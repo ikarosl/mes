@@ -1,21 +1,54 @@
 {
   "name": "company-mes-next",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
+  "type": "module",
   "packageManager": "pnpm@10.18.2",
   "engines": {
-    "node": ">=22.18.0"
+    "node": ">=22.18.0",
+    "pnpm": ">=10.18.2"
   },
   "scripts": {
-    "build": "turbo run build",
     "dev": "turbo run dev --parallel",
-    "lint": "turbo run lint",
+    "dev:api": "turbo run dev --filter=@company/api",
+    "dev:admin": "turbo run dev --filter=@company/admin-web",
+    "build": "turbo run build",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
-    "test:integration": "turbo run test:integration",
-    "test:e2e": "turbo run test:e2e",
-    "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm build",
-    "db:migrate": "pnpm --filter @company/database migrate",
-    "db:migrate:status": "pnpm --filter @company/database migrate:status"
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "verify": "pnpm format:check && pnpm lint && pnpm build && pnpm typecheck && pnpm test",
+    "prepare": "husky",
+    "precommit": "lint-staged",
+    "db:migrate": "turbo run migrate --filter=@company/database",
+    "db:migrate:status": "turbo run migrate:status --filter=@company/database",
+    "db:bootstrap-admin": "turbo run bootstrap-admin --filter=@company/database"
+  },
+  "lint-staged": {
+    "*.{js,mjs,cjs,ts,tsx,vue}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,css,less,scss,html,md,yml,yaml}": "prettier --write"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^22.10.2",
+    "@vitejs/plugin-vue": "^5.2.1",
+    "eslint": "^10.4.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-vue": "^10.9.1",
+    "globals": "^17.6.0",
+    "happy-dom": "^15.11.7",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.0.5",
+    "prettier": "^3.8.3",
+    "tsx": "^4.19.2",
+    "turbo": "^2.10.5",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.59.4",
+    "vitest": "^2.1.8",
+    "vue-tsc": "^2.1.10"
   }
 }

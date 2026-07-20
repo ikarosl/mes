@@ -1,33 +1,25 @@
-# MES Monorepo Architecture Blueprint
+# Company MES Next
 
-这是一个**不包含任何业务代码、业务 SQL 或历史上传文件**的工程架构样板，用于规划 `company_mes` 的下一阶段迁移。
+当前已落地范围：RBAC、认证、操作日志、管理端权限控制和多标签页路由缓存。未迁移产品、库存、生产、质量等业务模块。
 
-## 定位
+## 快速开始
 
-- 目标规模：一期约 50 名用户，优先采用可水平扩展的模块化单体，不提前拆微服务。
-- 后端：NestJS；按领域模块组织，每个模块内部区分 domain / application / infrastructure / presentation。
-- 前端：Vue 3 管理端为主，工作站端保留为轻量入口；遵守原项目 `design.md` 的左侧菜单、顶部栏、表格和 Modal 规则。
-- 数据库：MySQL；所有变更必须进入可排序、不可修改的迁移文件，并由 CI 从空库和升级库双向验证。
-- Redis：可选基础设施，不作为 50 人规模的强制依赖；通过端口适配器预留缓存、限流、分布式锁和队列能力。
-- 文件存储：业务只依赖 StoragePort，开发环境可用本地或 MinIO，生产可替换 S3/OSS/COS。
+1. 复制 `.env.example` 为 `.env`，设置数据库和长度不少于 32 位的 JWT 密钥。
+2. 启动 MySQL：`docker compose -f infra/compose/compose.dev.yml up -d mysql`。
+3. 安装依赖：`pnpm install --frozen-lockfile`。
+4. 执行迁移：`pnpm db:migrate`。
+5. 创建管理员：设置 `ADMIN_PASSWORD` 后运行 `pnpm db:bootstrap-admin`。
+6. 启动 API：`pnpm dev:api`。
+7. 启动管理端：`pnpm dev:admin`。
 
-## 重要边界
+## 验证
 
-1. 最新数据库设计依据是原项目 `docs/newSqlDesign.md`，本样板不复制其业务表。
-2. 旧 DOCX 需求说明书已被明确废弃。
-3. 本目录只描述架构、质量门禁和迁移流程，不代表已经完成项目迁移。
-4. 业务代码应按“模块逐个迁移 + 特征测试保护”进入，而不是整体复制。
+```text
+pnpm verify
+```
 
-## 目录入口
+项目使用 pnpm workspace 管理依赖，并由 Turborepo 编排 `dev`、`build`、`typecheck` 和 `test`。构建与测试任务可缓存；数据库迁移、迁移状态检查和管理员初始化明确禁止缓存。
 
-- `docs/current-project-audit.md`：现有项目审计结论。
-- `docs/architecture.md`：目标架构与依赖规则。
-- `docs/migration-roadmap.md`：迁移顺序、退出条件与回滚策略。
-- `docs/database-governance.md`：数据库迁移体系。
-- `docs/testing-strategy.md`：测试金字塔与 CI 门禁。
-- `infra/compose/compose.dev.yml`：本地 MySQL、Redis、MinIO 可选基础设施样板。
-- `.github/workflows/ci.yml`：CI 流程模板。
+Access Token 只存在页面内存；刷新页面或打开新浏览器标签时，前端通过 HttpOnly Refresh Cookie 恢复会话。应用内部多标签页由 Pinia 维护，并使用 Vue KeepAlive 缓存页面实例。
 
-## 建议启动顺序
-
-先评审并冻结 `newSqlDesign.md` 的基线版本，再实现工程底座、数据库基线迁移和最小测试样例。任何业务模块进入新仓库前，都必须先有迁移、契约测试和回滚说明。
+详细边界见 `agents.md` 和 `docs/rbac-auth-migration.md`。

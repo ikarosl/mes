@@ -1,23 +1,18 @@
 # syntax=docker/dockerfile:1.7
-FROM node:22-alpine AS base
+FROM node:22-alpine AS build
 RUN corepack enable
 WORKDIR /app
-
-FROM base AS dependencies
-COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
-COPY apps/api/package.json apps/api/package.json
-COPY packages packages
-RUN pnpm install --frozen-lockfile
-
-FROM dependencies AS build
 COPY . .
-RUN pnpm --filter @company/api build
+RUN pnpm install --frozen-lockfile && pnpm --filter @company/api... build
 
 FROM node:22-alpine AS runtime
+RUN corepack enable
 ENV NODE_ENV=production
-USER node
 WORKDIR /app
-COPY --from=build --chown=node:node /app/apps/api/dist ./dist
-COPY --from=build --chown=node:node /app/apps/api/package.json ./package.json
+COPY --from=build /app/package.json /app/pnpm-workspace.yaml /app/pnpm-lock.yaml ./
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/apps/api ./apps/api
+COPY --from=build /app/packages ./packages
+USER node
 EXPOSE 3000
-CMD ["node", "dist/main.js"]
+CMD ["node", "apps/api/dist/main.js"]

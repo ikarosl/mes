@@ -9,6 +9,15 @@
 - E2E：少量核心旅程，例如登录、建档、工单到批次、物料分配、报工、检验返工。
 - Performance：查询和关键写路径容量基线；按发布或定时任务执行。
 
+## 目录约定
+
+- 单元测试和组件测试放在被测模块附近的 `__tests__` 目录中，文件名统一为 `*.test.ts`。
+- 统一使用复数目录名 `__tests__`，不得使用 `__test__`，也不得将测试文件与生产源码平铺。
+- 包级测试放在 `packages/<package>/src/__tests__`。
+- 后端模块测试放在对应分层目录下的 `__tests__`，例如 `presentation/http/__tests__`。
+- 前端组件、Store、Composable 测试放在对应源码目录下的 `__tests__`。
+- 跨模块的集成、契约、E2E 和性能测试分别放在根目录 `tests/integration`、`tests/contract`、`tests/e2e` 和 `tests/performance`。
+
 ## PR 门禁
 
 1. format check

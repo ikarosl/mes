@@ -1,0 +1,9 @@
+node_modules/
+dist/
+coverage/
+.git/
+.pnpm-store/
+pnpm-lock.yaml
+*.log
+uploads/
+var/

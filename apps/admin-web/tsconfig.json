@@ -1,0 +1,5 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "types": ["vite/client"], "jsx": "preserve", "declaration": false },
+  "include": ["src/**/*.ts", "src/**/*.vue", "vite.config.ts"]
+}

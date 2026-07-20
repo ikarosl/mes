@@ -1,0 +1,34 @@
+{
+  "name": "@company/database",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --config ../../vitest.config.ts src",
+    "migrate": "tsx src/migrate.ts",
+    "migrate:status": "tsx src/migrate-status.ts",
+    "bootstrap-admin": "tsx src/bootstrap-admin.ts"
+  },
+  "dependencies": {
+    "bcryptjs": "catalog:",
+    "dotenv": "catalog:",
+    "mysql2": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "catalog:",
+    "@types/node": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}
