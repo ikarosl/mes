@@ -1,8 +1,10 @@
-import './load-env.js';
+import { loadWorkspaceEnv } from '@company/config';
 import { createDatabasePool } from './index.js';
 import { readMigrations } from './migration-utils.js';
 import type { RowDataPacket } from 'mysql2/promise';
 
+// Turbo 会在 packages/database 目录执行任务，因此必须显式加载工作区根目录 .env。
+loadWorkspaceEnv();
 const pool = createDatabasePool({ multipleStatements: true });
 try {
   await pool.query(`CREATE TABLE IF NOT EXISTS _schema_migrations (

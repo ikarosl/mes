@@ -10,6 +10,7 @@
     "test": "vitest run --config ../../vitest.config.ts src"
   },
   "dependencies": {
+    "@company/config": "workspace:*",
     "@company/constants": "workspace:*",
     "@company/contracts": "workspace:*",
     "@company/database": "workspace:*",
@@ -17,7 +18,6 @@
     "@nestjs/core": "catalog:",
     "@nestjs/platform-express": "catalog:",
     "bcryptjs": "catalog:",
-    "dotenv": "catalog:",
     "jose": "catalog:",
     "mysql2": "catalog:",
     "reflect-metadata": "catalog:",

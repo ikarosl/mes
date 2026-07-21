@@ -1,7 +1,9 @@
-import './load-env.js';
+import { loadWorkspaceEnv } from '@company/config';
 import bcrypt from 'bcryptjs';
 import { createDatabasePool, withTransaction } from './index.js';
 
+// 初始化管理员前统一加载工作区根目录 .env，保证账号配置与数据库连接一致。
+loadWorkspaceEnv();
 const username = process.env.ADMIN_USERNAME ?? 'admin';
 const password = process.env.ADMIN_PASSWORD;
 const displayName = process.env.ADMIN_DISPLAY_NAME ?? '系统管理员';

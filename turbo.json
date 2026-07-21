@@ -18,12 +18,15 @@
       "persistent": true
     },
     "migrate": {
+      "dependsOn": ["^build"],
       "cache": false
     },
     "migrate:status": {
+      "dependsOn": ["^build"],
       "cache": false
     },
     "bootstrap-admin": {
+      "dependsOn": ["^build"],
       "cache": false
     }
   }
