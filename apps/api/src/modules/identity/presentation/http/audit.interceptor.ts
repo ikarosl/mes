@@ -1,4 +1,10 @@
-import { CallHandler, ExecutionContext, Injectable, NestInterceptor } from '@nestjs/common';
+import {
+  CallHandler,
+  ExecutionContext,
+  HttpException,
+  Injectable,
+  NestInterceptor,
+} from '@nestjs/common';
 import type { UserProfile } from '@company/contracts';
 import { catchError, from, mergeMap, throwError } from 'rxjs';
 import { IdentityRepository } from '../../application/ports/identity.repository.js';
@@ -27,13 +33,18 @@ export class AuditInterceptor implements NestInterceptor {
           this.repository.writeLog({
             ...entry,
             result: 'failed',
-            remark: error instanceof Error ? error.message.slice(0, 255) : 'request failed',
+            remark: auditFailureRemark(error),
           }),
         ).pipe(mergeMap(() => throwError(() => error))),
       ),
     );
   }
 }
+
+/** Keep operation logs useful without persisting raw exception messages or secrets. */
+export const auditFailureRemark = (error: unknown) =>
+  error instanceof HttpException ? `HTTP ${error.getStatus()}` : 'Unhandled request failure';
+
 interface AuditRequest {
   method: string;
   path?: string;

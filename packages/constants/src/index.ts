@@ -16,6 +16,27 @@ export const PERMISSIONS = {
     permissions: { view: 'system:permission:view' },
     logs: { view: 'system:log:view' },
   },
+  product: {
+    view: 'product:view',
+    products: { view: 'product:products:view' },
+    categories: { view: 'product:categories:view' },
+    processes: { view: 'product:processes:view' },
+    routes: { view: 'product:routes:view' },
+  },
+  production: {
+    view: 'production:view',
+    orders: { view: 'production:orders:view' },
+    tasks: { view: 'production:tasks:view' },
+  },
+  warehouse: {
+    view: 'warehouse:view',
+    inventory: { view: 'warehouse:inventory:view' },
+    inbound: { view: 'warehouse:inbound:view' },
+    outbound: { view: 'warehouse:outbound:view' },
+    returns: { view: 'warehouse:returns:view' },
+    scraps: { view: 'warehouse:scraps:view' },
+    stockChecks: { view: 'warehouse:stock-checks:view' },
+  },
 } as const;
 
 export const permissionMatches = (granted: readonly string[], required?: string) => {

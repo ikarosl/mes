@@ -9,6 +9,13 @@ export interface RetryRequestConfig extends AxiosRequestConfig {
   retryTimes?: number;
   retryCount?: number;
   skipRetry?: boolean;
+  skipErrorHandling?: boolean;
+}
+
+interface ApiErrorResponse {
+  code?: string;
+  message?: string;
+  requestId?: string;
 }
 type InternalRetryConfig = InternalAxiosRequestConfig & RetryRequestConfig;
 export class RequestError extends Error {
@@ -16,6 +23,8 @@ export class RequestError extends Error {
     message: string,
     public readonly status: number,
     public readonly response?: AxiosResponse,
+    public readonly code?: string,
+    public readonly requestId?: string,
   ) {
     super(message);
     this.name = 'RequestError';
@@ -65,15 +74,14 @@ export const createRequestClient = (
 export const toRequestError = (error: unknown) => {
   if (error instanceof RequestError) return error;
   if (axios.isAxiosError(error)) {
-    const data = error.response?.data;
-    const message =
-      data && typeof data === 'object' && 'message' in data && typeof data.message === 'string'
-        ? data.message
-        : error.message;
+    const data = error.response?.data as ApiErrorResponse | undefined;
+    const message = data && typeof data.message === 'string' ? data.message : error.message;
     return new RequestError(
       message || 'Request failed',
       error.response?.status ?? 0,
       error.response,
+      typeof data?.code === 'string' ? data.code : error.code,
+      typeof data?.requestId === 'string' ? data.requestId : undefined,
     );
   }
   return error instanceof Error ? error : new Error('Request failed');

@@ -38,6 +38,7 @@ export const authApi: AuthApi = {
       skipRefresh: true,
       withCredentials: true,
       skipRetry: true,
+      skipErrorHandling: true,
     }),
   logout: () =>
     request<void>({

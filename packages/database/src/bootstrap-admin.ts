@@ -7,8 +7,8 @@ loadWorkspaceEnv();
 const username = process.env.ADMIN_USERNAME ?? 'admin';
 const password = process.env.ADMIN_PASSWORD;
 const displayName = process.env.ADMIN_DISPLAY_NAME ?? '系统管理员';
-if (!password || password.length < 12)
-  throw new Error('ADMIN_PASSWORD must contain at least 12 characters');
+if (!password || password.length < 6)
+  throw new Error('ADMIN_PASSWORD must contain at least 6 characters');
 const pool = createDatabasePool();
 try {
   await withTransaction(pool, async (connection) => {

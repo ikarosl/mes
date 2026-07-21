@@ -5,35 +5,266 @@
         <h2>权限管理</h2>
         <p>权限编码是前后端统一的授权契约</p>
       </div>
+      <el-button>刷新</el-button>
     </div>
-    <el-card
-      ><el-table :data="rows"
-        ><el-table-column prop="name" label="权限名称" /><el-table-column
+
+    <div class="query-panel">
+      <el-form
+        class="query-form"
+        :inline="true"
+      >
+        <el-form-item label="关键字">
+          <el-input
+            v-model="keyword"
+            clearable
+            placeholder="名称、编码、类型、路由或接口"
+          />
+        </el-form-item>
+      </el-form>
+    </div>
+
+    <div class="table-panel">
+      <el-table
+        :data="filteredPermissions"
+        class="data-table"
+      >
+        <el-table-column
+          prop="id"
+          label="ID"
+          width="80"
+        />
+        <el-table-column
+          prop="parentId"
+          label="父级ID"
+          width="90"
+        />
+        <el-table-column
+          prop="name"
+          label="权限名称"
+          min-width="140"
+        />
+        <el-table-column
           prop="code"
           label="权限编码"
-        /><el-table-column prop="type" label="类型" /><el-table-column
+          min-width="200"
+        />
+        <el-table-column
+          prop="type"
+          label="类型"
+          width="100"
+        />
+        <el-table-column
           prop="routePath"
           label="路由"
-        /><el-table-column label="状态"
-          ><template #default="{ row }"
-            ><el-tag :type="row.status === 1 ? 'success' : 'info'">{{
-              row.status === 1 ? '启用' : '停用'
-            }}</el-tag></template
-          ></el-table-column
-        ></el-table
-      ></el-card
-    >
+          min-width="160"
+        />
+        <el-table-column
+          prop="apiMethod"
+          label="方法"
+          width="90"
+        />
+        <el-table-column
+          prop="apiPath"
+          label="接口路径"
+          min-width="180"
+        />
+        <el-table-column
+          label="状态"
+          width="100"
+        >
+          <template #default="{ row }">
+            <el-tag :type="row.status === 1 ? 'success' : 'info'">
+              {{ row.status === 1 ? '启用' : '禁用' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+      </el-table>
+    </div>
   </section>
 </template>
+
 <script setup lang="ts">
-import { onActivated, onMounted, ref } from 'vue';
-import type { PermissionListItem } from '@company/contracts';
-import { systemApi } from '../../api/system';
+import { computed, ref } from 'vue';
+
 defineOptions({ name: 'PermissionsPage' });
-const rows = ref<PermissionListItem[]>([]);
-const load = async () => {
-  rows.value = await systemApi.permissions();
-};
-onMounted(load);
-onActivated(load);
+
+const demoData = [
+  {
+    id: '1',
+    parentId: '0',
+    name: '用户管理',
+    code: 'system:user:view',
+    type: 'MENU',
+    routePath: '/system/users',
+    apiMethod: 'GET',
+    apiPath: '/api/system/users',
+    status: 1,
+  },
+  {
+    id: '2',
+    parentId: '1',
+    name: '创建用户',
+    code: 'system:user:create',
+    type: 'BUTTON',
+    routePath: null,
+    apiMethod: 'POST',
+    apiPath: '/api/system/users',
+    status: 1,
+  },
+  {
+    id: '3',
+    parentId: '1',
+    name: '编辑用户',
+    code: 'system:user:update',
+    type: 'BUTTON',
+    routePath: null,
+    apiMethod: 'PUT',
+    apiPath: '/api/system/users/:id',
+    status: 1,
+  },
+  {
+    id: '4',
+    parentId: '0',
+    name: '角色管理',
+    code: 'system:role:view',
+    type: 'MENU',
+    routePath: '/system/roles',
+    apiMethod: 'GET',
+    apiPath: '/api/system/roles',
+    status: 1,
+  },
+  {
+    id: '5',
+    parentId: '0',
+    name: '权限管理',
+    code: 'system:permission:view',
+    type: 'MENU',
+    routePath: '/system/permissions',
+    apiMethod: 'GET',
+    apiPath: '/api/system/permissions',
+    status: 1,
+  },
+  {
+    id: '6',
+    parentId: '0',
+    name: '日志审计',
+    code: 'system:log:view',
+    type: 'MENU',
+    routePath: '/system/logs',
+    apiMethod: 'GET',
+    apiPath: '/api/system/logs',
+    status: 0,
+  },
+];
+
+const keyword = ref('');
+
+const filteredPermissions = computed(() => {
+  const value = keyword.value.trim().toLowerCase();
+  if (!value) return demoData;
+  return demoData.filter((item) =>
+    [
+      item.name,
+      item.code,
+      item.type,
+      item.routePath ?? '',
+      item.apiMethod ?? '',
+      item.apiPath ?? '',
+    ].some((field) => field.toLowerCase().includes(value)),
+  );
+});
 </script>
+
+<style scoped>
+.page-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+.page-title h2 {
+  margin: 0;
+  color: #283a50;
+  font-size: 20px;
+  font-weight: 600;
+}
+.page-title p {
+  margin: 4px 0 0;
+  color: #6b7280;
+  font-size: 14px;
+}
+
+.query-panel,
+.table-panel {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #ffffff;
+}
+.query-panel {
+  padding: 16px 20px;
+  margin-bottom: 16px;
+}
+.query-form {
+  display: flex;
+  align-items: flex-start;
+}
+.query-form :deep(.el-form-item) {
+  margin-right: 0;
+  margin-bottom: 0;
+}
+.query-form :deep(.el-form-item__label) {
+  color: #1f2937;
+  font-size: 14px;
+  font-weight: 500;
+}
+.query-form :deep(.el-input) {
+  width: 320px;
+}
+.query-form :deep(.el-input__wrapper) {
+  min-height: 34px;
+  border-radius: 6px;
+  box-shadow: 0 0 0 1px #e5e7eb inset;
+}
+
+.table-panel {
+  overflow: hidden;
+}
+
+.data-table {
+  width: 100%;
+  color: #1f2937;
+  font-size: 14px;
+}
+.data-table :deep(.el-table__header th) {
+  height: 48px;
+  background: #f9fafb;
+  color: #1f2937;
+  font-weight: 600;
+}
+.data-table :deep(.el-table__row) {
+  height: 48px;
+}
+.data-table :deep(.el-table__row:hover) {
+  background: #f3f4f6;
+}
+.data-table :deep(.el-table__cell) {
+  border-bottom-color: #e5e7eb;
+}
+.data-table :deep(.el-tag) {
+  height: 22px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 22px;
+}
+.data-table :deep(.el-tag--success) {
+  background: #dcfce7;
+  color: #22c55e;
+}
+.data-table :deep(.el-tag--info) {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+</style>

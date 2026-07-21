@@ -10,5 +10,5 @@ export default {
   arrowParens: 'always',
   endOfLine: 'lf',
   proseWrap: 'preserve',
-  singleAttributePerLine: false,
+  singleAttributePerLine: true,
 };
