@@ -7,7 +7,9 @@
       </div>
     </div>
     <el-card
-      ><el-descriptions :column="2" border
+      ><el-descriptions
+        :column="2"
+        border
         ><el-descriptions-item label="当前用户">{{
           auth.session?.user.displayName
         }}</el-descriptions-item

@@ -1,8 +1,9 @@
 import { Body, Controller, Get, Post, Req, Res } from '@nestjs/common';
-import type { LoginRequest, UserProfile } from '@company/contracts';
+import type { UserProfile } from '@company/contracts';
 import { loadAppConfig } from '../../../../config/env.js';
 import { AuthService } from '../../application/auth.service.js';
 import { CurrentUser, Public } from './auth.decorators.js';
+import { LoginDto } from './dto/auth.dto.js';
 
 const COOKIE = 'company_refresh_token';
 const MAX_AGE = 7 * 24 * 60 * 60 * 1000;
@@ -11,13 +12,10 @@ export class AuthController {
   private readonly config = loadAppConfig();
   constructor(private readonly auth: AuthService) {}
   @Public() @Post('login') async login(
-    @Body() body: LoginRequest,
+    @Body() body: LoginDto,
     @Res({ passthrough: true }) response: CookieResponse,
   ) {
-    const result = await this.auth.login({
-      username: String(body?.username ?? ''),
-      password: String(body?.password ?? ''),
-    });
+    const result = await this.auth.login(body);
     this.setCookie(response, result.refreshToken);
     return result.response;
   }

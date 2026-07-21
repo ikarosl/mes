@@ -9,6 +9,7 @@ export interface RetryRequestConfig extends AxiosRequestConfig {
   retryTimes?: number;
   retryCount?: number;
   skipRetry?: boolean;
+  retryUnsafe?: boolean;
   skipErrorHandling?: boolean;
 }
 
@@ -18,6 +19,9 @@ interface ApiErrorResponse {
   requestId?: string;
 }
 type InternalRetryConfig = InternalAxiosRequestConfig & RetryRequestConfig;
+const SAFE_RETRY_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+export const canRetryRequest = (method: string | undefined, retryUnsafe = false) =>
+  retryUnsafe || SAFE_RETRY_METHODS.has((method ?? 'GET').toUpperCase());
 export class RequestError extends Error {
   constructor(
     message: string,
@@ -59,6 +63,7 @@ export const createRequestClient = (
       if (
         config &&
         !config.skipRetry &&
+        canRetryRequest(config.method, config.retryUnsafe) &&
         (config.retryCount ?? 0) < attempts &&
         (!error.response || error.response.status >= 500)
       ) {

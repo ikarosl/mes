@@ -18,6 +18,8 @@
     "@nestjs/core": "catalog:",
     "@nestjs/platform-express": "catalog:",
     "bcryptjs": "catalog:",
+    "class-transformer": "catalog:",
+    "class-validator": "catalog:",
     "jose": "catalog:",
     "mysql2": "catalog:",
     "reflect-metadata": "catalog:",

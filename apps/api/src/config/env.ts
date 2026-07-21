@@ -8,6 +8,7 @@ export interface AppConfig {
   jwtAudience: string;
   refreshCookiePath: string;
   refreshCookieSecure: boolean;
+  trustProxyHops: number;
 }
 
 export const loadAppConfig = (): AppConfig => {
@@ -22,6 +23,7 @@ export const loadAppConfig = (): AppConfig => {
     jwtAudience: required('JWT_AUDIENCE'),
     refreshCookiePath: process.env.REFRESH_TOKEN_COOKIE_PATH ?? '/api/auth',
     refreshCookieSecure: process.env.REFRESH_TOKEN_COOKIE_SECURE === 'true',
+    trustProxyHops: nonNegativeInteger('TRUST_PROXY_HOPS', 0),
   };
 };
 
@@ -35,5 +37,11 @@ const required = (name: string) => {
 const integer = (name: string, fallback: number) => {
   const value = Number(process.env[name] ?? fallback);
   if (!Number.isInteger(value) || value <= 0) throw new Error(`${name} must be a positive integer`);
+  return value;
+};
+const nonNegativeInteger = (name: string, fallback: number) => {
+  const value = Number(process.env[name] ?? fallback);
+  if (!Number.isInteger(value) || value < 0)
+    throw new Error(`${name} must be a non-negative integer`);
   return value;
 };

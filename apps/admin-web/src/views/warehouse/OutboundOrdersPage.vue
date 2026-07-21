@@ -542,6 +542,7 @@ const detailVisible = ref(false);
 const query = reactive({ keyword: '', status: '' });
 
 const batchOptions = ref<BatchItem[]>([]);
+// TODO(api-integration): 接入批次号搜索 API 后接通此状态与函数
 const batchLoading = ref(false);
 const loadingAllocations = ref(false);
 

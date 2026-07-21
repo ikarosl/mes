@@ -11,6 +11,7 @@ export const createDatabasePool = (options: { multipleStatements?: boolean } = {
     password: requiredEnv('DB_PASSWORD', true),
     database: requiredEnv('DB_NAME'),
     charset: 'utf8mb4',
+    timezone: 'Z',
     connectionLimit: positiveIntegerEnv('DB_CONNECTION_LIMIT'),
     namedPlaceholders: false,
     multipleStatements: options.multipleStatements ?? false,

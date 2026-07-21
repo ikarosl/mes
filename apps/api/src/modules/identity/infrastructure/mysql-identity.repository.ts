@@ -3,6 +3,8 @@ import type { Pool, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import type { CreateRoleRequest, CreateUserRequest } from '@company/contracts';
 import { withTransaction } from '@company/database';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
+import type { AuditLogEntry } from '../application/audit.types.js';
+import { AuditRepository } from '../application/ports/audit.repository.js';
 import { IdentityRepository } from '../application/ports/identity.repository.js';
 import type {
   CredentialUser,
@@ -20,7 +22,7 @@ type UserRow = RowDataPacket & {
   display_name: string;
 };
 @Injectable()
-export class MysqlIdentityRepository implements IdentityRepository {
+export class MysqlIdentityRepository implements IdentityRepository, AuditRepository {
   constructor(@Inject(DATABASE_POOL) private readonly pool: Pool) {}
   async findCredentials(username: string): Promise<CredentialUser | null> {
     const [rows] = await this.pool.query<UserRow[]>(
@@ -114,7 +116,7 @@ export class MysqlIdentityRepository implements IdentityRepository {
       lastLoginAt: row.last_login_at?.toISOString() ?? null,
     }));
   }
-  async createUser(payload: CreateUserRequest, passwordHash: string) {
+  async createUser(payload: CreateUserRequest, passwordHash: string, audit: AuditLogEntry) {
     return withTransaction(this.pool, async (connection) => {
       const [result] = await connection.execute<ResultSetHeader>(
         'INSERT INTO users (department_id,username,password_hash,display_name,status) VALUES (?,?,?,?,1)',
@@ -125,23 +127,61 @@ export class MysqlIdentityRepository implements IdentityRepository {
           result.insertId,
           roleId,
         ]);
-      return String(result.insertId);
+      const id = String(result.insertId);
+      await this.writeLogWith(connection, {
+        ...audit,
+        targetId: id,
+        targetType: 'user',
+        afterData: {
+          username: payload.username,
+          displayName: payload.displayName,
+          departmentId: payload.departmentId ?? null,
+          roleIds: payload.roleIds,
+        },
+      });
+      return id;
     });
   }
-  async setUserStatus(userId: string, status: number) {
-    await this.pool.execute('UPDATE users SET status=? WHERE id=? AND deleted_at IS NULL', [
-      status,
-      userId,
-    ]);
-  }
-  async setUserRoles(userId: string, roleIds: string[]) {
+  async setUserStatus(userId: string, status: number, audit: AuditLogEntry) {
     await withTransaction(this.pool, async (connection) => {
+      const [rows] = await connection.query<(RowDataPacket & { status: number })[]>(
+        'SELECT status FROM users WHERE id=? AND deleted_at IS NULL FOR UPDATE',
+        [userId],
+      );
+      const current = rows[0];
+      if (!current) return;
+      await connection.execute('UPDATE users SET status=? WHERE id=? AND deleted_at IS NULL', [
+        status,
+        userId,
+      ]);
+      await this.writeLogWith(connection, {
+        ...audit,
+        targetId: userId,
+        targetType: 'user',
+        beforeData: { status: current.status },
+        afterData: { status },
+      });
+    });
+  }
+  async setUserRoles(userId: string, roleIds: string[], audit: AuditLogEntry) {
+    await withTransaction(this.pool, async (connection) => {
+      const [rows] = await connection.query<(RowDataPacket & { role_id: number })[]>(
+        'SELECT role_id FROM user_roles WHERE user_id=? ORDER BY role_id FOR UPDATE',
+        [userId],
+      );
       await connection.execute('DELETE FROM user_roles WHERE user_id=?', [userId]);
       for (const roleId of roleIds)
         await connection.execute('INSERT INTO user_roles (user_id,role_id) VALUES (?,?)', [
           userId,
           roleId,
         ]);
+      await this.writeLogWith(connection, {
+        ...audit,
+        targetId: userId,
+        targetType: 'user',
+        beforeData: { roleIds: rows.map((row) => String(row.role_id)) },
+        afterData: { roleIds },
+      });
     });
   }
   async listRoles(): Promise<IdentityRole[]> {
@@ -166,21 +206,45 @@ export class MysqlIdentityRepository implements IdentityRepository {
       permissionIds: row.permission_ids?.split(',') ?? [],
     }));
   }
-  async createRole(payload: CreateRoleRequest) {
-    const [result] = await this.pool.execute<ResultSetHeader>(
-      'INSERT INTO roles (name,code,description,status) VALUES (?,?,?,1)',
-      [payload.name, payload.code, payload.description ?? null],
-    );
-    return String(result.insertId);
+  async createRole(payload: CreateRoleRequest, audit: AuditLogEntry) {
+    return withTransaction(this.pool, async (connection) => {
+      const [result] = await connection.execute<ResultSetHeader>(
+        'INSERT INTO roles (name,code,description,status) VALUES (?,?,?,1)',
+        [payload.name, payload.code, payload.description ?? null],
+      );
+      const id = String(result.insertId);
+      await this.writeLogWith(connection, {
+        ...audit,
+        targetId: id,
+        targetType: 'role',
+        afterData: {
+          name: payload.name,
+          code: payload.code,
+          description: payload.description ?? null,
+        },
+      });
+      return id;
+    });
   }
-  async setRolePermissions(roleId: string, permissionIds: string[]) {
+  async setRolePermissions(roleId: string, permissionIds: string[], audit: AuditLogEntry) {
     await withTransaction(this.pool, async (connection) => {
+      const [rows] = await connection.query<(RowDataPacket & { permission_id: number })[]>(
+        'SELECT permission_id FROM role_permissions WHERE role_id=? ORDER BY permission_id FOR UPDATE',
+        [roleId],
+      );
       await connection.execute('DELETE FROM role_permissions WHERE role_id=?', [roleId]);
       for (const permissionId of permissionIds)
         await connection.execute(
           'INSERT INTO role_permissions (role_id,permission_id) VALUES (?,?)',
           [roleId, permissionId],
         );
+      await this.writeLogWith(connection, {
+        ...audit,
+        targetId: roleId,
+        targetType: 'role',
+        beforeData: { permissionIds: rows.map((row) => String(row.permission_id)) },
+        afterData: { permissionIds },
+      });
     });
   }
   async listPermissions(): Promise<IdentityPermission[]> {
@@ -213,29 +277,30 @@ export class MysqlIdentityRepository implements IdentityRepository {
     );
     return rows as Record<string, unknown>[];
   }
-  async writeLog(entry: {
-    logType: string;
-    module: string;
-    action: string;
-    userId?: string | null;
-    result: string;
-    ip?: string | null;
-    remark?: string | null;
-  }) {
-    await this.pool.execute(
-      'INSERT INTO operation_logs (log_type,module,action,user_id,result,ip,remark) VALUES (?,?,?,?,?,?,?)',
+  async writeLog(entry: AuditLogEntry) {
+    await this.writeLogWith(this.pool, entry);
+  }
+  private async writeLogWith(executor: Pick<Pool, 'execute'>, entry: AuditLogEntry) {
+    await executor.execute(
+      `INSERT INTO operation_logs
+       (log_type,module,action,user_id,target_id,target_type,result,before_data,after_data,ip,remark)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
       [
         entry.logType,
         entry.module,
         entry.action,
         entry.userId ?? null,
+        entry.targetId ?? null,
+        entry.targetType ?? null,
         entry.result,
+        jsonValue(entry.beforeData),
+        jsonValue(entry.afterData),
         entry.ip ?? null,
         entry.remark ?? null,
       ],
     );
   }
-  transaction<T>(work: (connection: import('mysql2/promise').PoolConnection) => Promise<T>) {
-    return withTransaction(this.pool, work);
-  }
 }
+
+const jsonValue = (value: unknown) =>
+  value === undefined || value === null ? null : JSON.stringify(value);

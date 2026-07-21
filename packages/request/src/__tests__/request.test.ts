@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { toRequestError } from '../index.js';
+import { canRetryRequest, toRequestError } from '../index.js';
 
 describe('request errors', () => {
   it('preserves regular Error instances', () => {
@@ -24,5 +24,12 @@ describe('request errors', () => {
       requestId: 'request_1234',
       message: '参数错误',
     });
+  });
+
+  it('retries only safe methods unless an unsafe retry is explicitly enabled', () => {
+    expect(canRetryRequest('GET')).toBe(true);
+    expect(canRetryRequest('post')).toBe(false);
+    expect(canRetryRequest('PATCH')).toBe(false);
+    expect(canRetryRequest('POST', true)).toBe(true);
   });
 });

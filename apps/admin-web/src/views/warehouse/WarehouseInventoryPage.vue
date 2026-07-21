@@ -330,6 +330,7 @@
 import { onMounted, reactive, ref } from 'vue';
 import { Refresh } from '@element-plus/icons-vue';
 import { DialogWidth } from '../../utils/dialog';
+// TODO(api-integration): 待接入操作类接口后启用 EMessage 提示
 import { EMessage } from '../../utils/message';
 
 defineOptions({ name: 'WarehouseInventoryPage' });
