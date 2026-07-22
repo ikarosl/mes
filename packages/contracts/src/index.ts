@@ -113,7 +113,7 @@ export interface SystemRoleListItem {
 }
 export interface SystemPermissionListItem {
   id: string;
-  parentId: string;
+  parentId: string | null;
   name: string;
   code: string;
   type: string;
@@ -208,6 +208,19 @@ export interface UpdateSystemRolePayload {
 }
 export interface AssignSystemRolePermissionsPayload {
   permissionIds: string[];
+}
+
+export interface OperationLogQuery extends PageQuery {
+  keyword?: string;
+  logType?: string;
+  module?: string;
+  result?: string;
+  userId?: string;
+  requestId?: string;
+  targetType?: string;
+  targetId?: string;
+  createdAtFrom?: string;
+  createdAtTo?: string;
 }
 
 /** 日志模块枚举值 */

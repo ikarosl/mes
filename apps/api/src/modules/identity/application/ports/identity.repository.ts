@@ -1,10 +1,17 @@
-import type { CreateRoleRequest, CreateUserRequest } from '@company/contracts';
+import type {
+  CreateSystemRolePayload,
+  CreateSystemUserPayload,
+  UpdateSystemRolePayload,
+  UpdateSystemUserPayload,
+} from '@company/contracts';
 import type { AuditLogEntry } from '../audit.types.js';
 import type {
   CredentialUser,
+  IdentityDepartmentOption,
   IdentityPermission,
   IdentityProfile,
   IdentityRole,
+  IdentityRoleOption,
   IdentityUser,
   RefreshTokenRecord,
 } from '../../domain/identity.types.js';
@@ -21,15 +28,37 @@ export abstract class IdentityRepository {
   ): Promise<boolean>;
   abstract revokeRefreshToken(jti: string): Promise<void>;
   abstract listUsers(): Promise<IdentityUser[]>;
+  abstract listDepartmentOptions(): Promise<IdentityDepartmentOption[]>;
+  abstract listRoleOptions(): Promise<IdentityRoleOption[]>;
   abstract createUser(
-    payload: CreateUserRequest,
+    payload: CreateSystemUserPayload,
     passwordHash: string,
     audit: AuditLogEntry,
   ): Promise<string>;
+  abstract updateUser(
+    userId: string,
+    payload: UpdateSystemUserPayload,
+    audit: AuditLogEntry,
+  ): Promise<boolean>;
   abstract setUserStatus(userId: string, status: number, audit: AuditLogEntry): Promise<void>;
+  abstract resetUserPassword(
+    userId: string,
+    passwordHash: string,
+    audit: AuditLogEntry,
+  ): Promise<boolean>;
   abstract setUserRoles(userId: string, roleIds: string[], audit: AuditLogEntry): Promise<void>;
   abstract listRoles(): Promise<IdentityRole[]>;
-  abstract createRole(payload: CreateRoleRequest, audit: AuditLogEntry): Promise<string>;
+  abstract createRole(payload: CreateSystemRolePayload, audit: AuditLogEntry): Promise<string>;
+  abstract updateRole(
+    roleId: string,
+    payload: UpdateSystemRolePayload,
+    audit: AuditLogEntry,
+  ): Promise<boolean>;
+  abstract deleteRole(
+    roleId: string,
+    audit: AuditLogEntry,
+  ): Promise<'deleted' | 'not-found' | 'in-use'>;
+  abstract getRolePermissionIds(roleId: string): Promise<string[] | null>;
   abstract setRolePermissions(
     roleId: string,
     permissionIds: string[],

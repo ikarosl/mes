@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Put } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { PERMISSIONS } from '@company/constants';
 import type { AuditContext } from '../../application/audit.types.js';
 import { RbacService } from '../../application/rbac.service.js';
@@ -9,6 +9,10 @@ import {
   CreateRoleDto,
   CreateUserDto,
   IdParamDto,
+  OperationLogQueryDto,
+  ResetUserPasswordDto,
+  UpdateRoleDto,
+  UpdateUserDto,
   UpdateUserStatusDto,
 } from './dto/rbac.dto.js';
 
@@ -24,6 +28,26 @@ export class RbacController {
   createUser(@Body() body: CreateUserDto, @CurrentAuditContext() audit: AuditContext) {
     return this.rbac.createUser(body, audit);
   }
+  @Get('departments/options')
+  @RequirePermission(PERMISSIONS.system.users.view)
+  departmentOptions() {
+    return this.rbac.listDepartmentOptions();
+  }
+  @Get('roles/options')
+  @RequirePermission(PERMISSIONS.system.users.view)
+  roleOptions() {
+    return this.rbac.listRoleOptions();
+  }
+  @Patch('users/:id')
+  @RequirePermission(PERMISSIONS.system.users.update)
+  @AuditInApplication()
+  updateUser(
+    @Param() { id }: IdParamDto,
+    @Body() body: UpdateUserDto,
+    @CurrentAuditContext() audit: AuditContext,
+  ) {
+    return this.rbac.updateUser(id, body, audit);
+  }
   @Patch('users/:id/status')
   @RequirePermission(PERMISSIONS.system.users.update)
   @AuditInApplication()
@@ -33,6 +57,16 @@ export class RbacController {
     @CurrentAuditContext() audit: AuditContext,
   ) {
     return this.rbac.setUserStatus(id, body.status, audit);
+  }
+  @Patch('users/:id/password')
+  @RequirePermission(PERMISSIONS.system.users.resetPassword)
+  @AuditInApplication()
+  resetUserPassword(
+    @Param() { id }: IdParamDto,
+    @Body() body: ResetUserPasswordDto,
+    @CurrentAuditContext() audit: AuditContext,
+  ) {
+    return this.rbac.resetUserPassword(id, body.password, audit);
   }
   @Put('users/:id/roles')
   @RequirePermission(PERMISSIONS.system.users.assignRoles)
@@ -53,6 +87,27 @@ export class RbacController {
   createRole(@Body() body: CreateRoleDto, @CurrentAuditContext() audit: AuditContext) {
     return this.rbac.createRole(body, audit);
   }
+  @Patch('roles/:id')
+  @RequirePermission(PERMISSIONS.system.roles.update)
+  @AuditInApplication()
+  updateRole(
+    @Param() { id }: IdParamDto,
+    @Body() body: UpdateRoleDto,
+    @CurrentAuditContext() audit: AuditContext,
+  ) {
+    return this.rbac.updateRole(id, body, audit);
+  }
+  @Delete('roles/:id')
+  @RequirePermission(PERMISSIONS.system.roles.delete)
+  @AuditInApplication()
+  deleteRole(@Param() { id }: IdParamDto, @CurrentAuditContext() audit: AuditContext) {
+    return this.rbac.deleteRole(id, audit);
+  }
+  @Get('roles/:id/permissions')
+  @RequirePermission(PERMISSIONS.system.roles.assignPermissions)
+  rolePermissions(@Param() { id }: IdParamDto) {
+    return this.rbac.getRolePermissions(id);
+  }
   @Put('roles/:id/permissions')
   @RequirePermission(PERMISSIONS.system.roles.assignPermissions)
   @AuditInApplication()
@@ -66,7 +121,13 @@ export class RbacController {
   @Get('permissions') @RequirePermission(PERMISSIONS.system.permissions.view) permissions() {
     return this.rbac.listPermissions();
   }
-  @Get('logs') @RequirePermission(PERMISSIONS.system.logs.view) logs() {
-    return this.rbac.listLogs();
+  @Get('logs') @RequirePermission(PERMISSIONS.system.logs.view) logs(
+    @Query() query: OperationLogQueryDto,
+  ) {
+    return this.rbac.listLogs({
+      ...query,
+      page: query.page ? Math.max(Number(query.page), 1) : undefined,
+      pageSize: query.pageSize ? Math.min(Math.max(Number(query.pageSize), 1), 100) : undefined,
+    });
   }
 }

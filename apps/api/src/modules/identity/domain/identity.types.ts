@@ -1,7 +1,9 @@
 import type {
-  PermissionListItem,
-  RoleListItem,
-  UserListItem,
+  SystemDepartmentOption,
+  SystemPermissionListItem,
+  SystemRoleListItem,
+  SystemRoleOption,
+  SystemUserListItem,
   UserProfile,
 } from '@company/contracts';
 
@@ -17,6 +19,8 @@ export interface RefreshTokenRecord {
   expiresAt: Date;
 }
 export type IdentityProfile = UserProfile;
-export type IdentityUser = UserListItem;
-export type IdentityRole = RoleListItem;
-export type IdentityPermission = PermissionListItem;
+export type IdentityUser = SystemUserListItem;
+export type IdentityRole = SystemRoleListItem;
+export type IdentityPermission = SystemPermissionListItem;
+export type IdentityDepartmentOption = SystemDepartmentOption;
+export type IdentityRoleOption = SystemRoleOption;

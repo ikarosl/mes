@@ -5,13 +5,7 @@
         <h2>操作日志</h2>
         <p>认证和 RBAC 关键操作审计</p>
       </div>
-      <el-button
-        @click="
-          logs = demoData;
-          total = demoData.length;
-        "
-        >刷新</el-button
-      >
+      <el-button @click="loadLogs">刷新</el-button>
     </div>
 
     <div class="query-panel">
@@ -125,6 +119,7 @@
 
     <div class="table-panel">
       <el-table
+        v-loading="loading"
         :data="logs"
         class="data-table"
       >
@@ -225,11 +220,7 @@
           :page-size="pageSize"
           :total="total"
           layout="prev, pager, next, jumper"
-          @current-change="
-            (page: number) => {
-              currentPage = page;
-            }
-          "
+          @current-change="loadLogs"
         />
       </div>
     </div>
@@ -283,123 +274,19 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue';
-import { OPERATION_LOG_MODULE_OPTIONS } from '@company/contracts';
+import { computed, onMounted, reactive, ref } from 'vue';
+import { OPERATION_LOG_MODULE_OPTIONS, type OperationLogListItem } from '@company/contracts';
+import { systemApi } from '../../api/system';
 import { DialogWidth } from '../../utils/dialog';
+import { EMessage } from '../../utils/message';
 
 defineOptions({ name: 'LogsPage' });
 
-const demoData = [
-  {
-    id: '1',
-    logType: 'auth',
-    module: 'auth',
-    action: '用户登录',
-    userId: '1',
-    username: 'admin',
-    targetId: null,
-    targetType: null,
-    targetIds: null,
-    businessKey: null,
-    result: 'success',
-    requestId: 'req-001',
-    httpMethod: 'POST',
-    route: '/api/auth/login',
-    httpStatus: 200,
-    durationMs: 45,
-    requestData: { username: 'admin' },
-    beforeData: null,
-    afterData: { loginTime: '2026-07-21T09:00:00' },
-    ip: '192.168.1.100',
-    userAgent: null,
-    errorCode: null,
-    remark: '登录成功',
-    createdAt: '2026-07-21 09:00:00',
-  },
-  {
-    id: '2',
-    logType: 'operation',
-    module: 'system',
-    action: '创建用户',
-    userId: '1',
-    username: 'admin',
-    targetId: '5',
-    targetType: 'user',
-    targetIds: null,
-    businessKey: null,
-    result: 'success',
-    requestId: 'req-002',
-    httpMethod: 'POST',
-    route: '/api/system/users',
-    httpStatus: 201,
-    durationMs: 120,
-    requestData: { username: 'operator1', displayName: '操作员' },
-    beforeData: null,
-    afterData: { id: '5', username: 'operator1' },
-    ip: '192.168.1.100',
-    userAgent: null,
-    errorCode: null,
-    remark: '新用户创建',
-    createdAt: '2026-07-21 09:30:00',
-  },
-  {
-    id: '3',
-    logType: 'operation',
-    module: 'system',
-    action: '更新角色权限',
-    userId: '1',
-    username: 'admin',
-    targetId: '2',
-    targetType: 'role',
-    targetIds: null,
-    businessKey: null,
-    result: 'success',
-    requestId: 'req-003',
-    httpMethod: 'PUT',
-    route: '/api/system/roles/2/permissions',
-    httpStatus: 200,
-    durationMs: 85,
-    requestData: { permissionIds: ['1', '2', '3'] },
-    beforeData: { permissionIds: ['1', '2'] },
-    afterData: { permissionIds: ['1', '2', '3'] },
-    ip: '192.168.1.100',
-    userAgent: null,
-    errorCode: null,
-    remark: '添加了查看权限',
-    createdAt: '2026-07-21 10:00:00',
-  },
-  {
-    id: '4',
-    logType: 'operation',
-    module: 'product',
-    action: '更新产品信息',
-    userId: '2',
-    username: 'operator1',
-    targetId: '1',
-    targetType: 'product',
-    targetIds: null,
-    businessKey: null,
-    result: 'failed',
-    requestId: 'req-004',
-    httpMethod: 'PUT',
-    route: '/api/products/1',
-    httpStatus: 422,
-    durationMs: 200,
-    requestData: { productName: '', unit: 'pcs' },
-    beforeData: null,
-    afterData: null,
-    ip: '192.168.1.101',
-    userAgent: null,
-    errorCode: 'VALIDATION_ERROR',
-    remark: '产品名称为空',
-    createdAt: '2026-07-21 11:00:00',
-  },
-];
-
-const logs = ref(demoData);
-const total = ref(demoData.length);
+const logs = ref<OperationLogListItem[]>([]);
+const total = ref(0);
 const currentPage = ref(1);
 const pageSize = 10;
+const loading = ref(false);
 const detailVisible = ref(false);
 const activeLog = ref<any>(null);
 const activeDiff = computed(() =>
@@ -420,8 +307,34 @@ const query = reactive({
   createdAtRange: [] as string[],
 });
 
+const loadLogs = async () => {
+  loading.value = true;
+  try {
+    const result = await systemApi.logs({
+      page: currentPage.value,
+      pageSize,
+      keyword: query.keyword || undefined,
+      logType: query.logType || undefined,
+      module: query.module || undefined,
+      result: query.result || undefined,
+      userId: query.userId || undefined,
+      requestId: query.requestId || undefined,
+      targetType: query.targetType || undefined,
+      targetId: query.targetId || undefined,
+      createdAtFrom: toIso(query.createdAtRange[0]),
+      createdAtTo: toIso(query.createdAtRange[1]),
+    });
+    logs.value = result.items;
+    total.value = result.total;
+  } catch (error) {
+    EMessage.error(error, '操作日志加载失败');
+  } finally {
+    loading.value = false;
+  }
+};
 const searchLogs = () => {
   currentPage.value = 1;
+  void loadLogs();
 };
 
 const resetQuery = () => {
@@ -437,6 +350,7 @@ const resetQuery = () => {
     createdAtRange: [],
   });
   currentPage.value = 1;
+  void loadLogs();
 };
 
 const openDetail = (row: any) => {
@@ -457,6 +371,9 @@ const buildDiff = (before: unknown, after: unknown) => {
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
+const toIso = (value?: string) =>
+  value ? new Date(value.replace(' ', 'T')).toISOString() : undefined;
+onMounted(loadLogs);
 </script>
 
 <style scoped>

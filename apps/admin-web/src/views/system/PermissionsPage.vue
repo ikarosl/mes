@@ -5,7 +5,7 @@
         <h2>权限管理</h2>
         <p>权限编码是前后端统一的授权契约</p>
       </div>
-      <el-button>刷新</el-button>
+      <el-button @click="loadPermissions">刷新</el-button>
     </div>
 
     <div class="query-panel">
@@ -25,6 +25,7 @@
 
     <div class="table-panel">
       <el-table
+        v-loading="loading"
         :data="filteredPermissions"
         class="data-table"
       >
@@ -73,8 +74,8 @@
           width="100"
         >
           <template #default="{ row }">
-            <el-tag :type="row.status === 1 ? 'success' : 'info'">
-              {{ row.status === 1 ? '启用' : '禁用' }}
+            <el-tag :type="row.status === SYSTEM_STATUS.enabled ? 'success' : 'info'">
+              {{ row.status === SYSTEM_STATUS.enabled ? '启用' : '禁用' }}
             </el-tag>
           </template>
         </el-table-column>
@@ -84,85 +85,22 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
+import type { SystemPermissionListItem } from '@company/contracts';
+import { SYSTEM_STATUS } from '@company/constants';
+import { systemApi } from '../../api/system';
+import { EMessage } from '../../utils/message';
 
 defineOptions({ name: 'PermissionsPage' });
 
-const demoData = [
-  {
-    id: '1',
-    parentId: '0',
-    name: '用户管理',
-    code: 'system:user:view',
-    type: 'MENU',
-    routePath: '/system/users',
-    apiMethod: 'GET',
-    apiPath: '/api/system/users',
-    status: 1,
-  },
-  {
-    id: '2',
-    parentId: '1',
-    name: '创建用户',
-    code: 'system:user:create',
-    type: 'BUTTON',
-    routePath: null,
-    apiMethod: 'POST',
-    apiPath: '/api/system/users',
-    status: 1,
-  },
-  {
-    id: '3',
-    parentId: '1',
-    name: '编辑用户',
-    code: 'system:user:update',
-    type: 'BUTTON',
-    routePath: null,
-    apiMethod: 'PUT',
-    apiPath: '/api/system/users/:id',
-    status: 1,
-  },
-  {
-    id: '4',
-    parentId: '0',
-    name: '角色管理',
-    code: 'system:role:view',
-    type: 'MENU',
-    routePath: '/system/roles',
-    apiMethod: 'GET',
-    apiPath: '/api/system/roles',
-    status: 1,
-  },
-  {
-    id: '5',
-    parentId: '0',
-    name: '权限管理',
-    code: 'system:permission:view',
-    type: 'MENU',
-    routePath: '/system/permissions',
-    apiMethod: 'GET',
-    apiPath: '/api/system/permissions',
-    status: 1,
-  },
-  {
-    id: '6',
-    parentId: '0',
-    name: '日志审计',
-    code: 'system:log:view',
-    type: 'MENU',
-    routePath: '/system/logs',
-    apiMethod: 'GET',
-    apiPath: '/api/system/logs',
-    status: 0,
-  },
-];
-
 const keyword = ref('');
+const permissions = ref<SystemPermissionListItem[]>([]);
+const loading = ref(false);
 
 const filteredPermissions = computed(() => {
   const value = keyword.value.trim().toLowerCase();
-  if (!value) return demoData;
-  return demoData.filter((item) =>
+  if (!value) return permissions.value;
+  return permissions.value.filter((item) =>
     [
       item.name,
       item.code,
@@ -173,6 +111,17 @@ const filteredPermissions = computed(() => {
     ].some((field) => field.toLowerCase().includes(value)),
   );
 });
+const loadPermissions = async () => {
+  loading.value = true;
+  try {
+    permissions.value = await systemApi.permissions();
+  } catch (error) {
+    EMessage.error(error, '权限目录加载失败');
+  } finally {
+    loading.value = false;
+  }
+};
+onMounted(loadPermissions);
 </script>
 
 <style scoped>

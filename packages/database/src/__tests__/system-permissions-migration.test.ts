@@ -16,4 +16,15 @@ describe('system permission migration', () => {
     expect(sql).not.toContain("'production:");
     expect(sql).not.toContain("'warehouse:");
   });
+
+  it('appends permissions for newly integrated system actions', async () => {
+    const sql = await readFile(
+      resolve(migrationsDir, '202607220001-system-module-permissions.up.sql'),
+      'utf8',
+    );
+
+    expect(sql).toContain("'system:user:reset-password'");
+    expect(sql).toContain("'system:role:delete'");
+    expect(sql).not.toContain("'product:");
+  });
 });

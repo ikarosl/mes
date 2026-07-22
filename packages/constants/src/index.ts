@@ -5,12 +5,14 @@ export const PERMISSIONS = {
       view: 'system:user:view',
       create: 'system:user:create',
       update: 'system:user:update',
+      resetPassword: 'system:user:reset-password',
       assignRoles: 'system:user:assign-roles',
     },
     roles: {
       view: 'system:role:view',
       create: 'system:role:create',
       update: 'system:role:update',
+      delete: 'system:role:delete',
       assignPermissions: 'system:role:assign-permissions',
     },
     permissions: { view: 'system:permission:view' },
@@ -37,6 +39,11 @@ export const PERMISSIONS = {
     scraps: { view: 'warehouse:scraps:view' },
     stockChecks: { view: 'warehouse:stock-checks:view' },
   },
+} as const;
+
+export const SYSTEM_STATUS = {
+  disabled: 0,
+  enabled: 1,
 } as const;
 
 export const permissionMatches = (granted: readonly string[], required?: string) => {

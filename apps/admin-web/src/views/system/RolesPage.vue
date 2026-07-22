@@ -75,6 +75,7 @@
     <div class="table-panel">
       <div class="table-toolbar">
         <el-button
+          v-if="auth.can(PERMISSIONS.system.roles.create)"
           type="primary"
           :icon="Plus"
           @click="openCreate"
@@ -89,12 +90,14 @@
               :icon="Refresh"
               text
               circle
+              @click="loadRoles"
             />
           </el-tooltip>
         </div>
       </div>
 
       <el-table
+        v-loading="loading"
         :data="pagedRoles"
         class="data-table"
         @selection-change="handleSelectionChange"
@@ -129,10 +132,10 @@
         >
           <template #default="{ row }">
             <el-tag
-              :type="row.status === 1 ? 'success' : 'info'"
+              :type="row.status === SYSTEM_STATUS.enabled ? 'success' : 'info'"
               effect="light"
             >
-              {{ row.status === 1 ? '启用' : '停用' }}
+              {{ row.status === SYSTEM_STATUS.enabled ? '启用' : '停用' }}
             </el-tag>
           </template>
         </el-table-column>
@@ -149,18 +152,21 @@
         >
           <template #default="{ row }">
             <el-button
+              v-if="auth.can(PERMISSIONS.system.roles.update)"
               link
               type="primary"
               @click="openEdit(row)"
               >编辑</el-button
             >
             <el-button
+              v-if="auth.can(PERMISSIONS.system.roles.assignPermissions)"
               link
               type="primary"
               @click="openAssignPermissions(row)"
               >分配权限</el-button
             >
             <el-button
+              v-if="auth.can(PERMISSIONS.system.roles.delete)"
               link
               type="danger"
               @click="deleteRole(row)"
@@ -235,6 +241,14 @@
             inactive-text="停用"
           />
         </el-form-item>
+        <el-form-item label="角色说明">
+          <el-input
+            v-model="roleForm.description"
+            type="textarea"
+            :rows="3"
+            maxlength="255"
+          />
+        </el-form-item>
         <el-form-item label="关联用户数">
           <el-input
             :model-value="roleForm.associatedUserCount"
@@ -247,6 +261,7 @@
         <el-button @click="roleDialogVisible = false">取消</el-button>
         <el-button
           type="primary"
+          :loading="submitting"
           @click="submitRole"
           >保存</el-button
         >
@@ -419,9 +434,16 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
+import { ElMessageBox } from 'element-plus';
 import { Plus, Refresh, Search } from '@element-plus/icons-vue';
-import { PERMISSIONS } from '@company/constants';
+import { PERMISSIONS, SYSTEM_STATUS } from '@company/constants';
+import type {
+  SystemPermissionListItem,
+  SystemPermissionTreeNode,
+  SystemRoleListItem,
+} from '@company/contracts';
+import { systemApi } from '../../api/system';
 import { DialogWidth } from '../../utils/dialog';
 import { EMessage } from '../../utils/message';
 import { useAuthStore } from '../../stores/auth';
@@ -430,44 +452,9 @@ defineOptions({ name: 'RolesPage' });
 
 const auth = useAuthStore();
 
-/* ====== 静态演示数据 ====== */
-const roles = ref<any[]>([
-  {
-    id: '1',
-    name: '系统管理员',
-    code: 'admin',
-    description: '系统超级管理员',
-    permissionCount: 30,
-    userCount: 1,
-    status: 1,
-    updatedAt: '2026-07-21 09:00:00',
-  },
-  {
-    id: '2',
-    name: '生产操作员',
-    code: 'operator',
-    description: '生产线操作人员',
-    permissionCount: 15,
-    userCount: 5,
-    status: 1,
-    updatedAt: '2026-07-20 14:00:00',
-  },
-  {
-    id: '3',
-    name: '质检员',
-    code: 'inspector',
-    description: '质量检验人员',
-    permissionCount: 10,
-    userCount: 3,
-    status: 0,
-    updatedAt: null,
-  },
-]);
-const users = ref<any[]>([
-  { id: '1', displayName: '管理员', roleIds: ['1'] },
-  { id: '2', displayName: '操作员甲', roleIds: ['2'] },
-  { id: '3', displayName: '质检员甲', roleIds: ['3'] },
-]);
+const roles = ref<SystemRoleListItem[]>([]);
+const loading = ref(false);
+const submitting = ref(false);
 const selectedRoles = ref<any[]>([]);
 const roleDialogVisible = ref(false);
 const permissionDialogVisible = ref(false);
@@ -520,12 +507,12 @@ const activeScopeCheckedCount = computed(() => {
 const currentPage = ref(1);
 const pageSize = ref(10);
 const query = reactive({ keyword: '', name: '', code: '', status: '' });
-const roleForm = reactive({ name: '', code: '', enabled: true, associatedUserCount: '0' });
-
-const roleUserCounts = computed(() => {
-  const m = new Map<string, number>();
-  for (const u of users.value) for (const rid of u.roleIds ?? []) m.set(rid, (m.get(rid) ?? 0) + 1);
-  return m;
+const roleForm = reactive({
+  name: '',
+  code: '',
+  description: '',
+  enabled: true,
+  associatedUserCount: '0',
 });
 
 const filteredRoles = computed(() =>
@@ -541,8 +528,8 @@ const filteredRoles = computed(() =>
           v.toLowerCase().includes(kw),
         )) &&
       (!query.status ||
-        (query.status === 'enabled' && role.status === 1) ||
-        (query.status === 'disabled' && role.status !== 1))
+        (query.status === 'enabled' && role.status === SYSTEM_STATUS.enabled) ||
+        (query.status === 'disabled' && role.status !== SYSTEM_STATUS.enabled))
     );
   }),
 );
@@ -552,7 +539,7 @@ const pagedRoles = computed(() => {
   return filteredRoles.value.slice(start, start + pageSize.value);
 });
 
-const getAssociatedUserCount = (role: any) => roleUserCounts.value.get(role.id) ?? 0;
+const getAssociatedUserCount = (role: SystemRoleListItem) => role.userCount;
 
 const handleSearch = () => {
   currentPage.value = 1;
@@ -570,7 +557,13 @@ const handleSelectionChange = (selection: any[]) => {
 
 const openCreate = () => {
   editingRoleId.value = null;
-  Object.assign(roleForm, { name: '', code: '', enabled: true, associatedUserCount: '0' });
+  Object.assign(roleForm, {
+    name: '',
+    code: '',
+    description: '',
+    enabled: true,
+    associatedUserCount: '0',
+  });
   roleDialogVisible.value = true;
 };
 const openEdit = (row: any) => {
@@ -578,18 +571,45 @@ const openEdit = (row: any) => {
   Object.assign(roleForm, {
     name: row.name,
     code: row.code,
-    enabled: row.status === 1,
+    description: row.description ?? '',
+    enabled: row.status === SYSTEM_STATUS.enabled,
     associatedUserCount: String(getAssociatedUserCount(row)),
   });
   roleDialogVisible.value = true;
 };
-const submitRole = () => {
+const loadRoles = async () => {
+  loading.value = true;
+  try {
+    roles.value = await systemApi.roles();
+  } catch (error) {
+    EMessage.error(error, '角色列表加载失败');
+  } finally {
+    loading.value = false;
+  }
+};
+const submitRole = async () => {
   if (!roleForm.name.trim() || !roleForm.code.trim()) {
     EMessage.warning('请填写角色名称和角色编码');
     return;
   }
-  EMessage.success(editingRoleId.value ? '角色已更新' : '角色已新增');
-  roleDialogVisible.value = false;
+  submitting.value = true;
+  try {
+    const payload = {
+      name: roleForm.name.trim(),
+      code: roleForm.code.trim(),
+      description: roleForm.description.trim() || null,
+      status: roleForm.enabled ? SYSTEM_STATUS.enabled : SYSTEM_STATUS.disabled,
+    };
+    if (editingRoleId.value) await systemApi.updateRole(editingRoleId.value, payload);
+    else await systemApi.createRole(payload);
+    EMessage.success(editingRoleId.value ? '角色已更新' : '角色已新增');
+    roleDialogVisible.value = false;
+    await loadRoles();
+  } catch (error) {
+    EMessage.error(error, '角色保存失败');
+  } finally {
+    submitting.value = false;
+  }
 };
 
 const collectPermissionIds = (node: any): string[] => [
@@ -656,22 +676,74 @@ const resetPermissionDialog = () => {
   initialPermissionIds.value = [];
   permissionKeyword.value = '';
 };
-const openAssignPermissions = (row: any) => {
+const buildPermissionTree = (items: SystemPermissionListItem[]): SystemPermissionTreeNode[] => {
+  const nodes = new Map(
+    items.map((item) => [item.id, { ...item, children: [] } as SystemPermissionTreeNode]),
+  );
+  const roots: SystemPermissionTreeNode[] = [];
+  for (const node of nodes.values()) {
+    const parent = node.parentId ? nodes.get(node.parentId) : undefined;
+    if (parent) parent.children.push(node);
+    else roots.push(node);
+  }
+  return roots;
+};
+const openAssignPermissions = async (row: SystemRoleListItem) => {
   editingRole.value = row;
   editingRoleId.value = row.id;
   permissionDialogVisible.value = true;
+  permissionLoading.value = true;
+  try {
+    const [permissions, detail] = await Promise.all([
+      systemApi.permissions(),
+      systemApi.rolePermissions(row.id),
+    ]);
+    permissionTree.value = buildPermissionTree(permissions);
+    checkedPermissionIds.value = new Set(detail.permissionIds);
+    initialPermissionIds.value = [...detail.permissionIds];
+    activePermissionNode.value = permissionTree.value[0] ?? null;
+  } catch (error) {
+    EMessage.error(error, '角色权限加载失败');
+    permissionDialogVisible.value = false;
+  } finally {
+    permissionLoading.value = false;
+  }
 };
-const submitRolePermissions = () => {
-  EMessage.success('角色权限已保存');
-  permissionDialogVisible.value = false;
+const submitRolePermissions = async () => {
+  if (!editingRole.value) return;
+  permissionLoading.value = true;
+  try {
+    await systemApi.setRolePermissions(editingRole.value.id, {
+      permissionIds: [...checkedPermissionIds.value],
+    });
+    EMessage.success('角色权限已保存');
+    permissionDialogVisible.value = false;
+    await loadRoles();
+  } catch (error) {
+    EMessage.error(error, '角色权限保存失败');
+  } finally {
+    permissionLoading.value = false;
+  }
 };
-const deleteRole = (_row?: any) => {
-  EMessage.warning('角色删除接口尚未接入');
+const deleteRole = async (row: SystemRoleListItem) => {
+  try {
+    await ElMessageBox.confirm(
+      `确定删除角色“${row.name}”吗？此操作将停用并软删除该角色。`,
+      '删除角色',
+      { type: 'warning' },
+    );
+    await systemApi.deleteRole(row.id);
+    EMessage.success('角色已删除');
+    await loadRoles();
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') EMessage.error(error, '角色删除失败');
+  }
 };
 
 watch(permissionKeyword, (kw) => {
   permissionTreeRef.value?.filter?.(kw);
 });
+onMounted(loadRoles);
 </script>
 
 <style scoped>

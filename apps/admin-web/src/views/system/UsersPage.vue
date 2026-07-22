@@ -87,12 +87,14 @@
       <div class="table-toolbar">
         <div class="batch-actions">
           <el-button
+            v-if="auth.can(PERMISSIONS.system.users.create)"
             type="primary"
             :icon="Plus"
             @click="openCreate"
             >新增用户</el-button
           >
           <el-button
+            v-if="auth.can(PERMISSIONS.system.users.resetPassword)"
             :icon="Key"
             @click="openBatchResetPassword"
             >重置密码</el-button
@@ -107,6 +109,7 @@
               :icon="Refresh"
               text
               circle
+              @click="loadUsers"
             />
           </el-tooltip>
           <el-tooltip
@@ -124,6 +127,7 @@
       </div>
 
       <el-table
+        v-loading="loading"
         :data="pagedUsers"
         class="data-table"
         @selection-change="handleSelectionChange"
@@ -166,10 +170,10 @@
         >
           <template #default="{ row }">
             <el-tag
-              :type="row.status === 1 ? 'success' : 'info'"
+              :type="row.status === SYSTEM_STATUS.enabled ? 'success' : 'info'"
               effect="light"
             >
-              {{ row.status === 1 ? '启用' : '停用' }}
+              {{ row.status === SYSTEM_STATUS.enabled ? '启用' : '停用' }}
             </el-tag>
           </template>
         </el-table-column>
@@ -186,25 +190,29 @@
         >
           <template #default="{ row }">
             <el-button
+              v-if="auth.can(PERMISSIONS.system.users.update)"
               link
               type="primary"
               @click="openEdit(row)"
               >编辑</el-button
             >
             <el-button
+              v-if="auth.can(PERMISSIONS.system.users.update)"
               link
               type="primary"
               @click="toggleStatus(row)"
             >
-              {{ row.status === 1 ? '停用' : '启用' }}
+              {{ row.status === SYSTEM_STATUS.enabled ? '停用' : '启用' }}
             </el-button>
             <el-button
+              v-if="auth.can(PERMISSIONS.system.users.resetPassword)"
               link
               type="primary"
               @click="openResetPassword(row)"
               >重置密码</el-button
             >
             <el-button
+              v-if="auth.can(PERMISSIONS.system.users.assignRoles)"
               link
               type="primary"
               @click="openAssignRoles(row)"
@@ -330,6 +338,7 @@
         <el-button @click="userDialogVisible = false">取消</el-button>
         <el-button
           type="primary"
+          :loading="submitting"
           @click="submitUser"
           >保存</el-button
         >
@@ -361,6 +370,7 @@
         <el-button @click="passwordDialogVisible = false">取消</el-button>
         <el-button
           type="primary"
+          :loading="submitting"
           @click="submitResetPassword"
           >确定</el-button
         >
@@ -406,6 +416,7 @@
         <el-button @click="roleDialogVisible = false">取消</el-button>
         <el-button
           type="primary"
+          :loading="submitting"
           @click="submitAssignRoles"
           >保存</el-button
         >
@@ -415,9 +426,16 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, reactive, ref } from 'vue';
+import { computed, nextTick, onMounted, reactive, ref } from 'vue';
+import { ElMessageBox } from 'element-plus';
 import { Filter, Key, Plus, Refresh } from '@element-plus/icons-vue';
-import { PERMISSIONS } from '@company/constants';
+import { PERMISSIONS, SYSTEM_STATUS } from '@company/constants';
+import type {
+  SystemDepartmentOption,
+  SystemRoleOption,
+  SystemUserListItem,
+} from '@company/contracts';
+import { systemApi } from '../../api/system';
 import { DialogWidth } from '../../utils/dialog';
 import { EMessage } from '../../utils/message';
 import { useAuthStore } from '../../stores/auth';
@@ -437,58 +455,14 @@ type UserForm = {
 
 const auth = useAuthStore();
 
-/* ====== 静态演示数据（接口接入前使用） ====== */
-const users = ref<Record<string, unknown>[]>([
-  {
-    id: '1',
-    username: 'admin',
-    displayName: '管理员',
-    departmentName: '技术部',
-    roleIds: ['1'],
-    roles: ['admin'],
-    status: 1,
-    lastLoginAt: '2026-07-21 09:00:00',
-    email: 'admin@company.com',
-    mobile: '13800138000',
-  },
-  {
-    id: '2',
-    username: 'operator',
-    displayName: '操作员',
-    departmentName: '生产部',
-    roleIds: ['2'],
-    roles: ['operator'],
-    status: 1,
-    lastLoginAt: '2026-07-20 14:30:00',
-    email: null,
-    mobile: null,
-  },
-  {
-    id: '3',
-    username: 'inspector',
-    displayName: '质检员',
-    departmentName: '质量部',
-    roleIds: ['3'],
-    roles: ['inspector'],
-    status: 0,
-    lastLoginAt: null,
-    email: null,
-    mobile: null,
-  },
-]);
-const departmentOptions = ref<Record<string, unknown>[]>([
-  { id: '1', name: '技术部', code: 'tech' },
-  { id: '2', name: '生产部', code: 'prod' },
-  { id: '3', name: '质量部', code: 'qa' },
-]);
-const roleOptions = ref<Record<string, unknown>[]>([
-  { id: '1', name: '系统管理员', code: 'admin' },
-  { id: '2', name: '生产操作员', code: 'operator' },
-  { id: '3', name: '质检员', code: 'inspector' },
-]);
-const selectedUsers = ref<Record<string, unknown>[]>([]);
-const resettingUsers = ref<Record<string, unknown>[]>([]);
-const assigningUser = ref<Record<string, unknown> | null>(null);
+const users = ref<SystemUserListItem[]>([]);
+const departmentOptions = ref<SystemDepartmentOption[]>([]);
+const roleOptions = ref<SystemRoleOption[]>([]);
+const selectedUsers = ref<SystemUserListItem[]>([]);
+const resettingUsers = ref<SystemUserListItem[]>([]);
+const assigningUser = ref<SystemUserListItem | null>(null);
+const loading = ref(false);
+const submitting = ref(false);
 
 const userDialogVisible = ref(false);
 const passwordDialogVisible = ref(false);
@@ -553,8 +527,8 @@ const filteredUsers = computed(() =>
         ].some((v: string) => v.toLowerCase().includes(kw))) &&
       (!query.roleId || user.roleIds?.includes(query.roleId)) &&
       (!query.status ||
-        (query.status === 'enabled' && user.status === 1) ||
-        (query.status === 'disabled' && user.status !== 1))
+        (query.status === 'enabled' && user.status === SYSTEM_STATUS.enabled) ||
+        (query.status === 'disabled' && user.status !== SYSTEM_STATUS.enabled))
     );
   }),
 );
@@ -604,26 +578,85 @@ const openEdit = (row: any) => {
     departmentId: row.departmentId,
     email: row.email ?? '',
     mobile: row.mobile ?? '',
-    enabled: row.status === 1,
+    enabled: row.status === SYSTEM_STATUS.enabled,
     roleIds: row.roleIds ?? [],
   });
   userDialogVisible.value = true;
 };
-const submitUser = () => {
+const loadUsers = async () => {
+  loading.value = true;
+  try {
+    users.value = await systemApi.users();
+  } catch (error) {
+    EMessage.error(error, '用户列表加载失败');
+  } finally {
+    loading.value = false;
+  }
+};
+const loadOptions = async () => {
+  try {
+    [departmentOptions.value, roleOptions.value] = await Promise.all([
+      systemApi.departmentOptions(),
+      systemApi.roleOptions(),
+    ]);
+  } catch (error) {
+    EMessage.error(error, '用户选项加载失败');
+  }
+};
+const submitUser = async () => {
   if (!userForm.username.trim() || !userForm.displayName.trim()) {
     EMessage.warning('请填写用户账号和姓名');
     return;
   }
-  if (!editingUserId.value && userForm.password.trim().length < 6) {
-    EMessage.warning('初始密码至少 6 位');
+  if (!editingUserId.value && userForm.password.trim().length < 12) {
+    EMessage.warning('初始密码至少 12 位');
     return;
   }
-  EMessage.success(editingUserId.value ? '用户信息已更新' : '用户已新增');
-  userDialogVisible.value = false;
+  submitting.value = true;
+  try {
+    if (editingUserId.value) {
+      await systemApi.updateUser(editingUserId.value, {
+        username: userForm.username.trim(),
+        displayName: userForm.displayName.trim(),
+        departmentId: userForm.departmentId,
+        email: userForm.email.trim() || null,
+        mobile: userForm.mobile.trim() || null,
+      });
+    } else {
+      await systemApi.createUser({
+        username: userForm.username.trim(),
+        password: userForm.password,
+        displayName: userForm.displayName.trim(),
+        departmentId: userForm.departmentId,
+        email: userForm.email.trim() || null,
+        mobile: userForm.mobile.trim() || null,
+        status: userForm.enabled ? SYSTEM_STATUS.enabled : SYSTEM_STATUS.disabled,
+        roleIds: userForm.roleIds,
+      });
+    }
+    EMessage.success(editingUserId.value ? '用户信息已更新' : '用户已新增');
+    userDialogVisible.value = false;
+    await Promise.all([loadUsers(), loadOptions()]);
+  } catch (error) {
+    EMessage.error(error, '用户保存失败');
+  } finally {
+    submitting.value = false;
+  }
 };
-const toggleStatus = (row: any) => {
-  const text = row.status === 1 ? '停用' : '启用';
-  EMessage.success(`用户已${text}`);
+const toggleStatus = async (row: SystemUserListItem) => {
+  const text = row.status === SYSTEM_STATUS.enabled ? '停用' : '启用';
+  try {
+    await ElMessageBox.confirm(`确定${text}用户“${row.displayName}”吗？`, `${text}用户`, {
+      type: 'warning',
+    });
+    await systemApi.setUserStatus(row.id, {
+      status: row.status === SYSTEM_STATUS.enabled ? SYSTEM_STATUS.disabled : SYSTEM_STATUS.enabled,
+    });
+    EMessage.success(`用户已${text}`);
+    await loadUsers();
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') EMessage.error(error, `${text}用户失败`);
+  }
 };
 const openResetPassword = (row: any) => {
   resettingUsers.value = [row];
@@ -639,28 +672,50 @@ const openBatchResetPassword = () => {
   passwordForm.password = '';
   passwordDialogVisible.value = true;
 };
-const submitResetPassword = () => {
-  if (passwordForm.password.trim().length < 6) {
-    EMessage.warning('新密码至少 6 位');
+const submitResetPassword = async () => {
+  if (passwordForm.password.trim().length < 12) {
+    EMessage.warning('新密码至少 12 位');
     return;
   }
-  EMessage.success('密码已重置');
-  passwordDialogVisible.value = false;
+  submitting.value = true;
+  try {
+    await Promise.all(
+      resettingUsers.value.map((user) =>
+        systemApi.resetUserPassword(user.id, { password: passwordForm.password }),
+      ),
+    );
+    EMessage.success('密码已重置，相关登录会话已失效');
+    passwordDialogVisible.value = false;
+  } catch (error) {
+    EMessage.error(error, '密码重置失败');
+  } finally {
+    submitting.value = false;
+  }
 };
 const openAssignRoles = (row: any) => {
   assigningUser.value = row;
   roleForm.roleIds = [...(row.roleIds ?? [])];
   roleDialogVisible.value = true;
 };
-const submitAssignRoles = () => {
+const submitAssignRoles = async () => {
   if (!assigningUser.value) return;
-  EMessage.success('角色已分配');
-  roleDialogVisible.value = false;
+  submitting.value = true;
+  try {
+    await systemApi.setUserRoles(assigningUser.value.id, { roleIds: roleForm.roleIds });
+    EMessage.success('角色已分配');
+    roleDialogVisible.value = false;
+    await loadUsers();
+  } catch (error) {
+    EMessage.error(error, '角色分配失败');
+  } finally {
+    submitting.value = false;
+  }
 };
 const focusFirstFilter = async () => {
   await nextTick();
   document.querySelector<HTMLInputElement>('.query-panel input')?.focus();
 };
+onMounted(() => Promise.all([loadUsers(), loadOptions()]));
 </script>
 
 <style scoped>
