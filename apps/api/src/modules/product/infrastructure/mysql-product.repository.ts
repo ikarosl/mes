@@ -19,6 +19,7 @@ import type {
   UserOption,
 } from '@company/contracts';
 import { withTransaction } from '@company/database';
+import { toBeijingISOString } from '../../../common/time/beijing-time.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
 import type { AuditContext } from '../../identity/application/audit.types.js';
 import { ProductDomainError } from '../domain/product.errors.js';
@@ -1039,7 +1040,7 @@ export class MysqlProductRepository implements ProductRepository {
     );
   }
   private date(value: Date | null) {
-    return value ? value.toISOString() : null;
+    return value ? toBeijingISOString(value) : null;
   }
   private json<T>(value: string | object | null): T[] {
     if (!value) return [];

@@ -27,6 +27,7 @@ export const authApi: AuthApi = {
       data: payload,
       skipAuth: true,
       skipRefresh: true,
+      preserveErrorMessage: true,
       withCredentials: true,
       skipRetry: true,
     }),

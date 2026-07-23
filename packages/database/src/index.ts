@@ -2,20 +2,29 @@ import { createPool, type Pool, type PoolConnection } from 'mysql2/promise';
 
 export type DatabasePool = Pool;
 export type DatabaseConnection = PoolConnection;
+export const DATABASE_TIME_ZONE = '+08:00';
 
-export const createDatabasePool = (options: { multipleStatements?: boolean } = {}) =>
-  createPool({
+export const initializeDatabaseConnection = (connection: Pick<PoolConnection, 'query'>) =>
+  connection.query(`SET time_zone = '${DATABASE_TIME_ZONE}'`);
+
+export const createDatabasePool = (options: { multipleStatements?: boolean } = {}) => {
+  const pool = createPool({
     host: requiredEnv('DB_HOST'),
     port: positiveIntegerEnv('DB_PORT'),
     user: requiredEnv('DB_USER'),
     password: requiredEnv('DB_PASSWORD', true),
     database: requiredEnv('DB_NAME'),
     charset: 'utf8mb4',
-    timezone: 'Z',
+    timezone: DATABASE_TIME_ZONE,
     connectionLimit: positiveIntegerEnv('DB_CONNECTION_LIMIT'),
     namedPlaceholders: false,
     multipleStatements: options.multipleStatements ?? false,
   });
+  pool.on('connection', (connection) => {
+    void initializeDatabaseConnection(connection);
+  });
+  return pool;
+};
 
 export const withTransaction = async <T>(
   pool: Pool,

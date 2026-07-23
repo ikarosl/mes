@@ -48,8 +48,8 @@ describe('AuthService token TTLs', () => {
 
     expect(accessClaims.exp! - accessClaims.iat!).toBe(10);
     expect(refreshClaims.exp! - refreshClaims.iat!).toBe(20);
-    expect(result.response.accessTokenExpiresAt).toBe('2026-07-23T09:00:10.000Z');
-    expect(result.response.refreshTokenExpiresAt).toBe('2026-07-23T09:00:20.000Z');
+    expect(result.response.accessTokenExpiresAt).toBe('2026-07-23T17:00:10.000+08:00');
+    expect(result.response.refreshTokenExpiresAt).toBe('2026-07-23T17:00:20.000+08:00');
     expect(savedRecord.expiresAt.toISOString()).toBe('2026-07-23T09:00:20.000Z');
   });
 });

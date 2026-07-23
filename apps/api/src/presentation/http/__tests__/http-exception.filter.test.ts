@@ -30,6 +30,7 @@ describe('HttpExceptionFilter', () => {
         message: '参数错误',
         requestId: 'request_1234',
         path: '/api/system/users',
+        timestamp: expect.stringMatching(/\+08:00$/),
       }),
     );
   });

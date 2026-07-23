@@ -3,6 +3,10 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, unlink, writeFile } from 'node:fs/promises';
 import { extname, resolve, sep } from 'node:path';
 import {
+  toBeijingCompactTimestamp,
+  toBeijingISOString,
+} from '../../../common/time/beijing-time.js';
+import {
   TechnicalFileStorage,
   type TechnicalFileUpload,
 } from '../application/ports/technical-file.storage.js';
@@ -13,16 +17,13 @@ export class LocalTechnicalFileStorage implements TechnicalFileStorage {
 
   async storeSop(file: TechnicalFileUpload) {
     const now = new Date();
+    const [beijingDate] = toBeijingISOString(now).split('T');
+    const [year, month] = beijingDate.split('-');
     const extension = extname(file.originalName)
       .toLowerCase()
       .replace(/[^.a-z0-9]/g, '')
       .slice(0, 12);
-    const objectKey = [
-      'sop',
-      String(now.getUTCFullYear()),
-      String(now.getUTCMonth() + 1).padStart(2, '0'),
-      `${randomUUID()}${extension}`,
-    ].join('/');
+    const objectKey = ['sop', year, month, `${randomUUID()}${extension}`].join('/');
     const absolutePath = this.resolveObjectKey(objectKey);
     await mkdir(resolve(absolutePath, '..'), { recursive: true });
     await writeFile(absolutePath, file.buffer, { flag: 'wx' });
@@ -36,10 +37,7 @@ export class LocalTechnicalFileStorage implements TechnicalFileStorage {
       sizeBytes: file.buffer.length,
       checksumSha256: createHash('sha256').update(file.buffer).digest('hex'),
       fileType: 'sop' as const,
-      versionNo: now
-        .toISOString()
-        .replace(/[-:.TZ]/g, '')
-        .slice(0, 14),
+      versionNo: toBeijingCompactTimestamp(now),
     };
   }
 

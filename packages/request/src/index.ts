@@ -11,6 +11,7 @@ export interface RetryRequestConfig extends AxiosRequestConfig {
   skipRetry?: boolean;
   retryUnsafe?: boolean;
   skipErrorHandling?: boolean;
+  preserveErrorMessage?: boolean;
 }
 
 interface ApiErrorResponse {

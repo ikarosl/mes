@@ -13,6 +13,7 @@ import type {
 } from '@company/contracts';
 import { SYSTEM_STATUS } from '@company/constants';
 import { withTransaction } from '@company/database';
+import { toBeijingISOString } from '../../../common/time/beijing-time.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
 import type { AuditLogEntry } from '../application/audit.types.js';
 import { AuditRepository } from '../application/ports/audit.repository.js';
@@ -142,7 +143,7 @@ export class MysqlIdentityRepository implements IdentityRepository, AuditReposit
       roleIds: row.role_ids?.split(',') ?? [],
       status: row.status,
       roles: row.roles?.split(',') ?? [],
-      lastLoginAt: row.last_login_at?.toISOString() ?? null,
+      lastLoginAt: row.last_login_at ? toBeijingISOString(row.last_login_at) : null,
     }));
   }
   async listDepartmentOptions(): Promise<IdentityDepartmentOption[]> {
@@ -330,7 +331,7 @@ export class MysqlIdentityRepository implements IdentityRepository, AuditReposit
       status: row.status,
       permissionCount: row.permission_count,
       userCount: row.user_count,
-      updatedAt: row.updated_at?.toISOString() ?? null,
+      updatedAt: row.updated_at ? toBeijingISOString(row.updated_at) : null,
     }));
   }
   async createRole(payload: CreateSystemRolePayload, audit: AuditLogEntry) {
@@ -609,7 +610,7 @@ const mapOperationLog = (row: OperationLogRow): OperationLogListItem => ({
   userAgent: null,
   errorCode: null,
   remark: row.remark,
-  createdAt: row.created_at.toISOString(),
+  createdAt: toBeijingISOString(row.created_at),
 });
 
 const parseJson = (value: unknown) => {

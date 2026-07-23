@@ -1,5 +1,6 @@
 import type { AxiosInstance } from 'axios';
 import { RequestError, toRequestError, type RetryRequestConfig } from '@company/request';
+import { isHttpErrorHandled, markHttpErrorHandled } from './http-error-state';
 
 export interface HttpErrorHandlerOptions {
   notify(message: string): void;
@@ -7,7 +8,11 @@ export interface HttpErrorHandlerOptions {
   onForbidden(): void;
 }
 
-type HandledError = Error & { handledByHttpErrorHandler?: boolean };
+type ErrorHandlingRequestConfig = RetryRequestConfig;
+
+const shouldPreserveApiMessage = (error: RequestError, config?: ErrorHandlingRequestConfig) =>
+  (config ?? (error.response?.config as ErrorHandlingRequestConfig | undefined))
+    ?.preserveErrorMessage === true;
 
 /** Auth refresh runs first; this handles only the final failed request. */
 export const installHttpErrorHandler = (
@@ -15,23 +20,27 @@ export const installHttpErrorHandler = (
   options: HttpErrorHandlerOptions,
 ) => {
   client.interceptors.response.use(undefined, (error: unknown) => {
-    const config = (error as { config?: RetryRequestConfig }).config;
-    if (!config?.skipErrorHandling) handleHttpError(error, options);
-    return Promise.reject(error);
+    const config = (error as { config?: ErrorHandlingRequestConfig }).config;
+    const requestError = toRequestError(error);
+    if (!config?.skipErrorHandling) handleHttpError(requestError, options, config);
+    return Promise.reject(requestError);
   });
 };
 
-export const handleHttpError = (error: unknown, options: HttpErrorHandlerOptions) => {
-  const handledError = error as HandledError;
-  if (handledError.handledByHttpErrorHandler) return;
-  handledError.handledByHttpErrorHandler = true;
+export const handleHttpError = (
+  error: unknown,
+  options: HttpErrorHandlerOptions,
+  config?: ErrorHandlingRequestConfig,
+) => {
+  if (isHttpErrorHandled(error)) return;
+  markHttpErrorHandled(error);
 
   const requestError = toRequestError(error);
   if (!(requestError instanceof RequestError)) {
     options.notify('请求失败，请稍后重试');
     return;
   }
-  if (requestError.status === 401) {
+  if (requestError.status === 401 && !shouldPreserveApiMessage(requestError, config)) {
     options.onUnauthorized();
     options.notify('登录状态已失效，请重新登录');
     return;

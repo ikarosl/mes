@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import type { ApiErrorResponse } from '@company/contracts';
+import { toBeijingISOString } from '../../common/time/beijing-time.js';
 
 interface RequestWithContext {
   originalUrl?: string;
@@ -43,7 +44,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       code: errorCode(status, exception),
       message: isHttpException ? exceptionMessage(exception, status) : '服务器内部错误，请稍后重试',
       requestId,
-      timestamp: new Date().toISOString(),
+      timestamp: toBeijingISOString(new Date()),
       path: request.originalUrl ?? request.url ?? '',
     };
 

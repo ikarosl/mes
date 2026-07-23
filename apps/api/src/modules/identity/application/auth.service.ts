@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import { jwtVerify, SignJWT } from 'jose';
 import { randomUUID } from 'node:crypto';
 import type { JwtClaims, LoginRequest, TokenResponse, UserProfile } from '@company/contracts';
+import { toBeijingISOString } from '../../../common/time/beijing-time.js';
 import { loadAppConfig } from '../../../config/env.js';
 import { IdentityRepository } from './ports/identity.repository.js';
 
@@ -60,8 +61,8 @@ export class AuthService {
       response: {
         user: profile,
         accessToken,
-        accessTokenExpiresAt: new Date(accessExpiresAt * 1000).toISOString(),
-        refreshTokenExpiresAt: new Date(refreshExpiresAt * 1000).toISOString(),
+        accessTokenExpiresAt: toBeijingISOString(accessExpiresAt * 1000),
+        refreshTokenExpiresAt: toBeijingISOString(refreshExpiresAt * 1000),
       } satisfies TokenResponse,
     };
   }
