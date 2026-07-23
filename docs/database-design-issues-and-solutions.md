@@ -19,6 +19,18 @@
 
 ## 2. 已确认问题与最终解决方案
 
+### 2.0 状态、类型和结果代码统一规则
+
+- 数据库继续使用 `VARCHAR`，不改为 MySQL `ENUM`。
+- 所有持久化代码统一使用小写英文 `snake_case`；中文只在前端映射展示。
+- 封闭值集合必须同时提供数据库 `CHECK`、共享常量和 TypeScript 字符串联合类型。
+- 数据库约束负责限制值域，领域层状态机负责限制合法转换，乐观锁负责阻止并发覆盖，操作日志负责审计。
+- `reference_type`、`reason_type` 等明确允许扩展的字段保留应用事务校验，并以契约测试覆盖所有已支持代码。
+- 低选择性状态字段不单独建索引；按实际查询建立 `(status, created_at)`、`(production_batch_id, status)` 等组合索引。
+- 已执行迁移不修改；未迁移业务表直接采用新代码，未来如扩展封闭值集合只能追加迁移调整 `CHECK`。
+
+验收时必须确认接口和数据库没有写入中文状态值，也没有绕过领域动作接口直接修改状态。
+
 ### 2.1 项目数据隔离
 
 #### 现状与问题
@@ -265,10 +277,10 @@ UNIQUE (
 
 #### 报废场景规则
 
-- `WAREHOUSE_ALLOCATED`：必须关联有效 allocation、需求、生产批次、物料和尚有可用预留的库存批次；确认后生成负数报废库存流水。
-- `RETURN_AFTER_OUTBOUND`：必须通过 `return_detail_id` 精确追溯原 allocation 和已确认退料；报废数量不得超过该退料明细已退回且尚未处置的数量。
-- `PRODUCTION_CONSUMED`：物料已在领料时扣减库存，报废确认不得再次生成负库存流水，但必须保留生产批次、需求、分配和原库存批次追溯。
-- `IN_STOCK`：不要求生产需求或 allocation，只要求库存对象和库存批次一致，确认后生成负数报废库存流水。
+- `warehouse_allocated`：必须关联有效 allocation、需求、生产批次、物料和尚有可用预留的库存批次；确认后生成负数报废库存流水。
+- `return_after_outbound`：必须通过 `return_detail_id` 精确追溯原 allocation 和已确认退料；报废数量不得超过该退料明细已退回且尚未处置的数量。
+- `production_consumed`：物料已在领料时扣减库存，报废确认不得再次生成负库存流水，但必须保留生产批次、需求、分配和原库存批次追溯。
+- `in_stock`：不要求生产需求或 allocation，只要求库存对象和库存批次一致，确认后生成负数报废库存流水。
 
 无法通过普通 `CHECK` 或外键表达的跨行数量限制，由应用在批次行锁事务内校验。
 
@@ -283,7 +295,7 @@ UNIQUE (
 
 #### 现状与语义
 
-`inventory_transaction.stock_status` 用于区分可用、待检、冻结和不良库存数量。“待检”仍然是库存数量的状态维度，不承载检验结论、检验人员或检验报告。
+`inventory_transaction.stock_status` 使用 `available`、`pending_inspection`、`frozen`、`defective` 区分可用、待检、冻结和不良库存数量。`pending_inspection` 仍然只是库存数量的状态维度，不承载检验结论、检验人员或检验报告。
 
 #### 最终决策
 
@@ -300,14 +312,14 @@ transaction_group_key VARCHAR(150) NULL
 `reference_type` 增加：
 
 ```text
-INSPECTION_RECORD
+inspection_record
 ```
 
 质量放行产生：
 
 ```text
-待检库存：状态转出，负数
-可用库存：状态转入，正数
+pending_inspection：状态转出，负数
+available：状态转入，正数
 ```
 
 两条流水必须：
@@ -316,7 +328,7 @@ INSPECTION_RECORD
 - 使用不同且分别唯一的 `idempotency_key`；
 - 具有相同 `item_id`、`batch_id`、单位和数量绝对值；
 - 一正一负并在同一数据库事务写入；
-- 使用 `reference_type = INSPECTION_RECORD`，`reference_detail_id` 指向触发放行的检验记录。
+- 使用 `reference_type = inspection_record`，`reference_detail_id` 指向触发放行的检验记录。
 
 质量结论、检验人员和报告仍只保存在 `inspection_records`。
 
@@ -412,7 +424,7 @@ source_rework_id BIGINT UNSIGNED NULL
 `return_stock_status` 只允许：
 
 ```text
-可用 / 待检 / 冻结 / 不良
+available / pending_inspection / frozen / defective
 ```
 
 从检查约束中删除“报废”。
@@ -421,10 +433,10 @@ source_rework_id BIGINT UNSIGNED NULL
 
 不能继续使用的退料按以下顺序处理：
 
-1. `return_order` 和 `return_detail` 记录退料，退回状态使用“不良”。
-2. 退料确认生成正数“不良”退料入库流水。
-3. 创建并确认 `item_scrap`，场景使用 `RETURN_AFTER_OUTBOUND`。
-4. 报废确认生成负数“不良”报废出库流水。
+1. `return_order` 和 `return_detail` 记录退料，退回状态使用 `defective`（不良）。
+2. 退料确认生成 `stock_status = defective` 的正数退料入库流水。
+3. 创建并确认 `item_scrap`，场景使用 `return_after_outbound`。
+4. 报废确认生成 `stock_status = defective` 的负数报废出库流水。
 
 `return_detail` 只记录退料事实，`item_scrap` 只记录报废事实，两者不得合并或互相替代。
 

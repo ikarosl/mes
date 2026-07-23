@@ -1,19 +1,5 @@
 <template>
   <section>
-    <PageHeader
-      title="工序管理"
-      description="管理生产工艺中的工序单元"
-    >
-      <template #actions>
-        <el-button
-          type="primary"
-          :icon="Plus"
-          @click="openCreate"
-          >新增工序</el-button
-        >
-      </template>
-    </PageHeader>
-
     <div class="query-panel">
       <el-form
         class="query-form"
@@ -48,6 +34,7 @@
         </el-form-item>
         <el-form-item class="query-actions">
           <el-button
+            v-if="auth.can(PERMISSIONS.product.processes.create)"
             type="primary"
             @click="handleSearch"
             >查询</el-button
@@ -76,12 +63,15 @@
               :icon="Refresh"
               text
               circle
+              :loading="loading"
+              @click="loadProcesses"
             />
           </el-tooltip>
         </template>
       </TableToolbar>
 
       <el-table
+        v-loading="loading"
         :data="pagedProcesses"
         class="data-table"
       >
@@ -90,11 +80,11 @@
           min-width="130"
         >
           <template #default="{ row }"
-            ><span class="process-code">{{ row.processCode }}</span></template
+            ><span class="process-code">{{ row.stepCode }}</span></template
           >
         </el-table-column>
         <el-table-column
-          prop="processName"
+          prop="stepName"
           label="工序名称"
           min-width="140"
         />
@@ -146,18 +136,21 @@
               >查看</el-button
             >
             <el-button
+              v-if="auth.can(PERMISSIONS.product.processes.update)"
               link
               type="primary"
               @click="openEdit(row)"
               >编辑</el-button
             >
             <el-button
+              v-if="auth.can(PERMISSIONS.product.processes.uploadSop)"
               link
               type="primary"
               @click="openUpload(row)"
               >上传文件</el-button
             >
             <el-button
+              v-if="auth.can(PERMISSIONS.product.processes.changeStatus)"
               link
               :type="row.status === 1 ? 'danger' : 'success'"
               @click="toggleStatus(row)"
@@ -233,6 +226,7 @@
         <el-button @click="processDialogVisible = false">取消</el-button>
         <el-button
           type="primary"
+          :loading="submitting"
           @click="submitProcess"
           >保存工序</el-button
         >
@@ -260,6 +254,7 @@
         <el-button @click="uploadDialogVisible = false">取消</el-button>
         <el-button
           type="primary"
+          :loading="submitting"
           @click="submitUpload"
           >上传文件</el-button
         >
@@ -276,8 +271,8 @@
         :column="2"
         border
       >
-        <el-descriptions-item label="工序编码">{{ detailRow.processCode }}</el-descriptions-item>
-        <el-descriptions-item label="工序名称">{{ detailRow.processName }}</el-descriptions-item>
+        <el-descriptions-item label="工序编码">{{ detailRow.stepCode }}</el-descriptions-item>
+        <el-descriptions-item label="工序名称">{{ detailRow.stepName }}</el-descriptions-item>
         <el-descriptions-item label="状态">{{
           detailRow.status === 1 ? '启用' : '停用'
         }}</el-descriptions-item>
@@ -307,67 +302,28 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { Plus, Refresh, UploadFilled } from '@element-plus/icons-vue';
-import type { UploadFile, UploadFiles } from 'element-plus';
-import PageHeader from '../../components/PageHeader.vue';
+import { ElMessageBox, type UploadFile, type UploadFiles } from 'element-plus';
+import { PERMISSIONS } from '@company/constants';
+import type { ProcessStepListItem } from '@company/contracts';
 import TableToolbar from '../../components/TableToolbar.vue';
 import PaginationFooter from '../../components/PaginationFooter.vue';
 import { DialogWidth } from '../../utils/dialog';
 import { EMessage } from '../../utils/message';
+import { productApi } from '../../api/product';
+import { useAuthStore } from '../../stores/auth';
 
 defineOptions({ name: 'ProcessesPage' });
 
-const demoData = [
-  {
-    id: '1',
-    processCode: 'GX-001',
-    processName: '来料检验',
-    description: '对来料进行外观和尺寸检验',
-    status: 1,
-    sopFileName: '来料检验SOP.pdf',
-    updatedAt: '2026-07-20 10:00:00',
-    remark: null,
-  },
-  {
-    id: '2',
-    processCode: 'GX-002',
-    processName: 'SMT贴片',
-    description: '表面贴装工艺',
-    status: 1,
-    sopFileName: null,
-    updatedAt: '2026-07-19 14:30:00',
-    remark: '需防静电',
-  },
-  {
-    id: '3',
-    processCode: 'GX-003',
-    processName: '波峰焊',
-    description: '插件波峰焊接',
-    status: 1,
-    sopFileName: '波峰焊操作规范.pdf',
-    updatedAt: '2026-07-18 09:00:00',
-    remark: null,
-  },
-  {
-    id: '4',
-    processCode: 'GX-004',
-    processName: '老化测试',
-    description: '高温老化测试',
-    status: 0,
-    sopFileName: null,
-    updatedAt: null,
-    remark: '设备维护中',
-  },
-];
+const auth = useAuthStore();
+const processes = ref<ProcessStepListItem[]>([]);
 
 const filteredProcesses = computed(() =>
-  demoData.filter((p: any) => {
+  processes.value.filter((p) => {
     const kw = query.keyword.trim().toLowerCase();
     return (
-      (!kw ||
-        p.processCode.toLowerCase().includes(kw) ||
-        p.processName.toLowerCase().includes(kw)) &&
+      (!kw || p.stepCode.toLowerCase().includes(kw) || p.stepName.toLowerCase().includes(kw)) &&
       (!query.status ||
         (query.status === 'enabled' && p.status === 1) ||
         (query.status === 'disabled' && p.status !== 1))
@@ -387,7 +343,10 @@ const detailDialogVisible = ref(false);
 const editingProcessId = ref<string | null>(null);
 const uploadFileList = ref<UploadFile[]>([]);
 const selectedFile = ref<File | null>(null);
-const detailRow = ref<any>(null);
+const uploadProcessId = ref<string | null>(null);
+const detailRow = ref<ProcessStepListItem | null>(null);
+const loading = ref(false);
+const submitting = ref(false);
 const query = reactive({ keyword: '', status: '' });
 const processForm = reactive({
   processCode: '',
@@ -423,55 +382,104 @@ const openCreate = () => {
   resetProcessForm();
   processDialogVisible.value = true;
 };
-const openEdit = (row: any) => {
+const openEdit = (row: ProcessStepListItem) => {
   editingProcessId.value = row.id;
   Object.assign(processForm, {
-    processCode: row.processCode,
-    processName: row.processName,
+    processCode: row.stepCode,
+    processName: row.stepName,
     description: row.description ?? '',
     enabled: row.status === 1,
     remark: row.remark ?? '',
   });
   processDialogVisible.value = true;
 };
-const openUpload = (row: any) => {
+const openUpload = (row: ProcessStepListItem) => {
   uploadFileList.value = [];
   selectedFile.value = null;
+  uploadProcessId.value = row.id;
   uploadDialogVisible.value = true;
 };
-const openDetail = (row: any) => {
+const openDetail = (row: ProcessStepListItem) => {
   detailRow.value = row;
   detailDialogVisible.value = true;
 };
 
-const submitProcess = () => {
+const loadProcesses = async () => {
+  loading.value = true;
+  try {
+    processes.value = await productApi.processSteps();
+  } catch (error) {
+    EMessage.error(error, '标准工序加载失败');
+  } finally {
+    loading.value = false;
+  }
+};
+const submitProcess = async () => {
   if (!processForm.processCode.trim() || !processForm.processName.trim()) {
     EMessage.warning('请填写工序编码和工序名称');
     return;
   }
-  EMessage.success(editingProcessId.value ? '工序已更新' : '工序已新增');
-  processDialogVisible.value = false;
+  submitting.value = true;
+  const payload = {
+    stepCode: processForm.processCode,
+    stepName: processForm.processName,
+    description: processForm.description || null,
+    status: processForm.enabled ? 1 : 0,
+    remark: processForm.remark || null,
+  };
+  try {
+    if (editingProcessId.value) await productApi.updateProcessStep(editingProcessId.value, payload);
+    else await productApi.createProcessStep(payload);
+    EMessage.success(editingProcessId.value ? '工序已更新' : '工序已新增');
+    processDialogVisible.value = false;
+    await loadProcesses();
+  } catch (error) {
+    EMessage.error(error, '工序保存失败');
+  } finally {
+    submitting.value = false;
+  }
 };
 
 const handleUploadChange = (_uploadFile: UploadFile, uploadFiles: UploadFiles) => {
   uploadFileList.value = uploadFiles.slice(-1);
+  selectedFile.value = uploadFiles.at(-1)?.raw ?? null;
 };
 const handleUploadRemove = () => {
   uploadFileList.value = [];
   selectedFile.value = null;
 };
-const submitUpload = () => {
-  if (!uploadFileList.value.length) {
+const submitUpload = async () => {
+  if (!selectedFile.value || !uploadProcessId.value) {
     EMessage.warning('请选择要上传的技术文件');
     return;
   }
-  EMessage.success('技术文件已上传');
-  uploadDialogVisible.value = false;
+  submitting.value = true;
+  try {
+    await productApi.uploadProcessStepSop(uploadProcessId.value, selectedFile.value);
+    EMessage.success('技术文件已上传');
+    uploadDialogVisible.value = false;
+    await loadProcesses();
+  } catch (error) {
+    EMessage.error(error, '技术文件上传失败');
+  } finally {
+    submitting.value = false;
+  }
 };
 
-const toggleStatus = (row: any) => {
-  EMessage.success(`工序已${row.status === 1 ? '停用' : '启用'}`);
+const toggleStatus = async (row: ProcessStepListItem) => {
+  const text = row.status === 1 ? '停用' : '启用';
+  try {
+    await ElMessageBox.confirm(`确定${text}工序“${row.stepName}”吗？`, `${text}工序`, {
+      type: row.status === 1 ? 'warning' : 'info',
+    });
+    await productApi.setProcessStepStatus(row.id, row.status === 1 ? 0 : 1);
+    EMessage.success(`工序已${text}`);
+    await loadProcesses();
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') EMessage.error(error, `${text}工序失败`);
+  }
 };
+onMounted(loadProcesses);
 </script>
 
 <style scoped>

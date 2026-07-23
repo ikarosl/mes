@@ -1,0 +1,11 @@
+DELETE FROM permissions WHERE code LIKE 'product:%' AND code <> 'product:view';
+DELETE FROM permissions WHERE code = 'product:view';
+DROP TABLE IF EXISTS route_step_materials;
+DROP TABLE IF EXISTS process_route_steps;
+DROP TABLE IF EXISTS product_materials;
+ALTER TABLE products DROP FOREIGN KEY fk_products_default_route;
+DROP TABLE IF EXISTS process_routes;
+DROP TABLE IF EXISTS process_steps;
+DROP TABLE IF EXISTS products;
+DROP TABLE IF EXISTS product_categories;
+DROP TABLE IF EXISTS technical_files;

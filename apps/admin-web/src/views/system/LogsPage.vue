@@ -1,13 +1,5 @@
 <template>
   <section>
-    <div class="page-title">
-      <div>
-        <h2>操作日志</h2>
-        <p>认证和 RBAC 关键操作审计</p>
-      </div>
-      <el-button @click="loadLogs">刷新</el-button>
-    </div>
-
     <div class="query-panel">
       <el-form
         class="query-form"
@@ -118,6 +110,11 @@
     </div>
 
     <div class="table-panel">
+      <TableToolbar>
+        <template #tools>
+          <el-button @click="loadLogs">刷新</el-button>
+        </template>
+      </TableToolbar>
       <el-table
         v-loading="loading"
         :data="logs"
@@ -275,7 +272,12 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
-import { OPERATION_LOG_MODULE_OPTIONS, type OperationLogListItem } from '@company/contracts';
+import TableToolbar from '../../components/TableToolbar.vue';
+import {
+  OPERATION_LOG_MODULE_OPTIONS,
+  type OperationLogListItem,
+  type OperationResult,
+} from '@company/contracts';
 import { systemApi } from '../../api/system';
 import { DialogWidth } from '../../utils/dialog';
 import { EMessage } from '../../utils/message';
@@ -299,7 +301,7 @@ const query = reactive({
   keyword: '',
   logType: '',
   module: '',
-  result: '',
+  result: '' as OperationResult | '',
   userId: '',
   requestId: '',
   targetType: '',
@@ -377,24 +379,6 @@ onMounted(loadLogs);
 </script>
 
 <style scoped>
-.page-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 16px;
-}
-.page-title h2 {
-  margin: 0;
-  color: #283a50;
-  font-size: 20px;
-  font-weight: 600;
-}
-.page-title p {
-  margin: 4px 0 0;
-  color: #6b7280;
-  font-size: 14px;
-}
-
 .query-panel,
 .table-panel {
   border: 1px solid #e5e7eb;

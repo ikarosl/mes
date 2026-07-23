@@ -1,18 +1,5 @@
 <template>
   <div class="tasks-page">
-    <div class="page-title">
-      <div>
-        <h2>生产任务管理</h2>
-        <p>管理生产批次任务与工序执行</p>
-      </div>
-      <el-button
-        type="primary"
-        :icon="Plus"
-        @click="openCreate"
-        >新增任务</el-button
-      >
-    </div>
-
     <section class="query-panel">
       <el-form
         class="query-form"
@@ -86,15 +73,16 @@
     </section>
 
     <section class="table-panel">
-      <div class="table-toolbar">
-        <el-button
-          type="primary"
-          :icon="Plus"
-          @click="openCreate"
-          >新增任务</el-button
-        >
-        <div class="toolbar-actions">
-          <span class="toolbar-title">生产任务</span>
+      <TableToolbar>
+        <template #actions>
+          <el-button
+            type="primary"
+            :icon="Plus"
+            @click="openCreate"
+            >新增任务</el-button
+          >
+        </template>
+        <template #tools>
           <el-tooltip
             content="刷新"
             placement="top"
@@ -107,8 +95,8 @@
               @click="loadTasks"
             />
           </el-tooltip>
-        </div>
-      </div>
+        </template>
+      </TableToolbar>
 
       <el-table
         v-loading="loading"
@@ -819,16 +807,14 @@
 import { computed, reactive, ref } from 'vue';
 import { ElMessageBox, type UploadRawFile } from 'element-plus';
 import { Plus, Refresh } from '@element-plus/icons-vue';
+import TableToolbar from '../../components/TableToolbar.vue';
+import type { BatchStepStatus, ProductionBatchStatus, WorkOrderStatus } from '@company/contracts';
 import { DialogWidth } from '../../utils/dialog';
 import { EMessage } from '../../utils/message';
 
 defineOptions({ name: 'ProductionTasksPage' });
 
 /* ====== 类型定义 ====== */
-type ProductionBatchStatus =
-  'pending' | 'material_pending' | 'material_assigned' | 'doing' | 'completed' | 'cancelled';
-type BatchStepStatus = 'pending' | 'doing' | 'completed' | 'abnormal';
-
 interface WorkOrderListItem {
   id: string;
   orderNo: string;
@@ -839,7 +825,7 @@ interface WorkOrderListItem {
   assignedQuantity: string;
   ownerId: string | null;
   ownerName: string | null;
-  status: string;
+  status: WorkOrderStatus;
   planStartDate: string | null;
   planEndDate: string | null;
   remark: string | null;
@@ -941,12 +927,14 @@ const taskStatusOptions: Array<{
   { value: 'pending', label: '已生成批次', type: 'info' },
   { value: 'material_pending', label: '已生成物料需求', type: 'primary' },
   { value: 'material_assigned', label: '已分配物料批次', type: 'primary' },
+  { value: 'material_outbound', label: '已领料出库', type: 'primary' },
   { value: 'doing', label: '执行中', type: 'primary' },
   { value: 'completed', label: '已完成', type: 'success' },
   { value: 'cancelled', label: '已取消', type: 'danger' },
 ];
 const stepStatusOptions: Array<{ value: BatchStepStatus; label: string }> = [
   { value: 'pending', label: '待开始' },
+  { value: 'assigned', label: '已派工' },
   { value: 'doing', label: '进行中' },
   { value: 'completed', label: '已完成' },
   { value: 'abnormal', label: '异常' },
@@ -1835,25 +1823,6 @@ const getSopFileName = (fileId: string | null) => {
   flex-direction: column;
   gap: 16px;
 }
-
-.page-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 0;
-}
-.page-title h2 {
-  margin: 0;
-  color: #283a50;
-  font-size: 20px;
-  font-weight: 600;
-}
-.page-title p {
-  margin: 4px 0 0;
-  color: #6b7280;
-  font-size: 14px;
-}
-
 .query-panel,
 .table-panel {
   border: 1px solid #e5e7eb;

@@ -14,7 +14,8 @@ import {
   MaxLength,
   ValidateIf,
 } from 'class-validator';
-import { SYSTEM_STATUS } from '@company/constants';
+import { OPERATION_RESULTS, SYSTEM_STATUS } from '@company/constants';
+import type { OperationResult } from '@company/contracts';
 
 export class IdParamDto {
   @IsNumberString({ no_symbols: true }, { message: '资源 ID 格式无效' })
@@ -151,7 +152,7 @@ export class OperationLogQueryDto {
   @IsOptional() @IsString() @MaxLength(128) keyword?: string;
   @IsOptional() @IsString() @MaxLength(32) logType?: string;
   @IsOptional() @IsString() @MaxLength(64) module?: string;
-  @IsOptional() @IsString() @MaxLength(32) result?: string;
+  @IsOptional() @IsIn(OPERATION_RESULTS) result?: OperationResult;
   @IsOptional() @IsNumberString({ no_symbols: true }) userId?: string;
   @IsOptional() @Matches(/^[A-Za-z0-9_-]{1,128}$/) requestId?: string;
   @IsOptional() @IsString() @MaxLength(64) targetType?: string;

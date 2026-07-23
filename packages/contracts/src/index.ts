@@ -47,7 +47,7 @@ export interface PermissionListItem {
   parentId: string | null;
   name: string;
   code: string;
-  type: string;
+  type: PermissionType;
   routePath: string | null;
   status: number;
 }
@@ -116,7 +116,7 @@ export interface SystemPermissionListItem {
   parentId: string | null;
   name: string;
   code: string;
-  type: string;
+  type: PermissionType;
   routePath: string | null;
   apiMethod: string | null;
   apiPath: string | null;
@@ -140,7 +140,7 @@ export interface OperationLogListItem {
   targetType: string | null;
   targetIds: unknown;
   businessKey: string | null;
-  result: string;
+  result: OperationResult;
   requestId: string | null;
   httpMethod: string | null;
   route: string | null;
@@ -214,13 +214,184 @@ export interface OperationLogQuery extends PageQuery {
   keyword?: string;
   logType?: string;
   module?: string;
-  result?: string;
+  result?: OperationResult;
   userId?: string;
   requestId?: string;
   targetType?: string;
   targetId?: string;
   createdAtFrom?: string;
   createdAtTo?: string;
+}
+
+export type ProductItemKind = 'material' | 'semi_finished' | 'finished_product';
+export type ProductAcquireMethod = 'self_made' | 'outsourced' | 'purchased';
+export type ProcessRouteStatus = 'draft' | 'enabled' | 'disabled' | 'archived';
+
+export interface ProductCategoryListItem {
+  id: string;
+  parentId: string | null;
+  categoryCode: string;
+  categoryName: string;
+  itemKind: ProductItemKind;
+  status: number;
+  remark: string | null;
+  updatedAt: string | null;
+}
+
+export interface ProductCategoryPayload {
+  parentId?: string | null;
+  categoryCode: string;
+  categoryName: string;
+  itemKind: ProductItemKind;
+  status: number;
+  remark?: string | null;
+}
+
+export interface ProductSpecValue {
+  key: string;
+  value: string;
+  unit?: string;
+}
+
+export interface ProductListItem {
+  id: string;
+  itemCode: string;
+  productName: string;
+  categoryId: string;
+  categoryCode: string;
+  categoryName: string;
+  itemKind: ProductItemKind;
+  defaultRouteId: string | null;
+  defaultRouteName: string | null;
+  unit: string;
+  acquireMethod: ProductAcquireMethod;
+  specValues: ProductSpecValue[];
+  status: number;
+  materialCount: number;
+  remark: string | null;
+  updatedAt: string | null;
+}
+
+export interface ProductPayload {
+  itemCode: string;
+  productName: string;
+  categoryId: string;
+  unit: string;
+  acquireMethod: ProductAcquireMethod;
+  specValues?: ProductSpecValue[];
+  status: number;
+  remark?: string | null;
+}
+
+export interface ProductOption {
+  id: string;
+  itemCode: string;
+  productName: string;
+  itemKind: ProductItemKind;
+  acquireMethod: ProductAcquireMethod;
+  unit: string;
+}
+
+export interface ProductMaterialItem {
+  id: string;
+  materialProductId: string;
+  itemCode: string;
+  productName: string;
+  itemKind: ProductItemKind;
+  quantityPerUnit: string;
+  unit: string;
+  isKeyMaterial: boolean;
+  needBatchRecord: boolean;
+  status: number;
+  remark: string | null;
+}
+
+export interface ProductMaterialPayload {
+  materialProductId: string;
+  quantityPerUnit: number;
+  unit: string;
+  isKeyMaterial: boolean;
+  needBatchRecord: boolean;
+  status?: number;
+  remark?: string | null;
+}
+
+export interface ProcessStepListItem {
+  id: string;
+  stepCode: string;
+  stepName: string;
+  description: string | null;
+  defaultSopFileId: string | null;
+  sopFileName: string | null;
+  status: number;
+  remark: string | null;
+  updatedAt: string | null;
+}
+
+export interface ProcessStepPayload {
+  stepCode: string;
+  stepName: string;
+  description?: string | null;
+  status: number;
+  remark?: string | null;
+}
+
+export interface ProcessRouteListItem {
+  id: string;
+  routeCode: string;
+  routeName: string;
+  productId: string;
+  itemCode: string;
+  productName: string;
+  versionNo: string;
+  status: ProcessRouteStatus;
+  processSummary: string | null;
+  stepCount: number;
+  remark: string | null;
+  updatedAt: string | null;
+}
+
+export interface ProcessRoutePayload {
+  routeCode: string;
+  routeName: string;
+  productId: string;
+  versionNo: string;
+  remark?: string | null;
+}
+
+export interface ProcessRouteStepItem {
+  id: string;
+  processStepId: string;
+  stepOrder: number;
+  stepCode: string;
+  stepName: string;
+  description: string | null;
+  defaultOwnerId: string | null;
+  defaultOwnerName: string | null;
+  sopFileId: string | null;
+  sopFileName: string | null;
+  needInspection: boolean;
+  needRecord: boolean;
+  status: number;
+  remark: string | null;
+  productMaterialIds: string[];
+}
+
+export interface ProcessRouteStepPayload {
+  processStepId: string;
+  stepOrder: number;
+  defaultOwnerId?: string | null;
+  sopFileId?: string | null;
+  needInspection: boolean;
+  needRecord: boolean;
+  status?: number;
+  remark?: string | null;
+  productMaterialIds?: string[];
+}
+
+export interface UserOption {
+  id: string;
+  displayName: string;
 }
 
 /** 日志模块枚举值 */
@@ -249,3 +420,58 @@ export const SYSTEM_API = {
   permissions: '/system/permissions',
   logs: '/system/logs',
 } as const;
+
+/** 生产、库存与质量模块持久化代码类型。中文名称只在前端展示层映射。 */
+export type PermissionType = 'menu' | 'page' | 'button' | 'api';
+export type OperationResult = 'success' | 'failed';
+export type WorkOrderStatus = 'draft' | 'released' | 'doing' | 'completed' | 'cancelled' | 'closed';
+export type ProductionBatchStatus =
+  | 'pending'
+  | 'material_pending'
+  | 'material_assigned'
+  | 'material_outbound'
+  | 'doing'
+  | 'completed'
+  | 'cancelled';
+export type BatchStepStatus = 'pending' | 'assigned' | 'doing' | 'completed' | 'abnormal';
+export type InventorySourceType =
+  'self_made' | 'purchased' | 'outsourced' | 'return_inbound' | 'stock_check_generated' | 'other';
+export type InventoryBatchStatus = 'available' | 'frozen' | 'disabled';
+export type StockStatus = 'available' | 'pending_inspection' | 'frozen' | 'defective';
+export type InventoryTransactionType =
+  | 'purchase_inbound'
+  | 'production_inbound'
+  | 'outsourced_inbound'
+  | 'production_material_outbound'
+  | 'sales_outbound'
+  | 'material_return_inbound'
+  | 'scrap_outbound'
+  | 'stock_check_adjustment'
+  | 'status_transfer_in'
+  | 'status_transfer_out';
+export type InventoryReferenceType =
+  | 'inbound_detail'
+  | 'outbound_detail'
+  | 'return_detail'
+  | 'scrap'
+  | 'stock_check_detail'
+  | 'inspection_record'
+  | 'manual';
+export type InboundOrderStatus = 'pending' | 'completed' | 'cancelled';
+export type DemandBusinessStatus = 'active' | 'cancelled' | 'closed' | 'frozen' | 'abnormal';
+export type AllocationStatus = 'active' | 'released' | 'cancelled' | 'frozen' | 'abnormal';
+export type OutboundOrderStatus =
+  'pending_picking' | 'picked' | 'partially_outbound' | 'completed' | 'cancelled';
+export type ReturnOrderStatus = 'pending' | 'returned' | 'scrapped' | 'cancelled';
+export type ScrapScene =
+  'warehouse_allocated' | 'return_after_outbound' | 'production_consumed' | 'in_stock';
+export type ScrapStatus = 'pending' | 'confirmed' | 'cancelled';
+export type StockCheckStatus = 'pending' | 'counting' | 'completed' | 'cancelled';
+export type StockCheckResult = 'surplus' | 'shortage' | 'matched';
+export type InspectionType = 'process' | 'final';
+export type InspectionResult = 'pending' | 'passed' | 'failed' | 'conditional';
+export type ReworkStatus = 'pending' | 'doing' | 'completed' | 'cancelled';
+export type ReworkResult = 'pending' | 'passed' | 'failed';
+export type FinishedFlowType =
+  'warehouse_inbound' | 'quality_release' | 'warehouse_outbound' | 'other';
+export type FinishedFlowStatus = 'confirmed' | 'cancelled';

@@ -1,18 +1,5 @@
 <template>
   <div>
-    <div class="page-title">
-      <div>
-        <h2>报废管理</h2>
-        <p>管理库存内报废、生产消耗报废等记录</p>
-      </div>
-      <el-button
-        type="primary"
-        :icon="Plus"
-        @click="openCreate"
-        >新增报废单</el-button
-      >
-    </div>
-
     <div class="query-panel">
       <el-form
         class="query-form"
@@ -36,14 +23,10 @@
               label="全部"
               value=""
             /><el-option
-              label="待确认"
-              value="待确认"
-            /><el-option
-              label="已确认"
-              value="已确认"
-            /><el-option
-              label="已取消"
-              value="已取消"
+              v-for="(label, value) in scrapStatusLabels"
+              :key="value"
+              :label="label"
+              :value="value"
             />
           </el-select>
         </el-form-item>
@@ -57,18 +40,10 @@
               label="全部"
               value=""
             /><el-option
-              label="已分配报废"
-              value="WAREHOUSE_ALLOCATED"
-            />
-            <el-option
-              label="退料报废"
-              value="RETURN_AFTER_OUTBOUND"
-            /><el-option
-              label="生产消耗报废"
-              value="PRODUCTION_CONSUMED"
-            /><el-option
-              label="库存内报废"
-              value="IN_STOCK"
+              v-for="(label, value) in scrapSceneLabels"
+              :key="value"
+              :label="label"
+              :value="value"
             />
           </el-select>
         </el-form-item>
@@ -84,16 +59,16 @@
     </div>
 
     <div class="table-panel">
-      <div class="table-toolbar">
-        <div class="batch-actions">
+      <TableToolbar>
+        <template #actions>
           <el-button
             type="primary"
             :icon="Plus"
             @click="openCreate"
             >新增报废单</el-button
           >
-        </div>
-        <div class="table-tools">
+        </template>
+        <template #tools>
           <el-tooltip
             content="刷新"
             placement="top"
@@ -106,8 +81,8 @@
               @click="loadRows"
             />
           </el-tooltip>
-        </div>
-      </div>
+        </template>
+      </TableToolbar>
 
       <el-table
         v-loading="loading"
@@ -148,10 +123,14 @@
           <template #default="{ row }"
             ><el-tag
               :type="
-                row.status === '已确认' ? 'danger' : row.status === '已取消' ? 'info' : 'warning'
+                row.status === 'confirmed'
+                  ? 'danger'
+                  : row.status === 'cancelled'
+                    ? 'info'
+                    : 'warning'
               "
               effect="light"
-              >{{ row.status }}</el-tag
+              >{{ scrapStatusLabel(row.status) }}</el-tag
             ></template
           >
         </el-table-column>
@@ -174,14 +153,14 @@
               >详情</el-button
             >
             <el-button
-              v-if="row.status === '待确认'"
+              v-if="row.status === 'pending'"
               link
               type="danger"
               @click="handleConfirm(row)"
               >确认报废</el-button
             >
             <el-button
-              v-if="row.status === '待确认'"
+              v-if="row.status === 'pending'"
               link
               @click="handleCancel(row)"
               >取消</el-button
@@ -242,18 +221,10 @@
             style="width: 100%"
           >
             <el-option
-              label="库存内报废"
-              value="IN_STOCK"
-            /><el-option
-              label="已分配未出库报废"
-              value="WAREHOUSE_ALLOCATED"
-            />
-            <el-option
-              label="退料后报废"
-              value="RETURN_AFTER_OUTBOUND"
-            /><el-option
-              label="生产消耗报废"
-              value="PRODUCTION_CONSUMED"
+              v-for="(label, value) in scrapSceneLabels"
+              :key="value"
+              :label="label"
+              :value="value"
             />
           </el-select>
         </el-form-item>
@@ -304,8 +275,8 @@
         }}</el-descriptions-item>
         <el-descriptions-item label="报废数量">{{ detailRow.scrapNumber }}</el-descriptions-item>
         <el-descriptions-item label="状态"
-          ><el-tag :type="detailRow.status === '已确认' ? 'danger' : 'info'">{{
-            detailRow.status
+          ><el-tag :type="detailRow.status === 'confirmed' ? 'danger' : 'info'">{{
+            scrapStatusLabels[detailRow.status]
           }}</el-tag></el-descriptions-item
         >
         <el-descriptions-item label="原因">{{ detailRow.reason || '-' }}</el-descriptions-item>
@@ -326,8 +297,15 @@
 import { onMounted, reactive, ref } from 'vue';
 import { ElMessageBox } from 'element-plus';
 import { Plus, Refresh } from '@element-plus/icons-vue';
+import type { ScrapScene, ScrapStatus } from '@company/contracts';
+import TableToolbar from '../../components/TableToolbar.vue';
 import { DialogWidth } from '../../utils/dialog';
 import { EMessage } from '../../utils/message';
+import {
+  scrapSceneLabels,
+  scrapStatusLabel,
+  scrapStatusLabels,
+} from '../../constants/business-status';
 
 defineOptions({ name: 'ScrapsPage' });
 
@@ -337,8 +315,8 @@ interface ScrapItem {
   itemCode: string;
   itemName: string;
   scrapNumber: string;
-  scrapScene: string;
-  status: string;
+  scrapScene: ScrapScene;
+  status: ScrapStatus;
   reason: string;
   remark: string;
   confirmedAt: string;
@@ -351,8 +329,8 @@ const demoRows: ScrapItem[] = [
     itemCode: 'MAT-001',
     itemName: '原材料A',
     scrapNumber: '10.0000',
-    scrapScene: 'IN_STOCK',
-    status: '已确认',
+    scrapScene: 'in_stock',
+    status: 'confirmed',
     reason: '过期变质',
     remark: '',
     confirmedAt: '2026-07-21T10:00:00',
@@ -363,8 +341,8 @@ const demoRows: ScrapItem[] = [
     itemCode: 'MAT-002',
     itemName: '原材料B',
     scrapNumber: '5.0000',
-    scrapScene: 'PRODUCTION_CONSUMED',
-    status: '待确认',
+    scrapScene: 'production_consumed',
+    status: 'pending',
     reason: '生产损耗',
     remark: '',
     confirmedAt: '',
@@ -375,8 +353,8 @@ const demoRows: ScrapItem[] = [
     itemCode: 'SEMI-001',
     itemName: '半成品X',
     scrapNumber: '2.0000',
-    scrapScene: 'RETURN_AFTER_OUTBOUND',
-    status: '待确认',
+    scrapScene: 'return_after_outbound',
+    status: 'pending',
     reason: '退料不良',
     remark: '需质检确认',
     confirmedAt: '',
@@ -387,8 +365,8 @@ const demoRows: ScrapItem[] = [
     itemCode: 'MAT-003',
     itemName: '化学品C',
     scrapNumber: '50.0000',
-    scrapScene: 'IN_STOCK',
-    status: '已确认',
+    scrapScene: 'in_stock',
+    status: 'confirmed',
     reason: '安全过期',
     remark: '',
     confirmedAt: '2026-07-19T15:00:00',
@@ -399,8 +377,8 @@ const demoRows: ScrapItem[] = [
     itemCode: 'MAT-001',
     itemName: '原材料A',
     scrapNumber: '0.0000',
-    scrapScene: 'WAREHOUSE_ALLOCATED',
-    status: '已取消',
+    scrapScene: 'warehouse_allocated',
+    status: 'cancelled',
     reason: '',
     remark: '取消报废',
     confirmedAt: '',
@@ -419,19 +397,13 @@ const detailVisible = ref(false);
 const query = reactive({ keyword: '', status: '', scrapScene: '' });
 const createForm = reactive({
   itemId: '',
-  scrapScene: 'IN_STOCK' as string,
+  scrapScene: 'in_stock' as ScrapScene,
   scrapNumber: 0,
   reason: '',
   remark: '',
 });
 
-const sceneLabel = (s: string) =>
-  ({
-    WAREHOUSE_ALLOCATED: '已分配报废',
-    RETURN_AFTER_OUTBOUND: '退料报废',
-    PRODUCTION_CONSUMED: '生产消耗报废',
-    IN_STOCK: '库存内报废',
-  })[s] ?? s;
+const sceneLabel = (scene: ScrapScene) => scrapSceneLabels[scene];
 
 const loadRows = async () => {
   loading.value = true;
@@ -472,7 +444,7 @@ const handlePageSizeChange = async () => {
 
 const openCreate = () => {
   createForm.itemId = '';
-  createForm.scrapScene = 'IN_STOCK';
+  createForm.scrapScene = 'in_stock';
   createForm.scrapNumber = 0;
   createForm.reason = '';
   createForm.remark = '';
@@ -532,24 +504,6 @@ onMounted(loadRows);
 </script>
 
 <style scoped>
-.page-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 16px;
-}
-.page-title h2 {
-  margin: 0;
-  color: #283a50;
-  font-size: 20px;
-  font-weight: 600;
-}
-.page-title p {
-  margin: 4px 0 0;
-  color: #6b7280;
-  font-size: 14px;
-}
-
 .query-panel,
 .table-panel {
   border: 1px solid #e5e7eb;

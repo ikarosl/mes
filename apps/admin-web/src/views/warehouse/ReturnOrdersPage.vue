@@ -1,18 +1,5 @@
 <template>
   <div>
-    <div class="page-title">
-      <div>
-        <h2>退料管理</h2>
-        <p>管理生产退料、入库或报废</p>
-      </div>
-      <el-button
-        type="primary"
-        :icon="Plus"
-        @click="openCreate"
-        >新增退料单</el-button
-      >
-    </div>
-
     <div class="query-panel">
       <el-form
         class="query-form"
@@ -36,18 +23,10 @@
               label="全部"
               value=""
             /><el-option
-              label="待处理"
-              value="待处理"
-            />
-            <el-option
-              label="已入库"
-              value="已入库"
-            /><el-option
-              label="已报废"
-              value="已报废"
-            /><el-option
-              label="已取消"
-              value="已取消"
+              v-for="(label, value) in returnOrderStatusLabels"
+              :key="value"
+              :label="label"
+              :value="value"
             />
           </el-select>
         </el-form-item>
@@ -63,16 +42,16 @@
     </div>
 
     <div class="table-panel">
-      <div class="table-toolbar">
-        <div class="batch-actions">
+      <TableToolbar>
+        <template #actions>
           <el-button
             type="primary"
             :icon="Plus"
             @click="openCreate"
             >新增退料单</el-button
           >
-        </div>
-        <div class="table-tools">
+        </template>
+        <template #tools>
           <el-tooltip
             content="刷新"
             placement="top"
@@ -85,8 +64,8 @@
               @click="loadRows"
             />
           </el-tooltip>
-        </div>
-      </div>
+        </template>
+      </TableToolbar>
 
       <el-table
         v-loading="loading"
@@ -110,16 +89,16 @@
           <template #default="{ row }"
             ><el-tag
               :type="
-                row.status === '已入库'
+                row.status === 'returned'
                   ? 'success'
-                  : row.status === '已报废'
+                  : row.status === 'scrapped'
                     ? 'danger'
-                    : row.status === '已取消'
+                    : row.status === 'cancelled'
                       ? 'info'
                       : 'warning'
               "
               effect="light"
-              >{{ row.status }}</el-tag
+              >{{ returnOrderStatusLabel(row.status) }}</el-tag
             ></template
           >
         </el-table-column>
@@ -157,21 +136,21 @@
               >详情</el-button
             >
             <el-button
-              v-if="row.status === '待处理'"
+              v-if="row.status === 'pending'"
               link
               type="success"
               @click="handleConfirmInbound(row)"
               >退料入库</el-button
             >
             <el-button
-              v-if="row.status === '待处理'"
+              v-if="row.status === 'pending'"
               link
               type="danger"
               @click="handleConfirmScrap(row)"
               >退料报废</el-button
             >
             <el-button
-              v-if="row.status === '待处理'"
+              v-if="row.status === 'pending'"
               link
               @click="handleCancel(row)"
               >取消</el-button
@@ -304,8 +283,8 @@
           detailRow.productionBatchId
         }}</el-descriptions-item>
         <el-descriptions-item label="状态"
-          ><el-tag :type="detailRow.status === '已入库' ? 'success' : 'info'">{{
-            detailRow.status
+          ><el-tag :type="detailRow.status === 'returned' ? 'success' : 'info'">{{
+            returnOrderStatusLabels[detailRow.status]
           }}</el-tag></el-descriptions-item
         >
         <el-descriptions-item label="退料时间">{{
@@ -320,8 +299,11 @@
 import { onMounted, reactive, ref } from 'vue';
 import { ElMessageBox } from 'element-plus';
 import { Delete, Plus, Refresh } from '@element-plus/icons-vue';
+import type { ReturnOrderStatus } from '@company/contracts';
+import TableToolbar from '../../components/TableToolbar.vue';
 import { DialogWidth } from '../../utils/dialog';
 import { EMessage } from '../../utils/message';
+import { returnOrderStatusLabel, returnOrderStatusLabels } from '../../constants/business-status';
 
 defineOptions({ name: 'ReturnOrdersPage' });
 
@@ -329,7 +311,7 @@ interface ReturnOrderItem {
   id: string;
   returnNo: string;
   productionBatchId: string;
-  status: string;
+  status: ReturnOrderStatus;
   totalReturnNumber: string;
   returnAt: string;
   remark: string;
@@ -348,7 +330,7 @@ const demoRows: ReturnOrderItem[] = [
     id: '1',
     returnNo: 'TL-20260721-001',
     productionBatchId: 'SC-202607-001',
-    status: '已入库',
+    status: 'returned',
     totalReturnNumber: '30.0000',
     returnAt: '2026-07-21T11:00:00',
     remark: '多余材料退回',
@@ -357,7 +339,7 @@ const demoRows: ReturnOrderItem[] = [
     id: '2',
     returnNo: 'TL-20260721-002',
     productionBatchId: 'SC-202607-002',
-    status: '待处理',
+    status: 'pending',
     totalReturnNumber: '15.0000',
     returnAt: '',
     remark: '',
@@ -366,7 +348,7 @@ const demoRows: ReturnOrderItem[] = [
     id: '3',
     returnNo: 'TL-20260720-003',
     productionBatchId: 'SC-202607-001',
-    status: '已报废',
+    status: 'scrapped',
     totalReturnNumber: '5.0000',
     returnAt: '2026-07-20T16:30:00',
     remark: '不良品报废',
@@ -375,7 +357,7 @@ const demoRows: ReturnOrderItem[] = [
     id: '4',
     returnNo: 'TL-20260719-004',
     productionBatchId: 'SC-202607-003',
-    status: '待处理',
+    status: 'pending',
     totalReturnNumber: '20.0000',
     returnAt: '',
     remark: '生产余料',
@@ -384,7 +366,7 @@ const demoRows: ReturnOrderItem[] = [
     id: '5',
     returnNo: 'TL-20260718-005',
     productionBatchId: 'SC-202607-004',
-    status: '已取消',
+    status: 'cancelled',
     totalReturnNumber: '0.0000',
     returnAt: '',
     remark: '取消',
@@ -523,24 +505,6 @@ onMounted(loadRows);
 </script>
 
 <style scoped>
-.page-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 16px;
-}
-.page-title h2 {
-  margin: 0;
-  color: #283a50;
-  font-size: 20px;
-  font-weight: 600;
-}
-.page-title p {
-  margin: 4px 0 0;
-  color: #6b7280;
-  font-size: 14px;
-}
-
 .query-panel,
 .table-panel {
   border: 1px solid #e5e7eb;

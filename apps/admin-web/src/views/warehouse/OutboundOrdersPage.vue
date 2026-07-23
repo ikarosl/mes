@@ -1,18 +1,5 @@
 <template>
   <div>
-    <div class="page-title">
-      <div>
-        <h2>出库管理</h2>
-        <p>管理生产领料出库等单据</p>
-      </div>
-      <el-button
-        type="primary"
-        :icon="Plus"
-        @click="openCreate"
-        >新增出库单</el-button
-      >
-    </div>
-
     <div class="query-panel">
       <el-form
         class="query-form"
@@ -36,18 +23,10 @@
               label="全部"
               value=""
             /><el-option
-              label="待确认"
-              value="待确认"
-            />
-            <el-option
-              label="已拣货"
-              value="已拣货"
-            /><el-option
-              label="已完成"
-              value="已完成"
-            /><el-option
-              label="已取消"
-              value="已取消"
+              v-for="(label, value) in outboundOrderStatusLabels"
+              :key="value"
+              :label="label"
+              :value="value"
             />
           </el-select>
         </el-form-item>
@@ -63,16 +42,16 @@
     </div>
 
     <div class="table-panel">
-      <div class="table-toolbar">
-        <div class="batch-actions">
+      <TableToolbar>
+        <template #actions>
           <el-button
             type="primary"
             :icon="Plus"
             @click="openCreate"
             >新增出库单</el-button
           >
-        </div>
-        <div class="table-tools">
+        </template>
+        <template #tools>
           <el-tooltip
             content="刷新"
             placement="top"
@@ -85,8 +64,8 @@
               @click="loadRows"
             />
           </el-tooltip>
-        </div>
-      </div>
+        </template>
+      </TableToolbar>
 
       <el-table
         v-loading="loading"
@@ -105,10 +84,14 @@
           <template #default="{ row }"
             ><el-tag
               :type="
-                row.status === '已完成' ? 'success' : row.status === '已取消' ? 'info' : 'warning'
+                row.status === 'completed'
+                  ? 'success'
+                  : row.status === 'cancelled'
+                    ? 'info'
+                    : 'warning'
               "
               effect="light"
-              >{{ row.status }}</el-tag
+              >{{ outboundOrderStatusLabel(row.status) }}</el-tag
             ></template
           >
         </el-table-column>
@@ -152,21 +135,21 @@
               >详情</el-button
             >
             <el-button
-              v-if="row.status === '待确认'"
+              v-if="row.status === 'pending_picking'"
               link
               type="warning"
               @click="handlePick(row)"
               >拣货</el-button
             >
             <el-button
-              v-if="['待确认', '已拣货'].includes(row.status)"
+              v-if="['pending_picking', 'picked', 'partially_outbound'].includes(row.status)"
               link
               type="success"
               @click="handleConfirm(row)"
               >确认出库</el-button
             >
             <el-button
-              v-if="row.status !== '已完成'"
+              v-if="!['completed', 'cancelled'].includes(row.status)"
               link
               type="danger"
               @click="handleCancel(row)"
@@ -327,8 +310,8 @@
                 style="width: 90px"
               >
                 <el-option
-                  label="可用"
-                  value="可用"
+                  :label="stockStatusLabels.available"
+                  value="available"
                 />
               </el-select>
             </template>
@@ -380,8 +363,8 @@
       >
         <el-descriptions-item label="单号">{{ detailRow.outboundNo }}</el-descriptions-item>
         <el-descriptions-item label="状态"
-          ><el-tag :type="detailRow.status === '已完成' ? 'success' : 'info'">{{
-            detailRow.status
+          ><el-tag :type="detailRow.status === 'completed' ? 'success' : 'info'">{{
+            outboundOrderStatusLabels[detailRow.status]
           }}</el-tag></el-descriptions-item
         >
         <el-descriptions-item label="出库时间">{{
@@ -421,9 +404,10 @@
         </el-table-column>
         <el-table-column
           label="状态"
-          prop="stockStatus"
           width="80"
-        />
+        >
+          <template #default="{ row }">{{ stockStatusLabel(row.stockStatus) }}</template>
+        </el-table-column>
       </el-table>
     </el-dialog>
   </div>
@@ -433,15 +417,23 @@
 import { computed, onMounted, reactive, ref } from 'vue';
 import { ElMessageBox } from 'element-plus';
 import { Delete, Plus, Refresh } from '@element-plus/icons-vue';
+import type { OutboundOrderStatus, StockStatus } from '@company/contracts';
+import TableToolbar from '../../components/TableToolbar.vue';
 import { DialogWidth } from '../../utils/dialog';
 import { EMessage } from '../../utils/message';
+import {
+  outboundOrderStatusLabel,
+  outboundOrderStatusLabels,
+  stockStatusLabel,
+  stockStatusLabels,
+} from '../../constants/business-status';
 
 defineOptions({ name: 'OutboundOrdersPage' });
 
 interface OutboundOrderItem {
   id: string;
   outboundNo: string;
-  status: string;
+  status: OutboundOrderStatus;
   detailCount: number;
   totalOutboundNumber: string;
   outboundAt: string;
@@ -453,7 +445,7 @@ interface OutboundDetailItem {
   itemName: string;
   batchCode: string;
   outboundNumber: string;
-  stockStatus: string;
+  stockStatus: StockStatus;
 }
 
 interface BatchItem {
@@ -471,7 +463,7 @@ interface CreateDetailRow {
   batchCode: string;
   availableOutboundQuantity: string;
   outboundNumber: number;
-  stockStatus: string;
+  stockStatus: StockStatus;
   remark: string;
 }
 
@@ -485,7 +477,7 @@ const demoRows: OutboundOrderItem[] = [
   {
     id: '1',
     outboundNo: 'CK-20260721-001',
-    status: '已完成',
+    status: 'completed',
     detailCount: 3,
     totalOutboundNumber: '120.0000',
     outboundAt: '2026-07-21T10:30:00',
@@ -494,7 +486,7 @@ const demoRows: OutboundOrderItem[] = [
   {
     id: '2',
     outboundNo: 'CK-20260721-002',
-    status: '待确认',
+    status: 'pending_picking',
     detailCount: 2,
     totalOutboundNumber: '45.0000',
     outboundAt: '',
@@ -503,7 +495,7 @@ const demoRows: OutboundOrderItem[] = [
   {
     id: '3',
     outboundNo: 'CK-20260720-003',
-    status: '已拣货',
+    status: 'picked',
     detailCount: 4,
     totalOutboundNumber: '80.0000',
     outboundAt: '',
@@ -512,7 +504,7 @@ const demoRows: OutboundOrderItem[] = [
   {
     id: '4',
     outboundNo: 'CK-20260719-004',
-    status: '已完成',
+    status: 'completed',
     detailCount: 1,
     totalOutboundNumber: '10.0000',
     outboundAt: '2026-07-19T14:00:00',
@@ -521,7 +513,7 @@ const demoRows: OutboundOrderItem[] = [
   {
     id: '5',
     outboundNo: 'CK-20260718-005',
-    status: '已取消',
+    status: 'cancelled',
     detailCount: 0,
     totalOutboundNumber: '0.0000',
     outboundAt: '',
@@ -607,7 +599,7 @@ const addDetail = (d: {
     batchCode: d.batchCode,
     availableOutboundQuantity: d.availableOutboundQuantity,
     outboundNumber: Number(d.availableOutboundQuantity),
-    stockStatus: '可用',
+    stockStatus: 'available',
     remark: '',
   });
 };
@@ -724,14 +716,14 @@ const openDetail = (row: OutboundOrderItem) => {
       itemName: '原材料A',
       batchCode: 'BATCH-A1',
       outboundNumber: '80.0000',
-      stockStatus: '可用',
+      stockStatus: 'available',
     },
     {
       itemCode: 'MAT-002',
       itemName: '原材料B',
       batchCode: 'BATCH-B1',
       outboundNumber: '40.0000',
-      stockStatus: '可用',
+      stockStatus: 'available',
     },
   ];
   detailVisible.value = true;
@@ -780,24 +772,6 @@ onMounted(loadRows);
 </script>
 
 <style scoped>
-.page-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 16px;
-}
-.page-title h2 {
-  margin: 0;
-  color: #283a50;
-  font-size: 20px;
-  font-weight: 600;
-}
-.page-title p {
-  margin: 4px 0 0;
-  color: #6b7280;
-  font-size: 14px;
-}
-
 .query-panel,
 .table-panel {
   border: 1px solid #e5e7eb;

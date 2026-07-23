@@ -1,12 +1,5 @@
 <template>
   <div>
-    <div class="page-title">
-      <div>
-        <h2>库存查询</h2>
-        <p>按物料、批次、库存状态查询实时库存</p>
-      </div>
-    </div>
-
     <div class="query-panel">
       <el-form
         class="query-form"
@@ -38,16 +31,10 @@
               value=""
             />
             <el-option
-              label="可用"
-              value="可用"
-            />
-            <el-option
-              label="冻结"
-              value="冻结"
-            />
-            <el-option
-              label="停用"
-              value="停用"
+              v-for="(label, value) in inventoryBatchStatusLabels"
+              :key="value"
+              :label="label"
+              :value="value"
             />
           </el-select>
         </el-form-item>
@@ -62,20 +49,10 @@
               value=""
             />
             <el-option
-              label="可用"
-              value="可用"
-            />
-            <el-option
-              label="待检"
-              value="待检"
-            />
-            <el-option
-              label="冻结"
-              value="冻结"
-            />
-            <el-option
-              label="不良"
-              value="不良"
+              v-for="(label, value) in stockStatusLabels"
+              :key="value"
+              :label="label"
+              :value="value"
             />
           </el-select>
         </el-form-item>
@@ -116,8 +93,8 @@
     </div>
 
     <div class="table-panel">
-      <div class="table-toolbar">
-        <div class="table-tools">
+      <TableToolbar>
+        <template #tools>
           <el-tooltip
             content="刷新"
             placement="top"
@@ -130,8 +107,8 @@
               @click="loadRows"
             />
           </el-tooltip>
-        </div>
-      </div>
+        </template>
+      </TableToolbar>
 
       <el-table
         v-loading="loading"
@@ -168,7 +145,7 @@
           label="来源"
           width="140"
         >
-          <template #default="{ row }">{{ row.sourceType || '-' }}</template>
+          <template #default="{ row }">{{ inventorySourceTypeLabel(row.sourceType) }}</template>
         </el-table-column>
         <el-table-column
           label="供应商"
@@ -222,15 +199,15 @@
           <template #default="{ row }">
             <el-tag
               :type="
-                row.batchStatus === '可用'
+                row.batchStatus === 'available'
                   ? 'success'
-                  : row.batchStatus === '冻结'
+                  : row.batchStatus === 'frozen'
                     ? 'warning'
                     : 'info'
               "
               effect="light"
             >
-              {{ row.batchStatus }}
+              {{ inventoryBatchStatusLabel(row.batchStatus) }}
             </el-tag>
           </template>
         </el-table-column>
@@ -296,7 +273,9 @@
           kindLabel(detailRow.itemKind)
         }}</el-descriptions-item>
         <el-descriptions-item label="批次号">{{ detailRow.batchCode }}</el-descriptions-item>
-        <el-descriptions-item label="来源类型">{{ detailRow.sourceType }}</el-descriptions-item>
+        <el-descriptions-item label="来源类型">{{
+          inventorySourceTypeLabels[detailRow.sourceType]
+        }}</el-descriptions-item>
         <el-descriptions-item label="供应商">{{ detailRow.provider || '-' }}</el-descriptions-item>
         <el-descriptions-item label="可用数量">{{
           formatQuantity(detailRow.availableQuantity)
@@ -315,10 +294,10 @@
         }}</el-descriptions-item>
         <el-descriptions-item label="批次状态">
           <el-tag
-            :type="detailRow.batchStatus === '可用' ? 'success' : 'info'"
+            :type="detailRow.batchStatus === 'available' ? 'success' : 'info'"
             effect="light"
           >
-            {{ detailRow.batchStatus }}
+            {{ inventoryBatchStatusLabels[detailRow.batchStatus] }}
           </el-tag>
         </el-descriptions-item>
       </el-descriptions>
@@ -329,9 +308,18 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue';
 import { Refresh } from '@element-plus/icons-vue';
+import type { InventoryBatchStatus, InventorySourceType } from '@company/contracts';
+import TableToolbar from '../../components/TableToolbar.vue';
 import { DialogWidth } from '../../utils/dialog';
 // TODO(api-integration): 待接入操作类接口后启用 EMessage 提示
 import { EMessage } from '../../utils/message';
+import {
+  inventoryBatchStatusLabels,
+  inventoryBatchStatusLabel,
+  inventorySourceTypeLabels,
+  inventorySourceTypeLabel,
+  stockStatusLabels,
+} from '../../constants/business-status';
 
 defineOptions({ name: 'WarehouseInventoryPage' });
 
@@ -341,14 +329,14 @@ interface InventoryItem {
   itemName: string;
   itemKind: string;
   batchCode: string;
-  sourceType: string;
+  sourceType: InventorySourceType;
   provider: string;
   availableQuantity: string;
   pendingQuantity: string;
   frozenQuantity: string;
   defectiveQuantity: string;
   totalQuantity: string;
-  batchStatus: string;
+  batchStatus: InventoryBatchStatus;
 }
 
 const demoRows: InventoryItem[] = [
@@ -358,14 +346,14 @@ const demoRows: InventoryItem[] = [
     itemName: '原材料A',
     itemKind: 'material',
     batchCode: 'BATCH-A1',
-    sourceType: '外购',
+    sourceType: 'purchased',
     provider: '供应商A',
     availableQuantity: '500.0000',
     pendingQuantity: '100.0000',
     frozenQuantity: '0.0000',
     defectiveQuantity: '0.0000',
     totalQuantity: '600.0000',
-    batchStatus: '可用',
+    batchStatus: 'available',
   },
   {
     id: '2',
@@ -373,14 +361,14 @@ const demoRows: InventoryItem[] = [
     itemName: '原材料B',
     itemKind: 'material',
     batchCode: 'BATCH-B1',
-    sourceType: '外购',
+    sourceType: 'purchased',
     provider: '供应商B',
     availableQuantity: '300.0000',
     pendingQuantity: '0.0000',
     frozenQuantity: '50.0000',
     defectiveQuantity: '10.0000',
     totalQuantity: '360.0000',
-    batchStatus: '可用',
+    batchStatus: 'available',
   },
   {
     id: '3',
@@ -388,14 +376,14 @@ const demoRows: InventoryItem[] = [
     itemName: '半成品X',
     itemKind: 'semi_finished',
     batchCode: 'BATCH-S1',
-    sourceType: '自产',
+    sourceType: 'self_made',
     provider: '',
     availableQuantity: '200.0000',
     pendingQuantity: '50.0000',
     frozenQuantity: '0.0000',
     defectiveQuantity: '0.0000',
     totalQuantity: '250.0000',
-    batchStatus: '可用',
+    batchStatus: 'available',
   },
   {
     id: '4',
@@ -403,14 +391,14 @@ const demoRows: InventoryItem[] = [
     itemName: '成品Z',
     itemKind: 'finished_product',
     batchCode: 'BATCH-F1',
-    sourceType: '自产',
+    sourceType: 'self_made',
     provider: '',
     availableQuantity: '150.0000',
     pendingQuantity: '0.0000',
     frozenQuantity: '0.0000',
     defectiveQuantity: '0.0000',
     totalQuantity: '150.0000',
-    batchStatus: '冻结',
+    batchStatus: 'frozen',
   },
   {
     id: '5',
@@ -418,14 +406,14 @@ const demoRows: InventoryItem[] = [
     itemName: '化学品C',
     itemKind: 'material',
     batchCode: 'BATCH-C1',
-    sourceType: '外购',
+    sourceType: 'purchased',
     provider: '供应商C',
     availableQuantity: '0.0000',
     pendingQuantity: '0.0000',
     frozenQuantity: '80.0000',
     defectiveQuantity: '20.0000',
     totalQuantity: '100.0000',
-    batchStatus: '停用',
+    batchStatus: 'disabled',
   },
 ];
 
@@ -512,24 +500,6 @@ onMounted(loadRows);
 </script>
 
 <style scoped>
-.page-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 16px;
-}
-.page-title h2 {
-  margin: 0;
-  color: #283a50;
-  font-size: 20px;
-  font-weight: 600;
-}
-.page-title p {
-  margin: 4px 0 0;
-  color: #6b7280;
-  font-size: 14px;
-}
-
 .query-panel,
 .table-panel {
   border: 1px solid #e5e7eb;

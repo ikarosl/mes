@@ -1,18 +1,5 @@
 <template>
   <div>
-    <div class="page-title">
-      <div>
-        <h2>盘点管理</h2>
-        <p>创建库存盘点单，录入实盘数量并处理差异</p>
-      </div>
-      <el-button
-        type="primary"
-        :icon="Plus"
-        @click="openCreate"
-        >新增盘点单</el-button
-      >
-    </div>
-
     <div class="query-panel">
       <el-form
         class="query-form"
@@ -36,18 +23,10 @@
               label="全部"
               value=""
             /><el-option
-              label="待盘点"
-              value="待盘点"
-            />
-            <el-option
-              label="盘点中"
-              value="盘点中"
-            /><el-option
-              label="已完成"
-              value="已完成"
-            /><el-option
-              label="已取消"
-              value="已取消"
+              v-for="(label, value) in stockCheckStatusLabels"
+              :key="value"
+              :label="label"
+              :value="value"
             />
           </el-select>
         </el-form-item>
@@ -63,16 +42,16 @@
     </div>
 
     <div class="table-panel">
-      <div class="table-toolbar">
-        <div class="batch-actions">
+      <TableToolbar>
+        <template #actions>
           <el-button
             type="primary"
             :icon="Plus"
             @click="openCreate"
             >新增盘点单</el-button
           >
-        </div>
-        <div class="table-tools">
+        </template>
+        <template #tools>
           <el-tooltip
             content="刷新"
             placement="top"
@@ -85,8 +64,8 @@
               @click="loadRows"
             />
           </el-tooltip>
-        </div>
-      </div>
+        </template>
+      </TableToolbar>
 
       <el-table
         v-loading="loading"
@@ -105,16 +84,16 @@
           <template #default="{ row }"
             ><el-tag
               :type="
-                row.status === '已完成'
+                row.status === 'completed'
                   ? 'success'
-                  : row.status === '盘点中'
+                  : row.status === 'counting'
                     ? 'warning'
-                    : row.status === '已取消'
+                    : row.status === 'cancelled'
                       ? 'info'
                       : ''
               "
               effect="light"
-              >{{ row.status }}</el-tag
+              >{{ stockCheckStatusLabel(row.status) }}</el-tag
             ></template
           >
         </el-table-column>
@@ -168,28 +147,28 @@
               >详情</el-button
             >
             <el-button
-              v-if="row.status === '待盘点'"
+              v-if="row.status === 'pending'"
               link
               type="primary"
               @click="openEdit(row)"
               >录入实盘</el-button
             >
             <el-button
-              v-if="row.status === '盘点中'"
+              v-if="row.status === 'counting'"
               link
               type="success"
               @click="handleComplete(row)"
               >完成盘点</el-button
             >
             <el-button
-              v-if="row.status === '已完成'"
+              v-if="row.status === 'completed'"
               link
               type="primary"
               @click="handleAdjust(row)"
               >生成调整</el-button
             >
             <el-button
-              v-if="['待盘点', '盘点中'].includes(row.status)"
+              v-if="['pending', 'counting'].includes(row.status)"
               link
               @click="handleCancel(row)"
               >取消</el-button
@@ -286,10 +265,11 @@
           width="130"
         />
         <el-table-column
-          prop="stockStatus"
           label="库存状态"
           width="90"
-        />
+        >
+          <template #default="{ row }">{{ stockStatusLabel(row.stockStatus) }}</template>
+        </el-table-column>
         <el-table-column
           prop="systemQuantity"
           label="账面数量"
@@ -335,7 +315,9 @@
         style="margin-bottom: 16px"
       >
         <el-descriptions-item label="盘点单号">{{ detailRow.checkNo }}</el-descriptions-item>
-        <el-descriptions-item label="状态">{{ detailRow.status }}</el-descriptions-item>
+        <el-descriptions-item label="状态">{{
+          stockCheckStatusLabels[detailRow.status]
+        }}</el-descriptions-item>
         <el-descriptions-item label="开始时间">{{
           detailRow.startedAt ? formatTime(detailRow.startedAt) : '-'
         }}</el-descriptions-item>
@@ -389,10 +371,14 @@
           <template #default="{ row }">
             <el-tag
               :type="
-                row.result === '一致' ? 'success' : row.result === '盘盈' ? 'warning' : 'danger'
+                row.result === 'matched'
+                  ? 'success'
+                  : row.result === 'surplus'
+                    ? 'warning'
+                    : 'danger'
               "
               size="small"
-              >{{ row.result }}</el-tag
+              >{{ stockCheckResultLabel(row.result) }}</el-tag
             >
           </template>
         </el-table-column>
@@ -412,15 +398,23 @@
 import { onMounted, reactive, ref } from 'vue';
 import { ElMessageBox } from 'element-plus';
 import { Plus, Refresh } from '@element-plus/icons-vue';
+import type { StockCheckResult, StockCheckStatus, StockStatus } from '@company/contracts';
+import TableToolbar from '../../components/TableToolbar.vue';
 import { DialogWidth } from '../../utils/dialog';
 import { EMessage } from '../../utils/message';
+import {
+  stockCheckResultLabel,
+  stockCheckStatusLabels,
+  stockCheckStatusLabel,
+  stockStatusLabel,
+} from '../../constants/business-status';
 
 defineOptions({ name: 'StockChecksPage' });
 
 interface StockCheckItem {
   id: string;
   checkNo: string;
-  status: string;
+  status: StockCheckStatus;
   detailCount: number;
   pendingItems: number;
   startedAt: string;
@@ -434,11 +428,11 @@ interface StockCheckDetailItem {
   itemName: string;
   batchCode: string;
   batchId: string;
-  stockStatus: string;
+  stockStatus: StockStatus;
   systemQuantity: string;
   actualQuantity: number;
   differenceQuantity: string;
-  result: string;
+  result: StockCheckResult;
   adjusted: boolean;
   remark: string;
 }
@@ -447,7 +441,7 @@ const demoRows: StockCheckItem[] = [
   {
     id: '1',
     checkNo: 'PD-20260721-001',
-    status: '已完成',
+    status: 'completed',
     detailCount: 10,
     pendingItems: 0,
     startedAt: '2026-07-21T08:00:00',
@@ -457,7 +451,7 @@ const demoRows: StockCheckItem[] = [
   {
     id: '2',
     checkNo: 'PD-20260721-002',
-    status: '盘点中',
+    status: 'counting',
     detailCount: 8,
     pendingItems: 3,
     startedAt: '2026-07-21T09:00:00',
@@ -467,7 +461,7 @@ const demoRows: StockCheckItem[] = [
   {
     id: '3',
     checkNo: 'PD-20260720-003',
-    status: '待盘点',
+    status: 'pending',
     detailCount: 5,
     pendingItems: 5,
     startedAt: '',
@@ -477,7 +471,7 @@ const demoRows: StockCheckItem[] = [
   {
     id: '4',
     checkNo: 'PD-20260719-004',
-    status: '已完成',
+    status: 'completed',
     detailCount: 15,
     pendingItems: 0,
     startedAt: '2026-07-19T08:00:00',
@@ -487,7 +481,7 @@ const demoRows: StockCheckItem[] = [
   {
     id: '5',
     checkNo: 'PD-20260718-005',
-    status: '已取消',
+    status: 'cancelled',
     detailCount: 0,
     pendingItems: 0,
     startedAt: '',
@@ -565,11 +559,11 @@ const openDetail = (row: StockCheckItem) => {
       itemName: '原材料A',
       batchCode: 'BATCH-A1',
       batchId: 'b1',
-      stockStatus: '可用',
+      stockStatus: 'available',
       systemQuantity: '100.0000',
       actualQuantity: 95,
       differenceQuantity: '-5.0000',
-      result: '盘亏',
+      result: 'shortage',
       adjusted: false,
       remark: '',
     },
@@ -579,11 +573,11 @@ const openDetail = (row: StockCheckItem) => {
       itemName: '原材料B',
       batchCode: 'BATCH-B1',
       batchId: 'b2',
-      stockStatus: '可用',
+      stockStatus: 'available',
       systemQuantity: '50.0000',
       actualQuantity: 52,
       differenceQuantity: '2.0000',
-      result: '盘盈',
+      result: 'surplus',
       adjusted: false,
       remark: '',
     },
@@ -593,11 +587,11 @@ const openDetail = (row: StockCheckItem) => {
       itemName: '原材料C',
       batchCode: 'BATCH-C1',
       batchId: 'b3',
-      stockStatus: '可用',
+      stockStatus: 'available',
       systemQuantity: '200.0000',
       actualQuantity: 200,
       differenceQuantity: '0.0000',
-      result: '一致',
+      result: 'matched',
       adjusted: true,
       remark: '',
     },
@@ -614,11 +608,11 @@ const openEdit = (row: StockCheckItem) => {
       itemName: '原材料A',
       batchCode: 'BATCH-A1',
       batchId: 'b1',
-      stockStatus: '可用',
+      stockStatus: 'available',
       systemQuantity: '100.0000',
       actualQuantity: 95,
       differenceQuantity: '-5.0000',
-      result: '盘亏',
+      result: 'shortage',
       adjusted: false,
       remark: '',
     },
@@ -628,11 +622,11 @@ const openEdit = (row: StockCheckItem) => {
       itemName: '原材料B',
       batchCode: 'BATCH-B1',
       batchId: 'b2',
-      stockStatus: '可用',
+      stockStatus: 'available',
       systemQuantity: '50.0000',
       actualQuantity: 52,
       differenceQuantity: '2.0000',
-      result: '盘盈',
+      result: 'surplus',
       adjusted: false,
       remark: '',
     },
@@ -699,24 +693,6 @@ onMounted(loadRows);
 </script>
 
 <style scoped>
-.page-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 16px;
-}
-.page-title h2 {
-  margin: 0;
-  color: #283a50;
-  font-size: 20px;
-  font-weight: 600;
-}
-.page-title p {
-  margin: 4px 0 0;
-  color: #6b7280;
-  font-size: 14px;
-}
-
 .query-panel,
 .table-panel {
   border: 1px solid #e5e7eb;

@@ -1,11 +1,17 @@
 import { BadRequestException, ValidationPipe, type ValidationError } from '@nestjs/common';
 
-const firstMessage = (errors: ValidationError[]): string | undefined => {
+const propertyPath = (parent: string, property: string) => {
+  if (!parent) return property;
+  return /^\d+$/.test(property) ? `${parent}[${property}]` : `${parent}.${property}`;
+};
+
+const firstMessage = (errors: ValidationError[], parent = ''): string | undefined => {
   for (const error of errors) {
-    if (error.constraints?.whitelistValidation) return `请求包含未允许的字段：${error.property}`;
+    const path = propertyPath(parent, error.property);
+    if (error.constraints?.whitelistValidation) return `请求包含未允许的字段：${path}`;
     const message = error.constraints ? Object.values(error.constraints)[0] : undefined;
-    if (message) return message;
-    const childMessage = firstMessage(error.children ?? []);
+    if (message) return `${path}: ${message}`;
+    const childMessage = firstMessage(error.children ?? [], path);
     if (childMessage) return childMessage;
   }
   return undefined;

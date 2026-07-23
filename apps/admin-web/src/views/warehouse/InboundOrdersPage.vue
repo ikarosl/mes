@@ -1,18 +1,5 @@
 <template>
   <div>
-    <div class="page-title">
-      <div>
-        <h2>入库管理</h2>
-        <p>管理外购、自产、委外等入库单据</p>
-      </div>
-      <el-button
-        type="primary"
-        :icon="Plus"
-        @click="openCreate"
-        >新增入库单</el-button
-      >
-    </div>
-
     <div class="query-panel">
       <el-form
         class="query-form"
@@ -37,25 +24,10 @@
               value=""
             />
             <el-option
-              label="外购"
-              value="外购"
-            /><el-option
-              label="自产"
-              value="自产"
-            />
-            <el-option
-              label="委外"
-              value="委外"
-            /><el-option
-              label="退货入库"
-              value="退货入库"
-            />
-            <el-option
-              label="盘点生成"
-              value="盘点生成"
-            /><el-option
-              label="其他"
-              value="其他"
+              v-for="(label, value) in inventorySourceTypeLabels"
+              :key="value"
+              :label="label"
+              :value="value"
             />
           </el-select>
         </el-form-item>
@@ -70,14 +42,10 @@
               value=""
             />
             <el-option
-              label="待确认"
-              value="待确认"
-            /><el-option
-              label="已完成"
-              value="已完成"
-            /><el-option
-              label="已取消"
-              value="已取消"
+              v-for="(label, value) in inboundOrderStatusLabels"
+              :key="value"
+              :label="label"
+              :value="value"
             />
           </el-select>
         </el-form-item>
@@ -94,16 +62,16 @@
     </div>
 
     <div class="table-panel">
-      <div class="table-toolbar">
-        <div class="batch-actions">
+      <TableToolbar>
+        <template #actions>
           <el-button
             type="primary"
             :icon="Plus"
             @click="openCreate"
             >新增入库单</el-button
           >
-        </div>
-        <div class="table-tools">
+        </template>
+        <template #tools>
           <el-tooltip
             content="刷新"
             placement="top"
@@ -116,8 +84,8 @@
               @click="loadRows"
             />
           </el-tooltip>
-        </div>
-      </div>
+        </template>
+      </TableToolbar>
 
       <el-table
         v-loading="loading"
@@ -130,10 +98,11 @@
           width="180"
         />
         <el-table-column
-          prop="sourceType"
           label="来源"
           width="100"
-        />
+        >
+          <template #default="{ row }">{{ inventorySourceTypeLabel(row.sourceType) }}</template>
+        </el-table-column>
         <el-table-column
           prop="provider"
           label="供应商"
@@ -148,10 +117,14 @@
           <template #default="{ row }">
             <el-tag
               :type="
-                row.status === '已完成' ? 'success' : row.status === '已取消' ? 'info' : 'warning'
+                row.status === 'completed'
+                  ? 'success'
+                  : row.status === 'cancelled'
+                    ? 'info'
+                    : 'warning'
               "
               effect="light"
-              >{{ row.status }}</el-tag
+              >{{ inboundOrderStatusLabel(row.status) }}</el-tag
             >
           </template>
         </el-table-column>
@@ -196,14 +169,14 @@
               >详情</el-button
             >
             <el-button
-              v-if="row.status === '待确认'"
+              v-if="row.status === 'pending'"
               link
               type="success"
               @click="handleConfirm(row)"
               >确认</el-button
             >
             <el-button
-              v-if="row.status === '待确认'"
+              v-if="row.status === 'pending'"
               link
               type="danger"
               @click="handleCancel(row)"
@@ -270,24 +243,10 @@
                 style="width: 100%"
               >
                 <el-option
-                  label="外购"
-                  value="外购"
-                /><el-option
-                  label="自产"
-                  value="自产"
-                /><el-option
-                  label="委外"
-                  value="委外"
-                />
-                <el-option
-                  label="退货入库"
-                  value="退货入库"
-                /><el-option
-                  label="盘点生成"
-                  value="盘点生成"
-                /><el-option
-                  label="其他"
-                  value="其他"
+                  v-for="(label, value) in inventorySourceTypeLabels"
+                  :key="value"
+                  :label="label"
+                  :value="value"
                 />
               </el-select>
             </el-form-item>
@@ -340,18 +299,10 @@
                 style="width: 100%"
               >
                 <el-option
-                  label="可用"
-                  value="可用"
-                /><el-option
-                  label="待检"
-                  value="待检"
-                />
-                <el-option
-                  label="冻结"
-                  value="冻结"
-                /><el-option
-                  label="不良"
-                  value="不良"
+                  v-for="(label, value) in stockStatusLabels"
+                  :key="value"
+                  :label="label"
+                  :value="value"
                 />
               </el-select>
             </el-col>
@@ -394,11 +345,13 @@
         border
       >
         <el-descriptions-item label="单号">{{ detailRow.inboundNo }}</el-descriptions-item>
-        <el-descriptions-item label="来源">{{ detailRow.sourceType }}</el-descriptions-item>
+        <el-descriptions-item label="来源">{{
+          inventorySourceTypeLabels[detailRow.sourceType]
+        }}</el-descriptions-item>
         <el-descriptions-item label="供应商">{{ detailRow.provider || '-' }}</el-descriptions-item>
         <el-descriptions-item label="状态"
-          ><el-tag :type="detailRow.status === '已完成' ? 'success' : 'info'">{{
-            detailRow.status
+          ><el-tag :type="detailRow.status === 'completed' ? 'success' : 'info'">{{
+            inboundOrderStatusLabels[detailRow.status]
           }}</el-tag></el-descriptions-item
         >
         <el-descriptions-item label="入库时间">{{
@@ -434,10 +387,11 @@
           align="right"
         />
         <el-table-column
-          prop="stockStatus"
           label="库存状态"
           width="100"
-        />
+        >
+          <template #default="{ row }">{{ stockStatusLabel(row.stockStatus) }}</template>
+        </el-table-column>
       </el-table>
     </el-dialog>
   </div>
@@ -447,17 +401,27 @@
 import { onMounted, reactive, ref } from 'vue';
 import { ElMessageBox } from 'element-plus';
 import { Delete, Plus, Refresh } from '@element-plus/icons-vue';
+import type { InboundOrderStatus, InventorySourceType, StockStatus } from '@company/contracts';
+import TableToolbar from '../../components/TableToolbar.vue';
 import { DialogWidth } from '../../utils/dialog';
 import { EMessage } from '../../utils/message';
+import {
+  inboundOrderStatusLabels,
+  inboundOrderStatusLabel,
+  inventorySourceTypeLabels,
+  inventorySourceTypeLabel,
+  stockStatusLabels,
+  stockStatusLabel,
+} from '../../constants/business-status';
 
 defineOptions({ name: 'InboundOrdersPage' });
 
 interface InboundOrderItem {
   id: string;
   inboundNo: string;
-  sourceType: string;
+  sourceType: InventorySourceType;
   provider: string;
-  status: string;
+  status: InboundOrderStatus;
   detailCount: number;
   totalInboundNumber: string;
   inboundAt: string;
@@ -469,14 +433,14 @@ interface InboundDetailItem {
   itemName: string;
   batchCode: string;
   inboundNumber: string;
-  stockStatus: string;
+  stockStatus: StockStatus;
 }
 
 type CreateDetailRow = {
   itemId: string;
   batchCode: string;
   inboundNumber: number;
-  stockStatus: string;
+  stockStatus: StockStatus;
   batchId?: string;
 };
 
@@ -484,9 +448,9 @@ const demoRows: InboundOrderItem[] = [
   {
     id: '1',
     inboundNo: 'RK-20260721-001',
-    sourceType: '外购',
+    sourceType: 'purchased',
     provider: '供应商A',
-    status: '已完成',
+    status: 'completed',
     detailCount: 3,
     totalInboundNumber: '150.0000',
     inboundAt: '2026-07-21T09:30:00',
@@ -495,9 +459,9 @@ const demoRows: InboundOrderItem[] = [
   {
     id: '2',
     inboundNo: 'RK-20260721-002',
-    sourceType: '自产',
+    sourceType: 'self_made',
     provider: '',
-    status: '待确认',
+    status: 'pending',
     detailCount: 2,
     totalInboundNumber: '50.0000',
     inboundAt: '',
@@ -506,9 +470,9 @@ const demoRows: InboundOrderItem[] = [
   {
     id: '3',
     inboundNo: 'RK-20260720-003',
-    sourceType: '退货入库',
+    sourceType: 'return_inbound',
     provider: '供应商B',
-    status: '待确认',
+    status: 'pending',
     detailCount: 1,
     totalInboundNumber: '20.0000',
     inboundAt: '',
@@ -517,9 +481,9 @@ const demoRows: InboundOrderItem[] = [
   {
     id: '4',
     inboundNo: 'RK-20260719-004',
-    sourceType: '委外',
+    sourceType: 'outsourced',
     provider: '委外加工厂',
-    status: '已完成',
+    status: 'completed',
     detailCount: 4,
     totalInboundNumber: '200.0000',
     inboundAt: '2026-07-19T16:00:00',
@@ -528,9 +492,9 @@ const demoRows: InboundOrderItem[] = [
   {
     id: '5',
     inboundNo: 'RK-20260718-005',
-    sourceType: '其他',
+    sourceType: 'other',
     provider: '',
-    status: '已取消',
+    status: 'cancelled',
     detailCount: 0,
     totalInboundNumber: '0.0000',
     inboundAt: '',
@@ -551,14 +515,19 @@ const detailVisible = ref(false);
 const query = reactive({ keyword: '', sourceType: '', status: '' });
 const createForm = reactive({
   inboundNo: '',
-  sourceType: '外购' as string,
+  sourceType: 'purchased' as InventorySourceType,
   provider: '',
   remark: '',
   details: [] as CreateDetailRow[],
 });
 
 const addDetail = () =>
-  createForm.details.push({ itemId: '', batchCode: '', inboundNumber: 0, stockStatus: '可用' });
+  createForm.details.push({
+    itemId: '',
+    batchCode: '',
+    inboundNumber: 0,
+    stockStatus: 'available',
+  });
 const removeDetail = (i: number) => createForm.details.splice(i, 1);
 
 const loadRows = async () => {
@@ -598,7 +567,7 @@ const handlePageSizeChange = async () => {
 
 const openCreate = () => {
   createForm.inboundNo = '';
-  createForm.sourceType = '外购';
+  createForm.sourceType = 'purchased';
   createForm.provider = '';
   createForm.remark = '';
   createForm.details = [];
@@ -627,14 +596,14 @@ const openDetail = (row: InboundOrderItem) => {
       itemName: '物料A',
       batchCode: 'BATCH-001',
       inboundNumber: '80.0000',
-      stockStatus: '可用',
+      stockStatus: 'available',
     },
     {
       itemCode: 'ITEM-002',
       itemName: '物料B',
       batchCode: 'BATCH-002',
       inboundNumber: '70.0000',
-      stockStatus: '待检',
+      stockStatus: 'pending_inspection',
     },
   ];
   detailVisible.value = true;
@@ -678,24 +647,6 @@ onMounted(loadRows);
 </script>
 
 <style scoped>
-.page-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 16px;
-}
-.page-title h2 {
-  margin: 0;
-  color: #283a50;
-  font-size: 20px;
-  font-weight: 600;
-}
-.page-title p {
-  margin: 4px 0 0;
-  color: #6b7280;
-  font-size: 14px;
-}
-
 .query-panel,
 .table-panel {
   border: 1px solid #e5e7eb;

@@ -1,19 +1,5 @@
 <template>
   <section>
-    <PageHeader
-      title="工艺路线管理"
-      description="管理产品工艺路线与工序顺序配置"
-    >
-      <template #actions>
-        <el-button
-          type="primary"
-          :icon="Plus"
-          @click="openCreate"
-          >新增路线</el-button
-        >
-      </template>
-    </PageHeader>
-
     <div class="query-panel">
       <el-form
         class="query-form"
@@ -37,6 +23,10 @@
               value=""
             />
             <el-option
+              label="草稿"
+              value="draft"
+            />
+            <el-option
               label="启用"
               value="enabled"
             />
@@ -44,10 +34,15 @@
               label="停用"
               value="disabled"
             />
+            <el-option
+              label="已归档"
+              value="archived"
+            />
           </el-select>
         </el-form-item>
         <el-form-item class="query-actions">
           <el-button
+            v-if="auth.can(PERMISSIONS.product.routes.create)"
             type="primary"
             @click="handleSearch"
             >查询</el-button
@@ -76,12 +71,15 @@
               :icon="Refresh"
               text
               circle
+              :loading="loading"
+              @click="loadData"
             />
           </el-tooltip>
         </template>
       </TableToolbar>
 
       <el-table
+        v-loading="loading"
         :data="pagedRoutes"
         class="data-table"
       >
@@ -116,7 +114,7 @@
           label="版本"
           width="100"
         >
-          <template #default="{ row }">{{ row.version || '-' }}</template>
+          <template #default="{ row }">{{ row.versionNo || '-' }}</template>
         </el-table-column>
         <el-table-column
           label="状态"
@@ -124,9 +122,9 @@
         >
           <template #default="{ row }">
             <el-tag
-              :type="row.status === 1 ? 'success' : 'info'"
+              :type="routeStatusType(row.status)"
               effect="light"
-              >{{ row.status === 1 ? '启用' : '停用' }}</el-tag
+              >{{ routeStatusLabel(row.status) }}</el-tag
             >
           </template>
         </el-table-column>
@@ -143,25 +141,29 @@
               >查看</el-button
             >
             <el-button
+              v-if="row.status === 'draft' && auth.can(PERMISSIONS.product.routes.update)"
               link
               type="primary"
               @click="openEdit(row)"
               >编辑</el-button
             >
             <el-button
+              v-if="row.status === 'draft' && auth.can(PERMISSIONS.product.routes.manageSteps)"
               link
               type="primary"
               @click="openSteps(row)"
               >配置工序</el-button
             >
             <el-button
+              v-if="row.status !== 'archived' && auth.can(PERMISSIONS.product.routes.changeStatus)"
               link
-              :type="row.status === 1 ? 'danger' : 'success'"
+              :type="row.status === 'enabled' ? 'danger' : 'success'"
               @click="toggleStatus(row)"
             >
-              {{ row.status === 1 ? '停用' : '启用' }}
+              {{ row.status === 'enabled' ? '停用' : '启用' }}
             </el-button>
             <el-button
+              v-if="row.status === 'draft' && auth.can(PERMISSIONS.product.routes.delete)"
               link
               type="danger"
               @click="deleteRoute(row)"
@@ -227,16 +229,12 @@
         </el-form-item>
         <el-form-item label="版本">
           <el-input
-            v-model="routeForm.version"
+            v-model="routeForm.versionNo"
             placeholder="例如：V1.0"
           />
         </el-form-item>
         <el-form-item label="状态">
-          <el-switch
-            v-model="routeForm.enabled"
-            active-text="启用"
-            inactive-text="停用"
-          />
+          <el-tag type="info">新路线以草稿保存，配置工序后再启用</el-tag>
         </el-form-item>
         <el-form-item label="备注">
           <el-input
@@ -251,6 +249,7 @@
         <el-button @click="routeDialogVisible = false">取消</el-button>
         <el-button
           type="primary"
+          :loading="submitting"
           @click="submitRoute"
           >保存路线</el-button
         >
@@ -271,6 +270,7 @@
           >
         </div>
         <el-button
+          v-if="auth.can(PERMISSIONS.product.routes.manageSteps)"
           type="primary"
           :icon="Plus"
           @click="addStep"
@@ -300,14 +300,14 @@
         >
           <template #default="{ row }">
             <el-select
-              v-model="row.processId"
+              v-model="row.processStepId"
               filterable
               placeholder="请选择已有工序"
             >
               <el-option
                 v-for="p in processOptions"
                 :key="p.id"
-                :label="`${p.processCode} / ${p.processName}`"
+                :label="`${p.stepCode} / ${p.stepName}`"
                 :value="p.id"
               />
             </el-select>
@@ -317,8 +317,41 @@
           label="技术文件"
           min-width="180"
         >
-          <template #default="{ row }">{{ getProcessSop(row.processId) || '-' }}</template>
+          <template #default="{ row }">{{ getProcessSop(row.processStepId) || '-' }}</template>
         </el-table-column>
+        <el-table-column
+          label="使用BOM明细"
+          min-width="240"
+        >
+          <template #default="{ row }">
+            <el-select
+              v-model="row.productMaterialIds"
+              multiple
+              clearable
+              collapse-tags
+              placeholder="可选"
+            >
+              <el-option
+                v-for="item in routeMaterialOptions"
+                :key="item.id"
+                :label="`${item.itemCode} / ${item.productName}`"
+                :value="item.id"
+              />
+            </el-select>
+          </template>
+        </el-table-column>
+        <el-table-column
+          label="需报工"
+          width="90"
+          align="center"
+          ><template #default="{ row }"><el-switch v-model="row.needRecord" /></template
+        ></el-table-column>
+        <el-table-column
+          label="需检验"
+          width="90"
+          align="center"
+          ><template #default="{ row }"><el-switch v-model="row.needInspection" /></template
+        ></el-table-column>
         <el-table-column
           label="默认负责人"
           min-width="150"
@@ -379,6 +412,7 @@
         <el-button @click="stepsDialogVisible = false">取消</el-button>
         <el-button
           type="primary"
+          :loading="submitting"
           @click="submitSteps"
           >保存工序顺序</el-button
         >
@@ -402,9 +436,9 @@
             ? `${detailRow.itemCode} / ${detailRow.productName}`
             : '-'
         }}</el-descriptions-item>
-        <el-descriptions-item label="版本">{{ detailRow.version || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="版本">{{ detailRow.versionNo || '-' }}</el-descriptions-item>
         <el-descriptions-item label="状态">{{
-          detailRow.status === 1 ? '启用' : '停用'
+          routeStatusLabels[detailRow.status]
         }}</el-descriptions-item>
         <el-descriptions-item label="备注">{{ detailRow.remark || '-' }}</el-descriptions-item>
       </el-descriptions>
@@ -413,83 +447,54 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { Plus, Refresh } from '@element-plus/icons-vue';
-import PageHeader from '../../components/PageHeader.vue';
+import { ElMessageBox } from 'element-plus';
+import { PERMISSIONS } from '@company/constants';
+import type {
+  ProcessRouteListItem,
+  ProcessRouteStatus,
+  ProcessStepListItem,
+  ProductMaterialItem,
+  ProductOption,
+  UserOption,
+} from '@company/contracts';
 import TableToolbar from '../../components/TableToolbar.vue';
 import PaginationFooter from '../../components/PaginationFooter.vue';
 import { DialogWidth } from '../../utils/dialog';
 import { EMessage } from '../../utils/message';
+import { productApi } from '../../api/product';
+import { useAuthStore } from '../../stores/auth';
 
 defineOptions({ name: 'ProcessRoutesPage' });
 
-const demoRoutes = [
-  {
-    id: '1',
-    routeCode: 'ROUTE-CIR-STD',
-    routeName: '环形器标准工艺路线',
-    productId: 'product-1',
-    itemCode: 'CIR-6-18-N',
-    productName: '六端口环形器',
-    processSummary: '来料检验 → SMT贴片 → 波峰焊 → 调试 → 老化测试 → 最终检验',
-    version: 'V1.0',
-    status: 1,
-    remark: null,
-  },
-  {
-    id: '2',
-    routeCode: 'ROUTE-PCB-SMT',
-    routeName: 'PCB贴片工艺路线',
-    productId: 'product-2',
-    itemCode: 'PCB-SMT-V1',
-    productName: 'SMT控制板',
-    processSummary: '来料检验 → SMT贴片 → AOI检测',
-    version: 'V1.2',
-    status: 1,
-    remark: '标准贴片路线',
-  },
-  {
-    id: '3',
-    routeCode: 'ROUTE-ISO-TEST',
-    routeName: '隔离器测试路线',
-    productId: 'product-3',
-    itemCode: 'ISO-2-6-SMA',
-    productName: '同轴隔离器',
-    processSummary: null,
-    version: 'V0.9',
-    status: 0,
-    remark: '待验证',
-  },
-];
-
-const productOptions = ref([
-  { id: 'product-1', itemCode: 'CIR-6-18-N', productName: '六端口环形器' },
-  { id: 'product-2', itemCode: 'PCB-SMT-V1', productName: 'SMT控制板' },
-  { id: 'product-3', itemCode: 'ISO-2-6-SMA', productName: '同轴隔离器' },
-]);
-
-const processOptions = ref([
-  { id: 'p1', processCode: 'GX-001', processName: '来料检验', sopFileName: '来料检验SOP.pdf' },
-  { id: 'p2', processCode: 'GX-002', processName: 'SMT贴片', sopFileName: null },
-  { id: 'p3', processCode: 'GX-003', processName: '波峰焊', sopFileName: '波峰焊操作规范.pdf' },
-  { id: 'p4', processCode: 'GX-004', processName: '调试', sopFileName: null },
-  { id: 'p5', processCode: 'GX-005', processName: '老化测试', sopFileName: null },
-]);
-
-const userOptions = ref([
-  { id: 'u1', displayName: '张三' },
-  { id: 'u2', displayName: '李四' },
-  { id: 'u3', displayName: '王五' },
-]);
+const auth = useAuthStore();
+const routes = ref<ProcessRouteListItem[]>([]);
+const productOptions = ref<ProductOption[]>([]);
+const processOptions = ref<ProcessStepListItem[]>([]);
+const userOptions = ref<UserOption[]>([]);
+const routeMaterialOptions = ref<ProductMaterialItem[]>([]);
+const routeStatusLabels: Record<ProcessRouteStatus, string> = {
+  draft: '草稿',
+  enabled: '启用',
+  disabled: '停用',
+  archived: '已归档',
+};
+const routeStatusTypes: Record<ProcessRouteStatus, 'info' | 'success' | 'warning'> = {
+  draft: 'info',
+  enabled: 'success',
+  disabled: 'warning',
+  archived: 'info',
+};
+const routeStatusLabel = (status: ProcessRouteStatus) => routeStatusLabels[status];
+const routeStatusType = (status: ProcessRouteStatus) => routeStatusTypes[status];
 
 const filteredRoutes = computed(() =>
-  demoRoutes.filter((r: any) => {
+  routes.value.filter((r) => {
     const kw = query.keyword.trim().toLowerCase();
     return (
       (!kw || r.routeCode.toLowerCase().includes(kw) || r.routeName.toLowerCase().includes(kw)) &&
-      (!query.status ||
-        (query.status === 'enabled' && r.status === 1) ||
-        (query.status === 'disabled' && r.status !== 1))
+      (!query.status || r.status === query.status)
     );
   }),
 );
@@ -503,19 +508,30 @@ const pageSize = ref(10);
 const routeDialogVisible = ref(false);
 const stepsDialogVisible = ref(false);
 const detailDialogVisible = ref(false);
+const loading = ref(false);
+const submitting = ref(false);
 const editingRouteId = ref<string | null>(null);
-const detailRow = ref<any>(null);
+const detailRow = ref<ProcessRouteListItem | null>(null);
 const query = reactive({ keyword: '', status: '' });
 const routeForm = reactive({
   routeCode: '',
   routeName: '',
   productId: '',
-  version: 'V1.0',
-  enabled: true,
+  versionNo: 'V1.0',
   remark: '',
 });
 
-type StepRow = { processId: string; stepOrder: number; defaultOwnerId: string; remark: string };
+type StepRow = {
+  processStepId: string;
+  stepOrder: number;
+  defaultOwnerId: string;
+  sopFileId: string;
+  needInspection: boolean;
+  needRecord: boolean;
+  status: number;
+  remark: string;
+  productMaterialIds: string[];
+};
 const stepForm = reactive<{ steps: StepRow[] }>({ steps: [] });
 
 const handleSearch = () => {
@@ -536,48 +552,106 @@ const openCreate = () => {
     routeCode: '',
     routeName: '',
     productId: '',
-    version: 'V1.0',
-    enabled: true,
+    versionNo: 'V1.0',
     remark: '',
   });
   routeDialogVisible.value = true;
 };
-const openEdit = (row: any) => {
+const openEdit = (row: ProcessRouteListItem) => {
   editingRouteId.value = row.id;
   Object.assign(routeForm, {
     routeCode: row.routeCode,
     routeName: row.routeName,
     productId: row.productId ?? '',
-    version: row.version ?? '',
-    enabled: row.status === 1,
+    versionNo: row.versionNo,
     remark: row.remark ?? '',
   });
   routeDialogVisible.value = true;
 };
-const openSteps = (row: any) => {
+const openSteps = async (row: ProcessRouteListItem) => {
   editingRouteId.value = row.id;
-  stepForm.steps = [];
   stepsDialogVisible.value = true;
+  try {
+    const [steps, materials] = await Promise.all([
+      productApi.routeSteps(row.id),
+      productApi.materials(row.productId),
+    ]);
+    stepForm.steps = steps.map((step) => ({
+      processStepId: step.processStepId,
+      stepOrder: step.stepOrder,
+      defaultOwnerId: step.defaultOwnerId ?? '',
+      sopFileId: step.sopFileId ?? '',
+      needInspection: step.needInspection,
+      needRecord: step.needRecord,
+      status: step.status,
+      remark: step.remark ?? '',
+      productMaterialIds: step.productMaterialIds,
+    }));
+    routeMaterialOptions.value = materials.filter((item) => item.status === 1);
+  } catch (error) {
+    EMessage.error(error, '路线步骤加载失败');
+  }
 };
-const openDetail = (row: any) => {
+const openDetail = (row: ProcessRouteListItem) => {
   detailRow.value = row;
   detailDialogVisible.value = true;
 };
 
-const submitRoute = () => {
+const loadData = async () => {
+  loading.value = true;
+  try {
+    const [routeRows, options] = await Promise.all([
+      productApi.routes(),
+      productApi.routeFormOptions(),
+    ]);
+    routes.value = routeRows;
+    productOptions.value = options.products.filter(
+      (item) => item.acquireMethod === 'self_made' && item.itemKind !== 'material',
+    );
+    processOptions.value = options.processSteps.filter((item) => item.status === 1);
+    userOptions.value = options.users;
+  } catch (error) {
+    EMessage.error(error, '工艺路线资料加载失败');
+  } finally {
+    loading.value = false;
+  }
+};
+const submitRoute = async () => {
   if (!routeForm.routeCode.trim() || !routeForm.routeName.trim() || !routeForm.productId) {
     EMessage.warning('请填写路线编号、路线名称并选择适用产品');
     return;
   }
-  EMessage.success(editingRouteId.value ? '工艺路线已更新' : '工艺路线已新增');
-  routeDialogVisible.value = false;
+  submitting.value = true;
+  const payload = {
+    routeCode: routeForm.routeCode,
+    routeName: routeForm.routeName,
+    productId: routeForm.productId,
+    versionNo: routeForm.versionNo,
+    remark: routeForm.remark || null,
+  };
+  try {
+    if (editingRouteId.value) await productApi.updateRoute(editingRouteId.value, payload);
+    else await productApi.createRoute(payload);
+    EMessage.success(editingRouteId.value ? '工艺路线已更新' : '工艺路线已新增');
+    routeDialogVisible.value = false;
+    await loadData();
+  } catch (error) {
+    EMessage.error(error, '工艺路线保存失败');
+  } finally {
+    submitting.value = false;
+  }
 };
 
 const addStep = () => {
   stepForm.steps.push({
-    processId: '',
+    processStepId: '',
     stepOrder: stepForm.steps.length + 1,
     defaultOwnerId: '',
+    sopFileId: '',
+    needInspection: false,
+    needRecord: true,
+    status: 1,
+    productMaterialIds: [],
     remark: '',
   });
 };
@@ -600,25 +674,74 @@ const normalizeStepOrders = () => {
   });
 };
 const refreshSteps = () => {
-  EMessage.success('工序列表已刷新');
+  loadData().then(() => EMessage.success('工序列表已刷新'));
 };
-const submitSteps = () => {
-  if (!stepForm.steps.length || stepForm.steps.some((s) => !s.processId)) {
+const submitSteps = async () => {
+  if (!stepForm.steps.length || stepForm.steps.some((s) => !s.processStepId)) {
     EMessage.warning('请选择每一道路线步骤对应的工序');
     return;
   }
-  EMessage.success('工序顺序已保存');
-  stepsDialogVisible.value = false;
+  if (!editingRouteId.value) return;
+  normalizeStepOrders();
+  submitting.value = true;
+  try {
+    await productApi.replaceRouteSteps(
+      editingRouteId.value,
+      stepForm.steps.map((step) => ({
+        processStepId: step.processStepId,
+        stepOrder: step.stepOrder,
+        defaultOwnerId: step.defaultOwnerId || null,
+        sopFileId: step.sopFileId || null,
+        needInspection: step.needInspection,
+        needRecord: step.needRecord,
+        status: step.status,
+        remark: step.remark || null,
+        productMaterialIds: step.productMaterialIds,
+      })),
+    );
+    EMessage.success('工序顺序和规则快照已保存');
+    stepsDialogVisible.value = false;
+    await loadData();
+  } catch (error) {
+    EMessage.error(error, '工序顺序保存失败');
+  } finally {
+    submitting.value = false;
+  }
 };
-const toggleStatus = (row: any) => {
-  EMessage.success(`工艺路线已${row.status === 1 ? '停用' : '启用'}`);
+const toggleStatus = async (row: ProcessRouteListItem) => {
+  const next: ProcessRouteStatus = row.status === 'enabled' ? 'disabled' : 'enabled';
+  const text = next === 'enabled' ? '启用' : '停用';
+  try {
+    await ElMessageBox.confirm(
+      `确定${text}路线“${row.routeName}（${row.versionNo}）”吗？${next === 'enabled' ? '启用后该版本的步骤、SOP 和规则快照将不可修改。' : ''}`,
+      `${text}工艺路线`,
+      { type: 'warning' },
+    );
+    await productApi.setRouteStatus(row.id, next);
+    EMessage.success(`工艺路线已${text}`);
+    await loadData();
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') EMessage.error(error, `${text}路线失败`);
+  }
 };
-const deleteRoute = (_row?: any) => {
-  EMessage.warning('工艺路线删除接口尚未接入');
+const deleteRoute = async (row: ProcessRouteListItem) => {
+  try {
+    await ElMessageBox.confirm(
+      `确定删除草稿路线“${row.routeName}（${row.versionNo}）”吗？`,
+      '删除工艺路线',
+      { type: 'warning', confirmButtonText: '删除' },
+    );
+    await productApi.deleteRoute(row.id);
+    EMessage.success('草稿路线已删除');
+    await loadData();
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') EMessage.error(error, '删除路线失败');
+  }
 };
 
 const getProcessSop = (processId: string) =>
-  processOptions.value.find((p: any) => p.id === processId)?.sopFileName || '-';
+  processOptions.value.find((p) => p.id === processId)?.sopFileName || '-';
+onMounted(loadData);
 </script>
 
 <style scoped>

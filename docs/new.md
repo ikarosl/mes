@@ -24,8 +24,41 @@
 - 所有主键和外键统一使用 `BIGINT UNSIGNED`。
 - 时间统一使用 `DATETIME` 并按 UTC 写入，前端按用户时区展示。
 - 业务数量统一使用 `DECIMAL(12,4)`；禁止使用浮点数保存数量。
-- 状态值必须在共享常量包中集中维护，并与数据库 `CHECK` 约束一致；不得在页面或 Repository 中散落魔法字符串。
+- 业务状态、类型和结果代码继续使用 `VARCHAR`，不使用 MySQL `ENUM`；这样新增代码值时只需追加迁移调整 `CHECK`，不把数据库枚举定义变成发布耦合点。
+- 持久化值统一使用小写英文 `snake_case` 稳定编码；中文只作为前端展示标签，不得写入业务字段。
+- 所有封闭值集合必须同时具备数据库 `CHECK`、共享常量和 TypeScript 字符串联合类型；不得在页面或 Repository 中散落魔法字符串。
+- 数据库 `CHECK` 只保证值域合法，状态转换是否合法由领域层状态机校验；Controller 不得直接把客户端提交的任意状态写入数据库。
+- 状态变更必须使用乐观锁并写操作日志；取消、确认和完成等动作使用明确的应用服务方法，不提供通用“修改状态”接口。
+- `reference_type`、`reason_type`、`file_type` 等明确允许扩展的代码字段可以不建立封闭 `CHECK`，但必须由共享常量、来源存在性校验和契约测试控制。
+- 不为低选择性的状态列单独滥建索引；只按照查询入口建立组合索引，例如 `(status, created_at)`、`(production_batch_id, status)`。
 - 单据编号和幂等键必须唯一；所有确认类动作必须在同一事务内写业务明细、库存流水和操作日志。
+
+### 统一库存代码字典
+
+| 字段                            | 稳定代码                                                                                                                                                                                                                             |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 库存来源 `source_type`          | `self_made`、`purchased`、`outsourced`、`return_inbound`、`stock_check_generated`、`other`                                                                                                                                           |
+| 库存状态 `stock_status`         | `available`、`pending_inspection`、`frozen`、`defective`                                                                                                                                                                             |
+| 库存批次状态 `batch_status`     | `available`、`frozen`、`disabled`                                                                                                                                                                                                    |
+| 库存流水类型 `transaction_type` | `purchase_inbound`、`production_inbound`、`outsourced_inbound`、`production_material_outbound`、`sales_outbound`、`material_return_inbound`、`scrap_outbound`、`stock_check_adjustment`、`status_transfer_in`、`status_transfer_out` |
+
+前端分别映射为“自产/外购/委外/退货入库/盘点生成/其他”、“可用/待检/冻结/不良”等中文标签。接口请求、响应、数据库记录、幂等键和日志结构化字段始终使用英文稳定代码。
+
+### 核心状态转换矩阵
+
+| 聚合     | 允许转换                                                                                                                                                                                                                                             |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 工艺路线 | `draft -> enabled/archived`；`enabled -> disabled/archived`；`disabled -> enabled/archived`；`archived` 为终态                                                                                                                                       |
+| 生产工单 | `draft -> released/cancelled`；`released -> doing/cancelled`；`doing -> completed/cancelled`；`completed -> closed`；`closed/cancelled` 为终态                                                                                                       |
+| 生产批次 | `pending -> material_pending/cancelled`；`material_pending -> material_assigned/cancelled`；`material_assigned -> material_outbound/cancelled`；`material_outbound -> doing/cancelled`；`doing -> completed/cancelled`；`completed/cancelled` 为终态 |
+| 入库单   | `pending -> completed/cancelled`                                                                                                                                                                                                                     |
+| 出库单   | `pending_picking -> picked/cancelled`；`picked -> partially_outbound/completed/cancelled`；`partially_outbound -> completed/cancelled`                                                                                                               |
+| 退料单   | `pending -> returned/scrapped/cancelled`                                                                                                                                                                                                             |
+| 报废单   | `pending -> confirmed/cancelled`                                                                                                                                                                                                                     |
+| 盘点单   | `pending -> counting/cancelled`；`counting -> completed/cancelled`                                                                                                                                                                                   |
+| 返工单   | `pending -> doing/cancelled`；`doing -> completed/cancelled`                                                                                                                                                                                         |
+
+矩阵之外的转换必须拒绝。终态不得恢复；若未来确需恢复，必须增加独立业务动作、权限、审计和追加迁移评审，不得通过通用更新接口绕过。
 
 # 一、系统、RBAC 与认证
 
@@ -103,7 +136,7 @@
 | `updated_at` | `DATETIME`        | 更新时间                        |
 | `deleted_at` | `DATETIME`        | 删除时间                        |
 
-约束：`UNIQUE (code)`；`parent_id -> permissions.id`。
+约束：`UNIQUE (code)`；`parent_id -> permissions.id`；`CHECK (type IN ('menu', 'page', 'button', 'api'))`。
 
 ## 1.5 `user_roles`
 
@@ -161,7 +194,7 @@
 | `remark`      | `VARCHAR(255)`    | 说明或脱敏后的错误摘要 |
 | `created_at`  | `DATETIME`        | 创建时间               |
 
-索引：`(user_id, created_at)`、`(module, action, created_at)`。
+约束：`CHECK (result IN ('success', 'failed'))`。索引：`(user_id, created_at)`、`(module, action, created_at)`。
 
 # 二、文件与工艺
 
@@ -220,7 +253,7 @@
 | `remark`     | `VARCHAR(255)`    | 备注                                       |
 | 审计字段     | 见统一规则        | 主数据审计字段                             |
 
-约束：`product_id -> products.id`；`UNIQUE (product_id, route_code, version_no)`；启用后的路线版本不得原地修改步骤，只能创建新版本。
+约束：`product_id -> products.id`；`UNIQUE (product_id, route_code, version_no)`；`CHECK (status IN ('draft', 'enabled', 'disabled', 'archived'))`；启用后的路线版本不得原地修改步骤，只能创建新版本。
 
 说明：路线必须绑定具体产品，才能保证路线工序关联的 `product_materials` 属于同一产品。跨产品复用工序通过 `process_steps` 完成，不在一期引入会破坏 BOM 约束的分类级路线模板。
 
@@ -433,6 +466,7 @@
 - 检查约束：`CHECK (planned_quantity > 0)`
 - 检查约束：`CHECK (status IN ('draft', 'released', 'doing', 'completed', 'cancelled', 'closed'))`
 - 索引：`INDEX (external_order_no)`
+- 组合索引：`INDEX (status, created_at)`，用于工单状态分页
 
 说明：
 
@@ -482,6 +516,7 @@
 - 唯一约束：`UNIQUE (work_order_id, batch_no)`
 - 组合引用索引：`UNIQUE (id, work_order_id)`、`UNIQUE (id, product_id)`
 - 检查约束：`CHECK (status IN ('pending', 'material_pending', 'material_assigned', 'material_outbound', 'doing', 'completed', 'cancelled'))`
+- 组合索引：`INDEX (work_order_id, status)`，用于按工单查询有效生产批次
 
 状态说明：
 
@@ -514,23 +549,23 @@
 
 职责：维护所有库存对象的库存批次，包括物料批次、半成品批次、成品批次。
 
-| 字段                         | 类型              | 说明                                                             |
-| ---------------------------- | ----------------- | ---------------------------------------------------------------- |
-| `id`                         | `BIGINT UNSIGNED` | 主键，库存批次 ID                                                |
-| `item_id`                    | `BIGINT UNSIGNED` | 库存对象 ID，关联 `products.id`                                  |
-| `item_code_snapshot`         | `VARCHAR(100)`    | 建批时库存对象编码快照                                           |
-| `product_name_snapshot`      | `VARCHAR(200)`    | 建批时名称快照                                                   |
-| `unit_snapshot`              | `VARCHAR(20)`     | 建批时基础单位快照                                               |
-| `batch_code`                 | `VARCHAR(100)`    | 库存批次号                                                       |
-| `source_type`                | `VARCHAR(30)`     | 来源类型：`自产`、`外购`、`委外`、`退货入库`、`盘点生成`、`其他` |
-| `provider`                   | `VARCHAR(100)`    | 供应商或委外方，自产时可为空                                     |
-| `source_work_order_id`       | `BIGINT UNSIGNED` | 来源工单 ID，自产或委外时可填                                    |
-| `source_production_batch_id` | `BIGINT UNSIGNED` | 来源生产批次 ID，自产半成品或成品时可填                          |
-| `production_date`            | `DATE`            | 生产日期或批次日期                                               |
-| `batch_status`               | `VARCHAR(20)`     | 批次业务状态，默认 `可用`                                        |
-| `remark`                     | `TEXT`            | 备注                                                             |
-| `version`                    | `INT`             | 乐观锁版本号，默认 `0`                                           |
-| 业务审计字段                 | 见统一规则        | 可变业务单据审计字段                                             |
+| 字段                         | 类型              | 说明                                    |
+| ---------------------------- | ----------------- | --------------------------------------- |
+| `id`                         | `BIGINT UNSIGNED` | 主键，库存批次 ID                       |
+| `item_id`                    | `BIGINT UNSIGNED` | 库存对象 ID，关联 `products.id`         |
+| `item_code_snapshot`         | `VARCHAR(100)`    | 建批时库存对象编码快照                  |
+| `product_name_snapshot`      | `VARCHAR(200)`    | 建批时名称快照                          |
+| `unit_snapshot`              | `VARCHAR(20)`     | 建批时基础单位快照                      |
+| `batch_code`                 | `VARCHAR(100)`    | 库存批次号                              |
+| `source_type`                | `VARCHAR(30)`     | 来源类型，使用统一英文代码              |
+| `provider`                   | `VARCHAR(100)`    | 供应商或委外方，自产时可为空            |
+| `source_work_order_id`       | `BIGINT UNSIGNED` | 来源工单 ID，自产或委外时可填           |
+| `source_production_batch_id` | `BIGINT UNSIGNED` | 来源生产批次 ID，自产半成品或成品时可填 |
+| `production_date`            | `DATE`            | 生产日期或批次日期                      |
+| `batch_status`               | `VARCHAR(20)`     | 批次业务状态，默认 `available`          |
+| `remark`                     | `TEXT`            | 备注                                    |
+| `version`                    | `INT`             | 乐观锁版本号，默认 `0`                  |
+| 业务审计字段                 | 见统一规则        | 可变业务单据审计字段                    |
 
 约束：
 
@@ -541,8 +576,9 @@
 - 当两个来源字段同时存在时，使用组合外键 `(source_production_batch_id, source_work_order_id) -> production_batches(id, work_order_id)` 保证一致
 - 唯一约束：`UNIQUE (item_id, batch_code)`
 - 唯一约束：`UNIQUE (id, item_id)`
-- 检查约束：`CHECK (source_type IN ('自产', '外购', '委外', '退货入库', '盘点生成', '其他'))`
-- 检查约束：`CHECK (batch_status IN ('可用', '冻结', '停用'))`
+- 检查约束：`CHECK (source_type IN ('self_made', 'purchased', 'outsourced', 'return_inbound', 'stock_check_generated', 'other'))`
+- 检查约束：`CHECK (batch_status IN ('available', 'frozen', 'disabled'))`
+- 组合索引：`INDEX (item_id, batch_status)`，用于按库存对象查询可用批次
 
 说明：
 
@@ -558,9 +594,9 @@
 
 | batch_id | item_id | 类型       | source_type | source_production_batch_id |
 | -------- | ------- | ---------- | ----------- | -------------------------- |
-| ib1      | pi2     | 物料批次   | 外购        | NULL                       |
-| ib6      | pi3     | 半成品批次 | 自产        | pb1                        |
-| ib7      | pi4     | 成品批次   | 自产        | pb1                        |
+| ib1      | pi2     | 物料批次   | purchased   | NULL                       |
+| ib6      | pi3     | 半成品批次 | self_made   | pb1                        |
+| ib7      | pi4     | 成品批次   | self_made   | pb1                        |
 
 ---
 
@@ -578,7 +614,7 @@
 | `transaction_type`           | `VARCHAR(30)`     | 库存变动类型                                         |
 | `quantity`                   | `DECIMAL(12,4)`   | 库存变动数量。正数表示增加，负数表示减少，不能为 `0` |
 | `unit_snapshot`              | `VARCHAR(20)`     | 发生流水时的单位快照                                 |
-| `stock_status`               | `VARCHAR(20)`     | 库存状态，默认 `可用`                                |
+| `stock_status`               | `VARCHAR(20)`     | 库存状态，默认 `available`                           |
 | `reference_type`             | `VARCHAR(50)`     | 来源明细类型                                         |
 | `reference_detail_id`        | `BIGINT UNSIGNED` | 来源明细 ID，建议指向明细行，不要只指向主单          |
 | `idempotency_key`            | `VARCHAR(150)`    | 幂等键，防止同一业务动作重复生成库存流水             |
@@ -590,46 +626,49 @@
 
 `transaction_type` 可选语义：
 
-| 值             | 说明                               |
-| -------------- | ---------------------------------- |
-| `采购入库`     | 外购物料、外购半成品、外购成品入库 |
-| `生产入库`     | 自产半成品或成品入库               |
-| `委外入库`     | 委外加工完成入库                   |
-| `生产领料出库` | 生产批次领料出库                   |
-| `销售出库`     | 成品销售出库，后续可扩展           |
-| `退料入库`     | 生产退料回仓                       |
-| `报废出库`     | 报废扣减库存                       |
-| `盘点调整`     | 盘点差异调整                       |
-| `状态转入`     | 库存状态转入                       |
-| `状态转出`     | 库存状态转出                       |
+| 值                             | 说明                               |
+| ------------------------------ | ---------------------------------- |
+| `purchase_inbound`             | 外购物料、外购半成品、外购成品入库 |
+| `production_inbound`           | 自产半成品或成品入库               |
+| `outsourced_inbound`           | 委外加工完成入库                   |
+| `production_material_outbound` | 生产批次领料出库                   |
+| `sales_outbound`               | 成品销售出库，后续可扩展           |
+| `material_return_inbound`      | 生产退料回仓                       |
+| `scrap_outbound`               | 报废扣减库存                       |
+| `stock_check_adjustment`       | 盘点差异调整                       |
+| `status_transfer_in`           | 库存状态转入                       |
+| `status_transfer_out`          | 库存状态转出                       |
 
 `stock_status` 可选语义：
 
-| 值     | 说明           |
-| ------ | -------------- |
-| `可用` | 可分配、可出库 |
-| `待检` | 暂不可用       |
-| `冻结` | 被业务冻结     |
-| `不良` | 不良品         |
+| 值                   | 说明           |
+| -------------------- | -------------- |
+| `available`          | 可分配、可出库 |
+| `pending_inspection` | 暂不可用       |
+| `frozen`             | 被业务冻结     |
+| `defective`          | 不良品         |
 
 `reference_type` 可选语义：
 
 | 值                   | 说明     |
 | -------------------- | -------- |
-| `INBOUND_DETAIL`     | 入库明细 |
-| `OUTBOUND_DETAIL`    | 出库明细 |
-| `RETURN_DETAIL`      | 退料明细 |
-| `SCRAP`              | 报废记录 |
-| `STOCK_CHECK_DETAIL` | 盘点明细 |
-| `INSPECTION_RECORD`  | 检验记录 |
-| `MANUAL`             | 手工调整 |
+| `inbound_detail`     | 入库明细 |
+| `outbound_detail`    | 出库明细 |
+| `return_detail`      | 退料明细 |
+| `scrap`              | 报废记录 |
+| `stock_check_detail` | 盘点明细 |
+| `inspection_record`  | 检验记录 |
+| `manual`             | 手工调整 |
 
 约束：
 
 - 主键：`id`
 - 检查约束：`CHECK (quantity <> 0)`
+- 检查约束：`CHECK (transaction_type IN ('purchase_inbound', 'production_inbound', 'outsourced_inbound', 'production_material_outbound', 'sales_outbound', 'material_return_inbound', 'scrap_outbound', 'stock_check_adjustment', 'status_transfer_in', 'status_transfer_out'))`
+- 检查约束：`CHECK (stock_status IN ('available', 'pending_inspection', 'frozen', 'defective'))`
 - 唯一约束：`UNIQUE (idempotency_key)`
 - 索引：`INDEX (transaction_group_key)`
+- 组合索引：`INDEX (item_id, batch_id, stock_status, created_at)`，用于库存汇总和批次流水查询
 - 外键：`FOREIGN KEY (item_id) REFERENCES products(id)`
 - 外键：`FOREIGN KEY (batch_id, item_id) REFERENCES item_batch(id, item_id)`
 - 外键：`reversal_of_transaction_id -> inventory_transaction.id`
@@ -657,20 +696,20 @@
 
 职责：维护入库主单，记录一次入库动作。入库来源可以是外购、自主生产、委外、退货入库、盘点生成等。
 
-| 字段                  | 类型              | 说明                                                             |
-| --------------------- | ----------------- | ---------------------------------------------------------------- |
-| `id`                  | `BIGINT UNSIGNED` | 主键                                                             |
-| `inbound_no`          | `VARCHAR(100)`    | 入库单号                                                         |
-| `source_type`         | `VARCHAR(30)`     | 来源类型：`自产`、`外购`、`委外`、`退货入库`、`盘点生成`、`其他` |
-| `provider`            | `VARCHAR(100)`    | 供应商、委外方或来源方，自产时可为空                             |
-| `work_order_id`       | `BIGINT UNSIGNED` | 来源工单 ID，自产或委外时可填                                    |
-| `production_batch_id` | `BIGINT UNSIGNED` | 来源生产批次 ID，自产半成品或成品入库时可填                      |
-| `status`              | `VARCHAR(30)`     | 入库单状态，默认 `待入库`                                        |
-| `inbound_at`          | `DATETIME`        | 实际入库时间                                                     |
-| `operator_id`         | `BIGINT UNSIGNED` | 操作人 ID                                                        |
-| `version`             | `INT`             | 乐观锁版本号，默认 `0`                                           |
-| `remark`              | `TEXT`            | 备注                                                             |
-| 业务审计字段          | 见统一规则        | 可变业务单据审计字段                                             |
+| 字段                  | 类型              | 说明                                        |
+| --------------------- | ----------------- | ------------------------------------------- |
+| `id`                  | `BIGINT UNSIGNED` | 主键                                        |
+| `inbound_no`          | `VARCHAR(100)`    | 入库单号                                    |
+| `source_type`         | `VARCHAR(30)`     | 来源类型，使用统一英文代码                  |
+| `provider`            | `VARCHAR(100)`    | 供应商、委外方或来源方，自产时可为空        |
+| `work_order_id`       | `BIGINT UNSIGNED` | 来源工单 ID，自产或委外时可填               |
+| `production_batch_id` | `BIGINT UNSIGNED` | 来源生产批次 ID，自产半成品或成品入库时可填 |
+| `status`              | `VARCHAR(30)`     | 入库单状态，默认 `pending`                  |
+| `inbound_at`          | `DATETIME`        | 实际入库时间                                |
+| `operator_id`         | `BIGINT UNSIGNED` | 操作人 ID                                   |
+| `version`             | `INT`             | 乐观锁版本号，默认 `0`                      |
+| `remark`              | `TEXT`            | 备注                                        |
+| 业务审计字段          | 见统一规则        | 可变业务单据审计字段                        |
 
 约束：
 
@@ -681,8 +720,9 @@
 - 外键：`FOREIGN KEY (production_batch_id) REFERENCES production_batches(id)`
 - 当两个字段同时存在时，使用组合外键 `(production_batch_id, work_order_id) -> production_batches(id, work_order_id)` 保证一致
 - 外键：`FOREIGN KEY (operator_id) REFERENCES users(id)`
-- 检查约束：`CHECK (source_type IN ('自产', '外购', '委外', '退货入库', '盘点生成', '其他'))`
-- 检查约束：`CHECK (status IN ('待入库', '已入库', '已取消'))`
+- 检查约束：`CHECK (source_type IN ('self_made', 'purchased', 'outsourced', 'return_inbound', 'stock_check_generated', 'other'))`
+- 检查约束：`CHECK (status IN ('pending', 'completed', 'cancelled'))`
+- 组合索引：`INDEX (status, created_at)`，用于入库单状态分页
 
 说明：
 
@@ -706,7 +746,7 @@
 | `batch_id`       | `BIGINT UNSIGNED` | 入库批次 ID，关联 `item_batch.id`    |
 | `inbound_number` | `DECIMAL(12,4)`   | 本次入库数量                         |
 | `unit_snapshot`  | `VARCHAR(20)`     | 入库时单位快照                       |
-| `stock_status`   | `VARCHAR(20)`     | 入库后的库存状态，默认 `可用`        |
+| `stock_status`   | `VARCHAR(20)`     | 入库后的库存状态，默认 `available`   |
 | `source_stage`   | `VARCHAR(100)`    | 来源工序或生产阶段，半成品入库时有用 |
 | `remark`         | `TEXT`            | 备注                                 |
 | `created_by`     | `BIGINT UNSIGNED` | 创建人                               |
@@ -719,7 +759,7 @@
 - 外键：`FOREIGN KEY (item_id) REFERENCES products(id)`
 - 外键：`FOREIGN KEY (batch_id, item_id) REFERENCES item_batch(id, item_id)`
 - 检查约束：`CHECK (inbound_number > 0)`
-- 检查约束：`CHECK (stock_status IN ('可用', '待检', '冻结', '不良'))`
+- 检查约束：`CHECK (stock_status IN ('available', 'pending_inspection', 'frozen', 'defective'))`
 - 唯一约束：`UNIQUE (inbound_id, batch_id, item_id)`
 
 说明：
@@ -758,7 +798,7 @@
 | `parent_demand_id`                 | `BIGINT UNSIGNED` | 补料需求关联的原始需求 ID                 |
 | `source_scrap_id`                  | `BIGINT UNSIGNED` | 报废补料关联的报废记录 ID，可为空         |
 | `reason_type`                      | `VARCHAR(50)`     | 补料原因                                  |
-| `business_status`                  | `VARCHAR(30)`     | 业务状态，默认 `正常`                     |
+| `business_status`                  | `VARCHAR(30)`     | 业务状态，默认 `active`                   |
 | `version`                          | `INT`             | 乐观锁版本号，默认 `0`                    |
 | `remark`                           | `TEXT`            | 备注                                      |
 | 业务审计字段                       | 见统一规则        | 可变业务单据审计字段                      |
@@ -787,7 +827,8 @@
 - 外键：`FOREIGN KEY (source_scrap_id) REFERENCES item_scrap(id)`
 - 检查约束：`CHECK (need_number > 0)`
 - 检查约束：`CHECK (demand_type IN (0, 1, 2))`
-- 检查约束：`CHECK (business_status IN ('正常', '已取消', '已关闭', '冻结', '异常'))`
+- 检查约束：`CHECK (business_status IN ('active', 'cancelled', 'closed', 'frozen', 'abnormal'))`
+- 组合索引：`INDEX (production_batch_id, business_status)`，用于查询批次有效需求
 - 检查约束：正常需求 `demand_type = 0` 时要求 `product_material_id IS NOT NULL`，且 `parent_demand_id IS NULL`、`source_scrap_id IS NULL`
 - 检查约束：追加需求 `demand_type = 1` 时要求 `product_material_id IS NOT NULL`、`parent_demand_id IS NOT NULL`，且 `source_scrap_id IS NULL`
 - 检查约束：报废补料 `demand_type = 2` 时要求 `product_material_id IS NOT NULL`、`parent_demand_id IS NOT NULL`、`source_scrap_id IS NOT NULL`
@@ -835,7 +876,7 @@
 | `batch_id`            | `BIGINT UNSIGNED` | 分配的库存批次 ID，关联 `item_batch.id`               |
 | `assigned_number`     | `DECIMAL(12,4)`   | 分配数量                                              |
 | `unit_snapshot`       | `VARCHAR(20)`     | 分配时单位快照                                        |
-| `allocation_status`   | `VARCHAR(30)`     | 分配业务状态，默认 `正常`                             |
+| `allocation_status`   | `VARCHAR(30)`     | 分配业务状态，默认 `active`                           |
 | `version`             | `INT`             | 乐观锁版本号，默认 `0`                                |
 | `remark`              | `TEXT`            | 备注                                                  |
 | 业务审计字段          | 见统一规则        | 可变业务单据审计字段                                  |
@@ -847,7 +888,8 @@
 - 外键：`FOREIGN KEY (demand_id, production_batch_id) REFERENCES production_item_demand(id, production_batch_id)`
 - 外键：`FOREIGN KEY (batch_id, item_id) REFERENCES item_batch(id, item_id)`
 - 检查约束：`CHECK (assigned_number > 0)`
-- 检查约束：`CHECK (allocation_status IN ('正常', '已释放', '已取消', '冻结', '异常'))`
+- 检查约束：`CHECK (allocation_status IN ('active', 'released', 'cancelled', 'frozen', 'abnormal'))`
+- 组合索引：`INDEX (production_batch_id, allocation_status)`，用于汇总批次有效预留
 - 唯一约束：`UNIQUE (id, demand_id)`
 - 唯一约束：`UNIQUE (id, production_batch_id)`
 - 唯一约束：`UNIQUE (id, item_id)`
@@ -867,7 +909,7 @@
 - 分配创建后，应影响可分配库存。
 - 分配不等于出库，库存流水不会因为分配而扣减。
 - 分配只代表业务预留，实际库存减少发生在出库时。
-- `allocation_status = 已释放` 或 `已取消` 时，不应继续占用可分配库存。
+- `allocation_status = released` 或 `cancelled` 时，不应继续占用可分配库存。
 
 ---
 
@@ -885,7 +927,7 @@
 | `outbound_no`         | `VARCHAR(100)`    | 出库单号                                  |
 | `production_batch_id` | `BIGINT UNSIGNED` | 生产批次 ID，关联 `production_batches.id` |
 | `work_order_id`       | `BIGINT UNSIGNED` | 工单 ID，冗余保存，便于查询               |
-| `status`              | `VARCHAR(30)`     | 出库单状态，默认 `待拣货`                 |
+| `status`              | `VARCHAR(30)`     | 出库单状态，默认 `pending_picking`        |
 | `outbound_at`         | `DATETIME`        | 实际出库时间                              |
 | `operator_id`         | `BIGINT UNSIGNED` | 操作人 ID                                 |
 | `version`             | `INT`             | 乐观锁版本号，默认 `0`                    |
@@ -899,7 +941,8 @@
 - 唯一约束：`UNIQUE (id, production_batch_id)`
 - 外键：`FOREIGN KEY (production_batch_id, work_order_id) REFERENCES production_batches(id, work_order_id)`
 - 外键：`FOREIGN KEY (operator_id) REFERENCES users(id)`
-- 检查约束：`CHECK (status IN ('待拣货', '已拣货', '部分出库', '已出库', '已取消'))`
+- 检查约束：`CHECK (status IN ('pending_picking', 'picked', 'partially_outbound', 'completed', 'cancelled'))`
+- 组合索引：`INDEX (status, created_at)`，用于出库单状态分页
 
 说明：
 
@@ -962,7 +1005,7 @@
 | `return_no`           | `VARCHAR(100)`    | 退料单号                                  |
 | `production_batch_id` | `BIGINT UNSIGNED` | 生产批次 ID，关联 `production_batches.id` |
 | `work_order_id`       | `BIGINT UNSIGNED` | 工单 ID，冗余保存                         |
-| `status`              | `VARCHAR(30)`     | 退料单状态，默认 `待处理`                 |
+| `status`              | `VARCHAR(30)`     | 退料单状态，默认 `pending`                |
 | `return_at`           | `DATETIME`        | 实际退料时间                              |
 | `operator_id`         | `BIGINT UNSIGNED` | 操作人 ID                                 |
 | `version`             | `INT`             | 乐观锁版本号，默认 `0`                    |
@@ -976,7 +1019,8 @@
 - 唯一约束：`UNIQUE (id, production_batch_id)`
 - 外键：`FOREIGN KEY (production_batch_id, work_order_id) REFERENCES production_batches(id, work_order_id)`
 - 外键：`FOREIGN KEY (operator_id) REFERENCES users(id)`
-- 检查约束：`CHECK (status IN ('待处理', '已入库', '已报废', '已取消'))`
+- 检查约束：`CHECK (status IN ('pending', 'returned', 'scrapped', 'cancelled'))`
+- 组合索引：`INDEX (status, created_at)`，用于退料单状态分页
 
 说明：
 
@@ -1001,7 +1045,7 @@
 | `batch_id`             | `BIGINT UNSIGNED` | 退料库存批次 ID                          |
 | `return_number`        | `DECIMAL(12,4)`   | 本次退料数量                             |
 | `unit_snapshot`        | `VARCHAR(20)`     | 退料时单位快照                           |
-| `return_stock_status`  | `VARCHAR(20)`     | 退回后的库存状态，默认 `可用`            |
+| `return_stock_status`  | `VARCHAR(20)`     | 退回后的库存状态，默认 `available`       |
 | `release_after_return` | `TINYINT`         | 是否退回后释放给公共库存：`0` 否，`1` 是 |
 | `remark`               | `TEXT`            | 备注                                     |
 | `created_by`           | `BIGINT UNSIGNED` | 创建人                                   |
@@ -1015,17 +1059,17 @@
 - 外键：`FOREIGN KEY (allocation_id, demand_id, production_batch_id, item_id, batch_id) REFERENCES production_item_allocation(id, demand_id, production_batch_id, item_id, batch_id)`
 - 外键：`FOREIGN KEY (batch_id, item_id) REFERENCES item_batch(id, item_id)`
 - 检查约束：`CHECK (return_number > 0)`
-- 检查约束：`CHECK (return_stock_status IN ('可用', '待检', '冻结', '不良'))`
+- 检查约束：`CHECK (return_stock_status IN ('available', 'pending_inspection', 'frozen', 'defective'))`
 - 检查约束：`CHECK (release_after_return IN (0, 1))`
 - 唯一约束：`UNIQUE (return_id, allocation_id)`
 - 组合候选键：`UNIQUE (id, allocation_id, demand_id, production_batch_id, item_id, batch_id)`，供退料后报废精确引用具体退料明细
 
 说明：
 
-- `return_stock_status = 可用` 的退料会增加库存流水中的可用库存。
+- `return_stock_status = available` 的退料会增加库存流水中的可用库存。
 - `release_after_return = 0` 表示退回后仍绑定原生产批次，可再次出给该批次。
 - `release_after_return = 1` 表示退回后释放给公共库存，不再继续占用原生产批次。
-- 退料入库应生成 `inventory_transaction`，类型为 `退料入库`。
+- 退料入库应生成 `inventory_transaction`，类型为 `material_return_inbound`。
 
 ---
 
@@ -1051,7 +1095,7 @@
 | `scrap_number`        | `DECIMAL(12,4)`   | 报废数量                                  |
 | `unit_snapshot`       | `VARCHAR(20)`     | 报废时单位快照                            |
 | `reason_type`         | `VARCHAR(50)`     | 报废原因                                  |
-| `status`              | `VARCHAR(30)`     | 状态，默认 `已确认`                       |
+| `status`              | `VARCHAR(30)`     | 状态，默认 `pending`                      |
 | `remark`              | `TEXT`            | 备注                                      |
 | `version`             | `INT`             | 乐观锁版本号，默认 `0`                    |
 | 业务审计字段          | 见统一规则        | 可变业务单据审计字段                      |
@@ -1060,10 +1104,10 @@
 
 | 值                      | 含义                                 | 是否影响 allocation 可再次出库量 |
 | ----------------------- | ------------------------------------ | -------------------------------- |
-| `WAREHOUSE_ALLOCATED`   | 已分配但未出库，在仓库侧报废         | 是                               |
-| `RETURN_AFTER_OUTBOUND` | 出库后退回，再发生报废               | 是                               |
-| `PRODUCTION_CONSUMED`   | 已出库到生产后，在生产过程中消耗报废 | 否                               |
-| `IN_STOCK`              | 库存内直接报废，例如成品库存报废     | 不涉及 allocation                |
+| `warehouse_allocated`   | 已分配但未出库，在仓库侧报废         | 是                               |
+| `return_after_outbound` | 出库后退回，再发生报废               | 是                               |
+| `production_consumed`   | 已出库到生产后，在生产过程中消耗报废 | 否                               |
+| `in_stock`              | 库存内直接报废，例如成品库存报废     | 不涉及 allocation                |
 
 约束：
 
@@ -1076,12 +1120,13 @@
 - 外键：`FOREIGN KEY (item_id) REFERENCES products(id)`
 - 外键：`FOREIGN KEY (batch_id, item_id) REFERENCES item_batch(id, item_id)`
 - 检查约束：`CHECK (scrap_number > 0)`
-- 检查约束：`CHECK (scrap_scene IN ('WAREHOUSE_ALLOCATED', 'RETURN_AFTER_OUTBOUND', 'PRODUCTION_CONSUMED', 'IN_STOCK'))`
-- 检查约束：`CHECK (status IN ('待确认', '已确认', '已取消'))`
-- 检查约束：`WAREHOUSE_ALLOCATED` 要求 `production_batch_id`、`demand_id`、`allocation_id`、`batch_id` 非空，且 `return_detail_id` 为空
-- 检查约束：`RETURN_AFTER_OUTBOUND` 要求 `production_batch_id`、`demand_id`、`allocation_id`、`return_detail_id`、`batch_id` 均非空
-- 检查约束：`PRODUCTION_CONSUMED` 要求 `production_batch_id`、`demand_id`、`allocation_id`、`batch_id` 非空，且 `return_detail_id` 为空
-- 检查约束：`IN_STOCK` 要求 `batch_id` 非空，且 `production_batch_id`、`demand_id`、`allocation_id`、`return_detail_id` 均为空
+- 检查约束：`CHECK (scrap_scene IN ('warehouse_allocated', 'return_after_outbound', 'production_consumed', 'in_stock'))`
+- 检查约束：`CHECK (status IN ('pending', 'confirmed', 'cancelled'))`
+- 检查约束：`warehouse_allocated` 要求 `production_batch_id`、`demand_id`、`allocation_id`、`batch_id` 非空，且 `return_detail_id` 为空
+- 检查约束：`return_after_outbound` 要求 `production_batch_id`、`demand_id`、`allocation_id`、`return_detail_id`、`batch_id` 均非空
+- 检查约束：`production_consumed` 要求 `production_batch_id`、`demand_id`、`allocation_id`、`batch_id` 非空，且 `return_detail_id` 为空
+- 检查约束：`in_stock` 要求 `batch_id` 非空，且 `production_batch_id`、`demand_id`、`allocation_id`、`return_detail_id` 均为空
+- 组合索引：`INDEX (status, created_at)`，用于报废单状态分页
 
 说明：
 
@@ -1092,12 +1137,12 @@
   - `parent_demand_id = 原始需求 ID`
   - `source_scrap_id = 报废记录 ID`
 
-- 库存内报废应生成 `inventory_transaction`，类型为 `报废出库`。
-- 只有 `status = 已确认` 的报废记录参与视图汇总。
-- `WAREHOUSE_ALLOCATED` 必须校验分配仍有效且存在尚未出库、未释放的可报废数量；确认后生成负数报废库存流水。
-- `RETURN_AFTER_OUTBOUND` 必须校验来源退料已确认，且报废数量不超过该退料明细尚未处置数量；确认后生成负数报废库存流水。
-- `PRODUCTION_CONSUMED` 的库存已在领料时扣减，确认报废时不得再次生成库存流水。
-- `IN_STOCK` 不虚构生产批次或需求关系，确认后从对应库存批次生成负数报废库存流水。
+- 库存内报废应生成 `inventory_transaction`，类型为 `scrap_outbound`。
+- 只有 `status = confirmed` 的报废记录参与视图汇总。
+- `warehouse_allocated` 必须校验分配仍有效且存在尚未出库、未释放的可报废数量；确认后生成负数报废库存流水。
+- `return_after_outbound` 必须校验来源退料已确认，且报废数量不超过该退料明细尚未处置数量；确认后生成负数报废库存流水。
+- `production_consumed` 的库存已在领料时扣减，确认报废时不得再次生成库存流水。
+- `in_stock` 不虚构生产批次或需求关系，确认后从对应库存批次生成负数报废库存流水。
 
 ---
 
@@ -1109,23 +1154,24 @@
 
 职责：维护库存盘点主单，记录一次盘点任务的基本信息。
 
-| 字段          | 类型              | 说明                    |
-| ------------- | ----------------- | ----------------------- |
-| `id`          | `BIGINT UNSIGNED` | 主键                    |
-| `check_no`    | `VARCHAR(100)`    | 盘点单号                |
-| `status`      | `VARCHAR(30)`     | 盘点状态，默认 `待盘点` |
-| `check_at`    | `DATETIME`        | 实际盘点时间            |
-| `operator_id` | `BIGINT UNSIGNED` | 操作人 ID               |
-| `remark`      | `TEXT`            | 备注                    |
-| `version`     | `INT`             | 乐观锁版本号，默认 `0`  |
-| 业务审计字段  | 见统一规则        | 可变业务单据审计字段    |
+| 字段          | 类型              | 说明                     |
+| ------------- | ----------------- | ------------------------ |
+| `id`          | `BIGINT UNSIGNED` | 主键                     |
+| `check_no`    | `VARCHAR(100)`    | 盘点单号                 |
+| `status`      | `VARCHAR(30)`     | 盘点状态，默认 `pending` |
+| `check_at`    | `DATETIME`        | 实际盘点时间             |
+| `operator_id` | `BIGINT UNSIGNED` | 操作人 ID                |
+| `remark`      | `TEXT`            | 备注                     |
+| `version`     | `INT`             | 乐观锁版本号，默认 `0`   |
+| 业务审计字段  | 见统一规则        | 可变业务单据审计字段     |
 
 约束：
 
 - 主键：`id`
 - 唯一约束：`UNIQUE (check_no)`
 - 外键：`FOREIGN KEY (operator_id) REFERENCES users(id)`
-- 检查约束：`CHECK (status IN ('待盘点', '盘点中', '已完成', '已取消'))`
+- 检查约束：`CHECK (status IN ('pending', 'counting', 'completed', 'cancelled'))`
+- 组合索引：`INDEX (status, created_at)`，用于盘点单状态分页
 
 说明：
 
@@ -1138,22 +1184,22 @@
 
 职责：维护库存盘点明细，记录某个库存对象某个批次的账面数量、实盘数量和差异数量。
 
-| 字段                  | 类型              | 说明                                     |
-| --------------------- | ----------------- | ---------------------------------------- |
-| `id`                  | `BIGINT UNSIGNED` | 主键                                     |
-| `stock_check_id`      | `BIGINT UNSIGNED` | 盘点主单 ID，关联 `stock_check_order.id` |
-| `item_id`             | `BIGINT UNSIGNED` | 库存对象 ID                              |
-| `batch_id`            | `BIGINT UNSIGNED` | 库存批次 ID                              |
-| `stock_status`        | `VARCHAR(20)`     | 盘点的库存状态，例如 `可用`、`待检`      |
-| `unit_snapshot`       | `VARCHAR(20)`     | 盘点时单位快照                           |
-| `system_quantity`     | `DECIMAL(12,4)`   | 盘点时系统账面数量                       |
-| `actual_quantity`     | `DECIMAL(12,4)`   | 实盘数量                                 |
-| `difference_quantity` | `DECIMAL(12,4)`   | 生成列：实盘数量 - 系统数量              |
-| `result`              | `VARCHAR(20)`     | 生成列：`盘盈`、`盘亏`、`一致`           |
-| `adjusted`            | `TINYINT`         | 是否已生成盘点调整流水：`0` 否，`1` 是   |
-| `remark`              | `TEXT`            | 备注                                     |
-| `created_by`          | `BIGINT UNSIGNED` | 创建人                                   |
-| `created_at`          | `DATETIME`        | 创建时间，默认 `CURRENT_TIMESTAMP`       |
+| 字段                  | 类型              | 说明                                                   |
+| --------------------- | ----------------- | ------------------------------------------------------ |
+| `id`                  | `BIGINT UNSIGNED` | 主键                                                   |
+| `stock_check_id`      | `BIGINT UNSIGNED` | 盘点主单 ID，关联 `stock_check_order.id`               |
+| `item_id`             | `BIGINT UNSIGNED` | 库存对象 ID                                            |
+| `batch_id`            | `BIGINT UNSIGNED` | 库存批次 ID                                            |
+| `stock_status`        | `VARCHAR(20)`     | 盘点的库存状态，例如 `available`、`pending_inspection` |
+| `unit_snapshot`       | `VARCHAR(20)`     | 盘点时单位快照                                         |
+| `system_quantity`     | `DECIMAL(12,4)`   | 盘点时系统账面数量                                     |
+| `actual_quantity`     | `DECIMAL(12,4)`   | 实盘数量                                               |
+| `difference_quantity` | `DECIMAL(12,4)`   | 生成列：实盘数量 - 系统数量                            |
+| `result`              | `VARCHAR(20)`     | 生成列：`surplus`、`shortage`、`matched`               |
+| `adjusted`            | `TINYINT`         | 是否已生成盘点调整流水：`0` 否，`1` 是                 |
+| `remark`              | `TEXT`            | 备注                                                   |
+| `created_by`          | `BIGINT UNSIGNED` | 创建人                                                 |
+| `created_at`          | `DATETIME`        | 创建时间，默认 `CURRENT_TIMESTAMP`                     |
 
 约束：
 
@@ -1163,13 +1209,15 @@
 - 外键：`FOREIGN KEY (batch_id, item_id) REFERENCES item_batch(id, item_id)`
 - 检查约束：`CHECK (system_quantity >= 0)`
 - 检查约束：`CHECK (actual_quantity >= 0)`
+- 检查约束：`CHECK (stock_status IN ('available', 'pending_inspection', 'frozen', 'defective'))`
+- 检查约束：`CHECK (result IN ('surplus', 'shortage', 'matched'))`
 - 检查约束：`CHECK (adjusted IN (0, 1))`
 - 唯一约束：`UNIQUE (stock_check_id, item_id, batch_id, stock_status)`
 
 说明：
 
 - `difference_quantity` 和 `result` 必须使用数据库生成列或只在查询视图中计算，禁止由接口独立写入。
-- 盘点调整应生成 `inventory_transaction`，类型为 `盘点调整`。
+- 盘点调整应生成 `inventory_transaction`，类型为 `stock_check_adjustment`。
 - 盘点明细应记录盘点时的系统数量快照，避免后续库存变动影响盘点结果。
 
 ---
@@ -1202,13 +1250,13 @@
 
 汇总口径：
 
-| 字段                 | 计算来源                              |
-| -------------------- | ------------------------------------- |
-| `available_quantity` | 汇总 `stock_status = 可用` 的库存流水 |
-| `pending_quantity`   | 汇总 `stock_status = 待检` 的库存流水 |
-| `frozen_quantity`    | 汇总 `stock_status = 冻结` 的库存流水 |
-| `defective_quantity` | 汇总 `stock_status = 不良` 的库存流水 |
-| `total_quantity`     | 汇总该批次所有库存流水                |
+| 字段                 | 计算来源                                            |
+| -------------------- | --------------------------------------------------- |
+| `available_quantity` | 汇总 `stock_status = available` 的库存流水          |
+| `pending_quantity`   | 汇总 `stock_status = pending_inspection` 的库存流水 |
+| `frozen_quantity`    | 汇总 `stock_status = frozen` 的库存流水             |
+| `defective_quantity` | 汇总 `stock_status = defective` 的库存流水          |
+| `total_quantity`     | 汇总该批次所有库存流水                              |
 
 说明：
 
@@ -1241,19 +1289,19 @@
 
 核心计算口径：
 
-| 字段                           | 计算来源                                                                         |
-| ------------------------------ | -------------------------------------------------------------------------------- |
-| `outbound_quantity`            | 汇总 `outbound_detail.outbound_number`                                           |
-| `returned_quantity`            | 汇总 `return_detail.return_number`                                               |
-| `returned_available_quantity`  | 汇总 `return_stock_status = 可用` 且 `release_after_return = 0` 的退料数量       |
-| `released_return_quantity`     | 汇总 `release_after_return = 1` 的退料数量                                       |
-| `stock_scrapped_quantity`      | 汇总 `WAREHOUSE_ALLOCATED`、`RETURN_AFTER_OUTBOUND` 且状态为 `已确认` 的报废数量 |
-| `production_scrapped_quantity` | 汇总 `PRODUCTION_CONSUMED` 且状态为 `已确认` 的报废数量                          |
-| `available_outbound_quantity`  | 分配数量 - 已出库数量 + 未释放可用退料数量 - 库存侧报废数量                      |
+| 字段                           | 计算来源                                                                            |
+| ------------------------------ | ----------------------------------------------------------------------------------- |
+| `outbound_quantity`            | 汇总 `outbound_detail.outbound_number`                                              |
+| `returned_quantity`            | 汇总 `return_detail.return_number`                                                  |
+| `returned_available_quantity`  | 汇总 `return_stock_status = available` 且 `release_after_return = 0` 的退料数量     |
+| `released_return_quantity`     | 汇总 `release_after_return = 1` 的退料数量                                          |
+| `stock_scrapped_quantity`      | 汇总 `warehouse_allocated`、`return_after_outbound` 且状态为 `confirmed` 的报废数量 |
+| `production_scrapped_quantity` | 汇总 `production_consumed` 且状态为 `confirmed` 的报废数量                          |
+| `available_outbound_quantity`  | 分配数量 - 已出库数量 + 未释放可用退料数量 - 库存侧报废数量                         |
 
 说明：
 
-- `PRODUCTION_CONSUMED` 不扣减 `available_outbound_quantity`。
+- `production_consumed` 不扣减 `available_outbound_quantity`。
 - `release_after_return = 1` 的退料不再属于原生产批次的可再次出库量。
 - 如果 `available_outbound_quantity < 0`，表示该分配行存在数量异常。
 
@@ -1299,16 +1347,16 @@
 
 `progress_status` 推荐规则：
 
-| 条件                                                           | 状态             |
-| -------------------------------------------------------------- | ---------------- |
-| `business_status` 为 `已取消`、`已关闭`、`冻结`、`异常`        | 直接显示业务状态 |
-| 已分配数量 = 0                                                 | `待分配`         |
-| 已分配数量 < 需求数量，且已出库数量 = 0                        | `部分分配`       |
-| 已分配数量 >= 需求数量，且已出库数量 = 0                       | `已分配`         |
-| 已出库数量 > 0，已出库数量 < 需求数量，且已分配数量 < 需求数量 | `缺料待补`       |
-| 已出库数量 > 0，已出库数量 < 需求数量                          | `部分出库`       |
-| 已出库数量 >= 需求数量                                         | `已出库`         |
-| 其他情况                                                       | `未知`           |
+| 条件                                                             | 状态                  |
+| ---------------------------------------------------------------- | --------------------- |
+| `business_status` 为 `cancelled`、`closed`、`frozen`、`abnormal` | 直接使用业务状态代码  |
+| 已分配数量 = 0                                                   | `pending_allocation`  |
+| 已分配数量 < 需求数量，且已出库数量 = 0                          | `partially_allocated` |
+| 已分配数量 >= 需求数量，且已出库数量 = 0                         | `allocated`           |
+| 已出库数量 > 0，已出库数量 < 需求数量，且已分配数量 < 需求数量   | `shortage`            |
+| 已出库数量 > 0，已出库数量 < 需求数量                            | `partially_outbound`  |
+| 已出库数量 >= 需求数量                                           | `outbound`            |
+| 其他情况                                                         | `unknown`             |
 
 说明：
 
@@ -1345,7 +1393,7 @@
 
 - 该视图用于新生产批次分配物料时判断可用量。
 - 不能只看账面库存，因为已分配但未出库的数量已经被预留。
-- `allocation_status IN ('已释放', '已取消')` 的分配不应继续占用库存。
+- `allocation_status IN ('released', 'cancelled')` 的分配不应继续占用库存。
 - 退料后如果 `release_after_return = 1`，退回数量应释放给公共库存，不继续占用原生产批次。
 
 ---
@@ -1514,10 +1562,10 @@
 盘点明细记录账面数量和实盘数量。
 若存在差异，应生成 `inventory_transaction`：
 
-| 差异 | 库存流水        |
-| ---- | --------------- |
-| 盘盈 | `盘点调整` 正数 |
-| 盘亏 | `盘点调整` 负数 |
+| 差异 | 库存流水                      |
+| ---- | ----------------------------- |
+| 盘盈 | `stock_check_adjustment` 正数 |
+| 盘亏 | `stock_check_adjustment` 负数 |
 
 说明：
 
@@ -1582,10 +1630,10 @@ SELECT id FROM item_batch WHERE id = :batch_id FOR UPDATE;
 
 库存状态通过同事务内的双流水表达，不创建独立状态转换单据：
 
-- 待检 → 可用：一条 `stock_status = 待检` 的负数流水 + 一条 `stock_status = 可用` 的正数流水。
+- 待检 → 可用：一条 `stock_status = pending_inspection` 的负数流水 + 一条 `stock_status = available` 的正数流水。
 - 两条流水共享相同 `transaction_group_key`，使用不同且分别唯一的 `idempotency_key`。
 - 两条流水具有相同 `item_id`、`batch_id`、单位和数量绝对值。
-- 使用 `reference_type = INSPECTION_RECORD`，`reference_detail_id` 指向触发放行的检验记录。
+- 使用 `reference_type = inspection_record`，`reference_detail_id` 指向触发放行的检验记录。
 - 状态转换流水必须填写 `transaction_group_key`；该字段建立普通索引用于成对核查，两条流水仍分别依靠 `idempotency_key` 防止重复。
 - 质量结论、检验人员和报告只保存在 `inspection_records`，库存流水只记录数量和状态维度。
 
@@ -1638,7 +1686,7 @@ production_item_allocation
 return_order
   ↓
 return_detail
-  ↓（`RETURN_AFTER_OUTBOUND`）
+  ↓（`return_after_outbound`）
 item_scrap
   ↓
 inventory_transaction
@@ -1759,6 +1807,9 @@ inventory_transaction
 - `CHECK (inspected_quantity > 0)`
 - `CHECK (qualified_quantity >= 0 AND unqualified_quantity >= 0)`
 - `CHECK (qualified_quantity + unqualified_quantity <= inspected_quantity)`
+- `CHECK (inspection_type IN ('process', 'final'))`
+- `CHECK (result IN ('pending', 'passed', 'failed', 'conditional'))`
+- 组合索引：`INDEX (production_batch_id, result, inspected_at)`，用于批次检验结论查询
 - 应用事务必须校验 `batch_step_record_id` 属于同一 `production_batch_id`
 - 应用事务必须校验 `source_rework_id` 对应的返工记录属于同一 `production_batch_id`
 
@@ -1785,7 +1836,7 @@ inventory_transaction
 | `version`              | `INT`             | 乐观锁版本号，默认 `0`                       |
 | 业务审计字段           | 见统一规则        | 可变返工记录审计字段                         |
 
-约束：`source_inspection_id -> inspection_records.id`；负责人和文件使用 `SET NULL`；`CHECK (rework_quantity > 0)`。返工数量不得超过来源检验记录的可返工不合格数量，该跨行规则由事务校验。
+约束：`source_inspection_id -> inspection_records.id`；负责人和文件使用 `SET NULL`；`CHECK (rework_quantity > 0)`；`CHECK (status IN ('pending', 'doing', 'completed', 'cancelled'))`；`CHECK (result IN ('pending', 'passed', 'failed'))`；组合索引 `INDEX (source_inspection_id, status)`。返工数量不得超过来源检验记录的可返工不合格数量，该跨行规则由事务校验。
 
 ## 4.4 `finished_flow_records`
 
@@ -1798,7 +1849,7 @@ inventory_transaction
 | `item_batch_id`            | `BIGINT UNSIGNED` | 库存批次 ID                                                           |
 | `item_id`                  | `BIGINT UNSIGNED` | 冗余库存对象 ID，与批次组合约束                                       |
 | `production_batch_id`      | `BIGINT UNSIGNED` | 来源生产批次，可为空                                                  |
-| `flow_type`                | `VARCHAR(40)`     | `WAREHOUSE_INBOUND`、`QUALITY_RELEASE`、`WAREHOUSE_OUTBOUND`、`OTHER` |
+| `flow_type`                | `VARCHAR(40)`     | `warehouse_inbound`、`quality_release`、`warehouse_outbound`、`other` |
 | `inventory_transaction_id` | `BIGINT UNSIGNED` | 对应库存流水；质量放行等非数量动作可为空                              |
 | `quantity_snapshot`        | `DECIMAL(12,4)`   | 本次流转数量快照，可为空                                              |
 | `unit_snapshot`            | `VARCHAR(20)`     | 单位快照                                                              |
@@ -1815,6 +1866,9 @@ inventory_transaction
 - `production_batch_id -> production_batches.id`
 - `inventory_transaction_id -> inventory_transaction.id`
 - `UNIQUE (inventory_transaction_id)`；MySQL 允许多个空值
+- `CHECK (flow_type IN ('warehouse_inbound', 'quality_release', 'warehouse_outbound', 'other'))`
+- `CHECK (status IN ('confirmed', 'cancelled'))`
+- 组合索引：`INDEX (item_batch_id, status, occurred_at)`
 - 有库存增减的流转必须关联库存流水，`finished_flow_records` 本身不得改变库存
 
 ## 4.5 追溯主链

@@ -10,9 +10,10 @@ export interface AuditLogEntry {
   userId?: string | null;
   targetId?: string | null;
   targetType?: string | null;
-  result: string;
+  result: OperationResult;
   beforeData?: unknown;
   afterData?: unknown;
   ip?: string | null;
   remark?: string | null;
 }
+import type { OperationResult } from '@company/contracts';

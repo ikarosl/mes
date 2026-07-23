@@ -1,19 +1,5 @@
 <template>
   <section>
-    <PageHeader
-      title="产品管理"
-      description="管理产品资料、规格参数与物料清单"
-    >
-      <template #actions>
-        <el-button
-          type="primary"
-          :icon="Plus"
-          @click="openCreate"
-          >新增产品</el-button
-        >
-      </template>
-    </PageHeader>
-
     <div class="query-panel">
       <el-form
         class="query-form"
@@ -36,7 +22,7 @@
             <el-option
               v-for="cat in categoryOptions"
               :key="cat.id"
-              :label="`${cat.productAttribute} / ${cat.productType}`"
+              :label="`${itemKindLabels[cat.itemKind]} / ${cat.categoryName}`"
               :value="cat.id"
             />
           </el-select>
@@ -82,6 +68,7 @@
         </el-form-item>
         <el-form-item class="query-actions">
           <el-button
+            v-if="auth.can(PERMISSIONS.product.products.create)"
             type="primary"
             @click="handleSearch"
             >查询</el-button
@@ -110,12 +97,15 @@
               :icon="Refresh"
               text
               circle
+              :loading="loading"
+              @click="loadData"
             />
           </el-tooltip>
         </template>
       </TableToolbar>
 
       <el-table
+        v-loading="loading"
         :data="pagedProducts"
         class="data-table"
       >
@@ -133,16 +123,16 @@
           min-width="160"
         />
         <el-table-column
-          label="属性"
+          label="对象类型"
           width="100"
           ><template #default="{ row }">{{
-            row.productAttribute || '-'
+            itemKindLabel(row.itemKind)
           }}</template></el-table-column
         >
         <el-table-column
-          label="类型"
+          label="分类"
           width="120"
-          ><template #default="{ row }">{{ row.productType || '-' }}</template></el-table-column
+          ><template #default="{ row }">{{ row.categoryName || '-' }}</template></el-table-column
         >
         <el-table-column
           label="规格参数"
@@ -157,7 +147,7 @@
         >
           <template #default="{ row }">
             <el-tag
-              v-if="row.acquireMethod !== 'self_made'"
+              v-if="!canConfigureProduction(row)"
               type="info"
               effect="light"
               >无</el-tag
@@ -215,25 +205,31 @@
               >查看</el-button
             >
             <el-button
+              v-if="auth.can(PERMISSIONS.product.products.update)"
               link
               type="primary"
               @click="openEdit(row)"
               >编辑</el-button
             >
             <el-button
-              v-if="row.acquireMethod === 'self_made'"
+              v-if="canConfigureProduction(row) && auth.can(PERMISSIONS.product.products.manageBom)"
               link
               :type="row.materialCount > 0 ? 'primary' : 'warning'"
               @click="openMaterials(row)"
               >物料清单</el-button
             >
             <el-button
+              v-if="
+                canConfigureProduction(row) &&
+                auth.can(PERMISSIONS.product.products.setDefaultRoute)
+              "
               link
               type="primary"
-              @click="showPlaceholder"
-              >库存</el-button
+              @click="openDefaultRoute(row)"
+              >默认路线</el-button
             >
             <el-button
+              v-if="auth.can(PERMISSIONS.product.products.changeStatus)"
               link
               :type="row.status === 1 ? 'danger' : 'success'"
               @click="toggleStatus(row)"
@@ -294,7 +290,7 @@
               <el-option
                 v-for="cat in categoryOptions"
                 :key="cat.id"
-                :label="`${cat.productAttribute} / ${cat.productType}`"
+                :label="`${itemKindLabels[cat.itemKind]} / ${cat.categoryName}`"
                 :value="cat.id"
               />
             </el-select>
@@ -409,6 +405,7 @@
         <el-button @click="productDialogVisible = false">取消</el-button>
         <el-button
           type="primary"
+          :loading="submitting"
           @click="submitProduct"
           >保存产品</el-button
         >
@@ -427,11 +424,11 @@
       >
         <el-descriptions-item label="产品编码">{{ detailRow.itemCode }}</el-descriptions-item>
         <el-descriptions-item label="产品名称">{{ detailRow.productName }}</el-descriptions-item>
-        <el-descriptions-item label="产品属性">{{
-          detailRow.productAttribute || '-'
+        <el-descriptions-item label="对象类型">{{
+          itemKindLabel(detailRow.itemKind)
         }}</el-descriptions-item>
-        <el-descriptions-item label="产品类型">{{
-          detailRow.productType || '-'
+        <el-descriptions-item label="产品分类">{{
+          detailRow.categoryName || '-'
         }}</el-descriptions-item>
         <el-descriptions-item label="获取方式">{{
           acquireMethodLabels[detailRow.acquireMethod as keyof typeof acquireMethodLabels]
@@ -439,6 +436,9 @@
         <el-descriptions-item label="单位">{{ detailRow.unit }}</el-descriptions-item>
         <el-descriptions-item label="物料清单">{{
           detailRow.materialCount > 0 ? `${detailRow.materialCount} 项` : '未配置'
+        }}</el-descriptions-item>
+        <el-descriptions-item label="默认路线">{{
+          detailRow.defaultRouteName || '未设置'
         }}</el-descriptions-item>
         <el-descriptions-item label="状态">{{
           detailRow.status === 1 ? '启用' : '停用'
@@ -490,10 +490,12 @@
           <div class="bom-actions">
             <el-button
               :icon="Refresh"
+              :loading="materialLoading"
               @click="refreshMaterials"
               >刷新物料</el-button
             >
             <el-button
+              v-if="auth.can(PERMISSIONS.product.products.manageBom)"
               type="primary"
               :icon="Plus"
               @click="addMaterialRow"
@@ -592,8 +594,46 @@
         <el-button @click="materialDialogVisible = false">取消</el-button>
         <el-button
           type="primary"
+          :loading="submitting"
           @click="submitMaterials"
           >保存物料清单</el-button
+        >
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="defaultRouteDialogVisible"
+      title="设置默认工艺路线"
+      :width="DialogWidth.md"
+    >
+      <el-form label-width="96px">
+        <el-form-item label="产品"
+          ><span
+            >{{ defaultRouteProduct?.itemCode }} / {{ defaultRouteProduct?.productName }}</span
+          ></el-form-item
+        >
+        <el-form-item label="默认路线">
+          <el-select
+            v-model="selectedDefaultRouteId"
+            clearable
+            placeholder="不设置默认路线"
+          >
+            <el-option
+              v-for="route in availableDefaultRoutes"
+              :key="route.id"
+              :label="`${route.routeCode} / ${route.routeName} / ${route.versionNo}`"
+              :value="route.id"
+            />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="defaultRouteDialogVisible = false">取消</el-button>
+        <el-button
+          type="primary"
+          :loading="submitting"
+          @click="submitDefaultRoute"
+          >保存默认路线</el-button
         >
       </template>
     </el-dialog>
@@ -601,13 +641,24 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { Plus, Refresh } from '@element-plus/icons-vue';
-import PageHeader from '../../components/PageHeader.vue';
+import { ElMessageBox } from 'element-plus';
+import { PERMISSIONS } from '@company/constants';
+import type {
+  ProcessRouteListItem,
+  ProductCategoryListItem,
+  ProductItemKind,
+  ProductListItem,
+  ProductMaterialPayload,
+  ProductOption,
+} from '@company/contracts';
 import TableToolbar from '../../components/TableToolbar.vue';
 import PaginationFooter from '../../components/PaginationFooter.vue';
 import { DialogWidth } from '../../utils/dialog';
 import { EMessage } from '../../utils/message';
+import { productApi } from '../../api/product';
+import { useAuthStore } from '../../stores/auth';
 
 defineOptions({ name: 'ProductsPage' });
 
@@ -623,81 +674,20 @@ type MaterialRow = {
 
 const acquireMethodLabels = { self_made: '自制', outsourced: '委外', purchased: '外购' };
 
-const demoProducts = [
-  {
-    id: '1',
-    itemCode: 'CIR-6-18-N',
-    productName: '六端口环形器',
-    productAttribute: '成品',
-    productType: '环形器',
-    categoryId: 'c1',
-    acquireMethod: 'self_made',
-    unit: 'pcs',
-    status: 1,
-    materialCount: 4,
-    specValues: [
-      { key: '频率范围', value: '6-18', unit: 'GHz' },
-      { key: '插入损耗', value: '≤0.5', unit: 'dB' },
-    ],
-    remark: null,
-  },
-  {
-    id: '2',
-    itemCode: 'ISO-2-6-SMA',
-    productName: '同轴隔离器',
-    productAttribute: '成品',
-    productType: '隔离器',
-    categoryId: 'c2',
-    acquireMethod: 'self_made',
-    unit: 'pcs',
-    status: 1,
-    materialCount: 0,
-    specValues: [{ key: '频率范围', value: '2-6', unit: 'GHz' }],
-    remark: '新产品',
-  },
-  {
-    id: '3',
-    itemCode: 'PCB-SMT-V1',
-    productName: 'SMT控制板',
-    productAttribute: '半成品',
-    productType: 'PCB组件',
-    categoryId: 'c3',
-    acquireMethod: 'outsourced',
-    unit: 'pcs',
-    status: 1,
-    materialCount: 0,
-    specValues: [],
-    remark: null,
-  },
-  {
-    id: '4',
-    itemCode: 'CABLE-SMA-100',
-    productName: 'SMA测试线',
-    productAttribute: '外购件',
-    productType: '线缆',
-    categoryId: null,
-    acquireMethod: 'purchased',
-    unit: '根',
-    status: 0,
-    materialCount: 0,
-    specValues: [{ key: '长度', value: '100', unit: 'cm' }],
-    remark: '停用',
-  },
-];
-
-const categoryOptions = ref([
-  { id: 'c1', productAttribute: '成品', productType: '环形器' },
-  { id: 'c2', productAttribute: '成品', productType: '隔离器' },
-  { id: 'c3', productAttribute: '半成品', productType: 'PCB组件' },
-]);
-const materialOptions = ref([
-  { id: 'm1', itemCode: 'MAG-001', productName: '钐钴磁钢', unit: '片' },
-  { id: 'm2', itemCode: 'FERRITE-001', productName: '铁氧体片', unit: '片' },
-  { id: 'm3', itemCode: 'CENTER-001', productName: '中心导体', unit: '个' },
-]);
+const auth = useAuthStore();
+const products = ref<ProductListItem[]>([]);
+const categoryOptions = ref<ProductCategoryListItem[]>([]);
+const materialOptions = ref<ProductOption[]>([]);
+const routes = ref<ProcessRouteListItem[]>([]);
+const itemKindLabels: Record<ProductItemKind, string> = {
+  material: '物料',
+  semi_finished: '半成品',
+  finished_product: '成品',
+};
+const itemKindLabel = (kind: ProductItemKind) => itemKindLabels[kind];
 
 const filteredProducts = computed(() =>
-  demoProducts.filter((p: any) => {
+  products.value.filter((p) => {
     const kw = query.keyword.trim().toLowerCase();
     return (
       (!kw || p.itemCode.toLowerCase().includes(kw) || p.productName.toLowerCase().includes(kw)) &&
@@ -719,9 +709,15 @@ const pageSize = ref(10);
 const productDialogVisible = ref(false);
 const detailDialogVisible = ref(false);
 const materialDialogVisible = ref(false);
+const defaultRouteDialogVisible = ref(false);
+const loading = ref(false);
+const materialLoading = ref(false);
+const submitting = ref(false);
 const editingProductId = ref<string | null>(null);
-const detailRow = ref<any>(null);
-const materialProduct = ref<any>(null);
+const detailRow = ref<ProductListItem | null>(null);
+const materialProduct = ref<ProductListItem | null>(null);
+const defaultRouteProduct = ref<ProductListItem | null>(null);
+const selectedDefaultRouteId = ref('');
 const materialRows = ref<MaterialRow[]>([]);
 const query = reactive({ keyword: '', categoryId: '', acquireMethod: '', status: '' });
 const productForm = reactive({
@@ -734,6 +730,13 @@ const productForm = reactive({
   remark: '',
   specValues: [] as SpecRow[],
 });
+const canConfigureProduction = (row: Pick<ProductListItem, 'acquireMethod' | 'itemKind'>) =>
+  row.acquireMethod === 'self_made' && row.itemKind !== 'material';
+const availableDefaultRoutes = computed(() =>
+  routes.value.filter(
+    (route) => route.productId === defaultRouteProduct.value?.id && route.status === 'enabled',
+  ),
+);
 
 const handleSearch = () => {
   currentPage.value = 1;
@@ -765,7 +768,7 @@ const openCreate = () => {
   addSpecRow();
   productDialogVisible.value = true;
 };
-const openEdit = (row: any) => {
+const openEdit = (row: ProductListItem) => {
   editingProductId.value = row.id;
   Object.assign(productForm, {
     itemCode: row.itemCode,
@@ -775,7 +778,7 @@ const openEdit = (row: any) => {
     acquireMethod: row.acquireMethod,
     enabled: row.status === 1,
     remark: row.remark ?? '',
-    specValues: (row.specValues || []).map((s: any) => ({
+    specValues: (row.specValues || []).map((s) => ({
       key: s.key,
       value: s.value ?? '',
       unit: s.unit ?? '',
@@ -784,14 +787,19 @@ const openEdit = (row: any) => {
   if (!productForm.specValues.length) addSpecRow();
   productDialogVisible.value = true;
 };
-const openDetail = (row: any) => {
+const openDetail = (row: ProductListItem) => {
   detailRow.value = row;
   detailDialogVisible.value = true;
 };
-const openMaterials = (row: any) => {
+const openMaterials = async (row: ProductListItem) => {
   materialProduct.value = row;
-  materialRows.value = [];
   materialDialogVisible.value = true;
+  await refreshMaterials();
+};
+const openDefaultRoute = (row: ProductListItem) => {
+  defaultRouteProduct.value = row;
+  selectedDefaultRouteId.value = row.defaultRouteId ?? '';
+  defaultRouteDialogVisible.value = true;
 };
 
 const addSpecRow = () => {
@@ -801,7 +809,26 @@ const removeSpecRow = (index: number) => {
   productForm.specValues.splice(index, 1);
 };
 
-const submitProduct = () => {
+const loadData = async () => {
+  loading.value = true;
+  try {
+    const [productRows, options] = await Promise.all([
+      productApi.products(),
+      productApi.productFormOptions(),
+    ]);
+    products.value = productRows;
+    categoryOptions.value = options.categories.filter((item) => item.status === 1);
+    materialOptions.value = options.products.filter(
+      (item) => item.itemKind === 'material' || item.itemKind === 'semi_finished',
+    );
+    routes.value = options.routes;
+  } catch (error) {
+    EMessage.error(error, '产品资料加载失败');
+  } finally {
+    loading.value = false;
+  }
+};
+const submitProduct = async () => {
   if (!productForm.itemCode.trim() || !productForm.productName.trim() || !productForm.unit.trim()) {
     EMessage.warning('请填写产品编码、产品名称和单位');
     return;
@@ -810,8 +837,28 @@ const submitProduct = () => {
     EMessage.warning('请选择产品分类');
     return;
   }
-  EMessage.success(editingProductId.value ? '产品已更新' : '产品已新增');
-  productDialogVisible.value = false;
+  submitting.value = true;
+  const payload = {
+    itemCode: productForm.itemCode,
+    productName: productForm.productName,
+    categoryId: productForm.categoryId,
+    unit: productForm.unit,
+    acquireMethod: productForm.acquireMethod as ProductListItem['acquireMethod'],
+    specValues: productForm.specValues,
+    status: productForm.enabled ? 1 : 0,
+    remark: productForm.remark || null,
+  };
+  try {
+    if (editingProductId.value) await productApi.updateProduct(editingProductId.value, payload);
+    else await productApi.createProduct(payload);
+    EMessage.success(editingProductId.value ? '产品已更新' : '产品已新增');
+    productDialogVisible.value = false;
+    await loadData();
+  } catch (error) {
+    EMessage.error(error, '产品保存失败');
+  } finally {
+    submitting.value = false;
+  }
 };
 
 const addMaterialRow = () => {
@@ -827,29 +874,98 @@ const addMaterialRow = () => {
 const removeMaterialRow = (index: number) => {
   materialRows.value.splice(index, 1);
 };
-const refreshMaterials = () => {
-  EMessage.success('物料选项已刷新');
+const refreshMaterials = async () => {
+  if (!materialProduct.value) return;
+  materialLoading.value = true;
+  try {
+    const [items, options] = await Promise.all([
+      productApi.materials(materialProduct.value.id),
+      productApi.productOptions(),
+    ]);
+    materialRows.value = items.map((item) => ({
+      materialProductId: item.materialProductId,
+      quantityPerUnit: Number(item.quantityPerUnit),
+      unit: item.unit,
+      isKeyMaterial: item.isKeyMaterial,
+      needBatchRecord: item.needBatchRecord,
+      remark: item.remark ?? '',
+    }));
+    materialOptions.value = options.filter(
+      (item) =>
+        (item.itemKind === 'material' || item.itemKind === 'semi_finished') &&
+        item.id !== materialProduct.value?.id,
+    );
+  } catch (error) {
+    EMessage.error(error, '物料清单加载失败');
+  } finally {
+    materialLoading.value = false;
+  }
 };
-const submitMaterials = () => {
-  if (!materialRows.value.length || materialRows.value.some((r) => !r.materialProductId)) {
+const submitMaterials = async () => {
+  if (materialRows.value.some((r) => !r.materialProductId)) {
     EMessage.warning('请选择物料');
     return;
   }
-  EMessage.success('物料清单已保存');
-  materialDialogVisible.value = false;
+  if (
+    new Set(materialRows.value.map((row) => row.materialProductId)).size !==
+    materialRows.value.length
+  ) {
+    EMessage.warning('同一物料不能重复添加');
+    return;
+  }
+  if (!materialProduct.value) return;
+  submitting.value = true;
+  try {
+    await productApi.replaceMaterials(
+      materialProduct.value.id,
+      materialRows.value as ProductMaterialPayload[],
+    );
+    EMessage.success('物料清单已保存');
+    materialDialogVisible.value = false;
+    await loadData();
+  } catch (error) {
+    EMessage.error(error, '物料清单保存失败');
+  } finally {
+    submitting.value = false;
+  }
 };
 
-const toggleStatus = (row: any) => {
-  EMessage.success(`产品已${row.status === 1 ? '停用' : '启用'}`);
+const submitDefaultRoute = async () => {
+  if (!defaultRouteProduct.value) return;
+  submitting.value = true;
+  try {
+    await productApi.setDefaultRoute(
+      defaultRouteProduct.value.id,
+      selectedDefaultRouteId.value || null,
+    );
+    EMessage.success('默认工艺路线已保存');
+    defaultRouteDialogVisible.value = false;
+    await loadData();
+  } catch (error) {
+    EMessage.error(error, '默认路线保存失败');
+  } finally {
+    submitting.value = false;
+  }
 };
-const showPlaceholder = () => {
-  EMessage.info('该模块尚未完成');
+const toggleStatus = async (row: ProductListItem) => {
+  const text = row.status === 1 ? '停用' : '启用';
+  try {
+    await ElMessageBox.confirm(`确定${text}“${row.productName}”吗？`, `${text}产品资料`, {
+      type: row.status === 1 ? 'warning' : 'info',
+    });
+    await productApi.setProductStatus(row.id, row.status === 1 ? 0 : 1);
+    EMessage.success(`产品已${text}`);
+    await loadData();
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') EMessage.error(error, `${text}产品失败`);
+  }
 };
 
-const formatSpecItem = (item: any) =>
+const formatSpecItem = (item: { key: string; value: string; unit?: string }) =>
   `${item.key}: ${item.value ?? '-'}${item.unit ? ` ${item.unit}` : ''}`;
-const formatSpecSummary = (items: any[]) =>
+const formatSpecSummary = (items: Array<{ key: string; value: string; unit?: string }>) =>
   !items?.length ? '-' : items.map(formatSpecItem).join('；');
+onMounted(loadData);
 </script>
 
 <style scoped>

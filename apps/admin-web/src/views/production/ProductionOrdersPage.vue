@@ -1,18 +1,5 @@
 <template>
   <div class="orders-page">
-    <div class="page-title">
-      <div>
-        <h2>工单管理</h2>
-        <p>管理生产工单与批次</p>
-      </div>
-      <el-button
-        type="primary"
-        :icon="Plus"
-        @click="openCreate"
-        >新增工单</el-button
-      >
-    </div>
-
     <section class="query-panel">
       <el-form
         class="query-form"
@@ -86,26 +73,30 @@
     </section>
 
     <section class="table-panel">
-      <div class="table-toolbar">
-        <el-button
-          type="primary"
-          :icon="Plus"
-          @click="openCreate"
-          >新增工单</el-button
-        >
-        <el-tooltip
-          content="刷新"
-          placement="top"
-        >
+      <TableToolbar>
+        <template #actions>
           <el-button
-            :icon="Refresh"
-            text
-            circle
-            :loading="loading"
-            @click="loadOrders"
-          />
-        </el-tooltip>
-      </div>
+            type="primary"
+            :icon="Plus"
+            @click="openCreate"
+            >新增工单</el-button
+          >
+        </template>
+        <template #tools>
+          <el-tooltip
+            content="刷新"
+            placement="top"
+          >
+            <el-button
+              :icon="Refresh"
+              text
+              circle
+              :loading="loading"
+              @click="loadOrders"
+            />
+          </el-tooltip>
+        </template>
+      </TableToolbar>
 
       <el-table
         v-loading="loading"
@@ -640,16 +631,14 @@
 import { computed, reactive, ref } from 'vue';
 import { ElMessageBox } from 'element-plus';
 import { Plus, Refresh } from '@element-plus/icons-vue';
+import TableToolbar from '../../components/TableToolbar.vue';
+import type { ProductionBatchStatus, WorkOrderStatus } from '@company/contracts';
 import { DialogWidth } from '../../utils/dialog';
 import { EMessage } from '../../utils/message';
 
 defineOptions({ name: 'ProductionOrdersPage' });
 
 /* ====== 类型定义 ====== */
-type WorkOrderStatus = 'draft' | 'released' | 'doing' | 'completed' | 'closed' | 'cancelled';
-type ProductionBatchStatus =
-  'pending' | 'material_pending' | 'material_assigned' | 'doing' | 'completed' | 'cancelled';
-
 interface WorkOrderListItem {
   id: string;
   orderNo: string;
@@ -733,6 +722,7 @@ const batchStatusOptions: Array<{
   { value: 'pending', label: '已生成批次', type: 'info' },
   { value: 'material_pending', label: '已生成物料需求', type: 'primary' },
   { value: 'material_assigned', label: '已分配物料批次', type: 'primary' },
+  { value: 'material_outbound', label: '已领料出库', type: 'primary' },
   { value: 'doing', label: '执行中', type: 'primary' },
   { value: 'completed', label: '已完成', type: 'success' },
   { value: 'cancelled', label: '已取消', type: 'danger' },
@@ -1174,25 +1164,6 @@ const formatQuantity = (value: string | number | null) => {
   flex-direction: column;
   gap: 16px;
 }
-
-.page-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 0;
-}
-.page-title h2 {
-  margin: 0;
-  color: #283a50;
-  font-size: 20px;
-  font-weight: 600;
-}
-.page-title p {
-  margin: 4px 0 0;
-  color: #6b7280;
-  font-size: 14px;
-}
-
 .query-panel,
 .table-panel {
   border: 1px solid #e5e7eb;

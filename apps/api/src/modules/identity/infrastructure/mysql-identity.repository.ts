@@ -5,7 +5,9 @@ import type {
   CreateSystemUserPayload,
   OperationLogListItem,
   OperationLogQuery,
+  OperationResult,
   PageResult,
+  PermissionType,
   UpdateSystemRolePayload,
   UpdateSystemUserPayload,
 } from '@company/contracts';
@@ -455,7 +457,7 @@ export class MysqlIdentityRepository implements IdentityRepository, AuditReposit
         parent_id: number | null;
         name: string;
         code: string;
-        type: string;
+        type: PermissionType;
         route_path: string | null;
         api_method: string | null;
         api_path: string | null;
@@ -575,7 +577,7 @@ type OperationLogRow = {
   username: string | null;
   target_id: number | null;
   target_type: string | null;
-  result: string;
+  result: OperationResult;
   before_data: unknown;
   after_data: unknown;
   ip: string | null;
