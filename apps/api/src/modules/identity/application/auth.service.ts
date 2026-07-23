@@ -6,8 +6,6 @@ import type { JwtClaims, LoginRequest, TokenResponse, UserProfile } from '@compa
 import { loadAppConfig } from '../../../config/env.js';
 import { IdentityRepository } from './ports/identity.repository.js';
 
-const ACCESS_TTL = 15 * 60;
-const REFRESH_TTL = 7 * 24 * 60 * 60;
 @Injectable()
 export class AuthService {
   private readonly config = loadAppConfig();
@@ -52,16 +50,18 @@ export class AuthService {
   private async issue(profile: UserProfile) {
     const now = Math.floor(Date.now() / 1000);
     const jti = randomUUID();
-    const accessToken = await this.sign(profile, 'access', now + ACCESS_TTL);
-    const refreshToken = await this.sign(profile, 'refresh', now + REFRESH_TTL, jti);
+    const accessExpiresAt = now + this.config.accessTokenTtlSeconds;
+    const refreshExpiresAt = now + this.config.refreshTokenTtlSeconds;
+    const accessToken = await this.sign(profile, 'access', accessExpiresAt);
+    const refreshToken = await this.sign(profile, 'refresh', refreshExpiresAt, jti);
     return {
       refreshToken,
-      record: { userId: profile.id, jti, expiresAt: new Date((now + REFRESH_TTL) * 1000) },
+      record: { userId: profile.id, jti, expiresAt: new Date(refreshExpiresAt * 1000) },
       response: {
         user: profile,
         accessToken,
-        accessTokenExpiresAt: new Date((now + ACCESS_TTL) * 1000).toISOString(),
-        refreshTokenExpiresAt: new Date((now + REFRESH_TTL) * 1000).toISOString(),
+        accessTokenExpiresAt: new Date(accessExpiresAt * 1000).toISOString(),
+        refreshTokenExpiresAt: new Date(refreshExpiresAt * 1000).toISOString(),
       } satisfies TokenResponse,
     };
   }

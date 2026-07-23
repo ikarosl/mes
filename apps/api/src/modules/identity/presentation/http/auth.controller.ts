@@ -6,7 +6,6 @@ import { CurrentUser, Public } from './auth.decorators.js';
 import { LoginDto } from './dto/auth.dto.js';
 
 const COOKIE = 'company_refresh_token';
-const MAX_AGE = 7 * 24 * 60 * 60 * 1000;
 @Controller('auth')
 export class AuthController {
   private readonly config = loadAppConfig();
@@ -40,7 +39,10 @@ export class AuthController {
     return user;
   }
   private setCookie(response: CookieResponse, value: string) {
-    response.cookie(COOKIE, value, { ...this.cookieOptions(), maxAge: MAX_AGE });
+    response.cookie(COOKIE, value, {
+      ...this.cookieOptions(),
+      maxAge: this.config.refreshTokenTtlSeconds * 1000,
+    });
   }
   private cookieOptions() {
     return {

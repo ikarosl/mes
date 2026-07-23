@@ -36,7 +36,7 @@ defineProps<{
   justify-content: space-between;
   gap: 12px;
   min-height: 32px;
-  padding: 6px 0;
+  padding: 6px 16px;
 }
 
 .toolbar-actions {

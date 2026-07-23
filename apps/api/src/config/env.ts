@@ -6,6 +6,8 @@ export interface AppConfig {
   jwtSecret: Uint8Array;
   jwtIssuer: string;
   jwtAudience: string;
+  accessTokenTtlSeconds: number;
+  refreshTokenTtlSeconds: number;
   refreshCookiePath: string;
   refreshCookieSecure: boolean;
   trustProxyHops: number;
@@ -21,6 +23,8 @@ export const loadAppConfig = (): AppConfig => {
     jwtSecret: new TextEncoder().encode(secret),
     jwtIssuer: required('JWT_ISSUER'),
     jwtAudience: required('JWT_AUDIENCE'),
+    accessTokenTtlSeconds: integer('ACCESS_TOKEN_TTL_SECONDS', 15 * 60),
+    refreshTokenTtlSeconds: integer('REFRESH_TOKEN_TTL_SECONDS', 7 * 24 * 60 * 60),
     refreshCookiePath: process.env.REFRESH_TOKEN_COOKIE_PATH ?? '/api/auth',
     refreshCookieSecure: process.env.REFRESH_TOKEN_COOKIE_SECURE === 'true',
     trustProxyHops: nonNegativeInteger('TRUST_PROXY_HOPS', 0),
