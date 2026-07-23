@@ -135,7 +135,7 @@
         >
           <template #default="{ row }">
             <div class="product-name">{{ row.productName }}</div>
-            <div class="sub-text">{{ row.productModel }}</div>
+            <div class="sub-text">{{ row.itemCode }}</div>
           </template>
         </el-table-column>
         <el-table-column
@@ -270,7 +270,7 @@
             reserve-keyword
             :loading="workOrderLoading"
             :remote-method="searchWorkOrders"
-            placeholder="输入工单号、客户或产品搜索"
+            placeholder="输入工单号、产品编码或名称搜索"
             @change="handleTaskOrderChange"
           >
             <el-option
@@ -827,18 +827,16 @@ defineOptions({ name: 'ProductionTasksPage' });
 /* ====== 类型定义 ====== */
 type ProductionBatchStatus =
   'pending' | 'material_pending' | 'material_assigned' | 'doing' | 'completed' | 'cancelled';
-type BatchStepStatus = 'pending' | 'doing' | 'completed' | 'abnormal' | 'skipped';
+type BatchStepStatus = 'pending' | 'doing' | 'completed' | 'abnormal';
 
 interface WorkOrderListItem {
   id: string;
   orderNo: string;
   productId: string;
   productName: string;
-  productModel: string;
+  itemCode: string;
   plannedQuantity: string;
   assignedQuantity: string;
-  routeId: string | null;
-  routeName: string | null;
   ownerId: string | null;
   ownerName: string | null;
   status: string;
@@ -854,7 +852,7 @@ interface ProductionBatchItem {
   batchNo: string;
   productId: string;
   productName: string;
-  productModel: string;
+  itemCode: string;
   routeId: string | null;
   routeName: string | null;
   plannedQuantity: string;
@@ -898,7 +896,7 @@ interface ProductionTaskDetail {
   batchNo: string;
   workOrderNo: string | null;
   productName: string;
-  productModel: string;
+  itemCode: string;
   routeName: string | null;
   plannedQuantity: string;
   ownerName: string | null;
@@ -910,15 +908,15 @@ interface ProductionTaskDetail {
 interface ProductListItem {
   id: string;
   productName: string;
-  productModel: string;
-  categoryId: string | null;
+  itemCode: string;
+  defaultRouteId: string | null;
 }
 
 interface ProcessRouteListItem {
   id: string;
   routeName: string;
   version: string | null;
-  productCategoryId: string | null;
+  productId: string;
 }
 
 interface SystemUserListItem {
@@ -952,7 +950,6 @@ const stepStatusOptions: Array<{ value: BatchStepStatus; label: string }> = [
   { value: 'doing', label: '进行中' },
   { value: 'completed', label: '已完成' },
   { value: 'abnormal', label: '异常' },
-  { value: 'skipped', label: '已跳过' },
 ];
 const stepStatusLabels = Object.fromEntries(
   stepStatusOptions.map((item) => [item.value, item.label]),
@@ -976,7 +973,7 @@ const tasks = ref<ProductionBatchItem[]>([
     batchNo: 'BATCH-001',
     productId: 'p1',
     productName: 'PCB主板-A100',
-    productModel: 'A100-V2',
+    itemCode: 'A100-V2',
     routeId: 'r1',
     routeName: 'SMT贴片工艺',
     plannedQuantity: '250',
@@ -994,7 +991,7 @@ const tasks = ref<ProductionBatchItem[]>([
     batchNo: 'BATCH-002',
     productId: 'p1',
     productName: 'PCB主板-A100',
-    productModel: 'A100-V2',
+    itemCode: 'A100-V2',
     routeId: 'r1',
     routeName: 'SMT贴片工艺',
     plannedQuantity: '250',
@@ -1012,7 +1009,7 @@ const tasks = ref<ProductionBatchItem[]>([
     batchNo: 'BATCH-003',
     productId: 'p3',
     productName: '机箱外壳-C500',
-    productModel: 'C500-V3',
+    itemCode: 'C500-V3',
     routeId: 'r3',
     routeName: '钣金加工工艺',
     plannedQuantity: '50',
@@ -1030,7 +1027,7 @@ const tasks = ref<ProductionBatchItem[]>([
     batchNo: 'BATCH-004',
     productId: 'p1',
     productName: 'PCB主板-A100',
-    productModel: 'A100-V2',
+    itemCode: 'A100-V2',
     routeId: 'r1',
     routeName: 'SMT贴片工艺',
     plannedQuantity: '1000',
@@ -1044,15 +1041,15 @@ const tasks = ref<ProductionBatchItem[]>([
 ]);
 
 const productOptions = ref<ProductListItem[]>([
-  { id: 'p1', productName: 'PCB主板-A100', productModel: 'A100-V2', categoryId: 'cat1' },
-  { id: 'p2', productName: '电源模块-B200', productModel: 'B200-V1', categoryId: 'cat2' },
-  { id: 'p3', productName: '机箱外壳-C500', productModel: 'C500-V3', categoryId: 'cat3' },
+  { id: 'p1', productName: 'PCB主板-A100', itemCode: 'A100-V2', defaultRouteId: 'r1' },
+  { id: 'p2', productName: '电源模块-B200', itemCode: 'B200-V1', defaultRouteId: 'r2' },
+  { id: 'p3', productName: '机箱外壳-C500', itemCode: 'C500-V3', defaultRouteId: 'r3' },
 ]);
 
 const routeOptions = ref<ProcessRouteListItem[]>([
-  { id: 'r1', routeName: 'SMT贴片工艺', version: 'V2', productCategoryId: 'cat1' },
-  { id: 'r2', routeName: '电源组装工艺', version: 'V1', productCategoryId: 'cat2' },
-  { id: 'r3', routeName: '钣金加工工艺', version: 'V3', productCategoryId: 'cat3' },
+  { id: 'r1', routeName: 'SMT贴片工艺', version: 'V2', productId: 'p1' },
+  { id: 'r2', routeName: '电源组装工艺', version: 'V1', productId: 'p2' },
+  { id: 'r3', routeName: '钣金加工工艺', version: 'V3', productId: 'p3' },
 ]);
 
 const userOptions = ref<SystemUserListItem[]>([
@@ -1067,11 +1064,9 @@ const workOrderOptions = ref<WorkOrderListItem[]>([
     orderNo: 'WO-2026-0001',
     productId: 'p1',
     productName: 'PCB主板-A100',
-    productModel: 'A100-V2',
+    itemCode: 'A100-V2',
     plannedQuantity: '500',
     assignedQuantity: '250',
-    routeId: 'r1',
-    routeName: 'SMT贴片工艺',
     ownerId: 'u1',
     ownerName: '张工',
     status: 'doing',
@@ -1084,11 +1079,9 @@ const workOrderOptions = ref<WorkOrderListItem[]>([
     orderNo: 'WO-2026-0004',
     productId: 'p3',
     productName: '机箱外壳-C500',
-    productModel: 'C500-V3',
+    itemCode: 'C500-V3',
     plannedQuantity: '50',
     assignedQuantity: '0',
-    routeId: 'r3',
-    routeName: '钣金加工工艺',
     ownerId: 'u3',
     ownerName: '王工',
     status: 'released',
@@ -1101,11 +1094,9 @@ const workOrderOptions = ref<WorkOrderListItem[]>([
     orderNo: 'WO-2026-0005',
     productId: 'p1',
     productName: 'PCB主板-A100',
-    productModel: 'A100-V2',
+    itemCode: 'A100-V2',
     plannedQuantity: '300',
     assignedQuantity: '0',
-    routeId: 'r1',
-    routeName: 'SMT贴片工艺',
     ownerId: 'u2',
     ownerName: '李工',
     status: 'released',
@@ -1306,7 +1297,7 @@ const searchWorkOrders = async (keyword: string) => {
       return (
         order.orderNo.toLowerCase().includes(kw) ||
         order.productName.toLowerCase().includes(kw) ||
-        order.productModel.toLowerCase().includes(kw)
+        order.itemCode.toLowerCase().includes(kw)
       );
     });
     workOrderOptions.value = filtered;
@@ -1318,11 +1309,9 @@ const searchWorkOrders = async (keyword: string) => {
           orderNo: 'WO-2026-0001',
           productId: 'p1',
           productName: 'PCB主板-A100',
-          productModel: 'A100-V2',
+          itemCode: 'A100-V2',
           plannedQuantity: '500',
           assignedQuantity: '250',
-          routeId: 'r1',
-          routeName: 'SMT贴片工艺',
           ownerId: 'u1',
           ownerName: '张工',
           status: 'doing',
@@ -1335,11 +1324,9 @@ const searchWorkOrders = async (keyword: string) => {
           orderNo: 'WO-2026-0004',
           productId: 'p3',
           productName: '机箱外壳-C500',
-          productModel: 'C500-V3',
+          itemCode: 'C500-V3',
           plannedQuantity: '50',
           assignedQuantity: '0',
-          routeId: 'r3',
-          routeName: '钣金加工工艺',
           ownerId: 'u3',
           ownerName: '王工',
           status: 'released',
@@ -1352,11 +1339,9 @@ const searchWorkOrders = async (keyword: string) => {
           orderNo: 'WO-2026-0005',
           productId: 'p1',
           productName: 'PCB主板-A100',
-          productModel: 'A100-V2',
+          itemCode: 'A100-V2',
           plannedQuantity: '300',
           assignedQuantity: '0',
-          routeId: 'r1',
-          routeName: 'SMT贴片工艺',
           ownerId: 'u2',
           ownerName: '李工',
           status: 'released',
@@ -1391,17 +1376,9 @@ const taskQuantityMax = computed(() => {
     : selectedWorkOrderRemaining.value;
 });
 const availableRouteOptions = computed(() => {
-  if (
-    !selectedWorkOrder.value ||
-    selectedProduct.value?.categoryId === null ||
-    selectedProduct.value?.categoryId === undefined
-  ) {
-    return routeOptions.value;
-  }
+  if (!selectedWorkOrder.value) return [];
   return routeOptions.value.filter(
-    (route) =>
-      route.productCategoryId === null ||
-      route.productCategoryId === selectedProduct.value?.categoryId,
+    (route) => route.productId === selectedWorkOrder.value?.productId,
   );
 });
 const sopFileOptions = computed(() => {
@@ -1503,7 +1480,6 @@ const handleTaskOrderChange = async (workOrderId: string) => {
   const requestToken = ++workOrderRouteRequestToken;
   const order = workOrderOptions.value.find((item) => item.id === workOrderId);
   if (!order) {
-    routeOptions.value = [];
     taskForm.routeId = '';
     createPreviewSteps.value = [];
     createPreviewMaterials.value = [];
@@ -1526,7 +1502,10 @@ const handleTaskOrderChange = async (workOrderId: string) => {
   if (requestToken !== workOrderRouteRequestToken || taskForm.workOrderId !== workOrderId) return;
 
   // Auto-select default route
-  taskForm.routeId = resolveRouteId(routeOptions.value);
+  taskForm.routeId = resolveRouteId(
+    availableRouteOptions.value,
+    selectedProduct.value?.defaultRouteId,
+  );
 
   taskForm.ownerId = order.ownerId ?? '';
   taskForm.planStartDate = order.planStartDate ?? '';
@@ -1614,7 +1593,7 @@ const openDetail = (row: ProductionBatchItem) => {
     batchNo: row.batchNo,
     workOrderNo: row.workOrderNo,
     productName: row.productName,
-    productModel: row.productModel,
+    itemCode: row.itemCode,
     routeName: row.routeName,
     plannedQuantity: row.plannedQuantity,
     ownerName: row.ownerName,
@@ -1809,16 +1788,14 @@ const submitStep = async () => {
 
 const getTaskStatusMeta = (status: ProductionBatchStatus) =>
   taskStatusOptions.find((item) => item.value === status) ?? taskStatusOptions[0];
-const formatProduct = (product: ProductListItem) =>
-  `${product.productModel} / ${product.productName}`;
-const formatTaskProduct = (order: WorkOrderListItem) =>
-  `${order.productModel} / ${order.productName}`;
+const formatProduct = (product: ProductListItem) => `${product.itemCode} / ${product.productName}`;
+const formatTaskProduct = (order: WorkOrderListItem) => `${order.itemCode} / ${order.productName}`;
 const formatRoute = (route: ProcessRouteListItem) =>
   `${route.routeName}${route.version ? ` / ${route.version}` : ''}`;
 const getWorkOrderRemaining = (order: WorkOrderListItem) =>
   Math.max(Number(order.plannedQuantity) - Number(order.assignedQuantity), 0);
 const formatWorkOrder = (order: WorkOrderListItem) =>
-  [order.orderNo, order.productModel, '剩余 ' + formatQuantity(getWorkOrderRemaining(order))].join(
+  [order.orderNo, order.itemCode, '剩余 ' + formatQuantity(getWorkOrderRemaining(order))].join(
     ' / ',
   );
 const formatQuantity = (value: string | number | null) => {

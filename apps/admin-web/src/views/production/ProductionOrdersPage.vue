@@ -126,7 +126,7 @@
         >
           <template #default="{ row }">
             <div class="product-name">{{ row.productName }}</div>
-            <div class="sub-text">{{ row.productModel }}</div>
+            <div class="sub-text">{{ row.itemCode }}</div>
           </template>
         </el-table-column>
         <el-table-column
@@ -313,15 +313,9 @@
               :step="1"
             />
           </el-form-item>
-          <el-form-item label="客户订单号">
+          <el-form-item label="外部订单号">
             <el-input
-              v-model="orderForm.customerOrderNo"
-              placeholder="可选填写"
-            />
-          </el-form-item>
-          <el-form-item label="客户名称">
-            <el-input
-              v-model="orderForm.customerName"
+              v-model="orderForm.externalOrderNo"
               placeholder="可选填写"
             />
           </el-form-item>
@@ -387,21 +381,15 @@
         >
           <el-descriptions-item label="工单号">{{ activeOrder.orderNo }}</el-descriptions-item>
           <el-descriptions-item label="产品">{{ activeOrder.productName }}</el-descriptions-item>
-          <el-descriptions-item label="型号">{{ activeOrder.productModel }}</el-descriptions-item>
-          <el-descriptions-item label="工艺路线">{{
-            activeOrder.routeName || '-'
-          }}</el-descriptions-item>
+          <el-descriptions-item label="产品编码">{{ activeOrder.itemCode }}</el-descriptions-item>
           <el-descriptions-item label="计划数量">{{
             formatQuantity(activeOrder.plannedQuantity)
           }}</el-descriptions-item>
           <el-descriptions-item label="已分配">{{
             formatQuantity(activeOrder.assignedQuantity)
           }}</el-descriptions-item>
-          <el-descriptions-item label="客户订单号">{{
-            activeOrder.customerOrderNo || '-'
-          }}</el-descriptions-item>
-          <el-descriptions-item label="客户名称">{{
-            activeOrder.customerName || '-'
+          <el-descriptions-item label="外部订单号">{{
+            activeOrder.externalOrderNo || '-'
           }}</el-descriptions-item>
           <el-descriptions-item label="负责人">{{
             activeOrder.ownerName || '-'
@@ -575,10 +563,10 @@
             v-model="batchForm.routeId"
             clearable
             filterable
-            placeholder="默认沿用工单路线"
+            placeholder="默认使用产品默认路线"
           >
             <el-option
-              v-for="route in routeOptions"
+              v-for="route in availableRouteOptions"
               :key="route.id"
               :label="route.routeName"
               :value="route.id"
@@ -667,15 +655,12 @@ interface WorkOrderListItem {
   orderNo: string;
   productId: string;
   productName: string;
-  productModel: string;
+  itemCode: string;
   plannedQuantity: string;
   assignedQuantity: string;
-  routeId: string | null;
-  routeName: string | null;
   ownerId: string | null;
   ownerName: string | null;
-  customerOrderNo: string | null;
-  customerName: string | null;
+  externalOrderNo: string | null;
   status: WorkOrderStatus;
   currentFlow: string;
   nextAction: string;
@@ -694,7 +679,7 @@ interface ProductionBatchItem {
   batchNo: string;
   productId: string;
   productName: string;
-  productModel: string;
+  itemCode: string;
   routeId: string | null;
   routeName: string | null;
   plannedQuantity: string;
@@ -709,15 +694,15 @@ interface ProductionBatchItem {
 interface ProductListItem {
   id: string;
   productName: string;
-  productModel: string;
-  categoryId: string | null;
+  itemCode: string;
+  defaultRouteId: string | null;
 }
 
 interface ProcessRouteListItem {
   id: string;
   routeName: string;
   version: string | null;
-  productCategoryId: string | null;
+  productId: string;
 }
 
 interface SystemUserListItem {
@@ -760,15 +745,12 @@ const orders = ref<WorkOrderListItem[]>([
     orderNo: 'WO-2026-0001',
     productId: '1',
     productName: 'PCB主板-A100',
-    productModel: 'A100-V2',
+    itemCode: 'A100-V2',
     plannedQuantity: '500',
     assignedQuantity: '250',
-    routeId: 'r1',
-    routeName: 'SMT贴片工艺',
     ownerId: 'u1',
     ownerName: '张工',
-    customerOrderNo: 'CO-001',
-    customerName: '客户A',
+    externalOrderNo: 'CO-001',
     status: 'doing',
     currentFlow: 'SMT贴片',
     nextAction: 'AOI检测',
@@ -781,15 +763,12 @@ const orders = ref<WorkOrderListItem[]>([
     orderNo: 'WO-2026-0002',
     productId: '1',
     productName: 'PCB主板-A100',
-    productModel: 'A100-V2',
+    itemCode: 'A100-V2',
     plannedQuantity: '1000',
     assignedQuantity: '1000',
-    routeId: 'r1',
-    routeName: 'SMT贴片工艺',
     ownerId: 'u2',
     ownerName: '李工',
-    customerOrderNo: 'CO-002',
-    customerName: '客户B',
+    externalOrderNo: 'CO-002',
     status: 'completed',
     currentFlow: '已完工',
     nextAction: '-',
@@ -802,15 +781,12 @@ const orders = ref<WorkOrderListItem[]>([
     orderNo: 'WO-2026-0003',
     productId: '2',
     productName: '电源模块-B200',
-    productModel: 'B200-V1',
+    itemCode: 'B200-V1',
     plannedQuantity: '200',
     assignedQuantity: '0',
-    routeId: 'r2',
-    routeName: '电源组装工艺',
     ownerId: null,
     ownerName: null,
-    customerOrderNo: null,
-    customerName: null,
+    externalOrderNo: null,
     status: 'draft',
     currentFlow: '未开始',
     nextAction: '下达工单',
@@ -823,15 +799,12 @@ const orders = ref<WorkOrderListItem[]>([
     orderNo: 'WO-2026-0004',
     productId: '3',
     productName: '机箱外壳-C500',
-    productModel: 'C500-V3',
+    itemCode: 'C500-V3',
     plannedQuantity: '50',
     assignedQuantity: '50',
-    routeId: 'r3',
-    routeName: '钣金加工工艺',
     ownerId: 'u1',
     ownerName: '张工',
-    customerOrderNo: 'CO-003',
-    customerName: '客户C',
+    externalOrderNo: 'CO-003',
     status: 'released',
     currentFlow: '待生产',
     nextAction: '创建生产批次',
@@ -844,15 +817,12 @@ const orders = ref<WorkOrderListItem[]>([
     orderNo: 'WO-2026-0005',
     productId: '1',
     productName: 'PCB主板-A100',
-    productModel: 'A100-V2',
+    itemCode: 'A100-V2',
     plannedQuantity: '300',
     assignedQuantity: '0',
-    routeId: 'r1',
-    routeName: 'SMT贴片工艺',
     ownerId: 'u2',
     ownerName: '李工',
-    customerOrderNo: null,
-    customerName: null,
+    externalOrderNo: null,
     status: 'draft',
     currentFlow: '未开始',
     nextAction: '下达工单',
@@ -863,15 +833,15 @@ const orders = ref<WorkOrderListItem[]>([
 ]);
 
 const productOptions = ref<ProductListItem[]>([
-  { id: '1', productName: 'PCB主板-A100', productModel: 'A100-V2', categoryId: 'cat1' },
-  { id: '2', productName: '电源模块-B200', productModel: 'B200-V1', categoryId: 'cat2' },
-  { id: '3', productName: '机箱外壳-C500', productModel: 'C500-V3', categoryId: 'cat3' },
+  { id: '1', productName: 'PCB主板-A100', itemCode: 'A100-V2', defaultRouteId: 'r1' },
+  { id: '2', productName: '电源模块-B200', itemCode: 'B200-V1', defaultRouteId: 'r2' },
+  { id: '3', productName: '机箱外壳-C500', itemCode: 'C500-V3', defaultRouteId: 'r3' },
 ]);
 
 const routeOptions = ref<ProcessRouteListItem[]>([
-  { id: 'r1', routeName: 'SMT贴片工艺', version: 'V2', productCategoryId: 'cat1' },
-  { id: 'r2', routeName: '电源组装工艺', version: 'V1', productCategoryId: 'cat2' },
-  { id: 'r3', routeName: '钣金加工工艺', version: 'V3', productCategoryId: 'cat3' },
+  { id: 'r1', routeName: 'SMT贴片工艺', version: 'V2', productId: '1' },
+  { id: 'r2', routeName: '电源组装工艺', version: 'V1', productId: '2' },
+  { id: 'r3', routeName: '钣金加工工艺', version: 'V3', productId: '3' },
 ]);
 
 const userOptions = ref<SystemUserListItem[]>([
@@ -900,8 +870,7 @@ const orderForm = reactive({
   orderNo: '',
   productId: '',
   plannedQuantity: 1,
-  customerOrderNo: '',
-  customerName: '',
+  externalOrderNo: '',
   ownerId: '',
   planStartDate: '',
   planEndDate: '',
@@ -921,6 +890,22 @@ const batchForm = reactive({
 const editingBatch = computed(
   () => taskBatches.value.find((item) => item.id === editingBatchId.value) ?? null,
 );
+const availableRouteOptions = computed(() => {
+  if (!taskOrder.value) {
+    return [];
+  }
+  return routeOptions.value.filter((route) => route.productId === taskOrder.value?.productId);
+});
+const getDefaultRouteForProduct = (productId: string) => {
+  const defaultRouteId = productOptions.value.find(
+    (product) => product.id === productId,
+  )?.defaultRouteId;
+  return (
+    routeOptions.value.find(
+      (route) => route.id === defaultRouteId && route.productId === productId,
+    ) ?? null
+  );
+};
 const batchQuantityMax = computed(() => {
   if (!taskOrder.value) {
     return null;
@@ -984,8 +969,7 @@ const resetOrderForm = () => {
     orderNo: '',
     productId: '',
     plannedQuantity: 1,
-    customerOrderNo: '',
-    customerName: '',
+    externalOrderNo: '',
     ownerId: '',
     planStartDate: '',
     planEndDate: '',
@@ -1005,8 +989,7 @@ const openEdit = (row: WorkOrderListItem) => {
     orderNo: row.orderNo,
     productId: row.productId,
     plannedQuantity: Number(row.plannedQuantity),
-    customerOrderNo: row.customerOrderNo ?? '',
-    customerName: row.customerName ?? '',
+    externalOrderNo: row.externalOrderNo ?? '',
     ownerId: row.ownerId ?? '',
     planStartDate: row.planStartDate ?? '',
     planEndDate: row.planEndDate ?? '',
@@ -1028,6 +1011,7 @@ const submitOrder = () => {
 };
 
 const openDetail = (row: WorkOrderListItem) => {
+  const defaultRoute = getDefaultRouteForProduct(row.productId);
   const batches: ProductionBatchItem[] = [
     {
       id: 'b1',
@@ -1035,9 +1019,9 @@ const openDetail = (row: WorkOrderListItem) => {
       batchNo: 'BATCH-001',
       productId: row.productId,
       productName: row.productName,
-      productModel: row.productModel,
-      routeId: row.routeId,
-      routeName: row.routeName,
+      itemCode: row.itemCode,
+      routeId: defaultRoute?.id ?? null,
+      routeName: defaultRoute?.routeName ?? null,
       plannedQuantity: '250',
       ownerId: 'u1',
       ownerName: '张工',
@@ -1052,9 +1036,9 @@ const openDetail = (row: WorkOrderListItem) => {
       batchNo: 'BATCH-002',
       productId: row.productId,
       productName: row.productName,
-      productModel: row.productModel,
-      routeId: row.routeId,
-      routeName: row.routeName,
+      itemCode: row.itemCode,
+      routeId: defaultRoute?.id ?? null,
+      routeName: defaultRoute?.routeName ?? null,
       plannedQuantity: '250',
       ownerId: 'u2',
       ownerName: '李工',
@@ -1069,6 +1053,7 @@ const openDetail = (row: WorkOrderListItem) => {
 };
 
 const openTasks = (row: WorkOrderListItem) => {
+  const defaultRoute = getDefaultRouteForProduct(row.productId);
   taskOrder.value = row;
   taskBatches.value = [
     {
@@ -1077,9 +1062,9 @@ const openTasks = (row: WorkOrderListItem) => {
       batchNo: 'BATCH-001',
       productId: row.productId,
       productName: row.productName,
-      productModel: row.productModel,
-      routeId: row.routeId,
-      routeName: row.routeName,
+      itemCode: row.itemCode,
+      routeId: defaultRoute?.id ?? null,
+      routeName: defaultRoute?.routeName ?? null,
       plannedQuantity: '250',
       ownerId: 'u1',
       ownerName: '张工',
@@ -1096,7 +1081,9 @@ const resetBatchForm = () => {
   const maxQuantity = batchQuantityMax.value ?? 1;
   Object.assign(batchForm, {
     batchNo: '',
-    routeId: taskOrder.value?.routeId ?? '',
+    routeId: taskOrder.value
+      ? (getDefaultRouteForProduct(taskOrder.value.productId)?.id ?? '')
+      : '',
     plannedQuantity: Math.min(1, Math.max(maxQuantity, 0.0001)),
     ownerId: taskOrder.value?.ownerId ?? '',
     status: 'pending' as ProductionBatchStatus,
@@ -1171,8 +1158,7 @@ const getOrderStatusMeta = (status: WorkOrderStatus) =>
   orderStatusOptions.find((item) => item.value === status) ?? orderStatusOptions[0];
 const getBatchStatusMeta = (status: ProductionBatchStatus) =>
   batchStatusOptions.find((item) => item.value === status) ?? batchStatusOptions[0];
-const formatProduct = (product: ProductListItem) =>
-  `${product.productModel} / ${product.productName}`;
+const formatProduct = (product: ProductListItem) => `${product.itemCode} / ${product.productName}`;
 
 const formatQuantity = (value: string | number | null) => {
   const amount = Number(value ?? 0);

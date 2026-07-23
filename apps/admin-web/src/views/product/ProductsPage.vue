@@ -24,7 +24,7 @@
           <el-input
             v-model="query.keyword"
             clearable
-            placeholder="型号或名称"
+            placeholder="编码或名称"
           />
         </el-form-item>
         <el-form-item label="产品分类">
@@ -120,11 +120,11 @@
         class="data-table"
       >
         <el-table-column
-          label="产品型号"
+          label="产品编码"
           min-width="170"
         >
           <template #default="{ row }"
-            ><span class="product-model">{{ row.productModel }}</span></template
+            ><span class="item-code">{{ row.itemCode }}</span></template
           >
         </el-table-column>
         <el-table-column
@@ -266,12 +266,12 @@
         <div class="form-section-title">基础信息</div>
         <div class="form-grid">
           <el-form-item
-            label="产品型号"
+            label="产品编码"
             required
           >
             <el-input
-              v-model="productForm.productModel"
-              placeholder="请输入产品型号"
+              v-model="productForm.itemCode"
+              placeholder="请输入产品编码"
             />
           </el-form-item>
           <el-form-item
@@ -425,7 +425,7 @@
         :column="2"
         border
       >
-        <el-descriptions-item label="产品型号">{{ detailRow.productModel }}</el-descriptions-item>
+        <el-descriptions-item label="产品编码">{{ detailRow.itemCode }}</el-descriptions-item>
         <el-descriptions-item label="产品名称">{{ detailRow.productName }}</el-descriptions-item>
         <el-descriptions-item label="产品属性">{{
           detailRow.productAttribute || '-'
@@ -484,7 +484,7 @@
         />
         <div class="bom-header">
           <div>
-            <span class="product-model">{{ materialProduct.productModel }}</span>
+            <span class="item-code">{{ materialProduct.itemCode }}</span>
             <span class="sub-text">{{ materialProduct.productName }}</span>
           </div>
           <div class="bom-actions">
@@ -518,7 +518,7 @@
                 <el-option
                   v-for="item in materialOptions"
                   :key="item.id"
-                  :label="`${item.productModel} / ${item.productName}`"
+                  :label="`${item.itemCode} / ${item.productName}`"
                   :value="item.id"
                 />
               </el-select>
@@ -626,7 +626,7 @@ const acquireMethodLabels = { self_made: '自制', outsourced: '委外', purchas
 const demoProducts = [
   {
     id: '1',
-    productModel: 'CIR-6-18-N',
+    itemCode: 'CIR-6-18-N',
     productName: '六端口环形器',
     productAttribute: '成品',
     productType: '环形器',
@@ -643,7 +643,7 @@ const demoProducts = [
   },
   {
     id: '2',
-    productModel: 'ISO-2-6-SMA',
+    itemCode: 'ISO-2-6-SMA',
     productName: '同轴隔离器',
     productAttribute: '成品',
     productType: '隔离器',
@@ -657,7 +657,7 @@ const demoProducts = [
   },
   {
     id: '3',
-    productModel: 'PCB-SMT-V1',
+    itemCode: 'PCB-SMT-V1',
     productName: 'SMT控制板',
     productAttribute: '半成品',
     productType: 'PCB组件',
@@ -671,7 +671,7 @@ const demoProducts = [
   },
   {
     id: '4',
-    productModel: 'CABLE-SMA-100',
+    itemCode: 'CABLE-SMA-100',
     productName: 'SMA测试线',
     productAttribute: '外购件',
     productType: '线缆',
@@ -691,18 +691,16 @@ const categoryOptions = ref([
   { id: 'c3', productAttribute: '半成品', productType: 'PCB组件' },
 ]);
 const materialOptions = ref([
-  { id: 'm1', productModel: 'MAG-001', productName: '钐钴磁钢', unit: '片' },
-  { id: 'm2', productModel: 'FERRITE-001', productName: '铁氧体片', unit: '片' },
-  { id: 'm3', productModel: 'CENTER-001', productName: '中心导体', unit: '个' },
+  { id: 'm1', itemCode: 'MAG-001', productName: '钐钴磁钢', unit: '片' },
+  { id: 'm2', itemCode: 'FERRITE-001', productName: '铁氧体片', unit: '片' },
+  { id: 'm3', itemCode: 'CENTER-001', productName: '中心导体', unit: '个' },
 ]);
 
 const filteredProducts = computed(() =>
   demoProducts.filter((p: any) => {
     const kw = query.keyword.trim().toLowerCase();
     return (
-      (!kw ||
-        p.productModel.toLowerCase().includes(kw) ||
-        p.productName.toLowerCase().includes(kw)) &&
+      (!kw || p.itemCode.toLowerCase().includes(kw) || p.productName.toLowerCase().includes(kw)) &&
       (!query.categoryId || p.categoryId === query.categoryId) &&
       (!query.acquireMethod || p.acquireMethod === query.acquireMethod) &&
       (!query.status ||
@@ -727,7 +725,7 @@ const materialProduct = ref<any>(null);
 const materialRows = ref<MaterialRow[]>([]);
 const query = reactive({ keyword: '', categoryId: '', acquireMethod: '', status: '' });
 const productForm = reactive({
-  productModel: '',
+  itemCode: '',
   productName: '',
   categoryId: '',
   unit: 'pcs',
@@ -751,7 +749,7 @@ const handlePageSizeChange = (val: number) => {
 
 const resetProductForm = () => {
   Object.assign(productForm, {
-    productModel: '',
+    itemCode: '',
     productName: '',
     categoryId: '',
     unit: 'pcs',
@@ -770,7 +768,7 @@ const openCreate = () => {
 const openEdit = (row: any) => {
   editingProductId.value = row.id;
   Object.assign(productForm, {
-    productModel: row.productModel,
+    itemCode: row.itemCode,
     productName: row.productName,
     categoryId: row.categoryId ?? '',
     unit: row.unit,
@@ -804,12 +802,8 @@ const removeSpecRow = (index: number) => {
 };
 
 const submitProduct = () => {
-  if (
-    !productForm.productModel.trim() ||
-    !productForm.productName.trim() ||
-    !productForm.unit.trim()
-  ) {
-    EMessage.warning('请填写产品型号、产品名称和单位');
+  if (!productForm.itemCode.trim() || !productForm.productName.trim() || !productForm.unit.trim()) {
+    EMessage.warning('请填写产品编码、产品名称和单位');
     return;
   }
   if (!productForm.categoryId) {
@@ -952,7 +946,7 @@ const formatSpecSummary = (items: any[]) =>
   font-weight: 500;
 }
 
-.product-model {
+.item-code {
   font-weight: 600;
 }
 

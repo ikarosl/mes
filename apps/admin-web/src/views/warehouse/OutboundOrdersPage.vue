@@ -230,7 +230,7 @@
               <el-option
                 v-for="b in batchOptions"
                 :key="b.id"
-                :label="`${b.batchNo} — ${b.productName}(${b.productModel})`"
+                :label="`${b.batchNo} — ${b.productName}(${b.itemCode})`"
                 :value="b.id"
               />
             </el-select>
@@ -460,7 +460,7 @@ interface BatchItem {
   id: string;
   batchNo: string;
   productName: string;
-  productModel: string;
+  itemCode: string;
   workOrderNo: string;
 }
 
@@ -552,21 +552,21 @@ const searchBatch = () => {
       id: 'b1',
       batchNo: 'SC-202607-001',
       productName: '产品A',
-      productModel: 'A-100',
+      itemCode: 'A-100',
       workOrderNo: 'WO-202607-001',
     },
     {
       id: 'b2',
       batchNo: 'SC-202607-002',
       productName: '产品B',
-      productModel: 'B-200',
+      itemCode: 'B-200',
       workOrderNo: 'WO-202607-002',
     },
     {
       id: 'b3',
       batchNo: 'SC-202607-003',
       productName: '产品C',
-      productModel: 'C-300',
+      itemCode: 'C-300',
       workOrderNo: 'WO-202607-003',
     },
   ];

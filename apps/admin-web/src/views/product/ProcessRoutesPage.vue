@@ -99,13 +99,11 @@
           min-width="150"
         />
         <el-table-column
-          label="使用产品类型"
+          label="适用产品"
           min-width="160"
         >
           <template #default="{ row }">{{
-            row.productAttribute && row.productType
-              ? `${row.productAttribute} / ${row.productType}`
-              : '-'
+            row.itemCode && row.productName ? `${row.itemCode} / ${row.productName}` : '-'
           }}</template>
         </el-table-column>
         <el-table-column
@@ -210,17 +208,20 @@
             placeholder="例如：环形器标准工艺路线"
           />
         </el-form-item>
-        <el-form-item label="使用产品类型">
+        <el-form-item
+          label="适用产品"
+          required
+        >
           <el-select
-            v-model="routeForm.productCategoryId"
+            v-model="routeForm.productId"
             filterable
-            placeholder="请选择产品分类"
+            placeholder="请选择产品"
           >
             <el-option
-              v-for="cat in categoryOptions"
-              :key="cat.id"
-              :label="`${cat.productAttribute} / ${cat.productType}`"
-              :value="cat.id"
+              v-for="product in productOptions"
+              :key="product.id"
+              :label="`${product.itemCode} / ${product.productName}`"
+              :value="product.id"
             />
           </el-select>
         </el-form-item>
@@ -396,9 +397,9 @@
       >
         <el-descriptions-item label="路线编号">{{ detailRow.routeCode }}</el-descriptions-item>
         <el-descriptions-item label="路线名称">{{ detailRow.routeName }}</el-descriptions-item>
-        <el-descriptions-item label="使用产品类型">{{
-          detailRow.productAttribute && detailRow.productType
-            ? `${detailRow.productAttribute} / ${detailRow.productType}`
+        <el-descriptions-item label="适用产品">{{
+          detailRow.itemCode && detailRow.productName
+            ? `${detailRow.itemCode} / ${detailRow.productName}`
             : '-'
         }}</el-descriptions-item>
         <el-descriptions-item label="版本">{{ detailRow.version || '-' }}</el-descriptions-item>
@@ -427,8 +428,9 @@ const demoRoutes = [
     id: '1',
     routeCode: 'ROUTE-CIR-STD',
     routeName: '环形器标准工艺路线',
-    productAttribute: '成品',
-    productType: '环形器',
+    productId: 'product-1',
+    itemCode: 'CIR-6-18-N',
+    productName: '六端口环形器',
     processSummary: '来料检验 → SMT贴片 → 波峰焊 → 调试 → 老化测试 → 最终检验',
     version: 'V1.0',
     status: 1,
@@ -438,8 +440,9 @@ const demoRoutes = [
     id: '2',
     routeCode: 'ROUTE-PCB-SMT',
     routeName: 'PCB贴片工艺路线',
-    productAttribute: '半成品',
-    productType: 'PCB组件',
+    productId: 'product-2',
+    itemCode: 'PCB-SMT-V1',
+    productName: 'SMT控制板',
     processSummary: '来料检验 → SMT贴片 → AOI检测',
     version: 'V1.2',
     status: 1,
@@ -449,8 +452,9 @@ const demoRoutes = [
     id: '3',
     routeCode: 'ROUTE-ISO-TEST',
     routeName: '隔离器测试路线',
-    productAttribute: '成品',
-    productType: '隔离器',
+    productId: 'product-3',
+    itemCode: 'ISO-2-6-SMA',
+    productName: '同轴隔离器',
     processSummary: null,
     version: 'V0.9',
     status: 0,
@@ -458,10 +462,10 @@ const demoRoutes = [
   },
 ];
 
-const categoryOptions = ref([
-  { id: 'c1', productAttribute: '成品', productType: '环形器' },
-  { id: 'c2', productAttribute: '成品', productType: '隔离器' },
-  { id: 'c3', productAttribute: '半成品', productType: 'PCB组件' },
+const productOptions = ref([
+  { id: 'product-1', itemCode: 'CIR-6-18-N', productName: '六端口环形器' },
+  { id: 'product-2', itemCode: 'PCB-SMT-V1', productName: 'SMT控制板' },
+  { id: 'product-3', itemCode: 'ISO-2-6-SMA', productName: '同轴隔离器' },
 ]);
 
 const processOptions = ref([
@@ -505,7 +509,7 @@ const query = reactive({ keyword: '', status: '' });
 const routeForm = reactive({
   routeCode: '',
   routeName: '',
-  productCategoryId: '',
+  productId: '',
   version: 'V1.0',
   enabled: true,
   remark: '',
@@ -531,7 +535,7 @@ const openCreate = () => {
   Object.assign(routeForm, {
     routeCode: '',
     routeName: '',
-    productCategoryId: '',
+    productId: '',
     version: 'V1.0',
     enabled: true,
     remark: '',
@@ -543,7 +547,7 @@ const openEdit = (row: any) => {
   Object.assign(routeForm, {
     routeCode: row.routeCode,
     routeName: row.routeName,
-    productCategoryId: '',
+    productId: row.productId ?? '',
     version: row.version ?? '',
     enabled: row.status === 1,
     remark: row.remark ?? '',
@@ -561,8 +565,8 @@ const openDetail = (row: any) => {
 };
 
 const submitRoute = () => {
-  if (!routeForm.routeCode.trim() || !routeForm.routeName.trim()) {
-    EMessage.warning('请填写路线编号和路线名称');
+  if (!routeForm.routeCode.trim() || !routeForm.routeName.trim() || !routeForm.productId) {
+    EMessage.warning('请填写路线编号、路线名称并选择适用产品');
     return;
   }
   EMessage.success(editingRouteId.value ? '工艺路线已更新' : '工艺路线已新增');
