@@ -13,6 +13,10 @@ import { EMessage } from './utils/message';
 const pinia = createPinia();
 const auth = useAuthStore(pinia);
 
+// Install global HTTP error handler for the application
+// must be done before mounting the app to ensure that all HTTP requests
+// are intercepted and handled appropriately. This setup allows for consistent error
+// handling across the application, providing user feedback and managing authentication state as needed.
 installHttpErrorHandler(httpClient, {
   notify: (message) => EMessage.error(message),
   onUnauthorized: () => {

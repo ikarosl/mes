@@ -10,6 +10,8 @@ export interface HttpErrorHandlerOptions {
 
 type ErrorHandlingRequestConfig = RetryRequestConfig;
 
+// 判断是否保留 API 返回的错误信息，若为 true，则不使用默认的错误提示，而是使用 API 返回的错误信息。
+// 保护登录接口这种不需要登录的接口，避免在登录失败时覆盖 API 返回的 真实的错误提示信息。
 const shouldPreserveApiMessage = (error: RequestError, config?: ErrorHandlingRequestConfig) =>
   (config ?? (error.response?.config as ErrorHandlingRequestConfig | undefined))
     ?.preserveErrorMessage === true;
