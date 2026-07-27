@@ -28,7 +28,7 @@ export class CreateUserDto {
   username!: string;
 
   @IsString({ message: '密码必须是字符串' })
-  @Length(12, 128, { message: '密码长度必须在 12 到 128 个字符之间' })
+  @Length(6, 128, { message: '密码长度必须在 6 到 128 个字符之间' })
   password!: string;
 
   @IsString({ message: '姓名必须是字符串' })
@@ -85,7 +85,7 @@ export class UpdateUserDto {
 
 export class ResetUserPasswordDto {
   @IsString({ message: '密码必须是字符串' })
-  @Length(12, 128, { message: '密码长度必须在 12 到 128 个字符之间' })
+  @Length(6, 128, { message: '密码长度必须在 6 到 128 个字符之间' })
   password!: string;
 }
 

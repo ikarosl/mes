@@ -33,8 +33,8 @@ export class RbacService {
     return this.repository.listRoleOptions();
   }
   async createUser(payload: CreateSystemUserPayload, context: AuditContext) {
-    if (!payload.username.trim() || !payload.displayName.trim() || payload.password.length < 12)
-      throw new BadRequestException('用户名、姓名必填，密码至少 12 位');
+    if (!payload.username.trim() || !payload.displayName.trim() || payload.password.length < 6)
+      throw new BadRequestException('用户名、姓名必填，密码至少 6 位');
     return {
       id: await this.repository.createUser(
         payload,
@@ -57,7 +57,7 @@ export class RbacService {
     return this.repository.setUserStatus(id, status, this.audit('更新用户状态', context));
   }
   async resetUserPassword(id: string, password: string, context: AuditContext) {
-    if (password.length < 12) throw new BadRequestException('密码至少 12 位');
+    if (password.length < 6) throw new BadRequestException('密码至少 6 位');
     const found = await this.repository.resetUserPassword(
       id,
       await bcrypt.hash(password, 12),

@@ -1,4 +1,5 @@
 import type {
+  PageResult,
   ProcessRouteListItem,
   ProcessRoutePayload,
   ProcessRouteStatus,
@@ -13,6 +14,9 @@ import type {
   ProductMaterialPayload,
   ProductOption,
   ProductPayload,
+  TechnicalFileListItem,
+  TechnicalFileQuery,
+  TechnicalFileStorageProvider,
   UserOption,
 } from '@company/contracts';
 import type { AuditContext } from '../../../identity/application/audit.types.js';
@@ -20,8 +24,8 @@ import type { AuditContext } from '../../../identity/application/audit.types.js'
 export interface StoredTechnicalFile {
   fileName: string;
   originalName: string;
-  storageProvider: 'local';
-  bucket: null;
+  storageProvider: TechnicalFileStorageProvider;
+  bucket: string | null;
   objectKey: string;
   mimeType: string;
   sizeBytes: number;
@@ -30,7 +34,25 @@ export interface StoredTechnicalFile {
   versionNo: string;
 }
 
+export type TechnicalFileLocator = Pick<
+  StoredTechnicalFile,
+  'storageProvider' | 'bucket' | 'objectKey'
+>;
+
 export abstract class ProductRepository {
+  abstract listTechnicalFiles(
+    query: TechnicalFileQuery,
+  ): Promise<PageResult<TechnicalFileListItem>>;
+  abstract getTechnicalFile(id: string): Promise<TechnicalFileListItem>;
+  abstract createTechnicalFile(
+    file: StoredTechnicalFile,
+    audit: AuditContext,
+  ): Promise<{ id: string }>;
+  abstract prepareTechnicalFileDelete(
+    id: string,
+    audit: AuditContext,
+  ): Promise<TechnicalFileLocator>;
+  abstract finalizeTechnicalFileDelete(id: string, audit: AuditContext): Promise<void>;
   abstract listCategories(): Promise<ProductCategoryListItem[]>;
   abstract createCategory(
     payload: ProductCategoryPayload,
@@ -74,6 +96,11 @@ export abstract class ProductRepository {
   abstract attachProcessStepSop(
     id: string,
     file: StoredTechnicalFile,
+    audit: AuditContext,
+  ): Promise<void>;
+  abstract setProcessStepDefaultSop(
+    id: string,
+    fileId: string | null,
     audit: AuditContext,
   ): Promise<void>;
 

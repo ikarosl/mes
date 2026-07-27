@@ -1,20 +1,5 @@
 <template>
   <section>
-    <div class="page-title">
-      <div>
-        <h2>用户管理</h2>
-        <p>维护账号、状态与角色关系</p>
-      </div>
-      <el-button
-        v-if="auth.can(PERMISSIONS.system.users.create)"
-        type="primary"
-        :icon="Plus"
-        @click="openCreate"
-      >
-        新增用户
-      </el-button>
-    </div>
-
     <div class="query-panel">
       <el-form
         class="query-form"
@@ -84,8 +69,8 @@
     </div>
 
     <div class="table-panel">
-      <div class="table-toolbar">
-        <div class="batch-actions">
+      <TableToolbar>
+        <template #actions>
           <el-button
             v-if="auth.can(PERMISSIONS.system.users.create)"
             type="primary"
@@ -99,8 +84,8 @@
             @click="openBatchResetPassword"
             >重置密码</el-button
           >
-        </div>
-        <div class="table-tools">
+        </template>
+        <template #tools>
           <el-tooltip
             content="刷新"
             placement="top"
@@ -123,8 +108,8 @@
               @click="focusFirstFilter"
             />
           </el-tooltip>
-        </div>
-      </div>
+        </template>
+      </TableToolbar>
 
       <el-table
         v-loading="loading"
@@ -435,6 +420,7 @@ import type {
   SystemRoleOption,
   SystemUserListItem,
 } from '@company/contracts';
+import TableToolbar from '../../components/TableToolbar.vue';
 import { systemApi } from '../../api/system';
 import { DialogWidth } from '../../utils/dialog';
 import { EMessage } from '../../utils/message';
@@ -608,8 +594,8 @@ const submitUser = async () => {
     EMessage.warning('请填写用户账号和姓名');
     return;
   }
-  if (!editingUserId.value && userForm.password.trim().length < 12) {
-    EMessage.warning('初始密码至少 12 位');
+  if (!editingUserId.value && userForm.password.trim().length < 6) {
+    EMessage.warning('初始密码至少 6 位');
     return;
   }
   submitting.value = true;
@@ -673,8 +659,8 @@ const openBatchResetPassword = () => {
   passwordDialogVisible.value = true;
 };
 const submitResetPassword = async () => {
-  if (passwordForm.password.trim().length < 12) {
-    EMessage.warning('新密码至少 12 位');
+  if (passwordForm.password.trim().length < 6) {
+    EMessage.warning('新密码至少 6 位');
     return;
   }
   submitting.value = true;
@@ -719,24 +705,6 @@ onMounted(() => Promise.all([loadUsers(), loadOptions()]));
 </script>
 
 <style scoped>
-.page-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 16px;
-}
-.page-title h2 {
-  margin: 0;
-  color: #283a50;
-  font-size: 20px;
-  font-weight: 600;
-}
-.page-title p {
-  margin: 4px 0 0;
-  color: #6b7280;
-  font-size: 14px;
-}
-
 .query-panel,
 .table-panel {
   border: 1px solid #e5e7eb;
@@ -788,33 +756,6 @@ onMounted(() => Promise.all([loadUsers(), loadOptions()]));
 
 .table-panel {
   overflow: hidden;
-}
-.table-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: 56px;
-  padding: 0 16px;
-  border-bottom: 1px solid #e5e7eb;
-}
-.batch-actions {
-  display: flex;
-  gap: 8px;
-}
-.batch-actions :deep(.el-button) {
-  height: 34px;
-  border-radius: 6px;
-}
-.table-tools {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  color: #6b7280;
-}
-.table-tools :deep(.el-button) {
-  width: 20px;
-  height: 20px;
-  color: #6b7280;
 }
 
 .data-table {

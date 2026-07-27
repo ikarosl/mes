@@ -1,4 +1,5 @@
 import {
+  BadGatewayException,
   BadRequestException,
   ConflictException,
   Injectable,
@@ -12,6 +13,7 @@ import type {
   ProductCategoryPayload,
   ProductMaterialPayload,
   ProductPayload,
+  TechnicalFileQuery,
 } from '@company/contracts';
 import type { AuditContext } from '../../identity/application/audit.types.js';
 import { ProductDomainError } from '../domain/product.errors.js';
@@ -27,6 +29,41 @@ export class ProductService {
 
   listCategories() {
     return this.repository.listCategories();
+  }
+  listTechnicalFiles(query: TechnicalFileQuery) {
+    return this.repository.listTechnicalFiles(query);
+  }
+  async uploadTechnicalFile(file: TechnicalFileUpload, audit: AuditContext) {
+    this.validateTechnicalFile(file);
+    let stored;
+    try {
+      stored = await this.storage.storeSop(file);
+    } catch {
+      throw new BadGatewayException('技术文件存储失败');
+    }
+    try {
+      return await this.run(() => this.repository.createTechnicalFile(stored, audit));
+    } catch (error) {
+      await this.storage.remove(stored).catch(() => undefined);
+      throw error;
+    }
+  }
+  async downloadTechnicalFile(id: string) {
+    const file = await this.run(() => this.repository.getTechnicalFile(id));
+    try {
+      return { file, stream: await this.storage.read(file) };
+    } catch {
+      throw new BadGatewayException('技术文件读取失败');
+    }
+  }
+  async deleteTechnicalFile(id: string, audit: AuditContext) {
+    const locator = await this.run(() => this.repository.prepareTechnicalFileDelete(id, audit));
+    try {
+      await this.storage.remove(locator);
+    } catch {
+      throw new BadGatewayException('技术文件删除失败，可重试此操作');
+    }
+    return this.run(() => this.repository.finalizeTechnicalFileDelete(id, audit));
   }
   listProducts() {
     return this.repository.listProducts();
@@ -92,14 +129,22 @@ export class ProductService {
     return this.run(() => this.repository.setProcessStepStatus(id, status, audit));
   }
   async uploadProcessStepSop(id: string, file: TechnicalFileUpload, audit: AuditContext) {
-    if (!file.buffer.length) throw new BadRequestException('上传文件不能为空');
-    const stored = await this.storage.storeSop(file);
+    this.validateTechnicalFile(file);
+    let stored;
+    try {
+      stored = await this.storage.storeSop(file);
+    } catch {
+      throw new BadGatewayException('技术文件存储失败');
+    }
     try {
       await this.run(() => this.repository.attachProcessStepSop(id, stored, audit));
     } catch (error) {
-      await this.storage.remove(stored.objectKey).catch(() => undefined);
+      await this.storage.remove(stored).catch(() => undefined);
       throw error;
     }
+  }
+  setProcessStepDefaultSop(id: string, fileId: string | null, audit: AuditContext) {
+    return this.run(() => this.repository.setProcessStepDefaultSop(id, fileId, audit));
   }
   createRoute(payload: ProcessRoutePayload, audit: AuditContext) {
     return this.run(() => this.repository.createRoute(this.cleanRoute(payload), audit));
@@ -133,6 +178,13 @@ export class ProductService {
       categoryName: payload.categoryName.trim(),
       remark: payload.remark?.trim() || null,
     };
+  }
+  private validateTechnicalFile(file: TechnicalFileUpload) {
+    if (!file.buffer.length) throw new BadRequestException('上传文件不能为空');
+    if (file.buffer.length > 20 * 1024 * 1024) {
+      throw new BadRequestException('技术文件不能超过 20 MiB');
+    }
+    if (!file.originalName.trim()) throw new BadRequestException('文件名不能为空');
   }
   private cleanProduct(payload: ProductPayload): ProductPayload {
     return {

@@ -13,6 +13,16 @@ export interface AppConfig {
   trustProxyHops: number;
 }
 
+export interface TechnicalFileStorageConfig {
+  endpoint?: string;
+  region: string;
+  bucket: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  sessionToken?: string;
+  forcePathStyle: boolean;
+}
+
 export const loadAppConfig = (): AppConfig => {
   // 启动 API 前统一加载工作区根目录 .env，避免受 Turbo 包工作目录影响。
   loadWorkspaceEnv();
@@ -28,6 +38,23 @@ export const loadAppConfig = (): AppConfig => {
     refreshCookiePath: process.env.REFRESH_TOKEN_COOKIE_PATH ?? '/api/auth',
     refreshCookieSecure: process.env.REFRESH_TOKEN_COOKIE_SECURE === 'true',
     trustProxyHops: nonNegativeInteger('TRUST_PROXY_HOPS', 0),
+  };
+};
+
+/** 加载唯一的 S3 协议存储配置；本地开发通过 endpoint 连接 MinIO/AIStor。 */
+export const loadTechnicalFileStorageConfig = (): TechnicalFileStorageConfig => {
+  loadWorkspaceEnv();
+  const endpoint = optionalUrl('S3_ENDPOINT');
+  return {
+    ...(endpoint ? { endpoint } : {}),
+    region: process.env.S3_REGION?.trim() || 'us-east-1',
+    bucket: required('S3_BUCKET'),
+    accessKeyId: required('S3_ACCESS_KEY_ID'),
+    secretAccessKey: required('S3_SECRET_ACCESS_KEY'),
+    ...(process.env.S3_SESSION_TOKEN?.trim()
+      ? { sessionToken: process.env.S3_SESSION_TOKEN.trim() }
+      : {}),
+    forcePathStyle: boolean('S3_FORCE_PATH_STYLE', Boolean(endpoint)),
   };
 };
 
@@ -48,4 +75,22 @@ const nonNegativeInteger = (name: string, fallback: number) => {
   if (!Number.isInteger(value) || value < 0)
     throw new Error(`${name} must be a non-negative integer`);
   return value;
+};
+
+const boolean = (name: string, fallback: boolean) => {
+  const value = process.env[name]?.trim().toLowerCase();
+  if (!value) return fallback;
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  throw new Error(`${name} must be true or false`);
+};
+
+const optionalUrl = (name: string) => {
+  const value = process.env[name]?.trim();
+  if (!value) return undefined;
+  try {
+    return new URL(value).toString().replace(/\/$/, '');
+  } catch {
+    throw new Error(`${name} must be a valid URL`);
+  }
 };

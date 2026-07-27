@@ -53,8 +53,13 @@ describe('ProductService workflow safeguards', () => {
 
   it('removes a stored SOP when database attachment fails', async () => {
     const repository = { attachProcessStepSop: vi.fn().mockRejectedValue(new Error('db failed')) };
+    const stored = {
+      storageProvider: 's3',
+      bucket: 'technical-files',
+      objectKey: 'sop/2026/file.pdf',
+    };
     const storage = {
-      storeSop: vi.fn().mockResolvedValue({ objectKey: 'sop/2026/file.pdf' }),
+      storeSop: vi.fn().mockResolvedValue(stored),
       remove: vi.fn().mockResolvedValue(undefined),
     };
     const service = new ProductService(repository as never, storage as never);
@@ -70,6 +75,34 @@ describe('ProductService workflow safeguards', () => {
         audit,
       ),
     ).rejects.toThrow('db failed');
-    expect(storage.remove).toHaveBeenCalledWith('sop/2026/file.pdf');
+    expect(storage.remove).toHaveBeenCalledWith(stored);
+  });
+
+  it('keeps a prepared deletion retryable when object deletion fails', async () => {
+    const locator = {
+      storageProvider: 's3',
+      bucket: 'technical-files',
+      objectKey: 'sop/2026/file.pdf',
+    };
+    const repository = {
+      prepareTechnicalFileDelete: vi.fn().mockResolvedValue(locator),
+      finalizeTechnicalFileDelete: vi.fn(),
+    };
+    const storage = { remove: vi.fn().mockRejectedValue(new Error('storage unavailable')) };
+    const service = new ProductService(repository as never, storage as never);
+
+    await expect(service.deleteTechnicalFile('2', audit)).rejects.toMatchObject({ status: 502 });
+    expect(repository.finalizeTechnicalFileDelete).not.toHaveBeenCalled();
+  });
+
+  it('associates an existing SOP without deleting the previous file', async () => {
+    const repository = { setProcessStepDefaultSop: vi.fn().mockResolvedValue(undefined) };
+    const storage = { remove: vi.fn() };
+    const service = new ProductService(repository as never, storage as never);
+
+    await service.setProcessStepDefaultSop('2', '8', audit);
+
+    expect(repository.setProcessStepDefaultSop).toHaveBeenCalledWith('2', '8', audit);
+    expect(storage.remove).not.toHaveBeenCalled();
   });
 });

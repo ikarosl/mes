@@ -41,6 +41,13 @@ export const PERMISSIONS = {
       changeStatus: 'product:processes:change-status',
       uploadSop: 'product:processes:upload-sop',
     },
+    files: {
+      view: 'product:files:view',
+      upload: 'product:files:upload',
+      download: 'product:files:download',
+      delete: 'product:files:delete',
+      attach: 'product:files:attach',
+    },
     routes: {
       view: 'product:routes:view',
       create: 'product:routes:create',
@@ -74,6 +81,8 @@ export const SYSTEM_STATUS = {
 export const PRODUCT_ITEM_KINDS = ['material', 'semi_finished', 'finished_product'] as const;
 export const PRODUCT_ACQUIRE_METHODS = ['self_made', 'outsourced', 'purchased'] as const;
 export const PROCESS_ROUTE_STATUSES = ['draft', 'enabled', 'disabled', 'archived'] as const;
+export const TECHNICAL_FILE_STORAGE_PROVIDERS = ['s3'] as const;
+export const TECHNICAL_FILE_TYPES = ['sop'] as const;
 export const PERMISSION_TYPES = ['menu', 'page', 'button', 'api'] as const;
 export const OPERATION_RESULTS = ['success', 'failed'] as const;
 

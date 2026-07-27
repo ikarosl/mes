@@ -31,7 +31,7 @@ describe('HTTP validation pipe', () => {
       pipe.transform(
         {
           username: 'operator',
-          password: '123456789012',
+          password: '123456',
           displayName: '操作员',
           roleIds: ['1'],
           isAdmin: true,

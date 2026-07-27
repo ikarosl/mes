@@ -7,9 +7,11 @@
     "dev": "tsc-watch -p tsconfig.json --onSuccess \"node dist/main.js\"",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --config ../../vitest.config.ts src"
+    "test": "vitest run --config ../../vitest.config.ts src",
+    "storage:ensure-bucket": "tsx src/scripts/ensure-technical-file-bucket.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "catalog:",
     "@company/config": "workspace:*",
     "@company/constants": "workspace:*",
     "@company/contracts": "workspace:*",
@@ -28,6 +30,7 @@
   "devDependencies": {
     "@types/bcryptjs": "catalog:",
     "@types/node": "catalog:",
+    "tsx": "catalog:",
     "tsc-watch": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"

@@ -1,13 +1,5 @@
 <template>
   <section>
-    <div class="page-title">
-      <div>
-        <h2>权限管理</h2>
-        <p>权限编码是前后端统一的授权契约</p>
-      </div>
-      <el-button @click="loadPermissions">刷新</el-button>
-    </div>
-
     <div class="query-panel">
       <el-form
         class="query-form"
@@ -24,6 +16,21 @@
     </div>
 
     <div class="table-panel">
+      <TableToolbar>
+        <template #tools>
+          <el-tooltip
+            content="刷新"
+            placement="top"
+          >
+            <el-button
+              :icon="Refresh"
+              text
+              circle
+              @click="loadPermissions"
+            />
+          </el-tooltip>
+        </template>
+      </TableToolbar>
       <el-table
         v-loading="loading"
         :data="filteredPermissions"
@@ -88,6 +95,8 @@
 import { computed, onMounted, ref } from 'vue';
 import type { SystemPermissionListItem } from '@company/contracts';
 import { SYSTEM_STATUS } from '@company/constants';
+import { Refresh } from '@element-plus/icons-vue';
+import TableToolbar from '../../components/TableToolbar.vue';
 import { systemApi } from '../../api/system';
 import { EMessage } from '../../utils/message';
 
@@ -125,24 +134,6 @@ onMounted(loadPermissions);
 </script>
 
 <style scoped>
-.page-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 16px;
-}
-.page-title h2 {
-  margin: 0;
-  color: #283a50;
-  font-size: 20px;
-  font-weight: 600;
-}
-.page-title p {
-  margin: 4px 0 0;
-  color: #6b7280;
-  font-size: 14px;
-}
-
 .query-panel,
 .table-panel {
   border: 1px solid #e5e7eb;

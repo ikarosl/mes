@@ -3,6 +3,79 @@ import { ProductDomainError } from '../../domain/product.errors.js';
 import { MysqlProductRepository } from '../mysql-product.repository.js';
 
 describe('MysqlProductRepository workflow transactions', () => {
+  it('persists technical file metadata and audit in the same transaction', async () => {
+    const connection = {
+      beginTransaction: vi.fn(),
+      query: vi.fn(),
+      execute: vi
+        .fn()
+        .mockResolvedValueOnce([{ insertId: 21, affectedRows: 1 }, []])
+        .mockResolvedValueOnce([{ insertId: 101, affectedRows: 1 }, []]),
+      commit: vi.fn(),
+      rollback: vi.fn(),
+      release: vi.fn(),
+    };
+    const repository = new MysqlProductRepository({
+      getConnection: vi.fn().mockResolvedValue(connection),
+    } as never);
+
+    await expect(
+      repository.createTechnicalFile(
+        {
+          fileName: 'SOP.pdf',
+          originalName: 'SOP.pdf',
+          storageProvider: 's3',
+          bucket: 'technical-files',
+          objectKey: 'sop/2026/07/file.pdf',
+          mimeType: 'application/pdf',
+          sizeBytes: 10,
+          checksumSha256: 'a'.repeat(64),
+          fileType: 'sop',
+          versionNo: '202607240001',
+        },
+        { userId: '1', ip: '127.0.0.1' },
+      ),
+    ).resolves.toEqual({ id: '21' });
+
+    expect(String(connection.execute.mock.calls[0]?.[0])).toContain('technical_files');
+    expect(String(connection.execute.mock.calls[1]?.[0])).toContain('operation_logs');
+    expect(connection.commit).toHaveBeenCalledOnce();
+  });
+
+  it('does not prepare deletion while a technical file is referenced', async () => {
+    const connection = {
+      beginTransaction: vi.fn(),
+      query: vi
+        .fn()
+        .mockResolvedValueOnce([
+          [
+            {
+              file_name: 'SOP.pdf',
+              storage_provider: 's3',
+              bucket: 'technical-files',
+              object_key: 'sop/file.pdf',
+              status: 1,
+            },
+          ],
+          [],
+        ])
+        .mockResolvedValueOnce([[{ total: 1 }], []]),
+      execute: vi.fn(),
+      commit: vi.fn(),
+      rollback: vi.fn(),
+      release: vi.fn(),
+    };
+    const repository = new MysqlProductRepository({
+      getConnection: vi.fn().mockResolvedValue(connection),
+    } as never);
+
+    await expect(
+      repository.prepareTechnicalFileDelete('21', { userId: '1', ip: null }),
+    ).rejects.toBeInstanceOf(ProductDomainError);
+    expect(connection.execute).not.toHaveBeenCalled();
+    expect(connection.rollback).toHaveBeenCalledOnce();
+  });
+
   it('creates a draft route and audit entry on the same transaction connection', async () => {
     const connection = {
       beginTransaction: vi.fn(),

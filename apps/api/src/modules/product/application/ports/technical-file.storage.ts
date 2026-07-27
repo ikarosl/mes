@@ -1,4 +1,6 @@
 import type { StoredTechnicalFile } from './product.repository.js';
+import type { Readable } from 'node:stream';
+import type { TechnicalFileLocator } from './product.repository.js';
 
 export interface TechnicalFileUpload {
   originalName: string;
@@ -8,5 +10,6 @@ export interface TechnicalFileUpload {
 
 export abstract class TechnicalFileStorage {
   abstract storeSop(file: TechnicalFileUpload): Promise<StoredTechnicalFile>;
-  abstract remove(objectKey: string): Promise<void>;
+  abstract read(locator: TechnicalFileLocator): Promise<Readable>;
+  abstract remove(locator: TechnicalFileLocator): Promise<void>;
 }

@@ -3,10 +3,8 @@ services:
     image: mysql:8.4
     command: --default-time-zone=+08:00
     environment:
-      MYSQL_DATABASE: company_mes_next
-      MYSQL_USER: mes
-      MYSQL_PASSWORD: change-me
-      MYSQL_ROOT_PASSWORD: change-root-me
+      MYSQL_DATABASE: ${DB_NAME:?DB_NAME is required}
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
     ports: ['3306:3306']
     volumes: ['mysql-data:/var/lib/mysql']
     healthcheck:
@@ -19,10 +17,22 @@ services:
     profiles: ['optional']
     ports: ['6379:6379']
   minio:
-    image: minio/minio
-    profiles: ['optional']
-    command: server /data --console-address :9001
-    environment: { MINIO_ROOT_USER: change-me, MINIO_ROOT_PASSWORD: change-me-now }
+    image: quay.io/minio/aistor/minio:RELEASE.2026-04-14T21-32-45Z
+    command:
+      ['minio', 'server', '/mnt/data', '--license', '/minio.license', '--console-address', ':9001']
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY_ID:?S3_ACCESS_KEY_ID is required}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY:?S3_SECRET_ACCESS_KEY is required}
     ports: ['9000:9000', '9001:9001']
+    volumes:
+      - minio-data:/mnt/data
+      - ./secrets/minio.license:/minio.license:ro
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://127.0.0.1:9000/minio/health/live']
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
 volumes:
   mysql-data:
+  minio-data:

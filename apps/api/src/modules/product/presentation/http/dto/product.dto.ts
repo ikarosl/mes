@@ -20,8 +20,14 @@ import {
   PRODUCT_ACQUIRE_METHODS,
   PRODUCT_ITEM_KINDS,
   SYSTEM_STATUS,
+  TECHNICAL_FILE_STORAGE_PROVIDERS,
 } from '@company/constants';
-import type { ProcessRouteStatus, ProductAcquireMethod, ProductItemKind } from '@company/contracts';
+import type {
+  ProcessRouteStatus,
+  ProductAcquireMethod,
+  ProductItemKind,
+  TechnicalFileStorageProvider,
+} from '@company/contracts';
 
 export class ProductIdParamDto {
   @IsNumberString() id!: string;
@@ -37,6 +43,18 @@ export class ProductCategoryDto {
 }
 export class StatusDto {
   @IsIn([SYSTEM_STATUS.disabled, SYSTEM_STATUS.enabled]) status!: number;
+}
+export class TechnicalFileQueryDto {
+  @IsOptional() @IsNumberString({ no_symbols: true }) page?: string;
+  @IsOptional() @IsNumberString({ no_symbols: true }) pageSize?: string;
+  @IsOptional() @IsString() @MaxLength(255) keyword?: string;
+  @IsOptional()
+  @Type(() => Number)
+  @IsIn([SYSTEM_STATUS.disabled, SYSTEM_STATUS.enabled])
+  status?: number;
+  @IsOptional()
+  @IsIn(TECHNICAL_FILE_STORAGE_PROVIDERS)
+  storageProvider?: TechnicalFileStorageProvider;
 }
 export class ProductSpecValueDto {
   @IsString() @IsNotEmpty() @MaxLength(100) key!: string;
@@ -81,6 +99,9 @@ export class ProcessStepDto {
   @IsOptional() @IsString() @MaxLength(255) description?: string | null;
   @IsIn([0, 1]) status!: number;
   @IsOptional() @IsString() remark?: string | null;
+}
+export class SetDefaultSopDto {
+  @ValidateIf((_, value) => value !== null) @IsNumberString() fileId!: string | null;
 }
 export class ProcessRouteDto {
   @IsString() @IsNotEmpty() @MaxLength(64) routeCode!: string;

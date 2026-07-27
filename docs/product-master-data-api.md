@@ -19,33 +19,38 @@
 
 接口统一位于 `/api/product`，除有效 Access Token 外还需要下表权限。
 
-| 方法与路径                          | 用途                                  | 权限                                 |
-| ----------------------------------- | ------------------------------------- | ------------------------------------ |
-| `GET /categories`                   | 分类列表                              | `product:categories:view`            |
-| `POST /categories`                  | 新增分类                              | `product:categories:create`          |
-| `PATCH /categories/:id`             | 编辑分类                              | `product:categories:update`          |
-| `PATCH /categories/:id/status`      | 启停分类                              | `product:categories:change-status`   |
-| `GET /products`                     | 产品、物料和半成品统一列表            | `product:products:view`              |
-| `GET /products/form-options`        | 产品页面所需分类、投入物料和路线选项  | `product:products:view`              |
-| `POST /products`                    | 新增统一库存对象                      | `product:products:create`            |
-| `PATCH /products/:id`               | 编辑基础资料                          | `product:products:update`            |
-| `PATCH /products/:id/status`        | 启停基础资料                          | `product:products:change-status`     |
-| `GET /products/:id/materials`       | 查询统一 BOM                          | `product:products:view`              |
-| `PUT /products/:id/materials`       | 事务替换统一 BOM                      | `product:products:manage-bom`        |
-| `PATCH /products/:id/default-route` | 设置同产品已启用的默认路线            | `product:products:set-default-route` |
-| `GET /process-steps`                | 标准工序列表                          | `product:processes:view`             |
-| `POST /process-steps`               | 新增标准工序                          | `product:processes:create`           |
-| `PATCH /process-steps/:id`          | 编辑标准工序                          | `product:processes:update`           |
-| `PATCH /process-steps/:id/status`   | 启停标准工序                          | `product:processes:change-status`    |
-| `POST /process-steps/:id/sop`       | 上传并关联默认 SOP，最大 20 MiB       | `product:processes:upload-sop`       |
-| `GET /process-routes`               | 工艺路线版本列表                      | `product:routes:view`                |
-| `GET /process-routes/form-options`  | 路线页面的产品、工序、负责人选项      | `product:routes:view`                |
-| `POST /process-routes`              | 新建草稿路线版本                      | `product:routes:create`              |
-| `PATCH /process-routes/:id`         | 编辑草稿路线                          | `product:routes:update`              |
-| `PATCH /process-routes/:id/status`  | 路线状态流转                          | `product:routes:change-status`       |
-| `DELETE /process-routes/:id`        | 软删除从未启用的草稿路线              | `product:routes:delete`              |
-| `GET /process-routes/:id/steps`     | 路线步骤与 BOM 关联                   | `product:routes:view`                |
-| `PUT /process-routes/:id/steps`     | 保存步骤顺序、SOP/规则快照及 BOM 关联 | `product:routes:manage-steps`        |
+| 方法与路径                             | 用途                                  | 权限                                 |
+| -------------------------------------- | ------------------------------------- | ------------------------------------ |
+| `GET /categories`                      | 分类列表                              | `product:categories:view`            |
+| `POST /categories`                     | 新增分类                              | `product:categories:create`          |
+| `PATCH /categories/:id`                | 编辑分类                              | `product:categories:update`          |
+| `PATCH /categories/:id/status`         | 启停分类                              | `product:categories:change-status`   |
+| `GET /products`                        | 产品、物料和半成品统一列表            | `product:products:view`              |
+| `GET /products/form-options`           | 产品页面所需分类、投入物料和路线选项  | `product:products:view`              |
+| `POST /products`                       | 新增统一库存对象                      | `product:products:create`            |
+| `PATCH /products/:id`                  | 编辑基础资料                          | `product:products:update`            |
+| `PATCH /products/:id/status`           | 启停基础资料                          | `product:products:change-status`     |
+| `GET /products/:id/materials`          | 查询统一 BOM                          | `product:products:view`              |
+| `PUT /products/:id/materials`          | 事务替换统一 BOM                      | `product:products:manage-bom`        |
+| `PATCH /products/:id/default-route`    | 设置同产品已启用的默认路线            | `product:products:set-default-route` |
+| `GET /process-steps`                   | 标准工序列表                          | `product:processes:view`             |
+| `POST /process-steps`                  | 新增标准工序                          | `product:processes:create`           |
+| `PATCH /process-steps/:id`             | 编辑标准工序                          | `product:processes:update`           |
+| `PATCH /process-steps/:id/status`      | 启停标准工序                          | `product:processes:change-status`    |
+| `POST /process-steps/:id/sop`          | 上传并关联默认 SOP，最大 20 MiB       | `product:processes:upload-sop`       |
+| `GET /technical-files`                 | 分页查询 SOP 技术文件                 | `product:files:view`                 |
+| `POST /technical-files`                | 独立上传 SOP，最大 20 MiB             | `product:files:upload`               |
+| `GET /technical-files/:id/content`     | 鉴权后流式下载私有文件                | `product:files:download`             |
+| `DELETE /technical-files/:id`          | 删除未被引用的技术文件                | `product:files:delete`               |
+| `PATCH /process-steps/:id/default-sop` | 关联、替换或解除默认 SOP              | `product:files:attach`               |
+| `GET /process-routes`                  | 工艺路线版本列表                      | `product:routes:view`                |
+| `GET /process-routes/form-options`     | 路线页面的产品、工序、负责人选项      | `product:routes:view`                |
+| `POST /process-routes`                 | 新建草稿路线版本                      | `product:routes:create`              |
+| `PATCH /process-routes/:id`            | 编辑草稿路线                          | `product:routes:update`              |
+| `PATCH /process-routes/:id/status`     | 路线状态流转                          | `product:routes:change-status`       |
+| `DELETE /process-routes/:id`           | 软删除从未启用的草稿路线              | `product:routes:delete`              |
+| `GET /process-routes/:id/steps`        | 路线步骤与 BOM 关联                   | `product:routes:view`                |
+| `PUT /process-routes/:id/steps`        | 保存步骤顺序、SOP/规则快照及 BOM 关联 | `product:routes:manage-steps`        |
 
 ## 4. 工作流不变量
 
@@ -73,7 +78,7 @@
 
 迁移未创建 `item_type`、`item_info`、`product_bom`、`processes` 或其他重复模型。所有主数据使用统一审计字段和永久自然键，删除仅为软删除；纯路线步骤/BOM 关联按规范使用物理替换。
 
-SOP 文件元数据写入 `technical_files`，文件内容通过应用层存储端口写入本地适配器。默认目录为进程工作目录下的 `storage/technical-files`，可通过 `MES_FILE_STORAGE_PATH` 指定；数据库只保存稳定对象键，不保存临时 URL。
+SOP 文件元数据写入 `technical_files`，内容统一通过 S3 协议存储端口访问；本地开发连接 AIStor/MinIO，正式环境可以连接兼容 S3 的对象存储。数据库统一写入 `storage_provider='s3'`，只保存 Bucket、稳定对象键和元数据，不保存临时 URL。完整配置及迁移约束见 `docs/technical-file-storage.md`。
 
 ## 6. design.md 符合性
 

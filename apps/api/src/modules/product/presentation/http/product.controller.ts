@@ -8,6 +8,9 @@ import {
   Patch,
   Post,
   Put,
+  Query,
+  Res,
+  StreamableFile,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
@@ -31,13 +34,63 @@ import {
   ReplaceProcessRouteStepsDto,
   ReplaceProductMaterialsDto,
   StatusDto,
+  SetDefaultSopDto,
+  TechnicalFileQueryDto,
 } from './dto/product.dto.js';
+import { decodeMultipartFileName } from './multipart-file-name.js';
 
 type UploadedSop = { originalname: string; mimetype: string; buffer: Buffer; size: number };
 
 @Controller('product')
 export class ProductController {
   constructor(private readonly service: ProductService) {}
+
+  @Get('technical-files')
+  @RequirePermission(PERMISSIONS.product.files.view)
+  technicalFiles(@Query() query: TechnicalFileQueryDto) {
+    return this.service.listTechnicalFiles({
+      page: query.page ? Math.max(Number(query.page), 1) : undefined,
+      pageSize: query.pageSize ? Math.min(Math.max(Number(query.pageSize), 1), 100) : undefined,
+      keyword: query.keyword?.trim() || undefined,
+      status: query.status,
+      storageProvider: query.storageProvider,
+    });
+  }
+
+  @Post('technical-files')
+  @RequirePermission(PERMISSIONS.product.files.upload)
+  @AuditInApplication()
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024, files: 1 } }))
+  uploadTechnicalFile(
+    @UploadedFile() file: UploadedSop | undefined,
+    @CurrentAuditContext() audit: AuditContext,
+  ) {
+    return this.service.uploadTechnicalFile(toTechnicalFileUpload(file), audit);
+  }
+
+  @Get('technical-files/:id/content')
+  @RequirePermission(PERMISSIONS.product.files.download)
+  async downloadTechnicalFile(
+    @Param() { id }: ProductIdParamDto,
+    @Res({ passthrough: true }) response: ResponseHeaders,
+  ) {
+    const { file, stream } = await this.service.downloadTechnicalFile(id);
+    response.setHeader('Content-Type', file.mimeType || 'application/octet-stream');
+    response.setHeader('Content-Length', String(file.sizeBytes));
+    response.setHeader('Content-Disposition', contentDisposition(file.originalName));
+    response.setHeader('X-Content-Type-Options', 'nosniff');
+    return new StreamableFile(stream);
+  }
+
+  @Delete('technical-files/:id')
+  @RequirePermission(PERMISSIONS.product.files.delete)
+  @AuditInApplication()
+  deleteTechnicalFile(
+    @Param() { id }: ProductIdParamDto,
+    @CurrentAuditContext() audit: AuditContext,
+  ) {
+    return this.service.deleteTechnicalFile(id, audit);
+  }
 
   @Get('categories')
   @RequirePermission(PERMISSIONS.product.categories.view)
@@ -183,16 +236,18 @@ export class ProductController {
     @UploadedFile() file: UploadedSop | undefined,
     @CurrentAuditContext() audit: AuditContext,
   ) {
-    if (!file) throw new BadRequestException('请选择要上传的 SOP 文件');
-    return this.service.uploadProcessStepSop(
-      id,
-      {
-        originalName: file.originalname,
-        mimeType: file.mimetype || 'application/octet-stream',
-        buffer: file.buffer,
-      },
-      audit,
-    );
+    return this.service.uploadProcessStepSop(id, toTechnicalFileUpload(file), audit);
+  }
+
+  @Patch('process-steps/:id/default-sop')
+  @RequirePermission(PERMISSIONS.product.files.attach)
+  @AuditInApplication()
+  defaultSop(
+    @Param() { id }: ProductIdParamDto,
+    @Body() body: SetDefaultSopDto,
+    @CurrentAuditContext() audit: AuditContext,
+  ) {
+    return this.service.setProcessStepDefaultSop(id, body.fileId, audit);
   }
 
   @Get('process-routes')
@@ -263,3 +318,21 @@ export class ProductController {
     return this.service.listUserOptions();
   }
 }
+
+interface ResponseHeaders {
+  setHeader(name: string, value: string): void;
+}
+
+const toTechnicalFileUpload = (file: UploadedSop | undefined) => {
+  if (!file) throw new BadRequestException('请选择要上传的 SOP 文件');
+  return {
+    originalName: decodeMultipartFileName(file.originalname),
+    mimeType: file.mimetype || 'application/octet-stream',
+    buffer: file.buffer,
+  };
+};
+
+const contentDisposition = (fileName: string) => {
+  const fallback = fileName.replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 150) || 'download';
+  return `attachment; filename="${fallback}"; filename*=UTF-8''${encodeURIComponent(fileName)}`;
+};

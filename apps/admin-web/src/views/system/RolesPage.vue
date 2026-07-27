@@ -1,20 +1,5 @@
 <template>
   <section>
-    <div class="page-title">
-      <div>
-        <h2>角色管理</h2>
-        <p>维护角色与权限的多对多关系</p>
-      </div>
-      <el-button
-        v-if="auth.can(PERMISSIONS.system.roles.create)"
-        type="primary"
-        :icon="Plus"
-        @click="openCreate"
-      >
-        新增角色
-      </el-button>
-    </div>
-
     <div class="query-panel">
       <el-form
         class="query-form"
@@ -73,15 +58,17 @@
     </div>
 
     <div class="table-panel">
-      <div class="table-toolbar">
-        <el-button
-          v-if="auth.can(PERMISSIONS.system.roles.create)"
-          type="primary"
-          :icon="Plus"
-          @click="openCreate"
-          >新增角色</el-button
-        >
-        <div class="table-tools">
+      <TableToolbar>
+        <template #actions>
+          <el-button
+            v-if="auth.can(PERMISSIONS.system.roles.create)"
+            type="primary"
+            :icon="Plus"
+            @click="openCreate"
+            >新增角色</el-button
+          >
+        </template>
+        <template #tools>
           <el-tooltip
             content="刷新"
             placement="top"
@@ -93,8 +80,8 @@
               @click="loadRoles"
             />
           </el-tooltip>
-        </div>
-      </div>
+        </template>
+      </TableToolbar>
 
       <el-table
         v-loading="loading"
@@ -443,6 +430,7 @@ import type {
   SystemPermissionTreeNode,
   SystemRoleListItem,
 } from '@company/contracts';
+import TableToolbar from '../../components/TableToolbar.vue';
 import { systemApi } from '../../api/system';
 import { DialogWidth } from '../../utils/dialog';
 import { EMessage } from '../../utils/message';
@@ -747,24 +735,6 @@ onMounted(loadRoles);
 </script>
 
 <style scoped>
-.page-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 16px;
-}
-.page-title h2 {
-  margin: 0;
-  color: #283a50;
-  font-size: 20px;
-  font-weight: 600;
-}
-.page-title p {
-  margin: 4px 0 0;
-  color: #6b7280;
-  font-size: 14px;
-}
-
 .query-panel,
 .table-panel {
   border: 1px solid #e5e7eb;
@@ -818,28 +788,6 @@ onMounted(loadRoles);
 
 .table-panel {
   overflow: hidden;
-}
-.table-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: 56px;
-  padding: 0 16px;
-  border-bottom: 1px solid #e5e7eb;
-}
-.table-toolbar :deep(.el-button) {
-  height: 34px;
-  border-radius: 6px;
-}
-.table-tools {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.table-tools :deep(.el-button) {
-  width: 20px;
-  height: 20px;
-  color: #6b7280;
 }
 
 .data-table {

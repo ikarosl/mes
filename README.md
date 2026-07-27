@@ -5,7 +5,7 @@
 ## 快速开始
 
 1. 复制 `.env.example` 为 `.env`，设置数据库和长度不少于 32 位的 JWT 密钥。
-2. 启动 MySQL：`docker compose -f infra/compose/compose.dev.yml up -d mysql`。
+2. 启动基础设施：`pnpm infra:up`。该命令显式读取仓库根目录唯一的 `.env`。
 3. 安装依赖：`pnpm install --frozen-lockfile`。
 4. 执行迁移：`pnpm db:migrate`。
 5. 创建管理员：设置 `ADMIN_PASSWORD` 后运行 `pnpm db:bootstrap-admin`。
