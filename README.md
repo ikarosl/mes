@@ -1,6 +1,6 @@
 # Company MES Next
 
-当前已落地范围：RBAC、认证、操作日志、管理端权限控制和多标签页路由缓存。未迁移产品、库存、生产、质量等业务模块。
+当前已落地范围：RBAC、认证、操作日志、管理端权限控制、多标签页路由缓存、产品主数据、技术文件、工序和工艺路线。生产、库存、质量和追溯后端尚未迁移。
 
 ## 快速开始
 
@@ -22,4 +22,12 @@ pnpm verify
 
 Access Token 只存在页面内存；刷新页面或打开新浏览器标签时，前端通过 HttpOnly Refresh Cookie 恢复会话。应用内部多标签页由 Pinia 维护，并使用 Vue KeepAlive 缓存页面实例。
 
-详细边界见 `agents.md` 和 `docs/rbac-auth-migration.md`。
+## 项目规范
+
+- 执行规则：[agents.md](agents.md)
+- 代码架构：[docs/architecture.md](docs/architecture.md)
+- HTTP 接口：[docs/api-conventions.md](docs/api-conventions.md)
+- 编码规范：[docs/coding-standards.md](docs/coding-standards.md)
+- 数据库设计：[docs/new.md](docs/new.md)
+- 管理端设计：[design.md](design.md)
+- 测试策略：[docs/testing-strategy.md](docs/testing-strategy.md)

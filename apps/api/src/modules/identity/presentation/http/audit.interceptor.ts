@@ -1,16 +1,16 @@
 import {
-  CallHandler,
-  ExecutionContext,
+  type CallHandler,
+  type ExecutionContext,
   HttpException,
   Injectable,
   Logger,
-  NestInterceptor,
+  type NestInterceptor,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import type { UserProfile } from '@company/contracts';
 import { catchError, from, mergeMap, throwError } from 'rxjs';
 import { AuditRepository } from '../../application/ports/audit.repository.js';
-import { AUDIT_IN_APPLICATION } from './auth.decorators.js';
+import { AUDIT_IN_APPLICATION } from '../../../../common/security/auth.decorators.js';
 
 @Injectable()
 export class AuditInterceptor implements NestInterceptor {

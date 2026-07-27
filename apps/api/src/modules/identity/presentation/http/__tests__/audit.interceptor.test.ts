@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { Reflector } from '@nestjs/core';
+import { type Reflector } from '@nestjs/core';
 import { lastValueFrom, of } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 import type { AuditRepository } from '../../../application/ports/audit.repository.js';

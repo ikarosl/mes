@@ -1,3 +1,4 @@
+import 'reflect-metadata';
 import { validate } from 'class-validator';
 import { describe, expect, it } from 'vitest';
 import { CreateUserDto, OperationLogQueryDto, ResetUserPasswordDto } from '../dto/rbac.dto.js';

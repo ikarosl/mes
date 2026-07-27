@@ -3,33 +3,23 @@ import type {
   CreateSystemUserPayload,
   UpdateSystemRolePayload,
   UpdateSystemUserPayload,
+  UserOption,
 } from '@company/contracts';
-import type { AuditLogEntry } from '../audit.types.js';
+import type { AuditLogEntry } from '../../../../common/audit/audit.types.js';
 import type {
-  CredentialUser,
   IdentityDepartmentOption,
   IdentityPermission,
-  IdentityProfile,
   IdentityRole,
   IdentityRoleOption,
   IdentityUser,
-  RefreshTokenRecord,
 } from '../../domain/identity.types.js';
 
-export abstract class IdentityRepository {
-  abstract findCredentials(username: string): Promise<CredentialUser | null>;
-  abstract findProfile(userId: string): Promise<IdentityProfile | null>;
-  abstract touchLastLogin(userId: string): Promise<void>;
-  abstract saveRefreshToken(token: RefreshTokenRecord): Promise<void>;
-  abstract rotateRefreshToken(
-    oldJti: string,
-    userId: string,
-    replacement: RefreshTokenRecord,
-  ): Promise<boolean>;
-  abstract revokeRefreshToken(jti: string): Promise<void>;
+export abstract class RbacRepository {
   abstract listUsers(): Promise<IdentityUser[]>;
   abstract listDepartmentOptions(): Promise<IdentityDepartmentOption[]>;
   abstract listRoleOptions(): Promise<IdentityRoleOption[]>;
+  abstract listActiveUserOptions(): Promise<UserOption[]>;
+  abstract listActiveUserOptionsByIds(ids: string[]): Promise<UserOption[]>;
   abstract createUser(
     payload: CreateSystemUserPayload,
     passwordHash: string,

@@ -7,7 +7,14 @@ const audit = { userId: '1', ip: '127.0.0.1' };
 describe('ProductService workflow safeguards', () => {
   it('rejects duplicate BOM inputs before opening a repository transaction', async () => {
     const repository = { replaceMaterials: vi.fn() };
-    const service = new ProductService(repository as never, {} as never);
+    const service = new ProductService(
+      {} as never,
+      repository as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
 
     expect(() =>
       service.replaceMaterials(
@@ -36,9 +43,16 @@ describe('ProductService workflow safeguards', () => {
 
   it('requires route step orders to be continuous from one', async () => {
     const repository = { replaceRouteSteps: vi.fn() };
-    const service = new ProductService(repository as never, {} as never);
+    const service = new ProductService(
+      {} as never,
+      {} as never,
+      {} as never,
+      repository as never,
+      {} as never,
+      {} as never,
+    );
 
-    expect(() =>
+    await expect(
       service.replaceRouteSteps(
         '30',
         [
@@ -47,8 +61,61 @@ describe('ProductService workflow safeguards', () => {
         ],
         audit,
       ),
-    ).toThrow(BadRequestException);
+    ).rejects.toBeInstanceOf(BadRequestException);
     expect(repository.replaceRouteSteps).not.toHaveBeenCalled();
+  });
+
+  it('rejects inactive route owners before opening the route transaction', async () => {
+    const repository = { replaceRouteSteps: vi.fn() };
+    const identityDirectory = { listActiveUserOptionsByIds: vi.fn().mockResolvedValue([]) };
+    const service = new ProductService(
+      {} as never,
+      {} as never,
+      {} as never,
+      repository as never,
+      {} as never,
+      identityDirectory as never,
+    );
+
+    await expect(
+      service.replaceRouteSteps(
+        '30',
+        [
+          {
+            processStepId: '1',
+            stepOrder: 1,
+            defaultOwnerId: '99',
+            needInspection: false,
+            needRecord: true,
+          },
+        ],
+        audit,
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(repository.replaceRouteSteps).not.toHaveBeenCalled();
+  });
+
+  it('enriches route steps through the Identity public directory', async () => {
+    const repository = {
+      listRouteSteps: vi
+        .fn()
+        .mockResolvedValue([{ id: '1', defaultOwnerId: '7', defaultOwnerName: null }]),
+    };
+    const identityDirectory = {
+      listActiveUserOptionsByIds: vi.fn().mockResolvedValue([{ id: '7', displayName: '张师傅' }]),
+    };
+    const service = new ProductService(
+      {} as never,
+      {} as never,
+      {} as never,
+      repository as never,
+      {} as never,
+      identityDirectory as never,
+    );
+
+    await expect(service.listRouteSteps('30')).resolves.toEqual([
+      { id: '1', defaultOwnerId: '7', defaultOwnerName: '张师傅' },
+    ]);
   });
 
   it('removes a stored SOP when database attachment fails', async () => {
@@ -62,7 +129,14 @@ describe('ProductService workflow safeguards', () => {
       storeSop: vi.fn().mockResolvedValue(stored),
       remove: vi.fn().mockResolvedValue(undefined),
     };
-    const service = new ProductService(repository as never, storage as never);
+    const service = new ProductService(
+      {} as never,
+      {} as never,
+      repository as never,
+      {} as never,
+      storage as never,
+      {} as never,
+    );
 
     await expect(
       service.uploadProcessStepSop(
@@ -89,7 +163,14 @@ describe('ProductService workflow safeguards', () => {
       finalizeTechnicalFileDelete: vi.fn(),
     };
     const storage = { remove: vi.fn().mockRejectedValue(new Error('storage unavailable')) };
-    const service = new ProductService(repository as never, storage as never);
+    const service = new ProductService(
+      repository as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      storage as never,
+      {} as never,
+    );
 
     await expect(service.deleteTechnicalFile('2', audit)).rejects.toMatchObject({ status: 502 });
     expect(repository.finalizeTechnicalFileDelete).not.toHaveBeenCalled();
@@ -98,7 +179,14 @@ describe('ProductService workflow safeguards', () => {
   it('associates an existing SOP without deleting the previous file', async () => {
     const repository = { setProcessStepDefaultSop: vi.fn().mockResolvedValue(undefined) };
     const storage = { remove: vi.fn() };
-    const service = new ProductService(repository as never, storage as never);
+    const service = new ProductService(
+      {} as never,
+      {} as never,
+      repository as never,
+      {} as never,
+      storage as never,
+      {} as never,
+    );
 
     await service.setProcessStepDefaultSop('2', '8', audit);
 

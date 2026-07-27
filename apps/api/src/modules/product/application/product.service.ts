@@ -15,23 +15,31 @@ import type {
   ProductPayload,
   TechnicalFileQuery,
 } from '@company/contracts';
-import type { AuditContext } from '../../identity/application/audit.types.js';
+import type { AuditContext } from '../../../common/audit/audit.types.js';
+import { IdentityDirectoryService } from '../../identity/public.js';
 import { ProductDomainError } from '../domain/product.errors.js';
-import { ProductRepository } from './ports/product.repository.js';
+import { ProcessRouteRepository } from './ports/process-route.repository.js';
+import { ProcessStepRepository } from './ports/process-step.repository.js';
+import { ProductCatalogRepository } from './ports/product-catalog.repository.js';
+import { TechnicalFileRepository } from './ports/technical-file.repository.js';
 import { TechnicalFileStorage, type TechnicalFileUpload } from './ports/technical-file.storage.js';
 
 @Injectable()
 export class ProductService {
   constructor(
-    private readonly repository: ProductRepository,
+    private readonly technicalFiles: TechnicalFileRepository,
+    private readonly catalog: ProductCatalogRepository,
+    private readonly processSteps: ProcessStepRepository,
+    private readonly routes: ProcessRouteRepository,
     private readonly storage: TechnicalFileStorage,
+    private readonly identityDirectory: IdentityDirectoryService,
   ) {}
 
   listCategories() {
-    return this.repository.listCategories();
+    return this.catalog.listCategories();
   }
   listTechnicalFiles(query: TechnicalFileQuery) {
-    return this.repository.listTechnicalFiles(query);
+    return this.technicalFiles.listTechnicalFiles(query);
   }
   async uploadTechnicalFile(file: TechnicalFileUpload, audit: AuditContext) {
     this.validateTechnicalFile(file);
@@ -42,14 +50,14 @@ export class ProductService {
       throw new BadGatewayException('技术文件存储失败');
     }
     try {
-      return await this.run(() => this.repository.createTechnicalFile(stored, audit));
+      return await this.run(() => this.technicalFiles.createTechnicalFile(stored, audit));
     } catch (error) {
       await this.storage.remove(stored).catch(() => undefined);
       throw error;
     }
   }
   async downloadTechnicalFile(id: string) {
-    const file = await this.run(() => this.repository.getTechnicalFile(id));
+    const file = await this.run(() => this.technicalFiles.getTechnicalFile(id));
     try {
       return { file, stream: await this.storage.read(file) };
     } catch {
@@ -57,53 +65,61 @@ export class ProductService {
     }
   }
   async deleteTechnicalFile(id: string, audit: AuditContext) {
-    const locator = await this.run(() => this.repository.prepareTechnicalFileDelete(id, audit));
+    const locator = await this.run(() => this.technicalFiles.prepareTechnicalFileDelete(id, audit));
     try {
       await this.storage.remove(locator);
     } catch {
       throw new BadGatewayException('技术文件删除失败，可重试此操作');
     }
-    return this.run(() => this.repository.finalizeTechnicalFileDelete(id, audit));
+    return this.run(() => this.technicalFiles.finalizeTechnicalFileDelete(id, audit));
   }
   listProducts() {
-    return this.repository.listProducts();
+    return this.catalog.listProducts();
   }
   listProductOptions() {
-    return this.repository.listProductOptions();
+    return this.catalog.listProductOptions();
   }
   listProcessSteps() {
-    return this.repository.listProcessSteps();
+    return this.processSteps.listProcessSteps();
   }
   listRoutes() {
-    return this.repository.listRoutes();
+    return this.routes.listRoutes();
   }
   listUserOptions() {
-    return this.repository.listUserOptions();
+    return this.identityDirectory.listActiveUserOptions();
   }
   listMaterials(productId: string) {
-    return this.repository.listMaterials(productId);
+    return this.catalog.listMaterials(productId);
   }
-  listRouteSteps(routeId: string) {
-    return this.repository.listRouteSteps(routeId);
+  async listRouteSteps(routeId: string) {
+    const items = await this.routes.listRouteSteps(routeId);
+    const ownerIds = [...new Set(items.flatMap((item) => item.defaultOwnerId ?? []))];
+    if (ownerIds.length === 0) return items;
+    const owners = await this.identityDirectory.listActiveUserOptionsByIds(ownerIds);
+    const names = new Map(owners.map((owner) => [owner.id, owner.displayName]));
+    return items.map((item) => ({
+      ...item,
+      defaultOwnerName: item.defaultOwnerId ? (names.get(item.defaultOwnerId) ?? null) : null,
+    }));
   }
 
   createCategory(payload: ProductCategoryPayload, audit: AuditContext) {
-    return this.run(() => this.repository.createCategory(this.cleanCategory(payload), audit));
+    return this.run(() => this.catalog.createCategory(this.cleanCategory(payload), audit));
   }
   updateCategory(id: string, payload: ProductCategoryPayload, audit: AuditContext) {
-    return this.run(() => this.repository.updateCategory(id, this.cleanCategory(payload), audit));
+    return this.run(() => this.catalog.updateCategory(id, this.cleanCategory(payload), audit));
   }
   setCategoryStatus(id: string, status: number, audit: AuditContext) {
-    return this.run(() => this.repository.setCategoryStatus(id, status, audit));
+    return this.run(() => this.catalog.setCategoryStatus(id, status, audit));
   }
   createProduct(payload: ProductPayload, audit: AuditContext) {
-    return this.run(() => this.repository.createProduct(this.cleanProduct(payload), audit));
+    return this.run(() => this.catalog.createProduct(this.cleanProduct(payload), audit));
   }
   updateProduct(id: string, payload: ProductPayload, audit: AuditContext) {
-    return this.run(() => this.repository.updateProduct(id, this.cleanProduct(payload), audit));
+    return this.run(() => this.catalog.updateProduct(id, this.cleanProduct(payload), audit));
   }
   setProductStatus(id: string, status: number, audit: AuditContext) {
-    return this.run(() => this.repository.setProductStatus(id, status, audit));
+    return this.run(() => this.catalog.setProductStatus(id, status, audit));
   }
   replaceMaterials(id: string, items: ProductMaterialPayload[], audit: AuditContext) {
     if (new Set(items.map((item) => item.materialProductId)).size !== items.length) {
@@ -112,21 +128,23 @@ export class ProductService {
     if (items.some((item) => item.quantityPerUnit <= 0 || !item.unit.trim())) {
       throw new BadRequestException('BOM 单位用量必须大于 0，且用量单位不能为空');
     }
-    return this.run(() => this.repository.replaceMaterials(id, items, audit));
+    return this.run(() => this.catalog.replaceMaterials(id, items, audit));
   }
   setDefaultRoute(id: string, routeId: string | null, audit: AuditContext) {
-    return this.run(() => this.repository.setDefaultRoute(id, routeId, audit));
+    return this.run(() => this.catalog.setDefaultRoute(id, routeId, audit));
   }
   createProcessStep(payload: ProcessStepPayload, audit: AuditContext) {
-    return this.run(() => this.repository.createProcessStep(this.cleanProcessStep(payload), audit));
+    return this.run(() =>
+      this.processSteps.createProcessStep(this.cleanProcessStep(payload), audit),
+    );
   }
   updateProcessStep(id: string, payload: ProcessStepPayload, audit: AuditContext) {
     return this.run(() =>
-      this.repository.updateProcessStep(id, this.cleanProcessStep(payload), audit),
+      this.processSteps.updateProcessStep(id, this.cleanProcessStep(payload), audit),
     );
   }
   setProcessStepStatus(id: string, status: number, audit: AuditContext) {
-    return this.run(() => this.repository.setProcessStepStatus(id, status, audit));
+    return this.run(() => this.processSteps.setProcessStepStatus(id, status, audit));
   }
   async uploadProcessStepSop(id: string, file: TechnicalFileUpload, audit: AuditContext) {
     this.validateTechnicalFile(file);
@@ -137,28 +155,28 @@ export class ProductService {
       throw new BadGatewayException('技术文件存储失败');
     }
     try {
-      await this.run(() => this.repository.attachProcessStepSop(id, stored, audit));
+      await this.run(() => this.processSteps.attachProcessStepSop(id, stored, audit));
     } catch (error) {
       await this.storage.remove(stored).catch(() => undefined);
       throw error;
     }
   }
   setProcessStepDefaultSop(id: string, fileId: string | null, audit: AuditContext) {
-    return this.run(() => this.repository.setProcessStepDefaultSop(id, fileId, audit));
+    return this.run(() => this.processSteps.setProcessStepDefaultSop(id, fileId, audit));
   }
   createRoute(payload: ProcessRoutePayload, audit: AuditContext) {
-    return this.run(() => this.repository.createRoute(this.cleanRoute(payload), audit));
+    return this.run(() => this.routes.createRoute(this.cleanRoute(payload), audit));
   }
   updateRoute(id: string, payload: ProcessRoutePayload, audit: AuditContext) {
-    return this.run(() => this.repository.updateRoute(id, this.cleanRoute(payload), audit));
+    return this.run(() => this.routes.updateRoute(id, this.cleanRoute(payload), audit));
   }
   setRouteStatus(id: string, status: ProcessRouteStatus, audit: AuditContext) {
-    return this.run(() => this.repository.setRouteStatus(id, status, audit));
+    return this.run(() => this.routes.setRouteStatus(id, status, audit));
   }
   deleteRoute(id: string, audit: AuditContext) {
-    return this.run(() => this.repository.deleteRoute(id, audit));
+    return this.run(() => this.routes.deleteRoute(id, audit));
   }
-  replaceRouteSteps(id: string, items: ProcessRouteStepPayload[], audit: AuditContext) {
+  async replaceRouteSteps(id: string, items: ProcessRouteStepPayload[], audit: AuditContext) {
     const orders = items.map((item) => item.stepOrder);
     const normalizedOrders = [...orders].sort((left, right) => left - right);
     if (
@@ -168,7 +186,14 @@ export class ProductService {
     ) {
       throw new BadRequestException('路线至少包含一个工序，且工序顺序必须从 1 开始连续排列');
     }
-    return this.run(() => this.repository.replaceRouteSteps(id, items, audit));
+    const ownerIds = [...new Set(items.flatMap((item) => item.defaultOwnerId ?? []))];
+    if (ownerIds.length > 0) {
+      const owners = await this.identityDirectory.listActiveUserOptionsByIds(ownerIds);
+      if (owners.length !== ownerIds.length) {
+        throw new BadRequestException('默认负责人不存在或已停用');
+      }
+    }
+    return this.run(() => this.routes.replaceRouteSteps(id, items, audit));
   }
 
   private cleanCategory(payload: ProductCategoryPayload): ProductCategoryPayload {

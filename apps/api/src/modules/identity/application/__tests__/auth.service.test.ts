@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import bcrypt from 'bcryptjs';
 import { decodeJwt } from 'jose';
 import { AuthService } from '../auth.service.js';
-import type { IdentityRepository } from '../ports/identity.repository.js';
+import type { AuthRepository } from '../ports/auth.repository.js';
 
 describe('AuthService token TTLs', () => {
   beforeEach(() => {
@@ -38,7 +38,7 @@ describe('AuthService token TTLs', () => {
       }),
       touchLastLogin: vi.fn(),
       saveRefreshToken,
-    } as unknown as IdentityRepository;
+    } as unknown as AuthRepository;
     const service = new AuthService(repository);
 
     const result = await service.login({ username: 'admin', password: 'secret' });

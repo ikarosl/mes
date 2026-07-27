@@ -76,21 +76,6 @@ body {
 .content {
   padding: 20px;
 }
-.page-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 16px;
-}
-.page-title h2 {
-  margin: 0 0 5px;
-  font-size: 20px;
-}
-.page-title p {
-  margin: 0;
-  color: #6b7280;
-  font-size: 14px;
-}
 .login-page {
   min-height: 100vh;
   display: grid;

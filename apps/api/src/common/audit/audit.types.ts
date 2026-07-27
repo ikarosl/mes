@@ -1,3 +1,5 @@
+import type { OperationResult } from '@company/contracts';
+
 export interface AuditContext {
   userId: string | null;
   ip: string | null;
@@ -16,4 +18,3 @@ export interface AuditLogEntry {
   ip?: string | null;
   remark?: string | null;
 }
-import type { OperationResult } from '@company/contracts';

@@ -1,4 +1,4 @@
-import { Reflector } from '@nestjs/core';
+import { type Reflector } from '@nestjs/core';
 import { describe, expect, it, vi } from 'vitest';
 import { permissionMatches } from '@company/constants';
 import type { AuthService } from '../../../application/auth.service.js';

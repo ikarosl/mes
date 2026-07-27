@@ -16,6 +16,7 @@ import {
 } from 'class-validator';
 import { OPERATION_RESULTS, SYSTEM_STATUS } from '@company/constants';
 import type { OperationResult } from '@company/contracts';
+import { PageQueryDto } from '../../../../../presentation/http/dto/page-query.dto.js';
 
 export class IdParamDto {
   @IsNumberString({ no_symbols: true }, { message: '资源 ID 格式无效' })
@@ -146,9 +147,7 @@ export class AssignRolePermissionsDto {
   permissionIds!: string[];
 }
 
-export class OperationLogQueryDto {
-  @IsOptional() @IsNumberString({ no_symbols: true }) page?: string;
-  @IsOptional() @IsNumberString({ no_symbols: true }) pageSize?: string;
+export class OperationLogQueryDto extends PageQueryDto {
   @IsOptional() @IsString() @MaxLength(128) keyword?: string;
   @IsOptional() @IsString() @MaxLength(32) logType?: string;
   @IsOptional() @IsString() @MaxLength(64) module?: string;

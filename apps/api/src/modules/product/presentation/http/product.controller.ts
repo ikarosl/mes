@@ -16,12 +16,12 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { PERMISSIONS } from '@company/constants';
-import type { AuditContext } from '../../../identity/application/audit.types.js';
+import type { AuditContext } from '../../../../common/audit/audit.types.js';
 import {
   AuditInApplication,
   CurrentAuditContext,
   RequirePermission,
-} from '../../../identity/presentation/http/auth.decorators.js';
+} from '../../../../common/security/auth.decorators.js';
 import { ProductService } from '../../application/product.service.js';
 import {
   DefaultRouteDto,
@@ -49,8 +49,8 @@ export class ProductController {
   @RequirePermission(PERMISSIONS.product.files.view)
   technicalFiles(@Query() query: TechnicalFileQueryDto) {
     return this.service.listTechnicalFiles({
-      page: query.page ? Math.max(Number(query.page), 1) : undefined,
-      pageSize: query.pageSize ? Math.min(Math.max(Number(query.pageSize), 1), 100) : undefined,
+      page: query.page,
+      pageSize: query.pageSize,
       keyword: query.keyword?.trim() || undefined,
       status: query.status,
       storageProvider: query.storageProvider,

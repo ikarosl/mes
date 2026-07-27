@@ -7,3 +7,5 @@ pnpm-lock.yaml
 *.log
 uploads/
 var/
+# 数据库唯一基准文档篇幅较大，避免格式化器重排表格和 SQL 示例。
+docs/new.md

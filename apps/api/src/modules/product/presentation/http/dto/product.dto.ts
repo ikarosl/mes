@@ -28,6 +28,7 @@ import type {
   ProductItemKind,
   TechnicalFileStorageProvider,
 } from '@company/contracts';
+import { PageQueryDto } from '../../../../../presentation/http/dto/page-query.dto.js';
 
 export class ProductIdParamDto {
   @IsNumberString() id!: string;
@@ -44,9 +45,7 @@ export class ProductCategoryDto {
 export class StatusDto {
   @IsIn([SYSTEM_STATUS.disabled, SYSTEM_STATUS.enabled]) status!: number;
 }
-export class TechnicalFileQueryDto {
-  @IsOptional() @IsNumberString({ no_symbols: true }) page?: string;
-  @IsOptional() @IsNumberString({ no_symbols: true }) pageSize?: string;
+export class TechnicalFileQueryDto extends PageQueryDto {
   @IsOptional() @IsString() @MaxLength(255) keyword?: string;
   @IsOptional()
   @Type(() => Number)

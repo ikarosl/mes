@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ProductDomainError } from '../../domain/product.errors.js';
-import { MysqlProductRepository } from '../mysql-product.repository.js';
+import { MysqlProcessRouteRepository } from '../mysql-process-route.repository.js';
+import { MysqlTechnicalFileRepository } from '../mysql-technical-file.repository.js';
 
-describe('MysqlProductRepository workflow transactions', () => {
+describe('MySQL product adapters workflow transactions', () => {
   it('persists technical file metadata and audit in the same transaction', async () => {
     const connection = {
       beginTransaction: vi.fn(),
@@ -15,7 +16,7 @@ describe('MysqlProductRepository workflow transactions', () => {
       rollback: vi.fn(),
       release: vi.fn(),
     };
-    const repository = new MysqlProductRepository({
+    const repository = new MysqlTechnicalFileRepository({
       getConnection: vi.fn().mockResolvedValue(connection),
     } as never);
 
@@ -65,7 +66,7 @@ describe('MysqlProductRepository workflow transactions', () => {
       rollback: vi.fn(),
       release: vi.fn(),
     };
-    const repository = new MysqlProductRepository({
+    const repository = new MysqlTechnicalFileRepository({
       getConnection: vi.fn().mockResolvedValue(connection),
     } as never);
 
@@ -102,7 +103,7 @@ describe('MysqlProductRepository workflow transactions', () => {
       rollback: vi.fn(),
       release: vi.fn(),
     };
-    const repository = new MysqlProductRepository({
+    const repository = new MysqlProcessRouteRepository({
       getConnection: vi.fn().mockResolvedValue(connection),
     } as never);
 
@@ -146,7 +147,7 @@ describe('MysqlProductRepository workflow transactions', () => {
       rollback: vi.fn(),
       release: vi.fn(),
     };
-    const repository = new MysqlProductRepository({
+    const repository = new MysqlProcessRouteRepository({
       getConnection: vi.fn().mockResolvedValue(connection),
     } as never);
 

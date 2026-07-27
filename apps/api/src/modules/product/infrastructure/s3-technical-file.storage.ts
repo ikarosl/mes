@@ -13,7 +13,7 @@ import {
   toBeijingISOString,
 } from '../../../common/time/beijing-time.js';
 import {
-  TechnicalFileStorage,
+  type TechnicalFileStorage,
   type TechnicalFileUpload,
 } from '../application/ports/technical-file.storage.js';
 

@@ -1,91 +1,115 @@
-# 目标架构
+# Company MES Next 架构规范
 
-## 1. 架构风格
+本文是项目代码架构与模块边界的唯一基准。数据库业务设计以 `new.md` 为准，HTTP 接口以
+`api-conventions.md` 为准，编码细节以 `coding-standards.md` 为准，管理端视觉交互以根目录
+`design.md` 为准。
 
-采用“模块化单体 + 端口适配器”。一个 NestJS API 进程承载一期模块，但禁止模块绕过公开应用服务直接访问其他模块的表或 Repository。这样适合 50 人规模，也为以后拆分独立服务保留边界。
+## 1. 架构风格与当前范围
 
-## 2. Monorepo 目录
+项目采用“模块化单体 + 端口适配器”。一个 NestJS API 进程承载当前模块，不拆微服务，不为
+完整 MES 预建空模块。
 
-```text
-apps/
-  api/                    NestJS 组合根，只负责装配模块与进程启动
-  admin-web/              Vue 3 管理端主线
-  workstation-web/        轻量员工/检测测试入口
-packages/
-  contracts/              OpenAPI 派生类型、运行时 schema、事件契约
-  database/               DataSource、迁移、迁移 CLI；不放业务 Repository
-  config/                 配置 schema 与环境加载
-  observability/          logger、trace、metrics、request-id
-  storage/                StoragePort 及 local/S3 adapter
-  cache/                  Cache/Lock/RateLimit 端口及 memory/Redis adapter
-  testing/                test builders、容器辅助、fixtures
-  ui/                     符合 design.md 的通用 Modal/Table/Form 组件
-  eslint-config/          共享 lint 规则
-  tsconfig/               共享 TypeScript 配置
-tests/
-  contract/               API / event 契约兼容性测试
-  e2e/                    核心用户旅程
-  performance/            容量基线，不作为每次 PR 的快速任务
-infra/
-  compose/                本地依赖
-  docker/                 多阶段镜像
-  nginx/                  反向代理与静态资源
-  k8s/                    真正需要编排时再启用
-ops/
-  runbooks/               发布、回滚、备份恢复、故障处理
-docs/
-  adr/                    不可隐式改变的重要架构决策
-  diagrams/               上下文、容器、模块依赖图
-```
+当前正式范围：
 
-## 3. NestJS 模块内部模板
+- Identity/System：认证、RBAC、操作日志和管理端权限基础设施。
+- Product：产品分类、产品主数据、产品物料、技术文件、工序和工艺路线。
 
-```text
-modules/<module>/
-  domain/
-    entities/
-    value-objects/
-    events/
-    services/
-  application/
-    commands/
-    queries/
-    dto/
-    ports/
-  infrastructure/
-    persistence/
-    cache/
-    storage/
-  presentation/
-    http/
-  <module>.module.ts
-```
+生产、库存、质量和追溯后端只能在迁移阶段明确更新后追加，不得仅凭已有 UI 原型提前实现。
 
-推荐领域模块：identity、product、process、production、inventory、quality、traceability。traceability 只做跨模块只读投影或查询编排，不能成为新的“万能模块”。
+## 2. 模块与功能的划分
 
-## 4. 依赖规则
+独立业务模块应同时具备多数条件：独立业务术语、独立规则和状态、明确数据所有权、少量公开
+能力以及独立测试价值。不能因为只有一张表、一个页面或文件过长就建立模块。
+
+共享同一业务语言、数据所有权和事务的能力保留在同一模块，按功能拆分 Controller、Service、
+Port 和 Adapter。当前 Product 保持一个 NestJS 模块，内部划分 technical-file、catalog、
+process-step 和 process-route；只有工艺能力出现独立生命周期、团队所有权或大量外部调用时才
+提取 ProcessModule。
+
+`common` 仅存放真正跨模块且不含业务知识的能力，例如审计上下文、HTTP 安全装饰器和时间格式。
+`common` 不拥有业务表，也不得成为绕过模块边界的万能目录。
+
+## 3. 模块内部依赖
 
 ```text
 presentation -> application -> domain
 infrastructure -> application ports + domain
-domain -> 不依赖 NestJS、ORM、HTTP、Redis、S3
-module A -> module B 的公开 application facade / contract
+domain -> 纯 TypeScript，不依赖 NestJS、MySQL、HTTP、存储 SDK
 ```
 
-通过 ESLint boundaries 或 dependency-cruiser 在 CI 阻止反向依赖与跨模块深层 import。
+| 来源层         | 可以依赖                                     | 禁止依赖                                              |
+| -------------- | -------------------------------------------- | ----------------------------------------------------- |
+| domain         | 本模块 domain、纯共享契约                    | application、presentation、infrastructure、框架和 SDK |
+| application    | 本模块 domain、ports、contracts              | presentation、infrastructure、数据库连接和 SDK        |
+| presentation   | 本模块 application、公共 HTTP 能力           | infrastructure、SQL、数据库连接                       |
+| infrastructure | 本模块 application ports、domain、基础设施包 | 其他模块内部实现                                      |
 
-## 5. 关键基础设施端口
+Controller 只负责协议映射、DTO、权限装饰器和响应转换，不写 SQL、不管理事务、不处理 Token 密钥。
 
-- StoragePort：put/get/delete/presign/head；业务只保存 objectKey、版本、校验和和元数据，不保存供应商 URL。
-- CachePort：get/set/delete；默认 Noop/Memory，按配置启用 Redis。
-- LockPort：关键库存和状态操作使用数据库行锁优先；跨实例协调时使用 Redis 实现。
-- Clock / IdGenerator：便于测试状态流转和审计时间。
-- UnitOfWork：统一事务边界，禁止 Controller 开启事务。
-- AuditPort：业务动作在同一事务写审计/outbox，避免 fire-and-forget 丢失。
+## 4. 模块公开边界与数据所有权
 
-## 6. 不建议现在做
+- 可被其他模块使用的模块必须提供根级 `public.ts`。
+- 跨模块只能引用目标模块 `public.ts` 导出的 Facade、抽象 token 或稳定契约。
+- 禁止引用其他模块的 Repository、domain、presentation、infrastructure 或深层 application 文件。
+- `@company/contracts` 只保存传输契约，不保存 Pool、PoolConnection、事务 executor 或 SDK 类型。
+- 每张业务表有唯一所属模块；模块不能直接查询或修改其他模块的表。
+- 跨模块读通过目标模块公开 Query/Directory Facade；跨模块写通过目标模块公开应用服务。
+- 组合根 `AppModule` 可以引用模块公开的装配对象，但不写业务逻辑。
 
-- 不拆微服务、不上 Kafka、不引入 Kubernetes 作为一期前提。
-- 不把 Redis 当主数据源或库存真相源。
-- 不为“完整 MES”预建大量空模块。
-- 不在业务模块中直接使用具体 S3 SDK 或 Redis client。
+当前数据所有权：
+
+| 模块            | 拥有的数据                                                                                               |
+| --------------- | -------------------------------------------------------------------------------------------------------- |
+| Identity/System | departments、users、roles、permissions、关联表、refresh_tokens、operation_logs                           |
+| Product         | product_categories、products、product_materials、technical_files、process_steps、process_routes 及关联表 |
+| common          | 不拥有业务表                                                                                             |
+
+Product 获取用户选项必须调用 Identity 的公开目录服务，不能直接查询 `users`。
+
+## 5. Port、Adapter 与文件拆分
+
+Port 按调用者需要和变化原因设计，应保持窄而明确。一个 Adapter 可以实现多个紧密相关的 Port；
+接口数量不是单一职责的判定标准。
+
+Repository 或页面超过 500 行只产生维护性警告。拆分必须依据业务能力、事务边界、测试隔离或独立
+变化原因，禁止为了满足行数机械移动代码。Controller、Service 和 SQL 不得混写在同一文件。
+
+## 6. 事务与审计
+
+- Controller 不开启事务。
+- application 描述业务动作；infrastructure 使用数据库连接执行原子写入。
+- application port 不得暴露数据库连接类型。
+- 核心业务写入和成功审计使用同一个事务 executor；审计失败时整体回滚并返回失败。
+- 通用 HTTP、登录、401/403 和失败日志采用 best-effort；写日志失败不能覆盖原响应或原异常。
+- 禁止 fire-and-forget 核心写操作。
+- 跨多个业务模块的写入在出现真实用例前不预建分布式事务；优先由一个明确用例通过公开 Facade 编排。
+
+## 7. 基础设施
+
+- MySQL 是业务事实来源；Redis 只在出现多实例协调需求后通过端口引入。
+- 技术文件统一使用 S3 标准对象存储接口，业务只保存 bucket、objectKey、版本、校验和和元数据。
+- domain、application 和 presentation 不得直接依赖具体数据库或存储 SDK；infrastructure adapter 可以。
+- 数据库时间和公共接口时间遵守 `new.md` 的 `Asia/Shanghai / +08:00` 规则。
+
+## 8. 前端结构
+
+- 顶部栏根据路由 `meta.title` 显示当前页面名称，业务内容区不重复同名标题。
+- 业务页通常从筛选区、工具栏或主体卡片开始。
+- 可选说明只表达长期有效的业务规则、风险或帮助，不显示迁移验证和测试占位文案。
+- 页面保持稳定路由名、组件名和 keep-alive 行为。
+- 超长页面按筛选、表格、表单、详情弹窗和 composable 拆分，不机械拆纯展示片段。
+
+## 9. 自动约束
+
+| 规则                    | 自动措施                         |
+| ----------------------- | -------------------------------- |
+| 分层反向依赖            | ESLint `no-restricted-imports`   |
+| 跨模块深层 import       | ESLint `boundaries/dependencies` |
+| domain 引入框架/数据库  | ESLint error                     |
+| Repository/Vue 文件过长 | ESLint warning                   |
+| DTO、分页和错误结构     | 单元测试、契约测试               |
+| 核心写入与审计原子性    | Repository 事务测试              |
+| 数据表所有权            | 架构测试和代码评审               |
+| 文档失效链接            | `pnpm docs:check`                |
+
+新增模块时必须先登记业务能力、数据所有权和公开入口，再实现代码并补充边界测试。

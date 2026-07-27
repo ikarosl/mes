@@ -2,7 +2,7 @@ import { Body, Controller, Get, Post, Req, Res } from '@nestjs/common';
 import type { UserProfile } from '@company/contracts';
 import { loadAppConfig } from '../../../../config/env.js';
 import { AuthService } from '../../application/auth.service.js';
-import { CurrentUser, Public } from './auth.decorators.js';
+import { CurrentUser, Public } from '../../../../common/security/auth.decorators.js';
 import { LoginDto } from './dto/auth.dto.js';
 
 const COOKIE = 'company_refresh_token';

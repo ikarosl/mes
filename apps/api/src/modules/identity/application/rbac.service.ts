@@ -13,14 +13,14 @@ import type {
   UpdateSystemRolePayload,
   UpdateSystemUserPayload,
 } from '@company/contracts';
-import type { AuditContext, AuditLogEntry } from './audit.types.js';
+import type { AuditContext, AuditLogEntry } from '../../../common/audit/audit.types.js';
 import { AuditRepository } from './ports/audit.repository.js';
-import { IdentityRepository } from './ports/identity.repository.js';
+import { RbacRepository } from './ports/rbac.repository.js';
 
 @Injectable()
 export class RbacService {
   constructor(
-    private readonly repository: IdentityRepository,
+    private readonly repository: RbacRepository,
     private readonly auditRepository: AuditRepository,
   ) {}
   listUsers() {

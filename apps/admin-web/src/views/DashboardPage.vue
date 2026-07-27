@@ -1,11 +1,5 @@
 <template>
   <section>
-    <div class="page-title">
-      <div>
-        <h2>首页</h2>
-        <p>RBAC 与认证模块迁移验证入口</p>
-      </div>
-    </div>
     <el-card
       ><el-descriptions
         :column="2"

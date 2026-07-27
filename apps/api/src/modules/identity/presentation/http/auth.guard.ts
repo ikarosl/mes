@@ -1,6 +1,6 @@
 import {
-  CanActivate,
-  ExecutionContext,
+  type CanActivate,
+  type ExecutionContext,
   Injectable,
   Logger,
   UnauthorizedException,
@@ -9,7 +9,7 @@ import { Reflector } from '@nestjs/core';
 import { permissionMatches } from '@company/constants';
 import { AuthService } from '../../application/auth.service.js';
 import { AuditRepository } from '../../application/ports/audit.repository.js';
-import { IS_PUBLIC, REQUIRED_PERMISSION } from './auth.decorators.js';
+import { IS_PUBLIC, REQUIRED_PERMISSION } from '../../../../common/security/auth.decorators.js';
 @Injectable()
 export class AuthGuard implements CanActivate {
   private readonly logger = new Logger(AuthGuard.name);

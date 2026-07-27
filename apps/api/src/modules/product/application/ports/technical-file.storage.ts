@@ -1,6 +1,5 @@
-import type { StoredTechnicalFile } from './product.repository.js';
 import type { Readable } from 'node:stream';
-import type { TechnicalFileLocator } from './product.repository.js';
+import type { StoredTechnicalFile, TechnicalFileLocator } from './technical-file.repository.js';
 
 export interface TechnicalFileUpload {
   originalName: string;

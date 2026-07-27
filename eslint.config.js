@@ -1,4 +1,5 @@
 import eslint from '@eslint/js';
+import boundaries from 'eslint-plugin-boundaries';
 import prettier from 'eslint-config-prettier';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
@@ -22,9 +23,52 @@ export default tseslint.config(
     },
   },
   {
+    files: ['scripts/**/*.mjs'],
+    languageOptions: { globals: { ...globals.node } },
+  },
+  {
     files: ['**/*.{ts,vue}'],
     languageOptions: { globals: { ...globals.browser, ...globals.node } },
-    rules: { '@typescript-eslint/no-explicit-any': 'error' },
+    rules: {
+      '@typescript-eslint/consistent-type-imports': [
+        'error',
+        { prefer: 'type-imports', fixStyle: 'inline-type-imports' },
+      ],
+      '@typescript-eslint/no-explicit-any': 'error',
+      eqeqeq: ['error', 'always', { null: 'ignore' }],
+    },
+  },
+  {
+    files: ['apps/api/src/modules/**/*.{ts,tsx}'],
+    plugins: { boundaries },
+    settings: {
+      'boundaries/elements': [
+        {
+          type: 'api-module',
+          pattern: 'apps/api/src/modules/*',
+          capture: ['moduleName'],
+        },
+      ],
+    },
+    rules: {
+      'boundaries/dependencies': [
+        'error',
+        {
+          default: 'allow',
+          policies: [
+            {
+              from: { element: { type: 'api-module' } },
+              disallow: {
+                to: {
+                  element: { type: 'api-module', fileInternalPath: '!public.ts' },
+                },
+              },
+              message: '跨业务模块只能通过目标模块的 public.ts 导入',
+            },
+          ],
+        },
+      ],
+    },
   },
   {
     files: ['apps/api/src/modules/*/domain/**/*.ts'],
@@ -49,6 +93,11 @@ export default tseslint.config(
         },
       ],
     },
+  },
+  // Nest 的构造器注入和 DTO 校验依赖运行时类型元数据，不能自动改成 type-only import。
+  {
+    files: ['apps/api/src/**/*.ts'],
+    rules: { '@typescript-eslint/consistent-type-imports': 'off' },
   },
   {
     files: ['apps/api/src/modules/*/application/**/*.ts'],
@@ -86,6 +135,18 @@ export default tseslint.config(
           ],
         },
       ],
+    },
+  },
+  {
+    files: ['apps/api/src/modules/*/infrastructure/**/*.ts'],
+    rules: {
+      'max-lines': ['warn', { max: 500, skipBlankLines: true, skipComments: true }],
+    },
+  },
+  {
+    files: ['apps/admin-web/src/views/**/*.vue'],
+    rules: {
+      'max-lines': ['warn', { max: 500, skipBlankLines: true, skipComments: true }],
     },
   },
   // ⚠ 债务隔离：已知的迁移占位区，待接通真实 API 后逐步解除

@@ -3,7 +3,7 @@ import { BadRequestException, StreamableFile } from '@nestjs/common';
 import { Readable } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
 import { PERMISSIONS } from '@company/constants';
-import { REQUIRED_PERMISSION } from '../../../../identity/presentation/http/auth.decorators.js';
+import { REQUIRED_PERMISSION } from '../../../../../common/security/auth.decorators.js';
 import { ProductController } from '../product.controller.js';
 
 describe('ProductController technical files', () => {

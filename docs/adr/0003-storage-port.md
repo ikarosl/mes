@@ -1,5 +1,5 @@
 # ADR-0003：文件存储使用端口适配器
 
-状态：Proposed
+状态：Accepted
 
-业务层只识别 objectKey、文件元数据、校验和和版本，不直接拼接本地 URL。开发可使用 LocalStorageAdapter，联调可使用 MinIO，生产使用 S3 compatible adapter。下载优先使用短期签名 URL，并保留权限校验、大小/MIME 限制和病毒扫描钩子。
+决策已调整并完成初期实现：所有环境统一使用 S3 标准对象存储接口；本地开发可连接 AIStor/MinIO，部署环境连接兼容 S3 的对象存储。业务层只识别 bucket、objectKey、文件元数据、校验和和版本，不直接拼接本地或供应商 URL。下载保留权限校验、大小/MIME 限制和后续病毒扫描钩子。

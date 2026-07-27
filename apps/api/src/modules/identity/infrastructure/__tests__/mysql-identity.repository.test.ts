@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import { MysqlIdentityRepository } from '../mysql-identity.repository.js';
+import { MysqlRbacRepository } from '../mysql-rbac.repository.js';
 
-describe('MysqlIdentityRepository audited mutations', () => {
+describe('MysqlRbacRepository audited mutations', () => {
   it('writes a role assignment and its audit entry on the same transaction connection', async () => {
     const connection = {
       beginTransaction: vi.fn(),
@@ -12,7 +12,7 @@ describe('MysqlIdentityRepository audited mutations', () => {
       release: vi.fn(),
     };
     const pool = { getConnection: vi.fn().mockResolvedValue(connection) };
-    const repository = new MysqlIdentityRepository(pool as never);
+    const repository = new MysqlRbacRepository(pool as never);
 
     await repository.setUserRoles('10', ['2'], {
       logType: 'operation',

@@ -1,5 +1,5 @@
 import type { OperationLogListItem, OperationLogQuery, PageResult } from '@company/contracts';
-import type { AuditLogEntry } from '../audit.types.js';
+import type { AuditLogEntry } from '../../../../common/audit/audit.types.js';
 
 /** Narrow audit port shared by HTTP security handling and identity use cases. */
 export abstract class AuditRepository {

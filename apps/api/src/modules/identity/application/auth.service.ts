@@ -5,12 +5,12 @@ import { randomUUID } from 'node:crypto';
 import type { JwtClaims, LoginRequest, TokenResponse, UserProfile } from '@company/contracts';
 import { toBeijingISOString } from '../../../common/time/beijing-time.js';
 import { loadAppConfig } from '../../../config/env.js';
-import { IdentityRepository } from './ports/identity.repository.js';
+import { AuthRepository } from './ports/auth.repository.js';
 
 @Injectable()
 export class AuthService {
   private readonly config = loadAppConfig();
-  constructor(private readonly repository: IdentityRepository) {}
+  constructor(private readonly repository: AuthRepository) {}
   async login(payload: LoginRequest) {
     const user = await this.repository.findCredentials(payload.username);
     if (!user || !(await bcrypt.compare(payload.password, user.passwordHash)))

@@ -1,8 +1,12 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { PERMISSIONS } from '@company/constants';
-import type { AuditContext } from '../../application/audit.types.js';
+import type { AuditContext } from '../../../../common/audit/audit.types.js';
 import { RbacService } from '../../application/rbac.service.js';
-import { AuditInApplication, CurrentAuditContext, RequirePermission } from './auth.decorators.js';
+import {
+  AuditInApplication,
+  CurrentAuditContext,
+  RequirePermission,
+} from '../../../../common/security/auth.decorators.js';
 import {
   AssignRolePermissionsDto,
   AssignUserRolesDto,
@@ -126,8 +130,7 @@ export class RbacController {
   ) {
     return this.rbac.listLogs({
       ...query,
-      page: query.page ? Math.max(Number(query.page), 1) : undefined,
-      pageSize: query.pageSize ? Math.min(Math.max(Number(query.pageSize), 1), 100) : undefined,
+      keyword: query.keyword?.trim() || undefined,
     });
   }
 }
