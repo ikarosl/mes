@@ -1,0 +1,9 @@
+ALTER TABLE operation_logs
+  DROP KEY idx_operation_logs_request_id,
+  DROP COLUMN error_code,
+  DROP COLUMN user_agent,
+  DROP COLUMN duration_ms,
+  DROP COLUMN http_status,
+  DROP COLUMN route,
+  DROP COLUMN http_method,
+  DROP COLUMN request_id;

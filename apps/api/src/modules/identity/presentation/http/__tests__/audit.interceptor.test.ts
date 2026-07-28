@@ -29,6 +29,9 @@ describe('audit failure remarks', () => {
 
     expect(result).toEqual({ id: '1' });
     expect(writeLog).toHaveBeenCalledOnce();
+    expect(writeLog).toHaveBeenCalledWith(
+      expect.objectContaining({ requestId: 'request_1234', httpMethod: 'POST' }),
+    );
   });
 
   it('skips duplicate success logging when the application transaction owns the audit', async () => {
@@ -53,6 +56,7 @@ const httpContext = () => ({
       path: '/api/system/users',
       ip: '127.0.0.1',
       user: { id: '1' },
+      requestId: 'request_1234',
     }),
   }),
   getHandler: () => undefined,

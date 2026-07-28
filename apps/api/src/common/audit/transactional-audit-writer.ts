@@ -7,8 +7,8 @@ export const writeTransactionalAudit = async (
 ): Promise<void> => {
   await executor.execute(
     `INSERT INTO operation_logs
-     (log_type,module,action,user_id,target_id,target_type,result,before_data,after_data,ip,remark)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+     (log_type,module,action,user_id,target_id,target_type,result,before_data,after_data,ip,request_id,http_method,route,http_status,duration_ms,user_agent,error_code,remark)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [
       entry.logType,
       entry.module,
@@ -20,6 +20,13 @@ export const writeTransactionalAudit = async (
       jsonValue(entry.beforeData),
       jsonValue(entry.afterData),
       entry.ip ?? null,
+      entry.requestId ?? null,
+      entry.httpMethod ?? null,
+      entry.route ?? null,
+      entry.httpStatus ?? null,
+      entry.durationMs ?? null,
+      entry.userAgent ?? null,
+      entry.errorCode ?? null,
       entry.remark ?? null,
     ],
   );

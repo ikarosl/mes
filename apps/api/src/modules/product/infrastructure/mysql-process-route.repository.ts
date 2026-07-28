@@ -491,6 +491,8 @@ export class MysqlProcessRouteRepository implements ProcessRouteRepository {
       beforeData,
       afterData,
       ip: audit.ip,
+      requestId: audit.requestId,
+      userAgent: audit.userAgent,
     });
   }
   private date(value: Date | null) {

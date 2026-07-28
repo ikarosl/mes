@@ -194,6 +194,8 @@ export class MysqlTechnicalFileRepository implements TechnicalFileRepository {
       beforeData,
       afterData,
       ip: audit.ip,
+      requestId: audit.requestId,
+      userAgent: audit.userAgent,
     });
   }
   private async technicalFileRecord(db: Db, id: string, lock = false) {

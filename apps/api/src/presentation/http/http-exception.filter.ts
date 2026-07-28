@@ -6,14 +6,15 @@ import {
   HttpStatus,
   Logger,
 } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
 import type { ApiErrorResponse } from '@company/contracts';
 import { toBeijingISOString } from '../../common/time/beijing-time.js';
+import { isRequestId } from '../../common/http/request-context.middleware.js';
 
 interface RequestWithContext {
   originalUrl?: string;
   url?: string;
   headers?: { 'x-request-id'?: string | string[] };
+  requestId?: string;
 }
 
 interface ResponseWriter {
@@ -32,7 +33,8 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const response = http.getResponse<ResponseWriter>();
     const isHttpException = exception instanceof HttpException;
     const status = isHttpException ? exception.getStatus() : HttpStatus.INTERNAL_SERVER_ERROR;
-    const requestId = readRequestId(request.headers?.['x-request-id']) ?? randomUUID();
+    const requestId =
+      request.requestId ?? readRequestId(request.headers?.['x-request-id']) ?? 'unknown';
 
     if (!isHttpException) {
       // Do not log the original message or stack: it may contain payloads or secrets.
@@ -55,7 +57,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
 const readRequestId = (value: string | string[] | undefined) => {
   const requestId = Array.isArray(value) ? value[0] : value;
-  return requestId && /^[A-Za-z0-9_-]{8,128}$/.test(requestId) ? requestId : undefined;
+  return isRequestId(requestId) ? requestId : undefined;
 };
 
 const errorCode = (status: number, exception: unknown) => {

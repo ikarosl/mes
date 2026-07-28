@@ -28,7 +28,12 @@ export class AuditInterceptor implements NestInterceptor {
       action: `${request.method} ${request.path ?? ''}`,
       userId: request.user?.id ?? null,
       ip: readIp(request),
+      requestId: request.requestId ?? null,
+      httpMethod: request.method,
+      route: request.route?.path ?? request.path ?? null,
+      userAgent: readHeader(request.headers?.['user-agent']),
     };
+    const startedAt = Date.now();
     const applicationAudited = this.reflector.getAllAndOverride<boolean>(AUDIT_IN_APPLICATION, [
       context.getHandler(),
       context.getClass(),
@@ -37,15 +42,24 @@ export class AuditInterceptor implements NestInterceptor {
       mergeMap((value) =>
         applicationAudited
           ? [value]
-          : from(this.writeBestEffort({ ...entry, result: 'success' })).pipe(
-              mergeMap(() => [value]),
-            ),
+          : from(
+              this.writeBestEffort({
+                ...entry,
+                result: 'success',
+                httpStatus: 200,
+                durationMs: Date.now() - startedAt,
+              }),
+            ).pipe(mergeMap(() => [value])),
       ),
       catchError((error: unknown) =>
         from(
           this.writeBestEffort({
             ...entry,
             result: 'failed',
+            httpStatus: error instanceof HttpException ? error.getStatus() : 500,
+            durationMs: Date.now() - startedAt,
+            errorCode:
+              error instanceof HttpException ? String(error.getStatus()) : 'INTERNAL_SERVER_ERROR',
             remark: auditFailureRemark(error),
           }),
         ).pipe(mergeMap(() => throwError(() => error))),
@@ -68,7 +82,12 @@ export const auditFailureRemark = (error: unknown) =>
 interface AuditRequest {
   method: string;
   path?: string;
+  route?: { path?: string };
   ip?: string;
+  requestId?: string;
+  headers?: { 'user-agent'?: string | string[] };
   user?: UserProfile;
 }
 const readIp = (request: AuditRequest) => request.ip ?? null;
+const readHeader = (value: string | string[] | undefined) =>
+  (Array.isArray(value) ? value[0] : value) ?? null;

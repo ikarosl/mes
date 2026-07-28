@@ -117,6 +117,8 @@ export class RbacService {
       userId: context.userId,
       result: 'success',
       ip: context.ip,
+      requestId: context.requestId,
+      userAgent: context.userAgent,
     };
   }
 }

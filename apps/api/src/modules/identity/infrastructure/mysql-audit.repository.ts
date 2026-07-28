@@ -38,7 +38,7 @@ export class MysqlAuditRepository implements AuditRepository {
     if (query.targetId) add('ol.target_id=?', query.targetId);
     if (query.createdAtFrom) add('ol.created_at>=?', new Date(query.createdAtFrom));
     if (query.createdAtTo) add('ol.created_at<=?', new Date(query.createdAtTo));
-    if (query.requestId) conditions.push('1=0');
+    if (query.requestId) add('ol.request_id=?', query.requestId);
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const [countRows] = await this.pool.query<(RowDataPacket & { total: number })[]>(
       `SELECT COUNT(*) total FROM operation_logs ol LEFT JOIN users u ON u.id=ol.user_id ${where}`,
@@ -46,7 +46,8 @@ export class MysqlAuditRepository implements AuditRepository {
     );
     const [rows] = await this.pool.query<(RowDataPacket & OperationLogRow)[]>(
       `SELECT ol.id,ol.log_type,ol.module,ol.action,ol.user_id,u.username,ol.target_id,
-              ol.target_type,ol.result,ol.before_data,ol.after_data,ol.ip,ol.remark,ol.created_at
+              ol.target_type,ol.result,ol.before_data,ol.after_data,ol.ip,ol.request_id,ol.http_method,
+              ol.route,ol.http_status,ol.duration_ms,ol.user_agent,ol.error_code,ol.remark,ol.created_at
        FROM operation_logs ol LEFT JOIN users u ON u.id=ol.user_id
        ${where} ORDER BY ol.id DESC LIMIT ? OFFSET ?`,
       [...parameters, pageSize, (page - 1) * pageSize],
@@ -77,6 +78,13 @@ type OperationLogRow = {
   before_data: unknown;
   after_data: unknown;
   ip: string | null;
+  request_id: string | null;
+  http_method: string | null;
+  route: string | null;
+  http_status: number | null;
+  duration_ms: number | null;
+  user_agent: string | null;
+  error_code: string | null;
   remark: string | null;
   created_at: Date;
 };
@@ -93,17 +101,17 @@ const mapOperationLog = (row: OperationLogRow): OperationLogListItem => ({
   targetIds: null,
   businessKey: null,
   result: row.result,
-  requestId: null,
-  httpMethod: null,
-  route: null,
-  httpStatus: null,
-  durationMs: null,
+  requestId: row.request_id,
+  httpMethod: row.http_method,
+  route: row.route,
+  httpStatus: row.http_status,
+  durationMs: row.duration_ms,
   requestData: null,
   beforeData: parseJson(row.before_data),
   afterData: parseJson(row.after_data),
   ip: row.ip,
-  userAgent: null,
-  errorCode: null,
+  userAgent: row.user_agent,
+  errorCode: row.error_code,
   remark: row.remark,
   createdAt: toBeijingISOString(row.created_at),
 });
