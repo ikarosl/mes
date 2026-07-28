@@ -43,6 +43,16 @@ await assertNoMatch(
   /from ['"]mysql2(?:\/promise)?['"]/i,
   'application port 不得泄漏 mysql2 类型',
 );
+await assertNoMatch(
+  'apps/api/src/modules/product',
+  /from ['"](?:\.\.\/identity\/(?!public(?:\.js)?['"])|.*\/modules\/identity\/(?!public(?:\.js)?['"]))/,
+  'Product 跨模块依赖只能通过 Identity public.ts',
+);
+await assertNoMatch(
+  'apps/api/src/modules/identity',
+  /from ['"](?:\.\.\/product\/(?!public(?:\.js)?['"])|.*\/modules\/product\/(?!public(?:\.js)?['"]))/,
+  'Identity/System 跨模块依赖只能通过 Product public.ts',
+);
 
 if (violations.length > 0) {
   console.error(violations.join('\n'));

@@ -3,6 +3,9 @@ import { loadTechnicalFileStorageConfig } from '../../config/env.js';
 import { DatabaseModule } from '../../infrastructure/database/database.module.js';
 import { IdentityModule } from '../identity/public.js';
 import { ProductService } from './application/product.service.js';
+import { ProductSnapshotQuery } from './application/product-snapshot.query.js';
+import { ProductSnapshotService } from './application/product-snapshot.service.js';
+import { ProductSnapshotRepository } from './application/ports/product-snapshot.repository.js';
 import { ProcessRouteRepository } from './application/ports/process-route.repository.js';
 import { ProcessStepRepository } from './application/ports/process-step.repository.js';
 import { ProductCatalogRepository } from './application/ports/product-catalog.repository.js';
@@ -12,6 +15,7 @@ import { MysqlProcessRouteRepository } from './infrastructure/mysql-process-rout
 import { MysqlProcessStepRepository } from './infrastructure/mysql-process-step.repository.js';
 import { MysqlProductCatalogRepository } from './infrastructure/mysql-product-catalog.repository.js';
 import { MysqlTechnicalFileRepository } from './infrastructure/mysql-technical-file.repository.js';
+import { MysqlProductSnapshotRepository } from './infrastructure/mysql-product-snapshot.repository.js';
 import { S3TechnicalFileStorage } from './infrastructure/s3-technical-file.storage.js';
 import { ProductController } from './presentation/http/product.controller.js';
 
@@ -20,6 +24,8 @@ import { ProductController } from './presentation/http/product.controller.js';
   controllers: [ProductController],
   providers: [
     ProductService,
+    ProductSnapshotService,
+    MysqlProductSnapshotRepository,
     MysqlTechnicalFileRepository,
     MysqlProductCatalogRepository,
     MysqlProcessStepRepository,
@@ -28,6 +34,8 @@ import { ProductController } from './presentation/http/product.controller.js';
     { provide: ProductCatalogRepository, useExisting: MysqlProductCatalogRepository },
     { provide: ProcessStepRepository, useExisting: MysqlProcessStepRepository },
     { provide: ProcessRouteRepository, useExisting: MysqlProcessRouteRepository },
+    { provide: ProductSnapshotRepository, useExisting: MysqlProductSnapshotRepository },
+    { provide: ProductSnapshotQuery, useExisting: ProductSnapshotService },
     {
       provide: TechnicalFileStorage,
       useFactory: () => new S3TechnicalFileStorage(loadTechnicalFileStorageConfig()),
