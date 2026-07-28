@@ -23,6 +23,15 @@ export const migrationLockName = 'company_mes_migration';
 export const acquireMigrationLockQuery = 'SELECT GET_LOCK(?, ?) acquired';
 export const releaseMigrationLockQuery = 'SELECT RELEASE_LOCK(?) released';
 
+export type MigrationStatus = 'applied' | 'pending' | 'checksum-mismatch';
+export const migrationStatus = (
+  appliedChecksum: string | undefined,
+  expectedChecksum: string,
+): MigrationStatus => {
+  if (!appliedChecksum) return 'pending';
+  return appliedChecksum === expectedChecksum ? 'applied' : 'checksum-mismatch';
+};
+
 export const readMigrations = async () => {
   const names = (await readdir(migrationsDir)).filter((name) => name.endsWith('.up.sql')).sort();
   return Promise.all(

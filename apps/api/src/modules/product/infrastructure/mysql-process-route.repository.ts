@@ -7,6 +7,7 @@ import { toBeijingISOString } from '../../../common/time/beijing-time.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
 import { ProductDomainError } from '../domain/product.errors.js';
 import { requireConfigurableProduct } from '../domain/product-configuration.policy.js';
+import { lockTechnicalFileSnapshot } from './mysql-product-reference-locks.js';
 
 type Db = Pool | PoolConnection;
 type EntityRow = RowDataPacket & { id: number; status?: number | string; is_deleted?: number };
@@ -181,7 +182,7 @@ export class MysqlProcessRouteRepository implements ProcessRouteRepository {
       if (status !== current && !allowed[current].includes(status)) {
         throw new ProductDomainError('INVALID_ROUTE', `工艺路线不能从 ${current} 变更为 ${status}`);
       }
-      if (status !== 'enabled' && before.default_route_id !== null) {
+      if (status !== 'enabled' && (await this.isDefaultRouteInUse(connection, id))) {
         throw new ProductDomainError(
           'DEFAULT_ROUTE_IN_USE',
           'A route configured as a product default cannot be disabled or archived',
@@ -301,25 +302,20 @@ export class MysqlProcessRouteRepository implements ProcessRouteRepository {
             step_name: string;
             description: string | null;
             default_sop_file_id: number | null;
-            sop_file_name: string | null;
-            sop_object_key: string | null;
           })[]
         >(
-          `SELECT ps.step_code,ps.step_name,ps.description,ps.default_sop_file_id,tf.file_name sop_file_name,tf.object_key sop_object_key
-                FROM process_steps ps LEFT JOIN technical_files tf ON tf.id=COALESCE(?,ps.default_sop_file_id) AND tf.file_type='sop' AND tf.is_deleted=0 AND tf.status=1
+          `SELECT ps.step_code,ps.step_name,ps.description,ps.default_sop_file_id
+                FROM process_steps ps
                 WHERE ps.id=? AND ps.is_deleted=0 AND ps.status=1`,
-          [item.sopFileId ?? null, item.processStepId],
+          [item.processStepId],
         );
         if (!step) throw new ProductDomainError('NOT_FOUND', '路线引用的工序不存在或已停用');
         const resolvedSopFileId =
           item.sopFileId ??
           (step.default_sop_file_id === null ? null : String(step.default_sop_file_id));
-        if (resolvedSopFileId && !step.sop_file_name) {
-          throw new ProductDomainError(
-            'NOT_FOUND',
-            'Referenced SOP does not exist, is disabled, or is pending deletion',
-          );
-        }
+        const sop = resolvedSopFileId
+          ? await lockTechnicalFileSnapshot(connection, resolvedSopFileId)
+          : null;
         for (const materialId of item.productMaterialIds ?? []) {
           const [[material]] = await connection.query<EntityRow[]>(
             'SELECT id FROM product_materials WHERE id=? AND product_id=? AND status=1 AND is_deleted=0',
@@ -337,8 +333,8 @@ export class MysqlProcessRouteRepository implements ProcessRouteRepository {
           stepName: step.step_name,
           description: step.description,
           sopFileId: resolvedSopFileId,
-          sopFileName: step.sop_file_name,
-          sopObjectKey: step.sop_object_key,
+          sopFileName: sop?.file_name ?? null,
+          sopObjectKey: sop?.object_key ?? null,
         });
       }
       const existingIds = before.map((item) => item.id);
@@ -456,6 +452,13 @@ export class MysqlProcessRouteRepository implements ProcessRouteRepository {
     );
     if (!row) throw new ProductDomainError('NOT_FOUND', '工艺路线不存在');
     return row;
+  }
+  private async isDefaultRouteInUse(db: Db, routeId: string): Promise<boolean> {
+    const [[product]] = await db.query<EntityRow[]>(
+      'SELECT id FROM products WHERE default_route_id=? AND is_deleted=0 LIMIT 1 FOR UPDATE',
+      [routeId],
+    );
+    return Boolean(product);
   }
   private async listRouteStepRecords(db: Db, routeId: string) {
     const [rows] = await db.query<

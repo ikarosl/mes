@@ -36,6 +36,7 @@
 
 - Controller 负责协议映射；Service 负责用例；domain 负责纯业务规则；infrastructure 负责 SQL 和 SDK。
 - application port 不得出现 Pool、PoolConnection、HTTP Request、S3 Client 等基础设施类型。
+- domain、application、infrastructure 和通用 persistence helper 不直接抛 Nest HTTP 异常；presentation 统一完成协议映射。
 - 跨模块只引用目标模块 `public.ts`。
 - 一个 Adapter 可以实现多个紧密相关的窄 Port，拆分类以变化原因和事务边界为准。
 - 核心写入与审计同事务；通用日志失败不能覆盖原业务结果。

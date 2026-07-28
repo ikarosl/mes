@@ -2,6 +2,7 @@ import {
   type CallHandler,
   type ExecutionContext,
   HttpException,
+  HttpStatus,
   Injectable,
   Logger,
   type NestInterceptor,
@@ -20,7 +21,9 @@ export class AuditInterceptor implements NestInterceptor {
     private readonly reflector: Reflector,
   ) {}
   intercept(context: ExecutionContext, next: CallHandler) {
-    const request = context.switchToHttp().getRequest<AuditRequest>();
+    const http = context.switchToHttp();
+    const request = http.getRequest<AuditRequest>();
+    const response = http.getResponse<{ statusCode?: number }>();
     if (request.method === 'GET') return next.handle();
     const entry = {
       logType: request.path?.startsWith('/api/auth') ? 'auth' : 'operation',
@@ -46,7 +49,7 @@ export class AuditInterceptor implements NestInterceptor {
               this.writeBestEffort({
                 ...entry,
                 result: 'success',
-                httpStatus: 200,
+                httpStatus: response.statusCode ?? 200,
                 durationMs: Date.now() - startedAt,
               }),
             ).pipe(mergeMap(() => [value])),
@@ -58,8 +61,7 @@ export class AuditInterceptor implements NestInterceptor {
             result: 'failed',
             httpStatus: error instanceof HttpException ? error.getStatus() : 500,
             durationMs: Date.now() - startedAt,
-            errorCode:
-              error instanceof HttpException ? String(error.getStatus()) : 'INTERNAL_SERVER_ERROR',
+            errorCode: auditErrorCode(error),
             remark: auditFailureRemark(error),
           }),
         ).pipe(mergeMap(() => throwError(() => error))),
@@ -78,6 +80,20 @@ export class AuditInterceptor implements NestInterceptor {
 /** Keep operation logs useful without persisting raw exception messages or secrets. */
 export const auditFailureRemark = (error: unknown) =>
   error instanceof HttpException ? `HTTP ${error.getStatus()}` : 'Unhandled request failure';
+
+export const auditErrorCode = (error: unknown): string => {
+  if (!(error instanceof HttpException)) return 'INTERNAL_SERVER_ERROR';
+  const payload = error.getResponse();
+  if (
+    payload &&
+    typeof payload === 'object' &&
+    'code' in payload &&
+    typeof payload.code === 'string'
+  ) {
+    return payload.code;
+  }
+  return HttpStatus[error.getStatus()] ?? `HTTP_${error.getStatus()}`;
+};
 
 interface AuditRequest {
   method: string;

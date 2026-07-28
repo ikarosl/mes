@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import { HttpExceptionFilter } from '../http-exception.filter.js';
+import { ConcurrencyError } from '../../../common/persistence/optimistic-lock.js';
 
 const invoke = (exception: unknown, url = '/api/system/users') => {
   const json = vi.fn();
@@ -31,6 +32,21 @@ describe('HttpExceptionFilter', () => {
         requestId: 'request_1234',
         path: '/api/system/users',
         timestamp: expect.stringMatching(/\+08:00$/),
+      }),
+    );
+  });
+
+  it('maps protocol-independent concurrency errors to the stable 409 envelope', () => {
+    const { json, status } = invoke(
+      new ConcurrencyError('CONCURRENT_MODIFICATION', 'Refresh and retry'),
+    );
+
+    expect(status).toHaveBeenCalledWith(409);
+    expect(json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 409,
+        code: 'CONCURRENT_MODIFICATION',
+        message: 'Refresh and retry',
       }),
     );
   });

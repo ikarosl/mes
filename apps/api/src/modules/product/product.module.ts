@@ -41,5 +41,6 @@ import { ProductController } from './presentation/http/product.controller.js';
       useFactory: () => new S3TechnicalFileStorage(loadTechnicalFileStorageConfig()),
     },
   ],
+  exports: [ProductSnapshotQuery],
 })
 export class ProductModule {}

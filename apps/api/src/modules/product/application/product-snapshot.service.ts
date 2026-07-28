@@ -1,5 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import { ProductSnapshotQuery } from './product-snapshot.query.js';
+import {
+  ProductSnapshotQuery,
+  type ProcessRouteSnapshot,
+  type ProductBomSnapshot,
+  type ProductionProductSnapshot,
+} from './product-snapshot.query.js';
 import { ProductSnapshotRepository } from './ports/product-snapshot.repository.js';
 
 @Injectable()
@@ -8,13 +13,13 @@ export class ProductSnapshotService extends ProductSnapshotQuery {
     super();
   }
 
-  getProductionProduct(productId: string) {
+  getProductionProduct(productId: string): Promise<ProductionProductSnapshot> {
     return this.snapshots.getProductionProduct(productId);
   }
-  getBomSnapshot(productId: string) {
+  getBomSnapshot(productId: string): Promise<ProductBomSnapshot> {
     return this.snapshots.getBomSnapshot(productId);
   }
-  getRouteSnapshot(routeId: string) {
+  getRouteSnapshot(routeId: string): Promise<ProcessRouteSnapshot> {
     return this.snapshots.getRouteSnapshot(routeId);
   }
 }

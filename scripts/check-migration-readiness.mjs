@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 
@@ -30,28 +31,71 @@ const forbiddenModels = [
   'batch_material_usages',
 ];
 const violations = [];
+const migrationNames = (await readdir(migrationsDir))
+  .filter((file) => file.endsWith('.sql'))
+  .sort();
+const migrationNameSet = new Set(migrationNames);
 
-for (const name of (await readdir(migrationsDir))
-  .filter((file) => file.endsWith('.up.sql'))
-  .sort()) {
+for (const name of migrationNames) {
+  if (!/^\d{12}-[a-z0-9]+(?:-[a-z0-9]+)*\.(?:up|down)\.sql$/.test(name)) {
+    violations.push(`${name}: invalid migration filename`);
+  }
+  if (name.endsWith('.up.sql') && !migrationNameSet.has(name.replace(/\.up\.sql$/, '.down.sql'))) {
+    violations.push(`${name}: matching down migration is missing`);
+  }
+}
+
+const baseSha = process.env.MIGRATION_BASE_SHA?.trim();
+if (baseSha) {
+  if (!/^[0-9a-f]{7,40}$/i.test(baseSha)) {
+    violations.push('MIGRATION_BASE_SHA is not a valid Git commit');
+  } else {
+    const changes = execFileSync(
+      'git',
+      ['diff', '--name-status', `${baseSha}...HEAD`, '--', 'packages/database/migrations'],
+      { encoding: 'utf8' },
+    )
+      .split(/\r?\n/)
+      .filter(Boolean);
+    for (const change of changes) {
+      const [status, file] = change.split(/\s+/, 2);
+      if (status !== 'A') {
+        violations.push(`${file ?? change}: historical migrations are append-only (${status})`);
+      }
+    }
+  }
+}
+
+for (const name of migrationNames) {
   const source = await readFile(path.join(migrationsDir, name), 'utf8');
   for (const model of forbiddenModels) {
     if (
       new RegExp(
-        `\\b(?:CREATE\\s+TABLE|ALTER\\s+TABLE|FROM|JOIN|INTO|UPDATE)\\s+\\x60?${model}\\b`,
+        `\\b(?:CREATE\\s+TABLE|ALTER\\s+TABLE|DROP\\s+TABLE|FROM|JOIN|INTO|UPDATE)\\s+\\x60?${model}\\b`,
         'i',
       ).test(source)
-    )
+    ) {
       violations.push(`${name}: forbidden legacy model ${model}`);
+    }
   }
-  for (const match of source.matchAll(
-    /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?`?([a-z_]+)`?/gi,
-  )) {
+  const touchedTables = source.matchAll(
+    /\b(?:CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?|ALTER\s+TABLE\s+|DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?|INSERT\s+INTO\s+|DELETE\s+FROM\s+)`?([a-z_][a-z0-9_]*)`?/gi,
+  );
+  for (const match of touchedTables) {
     const table = match[1].toLowerCase();
-    if (!allowedTables.has(table))
+    if (!allowedTables.has(table)) {
       violations.push(
-        `${name}: unregistered table ${table}; register ownership and version/idempotency rules first`,
+        `${name}: unregistered table ${table}; register ownership and business rules first`,
       );
+    }
+  }
+  for (const rename of source.matchAll(
+    /\bRENAME\s+TABLE\s+`?([a-z_][a-z0-9_]*)`?\s+TO\s+`?([a-z_][a-z0-9_]*)`?/gi,
+  )) {
+    for (const table of [rename[1].toLowerCase(), rename[2].toLowerCase()]) {
+      if (!allowedTables.has(table))
+        violations.push(`${name}: unregistered renamed table ${table}`);
+    }
   }
 }
 

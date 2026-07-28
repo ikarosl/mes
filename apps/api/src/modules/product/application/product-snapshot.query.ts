@@ -7,6 +7,7 @@ export interface ProductionProductSnapshot {
 }
 
 export interface ProductBomLineSnapshot {
+  productMaterialId: string;
   materialProductId: string;
   itemCode: string;
   productName: string;
@@ -22,12 +23,14 @@ export interface ProductBomSnapshot {
 }
 
 export interface ProcessRouteStepSnapshot {
+  routeStepId: string;
   stepOrder: number;
   processStepId: string;
   stepCode: string;
   stepName: string;
   description: string | null;
-  sop: { id: string; fileName: string; versionNo: string } | null;
+  defaultOwnerId: string | null;
+  sop: { id: string; fileName: string; objectKey: string; versionNo: string } | null;
   needInspection: boolean;
   needRecord: boolean;
 }

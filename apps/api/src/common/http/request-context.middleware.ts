@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 export const REQUEST_ID_HEADER = 'x-request-id';
+export const createRequestId = (): string => randomUUID();
 export const isRequestId = (value: unknown): value is string =>
   typeof value === 'string' && /^[A-Za-z0-9_-]{8,128}$/.test(value);
 
@@ -19,7 +20,7 @@ export const requestContextMiddleware = (
 ) => {
   const header = request.headers[REQUEST_ID_HEADER];
   const candidate = Array.isArray(header) ? header[0] : header;
-  const requestId = isRequestId(candidate) ? candidate : randomUUID();
+  const requestId = isRequestId(candidate) ? candidate : createRequestId();
   request.requestId = requestId;
   response.setHeader(REQUEST_ID_HEADER, requestId);
   next();

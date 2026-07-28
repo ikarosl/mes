@@ -24,6 +24,12 @@ const assertNoMatch = async (directory, pattern, message) => {
 };
 
 await assertNoMatch(
+  'apps/api/src/common/persistence',
+  /from ['"]@nestjs\//i,
+  '通用 persistence helper 不得直接依赖 Nest HTTP/框架异常',
+);
+
+await assertNoMatch(
   'apps/api/src/modules/product/infrastructure',
   /\b(?:FROM|JOIN|INTO|UPDATE)\s+(?:departments|users|roles|permissions|user_roles|role_permissions|refresh_tokens|operation_logs)\b/i,
   'Product 不得直接访问 Identity/System 拥有的表',

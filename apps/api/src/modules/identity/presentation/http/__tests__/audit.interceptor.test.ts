@@ -1,9 +1,9 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { type Reflector } from '@nestjs/core';
 import { lastValueFrom, of } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 import type { AuditRepository } from '../../../application/ports/audit.repository.js';
-import { AuditInterceptor, auditFailureRemark } from '../audit.interceptor.js';
+import { AuditInterceptor, auditErrorCode, auditFailureRemark } from '../audit.interceptor.js';
 
 describe('audit failure remarks', () => {
   it('does not persist raw exception messages', () => {
@@ -14,6 +14,12 @@ describe('audit failure remarks', () => {
 
   it('retains the safe status of expected HTTP errors', () => {
     expect(auditFailureRemark(new BadRequestException('password=secret'))).toBe('HTTP 400');
+  });
+
+  it('retains a stable application error code for failed audits', () => {
+    expect(
+      auditErrorCode(new ConflictException({ code: 'CONCURRENT_MODIFICATION', message: 'stale' })),
+    ).toBe('CONCURRENT_MODIFICATION');
   });
 
   it('does not turn a successful operation into a failure when generic audit storage is down', async () => {
@@ -30,7 +36,7 @@ describe('audit failure remarks', () => {
     expect(result).toEqual({ id: '1' });
     expect(writeLog).toHaveBeenCalledOnce();
     expect(writeLog).toHaveBeenCalledWith(
-      expect.objectContaining({ requestId: 'request_1234', httpMethod: 'POST' }),
+      expect.objectContaining({ requestId: 'request_1234', httpMethod: 'POST', httpStatus: 201 }),
     );
   });
 
@@ -58,6 +64,7 @@ const httpContext = () => ({
       user: { id: '1' },
       requestId: 'request_1234',
     }),
+    getResponse: () => ({ statusCode: 201 }),
   }),
   getHandler: () => undefined,
   getClass: () => undefined,

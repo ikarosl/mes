@@ -14,83 +14,68 @@
 
 8 环境变量 生成 compose文件 和nginx 等部署文件，避免环境变量分散，且一处修改多处改动（最后再做都ok）
 
-对，现在的 `pnpm infra:up` 本质上是开发环境快速启动脚本。但它当前同时启动：
+9 新版 SOP 会出现逻辑矛盾。采用以下规则：
 
-```text
-mysql + AIStor/MinIO + 自动建桶
-```
+1. 创建工序时 SOP 应当可选
+   有些工序只需要文字说明、设备参数或现场经验，不一定存在 SOP。当前数据库的 `default_sop_file_id` 允许为空，这个设计合理。因此：
 
-这与你的实际环境不匹配：Windows 已经运行 MySQL，再启动 Compose MySQL 很可能争用 `3306` 端口。
+   - 可以创建无 SOP 工序；
+   - 工序启用不应强制要求 SOP；
+   - 工艺路线步骤的 `sop_file_id` 同样允许为空；
+   - 如果某类工序必须有 SOP，应作为单独业务规则配置，而不是全局强制。
 
-更合理的设计是“默认只启动项目缺少的基础设施”，而不是强制所有开发者把 MySQL 迁入 Docker。
+2. SOP 文件内容一旦生成就永远不可覆盖
+   上传新内容不能修改原对象存储文件，也不能复用原 `technical_files` 记录。必须：
 
-建议调整成：
+   - 新建一条 `technical_files` 记录；
+   - 生成新的 `version_no`；
+   - 使用新的对象存储 `object_key`；
+   - 保留旧版本供历史路线和生产记录追溯。
 
-```text
-pnpm infra:up
-└─ 只启动 AIStor/MinIO
-   └─ 自动检查并创建 Bucket
+3. 已启用工序可以“发布新版 SOP”，但不能修改旧版文件
+   这里需要修正“启用后完全不可变更 SOP”的表述。更准确的是：
 
-pnpm infra:up:full
-└─ 启动 MySQL + AIStor/MinIO
-   └─ 自动检查并创建 Bucket
-```
+   > 工序启用后不得覆盖、删除或修改已经发布的 SOP 文件；需要更新时必须发布新的 SOP 文件版本，并将工序默认 SOP 指向新版本。
 
-MySQL Compose 服务继续保留，供以下场景选择使用：
+   这会改变工序的“默认 SOP 指针”，但不会修改旧文件，也不会影响已发布的路线。
 
-- 同事本机没有 MySQL。
-- 需要隔离的开发数据库。
-- CI 启动一次性测试数据库。
-- 快速搭建全新开发环境。
+4. 已启用工艺路线必须冻结工序与 SOP 快照
+   路线启用时，每个路线步骤应固定保存：
 
-你的环境则继续使用：
+   - `process_step_id`
+   - 工序编码、名称、说明快照
+   - SOP 文件 ID，可为空
+   - SOP 文件名快照
+   - SOP 版本号快照
+   - SOP 对象键快照
+   - 最好再保存校验和快照
+   - 报工、检验等执行规则快照
 
-```dotenv
-DB_HOST=127.0.0.1
-DB_PORT=3306
-DB_USER=mes
-DB_NAME=company_mes_next
-```
+   后续工序切换到新版 SOP 时：
 
-数据库迁移始终针对 `.env` 指向的数据库：
+   - 已启用路线继续使用旧 SOP；
+   - 草稿路线可以刷新或选择新版 SOP；
+   - 已启用路线若要采用新版 SOP，必须创建新的路线版本。
 
-```bash
-pnpm db:migrate
-```
+当前实现已经做到“路线启用后步骤和 SOP 快照不可原地修改”，但存在一个缺口：数据库保存了 SOP ID、名称和对象键快照，却没有独立保存 `sop_version_no_snapshot`。查询时仍通过 `technical_files` 表获取版本号。虽然文件 ID 不变时结果通常稳定，但不够严格，建议追加快照字段。
 
-它不关心 MySQL 来自 Windows 服务、WSL、Linux 还是 Docker。
+5. “未启用”和“停用”不能共用一个状态语义
+   当前 `process_steps.status` 只有：
 
-跨平台也不需要维护三份 Compose 文件。可以统一使用一个 Compose，再通过启动器选择 Docker Engine：
+   - `1`：启用
+   - `0`：停用
 
-```text
-Windows
-├─ Windows Docker 可用 → docker compose
-└─ 仅 WSL Docker 可用 → wsl docker compose
+   这无法区分“从未启用、仍可编辑的草稿”和“曾经启用、现在已经停用的历史工序”。如果规则是“启用前可修改，启用后不可原地修改”，建议改为：
 
-Linux
-└─ docker compose
-```
+   `draft → enabled → disabled → archived`
 
-最终建议命令结构：
+   推荐行为：
 
-```text
-pnpm infra:up              # 自动选择 Docker，只启动对象存储
-pnpm infra:up:full         # 自动选择 Docker，启动 MySQL + 对象存储
+   - `draft`：可修改基本信息、可上传/移除默认 SOP；
+   - `enabled`：基本定义受控；可通过“发布新版 SOP”产生新文件版本；
+   - `disabled`：禁止被新路线选用，历史路线和生产记录继续有效；
+   - `archived`：终态，不允许重新启用或修改。
 
-pnpm infra:up:wsl          # 显式使用 WSL，仅作为备用
-pnpm infra:up:desktop      # 显式使用 Docker Desktop
-pnpm infra:down
-pnpm infra:logs
+结论：你的版本化和快照方向是正确的；“创建工序必须上传 SOP”不正确，SOP 应允许为空；“启用后不能改旧 SOP 文件”正确，但应该允许通过受控的“发布新版本”操作更新默认 SOP。否则工序启用后将没有合理的文件升级通道。
 
-pnpm db:migrate            # 操作 .env 指向的任意 MySQL
-pnpm storage:check         # 检查 S3/Bucket
-pnpm storage:ensure-bucket # 初始化环境时创建缺失 Bucket
-```
-
-这样能同时满足：
-
-- 你的 Windows MySQL 环境不会发生端口冲突。
-- 同事可以选择 Compose MySQL。
-- Windows、WSL、Linux 共用相同 Compose 配置。
-- Bucket 初始化仍通过标准 S3 API完成，与操作系统无关。
-- CI 可以单独启动完整的临时基础设施。
+如果落实这套规则，将涉及 `docs/new.md`、产品模块策略、前后端交互及追加 migration，不能修改现有 migration。

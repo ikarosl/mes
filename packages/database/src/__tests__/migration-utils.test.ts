@@ -3,6 +3,7 @@ import {
   acquireMigrationLockQuery,
   checksum,
   migrationLockName,
+  migrationStatus,
   releaseMigrationLockQuery,
   schemaMigrationsTableExistsQuery,
 } from '../migration-utils.js';
@@ -27,5 +28,13 @@ describe('migration status query', () => {
     expect(schemaMigrationsTableExistsQuery).toContain('SELECT 1');
     expect(schemaMigrationsTableExistsQuery).toContain("table_name = '_schema_migrations'");
     expect(schemaMigrationsTableExistsQuery).not.toMatch(/SELECT\s+name/i);
+  });
+});
+
+describe('migration readiness status', () => {
+  it('fails closed for pending and checksum-mismatched migrations', () => {
+    expect(migrationStatus(undefined, 'expected')).toBe('pending');
+    expect(migrationStatus('different', 'expected')).toBe('checksum-mismatch');
+    expect(migrationStatus('expected', 'expected')).toBe('applied');
   });
 });

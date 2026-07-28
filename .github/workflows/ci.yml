@@ -8,6 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: pnpm }
@@ -16,6 +17,8 @@ jobs:
       - run: pnpm docs:check
       - run: pnpm architecture:check
       - run: pnpm migration:check
+        env:
+          MIGRATION_BASE_SHA: ${{ github.event.pull_request.base.sha }}
       - run: pnpm secrets:check
       - run: pnpm audit --prod --audit-level=high
       - run: pnpm lint

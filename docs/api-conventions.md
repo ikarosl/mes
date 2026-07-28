@@ -74,3 +74,17 @@ interface PageResult<T> {
 - 已发布字段不能静默改名、改类型或改变空值语义。
 - 新增可选字段保持旧客户端兼容；破坏性变更必须先更新 contracts、测试和模块 API 文档。
 - 数据库 schema 变化只通过追加 migration 完成。
+
+## 7. 请求上下文与幂等键
+
+- 每个请求使用 `X-Request-Id` 关联响应与审计；只接受 8 到 128 位字母、数字、下划线或连字符，否则服务端生成 UUID。
+- `User-Agent` 属于不可信元数据，进入审计上下文前最多保留 512 个字符，不得让超长头部破坏核心业务事务。
+- 确认、冲销、库存流水生成等幂等命令统一从 `Idempotency-Key` 请求头读取，不在 body 中重复定义。
+- `Idempotency-Key` 长度为 1 到 150；缺失时是否拒绝由具体命令声明，非法值统一返回 `400 VALIDATION_ERROR`。
+- 同一幂等键和同一规范化请求返回原结果；同一键对应不同请求返回 `409 IDEMPOTENCY_CONFLICT`。
+
+## 8. 乐观锁与冲突
+
+- 可变业务单据命令在 body 中携带当前整数 `version`；Repository 使用 `WHERE id=? AND version=?` 原子更新并递增版本。
+- 受影响行数为 0 时抛出协议无关的并发业务错误，由 HTTP 异常出口映射为 `409 CONCURRENT_MODIFICATION`。
+- application、domain 和 persistence helper 不直接抛 Nest HTTP 异常；HTTP 状态与错误信封只在 presentation 层映射。

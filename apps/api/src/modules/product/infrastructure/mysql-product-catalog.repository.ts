@@ -421,6 +421,14 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
 
   async setDefaultRoute(productId: string, routeId: string | null, audit: AuditContext) {
     await withTransaction(this.pool, async (connection) => {
+      let route: (RowDataPacket & { product_id: number; status: string }) | undefined;
+      if (routeId) {
+        [[route]] = await connection.query<
+          (RowDataPacket & { product_id: number; status: string })[]
+        >('SELECT product_id,status FROM process_routes WHERE id=? AND is_deleted=0 FOR UPDATE', [
+          routeId,
+        ]);
+      }
       const product = await this.productRecord(connection, productId, true);
       requireConfigurableProduct({
         status: product.status,
@@ -434,9 +442,6 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
         );
       }
       if (routeId) {
-        const [[route]] = await connection.query<
-          (RowDataPacket & { product_id: number; status: string })[]
-        >('SELECT product_id,status FROM process_routes WHERE id=? AND is_deleted=0', [routeId]);
         if (!route || String(route.product_id) !== productId || route.status !== 'enabled') {
           throw new ProductDomainError('INVALID_ROUTE', '默认路线必须是该产品已启用的工艺路线');
         }

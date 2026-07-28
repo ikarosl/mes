@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ProductDomainError } from '../../domain/product.errors.js';
 import { MysqlProcessRouteRepository } from '../mysql-process-route.repository.js';
+import { MysqlProductCatalogRepository } from '../mysql-product-catalog.repository.js';
 import { MysqlTechnicalFileRepository } from '../mysql-technical-file.repository.js';
 
 describe('MySQL product adapters workflow transactions', () => {
@@ -181,4 +182,155 @@ describe('MySQL product adapters workflow transactions', () => {
     expect(connection.rollback).toHaveBeenCalledOnce();
     expect(connection.execute).not.toHaveBeenCalled();
   });
+
+  it('allows a non-default enabled route to be disabled', async () => {
+    const connection = transactionConnection();
+    connection.query
+      .mockResolvedValueOnce([
+        [
+          {
+            id: 15,
+            route_code: 'R-1',
+            route_name: '标准路线',
+            product_id: 9,
+            version_no: 'V1',
+            status: 'enabled',
+          },
+        ],
+        [],
+      ])
+      .mockResolvedValueOnce([[], []]);
+    connection.execute.mockResolvedValue([{ affectedRows: 1 }, []]);
+    const repository = new MysqlProcessRouteRepository({
+      getConnection: vi.fn().mockResolvedValue(connection),
+    } as never);
+
+    await expect(
+      repository.setRouteStatus('15', 'disabled', { userId: '1', ip: null }),
+    ).resolves.toBeUndefined();
+
+    expect(String(connection.query.mock.calls[1]?.[0])).toContain('default_route_id');
+    expect(connection.commit).toHaveBeenCalledOnce();
+  });
+
+  it('refuses to disable a route that is still configured as a product default', async () => {
+    const connection = transactionConnection();
+    connection.query
+      .mockResolvedValueOnce([
+        [
+          {
+            id: 15,
+            route_code: 'R-1',
+            route_name: '标准路线',
+            product_id: 9,
+            version_no: 'V1',
+            status: 'enabled',
+          },
+        ],
+        [],
+      ])
+      .mockResolvedValueOnce([[{ id: 9 }], []]);
+    const repository = new MysqlProcessRouteRepository({
+      getConnection: vi.fn().mockResolvedValue(connection),
+    } as never);
+
+    await expect(
+      repository.setRouteStatus('15', 'disabled', { userId: '1', ip: null }),
+    ).rejects.toMatchObject({ code: 'DEFAULT_ROUTE_IN_USE' });
+    expect(connection.rollback).toHaveBeenCalledOnce();
+  });
+
+  it('locks a selected SOP before persisting a route-step snapshot', async () => {
+    const connection = transactionConnection();
+    connection.query
+      .mockResolvedValueOnce([
+        [
+          {
+            id: 15,
+            route_code: 'R-1',
+            route_name: '标准路线',
+            product_id: 9,
+            version_no: 'V1',
+            status: 'draft',
+          },
+        ],
+        [],
+      ])
+      .mockResolvedValueOnce([[], []])
+      .mockResolvedValueOnce([
+        [
+          {
+            step_code: 'CUT',
+            step_name: '切割',
+            description: null,
+            default_sop_file_id: null,
+          },
+        ],
+        [],
+      ])
+      .mockResolvedValueOnce([[{ file_name: 'cut.pdf', object_key: 'sop/cut.pdf' }], []])
+      .mockResolvedValueOnce([[{ id: 41 }], []]);
+    connection.execute.mockResolvedValue([{ affectedRows: 1 }, []]);
+    const repository = new MysqlProcessRouteRepository({
+      getConnection: vi.fn().mockResolvedValue(connection),
+    } as never);
+
+    await repository.replaceRouteSteps(
+      '15',
+      [
+        {
+          processStepId: '7',
+          stepOrder: 1,
+          sopFileId: '6',
+          needInspection: false,
+          needRecord: true,
+          productMaterialIds: [],
+        },
+      ],
+      { userId: '1', ip: null },
+    );
+
+    expect(String(connection.query.mock.calls[3]?.[0])).toContain('FOR UPDATE');
+    expect(connection.commit).toHaveBeenCalledOnce();
+  });
+
+  it('locks a default-route candidate before locking and updating its product', async () => {
+    const connection = transactionConnection();
+    connection.query
+      .mockResolvedValueOnce([[{ product_id: 9, status: 'enabled' }], []])
+      .mockResolvedValueOnce([
+        [
+          {
+            id: 9,
+            item_code: 'FG-1',
+            product_name: '成品',
+            category_id: 2,
+            item_kind: 'finished_product',
+            acquire_method: 'self_made',
+            status: 1,
+            default_route_id: null,
+          },
+        ],
+        [],
+      ]);
+    connection.execute.mockResolvedValue([{ affectedRows: 1 }, []]);
+    const repository = new MysqlProductCatalogRepository({
+      getConnection: vi.fn().mockResolvedValue(connection),
+    } as never);
+
+    await repository.setDefaultRoute('9', '15', { userId: '1', ip: null });
+
+    expect(String(connection.query.mock.calls[0]?.[0])).toContain('FOR UPDATE');
+    expect(String(connection.query.mock.calls[1]?.[0])).toContain('FROM products');
+    expect(connection.commit).toHaveBeenCalledOnce();
+  });
+});
+
+const transactionConnection = () => ({
+  beginTransaction: vi.fn(),
+  query: vi.fn(),
+  execute: vi.fn(),
+  commit: vi.fn(),
+  rollback: vi.fn(),
+  release: vi.fn(),
 });

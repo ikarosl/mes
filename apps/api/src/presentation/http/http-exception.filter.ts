@@ -8,7 +8,8 @@ import {
 } from '@nestjs/common';
 import type { ApiErrorResponse } from '@company/contracts';
 import { toBeijingISOString } from '../../common/time/beijing-time.js';
-import { isRequestId } from '../../common/http/request-context.middleware.js';
+import { createRequestId, isRequestId } from '../../common/http/request-context.middleware.js';
+import { ConcurrencyError } from '../../common/persistence/optimistic-lock.js';
 
 interface RequestWithContext {
   originalUrl?: string;
@@ -32,11 +33,16 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const request = http.getRequest<RequestWithContext>();
     const response = http.getResponse<ResponseWriter>();
     const isHttpException = exception instanceof HttpException;
-    const status = isHttpException ? exception.getStatus() : HttpStatus.INTERNAL_SERVER_ERROR;
+    const isConcurrencyError = exception instanceof ConcurrencyError;
+    const status = isHttpException
+      ? exception.getStatus()
+      : isConcurrencyError
+        ? HttpStatus.CONFLICT
+        : HttpStatus.INTERNAL_SERVER_ERROR;
     const requestId =
-      request.requestId ?? readRequestId(request.headers?.['x-request-id']) ?? 'unknown';
+      request.requestId ?? readRequestId(request.headers?.['x-request-id']) ?? createRequestId();
 
-    if (!isHttpException) {
+    if (!isHttpException && !isConcurrencyError) {
       // Do not log the original message or stack: it may contain payloads or secrets.
       this.logger.error(`Unhandled HTTP exception: requestId=${requestId}, status=${status}`);
     }
@@ -44,7 +50,11 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const body: ApiErrorResponse = {
       status,
       code: errorCode(status, exception),
-      message: isHttpException ? exceptionMessage(exception, status) : '服务器内部错误，请稍后重试',
+      message: isHttpException
+        ? exceptionMessage(exception, status)
+        : isConcurrencyError
+          ? exception.message
+          : '服务器内部错误，请稍后重试',
       requestId,
       timestamp: toBeijingISOString(new Date()),
       path: request.originalUrl ?? request.url ?? '',
@@ -61,6 +71,7 @@ const readRequestId = (value: string | string[] | undefined) => {
 };
 
 const errorCode = (status: number, exception: unknown) => {
+  if (exception instanceof ConcurrencyError) return exception.code;
   if (exception instanceof HttpException) {
     const payload = exception.getResponse();
     if (
