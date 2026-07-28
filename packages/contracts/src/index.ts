@@ -86,6 +86,16 @@ export interface ApiErrorResponse {
   path: string;
 }
 
+/** Required by future mutable business-document commands. */
+export interface VersionedCommand {
+  version: number;
+}
+
+/** Required by future confirmation-style commands. */
+export interface IdempotentCommand {
+  idempotencyKey: string;
+}
+
 /* ====== 系统管理模块（移植旧项目 SystemUI 使用） ====== */
 /** 系统用户列表项 */
 export interface SystemUserListItem {

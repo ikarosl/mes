@@ -86,6 +86,11 @@ export const TECHNICAL_FILE_TYPES = ['sop'] as const;
 export const PERMISSION_TYPES = ['menu', 'page', 'button', 'api'] as const;
 export const OPERATION_RESULTS = ['success', 'failed'] as const;
 
+export const CONCURRENCY_ERROR_CODES = {
+  concurrentModification: 'CONCURRENT_MODIFICATION',
+  idempotencyConflict: 'IDEMPOTENCY_CONFLICT',
+} as const;
+
 export const WORK_ORDER_STATUSES = [
   'draft',
   'released',
