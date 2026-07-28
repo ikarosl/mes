@@ -290,7 +290,7 @@ const currentPage = ref(1);
 const pageSize = 10;
 const loading = ref(false);
 const detailVisible = ref(false);
-const activeLog = ref<any>(null);
+const activeLog = ref<OperationLogListItem | null>(null);
 const activeDiff = computed(() =>
   buildDiff(activeLog.value?.beforeData, activeLog.value?.afterData),
 );
@@ -355,7 +355,7 @@ const resetQuery = () => {
   void loadLogs();
 };
 
-const openDetail = (row: any) => {
+const openDetail = (row: OperationLogListItem): void => {
   activeLog.value = row;
   detailVisible.value = true;
 };

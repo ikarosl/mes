@@ -44,4 +44,21 @@ describe('systemApi contract mapping', () => {
       params: { page: 2, pageSize: 10, module: 'system' },
     });
   });
+
+  it('passes user and role pagination filters as query parameters', async () => {
+    request.mockResolvedValue({ data: { items: [], total: 0, page: 2, pageSize: 20 } });
+    const { systemApi } = await import('../system');
+
+    await systemApi.users({ page: 2, pageSize: 20, keyword: '张', status: 1 });
+    await systemApi.roles({ page: 1, pageSize: 10, code: 'ADMIN' });
+
+    expect(request).toHaveBeenNthCalledWith(1, {
+      url: '/system/users',
+      params: { page: 2, pageSize: 20, keyword: '张', status: 1 },
+    });
+    expect(request).toHaveBeenNthCalledWith(2, {
+      url: '/system/roles',
+      params: { page: 1, pageSize: 10, code: 'ADMIN' },
+    });
+  });
 });

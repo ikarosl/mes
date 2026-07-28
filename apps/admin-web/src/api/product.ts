@@ -1,5 +1,7 @@
 import type {
   ProcessRouteListItem,
+  ProcessRouteOption,
+  ProcessRouteQuery,
   ProcessRoutePayload,
   ProcessRouteStatus,
   ProcessRouteStepItem,
@@ -9,9 +11,11 @@ import type {
   ProductCategoryListItem,
   ProductCategoryPayload,
   ProductListItem,
+  ProductListQuery,
   ProductMaterialItem,
   ProductMaterialPayload,
   ProductOption,
+  PageResult,
   ProductPayload,
   UserOption,
 } from '@company/contracts';
@@ -47,13 +51,14 @@ export const productApi = {
   setCategoryStatus: (id: string, status: number) =>
     request<void>({ url: `${base}/categories/${id}/status`, method: 'PATCH', data: { status } }),
 
-  products: () => request<ProductListItem[]>({ url: `${base}/products` }),
+  products: (params: ProductListQuery) =>
+    request<PageResult<ProductListItem>>({ url: `${base}/products`, params }),
   productOptions: () => request<ProductOption[]>({ url: `${base}/products/options` }),
   productFormOptions: () =>
     request<{
       categories: ProductCategoryListItem[];
       products: ProductOption[];
-      routes: ProcessRouteListItem[];
+      routes: ProcessRouteOption[];
     }>({ url: `${base}/products/form-options` }),
   createProduct: (data: ProductPayload) =>
     request<{ id: string }>({
@@ -93,7 +98,8 @@ export const productApi = {
     return request<void>({ url: `${base}/process-steps/${id}/sop`, method: 'POST', data });
   },
 
-  routes: () => request<ProcessRouteListItem[]>({ url: `${base}/process-routes` }),
+  routes: (params: ProcessRouteQuery) =>
+    request<PageResult<ProcessRouteListItem>>({ url: `${base}/process-routes`, params }),
   routeFormOptions: () =>
     request<{
       products: ProductOption[];

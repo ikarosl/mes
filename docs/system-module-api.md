@@ -34,6 +34,8 @@
 
 写操作均由应用服务构造审计上下文，Repository 在同一数据库事务内写入业务数据和 `operation_logs`。密码只以 bcrypt 哈希写入，审计数据不包含密码、Token 或 Cookie。
 
+用户和角色列表遵守通用 `PageResult<T>` 响应。用户列表支持 `page`、`pageSize`、`keyword`、`username`、`displayName`、`roleId` 和 `status`；角色列表支持 `page`、`pageSize`、`keyword`、`name`、`code` 和 `status`。筛选或每页条数变化时，管理端回到第一页重新请求。
+
 ## 数据库影响
 
 现有 `departments`、`users`、`roles`、`permissions`、`user_roles`、`role_permissions`、`refresh_tokens` 和 `operation_logs` 已满足业务数据结构，无需新增业务表。迁移 `202607220001-system-module-permissions` 仅追加“重置用户密码”和“删除角色”两个权限点；既有迁移保持不变。

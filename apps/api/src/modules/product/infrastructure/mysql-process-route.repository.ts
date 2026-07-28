@@ -11,12 +11,15 @@ type Db = Pool | PoolConnection;
 type EntityRow = RowDataPacket & { id: number; status?: number | string; is_deleted?: number };
 import type {
   ProcessRouteListItem,
+  ProcessRouteOption,
   ProcessRoutePayload,
+  ProcessRouteQuery,
   ProcessRouteStatus,
   ProcessRouteStepItem,
   ProcessRouteStepPayload,
   ProductItemKind,
   ProductListItem,
+  PageResult,
 } from '@company/contracts';
 import { type ProcessRouteRepository } from '../application/ports/process-route.repository.js';
 
@@ -24,7 +27,25 @@ import { type ProcessRouteRepository } from '../application/ports/process-route.
 export class MysqlProcessRouteRepository implements ProcessRouteRepository {
   constructor(@Inject(DATABASE_POOL) private readonly pool: Pool) {}
 
-  async listRoutes(): Promise<ProcessRouteListItem[]> {
+  async listRoutes(query: ProcessRouteQuery): Promise<PageResult<ProcessRouteListItem>> {
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? 10;
+    const conditions = ['r.is_deleted=0'];
+    const parameters: string[] = [];
+    if (query.keyword) {
+      const keyword = `%${query.keyword}%`;
+      conditions.push('(r.route_code LIKE ? OR r.route_name LIKE ?)');
+      parameters.push(keyword, keyword);
+    }
+    if (query.status) {
+      conditions.push('r.status=?');
+      parameters.push(query.status);
+    }
+    const where = conditions.join(' AND ');
+    const [[countRow]] = await this.pool.query<(RowDataPacket & { total: number })[]>(
+      `SELECT COUNT(*) total FROM process_routes r WHERE ${where}`,
+      parameters,
+    );
     const [rows] = await this.pool.query<
       (RowDataPacket & {
         id: number;
@@ -40,13 +61,17 @@ export class MysqlProcessRouteRepository implements ProcessRouteRepository {
         remark: string | null;
         updated_at: Date | null;
       })[]
-    >(`SELECT r.id,r.route_code,r.route_name,r.product_id,p.item_code,p.product_name,r.version_no,r.status,
+    >(
+      `SELECT r.id,r.route_code,r.route_name,r.product_id,p.item_code,p.product_name,r.version_no,r.status,
                     GROUP_CONCAT(CASE WHEN rs.is_deleted=0 THEN rs.step_name_snapshot END ORDER BY rs.step_order SEPARATOR ' → ') process_summary,
                     COUNT(CASE WHEN rs.is_deleted=0 THEN 1 END) step_count,r.remark,r.updated_at
              FROM process_routes r JOIN products p ON p.id=r.product_id
              LEFT JOIN process_route_steps rs ON rs.route_id=r.id
-             WHERE r.is_deleted=0 GROUP BY r.id,p.item_code,p.product_name ORDER BY r.id DESC`);
-    return rows.map((row) => ({
+             WHERE ${where} GROUP BY r.id,p.item_code,p.product_name ORDER BY r.created_at DESC,r.id DESC
+             LIMIT ? OFFSET ?`,
+      [...parameters, pageSize, (page - 1) * pageSize],
+    );
+    const items = rows.map((row) => ({
       id: String(row.id),
       routeCode: row.route_code,
       routeName: row.route_name,
@@ -59,6 +84,30 @@ export class MysqlProcessRouteRepository implements ProcessRouteRepository {
       stepCount: Number(row.step_count),
       remark: row.remark,
       updatedAt: this.date(row.updated_at),
+    }));
+    return { items, total: Number(countRow?.total ?? 0), page, pageSize };
+  }
+
+  async listRouteOptions(): Promise<ProcessRouteOption[]> {
+    const [rows] = await this.pool.query<
+      (RowDataPacket & {
+        id: number;
+        route_code: string;
+        route_name: string;
+        product_id: number;
+        version_no: string;
+        status: ProcessRouteStatus;
+      })[]
+    >(`SELECT id,route_code,route_name,product_id,version_no,status
+       FROM process_routes WHERE is_deleted=0 AND status='enabled'
+       ORDER BY route_code,version_no,id`);
+    return rows.map((row) => ({
+      id: String(row.id),
+      routeCode: row.route_code,
+      routeName: row.route_name,
+      productId: String(row.product_id),
+      versionNo: row.version_no,
+      status: row.status,
     }));
   }
 

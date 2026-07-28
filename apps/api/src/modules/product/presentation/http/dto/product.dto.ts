@@ -55,6 +55,19 @@ export class TechnicalFileQueryDto extends PageQueryDto {
   @IsIn(TECHNICAL_FILE_STORAGE_PROVIDERS)
   storageProvider?: TechnicalFileStorageProvider;
 }
+export class ProductListQueryDto extends PageQueryDto {
+  @IsOptional() @IsString() @MaxLength(255) keyword?: string;
+  @IsOptional() @IsNumberString() categoryId?: string;
+  @IsOptional() @IsIn(PRODUCT_ACQUIRE_METHODS) acquireMethod?: ProductAcquireMethod;
+  @IsOptional()
+  @Type(() => Number)
+  @IsIn([SYSTEM_STATUS.disabled, SYSTEM_STATUS.enabled])
+  status?: number;
+}
+export class ProcessRouteQueryDto extends PageQueryDto {
+  @IsOptional() @IsString() @MaxLength(255) keyword?: string;
+  @IsOptional() @IsIn(PROCESS_ROUTE_STATUSES) status?: ProcessRouteStatus;
+}
 export class ProductSpecValueDto {
   @IsString() @IsNotEmpty() @MaxLength(100) key!: string;
   @IsString() @MaxLength(255) value!: string;

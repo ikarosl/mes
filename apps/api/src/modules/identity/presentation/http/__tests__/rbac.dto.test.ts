@@ -1,7 +1,13 @@
 import 'reflect-metadata';
 import { validate } from 'class-validator';
+import { plainToInstance } from 'class-transformer';
 import { describe, expect, it } from 'vitest';
-import { CreateUserDto, OperationLogQueryDto, ResetUserPasswordDto } from '../dto/rbac.dto.js';
+import {
+  CreateUserDto,
+  OperationLogQueryDto,
+  ResetUserPasswordDto,
+  SystemUserQueryDto,
+} from '../dto/rbac.dto.js';
 
 describe('OperationLogQueryDto', () => {
   it('accepts shared operation result codes', async () => {
@@ -35,5 +41,19 @@ describe('development password validation', () => {
   it('retains a basic six-character minimum', async () => {
     const dto = Object.assign(new ResetUserPasswordDto(), { password: '12345' });
     expect((await validate(dto)).some((error) => error.property === 'password')).toBe(true);
+  });
+});
+
+describe('SystemUserQueryDto', () => {
+  it('transforms and accepts valid page and status filters', async () => {
+    const dto = plainToInstance(SystemUserQueryDto, { page: '2', pageSize: '20', status: '1' });
+    expect(await validate(dto)).toEqual([]);
+    expect(dto).toMatchObject({ page: 2, pageSize: 20, status: 1 });
+  });
+
+  it('rejects an invalid role id and status', async () => {
+    const dto = plainToInstance(SystemUserQueryDto, { roleId: 'abc', status: '9' });
+    const properties = (await validate(dto)).map((error) => error.property);
+    expect(properties).toEqual(expect.arrayContaining(['roleId', 'status']));
   });
 });

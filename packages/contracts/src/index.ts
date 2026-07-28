@@ -167,6 +167,21 @@ export interface SystemRoleOption {
   code: string;
 }
 
+export interface SystemUserQuery extends PageQuery {
+  keyword?: string;
+  username?: string;
+  displayName?: string;
+  roleId?: string;
+  status?: number;
+}
+
+export interface SystemRoleQuery extends PageQuery {
+  keyword?: string;
+  name?: string;
+  code?: string;
+  status?: number;
+}
+
 /* ====== 系统模块请求体类型 ====== */
 export interface CreateSystemUserPayload {
   username: string;
@@ -228,6 +243,18 @@ export type ProductAcquireMethod = 'self_made' | 'outsourced' | 'purchased';
 export type ProcessRouteStatus = 'draft' | 'enabled' | 'disabled' | 'archived';
 export type TechnicalFileStorageProvider = 's3';
 export type TechnicalFileType = 'sop';
+
+export interface ProductListQuery extends PageQuery {
+  keyword?: string;
+  categoryId?: string;
+  acquireMethod?: ProductAcquireMethod;
+  status?: number;
+}
+
+export interface ProcessRouteQuery extends PageQuery {
+  keyword?: string;
+  status?: ProcessRouteStatus;
+}
 
 export interface TechnicalFileQuery extends PageQuery {
   keyword?: string;
@@ -378,6 +405,15 @@ export interface ProcessRouteListItem {
   stepCount: number;
   remark: string | null;
   updatedAt: string | null;
+}
+
+export interface ProcessRouteOption {
+  id: string;
+  routeCode: string;
+  routeName: string;
+  productId: string;
+  versionNo: string;
+  status: ProcessRouteStatus;
 }
 
 export interface ProcessRoutePayload {

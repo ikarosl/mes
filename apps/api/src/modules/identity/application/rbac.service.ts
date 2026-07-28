@@ -12,6 +12,8 @@ import type {
   OperationLogQuery,
   UpdateSystemRolePayload,
   UpdateSystemUserPayload,
+  SystemRoleQuery,
+  SystemUserQuery,
 } from '@company/contracts';
 import type { AuditContext, AuditLogEntry } from '../../../common/audit/audit.types.js';
 import { AuditRepository } from './ports/audit.repository.js';
@@ -23,8 +25,8 @@ export class RbacService {
     private readonly repository: RbacRepository,
     private readonly auditRepository: AuditRepository,
   ) {}
-  listUsers() {
-    return this.repository.listUsers();
+  listUsers(query: SystemUserQuery) {
+    return this.repository.listUsers(query);
   }
   listDepartmentOptions() {
     return this.repository.listDepartmentOptions();
@@ -68,8 +70,8 @@ export class RbacService {
   setUserRoles(id: string, roleIds: string[], context: AuditContext) {
     return this.repository.setUserRoles(id, roleIds, this.audit('分配用户角色', context));
   }
-  listRoles() {
-    return this.repository.listRoles();
+  listRoles(query: SystemRoleQuery) {
+    return this.repository.listRoles(query);
   }
   async createRole(payload: CreateSystemRolePayload, context: AuditContext) {
     if (!payload.name.trim() || !payload.code.trim())

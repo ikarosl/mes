@@ -14,6 +14,7 @@ import {
   MaxLength,
   ValidateIf,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { OPERATION_RESULTS, SYSTEM_STATUS } from '@company/constants';
 import type { OperationResult } from '@company/contracts';
 import { PageQueryDto } from '../../../../../presentation/http/dto/page-query.dto.js';
@@ -21,6 +22,27 @@ import { PageQueryDto } from '../../../../../presentation/http/dto/page-query.dt
 export class IdParamDto {
   @IsNumberString({ no_symbols: true }, { message: '资源 ID 格式无效' })
   id!: string;
+}
+
+export class SystemUserQueryDto extends PageQueryDto {
+  @IsOptional() @IsString() @MaxLength(128) keyword?: string;
+  @IsOptional() @IsString() @MaxLength(64) username?: string;
+  @IsOptional() @IsString() @MaxLength(64) displayName?: string;
+  @IsOptional() @IsNumberString({ no_symbols: true }) roleId?: string;
+  @IsOptional()
+  @Type(() => Number)
+  @IsIn([SYSTEM_STATUS.disabled, SYSTEM_STATUS.enabled])
+  status?: number;
+}
+
+export class SystemRoleQueryDto extends PageQueryDto {
+  @IsOptional() @IsString() @MaxLength(128) keyword?: string;
+  @IsOptional() @IsString() @MaxLength(64) name?: string;
+  @IsOptional() @IsString() @MaxLength(64) code?: string;
+  @IsOptional()
+  @Type(() => Number)
+  @IsIn([SYSTEM_STATUS.disabled, SYSTEM_STATUS.enabled])
+  status?: number;
 }
 
 export class CreateUserDto {

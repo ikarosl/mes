@@ -71,4 +71,21 @@ describe('productApi contract mapping', () => {
       data: expect.objectContaining({ specValues: [{ key: '频率', value: '10', unit: 'GHz' }] }),
     });
   });
+
+  it('passes product and route pagination filters as query parameters', async () => {
+    request.mockResolvedValue({ data: { items: [], total: 0, page: 3, pageSize: 50 } });
+    const { productApi } = await import('../product');
+
+    await productApi.products({ page: 3, pageSize: 50, categoryId: '2', status: 1 });
+    await productApi.routes({ page: 1, pageSize: 10, status: 'draft' });
+
+    expect(request).toHaveBeenNthCalledWith(1, {
+      url: '/product/products',
+      params: { page: 3, pageSize: 50, categoryId: '2', status: 1 },
+    });
+    expect(request).toHaveBeenNthCalledWith(2, {
+      url: '/product/process-routes',
+      params: { page: 1, pageSize: 10, status: 'draft' },
+    });
+  });
 });

@@ -15,6 +15,8 @@ import type {
   ProductListItem,
   ProductMaterialItem,
   ProductMaterialPayload,
+  ProductListQuery,
+  PageResult,
   ProductOption,
   ProductPayload,
 } from '@company/contracts';
@@ -142,7 +144,33 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
     });
   }
 
-  async listProducts(): Promise<ProductListItem[]> {
+  async listProducts(query: ProductListQuery): Promise<PageResult<ProductListItem>> {
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? 10;
+    const conditions = ['p.is_deleted=0'];
+    const parameters: Array<string | number> = [];
+    if (query.keyword) {
+      const keyword = `%${query.keyword}%`;
+      conditions.push('(p.item_code LIKE ? OR p.product_name LIKE ?)');
+      parameters.push(keyword, keyword);
+    }
+    if (query.categoryId) {
+      conditions.push('p.category_id=?');
+      parameters.push(query.categoryId);
+    }
+    if (query.acquireMethod) {
+      conditions.push('p.acquire_method=?');
+      parameters.push(query.acquireMethod);
+    }
+    if (query.status !== undefined) {
+      conditions.push('p.status=?');
+      parameters.push(query.status);
+    }
+    const where = conditions.join(' AND ');
+    const [[countRow]] = await this.pool.query<(RowDataPacket & { total: number })[]>(
+      `SELECT COUNT(*) total FROM products p WHERE ${where}`,
+      parameters,
+    );
     const [rows] = await this.pool.query<
       (RowDataPacket & {
         id: number;
@@ -162,14 +190,18 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
         remark: string | null;
         updated_at: Date | null;
       })[]
-    >(`SELECT p.id,p.item_code,p.product_name,p.category_id,c.category_code,c.category_name,c.item_kind,
+    >(
+      `SELECT p.id,p.item_code,p.product_name,p.category_id,c.category_code,c.category_name,c.item_kind,
                     p.default_route_id,r.route_name default_route_name,p.unit,p.acquire_method,p.spec_values,p.status,
                     COUNT(pm.id) material_count,p.remark,p.updated_at
              FROM products p JOIN product_categories c ON c.id=p.category_id
              LEFT JOIN process_routes r ON r.id=p.default_route_id AND r.is_deleted=0
              LEFT JOIN product_materials pm ON pm.product_id=p.id AND pm.is_deleted=0 AND pm.status=1
-             WHERE p.is_deleted=0 GROUP BY p.id,c.category_code,c.category_name,c.item_kind,r.route_name ORDER BY p.id DESC`);
-    return rows.map((row) => ({
+             WHERE ${where} GROUP BY p.id,c.category_code,c.category_name,c.item_kind,r.route_name
+             ORDER BY p.item_code,p.id LIMIT ? OFFSET ?`,
+      [...parameters, pageSize, (page - 1) * pageSize],
+    );
+    const items = rows.map((row) => ({
       id: String(row.id),
       itemCode: row.item_code,
       productName: row.product_name,
@@ -181,12 +213,13 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
       defaultRouteName: row.default_route_name,
       unit: row.unit,
       acquireMethod: row.acquire_method,
-      specValues: this.json(row.spec_values),
+      specValues: this.json<ProductListItem['specValues'][number]>(row.spec_values),
       status: row.status,
       materialCount: Number(row.material_count),
       remark: row.remark,
       updatedAt: this.date(row.updated_at),
     }));
+    return { items, total: Number(countRow?.total ?? 0), page, pageSize };
   }
 
   async listProductOptions(): Promise<ProductOption[]> {

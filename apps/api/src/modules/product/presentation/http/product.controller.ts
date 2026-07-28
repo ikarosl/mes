@@ -26,10 +26,12 @@ import { ProductService } from '../../application/product.service.js';
 import {
   DefaultRouteDto,
   ProcessRouteDto,
+  ProcessRouteQueryDto,
   ProcessRouteStatusDto,
   ProcessStepDto,
   ProductCategoryDto,
   ProductDto,
+  ProductListQueryDto,
   ProductIdParamDto,
   ReplaceProcessRouteStepsDto,
   ReplaceProductMaterialsDto,
@@ -126,8 +128,15 @@ export class ProductController {
 
   @Get('products')
   @RequirePermission(PERMISSIONS.product.products.view)
-  products() {
-    return this.service.listProducts();
+  products(@Query() query: ProductListQueryDto) {
+    return this.service.listProducts({
+      page: query.page,
+      pageSize: query.pageSize,
+      keyword: query.keyword?.trim() || undefined,
+      categoryId: query.categoryId,
+      acquireMethod: query.acquireMethod,
+      status: query.status,
+    });
   }
   @Get('products/options')
   @RequirePermission(PERMISSIONS.product.products.view)
@@ -140,7 +149,7 @@ export class ProductController {
     const [categories, products, routes] = await Promise.all([
       this.service.listCategories(),
       this.service.listProductOptions(),
-      this.service.listRoutes(),
+      this.service.listRouteOptions(),
     ]);
     return { categories, products, routes };
   }
@@ -252,8 +261,13 @@ export class ProductController {
 
   @Get('process-routes')
   @RequirePermission(PERMISSIONS.product.routes.view)
-  routes() {
-    return this.service.listRoutes();
+  routes(@Query() query: ProcessRouteQueryDto) {
+    return this.service.listRoutes({
+      page: query.page,
+      pageSize: query.pageSize,
+      keyword: query.keyword?.trim() || undefined,
+      status: query.status,
+    });
   }
   @Get('process-routes/form-options')
   @RequirePermission(PERMISSIONS.product.routes.view)

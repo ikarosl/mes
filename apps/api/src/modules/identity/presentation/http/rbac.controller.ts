@@ -15,6 +15,8 @@ import {
   IdParamDto,
   OperationLogQueryDto,
   ResetUserPasswordDto,
+  SystemRoleQueryDto,
+  SystemUserQueryDto,
   UpdateRoleDto,
   UpdateUserDto,
   UpdateUserStatusDto,
@@ -23,8 +25,18 @@ import {
 @Controller('system')
 export class RbacController {
   constructor(private readonly rbac: RbacService) {}
-  @Get('users') @RequirePermission(PERMISSIONS.system.users.view) users() {
-    return this.rbac.listUsers();
+  @Get('users') @RequirePermission(PERMISSIONS.system.users.view) users(
+    @Query() query: SystemUserQueryDto,
+  ) {
+    return this.rbac.listUsers({
+      page: query.page,
+      pageSize: query.pageSize,
+      keyword: query.keyword?.trim() || undefined,
+      username: query.username?.trim() || undefined,
+      displayName: query.displayName?.trim() || undefined,
+      roleId: query.roleId,
+      status: query.status,
+    });
   }
   @Post('users')
   @RequirePermission(PERMISSIONS.system.users.create)
@@ -82,8 +94,17 @@ export class RbacController {
   ) {
     return this.rbac.setUserRoles(id, body.roleIds, audit);
   }
-  @Get('roles') @RequirePermission(PERMISSIONS.system.roles.view) roles() {
-    return this.rbac.listRoles();
+  @Get('roles') @RequirePermission(PERMISSIONS.system.roles.view) roles(
+    @Query() query: SystemRoleQueryDto,
+  ) {
+    return this.rbac.listRoles({
+      page: query.page,
+      pageSize: query.pageSize,
+      keyword: query.keyword?.trim() || undefined,
+      name: query.name?.trim() || undefined,
+      code: query.code?.trim() || undefined,
+      status: query.status,
+    });
   }
   @Post('roles')
   @RequirePermission(PERMISSIONS.system.roles.create)

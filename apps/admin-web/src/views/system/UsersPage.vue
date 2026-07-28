@@ -113,7 +113,7 @@
 
       <el-table
         v-loading="loading"
-        :data="pagedUsers"
+        :data="users"
         class="data-table"
         @selection-change="handleSelectionChange"
       >
@@ -208,7 +208,7 @@
       </el-table>
 
       <div class="table-footer">
-        <span class="total-text">共 {{ filteredUsers.length }} 条</span>
+        <span class="total-text">共 {{ total }} 条</span>
         <el-select
           v-model="pageSize"
           class="page-size-select"
@@ -230,394 +230,133 @@
         <el-pagination
           v-model:current-page="currentPage"
           :page-size="pageSize"
-          :total="filteredUsers.length"
+          :total="total"
           layout="prev, pager, next"
+          @current-change="handlePageChange"
         />
       </div>
     </div>
 
     <!-- 新增/编辑用户弹窗 -->
-    <el-dialog
-      v-model="userDialogVisible"
-      :title="editingUserId ? '编辑用户' : '新增用户'"
-      :width="DialogWidth.md"
-      @closed="resetUserForm"
-    >
-      <el-form
-        class="dialog-form"
-        label-width="92px"
-        :model="userForm"
-      >
-        <el-form-item
-          label="用户账号"
-          required
-        >
-          <el-input v-model="userForm.username" />
-        </el-form-item>
-        <el-form-item
-          v-if="!editingUserId"
-          label="初始密码"
-          required
-        >
-          <el-input
-            v-model="userForm.password"
-            show-password
-          />
-        </el-form-item>
-        <el-form-item
-          label="姓名"
-          required
-        >
-          <el-input v-model="userForm.displayName" />
-        </el-form-item>
-        <el-form-item label="部门">
-          <el-select
-            v-model="userForm.departmentId"
-            clearable
-            placeholder="请选择部门"
-          >
-            <el-option
-              v-for="department in departmentOptions"
-              :key="department.id"
-              :label="department.name"
-              :value="department.id"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item
-          v-if="!editingUserId"
-          label="角色"
-        >
-          <el-select
-            v-model="userForm.roleIds"
-            multiple
-            clearable
-            placeholder="请选择角色"
-          >
-            <el-option
-              v-for="role in roleOptions"
-              :key="role.id"
-              :label="role.name"
-              :value="role.id"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="邮箱">
-          <el-input v-model="userForm.email" />
-        </el-form-item>
-        <el-form-item label="手机号">
-          <el-input v-model="userForm.mobile" />
-        </el-form-item>
-        <el-form-item
-          v-if="!editingUserId"
-          label="状态"
-        >
-          <el-switch
-            v-model="userForm.enabled"
-            active-text="启用"
-            inactive-text="停用"
-          />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="userDialogVisible = false">取消</el-button>
-        <el-button
-          type="primary"
-          :loading="submitting"
-          @click="submitUser"
-          >保存</el-button
-        >
-      </template>
-    </el-dialog>
+    <UserFormDialog
+      ref="userFormDialogRef"
+      :visible="userDialogVisible"
+      :editing-user-id="editingUserId"
+      :department-options="departmentOptions"
+      :role-options="roleOptions"
+      :submitting="submittingUser"
+      @update:visible="userDialogVisible = $event"
+      @save="submitUser"
+    />
 
     <!-- 重置密码弹窗 -->
-    <el-dialog
-      v-model="passwordDialogVisible"
-      :title="passwordDialogTitle"
-      :width="DialogWidth.sm"
-    >
-      <el-form
-        class="dialog-form"
-        label-width="92px"
-        :model="passwordForm"
-      >
-        <el-form-item
-          label="新密码"
-          required
-        >
-          <el-input
-            v-model="passwordForm.password"
-            show-password
-          />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="passwordDialogVisible = false">取消</el-button>
-        <el-button
-          type="primary"
-          :loading="submitting"
-          @click="submitResetPassword"
-          >确定</el-button
-        >
-      </template>
-    </el-dialog>
+    <UserPasswordDialog
+      :visible="passwordDialogVisible"
+      :is-batch="resettingUsers.length > 1"
+      :submitting="submittingPassword"
+      @update:visible="passwordDialogVisible = $event"
+      @confirm="submitResetPassword"
+    />
 
     <!-- 分配角色弹窗 -->
-    <el-dialog
-      v-model="roleDialogVisible"
-      title="分配角色"
-      :width="DialogWidth.md"
-    >
-      <el-form
-        class="dialog-form"
-        label-width="92px"
-      >
-        <el-form-item label="用户">
-          <el-input
-            :model-value="assigningUser?.displayName ?? ''"
-            disabled
-          />
-        </el-form-item>
-        <el-form-item
-          label="角色"
-          required
-        >
-          <el-select
-            v-model="roleForm.roleIds"
-            multiple
-            clearable
-            placeholder="请选择角色"
-          >
-            <el-option
-              v-for="role in roleOptions"
-              :key="role.id"
-              :label="role.name"
-              :value="role.id"
-            />
-          </el-select>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="roleDialogVisible = false">取消</el-button>
-        <el-button
-          type="primary"
-          :loading="submitting"
-          @click="submitAssignRoles"
-          >保存</el-button
-        >
-      </template>
-    </el-dialog>
+    <UserRoleDialog
+      :visible="roleDialogVisible"
+      :user-name="assigningUser?.displayName ?? ''"
+      :role-options="roleOptions"
+      :initial-role-ids="assigningUser?.roleIds ?? []"
+      :submitting="submittingRoles"
+      @update:visible="roleDialogVisible = $event"
+      @confirm="submitAssignRoles"
+    />
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref } from 'vue';
+import { nextTick, onMounted, ref } from 'vue';
 import { ElMessageBox } from 'element-plus';
 import { Filter, Key, Plus, Refresh } from '@element-plus/icons-vue';
 import { PERMISSIONS, SYSTEM_STATUS } from '@company/constants';
-import type {
-  SystemDepartmentOption,
-  SystemRoleOption,
-  SystemUserListItem,
-} from '@company/contracts';
+import type { SystemUserListItem } from '@company/contracts';
 import TableToolbar from '../../components/TableToolbar.vue';
-import { systemApi } from '../../api/system';
-import { DialogWidth } from '../../utils/dialog';
 import { EMessage } from '../../utils/message';
+import { systemApi } from '../../api/system';
 import { useAuthStore } from '../../stores/auth';
+import { useSystemUsers } from './composables/useSystemUsers';
+import UserFormDialog from './components/UserFormDialog.vue';
+import type { UserFormValue } from './components/UserFormDialog.vue';
+import UserPasswordDialog from './components/UserPasswordDialog.vue';
+import UserRoleDialog from './components/UserRoleDialog.vue';
 
 defineOptions({ name: 'UsersPage' });
 
-type UserForm = {
-  username: string;
-  password: string;
-  displayName: string;
-  departmentId: string | null;
-  email: string;
-  mobile: string;
-  enabled: boolean;
-  roleIds: string[];
-};
-
 const auth = useAuthStore();
+const {
+  users,
+  departmentOptions,
+  roleOptions,
+  selectedUsers,
+  loading,
+  total,
+  currentPage,
+  pageSize,
+  query,
+  formatUserRoles,
+  getPrimaryRoleName,
+  loadUsers,
+  loadOptions,
+  handleSearch,
+  resetQuery,
+  handlePageSizeChange,
+  handlePageChange,
+  handleSelectionChange,
+} = useSystemUsers();
 
-const users = ref<SystemUserListItem[]>([]);
-const departmentOptions = ref<SystemDepartmentOption[]>([]);
-const roleOptions = ref<SystemRoleOption[]>([]);
-const selectedUsers = ref<SystemUserListItem[]>([]);
-const resettingUsers = ref<SystemUserListItem[]>([]);
-const assigningUser = ref<SystemUserListItem | null>(null);
-const loading = ref(false);
-const submitting = ref(false);
-
+/* ----- dialog state ----- */
 const userDialogVisible = ref(false);
 const passwordDialogVisible = ref(false);
 const roleDialogVisible = ref(false);
 const editingUserId = ref<string | null>(null);
-const currentPage = ref(1);
-const pageSize = ref(10);
-const query = reactive({
-  keyword: '',
-  username: '',
-  displayName: '',
-  roleId: '',
-  status: '',
-});
-const userForm = reactive<UserForm>({
-  username: '',
-  password: '',
-  displayName: '',
-  departmentId: null,
-  email: '',
-  mobile: '',
-  enabled: true,
-  roleIds: [],
-});
-const passwordForm = reactive({ password: '' });
-const roleForm = reactive({ roleIds: [] as string[] });
+const resettingUsers = ref<SystemUserListItem[]>([]);
+const assigningUser = ref<SystemUserListItem | null>(null);
+const userFormDialogRef = ref();
+const submittingUser = ref(false);
+const submittingPassword = ref(false);
+const submittingRoles = ref(false);
 
-const roleNameMap = computed(() => new Map(roleOptions.value.map((r: any) => [r.id, r.name])));
-const passwordDialogTitle = computed(() =>
-  resettingUsers.value.length > 1 ? '批量重置密码' : '重置密码',
-);
-
-const getRoleName = (idOrCode: string) => roleNameMap.value.get(idOrCode) ?? idOrCode;
-
-const formatUserRoles = (row: any) => {
-  if (row.roleIds?.length) return row.roleIds.map(getRoleName).join('、');
-  if (row.roles?.length) return row.roles.map(getRoleName).join('、');
-  return '-';
-};
-const getPrimaryRoleName = (row: any) => {
-  const id = row.roleIds?.[0];
-  const code = row.roles?.[0];
-  return id ? getRoleName(id) : code ? getRoleName(code) : '-';
-};
-
-const filteredUsers = computed(() =>
-  users.value.filter((user: any) => {
-    const kw = query.keyword.trim().toLowerCase();
-    const uk = query.username.trim().toLowerCase();
-    const nk = query.displayName.trim().toLowerCase();
-    return (
-      (!uk || user.username.toLowerCase().includes(uk)) &&
-      (!nk || user.displayName.toLowerCase().includes(nk)) &&
-      (!kw ||
-        [
-          user.username,
-          user.displayName,
-          user.departmentName ?? '',
-          user.email ?? '',
-          user.mobile ?? '',
-          formatUserRoles(user),
-        ].some((v: string) => v.toLowerCase().includes(kw))) &&
-      (!query.roleId || user.roleIds?.includes(query.roleId)) &&
-      (!query.status ||
-        (query.status === 'enabled' && user.status === SYSTEM_STATUS.enabled) ||
-        (query.status === 'disabled' && user.status !== SYSTEM_STATUS.enabled))
-    );
-  }),
-);
-
-const pagedUsers = computed(() => {
-  const start = (currentPage.value - 1) * pageSize.value;
-  return filteredUsers.value.slice(start, start + pageSize.value);
-});
-
-const resetUserForm = () => {
-  Object.assign(userForm, {
-    username: '',
-    password: '',
-    displayName: '',
-    departmentId: null,
-    email: '',
-    mobile: '',
-    enabled: true,
-    roleIds: [],
-  });
-};
-const handleSearch = () => {
-  currentPage.value = 1;
-};
-const resetQuery = () => {
-  Object.assign(query, { keyword: '', username: '', displayName: '', roleId: '', status: '' });
-  currentPage.value = 1;
-};
-const handlePageSizeChange = () => {
-  currentPage.value = 1;
-};
-const handleSelectionChange = (selection: any[]) => {
-  selectedUsers.value = selection;
-};
-
-const openCreate = () => {
+/* ----- user CRUD ----- */
+const openCreate = (): void => {
   editingUserId.value = null;
-  resetUserForm();
+  userFormDialogRef.value?.resetForm();
   userDialogVisible.value = true;
 };
-const openEdit = (row: any) => {
+
+const openEdit = (row: SystemUserListItem): void => {
   editingUserId.value = row.id;
-  Object.assign(userForm, {
-    username: row.username,
-    password: '',
-    displayName: row.displayName,
-    departmentId: row.departmentId,
-    email: row.email ?? '',
-    mobile: row.mobile ?? '',
-    enabled: row.status === SYSTEM_STATUS.enabled,
-    roleIds: row.roleIds ?? [],
-  });
+  userFormDialogRef.value?.setForm(row);
   userDialogVisible.value = true;
 };
-const loadUsers = async () => {
-  loading.value = true;
-  try {
-    users.value = await systemApi.users();
-  } catch (error) {
-    EMessage.error(error, '用户列表加载失败');
-  } finally {
-    loading.value = false;
-  }
-};
-const loadOptions = async () => {
-  try {
-    [departmentOptions.value, roleOptions.value] = await Promise.all([
-      systemApi.departmentOptions(),
-      systemApi.roleOptions(),
-    ]);
-  } catch (error) {
-    EMessage.error(error, '用户选项加载失败');
-  }
-};
-const submitUser = async () => {
-  if (!userForm.username.trim() || !userForm.displayName.trim()) {
-    EMessage.warning('请填写用户账号和姓名');
-    return;
-  }
-  if (!editingUserId.value && userForm.password.trim().length < 6) {
-    EMessage.warning('初始密码至少 6 位');
-    return;
-  }
-  submitting.value = true;
+
+const submitUser = async (data: UserFormValue): Promise<void> => {
+  submittingUser.value = true;
   try {
     if (editingUserId.value) {
       await systemApi.updateUser(editingUserId.value, {
-        username: userForm.username.trim(),
-        displayName: userForm.displayName.trim(),
-        departmentId: userForm.departmentId,
-        email: userForm.email.trim() || null,
-        mobile: userForm.mobile.trim() || null,
+        username: data.username,
+        displayName: data.displayName,
+        departmentId: data.departmentId,
+        email: data.email.trim() || null,
+        mobile: data.mobile.trim() || null,
       });
     } else {
       await systemApi.createUser({
-        username: userForm.username.trim(),
-        password: userForm.password,
-        displayName: userForm.displayName.trim(),
-        departmentId: userForm.departmentId,
-        email: userForm.email.trim() || null,
-        mobile: userForm.mobile.trim() || null,
-        status: userForm.enabled ? SYSTEM_STATUS.enabled : SYSTEM_STATUS.disabled,
-        roleIds: userForm.roleIds,
+        username: data.username,
+        password: data.password,
+        displayName: data.displayName,
+        departmentId: data.departmentId,
+        email: data.email.trim() || null,
+        mobile: data.mobile.trim() || null,
+        status: data.enabled ? SYSTEM_STATUS.enabled : SYSTEM_STATUS.disabled,
+        roleIds: data.roleIds,
       });
     }
     EMessage.success(editingUserId.value ? '用户信息已更新' : '用户已新增');
@@ -626,13 +365,14 @@ const submitUser = async () => {
   } catch (error) {
     EMessage.error(error, '用户保存失败');
   } finally {
-    submitting.value = false;
+    submittingUser.value = false;
   }
 };
-const toggleStatus = async (row: SystemUserListItem) => {
+
+const toggleStatus = async (row: SystemUserListItem): Promise<void> => {
   const text = row.status === SYSTEM_STATUS.enabled ? '停用' : '启用';
   try {
-    await ElMessageBox.confirm(`确定${text}用户“${row.displayName}”吗？`, `${text}用户`, {
+    await ElMessageBox.confirm(`确定${text}用户"${row.displayName}"吗？`, `${text}用户`, {
       type: 'warning',
     });
     await systemApi.setUserStatus(row.id, {
@@ -640,67 +380,69 @@ const toggleStatus = async (row: SystemUserListItem) => {
     });
     EMessage.success(`用户已${text}`);
     await loadUsers();
-  } catch (error) {
-    if (error !== 'cancel' && error !== 'close') EMessage.error(error, `${text}用户失败`);
+  } catch (error: unknown) {
+    if (error !== 'cancel' && error !== 'close') {
+      EMessage.error(error, `${text}用户失败`);
+    }
   }
 };
-const openResetPassword = (row: any) => {
+
+/* ----- password ----- */
+const openResetPassword = (row: SystemUserListItem): void => {
   resettingUsers.value = [row];
-  passwordForm.password = '';
   passwordDialogVisible.value = true;
 };
-const openBatchResetPassword = () => {
+
+const openBatchResetPassword = (): void => {
   if (!selectedUsers.value.length) {
     EMessage.warning('请先选择需要重置密码的用户');
     return;
   }
   resettingUsers.value = [...selectedUsers.value];
-  passwordForm.password = '';
   passwordDialogVisible.value = true;
 };
-const submitResetPassword = async () => {
-  if (passwordForm.password.trim().length < 6) {
-    EMessage.warning('新密码至少 6 位');
-    return;
-  }
-  submitting.value = true;
+
+const submitResetPassword = async (password: string): Promise<void> => {
+  submittingPassword.value = true;
   try {
     await Promise.all(
-      resettingUsers.value.map((user) =>
-        systemApi.resetUserPassword(user.id, { password: passwordForm.password }),
-      ),
+      resettingUsers.value.map((user) => systemApi.resetUserPassword(user.id, { password })),
     );
     EMessage.success('密码已重置，相关登录会话已失效');
     passwordDialogVisible.value = false;
   } catch (error) {
     EMessage.error(error, '密码重置失败');
   } finally {
-    submitting.value = false;
+    submittingPassword.value = false;
   }
 };
-const openAssignRoles = (row: any) => {
+
+/* ----- role assignment ----- */
+const openAssignRoles = (row: SystemUserListItem): void => {
   assigningUser.value = row;
-  roleForm.roleIds = [...(row.roleIds ?? [])];
   roleDialogVisible.value = true;
 };
-const submitAssignRoles = async () => {
+
+const submitAssignRoles = async (roleIds: string[]): Promise<void> => {
   if (!assigningUser.value) return;
-  submitting.value = true;
+  submittingRoles.value = true;
   try {
-    await systemApi.setUserRoles(assigningUser.value.id, { roleIds: roleForm.roleIds });
+    await systemApi.setUserRoles(assigningUser.value.id, { roleIds });
     EMessage.success('角色已分配');
     roleDialogVisible.value = false;
     await loadUsers();
   } catch (error) {
     EMessage.error(error, '角色分配失败');
   } finally {
-    submitting.value = false;
+    submittingRoles.value = false;
   }
 };
-const focusFirstFilter = async () => {
+
+const focusFirstFilter = async (): Promise<void> => {
   await nextTick();
   document.querySelector<HTMLInputElement>('.query-panel input')?.focus();
 };
+
 onMounted(() => Promise.all([loadUsers(), loadOptions()]));
 </script>
 
@@ -841,11 +583,6 @@ onMounted(() => Promise.all([loadUsers(), loadOptions()]));
   border-color: #306188;
   background: #306188;
   color: #ffffff;
-}
-
-.dialog-form :deep(.el-select),
-.dialog-form :deep(.el-input) {
-  width: 100%;
 }
 
 @media (max-width: 1120px) {

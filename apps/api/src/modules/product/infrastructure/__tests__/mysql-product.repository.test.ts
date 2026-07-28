@@ -4,6 +4,20 @@ import { MysqlProcessRouteRepository } from '../mysql-process-route.repository.j
 import { MysqlTechnicalFileRepository } from '../mysql-technical-file.repository.js';
 
 describe('MySQL product adapters workflow transactions', () => {
+  it('returns a stable server-paginated route list', async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce([[{ total: 0 }], []])
+      .mockResolvedValueOnce([[], []]);
+    const repository = new MysqlProcessRouteRepository({ query } as never);
+
+    await expect(
+      repository.listRoutes({ page: 2, pageSize: 10, keyword: 'R-', status: 'draft' }),
+    ).resolves.toEqual({ items: [], total: 0, page: 2, pageSize: 10 });
+    expect(String(query.mock.calls[1]?.[0])).toContain('ORDER BY r.created_at DESC,r.id DESC');
+    expect(query.mock.calls[1]?.[1]).toEqual(['%R-%', '%R-%', 'draft', 10, 10]);
+  });
+
   it('persists technical file metadata and audit in the same transaction', async () => {
     const connection = {
       beginTransaction: vi.fn(),

@@ -52,6 +52,8 @@
 | `GET /process-routes/:id/steps`        | 路线步骤与 BOM 关联                   | `product:routes:view`                |
 | `PUT /process-routes/:id/steps`        | 保存步骤顺序、SOP/规则快照及 BOM 关联 | `product:routes:manage-steps`        |
 
+`GET /products` 和 `GET /process-routes` 使用通用 `PageResult<T>` 响应。产品列表支持 `page`、`pageSize`、`keyword`、`categoryId`、`acquireMethod` 和 `status`；路线列表支持 `page`、`pageSize`、`keyword` 和 `status`。`form-options` 仅返回表单需要的选项数据，不承担正式列表分页。
+
 ## 4. 工作流不变量
 
 1. 分类仅使用 `item_kind = material | semi_finished | finished_product`；分类说明“是什么”，`acquire_method` 说明“如何获得”。

@@ -4,6 +4,8 @@ import type {
   ProductListItem,
   ProductMaterialItem,
   ProductMaterialPayload,
+  ProductListQuery,
+  PageResult,
   ProductOption,
   ProductPayload,
 } from '@company/contracts';
@@ -21,7 +23,7 @@ export abstract class ProductCatalogRepository {
     audit: AuditContext,
   ): Promise<void>;
   abstract setCategoryStatus(id: string, status: number, audit: AuditContext): Promise<void>;
-  abstract listProducts(): Promise<ProductListItem[]>;
+  abstract listProducts(query: ProductListQuery): Promise<PageResult<ProductListItem>>;
   abstract listProductOptions(): Promise<ProductOption[]>;
   abstract createProduct(payload: ProductPayload, audit: AuditContext): Promise<{ id: string }>;
   abstract updateProduct(id: string, payload: ProductPayload, audit: AuditContext): Promise<void>;

@@ -1,6 +1,9 @@
 import type {
   CreateSystemRolePayload,
   CreateSystemUserPayload,
+  PageResult,
+  SystemRoleQuery,
+  SystemUserQuery,
   UpdateSystemRolePayload,
   UpdateSystemUserPayload,
   UserOption,
@@ -15,7 +18,7 @@ import type {
 } from '../../domain/identity.types.js';
 
 export abstract class RbacRepository {
-  abstract listUsers(): Promise<IdentityUser[]>;
+  abstract listUsers(query: SystemUserQuery): Promise<PageResult<IdentityUser>>;
   abstract listDepartmentOptions(): Promise<IdentityDepartmentOption[]>;
   abstract listRoleOptions(): Promise<IdentityRoleOption[]>;
   abstract listActiveUserOptions(): Promise<UserOption[]>;
@@ -37,7 +40,7 @@ export abstract class RbacRepository {
     audit: AuditLogEntry,
   ): Promise<boolean>;
   abstract setUserRoles(userId: string, roleIds: string[], audit: AuditLogEntry): Promise<void>;
-  abstract listRoles(): Promise<IdentityRole[]>;
+  abstract listRoles(query: SystemRoleQuery): Promise<PageResult<IdentityRole>>;
   abstract createRole(payload: CreateSystemRolePayload, audit: AuditLogEntry): Promise<string>;
   abstract updateRole(
     roleId: string,

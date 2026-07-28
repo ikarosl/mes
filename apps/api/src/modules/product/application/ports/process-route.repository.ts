@@ -1,14 +1,18 @@
 import type {
   ProcessRouteListItem,
+  ProcessRouteOption,
   ProcessRoutePayload,
+  ProcessRouteQuery,
   ProcessRouteStatus,
   ProcessRouteStepItem,
   ProcessRouteStepPayload,
+  PageResult,
 } from '@company/contracts';
 import type { AuditContext } from '../../../../common/audit/audit.types.js';
 
 export abstract class ProcessRouteRepository {
-  abstract listRoutes(): Promise<ProcessRouteListItem[]>;
+  abstract listRoutes(query: ProcessRouteQuery): Promise<PageResult<ProcessRouteListItem>>;
+  abstract listRouteOptions(): Promise<ProcessRouteOption[]>;
   abstract createRoute(payload: ProcessRoutePayload, audit: AuditContext): Promise<{ id: string }>;
   abstract updateRoute(
     id: string,

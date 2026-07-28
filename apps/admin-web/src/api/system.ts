@@ -11,9 +11,11 @@ import {
   type SystemDepartmentOption,
   type SystemPermissionListItem,
   type SystemRoleListItem,
+  type SystemRoleQuery,
   type SystemRoleOption,
   type SystemRolePermissionDetail,
   type SystemUserListItem,
+  type SystemUserQuery,
   type UpdateSystemRolePayload,
   type UpdateSystemUserPayload,
   type UpdateSystemUserStatusPayload,
@@ -30,7 +32,8 @@ const request = async <T>(config: Parameters<typeof httpClient.request<T>>[0]) =
 };
 
 export const systemApi = {
-  users: () => request<SystemUserListItem[]>({ url: SYSTEM_API.users }),
+  users: (params: SystemUserQuery) =>
+    request<PageResult<SystemUserListItem>>({ url: SYSTEM_API.users, params }),
   departmentOptions: () => request<SystemDepartmentOption[]>({ url: SYSTEM_API.departmentOptions }),
   roleOptions: () => request<SystemRoleOption[]>({ url: SYSTEM_API.roleOptions }),
   createUser: (data: CreateSystemUserPayload) =>
@@ -43,7 +46,8 @@ export const systemApi = {
     request<void>({ url: `${SYSTEM_API.users}/${id}/password`, method: 'PATCH', data }),
   setUserRoles: (id: string, data: AssignSystemUserRolesPayload) =>
     request<void>({ url: `${SYSTEM_API.users}/${id}/roles`, method: 'PUT', data }),
-  roles: () => request<SystemRoleListItem[]>({ url: SYSTEM_API.roles }),
+  roles: (params: SystemRoleQuery) =>
+    request<PageResult<SystemRoleListItem>>({ url: SYSTEM_API.roles, params }),
   createRole: (data: CreateSystemRolePayload) =>
     request<{ id: string }>({ url: SYSTEM_API.roles, method: 'POST', data }),
   updateRole: (id: string, data: UpdateSystemRolePayload) =>

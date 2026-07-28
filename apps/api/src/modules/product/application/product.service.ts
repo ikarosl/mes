@@ -7,11 +7,13 @@ import {
 } from '@nestjs/common';
 import type {
   ProcessRoutePayload,
+  ProcessRouteQuery,
   ProcessRouteStatus,
   ProcessRouteStepPayload,
   ProcessStepPayload,
   ProductCategoryPayload,
   ProductMaterialPayload,
+  ProductListQuery,
   ProductPayload,
   TechnicalFileQuery,
 } from '@company/contracts';
@@ -73,8 +75,8 @@ export class ProductService {
     }
     return this.run(() => this.technicalFiles.finalizeTechnicalFileDelete(id, audit));
   }
-  listProducts() {
-    return this.catalog.listProducts();
+  listProducts(query: ProductListQuery) {
+    return this.catalog.listProducts(query);
   }
   listProductOptions() {
     return this.catalog.listProductOptions();
@@ -82,8 +84,11 @@ export class ProductService {
   listProcessSteps() {
     return this.processSteps.listProcessSteps();
   }
-  listRoutes() {
-    return this.routes.listRoutes();
+  listRoutes(query: ProcessRouteQuery) {
+    return this.routes.listRoutes(query);
+  }
+  listRouteOptions() {
+    return this.routes.listRouteOptions();
   }
   listUserOptions() {
     return this.identityDirectory.listActiveUserOptions();

@@ -4,6 +4,9 @@ import type {
   CreateSystemRolePayload,
   CreateSystemUserPayload,
   PermissionType,
+  PageResult,
+  SystemRoleQuery,
+  SystemUserQuery,
   UpdateSystemRolePayload,
   UpdateSystemUserPayload,
   UserOption,
@@ -27,7 +30,43 @@ import type {
 export class MysqlRbacRepository implements RbacRepository {
   constructor(@Inject(DATABASE_POOL) private readonly pool: Pool) {}
 
-  async listUsers(): Promise<IdentityUser[]> {
+  async listUsers(query: SystemUserQuery): Promise<PageResult<IdentityUser>> {
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? 10;
+    const conditions = ['u.deleted_at IS NULL'];
+    const parameters: Array<string | number> = [];
+    if (query.keyword) {
+      const keyword = `%${query.keyword}%`;
+      conditions.push(`(u.username LIKE ? OR u.display_name LIKE ? OR d.name LIKE ? OR u.email LIKE ? OR u.mobile LIKE ?
+        OR EXISTS (SELECT 1 FROM user_roles kur JOIN roles kr ON kr.id=kur.role_id AND kr.deleted_at IS NULL
+                   WHERE kur.user_id=u.id AND (kr.name LIKE ? OR kr.code LIKE ?)))`);
+      parameters.push(keyword, keyword, keyword, keyword, keyword, keyword, keyword);
+    }
+    if (query.username) {
+      conditions.push('u.username LIKE ?');
+      parameters.push(`%${query.username}%`);
+    }
+    if (query.displayName) {
+      conditions.push('u.display_name LIKE ?');
+      parameters.push(`%${query.displayName}%`);
+    }
+    if (query.roleId) {
+      conditions.push(
+        'EXISTS (SELECT 1 FROM user_roles fur WHERE fur.user_id=u.id AND fur.role_id=?)',
+      );
+      parameters.push(query.roleId);
+    }
+    if (query.status !== undefined) {
+      conditions.push('u.status=?');
+      parameters.push(query.status);
+    }
+    const where = conditions.join(' AND ');
+    const [[countRow]] = await this.pool.query<(RowDataPacket & { total: number })[]>(
+      `SELECT COUNT(*) total FROM users u
+       LEFT JOIN departments d ON d.id=u.department_id AND d.deleted_at IS NULL
+       WHERE ${where}`,
+      parameters,
+    );
     const [rows] = await this.pool.query<
       (RowDataPacket & {
         id: number;
@@ -50,10 +89,11 @@ export class MysqlRbacRepository implements RbacRepository {
        LEFT JOIN departments d ON d.id=u.department_id AND d.deleted_at IS NULL
        LEFT JOIN user_roles ur ON ur.user_id=u.id
        LEFT JOIN roles r ON r.id=ur.role_id AND r.deleted_at IS NULL
-       WHERE u.deleted_at IS NULL
-       GROUP BY u.id,d.name ORDER BY u.id DESC`,
+       WHERE ${where}
+       GROUP BY u.id,d.name ORDER BY u.id DESC LIMIT ? OFFSET ?`,
+      [...parameters, pageSize, (page - 1) * pageSize],
     );
-    return rows.map((row) => ({
+    const items = rows.map((row) => ({
       id: String(row.id),
       username: row.username,
       displayName: row.display_name,
@@ -66,6 +106,7 @@ export class MysqlRbacRepository implements RbacRepository {
       roles: row.roles?.split(',') ?? [],
       lastLoginAt: row.last_login_at ? toBeijingISOString(row.last_login_at) : null,
     }));
+    return { items, total: Number(countRow?.total ?? 0), page, pageSize };
   }
 
   async listDepartmentOptions(): Promise<IdentityDepartmentOption[]> {
@@ -268,7 +309,33 @@ export class MysqlRbacRepository implements RbacRepository {
     });
   }
 
-  async listRoles(): Promise<IdentityRole[]> {
+  async listRoles(query: SystemRoleQuery): Promise<PageResult<IdentityRole>> {
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? 10;
+    const conditions = ['r.deleted_at IS NULL'];
+    const parameters: Array<string | number> = [];
+    if (query.keyword) {
+      const keyword = `%${query.keyword}%`;
+      conditions.push('(r.name LIKE ? OR r.code LIKE ? OR r.description LIKE ?)');
+      parameters.push(keyword, keyword, keyword);
+    }
+    if (query.name) {
+      conditions.push('r.name LIKE ?');
+      parameters.push(`%${query.name}%`);
+    }
+    if (query.code) {
+      conditions.push('r.code LIKE ?');
+      parameters.push(`%${query.code}%`);
+    }
+    if (query.status !== undefined) {
+      conditions.push('r.status=?');
+      parameters.push(query.status);
+    }
+    const where = conditions.join(' AND ');
+    const [[countRow]] = await this.pool.query<(RowDataPacket & { total: number })[]>(
+      `SELECT COUNT(*) total FROM roles r WHERE ${where}`,
+      parameters,
+    );
     const [rows] = await this.pool.query<
       (RowDataPacket & {
         id: number;
@@ -284,9 +351,10 @@ export class MysqlRbacRepository implements RbacRepository {
       `SELECT r.id,r.name,r.code,r.description,r.status,r.updated_at,
               (SELECT COUNT(*) FROM role_permissions rp WHERE rp.role_id=r.id) permission_count,
               (SELECT COUNT(*) FROM user_roles ur WHERE ur.role_id=r.id) user_count
-       FROM roles r WHERE r.deleted_at IS NULL ORDER BY r.id DESC`,
+       FROM roles r WHERE ${where} ORDER BY r.id DESC LIMIT ? OFFSET ?`,
+      [...parameters, pageSize, (page - 1) * pageSize],
     );
-    return rows.map((row) => ({
+    const items = rows.map((row) => ({
       id: String(row.id),
       name: row.name,
       code: row.code,
@@ -296,6 +364,7 @@ export class MysqlRbacRepository implements RbacRepository {
       userCount: row.user_count,
       updatedAt: row.updated_at ? toBeijingISOString(row.updated_at) : null,
     }));
+    return { items, total: Number(countRow?.total ?? 0), page, pageSize };
   }
 
   async createRole(payload: CreateSystemRolePayload, audit: AuditLogEntry): Promise<string> {
