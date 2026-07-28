@@ -37,7 +37,7 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --frozen-lockfile
-      - run: pnpm db:migrate
+      - run: pnpm test:migration:fresh
         env:
           {
             DB_HOST: 127.0.0.1,

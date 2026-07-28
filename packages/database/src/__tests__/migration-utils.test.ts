@@ -1,10 +1,24 @@
 import { describe, expect, it } from 'vitest';
-import { checksum, schemaMigrationsTableExistsQuery } from '../migration-utils.js';
+import {
+  acquireMigrationLockQuery,
+  checksum,
+  migrationLockName,
+  releaseMigrationLockQuery,
+  schemaMigrationsTableExistsQuery,
+} from '../migration-utils.js';
 
 describe('migration checksum', () => {
   it('is deterministic and detects content changes', () => {
     expect(checksum('SELECT 1')).toBe(checksum('SELECT 1'));
     expect(checksum('SELECT 1')).not.toBe(checksum('SELECT 2'));
+  });
+});
+
+describe('migration advisory lock', () => {
+  it('uses MySQL advisory-lock queries with a stable lock name', () => {
+    expect(migrationLockName).toBe('company_mes_migration');
+    expect(acquireMigrationLockQuery).toContain('GET_LOCK');
+    expect(releaseMigrationLockQuery).toContain('RELEASE_LOCK');
   });
 });
 

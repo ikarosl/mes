@@ -19,6 +19,10 @@ export const schemaMigrationsTableExistsQuery = `
   LIMIT 1
 `;
 
+export const migrationLockName = 'company_mes_migration';
+export const acquireMigrationLockQuery = 'SELECT GET_LOCK(?, ?) acquired';
+export const releaseMigrationLockQuery = 'SELECT RELEASE_LOCK(?) released';
+
 export const readMigrations = async () => {
   const names = (await readdir(migrationsDir)).filter((name) => name.endsWith('.up.sql')).sort();
   return Promise.all(

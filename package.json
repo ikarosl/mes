@@ -25,6 +25,7 @@
     "precommit": "lint-staged",
     "db:migrate": "turbo run migrate --filter=@company/database",
     "db:migrate:status": "turbo run migrate:status --filter=@company/database",
+    "test:migration:fresh": "corepack pnpm db:migrate && corepack pnpm db:migrate:status",
     "db:bootstrap-admin": "turbo run bootstrap-admin --filter=@company/database",
     "storage:ensure-bucket": "corepack pnpm --filter @company/api storage:ensure-bucket",
     "infra:config": "wsl docker compose --env-file .env -f infra/compose/compose.dev.yml config --quiet",
