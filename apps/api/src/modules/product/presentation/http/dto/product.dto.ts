@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   ArrayUnique,
   IsArray,
   IsBoolean,
@@ -98,6 +99,7 @@ export class ProductMaterialDto {
 }
 export class ReplaceProductMaterialsDto {
   @IsArray()
+  @ArrayMaxSize(200)
   @ValidateNested({ each: true })
   @Type(() => ProductMaterialDto)
   items!: ProductMaterialDto[];
@@ -146,6 +148,7 @@ export class ProcessRouteStepDto {
 }
 export class ReplaceProcessRouteStepsDto {
   @IsArray()
+  @ArrayMaxSize(200)
   @ValidateNested({ each: true })
   @Type(() => ProcessRouteStepDto)
   items!: ProcessRouteStepDto[];

@@ -127,6 +127,9 @@ export class ProductService {
     return this.run(() => this.catalog.setProductStatus(id, status, audit));
   }
   replaceMaterials(id: string, items: ProductMaterialPayload[], audit: AuditContext) {
+    if (items.length > 200) {
+      throw new BadRequestException('A BOM cannot contain more than 200 lines');
+    }
     if (new Set(items.map((item) => item.materialProductId)).size !== items.length) {
       throw new BadRequestException('同一投入物料不能在一份 BOM 中重复');
     }
@@ -182,6 +185,9 @@ export class ProductService {
     return this.run(() => this.routes.deleteRoute(id, audit));
   }
   async replaceRouteSteps(id: string, items: ProcessRouteStepPayload[], audit: AuditContext) {
+    if (items.length > 200) {
+      throw new BadRequestException('A route cannot contain more than 200 steps');
+    }
     const orders = items.map((item) => item.stepOrder);
     const normalizedOrders = [...orders].sort((left, right) => left - right);
     if (

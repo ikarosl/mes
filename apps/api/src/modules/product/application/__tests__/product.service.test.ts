@@ -41,6 +41,33 @@ describe('ProductService workflow safeguards', () => {
     expect(repository.replaceMaterials).not.toHaveBeenCalled();
   });
 
+  it('rejects more than 200 BOM lines before opening a repository transaction', () => {
+    const repository = { replaceMaterials: vi.fn() };
+    const service = new ProductService(
+      {} as never,
+      repository as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    expect(() =>
+      service.replaceMaterials(
+        '10',
+        Array.from({ length: 201 }, (_, index) => ({
+          materialProductId: String(index + 1),
+          quantityPerUnit: 1,
+          unit: 'pcs',
+          isKeyMaterial: false,
+          needBatchRecord: false,
+        })),
+        audit,
+      ),
+    ).toThrow(BadRequestException);
+    expect(repository.replaceMaterials).not.toHaveBeenCalled();
+  });
+
   it('requires route step orders to be continuous from one', async () => {
     const repository = { replaceRouteSteps: vi.fn() };
     const service = new ProductService(

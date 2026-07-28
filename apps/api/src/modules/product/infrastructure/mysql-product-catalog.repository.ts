@@ -6,6 +6,7 @@ import { writeTransactionalAudit } from '../../../common/audit/transactional-aud
 import { toBeijingISOString } from '../../../common/time/beijing-time.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
 import { ProductDomainError } from '../domain/product.errors.js';
+import { requireConfigurableProduct } from '../domain/product-configuration.policy.js';
 
 type Db = Pool | PoolConnection;
 import type {
@@ -367,6 +368,11 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
   async replaceMaterials(productId: string, items: ProductMaterialPayload[], audit: AuditContext) {
     await withTransaction(this.pool, async (connection) => {
       const product = await this.productRecord(connection, productId, true);
+      requireConfigurableProduct({
+        status: product.status,
+        acquireMethod: product.acquire_method,
+        itemKind: product.item_kind,
+      });
       if (product.acquire_method !== 'self_made' || product.item_kind === 'material') {
         throw new ProductDomainError('INVALID_PRODUCT_KIND', '只有自制半成品或成品可以配置 BOM');
       }
@@ -416,6 +422,11 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
   async setDefaultRoute(productId: string, routeId: string | null, audit: AuditContext) {
     await withTransaction(this.pool, async (connection) => {
       const product = await this.productRecord(connection, productId, true);
+      requireConfigurableProduct({
+        status: product.status,
+        acquireMethod: product.acquire_method,
+        itemKind: product.item_kind,
+      });
       if (product.acquire_method !== 'self_made' || product.item_kind === 'material') {
         throw new ProductDomainError(
           'INVALID_PRODUCT_KIND',
