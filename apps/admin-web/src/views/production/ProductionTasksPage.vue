@@ -805,12 +805,13 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue';
-import { ElMessageBox, type UploadRawFile } from 'element-plus';
+import type { UploadRawFile } from 'element-plus';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import TableToolbar from '../../components/TableToolbar.vue';
 import type { BatchStepStatus, ProductionBatchStatus, WorkOrderStatus } from '@company/contracts';
 import { DialogWidth } from '../../utils/dialog';
 import { EMessage } from '../../utils/message';
+import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
 
 defineOptions({ name: 'ProductionTasksPage' });
 

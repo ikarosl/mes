@@ -304,13 +304,14 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
 import { Plus, Refresh, UploadFilled } from '@element-plus/icons-vue';
-import { ElMessageBox, type UploadFile, type UploadFiles } from 'element-plus';
+import type { UploadFile, UploadFiles } from 'element-plus';
 import { PERMISSIONS } from '@company/constants';
 import type { ProcessStepListItem } from '@company/contracts';
 import TableToolbar from '../../components/TableToolbar.vue';
 import PaginationFooter from '../../components/PaginationFooter.vue';
 import { DialogWidth } from '../../utils/dialog';
 import { EMessage } from '../../utils/message';
+import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
 import { productApi } from '../../api/product';
 import { useAuthStore } from '../../stores/auth';
 

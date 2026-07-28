@@ -46,12 +46,18 @@
             v-model="row.processStepId"
             filterable
             placeholder="请选择已有工序"
+            @visible-change="(visible: boolean) => visible && $emit('refresh')"
           >
             <el-option
-              v-for="p in processOptions"
-              :key="p.id"
-              :label="`${p.stepCode} / ${p.stepName}`"
-              :value="p.id"
+              v-for="choice in processChoices(row.processStepId)"
+              :key="choice.value"
+              :label="
+                choice.option
+                  ? `${choice.option.stepCode} / ${choice.option.stepName}`
+                  : `${choice.value}（已失效）`
+              "
+              :value="choice.value"
+              :disabled="choice.isUnavailable"
             />
           </el-select>
         </template>
@@ -73,12 +79,18 @@
             clearable
             collapse-tags
             placeholder="可选"
+            @visible-change="(visible: boolean) => visible && $emit('refresh')"
           >
             <el-option
-              v-for="item in routeMaterialOptions"
-              :key="item.id"
-              :label="`${item.itemCode} / ${item.productName}`"
-              :value="item.id"
+              v-for="choice in materialChoices(row.productMaterialIds)"
+              :key="choice.value"
+              :label="
+                choice.option
+                  ? `${choice.option.itemCode} / ${choice.option.productName}`
+                  : `${choice.value}（已失效）`
+              "
+              :value="choice.value"
+              :disabled="choice.isUnavailable"
             />
           </el-select>
         </template>
@@ -106,12 +118,14 @@
             v-model="row.defaultOwnerId"
             clearable
             placeholder="请选择"
+            @visible-change="(visible: boolean) => visible && $emit('refresh')"
           >
             <el-option
-              v-for="u in userOptions"
-              :key="u.id"
-              :label="u.displayName"
-              :value="u.id"
+              v-for="choice in userChoices(row.defaultOwnerId)"
+              :key="choice.value"
+              :label="choice.option?.displayName ?? `${choice.value}（已失效）`"
+              :value="choice.value"
+              :disabled="choice.isUnavailable"
             />
           </el-select>
         </template>
@@ -171,6 +185,7 @@ import { ref } from 'vue';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import type { ProcessStepListItem, ProductMaterialItem, UserOption } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
+import { buildLiveOptions, hasUnavailableSelection } from '../../../utils/live-options';
 import { EMessage } from '../../../utils/message';
 
 export type StepRow = {
@@ -243,9 +258,41 @@ const normalizeStepOrders = (): void => {
 const getProcessSop = (processId: string): string | undefined =>
   props.processOptions.find((p) => p.id === processId)?.sopFileName ?? undefined;
 
+const processChoices = (selectedValue: string) =>
+  buildLiveOptions(props.processOptions, selectedValue ? [selectedValue] : [], (item) => item.id);
+
+const materialChoices = (selectedValues: string[]) =>
+  buildLiveOptions(props.routeMaterialOptions, selectedValues, (item) => item.id);
+
+const userChoices = (selectedValue: string) =>
+  buildLiveOptions(props.userOptions, selectedValue ? [selectedValue] : [], (item) => item.id);
+
 const handleSubmit = (): void => {
   if (!localSteps.value.length || localSteps.value.some((s) => !s.processStepId)) {
     EMessage.warning('请选择每一道路线步骤对应的工序');
+    return;
+  }
+  if (
+    localSteps.value.some(
+      (step) =>
+        hasUnavailableSelection(
+          props.processOptions,
+          step.processStepId ? [step.processStepId] : [],
+          (item) => item.id,
+        ) ||
+        hasUnavailableSelection(
+          props.routeMaterialOptions,
+          step.productMaterialIds,
+          (item) => item.id,
+        ) ||
+        hasUnavailableSelection(
+          props.userOptions,
+          step.defaultOwnerId ? [step.defaultOwnerId] : [],
+          (item) => item.id,
+        ),
+    )
+  ) {
+    EMessage.warning('工序、物料或负责人候选项已失效，请重新选择');
     return;
   }
   normalizeStepOrders();

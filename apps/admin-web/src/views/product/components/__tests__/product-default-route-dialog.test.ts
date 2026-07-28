@@ -10,7 +10,16 @@ describe('ProductDefaultRouteDialog', () => {
       props: {
         visible: true,
         product: { id: '1', itemCode: 'FG-1', productName: '成品' } as never,
-        availableRoutes: [],
+        availableRoutes: [
+          {
+            id: '7',
+            productId: '1',
+            routeCode: 'ROUTE-1',
+            routeName: '默认路线',
+            versionNo: 'V1.0',
+            status: 'enabled',
+          },
+        ],
         currentRouteId: '7',
         submitting: false,
       },

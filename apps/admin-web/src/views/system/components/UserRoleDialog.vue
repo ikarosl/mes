@@ -4,6 +4,7 @@
     title="分配角色"
     :width="DialogWidth.md"
     @update:model-value="$emit('update:visible', $event)"
+    @open="$emit('refresh-options')"
   >
     <el-form
       class="dialog-form"
@@ -24,12 +25,14 @@
           multiple
           clearable
           placeholder="请选择角色"
+          @visible-change="(visible: boolean) => visible && $emit('refresh-options')"
         >
           <el-option
-            v-for="role in roleOptions"
-            :key="role.id"
-            :label="role.name"
-            :value="role.id"
+            v-for="choice in roleChoices"
+            :key="choice.value"
+            :label="choice.option?.name ?? `${choice.value}（已失效）`"
+            :value="choice.value"
+            :disabled="choice.isUnavailable"
           />
         </el-select>
       </el-form-item>
@@ -47,9 +50,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import type { SystemRoleOption } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
+import { buildLiveOptions, hasUnavailableSelection } from '../../../utils/live-options';
+import { EMessage } from '../../../utils/message';
 
 const props = defineProps<{
   visible: boolean;
@@ -61,10 +66,14 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'update:visible', val: boolean): void;
+  (e: 'refresh-options'): void;
   (e: 'confirm', roleIds: string[]): void;
 }>();
 
 const roleIds = ref<string[]>([]);
+const roleChoices = computed(() =>
+  buildLiveOptions(props.roleOptions, roleIds.value, (option) => option.id),
+);
 
 watch(
   () => props.visible,
@@ -76,6 +85,10 @@ watch(
 );
 
 const handleConfirm = (): void => {
+  if (hasUnavailableSelection(props.roleOptions, roleIds.value, (option) => option.id)) {
+    EMessage.warning('角色已失效，请重新选择');
+    return;
+  }
   emit('confirm', roleIds.value);
 };
 </script>

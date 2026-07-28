@@ -4,6 +4,7 @@
     :title="editingProductId ? '编辑产品' : '新增产品'"
     :width="DialogWidth.lg"
     @update:model-value="$emit('update:visible', $event)"
+    @open="$emit('refresh-options')"
     @closed="resetForm"
   >
     <el-form
@@ -38,12 +39,18 @@
           <el-select
             v-model="form.categoryId"
             placeholder="请选择产品分类"
+            @visible-change="(visible: boolean) => visible && $emit('refresh-options')"
           >
             <el-option
-              v-for="cat in categoryOptions"
-              :key="cat.id"
-              :label="`${itemKindLabels[cat.itemKind]} / ${cat.categoryName}`"
-              :value="cat.id"
+              v-for="choice in categoryChoices"
+              :key="choice.value"
+              :label="
+                choice.option
+                  ? `${itemKindLabels[choice.option.itemKind]} / ${choice.option.categoryName}`
+                  : `${choice.value}（已失效）`
+              "
+              :value="choice.value"
+              :disabled="choice.isUnavailable"
             />
           </el-select>
         </el-form-item>
@@ -169,7 +176,7 @@
 </template>
 
 <script setup lang="ts">
-import { reactive } from 'vue';
+import { computed, reactive } from 'vue';
 import { Plus } from '@element-plus/icons-vue';
 import type {
   ProductAcquireMethod,
@@ -177,6 +184,7 @@ import type {
   ProductItemKind,
 } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
+import { buildLiveOptions, hasUnavailableSelection } from '../../../utils/live-options';
 import { EMessage } from '../../../utils/message';
 
 export type SpecRow = { key: string; value: string; unit: string };
@@ -191,7 +199,7 @@ export type ProductFormValue = {
   specValues: SpecRow[];
 };
 
-defineProps<{
+const props = defineProps<{
   visible: boolean;
   editingProductId: string | null;
   categoryOptions: ProductCategoryListItem[];
@@ -201,6 +209,7 @@ defineProps<{
 
 const emit = defineEmits<{
   (e: 'update:visible', val: boolean): void;
+  (e: 'refresh-options'): void;
   (e: 'save', data: ProductFormValue): void;
 }>();
 
@@ -216,6 +225,13 @@ const initialForm = (): ProductFormValue => ({
 });
 
 const form = reactive<ProductFormValue>(initialForm());
+const categoryChoices = computed(() =>
+  buildLiveOptions(
+    props.categoryOptions,
+    form.categoryId ? [form.categoryId] : [],
+    (item) => item.id,
+  ),
+);
 
 const resetForm = (): void => {
   Object.assign(form, initialForm());
@@ -263,6 +279,10 @@ const handleSubmit = (): void => {
   }
   if (!form.categoryId) {
     EMessage.warning('请选择产品分类');
+    return;
+  }
+  if (hasUnavailableSelection(props.categoryOptions, [form.categoryId], (item) => item.id)) {
+    EMessage.warning('产品分类已失效，请重新选择');
     return;
   }
   emit('save', { ...form });

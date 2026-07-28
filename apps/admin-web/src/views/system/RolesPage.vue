@@ -215,12 +215,12 @@
 
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
-import { ElMessageBox } from 'element-plus';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import { PERMISSIONS, SYSTEM_STATUS } from '@company/constants';
 import type { SystemRoleListItem } from '@company/contracts';
 import TableToolbar from '../../components/TableToolbar.vue';
 import { EMessage } from '../../utils/message';
+import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
 import { systemApi } from '../../api/system';
 import { useAuthStore } from '../../stores/auth';
 import { useSystemRoles } from './composables/useSystemRoles';

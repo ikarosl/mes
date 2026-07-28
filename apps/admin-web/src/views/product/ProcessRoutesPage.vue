@@ -190,6 +190,7 @@
       :product-options="productOptions"
       :submitting="submittingRoute"
       @update:visible="routeDialogVisible = $event"
+      @refresh-options="refreshRouteOptions"
       @save="submitRoute"
     />
 
@@ -203,7 +204,7 @@
       :submitting="submittingSteps"
       @update:visible="stepsDialogVisible = $event"
       @save="submitSteps"
-      @refresh="loadData"
+      @refresh="refreshStepOptions"
     />
 
     <!-- 工艺路线详情弹窗 -->
@@ -217,15 +218,15 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { onActivated, onMounted, ref } from 'vue';
 import { Plus, Refresh } from '@element-plus/icons-vue';
-import { ElMessageBox } from 'element-plus';
 import { PERMISSIONS } from '@company/constants';
 import type { ProcessRouteListItem, ProcessRouteStatus } from '@company/contracts';
 import { productApi } from '../../api/product';
 import TableToolbar from '../../components/TableToolbar.vue';
 import PaginationFooter from '../../components/PaginationFooter.vue';
 import { EMessage } from '../../utils/message';
+import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
 import { useAuthStore } from '../../stores/auth';
 import { useProcessRoutes } from './composables/useProcessRoutes';
 import RouteFormDialog from './components/RouteFormDialog.vue';
@@ -250,6 +251,7 @@ const {
   query,
   routeStatusLabel,
   routeStatusType,
+  loadOptions,
   loadData,
   handleSearch,
   resetQuery,
@@ -262,20 +264,44 @@ const routeDialogVisible = ref(false);
 const stepsDialogVisible = ref(false);
 const detailDialogVisible = ref(false);
 const editingRouteId = ref<string | null>(null);
+const editingRouteProductId = ref<string | null>(null);
 const detailRow = ref<ProcessRouteListItem | null>(null);
 const submittingSteps = ref(false);
 const routeFormDialogRef = ref();
 const routeStepDialogRef = ref();
 const submittingRoute = ref(false);
 
+const refreshRouteOptions = (visible = true): void => {
+  if (visible) void loadOptions();
+};
+
+const refreshStepOptions = async (visible = true): Promise<void> => {
+  if (!visible) return;
+  await loadOptions();
+  if (!editingRouteProductId.value) return;
+  try {
+    const materials = await productApi.materials(editingRouteProductId.value);
+    routeMaterialOptions.value = materials.filter((item) => item.status === 1);
+  } catch (error) {
+    EMessage.error(error, '路线步骤候选项加载失败');
+  }
+};
+
+const refreshActiveRouteEditors = (): void => {
+  refreshRouteOptions();
+  if (stepsDialogVisible.value) void refreshStepOptions();
+};
+
 /* ----- route CRUD ----- */
 const openCreate = (): void => {
+  refreshRouteOptions();
   editingRouteId.value = null;
   routeFormDialogRef.value?.resetForm();
   routeDialogVisible.value = true;
 };
 
 const openEdit = (row: ProcessRouteListItem): void => {
+  refreshRouteOptions();
   editingRouteId.value = row.id;
   routeFormDialogRef.value?.setForm(row);
   routeDialogVisible.value = true;
@@ -343,12 +369,10 @@ const deleteRoute = async (row: ProcessRouteListItem): Promise<void> => {
 /* ----- steps ----- */
 const openSteps = async (row: ProcessRouteListItem): Promise<void> => {
   editingRouteId.value = row.id;
+  editingRouteProductId.value = row.productId;
   stepsDialogVisible.value = true;
   try {
-    const [steps, materials] = await Promise.all([
-      productApi.routeSteps(row.id),
-      productApi.materials(row.productId),
-    ]);
+    const [steps] = await Promise.all([productApi.routeSteps(row.id), refreshStepOptions()]);
     routeStepDialogRef.value?.setSteps(
       steps.map((step) => ({
         processStepId: step.processStepId,
@@ -362,7 +386,6 @@ const openSteps = async (row: ProcessRouteListItem): Promise<void> => {
         productMaterialIds: step.productMaterialIds,
       })),
     );
-    routeMaterialOptions.value = materials.filter((item) => item.status === 1);
   } catch (error) {
     EMessage.error(error, '路线步骤加载失败');
   }
@@ -397,6 +420,7 @@ const submitSteps = async (steps: StepRow[]): Promise<void> => {
 };
 
 onMounted(loadData);
+onActivated(refreshActiveRouteEditors);
 </script>
 
 <style scoped>

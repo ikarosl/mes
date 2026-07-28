@@ -399,12 +399,12 @@
 
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue';
-import { ElMessageBox } from 'element-plus';
 import { Delete, Plus, Refresh } from '@element-plus/icons-vue';
 import type { InboundOrderStatus, InventorySourceType, StockStatus } from '@company/contracts';
 import TableToolbar from '../../components/TableToolbar.vue';
 import { DialogWidth } from '../../utils/dialog';
 import { EMessage } from '../../utils/message';
+import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
 import {
   inboundOrderStatusLabels,
   inboundOrderStatusLabel,

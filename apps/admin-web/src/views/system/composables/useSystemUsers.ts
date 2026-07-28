@@ -17,6 +17,7 @@ export function useSystemUsers() {
   const total = ref(0);
   const currentPage = ref(1);
   const pageSize = ref(10);
+  let optionsRequest: Promise<void> | null = null;
   const query = reactive({
     keyword: '',
     username: '',
@@ -67,15 +68,22 @@ export function useSystemUsers() {
     }
   };
 
-  const loadOptions = async (): Promise<void> => {
-    try {
-      [departmentOptions.value, roleOptions.value] = await Promise.all([
-        systemApi.departmentOptions(),
-        systemApi.roleOptions(),
-      ]);
-    } catch (error) {
-      EMessage.error(error, '用户选项加载失败');
+  const loadOptions = (): Promise<void> => {
+    if (!optionsRequest) {
+      optionsRequest = (async () => {
+        try {
+          [departmentOptions.value, roleOptions.value] = await Promise.all([
+            systemApi.departmentOptions(),
+            systemApi.roleOptions(),
+          ]);
+        } catch (error) {
+          EMessage.error(error, '用户选项加载失败');
+        }
+      })().finally(() => {
+        optionsRequest = null;
+      });
     }
+    return optionsRequest;
   };
 
   const handleSearch = async (): Promise<void> => {

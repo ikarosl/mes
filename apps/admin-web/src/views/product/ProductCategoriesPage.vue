@@ -207,12 +207,18 @@
             v-model="categoryForm.parentId"
             clearable
             placeholder="顶级分类"
+            @visible-change="refreshCategories"
           >
             <el-option
-              v-for="item in parentOptions"
-              :key="item.id"
-              :label="`${item.categoryCode} / ${item.categoryName}`"
-              :value="item.id"
+              v-for="choice in parentChoices"
+              :key="choice.value"
+              :label="
+                choice.option
+                  ? `${choice.option.categoryCode} / ${choice.option.categoryName}`
+                  : `${choice.value}（已失效）`
+              "
+              :value="choice.value"
+              :disabled="choice.isUnavailable"
             />
           </el-select>
         </el-form-item>
@@ -275,15 +281,16 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onActivated, onMounted, reactive, ref } from 'vue';
 import { Plus, Refresh } from '@element-plus/icons-vue';
-import { ElMessageBox } from 'element-plus';
 import { PERMISSIONS } from '@company/constants';
 import type { ProductCategoryListItem, ProductItemKind } from '@company/contracts';
 import TableToolbar from '../../components/TableToolbar.vue';
 import PaginationFooter from '../../components/PaginationFooter.vue';
 import { DialogWidth } from '../../utils/dialog';
+import { buildLiveOptions, hasUnavailableSelection } from '../../utils/live-options';
 import { EMessage } from '../../utils/message';
+import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
 import { productApi } from '../../api/product';
 import { useAuthStore } from '../../stores/auth';
 
@@ -293,6 +300,7 @@ const auth = useAuthStore();
 const categories = ref<ProductCategoryListItem[]>([]);
 const loading = ref(false);
 const submitting = ref(false);
+let categoriesRequest: Promise<void> | null = null;
 const itemKindLabels: Record<ProductItemKind, string> = {
   material: '物料',
   semi_finished: '半成品',
@@ -342,6 +350,13 @@ const parentOptions = computed(() =>
       item.status === 1,
   ),
 );
+const parentChoices = computed(() =>
+  buildLiveOptions(
+    parentOptions.value,
+    categoryForm.parentId ? [categoryForm.parentId] : [],
+    (item) => item.id,
+  ),
+);
 
 const resetCategoryForm = () => {
   Object.assign(categoryForm, {
@@ -366,11 +381,13 @@ const handlePageSizeChange = (val: number) => {
 };
 
 const openCreate = () => {
+  refreshCategories();
   editingCategoryId.value = null;
   resetCategoryForm();
   categoryDialogVisible.value = true;
 };
 const openEdit = (row: ProductCategoryListItem) => {
+  refreshCategories();
   editingCategoryId.value = row.id;
   Object.assign(categoryForm, {
     parentId: row.parentId ?? '',
@@ -387,19 +404,39 @@ const openDetail = (row: ProductCategoryListItem) => {
   detailDialogVisible.value = true;
 };
 
-const loadCategories = async () => {
-  loading.value = true;
-  try {
-    categories.value = await productApi.categories();
-  } catch (error) {
-    EMessage.error(error, '产品分类加载失败');
-  } finally {
-    loading.value = false;
+const loadCategories = (): Promise<void> => {
+  if (!categoriesRequest) {
+    loading.value = true;
+    categoriesRequest = (async () => {
+      try {
+        categories.value = await productApi.categories();
+      } catch (error) {
+        EMessage.error(error, '产品分类加载失败');
+      } finally {
+        loading.value = false;
+      }
+    })().finally(() => {
+      categoriesRequest = null;
+    });
   }
+  return categoriesRequest;
+};
+const refreshCategories = (visible = true): void => {
+  if (visible) void loadCategories();
 };
 const submitCategory = async () => {
   if (!categoryForm.categoryCode.trim() || !categoryForm.categoryName.trim()) {
     EMessage.warning('请填写分类编码和分类名称');
+    return;
+  }
+  if (
+    hasUnavailableSelection(
+      parentOptions.value,
+      categoryForm.parentId ? [categoryForm.parentId] : [],
+      (item) => item.id,
+    )
+  ) {
+    EMessage.warning('父分类已失效，请重新选择');
     return;
   }
   submitting.value = true;
@@ -438,6 +475,7 @@ const toggleStatus = async (row: ProductCategoryListItem) => {
   }
 };
 onMounted(loadCategories);
+onActivated(refreshCategories);
 </script>
 
 <style scoped>

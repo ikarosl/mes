@@ -4,6 +4,7 @@
     title="设置默认工艺路线"
     :width="DialogWidth.md"
     @update:model-value="$emit('update:visible', $event)"
+    @open="$emit('refresh-options')"
   >
     <el-form label-width="96px">
       <el-form-item label="产品">
@@ -14,12 +15,18 @@
           v-model="selectedRouteId"
           clearable
           placeholder="不设置默认路线"
+          @visible-change="(visible: boolean) => visible && $emit('refresh-options')"
         >
           <el-option
-            v-for="route in availableRoutes"
-            :key="route.id"
-            :label="`${route.routeCode} / ${route.routeName} / ${route.versionNo}`"
-            :value="route.id"
+            v-for="choice in routeChoices"
+            :key="choice.value"
+            :label="
+              choice.option
+                ? `${choice.option.routeCode} / ${choice.option.routeName} / ${choice.option.versionNo}`
+                : `${choice.value}（已失效）`
+            "
+            :value="choice.value"
+            :disabled="choice.isUnavailable"
           />
         </el-select>
       </el-form-item>
@@ -37,9 +44,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import type { ProcessRouteOption, ProductListItem } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
+import { buildLiveOptions, hasUnavailableSelection } from '../../../utils/live-options';
+import { EMessage } from '../../../utils/message';
 
 const props = defineProps<{
   visible: boolean;
@@ -51,12 +60,30 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'update:visible', val: boolean): void;
+  (e: 'refresh-options'): void;
   (e: 'confirm', routeId: string | null): void;
 }>();
 
 const selectedRouteId = ref('');
+const routeChoices = computed(() =>
+  buildLiveOptions(
+    props.availableRoutes,
+    selectedRouteId.value ? [selectedRouteId.value] : [],
+    (item) => item.id,
+  ),
+);
 
 const handleConfirm = (): void => {
+  if (
+    hasUnavailableSelection(
+      props.availableRoutes,
+      selectedRouteId.value ? [selectedRouteId.value] : [],
+      (item) => item.id,
+    )
+  ) {
+    EMessage.warning('默认工艺路线已失效，请重新选择');
+    return;
+  }
   emit('confirm', selectedRouteId.value || null);
 };
 

@@ -74,7 +74,17 @@ body {
   color: #909399;
 }
 .content {
+  position: relative;
+  isolation: isolate;
+  min-height: calc(100vh - 102px);
   padding: 20px;
+}
+.route-dialog-overlay.el-overlay,
+.route-dialog-overlay .el-overlay-dialog,
+.content > .el-overlay.is-message-box,
+.content > .el-overlay.is-message-box .el-overlay-message-box {
+  position: absolute;
+  inset: 0;
 }
 .login-page {
   min-height: 100vh;

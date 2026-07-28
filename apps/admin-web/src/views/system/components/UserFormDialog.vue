@@ -4,6 +4,7 @@
     :title="editingUserId ? '编辑用户' : '新增用户'"
     :width="DialogWidth.md"
     @update:model-value="$emit('update:visible', $event)"
+    @open="$emit('refresh-options')"
     @closed="resetForm"
   >
     <el-form
@@ -38,12 +39,14 @@
           v-model="form.departmentId"
           clearable
           placeholder="请选择部门"
+          @visible-change="(visible: boolean) => visible && $emit('refresh-options')"
         >
           <el-option
-            v-for="department in departmentOptions"
-            :key="department.id"
-            :label="department.name"
-            :value="department.id"
+            v-for="choice in departmentChoices"
+            :key="choice.value"
+            :label="choice.option?.name ?? `${choice.value}（已失效）`"
+            :value="choice.value"
+            :disabled="choice.isUnavailable"
           />
         </el-select>
       </el-form-item>
@@ -56,12 +59,14 @@
           multiple
           clearable
           placeholder="请选择角色"
+          @visible-change="(visible: boolean) => visible && $emit('refresh-options')"
         >
           <el-option
-            v-for="role in roleOptions"
-            :key="role.id"
-            :label="role.name"
-            :value="role.id"
+            v-for="choice in roleChoices"
+            :key="choice.value"
+            :label="choice.option?.name ?? `${choice.value}（已失效）`"
+            :value="choice.value"
+            :disabled="choice.isUnavailable"
           />
         </el-select>
       </el-form-item>
@@ -95,10 +100,11 @@
 </template>
 
 <script setup lang="ts">
-import { reactive } from 'vue';
+import { computed, reactive } from 'vue';
 import { SYSTEM_STATUS } from '@company/constants';
 import type { SystemDepartmentOption, SystemRoleOption } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
+import { buildLiveOptions, hasUnavailableSelection } from '../../../utils/live-options';
 import { EMessage } from '../../../utils/message';
 
 export type UserFormValue = {
@@ -122,6 +128,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'update:visible', val: boolean): void;
+  (e: 'refresh-options'): void;
   (e: 'save', data: UserFormValue): void;
 }>();
 
@@ -137,6 +144,16 @@ const initialForm = (): UserFormValue => ({
 });
 
 const form = reactive<UserFormValue>(initialForm());
+const departmentChoices = computed(() =>
+  buildLiveOptions(
+    props.departmentOptions,
+    form.departmentId ? [form.departmentId] : [],
+    (option) => option.id,
+  ),
+);
+const roleChoices = computed(() =>
+  buildLiveOptions(props.roleOptions, form.roleIds, (option) => option.id),
+);
 
 const resetForm = (): void => {
   Object.assign(form, initialForm());
@@ -170,6 +187,18 @@ const handleSubmit = async (): Promise<void> => {
   }
   if (!props.editingUserId && form.password.trim().length < 6) {
     EMessage.warning('初始密码至少 6 位');
+    return;
+  }
+  if (
+    hasUnavailableSelection(
+      props.departmentOptions,
+      form.departmentId ? [form.departmentId] : [],
+      (option) => option.id,
+    ) ||
+    (!props.editingUserId &&
+      hasUnavailableSelection(props.roleOptions, form.roleIds, (option) => option.id))
+  ) {
+    EMessage.warning('部门或角色已失效，请重新选择');
     return;
   }
   emit('save', { ...form, username: form.username.trim(), displayName: form.displayName.trim() });

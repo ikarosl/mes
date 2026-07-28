@@ -6,7 +6,7 @@
   "packageManager": "pnpm@10.18.2",
   "engines": {
     "node": ">=22.18.0",
-    "pnpm": ">=10.18.2"
+    "pnpm": ">=10.18.2 <11"
   },
   "scripts": {
     "dev": "turbo run dev --parallel",
@@ -20,7 +20,7 @@
     "architecture:check": "node scripts/check-api-architecture.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "verify": "pnpm format:check && pnpm docs:check && pnpm architecture:check && pnpm lint && pnpm build && pnpm typecheck && pnpm test",
+    "verify": "corepack pnpm run format:check && corepack pnpm run docs:check && corepack pnpm run architecture:check && corepack pnpm run lint && corepack pnpm run build && corepack pnpm run typecheck && corepack pnpm run test",
     "prepare": "husky",
     "precommit": "lint-staged",
     "db:migrate": "turbo run migrate --filter=@company/database",

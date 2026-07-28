@@ -18,6 +18,7 @@
             v-model="query.categoryId"
             clearable
             placeholder="全部"
+            @visible-change="refreshProductOptions"
           >
             <el-option
               v-for="cat in categoryOptions"
@@ -255,6 +256,7 @@
       :item-kind-labels="itemKindLabels"
       :submitting="submittingProduct"
       @update:visible="productDialogVisible = $event"
+      @refresh-options="refreshProductOptions"
       @save="submitProduct"
     />
 
@@ -278,7 +280,7 @@
       :submitting="submittingMaterials"
       @update:visible="materialDialogVisible = $event"
       @save="submitMaterials"
-      @refresh="refreshMaterials"
+      @refresh="refreshMaterialOptions"
     />
 
     <!-- 默认路线弹窗 -->
@@ -289,21 +291,22 @@
       :current-route-id="defaultRouteProduct?.defaultRouteId ?? null"
       :submitting="submittingDefaultRoute"
       @update:visible="defaultRouteDialogVisible = $event"
+      @refresh-options="refreshProductOptions"
       @confirm="submitDefaultRoute"
     />
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onActivated, onMounted, ref } from 'vue';
 import { Plus, Refresh } from '@element-plus/icons-vue';
-import { ElMessageBox } from 'element-plus';
 import { PERMISSIONS } from '@company/constants';
 import type { ProductAcquireMethod, ProductListItem } from '@company/contracts';
 import { productApi } from '../../api/product';
 import TableToolbar from '../../components/TableToolbar.vue';
 import PaginationFooter from '../../components/PaginationFooter.vue';
 import { EMessage } from '../../utils/message';
+import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
 import { useAuthStore } from '../../stores/auth';
 import { useProducts } from './composables/useProducts';
 import ProductFormDialog from './components/ProductFormDialog.vue';
@@ -334,6 +337,7 @@ const {
   itemKindLabels,
   itemKindLabel,
   canConfigureProduction,
+  loadOptions,
   loadData,
   handleSearch,
   resetQuery,
@@ -359,6 +363,15 @@ const materialDialogRef = ref();
 const submittingProduct = ref(false);
 const submittingDefaultRoute = ref(false);
 
+const refreshProductOptions = (visible = true): void => {
+  if (visible) void loadOptions();
+};
+
+const refreshActiveProductEditors = (): void => {
+  refreshProductOptions();
+  if (materialDialogVisible.value) void refreshMaterialOptions();
+};
+
 const availableDefaultRoutes = computed(() =>
   routes.value.filter(
     (route) => route.productId === defaultRouteProduct.value?.id && route.status === 'enabled',
@@ -367,12 +380,14 @@ const availableDefaultRoutes = computed(() =>
 
 /* ----- product CRUD ----- */
 const openCreate = (): void => {
+  refreshProductOptions();
   editingProductId.value = null;
   productFormDialogRef.value?.resetForm();
   productDialogVisible.value = true;
 };
 
 const openEdit = (row: ProductListItem): void => {
+  refreshProductOptions();
   editingProductId.value = row.id;
   productFormDialogRef.value?.setForm(row);
   productDialogVisible.value = true;
@@ -426,15 +441,10 @@ const toggleStatus = async (row: ProductListItem): Promise<void> => {
 const openMaterials = async (row: ProductListItem): Promise<void> => {
   materialProduct.value = row;
   materialDialogVisible.value = true;
-  await refreshMaterials();
-};
-
-const refreshMaterials = async (): Promise<void> => {
-  if (!materialProduct.value) return;
   materialLoading.value = true;
   try {
     const [items, options] = await Promise.all([
-      productApi.materials(materialProduct.value.id),
+      productApi.materials(row.id),
       productApi.productOptions(),
     ]);
     materialDialogRef.value?.setRows(
@@ -449,11 +459,27 @@ const refreshMaterials = async (): Promise<void> => {
     );
     materialOptions.value = options.filter(
       (item) =>
+        (item.itemKind === 'material' || item.itemKind === 'semi_finished') && item.id !== row.id,
+    );
+  } catch (error) {
+    EMessage.error(error, '物料清单加载失败');
+  } finally {
+    materialLoading.value = false;
+  }
+};
+
+const refreshMaterialOptions = async (visible = true): Promise<void> => {
+  if (!visible || !materialProduct.value) return;
+  materialLoading.value = true;
+  try {
+    const options = await productApi.productOptions();
+    materialOptions.value = options.filter(
+      (item) =>
         (item.itemKind === 'material' || item.itemKind === 'semi_finished') &&
         item.id !== materialProduct.value?.id,
     );
   } catch (error) {
-    EMessage.error(error, '物料清单加载失败');
+    EMessage.error(error, '物料候选项加载失败');
   } finally {
     materialLoading.value = false;
   }
@@ -476,6 +502,7 @@ const submitMaterials = async (rows: MaterialRow[]): Promise<void> => {
 
 /* ----- default route ----- */
 const openDefaultRoute = (row: ProductListItem): void => {
+  refreshProductOptions();
   defaultRouteProduct.value = row;
   defaultRouteDialogVisible.value = true;
 };
@@ -496,6 +523,7 @@ const submitDefaultRoute = async (routeId: string | null): Promise<void> => {
 };
 
 onMounted(loadData);
+onActivated(refreshActiveProductEditors);
 </script>
 
 <style scoped>

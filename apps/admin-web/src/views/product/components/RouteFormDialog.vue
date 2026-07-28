@@ -4,6 +4,7 @@
     :title="editingRouteId ? '编辑工艺路线' : '新增工艺路线'"
     :width="DialogWidth.md"
     @update:model-value="$emit('update:visible', $event)"
+    @open="$emit('refresh-options')"
     @closed="resetForm"
   >
     <el-form
@@ -37,12 +38,18 @@
           v-model="form.productId"
           filterable
           placeholder="请选择产品"
+          @visible-change="(visible: boolean) => visible && $emit('refresh-options')"
         >
           <el-option
-            v-for="product in productOptions"
-            :key="product.id"
-            :label="`${product.itemCode} / ${product.productName}`"
-            :value="product.id"
+            v-for="choice in productChoices"
+            :key="choice.value"
+            :label="
+              choice.option
+                ? `${choice.option.itemCode} / ${choice.option.productName}`
+                : `${choice.value}（已失效）`
+            "
+            :value="choice.value"
+            :disabled="choice.isUnavailable"
           />
         </el-select>
       </el-form-item>
@@ -77,9 +84,10 @@
 </template>
 
 <script setup lang="ts">
-import { reactive } from 'vue';
+import { computed, reactive } from 'vue';
 import type { ProductOption } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
+import { buildLiveOptions, hasUnavailableSelection } from '../../../utils/live-options';
 import { EMessage } from '../../../utils/message';
 
 export type RouteFormValue = {
@@ -90,7 +98,7 @@ export type RouteFormValue = {
   remark: string;
 };
 
-defineProps<{
+const props = defineProps<{
   visible: boolean;
   editingRouteId: string | null;
   productOptions: ProductOption[];
@@ -99,6 +107,7 @@ defineProps<{
 
 const emit = defineEmits<{
   (e: 'update:visible', val: boolean): void;
+  (e: 'refresh-options'): void;
   (e: 'save', data: RouteFormValue): void;
 }>();
 
@@ -111,6 +120,9 @@ const initialForm = (): RouteFormValue => ({
 });
 
 const form = reactive<RouteFormValue>(initialForm());
+const productChoices = computed(() =>
+  buildLiveOptions(props.productOptions, form.productId ? [form.productId] : [], (item) => item.id),
+);
 
 const resetForm = (): void => {
   Object.assign(form, initialForm());
@@ -135,6 +147,10 @@ const setForm = (row: {
 const handleSubmit = (): void => {
   if (!form.routeCode.trim() || !form.routeName.trim() || !form.productId) {
     EMessage.warning('请填写路线编号、路线名称并选择适用产品');
+    return;
+  }
+  if (hasUnavailableSelection(props.productOptions, [form.productId], (item) => item.id)) {
+    EMessage.warning('适用产品已失效，请重新选择');
     return;
   }
   emit('save', {

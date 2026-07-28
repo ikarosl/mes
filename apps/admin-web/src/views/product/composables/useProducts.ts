@@ -20,6 +20,7 @@ export function useProducts() {
   const total = ref(0);
   const currentPage = ref(1);
   const pageSize = ref(10);
+  let optionsRequest: Promise<void> | null = null;
   const query = reactive<{
     keyword: string;
     categoryId: string;
@@ -64,19 +65,27 @@ export function useProducts() {
     }
   };
 
-  const loadOptions = async (): Promise<void> => {
-    try {
-      const options = await productApi.productFormOptions();
-      categoryOptions.value = options.categories.filter(
-        (item: ProductCategoryListItem) => item.status === 1,
-      );
-      materialOptions.value = options.products.filter(
-        (item: ProductOption) => item.itemKind === 'material' || item.itemKind === 'semi_finished',
-      );
-      routes.value = options.routes;
-    } catch (error) {
-      EMessage.error(error, '产品选项加载失败');
+  const loadOptions = (): Promise<void> => {
+    if (!optionsRequest) {
+      optionsRequest = (async () => {
+        try {
+          const options = await productApi.productFormOptions();
+          categoryOptions.value = options.categories.filter(
+            (item: ProductCategoryListItem) => item.status === 1,
+          );
+          materialOptions.value = options.products.filter(
+            (item: ProductOption) =>
+              item.itemKind === 'material' || item.itemKind === 'semi_finished',
+          );
+          routes.value = options.routes;
+        } catch (error) {
+          EMessage.error(error, '产品选项加载失败');
+        }
+      })().finally(() => {
+        optionsRequest = null;
+      });
     }
+    return optionsRequest;
   };
 
   const loadData = async (): Promise<void> => {

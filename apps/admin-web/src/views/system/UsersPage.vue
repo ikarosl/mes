@@ -32,6 +32,7 @@
             v-model="query.roleId"
             clearable
             placeholder="请选择岗位"
+            @visible-change="refreshUserOptions"
           >
             <el-option
               v-for="role in roleOptions"
@@ -246,6 +247,7 @@
       :role-options="roleOptions"
       :submitting="submittingUser"
       @update:visible="userDialogVisible = $event"
+      @refresh-options="refreshUserOptions"
       @save="submitUser"
     />
 
@@ -266,19 +268,20 @@
       :initial-role-ids="assigningUser?.roleIds ?? []"
       :submitting="submittingRoles"
       @update:visible="roleDialogVisible = $event"
+      @refresh-options="refreshUserOptions"
       @confirm="submitAssignRoles"
     />
   </section>
 </template>
 
 <script setup lang="ts">
-import { nextTick, onMounted, ref } from 'vue';
-import { ElMessageBox } from 'element-plus';
+import { nextTick, onActivated, onMounted, ref } from 'vue';
 import { Filter, Key, Plus, Refresh } from '@element-plus/icons-vue';
 import { PERMISSIONS, SYSTEM_STATUS } from '@company/constants';
 import type { SystemUserListItem } from '@company/contracts';
 import TableToolbar from '../../components/TableToolbar.vue';
 import { EMessage } from '../../utils/message';
+import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
 import { systemApi } from '../../api/system';
 import { useAuthStore } from '../../stores/auth';
 import { useSystemUsers } from './composables/useSystemUsers';
@@ -323,14 +326,20 @@ const submittingUser = ref(false);
 const submittingPassword = ref(false);
 const submittingRoles = ref(false);
 
+const refreshUserOptions = (visible = true): void => {
+  if (visible) void loadOptions();
+};
+
 /* ----- user CRUD ----- */
 const openCreate = (): void => {
+  refreshUserOptions();
   editingUserId.value = null;
   userFormDialogRef.value?.resetForm();
   userDialogVisible.value = true;
 };
 
 const openEdit = (row: SystemUserListItem): void => {
+  refreshUserOptions();
   editingUserId.value = row.id;
   userFormDialogRef.value?.setForm(row);
   userDialogVisible.value = true;
@@ -419,6 +428,7 @@ const submitResetPassword = async (password: string): Promise<void> => {
 
 /* ----- role assignment ----- */
 const openAssignRoles = (row: SystemUserListItem): void => {
+  refreshUserOptions();
   assigningUser.value = row;
   roleDialogVisible.value = true;
 };
@@ -443,7 +453,8 @@ const focusFirstFilter = async (): Promise<void> => {
   document.querySelector<HTMLInputElement>('.query-panel input')?.focus();
 };
 
-onMounted(() => Promise.all([loadUsers(), loadOptions()]));
+onMounted(loadUsers);
+onActivated(refreshUserOptions);
 </script>
 
 <style scoped>

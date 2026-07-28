@@ -4,11 +4,13 @@ import ElementPlus from 'element-plus';
 import 'element-plus/dist/index.css';
 import './styles/index.css';
 import App from './App.vue';
+import RouteDialog from './components/RouteDialog.vue';
 import { router } from './router';
 import { installHttpErrorHandler } from './api/error-handler';
 import { httpClient } from './api/http';
 import { useAuthStore } from './stores/auth';
 import { EMessage } from './utils/message';
+import { RouteMessageBox } from './utils/route-message-box';
 
 const pinia = createPinia();
 const auth = useAuthStore(pinia);
@@ -33,4 +35,13 @@ installHttpErrorHandler(httpClient, {
   },
 });
 
-createApp(App).use(pinia).use(router).use(ElementPlus).mount('#app');
+const app = createApp(App);
+
+app.use(pinia).use(router).use(ElementPlus);
+// Keep every Element Plus dialog inside the cached route subtree so inactive tabs
+// retain their editor state without blocking navigation outside the content region.
+app.component('ElDialog', RouteDialog);
+router.beforeEach(() => {
+  RouteMessageBox.close();
+});
+app.mount('#app');

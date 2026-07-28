@@ -20,6 +20,7 @@ export function useProcessRoutes() {
   const total = ref(0);
   const currentPage = ref(1);
   const pageSize = ref(10);
+  let optionsRequest: Promise<void> | null = null;
   const query = reactive<{ keyword: string; status: ProcessRouteStatus | '' }>({
     keyword: '',
     status: '',
@@ -61,19 +62,27 @@ export function useProcessRoutes() {
     }
   };
 
-  const loadOptions = async (): Promise<void> => {
-    try {
-      const options = await productApi.routeFormOptions();
-      productOptions.value = options.products.filter(
-        (item: ProductOption) => item.acquireMethod === 'self_made' && item.itemKind !== 'material',
-      );
-      processOptions.value = options.processSteps.filter(
-        (item: ProcessStepListItem) => item.status === 1,
-      );
-      userOptions.value = options.users;
-    } catch (error) {
-      EMessage.error(error, '工艺路线选项加载失败');
+  const loadOptions = (): Promise<void> => {
+    if (!optionsRequest) {
+      optionsRequest = (async () => {
+        try {
+          const options = await productApi.routeFormOptions();
+          productOptions.value = options.products.filter(
+            (item: ProductOption) =>
+              item.acquireMethod === 'self_made' && item.itemKind !== 'material',
+          );
+          processOptions.value = options.processSteps.filter(
+            (item: ProcessStepListItem) => item.status === 1,
+          );
+          userOptions.value = options.users;
+        } catch (error) {
+          EMessage.error(error, '工艺路线选项加载失败');
+        }
+      })().finally(() => {
+        optionsRequest = null;
+      });
     }
+    return optionsRequest;
   };
 
   const loadData = async (): Promise<void> => {

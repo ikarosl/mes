@@ -47,12 +47,18 @@
               v-model="row.materialProductId"
               filterable
               placeholder="请选择物料"
+              @visible-change="(visible: boolean) => visible && $emit('refresh')"
             >
               <el-option
-                v-for="item in materialOptions"
-                :key="item.id"
-                :label="`${item.itemCode} / ${item.productName}`"
-                :value="item.id"
+                v-for="choice in materialChoices(row.materialProductId)"
+                :key="choice.value"
+                :label="
+                  choice.option
+                    ? `${choice.option.itemCode} / ${choice.option.productName}`
+                    : `${choice.value}（已失效）`
+                "
+                :value="choice.value"
+                :disabled="choice.isUnavailable"
               />
             </el-select>
           </template>
@@ -140,6 +146,7 @@ import { ref } from 'vue';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import type { ProductListItem, ProductOption } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
+import { buildLiveOptions, hasUnavailableSelection } from '../../../utils/live-options';
 import { EMessage } from '../../../utils/message';
 
 export type MaterialRow = {
@@ -186,9 +193,24 @@ const removeRow = (index: number): void => {
   localRows.value.splice(index, 1);
 };
 
+const materialChoices = (selectedValue: string) =>
+  buildLiveOptions(props.materialOptions, selectedValue ? [selectedValue] : [], (item) => item.id);
+
 const handleSubmit = (): void => {
   if (localRows.value.some((r) => !r.materialProductId)) {
     EMessage.warning('请选择物料');
+    return;
+  }
+  if (
+    localRows.value.some((row) =>
+      hasUnavailableSelection(
+        props.materialOptions,
+        row.materialProductId ? [row.materialProductId] : [],
+        (item) => item.id,
+      ),
+    )
+  ) {
+    EMessage.warning('物料候选项已失效，请重新选择');
     return;
   }
   if (new Set(localRows.value.map((r) => r.materialProductId)).size !== localRows.value.length) {
