@@ -17,6 +17,8 @@ import type {
   ProductOption,
   PageResult,
   ProductPayload,
+  TechnicalFileListItem,
+  TechnicalFileQuery,
   UserOption,
 } from '@company/contracts';
 import { toRequestError } from '@company/request';
@@ -43,6 +45,8 @@ const cleanProductPayload = (data: ProductPayload): ProductPayload => ({
 });
 
 export const productApi = {
+  technicalFiles: (params: TechnicalFileQuery) =>
+    request<PageResult<TechnicalFileListItem>>({ url: `${base}/technical-files`, params }),
   categories: () => request<ProductCategoryListItem[]>({ url: `${base}/categories` }),
   createCategory: (data: ProductCategoryPayload) =>
     request<{ id: string }>({ url: `${base}/categories`, method: 'POST', data }),

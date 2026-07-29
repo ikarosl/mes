@@ -60,8 +60,22 @@ export const PERMISSIONS = {
   },
   production: {
     view: 'production:view',
-    orders: { view: 'production:orders:view' },
+    orders: {
+      view: 'production:orders:view',
+      create: 'production:orders:create',
+      update: 'production:orders:update',
+      transition: 'production:orders:transition',
+    },
     tasks: { view: 'production:tasks:view' },
+    batches: {
+      create: 'production:batches:create',
+      update: 'production:batches:update',
+      transition: 'production:batches:transition',
+    },
+    steps: {
+      report: 'production:steps:report',
+      manageExecution: 'production:steps:manage-execution',
+    },
   },
   warehouse: {
     view: 'warehouse:view',

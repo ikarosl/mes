@@ -321,6 +321,14 @@ import {
   stockStatusLabels,
 } from '../../constants/business-status';
 
+/**
+ * TODO(warehouse-api): 库存查询页面。当前使用静态演示数据。
+ * 后端库存模块（item_batch/inventory_transaction + 汇总视图）尚未迁移。
+ * 待后端实现以下接口后接入：
+ *   GET    /warehouse/inventory    — 现存量分页（含库存状态汇总）
+ *   GET    /warehouse/inventory/:id — 批次详情
+ * 参考 contracts: InventoryBatchStatus, StockStatus, InventorySourceType
+ */
 defineOptions({ name: 'WarehouseInventoryPage' });
 
 interface InventoryItem {

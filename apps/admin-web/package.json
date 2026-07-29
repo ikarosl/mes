@@ -7,7 +7,9 @@
     "dev": "vite --host 0.0.0.0",
     "build": "vue-tsc --noEmit && vite build",
     "typecheck": "vue-tsc --noEmit",
-    "test": "vitest run --config ../../vitest.config.ts src"
+    "test": "vitest run --config ../../vitest.config.ts src",
+    "test:e2e": "playwright test",
+    "test:e2e:install": "playwright install chromium"
   },
   "dependencies": {
     "@company/auth-client": "workspace:*",
@@ -23,8 +25,10 @@
   },
   "devDependencies": {
     "@company/config": "workspace:*",
+    "@playwright/test": "^1.62.0",
     "@vitejs/plugin-vue": "catalog:",
     "@vue/test-utils": "catalog:",
+    "playwright": "^1.62.0",
     "typescript": "catalog:",
     "vite": "catalog:",
     "vitest": "catalog:",

@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import {
   ProductSnapshotQuery,
   type ProcessRouteSnapshot,
+  type EnabledSopFileSnapshot,
   type ProductBomSnapshot,
   type ProductionProductSnapshot,
 } from './product-snapshot.query.js';
@@ -21,5 +22,8 @@ export class ProductSnapshotService extends ProductSnapshotQuery {
   }
   getRouteSnapshot(routeId: string): Promise<ProcessRouteSnapshot> {
     return this.snapshots.getRouteSnapshot(routeId);
+  }
+  getEnabledSopFileSnapshot(fileId: string): Promise<EnabledSopFileSnapshot> {
+    return this.snapshots.getEnabledSopFileSnapshot(fileId);
   }
 }

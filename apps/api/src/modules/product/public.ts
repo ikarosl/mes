@@ -6,4 +6,5 @@ export {
   type ProductBomLineSnapshot,
   type ProductBomSnapshot,
   type ProductionProductSnapshot,
+  type EnabledSopFileSnapshot,
 } from './application/product-snapshot.query.js';

@@ -7,6 +7,7 @@ import type {
   ProcessRouteSnapshot,
   ProductBomSnapshot,
   ProductionProductSnapshot,
+  EnabledSopFileSnapshot,
 } from '../application/product-snapshot.query.js';
 import { ProductSnapshotRepository } from '../application/ports/product-snapshot.repository.js';
 
@@ -160,6 +161,28 @@ export class MysqlProductSnapshotRepository implements ProductSnapshotRepository
         })),
       };
     });
+  }
+
+  async getEnabledSopFileSnapshot(fileId: string): Promise<EnabledSopFileSnapshot> {
+    const [[file]] = await this.pool.query<
+      (RowDataPacket & {
+        id: number;
+        file_name: string;
+        object_key: string;
+        version_no: string;
+      })[]
+    >(
+      `SELECT id,file_name,object_key,version_no FROM technical_files
+       WHERE id=? AND file_type='sop' AND status=1 AND is_deleted=0`,
+      [fileId],
+    );
+    if (!file) throw new ProductDomainError('NOT_FOUND', 'Enabled SOP file not found');
+    return {
+      id: String(file.id),
+      fileName: file.file_name,
+      objectKey: file.object_key,
+      versionNo: file.version_no,
+    };
   }
 
   private async productionProduct(db: Db, productId: string): Promise<ProductionProductSnapshot> {

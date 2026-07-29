@@ -13,7 +13,7 @@
 
 - Identity/System：认证、RBAC、操作日志和管理端权限基础设施。
 - Product：产品分类、产品主数据、产品物料、技术文件、工序和工艺路线。
-- Production：生产工单、生产批次、工序报工追溯。
+- Production：生产工单、生产批次、工序报工追溯，以及其依赖的生产物料需求、分配和领料出库链路；按状态机分阶段迁移。
 
 Inventory（库存批次、出入库、盘点）、Quality（检验、返工）和 Traceability（全流程追溯）只能在后续迁移阶段明确更新后追加，不得仅凭已有 UI 原型提前实现。
 
@@ -59,12 +59,12 @@ Controller 只负责协议映射、DTO、权限装饰器和响应转换，不写
 
 当前数据所有权：
 
-| 模块            | 拥有的数据                                                                                               |
-| --------------- | -------------------------------------------------------------------------------------------------------- |
-| Identity/System | departments、users、roles、permissions、关联表、refresh_tokens、operation_logs                           |
-| Product         | product_categories、products、product_materials、technical_files、process_steps、process_routes 及关联表 |
-| Production      | work_orders、production_batches、batch_step_records                                                      |
-| common          | 不拥有业务表                                                                                             |
+| 模块            | 拥有的数据                                                                                                                               |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Identity/System | departments、users、roles、permissions、关联表、refresh_tokens、operation_logs                                                           |
+| Product         | product_categories、products、product_materials、technical_files、process_steps、process_routes 及关联表                                 |
+| Production      | work_orders、production_batches、batch_step_records、production_item_demand、production_item_allocation、outbound_order、outbound_detail |
+| common          | 不拥有业务表                                                                                                                             |
 
 Product 获取用户选项必须调用 Identity 的公开目录服务，不能直接查询 `users`。
 

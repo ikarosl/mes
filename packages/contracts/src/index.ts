@@ -464,6 +464,189 @@ export interface UserOption {
   displayName: string;
 }
 
+export interface WorkOrderQuery extends PageQuery {
+  keyword?: string;
+  productId?: string;
+  status?: WorkOrderStatus;
+}
+
+export interface ProductionBatchQuery extends PageQuery {
+  keyword?: string;
+  workOrderId?: string;
+  status?: ProductionBatchStatus;
+  ownerId?: string;
+}
+
+export interface WorkOrderItem {
+  id: string;
+  workOrderNo: string;
+  productId: string;
+  productCode: string;
+  productName: string;
+  unit: string;
+  plannedQuantity: string;
+  customerName: string | null;
+  qualityLevel: string | null;
+  workOrderOwnerId: string | null;
+  planStartDate: string | null;
+  planEndDate: string | null;
+  assignedQuantity: string;
+  status: WorkOrderStatus;
+  releasedAt: string | null;
+  externalOrderNo: string | null;
+  remark: string | null;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProductionBatchItem {
+  id: string;
+  workOrderId: string;
+  workOrderNo: string;
+  productId: string;
+  productCode: string;
+  productName: string;
+  batchNo: string;
+  routeId: string | null;
+  routeCode: string | null;
+  routeVersion: string | null;
+  plannedQuantity: string;
+  completedQuantity: string;
+  qualifiedQuantity: string;
+  planStartDate: string | null;
+  planEndDate: string | null;
+  startedAt: string | null;
+  status: ProductionBatchStatus;
+  ownerId: string | null;
+  ownerName: string | null;
+  completedAt: string | null;
+  completedBy: string | null;
+  remark: string | null;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BatchStepRecordItem {
+  id: string;
+  productionBatchId: string;
+  routeStepId: string;
+  stepOrder: number;
+  stepCode: string;
+  stepName: string;
+  defaultSopFileId: string | null;
+  defaultSopFileName: string | null;
+  defaultSopVersionNo: string | null;
+  actualSopFileId: string | null;
+  actualSopFileName: string | null;
+  actualSopVersionNo: string | null;
+  defaultResponsibleUserId: string | null;
+  defaultResponsibleUserName: string | null;
+  responsibleUserId: string | null;
+  responsibleUserName: string | null;
+  needRecord: boolean;
+  needInspection: boolean;
+  status: BatchStepStatus;
+  startedAt: string | null;
+  completedAt: string | null;
+  outputQuantity: string;
+  qualifiedQuantity: string;
+  abnormalQuantity: string;
+  reworkQuantity: string;
+  unit: string;
+  remark: string | null;
+  version: number;
+}
+
+export interface WorkOrderDetail extends WorkOrderItem {
+  batches: ProductionBatchItem[];
+}
+
+export interface ProductionBatchDetail extends ProductionBatchItem {
+  stepRecords: BatchStepRecordItem[];
+}
+
+export interface ProductionItemDemandItem {
+  id: string;
+  productionBatchId: string;
+  productMaterialId: string;
+  itemId: string;
+  itemCode: string;
+  itemName: string;
+  quantityPerUnit: string;
+  unit: string;
+  isKeyMaterial: boolean;
+  needBatchRecord: boolean;
+  plannedOutputQuantity: string;
+  needNumber: string;
+  businessStatus: DemandBusinessStatus;
+  version: number;
+}
+
+export interface CreateWorkOrderPayload {
+  workOrderNo: string;
+  productId: string;
+  plannedQuantity: number;
+  customerName?: string | null;
+  qualityLevel?: string | null;
+  workOrderOwnerId?: string | null;
+  planStartDate?: string | null;
+  planEndDate?: string | null;
+  externalOrderNo?: string | null;
+  remark?: string | null;
+}
+
+export interface UpdateWorkOrderPayload extends VersionedCommand {
+  customerName?: string | null;
+  qualityLevel?: string | null;
+  workOrderOwnerId?: string | null;
+  planStartDate?: string | null;
+  planEndDate?: string | null;
+  externalOrderNo?: string | null;
+  remark?: string | null;
+}
+
+export interface CreateProductionBatchPayload {
+  batchNo?: string | null;
+  routeId?: string | null;
+  plannedQuantity: number;
+  ownerId?: string | null;
+  planStartDate?: string | null;
+  planEndDate?: string | null;
+  remark?: string | null;
+  stepOverrides?: CreateBatchStepOverridePayload[];
+}
+
+/** Only overrides execution parameters on route-generated steps; it never changes the route step set. */
+export interface CreateBatchStepOverridePayload {
+  routeStepId: string;
+  actualSopFileId?: string | null;
+  responsibleUserId?: string | null;
+}
+
+export interface UpdateProductionBatchPayload extends VersionedCommand {
+  ownerId?: string | null;
+  planStartDate?: string | null;
+  planEndDate?: string | null;
+  remark?: string | null;
+}
+
+export interface UpdateBatchStepRecordPayload extends VersionedCommand {
+  responsibleUserId?: string | null;
+  status: BatchStepStatus;
+  outputQuantity: number;
+  qualifiedQuantity: number;
+  abnormalQuantity: number;
+  reworkQuantity: number;
+  remark?: string | null;
+}
+
+export interface UpdateBatchStepExecutionPayload extends VersionedCommand {
+  actualSopFileId?: string | null;
+  responsibleUserId?: string | null;
+}
+
 /** 日志模块枚举值 */
 export const OPERATION_LOG_MODULE_OPTIONS = [
   { label: '认证登录', value: 'auth' },

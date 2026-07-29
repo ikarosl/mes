@@ -10,7 +10,7 @@
           <el-input
             v-model="query.keyword"
             clearable
-            placeholder="工单号/产品"
+            placeholder="工单号/产品编码/名称"
           />
         </el-form-item>
         <el-form-item label="产品">
@@ -28,25 +28,11 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="负责人">
-          <el-select
-            v-model="query.ownerId"
-            clearable
-            filterable
-            placeholder="全部"
-          >
-            <el-option
-              v-for="user in userOptions"
-              :key="user.id"
-              :label="user.displayName"
-              :value="user.id"
-            />
-          </el-select>
-        </el-form-item>
         <el-form-item label="状态">
           <el-select
             v-model="query.status"
             placeholder="全部"
+            clearable
           >
             <el-option
               label="全部"
@@ -107,47 +93,56 @@
           label="工单号"
           min-width="160"
         >
-          <template #default="{ row }">
-            <span class="order-no">{{ row.orderNo }}</span>
-          </template>
+          <template #default="{ row }"
+            ><span class="order-no">{{ row.workOrderNo }}</span></template
+          >
         </el-table-column>
         <el-table-column
           label="产品"
-          min-width="220"
+          min-width="200"
         >
           <template #default="{ row }">
             <div class="product-name">{{ row.productName }}</div>
-            <div class="sub-text">{{ row.itemCode }}</div>
+            <div class="sub-text">{{ row.productCode }}</div>
           </template>
         </el-table-column>
         <el-table-column
-          label="数量"
-          width="150"
+          label="计划数量"
+          width="120"
           align="right"
         >
-          <template #default="{ row }">
-            {{ formatQuantity(row.assignedQuantity) }} / {{ formatQuantity(row.plannedQuantity) }}
-          </template>
+          <template #default="{ row }">{{ formatQuantity(row.plannedQuantity) }}</template>
+        </el-table-column>
+        <el-table-column
+          label="已分配"
+          width="110"
+          align="right"
+        >
+          <template #default="{ row }">{{ formatQuantity(row.assignedQuantity) }}</template>
         </el-table-column>
         <el-table-column
           label="负责人"
-          width="120"
+          width="110"
         >
-          <template #default="{ row }">{{ row.ownerName || '-' }}</template>
+          <template #default="{ row }">{{ getOwnerName(row.workOrderOwnerId) }}</template>
         </el-table-column>
         <el-table-column
-          label="当前流程"
-          min-width="180"
-          show-overflow-tooltip
+          label="客户名称"
+          width="140"
         >
-          <template #default="{ row }">{{ row.currentFlow }}</template>
+          <template #default="{ row }">{{ row.customerName || '-' }}</template>
         </el-table-column>
         <el-table-column
-          label="下一步"
-          min-width="150"
-          show-overflow-tooltip
+          label="计划开始"
+          width="110"
         >
-          <template #default="{ row }">{{ row.nextAction }}</template>
+          <template #default="{ row }">{{ formatDateForDisplay(row.planStartDate) }}</template>
+        </el-table-column>
+        <el-table-column
+          label="计划完成"
+          width="110"
+        >
+          <template #default="{ row }">{{ formatDateForDisplay(row.planEndDate) }}</template>
         </el-table-column>
         <el-table-column
           label="状态"
@@ -163,14 +158,8 @@
           </template>
         </el-table-column>
         <el-table-column
-          label="计划完成"
-          width="120"
-        >
-          <template #default="{ row }">{{ row.planEndDate || '-' }}</template>
-        </el-table-column>
-        <el-table-column
           label="操作"
-          width="310"
+          width="300"
           fixed="right"
         >
           <template #default="{ row }">
@@ -190,6 +179,7 @@
             <el-button
               link
               type="primary"
+              :disabled="row.status === 'draft'"
               @click="openTasks(row)"
               >生产批次</el-button
             >
@@ -255,15 +245,18 @@
       </div>
     </section>
 
+    <!-- 新增/编辑工单弹窗 -->
     <el-dialog
       v-model="orderDialogVisible"
       :title="editingOrderId ? '编辑工单' : '新增工单'"
       :width="DialogWidth.lg"
+      @open="loadOptions"
     >
       <el-form
         class="dialog-form"
         label-width="108px"
         :model="orderForm"
+        :disabled="submitting"
       >
         <div class="form-grid">
           <el-form-item
@@ -271,7 +264,7 @@
             required
           >
             <el-input
-              v-model="orderForm.orderNo"
+              v-model="orderForm.workOrderNo"
               placeholder="请输入工单号"
             />
           </el-form-item>
@@ -284,12 +277,14 @@
               filterable
               placeholder="请选择产品"
               @change="handleOrderProductChange"
+              @visible-change="(v: boolean) => v && loadOptions()"
             >
               <el-option
-                v-for="product in productOptions"
-                :key="product.id"
-                :label="formatProduct(product)"
-                :value="product.id"
+                v-for="choice in productChoices"
+                :key="choice.value"
+                :label="choice.option ? formatProduct(choice.option) : `${choice.value}（已失效）`"
+                :value="choice.value"
+                :disabled="choice.isUnavailable"
               />
             </el-select>
           </el-form-item>
@@ -304,26 +299,34 @@
               :step="1"
             />
           </el-form-item>
-          <el-form-item label="外部订单号">
+          <el-form-item label="负责人">
+            <el-select
+              v-model="orderForm.workOrderOwnerId"
+              clearable
+              filterable
+              placeholder="请选择工单负责人"
+              @visible-change="(v: boolean) => v && loadOptions()"
+            >
+              <el-option
+                v-for="choice in userChoices"
+                :key="choice.value"
+                :label="choice.option?.displayName ?? `${choice.value}（已失效）`"
+                :value="choice.value"
+                :disabled="choice.isUnavailable"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="客户名称">
             <el-input
-              v-model="orderForm.externalOrderNo"
+              v-model="orderForm.customerName"
               placeholder="可选填写"
             />
           </el-form-item>
-          <el-form-item label="负责人">
-            <el-select
-              v-model="orderForm.ownerId"
-              clearable
-              filterable
-              placeholder="请选择负责人"
-            >
-              <el-option
-                v-for="user in userOptions"
-                :key="user.id"
-                :label="user.displayName"
-                :value="user.id"
-              />
-            </el-select>
+          <el-form-item label="质量等级">
+            <el-input
+              v-model="orderForm.qualityLevel"
+              placeholder="客户质量等级代码"
+            />
           </el-form-item>
           <el-form-item label="计划开始">
             <el-date-picker
@@ -337,6 +340,12 @@
               v-model="orderForm.planEndDate"
               type="date"
               value-format="YYYY-MM-DD"
+            />
+          </el-form-item>
+          <el-form-item label="外部订单号">
+            <el-input
+              v-model="orderForm.externalOrderNo"
+              placeholder="可选填写"
             />
           </el-form-item>
         </div>
@@ -360,6 +369,7 @@
       </template>
     </el-dialog>
 
+    <!-- 工单详情弹窗 -->
     <el-dialog
       v-model="detailDialogVisible"
       title="工单详情"
@@ -370,9 +380,11 @@
           :column="3"
           border
         >
-          <el-descriptions-item label="工单号">{{ activeOrder.orderNo }}</el-descriptions-item>
+          <el-descriptions-item label="工单号">{{ activeOrder.workOrderNo }}</el-descriptions-item>
           <el-descriptions-item label="产品">{{ activeOrder.productName }}</el-descriptions-item>
-          <el-descriptions-item label="产品编码">{{ activeOrder.itemCode }}</el-descriptions-item>
+          <el-descriptions-item label="产品编码">{{
+            activeOrder.productCode
+          }}</el-descriptions-item>
           <el-descriptions-item label="计划数量">{{
             formatQuantity(activeOrder.plannedQuantity)
           }}</el-descriptions-item>
@@ -383,13 +395,26 @@
             activeOrder.externalOrderNo || '-'
           }}</el-descriptions-item>
           <el-descriptions-item label="负责人">{{
-            activeOrder.ownerName || '-'
+            getOwnerName(activeOrder.workOrderOwnerId)
+          }}</el-descriptions-item>
+          <el-descriptions-item label="客户名称">{{
+            activeOrder.customerName || '-'
+          }}</el-descriptions-item>
+          <el-descriptions-item label="质量等级">{{
+            activeOrder.qualityLevel || '-'
+          }}</el-descriptions-item>
+          <el-descriptions-item label="计划开始">{{
+            formatDateForDisplay(activeOrder.planStartDate)
+          }}</el-descriptions-item>
+          <el-descriptions-item label="计划完成">{{
+            formatDateForDisplay(activeOrder.planEndDate)
           }}</el-descriptions-item>
           <el-descriptions-item label="状态">{{
             getOrderStatusMeta(activeOrder.status).label
           }}</el-descriptions-item>
-          <el-descriptions-item label="计划完成">{{
-            activeOrder.planEndDate || '-'
+          <el-descriptions-item label="版本号">{{ activeOrder.version }}</el-descriptions-item>
+          <el-descriptions-item label="创建时间">{{
+            activeOrder.createdAt || '-'
           }}</el-descriptions-item>
           <el-descriptions-item
             label="备注"
@@ -400,6 +425,7 @@
 
         <div class="dialog-section-title">生产批次</div>
         <el-table
+          v-if="activeOrder.batches?.length"
           :data="activeOrder.batches"
           class="detail-table"
         >
@@ -409,11 +435,21 @@
             min-width="160"
           />
           <el-table-column
-            label="数量"
+            label="计划数量"
             width="120"
             align="right"
           >
             <template #default="{ row }">{{ formatQuantity(row.plannedQuantity) }}</template>
+          </el-table-column>
+          <el-table-column
+            label="完成/合格"
+            width="160"
+            align="right"
+          >
+            <template #default="{ row }"
+              >{{ formatQuantity(row.completedQuantity) }} /
+              {{ formatQuantity(row.qualifiedQuantity) }}</template
+            >
           </el-table-column>
           <el-table-column
             label="任务状态"
@@ -427,16 +463,17 @@
           >
             <template #default="{ row }">{{ row.ownerName || '-' }}</template>
           </el-table-column>
-          <el-table-column
-            label="计划完成"
-            width="120"
-          >
-            <template #default="{ row }">{{ row.planEndDate || '-' }}</template>
-          </el-table-column>
         </el-table>
+        <div
+          v-else
+          class="empty-hint"
+        >
+          暂无生产批次
+        </div>
       </template>
     </el-dialog>
 
+    <!-- 生产批次列表弹窗 -->
     <el-dialog
       v-model="taskDialogVisible"
       title="生产批次"
@@ -445,11 +482,11 @@
       <template v-if="taskOrder">
         <div class="task-toolbar">
           <div>
-            <span class="order-no">{{ taskOrder.orderNo }}</span>
-            <span class="sub-text"
-              >计划 {{ formatQuantity(taskOrder.plannedQuantity) }}，已分配
-              {{ formatQuantity(taskOrder.assignedQuantity) }}</span
-            >
+            <span class="order-no">{{ taskOrder.workOrderNo }}</span>
+            <span class="sub-text">
+              计划 {{ formatQuantity(taskOrder.plannedQuantity) }}， 已分配
+              {{ formatQuantity(taskOrder.assignedQuantity) }}
+            </span>
           </div>
           <el-button
             type="primary"
@@ -473,22 +510,35 @@
             min-width="160"
           />
           <el-table-column
-            label="数量"
+            label="计划数量"
             width="120"
             align="right"
           >
             <template #default="{ row }">{{ formatQuantity(row.plannedQuantity) }}</template>
           </el-table-column>
           <el-table-column
+            label="计划开始"
+            width="110"
+          >
+            <template #default="{ row }">{{ formatDateForDisplay(row.planStartDate) }}</template>
+          </el-table-column>
+          <el-table-column
+            label="计划完成"
+            width="110"
+          >
+            <template #default="{ row }">{{ formatDateForDisplay(row.planEndDate) }}</template>
+          </el-table-column>
+          <el-table-column
             label="任务状态"
-            width="120"
+            width="130"
           >
             <template #default="{ row }">
               <el-tag
                 :type="getBatchStatusMeta(row.status).type"
                 effect="light"
-                >{{ getBatchStatusMeta(row.status).label }}</el-tag
               >
+                {{ getBatchStatusMeta(row.status).label }}
+              </el-tag>
             </template>
           </el-table-column>
           <el-table-column
@@ -498,10 +548,14 @@
             <template #default="{ row }">{{ row.ownerName || '-' }}</template>
           </el-table-column>
           <el-table-column
-            label="计划完成"
-            width="120"
+            label="完成/合格"
+            width="150"
+            align="right"
           >
-            <template #default="{ row }">{{ row.planEndDate || '-' }}</template>
+            <template #default="{ row }"
+              >{{ formatQuantity(row.completedQuantity) }} /
+              {{ formatQuantity(row.qualifiedQuantity) }}</template
+            >
           </el-table-column>
           <el-table-column
             label="操作"
@@ -521,6 +575,7 @@
       </template>
     </el-dialog>
 
+    <!-- 新增/编辑生产批次弹窗 -->
     <el-dialog
       v-model="batchFormDialogVisible"
       :title="editingBatchId ? '编辑生产批次' : '新增生产批次'"
@@ -530,6 +585,7 @@
         class="dialog-form"
         label-width="108px"
         :model="batchForm"
+        :disabled="submitting"
       >
         <el-form-item label="批次号">
           <el-input
@@ -547,6 +603,20 @@
             :max="batchQuantityMax ?? undefined"
             :precision="4"
             :step="1"
+          />
+        </el-form-item>
+        <el-form-item label="计划开始">
+          <el-date-picker
+            v-model="batchForm.planStartDate"
+            type="date"
+            value-format="YYYY-MM-DD"
+          />
+        </el-form-item>
+        <el-form-item label="计划完成">
+          <el-date-picker
+            v-model="batchForm.planEndDate"
+            type="date"
+            value-format="YYYY-MM-DD"
           />
         </el-form-item>
         <el-form-item label="工艺路线">
@@ -579,33 +649,6 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item
-          v-if="editingBatchId"
-          label="任务状态"
-        >
-          <el-select v-model="batchForm.status">
-            <el-option
-              v-for="item in batchStatusOptions"
-              :key="item.value"
-              :label="item.label"
-              :value="item.value"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="计划开始">
-          <el-date-picker
-            v-model="batchForm.planStartDate"
-            type="date"
-            value-format="YYYY-MM-DD"
-          />
-        </el-form-item>
-        <el-form-item label="计划完成">
-          <el-date-picker
-            v-model="batchForm.planEndDate"
-            type="date"
-            value-format="YYYY-MM-DD"
-          />
-        </el-form-item>
         <el-form-item label="备注">
           <el-input
             v-model="batchForm.remark"
@@ -628,76 +671,43 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue';
+import { computed, onActivated, onMounted, reactive, ref } from 'vue';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import TableToolbar from '../../components/TableToolbar.vue';
-import type { ProductionBatchStatus, WorkOrderStatus } from '@company/contracts';
+import type {
+  ProductionBatchItem,
+  ProductionBatchStatus,
+  WorkOrderDetail,
+  WorkOrderItem,
+  WorkOrderStatus,
+} from '@company/contracts';
 import { DialogWidth } from '../../utils/dialog';
+import { formatDateForDisplay, toDateInputValue } from '../../utils/date';
 import { EMessage } from '../../utils/message';
 import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
+import { buildLiveOptions, hasUnavailableSelection } from '../../utils/live-options';
+import { productionApi } from '../../api/production';
+import { productApi } from '../../api/product';
 
 defineOptions({ name: 'ProductionOrdersPage' });
 
-/* ====== 类型定义 ====== */
-interface WorkOrderListItem {
-  id: string;
-  orderNo: string;
-  productId: string;
-  productName: string;
-  itemCode: string;
-  plannedQuantity: string;
-  assignedQuantity: string;
-  ownerId: string | null;
-  ownerName: string | null;
-  externalOrderNo: string | null;
-  status: WorkOrderStatus;
-  currentFlow: string;
-  nextAction: string;
-  planStartDate: string | null;
-  planEndDate: string | null;
-  remark: string | null;
-}
-
-interface WorkOrderDetail extends WorkOrderListItem {
-  batches: ProductionBatchItem[];
-}
-
-interface ProductionBatchItem {
-  id: string;
-  workOrderId: string;
-  batchNo: string;
-  productId: string;
-  productName: string;
-  itemCode: string;
-  routeId: string | null;
-  routeName: string | null;
-  plannedQuantity: string;
-  ownerId: string | null;
-  ownerName: string | null;
-  status: ProductionBatchStatus;
-  planStartDate: string | null;
-  planEndDate: string | null;
-  remark: string | null;
-}
-
-interface ProductListItem {
+/* ====== 基础类型 ====== */
+interface ProductOption {
   id: string;
   productName: string;
   itemCode: string;
-  defaultRouteId: string | null;
 }
 
-interface ProcessRouteListItem {
-  id: string;
-  routeName: string;
-  version: string | null;
-  productId: string;
-}
-
-interface SystemUserListItem {
+interface SystemUserOption {
   id: string;
   displayName: string;
-  username: string;
+}
+
+interface ProcessRouteOption {
+  id: string;
+  routeName: string;
+  version: string;
+  productId: string;
 }
 
 /* ====== 状态选项 ====== */
@@ -728,124 +738,17 @@ const batchStatusOptions: Array<{
   { value: 'cancelled', label: '已取消', type: 'danger' },
 ];
 
-/* ====== 静态演示数据 ====== */
-const orders = ref<WorkOrderListItem[]>([
-  {
-    id: '1',
-    orderNo: 'WO-2026-0001',
-    productId: '1',
-    productName: 'PCB主板-A100',
-    itemCode: 'A100-V2',
-    plannedQuantity: '500',
-    assignedQuantity: '250',
-    ownerId: 'u1',
-    ownerName: '张工',
-    externalOrderNo: 'CO-001',
-    status: 'doing',
-    currentFlow: 'SMT贴片',
-    nextAction: 'AOI检测',
-    planStartDate: '2026-07-15',
-    planEndDate: '2026-07-30',
-    remark: '加急订单',
-  },
-  {
-    id: '2',
-    orderNo: 'WO-2026-0002',
-    productId: '1',
-    productName: 'PCB主板-A100',
-    itemCode: 'A100-V2',
-    plannedQuantity: '1000',
-    assignedQuantity: '1000',
-    ownerId: 'u2',
-    ownerName: '李工',
-    externalOrderNo: 'CO-002',
-    status: 'completed',
-    currentFlow: '已完工',
-    nextAction: '-',
-    planStartDate: '2026-07-01',
-    planEndDate: '2026-07-20',
-    remark: null,
-  },
-  {
-    id: '3',
-    orderNo: 'WO-2026-0003',
-    productId: '2',
-    productName: '电源模块-B200',
-    itemCode: 'B200-V1',
-    plannedQuantity: '200',
-    assignedQuantity: '0',
-    ownerId: null,
-    ownerName: null,
-    externalOrderNo: null,
-    status: 'draft',
-    currentFlow: '未开始',
-    nextAction: '下达工单',
-    planStartDate: '2026-07-25',
-    planEndDate: '2026-08-10',
-    remark: null,
-  },
-  {
-    id: '4',
-    orderNo: 'WO-2026-0004',
-    productId: '3',
-    productName: '机箱外壳-C500',
-    itemCode: 'C500-V3',
-    plannedQuantity: '50',
-    assignedQuantity: '50',
-    ownerId: 'u1',
-    ownerName: '张工',
-    externalOrderNo: 'CO-003',
-    status: 'released',
-    currentFlow: '待生产',
-    nextAction: '创建生产批次',
-    planStartDate: '2026-07-18',
-    planEndDate: '2026-07-28',
-    remark: null,
-  },
-  {
-    id: '5',
-    orderNo: 'WO-2026-0005',
-    productId: '1',
-    productName: 'PCB主板-A100',
-    itemCode: 'A100-V2',
-    plannedQuantity: '300',
-    assignedQuantity: '0',
-    ownerId: 'u2',
-    ownerName: '李工',
-    externalOrderNo: null,
-    status: 'draft',
-    currentFlow: '未开始',
-    nextAction: '下达工单',
-    planStartDate: null,
-    planEndDate: '2026-08-05',
-    remark: null,
-  },
-]);
-
-const productOptions = ref<ProductListItem[]>([
-  { id: '1', productName: 'PCB主板-A100', itemCode: 'A100-V2', defaultRouteId: 'r1' },
-  { id: '2', productName: '电源模块-B200', itemCode: 'B200-V1', defaultRouteId: 'r2' },
-  { id: '3', productName: '机箱外壳-C500', itemCode: 'C500-V3', defaultRouteId: 'r3' },
-]);
-
-const routeOptions = ref<ProcessRouteListItem[]>([
-  { id: 'r1', routeName: 'SMT贴片工艺', version: 'V2', productId: '1' },
-  { id: 'r2', routeName: '电源组装工艺', version: 'V1', productId: '2' },
-  { id: 'r3', routeName: '钣金加工工艺', version: 'V3', productId: '3' },
-]);
-
-const userOptions = ref<SystemUserListItem[]>([
-  { id: 'u1', displayName: '张工', username: 'zhang' },
-  { id: 'u2', displayName: '李工', username: 'li' },
-  { id: 'u3', displayName: '王工', username: 'wang' },
-]);
-
+/* ====== 响应式数据 ====== */
+const orders = ref<WorkOrderItem[]>([]);
+const productOptions = ref<ProductOption[]>([]);
+const routeOptions = ref<ProcessRouteOption[]>([]);
+const userOptions = ref<SystemUserOption[]>([]);
 const activeOrder = ref<WorkOrderDetail | null>(null);
-const taskOrder = ref<WorkOrderListItem | null>(null);
+const taskOrder = ref<WorkOrderItem | null>(null);
 const taskBatches = ref<ProductionBatchItem[]>([]);
 const loading = ref(false);
 const submitting = ref(false);
-const total = ref(5);
+const total = ref(0);
 const currentPage = ref(1);
 const pageSize = ref(10);
 const orderDialogVisible = ref(false);
@@ -855,15 +758,17 @@ const batchFormDialogVisible = ref(false);
 const editingOrderId = ref<string | null>(null);
 const editingBatchId = ref<string | null>(null);
 
-const query = reactive({ keyword: '', productId: '', ownerId: '', status: '' });
+const query = reactive({ keyword: '', productId: '', status: '' });
 const orderForm = reactive({
-  orderNo: '',
+  workOrderNo: '',
   productId: '',
   plannedQuantity: 1,
-  externalOrderNo: '',
-  ownerId: '',
+  workOrderOwnerId: '',
+  customerName: '',
+  qualityLevel: '',
   planStartDate: '',
   planEndDate: '',
+  externalOrderNo: '',
   remark: '',
 });
 const batchForm = reactive({
@@ -871,7 +776,6 @@ const batchForm = reactive({
   routeId: '',
   plannedQuantity: 1,
   ownerId: '',
-  status: 'pending' as ProductionBatchStatus,
   planStartDate: '',
   planEndDate: '',
   remark: '',
@@ -881,58 +785,95 @@ const editingBatch = computed(
   () => taskBatches.value.find((item) => item.id === editingBatchId.value) ?? null,
 );
 const availableRouteOptions = computed(() => {
-  if (!taskOrder.value) {
-    return [];
-  }
+  if (!taskOrder.value) return [];
   return routeOptions.value.filter((route) => route.productId === taskOrder.value?.productId);
 });
-const getDefaultRouteForProduct = (productId: string) => {
-  const defaultRouteId = productOptions.value.find(
-    (product) => product.id === productId,
-  )?.defaultRouteId;
-  return (
-    routeOptions.value.find(
-      (route) => route.id === defaultRouteId && route.productId === productId,
-    ) ?? null
-  );
-};
 const batchQuantityMax = computed(() => {
-  if (!taskOrder.value) {
-    return null;
-  }
-  const plannedQuantity = Number(taskOrder.value.plannedQuantity);
-  const assignedQuantity = Number(taskOrder.value.assignedQuantity);
-  const currentBatchQuantity = editingBatch.value ? Number(editingBatch.value.plannedQuantity) : 0;
-  const maxQuantity = plannedQuantity - assignedQuantity + currentBatchQuantity;
-  return Number.isFinite(maxQuantity) ? Math.max(maxQuantity, 0) : null;
+  if (!taskOrder.value) return null;
+  const planned = Number(taskOrder.value.plannedQuantity);
+  const assigned = Number(taskOrder.value.assignedQuantity);
+  const currentBatch = editingBatch.value ? Number(editingBatch.value.plannedQuantity) : 0;
+  const maxQty = planned - assigned + currentBatch;
+  return Number.isFinite(maxQty) ? Math.max(maxQty, 0) : null;
 });
+
+const getOwnerName = (ownerId: string | null | undefined): string => {
+  if (!ownerId) return '-';
+  return userOptions.value.find((u) => u.id === ownerId)?.displayName ?? '-';
+};
+
+/** 实时选项：产品和负责人 */
+const productChoices = computed(() =>
+  buildLiveOptions(
+    productOptions.value,
+    orderForm.productId ? [orderForm.productId] : [],
+    (p) => p.id,
+  ),
+);
+const userChoices = computed(() =>
+  buildLiveOptions(
+    userOptions.value,
+    orderForm.workOrderOwnerId ? [orderForm.workOrderOwnerId] : [],
+    (u) => u.id,
+  ),
+);
+
+/* ====== 数据加载 ====== */
+const loadOptions = async () => {
+  try {
+    const [formOptions, userOpts] = await Promise.all([
+      productApi.productFormOptions(),
+      productApi.userOptions(),
+    ]);
+    productOptions.value = formOptions.products.map((p) => ({
+      id: p.id,
+      productName: p.productName,
+      itemCode: p.itemCode,
+    }));
+    routeOptions.value = formOptions.routes.map((r) => ({
+      id: r.id,
+      routeName: r.routeName,
+      version: r.versionNo,
+      productId: r.productId,
+    }));
+    userOptions.value = userOpts;
+  } catch {
+    productOptions.value = [];
+    routeOptions.value = [];
+    userOptions.value = [];
+  }
+};
 
 const loadOrders = async () => {
   loading.value = true;
   try {
-    // Demo data — simulated delay
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    const page = await productionApi.listOrders({
+      page: currentPage.value,
+      pageSize: pageSize.value,
+      keyword: query.keyword || undefined,
+      productId: query.productId || undefined,
+      status: (query.status || undefined) as WorkOrderStatus | undefined,
+    });
+    orders.value = page.items;
+    total.value = page.total;
     syncTaskOrderFromOrders();
+  } catch (error) {
+    EMessage.error(error, '工单查询失败');
   } finally {
     loading.value = false;
   }
 };
 
 const syncTaskOrderFromOrders = () => {
-  if (!taskOrder.value) {
-    return;
-  }
-  const latestOrder = orders.value.find((item) => item.id === taskOrder.value?.id);
-  if (latestOrder) {
-    taskOrder.value = latestOrder;
-  }
+  if (!taskOrder.value) return;
+  const latest = orders.value.find((item) => item.id === taskOrder.value?.id);
+  if (latest) taskOrder.value = latest;
 };
 
-// TODO(api-integration): 接通真实 API 分页查询后删除此占位函数
 const loadPageData = async () => {
   loading.value = true;
   try {
-    await loadOrders();
+    await Promise.all([loadOptions(), loadOrders()]);
   } finally {
     loading.value = false;
   }
@@ -942,27 +883,30 @@ const searchOrders = async () => {
   currentPage.value = 1;
   await loadOrders();
 };
-
 const resetQuery = async () => {
-  Object.assign(query, { keyword: '', productId: '', ownerId: '', status: '' });
+  query.keyword = '';
+  query.productId = '';
+  query.status = '';
   currentPage.value = 1;
   await loadOrders();
 };
-
 const handlePageSizeChange = async () => {
   currentPage.value = 1;
   await loadOrders();
 };
 
+/* ====== 工单 CRUD ====== */
 const resetOrderForm = () => {
   Object.assign(orderForm, {
-    orderNo: '',
+    workOrderNo: '',
     productId: '',
     plannedQuantity: 1,
-    externalOrderNo: '',
-    ownerId: '',
+    workOrderOwnerId: '',
+    customerName: '',
+    qualityLevel: '',
     planStartDate: '',
     planEndDate: '',
+    externalOrderNo: '',
     remark: '',
   });
 };
@@ -973,16 +917,18 @@ const openCreate = () => {
   orderDialogVisible.value = true;
 };
 
-const openEdit = (row: WorkOrderListItem) => {
+const openEdit = (row: WorkOrderItem) => {
   editingOrderId.value = row.id;
   Object.assign(orderForm, {
-    orderNo: row.orderNo,
+    workOrderNo: row.workOrderNo,
     productId: row.productId,
     plannedQuantity: Number(row.plannedQuantity),
+    workOrderOwnerId: row.workOrderOwnerId ?? '',
+    customerName: row.customerName ?? '',
+    qualityLevel: row.qualityLevel ?? '',
+    planStartDate: toDateInputValue(row.planStartDate),
+    planEndDate: toDateInputValue(row.planEndDate),
     externalOrderNo: row.externalOrderNo ?? '',
-    ownerId: row.ownerId ?? '',
-    planStartDate: row.planStartDate ?? '',
-    planEndDate: row.planEndDate ?? '',
     remark: row.remark ?? '',
   });
   orderDialogVisible.value = true;
@@ -990,95 +936,132 @@ const openEdit = (row: WorkOrderListItem) => {
 
 const handleOrderProductChange = () => {};
 
-const submitOrder = () => {
-  if (!orderForm.orderNo.trim() || !orderForm.productId || orderForm.plannedQuantity <= 0) {
+const submitOrder = async () => {
+  if (!orderForm.workOrderNo.trim() || !orderForm.productId || orderForm.plannedQuantity <= 0) {
     EMessage.warning('请填写工单号、产品和计划数量');
     return;
   }
-  EMessage.success(editingOrderId.value ? '工单已更新' : '工单已新增');
-  orderDialogVisible.value = false;
-  void loadOrders();
+  if (
+    hasUnavailableSelection(
+      productOptions.value,
+      orderForm.productId ? [orderForm.productId] : [],
+      (p) => p.id,
+    )
+  ) {
+    EMessage.warning('所选产品已失效，请重新选择');
+    return;
+  }
+  if (
+    hasUnavailableSelection(
+      userOptions.value,
+      orderForm.workOrderOwnerId ? [orderForm.workOrderOwnerId] : [],
+      (u) => u.id,
+    )
+  ) {
+    EMessage.warning('所选负责人已失效，请重新选择');
+    return;
+  }
+  submitting.value = true;
+  try {
+    const editId = editingOrderId.value;
+    if (editId) {
+      const order = orders.value.find((o) => o.id === editId);
+      await productionApi.updateOrder(editId, {
+        workOrderOwnerId: orderForm.workOrderOwnerId || null,
+        customerName: orderForm.customerName || null,
+        qualityLevel: orderForm.qualityLevel || null,
+        planStartDate: toDateInputValue(orderForm.planStartDate) || null,
+        planEndDate: toDateInputValue(orderForm.planEndDate) || null,
+        externalOrderNo: orderForm.externalOrderNo || null,
+        remark: orderForm.remark || null,
+        version: order?.version ?? 0,
+      });
+      EMessage.success('工单已更新');
+    } else {
+      await productionApi.createOrder({
+        workOrderNo: orderForm.workOrderNo.trim(),
+        productId: orderForm.productId,
+        plannedQuantity: orderForm.plannedQuantity,
+        workOrderOwnerId: orderForm.workOrderOwnerId || null,
+        customerName: orderForm.customerName || null,
+        qualityLevel: orderForm.qualityLevel || null,
+        planStartDate: toDateInputValue(orderForm.planStartDate) || null,
+        planEndDate: toDateInputValue(orderForm.planEndDate) || null,
+        externalOrderNo: orderForm.externalOrderNo || null,
+        remark: orderForm.remark || null,
+      });
+      EMessage.success('工单已新增');
+    }
+    orderDialogVisible.value = false;
+    await loadOrders();
+  } catch (error) {
+    EMessage.error(error, '工单保存失败');
+  } finally {
+    submitting.value = false;
+  }
 };
 
-const openDetail = (row: WorkOrderListItem) => {
-  const defaultRoute = getDefaultRouteForProduct(row.productId);
-  const batches: ProductionBatchItem[] = [
-    {
-      id: 'b1',
-      workOrderId: row.id,
-      batchNo: 'BATCH-001',
-      productId: row.productId,
-      productName: row.productName,
-      itemCode: row.itemCode,
-      routeId: defaultRoute?.id ?? null,
-      routeName: defaultRoute?.routeName ?? null,
-      plannedQuantity: '250',
-      ownerId: 'u1',
-      ownerName: '张工',
-      status: 'doing',
-      planStartDate: row.planStartDate,
-      planEndDate: row.planEndDate,
-      remark: null,
-    },
-    {
-      id: 'b2',
-      workOrderId: row.id,
-      batchNo: 'BATCH-002',
-      productId: row.productId,
-      productName: row.productName,
-      itemCode: row.itemCode,
-      routeId: defaultRoute?.id ?? null,
-      routeName: defaultRoute?.routeName ?? null,
-      plannedQuantity: '250',
-      ownerId: 'u2',
-      ownerName: '李工',
-      status: 'pending',
-      planStartDate: row.planStartDate,
-      planEndDate: row.planEndDate,
-      remark: null,
-    },
-  ];
-  activeOrder.value = { ...row, batches };
-  detailDialogVisible.value = true;
+const openDetail = async (row: WorkOrderItem) => {
+  try {
+    activeOrder.value = await productionApi.getOrder(row.id);
+    detailDialogVisible.value = true;
+  } catch (error) {
+    EMessage.error(error, '工单详情查询失败');
+  }
 };
 
-const openTasks = (row: WorkOrderListItem) => {
-  const defaultRoute = getDefaultRouteForProduct(row.productId);
+/* ====== 工单状态变更 ====== */
+const releaseOrder = (row: WorkOrderItem) => changeOrderStatus(row, 'release', '下达');
+const closeOrder = (row: WorkOrderItem) => changeOrderStatus(row, 'close', '关闭');
+const cancelOrder = (row: WorkOrderItem) => changeOrderStatus(row, 'cancel', '取消');
+
+const changeOrderStatus = async (
+  row: WorkOrderItem,
+  action: 'release' | 'close' | 'cancel',
+  label: string,
+) => {
+  try {
+    await ElMessageBox.confirm(`确认${label}该工单？`, `${label}工单`, {
+      confirmButtonText: `确认${label}`,
+      cancelButtonText: '取消',
+      type: action === 'cancel' ? 'warning' : 'info',
+    });
+  } catch {
+    return;
+  }
+  try {
+    await productionApi.changeOrderStatus(row.id, action, row.version);
+    EMessage.success(`工单已${label}`);
+    await loadOrders();
+  } catch (error) {
+    EMessage.error(error, `工单${label}失败`);
+  }
+};
+
+const canEditOrder = (row: WorkOrderItem) => row.status === 'draft' || row.status === 'released';
+const canCloseOrder = (row: WorkOrderItem) =>
+  row.status === 'released' || row.status === 'completed';
+const canCancelOrder = (row: WorkOrderItem) => ['draft', 'released', 'doing'].includes(row.status);
+
+/* ====== 批次管理 ====== */
+const openTasks = async (row: WorkOrderItem) => {
   taskOrder.value = row;
-  taskBatches.value = [
-    {
-      id: 'b1',
-      workOrderId: row.id,
-      batchNo: 'BATCH-001',
-      productId: row.productId,
-      productName: row.productName,
-      itemCode: row.itemCode,
-      routeId: defaultRoute?.id ?? null,
-      routeName: defaultRoute?.routeName ?? null,
-      plannedQuantity: '250',
-      ownerId: 'u1',
-      ownerName: '张工',
-      status: 'doing',
-      planStartDate: row.planStartDate,
-      planEndDate: row.planEndDate,
-      remark: null,
-    },
-  ];
-  taskDialogVisible.value = true;
+  try {
+    taskBatches.value = await productionApi.listOrderBatches(row.id);
+    taskDialogVisible.value = true;
+  } catch (error) {
+    EMessage.error(error, '生产批次查询失败');
+  }
 };
 
 const resetBatchForm = () => {
-  const maxQuantity = batchQuantityMax.value ?? 1;
   Object.assign(batchForm, {
     batchNo: '',
-    routeId: taskOrder.value
-      ? (getDefaultRouteForProduct(taskOrder.value.productId)?.id ?? '')
-      : '',
-    plannedQuantity: Math.min(1, Math.max(maxQuantity, 0.0001)),
-    ownerId: taskOrder.value?.ownerId ?? '',
-    status: 'pending' as ProductionBatchStatus,
-    planStartDate: taskOrder.value?.planStartDate ?? '',
-    planEndDate: taskOrder.value?.planEndDate ?? '',
+    routeId: '',
+    plannedQuantity: 1,
+    ownerId: '',
+    planStartDate: toDateInputValue(taskOrder.value?.planStartDate),
+    planEndDate: toDateInputValue(taskOrder.value?.planEndDate),
     remark: '',
   });
 };
@@ -1096,15 +1079,14 @@ const openEditBatch = (row: ProductionBatchItem) => {
     routeId: row.routeId ?? '',
     plannedQuantity: Number(row.plannedQuantity),
     ownerId: row.ownerId ?? '',
-    status: row.status,
-    planStartDate: row.planStartDate ?? '',
-    planEndDate: row.planEndDate ?? '',
+    planStartDate: toDateInputValue(row.planStartDate),
+    planEndDate: toDateInputValue(row.planEndDate),
     remark: row.remark ?? '',
   });
   batchFormDialogVisible.value = true;
 };
 
-const submitBatch = () => {
+const submitBatch = async () => {
   if (!taskOrder.value || batchForm.plannedQuantity <= 0) {
     EMessage.warning('请填写生产批次数量');
     return;
@@ -1113,49 +1095,63 @@ const submitBatch = () => {
     EMessage.warning('生产批次数量不能超过工单剩余可分配数量');
     return;
   }
-  EMessage.success(editingBatchId.value ? '生产批次已更新' : '生产批次已新增');
-  batchFormDialogVisible.value = false;
-  void loadOrders();
-};
-
-const releaseOrder = (row: WorkOrderListItem) => changeOrderStatus(row, 'released', '下达');
-const closeOrder = (row: WorkOrderListItem) => changeOrderStatus(row, 'closed', '关闭');
-const cancelOrder = (row: WorkOrderListItem) => changeOrderStatus(row, 'cancelled', '取消');
-
-const changeOrderStatus = async (
-  row: WorkOrderListItem,
-  status: WorkOrderStatus,
-  label: string,
-) => {
-  try {
-    await ElMessageBox.confirm(`确认${label}该工单？`, `${label}工单`, {
-      confirmButtonText: `确认${label}`,
-      cancelButtonText: '取消',
-      type: status === 'cancelled' ? 'warning' : 'info',
-    });
-  } catch {
+  if (
+    batchForm.planStartDate &&
+    batchForm.planEndDate &&
+    batchForm.planEndDate < batchForm.planStartDate
+  ) {
+    EMessage.warning('计划完成日期不能早于计划开始日期');
     return;
   }
-  EMessage.success(`工单已${label}`);
-  void loadOrders();
+  submitting.value = true;
+  try {
+    if (editingBatchId.value) {
+      const batch = taskBatches.value.find((b) => b.id === editingBatchId.value);
+      await productionApi.updateBatch(editingBatchId.value, {
+        ownerId: batchForm.ownerId || null,
+        planStartDate: toDateInputValue(batchForm.planStartDate) || null,
+        planEndDate: toDateInputValue(batchForm.planEndDate) || null,
+        remark: batchForm.remark || null,
+        version: batch?.version ?? 0,
+      });
+      EMessage.success('生产批次已更新');
+    } else {
+      await productionApi.createOrderBatch(taskOrder.value.id, {
+        batchNo: batchForm.batchNo || '',
+        routeId: batchForm.routeId || null,
+        plannedQuantity: batchForm.plannedQuantity,
+        ownerId: batchForm.ownerId || null,
+        planStartDate: toDateInputValue(batchForm.planStartDate) || null,
+        planEndDate: toDateInputValue(batchForm.planEndDate) || null,
+        remark: batchForm.remark || null,
+      });
+      EMessage.success('生产批次已新增');
+    }
+    batchFormDialogVisible.value = false;
+    taskBatches.value = await productionApi.listOrderBatches(taskOrder.value.id);
+    await loadOrders();
+  } catch (error) {
+    EMessage.error(error, '生产批次保存失败');
+  } finally {
+    submitting.value = false;
+  }
 };
 
-const canEditOrder = (row: WorkOrderListItem) => ['draft', 'released'].includes(row.status);
-const canCloseOrder = (row: WorkOrderListItem) => ['released', 'completed'].includes(row.status);
-const canCancelOrder = (row: WorkOrderListItem) =>
-  ['draft', 'released', 'doing'].includes(row.status);
+/* ====== 工具函数 ====== */
 const getOrderStatusMeta = (status: WorkOrderStatus) =>
   orderStatusOptions.find((item) => item.value === status) ?? orderStatusOptions[0];
 const getBatchStatusMeta = (status: ProductionBatchStatus) =>
   batchStatusOptions.find((item) => item.value === status) ?? batchStatusOptions[0];
-const formatProduct = (product: ProductListItem) => `${product.itemCode} / ${product.productName}`;
-
-const formatQuantity = (value: string | number | null) => {
+const formatProduct = (product: ProductOption) => `${product.itemCode} / ${product.productName}`;
+const formatQuantity = (value: string | number | null | undefined) => {
   const amount = Number(value ?? 0);
   return Number.isFinite(amount)
     ? amount.toLocaleString('zh-CN', { minimumFractionDigits: 0, maximumFractionDigits: 4 })
     : '-';
 };
+
+onMounted(loadPageData);
+onActivated(loadOptions);
 </script>
 
 <style scoped>
@@ -1170,22 +1166,18 @@ const formatQuantity = (value: string | number | null) => {
   border-radius: 8px;
   background: #ffffff;
 }
-
 .query-panel {
   padding: 20px 20px 4px;
 }
-
 .query-form {
   display: flex;
   align-items: flex-start;
   gap: 10px 22px;
 }
-
 .query-form :deep(.el-form-item) {
   margin-right: 0;
   margin-bottom: 16px;
 }
-
 .query-form :deep(.el-form-item__label) {
   height: 34px;
   padding-right: 8px;
@@ -1194,37 +1186,30 @@ const formatQuantity = (value: string | number | null) => {
   font-weight: 500;
   line-height: 34px;
 }
-
 .query-form :deep(.el-input),
 .query-form :deep(.el-select) {
   width: 180px;
 }
-
 .query-form :deep(.el-input__wrapper),
 .query-form :deep(.el-select__wrapper) {
   min-height: 34px;
   border-radius: 6px;
   box-shadow: 0 0 0 1px #e5e7eb inset;
 }
-
 .query-actions {
   margin-left: auto;
 }
-
 .query-actions :deep(.el-button) {
   min-width: 67px;
   height: 32px;
   border-radius: 6px;
 }
-
 .query-actions :deep(.el-button + .el-button) {
   margin-left: 12px;
 }
-
 .table-panel {
   overflow: hidden;
 }
-
 .table-toolbar,
 .task-toolbar {
   display: flex;
@@ -1234,18 +1219,15 @@ const formatQuantity = (value: string | number | null) => {
   padding: 0 16px;
   border-bottom: 1px solid #e5e7eb;
 }
-
 .table-toolbar :deep(.el-button) {
   height: 34px;
   border-radius: 6px;
 }
-
 .orders-table {
   width: 100%;
   color: #1f2937;
   font-size: 14px;
 }
-
 .orders-table :deep(.el-table__header th),
 .detail-table :deep(.el-table__header th) {
   height: 48px;
@@ -1253,22 +1235,18 @@ const formatQuantity = (value: string | number | null) => {
   color: #1f2937;
   font-weight: 600;
 }
-
 .orders-table :deep(.el-table__row),
 .detail-table :deep(.el-table__row) {
   height: 48px;
 }
-
 .orders-table :deep(.el-table__row:hover),
 .detail-table :deep(.el-table__row:hover) {
   background: #f3f4f6;
 }
-
 .orders-table :deep(.el-table__cell),
 .detail-table :deep(.el-table__cell) {
   border-bottom-color: #e5e7eb;
 }
-
 .orders-table :deep(.el-tag) {
   height: 22px;
   padding: 0 10px;
@@ -1278,50 +1256,45 @@ const formatQuantity = (value: string | number | null) => {
   font-weight: 500;
   line-height: 22px;
 }
-
 .orders-table :deep(.el-tag--success) {
   background: #dcfce7;
   color: #22c55e;
 }
-
 .orders-table :deep(.el-tag--info) {
   background: #f3f4f6;
   color: #6b7280;
 }
-
 .orders-table :deep(.el-tag--danger) {
   background: #fce8e8;
   color: #ef4444;
 }
-
 .orders-table :deep(.el-tag--warning) {
   background: #fef3c7;
   color: #f59e0b;
 }
-
+.orders-table :deep(.el-tag--primary) {
+  background: #e8f0fe;
+  color: #306188;
+}
 .orders-table :deep(.el-button.is-link) {
   padding: 0;
   font-weight: 500;
 }
-
 .order-no,
 .product-name {
   color: #1f2937;
   font-weight: 600;
 }
-
 .sub-text {
   margin-left: 8px;
   color: #6b7280;
   font-size: 12px;
 }
-
 .product-name + .sub-text {
   display: block;
   margin-left: 0;
   margin-top: 2px;
 }
-
 .table-footer {
   display: flex;
   align-items: center;
@@ -1330,26 +1303,21 @@ const formatQuantity = (value: string | number | null) => {
   height: 56px;
   padding: 0 16px;
 }
-
 .total-text {
   color: #6b7280;
   font-size: 14px;
 }
-
 .page-size-select {
   width: 78px;
 }
-
 .page-size-select :deep(.el-select__wrapper) {
   min-height: 30px;
   padding: 0 7px;
   border-radius: 6px;
 }
-
 .table-footer :deep(.el-pagination) {
   gap: 4px;
 }
-
 .table-footer :deep(.el-pager li),
 .table-footer :deep(.btn-prev),
 .table-footer :deep(.btn-next) {
@@ -1358,25 +1326,21 @@ const formatQuantity = (value: string | number | null) => {
   border: 1px solid #e5e7eb;
   border-radius: 6px;
 }
-
 .table-footer :deep(.el-pager li.is-active) {
   border-color: #306188;
   background: #306188;
   color: #ffffff;
 }
-
 .dialog-form {
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
-
 .form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0 20px;
 }
-
 .dialog-form :deep(.el-input),
 .dialog-form :deep(.el-select),
 .dialog-form :deep(.el-date-editor),
@@ -1384,31 +1348,31 @@ const formatQuantity = (value: string | number | null) => {
 .dialog-form :deep(.el-textarea) {
   width: 100%;
 }
-
 .dialog-form :deep(.el-input__wrapper),
 .dialog-form :deep(.el-select__wrapper) {
   border-radius: 6px;
   box-shadow: 0 0 0 1px #e5e7eb inset;
 }
-
 .dialog-form :deep(.el-button) {
   border-radius: 6px;
 }
-
 .dialog-section-title {
   margin: 20px 0 12px;
   color: #1f2937;
   font-size: 16px;
   font-weight: 600;
 }
-
+.empty-hint {
+  padding: 24px;
+  text-align: center;
+  color: #9ca3af;
+  font-size: 14px;
+}
 @media (max-width: 1120px) {
   .query-form,
   .form-grid {
-    display: grid;
     grid-template-columns: repeat(2, minmax(240px, 1fr));
   }
-
   .query-actions {
     margin-left: 0;
   }

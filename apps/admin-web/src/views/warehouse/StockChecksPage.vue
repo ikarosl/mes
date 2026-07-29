@@ -409,6 +409,19 @@ import {
   stockStatusLabel,
 } from '../../constants/business-status';
 
+/**
+ * TODO(warehouse-api): 盘点管理页面。当前使用静态演示数据。
+ * 后端盘点模块（stock_check_order/stock_check_detail/inventory_transaction）尚未迁移。
+ * 待后端实现以下接口后接入：
+ *   GET    /warehouse/stock-checks              — 分页列表
+ *   GET    /warehouse/stock-checks/:id          — 详情（含明细）
+ *   POST   /warehouse/stock-checks              — 创建
+ *   PATCH  /warehouse/stock-checks/:id          — 更新（录入实盘）
+ *   POST   /warehouse/stock-checks/:id/actions/complete — 完成盘点
+ *   POST   /warehouse/stock-checks/:id/actions/adjust   — 生成调整流水
+ *   POST   /warehouse/stock-checks/:id/actions/cancel   — 取消
+ * 参考 contracts: StockCheckStatus, StockCheckResult
+ */
 defineOptions({ name: 'StockChecksPage' });
 
 interface StockCheckItem {

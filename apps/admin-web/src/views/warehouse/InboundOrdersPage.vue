@@ -414,6 +414,18 @@ import {
   stockStatusLabel,
 } from '../../constants/business-status';
 
+/**
+ * TODO(warehouse-api): 入库管理页面。当前使用静态演示数据。
+ * 后端入库模块（inbound_order/inbound_detail/inventory_transaction）尚未迁移。
+ * 待后端实现以下接口后接入：
+ *   GET    /warehouse/inbound-orders          — 分页列表
+ *   GET    /warehouse/inbound-orders/:id      — 详情（含明细）
+ *   POST   /warehouse/inbound-orders          — 创建
+ *   POST   /warehouse/inbound-orders/:id/actions/confirm — 确认入库
+ *   POST   /warehouse/inbound-orders/:id/actions/cancel  — 取消
+ * 参考 contracts: InboundOrderStatus, InventorySourceType, StockStatus
+ * 参考 api/warehouse.ts: warehouseApi 注释定义
+ */
 defineOptions({ name: 'InboundOrdersPage' });
 
 interface InboundOrderItem {

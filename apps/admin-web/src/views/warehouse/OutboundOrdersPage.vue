@@ -428,6 +428,17 @@ import {
   stockStatusLabels,
 } from '../../constants/business-status';
 
+/**
+ * TODO(warehouse-api): 出库管理页面。当前使用静态演示数据。
+ * 后端出库模块（outbound_order/outbound_detail/inventory_transaction）尚未迁移。
+ * 待后端实现以下接口后接入：
+ *   GET    /warehouse/outbound-orders          — 分页列表
+ *   GET    /warehouse/outbound-orders/:id      — 详情（含明细）
+ *   POST   /warehouse/outbound-orders          — 创建（需关联分配行）
+ *   POST   /warehouse/outbound-orders/:id/actions/confirm — 确认出库
+ *   POST   /warehouse/outbound-orders/:id/actions/cancel  — 取消
+ * 参考 contracts: OutboundOrderStatus
+ */
 defineOptions({ name: 'OutboundOrdersPage' });
 
 interface OutboundOrderItem {

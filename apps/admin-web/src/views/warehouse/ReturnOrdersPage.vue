@@ -305,6 +305,18 @@ import { EMessage } from '../../utils/message';
 import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
 import { returnOrderStatusLabel, returnOrderStatusLabels } from '../../constants/business-status';
 
+/**
+ * TODO(warehouse-api): 退料管理页面。当前使用静态演示数据。
+ * 后端退料模块（return_order/return_detail/inventory_transaction）尚未迁移。
+ * 待后端实现以下接口后接入：
+ *   GET    /warehouse/return-orders           — 分页列表
+ *   GET    /warehouse/return-orders/:id       — 详情（含明细）
+ *   POST   /warehouse/return-orders           — 创建
+ *   POST   /warehouse/return-orders/:id/actions/confirm-inbound — 退料入库
+ *   POST   /warehouse/return-orders/:id/actions/confirm-scrap   — 退料报废
+ *   POST   /warehouse/return-orders/:id/actions/cancel          — 取消
+ * 参考 contracts: ReturnOrderStatus
+ */
 defineOptions({ name: 'ReturnOrdersPage' });
 
 interface ReturnOrderItem {
