@@ -293,6 +293,7 @@ export class MysqlProcessRouteRepository implements ProcessRouteRepository {
           sopFileId: string | null;
           sopFileName: string | null;
           sopObjectKey: string | null;
+          sopVersionNo: string | null;
         }
       > = [];
       for (const item of items) {
@@ -335,6 +336,7 @@ export class MysqlProcessRouteRepository implements ProcessRouteRepository {
           sopFileId: resolvedSopFileId,
           sopFileName: sop?.file_name ?? null,
           sopObjectKey: sop?.object_key ?? null,
+          sopVersionNo: sop?.version_no ?? null,
         });
       }
       const existingIds = before.map((item) => item.id);
@@ -349,11 +351,11 @@ export class MysqlProcessRouteRepository implements ProcessRouteRepository {
       );
       for (const item of snapshots) {
         await connection.execute(
-          `INSERT INTO process_route_steps (route_id,process_step_id,step_order,step_code_snapshot,step_name_snapshot,description_snapshot,default_owner_id,sop_file_id,sop_file_name_snapshot,sop_object_key_snapshot,need_inspection,need_record,status,remark,created_by,updated_by)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+          `INSERT INTO process_route_steps (route_id,process_step_id,step_order,step_code_snapshot,step_name_snapshot,description_snapshot,default_owner_id,sop_file_id,sop_file_name_snapshot,sop_object_key_snapshot,sop_version_no_snapshot,need_inspection,need_record,status,remark,created_by,updated_by)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
            ON DUPLICATE KEY UPDATE process_step_id=VALUES(process_step_id),step_code_snapshot=VALUES(step_code_snapshot),step_name_snapshot=VALUES(step_name_snapshot),
              description_snapshot=VALUES(description_snapshot),default_owner_id=VALUES(default_owner_id),sop_file_id=VALUES(sop_file_id),
-             sop_file_name_snapshot=VALUES(sop_file_name_snapshot),sop_object_key_snapshot=VALUES(sop_object_key_snapshot),need_inspection=VALUES(need_inspection),
+             sop_file_name_snapshot=VALUES(sop_file_name_snapshot),sop_object_key_snapshot=VALUES(sop_object_key_snapshot),sop_version_no_snapshot=VALUES(sop_version_no_snapshot),need_inspection=VALUES(need_inspection),
              need_record=VALUES(need_record),status=VALUES(status),remark=VALUES(remark),updated_by=VALUES(updated_by),is_deleted=0,deleted_by=NULL,deleted_at=NULL`,
           [
             routeId,
@@ -366,6 +368,7 @@ export class MysqlProcessRouteRepository implements ProcessRouteRepository {
             item.sopFileId,
             item.sopFileName,
             item.sopObjectKey,
+            item.sopVersionNo,
             Number(item.needInspection),
             Number(item.needRecord),
             item.status ?? 1,

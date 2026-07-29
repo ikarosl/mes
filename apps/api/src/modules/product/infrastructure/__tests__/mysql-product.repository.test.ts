@@ -268,7 +268,10 @@ describe('MySQL product adapters workflow transactions', () => {
         ],
         [],
       ])
-      .mockResolvedValueOnce([[{ file_name: 'cut.pdf', object_key: 'sop/cut.pdf' }], []])
+      .mockResolvedValueOnce([
+        [{ file_name: 'cut.pdf', object_key: 'sop/cut.pdf', version_no: 'V2' }],
+        [],
+      ])
       .mockResolvedValueOnce([[{ id: 41 }], []]);
     connection.execute.mockResolvedValue([{ affectedRows: 1 }, []]);
     const repository = new MysqlProcessRouteRepository({
@@ -291,6 +294,8 @@ describe('MySQL product adapters workflow transactions', () => {
     );
 
     expect(String(connection.query.mock.calls[3]?.[0])).toContain('FOR UPDATE');
+    expect(String(connection.execute.mock.calls[1]?.[0])).toContain('sop_version_no_snapshot');
+    expect(connection.execute.mock.calls[1]?.[1]).toContain('V2');
     expect(connection.commit).toHaveBeenCalledOnce();
   });
 

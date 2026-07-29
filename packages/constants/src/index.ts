@@ -1,6 +1,7 @@
 export const PERMISSIONS = {
   dashboard: { view: 'dashboard:view' },
   system: {
+    view: 'system:view',
     users: {
       view: 'system:user:view',
       create: 'system:user:create',

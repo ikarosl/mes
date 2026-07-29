@@ -40,4 +40,4 @@
 
 现有 `departments`、`users`、`roles`、`permissions`、`user_roles`、`role_permissions`、`refresh_tokens` 和 `operation_logs` 已满足业务数据结构，无需新增业务表。迁移 `202607220001-system-module-permissions` 仅追加“重置用户密码”和“删除角色”两个权限点；既有迁移保持不变。
 
-当前 `operation_logs` 表未持久化请求 ID、HTTP 方法、路由、状态码和耗时，因此接口为这些展示字段返回 `null`，请求 ID 筛选在当前结构下返回空结果。后续如需这些字段，必须另行追加迁移，不能修改已执行迁移。
+202607280001-operation-log-request-context 已为 `operation_logs` 追加 `request_id`、`http_method`、`route`、`http_status`、`duration_ms`、`user_agent` 和 `error_code` 字段，并建立了 `idx_operation_logs_request_id` 索引。接口可直接返回这些字段，请求 ID 筛选功能正常。后续若再新增字段，必须追加新的迁移，不能修改已执行迁移。

@@ -7,9 +7,11 @@ type Db = Pool | PoolConnection;
 export const lockTechnicalFileSnapshot = async (
   db: Db,
   fileId: string,
-): Promise<{ file_name: string; object_key: string }> => {
-  const [[file]] = await db.query<(RowDataPacket & { file_name: string; object_key: string })[]>(
-    `SELECT file_name,object_key FROM technical_files
+): Promise<{ file_name: string; object_key: string; version_no: string }> => {
+  const [[file]] = await db.query<
+    (RowDataPacket & { file_name: string; object_key: string; version_no: string })[]
+  >(
+    `SELECT file_name,object_key,version_no FROM technical_files
       WHERE id=? AND file_type='sop' AND is_deleted=0 AND status=1 FOR UPDATE`,
     [fileId],
   );

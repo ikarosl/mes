@@ -74,7 +74,7 @@ describe('MysqlProductSnapshotRepository', () => {
             sop_file_id: 6,
             sop_file_name_snapshot: 'cut.pdf',
             sop_object_key_snapshot: 'sop/cut.pdf',
-            sop_version_no: 'V2',
+            sop_version_no_snapshot: 'V2',
             sop_status: 1,
             sop_is_deleted: 0,
             need_inspection: 0,
@@ -94,6 +94,8 @@ describe('MysqlProductSnapshotRepository', () => {
         },
       ],
     });
+    expect(String(connection.query.mock.calls[2]?.[0])).toContain('rs.sop_version_no_snapshot');
+    expect(String(connection.query.mock.calls[2]?.[0])).not.toContain('tf.version_no');
     expect(connection.commit).toHaveBeenCalledOnce();
   });
 });

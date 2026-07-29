@@ -27,4 +27,16 @@ describe('system permission migration', () => {
     expect(sql).toContain("'system:role:delete'");
     expect(sql).not.toContain("'product:");
   });
+
+  it('groups system permissions beneath the system module menu', async () => {
+    const sql = await readFile(
+      resolve(migrationsDir, '202607290001-system-permission-hierarchy.up.sql'),
+      'utf8',
+    );
+
+    expect(sql).toContain("'system:view'");
+    expect(sql).toContain('type, route_path, api_method, api_path, sort_order, status');
+    expect(sql).toContain('child.parent_id = parent.id');
+    expect(sql).toContain("child.code LIKE 'system:%'");
+  });
 });

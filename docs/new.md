@@ -281,6 +281,7 @@
 | `sop_file_id`             | `BIGINT UNSIGNED` | 本路线步骤使用的 SOP，可为空 |
 | `sop_file_name_snapshot`  | `VARCHAR(255)`    | SOP 名称快照                 |
 | `sop_object_key_snapshot` | `VARCHAR(500)`    | SOP 对象键快照               |
+| `sop_version_no_snapshot` | `VARCHAR(64)`     | SOP 版本号快照               |
 | `need_inspection`         | `TINYINT`         | 是否要求检验，默认 `0`       |
 | `need_record`             | `TINYINT`         | 是否要求报工，默认 `1`       |
 | `status`                  | `TINYINT`         | `1` 启用、`0` 停用           |
@@ -1752,6 +1753,7 @@ inventory_transaction
 | `sop_file_id_snapshot`     | `BIGINT UNSIGNED` | 执行时 SOP 文件 ID，可为空                              |
 | `sop_file_name_snapshot`   | `VARCHAR(255)`    | SOP 文件名快照                                          |
 | `sop_object_key_snapshot`  | `VARCHAR(500)`    | SOP 对象键快照                                          |
+| `sop_version_no_snapshot`  | `VARCHAR(64)`     | SOP 版本号快照                                          |
 | `responsible_user_id`      | `BIGINT UNSIGNED` | 当前负责人，可为空                                      |
 | `need_record_snapshot`     | `TINYINT`         | 创建时冻结的必须报工标志，默认 `1`                      |
 | `need_inspection_snapshot` | `TINYINT`         | 创建时冻结的必须检验标志，默认 `0`                      |
@@ -1919,4 +1921,4 @@ production_batches
 
 每一步必须使用新的不可变迁移文件。已执行迁移不得修改；循环依赖的外键在两侧表都创建后通过后续迁移追加。
 
-当前新项目只完成第 1、2 步。本文档的其余表是后续模块迁移基准，不代表对应业务代码或数据库迁移已经完成。
+历史 migration 完成状态：第 1～2 步由首批 migration 完成；202607230001-product-master-data 合并实施了第 3～7 步（含 products.default_route_id 外键）。后续新表只能追加新的 migration 文件。

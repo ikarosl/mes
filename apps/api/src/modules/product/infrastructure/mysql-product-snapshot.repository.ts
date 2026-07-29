@@ -36,7 +36,7 @@ type RouteStepRow = RowDataPacket & {
   sop_file_id: number | null;
   sop_file_name_snapshot: string | null;
   sop_object_key_snapshot: string | null;
-  sop_version_no: string | null;
+  sop_version_no_snapshot: string | null;
   sop_status: number | null;
   sop_is_deleted: number | null;
   need_inspection: number;
@@ -109,7 +109,7 @@ export class MysqlProductSnapshotRepository implements ProductSnapshotRepository
       const [steps] = await connection.query<RouteStepRow[]>(
         `SELECT rs.id route_step_id,rs.step_order,rs.process_step_id,rs.step_code_snapshot,rs.step_name_snapshot,
                 rs.description_snapshot,rs.default_owner_id,rs.sop_file_id,rs.sop_file_name_snapshot,
-                rs.sop_object_key_snapshot,tf.version_no sop_version_no,tf.status sop_status,
+                rs.sop_object_key_snapshot,rs.sop_version_no_snapshot,tf.status sop_status,
                 tf.is_deleted sop_is_deleted,rs.need_inspection,rs.need_record
          FROM process_route_steps rs
          LEFT JOIN technical_files tf ON tf.id=rs.sop_file_id AND tf.file_type='sop'
@@ -125,7 +125,7 @@ export class MysqlProductSnapshotRepository implements ProductSnapshotRepository
             step.sop_file_id !== null &&
             (!step.sop_file_name_snapshot ||
               !step.sop_object_key_snapshot ||
-              !step.sop_version_no ||
+              !step.sop_version_no_snapshot ||
               step.sop_status !== 1 ||
               step.sop_is_deleted !== 0),
         )
@@ -153,7 +153,7 @@ export class MysqlProductSnapshotRepository implements ProductSnapshotRepository
                   id: String(step.sop_file_id),
                   fileName: step.sop_file_name_snapshot!,
                   objectKey: step.sop_object_key_snapshot!,
-                  versionNo: step.sop_version_no!,
+                  versionNo: step.sop_version_no_snapshot!,
                 },
           needInspection: Boolean(step.need_inspection),
           needRecord: Boolean(step.need_record),
