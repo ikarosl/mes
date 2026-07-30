@@ -1,9 +1,9 @@
-# Command Context and Request IDs
+# 命令上下文与请求 ID
 
-Every HTTP command receives a `CommandContext` with `actorId`, `requestId`, `ip`, `userAgent`, and optional `idempotencyKey`. The request-context middleware accepts only a valid `X-Request-Id`; otherwise it generates a UUID and writes it to both the request and response. User-Agent is bounded to the database limit before it enters a transactional audit.
+每个 HTTP 命令接收一个 `CommandContext`，包含 `actorId`、`requestId`、`ip`、`userAgent` 以及可选的 `idempotencyKey`。请求上下文中间件接受有效的 `X-Request-Id`；若不存在则生成一个 UUID，并将其写入请求和响应。User-Agent 在进入事务审计前会截断至数据库字段长度限制。
 
-Confirmation commands use the `Idempotency-Key` HTTP header as their only idempotency-key representation. The body must not duplicate it.
+确认类命令使用 `Idempotency-Key` HTTP 头作为其唯一的幂等键表示。请求体中不得重复携带。
 
-Business write audits persist the request ID in the same transaction as the business write. Generic request, failure, and security-denial logs are best-effort and must never include passwords, tokens, cookies, signatures, credentials, or raw request bodies.
+业务写操作的审计日志在同一个事务中将请求 ID 与业务写入一并持久化。通用请求、失败和安全拒绝日志为尽力而为（best-effort），且绝不能包含密码、令牌、Cookie、签名、凭证或原始请求体。
 
-`operation_logs.request_id` is nullable for historical compatibility and indexed for investigation. It can be queried through the existing operation-log request-ID filter.
+`operation_logs.request_id` 可为空以兼容历史数据，并已建立索引用于调查。可通过现有的操作日志请求 ID 筛选器进行查询。

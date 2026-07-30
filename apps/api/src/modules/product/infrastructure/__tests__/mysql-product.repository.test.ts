@@ -5,6 +5,37 @@ import { MysqlProductCatalogRepository } from '../mysql-product-catalog.reposito
 import { MysqlTechnicalFileRepository } from '../mysql-technical-file.repository.js';
 
 describe('MySQL product adapters workflow transactions', () => {
+  it('includes the configured default route in product form options', async () => {
+    const query = vi.fn().mockResolvedValue([
+      [
+        {
+          id: 9,
+          item_code: 'FG-1',
+          product_name: '成品',
+          item_kind: 'finished_product',
+          acquire_method: 'self_made',
+          unit: 'pcs',
+          default_route_id: 15,
+        },
+      ],
+      [],
+    ]);
+    const repository = new MysqlProductCatalogRepository({ query } as never);
+
+    await expect(repository.listProductOptions()).resolves.toEqual([
+      {
+        id: '9',
+        itemCode: 'FG-1',
+        productName: '成品',
+        itemKind: 'finished_product',
+        acquireMethod: 'self_made',
+        unit: 'pcs',
+        defaultRouteId: '15',
+      },
+    ]);
+    expect(String(query.mock.calls[0]?.[0])).toContain('p.default_route_id');
+  });
+
   it('returns a stable server-paginated route list', async () => {
     const query = vi
       .fn()

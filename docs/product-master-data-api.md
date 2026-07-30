@@ -13,7 +13,7 @@
 | 标准工序 | `product-processes`      | `/product/processes`      | `product:processes:view`  |
 | 工艺路线 | `product-process-routes` | `/product/process-routes` | `product:routes:view`     |
 
-按钮权限集中定义在 `@company/constants`，写接口全部由后端 `RequirePermission` 再次校验。关键权限包括 `product:products:manage-bom`、`product:products:set-default-route`、`product:processes:upload-sop` 和 `product:routes:manage-steps`。
+前端统一使用表中的页面权限控制菜单、路由和整页入口，不对页面内操作按钮做细粒度权限隐藏。写接口权限编码集中定义在 `@company/constants`，并由后端 `RequirePermission` 对每个接口独立校验。关键写权限包括 `product:products:manage-bom`、`product:products:set-default-route`、`product:processes:upload-sop` 和 `product:routes:manage-steps`。
 
 ## 3. HTTP 接口
 

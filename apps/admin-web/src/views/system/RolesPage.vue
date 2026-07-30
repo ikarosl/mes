@@ -130,7 +130,7 @@
           label="更新时间"
           min-width="170"
         >
-          <template #default="{ row }">{{ row.updatedAt ?? '-' }}</template>
+          <template #default="{ row }">{{ formatDateTimeForDisplay(row.updatedAt) }}</template>
         </el-table-column>
         <el-table-column
           label="操作"
@@ -223,6 +223,7 @@ import { EMessage } from '../../utils/message';
 import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
 import { systemApi } from '../../api/system';
 import { useAuthStore } from '../../stores/auth';
+import { formatDateTimeForDisplay } from '../../utils/date';
 import { useSystemRoles } from './composables/useSystemRoles';
 import RoleFormDialog from './components/RoleFormDialog.vue';
 import type { RoleFormValue } from './components/RoleFormDialog.vue';

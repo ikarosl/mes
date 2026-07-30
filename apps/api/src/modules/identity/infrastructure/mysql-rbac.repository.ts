@@ -153,6 +153,18 @@ export class MysqlRbacRepository implements RbacRepository {
     return rows.map((row) => ({ id: String(row.id), displayName: row.display_name }));
   }
 
+  async listUserReferencesByIds(ids: string[]): Promise<UserOption[]> {
+    if (ids.length === 0) return [];
+    const placeholders = ids.map(() => '?').join(',');
+    const [rows] = await this.pool.query<(RowDataPacket & { id: number; display_name: string })[]>(
+      `SELECT id,display_name FROM users
+       WHERE id IN (${placeholders})
+       ORDER BY id`,
+      ids,
+    );
+    return rows.map((row) => ({ id: String(row.id), displayName: row.display_name }));
+  }
+
   async createUser(
     payload: CreateSystemUserPayload,
     passwordHash: string,

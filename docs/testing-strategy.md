@@ -5,8 +5,8 @@
 - Unit：领域规则、状态机、数量计算、权限判断；不连接数据库。
 - Integration：Repository、事务、迁移、MySQL 约束、Redis/Storage adapter；使用真实容器依赖。
 - API：NestJS HTTP、DTO 校验、错误码、鉴权、幂等和 OpenAPI 契约。
-- Component：Vue 页面组件、Modal 表单、权限按钮、状态标签和 composable。
-- E2E：少量核心旅程，例如登录、建档、工单到批次、物料分配、报工、检验返工。
+- Component：Vue 页面组件、Modal 表单、页面权限入口、业务状态按钮、状态标签和 composable。前端权限测试覆盖菜单、路由和整页入口，不要求逐个验证操作按钮的权限隐藏；写接口权限由后端 API 测试覆盖。
+- E2E：只覆盖跨 UI、API 和独立测试数据库的少量核心旅程，例如登录、建档、工单到批次、物料分配、报工、检验返工；页面能否渲染属于 Component/Smoke，不作为 E2E。
 - Performance：查询和关键写路径容量基线；按发布或定时任务执行。
 
 ## 目录约定
@@ -29,7 +29,15 @@
 7. integration/API tests
 8. 依赖与秘密扫描
 
-主干或发布候选额外运行 E2E、镜像构建、镜像扫描和升级迁移测试。
+## Production MySQL 持久化集成测试
+
+根级 Integration 测试由 `typecheck:integration` 纳入 `pnpm verify`；即使运行时依赖未启动，也必须通过静态类型检查。
+
+Production 的事务、并发建批、物料需求快照和幂等键需要在真实 MySQL 中验证。该测试直接调用 Repository 和真实 MySQL，不经过浏览器，因此属于 Integration，不属于 E2E。启动专用测试 MySQL 并设置 `RUN_MYSQL_INTEGRATION=1` 后，执行 `pnpm test:production:mysql`；该命令会先检查显式开关，随后才构建 database 包并应用当前 migration，再运行 `tests/integration/production` 下的测试。未设置开关时，专用命令会在任何数据库操作前失败；IDE 或普通测试发现该文件时则将其跳过，避免误迁移 `.env` 指向的数据库。
+
+## E2E 启用条件
+
+当前阶段不保留 admin-web 子包内基于 CSS 结构和空页面渲染的 Playwright 测试，也不把 E2E 纳入 `pnpm verify`。只有在具备独立测试数据库、稳定数据准备/清理机制，以及至少一条完整业务旅程时，才在根目录 `tests/e2e` 增加 Playwright 配置和测试。主干或发布候选届时额外运行 E2E、镜像构建、镜像扫描和升级迁移测试。
 
 ## 最低策略
 

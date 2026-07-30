@@ -21,6 +21,10 @@ const allowedTables = new Set([
   'product_materials',
   'process_route_steps',
   'route_step_materials',
+  'work_orders',
+  'production_batches',
+  'batch_step_records',
+  'production_item_demand',
 ]);
 const forbiddenModels = [
   'item_type',

@@ -23,6 +23,7 @@ export abstract class RbacRepository {
   abstract listRoleOptions(): Promise<IdentityRoleOption[]>;
   abstract listActiveUserOptions(): Promise<UserOption[]>;
   abstract listActiveUserOptionsByIds(ids: string[]): Promise<UserOption[]>;
+  abstract listUserReferencesByIds(ids: string[]): Promise<UserOption[]>;
   abstract createUser(
     payload: CreateSystemUserPayload,
     passwordHash: string,

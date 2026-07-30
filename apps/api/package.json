@@ -16,6 +16,7 @@
     "@company/constants": "workspace:*",
     "@company/contracts": "workspace:*",
     "@company/database": "workspace:*",
+    "@company/code-rules": "workspace:*",
     "@nestjs/common": "catalog:",
     "@nestjs/core": "catalog:",
     "@nestjs/platform-express": "catalog:",

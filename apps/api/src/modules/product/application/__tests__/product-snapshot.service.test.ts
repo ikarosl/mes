@@ -20,4 +20,15 @@ describe('ProductSnapshotService', () => {
     await expect(service.getProductionProduct('1')).resolves.toEqual(product);
     expect(repository.getProductionProduct).toHaveBeenCalledWith('1');
   });
+
+  it('delegates production route snapshots with the work-order product boundary', async () => {
+    const repository = {
+      getProductionRouteSnapshot: vi.fn().mockResolvedValue(null),
+    };
+    const service = new ProductSnapshotService(repository as never);
+
+    await expect(service.getProductionRouteSnapshot('1', null)).resolves.toBeNull();
+
+    expect(repository.getProductionRouteSnapshot).toHaveBeenCalledWith('1', null);
+  });
 });

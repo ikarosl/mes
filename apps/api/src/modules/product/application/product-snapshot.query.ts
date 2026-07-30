@@ -44,9 +44,21 @@ export interface ProcessRouteSnapshot {
   steps: ProcessRouteStepSnapshot[];
 }
 
+export interface EnabledSopFileSnapshot {
+  id: string;
+  fileName: string;
+  objectKey: string;
+  versionNo: string;
+}
+
 /** Public read boundary for future production orchestration. */
 export abstract class ProductSnapshotQuery {
   abstract getProductionProduct(productId: string): Promise<ProductionProductSnapshot>;
+  abstract getProductionRouteSnapshot(
+    productId: string,
+    requestedRouteId: string | null,
+  ): Promise<ProcessRouteSnapshot | null>;
   abstract getBomSnapshot(productId: string): Promise<ProductBomSnapshot>;
   abstract getRouteSnapshot(routeId: string): Promise<ProcessRouteSnapshot>;
+  abstract getEnabledSopFileSnapshot(fileId: string): Promise<EnabledSopFileSnapshot>;
 }

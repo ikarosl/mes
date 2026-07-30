@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import {
   ProductSnapshotQuery,
   type ProcessRouteSnapshot,
+  type EnabledSopFileSnapshot,
   type ProductBomSnapshot,
   type ProductionProductSnapshot,
 } from './product-snapshot.query.js';
@@ -16,10 +17,19 @@ export class ProductSnapshotService extends ProductSnapshotQuery {
   getProductionProduct(productId: string): Promise<ProductionProductSnapshot> {
     return this.snapshots.getProductionProduct(productId);
   }
+  getProductionRouteSnapshot(
+    productId: string,
+    requestedRouteId: string | null,
+  ): Promise<ProcessRouteSnapshot | null> {
+    return this.snapshots.getProductionRouteSnapshot(productId, requestedRouteId);
+  }
   getBomSnapshot(productId: string): Promise<ProductBomSnapshot> {
     return this.snapshots.getBomSnapshot(productId);
   }
   getRouteSnapshot(routeId: string): Promise<ProcessRouteSnapshot> {
     return this.snapshots.getRouteSnapshot(routeId);
+  }
+  getEnabledSopFileSnapshot(fileId: string): Promise<EnabledSopFileSnapshot> {
+    return this.snapshots.getEnabledSopFileSnapshot(fileId);
   }
 }

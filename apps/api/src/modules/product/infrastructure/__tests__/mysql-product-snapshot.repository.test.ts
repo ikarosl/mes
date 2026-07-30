@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { withTransaction } from '@company/database';
 import { ProductDomainError } from '../../domain/product.errors.js';
 import { MysqlProductSnapshotRepository } from '../mysql-product-snapshot.repository.js';
 
@@ -29,6 +30,19 @@ describe('MysqlProductSnapshotRepository', () => {
     await expect(repository.getBomSnapshot('9')).resolves.toMatchObject({
       lines: [{ productMaterialId: '31', materialProductId: '21' }],
     });
+    expect(connection.commit).toHaveBeenCalledOnce();
+  });
+
+  it('joins an outer transaction and locks the current product used for a release snapshot', async () => {
+    const connection = transactionConnection();
+    const pool = { getConnection: vi.fn().mockResolvedValue(connection) };
+    connection.query.mockResolvedValueOnce([[productRow], []]);
+    const repository = new MysqlProductSnapshotRepository(pool as never);
+
+    await withTransaction(pool as never, async () => repository.getProductionProduct('9'));
+
+    expect(pool.getConnection).toHaveBeenCalledOnce();
+    expect(String(connection.query.mock.calls[0]?.[0])).toContain('FOR UPDATE');
     expect(connection.commit).toHaveBeenCalledOnce();
   });
 
@@ -96,6 +110,52 @@ describe('MysqlProductSnapshotRepository', () => {
     });
     expect(String(connection.query.mock.calls[2]?.[0])).toContain('rs.sop_version_no_snapshot');
     expect(String(connection.query.mock.calls[2]?.[0])).not.toContain('tf.version_no');
+    expect(connection.commit).toHaveBeenCalledOnce();
+  });
+
+  it('joins the batch-creation transaction and locks the selected route configuration', async () => {
+    const connection = transactionConnection();
+    const pool = { getConnection: vi.fn().mockResolvedValue(connection) };
+    connection.query
+      .mockResolvedValueOnce([[productRow], []])
+      .mockResolvedValueOnce([
+        [{ id: 15, route_code: 'R-1', route_name: 'Route', version_no: 'V1', product_id: 9 }],
+        [],
+      ])
+      .mockResolvedValueOnce([[productRow], []])
+      .mockResolvedValueOnce([
+        [
+          {
+            route_step_id: 41,
+            step_order: 1,
+            process_step_id: 7,
+            step_code_snapshot: 'CUT',
+            step_name_snapshot: 'Cut',
+            description_snapshot: null,
+            default_owner_id: null,
+            sop_file_id: null,
+            sop_file_name_snapshot: null,
+            sop_object_key_snapshot: null,
+            sop_version_no_snapshot: null,
+            sop_status: null,
+            sop_is_deleted: null,
+            need_inspection: 0,
+            need_record: 1,
+          },
+        ],
+        [],
+      ]);
+    const repository = new MysqlProductSnapshotRepository(pool as never);
+
+    await withTransaction(pool as never, async () =>
+      repository.getProductionRouteSnapshot('9', '15'),
+    );
+
+    expect(pool.getConnection).toHaveBeenCalledOnce();
+    expect(String(connection.query.mock.calls[0]?.[0])).toContain('FOR UPDATE');
+    expect(String(connection.query.mock.calls[1]?.[0])).toContain('FOR UPDATE');
+    expect(String(connection.query.mock.calls[3]?.[0])).toContain('FOR UPDATE');
+    expect(connection.query.mock.calls[1]?.[1]).toEqual(['15', '9']);
     expect(connection.commit).toHaveBeenCalledOnce();
   });
 });

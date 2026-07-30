@@ -1,8 +1,11 @@
 import { createPool, type Pool, type PoolConnection } from 'mysql2/promise';
+import { AsyncLocalStorage } from 'node:async_hooks';
 
 export type DatabasePool = Pool;
 export type DatabaseConnection = PoolConnection;
 export const DATABASE_TIME_ZONE = '+08:00';
+
+const transactionContext = new AsyncLocalStorage<{ pool: Pool; connection: PoolConnection }>();
 
 export const initializeDatabaseConnection = (connection: Pick<PoolConnection, 'query'>) =>
   connection.query(`SET time_zone = '${DATABASE_TIME_ZONE}'`);
@@ -30,10 +33,13 @@ export const withTransaction = async <T>(
   pool: Pool,
   work: (connection: PoolConnection) => Promise<T>,
 ) => {
+  const active = transactionContext.getStore();
+  if (active?.pool === pool) return work(active.connection);
+
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();
-    const result = await work(connection);
+    const result = await transactionContext.run({ pool, connection }, () => work(connection));
     await connection.commit();
     return result;
   } catch (error) {

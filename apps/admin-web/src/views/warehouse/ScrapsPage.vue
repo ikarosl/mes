@@ -307,6 +307,17 @@ import {
   scrapStatusLabels,
 } from '../../constants/business-status';
 
+/**
+ * TODO(warehouse-api): 报废管理页面。当前使用静态演示数据。
+ * 后端报废模块（item_scrap/inventory_transaction）尚未迁移。
+ * 待后端实现以下接口后接入：
+ *   GET    /warehouse/scraps              — 分页列表
+ *   GET    /warehouse/scraps/:id          — 详情
+ *   POST   /warehouse/scraps              — 创建
+ *   POST   /warehouse/scraps/:id/actions/confirm — 确认报废
+ *   POST   /warehouse/scraps/:id/actions/cancel  — 取消
+ * 参考 contracts: ScrapStatus, ScrapScene
+ */
 defineOptions({ name: 'ScrapsPage' });
 
 interface ScrapItem {

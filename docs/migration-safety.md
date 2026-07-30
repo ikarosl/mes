@@ -1,5 +1,5 @@
-# Migration Safety
+# 迁移安全
 
-The migration runner takes the MySQL advisory lock `company_mes_migration` on one dedicated connection before reading checksums or applying SQL. It releases the lock in `finally`, including when a migration fails. Each migration is recorded only after its SQL succeeds.
+迁移运行器在专用连接上获取 MySQL 建议锁 `company_mes_migration`，然后读取校验和或执行 SQL。锁在 `finally` 块中释放，即使迁移失败也不例外。每条迁移只有在 SQL 执行成功后才会被记录。
 
-Migrations remain append-only. Fresh verification applies migrations to a clean MySQL 8.4 database, runs the migration command a second time to prove idempotent pending-state handling, and fails status verification on pending or checksum-mismatched files. Upgrade and concurrent-migrator integration tests remain the next required test-environment milestone; `packages/database/test_init` records the separate future test-data initialization task and is not a substitute for them.
+迁移始终为仅追加（append-only）。新鲜验证会对一个干净的 MySQL 8.4 数据库应用所有迁移，然后再次运行迁移命令以证明待处理状态处理的幂等性，若存在待处理或校验和不匹配的文件则状态验证失败。升级和并发迁移器集成测试仍是下一个必需的测试环境里程碑；`packages/database/test_init` 记录了独立的未来测试数据初始化任务，不能替代上述集成测试。

@@ -232,8 +232,9 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
         item_kind: ProductItemKind;
         acquire_method: ProductOption['acquireMethod'];
         unit: string;
+        default_route_id: number | null;
       })[]
-    >(`SELECT p.id,p.item_code,p.product_name,c.item_kind,p.acquire_method,p.unit
+    >(`SELECT p.id,p.item_code,p.product_name,c.item_kind,p.acquire_method,p.unit,p.default_route_id
              FROM products p JOIN product_categories c ON c.id=p.category_id
              WHERE p.is_deleted=0 AND p.status=1 AND c.is_deleted=0 AND c.status=1 ORDER BY p.item_code`);
     return rows.map((row) => ({
@@ -243,6 +244,7 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
       itemKind: row.item_kind,
       acquireMethod: row.acquire_method,
       unit: row.unit,
+      defaultRouteId: row.default_route_id === null ? null : String(row.default_route_id),
     }));
   }
 

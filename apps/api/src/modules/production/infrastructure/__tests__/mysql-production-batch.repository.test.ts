@@ -1,0 +1,245 @@
+import { describe, expect, it, vi } from 'vitest';
+import { MysqlProductionBatchRepository } from '../mysql-production-batch.repository.js';
+
+describe('MysqlProductionBatchRepository persistence', () => {
+  it('does not join Identity tables when listing batches', async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce([[{ total: 0 }], []])
+      .mockResolvedValueOnce([[], []]);
+    const repository = new MysqlProductionBatchRepository({ query } as never);
+
+    await repository.list({});
+
+    expect(String(query.mock.calls[1]?.[0])).not.toMatch(/\busers\b/i);
+  });
+
+  it('opens the batch-creation transaction before invoking route snapshot orchestration', async () => {
+    const connection = transactionConnection();
+    connection.query.mockResolvedValueOnce([[releasedWorkOrder], []]);
+    const repository = new MysqlProductionBatchRepository({
+      getConnection: vi.fn().mockResolvedValue(connection),
+    } as never);
+    const action = vi.fn().mockResolvedValue('created');
+
+    await expect(repository.withBatchCreationTransaction('6', action)).resolves.toBe('created');
+
+    expect(action).toHaveBeenCalledWith('8');
+    expect(String(connection.query.mock.calls[0]?.[0])).toContain('FOR UPDATE');
+    expect(connection.beginTransaction).toHaveBeenCalledOnce();
+    expect(connection.commit).toHaveBeenCalledOnce();
+  });
+
+  it('locks capacity inputs and persists route and step snapshots before its success audit', async () => {
+    const connection = transactionConnection();
+    connection.query
+      .mockResolvedValueOnce([[releasedWorkOrder], []])
+      .mockResolvedValueOnce([[], []])
+      .mockResolvedValueOnce([[{ quantity: '0.0000' }], []])
+      .mockResolvedValueOnce([[batchRow], []])
+      .mockResolvedValueOnce([[], []]);
+    connection.execute
+      .mockResolvedValueOnce([{ insertId: 21, affectedRows: 1 }, []])
+      .mockResolvedValueOnce([{ affectedRows: 1 }, []])
+      .mockResolvedValueOnce([{ affectedRows: 1 }, []]);
+    const repository = new MysqlProductionBatchRepository({
+      getConnection: vi.fn().mockResolvedValue(connection),
+    } as never);
+
+    await repository.create(
+      '6',
+      { batchNo: 'B-001', plannedQuantity: 10 },
+      routeSnapshot as never,
+      [
+        {
+          routeStepId: '301',
+          responsibleUserId: '9',
+          actualSop: {
+            id: '502',
+            fileName: 'actual.pdf',
+            objectKey: 'sop/actual.pdf',
+            versionNo: 'v2',
+          },
+        },
+      ],
+      audit,
+    );
+
+    for (const call of connection.query.mock.calls.slice(0, 3)) {
+      expect(String(call[0])).toContain('FOR UPDATE');
+    }
+    const stepValues = connection.execute.mock.calls[1]?.[1] as unknown[];
+    expect(stepValues.slice(0, 16)).toEqual([
+      21,
+      '301',
+      1,
+      'CUT',
+      'Cutting',
+      '501',
+      'default.pdf',
+      'sop/default.pdf',
+      'v1',
+      '7',
+      '9',
+      '502',
+      'actual.pdf',
+      'sop/actual.pdf',
+      'v2',
+      1,
+    ]);
+    expect(String(connection.execute.mock.calls[2]?.[0])).toContain('INSERT INTO operation_logs');
+    expect(connection.commit).toHaveBeenCalledOnce();
+  });
+
+  it('rolls back and does not audit a stale batch update', async () => {
+    const connection = transactionConnection();
+    connection.query.mockResolvedValueOnce([[batchRow], []]);
+    connection.execute.mockResolvedValueOnce([{ affectedRows: 0 }, []]);
+    const repository = new MysqlProductionBatchRepository({
+      getConnection: vi.fn().mockResolvedValue(connection),
+    } as never);
+
+    await expect(repository.update('21', { version: 2 }, audit)).rejects.toMatchObject({
+      code: 'CONCURRENT_MODIFICATION',
+    });
+
+    expect(connection.execute).toHaveBeenCalledOnce();
+    expect(connection.rollback).toHaveBeenCalledOnce();
+  });
+
+  it('writes material-demand snapshots, stable idempotency keys and four-place quantities', async () => {
+    const connection = transactionConnection();
+    connection.query
+      .mockResolvedValueOnce([[batchRow], []])
+      .mockResolvedValueOnce([[{ ...batchRow, status: 'material_pending' }], []])
+      .mockResolvedValueOnce([[], []]);
+    connection.execute.mockResolvedValue([{ affectedRows: 1 }, []]);
+    const repository = new MysqlProductionBatchRepository({
+      getConnection: vi.fn().mockResolvedValue(connection),
+    } as never);
+
+    await repository.generateMaterialDemands(
+      '21',
+      2,
+      {
+        product: { id: '8' },
+        lines: [
+          {
+            productMaterialId: '401',
+            materialProductId: '402',
+            quantityPerUnit: '2.5000',
+            unit: 'kg',
+            isKeyMaterial: true,
+            needBatchRecord: false,
+          },
+        ],
+      } as never,
+      audit,
+    );
+
+    const demandValues = connection.execute.mock.calls[0]?.[1] as unknown[];
+    expect(demandValues.slice(0, 11)).toEqual([
+      '21',
+      '401',
+      '402',
+      '2.5000',
+      'kg',
+      1,
+      0,
+      '10.0000',
+      '25.0000',
+      'NORMAL:21:401',
+      '1',
+    ]);
+    expect(String(connection.execute.mock.calls[2]?.[0])).toContain('INSERT INTO operation_logs');
+    expect(connection.commit).toHaveBeenCalledOnce();
+  });
+
+  it('does not create a second material demand after the batch reaches material_pending', async () => {
+    const connection = transactionConnection();
+    connection.query
+      .mockResolvedValueOnce([[{ ...batchRow, status: 'material_pending' }], []])
+      .mockResolvedValueOnce([[{ ...batchRow, status: 'material_pending' }], []])
+      .mockResolvedValueOnce([[], []]);
+    const repository = new MysqlProductionBatchRepository({
+      getConnection: vi.fn().mockResolvedValue(connection),
+    } as never);
+
+    await repository.generateMaterialDemands(
+      '21',
+      2,
+      { product: { id: '8' }, lines: [] } as never,
+      audit,
+    );
+
+    expect(connection.execute).not.toHaveBeenCalled();
+    expect(connection.commit).toHaveBeenCalledOnce();
+  });
+});
+
+const transactionConnection = () => ({
+  beginTransaction: vi.fn(),
+  query: vi.fn(),
+  execute: vi.fn(),
+  commit: vi.fn(),
+  rollback: vi.fn(),
+  release: vi.fn(),
+});
+
+const audit = { actorId: '1', ip: null, requestId: 'test-request', userAgent: null };
+const releasedWorkOrder = {
+  id: 6,
+  product_id: 8,
+  planned_quantity: '100.0000',
+  unit_snapshot: 'pcs',
+  status: 'released',
+};
+const batchRow = {
+  id: 21,
+  work_order_id: 6,
+  work_order_no: 'WO-001',
+  product_id: 8,
+  product_code_snapshot: 'P-001',
+  product_name_snapshot: 'Product A',
+  batch_no: 'B-001',
+  route_id: 12,
+  route_code_snapshot: 'R-001',
+  route_version_snapshot: 'v1',
+  planned_quantity: '10.0000',
+  completed_quantity: '0.0000',
+  qualified_quantity: '0.0000',
+  plan_start_date: null,
+  plan_end_date: null,
+  status: 'pending',
+  owner_id: null,
+  completed_at: null,
+  started_at: null,
+  completed_by: null,
+  remark: null,
+  version: 2,
+  created_at: new Date('2026-08-01T00:00:00.000Z'),
+  updated_at: new Date('2026-08-01T00:00:00.000Z'),
+};
+const routeSnapshot = {
+  id: '12',
+  routeCode: 'R-001',
+  versionNo: 'v1',
+  product: { id: '8' },
+  steps: [
+    {
+      routeStepId: '301',
+      stepOrder: 1,
+      stepCode: 'CUT',
+      stepName: 'Cutting',
+      defaultOwnerId: '7',
+      needRecord: true,
+      needInspection: false,
+      sop: {
+        id: '501',
+        fileName: 'default.pdf',
+        objectKey: 'sop/default.pdf',
+        versionNo: 'v1',
+      },
+    },
+  ],
+};

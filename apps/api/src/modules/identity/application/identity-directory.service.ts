@@ -13,4 +13,9 @@ export class IdentityDirectoryService {
   listActiveUserOptionsByIds(ids: string[]): Promise<UserOption[]> {
     return ids.length === 0 ? Promise.resolve([]) : this.repository.listActiveUserOptionsByIds(ids);
   }
+
+  /** Resolve display data for persisted references, including disabled or soft-deleted users. */
+  listUserReferencesByIds(ids: string[]): Promise<UserOption[]> {
+    return ids.length === 0 ? Promise.resolve([]) : this.repository.listUserReferencesByIds(ids);
+  }
 }

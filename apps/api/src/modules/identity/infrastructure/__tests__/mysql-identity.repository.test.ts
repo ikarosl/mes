@@ -2,6 +2,27 @@ import { describe, expect, it, vi } from 'vitest';
 import { MysqlRbacRepository } from '../mysql-rbac.repository.js';
 
 describe('MysqlRbacRepository audited mutations', () => {
+  it('resolves persisted user references without filtering disabled or soft-deleted users', async () => {
+    const query = vi.fn().mockResolvedValue([
+      [
+        { id: 7, display_name: '已停用负责人' },
+        { id: 8, display_name: '已删除负责人' },
+      ],
+      [],
+    ]);
+    const repository = new MysqlRbacRepository({ query } as never);
+
+    await expect(repository.listUserReferencesByIds(['7', '8'])).resolves.toEqual([
+      { id: '7', displayName: '已停用负责人' },
+      { id: '8', displayName: '已删除负责人' },
+    ]);
+
+    const sql = String(query.mock.calls[0]?.[0]);
+    expect(sql).not.toContain('status=');
+    expect(sql).not.toContain('deleted_at');
+    expect(query.mock.calls[0]?.[1]).toEqual(['7', '8']);
+  });
+
   it('returns a stable server-paginated user list', async () => {
     const query = vi
       .fn()

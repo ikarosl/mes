@@ -7,6 +7,7 @@ import type {
   ProcessRouteSnapshot,
   ProductBomSnapshot,
   ProductionProductSnapshot,
+  EnabledSopFileSnapshot,
 } from '../application/product-snapshot.query.js';
 import { ProductSnapshotRepository } from '../application/ports/product-snapshot.repository.js';
 
@@ -48,7 +49,21 @@ export class MysqlProductSnapshotRepository implements ProductSnapshotRepository
   constructor(@Inject(DATABASE_POOL) private readonly pool: Pool) {}
 
   async getProductionProduct(productId: string): Promise<ProductionProductSnapshot> {
-    return this.productionProduct(this.pool, productId);
+    return withTransaction(this.pool, async (connection) =>
+      this.productionProduct(connection, productId, true),
+    );
+  }
+
+  async getProductionRouteSnapshot(
+    productId: string,
+    requestedRouteId: string | null,
+  ): Promise<ProcessRouteSnapshot | null> {
+    return withTransaction(this.pool, async (connection) => {
+      const product = await this.productionProduct(connection, productId, true);
+      const routeId = requestedRouteId ?? product.defaultRouteId;
+      if (!routeId) return null;
+      return this.routeSnapshot(connection, routeId, product.id, true);
+    });
   }
 
   async getBomSnapshot(productId: string): Promise<ProductBomSnapshot> {
@@ -95,79 +110,117 @@ export class MysqlProductSnapshotRepository implements ProductSnapshotRepository
   }
 
   async getRouteSnapshot(routeId: string): Promise<ProcessRouteSnapshot> {
+    return withTransaction(this.pool, async (connection) =>
+      this.routeSnapshot(connection, routeId),
+    );
+  }
+
+  async getEnabledSopFileSnapshot(fileId: string): Promise<EnabledSopFileSnapshot> {
     return withTransaction(this.pool, async (connection) => {
-      const [[route]] = await connection.query<RouteRow[]>(
-        `SELECT r.id,r.route_code,r.route_name,r.version_no,r.product_id
+      const [[file]] = await connection.query<
+        (RowDataPacket & {
+          id: number;
+          file_name: string;
+          object_key: string;
+          version_no: string;
+        })[]
+      >(
+        `SELECT id,file_name,object_key,version_no FROM technical_files
+         WHERE id=? AND file_type='sop' AND status=1 AND is_deleted=0 FOR UPDATE`,
+        [fileId],
+      );
+      if (!file) throw new ProductDomainError('NOT_FOUND', 'Enabled SOP file not found');
+      return {
+        id: String(file.id),
+        fileName: file.file_name,
+        objectKey: file.object_key,
+        versionNo: file.version_no,
+      };
+    });
+  }
+
+  private async routeSnapshot(
+    db: Db,
+    routeId: string,
+    expectedProductId?: string,
+    lock = false,
+  ): Promise<ProcessRouteSnapshot> {
+    const productCondition = expectedProductId ? ' AND r.product_id=?' : '';
+    const [[route]] = await db.query<RouteRow[]>(
+      `SELECT r.id,r.route_code,r.route_name,r.version_no,r.product_id
          FROM process_routes r JOIN products p ON p.id=r.product_id JOIN product_categories c ON c.id=p.category_id
         WHERE r.id=? AND r.status='enabled' AND r.is_deleted=0
           AND p.status=1 AND p.acquire_method='self_made' AND p.is_deleted=0
-          AND c.item_kind<>'material' AND c.status=1 AND c.is_deleted=0`,
-        [routeId],
-      );
-      if (!route) throw new ProductDomainError('NOT_FOUND', 'Enabled production route not found');
-      const product = await this.productionProduct(connection, String(route.product_id));
-      const [steps] = await connection.query<RouteStepRow[]>(
-        `SELECT rs.id route_step_id,rs.step_order,rs.process_step_id,rs.step_code_snapshot,rs.step_name_snapshot,
+          AND c.item_kind<>'material' AND c.status=1 AND c.is_deleted=0${productCondition}${lock ? ' FOR UPDATE' : ''}`,
+      expectedProductId ? [routeId, expectedProductId] : [routeId],
+    );
+    if (!route) throw new ProductDomainError('NOT_FOUND', 'Enabled production route not found');
+    const product = await this.productionProduct(db, String(route.product_id), lock);
+    const [steps] = await db.query<RouteStepRow[]>(
+      `SELECT rs.id route_step_id,rs.step_order,rs.process_step_id,rs.step_code_snapshot,rs.step_name_snapshot,
                 rs.description_snapshot,rs.default_owner_id,rs.sop_file_id,rs.sop_file_name_snapshot,
                 rs.sop_object_key_snapshot,rs.sop_version_no_snapshot,tf.status sop_status,
                 tf.is_deleted sop_is_deleted,rs.need_inspection,rs.need_record
          FROM process_route_steps rs
          LEFT JOIN technical_files tf ON tf.id=rs.sop_file_id AND tf.file_type='sop'
         WHERE rs.route_id=? AND rs.status=1 AND rs.is_deleted=0
-        ORDER BY rs.step_order`,
-        [routeId],
-      );
-      if (steps.length === 0)
-        throw new ProductDomainError('ROUTE_STEPS_REQUIRED', 'Enabled route has no active steps');
-      if (
-        steps.some(
-          (step) =>
-            step.sop_file_id !== null &&
-            (!step.sop_file_name_snapshot ||
-              !step.sop_object_key_snapshot ||
-              !step.sop_version_no_snapshot ||
-              step.sop_status !== 1 ||
-              step.sop_is_deleted !== 0),
-        )
-      ) {
-        throw new ProductDomainError('NOT_FOUND', 'Route contains an unavailable SOP snapshot');
-      }
-      return {
-        id: String(route.id),
-        routeCode: route.route_code,
-        routeName: route.route_name,
-        versionNo: route.version_no,
-        product,
-        steps: steps.map((step) => ({
-          routeStepId: String(step.route_step_id),
-          stepOrder: step.step_order,
-          processStepId: String(step.process_step_id),
-          stepCode: step.step_code_snapshot,
-          stepName: step.step_name_snapshot,
-          description: step.description_snapshot,
-          defaultOwnerId: step.default_owner_id === null ? null : String(step.default_owner_id),
-          sop:
-            step.sop_file_id === null
-              ? null
-              : {
-                  id: String(step.sop_file_id),
-                  fileName: step.sop_file_name_snapshot!,
-                  objectKey: step.sop_object_key_snapshot!,
-                  versionNo: step.sop_version_no_snapshot!,
-                },
-          needInspection: Boolean(step.need_inspection),
-          needRecord: Boolean(step.need_record),
-        })),
-      };
-    });
+        ORDER BY rs.step_order${lock ? ' FOR UPDATE' : ''}`,
+      [routeId],
+    );
+    if (steps.length === 0)
+      throw new ProductDomainError('ROUTE_STEPS_REQUIRED', 'Enabled route has no active steps');
+    if (
+      steps.some(
+        (step) =>
+          step.sop_file_id !== null &&
+          (!step.sop_file_name_snapshot ||
+            !step.sop_object_key_snapshot ||
+            !step.sop_version_no_snapshot ||
+            step.sop_status !== 1 ||
+            step.sop_is_deleted !== 0),
+      )
+    ) {
+      throw new ProductDomainError('NOT_FOUND', 'Route contains an unavailable SOP snapshot');
+    }
+    return {
+      id: String(route.id),
+      routeCode: route.route_code,
+      routeName: route.route_name,
+      versionNo: route.version_no,
+      product,
+      steps: steps.map((step) => ({
+        routeStepId: String(step.route_step_id),
+        stepOrder: step.step_order,
+        processStepId: String(step.process_step_id),
+        stepCode: step.step_code_snapshot,
+        stepName: step.step_name_snapshot,
+        description: step.description_snapshot,
+        defaultOwnerId: step.default_owner_id === null ? null : String(step.default_owner_id),
+        sop:
+          step.sop_file_id === null
+            ? null
+            : {
+                id: String(step.sop_file_id),
+                fileName: step.sop_file_name_snapshot!,
+                objectKey: step.sop_object_key_snapshot!,
+                versionNo: step.sop_version_no_snapshot!,
+              },
+        needInspection: Boolean(step.need_inspection),
+        needRecord: Boolean(step.need_record),
+      })),
+    };
   }
 
-  private async productionProduct(db: Db, productId: string): Promise<ProductionProductSnapshot> {
+  private async productionProduct(
+    db: Db,
+    productId: string,
+    lock = false,
+  ): Promise<ProductionProductSnapshot> {
     const [[row]] = await db.query<ProductRow[]>(
       `SELECT p.id,p.item_code,p.product_name,p.unit,p.default_route_id
          FROM products p JOIN product_categories c ON c.id=p.category_id
         WHERE p.id=? AND p.status=1 AND p.acquire_method='self_made' AND p.is_deleted=0
-          AND c.item_kind<>'material' AND c.status=1 AND c.is_deleted=0`,
+          AND c.item_kind<>'material' AND c.status=1 AND c.is_deleted=0${lock ? ' FOR UPDATE' : ''}`,
       [productId],
     );
     if (!row) throw new ProductDomainError('NOT_FOUND', 'Enabled production product not found');

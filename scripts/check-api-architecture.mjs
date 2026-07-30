@@ -28,6 +28,16 @@ await assertNoMatch(
   /from ['"]@nestjs\//i,
   '通用 persistence helper 不得直接依赖 Nest HTTP/框架异常',
 );
+await assertNoMatch(
+  'apps/api/src/modules/production/application',
+  /\b(?:BadRequestException|ConflictException|NotFoundException|HttpException)\b/,
+  'Production application 不得抛出 Nest HTTP 异常',
+);
+await assertNoMatch(
+  'apps/api/src/modules/production/domain',
+  /\b(?:BadRequestException|ConflictException|NotFoundException|HttpException)\b/,
+  'Production domain 不得抛出 Nest HTTP 异常',
+);
 
 await assertNoMatch(
   'apps/api/src/modules/product/infrastructure',
@@ -38,6 +48,11 @@ await assertNoMatch(
   'apps/api/src/modules/identity/infrastructure',
   /\b(?:FROM|JOIN|INTO|UPDATE)\s+(?:product_categories|products|product_materials|technical_files|process_steps|process_routes|process_route_steps)\b/i,
   'Identity/System 不得直接访问 Product 拥有的表',
+);
+await assertNoMatch(
+  'apps/api/src/modules/production/infrastructure',
+  /\b(?:FROM|JOIN|INTO|UPDATE)\s+(?:departments|users|roles|permissions|user_roles|role_permissions|refresh_tokens|product_categories|products|product_materials|technical_files|process_steps|process_routes|process_route_steps)\b/i,
+  'Production 不得直接访问 Identity/System 或 Product 拥有的表',
 );
 await assertNoMatch(
   'apps/api/src/modules/identity/application/ports',

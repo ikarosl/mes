@@ -458,6 +458,11 @@
 | `product_name_snapshot` | `VARCHAR(200)`    | 下达时产品名称快照                                               |
 | `unit_snapshot`         | `VARCHAR(20)`     | 下达时单位快照                                                   |
 | `planned_quantity`      | `DECIMAL(12,4)`   | 工单计划生产数量                                                 |
+| `customer_name`         | `VARCHAR(255)`    | 客户名称，可为空                                                 |
+| `quality_level`         | `VARCHAR(50)`     | 客户自定义质量等级代码，可为空                                   |
+| `work_order_owner_id`   | `BIGINT UNSIGNED` | 工单负责人，负责整体计划协调，可为空                             |
+| `plan_start_date`       | `DATE`            | 计划开始日期，可为空                                             |
+| `plan_end_date`         | `DATE`            | 计划完工日期，可为空                                             |
 | `status`                | `VARCHAR(30)`     | `draft`、`released`、`doing`、`completed`、`cancelled`、`closed` |
 | `released_at`           | `DATETIME`        | 下达时间                                                         |
 | `external_order_no`     | `VARCHAR(100)`    | 外部订单号，可为空                                               |
@@ -471,9 +476,13 @@
 - 唯一约束：`UNIQUE (work_order_no)`
 - 组合引用索引：`UNIQUE (id, product_id)`
 - 外键：`FOREIGN KEY (product_id) REFERENCES products(id)`
+- 外键：`work_order_owner_id -> users.id`
 - 检查约束：`CHECK (planned_quantity > 0)`
 - 检查约束：`CHECK (status IN ('draft', 'released', 'doing', 'completed', 'cancelled', 'closed'))`
+- 检查约束：`CHECK (plan_start_date IS NULL OR plan_end_date IS NULL OR plan_end_date >= plan_start_date)`
 - 索引：`INDEX (external_order_no)`
+- 索引：`INDEX (work_order_owner_id, status, created_at)`
+- 索引：`INDEX (plan_start_date)`
 - 组合索引：`INDEX (status, created_at)`，用于工单状态分页
 
 说明：
@@ -482,6 +491,8 @@
 - 一个工单可以拆分为多个生产批次。
 - 生产领料、生产入库、半成品入库等动作建议落到 `production_batches` 维度。
 - 产品快照在工单下达时冻结，后续修改产品主数据不得回写历史工单。
+- `quality_level` 是客户自定义等级，不建立固定状态字典或 `CHECK`；如后续需要客户级等级主数据，必须另行建模，不能把自由文本解释为质量结论。
+- 工单实际开工时间不单独持久化，由所属批次的最早 `started_at` 推导；工单实际完工时间由已完工批次的 `completed_at` 汇总，避免形成第二执行事实来源。
 
 ---
 
@@ -501,10 +512,13 @@
 | `planned_quantity`       | `DECIMAL(12,4)`   | 本批次计划生产数量              |
 | `completed_quantity`     | `DECIMAL(12,4)`   | 最终完成数量，默认 `0`          |
 | `qualified_quantity`     | `DECIMAL(12,4)`   | 最终合格数量，默认 `0`          |
+| `plan_start_date`        | `DATE`            | 本批次计划开始日期，可为空        |
+| `plan_end_date`          | `DATE`            | 本批次计划完工日期，可为空        |
+| `started_at`              | `DATETIME`        | 批次实际开工时间，可为空        |
 | `completed_at`           | `DATETIME`        | 完工确认时间，可为空            |
 | `completed_by`           | `BIGINT UNSIGNED` | 完工确认人，可为空              |
 | `status`                 | `VARCHAR(40)`     | 生产批次状态                    |
-| `owner_id`               | `BIGINT UNSIGNED` | 负责人 ID，可为空               |
+| `batch_owner_id`         | `BIGINT UNSIGNED` | 批次负责人，负责该批次执行，可为空 |
 | `remark`                 | `TEXT`            | 备注                            |
 | `version`                | `INT`             | 乐观锁版本号，默认 `0`          |
 | 业务审计字段             | 见统一规则        | 可变业务单据审计字段            |
@@ -514,17 +528,19 @@
 - 主键：`id`
 - 外键：`FOREIGN KEY (work_order_id, product_id) REFERENCES work_orders(id, product_id)`
 - 外键：`FOREIGN KEY (route_id) REFERENCES process_routes(id)`
-- 外键：`FOREIGN KEY (owner_id) REFERENCES users(id)`
+- 外键：`FOREIGN KEY (batch_owner_id) REFERENCES users(id)`
 - 外键：`FOREIGN KEY (completed_by) REFERENCES users(id)`
 - 检查约束：`CHECK (planned_quantity > 0)`
 - 检查约束：`CHECK (completed_quantity >= 0)`
 - 检查约束：`CHECK (qualified_quantity >= 0)`
 - 检查约束：`CHECK (qualified_quantity <= completed_quantity)`
+- 检查约束：`CHECK (plan_start_date IS NULL OR plan_end_date IS NULL OR plan_end_date >= plan_start_date)`
 - 检查约束：`CHECK (status <> 'completed' OR (completed_at IS NOT NULL AND completed_by IS NOT NULL))`
-- 唯一约束：`UNIQUE (work_order_id, batch_no)`
+- 唯一约束：`UNIQUE (batch_no)`；批次号在全系统范围内唯一，自动编号与手动输入均由后端校验
 - 组合引用索引：`UNIQUE (id, work_order_id)`、`UNIQUE (id, product_id)`
 - 检查约束：`CHECK (status IN ('pending', 'material_pending', 'material_assigned', 'material_outbound', 'doing', 'completed', 'cancelled'))`
 - 组合索引：`INDEX (work_order_id, status)`，用于按工单查询有效生产批次
+- 索引：`INDEX (plan_start_date)`，用于生产排程与按计划开工日筛选
 
 状态说明：
 
@@ -544,6 +560,7 @@
 - 生产批次负责表达“这一批怎么生产”。
 - `product_id` 是受组合外键保护的查询冗余，不允许与工单产品不一致。
 - 路线快照在批次创建时冻结；批次执行期间不能跟随路线主数据变化。
+- `plan_start_date`、`plan_end_date` 是批次排程，不是实际执行事实；实际开工、完工分别只以 `started_at`、`completed_at` 为准。
 - 成品或半成品入库后，应生成 `item_batch` 库存批次，并通过 `item_batch.source_production_batch_id` 关联回生产批次。
 - 一个生产批次可以产生多个库存批次，例如半成品批次、成品批次、待检批次。
 
@@ -845,6 +862,8 @@
 - 唯一约束：`UNIQUE (id, item_id)`
 - 唯一约束：`UNIQUE (id, production_batch_id)`
 - 索引：`INDEX (source_scrap_id)`
+
+分阶段迁移说明：在 `item_scrap` 建表前，`production_item_demand` 的物理约束先支持 `demand_type IN (0, 1)`，保留 `source_scrap_id` 字段及索引但要求其为空，并立即建立 `parent_demand_id` 自关联外键。按迁移顺序第 12 步建立 `item_scrap` 后，必须通过追加 migration 建立 `source_scrap_id` 外键并将类型及检查约束扩展到 `0、1、2`。Production 第一阶段应用仅生成 `demand_type = 0` 的正常需求。
 
 视图版本删除字段：
 
@@ -1750,11 +1769,16 @@ inventory_transaction
 | `step_order_snapshot`      | `INT`             | 工序顺序快照                                            |
 | `step_code_snapshot`       | `VARCHAR(100)`    | 工序编码快照                                            |
 | `step_name_snapshot`       | `VARCHAR(100)`    | 工序名称快照                                            |
-| `sop_file_id_snapshot`     | `BIGINT UNSIGNED` | 执行时 SOP 文件 ID，可为空                              |
-| `sop_file_name_snapshot`   | `VARCHAR(255)`    | SOP 文件名快照                                          |
-| `sop_object_key_snapshot`  | `VARCHAR(500)`    | SOP 对象键快照                                          |
-| `sop_version_no_snapshot`  | `VARCHAR(64)`     | SOP 版本号快照                                          |
-| `responsible_user_id`      | `BIGINT UNSIGNED` | 当前负责人，可为空                                      |
+| `sop_file_id_snapshot`     | `BIGINT UNSIGNED` | 路线默认 SOP 文件 ID 快照，可为空                       |
+| `sop_file_name_snapshot`   | `VARCHAR(255)`    | 路线默认 SOP 文件名快照                                 |
+| `sop_object_key_snapshot`  | `VARCHAR(500)`    | 路线默认 SOP 对象键快照                                 |
+| `sop_version_no_snapshot`  | `VARCHAR(64)`     | 路线默认 SOP 版本号快照                                 |
+| `default_responsible_user_id_snapshot` | `BIGINT UNSIGNED` | 路线默认负责人快照，可为空                    |
+| `actual_sop_file_id`       | `BIGINT UNSIGNED` | 现场实际 SOP 文件 ID；为空时使用默认快照                |
+| `actual_sop_file_name_snapshot` | `VARCHAR(255)` | 现场实际 SOP 文件名快照                                 |
+| `actual_sop_object_key_snapshot` | `VARCHAR(500)` | 现场实际 SOP 对象键快照                                 |
+| `actual_sop_version_no_snapshot` | `VARCHAR(64)` | 现场实际 SOP 版本号快照                                 |
+| `responsible_user_id`      | `BIGINT UNSIGNED` | 现场实际负责人；为空时使用默认负责人快照                 |
 | `need_record_snapshot`     | `TINYINT`         | 创建时冻结的必须报工标志，默认 `1`                      |
 | `need_inspection_snapshot` | `TINYINT`         | 创建时冻结的必须检验标志，默认 `0`                      |
 | `status`                   | `VARCHAR(30)`     | `pending`、`assigned`、`doing`、`completed`、`abnormal` |
@@ -1773,14 +1797,16 @@ inventory_transaction
 
 - `production_batch_id -> production_batches.id`
 - `route_step_id -> process_route_steps.id`
+- `default_responsible_user_id_snapshot -> users.id ON DELETE SET NULL`
 - `responsible_user_id -> users.id ON DELETE SET NULL`
+- `actual_sop_file_id -> technical_files.id ON DELETE SET NULL`
 - `UNIQUE (production_batch_id, route_step_id)`
 - 所有数量不得小于 `0`，且 `qualified_quantity + abnormal_quantity <= output_quantity`
 - 快照字段 `need_record_snapshot`、`need_inspection_snapshot` 只允许 `0` 或 `1`
 - 状态检查：`CHECK (status IN ('pending', 'assigned', 'doing', 'completed', 'abnormal'))`
 - 完工时必须存在 `started_at`、`completed_at`，并满足 `completed_at >= started_at`
 
-说明：创建生产批次时按路线步骤生成记录并复制快照（SOP、工序信息、必须报工和必须检验标志）；后续修改工序或路线不得回写已生成记录。
+说明：创建生产批次时按路线步骤生成记录并复制默认快照（SOP、负责人、工序信息、必须报工和必须检验标志）；后续修改工序或路线不得回写已生成记录。现场可仅覆盖已生成步骤的实际 SOP 与实际负责人，不能增删或重排工序；实际 SOP 变更必须同步冻结文件名、对象键与版本号快照，并以工序记录 `version` 乐观锁更新。
 
 ## 4.2 `inspection_records`
 

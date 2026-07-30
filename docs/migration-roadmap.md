@@ -25,7 +25,7 @@
 
 推荐顺序：identity -> product/process -> production -> inventory -> quality -> traceability。每个模块均执行：契约冻结、特征测试、数据迁移、代码迁移、双写/影子读（必要时）、验收、切流、旧入口下线。
 
-当前进度：identity 已完成认证、RBAC 和操作日志迁移；product/process 已完成产品主数据、技术文件、工序和工艺路线的初期迁移。production、inventory、quality、traceability 仍未进入后端迁移阶段。
+当前进度：identity 已完成认证、RBAC 和操作日志迁移；product/process 已完成产品主数据、技术文件、工序和工艺路线的初期迁移。Production 已进入分阶段后端迁移：先迁移工单、生产批次、工序快照和物料需求，再迁移物料分配与领料出库，满足状态机后开放批次执行与工序报工。通用 inventory、quality、traceability 仍未进入后端迁移阶段。
 
 ## 阶段 4：上线治理
 

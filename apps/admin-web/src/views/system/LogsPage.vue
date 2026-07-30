@@ -191,10 +191,11 @@
           show-overflow-tooltip
         />
         <el-table-column
-          prop="createdAt"
           label="时间"
           min-width="180"
-        />
+        >
+          <template #default="{ row }">{{ formatDateTimeForDisplay(row.createdAt) }}</template>
+        </el-table-column>
         <el-table-column
           label="详情"
           width="80"
@@ -279,6 +280,7 @@ import {
   type OperationResult,
 } from '@company/contracts';
 import { systemApi } from '../../api/system';
+import { formatDateTimeForDisplay } from '../../utils/date';
 import { DialogWidth } from '../../utils/dialog';
 import { EMessage } from '../../utils/message';
 

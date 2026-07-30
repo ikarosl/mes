@@ -167,7 +167,7 @@
           label="最近登录"
           min-width="170"
         >
-          <template #default="{ row }">{{ row.lastLoginAt ?? '-' }}</template>
+          <template #default="{ row }">{{ formatDateTimeForDisplay(row.lastLoginAt) }}</template>
         </el-table-column>
         <el-table-column
           label="操作"
@@ -284,6 +284,7 @@ import { EMessage } from '../../utils/message';
 import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
 import { systemApi } from '../../api/system';
 import { useAuthStore } from '../../stores/auth';
+import { formatDateTimeForDisplay } from '../../utils/date';
 import { useSystemUsers } from './composables/useSystemUsers';
 import UserFormDialog from './components/UserFormDialog.vue';
 import type { UserFormValue } from './components/UserFormDialog.vue';
