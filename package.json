@@ -40,6 +40,11 @@
     "infra:up:desktop": "docker compose --env-file .env -f infra/compose/compose.dev.yml up -d mysql minio && corepack pnpm storage:ensure-bucket",
     "infra:down:desktop": "docker compose --env-file .env -f infra/compose/compose.dev.yml down"
   },
+  "pnpm": {
+    "overrides": {
+      "multer": ">=2.2.0"
+    }
+  },
   "lint-staged": {
     "*.{js,mjs,cjs,ts,tsx,vue}": [
       "eslint --fix",
