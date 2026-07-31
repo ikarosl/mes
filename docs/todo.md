@@ -42,29 +42,29 @@
 
 4. 已启用工艺路线必须冻结工序与 SOP 快照（后端改动已完成；前端交互待改动）
 
-后续前端主要还需要：
-将“上传文件”明确为“发布新版 SOP”
-展示 SOP 版本号和当前默认版本
-草稿路线允许选择/刷新 SOP 版本
-已启用路线只展示冻结版本，不允许替换
-路线启用时，每个路线步骤应固定保存：
+   后续前端主要还需要：
+   将“上传文件”明确为“发布新版 SOP”
+   展示 SOP 版本号和当前默认版本
+   草稿路线允许选择/刷新 SOP 版本
+   已启用路线只展示冻结版本，不允许替换
+   路线启用时，每个路线步骤应固定保存：
 
-- `process_step_id`
-- 工序编码、名称、说明快照
-- SOP 文件 ID，可为空
-- SOP 文件名快照
-- SOP 版本号快照
-- SOP 对象键快照
-- 最好再保存校验和快照
-- 报工、检验等执行规则快照
+   - `process_step_id`
+   - 工序编码、名称、说明快照
+   - SOP 文件 ID，可为空
+   - SOP 文件名快照
+   - SOP 版本号快照
+   - SOP 对象键快照
+   - 最好再保存校验和快照
+   - 报工、检验等执行规则快照
 
-后续工序切换到新版 SOP 时：
+   后续工序切换到新版 SOP 时：
 
-- 已启用路线继续使用旧 SOP；
-- 草稿路线可以刷新或选择新版 SOP；
-- 已启用路线若要采用新版 SOP，必须创建新的路线版本。
+   - 已启用路线继续使用旧 SOP；
+   - 草稿路线可以刷新或选择新版 SOP；
+   - 已启用路线若要采用新版 SOP，必须创建新的路线版本。
 
-当前实现已经做到“路线启用后步骤和 SOP 快照不可原地修改”。`202607290002-product-route-step-sop-version-snapshot` 已补充独立的 `sop_version_no_snapshot`，路线写入时会与文件名、对象键一起冻结，生产公共快照不再实时读取 `technical_files.version_no`。校验和快照仍作为后续增强项，不与本次修复绑定。
+   当前实现已经做到“路线启用后步骤和 SOP 快照不可原地修改”。`202607290002-product-route-step-sop-version-snapshot` 已补充独立的 `sop_version_no_snapshot`，路线写入时会与文件名、对象键一起冻结，生产公共快照不再实时读取 `technical_files.version_no`。校验和快照仍作为后续增强项，不与本次修复绑定。
 
 5. “未启用”和“停用”不能共用一个状态语义
    当前 `process_steps.status` 只有：
@@ -116,3 +116,21 @@
 ├──────────┼───────────────────────────────────────────────────┤
 │ Product │ product.controller.ts — 16 处 CurrentAuditContext │
 └──────────┴───────────────────────────────────────────────────┘
+
+13 前端行内/列表操作缺少提交中防抖守卫（交互层，全项目统一补齐）
+
+- 现状：弹窗表单提交均有 `submitting` + `:loading` 守卫；行内操作（下达/关闭/取消/启停/删除，生产任务页「生成物料」）无 loading、无守卫，依赖确认框遮罩和后端兜底
+- 缺口场景：「确认后重复触发」会发出第二个请求——状态流转被 version 乐观锁挡（前端弹 409 失败，体验差但数据安全）；`generateMaterials` 无确认框无守卫，双击直接发两个请求（内部幂等键 UNIQUE 挡并发，但会报唯一键冲突）
+- 方案：行级 `pendingIds: Set<string>` 守卫，入口同步 add、finally delete，按钮 `:disabled` 绑定；`generateMaterials` 可考虑加二次确认
+- 涉及：production 两个页面 + product/system 的 toggleStatus/deleteRole 类函数
+- 与后端幂等闭环是不同层的问题（交互层 vs 协议层），互不替代
+
+14 后端幂等闭环拼图（协议层 HTTP 幂等键，阶段 3 未开始，分配/出库/库存流水迁移时启用）
+
+阶段定位：数据层防重（UNIQUE + version 乐观锁）已完成；内部稳定键（production_item_demand）顺序幂等完成；HTTP 幂等闭环未开始——传输通道休眠（auth.decorators.ts 读取校验保留）、`optimistic-lock.ts` 的 `idempotencyConflict()` 工厂未接入业务、无键+规范化请求指纹+执行状态+原结果登记表、无重放返回原结果。
+
+缺口 A：`MysqlProductionBatchRepository.generateMaterialDemands` 并发重复提交时两个事务都读到旧状态，第二个 INSERT 相同 `idempotency_key` 报 ER_DUP_ENTRY 直接冒泡；需捕获唯一键冲突后查已有返回（注意 REPEATABLE READ 快照下失败方看不到对方未提交数据，需短暂重试或等提交）。
+
+缺口 B：`nextBatchNo` 后端自动生成批次号，batchNo 留空的重复提交会产生两个不同批次号并创建两个批次（创建入口无状态守卫、无唯一键兜底）；按 `docs/concurrency-and-idempotency.md` 分层定义，此类创建动作属于 HTTP 幂等键启用清单。
+
+休眠代码：`readIdempotencyKey`、`CommandContext.idempotencyKey`（连审计都未写入）、`idempotencyConflict()` 均无业务消费方，保留待阶段 3 接入；接入时需同步补接口契约声明（`Idempotency-Key` 必填接口显式声明）。

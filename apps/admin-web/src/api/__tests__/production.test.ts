@@ -4,10 +4,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { request } = vi.hoisted(() => ({ request: vi.fn() }));
 vi.mock('../http', () => ({ httpClient: { request } }));
 
-const idempotencyHeaders = {
-  headers: { 'Idempotency-Key': expect.any(String) },
-};
-
 describe('productionApi', () => {
   beforeEach(() => {
     request.mockReset();
@@ -59,7 +55,6 @@ describe('productionApi', () => {
     });
 
     expect(request).toHaveBeenCalledWith({
-      ...idempotencyHeaders,
       url: '/production/work-orders',
       method: 'POST',
       data: { workOrderNo: 'WO-2026-0001', productId: '1', plannedQuantity: 100 },
@@ -83,7 +78,6 @@ describe('productionApi', () => {
     });
 
     expect(request).toHaveBeenCalledWith({
-      ...idempotencyHeaders,
       url: '/production/work-orders',
       method: 'POST',
       data: {
@@ -111,7 +105,6 @@ describe('productionApi', () => {
     });
 
     expect(request).toHaveBeenCalledWith({
-      ...idempotencyHeaders,
       url: '/production/work-orders/1',
       method: 'PATCH',
       data: { externalOrderNo: 'CO-001', remark: '加急', version: 0 },
@@ -133,7 +126,6 @@ describe('productionApi', () => {
     });
 
     expect(request).toHaveBeenCalledWith({
-      ...idempotencyHeaders,
       url: '/production/work-orders/1',
       method: 'PATCH',
       data: {
@@ -155,7 +147,6 @@ describe('productionApi', () => {
     await productionApi.changeOrderStatus('1', 'release', 1);
 
     expect(request).toHaveBeenCalledWith({
-      ...idempotencyHeaders,
       url: '/production/work-orders/1/actions/release',
       method: 'POST',
       data: { version: 1 },
@@ -168,7 +159,6 @@ describe('productionApi', () => {
     await productionApi.changeOrderStatus('2', 'cancel', 0);
 
     expect(request).toHaveBeenCalledWith({
-      ...idempotencyHeaders,
       url: '/production/work-orders/2/actions/cancel',
       method: 'POST',
       data: { version: 0 },
@@ -181,7 +171,6 @@ describe('productionApi', () => {
     await productionApi.changeOrderStatus('3', 'close', 2);
 
     expect(request).toHaveBeenCalledWith({
-      ...idempotencyHeaders,
       url: '/production/work-orders/3/actions/close',
       method: 'POST',
       data: { version: 2 },
@@ -207,7 +196,6 @@ describe('productionApi', () => {
     });
 
     expect(request).toHaveBeenCalledWith({
-      ...idempotencyHeaders,
       url: '/production/work-orders/1/batches',
       method: 'POST',
       data: { batchNo: 'BATCH-001', plannedQuantity: 50 },
@@ -251,7 +239,6 @@ describe('productionApi', () => {
     });
 
     expect(request).toHaveBeenCalledWith({
-      ...idempotencyHeaders,
       url: '/production/batches/1',
       method: 'PATCH',
       data: { ownerId: 'u2', remark: '更换负责人', version: 0 },
@@ -268,7 +255,6 @@ describe('productionApi', () => {
     });
 
     expect(request).toHaveBeenCalledWith({
-      ...idempotencyHeaders,
       url: '/production/batches/1/step-records/9/execution',
       method: 'PATCH',
       data: { version: 2, actualSopFileId: '7', responsibleUserId: 'u3' },
@@ -281,7 +267,6 @@ describe('productionApi', () => {
     await productionApi.generateMaterialDemands('1', 0);
 
     expect(request).toHaveBeenCalledWith({
-      ...idempotencyHeaders,
       url: '/production/batches/1/actions/generate-material-demands',
       method: 'POST',
       data: { version: 0 },
