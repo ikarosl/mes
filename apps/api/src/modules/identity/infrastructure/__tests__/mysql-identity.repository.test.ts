@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { AuditLogEntry } from '../../../../common/audit/audit.types.js';
 import { MysqlRbacRepository } from '../mysql-rbac.repository.js';
 
 describe('MysqlRbacRepository audited mutations', () => {
@@ -68,7 +69,11 @@ describe('MysqlRbacRepository audited mutations', () => {
   it('writes a role assignment and its audit entry on the same transaction connection', async () => {
     const connection = {
       beginTransaction: vi.fn(),
-      query: vi.fn().mockResolvedValue([[{ role_id: 1 }], []]),
+      query: vi
+        .fn()
+        .mockResolvedValueOnce([[{ id: 10 }], []]) // lock target user
+        .mockResolvedValueOnce([[{ id: 2 }], []]) // role reference exists
+        .mockResolvedValueOnce([[{ role_id: 1 }], []]), // existing user_roles
       execute: vi.fn().mockResolvedValue([{ affectedRows: 1 }, []]),
       commit: vi.fn(),
       rollback: vi.fn(),
@@ -77,15 +82,9 @@ describe('MysqlRbacRepository audited mutations', () => {
     const pool = { getConnection: vi.fn().mockResolvedValue(connection) };
     const repository = new MysqlRbacRepository(pool as never);
 
-    await repository.setUserRoles('10', ['2'], {
-      logType: 'operation',
-      module: 'system',
-      action: '分配用户角色',
-      userId: '1',
-      result: 'success',
-      ip: '127.0.0.1',
-    });
+    const result = await repository.setUserRoles('10', ['2'], auditEntry('分配用户角色'));
 
+    expect(result).toEqual({ status: 'success', value: undefined });
     const executedSql = connection.execute.mock.calls.map(([sql]) => String(sql));
     expect(executedSql.some((sql) => sql.includes('DELETE FROM user_roles'))).toBe(true);
     expect(executedSql.some((sql) => sql.includes('INSERT INTO user_roles'))).toBe(true);
@@ -93,4 +92,173 @@ describe('MysqlRbacRepository audited mutations', () => {
     expect(connection.commit).toHaveBeenCalledOnce();
     expect(connection.rollback).not.toHaveBeenCalled();
   });
+
+  it('returns not-found for a missing user in setUserStatus without writing an audit', async () => {
+    const connection = mockConnection({ query: [[[], []]] });
+    const repository = new MysqlRbacRepository(pool(connection) as never);
+
+    const result = await repository.setUserStatus('999', 1, auditEntry('更新用户状态'));
+
+    expect(result).toEqual({ status: 'not-found' });
+    expect(connection.execute).not.toHaveBeenCalled();
+    expect(connection.commit).toHaveBeenCalledOnce();
+    expect(connection.rollback).not.toHaveBeenCalled();
+  });
+
+  it('validates the target user even for an empty role assignment', async () => {
+    const connection = mockConnection({ query: [[[], []]] });
+    const repository = new MysqlRbacRepository(pool(connection) as never);
+
+    const result = await repository.setUserRoles('999', [], auditEntry('分配用户角色'));
+
+    expect(result).toEqual({ status: 'not-found' });
+    expect(connection.execute).not.toHaveBeenCalled();
+  });
+
+  it('returns invalid-reference when a role in the assignment does not exist', async () => {
+    const connection = mockConnection({
+      query: [
+        [[{ id: 10 }], []],
+        [[], []],
+      ],
+    });
+    const repository = new MysqlRbacRepository(pool(connection) as never);
+
+    const result = await repository.setUserRoles('10', ['999'], auditEntry('分配用户角色'));
+
+    expect(result).toEqual({
+      status: 'invalid-reference',
+      message: expect.stringContaining('999'),
+    });
+    expect(connection.execute).not.toHaveBeenCalled();
+  });
+
+  it('validates the target role even for an empty permission assignment', async () => {
+    const connection = mockConnection({ query: [[[], []]] });
+    const repository = new MysqlRbacRepository(pool(connection) as never);
+
+    const result = await repository.setRolePermissions('999', [], auditEntry('分配角色权限'));
+
+    expect(result).toEqual({ status: 'not-found' });
+    expect(connection.execute).not.toHaveBeenCalled();
+  });
+
+  it('returns invalid-reference when a permission in the assignment does not exist', async () => {
+    const connection = mockConnection({
+      query: [
+        [[{ id: 5 }], []],
+        [[], []],
+      ],
+    });
+    const repository = new MysqlRbacRepository(pool(connection) as never);
+
+    const result = await repository.setRolePermissions('5', ['999'], auditEntry('分配角色权限'));
+
+    expect(result).toEqual({
+      status: 'invalid-reference',
+      message: expect.stringContaining('999'),
+    });
+    expect(connection.execute).not.toHaveBeenCalled();
+  });
+
+  it('maps a duplicate username to a conflict result and rolls back', async () => {
+    const dupError = Object.assign(new Error('Duplicate entry'), { code: 'ER_DUP_ENTRY' });
+    const connection = mockConnection({ executeReject: dupError });
+    const repository = new MysqlRbacRepository(pool(connection) as never);
+
+    const result = await repository.createUser(
+      { username: 'admin', password: '123456', displayName: '管理员', roleIds: [] },
+      'hash',
+      auditEntry('创建用户'),
+    );
+
+    expect(result).toEqual({ status: 'conflict', message: '用户名已存在' });
+    expect(connection.rollback).toHaveBeenCalledOnce();
+    expect(connection.commit).not.toHaveBeenCalled();
+  });
+
+  it('maps a duplicate role code to a conflict result and rolls back', async () => {
+    const dupError = Object.assign(new Error('Duplicate entry'), { code: 'ER_DUP_ENTRY' });
+    const connection = mockConnection({ executeReject: dupError });
+    const repository = new MysqlRbacRepository(pool(connection) as never);
+
+    const result = await repository.createRole(
+      { name: '管理员', code: 'admin' },
+      auditEntry('创建角色'),
+    );
+
+    expect(result).toEqual({ status: 'conflict', message: '角色编码已存在' });
+    expect(connection.rollback).toHaveBeenCalledOnce();
+    expect(connection.commit).not.toHaveBeenCalled();
+  });
+
+  it('returns a conflict result when the role still has assigned users', async () => {
+    const connection = mockConnection({
+      query: [
+        [[{ name: '管理员', code: 'admin' }], []],
+        [[{ count: 2 }], []],
+      ],
+    });
+    const repository = new MysqlRbacRepository(pool(connection) as never);
+
+    const result = await repository.deleteRole('2', auditEntry('删除角色'));
+
+    expect(result).toEqual({ status: 'conflict', message: '角色仍有关联用户，不能删除' });
+    expect(connection.execute).not.toHaveBeenCalled();
+  });
+
+  it('returns not-found when deleting a missing role', async () => {
+    const connection = mockConnection({ query: [[[], []]] });
+    const repository = new MysqlRbacRepository(pool(connection) as never);
+
+    const result = await repository.deleteRole('999', auditEntry('删除角色'));
+
+    expect(result).toEqual({ status: 'not-found' });
+    expect(connection.execute).not.toHaveBeenCalled();
+  });
+});
+
+const auditEntry = (action: string): AuditLogEntry => ({
+  logType: 'operation',
+  module: 'system',
+  action,
+  userId: '1',
+  result: 'success',
+  ip: '127.0.0.1',
+});
+
+interface MockConnection {
+  beginTransaction: ReturnType<typeof vi.fn>;
+  query: ReturnType<typeof vi.fn>;
+  execute: ReturnType<typeof vi.fn>;
+  commit: ReturnType<typeof vi.fn>;
+  rollback: ReturnType<typeof vi.fn>;
+  release: ReturnType<typeof vi.fn>;
+}
+
+const mockConnection = (options?: {
+  query?: unknown[][];
+  executeReject?: unknown;
+}): MockConnection => {
+  const connection = {
+    beginTransaction: vi.fn(),
+    query: vi.fn(),
+    execute: vi.fn().mockResolvedValue([{ affectedRows: 1 }, []]),
+    commit: vi.fn(),
+    rollback: vi.fn(),
+    release: vi.fn(),
+  };
+  if (options?.query?.length) {
+    for (const result of options.query) {
+      connection.query.mockResolvedValueOnce(result);
+    }
+  } else {
+    connection.query.mockResolvedValue([[], []]);
+  }
+  if (options?.executeReject) connection.execute.mockRejectedValue(options.executeReject);
+  return connection;
+};
+
+const pool = (connection: MockConnection) => ({
+  getConnection: vi.fn().mockResolvedValue(connection),
 });

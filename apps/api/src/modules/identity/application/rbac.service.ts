@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import bcrypt from 'bcryptjs';
 import { SYSTEM_STATUS } from '@company/constants';
 import type {
@@ -17,7 +12,7 @@ import type {
 } from '@company/contracts';
 import type { AuditContext, AuditLogEntry } from '../../../common/audit/audit.types.js';
 import { AuditRepository } from './ports/audit.repository.js';
-import { RbacRepository } from './ports/rbac.repository.js';
+import { RbacRepository, type RbacWriteResult } from './ports/rbac.repository.js';
 
 @Injectable()
 export class RbacService {
@@ -34,69 +29,82 @@ export class RbacService {
   listRoleOptions() {
     return this.repository.listRoleOptions();
   }
-  async createUser(payload: CreateSystemUserPayload, context: AuditContext) {
+  async createUser(
+    payload: CreateSystemUserPayload,
+    context: AuditContext,
+  ): Promise<RbacWriteResult<string>> {
     if (!payload.username.trim() || !payload.displayName.trim() || payload.password.length < 6)
-      throw new BadRequestException('用户名、姓名必填，密码至少 6 位');
-    return {
-      id: await this.repository.createUser(
-        payload,
-        await bcrypt.hash(payload.password, 12),
-        this.audit('创建用户', context),
-      ),
-    };
+      return { status: 'invalid-input', message: '用户名、姓名必填，密码至少 6 位' };
+    return this.repository.createUser(
+      payload,
+      await bcrypt.hash(payload.password, 12),
+      this.audit('创建用户', context),
+    );
   }
-  async updateUser(id: string, payload: UpdateSystemUserPayload, context: AuditContext) {
+  updateUser(
+    id: string,
+    payload: UpdateSystemUserPayload,
+    context: AuditContext,
+  ): Promise<RbacWriteResult> {
     if (payload.username !== undefined && !payload.username.trim())
-      throw new BadRequestException('用户名不能为空');
+      return Promise.resolve({ status: 'invalid-input', message: '用户名不能为空' });
     if (payload.displayName !== undefined && !payload.displayName.trim())
-      throw new BadRequestException('姓名不能为空');
-    if (!(await this.repository.updateUser(id, payload, this.audit('更新用户资料', context))))
-      throw new NotFoundException('用户不存在');
+      return Promise.resolve({ status: 'invalid-input', message: '姓名不能为空' });
+    return this.repository.updateUser(id, payload, this.audit('更新用户资料', context));
   }
-  setUserStatus(id: string, status: number, context: AuditContext) {
+  setUserStatus(id: string, status: number, context: AuditContext): Promise<RbacWriteResult> {
     if (status !== SYSTEM_STATUS.disabled && status !== SYSTEM_STATUS.enabled)
-      throw new BadRequestException('状态无效');
+      return Promise.resolve({ status: 'invalid-input', message: '状态无效' });
     return this.repository.setUserStatus(id, status, this.audit('更新用户状态', context));
   }
-  async resetUserPassword(id: string, password: string, context: AuditContext) {
-    if (password.length < 6) throw new BadRequestException('密码至少 6 位');
-    const found = await this.repository.resetUserPassword(
+  async resetUserPassword(
+    id: string,
+    password: string,
+    context: AuditContext,
+  ): Promise<RbacWriteResult> {
+    if (password.length < 6) return { status: 'invalid-input', message: '密码至少 6 位' };
+    return this.repository.resetUserPassword(
       id,
       await bcrypt.hash(password, 12),
       this.audit('重置用户密码', context),
     );
-    if (!found) throw new NotFoundException('用户不存在');
   }
-  setUserRoles(id: string, roleIds: string[], context: AuditContext) {
+  setUserRoles(id: string, roleIds: string[], context: AuditContext): Promise<RbacWriteResult> {
     return this.repository.setUserRoles(id, roleIds, this.audit('分配用户角色', context));
   }
   listRoles(query: SystemRoleQuery) {
     return this.repository.listRoles(query);
   }
-  async createRole(payload: CreateSystemRolePayload, context: AuditContext) {
+  createRole(
+    payload: CreateSystemRolePayload,
+    context: AuditContext,
+  ): Promise<RbacWriteResult<string>> {
     if (!payload.name.trim() || !payload.code.trim())
-      throw new BadRequestException('角色名称和编码必填');
-    return { id: await this.repository.createRole(payload, this.audit('创建角色', context)) };
+      return Promise.resolve({ status: 'invalid-input', message: '角色名称和编码必填' });
+    return this.repository.createRole(payload, this.audit('创建角色', context));
   }
-  async updateRole(id: string, payload: UpdateSystemRolePayload, context: AuditContext) {
+  updateRole(
+    id: string,
+    payload: UpdateSystemRolePayload,
+    context: AuditContext,
+  ): Promise<RbacWriteResult> {
     if (payload.name !== undefined && !payload.name.trim())
-      throw new BadRequestException('角色名称不能为空');
+      return Promise.resolve({ status: 'invalid-input', message: '角色名称不能为空' });
     if (payload.code !== undefined && !payload.code.trim())
-      throw new BadRequestException('角色编码不能为空');
-    if (!(await this.repository.updateRole(id, payload, this.audit('更新角色', context))))
-      throw new NotFoundException('角色不存在');
+      return Promise.resolve({ status: 'invalid-input', message: '角色编码不能为空' });
+    return this.repository.updateRole(id, payload, this.audit('更新角色', context));
   }
-  async deleteRole(id: string, context: AuditContext) {
-    const result = await this.repository.deleteRole(id, this.audit('删除角色', context));
-    if (result === 'not-found') throw new NotFoundException('角色不存在');
-    if (result === 'in-use') throw new ConflictException('角色仍有关联用户，不能删除');
+  deleteRole(id: string, context: AuditContext): Promise<RbacWriteResult> {
+    return this.repository.deleteRole(id, this.audit('删除角色', context));
   }
-  async getRolePermissions(id: string) {
-    const permissionIds = await this.repository.getRolePermissionIds(id);
-    if (permissionIds === null) throw new NotFoundException('角色不存在');
-    return { roleId: id, permissionIds };
+  getRolePermissions(id: string) {
+    return this.repository.getRolePermissionIds(id);
   }
-  setRolePermissions(id: string, permissionIds: string[], context: AuditContext) {
+  setRolePermissions(
+    id: string,
+    permissionIds: string[],
+    context: AuditContext,
+  ): Promise<RbacWriteResult> {
     return this.repository.setRolePermissions(
       id,
       permissionIds,

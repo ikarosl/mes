@@ -17,6 +17,18 @@ import type {
   IdentityUser,
 } from '../../domain/identity.types.js';
 
+/**
+ * 写操作失败结果。业务失败（输入不合法、目标不存在、引用无效、自然键冲突）不作为异常抛出，
+ * 由 presentation 层统一映射为 HTTP 状态和错误信封；数据库错误在 infrastructure 内映射。
+ */
+export type RbacWriteFailure =
+  | { status: 'invalid-input'; message: string }
+  | { status: 'not-found' }
+  | { status: 'invalid-reference'; message: string }
+  | { status: 'conflict'; message: string };
+
+export type RbacWriteResult<T = void> = { status: 'success'; value: T } | RbacWriteFailure;
+
 export abstract class RbacRepository {
   abstract listUsers(query: SystemUserQuery): Promise<PageResult<IdentityUser>>;
   abstract listDepartmentOptions(): Promise<IdentityDepartmentOption[]>;
@@ -28,35 +40,43 @@ export abstract class RbacRepository {
     payload: CreateSystemUserPayload,
     passwordHash: string,
     audit: AuditLogEntry,
-  ): Promise<string>;
+  ): Promise<RbacWriteResult<string>>;
   abstract updateUser(
     userId: string,
     payload: UpdateSystemUserPayload,
     audit: AuditLogEntry,
-  ): Promise<boolean>;
-  abstract setUserStatus(userId: string, status: number, audit: AuditLogEntry): Promise<void>;
+  ): Promise<RbacWriteResult>;
+  abstract setUserStatus(
+    userId: string,
+    status: number,
+    audit: AuditLogEntry,
+  ): Promise<RbacWriteResult>;
   abstract resetUserPassword(
     userId: string,
     passwordHash: string,
     audit: AuditLogEntry,
-  ): Promise<boolean>;
-  abstract setUserRoles(userId: string, roleIds: string[], audit: AuditLogEntry): Promise<void>;
+  ): Promise<RbacWriteResult>;
+  abstract setUserRoles(
+    userId: string,
+    roleIds: string[],
+    audit: AuditLogEntry,
+  ): Promise<RbacWriteResult>;
   abstract listRoles(query: SystemRoleQuery): Promise<PageResult<IdentityRole>>;
-  abstract createRole(payload: CreateSystemRolePayload, audit: AuditLogEntry): Promise<string>;
+  abstract createRole(
+    payload: CreateSystemRolePayload,
+    audit: AuditLogEntry,
+  ): Promise<RbacWriteResult<string>>;
   abstract updateRole(
     roleId: string,
     payload: UpdateSystemRolePayload,
     audit: AuditLogEntry,
-  ): Promise<boolean>;
-  abstract deleteRole(
-    roleId: string,
-    audit: AuditLogEntry,
-  ): Promise<'deleted' | 'not-found' | 'in-use'>;
+  ): Promise<RbacWriteResult>;
+  abstract deleteRole(roleId: string, audit: AuditLogEntry): Promise<RbacWriteResult>;
   abstract getRolePermissionIds(roleId: string): Promise<string[] | null>;
   abstract setRolePermissions(
     roleId: string,
     permissionIds: string[],
     audit: AuditLogEntry,
-  ): Promise<void>;
+  ): Promise<RbacWriteResult>;
   abstract listPermissions(): Promise<IdentityPermission[]>;
 }

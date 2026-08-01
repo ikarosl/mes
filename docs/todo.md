@@ -1,136 +1,205 @@
-1 对象存储更改为仅S3标准适配器后再审查一遍代码，docker compose 配置项检查 正在做 （完成）
+# 项目整改、阶段任务与待决策事项
 
-2 审查上传文件代码 完成测试 （完成）
+本文是项目审查和开发阶段安排的正式参照，用于区分已经确认的问题、按阶段实施的整改、暂不能直接实施的业务冲突，以及一般工程任务。
 
-3 审查前后端接口分页问题和现存的架构问题进行分文件和模块。并提取出项目架构 代码质量规范 完善eslint , 前端文件拆分 （正在）
+## 1. 使用规则
 
-4 统一项目环境变量 （已完成）
+- `已完成`：已经落地，仅在回归审查发现新证据时重新打开。
+- `立即整改`：问题和目标行为已经确认，可以进入实施计划。
+- `阶段实施`：问题已经确认，但必须跟随对应业务迁移阶段实施，不得提前扩大范围。
+- `滞后 / 待决策`：现象或冲突已经发现，但实际业务需求、状态语义或计算口径尚未确定；只记录约束和决策输入，不直接改代码或 migration。
+- 数据库业务设计仍以 `docs/new.md` 为准；本文件记录实施时机和待决策事项。若两者存在冲突，必须先完成评审并同步规范，不能由实现自行选择。
+- 数据库结构调整只能追加 migration，已执行 migration 不得修改。
+- 系统管理的文件及其对象存储内容不得硬删除；业务“删除”只能通过停用、归档或软删除表达，并保留历史追溯能力。
 
-5 docker 服务开发环境快速启动脚本 跨环境 平台 兼容 （待后面做 这个事情可滞后 ）
+## 2. 已完成事项
 
-6 ci cd 完整模拟 保证运维部署环境（文件拆分完成后最高优先级任务）
+1. 对象存储已调整为 S3 标准适配器，并完成相关代码、Docker Compose 配置和上传文件测试审查。
+2. 项目环境变量已经统一。
+3. 已启用工艺路线的工序和 SOP 快照已在后端冻结；`202607290002-product-route-step-sop-version-snapshot` 已补充独立的 `sop_version_no_snapshot`，路线写入时会同时冻结文件名、对象键和版本号。
 
-7 其余模块业务逻辑代码 迁移。
+## 3. 已确认整改清单
 
-8 环境变量 生成 compose文件 和nginx 等部署文件，避免环境变量分散，且一处修改多处改动（最后再做都ok）
+### 3.1 System RBAC 写操作结果和数据库错误映射
 
-9 新版 SOP 会出现逻辑矛盾。采用以下规则，前端创建任务出现冲突问题，
-**当前是：下拉框选择参考文件 ！！ 但是这样还是在旧文件列表中选择（后续考虑在此将下拉框改为文件上传）**：
+状态：`已完成`
 
-1. 创建工序时 SOP 应当可选
-   有些工序只需要文字说明、设备参数或现场经验，不一定存在 SOP。当前数据库的 `default_sop_file_id` 允许为空，这个设计合理。因此：
+已确认问题：
 
-   - 可以创建无 SOP 工序；
-   - 工序启用不应强制要求 SOP；
-   - 工艺路线步骤的 `sop_file_id` 同样允许为空；
-   - 如果某类工序必须有 SOP，应作为单独业务规则配置，而不是全局强制。
+- 修改不存在用户的状态时，Repository 可能直接返回，HTTP 仍表现为成功。
+- 给不存在用户分配空角色列表、给不存在角色分配空权限列表时，可能记录成功审计。
+- 无效角色、权限、部门等引用依赖数据库外键失败，可能向客户端返回通用 500。
+- 用户名、角色编码等自然键冲突缺少统一映射，System 与 Product 的 409 语义不一致。
 
-2. SOP 文件内容一旦生成就永远不可覆盖
-   上传新内容不能修改原对象存储文件，也不能复用原 `technical_files` 记录。必须：
+整改要求：
 
-   - 新建一条 `technical_files` 记录；
-   - 生成新的 `version_no`；
-   - 使用新的对象存储 `object_key`；
-   - 保留旧版本供历史路线和生产记录追溯。
+- Repository 返回明确的 `success`、`not-found`、`invalid-reference`、`conflict` 结果或稳定模块错误。
+- 在同一事务内锁定目标用户或角色，并校验引用集合；空集合也必须校验目标是否存在。
+- 重复自然键返回 409，无效输入或引用返回稳定的 400/404，不得把 MySQL 错误直接暴露为 500。
+- 核心写入和成功审计保持同一事务。
+- 补充不存在目标、空角色/权限集合、无效引用和重复自然键的 API 测试及真实 MySQL 集成测试。
 
-3. 已启用工序可以“发布新版 SOP”，但不能修改旧版文件
-   这里需要修正“启用后完全不可变更 SOP”的表述。更准确的是：
+完成说明：
 
-   > 工序启用后不得覆盖、删除或修改已经发布的 SOP 文件；需要更新时必须发布新的 SOP 文件版本，并将工序默认 SOP 指向新版本。
+- RBAC 写路径统一返回 `RbacWriteResult`（`success`/`invalid-input`/`not-found`/`invalid-reference`/`conflict`）。写操作在事务内 `FOR UPDATE` 锁定目标用户或角色及引用记录，按主键升序加锁统一锁顺序，空集合同样校验目标存在；空白名称、短密码和非法状态由 application 层返回 `invalid-input` 结果。
+- `check-api-architecture.mjs` 的 `operation_logs` 唯一写入口检查增强为识别反引号表名、`REPLACE [INTO]` 和 schema 前缀写法。
+- `ER_DUP_ENTRY` 映射为 `conflict`（409）、外键失效映射为 `invalid-reference`（400），不再把 MySQL 错误暴露为 500；RbacService 不再直接抛 Nest HTTP 异常，由 RbacController（presentation）统一映射 HTTP 状态和错误信封。
+- 补充了仓库单元测试、控制器 API 测试和 `tests/integration/identity/rbac-persistence.mysql.test.ts` 真实 MySQL 集成测试。
 
-   这会改变工序的“默认 SOP 指针”，但不会修改旧文件，也不会影响已发布的路线。
+### 3.2 application 层协议和基础设施泄漏
 
-4. 已启用工艺路线必须冻结工序与 SOP 快照（后端改动已完成；前端交互待改动）
+状态：`立即整改`
 
-   后续前端主要还需要：
-   将“上传文件”明确为“发布新版 SOP”
-   展示 SOP 版本号和当前默认版本
-   草稿路线允许选择/刷新 SOP 版本
-   已启用路线只展示冻结版本，不允许替换
-   路线启用时，每个路线步骤应固定保存：
+已确认问题：
 
-   - `process_step_id`
-   - 工序编码、名称、说明快照
-   - SOP 文件 ID，可为空
-   - SOP 文件名快照
-   - SOP 版本号快照
-   - SOP 对象键快照
-   - 最好再保存校验和快照
-   - 报工、检验等执行规则快照
+- Identity 和 Product application 直接抛出 Nest HTTP 异常。
+- Product、Production application 识别 `ER_DUP_ENTRY` 等数据库驱动错误码。
+- Production 通过 Product 的公开入口依赖 `ProductDomainError`，公开错误契约和内部 domain 错误边界不清晰。
+- 当前 ESLint 和 `check-api-architecture.mjs` 没有完整覆盖 Identity、Product、Production，导致 `architecture:check` 可能误报通过。
 
-   后续工序切换到新版 SOP 时：
+整改要求：
 
-   - 已启用路线继续使用旧 SOP；
-   - 草稿路线可以刷新或选择新版 SOP；
-   - 已启用路线若要采用新版 SOP，必须创建新的路线版本。
+- 允许 application 使用 `@Injectable` 作为当前模块化单体的依赖注入手段，但不得直接抛 Nest HTTP 异常。
+- infrastructure adapter 将数据库、S3 等实现错误映射为稳定模块错误；presentation 统一映射 HTTP 状态和错误结构。
+- 跨模块公开稳定错误结果或查询契约，不直接把模块内部 domain 错误作为调用方控制流。
+- ESLint 和架构检查同时覆盖 Identity、Product、Production 及相关 common 边界。
+- 补充架构回归测试，保证 application 不引用 HTTP 异常、数据库驱动错误和 SDK 类型。
 
-   当前实现已经做到“路线启用后步骤和 SOP 快照不可原地修改”。`202607290002-product-route-step-sop-version-snapshot` 已补充独立的 `sop_version_no_snapshot`，路线写入时会与文件名、对象键一起冻结，生产公共快照不再实时读取 `technical_files.version_no`。校验和快照仍作为后续增强项，不与本次修复绑定。
+### 3.3 `operation_logs` 所有权与事务审计边界
 
-5. “未启用”和“停用”不能共用一个状态语义
-   当前 `process_steps.status` 只有：
+状态：`已完成`
 
-   - `1`：启用
-   - `0`：停用
+原冲突：
 
-   这无法区分“从未启用、仍可编辑的草稿”和“曾经启用、现在已经停用的历史工序”。如果规则是“启用前可修改，启用后不可原地修改”，建议改为：
+- `docs/architecture.md` 将 `operation_logs` 归属 Identity/System，同时规定 common 不拥有业务表、模块不得直接修改其他模块拥有的表。
+- 当前 `common/audit/transactional-audit-writer.ts` 直接保存 `operation_logs` 的 SQL，Product 和 Production repository 通过它参与业务事务。
+- 简单改为调用现有 Identity `AuditRepository.writeLog()` 不能自动保证加入调用方已经开启的数据库事务。
 
-   `draft → enabled → disabled → archived`
+已确定并落地的规则：
 
-   推荐行为：
+- `operation_logs` 明确归类为项目级平台审计基础设施，不属于 Identity/System、Product、Production
+  或 `common` 的业务数据；历史上与 RBAC 表位于同一初始 migration 不构成 Identity/System 所有权。
+- `common/audit/transactional-audit-writer.ts` 是唯一允许直接写 `operation_logs` 的基础设施入口。
+  各业务模块在自身事务 executor 内直接调用该 Writer，不要求也不得为了形式合规而通过 Identity
+  或其他模块的 `public.ts` 转发。
+- application port 继续禁止暴露 Pool、Connection 或事务 executor；审计 Writer 仅在 infrastructure
+  事务实现中使用。
+- `docs/architecture.md` 和自动架构检查已同步；审计查询当前继续由 Identity/System 提供公开能力。
+- 核心写入失败或成功审计失败时必须整体回滚；通用请求、拒绝和失败日志继续保持 best-effort。
 
-   - `draft`：可修改基本信息、可上传/移除默认 SOP；
-   - `enabled`：基本定义受控；可通过“发布新版 SOP”产生新文件版本；
-   - `disabled`：禁止被新路线选用，历史路线和生产记录继续有效；
-   - `archived`：终态，不允许重新启用或修改。
+### 3.4 正式业务列表分页和文件拆分
 
-结论：你的版本化和快照方向是正确的；“创建工序必须上传 SOP”不正确，SOP 应允许为空；“启用后不能改旧 SOP 文件”正确，但应该允许通过受控的“发布新版本”操作更新默认 SOP。否则工序启用后将没有合理的文件升级通道。
+状态：`正在进行`
 
-如果落实这套规则，将涉及 `docs/new.md`、产品模块策略、前后端交互及追加 migration，不能修改现有 migration。
+- 审查前后端接口分页问题；正式业务列表不得全量下载后在浏览器切片。
+- `process_steps` 等正式主数据列表需要服务端分页；表单选择使用独立、最小字段的 `/options` 接口。
+- 按模块和变化原因拆分超长文件，完善架构、代码质量规范和 ESLint；不得为了满足行数机械拆文件。
 
-10 追溯模块待迁移（追加于 Production 分阶段迁移）
+### 3.5 前端行内操作提交中守卫
 
-- 旧仓库没有可作为行为基准的全流程追溯交互；不得根据生产页面原型臆造接口或状态。
-- 在生产、库存和质量的事实链路稳定后，按 `docs/new.md` 第四章实现 `finished_flow_records` 及追溯查询。
-- 实现前需先补充验收场景：产品/工单/生产批次/工序记录/检验与返工/库存批次/库存流水之间的只读主链查询；库存数量仍只从 `inventory_transaction` 汇总。
-- 追溯记录不得成为第二库存事实来源，也不得通过页面直接写入汇总结果。
+状态：`已确认，统一整改`
 
-10. Production 追溯与质量闭环待完成（追加于 Production 分阶段迁移启动时）
+- 弹窗表单已经使用 `submitting` 和 `:loading`；下达、关闭、取消、启停、删除、生成物料等行内操作仍缺少统一 pending 守卫。
+- 重复状态流转通常会被 version 乐观锁阻止，数据安全但会产生多余请求和 409；交互层守卫不能替代服务端幂等。
+- 使用行级 `pendingIds: Set<string>`，入口同步添加、`finally` 删除，并绑定按钮 `disabled/loading`。
+- 涉及 Production 页面以及 Product、System 的 `toggleStatus`、`deleteRole` 等操作。
 
-- 旧项目没有可作为行为基准的追溯交互；不得臆造旧流程后直接实现。
-- 待生产工单、批次、物料需求、分配、领料出库和工序报工稳定后，按 `docs/new.md` 第四章迁移 `inspection_records`、`rework_records`、`finished_flow_records`。
-- 批次完工确认必须在该阶段补齐：必需报工工序完成、必检工序存在有效结论、无未关闭返工的事务校验。
-- 所有追溯查询只读快照和事实表；库存数量仍只从 `inventory_transaction` 汇总，不得在追溯表写入库存余额。
+## 4. 已确认但按阶段实施
 
-11. Production 物料需求精确十进制计算待确认
+### 4.1 Production HTTP 幂等闭环
 
-- 现有 `MysqlProductionBatchRepository.generateMaterialDemands()` 通过 `multiply()` 以 JavaScript `Number` 计算 `quantity_per_unit_snapshot * planned_output_quantity_snapshot`，再以 `toFixed(4)` 写入不可变事实 `production_item_demand.need_number`。
-- 这与 `docs/new.md`“业务数量统一使用 `DECIMAL(12,4)`、禁止使用浮点数保存数量”的要求存在不确定冲突；十进制定点边界值可能因二进制浮点舍入而得到错误结果。
-- 当前先保留计算行为，待确认是否因既有业务语义必须使用浮点计算。若确认需要整改，应改用精确十进制运算（字符串/定点整数或经评审的 decimal 库），补充边界值测试，并确认四舍五入规则后再落地。
+状态：`阶段 3 实施；分配、出库和库存流水迁移时启用`
 
-12 以下模块仍使用已弃用的 CurrentAuditContext，不在本次范围：（旧模块更新类型系统，待之后升级）
+当前状态：
 
-┌──────────┬───────────────────────────────────────────────────┐
-│ 模块 │ 文件 │
-├──────────┼───────────────────────────────────────────────────┤
-│ Identity │ rbac.controller.ts — 9 处 CurrentAuditContext │
-├──────────┼───────────────────────────────────────────────────┤
-│ Product │ product.controller.ts — 16 处 CurrentAuditContext │
-└──────────┴───────────────────────────────────────────────────┘
+- 数据层已经使用业务唯一约束和 version 乐观锁。
+- `production_item_demand` 使用 `NORMAL:{production_batch_id}:{product_material_id}` 作为内部稳定键。
+- `readIdempotencyKey`、`CommandContext.idempotencyKey` 和 `idempotencyConflict()` 为休眠代码，当前没有业务消费方。
+- 客户端不得发送伪 `Idempotency-Key`；启用时必须在具体接口契约中声明必填。
 
-13 前端行内/列表操作缺少提交中防抖守卫（交互层，全项目统一补齐）
+已确认缺口：
 
-- 现状：弹窗表单提交均有 `submitting` + `:loading` 守卫；行内操作（下达/关闭/取消/启停/删除，生产任务页「生成物料」）无 loading、无守卫，依赖确认框遮罩和后端兜底
-- 缺口场景：「确认后重复触发」会发出第二个请求——状态流转被 version 乐观锁挡（前端弹 409 失败，体验差但数据安全）；`generateMaterials` 无确认框无守卫，双击直接发两个请求（内部幂等键 UNIQUE 挡并发，但会报唯一键冲突）
-- 方案：行级 `pendingIds: Set<string>` 守卫，入口同步 add、finally delete，按钮 `:disabled` 绑定；`generateMaterials` 可考虑加二次确认
-- 涉及：production 两个页面 + product/system 的 toggleStatus/deleteRole 类函数
-- 与后端幂等闭环是不同层的问题（交互层 vs 协议层），互不替代
+- `nextBatchNo` 自动生成批次号；请求成功但响应丢失后重试会生成新的批次号和第二个批次，数据库 UNIQUE 无法识别同一业务意图。
+- 后续状态流转仅依赖 version 时，成功响应丢失后的重试可能返回 409，而不能重放原结果。
 
-14 后端幂等闭环拼图（协议层 HTTP 幂等键，阶段 3 未开始，分配/出库/库存流水迁移时启用）
+实施要求：
 
-阶段定位：数据层防重（UNIQUE + version 乐观锁）已完成；内部稳定键（production_item_demand）顺序幂等完成；HTTP 幂等闭环未开始——传输通道休眠（auth.decorators.ts 读取校验保留）、`optimistic-lock.ts` 的 `idempotencyConflict()` 工厂未接入业务、无键+规范化请求指纹+执行状态+原结果登记表、无重放返回原结果。
+- 使用 MySQL 中与业务写入同事务的幂等记录，保存幂等键、规范化请求指纹、执行状态和原结果；当前阶段不引入 Redis。
+- 相同键和相同指纹重放原结果；相同键和不同指纹返回稳定冲突错误。
+- 自动批次创建、后续确认、分配、出库和库存流水命令按风险逐项启用。
+- 补充“提交成功但响应丢失后重试”、同键不同请求、并发相同键的真实 MySQL 集成测试。
 
-缺口 A：`MysqlProductionBatchRepository.generateMaterialDemands` 并发重复提交时两个事务都读到旧状态，第二个 INSERT 相同 `idempotency_key` 报 ER_DUP_ENTRY 直接冒泡；需捕获唯一键冲突后查已有返回（注意 REPEATABLE READ 快照下失败方看不到对方未提交数据，需短暂重试或等提交）。
+待复验项：
 
-缺口 B：`nextBatchNo` 后端自动生成批次号，batchNo 留空的重复提交会产生两个不同批次号并创建两个批次（创建入口无状态守卫、无唯一键兜底）；按 `docs/concurrency-and-idempotency.md` 分层定义，此类创建动作属于 HTTP 幂等键启用清单。
+- `generateMaterialDemands` 已通过 `SELECT ... FOR UPDATE` 锁定批次；两个并发事务是否仍会同时读到旧状态并触发相同 `idempotency_key` 冲突，必须通过真实 MySQL 双事务测试确认，不能仅凭静态推断认定。
 
-休眠代码：`readIdempotencyKey`、`CommandContext.idempotencyKey`（连审计都未写入）、`idempotencyConflict()` 均无业务消费方，保留待阶段 3 接入；接入时需同步补接口契约声明（`Idempotency-Key` 必填接口显式声明）。
+### 4.2 Production 业务链路和追溯迁移
+
+状态：`分阶段实施`
+
+- 当前按生产工单、生产批次、工序报工、物料需求、分配和领料出库顺序迁移。
+- 未完成的报工、分配、出库和批次完工状态不是当前已上线缺陷，但未实现按钮不得表现为可用功能。
+- 通用库存、入库、退料、报废、盘点、质量和全链路追溯后端不得提前迁入。
+- 旧项目没有可作为行为基准的完整追溯交互，不得根据页面原型臆造接口和状态。
+- 生产、库存和质量事实链路稳定后，再按 `docs/new.md` 第四章实现 `inspection_records`、`rework_records`、`finished_flow_records` 和只读追溯查询。
+- 批次完工确认必须校验必需报工工序完成、必检工序存在有效结论、没有未关闭返工。
+- 追溯记录不得成为第二库存或需求事实来源；库存数量只从 `inventory_transaction` 汇总，生产需求只从 `production_item_demand` 读取。
+
+### 4.3 `CurrentAuditContext` 类型迁移
+
+状态：`滞后；不在当前整改范围`
+
+- Identity `rbac.controller.ts` 和 Product `product.controller.ts` 仍使用已弃用的 `CurrentAuditContext` / `AuditContext`。
+- 旧模块的类型系统后续统一升级；当前不因本项单独发起跨模块重构。
+- 新代码继续使用 `CommandContext`，不得扩大旧接口使用范围。
+
+## 5. 滞后及待业务决策事项
+
+### 5.1 SOP 发布、版本和删除语义
+
+状态：`整体方案滞后；实际需求确认后实施`
+
+滞后原因：
+
+- 尚未确认现场是继续从文件列表选择参考文件，还是在工序/任务入口直接上传并发布新版本。
+- 尚未确定 SOP 的逻辑文档身份、版本序列、发布入口、权限和工序状态生命周期。
+- `process_steps.status` 当前只有启用/停用，不能表达“从未启用的草稿”和“历史停用”；是否升级为 `draft -> enabled -> disabled -> archived` 需要同步业务规则、前后端交互、`docs/new.md` 和追加 migration。
+
+在完整方案确定前必须遵守的最低规则：
+
+- SOP 可以为空；不得全局强制所有工序上传 SOP。
+- 系统管理的任何文件都不允许硬删除，包括数据库记录对应的文件和对象存储内容。
+- 已发布 SOP 的“删除”只能禁止未来选择，不得删除或覆盖存储对象；旧版本必须保留供历史路线和生产记录追溯。
+- 新内容必须创建新的 `technical_files` 记录、新的 `version_no` 和新的 `object_key`，不得复用或覆盖旧记录、旧对象。
+- 已启用路线继续使用已冻结的旧 SOP；草稿路线是否允许刷新或选择新版本，待交互方案确认。
+- 校验和快照作为后续增强项，暂不与当前决策绑定。
+
+实施约束：
+
+- 当前不直接实施完整 SOP 生命周期和工序状态迁移。
+- 现有文件删除能力在满足“无硬删除”最低规则前不得作为正式可用能力。
+- 需求确认后先同步 `docs/new.md`、Product 策略和管理端交互，再追加 migration；不得修改已有 migration。
+
+### 5.2 Production 数量计算精度
+
+状态：`滞后；计算口径待业务确认`
+
+滞后原因：
+
+- 部分业务计算可能需要使用浮点计算过程，但当前尚未确认哪些计算允许使用、在哪一步舍入以及最终业务口径。
+- 尚未确定四舍五入方式、比较精度、溢出处理和中间计算精度。
+- 在统一口径前直接替换为某个 decimal 库或定点实现，可能固化错误业务语义。
+
+当前约束和待确认项：
+
+- 数据库存储继续遵守 `DECIMAL(12,4)`；不得把数据库事实字段改为 FLOAT/DOUBLE。
+- 当前 `multiply()` 使用 JavaScript `Number` 后 `toFixed(4)`，属于已知待确认实现，不立即修改。
+- 需要按字段和业务动作明确：输入允许精度、中间计算精度、舍入时点、舍入模式、比较规则、最大值和溢出行为。
+- 口径确认后，再选择字符串十进制、定点整数或经评审的 decimal 库，并补 `0.0001`、边界舍入、最大值和乘法溢出测试。
+
+## 6. 后续工程与部署任务
+
+1. 其余正式范围模块的业务逻辑按批准顺序迁移。
+2. Docker 开发环境快速启动脚本和跨平台兼容可以滞后实施。
+3. 文件拆分和质量门禁稳定后，最高优先级执行完整 CI/CD 模拟，保证运维部署环境。
+4. 最后统一生成 Compose、Nginx 等部署文件，避免环境变量分散及一处修改多处同步。

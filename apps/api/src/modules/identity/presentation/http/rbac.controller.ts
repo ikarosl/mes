@@ -1,7 +1,21 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  ConflictException,
+  Controller,
+  Delete,
+  Get,
+  NotFoundException,
+  Param,
+  Patch,
+  Post,
+  Put,
+  Query,
+} from '@nestjs/common';
 import { PERMISSIONS } from '@company/constants';
 import type { AuditContext } from '../../../../common/audit/audit.types.js';
 import { RbacService } from '../../application/rbac.service.js';
+import type { RbacWriteResult } from '../../application/ports/rbac.repository.js';
 import {
   AuditInApplication,
   CurrentAuditContext,
@@ -41,8 +55,9 @@ export class RbacController {
   @Post('users')
   @RequirePermission(PERMISSIONS.system.users.create)
   @AuditInApplication()
-  createUser(@Body() body: CreateUserDto, @CurrentAuditContext() audit: AuditContext) {
-    return this.rbac.createUser(body, audit);
+  async createUser(@Body() body: CreateUserDto, @CurrentAuditContext() audit: AuditContext) {
+    const result = await this.rbac.createUser(body, audit);
+    return { id: this.writeResult(result, '用户不存在') };
   }
   @Get('departments/options')
   @RequirePermission(PERMISSIONS.system.users.view)
@@ -57,42 +72,42 @@ export class RbacController {
   @Patch('users/:id')
   @RequirePermission(PERMISSIONS.system.users.update)
   @AuditInApplication()
-  updateUser(
+  async updateUser(
     @Param() { id }: IdParamDto,
     @Body() body: UpdateUserDto,
     @CurrentAuditContext() audit: AuditContext,
   ) {
-    return this.rbac.updateUser(id, body, audit);
+    this.writeResult(await this.rbac.updateUser(id, body, audit), '用户不存在');
   }
   @Patch('users/:id/status')
   @RequirePermission(PERMISSIONS.system.users.update)
   @AuditInApplication()
-  setUserStatus(
+  async setUserStatus(
     @Param() { id }: IdParamDto,
     @Body() body: UpdateUserStatusDto,
     @CurrentAuditContext() audit: AuditContext,
   ) {
-    return this.rbac.setUserStatus(id, body.status, audit);
+    this.writeResult(await this.rbac.setUserStatus(id, body.status, audit), '用户不存在');
   }
   @Patch('users/:id/password')
   @RequirePermission(PERMISSIONS.system.users.resetPassword)
   @AuditInApplication()
-  resetUserPassword(
+  async resetUserPassword(
     @Param() { id }: IdParamDto,
     @Body() body: ResetUserPasswordDto,
     @CurrentAuditContext() audit: AuditContext,
   ) {
-    return this.rbac.resetUserPassword(id, body.password, audit);
+    this.writeResult(await this.rbac.resetUserPassword(id, body.password, audit), '用户不存在');
   }
   @Put('users/:id/roles')
   @RequirePermission(PERMISSIONS.system.users.assignRoles)
   @AuditInApplication()
-  setUserRoles(
+  async setUserRoles(
     @Param() { id }: IdParamDto,
     @Body() body: AssignUserRolesDto,
     @CurrentAuditContext() audit: AuditContext,
   ) {
-    return this.rbac.setUserRoles(id, body.roleIds, audit);
+    this.writeResult(await this.rbac.setUserRoles(id, body.roleIds, audit), '用户不存在');
   }
   @Get('roles') @RequirePermission(PERMISSIONS.system.roles.view) roles(
     @Query() query: SystemRoleQueryDto,
@@ -109,39 +124,45 @@ export class RbacController {
   @Post('roles')
   @RequirePermission(PERMISSIONS.system.roles.create)
   @AuditInApplication()
-  createRole(@Body() body: CreateRoleDto, @CurrentAuditContext() audit: AuditContext) {
-    return this.rbac.createRole(body, audit);
+  async createRole(@Body() body: CreateRoleDto, @CurrentAuditContext() audit: AuditContext) {
+    const result = await this.rbac.createRole(body, audit);
+    return { id: this.writeResult(result, '角色不存在') };
   }
   @Patch('roles/:id')
   @RequirePermission(PERMISSIONS.system.roles.update)
   @AuditInApplication()
-  updateRole(
+  async updateRole(
     @Param() { id }: IdParamDto,
     @Body() body: UpdateRoleDto,
     @CurrentAuditContext() audit: AuditContext,
   ) {
-    return this.rbac.updateRole(id, body, audit);
+    this.writeResult(await this.rbac.updateRole(id, body, audit), '角色不存在');
   }
   @Delete('roles/:id')
   @RequirePermission(PERMISSIONS.system.roles.delete)
   @AuditInApplication()
-  deleteRole(@Param() { id }: IdParamDto, @CurrentAuditContext() audit: AuditContext) {
-    return this.rbac.deleteRole(id, audit);
+  async deleteRole(@Param() { id }: IdParamDto, @CurrentAuditContext() audit: AuditContext) {
+    this.writeResult(await this.rbac.deleteRole(id, audit), '角色不存在');
   }
   @Get('roles/:id/permissions')
   @RequirePermission(PERMISSIONS.system.roles.assignPermissions)
-  rolePermissions(@Param() { id }: IdParamDto) {
-    return this.rbac.getRolePermissions(id);
+  async rolePermissions(@Param() { id }: IdParamDto) {
+    const permissionIds = await this.rbac.getRolePermissions(id);
+    if (permissionIds === null) throw new NotFoundException('角色不存在');
+    return { roleId: id, permissionIds };
   }
   @Put('roles/:id/permissions')
   @RequirePermission(PERMISSIONS.system.roles.assignPermissions)
   @AuditInApplication()
-  setRolePermissions(
+  async setRolePermissions(
     @Param() { id }: IdParamDto,
     @Body() body: AssignRolePermissionsDto,
     @CurrentAuditContext() audit: AuditContext,
   ) {
-    return this.rbac.setRolePermissions(id, body.permissionIds, audit);
+    this.writeResult(
+      await this.rbac.setRolePermissions(id, body.permissionIds, audit),
+      '角色不存在',
+    );
   }
   @Get('permissions') @RequirePermission(PERMISSIONS.system.permissions.view) permissions() {
     return this.rbac.listPermissions();
@@ -153,5 +174,13 @@ export class RbacController {
       ...query,
       keyword: query.keyword?.trim() || undefined,
     });
+  }
+  /** presentation 层把协议无关的写结果映射为 HTTP 状态与错误信封。 */
+  private writeResult<T>(result: RbacWriteResult<T>, notFoundMessage: string): T {
+    if (result.status === 'success') return result.value;
+    if (result.status === 'not-found') throw new NotFoundException(notFoundMessage);
+    if (result.status === 'invalid-input') throw new BadRequestException(result.message);
+    if (result.status === 'invalid-reference') throw new BadRequestException(result.message);
+    throw new ConflictException(result.message);
   }
 }

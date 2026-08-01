@@ -7,7 +7,7 @@
 5. 库存只以 `inventory_transaction` 为事实来源；生产需求只以 `production_item_demand` 为事实来源；汇总视图不得写入。
 6. 主数据、可变业务单据和不可变事实遵守 `docs/new.md` 的审计、快照、乐观锁和冲销规则。
 7. 后端依赖为 `presentation -> application -> domain`，infrastructure 实现 application ports；application port 不得暴露数据库或 SDK 类型。
-8. 跨模块只能引用目标模块 `public.ts`；禁止访问其他模块内部层或直接查询、修改其他模块拥有的表。
+8. 跨模块只能引用目标模块 `public.ts`；禁止访问其他模块内部层或直接查询、修改其他模块拥有的表。唯一豁免是操作日志审计写入，统一由 `common/audit/transactional-audit-writer` 承担，不经过任何模块 public 能力转发（见 `docs/architecture.md` §4）。
 9. Controller 不写 SQL、不处理 Token 密钥、不承担业务事务。
 10. RBAC 后端校验是安全边界；前端只按页面权限控制菜单、路由和整页可见性，不要求对页面内操作按钮做细粒度权限隐藏；每个后端接口仍须独立鉴权。匿名接口必须显式 `@Public()`。
 11. Access Token 只在内存；Refresh Token 只通过 HttpOnly Cookie，不得写入 Web Storage。

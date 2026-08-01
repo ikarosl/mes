@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { Pool, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
+import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import type {
   CreateSystemRolePayload,
   CreateSystemUserPayload,
@@ -17,7 +17,11 @@ import type { AuditLogEntry } from '../../../common/audit/audit.types.js';
 import { writeTransactionalAudit } from '../../../common/audit/transactional-audit-writer.js';
 import { toBeijingISOString } from '../../../common/time/beijing-time.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
-import { type RbacRepository } from '../application/ports/rbac.repository.js';
+import {
+  type RbacRepository,
+  type RbacWriteFailure,
+  type RbacWriteResult,
+} from '../application/ports/rbac.repository.js';
 import type {
   IdentityDepartmentOption,
   IdentityPermission,
@@ -169,96 +173,127 @@ export class MysqlRbacRepository implements RbacRepository {
     payload: CreateSystemUserPayload,
     passwordHash: string,
     audit: AuditLogEntry,
-  ): Promise<string> {
-    return withTransaction(this.pool, async (connection) => {
-      const [result] = await connection.execute<ResultSetHeader>(
-        'INSERT INTO users (department_id,username,password_hash,display_name,email,mobile,status) VALUES (?,?,?,?,?,?,?)',
-        [
-          payload.departmentId ?? null,
-          payload.username,
-          passwordHash,
-          payload.displayName,
-          payload.email || null,
-          payload.mobile || null,
-          normalizeStatus(payload.status),
-        ],
-      );
-      for (const roleId of payload.roleIds ?? []) {
-        await connection.execute('INSERT INTO user_roles (user_id,role_id) VALUES (?,?)', [
-          result.insertId,
-          roleId,
-        ]);
-      }
-      const id = String(result.insertId);
-      await writeTransactionalAudit(connection, {
-        ...audit,
-        targetId: id,
-        targetType: 'user',
-        afterData: {
-          username: payload.username,
-          displayName: payload.displayName,
-          departmentId: payload.departmentId ?? null,
-          email: payload.email || null,
-          mobile: payload.mobile || null,
-          status: normalizeStatus(payload.status),
-          roleIds: payload.roleIds ?? [],
-        },
+  ): Promise<RbacWriteResult<string>> {
+    try {
+      return await withTransaction(this.pool, async (connection) => {
+        const roleIds = [...(payload.roleIds ?? [])].sort(compareNumericId);
+        const missingRoles = await findMissingReferenceIds(connection, 'roles', roleIds);
+        if (missingRoles.length > 0)
+          return { status: 'invalid-reference', message: '包含无效的角色引用' };
+        if (payload.departmentId) {
+          const missingDepartments = await findMissingReferenceIds(connection, 'departments', [
+            payload.departmentId,
+          ]);
+          if (missingDepartments.length > 0)
+            return { status: 'invalid-reference', message: '所选部门不存在或已停用' };
+        }
+        const [result] = await connection.execute<ResultSetHeader>(
+          'INSERT INTO users (department_id,username,password_hash,display_name,email,mobile,status) VALUES (?,?,?,?,?,?,?)',
+          [
+            payload.departmentId ?? null,
+            payload.username,
+            passwordHash,
+            payload.displayName,
+            payload.email || null,
+            payload.mobile || null,
+            normalizeStatus(payload.status),
+          ],
+        );
+        for (const roleId of roleIds) {
+          await connection.execute('INSERT INTO user_roles (user_id,role_id) VALUES (?,?)', [
+            result.insertId,
+            roleId,
+          ]);
+        }
+        const id = String(result.insertId);
+        await writeTransactionalAudit(connection, {
+          ...audit,
+          targetId: id,
+          targetType: 'user',
+          afterData: {
+            username: payload.username,
+            displayName: payload.displayName,
+            departmentId: payload.departmentId ?? null,
+            email: payload.email || null,
+            mobile: payload.mobile || null,
+            status: normalizeStatus(payload.status),
+            roleIds,
+          },
+        });
+        return writeSuccess(id);
       });
-      return id;
-    });
+    } catch (error) {
+      return mapWriteError(error, '用户名已存在');
+    }
   }
 
   async updateUser(
     userId: string,
     payload: UpdateSystemUserPayload,
     audit: AuditLogEntry,
-  ): Promise<boolean> {
-    return withTransaction(this.pool, async (connection) => {
-      const [rows] = await connection.query<
-        (RowDataPacket & {
-          username: string;
-          display_name: string;
-          department_id: number | null;
-          email: string | null;
-          mobile: string | null;
-        })[]
-      >(
-        'SELECT username,display_name,department_id,email,mobile FROM users WHERE id=? AND deleted_at IS NULL FOR UPDATE',
-        [userId],
-      );
-      const current = rows[0];
-      if (!current) return false;
-      const next = {
-        username: payload.username ?? current.username,
-        displayName: payload.displayName ?? current.display_name,
-        departmentId:
-          payload.departmentId === undefined ? current.department_id : payload.departmentId,
-        email: payload.email === undefined ? current.email : payload.email || null,
-        mobile: payload.mobile === undefined ? current.mobile : payload.mobile || null,
-      };
-      await connection.execute(
-        'UPDATE users SET username=?,display_name=?,department_id=?,email=?,mobile=? WHERE id=? AND deleted_at IS NULL',
-        [next.username, next.displayName, next.departmentId, next.email, next.mobile, userId],
-      );
-      await writeTransactionalAudit(connection, {
-        ...audit,
-        targetId: userId,
-        targetType: 'user',
-        beforeData: userSnapshot(current),
-        afterData: next,
+  ): Promise<RbacWriteResult> {
+    try {
+      return await withTransaction(this.pool, async (connection) => {
+        const [rows] = await connection.query<
+          (RowDataPacket & {
+            username: string;
+            display_name: string;
+            department_id: number | null;
+            email: string | null;
+            mobile: string | null;
+          })[]
+        >(
+          'SELECT username,display_name,department_id,email,mobile FROM users WHERE id=? AND deleted_at IS NULL FOR UPDATE',
+          [userId],
+        );
+        const current = rows[0];
+        if (!current) return { status: 'not-found' };
+        const departmentId =
+          payload.departmentId === undefined ? current.department_id : payload.departmentId;
+        if (departmentId !== null) {
+          const missingDepartments = await findMissingReferenceIds(connection, 'departments', [
+            String(departmentId),
+          ]);
+          if (missingDepartments.length > 0)
+            return { status: 'invalid-reference', message: '所选部门不存在或已停用' };
+        }
+        const next = {
+          username: payload.username ?? current.username,
+          displayName: payload.displayName ?? current.display_name,
+          departmentId,
+          email: payload.email === undefined ? current.email : payload.email || null,
+          mobile: payload.mobile === undefined ? current.mobile : payload.mobile || null,
+        };
+        await connection.execute(
+          'UPDATE users SET username=?,display_name=?,department_id=?,email=?,mobile=? WHERE id=? AND deleted_at IS NULL',
+          [next.username, next.displayName, next.departmentId, next.email, next.mobile, userId],
+        );
+        await writeTransactionalAudit(connection, {
+          ...audit,
+          targetId: userId,
+          targetType: 'user',
+          beforeData: userSnapshot(current),
+          afterData: next,
+        });
+        return writeSuccess(undefined);
       });
-      return true;
-    });
+    } catch (error) {
+      return mapWriteError(error, '用户名已存在');
+    }
   }
 
-  async setUserStatus(userId: string, status: number, audit: AuditLogEntry): Promise<void> {
-    await withTransaction(this.pool, async (connection) => {
+  async setUserStatus(
+    userId: string,
+    status: number,
+    audit: AuditLogEntry,
+  ): Promise<RbacWriteResult> {
+    return withTransaction(this.pool, async (connection) => {
       const [rows] = await connection.query<(RowDataPacket & { status: number })[]>(
         'SELECT status FROM users WHERE id=? AND deleted_at IS NULL FOR UPDATE',
         [userId],
       );
       const current = rows[0];
-      if (!current) return;
+      if (!current) return { status: 'not-found' };
       await connection.execute('UPDATE users SET status=? WHERE id=? AND deleted_at IS NULL', [
         status,
         userId,
@@ -270,6 +305,7 @@ export class MysqlRbacRepository implements RbacRepository {
         beforeData: { status: current.status },
         afterData: { status },
       });
+      return writeSuccess(undefined);
     });
   }
 
@@ -277,13 +313,17 @@ export class MysqlRbacRepository implements RbacRepository {
     userId: string,
     passwordHash: string,
     audit: AuditLogEntry,
-  ): Promise<boolean> {
+  ): Promise<RbacWriteResult> {
     return withTransaction(this.pool, async (connection) => {
-      const [result] = await connection.execute<ResultSetHeader>(
+      const [rows] = await connection.query<(RowDataPacket & { id: number })[]>(
+        'SELECT id FROM users WHERE id=? AND deleted_at IS NULL FOR UPDATE',
+        [userId],
+      );
+      if (!rows[0]) return { status: 'not-found' };
+      await connection.execute(
         'UPDATE users SET password_hash=? WHERE id=? AND deleted_at IS NULL',
         [passwordHash, userId],
       );
-      if (result.affectedRows !== 1) return false;
       await connection.execute(
         'UPDATE refresh_tokens SET revoked_at=COALESCE(revoked_at,NOW()) WHERE user_id=? AND revoked_at IS NULL',
         [userId],
@@ -294,31 +334,52 @@ export class MysqlRbacRepository implements RbacRepository {
         targetType: 'user',
         afterData: { refreshTokensRevoked: true },
       });
-      return true;
+      return writeSuccess(undefined);
     });
   }
 
-  async setUserRoles(userId: string, roleIds: string[], audit: AuditLogEntry): Promise<void> {
-    await withTransaction(this.pool, async (connection) => {
-      const [rows] = await connection.query<(RowDataPacket & { role_id: number })[]>(
-        'SELECT role_id FROM user_roles WHERE user_id=? ORDER BY role_id FOR UPDATE',
-        [userId],
-      );
-      await connection.execute('DELETE FROM user_roles WHERE user_id=?', [userId]);
-      for (const roleId of roleIds) {
-        await connection.execute('INSERT INTO user_roles (user_id,role_id) VALUES (?,?)', [
-          userId,
-          roleId,
-        ]);
-      }
-      await writeTransactionalAudit(connection, {
-        ...audit,
-        targetId: userId,
-        targetType: 'user',
-        beforeData: { roleIds: rows.map((row) => String(row.role_id)) },
-        afterData: { roleIds },
+  async setUserRoles(
+    userId: string,
+    roleIds: string[],
+    audit: AuditLogEntry,
+  ): Promise<RbacWriteResult> {
+    try {
+      return await withTransaction(this.pool, async (connection) => {
+        const [users] = await connection.query<(RowDataPacket & { id: number })[]>(
+          'SELECT id FROM users WHERE id=? AND deleted_at IS NULL FOR UPDATE',
+          [userId],
+        );
+        if (!users[0]) return { status: 'not-found' };
+        const sortedRoleIds = [...roleIds].sort(compareNumericId);
+        const missingRoles = await findMissingReferenceIds(connection, 'roles', sortedRoleIds);
+        if (missingRoles.length > 0)
+          return {
+            status: 'invalid-reference',
+            message: `包含无效的角色引用：${missingRoles.join(', ')}`,
+          };
+        const [rows] = await connection.query<(RowDataPacket & { role_id: number })[]>(
+          'SELECT role_id FROM user_roles WHERE user_id=? ORDER BY role_id FOR UPDATE',
+          [userId],
+        );
+        await connection.execute('DELETE FROM user_roles WHERE user_id=?', [userId]);
+        for (const roleId of sortedRoleIds) {
+          await connection.execute('INSERT INTO user_roles (user_id,role_id) VALUES (?,?)', [
+            userId,
+            roleId,
+          ]);
+        }
+        await writeTransactionalAudit(connection, {
+          ...audit,
+          targetId: userId,
+          targetType: 'user',
+          beforeData: { roleIds: rows.map((row) => String(row.role_id)) },
+          afterData: { roleIds },
+        });
+        return writeSuccess(undefined);
       });
-    });
+    } catch (error) {
+      return mapWriteError(error, '包含无效的角色引用');
+    }
   }
 
   async listRoles(query: SystemRoleQuery): Promise<PageResult<IdentityRole>> {
@@ -379,84 +440,99 @@ export class MysqlRbacRepository implements RbacRepository {
     return { items, total: Number(countRow?.total ?? 0), page, pageSize };
   }
 
-  async createRole(payload: CreateSystemRolePayload, audit: AuditLogEntry): Promise<string> {
-    return withTransaction(this.pool, async (connection) => {
-      const [result] = await connection.execute<ResultSetHeader>(
-        'INSERT INTO roles (name,code,description,status) VALUES (?,?,?,?)',
-        [payload.name, payload.code, payload.description ?? null, normalizeStatus(payload.status)],
-      );
-      const id = String(result.insertId);
-      await writeTransactionalAudit(connection, {
-        ...audit,
-        targetId: id,
-        targetType: 'role',
-        afterData: {
-          name: payload.name,
-          code: payload.code,
-          description: payload.description ?? null,
-          status: normalizeStatus(payload.status),
-        },
+  async createRole(
+    payload: CreateSystemRolePayload,
+    audit: AuditLogEntry,
+  ): Promise<RbacWriteResult<string>> {
+    try {
+      return await withTransaction(this.pool, async (connection) => {
+        const [result] = await connection.execute<ResultSetHeader>(
+          'INSERT INTO roles (name,code,description,status) VALUES (?,?,?,?)',
+          [
+            payload.name,
+            payload.code,
+            payload.description ?? null,
+            normalizeStatus(payload.status),
+          ],
+        );
+        const id = String(result.insertId);
+        await writeTransactionalAudit(connection, {
+          ...audit,
+          targetId: id,
+          targetType: 'role',
+          afterData: {
+            name: payload.name,
+            code: payload.code,
+            description: payload.description ?? null,
+            status: normalizeStatus(payload.status),
+          },
+        });
+        return writeSuccess(id);
       });
-      return id;
-    });
+    } catch (error) {
+      return mapWriteError(error, '角色编码已存在');
+    }
   }
 
   async updateRole(
     roleId: string,
     payload: UpdateSystemRolePayload,
     audit: AuditLogEntry,
-  ): Promise<boolean> {
-    return withTransaction(this.pool, async (connection) => {
-      const [rows] = await connection.query<
-        (RowDataPacket & {
-          name: string;
-          code: string;
-          description: string | null;
-          status: number;
-        })[]
-      >(
-        'SELECT name,code,description,status FROM roles WHERE id=? AND deleted_at IS NULL FOR UPDATE',
-        [roleId],
-      );
-      const current = rows[0];
-      if (!current) return false;
-      const next = {
-        name: payload.name ?? current.name,
-        code: payload.code ?? current.code,
-        description: payload.description === undefined ? current.description : payload.description,
-        status: payload.status === undefined ? current.status : normalizeStatus(payload.status),
-      };
-      await connection.execute(
-        'UPDATE roles SET name=?,code=?,description=?,status=? WHERE id=? AND deleted_at IS NULL',
-        [next.name, next.code, next.description, next.status, roleId],
-      );
-      await writeTransactionalAudit(connection, {
-        ...audit,
-        targetId: roleId,
-        targetType: 'role',
-        beforeData: current,
-        afterData: next,
+  ): Promise<RbacWriteResult> {
+    try {
+      return await withTransaction(this.pool, async (connection) => {
+        const [rows] = await connection.query<
+          (RowDataPacket & {
+            name: string;
+            code: string;
+            description: string | null;
+            status: number;
+          })[]
+        >(
+          'SELECT name,code,description,status FROM roles WHERE id=? AND deleted_at IS NULL FOR UPDATE',
+          [roleId],
+        );
+        const current = rows[0];
+        if (!current) return { status: 'not-found' };
+        const next = {
+          name: payload.name ?? current.name,
+          code: payload.code ?? current.code,
+          description:
+            payload.description === undefined ? current.description : payload.description,
+          status: payload.status === undefined ? current.status : normalizeStatus(payload.status),
+        };
+        await connection.execute(
+          'UPDATE roles SET name=?,code=?,description=?,status=? WHERE id=? AND deleted_at IS NULL',
+          [next.name, next.code, next.description, next.status, roleId],
+        );
+        await writeTransactionalAudit(connection, {
+          ...audit,
+          targetId: roleId,
+          targetType: 'role',
+          beforeData: current,
+          afterData: next,
+        });
+        return writeSuccess(undefined);
       });
-      return true;
-    });
+    } catch (error) {
+      return mapWriteError(error, '角色编码已存在');
+    }
   }
 
-  async deleteRole(
-    roleId: string,
-    audit: AuditLogEntry,
-  ): Promise<'deleted' | 'not-found' | 'in-use'> {
+  async deleteRole(roleId: string, audit: AuditLogEntry): Promise<RbacWriteResult> {
     return withTransaction(this.pool, async (connection) => {
       const [roles] = await connection.query<(RowDataPacket & { name: string; code: string })[]>(
         'SELECT name,code FROM roles WHERE id=? AND deleted_at IS NULL FOR UPDATE',
         [roleId],
       );
       const role = roles[0];
-      if (!role) return 'not-found';
+      if (!role) return { status: 'not-found' };
       const [counts] = await connection.query<(RowDataPacket & { count: number })[]>(
         'SELECT COUNT(*) count FROM user_roles WHERE role_id=?',
         [roleId],
       );
-      if ((counts[0]?.count ?? 0) > 0) return 'in-use';
+      if ((counts[0]?.count ?? 0) > 0)
+        return { status: 'conflict', message: '角色仍有关联用户，不能删除' };
       await connection.execute('DELETE FROM role_permissions WHERE role_id=?', [roleId]);
       await connection.execute('UPDATE roles SET deleted_at=NOW(),status=? WHERE id=?', [
         SYSTEM_STATUS.disabled,
@@ -469,7 +545,7 @@ export class MysqlRbacRepository implements RbacRepository {
         beforeData: role,
         afterData: { deleted: true },
       });
-      return 'deleted';
+      return writeSuccess(undefined);
     });
   }
 
@@ -490,27 +566,48 @@ export class MysqlRbacRepository implements RbacRepository {
     roleId: string,
     permissionIds: string[],
     audit: AuditLogEntry,
-  ): Promise<void> {
-    await withTransaction(this.pool, async (connection) => {
-      const [rows] = await connection.query<(RowDataPacket & { permission_id: number })[]>(
-        'SELECT permission_id FROM role_permissions WHERE role_id=? ORDER BY permission_id FOR UPDATE',
-        [roleId],
-      );
-      await connection.execute('DELETE FROM role_permissions WHERE role_id=?', [roleId]);
-      for (const permissionId of permissionIds) {
-        await connection.execute(
-          'INSERT INTO role_permissions (role_id,permission_id) VALUES (?,?)',
-          [roleId, permissionId],
+  ): Promise<RbacWriteResult> {
+    try {
+      return await withTransaction(this.pool, async (connection) => {
+        const [roles] = await connection.query<(RowDataPacket & { id: number })[]>(
+          'SELECT id FROM roles WHERE id=? AND deleted_at IS NULL FOR UPDATE',
+          [roleId],
         );
-      }
-      await writeTransactionalAudit(connection, {
-        ...audit,
-        targetId: roleId,
-        targetType: 'role',
-        beforeData: { permissionIds: rows.map((row) => String(row.permission_id)) },
-        afterData: { permissionIds },
+        if (!roles[0]) return { status: 'not-found' };
+        const sortedPermissionIds = [...permissionIds].sort(compareNumericId);
+        const missingPermissions = await findMissingReferenceIds(
+          connection,
+          'permissions',
+          sortedPermissionIds,
+        );
+        if (missingPermissions.length > 0)
+          return {
+            status: 'invalid-reference',
+            message: `包含无效的权限引用：${missingPermissions.join(', ')}`,
+          };
+        const [rows] = await connection.query<(RowDataPacket & { permission_id: number })[]>(
+          'SELECT permission_id FROM role_permissions WHERE role_id=? ORDER BY permission_id FOR UPDATE',
+          [roleId],
+        );
+        await connection.execute('DELETE FROM role_permissions WHERE role_id=?', [roleId]);
+        for (const permissionId of sortedPermissionIds) {
+          await connection.execute(
+            'INSERT INTO role_permissions (role_id,permission_id) VALUES (?,?)',
+            [roleId, permissionId],
+          );
+        }
+        await writeTransactionalAudit(connection, {
+          ...audit,
+          targetId: roleId,
+          targetType: 'role',
+          beforeData: { permissionIds: rows.map((row) => String(row.permission_id)) },
+          afterData: { permissionIds },
+        });
+        return writeSuccess(undefined);
       });
-    });
+    } catch (error) {
+      return mapWriteError(error, '包含无效的权限引用');
+    }
   }
 
   async listPermissions(): Promise<IdentityPermission[]> {
@@ -561,3 +658,39 @@ const userSnapshot = (row: {
   email: row.email,
   mobile: row.mobile,
 });
+
+const writeSuccess = <T>(value: T): RbacWriteResult<T> => ({ status: 'success', value });
+
+type ReferenceTable = 'roles' | 'permissions' | 'departments';
+
+/** 返回 ids 中不存在（软删除视为不存在）的引用，用于把引用失败映射为稳定 invalid-reference，而不是外键 500。 */
+const findMissingReferenceIds = async (
+  connection: Pick<PoolConnection, 'query'>,
+  table: ReferenceTable,
+  ids: string[],
+): Promise<string[]> => {
+  if (ids.length === 0) return [];
+  // 锁定引用记录：防止校验通过后、写入前引用被并发软删除/删除，导致外键虽通过却写入已删除引用。
+  // 升序锁定保证并发请求对同一批引用按相同顺序加锁，避免不同数组顺序造成的死锁。
+  const sortedIds = [...ids].sort(compareNumericId);
+  const placeholders = sortedIds.map(() => '?').join(',');
+  const [rows] = await connection.query<(RowDataPacket & { id: number })[]>(
+    `SELECT id FROM ${table} WHERE id IN (${placeholders}) AND deleted_at IS NULL FOR UPDATE`,
+    sortedIds,
+  );
+  const existing = new Set(rows.map((row) => String(row.id)));
+  return ids.filter((id) => !existing.has(id));
+};
+
+/** 按数值升序比较 BIGINT 主键字符串，保证多行引用锁的获取顺序一致。 */
+const compareNumericId = (a: string, b: string): number =>
+  BigInt(a) < BigInt(b) ? -1 : BigInt(a) > BigInt(b) ? 1 : 0;
+
+/** 把基础设施层可预期的数据库错误映射为写结果；未预期的错误继续上抛。 */
+const mapWriteError = (error: unknown, dupMessage: string): RbacWriteFailure => {
+  const code = (error as { code?: string })?.code;
+  if (code === 'ER_DUP_ENTRY') return { status: 'conflict', message: dupMessage };
+  if (code === 'ER_NO_REFERENCED_ROW_2')
+    return { status: 'invalid-reference', message: '包含无效的引用数据' };
+  throw error;
+};

@@ -2,7 +2,15 @@ import { access, readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 const root = process.cwd();
-const ignored = new Set(['.git', '.pnpm-store', '.turbo', 'coverage', 'dist', 'node_modules']);
+const ignored = new Set([
+  '.git',
+  '.pnpm-store',
+  '.turbo',
+  'coverage',
+  'dist',
+  'node_modules',
+  'ai_output', // 本地 AI 审查输出目录（已 gitignore），不属于文档源
+]);
 
 const markdownFiles = [];
 const walk = async (directory) => {

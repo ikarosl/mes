@@ -28,7 +28,11 @@ process-step 和 process-route；只有工艺能力出现独立生命周期、�
 提取 ProcessModule。
 
 `common` 仅存放真正跨模块且不含业务知识的能力，例如审计上下文、HTTP 安全装饰器和时间格式。
-`common` 不拥有业务表，也不得成为绕过模块边界的万能目录。
+`common` 不拥有业务表，也不得成为绕过模块边界的万能目录。`operation_logs` 是项目级平台审计
+基础设施，不归属 `common` 或任何业务模块（见 §4）。common 对模块边界规则的唯一豁免是审计写入：
+`common/audit/transactional-audit-writer`
+是写 `operation_logs` 的唯一合法咽喉，任何模块在自身事务 executor 内直接调用它追加成功审计，
+不经过目标模块 public 能力转发（见 §4 与 §6）。
 
 ## 3. 模块内部依赖
 
@@ -54,17 +58,27 @@ Controller 只负责协议映射、DTO、权限装饰器和响应转换，不写
 - 禁止引用其他模块的 Repository、domain、presentation、infrastructure 或深层 application 文件。
 - `@company/contracts` 只保存传输契约，不保存 Pool、PoolConnection、事务 executor 或 SDK 类型。
 - 每张业务表有唯一所属模块；模块不能直接查询或修改其他模块的表。
+- `operation_logs` 是项目级平台审计基础设施，不属于 Identity/System、Product、Production 或 `common`
+  的业务数据。其结构由项目数据库规范定义，变更统一在 `packages/database/migrations` 追加 migration；
+  历史上与 RBAC 表位于同一初始 migration 不构成 Identity/System 所有权。写入通道由
+  `common/audit/transactional-audit-writer` 统一承担，是跨模块 `public.ts` 规则的显式且唯一豁免：各模块
+  可在自身事务 executor 中直接调用该 writer，无需经任何模块的 `public.ts` 转发。除该 writer 外，任何
+  模块、Repository 或 Controller 禁止直接写该表。审计查询当前仍由 Identity/System 对外提供公开能力。
 - 跨模块读通过目标模块公开 Query/Directory Facade；跨模块写通过目标模块公开应用服务。
 - 组合根 `AppModule` 可以引用模块公开的装配对象，但不写业务逻辑。
 
 当前数据所有权：
 
-| 模块            | 拥有的数据                                                                                                                               |
-| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| Identity/System | departments、users、roles、permissions、关联表、refresh_tokens、operation_logs                                                           |
-| Product         | product_categories、products、product_materials、technical_files、process_steps、process_routes 及关联表                                 |
-| Production      | work_orders、production_batches、batch_step_records、production_item_demand、production_item_allocation、outbound_order、outbound_detail |
-| common          | 不拥有业务表                                                                                                                             |
+| 所有者/类别      | 拥有或管理的数据                                                                                                                         |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Identity/System  | departments、users、roles、permissions、关联表、refresh_tokens                                                                           |
+| Product          | product_categories、products、product_materials、technical_files、process_steps、process_routes 及关联表                                 |
+| Production       | work_orders、production_batches、batch_step_records、production_item_demand、production_item_allocation、outbound_order、outbound_detail |
+| 平台审计基础设施 | operation_logs                                                                                                                           |
+| common           | 不拥有业务表                                                                                                                             |
+
+`operation_logs` 的唯一写入能力由 `common/audit/transactional-audit-writer` 承担（见 §4 审计豁免与
+§6）；目录位置表示共享基础设施入口，不表示 `common` 拥有该表。
 
 Product 获取用户选项必须调用 Identity 的公开目录服务，不能直接查询 `users`。
 
@@ -82,6 +96,8 @@ Repository 或页面超过 500 行只产生维护性警告。拆分必须依据�
 - application 描述业务动作；infrastructure 使用数据库连接执行原子写入。
 - application port 不得暴露数据库连接类型。
 - 核心业务写入和成功审计使用同一个事务 executor；审计失败时整体回滚并返回失败。
+- 审计写入不归属任何业务模块：所有模块在自身事务 executor 内直接调用
+  `common/audit/transactional-audit-writer` 追加成功审计，不通过目标模块 public 能力转发（见 §4 豁免）。
 - 通用 HTTP、登录、401/403 和失败日志采用 best-effort；写日志失败不能覆盖原响应或原异常。
 - 禁止 fire-and-forget 核心写操作。
 - 跨多个业务模块的写入在出现真实用例前不预建分布式事务；优先由一个明确用例通过公开 Facade 编排。
@@ -105,15 +121,16 @@ Repository 或页面超过 500 行只产生维护性警告。拆分必须依据�
 
 ## 9. 自动约束
 
-| 规则                    | 自动措施                         |
-| ----------------------- | -------------------------------- |
-| 分层反向依赖            | ESLint `no-restricted-imports`   |
-| 跨模块深层 import       | ESLint `boundaries/dependencies` |
-| domain 引入框架/数据库  | ESLint error                     |
-| Repository/Vue 文件过长 | ESLint warning                   |
-| DTO、分页和错误结构     | 单元测试、契约测试               |
-| 核心写入与审计原子性    | Repository 事务测试              |
-| 数据表所有权            | 架构测试和代码评审               |
-| 文档失效链接            | `pnpm docs:check`                |
+| 规则                    | 自动措施                                                        |
+| ----------------------- | --------------------------------------------------------------- |
+| 分层反向依赖            | ESLint `no-restricted-imports`                                  |
+| 跨模块深层 import       | ESLint `boundaries/dependencies`                                |
+| domain 引入框架/数据库  | ESLint error                                                    |
+| Repository/Vue 文件过长 | ESLint warning                                                  |
+| DTO、分页和错误结构     | 单元测试、契约测试                                              |
+| 核心写入与审计原子性    | Repository 事务测试                                             |
+| 审计写入唯一咽喉        | 架构测试（仅 `transactional-audit-writer` 可写 operation_logs） |
+| 数据表所有权            | 架构测试和代码评审                                              |
+| 文档失效链接            | `pnpm docs:check`                                               |
 
 新增模块时必须先登记业务能力、数据所有权和公开入口，再实现代码并补充边界测试。

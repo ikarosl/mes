@@ -38,6 +38,10 @@
 
 ## 数据库影响
 
-现有 `departments`、`users`、`roles`、`permissions`、`user_roles`、`role_permissions`、`refresh_tokens` 和 `operation_logs` 已满足业务数据结构，无需新增业务表。迁移 `202607220001-system-module-permissions` 仅追加“重置用户密码”和“删除角色”两个权限点；既有迁移保持不变。
+System 现有 `departments`、`users`、`roles`、`permissions`、`user_roles`、`role_permissions` 和
+`refresh_tokens` 已满足业务数据结构，无需新增业务表。`operation_logs` 是项目级平台审计基础设施，
+不属于 System 业务数据；System 仅提供当前审计查询入口，业务模块写入时可直接调用唯一事务审计
+Writer，无需通过 System `public.ts`。迁移 `202607220001-system-module-permissions` 仅追加“重置用户密码”
+和“删除角色”两个权限点；既有迁移保持不变。
 
 202607280001-operation-log-request-context 已为 `operation_logs` 追加 `request_id`、`http_method`、`route`、`http_status`、`duration_ms`、`user_agent` 和 `error_code` 字段，并建立了 `idx_operation_logs_request_id` 索引。接口可直接返回这些字段，请求 ID 筛选功能正常。后续若再新增字段，必须追加新的迁移，不能修改已执行迁移。
