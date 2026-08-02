@@ -1,6 +1,4 @@
 import type {
-  ProductCategoryListItem,
-  ProductCategoryPayload,
   ProductListItem,
   ProductMaterialItem,
   ProductMaterialPayload,
@@ -12,17 +10,6 @@ import type {
 import type { AuditContext } from '../../../../common/audit/audit.types.js';
 
 export abstract class ProductCatalogRepository {
-  abstract listCategories(): Promise<ProductCategoryListItem[]>;
-  abstract createCategory(
-    payload: ProductCategoryPayload,
-    audit: AuditContext,
-  ): Promise<{ id: string }>;
-  abstract updateCategory(
-    id: string,
-    payload: ProductCategoryPayload,
-    audit: AuditContext,
-  ): Promise<void>;
-  abstract setCategoryStatus(id: string, status: number, audit: AuditContext): Promise<void>;
   abstract listProducts(query: ProductListQuery): Promise<PageResult<ProductListItem>>;
   abstract listProductOptions(): Promise<ProductOption[]>;
   abstract createProduct(payload: ProductPayload, audit: AuditContext): Promise<{ id: string }>;

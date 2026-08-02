@@ -161,12 +161,16 @@ export default tseslint.config(
   {
     files: ['apps/api/src/modules/*/infrastructure/**/*.ts'],
     rules: {
+      // 聚合内聚警示线，不是机械上限：超过 500 行按聚合根、变化原因和事务边界拆窄 Port 适配器，
+      // 禁止为了压行数搬移代码。见 docs/coding-standards.md §4。
       'max-lines': ['warn', { max: 500, skipBlankLines: true, skipComments: true }],
     },
   },
   {
     files: ['apps/admin-web/src/views/**/*.vue'],
     rules: {
+      // 视图内聚警示线：超过 500 行优先把列表状态/分页/副作用提取为 useXxx composable，
+      // 模板与样式不是拆分对象，禁止机械拆行数。见 docs/coding-standards.md §5。
       'max-lines': ['warn', { max: 500, skipBlankLines: true, skipComments: true }],
     },
   },

@@ -21,19 +21,21 @@
 
 | 方法与路径                             | 用途                                                         | 权限                                 |
 | -------------------------------------- | ------------------------------------------------------------ | ------------------------------------ |
-| `GET /categories`                      | 分类列表                                                     | `product:categories:view`            |
+| `GET /categories`                      | 分页查询分类列表                                             | `product:categories:view`            |
+| `GET /categories/options`              | 分类表单选项（最小字段，仅启用）                             | `product:categories:view`            |
 | `POST /categories`                     | 新增分类                                                     | `product:categories:create`          |
 | `PATCH /categories/:id`                | 编辑分类                                                     | `product:categories:update`          |
 | `PATCH /categories/:id/status`         | 启停分类                                                     | `product:categories:change-status`   |
 | `GET /products`                        | 产品、物料和半成品统一列表                                   | `product:products:view`              |
-| `GET /products/form-options`           | 产品页面所需分类、投入物料和路线选项                         | `product:products:view`              |
+| `GET /products/options`                | 产品、物料和半成品选项（最小字段，仅启用）                   | `product:products:view`              |
 | `POST /products`                       | 新增统一库存对象                                             | `product:products:create`            |
 | `PATCH /products/:id`                  | 编辑基础资料                                                 | `product:products:update`            |
 | `PATCH /products/:id/status`           | 启停基础资料                                                 | `product:products:change-status`     |
 | `GET /products/:id/materials`          | 查询统一 BOM                                                 | `product:products:view`              |
 | `PUT /products/:id/materials`          | 事务替换统一 BOM                                             | `product:products:manage-bom`        |
 | `PATCH /products/:id/default-route`    | 设置同产品已启用的默认路线                                   | `product:products:set-default-route` |
-| `GET /process-steps`                   | 标准工序列表                                                 | `product:processes:view`             |
+| `GET /process-steps`                   | 分页查询标准工序列表                                         | `product:processes:view`             |
+| `GET /process-steps/options`           | 标准工序选项（最小字段，仅启用）                             | `product:processes:view`             |
 | `POST /process-steps`                  | 新增标准工序                                                 | `product:processes:create`           |
 | `PATCH /process-steps/:id`             | 编辑标准工序                                                 | `product:processes:update`           |
 | `PATCH /process-steps/:id/status`      | 启停标准工序                                                 | `product:processes:change-status`    |
@@ -44,7 +46,8 @@
 | `DELETE /technical-files/:id`          | 软删除未被引用的技术文件（停用并标记删除，对象存储内容保留） | `product:files:delete`               |
 | `PATCH /process-steps/:id/default-sop` | 关联、替换或解除默认 SOP                                     | `product:files:attach`               |
 | `GET /process-routes`                  | 工艺路线版本列表                                             | `product:routes:view`                |
-| `GET /process-routes/form-options`     | 路线页面的产品、工序、负责人选项                             | `product:routes:view`                |
+| `GET /process-routes/options`          | 已启用路线选项（最小字段）                                   | `product:routes:view`                |
+| `GET /users/options`                   | 用户选项（最小字段，仅启用）                                 | `product:routes:view`                |
 | `POST /process-routes`                 | 新建草稿路线版本                                             | `product:routes:create`              |
 | `PATCH /process-routes/:id`            | 编辑草稿路线                                                 | `product:routes:update`              |
 | `PATCH /process-routes/:id/status`     | 路线状态流转                                                 | `product:routes:change-status`       |
@@ -52,7 +55,7 @@
 | `GET /process-routes/:id/steps`        | 路线步骤与 BOM 关联                                          | `product:routes:view`                |
 | `PUT /process-routes/:id/steps`        | 保存步骤顺序、SOP/规则快照及 BOM 关联                        | `product:routes:manage-steps`        |
 
-`GET /products` 和 `GET /process-routes` 使用通用 `PageResult<T>` 响应。产品列表支持 `page`、`pageSize`、`keyword`、`categoryId`、`acquireMethod` 和 `status`；路线列表支持 `page`、`pageSize`、`keyword` 和 `status`。`form-options` 仅返回表单需要的选项数据，不承担正式列表分页。
+`GET /products`、`GET /process-routes`、`GET /categories` 和 `GET /process-steps` 使用通用 `PageResult<T>` 响应。产品列表支持 `page`、`pageSize`、`keyword`、`categoryId`、`acquireMethod` 和 `status`；路线列表支持 `page`、`pageSize`、`keyword` 和 `status`；分类列表支持 `page`、`pageSize`、`categoryCode`、`categoryName` 和 `status`；工序列表支持 `page`、`pageSize`、`keyword` 和 `status`。表单选择统一使用独立 `/options` 接口（最小字段、默认排除停用和删除记录），不承担正式列表分页。
 
 ## 4. 工作流不变量
 

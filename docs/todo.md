@@ -98,11 +98,15 @@
 
 ### 3.4 正式业务列表分页和文件拆分
 
-状态：`正在进行`
+状态：`已完成`
 
-- 审查前后端接口分页问题；正式业务列表不得全量下载后在浏览器切片。
-- `process_steps` 等正式主数据列表需要服务端分页；表单选择使用独立、最小字段的 `/options` 接口。
-- 按模块和变化原因拆分超长文件，完善架构、代码质量规范和 ESLint；不得为了满足行数机械拆文件。
+完成说明：
+
+- `process_steps`、`product_categories` 列表改为服务端分页（新增 `ProcessStepQuery`/`ProductCategoryQuery`，返回 `PageResult<T>`），前端 `ProcessesPage.vue`、`ProductCategoriesPage.vue` 不再全量下载后在浏览器切片；分类页父分类下拉改用独立 `/categories/options`，与分页列表解耦。
+- 表单选择统一改为独立、最小字段的 `/options` 接口：新增 `/categories/options`、`/process-steps/options`、`/process-routes/options`，与已有 `/products/options`、`/users/options` 一起由前端 `Promise.all` 并发组合；删除聚合端点 `products/form-options`、`process-routes/form-options`，消除完整列表类型（`ProductCategoryListItem`/`ProcessStepListItem`）泄漏到表单。
+- 按变化原因拆分超长基础设施文件：分类聚合拆为 `MysqlProductCategoryRepository`（新端口 `ProductCategoryRepository`），产品/BOM 聚合保留 `MysqlProductCatalogRepository`；路线生命周期保留 `MysqlProcessRouteRepository`，路线步骤（SOP 快照冻结、BOM 关联）拆为 `MysqlProcessRouteStepRepository`（新端口 `ProcessRouteStepRepository`）。`ProcessesPage.vue`/`ProductCategoriesPage.vue` 抽取 `useProcessSteps`/`useProductCategories` composable（视图与状态分离）。warehouse 演示页、System 模块等在各自迁移阶段再处理，不为压行数机械拆分。
+- 规范与门禁：`docs/api-conventions.md` §5 明确“表单选择必须使用独立 `/options`、禁止复用分页列表接口在浏览器过滤、聚合 form-options 为反模式”；`docs/coding-standards.md` §4/§5 把 500 行定义为聚合/视图内聚警示线并给出拆分原则；`eslint.config.js` 的 `max-lines` 保持 warn 作为内聚信号并补注释说明。
+- 验证：API 与前端 typecheck、单测、lint、architecture:check、build 全部通过；`form-options` 端点与前端调用在源码中无残留，仅文档作为反模式说明保留。
 
 ### 3.5 前端行内操作提交中守卫
 

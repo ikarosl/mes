@@ -2,7 +2,7 @@ import { reactive, ref } from 'vue';
 import type {
   ProcessRouteListItem,
   ProcessRouteStatus,
-  ProcessStepListItem,
+  ProcessStepOption,
   ProductMaterialItem,
   ProductOption,
   UserOption,
@@ -13,7 +13,7 @@ import { EMessage } from '../../../utils/message';
 export function useProcessRoutes() {
   const routes = ref<ProcessRouteListItem[]>([]);
   const productOptions = ref<ProductOption[]>([]);
-  const processOptions = ref<ProcessStepListItem[]>([]);
+  const processOptions = ref<ProcessStepOption[]>([]);
   const userOptions = ref<UserOption[]>([]);
   const routeMaterialOptions = ref<ProductMaterialItem[]>([]);
   const loading = ref(false);
@@ -66,15 +66,17 @@ export function useProcessRoutes() {
     if (!optionsRequest) {
       optionsRequest = (async () => {
         try {
-          const options = await productApi.routeFormOptions();
-          productOptions.value = options.products.filter(
+          const [products, steps, users] = await Promise.all([
+            productApi.productOptions(),
+            productApi.processStepOptions(),
+            productApi.userOptions(),
+          ]);
+          productOptions.value = products.filter(
             (item: ProductOption) =>
               item.acquireMethod === 'self_made' && item.itemKind !== 'material',
           );
-          processOptions.value = options.processSteps.filter(
-            (item: ProcessStepListItem) => item.status === 1,
-          );
-          userOptions.value = options.users;
+          processOptions.value = steps;
+          userOptions.value = users;
         } catch (error) {
           EMessage.error(error, '工艺路线选项加载失败');
         }

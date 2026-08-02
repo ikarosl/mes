@@ -7,9 +7,13 @@ import type {
   ProcessRouteStepItem,
   ProcessRouteStepPayload,
   ProcessStepListItem,
+  ProcessStepOption,
   ProcessStepPayload,
+  ProcessStepQuery,
   ProductCategoryListItem,
+  ProductCategoryOption,
   ProductCategoryPayload,
+  ProductCategoryQuery,
   ProductListItem,
   ProductListQuery,
   ProductMaterialItem,
@@ -47,7 +51,9 @@ const cleanProductPayload = (data: ProductPayload): ProductPayload => ({
 export const productApi = {
   technicalFiles: (params: TechnicalFileQuery) =>
     request<PageResult<TechnicalFileListItem>>({ url: `${base}/technical-files`, params }),
-  categories: () => request<ProductCategoryListItem[]>({ url: `${base}/categories` }),
+  categories: (params: ProductCategoryQuery) =>
+    request<PageResult<ProductCategoryListItem>>({ url: `${base}/categories`, params }),
+  categoryOptions: () => request<ProductCategoryOption[]>({ url: `${base}/categories/options` }),
   createCategory: (data: ProductCategoryPayload) =>
     request<{ id: string }>({ url: `${base}/categories`, method: 'POST', data }),
   updateCategory: (id: string, data: ProductCategoryPayload) =>
@@ -58,12 +64,6 @@ export const productApi = {
   products: (params: ProductListQuery) =>
     request<PageResult<ProductListItem>>({ url: `${base}/products`, params }),
   productOptions: () => request<ProductOption[]>({ url: `${base}/products/options` }),
-  productFormOptions: () =>
-    request<{
-      categories: ProductCategoryListItem[];
-      products: ProductOption[];
-      routes: ProcessRouteOption[];
-    }>({ url: `${base}/products/form-options` }),
   createProduct: (data: ProductPayload) =>
     request<{ id: string }>({
       url: `${base}/products`,
@@ -89,7 +89,9 @@ export const productApi = {
       data: { routeId },
     }),
 
-  processSteps: () => request<ProcessStepListItem[]>({ url: `${base}/process-steps` }),
+  processSteps: (params: ProcessStepQuery) =>
+    request<PageResult<ProcessStepListItem>>({ url: `${base}/process-steps`, params }),
+  processStepOptions: () => request<ProcessStepOption[]>({ url: `${base}/process-steps/options` }),
   createProcessStep: (data: ProcessStepPayload) =>
     request<{ id: string }>({ url: `${base}/process-steps`, method: 'POST', data }),
   updateProcessStep: (id: string, data: ProcessStepPayload) =>
@@ -104,12 +106,7 @@ export const productApi = {
 
   routes: (params: ProcessRouteQuery) =>
     request<PageResult<ProcessRouteListItem>>({ url: `${base}/process-routes`, params }),
-  routeFormOptions: () =>
-    request<{
-      products: ProductOption[];
-      processSteps: ProcessStepListItem[];
-      users: UserOption[];
-    }>({ url: `${base}/process-routes/form-options` }),
+  routeOptions: () => request<ProcessRouteOption[]>({ url: `${base}/process-routes/options` }),
   createRoute: (data: ProcessRoutePayload) =>
     request<{ id: string }>({ url: `${base}/process-routes`, method: 'POST', data }),
   updateRoute: (id: string, data: ProcessRoutePayload) =>

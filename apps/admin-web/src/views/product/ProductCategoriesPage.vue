@@ -79,7 +79,7 @@
 
       <el-table
         v-loading="loading"
-        :data="pagedCategories"
+        :data="categories"
         class="data-table"
       >
         <el-table-column
@@ -149,159 +149,74 @@
       </el-table>
 
       <PaginationFooter
-        :total="filteredCategories.length"
+        :total="total"
         :current-page="currentPage"
         :page-size="pageSize"
         @update:page-size="handlePageSizeChange"
-        @page-change="currentPage = $event"
+        @page-change="handlePageChange"
       />
     </div>
 
-    <el-dialog
-      v-model="categoryDialogVisible"
-      :title="editingCategoryId ? '编辑分类' : '新增分类'"
-      :width="DialogWidth.md"
-      @closed="resetCategoryForm"
-    >
-      <el-form
-        class="dialog-form"
-        label-width="96px"
-        :model="categoryForm"
-      >
-        <el-form-item
-          label="分类编码"
-          required
-        >
-          <el-input
-            v-model="categoryForm.categoryCode"
-            placeholder="例如：MAT-ELECTRONIC"
-          />
-        </el-form-item>
-        <el-form-item
-          label="分类名称"
-          required
-        >
-          <el-input
-            v-model="categoryForm.categoryName"
-            placeholder="例如：电子物料"
-          />
-        </el-form-item>
-        <el-form-item
-          label="对象类型"
-          required
-        >
-          <el-select
-            v-model="categoryForm.itemKind"
-            :disabled="Boolean(editingCategoryId)"
-          >
-            <el-option
-              v-for="(label, value) in itemKindLabels"
-              :key="value"
-              :label="label"
-              :value="value"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="父分类">
-          <el-select
-            v-model="categoryForm.parentId"
-            clearable
-            placeholder="顶级分类"
-            @visible-change="refreshCategories"
-          >
-            <el-option
-              v-for="choice in parentChoices"
-              :key="choice.value"
-              :label="
-                choice.option
-                  ? `${choice.option.categoryCode} / ${choice.option.categoryName}`
-                  : `${choice.value}（已失效）`
-              "
-              :value="choice.value"
-              :disabled="choice.isUnavailable"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="状态">
-          <el-switch
-            v-model="categoryForm.enabled"
-            active-text="启用"
-            inactive-text="停用"
-          />
-        </el-form-item>
-        <el-form-item label="备注">
-          <el-input
-            v-model="categoryForm.remark"
-            type="textarea"
-            :rows="3"
-            placeholder="可填写分类说明"
-          />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="categoryDialogVisible = false">取消</el-button>
-        <el-button
-          type="primary"
-          :loading="submitting"
-          @click="submitCategory"
-          >保存分类</el-button
-        >
-      </template>
-    </el-dialog>
+    <ProductCategoryFormDialog
+      ref="categoryFormDialogRef"
+      :visible="categoryDialogVisible"
+      :editing-category-id="editingCategoryId"
+      :category-options="categoryOptions"
+      :item-kind-labels="itemKindLabels"
+      :submitting="submitting"
+      @update:visible="categoryDialogVisible = $event"
+      @refresh-options="refreshCategoryOptions"
+      @save="submitCategory"
+    />
 
-    <el-dialog
-      v-model="detailDialogVisible"
-      title="分类详情"
-      :width="DialogWidth.md"
-    >
-      <el-descriptions
-        v-if="detailRow"
-        :column="2"
-        border
-      >
-        <el-descriptions-item label="分类编码">{{ detailRow.categoryCode }}</el-descriptions-item>
-        <el-descriptions-item label="分类名称">{{ detailRow.categoryName }}</el-descriptions-item>
-        <el-descriptions-item label="对象类型">{{
-          itemKindLabels[detailRow.itemKind]
-        }}</el-descriptions-item>
-        <el-descriptions-item label="状态">{{
-          detailRow.status === 1 ? '启用' : '停用'
-        }}</el-descriptions-item>
-        <el-descriptions-item label="更新时间">{{
-          detailRow.updatedAt || '-'
-        }}</el-descriptions-item>
-        <el-descriptions-item
-          label="备注"
-          :span="2"
-          >{{ detailRow.remark || '-' }}</el-descriptions-item
-        >
-      </el-descriptions>
-    </el-dialog>
+    <ProductCategoryDetailDialog
+      :visible="detailDialogVisible"
+      :detail-row="detailRow"
+      :item-kind-labels="itemKindLabels"
+      @update:visible="detailDialogVisible = $event"
+    />
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed, onActivated, onMounted, reactive, ref } from 'vue';
+import { onActivated, onMounted, ref } from 'vue';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import { PERMISSIONS } from '@company/constants';
-import type { ProductCategoryListItem, ProductItemKind } from '@company/contracts';
+import type {
+  ProductCategoryListItem,
+  ProductCategoryPayload,
+  ProductItemKind,
+} from '@company/contracts';
 import TableToolbar from '../../components/TableToolbar.vue';
 import PaginationFooter from '../../components/PaginationFooter.vue';
-import { DialogWidth } from '../../utils/dialog';
-import { buildLiveOptions, hasUnavailableSelection } from '../../utils/live-options';
 import { EMessage } from '../../utils/message';
 import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
 import { productApi } from '../../api/product';
 import { useAuthStore } from '../../stores/auth';
 import { formatDateTimeForDisplay } from '../../utils/date';
+import { useProductCategories } from './composables/useProductCategories';
+import ProductCategoryDetailDialog from './components/ProductCategoryDetailDialog.vue';
+import ProductCategoryFormDialog from './components/ProductCategoryFormDialog.vue';
 
 defineOptions({ name: 'ProductCategoriesPage' });
 
 const auth = useAuthStore();
-const categories = ref<ProductCategoryListItem[]>([]);
-const loading = ref(false);
+const {
+  categories,
+  categoryOptions,
+  loading,
+  total,
+  currentPage,
+  pageSize,
+  query,
+  loadCategories,
+  refreshCategoryOptions,
+  handleSearch,
+  resetQuery,
+  handlePageSizeChange,
+  handlePageChange,
+} = useProductCategories();
 const submitting = ref(false);
-let categoriesRequest: Promise<void> | null = null;
 const itemKindLabels: Record<ProductItemKind, string> = {
   material: '物料',
   semi_finished: '半成品',
@@ -309,95 +224,22 @@ const itemKindLabels: Record<ProductItemKind, string> = {
 };
 const itemKindLabel = (kind: ProductItemKind) => itemKindLabels[kind];
 
-const filteredCategories = computed(() =>
-  categories.value.filter((c) => {
-    const code = query.categoryCode.trim().toLowerCase();
-    const name = query.categoryName.trim().toLowerCase();
-    return (
-      (!code || c.categoryCode.toLowerCase().includes(code)) &&
-      (!name || c.categoryName.toLowerCase().includes(name)) &&
-      (!query.status ||
-        (query.status === 'enabled' && c.status === 1) ||
-        (query.status === 'disabled' && c.status !== 1))
-    );
-  }),
-);
-
-const pagedCategories = computed(() => {
-  const start = (currentPage.value - 1) * pageSize.value;
-  return filteredCategories.value.slice(start, start + pageSize.value);
-});
-
-const currentPage = ref(1);
-const pageSize = ref(10);
 const categoryDialogVisible = ref(false);
 const detailDialogVisible = ref(false);
 const editingCategoryId = ref<string | null>(null);
 const detailRow = ref<ProductCategoryListItem | null>(null);
-const query = reactive({ categoryCode: '', categoryName: '', status: '' });
-const categoryForm = reactive({
-  parentId: '' as string,
-  categoryCode: '',
-  categoryName: '',
-  itemKind: 'material' as ProductItemKind,
-  enabled: true,
-  remark: '',
-});
-const parentOptions = computed(() =>
-  categories.value.filter(
-    (item) =>
-      item.id !== editingCategoryId.value &&
-      item.itemKind === categoryForm.itemKind &&
-      item.status === 1,
-  ),
-);
-const parentChoices = computed(() =>
-  buildLiveOptions(
-    parentOptions.value,
-    categoryForm.parentId ? [categoryForm.parentId] : [],
-    (item) => item.id,
-  ),
-);
-
-const resetCategoryForm = () => {
-  Object.assign(categoryForm, {
-    parentId: '',
-    categoryCode: '',
-    categoryName: '',
-    itemKind: 'material',
-    enabled: true,
-    remark: '',
-  });
-};
-const handleSearch = () => {
-  currentPage.value = 1;
-};
-const resetQuery = () => {
-  Object.assign(query, { categoryCode: '', categoryName: '', status: '' });
-  currentPage.value = 1;
-};
-const handlePageSizeChange = (val: number) => {
-  pageSize.value = val;
-  currentPage.value = 1;
-};
+const categoryFormDialogRef = ref<InstanceType<typeof ProductCategoryFormDialog> | null>(null);
 
 const openCreate = () => {
-  refreshCategories();
+  refreshCategoryOptions();
   editingCategoryId.value = null;
-  resetCategoryForm();
+  categoryFormDialogRef.value?.resetForm();
   categoryDialogVisible.value = true;
 };
 const openEdit = (row: ProductCategoryListItem) => {
-  refreshCategories();
+  refreshCategoryOptions();
   editingCategoryId.value = row.id;
-  Object.assign(categoryForm, {
-    parentId: row.parentId ?? '',
-    categoryCode: row.categoryCode,
-    categoryName: row.categoryName,
-    itemKind: row.itemKind,
-    enabled: row.status === 1,
-    remark: row.remark ?? '',
-  });
+  categoryFormDialogRef.value?.setForm(row);
   categoryDialogVisible.value = true;
 };
 const openDetail = (row: ProductCategoryListItem) => {
@@ -405,50 +247,8 @@ const openDetail = (row: ProductCategoryListItem) => {
   detailDialogVisible.value = true;
 };
 
-const loadCategories = (): Promise<void> => {
-  if (!categoriesRequest) {
-    loading.value = true;
-    categoriesRequest = (async () => {
-      try {
-        categories.value = await productApi.categories();
-      } catch (error) {
-        EMessage.error(error, '产品分类加载失败');
-      } finally {
-        loading.value = false;
-      }
-    })().finally(() => {
-      categoriesRequest = null;
-    });
-  }
-  return categoriesRequest;
-};
-const refreshCategories = (visible = true): void => {
-  if (visible) void loadCategories();
-};
-const submitCategory = async () => {
-  if (!categoryForm.categoryCode.trim() || !categoryForm.categoryName.trim()) {
-    EMessage.warning('请填写分类编码和分类名称');
-    return;
-  }
-  if (
-    hasUnavailableSelection(
-      parentOptions.value,
-      categoryForm.parentId ? [categoryForm.parentId] : [],
-      (item) => item.id,
-    )
-  ) {
-    EMessage.warning('父分类已失效，请重新选择');
-    return;
-  }
+const submitCategory = async (payload: ProductCategoryPayload) => {
   submitting.value = true;
-  const payload = {
-    parentId: categoryForm.parentId || null,
-    categoryCode: categoryForm.categoryCode,
-    categoryName: categoryForm.categoryName,
-    itemKind: categoryForm.itemKind,
-    status: categoryForm.enabled ? 1 : 0,
-    remark: categoryForm.remark || null,
-  };
   try {
     if (editingCategoryId.value) await productApi.updateCategory(editingCategoryId.value, payload);
     else await productApi.createCategory(payload);
@@ -476,7 +276,7 @@ const toggleStatus = async (row: ProductCategoryListItem) => {
   }
 };
 onMounted(loadCategories);
-onActivated(refreshCategories);
+onActivated(loadCategories);
 </script>
 
 <style scoped>
@@ -567,12 +367,6 @@ onActivated(refreshCategories);
 .data-table :deep(.el-button.is-link) {
   padding: 0;
   font-weight: 500;
-}
-
-.dialog-form :deep(.el-input),
-.dialog-form :deep(.el-select),
-.dialog-form :deep(.el-textarea) {
-  width: 100%;
 }
 
 @media (max-width: 1120px) {

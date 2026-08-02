@@ -5,7 +5,9 @@ import type {
   ProcessRouteStatus,
   ProcessRouteStepPayload,
   ProcessStepPayload,
+  ProcessStepQuery,
   ProductCategoryPayload,
+  ProductCategoryQuery,
   ProductMaterialPayload,
   ProductListQuery,
   ProductPayload,
@@ -15,8 +17,10 @@ import type { AuditContext } from '../../../common/audit/audit.types.js';
 import { IdentityDirectoryService } from '../../identity/public.js';
 import { ProductDomainError } from '../domain/product.errors.js';
 import { ProcessRouteRepository } from './ports/process-route.repository.js';
+import { ProcessRouteStepRepository } from './ports/process-route-step.repository.js';
 import { ProcessStepRepository } from './ports/process-step.repository.js';
 import { ProductCatalogRepository } from './ports/product-catalog.repository.js';
+import { ProductCategoryRepository } from './ports/product-category.repository.js';
 import { TechnicalFileRepository } from './ports/technical-file.repository.js';
 import { TechnicalFileStorage, type TechnicalFileUpload } from './ports/technical-file.storage.js';
 
@@ -24,15 +28,20 @@ import { TechnicalFileStorage, type TechnicalFileUpload } from './ports/technica
 export class ProductService {
   constructor(
     private readonly technicalFiles: TechnicalFileRepository,
+    private readonly categories: ProductCategoryRepository,
     private readonly catalog: ProductCatalogRepository,
     private readonly processSteps: ProcessStepRepository,
     private readonly routes: ProcessRouteRepository,
+    private readonly routeSteps: ProcessRouteStepRepository,
     private readonly storage: TechnicalFileStorage,
     private readonly identityDirectory: IdentityDirectoryService,
   ) {}
 
-  listCategories() {
-    return this.catalog.listCategories();
+  listCategories(query: ProductCategoryQuery) {
+    return this.categories.listCategories(query);
+  }
+  listCategoryOptions() {
+    return this.categories.listCategoryOptions();
   }
   listTechnicalFiles(query: TechnicalFileQuery) {
     return this.technicalFiles.listTechnicalFiles(query);
@@ -61,8 +70,11 @@ export class ProductService {
   listProductOptions() {
     return this.catalog.listProductOptions();
   }
-  listProcessSteps() {
-    return this.processSteps.listProcessSteps();
+  listProcessSteps(query: ProcessStepQuery) {
+    return this.processSteps.listProcessSteps(query);
+  }
+  listProcessStepOptions() {
+    return this.processSteps.listProcessStepOptions();
   }
   listRoutes(query: ProcessRouteQuery) {
     return this.routes.listRoutes(query);
@@ -77,7 +89,7 @@ export class ProductService {
     return this.catalog.listMaterials(productId);
   }
   async listRouteSteps(routeId: string) {
-    const items = await this.routes.listRouteSteps(routeId);
+    const items = await this.routeSteps.listRouteSteps(routeId);
     const ownerIds = [...new Set(items.flatMap((item) => item.defaultOwnerId ?? []))];
     if (ownerIds.length === 0) return items;
     const owners = await this.identityDirectory.listActiveUserOptionsByIds(ownerIds);
@@ -89,13 +101,13 @@ export class ProductService {
   }
 
   createCategory(payload: ProductCategoryPayload, audit: AuditContext) {
-    return this.catalog.createCategory(this.cleanCategory(payload), audit);
+    return this.categories.createCategory(this.cleanCategory(payload), audit);
   }
   updateCategory(id: string, payload: ProductCategoryPayload, audit: AuditContext) {
-    return this.catalog.updateCategory(id, this.cleanCategory(payload), audit);
+    return this.categories.updateCategory(id, this.cleanCategory(payload), audit);
   }
   setCategoryStatus(id: string, status: number, audit: AuditContext) {
-    return this.catalog.setCategoryStatus(id, status, audit);
+    return this.categories.setCategoryStatus(id, status, audit);
   }
   createProduct(payload: ProductPayload, audit: AuditContext) {
     return this.catalog.createProduct(this.cleanProduct(payload), audit);
@@ -178,7 +190,7 @@ export class ProductService {
         throw new ProductDomainError('INVALID_INPUT', '默认负责人不存在或已停用');
       }
     }
-    return this.routes.replaceRouteSteps(id, items, audit);
+    return this.routeSteps.replaceRouteSteps(id, items, audit);
   }
 
   private cleanCategory(payload: ProductCategoryPayload): ProductCategoryPayload {

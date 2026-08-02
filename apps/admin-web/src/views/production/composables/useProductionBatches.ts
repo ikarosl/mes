@@ -49,17 +49,16 @@ export function useProductionBatches() {
     if (!optionsRequest) {
       optionsRequest = (async () => {
         try {
-          const [formOptions, userOpts, sopFiles] = await Promise.all([
-            productApi.productFormOptions(),
+          const [products, routes, userOpts, sopFiles] = await Promise.all([
+            productApi.productOptions(),
+            productApi.routeOptions(),
             productApi.userOptions(),
             productApi
               .technicalFiles({ page: 1, pageSize: 100, status: 1 })
               .catch(() => ({ items: [], total: 0, page: 1, pageSize: 100 })),
           ]);
-          productOptions.value = formOptions.products.filter(
-            (item) => item.itemKind === 'finished_product',
-          );
-          routeOptions.value = formOptions.routes.map((item) => ({
+          productOptions.value = products.filter((item) => item.itemKind === 'finished_product');
+          routeOptions.value = routes.map((item) => ({
             id: item.id,
             routeName: item.routeName,
             versionNo: item.versionNo,

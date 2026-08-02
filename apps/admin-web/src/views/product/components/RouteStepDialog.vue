@@ -183,7 +183,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { Plus, Refresh } from '@element-plus/icons-vue';
-import type { ProcessStepListItem, ProductMaterialItem, UserOption } from '@company/contracts';
+import type { ProcessStepOption, ProductMaterialItem, UserOption } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
 import { buildLiveOptions, hasUnavailableSelection } from '../../../utils/live-options';
 import { EMessage } from '../../../utils/message';
@@ -202,7 +202,7 @@ export type StepRow = {
 
 const props = defineProps<{
   visible: boolean;
-  processOptions: ProcessStepListItem[];
+  processOptions: ProcessStepOption[];
   routeMaterialOptions: ProductMaterialItem[];
   userOptions: UserOption[];
   submitting: boolean;

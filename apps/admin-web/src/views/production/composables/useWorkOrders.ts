@@ -44,18 +44,19 @@ export function useWorkOrders() {
     if (!optionsRequest) {
       optionsRequest = (async () => {
         try {
-          const [formOptions, userOpts] = await Promise.all([
-            productApi.productFormOptions(),
+          const [products, routes, userOpts] = await Promise.all([
+            productApi.productOptions(),
+            productApi.routeOptions(),
             productApi.userOptions(),
           ]);
-          productOptions.value = formOptions.products
+          productOptions.value = products
             .filter((item) => item.itemKind === 'finished_product')
             .map((item) => ({
               id: item.id,
               productName: item.productName,
               itemCode: item.itemCode,
             }));
-          routeOptions.value = formOptions.routes.map((item) => ({
+          routeOptions.value = routes.map((item) => ({
             id: item.id,
             routeName: item.routeName,
             version: item.versionNo,

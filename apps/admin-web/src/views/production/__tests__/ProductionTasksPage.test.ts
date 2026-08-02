@@ -8,11 +8,8 @@ import ProductionTasksPage from '../ProductionTasksPage.vue';
 // Mock API modules to prevent real HTTP calls (ECONNREFUSED)
 vi.mock('../../../api/product', () => ({
   productApi: {
-    productFormOptions: vi.fn().mockResolvedValue({
-      categories: [],
-      products: [],
-      routes: [],
-    }),
+    productOptions: vi.fn().mockResolvedValue([]),
+    routeOptions: vi.fn().mockResolvedValue([]),
     userOptions: vi.fn().mockResolvedValue([]),
     technicalFiles: vi.fn().mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 100 }),
   },

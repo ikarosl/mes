@@ -2,7 +2,7 @@ import { reactive, ref } from 'vue';
 import { SYSTEM_STATUS } from '@company/constants';
 import type {
   ProcessRouteOption,
-  ProductCategoryListItem,
+  ProductCategoryOption,
   ProductAcquireMethod,
   ProductItemKind,
   ProductListItem,
@@ -13,7 +13,7 @@ import { EMessage } from '../../../utils/message';
 
 export function useProducts() {
   const products = ref<ProductListItem[]>([]);
-  const categoryOptions = ref<ProductCategoryListItem[]>([]);
+  const categoryOptions = ref<ProductCategoryOption[]>([]);
   const materialOptions = ref<ProductOption[]>([]);
   const routes = ref<ProcessRouteOption[]>([]);
   const loading = ref(false);
@@ -69,15 +69,17 @@ export function useProducts() {
     if (!optionsRequest) {
       optionsRequest = (async () => {
         try {
-          const options = await productApi.productFormOptions();
-          categoryOptions.value = options.categories.filter(
-            (item: ProductCategoryListItem) => item.status === 1,
-          );
-          materialOptions.value = options.products.filter(
+          const [categoryList, productList, routeList] = await Promise.all([
+            productApi.categoryOptions(),
+            productApi.productOptions(),
+            productApi.routeOptions(),
+          ]);
+          categoryOptions.value = categoryList;
+          materialOptions.value = productList.filter(
             (item: ProductOption) =>
               item.itemKind === 'material' || item.itemKind === 'semi_finished',
           );
-          routes.value = options.routes;
+          routes.value = routeList;
         } catch (error) {
           EMessage.error(error, '产品选项加载失败');
         }

@@ -31,7 +31,9 @@ import {
   ProcessRouteQueryDto,
   ProcessRouteStatusDto,
   ProcessStepDto,
+  ProcessStepQueryDto,
   ProductCategoryDto,
+  ProductCategoryQueryDto,
   ProductDto,
   ProductListQueryDto,
   ProductIdParamDto,
@@ -99,8 +101,19 @@ export class ProductController {
 
   @Get('categories')
   @RequirePermission(PERMISSIONS.product.categories.view)
-  categories() {
-    return this.service.listCategories();
+  categories(@Query() query: ProductCategoryQueryDto) {
+    return this.service.listCategories({
+      page: query.page,
+      pageSize: query.pageSize,
+      categoryCode: query.categoryCode?.trim() || undefined,
+      categoryName: query.categoryName?.trim() || undefined,
+      status: query.status,
+    });
+  }
+  @Get('categories/options')
+  @RequirePermission(PERMISSIONS.product.categories.view)
+  categoryOptions() {
+    return this.service.listCategoryOptions();
   }
   @Post('categories')
   @RequirePermission(PERMISSIONS.product.categories.create)
@@ -145,16 +158,6 @@ export class ProductController {
   @RequirePermission(PERMISSIONS.product.products.view)
   productOptions() {
     return this.service.listProductOptions();
-  }
-  @Get('products/form-options')
-  @RequirePermission(PERMISSIONS.product.products.view)
-  async productFormOptions() {
-    const [categories, products, routes] = await Promise.all([
-      this.service.listCategories(),
-      this.service.listProductOptions(),
-      this.service.listRouteOptions(),
-    ]);
-    return { categories, products, routes };
   }
   @Post('products')
   @RequirePermission(PERMISSIONS.product.products.create)
@@ -210,8 +213,18 @@ export class ProductController {
 
   @Get('process-steps')
   @RequirePermission(PERMISSIONS.product.processes.view)
-  processSteps() {
-    return this.service.listProcessSteps();
+  processSteps(@Query() query: ProcessStepQueryDto) {
+    return this.service.listProcessSteps({
+      page: query.page,
+      pageSize: query.pageSize,
+      keyword: query.keyword?.trim() || undefined,
+      status: query.status,
+    });
+  }
+  @Get('process-steps/options')
+  @RequirePermission(PERMISSIONS.product.processes.view)
+  processStepOptions() {
+    return this.service.listProcessStepOptions();
   }
   @Post('process-steps')
   @RequirePermission(PERMISSIONS.product.processes.create)
@@ -272,15 +285,10 @@ export class ProductController {
       status: query.status,
     });
   }
-  @Get('process-routes/form-options')
+  @Get('process-routes/options')
   @RequirePermission(PERMISSIONS.product.routes.view)
-  async routeFormOptions() {
-    const [products, processSteps, users] = await Promise.all([
-      this.service.listProductOptions(),
-      this.service.listProcessSteps(),
-      this.service.listUserOptions(),
-    ]);
-    return { products, processSteps, users };
+  routeOptions() {
+    return this.service.listRouteOptions();
   }
   @Post('process-routes')
   @RequirePermission(PERMISSIONS.product.routes.create)

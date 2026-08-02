@@ -261,6 +261,17 @@ export interface ProcessRouteQuery extends PageQuery {
   status?: ProcessRouteStatus;
 }
 
+export interface ProductCategoryQuery extends PageQuery {
+  categoryCode?: string;
+  categoryName?: string;
+  status?: number;
+}
+
+export interface ProcessStepQuery extends PageQuery {
+  keyword?: string;
+  status?: number;
+}
+
 export interface TechnicalFileQuery extends PageQuery {
   keyword?: string;
   status?: number;
@@ -297,6 +308,14 @@ export interface ProductCategoryListItem {
   status: number;
   remark: string | null;
   updatedAt: string | null;
+}
+
+/** 分类表单下拉选项；默认排除停用、删除记录。 */
+export interface ProductCategoryOption {
+  id: string;
+  categoryCode: string;
+  categoryName: string;
+  itemKind: ProductItemKind;
 }
 
 export interface ProductCategoryPayload {
@@ -388,6 +407,14 @@ export interface ProcessStepListItem {
   status: number;
   remark: string | null;
   updatedAt: string | null;
+}
+
+/** 标准工序表单下拉选项；默认排除停用、删除记录。 */
+export interface ProcessStepOption {
+  id: string;
+  stepCode: string;
+  stepName: string;
+  sopFileName: string | null;
 }
 
 export interface ProcessStepPayload {

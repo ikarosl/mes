@@ -64,7 +64,7 @@
               text
               circle
               :loading="loading"
-              @click="loadProcesses"
+              @click="loadSteps"
             />
           </el-tooltip>
         </template>
@@ -72,7 +72,7 @@
 
       <el-table
         v-loading="loading"
-        :data="pagedProcesses"
+        :data="steps"
         class="data-table"
       >
         <el-table-column
@@ -162,76 +162,22 @@
       </el-table>
 
       <PaginationFooter
-        :total="filteredProcesses.length"
+        :total="total"
         :current-page="currentPage"
         :page-size="pageSize"
         @update:page-size="handlePageSizeChange"
-        @page-change="currentPage = $event"
+        @page-change="handlePageChange"
       />
     </div>
 
-    <el-dialog
-      v-model="processDialogVisible"
-      :title="editingProcessId ? '编辑工序' : '新增工序'"
-      :width="DialogWidth.md"
-    >
-      <el-form
-        class="dialog-form"
-        label-width="96px"
-        :model="processForm"
-      >
-        <el-form-item
-          label="工序编码"
-          required
-        >
-          <el-input
-            v-model="processForm.processCode"
-            placeholder="例如：GX-001"
-          />
-        </el-form-item>
-        <el-form-item
-          label="工序名称"
-          required
-        >
-          <el-input
-            v-model="processForm.processName"
-            placeholder="例如：装配、调试、检验"
-          />
-        </el-form-item>
-        <el-form-item label="状态">
-          <el-switch
-            v-model="processForm.enabled"
-            active-text="启用"
-            inactive-text="停用"
-          />
-        </el-form-item>
-        <el-form-item label="工序说明">
-          <el-input
-            v-model="processForm.description"
-            type="textarea"
-            :rows="3"
-            placeholder="填写操作要求、检验要求或注意事项"
-          />
-        </el-form-item>
-        <el-form-item label="备注">
-          <el-input
-            v-model="processForm.remark"
-            type="textarea"
-            :rows="2"
-            placeholder="可填写备注"
-          />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="processDialogVisible = false">取消</el-button>
-        <el-button
-          type="primary"
-          :loading="submitting"
-          @click="submitProcess"
-          >保存工序</el-button
-        >
-      </template>
-    </el-dialog>
+    <ProcessStepFormDialog
+      ref="processFormDialogRef"
+      :visible="processDialogVisible"
+      :editing-process-id="editingProcessId"
+      :submitting="submitting"
+      @update:visible="processDialogVisible = $event"
+      @save="submitProcess"
+    />
 
     <el-dialog
       v-model="uploadDialogVisible"
@@ -261,52 +207,20 @@
       </template>
     </el-dialog>
 
-    <el-dialog
-      v-model="detailDialogVisible"
-      title="工序详情"
-      :width="DialogWidth.md"
-    >
-      <el-descriptions
-        v-if="detailRow"
-        :column="2"
-        border
-      >
-        <el-descriptions-item label="工序编码">{{ detailRow.stepCode }}</el-descriptions-item>
-        <el-descriptions-item label="工序名称">{{ detailRow.stepName }}</el-descriptions-item>
-        <el-descriptions-item label="状态">{{
-          detailRow.status === 1 ? '启用' : '停用'
-        }}</el-descriptions-item>
-        <el-descriptions-item label="更新时间">{{
-          detailRow.updatedAt || '-'
-        }}</el-descriptions-item>
-        <el-descriptions-item
-          label="工序说明"
-          :span="2"
-          >{{ detailRow.description || '-' }}</el-descriptions-item
-        >
-        <el-descriptions-item
-          label="技术文件"
-          :span="2"
-        >
-          <span v-if="detailRow.sopFileName">{{ detailRow.sopFileName }}</span
-          ><span v-else>-</span>
-        </el-descriptions-item>
-        <el-descriptions-item
-          label="备注"
-          :span="2"
-          >{{ detailRow.remark || '-' }}</el-descriptions-item
-        >
-      </el-descriptions>
-    </el-dialog>
+    <ProcessStepDetailDialog
+      :visible="detailDialogVisible"
+      :detail-row="detailRow"
+      @update:visible="detailDialogVisible = $event"
+    />
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { onMounted, ref } from 'vue';
 import { Plus, Refresh, UploadFilled } from '@element-plus/icons-vue';
 import type { UploadFile, UploadFiles } from 'element-plus';
 import { PERMISSIONS } from '@company/constants';
-import type { ProcessStepListItem } from '@company/contracts';
+import type { ProcessStepListItem, ProcessStepPayload } from '@company/contracts';
 import TableToolbar from '../../components/TableToolbar.vue';
 import PaginationFooter from '../../components/PaginationFooter.vue';
 import { DialogWidth } from '../../utils/dialog';
@@ -314,30 +228,27 @@ import { EMessage } from '../../utils/message';
 import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
 import { productApi } from '../../api/product';
 import { useAuthStore } from '../../stores/auth';
+import { useProcessSteps } from './composables/useProcessSteps';
+import ProcessStepDetailDialog from './components/ProcessStepDetailDialog.vue';
+import ProcessStepFormDialog from './components/ProcessStepFormDialog.vue';
 
 defineOptions({ name: 'ProcessesPage' });
 
 const auth = useAuthStore();
-const processes = ref<ProcessStepListItem[]>([]);
+const {
+  steps,
+  loading,
+  total,
+  currentPage,
+  pageSize,
+  query,
+  loadSteps,
+  handleSearch,
+  resetQuery,
+  handlePageSizeChange,
+  handlePageChange,
+} = useProcessSteps();
 
-const filteredProcesses = computed(() =>
-  processes.value.filter((p) => {
-    const kw = query.keyword.trim().toLowerCase();
-    return (
-      (!kw || p.stepCode.toLowerCase().includes(kw) || p.stepName.toLowerCase().includes(kw)) &&
-      (!query.status ||
-        (query.status === 'enabled' && p.status === 1) ||
-        (query.status === 'disabled' && p.status !== 1))
-    );
-  }),
-);
-const pagedProcesses = computed(() => {
-  const start = (currentPage.value - 1) * pageSize.value;
-  return filteredProcesses.value.slice(start, start + pageSize.value);
-});
-
-const currentPage = ref(1);
-const pageSize = ref(10);
 const processDialogVisible = ref(false);
 const uploadDialogVisible = ref(false);
 const detailDialogVisible = ref(false);
@@ -346,52 +257,17 @@ const uploadFileList = ref<UploadFile[]>([]);
 const selectedFile = ref<File | null>(null);
 const uploadProcessId = ref<string | null>(null);
 const detailRow = ref<ProcessStepListItem | null>(null);
-const loading = ref(false);
 const submitting = ref(false);
-const query = reactive({ keyword: '', status: '' });
-const processForm = reactive({
-  processCode: '',
-  processName: '',
-  description: '',
-  enabled: true,
-  remark: '',
-});
+const processFormDialogRef = ref<InstanceType<typeof ProcessStepFormDialog> | null>(null);
 
-const handleSearch = () => {
-  currentPage.value = 1;
-};
-const resetQuery = () => {
-  Object.assign(query, { keyword: '', status: '' });
-  currentPage.value = 1;
-};
-const handlePageSizeChange = (val: number) => {
-  pageSize.value = val;
-  currentPage.value = 1;
-};
-
-const resetProcessForm = () => {
-  Object.assign(processForm, {
-    processCode: '',
-    processName: '',
-    description: '',
-    enabled: true,
-    remark: '',
-  });
-};
 const openCreate = () => {
   editingProcessId.value = null;
-  resetProcessForm();
+  processFormDialogRef.value?.resetForm();
   processDialogVisible.value = true;
 };
 const openEdit = (row: ProcessStepListItem) => {
   editingProcessId.value = row.id;
-  Object.assign(processForm, {
-    processCode: row.stepCode,
-    processName: row.stepName,
-    description: row.description ?? '',
-    enabled: row.status === 1,
-    remark: row.remark ?? '',
-  });
+  processFormDialogRef.value?.setForm(row);
   processDialogVisible.value = true;
 };
 const openUpload = (row: ProcessStepListItem) => {
@@ -405,35 +281,14 @@ const openDetail = (row: ProcessStepListItem) => {
   detailDialogVisible.value = true;
 };
 
-const loadProcesses = async () => {
-  loading.value = true;
-  try {
-    processes.value = await productApi.processSteps();
-  } catch (error) {
-    EMessage.error(error, '标准工序加载失败');
-  } finally {
-    loading.value = false;
-  }
-};
-const submitProcess = async () => {
-  if (!processForm.processCode.trim() || !processForm.processName.trim()) {
-    EMessage.warning('请填写工序编码和工序名称');
-    return;
-  }
+const submitProcess = async (payload: ProcessStepPayload) => {
   submitting.value = true;
-  const payload = {
-    stepCode: processForm.processCode,
-    stepName: processForm.processName,
-    description: processForm.description || null,
-    status: processForm.enabled ? 1 : 0,
-    remark: processForm.remark || null,
-  };
   try {
     if (editingProcessId.value) await productApi.updateProcessStep(editingProcessId.value, payload);
     else await productApi.createProcessStep(payload);
     EMessage.success(editingProcessId.value ? '工序已更新' : '工序已新增');
     processDialogVisible.value = false;
-    await loadProcesses();
+    await loadSteps();
   } catch (error) {
     EMessage.error(error, '工序保存失败');
   } finally {
@@ -459,7 +314,7 @@ const submitUpload = async () => {
     await productApi.uploadProcessStepSop(uploadProcessId.value, selectedFile.value);
     EMessage.success('技术文件已上传');
     uploadDialogVisible.value = false;
-    await loadProcesses();
+    await loadSteps();
   } catch (error) {
     EMessage.error(error, '技术文件上传失败');
   } finally {
@@ -475,12 +330,12 @@ const toggleStatus = async (row: ProcessStepListItem) => {
     });
     await productApi.setProcessStepStatus(row.id, row.status === 1 ? 0 : 1);
     EMessage.success(`工序已${text}`);
-    await loadProcesses();
+    await loadSteps();
   } catch (error) {
     if (error !== 'cancel' && error !== 'close') EMessage.error(error, `${text}工序失败`);
   }
 };
-onMounted(loadProcesses);
+onMounted(loadSteps);
 </script>
 
 <style scoped>
@@ -578,12 +433,6 @@ onMounted(loadProcesses);
 }
 .empty-text {
   color: #9ca3af;
-}
-
-.dialog-form :deep(.el-input),
-.dialog-form :deep(.el-select),
-.dialog-form :deep(.el-textarea) {
-  width: 100%;
 }
 
 .upload-icon {

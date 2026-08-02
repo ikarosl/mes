@@ -180,7 +180,7 @@ import { computed, reactive } from 'vue';
 import { Plus } from '@element-plus/icons-vue';
 import type {
   ProductAcquireMethod,
-  ProductCategoryListItem,
+  ProductCategoryOption,
   ProductItemKind,
 } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
@@ -202,7 +202,7 @@ export type ProductFormValue = {
 const props = defineProps<{
   visible: boolean;
   editingProductId: string | null;
-  categoryOptions: ProductCategoryListItem[];
+  categoryOptions: ProductCategoryOption[];
   itemKindLabels: Record<ProductItemKind, string>;
   submitting: boolean;
 }>();

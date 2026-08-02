@@ -39,12 +39,14 @@
 - domain、application、infrastructure 和通用 persistence helper 不直接抛 Nest HTTP 异常；presentation 统一完成协议映射。
 - 跨模块只引用目标模块 `public.ts`。
 - 一个 Adapter 可以实现多个紧密相关的窄 Port，拆分类以变化原因和事务边界为准。
+- 基础设施单文件超过 500 行（ESLint `max-lines` 警告线）是“聚合内聚警示”，不是机械上限：应按聚合根、变化原因和事务边界拆成多个窄 Port 适配器（例如分类聚合与产品/BOM 聚合、路线生命周期与路线步骤 SOP 快照）；禁止为了压行数搬移代码或把一个聚合拆散到多个文件。
 - 核心写入与审计同事务；通用日志失败不能覆盖原业务结果。
 
 ## 5. Vue
 
 - 使用 Composition API 和 `<script setup lang="ts">`，Props、Emits、模板引用必须有类型。
 - 页面保存用例状态；可复用状态和副作用提取为 `useXxx` composable；跨页面状态使用 Pinia。
+- Vue 单文件超过 500 行时，优先把列表状态、服务端分页和可复用副作用提取到 `views/<模块>/composables/useXxx.ts`（视图与状态分离），再按需拆分弹窗组件；模板和样式不是拆分对象，禁止机械拆行数。
 - HTTP 只通过 `src/api` 封装，不在组件创建 Axios 实例。
 - `.vue` 不重复声明业务编码与中文映射；复用 shared constants 和格式化函数。
 - `v-for` 使用稳定业务 ID；loading 在 `finally` 恢复；通用 HTTP 错误不重复提示。

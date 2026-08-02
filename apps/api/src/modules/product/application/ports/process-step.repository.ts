@@ -1,9 +1,16 @@
-import type { ProcessStepListItem, ProcessStepPayload } from '@company/contracts';
+import type {
+  ProcessStepListItem,
+  ProcessStepOption,
+  ProcessStepPayload,
+  ProcessStepQuery,
+  PageResult,
+} from '@company/contracts';
 import type { AuditContext } from '../../../../common/audit/audit.types.js';
 import type { StoredTechnicalFile } from './technical-file.repository.js';
 
 export abstract class ProcessStepRepository {
-  abstract listProcessSteps(): Promise<ProcessStepListItem[]>;
+  abstract listProcessSteps(query: ProcessStepQuery): Promise<PageResult<ProcessStepListItem>>;
+  abstract listProcessStepOptions(): Promise<ProcessStepOption[]>;
   abstract createProcessStep(
     payload: ProcessStepPayload,
     audit: AuditContext,

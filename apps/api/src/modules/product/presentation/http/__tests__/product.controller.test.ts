@@ -63,3 +63,58 @@ describe('ProductController technical files', () => {
     );
   });
 });
+
+describe('ProductController paginated lists and options', () => {
+  it('passes a normalized category pagination query to the service', () => {
+    const service = { listCategories: vi.fn().mockReturnValue({ items: [], total: 0 }) };
+    const controller = new ProductController(service as never);
+
+    controller.categories({ page: 2, pageSize: 20, categoryCode: 'MAT ', status: 1 });
+
+    expect(service.listCategories).toHaveBeenCalledWith({
+      page: 2,
+      pageSize: 20,
+      categoryCode: 'MAT',
+      categoryName: undefined,
+      status: 1,
+    });
+  });
+
+  it('serves enabled categories as independent options', () => {
+    const service = { listCategoryOptions: vi.fn().mockReturnValue([{ id: '1' }]) };
+    const controller = new ProductController(service as never);
+
+    expect(controller.categoryOptions()).toEqual([{ id: '1' }]);
+    expect(service.listCategoryOptions).toHaveBeenCalledOnce();
+  });
+
+  it('passes a normalized process step pagination query to the service', () => {
+    const service = { listProcessSteps: vi.fn().mockReturnValue({ items: [], total: 0 }) };
+    const controller = new ProductController(service as never);
+
+    controller.processSteps({ page: 1, pageSize: 10, keyword: 'GX ', status: 0 });
+
+    expect(service.listProcessSteps).toHaveBeenCalledWith({
+      page: 1,
+      pageSize: 10,
+      keyword: 'GX',
+      status: 0,
+    });
+  });
+
+  it('serves enabled process steps as independent options', () => {
+    const service = { listProcessStepOptions: vi.fn().mockReturnValue([{ id: '2' }]) };
+    const controller = new ProductController(service as never);
+
+    expect(controller.processStepOptions()).toEqual([{ id: '2' }]);
+    expect(service.listProcessStepOptions).toHaveBeenCalledOnce();
+  });
+
+  it('serves enabled routes as independent options', () => {
+    const service = { listRouteOptions: vi.fn().mockReturnValue([{ id: '15' }]) };
+    const controller = new ProductController(service as never);
+
+    expect(controller.routeOptions()).toEqual([{ id: '15' }]);
+    expect(service.listRouteOptions).toHaveBeenCalledOnce();
+  });
+});
