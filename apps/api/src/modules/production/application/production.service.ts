@@ -14,7 +14,11 @@ import type {
 } from '@company/contracts';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { IdentityDirectoryService } from '../../identity/public.js';
-import { ProductDomainError, ProductSnapshotQuery } from '../../product/public.js';
+import {
+  ProductSnapshotQuery,
+  type ProcessRouteSnapshot,
+  type ProductQueryResult,
+} from '../../product/public.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
 import { ProductionRepository } from './ports/production.repository.js';
 import type { ResolvedBatchStepOverride } from './ports/production.repository.js';
@@ -31,27 +35,27 @@ export class ProductionService {
     return this.production.listWorkOrders(query);
   }
   async getWorkOrder(id: string) {
-    return this.enrichWorkOrder(await this.map(() => this.production.getWorkOrder(id)));
+    return this.enrichWorkOrder(await this.production.getWorkOrder(id));
   }
   async listBatches(query: ProductionBatchQuery) {
     const result = await this.production.listBatches(query);
     return { ...result, items: await this.enrichBatches(result.items) };
   }
   async getBatch(id: string) {
-    return this.enrichBatchDetail(await this.map(() => this.production.getBatch(id)));
+    return this.enrichBatchDetail(await this.production.getBatch(id));
   }
   async listWorkOrderBatches(id: string) {
-    return this.enrichBatches(await this.map(() => this.production.listWorkOrderBatches(id)));
+    return this.enrichBatches(await this.production.listWorkOrderBatches(id));
   }
 
   async createWorkOrder(payload: CreateWorkOrderPayload, audit: CommandContext) {
     if (payload.workOrderOwnerId) await this.requireActiveUser(payload.workOrderOwnerId);
     this.assertPlanDates(payload.planStartDate, payload.planEndDate);
-    const product = await this.map(() => this.products.getProductionProduct(payload.productId));
+    const product = this.requireProduct(
+      await this.products.getProductionProduct(payload.productId),
+    );
     return this.enrichWorkOrder(
-      await this.map(() =>
-        this.production.createWorkOrder(this.cleanWorkOrder(payload), product, audit),
-      ),
+      await this.production.createWorkOrder(this.cleanWorkOrder(payload), product, audit),
     );
   }
   async updateWorkOrder(id: string, payload: UpdateWorkOrderPayload, audit: CommandContext) {
@@ -61,31 +65,29 @@ export class ProductionService {
     const product =
       payload.productId === undefined
         ? undefined
-        : await this.map(() => this.products.getProductionProduct(payload.productId!));
+        : this.requireProduct(await this.products.getProductionProduct(payload.productId!));
     return this.enrichWorkOrder(
-      await this.map(() =>
-        this.production.updateWorkOrder(id, this.cleanVersioned(payload), product, audit),
-      ),
+      await this.production.updateWorkOrder(id, this.cleanVersioned(payload), product, audit),
     );
   }
   async releaseWorkOrder(id: string, version: number, audit: CommandContext) {
     const workOrder = await this.production.withWorkOrderReleaseTransaction(
       id,
       async (productId) => {
-        const product = await this.map(() => this.products.getProductionProduct(productId));
-        return this.map(() => this.production.releaseWorkOrder(id, version, product, audit));
+        const product = this.requireProduct(await this.products.getProductionProduct(productId));
+        return this.production.releaseWorkOrder(id, version, product, audit);
       },
     );
     return this.enrichWorkOrder(workOrder);
   }
   async cancelWorkOrder(id: string, version: number, audit: CommandContext) {
     return this.enrichWorkOrder(
-      await this.map(() => this.production.transitionWorkOrder(id, 'cancel', version, audit)),
+      await this.production.transitionWorkOrder(id, 'cancel', version, audit),
     );
   }
   async closeWorkOrder(id: string, version: number, audit: CommandContext) {
     return this.enrichWorkOrder(
-      await this.map(() => this.production.transitionWorkOrder(id, 'close', version, audit)),
+      await this.production.transitionWorkOrder(id, 'close', version, audit),
     );
   }
 
@@ -106,8 +108,8 @@ export class ProductionService {
     const batch = await this.production.withBatchCreationTransaction(
       workOrderId,
       async (workOrderProductId) => {
-        const route = await this.map(() =>
-          this.products.getProductionRouteSnapshot(
+        const route = this.requireProduct(
+          await this.products.getProductionRouteSnapshot(
             workOrderProductId,
             normalizedPayload.routeId ?? null,
           ),
@@ -116,8 +118,12 @@ export class ProductionService {
           normalizedPayload.stepOverrides ?? [],
           route,
         );
-        return this.map(() =>
-          this.production.createBatch(workOrderId, normalizedPayload, route, stepOverrides, audit),
+        return this.production.createBatch(
+          workOrderId,
+          normalizedPayload,
+          route,
+          stepOverrides,
+          audit,
         );
       },
     );
@@ -127,16 +133,16 @@ export class ProductionService {
     if (payload.ownerId !== undefined) await this.requireActiveUser(payload.ownerId);
     this.assertPlanDates(payload.planStartDate, payload.planEndDate);
     return this.enrichBatchDetail(
-      await this.map(() => this.production.updateBatch(id, this.cleanBatchUpdate(payload), audit)),
+      await this.production.updateBatch(id, this.cleanBatchUpdate(payload), audit),
     );
   }
   async generateMaterialDemands(id: string, version: number, audit: CommandContext) {
-    const productId = await this.map(() => this.production.getBatchProductId(id));
-    const bom = await this.map(() => this.products.getBomSnapshot(productId));
+    const productId = await this.production.getBatchProductId(id);
+    const bom = this.requireProduct(await this.products.getBomSnapshot(productId));
     if (bom.lines.length === 0)
       throw new ProductionDomainError('INVALID_INPUT', '产品未配置启用的 BOM，无法生成物料需求');
     return this.enrichBatchDetail(
-      await this.map(() => this.production.generateMaterialDemands(id, version, bom, audit)),
+      await this.production.generateMaterialDemands(id, version, bom, audit),
     );
   }
   async updateBatchStepExecution(
@@ -152,11 +158,11 @@ export class ProductionService {
         ? undefined
         : payload.actualSopFileId === null
           ? null
-          : await this.map(() => this.products.getEnabledSopFileSnapshot(payload.actualSopFileId!));
+          : this.requireProduct(
+              await this.products.getEnabledSopFileSnapshot(payload.actualSopFileId!),
+            );
     return this.enrichBatchDetail(
-      await this.map(() =>
-        this.production.updateBatchStepExecution(batchId, recordId, payload, actualSop, audit),
-      ),
+      await this.production.updateBatchStepExecution(batchId, recordId, payload, actualSop, audit),
     );
   }
   private async requireActiveUser(id: string | null): Promise<void> {
@@ -164,6 +170,13 @@ export class ProductionService {
     const users = await this.identity.listActiveUserOptionsByIds([id]);
     if (users.length !== 1)
       throw new ProductionDomainError('INVALID_INPUT', '负责人不存在或已停用');
+  }
+  private requireProduct<T>(result: ProductQueryResult<T>): T {
+    if (result.status === 'success') return result.value;
+    throw new ProductionDomainError(
+      result.status === 'not-found' ? 'NOT_FOUND' : 'INVALID_INPUT',
+      result.message,
+    );
   }
   private async enrichWorkOrder(workOrder: WorkOrderDetail): Promise<WorkOrderDetail> {
     return { ...workOrder, batches: await this.enrichBatches(workOrder.batches ?? []) };
@@ -234,25 +247,9 @@ export class ProductionService {
     if (payload.remark === undefined) return payload;
     return { ...payload, remark: payload.remark?.trim() || null };
   }
-  private async map<T>(action: () => Promise<T>): Promise<T> {
-    try {
-      return await action();
-    } catch (error) {
-      if (error instanceof ProductionDomainError) throw error;
-      if (error instanceof ProductDomainError) {
-        throw new ProductionDomainError(
-          error.code === 'NOT_FOUND' ? 'NOT_FOUND' : 'INVALID_INPUT',
-          error.message,
-        );
-      }
-      if ((error as { code?: string }).code === 'ER_DUP_ENTRY')
-        throw new ProductionDomainError('CONFLICT', '单据编号或幂等键已存在');
-      throw error;
-    }
-  }
   private async resolveStepOverrides(
     overrides: NonNullable<CreateProductionBatchPayload['stepOverrides']>,
-    route: Awaited<ReturnType<ProductSnapshotQuery['getProductionRouteSnapshot']>>,
+    route: ProcessRouteSnapshot | null,
   ): Promise<ResolvedBatchStepOverride[]> {
     if (overrides.length === 0) return [];
     if (!route)
@@ -272,7 +269,9 @@ export class ProductionService {
         routeStepId: override.routeStepId,
         responsibleUserId: override.responsibleUserId ?? null,
         actualSop: override.actualSopFileId
-          ? await this.map(() => this.products.getEnabledSopFileSnapshot(override.actualSopFileId!))
+          ? this.requireProduct(
+              await this.products.getEnabledSopFileSnapshot(override.actualSopFileId!),
+            )
           : null,
       })),
     );

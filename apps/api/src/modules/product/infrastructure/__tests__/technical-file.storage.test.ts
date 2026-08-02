@@ -37,7 +37,7 @@ describe('S3TechnicalFileStorage', () => {
     expect(send.mock.calls[2]?.[0].constructor.name).toBe('DeleteObjectCommand');
   });
 
-  it('rejects a persisted record without a bucket', async () => {
+  it('rejects a persisted record without a bucket as storage unavailable', async () => {
     const storage = new S3TechnicalFileStorage(
       {
         region: 'us-east-1',
@@ -51,6 +51,6 @@ describe('S3TechnicalFileStorage', () => {
 
     await expect(
       storage.read({ storageProvider: 's3', bucket: null, objectKey: 'sop/a' }),
-    ).rejects.toThrow('Object storage bucket is missing');
+    ).rejects.toMatchObject({ code: 'STORAGE_UNAVAILABLE' });
   });
 });

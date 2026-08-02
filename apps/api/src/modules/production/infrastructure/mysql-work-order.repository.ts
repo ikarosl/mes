@@ -19,6 +19,7 @@ import { ProductionDomainError } from '../domain/production.errors.js';
 import {
   BATCH_SELECT,
   type Db,
+  ensureNoDuplicate,
   findWorkOrder,
   mapBatch,
   mapWorkOrder,
@@ -116,7 +117,7 @@ export class MysqlWorkOrderRepository {
         payload,
       );
       return this.getDetail(connection, String(result.insertId));
-    });
+    }).catch((error) => ensureNoDuplicate(error, '单据编号或幂等键已存在'));
   }
 
   async update(

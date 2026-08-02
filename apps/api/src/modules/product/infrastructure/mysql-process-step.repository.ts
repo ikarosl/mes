@@ -6,6 +6,7 @@ import { writeTransactionalAudit } from '../../../common/audit/transactional-aud
 import { toBeijingISOString } from '../../../common/time/beijing-time.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
 import { ProductDomainError } from '../domain/product.errors.js';
+import { mapProductWriteError } from './mysql-product.shared.js';
 
 type Db = Pool | PoolConnection;
 import type { ProcessStepListItem, ProcessStepPayload } from '@company/contracts';
@@ -69,7 +70,9 @@ export class MysqlProcessStepRepository implements ProcessStepRepository {
         payload,
       );
       return { id: String(result.insertId) };
-    });
+    }).catch((error) =>
+      mapProductWriteError(error, '编码或版本已存在，软删除记录的自然键也不能复用'),
+    );
   }
 
   async updateProcessStep(id: string, payload: ProcessStepPayload, audit: AuditContext) {
@@ -88,7 +91,9 @@ export class MysqlProcessStepRepository implements ProcessStepRepository {
         ],
       );
       await this.audit(connection, audit, 'process-step.update', id, before, payload);
-    });
+    }).catch((error) =>
+      mapProductWriteError(error, '编码或版本已存在，软删除记录的自然键也不能复用'),
+    );
   }
 
   async setProcessStepStatus(id: string, status: number, audit: AuditContext) {

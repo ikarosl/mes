@@ -12,6 +12,7 @@ import {
   Res,
   StreamableFile,
   UploadedFile,
+  UseFilters,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -23,6 +24,7 @@ import {
   RequirePermission,
 } from '../../../../common/security/auth.decorators.js';
 import { ProductService } from '../../application/product.service.js';
+import { ProductDomainExceptionFilter } from './product-domain-exception.filter.js';
 import {
   DefaultRouteDto,
   ProcessRouteDto,
@@ -44,6 +46,7 @@ import { decodeMultipartFileName } from './multipart-file-name.js';
 type UploadedSop = { originalname: string; mimetype: string; buffer: Buffer; size: number };
 
 @Controller('product')
+@UseFilters(ProductDomainExceptionFilter)
 export class ProductController {
   constructor(private readonly service: ProductService) {}
 

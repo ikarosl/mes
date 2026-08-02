@@ -121,41 +121,12 @@ export class MysqlTechnicalFileRepository implements TechnicalFileRepository {
     });
   }
 
-  async prepareTechnicalFileDelete(id: string, audit: AuditContext) {
-    return withTransaction(this.pool, async (connection) => {
-      const file = await this.technicalFileRecord(connection, id, true);
-      await this.assertTechnicalFileUnreferenced(connection, id);
-      if (file.status !== 0) {
-        await connection.execute(
-          'UPDATE technical_files SET status=0,updated_by=? WHERE id=? AND is_deleted=0',
-          [audit.userId, id],
-        );
-        await this.audit(
-          connection,
-          audit,
-          'technical-file.delete.prepare',
-          id,
-          { status: file.status },
-          { status: 0 },
-        );
-      }
-      return {
-        storageProvider: file.storage_provider,
-        bucket: file.bucket,
-        objectKey: file.object_key,
-      };
-    });
-  }
-
-  async finalizeTechnicalFileDelete(id: string, audit: AuditContext) {
+  async deleteTechnicalFile(id: string, audit: AuditContext) {
     await withTransaction(this.pool, async (connection) => {
       const file = await this.technicalFileRecord(connection, id, true);
       await this.assertTechnicalFileUnreferenced(connection, id);
-      if (file.status !== 0) {
-        throw new ProductDomainError('CONFLICT', '技术文件尚未进入可删除状态');
-      }
       await connection.execute(
-        `UPDATE technical_files SET is_deleted=1,deleted_by=?,deleted_at=NOW(),updated_by=?
+        `UPDATE technical_files SET status=0,is_deleted=1,deleted_by=?,deleted_at=NOW(),updated_by=?
           WHERE id=? AND is_deleted=0`,
         [audit.userId, audit.userId, id],
       );
@@ -169,8 +140,9 @@ export class MysqlTechnicalFileRepository implements TechnicalFileRepository {
           storageProvider: file.storage_provider,
           bucket: file.bucket,
           objectKey: file.object_key,
+          status: file.status,
         },
-        null,
+        { status: 0, isDeleted: 1 },
       );
     });
   }

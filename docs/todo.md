@@ -48,7 +48,7 @@
 
 ### 3.2 application 层协议和基础设施泄漏
 
-状态：`立即整改`
+状态：`已完成`
 
 已确认问题：
 
@@ -64,6 +64,15 @@
 - 跨模块公开稳定错误结果或查询契约，不直接把模块内部 domain 错误作为调用方控制流。
 - ESLint 和架构检查同时覆盖 Identity、Product、Production 及相关 common 边界。
 - 补充架构回归测试，保证 application 不引用 HTTP 异常、数据库驱动错误和 SDK 类型。
+
+完成说明：
+
+- Identity `auth.service` 改用协议无关的 `AuthenticationError`（`identity/domain/auth.errors.ts`），由 `auth.controller` 和 `auth.guard`（presentation）捕获后映射为 401，不再在 application 抛 `UnauthorizedException`。
+- Product application 移除 5 个 Nest HTTP 异常类和 `ER_DUP_ENTRY` 识别；业务失败统一抛 `ProductDomainError`，新增 `ProductDomainExceptionFilter` 统一映射 HTTP（`NOT_FOUND`→404、`CONFLICT`/`ROUTE_IN_USE`/`DEFAULT_ROUTE_IN_USE`→409、`STORAGE_UNAVAILABLE`→502、其余→400），在 `ProductController` 注册。
+- S3 存储适配器把对象存储失败映射为 `ProductDomainError('STORAGE_UNAVAILABLE')`；Product 与 Production 写仓库分别在 infrastructure 把 `ER_DUP_ENTRY` 映射为 `CONFLICT`（`mysql-product.shared.ts` 的 `mapProductWriteError`、`mysql-production.shared.ts` 的 `ensureNoDuplicate`）。
+- 跨模块契约：`ProductSnapshotQuery` 改为返回稳定结果联合 `ProductQueryResult`，`ProductDomainError` 不再从 `product/public.ts` 导出，Production 不再依赖 Product 内部 domain 错误作为控制流，改按结果 `status` 分支映射为 `ProductionDomainError`。
+- ESLint application 层新增 `no-restricted-syntax`（禁止 `@nestjs/common` 的所有 `*Exception` 命名导入与 `ER_*` 驱动错误码字面量），`no-restricted-imports` 补 `@aws-sdk/*` 等 SDK 包；`check-api-architecture.mjs` 重构为可导入的 `checkApiArchitecture()`，覆盖 identity/product/production 三个模块 application/domain 的 HTTP 异常、DB 驱动错误码、SDK 依赖、application/ports 的 mysql2 泄漏及 public.ts 的 domain 错误导出，并由 `scripts/__tests__/api-architecture.test.ts` 做源码级回归。
+- 门禁按“所有 `*Exception`”匹配而非枚举已知类名：ESLint `no-restricted-syntax` 用 `ImportSpecifier[imported.name=/Exception$/]`，架构检查用 `@nestjs/common` 导入块内任意 `*Exception` 命名导入的正则，`UnprocessableEntityException`、`InternalServerErrorException`、`RequestTimeoutException` 等未枚举的 Nest 异常类同样被拦截；`checkApiArchitecture(extraSources)` 支持注入虚拟违规文件，`api-architecture.test.ts` 补充负向 fixture（未枚举异常类、DB 错误码、SDK、mysql2、public.ts domain 错误导出、operation_logs 直写均能拦截，非 Nest `*Exception` 不误报），避免门禁“假通过”。
 
 ### 3.3 `operation_logs` 所有权与事务审计边界
 
@@ -168,7 +177,8 @@
 在完整方案确定前必须遵守的最低规则：
 
 - SOP 可以为空；不得全局强制所有工序上传 SOP。
-- 系统管理的任何文件都不允许硬删除，包括数据库记录对应的文件和对象存储内容。
+- 系统管理的任何文件都不允许硬删除，包括数据库记录对应的文件和对象存储内容；业务“删除”只能通过停用、归档或软删除表达，并保留历史追溯能力。
+- 允许物理清理的只有上传失败且未登记进数据库的孤儿对象（临时对象从未成为系统管理的文件，无追溯需求）；已登记进 `technical_files` 的记录及其对象存储内容一律不得硬删除。
 - 已发布 SOP 的“删除”只能禁止未来选择，不得删除或覆盖存储对象；旧版本必须保留供历史路线和生产记录追溯。
 - 新内容必须创建新的 `technical_files` 记录、新的 `version_no` 和新的 `object_key`，不得复用或覆盖旧记录、旧对象。
 - 已启用路线继续使用已冻结的旧 SOP；草稿路线是否允许刷新或选择新版本，待交互方案确认。
@@ -177,7 +187,7 @@
 实施约束：
 
 - 当前不直接实施完整 SOP 生命周期和工序状态迁移。
-- 现有文件删除能力在满足“无硬删除”最低规则前不得作为正式可用能力。
+- `DELETE /technical-files/:id` 已改为软删除（停用并标记删除，保留对象存储内容），满足“无硬删除”最低规则，可作为正式可用能力；完整发布、版本和归档生命周期仍滞后，待业务方案确认。
 - 需求确认后先同步 `docs/new.md`、Product 策略和管理端交互，再追加 migration；不得修改已有 migration。
 
 ### 5.2 Production 数量计算精度

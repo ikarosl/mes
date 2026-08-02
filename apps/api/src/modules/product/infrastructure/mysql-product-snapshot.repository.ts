@@ -90,7 +90,7 @@ export class MysqlProductSnapshotRepository implements ProductSnapshotRepository
       ) {
         throw new ProductDomainError(
           'INVALID_MATERIAL',
-          'BOM contains a disabled or deleted material and cannot be used for production',
+          'BOM 包含已停用或已删除的投入物料，不能用于生产',
         );
       }
       return {
@@ -129,7 +129,7 @@ export class MysqlProductSnapshotRepository implements ProductSnapshotRepository
          WHERE id=? AND file_type='sop' AND status=1 AND is_deleted=0 FOR UPDATE`,
         [fileId],
       );
-      if (!file) throw new ProductDomainError('NOT_FOUND', 'Enabled SOP file not found');
+      if (!file) throw new ProductDomainError('NOT_FOUND', 'SOP 文件不存在或不可用');
       return {
         id: String(file.id),
         fileName: file.file_name,
@@ -154,7 +154,7 @@ export class MysqlProductSnapshotRepository implements ProductSnapshotRepository
           AND c.item_kind<>'material' AND c.status=1 AND c.is_deleted=0${productCondition}${lock ? ' FOR UPDATE' : ''}`,
       expectedProductId ? [routeId, expectedProductId] : [routeId],
     );
-    if (!route) throw new ProductDomainError('NOT_FOUND', 'Enabled production route not found');
+    if (!route) throw new ProductDomainError('NOT_FOUND', '已启用的生产工艺路线不存在');
     const product = await this.productionProduct(db, String(route.product_id), lock);
     const [steps] = await db.query<RouteStepRow[]>(
       `SELECT rs.id route_step_id,rs.step_order,rs.process_step_id,rs.step_code_snapshot,rs.step_name_snapshot,
@@ -168,7 +168,7 @@ export class MysqlProductSnapshotRepository implements ProductSnapshotRepository
       [routeId],
     );
     if (steps.length === 0)
-      throw new ProductDomainError('ROUTE_STEPS_REQUIRED', 'Enabled route has no active steps');
+      throw new ProductDomainError('ROUTE_STEPS_REQUIRED', '已启用的工艺路线没有可用工序');
     if (
       steps.some(
         (step) =>
@@ -180,7 +180,7 @@ export class MysqlProductSnapshotRepository implements ProductSnapshotRepository
             step.sop_is_deleted !== 0),
       )
     ) {
-      throw new ProductDomainError('NOT_FOUND', 'Route contains an unavailable SOP snapshot');
+      throw new ProductDomainError('NOT_FOUND', '工艺路线包含不可用的 SOP 快照');
     }
     return {
       id: String(route.id),
@@ -223,7 +223,7 @@ export class MysqlProductSnapshotRepository implements ProductSnapshotRepository
           AND c.item_kind<>'material' AND c.status=1 AND c.is_deleted=0${lock ? ' FOR UPDATE' : ''}`,
       [productId],
     );
-    if (!row) throw new ProductDomainError('NOT_FOUND', 'Enabled production product not found');
+    if (!row) throw new ProductDomainError('NOT_FOUND', '已启用的生产产品不存在');
     return {
       id: String(row.id),
       itemCode: row.item_code,

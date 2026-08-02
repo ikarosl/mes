@@ -1,5 +1,5 @@
-import { BadRequestException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
+import { ProductDomainError } from '../../domain/product.errors.js';
 import { ProductService } from '../product.service.js';
 
 const audit = { userId: '1', ip: '127.0.0.1' };
@@ -37,7 +37,7 @@ describe('ProductService workflow safeguards', () => {
         ],
         audit,
       ),
-    ).toThrow(BadRequestException);
+    ).toThrow(ProductDomainError);
     expect(repository.replaceMaterials).not.toHaveBeenCalled();
   });
 
@@ -64,7 +64,7 @@ describe('ProductService workflow safeguards', () => {
         })),
         audit,
       ),
-    ).toThrow(BadRequestException);
+    ).toThrow(ProductDomainError);
     expect(repository.replaceMaterials).not.toHaveBeenCalled();
   });
 
@@ -88,7 +88,7 @@ describe('ProductService workflow safeguards', () => {
         ],
         audit,
       ),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    ).rejects.toBeInstanceOf(ProductDomainError);
     expect(repository.replaceRouteSteps).not.toHaveBeenCalled();
   });
 
@@ -118,7 +118,7 @@ describe('ProductService workflow safeguards', () => {
         ],
         audit,
       ),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    ).rejects.toBeInstanceOf(ProductDomainError);
     expect(repository.replaceRouteSteps).not.toHaveBeenCalled();
   });
 
@@ -179,17 +179,9 @@ describe('ProductService workflow safeguards', () => {
     expect(storage.remove).toHaveBeenCalledWith(stored);
   });
 
-  it('keeps a prepared deletion retryable when object deletion fails', async () => {
-    const locator = {
-      storageProvider: 's3',
-      bucket: 'technical-files',
-      objectKey: 'sop/2026/file.pdf',
-    };
-    const repository = {
-      prepareTechnicalFileDelete: vi.fn().mockResolvedValue(locator),
-      finalizeTechnicalFileDelete: vi.fn(),
-    };
-    const storage = { remove: vi.fn().mockRejectedValue(new Error('storage unavailable')) };
+  it('soft-deletes a technical file without touching object storage', async () => {
+    const repository = { deleteTechnicalFile: vi.fn().mockResolvedValue(undefined) };
+    const storage = { remove: vi.fn() };
     const service = new ProductService(
       repository as never,
       {} as never,
@@ -199,8 +191,10 @@ describe('ProductService workflow safeguards', () => {
       {} as never,
     );
 
-    await expect(service.deleteTechnicalFile('2', audit)).rejects.toMatchObject({ status: 502 });
-    expect(repository.finalizeTechnicalFileDelete).not.toHaveBeenCalled();
+    await service.deleteTechnicalFile('2', audit);
+
+    expect(repository.deleteTechnicalFile).toHaveBeenCalledWith('2', audit);
+    expect(storage.remove).not.toHaveBeenCalled();
   });
 
   it('associates an existing SOP without deleting the previous file', async () => {

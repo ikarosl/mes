@@ -89,7 +89,7 @@ describe('MySQL product adapters workflow transactions', () => {
     expect(connection.commit).toHaveBeenCalledOnce();
   });
 
-  it('does not prepare deletion while a technical file is referenced', async () => {
+  it('does not delete a technical file while it is referenced', async () => {
     const connection = {
       beginTransaction: vi.fn(),
       query: vi
@@ -117,7 +117,7 @@ describe('MySQL product adapters workflow transactions', () => {
     } as never);
 
     await expect(
-      repository.prepareTechnicalFileDelete('21', { userId: '1', ip: null }),
+      repository.deleteTechnicalFile('21', { userId: '1', ip: null }),
     ).rejects.toBeInstanceOf(ProductDomainError);
     expect(connection.execute).not.toHaveBeenCalled();
     expect(connection.rollback).toHaveBeenCalledOnce();

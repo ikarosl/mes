@@ -1,15 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ProductDomainError } from '../../../product/public.js';
 import { ProductionService } from '../production.service.js';
 
 const audit = { actorId: '1', ip: '127.0.0.1', requestId: 'test-request', userAgent: null };
 
 describe('ProductionService first-stage commands', () => {
-  it('maps a product public query error to HTTP 404', async () => {
+  it('maps a product public query failure to HTTP 404', async () => {
     const products = {
       getProductionProduct: vi
         .fn()
-        .mockRejectedValue(new ProductDomainError('NOT_FOUND', '产品不存在')),
+        .mockResolvedValue({ status: 'not-found', message: '产品不存在' }),
     };
     const service = new ProductionService({} as never, products as never, {} as never);
 
@@ -21,14 +20,14 @@ describe('ProductionService first-stage commands', () => {
     });
   });
 
-  it('maps a route public query error to HTTP 404', async () => {
+  it('maps a route public query failure to HTTP 404', async () => {
     const repository = {
       withBatchCreationTransaction: vi.fn(async (_workOrderId, action) => action('8')),
     };
     const products = {
       getProductionRouteSnapshot: vi
         .fn()
-        .mockRejectedValue(new ProductDomainError('NOT_FOUND', '工艺路线不可用')),
+        .mockResolvedValue({ status: 'not-found', message: '工艺路线不可用' }),
     };
     const service = new ProductionService(repository as never, products as never, {} as never);
 
@@ -38,12 +37,12 @@ describe('ProductionService first-stage commands', () => {
     });
   });
 
-  it('maps a BOM public query error to HTTP 400', async () => {
+  it('maps a BOM public query failure to HTTP 400', async () => {
     const repository = { getBatchProductId: vi.fn().mockResolvedValue('8') };
     const products = {
       getBomSnapshot: vi
         .fn()
-        .mockRejectedValue(new ProductDomainError('INVALID_PRODUCT_KIND', '产品不可生成 BOM')),
+        .mockResolvedValue({ status: 'invalid-input', message: '产品不可生成 BOM' }),
     };
     const service = new ProductionService(repository as never, products as never, {} as never);
 
@@ -53,11 +52,11 @@ describe('ProductionService first-stage commands', () => {
     });
   });
 
-  it('maps an SOP public query error to HTTP 404', async () => {
+  it('maps an SOP public query failure to HTTP 404', async () => {
     const products = {
       getEnabledSopFileSnapshot: vi
         .fn()
-        .mockRejectedValue(new ProductDomainError('NOT_FOUND', 'SOP 文件不可用')),
+        .mockResolvedValue({ status: 'not-found', message: 'SOP 文件不可用' }),
     };
     const service = new ProductionService({} as never, products as never, {} as never);
 
@@ -76,11 +75,14 @@ describe('ProductionService first-stage commands', () => {
     };
     const products = {
       getProductionProduct: vi.fn().mockResolvedValue({
-        id: '8',
-        itemCode: 'FG-002',
-        productName: 'Current finished good',
-        unit: 'box',
-        defaultRouteId: null,
+        status: 'success',
+        value: {
+          id: '8',
+          itemCode: 'FG-002',
+          productName: 'Current finished good',
+          unit: 'box',
+          defaultRouteId: null,
+        },
       }),
     };
     const service = new ProductionService(repository as never, products as never, {} as never);
@@ -107,7 +109,7 @@ describe('ProductionService first-stage commands', () => {
     const products = {
       getProductionProduct: vi
         .fn()
-        .mockRejectedValue(new ProductDomainError('NOT_FOUND', '产品已停用')),
+        .mockResolvedValue({ status: 'not-found', message: '产品已停用' }),
     };
     const service = new ProductionService(repository as never, products as never, {} as never);
 
@@ -153,7 +155,9 @@ describe('ProductionService first-stage commands', () => {
       unit: 'box',
       defaultRouteId: null,
     };
-    const products = { getProductionProduct: vi.fn().mockResolvedValue(product) };
+    const products = {
+      getProductionProduct: vi.fn().mockResolvedValue({ status: 'success', value: product }),
+    };
     const service = new ProductionService(repository as never, products as never, {} as never);
     const payload = { version: 4, productId: '9', plannedQuantity: 25.5 };
 
@@ -170,17 +174,20 @@ describe('ProductionService first-stage commands', () => {
     };
     const products = {
       getBomSnapshot: vi.fn().mockResolvedValue({
-        product: { id: '8' },
-        lines: [
-          {
-            productMaterialId: '3',
-            materialProductId: '5',
-            quantityPerUnit: '2.0000',
-            unit: 'pcs',
-            isKeyMaterial: true,
-            needBatchRecord: true,
-          },
-        ],
+        status: 'success',
+        value: {
+          product: { id: '8' },
+          lines: [
+            {
+              productMaterialId: '3',
+              materialProductId: '5',
+              quantityPerUnit: '2.0000',
+              unit: 'pcs',
+              isKeyMaterial: true,
+              needBatchRecord: true,
+            },
+          ],
+        },
       }),
     };
     const service = new ProductionService(repository as never, products as never, {} as never);
@@ -230,8 +237,8 @@ describe('ProductionService first-stage commands', () => {
     };
     const products = {
       getProductionRouteSnapshot: vi.fn().mockResolvedValue({
-        id: '9',
-        steps: [{ routeStepId: '41' }],
+        status: 'success',
+        value: { id: '9', steps: [{ routeStepId: '41' }] },
       }),
     };
     const service = new ProductionService(repository as never, products as never, {} as never);
@@ -256,9 +263,8 @@ describe('ProductionService first-stage commands', () => {
     };
     const products = {
       getProductionRouteSnapshot: vi.fn().mockResolvedValue({
-        id: '9',
-        product: { id: '8' },
-        steps: [],
+        status: 'success',
+        value: { id: '9', product: { id: '8' }, steps: [] },
       }),
     };
     const service = new ProductionService(repository as never, products as never, {} as never);
@@ -320,10 +326,13 @@ describe('ProductionService first-stage commands', () => {
     const repository = { updateBatchStepExecution: vi.fn().mockResolvedValue({ id: '6' }) };
     const products = {
       getEnabledSopFileSnapshot: vi.fn().mockResolvedValue({
-        id: '8',
-        fileName: '现场作业.pdf',
-        objectKey: 'sop/8.pdf',
-        versionNo: 'V2',
+        status: 'success',
+        value: {
+          id: '8',
+          fileName: '现场作业.pdf',
+          objectKey: 'sop/8.pdf',
+          versionNo: 'V2',
+        },
       }),
     };
     const service = new ProductionService(repository as never, products as never, {} as never);

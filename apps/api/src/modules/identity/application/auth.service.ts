@@ -1,10 +1,11 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import bcrypt from 'bcryptjs';
 import { jwtVerify, SignJWT } from 'jose';
 import { randomUUID } from 'node:crypto';
 import type { JwtClaims, LoginRequest, TokenResponse, UserProfile } from '@company/contracts';
 import { toBeijingISOString } from '../../../common/time/beijing-time.js';
 import { loadAppConfig } from '../../../config/env.js';
+import { AuthenticationError } from '../domain/auth.errors.js';
 import { AuthRepository } from './ports/auth.repository.js';
 
 @Injectable()
@@ -14,7 +15,7 @@ export class AuthService {
   async login(payload: LoginRequest) {
     const user = await this.repository.findCredentials(payload.username);
     if (!user || !(await bcrypt.compare(payload.password, user.passwordHash)))
-      throw new UnauthorizedException('用户名或密码错误');
+      throw new AuthenticationError('INVALID_CREDENTIALS', '用户名或密码错误');
     const profile = await this.requireProfile(user.id);
     await this.repository.touchLastLogin(user.id);
     const pair = await this.issue(profile);
@@ -23,11 +24,11 @@ export class AuthService {
   }
   async refresh(token: string) {
     const claims = await this.verify(token, 'refresh');
-    if (!claims.jti) throw new UnauthorizedException('刷新令牌无效');
+    if (!claims.jti) throw new AuthenticationError('REFRESH_TOKEN_INVALID', '刷新令牌无效');
     const profile = await this.requireProfile(claims.sub);
     const pair = await this.issue(profile);
     const rotated = await this.repository.rotateRefreshToken(claims.jti, claims.sub, pair.record);
-    if (!rotated) throw new UnauthorizedException('刷新令牌已失效');
+    if (!rotated) throw new AuthenticationError('REFRESH_TOKEN_EXPIRED', '刷新令牌已失效');
     return { response: pair.response, refreshToken: pair.refreshToken };
   }
   async logout(token: string | null) {
@@ -45,7 +46,7 @@ export class AuthService {
   }
   private async requireProfile(userId: string) {
     const profile = await this.repository.findProfile(userId);
-    if (!profile) throw new UnauthorizedException('用户已停用或不存在');
+    if (!profile) throw new AuthenticationError('USER_DISABLED', '用户已停用或不存在');
     return profile;
   }
   private async issue(profile: UserProfile) {
@@ -88,7 +89,7 @@ export class AuthService {
       if (claims.kind !== kind || !claims.sub) throw new Error('kind');
       return claims;
     } catch {
-      throw new UnauthorizedException('令牌已过期或无效');
+      throw new AuthenticationError('TOKEN_INVALID', '令牌已过期或无效');
     }
   }
 }

@@ -16,7 +16,7 @@ export function requireConfigurableProduct(product: ConfigurableProduct): void {
   ) {
     throw new ProductDomainError(
       'INVALID_PRODUCT_KIND',
-      'Only enabled self-made semi-finished products or finished products can be configured',
+      '只有已启用的自制半成品或成品可以配置工艺路线',
     );
   }
 }

@@ -17,7 +17,10 @@ describe('ProductSnapshotService', () => {
     };
     const service = new ProductSnapshotService(repository as never);
 
-    await expect(service.getProductionProduct('1')).resolves.toEqual(product);
+    await expect(service.getProductionProduct('1')).resolves.toEqual({
+      status: 'success',
+      value: product,
+    });
     expect(repository.getProductionProduct).toHaveBeenCalledWith('1');
   });
 
@@ -27,7 +30,10 @@ describe('ProductSnapshotService', () => {
     };
     const service = new ProductSnapshotService(repository as never);
 
-    await expect(service.getProductionRouteSnapshot('1', null)).resolves.toBeNull();
+    await expect(service.getProductionRouteSnapshot('1', null)).resolves.toEqual({
+      status: 'success',
+      value: null,
+    });
 
     expect(repository.getProductionRouteSnapshot).toHaveBeenCalledWith('1', null);
   });

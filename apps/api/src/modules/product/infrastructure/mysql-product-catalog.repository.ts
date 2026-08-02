@@ -7,6 +7,7 @@ import { toBeijingISOString } from '../../../common/time/beijing-time.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
 import { ProductDomainError } from '../domain/product.errors.js';
 import { requireConfigurableProduct } from '../domain/product-configuration.policy.js';
+import { mapProductWriteError } from './mysql-product.shared.js';
 
 type Db = Pool | PoolConnection;
 import type {
@@ -79,7 +80,9 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
         payload,
       );
       return { id: String(result.insertId) };
-    });
+    }).catch((error) =>
+      mapProductWriteError(error, '编码或版本已存在，软删除记录的自然键也不能复用'),
+    );
   }
 
   async updateCategory(id: string, payload: ProductCategoryPayload, audit: AuditContext) {
@@ -124,7 +127,9 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
         ],
       );
       await this.audit(connection, audit, 'category.update', id, before, payload);
-    });
+    }).catch((error) =>
+      mapProductWriteError(error, '编码或版本已存在，软删除记录的自然键也不能复用'),
+    );
   }
 
   async setCategoryStatus(id: string, status: number, audit: AuditContext) {
@@ -269,7 +274,9 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
       );
       await this.audit(connection, audit, 'product.create', String(result.insertId), null, payload);
       return { id: String(result.insertId) };
-    });
+    }).catch((error) =>
+      mapProductWriteError(error, '编码或版本已存在，软删除记录的自然键也不能复用'),
+    );
   }
 
   async updateProduct(id: string, payload: ProductPayload, audit: AuditContext) {
@@ -307,7 +314,9 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
         ],
       );
       await this.audit(connection, audit, 'product.update', id, before, payload);
-    });
+    }).catch((error) =>
+      mapProductWriteError(error, '编码或版本已存在，软删除记录的自然键也不能复用'),
+    );
   }
 
   async setProductStatus(id: string, status: number, audit: AuditContext) {

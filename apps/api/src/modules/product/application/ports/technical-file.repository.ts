@@ -33,9 +33,9 @@ export abstract class TechnicalFileRepository {
     file: StoredTechnicalFile,
     audit: AuditContext,
   ): Promise<{ id: string }>;
-  abstract prepareTechnicalFileDelete(
-    id: string,
-    audit: AuditContext,
-  ): Promise<TechnicalFileLocator>;
-  abstract finalizeTechnicalFileDelete(id: string, audit: AuditContext): Promise<void>;
+  /**
+   * 软删除：停用（status=0）并标记删除（is_deleted=1），保留数据库记录与对象存储内容，
+   * 供历史路线和生产记录追溯。对象永不物理删除。
+   */
+  abstract deleteTechnicalFile(id: string, audit: AuditContext): Promise<void>;
 }

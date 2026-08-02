@@ -1,9 +1,12 @@
 import { Injectable } from '@nestjs/common';
+import { ProductDomainError } from '../domain/product.errors.js';
 import {
   ProductSnapshotQuery,
-  type ProcessRouteSnapshot,
   type EnabledSopFileSnapshot,
+  type ProcessRouteSnapshot,
   type ProductBomSnapshot,
+  type ProductQueryFailure,
+  type ProductQueryResult,
   type ProductionProductSnapshot,
 } from './product-snapshot.query.js';
 import { ProductSnapshotRepository } from './ports/product-snapshot.repository.js';
@@ -14,22 +17,38 @@ export class ProductSnapshotService extends ProductSnapshotQuery {
     super();
   }
 
-  getProductionProduct(productId: string): Promise<ProductionProductSnapshot> {
-    return this.snapshots.getProductionProduct(productId);
+  getProductionProduct(productId: string): Promise<ProductQueryResult<ProductionProductSnapshot>> {
+    return this.toResult(() => this.snapshots.getProductionProduct(productId));
   }
   getProductionRouteSnapshot(
     productId: string,
     requestedRouteId: string | null,
-  ): Promise<ProcessRouteSnapshot | null> {
-    return this.snapshots.getProductionRouteSnapshot(productId, requestedRouteId);
+  ): Promise<ProductQueryResult<ProcessRouteSnapshot | null>> {
+    return this.toResult(() =>
+      this.snapshots.getProductionRouteSnapshot(productId, requestedRouteId),
+    );
   }
-  getBomSnapshot(productId: string): Promise<ProductBomSnapshot> {
-    return this.snapshots.getBomSnapshot(productId);
+  getBomSnapshot(productId: string): Promise<ProductQueryResult<ProductBomSnapshot>> {
+    return this.toResult(() => this.snapshots.getBomSnapshot(productId));
   }
-  getRouteSnapshot(routeId: string): Promise<ProcessRouteSnapshot> {
-    return this.snapshots.getRouteSnapshot(routeId);
+  getRouteSnapshot(routeId: string): Promise<ProductQueryResult<ProcessRouteSnapshot>> {
+    return this.toResult(() => this.snapshots.getRouteSnapshot(routeId));
   }
-  getEnabledSopFileSnapshot(fileId: string): Promise<EnabledSopFileSnapshot> {
-    return this.snapshots.getEnabledSopFileSnapshot(fileId);
+  getEnabledSopFileSnapshot(fileId: string): Promise<ProductQueryResult<EnabledSopFileSnapshot>> {
+    return this.toResult(() => this.snapshots.getEnabledSopFileSnapshot(fileId));
+  }
+
+  private async toResult<T>(operation: () => Promise<T>): Promise<ProductQueryResult<T>> {
+    try {
+      return { status: 'success', value: await operation() };
+    } catch (error) {
+      if (error instanceof ProductDomainError) return toQueryFailure(error);
+      throw error;
+    }
   }
 }
+
+const toQueryFailure = (error: ProductDomainError): ProductQueryFailure =>
+  error.code === 'NOT_FOUND'
+    ? { status: 'not-found', message: error.message }
+    : { status: 'invalid-input', message: error.message };

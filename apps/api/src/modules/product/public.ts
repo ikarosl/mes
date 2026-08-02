@@ -1,7 +1,8 @@
 export { ProductModule } from './product.module.js';
-export { ProductDomainError } from './domain/product.errors.js';
 export {
   ProductSnapshotQuery,
+  type ProductQueryFailure,
+  type ProductQueryResult,
   type ProcessRouteSnapshot,
   type ProcessRouteStepSnapshot,
   type ProductBomLineSnapshot,

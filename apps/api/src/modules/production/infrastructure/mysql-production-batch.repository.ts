@@ -23,6 +23,7 @@ import {
   batchAudit,
   type BatchRow,
   type Db,
+  ensureNoDuplicate,
   findBatch,
   findStepRecord,
   findWorkOrder,
@@ -192,7 +193,7 @@ export class MysqlProductionBatchRepository {
         { ...payload, routeId: route?.id ?? null, stepCount: route?.steps.length ?? 0 },
       );
       return this.getDetail(connection, String(result.insertId));
-    });
+    }).catch((error) => ensureNoDuplicate(error, '单据编号或幂等键已存在'));
   }
 
   async update(

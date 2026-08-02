@@ -16,6 +16,7 @@ import {
   type TechnicalFileStorage,
   type TechnicalFileUpload,
 } from '../application/ports/technical-file.storage.js';
+import { ProductDomainError } from '../domain/product.errors.js';
 
 export type S3TechnicalFileStorageOptions = TechnicalFileStorageConfig;
 
@@ -50,15 +51,19 @@ export class S3TechnicalFileStorage implements TechnicalFileStorage {
       .replace(/[^.a-z0-9]/g, '')
       .slice(0, 12);
     const objectKey = ['sop', year, month, `${randomUUID()}${extension}`].join('/');
-    await this.client.send(
-      new PutObjectCommand({
-        Bucket: this.options.bucket,
-        Key: objectKey,
-        Body: file.buffer,
-        ContentType: file.mimeType,
-        ContentLength: file.buffer.length,
-      }),
-    );
+    try {
+      await this.client.send(
+        new PutObjectCommand({
+          Bucket: this.options.bucket,
+          Key: objectKey,
+          Body: file.buffer,
+          ContentType: file.mimeType,
+          ContentLength: file.buffer.length,
+        }),
+      );
+    } catch {
+      throw new ProductDomainError('STORAGE_UNAVAILABLE', '技术文件存储失败');
+    }
     return {
       fileName: file.originalName,
       originalName: file.originalName,
@@ -74,27 +79,36 @@ export class S3TechnicalFileStorage implements TechnicalFileStorage {
   }
 
   async read(locator: Parameters<TechnicalFileStorage['read']>[0]) {
-    const bucket = this.bucket(locator.bucket);
-    const response = await this.client.send(
-      new GetObjectCommand({ Bucket: bucket, Key: locator.objectKey }),
-    );
+    let response;
+    try {
+      const bucket = this.bucket(locator.bucket);
+      response = await this.client.send(
+        new GetObjectCommand({ Bucket: bucket, Key: locator.objectKey }),
+      );
+    } catch {
+      throw new ProductDomainError('STORAGE_UNAVAILABLE', '技术文件读取失败');
+    }
     if (!(response.Body instanceof Readable)) {
-      throw new Error('Object storage returned an unsupported response body');
+      throw new ProductDomainError('STORAGE_UNAVAILABLE', '技术文件读取失败');
     }
     return response.Body;
   }
 
   async remove(locator: Parameters<TechnicalFileStorage['remove']>[0]) {
-    await this.client.send(
-      new DeleteObjectCommand({
-        Bucket: this.bucket(locator.bucket),
-        Key: locator.objectKey,
-      }),
-    );
+    try {
+      await this.client.send(
+        new DeleteObjectCommand({
+          Bucket: this.bucket(locator.bucket),
+          Key: locator.objectKey,
+        }),
+      );
+    } catch {
+      throw new ProductDomainError('STORAGE_UNAVAILABLE', '技术文件删除失败，可重试此操作');
+    }
   }
 
   private bucket(bucket: string | null) {
-    if (!bucket) throw new Error('Object storage bucket is missing');
+    if (!bucket) throw new Error('对象存储桶缺失');
     return bucket;
   }
 }

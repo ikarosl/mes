@@ -111,12 +111,33 @@ export default tseslint.config(
                 'mysql2',
                 'mysql2/*',
                 '@company/database',
+                '@aws-sdk/*',
+                'typeorm',
+                'knex',
+                'prisma',
+                'sequelize',
                 '**/infrastructure/**',
                 '**/presentation/**',
               ],
               message: 'application 层只能通过端口访问基础设施',
             },
           ],
+        },
+      ],
+      'no-restricted-syntax': [
+        'error',
+        {
+          // @nestjs/common 的所有 *Exception 命名导入（BadRequest/NotFound/UnprocessableEntity/InternalServerError
+          // 等当前及未来新增的 Nest HTTP 异常类）一律禁止，避免枚举遗漏导致门禁假通过。
+          selector:
+            "ImportDeclaration[source.value='@nestjs/common'] ImportSpecifier[imported.name=/Exception$/]",
+          message:
+            'application 层不得引入 Nest HTTP 异常；业务失败应抛出协议无关的模块错误，由 presentation 映射 HTTP',
+        },
+        {
+          selector: 'Literal[value=/^ER_[A-Z_]+$/]',
+          message:
+            'application 层不得识别数据库驱动错误码；实现错误由 infrastructure 映射为模块错误',
         },
       ],
     },

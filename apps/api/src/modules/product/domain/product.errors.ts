@@ -8,7 +8,9 @@ export type ProductErrorCode =
   | 'IMMUTABLE_ROUTE'
   | 'ROUTE_STEPS_REQUIRED'
   | 'ROUTE_IN_USE'
-  | 'DEFAULT_ROUTE_IN_USE';
+  | 'DEFAULT_ROUTE_IN_USE'
+  | 'INVALID_INPUT'
+  | 'STORAGE_UNAVAILABLE';
 
 export class ProductDomainError extends Error {
   constructor(

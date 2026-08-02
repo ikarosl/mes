@@ -10,6 +10,7 @@ import { permissionMatches } from '@company/constants';
 import { AuthService } from '../../application/auth.service.js';
 import { AuditRepository } from '../../application/ports/audit.repository.js';
 import { IS_PUBLIC, REQUIRED_PERMISSION } from '../../../../common/security/auth.decorators.js';
+import { AuthenticationError } from '../../domain/auth.errors.js';
 @Injectable()
 export class AuthGuard implements CanActivate {
   private readonly logger = new Logger(AuthGuard.name);
@@ -43,7 +44,7 @@ export class AuthGuard implements CanActivate {
       user = await this.auth.authenticate(token);
     } catch (error) {
       await this.writeDenied(request, null, 'HTTP 401');
-      throw error;
+      throw error instanceof AuthenticationError ? new UnauthorizedException(error.message) : error;
     }
     const permission = this.reflector.getAllAndOverride<string | undefined>(REQUIRED_PERMISSION, [
       context.getHandler(),

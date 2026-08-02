@@ -8,6 +8,7 @@ import { DATABASE_POOL } from '../../../infrastructure/database/database.module.
 import { ProductDomainError } from '../domain/product.errors.js';
 import { requireConfigurableProduct } from '../domain/product-configuration.policy.js';
 import { lockTechnicalFileSnapshot } from './mysql-product-reference-locks.js';
+import { mapProductWriteError } from './mysql-product.shared.js';
 
 type Db = Pool | PoolConnection;
 type EntityRow = RowDataPacket & { id: number; status?: number | string; is_deleted?: number };
@@ -133,7 +134,9 @@ export class MysqlProcessRouteRepository implements ProcessRouteRepository {
         status: 'draft',
       });
       return { id: String(result.insertId) };
-    });
+    }).catch((error) =>
+      mapProductWriteError(error, '编码或版本已存在，软删除记录的自然键也不能复用'),
+    );
   }
 
   async updateRoute(id: string, payload: ProcessRoutePayload, audit: AuditContext) {
@@ -166,7 +169,9 @@ export class MysqlProcessRouteRepository implements ProcessRouteRepository {
         ],
       );
       await this.audit(connection, audit, 'route.update', id, before, payload);
-    });
+    }).catch((error) =>
+      mapProductWriteError(error, '编码或版本已存在，软删除记录的自然键也不能复用'),
+    );
   }
 
   async setRouteStatus(id: string, status: ProcessRouteStatus, audit: AuditContext) {
@@ -185,7 +190,7 @@ export class MysqlProcessRouteRepository implements ProcessRouteRepository {
       if (status !== 'enabled' && (await this.isDefaultRouteInUse(connection, id))) {
         throw new ProductDomainError(
           'DEFAULT_ROUTE_IN_USE',
-          'A route configured as a product default cannot be disabled or archived',
+          '作为产品默认路线的工艺路线不能停用或归档',
         );
       }
       if (status === 'enabled') {

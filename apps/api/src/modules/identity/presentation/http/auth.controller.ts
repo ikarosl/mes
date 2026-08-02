@@ -1,8 +1,9 @@
-import { Body, Controller, Get, Post, Req, Res } from '@nestjs/common';
+import { Body, Controller, Get, Post, Req, Res, UnauthorizedException } from '@nestjs/common';
 import type { UserProfile } from '@company/contracts';
 import { loadAppConfig } from '../../../../config/env.js';
 import { AuthService } from '../../application/auth.service.js';
 import { CurrentUser, Public } from '../../../../common/security/auth.decorators.js';
+import { AuthenticationError } from '../../domain/auth.errors.js';
 import { LoginDto } from './dto/auth.dto.js';
 
 const COOKIE = 'company_refresh_token';
@@ -14,7 +15,7 @@ export class AuthController {
     @Body() body: LoginDto,
     @Res({ passthrough: true }) response: CookieResponse,
   ) {
-    const result = await this.auth.login(body);
+    const result = await this.mapAuth(() => this.auth.login(body));
     this.setCookie(response, result.refreshToken);
     return result.response;
   }
@@ -23,7 +24,7 @@ export class AuthController {
     @Res({ passthrough: true }) response: CookieResponse,
   ) {
     const token = readCookie(request.headers.cookie, COOKIE);
-    const result = await this.auth.refresh(token ?? '');
+    const result = await this.mapAuth(() => this.auth.refresh(token ?? ''));
     this.setCookie(response, result.refreshToken);
     return result.response;
   }
@@ -37,6 +38,14 @@ export class AuthController {
   }
   @Get('me') me(@CurrentUser() user: UserProfile) {
     return user;
+  }
+  private async mapAuth<T>(action: () => Promise<T>): Promise<T> {
+    try {
+      return await action();
+    } catch (error) {
+      if (error instanceof AuthenticationError) throw new UnauthorizedException(error.message);
+      throw error;
+    }
   }
   private setCookie(response: CookieResponse, value: string) {
     response.cookie(COOKIE, value, {
