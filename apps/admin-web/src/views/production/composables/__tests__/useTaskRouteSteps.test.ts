@@ -61,6 +61,44 @@ describe('useTaskRouteSteps', () => {
     expect(state.preview.value).toEqual([]);
   });
 
+  it('discards an in-flight request when the route is cleared', async () => {
+    let resolveA!: (value: Array<typeof stepItem>) => void;
+    routeSteps.mockImplementation((routeId: string) =>
+      routeId === 'A'
+        ? new Promise((resolve) => {
+            resolveA = resolve;
+          })
+        : Promise.resolve([]),
+    );
+    const state = useTaskRouteSteps();
+
+    const pendingA = state.load('A', false);
+    await state.load('', false); // 清空路线推进请求代际，作废在途请求
+    resolveA([stepItem]);
+    await pendingA;
+
+    expect(state.preview.value).toEqual([]);
+  });
+
+  it('discards an in-flight request when switching to editing mode', async () => {
+    let resolveA!: (value: Array<typeof stepItem>) => void;
+    routeSteps.mockImplementation((routeId: string) =>
+      routeId === 'A'
+        ? new Promise((resolve) => {
+            resolveA = resolve;
+          })
+        : Promise.resolve([]),
+    );
+    const state = useTaskRouteSteps();
+
+    const pendingA = state.load('A', false);
+    await state.load('A', true); // 编辑模式推进请求代际，作废在途请求
+    resolveA([stepItem]);
+    await pendingA;
+
+    expect(state.preview.value).toEqual([]);
+  });
+
   it('reports and clears the preview when the route steps request fails', async () => {
     routeSteps.mockRejectedValue(new Error('500'));
     const state = useTaskRouteSteps();

@@ -4,7 +4,7 @@
     :title="editingTaskId ? '编辑任务' : '新增任务'"
     :width="DialogWidth.lg"
     @update:model-value="$emit('update:visible', $event)"
-    @open="$emit('refresh-work-orders')"
+    @open="onOpen"
   >
     <el-form
       class="dialog-form"
@@ -59,6 +59,7 @@
           clearable
           placeholder="请选择工艺路线"
           @change="loadCreateStepPreview"
+          @visible-change="(v: boolean) => v && $emit('refresh-routes')"
         >
           <el-option
             v-for="route in availableRouteOptions"
@@ -74,6 +75,7 @@
           filterable
           clearable
           placeholder="请选择负责人"
+          @visible-change="(v: boolean) => v && $emit('refresh-users')"
         >
           <el-option
             v-for="user in userOptions"
@@ -138,6 +140,7 @@
                 clearable
                 filterable
                 placeholder="留空则使用默认文件"
+                @visible-change="(v: boolean) => v && $emit('refresh-sop-files')"
               >
                 <el-option
                   v-for="file in sopFileOptions"
@@ -235,6 +238,9 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'update:visible', val: boolean): void;
   (e: 'refresh-work-orders'): void;
+  (e: 'refresh-routes'): void;
+  (e: 'refresh-users'): void;
+  (e: 'refresh-sop-files'): void;
   (e: 'save', data: TaskFormValue): void;
 }>();
 
@@ -246,6 +252,14 @@ const initialForm = (): Omit<TaskFormValue, 'stepOverrides'> => ({
   plannedQuantity: 1,
   remark: '',
 });
+
+/** 打开弹窗：刷新本弹窗实际需要的候选（工单 / 路线 / 负责人 / SOP 文件），不刷新无关资源 */
+const onOpen = (): void => {
+  emit('refresh-work-orders');
+  emit('refresh-routes');
+  emit('refresh-users');
+  emit('refresh-sop-files');
+};
 
 const form = reactive(initialForm());
 const {

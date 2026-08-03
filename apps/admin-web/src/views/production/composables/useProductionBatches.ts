@@ -83,14 +83,12 @@ export function useProductionBatches() {
       store.ensureUsers(),
       loadSopFiles(),
     ]).then(() => undefined);
-  /** 激活/弹窗触发：强制刷新共享候选 + 本地 SOP */
-  const refreshOptions = (): Promise<void> =>
-    Promise.all([
-      store.refreshProducts(),
-      store.refreshRoutes(),
-      store.refreshUsers(),
-      loadSopFiles(),
-    ]).then(() => undefined);
+  /** 定向刷新：展开哪个下拉只刷新哪个资源（docs/frontend-architecture.md §6） */
+  const refreshProducts = (): Promise<void> => store.refreshProducts();
+  const refreshRoutes = (): Promise<void> => store.refreshRoutes();
+  const refreshUsers = (): Promise<void> => store.refreshUsers();
+  /** SOP 文件候选：单飞去重，每次下拉展开都重新请求 */
+  const refreshSopFiles = (): Promise<void> => loadSopFiles();
 
   const loadTasks = async (): Promise<void> => {
     loading.value = true;
@@ -183,7 +181,10 @@ export function useProductionBatches() {
     pageSize,
     query,
     ensureOptions,
-    refreshOptions,
+    refreshProducts,
+    refreshRoutes,
+    refreshUsers,
+    refreshSopFiles,
     loadTasks,
     loadPageData,
     searchTasks,

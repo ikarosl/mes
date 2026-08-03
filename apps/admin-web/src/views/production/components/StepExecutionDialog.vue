@@ -4,6 +4,7 @@
     title="调整工序执行参数"
     :width="DialogWidth.md"
     @update:model-value="$emit('update:visible', $event)"
+    @open="onOpen"
   >
     <el-form
       v-if="stepRecord"
@@ -22,6 +23,7 @@
           clearable
           filterable
           placeholder="留空则使用默认文件"
+          @visible-change="(v: boolean) => v && $emit('refresh-sop-files')"
         >
           <el-option
             v-for="file in sopFileOptions"
@@ -40,6 +42,7 @@
           clearable
           filterable
           placeholder="留空则使用默认负责人"
+          @visible-change="(v: boolean) => v && $emit('refresh-users')"
         >
           <el-option
             v-for="user in userOptions"
@@ -83,8 +86,16 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'update:visible', val: boolean): void;
+  (e: 'refresh-sop-files'): void;
+  (e: 'refresh-users'): void;
   (e: 'save', data: StepExecutionValue): void;
 }>();
+
+/** 打开弹窗：刷新本弹窗实际需要的候选（SOP 文件 + 负责人），不刷新无关资源 */
+const onOpen = (): void => {
+  emit('refresh-sop-files');
+  emit('refresh-users');
+};
 
 const form = reactive<StepExecutionValue>({
   actualSopFileId: null,

@@ -8,6 +8,8 @@ import { EMessage } from '../../../utils/message';
 export function useProductsList() {
   const products = ref<ProductListItem[]>([]);
   const loading = ref(false);
+  /** 列表请求代际：快速查询/翻页时丢弃旧响应（last-request-wins，见 frontend-architecture §8.3） */
+  let listRequestToken = 0;
   const total = ref(0);
   const currentPage = ref(1);
   const pageSize = ref(10);
@@ -31,6 +33,7 @@ export function useProductsList() {
   ): boolean => row.acquireMethod === 'self_made' && row.itemKind !== 'material';
 
   const loadProducts = async (): Promise<void> => {
+    const token = ++listRequestToken;
     loading.value = true;
     try {
       const result = await productApi.products({
@@ -46,12 +49,14 @@ export function useProductsList() {
               ? SYSTEM_STATUS.disabled
               : undefined,
       });
+      if (token !== listRequestToken) return; // 查询/翻页已变化，丢弃旧响应
       products.value = result.items;
       total.value = result.total;
     } catch (error) {
+      if (token !== listRequestToken) return; // 丢弃旧请求的失败，不误导提示
       EMessage.error(error, '产品资料加载失败');
     } finally {
-      loading.value = false;
+      if (token === listRequestToken) loading.value = false; // loading 只由最新请求结束
     }
   };
 

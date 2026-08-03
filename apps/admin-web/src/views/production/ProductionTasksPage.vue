@@ -166,7 +166,10 @@
             <el-button
               link
               type="primary"
-              :disabled="row.status !== 'material_pending' && row.status !== 'pending'"
+              :disabled="
+                (row.status !== 'material_pending' && row.status !== 'pending') ||
+                isRowPending(row.id)
+              "
               @click="generateMaterials(row)"
               >生成物料</el-button
             >
@@ -230,6 +233,9 @@
       :submitting="submitting"
       @update:visible="taskDialogVisible = $event"
       @refresh-work-orders="refreshWorkOrders"
+      @refresh-routes="refreshRoutes"
+      @refresh-users="refreshUsers"
+      @refresh-sop-files="refreshSopFiles"
       @save="submitTask"
     />
 
@@ -249,6 +255,8 @@
       :user-options="userOptions"
       :submitting="submitting"
       @update:visible="stepExecutionDialogVisible = $event"
+      @refresh-sop-files="refreshSopFiles"
+      @refresh-users="refreshUsers"
       @save="submitStepExecutionOverride"
     />
   </div>
@@ -265,6 +273,7 @@ import type {
 } from '@company/contracts';
 import { productionApi } from '../../api/production';
 import { EMessage } from '../../utils/message';
+import { useRowPending } from '../../utils/useRowPending';
 import { BATCH_STATUS_META, batchStatusMeta, formatQuantity } from './production-status';
 import { useProductionBatches } from './composables/useProductionBatches';
 import TaskFormDialog from './components/TaskFormDialog.vue';
@@ -288,7 +297,10 @@ const {
   currentPage,
   pageSize,
   query,
-  refreshOptions,
+  refreshProducts,
+  refreshRoutes,
+  refreshUsers,
+  refreshSopFiles,
   loadTasks,
   loadPageData,
   searchTasks,
@@ -296,6 +308,9 @@ const {
   handlePageSizeChange,
   refreshWorkOrders,
 } = useProductionBatches();
+
+/** 行内写操作守卫（生成物料），同一行只允许一个在途（todo 3.5） */
+const { isRowPending, beginRow, endRow } = useRowPending();
 
 /* ====== 弹窗状态 ====== */
 const taskDialogVisible = ref(false);
@@ -394,12 +409,15 @@ const submitStepExecutionOverride = async (data: StepExecutionValue): Promise<vo
 
 /* ====== 生成物料需求 ====== */
 const generateMaterials = async (row: ProductionBatchItem): Promise<void> => {
+  if (!beginRow(row.id)) return;
   try {
     await productionApi.generateMaterialDemands(row.id, row.version);
     EMessage.success('物料需求已生成');
     await loadTasks();
   } catch (error) {
     EMessage.error(error, '物料需求生成失败');
+  } finally {
+    endRow(row.id);
   }
 };
 
@@ -407,8 +425,12 @@ const generateMaterials = async (row: ProductionBatchItem): Promise<void> => {
 const canEditBatch = (row: ProductionBatchItem): boolean => row.status === 'pending';
 
 onMounted(loadPageData);
+/** 页面重新激活：定向刷新页面可见筛选与仍打开弹窗的候选（各资源独立 loader 组合） */
 onActivated(() => {
-  refreshOptions();
+  refreshProducts();
+  refreshRoutes();
+  refreshUsers();
+  refreshSopFiles();
   refreshWorkOrders();
 });
 </script>

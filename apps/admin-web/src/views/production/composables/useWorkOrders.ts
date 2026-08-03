@@ -61,11 +61,10 @@ export function useWorkOrders() {
     Promise.all([store.ensureProducts(), store.ensureRoutes(), store.ensureUsers()]).then(
       () => undefined,
     );
-  /** 激活/弹窗触发：强制刷新三类共享候选 */
-  const refreshOptions = (): Promise<void> =>
-    Promise.all([store.refreshProducts(), store.refreshRoutes(), store.refreshUsers()]).then(
-      () => undefined,
-    );
+  /** 定向刷新：展开哪个下拉只刷新哪个资源（docs/frontend-architecture.md §6） */
+  const refreshProducts = (): Promise<void> => store.refreshProducts();
+  const refreshRoutes = (): Promise<void> => store.refreshRoutes();
+  const refreshUsers = (): Promise<void> => store.refreshUsers();
 
   const loadOrders = async (): Promise<void> => {
     loading.value = true;
@@ -125,7 +124,9 @@ export function useWorkOrders() {
     pageSize,
     query,
     ensureOptions,
-    refreshOptions,
+    refreshProducts,
+    refreshRoutes,
+    refreshUsers,
     loadOrders,
     loadPageData,
     searchOrders,

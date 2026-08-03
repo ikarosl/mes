@@ -230,6 +230,7 @@
               v-if="auth.can(PERMISSIONS.product.products.changeStatus)"
               link
               :type="row.status === 1 ? 'danger' : 'success'"
+              :disabled="isRowPending(row.id)"
               @click="toggleStatus(row)"
             >
               {{ row.status === 1 ? '停用' : '启用' }}
@@ -303,6 +304,7 @@ import TableToolbar from '../../components/TableToolbar.vue';
 import PaginationFooter from '../../components/PaginationFooter.vue';
 import { EMessage } from '../../utils/message';
 import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
+import { useRowPending } from '../../utils/useRowPending';
 import { useAuthStore } from '../../stores/auth';
 import { useProductsList } from './composables/useProductsList';
 import { useProductCategoryOptions } from './composables/useProductCategoryOptions';
@@ -342,6 +344,9 @@ const {
 } = useProductsList();
 const { categoryOptions, loadCategoryOptions } = useProductCategoryOptions();
 const referenceOptions = useReferenceOptionsStore();
+
+/** 行内写操作守卫（启停产品），同一行只允许一个在途（todo 3.5） */
+const { isRowPending, beginRow, endRow } = useRowPending();
 
 /* ----- dialog state ----- */
 const productDialogVisible = ref(false);
@@ -422,6 +427,7 @@ const submitProduct = async (data: ProductFormValue): Promise<void> => {
 };
 
 const toggleStatus = async (row: ProductListItem): Promise<void> => {
+  if (!beginRow(row.id)) return;
   const text = row.status === 1 ? '停用' : '启用';
   try {
     await ElMessageBox.confirm(`确定${text}"${row.productName}"吗？`, `${text}产品资料`, {
@@ -433,6 +439,8 @@ const toggleStatus = async (row: ProductListItem): Promise<void> => {
     referenceOptions.invalidateProducts();
   } catch (error: unknown) {
     if (error !== 'cancel' && error !== 'close') EMessage.error(error, `${text}产品失败`);
+  } finally {
+    endRow(row.id);
   }
 };
 

@@ -4,6 +4,7 @@
     :title="editingBatchId ? '编辑生产批次' : '新增生产批次'"
     :width="DialogWidth.md"
     @update:model-value="$emit('update:visible', $event)"
+    @open="onOpen"
   >
     <el-form
       class="dialog-form"
@@ -49,6 +50,7 @@
           clearable
           filterable
           placeholder="默认使用产品默认路线"
+          @visible-change="(v: boolean) => v && $emit('refresh-routes')"
         >
           <el-option
             v-for="route in availableRouteOptions"
@@ -64,6 +66,7 @@
           clearable
           filterable
           placeholder="请选择负责人"
+          @visible-change="(v: boolean) => v && $emit('refresh-users')"
         >
           <el-option
             v-for="user in userOptions"
@@ -127,8 +130,16 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'update:visible', val: boolean): void;
+  (e: 'refresh-routes'): void;
+  (e: 'refresh-users'): void;
   (e: 'save', data: BatchFormValue): void;
 }>();
+
+/** 打开弹窗：刷新本弹窗实际需要的候选（工艺路线 + 负责人），不刷新无关资源 */
+const onOpen = (): void => {
+  emit('refresh-routes');
+  emit('refresh-users');
+};
 
 const initialForm = (): BatchFormValue => ({
   batchNo: '',

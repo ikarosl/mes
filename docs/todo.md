@@ -110,12 +110,18 @@
 
 ### 3.5 前端行内操作提交中守卫
 
-状态：`已确认，统一整改`
+状态：`已完成`
 
 - 弹窗表单已经使用 `submitting` 和 `:loading`；下达、关闭、取消、启停、删除、生成物料等行内操作仍缺少统一 pending 守卫。
 - 重复状态流转通常会被 version 乐观锁阻止，数据安全但会产生多余请求和 409；交互层守卫不能替代服务端幂等。
 - 使用行级 `pendingIds: Set<string>`，入口同步添加、`finally` 删除，并绑定按钮 `disabled/loading`。
 - 涉及 Production 页面以及 Product、System 的 `toggleStatus`、`deleteRole` 等操作。
+
+完成说明：
+
+- 新增 `useRowPending()`，以页面实例内的 `Set<string>` 同步守卫行内写操作；入口先占用、`finally` 释放，并绑定相应按钮的 `loading` 与 `disabled`。
+- 已覆盖 Product、Production、System 三个域的启停、删除、下达、关闭、取消、生成物料等行内写操作，并补充 composable 与页面组件测试。
+- 该守卫只消除同一页面的重复点击；后端幂等与乐观锁仍是跨请求和并发写入的安全边界。
 
 ### 3.6 跨页面 `/options` 授权契约与前端数据所有权解耦
 

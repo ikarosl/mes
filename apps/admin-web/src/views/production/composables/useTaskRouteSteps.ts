@@ -18,14 +18,14 @@ export function useTaskRouteSteps() {
   let requestToken = 0;
 
   const load = async (routeId: string, editing: boolean): Promise<void> => {
+    const token = ++requestToken; // 所有目标变化分支先推进代际，清空/编辑也会作废在途请求
     if (!routeId || editing) {
       preview.value = [];
       return;
     }
-    const token = ++requestToken;
     try {
       const steps = await productApi.routeSteps(routeId);
-      if (token !== requestToken) return; // 路线已切换，丢弃旧响应
+      if (token !== requestToken) return; // 路线已切换或已清空，丢弃旧响应
       preview.value = steps.map((step) => ({
         ...step,
         actualSopFileId: null,

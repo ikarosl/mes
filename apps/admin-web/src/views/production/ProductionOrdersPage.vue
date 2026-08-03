@@ -186,7 +186,7 @@
             <el-button
               link
               type="primary"
-              :disabled="row.status !== 'draft'"
+              :disabled="row.status !== 'draft' || isRowPending(row.id)"
               @click="releaseOrder(row)"
               >下达</el-button
             >
@@ -199,12 +199,12 @@
               <template #dropdown>
                 <el-dropdown-menu>
                   <el-dropdown-item
-                    :disabled="!canCloseOrder(row)"
+                    :disabled="!canCloseOrder(row) || isRowPending(row.id)"
                     @click="closeOrder(row)"
                     >关闭工单</el-dropdown-item
                   >
                   <el-dropdown-item
-                    :disabled="!canCancelOrder(row)"
+                    :disabled="!canCancelOrder(row) || isRowPending(row.id)"
                     @click="cancelOrder(row)"
                     >取消工单</el-dropdown-item
                   >
@@ -254,7 +254,8 @@
       :user-options="userOptions"
       :submitting="submitting"
       @update:visible="orderDialogVisible = $event"
-      @refresh-options="refreshOptions"
+      @refresh-products="refreshProducts"
+      @refresh-users="refreshUsers"
       @save="submitOrder"
     />
 
@@ -289,6 +290,8 @@
       :default-end-date="toDateInputValue(taskOrder?.planEndDate)"
       :submitting="submitting"
       @update:visible="batchFormDialogVisible = $event"
+      @refresh-routes="refreshRoutes"
+      @refresh-users="refreshUsers"
       @save="submitBatch"
     />
   </div>
@@ -302,6 +305,7 @@ import type { ProductionBatchItem, WorkOrderDetail, WorkOrderItem } from '@compa
 import { productionApi } from '../../api/production';
 import { EMessage } from '../../utils/message';
 import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
+import { useRowPending } from '../../utils/useRowPending';
 import { formatDateForDisplay, toDateInputValue } from '../../utils/date';
 import { ORDER_STATUS_META, formatQuantity, orderStatusMeta } from './production-status';
 import { useWorkOrders } from './composables/useWorkOrders';
@@ -324,7 +328,9 @@ const {
   currentPage,
   pageSize,
   query,
-  refreshOptions,
+  refreshProducts,
+  refreshRoutes,
+  refreshUsers,
   loadOrders,
   loadPageData,
   searchOrders,
@@ -333,6 +339,9 @@ const {
   getOwnerName,
   formatProduct,
 } = useWorkOrders();
+
+/** 行内工单状态写操作守卫（下达/关闭/取消），同一行只允许一个在途（todo 3.5） */
+const { isRowPending, beginRow, endRow } = useRowPending();
 
 /* ====== 弹窗状态 ====== */
 const orderDialogVisible = ref(false);
@@ -451,21 +460,20 @@ const changeOrderStatus = async (
   action: 'release' | 'close' | 'cancel',
   label: string,
 ): Promise<void> => {
+  if (!beginRow(row.id)) return;
   try {
     await ElMessageBox.confirm(`确认${label}该工单？`, `${label}工单`, {
       confirmButtonText: `确认${label}`,
       cancelButtonText: '取消',
       type: action === 'cancel' ? 'warning' : 'info',
     });
-  } catch {
-    return;
-  }
-  try {
     await productionApi.changeOrderStatus(row.id, action, row.version);
     EMessage.success(`工单已${label}`);
     await loadOrders();
   } catch (error) {
-    EMessage.error(error, `工单${label}失败`);
+    if (error !== 'cancel' && error !== 'close') EMessage.error(error, `工单${label}失败`);
+  } finally {
+    endRow(row.id);
   }
 };
 
@@ -541,7 +549,12 @@ const submitBatch = async (data: BatchFormValue): Promise<void> => {
 };
 
 onMounted(loadPageData);
-onActivated(refreshOptions);
+/** 页面重新激活：定向刷新页面可见筛选与仍打开弹窗的候选（各资源独立 loader 组合） */
+onActivated(() => {
+  refreshProducts();
+  refreshRoutes();
+  refreshUsers();
+});
 </script>
 
 <style scoped>

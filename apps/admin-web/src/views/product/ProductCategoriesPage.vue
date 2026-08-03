@@ -140,6 +140,7 @@
               v-if="auth.can(PERMISSIONS.product.categories.changeStatus)"
               link
               :type="row.status === 1 ? 'danger' : 'success'"
+              :disabled="isRowPending(row.id)"
               @click="toggleStatus(row)"
             >
               {{ row.status === 1 ? '停用' : '启用' }}
@@ -191,6 +192,7 @@ import TableToolbar from '../../components/TableToolbar.vue';
 import PaginationFooter from '../../components/PaginationFooter.vue';
 import { EMessage } from '../../utils/message';
 import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
+import { useRowPending } from '../../utils/useRowPending';
 import { productApi } from '../../api/product';
 import { useAuthStore } from '../../stores/auth';
 import { formatDateTimeForDisplay } from '../../utils/date';
@@ -217,6 +219,8 @@ const {
   handlePageChange,
 } = useProductCategories();
 const submitting = ref(false);
+/** 行内写操作守卫（启停分类），同一行只允许一个在途（todo 3.5） */
+const { isRowPending, beginRow, endRow } = useRowPending();
 const itemKindLabels: Record<ProductItemKind, string> = {
   material: '物料',
   semi_finished: '半成品',
@@ -263,6 +267,7 @@ const submitCategory = async (payload: ProductCategoryPayload) => {
 };
 
 const toggleStatus = async (row: ProductCategoryListItem) => {
+  if (!beginRow(row.id)) return;
   const text = row.status === 1 ? '停用' : '启用';
   try {
     await ElMessageBox.confirm(`确定${text}分类“${row.categoryName}”吗？`, `${text}分类`, {
@@ -273,6 +278,8 @@ const toggleStatus = async (row: ProductCategoryListItem) => {
     await loadCategories();
   } catch (error) {
     if (error !== 'cancel' && error !== 'close') EMessage.error(error, `${text}分类失败`);
+  } finally {
+    endRow(row.id);
   }
 };
 onMounted(loadCategories);

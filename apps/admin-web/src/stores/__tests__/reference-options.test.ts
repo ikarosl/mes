@@ -76,15 +76,57 @@ describe('reference-options store', () => {
     expect(warning).not.toHaveBeenCalled();
   });
 
-  it('invalidate causes the next ensure to refetch', async () => {
+  it('invalidate causes the next ensure to refetch, and a fresh success clears the flag', async () => {
     productOptions.mockResolvedValue([]);
     const store = useReferenceOptionsStore();
 
     await store.ensureProducts();
     store.invalidateProducts();
     await store.ensureProducts();
+    await store.ensureProducts(); // 第二次 ensure 拉取成功 → 失效标记已清除，不再请求
 
     expect(productOptions).toHaveBeenCalledTimes(2);
+  });
+
+  it('a late response after invalidate must not clear the invalidation flag', async () => {
+    let resolveProducts!: (value: Array<{ id: string }>) => void;
+    productOptions.mockReturnValue(
+      new Promise((resolve) => {
+        resolveProducts = resolve;
+      }),
+    );
+    const store = useReferenceOptionsStore();
+
+    // 请求在途时另一页面完成写操作并 invalidate
+    const pending = store.refreshProducts();
+    store.invalidateProducts();
+    resolveProducts([{ id: '1' }]); // 写操作之前的旧快照
+    await pending;
+
+    expect(store.products.map((p) => p.id)).toEqual(['1']); // 旧快照被写入（允许）
+    expect(store.productsStatus).toBe('ready');
+
+    // 失效标记必须保留：下一次 ensure 重新请求，而不是直接返回旧缓存
+    await store.ensureProducts();
+    expect(productOptions).toHaveBeenCalledTimes(2);
+  });
+
+  it('a failed refresh marks the resource stale so the next ensure refetches', async () => {
+    productOptions.mockResolvedValueOnce([{ id: '1' }]);
+    productOptions.mockRejectedValueOnce(new Error('500'));
+    productOptions.mockResolvedValue([{ id: '2' }]);
+    const store = useReferenceOptionsStore();
+
+    await store.ensureProducts();
+    await store.refreshProducts();
+    expect(store.productsStatus).toBe('error');
+    expect(warning).toHaveBeenCalledOnce();
+
+    // 刷新失败已确认数据陈旧：ensure 不再直接返回旧缓存，而是重新请求
+    await store.ensureProducts();
+    expect(productOptions).toHaveBeenCalledTimes(3);
+    expect(store.products).toEqual([{ id: '2' }]);
+    expect(store.productsStatus).toBe('ready');
   });
 
   it('$reset clears all cached options', async () => {

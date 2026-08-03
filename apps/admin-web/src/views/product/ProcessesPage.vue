@@ -153,6 +153,7 @@
               v-if="auth.can(PERMISSIONS.product.processes.changeStatus)"
               link
               :type="row.status === 1 ? 'danger' : 'success'"
+              :disabled="isRowPending(row.id)"
               @click="toggleStatus(row)"
             >
               {{ row.status === 1 ? '停用' : '启用' }}
@@ -226,6 +227,7 @@ import PaginationFooter from '../../components/PaginationFooter.vue';
 import { DialogWidth } from '../../utils/dialog';
 import { EMessage } from '../../utils/message';
 import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
+import { useRowPending } from '../../utils/useRowPending';
 import { productApi } from '../../api/product';
 import { useAuthStore } from '../../stores/auth';
 import { useProcessSteps } from './composables/useProcessSteps';
@@ -248,6 +250,9 @@ const {
   handlePageSizeChange,
   handlePageChange,
 } = useProcessSteps();
+
+/** 行内写操作守卫（启停工序），同一行只允许一个在途（todo 3.5） */
+const { isRowPending, beginRow, endRow } = useRowPending();
 
 const processDialogVisible = ref(false);
 const uploadDialogVisible = ref(false);
@@ -323,6 +328,7 @@ const submitUpload = async () => {
 };
 
 const toggleStatus = async (row: ProcessStepListItem) => {
+  if (!beginRow(row.id)) return;
   const text = row.status === 1 ? '停用' : '启用';
   try {
     await ElMessageBox.confirm(`确定${text}工序“${row.stepName}”吗？`, `${text}工序`, {
@@ -333,6 +339,8 @@ const toggleStatus = async (row: ProcessStepListItem) => {
     await loadSteps();
   } catch (error) {
     if (error !== 'cancel' && error !== 'close') EMessage.error(error, `${text}工序失败`);
+  } finally {
+    endRow(row.id);
   }
 };
 onMounted(loadSteps);

@@ -186,6 +186,7 @@
               v-if="auth.can(PERMISSIONS.system.users.update)"
               link
               type="primary"
+              :disabled="isRowPending(row.id)"
               @click="toggleStatus(row)"
             >
               {{ row.status === SYSTEM_STATUS.enabled ? '停用' : '启用' }}
@@ -282,6 +283,7 @@ import type { SystemUserListItem } from '@company/contracts';
 import TableToolbar from '../../components/TableToolbar.vue';
 import { EMessage } from '../../utils/message';
 import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
+import { useRowPending } from '../../utils/useRowPending';
 import { systemApi } from '../../api/system';
 import { useAuthStore } from '../../stores/auth';
 import { useReferenceOptionsStore } from '../../stores/reference-options';
@@ -317,6 +319,9 @@ const {
 } = useSystemUsers();
 
 const referenceOptions = useReferenceOptionsStore();
+
+/** 行内写操作守卫（启停用户），同一行只允许一个在途（todo 3.5） */
+const { isRowPending, beginRow, endRow } = useRowPending();
 
 /* ----- dialog state ----- */
 const userDialogVisible = ref(false);
@@ -384,6 +389,7 @@ const submitUser = async (data: UserFormValue): Promise<void> => {
 };
 
 const toggleStatus = async (row: SystemUserListItem): Promise<void> => {
+  if (!beginRow(row.id)) return;
   const text = row.status === SYSTEM_STATUS.enabled ? '停用' : '启用';
   try {
     await ElMessageBox.confirm(`确定${text}用户"${row.displayName}"吗？`, `${text}用户`, {
@@ -399,6 +405,8 @@ const toggleStatus = async (row: SystemUserListItem): Promise<void> => {
     if (error !== 'cancel' && error !== 'close') {
       EMessage.error(error, `${text}用户失败`);
     }
+  } finally {
+    endRow(row.id);
   }
 };
 

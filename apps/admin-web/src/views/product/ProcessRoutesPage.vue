@@ -158,6 +158,7 @@
               v-if="row.status !== 'archived' && auth.can(PERMISSIONS.product.routes.changeStatus)"
               link
               :type="row.status === 'enabled' ? 'danger' : 'success'"
+              :disabled="isRowPending(row.id)"
               @click="toggleStatus(row)"
             >
               {{ row.status === 'enabled' ? '停用' : '启用' }}
@@ -166,6 +167,7 @@
               v-if="row.status === 'draft' && auth.can(PERMISSIONS.product.routes.delete)"
               link
               type="danger"
+              :disabled="isRowPending(row.id)"
               @click="deleteRoute(row)"
               >删除</el-button
             >
@@ -223,6 +225,7 @@ import TableToolbar from '../../components/TableToolbar.vue';
 import PaginationFooter from '../../components/PaginationFooter.vue';
 import { EMessage } from '../../utils/message';
 import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
+import { useRowPending } from '../../utils/useRowPending';
 import { useAuthStore } from '../../stores/auth';
 import { useProcessRoutesList } from './composables/useProcessRoutesList';
 import { useReferenceOptionsStore } from '../../stores/reference-options';
@@ -252,6 +255,9 @@ const {
 } = useProcessRoutesList();
 
 const referenceOptions = useReferenceOptionsStore();
+
+/** 行内写操作守卫（启停/删除路线），同一行只允许一个在途（todo 3.5） */
+const { isRowPending, beginRow, endRow } = useRowPending();
 
 /* ----- dialog state ----- */
 const routeDialogVisible = ref(false);
@@ -312,6 +318,7 @@ const submitRoute = async (data: RouteFormValue): Promise<void> => {
 };
 
 const toggleStatus = async (row: ProcessRouteListItem): Promise<void> => {
+  if (!beginRow(row.id)) return;
   const next: ProcessRouteStatus = row.status === 'enabled' ? 'disabled' : 'enabled';
   const text = next === 'enabled' ? '启用' : '停用';
   try {
@@ -326,10 +333,13 @@ const toggleStatus = async (row: ProcessRouteListItem): Promise<void> => {
     referenceOptions.invalidateRoutes();
   } catch (error: unknown) {
     if (error !== 'cancel' && error !== 'close') EMessage.error(error, `${text}路线失败`);
+  } finally {
+    endRow(row.id);
   }
 };
 
 const deleteRoute = async (row: ProcessRouteListItem): Promise<void> => {
+  if (!beginRow(row.id)) return;
   try {
     await ElMessageBox.confirm(
       `确定删除草稿路线"${row.routeName}（${row.versionNo}）"吗？`,
@@ -342,6 +352,8 @@ const deleteRoute = async (row: ProcessRouteListItem): Promise<void> => {
     referenceOptions.invalidateRoutes();
   } catch (error: unknown) {
     if (error !== 'cancel' && error !== 'close') EMessage.error(error, '删除路线失败');
+  } finally {
+    endRow(row.id);
   }
 };
 
