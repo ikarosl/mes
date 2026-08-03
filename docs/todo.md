@@ -117,6 +117,41 @@
 - 使用行级 `pendingIds: Set<string>`，入口同步添加、`finally` 删除，并绑定按钮 `disabled/loading`。
 - 涉及 Production 页面以及 Product、System 的 `toggleStatus`、`deleteRole` 等操作。
 
+### 3.6 跨页面 `/options` 授权契约与前端数据所有权解耦
+
+状态：`已完成`
+
+已确认问题：
+
+- 拆分独立 `/options` 后，每个选项端点被改为要求各自资源的视图权限，导致只拥有单页面权限的合法角色
+  （如仅 `product:products:view`）在加载产品页所需的 `/categories/options`、`/process-routes/options` 时被
+  403；前端页面级 `Promise.all` 因任一选项失败整体不赋值，且 403 触发全局处理器跳转无权限页。
+- 页面级 `loadData()` 同时刷新「列表 + 全部 options」，把无关数据绑成共同失败域，写操作成功也连带
+  刷新无关选项。
+
+整改要求：
+
+- 跨页面 `/options` 按「任意一个合法消费页面的视图权限」授权（any-of），授权集为消费页面视图权限的并集。
+- 前端按数据所有权拆分：正式列表由页面级 list composable 持有；页面筛选项由页面级 options composable
+  持有；表单/弹窗专用候选由弹窗级 composable 在打开/展开时加载，独立错误边界。
+- 选项请求使用 `skipErrorHandling` 且逐项 best-effort，单个选项失败只影响该项下拉，不拖累列表或其他选项，
+  也不触发全局 403 跳转。
+
+完成说明：
+
+- `permissionMatches` 支持 `string | string[]`（any-of），`RequirePermission` 接受权限数组；product 5 个
+  options 端点按全部消费页面视图权限并集设置 OR 授权集（`categories/options`→[products,categories]、
+  `process-steps/options`→[processes,routes]、
+  `products/options`→[products,routes,production:orders:view,production:tasks:view]、
+  `process-routes/options`→[products,routes,production:orders:view,production:tasks:view]、
+  `users/options`→[routes,production:orders:view,production:tasks:view]），覆盖生产工单/任务页消费，精确恢复旧聚合端点的授权行为。
+- 前端拆为 `useProductsList`/`useProcessRoutesList`（页面级列表）、`useProductCategoryOptions`（页面级筛选项）、
+  `useProductMaterialOptions`/`useProductRouteOptions`/`useProductFormOptions`/`useRouteStepOptions`（弹窗级候选）；
+  4 个弹窗改为自持候选数据并暴露 `refresh`；写操作成功后只刷新列表。生产演示页的 `loadOptions` 同步改为逐项
+  best-effort。
+- 契约与测试：`docs/api-conventions.md` §5 与 `docs/product-master-data-api.md` 明确跨页面 options 授权契约；
+  补 any-of 守卫测试、options 元数据契约与「最小权限角色矩阵」测试（仅持单页面权限可读该页全部选项）。
+
 ## 4. 已确认但按阶段实施
 
 ### 4.1 Production HTTP 幂等闭环

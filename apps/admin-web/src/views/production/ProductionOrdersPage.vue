@@ -254,7 +254,7 @@
       :user-options="userOptions"
       :submitting="submitting"
       @update:visible="orderDialogVisible = $event"
-      @refresh-options="loadOptions"
+      @refresh-options="refreshOptions"
       @save="submitOrder"
     />
 
@@ -324,7 +324,7 @@ const {
   currentPage,
   pageSize,
   query,
-  loadOptions,
+  refreshOptions,
   loadOrders,
   loadPageData,
   searchOrders,
@@ -541,7 +541,7 @@ const submitBatch = async (data: BatchFormValue): Promise<void> => {
 };
 
 onMounted(loadPageData);
-onActivated(loadOptions);
+onActivated(refreshOptions);
 </script>
 
 <style scoped>

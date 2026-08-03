@@ -284,6 +284,7 @@ import { EMessage } from '../../utils/message';
 import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
 import { systemApi } from '../../api/system';
 import { useAuthStore } from '../../stores/auth';
+import { useReferenceOptionsStore } from '../../stores/reference-options';
 import { formatDateTimeForDisplay } from '../../utils/date';
 import { useSystemUsers } from './composables/useSystemUsers';
 import UserFormDialog from './components/UserFormDialog.vue';
@@ -314,6 +315,8 @@ const {
   handlePageChange,
   handleSelectionChange,
 } = useSystemUsers();
+
+const referenceOptions = useReferenceOptionsStore();
 
 /* ----- dialog state ----- */
 const userDialogVisible = ref(false);
@@ -372,6 +375,7 @@ const submitUser = async (data: UserFormValue): Promise<void> => {
     EMessage.success(editingUserId.value ? '用户信息已更新' : '用户已新增');
     userDialogVisible.value = false;
     await Promise.all([loadUsers(), loadOptions()]);
+    referenceOptions.invalidateUsers();
   } catch (error) {
     EMessage.error(error, '用户保存失败');
   } finally {
@@ -390,6 +394,7 @@ const toggleStatus = async (row: SystemUserListItem): Promise<void> => {
     });
     EMessage.success(`用户已${text}`);
     await loadUsers();
+    referenceOptions.invalidateUsers();
   } catch (error: unknown) {
     if (error !== 'cancel' && error !== 'close') {
       EMessage.error(error, `${text}用户失败`);

@@ -1,26 +1,16 @@
 import { reactive, ref } from 'vue';
 import { SYSTEM_STATUS } from '@company/constants';
-import type {
-  ProcessRouteOption,
-  ProductCategoryOption,
-  ProductAcquireMethod,
-  ProductItemKind,
-  ProductListItem,
-  ProductOption,
-} from '@company/contracts';
+import type { ProductAcquireMethod, ProductItemKind, ProductListItem } from '@company/contracts';
 import { productApi } from '../../../api/product';
 import { EMessage } from '../../../utils/message';
 
-export function useProducts() {
+/** 产品页正式列表：查询、分页与列表加载。写操作成功后只调用 loadProducts()。 */
+export function useProductsList() {
   const products = ref<ProductListItem[]>([]);
-  const categoryOptions = ref<ProductCategoryOption[]>([]);
-  const materialOptions = ref<ProductOption[]>([]);
-  const routes = ref<ProcessRouteOption[]>([]);
   const loading = ref(false);
   const total = ref(0);
   const currentPage = ref(1);
   const pageSize = ref(10);
-  let optionsRequest: Promise<void> | null = null;
   const query = reactive<{
     keyword: string;
     categoryId: string;
@@ -65,35 +55,6 @@ export function useProducts() {
     }
   };
 
-  const loadOptions = (): Promise<void> => {
-    if (!optionsRequest) {
-      optionsRequest = (async () => {
-        try {
-          const [categoryList, productList, routeList] = await Promise.all([
-            productApi.categoryOptions(),
-            productApi.productOptions(),
-            productApi.routeOptions(),
-          ]);
-          categoryOptions.value = categoryList;
-          materialOptions.value = productList.filter(
-            (item: ProductOption) =>
-              item.itemKind === 'material' || item.itemKind === 'semi_finished',
-          );
-          routes.value = routeList;
-        } catch (error) {
-          EMessage.error(error, '产品选项加载失败');
-        }
-      })().finally(() => {
-        optionsRequest = null;
-      });
-    }
-    return optionsRequest;
-  };
-
-  const loadData = async (): Promise<void> => {
-    await Promise.all([loadProducts(), loadOptions()]);
-  };
-
   const handleSearch = async (): Promise<void> => {
     currentPage.value = 1;
     await loadProducts();
@@ -125,9 +86,6 @@ export function useProducts() {
 
   return {
     products,
-    categoryOptions,
-    materialOptions,
-    routes,
     loading,
     total,
     currentPage,
@@ -137,8 +95,6 @@ export function useProducts() {
     itemKindLabel,
     canConfigureProduction,
     loadProducts,
-    loadOptions,
-    loadData,
     handleSearch,
     resetQuery,
     handlePageSizeChange,

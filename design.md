@@ -119,7 +119,7 @@ font-family: Inter, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', Arial, san
 | `RouteMessageBox` | 删除、停用、取消、作废、完成等短时危险操作确认               | 不得直接调用 Element Plus `ElMessageBox`；路由切换时关闭且不缓存                        |
 | `live-options`    | 部门、角色、分类、产品、物料、工序、路线、负责人等可变候选项 | 在页面激活、弹窗打开或下拉展开时刷新；保留并标记失效已选值，提交前拦截                  |
 
-稳定枚举、普通输入和不参与编辑提交的展示数据不使用 `live-options`。具体接入代码、生命周期、当前使用情况和测试要求见 [`DynamicTabSwitching.md`](docs/frontCompoentDesgin/DynamicTabSwitching.md)。
+稳定枚举、普通输入和不参与编辑提交的展示数据不使用 `live-options`。具体交互接入、生命周期和测试要求见 [`DynamicTabSwitching.md`](docs/frontCompoentDesgin/DynamicTabSwitching.md)；候选的数据所有者、共享缓存、失效和竞态规则见 [`frontend-architecture.md`](docs/frontend-architecture.md)。
 
 ## 6. 表格规范
 

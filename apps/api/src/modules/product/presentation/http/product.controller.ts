@@ -111,7 +111,8 @@ export class ProductController {
     });
   }
   @Get('categories/options')
-  @RequirePermission(PERMISSIONS.product.categories.view)
+  // 跨页面选项授权：产品页（分类筛选/表单）或分类页（父分类）任一视图权限即可读取
+  @RequirePermission([PERMISSIONS.product.products.view, PERMISSIONS.product.categories.view])
   categoryOptions() {
     return this.service.listCategoryOptions();
   }
@@ -155,7 +156,13 @@ export class ProductController {
     });
   }
   @Get('products/options')
-  @RequirePermission(PERMISSIONS.product.products.view)
+  // 跨页面选项授权：产品页（BOM 候选）、工艺路线页（产品/BOM 候选）、生产工单/任务页（产品下拉）任一视图权限即可读取
+  @RequirePermission([
+    PERMISSIONS.product.products.view,
+    PERMISSIONS.product.routes.view,
+    PERMISSIONS.production.orders.view,
+    PERMISSIONS.production.tasks.view,
+  ])
   productOptions() {
     return this.service.listProductOptions();
   }
@@ -222,7 +229,8 @@ export class ProductController {
     });
   }
   @Get('process-steps/options')
-  @RequirePermission(PERMISSIONS.product.processes.view)
+  // 跨页面选项授权：工序页或工艺路线页（工序列）任一视图权限即可读取
+  @RequirePermission([PERMISSIONS.product.processes.view, PERMISSIONS.product.routes.view])
   processStepOptions() {
     return this.service.listProcessStepOptions();
   }
@@ -286,7 +294,13 @@ export class ProductController {
     });
   }
   @Get('process-routes/options')
-  @RequirePermission(PERMISSIONS.product.routes.view)
+  // 跨页面选项授权：产品页（默认路线下拉）、工艺路线页、生产工单/任务页（路线下拉）任一视图权限即可读取
+  @RequirePermission([
+    PERMISSIONS.product.products.view,
+    PERMISSIONS.product.routes.view,
+    PERMISSIONS.production.orders.view,
+    PERMISSIONS.production.tasks.view,
+  ])
   routeOptions() {
     return this.service.listRouteOptions();
   }
@@ -338,7 +352,12 @@ export class ProductController {
     return this.service.replaceRouteSteps(id, body.items, audit);
   }
   @Get('users/options')
-  @RequirePermission(PERMISSIONS.product.routes.view)
+  // 跨页面选项授权：工艺路线页（默认负责人）、生产工单/任务页（负责人下拉）任一视图权限即可读取
+  @RequirePermission([
+    PERMISSIONS.product.routes.view,
+    PERMISSIONS.production.orders.view,
+    PERMISSIONS.production.tasks.view,
+  ])
   userOptions() {
     return this.service.listUserOptions();
   }

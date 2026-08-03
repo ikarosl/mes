@@ -197,18 +197,13 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue';
-import type {
-  ProcessRouteStepItem,
-  ProductOption,
-  TechnicalFileListItem,
-  WorkOrderItem,
-} from '@company/contracts';
+import type { ProductOption, TechnicalFileListItem, WorkOrderItem } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
 import { EMessage } from '../../../utils/message';
 import { buildLiveOptions, hasUnavailableSelection } from '../../../utils/live-options';
-import { productApi } from '../../../api/product';
 import { formatQuantity, getWorkOrderRemaining } from '../production-status';
 import { resolveDefaultRouteId } from '../production-route-options';
+import { useTaskRouteSteps } from '../composables/useTaskRouteSteps';
 import type { TaskRouteOption, TaskUserOption } from '../composables/useProductionBatches';
 
 export type TaskFormValue = {
@@ -224,11 +219,6 @@ export type TaskFormValue = {
     responsibleUserId: string | null;
   }>;
 };
-
-interface CreateStepPreview extends ProcessRouteStepItem {
-  actualSopFileId: string | null;
-  responsibleUserId: string | null;
-}
 
 const props = defineProps<{
   visible: boolean;
@@ -258,7 +248,11 @@ const initialForm = (): Omit<TaskFormValue, 'stepOverrides'> => ({
 });
 
 const form = reactive(initialForm());
-const createStepPreview = ref<CreateStepPreview[]>([]);
+const {
+  preview: createStepPreview,
+  load: fetchStepPreview,
+  reset: resetStepPreview,
+} = useTaskRouteSteps();
 const editingTaskOriginalQuantity = ref(0);
 
 const selectedWorkOrder = computed(
@@ -297,22 +291,8 @@ const formatWorkOrderOption = (order: WorkOrderItem): string =>
     getWorkOrderRemaining(order),
   )}`;
 
-const loadCreateStepPreview = async (): Promise<void> => {
-  if (!form.routeId || props.editingTaskId) {
-    createStepPreview.value = [];
-    return;
-  }
-  try {
-    const steps = await productApi.routeSteps(form.routeId);
-    createStepPreview.value = steps.map((step) => ({
-      ...step,
-      actualSopFileId: null,
-      responsibleUserId: null,
-    }));
-  } catch (error) {
-    createStepPreview.value = [];
-    EMessage.error(error, '工序执行预览加载失败');
-  }
+const loadCreateStepPreview = (): void => {
+  void fetchStepPreview(form.routeId, Boolean(props.editingTaskId));
 };
 
 const handleWorkOrderChange = async (workOrderId: string): Promise<void> => {
@@ -332,7 +312,7 @@ const handleWorkOrderChange = async (workOrderId: string): Promise<void> => {
 
 const resetForm = (): void => {
   Object.assign(form, initialForm());
-  createStepPreview.value = [];
+  resetStepPreview();
 };
 
 const setForm = (row: {
@@ -352,7 +332,7 @@ const setForm = (row: {
     plannedQuantity: Number(row.plannedQuantity),
     remark: row.remark ?? '',
   });
-  createStepPreview.value = [];
+  resetStepPreview();
 };
 
 const handleSubmit = (): void => {

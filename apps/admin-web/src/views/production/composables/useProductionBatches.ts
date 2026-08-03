@@ -1,4 +1,4 @@
-import { reactive, ref } from 'vue';
+import { computed, reactive, ref } from 'vue';
 import type {
   ProductOption,
   ProductionBatchItem,
@@ -8,6 +8,7 @@ import type {
 } from '@company/contracts';
 import { productionApi } from '../../../api/production';
 import { productApi } from '../../../api/product';
+import { useReferenceOptionsStore } from '../../../stores/reference-options';
 import { EMessage } from '../../../utils/message';
 import { formatQuantity, getWorkOrderRemaining } from '../production-status';
 
@@ -24,10 +25,8 @@ export interface TaskUserOption {
 }
 
 export function useProductionBatches() {
+  const store = useReferenceOptionsStore();
   const batches = ref<ProductionBatchItem[]>([]);
-  const productOptions = ref<ProductOption[]>([]);
-  const routeOptions = ref<TaskRouteOption[]>([]);
-  const userOptions = ref<TaskUserOption[]>([]);
   const workOrderOptions = ref<WorkOrderItem[]>([]);
   const sopFileOptions = ref<TechnicalFileListItem[]>([]);
   const loading = ref(false);
@@ -35,8 +34,22 @@ export function useProductionBatches() {
   const total = ref(0);
   const currentPage = ref(1);
   const pageSize = ref(10);
-  let optionsRequest: Promise<void> | null = null;
+  let sopRequest: Promise<void> | null = null;
   let workOrderRequestToken = 0;
+
+  /** 共享原始候选 → 页面业务投影（过滤/映射留在消费侧） */
+  const productOptions = computed<ProductOption[]>(() =>
+    store.products.filter((item) => item.itemKind === 'finished_product'),
+  );
+  const routeOptions = computed<TaskRouteOption[]>(() =>
+    store.routes.map((item) => ({
+      id: item.id,
+      routeName: item.routeName,
+      versionNo: item.versionNo,
+      productId: item.productId,
+    })),
+  );
+  const userOptions = computed<TaskUserOption[]>(() => store.users);
 
   const query = reactive<{ keyword: string; ownerId: string; status: string }>({
     keyword: '',
@@ -44,40 +57,40 @@ export function useProductionBatches() {
     status: '',
   });
 
-  /** 产品、路线、负责人、SOP 文件选项；并发请求合并为一次 */
-  const loadOptions = (): Promise<void> => {
-    if (!optionsRequest) {
-      optionsRequest = (async () => {
-        try {
-          const [products, routes, userOpts, sopFiles] = await Promise.all([
-            productApi.productOptions(),
-            productApi.routeOptions(),
-            productApi.userOptions(),
-            productApi
-              .technicalFiles({ page: 1, pageSize: 100, status: 1 })
-              .catch(() => ({ items: [], total: 0, page: 1, pageSize: 100 })),
-          ]);
-          productOptions.value = products.filter((item) => item.itemKind === 'finished_product');
-          routeOptions.value = routes.map((item) => ({
-            id: item.id,
-            routeName: item.routeName,
-            versionNo: item.versionNo,
-            productId: item.productId,
-          }));
-          userOptions.value = userOpts;
-          sopFileOptions.value = sopFiles.items;
-        } catch {
-          productOptions.value = [];
-          routeOptions.value = [];
-          userOptions.value = [];
-          sopFileOptions.value = [];
-        }
-      })().finally(() => {
-        optionsRequest = null;
+  /** SOP 文件候选为本地页面选项（best-effort，单飞去重） */
+  const loadSopFiles = (): Promise<void> => {
+    if (sopRequest) return sopRequest;
+    sopRequest = productApi
+      .technicalFiles({ page: 1, pageSize: 100, status: 1 })
+      .then((page) => {
+        sopFileOptions.value = page.items;
+      })
+      .catch(() => {
+        sopFileOptions.value = [];
+        EMessage.warning('SOP 文件选项加载失败，下拉可能为空');
+      })
+      .finally(() => {
+        sopRequest = null;
       });
-    }
-    return optionsRequest;
+    return sopRequest;
   };
+
+  /** 首访：并发确保共享候选 + 本地 SOP */
+  const ensureOptions = (): Promise<void> =>
+    Promise.all([
+      store.ensureProducts(),
+      store.ensureRoutes(),
+      store.ensureUsers(),
+      loadSopFiles(),
+    ]).then(() => undefined);
+  /** 激活/弹窗触发：强制刷新共享候选 + 本地 SOP */
+  const refreshOptions = (): Promise<void> =>
+    Promise.all([
+      store.refreshProducts(),
+      store.refreshRoutes(),
+      store.refreshUsers(),
+      loadSopFiles(),
+    ]).then(() => undefined);
 
   const loadTasks = async (): Promise<void> => {
     loading.value = true;
@@ -99,7 +112,7 @@ export function useProductionBatches() {
   };
 
   const loadPageData = async (): Promise<void> => {
-    await Promise.all([loadOptions(), loadTasks(), refreshWorkOrders()]);
+    await Promise.all([ensureOptions(), loadTasks(), refreshWorkOrders()]);
   };
 
   const searchTasks = async (): Promise<void> => {
@@ -169,7 +182,8 @@ export function useProductionBatches() {
     currentPage,
     pageSize,
     query,
-    loadOptions,
+    ensureOptions,
+    refreshOptions,
     loadTasks,
     loadPageData,
     searchTasks,

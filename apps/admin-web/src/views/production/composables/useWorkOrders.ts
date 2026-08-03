@@ -1,7 +1,7 @@
-import { reactive, ref } from 'vue';
+import { computed, reactive, ref } from 'vue';
 import type { WorkOrderItem, WorkOrderStatus } from '@company/contracts';
 import { productionApi } from '../../../api/production';
-import { productApi } from '../../../api/product';
+import { useReferenceOptionsStore } from '../../../stores/reference-options';
 import { EMessage } from '../../../utils/message';
 
 export interface WorkOrderProductOption {
@@ -23,15 +23,32 @@ export interface WorkOrderRouteOption {
 }
 
 export function useWorkOrders() {
+  const store = useReferenceOptionsStore();
   const orders = ref<WorkOrderItem[]>([]);
-  const productOptions = ref<WorkOrderProductOption[]>([]);
-  const routeOptions = ref<WorkOrderRouteOption[]>([]);
-  const userOptions = ref<WorkOrderUserOption[]>([]);
   const loading = ref(false);
   const total = ref(0);
   const currentPage = ref(1);
   const pageSize = ref(10);
-  let optionsRequest: Promise<void> | null = null;
+
+  /** 共享原始候选 → 页面业务投影（过滤/映射留在消费侧） */
+  const productOptions = computed<WorkOrderProductOption[]>(() =>
+    store.products
+      .filter((item) => item.itemKind === 'finished_product')
+      .map((item) => ({
+        id: item.id,
+        productName: item.productName,
+        itemCode: item.itemCode,
+      })),
+  );
+  const routeOptions = computed<WorkOrderRouteOption[]>(() =>
+    store.routes.map((item) => ({
+      id: item.id,
+      routeName: item.routeName,
+      version: item.versionNo,
+      productId: item.productId,
+    })),
+  );
+  const userOptions = computed<WorkOrderUserOption[]>(() => store.users);
 
   const query = reactive<{ keyword: string; productId: string; status: string }>({
     keyword: '',
@@ -39,41 +56,16 @@ export function useWorkOrders() {
     status: '',
   });
 
-  /** 产品、路线、负责人选项；并发请求合并为一次 */
-  const loadOptions = (): Promise<void> => {
-    if (!optionsRequest) {
-      optionsRequest = (async () => {
-        try {
-          const [products, routes, userOpts] = await Promise.all([
-            productApi.productOptions(),
-            productApi.routeOptions(),
-            productApi.userOptions(),
-          ]);
-          productOptions.value = products
-            .filter((item) => item.itemKind === 'finished_product')
-            .map((item) => ({
-              id: item.id,
-              productName: item.productName,
-              itemCode: item.itemCode,
-            }));
-          routeOptions.value = routes.map((item) => ({
-            id: item.id,
-            routeName: item.routeName,
-            version: item.versionNo,
-            productId: item.productId,
-          }));
-          userOptions.value = userOpts;
-        } catch {
-          productOptions.value = [];
-          routeOptions.value = [];
-          userOptions.value = [];
-        }
-      })().finally(() => {
-        optionsRequest = null;
-      });
-    }
-    return optionsRequest;
-  };
+  /** 首访：并发确保三类共享候选（命中缓存即返回，各自独立合并并发） */
+  const ensureOptions = (): Promise<void> =>
+    Promise.all([store.ensureProducts(), store.ensureRoutes(), store.ensureUsers()]).then(
+      () => undefined,
+    );
+  /** 激活/弹窗触发：强制刷新三类共享候选 */
+  const refreshOptions = (): Promise<void> =>
+    Promise.all([store.refreshProducts(), store.refreshRoutes(), store.refreshUsers()]).then(
+      () => undefined,
+    );
 
   const loadOrders = async (): Promise<void> => {
     loading.value = true;
@@ -95,7 +87,7 @@ export function useWorkOrders() {
   };
 
   const loadPageData = async (): Promise<void> => {
-    await Promise.all([loadOptions(), loadOrders()]);
+    await Promise.all([ensureOptions(), loadOrders()]);
   };
 
   const searchOrders = async (): Promise<void> => {
@@ -132,7 +124,8 @@ export function useWorkOrders() {
     currentPage,
     pageSize,
     query,
-    loadOptions,
+    ensureOptions,
+    refreshOptions,
     loadOrders,
     loadPageData,
     searchOrders,

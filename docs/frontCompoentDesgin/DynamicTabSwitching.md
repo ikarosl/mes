@@ -1,13 +1,13 @@
 # 动态标签切换与路由弹窗基础设施
 
-本文说明管理端多标签页、Vue KeepAlive 与路由区域弹窗之间的协作方式，以及 `RouteDialog.vue`、`route-message-box.ts` 和 `live-options.ts` 的接入规范。视觉和通用交互约束仍以根目录 `design.md` 为准。
+本文说明管理端多标签页、Vue KeepAlive 与路由区域弹窗之间的协作方式，以及 `RouteDialog.vue`、`route-message-box.ts` 和 `live-options.ts` 的接入规范。视觉和通用交互约束仍以根目录 `design.md` 为准；候选属于共享 Store 还是弹窗、如何缓存、失效和处理竞态，以 `../frontend-architecture.md` 为准。
 
 ## 1. 设计目标
 
 - Dialog 和危险操作确认框只遮罩当前路由内容区，不阻断左侧菜单、顶部栏和标签栏。
 - 编辑 Dialog 随 KeepAlive 保留普通输入、已选值、校验状态和表格草稿。
 - 缓存页面失活后，其 Dialog 必须同步隐藏；返回原标签时恢复编辑现场。
-- 外部主数据候选项不使用陈旧页面缓存，应在关键生命周期重新请求。
+- 外部主数据候选项不以 KeepAlive 页面快照作为唯一来源，应按资源在关键生命周期刷新；跨页面同语义候选使用 Pinia 共享最后成功快照。
 - 候选项刷新不得覆盖编辑草稿；失效的已选值必须明确显示并阻止保存。
 
 ## 2. 基础设施职责
@@ -35,7 +35,7 @@ AdminLayout .content
 ├─ 页面调用 RouteMessageBox.confirm()
 │  └─ 确认框挂载到 .content
 └─ 页面激活/弹窗打开/下拉展开
-   └─ composable 请求最新候选项
+   └─ composable 定向调用共享 Store 或局部 loader
       └─ live-options 合并原已选值
          └─ 正常显示可用项，标记并拦截失效项
 ```
@@ -103,27 +103,36 @@ import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
 
 ### 6.1 请求时机
 
-动态候选项应在以下时机调用对应 composable 的 `loadOptions`：
+动态候选必须按资源命名和刷新。页面首次进入时加载正式列表，并 cache-first 获取实际参与页面筛选的候选；
+页面重新激活时只刷新可见筛选和仍打开弹窗的候选：
 
 ```ts
 import { onActivated, onMounted } from 'vue';
 
-onMounted(loadPageData);
-onActivated(loadOptions);
+onMounted(() => Promise.all([loadProducts(), ensureCategories()]));
+onActivated(() => {
+  void refreshCategories();
+  if (materialDialogVisible.value) materialDialogRef.value?.refreshVisibleOptions();
+});
 ```
 
-弹窗打开和下拉展开时继续刷新：
+弹窗打开可以并发刷新它显示已有值所必需的全部候选；下拉展开只刷新该字段对应的资源：
 
 ```vue
-<el-dialog @open="$emit('refresh-options')">
+<el-dialog @open="refreshVisibleOptions">
   <el-select
-    v-model="form.categoryId"
-    @visible-change="(visible: boolean) => visible && $emit('refresh-options')"
+    v-model="row.processStepId"
+    @visible-change="(visible: boolean) => visible && refreshProcessOptions()"
+  />
+  <el-select
+    v-model="row.defaultOwnerId"
+    @visible-change="(visible: boolean) => visible && refreshUserOptions()"
   />
 </el-dialog>
 ```
 
-同一 composable 应合并并发的候选请求，避免页面激活、弹窗打开和下拉展开同时产生重复 API 调用。
+同一原始资源应合并并发请求，避免页面激活、弹窗打开和下拉展开同时产生重复 API 调用；不同资源使用
+独立 Promise、loading 和错误状态。禁止让任意下拉统一调用 `loadOptions()`/`refreshAll()` 刷新无关资源。
 
 ### 6.2 保留失效的已选值
 
@@ -184,14 +193,16 @@ if (
 
 ## 7. 状态缓存边界
 
-| 状态               | 是否随 KeepAlive 保留 | 更新策略                           |
-| ------------------ | --------------------- | ---------------------------------- |
-| Dialog 显示状态    | 是                    | 返回标签后恢复                     |
-| 普通输入和表格草稿 | 是                    | 候选刷新不得覆盖                   |
-| 用户已选值         | 是                    | 缺失时标记为“已失效”               |
-| 动态候选集合       | 否                    | 页面激活、弹窗打开或下拉展开时请求 |
-| 危险操作确认框     | 否                    | 路由切换时关闭                     |
-| 服务端校验结果     | 否                    | 提交时重新校验                     |
+| 状态               | 所有者                   | 更新策略                                               |
+| ------------------ | ------------------------ | ------------------------------------------------------ |
+| Dialog 显示状态    | KeepAlive 页面           | 返回标签后恢复                                         |
+| 普通输入和表格草稿 | 弹窗组件/弹窗 composable | 随页面保留，候选刷新不得覆盖                           |
+| 用户已选值         | 编辑草稿                 | 随页面保留，候选缺失时标记为“已失效”                   |
+| 跨页面动态候选     | Pinia 共享参考 Store     | 保留最后成功快照；页面激活、弹窗打开或对应下拉展开刷新 |
+| 单弹窗动态候选     | 弹窗 composable          | 打开、激活或对应下拉展开时刷新                         |
+| ID 绑定关键明细    | 弹窗 Editor composable   | 切换目标时加载；页面激活不得覆盖编辑草稿               |
+| 危险操作确认框     | RouteMessageBox 短时状态 | 路由切换时关闭                                         |
+| 服务端校验结果     | 不缓存                   | 提交时重新校验                                         |
 
 ## 8. 测试要求
 
@@ -200,9 +211,12 @@ if (
 - Dialog 遮罩仍位于路由组件子树内；
 - KeepAlive 失活时 Dialog 不可见，返回后编辑草稿仍在；
 - MessageBox 的 `appendTo` 指向 `.content`；
-- 多次同时刷新候选项只产生一次请求；
+- 多次同时刷新同一候选资源只产生一次请求；
+- 展开一个下拉不会请求其他无关候选资源；
 - 候选刷新不会丢失原已选值；
-- 失效选择能够显示且无法提交。
+- 失效选择能够显示且无法提交；
+- 切换编辑目标后，旧目标的迟到响应不会覆盖新目标或草稿；
+- 关键明细加载失败时无法保存空数据覆盖服务端记录。
 
 相关测试位于：
 

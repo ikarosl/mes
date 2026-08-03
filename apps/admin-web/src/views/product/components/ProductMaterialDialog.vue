@@ -7,7 +7,15 @@
   >
     <template v-if="product">
       <el-alert
-        v-if="!localRows.length"
+        v-if="detailStatus === 'error'"
+        title="物料清单加载失败，当前不可保存，请点击刷新物料重试。"
+        type="error"
+        :closable="false"
+        show-icon
+        class="bom-alert"
+      />
+      <el-alert
+        v-else-if="detailReady && !localRows.length"
         title="当前产品尚未配置物料清单。生产任务生成物料需求前，需要先维护这里的用料。"
         type="warning"
         :closable="false"
@@ -23,7 +31,7 @@
           <el-button
             :icon="Refresh"
             :loading="loading"
-            @click="$emit('refresh')"
+            @click="refresh"
             >刷新物料</el-button
           >
           <el-button
@@ -47,7 +55,7 @@
               v-model="row.materialProductId"
               filterable
               placeholder="请选择物料"
-              @visible-change="(visible: boolean) => visible && $emit('refresh')"
+              @visible-change="(visible: boolean) => visible && refresh()"
             >
               <el-option
                 v-for="choice in materialChoices(row.materialProductId)"
@@ -134,6 +142,7 @@
       <el-button
         type="primary"
         :loading="submitting"
+        :disabled="!detailReady"
         @click="handleSubmit"
         >保存物料清单</el-button
       >
@@ -142,12 +151,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { Plus, Refresh } from '@element-plus/icons-vue';
-import type { ProductListItem, ProductOption } from '@company/contracts';
+import type { ProductListItem } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
 import { buildLiveOptions, hasUnavailableSelection } from '../../../utils/live-options';
 import { EMessage } from '../../../utils/message';
+import { useProductMaterialEditor } from '../composables/useProductMaterialEditor';
 
 export type MaterialRow = {
   materialProductId: string;
@@ -161,21 +171,60 @@ export type MaterialRow = {
 const props = defineProps<{
   visible: boolean;
   product: ProductListItem | null;
-  materialOptions: ProductOption[];
-  loading: boolean;
   submitting: boolean;
 }>();
 
 const emit = defineEmits<{
   (e: 'update:visible', val: boolean): void;
   (e: 'save', rows: MaterialRow[]): void;
-  (e: 'refresh'): void;
 }>();
 
+const { materialOptions, loading, detailStatus, loadedProductId, load, refreshOptions } =
+  useProductMaterialEditor();
 const localRows = ref<MaterialRow[]>([]);
+
+/** 仅当当前产品 BOM 明细已就绪（且属于当前产品）时才允许保存，避免把上一个产品的行保存到新目标 */
+const detailReady = computed(
+  () => detailStatus.value === 'ready' && loadedProductId.value === props.product?.id,
+);
 
 const setRows = (initial: MaterialRow[]): void => {
   localRows.value = initial;
+};
+
+/** 加载当前产品 BOM 明细并写入 localRows；失败/过期不覆盖为可保存空数据 */
+const loadRows = async (productId: string): Promise<void> => {
+  const rows = await load(productId);
+  if (!rows) return;
+  setRows(
+    rows.map((item) => ({
+      materialProductId: item.materialProductId,
+      quantityPerUnit: Number(item.quantityPerUnit),
+      unit: item.unit,
+      isKeyMaterial: item.isKeyMaterial,
+      needBatchRecord: item.needBatchRecord,
+      remark: item.remark ?? '',
+    })),
+  );
+};
+
+/** 打开弹窗时加载当前产品 BOM 明细与候选 */
+watch(
+  () => [props.visible, props.product?.id] as const,
+  async ([visible, productId]) => {
+    if (!visible || !productId) return;
+    await loadRows(productId);
+  },
+);
+
+/** 页面激活 / 下拉展开 / 刷新按钮：正常只刷新候选；明细加载失败时重试 BOM 明细 */
+const refresh = (): void => {
+  if (!props.product) return;
+  if (detailStatus.value === 'error') {
+    void loadRows(props.product.id);
+    return;
+  }
+  void refreshOptions(props.product.id);
 };
 
 const addRow = (): void => {
@@ -194,9 +243,13 @@ const removeRow = (index: number): void => {
 };
 
 const materialChoices = (selectedValue: string) =>
-  buildLiveOptions(props.materialOptions, selectedValue ? [selectedValue] : [], (item) => item.id);
+  buildLiveOptions(materialOptions.value, selectedValue ? [selectedValue] : [], (item) => item.id);
 
 const handleSubmit = (): void => {
+  if (!detailReady.value) {
+    EMessage.warning('物料清单尚未加载完成，请稍后重试');
+    return;
+  }
   if (localRows.value.some((r) => !r.materialProductId)) {
     EMessage.warning('请选择物料');
     return;
@@ -204,7 +257,7 @@ const handleSubmit = (): void => {
   if (
     localRows.value.some((row) =>
       hasUnavailableSelection(
-        props.materialOptions,
+        materialOptions.value,
         row.materialProductId ? [row.materialProductId] : [],
         (item) => item.id,
       ),
@@ -220,7 +273,7 @@ const handleSubmit = (): void => {
   emit('save', localRows.value);
 };
 
-defineExpose({ setRows });
+defineExpose({ setRows, refresh });
 </script>
 
 <style scoped>

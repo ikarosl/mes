@@ -9,7 +9,7 @@
       <div class="toolbar-left">
         <el-button
           :icon="Refresh"
-          @click="$emit('refresh')"
+          @click="refreshProcess"
           >刷新工序</el-button
         >
       </div>
@@ -46,7 +46,7 @@
             v-model="row.processStepId"
             filterable
             placeholder="请选择已有工序"
-            @visible-change="(visible: boolean) => visible && $emit('refresh')"
+            @visible-change="(visible: boolean) => visible && refreshProcess()"
           >
             <el-option
               v-for="choice in processChoices(row.processStepId)"
@@ -79,7 +79,7 @@
             clearable
             collapse-tags
             placeholder="可选"
-            @visible-change="(visible: boolean) => visible && $emit('refresh')"
+            @visible-change="(visible: boolean) => visible && refreshMaterials()"
           >
             <el-option
               v-for="choice in materialChoices(row.productMaterialIds)"
@@ -118,7 +118,7 @@
             v-model="row.defaultOwnerId"
             clearable
             placeholder="请选择"
-            @visible-change="(visible: boolean) => visible && $emit('refresh')"
+            @visible-change="(visible: boolean) => visible && refreshUsers()"
           >
             <el-option
               v-for="choice in userChoices(row.defaultOwnerId)"
@@ -181,12 +181,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, watch } from 'vue';
 import { Plus, Refresh } from '@element-plus/icons-vue';
-import type { ProcessStepOption, ProductMaterialItem, UserOption } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
 import { buildLiveOptions, hasUnavailableSelection } from '../../../utils/live-options';
 import { EMessage } from '../../../utils/message';
+import { useRouteStepEditor } from '../composables/useRouteStepEditor';
 
 export type StepRow = {
   processStepId: string;
@@ -202,22 +202,69 @@ export type StepRow = {
 
 const props = defineProps<{
   visible: boolean;
-  processOptions: ProcessStepOption[];
-  routeMaterialOptions: ProductMaterialItem[];
-  userOptions: UserOption[];
+  routeId: string | null;
+  productId: string | null;
   submitting: boolean;
 }>();
 
 const emit = defineEmits<{
   (e: 'update:visible', val: boolean): void;
   (e: 'save', steps: StepRow[]): void;
-  (e: 'refresh'): void;
 }>();
 
+const {
+  processOptions,
+  userOptions,
+  routeMaterialOptions,
+  stepsStatus,
+  loadSteps,
+  loadProcessOptions,
+  loadUserOptions,
+  loadMaterialOptions,
+  loadAllOptions,
+} = useRouteStepEditor();
 const localSteps = ref<StepRow[]>([]);
 
 const setSteps = (initial: StepRow[]): void => {
   localSteps.value = initial;
+};
+
+/** 打开弹窗时并发加载路线步骤明细与候选；关键明细失败不覆盖为可编辑空明细 */
+watch(
+  () => [props.visible, props.routeId, props.productId] as const,
+  async ([visible, routeId, productId]) => {
+    if (!visible || !routeId) return;
+    const [, steps] = await Promise.all([loadAllOptions(productId, false), loadSteps(routeId)]);
+    // 响应写入前核对当前路线与加载结果（last-request-wins）：已切换到其他路线或未加载成功则丢弃
+    if (props.routeId !== routeId || stepsStatus.value !== 'success') return;
+    setSteps(
+      steps.map((step) => ({
+        processStepId: step.processStepId,
+        stepOrder: step.stepOrder,
+        defaultOwnerId: step.defaultOwnerId ?? '',
+        sopFileId: step.sopFileId ?? '',
+        needInspection: step.needInspection,
+        needRecord: step.needRecord,
+        status: step.status,
+        remark: step.remark ?? '',
+        productMaterialIds: step.productMaterialIds,
+      })),
+    );
+  },
+);
+
+/** 页面激活时刷新候选数据（由页面 onActivated 调用），不重载步骤行 */
+const refresh = (): void => {
+  if (props.productId) void loadAllOptions(props.productId, true);
+};
+const refreshProcess = (): void => {
+  void loadProcessOptions(true);
+};
+const refreshMaterials = (): void => {
+  if (props.productId) void loadMaterialOptions(props.productId, true);
+};
+const refreshUsers = (): void => {
+  void loadUserOptions(true);
 };
 
 const addStep = (): void => {
@@ -256,18 +303,27 @@ const normalizeStepOrders = (): void => {
 };
 
 const getProcessSop = (processId: string): string | undefined =>
-  props.processOptions.find((p) => p.id === processId)?.sopFileName ?? undefined;
+  processOptions.value.find((p) => p.id === processId)?.sopFileName ?? undefined;
 
 const processChoices = (selectedValue: string) =>
-  buildLiveOptions(props.processOptions, selectedValue ? [selectedValue] : [], (item) => item.id);
+  buildLiveOptions(processOptions.value, selectedValue ? [selectedValue] : [], (item) => item.id);
 
 const materialChoices = (selectedValues: string[]) =>
-  buildLiveOptions(props.routeMaterialOptions, selectedValues, (item) => item.id);
+  buildLiveOptions(routeMaterialOptions.value, selectedValues, (item) => item.id);
 
 const userChoices = (selectedValue: string) =>
-  buildLiveOptions(props.userOptions, selectedValue ? [selectedValue] : [], (item) => item.id);
+  buildLiveOptions(userOptions.value, selectedValue ? [selectedValue] : [], (item) => item.id);
 
 const handleSubmit = (): void => {
+  // 加载中/失败/未加载时禁止保存，避免把旧路线步骤保存到新路线
+  if (stepsStatus.value !== 'success') {
+    EMessage.warning(
+      stepsStatus.value === 'error'
+        ? '路线步骤加载失败，请刷新后重试'
+        : '路线步骤加载中，请稍后再试',
+    );
+    return;
+  }
   if (!localSteps.value.length || localSteps.value.some((s) => !s.processStepId)) {
     EMessage.warning('请选择每一道路线步骤对应的工序');
     return;
@@ -276,17 +332,17 @@ const handleSubmit = (): void => {
     localSteps.value.some(
       (step) =>
         hasUnavailableSelection(
-          props.processOptions,
+          processOptions.value,
           step.processStepId ? [step.processStepId] : [],
           (item) => item.id,
         ) ||
         hasUnavailableSelection(
-          props.routeMaterialOptions,
+          routeMaterialOptions.value,
           step.productMaterialIds,
           (item) => item.id,
         ) ||
         hasUnavailableSelection(
-          props.userOptions,
+          userOptions.value,
           step.defaultOwnerId ? [step.defaultOwnerId] : [],
           (item) => item.id,
         ),
@@ -299,7 +355,7 @@ const handleSubmit = (): void => {
   emit('save', localSteps.value);
 };
 
-defineExpose({ setSteps });
+defineExpose({ setSteps, refresh });
 </script>
 
 <style scoped>

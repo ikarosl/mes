@@ -1,26 +1,15 @@
 import { reactive, ref } from 'vue';
-import type {
-  ProcessRouteListItem,
-  ProcessRouteStatus,
-  ProcessStepOption,
-  ProductMaterialItem,
-  ProductOption,
-  UserOption,
-} from '@company/contracts';
+import type { ProcessRouteListItem, ProcessRouteStatus } from '@company/contracts';
 import { productApi } from '../../../api/product';
 import { EMessage } from '../../../utils/message';
 
-export function useProcessRoutes() {
+/** 工艺路线页正式列表：查询、分页与列表加载。写操作成功后只调用 loadRoutes()。 */
+export function useProcessRoutesList() {
   const routes = ref<ProcessRouteListItem[]>([]);
-  const productOptions = ref<ProductOption[]>([]);
-  const processOptions = ref<ProcessStepOption[]>([]);
-  const userOptions = ref<UserOption[]>([]);
-  const routeMaterialOptions = ref<ProductMaterialItem[]>([]);
   const loading = ref(false);
   const total = ref(0);
   const currentPage = ref(1);
   const pageSize = ref(10);
-  let optionsRequest: Promise<void> | null = null;
   const query = reactive<{ keyword: string; status: ProcessRouteStatus | '' }>({
     keyword: '',
     status: '',
@@ -62,35 +51,6 @@ export function useProcessRoutes() {
     }
   };
 
-  const loadOptions = (): Promise<void> => {
-    if (!optionsRequest) {
-      optionsRequest = (async () => {
-        try {
-          const [products, steps, users] = await Promise.all([
-            productApi.productOptions(),
-            productApi.processStepOptions(),
-            productApi.userOptions(),
-          ]);
-          productOptions.value = products.filter(
-            (item: ProductOption) =>
-              item.acquireMethod === 'self_made' && item.itemKind !== 'material',
-          );
-          processOptions.value = steps;
-          userOptions.value = users;
-        } catch (error) {
-          EMessage.error(error, '工艺路线选项加载失败');
-        }
-      })().finally(() => {
-        optionsRequest = null;
-      });
-    }
-    return optionsRequest;
-  };
-
-  const loadData = async (): Promise<void> => {
-    await Promise.all([loadRoutes(), loadOptions()]);
-  };
-
   const handleSearch = async (): Promise<void> => {
     currentPage.value = 1;
     await loadRoutes();
@@ -115,10 +75,6 @@ export function useProcessRoutes() {
 
   return {
     routes,
-    productOptions,
-    processOptions,
-    userOptions,
-    routeMaterialOptions,
     loading,
     total,
     currentPage,
@@ -127,8 +83,6 @@ export function useProcessRoutes() {
     routeStatusLabel,
     routeStatusType,
     loadRoutes,
-    loadOptions,
-    loadData,
     handleSearch,
     resetQuery,
     handlePageSizeChange,

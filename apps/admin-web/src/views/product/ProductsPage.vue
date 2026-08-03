@@ -270,35 +270,31 @@
       @update:visible="detailDialogVisible = $event"
     />
 
-    <!-- 物料清单弹窗 -->
+    <!-- 物料清单弹窗（自持候选数据与 BOM 明细） -->
     <ProductMaterialDialog
       ref="materialDialogRef"
       :visible="materialDialogVisible"
       :product="materialProduct"
-      :material-options="materialOptions"
-      :loading="materialLoading"
       :submitting="submittingMaterials"
       @update:visible="materialDialogVisible = $event"
       @save="submitMaterials"
-      @refresh="refreshMaterialOptions"
     />
 
-    <!-- 默认路线弹窗 -->
+    <!-- 默认路线弹窗（自持路线候选） -->
     <ProductDefaultRouteDialog
+      ref="defaultRouteDialogRef"
       :visible="defaultRouteDialogVisible"
       :product="defaultRouteProduct"
-      :available-routes="availableDefaultRoutes"
       :current-route-id="defaultRouteProduct?.defaultRouteId ?? null"
       :submitting="submittingDefaultRoute"
       @update:visible="defaultRouteDialogVisible = $event"
-      @refresh-options="refreshProductOptions"
       @confirm="submitDefaultRoute"
     />
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed, onActivated, onMounted, ref } from 'vue';
+import { onActivated, onMounted, ref } from 'vue';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import { PERMISSIONS } from '@company/constants';
 import type { ProductAcquireMethod, ProductListItem } from '@company/contracts';
@@ -308,7 +304,9 @@ import PaginationFooter from '../../components/PaginationFooter.vue';
 import { EMessage } from '../../utils/message';
 import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
 import { useAuthStore } from '../../stores/auth';
-import { useProducts } from './composables/useProducts';
+import { useProductsList } from './composables/useProductsList';
+import { useProductCategoryOptions } from './composables/useProductCategoryOptions';
+import { useReferenceOptionsStore } from '../../stores/reference-options';
 import ProductFormDialog from './components/ProductFormDialog.vue';
 import type { ProductFormValue } from './components/ProductFormDialog.vue';
 import ProductDetailDialog from './components/ProductDetailDialog.vue';
@@ -326,9 +324,6 @@ const acquireMethodLabels: Record<string, string> = {
 const auth = useAuthStore();
 const {
   products,
-  categoryOptions,
-  materialOptions,
-  routes,
   loading,
   total,
   currentPage,
@@ -337,15 +332,16 @@ const {
   itemKindLabels,
   itemKindLabel,
   canConfigureProduction,
-  loadOptions,
-  loadData,
+  loadProducts,
   handleSearch,
   resetQuery,
   handlePageSizeChange,
   handlePageChange,
   formatSpecItem,
   formatSpecSummary,
-} = useProducts();
+} = useProductsList();
+const { categoryOptions, loadCategoryOptions } = useProductCategoryOptions();
+const referenceOptions = useReferenceOptionsStore();
 
 /* ----- dialog state ----- */
 const productDialogVisible = ref(false);
@@ -356,38 +352,39 @@ const editingProductId = ref<string | null>(null);
 const detailRow = ref<ProductListItem | null>(null);
 const materialProduct = ref<ProductListItem | null>(null);
 const defaultRouteProduct = ref<ProductListItem | null>(null);
-const materialLoading = ref(false);
 const submittingMaterials = ref(false);
 const productFormDialogRef = ref();
 const materialDialogRef = ref();
+const defaultRouteDialogRef = ref();
 const submittingProduct = ref(false);
 const submittingDefaultRoute = ref(false);
 
+/** 页面级共享候选：仅分类 options（列表筛选 + 产品表单），并发请求合并为一次 */
 const refreshProductOptions = (visible = true): void => {
-  if (visible) void loadOptions();
+  if (visible) void loadCategoryOptions();
+};
+
+/** 首次进入：加载列表 + 页面级分类选项；写操作成功后只刷新受影响列表，不连带其他 options */
+const loadData = async (): Promise<void> => {
+  await Promise.all([loadProducts(), loadCategoryOptions()]);
 };
 
 const refreshActiveProductEditors = (): void => {
-  refreshProductOptions();
-  if (materialDialogVisible.value) void refreshMaterialOptions();
+  void loadCategoryOptions();
+  if (materialDialogVisible.value) materialDialogRef.value?.refresh();
+  if (defaultRouteDialogVisible.value) defaultRouteDialogRef.value?.refresh();
 };
-
-const availableDefaultRoutes = computed(() =>
-  routes.value.filter(
-    (route) => route.productId === defaultRouteProduct.value?.id && route.status === 'enabled',
-  ),
-);
 
 /* ----- product CRUD ----- */
 const openCreate = (): void => {
-  refreshProductOptions();
+  void loadCategoryOptions();
   editingProductId.value = null;
   productFormDialogRef.value?.resetForm();
   productDialogVisible.value = true;
 };
 
 const openEdit = (row: ProductListItem): void => {
-  refreshProductOptions();
+  void loadCategoryOptions();
   editingProductId.value = row.id;
   productFormDialogRef.value?.setForm(row);
   productDialogVisible.value = true;
@@ -415,7 +412,8 @@ const submitProduct = async (data: ProductFormValue): Promise<void> => {
     else await productApi.createProduct(payload);
     EMessage.success(editingProductId.value ? '产品已更新' : '产品已新增');
     productDialogVisible.value = false;
-    await loadData();
+    await loadProducts();
+    referenceOptions.invalidateProducts();
   } catch (error) {
     EMessage.error(error, '产品保存失败');
   } finally {
@@ -431,58 +429,17 @@ const toggleStatus = async (row: ProductListItem): Promise<void> => {
     });
     await productApi.setProductStatus(row.id, row.status === 1 ? 0 : 1);
     EMessage.success(`产品已${text}`);
-    await loadData();
+    await loadProducts();
+    referenceOptions.invalidateProducts();
   } catch (error: unknown) {
     if (error !== 'cancel' && error !== 'close') EMessage.error(error, `${text}产品失败`);
   }
 };
 
 /* ----- BOM materials ----- */
-const openMaterials = async (row: ProductListItem): Promise<void> => {
+const openMaterials = (row: ProductListItem): void => {
   materialProduct.value = row;
   materialDialogVisible.value = true;
-  materialLoading.value = true;
-  try {
-    const [items, options] = await Promise.all([
-      productApi.materials(row.id),
-      productApi.productOptions(),
-    ]);
-    materialDialogRef.value?.setRows(
-      items.map((item) => ({
-        materialProductId: item.materialProductId,
-        quantityPerUnit: Number(item.quantityPerUnit),
-        unit: item.unit,
-        isKeyMaterial: item.isKeyMaterial,
-        needBatchRecord: item.needBatchRecord,
-        remark: item.remark ?? '',
-      })),
-    );
-    materialOptions.value = options.filter(
-      (item) =>
-        (item.itemKind === 'material' || item.itemKind === 'semi_finished') && item.id !== row.id,
-    );
-  } catch (error) {
-    EMessage.error(error, '物料清单加载失败');
-  } finally {
-    materialLoading.value = false;
-  }
-};
-
-const refreshMaterialOptions = async (visible = true): Promise<void> => {
-  if (!visible || !materialProduct.value) return;
-  materialLoading.value = true;
-  try {
-    const options = await productApi.productOptions();
-    materialOptions.value = options.filter(
-      (item) =>
-        (item.itemKind === 'material' || item.itemKind === 'semi_finished') &&
-        item.id !== materialProduct.value?.id,
-    );
-  } catch (error) {
-    EMessage.error(error, '物料候选项加载失败');
-  } finally {
-    materialLoading.value = false;
-  }
 };
 
 const submitMaterials = async (rows: MaterialRow[]): Promise<void> => {
@@ -492,7 +449,7 @@ const submitMaterials = async (rows: MaterialRow[]): Promise<void> => {
     await productApi.replaceMaterials(materialProduct.value.id, rows);
     EMessage.success('物料清单已保存');
     materialDialogVisible.value = false;
-    await loadData();
+    await loadProducts();
   } catch (error) {
     EMessage.error(error, '物料清单保存失败');
   } finally {
@@ -502,7 +459,6 @@ const submitMaterials = async (rows: MaterialRow[]): Promise<void> => {
 
 /* ----- default route ----- */
 const openDefaultRoute = (row: ProductListItem): void => {
-  refreshProductOptions();
   defaultRouteProduct.value = row;
   defaultRouteDialogVisible.value = true;
 };
@@ -514,7 +470,7 @@ const submitDefaultRoute = async (routeId: string | null): Promise<void> => {
     await productApi.setDefaultRoute(defaultRouteProduct.value.id, routeId);
     EMessage.success('默认工艺路线已保存');
     defaultRouteDialogVisible.value = false;
-    await loadData();
+    await loadProducts();
   } catch (error) {
     EMessage.error(error, '默认路线保存失败');
   } finally {

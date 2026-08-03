@@ -107,8 +107,17 @@ describe('productApi contract mapping', () => {
       url: '/product/process-steps',
       params: { page: 2, pageSize: 20, keyword: 'GX' },
     });
-    expect(request).toHaveBeenNthCalledWith(3, { url: '/product/categories/options' });
-    expect(request).toHaveBeenNthCalledWith(4, { url: '/product/process-steps/options' });
-    expect(request).toHaveBeenNthCalledWith(5, { url: '/product/process-routes/options' });
+    expect(request).toHaveBeenNthCalledWith(3, {
+      url: '/product/categories/options',
+      skipErrorHandling: true,
+    });
+    expect(request).toHaveBeenNthCalledWith(4, {
+      url: '/product/process-steps/options',
+      skipErrorHandling: true,
+    });
+    expect(request).toHaveBeenNthCalledWith(5, {
+      url: '/product/process-routes/options',
+      skipErrorHandling: true,
+    });
   });
 });

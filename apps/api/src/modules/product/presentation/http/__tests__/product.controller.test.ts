@@ -2,7 +2,7 @@ import 'reflect-metadata';
 import { BadRequestException, StreamableFile } from '@nestjs/common';
 import { Readable } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
-import { PERMISSIONS } from '@company/constants';
+import { PERMISSIONS, permissionMatches } from '@company/constants';
 import { REQUIRED_PERMISSION } from '../../../../../common/security/auth.decorators.js';
 import { ProductController } from '../product.controller.js';
 
@@ -116,5 +116,105 @@ describe('ProductController paginated lists and options', () => {
 
     expect(controller.routeOptions()).toEqual([{ id: '15' }]);
     expect(service.listRouteOptions).toHaveBeenCalledOnce();
+  });
+});
+
+describe('Product options cross-page authorization contract', () => {
+  type OptionsMethod =
+    'categoryOptions' | 'productOptions' | 'processStepOptions' | 'routeOptions' | 'userOptions';
+
+  const readOptionsPermissions = (method: OptionsMethod): string | readonly string[] =>
+    Reflect.getMetadata(REQUIRED_PERMISSION, ProductController.prototype[method]) as
+      string | readonly string[];
+
+  const optionsPermissions: Record<OptionsMethod, string[]> = {
+    categoryOptions: [PERMISSIONS.product.products.view, PERMISSIONS.product.categories.view],
+    productOptions: [
+      PERMISSIONS.product.products.view,
+      PERMISSIONS.product.routes.view,
+      PERMISSIONS.production.orders.view,
+      PERMISSIONS.production.tasks.view,
+    ],
+    processStepOptions: [PERMISSIONS.product.processes.view, PERMISSIONS.product.routes.view],
+    routeOptions: [
+      PERMISSIONS.product.products.view,
+      PERMISSIONS.product.routes.view,
+      PERMISSIONS.production.orders.view,
+      PERMISSIONS.production.tasks.view,
+    ],
+    userOptions: [
+      PERMISSIONS.product.routes.view,
+      PERMISSIONS.production.orders.view,
+      PERMISSIONS.production.tasks.view,
+    ],
+  };
+
+  it('declares an any-of permission set on every options endpoint', () => {
+    for (const [method, permissions] of Object.entries(optionsPermissions) as Array<
+      [OptionsMethod, string[]]
+    >) {
+      expect(readOptionsPermissions(method)).toEqual(permissions);
+    }
+  });
+
+  it('keeps each consuming page minimum role readable on its form options', () => {
+    const pageOptions: Array<{ page: string; permission: string; endpoints: OptionsMethod[] }> = [
+      {
+        page: '产品管理',
+        permission: PERMISSIONS.product.products.view,
+        endpoints: ['categoryOptions', 'productOptions', 'routeOptions'],
+      },
+      {
+        page: '产品分类',
+        permission: PERMISSIONS.product.categories.view,
+        endpoints: ['categoryOptions'],
+      },
+      {
+        page: '工艺路线',
+        permission: PERMISSIONS.product.routes.view,
+        endpoints: ['productOptions', 'processStepOptions', 'userOptions'],
+      },
+      {
+        page: '生产工单',
+        permission: PERMISSIONS.production.orders.view,
+        endpoints: ['productOptions', 'routeOptions', 'userOptions'],
+      },
+      {
+        page: '生产任务',
+        permission: PERMISSIONS.production.tasks.view,
+        endpoints: ['productOptions', 'routeOptions', 'userOptions'],
+      },
+    ];
+    for (const { page, permission, endpoints } of pageOptions) {
+      for (const method of endpoints) {
+        expect(
+          permissionMatches([permission], readOptionsPermissions(method)),
+          `${page} 最小权限 ${permission} 应可读取 ${method}`,
+        ).toBe(true);
+      }
+    }
+  });
+
+  it('rejects an options endpoint when the role holds no consuming page permission', () => {
+    expect(
+      permissionMatches(
+        [PERMISSIONS.product.products.view],
+        readOptionsPermissions('processStepOptions'),
+      ),
+    ).toBe(false);
+  });
+
+  it('does not open options beyond the consuming pages to a production-only role', () => {
+    for (const permission of [
+      PERMISSIONS.production.orders.view,
+      PERMISSIONS.production.tasks.view,
+    ]) {
+      expect(permissionMatches([permission], readOptionsPermissions('categoryOptions'))).toBe(
+        false,
+      );
+      expect(permissionMatches([permission], readOptionsPermissions('processStepOptions'))).toBe(
+        false,
+      );
+    }
   });
 });

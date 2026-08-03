@@ -14,6 +14,37 @@ describe('permissionMatches', () => {
     expect(permissionMatches(['*'], 'anything')).toBe(true);
   });
 
+  it('allows a grant when it matches any permission in an any-of set', () => {
+    expect(
+      permissionMatches(
+        ['product:products:view'],
+        ['product:products:view', 'product:categories:view'],
+      ),
+    ).toBe(true);
+    expect(
+      permissionMatches(
+        ['product:categories:view'],
+        ['product:products:view', 'product:categories:view'],
+      ),
+    ).toBe(true);
+  });
+
+  it('denies a grant that matches none of the any-of set', () => {
+    expect(
+      permissionMatches(
+        ['product:processes:view'],
+        ['product:products:view', 'product:categories:view'],
+      ),
+    ).toBe(false);
+    expect(permissionMatches([], ['product:products:view', 'product:categories:view'])).toBe(false);
+  });
+
+  it('applies wildcards inside an any-of set and rejects an empty set', () => {
+    expect(permissionMatches(['*'], ['product:products:view', 'product:routes:view'])).toBe(true);
+    expect(permissionMatches(['product:*'], ['product:products:view'])).toBe(true);
+    expect(permissionMatches(['product:products:view'], [])).toBe(false);
+  });
+
   it('centralizes product workflow status and mutation permission codes', () => {
     expect(PRODUCT_ITEM_KINDS).toEqual(['material', 'semi_finished', 'finished_product']);
     expect(PROCESS_ROUTE_STATUSES).toContain('archived');

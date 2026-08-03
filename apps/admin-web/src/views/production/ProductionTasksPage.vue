@@ -288,7 +288,7 @@ const {
   currentPage,
   pageSize,
   query,
-  loadOptions,
+  refreshOptions,
   loadTasks,
   loadPageData,
   searchTasks,
@@ -408,7 +408,7 @@ const canEditBatch = (row: ProductionBatchItem): boolean => row.status === 'pend
 
 onMounted(loadPageData);
 onActivated(() => {
-  loadOptions();
+  refreshOptions();
   refreshWorkOrders();
 });
 </script>

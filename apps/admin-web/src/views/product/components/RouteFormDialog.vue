@@ -4,7 +4,6 @@
     :title="editingRouteId ? '编辑工艺路线' : '新增工艺路线'"
     :width="DialogWidth.md"
     @update:model-value="$emit('update:visible', $event)"
-    @open="$emit('refresh-options')"
     @closed="resetForm"
   >
     <el-form
@@ -38,7 +37,7 @@
           v-model="form.productId"
           filterable
           placeholder="请选择产品"
-          @visible-change="(visible: boolean) => visible && $emit('refresh-options')"
+          @visible-change="(visible: boolean) => visible && refreshProductOptions()"
         >
           <el-option
             v-for="choice in productChoices"
@@ -84,11 +83,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive } from 'vue';
-import type { ProductOption } from '@company/contracts';
+import { computed, reactive, watch } from 'vue';
 import { DialogWidth } from '../../../utils/dialog';
 import { buildLiveOptions, hasUnavailableSelection } from '../../../utils/live-options';
 import { EMessage } from '../../../utils/message';
+import { useProductFormOptions } from '../composables/useProductFormOptions';
 
 export type RouteFormValue = {
   routeCode: string;
@@ -101,15 +100,15 @@ export type RouteFormValue = {
 const props = defineProps<{
   visible: boolean;
   editingRouteId: string | null;
-  productOptions: ProductOption[];
   submitting: boolean;
 }>();
 
 const emit = defineEmits<{
   (e: 'update:visible', val: boolean): void;
-  (e: 'refresh-options'): void;
   (e: 'save', data: RouteFormValue): void;
 }>();
+
+const { productOptions, loadProductOptions, refreshProductOptions } = useProductFormOptions();
 
 const initialForm = (): RouteFormValue => ({
   routeCode: '',
@@ -121,8 +120,22 @@ const initialForm = (): RouteFormValue => ({
 
 const form = reactive<RouteFormValue>(initialForm());
 const productChoices = computed(() =>
-  buildLiveOptions(props.productOptions, form.productId ? [form.productId] : [], (item) => item.id),
+  buildLiveOptions(productOptions.value, form.productId ? [form.productId] : [], (item) => item.id),
 );
+
+/** 打开弹窗时加载适用产品候选 */
+watch(
+  () => props.visible,
+  (visible) => {
+    if (visible) void loadProductOptions();
+  },
+  { immediate: true },
+);
+
+/** 页面激活时刷新候选数据（由页面 onActivated 调用） */
+const refresh = (): void => {
+  void refreshProductOptions();
+};
 
 const resetForm = (): void => {
   Object.assign(form, initialForm());
@@ -149,7 +162,7 @@ const handleSubmit = (): void => {
     EMessage.warning('请填写路线编号、路线名称并选择适用产品');
     return;
   }
-  if (hasUnavailableSelection(props.productOptions, [form.productId], (item) => item.id)) {
+  if (hasUnavailableSelection(productOptions.value, [form.productId], (item) => item.id)) {
     EMessage.warning('适用产品已失效，请重新选择');
     return;
   }
@@ -160,7 +173,7 @@ const handleSubmit = (): void => {
   });
 };
 
-defineExpose({ setForm, resetForm });
+defineExpose({ setForm, resetForm, refresh });
 </script>
 
 <style scoped>
