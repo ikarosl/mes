@@ -20,6 +20,24 @@ describe('ProductionService first-stage commands', () => {
     });
   });
 
+  it('returns the complete work-order options result from the repository', async () => {
+    const options = [
+      {
+        id: '11',
+        workOrderNo: 'WO-002',
+        productId: '8',
+        productCode: 'FG-002',
+        productName: 'Finished good',
+        remainingQuantity: '50.0000',
+      },
+    ];
+    const repository = { listWorkOrderOptions: vi.fn().mockResolvedValue(options) };
+    const service = new ProductionService(repository as never, {} as never, {} as never);
+
+    await expect(service.listWorkOrderOptions()).resolves.toEqual(options);
+    expect(repository.listWorkOrderOptions).toHaveBeenCalledWith();
+  });
+
   it('maps a route public query failure to HTTP 404', async () => {
     const repository = {
       withBatchCreationTransaction: vi.fn(async (_workOrderId, action) => action('8')),

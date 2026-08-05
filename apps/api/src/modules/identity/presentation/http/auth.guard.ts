@@ -46,10 +46,10 @@ export class AuthGuard implements CanActivate {
       await this.writeDenied(request, null, 'HTTP 401');
       throw error instanceof AuthenticationError ? new UnauthorizedException(error.message) : error;
     }
-    const permission = this.reflector.getAllAndOverride<string | undefined>(REQUIRED_PERMISSION, [
-      context.getHandler(),
-      context.getClass(),
-    ]);
+    const permission = this.reflector.getAllAndOverride<string | readonly string[] | undefined>(
+      REQUIRED_PERMISSION,
+      [context.getHandler(), context.getClass()],
+    );
     if (!permissionMatches(user.permissions, permission)) {
       await this.writeDenied(request, user.id, 'HTTP 403');
       return false;

@@ -107,7 +107,7 @@ font-family: Inter, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', Arial, san
 - 缓存页面重新激活；
 - 用户展开需要实时数据的选择控件或主动点击刷新。
 
-刷新候选项不得覆盖普通输入、已选值或表格型编辑草稿。原已选值在最新候选集中已停用、删除或不再满足条件时，应继续显示为“已失效”，禁止把内部 ID 当作正常标签展示；保存前必须要求用户重新选择，最终提交仍由后端重新校验权限、状态、版本和业务前置条件。
+刷新候选项不得覆盖普通输入、已选值或表格型编辑草稿。原已选值在最新候选集中已停用、删除或不再满足条件时，应继续显示为“已失效”，禁止把内部 ID 当作正常标签展示；保存前必须要求用户重新选择，最终提交仍由后端重新校验权限、状态、版本和业务前置条件。候选项合并只保留当前已选失效值用于显示与提交拦截，未选中的失效项不得残留在下拉列表中。
 
 ### 5.2 前端交互基础设施
 
@@ -119,7 +119,7 @@ font-family: Inter, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', Arial, san
 | `RouteMessageBox` | 删除、停用、取消、作废、完成等短时危险操作确认               | 不得直接调用 Element Plus `ElMessageBox`；路由切换时关闭且不缓存                        |
 | `live-options`    | 部门、角色、分类、产品、物料、工序、路线、负责人等可变候选项 | 在页面激活、弹窗打开或下拉展开时刷新；保留并标记失效已选值，提交前拦截                  |
 
-稳定枚举、普通输入和不参与编辑提交的展示数据不使用 `live-options`。具体接入代码、生命周期、当前使用情况和测试要求见 [`DynamicTabSwitching.md`](docs/frontCompoentDesgin/DynamicTabSwitching.md)。
+稳定枚举、普通输入和不参与编辑提交的展示数据不使用 `live-options`。具体交互接入、生命周期和测试要求见 [`DynamicTabSwitching.md`](docs/frontCompoentDesgin/DynamicTabSwitching.md)；候选的数据所有者、实例边界、失效和竞态规则见 [`frontend-architecture.md`](docs/frontend-architecture.md)。
 
 ## 6. 表格规范
 

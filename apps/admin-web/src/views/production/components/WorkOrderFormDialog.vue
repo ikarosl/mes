@@ -4,7 +4,7 @@
     :title="editingOrderId ? '编辑工单' : '新增工单'"
     :width="DialogWidth.lg"
     @update:model-value="$emit('update:visible', $event)"
-    @open="$emit('refresh-options')"
+    @open="onOpen"
   >
     <el-form
       class="dialog-form"
@@ -31,7 +31,8 @@
             v-model="form.productId"
             filterable
             placeholder="请选择产品"
-            @visible-change="(v: boolean) => v && $emit('refresh-options')"
+            :loading="props.productOptionsStatus === 'loading'"
+            @visible-change="(v: boolean) => v && $emit('refresh-products')"
           >
             <el-option
               v-for="choice in productChoices"
@@ -59,7 +60,8 @@
             clearable
             filterable
             placeholder="请选择工单负责人"
-            @visible-change="(v: boolean) => v && $emit('refresh-options')"
+            :loading="props.userOptionsStatus === 'loading'"
+            @visible-change="(v: boolean) => v && $emit('refresh-users')"
           >
             <el-option
               v-for="choice in userChoices"
@@ -126,12 +128,12 @@
 
 <script setup lang="ts">
 import { computed, reactive } from 'vue';
-import type { WorkOrderItem } from '@company/contracts';
+import type { ProductOption, UserOption, WorkOrderItem } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
 import { toDateInputValue } from '../../../utils/date';
 import { EMessage } from '../../../utils/message';
 import { buildLiveOptions, hasUnavailableSelection } from '../../../utils/live-options';
-import type { WorkOrderProductOption, WorkOrderUserOption } from '../composables/useWorkOrders';
+import type { RefreshableStatus } from '../../../composables/options/useRefreshableOptions';
 
 export type WorkOrderFormValue = {
   workOrderNo: string;
@@ -149,16 +151,25 @@ export type WorkOrderFormValue = {
 const props = defineProps<{
   visible: boolean;
   editingOrderId: string | null;
-  productOptions: WorkOrderProductOption[];
-  userOptions: WorkOrderUserOption[];
+  productOptions: ProductOption[];
+  productOptionsStatus: RefreshableStatus;
+  userOptions: UserOption[];
+  userOptionsStatus: RefreshableStatus;
   submitting: boolean;
 }>();
 
 const emit = defineEmits<{
   (e: 'update:visible', val: boolean): void;
-  (e: 'refresh-options'): void;
+  (e: 'refresh-products'): void;
+  (e: 'refresh-users'): void;
   (e: 'save', data: WorkOrderFormValue): void;
 }>();
+
+/** 打开弹窗：刷新本弹窗实际需要的候选（产品 + 负责人），不刷新无关资源 */
+const onOpen = (): void => {
+  emit('refresh-products');
+  emit('refresh-users');
+};
 
 const initialForm = (): WorkOrderFormValue => ({
   workOrderNo: '',
@@ -175,9 +186,16 @@ const initialForm = (): WorkOrderFormValue => ({
 
 const form = reactive<WorkOrderFormValue>(initialForm());
 
-/** 实时选项：产品和负责人 */
+/** 实时选项：产品和负责人（产品业务投影：仅成品） */
+const finishedProducts = computed(() =>
+  props.productOptions.filter((p) => p.itemKind === 'finished_product'),
+);
 const productChoices = computed(() =>
-  buildLiveOptions(props.productOptions, form.productId ? [form.productId] : [], (item) => item.id),
+  buildLiveOptions(
+    finishedProducts.value,
+    form.productId ? [form.productId] : [],
+    (item) => item.id,
+  ),
 );
 const userChoices = computed(() =>
   buildLiveOptions(
@@ -187,7 +205,7 @@ const userChoices = computed(() =>
   ),
 );
 
-const formatProduct = (product: WorkOrderProductOption): string =>
+const formatProduct = (product: ProductOption): string =>
   `${product.itemCode} / ${product.productName}`;
 
 const resetForm = (): void => {
@@ -216,7 +234,7 @@ const handleSubmit = (): void => {
   }
   if (
     hasUnavailableSelection(
-      props.productOptions,
+      finishedProducts.value,
       form.productId ? [form.productId] : [],
       (item) => item.id,
     )

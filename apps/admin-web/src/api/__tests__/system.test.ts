@@ -45,6 +45,22 @@ describe('systemApi contract mapping', () => {
     });
   });
 
+  it('requests department and role options best-effort with skipErrorHandling', async () => {
+    const { systemApi } = await import('../system');
+
+    await systemApi.departmentOptions();
+    await systemApi.roleOptions();
+
+    expect(request).toHaveBeenNthCalledWith(1, {
+      url: '/system/departments/options',
+      skipErrorHandling: true,
+    });
+    expect(request).toHaveBeenNthCalledWith(2, {
+      url: '/system/roles/options',
+      skipErrorHandling: true,
+    });
+  });
+
   it('passes user and role pagination filters as query parameters', async () => {
     request.mockResolvedValue({ data: { items: [], total: 0, page: 2, pageSize: 20 } });
     const { systemApi } = await import('../system');

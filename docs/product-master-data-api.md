@@ -19,40 +19,64 @@
 
 接口统一位于 `/api/product`，除有效 Access Token 外还需要下表权限。
 
-| 方法与路径                             | 用途                                                         | 权限                                 |
-| -------------------------------------- | ------------------------------------------------------------ | ------------------------------------ |
-| `GET /categories`                      | 分类列表                                                     | `product:categories:view`            |
-| `POST /categories`                     | 新增分类                                                     | `product:categories:create`          |
-| `PATCH /categories/:id`                | 编辑分类                                                     | `product:categories:update`          |
-| `PATCH /categories/:id/status`         | 启停分类                                                     | `product:categories:change-status`   |
-| `GET /products`                        | 产品、物料和半成品统一列表                                   | `product:products:view`              |
-| `GET /products/form-options`           | 产品页面所需分类、投入物料和路线选项                         | `product:products:view`              |
-| `POST /products`                       | 新增统一库存对象                                             | `product:products:create`            |
-| `PATCH /products/:id`                  | 编辑基础资料                                                 | `product:products:update`            |
-| `PATCH /products/:id/status`           | 启停基础资料                                                 | `product:products:change-status`     |
-| `GET /products/:id/materials`          | 查询统一 BOM                                                 | `product:products:view`              |
-| `PUT /products/:id/materials`          | 事务替换统一 BOM                                             | `product:products:manage-bom`        |
-| `PATCH /products/:id/default-route`    | 设置同产品已启用的默认路线                                   | `product:products:set-default-route` |
-| `GET /process-steps`                   | 标准工序列表                                                 | `product:processes:view`             |
-| `POST /process-steps`                  | 新增标准工序                                                 | `product:processes:create`           |
-| `PATCH /process-steps/:id`             | 编辑标准工序                                                 | `product:processes:update`           |
-| `PATCH /process-steps/:id/status`      | 启停标准工序                                                 | `product:processes:change-status`    |
-| `POST /process-steps/:id/sop`          | 上传并关联默认 SOP，最大 20 MiB                              | `product:processes:upload-sop`       |
-| `GET /technical-files`                 | 分页查询 SOP 技术文件                                        | `product:files:view`                 |
-| `POST /technical-files`                | 独立上传 SOP，最大 20 MiB                                    | `product:files:upload`               |
-| `GET /technical-files/:id/content`     | 鉴权后流式下载私有文件                                       | `product:files:download`             |
-| `DELETE /technical-files/:id`          | 软删除未被引用的技术文件（停用并标记删除，对象存储内容保留） | `product:files:delete`               |
-| `PATCH /process-steps/:id/default-sop` | 关联、替换或解除默认 SOP                                     | `product:files:attach`               |
-| `GET /process-routes`                  | 工艺路线版本列表                                             | `product:routes:view`                |
-| `GET /process-routes/form-options`     | 路线页面的产品、工序、负责人选项                             | `product:routes:view`                |
-| `POST /process-routes`                 | 新建草稿路线版本                                             | `product:routes:create`              |
-| `PATCH /process-routes/:id`            | 编辑草稿路线                                                 | `product:routes:update`              |
-| `PATCH /process-routes/:id/status`     | 路线状态流转                                                 | `product:routes:change-status`       |
-| `DELETE /process-routes/:id`           | 软删除从未启用的草稿路线                                     | `product:routes:delete`              |
-| `GET /process-routes/:id/steps`        | 路线步骤与 BOM 关联                                          | `product:routes:view`                |
-| `PUT /process-routes/:id/steps`        | 保存步骤顺序、SOP/规则快照及 BOM 关联                        | `product:routes:manage-steps`        |
+> `/options` 端点采用跨页面授权契约（any-of）：授权集是全部消费页面的视图权限并集。例如
+> `/categories/options` 同时服务产品页（`product:products:view`）与分类页（`product:categories:view`），
+> 任一权限即可读取，避免只拥有单个页面权限的角色被 403。生产工单页（`production:orders:view`）与
+> 生产任务页（`production:tasks:view`）会消费 `products/options`、`process-routes/options` 和
+> `users/options`，对应授权集须并入这两个视图权限。生产任务页任务表单弹窗额外消费的生产域工单候选
+> 见下表后的「跨模块 /options 契约」。前端把选项请求视为 best-effort
+> （`skipErrorHandling`），单个选项失败只影响该项下拉，不触发全局 403 跳转。
 
-`GET /products` 和 `GET /process-routes` 使用通用 `PageResult<T>` 响应。产品列表支持 `page`、`pageSize`、`keyword`、`categoryId`、`acquireMethod` 和 `status`；路线列表支持 `page`、`pageSize`、`keyword` 和 `status`。`form-options` 仅返回表单需要的选项数据，不承担正式列表分页。
+| 方法与路径                             | 用途                                                         | 权限                                                                                                |
+| -------------------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
+| `GET /categories`                      | 分页查询分类列表                                             | `product:categories:view`                                                                           |
+| `GET /categories/options`              | 分类表单选项（最小字段，仅启用）                             | `product:products:view` 或 `product:categories:view`                                                |
+| `POST /categories`                     | 新增分类                                                     | `product:categories:create`                                                                         |
+| `PATCH /categories/:id`                | 编辑分类                                                     | `product:categories:update`                                                                         |
+| `PATCH /categories/:id/status`         | 启停分类                                                     | `product:categories:change-status`                                                                  |
+| `GET /products`                        | 产品、物料和半成品统一列表                                   | `product:products:view`                                                                             |
+| `GET /products/options`                | 产品、物料和半成品选项（最小字段，仅启用）                   | `product:products:view`、`product:routes:view`、`production:orders:view` 或 `production:tasks:view` |
+| `POST /products`                       | 新增统一库存对象                                             | `product:products:create`                                                                           |
+| `PATCH /products/:id`                  | 编辑基础资料                                                 | `product:products:update`                                                                           |
+| `PATCH /products/:id/status`           | 启停基础资料                                                 | `product:products:change-status`                                                                    |
+| `GET /products/:id/materials`          | 查询统一 BOM                                                 | `product:products:view`                                                                             |
+| `PUT /products/:id/materials`          | 事务替换统一 BOM                                             | `product:products:manage-bom`                                                                       |
+| `PATCH /products/:id/default-route`    | 设置同产品已启用的默认路线                                   | `product:products:set-default-route`                                                                |
+| `GET /process-steps`                   | 分页查询标准工序列表                                         | `product:processes:view`                                                                            |
+| `GET /process-steps/options`           | 标准工序选项（最小字段，仅启用）                             | `product:processes:view` 或 `product:routes:view`                                                   |
+| `POST /process-steps`                  | 新增标准工序                                                 | `product:processes:create`                                                                          |
+| `PATCH /process-steps/:id`             | 编辑标准工序                                                 | `product:processes:update`                                                                          |
+| `PATCH /process-steps/:id/status`      | 启停标准工序                                                 | `product:processes:change-status`                                                                   |
+| `POST /process-steps/:id/sop`          | 上传并关联默认 SOP，最大 20 MiB                              | `product:processes:upload-sop`                                                                      |
+| `GET /technical-files`                 | 分页查询 SOP 技术文件                                        | `product:files:view`                                                                                |
+| `POST /technical-files`                | 独立上传 SOP，最大 20 MiB                                    | `product:files:upload`                                                                              |
+| `GET /technical-files/:id/content`     | 鉴权后流式下载私有文件                                       | `product:files:download`                                                                            |
+| `DELETE /technical-files/:id`          | 软删除未被引用的技术文件（停用并标记删除，对象存储内容保留） | `product:files:delete`                                                                              |
+| `PATCH /process-steps/:id/default-sop` | 关联、替换或解除默认 SOP                                     | `product:files:attach`                                                                              |
+| `GET /process-routes`                  | 工艺路线版本列表                                             | `product:routes:view`                                                                               |
+| `GET /process-routes/options`          | 已启用路线选项（最小字段）                                   | `product:products:view`、`product:routes:view`、`production:orders:view` 或 `production:tasks:view` |
+| `GET /users/options`                   | 用户选项（最小字段，仅启用）                                 | `product:routes:view`、`production:orders:view` 或 `production:tasks:view`                          |
+| `POST /process-routes`                 | 新建草稿路线版本                                             | `product:routes:create`                                                                             |
+| `PATCH /process-routes/:id`            | 编辑草稿路线                                                 | `product:routes:update`                                                                             |
+| `PATCH /process-routes/:id/status`     | 路线状态流转                                                 | `product:routes:change-status`                                                                      |
+| `DELETE /process-routes/:id`           | 软删除从未启用的草稿路线                                     | `product:routes:delete`                                                                             |
+| `GET /process-routes/:id/steps`        | 路线步骤与 BOM 关联                                          | `product:routes:view`                                                                               |
+| `PUT /process-routes/:id/steps`        | 保存步骤顺序、SOP/规则快照及 BOM 关联                        | `product:routes:manage-steps`                                                                       |
+
+### 跨模块 /options 契约（不属于 `/api/product`）
+
+上表接口统一位于 `/api/product`。任务表单弹窗除消费上表的产品类 options 外，还消费一个生产域工单候选，
+该端点不在 `/api/product` 前缀下，完整路径与授权如下：
+
+| 方法  | 完整路径                              | 用途                                                                                                   | 权限                    |
+| ----- | ------------------------------------- | ------------------------------------------------------------------------------------------------------ | ----------------------- |
+| `GET` | `/api/production/work-orders/options` | 任务表单已下达工单候选（完整返回全部 `released` 且仍有余量，前端本地过滤，最小字段 `WorkOrderOption`） | `production:tasks:view` |
+
+该端点位于生产模块（`apps/api/src/modules/production`），唯一消费方是生产任务页的任务表单弹窗；因其同时
+依赖上表的产品类 options，故在本文档汇总列出。实际前缀为 `/api/production/...`，与上表 `/api/product/...`
+不冲突，前端以 `skipErrorHandling` best-effort 读取。
+
+`GET /products`、`GET /process-routes`、`GET /categories` 和 `GET /process-steps` 使用通用 `PageResult<T>` 响应。产品列表支持 `page`、`pageSize`、`keyword`、`categoryId`、`acquireMethod` 和 `status`；路线列表支持 `page`、`pageSize`、`keyword` 和 `status`；分类列表支持 `page`、`pageSize`、`categoryCode`、`categoryName` 和 `status`；工序列表支持 `page`、`pageSize`、`keyword` 和 `status`。表单选择统一使用独立 `/options` 接口（最小字段、默认排除停用和删除记录），不承担正式列表分页。
 
 ## 4. 工作流不变量
 

@@ -31,7 +31,9 @@ import {
   ProcessRouteQueryDto,
   ProcessRouteStatusDto,
   ProcessStepDto,
+  ProcessStepQueryDto,
   ProductCategoryDto,
+  ProductCategoryQueryDto,
   ProductDto,
   ProductListQueryDto,
   ProductIdParamDto,
@@ -99,8 +101,20 @@ export class ProductController {
 
   @Get('categories')
   @RequirePermission(PERMISSIONS.product.categories.view)
-  categories() {
-    return this.service.listCategories();
+  categories(@Query() query: ProductCategoryQueryDto) {
+    return this.service.listCategories({
+      page: query.page,
+      pageSize: query.pageSize,
+      categoryCode: query.categoryCode?.trim() || undefined,
+      categoryName: query.categoryName?.trim() || undefined,
+      status: query.status,
+    });
+  }
+  @Get('categories/options')
+  // 跨页面选项授权：产品页（分类筛选/表单）或分类页（父分类）任一视图权限即可读取
+  @RequirePermission([PERMISSIONS.product.products.view, PERMISSIONS.product.categories.view])
+  categoryOptions() {
+    return this.service.listCategoryOptions();
   }
   @Post('categories')
   @RequirePermission(PERMISSIONS.product.categories.create)
@@ -142,19 +156,15 @@ export class ProductController {
     });
   }
   @Get('products/options')
-  @RequirePermission(PERMISSIONS.product.products.view)
+  // 跨页面选项授权：产品页（BOM 候选）、工艺路线页（产品/BOM 候选）、生产工单/任务页（产品下拉）任一视图权限即可读取
+  @RequirePermission([
+    PERMISSIONS.product.products.view,
+    PERMISSIONS.product.routes.view,
+    PERMISSIONS.production.orders.view,
+    PERMISSIONS.production.tasks.view,
+  ])
   productOptions() {
     return this.service.listProductOptions();
-  }
-  @Get('products/form-options')
-  @RequirePermission(PERMISSIONS.product.products.view)
-  async productFormOptions() {
-    const [categories, products, routes] = await Promise.all([
-      this.service.listCategories(),
-      this.service.listProductOptions(),
-      this.service.listRouteOptions(),
-    ]);
-    return { categories, products, routes };
   }
   @Post('products')
   @RequirePermission(PERMISSIONS.product.products.create)
@@ -210,8 +220,19 @@ export class ProductController {
 
   @Get('process-steps')
   @RequirePermission(PERMISSIONS.product.processes.view)
-  processSteps() {
-    return this.service.listProcessSteps();
+  processSteps(@Query() query: ProcessStepQueryDto) {
+    return this.service.listProcessSteps({
+      page: query.page,
+      pageSize: query.pageSize,
+      keyword: query.keyword?.trim() || undefined,
+      status: query.status,
+    });
+  }
+  @Get('process-steps/options')
+  // 跨页面选项授权：工序页或工艺路线页（工序列）任一视图权限即可读取
+  @RequirePermission([PERMISSIONS.product.processes.view, PERMISSIONS.product.routes.view])
+  processStepOptions() {
+    return this.service.listProcessStepOptions();
   }
   @Post('process-steps')
   @RequirePermission(PERMISSIONS.product.processes.create)
@@ -272,15 +293,16 @@ export class ProductController {
       status: query.status,
     });
   }
-  @Get('process-routes/form-options')
-  @RequirePermission(PERMISSIONS.product.routes.view)
-  async routeFormOptions() {
-    const [products, processSteps, users] = await Promise.all([
-      this.service.listProductOptions(),
-      this.service.listProcessSteps(),
-      this.service.listUserOptions(),
-    ]);
-    return { products, processSteps, users };
+  @Get('process-routes/options')
+  // 跨页面选项授权：产品页（默认路线下拉）、工艺路线页、生产工单/任务页（路线下拉）任一视图权限即可读取
+  @RequirePermission([
+    PERMISSIONS.product.products.view,
+    PERMISSIONS.product.routes.view,
+    PERMISSIONS.production.orders.view,
+    PERMISSIONS.production.tasks.view,
+  ])
+  routeOptions() {
+    return this.service.listRouteOptions();
   }
   @Post('process-routes')
   @RequirePermission(PERMISSIONS.product.routes.create)
@@ -330,7 +352,12 @@ export class ProductController {
     return this.service.replaceRouteSteps(id, body.items, audit);
   }
   @Get('users/options')
-  @RequirePermission(PERMISSIONS.product.routes.view)
+  // 跨页面选项授权：工艺路线页（默认负责人）、生产工单/任务页（负责人下拉）任一视图权限即可读取
+  @RequirePermission([
+    PERMISSIONS.product.routes.view,
+    PERMISSIONS.production.orders.view,
+    PERMISSIONS.production.tasks.view,
+  ])
   userOptions() {
     return this.service.listUserOptions();
   }

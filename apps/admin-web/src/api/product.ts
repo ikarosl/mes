@@ -7,9 +7,13 @@ import type {
   ProcessRouteStepItem,
   ProcessRouteStepPayload,
   ProcessStepListItem,
+  ProcessStepOption,
   ProcessStepPayload,
+  ProcessStepQuery,
   ProductCategoryListItem,
+  ProductCategoryOption,
   ProductCategoryPayload,
+  ProductCategoryQuery,
   ProductListItem,
   ProductListQuery,
   ProductMaterialItem,
@@ -21,10 +25,10 @@ import type {
   TechnicalFileQuery,
   UserOption,
 } from '@company/contracts';
-import { toRequestError } from '@company/request';
+import { toRequestError, type RetryRequestConfig } from '@company/request';
 import { httpClient } from './http';
 
-const request = async <T>(config: Parameters<typeof httpClient.request<T>>[0]) => {
+const request = async <T>(config: RetryRequestConfig) => {
   try {
     return (await httpClient.request<T>(config)).data;
   } catch (error) {
@@ -47,7 +51,14 @@ const cleanProductPayload = (data: ProductPayload): ProductPayload => ({
 export const productApi = {
   technicalFiles: (params: TechnicalFileQuery) =>
     request<PageResult<TechnicalFileListItem>>({ url: `${base}/technical-files`, params }),
-  categories: () => request<ProductCategoryListItem[]>({ url: `${base}/categories` }),
+  categories: (params: ProductCategoryQuery) =>
+    request<PageResult<ProductCategoryListItem>>({ url: `${base}/categories`, params }),
+  // options 为表单参考读取（best-effort）：失败不触发全局 403 跳转/提示，由调用方 composable 降级
+  categoryOptions: () =>
+    request<ProductCategoryOption[]>({
+      url: `${base}/categories/options`,
+      skipErrorHandling: true,
+    }),
   createCategory: (data: ProductCategoryPayload) =>
     request<{ id: string }>({ url: `${base}/categories`, method: 'POST', data }),
   updateCategory: (id: string, data: ProductCategoryPayload) =>
@@ -57,13 +68,8 @@ export const productApi = {
 
   products: (params: ProductListQuery) =>
     request<PageResult<ProductListItem>>({ url: `${base}/products`, params }),
-  productOptions: () => request<ProductOption[]>({ url: `${base}/products/options` }),
-  productFormOptions: () =>
-    request<{
-      categories: ProductCategoryListItem[];
-      products: ProductOption[];
-      routes: ProcessRouteOption[];
-    }>({ url: `${base}/products/form-options` }),
+  productOptions: () =>
+    request<ProductOption[]>({ url: `${base}/products/options`, skipErrorHandling: true }),
   createProduct: (data: ProductPayload) =>
     request<{ id: string }>({
       url: `${base}/products`,
@@ -89,7 +95,10 @@ export const productApi = {
       data: { routeId },
     }),
 
-  processSteps: () => request<ProcessStepListItem[]>({ url: `${base}/process-steps` }),
+  processSteps: (params: ProcessStepQuery) =>
+    request<PageResult<ProcessStepListItem>>({ url: `${base}/process-steps`, params }),
+  processStepOptions: () =>
+    request<ProcessStepOption[]>({ url: `${base}/process-steps/options`, skipErrorHandling: true }),
   createProcessStep: (data: ProcessStepPayload) =>
     request<{ id: string }>({ url: `${base}/process-steps`, method: 'POST', data }),
   updateProcessStep: (id: string, data: ProcessStepPayload) =>
@@ -104,12 +113,11 @@ export const productApi = {
 
   routes: (params: ProcessRouteQuery) =>
     request<PageResult<ProcessRouteListItem>>({ url: `${base}/process-routes`, params }),
-  routeFormOptions: () =>
-    request<{
-      products: ProductOption[];
-      processSteps: ProcessStepListItem[];
-      users: UserOption[];
-    }>({ url: `${base}/process-routes/form-options` }),
+  routeOptions: () =>
+    request<ProcessRouteOption[]>({
+      url: `${base}/process-routes/options`,
+      skipErrorHandling: true,
+    }),
   createRoute: (data: ProcessRoutePayload) =>
     request<{ id: string }>({ url: `${base}/process-routes`, method: 'POST', data }),
   updateRoute: (id: string, data: ProcessRoutePayload) =>
@@ -126,5 +134,6 @@ export const productApi = {
     request<ProcessRouteStepItem[]>({ url: `${base}/process-routes/${id}/steps` }),
   replaceRouteSteps: (id: string, items: ProcessRouteStepPayload[]) =>
     request<void>({ url: `${base}/process-routes/${id}/steps`, method: 'PUT', data: { items } }),
-  userOptions: () => request<UserOption[]>({ url: `${base}/users/options` }),
+  userOptions: () =>
+    request<UserOption[]>({ url: `${base}/users/options`, skipErrorHandling: true }),
 };

@@ -7,6 +7,7 @@ import type {
   UpdateWorkOrderPayload,
   WorkOrderDetail,
   WorkOrderItem,
+  WorkOrderOption,
   WorkOrderQuery,
   WorkOrderStatus,
 } from '@company/contracts';
@@ -61,6 +62,34 @@ export class MysqlWorkOrderRepository {
       [...values, pageSize, (page - 1) * pageSize],
     );
     return { items: rows.map(mapWorkOrder), total: Number(count?.total ?? 0), page, pageSize };
+  }
+
+  async listWorkOrderOptions(): Promise<WorkOrderOption[]> {
+    const remaining = `(wo.planned_quantity - COALESCE((SELECT SUM(b.planned_quantity) FROM production_batches b WHERE b.work_order_id=wo.id AND b.status<>'cancelled'),0))`;
+    const conditions = [`wo.status='released'`, `${remaining} > 0`];
+    const [rows] = await this.pool.query<
+      (RowDataPacket & {
+        id: number;
+        work_order_no: string;
+        product_id: number;
+        product_code_snapshot: string;
+        product_name_snapshot: string;
+        remaining_quantity: string;
+      })[]
+    >(
+      `SELECT wo.id,wo.work_order_no,wo.product_id,wo.product_code_snapshot,wo.product_name_snapshot,${remaining} AS remaining_quantity
+         FROM work_orders wo
+         WHERE ${conditions.join(' AND ')}
+         ORDER BY wo.work_order_no ASC,wo.id ASC`,
+    );
+    return rows.map((row) => ({
+      id: String(row.id),
+      workOrderNo: row.work_order_no,
+      productId: String(row.product_id),
+      productCode: row.product_code_snapshot,
+      productName: row.product_name_snapshot,
+      remainingQuantity: row.remaining_quantity,
+    }));
   }
 
   async get(id: string): Promise<WorkOrderDetail> {

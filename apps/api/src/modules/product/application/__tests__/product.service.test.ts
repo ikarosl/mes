@@ -9,7 +9,9 @@ describe('ProductService workflow safeguards', () => {
     const repository = { replaceMaterials: vi.fn() };
     const service = new ProductService(
       {} as never,
+      {} as never,
       repository as never,
+      {} as never,
       {} as never,
       {} as never,
       {} as never,
@@ -45,7 +47,9 @@ describe('ProductService workflow safeguards', () => {
     const repository = { replaceMaterials: vi.fn() };
     const service = new ProductService(
       {} as never,
+      {} as never,
       repository as never,
+      {} as never,
       {} as never,
       {} as never,
       {} as never,
@@ -74,6 +78,8 @@ describe('ProductService workflow safeguards', () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never,
+      {} as never,
       repository as never,
       {} as never,
       {} as never,
@@ -96,6 +102,8 @@ describe('ProductService workflow safeguards', () => {
     const repository = { replaceRouteSteps: vi.fn() };
     const identityDirectory = { listActiveUserOptionsByIds: vi.fn().mockResolvedValue([]) };
     const service = new ProductService(
+      {} as never,
+      {} as never,
       {} as never,
       {} as never,
       {} as never,
@@ -135,6 +143,8 @@ describe('ProductService workflow safeguards', () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never,
+      {} as never,
       repository as never,
       {} as never,
       identityDirectory as never,
@@ -159,7 +169,9 @@ describe('ProductService workflow safeguards', () => {
     const service = new ProductService(
       {} as never,
       {} as never,
+      {} as never,
       repository as never,
+      {} as never,
       {} as never,
       storage as never,
       {} as never,
@@ -187,6 +199,8 @@ describe('ProductService workflow safeguards', () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never,
+      {} as never,
       storage as never,
       {} as never,
     );
@@ -203,7 +217,9 @@ describe('ProductService workflow safeguards', () => {
     const service = new ProductService(
       {} as never,
       {} as never,
+      {} as never,
       repository as never,
+      {} as never,
       {} as never,
       storage as never,
       {} as never,

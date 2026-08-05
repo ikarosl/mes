@@ -17,9 +17,13 @@ export const useAuthStore = defineStore('auth', () => {
     },
   });
   channel?.addEventListener('message', (event) => {
-    if (event.data === 'logout') client.clearSession();
+    if (event.data === 'logout') {
+      client.clearSession();
+    }
   });
-  const login = async (payload: LoginRequest) => client.login(payload);
+  const login = async (payload: LoginRequest) => {
+    return client.login(payload);
+  };
   const restore = () => {
     restoring.value ??= client.restoreSession().finally(() => {
       restoring.value = null;
@@ -38,7 +42,9 @@ export const useAuthStore = defineStore('auth', () => {
     login,
     restore,
     logout,
-    clear: () => client.clearSession(),
+    clear: () => {
+      client.clearSession();
+    },
     can,
   };
 });

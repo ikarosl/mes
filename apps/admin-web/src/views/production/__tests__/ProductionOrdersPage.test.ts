@@ -1,26 +1,49 @@
-import { mount } from '@vue/test-utils';
+import { flushPromises, mount } from '@vue/test-utils';
 import ElementPlus from 'element-plus';
-import { describe, expect, it, vi } from 'vitest';
+import { nextTick } from 'vue';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia } from 'pinia';
 import { createRouter, createWebHistory } from 'vue-router';
 import ProductionOrdersPage from '../ProductionOrdersPage.vue';
 
+const {
+  listOrders,
+  listOrderBatches,
+  changeOrderStatus,
+  confirm,
+  success,
+  error,
+  productOptions,
+  routeOptions,
+  userOptions,
+} = vi.hoisted(() => ({
+  listOrders: vi.fn(),
+  listOrderBatches: vi.fn(),
+  changeOrderStatus: vi.fn(),
+  confirm: vi.fn(),
+  success: vi.fn(),
+  error: vi.fn(),
+  productOptions: vi.fn(),
+  routeOptions: vi.fn(),
+  userOptions: vi.fn(),
+}));
+
 // Mock API modules to prevent real HTTP calls (ECONNREFUSED)
 vi.mock('../../../api/product', () => ({
   productApi: {
-    productFormOptions: vi.fn().mockResolvedValue({
-      categories: [],
-      products: [],
-      routes: [],
-    }),
-    userOptions: vi.fn().mockResolvedValue([]),
+    productOptions,
+    routeOptions,
+    userOptions,
   },
 }));
 vi.mock('../../../api/production', () => ({
-  productionApi: {
-    listOrders: vi.fn().mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 10 }),
-    listOrderBatches: vi.fn().mockResolvedValue([]),
-  },
+  productionApi: { listOrders, listOrderBatches, changeOrderStatus },
+}));
+vi.mock('../../../utils/route-message-box', () => ({
+  RouteMessageBox: { confirm },
+}));
+vi.mock('../../../utils/message', () => ({
+  EMessage: { success, error, warning: vi.fn() },
 }));
 
 const router = createRouter({
@@ -28,11 +51,43 @@ const router = createRouter({
   routes: [{ path: '/:pathMatch(.*)*', name: 'test', component: { template: '<div />' } }],
 });
 
+const orderRow = {
+  id: 'o1',
+  workOrderNo: 'WO-001',
+  productId: 'p1',
+  productCode: 'P001',
+  productName: '环形器',
+  plannedQuantity: 100,
+  assignedQuantity: 0,
+  workOrderOwnerId: null,
+  customerName: null,
+  planStartDate: null,
+  planEndDate: null,
+  status: 'draft',
+  version: 0,
+};
+
 describe('ProductionOrdersPage', () => {
   const mountPage = () =>
     mount(ProductionOrdersPage, {
       global: { plugins: [ElementPlus, router, createPinia()] },
     });
+
+  beforeEach(() => {
+    listOrders.mockReset();
+    listOrders.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 10 });
+    listOrderBatches.mockReset();
+    listOrderBatches.mockResolvedValue([]);
+    changeOrderStatus.mockReset();
+    changeOrderStatus.mockResolvedValue(undefined);
+    confirm.mockReset();
+    productOptions.mockReset();
+    productOptions.mockResolvedValue([]);
+    routeOptions.mockReset();
+    routeOptions.mockResolvedValue([]);
+    userOptions.mockReset();
+    userOptions.mockResolvedValue([]);
+  });
 
   it('renders the query panel with search fields', () => {
     const wrapper = mountPage();
@@ -61,8 +116,98 @@ describe('ProductionOrdersPage', () => {
     expect(wrapper.find('.table-footer').exists()).toBe(true);
   });
 
+  it('requests the target page when the pagination page changes', async () => {
+    const wrapper = mountPage();
+    await flushPromises();
+    listOrders.mockClear();
+
+    const pagination = wrapper.findComponent({ name: 'ElPagination' });
+    expect(pagination.exists()).toBe(true);
+    pagination.vm.$emit('current-change', 2);
+    await flushPromises();
+
+    expect(listOrders).toHaveBeenCalledTimes(1);
+    expect(listOrders.mock.calls[0][0]).toMatchObject({ page: 2 });
+  });
+
   it('renders the page with stable component name', () => {
     const wrapper = mountPage();
     expect(wrapper.vm.$options.name).toBe('ProductionOrdersPage');
+  });
+
+  it('refreshes the product candidates when the product filter expands', async () => {
+    const wrapper = mountPage();
+    await flushPromises();
+    productOptions.mockClear();
+
+    const productSelect = wrapper.findComponent({ name: 'ElSelect' });
+    productSelect.vm.$emit('visible-change', true);
+    await nextTick();
+
+    expect(productOptions).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows a selected product removed from the candidates as expired in the filter', async () => {
+    productOptions.mockResolvedValue([
+      {
+        id: 'p1',
+        itemCode: 'C1',
+        productName: '产品1',
+        itemKind: 'finished_product',
+        acquireMethod: 'self_made',
+        unit: '个',
+        defaultRouteId: null,
+      },
+    ]);
+    const wrapper = mountPage();
+    await flushPromises();
+
+    // 展开产品筛选，候选加载完成（含 p1）
+    const productSelect = wrapper.findComponent({ name: 'ElSelect' });
+    await productSelect.vm.$emit('visible-change', true);
+    await flushPromises();
+
+    // 已选产品在后续刷新中被移除
+    productOptions.mockResolvedValue([]);
+    await productSelect.vm.$emit('visible-change', true);
+    await flushPromises();
+
+    const vm = wrapper.vm as unknown as {
+      query: { productId: string };
+      productChoices: unknown[];
+    };
+    vm.query.productId = 'p1';
+    await nextTick();
+
+    expect(vm.productChoices).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ value: 'p1', option: null, isUnavailable: true }),
+      ]),
+    );
+  });
+
+  it('disables the row release button while the write is pending and submits once', async () => {
+    // 行必须持续存在：写操作成功后页面会重新加载列表
+    listOrders.mockResolvedValue({ items: [orderRow], total: 1, page: 1, pageSize: 10 });
+    let confirmResolve!: (value: unknown) => void;
+    confirm.mockReturnValue(new Promise((resolve) => (confirmResolve = resolve)));
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    const findRelease = () => wrapper.findAll('button').find((b) => b.text().trim() === '下达');
+    expect(findRelease()).toBeDefined();
+    expect(findRelease()!.attributes('disabled')).toBeUndefined();
+
+    await findRelease()!.trigger('click');
+    await nextTick();
+    expect(findRelease()!.attributes('disabled')).toBeDefined(); // 确认框期间行内写操作被占用
+    expect(changeOrderStatus).not.toHaveBeenCalled();
+
+    confirmResolve('confirm');
+    await flushPromises();
+    expect(changeOrderStatus).toHaveBeenCalledTimes(1);
+    expect(changeOrderStatus).toHaveBeenCalledWith('o1', 'release', 0);
+    expect(findRelease()!.attributes('disabled')).toBeUndefined(); // 写操作结束释放
   });
 });

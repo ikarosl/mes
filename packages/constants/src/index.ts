@@ -205,12 +205,22 @@ export const FINISHED_FLOW_TYPES = [
 ] as const;
 export const FINISHED_FLOW_STATUSES = ['confirmed', 'cancelled'] as const;
 
-export const permissionMatches = (granted: readonly string[], required?: string) => {
+/**
+ * 权限匹配：required 为单个权限或任意之一权限集（any-of，跨页面 /options 授权用）。
+ * 未提供 required 视为放行；空数组视为拒绝一切。
+ */
+export const permissionMatches = (
+  granted: readonly string[],
+  required?: string | readonly string[],
+) => {
   if (!required) return true;
-  return granted.some(
-    (permission) =>
-      permission === '*' ||
-      permission === required ||
-      (permission.endsWith(':*') && required.startsWith(permission.slice(0, -1))),
+  const requirements = Array.isArray(required) ? required : [required];
+  return requirements.some((requirement) =>
+    granted.some(
+      (permission) =>
+        permission === '*' ||
+        permission === requirement ||
+        (permission.endsWith(':*') && requirement.startsWith(permission.slice(0, -1))),
+    ),
   );
 };

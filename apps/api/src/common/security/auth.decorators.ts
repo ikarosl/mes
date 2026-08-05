@@ -13,7 +13,11 @@ export const REQUIRED_PERMISSION = 'requiredPermission';
 export const AUDIT_IN_APPLICATION = 'auditInApplication';
 
 export const Public = () => SetMetadata(IS_PUBLIC, true);
-export const RequirePermission = (permission: string) =>
+/**
+ * 声明所需权限。传数组表示 any-of（任意之一命中即放行），用于跨页面 /options 等被多个
+ * 消费页面共用的只读端点。单个字符串为既有语义（必须命中）。
+ */
+export const RequirePermission = (permission: string | readonly string[]) =>
   SetMetadata(REQUIRED_PERMISSION, permission);
 export const AuditInApplication = () => SetMetadata(AUDIT_IN_APPLICATION, true);
 

@@ -69,6 +69,21 @@ export class ProcessRouteQueryDto extends PageQueryDto {
   @IsOptional() @IsString() @MaxLength(255) keyword?: string;
   @IsOptional() @IsIn(PROCESS_ROUTE_STATUSES) status?: ProcessRouteStatus;
 }
+export class ProductCategoryQueryDto extends PageQueryDto {
+  @IsOptional() @IsString() @MaxLength(64) categoryCode?: string;
+  @IsOptional() @IsString() @MaxLength(100) categoryName?: string;
+  @IsOptional()
+  @Type(() => Number)
+  @IsIn([SYSTEM_STATUS.disabled, SYSTEM_STATUS.enabled])
+  status?: number;
+}
+export class ProcessStepQueryDto extends PageQueryDto {
+  @IsOptional() @IsString() @MaxLength(255) keyword?: string;
+  @IsOptional()
+  @Type(() => Number)
+  @IsIn([SYSTEM_STATUS.disabled, SYSTEM_STATUS.enabled])
+  status?: number;
+}
 export class ProductSpecValueDto {
   @IsString() @IsNotEmpty() @MaxLength(100) key!: string;
   @IsString() @MaxLength(255) value!: string;

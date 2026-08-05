@@ -34,6 +34,9 @@ export class ProductionService {
   listWorkOrders(query: WorkOrderQuery) {
     return this.production.listWorkOrders(query);
   }
+  listWorkOrderOptions() {
+    return this.production.listWorkOrderOptions();
+  }
   async getWorkOrder(id: string) {
     return this.enrichWorkOrder(await this.production.getWorkOrder(id));
   }

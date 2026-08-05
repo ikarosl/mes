@@ -26,6 +26,7 @@ Access Token 只存在页面内存；刷新页面或打开新浏览器标签时�
 
 - 执行规则：[agents.md](agents.md)
 - 代码架构：[docs/architecture.md](docs/architecture.md)
+- 前端架构：[docs/frontend-architecture.md](docs/frontend-architecture.md)
 - HTTP 接口：[docs/api-conventions.md](docs/api-conventions.md)
 - 编码规范：[docs/coding-standards.md](docs/coding-standards.md)
 - 数据库设计：[docs/new.md](docs/new.md)

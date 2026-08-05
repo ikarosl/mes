@@ -103,7 +103,7 @@
 </template>
 
 <script setup lang="ts">
-import type { WorkOrderDetail } from '@company/contracts';
+import type { UserOption, WorkOrderDetail } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
 import { formatDateForDisplay } from '../../../utils/date';
 import {
@@ -112,12 +112,11 @@ import {
   orderStatusMeta,
   resolveOwnerName,
 } from '../production-status';
-import type { WorkOrderUserOption } from '../composables/useWorkOrders';
 
 defineProps<{
   visible: boolean;
   order: WorkOrderDetail | null;
-  userOptions: WorkOrderUserOption[];
+  userOptions: UserOption[];
 }>();
 
 defineEmits<{

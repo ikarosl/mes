@@ -72,7 +72,7 @@
               text
               circle
               :loading="loading"
-              @click="loadData"
+              @click="loadRoutes"
             />
           </el-tooltip>
         </template>
@@ -158,6 +158,7 @@
               v-if="row.status !== 'archived' && auth.can(PERMISSIONS.product.routes.changeStatus)"
               link
               :type="row.status === 'enabled' ? 'danger' : 'success'"
+              :disabled="isRowPending(row.id)"
               @click="toggleStatus(row)"
             >
               {{ row.status === 'enabled' ? '停用' : '启用' }}
@@ -166,6 +167,7 @@
               v-if="row.status === 'draft' && auth.can(PERMISSIONS.product.routes.delete)"
               link
               type="danger"
+              :disabled="isRowPending(row.id)"
               @click="deleteRoute(row)"
               >删除</el-button
             >
@@ -182,29 +184,24 @@
       />
     </div>
 
-    <!-- 新增/编辑工艺路线弹窗 -->
+    <!-- 新增/编辑工艺路线弹窗（自持适用产品候选） -->
     <RouteFormDialog
       ref="routeFormDialogRef"
       :visible="routeDialogVisible"
       :editing-route-id="editingRouteId"
-      :product-options="productOptions"
       :submitting="submittingRoute"
       @update:visible="routeDialogVisible = $event"
-      @refresh-options="refreshRouteOptions"
       @save="submitRoute"
     />
 
-    <!-- 配置工序顺序弹窗 -->
+    <!-- 配置工序顺序弹窗（自持路线步骤明细与工序/用户/物料候选） -->
     <RouteStepDialog
-      ref="routeStepDialogRef"
       :visible="stepsDialogVisible"
-      :process-options="processOptions"
-      :route-material-options="routeMaterialOptions"
-      :user-options="userOptions"
+      :route-id="editingRouteId"
+      :product-id="editingRouteProductId"
       :submitting="submittingSteps"
       @update:visible="stepsDialogVisible = $event"
       @save="submitSteps"
-      @refresh="refreshStepOptions"
     />
 
     <!-- 工艺路线详情弹窗 -->
@@ -218,7 +215,7 @@
 </template>
 
 <script setup lang="ts">
-import { onActivated, onMounted, ref } from 'vue';
+import { onMounted, ref } from 'vue';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import { PERMISSIONS } from '@company/constants';
 import type { ProcessRouteListItem, ProcessRouteStatus } from '@company/contracts';
@@ -227,8 +224,9 @@ import TableToolbar from '../../components/TableToolbar.vue';
 import PaginationFooter from '../../components/PaginationFooter.vue';
 import { EMessage } from '../../utils/message';
 import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
+import { useRowPending } from '../../utils/useRowPending';
 import { useAuthStore } from '../../stores/auth';
-import { useProcessRoutes } from './composables/useProcessRoutes';
+import { useProcessRoutesList } from './composables/useProcessRoutesList';
 import RouteFormDialog from './components/RouteFormDialog.vue';
 import type { RouteFormValue } from './components/RouteFormDialog.vue';
 import RouteStepDialog from './components/RouteStepDialog.vue';
@@ -240,10 +238,6 @@ defineOptions({ name: 'ProcessRoutesPage' });
 const auth = useAuthStore();
 const {
   routes,
-  productOptions,
-  processOptions,
-  userOptions,
-  routeMaterialOptions,
   loading,
   total,
   currentPage,
@@ -251,13 +245,15 @@ const {
   query,
   routeStatusLabel,
   routeStatusType,
-  loadOptions,
-  loadData,
+  loadRoutes,
   handleSearch,
   resetQuery,
   handlePageSizeChange,
   handlePageChange,
-} = useProcessRoutes();
+} = useProcessRoutesList();
+
+/** 行内写操作守卫（启停/删除路线），同一行只允许一个在途（todo 3.5） */
+const { isRowPending, beginRow, endRow } = useRowPending();
 
 /* ----- dialog state ----- */
 const routeDialogVisible = ref(false);
@@ -268,40 +264,16 @@ const editingRouteProductId = ref<string | null>(null);
 const detailRow = ref<ProcessRouteListItem | null>(null);
 const submittingSteps = ref(false);
 const routeFormDialogRef = ref();
-const routeStepDialogRef = ref();
 const submittingRoute = ref(false);
-
-const refreshRouteOptions = (visible = true): void => {
-  if (visible) void loadOptions();
-};
-
-const refreshStepOptions = async (visible = true): Promise<void> => {
-  if (!visible) return;
-  await loadOptions();
-  if (!editingRouteProductId.value) return;
-  try {
-    const materials = await productApi.materials(editingRouteProductId.value);
-    routeMaterialOptions.value = materials.filter((item) => item.status === 1);
-  } catch (error) {
-    EMessage.error(error, '路线步骤候选项加载失败');
-  }
-};
-
-const refreshActiveRouteEditors = (): void => {
-  refreshRouteOptions();
-  if (stepsDialogVisible.value) void refreshStepOptions();
-};
 
 /* ----- route CRUD ----- */
 const openCreate = (): void => {
-  refreshRouteOptions();
   editingRouteId.value = null;
   routeFormDialogRef.value?.resetForm();
   routeDialogVisible.value = true;
 };
 
 const openEdit = (row: ProcessRouteListItem): void => {
-  refreshRouteOptions();
   editingRouteId.value = row.id;
   routeFormDialogRef.value?.setForm(row);
   routeDialogVisible.value = true;
@@ -326,7 +298,7 @@ const submitRoute = async (data: RouteFormValue): Promise<void> => {
     else await productApi.createRoute(payload);
     EMessage.success(editingRouteId.value ? '工艺路线已更新' : '工艺路线已新增');
     routeDialogVisible.value = false;
-    await loadData();
+    await loadRoutes();
   } catch (error) {
     EMessage.error(error, '工艺路线保存失败');
   } finally {
@@ -335,6 +307,7 @@ const submitRoute = async (data: RouteFormValue): Promise<void> => {
 };
 
 const toggleStatus = async (row: ProcessRouteListItem): Promise<void> => {
+  if (!beginRow(row.id)) return;
   const next: ProcessRouteStatus = row.status === 'enabled' ? 'disabled' : 'enabled';
   const text = next === 'enabled' ? '启用' : '停用';
   try {
@@ -345,13 +318,16 @@ const toggleStatus = async (row: ProcessRouteListItem): Promise<void> => {
     );
     await productApi.setRouteStatus(row.id, next);
     EMessage.success(`工艺路线已${text}`);
-    await loadData();
+    await loadRoutes();
   } catch (error: unknown) {
     if (error !== 'cancel' && error !== 'close') EMessage.error(error, `${text}路线失败`);
+  } finally {
+    endRow(row.id);
   }
 };
 
 const deleteRoute = async (row: ProcessRouteListItem): Promise<void> => {
+  if (!beginRow(row.id)) return;
   try {
     await ElMessageBox.confirm(
       `确定删除草稿路线"${row.routeName}（${row.versionNo}）"吗？`,
@@ -360,35 +336,19 @@ const deleteRoute = async (row: ProcessRouteListItem): Promise<void> => {
     );
     await productApi.deleteRoute(row.id);
     EMessage.success('草稿路线已删除');
-    await loadData();
+    await loadRoutes();
   } catch (error: unknown) {
     if (error !== 'cancel' && error !== 'close') EMessage.error(error, '删除路线失败');
+  } finally {
+    endRow(row.id);
   }
 };
 
-/* ----- steps ----- */
-const openSteps = async (row: ProcessRouteListItem): Promise<void> => {
+/* ----- steps（弹窗自持路线步骤明细与候选） ----- */
+const openSteps = (row: ProcessRouteListItem): void => {
   editingRouteId.value = row.id;
   editingRouteProductId.value = row.productId;
   stepsDialogVisible.value = true;
-  try {
-    const [steps] = await Promise.all([productApi.routeSteps(row.id), refreshStepOptions()]);
-    routeStepDialogRef.value?.setSteps(
-      steps.map((step) => ({
-        processStepId: step.processStepId,
-        stepOrder: step.stepOrder,
-        defaultOwnerId: step.defaultOwnerId ?? '',
-        sopFileId: step.sopFileId ?? '',
-        needInspection: step.needInspection,
-        needRecord: step.needRecord,
-        status: step.status,
-        remark: step.remark ?? '',
-        productMaterialIds: step.productMaterialIds,
-      })),
-    );
-  } catch (error) {
-    EMessage.error(error, '路线步骤加载失败');
-  }
 };
 
 const submitSteps = async (steps: StepRow[]): Promise<void> => {
@@ -411,7 +371,7 @@ const submitSteps = async (steps: StepRow[]): Promise<void> => {
     );
     EMessage.success('工序顺序和规则快照已保存');
     stepsDialogVisible.value = false;
-    await loadData();
+    await loadRoutes();
   } catch (error) {
     EMessage.error(error, '工序顺序保存失败');
   } finally {
@@ -419,8 +379,7 @@ const submitSteps = async (steps: StepRow[]): Promise<void> => {
   }
 };
 
-onMounted(loadData);
-onActivated(refreshActiveRouteEditors);
+onMounted(loadRoutes);
 </script>
 
 <style scoped>

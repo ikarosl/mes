@@ -156,6 +156,7 @@
               v-if="auth.can(PERMISSIONS.system.roles.delete)"
               link
               type="danger"
+              :disabled="isRowPending(row.id)"
               @click="deleteRole(row)"
               >删除</el-button
             >
@@ -221,6 +222,7 @@ import type { SystemRoleListItem } from '@company/contracts';
 import TableToolbar from '../../components/TableToolbar.vue';
 import { EMessage } from '../../utils/message';
 import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
+import { useRowPending } from '../../utils/useRowPending';
 import { systemApi } from '../../api/system';
 import { useAuthStore } from '../../stores/auth';
 import { formatDateTimeForDisplay } from '../../utils/date';
@@ -246,6 +248,9 @@ const {
   handlePageChange,
   handleSelectionChange,
 } = useSystemRoles();
+
+/** 行内写操作守卫（删除角色），同一行只允许一个在途（todo 3.5） */
+const { isRowPending, beginRow, endRow } = useRowPending();
 
 /* ----- dialog state ----- */
 const roleDialogVisible = ref(false);
@@ -293,6 +298,7 @@ const submitRole = async (data: RoleFormValue): Promise<void> => {
 };
 
 const deleteRole = async (row: SystemRoleListItem): Promise<void> => {
+  if (!beginRow(row.id)) return;
   try {
     await ElMessageBox.confirm(
       `确定删除角色"${row.name}"吗？此操作将停用并软删除该角色。`,
@@ -306,6 +312,8 @@ const deleteRole = async (row: SystemRoleListItem): Promise<void> => {
     if (error !== 'cancel' && error !== 'close') {
       EMessage.error(error, '角色删除失败');
     }
+  } finally {
+    endRow(row.id);
   }
 };
 

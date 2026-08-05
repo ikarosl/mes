@@ -4,7 +4,6 @@
     :title="editingRouteId ? '编辑工艺路线' : '新增工艺路线'"
     :width="DialogWidth.md"
     @update:model-value="$emit('update:visible', $event)"
-    @open="$emit('refresh-options')"
     @closed="resetForm"
   >
     <el-form
@@ -38,7 +37,7 @@
           v-model="form.productId"
           filterable
           placeholder="请选择产品"
-          @visible-change="(visible: boolean) => visible && $emit('refresh-options')"
+          @visible-change="(visible: boolean) => visible && productSource.refresh()"
         >
           <el-option
             v-for="choice in productChoices"
@@ -84,11 +83,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive } from 'vue';
-import type { ProductOption } from '@company/contracts';
+import { computed, onActivated, reactive, watch } from 'vue';
 import { DialogWidth } from '../../../utils/dialog';
 import { buildLiveOptions, hasUnavailableSelection } from '../../../utils/live-options';
 import { EMessage } from '../../../utils/message';
+import { useProductOptions } from '../../../composables/options/useProductOptions';
 
 export type RouteFormValue = {
   routeCode: string;
@@ -101,15 +100,20 @@ export type RouteFormValue = {
 const props = defineProps<{
   visible: boolean;
   editingRouteId: string | null;
-  productOptions: ProductOption[];
   submitting: boolean;
 }>();
 
 const emit = defineEmits<{
   (e: 'update:visible', val: boolean): void;
-  (e: 'refresh-options'): void;
   (e: 'save', data: RouteFormValue): void;
 }>();
+
+const productSource = useProductOptions();
+const productOptions = computed(() =>
+  productSource.options.value.filter(
+    (p) => p.acquireMethod === 'self_made' && p.itemKind !== 'material',
+  ),
+);
 
 const initialForm = (): RouteFormValue => ({
   routeCode: '',
@@ -121,8 +125,21 @@ const initialForm = (): RouteFormValue => ({
 
 const form = reactive<RouteFormValue>(initialForm());
 const productChoices = computed(() =>
-  buildLiveOptions(props.productOptions, form.productId ? [form.productId] : [], (item) => item.id),
+  buildLiveOptions(productOptions.value, form.productId ? [form.productId] : [], (item) => item.id),
 );
+
+/** 打开弹窗时刷新适用产品候选 */
+watch(
+  () => props.visible,
+  (visible) => {
+    if (visible) void productSource.refresh();
+  },
+);
+
+/** 页面重新激活且弹窗打开时刷新候选（弹窗自持，页面不再调用） */
+onActivated(() => {
+  if (props.visible) void productSource.refresh();
+});
 
 const resetForm = (): void => {
   Object.assign(form, initialForm());
@@ -149,7 +166,7 @@ const handleSubmit = (): void => {
     EMessage.warning('请填写路线编号、路线名称并选择适用产品');
     return;
   }
-  if (hasUnavailableSelection(props.productOptions, [form.productId], (item) => item.id)) {
+  if (hasUnavailableSelection(productOptions.value, [form.productId], (item) => item.id)) {
     EMessage.warning('适用产品已失效，请重新选择');
     return;
   }

@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ProductDomainError } from '../../domain/product.errors.js';
 import { MysqlProcessRouteRepository } from '../mysql-process-route.repository.js';
+import { MysqlProcessRouteStepRepository } from '../mysql-process-route-step.repository.js';
+import { MysqlProcessStepRepository } from '../mysql-process-step.repository.js';
 import { MysqlProductCatalogRepository } from '../mysql-product-catalog.repository.js';
+import { MysqlProductCategoryRepository } from '../mysql-product-category.repository.js';
 import { MysqlTechnicalFileRepository } from '../mysql-technical-file.repository.js';
 
 describe('MySQL product adapters workflow transactions', () => {
@@ -48,6 +51,93 @@ describe('MySQL product adapters workflow transactions', () => {
     ).resolves.toEqual({ items: [], total: 0, page: 2, pageSize: 10 });
     expect(String(query.mock.calls[1]?.[0])).toContain('ORDER BY r.created_at DESC,r.id DESC');
     expect(query.mock.calls[1]?.[1]).toEqual(['%R-%', '%R-%', 'draft', 10, 10]);
+  });
+
+  it('returns a stable server-paginated category list', async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce([[{ total: 3 }], []])
+      .mockResolvedValueOnce([[], []]);
+    const repository = new MysqlProductCategoryRepository({ query } as never);
+
+    await expect(
+      repository.listCategories({ page: 2, pageSize: 10, categoryCode: 'MAT', status: 1 }),
+    ).resolves.toEqual({ items: [], total: 3, page: 2, pageSize: 10 });
+    expect(String(query.mock.calls[1]?.[0])).toContain('ORDER BY item_kind,category_code,id');
+    expect(query.mock.calls[1]?.[1]).toEqual(['%MAT%', 1, 10, 10]);
+  });
+
+  it('returns enabled categories as minimal options', async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValue([
+        [{ id: 1, category_code: 'MAT', category_name: '电子物料', item_kind: 'material' }],
+        [],
+      ]);
+    const repository = new MysqlProductCategoryRepository({ query } as never);
+
+    await expect(repository.listCategoryOptions()).resolves.toEqual([
+      { id: '1', categoryCode: 'MAT', categoryName: '电子物料', itemKind: 'material' },
+    ]);
+    expect(String(query.mock.calls[0]?.[0])).toContain('status=1');
+  });
+
+  it('returns a stable server-paginated process step list', async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce([[{ total: 0 }], []])
+      .mockResolvedValueOnce([[], []]);
+    const repository = new MysqlProcessStepRepository({ query } as never);
+
+    await expect(
+      repository.listProcessSteps({ page: 1, pageSize: 10, keyword: 'GX', status: 1 }),
+    ).resolves.toEqual({ items: [], total: 0, page: 1, pageSize: 10 });
+    expect(String(query.mock.calls[1]?.[0])).toContain('ORDER BY ps.step_code,ps.id');
+    expect(query.mock.calls[1]?.[1]).toEqual(['%GX%', '%GX%', 1, 10, 0]);
+  });
+
+  it('returns enabled process steps as minimal options', async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValue([
+        [{ id: 2, step_code: 'GX-1', step_name: '切割', sop_file_name: 'cut.pdf' }],
+        [],
+      ]);
+    const repository = new MysqlProcessStepRepository({ query } as never);
+
+    await expect(repository.listProcessStepOptions()).resolves.toEqual([
+      { id: '2', stepCode: 'GX-1', stepName: '切割', sopFileName: 'cut.pdf' },
+    ]);
+    expect(String(query.mock.calls[0]?.[0])).toContain('status=1');
+  });
+
+  it('returns enabled routes as minimal options', async () => {
+    const query = vi.fn().mockResolvedValue([
+      [
+        {
+          id: 15,
+          route_code: 'R-1',
+          route_name: '标准路线',
+          product_id: 9,
+          version_no: 'V1',
+          status: 'enabled',
+        },
+      ],
+      [],
+    ]);
+    const repository = new MysqlProcessRouteRepository({ query } as never);
+
+    await expect(repository.listRouteOptions()).resolves.toEqual([
+      {
+        id: '15',
+        routeCode: 'R-1',
+        routeName: '标准路线',
+        productId: '9',
+        versionNo: 'V1',
+        status: 'enabled',
+      },
+    ]);
+    expect(String(query.mock.calls[0]?.[0])).toContain("status='enabled'");
   });
 
   it('persists technical file metadata and audit in the same transaction', async () => {
@@ -305,7 +395,7 @@ describe('MySQL product adapters workflow transactions', () => {
       ])
       .mockResolvedValueOnce([[{ id: 41 }], []]);
     connection.execute.mockResolvedValue([{ affectedRows: 1 }, []]);
-    const repository = new MysqlProcessRouteRepository({
+    const repository = new MysqlProcessRouteStepRepository({
       getConnection: vi.fn().mockResolvedValue(connection),
     } as never);
 

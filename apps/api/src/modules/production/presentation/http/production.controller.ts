@@ -30,6 +30,13 @@ export class ProductionController {
   workOrders(@Query() query: WorkOrderQueryDto) {
     return this.service.listWorkOrders({ ...query, keyword: query.keyword?.trim() || undefined });
   }
+  // 任务表单工单候选：完整返回全部已下达且仍有可分配余量的工单。
+  // 当前候选规模具有明确小上限，不分页、不截断，前端本地筛选。
+  @Get('work-orders/options')
+  @RequirePermission([PERMISSIONS.production.tasks.view])
+  workOrderOptions() {
+    return this.service.listWorkOrderOptions();
+  }
   @Get('work-orders/:id')
   @RequirePermission(PERMISSIONS.production.orders.view)
   workOrder(@Param() { id }: IdParamDto) {

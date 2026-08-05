@@ -4,8 +4,6 @@ import type {
   ProcessRoutePayload,
   ProcessRouteQuery,
   ProcessRouteStatus,
-  ProcessRouteStepItem,
-  ProcessRouteStepPayload,
   PageResult,
 } from '@company/contracts';
 import type { AuditContext } from '../../../../common/audit/audit.types.js';
@@ -25,10 +23,4 @@ export abstract class ProcessRouteRepository {
     audit: AuditContext,
   ): Promise<void>;
   abstract deleteRoute(id: string, audit: AuditContext): Promise<void>;
-  abstract listRouteSteps(routeId: string): Promise<ProcessRouteStepItem[]>;
-  abstract replaceRouteSteps(
-    routeId: string,
-    items: ProcessRouteStepPayload[],
-    audit: AuditContext,
-  ): Promise<void>;
 }

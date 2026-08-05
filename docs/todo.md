@@ -98,20 +98,77 @@
 
 ### 3.4 正式业务列表分页和文件拆分
 
-状态：`正在进行`
+状态：`已完成`
 
-- 审查前后端接口分页问题；正式业务列表不得全量下载后在浏览器切片。
-- `process_steps` 等正式主数据列表需要服务端分页；表单选择使用独立、最小字段的 `/options` 接口。
-- 按模块和变化原因拆分超长文件，完善架构、代码质量规范和 ESLint；不得为了满足行数机械拆文件。
+完成说明：
+
+- `process_steps`、`product_categories` 列表改为服务端分页（新增 `ProcessStepQuery`/`ProductCategoryQuery`，返回 `PageResult<T>`），前端 `ProcessesPage.vue`、`ProductCategoriesPage.vue` 不再全量下载后在浏览器切片；分类页父分类下拉改用独立 `/categories/options`，与分页列表解耦。
+- 表单选择统一改为独立、最小字段的 `/options` 接口：新增 `/categories/options`、`/process-steps/options`、`/process-routes/options`，与已有 `/products/options`、`/users/options` 一起由前端 `Promise.all` 并发组合；删除聚合端点 `products/form-options`、`process-routes/form-options`，消除完整列表类型（`ProductCategoryListItem`/`ProcessStepListItem`）泄漏到表单。
+- 按变化原因拆分超长基础设施文件：分类聚合拆为 `MysqlProductCategoryRepository`（新端口 `ProductCategoryRepository`），产品/BOM 聚合保留 `MysqlProductCatalogRepository`；路线生命周期保留 `MysqlProcessRouteRepository`，路线步骤（SOP 快照冻结、BOM 关联）拆为 `MysqlProcessRouteStepRepository`（新端口 `ProcessRouteStepRepository`）。`ProcessesPage.vue`/`ProductCategoriesPage.vue` 抽取 `useProcessSteps`/`useProductCategories` composable（视图与状态分离）。warehouse 演示页、System 模块等在各自迁移阶段再处理，不为压行数机械拆分。
+- 规范与门禁：`docs/api-conventions.md` §5 明确“表单选择必须使用独立 `/options`、禁止复用分页列表接口在浏览器过滤、聚合 form-options 为反模式”；`docs/coding-standards.md` §4/§5 把 500 行定义为聚合/视图内聚警示线并给出拆分原则；`eslint.config.js` 的 `max-lines` 保持 warn 作为内聚信号并补注释说明。
+- 验证：API 与前端 typecheck、单测、lint、architecture:check、build 全部通过；`form-options` 端点与前端调用在源码中无残留，仅文档作为反模式说明保留。
 
 ### 3.5 前端行内操作提交中守卫
 
-状态：`已确认，统一整改`
+状态：`已完成`
 
 - 弹窗表单已经使用 `submitting` 和 `:loading`；下达、关闭、取消、启停、删除、生成物料等行内操作仍缺少统一 pending 守卫。
 - 重复状态流转通常会被 version 乐观锁阻止，数据安全但会产生多余请求和 409；交互层守卫不能替代服务端幂等。
 - 使用行级 `pendingIds: Set<string>`，入口同步添加、`finally` 删除，并绑定按钮 `disabled/loading`。
 - 涉及 Production 页面以及 Product、System 的 `toggleStatus`、`deleteRole` 等操作。
+
+完成说明：
+
+- 新增 `useRowPending()`，以页面实例内的 `Set<string>` 同步守卫行内写操作；入口先占用、`finally` 释放，并绑定相应按钮的 `loading` 与 `disabled`。
+- 已覆盖 Product、Production、System 三个域的启停、删除、下达、关闭、取消、生成物料等行内写操作，并补充 composable 与页面组件测试。
+- 该守卫只消除同一页面的重复点击；后端幂等与乐观锁仍是跨请求和并发写入的安全边界。
+
+### 3.6 跨页面 `/options` 授权契约与前端数据所有权解耦
+
+状态：`已完成（含代码审查修正）`
+
+已确认问题：
+
+- 拆分独立 `/options` 后，每个选项端点被改为要求各自资源的视图权限，导致只拥有单页面权限的合法角色
+  （如仅 `product:products:view`）在加载产品页所需的 `/categories/options`、`/process-routes/options` 时被
+  403；前端页面级 `Promise.all` 因任一选项失败整体不赋值，且 403 触发全局处理器跳转无权限页。
+- 页面级 `loadData()` 同时刷新「列表 + 全部 options」，把无关数据绑成共同失败域，写操作成功也连带
+  刷新无关选项。
+
+整改要求：
+
+- 跨页面 `/options` 按「任意一个合法消费页面的视图权限」授权（any-of），授权集为消费页面视图权限的并集。
+- 前端按数据所有权拆分：正式列表由页面级 list composable 持有；页面筛选项由页面级 options composable
+  持有；表单/弹窗专用候选由弹窗级 composable 在打开/展开时加载，独立错误边界。
+- 选项请求使用 `skipErrorHandling` 且逐项 best-effort，单个选项失败只影响该项下拉，不拖累列表或其他选项，
+  也不触发全局 403 跳转。
+
+完成说明：
+
+- `permissionMatches` 支持 `string | string[]`（any-of），`RequirePermission` 接受权限数组；product 5 个
+  options 端点按全部消费页面视图权限并集设置 OR 授权集（`categories/options`→[products,categories]、
+  `process-steps/options`→[processes,routes]、
+  `products/options`→[products,routes,production:orders:view,production:tasks:view]、
+  `process-routes/options`→[products,routes,production:orders:view,production:tasks:view]、
+  `users/options`→[routes,production:orders:view,production:tasks:view]），覆盖生产工单/任务页消费，精确恢复旧聚合端点的授权行为。
+- 前端候选数据所有权收敛为“composable 实现复用、所有者实例局部化”：新增 `useRefreshableOptions` 基础实例
+  与 `useProductOptions`/`useProcessRouteOptions`/`useUserOptions`/`useProcessStepOptions` 资源包装，
+  正式列表仍由页面级 `useXxxList` 持有。同一缓存路由页内多个消费者共享同一候选源实例时提升到页面持有，
+  否则由最近消费者（页面或弹窗）自持；谁持有实例谁负责它的页面激活刷新，消费者只通过 `refresh-x` 事件
+  触发刷新。候选刷新时机为页面激活、弹窗打开、下拉展开；最新候选与当前已选值经 `live-options` 合并，
+  失效已选值显示并拦截提交。删除共享 Pinia 参考 Store（`reference-options.ts`）以及 ensure/invalidate/
+  revision/generation 语义。
+- 契约与测试：`docs/api-conventions.md` §5 与 `docs/product-master-data-api.md` 明确跨页面 options 授权契约；
+  补 any-of 守卫测试、options 元数据契约与「最小权限角色矩阵」测试（仅持单页面权限可读该页全部选项）。
+
+代码审查修正：
+
+- 任务表单「已下达工单候选」改为独立 `GET /production/work-orders/options` 端点（完整返回全部 `released` 且仍有余量的工单，前端本地过滤，最小字段 `WorkOrderOption`），移除复用正式分页接口在浏览器过滤/切片的实现（api-conventions.md §5）；任务弹窗编辑模式不再对只读工单做失效校验，已全部分配/状态变化/不在候选的工单不再阻断保存。
+- 「刷新后合并当前选择并显示失效」补全：生产批次/任务/工序执行弹窗的路线与负责人下拉、工单/任务/产品页面的筛选下拉统一接入 `buildLiveOptions` 合并与提交前 `hasUnavailableSelection` 拦截。
+- 任务默认路线解析改为候选就绪后补算：工单候选先返回而产品/路线未就绪时，记录待解析工单，产品/路线候选就绪后 `watch` 补算默认路线与工序预览，用户手动改路线不被候选刷新覆盖。
+- 分类候选统一为 `useRefreshableOptions` 薄包装 `useProductCategoryOptions`（失败保留上次成功快照，不再置空误判失效），移除 `useProductCategories` 内重复的 options 加载；分类页父分类候选由弹窗自持实例。
+- `useProductCategories`/`useProcessSteps` 正式列表补 last-request-wins；`ProductCategoriesPage` 移除 `onActivated` 首帧双请求（仅 `onMounted` 加载列表）。
+- 关键明细生命周期：产品物料清单弹窗页面激活只刷新候选、明细失败由「刷新物料」按钮显式重试并禁用「添加已有物料」；路线步骤/物料清单弹窗关闭时推进请求 token，丢弃关闭后迟到的明细响应。
 
 ## 4. 已确认但按阶段实施
 

@@ -11,6 +11,7 @@ import type {
   UpdateWorkOrderPayload,
   WorkOrderDetail,
   WorkOrderItem,
+  WorkOrderOption,
   WorkOrderQuery,
 } from '@company/contracts';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
@@ -41,6 +42,9 @@ export class MysqlProductionRepository extends ProductionRepository {
 
   listWorkOrders(query: WorkOrderQuery): Promise<PageResult<WorkOrderItem>> {
     return this.workOrders.list(query);
+  }
+  listWorkOrderOptions(): Promise<WorkOrderOption[]> {
+    return this.workOrders.listWorkOrderOptions();
   }
   getWorkOrder(id: string): Promise<WorkOrderDetail> {
     return this.workOrders.get(id);

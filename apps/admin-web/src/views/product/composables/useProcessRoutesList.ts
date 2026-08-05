@@ -1,26 +1,17 @@
 import { reactive, ref } from 'vue';
-import type {
-  ProcessRouteListItem,
-  ProcessRouteStatus,
-  ProcessStepListItem,
-  ProductMaterialItem,
-  ProductOption,
-  UserOption,
-} from '@company/contracts';
+import type { ProcessRouteListItem, ProcessRouteStatus } from '@company/contracts';
 import { productApi } from '../../../api/product';
 import { EMessage } from '../../../utils/message';
 
-export function useProcessRoutes() {
+/** 工艺路线页正式列表：查询、分页与列表加载。写操作成功后只调用 loadRoutes()。 */
+export function useProcessRoutesList() {
   const routes = ref<ProcessRouteListItem[]>([]);
-  const productOptions = ref<ProductOption[]>([]);
-  const processOptions = ref<ProcessStepListItem[]>([]);
-  const userOptions = ref<UserOption[]>([]);
-  const routeMaterialOptions = ref<ProductMaterialItem[]>([]);
   const loading = ref(false);
+  /** 列表请求代际：快速查询/翻页时丢弃旧响应（last-request-wins，见 frontend-architecture §7.3） */
+  let listRequestToken = 0;
   const total = ref(0);
   const currentPage = ref(1);
   const pageSize = ref(10);
-  let optionsRequest: Promise<void> | null = null;
   const query = reactive<{ keyword: string; status: ProcessRouteStatus | '' }>({
     keyword: '',
     status: '',
@@ -45,6 +36,7 @@ export function useProcessRoutes() {
     routeStatusTypes[status];
 
   const loadRoutes = async (): Promise<void> => {
+    const token = ++listRequestToken;
     loading.value = true;
     try {
       const result = await productApi.routes({
@@ -53,40 +45,15 @@ export function useProcessRoutes() {
         keyword: query.keyword.trim() || undefined,
         status: query.status || undefined,
       });
+      if (token !== listRequestToken) return; // 查询/翻页已变化，丢弃旧响应
       routes.value = result.items;
       total.value = result.total;
     } catch (error) {
+      if (token !== listRequestToken) return; // 丢弃旧请求的失败，不误导提示
       EMessage.error(error, '工艺路线资料加载失败');
     } finally {
-      loading.value = false;
+      if (token === listRequestToken) loading.value = false; // loading 只由最新请求结束
     }
-  };
-
-  const loadOptions = (): Promise<void> => {
-    if (!optionsRequest) {
-      optionsRequest = (async () => {
-        try {
-          const options = await productApi.routeFormOptions();
-          productOptions.value = options.products.filter(
-            (item: ProductOption) =>
-              item.acquireMethod === 'self_made' && item.itemKind !== 'material',
-          );
-          processOptions.value = options.processSteps.filter(
-            (item: ProcessStepListItem) => item.status === 1,
-          );
-          userOptions.value = options.users;
-        } catch (error) {
-          EMessage.error(error, '工艺路线选项加载失败');
-        }
-      })().finally(() => {
-        optionsRequest = null;
-      });
-    }
-    return optionsRequest;
-  };
-
-  const loadData = async (): Promise<void> => {
-    await Promise.all([loadRoutes(), loadOptions()]);
   };
 
   const handleSearch = async (): Promise<void> => {
@@ -113,10 +80,6 @@ export function useProcessRoutes() {
 
   return {
     routes,
-    productOptions,
-    processOptions,
-    userOptions,
-    routeMaterialOptions,
     loading,
     total,
     currentPage,
@@ -125,8 +88,6 @@ export function useProcessRoutes() {
     routeStatusLabel,
     routeStatusType,
     loadRoutes,
-    loadOptions,
-    loadData,
     handleSearch,
     resetQuery,
     handlePageSizeChange,

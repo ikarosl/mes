@@ -1,13 +1,13 @@
 # 动态标签切换与路由弹窗基础设施
 
-本文说明管理端多标签页、Vue KeepAlive 与路由区域弹窗之间的协作方式，以及 `RouteDialog.vue`、`route-message-box.ts` 和 `live-options.ts` 的接入规范。视觉和通用交互约束仍以根目录 `design.md` 为准。
+本文说明管理端多标签页、Vue KeepAlive 与路由区域弹窗之间的协作方式，以及 `RouteDialog.vue`、`route-message-box.ts` 和 `live-options.ts` 的接入规范。视觉和通用交互约束仍以根目录 `design.md` 为准；候选实例归属哪个消费方（页面或弹窗）、如何刷新、失效合并与竞态处理，以 `../frontend-architecture.md` 为准。
 
 ## 1. 设计目标
 
 - Dialog 和危险操作确认框只遮罩当前路由内容区，不阻断左侧菜单、顶部栏和标签栏。
 - 编辑 Dialog 随 KeepAlive 保留普通输入、已选值、校验状态和表格草稿。
 - 缓存页面失活后，其 Dialog 必须同步隐藏；返回原标签时恢复编辑现场。
-- 外部主数据候选项不使用陈旧页面缓存，应在关键生命周期重新请求。
+- 外部主数据候选项不以 KeepAlive 页面快照作为唯一来源，应按资源在关键生命周期刷新；同一候选源实例由最近共同所有者（页面或弹窗）持有，跨页面各自实例，不共享缓存。
 - 候选项刷新不得覆盖编辑草稿；失效的已选值必须明确显示并阻止保存。
 
 ## 2. 基础设施职责
@@ -35,7 +35,7 @@ AdminLayout .content
 ├─ 页面调用 RouteMessageBox.confirm()
 │  └─ 确认框挂载到 .content
 └─ 页面激活/弹窗打开/下拉展开
-   └─ composable 请求最新候选项
+   └─ 持有候选实例的 composable 定向 refresh
       └─ live-options 合并原已选值
          └─ 正常显示可用项，标记并拦截失效项
 ```
@@ -103,27 +103,51 @@ import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
 
 ### 6.1 请求时机
 
-动态候选项应在以下时机调用对应 composable 的 `loadOptions`：
+动态候选必须按资源命名和刷新，并遵守“谁持有实例谁负责它的页面激活刷新”的所有权规则（见
+`frontend-architecture.md` §4）。页面候选刷新只挂在 `onActivated`（首次挂载与再激活都会触发，避免首帧双请求）；
+`onMounted` 只加载正式列表和关键明细：
 
 ```ts
-import { onActivated, onMounted } from 'vue';
+import { onActivated } from 'vue';
 
-onMounted(loadPageData);
-onActivated(loadOptions);
+const productSource = useProductOptions();
+const userSource = useUserOptions();
+
+// 页面持有候选：页面负责激活刷新（首次进入也在此完成）
+onActivated(() => {
+  void productSource.refresh();
+  void userSource.refresh();
+});
 ```
 
-弹窗打开和下拉展开时继续刷新：
+页面持有并下发给弹窗的候选，弹窗经 props 接收、经 `refresh-x` 事件触发刷新，不再自行注册 `onActivated`：
 
 ```vue
-<el-dialog @open="$emit('refresh-options')">
-  <el-select
-    v-model="form.categoryId"
-    @visible-change="(visible: boolean) => visible && $emit('refresh-options')"
-  />
-</el-dialog>
+<WorkOrderFormDialog
+  :product-options="productSource.options.value"
+  :user-options="userSource.options.value"
+  @refresh-products="productSource.refresh"
+  @refresh-users="userSource.refresh"
+/>
 ```
 
-同一 composable 应合并并发的候选请求，避免页面激活、弹窗打开和下拉展开同时产生重复 API 调用。
+弹窗自持的候选，由弹窗在打开（watch visible）、页面激活且仍打开（onActivated + visible 守卫）、下拉展开
+（visible-change）三个时机刷新：
+
+```vue
+<el-select
+  v-model="row.processStepId"
+  @visible-change="(visible: boolean) => visible && processSource.refresh()"
+/>
+<el-select
+  v-model="row.defaultOwnerId"
+  @visible-change="(visible: boolean) => visible && userSource.refresh()"
+/>
+```
+
+页面筛选下拉同样在 `visible-change` 时只刷新该筛选资源。每个候选实例独立刷新、独立 last-request-wins；
+不同实例之间不合并请求（每次刷新都重新请求，以最后一次结果为准）。禁止让任意下拉统一调用
+`loadOptions()`/`refreshAll()` 刷新无关资源。
 
 ### 6.2 保留失效的已选值
 
@@ -184,14 +208,16 @@ if (
 
 ## 7. 状态缓存边界
 
-| 状态               | 是否随 KeepAlive 保留 | 更新策略                           |
-| ------------------ | --------------------- | ---------------------------------- |
-| Dialog 显示状态    | 是                    | 返回标签后恢复                     |
-| 普通输入和表格草稿 | 是                    | 候选刷新不得覆盖                   |
-| 用户已选值         | 是                    | 缺失时标记为“已失效”               |
-| 动态候选集合       | 否                    | 页面激活、弹窗打开或下拉展开时请求 |
-| 危险操作确认框     | 否                    | 路由切换时关闭                     |
-| 服务端校验结果     | 否                    | 提交时重新校验                     |
+| 状态               | 所有者                   | 更新策略                                                             |
+| ------------------ | ------------------------ | -------------------------------------------------------------------- |
+| Dialog 显示状态    | KeepAlive 页面           | 返回标签后恢复                                                       |
+| 普通输入和表格草稿 | 弹窗组件/弹窗 composable | 随页面保留，候选刷新不得覆盖                                         |
+| 用户已选值         | 编辑草稿                 | 随页面保留，候选缺失时标记为“已失效”                                 |
+| 页面级动态候选     | 页面 composable 实例     | 谁持有谁负责激活刷新；打开、激活、展开时刷新；失败保留实例内上次成功 |
+| 弹窗级动态候选     | 弹窗 composable 实例     | 打开、激活（仍打开时）、展开时刷新；失败保留实例内上次成功           |
+| ID 绑定关键明细    | 弹窗 Editor composable   | 切换目标时加载；页面激活不得覆盖编辑草稿                             |
+| 危险操作确认框     | RouteMessageBox 短时状态 | 路由切换时关闭                                                       |
+| 服务端校验结果     | 不缓存                   | 提交时重新校验                                                       |
 
 ## 8. 测试要求
 
@@ -200,9 +226,12 @@ if (
 - Dialog 遮罩仍位于路由组件子树内；
 - KeepAlive 失活时 Dialog 不可见，返回后编辑草稿仍在；
 - MessageBox 的 `appendTo` 指向 `.content`；
-- 多次同时刷新候选项只产生一次请求；
+- 同一候选实例的每次 `refresh()` 都重新请求；并发刷新采用 last-request-wins，旧响应和旧失败不得覆盖或提示；
+- 展开一个下拉不会请求其他无关候选资源；
 - 候选刷新不会丢失原已选值；
-- 失效选择能够显示且无法提交。
+- 失效选择能够显示且无法提交；
+- 切换编辑目标后，旧目标的迟到响应不会覆盖新目标或草稿；
+- 关键明细加载失败时无法保存空数据覆盖服务端记录。
 
 相关测试位于：
 

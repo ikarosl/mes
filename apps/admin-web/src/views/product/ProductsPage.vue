@@ -18,13 +18,18 @@
             v-model="query.categoryId"
             clearable
             placeholder="全部"
-            @visible-change="refreshProductOptions"
+            @visible-change="(v: boolean) => v && categorySource.refresh()"
           >
             <el-option
-              v-for="cat in categoryOptions"
-              :key="cat.id"
-              :label="`${itemKindLabels[cat.itemKind]} / ${cat.categoryName}`"
-              :value="cat.id"
+              v-for="choice in categoryChoices"
+              :key="choice.value"
+              :label="
+                choice.option
+                  ? `${itemKindLabels[choice.option.itemKind]} / ${choice.option.categoryName}`
+                  : `${choice.value}（已失效）`
+              "
+              :value="choice.value"
+              :disabled="choice.isUnavailable"
             />
           </el-select>
         </el-form-item>
@@ -230,6 +235,7 @@
               v-if="auth.can(PERMISSIONS.product.products.changeStatus)"
               link
               :type="row.status === 1 ? 'danger' : 'success'"
+              :disabled="isRowPending(row.id)"
               @click="toggleStatus(row)"
             >
               {{ row.status === 1 ? '停用' : '启用' }}
@@ -252,11 +258,11 @@
       ref="productFormDialogRef"
       :visible="productDialogVisible"
       :editing-product-id="editingProductId"
-      :category-options="categoryOptions"
+      :category-options="categorySource.options.value"
       :item-kind-labels="itemKindLabels"
       :submitting="submittingProduct"
       @update:visible="productDialogVisible = $event"
-      @refresh-options="refreshProductOptions"
+      @refresh-options="categorySource.refresh"
       @save="submitProduct"
     />
 
@@ -270,28 +276,22 @@
       @update:visible="detailDialogVisible = $event"
     />
 
-    <!-- 物料清单弹窗 -->
+    <!-- 物料清单弹窗（自持候选数据与 BOM 明细） -->
     <ProductMaterialDialog
-      ref="materialDialogRef"
       :visible="materialDialogVisible"
       :product="materialProduct"
-      :material-options="materialOptions"
-      :loading="materialLoading"
       :submitting="submittingMaterials"
       @update:visible="materialDialogVisible = $event"
       @save="submitMaterials"
-      @refresh="refreshMaterialOptions"
     />
 
-    <!-- 默认路线弹窗 -->
+    <!-- 默认路线弹窗（自持路线候选） -->
     <ProductDefaultRouteDialog
       :visible="defaultRouteDialogVisible"
       :product="defaultRouteProduct"
-      :available-routes="availableDefaultRoutes"
       :current-route-id="defaultRouteProduct?.defaultRouteId ?? null"
       :submitting="submittingDefaultRoute"
       @update:visible="defaultRouteDialogVisible = $event"
-      @refresh-options="refreshProductOptions"
       @confirm="submitDefaultRoute"
     />
   </section>
@@ -307,8 +307,11 @@ import TableToolbar from '../../components/TableToolbar.vue';
 import PaginationFooter from '../../components/PaginationFooter.vue';
 import { EMessage } from '../../utils/message';
 import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
+import { useRowPending } from '../../utils/useRowPending';
 import { useAuthStore } from '../../stores/auth';
-import { useProducts } from './composables/useProducts';
+import { useProductsList } from './composables/useProductsList';
+import { useProductCategoryOptions } from '../../composables/options/useProductCategoryOptions';
+import { buildLiveOptions } from '../../utils/live-options';
 import ProductFormDialog from './components/ProductFormDialog.vue';
 import type { ProductFormValue } from './components/ProductFormDialog.vue';
 import ProductDetailDialog from './components/ProductDetailDialog.vue';
@@ -326,9 +329,6 @@ const acquireMethodLabels: Record<string, string> = {
 const auth = useAuthStore();
 const {
   products,
-  categoryOptions,
-  materialOptions,
-  routes,
   loading,
   total,
   currentPage,
@@ -337,15 +337,26 @@ const {
   itemKindLabels,
   itemKindLabel,
   canConfigureProduction,
-  loadOptions,
-  loadData,
+  loadProducts,
   handleSearch,
   resetQuery,
   handlePageSizeChange,
   handlePageChange,
   formatSpecItem,
   formatSpecSummary,
-} = useProducts();
+} = useProductsList();
+const categorySource = useProductCategoryOptions();
+/** 分类筛选下拉：合并当前已选但已失效的分类，供用户清除（P1d） */
+const categoryChoices = computed(() =>
+  buildLiveOptions(
+    categorySource.options.value,
+    query.categoryId ? [query.categoryId] : [],
+    (c) => c.id,
+  ),
+);
+
+/** 行内写操作守卫（启停产品），同一行只允许一个在途（todo 3.5） */
+const { isRowPending, beginRow, endRow } = useRowPending();
 
 /* ----- dialog state ----- */
 const productDialogVisible = ref(false);
@@ -356,38 +367,26 @@ const editingProductId = ref<string | null>(null);
 const detailRow = ref<ProductListItem | null>(null);
 const materialProduct = ref<ProductListItem | null>(null);
 const defaultRouteProduct = ref<ProductListItem | null>(null);
-const materialLoading = ref(false);
 const submittingMaterials = ref(false);
 const productFormDialogRef = ref();
-const materialDialogRef = ref();
 const submittingProduct = ref(false);
 const submittingDefaultRoute = ref(false);
 
-const refreshProductOptions = (visible = true): void => {
-  if (visible) void loadOptions();
+/** 首次进入 / 刷新按钮：只加载正式列表；分类候选仅在页面激活时刷新（M1） */
+const loadData = async (): Promise<void> => {
+  await loadProducts();
 };
-
-const refreshActiveProductEditors = (): void => {
-  refreshProductOptions();
-  if (materialDialogVisible.value) void refreshMaterialOptions();
-};
-
-const availableDefaultRoutes = computed(() =>
-  routes.value.filter(
-    (route) => route.productId === defaultRouteProduct.value?.id && route.status === 'enabled',
-  ),
-);
 
 /* ----- product CRUD ----- */
+// 弹窗打开时的分类候选刷新由 ProductFormDialog 的 @open 统一触发（@refresh-options），
+// openCreate/openEdit 不再主动 refresh，避免每次打开重复请求 /categories/options。
 const openCreate = (): void => {
-  refreshProductOptions();
   editingProductId.value = null;
   productFormDialogRef.value?.resetForm();
   productDialogVisible.value = true;
 };
 
 const openEdit = (row: ProductListItem): void => {
-  refreshProductOptions();
   editingProductId.value = row.id;
   productFormDialogRef.value?.setForm(row);
   productDialogVisible.value = true;
@@ -415,7 +414,7 @@ const submitProduct = async (data: ProductFormValue): Promise<void> => {
     else await productApi.createProduct(payload);
     EMessage.success(editingProductId.value ? '产品已更新' : '产品已新增');
     productDialogVisible.value = false;
-    await loadData();
+    await loadProducts();
   } catch (error) {
     EMessage.error(error, '产品保存失败');
   } finally {
@@ -424,6 +423,7 @@ const submitProduct = async (data: ProductFormValue): Promise<void> => {
 };
 
 const toggleStatus = async (row: ProductListItem): Promise<void> => {
+  if (!beginRow(row.id)) return;
   const text = row.status === 1 ? '停用' : '启用';
   try {
     await ElMessageBox.confirm(`确定${text}"${row.productName}"吗？`, `${text}产品资料`, {
@@ -431,58 +431,18 @@ const toggleStatus = async (row: ProductListItem): Promise<void> => {
     });
     await productApi.setProductStatus(row.id, row.status === 1 ? 0 : 1);
     EMessage.success(`产品已${text}`);
-    await loadData();
+    await loadProducts();
   } catch (error: unknown) {
     if (error !== 'cancel' && error !== 'close') EMessage.error(error, `${text}产品失败`);
+  } finally {
+    endRow(row.id);
   }
 };
 
 /* ----- BOM materials ----- */
-const openMaterials = async (row: ProductListItem): Promise<void> => {
+const openMaterials = (row: ProductListItem): void => {
   materialProduct.value = row;
   materialDialogVisible.value = true;
-  materialLoading.value = true;
-  try {
-    const [items, options] = await Promise.all([
-      productApi.materials(row.id),
-      productApi.productOptions(),
-    ]);
-    materialDialogRef.value?.setRows(
-      items.map((item) => ({
-        materialProductId: item.materialProductId,
-        quantityPerUnit: Number(item.quantityPerUnit),
-        unit: item.unit,
-        isKeyMaterial: item.isKeyMaterial,
-        needBatchRecord: item.needBatchRecord,
-        remark: item.remark ?? '',
-      })),
-    );
-    materialOptions.value = options.filter(
-      (item) =>
-        (item.itemKind === 'material' || item.itemKind === 'semi_finished') && item.id !== row.id,
-    );
-  } catch (error) {
-    EMessage.error(error, '物料清单加载失败');
-  } finally {
-    materialLoading.value = false;
-  }
-};
-
-const refreshMaterialOptions = async (visible = true): Promise<void> => {
-  if (!visible || !materialProduct.value) return;
-  materialLoading.value = true;
-  try {
-    const options = await productApi.productOptions();
-    materialOptions.value = options.filter(
-      (item) =>
-        (item.itemKind === 'material' || item.itemKind === 'semi_finished') &&
-        item.id !== materialProduct.value?.id,
-    );
-  } catch (error) {
-    EMessage.error(error, '物料候选项加载失败');
-  } finally {
-    materialLoading.value = false;
-  }
 };
 
 const submitMaterials = async (rows: MaterialRow[]): Promise<void> => {
@@ -492,7 +452,7 @@ const submitMaterials = async (rows: MaterialRow[]): Promise<void> => {
     await productApi.replaceMaterials(materialProduct.value.id, rows);
     EMessage.success('物料清单已保存');
     materialDialogVisible.value = false;
-    await loadData();
+    await loadProducts();
   } catch (error) {
     EMessage.error(error, '物料清单保存失败');
   } finally {
@@ -502,7 +462,6 @@ const submitMaterials = async (rows: MaterialRow[]): Promise<void> => {
 
 /* ----- default route ----- */
 const openDefaultRoute = (row: ProductListItem): void => {
-  refreshProductOptions();
   defaultRouteProduct.value = row;
   defaultRouteDialogVisible.value = true;
 };
@@ -514,7 +473,7 @@ const submitDefaultRoute = async (routeId: string | null): Promise<void> => {
     await productApi.setDefaultRoute(defaultRouteProduct.value.id, routeId);
     EMessage.success('默认工艺路线已保存');
     defaultRouteDialogVisible.value = false;
-    await loadData();
+    await loadProducts();
   } catch (error) {
     EMessage.error(error, '默认路线保存失败');
   } finally {
@@ -523,7 +482,9 @@ const submitDefaultRoute = async (routeId: string | null): Promise<void> => {
 };
 
 onMounted(loadData);
-onActivated(refreshActiveProductEditors);
+onActivated(() => {
+  void categorySource.refresh();
+});
 </script>
 
 <style scoped>

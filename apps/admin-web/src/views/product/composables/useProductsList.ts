@@ -1,26 +1,18 @@
 import { reactive, ref } from 'vue';
 import { SYSTEM_STATUS } from '@company/constants';
-import type {
-  ProcessRouteOption,
-  ProductCategoryListItem,
-  ProductAcquireMethod,
-  ProductItemKind,
-  ProductListItem,
-  ProductOption,
-} from '@company/contracts';
+import type { ProductAcquireMethod, ProductItemKind, ProductListItem } from '@company/contracts';
 import { productApi } from '../../../api/product';
 import { EMessage } from '../../../utils/message';
 
-export function useProducts() {
+/** 产品页正式列表：查询、分页与列表加载。写操作成功后只调用 loadProducts()。 */
+export function useProductsList() {
   const products = ref<ProductListItem[]>([]);
-  const categoryOptions = ref<ProductCategoryListItem[]>([]);
-  const materialOptions = ref<ProductOption[]>([]);
-  const routes = ref<ProcessRouteOption[]>([]);
   const loading = ref(false);
+  /** 列表请求代际：快速查询/翻页时丢弃旧响应（last-request-wins，见 frontend-architecture §7.3） */
+  let listRequestToken = 0;
   const total = ref(0);
   const currentPage = ref(1);
   const pageSize = ref(10);
-  let optionsRequest: Promise<void> | null = null;
   const query = reactive<{
     keyword: string;
     categoryId: string;
@@ -41,6 +33,7 @@ export function useProducts() {
   ): boolean => row.acquireMethod === 'self_made' && row.itemKind !== 'material';
 
   const loadProducts = async (): Promise<void> => {
+    const token = ++listRequestToken;
     loading.value = true;
     try {
       const result = await productApi.products({
@@ -56,40 +49,15 @@ export function useProducts() {
               ? SYSTEM_STATUS.disabled
               : undefined,
       });
+      if (token !== listRequestToken) return; // 查询/翻页已变化，丢弃旧响应
       products.value = result.items;
       total.value = result.total;
     } catch (error) {
+      if (token !== listRequestToken) return; // 丢弃旧请求的失败，不误导提示
       EMessage.error(error, '产品资料加载失败');
     } finally {
-      loading.value = false;
+      if (token === listRequestToken) loading.value = false; // loading 只由最新请求结束
     }
-  };
-
-  const loadOptions = (): Promise<void> => {
-    if (!optionsRequest) {
-      optionsRequest = (async () => {
-        try {
-          const options = await productApi.productFormOptions();
-          categoryOptions.value = options.categories.filter(
-            (item: ProductCategoryListItem) => item.status === 1,
-          );
-          materialOptions.value = options.products.filter(
-            (item: ProductOption) =>
-              item.itemKind === 'material' || item.itemKind === 'semi_finished',
-          );
-          routes.value = options.routes;
-        } catch (error) {
-          EMessage.error(error, '产品选项加载失败');
-        }
-      })().finally(() => {
-        optionsRequest = null;
-      });
-    }
-    return optionsRequest;
-  };
-
-  const loadData = async (): Promise<void> => {
-    await Promise.all([loadProducts(), loadOptions()]);
   };
 
   const handleSearch = async (): Promise<void> => {
@@ -123,9 +91,6 @@ export function useProducts() {
 
   return {
     products,
-    categoryOptions,
-    materialOptions,
-    routes,
     loading,
     total,
     currentPage,
@@ -135,8 +100,6 @@ export function useProducts() {
     itemKindLabel,
     canConfigureProduction,
     loadProducts,
-    loadOptions,
-    loadData,
     handleSearch,
     resetQuery,
     handlePageSizeChange,

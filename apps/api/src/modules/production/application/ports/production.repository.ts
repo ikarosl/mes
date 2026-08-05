@@ -9,6 +9,7 @@ import type {
   UpdateProductionBatchPayload,
   WorkOrderDetail,
   WorkOrderItem,
+  WorkOrderOption,
   WorkOrderQuery,
   UpdateWorkOrderPayload,
 } from '@company/contracts';
@@ -27,6 +28,7 @@ export interface ResolvedBatchStepOverride {
 
 export abstract class ProductionRepository {
   abstract listWorkOrders(query: WorkOrderQuery): Promise<PageResult<WorkOrderItem>>;
+  abstract listWorkOrderOptions(): Promise<WorkOrderOption[]>;
   abstract getWorkOrder(id: string): Promise<WorkOrderDetail>;
   abstract createWorkOrder(
     payload: CreateWorkOrderPayload,

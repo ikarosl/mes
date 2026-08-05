@@ -277,6 +277,61 @@ describe('MysqlWorkOrderRepository data ownership', () => {
   });
 });
 
+describe('MysqlWorkOrderRepository work-order options', () => {
+  it('returns only released work orders that still have remaining quantity', async () => {
+    const query = vi.fn().mockResolvedValue([[], []]);
+    const repository = new MysqlWorkOrderRepository({ query } as never);
+
+    await repository.listWorkOrderOptions();
+
+    const sql = String(query.mock.calls[0]?.[0]);
+    expect(sql).toContain('FROM work_orders wo');
+    expect(sql).toContain("wo.status='released'");
+    expect(sql).toContain('> 0');
+  });
+
+  it('maps the product snapshot and remaining quantity to WorkOrderOption', async () => {
+    const query = vi.fn().mockResolvedValue([[optionRow], []]);
+    const repository = new MysqlWorkOrderRepository({ query } as never);
+
+    await expect(repository.listWorkOrderOptions()).resolves.toEqual([
+      {
+        id: '6',
+        workOrderNo: 'WO-001',
+        productId: '8',
+        productCode: 'P-001',
+        productName: 'Product A',
+        remainingQuantity: '50.0000',
+      },
+    ]);
+  });
+
+  it('sums planned quantity only from non-cancelled batches of the same work order', async () => {
+    const query = vi.fn().mockResolvedValue([[], []]);
+    const repository = new MysqlWorkOrderRepository({ query } as never);
+
+    await repository.listWorkOrderOptions();
+
+    const sql = String(query.mock.calls[0]?.[0]);
+    expect(sql).toContain('SELECT SUM(b.planned_quantity)');
+    expect(sql).toContain('b.work_order_id=wo.id');
+    expect(sql).toContain("b.status<>'cancelled'");
+  });
+
+  it('returns the complete candidate set without a keyword window or a hidden limit', async () => {
+    const query = vi.fn().mockResolvedValue([[], []]);
+    const repository = new MysqlWorkOrderRepository({ query } as never);
+
+    await repository.listWorkOrderOptions();
+
+    const sql = String(query.mock.calls[0]?.[0]);
+    expect(sql).not.toContain('LIMIT');
+    expect(sql).not.toContain('LIKE');
+    expect(sql).toContain('ORDER BY wo.work_order_no ASC,wo.id ASC');
+    expect(query.mock.calls[0]?.[1]).toBeUndefined();
+  });
+});
+
 const transactionConnection = () => ({
   beginTransaction: vi.fn(),
   query: vi.fn(),
@@ -307,4 +362,13 @@ const workOrderRow = {
   version: 3,
   created_at: new Date('2026-08-01T00:00:00.000Z'),
   updated_at: new Date('2026-08-01T00:00:00.000Z'),
+};
+
+const optionRow = {
+  id: 6,
+  work_order_no: 'WO-001',
+  product_id: 8,
+  product_code_snapshot: 'P-001',
+  product_name_snapshot: 'Product A',
+  remaining_quantity: '50.0000',
 };

@@ -9,7 +9,13 @@ import { ProductDomainError } from '../domain/product.errors.js';
 import { mapProductWriteError } from './mysql-product.shared.js';
 
 type Db = Pool | PoolConnection;
-import type { ProcessStepListItem, ProcessStepPayload } from '@company/contracts';
+import type {
+  ProcessStepListItem,
+  ProcessStepOption,
+  ProcessStepPayload,
+  ProcessStepQuery,
+  PageResult,
+} from '@company/contracts';
 import { type ProcessStepRepository } from '../application/ports/process-step.repository.js';
 import type { StoredTechnicalFile } from '../application/ports/technical-file.repository.js';
 
@@ -17,7 +23,25 @@ import type { StoredTechnicalFile } from '../application/ports/technical-file.re
 export class MysqlProcessStepRepository implements ProcessStepRepository {
   constructor(@Inject(DATABASE_POOL) private readonly pool: Pool) {}
 
-  async listProcessSteps(): Promise<ProcessStepListItem[]> {
+  async listProcessSteps(query: ProcessStepQuery): Promise<PageResult<ProcessStepListItem>> {
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? 10;
+    const conditions = ['ps.is_deleted=0'];
+    const parameters: Array<string | number> = [];
+    if (query.keyword) {
+      const keyword = `%${query.keyword}%`;
+      conditions.push('(ps.step_code LIKE ? OR ps.step_name LIKE ?)');
+      parameters.push(keyword, keyword);
+    }
+    if (query.status !== undefined) {
+      conditions.push('ps.status=?');
+      parameters.push(query.status);
+    }
+    const where = conditions.join(' AND ');
+    const [[countRow]] = await this.pool.query<(RowDataPacket & { total: number })[]>(
+      `SELECT COUNT(*) total FROM process_steps ps WHERE ${where}`,
+      parameters,
+    );
     const [rows] = await this.pool.query<
       (RowDataPacket & {
         id: number;
@@ -30,11 +54,14 @@ export class MysqlProcessStepRepository implements ProcessStepRepository {
         remark: string | null;
         updated_at: Date | null;
       })[]
-    >(`SELECT ps.id,ps.step_code,ps.step_name,ps.description,ps.default_sop_file_id,tf.file_name sop_file_name,
+    >(
+      `SELECT ps.id,ps.step_code,ps.step_name,ps.description,ps.default_sop_file_id,tf.file_name sop_file_name,
                     ps.status,ps.remark,ps.updated_at
              FROM process_steps ps LEFT JOIN technical_files tf ON tf.id=ps.default_sop_file_id AND tf.is_deleted=0
-             WHERE ps.is_deleted=0 ORDER BY ps.step_code`);
-    return rows.map((row) => ({
+             WHERE ${where} ORDER BY ps.step_code,ps.id LIMIT ? OFFSET ?`,
+      [...parameters, pageSize, (page - 1) * pageSize],
+    );
+    const items = rows.map((row) => ({
       id: String(row.id),
       stepCode: row.step_code,
       stepName: row.step_name,
@@ -44,6 +71,26 @@ export class MysqlProcessStepRepository implements ProcessStepRepository {
       status: row.status,
       remark: row.remark,
       updatedAt: this.date(row.updated_at),
+    }));
+    return { items, total: Number(countRow?.total ?? 0), page, pageSize };
+  }
+
+  async listProcessStepOptions(): Promise<ProcessStepOption[]> {
+    const [rows] = await this.pool.query<
+      (RowDataPacket & {
+        id: number;
+        step_code: string;
+        step_name: string;
+        sop_file_name: string | null;
+      })[]
+    >(`SELECT ps.id,ps.step_code,ps.step_name,tf.file_name sop_file_name
+         FROM process_steps ps LEFT JOIN technical_files tf ON tf.id=ps.default_sop_file_id AND tf.is_deleted=0
+         WHERE ps.is_deleted=0 AND ps.status=1 ORDER BY ps.step_code,ps.id`);
+    return rows.map((row) => ({
+      id: String(row.id),
+      stepCode: row.step_code,
+      stepName: row.step_name,
+      sopFileName: row.sop_file_name,
     }));
   }
 

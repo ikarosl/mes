@@ -88,4 +88,36 @@ describe('productApi contract mapping', () => {
       params: { page: 1, pageSize: 10, status: 'draft' },
     });
   });
+
+  it('paginates categories and process steps and serves independent options endpoints', async () => {
+    request.mockResolvedValue({ data: { items: [], total: 0, page: 1, pageSize: 10 } });
+    const { productApi } = await import('../product');
+
+    await productApi.categories({ page: 1, pageSize: 10, categoryCode: 'MAT', status: 1 });
+    await productApi.processSteps({ page: 2, pageSize: 20, keyword: 'GX' });
+    await productApi.categoryOptions();
+    await productApi.processStepOptions();
+    await productApi.routeOptions();
+
+    expect(request).toHaveBeenNthCalledWith(1, {
+      url: '/product/categories',
+      params: { page: 1, pageSize: 10, categoryCode: 'MAT', status: 1 },
+    });
+    expect(request).toHaveBeenNthCalledWith(2, {
+      url: '/product/process-steps',
+      params: { page: 2, pageSize: 20, keyword: 'GX' },
+    });
+    expect(request).toHaveBeenNthCalledWith(3, {
+      url: '/product/categories/options',
+      skipErrorHandling: true,
+    });
+    expect(request).toHaveBeenNthCalledWith(4, {
+      url: '/product/process-steps/options',
+      skipErrorHandling: true,
+    });
+    expect(request).toHaveBeenNthCalledWith(5, {
+      url: '/product/process-routes/options',
+      skipErrorHandling: true,
+    });
+  });
 });

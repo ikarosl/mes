@@ -11,8 +11,6 @@ import { mapProductWriteError } from './mysql-product.shared.js';
 
 type Db = Pool | PoolConnection;
 import type {
-  ProductCategoryListItem,
-  ProductCategoryPayload,
   ProductItemKind,
   ProductListItem,
   ProductMaterialItem,
@@ -27,128 +25,6 @@ import { type ProductCatalogRepository } from '../application/ports/product-cata
 @Injectable()
 export class MysqlProductCatalogRepository implements ProductCatalogRepository {
   constructor(@Inject(DATABASE_POOL) private readonly pool: Pool) {}
-
-  async listCategories(): Promise<ProductCategoryListItem[]> {
-    const [rows] = await this.pool.query<
-      (RowDataPacket & {
-        id: number;
-        parent_id: number | null;
-        category_code: string;
-        category_name: string;
-        item_kind: ProductItemKind;
-        status: number;
-        remark: string | null;
-        updated_at: Date | null;
-      })[]
-    >(`SELECT id,parent_id,category_code,category_name,item_kind,status,remark,updated_at
-             FROM product_categories WHERE is_deleted=0 ORDER BY item_kind,category_code`);
-    return rows.map((row) => ({
-      id: String(row.id),
-      parentId: row.parent_id === null ? null : String(row.parent_id),
-      categoryCode: row.category_code,
-      categoryName: row.category_name,
-      itemKind: row.item_kind,
-      status: row.status,
-      remark: row.remark,
-      updatedAt: this.date(row.updated_at),
-    }));
-  }
-
-  async createCategory(payload: ProductCategoryPayload, audit: AuditContext) {
-    return withTransaction(this.pool, async (connection) => {
-      await this.validateCategoryParent(connection, payload.parentId ?? null, payload.itemKind);
-      const [result] = await connection.execute<ResultSetHeader>(
-        `INSERT INTO product_categories (parent_id,category_code,category_name,item_kind,status,remark,created_by,updated_by)
-         VALUES (?,?,?,?,?,?,?,?)`,
-        [
-          payload.parentId ?? null,
-          payload.categoryCode,
-          payload.categoryName,
-          payload.itemKind,
-          payload.status,
-          payload.remark ?? null,
-          audit.userId,
-          audit.userId,
-        ],
-      );
-      await this.audit(
-        connection,
-        audit,
-        'category.create',
-        String(result.insertId),
-        null,
-        payload,
-      );
-      return { id: String(result.insertId) };
-    }).catch((error) =>
-      mapProductWriteError(error, '编码或版本已存在，软删除记录的自然键也不能复用'),
-    );
-  }
-
-  async updateCategory(id: string, payload: ProductCategoryPayload, audit: AuditContext) {
-    await withTransaction(this.pool, async (connection) => {
-      const before = await this.categoryRecord(connection, id);
-      if (payload.parentId === id)
-        throw new ProductDomainError('INVALID_CATEGORY', '分类不能将自身设为父分类');
-      await this.validateCategoryParent(connection, payload.parentId ?? null, payload.itemKind);
-      if (payload.parentId) {
-        const [cycle] = await connection.query<RowDataPacket[]>(
-          `WITH RECURSIVE ancestors AS (
-             SELECT id,parent_id FROM product_categories WHERE id=? AND is_deleted=0
-             UNION ALL
-             SELECT pc.id,pc.parent_id FROM product_categories pc JOIN ancestors a ON pc.id=a.parent_id WHERE pc.is_deleted=0
-           ) SELECT id FROM ancestors WHERE id=? LIMIT 1`,
-          [payload.parentId, id],
-        );
-        if (cycle.length)
-          throw new ProductDomainError(
-            'INVALID_CATEGORY',
-            '父分类不能指向当前分类的下级，避免形成循环',
-          );
-      }
-      const [[usage]] = await connection.query<(RowDataPacket & { count: number })[]>(
-        'SELECT COUNT(*) count FROM products WHERE category_id=? AND is_deleted=0',
-        [id],
-      );
-      if ((usage?.count ?? 0) > 0 && before.item_kind !== payload.itemKind) {
-        throw new ProductDomainError('INVALID_CATEGORY', '已被产品使用的分类不能修改对象类型');
-      }
-      await connection.execute(
-        `UPDATE product_categories SET parent_id=?,category_code=?,category_name=?,item_kind=?,status=?,remark=?,updated_by=? WHERE id=? AND is_deleted=0`,
-        [
-          payload.parentId ?? null,
-          payload.categoryCode,
-          payload.categoryName,
-          payload.itemKind,
-          payload.status,
-          payload.remark ?? null,
-          audit.userId,
-          id,
-        ],
-      );
-      await this.audit(connection, audit, 'category.update', id, before, payload);
-    }).catch((error) =>
-      mapProductWriteError(error, '编码或版本已存在，软删除记录的自然键也不能复用'),
-    );
-  }
-
-  async setCategoryStatus(id: string, status: number, audit: AuditContext) {
-    await withTransaction(this.pool, async (connection) => {
-      const before = await this.categoryRecord(connection, id);
-      await connection.execute(
-        'UPDATE product_categories SET status=?,updated_by=? WHERE id=? AND is_deleted=0',
-        [status, audit.userId, id],
-      );
-      await this.audit(
-        connection,
-        audit,
-        'category.status',
-        id,
-        { status: before.status },
-        { status },
-      );
-    });
-  }
 
   async listProducts(query: ProductListQuery): Promise<PageResult<ProductListItem>> {
     const page = query.page ?? 1;
@@ -493,12 +369,6 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
     if (row.status !== 1)
       throw new ProductDomainError('INVALID_CATEGORY', '只能选择已启用的产品分类');
     return row;
-  }
-  private async validateCategoryParent(db: Db, parentId: string | null, itemKind: ProductItemKind) {
-    if (!parentId) return;
-    const parent = await this.requireCategory(db, parentId);
-    if (parent.item_kind !== itemKind)
-      throw new ProductDomainError('INVALID_CATEGORY', '父子分类必须属于相同对象类型');
   }
   private async productRecord(db: Db, id: string, lock = false) {
     const [[row]] = await db.query<

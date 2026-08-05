@@ -9,7 +9,7 @@
       <div class="toolbar-left">
         <el-button
           :icon="Refresh"
-          @click="$emit('refresh')"
+          @click="processSource.refresh"
           >刷新工序</el-button
         >
       </div>
@@ -46,7 +46,7 @@
             v-model="row.processStepId"
             filterable
             placeholder="请选择已有工序"
-            @visible-change="(visible: boolean) => visible && $emit('refresh')"
+            @visible-change="(visible: boolean) => visible && processSource.refresh()"
           >
             <el-option
               v-for="choice in processChoices(row.processStepId)"
@@ -79,7 +79,7 @@
             clearable
             collapse-tags
             placeholder="可选"
-            @visible-change="(visible: boolean) => visible && $emit('refresh')"
+            @visible-change="(visible: boolean) => visible && refreshMaterials()"
           >
             <el-option
               v-for="choice in materialChoices(row.productMaterialIds)"
@@ -118,7 +118,7 @@
             v-model="row.defaultOwnerId"
             clearable
             placeholder="请选择"
-            @visible-change="(visible: boolean) => visible && $emit('refresh')"
+            @visible-change="(visible: boolean) => visible && userSource.refresh()"
           >
             <el-option
               v-for="choice in userChoices(row.defaultOwnerId)"
@@ -181,12 +181,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { onActivated, ref, watch } from 'vue';
 import { Plus, Refresh } from '@element-plus/icons-vue';
-import type { ProcessStepListItem, ProductMaterialItem, UserOption } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
 import { buildLiveOptions, hasUnavailableSelection } from '../../../utils/live-options';
 import { EMessage } from '../../../utils/message';
+import { useProcessStepOptions } from '../composables/useProcessStepOptions';
+import { useUserOptions } from '../../../composables/options/useUserOptions';
+import { useRouteStepEditor } from '../composables/useRouteStepEditor';
 
 export type StepRow = {
   processStepId: string;
@@ -202,22 +204,72 @@ export type StepRow = {
 
 const props = defineProps<{
   visible: boolean;
-  processOptions: ProcessStepListItem[];
-  routeMaterialOptions: ProductMaterialItem[];
-  userOptions: UserOption[];
+  routeId: string | null;
+  productId: string | null;
   submitting: boolean;
 }>();
 
 const emit = defineEmits<{
   (e: 'update:visible', val: boolean): void;
   (e: 'save', steps: StepRow[]): void;
-  (e: 'refresh'): void;
 }>();
 
+const processSource = useProcessStepOptions();
+const userSource = useUserOptions();
+const { routeMaterialOptions, stepsStatus, loadSteps, loadMaterialOptions, invalidateSteps } =
+  useRouteStepEditor();
 const localSteps = ref<StepRow[]>([]);
 
 const setSteps = (initial: StepRow[]): void => {
   localSteps.value = initial;
+};
+
+/** 刷新弹窗自持的未绑定候选（工序 / 负责人 / 物料），不重载步骤行 */
+const refreshDialogOptions = (): void => {
+  void processSource.refresh();
+  void userSource.refresh();
+  if (props.productId) void loadMaterialOptions(props.productId, true);
+};
+
+/** 打开弹窗时并发加载路线步骤明细与候选；关闭时推进请求代际，迟到的步骤响应不得写回 localSteps */
+watch(
+  () => [props.visible, props.routeId, props.productId] as const,
+  async ([visible, routeId]) => {
+    if (!visible) {
+      invalidateSteps();
+      return;
+    }
+    if (!routeId) return;
+    refreshDialogOptions();
+    const steps = await loadSteps(routeId);
+    // 过期请求（关闭后重开同一路线等场景下代际已推进）返回 null：明确忽略，
+    // 不得借用新请求的 success 状态把空数组当成"该路线没有步骤"清空刚加载或已编辑的草稿
+    if (steps === null) return;
+    // 响应写入前核对当前路线与加载结果（last-request-wins）：已切换到其他路线或未加载成功则丢弃
+    if (props.routeId !== routeId || stepsStatus.value !== 'success') return;
+    setSteps(
+      steps.map((step) => ({
+        processStepId: step.processStepId,
+        stepOrder: step.stepOrder,
+        defaultOwnerId: step.defaultOwnerId ?? '',
+        sopFileId: step.sopFileId ?? '',
+        needInspection: step.needInspection,
+        needRecord: step.needRecord,
+        status: step.status,
+        remark: step.remark ?? '',
+        productMaterialIds: step.productMaterialIds,
+      })),
+    );
+  },
+);
+
+/** 页面重新激活且弹窗打开时刷新未绑定候选（不重载步骤行，保留 localSteps 草稿） */
+onActivated(() => {
+  if (props.visible) refreshDialogOptions();
+});
+
+const refreshMaterials = (): void => {
+  if (props.productId) void loadMaterialOptions(props.productId, true);
 };
 
 const addStep = (): void => {
@@ -256,18 +308,35 @@ const normalizeStepOrders = (): void => {
 };
 
 const getProcessSop = (processId: string): string | undefined =>
-  props.processOptions.find((p) => p.id === processId)?.sopFileName ?? undefined;
+  processSource.options.value.find((p) => p.id === processId)?.sopFileName ?? undefined;
 
 const processChoices = (selectedValue: string) =>
-  buildLiveOptions(props.processOptions, selectedValue ? [selectedValue] : [], (item) => item.id);
+  buildLiveOptions(
+    processSource.options.value,
+    selectedValue ? [selectedValue] : [],
+    (item) => item.id,
+  );
 
 const materialChoices = (selectedValues: string[]) =>
-  buildLiveOptions(props.routeMaterialOptions, selectedValues, (item) => item.id);
+  buildLiveOptions(routeMaterialOptions.value, selectedValues, (item) => item.id);
 
 const userChoices = (selectedValue: string) =>
-  buildLiveOptions(props.userOptions, selectedValue ? [selectedValue] : [], (item) => item.id);
+  buildLiveOptions(
+    userSource.options.value,
+    selectedValue ? [selectedValue] : [],
+    (item) => item.id,
+  );
 
 const handleSubmit = (): void => {
+  // 加载中/失败/未加载时禁止保存，避免把旧路线步骤保存到新路线
+  if (stepsStatus.value !== 'success') {
+    EMessage.warning(
+      stepsStatus.value === 'error'
+        ? '路线步骤加载失败，请刷新后重试'
+        : '路线步骤加载中，请稍后再试',
+    );
+    return;
+  }
   if (!localSteps.value.length || localSteps.value.some((s) => !s.processStepId)) {
     EMessage.warning('请选择每一道路线步骤对应的工序');
     return;
@@ -276,17 +345,17 @@ const handleSubmit = (): void => {
     localSteps.value.some(
       (step) =>
         hasUnavailableSelection(
-          props.processOptions,
+          processSource.options.value,
           step.processStepId ? [step.processStepId] : [],
           (item) => item.id,
         ) ||
         hasUnavailableSelection(
-          props.routeMaterialOptions,
+          routeMaterialOptions.value,
           step.productMaterialIds,
           (item) => item.id,
         ) ||
         hasUnavailableSelection(
-          props.userOptions,
+          userSource.options.value,
           step.defaultOwnerId ? [step.defaultOwnerId] : [],
           (item) => item.id,
         ),

@@ -4,7 +4,7 @@
     title="分配角色"
     :width="DialogWidth.md"
     @update:model-value="$emit('update:visible', $event)"
-    @open="$emit('refresh-options')"
+    @open="$emit('refresh-roles')"
   >
     <el-form
       class="dialog-form"
@@ -25,7 +25,7 @@
           multiple
           clearable
           placeholder="请选择角色"
-          @visible-change="(visible: boolean) => visible && $emit('refresh-options')"
+          @visible-change="(visible: boolean) => visible && $emit('refresh-roles')"
         >
           <el-option
             v-for="choice in roleChoices"
@@ -66,7 +66,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'update:visible', val: boolean): void;
-  (e: 'refresh-options'): void;
+  (e: 'refresh-roles'): void;
   (e: 'confirm', roleIds: string[]): void;
 }>();
 
