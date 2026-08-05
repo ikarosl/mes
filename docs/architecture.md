@@ -35,6 +35,12 @@ process-step 和 process-route；只有工艺能力出现独立生命周期、�
 是写 `operation_logs` 的唯一合法咽喉，任何模块在自身事务 executor 内直接调用它追加成功审计，
 不经过目标模块 public 能力转发（见 §4 与 §6）。
 
+HTTP 幂等也是跨业务模块的平台能力：`common/idempotency` 只定义协议无关的
+`IdempotencyExecutor` 调用契约，不拥有表、不实现事务；后续 MySQL adapter 统一放在
+`infrastructure/idempotency`。在 adapter、migration 和业务接入完成前不得注册直通实现，也不得让
+客户端发送伪幂等键。具体实施边界见
+[`http-idempotency-implementation-plan.md`](http-idempotency-implementation-plan.md)。
+
 ## 3. 模块内部依赖
 
 ```text
@@ -65,6 +71,10 @@ Controller 只负责协议映射、DTO、权限装饰器和响应转换，不写
   `common/audit/transactional-audit-writer` 统一承担，是跨模块 `public.ts` 规则的显式且唯一豁免：各模块
   可在自身事务 executor 中直接调用该 writer，无需经任何模块的 `public.ts` 转发。除该 writer 外，任何
   模块、Repository 或 Controller 禁止直接写该表。审计查询当前仍由 Identity/System 对外提供公开能力。
+- 计划中的 `http_idempotency_records` 是项目级 HTTP 幂等基础设施，不归属任何业务模块或 `common`。
+  业务 application 只依赖 `common/idempotency` 的抽象端口；唯一表写入口必须是
+  `infrastructure/idempotency/mysql-idempotency.executor`。业务 Controller、Service 和 Repository
+  均不得直接查询或修改该表。
 - 跨模块读通过目标模块公开 Query/Directory Facade；跨模块写通过目标模块公开应用服务。
 - 组合根 `AppModule` 可以引用模块公开的装配对象，但不写业务逻辑。
 
@@ -76,6 +86,7 @@ Controller 只负责协议映射、DTO、权限装饰器和响应转换，不写
 | Product          | product_categories、products、product_materials、technical_files、process_steps、process_routes 及关联表                                 |
 | Production       | work_orders、production_batches、batch_step_records、production_item_demand、production_item_allocation、outbound_order、outbound_detail |
 | 平台审计基础设施 | operation_logs                                                                                                                           |
+| 平台幂等基础设施 | http_idempotency_records（设计已登记，尚未迁移）                                                                                         |
 | common           | 不拥有业务表                                                                                                                             |
 
 `operation_logs` 的唯一写入能力由 `common/audit/transactional-audit-writer` 承担（见 §4 审计豁免与
@@ -97,6 +108,8 @@ Repository 或页面超过 500 行只产生维护性警告。拆分必须依据�
 - application 描述业务动作；infrastructure 使用数据库连接执行原子写入。
 - application port 不得暴露数据库连接类型。
 - 核心业务写入和成功审计使用同一个事务 executor；审计失败时整体回滚并返回失败。
+- 启用 HTTP 幂等的命令由平台 `IdempotencyExecutor` 开启外层事务；幂等记录、业务写入和成功审计必须
+  复用同一数据库连接并原子提交。幂等端口不得暴露连接类型，Controller 不负责开启该事务。
 - 审计写入不归属任何业务模块：所有模块在自身事务 executor 内直接调用
   `common/audit/transactional-audit-writer` 追加成功审计，不通过目标模块 public 能力转发（见 §4 豁免）。
 - 通用 HTTP、登录、401/403 和失败日志采用 best-effort；写日志失败不能覆盖原响应或原异常。
@@ -106,6 +119,8 @@ Repository 或页面超过 500 行只产生维护性警告。拆分必须依据�
 ## 7. 基础设施
 
 - MySQL 是业务事实来源；Redis 只在出现多实例协调需求后通过端口引入。
+- HTTP 幂等闭环使用 MySQL 唯一约束和事务协调；当前轻量 MES 不为该能力引入 Redis，也不增加服务端
+  幂等键预领取接口。
 - 技术文件统一使用 S3 标准对象存储接口，业务只保存 bucket、objectKey、版本、校验和和元数据。
 - domain、application 和 presentation 不得直接依赖具体数据库或存储 SDK；infrastructure adapter 可以。
 - 数据库时间和公共接口时间遵守 `new.md` 的 `Asia/Shanghai / +08:00` 规则。

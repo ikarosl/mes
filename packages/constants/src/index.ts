@@ -106,6 +106,9 @@ export const CONCURRENCY_ERROR_CODES = {
   idempotencyConflict: 'IDEMPOTENCY_CONFLICT',
 } as const;
 
+/** 未启用幂等的端点收到意外 `Idempotency-Key` 头时的拒绝错误码。 */
+export const IDEMPOTENCY_NOT_SUPPORTED = 'IDEMPOTENCY_NOT_SUPPORTED';
+
 export const WORK_ORDER_STATUSES = [
   'draft',
   'released',

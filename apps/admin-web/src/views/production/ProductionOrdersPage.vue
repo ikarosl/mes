@@ -305,6 +305,7 @@ import { computed, onActivated, onMounted, ref, watch } from 'vue';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import TableToolbar from '../../components/TableToolbar.vue';
 import type {
+  CreateProductionBatchPayload,
   ProductOption,
   ProductionBatchItem,
   WorkOrderDetail,
@@ -316,6 +317,7 @@ import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
 import { useRowPending } from '../../utils/useRowPending';
 import { buildLiveOptions } from '../../utils/live-options';
 import { formatDateForDisplay, toDateInputValue } from '../../utils/date';
+import { useIdempotentIntent } from '../../composables/idempotency/useIdempotentIntent';
 import { useProductOptions } from '../../composables/options/useProductOptions';
 import { useUserOptions } from '../../composables/options/useUserOptions';
 import { ORDER_STATUS_META, formatQuantity, orderStatusMeta } from './production-status';
@@ -367,6 +369,9 @@ const productChoices = computed(() =>
 
 /** 行内工单状态写操作守卫（下达/关闭/取消），同一行只允许一个在途（todo 3.5） */
 const { isRowPending, beginRow, endRow } = useRowPending();
+
+/** 创建生产批次的幂等意图（试点端点）：页面局部持有，弹窗打开/关闭时清除旧意图 */
+const createBatchIntent = useIdempotentIntent();
 
 /* ====== 弹窗状态 ====== */
 const orderDialogVisible = ref(false);
@@ -524,8 +529,14 @@ watch(orders, (items) => {
 const openCreateBatch = (): void => {
   editingBatchId.value = null;
   batchFormDialogRef.value?.resetForm();
+  createBatchIntent.reset();
   batchFormDialogVisible.value = true;
 };
+
+/** 弹窗关闭（含放弃/取消）时清除创建批次意图；成功提交已由 execute 自动清除，此处覆盖关闭场景 */
+watch(batchFormDialogVisible, (visible) => {
+  if (!visible) createBatchIntent.reset();
+});
 
 const openEditBatch = (row: ProductionBatchItem): void => {
   editingBatchId.value = row.id;
@@ -548,7 +559,7 @@ const submitBatch = async (data: BatchFormValue): Promise<void> => {
       });
       EMessage.success('生产批次已更新');
     } else {
-      await productionApi.createOrderBatch(taskOrder.value.id, {
+      const payload: CreateProductionBatchPayload = {
         batchNo: data.batchNo || '',
         routeId: data.routeId || null,
         plannedQuantity: data.plannedQuantity,
@@ -556,7 +567,12 @@ const submitBatch = async (data: BatchFormValue): Promise<void> => {
         planStartDate: toDateInputValue(data.planStartDate) || null,
         planEndDate: toDateInputValue(data.planEndDate) || null,
         remark: data.remark || null,
-      });
+      };
+      const workOrderId = taskOrder.value.id;
+      await createBatchIntent.execute(
+        { scope: 'production.batch.create.v1', params: { workOrderId }, query: {}, body: payload },
+        (key) => productionApi.createOrderBatch(workOrderId, payload, key),
+      );
       EMessage.success('生产批次已新增');
     }
     batchFormDialogVisible.value = false;

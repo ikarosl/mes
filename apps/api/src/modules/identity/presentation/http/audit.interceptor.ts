@@ -11,6 +11,7 @@ import { Reflector } from '@nestjs/core';
 import type { UserProfile } from '@company/contracts';
 import { catchError, from, mergeMap, throwError } from 'rxjs';
 import { AuditRepository } from '../../application/ports/audit.repository.js';
+import { ConcurrencyError } from '../../../../common/persistence/optimistic-lock.js';
 import { AUDIT_IN_APPLICATION } from '../../../../common/security/auth.decorators.js';
 
 @Injectable()
@@ -59,7 +60,12 @@ export class AuditInterceptor implements NestInterceptor {
           this.writeBestEffort({
             ...entry,
             result: 'failed',
-            httpStatus: error instanceof HttpException ? error.getStatus() : 500,
+            httpStatus:
+              error instanceof HttpException
+                ? error.getStatus()
+                : error instanceof ConcurrencyError
+                  ? HttpStatus.CONFLICT
+                  : 500,
             durationMs: Date.now() - startedAt,
             errorCode: auditErrorCode(error),
             remark: auditFailureRemark(error),
@@ -79,9 +85,14 @@ export class AuditInterceptor implements NestInterceptor {
 
 /** Keep operation logs useful without persisting raw exception messages or secrets. */
 export const auditFailureRemark = (error: unknown) =>
-  error instanceof HttpException ? `HTTP ${error.getStatus()}` : 'Unhandled request failure';
+  error instanceof HttpException
+    ? `HTTP ${error.getStatus()}`
+    : error instanceof ConcurrencyError
+      ? 'HTTP 409'
+      : 'Unhandled request failure';
 
 export const auditErrorCode = (error: unknown): string => {
+  if (error instanceof ConcurrencyError) return error.code;
   if (!(error instanceof HttpException)) return 'INTERNAL_SERVER_ERROR';
   const payload = error.getResponse();
   if (

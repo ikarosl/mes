@@ -174,30 +174,49 @@
 
 ### 4.1 Production HTTP 幂等闭环
 
-状态：`阶段 3 实施；分配、出库和库存流水迁移时启用`
+状态：`平台闭环已实施，createBatch 试点已接线；真实 MySQL 集成测试跑通前不宣布闭环完成`
 
 当前状态：
 
 - 数据层已经使用业务唯一约束和 version 乐观锁。
 - `production_item_demand` 使用 `NORMAL:{production_batch_id}:{product_material_id}` 作为内部稳定键。
-- `readIdempotencyKey`、`CommandContext.idempotencyKey` 和 `idempotencyConflict()` 为休眠代码，当前没有业务消费方。
-- 客户端不得发送伪 `Idempotency-Key`；启用时必须在具体接口契约中声明必填。
+- 平台闭环已落地：`202608050001-http-idempotency-records` migration（`UNIQUE(scope,idempotency_key)`、
+  `initial_request_id` 索引、completed 三字段联动 CHECK）、规范化请求指纹 + JSON-safe 校验、MySQL
+  `IdempotencyExecutor` 适配器与平台 module、架构门禁（`http_idempotency_records` 唯一写入口）。
+- 端点级启用元数据已落地：`@IdempotentEndpoint()` + `IdempotencyKeyGuard`（未启用端点携带键 → 400
+  `IDEMPOTENCY_NOT_SUPPORTED`，启用端点缺少/非法键 → 400 `VALIDATION_ERROR`）；`AuditInterceptor` 已把
+  `ConcurrencyError` 记录为 409/原错误码，与全局 `HttpExceptionFilter` 一致。
+- `IDEMPOTENCY_NOT_SUPPORTED` 已在 `packages/constants` 登记；端口已携带 `requestId`，结果 codec 返回
+  递归 `JsonValue` 且写入前运行时校验。
+- createBatch 试点已接线：Controller 声明 `@IdempotentEndpoint()`；`ProductionService.createBatch` 经
+  `IdempotencyExecutor` 包装（scope `production.batch.create.v1`、指纹含 workOrderId + 规范化 body、重放
+  不重跑 handler 且不新增成功审计）；管理端 `useIdempotentIntent` 意图 composable 已接入两个建批调用点，
+  `createOrderBatch` 发送 `Idempotency-Key` 并启用 unsafe 重试。
+- 管理端当前没有表单草稿持久化、待提交恢复日志或按幂等键查询结果能力；内存 K1 只能随存活的
+  composable/KeepAlive 实例保留，浏览器硬刷新后无法恢复；createBatch 试点界面/接口文档须声明该覆盖缺口。
+- 单元与契约测试通过（api 241、admin-web 37、集成编译通过）；真实 MySQL 集成测试
+  `tests/integration/idempotency/http-idempotency.mysql.test.ts` 已编写并纳入
+  `pnpm test:production:mysql` 的 `tests/integration` 扫描，需在 `RUN_MYSQL_INTEGRATION=1` 下跑通并发/回滚/
+  重放/清理用例后方可按验收门槛宣布 createBatch 闭环完成。
 
 已确认缺口：
 
-- `nextBatchNo` 自动生成批次号；请求成功但响应丢失后重试会生成新的批次号和第二个批次，数据库 UNIQUE 无法识别同一业务意图。
-- 后续状态流转仅依赖 version 时，成功响应丢失后的重试可能返回 409，而不能重放原结果。
+- `nextBatchNo` 自动生成批次号；请求成功但响应丢失后重试会生成新的批次号和第二个批次，数据库 UNIQUE 无法识别同一业务意图（已由 HTTP 幂等闭环覆盖）。
+- 后续状态流转仅依赖 version 时，成功响应丢失后的重试可能返回 409，而不能重放原结果（阶段 C 逐项评估）。
 
 实施要求：
 
-- 使用 MySQL 中与业务写入同事务的幂等记录，保存幂等键、规范化请求指纹、执行状态和原结果；当前阶段不引入 Redis。
-- 相同键和相同指纹重放原结果；相同键和不同指纹返回稳定冲突错误。
-- 自动批次创建、后续确认、分配、出库和库存流水命令按风险逐项启用。
-- 补充“提交成功但响应丢失后重试”、同键不同请求、并发相同键的真实 MySQL 集成测试。
+- 剩余动作：跑通真实 MySQL 集成测试；随后按风险评估工单下达/取消/关闭、批次状态确认、物料分配、出库和
+  库存流水命令，逐项满足启用门槛后再扩展；`generateMaterialDemands` 先复验天然幂等再决定是否接入结果重放。
+- 完整实施顺序、事务伪代码、前端生命周期和验收门槛见
+  [`http-idempotency-implementation-plan.md`](http-idempotency-implementation-plan.md)。
 
 待复验项：
 
-- `generateMaterialDemands` 已通过 `SELECT ... FOR UPDATE` 锁定批次；两个并发事务是否仍会同时读到旧状态并触发相同 `idempotency_key` 冲突，必须通过真实 MySQL 双事务测试确认，不能仅凭静态推断认定。
+- `generateMaterialDemands` 已通过 `SELECT ... FOR UPDATE` 锁定批次，但现有真实 MySQL 用例只覆盖顺序
+  重复调用。必须补双事务测试；同时完整 application 路径会在状态短路前重新读取实时 BOM，第一次成功后
+  若 BOM 变化，响应丢失重试可能先失败。因此当前只能认定 Repository 写入路径是天然幂等候选，不能静态
+  断言整个 HTTP 端点无需结果重放。
 
 ### 4.2 Production 业务链路和追溯迁移
 

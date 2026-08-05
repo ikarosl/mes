@@ -259,11 +259,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onActivated, onMounted, ref } from 'vue';
+import { computed, onActivated, onMounted, ref, watch } from 'vue';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import TableToolbar from '../../components/TableToolbar.vue';
 import type {
   BatchStepRecordItem,
+  CreateProductionBatchPayload,
   ProductionBatchDetail,
   ProductionBatchItem,
 } from '@company/contracts';
@@ -272,6 +273,7 @@ import { EMessage } from '../../utils/message';
 import { useRowPending } from '../../utils/useRowPending';
 import { BATCH_STATUS_META, batchStatusMeta, formatQuantity } from './production-status';
 import { useProductionBatchesList } from './composables/useProductionBatchesList';
+import { useIdempotentIntent } from '../../composables/idempotency/useIdempotentIntent';
 import { useUserOptions } from '../../composables/options/useUserOptions';
 import { buildLiveOptions } from '../../utils/live-options';
 import TaskFormDialog from './components/TaskFormDialog.vue';
@@ -314,6 +316,9 @@ const userChoices = computed(() =>
 /** 行内写操作守卫（生成物料），同一行只允许一个在途（todo 3.5） */
 const { isRowPending, beginRow, endRow } = useRowPending();
 
+/** 创建生产批次任务的幂等意图（试点端点）：页面局部持有，弹窗打开/关闭时清除旧意图 */
+const createBatchIntent = useIdempotentIntent();
+
 /* ====== 弹窗状态 ====== */
 const taskDialogVisible = ref(false);
 const detailDialogVisible = ref(false);
@@ -331,8 +336,14 @@ const taskFormDialogRef = ref<{
 const openCreate = (): void => {
   editingTaskId.value = null;
   taskFormDialogRef.value?.resetForm();
+  createBatchIntent.reset();
   taskDialogVisible.value = true;
 };
+
+/** 弹窗关闭（含放弃/取消）时清除创建任务意图；成功提交已由 execute 自动清除，此处覆盖关闭场景 */
+watch(taskDialogVisible, (visible) => {
+  if (!visible) createBatchIntent.reset();
+});
 
 const openEdit = (row: ProductionBatchItem): void => {
   editingTaskId.value = row.id;
@@ -353,14 +364,19 @@ const submitTask = async (data: TaskFormValue): Promise<void> => {
       });
       EMessage.success('任务已更新');
     } else {
-      await productionApi.createOrderBatch(data.workOrderId, {
+      const payload: CreateProductionBatchPayload = {
         batchNo: data.batchNo || '',
         routeId: data.routeId || null,
         plannedQuantity: data.plannedQuantity,
         ownerId: data.ownerId || null,
         remark: data.remark || null,
         stepOverrides: data.stepOverrides,
-      });
+      };
+      const workOrderId = data.workOrderId;
+      await createBatchIntent.execute(
+        { scope: 'production.batch.create.v1', params: { workOrderId }, query: {}, body: payload },
+        (key) => productionApi.createOrderBatch(workOrderId, payload, key),
+      );
       EMessage.success('任务已新增');
     }
     taskDialogVisible.value = false;

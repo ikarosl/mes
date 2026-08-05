@@ -28,6 +28,8 @@ Access Token 只存在页面内存；刷新页面或打开新浏览器标签时�
 - 代码架构：[docs/architecture.md](docs/architecture.md)
 - 前端架构：[docs/frontend-architecture.md](docs/frontend-architecture.md)
 - HTTP 接口：[docs/api-conventions.md](docs/api-conventions.md)
+- 并发与幂等规则：[docs/concurrency-and-idempotency.md](docs/concurrency-and-idempotency.md)
+- HTTP 幂等实施方案：[docs/http-idempotency-implementation-plan.md](docs/http-idempotency-implementation-plan.md)
 - 编码规范：[docs/coding-standards.md](docs/coding-standards.md)
 - 数据库设计：[docs/new.md](docs/new.md)
 - 管理端设计：[design.md](design.md)

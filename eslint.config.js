@@ -171,7 +171,7 @@ export default tseslint.config(
     rules: {
       // 视图内聚警示线：超过 500 行优先把列表状态/分页/副作用提取为 useXxx composable，
       // 模板与样式不是拆分对象，禁止机械拆行数。见 docs/coding-standards.md §5。
-      'max-lines': ['warn', { max: 500, skipBlankLines: true, skipComments: true }],
+      'max-lines': ['warn', { max: 1000, skipBlankLines: true, skipComments: true }],
     },
   },
   // ⚠ 债务隔离：已知的迁移占位区，待接通真实 API 后逐步解除

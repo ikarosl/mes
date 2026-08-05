@@ -4,6 +4,7 @@ import type { CommandContext } from '../../../../common/audit/audit.types.js';
 import {
   AuditInApplication,
   CurrentCommandContext,
+  IdempotentEndpoint,
   RequirePermission,
 } from '../../../../common/security/auth.decorators.js';
 import { ProductionService } from '../../application/production.service.js';
@@ -99,6 +100,7 @@ export class ProductionController {
   @Post('work-orders/:id/batches')
   @RequirePermission(PERMISSIONS.production.batches.create)
   @AuditInApplication()
+  @IdempotentEndpoint()
   createBatch(
     @Param() { id }: IdParamDto,
     @Body() body: CreateProductionBatchDto,

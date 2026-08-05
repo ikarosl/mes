@@ -35,6 +35,17 @@
 
 Production 的事务、并发建批、物料需求快照和幂等键需要在真实 MySQL 中验证。该测试直接调用 Repository 和真实 MySQL，不经过浏览器，因此属于 Integration，不属于 E2E。启动专用测试 MySQL 并设置 `RUN_MYSQL_INTEGRATION=1` 后，执行 `pnpm test:production:mysql`；该命令会先检查显式开关，随后才构建 database 包并应用当前 migration，再运行 `tests/integration/production` 下的测试。未设置开关时，专用命令会在任何数据库操作前失败；IDE 或普通测试发现该文件时则将其跳过，避免误迁移 `.env` 指向的数据库。
 
+HTTP 幂等框架当前只有抽象端口单测，不代表服务端闭环已通过。后续 MySQL adapter 落地时，必须新增
+真实双连接/双事务测试，覆盖同键并发只执行一次、同键同指纹重放、同键不同指纹冲突、首次事务回滚后
+可再次执行、提交成功但响应丢失后的重试、到期未清理仍重放和物理清理后按新请求执行；不得用内存 fake
+或顺序单测替代。API/契约测试还必须覆盖未启用端点拒绝意外 header、响应与失败审计都映射为同一 409
+错误码、首次 request ID 可关联成功审计，以及结果 codec 拒绝非 JSON-safe 输出。完整矩阵见
+[`http-idempotency-implementation-plan.md`](http-idempotency-implementation-plan.md)。
+
+天然幂等复验必须从完整 application/API 路径执行，不能只调用 Repository。尤其
+`generateMaterialDemands` 需要验证响应丢失后的重试不会在状态短路前因实时 BOM 已变化而失败，并使用
+真实双事务证明并发调用只生成一次需求和一次成功审计。
+
 ## E2E 启用条件
 
 当前阶段不保留 admin-web 子包内基于 CSS 结构和空页面渲染的 Playwright 测试，也不把 E2E 纳入 `pnpm verify`。只有在具备独立测试数据库、稳定数据准备/清理机制，以及至少一条完整业务旅程时，才在根目录 `tests/e2e` 增加 Playwright 配置和测试。主干或发布候选届时额外运行 E2E、镜像构建、镜像扫描和升级迁移测试。

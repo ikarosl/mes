@@ -1,7 +1,21 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ProductionService } from '../production.service.js';
 
-const audit = { actorId: '1', ip: '127.0.0.1', requestId: 'test-request', userAgent: null };
+const audit = {
+  actorId: '1',
+  ip: '127.0.0.1',
+  requestId: 'test-request',
+  userAgent: null,
+  idempotencyKey: 'test-idempotency-key',
+};
+
+/** 直通 executor：createBatch 幂等试点在单测中直接执行业务 handler 并标记非重放。 */
+const executingIdempotencyExecutor = {
+  execute: async (command: { handler: () => Promise<unknown> }) => ({
+    result: await command.handler(),
+    isReplay: false,
+  }),
+};
 
 describe('ProductionService first-stage commands', () => {
   it('maps a product public query failure to HTTP 404', async () => {
@@ -10,7 +24,7 @@ describe('ProductionService first-stage commands', () => {
         .fn()
         .mockResolvedValue({ status: 'not-found', message: '产品不存在' }),
     };
-    const service = new ProductionService({} as never, products as never, {} as never);
+    const service = new ProductionService({} as never, products as never, {} as never, {} as never);
 
     await expect(
       service.createWorkOrder({ productId: '8', workOrderNo: 'WO-001', plannedQuantity: 1 }, audit),
@@ -32,7 +46,12 @@ describe('ProductionService first-stage commands', () => {
       },
     ];
     const repository = { listWorkOrderOptions: vi.fn().mockResolvedValue(options) };
-    const service = new ProductionService(repository as never, {} as never, {} as never);
+    const service = new ProductionService(
+      repository as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
 
     await expect(service.listWorkOrderOptions()).resolves.toEqual(options);
     expect(repository.listWorkOrderOptions).toHaveBeenCalledWith();
@@ -47,7 +66,12 @@ describe('ProductionService first-stage commands', () => {
         .fn()
         .mockResolvedValue({ status: 'not-found', message: '工艺路线不可用' }),
     };
-    const service = new ProductionService(repository as never, products as never, {} as never);
+    const service = new ProductionService(
+      repository as never,
+      products as never,
+      {} as never,
+      executingIdempotencyExecutor as never,
+    );
 
     await expect(service.createBatch('6', { plannedQuantity: 1 }, audit)).rejects.toMatchObject({
       code: 'NOT_FOUND',
@@ -62,7 +86,12 @@ describe('ProductionService first-stage commands', () => {
         .fn()
         .mockResolvedValue({ status: 'invalid-input', message: '产品不可生成 BOM' }),
     };
-    const service = new ProductionService(repository as never, products as never, {} as never);
+    const service = new ProductionService(
+      repository as never,
+      products as never,
+      {} as never,
+      {} as never,
+    );
 
     await expect(service.generateMaterialDemands('6', 2, audit)).rejects.toMatchObject({
       code: 'INVALID_INPUT',
@@ -76,7 +105,7 @@ describe('ProductionService first-stage commands', () => {
         .fn()
         .mockResolvedValue({ status: 'not-found', message: 'SOP 文件不可用' }),
     };
-    const service = new ProductionService({} as never, products as never, {} as never);
+    const service = new ProductionService({} as never, products as never, {} as never, {} as never);
 
     await expect(
       service.updateBatchStepExecution('6', '7', { version: 3, actualSopFileId: '8' }, audit),
@@ -103,7 +132,12 @@ describe('ProductionService first-stage commands', () => {
         },
       }),
     };
-    const service = new ProductionService(repository as never, products as never, {} as never);
+    const service = new ProductionService(
+      repository as never,
+      products as never,
+      {} as never,
+      {} as never,
+    );
 
     await service.releaseWorkOrder('11', 4, audit);
 
@@ -129,7 +163,12 @@ describe('ProductionService first-stage commands', () => {
         .fn()
         .mockResolvedValue({ status: 'not-found', message: '产品已停用' }),
     };
-    const service = new ProductionService(repository as never, products as never, {} as never);
+    const service = new ProductionService(
+      repository as never,
+      products as never,
+      {} as never,
+      {} as never,
+    );
 
     await expect(service.releaseWorkOrder('11', 4, audit)).rejects.toMatchObject({
       code: 'NOT_FOUND',
@@ -141,7 +180,12 @@ describe('ProductionService first-stage commands', () => {
     const repository = {
       updateWorkOrder: vi.fn().mockResolvedValue({ id: '11', batches: [] }),
     };
-    const service = new ProductionService(repository as never, {} as never, {} as never);
+    const service = new ProductionService(
+      repository as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
 
     await service.updateWorkOrder('11', { version: 4 }, audit);
     await service.updateWorkOrder('11', { version: 5, remark: null }, audit);
@@ -176,7 +220,12 @@ describe('ProductionService first-stage commands', () => {
     const products = {
       getProductionProduct: vi.fn().mockResolvedValue({ status: 'success', value: product }),
     };
-    const service = new ProductionService(repository as never, products as never, {} as never);
+    const service = new ProductionService(
+      repository as never,
+      products as never,
+      {} as never,
+      {} as never,
+    );
     const payload = { version: 4, productId: '9', plannedQuantity: 25.5 };
 
     await service.updateWorkOrder('11', payload, audit);
@@ -208,7 +257,12 @@ describe('ProductionService first-stage commands', () => {
         },
       }),
     };
-    const service = new ProductionService(repository as never, products as never, {} as never);
+    const service = new ProductionService(
+      repository as never,
+      products as never,
+      {} as never,
+      {} as never,
+    );
 
     await service.generateMaterialDemands('6', 2, audit);
 
@@ -222,7 +276,12 @@ describe('ProductionService first-stage commands', () => {
 
   it('rejects a production batch plan whose end date precedes its start date', async () => {
     const repository = { updateBatch: vi.fn() };
-    const service = new ProductionService(repository as never, {} as never, {} as never);
+    const service = new ProductionService(
+      repository as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
 
     await expect(
       service.updateBatch(
@@ -241,7 +300,12 @@ describe('ProductionService first-stage commands', () => {
 
   it('forwards batch plan dates as a versioned update', async () => {
     const repository = { updateBatch: vi.fn().mockResolvedValue({ id: '6' }) };
-    const service = new ProductionService(repository as never, {} as never, {} as never);
+    const service = new ProductionService(
+      repository as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
     const payload = { version: 2, planStartDate: '2026-08-01', planEndDate: '2026-08-02' };
 
     await service.updateBatch('6', payload, audit);
@@ -259,7 +323,12 @@ describe('ProductionService first-stage commands', () => {
         value: { id: '9', steps: [{ routeStepId: '41' }] },
       }),
     };
-    const service = new ProductionService(repository as never, products as never, {} as never);
+    const service = new ProductionService(
+      repository as never,
+      products as never,
+      {} as never,
+      executingIdempotencyExecutor as never,
+    );
 
     await expect(
       service.createBatch(
@@ -285,7 +354,12 @@ describe('ProductionService first-stage commands', () => {
         value: { id: '9', product: { id: '8' }, steps: [] },
       }),
     };
-    const service = new ProductionService(repository as never, products as never, {} as never);
+    const service = new ProductionService(
+      repository as never,
+      products as never,
+      {} as never,
+      executingIdempotencyExecutor as never,
+    );
 
     await service.createBatch('6', { plannedQuantity: 1 }, audit);
 
@@ -298,6 +372,62 @@ describe('ProductionService first-stage commands', () => {
       [],
       audit,
     );
+  });
+
+  it('wraps createBatch in the idempotency executor with a stable scope and request snapshot', async () => {
+    const repository = {
+      withBatchCreationTransaction: vi.fn(async (_workOrderId, action) => action('8')),
+      createBatch: vi.fn().mockResolvedValue({ id: '6', ownerId: null, stepRecords: [] }),
+    };
+    const products = {
+      getProductionRouteSnapshot: vi.fn().mockResolvedValue({
+        status: 'success',
+        value: { id: '9', product: { id: '8' }, steps: [] },
+      }),
+    };
+    const captured: unknown[] = [];
+    const capturingExecutor = {
+      execute: vi.fn(async (command: { handler: () => Promise<unknown> }) => {
+        captured.push(command);
+        return { result: await command.handler(), isReplay: false };
+      }),
+    };
+    const service = new ProductionService(
+      repository as never,
+      products as never,
+      {} as never,
+      capturingExecutor as never,
+    );
+
+    await service.createBatch('6', { plannedQuantity: 3, batchNo: '  task_batch-001  ' }, audit);
+
+    expect(capturingExecutor.execute).toHaveBeenCalledOnce();
+    const command = captured[0] as {
+      scope: string;
+      key: string;
+      actorId: string;
+      requestId: string;
+      request: { params: { workOrderId: string }; body: unknown };
+      resultCodec: { encode: (result: unknown) => unknown; decode: (stored: unknown) => unknown };
+    };
+    expect(command.scope).toBe('production.batch.create.v1');
+    expect(command.key).toBe('test-idempotency-key');
+    expect(command.actorId).toBe('1');
+    expect(command.requestId).toBe('test-request');
+    expect(command.request.params).toEqual({ workOrderId: '6' });
+    // body 必须是 DTO 转换与 trim 后的规范化载荷，才能与重放指纹一致
+    expect(command.request.body).toEqual({
+      plannedQuantity: 3,
+      batchNo: 'task_batch-001',
+      remark: null,
+    });
+    // codec 往返：encode 输出可 JSON 序列化，decode 校验未知持久化值
+    expect(
+      command.resultCodec.decode(command.resultCodec.encode({ id: '6', batchNo: 'x' })),
+    ).toEqual({
+      id: '6',
+      batchNo: 'x',
+    });
   });
 
   it('enriches all batch user references with one Identity directory call', async () => {
@@ -323,7 +453,12 @@ describe('ProductionService first-stage commands', () => {
         { id: '8', displayName: '默认负责人' },
       ]),
     };
-    const service = new ProductionService(repository as never, {} as never, identity as never);
+    const service = new ProductionService(
+      repository as never,
+      {} as never,
+      identity as never,
+      {} as never,
+    );
 
     const result = await service.getBatch('6');
 
@@ -353,7 +488,12 @@ describe('ProductionService first-stage commands', () => {
         },
       }),
     };
-    const service = new ProductionService(repository as never, products as never, {} as never);
+    const service = new ProductionService(
+      repository as never,
+      products as never,
+      {} as never,
+      {} as never,
+    );
 
     await service.updateBatchStepExecution('6', '7', { version: 3, actualSopFileId: '8' }, audit);
 

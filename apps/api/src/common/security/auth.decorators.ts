@@ -11,6 +11,7 @@ import { createRequestId } from '../http/request-context.middleware.js';
 export const IS_PUBLIC = 'isPublic';
 export const REQUIRED_PERMISSION = 'requiredPermission';
 export const AUDIT_IN_APPLICATION = 'auditInApplication';
+export const IDEMPOTENT_ENDPOINT = 'idempotentEndpoint';
 
 export const Public = () => SetMetadata(IS_PUBLIC, true);
 /**
@@ -20,6 +21,7 @@ export const Public = () => SetMetadata(IS_PUBLIC, true);
 export const RequirePermission = (permission: string | readonly string[]) =>
   SetMetadata(REQUIRED_PERMISSION, permission);
 export const AuditInApplication = () => SetMetadata(AUDIT_IN_APPLICATION, true);
+export const IdempotentEndpoint = () => SetMetadata(IDEMPOTENT_ENDPOINT, true);
 
 export const CurrentUser = createParamDecorator(
   (_data: unknown, context: ExecutionContext) =>

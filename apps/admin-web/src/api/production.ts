@@ -59,12 +59,19 @@ export const productionApi = {
   listOrderBatches: (workOrderId: string) =>
     request<ProductionBatchItem[]>({ url: `/production/work-orders/${workOrderId}/batches` }),
 
-  /** 在工单下创建生产批次 */
-  createOrderBatch: (workOrderId: string, data: CreateProductionBatchPayload) =>
+  /** 在工单下创建生产批次（幂等试点端点：键由业务意图 composable 生成并传入，本包装只转发） */
+  createOrderBatch: (
+    workOrderId: string,
+    data: CreateProductionBatchPayload,
+    idempotencyKey: string,
+  ) =>
     request<ProductionBatchDetail>({
       url: `/production/work-orders/${workOrderId}/batches`,
       method: 'POST',
       data,
+      headers: { 'Idempotency-Key': idempotencyKey },
+      retryUnsafe: true,
+      retryTimes: 2,
     }),
 
   /** 分页查询生产批次 */

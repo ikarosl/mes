@@ -13,6 +13,7 @@ const allowedTables = new Set([
   'role_permissions',
   'refresh_tokens',
   'operation_logs',
+  'http_idempotency_records',
   'technical_files',
   'product_categories',
   'products',

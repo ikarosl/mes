@@ -13,6 +13,11 @@ import type {
   WorkOrderQuery,
 } from '@company/contracts';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
+import {
+  IdempotencyExecutor,
+  type IdempotencyResultCodec,
+  type JsonValue,
+} from '../../../common/idempotency/idempotency-executor.js';
 import { IdentityDirectoryService } from '../../identity/public.js';
 import {
   ProductSnapshotQuery,
@@ -29,6 +34,7 @@ export class ProductionService {
     private readonly production: ProductionRepository,
     private readonly products: ProductSnapshotQuery,
     private readonly identity: IdentityDirectoryService,
+    private readonly idempotency: IdempotencyExecutor,
   ) {}
 
   listWorkOrders(query: WorkOrderQuery) {
@@ -108,29 +114,46 @@ export class ProductionService {
       throw new ProductionDomainError('INVALID_INPUT', '手动批次号必须符合 task_batch-001 格式');
     }
     await this.requireActiveUser(payload.ownerId ?? null);
-    const batch = await this.production.withBatchCreationTransaction(
-      workOrderId,
-      async (workOrderProductId) => {
-        const route = this.requireProduct(
-          await this.products.getProductionRouteSnapshot(
-            workOrderProductId,
-            normalizedPayload.routeId ?? null,
-          ),
-        );
-        const stepOverrides = await this.resolveStepOverrides(
-          normalizedPayload.stepOverrides ?? [],
-          route,
-        );
-        return this.production.createBatch(
-          workOrderId,
-          normalizedPayload,
-          route,
-          stepOverrides,
-          audit,
-        );
+    const idempotencyKey = audit.idempotencyKey;
+    if (!idempotencyKey || !audit.actorId) {
+      throw new ProductionDomainError(
+        'INVALID_STATE',
+        '创建生产批次缺少 Idempotency-Key 或用户上下文',
+      );
+    }
+    const execution = await this.idempotency.execute<ProductionBatchDetail>({
+      scope: 'production.batch.create.v1',
+      key: idempotencyKey,
+      actorId: audit.actorId,
+      requestId: audit.requestId,
+      request: {
+        params: { workOrderId },
+        body: normalizedPayload,
       },
-    );
-    return this.enrichBatchDetail(batch);
+      resultCodec: productionBatchResultCodec,
+      handler: () =>
+        this.production.withBatchCreationTransaction(workOrderId, async (workOrderProductId) => {
+          const route = this.requireProduct(
+            await this.products.getProductionRouteSnapshot(
+              workOrderProductId,
+              normalizedPayload.routeId ?? null,
+            ),
+          );
+          const stepOverrides = await this.resolveStepOverrides(
+            normalizedPayload.stepOverrides ?? [],
+            route,
+          );
+          return this.production.createBatch(
+            workOrderId,
+            normalizedPayload,
+            route,
+            stepOverrides,
+            audit,
+          );
+        }),
+    });
+    // 重放路径返回首次保存的未富化详情；首次与重放都在展示层统一富化用户名，保证响应形状一致。
+    return this.enrichBatchDetail(execution.result);
   }
   async updateBatch(id: string, payload: UpdateProductionBatchPayload, audit: CommandContext) {
     if (payload.ownerId !== undefined) await this.requireActiveUser(payload.ownerId);
@@ -282,3 +305,26 @@ export class ProductionService {
 }
 
 const PRODUCTION_BATCH_NO_RULE = { prefix: 'task_batch', padding: 3 } as const;
+
+/**
+ * createBatch 幂等试点结果 codec：保存仓库返回的未富化详情（全 JSON-safe），
+ * decode 必须校验未知持久化值，损坏时抛错让 executor 走 corrupt 路径，绝不重跑 handler 自愈。
+ */
+const productionBatchResultCodec: IdempotencyResultCodec<ProductionBatchDetail> = {
+  // ProductionBatchDetail 的全部字段均为 JSON-safe；命名接口无法隐式满足索引签名，
+  // 转换为 JsonValue 后仍由 executor 的 assertJsonValue 做运行时兜底校验。
+  encode: (result) => result as unknown as JsonValue,
+  decode: (stored) => {
+    if (
+      typeof stored !== 'object' ||
+      stored === null ||
+      !('id' in stored) ||
+      typeof stored.id !== 'string' ||
+      !('batchNo' in stored) ||
+      typeof stored.batchNo !== 'string'
+    ) {
+      throw new Error('已保存的生产批次结果无法反序列化');
+    }
+    return stored as ProductionBatchDetail;
+  },
+};

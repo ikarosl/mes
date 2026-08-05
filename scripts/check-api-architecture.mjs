@@ -37,6 +37,9 @@ const domainErrorExportPattern = /export\s*\{[\s\S]*?\b[A-Z][A-Za-z]*DomainError
 const operationLogsWritePattern =
   /\b(?:INSERT\s+(?:IGNORE\s+)?INTO\s+|REPLACE(?:\s+INTO)?\s+|UPDATE\s+|DELETE\s+FROM\s+)`?(?:`?\w+`?[.])?`?operation_logs\b/i;
 
+const idempotencyRecordsWritePattern =
+  /\b(?:INSERT\s+(?:IGNORE\s+)?INTO\s+|REPLACE(?:\s+INTO)?\s+|UPDATE\s+|DELETE\s+FROM\s+)`?(?:`?\w+`?[.])?`?http_idempotency_records\b/i;
+
 const identityOwnedTables =
   'departments|users|roles|permissions|user_roles|role_permissions|refresh_tokens';
 const productOwnedTables =
@@ -129,6 +132,14 @@ const checks = [
     pattern: operationLogsWritePattern,
     message: 'operation_logs 只能由 common/audit/transactional-audit-writer 写入',
     exclude: ['apps/api/src/common/audit/transactional-audit-writer.ts'],
+  },
+  // http_idempotency_records 是平台级幂等基础设施：唯一表写入口只能是 MySQL executor
+  {
+    directory: 'apps/api/src',
+    pattern: idempotencyRecordsWritePattern,
+    message:
+      'http_idempotency_records 只能由 infrastructure/idempotency/mysql-idempotency.executor 写入',
+    exclude: ['apps/api/src/infrastructure/idempotency/mysql-idempotency.executor.ts'],
   },
 ];
 

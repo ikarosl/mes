@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { AppController } from './app.controller.js';
 import { AuditInterceptor, AuthGuard, IdentityModule } from './modules/identity/public.js';
+import { IdempotencyKeyGuard } from './modules/identity/presentation/http/idempotency-key.guard.js';
 import { ProductModule } from './modules/product/public.js';
 import { ProductionModule } from './modules/production/public.js';
 import { HttpExceptionFilter } from './presentation/http/http-exception.filter.js';
@@ -11,6 +12,7 @@ import { HttpExceptionFilter } from './presentation/http/http-exception.filter.j
   providers: [
     { provide: APP_FILTER, useClass: HttpExceptionFilter },
     { provide: APP_GUARD, useExisting: AuthGuard },
+    { provide: APP_GUARD, useClass: IdempotencyKeyGuard },
     { provide: APP_INTERCEPTOR, useClass: AuditInterceptor },
   ],
 })
