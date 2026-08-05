@@ -19,12 +19,14 @@
             clearable
             filterable
             placeholder="全部"
+            @visible-change="(v: boolean) => v && productSource.refresh()"
           >
             <el-option
-              v-for="product in productOptions"
-              :key="product.id"
-              :label="formatProduct(product)"
-              :value="product.id"
+              v-for="choice in productChoices"
+              :key="choice.value"
+              :label="choice.option ? formatProduct(choice.option) : `${choice.value}（已失效）`"
+              :value="choice.value"
+              :disabled="choice.isUnavailable"
             />
           </el-select>
         </el-form-item>
@@ -240,7 +242,7 @@
           :page-size="pageSize"
           :total="total"
           layout="prev, pager, next, jumper"
-          @current-change="loadOrders"
+          @current-change="handlePageChange"
         />
       </div>
     </section>
@@ -250,12 +252,14 @@
       ref="workOrderFormDialogRef"
       :visible="orderDialogVisible"
       :editing-order-id="editingOrderId"
-      :product-options="productOptions"
-      :user-options="userOptions"
+      :product-options="productSource.options.value"
+      :product-options-status="productSource.status.value"
+      :user-options="userSource.options.value"
+      :user-options-status="userSource.status.value"
       :submitting="submitting"
       @update:visible="orderDialogVisible = $event"
-      @refresh-products="refreshProducts"
-      @refresh-users="refreshUsers"
+      @refresh-products="productSource.refresh"
+      @refresh-users="userSource.refresh"
       @save="submitOrder"
     />
 
@@ -263,7 +267,7 @@
     <WorkOrderDetailDialog
       :visible="detailDialogVisible"
       :order="activeOrder"
-      :user-options="userOptions"
+      :user-options="userSource.options.value"
       @update:visible="detailDialogVisible = $event"
     />
 
@@ -283,15 +287,14 @@
       ref="batchFormDialogRef"
       :visible="batchFormDialogVisible"
       :editing-batch-id="editingBatchId"
-      :available-route-options="availableRouteOptions"
-      :user-options="userOptions"
+      :product-id="taskOrder?.productId"
+      :user-options="userSource.options.value"
       :max-quantity="batchQuantityMax"
       :default-start-date="toDateInputValue(taskOrder?.planStartDate)"
       :default-end-date="toDateInputValue(taskOrder?.planEndDate)"
       :submitting="submitting"
       @update:visible="batchFormDialogVisible = $event"
-      @refresh-routes="refreshRoutes"
-      @refresh-users="refreshUsers"
+      @refresh-users="userSource.refresh"
       @save="submitBatch"
     />
   </div>
@@ -301,14 +304,22 @@
 import { computed, onActivated, onMounted, ref, watch } from 'vue';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import TableToolbar from '../../components/TableToolbar.vue';
-import type { ProductionBatchItem, WorkOrderDetail, WorkOrderItem } from '@company/contracts';
+import type {
+  ProductOption,
+  ProductionBatchItem,
+  WorkOrderDetail,
+  WorkOrderItem,
+} from '@company/contracts';
 import { productionApi } from '../../api/production';
 import { EMessage } from '../../utils/message';
 import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
 import { useRowPending } from '../../utils/useRowPending';
+import { buildLiveOptions } from '../../utils/live-options';
 import { formatDateForDisplay, toDateInputValue } from '../../utils/date';
+import { useProductOptions } from '../../composables/options/useProductOptions';
+import { useUserOptions } from '../../composables/options/useUserOptions';
 import { ORDER_STATUS_META, formatQuantity, orderStatusMeta } from './production-status';
-import { useWorkOrders } from './composables/useWorkOrders';
+import { useWorkOrdersList } from './composables/useWorkOrdersList';
 import WorkOrderFormDialog from './components/WorkOrderFormDialog.vue';
 import type { WorkOrderFormValue } from './components/WorkOrderFormDialog.vue';
 import WorkOrderDetailDialog from './components/WorkOrderDetailDialog.vue';
@@ -320,25 +331,39 @@ defineOptions({ name: 'ProductionOrdersPage' });
 
 const {
   orders,
-  productOptions,
-  routeOptions,
-  userOptions,
   loading,
   total,
   currentPage,
   pageSize,
   query,
-  refreshProducts,
-  refreshRoutes,
-  refreshUsers,
   loadOrders,
   loadPageData,
   searchOrders,
   resetQuery,
   handlePageSizeChange,
-  getOwnerName,
-  formatProduct,
-} = useWorkOrders();
+  handlePageChange,
+} = useWorkOrdersList();
+
+/** 页面持有的候选实例：产品（筛选 + 工单弹窗）、负责人（工单/详情/批次弹窗） */
+const productSource = useProductOptions();
+const userSource = useUserOptions();
+
+/** 工单产品候选：仅成品 */
+const finishedProducts = computed(() =>
+  productSource.options.value.filter((p) => p.itemKind === 'finished_product'),
+);
+const getOwnerName = (ownerId: string | null | undefined): string =>
+  userSource.options.value.find((user) => user.id === ownerId)?.displayName ?? '-';
+const formatProduct = (product: ProductOption): string =>
+  `${product.itemCode} / ${product.productName}`;
+/** 产品筛选下拉实时选项：已选产品在候选被移除时显示「ID（已失效）」并禁用（筛选允许清除） */
+const productChoices = computed(() =>
+  buildLiveOptions(
+    finishedProducts.value,
+    query.productId ? [query.productId] : [],
+    (product) => product.id,
+  ),
+);
 
 /** 行内工单状态写操作守卫（下达/关闭/取消），同一行只允许一个在途（todo 3.5） */
 const { isRowPending, beginRow, endRow } = useRowPending();
@@ -366,10 +391,6 @@ const batchFormDialogRef = ref<{
 const editingBatch = computed(
   () => taskBatches.value.find((item) => item.id === editingBatchId.value) ?? null,
 );
-const availableRouteOptions = computed(() => {
-  if (!taskOrder.value) return [];
-  return routeOptions.value.filter((route) => route.productId === taskOrder.value?.productId);
-});
 /** 本批次计划数量上限：工单计划 - 已分配 + 当前编辑批次数量 */
 const batchQuantityMax = computed(() => {
   if (!taskOrder.value) return null;
@@ -549,11 +570,10 @@ const submitBatch = async (data: BatchFormValue): Promise<void> => {
 };
 
 onMounted(loadPageData);
-/** 页面重新激活：定向刷新页面可见筛选与仍打开弹窗的候选（各资源独立 loader 组合） */
+/** 页面重新激活：刷新页面可见候选（产品筛选 + 弹窗消费者）；正式列表由 onMounted 首访加载 */
 onActivated(() => {
-  refreshProducts();
-  refreshRoutes();
-  refreshUsers();
+  void productSource.refresh();
+  void userSource.refresh();
 });
 </script>
 

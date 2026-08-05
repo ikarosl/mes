@@ -31,12 +31,13 @@
           <el-button
             :icon="Refresh"
             :loading="loading"
-            @click="refresh"
+            @click="retryNow"
             >刷新物料</el-button
           >
           <el-button
             type="primary"
             :icon="Plus"
+            :disabled="!detailReady"
             @click="addRow"
             >添加已有物料</el-button
           >
@@ -55,7 +56,7 @@
               v-model="row.materialProductId"
               filterable
               placeholder="请选择物料"
-              @visible-change="(visible: boolean) => visible && refresh()"
+              @visible-change="(visible: boolean) => visible && refreshCandidates()"
             >
               <el-option
                 v-for="choice in materialChoices(row.materialProductId)"
@@ -151,7 +152,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, onActivated, ref, watch } from 'vue';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import type { ProductListItem } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
@@ -179,8 +180,15 @@ const emit = defineEmits<{
   (e: 'save', rows: MaterialRow[]): void;
 }>();
 
-const { materialOptions, loading, detailStatus, loadedProductId, load, refreshOptions } =
-  useProductMaterialEditor();
+const {
+  materialOptions,
+  loading,
+  detailStatus,
+  loadedProductId,
+  load,
+  refreshOptions,
+  invalidate,
+} = useProductMaterialEditor();
 const localRows = ref<MaterialRow[]>([]);
 
 /** 仅当当前产品 BOM 明细已就绪（且属于当前产品）时才允许保存，避免把上一个产品的行保存到新目标 */
@@ -208,24 +216,39 @@ const loadRows = async (productId: string): Promise<void> => {
   );
 };
 
-/** 打开弹窗时加载当前产品 BOM 明细与候选 */
+/** 打开弹窗时加载当前产品 BOM 明细与候选；关闭时推进请求代际，迟到的明细响应不得写回草稿行 */
 watch(
   () => [props.visible, props.product?.id] as const,
   async ([visible, productId]) => {
-    if (!visible || !productId) return;
+    if (!visible) {
+      invalidate();
+      return;
+    }
+    if (!productId) return;
     await loadRows(productId);
   },
 );
 
-/** 页面激活 / 下拉展开 / 刷新按钮：正常只刷新候选；明细加载失败时重试 BOM 明细 */
-const refresh = (): void => {
+/** 下拉展开 / 页面激活：只刷新候选，不重载 BOM 明细（避免覆盖用户草稿行） */
+const refreshCandidates = (): void => {
+  if (!props.product) return;
+  void refreshOptions(props.product.id);
+};
+
+/** 刷新物料按钮：明细加载失败时显式重试 BOM 明细，否则只刷新候选 */
+const retryNow = (): void => {
   if (!props.product) return;
   if (detailStatus.value === 'error') {
     void loadRows(props.product.id);
     return;
   }
-  void refreshOptions(props.product.id);
+  refreshCandidates();
 };
+
+/** 页面重新激活且弹窗打开时只刷新候选（不重试明细，不覆盖草稿行） */
+onActivated(() => {
+  if (props.visible && props.product) void refreshOptions(props.product.id);
+});
 
 const addRow = (): void => {
   localRows.value.push({
@@ -273,7 +296,7 @@ const handleSubmit = (): void => {
   emit('save', localRows.value);
 };
 
-defineExpose({ setRows, refresh });
+defineExpose({ setRows });
 </script>
 
 <style scoped>

@@ -37,7 +37,7 @@
           v-model="form.productId"
           filterable
           placeholder="请选择产品"
-          @visible-change="(visible: boolean) => visible && refreshProductOptions()"
+          @visible-change="(visible: boolean) => visible && productSource.refresh()"
         >
           <el-option
             v-for="choice in productChoices"
@@ -83,11 +83,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, watch } from 'vue';
+import { computed, onActivated, reactive, watch } from 'vue';
 import { DialogWidth } from '../../../utils/dialog';
 import { buildLiveOptions, hasUnavailableSelection } from '../../../utils/live-options';
 import { EMessage } from '../../../utils/message';
-import { useProductFormOptions } from '../composables/useProductFormOptions';
+import { useProductOptions } from '../../../composables/options/useProductOptions';
 
 export type RouteFormValue = {
   routeCode: string;
@@ -108,7 +108,12 @@ const emit = defineEmits<{
   (e: 'save', data: RouteFormValue): void;
 }>();
 
-const { productOptions, loadProductOptions, refreshProductOptions } = useProductFormOptions();
+const productSource = useProductOptions();
+const productOptions = computed(() =>
+  productSource.options.value.filter(
+    (p) => p.acquireMethod === 'self_made' && p.itemKind !== 'material',
+  ),
+);
 
 const initialForm = (): RouteFormValue => ({
   routeCode: '',
@@ -123,19 +128,18 @@ const productChoices = computed(() =>
   buildLiveOptions(productOptions.value, form.productId ? [form.productId] : [], (item) => item.id),
 );
 
-/** 打开弹窗时加载适用产品候选 */
+/** 打开弹窗时刷新适用产品候选 */
 watch(
   () => props.visible,
   (visible) => {
-    if (visible) void loadProductOptions();
+    if (visible) void productSource.refresh();
   },
-  { immediate: true },
 );
 
-/** 页面激活时刷新候选数据（由页面 onActivated 调用） */
-const refresh = (): void => {
-  void refreshProductOptions();
-};
+/** 页面重新激活且弹窗打开时刷新候选（弹窗自持，页面不再调用） */
+onActivated(() => {
+  if (props.visible) void productSource.refresh();
+});
 
 const resetForm = (): void => {
   Object.assign(form, initialForm());
@@ -173,7 +177,7 @@ const handleSubmit = (): void => {
   });
 };
 
-defineExpose({ setForm, resetForm, refresh });
+defineExpose({ setForm, resetForm });
 </script>
 
 <style scoped>

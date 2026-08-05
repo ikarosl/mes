@@ -50,13 +50,14 @@
           clearable
           filterable
           placeholder="默认使用产品默认路线"
-          @visible-change="(v: boolean) => v && $emit('refresh-routes')"
+          @visible-change="(v: boolean) => v && routeSource.refresh()"
         >
           <el-option
-            v-for="route in availableRouteOptions"
-            :key="route.id"
-            :label="route.routeName"
-            :value="route.id"
+            v-for="choice in routeChoices"
+            :key="choice.value"
+            :label="choice.option ? choice.option.routeName : `${choice.value}（已失效）`"
+            :value="choice.value"
+            :disabled="choice.isUnavailable"
           />
         </el-select>
       </el-form-item>
@@ -69,10 +70,11 @@
           @visible-change="(v: boolean) => v && $emit('refresh-users')"
         >
           <el-option
-            v-for="user in userOptions"
-            :key="user.id"
-            :label="user.displayName"
-            :value="user.id"
+            v-for="choice in userChoices"
+            :key="choice.value"
+            :label="choice.option?.displayName ?? `${choice.value}（已失效）`"
+            :value="choice.value"
+            :disabled="choice.isUnavailable"
           />
         </el-select>
       </el-form-item>
@@ -97,12 +99,13 @@
 </template>
 
 <script setup lang="ts">
-import { reactive } from 'vue';
-import type { ProductionBatchItem } from '@company/contracts';
+import { computed, onActivated, reactive, watch } from 'vue';
+import type { ProductionBatchItem, ProcessRouteOption, UserOption } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
 import { toDateInputValue } from '../../../utils/date';
 import { EMessage } from '../../../utils/message';
-import type { WorkOrderRouteOption, WorkOrderUserOption } from '../composables/useWorkOrders';
+import { buildLiveOptions, hasUnavailableSelection } from '../../../utils/live-options';
+import { useProcessRouteOptions } from '../../../composables/options/useProcessRouteOptions';
 
 export type BatchFormValue = {
   batchNo: string;
@@ -117,8 +120,9 @@ export type BatchFormValue = {
 const props = defineProps<{
   visible: boolean;
   editingBatchId: string | null;
-  availableRouteOptions: WorkOrderRouteOption[];
-  userOptions: WorkOrderUserOption[];
+  /** 当前工单产品 id：工艺路线候选按该产品过滤 */
+  productId: string | null | undefined;
+  userOptions: UserOption[];
   /** 本批次计划数量上限；null 表示不限制 */
   maxQuantity: number | null;
   /** 默认计划开始日期（取自工单） */
@@ -130,16 +134,34 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'update:visible', val: boolean): void;
-  (e: 'refresh-routes'): void;
   (e: 'refresh-users'): void;
   (e: 'save', data: BatchFormValue): void;
 }>();
 
-/** 打开弹窗：刷新本弹窗实际需要的候选（工艺路线 + 负责人），不刷新无关资源 */
+/** 工艺路线候选：弹窗自持实例，页面仅传入产品 id 供过滤 */
+const routeSource = useProcessRouteOptions();
+/** 当前工单可用路线：按工单产品过滤（原页面 availableRouteOptions 过滤逻辑移入弹窗） */
+const availableRouteOptions = computed<ProcessRouteOption[]>(() => {
+  if (!props.productId) return [];
+  return routeSource.options.value.filter((route) => route.productId === props.productId);
+});
+
+/** 打开弹窗：刷新负责人候选；路线候选由 visible watch / onActivated / 下拉展开负责 */
 const onOpen = (): void => {
-  emit('refresh-routes');
   emit('refresh-users');
 };
+
+/** 打开弹窗时刷新路线候选（对话框自持资源：打开即刷新） */
+watch(
+  () => props.visible,
+  (v) => {
+    if (v) void routeSource.refresh();
+  },
+);
+/** 页面重新激活且弹窗仍打开：刷新路线候选 */
+onActivated(() => {
+  if (props.visible) void routeSource.refresh();
+});
 
 const initialForm = (): BatchFormValue => ({
   batchNo: '',
@@ -152,6 +174,19 @@ const initialForm = (): BatchFormValue => ({
 });
 
 const form = reactive<BatchFormValue>(initialForm());
+
+/** 路线下拉实时选项：已选路线在候选被移除时显示「ID（已失效）」并禁用 */
+const routeChoices = computed(() =>
+  buildLiveOptions(
+    availableRouteOptions.value,
+    form.routeId ? [form.routeId] : [],
+    (route) => route.id,
+  ),
+);
+/** 负责人下拉实时选项：同上 */
+const userChoices = computed(() =>
+  buildLiveOptions(props.userOptions, form.ownerId ? [form.ownerId] : [], (user) => user.id),
+);
 
 const resetForm = (): void => {
   Object.assign(form, initialForm());
@@ -180,6 +215,20 @@ const handleSubmit = (): void => {
   }
   if (form.planStartDate && form.planEndDate && form.planEndDate < form.planStartDate) {
     EMessage.warning('计划完成日期不能早于计划开始日期');
+    return;
+  }
+  if (
+    form.routeId &&
+    hasUnavailableSelection(availableRouteOptions.value, [form.routeId], (route) => route.id)
+  ) {
+    EMessage.warning('所选工艺路线已失效，请重新选择');
+    return;
+  }
+  if (
+    form.ownerId &&
+    hasUnavailableSelection(props.userOptions, [form.ownerId], (user) => user.id)
+  ) {
+    EMessage.warning('所选负责人已失效，请重新选择');
     return;
   }
   emit('save', { ...form });

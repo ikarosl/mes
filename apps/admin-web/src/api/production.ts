@@ -10,12 +10,13 @@ import type {
   UpdateWorkOrderPayload,
   WorkOrderDetail,
   WorkOrderItem,
+  WorkOrderOption,
   WorkOrderQuery,
 } from '@company/contracts';
-import { toRequestError } from '@company/request';
+import { toRequestError, type RetryRequestConfig } from '@company/request';
 import { httpClient } from './http';
 
-const request = async <T>(config: Parameters<typeof httpClient.request<T>>[0]) => {
+const request = async <T>(config: RetryRequestConfig) => {
   try {
     return (await httpClient.request<T>(config)).data;
   } catch (error) {
@@ -27,6 +28,13 @@ export const productionApi = {
   /** 分页查询生产工单 */
   listOrders: (params: WorkOrderQuery) =>
     request<PageResult<WorkOrderItem>>({ url: '/production/work-orders', params }),
+
+  /** 任务表单已下达工单候选（/options 契约）：完整返回全部 released 且仍有余量的工单，前端本地过滤 */
+  workOrderOptions: () =>
+    request<WorkOrderOption[]>({
+      url: '/production/work-orders/options',
+      skipErrorHandling: true,
+    }),
 
   /** 获取工单详情（含生产批次） */
   getOrder: (id: string) => request<WorkOrderDetail>({ url: `/production/work-orders/${id}` }),

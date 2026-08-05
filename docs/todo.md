@@ -125,7 +125,7 @@
 
 ### 3.6 跨页面 `/options` 授权契约与前端数据所有权解耦
 
-状态：`已完成`
+状态：`已完成（含代码审查修正）`
 
 已确认问题：
 
@@ -151,12 +151,24 @@
   `products/options`→[products,routes,production:orders:view,production:tasks:view]、
   `process-routes/options`→[products,routes,production:orders:view,production:tasks:view]、
   `users/options`→[routes,production:orders:view,production:tasks:view]），覆盖生产工单/任务页消费，精确恢复旧聚合端点的授权行为。
-- 前端拆为 `useProductsList`/`useProcessRoutesList`（页面级列表）、`useProductCategoryOptions`（页面级筛选项）、
-  `useProductMaterialOptions`/`useProductRouteOptions`/`useProductFormOptions`/`useRouteStepOptions`（弹窗级候选）；
-  4 个弹窗改为自持候选数据并暴露 `refresh`；写操作成功后只刷新列表。生产演示页的 `loadOptions` 同步改为逐项
-  best-effort。
+- 前端候选数据所有权收敛为“composable 实现复用、所有者实例局部化”：新增 `useRefreshableOptions` 基础实例
+  与 `useProductOptions`/`useProcessRouteOptions`/`useUserOptions`/`useProcessStepOptions` 资源包装，
+  正式列表仍由页面级 `useXxxList` 持有。同一缓存路由页内多个消费者共享同一候选源实例时提升到页面持有，
+  否则由最近消费者（页面或弹窗）自持；谁持有实例谁负责它的页面激活刷新，消费者只通过 `refresh-x` 事件
+  触发刷新。候选刷新时机为页面激活、弹窗打开、下拉展开；最新候选与当前已选值经 `live-options` 合并，
+  失效已选值显示并拦截提交。删除共享 Pinia 参考 Store（`reference-options.ts`）以及 ensure/invalidate/
+  revision/generation 语义。
 - 契约与测试：`docs/api-conventions.md` §5 与 `docs/product-master-data-api.md` 明确跨页面 options 授权契约；
   补 any-of 守卫测试、options 元数据契约与「最小权限角色矩阵」测试（仅持单页面权限可读该页全部选项）。
+
+代码审查修正：
+
+- 任务表单「已下达工单候选」改为独立 `GET /production/work-orders/options` 端点（完整返回全部 `released` 且仍有余量的工单，前端本地过滤，最小字段 `WorkOrderOption`），移除复用正式分页接口在浏览器过滤/切片的实现（api-conventions.md §5）；任务弹窗编辑模式不再对只读工单做失效校验，已全部分配/状态变化/不在候选的工单不再阻断保存。
+- 「刷新后合并当前选择并显示失效」补全：生产批次/任务/工序执行弹窗的路线与负责人下拉、工单/任务/产品页面的筛选下拉统一接入 `buildLiveOptions` 合并与提交前 `hasUnavailableSelection` 拦截。
+- 任务默认路线解析改为候选就绪后补算：工单候选先返回而产品/路线未就绪时，记录待解析工单，产品/路线候选就绪后 `watch` 补算默认路线与工序预览，用户手动改路线不被候选刷新覆盖。
+- 分类候选统一为 `useRefreshableOptions` 薄包装 `useProductCategoryOptions`（失败保留上次成功快照，不再置空误判失效），移除 `useProductCategories` 内重复的 options 加载；分类页父分类候选由弹窗自持实例。
+- `useProductCategories`/`useProcessSteps` 正式列表补 last-request-wins；`ProductCategoriesPage` 移除 `onActivated` 首帧双请求（仅 `onMounted` 加载列表）。
+- 关键明细生命周期：产品物料清单弹窗页面激活只刷新候选、明细失败由「刷新物料」按钮显式重试并禁用「添加已有物料」；路线步骤/物料清单弹窗关闭时推进请求 token，丢弃关闭后迟到的明细响应。
 
 ## 4. 已确认但按阶段实施
 

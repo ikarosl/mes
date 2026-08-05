@@ -20,10 +20,10 @@ import {
   type UpdateSystemUserPayload,
   type UpdateSystemUserStatusPayload,
 } from '@company/contracts';
-import { toRequestError } from '@company/request';
+import { toRequestError, type RetryRequestConfig } from '@company/request';
 import { httpClient } from './http';
 
-const request = async <T>(config: Parameters<typeof httpClient.request<T>>[0]) => {
+const request = async <T>(config: RetryRequestConfig) => {
   try {
     return (await httpClient.request<T>(config)).data;
   } catch (error) {
@@ -34,8 +34,14 @@ const request = async <T>(config: Parameters<typeof httpClient.request<T>>[0]) =
 export const systemApi = {
   users: (params: SystemUserQuery) =>
     request<PageResult<SystemUserListItem>>({ url: SYSTEM_API.users, params }),
-  departmentOptions: () => request<SystemDepartmentOption[]>({ url: SYSTEM_API.departmentOptions }),
-  roleOptions: () => request<SystemRoleOption[]>({ url: SYSTEM_API.roleOptions }),
+  // /options 契约：best-effort，403/失败只影响该项下拉，不触发全局错误处理
+  departmentOptions: () =>
+    request<SystemDepartmentOption[]>({
+      url: SYSTEM_API.departmentOptions,
+      skipErrorHandling: true,
+    }),
+  roleOptions: () =>
+    request<SystemRoleOption[]>({ url: SYSTEM_API.roleOptions, skipErrorHandling: true }),
   createUser: (data: CreateSystemUserPayload) =>
     request<{ id: string }>({ url: SYSTEM_API.users, method: 'POST', data }),
   updateUser: (id: string, data: UpdateSystemUserPayload) =>

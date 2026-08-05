@@ -19,12 +19,14 @@
             clearable
             filterable
             placeholder="全部"
+            @visible-change="(v: boolean) => v && userSource.refresh()"
           >
             <el-option
-              v-for="user in userOptions"
-              :key="user.id"
-              :label="user.displayName"
-              :value="user.id"
+              v-for="choice in userChoices"
+              :key="choice.value"
+              :label="choice.option?.displayName ?? `${choice.value}（已失效）`"
+              :value="choice.value"
+              :disabled="choice.isUnavailable"
             />
           </el-select>
         </el-form-item>
@@ -214,7 +216,7 @@
           :page-size="pageSize"
           :total="total"
           layout="prev, pager, next, jumper"
-          @current-change="loadTasks"
+          @current-change="handlePageChange"
         />
       </div>
     </section>
@@ -224,17 +226,11 @@
       ref="taskFormDialogRef"
       :visible="taskDialogVisible"
       :editing-task-id="editingTaskId"
-      :work-order-options="workOrderOptions"
-      :work-order-loading="workOrderLoading"
-      :product-options="productOptions"
-      :route-options="routeOptions"
-      :user-options="userOptions"
+      :user-options="userSource.options.value"
       :sop-file-options="sopFileOptions"
       :submitting="submitting"
       @update:visible="taskDialogVisible = $event"
-      @refresh-work-orders="refreshWorkOrders"
-      @refresh-routes="refreshRoutes"
-      @refresh-users="refreshUsers"
+      @refresh-users="userSource.refresh"
       @refresh-sop-files="refreshSopFiles"
       @save="submitTask"
     />
@@ -252,18 +248,18 @@
       :visible="stepExecutionDialogVisible"
       :step-record="editingStepRecord"
       :sop-file-options="sopFileOptions"
-      :user-options="userOptions"
+      :user-options="userSource.options.value"
       :submitting="submitting"
       @update:visible="stepExecutionDialogVisible = $event"
       @refresh-sop-files="refreshSopFiles"
-      @refresh-users="refreshUsers"
+      @refresh-users="userSource.refresh"
       @save="submitStepExecutionOverride"
     />
   </div>
 </template>
 
 <script setup lang="ts">
-import { onActivated, onMounted, ref } from 'vue';
+import { computed, onActivated, onMounted, ref } from 'vue';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import TableToolbar from '../../components/TableToolbar.vue';
 import type {
@@ -275,7 +271,9 @@ import { productionApi } from '../../api/production';
 import { EMessage } from '../../utils/message';
 import { useRowPending } from '../../utils/useRowPending';
 import { BATCH_STATUS_META, batchStatusMeta, formatQuantity } from './production-status';
-import { useProductionBatches } from './composables/useProductionBatches';
+import { useProductionBatchesList } from './composables/useProductionBatchesList';
+import { useUserOptions } from '../../composables/options/useUserOptions';
+import { buildLiveOptions } from '../../utils/live-options';
 import TaskFormDialog from './components/TaskFormDialog.vue';
 import type { TaskFormValue } from './components/TaskFormDialog.vue';
 import TaskDetailDialog from './components/TaskDetailDialog.vue';
@@ -286,28 +284,32 @@ defineOptions({ name: 'ProductionTasksPage' });
 
 const {
   batches,
-  productOptions,
-  routeOptions,
-  userOptions,
-  workOrderOptions,
   sopFileOptions,
   loading,
-  workOrderLoading,
   total,
   currentPage,
   pageSize,
   query,
-  refreshProducts,
-  refreshRoutes,
-  refreshUsers,
   refreshSopFiles,
   loadTasks,
   loadPageData,
   searchTasks,
   resetQuery,
   handlePageSizeChange,
-  refreshWorkOrders,
-} = useProductionBatches();
+  handlePageChange,
+} = useProductionBatchesList();
+
+/** 页面级负责人候选（查询筛选 + 任务弹窗 + 工序执行弹窗）：页面持有并负责激活刷新 */
+const userSource = useUserOptions();
+
+/** 负责人筛选下拉实时选项：已选负责人在候选被移除时显示「ID（已失效）」并禁用 */
+const userChoices = computed(() =>
+  buildLiveOptions(
+    userSource.options.value,
+    query.ownerId ? [query.ownerId] : [],
+    (user) => user.id,
+  ),
+);
 
 /** 行内写操作守卫（生成物料），同一行只允许一个在途（todo 3.5） */
 const { isRowPending, beginRow, endRow } = useRowPending();
@@ -425,13 +427,10 @@ const generateMaterials = async (row: ProductionBatchItem): Promise<void> => {
 const canEditBatch = (row: ProductionBatchItem): boolean => row.status === 'pending';
 
 onMounted(loadPageData);
-/** 页面重新激活：定向刷新页面可见筛选与仍打开弹窗的候选（各资源独立 loader 组合） */
+/** 页面重新激活：定向刷新页面持有的候选（负责人 + SOP 文件）；弹窗自持候选由弹窗自身刷新 */
 onActivated(() => {
-  refreshProducts();
-  refreshRoutes();
-  refreshUsers();
-  refreshSopFiles();
-  refreshWorkOrders();
+  void userSource.refresh();
+  void refreshSopFiles();
 });
 </script>
 

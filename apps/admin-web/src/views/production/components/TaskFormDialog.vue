@@ -4,7 +4,6 @@
     :title="editingTaskId ? '编辑任务' : '新增任务'"
     :width="DialogWidth.lg"
     @update:model-value="$emit('update:visible', $event)"
-    @open="onOpen"
   >
     <el-form
       class="dialog-form"
@@ -20,10 +19,10 @@
           <el-select
             v-model="form.workOrderId"
             filterable
-            :loading="workOrderLoading"
+            :loading="workOrderSource.loading.value"
             placeholder="请选择工单"
             @change="handleWorkOrderChange"
-            @visible-change="(v: boolean) => v && $emit('refresh-work-orders')"
+            @visible-change="(v: boolean) => v && workOrderSource.refresh()"
           >
             <el-option
               v-for="choice in workOrderChoices"
@@ -58,14 +57,15 @@
           filterable
           clearable
           placeholder="请选择工艺路线"
-          @change="loadCreateStepPreview"
-          @visible-change="(v: boolean) => v && $emit('refresh-routes')"
+          @change="handleRouteChange"
+          @visible-change="(v: boolean) => v && routeSource.refresh()"
         >
           <el-option
-            v-for="route in availableRouteOptions"
-            :key="route.id"
-            :label="formatRoute(route)"
-            :value="route.id"
+            v-for="choice in routeChoices"
+            :key="choice.value"
+            :label="choice.option ? formatRoute(choice.option) : `${choice.value}（已失效）`"
+            :value="choice.value"
+            :disabled="choice.isUnavailable"
           />
         </el-select>
       </el-form-item>
@@ -78,10 +78,11 @@
           @visible-change="(v: boolean) => v && $emit('refresh-users')"
         >
           <el-option
-            v-for="user in userOptions"
-            :key="user.id"
-            :label="user.displayName"
-            :value="user.id"
+            v-for="choice in ownerChoices"
+            :key="choice.value"
+            :label="choice.option ? choice.option.displayName : `${choice.value}（已失效）`"
+            :value="choice.value"
+            :disabled="choice.isUnavailable"
           />
         </el-select>
       </el-form-item>
@@ -167,12 +168,14 @@
                 clearable
                 filterable
                 placeholder="留空则使用默认负责人"
+                @visible-change="(v: boolean) => v && $emit('refresh-users')"
               >
                 <el-option
-                  v-for="user in userOptions"
-                  :key="user.id"
-                  :label="user.displayName"
-                  :value="user.id"
+                  v-for="choice in stepOwnerChoices(row)"
+                  :key="choice.value"
+                  :label="choice.option ? choice.option.displayName : `${choice.value}（已失效）`"
+                  :value="choice.value"
+                  :disabled="choice.isUnavailable"
                 />
               </el-select>
             </template>
@@ -199,15 +202,25 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue';
-import type { ProductOption, TechnicalFileListItem, WorkOrderItem } from '@company/contracts';
+import { computed, onActivated, reactive, ref, watch } from 'vue';
+import type {
+  ProcessRouteOption,
+  TechnicalFileListItem,
+  UserOption,
+  WorkOrderOption,
+} from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
 import { EMessage } from '../../../utils/message';
-import { buildLiveOptions, hasUnavailableSelection } from '../../../utils/live-options';
-import { formatQuantity, getWorkOrderRemaining } from '../production-status';
+import {
+  buildLiveOptions,
+  hasUnavailableSelection,
+  type LiveOption,
+} from '../../../utils/live-options';
 import { resolveDefaultRouteId } from '../production-route-options';
-import { useTaskRouteSteps } from '../composables/useTaskRouteSteps';
-import type { TaskRouteOption, TaskUserOption } from '../composables/useProductionBatches';
+import { useProductOptions } from '../../../composables/options/useProductOptions';
+import { useProcessRouteOptions } from '../../../composables/options/useProcessRouteOptions';
+import { useTaskRouteSteps, type TaskStepPreview } from '../composables/useTaskRouteSteps';
+import { useWorkOrderOptions } from '../composables/useWorkOrderOptions';
 
 export type TaskFormValue = {
   workOrderId: string;
@@ -226,19 +239,13 @@ export type TaskFormValue = {
 const props = defineProps<{
   visible: boolean;
   editingTaskId: string | null;
-  workOrderOptions: WorkOrderItem[];
-  workOrderLoading: boolean;
-  productOptions: ProductOption[];
-  routeOptions: TaskRouteOption[];
-  userOptions: TaskUserOption[];
+  userOptions: UserOption[];
   sopFileOptions: TechnicalFileListItem[];
   submitting: boolean;
 }>();
 
 const emit = defineEmits<{
   (e: 'update:visible', val: boolean): void;
-  (e: 'refresh-work-orders'): void;
-  (e: 'refresh-routes'): void;
   (e: 'refresh-users'): void;
   (e: 'refresh-sop-files'): void;
   (e: 'save', data: TaskFormValue): void;
@@ -253,13 +260,35 @@ const initialForm = (): Omit<TaskFormValue, 'stepOverrides'> => ({
   remark: '',
 });
 
-/** 打开弹窗：刷新本弹窗实际需要的候选（工单 / 路线 / 负责人 / SOP 文件），不刷新无关资源 */
+/** 本弹窗自持候选源：工单（本地过滤）/ 产品 / 工艺路线；打开、展开、页面激活时定向刷新 */
+const productSource = useProductOptions();
+const routeSource = useProcessRouteOptions();
+const workOrderSource = useWorkOrderOptions();
+
+/** 打开弹窗：刷新本弹窗自持候选（产品 / 路线 / 工单），并请页面刷新它持有的用户 / SOP 文件候选 */
 const onOpen = (): void => {
-  emit('refresh-work-orders');
-  emit('refresh-routes');
+  void productSource.refresh();
+  void routeSource.refresh();
+  void workOrderSource.refresh();
   emit('refresh-users');
   emit('refresh-sop-files');
 };
+
+/** 打开（props.visible 变 true）：执行 onOpen；页面激活时若弹窗仍打开则再次定向刷新 */
+watch(
+  () => props.visible,
+  (visible) => {
+    if (visible) onOpen();
+  },
+);
+
+onActivated(() => {
+  if (props.visible) {
+    void productSource.refresh();
+    void routeSource.refresh();
+    void workOrderSource.refresh();
+  }
+});
 
 const form = reactive(initialForm());
 const {
@@ -270,25 +299,24 @@ const {
 const editingTaskOriginalQuantity = ref(0);
 
 const selectedWorkOrder = computed(
-  () => props.workOrderOptions.find((item) => item.id === form.workOrderId) ?? null,
+  () => workOrderSource.options.value.find((item) => item.id === form.workOrderId) ?? null,
 );
 /** 候选工单：标记失效已选值 */
 const workOrderChoices = computed(() =>
   buildLiveOptions(
-    props.workOrderOptions,
+    workOrderSource.options.value,
     form.workOrderId ? [form.workOrderId] : [],
     (item) => item.id,
   ),
 );
 const availableRouteOptions = computed(() => {
-  if (!selectedWorkOrder.value) return props.routeOptions;
-  return props.routeOptions.filter(
-    (route) => route.productId === selectedWorkOrder.value?.productId,
-  );
+  const order = selectedWorkOrder.value;
+  if (!order) return routeSource.options.value;
+  return routeSource.options.value.filter((route) => route.productId === order.productId);
 });
 const selectedWorkOrderRemaining = computed(() => {
   if (!selectedWorkOrder.value) return null;
-  return getWorkOrderRemaining(selectedWorkOrder.value);
+  return Number(selectedWorkOrder.value.remainingQuantity);
 });
 const taskQuantityMax = computed(() => {
   if (selectedWorkOrderRemaining.value === null) return null;
@@ -297,34 +325,91 @@ const taskQuantityMax = computed(() => {
     : selectedWorkOrderRemaining.value;
 });
 
-const formatRoute = (route: TaskRouteOption): string =>
+const formatRoute = (route: ProcessRouteOption): string =>
   `${route.routeName}${route.versionNo ? ` / ${route.versionNo}` : ''}`;
 
-const formatWorkOrderOption = (order: WorkOrderItem): string =>
-  `${order.workOrderNo} / ${order.productCode} / 剩余 ${formatQuantity(
-    getWorkOrderRemaining(order),
-  )}`;
+const formatWorkOrderOption = (order: WorkOrderOption): string =>
+  workOrderSource.formatOption(order);
+
+/** 路线下拉：合并已选值，候选刷新后已失效路线回显「ID（已失效）」并禁用 */
+const routeChoices = computed(() =>
+  buildLiveOptions(
+    availableRouteOptions.value,
+    form.routeId ? [form.routeId] : [],
+    (route) => route.id,
+  ),
+);
+/** 负责人下拉：合并已选值，已失效负责人回显「ID（已失效）」并禁用 */
+const ownerChoices = computed(() =>
+  buildLiveOptions(props.userOptions, form.ownerId ? [form.ownerId] : [], (user) => user.id),
+);
+/** 工序预览行内实际负责人：同样合并已选值，刷新后已失效负责人回显「ID（已失效）」并禁用 */
+const stepOwnerChoices = (row: TaskStepPreview): LiveOption<UserOption>[] =>
+  buildLiveOptions(
+    props.userOptions,
+    row.responsibleUserId ? [row.responsibleUserId] : [],
+    (user) => user.id,
+  );
 
 const loadCreateStepPreview = (): void => {
   void fetchStepPreview(form.routeId, Boolean(props.editingTaskId));
 };
 
-const handleWorkOrderChange = async (workOrderId: string): Promise<void> => {
-  const order = props.workOrderOptions.find((item) => item.id === workOrderId);
-  if (!order) {
-    form.routeId = '';
-    return;
-  }
-  form.routeId = resolveDefaultRouteId(order.productId, props.productOptions, props.routeOptions);
+/** 待补算默认路线的工单 id：工单 change 时产品/路线候选未就绪，候选就绪后补算（不覆盖用户手动改的路线） */
+let pendingRouteWorkOrderId: string | null = null;
+
+/** 用户手动选择/清空路线：取消待补算的默认路线，避免迟到的默认路线补算覆盖手动选择 */
+const handleRouteChange = (): void => {
+  pendingRouteWorkOrderId = null;
+  loadCreateStepPreview();
+};
+
+const applyDefaultRoute = (order: WorkOrderOption): void => {
+  form.routeId = resolveDefaultRouteId(
+    order.productId,
+    productSource.options.value,
+    routeSource.options.value,
+  );
+  loadCreateStepPreview();
+};
+
+/**
+ * 产品 / 路线候选就绪后，补算之前因候选未就绪而挂起的默认路线。
+ * pending 只在工单 change 时设置，用户手动改路线不会被候选刷新覆盖。
+ */
+watch(
+  () => [productSource.options.value, routeSource.options.value],
+  () => {
+    if (!pendingRouteWorkOrderId) return;
+    if (productSource.status.value !== 'ready' || routeSource.status.value !== 'ready') return;
+    const order = workOrderSource.options.value.find((item) => item.id === pendingRouteWorkOrderId);
+    pendingRouteWorkOrderId = null;
+    if (!order || order.id !== form.workOrderId) return; // 工单已切换/清空，丢弃挂起
+    applyDefaultRoute(order);
+  },
+);
+
+const handleWorkOrderChange = (workOrderId: string): void => {
+  const order = workOrderSource.options.value.find((item) => item.id === workOrderId);
+  // 切换工单：立即清空上一工单的路线与负责人及预览，防止旧产品路线残留到提交校验
+  pendingRouteWorkOrderId = null;
+  form.routeId = '';
   form.ownerId = '';
-  form.plannedQuantity = getWorkOrderRemaining(order);
+  resetStepPreview();
+  if (!order) return;
+  form.plannedQuantity = Number(order.remainingQuantity);
   if (form.plannedQuantity <= 0) {
     EMessage.warning('该工单已无可分配数量');
   }
-  await loadCreateStepPreview();
+  if (productSource.status.value === 'ready' && routeSource.status.value === 'ready') {
+    applyDefaultRoute(order);
+  } else {
+    pendingRouteWorkOrderId = order.id;
+  }
 };
 
 const resetForm = (): void => {
+  pendingRouteWorkOrderId = null;
   Object.assign(form, initialForm());
   resetStepPreview();
 };
@@ -338,6 +423,7 @@ const setForm = (row: {
   remark: string | null;
 }): void => {
   editingTaskOriginalQuantity.value = Number(row.plannedQuantity);
+  pendingRouteWorkOrderId = null; // 编辑模式工单只读回显，不参与默认路线补算
   Object.assign(form, {
     workOrderId: row.workOrderId,
     batchNo: row.batchNo,
@@ -358,14 +444,41 @@ const handleSubmit = (): void => {
     EMessage.warning('计划数量不能超过工单剩余数量');
     return;
   }
+  // 编辑模式工单只读回显，可能不在 released 候选内（已全部分配/状态变化），跳过失效校验
   if (
+    !props.editingTaskId &&
     hasUnavailableSelection(
-      props.workOrderOptions,
+      workOrderSource.options.value,
       form.workOrderId ? [form.workOrderId] : [],
       (item) => item.id,
     )
   ) {
     EMessage.warning('所选工单已失效，请重新选择');
+    return;
+  }
+  if (
+    form.routeId &&
+    hasUnavailableSelection(availableRouteOptions.value, [form.routeId], (route) => route.id)
+  ) {
+    EMessage.warning('所选工艺路线已失效，请重新选择');
+    return;
+  }
+  if (
+    form.ownerId &&
+    hasUnavailableSelection(props.userOptions, [form.ownerId], (user) => user.id)
+  ) {
+    EMessage.warning('所选负责人已失效，请重新选择');
+    return;
+  }
+  // 工序执行行内实际负责人：刷新后已失效时前端拦截，不等后端拒绝
+  if (
+    createStepPreview.value.some(
+      (step) =>
+        step.responsibleUserId &&
+        hasUnavailableSelection(props.userOptions, [step.responsibleUserId], (user) => user.id),
+    )
+  ) {
+    EMessage.warning('所选工序实际负责人已失效，请重新选择');
     return;
   }
   emit('save', {

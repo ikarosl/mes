@@ -31,6 +31,7 @@
             v-model="form.productId"
             filterable
             placeholder="请选择产品"
+            :loading="props.productOptionsStatus === 'loading'"
             @visible-change="(v: boolean) => v && $emit('refresh-products')"
           >
             <el-option
@@ -59,6 +60,7 @@
             clearable
             filterable
             placeholder="请选择工单负责人"
+            :loading="props.userOptionsStatus === 'loading'"
             @visible-change="(v: boolean) => v && $emit('refresh-users')"
           >
             <el-option
@@ -126,12 +128,12 @@
 
 <script setup lang="ts">
 import { computed, reactive } from 'vue';
-import type { WorkOrderItem } from '@company/contracts';
+import type { ProductOption, UserOption, WorkOrderItem } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
 import { toDateInputValue } from '../../../utils/date';
 import { EMessage } from '../../../utils/message';
 import { buildLiveOptions, hasUnavailableSelection } from '../../../utils/live-options';
-import type { WorkOrderProductOption, WorkOrderUserOption } from '../composables/useWorkOrders';
+import type { RefreshableStatus } from '../../../composables/options/useRefreshableOptions';
 
 export type WorkOrderFormValue = {
   workOrderNo: string;
@@ -149,8 +151,10 @@ export type WorkOrderFormValue = {
 const props = defineProps<{
   visible: boolean;
   editingOrderId: string | null;
-  productOptions: WorkOrderProductOption[];
-  userOptions: WorkOrderUserOption[];
+  productOptions: ProductOption[];
+  productOptionsStatus: RefreshableStatus;
+  userOptions: UserOption[];
+  userOptionsStatus: RefreshableStatus;
   submitting: boolean;
 }>();
 
@@ -182,9 +186,16 @@ const initialForm = (): WorkOrderFormValue => ({
 
 const form = reactive<WorkOrderFormValue>(initialForm());
 
-/** 实时选项：产品和负责人 */
+/** 实时选项：产品和负责人（产品业务投影：仅成品） */
+const finishedProducts = computed(() =>
+  props.productOptions.filter((p) => p.itemKind === 'finished_product'),
+);
 const productChoices = computed(() =>
-  buildLiveOptions(props.productOptions, form.productId ? [form.productId] : [], (item) => item.id),
+  buildLiveOptions(
+    finishedProducts.value,
+    form.productId ? [form.productId] : [],
+    (item) => item.id,
+  ),
 );
 const userChoices = computed(() =>
   buildLiveOptions(
@@ -194,7 +205,7 @@ const userChoices = computed(() =>
   ),
 );
 
-const formatProduct = (product: WorkOrderProductOption): string =>
+const formatProduct = (product: ProductOption): string =>
   `${product.itemCode} / ${product.productName}`;
 
 const resetForm = (): void => {
@@ -223,7 +234,7 @@ const handleSubmit = (): void => {
   }
   if (
     hasUnavailableSelection(
-      props.productOptions,
+      finishedProducts.value,
       form.productId ? [form.productId] : [],
       (item) => item.id,
     )

@@ -45,10 +45,11 @@
           @visible-change="(v: boolean) => v && $emit('refresh-users')"
         >
           <el-option
-            v-for="user in userOptions"
-            :key="user.id"
-            :label="user.displayName"
-            :value="user.id"
+            v-for="choice in userChoices"
+            :key="choice.value"
+            :label="choice.option?.displayName ?? `${choice.value}（已失效）`"
+            :value="choice.value"
+            :disabled="choice.isUnavailable"
           />
         </el-select>
       </el-form-item>
@@ -66,10 +67,11 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, watch } from 'vue';
-import type { BatchStepRecordItem, TechnicalFileListItem } from '@company/contracts';
+import { computed, reactive, watch } from 'vue';
+import type { BatchStepRecordItem, TechnicalFileListItem, UserOption } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
-import type { TaskUserOption } from '../composables/useProductionBatches';
+import { EMessage } from '../../../utils/message';
+import { buildLiveOptions, hasUnavailableSelection } from '../../../utils/live-options';
 
 export type StepExecutionValue = {
   actualSopFileId: string | null;
@@ -80,7 +82,7 @@ const props = defineProps<{
   visible: boolean;
   stepRecord: BatchStepRecordItem | null;
   sopFileOptions: TechnicalFileListItem[];
-  userOptions: TaskUserOption[];
+  userOptions: UserOption[];
   submitting: boolean;
 }>();
 
@@ -113,7 +115,23 @@ watch(
   { immediate: true },
 );
 
+/** 负责人下拉实时选项：已选负责人在候选被移除时显示「ID（已失效）」并禁用 */
+const userChoices = computed(() =>
+  buildLiveOptions(
+    props.userOptions,
+    form.responsibleUserId ? [form.responsibleUserId] : [],
+    (user) => user.id,
+  ),
+);
+
 const handleSubmit = (): void => {
+  if (
+    form.responsibleUserId &&
+    hasUnavailableSelection(props.userOptions, [form.responsibleUserId], (user) => user.id)
+  ) {
+    EMessage.warning('所选负责人已失效，请重新选择');
+    return;
+  }
   emit('save', { ...form });
 };
 </script>

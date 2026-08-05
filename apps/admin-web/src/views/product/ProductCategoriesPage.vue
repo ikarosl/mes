@@ -162,11 +162,9 @@
       ref="categoryFormDialogRef"
       :visible="categoryDialogVisible"
       :editing-category-id="editingCategoryId"
-      :category-options="categoryOptions"
       :item-kind-labels="itemKindLabels"
       :submitting="submitting"
       @update:visible="categoryDialogVisible = $event"
-      @refresh-options="refreshCategoryOptions"
       @save="submitCategory"
     />
 
@@ -180,7 +178,7 @@
 </template>
 
 <script setup lang="ts">
-import { onActivated, onMounted, ref } from 'vue';
+import { onMounted, ref } from 'vue';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import { PERMISSIONS } from '@company/constants';
 import type {
@@ -205,14 +203,12 @@ defineOptions({ name: 'ProductCategoriesPage' });
 const auth = useAuthStore();
 const {
   categories,
-  categoryOptions,
   loading,
   total,
   currentPage,
   pageSize,
   query,
   loadCategories,
-  refreshCategoryOptions,
   handleSearch,
   resetQuery,
   handlePageSizeChange,
@@ -235,13 +231,11 @@ const detailRow = ref<ProductCategoryListItem | null>(null);
 const categoryFormDialogRef = ref<InstanceType<typeof ProductCategoryFormDialog> | null>(null);
 
 const openCreate = () => {
-  refreshCategoryOptions();
   editingCategoryId.value = null;
   categoryFormDialogRef.value?.resetForm();
   categoryDialogVisible.value = true;
 };
 const openEdit = (row: ProductCategoryListItem) => {
-  refreshCategoryOptions();
   editingCategoryId.value = row.id;
   categoryFormDialogRef.value?.setForm(row);
   categoryDialogVisible.value = true;
@@ -283,7 +277,6 @@ const toggleStatus = async (row: ProductCategoryListItem) => {
   }
 };
 onMounted(loadCategories);
-onActivated(loadCategories);
 </script>
 
 <style scoped>

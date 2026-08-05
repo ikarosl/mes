@@ -1,7 +1,7 @@
 # apps/admin-web
 
 Vue 3 管理端主线。视觉与交互继续遵守原项目 `design.md`：左侧菜单 + 顶部栏 + 内容区；列表优先；新增、编辑、分配、确认使用 Modal，不使用 Drawer。
-前端分层、数据所有权、共享候选、缓存失效和竞态规则遵守 `../../docs/frontend-architecture.md`。
+前端分层、候选数据所有权（composable 实现复用、实例局部化）、竞态守卫和刷新时机遵守 `../../docs/frontend-architecture.md`。
 
 ```text
 src/

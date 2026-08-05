@@ -196,7 +196,6 @@
 
     <!-- 配置工序顺序弹窗（自持路线步骤明细与工序/用户/物料候选） -->
     <RouteStepDialog
-      ref="routeStepDialogRef"
       :visible="stepsDialogVisible"
       :route-id="editingRouteId"
       :product-id="editingRouteProductId"
@@ -216,7 +215,7 @@
 </template>
 
 <script setup lang="ts">
-import { onActivated, onMounted, ref } from 'vue';
+import { onMounted, ref } from 'vue';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import { PERMISSIONS } from '@company/constants';
 import type { ProcessRouteListItem, ProcessRouteStatus } from '@company/contracts';
@@ -228,7 +227,6 @@ import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
 import { useRowPending } from '../../utils/useRowPending';
 import { useAuthStore } from '../../stores/auth';
 import { useProcessRoutesList } from './composables/useProcessRoutesList';
-import { useReferenceOptionsStore } from '../../stores/reference-options';
 import RouteFormDialog from './components/RouteFormDialog.vue';
 import type { RouteFormValue } from './components/RouteFormDialog.vue';
 import RouteStepDialog from './components/RouteStepDialog.vue';
@@ -254,8 +252,6 @@ const {
   handlePageChange,
 } = useProcessRoutesList();
 
-const referenceOptions = useReferenceOptionsStore();
-
 /** 行内写操作守卫（启停/删除路线），同一行只允许一个在途（todo 3.5） */
 const { isRowPending, beginRow, endRow } = useRowPending();
 
@@ -268,13 +264,7 @@ const editingRouteProductId = ref<string | null>(null);
 const detailRow = ref<ProcessRouteListItem | null>(null);
 const submittingSteps = ref(false);
 const routeFormDialogRef = ref();
-const routeStepDialogRef = ref();
 const submittingRoute = ref(false);
-
-const refreshActiveRouteEditors = (): void => {
-  if (routeDialogVisible.value) routeFormDialogRef.value?.refresh();
-  if (stepsDialogVisible.value) routeStepDialogRef.value?.refresh();
-};
 
 /* ----- route CRUD ----- */
 const openCreate = (): void => {
@@ -309,7 +299,6 @@ const submitRoute = async (data: RouteFormValue): Promise<void> => {
     EMessage.success(editingRouteId.value ? '工艺路线已更新' : '工艺路线已新增');
     routeDialogVisible.value = false;
     await loadRoutes();
-    referenceOptions.invalidateRoutes();
   } catch (error) {
     EMessage.error(error, '工艺路线保存失败');
   } finally {
@@ -330,7 +319,6 @@ const toggleStatus = async (row: ProcessRouteListItem): Promise<void> => {
     await productApi.setRouteStatus(row.id, next);
     EMessage.success(`工艺路线已${text}`);
     await loadRoutes();
-    referenceOptions.invalidateRoutes();
   } catch (error: unknown) {
     if (error !== 'cancel' && error !== 'close') EMessage.error(error, `${text}路线失败`);
   } finally {
@@ -349,7 +337,6 @@ const deleteRoute = async (row: ProcessRouteListItem): Promise<void> => {
     await productApi.deleteRoute(row.id);
     EMessage.success('草稿路线已删除');
     await loadRoutes();
-    referenceOptions.invalidateRoutes();
   } catch (error: unknown) {
     if (error !== 'cancel' && error !== 'close') EMessage.error(error, '删除路线失败');
   } finally {
@@ -385,7 +372,6 @@ const submitSteps = async (steps: StepRow[]): Promise<void> => {
     EMessage.success('工序顺序和规则快照已保存');
     stepsDialogVisible.value = false;
     await loadRoutes();
-    referenceOptions.invalidateRoutes();
   } catch (error) {
     EMessage.error(error, '工序顺序保存失败');
   } finally {
@@ -394,7 +380,6 @@ const submitSteps = async (steps: StepRow[]): Promise<void> => {
 };
 
 onMounted(loadRoutes);
-onActivated(refreshActiveRouteEditors);
 </script>
 
 <style scoped>

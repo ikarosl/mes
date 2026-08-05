@@ -1,16 +1,11 @@
 import { reactive, ref } from 'vue';
 import { SYSTEM_STATUS } from '@company/constants';
-import type {
-  ProductCategoryListItem,
-  ProductCategoryOption,
-  ProductCategoryQuery,
-} from '@company/contracts';
+import type { ProductCategoryListItem, ProductCategoryQuery } from '@company/contracts';
 import { productApi } from '../../../api/product';
 import { EMessage } from '../../../utils/message';
 
 export function useProductCategories() {
   const categories = ref<ProductCategoryListItem[]>([]);
-  const categoryOptions = ref<ProductCategoryOption[]>([]);
   const loading = ref(false);
   const total = ref(0);
   const currentPage = ref(1);
@@ -20,9 +15,11 @@ export function useProductCategories() {
     categoryName: '',
     status: '',
   });
-  let optionsRequest: Promise<void> | null = null;
+  /** 列表请求代际：快速查询/翻页时丢弃旧响应（last-request-wins，见 frontend-architecture §7.3） */
+  let listRequestToken = 0;
 
   const loadCategories = async (): Promise<void> => {
+    const token = ++listRequestToken;
     loading.value = true;
     try {
       const params: ProductCategoryQuery = {
@@ -38,32 +35,15 @@ export function useProductCategories() {
               : undefined,
       };
       const result = await productApi.categories(params);
+      if (token !== listRequestToken) return; // 查询/翻页已变化，丢弃旧响应
       categories.value = result.items;
       total.value = result.total;
     } catch (error) {
+      if (token !== listRequestToken) return; // 丢弃旧请求的失败，不误导提示
       EMessage.error(error, '产品分类加载失败');
     } finally {
-      loading.value = false;
+      if (token === listRequestToken) loading.value = false; // loading 只由最新请求结束
     }
-  };
-
-  /** 父分类下拉选项；与分页列表解耦，并发请求合并为一次 */
-  const loadCategoryOptions = (): Promise<void> => {
-    if (!optionsRequest) {
-      optionsRequest = (async () => {
-        try {
-          categoryOptions.value = await productApi.categoryOptions();
-        } catch (error) {
-          EMessage.error(error, '产品分类选项加载失败');
-        }
-      })().finally(() => {
-        optionsRequest = null;
-      });
-    }
-    return optionsRequest;
-  };
-  const refreshCategoryOptions = (visible = true): void => {
-    if (visible) void loadCategoryOptions();
   };
 
   const handleSearch = async (): Promise<void> => {
@@ -87,15 +67,12 @@ export function useProductCategories() {
 
   return {
     categories,
-    categoryOptions,
     loading,
     total,
     currentPage,
     pageSize,
     query,
     loadCategories,
-    loadCategoryOptions,
-    refreshCategoryOptions,
     handleSearch,
     resetQuery,
     handlePageSizeChange,

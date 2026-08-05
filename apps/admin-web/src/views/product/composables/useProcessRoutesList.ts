@@ -7,7 +7,7 @@ import { EMessage } from '../../../utils/message';
 export function useProcessRoutesList() {
   const routes = ref<ProcessRouteListItem[]>([]);
   const loading = ref(false);
-  /** 列表请求代际：快速查询/翻页时丢弃旧响应（last-request-wins，见 frontend-architecture §8.3） */
+  /** 列表请求代际：快速查询/翻页时丢弃旧响应（last-request-wins，见 frontend-architecture §7.3） */
   let listRequestToken = 0;
   const total = ref(0);
   const currentPage = ref(1);

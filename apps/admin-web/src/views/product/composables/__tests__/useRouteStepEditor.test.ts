@@ -1,19 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { setActivePinia, createPinia } from 'pinia';
 import { useRouteStepEditor } from '../useRouteStepEditor';
 
-const { routeSteps, processStepOptions, userOptions, materials, error, warning } = vi.hoisted(
-  () => ({
-    routeSteps: vi.fn(),
-    processStepOptions: vi.fn(),
-    userOptions: vi.fn(),
-    materials: vi.fn(),
-    error: vi.fn(),
-    warning: vi.fn(),
-  }),
-);
+const { routeSteps, materials, error, warning } = vi.hoisted(() => ({
+  routeSteps: vi.fn(),
+  materials: vi.fn(),
+  error: vi.fn(),
+  warning: vi.fn(),
+}));
 vi.mock('../../../../api/product', () => ({
-  productApi: { routeSteps, processStepOptions, userOptions, materials },
+  productApi: { routeSteps, materials },
 }));
 vi.mock('../../../../utils/message', () => ({ EMessage: { error, warning } }));
 
@@ -46,48 +41,38 @@ const materialItem = {
 describe('useRouteStepEditor', () => {
   beforeEach(() => {
     routeSteps.mockReset();
-    processStepOptions.mockReset();
-    userOptions.mockReset();
     materials.mockReset();
     error.mockReset();
     warning.mockReset();
-    setActivePinia(createPinia());
   });
 
-  it('loads steps and all candidates on dialog open', async () => {
+  it('loads steps and material candidates on dialog open', async () => {
     routeSteps.mockResolvedValue([stepItem]);
-    processStepOptions.mockResolvedValue([
-      { id: 's1', stepCode: 'P1', stepName: '工序1', sopFileName: null },
-    ]);
-    userOptions.mockResolvedValue([{ id: 'u1', displayName: '张三' }]);
     materials.mockResolvedValue([materialItem]);
     const state = useRouteStepEditor();
 
-    const [, steps] = await Promise.all([state.loadAllOptions('p1', false), state.loadSteps('r1')]);
+    const steps = await state.loadSteps('r1');
+    await state.loadMaterialOptions('p1', false);
 
     expect(steps).toHaveLength(1);
-    expect(state.processOptions.value).toHaveLength(1);
-    expect(state.userOptions.value).toHaveLength(1);
     expect(state.routeMaterialOptions.value).toHaveLength(1);
     expect(state.stepsStatus.value).toBe('success');
     expect(state.loadedRouteId.value).toBe('r1');
   });
 
-  it('keeps steps when a candidate fails (first load keeps that candidate empty)', async () => {
+  it('keeps steps when material candidates fail (first load stays empty)', async () => {
     routeSteps.mockResolvedValue([stepItem]);
-    processStepOptions.mockRejectedValue(new Error('403'));
-    userOptions.mockResolvedValue([{ id: 'u1', displayName: '张三' }]);
-    materials.mockResolvedValue([]);
+    materials.mockRejectedValue(new Error('403'));
     const state = useRouteStepEditor();
 
     const steps = await state.loadSteps('r1');
-    await state.loadAllOptions(null, false);
+    await state.loadMaterialOptions('p1', false);
 
     expect(steps).toHaveLength(1);
-    expect(state.processOptions.value).toEqual([]);
-    expect(state.userOptions.value).toHaveLength(1);
+    expect(state.routeMaterialOptions.value).toEqual([]);
     expect(state.stepsStatus.value).toBe('success');
     expect(state.loadedRouteId.value).toBe('r1');
+    expect(warning).toHaveBeenCalled();
     expect(error).not.toHaveBeenCalled();
   });
 
@@ -103,52 +88,24 @@ describe('useRouteStepEditor', () => {
     expect(error).toHaveBeenCalled();
   });
 
-  it('refreshing candidates never reloads route steps', async () => {
-    processStepOptions.mockResolvedValue([]);
-    userOptions.mockResolvedValue([]);
+  it('refreshMaterialOptions never reloads route steps', async () => {
     materials.mockResolvedValue([]);
     const state = useRouteStepEditor();
 
-    await state.loadAllOptions('p1', true);
+    await state.refreshMaterialOptions('p1');
 
     expect(routeSteps).not.toHaveBeenCalled();
   });
 
-  it('expanding the owner dropdown only refreshes users', async () => {
-    userOptions.mockResolvedValue([{ id: 'u1', displayName: '张三' }]);
+  it('refreshMaterialOptions force re-requests materials even when already loaded', async () => {
+    materials.mockResolvedValueOnce([materialItem]);
+    materials.mockResolvedValueOnce([]);
     const state = useRouteStepEditor();
 
-    await state.loadUserOptions(true);
+    await state.loadMaterialOptions('p1', false);
+    await state.refreshMaterialOptions('p1');
 
-    expect(userOptions).toHaveBeenCalledTimes(1);
-    expect(processStepOptions).not.toHaveBeenCalled();
-    expect(materials).not.toHaveBeenCalled();
-    expect(routeSteps).not.toHaveBeenCalled();
-  });
-
-  it('expanding the process dropdown only refreshes process', async () => {
-    processStepOptions.mockResolvedValue([]);
-    const state = useRouteStepEditor();
-
-    await state.loadProcessOptions(true);
-
-    expect(processStepOptions).toHaveBeenCalledTimes(1);
-    expect(userOptions).not.toHaveBeenCalled();
-    expect(materials).not.toHaveBeenCalled();
-    expect(routeSteps).not.toHaveBeenCalled();
-  });
-
-  it('force refresh re-requests a resource even when already loaded', async () => {
-    processStepOptions.mockResolvedValueOnce([
-      { id: 's1', stepCode: 'P1', stepName: '工序1', sopFileName: null },
-    ]);
-    processStepOptions.mockResolvedValueOnce([]);
-    const state = useRouteStepEditor();
-
-    await state.loadProcessOptions(false);
-    await state.loadProcessOptions(true);
-
-    expect(processStepOptions).toHaveBeenCalledTimes(2);
+    expect(materials).toHaveBeenCalledTimes(2);
   });
 
   it('discards a late materials response for a previous product', async () => {
@@ -205,6 +162,55 @@ describe('useRouteStepEditor', () => {
 
     // B 的结果保留，A 的迟到响应被丢弃且不改变状态
     expect(state.loadedRouteId.value).toBe('B');
+    expect(state.stepsStatus.value).toBe('success');
+  });
+
+  it('returns null (stale marker) for a late steps response of a previous route, not an empty array', async () => {
+    let resolveA!: (value: Array<typeof stepItem>) => void;
+    routeSteps.mockImplementation((routeId: string) =>
+      routeId === 'A'
+        ? new Promise((resolve) => {
+            resolveA = resolve;
+          })
+        : Promise.resolve([stepItem]),
+    );
+    const state = useRouteStepEditor();
+
+    const pendingA = state.loadSteps('A');
+    const pendingB = state.loadSteps('B');
+    await pendingB;
+    resolveA([{ ...stepItem, processStepId: 'sA' }]);
+
+    // 过期响应返回 null（而非空数组），调用方才能与"该路线确实没有步骤"区分开
+    expect(await pendingA).toBeNull();
+    expect(state.loadedRouteId.value).toBe('B');
+    expect(state.stepsStatus.value).toBe('success');
+  });
+
+  it('returns null for a stale response after invalidateSteps (same route closed and reopened)', async () => {
+    const resolvers: Array<(value: Array<typeof stepItem>) => void> = [];
+    routeSteps.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvers.push(resolve);
+        }),
+    );
+    const state = useRouteStepEditor();
+
+    const pendingOld = state.loadSteps('R');
+    state.invalidateSteps(); // 弹窗关闭：推进请求代际
+    const pendingNew = state.loadSteps('R'); // 重新打开同一路线：新请求
+    expect(resolvers).toHaveLength(2);
+
+    // 旧请求（代际已过期）先返回：过期标记，不得被当作"该路线没有步骤"
+    resolvers[0]([{ ...stepItem, processStepId: 'sOld' }]);
+    expect(await pendingOld).toBeNull();
+
+    // 新请求正常返回，不受旧响应影响
+    resolvers[1]([{ ...stepItem, processStepId: 'sNew' }]);
+    const fresh = await pendingNew;
+    expect(fresh?.map((s) => s.processStepId)).toEqual(['sNew']);
+    expect(state.loadedRouteId.value).toBe('R');
     expect(state.stepsStatus.value).toBe('success');
   });
 

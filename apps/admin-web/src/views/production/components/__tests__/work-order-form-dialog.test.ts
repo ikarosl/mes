@@ -1,5 +1,5 @@
 import { nextTick } from 'vue';
-import { mount } from '@vue/test-utils';
+import { flushPromises, mount } from '@vue/test-utils';
 import { describe, expect, it, vi } from 'vitest';
 import WorkOrderFormDialog from '../WorkOrderFormDialog.vue';
 
@@ -13,8 +13,6 @@ const selectStub = {
     '<button class="select-stub" @click="$emit(\'visible-change\', true)">{{ placeholder }}</button>',
 };
 
-const passthroughStub = { template: '<div><slot /></div>' };
-
 /** el-dialog 打开时发射 open，驱动弹窗自身的 @open 组合刷新 */
 const dialogStub = {
   props: ['modelValue'],
@@ -27,20 +25,37 @@ const dialogStub = {
   template: '<div class="dialog-stub"><slot/><slot name="footer"/></div>',
 };
 
-const openDialog = async () => {
+/** 渲染默认插槽的透传 stub：`true` 会丢弃插槽内容，导致弹窗内表单不渲染 */
+const passthroughStub = { template: '<div><slot /></div>' };
+
+const openDialog = async (overrides: Record<string, unknown> = {}) => {
   const wrapper = mount(WorkOrderFormDialog, {
     props: {
       visible: false,
       editingOrderId: null,
-      productOptions: [{ id: 'p1', productName: '产品1', itemCode: 'C1' }],
+      productOptions: [
+        {
+          id: 'p1',
+          productName: '产品1',
+          itemCode: 'C1',
+          itemKind: 'finished_product',
+          acquireMethod: 'self_made',
+          unit: '个',
+          defaultRouteId: null,
+        },
+      ],
+      productOptionsStatus: 'ready',
       userOptions: [{ id: 'u1', displayName: '张三' }],
+      userOptionsStatus: 'ready',
       submitting: false,
+      ...overrides,
     },
     global: {
       stubs: {
         'el-dialog': dialogStub,
         'el-select': selectStub,
         'el-option': true,
+        'el-button': { template: '<button><slot/></button>' },
         'el-input': true,
         'el-input-number': true,
         'el-date-picker': true,
@@ -50,14 +65,18 @@ const openDialog = async () => {
     },
   });
   await wrapper.setProps({ visible: true });
+  await flushPromises();
   await nextTick();
   return wrapper;
 };
 
 type DialogWrapper = Awaited<ReturnType<typeof openDialog>>;
 
-const selectByPlaceholder = (wrapper: DialogWrapper, placeholder: string) =>
-  wrapper.findAll('.select-stub').find((b) => b.text() === placeholder);
+const emitVisibleChange = async (wrapper: DialogWrapper, placeholder: string): Promise<void> => {
+  const button = wrapper.findAll('.select-stub').find((b) => b.text() === placeholder);
+  expect(button).toBeDefined();
+  await button!.trigger('click');
+};
 
 const eventCounts = (wrapper: DialogWrapper) => ({
   products: wrapper.emitted('refresh-products')?.length ?? 0,
@@ -70,7 +89,7 @@ describe('WorkOrderFormDialog', () => {
     const wrapper = await openDialog();
     const before = eventCounts(wrapper);
 
-    await selectByPlaceholder(wrapper, '请选择产品')!.trigger('click');
+    await emitVisibleChange(wrapper, '请选择产品');
 
     const after = eventCounts(wrapper);
     expect(after.products).toBe(before.products + 1);
@@ -82,7 +101,7 @@ describe('WorkOrderFormDialog', () => {
     const wrapper = await openDialog();
     const before = eventCounts(wrapper);
 
-    await selectByPlaceholder(wrapper, '请选择工单负责人')!.trigger('click');
+    await emitVisibleChange(wrapper, '请选择工单负责人');
 
     const after = eventCounts(wrapper);
     expect(after.users).toBe(before.users + 1);
@@ -95,5 +114,16 @@ describe('WorkOrderFormDialog', () => {
     expect(wrapper.emitted('refresh-products')).toHaveLength(1);
     expect(wrapper.emitted('refresh-users')).toHaveLength(1);
     expect(wrapper.emitted('refresh-routes')).toBeUndefined();
+  });
+
+  it('binds the select loading state to the candidate status', async () => {
+    const wrapper = await openDialog({
+      productOptionsStatus: 'loading',
+      userOptionsStatus: 'loading',
+    });
+    const productButton = wrapper.findAll('.select-stub').find((b) => b.text() === '请选择产品');
+    const userButton = wrapper.findAll('.select-stub').find((b) => b.text() === '请选择工单负责人');
+    expect(productButton!.attributes('loading')).toBe('true');
+    expect(userButton!.attributes('loading')).toBe('true');
   });
 });

@@ -498,6 +498,17 @@ export interface WorkOrderQuery extends PageQuery {
   status?: WorkOrderStatus;
 }
 
+/** 任务表单已下达工单候选（/production/work-orders/options）：仅已下达且仍有余量的工单。 */
+export interface WorkOrderOption {
+  id: string;
+  workOrderNo: string;
+  productId: string;
+  productCode: string;
+  productName: string;
+  /** 剩余可分配数量 = 计划数量 - 已分配数量 */
+  remainingQuantity: string;
+}
+
 export interface ProductionBatchQuery extends PageQuery {
   keyword?: string;
   workOrderId?: string;

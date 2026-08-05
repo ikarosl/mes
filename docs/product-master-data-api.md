@@ -23,7 +23,8 @@
 > `/categories/options` 同时服务产品页（`product:products:view`）与分类页（`product:categories:view`），
 > 任一权限即可读取，避免只拥有单个页面权限的角色被 403。生产工单页（`production:orders:view`）与
 > 生产任务页（`production:tasks:view`）会消费 `products/options`、`process-routes/options` 和
-> `users/options`，对应授权集须并入这两个视图权限。前端把选项请求视为 best-effort
+> `users/options`，对应授权集须并入这两个视图权限。生产任务页任务表单弹窗额外消费的生产域工单候选
+> 见下表后的「跨模块 /options 契约」。前端把选项请求视为 best-effort
 > （`skipErrorHandling`），单个选项失败只影响该项下拉，不触发全局 403 跳转。
 
 | 方法与路径                             | 用途                                                         | 权限                                                                                                |
@@ -61,6 +62,19 @@
 | `DELETE /process-routes/:id`           | 软删除从未启用的草稿路线                                     | `product:routes:delete`                                                                             |
 | `GET /process-routes/:id/steps`        | 路线步骤与 BOM 关联                                          | `product:routes:view`                                                                               |
 | `PUT /process-routes/:id/steps`        | 保存步骤顺序、SOP/规则快照及 BOM 关联                        | `product:routes:manage-steps`                                                                       |
+
+### 跨模块 /options 契约（不属于 `/api/product`）
+
+上表接口统一位于 `/api/product`。任务表单弹窗除消费上表的产品类 options 外，还消费一个生产域工单候选，
+该端点不在 `/api/product` 前缀下，完整路径与授权如下：
+
+| 方法  | 完整路径                              | 用途                                                                                                   | 权限                    |
+| ----- | ------------------------------------- | ------------------------------------------------------------------------------------------------------ | ----------------------- |
+| `GET` | `/api/production/work-orders/options` | 任务表单已下达工单候选（完整返回全部 `released` 且仍有余量，前端本地过滤，最小字段 `WorkOrderOption`） | `production:tasks:view` |
+
+该端点位于生产模块（`apps/api/src/modules/production`），唯一消费方是生产任务页的任务表单弹窗；因其同时
+依赖上表的产品类 options，故在本文档汇总列出。实际前缀为 `/api/production/...`，与上表 `/api/product/...`
+不冲突，前端以 `skipErrorHandling` best-effort 读取。
 
 `GET /products`、`GET /process-routes`、`GET /categories` 和 `GET /process-steps` 使用通用 `PageResult<T>` 响应。产品列表支持 `page`、`pageSize`、`keyword`、`categoryId`、`acquireMethod` 和 `status`；路线列表支持 `page`、`pageSize`、`keyword` 和 `status`；分类列表支持 `page`、`pageSize`、`categoryCode`、`categoryName` 和 `status`；工序列表支持 `page`、`pageSize`、`keyword` 和 `status`。表单选择统一使用独立 `/options` 接口（最小字段、默认排除停用和删除记录），不承担正式列表分页。
 

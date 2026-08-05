@@ -18,13 +18,18 @@
             v-model="query.categoryId"
             clearable
             placeholder="全部"
-            @visible-change="refreshProductOptions"
+            @visible-change="(v: boolean) => v && categorySource.refresh()"
           >
             <el-option
-              v-for="cat in categoryOptions"
-              :key="cat.id"
-              :label="`${itemKindLabels[cat.itemKind]} / ${cat.categoryName}`"
-              :value="cat.id"
+              v-for="choice in categoryChoices"
+              :key="choice.value"
+              :label="
+                choice.option
+                  ? `${itemKindLabels[choice.option.itemKind]} / ${choice.option.categoryName}`
+                  : `${choice.value}（已失效）`
+              "
+              :value="choice.value"
+              :disabled="choice.isUnavailable"
             />
           </el-select>
         </el-form-item>
@@ -253,11 +258,11 @@
       ref="productFormDialogRef"
       :visible="productDialogVisible"
       :editing-product-id="editingProductId"
-      :category-options="categoryOptions"
+      :category-options="categorySource.options.value"
       :item-kind-labels="itemKindLabels"
       :submitting="submittingProduct"
       @update:visible="productDialogVisible = $event"
-      @refresh-options="refreshProductOptions"
+      @refresh-options="categorySource.refresh"
       @save="submitProduct"
     />
 
@@ -273,7 +278,6 @@
 
     <!-- 物料清单弹窗（自持候选数据与 BOM 明细） -->
     <ProductMaterialDialog
-      ref="materialDialogRef"
       :visible="materialDialogVisible"
       :product="materialProduct"
       :submitting="submittingMaterials"
@@ -283,7 +287,6 @@
 
     <!-- 默认路线弹窗（自持路线候选） -->
     <ProductDefaultRouteDialog
-      ref="defaultRouteDialogRef"
       :visible="defaultRouteDialogVisible"
       :product="defaultRouteProduct"
       :current-route-id="defaultRouteProduct?.defaultRouteId ?? null"
@@ -295,7 +298,7 @@
 </template>
 
 <script setup lang="ts">
-import { onActivated, onMounted, ref } from 'vue';
+import { computed, onActivated, onMounted, ref } from 'vue';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import { PERMISSIONS } from '@company/constants';
 import type { ProductAcquireMethod, ProductListItem } from '@company/contracts';
@@ -307,8 +310,8 @@ import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
 import { useRowPending } from '../../utils/useRowPending';
 import { useAuthStore } from '../../stores/auth';
 import { useProductsList } from './composables/useProductsList';
-import { useProductCategoryOptions } from './composables/useProductCategoryOptions';
-import { useReferenceOptionsStore } from '../../stores/reference-options';
+import { useProductCategoryOptions } from '../../composables/options/useProductCategoryOptions';
+import { buildLiveOptions } from '../../utils/live-options';
 import ProductFormDialog from './components/ProductFormDialog.vue';
 import type { ProductFormValue } from './components/ProductFormDialog.vue';
 import ProductDetailDialog from './components/ProductDetailDialog.vue';
@@ -342,8 +345,15 @@ const {
   formatSpecItem,
   formatSpecSummary,
 } = useProductsList();
-const { categoryOptions, loadCategoryOptions } = useProductCategoryOptions();
-const referenceOptions = useReferenceOptionsStore();
+const categorySource = useProductCategoryOptions();
+/** 分类筛选下拉：合并当前已选但已失效的分类，供用户清除（P1d） */
+const categoryChoices = computed(() =>
+  buildLiveOptions(
+    categorySource.options.value,
+    query.categoryId ? [query.categoryId] : [],
+    (c) => c.id,
+  ),
+);
 
 /** 行内写操作守卫（启停产品），同一行只允许一个在途（todo 3.5） */
 const { isRowPending, beginRow, endRow } = useRowPending();
@@ -359,37 +369,24 @@ const materialProduct = ref<ProductListItem | null>(null);
 const defaultRouteProduct = ref<ProductListItem | null>(null);
 const submittingMaterials = ref(false);
 const productFormDialogRef = ref();
-const materialDialogRef = ref();
-const defaultRouteDialogRef = ref();
 const submittingProduct = ref(false);
 const submittingDefaultRoute = ref(false);
 
-/** 页面级共享候选：仅分类 options（列表筛选 + 产品表单），并发请求合并为一次 */
-const refreshProductOptions = (visible = true): void => {
-  if (visible) void loadCategoryOptions();
-};
-
-/** 首次进入：加载列表 + 页面级分类选项；写操作成功后只刷新受影响列表，不连带其他 options */
+/** 首次进入 / 刷新按钮：只加载正式列表；分类候选仅在页面激活时刷新（M1） */
 const loadData = async (): Promise<void> => {
-  await Promise.all([loadProducts(), loadCategoryOptions()]);
-};
-
-const refreshActiveProductEditors = (): void => {
-  void loadCategoryOptions();
-  if (materialDialogVisible.value) materialDialogRef.value?.refresh();
-  if (defaultRouteDialogVisible.value) defaultRouteDialogRef.value?.refresh();
+  await loadProducts();
 };
 
 /* ----- product CRUD ----- */
+// 弹窗打开时的分类候选刷新由 ProductFormDialog 的 @open 统一触发（@refresh-options），
+// openCreate/openEdit 不再主动 refresh，避免每次打开重复请求 /categories/options。
 const openCreate = (): void => {
-  void loadCategoryOptions();
   editingProductId.value = null;
   productFormDialogRef.value?.resetForm();
   productDialogVisible.value = true;
 };
 
 const openEdit = (row: ProductListItem): void => {
-  void loadCategoryOptions();
   editingProductId.value = row.id;
   productFormDialogRef.value?.setForm(row);
   productDialogVisible.value = true;
@@ -418,7 +415,6 @@ const submitProduct = async (data: ProductFormValue): Promise<void> => {
     EMessage.success(editingProductId.value ? '产品已更新' : '产品已新增');
     productDialogVisible.value = false;
     await loadProducts();
-    referenceOptions.invalidateProducts();
   } catch (error) {
     EMessage.error(error, '产品保存失败');
   } finally {
@@ -436,7 +432,6 @@ const toggleStatus = async (row: ProductListItem): Promise<void> => {
     await productApi.setProductStatus(row.id, row.status === 1 ? 0 : 1);
     EMessage.success(`产品已${text}`);
     await loadProducts();
-    referenceOptions.invalidateProducts();
   } catch (error: unknown) {
     if (error !== 'cancel' && error !== 'close') EMessage.error(error, `${text}产品失败`);
   } finally {
@@ -487,7 +482,9 @@ const submitDefaultRoute = async (routeId: string | null): Promise<void> => {
 };
 
 onMounted(loadData);
-onActivated(refreshActiveProductEditors);
+onActivated(() => {
+  void categorySource.refresh();
+});
 </script>
 
 <style scoped>

@@ -50,7 +50,7 @@
           v-model="form.parentId"
           clearable
           placeholder="顶级分类"
-          @visible-change="(visible: boolean) => visible && $emit('refresh-options')"
+          @visible-change="(visible: boolean) => visible && categorySource.refresh()"
         >
           <el-option
             v-for="choice in parentChoices"
@@ -94,26 +94,21 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive } from 'vue';
-import type {
-  ProductCategoryOption,
-  ProductCategoryPayload,
-  ProductItemKind,
-} from '@company/contracts';
+import { computed, onActivated, reactive, watch } from 'vue';
+import type { ProductCategoryPayload, ProductItemKind } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
 import { buildLiveOptions, hasUnavailableSelection } from '../../../utils/live-options';
 import { EMessage } from '../../../utils/message';
+import { useProductCategoryOptions } from '../../../composables/options/useProductCategoryOptions';
 
 const props = defineProps<{
   visible: boolean;
   editingCategoryId: string | null;
-  categoryOptions: ProductCategoryOption[];
   itemKindLabels: Record<ProductItemKind, string>;
   submitting: boolean;
 }>();
 const emit = defineEmits<{
   (e: 'update:visible', val: boolean): void;
-  (e: 'refresh-options'): void;
   (e: 'save', payload: ProductCategoryPayload): void;
 }>();
 
@@ -153,14 +148,27 @@ const setForm = (row: {
     remark: row.remark ?? '',
   });
 };
+
+/** 弹窗自持父分类候选：打开、重新激活、下拉展开时刷新；失败保留上次成功（P2a） */
+const categorySource = useProductCategoryOptions();
 const parentOptions = computed(() =>
-  props.categoryOptions.filter(
+  categorySource.options.value.filter(
     (item) => item.id !== props.editingCategoryId && item.itemKind === form.itemKind,
   ),
 );
 const parentChoices = computed(() =>
   buildLiveOptions(parentOptions.value, form.parentId ? [form.parentId] : [], (item) => item.id),
 );
+watch(
+  () => props.visible,
+  (visible) => {
+    if (visible) void categorySource.refresh();
+  },
+);
+onActivated(() => {
+  if (props.visible) void categorySource.refresh();
+});
+
 const handleSubmit = (): void => {
   if (!form.categoryCode.trim() || !form.categoryName.trim()) {
     EMessage.warning('请填写分类编码和分类名称');

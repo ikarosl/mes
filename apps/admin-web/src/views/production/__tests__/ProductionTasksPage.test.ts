@@ -1,29 +1,42 @@
-import { flushPromises, mount } from '@vue/test-utils';
+import { flushPromises, mount, type VueWrapper } from '@vue/test-utils';
 import ElementPlus from 'element-plus';
-import { nextTick } from 'vue';
+import { KeepAlive, nextTick } from 'vue';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia } from 'pinia';
 import { createRouter, createWebHistory } from 'vue-router';
 import ProductionTasksPage from '../ProductionTasksPage.vue';
 
-const { listBatches, listOrders, generateMaterialDemands, confirm, success, error } = vi.hoisted(
-  () => ({
-    listBatches: vi.fn(),
-    listOrders: vi.fn(),
-    generateMaterialDemands: vi.fn(),
-    confirm: vi.fn(),
-    success: vi.fn(),
-    error: vi.fn(),
-  }),
-);
+const {
+  listBatches,
+  listOrders,
+  generateMaterialDemands,
+  productOptions,
+  routeOptions,
+  userOptions,
+  technicalFiles,
+  confirm,
+  success,
+  error,
+} = vi.hoisted(() => ({
+  listBatches: vi.fn(),
+  listOrders: vi.fn(),
+  generateMaterialDemands: vi.fn(),
+  productOptions: vi.fn(),
+  routeOptions: vi.fn(),
+  userOptions: vi.fn(),
+  technicalFiles: vi.fn(),
+  confirm: vi.fn(),
+  success: vi.fn(),
+  error: vi.fn(),
+}));
 
 // Mock API modules to prevent real HTTP calls (ECONNREFUSED)
 vi.mock('../../../api/product', () => ({
   productApi: {
-    productOptions: vi.fn().mockResolvedValue([]),
-    routeOptions: vi.fn().mockResolvedValue([]),
-    userOptions: vi.fn().mockResolvedValue([]),
-    technicalFiles: vi.fn().mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 100 }),
+    productOptions,
+    routeOptions,
+    userOptions,
+    technicalFiles,
   },
 }));
 vi.mock('../../../api/production', () => ({
@@ -63,6 +76,16 @@ describe('ProductionTasksPage', () => {
       global: { plugins: [ElementPlus, router, createPinia()] },
     });
 
+  /** 放入 KeepAlive：让 onActivated 首次挂载即触发，验证页面激活的候选刷新行为 */
+  const mountPageWithKeepAlive = () =>
+    mount(
+      {
+        components: { KeepAlive, ProductionTasksPage },
+        template: '<KeepAlive><ProductionTasksPage /></KeepAlive>',
+      },
+      { global: { plugins: [ElementPlus, router, createPinia()] } },
+    );
+
   beforeEach(() => {
     listBatches.mockReset();
     listBatches.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 10 });
@@ -70,6 +93,14 @@ describe('ProductionTasksPage', () => {
     listOrders.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 50 });
     generateMaterialDemands.mockReset();
     generateMaterialDemands.mockResolvedValue(undefined);
+    productOptions.mockReset();
+    productOptions.mockResolvedValue([]);
+    routeOptions.mockReset();
+    routeOptions.mockResolvedValue([]);
+    userOptions.mockReset();
+    userOptions.mockResolvedValue([]);
+    technicalFiles.mockReset();
+    technicalFiles.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 100 });
     confirm.mockReset();
   });
 
@@ -98,15 +129,31 @@ describe('ProductionTasksPage', () => {
     expect(wrapper.find('.table-footer').exists()).toBe(true);
   });
 
+  it('requests the target page when the pagination page changes', async () => {
+    const wrapper = mountPage();
+    await flushPromises();
+    listBatches.mockClear();
+
+    const pagination = wrapper.findComponent({ name: 'ElPagination' });
+    expect(pagination.exists()).toBe(true);
+    pagination.vm.$emit('current-change', 2);
+    await flushPromises();
+
+    expect(listBatches).toHaveBeenCalledTimes(1);
+    expect(listBatches.mock.calls[0][0]).toMatchObject({ page: 2 });
+  });
+
   it('renders with the correct component name for KeepAlive', () => {
     const wrapper = mountPage();
     expect(wrapper.vm.$options.name).toBe('ProductionTasksPage');
   });
 
   it('disables the generate-materials button while the write is pending and submits once', async () => {
-    listBatches.mockResolvedValueOnce({ items: [batchRow], total: 1, page: 1, pageSize: 10 });
-    let confirmResolve!: (value: unknown) => void;
-    confirm.mockReturnValue(new Promise((resolve) => (confirmResolve = resolve)));
+    // 行必须持续存在：写操作成功后页面会重新加载列表
+    listBatches.mockResolvedValue({ items: [batchRow], total: 1, page: 1, pageSize: 10 });
+    // generateMaterials 无确认框：直接调用 generateMaterialDemands，以在途请求作为 pending 窗口
+    let resolveDemands!: (value: unknown) => void;
+    generateMaterialDemands.mockReturnValue(new Promise((resolve) => (resolveDemands = resolve)));
 
     const wrapper = mountPage();
     await flushPromises();
@@ -118,13 +165,80 @@ describe('ProductionTasksPage', () => {
 
     await findGenerate()!.trigger('click');
     await nextTick();
-    expect(findGenerate()!.attributes('disabled')).toBeDefined(); // 确认框期间行内写操作被占用
-    expect(generateMaterialDemands).not.toHaveBeenCalled();
-
-    confirmResolve('confirm');
-    await flushPromises();
+    expect(findGenerate()!.attributes('disabled')).toBeDefined(); // 写操作在途：按钮禁用
     expect(generateMaterialDemands).toHaveBeenCalledTimes(1);
     expect(generateMaterialDemands).toHaveBeenCalledWith('b1', 0);
+
+    resolveDemands(undefined);
+    await flushPromises();
     expect(findGenerate()!.attributes('disabled')).toBeUndefined(); // 写操作结束释放
+  });
+
+  it('expanding the 负责人 filter refreshes only the user options source', async () => {
+    const wrapper = mountPage();
+    await flushPromises();
+    productOptions.mockClear();
+    routeOptions.mockClear();
+    listOrders.mockClear();
+    userOptions.mockClear();
+
+    const ownerFormItem = wrapper
+      .findAll('.el-form-item')
+      .find((item) => item.text().includes('负责人'));
+    expect(ownerFormItem).toBeDefined();
+    const ownerSelect = ownerFormItem!.findComponent({ name: 'ElSelect' });
+    await ownerSelect.vm.$emit('visible-change', true);
+    await flushPromises();
+
+    expect(userOptions).toHaveBeenCalledTimes(1); // 页面级负责人候选被定向刷新
+    expect(productOptions).not.toHaveBeenCalled();
+    expect(routeOptions).not.toHaveBeenCalled();
+    expect(listOrders).not.toHaveBeenCalled();
+  });
+
+  it('shows a selected owner removed from the candidates as expired in the filter', async () => {
+    userOptions.mockResolvedValue([{ id: 'u1', displayName: '张三' }]);
+    const wrapper = mountPage();
+    await flushPromises();
+
+    // 展开负责人筛选，候选加载完成（含 u1）
+    const ownerFormItem = wrapper
+      .findAll('.el-form-item')
+      .find((item) => item.text().includes('负责人'));
+    expect(ownerFormItem).toBeDefined();
+    const ownerSelect = ownerFormItem!.findComponent({ name: 'ElSelect' });
+    await ownerSelect.vm.$emit('visible-change', true);
+    await flushPromises();
+
+    // 已选负责人在后续刷新中被移除
+    userOptions.mockResolvedValue([]);
+    await ownerSelect.vm.$emit('visible-change', true);
+    await flushPromises();
+
+    const vm = wrapper.vm as unknown as {
+      query: { ownerId: string };
+      userChoices: unknown[];
+    };
+    vm.query.ownerId = 'u1';
+    await nextTick();
+
+    expect(vm.userChoices).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ value: 'u1', option: null, isUnavailable: true }),
+      ]),
+    );
+  });
+
+  it('on activation refreshes only users and SOP files, never product/route/work-order', async () => {
+    const wrapper = mountPageWithKeepAlive();
+    await flushPromises();
+
+    // 首次挂载：onMounted 只加载正式列表；onActivated 只刷新页面持有的候选
+    expect(listBatches).toHaveBeenCalledTimes(1);
+    expect(userOptions).toHaveBeenCalledTimes(1);
+    expect(technicalFiles).toHaveBeenCalledTimes(1);
+    expect(productOptions).not.toHaveBeenCalled();
+    expect(routeOptions).not.toHaveBeenCalled();
+    expect(listOrders).not.toHaveBeenCalled();
   });
 });

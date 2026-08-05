@@ -14,7 +14,7 @@
           v-model="selectedRouteId"
           clearable
           placeholder="不设置默认路线"
-          @visible-change="(visible: boolean) => visible && refreshRouteOptions()"
+          @visible-change="(visible: boolean) => visible && routeSource.refresh()"
         >
           <el-option
             v-for="choice in routeChoices"
@@ -43,12 +43,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, onActivated, ref, watch } from 'vue';
 import type { ProductListItem } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
 import { buildLiveOptions, hasUnavailableSelection } from '../../../utils/live-options';
 import { EMessage } from '../../../utils/message';
-import { useProductRouteOptions } from '../composables/useProductRouteOptions';
+import { useProcessRouteOptions } from '../../../composables/options/useProcessRouteOptions';
 
 const props = defineProps<{
   visible: boolean;
@@ -62,11 +62,11 @@ const emit = defineEmits<{
   (e: 'confirm', routeId: string | null): void;
 }>();
 
-const { routeOptions, loadRouteOptions, refreshRouteOptions } = useProductRouteOptions();
+const routeSource = useProcessRouteOptions();
 const selectedRouteId = ref('');
 
 const availableRoutes = computed(() =>
-  routeOptions.value.filter(
+  routeSource.options.value.filter(
     (route) => route.productId === props.product?.id && route.status === 'enabled',
   ),
 );
@@ -78,11 +78,6 @@ const routeChoices = computed(() =>
     (item) => item.id,
   ),
 );
-
-/** 页面激活时刷新候选数据（由页面 onActivated 调用） */
-const refresh = (): void => {
-  void refreshRouteOptions();
-};
 
 const handleConfirm = (): void => {
   if (
@@ -98,15 +93,18 @@ const handleConfirm = (): void => {
   emit('confirm', selectedRouteId.value || null);
 };
 
+/** 打开弹窗时同步当前默认路线并刷新可用路线候选 */
 watch(
   () => [props.visible, props.product?.id, props.currentRouteId] as const,
   ([visible]) => {
     if (!visible) return;
     selectedRouteId.value = props.currentRouteId ?? '';
-    void loadRouteOptions();
+    void routeSource.refresh();
   },
-  { immediate: true },
 );
 
-defineExpose({ refresh });
+/** 页面重新激活且弹窗打开时刷新候选（弹窗自持，页面不再调用） */
+onActivated(() => {
+  if (props.visible) void routeSource.refresh();
+});
 </script>

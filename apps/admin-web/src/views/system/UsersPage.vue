@@ -32,7 +32,7 @@
             v-model="query.roleId"
             clearable
             placeholder="请选择岗位"
-            @visible-change="refreshUserOptions"
+            @visible-change="(visible: boolean) => visible && refreshRoles()"
           >
             <el-option
               v-for="role in roleOptions"
@@ -244,11 +244,10 @@
       ref="userFormDialogRef"
       :visible="userDialogVisible"
       :editing-user-id="editingUserId"
-      :department-options="departmentOptions"
       :role-options="roleOptions"
       :submitting="submittingUser"
       @update:visible="userDialogVisible = $event"
-      @refresh-options="refreshUserOptions"
+      @refresh-roles="refreshRoles"
       @save="submitUser"
     />
 
@@ -269,7 +268,7 @@
       :initial-role-ids="assigningUser?.roleIds ?? []"
       :submitting="submittingRoles"
       @update:visible="roleDialogVisible = $event"
-      @refresh-options="refreshUserOptions"
+      @refresh-roles="refreshRoles"
       @confirm="submitAssignRoles"
     />
   </section>
@@ -286,8 +285,8 @@ import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
 import { useRowPending } from '../../utils/useRowPending';
 import { systemApi } from '../../api/system';
 import { useAuthStore } from '../../stores/auth';
-import { useReferenceOptionsStore } from '../../stores/reference-options';
 import { formatDateTimeForDisplay } from '../../utils/date';
+import { useRoleOptions } from '../../composables/options/useRoleOptions';
 import { useSystemUsers } from './composables/useSystemUsers';
 import UserFormDialog from './components/UserFormDialog.vue';
 import type { UserFormValue } from './components/UserFormDialog.vue';
@@ -297,10 +296,13 @@ import UserRoleDialog from './components/UserRoleDialog.vue';
 defineOptions({ name: 'UsersPage' });
 
 const auth = useAuthStore();
+/**
+ * 角色候选由页面持有：岗位筛选、列表角色名、用户表单与分配角色弹窗共享（T1 提升到页面），
+ * 页面激活只刷新角色；部门候选唯一消费者是用户表单弹窗，由弹窗自持（见 UserFormDialog）。
+ */
+const { options: roleOptions, refresh: refreshRoles } = useRoleOptions();
 const {
   users,
-  departmentOptions,
-  roleOptions,
   selectedUsers,
   loading,
   total,
@@ -310,15 +312,12 @@ const {
   formatUserRoles,
   getPrimaryRoleName,
   loadUsers,
-  loadOptions,
   handleSearch,
   resetQuery,
   handlePageSizeChange,
   handlePageChange,
   handleSelectionChange,
-} = useSystemUsers();
-
-const referenceOptions = useReferenceOptionsStore();
+} = useSystemUsers(roleOptions);
 
 /** 行内写操作守卫（启停用户），同一行只允许一个在途（todo 3.5） */
 const { isRowPending, beginRow, endRow } = useRowPending();
@@ -335,20 +334,16 @@ const submittingUser = ref(false);
 const submittingPassword = ref(false);
 const submittingRoles = ref(false);
 
-const refreshUserOptions = (visible = true): void => {
-  if (visible) void loadOptions();
-};
-
 /* ----- user CRUD ----- */
+// 弹窗打开时，部门候选由 UserFormDialog 自持刷新，角色候选通过 @refresh-roles 交给页面刷新；
+// openCreate/openEdit 不再主动 refresh，避免每次打开重复请求候选（P2）。
 const openCreate = (): void => {
-  refreshUserOptions();
   editingUserId.value = null;
   userFormDialogRef.value?.resetForm();
   userDialogVisible.value = true;
 };
 
 const openEdit = (row: SystemUserListItem): void => {
-  refreshUserOptions();
   editingUserId.value = row.id;
   userFormDialogRef.value?.setForm(row);
   userDialogVisible.value = true;
@@ -379,8 +374,8 @@ const submitUser = async (data: UserFormValue): Promise<void> => {
     }
     EMessage.success(editingUserId.value ? '用户信息已更新' : '用户已新增');
     userDialogVisible.value = false;
-    await Promise.all([loadUsers(), loadOptions()]);
-    referenceOptions.invalidateUsers();
+    // 保存成功只刷新用户列表；候选的新鲜度由弹窗打开/下拉展开时的刷新保证（P2）
+    await loadUsers();
   } catch (error) {
     EMessage.error(error, '用户保存失败');
   } finally {
@@ -400,7 +395,6 @@ const toggleStatus = async (row: SystemUserListItem): Promise<void> => {
     });
     EMessage.success(`用户已${text}`);
     await loadUsers();
-    referenceOptions.invalidateUsers();
   } catch (error: unknown) {
     if (error !== 'cancel' && error !== 'close') {
       EMessage.error(error, `${text}用户失败`);
@@ -441,8 +435,8 @@ const submitResetPassword = async (password: string): Promise<void> => {
 };
 
 /* ----- role assignment ----- */
+// 角色候选刷新由 UserRoleDialog @open 统一触发（@refresh-roles），此处不再主动 refresh（P2）。
 const openAssignRoles = (row: SystemUserListItem): void => {
-  refreshUserOptions();
   assigningUser.value = row;
   roleDialogVisible.value = true;
 };
@@ -468,7 +462,10 @@ const focusFirstFilter = async (): Promise<void> => {
 };
 
 onMounted(loadUsers);
-onActivated(refreshUserOptions);
+/** 页面激活：只刷新页面持有的角色候选；部门候选由用户表单弹窗自持（T1） */
+onActivated(() => {
+  void refreshRoles();
+});
 </script>
 
 <style scoped>
