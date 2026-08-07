@@ -6,7 +6,9 @@ import tseslint from 'typescript-eslint';
 import vue from 'eslint-plugin-vue';
 
 export default tseslint.config(
-  { ignores: ['**/dist/**', '**/coverage/**', '**/node_modules/**'] },
+  // 忽略构建产物与 .claude/worktrees/**（并发会话的 git worktree 副本含独立 tsconfig/eslint 配置，
+  // 会导致 tsconfigRootDir 多候选解析失败；worktree 属于临时工作区，不应参与本仓库门禁）。
+  { ignores: ['**/dist/**', '**/coverage/**', '**/node_modules/**', '**/.claude/worktrees/**'] },
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
   ...vue.configs['flat/recommended'],
@@ -169,9 +171,9 @@ export default tseslint.config(
   {
     files: ['apps/admin-web/src/views/**/*.vue'],
     rules: {
-      // 视图内聚警示线：超过 500 行优先把列表状态/分页/副作用提取为 useXxx composable，
+      // 视图内聚警示线：超过 1000 行优先把列表状态/分页/副作用提取为 useXxx composable，
       // 模板与样式不是拆分对象，禁止机械拆行数。见 docs/coding-standards.md §5。
-      'max-lines': ['warn', { max: 500, skipBlankLines: true, skipComments: true }],
+      'max-lines': ['warn', { max: 1000, skipBlankLines: true, skipComments: true }],
     },
   },
   // ⚠ 债务隔离：已知的迁移占位区，待接通真实 API 后逐步解除

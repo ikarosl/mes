@@ -204,6 +204,45 @@
 
 约束：`CHECK (result IN ('success', 'failed'))`。索引：`(user_id, created_at)`、`(module, action, created_at)`、`(request_id)`。
 
+## 1.9 `http_idempotency_records`（已迁移，平台闭环）
+
+职责：作为项目级 HTTP 幂等基础设施，原子登记一次已认证业务意图的请求指纹和成功业务结果；不归属
+Identity/System、Product、Production 或 `common`。唯一写入口和事务规则以 `docs/architecture.md` 与
+`docs/http-idempotency-implementation-plan.md` 为准。
+
+| 字段                  | 类型                                        | 说明                                               |
+| --------------------- | ------------------------------------------- | -------------------------------------------------- |
+| `id`                  | `BIGINT UNSIGNED`                           | 主键，自增                                         |
+| `scope`               | `VARCHAR(128) COLLATE utf8mb4_bin`          | 稳定命令范围，包含契约版本，例如 `*.v1`            |
+| `idempotency_key`     | `VARCHAR(150) COLLATE utf8mb4_bin`          | 客户端业务意图键，区分大小写                       |
+| `request_fingerprint` | `CHAR(64) CHARACTER SET ascii COLLATE ascii_bin` | 规范化请求的 SHA-256 小写十六进制摘要          |
+| `actor_id`            | `BIGINT UNSIGNED`                           | 已认证操作用户，不为空                             |
+| `initial_request_id`  | `VARCHAR(128)`                              | 首次登记请求 ID，用于关联首次成功审计              |
+| `status`              | `VARCHAR(16)`                               | `processing`、`completed`                          |
+| `result_json`         | `JSON`                                      | 可重放的成功业务结果；处理中为空                   |
+| `created_at`          | `DATETIME`                                  | 首次登记时间                                       |
+| `completed_at`        | `DATETIME`                                  | 成功结果保存时间；处理中为空                       |
+| `expires_at`          | `DATETIME`                                  | 允许清理时间；第一阶段成功后至少保留 12 小时         |
+
+约束与规则：
+
+- `UNIQUE (scope, idempotency_key)`；索引 `(expires_at)`、`(initial_request_id)`；外键 `actor_id -> users.id`；
+- `CHECK (status IN ('processing', 'completed'))`；completed 必须同时具有 `result_json`、
+  `completed_at` 和 `expires_at`，processing 时三者必须为空；
+- 请求指纹包含 actorId；不同用户复用同一 scope/key 时只能得到指纹冲突，不得重放其他用户结果；
+- 不保存原始请求体、Authorization、Cookie、Token、签名、IP、User-Agent 或任意 HTTP headers；
+- `result_json` 只保存经评审可重放的成功业务结果，不得包含临时下载签名、凭证或短期密钥；
+- `result_json` 写入前必须通过递归 JSON value 校验；不得隐式保存 `undefined`、`bigint`、循环引用、`Date`
+  或其他类实例；
+- 幂等记录、业务写入和成功审计在同一事务中提交；失败整体回滚，不持久化失败响应；
+- 首次成功审计使用与 `initial_request_id` 相同的 `operation_logs.request_id`；原始幂等键不重复写入
+  `operation_logs`，成功重放不新增业务成功审计；
+- 到期清理是运维回收，不改变 12 小时内的协议保证。具体接口如需更长重试窗口，必须在接入时声明并延长；
+- 到达 `expires_at` 但记录尚未物理删除时仍然重放；清理器实际删除后，相同 scope/key 才按新请求处理；
+- 表结构已由 `202608050001-http-idempotency-records` 迁移落地，唯一写入口是
+  `infrastructure/idempotency/mysql-idempotency.executor`；createBatch 是首个已启用端点（scope
+  `production.batch.create.v1`），契约见 `docs/concurrency-and-idempotency.md`。
+
 # 二、文件与工艺
 
 ## 2.1 `technical_files`
@@ -1930,6 +1969,7 @@ production_batches
 ```text
 1. departments / users / roles / permissions / user_roles / role_permissions
 2. refresh_tokens / operation_logs
+2a. http_idempotency_records（平台闭环实施时追加，必须早于首个幂等业务端点启用）
 3. technical_files / product_categories / process_steps
 4. products（暂不添加 default_route_id 外键）
 5. process_routes / process_route_steps
@@ -1948,4 +1988,6 @@ production_batches
 
 每一步必须使用新的不可变迁移文件。已执行迁移不得修改；循环依赖的外键在两侧表都创建后通过后续迁移追加。
 
-历史 migration 完成状态：第 1～2 步由首批 migration 完成；202607230001-product-master-data 合并实施了第 3～7 步（含 products.default_route_id 外键）。后续新表只能追加新的 migration 文件。
+历史 migration 完成状态：第 1～2 步由首批 migration 完成；2a 由
+`202608050001-http-idempotency-records` 追加落地；202607230001-product-master-data 合并实施了第 3～7 步
+（含 products.default_route_id 外键）。后续新表只能追加新的 migration 文件。

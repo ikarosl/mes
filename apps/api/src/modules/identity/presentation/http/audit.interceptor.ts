@@ -9,8 +9,11 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import type { UserProfile } from '@company/contracts';
+import { IDEMPOTENCY_RESULT_CORRUPT, IDEMPOTENCY_STORAGE_RETRYABLE } from '@company/constants';
 import { catchError, from, mergeMap, throwError } from 'rxjs';
 import { AuditRepository } from '../../application/ports/audit.repository.js';
+import { ConcurrencyError } from '../../../../common/persistence/optimistic-lock.js';
+import { IdempotencyStorageError } from '../../../../common/idempotency/idempotency.errors.js';
 import { AUDIT_IN_APPLICATION } from '../../../../common/security/auth.decorators.js';
 
 @Injectable()
@@ -59,7 +62,14 @@ export class AuditInterceptor implements NestInterceptor {
           this.writeBestEffort({
             ...entry,
             result: 'failed',
-            httpStatus: error instanceof HttpException ? error.getStatus() : 500,
+            httpStatus:
+              error instanceof HttpException
+                ? error.getStatus()
+                : error instanceof ConcurrencyError
+                  ? HttpStatus.CONFLICT
+                  : error instanceof IdempotencyStorageError
+                    ? idempotencyStorageStatus(error)
+                    : 500,
             durationMs: Date.now() - startedAt,
             errorCode: auditErrorCode(error),
             remark: auditFailureRemark(error),
@@ -79,9 +89,22 @@ export class AuditInterceptor implements NestInterceptor {
 
 /** Keep operation logs useful without persisting raw exception messages or secrets. */
 export const auditFailureRemark = (error: unknown) =>
-  error instanceof HttpException ? `HTTP ${error.getStatus()}` : 'Unhandled request failure';
+  error instanceof HttpException
+    ? `HTTP ${error.getStatus()}`
+    : error instanceof ConcurrencyError
+      ? 'HTTP 409'
+      : error instanceof IdempotencyStorageError
+        ? `HTTP ${idempotencyStorageStatus(error)}`
+        : 'Unhandled request failure';
+
+/** 幂等存储错误与 HttpExceptionFilter 保持一致的 HTTP 状态：可重试 503，结果损坏 500。 */
+export const idempotencyStorageStatus = (error: IdempotencyStorageError) =>
+  error.kind === 'retryable' ? HttpStatus.SERVICE_UNAVAILABLE : HttpStatus.INTERNAL_SERVER_ERROR;
 
 export const auditErrorCode = (error: unknown): string => {
+  if (error instanceof ConcurrencyError) return error.code;
+  if (error instanceof IdempotencyStorageError)
+    return error.kind === 'corrupt' ? IDEMPOTENCY_RESULT_CORRUPT : IDEMPOTENCY_STORAGE_RETRYABLE;
   if (!(error instanceof HttpException)) return 'INTERNAL_SERVER_ERROR';
   const payload = error.getResponse();
   if (

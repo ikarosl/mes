@@ -7,8 +7,10 @@ import {
   Logger,
 } from '@nestjs/common';
 import type { ApiErrorResponse } from '@company/contracts';
+import { IDEMPOTENCY_RESULT_CORRUPT, IDEMPOTENCY_STORAGE_RETRYABLE } from '@company/constants';
 import { toBeijingISOString } from '../../common/time/beijing-time.js';
 import { createRequestId, isRequestId } from '../../common/http/request-context.middleware.js';
+import { IdempotencyStorageError } from '../../common/idempotency/idempotency.errors.js';
 import { ConcurrencyError } from '../../common/persistence/optimistic-lock.js';
 
 interface RequestWithContext {
@@ -34,15 +36,18 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const response = http.getResponse<ResponseWriter>();
     const isHttpException = exception instanceof HttpException;
     const isConcurrencyError = exception instanceof ConcurrencyError;
+    const isIdempotencyStorageError = exception instanceof IdempotencyStorageError;
     const status = isHttpException
       ? exception.getStatus()
       : isConcurrencyError
         ? HttpStatus.CONFLICT
-        : HttpStatus.INTERNAL_SERVER_ERROR;
+        : isIdempotencyStorageError
+          ? idempotencyStorageStatus(exception)
+          : HttpStatus.INTERNAL_SERVER_ERROR;
     const requestId =
       request.requestId ?? readRequestId(request.headers?.['x-request-id']) ?? createRequestId();
 
-    if (!isHttpException && !isConcurrencyError) {
+    if (!isHttpException && !isConcurrencyError && !isIdempotencyStorageError) {
       // Do not log the original message or stack: it may contain payloads or secrets.
       this.logger.error(`Unhandled HTTP exception: requestId=${requestId}, status=${status}`);
     }
@@ -52,7 +57,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       code: errorCode(status, exception),
       message: isHttpException
         ? exceptionMessage(exception, status)
-        : isConcurrencyError
+        : isConcurrencyError || isIdempotencyStorageError
           ? exception.message
           : '服务器内部错误，请稍后重试',
       requestId,
@@ -70,7 +75,15 @@ const readRequestId = (value: string | string[] | undefined) => {
   return isRequestId(requestId) ? requestId : undefined;
 };
 
+/** 可重试存储失败是瞬态（锁等待/死锁/连接中断）→ 503；结果损坏是确定性服务端数据问题 → 500。 */
+const idempotencyStorageStatus = (error: IdempotencyStorageError) =>
+  error.kind === 'retryable' ? HttpStatus.SERVICE_UNAVAILABLE : HttpStatus.INTERNAL_SERVER_ERROR;
+
 const errorCode = (status: number, exception: unknown) => {
+  if (exception instanceof IdempotencyStorageError)
+    return exception.kind === 'corrupt'
+      ? IDEMPOTENCY_RESULT_CORRUPT
+      : IDEMPOTENCY_STORAGE_RETRYABLE;
   if (exception instanceof ConcurrencyError) return exception.code;
   if (exception instanceof HttpException) {
     const payload = exception.getResponse();

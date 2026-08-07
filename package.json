@@ -16,7 +16,7 @@
     "typecheck": "turbo run typecheck",
     "typecheck:integration": "tsc -p tests/integration/tsconfig.json --noEmit",
     "test": "turbo run test",
-    "test:production:mysql": "node scripts/assert-mysql-integration-enabled.mjs && corepack pnpm --filter @company/database build && corepack pnpm db:migrate && corepack pnpm exec vitest run --config tests/integration/vitest.mysql.config.ts",
+    "test:production:mysql": "corepack pnpm --filter @company/config build && node scripts/assert-mysql-integration-enabled.mjs && corepack pnpm --filter @company/utils build && corepack pnpm --filter @company/constants build && corepack pnpm --filter @company/database build && corepack pnpm db:init && corepack pnpm db:seed && corepack pnpm exec vitest run --config tests/integration/vitest.mysql.config.ts",
     "lint": "eslint .",
     "docs:check": "node scripts/check-doc-links.mjs",
     "architecture:check": "node scripts/check-api-architecture.mjs",
@@ -29,6 +29,8 @@
     "precommit": "lint-staged",
     "db:migrate": "turbo run migrate --filter=@company/database",
     "db:migrate:status": "turbo run migrate:status --filter=@company/database",
+    "db:seed": "turbo run seed --filter=@company/database",
+    "db:init": "corepack pnpm db:migrate && corepack pnpm db:seed && corepack pnpm db:bootstrap-admin",
     "test:migration:fresh": "corepack pnpm db:migrate && corepack pnpm db:migrate && corepack pnpm db:migrate:status",
     "db:bootstrap-admin": "turbo run bootstrap-admin --filter=@company/database",
     "storage:ensure-bucket": "corepack pnpm --filter @company/api storage:ensure-bucket",
@@ -54,6 +56,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@swc/core": "^1.15.47",
     "@types/node": "^22.10.2",
     "@vitejs/plugin-vue": "^5.2.1",
     "@vitest/coverage-v8": "^3.2.7",
@@ -69,6 +72,7 @@
     "turbo": "^2.10.5",
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.59.4",
+    "unplugin-swc": "^1.5.10",
     "vitest": "^3.2.7",
     "vue-tsc": "^2.1.10"
   }

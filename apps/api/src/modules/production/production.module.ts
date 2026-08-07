@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../infrastructure/database/database.module.js';
+import { IdempotencyModule } from '../../infrastructure/idempotency/idempotency.module.js';
 import { IdentityModule } from '../identity/public.js';
 import { ProductModule } from '../product/public.js';
 import { ProductionService } from './application/production.service.js';
@@ -10,7 +11,7 @@ import { MysqlWorkOrderRepository } from './infrastructure/mysql-work-order.repo
 import { ProductionController } from './presentation/http/production.controller.js';
 
 @Module({
-  imports: [DatabaseModule, IdentityModule, ProductModule],
+  imports: [DatabaseModule, IdentityModule, ProductModule, IdempotencyModule],
   controllers: [ProductionController],
   providers: [
     ProductionService,

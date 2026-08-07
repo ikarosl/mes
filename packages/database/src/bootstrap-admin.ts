@@ -1,6 +1,7 @@
 import { loadWorkspaceEnv } from '@company/config';
 import bcrypt from 'bcryptjs';
 import { createDatabasePool, withTransaction } from './index.js';
+import type { RowDataPacket } from 'mysql2/promise';
 
 // 初始化管理员前统一加载工作区根目录 .env，保证账号配置与数据库连接一致。
 loadWorkspaceEnv();
@@ -12,6 +13,19 @@ if (!password || password.length < 6)
 const pool = createDatabasePool();
 try {
   await withTransaction(pool, async (connection) => {
+    const [roles] = await connection.query<(RowDataPacket & { id: number })[]>(
+      `SELECT role.id
+       FROM roles AS role
+       JOIN role_permissions AS role_permission ON role_permission.role_id = role.id
+       JOIN permissions AS permission ON permission.id = role_permission.permission_id
+       WHERE role.code = 'admin' AND role.status = 1 AND role.deleted_at IS NULL
+         AND permission.code = '*' AND permission.status = 1 AND permission.deleted_at IS NULL
+       LIMIT 1
+       FOR UPDATE`,
+    );
+    const adminRole = roles[0];
+    if (!adminRole) throw new Error('System access seed is missing; run pnpm db:seed first');
+
     const passwordHash = await bcrypt.hash(password, 12);
     await connection.execute(
       `INSERT INTO users (username, password_hash, display_name, status)
@@ -19,17 +33,11 @@ try {
        ON DUPLICATE KEY UPDATE password_hash = VALUES(password_hash), display_name = VALUES(display_name), status = 1, deleted_at = NULL`,
       [username, passwordHash, displayName],
     );
-    await connection.execute(`INSERT INTO roles (name, code, description, status) VALUES ('系统管理员', 'admin', '系统内置管理员', 1)
-      ON DUPLICATE KEY UPDATE name = VALUES(name), status = 1, deleted_at = NULL`);
-    await connection.execute(`INSERT INTO permissions (name, code, type, status) VALUES ('全部权限', '*', 'api', 1)
-      ON DUPLICATE KEY UPDATE name = VALUES(name), status = 1, deleted_at = NULL`);
     await connection.execute(
       `INSERT IGNORE INTO user_roles (user_id, role_id)
-      SELECT u.id, r.id FROM users u JOIN roles r ON r.code = 'admin' WHERE u.username = ?`,
-      [username],
+       SELECT id, ? FROM users WHERE username = ?`,
+      [adminRole.id, username],
     );
-    await connection.execute(`INSERT IGNORE INTO role_permissions (role_id, permission_id)
-      SELECT r.id, p.id FROM roles r JOIN permissions p ON p.code = '*' WHERE r.code = 'admin'`);
   });
   console.log(`Administrator ready: ${username}`);
 } finally {

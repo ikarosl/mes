@@ -7,5 +7,7 @@ pnpm-lock.yaml
 *.log
 uploads/
 var/
+# 并发会话的 git worktree 副本（.claude/worktrees/**）属于临时工作区，不参与格式化门禁
+.claude/worktrees/
 # 数据库唯一基准文档篇幅较大，避免格式化器重排表格和 SQL 示例。
 docs/new.md

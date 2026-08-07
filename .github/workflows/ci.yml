@@ -24,6 +24,7 @@ jobs:
       - run: pnpm lint
       - run: pnpm build
       - run: pnpm typecheck
+      - run: pnpm typecheck:integration
       - run: pnpm test
   migration-fresh:
     runs-on: ubuntu-latest
@@ -56,4 +57,47 @@ jobs:
             DB_PASSWORD: mes-test,
             DB_NAME: company_mes_next,
             DB_CONNECTION_LIMIT: 5,
+          }
+  integration-mysql:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          {
+            MYSQL_DATABASE: company_mes_next_test,
+            MYSQL_USER: mes,
+            MYSQL_PASSWORD: mes-test,
+            MYSQL_ROOT_PASSWORD: root-test,
+          }
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysql --protocol=tcp -h 127.0.0.1 -umes -pmes-test company_mes_next_test -e 'SELECT 1'"
+          --health-interval=5s --health-timeout=3s --health-retries=20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      # 真实 MySQL 集成套件（HTTP 幂等闭环全量）：构建依赖 → db:init → seed 幂等复验 → integration tests。
+      # 需要 DB_*/ADMIN_PASSWORD/JWT_*/S3_*：AppModule 启动即校验 JWT，ProductModule 工厂会读取 S3 配置（测试不触达存储）。
+      - run: pnpm test:production:mysql
+        env:
+          {
+            RUN_MYSQL_INTEGRATION: '1',
+            DB_HOST: 127.0.0.1,
+            DB_PORT: 3306,
+            DB_USER: mes,
+            DB_PASSWORD: mes-test,
+            DB_NAME: company_mes_next_test,
+            TEST_DB_NAME: company_mes_next_test,
+            DB_CONNECTION_LIMIT: 5,
+            ADMIN_PASSWORD: ci-admin-password,
+            JWT_SECRET: ci-jwt-secret-0123456789abcdef0123456789abcdef,
+            JWT_ISSUER: company-mes-next,
+            JWT_AUDIENCE: company-mes-admin,
+            S3_BUCKET: ci-test-bucket,
+            S3_ACCESS_KEY_ID: ci-test-key,
+            S3_SECRET_ACCESS_KEY: ci-test-secret,
           }

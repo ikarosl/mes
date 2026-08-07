@@ -187,18 +187,22 @@ describe('productionApi', () => {
     });
   });
 
-  it('creates a batch under a work order', async () => {
+  it('creates a batch under a work order with idempotency key and unsafe retry', async () => {
     const { productionApi } = await import('../production');
 
-    await productionApi.createOrderBatch('1', {
-      batchNo: 'BATCH-001',
-      plannedQuantity: 50,
-    });
+    await productionApi.createOrderBatch(
+      '1',
+      { batchNo: 'BATCH-001', plannedQuantity: 50 },
+      'k1-uuid',
+    );
 
     expect(request).toHaveBeenCalledWith({
       url: '/production/work-orders/1/batches',
       method: 'POST',
       data: { batchNo: 'BATCH-001', plannedQuantity: 50 },
+      headers: { 'Idempotency-Key': 'k1-uuid' },
+      retryUnsafe: true,
+      retryTimes: 2,
     });
   });
 

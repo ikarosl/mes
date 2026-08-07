@@ -1,9 +1,16 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { type Reflector } from '@nestjs/core';
-import { lastValueFrom, of } from 'rxjs';
+import { lastValueFrom, of, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 import type { AuditRepository } from '../../../application/ports/audit.repository.js';
-import { AuditInterceptor, auditErrorCode, auditFailureRemark } from '../audit.interceptor.js';
+import { ConcurrencyError } from '../../../../../common/persistence/optimistic-lock.js';
+import { IdempotencyStorageError } from '../../../../../common/idempotency/idempotency.errors.js';
+import {
+  AuditInterceptor,
+  auditErrorCode,
+  auditFailureRemark,
+  idempotencyStorageStatus,
+} from '../audit.interceptor.js';
 
 describe('audit failure remarks', () => {
   it('does not persist raw exception messages', () => {
@@ -52,6 +59,84 @@ describe('audit failure remarks', () => {
     );
 
     expect(writeLog).not.toHaveBeenCalled();
+  });
+
+  it('records an idempotency conflict as HTTP 409 with its stable error code in the failure audit', async () => {
+    const writeLog = vi.fn().mockResolvedValue(undefined);
+    const interceptor = new AuditInterceptor(
+      { writeLog } as unknown as AuditRepository,
+      { getAllAndOverride: vi.fn().mockReturnValue(false) } as unknown as Reflector,
+    );
+
+    await expect(
+      lastValueFrom(
+        interceptor.intercept(httpContext() as never, {
+          handle: () => throwError(() => new ConcurrencyError('IDEMPOTENCY_CONFLICT', 'conflict')),
+        }),
+      ),
+    ).rejects.toThrow('conflict');
+
+    expect(writeLog).toHaveBeenCalledOnce();
+    expect(writeLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        result: 'failed',
+        httpStatus: 409,
+        errorCode: 'IDEMPOTENCY_CONFLICT',
+        remark: 'HTTP 409',
+      }),
+    );
+  });
+
+  it('records a concurrent modification as HTTP 409 with its stable error code in the failure audit', async () => {
+    const writeLog = vi.fn().mockResolvedValue(undefined);
+    const interceptor = new AuditInterceptor(
+      { writeLog } as unknown as AuditRepository,
+      { getAllAndOverride: vi.fn().mockReturnValue(false) } as unknown as Reflector,
+    );
+
+    await expect(
+      lastValueFrom(
+        interceptor.intercept(httpContext() as never, {
+          handle: () => throwError(() => new ConcurrencyError('CONCURRENT_MODIFICATION', 'stale')),
+        }),
+      ),
+    ).rejects.toThrow('stale');
+
+    expect(writeLog).toHaveBeenCalledOnce();
+    expect(writeLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        result: 'failed',
+        httpStatus: 409,
+        errorCode: 'CONCURRENT_MODIFICATION',
+        remark: 'HTTP 409',
+      }),
+    );
+  });
+
+  it('maps ConcurrencyError failures to HTTP 409 remarks and stable error codes', () => {
+    expect(auditFailureRemark(new ConcurrencyError('IDEMPOTENCY_CONFLICT', 'conflict'))).toBe(
+      'HTTP 409',
+    );
+    expect(auditErrorCode(new ConcurrencyError('CONCURRENT_MODIFICATION', 'stale'))).toBe(
+      'CONCURRENT_MODIFICATION',
+    );
+  });
+
+  it('maps idempotency storage failures to distinct stable codes and remarks', () => {
+    expect(idempotencyStorageStatus(new IdempotencyStorageError('retryable', 'x'))).toBe(503);
+    expect(idempotencyStorageStatus(new IdempotencyStorageError('corrupt', 'x'))).toBe(500);
+    expect(
+      auditFailureRemark(new IdempotencyStorageError('retryable', '幂等登记竞态，请重试')),
+    ).toBe('HTTP 503');
+    expect(
+      auditFailureRemark(new IdempotencyStorageError('corrupt', '已保存的幂等结果无法反序列化')),
+    ).toBe('HTTP 500');
+    expect(auditErrorCode(new IdempotencyStorageError('retryable', 'x'))).toBe(
+      'IDEMPOTENCY_STORAGE_RETRYABLE',
+    );
+    expect(auditErrorCode(new IdempotencyStorageError('corrupt', 'x'))).toBe(
+      'IDEMPOTENCY_RESULT_CORRUPT',
+    );
   });
 });
 

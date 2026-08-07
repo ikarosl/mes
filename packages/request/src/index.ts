@@ -4,6 +4,7 @@ import axios, {
   type AxiosResponse,
   type InternalAxiosRequestConfig,
 } from 'axios';
+import { IDEMPOTENCY_RESULT_CORRUPT } from '@company/constants';
 
 export interface RetryRequestConfig extends AxiosRequestConfig {
   retryTimes?: number;
@@ -23,6 +24,15 @@ type InternalRetryConfig = InternalAxiosRequestConfig & RetryRequestConfig;
 const SAFE_RETRY_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 export const canRetryRequest = (method: string | undefined, retryUnsafe = false) =>
   retryUnsafe || SAFE_RETRY_METHODS.has((method ?? 'GET').toUpperCase());
+
+/**
+ * 幂等结果损坏（500 IDEMPOTENCY_RESULT_CORRUPT）是确定性服务端数据错误：同键重试必然再次失败，
+ * 且首次结果是否成功不可知，必须交由上层提示人工处理。请求层不得把它当普通 5xx 自动重试。
+ */
+const isCorruptResult = (error: AxiosError): boolean => {
+  const data = error.response?.data as ApiErrorResponse | undefined;
+  return typeof data?.code === 'string' && data.code === IDEMPOTENCY_RESULT_CORRUPT;
+};
 export class RequestError extends Error {
   constructor(
     message: string,
@@ -66,7 +76,8 @@ export const createRequestClient = (
         !config.skipRetry &&
         canRetryRequest(config.method, config.retryUnsafe) &&
         (config.retryCount ?? 0) < attempts &&
-        (!error.response || error.response.status >= 500)
+        (!error.response || error.response.status >= 500) &&
+        !isCorruptResult(error)
       ) {
         config.retryCount = (config.retryCount ?? 0) + 1;
         await new Promise((resolve) => globalThis.setTimeout(resolve, 300 * config.retryCount!));

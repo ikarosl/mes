@@ -5,6 +5,8 @@
 ## 1. 使用规则
 
 - `已完成`：已经落地，仅在回归审查发现新证据时重新打开。
+- 幂等闭环相关事项的进度统一使用 `docs/http-idempotency-implementation-plan.md`「进度口径」的四级状态
+  （planned → wired → verified → released）；「已完成」只用于 released 对应的事项。
 - `立即整改`：问题和目标行为已经确认，可以进入实施计划。
 - `阶段实施`：问题已经确认，但必须跟随对应业务迁移阶段实施，不得提前扩大范围。
 - `滞后 / 待决策`：现象或冲突已经发现，但实际业务需求、状态语义或计算口径尚未确定；只记录约束和决策输入，不直接改代码或 migration。
@@ -105,7 +107,7 @@
 - `process_steps`、`product_categories` 列表改为服务端分页（新增 `ProcessStepQuery`/`ProductCategoryQuery`，返回 `PageResult<T>`），前端 `ProcessesPage.vue`、`ProductCategoriesPage.vue` 不再全量下载后在浏览器切片；分类页父分类下拉改用独立 `/categories/options`，与分页列表解耦。
 - 表单选择统一改为独立、最小字段的 `/options` 接口：新增 `/categories/options`、`/process-steps/options`、`/process-routes/options`，与已有 `/products/options`、`/users/options` 一起由前端 `Promise.all` 并发组合；删除聚合端点 `products/form-options`、`process-routes/form-options`，消除完整列表类型（`ProductCategoryListItem`/`ProcessStepListItem`）泄漏到表单。
 - 按变化原因拆分超长基础设施文件：分类聚合拆为 `MysqlProductCategoryRepository`（新端口 `ProductCategoryRepository`），产品/BOM 聚合保留 `MysqlProductCatalogRepository`；路线生命周期保留 `MysqlProcessRouteRepository`，路线步骤（SOP 快照冻结、BOM 关联）拆为 `MysqlProcessRouteStepRepository`（新端口 `ProcessRouteStepRepository`）。`ProcessesPage.vue`/`ProductCategoriesPage.vue` 抽取 `useProcessSteps`/`useProductCategories` composable（视图与状态分离）。warehouse 演示页、System 模块等在各自迁移阶段再处理，不为压行数机械拆分。
-- 规范与门禁：`docs/api-conventions.md` §5 明确“表单选择必须使用独立 `/options`、禁止复用分页列表接口在浏览器过滤、聚合 form-options 为反模式”；`docs/coding-standards.md` §4/§5 把 500 行定义为聚合/视图内聚警示线并给出拆分原则；`eslint.config.js` 的 `max-lines` 保持 warn 作为内聚信号并补注释说明。
+- 规范与门禁：`docs/api-conventions.md` §5 明确“表单选择必须使用独立 `/options`、禁止复用分页列表接口在浏览器过滤、聚合 form-options 为反模式”；`docs/coding-standards.md` §4/§5 定义聚合/视图内聚警示线（基础设施 500 行、Vue 视图 1000 行）并给出拆分原则；`eslint.config.js` 的 `max-lines` 保持 warn 作为内聚信号并补注释说明。
 - 验证：API 与前端 typecheck、单测、lint、architecture:check、build 全部通过；`form-options` 端点与前端调用在源码中无残留，仅文档作为反模式说明保留。
 
 ### 3.5 前端行内操作提交中守卫
@@ -174,30 +176,109 @@
 
 ### 4.1 Production HTTP 幂等闭环
 
-状态：`阶段 3 实施；分配、出库和库存流水迁移时启用`
+状态：`released（代码契约启用层面，四级口径见 http-idempotency-implementation-plan.md「进度口径」：2026-08-07 pnpm verify 全绿（18/18 任务，apps/api 42 文件 / 310 用例、admin-web 43 文件 / 257 用例）且本地以 PowerShell $env:RUN_MYSQL_INTEGRATION='1'; $env:TEST_DB_NAME='easy_mes_test'; $env:DB_NAME='easy_mes_test'（Bash 等价：RUN_MYSQL_INTEGRATION=1 TEST_DB_NAME=easy_mes_test DB_NAME=easy_mes_test）全量集成套件实测通过（5 文件 / 29 用例，含 HTTP 管线与真实锁等待 1205 用例）；瞬态错误契约已覆盖完整事务边界（登记 INSERT、handler 内业务 SQL、重放 SELECT、completed UPDATE、取连接/开启事务/提交统一映射 retryable 503；rollback 失败不覆盖原始异常；handler 内其他 SDK 网络错误不误判；firstRun/replay 成功指标 commit 后记录）；集成门禁要求 TEST_DB_NAME 必填、DB_NAME 必须与 TEST_DB_NAME 完全相等且库名以 _test 结尾（本地在 easy_mes_test 上完成，CI 使用 company_mes_next_test）；契约已声明 Idempotency-Key 必填、前端已发送；CI 的 integration-mysql 作业待首次运行确认）`
 
 当前状态：
 
 - 数据层已经使用业务唯一约束和 version 乐观锁。
 - `production_item_demand` 使用 `NORMAL:{production_batch_id}:{product_material_id}` 作为内部稳定键。
-- `readIdempotencyKey`、`CommandContext.idempotencyKey` 和 `idempotencyConflict()` 为休眠代码，当前没有业务消费方。
-- 客户端不得发送伪 `Idempotency-Key`；启用时必须在具体接口契约中声明必填。
+- 平台闭环已落地：`202608050001-http-idempotency-records` migration（`UNIQUE(scope,idempotency_key)`、
+  `initial_request_id` 索引、completed 三字段联动 CHECK）、规范化请求指纹 + JSON-safe 校验、MySQL
+  `IdempotencyExecutor` 适配器与平台 module、架构门禁（`http_idempotency_records` 唯一写入口）。
+- 端点级启用元数据已落地：`@IdempotentEndpoint({ scope })` + `IdempotencyKeyGuard`（未启用端点携带键 → 400
+  `IDEMPOTENCY_NOT_SUPPORTED`，启用端点缺少/非法键 → 400 `VALIDATION_ERROR`）；`AuditInterceptor` 已把
+  `ConcurrencyError` 记录为 409/原错误码，与全局 `HttpExceptionFilter` 一致。
+- `IDEMPOTENCY_NOT_SUPPORTED` 已在 `packages/constants` 登记；端口已携带 `requestId`，结果 codec 返回
+  递归 `JsonValue` 且写入前运行时校验。
+- createBatch 试点已接线：Controller 声明 `@IdempotentEndpoint({ scope: CREATE_BATCH_IDEMPOTENCY_SCOPE })`；`ProductionService.createBatch` 经
+  `IdempotencyExecutor` 包装（scope `production.batch.create.v1`、指纹含 workOrderId + 规范化 body、重放
+  不重跑 handler 且不新增成功审计）；管理端 `useIdempotentIntent` 意图 composable 已接入两个建批调用点，
+  `createOrderBatch` 发送 `Idempotency-Key` 并启用 unsafe 重试；幂等键生成仅依赖 Web Crypto
+  （`crypto.randomUUID()`，不可用时经 `getRandomValues` 拼接 UUID v4），环境不支持时直接抛错阻止提交，
+  绝不降级 `Math.random` 等非加密随机数（弱随机键可预测/碰撞会制造重复批次风险）。
+- 试点接线深化：负责人启用等受数据库状态影响的业务校验移入首次执行的 handler，重放不
+  重复校验（避免负责人停用后同键重试返回 400）；首次执行即在 handler 内富化并保存最终响应快照（含用户
+  名），重放返回与首次成功完全一致的响应；`@company/database` 新增 `withActiveConnection`，使 executor
+  外层事务内的校验与富化只读查询复用同一事务连接，保证幂等记录、业务写入、成功审计与 handler 内读取
+  同一事务上下文。
+- 前端意图闭环细化：`useIdempotentIntent` 在 `IDEMPOTENCY_RESULT_CORRUPT` 后置
+  blocked 状态并阻止继续提交（不重试、不自动换新键，首次结果是否成功不可知）；请求层 `isCorruptResult`
+  跳过对该错误码的自动重试；工单页/任务页建批弹窗在结果未知（pending/blocked）关闭时经 `getStatus()`
+  守卫弹确认，用户确认才放弃 K1，取消则保留弹窗与键，避免静默丢弃 K1 导致重复的自动编号批次；两个
+  页面均补关闭守卫组件测试（`ProductionOrdersPage.test.ts`、`ProductionTasksPage.test.ts`）。
+- 真实数据下的 JSON-safe 缺陷已修复并由集成用例覆盖：mysql2 把 `plan_start_date` 等 DATE/DATETIME 列返回
+  Date 实例（映射器类型曾误标 string），幂等结果 codec 断言失败会使 createBatch 整体回滚；
+  `mapBatch`/`mapWorkOrder` 改经 `date()` 统一转北京 ISO 字符串，codec `encode` 改为 JSON 序列化往返固化
+  最终响应快照，与客户端收到的序列化结果一致。
+- 幂等基础设施错误已区分映射并接入失败审计：瞬态错误分类已由 executor 落地并覆盖完整事务边界（登记
+  INSERT、handler 内业务 SQL、重放 SELECT、completed UPDATE，以及取连接/开启事务/提交统一映射为
+  `IdempotencyStorageError('retryable')` → `503 IDEMPOTENCY_STORAGE_RETRYABLE`；rollback 失败 best-effort
+  记录不覆盖原始异常；handler 内其他 SDK 网络错误原样冒泡不误判；firstRun/replay 成功指标只在 commit
+  成功后记录，含真实双事务锁等待用例，随 `RUN_MYSQL_INTEGRATION=1` 套件验证）；结果损坏（已保存结果无法反序列化）→ `500
+IDEMPOTENCY_RESULT_CORRUPT`；`HttpExceptionFilter` 与 `AuditInterceptor` 统一识别。前端
+  `useIdempotentIntent` 对结果损坏阻塞当前意图并提示人工处理，不重试、不自动换新键（首次结果是否成功
+  不可知），直到用户显式放弃（关闭弹窗/重新发起）。
+- createBatch 结果 codec 升级为 Zod 完整嵌套 schema（`production-batch-result.codec.ts`）：encode/decode 都经
+  `productionBatchDetailSchema` 校验，不使用 `coerce`/`preprocess`，结构错误一律拒绝——首次结果结构错误在保存
+  前使事务回滚，重放记录损坏走 `IDEMPOTENCY_RESULT_CORRUPT`；结果结构冻结在 scope `production.batch.create.v1`，
+  形状变更必须 bump scope 并引入新 codec。
+- 到期清理与运行观测已落地：新增 `infrastructure/idempotency/idempotency-housekeeping.service.ts`（平台到期
+  清理唯一写入口，按小批次删除已到期 `completed` 记录，`expires_at` 只表示允许清理、物理删除前同键仍重放；
+  发现持久化 `processing` 记录时告警并停止自动处置）与 `idempotency.metrics.ts`（in-memory 重放/冲突/失败
+  计数，housekeeping 周期性输出重放率/冲突率/失败率摘要并重置窗口）；executor 在重放、冲突、结果损坏、
+  可重试存储失败路径分别记录指标，平台日志只携带 requestId、scope 和脱敏键摘要（`idempotency-key-digest`），
+  不再打印原始幂等键；架构门禁豁免 housekeeping 的到期清理写入。阶段 A 门槛（计划 §10 阶段 A 第 7/8 条、
+  §12 观测项）已满足。
+- 管理端当前没有表单草稿持久化、待提交恢复日志或按幂等键查询结果能力；内存 K1 只能随存活的
+  composable/KeepAlive 实例保留，浏览器硬刷新后无法恢复；createBatch 试点界面/接口文档须声明该覆盖缺口。
+- 前端闭环已加固：请求层对 `IDEMPOTENCY_RESULT_CORRUPT` 跳过自动重试（确定性失败，不得把重试次数浪费在
+  必然失败的请求上，必须立即交回 composable 阻塞意图）；`useIdempotentIntent` 暴露
+  idle/pending/blocked/expired 状态，意图超过服务端 12 小时重放保证窗口（`IDEMPOTENT_INTENT_TTL_MS`，
+  与 executor 的 `expires_at = completed_at + 12 小时` 对齐，窗口从第一次正式提交的 `firstAttemptAt` 起算）
+  后既不复用旧键重试也不自动换新键，须先核对业务结果；**结果未知的意图修改业务内容不得静默换键**（首次
+  结果是否成功不可知，自动换新键盲发会制造重复批次，提交被拦截提示先核对、显式放弃后才生成新键）；
+  两个创建弹窗在结果未知（模糊失败/提交在途/结果损坏/超出重试窗口）时关闭必须先经确认，取消
+  保留弹窗与 K1、确认才 reset，避免静默丢 K1 或按“关闭并重新发起”生成 K2 造成第二个自动编号批次。
+- 单元与契约测试通过，admin-web 类型检查与测试通过；真实 MySQL 集成套件已实测通过（进度 released）：
+  2026-08-07 本地执行（PowerShell：`$env:RUN_MYSQL_INTEGRATION='1'; $env:TEST_DB_NAME='easy_mes_test';
+$env:DB_NAME='easy_mes_test'`；Bash：`RUN_MYSQL_INTEGRATION=1 TEST_DB_NAME=easy_mes_test
+DB_NAME=easy_mes_test pnpm test:production:mysql`）
+  `pnpm test:production:mysql`（先经 `scripts/assert-mysql-integration-enabled.mjs` 校验显式开关与专用
+  测试库门禁——`TEST_DB_NAME` 必填、`DB_NAME` 必须与 `TEST_DB_NAME` 完全相等且库名必须以 `_test` 结尾，
+  开发/生产库名一律拒绝；构建 utils/constants/database 后通过 `db:init`
+  完成 migration、系统 seed 和管理员初始化，复验 seed 幂等性后运行
+  `tests/integration` 全套），5 文件 / 29 用例全部通过；CI（`.github/workflows/ci.yml`）已新增
+  `integration-mysql` 作业在专用测试库 `company_mes_next_test` 上执行同一套件（待首次运行确认）；集成文件均以
+  `process.env.RUN_MYSQL_INTEGRATION === '1' ? describe : describe.skip` 门禁。通用 executor 用例
+  （`http-idempotency.mysql.test.ts`）覆盖并发、回滚、重放、冲突、过期清理，并新增 housekeeping 到期清理
+  用例（已到期 completed 被物理删除、未到期保留重放、异常 processing 只告警不处置）；
+  `create-batch-closed-loop.mysql.test.ts` 定位为 **application/database 闭环**（直接构造
+  Controller/ProductionService/executor/真实仓库，未经过 HTTP 管线），证明
+  "http_idempotency_records + production_batches + operation_logs"三者同一事务：成功三表同提交、业务失败
+  三表同回滚、重放不新增写入且返回冻结快照；HTTP 管线部分由新增
+  `create-batch-http-pipeline.mysql.test.ts` 覆盖（启动 Nest 测试应用 + supertest：AuthGuard/
+  IdempotencyKeyGuard 顺序、DTO Pipe、CurrentCommandContext、AuditInterceptor、HttpExceptionFilter 最终
+  错误信封，含 Guard 门禁缺键 400、合法键放行）。每个用例前清空 scratch 与 scope 幂等记录，绝对计数断言
+  不受跨用例/跨运行残留污染。
 
 已确认缺口：
 
-- `nextBatchNo` 自动生成批次号；请求成功但响应丢失后重试会生成新的批次号和第二个批次，数据库 UNIQUE 无法识别同一业务意图。
-- 后续状态流转仅依赖 version 时，成功响应丢失后的重试可能返回 409，而不能重放原结果。
+- `nextBatchNo` 自动生成批次号；请求成功但响应丢失后重试会生成新的批次号和第二个批次，数据库 UNIQUE 无法识别同一业务意图（已由 HTTP 幂等闭环覆盖）。
+- 后续状态流转仅依赖 version 时，成功响应丢失后的重试可能返回 409，而不能重放原结果（阶段 C 逐项评估）。
 
 实施要求：
 
-- 使用 MySQL 中与业务写入同事务的幂等记录，保存幂等键、规范化请求指纹、执行状态和原结果；当前阶段不引入 Redis。
-- 相同键和相同指纹重放原结果；相同键和不同指纹返回稳定冲突错误。
-- 自动批次创建、后续确认、分配、出库和库存流水命令按风险逐项启用。
-- 补充“提交成功但响应丢失后重试”、同键不同请求、并发相同键的真实 MySQL 集成测试。
+- 后续动作：按风险评估工单下达/取消/关闭、批次状态确认、物料分配、出库和库存流水命令，逐项满足启用门槛
+  后再扩展；`generateMaterialDemands` 先复验天然幂等再决定是否接入结果重放。
+- 完整实施顺序、事务伪代码、前端生命周期和验收门槛见
+  [`http-idempotency-implementation-plan.md`](http-idempotency-implementation-plan.md)。
 
 待复验项：
 
-- `generateMaterialDemands` 已通过 `SELECT ... FOR UPDATE` 锁定批次；两个并发事务是否仍会同时读到旧状态并触发相同 `idempotency_key` 冲突，必须通过真实 MySQL 双事务测试确认，不能仅凭静态推断认定。
+- `generateMaterialDemands` 已通过 `SELECT ... FOR UPDATE` 锁定批次，但现有真实 MySQL 用例只覆盖顺序
+  重复调用。必须补双事务测试；同时完整 application 路径会在状态短路前重新读取实时 BOM，第一次成功后
+  若 BOM 变化，响应丢失重试可能先失败。因此当前只能认定 Repository 写入路径是天然幂等候选，不能静态
+  断言整个 HTTP 端点无需结果重放。
 
 ### 4.2 Production 业务链路和追溯迁移
 

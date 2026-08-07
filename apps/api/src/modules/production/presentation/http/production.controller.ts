@@ -4,8 +4,10 @@ import type { CommandContext } from '../../../../common/audit/audit.types.js';
 import {
   AuditInApplication,
   CurrentCommandContext,
+  IdempotentEndpoint,
   RequirePermission,
 } from '../../../../common/security/auth.decorators.js';
+import { CREATE_BATCH_IDEMPOTENCY_SCOPE } from '../../application/idempotency/create-batch-idempotency.contract.js';
 import { ProductionService } from '../../application/production.service.js';
 import {
   BatchStepRecordParamDto,
@@ -16,6 +18,7 @@ import {
   UpdateBatchStepExecutionDto,
   UpdateProductionBatchDto,
   UpdateWorkOrderDto,
+  WorkOrderIdParamDto,
   WorkOrderQueryDto,
 } from './dto/production.dto.js';
 import { VersionedCommandDto } from '../../../../presentation/http/dto/versioned-command.dto.js';
@@ -37,10 +40,10 @@ export class ProductionController {
   workOrderOptions() {
     return this.service.listWorkOrderOptions();
   }
-  @Get('work-orders/:id')
+  @Get('work-orders/:workOrderId')
   @RequirePermission(PERMISSIONS.production.orders.view)
-  workOrder(@Param() { id }: IdParamDto) {
-    return this.service.getWorkOrder(id);
+  workOrder(@Param() { workOrderId }: WorkOrderIdParamDto) {
+    return this.service.getWorkOrder(workOrderId);
   }
   @Post('work-orders')
   @RequirePermission(PERMISSIONS.production.orders.create)
@@ -51,60 +54,64 @@ export class ProductionController {
   ) {
     return this.service.createWorkOrder(body, audit);
   }
-  @Patch('work-orders/:id')
+  @Patch('work-orders/:workOrderId')
   @RequirePermission(PERMISSIONS.production.orders.update)
   @AuditInApplication()
   updateWorkOrder(
-    @Param() { id }: IdParamDto,
+    @Param() { workOrderId }: WorkOrderIdParamDto,
     @Body() body: UpdateWorkOrderDto,
     @CurrentCommandContext() audit: CommandContext,
   ) {
-    return this.service.updateWorkOrder(id, body, audit);
+    return this.service.updateWorkOrder(workOrderId, body, audit);
   }
-  @Post('work-orders/:id/actions/release')
+  @Post('work-orders/:workOrderId/actions/release')
   @RequirePermission(PERMISSIONS.production.orders.transition)
   @AuditInApplication()
   releaseWorkOrder(
-    @Param() { id }: IdParamDto,
+    @Param() { workOrderId }: WorkOrderIdParamDto,
     @Body() body: VersionedCommandDto,
     @CurrentCommandContext() audit: CommandContext,
   ) {
-    return this.service.releaseWorkOrder(id, body.version, audit);
+    return this.service.releaseWorkOrder(workOrderId, body.version, audit);
   }
-  @Post('work-orders/:id/actions/cancel')
+  @Post('work-orders/:workOrderId/actions/cancel')
   @RequirePermission(PERMISSIONS.production.orders.transition)
   @AuditInApplication()
   cancelWorkOrder(
-    @Param() { id }: IdParamDto,
+    @Param() { workOrderId }: WorkOrderIdParamDto,
     @Body() body: VersionedCommandDto,
     @CurrentCommandContext() audit: CommandContext,
   ) {
-    return this.service.cancelWorkOrder(id, body.version, audit);
+    return this.service.cancelWorkOrder(workOrderId, body.version, audit);
   }
-  @Post('work-orders/:id/actions/close')
+  @Post('work-orders/:workOrderId/actions/close')
   @RequirePermission(PERMISSIONS.production.orders.transition)
   @AuditInApplication()
   closeWorkOrder(
-    @Param() { id }: IdParamDto,
+    @Param() { workOrderId }: WorkOrderIdParamDto,
     @Body() body: VersionedCommandDto,
     @CurrentCommandContext() audit: CommandContext,
   ) {
-    return this.service.closeWorkOrder(id, body.version, audit);
+    return this.service.closeWorkOrder(workOrderId, body.version, audit);
   }
-  @Get('work-orders/:id/batches')
+  @Get('work-orders/:workOrderId/batches')
   @RequirePermission(PERMISSIONS.production.tasks.view)
-  workOrderBatches(@Param() { id }: IdParamDto) {
-    return this.service.listWorkOrderBatches(id);
+  workOrderBatches(@Param() { workOrderId }: WorkOrderIdParamDto) {
+    return this.service.listWorkOrderBatches(workOrderId);
   }
-  @Post('work-orders/:id/batches')
+  @Post('work-orders/:workOrderId/batches')
   @RequirePermission(PERMISSIONS.production.batches.create)
   @AuditInApplication()
+  // scope 引用 application 层幂等契约常量（唯一事实来源，见 create-batch-idempotency.contract.ts）。
+  // 本控制器已 import application 层 ProductionService，presentation→application 是既有合规依赖方向，
+  // 模块内直接 import 契约文件即可，不涉及跨模块 public.ts 约束。
+  @IdempotentEndpoint({ scope: CREATE_BATCH_IDEMPOTENCY_SCOPE })
   createBatch(
-    @Param() { id }: IdParamDto,
+    @Param() { workOrderId }: WorkOrderIdParamDto,
     @Body() body: CreateProductionBatchDto,
     @CurrentCommandContext() audit: CommandContext,
   ) {
-    return this.service.createBatch(id, body, audit);
+    return this.service.createBatch(workOrderId, body, audit);
   }
   @Get('batches')
   @RequirePermission(PERMISSIONS.production.tasks.view)

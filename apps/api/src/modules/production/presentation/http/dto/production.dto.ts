@@ -30,6 +30,9 @@ const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 export class IdParamDto {
   @IsString() @MaxLength(20) id!: string;
 }
+export class WorkOrderIdParamDto {
+  @IsString() @MaxLength(20) workOrderId!: string;
+}
 export class BatchStepRecordParamDto {
   @IsString() @MaxLength(20) batchId!: string;
   @IsString() @MaxLength(20) recordId!: string;

@@ -229,7 +229,7 @@
       :user-options="userSource.options.value"
       :sop-file-options="sopFileOptions"
       :submitting="submitting"
-      @update:visible="taskDialogVisible = $event"
+      @update:visible="handleTaskDialogClose"
       @refresh-users="userSource.refresh"
       @refresh-sop-files="refreshSopFiles"
       @save="submitTask"
@@ -264,14 +264,18 @@ import { Plus, Refresh } from '@element-plus/icons-vue';
 import TableToolbar from '../../components/TableToolbar.vue';
 import type {
   BatchStepRecordItem,
+  CreateProductionBatchPayload,
   ProductionBatchDetail,
   ProductionBatchItem,
 } from '@company/contracts';
+import { normalizeCreateBatchPayload } from '@company/utils';
 import { productionApi } from '../../api/production';
 import { EMessage } from '../../utils/message';
+import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
 import { useRowPending } from '../../utils/useRowPending';
 import { BATCH_STATUS_META, batchStatusMeta, formatQuantity } from './production-status';
 import { useProductionBatchesList } from './composables/useProductionBatchesList';
+import { useIdempotentIntent } from '../../composables/idempotency/useIdempotentIntent';
 import { useUserOptions } from '../../composables/options/useUserOptions';
 import { buildLiveOptions } from '../../utils/live-options';
 import TaskFormDialog from './components/TaskFormDialog.vue';
@@ -314,6 +318,9 @@ const userChoices = computed(() =>
 /** 行内写操作守卫（生成物料），同一行只允许一个在途（todo 3.5） */
 const { isRowPending, beginRow, endRow } = useRowPending();
 
+/** 创建生产批次任务的幂等意图（试点端点）：页面局部持有，弹窗打开/关闭时清除旧意图 */
+const createBatchIntent = useIdempotentIntent();
+
 /* ====== 弹窗状态 ====== */
 const taskDialogVisible = ref(false);
 const detailDialogVisible = ref(false);
@@ -331,7 +338,43 @@ const taskFormDialogRef = ref<{
 const openCreate = (): void => {
   editingTaskId.value = null;
   taskFormDialogRef.value?.resetForm();
+  createBatchIntent.reset();
   taskDialogVisible.value = true;
+};
+
+/**
+ * 任务弹窗关闭守卫：意图结果未知（网络模糊失败/提交在途/结果损坏/超时）时不得静默丢弃 K1，
+ * 否则重新提交可能生成第二个自动编号批次。必须提示后由用户显式确认才 reset（放弃）。
+ * idle 状态直接关闭；程序化关闭（提交成功后置 visible=false）不会触发 update:visible，走不到这里。
+ */
+const handleTaskDialogClose = async (visible: boolean): Promise<void> => {
+  if (visible) {
+    taskDialogVisible.value = true;
+    return;
+  }
+  const state = createBatchIntent.getStatus();
+  if (state === 'idle') {
+    taskDialogVisible.value = false;
+    createBatchIntent.reset();
+    return;
+  }
+  const message =
+    state === 'blocked'
+      ? '该提交的幂等结果已损坏，无法确认本次是否已创建批次。关闭后重新发起可能生成重复批次，建议先在批次列表中核对是否已生成。是否仍要关闭？'
+      : state === 'expired'
+        ? '该提交已超出幂等重试窗口（12 小时），旧键已无法安全重试。关闭后重新发起可能生成重复批次，建议先在批次列表中核对是否已生成。是否仍要关闭？'
+        : '上次提交结果未知（网络异常或服务端未确认）。关闭后将无法安全重试；若本次实际已成功，重新提交可能生成重复批次。是否仍要关闭？';
+  try {
+    await ElMessageBox.confirm(message, '关闭确认', {
+      confirmButtonText: '仍要关闭',
+      cancelButtonText: '继续保留',
+      type: 'warning',
+    });
+    taskDialogVisible.value = false;
+    createBatchIntent.reset();
+  } catch {
+    // 用户选择保留：不关闭弹窗、不丢弃意图，K1 继续保留以便安全重试
+  }
 };
 
 const openEdit = (row: ProductionBatchItem): void => {
@@ -353,14 +396,25 @@ const submitTask = async (data: TaskFormValue): Promise<void> => {
       });
       EMessage.success('任务已更新');
     } else {
-      await productionApi.createOrderBatch(data.workOrderId, {
+      const payload: CreateProductionBatchPayload = {
         batchNo: data.batchNo || '',
         routeId: data.routeId || null,
         plannedQuantity: data.plannedQuantity,
         ownerId: data.ownerId || null,
         remark: data.remark || null,
         stepOverrides: data.stepOverrides,
-      });
+      };
+      const workOrderId = data.workOrderId;
+      const normalizedPayload = normalizeCreateBatchPayload(payload);
+      await createBatchIntent.execute(
+        {
+          intentType: 'production.batch.create',
+          params: { workOrderId },
+          query: {},
+          body: normalizedPayload,
+        },
+        (key) => productionApi.createOrderBatch(workOrderId, normalizedPayload, key),
+      );
       EMessage.success('任务已新增');
     }
     taskDialogVisible.value = false;

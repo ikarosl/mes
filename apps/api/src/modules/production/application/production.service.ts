@@ -12,7 +12,9 @@ import type {
   WorkOrderDetail,
   WorkOrderQuery,
 } from '@company/contracts';
+import { normalizeCreateBatchPayload } from '@company/utils';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
+import { IdempotencyExecutor } from '../../../common/idempotency/idempotency-executor.js';
 import { IdentityDirectoryService } from '../../identity/public.js';
 import {
   ProductSnapshotQuery,
@@ -22,6 +24,8 @@ import {
 import { ProductionDomainError } from '../domain/production.errors.js';
 import { ProductionRepository } from './ports/production.repository.js';
 import type { ResolvedBatchStepOverride } from './ports/production.repository.js';
+import { CREATE_BATCH_IDEMPOTENCY_SCOPE } from './idempotency/create-batch-idempotency.contract.js';
+import { productionBatchResultCodec } from './idempotency/production-batch-result.codec.js';
 
 @Injectable()
 export class ProductionService {
@@ -29,6 +33,7 @@ export class ProductionService {
     private readonly production: ProductionRepository,
     private readonly products: ProductSnapshotQuery,
     private readonly identity: IdentityDirectoryService,
+    private readonly idempotency: IdempotencyExecutor,
   ) {}
 
   listWorkOrders(query: WorkOrderQuery) {
@@ -99,7 +104,9 @@ export class ProductionService {
     payload: CreateProductionBatchPayload,
     audit: CommandContext,
   ) {
-    const normalizedPayload = this.cleanBatch(payload);
+    const normalizedPayload = normalizeCreateBatchPayload(payload);
+    // 纯格式校验只由请求内容决定，放在幂等 executor 外；会受数据库状态影响的业务校验（负责人是否
+    // 启用等）移入 handler，重放不重复执行——否则负责人停用后同键重试会 400 而非重放原结果。
     this.assertPlanDates(normalizedPayload.planStartDate, normalizedPayload.planEndDate);
     if (
       normalizedPayload.batchNo &&
@@ -107,30 +114,55 @@ export class ProductionService {
     ) {
       throw new ProductionDomainError('INVALID_INPUT', '手动批次号必须符合 task_batch-001 格式');
     }
-    await this.requireActiveUser(payload.ownerId ?? null);
-    const batch = await this.production.withBatchCreationTransaction(
-      workOrderId,
-      async (workOrderProductId) => {
-        const route = this.requireProduct(
-          await this.products.getProductionRouteSnapshot(
-            workOrderProductId,
-            normalizedPayload.routeId ?? null,
-          ),
-        );
-        const stepOverrides = await this.resolveStepOverrides(
-          normalizedPayload.stepOverrides ?? [],
-          route,
-        );
-        return this.production.createBatch(
+    const idempotencyKey = audit.idempotencyKey;
+    if (!idempotencyKey || !audit.actorId) {
+      throw new ProductionDomainError(
+        'INVALID_STATE',
+        '创建生产批次缺少 Idempotency-Key 或用户上下文',
+      );
+    }
+    const execution = await this.idempotency.execute<ProductionBatchDetail>({
+      scope: CREATE_BATCH_IDEMPOTENCY_SCOPE,
+      key: idempotencyKey,
+      actorId: audit.actorId,
+      requestId: audit.requestId,
+      request: {
+        params: { workOrderId },
+        body: normalizedPayload,
+      },
+      resultCodec: productionBatchResultCodec,
+      handler: async () => {
+        // 会变化的业务校验：负责人是否启用，只在首次执行时校验；读取经 withActiveConnection 复用
+        // executor 外层事务连接，与批次创建、成功审计、幂等结果处于同一事务上下文。
+        await this.requireActiveUser(normalizedPayload.ownerId ?? null);
+        return this.production.withBatchCreationTransaction(
           workOrderId,
-          normalizedPayload,
-          route,
-          stepOverrides,
-          audit,
+          async (workOrderProductId) => {
+            const route = this.requireProduct(
+              await this.products.getProductionRouteSnapshot(
+                workOrderProductId,
+                normalizedPayload.routeId ?? null,
+              ),
+            );
+            const stepOverrides = await this.resolveStepOverrides(
+              normalizedPayload.stepOverrides ?? [],
+              route,
+            );
+            const batch = await this.production.createBatch(
+              workOrderId,
+              normalizedPayload,
+              route,
+              stepOverrides,
+              audit,
+            );
+            // 首次执行即富化并保存最终响应快照，重放直接返回该快照；
+            // 用户名变化不会改变重放响应，保证"相同 K1 + 相同内容 -> 原成功业务结果"。
+            return this.enrichBatchDetail(batch);
+          },
         );
       },
-    );
-    return this.enrichBatchDetail(batch);
+    });
+    return execution.result;
   }
   async updateBatch(id: string, payload: UpdateProductionBatchPayload, audit: CommandContext) {
     if (payload.ownerId !== undefined) await this.requireActiveUser(payload.ownerId);
@@ -231,13 +263,6 @@ export class ProductionService {
       ...payload,
       workOrderNo: payload.workOrderNo.trim(),
       externalOrderNo: payload.externalOrderNo?.trim() || null,
-      remark: payload.remark?.trim() || null,
-    };
-  }
-  private cleanBatch(payload: CreateProductionBatchPayload): CreateProductionBatchPayload {
-    return {
-      ...payload,
-      batchNo: payload.batchNo?.trim() || null,
       remark: payload.remark?.trim() || null,
     };
   }

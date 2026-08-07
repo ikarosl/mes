@@ -4,6 +4,8 @@ import { nextTick } from 'vue';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia } from 'pinia';
 import { createRouter, createWebHistory } from 'vue-router';
+import { RequestError } from '@company/request';
+import { IDEMPOTENCY_RESULT_CORRUPT } from '@company/constants';
 import ProductionOrdersPage from '../ProductionOrdersPage.vue';
 
 const {
@@ -210,4 +212,149 @@ describe('ProductionOrdersPage', () => {
     expect(changeOrderStatus).toHaveBeenCalledWith('o1', 'release', 0);
     expect(findRelease()!.attributes('disabled')).toBeUndefined(); // 写操作结束释放
   });
+});
+
+type GuardVm = {
+  createBatchIntent: {
+    execute: (snapshot: unknown, submit: (key: string) => Promise<unknown>) => Promise<unknown>;
+    getStatus: () => string;
+  };
+  handleBatchFormDialogClose: (visible: boolean) => Promise<void>;
+  batchFormDialogVisible: boolean;
+};
+
+const intentSnapshot = {
+  intentType: 'production.batch.create',
+  params: { workOrderId: 'o1' },
+  query: {},
+  body: { batchNo: null, remark: null },
+};
+
+describe('ProductionOrdersPage batch dialog close guard', () => {
+  const mountPage = () =>
+    mount(ProductionOrdersPage, {
+      global: { plugins: [ElementPlus, router, createPinia()] },
+    });
+  const guardVm = (wrapper: ReturnType<typeof mountPage>) => wrapper.vm as unknown as GuardVm;
+
+  beforeEach(() => {
+    confirm.mockReset();
+  });
+
+  it('idle 状态直接关闭：不弹确认、不残留意图', async () => {
+    const wrapper = mountPage();
+    await flushPromises();
+    const vm = guardVm(wrapper);
+
+    await vm.handleBatchFormDialogClose(true); // 打开
+    await vm.handleBatchFormDialogClose(false); // 关闭
+
+    expect(confirm).not.toHaveBeenCalled();
+    expect(vm.batchFormDialogVisible).toBe(false);
+  }, 15_000);
+
+  it('网络模糊失败后关闭弹窗：先确认，用户取消则保留弹窗与 K1', async () => {
+    const wrapper = mountPage();
+    await flushPromises();
+    const vm = guardVm(wrapper);
+
+    await vm.handleBatchFormDialogClose(true); // 打开弹窗
+    // 真实 intent 提交失败（断网）→ pending，同键可重试
+    await expect(
+      vm.createBatchIntent.execute(intentSnapshot, () =>
+        Promise.reject(new RequestError('网络断开', 0)),
+      ),
+    ).rejects.toBeInstanceOf(RequestError);
+    expect(vm.createBatchIntent.getStatus()).toBe('pending');
+
+    confirm.mockRejectedValue('cancel'); // 用户选择「继续保留」
+    await vm.handleBatchFormDialogClose(false);
+
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(confirm.mock.calls[0][0]).toContain('结果未知');
+    expect(vm.batchFormDialogVisible).toBe(true); // 弹窗保持打开
+    expect(vm.createBatchIntent.getStatus()).toBe('pending'); // K1 未丢失
+
+    // 用户确认关闭 → 显式放弃
+    confirm.mockResolvedValue('confirm');
+    await vm.handleBatchFormDialogClose(false);
+    expect(vm.batchFormDialogVisible).toBe(false);
+    expect(vm.createBatchIntent.getStatus()).toBe('idle');
+  }, 15_000);
+
+  it('模糊失败后修改表单提交：不静默换键盲发，提示先核对结果', async () => {
+    const wrapper = mountPage();
+    await flushPromises();
+    const vm = guardVm(wrapper);
+
+    await vm.handleBatchFormDialogClose(true); // 打开弹窗
+    // 真实 intent 提交失败（断网）→ pending，同键可重试
+    await expect(
+      vm.createBatchIntent.execute(intentSnapshot, () =>
+        Promise.reject(new RequestError('网络断开', 0)),
+      ),
+    ).rejects.toBeInstanceOf(RequestError);
+    expect(vm.createBatchIntent.getStatus()).toBe('pending');
+
+    // 修改业务内容后再次提交：不得静默换新键盲发，必须提示先核对结果
+    await expect(
+      vm.createBatchIntent.execute(
+        { ...intentSnapshot, body: { batchNo: null, remark: 'changed' } },
+        () => Promise.resolve('ok'),
+      ),
+    ).rejects.toThrow(/结果未知/);
+    expect(vm.createBatchIntent.getStatus()).toBe('pending'); // K1 未丢失、未换键
+  }, 15_000);
+
+  it('结果损坏后关闭弹窗：按 blocked 文案提示重复批次风险，不静默放行 K2', async () => {
+    const wrapper = mountPage();
+    await flushPromises();
+    const vm = guardVm(wrapper);
+
+    await vm.handleBatchFormDialogClose(true); // 打开弹窗
+    await expect(
+      vm.createBatchIntent.execute(intentSnapshot, () =>
+        Promise.reject(new RequestError('结果损坏', 500, undefined, IDEMPOTENCY_RESULT_CORRUPT)),
+      ),
+    ).rejects.toBeTruthy();
+    expect(vm.createBatchIntent.getStatus()).toBe('blocked');
+
+    confirm.mockRejectedValue('cancel');
+    await vm.handleBatchFormDialogClose(false);
+
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(confirm.mock.calls[0][0]).toContain('结果已损坏');
+    expect(confirm.mock.calls[0][0]).toContain('重复批次');
+    expect(vm.batchFormDialogVisible).toBe(true);
+    expect(vm.createBatchIntent.getStatus()).toBe('blocked');
+  }, 15_000);
+
+  it('意图超出 12 小时重试窗口后关闭弹窗：按超窗口文案提示，不静默放行重复提交', async () => {
+    const wrapper = mountPage();
+    await flushPromises();
+    const vm = guardVm(wrapper);
+    await vm.handleBatchFormDialogClose(true); // 打开弹窗（真实计时器下完成挂载与确认）
+
+    vi.useFakeTimers();
+    try {
+      // 网络模糊失败 → pending；推进到超过 12 小时窗口 → expired
+      await expect(
+        vm.createBatchIntent.execute(intentSnapshot, () =>
+          Promise.reject(new RequestError('网络断开', 0)),
+        ),
+      ).rejects.toBeInstanceOf(RequestError);
+      vi.advanceTimersByTime(12 * 60 * 60 * 1000 + 1);
+      expect(vm.createBatchIntent.getStatus()).toBe('expired');
+
+      confirm.mockRejectedValue('cancel');
+      await vm.handleBatchFormDialogClose(false);
+
+      expect(confirm).toHaveBeenCalledTimes(1);
+      expect(confirm.mock.calls[0][0]).toContain('重试窗口');
+      expect(vm.batchFormDialogVisible).toBe(true);
+      expect(vm.createBatchIntent.getStatus()).toBe('expired');
+    } finally {
+      vi.useRealTimers();
+    }
+  }, 15_000);
 });
