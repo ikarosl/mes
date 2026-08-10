@@ -18,3 +18,45 @@
 - 数据库变更必须先更新对应章节，再在 `packages/database/migrations` 追加 migration；已执行 migration 不得修改。
 - migration、代码、接口契约与本目录不一致时，不得由实现自行选择，必须先完成设计评审并同步规范。
 - 尚未完成业务决策的能力必须明确标记边界，不得以推测性字段或状态提前固化。
+
+生产流程整体模型：
+```
+    production_batches
+            │
+            ▼
+    batch_step_records
+    某批次 × 某工序 = 一个执行节点
+            │
+            ▼
+    batch_step_reports
+    每次报工一条
+            │
+            │ abnormal_quantity > 0
+            ▼
+        异常审批
+        /       \
+       /         \
+    可返工        不可返工
+    │              │
+    ▼              ▼
+rework_records  batch_step_scrap_records
+    │             │
+    │             │ 最终生产损失
+    │             ▼
+    │   production_material_supplement
+    │           │
+    │           ▼
+    │   production_item_demand
+    │           │
+    │           ▼
+    │       allocation
+    │           │
+    │           ▼
+    │        outbound
+    │
+    └─重新回到该工序
+            ↓
+    batch_step_reports
+    再新增返工报工
+
+```

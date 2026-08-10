@@ -4,7 +4,7 @@
 
 ## 3.11 跨模块引用说明
 
-本章引用的 `users`、`process_routes`、`process_steps`、`technical_files` 分别由[系统、RBAC 与认证](../10-system-rbac-auth.md)和[文件与工艺](../20-files-and-process.md)定义。报工事实使用[生产报工、追溯与质量边界](../40-production-traceability-quality.md)定义的 `batch_step_reports`；质检和返工模型尚未闭环，不得创建旧草案中的 `inspection_records`、`rework_records`、`quality_check_order` 或 `quality_check_detail`。
+本章引用的 `users`、`process_routes`、`process_steps`、`technical_files` 分别由[系统、RBAC 与认证](../10-system-rbac-auth.md)和[文件与工艺](../20-files-and-process.md)定义。报工事实使用[生产报工、追溯与质量边界](../40-production-traceability-quality.md)定义的 `batch_step_reports`；工序异常审批已确认需要与执行状态分离，但数量拆分、返工和再次报工额度仍未闭环，不得创建未定稿的 `batch_step_abnormal_records`、`rework_records`、`quality_check_order` 或 `quality_check_detail`。
 
 跨模块写操作必须由应用服务在同一事务内维护组合外键、快照和操作日志，Controller 不得直接拼接 SQL 修改多张事实表。
 
@@ -74,21 +74,25 @@
 
 ---
 
-### 3.12.5 报废补料草案边界（待决策）
+### 3.12.5 半自动报废补料边界（部分已确认）
 
-以下仅保留“不得改写原需求事实”的候选方向，不代表报废补料流程已批准。生产消耗报废、补料触发和审批模型闭环后，如决定需要补料，应新增需求：
+已确认补料采用管理员半自动决策：系统只给出候选物料，管理员选择物料并填写数量；系统不得根据工序异常数量或 BOM 自动推算补料数量。候选物料优先取异常工序绑定的有效 `route_step_materials`，未绑定时可以降级为当前产品全部有效 BOM 物料。最终选中的物料、人工填写数量、单位和原始需求在补料明细中冻结，未选候选项不需要冻结。
+
+补料不得改写原需求事实。对于现有 `item_scrap` 表达的库存或生产消耗报废，批准后新增需求使用以下字段：
 
 | 字段               | 值          |
 | ------------------ | ----------- |
-| `demand_type`      | `2`         |
+| `demand_type`      | `scrap_supplement` |
 | `parent_demand_id` | 原始需求 ID |
 | `source_scrap_id`  | 报废记录 ID |
 | `need_number`      | 补料数量    |
 
 说明：
 
-- 不建议直接修改原始需求的 `need_number`。
-- 这样可以形成清晰链路：原始需求 → 报废记录 → 补料需求 → 分配 → 出库。
+- 不得直接修改原始需求的 `need_number`。
+- 目标链路为：原始需求 → 工序报废/补料单及明细 → 补料需求 → 分配 → 出库。
+- 上表的 `source_scrap_id` 只允许引用现有 `item_scrap.id`。未来工序报废补料不得把 `batch_step_scrap_records.id` 填入该字段；它与补料明细、需求之间的新来源外键需要另行定稿。
+- `production_material_supplement`、补料明细、工序报废和需求之间的完整外键，以及出库后如何形成再次报工额度仍待决策；未闭环前不得据此创建表或接口。
 
 ---
 
@@ -136,10 +140,10 @@
 - 批次工序必须由后端查询所选路线的有效 `process_route_steps` 后按顺序自动生成，不接受前端提交任意 `route_step_id` 集合。
 - 上述读取、校验、批次创建和批次工序生成必须处于同一应用事务。
 
-### 3.12.9 需求幂等与报废补料候选条件（待决策）
+### 3.12.9 需求幂等与报废补料候选条件
 
 - 正常需求幂等键为 `NORMAL:{production_batch_id}:{product_material_id}`。
-- 报废补料候选内部键为 `SCRAP:{source_scrap_id}:{product_material_id}`。
+- 当前库存/生产消耗报废补料候选内部键为 `SCRAP:{source_scrap_id}:{product_material_id}`；未来工序补料单的幂等来源键随补料明细外键一并定稿，不得复用不匹配的 `item_scrap` ID。
 - 人工追加候选内部键为 `ADDITIONAL:{production_batch_id}:{business_action_no}:{product_material_id}`。
 - 相同幂等键重复提交返回既有需求，不新增记录、不修改原需求数量。
 - 一条已确认报废可以为不同 BOM 行生成多条补料需求，但报废、原需求和补料需求必须属于同一生产批次。
@@ -168,14 +172,15 @@ SELECT id FROM item_batch WHERE id = :batch_id FOR UPDATE;
 
 ### 3.12.11 批次完工确认与乐观锁
 
-`production_batches` 的完工确认使用 `version` 乐观锁。下列质检和返工前置条件是目标边界；对应模型未闭环前不得开放批次完工命令：
+`production_batches` 的完工确认使用 `version` 乐观锁。当前生产过程采用临时自检放行口径；批次完工只表达生产执行完成，不代表最终质量结论：
 
 - 批次完工前校验所有 `need_record_snapshot = 1` 的工序已完成。
-- 批次完工前校验所有 `need_inspection_snapshot = 1` 的工序存在有效检验结论。
+- `need_inspection_snapshot` 当前只保留路线快照，不创建过程检验任务，也不作为批次生产完工或下工序流转的阻塞条件；这是过程质量流程缺失期间的临时方案。
 - 批次完工前校验不存在未关闭返工。
 - 在同一事务写入最终数量、完工时间、完工人、`completed` 状态和操作日志。
 - 批次完工不自动创建入库单、库存批次或库存流水。
-- 工单完成数量从已完工生产批次 `qualified_quantity` 汇总。
+- `batch_step_reports.normal_quantity` 是工序自检正常量，不是最终质检合格量；不得直接写入 `production_batches.qualified_quantity`。
+- 生产完成后的最终质检、`qualified_quantity` 写入和工单合格完成数量汇总仍待质量模型定稿；在此之前不得把批次生产完工描述为最终质量完成。
 
 ### 3.12.12 库存状态转换双流水
 

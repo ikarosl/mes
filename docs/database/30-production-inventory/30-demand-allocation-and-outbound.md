@@ -4,7 +4,7 @@
 
 ## 3.5 生产物料需求与分配表
 
-> 当前只批准 `demand_type = 0` 的正常需求进入 application/API 实施。`demand_type = 1/2`、补料触发、审批、数量来源以及与报废事实的关系仍是待决策草案；已有物理字段和约束仅保留演进空间，不构成开放补料能力的依据。
+> 正式设计中的 `demand_type` 统一使用 `normal`、`manual_additional`、`scrap_supplement` 字符串代码。当前物理表和 application 仍使用历史数字代码且只开放正常需求；必须先以追加 migration 和版本化契约完成字符串迁移，才能开放其他需求类型。半自动补料的候选与人工填量边界已经确认，但补料如何形成再次报工额度仍待决策，不构成开放补料能力的依据。
 
 ---
 
@@ -26,7 +26,7 @@
 | `need_batch_record_snapshot`       | `TINYINT`         | 批次追溯要求快照                          |
 | `planned_output_quantity_snapshot` | `DECIMAL(12,4)`   | 生成需求时的批次计划产量快照              |
 | `need_number`                      | `DECIMAL(12,4)`   | 需求数量                                  |
-| `demand_type`                      | `TINYINT`         | 需求类型，默认 `0`                        |
+| `demand_type`                      | `VARCHAR(30)`     | 需求类型，默认 `normal`                   |
 | `idempotency_key`                  | `VARCHAR(150)`    | 幂等键，同一键重复提交返回既有结果        |
 | `parent_demand_id`                 | `BIGINT UNSIGNED` | 补料需求关联的原始需求 ID                 |
 | `source_scrap_id`                  | `BIGINT UNSIGNED` | 报废补料关联的报废记录 ID，可为空         |
@@ -44,9 +44,9 @@
 | `item_id`                                      | 受组合外键保护的需求对象冗余，便于查询和约束     |
 | `quantity_per_unit_snapshot` / `unit_snapshot` | 保证 BOM 修改后仍可还原需求计算口径              |
 | `need_number`                                  | 需求事实，不应因为出库、退料、报废而直接修改     |
-| `demand_type`                                  | `0` 正常需求，`1` 追加补料，`2` 报废补料         |
+| `demand_type`                                  | `normal` 正常需求、`manual_additional` 人工追加、`scrap_supplement` 报废补料 |
 | `parent_demand_id`                             | 补料需求关联的原始需求                           |
-| `source_scrap_id`                              | 报废补料来源，同一报废记录可生成多种物料补料需求 |
+| `source_scrap_id`                              | 现有 `item_scrap` 报废补料来源；不得用于冒充尚未定稿的工序报废或补料明细 ID |
 | `idempotency_key`                              | 幂等键，同一键重复提交返回既有结果               |
 | `business_status`                              | 业务状态，不表达数量进度                         |
 
@@ -59,19 +59,19 @@
 - 外键：`FOREIGN KEY (parent_demand_id) REFERENCES production_item_demand(id)`
 - 外键：`FOREIGN KEY (source_scrap_id) REFERENCES item_scrap(id)`
 - 检查约束：`CHECK (need_number > 0)`
-- 检查约束：`CHECK (demand_type IN (0, 1, 2))`
+- 检查约束：`CHECK (demand_type IN ('normal', 'manual_additional', 'scrap_supplement'))`
 - 检查约束：`CHECK (business_status IN ('active', 'cancelled', 'closed', 'frozen', 'abnormal'))`
 - 组合索引：`INDEX (production_batch_id, business_status)`，用于查询批次有效需求
-- 检查约束：正常需求 `demand_type = 0` 时要求 `product_material_id IS NOT NULL`，且 `parent_demand_id IS NULL`、`source_scrap_id IS NULL`
-- 检查约束：追加需求 `demand_type = 1` 时要求 `product_material_id IS NOT NULL`、`parent_demand_id IS NOT NULL`，且 `source_scrap_id IS NULL`
-- 检查约束：报废补料 `demand_type = 2` 时要求 `product_material_id IS NOT NULL`、`parent_demand_id IS NOT NULL`、`source_scrap_id IS NOT NULL`
+- 检查约束：正常需求 `demand_type = 'normal'` 时要求 `product_material_id IS NOT NULL`，且 `parent_demand_id IS NULL`、`source_scrap_id IS NULL`
+- 检查约束：人工追加需求 `demand_type = 'manual_additional'` 时要求 `product_material_id IS NOT NULL`、`parent_demand_id IS NOT NULL`，且 `source_scrap_id IS NULL`
+- 检查约束：报废补料 `demand_type = 'scrap_supplement'` 时要求 `product_material_id IS NOT NULL`、`parent_demand_id IS NOT NULL`、`source_scrap_id IS NOT NULL`
 - 检查约束：正常需求的 BOM 快照字段不得为空且均大于 `0`
 - 唯一约束：`UNIQUE (idempotency_key)`
 - 唯一约束：`UNIQUE (id, item_id)`
 - 唯一约束：`UNIQUE (id, production_batch_id)`
 - 索引：`INDEX (source_scrap_id)`
 
-分阶段迁移说明：在 `item_scrap` 建表前，`production_item_demand` 的物理约束先支持 `demand_type IN (0, 1)`，保留 `source_scrap_id` 字段及索引但要求其为空，并立即建立 `parent_demand_id` 自关联外键。按迁移顺序第 12 步建立 `item_scrap` 后，必须通过追加 migration 建立 `source_scrap_id` 外键并将类型及检查约束扩展到 `0、1、2`。Production 第一阶段应用仅生成 `demand_type = 0` 的正常需求。
+迁移说明：已执行 migration 中的 `production_item_demand.demand_type` 仍为数字类型，物理约束支持 `0/1`，Production application 只生成 `0` 的正常需求。已执行文件不得修改；后续必须追加 migration，把既有 `0/1` 映射为 `normal/manual_additional` 并把字段改为 `VARCHAR(30)`，同时同步共享常量、字符串联合类型、Repository 和契约测试。在 `item_scrap` 及补料来源关系定稿后，再通过后续追加 migration 开放 `scrap_supplement` 并建立所需外键。在上述迁移完成前，数据库和应用仍只允许现有正常需求流程。
 
 视图版本删除字段：
 
@@ -91,8 +91,17 @@
 - 幂等键使用稳定格式：正常需求为 `NORMAL:{production_batch_id}:{product_material_id}`，报废补料为 `SCRAP:{source_scrap_id}:{product_material_id}`，人工追加为 `ADDITIONAL:{production_batch_id}:{business_action_no}:{product_material_id}`。
 - `business_action_no` 必须是一次人工追加动作的稳定唯一编号；相同幂等键重复提交时返回既有需求，不插入新记录，也不得修改既有 `need_number`。
 - 应用事务必须校验 `parent_demand_id` 指向的原需求与当前需求属于同一生产批次，且 `product_material_id` 对应投入对象与 `item_id` 一致。
-- 报废补料还必须校验 `source_scrap_id` 指向已确认、未取消的报废记录，且报废、原需求和补料需求属于同一生产批次。
+- 现有 `item_scrap` 报废补料还必须校验 `source_scrap_id` 指向已确认、未取消的报废记录，且报废、原需求和补料需求属于同一生产批次。未来工序报废补料必须使用与工序报废/补料明细相匹配的新来源外键，不得把对应 ID 填入 `source_scrap_id`。
 - 需求事实和对应操作日志必须在同一事务写入。
+
+### 半自动补料边界（已确认方向，尚未形成可实施表结构）
+
+- 后续补料流程使用 `production_material_supplement` 及其补料明细承载管理员的主动补料动作；一张补料单可以选择多种物料。
+- 系统只提供候选物料，不自动计算每种物料的补料数量。管理员选择物料并手工填写数量，系统不得使用工序异常数量乘 BOM 用量推算补料数量。
+- 候选物料优先来自异常工序绑定的有效 `route_step_materials`；工序没有绑定物料时，可以降级展示当前产品的全部有效 BOM 物料。候选范围只用于辅助选择，不构成数量计算或工序消耗事实。
+- 系统只校验管理员选择的物料属于当前产品、补料数量大于 `0`、单位与物料/BOM 口径一致，并在补料明细中冻结最终选中的 `product_material_id`、`item_id`、人工填写数量、单位快照和原始需求 ID；无需冻结未被选中的候选集合。
+- 批准补料后应新增 `demand_type = 'scrap_supplement'` 的需求，不得修改原始需求的 `need_number`。管理员填写的数量必须保留为人工决策事实，不得描述为系统计算数量。
+- 补料单/明细的完整字段、补料与工序报废的外键、需求来源外键、出库达到何种条件后允许再次报工，以及报工如何消费补料额度仍待决策；这些问题定稿前不得创建相应 migration 或 API。
 
 ---
 
@@ -225,4 +234,3 @@
 - `production_batch_id` 是有价值的冗余字段，便于按生产批次查询出库记录。
 
 ---
-

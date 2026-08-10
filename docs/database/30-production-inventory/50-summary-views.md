@@ -98,7 +98,7 @@
 | `product_material_id`          | `BIGINT UNSIGNED` | BOM 行 ID          |
 | `item_id`                      | `BIGINT UNSIGNED` | 需求对象 ID        |
 | `need_number`                  | `DECIMAL(12,4)`   | 需求数量           |
-| `demand_type`                  | `TINYINT`         | 需求类型           |
+| `demand_type`                  | `VARCHAR(30)`     | 需求类型：`normal`、`manual_additional`、`scrap_supplement` |
 | `parent_demand_id`             | `BIGINT UNSIGNED` | 原始需求 ID        |
 | `source_scrap_id`              | `BIGINT UNSIGNED` | 来源报废记录 ID    |
 | `business_status`              | `VARCHAR(30)`     | 业务状态           |
@@ -230,4 +230,3 @@
 - 当前库存数量不一定等于生产入库数量，因为后续可能发生销售出库、盘点调整、报废出库等。
 
 ---
-

@@ -144,7 +144,7 @@
 - 生产消耗报废不应直接扣减原 allocation 的可再次出库量。
 - 生产消耗报废如果需要补料，应新增 `production_item_demand`，并设置：
 
-  - `demand_type = 2`
+  - `demand_type = 'scrap_supplement'`
   - `parent_demand_id = 原始需求 ID`
   - `source_scrap_id = 报废记录 ID`
 
@@ -232,4 +232,3 @@
 - 盘点明细应记录盘点时的系统数量快照，避免后续库存变动影响盘点结果。
 
 ---
-

@@ -15,6 +15,7 @@
 8a. batch_step_reports（追加事实表、迁移历史累计量并移除工序节点的累计数量列）
 9. item_batch / inbound_order / inbound_detail / inventory_transaction
 10. production_item_demand / production_item_allocation
+10a. 将 production_item_demand.demand_type 从历史数字代码追加迁移为字符串代码（字段、CHECK、共享常量、契约和 Repository 必须同步；未实施前仍只开放现有正常需求）
 11. outbound_order / outbound_detail / return_order / return_detail / item_scrap
 12. 为 production_item_demand.source_scrap_id 追加外键
 13. stock_check_order / stock_check_detail
@@ -28,4 +29,5 @@
 历史 migration 完成状态：第 1～2 步由首批 migration 完成；2a 由
 `202608050001-http-idempotency-records` 追加落地；`202607230001-product-master-data` 合并实施了第 3～7 步
 （含 `products.default_route_id` 外键）；第 8 步由 `202607300001-production-core` 落地；8a 由
-`202608100001-batch-step-reports` 追加落地。后续新表只能追加新的 migration 文件。
+`202608100001-batch-step-reports` 追加落地。第 10a 步是已确认但尚未实施的设计迁移；不得修改已执行的
+`202607300002-production-item-demand` 或 `202607300005-production-demand-design-alignment`，必须新增 migration。后续新表只能追加新的 migration 文件。
