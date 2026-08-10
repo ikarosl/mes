@@ -21,6 +21,7 @@ export const Public = () => SetMetadata(IS_PUBLIC, true);
 export const RequirePermission = (permission: string | readonly string[]) =>
   SetMetadata(REQUIRED_PERMISSION, permission);
 export const AuditInApplication = () => SetMetadata(AUDIT_IN_APPLICATION, true);
+export const IdempotentEndpoint = () => SetMetadata(IDEMPOTENT_ENDPOINT, true);
 
 /**
  * @IdempotentEndpoint 元数据形状：scope 是稳定契约标识（如 `production.batch.create.v1`），
