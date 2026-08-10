@@ -1,8 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { CommandContext } from '../../../../common/audit/audit.types.js';
 import { ProductDomainError } from '../../domain/product.errors.js';
 import { ProductService } from '../product.service.js';
 
-const audit = { userId: '1', ip: '127.0.0.1' };
+const audit: CommandContext = {
+  actorId: '1',
+  requestId: 'req-1',
+  ip: '127.0.0.1',
+  userAgent: null,
+};
 
 describe('ProductService workflow safeguards', () => {
   it('rejects duplicate BOM inputs before opening a repository transaction', async () => {

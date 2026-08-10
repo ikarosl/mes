@@ -42,7 +42,7 @@ const SCOPE = CREATE_BATCH_IDEMPOTENCY_SCOPE;
  * access token，AuthGuard 与 AuthService.authenticate 照常执行（审计 actorId 外键因此合法）。
  *
  * 覆盖 closed-loop 测试（直接构造对象、无 HTTP 管线）未覆盖的：Guard 注册顺序（401 先于幂等
- * 门禁）、DTO Pipe 校验、CurrentCommandContext 装饰器取值、AuditInterceptor 失败审计、
+ * 门禁）、DTO Pipe 校验、CurrentIdempotentCommandContext 装饰器取值、AuditInterceptor 失败审计、
  * HttpExceptionFilter 最终错误 envelope。
  */
 describeMysql('createBatch HTTP pipeline (real Nest app + real MySQL)', () => {
@@ -227,7 +227,7 @@ describeMysql('createBatch HTTP pipeline (real Nest app + real MySQL)', () => {
     expect(record.status).toBe('completed');
     expect(record.initial_request_id).toBe(fixture.createRequestId);
 
-    // 事务内成功审计由 CurrentCommandContext 提供 requestId/actorId，与请求上下文一致
+    // 事务内成功审计由 CurrentIdempotentCommandContext 提供 requestId/actorId，与请求上下文一致
     const [[successAudit]] = await pool.query<
       (RowDataPacket & {
         module: string;

@@ -3,8 +3,16 @@ import { BadRequestException, StreamableFile } from '@nestjs/common';
 import { Readable } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
 import { PERMISSIONS, permissionMatches } from '@company/constants';
+import type { CommandContext } from '../../../../../common/audit/audit.types.js';
 import { REQUIRED_PERMISSION } from '../../../../../common/security/auth.decorators.js';
 import { ProductController } from '../product.controller.js';
+
+const commandContext: CommandContext = {
+  actorId: '1',
+  requestId: 'req-1',
+  ip: null,
+  userAgent: null,
+};
 
 describe('ProductController technical files', () => {
   it('streams a private download with safe response headers and RBAC metadata', async () => {
@@ -36,7 +44,7 @@ describe('ProductController technical files', () => {
     const service = { uploadTechnicalFile: vi.fn() };
     const controller = new ProductController(service as never);
 
-    expect(() => controller.uploadTechnicalFile(undefined, { userId: '1', ip: null })).toThrow(
+    expect(() => controller.uploadTechnicalFile(undefined, commandContext)).toThrow(
       BadRequestException,
     );
     expect(service.uploadTechnicalFile).not.toHaveBeenCalled();
@@ -45,7 +53,7 @@ describe('ProductController technical files', () => {
   it('repairs a UTF-8 multipart filename before calling the service', () => {
     const service = { uploadTechnicalFile: vi.fn().mockReturnValue({ id: '9' }) };
     const controller = new ProductController(service as never);
-    const audit = { userId: '1', ip: null };
+    const audit = commandContext;
 
     controller.uploadTechnicalFile(
       {

@@ -102,6 +102,11 @@ released 只表示代码契约启用层面，与「部署完成/上线」无关�
 正式契约而非过渡行为，详见 §4、§8 与 §13。平台始终不提供“直通执行”的假实现，业务注入的是真实
 MySQL executor。
 
+当前命令上下文模型已完成收口：普通 `CommandContext` 不含幂等键；Guard 校验并规范化 header 后，只有
+createBatch 通过 `CurrentIdempotentCommandContext` 获得 `IdempotentCommandContext`。Identity/Product 的
+`AuditContext`/`CurrentAuditContext` 已删除；application port 与 Repository 仍只接收 `CommandContext`。
+Product 文件上传因对象存储副作用不在 MySQL 单事务内，保持非幂等。
+
 ## 2. 项目级决定
 
 1. 幂等键由前端使用 `crypto.randomUUID()` 生成，服务端不提供“领取幂等键”预请求接口。
@@ -606,7 +611,7 @@ Repository 的 `material_pending` 短路之前，会先重新查询批次产品�
   Controller/ProductionService/executor/真实仓库，未经过 HTTP 管线）三表同事务：成功三表同提交、业务失败
   三表同回滚、重放不新增写入且返回冻结快照；
 - createBatch HTTP 管线集成用例（`create-batch-http-pipeline.mysql.test.ts`，启动 Nest 测试应用 +
-  supertest）：覆盖 AuthGuard/IdempotencyKeyGuard 顺序、DTO Pipe、CurrentCommandContext、AuditInterceptor
+  supertest）：覆盖 AuthGuard/IdempotencyKeyGuard 顺序、DTO Pipe、CurrentIdempotentCommandContext、AuditInterceptor
   与 HttpExceptionFilter 的最终错误信封（含缺键 400、合法键放行）；
 - 真实批次详情 JSON-safe：`mapBatch`/`mapWorkOrder` 将 DATE/DATETIME 列统一为字符串，codec `encode` 以 JSON
   序列化往返固化最终响应快照；

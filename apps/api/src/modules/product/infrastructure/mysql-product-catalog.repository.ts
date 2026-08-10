@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import { withTransaction } from '@company/database';
-import type { AuditContext } from '../../../common/audit/audit.types.js';
+import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { writeTransactionalAudit } from '../../../common/audit/transactional-audit-writer.js';
 import { toBeijingISOString } from '../../../common/time/beijing-time.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
@@ -129,7 +129,7 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
     }));
   }
 
-  async createProduct(payload: ProductPayload, audit: AuditContext) {
+  async createProduct(payload: ProductPayload, audit: CommandContext) {
     return withTransaction(this.pool, async (connection) => {
       await this.requireCategory(connection, payload.categoryId);
       const [result] = await connection.execute<ResultSetHeader>(
@@ -144,8 +144,8 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
           JSON.stringify(payload.specValues ?? []),
           payload.status,
           payload.remark ?? null,
-          audit.userId,
-          audit.userId,
+          audit.actorId,
+          audit.actorId,
         ],
       );
       await this.audit(connection, audit, 'product.create', String(result.insertId), null, payload);
@@ -155,7 +155,7 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
     );
   }
 
-  async updateProduct(id: string, payload: ProductPayload, audit: AuditContext) {
+  async updateProduct(id: string, payload: ProductPayload, audit: CommandContext) {
     await withTransaction(this.pool, async (connection) => {
       const before = await this.productRecord(connection, id);
       const category = await this.requireCategory(connection, payload.categoryId);
@@ -185,7 +185,7 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
           JSON.stringify(payload.specValues ?? []),
           payload.status,
           payload.remark ?? null,
-          audit.userId,
+          audit.actorId,
           id,
         ],
       );
@@ -195,12 +195,12 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
     );
   }
 
-  async setProductStatus(id: string, status: number, audit: AuditContext) {
+  async setProductStatus(id: string, status: number, audit: CommandContext) {
     await withTransaction(this.pool, async (connection) => {
       const before = await this.productRecord(connection, id);
       await connection.execute(
         'UPDATE products SET status=?,updated_by=? WHERE id=? AND is_deleted=0',
-        [status, audit.userId, id],
+        [status, audit.actorId, id],
       );
       await this.audit(
         connection,
@@ -252,7 +252,11 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
     }));
   }
 
-  async replaceMaterials(productId: string, items: ProductMaterialPayload[], audit: AuditContext) {
+  async replaceMaterials(
+    productId: string,
+    items: ProductMaterialPayload[],
+    audit: CommandContext,
+  ) {
     await withTransaction(this.pool, async (connection) => {
       const product = await this.productRecord(connection, productId, true);
       requireConfigurableProduct({
@@ -280,7 +284,7 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
       }
       await connection.execute(
         'UPDATE product_materials SET is_deleted=1,deleted_by=?,deleted_at=NOW(),updated_by=? WHERE product_id=? AND is_deleted=0',
-        [audit.userId, audit.userId, productId],
+        [audit.actorId, audit.actorId, productId],
       );
       for (const item of items) {
         await connection.execute(
@@ -297,8 +301,8 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
             Number(item.needBatchRecord),
             item.status ?? 1,
             item.remark ?? null,
-            audit.userId,
-            audit.userId,
+            audit.actorId,
+            audit.actorId,
           ],
         );
       }
@@ -306,7 +310,7 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
     });
   }
 
-  async setDefaultRoute(productId: string, routeId: string | null, audit: AuditContext) {
+  async setDefaultRoute(productId: string, routeId: string | null, audit: CommandContext) {
     await withTransaction(this.pool, async (connection) => {
       let route: (RowDataPacket & { product_id: number; status: string }) | undefined;
       if (routeId) {
@@ -335,7 +339,7 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
       }
       await connection.execute(
         'UPDATE products SET default_route_id=?,updated_by=? WHERE id=? AND is_deleted=0',
-        [routeId, audit.userId, productId],
+        [routeId, audit.actorId, productId],
       );
       await this.audit(
         connection,
@@ -419,7 +423,7 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
   }
   private async audit(
     db: Db,
-    audit: AuditContext,
+    audit: CommandContext,
     action: string,
     targetId: string,
     beforeData: unknown,
@@ -429,7 +433,7 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
       logType: 'business',
       module: 'product',
       action,
-      userId: audit.userId,
+      userId: audit.actorId,
       targetId,
       targetType: 'product-master-data',
       result: 'success',

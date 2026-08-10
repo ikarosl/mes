@@ -10,7 +10,7 @@ import type {
   SystemRoleQuery,
   SystemUserQuery,
 } from '@company/contracts';
-import type { AuditContext, AuditLogEntry } from '../../../common/audit/audit.types.js';
+import type { CommandContext, AuditLogEntry } from '../../../common/audit/audit.types.js';
 import { AuditRepository } from './ports/audit.repository.js';
 import { RbacRepository, type RbacWriteResult } from './ports/rbac.repository.js';
 
@@ -31,7 +31,7 @@ export class RbacService {
   }
   async createUser(
     payload: CreateSystemUserPayload,
-    context: AuditContext,
+    context: CommandContext,
   ): Promise<RbacWriteResult<string>> {
     if (!payload.username.trim() || !payload.displayName.trim() || payload.password.length < 6)
       return { status: 'invalid-input', message: '用户名、姓名必填，密码至少 6 位' };
@@ -44,7 +44,7 @@ export class RbacService {
   updateUser(
     id: string,
     payload: UpdateSystemUserPayload,
-    context: AuditContext,
+    context: CommandContext,
   ): Promise<RbacWriteResult> {
     if (payload.username !== undefined && !payload.username.trim())
       return Promise.resolve({ status: 'invalid-input', message: '用户名不能为空' });
@@ -52,7 +52,7 @@ export class RbacService {
       return Promise.resolve({ status: 'invalid-input', message: '姓名不能为空' });
     return this.repository.updateUser(id, payload, this.audit('更新用户资料', context));
   }
-  setUserStatus(id: string, status: number, context: AuditContext): Promise<RbacWriteResult> {
+  setUserStatus(id: string, status: number, context: CommandContext): Promise<RbacWriteResult> {
     if (status !== SYSTEM_STATUS.disabled && status !== SYSTEM_STATUS.enabled)
       return Promise.resolve({ status: 'invalid-input', message: '状态无效' });
     return this.repository.setUserStatus(id, status, this.audit('更新用户状态', context));
@@ -60,7 +60,7 @@ export class RbacService {
   async resetUserPassword(
     id: string,
     password: string,
-    context: AuditContext,
+    context: CommandContext,
   ): Promise<RbacWriteResult> {
     if (password.length < 6) return { status: 'invalid-input', message: '密码至少 6 位' };
     return this.repository.resetUserPassword(
@@ -69,7 +69,7 @@ export class RbacService {
       this.audit('重置用户密码', context),
     );
   }
-  setUserRoles(id: string, roleIds: string[], context: AuditContext): Promise<RbacWriteResult> {
+  setUserRoles(id: string, roleIds: string[], context: CommandContext): Promise<RbacWriteResult> {
     return this.repository.setUserRoles(id, roleIds, this.audit('分配用户角色', context));
   }
   listRoles(query: SystemRoleQuery) {
@@ -77,7 +77,7 @@ export class RbacService {
   }
   createRole(
     payload: CreateSystemRolePayload,
-    context: AuditContext,
+    context: CommandContext,
   ): Promise<RbacWriteResult<string>> {
     if (!payload.name.trim() || !payload.code.trim())
       return Promise.resolve({ status: 'invalid-input', message: '角色名称和编码必填' });
@@ -86,7 +86,7 @@ export class RbacService {
   updateRole(
     id: string,
     payload: UpdateSystemRolePayload,
-    context: AuditContext,
+    context: CommandContext,
   ): Promise<RbacWriteResult> {
     if (payload.name !== undefined && !payload.name.trim())
       return Promise.resolve({ status: 'invalid-input', message: '角色名称不能为空' });
@@ -94,7 +94,7 @@ export class RbacService {
       return Promise.resolve({ status: 'invalid-input', message: '角色编码不能为空' });
     return this.repository.updateRole(id, payload, this.audit('更新角色', context));
   }
-  deleteRole(id: string, context: AuditContext): Promise<RbacWriteResult> {
+  deleteRole(id: string, context: CommandContext): Promise<RbacWriteResult> {
     return this.repository.deleteRole(id, this.audit('删除角色', context));
   }
   getRolePermissions(id: string) {
@@ -103,7 +103,7 @@ export class RbacService {
   setRolePermissions(
     id: string,
     permissionIds: string[],
-    context: AuditContext,
+    context: CommandContext,
   ): Promise<RbacWriteResult> {
     return this.repository.setRolePermissions(
       id,
@@ -117,12 +117,12 @@ export class RbacService {
   listLogs(query: OperationLogQuery) {
     return this.auditRepository.listLogs(query);
   }
-  private audit(action: string, context: AuditContext): AuditLogEntry {
+  private audit(action: string, context: CommandContext): AuditLogEntry {
     return {
       logType: 'operation',
       module: 'system',
       action,
-      userId: context.userId,
+      userId: context.actorId,
       result: 'success',
       ip: context.ip,
       requestId: context.requestId,

@@ -41,6 +41,9 @@ HTTP 幂等也是跨业务模块的平台能力：`common/idempotency` 只定义
 `IdempotencyKeyGuard` 与平台 module，见 §4 数据所有权）。`http_idempotency_records` 的 migration
 （`202608050001-http-idempotency-records`）已追加，平台表写入口已限定 executor 与 housekeeping；
 业务代码不注册直通实现，未启用端点收到幂等键一律返回 `400 IDEMPOTENCY_NOT_SUPPORTED`，不静默放行。
+命令上下文与幂等能力分离：`CommandContext` 仅承载 actor/requestId/IP/User-Agent；只有已声明并验收的
+application 用例接收 `IdempotentCommandContext`。幂等键不得进入 application port 或 Repository，Service
+调用业务 Repository 前必须收窄回 `CommandContext`。当前白名单只有 Production createBatch。
 具体实施边界见 [`http-idempotency-implementation-plan.md`](http-idempotency-implementation-plan.md)。
 
 ## 3. 模块内部依赖
@@ -161,6 +164,7 @@ Controller、Service 和 SQL 不得混写在同一文件。
 | DTO、分页和错误结构     | 单元测试、契约测试                                              |
 | 核心写入与审计原子性    | Repository 事务测试                                             |
 | 审计写入唯一咽喉        | 架构测试（仅 `transactional-audit-writer` 可写 operation_logs） |
+| 命令上下文/幂等能力分离 | 架构测试（旧类型禁用、Repository 禁止幂等上下文、用例白名单）   |
 | 数据表所有权            | 架构测试和代码评审                                              |
 | 文档失效链接            | `pnpm docs:check`                                               |
 

@@ -13,7 +13,10 @@ import type {
   WorkOrderQuery,
 } from '@company/contracts';
 import { normalizeCreateBatchPayload } from '@company/utils';
-import type { CommandContext } from '../../../common/audit/audit.types.js';
+import type {
+  CommandContext,
+  IdempotentCommandContext,
+} from '../../../common/audit/audit.types.js';
 import { IdempotencyExecutor } from '../../../common/idempotency/idempotency-executor.js';
 import { IdentityDirectoryService } from '../../identity/public.js';
 import {
@@ -102,7 +105,7 @@ export class ProductionService {
   async createBatch(
     workOrderId: string,
     payload: CreateProductionBatchPayload,
-    audit: CommandContext,
+    audit: IdempotentCommandContext,
   ) {
     const normalizedPayload = normalizeCreateBatchPayload(payload);
     // 纯格式校验只由请求内容决定，放在幂等 executor 外；会受数据库状态影响的业务校验（负责人是否
@@ -114,16 +117,16 @@ export class ProductionService {
     ) {
       throw new ProductionDomainError('INVALID_INPUT', '手动批次号必须符合 task_batch-001 格式');
     }
-    const idempotencyKey = audit.idempotencyKey;
-    if (!idempotencyKey || !audit.actorId) {
-      throw new ProductionDomainError(
-        'INVALID_STATE',
-        '创建生产批次缺少 Idempotency-Key 或用户上下文',
-      );
-    }
+    // 幂等能力止于 application service：repository 只接收不含幂等键的命令审计元数据。
+    const commandContext: CommandContext = {
+      actorId: audit.actorId,
+      requestId: audit.requestId,
+      ip: audit.ip,
+      userAgent: audit.userAgent,
+    };
     const execution = await this.idempotency.execute<ProductionBatchDetail>({
       scope: CREATE_BATCH_IDEMPOTENCY_SCOPE,
-      key: idempotencyKey,
+      key: audit.idempotencyKey,
       actorId: audit.actorId,
       requestId: audit.requestId,
       request: {
@@ -153,7 +156,7 @@ export class ProductionService {
               normalizedPayload,
               route,
               stepOverrides,
-              audit,
+              commandContext,
             );
             // 首次执行即富化并保存最终响应快照，重放直接返回该快照；
             // 用户名变化不会改变重放响应，保证"相同 K1 + 相同内容 -> 原成功业务结果"。

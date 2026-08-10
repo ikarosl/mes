@@ -56,21 +56,15 @@ HTTP 幂等平台的 MySQL 适配器与真实 MySQL 集成用例已落地（与 
 Controller/Service/executor/真实仓库，未经过 HTTP 管线），验证幂等记录、业务写入与成功审计三表同事务
 （成功同提交、失败同回滚、重放不新增写入）；HTTP 管线部分由新增
 `create-batch-http-pipeline.mysql.test.ts` 覆盖（启动 Nest 测试应用 + supertest：AuthGuard/
-IdempotencyKeyGuard 顺序、DTO Pipe、CurrentCommandContext、AuditInterceptor、HttpExceptionFilter 最终
+IdempotencyKeyGuard 顺序、DTO Pipe、CurrentIdempotentCommandContext、AuditInterceptor、HttpExceptionFilter 最终
 错误信封）。API/契约测试还覆盖未启用端点拒绝意外 header、响应与失败审计都映射为同一 409 错误码、
 首次 request ID 可关联成功审计，以及结果 codec 拒绝非 JSON-safe 输出。完整矩阵见
 [`http-idempotency-implementation-plan.md`](http-idempotency-implementation-plan.md)。
 
-天然幂等复验必须从完整 application/API 路径执行，不能只调用 Repository。尤其
-`generateMaterialDemands` 需要验证响应丢失后的重试不会在状态短路前因实时 BOM 已变化而失败，并使用
-真实双事务证明并发调用只生成一次需求和一次成功审计。
-
-HTTP 幂等框架当前只有抽象端口单测，不代表服务端闭环已通过。后续 MySQL adapter 落地时，必须新增
-真实双连接/双事务测试，覆盖同键并发只执行一次、同键同指纹重放、同键不同指纹冲突、首次事务回滚后
-可再次执行、提交成功但响应丢失后的重试、到期未清理仍重放和物理清理后按新请求执行；不得用内存 fake
-或顺序单测替代。API/契约测试还必须覆盖未启用端点拒绝意外 header、响应与失败审计都映射为同一 409
-错误码、首次 request ID 可关联成功审计，以及结果 codec 拒绝非 JSON-safe 输出。完整矩阵见
-[`http-idempotency-implementation-plan.md`](http-idempotency-implementation-plan.md)。
+命令上下文迁移测试同时锁定：普通 `CommandContext` 不含幂等键；Guard 将 trim 后的键写入请求局部私有
+属性；只有 createBatch 使用 `IdempotentCommandContext` 和 executor；Repository Port/Adapter 不依赖该
+子类型。Product 文件上传 HTTP 契约测试必须证明误带 header 返回 `IDEMPOTENCY_NOT_SUPPORTED`，且
+`storage.storeSop()` 与数据库 Repository 均未调用。
 
 天然幂等复验必须从完整 application/API 路径执行，不能只调用 Repository。尤其
 `generateMaterialDemands` 需要验证响应丢失后的重试不会在状态短路前因实时 BOM 已变化而失败，并使用

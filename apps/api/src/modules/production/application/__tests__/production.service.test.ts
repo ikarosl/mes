@@ -1,13 +1,21 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ProductionBatchDetail } from '@company/contracts';
+import type {
+  CommandContext,
+  IdempotentCommandContext,
+} from '../../../../common/audit/audit.types.js';
 import { ProductionService } from '../production.service.js';
 import { CREATE_BATCH_IDEMPOTENCY_SCOPE } from '../idempotency/create-batch-idempotency.contract.js';
 
-const audit = {
+const audit: CommandContext = {
   actorId: '1',
   ip: '127.0.0.1',
   requestId: 'test-request',
   userAgent: null,
+};
+const idempotentAudit: IdempotentCommandContext = {
+  ...audit,
+  actorId: '1',
   idempotencyKey: 'test-idempotency-key',
 };
 
@@ -108,7 +116,9 @@ describe('ProductionService first-stage commands', () => {
       executingIdempotencyExecutor as never,
     );
 
-    await expect(service.createBatch('6', { plannedQuantity: 1 }, audit)).rejects.toMatchObject({
+    await expect(
+      service.createBatch('6', { plannedQuantity: 1 }, idempotentAudit),
+    ).rejects.toMatchObject({
       code: 'NOT_FOUND',
       message: '工艺路线不可用',
     });
@@ -373,7 +383,7 @@ describe('ProductionService first-stage commands', () => {
           plannedQuantity: 1,
           stepOverrides: [{ routeStepId: '42', responsibleUserId: null }],
         },
-        audit,
+        idempotentAudit,
       ),
     ).rejects.toThrow('工序覆盖项不属于所选工艺路线');
   });
@@ -396,7 +406,7 @@ describe('ProductionService first-stage commands', () => {
       executingIdempotencyExecutor as never,
     );
 
-    await service.createBatch('6', { plannedQuantity: 1 }, audit);
+    await service.createBatch('6', { plannedQuantity: 1 }, idempotentAudit);
 
     expect(repository.withBatchCreationTransaction).toHaveBeenCalledWith('6', expect.any(Function));
     expect(products.getProductionRouteSnapshot).toHaveBeenCalledWith('8', null);
@@ -434,7 +444,11 @@ describe('ProductionService first-stage commands', () => {
       capturingExecutor as never,
     );
 
-    await service.createBatch('6', { plannedQuantity: 3, batchNo: '  task_batch-001  ' }, audit);
+    await service.createBatch(
+      '6',
+      { plannedQuantity: 3, batchNo: '  task_batch-001  ' },
+      idempotentAudit,
+    );
 
     expect(capturingExecutor.execute).toHaveBeenCalledOnce();
     const command = captured[0] as {
@@ -482,7 +496,7 @@ describe('ProductionService first-stage commands', () => {
     );
 
     await expect(
-      service.createBatch('6', { plannedQuantity: 1, ownerId: '7' }, audit),
+      service.createBatch('6', { plannedQuantity: 1, ownerId: '7' }, idempotentAudit),
     ).rejects.toMatchObject({
       code: 'INVALID_INPUT',
       message: '负责人不存在或已停用',
@@ -524,7 +538,7 @@ describe('ProductionService first-stage commands', () => {
     const result = await service.createBatch(
       '6',
       { plannedQuantity: 1, ownerId: '7', batchNo: 'task_batch-001' },
-      audit,
+      idempotentAudit,
     );
 
     expect(replayingExecutor.execute).toHaveBeenCalledOnce();

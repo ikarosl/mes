@@ -7,6 +7,7 @@ import {
   IDEMPOTENT_ENDPOINT,
   IdempotentEndpoint,
   IS_PUBLIC,
+  VALIDATED_IDEMPOTENCY_KEY,
 } from '../../../common/security/auth.decorators.js';
 import { IdempotencyKeyGuard } from '../idempotency-key.guard.js';
 
@@ -117,13 +118,18 @@ describe('IdempotencyKeyGuard matrix', () => {
   });
 
   it('passes an enabled endpoint with a valid Idempotency-Key', () => {
-    expect(
-      guard.canActivate(
-        context(HandlerEnabledController.prototype.create, HandlerEnabledController, {
-          'idempotency-key': VALID_KEY,
-        }),
-      ),
-    ).toBe(true);
+    const request = { headers: { 'idempotency-key': `  ${VALID_KEY}  ` } } as {
+      headers: Record<string, string>;
+      [VALIDATED_IDEMPOTENCY_KEY]?: string;
+    };
+    const executionContext = {
+      getHandler: () => HandlerEnabledController.prototype.create,
+      getClass: () => HandlerEnabledController,
+      switchToHttp: () => ({ getRequest: () => request }),
+    } as never;
+
+    expect(guard.canActivate(executionContext)).toBe(true);
+    expect(request[VALIDATED_IDEMPOTENCY_KEY]).toBe(VALID_KEY);
   });
 
   it('passes a public endpoint without an Idempotency-Key (public endpoints never require one)', () => {

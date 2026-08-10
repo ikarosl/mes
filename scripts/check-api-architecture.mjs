@@ -55,6 +55,8 @@ const idempotencyScopeLiteralPattern = new RegExp(
 
 const isPresentationHttpFile = (relative) => relative.includes('/presentation/http/');
 const isApplicationLayerFile = (relative) => relative.includes('/application/');
+const isRepositoryBoundaryFile = (relative) =>
+  relative.includes('/application/ports/') || relative.includes('/infrastructure/');
 
 /** 幂等契约文件：*-idempotency.contract.ts（scope 值的唯一事实来源）。 */
 const isContractFile = (relative) =>
@@ -112,6 +114,60 @@ const productOwnedTables =
 
 /** 检查定义：directory（相对 root）+ pattern + message；可选 exclude / fileMatch。 */
 const checks = [
+  // 命令审计上下文与 HTTP 幂等能力必须正交：旧兼容类型已完成迁移，不得重新引入。
+  {
+    directory: 'apps/api/src',
+    pattern: /\b(?:AuditContext|CurrentAuditContext)\b/,
+    message:
+      '已废弃的 AuditContext/CurrentAuditContext 不得重新引入；普通命令使用 CommandContext，幂等端点使用 IdempotentCommandContext',
+  },
+  {
+    directory: 'apps/api/src/common/audit',
+    pattern: /interface\s+CommandContext\s*\{[^}]*\bidempotencyKey\b/s,
+    message: 'CommandContext 只能承载命令审计元数据，不得包含 idempotencyKey',
+    fileMatch: (relative) => relative === 'apps/api/src/common/audit/audit.types.ts',
+  },
+  {
+    directory: 'apps/api/src/modules',
+    pattern: /\bIdempotentCommandContext\b/,
+    message:
+      'Repository Port/Adapter 不得依赖 IdempotentCommandContext；HTTP 幂等能力止于 application 用例',
+    fileMatch: isRepositoryBoundaryFile,
+  },
+  // 当前登记的唯一幂等用例是 Production createBatch。新增用例必须显式更新本白名单及契约测试。
+  {
+    directory: 'apps/api/src/modules',
+    pattern: /\bIdempotentCommandContext\b/,
+    message:
+      '当前只有 Production createBatch 可使用 IdempotentCommandContext；新增幂等命令必须先完成契约登记与验收',
+    exclude: [
+      'apps/api/src/modules/production/application/production.service.ts',
+      'apps/api/src/modules/production/presentation/http/production.controller.ts',
+    ],
+  },
+  {
+    directory: 'apps/api/src/modules',
+    pattern: /\bIdempotencyExecutor\b/,
+    message:
+      '当前只有 Production createBatch application 用例可依赖 IdempotencyExecutor；新增用例必须先完成契约登记与验收',
+    exclude: ['apps/api/src/modules/production/application/production.service.ts'],
+    fileMatch: isApplicationLayerFile,
+  },
+  // Guard 只能存在于项目级幂等基础设施，避免业务模块再次形成相反契约实现。
+  {
+    directory: 'apps/api/src',
+    pattern: /\bclass\s+IdempotencyKeyGuard\b/,
+    message: 'IdempotencyKeyGuard 只能定义在项目级 infrastructure/idempotency 中',
+    exclude: ['apps/api/src/infrastructure/idempotency/idempotency-key.guard.ts'],
+  },
+  // 管理端当前只有 createBatch API wrapper 可发送幂等头并开启非安全方法重试。
+  {
+    directory: 'apps/admin-web/src',
+    pattern: /(?:['"]Idempotency-Key['"]\s*:|\bretryUnsafe\s*:)/,
+    message:
+      '当前只有 production createBatch API wrapper 可设置 Idempotency-Key/retryUnsafe；新增调用必须先登记后端幂等契约',
+    exclude: ['apps/admin-web/src/api/production.ts'],
+  },
   // 通用 persistence helper 不得依赖 Nest HTTP/框架异常
   {
     directory: 'apps/api/src/common/persistence',
@@ -250,6 +306,21 @@ const checks = [
     requires: [/from\s+['"][^'"]+idempotency\.contract\.js['"]/],
     message:
       '声明 @IdempotentEndpoint 的 Controller 必须 import 本模块幂等契约 scope 常量（*-idempotency.contract.ts）',
+    fileMatch: isPresentationHttpFile,
+  },
+  {
+    directory: 'apps/api/src',
+    pattern: /@IdempotentEndpoint\(/,
+    requires: [/\bCurrentIdempotentCommandContext\b/],
+    message:
+      '声明 @IdempotentEndpoint 的 Controller 必须使用 CurrentIdempotentCommandContext 获取已校验的键',
+    fileMatch: isPresentationHttpFile,
+  },
+  {
+    directory: 'apps/api/src',
+    pattern: /@CurrentIdempotentCommandContext\(\)/,
+    requires: [/@IdempotentEndpoint\(/],
+    message: 'CurrentIdempotentCommandContext 只能用于声明了 @IdempotentEndpoint 的 Controller',
     fileMatch: isPresentationHttpFile,
   },
   // 规则 c：application 层对幂等 executor 的 execute 调用必须引用契约 scope 常量，禁止字面量

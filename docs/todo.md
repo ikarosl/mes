@@ -257,7 +257,7 @@ DB_NAME=easy_mes_test pnpm test:production:mysql`）
   "http_idempotency_records + production_batches + operation_logs"三者同一事务：成功三表同提交、业务失败
   三表同回滚、重放不新增写入且返回冻结快照；HTTP 管线部分由新增
   `create-batch-http-pipeline.mysql.test.ts` 覆盖（启动 Nest 测试应用 + supertest：AuthGuard/
-  IdempotencyKeyGuard 顺序、DTO Pipe、CurrentCommandContext、AuditInterceptor、HttpExceptionFilter 最终
+  IdempotencyKeyGuard 顺序、DTO Pipe、CurrentIdempotentCommandContext、AuditInterceptor、HttpExceptionFilter 最终
   错误信封，含 Guard 门禁缺键 400、合法键放行）。每个用例前清空 scratch 与 scope 幂等记录，绝对计数断言
   不受跨用例/跨运行残留污染。
 
@@ -292,13 +292,19 @@ DB_NAME=easy_mes_test pnpm test:production:mysql`）
 - 批次完工确认必须校验必需报工工序完成、必检工序存在有效结论、没有未关闭返工。
 - 追溯记录不得成为第二库存或需求事实来源；库存数量只从 `inventory_transaction` 汇总，生产需求只从 `production_item_demand` 读取。
 
-### 4.3 `CurrentAuditContext` 类型迁移
+### 4.3 命令上下文与幂等能力分离
 
-状态：`滞后；不在当前整改范围`
+状态：`已完成（2026-08-10）`
 
-- Identity `rbac.controller.ts` 和 Product `product.controller.ts` 仍使用已弃用的 `CurrentAuditContext` / `AuditContext`。
-- 旧模块的类型系统后续统一升级；当前不因本项单独发起跨模块重构。
-- 新代码继续使用 `CommandContext`，不得扩大旧接口使用范围。
+- Identity、Product、Production 普通写命令已统一为不含幂等键的 `CommandContext`；废弃的
+  `AuditContext` / `CurrentAuditContext` 已从生产代码删除。
+- 只有 createBatch 使用 `IdempotentCommandContext` 与 `CurrentIdempotentCommandContext`；Guard 校验并
+  规范化 header 后写入请求局部私有属性，普通装饰器不再解析幂等键。
+- application port 与 Repository 只接收 `CommandContext`；createBatch Service 在调用 Repository 前显式
+  去除幂等键。架构门禁禁止旧类型回流、幂等上下文泄漏、未登记 executor/前端 header 使用及重复 Guard。
+- Product 文件上传保持非幂等；HTTP 契约测试验证误带 header 在对象存储与数据库副作用前拒绝。
+- 2026-08-10 验证：`pnpm verify` 全绿（API 43 文件 / 313 用例）；专用 `easy_mes_test` 执行 migration、
+  重复 seed 与完整 MySQL 集成套件通过（5 文件 / 29 用例）。
 
 ## 5. 滞后及待业务决策事项
 

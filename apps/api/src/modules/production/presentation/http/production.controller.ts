@@ -1,9 +1,13 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, UseFilters } from '@nestjs/common';
 import { PERMISSIONS } from '@company/constants';
-import type { CommandContext } from '../../../../common/audit/audit.types.js';
+import type {
+  CommandContext,
+  IdempotentCommandContext,
+} from '../../../../common/audit/audit.types.js';
 import {
   AuditInApplication,
   CurrentCommandContext,
+  CurrentIdempotentCommandContext,
   IdempotentEndpoint,
   RequirePermission,
 } from '../../../../common/security/auth.decorators.js';
@@ -109,7 +113,7 @@ export class ProductionController {
   createBatch(
     @Param() { workOrderId }: WorkOrderIdParamDto,
     @Body() body: CreateProductionBatchDto,
-    @CurrentCommandContext() audit: CommandContext,
+    @CurrentIdempotentCommandContext() audit: IdempotentCommandContext,
   ) {
     return this.service.createBatch(workOrderId, body, audit);
   }

@@ -8,6 +8,8 @@ import { Reflector } from '@nestjs/core';
 import { IDEMPOTENCY_NOT_SUPPORTED } from '@company/constants';
 import {
   IDEMPOTENT_ENDPOINT,
+  VALIDATED_IDEMPOTENCY_KEY,
+  type CommandContextRequest,
   type IdempotentEndpointMeta,
 } from '../../common/security/auth.decorators.js';
 
@@ -35,9 +37,11 @@ export class IdempotencyKeyGuard implements CanActivate {
       context.getClass(),
     ]);
     const enabled = metadata !== undefined;
-    const request = context.switchToHttp().getRequest<{
-      headers?: { 'idempotency-key'?: string | string[] };
-    }>();
+    const request = context.switchToHttp().getRequest<
+      CommandContextRequest & {
+        headers?: { 'idempotency-key'?: string | string[] };
+      }
+    >();
     const header = request.headers?.['idempotency-key'];
     const key = (Array.isArray(header) ? header[0] : header)?.trim();
     if (!enabled) {
@@ -61,6 +65,7 @@ export class IdempotencyKeyGuard implements CanActivate {
         message: 'Idempotency-Key must contain between 1 and 150 characters',
       });
     }
+    request[VALIDATED_IDEMPOTENCY_KEY] = key;
     return true;
   }
 }

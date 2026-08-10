@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import { withTransaction } from '@company/database';
-import type { AuditContext } from '../../../common/audit/audit.types.js';
+import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { writeTransactionalAudit } from '../../../common/audit/transactional-audit-writer.js';
 import { toBeijingISOString } from '../../../common/time/beijing-time.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
@@ -111,7 +111,7 @@ export class MysqlProcessRouteRepository implements ProcessRouteRepository {
     }));
   }
 
-  async createRoute(payload: ProcessRoutePayload, audit: AuditContext) {
+  async createRoute(payload: ProcessRoutePayload, audit: CommandContext) {
     return withTransaction(this.pool, async (connection) => {
       await this.requireRoutableProduct(connection, payload.productId);
       const [result] = await connection.execute<ResultSetHeader>(
@@ -122,8 +122,8 @@ export class MysqlProcessRouteRepository implements ProcessRouteRepository {
           payload.productId,
           payload.versionNo,
           payload.remark ?? null,
-          audit.userId,
-          audit.userId,
+          audit.actorId,
+          audit.actorId,
         ],
       );
       await this.audit(connection, audit, 'route.create', String(result.insertId), null, {
@@ -136,7 +136,7 @@ export class MysqlProcessRouteRepository implements ProcessRouteRepository {
     );
   }
 
-  async updateRoute(id: string, payload: ProcessRoutePayload, audit: AuditContext) {
+  async updateRoute(id: string, payload: ProcessRoutePayload, audit: CommandContext) {
     await withTransaction(this.pool, async (connection) => {
       const before = await this.routeRecord(connection, id, true);
       if (before.status !== 'draft')
@@ -161,7 +161,7 @@ export class MysqlProcessRouteRepository implements ProcessRouteRepository {
           payload.productId,
           payload.versionNo,
           payload.remark ?? null,
-          audit.userId,
+          audit.actorId,
           id,
         ],
       );
@@ -171,7 +171,7 @@ export class MysqlProcessRouteRepository implements ProcessRouteRepository {
     );
   }
 
-  async setRouteStatus(id: string, status: ProcessRouteStatus, audit: AuditContext) {
+  async setRouteStatus(id: string, status: ProcessRouteStatus, audit: CommandContext) {
     await withTransaction(this.pool, async (connection) => {
       const before = await this.routeRecord(connection, id, true);
       const current = before.status as ProcessRouteStatus;
@@ -204,13 +204,13 @@ export class MysqlProcessRouteRepository implements ProcessRouteRepository {
       }
       await connection.execute(
         'UPDATE process_routes SET status=?,updated_by=? WHERE id=? AND is_deleted=0',
-        [status, audit.userId, id],
+        [status, audit.actorId, id],
       );
       await this.audit(connection, audit, 'route.status', id, { status: current }, { status });
     });
   }
 
-  async deleteRoute(id: string, audit: AuditContext) {
+  async deleteRoute(id: string, audit: CommandContext) {
     await withTransaction(this.pool, async (connection) => {
       const before = await this.routeRecord(connection, id, true);
       if (before.status !== 'draft')
@@ -221,11 +221,11 @@ export class MysqlProcessRouteRepository implements ProcessRouteRepository {
       );
       await connection.execute(
         'UPDATE process_route_steps SET is_deleted=1,deleted_by=?,deleted_at=NOW(),updated_by=? WHERE route_id=? AND is_deleted=0',
-        [audit.userId, audit.userId, id],
+        [audit.actorId, audit.actorId, id],
       );
       await connection.execute(
         'UPDATE process_routes SET is_deleted=1,deleted_by=?,deleted_at=NOW(),updated_by=? WHERE id=? AND is_deleted=0',
-        [audit.userId, audit.userId, id],
+        [audit.actorId, audit.actorId, id],
       );
       await this.audit(connection, audit, 'route.delete', id, before, null);
     });
@@ -297,7 +297,7 @@ export class MysqlProcessRouteRepository implements ProcessRouteRepository {
   }
   private async audit(
     db: Db,
-    audit: AuditContext,
+    audit: CommandContext,
     action: string,
     targetId: string,
     beforeData: unknown,
@@ -307,7 +307,7 @@ export class MysqlProcessRouteRepository implements ProcessRouteRepository {
       logType: 'business',
       module: 'product',
       action,
-      userId: audit.userId,
+      userId: audit.actorId,
       targetId,
       targetType: 'product-master-data',
       result: 'success',

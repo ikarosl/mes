@@ -119,6 +119,10 @@ API 包装函数必须接收调用方传入的键，禁止在每次调用内部�
 缺少或携带非法键返回 `400 VALIDATION_ERROR`。该端点级门禁已由 `IdempotencyKeyGuard` 落地并接入全局守卫，
 鉴权（401/403）先于幂等检查。
 
+命令审计上下文不等于幂等能力：普通端点只接收不含键的 `CommandContext`；Guard 校验合法键并写入请求局部
+私有属性后，已启用端点才通过 `CurrentIdempotentCommandContext` 获得必填键。`IdempotentCommandContext`
+只允许进入已登记的 application 用例，传给 Repository 前必须收窄为 `CommandContext`。
+
 ### 3.3 已启用试点端点契约
 
 `POST /api/production/work-orders/:workOrderId/batches`（createBatch）是首个已启用幂等闭环的端点：
@@ -175,6 +179,8 @@ housekeeping 周期性输出重放率/冲突率/失败率摘要并重置窗口�
 
 该端点外，Product、Identity 和 Production 的其他客户端**仍不得发送** `Idempotency-Key`——未启用端点收到
 该头会被全局守卫拒绝（`400 IDEMPOTENCY_NOT_SUPPORTED`），不存在静默伪幂等。
+Product 技术文件上传与工序 SOP 上传包含对象存储副作用，不在当前 MySQL executor 的原子事务范围内，因而
+明确保持非幂等且不得开启 `retryUnsafe`；误带 header 必须在 `storage.storeSop()` 之前拒绝。
 
 createBatch 试点接线进一步落实「重放返回原结果」的完整语义：
 

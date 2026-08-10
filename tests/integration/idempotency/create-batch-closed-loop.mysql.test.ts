@@ -13,7 +13,7 @@ import {
 } from '../../../apps/api/node_modules/@nestjs/common';
 import { Reflector } from '../../../apps/api/node_modules/@nestjs/core';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import type { CommandContext } from '../../../apps/api/src/common/audit/audit.types.js';
+import type { IdempotentCommandContext } from '../../../apps/api/src/common/audit/audit.types.js';
 import { MysqlIdempotencyExecutor } from '../../../apps/api/src/infrastructure/idempotency/mysql-idempotency.executor.js';
 import { IdentityDirectoryService } from '../../../apps/api/src/modules/identity/application/identity-directory.service.js';
 import { MysqlRbacRepository } from '../../../apps/api/src/modules/identity/infrastructure/mysql-rbac.repository.js';
@@ -37,12 +37,12 @@ const SCOPE = CREATE_BATCH_IDEMPOTENCY_SCOPE;
 /**
  * createBatch application/database 幂等闭环（真实 MySQL）：直接构造 ProductionController ->
  * ProductionService -> MysqlIdempotencyExecutor -> 真实批次 Repository，手工构造
- * CommandContext 并直接调用 IdempotencyKeyGuard.canActivate，证明
+ * IdempotentCommandContext 并直接调用 IdempotencyKeyGuard.canActivate，证明
  * "http_idempotency_records + production_batches + operation_logs" 三者同一事务：
  * 成功三表同提交、业务失败三表同回滚、重放不新增任何写入。
  *
  * 注意：本测试未经过真实 HTTP 管线，不覆盖：AuthGuard 与 IdempotencyKeyGuard 的真实注册顺序、
- * DTO Pipe 参数解析与校验、CurrentCommandContext 装饰器取值、AuditInterceptor 失败审计、
+ * DTO Pipe 参数解析与校验、CurrentIdempotentCommandContext 装饰器取值、AuditInterceptor 失败审计、
  * HttpExceptionFilter 的最终 HTTP 错误 envelope。上述内容由
  * create-batch-http-pipeline.mysql.test.ts（真实 Nest 测试应用）覆盖。
  */
@@ -262,7 +262,7 @@ const commandContext = (
   actorId: number,
   idempotencyKey: string,
   requestId: string,
-): CommandContext => ({
+): IdempotentCommandContext => ({
   actorId: String(actorId),
   requestId,
   ip: '127.0.0.1',

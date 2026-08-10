@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import { NotFoundException } from '@nestjs/common';
-import type { AuditContext } from '../../../../../common/audit/audit.types.js';
+import type { CommandContext } from '../../../../../common/audit/audit.types.js';
 import { RbacController } from '../rbac.controller.js';
 
-const audit: AuditContext = {
-  userId: '1',
+const audit: CommandContext = {
+  actorId: '1',
   requestId: 'req-1',
   ip: '127.0.0.1',
   userAgent: null,

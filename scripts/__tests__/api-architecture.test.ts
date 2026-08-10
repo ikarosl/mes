@@ -65,6 +65,72 @@ describe('checkApiArchitecture', () => {
     expect(flagsPath(violations, 'product/application/ports/leak.ts')).toBe(true);
   });
 
+  it('flags legacy AuditContext symbols in production code', async () => {
+    const violations = await checkApiArchitecture([
+      {
+        path: 'apps/api/src/modules/product/application/legacy.ts',
+        source: `import type { AuditContext } from '../../../../common/audit/audit.types.js';\n`,
+      },
+    ]);
+
+    expect(flagsPath(violations, 'product/application/legacy.ts')).toBe(true);
+  });
+
+  it('flags idempotencyKey added back to the base CommandContext', async () => {
+    const violations = await checkApiArchitecture([
+      {
+        path: 'apps/api/src/common/audit/audit.types.ts',
+        source: `interface CommandContext { actorId: string | null; idempotencyKey?: string }\n`,
+      },
+    ]);
+
+    expect(flagsPath(violations, 'common/audit/audit.types.ts')).toBe(true);
+  });
+
+  it('flags IdempotentCommandContext leaking into a repository port', async () => {
+    const violations = await checkApiArchitecture([
+      {
+        path: 'apps/api/src/modules/product/application/ports/leak.repository.ts',
+        source: `import type { IdempotentCommandContext } from '../../../../../common/audit/audit.types.js';\n`,
+      },
+    ]);
+
+    expect(flagsPath(violations, 'product/application/ports/leak.repository.ts')).toBe(true);
+  });
+
+  it('flags an unregistered application use of IdempotencyExecutor', async () => {
+    const violations = await checkApiArchitecture([
+      {
+        path: 'apps/api/src/modules/product/application/product.service.ts',
+        source: `import { IdempotencyExecutor } from '../../../common/idempotency/idempotency-executor.js';\n`,
+      },
+    ]);
+
+    expect(flagsPath(violations, 'product/application/product.service.ts')).toBe(true);
+  });
+
+  it('flags a duplicate IdempotencyKeyGuard inside a business module', async () => {
+    const violations = await checkApiArchitecture([
+      {
+        path: 'apps/api/src/modules/identity/presentation/http/idempotency-key.guard.ts',
+        source: `class IdempotencyKeyGuard {}\n`,
+      },
+    ]);
+
+    expect(flagsPath(violations, 'identity/presentation/http/idempotency-key.guard.ts')).toBe(true);
+  });
+
+  it('flags an unregistered frontend wrapper setting idempotency headers or unsafe retry', async () => {
+    const violations = await checkApiArchitecture([
+      {
+        path: 'apps/admin-web/src/api/product.ts',
+        source: `client.post('/products', body, { headers: { 'Idempotency-Key': key }, retryUnsafe: true });\n`,
+      },
+    ]);
+
+    expect(flagsPath(violations, 'apps/admin-web/src/api/product.ts')).toBe(true);
+  });
+
   it('flags a public.ts that re-exports a domain error', async () => {
     const violations = await checkApiArchitecture([
       {
@@ -200,6 +266,21 @@ describe('checkApiArchitecture', () => {
     expect(flagsPath(violations, 'production/presentation/http/leak.controller.ts')).toBe(true);
   });
 
+  it('flags an idempotent endpoint that does not use the idempotent command context decorator', async () => {
+    const violations = await checkApiArchitecture([
+      {
+        path: 'apps/api/src/modules/production/presentation/http/leak.controller.ts',
+        source: [
+          `import { CREATE_BATCH_IDEMPOTENCY_SCOPE } from '../../application/idempotency/create-batch-idempotency.contract.js';`,
+          `@IdempotentEndpoint({ scope: CREATE_BATCH_IDEMPOTENCY_SCOPE })`,
+          `create(@CurrentCommandContext() context: CommandContext) {}`,
+        ].join('\n'),
+      },
+    ]);
+
+    expect(flagsPath(violations, 'production/presentation/http/leak.controller.ts')).toBe(true);
+  });
+
   it('flags a literal scope in an application-layer idempotency executor call', async () => {
     const violations = await checkApiArchitecture([
       {
@@ -217,7 +298,9 @@ describe('checkApiArchitecture', () => {
         path: 'apps/api/src/modules/production/presentation/http/compliant.controller.ts',
         source: [
           `import { CREATE_BATCH_IDEMPOTENCY_SCOPE } from '../../application/idempotency/create-batch-idempotency.contract.js';`,
+          `import { CurrentIdempotentCommandContext } from '../../../../../common/security/auth.decorators.js';`,
           `@IdempotentEndpoint({ scope: CREATE_BATCH_IDEMPOTENCY_SCOPE })`,
+          `create(@CurrentIdempotentCommandContext() context: unknown) {}`,
         ].join('\n'),
       },
     ]);
@@ -280,7 +363,9 @@ describe('checkApiArchitecture', () => {
         path: 'apps/api/src/modules/product/presentation/http/create.controller.ts',
         source: [
           `import { PRODUCT_CREATE_IDEMPOTENCY_SCOPE } from '../../application/idempotency/product-create-idempotency.contract.js';`,
+          `import { CurrentIdempotentCommandContext } from '../../../../../common/security/auth.decorators.js';`,
           `@IdempotentEndpoint({ scope: PRODUCT_CREATE_IDEMPOTENCY_SCOPE })`,
+          `create(@CurrentIdempotentCommandContext() context: unknown) {}`,
         ].join('\n'),
       },
       {
