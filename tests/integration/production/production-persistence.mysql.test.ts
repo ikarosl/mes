@@ -40,10 +40,26 @@ describeMysql('Production MySQL persistence', () => {
       await pool.execute('DELETE FROM production_item_demand WHERE production_batch_id=?', [
         fixture.batchId,
       ]);
+      await pool.execute(
+        'DELETE FROM batch_step_reports WHERE production_batch_id=? AND (reversal_of_report_id IS NOT NULL OR replaces_report_id IS NOT NULL)',
+        [fixture.batchId],
+      );
+      await pool.execute(
+        'DELETE FROM batch_step_reports WHERE production_batch_id=? AND reversal_of_report_id IS NULL AND replaces_report_id IS NULL',
+        [fixture.batchId],
+      );
+      await pool.execute('DELETE FROM batch_step_records WHERE production_batch_id=?', [
+        fixture.batchId,
+      ]);
       await pool.execute('DELETE FROM production_batches WHERE work_order_id=?', [
         fixture.workOrderId,
       ]);
       await pool.execute('DELETE FROM work_orders WHERE id=?', [fixture.workOrderId]);
+      await pool.execute('DELETE FROM process_route_steps WHERE route_id=?', [
+        fixture.processRouteId,
+      ]);
+      await pool.execute('DELETE FROM process_routes WHERE id=?', [fixture.processRouteId]);
+      await pool.execute('DELETE FROM process_steps WHERE id=?', [fixture.processStepId]);
       await pool.execute('DELETE FROM product_materials WHERE product_id=?', [fixture.productId]);
       await pool.execute('DELETE FROM products WHERE id IN (?,?)', [
         fixture.productId,
@@ -137,6 +153,112 @@ describeMysql('Production MySQL persistence', () => {
     );
     expect(Number(count.total)).toBe(1);
   });
+
+  it('stores immutable report facts and derives the compatibility totals after reversal and correction', async () => {
+    const token = `report-${Date.now()}-${process.pid}`;
+    const originalId = await insert(
+      pool,
+      `INSERT INTO batch_step_reports
+        (report_no,production_batch_id,batch_step_record_id,report_type,reported_quantity,normal_quantity,abnormal_quantity,unit_snapshot,created_by)
+       VALUES (?,?,?,'normal',?,?,?,?,?)`,
+      [
+        `${token}-original`,
+        fixture.batchId,
+        fixture.batchStepRecordId,
+        '4.0000',
+        '4.0000',
+        '0.0000',
+        'pcs',
+        fixture.actorId,
+      ],
+    );
+    await insert(
+      pool,
+      `INSERT INTO batch_step_reports
+        (report_no,production_batch_id,batch_step_record_id,report_type,reported_quantity,normal_quantity,abnormal_quantity,unit_snapshot,created_by)
+       VALUES (?,?,?,'normal',?,?,?,?,?)`,
+      [
+        `${token}-first`,
+        fixture.batchId,
+        fixture.batchStepRecordId,
+        '6.0000',
+        '5.0000',
+        '1.0000',
+        'pcs',
+        fixture.actorId,
+      ],
+    );
+    await insert(
+      pool,
+      `INSERT INTO batch_step_reports
+        (report_no,production_batch_id,batch_step_record_id,report_type,reversal_of_report_id,reported_quantity,normal_quantity,abnormal_quantity,unit_snapshot,created_by)
+       VALUES (?,?,?,'reversal',?,?,?,?,?,?)`,
+      [
+        `${token}-reversal`,
+        fixture.batchId,
+        fixture.batchStepRecordId,
+        originalId,
+        '4.0000',
+        '4.0000',
+        '0.0000',
+        'pcs',
+        fixture.actorId,
+      ],
+    );
+    await insert(
+      pool,
+      `INSERT INTO batch_step_reports
+        (report_no,production_batch_id,batch_step_record_id,report_type,replaces_report_id,reported_quantity,normal_quantity,abnormal_quantity,unit_snapshot,created_by)
+       VALUES (?,?,?,'normal',?,?,?,?,?,?)`,
+      [
+        `${token}-replacement`,
+        fixture.batchId,
+        fixture.batchStepRecordId,
+        originalId,
+        '3.0000',
+        '2.0000',
+        '1.0000',
+        'pcs',
+        fixture.actorId,
+      ],
+    );
+
+    await expect(
+      pool.execute(
+        `INSERT INTO batch_step_reports
+          (report_no,production_batch_id,batch_step_record_id,report_type,reversal_of_report_id,reported_quantity,normal_quantity,abnormal_quantity,unit_snapshot,created_by)
+         VALUES (?,?,?,'reversal',?,?,?,?,?,?)`,
+        [
+          `${token}-duplicate-reversal`,
+          fixture.batchId,
+          fixture.batchStepRecordId,
+          originalId,
+          '4.0000',
+          '4.0000',
+          '0.0000',
+          'pcs',
+          fixture.actorId,
+        ],
+      ),
+    ).rejects.toMatchObject({ code: 'ER_DUP_ENTRY' });
+
+    const detail = await repository.get(String(fixture.batchId));
+    expect(detail.stepRecords).toHaveLength(1);
+    expect(detail.stepRecords[0]).toMatchObject({
+      outputQuantity: '9.0000',
+      qualifiedQuantity: '7.0000',
+      abnormalQuantity: '2.0000',
+      reworkQuantity: '0.0000',
+    });
+
+    const [legacyColumns] = await pool.query<RowDataPacket[]>(
+      `SELECT column_name
+       FROM information_schema.columns
+       WHERE table_schema=DATABASE() AND table_name='batch_step_records'
+         AND column_name IN ('output_quantity','qualified_quantity','abnormal_quantity','rework_quantity')`,
+    );
+    expect(legacyColumns).toHaveLength(0);
+  });
 });
 
 interface Fixture {
@@ -146,8 +268,12 @@ interface Fixture {
   productId: number;
   materialId: number;
   productMaterialId: number;
+  processStepId: number;
+  processRouteId: number;
   workOrderId: number;
   batchId: number;
+  batchStepRecordId: number;
+  actorId: number;
   concurrentBatchNo: string;
 }
 
@@ -188,6 +314,23 @@ const createFixture = async (pool: Pool): Promise<Fixture> => {
     'INSERT INTO product_materials (product_id,material_product_id,quantity_per_unit,unit,is_key_material,need_batch_record) VALUES (?,?,?,?,?,?)',
     [productId, materialId, '0.1000', 'kg', 1, 0],
   );
+  const processStepId = await insert(
+    pool,
+    'INSERT INTO process_steps (step_code,step_name,status) VALUES (?,?,?)',
+    [`${token}-step`, 'Production test step', 1],
+  );
+  const processRouteId = await insert(
+    pool,
+    'INSERT INTO process_routes (product_id,route_code,route_name,version_no,status) VALUES (?,?,?,?,?)',
+    [productId, `${token}-route`, 'Production test route', 'V1', 'enabled'],
+  );
+  const routeStepId = await insert(
+    pool,
+    `INSERT INTO process_route_steps
+      (route_id,process_step_id,step_order,step_code_snapshot,step_name_snapshot,need_record,need_inspection)
+     VALUES (?,?,?,?,?,?,?)`,
+    [processRouteId, processStepId, 1, `${token}-step`, 'Production test step', 1, 0],
+  );
   const workOrderId = await insert(
     pool,
     'INSERT INTO work_orders (work_order_no,product_id,product_code_snapshot,product_name_snapshot,unit_snapshot,planned_quantity,status) VALUES (?,?,?,?,?,?,?)',
@@ -206,6 +349,17 @@ const createFixture = async (pool: Pool): Promise<Fixture> => {
     'INSERT INTO production_batches (work_order_id,product_id,batch_no,planned_quantity) VALUES (?,?,?,?)',
     [workOrderId, productId, `${token}-demand`, '3.0000'],
   );
+  const batchStepRecordId = await insert(
+    pool,
+    `INSERT INTO batch_step_records
+      (production_batch_id,route_step_id,step_order_snapshot,step_code_snapshot,step_name_snapshot,need_record_snapshot,need_inspection_snapshot,unit_snapshot)
+     VALUES (?,?,?,?,?,?,?,?)`,
+    [batchId, routeStepId, 1, `${token}-step`, 'Production test step', 1, 0, 'pcs'],
+  );
+  const [[actor]] = await pool.query<(RowDataPacket & { id: number })[]>(
+    'SELECT id FROM users ORDER BY id LIMIT 1',
+  );
+  if (!actor) throw new Error('Production MySQL test requires seeded users');
   return {
     requestId: `${token}-request`,
     productCategoryId,
@@ -213,8 +367,12 @@ const createFixture = async (pool: Pool): Promise<Fixture> => {
     productId,
     materialId,
     productMaterialId,
+    processStepId,
+    processRouteId,
     workOrderId,
     batchId,
+    batchStepRecordId,
+    actorId: actor.id,
     concurrentBatchNo: `${token}-concurrent`,
   };
 };

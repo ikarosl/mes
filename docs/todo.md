@@ -10,7 +10,7 @@
 - `立即整改`：问题和目标行为已经确认，可以进入实施计划。
 - `阶段实施`：问题已经确认，但必须跟随对应业务迁移阶段实施，不得提前扩大范围。
 - `滞后 / 待决策`：现象或冲突已经发现，但实际业务需求、状态语义或计算口径尚未确定；只记录约束和决策输入，不直接改代码或 migration。
-- 数据库业务设计仍以 `docs/new.md` 为准；本文件记录实施时机和待决策事项。若两者存在冲突，必须先完成评审并同步规范，不能由实现自行选择。
+- 数据库业务设计仍以 `docs/database/README.md` 及其列出的领域章节为准；本文件记录实施时机和待决策事项。若两者存在冲突，必须先完成评审并同步规范，不能由实现自行选择。
 - 数据库结构调整只能追加 migration，已执行 migration 不得修改。
 - 系统管理的文件及其对象存储内容不得硬删除；业务“删除”只能通过停用、归档或软删除表达，并保留历史追溯能力。
 
@@ -285,10 +285,13 @@ DB_NAME=easy_mes_test pnpm test:production:mysql`）
 状态：`分阶段实施`
 
 - 当前按生产工单、生产批次、工序报工、物料需求、分配和领料出库顺序迁移。
-- 未完成的报工、分配、出库和批次完工状态不是当前已上线缺陷，但未实现按钮不得表现为可用功能。
+- 报工数据库模型已完成第一步：`202608100001-batch-step-reports` 新增不可变的分批报工事实，支持全量冲销和原单更正关系；同时迁移历史累计量并移除 `batch_step_records` 的四个累计数量列。
+- 现有 Production 查询暂以聚合值兼容旧返回字段；报工 application、HTTP、管理端、权限接线以及同事务的成功审计/幂等结果尚未实现。数据库落地不等于功能发布，未实现按钮不得表现为可用功能。
+- 下一实施切片是报工创建与管理员更正：新增 migration 已把 `production:steps:report` 的旧 PATCH 元数据校正为报工事实 POST 路径；后续需真正实现权限装饰器、稳定顺序锁定相邻工序、校验首工序和上下工序数量上限、同事务写入事实/冲销/更正/状态/成功审计/幂等结果，并补真实 MySQL 与 HTTP 闭环测试。
+- 2026-08-10 数据库验证：专用临时 MySQL 8.4 从空库连续执行两次 migration 并检查状态通过；重复 seed 与完整 MySQL 集成套件通过（5 文件 / 30 用例）。新增用例验证普通事实、全量冲销、更正关系、重复冲销唯一约束、`9/7/2` 聚合兼容结果和旧累计列已移除。
 - 通用库存、入库、退料、报废、盘点、质量和全链路追溯后端不得提前迁入。
 - 旧项目没有可作为行为基准的完整追溯交互，不得根据页面原型臆造接口和状态。
-- 生产、库存和质量事实链路稳定后，再按 `docs/new.md` 第四章实现 `inspection_records`、`rework_records`、`finished_flow_records` 和只读追溯查询。
+- 补料、报废确认、质检放行和返工语义仍未闭环。先按 `docs/database/40-production-traceability-quality.md` 的明确边界完成纯报工链路；不得提前实现 `inspection_records`、`rework_records`、`finished_flow_records`。
 - 批次完工确认必须校验必需报工工序完成、必检工序存在有效结论、没有未关闭返工。
 - 追溯记录不得成为第二库存或需求事实来源；库存数量只从 `inventory_transaction` 汇总，生产需求只从 `production_item_demand` 读取。
 
@@ -304,7 +307,7 @@ DB_NAME=easy_mes_test pnpm test:production:mysql`）
   去除幂等键。架构门禁禁止旧类型回流、幂等上下文泄漏、未登记 executor/前端 header 使用及重复 Guard。
 - Product 文件上传保持非幂等；HTTP 契约测试验证误带 header 在对象存储与数据库副作用前拒绝。
 - 2026-08-10 验证：`pnpm verify` 全绿（API 43 文件 / 313 用例）；专用 `easy_mes_test` 执行 migration、
-  重复 seed 与完整 MySQL 集成套件通过（5 文件 / 29 用例）。
+  重复 seed 与完整 MySQL 集成套件通过（本次报工 migration 复验后为 5 文件 / 30 用例）。
 
 ## 5. 滞后及待业务决策事项
 
@@ -316,7 +319,7 @@ DB_NAME=easy_mes_test pnpm test:production:mysql`）
 
 - 尚未确认现场是继续从文件列表选择参考文件，还是在工序/任务入口直接上传并发布新版本。
 - 尚未确定 SOP 的逻辑文档身份、版本序列、发布入口、权限和工序状态生命周期。
-- `process_steps.status` 当前只有启用/停用，不能表达“从未启用的草稿”和“历史停用”；是否升级为 `draft -> enabled -> disabled -> archived` 需要同步业务规则、前后端交互、`docs/new.md` 和追加 migration。
+- `process_steps.status` 当前只有启用/停用，不能表达“从未启用的草稿”和“历史停用”；是否升级为 `draft -> enabled -> disabled -> archived` 需要同步业务规则、前后端交互、对应数据库领域章节和追加 migration。
 
 在完整方案确定前必须遵守的最低规则：
 
@@ -332,7 +335,7 @@ DB_NAME=easy_mes_test pnpm test:production:mysql`）
 
 - 当前不直接实施完整 SOP 生命周期和工序状态迁移。
 - `DELETE /technical-files/:id` 已改为软删除（停用并标记删除，保留对象存储内容），满足“无硬删除”最低规则，可作为正式可用能力；完整发布、版本和归档生命周期仍滞后，待业务方案确认。
-- 需求确认后先同步 `docs/new.md`、Product 策略和管理端交互，再追加 migration；不得修改已有 migration。
+- 需求确认后先同步对应数据库领域章节、Product 策略和管理端交互，再追加 migration；不得修改已有 migration。
 
 ### 5.2 Production 数量计算精度
 

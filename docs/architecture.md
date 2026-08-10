@@ -1,6 +1,6 @@
 # Company MES Next 架构规范
 
-本文是项目代码架构与模块边界的唯一基准。数据库业务设计以 `new.md` 为准，HTTP 接口以
+本文是项目代码架构与模块边界的唯一基准。数据库业务设计以 `database/README.md` 及其列出的领域章节为准，HTTP 接口以
 `api-conventions.md` 为准，编码细节以 `coding-standards.md` 为准，管理端视觉交互以根目录
 `design.md` 为准；管理端前端分层、数据所有权、共享状态、缓存和异步生命周期以
 `frontend-architecture.md` 为准。
@@ -94,7 +94,7 @@ Controller 只负责协议映射、DTO、权限装饰器和响应转换，不写
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | Identity/System  | departments、users、roles、permissions、关联表、refresh_tokens                                                                           |
 | Product          | product_categories、products、product_materials、technical_files、process_steps、process_routes 及关联表                                 |
-| Production       | work_orders、production_batches、batch_step_records、production_item_demand、production_item_allocation、outbound_order、outbound_detail |
+| Production       | work_orders、production_batches、batch_step_records、batch_step_reports、production_item_demand、production_item_allocation、outbound_order、outbound_detail |
 | 平台审计基础设施 | operation_logs                                                                                                                           |
 | 平台幂等基础设施 | http_idempotency_records（已落地）                                                                                                       |
 | common           | 不拥有业务表                                                                                                                             |
@@ -134,7 +134,7 @@ Controller、Service 和 SQL 不得混写在同一文件。
   幂等键预领取接口。
 - 技术文件统一使用 S3 标准对象存储接口，业务只保存 bucket、objectKey、版本、校验和和元数据。
 - domain、application 和 presentation 不得直接依赖具体数据库或存储 SDK；infrastructure adapter 可以。
-- 数据库时间和公共接口时间遵守 `new.md` 的 `Asia/Shanghai / +08:00` 规则。
+- 数据库时间和公共接口时间遵守 `database/00-foundations.md` 的 `Asia/Shanghai / +08:00` 规则。
 
 ## 8. 前端结构
 

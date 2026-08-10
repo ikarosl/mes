@@ -2,10 +2,10 @@
 
 1. 本项目是 50 人以内轻量 MES 的模块化单体，不得擅自拆微服务或引入完整 ERP/MES 范围。
 2. 当前正式范围包括认证、RBAC、操作日志、前端权限基础设施、产品主数据、技术文件、工序和工艺路线，以及分阶段迁移的 Production：生产工单、生产批次、工序报工追溯和其依赖的生产物料需求、分配、领料出库链路。通用库存、入库、退料、报废、盘点、质量和全链路追溯后端不得提前迁入。
-3. 数据库业务设计只以 `docs/new.md` 为准；代码架构以 `docs/architecture.md` 为准；管理端前端分层、数据所有权、共享状态和异步生命周期以 `docs/frontend-architecture.md` 为准；接口以 `docs/api-conventions.md` 为准；编码以 `docs/coding-standards.md` 为准；管理端视觉交互以 `design.md` 为准。
+3. 数据库业务设计只以 `docs/database/README.md` 及其列出的领域章节为准；代码架构以 `docs/architecture.md` 为准；管理端前端分层、数据所有权、共享状态和异步生命周期以 `docs/frontend-architecture.md` 为准；接口以 `docs/api-conventions.md` 为准；编码以 `docs/coding-standards.md` 为准；管理端视觉交互以 `design.md` 为准。
 4. 数据库变更只能在 `packages/database/migrations` 追加 migration，已执行文件不可修改。
 5. 库存只以 `inventory_transaction` 为事实来源；生产需求只以 `production_item_demand` 为事实来源；汇总视图不得写入。
-6. 主数据、可变业务单据和不可变事实遵守 `docs/new.md` 的审计、快照、乐观锁和冲销规则。
+6. 主数据、可变业务单据和不可变事实遵守 `docs/database/00-foundations.md` 及对应领域章节的审计、快照、乐观锁和冲销规则。
 7. 后端依赖为 `presentation -> application -> domain`，infrastructure 实现 application ports；application port 不得暴露数据库或 SDK 类型。
 8. 跨模块只能引用目标模块 `public.ts`；禁止访问其他模块内部层或直接查询、修改其他模块拥有的表。唯一豁免是操作日志审计写入，统一由 `common/audit/transactional-audit-writer` 承担，不经过任何模块 public 能力转发（见 `docs/architecture.md` §4）。
 9. Controller 不写 SQL、不处理 Token 密钥、不承担业务事务。

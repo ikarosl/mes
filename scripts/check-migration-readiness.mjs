@@ -25,6 +25,7 @@ const allowedTables = new Set([
   'work_orders',
   'production_batches',
   'batch_step_records',
+  'batch_step_reports',
   'production_item_demand',
 ]);
 const forbiddenModels = [
@@ -73,6 +74,11 @@ if (baseSha) {
 
 for (const name of migrationNames) {
   const source = await readFile(path.join(migrationsDir, name), 'utf8');
+  const temporaryTables = new Set(
+    [...source.matchAll(/\bCREATE\s+TEMPORARY\s+TABLE\s+`?([a-z_][a-z0-9_]*)`?/gi)].map((match) =>
+      match[1].toLowerCase(),
+    ),
+  );
   for (const model of forbiddenModels) {
     if (
       new RegExp(
@@ -88,6 +94,7 @@ for (const name of migrationNames) {
   );
   for (const match of touchedTables) {
     const table = match[1].toLowerCase();
+    if (temporaryTables.has(table)) continue;
     if (!allowedTables.has(table)) {
       violations.push(
         `${name}: unregistered table ${table}; register ownership and business rules first`,

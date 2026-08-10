@@ -23,7 +23,7 @@
 
 本文描述 `docs/todo.md` 4.1 的后续具体实现。通用规则以
 [`concurrency-and-idempotency.md`](concurrency-and-idempotency.md) 为准，数据库结构以
-[`new.md`](new.md) 为准，本文只给出落地顺序、伪代码、测试和启用门槛。
+[`database/README.md`](database/README.md) 及其领域章节为准，本文只给出落地顺序、伪代码、测试和启用门槛。
 
 ## 进度口径（四级状态）
 
@@ -67,7 +67,7 @@ released 只表示代码契约启用层面，与「部署完成/上线」无关�
   元数据、规范化指纹、JSON-safe 结果 codec、MySQL executor、错误映射、架构门禁、到期清理和真实 MySQL
   集成测试）。此阶段明确**不要求任何业务接口发送幂等键**（§10 阶段 A 第 9 条）。
 - **阶段 B：Production 试点** —— 首个业务端点「后端自动生成批次号的创建批次」端到端接入，并落地前端键生命周期。
-- **阶段 C：按风险扩展** —— 工单下达/取消/关闭、批次状态确认、物料分配/领料/库存流水等命令按风险逐项启用。
+- **阶段 C：按风险扩展** —— 报工创建/更正、工单下达/取消/关闭、批次状态确认、物料分配/领料/库存流水等命令按风险逐项启用。
 
 这三阶段只属于 HTTP 幂等闭环，与 `docs/todo.md` §4.2、`docs/migration-readiness.md` 中的「Production
 业务迁移阶段」（`work_orders` → `production_item_demand` → `item_scrap`）不是同一概念，不要混淆。
@@ -208,7 +208,8 @@ HTTP 调用或对象存储写入；存在外部副作用的命令必须先设计
 
 ## 5. 数据库记录
 
-计划表 `http_idempotency_records` 的正式字段和约束见 `docs/new.md` §1.9。核心唯一标识为：
+计划表 `http_idempotency_records` 的正式字段和约束见
+[`database/10-system-rbac-auth.md`](database/10-system-rbac-auth.md) §1.9。核心唯一标识为：
 
 ```text
 UNIQUE (scope, idempotency_key)
@@ -540,7 +541,7 @@ K1 对应的首次请求实际上已经成功，仍可能产生第二条数据�
 
 ### 阶段 C：按风险扩展
 
-依次评估工单下达/取消/关闭、批次状态确认，以及后续 4.2 的物料分配、领料出库和库存流水命令。
+依次评估报工创建/管理员更正、工单下达/取消/关闭、批次状态确认，以及后续 4.2 的物料分配、领料出库和库存流水命令。报工与更正会新增不可变事实，不能把业务 `report_no` 当作 HTTP 重试身份；接口开放前必须完成同事务的事实写入、成功审计和幂等结果保存，并验证响应丢失重放。
 `generateMaterialDemands` 已有可复现业务稳定键，应先用真实 MySQL 双事务测试验证天然幂等，再决定是否
 同时需要 HTTP 结果重放；不得为了“统一”而给所有 PATCH/POST 无差别加键。当前 application 在进入
 Repository 的 `material_pending` 短路之前，会先重新查询批次产品和实时 BOM；第一次成功后若 BOM 被修改、
@@ -623,7 +624,7 @@ Repository 的 `material_pending` 短路之前，会先重新查询批次产品�
 
 一个接口只有同时满足以下条件才算完成幂等闭环：
 
-- `docs/new.md`、migration、代码和接口文档一致；
+- 数据库领域章节、migration、代码和接口文档一致；
 - scope 稳定且不会被路由重命名意外改变；
 - 请求指纹覆盖全部业务语义输入；
 - 前端意图签名覆盖相同的客户端语义 params/query/body/version；

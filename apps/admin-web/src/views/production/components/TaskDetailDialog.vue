@@ -125,7 +125,7 @@
           >
             暂无工序记录
           </div>
-          <!-- TODO(api-integration): 工序报工、开工、完工仍待后端 batch_step_records 报工接口。 -->
+          <!-- TODO(api-integration): 工序开工/完工和幂等的 batch_step_reports 报工/更正接口尚未落地。 -->
         </el-tab-pane>
         <el-tab-pane label="物料需求">
           <!-- TODO(api-integration): 物料需求列表需要后端 production_item_demand 查询接口 -->

@@ -1,6 +1,6 @@
 /**
  * TODO(warehouse-api): 仓储管理模块后端接口尚未迁移。
- * 以下类型定义基于 docs/new.md 第三章设计，供后续开发参考。
+ * 以下类型定义基于 docs/database/30-production-inventory/README.md 及其主题章节，供后续开发参考。
  * 当前页面使用静态演示数据，待后端控制器实现后接入。
  */
 

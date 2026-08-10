@@ -42,6 +42,6 @@ Access Token 只存在页面内存；刷新页面或打开新浏览器标签时�
 - 并发与幂等规则：[docs/concurrency-and-idempotency.md](docs/concurrency-and-idempotency.md)
 - HTTP 幂等实施方案：[docs/http-idempotency-implementation-plan.md](docs/http-idempotency-implementation-plan.md)
 - 编码规范：[docs/coding-standards.md](docs/coding-standards.md)
-- 数据库设计：[docs/new.md](docs/new.md)
+- 数据库设计：[docs/database/README.md](docs/database/README.md)
 - 管理端设计：[design.md](design.md)
 - 测试策略：[docs/testing-strategy.md](docs/testing-strategy.md)

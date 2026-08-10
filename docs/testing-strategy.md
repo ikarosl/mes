@@ -33,7 +33,7 @@
 
 根级 Integration 测试由 `typecheck:integration` 纳入 `pnpm verify`；即使运行时依赖未启动，也必须通过静态类型检查。
 
-Production 的事务、并发建批、物料需求快照和幂等键需要在真实 MySQL 中验证。该测试直接调用 Repository 和真实 MySQL，不经过浏览器，因此属于 Integration，不属于 E2E。启动专用测试 MySQL，并设置 `RUN_MYSQL_INTEGRATION=1`、`TEST_DB_NAME`、`DB_NAME` 与 `ADMIN_PASSWORD` 后，执行 `pnpm test:production:mysql`（环境变量设置方式任选其一）：
+Production 的事务、并发建批、物料需求快照、报工事实约束/聚合和幂等键需要在真实 MySQL 中验证。该测试直接调用 Repository 和真实 MySQL，不经过浏览器，因此属于 Integration，不属于 E2E。启动专用测试 MySQL，并设置 `RUN_MYSQL_INTEGRATION=1`、`TEST_DB_NAME`、`DB_NAME` 与 `ADMIN_PASSWORD` 后，执行 `pnpm test:production:mysql`（环境变量设置方式任选其一）：
 
 - PowerShell：`$env:RUN_MYSQL_INTEGRATION='1'; $env:TEST_DB_NAME='easy_mes_test'; $env:DB_NAME='easy_mes_test'`，再执行 `pnpm test:production:mysql`；
 - Bash：`RUN_MYSQL_INTEGRATION=1 TEST_DB_NAME=easy_mes_test DB_NAME=easy_mes_test pnpm test:production:mysql`；

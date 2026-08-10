@@ -65,7 +65,7 @@
 - migration 只能追加，命名为时间戳加 kebab-case 目的，同时提供 up/down。
 - 已执行 migration 不可修改；每个 migration 只承担一个明确目标。
 - 新增封闭状态值时同步更新数据库 CHECK、constants、contracts 和测试。
-- 时间遵守 `new.md` 的 `+08:00` 规则。
+- 时间遵守 `database/00-foundations.md` 的 `+08:00` 规则。
 
 ## 7. 注释、错误、日志与安全
 
