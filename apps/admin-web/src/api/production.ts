@@ -33,6 +33,9 @@ import type {
   ProductionTraceWorkOrderGroup,
   ProductionTraceDetail,
   ProductionTraceQuery,
+  MaterialOutboundQuery,
+  MaterialOutboundBatchOption,
+  MaterialOutboundCandidateItem,
 } from '@company/contracts';
 import { toRequestError, type RetryRequestConfig } from '@company/request';
 import { httpClient } from './http';
@@ -178,6 +181,40 @@ export const productionApi = {
 
   listMaterialOutbounds: (batchId: string) =>
     request<MaterialOutboundItem[]>({ url: `/production/batches/${batchId}/material-outbounds` }),
+
+  listMaterialOutboundOrders: (params: MaterialOutboundQuery) =>
+    request<PageResult<MaterialOutboundItem>>({ url: '/production/material-outbounds', params }),
+
+  getMaterialOutbound: (outboundId: string) =>
+    request<MaterialOutboundItem>({ url: `/production/material-outbounds/${outboundId}` }),
+
+  listMaterialOutboundBatchOptions: () =>
+    request<MaterialOutboundBatchOption[]>({
+      url: '/production/material-outbounds/batch-options',
+      skipErrorHandling: true,
+    }),
+
+  listMaterialOutboundCandidates: (batchId: string) =>
+    request<MaterialOutboundCandidateItem[]>({
+      url: `/production/batches/${batchId}/material-outbound-candidates`,
+    }),
+
+  confirmMaterialOutbound: (outboundId: string, version: number, idempotencyKey: string) =>
+    request<MaterialOutboundCommandResult>({
+      url: `/production/material-outbounds/${outboundId}/actions/confirm`,
+      method: 'POST',
+      data: { version },
+      headers: { 'Idempotency-Key': idempotencyKey },
+      retryUnsafe: true,
+      retryTimes: 2,
+    }),
+
+  cancelMaterialOutbound: (outboundId: string, version: number) =>
+    request<MaterialOutboundItem>({
+      url: `/production/material-outbounds/${outboundId}/actions/cancel`,
+      method: 'POST',
+      data: { version },
+    }),
 
   listWorkerTasks: () => request<ProductionWorkerTaskItem[]>({ url: '/production/worker-tasks' }),
 

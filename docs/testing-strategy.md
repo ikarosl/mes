@@ -59,7 +59,7 @@ IdempotencyKeyGuard 顺序、DTO Pipe、CurrentIdempotentCommandContext、AuditI
 [`http-idempotency-implementation-plan.md`](http-idempotency-implementation-plan.md)。
 
 命令上下文迁移测试同时锁定：普通 `CommandContext` 不含幂等键；Guard 将 trim 后的键写入请求局部私有
-属性；只有已登记的 createBatch、物料分配创建和生产领料出库使用 `IdempotentCommandContext` 与 executor；
+属性；只有已登记的 createBatch、物料分配创建、待出库单创建、生产领料整单确认、报工创建和报工更正使用 `IdempotentCommandContext` 与 executor；
 Repository Port/Adapter 不依赖该子类型。Product 文件上传 HTTP 契约测试必须证明误带 header 返回 `IDEMPOTENCY_NOT_SUPPORTED`，且
 `storage.storeSop()` 与数据库 Repository 均未调用。
 

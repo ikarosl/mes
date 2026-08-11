@@ -168,7 +168,7 @@ const warehouseMenus = [
   {
     title: '出库管理',
     path: '/warehouse/outbound-orders',
-    permission: PERMISSIONS.warehouse.outbound.view,
+    permission: PERMISSIONS.production.materials.view,
   },
   {
     title: '退料管理',

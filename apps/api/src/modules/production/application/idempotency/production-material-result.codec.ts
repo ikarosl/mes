@@ -15,6 +15,7 @@ import type {
 } from '../../../../common/idempotency/idempotency-executor.js';
 import { CREATE_MATERIAL_ALLOCATION_IDEMPOTENCY_SCOPE } from './create-material-allocation-idempotency.contract.js';
 import { CREATE_MATERIAL_OUTBOUND_IDEMPOTENCY_SCOPE } from './create-material-outbound-idempotency.contract.js';
+import { CONFIRM_MATERIAL_OUTBOUND_IDEMPOTENCY_SCOPE } from './confirm-material-outbound-idempotency.contract.js';
 
 const nullableString = z.string().nullable();
 const allocationSchema: z.ZodType<ProductionMaterialAllocationItem> = z
@@ -27,6 +28,8 @@ const allocationSchema: z.ZodType<ProductionMaterialAllocationItem> = z
     batchCode: z.string(),
     assignedQuantity: z.string(),
     outboundQuantity: z.string(),
+    pendingOutboundQuantity: z.string(),
+    availableToOrderQuantity: z.string(),
     remainingOutboundQuantity: z.string(),
     unit: z.string(),
     allocationStatus: z.enum(ALLOCATION_STATUSES),
@@ -57,6 +60,7 @@ const outboundDetailSchema = z
     itemName: z.string(),
     outboundQuantity: z.string(),
     unit: z.string(),
+    inventoryTransactionId: nullableString,
   })
   .strict();
 const outboundSchema = z
@@ -64,11 +68,22 @@ const outboundSchema = z
     outboundId: z.string(),
     outboundNo: z.string(),
     productionBatchId: z.string(),
+    batchNo: z.string(),
+    workOrderId: z.string(),
+    workOrderNo: z.string(),
+    productId: z.string(),
+    productCode: z.string(),
+    productName: z.string(),
     status: z.enum(OUTBOUND_ORDER_STATUSES),
-    outboundAt: z.string(),
-    operatorId: z.string(),
+    outboundAt: nullableString,
+    operatorId: nullableString,
     operatorName: nullableString,
+    createdById: nullableString,
+    createdByName: nullableString,
+    createdAt: z.string(),
+    version: z.number().int().nonnegative(),
     remark: nullableString,
+    quantitySummary: z.array(z.object({ unit: z.string(), quantity: z.string() }).strict()),
     details: z.array(outboundDetailSchema),
   })
   .strict();
@@ -93,4 +108,8 @@ export const materialAllocationResultCodec = {
 export const materialOutboundResultCodec = {
   ...codec(outboundResultSchema),
   scope: CREATE_MATERIAL_OUTBOUND_IDEMPOTENCY_SCOPE,
+} as const;
+export const confirmMaterialOutboundResultCodec = {
+  ...codec(outboundResultSchema),
+  scope: CONFIRM_MATERIAL_OUTBOUND_IDEMPOTENCY_SCOPE,
 } as const;

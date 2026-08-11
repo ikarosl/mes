@@ -5,6 +5,10 @@ import type {
   MaterialAllocationCommandResult,
   MaterialOutboundCommandResult,
   MaterialOutboundItem,
+  MaterialOutboundQuery,
+  MaterialOutboundBatchOption,
+  MaterialOutboundCandidateItem,
+  PageResult,
   ProductionMaterialAllocationItem,
   ProductionMaterialDemandItem,
 } from '@company/contracts';
@@ -30,4 +34,20 @@ export abstract class ProductionMaterialRepository {
     context: CommandContext,
   ): Promise<MaterialOutboundCommandResult>;
   abstract listOutbounds(batchId: string): Promise<MaterialOutboundItem[]>;
+  abstract listOutboundOrders(
+    query: MaterialOutboundQuery,
+  ): Promise<PageResult<MaterialOutboundItem>>;
+  abstract getOutbound(outboundId: string): Promise<MaterialOutboundItem>;
+  abstract listOutboundBatchOptions(): Promise<MaterialOutboundBatchOption[]>;
+  abstract listOutboundCandidates(batchId: string): Promise<MaterialOutboundCandidateItem[]>;
+  abstract confirmOutbound(
+    outboundId: string,
+    version: number,
+    context: CommandContext,
+  ): Promise<MaterialOutboundCommandResult>;
+  abstract cancelOutbound(
+    outboundId: string,
+    version: number,
+    context: CommandContext,
+  ): Promise<MaterialOutboundItem>;
 }

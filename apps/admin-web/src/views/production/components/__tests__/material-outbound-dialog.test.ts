@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import MaterialOutboundDialog from '../MaterialOutboundDialog.vue';
 
 describe('MaterialOutboundDialog', () => {
-  it('offers only active allocations with a positive un-outbound balance', () => {
+  it('offers only active allocations with positive orderable quantity', () => {
     const wrapper = mount(MaterialOutboundDialog, {
       props: {
         visible: true,
@@ -15,11 +15,15 @@ describe('MaterialOutboundDialog', () => {
                 allocationId: 'a1',
                 allocationStatus: 'active',
                 remainingOutboundQuantity: '2.0000',
+                availableToOrderQuantity: '2.0000',
+                pendingOutboundQuantity: '0.0000',
               },
               {
                 allocationId: 'a2',
                 allocationStatus: 'released',
                 remainingOutboundQuantity: '3.0000',
+                availableToOrderQuantity: '3.0000',
+                pendingOutboundQuantity: '0.0000',
               },
             ],
           },

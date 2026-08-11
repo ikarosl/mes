@@ -314,6 +314,42 @@ describe('productionApi', () => {
     });
   });
 
+  it('uses real material outbound list, detail, candidate, confirm and cancel endpoints', async () => {
+    const { productionApi } = await import('../production');
+    await productionApi.listMaterialOutboundOrders({
+      page: 1,
+      pageSize: 20,
+      status: 'pending_picking',
+    });
+    await productionApi.getMaterialOutbound('8');
+    await productionApi.listMaterialOutboundBatchOptions();
+    await productionApi.listMaterialOutboundCandidates('3');
+    await productionApi.confirmMaterialOutbound('8', 0, 'confirm-key');
+    await productionApi.cancelMaterialOutbound('9', 1);
+    expect(request.mock.calls.slice(-6).map(([config]) => config)).toEqual([
+      {
+        url: '/production/material-outbounds',
+        params: { page: 1, pageSize: 20, status: 'pending_picking' },
+      },
+      { url: '/production/material-outbounds/8' },
+      { url: '/production/material-outbounds/batch-options', skipErrorHandling: true },
+      { url: '/production/batches/3/material-outbound-candidates' },
+      {
+        url: '/production/material-outbounds/8/actions/confirm',
+        method: 'POST',
+        data: { version: 0 },
+        headers: { 'Idempotency-Key': 'confirm-key' },
+        retryUnsafe: true,
+        retryTimes: 2,
+      },
+      {
+        url: '/production/material-outbounds/9/actions/cancel',
+        method: 'POST',
+        data: { version: 1 },
+      },
+    ]);
+  });
+
   it('uses semantic step assignment routes without idempotency headers', async () => {
     const { productionApi } = await import('../production');
     await productionApi.assignStep('1', '9', '7', 0);

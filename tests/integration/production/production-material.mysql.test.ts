@@ -83,7 +83,7 @@ describeMysql('Production material MySQL transactions', () => {
     }
   });
 
-  it('creates outbound details, negative ledger facts, audit, and material_outbound atomically', async () => {
+  it('creates one pending multi-line order without stock deduction, then confirms it atomically', async () => {
     const f = await fixture(pool, actorId, 'outbound');
     try {
       const allocated = await repository.createAllocations(
@@ -114,15 +114,34 @@ describeMysql('Production material MySQL transactions', () => {
         },
         ctx(actorId, f.token),
       );
-      expect(result.batchStatus).toBe('material_outbound');
+      expect(result.batchStatus).toBe('material_assigned');
+      expect(result.outbound.status).toBe('pending_picking');
+      expect(result.outbound.outboundAt).toBeNull();
       const [[ledger]] = await pool.query<(RowDataPacket & { quantity: string; count: number })[]>(
         "SELECT SUM(quantity) quantity,COUNT(*) count FROM inventory_transaction WHERE reference_type='outbound_detail' AND reference_detail_id IN (SELECT id FROM outbound_detail WHERE outbound_id=?)",
         [result.outbound.outboundId],
       );
-      expect(Number(ledger?.quantity)).toBe(-10);
-      expect(Number(ledger?.count)).toBe(2);
+      expect(Number(ledger?.count)).toBe(0);
+      const demandsWhilePending = await repository.listDemands(String(f.batchId));
+      expect(Number(demandsWhilePending[0]?.outboundQuantity)).toBe(0);
+      expect(Number(demandsWhilePending[0]?.allocations[0]?.pendingOutboundQuantity)).toBe(4);
+      const confirmed = await repository.confirmOutbound(
+        result.outbound.outboundId,
+        0,
+        ctx(actorId, `${f.token}-confirm`),
+      );
+      expect(confirmed.batchStatus).toBe('material_outbound');
+      expect(confirmed.outbound.status).toBe('completed');
+      const [[confirmedLedger]] = await pool.query<
+        (RowDataPacket & { quantity: string; count: number })[]
+      >(
+        "SELECT SUM(quantity) quantity,COUNT(*) count FROM inventory_transaction WHERE reference_type='outbound_detail' AND reference_detail_id IN (SELECT id FROM outbound_detail WHERE outbound_id=?)",
+        [result.outbound.outboundId],
+      );
+      expect(Number(confirmedLedger?.quantity)).toBe(-10);
+      expect(Number(confirmedLedger?.count)).toBe(2);
       const [[audit]] = await pool.query<(RowDataPacket & { count: number })[]>(
-        "SELECT COUNT(*) count FROM operation_logs WHERE request_id=? AND action='production-material.outbound'",
+        "SELECT COUNT(*) count FROM operation_logs WHERE request_id=? AND action='production-material.outbound.create'",
         [f.token],
       );
       expect(Number(audit?.count)).toBe(1);
@@ -192,7 +211,53 @@ describeMysql('Production material MySQL transactions', () => {
     }
   });
 
-  it('checks the aggregate outbound quantity when multiple allocations use the same inventory batch', async () => {
+  it('serializes competing pending orders and restores orderable quantity after cancellation', async () => {
+    const f = await fixture(pool, actorId, 'outbound-order-race');
+    try {
+      const allocation = await repository.createAllocations(
+        String(f.batchId),
+        {
+          allocations: [
+            {
+              demandId: String(f.demandId),
+              itemBatchId: String(f.itemBatch1),
+              assignedQuantity: 10,
+            },
+          ],
+        },
+        ctx(actorId, f.token),
+      );
+      const payload = {
+        details: [{ allocationId: allocation.allocations[0]!.allocationId, outboundQuantity: 10 }],
+      };
+      const results = await Promise.allSettled([
+        repository.createOutbound(String(f.batchId), payload, ctx(actorId, `${f.token}-a`)),
+        repository.createOutbound(String(f.batchId), payload, ctx(actorId, `${f.token}-b`)),
+      ]);
+      expect(results.filter((row) => row.status === 'fulfilled')).toHaveLength(1);
+      expect(results.filter((row) => row.status === 'rejected')).toHaveLength(1);
+      const created = results.find((row) => row.status === 'fulfilled');
+      if (!created || created.status !== 'fulfilled') throw new Error('pending order required');
+      const beforeCancel = await repository.listOutboundCandidates(String(f.batchId));
+      expect(beforeCancel).toHaveLength(0);
+      await repository.cancelOutbound(
+        created.value.outbound.outboundId,
+        created.value.outbound.version,
+        ctx(actorId, `${f.token}-cancel`),
+      );
+      const afterCancel = await repository.listOutboundCandidates(String(f.batchId));
+      expect(Number(afterCancel[0]?.availableToOrderQuantity)).toBe(10);
+      const [[ledger]] = await pool.query<(RowDataPacket & { count: number })[]>(
+        "SELECT COUNT(*) count FROM inventory_transaction WHERE reference_type='outbound_detail' AND reference_detail_id IN (SELECT id FROM outbound_detail WHERE outbound_id=?)",
+        [created.value.outbound.outboundId],
+      );
+      expect(Number(ledger?.count)).toBe(0);
+    } finally {
+      await cleanup(pool, f);
+    }
+  });
+
+  it('keeps a pending order intact when aggregate stock validation fails during confirmation', async () => {
     const f = await fixture(pool, actorId, 'outbound-aggregate');
     try {
       const first = await repository.createAllocations(
@@ -226,23 +291,29 @@ describeMysql('Production material MySQL transactions', () => {
         [f.materialId, f.itemBatch1, `${f.token}-external-outbound`, actorId],
       );
 
+      const pending = await repository.createOutbound(
+        String(f.batchId),
+        {
+          details: [
+            { allocationId: first.allocations[0]!.allocationId, outboundQuantity: 5 },
+            { allocationId: second.allocations[0]!.allocationId, outboundQuantity: 5 },
+          ],
+        },
+        ctx(actorId, f.token),
+      );
       await expect(
-        repository.createOutbound(
-          String(f.batchId),
-          {
-            details: [
-              { allocationId: first.allocations[0]!.allocationId, outboundQuantity: 5 },
-              { allocationId: second.allocations[0]!.allocationId, outboundQuantity: 5 },
-            ],
-          },
-          ctx(actorId, f.token),
-        ),
+        repository.confirmOutbound(pending.outbound.outboundId, 0, ctx(actorId, f.token)),
       ).rejects.toMatchObject({ code: 'INSUFFICIENT_AVAILABLE_STOCK' });
       const [[outboundCount]] = await pool.query<(RowDataPacket & { count: number })[]>(
-        'SELECT COUNT(*) count FROM outbound_order WHERE production_batch_id=?',
+        "SELECT COUNT(*) count FROM outbound_order WHERE production_batch_id=? AND status='pending_picking'",
         [f.batchId],
       );
-      expect(Number(outboundCount?.count)).toBe(0);
+      expect(Number(outboundCount?.count)).toBe(1);
+      const [[ledgerCount]] = await pool.query<(RowDataPacket & { count: number })[]>(
+        "SELECT COUNT(*) count FROM inventory_transaction WHERE reference_type='outbound_detail' AND reference_detail_id IN (SELECT id FROM outbound_detail WHERE outbound_id=?)",
+        [pending.outbound.outboundId],
+      );
+      expect(Number(ledgerCount?.count)).toBe(0);
     } finally {
       await cleanup(pool, f);
     }
@@ -312,7 +383,7 @@ describeMysql('Production material MySQL transactions', () => {
     }
   });
 
-  it('replays outbound without double deduction and rejects a damaged stored result codec', async () => {
+  it('replays create and confirm without duplicate order or stock deduction and rejects damaged results', async () => {
     const f = await fixture(pool, actorId, 'outbound-idempotency');
     try {
       const allocation = await repository.createAllocations(
@@ -343,12 +414,11 @@ describeMysql('Production material MySQL transactions', () => {
         idemCtx(actorId, `${f.token}-replay`, key),
       );
       expect(replay).toEqual(first);
-      const [[ledger]] = await pool.query<(RowDataPacket & { quantity: string; count: number })[]>(
+      const [[pendingLedger]] = await pool.query<(RowDataPacket & { count: number })[]>(
         "SELECT SUM(quantity) quantity,COUNT(*) count FROM inventory_transaction WHERE reference_type='outbound_detail' AND reference_detail_id IN (SELECT id FROM outbound_detail WHERE outbound_id=?)",
         [first.outbound.outboundId],
       );
-      expect(Number(ledger?.quantity)).toBe(-10);
-      expect(Number(ledger?.count)).toBe(1);
+      expect(Number(pendingLedger?.count)).toBe(0);
 
       await expect(
         service.createOutbound(
@@ -369,6 +439,25 @@ describeMysql('Production material MySQL transactions', () => {
           idemCtx(actorId, `${f.token}-corrupt`, key),
         ),
       ).rejects.toMatchObject({ kind: 'corrupt' });
+
+      const confirmKey = `${f.token}-confirm-key`;
+      const confirmed = await service.confirmOutbound(
+        first.outbound.outboundId,
+        first.outbound.version,
+        idemCtx(actorId, `${f.token}-confirm-first`, confirmKey),
+      );
+      const confirmReplay = await service.confirmOutbound(
+        first.outbound.outboundId,
+        first.outbound.version,
+        idemCtx(actorId, `${f.token}-confirm-replay`, confirmKey),
+      );
+      expect(confirmReplay).toEqual(confirmed);
+      const [[ledger]] = await pool.query<(RowDataPacket & { quantity: string; count: number })[]>(
+        "SELECT SUM(quantity) quantity,COUNT(*) count FROM inventory_transaction WHERE reference_type='outbound_detail' AND reference_detail_id IN (SELECT id FROM outbound_detail WHERE outbound_id=?)",
+        [first.outbound.outboundId],
+      );
+      expect(Number(ledger?.quantity)).toBe(-10);
+      expect(Number(ledger?.count)).toBe(1);
     } finally {
       await cleanup(pool, f);
     }

@@ -50,7 +50,11 @@ const statusFor = (code: ProductionDomainError['code']): number => {
     code === 'INSUFFICIENT_AVAILABLE_STOCK' ||
     code === 'ALLOCATION_EXCEEDS_DEMAND' ||
     code === 'ALLOCATION_ALREADY_OUTBOUND' ||
+    code === 'ALLOCATION_PENDING_OUTBOUND' ||
     code === 'OUTBOUND_EXCEEDS_ALLOCATION' ||
+    code === 'OUTBOUND_ALLOCATION_CHANGED' ||
+    code === 'OUTBOUND_CONFIRM_NOT_ALLOWED' ||
+    code === 'OUTBOUND_CANCEL_NOT_ALLOWED' ||
     code === 'STEP_ASSIGNMENT_CONFLICT' ||
     code === 'STEP_START_NOT_ALLOWED' ||
     code === 'STEP_REPORT_NOT_ALLOWED' ||

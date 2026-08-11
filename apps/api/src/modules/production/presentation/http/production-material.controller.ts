@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, UseFilters } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, UseFilters } from '@nestjs/common';
 import { PERMISSIONS } from '@company/constants';
 import type {
   CommandContext,
@@ -14,6 +14,7 @@ import {
 import { VersionedCommandDto } from '../../../../presentation/http/dto/versioned-command.dto.js';
 import { CREATE_MATERIAL_ALLOCATION_IDEMPOTENCY_SCOPE } from '../../application/idempotency/create-material-allocation-idempotency.contract.js';
 import { CREATE_MATERIAL_OUTBOUND_IDEMPOTENCY_SCOPE } from '../../application/idempotency/create-material-outbound-idempotency.contract.js';
+import { CONFIRM_MATERIAL_OUTBOUND_IDEMPOTENCY_SCOPE } from '../../application/idempotency/confirm-material-outbound-idempotency.contract.js';
 import { ProductionMaterialService } from '../../application/production-material.service.js';
 import { ProductionDomainExceptionFilter } from './production-domain-exception.filter.js';
 import {
@@ -22,6 +23,8 @@ import {
   CreateMaterialAllocationsDto,
   CreateMaterialOutboundDto,
   DemandIdParamDto,
+  MaterialOutboundQueryDto,
+  OutboundIdParamDto,
 } from './dto/production-material.dto.js';
 
 @Controller('production')
@@ -80,5 +83,57 @@ export class ProductionMaterialController {
   @RequirePermission(PERMISSIONS.production.materials.view)
   outbounds(@Param() { batchId }: BatchIdParamDto) {
     return this.service.listOutbounds(batchId);
+  }
+
+  @Get('material-outbounds/batch-options')
+  @RequirePermission(PERMISSIONS.production.materials.view)
+  outboundBatchOptions() {
+    return this.service.listOutboundBatchOptions();
+  }
+
+  @Get('batches/:batchId/material-outbound-candidates')
+  @RequirePermission(PERMISSIONS.production.materials.view)
+  outboundCandidates(@Param() { batchId }: BatchIdParamDto) {
+    return this.service.listOutboundCandidates(batchId);
+  }
+
+  @Get('material-outbounds')
+  @RequirePermission(PERMISSIONS.production.materials.view)
+  outboundOrders(@Query() query: MaterialOutboundQueryDto) {
+    return this.service.listOutboundOrders({
+      page: query.page,
+      pageSize: query.pageSize,
+      keyword: query.keyword?.trim() || undefined,
+      status: query.status,
+    });
+  }
+
+  @Get('material-outbounds/:outboundId')
+  @RequirePermission(PERMISSIONS.production.materials.view)
+  outboundDetail(@Param() { outboundId }: OutboundIdParamDto) {
+    return this.service.getOutbound(outboundId);
+  }
+
+  @Post('material-outbounds/:outboundId/actions/confirm')
+  @RequirePermission(PERMISSIONS.production.materials.confirmOutbound)
+  @AuditInApplication()
+  @IdempotentEndpoint({ scope: CONFIRM_MATERIAL_OUTBOUND_IDEMPOTENCY_SCOPE })
+  confirmOutbound(
+    @Param() { outboundId }: OutboundIdParamDto,
+    @Body() body: VersionedCommandDto,
+    @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
+  ) {
+    return this.service.confirmOutbound(outboundId, body.version, context);
+  }
+
+  @Post('material-outbounds/:outboundId/actions/cancel')
+  @RequirePermission(PERMISSIONS.production.materials.cancelOutbound)
+  @AuditInApplication()
+  cancelOutbound(
+    @Param() { outboundId }: OutboundIdParamDto,
+    @Body() body: VersionedCommandDto,
+    @CurrentCommandContext() context: CommandContext,
+  ) {
+    return this.service.cancelOutbound(outboundId, body.version, context);
   }
 }

@@ -8,6 +8,7 @@ import type {
 } from '@company/contracts';
 import { productionApi } from '../../../api/production';
 import { useIdempotentIntent } from '../../../composables/idempotency/useIdempotentIntent';
+import { normalizeMaterialOutboundPayload } from '@company/utils';
 
 export const useProductionMaterials = () => {
   const batchId = ref<string | null>(null);
@@ -108,10 +109,7 @@ export const useProductionMaterials = () => {
   const outbound = async (payload: CreateMaterialOutboundPayload): Promise<void> => {
     if (!batchId.value || submitting.value) return;
     const id = batchId.value;
-    const normalized = {
-      details: payload.details.map((line) => ({ ...line })),
-      remark: payload.remark?.trim() || null,
-    };
+    const normalized = normalizeMaterialOutboundPayload(payload);
     submitting.value = true;
     try {
       await outboundIntent.execute(

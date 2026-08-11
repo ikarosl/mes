@@ -9,6 +9,8 @@ import type {
   ProductionWorkerTaskItem,
   CompleteProductionExecutionPayload,
   ProductionTraceDetail,
+  CreateMaterialOutboundPayload,
+  ConfirmMaterialOutboundPayload,
 } from '../index.js';
 
 describe('auth contract', () => {
@@ -74,5 +76,18 @@ describe('production material contracts', () => {
     };
     const demand = { demandId: '1', remainingQuantity: '1.2500' } as ProductionMaterialDemandItem;
     expect(payload.allocations[0]?.demandId).toBe(demand.demandId);
+  });
+
+  it('separates pending order creation from versioned whole-order confirmation', () => {
+    const create: CreateMaterialOutboundPayload = {
+      details: [
+        { allocationId: '1', outboundQuantity: 2 },
+        { allocationId: '2', outboundQuantity: 3 },
+      ],
+    };
+    const confirm: ConfirmMaterialOutboundPayload = { version: 0 };
+    expect(create.details).toHaveLength(2);
+    expect(create).not.toHaveProperty('status');
+    expect(confirm).toEqual({ version: 0 });
   });
 });

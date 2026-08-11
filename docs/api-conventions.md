@@ -118,7 +118,9 @@ interface PageResult<T> {
 - 当前已启用闭环的端点包括 `POST /api/production/work-orders/:workOrderId/batches`（scope
   `production.batch.create.v2`）、`POST /api/production/batches/:batchId/material-allocations`（scope
   `production.material-allocation.create.v1`）和 `POST /api/production/batches/:batchId/material-outbounds`
-  （scope `production.material-outbound.create.v1`），契约与重放语义见
+  （scope `production.material-outbound.create.v2`），以及
+  `POST /api/production/material-outbounds/:outboundId/actions/confirm`（scope
+  `production.material-outbound.confirm.v1`），契约与重放语义见
   [`concurrency-and-idempotency.md`](concurrency-and-idempotency.md) §3.3；全部写端点「需要幂等键 / 有自然
   键兜底 / 当前做不到」的完整分类见该文 §4.1。未声明启用的端点收到该头返回
   `400 IDEMPOTENCY_NOT_SUPPORTED`（该门禁已由全局 `IdempotencyKeyGuard` 落地）；其余接口在前端发送该头

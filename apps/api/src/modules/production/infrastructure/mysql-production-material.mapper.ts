@@ -33,6 +33,7 @@ export type AllocationRow = RowDataPacket & {
   batch_code: string;
   assigned_number: string;
   outbound_quantity: string;
+  pending_outbound_quantity: string;
   unit_snapshot: string;
   allocation_status: ProductionMaterialAllocationItem['allocationStatus'];
   version: number;
@@ -58,9 +59,18 @@ export type OutboundRow = RowDataPacket & {
   id: number;
   outbound_no: string;
   production_batch_id: number;
+  batch_no: string;
+  work_order_id: number;
+  work_order_no: string;
+  product_id: number;
+  product_code: string;
+  product_name: string;
   status: MaterialOutboundItem['status'];
-  outbound_at: Date;
-  operator_id: number;
+  outbound_at: Date | null;
+  operator_id: number | null;
+  created_by: number | null;
+  created_at: Date;
+  version: number;
   remark: string | null;
 };
 
@@ -76,15 +86,17 @@ export type OutboundDetailRow = RowDataPacket & {
   product_name_snapshot: string;
   outbound_number: string;
   unit_snapshot: string;
+  inventory_transaction_id: number | null;
 };
 
 export const DEMAND_SELECT = `SELECT d.id,d.production_batch_id,d.product_material_id,d.item_id,'' item_code,'' item_name,d.unit_snapshot,d.need_number,d.demand_type,d.business_status,d.version,
   COALESCE((SELECT SUM(a.assigned_number) FROM production_item_allocation a WHERE a.demand_id=d.id AND a.allocation_status NOT IN ('released','cancelled')),0) allocated_quantity,
-  COALESCE((SELECT SUM(od.outbound_number) FROM outbound_detail od WHERE od.demand_id=d.id),0) outbound_quantity
+  COALESCE((SELECT SUM(od.outbound_number) FROM outbound_detail od JOIN outbound_order oo ON oo.id=od.outbound_id WHERE od.demand_id=d.id AND oo.status='completed'),0) outbound_quantity
   FROM production_item_demand d`;
 
 export const ALLOCATION_SELECT = `SELECT a.id,a.demand_id,a.production_batch_id,a.item_id,a.batch_id,ib.batch_code,a.assigned_number,
-  COALESCE((SELECT SUM(od.outbound_number) FROM outbound_detail od WHERE od.allocation_id=a.id),0) outbound_quantity,
+  COALESCE((SELECT SUM(od.outbound_number) FROM outbound_detail od JOIN outbound_order oo ON oo.id=od.outbound_id WHERE od.allocation_id=a.id AND oo.status='completed'),0) outbound_quantity,
+  COALESCE((SELECT SUM(od.outbound_number) FROM outbound_detail od JOIN outbound_order oo ON oo.id=od.outbound_id WHERE od.allocation_id=a.id AND oo.status='pending_picking'),0) pending_outbound_quantity,
   a.unit_snapshot,a.allocation_status,a.version,a.remark,a.created_at
   FROM production_item_allocation a JOIN item_batch ib ON ib.id=a.batch_id`;
 
@@ -97,6 +109,15 @@ export const mapAllocation = (row: AllocationRow): ProductionMaterialAllocationI
   batchCode: row.batch_code,
   assignedQuantity: row.assigned_number,
   outboundQuantity: row.outbound_quantity,
+  pendingOutboundQuantity: row.pending_outbound_quantity,
+  availableToOrderQuantity: decimal(
+    Math.max(
+      0,
+      Number(row.assigned_number) -
+        Number(row.outbound_quantity) -
+        Number(row.pending_outbound_quantity),
+    ),
+  ),
   remainingOutboundQuantity: decimal(
     Math.max(0, Number(row.assigned_number) - Number(row.outbound_quantity)),
   ),

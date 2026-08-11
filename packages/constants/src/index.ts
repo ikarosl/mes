@@ -73,6 +73,8 @@ export const PERMISSIONS = {
       view: 'production:materials:view',
       allocate: 'production:materials:allocate',
       outbound: 'production:materials:outbound',
+      confirmOutbound: 'production:materials:outbound-confirm',
+      cancelOutbound: 'production:materials:outbound-cancel',
     },
     batches: {
       create: 'production:batches:create',
@@ -238,7 +240,6 @@ export const OUTBOUND_ORDER_STATUSES = [
   'completed',
   'cancelled',
 ] as const;
-
 export const ALLOCATION_STATUS_LABELS = {
   active: '有效',
   released: '已释放',
@@ -258,10 +259,10 @@ export const MATERIAL_DEMAND_PROGRESS_LABELS = {
 } as const;
 
 export const OUTBOUND_ORDER_STATUS_LABELS = {
-  pending_picking: '待拣货',
+  pending_picking: '待出库',
   picked: '已拣货',
   partially_outbound: '部分出库',
-  completed: '已完成',
+  completed: '已出库',
   cancelled: '已取消',
 } as const;
 export const RETURN_ORDER_STATUSES = ['pending', 'returned', 'scrapped', 'cancelled'] as const;

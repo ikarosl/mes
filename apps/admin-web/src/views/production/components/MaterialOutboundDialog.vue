@@ -7,8 +7,8 @@
   >
     <div class="dialog-body">
       <el-alert
-        title="出库将立即写入负数库存流水，请核对库存批次和本次数量。"
-        type="warning"
+        title="创建后进入待出库状态，不会立即扣减库存；请打印单据完成拣货、领料和签字，再到出库管理中整单确认。"
+        type="info"
         :closable="false"
       />
       <el-table
@@ -31,10 +31,31 @@
           min-width="140"
         />
         <el-table-column
-          label="未出库量"
+          label="分配数量"
           width="110"
           ><template #default="{ row }">{{
-            formatQuantity(row.remainingOutboundQuantity)
+            formatQuantity(row.assignedQuantity)
+          }}</template></el-table-column
+        >
+        <el-table-column
+          label="已确认出库"
+          width="120"
+          ><template #default="{ row }">{{
+            formatQuantity(row.outboundQuantity)
+          }}</template></el-table-column
+        >
+        <el-table-column
+          label="待确认占用"
+          width="120"
+          ><template #default="{ row }">{{
+            formatQuantity(row.pendingOutboundQuantity)
+          }}</template></el-table-column
+        >
+        <el-table-column
+          label="可制单"
+          width="110"
+          ><template #default="{ row }">{{
+            formatQuantity(row.availableToOrderQuantity)
           }}</template></el-table-column
         >
         <el-table-column
@@ -44,7 +65,7 @@
             ><el-input-number
               v-model="quantities[row.allocationId]"
               :min="0.0001"
-              :max="Number(row.remainingOutboundQuantity)"
+              :max="Number(row.availableToOrderQuantity)"
               :precision="4" /></template
         ></el-table-column>
       </el-table>
@@ -56,6 +77,9 @@
         maxlength="5000"
         placeholder="出库备注（可选）"
       />
+      <div class="selection-summary">
+        已选择 {{ selection.length }} 条分配行；数量按各行单位分别记录，不跨单位合计。
+      </div>
       <h3>本批次出库记录</h3>
       <el-table
         v-loading="loadingOutbounds"
@@ -68,13 +92,18 @@
           min-width="190"
         />
         <el-table-column
-          prop="outboundAt"
-          label="出库时间"
+          label="状态"
+          width="110"
+          ><template #default="{ row }">{{ statusLabel(row.status) }}</template></el-table-column
+        >
+        <el-table-column
+          prop="createdAt"
+          label="制单时间"
           min-width="180"
         />
         <el-table-column
-          prop="operatorName"
-          label="操作人"
+          prop="createdByName"
+          label="制单人"
           width="120"
         />
         <el-table-column
@@ -91,7 +120,7 @@
         :loading="submitting"
         :disabled="selection.length === 0"
         @click="submit"
-        >确认领料出库</el-button
+        >创建待出库单</el-button
       ></template
     >
   </el-dialog>
@@ -106,6 +135,7 @@ import type {
 } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
 import { formatQuantity } from '../production-status';
+import { OUTBOUND_ORDER_STATUS_LABELS } from '@company/constants';
 type OutboundAllocation = ProductionMaterialAllocationItem & { itemName: string };
 const props = defineProps<{
   visible: boolean;
@@ -130,7 +160,7 @@ const remark = ref('');
 const availableAllocations = computed<OutboundAllocation[]>(() =>
   props.demands.flatMap((d) =>
     d.allocations
-      .filter((a) => a.allocationStatus === 'active' && Number(a.remainingOutboundQuantity) > 0)
+      .filter((a) => a.allocationStatus === 'active' && Number(a.availableToOrderQuantity) > 0)
       .map((a) => ({ ...a, itemName: d.itemName })),
   ),
 );
@@ -141,17 +171,19 @@ watch(
     selection.value = [];
     remark.value = '';
     for (const row of availableAllocations.value)
-      quantities[row.allocationId] = Number(row.remainingOutboundQuantity);
+      quantities[row.allocationId] = Number(row.availableToOrderQuantity);
   },
 );
 const submit = () =>
   emit('submit', {
     details: selection.value.map((row) => ({
       allocationId: row.allocationId,
-      outboundQuantity: quantities[row.allocationId] ?? Number(row.remainingOutboundQuantity),
+      outboundQuantity: quantities[row.allocationId] ?? Number(row.availableToOrderQuantity),
     })),
     remark: remark.value.trim() || null,
   });
+const statusLabel = (status: MaterialOutboundItem['status']) =>
+  OUTBOUND_ORDER_STATUS_LABELS[status];
 </script>
 
 <style scoped>
@@ -164,6 +196,11 @@ const submit = () =>
 }
 .remark {
   margin: 16px 0;
+}
+.selection-summary {
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+  margin-bottom: 16px;
 }
 h3 {
   margin: 18px 0 12px;

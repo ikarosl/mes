@@ -5,15 +5,19 @@ import {
   IsArray,
   IsNumber,
   IsOptional,
+  IsIn,
   IsString,
   MaxLength,
   Min,
   ValidateNested,
 } from 'class-validator';
+import { OUTBOUND_ORDER_STATUSES } from '@company/constants';
 import type {
   CreateMaterialAllocationsPayload,
   CreateMaterialOutboundPayload,
+  MaterialOutboundQuery,
 } from '@company/contracts';
+import { PageQueryDto } from '../../../../../presentation/http/dto/page-query.dto.js';
 
 export class BatchIdParamDto {
   @IsString() @MaxLength(20) batchId!: string;
@@ -23,6 +27,14 @@ export class DemandIdParamDto {
 }
 export class AllocationParamDto extends BatchIdParamDto {
   @IsString() @MaxLength(20) allocationId!: string;
+}
+export class OutboundIdParamDto {
+  @IsString() @MaxLength(20) outboundId!: string;
+}
+
+export class MaterialOutboundQueryDto extends PageQueryDto implements MaterialOutboundQuery {
+  @IsOptional() @IsString() @MaxLength(100) keyword?: string;
+  @IsOptional() @IsIn(OUTBOUND_ORDER_STATUSES) status?: MaterialOutboundQuery['status'];
 }
 
 export class CreateMaterialAllocationLineDto {

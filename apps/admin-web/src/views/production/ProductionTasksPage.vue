@@ -638,10 +638,10 @@ const openMaterialOutbound = async (row: ProductionBatchItem): Promise<void> => 
 const handleMaterialOutbound = async (payload: CreateMaterialOutboundPayload): Promise<void> => {
   try {
     await materials.outbound(payload);
-    EMessage.success('生产领料出库已完成');
+    EMessage.success('待出库单已创建，请打印并完成线下拣货后再整单确认');
     await loadTasks();
   } catch (error) {
-    EMessage.error(error, materialErrorFallback(error, '生产领料出库失败'));
+    EMessage.error(error, materialErrorFallback(error, '待出库单创建失败'));
   }
 };
 const materialIntentMessage = (operation: string, state: string): string =>
@@ -723,6 +723,7 @@ const materialErrorFallback = (error: unknown, fallback: string): string => {
     ALLOCATION_EXCEEDS_DEMAND: '分配数量超过当前需求缺口，请刷新需求后重试',
     ALLOCATION_ALREADY_OUTBOUND: '该分配已发生出库，不能释放',
     OUTBOUND_EXCEEDS_ALLOCATION: '出库数量超过当前未出库量，请刷新后重试',
+    ALLOCATION_PENDING_OUTBOUND: '该分配已有待确认出库单，请先取消相关单据',
     CONCURRENT_MODIFICATION: '数据已被其他操作修改，请刷新后重试',
   };
   return messages[code] ?? fallback;

@@ -209,7 +209,7 @@ export const router = createRouter({
           'warehouse-outbound',
           '出库管理',
           OutboundOrdersPage,
-          PERMISSIONS.warehouse.outbound.view,
+          PERMISSIONS.production.materials.view,
           'OutboundOrdersPage',
         ),
         page(

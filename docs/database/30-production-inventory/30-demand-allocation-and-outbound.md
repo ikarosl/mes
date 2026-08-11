@@ -235,4 +235,13 @@
 - `outbound_id` 用于表达哪些明细属于同一次出库动作。
 - `production_batch_id` 是有价值的冗余字段，便于按生产批次查询出库记录。
 
+当前 Production 实施口径：创建单据只允许写入 `pending_picking`，不生成库存流水；整单确认执行
+`pending_picking -> completed` 并为每条明细生成一条负数 `production_material_outbound` 流水；取消执行
+`pending_picking -> cancelled` 且不生成流水。`picked`、`partially_outbound` 只保留在数据库稳定代码集合中，
+当前不开放操作入口，也不支持单据分批确认。
+
+数量汇总必须连接父单状态：已确认出库量只汇总 `outbound_order.status = 'completed'` 的明细；
+`pending_picking` 明细只占用待制单额度，`cancelled` 明细不占用。可制单数量为“分配数量 - 已确认出库量 -
+待确认单据占用量”，仍可实际出库数量为“分配数量 - 已确认出库量”。
+
 ---

@@ -50,7 +50,8 @@ const idempotencyRecordsWritePattern =
 const knownIdempotencyScopes = [
   'production.batch.create.v2',
   'production.material-allocation.create.v1',
-  'production.material-outbound.create.v1',
+  'production.material-outbound.create.v2',
+  'production.material-outbound.confirm.v1',
   'production.step-report.create.v1',
   'production.step-report.correct.v1',
 ];

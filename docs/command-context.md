@@ -34,7 +34,8 @@ trim 请求头，再将规范化键写入请求局部私有属性；参数装饰
 port/Repository 的对象必须重新收窄为 `CommandContext`，Repository 不得读取 header 或幂等键。当前已启用
 端点是 createBatch（scope `production.batch.create.v2`）、物料分配创建（scope
 `production.material-allocation.create.v1`）和生产领料出库（scope
-`production.material-outbound.create.v1`）；其余 Product、Identity、Production 端点误带任意
+`production.material-outbound.create.v2`）和生产领料整单确认（scope
+`production.material-outbound.confirm.v1`）；其余 Product、Identity、Production 端点误带任意
 `Idempotency-Key` 均返回 `400 IDEMPOTENCY_NOT_SUPPORTED`，包括 `@Public()` 端点。
 
 Product 文件上传虽需要 `CommandContext` 记录审计，但对象存储写入不在 MySQL executor 的单事务边界内，

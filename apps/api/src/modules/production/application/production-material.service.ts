@@ -3,7 +3,9 @@ import type {
   CreateMaterialAllocationsPayload,
   CreateMaterialOutboundPayload,
   MaterialOutboundItem,
+  MaterialOutboundQuery,
 } from '@company/contracts';
+import { normalizeMaterialOutboundPayload } from '@company/utils';
 import type {
   CommandContext,
   IdempotentCommandContext,
@@ -13,9 +15,11 @@ import { IdentityDirectoryService } from '../../identity/public.js';
 import { ProductSnapshotQuery } from '../../product/public.js';
 import { CREATE_MATERIAL_ALLOCATION_IDEMPOTENCY_SCOPE } from './idempotency/create-material-allocation-idempotency.contract.js';
 import { CREATE_MATERIAL_OUTBOUND_IDEMPOTENCY_SCOPE } from './idempotency/create-material-outbound-idempotency.contract.js';
+import { CONFIRM_MATERIAL_OUTBOUND_IDEMPOTENCY_SCOPE } from './idempotency/confirm-material-outbound-idempotency.contract.js';
 import {
   materialAllocationResultCodec,
   materialOutboundResultCodec,
+  confirmMaterialOutboundResultCodec,
 } from './idempotency/production-material-result.codec.js';
 import { ProductionMaterialRepository } from './ports/production-material.repository.js';
 
@@ -81,13 +85,7 @@ export class ProductionMaterialService {
     payload: CreateMaterialOutboundPayload,
     context: IdempotentCommandContext,
   ) {
-    const normalized = {
-      details: payload.details.map((line) => ({
-        allocationId: line.allocationId,
-        outboundQuantity: line.outboundQuantity,
-      })),
-      remark: payload.remark?.trim() || null,
-    };
+    const normalized = normalizeMaterialOutboundPayload(payload);
     const commandContext = narrow(context);
     const execution = await this.idempotency.execute({
       scope: CREATE_MATERIAL_OUTBOUND_IDEMPOTENCY_SCOPE,
@@ -108,9 +106,50 @@ export class ProductionMaterialService {
       (await this.materials.listOutbounds(batchId)).map((row) => this.enrichOutbound(row)),
     );
   }
+  async listOutboundOrders(query: MaterialOutboundQuery) {
+    const result = await this.materials.listOutboundOrders(query);
+    return {
+      ...result,
+      items: await Promise.all(result.items.map((row) => this.enrichOutbound(row))),
+    };
+  }
+  async getOutbound(outboundId: string) {
+    return this.enrichOutbound(await this.materials.getOutbound(outboundId));
+  }
+  listOutboundBatchOptions() {
+    return this.materials.listOutboundBatchOptions();
+  }
+  listOutboundCandidates(batchId: string) {
+    return this.materials.listOutboundCandidates(batchId);
+  }
+  async confirmOutbound(outboundId: string, version: number, context: IdempotentCommandContext) {
+    const commandContext = narrow(context);
+    const execution = await this.idempotency.execute({
+      scope: CONFIRM_MATERIAL_OUTBOUND_IDEMPOTENCY_SCOPE,
+      key: context.idempotencyKey,
+      actorId: context.actorId,
+      requestId: context.requestId,
+      request: { params: { outboundId }, body: { version } },
+      resultCodec: confirmMaterialOutboundResultCodec,
+      handler: async () => {
+        const result = await this.materials.confirmOutbound(outboundId, version, commandContext);
+        return { ...result, outbound: await this.enrichOutbound(result.outbound) };
+      },
+    });
+    return execution.result;
+  }
+  async cancelOutbound(outboundId: string, version: number, context: CommandContext) {
+    return this.enrichOutbound(await this.materials.cancelOutbound(outboundId, version, context));
+  }
   private async enrichOutbound(row: MaterialOutboundItem): Promise<MaterialOutboundItem> {
-    const users = await this.identity.listUserReferencesByIds([row.operatorId]);
-    return { ...row, operatorName: users[0]?.displayName ?? null };
+    const ids = [row.operatorId, row.createdById].filter((id): id is string => Boolean(id));
+    const users = await this.identity.listUserReferencesByIds([...new Set(ids)]);
+    const byId = new Map(users.map((user) => [user.id, user.displayName]));
+    return {
+      ...row,
+      operatorName: row.operatorId ? (byId.get(row.operatorId) ?? null) : null,
+      createdByName: row.createdById ? (byId.get(row.createdById) ?? null) : null,
+    };
   }
 }
 
