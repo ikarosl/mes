@@ -189,8 +189,6 @@ export class ProductionService {
     payload: UpdateBatchStepExecutionPayload,
     audit: CommandContext,
   ) {
-    if (payload.responsibleUserId !== undefined)
-      await this.requireActiveUser(payload.responsibleUserId);
     const actualSop =
       payload.actualSopFileId === undefined
         ? undefined
@@ -293,12 +291,10 @@ export class ProductionService {
       if (seen.has(override.routeStepId))
         throw new ProductionDomainError('INVALID_INPUT', '同一工序只能提交一次执行参数覆盖');
       seen.add(override.routeStepId);
-      if (override.responsibleUserId) await this.requireActiveUser(override.responsibleUserId);
     }
     return Promise.all(
       overrides.map(async (override) => ({
         routeStepId: override.routeStepId,
-        responsibleUserId: override.responsibleUserId ?? null,
         actualSop: override.actualSopFileId
           ? this.requireProduct(
               await this.products.getEnabledSopFileSnapshot(override.actualSopFileId!),

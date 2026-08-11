@@ -53,7 +53,6 @@ describe('MysqlProductionBatchRepository persistence', () => {
       [
         {
           routeStepId: '301',
-          responsibleUserId: '9',
           actualSop: {
             id: '502',
             fileName: 'actual.pdf',
@@ -80,7 +79,7 @@ describe('MysqlProductionBatchRepository persistence', () => {
       'sop/default.pdf',
       'v1',
       '7',
-      '9',
+      null,
       '502',
       'actual.pdf',
       'sop/actual.pdf',

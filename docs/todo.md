@@ -191,7 +191,7 @@
 - `IDEMPOTENCY_NOT_SUPPORTED` 已在 `packages/constants` 登记；端口已携带 `requestId`，结果 codec 返回
   递归 `JsonValue` 且写入前运行时校验。
 - createBatch 试点已接线：Controller 声明 `@IdempotentEndpoint({ scope: CREATE_BATCH_IDEMPOTENCY_SCOPE })`；`ProductionService.createBatch` 经
-  `IdempotencyExecutor` 包装（scope `production.batch.create.v1`、指纹含 workOrderId + 规范化 body、重放
+  `IdempotencyExecutor` 包装（scope `production.batch.create.v2`、指纹含 workOrderId + 规范化 body、重放
   不重跑 handler 且不新增成功审计）；管理端 `useIdempotentIntent` 意图 composable 已接入两个建批调用点，
   `createOrderBatch` 发送 `Idempotency-Key` 并启用 unsafe 重试；幂等键生成仅依赖 Web Crypto
   （`crypto.randomUUID()`，不可用时经 `getRandomValues` 拼接 UUID v4），环境不支持时直接抛错阻止提交，
@@ -220,7 +220,7 @@ IDEMPOTENCY_RESULT_CORRUPT`；`HttpExceptionFilter` 与 `AuditInterceptor` 统�
   不可知），直到用户显式放弃（关闭弹窗/重新发起）。
 - createBatch 结果 codec 升级为 Zod 完整嵌套 schema（`production-batch-result.codec.ts`）：encode/decode 都经
   `productionBatchDetailSchema` 校验，不使用 `coerce`/`preprocess`，结构错误一律拒绝——首次结果结构错误在保存
-  前使事务回滚，重放记录损坏走 `IDEMPOTENCY_RESULT_CORRUPT`；结果结构冻结在 scope `production.batch.create.v1`，
+  前使事务回滚，重放记录损坏走 `IDEMPOTENCY_RESULT_CORRUPT`；结果结构冻结在 scope `production.batch.create.v2`，
   形状变更必须 bump scope 并引入新 codec。
 - 到期清理与运行观测已落地：新增 `infrastructure/idempotency/idempotency-housekeeping.service.ts`（平台到期
   清理唯一写入口，按小批次删除已到期 `completed` 记录，`expires_at` 只表示允许清理、物理删除前同键仍重放；
@@ -292,6 +292,7 @@ IDEMPOTENCY_RESULT_CORRUPT`；`HttpExceptionFilter` 与 `AuditInterceptor` 统�
   3. **4.2-C 报工创建与管理员更正**：使用 migration 已校正的 `production:steps:report` POST 权限，稳定顺序锁定当前及相邻工序，校验 `required_normal` 和上下游数量，同事务写入普通/冲销/更正事实、异常待处置单、工序状态、成功审计和幂等结果，并补真实 MySQL 与 HTTP 闭环测试。普通报工只接受 `doing`；必报工工序在 `effective_normal == required_normal` 时自动完成。已完成工序更正后数量不足时，无下游冲突则重开为 `doing`，低于下游有效正常量则拒绝并提示先从下游冲销。
   4. **4.2-D 批次生产执行完工**：全部必报工工序完成后，服务端在事务内重新聚合最后一道必报工工序的 `effective_normal`，将其作为 `production_batches.completed_quantity`，并写入完工状态、时间、确认人和成功审计；客户端不得填写完成数量。没有必报工工序或数量不足时拒绝。当前不实现短批完工，未来必须通过独立生产损失/短批完工命令处理差额；本切片不写 `qualified_quantity`，也不等待尚不存在的最终质检结论。
 - 工序状态规则已定稿，不再列为待决策项：`pending -> assigned -> doing -> completed`；开工前允许 `assigned -> pending` 撤回派工，合法更正可触发 `completed -> doing`。权威数据库章节保留的管理员确认完工方案只是互斥备用方案，当前不得实现为并行入口。
+- 2026-08-11：4.2-A 与 4.2-B 已形成当前 UI/API/MySQL 闭环。`202608110002` 落地生产物料分配、出库和窄库存账本；`202608110003` 落地派工/开工权限，`202608110004` 追加员工“我的工序”页面权限。创建批次不再接收逐工序负责人，工序以 `pending + NULL responsible_user_id` 创建；管理端可逐工序派工、撤回和改派，员工端只能查看本人任务并显式开工。专用 MySQL 套件 7 文件 / 42 用例通过，其中执行事务覆盖首工序同步推进批次、非负责人拒绝、上游未放行拒绝、并发派工和审计失败回滚；独立空库 `easy_mes_stage2_fresh_test` 已从零应用全部 migration 并通过二次执行。
 - 当前临时自检方案不创建过程检验任务，也不以 `need_inspection_snapshot` 或“无未关闭返工”阻塞下工序和生产执行完工；`effective_normal` 仅临时作为下工序放行量，不是最终质量合格量。批次最终质量确认、`qualified_quantity` 写入和返工闭环属于后续独立切片，不得混入 4.2-A/B/C。
 - 2026-08-11 数据库验证：临时 MySQL 8.4 空库完整应用至 `202608110001-production-abnormal-dispositions-and-demand-type-codes`，第二次执行无重复变更，migration status 全部为 applied；专用 `easy_mes_test` 完成 migration、系统 seed、管理员初始化和重复 seed 后，真实 MySQL 集成套件 5 文件 / 31 用例全部通过。该结果取代早于最新 migration 的 2026-08-10 空库证据。
 - 通用库存、入库、退料、报废、盘点、质量和全链路追溯后端不得提前迁入。
@@ -306,9 +307,9 @@ IDEMPOTENCY_RESULT_CORRUPT`；`HttpExceptionFilter` 与 `AuditInterceptor` 统�
 
 - Identity、Product、Production 普通写命令已统一为不含幂等键的 `CommandContext`；废弃的
   `AuditContext` / `CurrentAuditContext` 已从生产代码删除。
-- 只有 createBatch 使用 `IdempotentCommandContext` 与 `CurrentIdempotentCommandContext`；Guard 校验并
-  规范化 header 后写入请求局部私有属性，普通装饰器不再解析幂等键。
-- application port 与 Repository 只接收 `CommandContext`；createBatch Service 在调用 Repository 前显式
+- 已登记的 createBatch、物料分配创建和生产领料出库使用 `IdempotentCommandContext` 与
+  `CurrentIdempotentCommandContext`；Guard 校验并规范化 header 后写入请求局部私有属性，普通装饰器不再解析幂等键。
+- application port 与 Repository 只接收 `CommandContext`；相关 Production Service 在调用 Repository 前显式
   去除幂等键。架构门禁禁止旧类型回流、幂等上下文泄漏、未登记 executor/前端 header 使用及重复 Guard。
 - Product 文件上传保持非幂等；HTTP 契约测试验证误带 header 在对象存储与数据库副作用前拒绝。
 - 2026-08-11 验证：`pnpm verify` 全绿（API 43 文件 / 313 用例、管理端 43 文件 / 257 用例，lint 0 error / 18 warning）；包含最新 migration 的临时 MySQL 8.4 空库双执行与状态检查通过，专用 `easy_mes_test` 的完整真实 MySQL 套件 5 文件 / 31 用例通过。

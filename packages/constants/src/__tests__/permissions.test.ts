@@ -4,6 +4,7 @@ import {
   PROCESS_ROUTE_STATUSES,
   PRODUCT_ITEM_KINDS,
   TECHNICAL_FILE_STORAGE_PROVIDERS,
+  ALLOCATION_STATUS_LABELS,
   permissionMatches,
 } from '../index.js';
 
@@ -52,5 +53,23 @@ describe('permissionMatches', () => {
     expect(PERMISSIONS.product.routes.manageSteps).toBe('product:routes:manage-steps');
     expect(PERMISSIONS.product.files.download).toBe('product:files:download');
     expect(TECHNICAL_FILE_STORAGE_PROVIDERS).toEqual(['s3']);
+  });
+
+  it('centralizes production material permissions and labels', () => {
+    expect(PERMISSIONS.production.materials).toEqual({
+      view: 'production:materials:view',
+      allocate: 'production:materials:allocate',
+      outbound: 'production:materials:outbound',
+    });
+    expect(ALLOCATION_STATUS_LABELS.released).toBe('已释放');
+  });
+
+  it('separates worker task visibility, assignment, and start permissions', () => {
+    expect(PERMISSIONS.production.workerTasks.view).toBe('production:worker-tasks:view');
+    expect(PERMISSIONS.production.steps.assign).toBe('production:steps:assign');
+    expect(PERMISSIONS.production.steps.start).toBe('production:steps:start');
+    expect(PERMISSIONS.production.steps.manageExecution).not.toBe(
+      PERMISSIONS.production.steps.assign,
+    );
   });
 });

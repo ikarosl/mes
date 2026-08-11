@@ -67,6 +67,12 @@ export const PERMISSIONS = {
       transition: 'production:orders:transition',
     },
     tasks: { view: 'production:tasks:view' },
+    workerTasks: { view: 'production:worker-tasks:view' },
+    materials: {
+      view: 'production:materials:view',
+      allocate: 'production:materials:allocate',
+      outbound: 'production:materials:outbound',
+    },
     batches: {
       create: 'production:batches:create',
       update: 'production:batches:update',
@@ -75,6 +81,8 @@ export const PERMISSIONS = {
     steps: {
       report: 'production:steps:report',
       manageExecution: 'production:steps:manage-execution',
+      assign: 'production:steps:assign',
+      start: 'production:steps:start',
     },
   },
   warehouse: {
@@ -135,6 +143,12 @@ export const PRODUCTION_BATCH_STATUSES = [
   'cancelled',
 ] as const;
 export const BATCH_STEP_STATUSES = ['pending', 'assigned', 'doing', 'completed'] as const;
+export const BATCH_STEP_STATUS_LABELS = {
+  pending: '待派工',
+  assigned: '已派工',
+  doing: '进行中',
+  completed: '已完成',
+} as const;
 export const BATCH_STEP_ABNORMAL_REVIEW_STATUSES = [
   'pending_review',
   'approved',
@@ -200,6 +214,32 @@ export const OUTBOUND_ORDER_STATUSES = [
   'completed',
   'cancelled',
 ] as const;
+
+export const ALLOCATION_STATUS_LABELS = {
+  active: '有效',
+  released: '已释放',
+  cancelled: '已取消',
+  frozen: '已冻结',
+  abnormal: '异常',
+} as const;
+
+export const MATERIAL_DEMAND_PROGRESS_LABELS = {
+  pending_allocation: '待分配',
+  partially_allocated: '部分分配',
+  allocated: '已分配',
+  shortage: '缺料',
+  partially_outbound: '部分出库',
+  outbound: '已出库',
+  unknown: '未知',
+} as const;
+
+export const OUTBOUND_ORDER_STATUS_LABELS = {
+  pending_picking: '待拣货',
+  picked: '已拣货',
+  partially_outbound: '部分出库',
+  completed: '已完成',
+  cancelled: '已取消',
+} as const;
 export const RETURN_ORDER_STATUSES = ['pending', 'returned', 'scrapped', 'cancelled'] as const;
 export const SCRAP_SCENES = [
   'warehouse_allocated',

@@ -58,12 +58,10 @@
               <template #default="{ row }">{{ row.defaultResponsibleUserName || '-' }}</template>
             </el-table-column>
             <el-table-column
-              label="实际负责人"
+              label="派工负责人"
               width="130"
             >
-              <template #default="{ row }">{{
-                row.responsibleUserName || row.defaultResponsibleUserName || '-'
-              }}</template>
+              <template #default="{ row }">{{ row.responsibleUserName || '尚未派工' }}</template>
             </el-table-column>
             <el-table-column
               label="生效参考文件"
@@ -105,10 +103,34 @@
             </el-table-column>
             <el-table-column
               label="操作"
-              width="90"
+              width="220"
               fixed="right"
             >
               <template #default="{ row }">
+                <el-button
+                  v-if="row.status === 'pending'"
+                  link
+                  type="primary"
+                  :loading="assignmentPendingIds.has(row.id)"
+                  @click="$emit('assign-step', row)"
+                  >派工</el-button
+                >
+                <template v-else-if="row.status === 'assigned'">
+                  <el-button
+                    link
+                    type="primary"
+                    :loading="assignmentPendingIds.has(row.id)"
+                    @click="$emit('reassign-step', row)"
+                    >改派</el-button
+                  >
+                  <el-button
+                    link
+                    type="danger"
+                    :loading="assignmentPendingIds.has(row.id)"
+                    @click="$emit('unassign-step', row)"
+                    >撤回</el-button
+                  >
+                </template>
                 <el-button
                   link
                   type="primary"
@@ -125,11 +147,12 @@
           >
             暂无工序记录
           </div>
-          <!-- TODO(api-integration): 工序开工/完工和幂等的 batch_step_reports 报工/更正接口尚未落地。 -->
+          <!-- TODO(4.2-C): batch_step_reports 分批报工、异常展示和管理员更正尚未落地。 -->
         </el-tab-pane>
         <el-tab-pane label="物料需求">
-          <!-- TODO(api-integration): 物料需求列表需要后端 production_item_demand 查询接口 -->
-          <div class="empty-hint">物料需求可通过「生成物料」按钮生成</div>
+          <div class="empty-hint">
+            物料需求、库存批次分配与领料出库统一从任务列表的批次操作入口办理。
+          </div>
         </el-tab-pane>
       </el-tabs>
     </template>
@@ -144,11 +167,15 @@ import { STEP_STATUS_LABELS, batchStatusMeta, formatQuantity } from '../producti
 defineProps<{
   visible: boolean;
   batch: ProductionBatchDetail | null;
+  assignmentPendingIds: Set<string>;
 }>();
 
 defineEmits<{
   (e: 'update:visible', val: boolean): void;
   (e: 'edit-step-execution', row: BatchStepRecordItem): void;
+  (e: 'assign-step', row: BatchStepRecordItem): void;
+  (e: 'reassign-step', row: BatchStepRecordItem): void;
+  (e: 'unassign-step', row: BatchStepRecordItem): void;
 }>();
 </script>
 

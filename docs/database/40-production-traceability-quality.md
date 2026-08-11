@@ -80,7 +80,7 @@ pending -> assigned -> doing -> completed
 - `production_batches.material_assigned` 只表示批次物料已分配，不能触发任何工序进入 `assigned`。物料需求、分配和领料出库推动生产批次状态；派工、开工和完工推动单个工序状态，两套状态机独立推进。
 - 工序能否开工由应用层综合校验派工状态、批次物料状态和上游正常放行数量。若页面需要“可开工”提示，应返回派生结果，不新增或复用持久化状态。
 
-当前数据库已经允许上述四种状态，但应用层尚无独立派工命令；在派工 API、管理端操作和闭环测试落地前，不能把 `assigned` 描述为已经实现的业务流程。
+上述四种状态、独立派工/撤回/改派/员工开工命令、管理端逐工序操作和员工“我的工序”入口已在 4.2-B 落地。派工与开工仍是两个独立动作；任何后续报工实现不得绕过 `assigned -> doing`。
 
 #### 4.1.2 工序完工的两版方案
 
@@ -149,7 +149,7 @@ effective_abnormal = SUM(normal.abnormal_quantity) - SUM(reversal.abnormal_quant
 
 `batch_step_records` 不缓存这些汇总。列表、详情和校验必须从 `batch_step_reports` 聚合；如以后为性能增加汇总视图，它也只能是只读派生数据。
 
-现有 Production 返回模型暂时把 `effective_reported` 映射到 `outputQuantity`、把 `effective_normal` 映射到 `qualifiedQuantity`，以维持已发布的 createBatch 幂等 scope v1 响应结构。这只是兼容别名，不代表“正常数量已经质检合格”；后续报工接口定稿时必须通过版本化契约消除该歧义，不得静默改变 v1 codec。
+现有 Production 返回模型暂时把 `effective_reported` 映射到 `outputQuantity`、把 `effective_normal` 映射到 `qualifiedQuantity`，以维持 createBatch 当前幂等结果结构。这只是兼容别名，不代表“正常数量已经质检合格”；后续报工接口定稿时必须通过版本化契约消除该歧义，不得静默改变当前 codec。
 
 ### 4.2.2 普通报工、冲销和更正
 

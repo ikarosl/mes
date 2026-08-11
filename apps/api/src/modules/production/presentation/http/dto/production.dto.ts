@@ -4,6 +4,7 @@ import {
   IsArray,
   IsDateString,
   IsIn,
+  IsNotEmpty,
   IsNumber,
   IsOptional,
   IsString,
@@ -94,7 +95,6 @@ export class UpdateWorkOrderDto extends VersionedCommandDto implements UpdateWor
 export class CreateBatchStepOverrideDto {
   @IsString() @MaxLength(20) routeStepId!: string;
   @IsOptional() @IsString() @MaxLength(20) actualSopFileId?: string | null;
-  @IsOptional() @IsString() @MaxLength(20) responsibleUserId?: string | null;
 }
 export class CreateProductionBatchDto implements CreateProductionBatchPayload {
   @IsOptional() @IsString() @MaxLength(100) batchNo?: string | null;
@@ -141,5 +141,8 @@ export class UpdateBatchStepExecutionDto
   implements UpdateBatchStepExecutionPayload
 {
   @IsOptional() @IsString() @MaxLength(20) actualSopFileId?: string | null;
-  @IsOptional() @IsString() @MaxLength(20) responsibleUserId?: string | null;
+}
+
+export class AssignProductionStepDto extends VersionedCommandDto {
+  @IsString() @IsNotEmpty() @MaxLength(20) responsibleUserId!: string;
 }

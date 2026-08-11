@@ -43,7 +43,18 @@ export class ProductionDomainExceptionFilter implements ExceptionFilter {
 
 const statusFor = (code: ProductionDomainError['code']): number => {
   if (code === 'NOT_FOUND') return HttpStatus.NOT_FOUND;
-  if (code === 'CONFLICT' || code === 'CONCURRENT_MODIFICATION') return HttpStatus.CONFLICT;
+  if (code === 'NOT_STEP_ASSIGNEE') return HttpStatus.FORBIDDEN;
+  if (
+    code === 'CONFLICT' ||
+    code === 'CONCURRENT_MODIFICATION' ||
+    code === 'INSUFFICIENT_AVAILABLE_STOCK' ||
+    code === 'ALLOCATION_EXCEEDS_DEMAND' ||
+    code === 'ALLOCATION_ALREADY_OUTBOUND' ||
+    code === 'OUTBOUND_EXCEEDS_ALLOCATION' ||
+    code === 'STEP_ASSIGNMENT_CONFLICT' ||
+    code === 'STEP_START_NOT_ALLOWED'
+  )
+    return HttpStatus.CONFLICT;
   return HttpStatus.BAD_REQUEST;
 };
 

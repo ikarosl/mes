@@ -255,13 +255,12 @@ describe('productionApi', () => {
     await productionApi.updateBatchStepExecution('1', '9', {
       version: 2,
       actualSopFileId: '7',
-      responsibleUserId: 'u3',
     });
 
     expect(request).toHaveBeenCalledWith({
       url: '/production/batches/1/step-records/9/execution',
       method: 'PATCH',
-      data: { version: 2, actualSopFileId: '7', responsibleUserId: 'u3' },
+      data: { version: 2, actualSopFileId: '7' },
     });
   });
 
@@ -275,6 +274,82 @@ describe('productionApi', () => {
       method: 'POST',
       data: { version: 0 },
     });
+  });
+
+  it('creates material allocations with the supplied idempotency key', async () => {
+    const { productionApi } = await import('../production');
+    const data = { allocations: [{ demandId: '2', itemBatchId: '3', assignedQuantity: 1 }] };
+    await productionApi.createMaterialAllocations('1', data, 'allocation-key');
+    expect(request).toHaveBeenCalledWith({
+      url: '/production/batches/1/material-allocations',
+      method: 'POST',
+      data,
+      headers: { 'Idempotency-Key': 'allocation-key' },
+      retryUnsafe: true,
+      retryTimes: 2,
+    });
+  });
+
+  it('does not send an idempotency key when releasing an allocation', async () => {
+    const { productionApi } = await import('../production');
+    await productionApi.releaseMaterialAllocation('1', '9', 2);
+    expect(request).toHaveBeenCalledWith({
+      url: '/production/batches/1/material-allocations/9/actions/release',
+      method: 'POST',
+      data: { version: 2 },
+    });
+  });
+
+  it('creates production material outbound with unsafe retry under the same key', async () => {
+    const { productionApi } = await import('../production');
+    const data = { details: [{ allocationId: '9', outboundQuantity: 2 }], remark: null };
+    await productionApi.createMaterialOutbound('1', data, 'outbound-key');
+    expect(request).toHaveBeenCalledWith({
+      url: '/production/batches/1/material-outbounds',
+      method: 'POST',
+      data,
+      headers: { 'Idempotency-Key': 'outbound-key' },
+      retryUnsafe: true,
+      retryTimes: 2,
+    });
+  });
+
+  it('uses semantic step assignment routes without idempotency headers', async () => {
+    const { productionApi } = await import('../production');
+    await productionApi.assignStep('1', '9', '7', 0);
+    await productionApi.unassignStep('1', '9', 1);
+    await productionApi.reassignStep('1', '9', '8', 2);
+    expect(request.mock.calls.slice(-3).map(([config]) => config)).toEqual([
+      {
+        url: '/production/batches/1/step-records/9/actions/assign',
+        method: 'POST',
+        data: { responsibleUserId: '7', version: 0 },
+      },
+      {
+        url: '/production/batches/1/step-records/9/actions/unassign',
+        method: 'POST',
+        data: { version: 1 },
+      },
+      {
+        url: '/production/batches/1/step-records/9/actions/reassign',
+        method: 'POST',
+        data: { responsibleUserId: '8', version: 2 },
+      },
+    ]);
+  });
+
+  it('lists current employee tasks and starts a step with its version', async () => {
+    const { productionApi } = await import('../production');
+    await productionApi.listWorkerTasks();
+    await productionApi.startStep('1', '9', 3);
+    expect(request.mock.calls.slice(-2).map(([config]) => config)).toEqual([
+      { url: '/production/worker-tasks' },
+      {
+        url: '/production/batches/1/step-records/9/actions/start',
+        method: 'POST',
+        data: { version: 3 },
+      },
+    ]);
   });
 
   it('handles network errors gracefully via toRequestError', async () => {

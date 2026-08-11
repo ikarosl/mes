@@ -181,4 +181,4 @@ Identity/System、Product、Production 或 `common`。唯一写入口和事务�
 - 到达 `expires_at` 但记录尚未物理删除时仍然重放；清理器实际删除后，相同 scope/key 才按新请求处理；
 - 表结构已由 `202608050001-http-idempotency-records` 迁移落地，唯一写入口是
   `infrastructure/idempotency/mysql-idempotency.executor`；createBatch 是首个已启用端点（scope
-  `production.batch.create.v1`），契约见 `docs/concurrency-and-idempotency.md`。
+  `production.batch.create.v2`），契约见 `docs/concurrency-and-idempotency.md`。

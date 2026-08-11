@@ -645,14 +645,14 @@ Repository 的 `material_pending` 短路之前，会先重新查询批次产品�
 在上述门槛全部满足前，框架存在不等于接口已启用；`docs/todo.md` 4.1 的进度按本文「进度口径」标记
 （createBatch 已 released；其余端点满足 §12 门槛前不得标记 released/已完成）。
 
-## 13. scope 服务端独占与未来 v2 兼容方案
+## 13. scope 服务端独占与版本兼容方案
 
 ### 13.1 当前契约：客户端只传键，scope 完全由服务端控制
 
 - API 路径与 HTTP 契约固定为 `POST /api/production/work-orders/:workOrderId/batches` +
   `Idempotency-Key: <uuid>`；不增加 `Idempotency-Scope`、`X-Api-Version`、`X-Idempotency-Version`，
   也不做前端构建版本协商。客户端只能提供键，不能决定服务端存储命名空间。
-- scope 由后端集中定义：`CREATE_BATCH_IDEMPOTENCY_SCOPE`（`production.batch.create.v1`，位于
+- scope 由后端集中定义：`CREATE_BATCH_IDEMPOTENCY_SCOPE`（当前为 `production.batch.create.v2`，位于
   `apps/api/src/modules/production/application/idempotency/create-batch-idempotency.contract.ts`），
   被 `ProductionService.createBatch`、`productionBatchResultCodec`（codec 附带 `scope` 字段并与执行
   契约共用同一常量）、后端单元测试与 MySQL 集成测试共同引用，是模块内唯一事实来源。
@@ -664,9 +664,9 @@ Repository 的 `material_pending` 短路之前，会先重新查询批次产品�
   未清理仍重放；清理器物理删除后不再保证；客户端不得在 12 小时后自动重试旧键或自动换新键，应先核对
   业务结果（见 §5、§9）。
 
-### 13.2 未来不兼容升级：临时服务端 v1 重放兼容窗口
+### 13.2 不兼容升级：旧 scope 重放兼容窗口
 
-当前不实现版本化路由，也不提前扩充 executor。未来发生不兼容变更（如请求/结果 DTO 形状变化）时，
+当前不实现版本化路由，也不提前扩充 executor。发生不兼容变更（如请求/结果 DTO 形状变化）时，
 按以下顺序处理，不改变 Controller 路径、请求 body、RBAC、数据库表或前后端部署方式：
 
 ```text
@@ -683,6 +683,6 @@ Repository 的 `material_pending` 短路之前，会先重新查询批次产品�
    兼容。只有新旧请求 DTO 本身无法在同一路径兼容时，才需要新增版本化路由。
 3. 前端 `intentType` 是本地意图名，不随服务端 scope bump 变化；只有在业务意图本身改变时才调整。
 
-> 当前阶段按 §13.1 保持最小契约：同一路径 + 仅传 `Idempotency-Key`、后端固定
-> `production.batch.create.v1`、前端使用 `production.batch.create` 本地意图名、服务端最短重放保证
+> 4.2-B 移除了创建批次时逐工序 `responsibleUserId`，新请求固定使用
+> `production.batch.create.v2`；前端仍使用 `production.batch.create` 本地意图名，服务端最短重放保证
 > 12 小时。

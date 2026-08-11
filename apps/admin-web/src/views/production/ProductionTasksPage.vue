@@ -176,15 +176,17 @@
               >生成物料</el-button
             >
             <el-button
-              v-if="row.status === 'material_pending'"
+              v-if="row.status === 'material_pending' || row.status === 'material_assigned'"
               link
               type="primary"
+              @click="openMaterialAllocation(row)"
               >分配物料</el-button
             >
             <el-button
-              v-if="row.status === 'material_assigned'"
+              v-if="row.status === 'material_assigned' || row.status === 'material_outbound'"
               link
               type="primary"
+              @click="openMaterialOutbound(row)"
               >领料出库</el-button
             >
           </template>
@@ -239,8 +241,12 @@
     <TaskDetailDialog
       :visible="detailDialogVisible"
       :batch="activeBatch"
+      :assignment-pending-ids="assignmentPendingIds"
       @update:visible="detailDialogVisible = $event"
       @edit-step-execution="openStepExecutionOverride"
+      @assign-step="openStepAssignment($event, 'assign')"
+      @reassign-step="openStepAssignment($event, 'reassign')"
+      @unassign-step="handleStepUnassign"
     />
 
     <!-- 调整工序执行参数弹窗 -->
@@ -248,12 +254,47 @@
       :visible="stepExecutionDialogVisible"
       :step-record="editingStepRecord"
       :sop-file-options="sopFileOptions"
-      :user-options="userSource.options.value"
       :submitting="submitting"
       @update:visible="stepExecutionDialogVisible = $event"
       @refresh-sop-files="refreshSopFiles"
-      @refresh-users="userSource.refresh"
       @save="submitStepExecutionOverride"
+    />
+
+    <StepAssignmentDialog
+      :visible="stepAssignmentDialogVisible"
+      :mode="stepAssignmentMode"
+      :step-record="assignmentStepRecord"
+      :user-options="userSource.options.value"
+      :submitting="
+        assignmentStepRecord ? stepAssignments.isPending(assignmentStepRecord.id) : false
+      "
+      @update:visible="stepAssignmentDialogVisible = $event"
+      @refresh-users="userSource.refresh"
+      @submit="submitStepAssignment"
+    />
+
+    <MaterialDemandAllocationDialog
+      :visible="materialAllocationVisible"
+      :demands="materials.demands.value"
+      :available-item-batches="materials.availableItemBatches.value"
+      :loading-demands="materials.loadingDemands.value"
+      :loading-available="materials.loadingAvailable.value"
+      :submitting="materials.submitting.value"
+      :release-pending-ids="materials.releasePendingIds.value"
+      @update:visible="handleMaterialAllocationClose"
+      @load-available="materials.loadAvailable"
+      @allocate="handleMaterialAllocate"
+      @release="handleMaterialRelease"
+    />
+
+    <MaterialOutboundDialog
+      :visible="materialOutboundVisible"
+      :demands="materials.demands.value"
+      :outbounds="materials.outbounds.value"
+      :loading-outbounds="materials.loadingOutbounds.value"
+      :submitting="materials.submitting.value"
+      @update:visible="handleMaterialOutboundClose"
+      @submit="handleMaterialOutbound"
     />
   </div>
 </template>
@@ -267,6 +308,9 @@ import type {
   CreateProductionBatchPayload,
   ProductionBatchDetail,
   ProductionBatchItem,
+  CreateMaterialAllocationsPayload,
+  CreateMaterialOutboundPayload,
+  ProductionMaterialAllocationItem,
 } from '@company/contracts';
 import { normalizeCreateBatchPayload } from '@company/utils';
 import { productionApi } from '../../api/production';
@@ -283,6 +327,11 @@ import type { TaskFormValue } from './components/TaskFormDialog.vue';
 import TaskDetailDialog from './components/TaskDetailDialog.vue';
 import StepExecutionDialog from './components/StepExecutionDialog.vue';
 import type { StepExecutionValue } from './components/StepExecutionDialog.vue';
+import MaterialDemandAllocationDialog from './components/MaterialDemandAllocationDialog.vue';
+import MaterialOutboundDialog from './components/MaterialOutboundDialog.vue';
+import { useProductionMaterials } from './composables/useProductionMaterials';
+import StepAssignmentDialog from './components/StepAssignmentDialog.vue';
+import { useStepAssignments } from './composables/useStepAssignments';
 
 defineOptions({ name: 'ProductionTasksPage' });
 
@@ -329,6 +378,21 @@ const editingTaskId = ref<string | null>(null);
 const submitting = ref(false);
 const activeBatch = ref<ProductionBatchDetail | null>(null);
 const editingStepRecord = ref<BatchStepRecordItem | null>(null);
+const stepAssignmentDialogVisible = ref(false);
+const stepAssignmentMode = ref<'assign' | 'reassign'>('assign');
+const assignmentStepRecord = ref<BatchStepRecordItem | null>(null);
+const stepAssignments = useStepAssignments();
+const assignmentPendingIds = computed(
+  () =>
+    new Set(
+      (activeBatch.value?.stepRecords ?? [])
+        .filter((step) => stepAssignments.isPending(step.id))
+        .map((step) => step.id),
+    ),
+);
+const materialAllocationVisible = ref(false);
+const materialOutboundVisible = ref(false);
+const materials = useProductionMaterials();
 const taskFormDialogRef = ref<{
   setForm: (row: ProductionBatchItem) => void;
   resetForm: () => void;
@@ -451,7 +515,6 @@ const submitStepExecutionOverride = async (data: StepExecutionValue): Promise<vo
       {
         version: editingStepRecord.value.version,
         actualSopFileId: data.actualSopFileId,
-        responsibleUserId: data.responsibleUserId,
       },
     );
     stepExecutionDialogVisible.value = false;
@@ -461,6 +524,61 @@ const submitStepExecutionOverride = async (data: StepExecutionValue): Promise<vo
   } finally {
     submitting.value = false;
   }
+};
+
+const openStepAssignment = (row: BatchStepRecordItem, mode: 'assign' | 'reassign'): void => {
+  assignmentStepRecord.value = row;
+  stepAssignmentMode.value = mode;
+  stepAssignmentDialogVisible.value = true;
+};
+
+const refreshActiveBatch = async (): Promise<void> => {
+  if (!activeBatch.value) return;
+  activeBatch.value = await productionApi.getBatch(activeBatch.value.id);
+  await loadTasks();
+};
+
+const submitStepAssignment = async (responsibleUserId: string): Promise<void> => {
+  if (!activeBatch.value || !assignmentStepRecord.value) return;
+  const row = assignmentStepRecord.value;
+  try {
+    if (stepAssignmentMode.value === 'assign')
+      await stepAssignments.assign(activeBatch.value.id, row.id, responsibleUserId, row.version);
+    else
+      await stepAssignments.reassign(activeBatch.value.id, row.id, responsibleUserId, row.version);
+    stepAssignmentDialogVisible.value = false;
+    EMessage.success(stepAssignmentMode.value === 'assign' ? '工序派工成功' : '工序改派成功');
+    await refreshActiveBatch();
+  } catch (error) {
+    EMessage.error(error, stepExecutionErrorFallback(error, '工序派工失败'));
+  }
+};
+
+const handleStepUnassign = async (row: BatchStepRecordItem): Promise<void> => {
+  if (!activeBatch.value) return;
+  try {
+    await ElMessageBox.confirm(`确认撤回工序「${row.stepName}」的当前派工？`, '撤回派工', {
+      confirmButtonText: '确认撤回',
+      cancelButtonText: '取消',
+      type: 'warning',
+    });
+    await stepAssignments.unassign(activeBatch.value.id, row.id, row.version);
+    EMessage.success('工序派工已撤回');
+    await refreshActiveBatch();
+  } catch (error) {
+    if (error === 'cancel' || error === 'close') return;
+    EMessage.error(error, stepExecutionErrorFallback(error, '撤回派工失败'));
+  }
+};
+
+const stepExecutionErrorFallback = (error: unknown, fallback: string): string => {
+  const code =
+    typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : '';
+  const messages: Record<string, string> = {
+    STEP_ASSIGNMENT_CONFLICT: '工序派工状态已变化，请刷新任务详情后重试',
+    CONCURRENT_MODIFICATION: '工序已被其他操作修改，请刷新后重试',
+  };
+  return messages[code] ?? fallback;
 };
 
 /* ====== 生成物料需求 ====== */
@@ -475,6 +593,139 @@ const generateMaterials = async (row: ProductionBatchItem): Promise<void> => {
   } finally {
     endRow(row.id);
   }
+};
+
+const openMaterialAllocation = async (row: ProductionBatchItem): Promise<void> => {
+  if (!(await prepareMaterialBatch(row.id))) return;
+  materials.setBatch(row.id);
+  materialAllocationVisible.value = true;
+  try {
+    await materials.loadDemands();
+  } catch (error) {
+    EMessage.error(error, '物料需求查询失败');
+  }
+};
+const handleMaterialAllocate = async (payload: CreateMaterialAllocationsPayload): Promise<void> => {
+  try {
+    await materials.allocate(payload);
+    EMessage.success('物料分配已完成');
+    await loadTasks();
+  } catch (error) {
+    EMessage.error(error, materialErrorFallback(error, '物料分配失败'));
+  }
+};
+const handleMaterialRelease = async (
+  allocation: ProductionMaterialAllocationItem,
+): Promise<void> => {
+  try {
+    await materials.release(allocation.allocationId, allocation.version);
+    EMessage.success('未出库分配已释放');
+    await loadTasks();
+  } catch (error) {
+    EMessage.error(error, materialErrorFallback(error, '物料分配释放失败'));
+  }
+};
+const openMaterialOutbound = async (row: ProductionBatchItem): Promise<void> => {
+  if (!(await prepareMaterialBatch(row.id))) return;
+  materials.setBatch(row.id);
+  materialOutboundVisible.value = true;
+  try {
+    await Promise.all([materials.loadDemands(), materials.loadOutbounds()]);
+  } catch (error) {
+    EMessage.error(error, '生产领料数据查询失败');
+  }
+};
+const handleMaterialOutbound = async (payload: CreateMaterialOutboundPayload): Promise<void> => {
+  try {
+    await materials.outbound(payload);
+    EMessage.success('生产领料出库已完成');
+    await loadTasks();
+  } catch (error) {
+    EMessage.error(error, materialErrorFallback(error, '生产领料出库失败'));
+  }
+};
+const materialIntentMessage = (operation: string, state: string): string =>
+  state === 'blocked'
+    ? `${operation}的幂等结果已损坏，无法确认业务结果。请先刷新需求、出库记录和库存后核对；仍要放弃本次安全重试吗？`
+    : state === 'expired'
+      ? `${operation}已超出 12 小时安全重试窗口。请先核对需求、出库记录和库存；仍要放弃本次意图吗？`
+      : `${operation}的服务端结果尚未确认。放弃后重新提交可能重复形成业务事实，请先核对需求、出库记录和库存；仍要放弃吗？`;
+const confirmMaterialIntentReset = async (
+  operation: string,
+  status: 'idle' | 'pending' | 'blocked' | 'expired',
+  reset: () => void,
+): Promise<boolean> => {
+  if (status === 'idle') {
+    reset();
+    return true;
+  }
+  try {
+    await ElMessageBox.confirm(materialIntentMessage(operation, status), '放弃幂等意图确认', {
+      confirmButtonText: '核对后仍要放弃',
+      cancelButtonText: '继续保留',
+      type: 'warning',
+    });
+    reset();
+    return true;
+  } catch {
+    return false;
+  }
+};
+const prepareMaterialBatch = async (nextBatchId: string): Promise<boolean> => {
+  if (!materials.batchId.value || materials.batchId.value === nextBatchId) return true;
+  if (
+    !(await confirmMaterialIntentReset(
+      '物料分配',
+      materials.getAllocationIntentStatus(),
+      materials.resetAllocationIntent,
+    ))
+  )
+    return false;
+  return confirmMaterialIntentReset(
+    '生产领料出库',
+    materials.getOutboundIntentStatus(),
+    materials.resetOutboundIntent,
+  );
+};
+const handleMaterialAllocationClose = async (visible: boolean): Promise<void> => {
+  if (visible) {
+    materialAllocationVisible.value = true;
+    return;
+  }
+  if (
+    await confirmMaterialIntentReset(
+      '物料分配',
+      materials.getAllocationIntentStatus(),
+      materials.resetAllocationIntent,
+    )
+  )
+    materialAllocationVisible.value = false;
+};
+const handleMaterialOutboundClose = async (visible: boolean): Promise<void> => {
+  if (visible) {
+    materialOutboundVisible.value = true;
+    return;
+  }
+  if (
+    await confirmMaterialIntentReset(
+      '生产领料出库',
+      materials.getOutboundIntentStatus(),
+      materials.resetOutboundIntent,
+    )
+  )
+    materialOutboundVisible.value = false;
+};
+const materialErrorFallback = (error: unknown, fallback: string): string => {
+  const code =
+    typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : '';
+  const messages: Record<string, string> = {
+    INSUFFICIENT_AVAILABLE_STOCK: '库存已变化，请刷新库存批次后重新分配',
+    ALLOCATION_EXCEEDS_DEMAND: '分配数量超过当前需求缺口，请刷新需求后重试',
+    ALLOCATION_ALREADY_OUTBOUND: '该分配已发生出库，不能释放',
+    OUTBOUND_EXCEEDS_ALLOCATION: '出库数量超过当前未出库量，请刷新后重试',
+    CONCURRENT_MODIFICATION: '数据已被其他操作修改，请刷新后重试',
+  };
+  return messages[code] ?? fallback;
 };
 
 /* ====== 工具函数 ====== */

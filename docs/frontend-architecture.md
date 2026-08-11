@@ -186,12 +186,12 @@ const finishedProducts = computed(() =>
 快速查询、翻页和改变 pageSize 可能响应乱序。列表 composable 使用请求序号确保较旧查询不能覆盖较新查询结果；
 loading 的结束只由当前最新请求负责。
 
-### 7.4 写命令的幂等意图（createBatch 试点已启用）
+### 7.4 写命令的幂等意图
 
 只有接口文档明确声明 `Idempotency-Key` 必填且服务端闭环已经完成的命令，前端才建立幂等意图。当前已
-启用闭环的端点是 createBatch（scope `production.batch.create.v1`），工单页与任务页建批弹窗经
-`useIdempotentIntent` 持有键，`createOrderBatch` 是该端点唯一发送 `Idempotency-Key` 的包装函数（启用
-unsafe 自动重试）；其余未启用接口仍不得生成或发送该头。键状态由发起写操作的页面/弹窗 composable 局部
+启用闭环的端点是 createBatch、物料分配创建和生产领料出库。建批弹窗及
+`useProductionMaterials` 分别经 `useIdempotentIntent` 持有键，对应 API 包装函数仅接收并转发键且启用
+unsafe 自动重试；释放分配及其余未启用接口不得生成或发送该头。键状态由发起写操作的页面/弹窗 composable 局部
 持有，`src/api` 只接收并转发键，不生成键、不保存状态；不得放入跨页面 Pinia Store。键绑定“一次尚未
 确认结果的提交意图”，不绑定点击次数或弹窗 visible 状态；第一次正式提交才使用 `crypto.randomUUID()`
 （12 小时窗口 `firstAttemptAt` 从这次点击起算），相同有效载荷的超时、断网、无响应和可重试 5xx 复用原
@@ -210,11 +210,13 @@ K1：关闭守卫（`handleBatchFormDialogClose`/`handleTaskDialogClose`）先�
 params、query、规范化 body 和 version 的字段清单，前端签名覆盖同一组客户端业务输入；签名用于区分
 「从未提交的草稿」与「已提交但结果未知的意图」：草稿态任意修改（首次提交才生成键），结果未知的意图
 修改业务内容时提交被拦截、不静默换键（见上文）。签名只用于前端生命周期判断，不作为安全指纹发送给
-后端，actorId 等服务端上下文仍由后端计算；用户会话切换时必须销毁尚未闭环的本地意图。
+后端，actorId 等服务端上下文仍由后端计算；用户会话切换时必须销毁尚未闭环的本地意图。物料分配签名覆盖
+`batchId` 与规范化后的多条分配明细；领料出库签名覆盖 `batchId`、规范化明细与备注。
 
 scope 完全由服务端控制，前端不传输、不协商（不发送 `Idempotency-Scope`、`X-Api-Version` 等头）：
-`ClientIntentSnapshot` 用本地意图名 `intentType`（如 `production.batch.create`，不带版本号）区分业务
-意图，只参与签名；服务端 scope（`production.batch.create.v1`）由后端
+`ClientIntentSnapshot` 用本地意图名 `intentType`（如 `production.batch.create`、
+`production.material-allocation.create`，均不带版本号）区分业务
+意图，只参与签名；服务端 scope（`production.batch.create.v2`）由后端
 `create-batch-idempotency.contract.ts` 独占定义并携带契约版本（见实施方案 §13）。
 
 当前项目没有表单草稿持久化、待提交恢复日志或按幂等键查询结果的接口。局部 composable 只能在自身及
@@ -223,8 +225,8 @@ KeepAlive 页面实例存活期间保留 K1；浏览器硬刷新会丢失表单�
 恢复 UI，或实现受鉴权的服务端结果查询；当前两者均不存在，不得在文档或测试中宣称已经支持。
 
 幂等键生命周期不能替代弹窗 `submitting` 和行级 pending。完整服务端事务、前端伪代码和启用门槛见
-[`http-idempotency-implementation-plan.md`](http-idempotency-implementation-plan.md)。除 createBatch 外，
-前端不得向任何未启用接口发送该 header。
+[`http-idempotency-implementation-plan.md`](http-idempotency-implementation-plan.md)。除已登记的三个
+Production 命令外，前端不得向任何未启用接口发送该 header。
 
 ## 8. 错误边界
 

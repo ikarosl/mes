@@ -381,7 +381,7 @@ describe('ProductionService first-stage commands', () => {
         {
           routeId: '9',
           plannedQuantity: 1,
-          stepOverrides: [{ routeStepId: '42', responsibleUserId: null }],
+          stepOverrides: [{ routeStepId: '42', actualSopFileId: null }],
         },
         idempotentAudit,
       ),

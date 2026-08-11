@@ -172,7 +172,7 @@ export class MysqlProductionBatchRepository {
             step.sop?.objectKey ?? null,
             step.sop?.versionNo ?? null,
             step.defaultOwnerId ?? null,
-            override?.responsibleUserId ?? null,
+            null,
             override?.actualSop?.id ?? null,
             override?.actualSop?.fileName ?? null,
             override?.actualSop?.objectKey ?? null,
@@ -251,13 +251,10 @@ export class MysqlProductionBatchRepository {
         throw new ProductionDomainError('INVALID_STATE', '已取消或已完成批次不能调整工序执行参数');
       const before = await findStepRecord(connection, batchId, recordId, true);
       if (before.status !== 'pending' && before.status !== 'assigned')
-        throw new ProductionDomainError('INVALID_STATE', '工序开始后不能调整实际 SOP 或负责人');
+        throw new ProductionDomainError('INVALID_STATE', '工序开始后不能调整实际 SOP');
       const [result] = await connection.execute<ResultSetHeader>(
-        `UPDATE batch_step_records SET responsible_user_id=?,actual_sop_file_id=?,actual_sop_file_name_snapshot=?,actual_sop_object_key_snapshot=?,actual_sop_version_no_snapshot=?,version=version+1,updated_by=? WHERE id=? AND production_batch_id=? AND version=?`,
+        `UPDATE batch_step_records SET actual_sop_file_id=?,actual_sop_file_name_snapshot=?,actual_sop_object_key_snapshot=?,actual_sop_version_no_snapshot=?,version=version+1,updated_by=? WHERE id=? AND production_batch_id=? AND version=?`,
         [
-          payload.responsibleUserId === undefined
-            ? before.responsible_user_id
-            : payload.responsibleUserId,
           actualSop === undefined ? before.actual_sop_file_id : (actualSop?.id ?? null),
           actualSop === undefined
             ? before.actual_sop_file_name_snapshot

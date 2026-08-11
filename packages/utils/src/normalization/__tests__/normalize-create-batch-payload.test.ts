@@ -30,7 +30,7 @@ describe('normalizeCreateBatchPayload', () => {
 
   it('其余字段与 stepOverrides 原样透传', () => {
     const stepOverrides = [
-      { routeStepId: 's1', responsibleUserId: 'u1' },
+      { routeStepId: 's1', actualSopFileId: null },
       { routeStepId: 's2', actualSopFileId: 'f1' },
     ];
     expect(

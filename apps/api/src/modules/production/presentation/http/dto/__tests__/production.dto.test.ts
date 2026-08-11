@@ -3,6 +3,7 @@ import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { describe, expect, it } from 'vitest';
 import {
+  AssignProductionStepDto,
   CreateProductionBatchDto,
   CreateWorkOrderDto,
   UpdateBatchStepExecutionDto,
@@ -17,18 +18,30 @@ describe('Production batch execution DTOs', () => {
       stepOverrides: [{ routeStepId: '41', actualSopFileId: '7', responsibleUserId: '3' }],
     });
 
-    expect(await validate(dto)).toEqual([]);
+    expect(await validate(dto, { whitelist: true })).toEqual([]);
     expect(dto.stepOverrides?.[0]).toMatchObject({
       routeStepId: '41',
       actualSopFileId: '7',
-      responsibleUserId: '3',
     });
+    expect(dto.stepOverrides?.[0]).not.toHaveProperty('responsibleUserId');
   });
 
   it('requires the step-record version for an execution override', async () => {
     const dto = plainToInstance(UpdateBatchStepExecutionDto, { actualSopFileId: '7' });
 
     expect((await validate(dto)).some((error) => error.property === 'version')).toBe(true);
+  });
+
+  it('requires both a responsible employee and version for assignment', async () => {
+    const invalid = plainToInstance(AssignProductionStepDto, { responsibleUserId: '' });
+    expect((await validate(invalid)).map((error) => error.property)).toEqual(
+      expect.arrayContaining(['responsibleUserId', 'version']),
+    );
+    const valid = plainToInstance(AssignProductionStepDto, {
+      responsibleUserId: '7',
+      version: 0,
+    });
+    expect(await validate(valid)).toEqual([]);
   });
 });
 

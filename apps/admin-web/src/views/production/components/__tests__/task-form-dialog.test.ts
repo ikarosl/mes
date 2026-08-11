@@ -412,11 +412,6 @@ describe('TaskFormDialog', () => {
     const beforeSop = wrapper.emitted('refresh-sop-files')?.length ?? 0;
     await emitVisibleChange(wrapper, '留空则使用默认文件');
     expect(wrapper.emitted('refresh-sop-files')?.length).toBe(beforeSop + 1);
-
-    // 逐行实际负责人下拉只刷新用户
-    const beforeOwner = wrapper.emitted('refresh-users')?.length ?? 0;
-    await emitVisibleChange(wrapper, '留空则使用默认负责人');
-    expect(wrapper.emitted('refresh-users')?.length).toBe(beforeOwner + 1);
   });
 
   it('uses a local filterable work-order select without remote-method', async () => {

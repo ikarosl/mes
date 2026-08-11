@@ -1,5 +1,13 @@
 import type {
   CreateProductionBatchPayload,
+  CreateMaterialAllocationsPayload,
+  CreateMaterialOutboundPayload,
+  AvailableItemBatchItem,
+  MaterialAllocationCommandResult,
+  MaterialOutboundCommandResult,
+  MaterialOutboundItem,
+  ProductionMaterialAllocationItem,
+  ProductionMaterialDemandItem,
   CreateWorkOrderPayload,
   PageResult,
   ProductionBatchDetail,
@@ -12,6 +20,8 @@ import type {
   WorkOrderItem,
   WorkOrderOption,
   WorkOrderQuery,
+  ProductionStepCommandResult,
+  ProductionWorkerTaskItem,
 } from '@company/contracts';
 import { toRequestError, type RetryRequestConfig } from '@company/request';
 import { httpClient } from './http';
@@ -100,6 +110,89 @@ export const productionApi = {
   generateMaterialDemands: (batchId: string, version: number) =>
     request<ProductionBatchDetail>({
       url: `/production/batches/${batchId}/actions/generate-material-demands`,
+      method: 'POST',
+      data: { version },
+    }),
+
+  listMaterialDemands: (batchId: string) =>
+    request<ProductionMaterialDemandItem[]>({
+      url: `/production/batches/${batchId}/material-demands`,
+    }),
+
+  listAvailableItemBatches: (demandId: string) =>
+    request<AvailableItemBatchItem[]>({
+      url: `/production/material-demands/${demandId}/available-item-batches`,
+    }),
+
+  createMaterialAllocations: (
+    batchId: string,
+    data: CreateMaterialAllocationsPayload,
+    idempotencyKey: string,
+  ) =>
+    request<MaterialAllocationCommandResult>({
+      url: `/production/batches/${batchId}/material-allocations`,
+      method: 'POST',
+      data,
+      headers: { 'Idempotency-Key': idempotencyKey },
+      retryUnsafe: true,
+      retryTimes: 2,
+    }),
+
+  releaseMaterialAllocation: (batchId: string, allocationId: string, version: number) =>
+    request<ProductionMaterialAllocationItem>({
+      url: `/production/batches/${batchId}/material-allocations/${allocationId}/actions/release`,
+      method: 'POST',
+      data: { version },
+    }),
+
+  createMaterialOutbound: (
+    batchId: string,
+    data: CreateMaterialOutboundPayload,
+    idempotencyKey: string,
+  ) =>
+    request<MaterialOutboundCommandResult>({
+      url: `/production/batches/${batchId}/material-outbounds`,
+      method: 'POST',
+      data,
+      headers: { 'Idempotency-Key': idempotencyKey },
+      retryUnsafe: true,
+      retryTimes: 2,
+    }),
+
+  listMaterialOutbounds: (batchId: string) =>
+    request<MaterialOutboundItem[]>({ url: `/production/batches/${batchId}/material-outbounds` }),
+
+  listWorkerTasks: () => request<ProductionWorkerTaskItem[]>({ url: '/production/worker-tasks' }),
+
+  assignStep: (batchId: string, stepRecordId: string, responsibleUserId: string, version: number) =>
+    request<ProductionStepCommandResult>({
+      url: `/production/batches/${batchId}/step-records/${stepRecordId}/actions/assign`,
+      method: 'POST',
+      data: { responsibleUserId, version },
+    }),
+
+  unassignStep: (batchId: string, stepRecordId: string, version: number) =>
+    request<ProductionStepCommandResult>({
+      url: `/production/batches/${batchId}/step-records/${stepRecordId}/actions/unassign`,
+      method: 'POST',
+      data: { version },
+    }),
+
+  reassignStep: (
+    batchId: string,
+    stepRecordId: string,
+    responsibleUserId: string,
+    version: number,
+  ) =>
+    request<ProductionStepCommandResult>({
+      url: `/production/batches/${batchId}/step-records/${stepRecordId}/actions/reassign`,
+      method: 'POST',
+      data: { responsibleUserId, version },
+    }),
+
+  startStep: (batchId: string, stepRecordId: string, version: number) =>
+    request<ProductionStepCommandResult>({
+      url: `/production/batches/${batchId}/step-records/${stepRecordId}/actions/start`,
       method: 'POST',
       data: { version },
     }),

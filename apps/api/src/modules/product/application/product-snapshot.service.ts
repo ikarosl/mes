@@ -8,6 +8,7 @@ import {
   type ProductQueryFailure,
   type ProductQueryResult,
   type ProductionProductSnapshot,
+  type InventoryItemReference,
 } from './product-snapshot.query.js';
 import { ProductSnapshotRepository } from './ports/product-snapshot.repository.js';
 
@@ -15,6 +16,10 @@ import { ProductSnapshotRepository } from './ports/product-snapshot.repository.j
 export class ProductSnapshotService extends ProductSnapshotQuery {
   constructor(private readonly snapshots: ProductSnapshotRepository) {
     super();
+  }
+
+  listInventoryItemReferencesByIds(itemIds: string[]): Promise<InventoryItemReference[]> {
+    return this.snapshots.listInventoryItemReferencesByIds(itemIds);
   }
 
   getProductionProduct(productId: string): Promise<ProductQueryResult<ProductionProductSnapshot>> {

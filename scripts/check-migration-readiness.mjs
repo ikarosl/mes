@@ -28,6 +28,11 @@ const allowedTables = new Set([
   'batch_step_reports',
   'batch_step_abnormal_dispositions',
   'production_item_demand',
+  'item_batch',
+  'inventory_transaction',
+  'production_item_allocation',
+  'outbound_order',
+  'outbound_detail',
 ]);
 const forbiddenModels = [
   'item_type',

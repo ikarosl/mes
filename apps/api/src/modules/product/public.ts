@@ -8,5 +8,6 @@ export {
   type ProductBomLineSnapshot,
   type ProductBomSnapshot,
   type ProductionProductSnapshot,
+  type InventoryItemReference,
   type EnabledSopFileSnapshot,
 } from './application/product-snapshot.query.js';

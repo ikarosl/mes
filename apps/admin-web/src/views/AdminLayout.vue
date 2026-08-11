@@ -136,6 +136,11 @@ const productItems = computed(() => productMenus.filter((item) => auth.can(item.
 const productionMenus = [
   { title: '工单管理', path: '/production/orders', permission: PERMISSIONS.production.orders.view },
   { title: '生产任务', path: '/production/tasks', permission: PERMISSIONS.production.tasks.view },
+  {
+    title: '我的工序',
+    path: '/production/worker-tasks',
+    permission: PERMISSIONS.production.workerTasks.view,
+  },
 ];
 const productionItems = computed(() => productionMenus.filter((item) => auth.can(item.permission)));
 

@@ -47,7 +47,11 @@ const idempotencyRecordsWritePattern =
  * 新增 scope 时无需人工记得同步。生产源码（契约常量文件除外）禁止出现这些值的字符串字面量
  * ——scope 只能经由契约常量标识符引用。
  */
-const knownIdempotencyScopes = ['production.batch.create.v1'];
+const knownIdempotencyScopes = [
+  'production.batch.create.v2',
+  'production.material-allocation.create.v1',
+  'production.material-outbound.create.v1',
+];
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const idempotencyScopeLiteralPattern = new RegExp(
   `['"](?:${knownIdempotencyScopes.map(escapeRegExp).join('|')})['"]`,
@@ -134,23 +138,28 @@ const checks = [
       'Repository Port/Adapter 不得依赖 IdempotentCommandContext；HTTP 幂等能力止于 application 用例',
     fileMatch: isRepositoryBoundaryFile,
   },
-  // 当前登记的唯一幂等用例是 Production createBatch。新增用例必须显式更新本白名单及契约测试。
+  // 当前登记的幂等用例必须显式列入本白名单并具备版本化契约与测试。
   {
     directory: 'apps/api/src/modules',
     pattern: /\bIdempotentCommandContext\b/,
     message:
-      '当前只有 Production createBatch 可使用 IdempotentCommandContext；新增幂等命令必须先完成契约登记与验收',
+      '只有已登记的 Production 幂等命令可使用 IdempotentCommandContext；新增命令必须先完成契约登记与验收',
     exclude: [
       'apps/api/src/modules/production/application/production.service.ts',
+      'apps/api/src/modules/production/application/production-material.service.ts',
       'apps/api/src/modules/production/presentation/http/production.controller.ts',
+      'apps/api/src/modules/production/presentation/http/production-material.controller.ts',
     ],
   },
   {
     directory: 'apps/api/src/modules',
     pattern: /\bIdempotencyExecutor\b/,
     message:
-      '当前只有 Production createBatch application 用例可依赖 IdempotencyExecutor；新增用例必须先完成契约登记与验收',
-    exclude: ['apps/api/src/modules/production/application/production.service.ts'],
+      '只有已登记的 Production application 用例可依赖 IdempotencyExecutor；新增用例必须先完成契约登记与验收',
+    exclude: [
+      'apps/api/src/modules/production/application/production.service.ts',
+      'apps/api/src/modules/production/application/production-material.service.ts',
+    ],
     fileMatch: isApplicationLayerFile,
   },
   // Guard 只能存在于项目级幂等基础设施，避免业务模块再次形成相反契约实现。
@@ -160,12 +169,12 @@ const checks = [
     message: 'IdempotencyKeyGuard 只能定义在项目级 infrastructure/idempotency 中',
     exclude: ['apps/api/src/infrastructure/idempotency/idempotency-key.guard.ts'],
   },
-  // 管理端当前只有 createBatch API wrapper 可发送幂等头并开启非安全方法重试。
+  // 管理端只有已完成后端闭环的 API wrapper 可发送幂等头并开启非安全方法重试。
   {
     directory: 'apps/admin-web/src',
     pattern: /(?:['"]Idempotency-Key['"]\s*:|\bretryUnsafe\s*:)/,
     message:
-      '当前只有 production createBatch API wrapper 可设置 Idempotency-Key/retryUnsafe；新增调用必须先登记后端幂等契约',
+      '只有已登记的 production API wrapper 可设置 Idempotency-Key/retryUnsafe；新增调用必须先登记后端幂等契约',
     exclude: ['apps/admin-web/src/api/production.ts'],
   },
   // 通用 persistence helper 不得依赖 Nest HTTP/框架异常

@@ -158,28 +158,6 @@
           >
             <template #default="{ row }">{{ row.defaultOwnerName || '未配置' }}</template>
           </el-table-column>
-          <el-table-column
-            label="实际负责人"
-            min-width="180"
-          >
-            <template #default="{ row }">
-              <el-select
-                v-model="row.responsibleUserId"
-                clearable
-                filterable
-                placeholder="留空则使用默认负责人"
-                @visible-change="(v: boolean) => v && $emit('refresh-users')"
-              >
-                <el-option
-                  v-for="choice in stepOwnerChoices(row)"
-                  :key="choice.value"
-                  :label="choice.option ? choice.option.displayName : `${choice.value}（已失效）`"
-                  :value="choice.value"
-                  :disabled="choice.isUnavailable"
-                />
-              </el-select>
-            </template>
-          </el-table-column>
         </el-table>
         <div
           v-if="!createStepPreview.length"
@@ -211,15 +189,11 @@ import type {
 } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
 import { EMessage } from '../../../utils/message';
-import {
-  buildLiveOptions,
-  hasUnavailableSelection,
-  type LiveOption,
-} from '../../../utils/live-options';
+import { buildLiveOptions, hasUnavailableSelection } from '../../../utils/live-options';
 import { resolveDefaultRouteId } from '../production-route-options';
 import { useProductOptions } from '../../../composables/options/useProductOptions';
 import { useProcessRouteOptions } from '../../../composables/options/useProcessRouteOptions';
-import { useTaskRouteSteps, type TaskStepPreview } from '../composables/useTaskRouteSteps';
+import { useTaskRouteSteps } from '../composables/useTaskRouteSteps';
 import { useWorkOrderOptions } from '../composables/useWorkOrderOptions';
 
 export type TaskFormValue = {
@@ -232,7 +206,6 @@ export type TaskFormValue = {
   stepOverrides: Array<{
     routeStepId: string;
     actualSopFileId: string | null;
-    responsibleUserId: string | null;
   }>;
 };
 
@@ -343,14 +316,6 @@ const routeChoices = computed(() =>
 const ownerChoices = computed(() =>
   buildLiveOptions(props.userOptions, form.ownerId ? [form.ownerId] : [], (user) => user.id),
 );
-/** 工序预览行内实际负责人：同样合并已选值，刷新后已失效负责人回显「ID（已失效）」并禁用 */
-const stepOwnerChoices = (row: TaskStepPreview): LiveOption<UserOption>[] =>
-  buildLiveOptions(
-    props.userOptions,
-    row.responsibleUserId ? [row.responsibleUserId] : [],
-    (user) => user.id,
-  );
-
 const loadCreateStepPreview = (): void => {
   void fetchStepPreview(form.routeId, Boolean(props.editingTaskId));
 };
@@ -470,25 +435,13 @@ const handleSubmit = (): void => {
     EMessage.warning('所选负责人已失效，请重新选择');
     return;
   }
-  // 工序执行行内实际负责人：刷新后已失效时前端拦截，不等后端拒绝
-  if (
-    createStepPreview.value.some(
-      (step) =>
-        step.responsibleUserId &&
-        hasUnavailableSelection(props.userOptions, [step.responsibleUserId], (user) => user.id),
-    )
-  ) {
-    EMessage.warning('所选工序实际负责人已失效，请重新选择');
-    return;
-  }
   emit('save', {
     ...form,
     stepOverrides: createStepPreview.value
-      .filter((step) => step.actualSopFileId || step.responsibleUserId)
+      .filter((step) => step.actualSopFileId)
       .map((step) => ({
         routeStepId: step.id,
         actualSopFileId: step.actualSopFileId,
-        responsibleUserId: step.responsibleUserId,
       })),
   });
 };

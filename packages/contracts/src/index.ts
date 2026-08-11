@@ -624,6 +624,129 @@ export interface ProductionItemDemandItem {
   version: number;
 }
 
+export type MaterialDemandProgressStatus =
+  | 'pending_allocation'
+  | 'partially_allocated'
+  | 'allocated'
+  | 'shortage'
+  | 'partially_outbound'
+  | 'outbound'
+  | 'unknown'
+  | DemandBusinessStatus;
+
+export interface ProductionMaterialAllocationItem {
+  allocationId: string;
+  demandId: string;
+  productionBatchId: string;
+  itemId: string;
+  itemBatchId: string;
+  batchCode: string;
+  assignedQuantity: string;
+  outboundQuantity: string;
+  remainingOutboundQuantity: string;
+  unit: string;
+  allocationStatus: AllocationStatus;
+  version: number;
+  remark: string | null;
+  createdAt: string;
+}
+
+export interface ProductionMaterialDemandItem {
+  demandId: string;
+  productionBatchId: string;
+  productMaterialId: string;
+  itemId: string;
+  itemCode: string;
+  itemName: string;
+  unit: string;
+  demandQuantity: string;
+  allocatedQuantity: string;
+  outboundQuantity: string;
+  remainingQuantity: string;
+  demandType: DemandType;
+  businessStatus: DemandBusinessStatus;
+  progressStatus: MaterialDemandProgressStatus;
+  version: number;
+  allocations: ProductionMaterialAllocationItem[];
+}
+
+export interface AvailableItemBatchItem {
+  itemBatchId: string;
+  itemId: string;
+  itemCode: string;
+  itemName: string;
+  batchCode: string;
+  unit: string;
+  sourceType: InventorySourceType;
+  provider: string | null;
+  productionDate: string | null;
+  onHandAvailableQuantity: string;
+  reservedQuantity: string;
+  availableToAllocateQuantity: string;
+}
+
+export interface CreateMaterialAllocationLinePayload {
+  demandId: string;
+  itemBatchId: string;
+  assignedQuantity: number;
+  remark?: string | null;
+}
+
+export interface CreateMaterialAllocationsPayload {
+  allocations: CreateMaterialAllocationLinePayload[];
+}
+
+export interface MaterialAllocationCommandResult {
+  productionBatchId: string;
+  batchStatus: ProductionBatchStatus;
+  batchVersion: number;
+  allocations: ProductionMaterialAllocationItem[];
+}
+
+export type ReleaseMaterialAllocationPayload = VersionedCommand;
+
+export interface CreateMaterialOutboundDetailPayload {
+  allocationId: string;
+  outboundQuantity: number;
+}
+
+export interface CreateMaterialOutboundPayload {
+  details: CreateMaterialOutboundDetailPayload[];
+  remark?: string | null;
+}
+
+export interface MaterialOutboundDetailItem {
+  id: string;
+  allocationId: string;
+  demandId: string;
+  itemId: string;
+  itemBatchId: string;
+  batchCode: string;
+  itemCode: string;
+  itemName: string;
+  outboundQuantity: string;
+  unit: string;
+}
+
+export interface MaterialOutboundItem {
+  outboundId: string;
+  outboundNo: string;
+  productionBatchId: string;
+  status: OutboundOrderStatus;
+  outboundAt: string;
+  operatorId: string;
+  operatorName: string | null;
+  remark: string | null;
+  details: MaterialOutboundDetailItem[];
+}
+
+export interface MaterialOutboundCommandResult {
+  productionBatchId: string;
+  batchStatus: ProductionBatchStatus;
+  batchVersion: number;
+  outbound: MaterialOutboundItem;
+}
+
 export interface CreateWorkOrderPayload {
   workOrderNo: string;
   productId: string;
@@ -664,7 +787,6 @@ export interface CreateProductionBatchPayload {
 export interface CreateBatchStepOverridePayload {
   routeStepId: string;
   actualSopFileId?: string | null;
-  responsibleUserId?: string | null;
 }
 
 export interface UpdateProductionBatchPayload extends VersionedCommand {
@@ -674,19 +796,48 @@ export interface UpdateProductionBatchPayload extends VersionedCommand {
   remark?: string | null;
 }
 
-export interface UpdateBatchStepRecordPayload extends VersionedCommand {
-  responsibleUserId?: string | null;
-  status: BatchStepStatus;
-  outputQuantity: number;
-  qualifiedQuantity: number;
-  abnormalQuantity: number;
-  reworkQuantity: number;
-  remark?: string | null;
-}
-
 export interface UpdateBatchStepExecutionPayload extends VersionedCommand {
   actualSopFileId?: string | null;
-  responsibleUserId?: string | null;
+}
+
+export interface AssignProductionStepPayload extends VersionedCommand {
+  responsibleUserId: string;
+}
+
+export interface ProductionStepCommandResult {
+  productionBatchId: string;
+  batchStatus: ProductionBatchStatus;
+  batchVersion: number;
+  stepRecordId: string;
+  stepStatus: BatchStepStatus;
+  responsibleUserId: string | null;
+  startedAt: string | null;
+  version: number;
+}
+
+export interface ProductionWorkerTaskItem {
+  stepRecordId: string;
+  productionBatchId: string;
+  batchNo: string;
+  workOrderId: string;
+  workOrderNo: string;
+  productId: string;
+  productCode: string;
+  productName: string;
+  stepOrder: number;
+  stepCode: string;
+  stepName: string;
+  status: BatchStepStatus;
+  needRecord: boolean;
+  unit: string;
+  plannedQuantity: string;
+  requiredNormalQuantity: string;
+  effectiveNormalQuantity: string;
+  effectiveAbnormalQuantity: string;
+  startedAt: string | null;
+  version: number;
+  canStart: boolean;
+  startBlockedReason: string | null;
 }
 
 /** 日志模块枚举值 */

@@ -8,6 +8,7 @@ import type {
   ProductBomSnapshot,
   ProductionProductSnapshot,
   EnabledSopFileSnapshot,
+  InventoryItemReference,
 } from '../application/product-snapshot.query.js';
 import { ProductSnapshotRepository } from '../application/ports/product-snapshot.repository.js';
 
@@ -47,6 +48,20 @@ type RouteStepRow = RowDataPacket & {
 @Injectable()
 export class MysqlProductSnapshotRepository implements ProductSnapshotRepository {
   constructor(@Inject(DATABASE_POOL) private readonly pool: Pool) {}
+
+  async listInventoryItemReferencesByIds(itemIds: string[]): Promise<InventoryItemReference[]> {
+    if (itemIds.length === 0) return [];
+    const [rows] = await this.pool.query<ProductRow[]>(
+      `SELECT id,item_code,product_name,unit,default_route_id FROM products WHERE id IN (${itemIds.map(() => '?').join(',')})`,
+      itemIds,
+    );
+    return rows.map((row) => ({
+      id: String(row.id),
+      itemCode: row.item_code,
+      productName: row.product_name,
+      unit: row.unit,
+    }));
+  }
 
   async getProductionProduct(productId: string): Promise<ProductionProductSnapshot> {
     return withTransaction(this.pool, async (connection) =>
