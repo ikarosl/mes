@@ -34,6 +34,14 @@
           </div>
         </template>
         <template #tools>
+          <el-button
+            v-if="completionCheck?.batchStatus === 'doing'"
+            type="primary"
+            :disabled="!completionCheck.canComplete"
+            :loading="completionPending"
+            @click="completionVisible = true"
+            >生产执行完工</el-button
+          >
           <el-tooltip
             content="刷新当前批次"
             placement="top"
@@ -138,6 +146,33 @@
                 ><strong>{{ batchStatusMeta(record.batchStatus).label }}</strong>
               </div>
             </div>
+
+            <section
+              v-if="completionCheck && completionCheck.batchStatus === 'doing'"
+              class="completion-check"
+            >
+              <div>
+                <strong>生产执行完工检查</strong>
+                <p>
+                  {{ completionCheck.completedRequiredStepCount }} /
+                  {{ completionCheck.requiredStepCount }} 道必报工工序已完成；末道必报工工序
+                  {{ completionCheck.finalRequiredStepName || '—' }} 有效正常数量
+                  {{ formatQuantity(completionCheck.finalEffectiveNormalQuantity) }} /
+                  {{ formatQuantity(completionCheck.plannedQuantity) }}。
+                </p>
+              </div>
+              <el-tag :type="completionCheck.canComplete ? 'success' : 'warning'">
+                {{ completionCheck.canComplete ? '可执行完工' : '尚不满足完工条件' }}
+              </el-tag>
+              <ul v-if="completionCheck.blockers.length">
+                <li
+                  v-for="blocker in completionCheck.blockers"
+                  :key="blocker"
+                >
+                  {{ PRODUCTION_EXECUTION_COMPLETION_BLOCKER_LABELS[blocker] }}
+                </li>
+              </ul>
+            </section>
 
             <article
               v-for="step in record.steps"
@@ -361,6 +396,46 @@
         >
       </template>
     </el-dialog>
+
+    <el-dialog
+      v-model="completionVisible"
+      title="确认生产执行完工"
+      width="min(640px, 75vw)"
+    >
+      <el-alert
+        class="dialog-tip"
+        type="warning"
+        :closable="false"
+        show-icon
+        title="确认后，服务端将以末道必报工工序的有效正常数量作为批次完成数量，并记录完工人和完工时间。"
+      />
+      <el-descriptions
+        v-if="record && completionCheck"
+        :column="2"
+        border
+      >
+        <el-descriptions-item label="生产批次">{{ record.batchNo }}</el-descriptions-item>
+        <el-descriptions-item label="生产工单">{{ record.workOrderNo }}</el-descriptions-item>
+        <el-descriptions-item label="计划数量">{{
+          formatQuantity(completionCheck.plannedQuantity)
+        }}</el-descriptions-item>
+        <el-descriptions-item label="完成数量来源">
+          {{ completionCheck.finalRequiredStepName }} ·
+          {{ formatQuantity(completionCheck.finalEffectiveNormalQuantity) }}
+        </el-descriptions-item>
+      </el-descriptions>
+      <p class="completion-note">本操作只确认生产执行完成，不代表质量放行，也不会生成成品入库。</p>
+      <template #footer>
+        <el-button @click="completionVisible = false">取消</el-button>
+        <el-button
+          type="primary"
+          :loading="completionPending"
+          :disabled="!completionCheck?.canComplete"
+          @click="submitCompletion"
+          >确认生产执行完工</el-button
+        >
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -371,6 +446,7 @@ import {
   BATCH_STEP_ABNORMAL_REVIEW_STATUS_LABELS,
   BATCH_STEP_REPORT_TYPE_LABELS,
   BATCH_STEP_STATUS_LABELS,
+  PRODUCTION_EXECUTION_COMPLETION_BLOCKER_LABELS,
 } from '@company/constants';
 import type {
   BatchStepExecutionRecordItem,
@@ -387,6 +463,7 @@ defineOptions({ name: 'ProductionExecutionRecordsPage' });
 const keyword = ref('');
 const currentPage = ref(1);
 const changeVisible = ref(false);
+const completionVisible = ref(false);
 const changeMode = ref<'correct' | 'reverse'>('correct');
 const changeStep = ref<BatchStepExecutionRecordItem | null>(null);
 const changeReport = ref<BatchStepReportItem | null>(null);
@@ -398,12 +475,19 @@ const {
   detailLoading,
   selectedBatchId,
   record,
+  completionCheck,
   pendingKeys,
   loadBatches,
   selectBatch,
   reverse,
   correct,
+  completeExecution,
 } = useProductionExecutionRecords();
+const completionPending = computed(() =>
+  completionCheck.value
+    ? pendingKeys.value.has(`complete:${completionCheck.value.productionBatchId}`)
+    : false,
+);
 const completedStepCount = computed(
   () => record.value?.steps.filter((step) => step.status === 'completed').length ?? 0,
 );
@@ -496,6 +580,16 @@ const submitChange = async () => {
     EMessage.success(changeMode.value === 'correct' ? '报工已按追加事实更正' : '报工已冲销');
   } catch (error) {
     EMessage.error(error, '报工调整失败，请刷新后重试');
+  }
+};
+const submitCompletion = async () => {
+  if (!completionCheck.value?.canComplete) return;
+  try {
+    await completeExecution();
+    completionVisible.value = false;
+    EMessage.success('生产执行已完工');
+  } catch (error) {
+    EMessage.error(error, '生产执行完工失败，请刷新后核对完工条件');
   }
 };
 onMounted(search);
@@ -641,6 +735,35 @@ onActivated(refreshCurrent);
 .step-metrics span {
   color: var(--el-text-color-secondary);
   font-size: 13px;
+}
+.completion-check {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 16px;
+  margin-top: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 8px;
+  background: var(--el-fill-color-lighter);
+}
+.completion-check p,
+.completion-note {
+  margin: 6px 0 0;
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.completion-check ul {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--el-color-warning-dark-2);
+  font-size: 13px;
+}
+.completion-note {
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: var(--el-fill-color-light);
 }
 .step-card {
   margin-top: 16px;

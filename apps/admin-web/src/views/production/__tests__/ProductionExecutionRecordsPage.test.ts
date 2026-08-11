@@ -5,6 +5,8 @@ import ProductionExecutionRecordsPage from '../ProductionExecutionRecordsPage.vu
 const api = vi.hoisted(() => ({
   listBatches: vi.fn(),
   getBatchExecutionRecords: vi.fn(),
+  getExecutionCompletionCheck: vi.fn(),
+  completeProductionExecution: vi.fn(),
 }));
 vi.mock('../../../api/production', () => ({ productionApi: api }));
 
@@ -12,6 +14,8 @@ describe('ProductionExecutionRecordsPage', () => {
   beforeEach(() => {
     api.listBatches.mockReset().mockResolvedValue({ items: [], total: 0 });
     api.getBatchExecutionRecords.mockReset();
+    api.getExecutionCompletionCheck.mockReset();
+    api.completeProductionExecution.mockReset();
   });
 
   it('uses the current project query-panel shell without duplicating the route title', () => {

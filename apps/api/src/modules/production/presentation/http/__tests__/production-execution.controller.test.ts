@@ -34,6 +34,16 @@ describe('ProductionExecutionController permissions', () => {
     );
     expect(Reflect.getMetadata(METHOD_METADATA, start)).toBe(RequestMethod.POST);
     expect(Reflect.getMetadata(IDEMPOTENT_ENDPOINT, start)).toBeUndefined();
+
+    const complete = ProductionExecutionController.prototype.completeExecution;
+    expect(Reflect.getMetadata(PATH_METADATA, complete)).toBe(
+      'batches/:batchId/actions/complete-execution',
+    );
+    expect(Reflect.getMetadata(METHOD_METADATA, complete)).toBe(RequestMethod.POST);
+    expect(Reflect.getMetadata(REQUIRED_PERMISSION, complete)).toBe(
+      PERMISSIONS.production.steps.manageExecution,
+    );
+    expect(Reflect.getMetadata(IDEMPOTENT_ENDPOINT, complete)).toBeUndefined();
   });
 
   it('forwards authenticated actor and version to the application service', async () => {

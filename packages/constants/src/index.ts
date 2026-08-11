@@ -167,6 +167,18 @@ export const BATCH_STEP_ABNORMAL_REVIEW_STATUS_LABELS = {
   rejected: '已驳回',
   cancelled: '已取消',
 } as const;
+export const PRODUCTION_EXECUTION_COMPLETION_BLOCKERS = [
+  'batch_not_doing',
+  'no_required_reporting_step',
+  'required_step_incomplete',
+  'final_step_quantity_insufficient',
+] as const;
+export const PRODUCTION_EXECUTION_COMPLETION_BLOCKER_LABELS = {
+  batch_not_doing: '批次尚未进入生产执行状态',
+  no_required_reporting_step: '批次没有必报工工序',
+  required_step_incomplete: '仍有必报工工序未完成',
+  final_step_quantity_insufficient: '最后一道必报工工序的有效正常数量尚未达到计划数量',
+} as const;
 export const INVENTORY_SOURCE_TYPES = [
   'self_made',
   'purchased',

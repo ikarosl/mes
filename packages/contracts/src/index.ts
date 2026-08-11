@@ -952,6 +952,37 @@ export interface CorrectBatchStepReportCommandResult {
   abnormalDisposition: BatchStepAbnormalDispositionItem | null;
 }
 
+export type ProductionExecutionCompletionBlocker =
+  | 'batch_not_doing'
+  | 'no_required_reporting_step'
+  | 'required_step_incomplete'
+  | 'final_step_quantity_insufficient';
+
+export interface ProductionExecutionCompletionCheck {
+  productionBatchId: string;
+  batchStatus: ProductionBatchStatus;
+  version: number;
+  plannedQuantity: string;
+  requiredStepCount: number;
+  completedRequiredStepCount: number;
+  finalRequiredStepId: string | null;
+  finalRequiredStepName: string | null;
+  finalEffectiveNormalQuantity: string;
+  canComplete: boolean;
+  blockers: ProductionExecutionCompletionBlocker[];
+}
+
+export type CompleteProductionExecutionPayload = VersionedCommand;
+
+export interface ProductionExecutionCompletionResult {
+  productionBatchId: string;
+  batchStatus: 'completed';
+  completedQuantity: string;
+  completedAt: string;
+  completedById: string;
+  version: number;
+}
+
 /** 日志模块枚举值 */
 export const OPERATION_LOG_MODULE_OPTIONS = [
   { label: '认证登录', value: 'auth' },

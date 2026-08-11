@@ -352,6 +352,20 @@ describe('productionApi', () => {
     ]);
   });
 
+  it('checks and completes production execution without an idempotency header or client quantity', async () => {
+    const { productionApi } = await import('../production');
+    await productionApi.getExecutionCompletionCheck('1');
+    await productionApi.completeProductionExecution('1', 4);
+    expect(request.mock.calls.slice(-2).map(([config]) => config)).toEqual([
+      { url: '/production/batches/1/execution-completion-check' },
+      {
+        url: '/production/batches/1/actions/complete-execution',
+        method: 'POST',
+        data: { version: 4 },
+      },
+    ]);
+  });
+
   it('uses idempotency only for report creation and correction, not reversal', async () => {
     const { productionApi } = await import('../production');
     const createBody = { version: 3, normalQuantity: 2, abnormalQuantity: 1, remark: null };

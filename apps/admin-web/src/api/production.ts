@@ -27,6 +27,8 @@ import type {
   CorrectBatchStepReportPayload,
   CreateBatchStepReportPayload,
   ProductionExecutionRecordGroup,
+  ProductionExecutionCompletionCheck,
+  ProductionExecutionCompletionResult,
   ReverseBatchStepReportPayload,
 } from '@company/contracts';
 import { toRequestError, type RetryRequestConfig } from '@company/request';
@@ -206,6 +208,18 @@ export const productionApi = {
   getBatchExecutionRecords: (batchId: string) =>
     request<ProductionExecutionRecordGroup>({
       url: `/production/batches/${batchId}/execution-records`,
+    }),
+
+  getExecutionCompletionCheck: (batchId: string) =>
+    request<ProductionExecutionCompletionCheck>({
+      url: `/production/batches/${batchId}/execution-completion-check`,
+    }),
+
+  completeProductionExecution: (batchId: string, version: number) =>
+    request<ProductionExecutionCompletionResult>({
+      url: `/production/batches/${batchId}/actions/complete-execution`,
+      method: 'POST',
+      data: { version },
     }),
 
   createStepReport: (

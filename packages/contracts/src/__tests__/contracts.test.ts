@@ -7,6 +7,7 @@ import type {
   CorrectBatchStepReportPayload,
   ProductionMaterialDemandItem,
   ProductionWorkerTaskItem,
+  CompleteProductionExecutionPayload,
 } from '../index.js';
 
 describe('auth contract', () => {
@@ -41,6 +42,13 @@ describe('production execution contracts', () => {
     expect(report).not.toHaveProperty('completedQuantity');
     expect(report).not.toHaveProperty('qualifiedQuantity');
     expect(correction.reason).toBeTruthy();
+  });
+
+  it('keeps execution completion server-derived', () => {
+    const payload: CompleteProductionExecutionPayload = { version: 5 };
+    expect(payload).toEqual({ version: 5 });
+    expect(payload).not.toHaveProperty('completedQuantity');
+    expect(payload).not.toHaveProperty('qualifiedQuantity');
   });
 });
 

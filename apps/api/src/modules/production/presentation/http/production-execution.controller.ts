@@ -10,11 +10,29 @@ import { VersionedCommandDto } from '../../../../presentation/http/dto/versioned
 import { ProductionExecutionService } from '../../application/production-execution.service.js';
 import { ProductionDomainExceptionFilter } from './production-domain-exception.filter.js';
 import { AssignProductionStepDto, BatchStepRecordParamDto } from './dto/production.dto.js';
+import { BatchIdParamDto } from './dto/production-material.dto.js';
 
 @Controller('production')
 @UseFilters(ProductionDomainExceptionFilter)
 export class ProductionExecutionController {
   constructor(private readonly service: ProductionExecutionService) {}
+
+  @Get('batches/:batchId/execution-completion-check')
+  @RequirePermission(PERMISSIONS.production.tasks.view)
+  completionCheck(@Param() { batchId }: BatchIdParamDto) {
+    return this.service.getCompletionCheck(batchId);
+  }
+
+  @Post('batches/:batchId/actions/complete-execution')
+  @RequirePermission(PERMISSIONS.production.steps.manageExecution)
+  @AuditInApplication()
+  completeExecution(
+    @Param() { batchId }: BatchIdParamDto,
+    @Body() body: VersionedCommandDto,
+    @CurrentCommandContext() context: CommandContext,
+  ) {
+    return this.service.completeExecution(batchId, body.version, context);
+  }
 
   @Get('worker-tasks')
   @RequirePermission(PERMISSIONS.production.workerTasks.view)

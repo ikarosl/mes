@@ -4,6 +4,7 @@ import type {
   BatchStepReportItem,
   ProductionBatchItem,
   ProductionExecutionRecordGroup,
+  ProductionExecutionCompletionCheck,
 } from '@company/contracts';
 import { productionApi } from '../../../api/production';
 import { useIdempotentIntent } from '../../../composables/idempotency/useIdempotentIntent';
@@ -15,6 +16,7 @@ export const useProductionExecutionRecords = () => {
   const detailLoading = ref(false);
   const selectedBatchId = ref<string | null>(null);
   const record = ref<ProductionExecutionRecordGroup | null>(null);
+  const completionCheck = ref<ProductionExecutionCompletionCheck | null>(null);
   const pendingKeys = ref(new Set<string>());
   const correctionIntents = new Map<string, ReturnType<typeof useIdempotentIntent>>();
 
@@ -30,6 +32,7 @@ export const useProductionExecutionRecords = () => {
       total.value = result.total;
       if (!result.items.some((item) => item.id === selectedBatchId.value)) {
         record.value = null;
+        completionCheck.value = null;
         selectedBatchId.value = null;
         if (result.items[0]) await selectBatch(result.items[0].id);
       }
@@ -41,7 +44,12 @@ export const useProductionExecutionRecords = () => {
     selectedBatchId.value = batchId;
     detailLoading.value = true;
     try {
-      record.value = await productionApi.getBatchExecutionRecords(batchId);
+      const [nextRecord, nextCompletionCheck] = await Promise.all([
+        productionApi.getBatchExecutionRecords(batchId),
+        productionApi.getExecutionCompletionCheck(batchId),
+      ]);
+      record.value = nextRecord;
+      completionCheck.value = nextCompletionCheck;
     } finally {
       detailLoading.value = false;
     }
@@ -110,6 +118,14 @@ export const useProductionExecutionRecords = () => {
       correctionIntents.delete(report.reportId);
       await selectBatch(step.productionBatchId);
     });
+  const completeExecution = (): Promise<void> => {
+    const check = completionCheck.value;
+    if (!check) return Promise.resolve();
+    return withPending(`complete:${check.productionBatchId}`, async () => {
+      await productionApi.completeProductionExecution(check.productionBatchId, check.version);
+      await selectBatch(check.productionBatchId);
+    });
+  };
 
   return {
     batches,
@@ -118,10 +134,12 @@ export const useProductionExecutionRecords = () => {
     detailLoading,
     selectedBatchId,
     record,
+    completionCheck,
     pendingKeys,
     loadBatches,
     selectBatch,
     reverse,
     correct,
+    completeExecution,
   };
 };

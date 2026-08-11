@@ -4,6 +4,8 @@ import { useProductionExecutionRecords } from '../useProductionExecutionRecords'
 const api = vi.hoisted(() => ({
   listBatches: vi.fn(),
   getBatchExecutionRecords: vi.fn(),
+  getExecutionCompletionCheck: vi.fn(),
+  completeProductionExecution: vi.fn(),
   correctStepReport: vi.fn(),
   reverseStepReport: vi.fn(),
 }));
@@ -13,7 +15,16 @@ const batch = (id: string) => ({ id, batchNo: `PB-${id}` });
 const group = (id: string) => ({ productionBatchId: id, batchNo: `PB-${id}`, steps: [] });
 
 describe('useProductionExecutionRecords', () => {
-  beforeEach(() => Object.values(api).forEach((mock) => mock.mockReset()));
+  beforeEach(() => {
+    Object.values(api).forEach((mock) => mock.mockReset());
+    api.getExecutionCompletionCheck.mockResolvedValue({
+      productionBatchId: '1',
+      batchStatus: 'doing',
+      version: 4,
+      canComplete: true,
+      blockers: [],
+    });
+  });
 
   it('keeps the selected detail within the current filtered page', async () => {
     api.listBatches.mockResolvedValueOnce({ items: [batch('1')], total: 1 });
@@ -48,5 +59,16 @@ describe('useProductionExecutionRecords', () => {
       expect.any(String),
     );
     expect(api.getBatchExecutionRecords).toHaveBeenCalledWith('1');
+  });
+
+  it('uses the server check version and refreshes the projection after completion', async () => {
+    api.getBatchExecutionRecords.mockResolvedValue(group('1'));
+    api.completeProductionExecution.mockResolvedValue({ batchStatus: 'completed' });
+    const state = useProductionExecutionRecords();
+    await state.selectBatch('1');
+    await state.completeExecution();
+    expect(api.completeProductionExecution).toHaveBeenCalledWith('1', 4);
+    expect(api.getBatchExecutionRecords).toHaveBeenCalledTimes(2);
+    expect(api.getExecutionCompletionCheck).toHaveBeenCalledTimes(2);
   });
 });

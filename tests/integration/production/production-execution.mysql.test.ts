@@ -393,6 +393,106 @@ describeMysql('Production execution MySQL transactions', () => {
       await cleanup(pool, fixture);
     }
   });
+
+  it('completes production execution from the final required step and naturally replays', async () => {
+    const fixture = await createFixture(pool, 'complete');
+    try {
+      await completeRequiredSteps(repository, reporting, fixture);
+      const check = await repository.getCompletionCheck(String(fixture.batchId));
+      expect(check).toMatchObject({
+        canComplete: true,
+        requiredStepCount: 2,
+        completedRequiredStepCount: 2,
+        finalRequiredStepId: String(fixture.secondStepRecordId),
+        finalEffectiveNormalQuantity: '10.0000',
+        version: 1,
+      });
+
+      const result = await repository.completeExecution(
+        String(fixture.batchId),
+        1,
+        context(fixture.actorId, `${fixture.token}-complete`),
+      );
+      const replay = await repository.completeExecution(
+        String(fixture.batchId),
+        1,
+        context(fixture.actorId, `${fixture.token}-complete-replay`),
+      );
+      expect(replay).toEqual(result);
+      expect(result).toMatchObject({
+        batchStatus: 'completed',
+        completedQuantity: '10.0000',
+        completedById: String(fixture.actorId),
+        version: 2,
+      });
+      const [[batch]] = await pool.query<
+        (RowDataPacket & { completed_quantity: string; qualified_quantity: string })[]
+      >('SELECT completed_quantity,qualified_quantity FROM production_batches WHERE id=?', [
+        fixture.batchId,
+      ]);
+      expect(batch).toMatchObject({
+        completed_quantity: '10.0000',
+        qualified_quantity: '0.0000',
+      });
+      expect(
+        await auditCount(pool, `${fixture.token}-complete`, 'production-execution.complete'),
+      ).toBe(1);
+      expect(
+        await auditCount(pool, `${fixture.token}-complete-replay`, 'production-execution.complete'),
+      ).toBe(0);
+    } finally {
+      await cleanup(pool, fixture);
+    }
+  });
+
+  it('rejects incomplete execution and rolls back completion if success audit fails', async () => {
+    const incomplete = await createFixture(pool, 'complete-incomplete');
+    try {
+      await pool.execute("UPDATE production_batches SET status='doing' WHERE id=?", [
+        incomplete.batchId,
+      ]);
+      await expect(
+        repository.completeExecution(
+          String(incomplete.batchId),
+          0,
+          context(incomplete.actorId, `${incomplete.token}-blocked`),
+        ),
+      ).rejects.toMatchObject({ code: 'REQUIRED_STEP_INCOMPLETE' });
+      expect(
+        await auditCount(pool, `${incomplete.token}-blocked`, 'production-execution.complete'),
+      ).toBe(0);
+    } finally {
+      await cleanup(pool, incomplete);
+    }
+
+    const rollback = await createFixture(pool, 'complete-audit-rollback');
+    try {
+      await completeRequiredSteps(repository, reporting, rollback);
+      await expect(
+        repository.completeExecution(
+          String(rollback.batchId),
+          1,
+          context(rollback.actorId, 'x'.repeat(500)),
+        ),
+      ).rejects.toBeDefined();
+      const [[batch]] = await pool.query<
+        (RowDataPacket & {
+          status: string;
+          completed_quantity: string;
+          completed_at: Date | null;
+        })[]
+      >('SELECT status,completed_quantity,completed_at FROM production_batches WHERE id=?', [
+        rollback.batchId,
+      ]);
+      expect(batch).toMatchObject({
+        status: 'doing',
+        completed_quantity: '0.0000',
+        completed_at: null,
+      });
+    } finally {
+      await cleanup(pool, rollback);
+    }
+  });
 });
 
 type Fixture = {
@@ -515,6 +615,37 @@ const createFixture = async (pool: Pool, suffix: string): Promise<Fixture> => {
     firstStepRecordId,
     secondStepRecordId,
   };
+};
+
+const completeRequiredSteps = async (
+  repository: MysqlProductionExecutionRepository,
+  reporting: MysqlProductionReportingRepository,
+  fixture: Fixture,
+): Promise<void> => {
+  for (const [index, stepRecordId] of [
+    fixture.firstStepRecordId,
+    fixture.secondStepRecordId,
+  ].entries()) {
+    await repository.assignStep(
+      String(fixture.batchId),
+      String(stepRecordId),
+      String(fixture.workerId),
+      0,
+      context(fixture.actorId, `${fixture.token}-complete-assign-${index}`),
+    );
+    await repository.startStep(
+      String(fixture.batchId),
+      String(stepRecordId),
+      1,
+      context(fixture.workerId, `${fixture.token}-complete-start-${index}`),
+    );
+    await reporting.createReport(
+      String(fixture.batchId),
+      String(stepRecordId),
+      { version: 2, normalQuantity: 10, abnormalQuantity: 0, remark: null },
+      context(fixture.workerId, `${fixture.token}-complete-report-${index}`),
+    );
+  }
 };
 
 const cleanup = async (pool: Pool, fixture: Fixture): Promise<void> => {

@@ -40,4 +40,17 @@ describe('ProductionExecutionService', () => {
     expect(execution.listWorkerTasks).toHaveBeenCalledWith('7');
     expect(execution.startStep).toHaveBeenCalledWith('1', '2', 3, context);
   });
+
+  it('forwards completion checks and completion with the authenticated command context', async () => {
+    const execution = {
+      getCompletionCheck: vi.fn().mockResolvedValue({ canComplete: true }),
+      completeExecution: vi.fn().mockResolvedValue({ batchStatus: 'completed' }),
+    };
+    const service = new ProductionExecutionService(execution as never, {} as never);
+
+    await service.getCompletionCheck('1');
+    await service.completeExecution('1', 3, context);
+    expect(execution.getCompletionCheck).toHaveBeenCalledWith('1');
+    expect(execution.completeExecution).toHaveBeenCalledWith('1', 3, context);
+  });
 });

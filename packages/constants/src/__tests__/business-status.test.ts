@@ -11,6 +11,7 @@ import {
   INVENTORY_SOURCE_TYPES,
   INVENTORY_TRANSACTION_TYPES,
   OUTBOUND_ORDER_STATUSES,
+  PRODUCTION_EXECUTION_COMPLETION_BLOCKERS,
   SCRAP_SCENES,
   STOCK_STATUSES,
 } from '../index';
@@ -27,6 +28,7 @@ const persistedCodeSets = [
   BATCH_STEP_ABNORMAL_DISPOSITION_TYPES,
   DEMAND_TYPES,
   OUTBOUND_ORDER_STATUSES,
+  PRODUCTION_EXECUTION_COMPLETION_BLOCKERS,
   SCRAP_SCENES,
   FINISHED_FLOW_TYPES,
 ] as const;
@@ -60,5 +62,14 @@ describe('business persisted codes', () => {
     expect(BATCH_STEP_ABNORMAL_DISPOSITION_TYPES).toEqual(['rework', 'scrap']);
     expect(BATCH_STEP_REPORT_TYPES).toEqual(['normal', 'reversal']);
     expect(DEMAND_TYPES).toEqual(['normal', 'manual_additional']);
+  });
+
+  it('keeps production execution completion blockers stable', () => {
+    expect(PRODUCTION_EXECUTION_COMPLETION_BLOCKERS).toEqual([
+      'batch_not_doing',
+      'no_required_reporting_step',
+      'required_step_incomplete',
+      'final_step_quantity_insufficient',
+    ]);
   });
 });

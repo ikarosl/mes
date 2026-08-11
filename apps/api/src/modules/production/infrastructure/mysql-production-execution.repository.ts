@@ -4,6 +4,8 @@ import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql
 import type {
   BatchStepStatus,
   ProductionBatchStatus,
+  ProductionExecutionCompletionCheck,
+  ProductionExecutionCompletionResult,
   ProductionStepCommandResult,
   ProductionWorkerTaskItem,
 } from '@company/contracts';
@@ -19,7 +21,9 @@ import {
   requireFollowingStepStartable,
 } from '../domain/production-execution.policy.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
+import { evaluateProductionExecutionCompletion } from '../domain/production-completion.policy.js';
 import { findBatch } from './mysql-production.shared.js';
+import type { BatchRow, Db } from './mysql-production.shared.js';
 
 type ExecutionStepRow = RowDataPacket & {
   id: number;
@@ -60,10 +64,80 @@ type WorkerTaskRow = RowDataPacket & {
   version: number;
 };
 
+type CompletionStepRow = RowDataPacket & {
+  id: number;
+  step_order_snapshot: number;
+  step_name_snapshot: string;
+  status: BatchStepStatus;
+  effective_normal: string;
+};
+
 @Injectable()
 export class MysqlProductionExecutionRepository extends ProductionExecutionRepository {
   constructor(@Inject(DATABASE_POOL) private readonly pool: Pool) {
     super();
+  }
+
+  async getCompletionCheck(batchId: string): Promise<ProductionExecutionCompletionCheck> {
+    const batch = await findBatch(this.pool, batchId);
+    const steps = await selectRequiredCompletionSteps(this.pool, batchId);
+    return mapCompletionCheck(batchId, batch, steps);
+  }
+
+  async completeExecution(
+    batchId: string,
+    version: number,
+    context: CommandContext,
+  ): Promise<ProductionExecutionCompletionResult> {
+    return withTransaction(this.pool, async (connection) => {
+      const actorId = context.actorId;
+      if (!actorId) throw new ProductionDomainError('INVALID_INPUT', '缺少当前操作人身份');
+      const batch = await findBatch(connection, batchId, true);
+      if (batch.status === 'completed') return completionResult(batchId, batch);
+      if (batch.status !== 'doing')
+        throw new ProductionDomainError(
+          'BATCH_EXECUTION_COMPLETION_NOT_ALLOWED',
+          '只有生产执行中的批次可以确认完工',
+        );
+      if (batch.version !== version)
+        throw new ProductionDomainError(
+          'CONCURRENT_MODIFICATION',
+          '生产批次状态已变化，请刷新后重试',
+        );
+      await connection.query(
+        'SELECT id FROM batch_step_records WHERE production_batch_id=? ORDER BY step_order_snapshot,id FOR UPDATE',
+        [batchId],
+      );
+      const steps = await selectRequiredCompletionSteps(connection, batchId);
+      const check = mapCompletionCheck(batchId, batch, steps);
+      if (!check.canComplete) throwCompletionBlocker(check);
+      const [updated] = await connection.execute<ResultSetHeader>(
+        `UPDATE production_batches
+         SET completed_quantity=?,status='completed',completed_at=NOW(),completed_by=?,updated_by=?,version=version+1
+         WHERE id=? AND status='doing' AND version=?`,
+        [check.finalEffectiveNormalQuantity, actorId, actorId, batchId, version],
+      );
+      assertVersion(updated, '生产批次状态已变化，请刷新后重试');
+      await writeTransactionalAudit(connection, {
+        logType: 'business',
+        module: 'production',
+        action: 'production-execution.complete',
+        userId: actorId,
+        targetId: batchId,
+        targetType: 'production_batch',
+        result: 'success',
+        beforeData: { status: batch.status, version: batch.version },
+        afterData: {
+          status: 'completed',
+          completedQuantity: check.finalEffectiveNormalQuantity,
+          version: version + 1,
+        },
+        requestId: context.requestId,
+        ip: context.ip,
+        userAgent: context.userAgent,
+      });
+      return completionResult(batchId, await findBatch(connection, batchId));
+    });
   }
 
   async listWorkerTasks(actorId: string): Promise<ProductionWorkerTaskItem[]> {
@@ -374,3 +448,75 @@ const auditStep = (
     ip: context.ip,
     userAgent: context.userAgent,
   });
+
+const selectRequiredCompletionSteps = async (
+  db: Db,
+  batchId: string,
+): Promise<CompletionStepRow[]> => {
+  const [rows] = await db.query<CompletionStepRow[]>(
+    `SELECT sr.id,sr.step_order_snapshot,sr.step_name_snapshot,sr.status,
+      COALESCE(SUM(CASE WHEN r.report_type='normal' THEN r.normal_quantity ELSE -r.normal_quantity END),0) effective_normal
+     FROM batch_step_records sr
+     LEFT JOIN batch_step_reports r ON r.batch_step_record_id=sr.id
+     WHERE sr.production_batch_id=? AND sr.need_record_snapshot=1
+     GROUP BY sr.id,sr.step_order_snapshot,sr.step_name_snapshot,sr.status
+     ORDER BY sr.step_order_snapshot,sr.id`,
+    [batchId],
+  );
+  return rows;
+};
+
+const mapCompletionCheck = (
+  batchId: string,
+  batch: BatchRow,
+  steps: CompletionStepRow[],
+): ProductionExecutionCompletionCheck =>
+  evaluateProductionExecutionCompletion({
+    productionBatchId: batchId,
+    batchStatus: batch.status,
+    version: batch.version,
+    plannedQuantity: batch.planned_quantity,
+    requiredSteps: steps.map((step) => ({
+      id: String(step.id),
+      order: step.step_order_snapshot,
+      name: step.step_name_snapshot,
+      status: step.status,
+      effectiveNormalQuantity: step.effective_normal,
+    })),
+  });
+
+const throwCompletionBlocker = (check: ProductionExecutionCompletionCheck): never => {
+  const blocker = check.blockers[0];
+  if (blocker === 'no_required_reporting_step')
+    throw new ProductionDomainError(
+      'NO_REQUIRED_REPORTING_STEP',
+      '批次没有必报工工序，不能执行完工',
+    );
+  if (blocker === 'required_step_incomplete')
+    throw new ProductionDomainError('REQUIRED_STEP_INCOMPLETE', '仍有必报工工序尚未完成');
+  if (blocker === 'final_step_quantity_insufficient')
+    throw new ProductionDomainError(
+      'FINAL_STEP_QUANTITY_INSUFFICIENT',
+      '末道必报工工序的有效正常数量未达到批次计划数量',
+    );
+  throw new ProductionDomainError(
+    'BATCH_EXECUTION_COMPLETION_NOT_ALLOWED',
+    '只有生产执行中的批次可以确认完工',
+  );
+};
+
+const completionResult = (
+  batchId: string,
+  batch: BatchRow,
+): ProductionExecutionCompletionResult => {
+  if (batch.status !== 'completed' || !batch.completed_at || batch.completed_by === null)
+    throw new ProductionDomainError('CONFLICT', '生产批次完工结果不完整');
+  return {
+    productionBatchId: batchId,
+    batchStatus: 'completed',
+    completedQuantity: batch.completed_quantity,
+    completedAt: toBeijingISOString(batch.completed_at),
+    completedById: String(batch.completed_by),
+    version: batch.version,
+  };
+};

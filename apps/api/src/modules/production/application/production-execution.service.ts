@@ -11,6 +11,15 @@ export class ProductionExecutionService {
     private readonly identity: IdentityDirectoryService,
   ) {}
 
+  getCompletionCheck(batchId: string) {
+    return this.execution.getCompletionCheck(batchId);
+  }
+
+  completeExecution(batchId: string, version: number, context: CommandContext) {
+    if (!context.actorId) throw new ProductionDomainError('INVALID_INPUT', '缺少当前操作人身份');
+    return this.execution.completeExecution(batchId, version, context);
+  }
+
   listMyTasks(context: CommandContext) {
     if (!context.actorId) throw new ProductionDomainError('NOT_STEP_ASSIGNEE', '缺少当前员工身份');
     return this.execution.listWorkerTasks(context.actorId);
