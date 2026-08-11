@@ -3,10 +3,10 @@ services:
     image: mysql:8.4
     command: --default-time-zone=+08:00
     environment:
-      MYSQL_DATABASE: ${DB_NAME:?DB_NAME is required}
+      MYSQL_DATABASE: ${TEST_DB_NAME:-easy_mes_test}
       MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
-    ports: ['3306:3306']
-    volumes: ['mysql-data:/var/lib/mysql']
+    ports: ['${TEST_DB_PORT:-3307}:3306']
+    volumes: ['mysql-integration-data:/var/lib/mysql']
     healthcheck:
       test: ['CMD', 'mysqladmin', 'ping', '-h', '127.0.0.1']
       interval: 5s
@@ -34,5 +34,5 @@ services:
       retries: 30
     restart: unless-stopped
 volumes:
-  mysql-data:
+  mysql-integration-data:
   minio-data:

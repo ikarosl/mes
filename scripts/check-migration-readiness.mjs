@@ -26,6 +26,7 @@ const allowedTables = new Set([
   'production_batches',
   'batch_step_records',
   'batch_step_reports',
+  'batch_step_abnormal_dispositions',
   'production_item_demand',
 ]);
 const forbiddenModels = [

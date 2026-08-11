@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { generateBatchNo } from '@company/code-rules';
+import { DEMAND_TYPE } from '@company/constants';
 import { withTransaction } from '@company/database';
 import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import type {
@@ -300,7 +301,7 @@ export class MysqlProductionBatchRepository {
         throw new ProductionDomainError('INVALID_INPUT', 'BOM 与生产批次产品不一致');
       for (const line of bom.lines) {
         await connection.execute(
-          `INSERT INTO production_item_demand (production_batch_id,product_material_id,item_id,quantity_per_unit_snapshot,unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,planned_output_quantity_snapshot,need_number,demand_type,idempotency_key,business_status,created_by,updated_by) VALUES (?,?,?,?,?,?,?,?,?,0,?,'active',?,?)`,
+          `INSERT INTO production_item_demand (production_batch_id,product_material_id,item_id,quantity_per_unit_snapshot,unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,planned_output_quantity_snapshot,need_number,demand_type,idempotency_key,business_status,created_by,updated_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,'active',?,?)`,
           [
             batchId,
             line.productMaterialId,
@@ -311,6 +312,7 @@ export class MysqlProductionBatchRepository {
             Number(line.needBatchRecord),
             batch.planned_quantity,
             multiply(line.quantityPerUnit, batch.planned_quantity),
+            DEMAND_TYPE.normal,
             `NORMAL:${batchId}:${line.productMaterialId}`,
             audit.actorId,
             audit.actorId,

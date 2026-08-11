@@ -86,6 +86,8 @@ jobs:
         env:
           {
             RUN_MYSQL_INTEGRATION: '1',
+            TEST_DB_HOST: 127.0.0.1,
+            TEST_DB_PORT: 3306,
             DB_HOST: 127.0.0.1,
             DB_PORT: 3306,
             DB_USER: mes,

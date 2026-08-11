@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   ALLOCATION_STATUSES,
+  BATCH_STEP_ABNORMAL_DISPOSITION_TYPES,
+  BATCH_STEP_ABNORMAL_REVIEW_STATUSES,
+  BATCH_STEP_STATUSES,
+  DEMAND_TYPES,
   FINISHED_FLOW_TYPES,
   INVENTORY_REFERENCE_TYPES,
   INVENTORY_SOURCE_TYPES,
@@ -16,6 +20,10 @@ const persistedCodeSets = [
   INVENTORY_TRANSACTION_TYPES,
   INVENTORY_REFERENCE_TYPES,
   ALLOCATION_STATUSES,
+  BATCH_STEP_STATUSES,
+  BATCH_STEP_ABNORMAL_REVIEW_STATUSES,
+  BATCH_STEP_ABNORMAL_DISPOSITION_TYPES,
+  DEMAND_TYPES,
   OUTBOUND_ORDER_STATUSES,
   SCRAP_SCENES,
   FINISHED_FLOW_TYPES,
@@ -37,5 +45,17 @@ describe('business persisted codes', () => {
       'production_consumed',
       'in_stock',
     ]);
+  });
+
+  it('separates step execution, abnormal review and current demand type codes', () => {
+    expect(BATCH_STEP_STATUSES).toEqual(['pending', 'assigned', 'doing', 'completed']);
+    expect(BATCH_STEP_ABNORMAL_REVIEW_STATUSES).toEqual([
+      'pending_review',
+      'approved',
+      'rejected',
+      'cancelled',
+    ]);
+    expect(BATCH_STEP_ABNORMAL_DISPOSITION_TYPES).toEqual(['rework', 'scrap']);
+    expect(DEMAND_TYPES).toEqual(['normal', 'manual_additional']);
   });
 });

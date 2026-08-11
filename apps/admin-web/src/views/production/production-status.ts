@@ -35,7 +35,6 @@ export const STEP_STATUS_META: StatusMeta<BatchStepStatus>[] = [
   { value: 'assigned', label: '已派工', type: 'primary' },
   { value: 'doing', label: '进行中', type: 'primary' },
   { value: 'completed', label: '已完成', type: 'success' },
-  { value: 'abnormal', label: '异常', type: 'danger' },
 ];
 
 export const STEP_STATUS_LABELS: Record<string, string> = Object.fromEntries(

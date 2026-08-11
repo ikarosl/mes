@@ -33,13 +33,9 @@
 
 根级 Integration 测试由 `typecheck:integration` 纳入 `pnpm verify`；即使运行时依赖未启动，也必须通过静态类型检查。
 
-Production 的事务、并发建批、物料需求快照、报工事实约束/聚合和幂等键需要在真实 MySQL 中验证。该测试直接调用 Repository 和真实 MySQL，不经过浏览器，因此属于 Integration，不属于 E2E。启动专用测试 MySQL，并设置 `RUN_MYSQL_INTEGRATION=1`、`TEST_DB_NAME`、`DB_NAME` 与 `ADMIN_PASSWORD` 后，执行 `pnpm test:production:mysql`（环境变量设置方式任选其一）：
+Production 的事务、并发建批、物料需求快照、报工事实约束/聚合和幂等键需要在真实 MySQL 中验证。该测试直接调用 Repository 和真实 MySQL，不经过浏览器，因此属于 Integration，不属于 E2E。开发运行使用 Windows 宿主机 `3306`；本地集成测试 WSL Docker 使用 `3307:3306`（宿主:容器）；CI 服务容器使用 `3306`。完整的 PowerShell/Bash 命令见根 [README](../README.md#数据库命令)。
 
-- PowerShell：`$env:RUN_MYSQL_INTEGRATION='1'; $env:TEST_DB_NAME='easy_mes_test'; $env:DB_NAME='easy_mes_test'`，再执行 `pnpm test:production:mysql`；
-- Bash：`RUN_MYSQL_INTEGRATION=1 TEST_DB_NAME=easy_mes_test DB_NAME=easy_mes_test pnpm test:production:mysql`；
-- 或直接在仓库根 `.env` 中写入这三个变量：`scripts/assert-mysql-integration-enabled.mjs` 会在任何判定前先加载 `.env`；系统环境变量（PowerShell `$env:`）优先于 `.env`，`.env` 不会覆盖已注入的变量。
-
-该命令会先检查显式开关与专用测试库门禁（`TEST_DB_NAME` 必填，`DB_NAME` 必须与 `TEST_DB_NAME` 完全相等且库名以 `_test` 结尾，开发/生产库名一律拒绝），随后构建所需 workspace，复用 `db:init` 执行 migration、系统 seed 和管理员初始化，再重复执行一次 seed 证明幂等性，最后运行 `tests/integration` 全套测试
+该命令会先检查显式开关与专用测试端点门禁：`TEST_DB_HOST/PORT/NAME` 必填，`DB_HOST/PORT/NAME` 必须分别与之完全相等，并且库名必须以 `_test` 结尾。通过后构建所需 workspace，复用 `db:init` 执行 migration、系统 seed 和管理员初始化，再重复执行一次 seed 证明幂等性，最后运行 `tests/integration` 全套测试
 （`vitest.mysql.config.ts` 的 include 为 `tests/integration/**/*.test.ts`，当前共 5 个文件：
 `production/production-persistence.mysql.test.ts`、`identity/rbac-persistence.mysql.test.ts`、
 `idempotency/http-idempotency.mysql.test.ts`、`idempotency/create-batch-closed-loop.mysql.test.ts` 与

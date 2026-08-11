@@ -41,6 +41,10 @@ describeMysql('Production MySQL persistence', () => {
         fixture.batchId,
       ]);
       await pool.execute(
+        'DELETE FROM batch_step_abnormal_dispositions WHERE production_batch_id=?',
+        [fixture.batchId],
+      );
+      await pool.execute(
         'DELETE FROM batch_step_reports WHERE production_batch_id=? AND (reversal_of_report_id IS NOT NULL OR replaces_report_id IS NOT NULL)',
         [fixture.batchId],
       );
@@ -108,7 +112,7 @@ describeMysql('Production MySQL persistence', () => {
     );
 
     const [demands] = await pool.query<DemandRow[]>(
-      'SELECT quantity_per_unit_snapshot,unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,planned_output_quantity_snapshot,need_number,idempotency_key FROM production_item_demand WHERE production_batch_id=?',
+      'SELECT quantity_per_unit_snapshot,unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,planned_output_quantity_snapshot,need_number,demand_type,idempotency_key FROM production_item_demand WHERE production_batch_id=?',
       [fixture.batchId],
     );
     expect(demands).toEqual([
@@ -119,9 +123,28 @@ describeMysql('Production MySQL persistence', () => {
         need_batch_record_snapshot: 0,
         planned_output_quantity_snapshot: '3.0000',
         need_number: '0.3000',
+        demand_type: 'normal',
         idempotency_key: `NORMAL:${fixture.batchId}:${fixture.productMaterialId}`,
       },
     ]);
+    const [[demandTypeColumn]] = await pool.query<
+      (RowDataPacket & { data_type_value: string; column_default_value: string })[]
+    >(
+      `SELECT data_type AS data_type_value,column_default AS column_default_value
+       FROM information_schema.columns
+       WHERE table_schema=DATABASE() AND table_name='production_item_demand'
+         AND column_name='demand_type'`,
+    );
+    expect(demandTypeColumn).toEqual({
+      data_type_value: 'varchar',
+      column_default_value: 'normal',
+    });
+    await expect(
+      pool.execute(
+        "UPDATE production_item_demand SET demand_type='manual_additional' WHERE production_batch_id=?",
+        [fixture.batchId],
+      ),
+    ).rejects.toMatchObject({ code: 'ER_CHECK_CONSTRAINT_VIOLATED' });
     const [[batch]] = await pool.query<(RowDataPacket & { status: string; version: number })[]>(
       'SELECT status,version FROM production_batches WHERE id=?',
       [fixture.batchId],
@@ -259,6 +282,88 @@ describeMysql('Production MySQL persistence', () => {
     );
     expect(legacyColumns).toHaveLength(0);
   });
+
+  it('enforces abnormal disposition identity, review state and separated step status', async () => {
+    const token = `disposition-${Date.now()}-${process.pid}`;
+    const reportId = await insert(
+      pool,
+      `INSERT INTO batch_step_reports
+        (report_no,production_batch_id,batch_step_record_id,report_type,reported_quantity,normal_quantity,abnormal_quantity,unit_snapshot,created_by)
+       VALUES (?,?,?,'normal',?,?,?,?,?)`,
+      [
+        `${token}-report`,
+        fixture.batchId,
+        fixture.batchStepRecordId,
+        '2.0000',
+        '1.0000',
+        '1.0000',
+        'pcs',
+        fixture.actorId,
+      ],
+    );
+    const dispositionId = await insert(
+      pool,
+      `INSERT INTO batch_step_abnormal_dispositions
+        (disposition_no,production_batch_id,batch_step_record_id,batch_step_report_id,created_by,updated_by)
+       VALUES (?,?,?,?,?,?)`,
+      [
+        `${token}-disposition`,
+        fixture.batchId,
+        fixture.batchStepRecordId,
+        reportId,
+        fixture.actorId,
+        fixture.actorId,
+      ],
+    );
+
+    await expect(
+      pool.execute(
+        `INSERT INTO batch_step_abnormal_dispositions
+          (disposition_no,production_batch_id,batch_step_record_id,batch_step_report_id,created_by,updated_by)
+         VALUES (?,?,?,?,?,?)`,
+        [
+          `${token}-duplicate`,
+          fixture.batchId,
+          fixture.batchStepRecordId,
+          reportId,
+          fixture.actorId,
+          fixture.actorId,
+        ],
+      ),
+    ).rejects.toMatchObject({ code: 'ER_DUP_ENTRY' });
+
+    await expect(
+      pool.execute(
+        "UPDATE batch_step_abnormal_dispositions SET review_status='approved' WHERE id=?",
+        [dispositionId],
+      ),
+    ).rejects.toMatchObject({ code: 'ER_CHECK_CONSTRAINT_VIOLATED' });
+
+    await pool.execute(
+      `UPDATE batch_step_abnormal_dispositions
+       SET review_status='approved',disposition_type='scrap',reviewed_by=?,reviewed_at=CURRENT_TIMESTAMP,
+           version=version+1,updated_by=?
+       WHERE id=? AND version=0`,
+      [fixture.actorId, fixture.actorId, dispositionId],
+    );
+    const [[disposition]] = await pool.query<DispositionRow[]>(
+      `SELECT review_status,disposition_type,reviewed_by,version
+       FROM batch_step_abnormal_dispositions WHERE id=?`,
+      [dispositionId],
+    );
+    expect(disposition).toMatchObject({
+      review_status: 'approved',
+      disposition_type: 'scrap',
+      reviewed_by: fixture.actorId,
+      version: 1,
+    });
+
+    await expect(
+      pool.execute("UPDATE batch_step_records SET status='abnormal' WHERE id=?", [
+        fixture.batchStepRecordId,
+      ]),
+    ).rejects.toMatchObject({ code: 'ER_CHECK_CONSTRAINT_VIOLATED' });
+  });
 });
 
 interface Fixture {
@@ -284,7 +389,15 @@ type DemandRow = RowDataPacket & {
   need_batch_record_snapshot: number;
   planned_output_quantity_snapshot: string;
   need_number: string;
+  demand_type: string;
   idempotency_key: string;
+};
+
+type DispositionRow = RowDataPacket & {
+  review_status: string;
+  disposition_type: string | null;
+  reviewed_by: number | null;
+  version: number;
 };
 
 const createFixture = async (pool: Pool): Promise<Fixture> => {

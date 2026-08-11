@@ -83,7 +83,7 @@ export type StepRow = RowDataPacket & {
   responsible_user_id: number | null;
   need_record_snapshot: number;
   need_inspection_snapshot: number;
-  status: 'pending' | 'assigned' | 'doing' | 'completed' | 'abnormal';
+  status: 'pending' | 'assigned' | 'doing' | 'completed';
   started_at: Date | null;
   completed_at: Date | null;
   output_quantity: string;

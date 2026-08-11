@@ -5,23 +5,33 @@ import { migrationsDir } from '../migration-utils.js';
 
 describe('production core migration', () => {
   it('defines the Production persistence tables, immutable demand snapshot and paired rollbacks', async () => {
-    const [core, demand, planDates, execution, alignment, reports] = await Promise.all([
-      readMigration('202607300001-production-core.up.sql'),
-      readMigration('202607300002-production-item-demand.up.sql'),
-      readMigration('202607300003-production-batch-plan-dates.up.sql'),
-      readMigration('202607300004-production-batch-step-execution-overrides.up.sql'),
-      readMigration('202607300005-production-demand-design-alignment.up.sql'),
-      readMigration('202608100001-batch-step-reports.up.sql'),
-    ]);
-    const [coreDown, demandDown, planDatesDown, executionDown, alignmentDown, reportsDown] =
+    const [core, demand, planDates, execution, alignment, reports, designAlignment] =
       await Promise.all([
-        readMigration('202607300001-production-core.down.sql'),
-        readMigration('202607300002-production-item-demand.down.sql'),
-        readMigration('202607300003-production-batch-plan-dates.down.sql'),
-        readMigration('202607300004-production-batch-step-execution-overrides.down.sql'),
-        readMigration('202607300005-production-demand-design-alignment.down.sql'),
-        readMigration('202608100001-batch-step-reports.down.sql'),
+        readMigration('202607300001-production-core.up.sql'),
+        readMigration('202607300002-production-item-demand.up.sql'),
+        readMigration('202607300003-production-batch-plan-dates.up.sql'),
+        readMigration('202607300004-production-batch-step-execution-overrides.up.sql'),
+        readMigration('202607300005-production-demand-design-alignment.up.sql'),
+        readMigration('202608100001-batch-step-reports.up.sql'),
+        readMigration('202608110001-production-abnormal-dispositions-and-demand-type-codes.up.sql'),
       ]);
+    const [
+      coreDown,
+      demandDown,
+      planDatesDown,
+      executionDown,
+      alignmentDown,
+      reportsDown,
+      designAlignmentDown,
+    ] = await Promise.all([
+      readMigration('202607300001-production-core.down.sql'),
+      readMigration('202607300002-production-item-demand.down.sql'),
+      readMigration('202607300003-production-batch-plan-dates.down.sql'),
+      readMigration('202607300004-production-batch-step-execution-overrides.down.sql'),
+      readMigration('202607300005-production-demand-design-alignment.down.sql'),
+      readMigration('202608100001-batch-step-reports.down.sql'),
+      readMigration('202608110001-production-abnormal-dispositions-and-demand-type-codes.down.sql'),
+    ]);
 
     expect(core).toContain('CREATE TABLE work_orders');
     expect(core).toContain('CREATE TABLE production_batches');
@@ -49,6 +59,20 @@ describe('production core migration', () => {
     expect(reports).toContain(
       "api_path = '/api/production/batches/:batchId/step-records/:recordId/reports'",
     );
+    expect(designAlignment).toContain('CREATE TABLE batch_step_abnormal_dispositions');
+    expect(designAlignment).toContain(
+      'UNIQUE KEY uk_batch_step_abnormal_dispositions_report (batch_step_report_id)',
+    );
+    expect(designAlignment).toContain(
+      'REFERENCES batch_step_reports(id, batch_step_record_id, production_batch_id)',
+    );
+    expect(designAlignment).toContain("status IN ('pending', 'assigned', 'doing', 'completed')");
+    expect(designAlignment).toContain('MODIFY COLUMN demand_type VARCHAR(30)');
+    expect(designAlignment).toContain("WHEN '0' THEN 'normal'");
+    expect(designAlignment).toContain("WHEN '1' THEN 'manual_additional'");
+    expect(designAlignment).toContain("demand_type IN ('normal', 'manual_additional')");
+    expect(designAlignment).toContain("report.report_type = 'normal'");
+    expect(designAlignment).toContain('reversal.reversal_of_report_id = report.id');
     expect(coreDown).toContain('DROP TABLE batch_step_records;');
     expect(demandDown).toContain('DROP TABLE production_item_demand;');
     expect(planDatesDown).toContain('DROP COLUMN plan_end_date');
@@ -58,6 +82,11 @@ describe('production core migration', () => {
     expect(reportsDown).toContain('ADD COLUMN output_quantity');
     expect(reportsDown).toContain('DROP TABLE batch_step_reports;');
     expect(reportsDown).toContain("api_method = 'PATCH'");
+    expect(designAlignmentDown).toContain('DROP TABLE batch_step_abnormal_dispositions;');
+    expect(designAlignmentDown).toContain('MODIFY COLUMN demand_type TINYINT');
+    expect(designAlignmentDown).toContain(
+      "status IN ('pending', 'assigned', 'doing', 'completed', 'abnormal')",
+    );
   });
 
   it('removes every seeded Production permission before removing its parent menu', async () => {

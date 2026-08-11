@@ -205,7 +205,7 @@
 | `route_code_snapshot`    | `VARCHAR(64)`     | 路线编码快照                    |
 | `route_version_snapshot` | `VARCHAR(64)`     | 路线版本快照                    |
 | `planned_quantity`       | `DECIMAL(12,4)`   | 本批次计划生产数量              |
-| `completed_quantity`     | `DECIMAL(12,4)`   | 最终完成数量，默认 `0`          |
+| `completed_quantity`     | `DECIMAL(12,4)`   | 生产执行完成数量，默认 `0`；批次完工时由服务端从报工事实推导 |
 | `qualified_quantity`     | `DECIMAL(12,4)`   | 最终合格数量，默认 `0`          |
 | `plan_start_date`        | `DATE`            | 本批次计划开始日期，可为空        |
 | `plan_end_date`          | `DATE`            | 本批次计划完工日期，可为空        |
@@ -249,6 +249,14 @@
 | `completed`         | 生产完成               |
 | `cancelled`         | 已取消                 |
 
+当前生产执行完工数量规则：
+
+- 以本批次中 `need_record_snapshot = 1` 且 `step_order_snapshot` 最大的工序作为数量来源工序；`completed_quantity` 等于该工序从 `batch_step_reports` 聚合得到的 `effective_normal`。
+- 完工命令必须在事务内重新锁定并校验所有必报工工序均为 `completed`，重新聚合数量后写入；客户端不得提交或覆盖 `completed_quantity`。
+- 当前至少需要存在一道必报工工序；没有数量来源工序的批次不得执行完工确认。
+- 当前不支持正常数量低于要求数量时的短批完工。确需按不足数量结束时，未来以独立的短批完工/生产损失确认命令记录差额、原因、确认人与审计，不得通过人工填写 `completed_quantity` 绕过报工事实。
+- `qualified_quantity` 不由生产执行完工命令写入；它只允许来自未来独立的最终质量结论。
+
 说明：
 
 - `production_batches` 是生产执行批次，不是库存批次。
@@ -260,4 +268,3 @@
 - 一个生产批次可以产生多个库存批次，例如半成品批次、成品批次、待检批次。
 
 ---
-

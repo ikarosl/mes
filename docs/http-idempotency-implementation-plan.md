@@ -4,9 +4,8 @@
 > MySQL `IdempotencyExecutor` 与平台 module、架构门禁、`@IdempotentEndpoint({ scope })` 端点门禁、
 > `AuditInterceptor` 409 修复、**到期清理 + 运行观测**）与阶段 B（createBatch 试点：Service/Controller
 > 接线、前端 `useIdempotentIntent` 意图、契约测试）已按本文落地，当前进度 **released**（代码契约启用
-> 层面，口径见下文「进度口径」一节；2026-08-07 本地
-> （PowerShell：`$env:RUN_MYSQL_INTEGRATION='1'; $env:TEST_DB_NAME='easy_mes_test'; $env:DB_NAME='easy_mes_test'`；
-> Bash：`RUN_MYSQL_INTEGRATION=1 TEST_DB_NAME=easy_mes_test DB_NAME=easy_mes_test pnpm test:production:mysql`）
+> 层面，口径见下文「进度口径」一节；2026-08-07 本地（当前可复现命令见根 README，
+> WSL Docker 使用宿主 `3307` 端口与 `easy_mes_test` 专用库）
 > 全量集成套件实测通过，
 > 5 文件 / 29 用例，含 HTTP 管线、真实锁等待与过期清理用例，见 §11；CI 已新增 `integration-mysql`
 > 作业在专用测试库 `company_mes_next_test` 上执行同一套件，待首次运行确认）。瞬态错误契约已覆盖完整
@@ -42,10 +41,9 @@
 当前状态：**released**（代码契约启用层面：`api-conventions.md` §7 与 `concurrency-and-idempotency.md` §3.3
 已声明 `Idempotency-Key` 必填、前端 `useIdempotentIntent` 已发送、§12 验收门槛满足）。支撑证据：
 2026-08-07 `pnpm verify` 全绿（18/18 任务，apps/api 42 文件 / 310 用例、admin-web 43 文件 / 257 用例），且
-（PowerShell：`$env:RUN_MYSQL_INTEGRATION='1'; $env:TEST_DB_NAME='easy_mes_test'; $env:DB_NAME='easy_mes_test'`；
-Bash：`RUN_MYSQL_INTEGRATION=1 TEST_DB_NAME=easy_mes_test DB_NAME=easy_mes_test pnpm test:production:mysql`）
-本地实测通过（先经 `scripts/assert-mysql-integration-enabled.mjs` 校验显式开关与专用测试库门禁：
-`TEST_DB_NAME` 必填、`DB_NAME` 必须与 `TEST_DB_NAME` 完全相等且库名必须以 `_test` 结尾，本地在
+本地实测通过（当前可复现命令见根 README；先经
+`scripts/assert-mysql-integration-enabled.mjs` 校验显式开关与专用测试端点/库门禁：
+`TEST_DB_HOST/PORT/NAME` 必填，`DB_HOST/PORT/NAME` 必须分别与之完全相等，且库名必须以 `_test` 结尾，本地在
 `easy_mes_test` 上完成；构建 utils/constants/database 后通过 `db:init` 完成 migration、系统 seed 和
 管理员初始化，复验 seed 幂等性后运行 `tests/integration` 全套，5 文件 / 29 用例，覆盖项见 §11）。
 瞬态错误契约覆盖完整事务边界：事务内语句（登记 INSERT、handler 内业务 SQL、重放 SELECT、completed
@@ -576,18 +574,22 @@ Repository 的 `material_pending` 短路之前，会先重新查询批次产品�
 ### 真实 MySQL 集成测试
 
 > 以下用例均已落地（进度 released，见「进度口径」）；执行需显式设置 `RUN_MYSQL_INTEGRATION=1` 且满足
-> 专用测试库门禁：`TEST_DB_NAME` 必填、`DB_NAME` 必须与 `TEST_DB_NAME` 完全相等、库名必须以 `_test`
+> 专用测试端点/库门禁：`TEST_DB_HOST/PORT/NAME` 必填、`DB_HOST/PORT/NAME` 必须分别与之完全相等、库名必须以 `_test`
 > 结尾（由 `scripts/assert-mysql-integration-enabled.mjs` 强制校验，开发/生产库名一律拒绝）。2026-08-07
 > 本地在 `easy_mes_test` 上全量套件实测通过（5 文件 / 29 用例），命令（PowerShell）：
 >
 > ```powershell
 > $env:RUN_MYSQL_INTEGRATION='1'
+> $env:TEST_DB_HOST='127.0.0.1'
+> $env:TEST_DB_PORT='3307'
 > $env:TEST_DB_NAME='easy_mes_test'
-> $env:DB_NAME='easy_mes_test'
+> $env:DB_HOST=$env:TEST_DB_HOST
+> $env:DB_PORT=$env:TEST_DB_PORT
+> $env:DB_NAME=$env:TEST_DB_NAME
 > pnpm test:production:mysql
 > ```
 >
-> Bash 等价形式：`RUN_MYSQL_INTEGRATION=1 TEST_DB_NAME=easy_mes_test DB_NAME=easy_mes_test pnpm test:production:mysql`；
+> Bash 等价形式见根 README；本地 WSL Docker 默认使用 `3307:3306`，CI 服务容器使用 `3306`；
 > CI 已新增 `integration-mysql` 作业在专用测试库 `company_mes_next_test` 上执行同一套件（待首次运行确认）。
 > 集成套件运行说明：`vitest.mysql.config.ts` 使用 SWC 变换（esbuild 不发射 `emitDecoratorMetadata`，Nest 构造器注入
 > 会得到 undefined；与 apps/api tsconfig 开启的 tsc 构建行为一致）；HTTP 管线用例以 jose 用同一

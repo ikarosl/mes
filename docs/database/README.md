@@ -19,44 +19,45 @@
 - migration、代码、接口契约与本目录不一致时，不得由实现自行选择，必须先完成设计评审并同步规范。
 - 尚未完成业务决策的能力必须明确标记边界，不得以推测性字段或状态提前固化。
 
-生产流程整体模型：
-```
-    production_batches
-            │
-            ▼
-    batch_step_records
-    某批次 × 某工序 = 一个执行节点
-            │
-            ▼
-    batch_step_reports
-    每次报工一条
-            │
-            │ abnormal_quantity > 0
-            ▼
-        异常审批
-        /       \
-       /         \
-    可返工        不可返工
-    │              │
-    ▼              ▼
-rework_records  batch_step_scrap_records
-    │             │
-    │             │ 最终生产损失
-    │             ▼
-    │   production_material_supplement
-    │           │
-    │           ▼
-    │   production_item_demand
-    │           │
-    │           ▼
-    │       allocation
-    │           │
-    │           ▼
-    │        outbound
-    │
-    └─重新回到该工序
-            ↓
-    batch_step_reports
-    再新增返工报工
+## 生产流程模型与设计表索引
 
+实现状态口径：
+
+- **已实现**：migration、应用服务与当前对外能力已对齐。
+- **数据库已落地**：追加 migration 及共享代码已提供；不等于相应 API、管理端和业务闭环已发布。
+- **设计定稿、待迁移**：权威章节已定义表与规则，但当前 migration 尚未建表。
+- **边界预留**：只确认流程位置或部分原则，完整表结构尚未闭环，不得提前实现。
+
+```text
+production_batches
+├─ normal BOM 需求 -> production_item_demand -> production_item_allocation -> outbound_detail
+│                                                             └-> inventory_transaction
+└─ batch_step_records
+   └─ batch_step_reports（每次报工一条不可变事实）
+      ├─ normal_quantity -> 临时作为下工序正常放行量
+      └─ abnormal_quantity > 0
+         └─ batch_step_abnormal_dispositions（每次异常报工一张处置单）
+            ├─ rework -> rework_records -> 回到该工序追加报工
+            └─ scrap  -> batch_step_scrap_records
+                         └─ production_material_supplement
+                            └─ production_item_demand(scrap_supplement)
+                               └─ 分配 -> 领料出库 -> inventory_transaction
 ```
+
+| 流程位置 | 设计表 | 事实/职责 | 权威定义 | 当前实现状态 |
+| --- | --- | --- | --- | --- |
+| 生产计划 | `work_orders` | 生产工单可变聚合 | [产品主数据与生产批次](30-production-inventory/10-master-data-and-batches.md) | 已实现 |
+| 生产计划 | `production_batches` | 工单下的生产执行批次 | [产品主数据与生产批次](30-production-inventory/10-master-data-and-batches.md) | 已实现 |
+| 工序执行 | `batch_step_records` | 某批次 × 某工序的可变执行节点 | [生产报工、追溯与质量边界](40-production-traceability-quality.md) | 表与状态集合已实现，执行状态不再包含 `abnormal`；派工命令和管理端流程待实现 |
+| 报工事实 | `batch_step_reports` | 每次报工、冲销和更正的不可变事实 | [生产报工、追溯与质量边界](40-production-traceability-quality.md) | 数据库已落地；报工 API/管理端待实现 |
+| 异常审批 | `batch_step_abnormal_dispositions` | 每次有效异常报工的独立审批处置单 | [生产报工、追溯与质量边界](40-production-traceability-quality.md) | 数据库已落地；创建/审批命令待实现 |
+| 返工 | `rework_records` | 异常处置为可返工后的返工业务单 | [生产报工、追溯与质量边界](40-production-traceability-quality.md) | 边界预留；禁止建表 |
+| 工序报废 | `batch_step_scrap_records` | 审批为不可返工的工序损失 | [生产报工、追溯与质量边界](40-production-traceability-quality.md) | 边界预留；禁止建表 |
+| 主动补料 | `production_material_supplement` / 明细 | 管理员选择候选物料并人工填量 | [生产需求、分配与领料出库](30-production-inventory/30-demand-allocation-and-outbound.md) | 边界预留；完整字段/外键待定 |
+| 物料需求 | `production_item_demand` | 生产需求唯一事实来源 | [生产需求、分配与领料出库](30-production-inventory/30-demand-allocation-and-outbound.md) | `normal`已实现；`manual_additional`仅数据库允许；`scrap_supplement`待后续迁移 |
+| 物料预留 | `production_item_allocation` | 需求到库存批次的分配事实 | [生产需求、分配与领料出库](30-production-inventory/30-demand-allocation-and-outbound.md) | 设计定稿、待迁移 |
+| 领料出库 | `outbound_order` | 按生产批次组织的出库主单 | [生产需求、分配与领料出库](30-production-inventory/30-demand-allocation-and-outbound.md) | 设计定稿、待迁移 |
+| 领料出库 | `outbound_detail` | 每个分配行的实际出库事实 | [生产需求、分配与领料出库](30-production-inventory/30-demand-allocation-and-outbound.md) | 设计定稿、待迁移 |
+| 库存扣减 | `inventory_transaction` | 出库后的库存数量唯一事实来源 | [库存批次、库存流水与入库](30-production-inventory/20-inventory-ledger-and-inbound.md) | 设计定稿、待迁移 |
+
+复核时还必须同时阅读 [跨模块规则](30-production-inventory/90-cross-module-rules.md) 和 [建表与迁移顺序](90-migration-order.md)。表存在只证明持久化结构可用，不证明业务命令、RBAC、审计、界面与下游事务已经闭环。

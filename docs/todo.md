@@ -240,11 +240,10 @@ IDEMPOTENCY_RESULT_CORRUPT`；`HttpExceptionFilter` 与 `AuditInterceptor` 统�
   两个创建弹窗在结果未知（模糊失败/提交在途/结果损坏/超出重试窗口）时关闭必须先经确认，取消
   保留弹窗与 K1、确认才 reset，避免静默丢 K1 或按“关闭并重新发起”生成 K2 造成第二个自动编号批次。
 - 单元与契约测试通过，admin-web 类型检查与测试通过；真实 MySQL 集成套件已实测通过（进度 released）：
-  2026-08-07 本地执行（PowerShell：`$env:RUN_MYSQL_INTEGRATION='1'; $env:TEST_DB_NAME='easy_mes_test';
-$env:DB_NAME='easy_mes_test'`；Bash：`RUN_MYSQL_INTEGRATION=1 TEST_DB_NAME=easy_mes_test
-DB_NAME=easy_mes_test pnpm test:production:mysql`）
+  2026-08-07 本地执行（当前可复现的 PowerShell/Bash 命令见根 README；本地 WSL Docker 使用
+  宿主 `3307` 端口与 `easy_mes_test` 专用库）
   `pnpm test:production:mysql`（先经 `scripts/assert-mysql-integration-enabled.mjs` 校验显式开关与专用
-  测试库门禁——`TEST_DB_NAME` 必填、`DB_NAME` 必须与 `TEST_DB_NAME` 完全相等且库名必须以 `_test` 结尾，
+  测试端点/库门禁——当前 `TEST_DB_HOST/PORT/NAME` 必填、`DB_HOST/PORT/NAME` 必须分别与之完全相等且库名必须以 `_test` 结尾，
   开发/生产库名一律拒绝；构建 utils/constants/database 后通过 `db:init`
   完成 migration、系统 seed 和管理员初始化，复验 seed 幂等性后运行
   `tests/integration` 全套），5 文件 / 29 用例全部通过；CI（`.github/workflows/ci.yml`）已新增
@@ -284,15 +283,21 @@ DB_NAME=easy_mes_test pnpm test:production:mysql`）
 
 状态：`分阶段实施`
 
-- 当前按生产工单、生产批次、工序报工、物料需求、分配和领料出库顺序迁移。
+- 当前按生产工单、生产批次、物料需求、最小分配与领料出库、工序派工与开工、工序报工的顺序迁移；报工事实表虽已先行追加，但不得据此跳过运行时前置链路。
 - 报工数据库模型已完成第一步：`202608100001-batch-step-reports` 新增不可变的分批报工事实，支持全量冲销和原单更正关系；同时迁移历史累计量并移除 `batch_step_records` 的四个累计数量列。
 - 现有 Production 查询暂以聚合值兼容旧返回字段；报工 application、HTTP、管理端、权限接线以及同事务的成功审计/幂等结果尚未实现。数据库落地不等于功能发布，未实现按钮不得表现为可用功能。
-- 下一实施切片是报工创建与管理员更正：新增 migration 已把 `production:steps:report` 的旧 PATCH 元数据校正为报工事实 POST 路径；后续需真正实现权限装饰器、稳定顺序锁定相邻工序、校验首工序和上下工序数量上限、同事务写入事实/冲销/更正/状态/成功审计/幂等结果，并补真实 MySQL 与 HTTP 闭环测试。
-- 2026-08-10 数据库验证：专用临时 MySQL 8.4 从空库连续执行两次 migration 并检查状态通过；重复 seed 与完整 MySQL 集成套件通过（5 文件 / 30 用例）。新增用例验证普通事实、全量冲销、更正关系、重复冲销唯一约束、`9/7/2` 聚合兼容结果和旧累计列已移除。
+- 当前实施顺序已经收敛，必须按以下切片推进，不能因为报工事实表已经落地就绕过其物料前置链路：
+  1. **4.2-A 最小物料分配与领料出库链路**：以追加 migration 落地本链路依赖的 `item_batch`、`inventory_transaction`、`production_item_allocation`、`outbound_order` 和 `outbound_detail`；只开放可分配库存查询、生产需求分配/释放、生产领料出库及对应的 `production_material_outbound` 库存流水，不提前迁入通用入库、退料、报废、盘点或质量能力。分配必须以库存批次行锁和“账面可用量减有效预留”防止超分配；出库明细、负库存流水、成功审计和幂等结果必须同事务提交。全部正常需求完成有效分配后才允许批次进入 `material_assigned`，全部应领数量完成出库后才进入 `material_outbound`。同步完成 RBAC、HTTP、管理端操作和真实 MySQL 并发/回滚闭环测试。
+  2. **4.2-B 工序派工与开工**：管理员逐工序确认负责人后执行 `pending -> assigned`；已派工员工显式开工后执行 `assigned -> doing` 并写入工序 `started_at`。第一道工序开工只接受 `production_batches.status = material_outbound`，并在同一事务把批次转为 `doing`、写入批次 `started_at`；物料分配或出库本身不得修改工序状态。本切片还必须返工现有临时接口：createBatch 不再接受或写入逐工序 `responsibleUserId`，批次创建后的 `responsible_user_id` 必须为空；现有“执行参数更新”不能继续以只改负责人但不改状态的方式冒充派工，实际 SOP 覆盖与派工/撤回/改派应拆成语义明确的命令和权限。
+  3. **4.2-C 报工创建与管理员更正**：使用 migration 已校正的 `production:steps:report` POST 权限，稳定顺序锁定当前及相邻工序，校验 `required_normal` 和上下游数量，同事务写入普通/冲销/更正事实、异常待处置单、工序状态、成功审计和幂等结果，并补真实 MySQL 与 HTTP 闭环测试。普通报工只接受 `doing`；必报工工序在 `effective_normal == required_normal` 时自动完成。已完成工序更正后数量不足时，无下游冲突则重开为 `doing`，低于下游有效正常量则拒绝并提示先从下游冲销。
+  4. **4.2-D 批次生产执行完工**：全部必报工工序完成后，服务端在事务内重新聚合最后一道必报工工序的 `effective_normal`，将其作为 `production_batches.completed_quantity`，并写入完工状态、时间、确认人和成功审计；客户端不得填写完成数量。没有必报工工序或数量不足时拒绝。当前不实现短批完工，未来必须通过独立生产损失/短批完工命令处理差额；本切片不写 `qualified_quantity`，也不等待尚不存在的最终质检结论。
+- 工序状态规则已定稿，不再列为待决策项：`pending -> assigned -> doing -> completed`；开工前允许 `assigned -> pending` 撤回派工，合法更正可触发 `completed -> doing`。权威数据库章节保留的管理员确认完工方案只是互斥备用方案，当前不得实现为并行入口。
+- 当前临时自检方案不创建过程检验任务，也不以 `need_inspection_snapshot` 或“无未关闭返工”阻塞下工序和生产执行完工；`effective_normal` 仅临时作为下工序放行量，不是最终质量合格量。批次最终质量确认、`qualified_quantity` 写入和返工闭环属于后续独立切片，不得混入 4.2-A/B/C。
+- 2026-08-11 数据库验证：临时 MySQL 8.4 空库完整应用至 `202608110001-production-abnormal-dispositions-and-demand-type-codes`，第二次执行无重复变更，migration status 全部为 applied；专用 `easy_mes_test` 完成 migration、系统 seed、管理员初始化和重复 seed 后，真实 MySQL 集成套件 5 文件 / 31 用例全部通过。该结果取代早于最新 migration 的 2026-08-10 空库证据。
 - 通用库存、入库、退料、报废、盘点、质量和全链路追溯后端不得提前迁入。
 - 旧项目没有可作为行为基准的完整追溯交互，不得根据页面原型臆造接口和状态。
-- 补料、报废确认、质检放行和返工语义仍未闭环。先按 `docs/database/40-production-traceability-quality.md` 的明确边界完成纯报工链路；不得提前实现 `inspection_records`、`rework_records`、`finished_flow_records`。
-- 批次完工确认必须校验必需报工工序完成、必检工序存在有效结论、没有未关闭返工。
+- 补料、报废确认、质检放行和返工语义仍未闭环。按上述 4.2-A/B/C 顺序完成生产物料与工序执行最小链路；不得提前实现 `inspection_records`、`rework_records`、`finished_flow_records`。
+- 当前批次生产执行完工与最终质量确认必须保持两个语义：前者采用临时自检口径，由最后一道必报工工序的 `effective_normal` 自动形成 `completed_quantity`，不校验尚不存在的有效检验结论或未关闭返工；后者在质量模型、返工模型和 `qualified_quantity` 写入口径定稿前不得开放。未来质量闭环不能反向篡改当前 `normal_quantity` 的自检含义。
 - 追溯记录不得成为第二库存或需求事实来源；库存数量只从 `inventory_transaction` 汇总，生产需求只从 `production_item_demand` 读取。
 
 ### 4.3 命令上下文与幂等能力分离
@@ -306,8 +311,7 @@ DB_NAME=easy_mes_test pnpm test:production:mysql`）
 - application port 与 Repository 只接收 `CommandContext`；createBatch Service 在调用 Repository 前显式
   去除幂等键。架构门禁禁止旧类型回流、幂等上下文泄漏、未登记 executor/前端 header 使用及重复 Guard。
 - Product 文件上传保持非幂等；HTTP 契约测试验证误带 header 在对象存储与数据库副作用前拒绝。
-- 2026-08-10 验证：`pnpm verify` 全绿（API 43 文件 / 313 用例）；专用 `easy_mes_test` 执行 migration、
-  重复 seed 与完整 MySQL 集成套件通过（本次报工 migration 复验后为 5 文件 / 30 用例）。
+- 2026-08-11 验证：`pnpm verify` 全绿（API 43 文件 / 313 用例、管理端 43 文件 / 257 用例，lint 0 error / 18 warning）；包含最新 migration 的临时 MySQL 8.4 空库双执行与状态检查通过，专用 `easy_mes_test` 的完整真实 MySQL 套件 5 文件 / 31 用例通过。
 
 ## 5. 滞后及待业务决策事项
 
@@ -318,7 +322,7 @@ DB_NAME=easy_mes_test pnpm test:production:mysql`）
 滞后原因：
 
 - 尚未确认现场是继续从文件列表选择参考文件，还是在工序/任务入口直接上传并发布新版本。
-- 尚未确定 SOP 的逻辑文档身份、版本序列、发布入口、权限和工序状态生命周期。
+- 尚未确定 SOP 的逻辑文档身份、版本序列、发布入口、权限和 `process_steps` 工序主数据生命周期；这里不指已经定稿的 `batch_step_records` 执行状态机。
 - `process_steps.status` 当前只有启用/停用，不能表达“从未启用的草稿”和“历史停用”；是否升级为 `draft -> enabled -> disabled -> archived` 需要同步业务规则、前后端交互、对应数据库领域章节和追加 migration。
 
 在完整方案确定前必须遵守的最低规则：
@@ -333,7 +337,7 @@ DB_NAME=easy_mes_test pnpm test:production:mysql`）
 
 实施约束：
 
-- 当前不直接实施完整 SOP 生命周期和工序状态迁移。
+- 当前不直接实施完整 SOP 生命周期和 `process_steps` 工序主数据状态迁移。
 - `DELETE /technical-files/:id` 已改为软删除（停用并标记删除，保留对象存储内容），满足“无硬删除”最低规则，可作为正式可用能力；完整发布、版本和归档生命周期仍滞后，待业务方案确认。
 - 需求确认后先同步对应数据库领域章节、Product 策略和管理端交互，再追加 migration；不得修改已有 migration。
 

@@ -134,13 +134,14 @@ export const PRODUCTION_BATCH_STATUSES = [
   'completed',
   'cancelled',
 ] as const;
-export const BATCH_STEP_STATUSES = [
-  'pending',
-  'assigned',
-  'doing',
-  'completed',
-  'abnormal',
+export const BATCH_STEP_STATUSES = ['pending', 'assigned', 'doing', 'completed'] as const;
+export const BATCH_STEP_ABNORMAL_REVIEW_STATUSES = [
+  'pending_review',
+  'approved',
+  'rejected',
+  'cancelled',
 ] as const;
+export const BATCH_STEP_ABNORMAL_DISPOSITION_TYPES = ['rework', 'scrap'] as const;
 export const INVENTORY_SOURCE_TYPES = [
   'self_made',
   'purchased',
@@ -173,6 +174,11 @@ export const INVENTORY_REFERENCE_TYPES = [
   'manual',
 ] as const;
 export const INBOUND_ORDER_STATUSES = ['pending', 'completed', 'cancelled'] as const;
+export const DEMAND_TYPES = ['normal', 'manual_additional'] as const;
+export const DEMAND_TYPE = {
+  normal: DEMAND_TYPES[0],
+  manualAdditional: DEMAND_TYPES[1],
+} as const;
 export const DEMAND_BUSINESS_STATUSES = [
   'active',
   'cancelled',

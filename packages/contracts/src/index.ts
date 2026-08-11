@@ -619,6 +619,7 @@ export interface ProductionItemDemandItem {
   needBatchRecord: boolean;
   plannedOutputQuantity: string;
   needNumber: string;
+  demandType: DemandType;
   businessStatus: DemandBusinessStatus;
   version: number;
 }
@@ -727,7 +728,10 @@ export type ProductionBatchStatus =
   | 'doing'
   | 'completed'
   | 'cancelled';
-export type BatchStepStatus = 'pending' | 'assigned' | 'doing' | 'completed' | 'abnormal';
+export type BatchStepStatus = 'pending' | 'assigned' | 'doing' | 'completed';
+export type BatchStepAbnormalReviewStatus =
+  'pending_review' | 'approved' | 'rejected' | 'cancelled';
+export type BatchStepAbnormalDispositionType = 'rework' | 'scrap';
 export type InventorySourceType =
   'self_made' | 'purchased' | 'outsourced' | 'return_inbound' | 'stock_check_generated' | 'other';
 export type InventoryBatchStatus = 'available' | 'frozen' | 'disabled';
@@ -752,6 +756,7 @@ export type InventoryReferenceType =
   | 'inspection_record'
   | 'manual';
 export type InboundOrderStatus = 'pending' | 'completed' | 'cancelled';
+export type DemandType = 'normal' | 'manual_additional';
 export type DemandBusinessStatus = 'active' | 'cancelled' | 'closed' | 'frozen' | 'abnormal';
 export type AllocationStatus = 'active' | 'released' | 'cancelled' | 'frozen' | 'abnormal';
 export type OutboundOrderStatus =

@@ -4,7 +4,7 @@
 
 ## 3.11 跨模块引用说明
 
-本章引用的 `users`、`process_routes`、`process_steps`、`technical_files` 分别由[系统、RBAC 与认证](../10-system-rbac-auth.md)和[文件与工艺](../20-files-and-process.md)定义。报工事实使用[生产报工、追溯与质量边界](../40-production-traceability-quality.md)定义的 `batch_step_reports`；工序异常审批已确认需要与执行状态分离，但数量拆分、返工和再次报工额度仍未闭环，不得创建未定稿的 `batch_step_abnormal_records`、`rework_records`、`quality_check_order` 或 `quality_check_detail`。
+本章引用的 `users`、`process_routes`、`process_steps`、`technical_files` 分别由[系统、RBAC 与认证](../10-system-rbac-auth.md)和[文件与工艺](../20-files-and-process.md)定义。报工事实使用[生产报工、追溯与质量边界](../40-production-traceability-quality.md)定义的 `batch_step_reports`；工序异常审批使用已追加 migration 的 `batch_step_abnormal_dispositions`，不得把异常审批状态写入 `batch_step_records.status`。当前处置单创建、审批命令及下游事务尚未实现；当前阶段明确不做返工/补料报工额度来源和激活限制；`rework_records`、工序报废、`quality_check_order` 和 `quality_check_detail` 仍未定稿，不得提前创建。
 
 跨模块写操作必须由应用服务在同一事务内维护组合外键、快照和操作日志，Controller 不得直接拼接 SQL 修改多张事实表。
 
@@ -92,7 +92,9 @@
 - 不得直接修改原始需求的 `need_number`。
 - 目标链路为：原始需求 → 工序报废/补料单及明细 → 补料需求 → 分配 → 出库。
 - 上表的 `source_scrap_id` 只允许引用现有 `item_scrap.id`。未来工序报废补料不得把 `batch_step_scrap_records.id` 填入该字段；它与补料明细、需求之间的新来源外键需要另行定稿。
-- `production_material_supplement`、补料明细、工序报废和需求之间的完整外键，以及出库后如何形成再次报工额度仍待决策；未闭环前不得据此创建表或接口。
+- 当前阶段补料、分配和出库不形成再次报工额度，也不作为报工开关；工序只按有效正常数量是否达到当前要求数量判断能否继续报工。
+- 该简化方案无法追溯某次补报所使用的补料/返工来源，也不能控制来源剩余额度。未来如升级严格控制，再评审来源授权、出库激活、消费明细和并发规则。
+- `production_material_supplement`、补料明细、工序报废和需求之间的完整外键仍待决策；未闭环前不得据此创建表或接口。
 
 ---
 
@@ -176,8 +178,9 @@ SELECT id FROM item_batch WHERE id = :batch_id FOR UPDATE;
 
 - 批次完工前校验所有 `need_record_snapshot = 1` 的工序已完成。
 - `need_inspection_snapshot` 当前只保留路线快照，不创建过程检验任务，也不作为批次生产完工或下工序流转的阻塞条件；这是过程质量流程缺失期间的临时方案。
-- 批次完工前校验不存在未关闭返工。
-- 在同一事务写入最终数量、完工时间、完工人、`completed` 状态和操作日志。
+- 当前尚无 `rework_records`，生产执行完工不得伪造“无未关闭返工”校验；待处理异常继续由 `batch_step_abnormal_dispositions` 独立表达和展示，不复用批次执行状态。
+- `completed_quantity` 固定取最后一道必报工工序（`need_record_snapshot = 1` 且 `step_order_snapshot` 最大）的 `effective_normal`。完工命令必须在事务内锁定并校验全部必报工工序、重新聚合该数量，客户端不得提交完成数量；没有必报工工序或任一必报工工序未完成时拒绝。
+- 当前不支持正常数量不足时的短批完工；未来必须以独立的生产损失/短批完工事实确认差额，不得人工覆盖 `completed_quantity`。正常批次完工必须在同一事务写入完成数量、完工时间、完工人、`completed` 状态和成功操作日志。
 - 批次完工不自动创建入库单、库存批次或库存流水。
 - `batch_step_reports.normal_quantity` 是工序自检正常量，不是最终质检合格量；不得直接写入 `production_batches.qualified_quantity`。
 - 生产完成后的最终质检、`qualified_quantity` 写入和工单合格完成数量汇总仍待质量模型定稿；在此之前不得把批次生产完工描述为最终质量完成。

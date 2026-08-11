@@ -138,7 +138,7 @@ describe('MysqlProductionBatchRepository persistence', () => {
     );
 
     const demandValues = connection.execute.mock.calls[0]?.[1] as unknown[];
-    expect(demandValues.slice(0, 11)).toEqual([
+    expect(demandValues.slice(0, 12)).toEqual([
       '21',
       '401',
       '402',
@@ -148,6 +148,7 @@ describe('MysqlProductionBatchRepository persistence', () => {
       0,
       '10.0000',
       '25.0000',
+      'normal',
       'NORMAL:21:401',
       '1',
     ]);

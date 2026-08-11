@@ -4,7 +4,7 @@
 
 ## 3.5 生产物料需求与分配表
 
-> 正式设计中的 `demand_type` 统一使用 `normal`、`manual_additional`、`scrap_supplement` 字符串代码。当前物理表和 application 仍使用历史数字代码且只开放正常需求；必须先以追加 migration 和版本化契约完成字符串迁移，才能开放其他需求类型。半自动补料的候选与人工填量边界已经确认，但补料如何形成再次报工额度仍待决策，不构成开放补料能力的依据。
+> `202608110001-production-abnormal-dispositions-and-demand-type-codes` 已把 `demand_type` 从历史数字 `0/1` 追加迁移为字符串 `normal/manual_additional`，共享常量、契约和 Production Repository 已同步；当前 application 仍只生成 `normal`，`manual_additional` 尚未开放业务接口。完整目标设计还包含 `scrap_supplement`，但必须等工序报废、补料明细及需求来源外键定稿后再追加 migration 开放，当前数据库 `CHECK` 不接受该值。半自动补料的候选与人工填量边界已经确认；当前阶段明确不把补料、分配或出库状态作为再次报工的限制条件，该缺口及升级方向见本章后文。
 
 ---
 
@@ -71,7 +71,7 @@
 - 唯一约束：`UNIQUE (id, production_batch_id)`
 - 索引：`INDEX (source_scrap_id)`
 
-迁移说明：已执行 migration 中的 `production_item_demand.demand_type` 仍为数字类型，物理约束支持 `0/1`，Production application 只生成 `0` 的正常需求。已执行文件不得修改；后续必须追加 migration，把既有 `0/1` 映射为 `normal/manual_additional` 并把字段改为 `VARCHAR(30)`，同时同步共享常量、字符串联合类型、Repository 和契约测试。在 `item_scrap` 及补料来源关系定稿后，再通过后续追加 migration 开放 `scrap_supplement` 并建立所需外键。在上述迁移完成前，数据库和应用仍只允许现有正常需求流程。
+迁移说明：`202608110001-production-abnormal-dispositions-and-demand-type-codes` 会在首个永久 DDL 前校验历史值只包含 `0/1`，再映射为 `normal/manual_additional` 并把字段改为 `VARCHAR(30)`。当前物理约束和共享代码只包含已有语义的 `normal/manual_additional`，Production application 只生成 `normal`。在工序报废、补料明细和需求来源外键定稿后，再通过后续追加 migration 开放 `scrap_supplement`；不得只扩展应用字符串而跳过数据库约束和外键。
 
 视图版本删除字段：
 
@@ -101,7 +101,9 @@
 - 候选物料优先来自异常工序绑定的有效 `route_step_materials`；工序没有绑定物料时，可以降级展示当前产品的全部有效 BOM 物料。候选范围只用于辅助选择，不构成数量计算或工序消耗事实。
 - 系统只校验管理员选择的物料属于当前产品、补料数量大于 `0`、单位与物料/BOM 口径一致，并在补料明细中冻结最终选中的 `product_material_id`、`item_id`、人工填写数量、单位快照和原始需求 ID；无需冻结未被选中的候选集合。
 - 批准补料后应新增 `demand_type = 'scrap_supplement'` 的需求，不得修改原始需求的 `need_number`。管理员填写的数量必须保留为人工决策事实，不得描述为系统计算数量。
-- 补料单/明细的完整字段、补料与工序报废的外键、需求来源外键、出库达到何种条件后允许再次报工，以及报工如何消费补料额度仍待决策；这些问题定稿前不得创建相应 migration 或 API。
+- 当前阶段不记录报工额度来源，也不要求补料需求、分配或出库完成后才允许再次报工；是否允许追加报工只按工序有效正常数量是否达到当前要求数量判断。
+- 因此补料单只形成“工序报废 → 人工补料 → 新需求 → 分配 → 出库”的物料业务链，不能证明某次补报消费了哪张补料单。未来如升级严格额度控制，再追加报工来源/授权、出库激活和剩余量消费模型；不得把当前简化流程描述为已经完成该闭环。
+- 补料单/明细的完整字段、补料与工序报废的外键及需求来源外键仍待决策；这些问题定稿前不得创建相应 migration 或 API。
 
 ---
 

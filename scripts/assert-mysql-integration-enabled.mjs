@@ -33,9 +33,9 @@ const envFixHint =
   '系统环境变量（PowerShell $env:）优先于 .env：脚本加载 .env 时不会覆盖已注入的变量，两者冲突时以系统环境为准。';
 
 const psPrefix =
-  "PowerShell 临时变量：`$env:RUN_MYSQL_INTEGRATION='1'; $env:TEST_DB_NAME='easy_mes_test'; $env:DB_NAME='easy_mes_test'; pnpm test:production:mysql`";
+  "PowerShell 临时变量：`$env:RUN_MYSQL_INTEGRATION='1'; $env:TEST_DB_HOST='127.0.0.1'; $env:TEST_DB_PORT='3307'; $env:TEST_DB_NAME='easy_mes_test'; $env:DB_HOST=$env:TEST_DB_HOST; $env:DB_PORT=$env:TEST_DB_PORT; $env:DB_NAME=$env:TEST_DB_NAME; pnpm test:production:mysql`";
 const bashPrefix =
-  'Bash 临时变量：`RUN_MYSQL_INTEGRATION=1 TEST_DB_NAME=easy_mes_test DB_NAME=easy_mes_test pnpm test:production:mysql`';
+  'Bash 临时变量：`RUN_MYSQL_INTEGRATION=1 TEST_DB_HOST=127.0.0.1 TEST_DB_PORT=3307 TEST_DB_NAME=easy_mes_test DB_HOST=127.0.0.1 DB_PORT=3307 DB_NAME=easy_mes_test pnpm test:production:mysql`';
 
 export const assertMysqlIntegrationEnabled = (environment = process.env) => {
   if (environment.RUN_MYSQL_INTEGRATION !== '1') {
@@ -50,12 +50,54 @@ export const assertMysqlIntegrationEnabled = (environment = process.env) => {
     );
   }
 
+  const testDbHost = environment.TEST_DB_HOST;
+  if (!testDbHost) {
+    throw new Error(
+      `拒绝执行 MySQL 集成初始化：TEST_DB_HOST 未设置或为空（当前值：${displayValue(testDbHost)}）。` +
+        `修复：${psPrefix}；或 ${bashPrefix}。` +
+        envFixHint,
+    );
+  }
+
+  if (environment.DB_HOST !== testDbHost) {
+    throw new Error(
+      `拒绝执行 MySQL 集成初始化：DB_HOST 必须与 TEST_DB_HOST 完全相等（当前 DB_HOST：${displayValue(
+        environment.DB_HOST,
+      )}，TEST_DB_HOST：${displayValue(testDbHost)}）。` +
+        `修复：${psPrefix}；或 ${bashPrefix}。` +
+        '禁止让集成测试隐式回退到其他 MySQL 实例。' +
+        envFixHint,
+    );
+  }
+
+  const testDbPort = environment.TEST_DB_PORT;
+  if (!/^\d+$/.test(testDbPort ?? '') || Number(testDbPort) < 1 || Number(testDbPort) > 65535) {
+    throw new Error(
+      `拒绝执行 MySQL 集成初始化：TEST_DB_PORT 必须是 1-65535 的整数（当前值：${displayValue(
+        testDbPort,
+      )}）。` +
+        `修复：${psPrefix}；或 ${bashPrefix}。` +
+        envFixHint,
+    );
+  }
+
+  if (environment.DB_PORT !== testDbPort) {
+    throw new Error(
+      `拒绝执行 MySQL 集成初始化：DB_PORT 必须与 TEST_DB_PORT 完全相等（当前 DB_PORT：${displayValue(
+        environment.DB_PORT,
+      )}，TEST_DB_PORT：${displayValue(testDbPort)}）。` +
+        `修复：${psPrefix}；或 ${bashPrefix}。` +
+        '本地 WSL Docker 推荐 TEST_DB_PORT=3307，CI 服务容器可继续使用 3306。' +
+        envFixHint,
+    );
+  }
+
   const testDbName = environment.TEST_DB_NAME;
   if (!testDbName) {
     throw new Error(
       `拒绝执行 MySQL 集成初始化：TEST_DB_NAME 未设置或为空（当前值：${displayValue(testDbName)}）。` +
         '修复（二选一）：' +
-        '① 本地：在仓库根 .env 中设置 `TEST_DB_NAME=easy_mes_test`（同时把 DB_NAME 改为同值，见下一条门禁）；' +
+        '① 本地：在仓库根 .env 中设置 `TEST_DB_NAME=easy_mes_test`（执行时同时把 DB_NAME 改为同值，见下一条门禁）；' +
         `② 临时环境变量：${psPrefix}；或 ${bashPrefix}。` +
         envFixHint,
     );
