@@ -30,6 +30,9 @@ import type {
   ProductionExecutionCompletionCheck,
   ProductionExecutionCompletionResult,
   ReverseBatchStepReportPayload,
+  ProductionTraceWorkOrderGroup,
+  ProductionTraceDetail,
+  ProductionTraceQuery,
 } from '@company/contracts';
 import { toRequestError, type RetryRequestConfig } from '@company/request';
 import { httpClient } from './http';
@@ -43,6 +46,12 @@ const request = async <T>(config: RetryRequestConfig) => {
 };
 
 export const productionApi = {
+  searchProductionTrace: (params: ProductionTraceQuery) =>
+    request<PageResult<ProductionTraceWorkOrderGroup>>({ url: '/production/trace', params }),
+
+  getProductionTrace: (batchId: string) =>
+    request<ProductionTraceDetail>({ url: `/production/trace/batches/${batchId}` }),
+
   /** 分页查询生产工单 */
   listOrders: (params: WorkOrderQuery) =>
     request<PageResult<WorkOrderItem>>({ url: '/production/work-orders', params }),

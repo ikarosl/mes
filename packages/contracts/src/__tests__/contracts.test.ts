@@ -8,6 +8,7 @@ import type {
   ProductionMaterialDemandItem,
   ProductionWorkerTaskItem,
   CompleteProductionExecutionPayload,
+  ProductionTraceDetail,
 } from '../index.js';
 
 describe('auth contract', () => {
@@ -49,6 +50,20 @@ describe('production execution contracts', () => {
     expect(payload).toEqual({ version: 5 });
     expect(payload).not.toHaveProperty('completedQuantity');
     expect(payload).not.toHaveProperty('qualifiedQuantity');
+  });
+
+  it('models Production trace from current persisted facts only', () => {
+    const trace = {
+      summary: { productionBatchId: '1' },
+      materialDemands: [],
+      materialOutbounds: [],
+      inventoryTransactions: [],
+      steps: [],
+    } as unknown as ProductionTraceDetail;
+    expect(trace).not.toHaveProperty('quality');
+    expect(trace).not.toHaveProperty('rework');
+    expect(trace).not.toHaveProperty('scrap');
+    expect(trace).not.toHaveProperty('finishedFlows');
   });
 });
 

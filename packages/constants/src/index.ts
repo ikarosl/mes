@@ -68,6 +68,7 @@ export const PERMISSIONS = {
     },
     tasks: { view: 'production:tasks:view' },
     workerTasks: { view: 'production:worker-tasks:view' },
+    trace: { view: 'production:trace:view' },
     materials: {
       view: 'production:materials:view',
       allocate: 'production:materials:allocate',

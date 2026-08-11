@@ -13,6 +13,7 @@ import { ProductSnapshotService } from '../../../apps/api/src/modules/product/ap
 import { MysqlProductSnapshotRepository } from '../../../apps/api/src/modules/product/infrastructure/mysql-product-snapshot.repository.js';
 import { ProductionMaterialService } from '../../../apps/api/src/modules/production/application/production-material.service.js';
 import { MysqlProductionMaterialRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-material.repository.js';
+import { MysqlProductionTraceRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-trace.repository.js';
 
 loadWorkspaceEnv();
 const describeMysql = process.env.RUN_MYSQL_INTEGRATION === '1' ? describe : describe.skip;
@@ -125,6 +126,23 @@ describeMysql('Production material MySQL transactions', () => {
         [f.token],
       );
       expect(Number(audit?.count)).toBe(1);
+      const trace = new MysqlProductionTraceRepository(pool);
+      const byInventoryBatch = await trace.search({
+        keyword: `${f.token}-ib1`,
+        page: 1,
+        pageSize: 20,
+      });
+      expect(
+        byInventoryBatch.items.flatMap((item) =>
+          item.batches.map((batch) => batch.productionBatchId),
+        ),
+      ).toContain(String(f.batchId));
+      const transactions = await trace.listInventoryTransactions(String(f.batchId));
+      expect(transactions).toHaveLength(2);
+      expect(transactions.every((transaction) => Number(transaction.quantity) < 0)).toBe(true);
+      expect(transactions.map((transaction) => transaction.outboundDetailId).sort()).toEqual(
+        result.outbound.details.map((detail) => detail.id).sort(),
+      );
     } finally {
       await cleanup(pool, f);
     }

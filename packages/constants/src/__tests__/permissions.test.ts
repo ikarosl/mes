@@ -72,4 +72,9 @@ describe('permissionMatches', () => {
       PERMISSIONS.production.steps.assign,
     );
   });
+
+  it('uses a dedicated read-only Production trace permission', () => {
+    expect(PERMISSIONS.production.trace.view).toBe('production:trace:view');
+    expect(PERMISSIONS.production.trace.view).not.toBe(PERMISSIONS.production.tasks.view);
+  });
 });

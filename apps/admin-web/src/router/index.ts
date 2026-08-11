@@ -23,6 +23,7 @@ import ProductionOrdersPage from '../views/production/ProductionOrdersPage.vue';
 import ProductionTasksPage from '../views/production/ProductionTasksPage.vue';
 import ProductionWorkerTasksPage from '../views/production/WorkerTasksPage.vue';
 import ProductionExecutionRecordsPage from '../views/production/ProductionExecutionRecordsPage.vue';
+import ProductionTracePage from '../views/production/ProductionTracePage.vue';
 
 // 仓储管理
 import InboundOrdersPage from '../views/warehouse/InboundOrdersPage.vue';
@@ -176,6 +177,14 @@ export const router = createRouter({
           ProductionExecutionRecordsPage,
           PERMISSIONS.production.tasks.view,
           'ProductionExecutionRecordsPage',
+        ),
+        page(
+          'production/trace',
+          'production-trace',
+          '生产追溯',
+          ProductionTracePage,
+          PERMISSIONS.production.trace.view,
+          'ProductionTracePage',
         ),
 
         // 仓储管理

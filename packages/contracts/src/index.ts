@@ -983,6 +983,55 @@ export interface ProductionExecutionCompletionResult {
   version: number;
 }
 
+export interface ProductionTraceQuery extends PageQuery {
+  keyword?: string;
+}
+
+export interface ProductionTraceBatchSummary {
+  productionBatchId: string;
+  batchNo: string;
+  batchStatus: ProductionBatchStatus;
+  workOrderId: string;
+  workOrderNo: string;
+  productId: string;
+  productCode: string;
+  productName: string;
+  plannedQuantity: string;
+  completedQuantity: string;
+  startedAt: string | null;
+  completedAt: string | null;
+}
+
+export interface ProductionTraceWorkOrderGroup {
+  workOrderId: string;
+  workOrderNo: string;
+  productId: string;
+  productCode: string;
+  productName: string;
+  batches: ProductionTraceBatchSummary[];
+}
+
+export interface ProductionTraceInventoryTransaction {
+  transactionId: string;
+  outboundDetailId: string;
+  itemId: string;
+  itemCode: string;
+  itemName: string;
+  itemBatchId: string;
+  batchCode: string;
+  quantity: string;
+  unit: string;
+  transactionAt: string;
+}
+
+export interface ProductionTraceDetail {
+  summary: ProductionTraceBatchSummary;
+  materialDemands: ProductionMaterialDemandItem[];
+  materialOutbounds: MaterialOutboundItem[];
+  inventoryTransactions: ProductionTraceInventoryTransaction[];
+  steps: BatchStepExecutionRecordItem[];
+}
+
 /** 日志模块枚举值 */
 export const OPERATION_LOG_MODULE_OPTIONS = [
   { label: '认证登录', value: 'auth' },

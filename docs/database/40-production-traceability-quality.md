@@ -278,4 +278,6 @@ products
   -> batch_step_abnormal_dispositions（数据库已落地，应用闭环待实现）
 ```
 
-`batch_step_abnormal_dispositions` 已作为追溯节点定稿并追加数据库 migration；报工与异常处置 application 尚未实现。质检、返工和成品流转只能在各自业务语义闭环后追加到主链。追溯查询可以使用受约束的冗余字段和快照，但任何库存数量只能从 `inventory_transaction` 汇总，任何生产需求只能从 `production_item_demand` 读取。
+`batch_step_abnormal_dispositions` 已作为追溯节点定稿并追加数据库 migration；报工创建、更正以及异常待处置展示已经落地，异常审批仍不在当前范围。质检、返工和成品流转只能在各自业务语义闭环后追加到主链。追溯查询可以使用受约束的冗余字段和快照，但任何库存数量只能从 `inventory_transaction` 汇总，任何生产需求只能从 `production_item_demand` 读取。
+
+当前 Production 只读追溯已经落地查询投影：支持按工单号、生产批次号、物料编码和库存批次号定位生产批次，并读取工单/批次概览、`production_item_demand`、`production_item_allocation`、`outbound_order/outbound_detail`、对应的 `production_material_outbound` 库存流水、`batch_step_records`、`batch_step_reports` 普通/冲销/替代链及有效聚合、`batch_step_abnormal_dispositions` 待处置记录。该投影不创建第二事实表，不返回质量、返工、报废、退料或成品流向占位数据。

@@ -366,6 +366,19 @@ describe('productionApi', () => {
     ]);
   });
 
+  it('uses read-only Production trace endpoints without warehouse API ownership', async () => {
+    const { productionApi } = await import('../production');
+    await productionApi.searchProductionTrace({ keyword: 'IB-1', page: 1, pageSize: 20 });
+    await productionApi.getProductionTrace('7');
+    expect(request.mock.calls.slice(-2).map(([config]) => config)).toEqual([
+      {
+        url: '/production/trace',
+        params: { keyword: 'IB-1', page: 1, pageSize: 20 },
+      },
+      { url: '/production/trace/batches/7' },
+    ]);
+  });
+
   it('uses idempotency only for report creation and correction, not reversal', async () => {
     const { productionApi } = await import('../production');
     const createBody = { version: 3, normalQuantity: 2, abnormalQuantity: 1, remark: null };
