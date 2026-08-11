@@ -7,6 +7,11 @@ import {
 } from '../../../apps/api/node_modules/mysql2/promise.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { MysqlProductionExecutionRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-execution.repository.js';
+import { MysqlProductionReportingRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-reporting.repository.js';
+import { MysqlIdempotencyExecutor } from '../../../apps/api/src/infrastructure/idempotency/mysql-idempotency.executor.js';
+import { IdentityDirectoryService } from '../../../apps/api/src/modules/identity/application/identity-directory.service.js';
+import { MysqlRbacRepository } from '../../../apps/api/src/modules/identity/infrastructure/mysql-rbac.repository.js';
+import { ProductionReportingService } from '../../../apps/api/src/modules/production/application/production-reporting.service.js';
 
 loadWorkspaceEnv();
 const describeMysql = process.env.RUN_MYSQL_INTEGRATION === '1' ? describe : describe.skip;
@@ -14,6 +19,8 @@ const describeMysql = process.env.RUN_MYSQL_INTEGRATION === '1' ? describe : des
 describeMysql('Production execution MySQL transactions', () => {
   let pool: Pool;
   let repository: MysqlProductionExecutionRepository;
+  let reporting: MysqlProductionReportingRepository;
+  let reportingService: ProductionReportingService;
 
   beforeAll(() => {
     pool = createPool({
@@ -27,6 +34,12 @@ describeMysql('Production execution MySQL transactions', () => {
       connectionLimit: 6,
     });
     repository = new MysqlProductionExecutionRepository(pool);
+    reporting = new MysqlProductionReportingRepository(pool);
+    reportingService = new ProductionReportingService(
+      reporting,
+      new IdentityDirectoryService(new MysqlRbacRepository(pool)),
+      new MysqlIdempotencyExecutor(pool),
+    );
   });
 
   afterAll(async () => pool?.end());
@@ -184,6 +197,202 @@ describeMysql('Production execution MySQL transactions', () => {
       await cleanup(pool, fixture);
     }
   });
+
+  it('records split reports, creates pending abnormal disposition and completes at exact normal quantity', async () => {
+    const fixture = await createFixture(pool, 'report');
+    try {
+      await repository.assignStep(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        String(fixture.workerId),
+        0,
+        context(fixture.actorId, `${fixture.token}-assign`),
+      );
+      await repository.startStep(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        1,
+        context(fixture.workerId, `${fixture.token}-start`),
+      );
+      const first = await reporting.createReport(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        { version: 2, normalQuantity: 4, abnormalQuantity: 1, remark: 'split one' },
+        context(fixture.workerId, `${fixture.token}-report-1`),
+      );
+      expect(first).toMatchObject({ stepStatus: 'doing', effectiveNormalQuantity: '4.0000' });
+      expect(first.abnormalDisposition).toMatchObject({ reviewStatus: 'pending_review' });
+      const second = await reporting.createReport(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        { version: 3, normalQuantity: 6, abnormalQuantity: 0, remark: null },
+        context(fixture.workerId, `${fixture.token}-report-2`),
+      );
+      expect(second).toMatchObject({ stepStatus: 'completed', effectiveNormalQuantity: '10.0000' });
+      expect(
+        await auditCount(pool, `${fixture.token}-report-2`, 'production-step-report.create'),
+      ).toBe(1);
+    } finally {
+      await cleanup(pool, fixture);
+    }
+  });
+
+  it('corrects by appending reversal and replacement and reopens a completed step', async () => {
+    const fixture = await createFixture(pool, 'correct');
+    try {
+      await repository.assignStep(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        String(fixture.workerId),
+        0,
+        context(fixture.actorId, `${fixture.token}-assign`),
+      );
+      await repository.startStep(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        1,
+        context(fixture.workerId, `${fixture.token}-start`),
+      );
+      const original = await reporting.createReport(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        { version: 2, normalQuantity: 10, abnormalQuantity: 0, remark: null },
+        context(fixture.workerId, `${fixture.token}-report`),
+      );
+      const corrected = await reporting.correctReport(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        original.report.reportId,
+        { version: 3, normalQuantity: 9, abnormalQuantity: 0, reason: '数量录入更正' },
+        context(fixture.actorId, `${fixture.token}-correct`),
+      );
+      expect(corrected).toMatchObject({ stepStatus: 'doing', effectiveNormalQuantity: '9.0000' });
+      expect(corrected.reversal.reversalOfReportId).toBe(original.report.reportId);
+      expect(corrected.replacement.correctionOfReportId).toBe(original.report.reportId);
+      const [[count]] = await pool.query<(RowDataPacket & { count: number })[]>(
+        'SELECT COUNT(*) count FROM batch_step_reports WHERE batch_step_record_id=?',
+        [fixture.firstStepRecordId],
+      );
+      expect(Number(count?.count)).toBe(3);
+    } finally {
+      await cleanup(pool, fixture);
+    }
+  });
+
+  it('serializes concurrent reports with the same step version', async () => {
+    const fixture = await createFixture(pool, 'report-race');
+    try {
+      await repository.assignStep(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        String(fixture.workerId),
+        0,
+        context(fixture.actorId, `${fixture.token}-assign`),
+      );
+      await repository.startStep(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        1,
+        context(fixture.workerId, `${fixture.token}-start`),
+      );
+      const results = await Promise.allSettled([
+        reporting.createReport(
+          String(fixture.batchId),
+          String(fixture.firstStepRecordId),
+          { version: 2, normalQuantity: 6, abnormalQuantity: 0 },
+          context(fixture.workerId, `${fixture.token}-race-a`),
+        ),
+        reporting.createReport(
+          String(fixture.batchId),
+          String(fixture.firstStepRecordId),
+          { version: 2, normalQuantity: 6, abnormalQuantity: 0 },
+          context(fixture.workerId, `${fixture.token}-race-b`),
+        ),
+      ]);
+      expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+      expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+    } finally {
+      await cleanup(pool, fixture);
+    }
+  });
+
+  it('replays report creation and correction without duplicating immutable facts', async () => {
+    const fixture = await createFixture(pool, 'report-idempotency');
+    try {
+      await repository.assignStep(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        String(fixture.workerId),
+        0,
+        context(fixture.actorId, `${fixture.token}-assign`),
+      );
+      await repository.startStep(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        1,
+        context(fixture.workerId, `${fixture.token}-start`),
+      );
+      const createPayload = { version: 2, normalQuantity: 4, abnormalQuantity: 0, remark: null };
+      const createKey = `${fixture.token}-create-key`;
+      const first = await reportingService.createReport(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        createPayload,
+        idempotentContext(fixture.workerId, `${fixture.token}-create-first`, createKey),
+      );
+      const replay = await reportingService.createReport(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        createPayload,
+        idempotentContext(fixture.workerId, `${fixture.token}-create-replay`, createKey),
+      );
+      expect(replay).toEqual(first);
+      await expect(
+        reportingService.createReport(
+          String(fixture.batchId),
+          String(fixture.firstStepRecordId),
+          { ...createPayload, normalQuantity: 3 },
+          idempotentContext(fixture.workerId, `${fixture.token}-create-conflict`, createKey),
+        ),
+      ).rejects.toMatchObject({ code: 'IDEMPOTENCY_CONFLICT' });
+
+      await reporting.createReport(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        { version: 3, normalQuantity: 6, abnormalQuantity: 0 },
+        context(fixture.workerId, `${fixture.token}-complete`),
+      );
+      const correctionPayload = {
+        version: 4,
+        normalQuantity: 3,
+        abnormalQuantity: 0,
+        reason: '响应丢失重试',
+      };
+      const correctionKey = `${fixture.token}-correct-key`;
+      const corrected = await reportingService.correctReport(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        first.report.reportId,
+        correctionPayload,
+        idempotentContext(fixture.actorId, `${fixture.token}-correct-first`, correctionKey),
+      );
+      const correctedReplay = await reportingService.correctReport(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        first.report.reportId,
+        correctionPayload,
+        idempotentContext(fixture.actorId, `${fixture.token}-correct-replay`, correctionKey),
+      );
+      expect(correctedReplay).toEqual(corrected);
+      const [[count]] = await pool.query<(RowDataPacket & { count: number })[]>(
+        'SELECT COUNT(*) count FROM batch_step_reports WHERE batch_step_record_id=?',
+        [fixture.firstStepRecordId],
+      );
+      expect(Number(count?.count)).toBe(4);
+    } finally {
+      await cleanup(pool, fixture);
+    }
+  });
 });
 
 type Fixture = {
@@ -310,6 +519,19 @@ const createFixture = async (pool: Pool, suffix: string): Promise<Fixture> => {
 
 const cleanup = async (pool: Pool, fixture: Fixture): Promise<void> => {
   await pool.execute('DELETE FROM operation_logs WHERE request_id LIKE ?', [`${fixture.token}%`]);
+  await pool.execute('DELETE FROM http_idempotency_records WHERE idempotency_key LIKE ?', [
+    `${fixture.token}%`,
+  ]);
+  await pool.execute('DELETE FROM batch_step_abnormal_dispositions WHERE production_batch_id=?', [
+    fixture.batchId,
+  ]);
+  await pool.execute(
+    'DELETE FROM batch_step_reports WHERE production_batch_id=? AND (reversal_of_report_id IS NOT NULL OR replaces_report_id IS NOT NULL)',
+    [fixture.batchId],
+  );
+  await pool.execute('DELETE FROM batch_step_reports WHERE production_batch_id=?', [
+    fixture.batchId,
+  ]);
   await pool.execute('DELETE FROM batch_step_records WHERE production_batch_id=?', [
     fixture.batchId,
   ]);
@@ -336,6 +558,10 @@ const context = (actorId: number, requestId: string) => ({
   requestId,
   ip: null,
   userAgent: null,
+});
+const idempotentContext = (actorId: number, requestId: string, idempotencyKey: string) => ({
+  ...context(actorId, requestId),
+  idempotencyKey,
 });
 
 const auditCount = async (pool: Pool, requestId: string, action: string): Promise<number> => {

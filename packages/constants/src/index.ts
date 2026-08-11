@@ -149,6 +149,11 @@ export const BATCH_STEP_STATUS_LABELS = {
   doing: '进行中',
   completed: '已完成',
 } as const;
+export const BATCH_STEP_REPORT_TYPES = ['normal', 'reversal'] as const;
+export const BATCH_STEP_REPORT_TYPE_LABELS = {
+  normal: '普通报工',
+  reversal: '冲销事实',
+} as const;
 export const BATCH_STEP_ABNORMAL_REVIEW_STATUSES = [
   'pending_review',
   'approved',
@@ -156,6 +161,12 @@ export const BATCH_STEP_ABNORMAL_REVIEW_STATUSES = [
   'cancelled',
 ] as const;
 export const BATCH_STEP_ABNORMAL_DISPOSITION_TYPES = ['rework', 'scrap'] as const;
+export const BATCH_STEP_ABNORMAL_REVIEW_STATUS_LABELS = {
+  pending_review: '待处置',
+  approved: '已批准',
+  rejected: '已驳回',
+  cancelled: '已取消',
+} as const;
 export const INVENTORY_SOURCE_TYPES = [
   'self_made',
   'purchased',

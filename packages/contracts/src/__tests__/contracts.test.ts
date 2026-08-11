@@ -3,6 +3,8 @@ import { AUTH_API } from '../index.js';
 import type {
   AssignProductionStepPayload,
   CreateMaterialAllocationsPayload,
+  CreateBatchStepReportPayload,
+  CorrectBatchStepReportPayload,
   ProductionMaterialDemandItem,
   ProductionWorkerTaskItem,
 } from '../index.js';
@@ -21,6 +23,24 @@ describe('production execution contracts', () => {
     } as ProductionWorkerTaskItem;
     expect(payload).toEqual({ responsibleUserId: '7', version: 2 });
     expect(task.requiredNormalQuantity).toBe('10.0000');
+  });
+
+  it('models each report as a delta and correction as a replacement command', () => {
+    const report: CreateBatchStepReportPayload = {
+      version: 3,
+      normalQuantity: 2,
+      abnormalQuantity: 1,
+      remark: '本次报工',
+    };
+    const correction: CorrectBatchStepReportPayload = {
+      version: 4,
+      normalQuantity: 1,
+      abnormalQuantity: 0,
+      reason: '录入更正',
+    };
+    expect(report).not.toHaveProperty('completedQuantity');
+    expect(report).not.toHaveProperty('qualifiedQuantity');
+    expect(correction.reason).toBeTruthy();
   });
 });
 

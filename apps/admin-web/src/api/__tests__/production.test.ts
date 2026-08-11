@@ -352,6 +352,38 @@ describe('productionApi', () => {
     ]);
   });
 
+  it('uses idempotency only for report creation and correction, not reversal', async () => {
+    const { productionApi } = await import('../production');
+    const createBody = { version: 3, normalQuantity: 2, abnormalQuantity: 1, remark: null };
+    await productionApi.createStepReport('1', '9', createBody, 'report-key');
+    await productionApi.reverseStepReport('1', '9', '12', { version: 4, reason: '录入错误' });
+    const correctBody = { version: 4, normalQuantity: 2, abnormalQuantity: 0, reason: '修正' };
+    await productionApi.correctStepReport('1', '9', '12', correctBody, 'correct-key');
+    expect(request.mock.calls.slice(-3).map(([config]) => config)).toEqual([
+      {
+        url: '/production/batches/1/step-records/9/reports',
+        method: 'POST',
+        data: createBody,
+        headers: { 'Idempotency-Key': 'report-key' },
+        retryUnsafe: true,
+        retryTimes: 2,
+      },
+      {
+        url: '/production/batches/1/step-records/9/reports/12/actions/reverse',
+        method: 'POST',
+        data: { version: 4, reason: '录入错误' },
+      },
+      {
+        url: '/production/batches/1/step-records/9/reports/12/actions/correct',
+        method: 'POST',
+        data: correctBody,
+        headers: { 'Idempotency-Key': 'correct-key' },
+        retryUnsafe: true,
+        retryTimes: 2,
+      },
+    ]);
+  });
+
   it('handles network errors gracefully via toRequestError', async () => {
     const { RequestError } = await import('@company/request');
     const axios = await import('axios');

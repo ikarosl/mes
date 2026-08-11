@@ -52,7 +52,12 @@ const statusFor = (code: ProductionDomainError['code']): number => {
     code === 'ALLOCATION_ALREADY_OUTBOUND' ||
     code === 'OUTBOUND_EXCEEDS_ALLOCATION' ||
     code === 'STEP_ASSIGNMENT_CONFLICT' ||
-    code === 'STEP_START_NOT_ALLOWED'
+    code === 'STEP_START_NOT_ALLOWED' ||
+    code === 'STEP_REPORT_NOT_ALLOWED' ||
+    code === 'STEP_REPORT_QUANTITY_EXCEEDED' ||
+    code === 'STEP_REPORT_ALREADY_REVERSED' ||
+    code === 'STEP_REPORT_DEPENDENCY_CONFLICT' ||
+    code === 'DOWNSTREAM_QUANTITY_CONFLICT'
   )
     return HttpStatus.CONFLICT;
   return HttpStatus.BAD_REQUEST;

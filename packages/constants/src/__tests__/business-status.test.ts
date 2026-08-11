@@ -4,6 +4,7 @@ import {
   BATCH_STEP_ABNORMAL_DISPOSITION_TYPES,
   BATCH_STEP_ABNORMAL_REVIEW_STATUSES,
   BATCH_STEP_STATUSES,
+  BATCH_STEP_REPORT_TYPES,
   DEMAND_TYPES,
   FINISHED_FLOW_TYPES,
   INVENTORY_REFERENCE_TYPES,
@@ -21,6 +22,7 @@ const persistedCodeSets = [
   INVENTORY_REFERENCE_TYPES,
   ALLOCATION_STATUSES,
   BATCH_STEP_STATUSES,
+  BATCH_STEP_REPORT_TYPES,
   BATCH_STEP_ABNORMAL_REVIEW_STATUSES,
   BATCH_STEP_ABNORMAL_DISPOSITION_TYPES,
   DEMAND_TYPES,
@@ -56,6 +58,7 @@ describe('business persisted codes', () => {
       'cancelled',
     ]);
     expect(BATCH_STEP_ABNORMAL_DISPOSITION_TYPES).toEqual(['rework', 'scrap']);
+    expect(BATCH_STEP_REPORT_TYPES).toEqual(['normal', 'reversal']);
     expect(DEMAND_TYPES).toEqual(['normal', 'manual_additional']);
   });
 });

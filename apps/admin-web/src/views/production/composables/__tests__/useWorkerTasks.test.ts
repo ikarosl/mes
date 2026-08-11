@@ -2,7 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ProductionWorkerTaskItem } from '@company/contracts';
 import { useWorkerTasks } from '../useWorkerTasks';
 
-const api = vi.hoisted(() => ({ listWorkerTasks: vi.fn(), startStep: vi.fn() }));
+const api = vi.hoisted(() => ({
+  listWorkerTasks: vi.fn(),
+  startStep: vi.fn(),
+  createStepReport: vi.fn(),
+}));
 vi.mock('../../../../api/production', () => ({ productionApi: api }));
 
 const task = {
@@ -35,5 +39,20 @@ describe('useWorkerTasks', () => {
     resolveFirst([task]);
     await first;
     expect(state.tasks.value).toEqual([]);
+  });
+
+  it('sends the same normalized report object for intent signing and transport', async () => {
+    api.createStepReport.mockResolvedValue({});
+    api.listWorkerTasks.mockResolvedValue([]);
+    const state = useWorkerTasks();
+    await state.report(task, 2, 1, '  本次异常  ');
+    expect(api.createStepReport).toHaveBeenCalledWith(
+      '2',
+      '10',
+      { version: 3, normalQuantity: 2, abnormalQuantity: 1, remark: '本次异常' },
+      expect.any(String),
+    );
+    expect(state.reportPendingIds.value.size).toBe(0);
+    expect(api.listWorkerTasks).toHaveBeenCalledOnce();
   });
 });

@@ -15,8 +15,11 @@ import {
 } from 'class-validator';
 import type {
   CreateProductionBatchPayload,
+  CorrectBatchStepReportPayload,
+  CreateBatchStepReportPayload,
   CreateWorkOrderPayload,
   ProductionBatchQuery,
+  ReverseBatchStepReportPayload,
   UpdateProductionBatchPayload,
   UpdateBatchStepExecutionPayload,
   UpdateWorkOrderPayload,
@@ -37,6 +40,9 @@ export class WorkOrderIdParamDto {
 export class BatchStepRecordParamDto {
   @IsString() @MaxLength(20) batchId!: string;
   @IsString() @MaxLength(20) recordId!: string;
+}
+export class BatchStepReportParamDto extends BatchStepRecordParamDto {
+  @IsString() @MaxLength(20) reportId!: string;
 }
 export class WorkOrderQueryDto extends PageQueryDto implements WorkOrderQuery {
   @IsOptional() @IsString() @MaxLength(100) keyword?: string;
@@ -145,4 +151,29 @@ export class UpdateBatchStepExecutionDto
 
 export class AssignProductionStepDto extends VersionedCommandDto {
   @IsString() @IsNotEmpty() @MaxLength(20) responsibleUserId!: string;
+}
+
+export class CreateBatchStepReportDto
+  extends VersionedCommandDto
+  implements CreateBatchStepReportPayload
+{
+  @Type(() => Number) @IsNumber({ maxDecimalPlaces: 4 }) @Min(0) normalQuantity!: number;
+  @Type(() => Number) @IsNumber({ maxDecimalPlaces: 4 }) @Min(0) abnormalQuantity!: number;
+  @IsOptional() @IsString() @MaxLength(5000) remark?: string | null;
+}
+
+export class ReverseBatchStepReportDto
+  extends VersionedCommandDto
+  implements ReverseBatchStepReportPayload
+{
+  @IsString() @IsNotEmpty() @MaxLength(5000) reason!: string;
+}
+
+export class CorrectBatchStepReportDto
+  extends VersionedCommandDto
+  implements CorrectBatchStepReportPayload
+{
+  @Type(() => Number) @IsNumber({ maxDecimalPlaces: 4 }) @Min(0) normalQuantity!: number;
+  @Type(() => Number) @IsNumber({ maxDecimalPlaces: 4 }) @Min(0) abnormalQuantity!: number;
+  @IsString() @IsNotEmpty() @MaxLength(5000) reason!: string;
 }

@@ -22,6 +22,12 @@ import type {
   WorkOrderQuery,
   ProductionStepCommandResult,
   ProductionWorkerTaskItem,
+  BatchStepReportCommandResult,
+  CorrectBatchStepReportCommandResult,
+  CorrectBatchStepReportPayload,
+  CreateBatchStepReportPayload,
+  ProductionExecutionRecordGroup,
+  ReverseBatchStepReportPayload,
 } from '@company/contracts';
 import { toRequestError, type RetryRequestConfig } from '@company/request';
 import { httpClient } from './http';
@@ -195,5 +201,53 @@ export const productionApi = {
       url: `/production/batches/${batchId}/step-records/${stepRecordId}/actions/start`,
       method: 'POST',
       data: { version },
+    }),
+
+  getBatchExecutionRecords: (batchId: string) =>
+    request<ProductionExecutionRecordGroup>({
+      url: `/production/batches/${batchId}/execution-records`,
+    }),
+
+  createStepReport: (
+    batchId: string,
+    stepRecordId: string,
+    data: CreateBatchStepReportPayload,
+    idempotencyKey: string,
+  ) =>
+    request<BatchStepReportCommandResult>({
+      url: `/production/batches/${batchId}/step-records/${stepRecordId}/reports`,
+      method: 'POST',
+      data,
+      headers: { 'Idempotency-Key': idempotencyKey },
+      retryUnsafe: true,
+      retryTimes: 2,
+    }),
+
+  reverseStepReport: (
+    batchId: string,
+    stepRecordId: string,
+    reportId: string,
+    data: ReverseBatchStepReportPayload,
+  ) =>
+    request<BatchStepReportCommandResult>({
+      url: `/production/batches/${batchId}/step-records/${stepRecordId}/reports/${reportId}/actions/reverse`,
+      method: 'POST',
+      data,
+    }),
+
+  correctStepReport: (
+    batchId: string,
+    stepRecordId: string,
+    reportId: string,
+    data: CorrectBatchStepReportPayload,
+    idempotencyKey: string,
+  ) =>
+    request<CorrectBatchStepReportCommandResult>({
+      url: `/production/batches/${batchId}/step-records/${stepRecordId}/reports/${reportId}/actions/correct`,
+      method: 'POST',
+      data,
+      headers: { 'Idempotency-Key': idempotencyKey },
+      retryUnsafe: true,
+      retryTimes: 2,
     }),
 };

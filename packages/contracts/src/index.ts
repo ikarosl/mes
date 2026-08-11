@@ -840,6 +840,118 @@ export interface ProductionWorkerTaskItem {
   startBlockedReason: string | null;
 }
 
+export interface CreateBatchStepReportPayload extends VersionedCommand {
+  normalQuantity: number;
+  abnormalQuantity: number;
+  remark?: string | null;
+}
+
+export interface CorrectBatchStepReportPayload extends VersionedCommand {
+  normalQuantity: number;
+  abnormalQuantity: number;
+  reason: string;
+}
+
+export interface ReverseBatchStepReportPayload extends VersionedCommand {
+  reason: string;
+}
+
+export interface BatchStepReportItem {
+  reportId: string;
+  reportNo: string;
+  productionBatchId: string;
+  stepRecordId: string;
+  reportType: BatchStepReportType;
+  reversalOfReportId: string | null;
+  correctionOfReportId: string | null;
+  reportedQuantity: string;
+  normalQuantity: string;
+  abnormalQuantity: string;
+  unit: string;
+  remark: string | null;
+  createdById: string;
+  createdByName: string | null;
+  createdAt: string;
+  isEffective: boolean;
+}
+
+export interface BatchStepAbnormalDispositionItem {
+  dispositionId: string;
+  dispositionNo: string;
+  productionBatchId: string;
+  stepRecordId: string;
+  sourceReportId: string;
+  reviewStatus: BatchStepAbnormalReviewStatus;
+  dispositionType: 'rework' | 'scrap' | null;
+  remark: string | null;
+  version: number;
+  createdAt: string;
+}
+
+export interface BatchStepExecutionRecordItem {
+  stepRecordId: string;
+  productionBatchId: string;
+  stepOrder: number;
+  stepCode: string;
+  stepName: string;
+  responsibleUserId: string | null;
+  responsibleUserName: string | null;
+  status: BatchStepStatus;
+  needRecord: boolean;
+  unit: string;
+  requiredNormalQuantity: string;
+  effectiveReportedQuantity: string;
+  effectiveNormalQuantity: string;
+  effectiveAbnormalQuantity: string;
+  remainingNormalQuantity: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  version: number;
+  reports: BatchStepReportItem[];
+  abnormalDispositions: BatchStepAbnormalDispositionItem[];
+}
+
+export interface ProductionExecutionRecordGroup {
+  productionBatchId: string;
+  batchNo: string;
+  workOrderId: string;
+  workOrderNo: string;
+  productCode: string;
+  productName: string;
+  batchStatus: ProductionBatchStatus;
+  plannedQuantity: string;
+  steps: BatchStepExecutionRecordItem[];
+}
+
+export interface BatchStepReportCommandResult {
+  productionBatchId: string;
+  stepRecordId: string;
+  stepStatus: BatchStepStatus;
+  stepVersion: number;
+  requiredNormalQuantity: string;
+  effectiveReportedQuantity: string;
+  effectiveNormalQuantity: string;
+  effectiveAbnormalQuantity: string;
+  remainingNormalQuantity: string;
+  report: BatchStepReportItem;
+  abnormalDisposition: BatchStepAbnormalDispositionItem | null;
+}
+
+export interface CorrectBatchStepReportCommandResult {
+  productionBatchId: string;
+  stepRecordId: string;
+  stepStatus: BatchStepStatus;
+  stepVersion: number;
+  requiredNormalQuantity: string;
+  effectiveReportedQuantity: string;
+  effectiveNormalQuantity: string;
+  effectiveAbnormalQuantity: string;
+  remainingNormalQuantity: string;
+  reversal: BatchStepReportItem;
+  replacement: BatchStepReportItem;
+  abnormalDisposition: BatchStepAbnormalDispositionItem | null;
+}
+
 /** 日志模块枚举值 */
 export const OPERATION_LOG_MODULE_OPTIONS = [
   { label: '认证登录', value: 'auth' },
@@ -880,8 +992,6 @@ export type ProductionBatchStatus =
   | 'completed'
   | 'cancelled';
 export type BatchStepStatus = 'pending' | 'assigned' | 'doing' | 'completed';
-export type BatchStepAbnormalReviewStatus =
-  'pending_review' | 'approved' | 'rejected' | 'cancelled';
 export type BatchStepAbnormalDispositionType = 'rework' | 'scrap';
 export type InventorySourceType =
   'self_made' | 'purchased' | 'outsourced' | 'return_inbound' | 'stock_check_generated' | 'other';
@@ -912,6 +1022,9 @@ export type DemandBusinessStatus = 'active' | 'cancelled' | 'closed' | 'frozen' 
 export type AllocationStatus = 'active' | 'released' | 'cancelled' | 'frozen' | 'abnormal';
 export type OutboundOrderStatus =
   'pending_picking' | 'picked' | 'partially_outbound' | 'completed' | 'cancelled';
+export type BatchStepReportType = 'normal' | 'reversal';
+export type BatchStepAbnormalReviewStatus =
+  'pending_review' | 'approved' | 'rejected' | 'cancelled';
 export type ReturnOrderStatus = 'pending' | 'returned' | 'scrapped' | 'cancelled';
 export type ScrapScene =
   'warehouse_allocated' | 'return_after_outbound' | 'production_consumed' | 'in_stock';

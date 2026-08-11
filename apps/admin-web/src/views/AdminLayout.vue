@@ -141,6 +141,11 @@ const productionMenus = [
     path: '/production/worker-tasks',
     permission: PERMISSIONS.production.workerTasks.view,
   },
+  {
+    title: '生产报工记录',
+    path: '/production/execution-records',
+    permission: PERMISSIONS.production.tasks.view,
+  },
 ];
 const productionItems = computed(() => productionMenus.filter((item) => auth.can(item.permission)));
 

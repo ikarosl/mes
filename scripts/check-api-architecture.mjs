@@ -51,6 +51,8 @@ const knownIdempotencyScopes = [
   'production.batch.create.v2',
   'production.material-allocation.create.v1',
   'production.material-outbound.create.v1',
+  'production.step-report.create.v1',
+  'production.step-report.correct.v1',
 ];
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const idempotencyScopeLiteralPattern = new RegExp(
@@ -147,8 +149,10 @@ const checks = [
     exclude: [
       'apps/api/src/modules/production/application/production.service.ts',
       'apps/api/src/modules/production/application/production-material.service.ts',
+      'apps/api/src/modules/production/application/production-reporting.service.ts',
       'apps/api/src/modules/production/presentation/http/production.controller.ts',
       'apps/api/src/modules/production/presentation/http/production-material.controller.ts',
+      'apps/api/src/modules/production/presentation/http/production-reporting.controller.ts',
     ],
   },
   {
@@ -159,6 +163,7 @@ const checks = [
     exclude: [
       'apps/api/src/modules/production/application/production.service.ts',
       'apps/api/src/modules/production/application/production-material.service.ts',
+      'apps/api/src/modules/production/application/production-reporting.service.ts',
     ],
     fileMatch: isApplicationLayerFile,
   },
