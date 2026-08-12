@@ -3,12 +3,18 @@ import type {
   CorrectBatchStepReportCommandResult,
   CorrectBatchStepReportPayload,
   CreateBatchStepReportPayload,
+  PageResult,
+  ProductionBatchQuery,
+  ProductionExecutionBatchSummary,
   ProductionExecutionRecordGroup,
   ReverseBatchStepReportPayload,
 } from '@company/contracts';
 import type { CommandContext } from '../../../../common/audit/audit.types.js';
 
 export abstract class ProductionReportingRepository {
+  abstract listExecutionBatches(
+    query: ProductionBatchQuery,
+  ): Promise<PageResult<ProductionExecutionBatchSummary>>;
   abstract getBatchExecution(batchId: string): Promise<ProductionExecutionRecordGroup>;
   abstract createReport(
     batchId: string,

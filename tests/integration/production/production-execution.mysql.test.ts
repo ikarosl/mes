@@ -235,6 +235,23 @@ describeMysql('Production execution MySQL transactions', () => {
         effectiveAbnormalQuantity: '1.0000',
         availableNormalQuantity: '0.0000',
       });
+      const summaries = await reporting.listExecutionBatches({
+        keyword: fixture.token,
+        page: 1,
+        pageSize: 20,
+      });
+      expect(summaries).toMatchObject({
+        total: 1,
+        items: [
+          {
+            id: String(fixture.batchId),
+            completedStepCount: 0,
+            totalStepCount: 2,
+            effectiveAbnormalQuantity: '1.0000',
+            pendingAbnormalCount: 1,
+          },
+        ],
+      });
       await expect(
         reporting.createReport(
           String(fixture.batchId),

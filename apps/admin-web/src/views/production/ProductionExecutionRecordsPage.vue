@@ -58,55 +58,65 @@
       </TableToolbar>
 
       <div class="workspace">
-        <aside class="batch-list">
-          <div class="batch-list-heading">
-            <strong>生产批次</strong>
-            <span>点击切换记录</span>
-          </div>
-          <div
-            v-loading="loading"
-            class="batch-items"
-          >
-            <button
-              v-for="batch in batches"
-              :key="batch.id"
-              type="button"
-              :class="['batch-item', { active: selectedBatchId === batch.id }]"
-              @click="selectBatch(batch.id)"
-            >
-              <strong>{{ batch.batchNo }}</strong>
-              <span>{{ batch.workOrderNo }}</span>
-              <small>{{ batch.productCode }} / {{ batch.productName }}</small>
-              <el-tag
-                size="small"
-                :type="batchStatusMeta(batch.status).type"
-                effect="light"
-                >{{ batchStatusMeta(batch.status).label }}</el-tag
-              >
-            </button>
-            <el-empty
-              v-if="!loading && batches.length === 0"
-              description="未找到生产批次"
-              :image-size="72"
-            />
-          </div>
-          <el-pagination
-            v-if="total > 20"
-            class="batch-pagination"
-            small
-            layout="prev, pager, next"
-            :current-page="currentPage"
-            :page-size="20"
-            :total="total"
-            @current-change="changePage"
-          />
-        </aside>
+        <ProductionExecutionBatchList
+          :batches="batches"
+          :loading="loading"
+          :selected-batch-id="selectedBatchId"
+          :current-page="currentPage"
+          :total="total"
+          @select="selectBatch"
+          @change-page="changePage"
+        />
 
         <main
           v-loading="detailLoading"
           class="record-panel"
         >
           <template v-if="record">
+            <section
+              :class="['batch-health', selectedBatchRiskClass]"
+              aria-label="批次执行摘要"
+            >
+              <div class="batch-health-main">
+                <div class="batch-health-title">
+                  <strong>{{ record.batchNo }}</strong>
+                  <el-tag :type="batchStatusMeta(record.batchStatus).type">
+                    {{ batchStatusMeta(record.batchStatus).label }}
+                  </el-tag>
+                  <el-tag
+                    v-if="selectedOverdueDays > 0"
+                    type="warning"
+                    >已逾期 {{ selectedOverdueDays }} 天</el-tag
+                  >
+                  <el-tag
+                    v-if="selectedBatch && executionBatchHasAbnormal(selectedBatch)"
+                    type="danger"
+                    >有效异常 {{ formatQuantity(selectedBatch.effectiveAbnormalQuantity) }} · 待处置
+                    {{ selectedBatch.pendingAbnormalCount }}</el-tag
+                  >
+                </div>
+                <p>
+                  工单 {{ record.workOrderNo }} · {{ record.productCode }} /
+                  {{ record.productName }}
+                  <template v-if="selectedBatch?.planEndDate">
+                    · 计划完成 {{ selectedBatch.planEndDate }}
+                  </template>
+                  <template v-if="currentStepLabel"> · 当前工序 {{ currentStepLabel }} </template>
+                </p>
+              </div>
+              <div class="batch-progress">
+                <div>
+                  <span>工序进度</span>
+                  <strong>{{ completedStepCount }} / {{ record.steps.length }}</strong>
+                </div>
+                <el-progress
+                  :percentage="stepProgressPercentage"
+                  :stroke-width="10"
+                  :show-text="false"
+                  :status="pendingAbnormalCount > 0 ? 'exception' : undefined"
+                />
+              </div>
+            </section>
             <el-alert
               class="fact-tip"
               type="info"
@@ -116,34 +126,22 @@
             />
             <div class="record-overview">
               <div>
-                <span>生产批次</span><strong>{{ record.batchNo }}</strong>
-              </div>
-              <div>
-                <span>生产工单</span><strong>{{ record.workOrderNo }}</strong>
-              </div>
-              <div>
-                <span>产品</span
-                ><strong>{{ record.productCode }} / {{ record.productName }}</strong>
-              </div>
-              <div>
                 <span>计划数量</span><strong>{{ formatQuantity(record.plannedQuantity) }}</strong>
-              </div>
-              <div>
-                <span>工序进度</span
-                ><strong>{{ completedStepCount }} / {{ record.steps.length }}</strong>
               </div>
               <div>
                 <span>有效报工事实</span><strong>{{ effectiveReportCount }}</strong>
               </div>
               <div>
-                <span>待处置异常</span
-                ><strong :class="{ 'warning-text': pendingAbnormalCount > 0 }">{{
-                  pendingAbnormalCount
+                <span>有效异常数量</span
+                ><strong :class="{ 'danger-text': effectiveAbnormalQuantity > 0 }">{{
+                  formatQuantity(effectiveAbnormalQuantity)
                 }}</strong>
               </div>
               <div>
-                <span>批次状态</span
-                ><strong>{{ batchStatusMeta(record.batchStatus).label }}</strong>
+                <span>待处置异常</span
+                ><strong :class="{ 'danger-text': pendingAbnormalCount > 0 }">{{
+                  pendingAbnormalCount
+                }}</strong>
               </div>
             </div>
 
@@ -177,7 +175,7 @@
             <article
               v-for="step in record.steps"
               :key="step.stepRecordId"
-              class="step-card"
+              :class="['step-card', { 'has-abnormal': stepHasAbnormal(step) }]"
             >
               <header>
                 <div>
@@ -201,7 +199,7 @@
                 <span
                   >有效正常累计 <b>{{ formatQuantity(step.effectiveNormalQuantity) }}</b></span
                 >
-                <span
+                <span :class="{ 'danger-text': Number(step.effectiveAbnormalQuantity) > 0 }"
                   >有效异常累计 <b>{{ formatQuantity(step.effectiveAbnormalQuantity) }}</b></span
                 >
                 <span
@@ -233,7 +231,14 @@
                   label="异常数量"
                   width="110"
                 >
-                  <template #default="{ row }">{{ formatQuantity(row.abnormalQuantity) }}</template>
+                  <template #default="{ row }">
+                    <strong
+                      :class="{
+                        'danger-text': row.isEffective && Number(row.abnormalQuantity) > 0,
+                      }"
+                      >{{ formatQuantity(row.abnormalQuantity) }}</strong
+                    >
+                  </template>
                 </el-table-column>
                 <el-table-column
                   label="事实关系"
@@ -305,7 +310,7 @@
                 <el-tag
                   v-for="item in step.abnormalDispositions"
                   :key="item.dispositionId"
-                  type="warning"
+                  type="danger"
                   >{{ item.dispositionNo }} ·
                   {{ BATCH_STEP_ABNORMAL_REVIEW_STATUS_LABELS[item.reviewStatus] }}</el-tag
                 >
@@ -476,7 +481,13 @@ import { formatDateTimeForDisplay } from '../../utils/date';
 import { EMessage } from '../../utils/message';
 import TableToolbar from '../../components/TableToolbar.vue';
 import { batchStatusMeta, formatQuantity, stepStatusMeta } from './production-status';
+import ProductionExecutionBatchList from './components/ProductionExecutionBatchList.vue';
 import { useProductionExecutionRecords } from './composables/useProductionExecutionRecords';
+import {
+  executionBatchHasAbnormal,
+  executionBatchOverdueDays,
+  executionBatchRiskClass,
+} from './production-execution-risk';
 
 defineOptions({ name: 'ProductionExecutionRecordsPage' });
 const keyword = ref('');
@@ -510,6 +521,13 @@ const completionPending = computed(() =>
 const completedStepCount = computed(
   () => record.value?.steps.filter((step) => step.status === 'completed').length ?? 0,
 );
+const selectedBatch = computed(
+  () => batches.value.find((batch) => batch.id === selectedBatchId.value) ?? null,
+);
+const stepProgressPercentage = computed(() => {
+  const totalSteps = record.value?.steps.length ?? 0;
+  return totalSteps > 0 ? Math.round((completedStepCount.value / totalSteps) * 100) : 0;
+});
 const effectiveReportCount = computed(
   () =>
     record.value?.steps.reduce(
@@ -517,6 +535,19 @@ const effectiveReportCount = computed(
       0,
     ) ?? 0,
 );
+const effectiveAbnormalQuantity = computed(
+  () =>
+    record.value?.steps.reduce(
+      (total, step) => total + Number(step.effectiveAbnormalQuantity),
+      0,
+    ) ?? 0,
+);
+const currentStepLabel = computed(() => {
+  const step =
+    record.value?.steps.find((item) => item.status === 'doing') ??
+    record.value?.steps.find((item) => item.status === 'assigned');
+  return step ? `${step.stepOrder}. ${step.stepName}` : null;
+});
 const pendingAbnormalCount = computed(
   () =>
     record.value?.steps.reduce(
@@ -526,6 +557,15 @@ const pendingAbnormalCount = computed(
       0,
     ) ?? 0,
 );
+const selectedOverdueDays = computed(() =>
+  selectedBatch.value ? executionBatchOverdueDays(selectedBatch.value) : 0,
+);
+const selectedBatchRiskClass = computed(() =>
+  selectedBatch.value ? executionBatchRiskClass(selectedBatch.value) : '',
+);
+const stepHasAbnormal = (step: BatchStepExecutionRecordItem): boolean =>
+  Number(step.effectiveAbnormalQuantity) > 0 ||
+  step.abnormalDispositions.some((item) => item.reviewStatus === 'pending_review');
 const changeKey = computed(() =>
   changeReport.value ? `${changeMode.value}:${changeReport.value.reportId}` : '',
 );
@@ -754,62 +794,56 @@ onActivated(refreshCurrent);
   grid-template-columns: 300px minmax(0, 1fr);
   min-height: 540px;
 }
-.batch-list {
-  padding: 16px;
-  border-right: 1px solid #e5e7eb;
-  background: #f9fafb;
-}
-.batch-list-heading {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-}
-.batch-list-heading strong {
-  color: #1f2937;
-  font-size: 14px;
-}
-.batch-list-heading span {
-  color: #9ca3af;
-  font-size: 12px;
-}
-.batch-items {
-  display: grid;
-  gap: 8px;
-  margin-top: 14px;
-}
-.batch-item {
-  display: grid;
-  gap: 4px;
-  width: 100%;
-  padding: 12px;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  background: #ffffff;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.batch-item.active {
-  border-color: var(--el-color-primary);
-  background: var(--el-color-primary-light-9);
-}
-.batch-item span,
-.batch-item small {
-  color: #6b7280;
-}
-.batch-item :deep(.el-tag) {
-  width: fit-content;
-}
-.batch-pagination {
-  justify-content: center;
-  margin-top: 14px;
-}
 .record-panel {
   min-width: 0;
   padding: 16px 20px 20px;
 }
 .fact-tip {
   margin-bottom: 16px;
+}
+.batch-health {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 38%);
+  align-items: center;
+  gap: 20px;
+  margin-bottom: 16px;
+  padding: 16px;
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 8px;
+  background: var(--el-fill-color-lighter);
+}
+.batch-health.risk-warning {
+  border-color: var(--el-color-warning);
+}
+.batch-health.risk-error {
+  border-color: var(--el-color-danger);
+}
+.batch-health-title,
+.batch-progress > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.batch-health-title > strong {
+  color: var(--el-text-color-primary);
+  font-size: 18px;
+}
+.batch-health-main p {
+  margin: 7px 0 0;
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+}
+.batch-progress {
+  display: grid;
+  gap: 10px;
+}
+.batch-progress > div {
+  justify-content: space-between;
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+}
+.batch-progress strong {
+  color: var(--el-text-color-primary);
 }
 .record-overview,
 .step-metrics {
@@ -862,6 +896,9 @@ onActivated(refreshCurrent);
   margin-top: 16px;
   padding: 16px;
 }
+.step-card.has-abnormal {
+  border-color: var(--el-color-danger);
+}
 .step-card header {
   display: flex;
   align-items: center;
@@ -886,11 +923,15 @@ onActivated(refreshCurrent);
   gap: 8px;
   margin-top: 12px;
   padding: 12px;
-  background: var(--el-color-warning-light-9);
+  border: 1px solid var(--el-color-danger-light-7);
+  background: var(--el-color-danger-light-9);
   border-radius: 8px;
 }
 .warning-text {
   color: #f59e0b;
+}
+.danger-text {
+  color: var(--el-color-danger);
 }
 .disabled-action {
   color: #9ca3af;
@@ -910,13 +951,12 @@ onActivated(refreshCurrent);
   .workspace {
     grid-template-columns: 1fr;
   }
-  .batch-list {
-    border-right: 0;
-    border-bottom: 1px solid var(--el-border-color-lighter);
-  }
   .record-overview,
   .step-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .batch-health {
+    grid-template-columns: 1fr;
   }
   .query-form {
     display: grid;

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useProductionExecutionRecords } from '../useProductionExecutionRecords';
 
 const api = vi.hoisted(() => ({
-  listBatches: vi.fn(),
+  listExecutionBatchSummaries: vi.fn(),
   getBatchExecutionRecords: vi.fn(),
   getExecutionCompletionCheck: vi.fn(),
   completeProductionExecution: vi.fn(),
@@ -27,13 +27,13 @@ describe('useProductionExecutionRecords', () => {
   });
 
   it('keeps the selected detail within the current filtered page', async () => {
-    api.listBatches.mockResolvedValueOnce({ items: [batch('1')], total: 1 });
+    api.listExecutionBatchSummaries.mockResolvedValueOnce({ items: [batch('1')], total: 1 });
     api.getBatchExecutionRecords.mockResolvedValueOnce(group('1'));
     const state = useProductionExecutionRecords();
     await state.loadBatches('PB-1');
     expect(state.selectedBatchId.value).toBe('1');
 
-    api.listBatches.mockResolvedValueOnce({ items: [batch('2')], total: 1 });
+    api.listExecutionBatchSummaries.mockResolvedValueOnce({ items: [batch('2')], total: 1 });
     api.getBatchExecutionRecords.mockResolvedValueOnce(group('2'));
     await state.loadBatches('PB-2');
     expect(state.selectedBatchId.value).toBe('2');

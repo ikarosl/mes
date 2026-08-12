@@ -223,6 +223,15 @@ describe('productionApi', () => {
     });
   });
 
+  it('lists execution batch summaries without per-row detail requests', async () => {
+    const { productionApi } = await import('../production');
+    await productionApi.listExecutionBatchSummaries({ page: 2, pageSize: 20, keyword: 'PB' });
+    expect(request).toHaveBeenCalledWith({
+      url: '/production/execution-batches',
+      params: { page: 2, pageSize: 20, keyword: 'PB' },
+    });
+  });
+
   it('gets batch detail', async () => {
     const { productionApi } = await import('../production');
 

@@ -2,7 +2,7 @@ import { ref } from 'vue';
 import type {
   BatchStepExecutionRecordItem,
   BatchStepReportItem,
-  ProductionBatchItem,
+  ProductionExecutionBatchSummary,
   ProductionExecutionRecordGroup,
   ProductionExecutionCompletionCheck,
 } from '@company/contracts';
@@ -10,7 +10,7 @@ import { productionApi } from '../../../api/production';
 import { useIdempotentIntent } from '../../../composables/idempotency/useIdempotentIntent';
 
 export const useProductionExecutionRecords = () => {
-  const batches = ref<ProductionBatchItem[]>([]);
+  const batches = ref<ProductionExecutionBatchSummary[]>([]);
   const total = ref(0);
   const loading = ref(false);
   const detailLoading = ref(false);
@@ -23,7 +23,7 @@ export const useProductionExecutionRecords = () => {
   const loadBatches = async (keyword = '', page = 1): Promise<void> => {
     loading.value = true;
     try {
-      const result = await productionApi.listBatches({
+      const result = await productionApi.listExecutionBatchSummaries({
         keyword: keyword || undefined,
         page,
         pageSize: 20,
@@ -50,6 +50,27 @@ export const useProductionExecutionRecords = () => {
       ]);
       record.value = nextRecord;
       completionCheck.value = nextCompletionCheck;
+      batches.value = batches.value.map((batch) =>
+        batch.id === batchId
+          ? {
+              ...batch,
+              status: nextRecord.batchStatus,
+              completedStepCount: nextRecord.steps.filter((step) => step.status === 'completed')
+                .length,
+              totalStepCount: nextRecord.steps.length,
+              effectiveAbnormalQuantity: nextRecord.steps
+                .reduce((total, step) => total + Number(step.effectiveAbnormalQuantity), 0)
+                .toFixed(4),
+              pendingAbnormalCount: nextRecord.steps.reduce(
+                (total, step) =>
+                  total +
+                  step.abnormalDispositions.filter((item) => item.reviewStatus === 'pending_review')
+                    .length,
+                0,
+              ),
+            }
+          : batch,
+      );
     } finally {
       detailLoading.value = false;
     }

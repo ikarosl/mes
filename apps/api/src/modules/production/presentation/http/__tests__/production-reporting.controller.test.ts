@@ -16,6 +16,9 @@ describe('ProductionReportingController contract', () => {
     expect(Reflect.getMetadata(REQUIRED_PERMISSION, prototype.getBatchExecution)).toBe(
       PERMISSIONS.production.tasks.view,
     );
+    expect(Reflect.getMetadata(REQUIRED_PERMISSION, prototype.listExecutionBatches)).toBe(
+      PERMISSIONS.production.tasks.view,
+    );
     expect(Reflect.getMetadata(REQUIRED_PERMISSION, prototype.createReport)).toBe(
       PERMISSIONS.production.steps.report,
     );
@@ -40,6 +43,12 @@ describe('ProductionReportingController contract', () => {
       'batches/:batchId/step-records/:recordId/reports',
     );
     expect(Reflect.getMetadata(METHOD_METADATA, prototype.createReport)).toBe(RequestMethod.POST);
+    expect(Reflect.getMetadata(PATH_METADATA, prototype.listExecutionBatches)).toBe(
+      'execution-batches',
+    );
+    expect(Reflect.getMetadata(METHOD_METADATA, prototype.listExecutionBatches)).toBe(
+      RequestMethod.GET,
+    );
   });
 
   it('forwards the same normalized DTO object to the application service', async () => {

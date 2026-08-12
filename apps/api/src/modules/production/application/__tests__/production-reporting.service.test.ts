@@ -10,6 +10,18 @@ const context = {
 };
 
 describe('ProductionReportingService', () => {
+  it('returns the execution batch summary projection without per-row enrichment', async () => {
+    const result = { items: [{ id: '1', pendingAbnormalCount: 2 }], total: 1 };
+    const reporting = { listExecutionBatches: vi.fn().mockResolvedValue(result) };
+    const service = new ProductionReportingService(
+      reporting as never,
+      { listUserReferencesByIds: vi.fn() } as never,
+      { execute: vi.fn() } as never,
+    );
+    await expect(service.listExecutionBatches({ page: 1, pageSize: 20 })).resolves.toBe(result);
+    expect(reporting.listExecutionBatches).toHaveBeenCalledWith({ page: 1, pageSize: 20 });
+  });
+
   it('normalizes and executes report creation through the stable idempotency scope', async () => {
     const reporting = { createReport: vi.fn().mockResolvedValue({ ok: true }) };
     const idempotency = {

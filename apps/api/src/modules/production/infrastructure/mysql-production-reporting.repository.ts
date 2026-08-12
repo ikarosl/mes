@@ -8,6 +8,7 @@ import type {
   CorrectBatchStepReportCommandResult,
   CorrectBatchStepReportPayload,
   CreateBatchStepReportPayload,
+  ProductionBatchQuery,
   ProductionExecutionRecordGroup,
   ReverseBatchStepReportPayload,
 } from '@company/contracts';
@@ -23,6 +24,7 @@ import {
 } from '../domain/production-reporting.policy.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
 import { findBatch } from './mysql-production.shared.js';
+import { selectExecutionBatchSummaries } from './mysql-production-reporting-batch.projection.js';
 import {
   groupRowsBy,
   mapDisposition,
@@ -50,6 +52,10 @@ type LockedStepRow = RowDataPacket & {
 export class MysqlProductionReportingRepository extends ProductionReportingRepository {
   constructor(@Inject(DATABASE_POOL) private readonly pool: Pool) {
     super();
+  }
+
+  listExecutionBatches(query: ProductionBatchQuery) {
+    return selectExecutionBatchSummaries(this.pool, query);
   }
 
   async getBatchExecution(batchId: string): Promise<ProductionExecutionRecordGroup> {

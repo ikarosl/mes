@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type {
   CorrectBatchStepReportPayload,
   CreateBatchStepReportPayload,
+  ProductionBatchQuery,
   ProductionExecutionRecordGroup,
 } from '@company/contracts';
 import type {
@@ -26,6 +27,10 @@ export class ProductionReportingService {
     private readonly identity: IdentityDirectoryService,
     private readonly idempotency: IdempotencyExecutor,
   ) {}
+
+  listExecutionBatches(query: ProductionBatchQuery) {
+    return this.reporting.listExecutionBatches(query);
+  }
 
   async getBatchExecution(batchId: string): Promise<ProductionExecutionRecordGroup> {
     return this.enrichGroup(await this.reporting.getBatchExecution(batchId));

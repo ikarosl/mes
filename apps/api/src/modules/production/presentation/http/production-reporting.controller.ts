@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, UseFilters } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, UseFilters } from '@nestjs/common';
 import { PERMISSIONS } from '@company/constants';
 import type {
   CommandContext,
@@ -21,6 +21,7 @@ import {
   CorrectBatchStepReportDto,
   CreateBatchStepReportDto,
   ReverseBatchStepReportDto,
+  ProductionBatchQueryDto,
 } from './dto/production.dto.js';
 import { BatchIdParamDto } from './dto/production-material.dto.js';
 
@@ -28,6 +29,12 @@ import { BatchIdParamDto } from './dto/production-material.dto.js';
 @UseFilters(ProductionDomainExceptionFilter)
 export class ProductionReportingController {
   constructor(private readonly service: ProductionReportingService) {}
+
+  @Get('execution-batches')
+  @RequirePermission(PERMISSIONS.production.tasks.view)
+  listExecutionBatches(@Query() query: ProductionBatchQueryDto) {
+    return this.service.listExecutionBatches(query);
+  }
 
   @Get('batches/:batchId/execution-records')
   @RequirePermission(PERMISSIONS.production.tasks.view)

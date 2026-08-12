@@ -29,6 +29,7 @@ import type {
   ProductionExecutionRecordGroup,
   ProductionExecutionCompletionCheck,
   ProductionExecutionCompletionResult,
+  ProductionExecutionBatchSummary,
   ReverseBatchStepReportPayload,
   ProductionTraceWorkOrderGroup,
   ProductionTraceDetail,
@@ -291,6 +292,12 @@ export const productionApi = {
   getBatchExecutionRecords: (batchId: string) =>
     request<ProductionExecutionRecordGroup>({
       url: `/production/batches/${batchId}/execution-records`,
+    }),
+
+  listExecutionBatchSummaries: (params: ProductionBatchQuery) =>
+    request<PageResult<ProductionExecutionBatchSummary>>({
+      url: '/production/execution-batches',
+      params,
     }),
 
   getExecutionCompletionCheck: (batchId: string) =>

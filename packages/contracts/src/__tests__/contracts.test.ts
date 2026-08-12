@@ -13,6 +13,7 @@ import type {
   ConfirmMaterialOutboundPayload,
   CreatePurchaseInboundPayload,
   InventoryBatchItem,
+  ProductionExecutionBatchSummary,
 } from '../index.js';
 
 describe('auth contract', () => {
@@ -20,6 +21,16 @@ describe('auth contract', () => {
 });
 
 describe('production execution contracts', () => {
+  it('provides one list projection for progress and abnormal risk cues', () => {
+    const summary = {
+      completedStepCount: 2,
+      totalStepCount: 3,
+      effectiveAbnormalQuantity: '1.0000',
+      pendingAbnormalCount: 1,
+    } as ProductionExecutionBatchSummary;
+    expect(summary).toMatchObject({ completedStepCount: 2, pendingAbnormalCount: 1 });
+  });
+
   it('uses a versioned assignee command and server-derived worker progress', () => {
     const payload: AssignProductionStepPayload = { responsibleUserId: '7', version: 2 };
     const task = {

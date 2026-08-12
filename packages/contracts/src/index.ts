@@ -567,6 +567,13 @@ export interface ProductionBatchItem {
   updatedAt: string;
 }
 
+export interface ProductionExecutionBatchSummary extends ProductionBatchItem {
+  completedStepCount: number;
+  totalStepCount: number;
+  effectiveAbnormalQuantity: string;
+  pendingAbnormalCount: number;
+}
+
 export interface BatchStepRecordItem {
   id: string;
   productionBatchId: string;
