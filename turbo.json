@@ -53,6 +53,20 @@
         "DB_CONNECTION_LIMIT"
       ]
     },
+    "seed:demo": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "passThroughEnv": [
+        "DB_HOST",
+        "DB_PORT",
+        "DB_USER",
+        "DB_PASSWORD",
+        "DB_NAME",
+        "DB_CONNECTION_LIMIT",
+        "ALLOW_DEMO_SEED",
+        "DEMO_USER_PASSWORD"
+      ]
+    },
     "bootstrap-admin": {
       "dependsOn": ["^build"],
       "cache": false,

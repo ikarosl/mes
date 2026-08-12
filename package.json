@@ -30,6 +30,7 @@
     "db:migrate": "turbo run migrate --filter=@company/database",
     "db:migrate:status": "turbo run migrate:status --filter=@company/database",
     "db:seed": "turbo run seed --filter=@company/database",
+    "db:seed:demo": "turbo run seed:demo --filter=@company/database",
     "db:init": "corepack pnpm db:migrate && corepack pnpm db:seed && corepack pnpm db:bootstrap-admin",
     "test:migration:fresh": "corepack pnpm db:migrate && corepack pnpm db:migrate && corepack pnpm db:migrate:status",
     "db:bootstrap-admin": "turbo run bootstrap-admin --filter=@company/database",
