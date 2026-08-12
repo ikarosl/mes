@@ -992,6 +992,62 @@ export interface CompleteReworkResult {
   abnormalDisposition: BatchStepAbnormalDispositionItem | null;
 }
 
+export interface ProductionSupplementCandidateItem {
+  originalDemandId: string;
+  productionBatchId: string;
+  productMaterialId: string;
+  itemId: string;
+  itemCode: string;
+  itemName: string;
+  unit: string;
+  normalDemandQuantity: string;
+}
+
+export interface ApproveScrapSupplementLinePayload {
+  originalDemandId: string;
+  supplementQuantity: number;
+}
+
+export interface ApproveScrapSupplementPayload extends VersionedCommand {
+  details: ApproveScrapSupplementLinePayload[];
+  remark?: string | null;
+}
+
+export interface ProductionMaterialSupplementDetailItem {
+  detailId: string;
+  originalDemandId: string;
+  demandId: string;
+  productMaterialId: string;
+  itemId: string;
+  itemCode: string;
+  itemName: string;
+  supplementQuantity: string;
+  unit: string;
+}
+
+export interface ProductionMaterialSupplementItem {
+  supplementId: string;
+  supplementNo: string;
+  scrapRecordId: string;
+  productionBatchId: string;
+  stepRecordId: string;
+  status: 'approved';
+  remark: string | null;
+  createdAt: string;
+  details: ProductionMaterialSupplementDetailItem[];
+}
+
+export interface ApproveScrapSupplementResult {
+  disposition: BatchStepAbnormalDispositionItem;
+  scrapRecord: {
+    scrapRecordId: string;
+    sourceReportId: string;
+    scrapQuantity: string;
+    unit: string;
+  };
+  supplement: ProductionMaterialSupplementItem;
+}
+
 export interface BatchStepExecutionRecordItem {
   stepRecordId: string;
   productionBatchId: string;
@@ -1293,7 +1349,7 @@ export interface InventoryBatchItem {
     inventoryTransactionId: string;
   }>;
 }
-export type DemandType = 'normal' | 'manual_additional';
+export type DemandType = 'normal' | 'manual_additional' | 'scrap_supplement';
 export type DemandBusinessStatus = 'active' | 'cancelled' | 'closed' | 'frozen' | 'abnormal';
 export type AllocationStatus = 'active' | 'released' | 'cancelled' | 'frozen' | 'abnormal';
 export type OutboundOrderStatus =

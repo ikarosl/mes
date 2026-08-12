@@ -230,10 +230,11 @@ export const INVENTORY_REFERENCE_TYPES = [
   'manual',
 ] as const;
 export const INBOUND_ORDER_STATUSES = ['pending', 'completed', 'cancelled'] as const;
-export const DEMAND_TYPES = ['normal', 'manual_additional'] as const;
+export const DEMAND_TYPES = ['normal', 'manual_additional', 'scrap_supplement'] as const;
 export const DEMAND_TYPE = {
   normal: DEMAND_TYPES[0],
   manualAdditional: DEMAND_TYPES[1],
+  scrapSupplement: DEMAND_TYPES[2],
 } as const;
 export const DEMAND_BUSINESS_STATUSES = [
   'active',

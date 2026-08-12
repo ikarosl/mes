@@ -52,8 +52,8 @@ production_batches
 | 报工事实 | `batch_step_reports` | 每次报工、冲销和更正的不可变事实 | [生产报工、追溯与质量边界](40-production-traceability-quality.md) | 数据库已落地；报工 API/管理端待实现 |
 | 异常审批 | `batch_step_abnormal_dispositions` | 每次有效异常报工的独立审批处置单 | [生产报工、追溯与质量边界](40-production-traceability-quality.md) | 数据库已落地；创建/审批命令待实现 |
 | 返工 | `rework_records` | 异常处置为可返工后的返工业务单及完成报工来源 | [生产报工、追溯与质量边界](40-production-traceability-quality.md) | 设计定稿、待迁移 |
-| 工序报废 | `batch_step_scrap_records` | 审批为不可返工的工序损失 | [生产报工、追溯与质量边界](40-production-traceability-quality.md) | 设计定稿、待迁移 |
-| 主动补料 | `production_material_supplement` / 明细 | 管理员选择候选物料并人工填量 | [生产需求、分配与领料出库](30-production-inventory/30-demand-allocation-and-outbound.md) | 设计定稿、待迁移 |
+| 工序报废 | `batch_step_scrap_records` | 审批为不可返工的工序损失 | [生产报工、追溯与质量边界](40-production-traceability-quality.md) | 已落地 |
+| 主动补料 | `production_material_supplement` / 明细 | 管理员选择候选物料并人工填量 | [生产需求、分配与领料出库](30-production-inventory/30-demand-allocation-and-outbound.md) | 已落地 |
 | 物料需求 | `production_item_demand` | 生产需求唯一事实来源 | [生产需求、分配与领料出库](30-production-inventory/30-demand-allocation-and-outbound.md) | `normal`已实现；`manual_additional`仅数据库允许；`scrap_supplement`设计定稿、待迁移 |
 | 物料预留 | `production_item_allocation` | 需求到库存批次的分配事实 | [生产需求、分配与领料出库](30-production-inventory/30-demand-allocation-and-outbound.md) | 设计定稿、待迁移 |
 | 领料出库 | `outbound_order` | 按生产批次组织的出库主单 | [生产需求、分配与领料出库](30-production-inventory/30-demand-allocation-and-outbound.md) | 设计定稿、待迁移 |

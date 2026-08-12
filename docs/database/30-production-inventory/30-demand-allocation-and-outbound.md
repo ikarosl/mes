@@ -89,7 +89,7 @@
 - 如果某个生产批次需要领用上一个生产批次产出的半成品，也应通过该表生成需求。
 - 补料不建议直接修改原需求的 `need_number`，应新增一条需求记录。
 - 正常需求的 `need_number = quantity_per_unit_snapshot * planned_output_quantity_snapshot`；结果生成后作为事实保存，不随 BOM 或批次计划变化自动回写。
-- 幂等键使用稳定格式：正常需求为 `NORMAL:{production_batch_id}:{product_material_id}`，报废补料为 `SCRAP:{source_scrap_id}:{product_material_id}`，人工追加为 `ADDITIONAL:{production_batch_id}:{business_action_no}:{product_material_id}`。
+- 幂等键使用稳定格式：正常需求为 `NORMAL:{production_batch_id}:{product_material_id}`，现有库存报废补料为 `SCRAP:{source_scrap_id}:{product_material_id}`，工序主动补料为 `SCRAPSUP:{source_supplement_detail_id}`，人工追加为 `ADDITIONAL:{production_batch_id}:{business_action_no}:{product_material_id}`。
 - `business_action_no` 必须是一次人工追加动作的稳定唯一编号；相同幂等键重复提交时返回既有需求，不插入新记录，也不得修改既有 `need_number`。
 - 应用事务必须校验 `parent_demand_id` 指向的原需求与当前需求属于同一生产批次，且 `product_material_id` 对应投入对象与 `item_id` 一致。
 - 现有 `item_scrap` 报废补料还必须校验 `source_scrap_id` 指向已确认、未取消的报废记录，且报废、原需求和补料需求属于同一生产批次。未来工序报废补料必须使用与工序报废/补料明细相匹配的新来源外键，不得把对应 ID 填入 `source_scrap_id`。

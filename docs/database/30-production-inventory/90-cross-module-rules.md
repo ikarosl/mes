@@ -91,10 +91,10 @@
 
 - 不得直接修改原始需求的 `need_number`。
 - 目标链路为：原始需求 → 工序报废/补料单及明细 → 补料需求 → 分配 → 出库。
-- 上表的 `source_scrap_id` 只允许引用现有 `item_scrap.id`。未来工序报废补料不得把 `batch_step_scrap_records.id` 填入该字段；它与补料明细、需求之间的新来源外键需要另行定稿。
+- 上表的 `source_scrap_id` 只允许引用现有 `item_scrap.id`。工序报废补料不得把 `batch_step_scrap_records.id` 填入该字段，而是由 `source_supplement_detail_id` 关联主动补料明细。
 - 当前阶段补料、分配和出库不形成再次报工额度，也不作为报工开关；工序只按有效正常数量是否达到当前要求数量判断能否继续报工。
 - 该简化方案无法追溯某次补报所使用的补料/返工来源，也不能控制来源剩余额度。未来如升级严格控制，再评审来源授权、出库激活、消费明细和并发规则。
-- `production_material_supplement`、补料明细、工序报废和需求之间的完整外键仍待决策；未闭环前不得据此创建表或接口。
+- `production_material_supplement`、补料明细、工序报废和需求之间使用批次、工序、BOM 明细、物料和原始需求组合外键保持一致；只允许 Production 模块在批准报废补料事务中写入。
 
 ---
 
@@ -145,7 +145,7 @@
 ### 3.12.9 需求幂等与报废补料候选条件
 
 - 正常需求幂等键为 `NORMAL:{production_batch_id}:{product_material_id}`。
-- 当前库存/生产消耗报废补料候选内部键为 `SCRAP:{source_scrap_id}:{product_material_id}`；未来工序补料单的幂等来源键随补料明细外键一并定稿，不得复用不匹配的 `item_scrap` ID。
+- 当前库存/生产消耗报废补料候选内部键为 `SCRAP:{source_scrap_id}:{product_material_id}`；工序主动补料需求使用 `SCRAPSUP:{source_supplement_detail_id}`，不得复用不匹配的 `item_scrap` ID。
 - 人工追加候选内部键为 `ADDITIONAL:{production_batch_id}:{business_action_no}:{product_material_id}`。
 - 相同幂等键重复提交返回既有需求，不新增记录、不修改原需求数量。
 - 一条已确认报废可以为不同 BOM 行生成多条补料需求，但报废、原需求和补料需求必须属于同一生产批次。

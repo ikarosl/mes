@@ -20,6 +20,7 @@
 10a. 将 production_item_demand.demand_type 从历史数字代码追加迁移为字符串代码（已与字段、CHECK、共享常量、契约和 Repository 同步；当前 application 只生成 normal）
 11. outbound_order / outbound_detail / return_order / return_detail / item_scrap
 12. 为 production_item_demand.source_scrap_id 追加外键
+13. 追加工序报废、主动补料及 `production_item_demand.source_supplement_detail_id` 模型（`202608130002-production-abnormal-supplement`）
 13. stock_check_order / stock_check_detail
 14. inspection_records（过程检验和最终质量语义未闭环，暂不实施）
 15. finished_flow_records（质量放行和入库边界未闭环，暂不实施）
