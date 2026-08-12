@@ -95,7 +95,7 @@ Controller 只负责协议映射、DTO、权限装饰器和响应转换，不写
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | Identity/System  | departments、users、roles、permissions、关联表、refresh_tokens                                                                           |
 | Product          | product_categories、products、product_materials、technical_files、process_steps、process_routes 及关联表                                 |
-| Production       | work_orders、production_batches、batch_step_records、batch_step_reports、batch_step_abnormal_dispositions、production_item_demand、production_item_allocation、inbound_order、inbound_detail、outbound_order、outbound_detail，以及当前生产物料切片内部的窄库存账本 item_batch、inventory_transaction |
+| Production       | work_orders、production_batches、batch_step_records、batch_step_reports、batch_step_abnormal_dispositions、rework_records、batch_step_scrap_records、production_material_supplement 及明细、production_item_demand、production_item_allocation、inbound_order、inbound_detail、outbound_order、outbound_detail，以及当前生产物料切片内部的窄库存账本 item_batch、inventory_transaction |
 | 平台审计基础设施 | operation_logs                                                                                                                           |
 | 平台幂等基础设施 | http_idempotency_records（已落地）                                                                                                       |
 | common           | 不拥有业务表                                                                                                                             |
