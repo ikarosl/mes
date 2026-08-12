@@ -350,6 +350,53 @@ describe('productionApi', () => {
     ]);
   });
 
+  it('uses Production-owned purchase inbound and inventory endpoints with correct idempotency', async () => {
+    const { productionApi } = await import('../production');
+    const data = {
+      inboundNo: null,
+      provider: '供应商 A',
+      remark: null,
+      details: [{ itemId: '2', batchCode: 'LOT-1', inboundQuantity: 5, remark: null }],
+    };
+    await productionApi.listPurchaseInbounds({ page: 1, pageSize: 20, status: 'pending' });
+    await productionApi.getPurchaseInbound('7');
+    await productionApi.createPurchaseInbound(data, 'create-inbound-key');
+    await productionApi.confirmPurchaseInbound('7', 0, 'confirm-inbound-key');
+    await productionApi.cancelPurchaseInbound('8', 1);
+    await productionApi.listInventoryBatches({ page: 1, pageSize: 20 });
+    await productionApi.getInventoryBatch('9');
+    expect(request.mock.calls.slice(-7).map(([config]) => config)).toEqual([
+      {
+        url: '/production/purchase-inbounds',
+        params: { page: 1, pageSize: 20, status: 'pending' },
+      },
+      { url: '/production/purchase-inbounds/7' },
+      {
+        url: '/production/purchase-inbounds',
+        method: 'POST',
+        data,
+        headers: { 'Idempotency-Key': 'create-inbound-key' },
+        retryUnsafe: true,
+        retryTimes: 2,
+      },
+      {
+        url: '/production/purchase-inbounds/7/actions/confirm',
+        method: 'POST',
+        data: { version: 0 },
+        headers: { 'Idempotency-Key': 'confirm-inbound-key' },
+        retryUnsafe: true,
+        retryTimes: 2,
+      },
+      {
+        url: '/production/purchase-inbounds/8/actions/cancel',
+        method: 'POST',
+        data: { version: 1 },
+      },
+      { url: '/production/inventory-batches', params: { page: 1, pageSize: 20 } },
+      { url: '/production/inventory-batches/9' },
+    ]);
+  });
+
   it('uses semantic step assignment routes without idempotency headers', async () => {
     const { productionApi } = await import('../production');
     await productionApi.assignStep('1', '9', '7', 0);

@@ -17,19 +17,27 @@ export class ProductionTraceService {
   }
 
   async getDetail(batchId: string): Promise<ProductionTraceDetail> {
-    const [summary, materialDemands, materialOutbounds, inventoryTransactions, execution] =
-      await Promise.all([
-        this.trace.getSummary(batchId),
-        this.materials.listDemands(batchId),
-        this.materials.listOutbounds(batchId),
-        this.trace.listInventoryTransactions(batchId),
-        this.reporting.getBatchExecution(batchId),
-      ]);
+    const [
+      summary,
+      materialDemands,
+      materialOutbounds,
+      inventoryTransactions,
+      materialInboundSources,
+      execution,
+    ] = await Promise.all([
+      this.trace.getSummary(batchId),
+      this.materials.listDemands(batchId),
+      this.materials.listOutbounds(batchId),
+      this.trace.listInventoryTransactions(batchId),
+      this.trace.listMaterialInboundSources(batchId),
+      this.reporting.getBatchExecution(batchId),
+    ]);
     return {
       summary,
       materialDemands,
       materialOutbounds,
       inventoryTransactions,
+      materialInboundSources,
       steps: execution.steps,
     };
   }

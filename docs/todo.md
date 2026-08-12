@@ -296,6 +296,10 @@ IDEMPOTENCY_RESULT_CORRUPT`；`HttpExceptionFilter` 与 `AuditInterceptor` 统�
 - 2026-08-11：4.2-C 与 4.2-D 已形成当前 UI/API/MySQL 闭环。报工与管理员更正使用不可变普通/冲销/替代事实并聚合有效数量；异常数量只创建待处置记录，不引入异常工序状态。生产执行完工由服务端重新聚合全部必报工工序，以末道必报工工序的有效正常数量写入 `completed_quantity`，客户端只提交 `version`；已完工重试返回既有结果且不重复审计，不写 `qualified_quantity`，不等待质量、返工或成品入库。执行事务套件覆盖未完成拒绝、成功审计同事务、审计失败回滚和天然幂等重放。
 - 2026-08-11：当前 Production 只读生产追溯已落地独立查询投影和 `production:trace:view` 权限。支持按工单号、生产批次号、物料编码和库存批次号检索，只展示需求、分配、生产领料出库、负库存流水、工序、普通/冲销/替代报工链、有效聚合和异常待处置事实；不创建追溯事实表，不返回质量、返工、报废、退料或成品流向占位数组。
 - 2026-08-11：生产领料出库修正为独立单据闭环。创建只形成 `pending_picking` 主单与多行明细，不扣库存；整单确认后才生成负库存流水并按已确认累计推进生产批次；待确认单可取消并释放可制单占用。管理端出库单列表、详情、确认、取消和浏览器打印已接真实 Production API。
+- 2026-08-12：补齐 Production 内部窄库存账本的外购物料入库来源。`inbound_order` / `inbound_detail`
+  只支持 purchased 的 pending 创建、整单确认和待确认取消；pending 不增加库存，确认逐明细生成
+  `purchase_inbound` 正流水，取消不生成流水。管理端入库单与库存批次页已接真实 Production API，
+  生产追溯补充入库单/正流水或“期初来源”，不扩展成通用 Warehouse、质量或成品库存能力。
 - 当前临时自检方案不创建过程检验任务，也不以 `need_inspection_snapshot` 或“无未关闭返工”阻塞下工序和生产执行完工；`effective_normal` 仅临时作为下工序放行量，不是最终质量合格量。批次最终质量确认、`qualified_quantity` 写入和返工闭环属于后续独立切片，不得混入 4.2-A/B/C。
 - 2026-08-11 数据库验证：临时 MySQL 8.4 空库完整应用至 `202608110001-production-abnormal-dispositions-and-demand-type-codes`，第二次执行无重复变更，migration status 全部为 applied；专用 `easy_mes_test` 完成 migration、系统 seed、管理员初始化和重复 seed 后，真实 MySQL 集成套件 5 文件 / 31 用例全部通过。该结果取代早于最新 migration 的 2026-08-10 空库证据。
 - 通用库存、入库、退料、报废、盘点、质量和全链路追溯后端不得提前迁入。

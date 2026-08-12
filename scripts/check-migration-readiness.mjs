@@ -28,6 +28,8 @@ const allowedTables = new Set([
   'batch_step_reports',
   'batch_step_abnormal_dispositions',
   'production_item_demand',
+  'inbound_order',
+  'inbound_detail',
   'item_batch',
   'inventory_transaction',
   'production_item_allocation',

@@ -142,6 +142,7 @@ describe('Product options cross-page authorization contract', () => {
       PERMISSIONS.product.routes.view,
       PERMISSIONS.production.orders.view,
       PERMISSIONS.production.tasks.view,
+      PERMISSIONS.production.inbounds.view,
     ],
     processStepOptions: [PERMISSIONS.product.processes.view, PERMISSIONS.product.routes.view],
     routeOptions: [
@@ -208,6 +209,21 @@ describe('Product options cross-page authorization contract', () => {
       permissionMatches(
         [PERMISSIONS.product.products.view],
         readOptionsPermissions('processStepOptions'),
+      ),
+    ).toBe(false);
+  });
+
+  it('allows the purchase inbound page to read product options only', () => {
+    expect(
+      permissionMatches(
+        [PERMISSIONS.production.inbounds.view],
+        readOptionsPermissions('productOptions'),
+      ),
+    ).toBe(true);
+    expect(
+      permissionMatches(
+        [PERMISSIONS.production.inbounds.view],
+        readOptionsPermissions('routeOptions'),
       ),
     ).toBe(false);
   });

@@ -6,6 +6,7 @@ describe('ProductionTraceService', () => {
     const trace = {
       getSummary: vi.fn().mockResolvedValue({ productionBatchId: '1' }),
       listInventoryTransactions: vi.fn().mockResolvedValue([{ transactionId: '8' }]),
+      listMaterialInboundSources: vi.fn().mockResolvedValue([{ inboundNo: 'PI-1' }]),
     };
     const materials = {
       listDemands: vi.fn().mockResolvedValue([{ demandId: '2' }]),
@@ -25,6 +26,7 @@ describe('ProductionTraceService', () => {
       materialDemands: [{ demandId: '2' }],
       materialOutbounds: [{ outboundId: '3' }],
       inventoryTransactions: [{ transactionId: '8' }],
+      materialInboundSources: [{ inboundNo: 'PI-1' }],
       steps: [{ stepRecordId: '4' }],
     });
   });

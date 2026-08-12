@@ -74,7 +74,7 @@ describe('ProductionTracePage', () => {
     expect(wrapper.find('.query-panel').exists()).toBe(true);
     expect(wrapper.find('h1').exists()).toBe(false);
     const tabs = wrapper.findAll('.trace-tab').map((tab) => tab.attributes('data-label'));
-    expect(tabs).toEqual(['物料需求与分配', '领料出库与库存流水', '工序与报工']);
+    expect(tabs).toEqual(['物料需求与分配', '物料入库来源', '领料出库与库存流水', '工序与报工']);
     expect(tabs).not.toContain('质量/返工');
     expect(tabs).not.toContain('成品流转');
   });

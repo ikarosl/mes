@@ -36,6 +36,11 @@ import type {
   MaterialOutboundQuery,
   MaterialOutboundBatchOption,
   MaterialOutboundCandidateItem,
+  CreatePurchaseInboundPayload,
+  InventoryBatchItem,
+  InventoryBatchQuery,
+  PurchaseInboundOrderItem,
+  PurchaseInboundOrderQuery,
 } from '@company/contracts';
 import { toRequestError, type RetryRequestConfig } from '@company/request';
 import { httpClient } from './http';
@@ -49,6 +54,38 @@ const request = async <T>(config: RetryRequestConfig) => {
 };
 
 export const productionApi = {
+  listPurchaseInbounds: (params: PurchaseInboundOrderQuery) =>
+    request<PageResult<PurchaseInboundOrderItem>>({ url: '/production/purchase-inbounds', params }),
+  getPurchaseInbound: (id: string) =>
+    request<PurchaseInboundOrderItem>({ url: `/production/purchase-inbounds/${id}` }),
+  createPurchaseInbound: (data: CreatePurchaseInboundPayload, idempotencyKey: string) =>
+    request<PurchaseInboundOrderItem>({
+      url: '/production/purchase-inbounds',
+      method: 'POST',
+      data,
+      headers: { 'Idempotency-Key': idempotencyKey },
+      retryUnsafe: true,
+      retryTimes: 2,
+    }),
+  confirmPurchaseInbound: (id: string, version: number, idempotencyKey: string) =>
+    request<PurchaseInboundOrderItem>({
+      url: `/production/purchase-inbounds/${id}/actions/confirm`,
+      method: 'POST',
+      data: { version },
+      headers: { 'Idempotency-Key': idempotencyKey },
+      retryUnsafe: true,
+      retryTimes: 2,
+    }),
+  cancelPurchaseInbound: (id: string, version: number) =>
+    request<PurchaseInboundOrderItem>({
+      url: `/production/purchase-inbounds/${id}/actions/cancel`,
+      method: 'POST',
+      data: { version },
+    }),
+  listInventoryBatches: (params: InventoryBatchQuery) =>
+    request<PageResult<InventoryBatchItem>>({ url: '/production/inventory-batches', params }),
+  getInventoryBatch: (id: string) =>
+    request<InventoryBatchItem>({ url: `/production/inventory-batches/${id}` }),
   searchProductionTrace: (params: ProductionTraceQuery) =>
     request<PageResult<ProductionTraceWorkOrderGroup>>({ url: '/production/trace', params }),
 

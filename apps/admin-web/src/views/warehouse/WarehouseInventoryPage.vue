@@ -1,522 +1,309 @@
 <template>
-  <div>
-    <div class="query-panel">
+  <div class="inventory-page">
+    <section class="query-panel">
       <el-form
         class="query-form"
         :inline="true"
         :model="query"
-      >
-        <el-form-item label="物料">
-          <el-input
+        ><el-form-item label="物料"
+          ><el-input
             v-model="query.keyword"
             clearable
-            placeholder="名称或编码"
-          />
-        </el-form-item>
-        <el-form-item label="批次号">
-          <el-input
+            placeholder="编码或名称" /></el-form-item
+        ><el-form-item label="库存批次"
+          ><el-input
             v-model="query.batchCode"
             clearable
-            placeholder="库存批次号"
-          />
-        </el-form-item>
-        <el-form-item label="批次状态">
-          <el-select
+            placeholder="批次号" /></el-form-item
+        ><el-form-item label="批次状态"
+          ><el-select
             v-model="query.batchStatus"
-            placeholder="全部"
             clearable
-          >
-            <el-option
-              label="全部"
-              value=""
-            />
-            <el-option
+            placeholder="全部"
+            ><el-option
               v-for="(label, value) in inventoryBatchStatusLabels"
               :key="value"
               :label="label"
-              :value="value"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="库存状态">
-          <el-select
-            v-model="query.stockStatus"
-            placeholder="全部"
-            clearable
-          >
-            <el-option
-              label="全部"
-              value=""
-            />
-            <el-option
-              v-for="(label, value) in stockStatusLabels"
-              :key="value"
-              :label="label"
-              :value="value"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="对象大类">
-          <el-select
-            v-model="query.itemKind"
-            placeholder="全部"
-            clearable
-          >
-            <el-option
-              label="全部"
-              value=""
-            />
-            <el-option
-              label="物料"
-              value="material"
-            />
-            <el-option
-              label="半成品"
-              value="semi_finished"
-            />
-            <el-option
-              label="成品"
-              value="finished_product"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item class="query-actions">
-          <el-button
+              :value="value" /></el-select></el-form-item
+        ><el-form-item class="query-actions"
+          ><el-button
             type="primary"
             :loading="loading"
             @click="search"
             >查询</el-button
-          >
-          <el-button @click="resetQuery">重置</el-button>
-        </el-form-item>
-      </el-form>
-    </div>
-
-    <div class="table-panel">
-      <TableToolbar>
-        <template #tools>
-          <el-tooltip
-            content="刷新"
-            placement="top"
-          >
-            <el-button
-              :icon="Refresh"
-              text
-              circle
-              :loading="loading"
-              @click="loadRows"
-            />
-          </el-tooltip>
-        </template>
-      </TableToolbar>
-
-      <el-table
+          ><el-button @click="reset">重置</el-button></el-form-item
+        ></el-form
+      >
+    </section>
+    <section class="table-panel">
+      <TableToolbar :total="total"
+        ><template #tools
+          ><el-button
+            :icon="Refresh"
+            text
+            circle
+            :loading="loading"
+            @click="load" /></template></TableToolbar
+      ><el-table
         v-loading="loading"
         :data="rows"
         class="data-table"
-      >
-        <el-table-column
-          label="库存对象"
-          min-width="180"
-        >
-          <template #default="{ row }">
-            <div class="item-name">{{ row.itemName }}</div>
-            <div class="sub-text">{{ row.itemCode }}</div>
-          </template>
-        </el-table-column>
-        <el-table-column
-          label="类型"
-          width="120"
-        >
-          <template #default="{ row }">
-            <el-tag
-              size="small"
-              effect="plain"
-              >{{ kindLabel(row.itemKind) }}</el-tag
-            >
-          </template>
-        </el-table-column>
-        <el-table-column
+        empty-text="暂无库存批次"
+        ><el-table-column
+          label="物料"
+          min-width="210"
+          ><template #default="{ row }"
+            ><strong>{{ row.itemName }}</strong>
+            <div class="secondary">{{ row.itemCode }}</div></template
+          ></el-table-column
+        ><el-table-column
           prop="batchCode"
-          label="批次号"
-          min-width="170"
-        />
-        <el-table-column
+          label="库存批次"
+          min-width="160"
+        /><el-table-column
           label="来源"
-          width="140"
-        >
-          <template #default="{ row }">{{ inventorySourceTypeLabel(row.sourceType) }}</template>
-        </el-table-column>
-        <el-table-column
-          label="供应商"
+          width="110"
+          ><template #default="{ row }">{{
+            inventorySourceTypeLabel(row.sourceType)
+          }}</template></el-table-column
+        ><el-table-column
+          prop="provider"
+          label="供应方"
           min-width="140"
-        >
-          <template #default="{ row }">{{ row.provider || '-' }}</template>
-        </el-table-column>
-        <el-table-column
-          label="可用数量"
-          width="120"
+          ><template #default="{ row }">{{ row.provider || '-' }}</template></el-table-column
+        ><el-table-column
+          label="账面可用量"
+          width="130"
           align="right"
-        >
-          <template #default="{ row }">
-            <span :class="{ 'danger-text': Number(row.availableQuantity) < 0 }">
-              {{ formatQuantity(row.availableQuantity) }}
-            </span>
-          </template>
-        </el-table-column>
-        <el-table-column
-          label="待检数量"
-          width="110"
+          ><template #default="{ row }"
+            >{{ formatQuantity(row.onHandAvailableQuantity) }} {{ row.unit }}</template
+          ></el-table-column
+        ><el-table-column
+          label="有效预留量"
+          width="130"
           align="right"
-        >
-          <template #default="{ row }">{{ formatQuantity(row.pendingQuantity) }}</template>
-        </el-table-column>
-        <el-table-column
-          label="冻结数量"
-          width="110"
+          ><template #default="{ row }"
+            >{{ formatQuantity(row.reservedQuantity) }} {{ row.unit }}</template
+          ></el-table-column
+        ><el-table-column
+          label="可分配量"
+          width="130"
           align="right"
-        >
-          <template #default="{ row }">{{ formatQuantity(row.frozenQuantity) }}</template>
-        </el-table-column>
-        <el-table-column
-          label="不良数量"
-          width="110"
-          align="right"
-        >
-          <template #default="{ row }">{{ formatQuantity(row.defectiveQuantity) }}</template>
-        </el-table-column>
-        <el-table-column
-          label="合计"
-          width="110"
-          align="right"
-        >
-          <template #default="{ row }">{{ formatQuantity(row.totalQuantity) }}</template>
-        </el-table-column>
-        <el-table-column
+          ><template #default="{ row }"
+            ><strong :class="{ zero: Number(row.availableToAllocateQuantity) <= 0 }">{{
+              formatQuantity(row.availableToAllocateQuantity)
+            }}</strong>
+            {{ row.unit }}</template
+          ></el-table-column
+        ><el-table-column
           label="批次状态"
-          width="112"
-        >
-          <template #default="{ row }">
-            <el-tag
+          width="110"
+          ><template #default="{ row }"
+            ><el-tag
               :type="
-                row.batchStatus === 'available'
+                row.batchStatus === 'available' && Number(row.availableToAllocateQuantity) > 0
                   ? 'success'
                   : row.batchStatus === 'frozen'
                     ? 'warning'
                     : 'info'
               "
-              effect="light"
-            >
-              {{ inventoryBatchStatusLabel(row.batchStatus) }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column
+              >{{
+                row.batchStatus === 'available' && Number(row.availableToAllocateQuantity) <= 0
+                  ? '无可用库存'
+                  : inventoryBatchStatusLabel(row.batchStatus)
+              }}</el-tag
+            ></template
+          ></el-table-column
+        ><el-table-column
           label="操作"
-          width="140"
+          width="80"
           fixed="right"
-        >
-          <template #default="{ row }">
-            <el-button
+          ><template #default="{ row }"
+            ><el-button
               link
               type="primary"
-              @click="openDetail(row)"
+              @click="openDetail(row.itemBatchId)"
               >查看</el-button
-            >
-          </template>
-        </el-table-column>
-      </el-table>
-
+            ></template
+          ></el-table-column
+        ></el-table
+      >
       <div class="table-footer">
-        <span class="total-text">共 {{ total }} 条</span>
-        <el-select
-          v-model="pageSize"
+        <span>共 {{ total }} 条</span
+        ><el-select
+          v-model="query.pageSize"
           class="page-size-select"
-          @change="handlePageSizeChange"
-        >
-          <el-option
+          @change="pageSizeChanged"
+          ><el-option
             label="10条/页"
-            :value="10"
-          />
-          <el-option
+            :value="10" /><el-option
             label="20条/页"
-            :value="20"
-          />
-          <el-option
+            :value="20" /><el-option
             label="50条/页"
-            :value="50"
-          />
-        </el-select>
-        <el-pagination
-          v-model:current-page="currentPage"
-          :page-size="pageSize"
+            :value="50" /></el-select
+        ><el-pagination
+          v-model:current-page="query.page"
+          :page-size="query.pageSize"
           :total="total"
-          layout="prev, pager, next, jumper"
-          @current-change="loadRows"
+          layout="prev,pager,next,jumper"
+          @current-change="load"
         />
       </div>
-    </div>
-
+    </section>
     <el-dialog
       v-model="detailVisible"
-      title="批次详情"
+      title="物料库存批次详情"
       :width="DialogWidth.lg"
-    >
-      <el-descriptions
-        v-if="detailRow"
-        :column="2"
-        border
+      ><div
+        v-loading="detailLoading"
+        class="detail-body"
       >
-        <el-descriptions-item label="对象名称">{{ detailRow.itemName }}</el-descriptions-item>
-        <el-descriptions-item label="对象编码">{{ detailRow.itemCode }}</el-descriptions-item>
-        <el-descriptions-item label="对象大类">{{
-          kindLabel(detailRow.itemKind)
-        }}</el-descriptions-item>
-        <el-descriptions-item label="批次号">{{ detailRow.batchCode }}</el-descriptions-item>
-        <el-descriptions-item label="来源类型">{{
-          inventorySourceTypeLabels[detailRow.sourceType]
-        }}</el-descriptions-item>
-        <el-descriptions-item label="供应商">{{ detailRow.provider || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="可用数量">{{
-          formatQuantity(detailRow.availableQuantity)
-        }}</el-descriptions-item>
-        <el-descriptions-item label="待检数量">{{
-          formatQuantity(detailRow.pendingQuantity)
-        }}</el-descriptions-item>
-        <el-descriptions-item label="冻结数量">{{
-          formatQuantity(detailRow.frozenQuantity)
-        }}</el-descriptions-item>
-        <el-descriptions-item label="不良数量">{{
-          formatQuantity(detailRow.defectiveQuantity)
-        }}</el-descriptions-item>
-        <el-descriptions-item label="合计数量">{{
-          formatQuantity(detailRow.totalQuantity)
-        }}</el-descriptions-item>
-        <el-descriptions-item label="批次状态">
-          <el-tag
-            :type="detailRow.batchStatus === 'available' ? 'success' : 'info'"
-            effect="light"
+        <template v-if="detail"
+          ><el-descriptions
+            :column="2"
+            border
+            ><el-descriptions-item label="物料"
+              >{{ detail.itemCode }} · {{ detail.itemName }}</el-descriptions-item
+            ><el-descriptions-item label="库存批次">{{ detail.batchCode }}</el-descriptions-item
+            ><el-descriptions-item label="来源">{{
+              inventorySourceTypeLabel(detail.sourceType)
+            }}</el-descriptions-item
+            ><el-descriptions-item label="供应方">{{ detail.provider || '-' }}</el-descriptions-item
+            ><el-descriptions-item label="账面可用量"
+              >{{ formatQuantity(detail.onHandAvailableQuantity) }}
+              {{ detail.unit }}</el-descriptions-item
+            ><el-descriptions-item label="有效预留量"
+              >{{ formatQuantity(detail.reservedQuantity) }} {{ detail.unit }}</el-descriptions-item
+            ><el-descriptions-item label="可分配量"
+              >{{ formatQuantity(detail.availableToAllocateQuantity) }}
+              {{ detail.unit }}</el-descriptions-item
+            ><el-descriptions-item label="说明"
+              >数量仅由库存流水聚合，页面不可编辑</el-descriptions-item
+            ></el-descriptions
           >
-            {{ inventoryBatchStatusLabels[detailRow.batchStatus] }}
-          </el-tag>
-        </el-descriptions-item>
-      </el-descriptions>
-    </el-dialog>
+          <h3>已确认入库来源</h3>
+          <el-table
+            :data="detail.inboundSources"
+            empty-text="期初来源：该批次没有 inbound_detail 对应的已确认入库单"
+            ><el-table-column
+              prop="inboundNo"
+              label="入库单号"
+            /><el-table-column
+              prop="provider"
+              label="供应方"
+              ><template #default="{ row }">{{ row.provider || '-' }}</template></el-table-column
+            ><el-table-column
+              label="确认时间"
+              width="180"
+              ><template #default="{ row }">{{
+                formatDateTimeForDisplay(row.inboundAt)
+              }}</template></el-table-column
+            ><el-table-column
+              label="入库数量"
+              width="120"
+              align="right"
+              ><template #default="{ row }">{{
+                formatQuantity(row.inboundQuantity)
+              }}</template></el-table-column
+            ><el-table-column
+              label="正库存流水"
+              width="120"
+              ><template #default="{ row }"
+                >#{{ row.inventoryTransactionId }}</template
+              ></el-table-column
+            ></el-table
+          ></template
+        >
+      </div></el-dialog
+    >
   </div>
 </template>
-
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
+import { onActivated, onMounted, reactive, ref } from 'vue';
 import { Refresh } from '@element-plus/icons-vue';
-import type { InventoryBatchStatus, InventorySourceType } from '@company/contracts';
+import type { InventoryBatchItem, InventoryBatchQuery } from '@company/contracts';
+import { productionApi } from '../../api/production';
 import TableToolbar from '../../components/TableToolbar.vue';
-import { DialogWidth } from '../../utils/dialog';
-// TODO(api-integration): 待接入操作类接口后启用 EMessage 提示
-import { EMessage } from '../../utils/message';
 import {
-  inventoryBatchStatusLabels,
   inventoryBatchStatusLabel,
-  inventorySourceTypeLabels,
+  inventoryBatchStatusLabels,
   inventorySourceTypeLabel,
-  stockStatusLabels,
 } from '../../constants/business-status';
-
-/**
- * TODO(warehouse-api): 库存查询页面。当前使用静态演示数据。
- * 后端库存模块（item_batch/inventory_transaction + 汇总视图）尚未迁移。
- * 待后端实现以下接口后接入：
- *   GET    /warehouse/inventory    — 现存量分页（含库存状态汇总）
- *   GET    /warehouse/inventory/:id — 批次详情
- * 参考 contracts: InventoryBatchStatus, StockStatus, InventorySourceType
- */
+import { DialogWidth } from '../../utils/dialog';
+import { formatDateTimeForDisplay } from '../../utils/date';
+import { EMessage } from '../../utils/message';
+import { formatQuantity } from '../production/production-status';
 defineOptions({ name: 'WarehouseInventoryPage' });
-
-interface InventoryItem {
-  id: string;
-  itemCode: string;
-  itemName: string;
-  itemKind: string;
-  batchCode: string;
-  sourceType: InventorySourceType;
-  provider: string;
-  availableQuantity: string;
-  pendingQuantity: string;
-  frozenQuantity: string;
-  defectiveQuantity: string;
-  totalQuantity: string;
-  batchStatus: InventoryBatchStatus;
-}
-
-const demoRows: InventoryItem[] = [
-  {
-    id: '1',
-    itemCode: 'MAT-001',
-    itemName: '原材料A',
-    itemKind: 'material',
-    batchCode: 'BATCH-A1',
-    sourceType: 'purchased',
-    provider: '供应商A',
-    availableQuantity: '500.0000',
-    pendingQuantity: '100.0000',
-    frozenQuantity: '0.0000',
-    defectiveQuantity: '0.0000',
-    totalQuantity: '600.0000',
-    batchStatus: 'available',
-  },
-  {
-    id: '2',
-    itemCode: 'MAT-002',
-    itemName: '原材料B',
-    itemKind: 'material',
-    batchCode: 'BATCH-B1',
-    sourceType: 'purchased',
-    provider: '供应商B',
-    availableQuantity: '300.0000',
-    pendingQuantity: '0.0000',
-    frozenQuantity: '50.0000',
-    defectiveQuantity: '10.0000',
-    totalQuantity: '360.0000',
-    batchStatus: 'available',
-  },
-  {
-    id: '3',
-    itemCode: 'SEMI-001',
-    itemName: '半成品X',
-    itemKind: 'semi_finished',
-    batchCode: 'BATCH-S1',
-    sourceType: 'self_made',
-    provider: '',
-    availableQuantity: '200.0000',
-    pendingQuantity: '50.0000',
-    frozenQuantity: '0.0000',
-    defectiveQuantity: '0.0000',
-    totalQuantity: '250.0000',
-    batchStatus: 'available',
-  },
-  {
-    id: '4',
-    itemCode: 'FP-001',
-    itemName: '成品Z',
-    itemKind: 'finished_product',
-    batchCode: 'BATCH-F1',
-    sourceType: 'self_made',
-    provider: '',
-    availableQuantity: '150.0000',
-    pendingQuantity: '0.0000',
-    frozenQuantity: '0.0000',
-    defectiveQuantity: '0.0000',
-    totalQuantity: '150.0000',
-    batchStatus: 'frozen',
-  },
-  {
-    id: '5',
-    itemCode: 'MAT-003',
-    itemName: '化学品C',
-    itemKind: 'material',
-    batchCode: 'BATCH-C1',
-    sourceType: 'purchased',
-    provider: '供应商C',
-    availableQuantity: '0.0000',
-    pendingQuantity: '0.0000',
-    frozenQuantity: '80.0000',
-    defectiveQuantity: '20.0000',
-    totalQuantity: '100.0000',
-    batchStatus: 'disabled',
-  },
-];
-
-const rows = ref<InventoryItem[]>([...demoRows]);
-const detailRow = ref<InventoryItem | null>(null);
-const loading = ref(false);
-const total = ref(5);
-const currentPage = ref(1);
-const pageSize = ref(10);
-const detailVisible = ref(false);
-
-const query = reactive({
-  keyword: '',
-  batchCode: '',
-  batchStatus: '',
-  stockStatus: '',
-  itemKind: '',
-});
-
-const kindLabel = (kind: string) => {
-  const map: Record<string, string> = {
-    material: '物料',
-    semi_finished: '半成品',
-    finished_product: '成品',
-  };
-  return map[kind] ?? kind;
-};
-
-const loadRows = async () => {
+const query = reactive<InventoryBatchQuery>({ page: 1, pageSize: 20 });
+const rows = ref<InventoryBatchItem[]>([]),
+  total = ref(0),
+  loading = ref(false),
+  detail = ref<InventoryBatchItem | null>(null),
+  detailLoading = ref(false),
+  detailVisible = ref(false);
+let token = 0;
+const load = async () => {
+  const current = ++token;
   loading.value = true;
-  setTimeout(() => {
-    const kw = query.keyword.trim().toLowerCase();
-    const bc = query.batchCode.trim().toLowerCase();
-    const bs = query.batchStatus;
-    const ss = query.stockStatus;
-    const ik = query.itemKind;
-    let filtered = [...demoRows];
-    if (kw)
-      filtered = filtered.filter(
-        (r) => r.itemName.toLowerCase().includes(kw) || r.itemCode.toLowerCase().includes(kw),
-      );
-    if (bc) filtered = filtered.filter((r) => r.batchCode.toLowerCase().includes(bc));
-    if (bs) filtered = filtered.filter((r) => r.batchStatus === bs);
-    if (ss) filtered = filtered.filter((r) => r.availableQuantity !== undefined); // simulates stockStatus filter
-    if (ik) filtered = filtered.filter((r) => r.itemKind === ik);
-    rows.value = filtered;
-    total.value = filtered.length;
-    loading.value = false;
-  }, 300);
+  try {
+    const r = await productionApi.listInventoryBatches({
+      ...query,
+      keyword: query.keyword?.trim() || undefined,
+      batchCode: query.batchCode?.trim() || undefined,
+    });
+    if (current === token) {
+      rows.value = r.items;
+      total.value = r.total;
+    }
+  } catch (e) {
+    EMessage.error(e, '库存批次加载失败');
+  } finally {
+    if (current === token) loading.value = false;
+  }
 };
-
-const search = async () => {
-  currentPage.value = 1;
-  await loadRows();
+const search = () => {
+  query.page = 1;
+  return load();
 };
-
-const resetQuery = async () => {
-  query.keyword = '';
-  query.batchCode = '';
-  query.batchStatus = '';
-  query.stockStatus = '';
-  query.itemKind = '';
-  currentPage.value = 1;
-  await loadRows();
+const reset = () => {
+  query.keyword = undefined;
+  query.batchCode = undefined;
+  query.batchStatus = undefined;
+  query.page = 1;
+  return load();
 };
-
-const handlePageSizeChange = async () => {
-  currentPage.value = 1;
-  await loadRows();
+const pageSizeChanged = () => {
+  query.page = 1;
+  return load();
 };
-
-const openDetail = (row: InventoryItem) => {
-  detailRow.value = row;
+const openDetail = async (id: string) => {
   detailVisible.value = true;
+  detailLoading.value = true;
+  try {
+    detail.value = await productionApi.getInventoryBatch(id);
+  } catch (e) {
+    EMessage.error(e, '库存批次详情加载失败');
+  } finally {
+    detailLoading.value = false;
+  }
 };
-
-const formatQuantity = (value: string | number | null) => {
-  const amount = Number(value ?? 0);
-  if (!Number.isFinite(amount)) return '-';
-  return amount.toLocaleString('zh-CN', { minimumFractionDigits: 0, maximumFractionDigits: 4 });
-};
-
-onMounted(loadRows);
+onMounted(load);
+onActivated(load);
 </script>
-
 <style scoped>
+.inventory-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
 .query-panel,
 .table-panel {
   border: 1px solid #e5e7eb;
   border-radius: 8px;
-  background: #ffffff;
+  background: #fff;
 }
 .query-panel {
-  padding: 20px 20px 8px;
-  margin-bottom: 16px;
+  padding: 20px 20px 4px;
 }
 .query-form {
   display: flex;
@@ -527,161 +314,61 @@ onMounted(loadRows);
   margin-right: 0;
   margin-bottom: 16px;
 }
-.query-form :deep(.el-form-item__label) {
-  height: 34px;
-  padding-right: 8px;
-  color: #1f2937;
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 34px;
-}
 .query-form :deep(.el-input),
 .query-form :deep(.el-select) {
-  width: 142px;
-}
-.query-form :deep(.el-input__wrapper),
-.query-form :deep(.el-select__wrapper) {
-  min-height: 34px;
-  border-radius: 6px;
-  box-shadow: 0 0 0 1px #e5e7eb inset;
+  width: 180px;
 }
 .query-actions {
   margin-left: auto;
 }
-.query-actions :deep(.el-button) {
-  min-width: 67px;
-  height: 32px;
-  border-radius: 6px;
-}
-.query-actions :deep(.el-button + .el-button) {
-  margin-left: 12px;
-}
-
 .table-panel {
   overflow: hidden;
 }
-.table-toolbar {
-  display: flex;
+.table-panel :deep(.table-toolbar) {
+  min-height: 56px;
   align-items: center;
-  justify-content: flex-end;
-  height: 56px;
-  padding: 0 16px;
   border-bottom: 1px solid #e5e7eb;
 }
-.table-tools {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  color: #6b7280;
-}
-.table-tools :deep(.el-button) {
-  width: 20px;
-  height: 20px;
-  color: #6b7280;
-}
-
-.data-table {
-  width: 100%;
-  color: #1f2937;
-  font-size: 14px;
-}
-.data-table :deep(.el-table__header th) {
+.data-table :deep(th.el-table__cell) {
   height: 48px;
   background: #f9fafb;
   color: #1f2937;
-  font-weight: 600;
 }
-.data-table :deep(.el-table__row) {
-  height: 48px;
-}
-.data-table :deep(.el-table__row:hover) {
-  background: #f3f4f6;
-}
-.data-table :deep(.el-table__cell) {
-  border-bottom-color: #e5e7eb;
-}
-.item-name {
-  color: #1f2937;
-  font-weight: 600;
-}
-.sub-text {
-  margin-top: 2px;
+.secondary {
   color: #6b7280;
   font-size: 12px;
 }
-.danger-text {
-  color: #ef4444;
-  font-weight: 600;
+.zero {
+  color: #9ca3af;
 }
-.data-table :deep(.el-tag) {
-  height: 22px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 4px;
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 22px;
-}
-.data-table :deep(.el-tag--success) {
-  background: #dcfce7;
-  color: #22c55e;
-}
-.data-table :deep(.el-tag--info) {
-  background: #f3f4f6;
-  color: #6b7280;
-}
-.data-table :deep(.el-tag--warning) {
-  background: #fef3c7;
-  color: #f59e0b;
-}
-.data-table :deep(.el-tag--danger) {
-  background: #fce8e8;
-  color: #ef4444;
-}
-.data-table :deep(.el-button.is-link) {
-  padding: 0;
-  font-weight: 500;
-}
-
 .table-footer {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 12px;
-  height: 56px;
+  min-height: 56px;
   padding: 0 16px;
-}
-.total-text {
   color: #6b7280;
-  font-size: 14px;
 }
 .page-size-select {
   width: 78px;
 }
-.page-size-select :deep(.el-select__wrapper) {
-  min-height: 30px;
-  padding: 0 7px;
-  border-radius: 6px;
+.detail-body {
+  min-height: 160px;
+  max-height: 70vh;
+  overflow: auto;
 }
-.table-footer :deep(.el-pagination) {
-  gap: 4px;
+.detail-body h3 {
+  margin: 18px 0 10px;
+  font-size: 16px;
 }
-.table-footer :deep(.el-pager li),
-.table-footer :deep(.btn-prev),
-.table-footer :deep(.btn-next) {
-  min-width: 32px;
-  height: 32px;
-  border: 1px solid #e5e7eb;
-  border-radius: 6px;
-}
-.table-footer :deep(.el-pager li.is-active) {
-  border-color: #306188;
-  background: #306188;
-  color: #ffffff;
-}
-
-.dialog-form :deep(.el-select),
-.dialog-form :deep(.el-input) {
-  width: 100%;
+@media (max-width: 1000px) {
+  .query-form {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(220px, 1fr));
+  }
+  .query-actions {
+    margin-left: 0;
+  }
 }
 </style>

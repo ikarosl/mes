@@ -201,6 +201,62 @@
               </el-tab-pane>
 
               <el-tab-pane
+                label="物料入库来源"
+                name="inbound"
+              >
+                <el-alert
+                  title="这里只展示本批次实际分配库存批次的正库存来源；没有入库明细的历史正流水标记为期初来源。"
+                  type="info"
+                  :closable="false"
+                />
+                <el-table
+                  :data="detail.materialInboundSources"
+                  empty-text="暂无可追溯的正库存来源"
+                >
+                  <el-table-column
+                    label="物料 / 库存批次"
+                    min-width="220"
+                  >
+                    <template #default="{ row }">
+                      {{ row.itemCode }} · {{ row.itemName }} / {{ row.batchCode }}
+                    </template>
+                  </el-table-column>
+                  <el-table-column
+                    label="来源"
+                    width="120"
+                  >
+                    <template #default="{ row }">{{
+                      row.sourceLabel === 'purchase_inbound' ? '外购入库' : '期初来源'
+                    }}</template>
+                  </el-table-column>
+                  <el-table-column
+                    label="入库单 / 供应方"
+                    min-width="190"
+                  >
+                    <template #default="{ row }">
+                      {{ row.inboundNo || '—' }} / {{ row.provider || '—' }}
+                    </template>
+                  </el-table-column>
+                  <el-table-column
+                    label="确认时间"
+                    width="175"
+                  >
+                    <template #default="{ row }">{{
+                      formatDateTimeForDisplay(row.confirmedAt)
+                    }}</template>
+                  </el-table-column>
+                  <el-table-column
+                    label="正库存流水"
+                    min-width="170"
+                  >
+                    <template #default="{ row }">
+                      #{{ row.inventoryTransactionId }} · +{{ formatQuantity(row.inboundQuantity) }}
+                    </template>
+                  </el-table-column>
+                </el-table>
+              </el-tab-pane>
+
+              <el-tab-pane
                 label="领料出库与库存流水"
                 name="outbound"
               >

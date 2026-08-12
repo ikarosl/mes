@@ -226,6 +226,9 @@ createBatch 试点接线进一步落实「重放返回原结果」的完整语�
 | 创建物料分配 | 新增不可变分配事实；无客户端可复现业务键 | 已启用，scope `production.material-allocation.create.v1`；幂等记录、分配、批次状态和成功审计同事务 |
 | 释放物料分配 | 更新既有 allocation；`allocationId + version` | 使用状态短路与 version 乐观锁；不发送 `Idempotency-Key` |
 | 创建生产领料出库单 | 新增待出库主单/明细；服务端单号不可复现；不扣库存 | 已启用，scope `production.material-outbound.create.v2`；待出库事实、成功审计和结果同事务 |
+| 创建外购物料入库单 | 新增 pending 主单、明细和零余额库存批次；不写库存流水 | 已启用，scope `production.purchase-inbound.create.v1`；业务写入、成功审计和结果同事务 |
+| 确认外购物料入库 | 整单生成 `purchase_inbound` 正库存流水 | 已启用，scope `production.purchase-inbound.confirm.v1`；状态、流水、成功审计和结果同事务 |
+| 取消待确认外购物料入库 | `pending -> cancelled`，不产生库存流水 | 状态 + version 天然幂等；前端不发送 `Idempotency-Key` |
 | 确认生产领料出库 | 整单生成负库存流水并推进批次；`outboundId + version` | 已启用，scope `production.material-outbound.confirm.v1`；单据状态、内部库存流水键、批次状态、审计和结果同事务 |
 | 取消待出库单 | `pending_picking -> cancelled`；`outboundId + version` | 使用状态短路与 version；不发送 `Idempotency-Key`，取消后待制单占用立即释放 |
 | 创建工序报工 | 新增不可变报工事实；异常数量还会新增待处置记录 | 已启用，scope `production.step-report.create.v1`；报工、异常待处置、工序状态、成功审计和幂等结果同事务 |

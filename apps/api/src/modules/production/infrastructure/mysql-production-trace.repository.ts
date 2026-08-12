@@ -141,6 +141,46 @@ export class MysqlProductionTraceRepository extends ProductionTraceRepository {
       transactionAt: toBeijingISOString(row.created_at),
     }));
   }
+
+  async listMaterialInboundSources(batchId: string) {
+    const [rows] = await this.pool.query<
+      (RowDataPacket & {
+        item_batch_id: number;
+        batch_code: string;
+        item_code: string;
+        item_name: string;
+        inbound_no: string | null;
+        provider: string | null;
+        confirmed_at: Date | null;
+        quantity: string;
+        transaction_id: number;
+        reference_type: string;
+      })[]
+    >(
+      `SELECT DISTINCT ib.id item_batch_id,ib.batch_code,ib.item_code_snapshot item_code,
+        ib.product_name_snapshot item_name,o.inbound_no,o.provider,o.inbound_at confirmed_at,
+        tx.quantity,tx.id transaction_id,tx.reference_type
+       FROM production_item_allocation a JOIN item_batch ib ON ib.id=a.batch_id
+       JOIN inventory_transaction tx ON tx.batch_id=ib.id AND tx.quantity>0
+       LEFT JOIN inbound_detail d ON tx.reference_type='inbound_detail' AND tx.reference_detail_id=d.id
+       LEFT JOIN inbound_order o ON o.id=d.inbound_id AND o.status='completed'
+       WHERE a.production_batch_id=? AND tx.stock_status='available'
+       ORDER BY ib.id,tx.id`,
+      [batchId],
+    );
+    return rows.map((row) => ({
+      itemBatchId: String(row.item_batch_id),
+      batchCode: row.batch_code,
+      itemCode: row.item_code,
+      itemName: row.item_name,
+      sourceLabel: row.inbound_no ? ('purchase_inbound' as const) : ('initial_stock' as const),
+      inboundNo: row.inbound_no,
+      provider: row.provider,
+      confirmedAt: row.confirmed_at ? toBeijingISOString(row.confirmed_at) : null,
+      inboundQuantity: row.quantity,
+      inventoryTransactionId: String(row.transaction_id),
+    }));
+  }
 }
 
 const mapSummary = (row: TraceSummaryRow): ProductionTraceBatchSummary => ({

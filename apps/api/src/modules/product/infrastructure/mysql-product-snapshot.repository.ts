@@ -18,6 +18,7 @@ type ProductRow = RowDataPacket & {
   product_name: string;
   unit: string;
   default_route_id: number | null;
+  item_kind: InventoryItemReference['itemKind'];
 };
 type Db = Pool | PoolConnection;
 type RouteRow = RowDataPacket & {
@@ -52,7 +53,10 @@ export class MysqlProductSnapshotRepository implements ProductSnapshotRepository
   async listInventoryItemReferencesByIds(itemIds: string[]): Promise<InventoryItemReference[]> {
     if (itemIds.length === 0) return [];
     const [rows] = await this.pool.query<ProductRow[]>(
-      `SELECT id,item_code,product_name,unit,default_route_id FROM products WHERE id IN (${itemIds.map(() => '?').join(',')})`,
+      `SELECT p.id,p.item_code,p.product_name,p.unit,c.item_kind,p.default_route_id
+         FROM products p
+         JOIN product_categories c ON c.id=p.category_id AND c.status=1 AND c.is_deleted=0
+        WHERE p.status=1 AND p.deleted_at IS NULL AND p.id IN (${itemIds.map(() => '?').join(',')})`,
       itemIds,
     );
     return rows.map((row) => ({
@@ -60,6 +64,7 @@ export class MysqlProductSnapshotRepository implements ProductSnapshotRepository
       itemCode: row.item_code,
       productName: row.product_name,
       unit: row.unit,
+      itemKind: row.item_kind,
     }));
   }
 

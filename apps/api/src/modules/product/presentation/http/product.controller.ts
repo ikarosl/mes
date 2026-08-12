@@ -162,6 +162,7 @@ export class ProductController {
     PERMISSIONS.product.routes.view,
     PERMISSIONS.production.orders.view,
     PERMISSIONS.production.tasks.view,
+    PERMISSIONS.production.inbounds.view,
   ])
   productOptions() {
     return this.service.listProductOptions();

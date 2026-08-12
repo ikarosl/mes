@@ -59,9 +59,12 @@ IdempotencyKeyGuard 顺序、DTO Pipe、CurrentIdempotentCommandContext、AuditI
 [`http-idempotency-implementation-plan.md`](http-idempotency-implementation-plan.md)。
 
 命令上下文迁移测试同时锁定：普通 `CommandContext` 不含幂等键；Guard 将 trim 后的键写入请求局部私有
-属性；只有已登记的 createBatch、物料分配创建、待出库单创建、生产领料整单确认、报工创建和报工更正使用 `IdempotentCommandContext` 与 executor；
+属性；只有已登记的 createBatch、物料分配创建、待出库单创建、生产领料整单确认、外购物料入库单创建、
+外购物料整单确认、报工创建和报工更正使用 `IdempotentCommandContext` 与 executor；
 Repository Port/Adapter 不依赖该子类型。Product 文件上传 HTTP 契约测试必须证明误带 header 返回 `IDEMPOTENCY_NOT_SUPPORTED`，且
-`storage.storeSop()` 与数据库 Repository 均未调用。
+`storage.storeSop()` 与数据库 Repository 均未调用。Production material 事务套件同时覆盖外购物料
+入库：pending 不产生库存流水，多明细确认逐条形成唯一正流水，并发/同键重试不重复入账，取消不入账，
+成功审计失败时状态和流水整体回滚。
 
 天然幂等复验必须从完整 application/API 路径执行，不能只调用 Repository。尤其
 `generateMaterialDemands` 需要验证响应丢失后的重试不会在状态短路前因实时 BOM 已变化而失败，并使用

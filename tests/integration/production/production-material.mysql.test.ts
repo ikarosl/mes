@@ -14,6 +14,8 @@ import { MysqlProductSnapshotRepository } from '../../../apps/api/src/modules/pr
 import { ProductionMaterialService } from '../../../apps/api/src/modules/production/application/production-material.service.js';
 import { MysqlProductionMaterialRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-material.repository.js';
 import { MysqlProductionTraceRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-trace.repository.js';
+import { ProductionInboundService } from '../../../apps/api/src/modules/production/application/production-inbound.service.js';
+import { MysqlProductionInboundRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-inbound.repository.js';
 
 loadWorkspaceEnv();
 const describeMysql = process.env.RUN_MYSQL_INTEGRATION === '1' ? describe : describe.skip;
@@ -459,6 +461,145 @@ describeMysql('Production material MySQL transactions', () => {
       expect(Number(ledger?.quantity)).toBe(-10);
       expect(Number(ledger?.count)).toBe(1);
     } finally {
+      await cleanup(pool, f);
+    }
+  });
+
+  it('creates pending purchase inbound without stock, confirms once, and cancels without ledger', async () => {
+    const f = await fixture(pool, actorId, 'inbound');
+    const inboundService = new ProductionInboundService(
+      new MysqlProductionInboundRepository(pool),
+      new ProductSnapshotService(new MysqlProductSnapshotRepository(pool)),
+      new IdentityDirectoryService(new MysqlRbacRepository(pool)),
+      new MysqlIdempotencyExecutor(pool),
+    );
+    const inboundIds: string[] = [];
+    const batchCodes = [
+      `${f.token}-purchase-a`,
+      `${f.token}-purchase-b`,
+      `${f.token}-cancel`,
+      `${f.token}-rollback`,
+    ];
+    try {
+      const created = await inboundService.create(
+        {
+          inboundNo: `${f.token}-PI1`,
+          provider: '供应商',
+          details: [
+            { itemId: String(f.materialId), batchCode: batchCodes[0]!, inboundQuantity: 7 },
+            { itemId: String(f.materialId), batchCode: batchCodes[1]!, inboundQuantity: 5 },
+          ],
+        },
+        idemCtx(actorId, `${f.token}-create`, `${f.token}-create-key`),
+      );
+      inboundIds.push(created.inboundId);
+      expect(created.status).toBe('pending');
+      expect(created.details).toHaveLength(2);
+      expect(created.details.every((detail) => detail.inventoryTransactionId === null)).toBe(true);
+      const createReplay = await inboundService.create(
+        {
+          inboundNo: `${f.token}-PI1`,
+          provider: '供应商',
+          details: [
+            { itemId: String(f.materialId), batchCode: batchCodes[0]!, inboundQuantity: 7 },
+            { itemId: String(f.materialId), batchCode: batchCodes[1]!, inboundQuantity: 5 },
+          ],
+        },
+        idemCtx(actorId, `${f.token}-create-replay`, `${f.token}-create-key`),
+      );
+      expect(createReplay).toEqual(created);
+      const [[pendingLedger]] = await pool.query<(RowDataPacket & { count: number })[]>(
+        `SELECT COUNT(*) count FROM inventory_transaction WHERE reference_type='inbound_detail' AND reference_detail_id IN (${created.details.map(() => '?').join(',')})`,
+        created.details.map((detail) => detail.id),
+      );
+      expect(Number(pendingLedger?.count)).toBe(0);
+      const [confirmed, concurrentReplay] = await Promise.all([
+        inboundService.confirm(
+          created.inboundId,
+          0,
+          idemCtx(actorId, `${f.token}-confirm`, `${f.token}-confirm-key`),
+        ),
+        inboundService.confirm(
+          created.inboundId,
+          0,
+          idemCtx(actorId, `${f.token}-confirm-concurrent`, `${f.token}-confirm-key-2`),
+        ),
+      ]);
+      expect(concurrentReplay).toEqual(confirmed);
+      const replay = await inboundService.confirm(
+        created.inboundId,
+        0,
+        idemCtx(actorId, `${f.token}-confirm-replay`, `${f.token}-confirm-key`),
+      );
+      expect(replay).toEqual(confirmed);
+      const [[ledger]] = await pool.query<(RowDataPacket & { count: number; quantity: string })[]>(
+        `SELECT COUNT(*) count,SUM(quantity) quantity FROM inventory_transaction WHERE reference_type='inbound_detail' AND reference_detail_id IN (${confirmed.details.map(() => '?').join(',')})`,
+        confirmed.details.map((detail) => detail.id),
+      );
+      expect(Number(ledger?.count)).toBe(2);
+      expect(Number(ledger?.quantity)).toBe(12);
+      await expect(
+        inboundService.cancel(
+          created.inboundId,
+          confirmed.version,
+          ctx(actorId, `${f.token}-bad-cancel`),
+        ),
+      ).rejects.toMatchObject({ code: 'INBOUND_CANCEL_NOT_ALLOWED' });
+      const pending = await inboundService.create(
+        {
+          inboundNo: `${f.token}-PI2`,
+          details: [
+            { itemId: String(f.materialId), batchCode: batchCodes[2]!, inboundQuantity: 3 },
+          ],
+        },
+        idemCtx(actorId, `${f.token}-cancel-create`, `${f.token}-cancel-create-key`),
+      );
+      inboundIds.push(pending.inboundId);
+      expect(
+        (await inboundService.cancel(pending.inboundId, 0, ctx(actorId, `${f.token}-cancel`)))
+          .status,
+      ).toBe('cancelled');
+      const [[cancelLedger]] = await pool.query<(RowDataPacket & { count: number })[]>(
+        "SELECT COUNT(*) count FROM inventory_transaction WHERE reference_type='inbound_detail' AND reference_detail_id=?",
+        [pending.details[0]!.id],
+      );
+      expect(Number(cancelLedger?.count)).toBe(0);
+      const rollback = await inboundService.create(
+        {
+          inboundNo: `${f.token}-PI3`,
+          details: [
+            { itemId: String(f.materialId), batchCode: batchCodes[3]!, inboundQuantity: 4 },
+          ],
+        },
+        idemCtx(actorId, `${f.token}-rollback-create`, `${f.token}-rollback-create-key`),
+      );
+      inboundIds.push(rollback.inboundId);
+      await expect(
+        inboundService.confirm(
+          rollback.inboundId,
+          0,
+          idemCtx(actorId, 'x'.repeat(500), `${f.token}-rollback-confirm-key`),
+        ),
+      ).rejects.toBeDefined();
+      const afterRollback = await inboundService.get(rollback.inboundId);
+      expect(afterRollback).toMatchObject({ status: 'pending', version: 0 });
+      expect(afterRollback.details[0]?.inventoryTransactionId).toBeNull();
+    } finally {
+      if (inboundIds.length) {
+        await pool.execute(
+          `DELETE FROM inventory_transaction WHERE reference_type='inbound_detail' AND reference_detail_id IN (SELECT id FROM inbound_detail WHERE inbound_id IN (${inboundIds.map(() => '?').join(',')}))`,
+          inboundIds,
+        );
+        await pool.execute(
+          `DELETE FROM inbound_detail WHERE inbound_id IN (${inboundIds.map(() => '?').join(',')})`,
+          inboundIds,
+        );
+        await pool.execute(
+          `DELETE FROM inbound_order WHERE id IN (${inboundIds.map(() => '?').join(',')})`,
+          inboundIds,
+        );
+      }
+      await pool.execute('DELETE FROM item_batch WHERE batch_code IN (?,?,?,?)', batchCodes);
       await cleanup(pool, f);
     }
   });

@@ -52,6 +52,8 @@ const knownIdempotencyScopes = [
   'production.material-allocation.create.v1',
   'production.material-outbound.create.v2',
   'production.material-outbound.confirm.v1',
+  'production.purchase-inbound.create.v1',
+  'production.purchase-inbound.confirm.v1',
   'production.step-report.create.v1',
   'production.step-report.correct.v1',
 ];
@@ -150,9 +152,11 @@ const checks = [
     exclude: [
       'apps/api/src/modules/production/application/production.service.ts',
       'apps/api/src/modules/production/application/production-material.service.ts',
+      'apps/api/src/modules/production/application/production-inbound.service.ts',
       'apps/api/src/modules/production/application/production-reporting.service.ts',
       'apps/api/src/modules/production/presentation/http/production.controller.ts',
       'apps/api/src/modules/production/presentation/http/production-material.controller.ts',
+      'apps/api/src/modules/production/presentation/http/production-inbound.controller.ts',
       'apps/api/src/modules/production/presentation/http/production-reporting.controller.ts',
     ],
   },
@@ -164,6 +168,7 @@ const checks = [
     exclude: [
       'apps/api/src/modules/production/application/production.service.ts',
       'apps/api/src/modules/production/application/production-material.service.ts',
+      'apps/api/src/modules/production/application/production-inbound.service.ts',
       'apps/api/src/modules/production/application/production-reporting.service.ts',
     ],
     fileMatch: isApplicationLayerFile,

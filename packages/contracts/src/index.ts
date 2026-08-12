@@ -1081,6 +1081,18 @@ export interface ProductionTraceDetail {
   materialDemands: ProductionMaterialDemandItem[];
   materialOutbounds: MaterialOutboundItem[];
   inventoryTransactions: ProductionTraceInventoryTransaction[];
+  materialInboundSources: Array<{
+    itemBatchId: string;
+    batchCode: string;
+    itemCode: string;
+    itemName: string;
+    sourceLabel: 'purchase_inbound' | 'initial_stock';
+    inboundNo: string | null;
+    provider: string | null;
+    confirmedAt: string | null;
+    inboundQuantity: string;
+    inventoryTransactionId: string;
+  }>;
   steps: BatchStepExecutionRecordItem[];
 }
 
@@ -1149,6 +1161,80 @@ export type InventoryReferenceType =
   | 'inspection_record'
   | 'manual';
 export type InboundOrderStatus = 'pending' | 'completed' | 'cancelled';
+
+export interface PurchaseInboundDetailItem {
+  id: string;
+  itemId: string;
+  itemCode: string;
+  itemName: string;
+  itemBatchId: string;
+  batchCode: string;
+  inboundQuantity: string;
+  unit: string;
+  stockStatus: 'available';
+  inventoryTransactionId: string | null;
+}
+export interface PurchaseInboundOrderItem {
+  inboundId: string;
+  inboundNo: string;
+  sourceType: 'purchased';
+  provider: string | null;
+  status: InboundOrderStatus;
+  inboundAt: string | null;
+  operatorId: string | null;
+  operatorName: string | null;
+  createdById: string | null;
+  createdByName: string | null;
+  createdAt: string;
+  version: number;
+  remark: string | null;
+  detailCount: number;
+  totalInboundQuantity: string;
+  quantitySummary: Array<{ unit: string; quantity: string }>;
+  details: PurchaseInboundDetailItem[];
+}
+export interface PurchaseInboundOrderQuery extends PageQuery {
+  keyword?: string;
+  status?: InboundOrderStatus;
+}
+export interface CreatePurchaseInboundPayload {
+  inboundNo?: string | null;
+  provider?: string | null;
+  remark?: string | null;
+  details: Array<{
+    itemId: string;
+    batchCode: string;
+    inboundQuantity: number;
+    remark?: string | null;
+  }>;
+}
+export interface InventoryBatchQuery extends PageQuery {
+  keyword?: string;
+  batchCode?: string;
+  batchStatus?: InventoryBatchStatus;
+}
+export interface InventoryBatchItem {
+  itemBatchId: string;
+  itemId: string;
+  itemCode: string;
+  itemName: string;
+  unit: string;
+  batchCode: string;
+  sourceType: InventorySourceType;
+  provider: string | null;
+  batchStatus: InventoryBatchStatus;
+  onHandAvailableQuantity: string;
+  reservedQuantity: string;
+  availableToAllocateQuantity: string;
+  inboundSources: Array<{
+    inboundId: string;
+    inboundNo: string;
+    provider: string | null;
+    inboundAt: string;
+    inboundQuantity: string;
+    inventoryTransactionId: string;
+  }>;
+}
 export type DemandType = 'normal' | 'manual_additional';
 export type DemandBusinessStatus = 'active' | 'cancelled' | 'closed' | 'frozen' | 'abnormal';
 export type AllocationStatus = 'active' | 'released' | 'cancelled' | 'frozen' | 'abnormal';

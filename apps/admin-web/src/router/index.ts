@@ -193,7 +193,7 @@ export const router = createRouter({
           'warehouse-inventory',
           '库存查询',
           WarehouseInventoryPage,
-          PERMISSIONS.warehouse.inventory.view,
+          PERMISSIONS.production.inventory.view,
           'WarehouseInventoryPage',
         ),
         page(
@@ -201,7 +201,7 @@ export const router = createRouter({
           'warehouse-inbound',
           '入库管理',
           InboundOrdersPage,
-          PERMISSIONS.warehouse.inbound.view,
+          PERMISSIONS.production.inbounds.view,
           'InboundOrdersPage',
         ),
         page(

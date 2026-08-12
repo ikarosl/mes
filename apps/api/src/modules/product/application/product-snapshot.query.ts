@@ -11,6 +11,7 @@ export interface InventoryItemReference {
   itemCode: string;
   productName: string;
   unit: string;
+  itemKind: 'material' | 'semi_finished' | 'finished_product';
 }
 
 export interface ProductBomLineSnapshot {

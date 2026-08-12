@@ -4,6 +4,7 @@ import type {
   ProductionTraceInventoryTransaction,
   ProductionTraceQuery,
   ProductionTraceWorkOrderGroup,
+  ProductionTraceDetail,
 } from '@company/contracts';
 
 export abstract class ProductionTraceRepository {
@@ -12,4 +13,7 @@ export abstract class ProductionTraceRepository {
   abstract listInventoryTransactions(
     batchId: string,
   ): Promise<ProductionTraceInventoryTransaction[]>;
+  abstract listMaterialInboundSources(
+    batchId: string,
+  ): Promise<ProductionTraceDetail['materialInboundSources']>;
 }

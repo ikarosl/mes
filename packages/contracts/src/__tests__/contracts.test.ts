@@ -11,6 +11,8 @@ import type {
   ProductionTraceDetail,
   CreateMaterialOutboundPayload,
   ConfirmMaterialOutboundPayload,
+  CreatePurchaseInboundPayload,
+  InventoryBatchItem,
 } from '../index.js';
 
 describe('auth contract', () => {
@@ -89,5 +91,22 @@ describe('production material contracts', () => {
     expect(create.details).toHaveLength(2);
     expect(create).not.toHaveProperty('status');
     expect(confirm).toEqual({ version: 0 });
+  });
+
+  it('models pending purchase inbound separately from ledger-derived inventory', () => {
+    const inbound: CreatePurchaseInboundPayload = {
+      inboundNo: null,
+      provider: '供应商 A',
+      remark: null,
+      details: [{ itemId: '1', batchCode: 'LOT-1', inboundQuantity: 5, remark: null }],
+    };
+    const inventory = {
+      itemBatchId: '2',
+      onHandAvailableQuantity: '5.0000',
+      reservedQuantity: '2.0000',
+      availableToAllocateQuantity: '3.0000',
+    } as InventoryBatchItem;
+    expect(inbound).not.toHaveProperty('status');
+    expect(inventory.availableToAllocateQuantity).toBe('3.0000');
   });
 });

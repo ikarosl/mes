@@ -158,28 +158,17 @@ const warehouseMenus = [
   {
     title: '库存查询',
     path: '/warehouse/inventory',
-    permission: PERMISSIONS.warehouse.inventory.view,
+    permission: PERMISSIONS.production.inventory.view,
   },
   {
     title: '入库管理',
     path: '/warehouse/inbound-orders',
-    permission: PERMISSIONS.warehouse.inbound.view,
+    permission: PERMISSIONS.production.inbounds.view,
   },
   {
     title: '出库管理',
     path: '/warehouse/outbound-orders',
     permission: PERMISSIONS.production.materials.view,
-  },
-  {
-    title: '退料管理',
-    path: '/warehouse/return-orders',
-    permission: PERMISSIONS.warehouse.returns.view,
-  },
-  { title: '报废管理', path: '/warehouse/scraps', permission: PERMISSIONS.warehouse.scraps.view },
-  {
-    title: '盘点管理',
-    path: '/warehouse/stock-checks',
-    permission: PERMISSIONS.warehouse.stockChecks.view,
   },
 ];
 const warehouseItems = computed(() => warehouseMenus.filter((item) => auth.can(item.permission)));
