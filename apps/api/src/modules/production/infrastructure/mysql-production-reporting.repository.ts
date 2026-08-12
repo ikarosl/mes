@@ -72,7 +72,8 @@ export class MysqlProductionReportingRepository extends ProductionReportingRepos
       steps: steps.map((step, index) =>
         mapExecutionStep(
           step,
-          index === 0 ? batch.planned_quantity : steps[index - 1]!.effective_normal,
+          batch.planned_quantity,
+          releasedQuantity(batch.planned_quantity, steps[index - 1]),
           reportsByStep.get(String(step.id)) ?? [],
           dispositionsByStep.get(String(step.id)) ?? [],
         ),
@@ -87,7 +88,7 @@ export class MysqlProductionReportingRepository extends ProductionReportingRepos
     context: CommandContext & { actorId: string },
   ): Promise<BatchStepReportCommandResult> {
     return withTransaction(this.pool, async (connection) => {
-      const { current, required } = await lockContext(connection, batchId, stepRecordId);
+      const { current, required, released } = await lockContext(connection, batchId, stepRecordId);
       if (current.status !== 'doing' || String(current.responsible_user_id) !== context.actorId)
         throw new ProductionDomainError(
           current.status !== 'doing' ? 'STEP_REPORT_NOT_ALLOWED' : 'NOT_STEP_ASSIGNEE',
@@ -97,7 +98,7 @@ export class MysqlProductionReportingRepository extends ProductionReportingRepos
         throw new ProductionDomainError('STEP_REPORT_NOT_ALLOWED', '该工序无需报工');
       assertVersion(current, payload.version);
       requireReportQuantities(payload.normalQuantity, payload.abnormalQuantity);
-      requireNormalWithinRequired(current.effective_normal, payload.normalQuantity, required);
+      requireNormalWithinRequired(current.effective_normal, payload.normalQuantity, released);
       const reportId = await insertReport(connection, {
         batchId,
         stepRecordId,
@@ -125,7 +126,15 @@ export class MysqlProductionReportingRepository extends ProductionReportingRepos
         normalQuantity: fixed(payload.normalQuantity),
         abnormalQuantity: fixed(payload.abnormalQuantity),
       });
-      return commandResult(connection, batchId, stepRecordId, required, reportId, dispositionId);
+      return commandResult(
+        connection,
+        batchId,
+        stepRecordId,
+        required,
+        released,
+        reportId,
+        dispositionId,
+      );
     });
   }
 
@@ -138,7 +147,7 @@ export class MysqlProductionReportingRepository extends ProductionReportingRepos
   ): Promise<BatchStepReportCommandResult> {
     return withTransaction(this.pool, async (connection) => {
       const actorId = requireActor(context);
-      const { current, required, downstream } = await lockContext(
+      const { current, required, released, downstream } = await lockContext(
         connection,
         batchId,
         stepRecordId,
@@ -151,6 +160,7 @@ export class MysqlProductionReportingRepository extends ProductionReportingRepos
           batchId,
           stepRecordId,
           required,
+          released,
           String(existing.id),
           null,
         );
@@ -176,7 +186,7 @@ export class MysqlProductionReportingRepository extends ProductionReportingRepos
         reversalOfReportId: reportId,
         reason: payload.reason,
       });
-      return commandResult(connection, batchId, stepRecordId, required, reversalId, null);
+      return commandResult(connection, batchId, stepRecordId, required, released, reversalId, null);
     });
   }
 
@@ -189,7 +199,7 @@ export class MysqlProductionReportingRepository extends ProductionReportingRepos
   ): Promise<CorrectBatchStepReportCommandResult> {
     return withTransaction(this.pool, async (connection) => {
       const actorId = requireActor(context);
-      const { current, required, downstream } = await lockContext(
+      const { current, required, released, downstream } = await lockContext(
         connection,
         batchId,
         stepRecordId,
@@ -202,7 +212,7 @@ export class MysqlProductionReportingRepository extends ProductionReportingRepos
         subtract(current.effective_normal, target.normal_quantity),
         payload.normalQuantity,
       );
-      requireNormalWithinRequired(0, correctedNormal, required);
+      requireNormalWithinRequired(0, correctedNormal, released);
       requireNoDownstreamQuantityConflict(correctedNormal, downstream?.effective_normal ?? 0);
       const reversalId = await insertReport(connection, {
         batchId,
@@ -238,7 +248,7 @@ export class MysqlProductionReportingRepository extends ProductionReportingRepos
         reversalReportId: reversalId,
         reason: payload.reason,
       });
-      const summary = await summaryResult(connection, batchId, stepRecordId, required);
+      const summary = await summaryResult(connection, batchId, stepRecordId, required, released);
       return {
         ...summary,
         reversal: mapReport(await selectReport(connection, String(reversalId))),
@@ -263,8 +273,9 @@ const lockContext = async (connection: PoolConnection, batchId: string, stepReco
   const index = steps.findIndex((row) => String(row.id) === stepRecordId);
   if (index < 0) throw new ProductionDomainError('NOT_FOUND', '批次工序记录不存在');
   const current = steps[index]!;
-  const required = index === 0 ? batch.planned_quantity : steps[index - 1]!.effective_normal;
-  return { batch, steps, current, index, required, downstream: steps[index + 1] ?? null };
+  const required = batch.planned_quantity;
+  const released = releasedQuantity(batch.planned_quantity, steps[index - 1]);
+  return { batch, steps, current, index, required, released, downstream: steps[index + 1] ?? null };
 };
 
 const requireCorrectable = (target: ReportRow): void => {
@@ -377,10 +388,11 @@ const commandResult = async (
   batchId: string,
   stepRecordId: string,
   required: string,
+  released: string,
   reportId: string,
   dispositionId: string | null,
 ): Promise<BatchStepReportCommandResult> => ({
-  ...(await summaryResult(connection, batchId, stepRecordId, required)),
+  ...(await summaryResult(connection, batchId, stepRecordId, required, released)),
   report: mapReport(await selectReport(connection, reportId)),
   abnormalDisposition: dispositionId
     ? mapDisposition(await selectDisposition(connection, dispositionId))
@@ -392,6 +404,7 @@ const summaryResult = async (
   batchId: string,
   stepRecordId: string,
   required: string,
+  released: string,
 ) => {
   const [rows] = await connection.query<LockedStepRow[]>(
     `SELECT sr.id,sr.step_order_snapshot,sr.status,sr.responsible_user_id,sr.need_record_snapshot,sr.unit_snapshot,sr.version,${SUMMARY_COLUMNS}
@@ -406,6 +419,8 @@ const summaryResult = async (
     stepStatus: row.status,
     stepVersion: row.version,
     requiredNormalQuantity: fixed(required),
+    releasedNormalQuantity: fixed(released),
+    availableNormalQuantity: fixed(Math.max(0, Number(released) - Number(row.effective_normal))),
     effectiveReportedQuantity: row.effective_reported,
     effectiveNormalQuantity: row.effective_normal,
     effectiveAbnormalQuantity: row.effective_abnormal,
@@ -449,6 +464,17 @@ const add = (left: number | string, right: number | string): string =>
   fixed(Number(left) + Number(right));
 const subtract = (left: number | string, right: number | string): string =>
   fixed(Number(left) - Number(right));
+const releasedQuantity = (
+  plannedQuantity: string,
+  previous: LockedStepRow | ProjectionStepRow | undefined,
+): string => {
+  if (!previous) return plannedQuantity;
+  return previous.need_record_snapshot
+    ? previous.effective_normal
+    : previous.status === 'completed'
+      ? plannedQuantity
+      : '0.0000';
+};
 const SUMMARY_COLUMNS = `COALESCE(SUM(CASE WHEN r.report_type='normal' THEN r.reported_quantity ELSE -r.reported_quantity END),0) effective_reported,
   COALESCE(SUM(CASE WHEN r.report_type='normal' THEN r.normal_quantity ELSE -r.normal_quantity END),0) effective_normal,
   COALESCE(SUM(CASE WHEN r.report_type='normal' THEN r.abnormal_quantity ELSE -r.abnormal_quantity END),0) effective_abnormal`;

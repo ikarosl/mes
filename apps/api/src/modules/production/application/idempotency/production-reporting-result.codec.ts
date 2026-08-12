@@ -57,6 +57,8 @@ const summaryFields = {
   stepStatus: z.enum(BATCH_STEP_STATUSES),
   stepVersion: z.number().int().nonnegative(),
   requiredNormalQuantity: z.string(),
+  releasedNormalQuantity: z.string(),
+  availableNormalQuantity: z.string(),
   effectiveReportedQuantity: z.string(),
   effectiveNormalQuantity: z.string(),
   effectiveAbnormalQuantity: z.string(),

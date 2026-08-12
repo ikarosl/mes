@@ -20,8 +20,8 @@ export const assertDemoSeedEnabled = (environment: NodeJS.ProcessEnv) => {
     throw new Error('Demo seed is disabled. Set ALLOW_DEMO_SEED=1 for an explicit demo load.');
   }
   const password = environment.DEMO_USER_PASSWORD;
-  if (!password || password.length < 8) {
-    throw new Error('DEMO_USER_PASSWORD must contain at least 8 characters.');
+  if (!password || password.length < 6) {
+    throw new Error('DEMO_USER_PASSWORD must contain at least 6 characters.');
   }
   return password;
 };

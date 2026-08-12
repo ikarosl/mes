@@ -64,6 +64,12 @@
           <template #default="{ row }">
             {{ formatQuantity(row.effectiveNormalQuantity) }} /
             {{ formatQuantity(row.requiredNormalQuantity) }} {{ row.unit }}
+            <div
+              v-if="row.status === 'doing'"
+              class="quantity-release"
+            >
+              当前可报 {{ formatQuantity(row.availableNormalQuantity) }} {{ row.unit }}
+            </div>
           </template>
         </el-table-column>
         <el-table-column
@@ -193,7 +199,7 @@ const submitReport = async (payload: {
       typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : '';
     const fallback =
       code === 'STEP_REPORT_QUANTITY_EXCEEDED'
-        ? '正常数量超过剩余需报数量，请刷新后重试'
+        ? '正常数量超过上游当前放行的可报数量，请刷新后重试'
         : code === 'NOT_STEP_ASSIGNEE'
           ? '该工序已改派，请刷新本人任务'
           : code === 'CONCURRENT_MODIFICATION'
@@ -254,5 +260,10 @@ onActivated(reload);
 .muted {
   color: #9ca3af;
   font-size: 13px;
+}
+.quantity-release {
+  margin-top: 4px;
+  color: #6b7280;
+  font-size: 12px;
 }
 </style>

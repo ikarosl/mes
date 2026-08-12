@@ -91,6 +91,7 @@ export const mapDisposition = (row: DispositionRow): BatchStepAbnormalDispositio
 export const mapExecutionStep = (
   row: ProjectionStepRow,
   required: string,
+  released: string,
   reports: ReportRow[],
   dispositions: DispositionRow[],
 ): BatchStepExecutionRecordItem => ({
@@ -105,6 +106,8 @@ export const mapExecutionStep = (
   needRecord: Boolean(row.need_record_snapshot),
   unit: row.unit_snapshot,
   requiredNormalQuantity: fixed(required),
+  releasedNormalQuantity: fixed(released),
+  availableNormalQuantity: fixed(Math.max(0, Number(released) - Number(row.effective_normal))),
   effectiveReportedQuantity: row.effective_reported,
   effectiveNormalQuantity: row.effective_normal,
   effectiveAbnormalQuantity: row.effective_abnormal,

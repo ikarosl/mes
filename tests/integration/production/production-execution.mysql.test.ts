@@ -237,6 +237,85 @@ describeMysql('Production execution MySQL transactions', () => {
     }
   });
 
+  it('uses upstream normal output only as the current release limit, never as downstream completion target', async () => {
+    const fixture = await createFixture(pool, 'report-release-limit');
+    try {
+      await repository.assignStep(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        String(fixture.workerId),
+        0,
+        context(fixture.actorId, `${fixture.token}-assign-first`),
+      );
+      await repository.assignStep(
+        String(fixture.batchId),
+        String(fixture.secondStepRecordId),
+        String(fixture.workerId),
+        0,
+        context(fixture.actorId, `${fixture.token}-assign-second`),
+      );
+      await repository.startStep(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        1,
+        context(fixture.workerId, `${fixture.token}-start-first`),
+      );
+      await reporting.createReport(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        { version: 2, normalQuantity: 4, abnormalQuantity: 0 },
+        context(fixture.workerId, `${fixture.token}-report-first-part`),
+      );
+      await repository.startStep(
+        String(fixture.batchId),
+        String(fixture.secondStepRecordId),
+        1,
+        context(fixture.workerId, `${fixture.token}-start-second`),
+      );
+      const downstreamPart = await reporting.createReport(
+        String(fixture.batchId),
+        String(fixture.secondStepRecordId),
+        { version: 2, normalQuantity: 4, abnormalQuantity: 0 },
+        context(fixture.workerId, `${fixture.token}-report-second-part`),
+      );
+      expect(downstreamPart).toMatchObject({
+        stepStatus: 'doing',
+        requiredNormalQuantity: '10.0000',
+        releasedNormalQuantity: '4.0000',
+        availableNormalQuantity: '0.0000',
+        remainingNormalQuantity: '6.0000',
+      });
+      await expect(
+        reporting.createReport(
+          String(fixture.batchId),
+          String(fixture.secondStepRecordId),
+          { version: 3, normalQuantity: 1, abnormalQuantity: 0 },
+          context(fixture.workerId, `${fixture.token}-report-second-over-release`),
+        ),
+      ).rejects.toMatchObject({ code: 'STEP_REPORT_QUANTITY_EXCEEDED' });
+      await reporting.createReport(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        { version: 3, normalQuantity: 6, abnormalQuantity: 0 },
+        context(fixture.workerId, `${fixture.token}-report-first-complete`),
+      );
+      const downstreamComplete = await reporting.createReport(
+        String(fixture.batchId),
+        String(fixture.secondStepRecordId),
+        { version: 3, normalQuantity: 6, abnormalQuantity: 0 },
+        context(fixture.workerId, `${fixture.token}-report-second-complete`),
+      );
+      expect(downstreamComplete).toMatchObject({
+        stepStatus: 'completed',
+        requiredNormalQuantity: '10.0000',
+        releasedNormalQuantity: '10.0000',
+        effectiveNormalQuantity: '10.0000',
+      });
+    } finally {
+      await cleanup(pool, fixture);
+    }
+  });
+
   it('corrects by appending reversal and replacement and reopens a completed step', async () => {
     const fixture = await createFixture(pool, 'correct');
     try {

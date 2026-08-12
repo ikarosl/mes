@@ -193,6 +193,12 @@
                   >需报正常量 <b>{{ formatQuantity(step.requiredNormalQuantity) }}</b></span
                 >
                 <span
+                  >当前放行量 <b>{{ formatQuantity(step.releasedNormalQuantity) }}</b></span
+                >
+                <span
+                  >当前可报量 <b>{{ formatQuantity(step.availableNormalQuantity) }}</b></span
+                >
+                <span
                   >有效正常累计 <b>{{ formatQuantity(step.effectiveNormalQuantity) }}</b></span
                 >
                 <span
@@ -267,7 +273,7 @@
                   fixed="right"
                 >
                   <template #default="{ row }">
-                    <template v-if="canChange(row)">
+                    <template v-if="canChange(step, row)">
                       <el-button
                         link
                         type="primary"
@@ -283,7 +289,7 @@
                     </template>
                     <el-tooltip
                       v-else-if="row.reportType === 'normal' && row.isEffective"
-                      content="该报工已形成异常待处置依赖，当前阶段只允许查看，不可冲销或更正"
+                      :content="adjustmentBlockReason(step, row) || ''"
                       placement="top"
                     >
                       <span class="disabled-action">不可调整</span>
@@ -295,7 +301,7 @@
                 v-if="step.abnormalDispositions.length"
                 class="abnormal-list"
               >
-                <strong>异常待处置</strong>
+                <strong>异常处置记录（当前只读）</strong>
                 <el-tag
                   v-for="item in step.abnormalDispositions"
                   :key="item.dispositionId"
@@ -303,6 +309,10 @@
                   >{{ item.dispositionNo }} ·
                   {{ BATCH_STEP_ABNORMAL_REVIEW_STATUS_LABELS[item.reviewStatus] }}</el-tag
                 >
+                <p>
+                  当前 Production
+                  阶段尚未开放返工、报废审批。异常处置与报工更正是两类业务；已形成处置依赖的报工不能直接冲销或更正。
+                </p>
               </div>
             </article>
           </template>
@@ -349,6 +359,14 @@
           {{ changeReport.unit }}</el-descriptions-item
         >
       </el-descriptions>
+      <el-alert
+        v-if="changeStep && changeReport"
+        class="dialog-tip"
+        :type="changeHasDownstreamConflict || changeExceedsReleased ? 'error' : 'warning'"
+        :closable="false"
+        show-icon
+        :title="changeImpactText"
+      />
       <el-form label-position="top">
         <template v-if="changeMode === 'correct'">
           <el-form-item
@@ -358,6 +376,7 @@
             <el-input-number
               v-model="changeForm.normalQuantity"
               :min="0"
+              :max="replacementNormalMaximum"
               :precision="4"
             />
           </el-form-item>
@@ -511,16 +530,75 @@ const changeKey = computed(() =>
   changeReport.value ? `${changeMode.value}:${changeReport.value.reportId}` : '',
 );
 const changePending = computed(() => pendingKeys.value.has(changeKey.value));
+const changedEffectiveNormal = computed(() => {
+  if (!changeStep.value || !changeReport.value) return 0;
+  const withoutOriginal =
+    Number(changeStep.value.effectiveNormalQuantity) - Number(changeReport.value.normalQuantity);
+  return Math.max(
+    0,
+    withoutOriginal + (changeMode.value === 'correct' ? changeForm.normalQuantity : 0),
+  );
+});
+const replacementNormalMaximum = computed(() => {
+  if (!changeStep.value || !changeReport.value) return 0;
+  const withoutOriginal =
+    Number(changeStep.value.effectiveNormalQuantity) - Number(changeReport.value.normalQuantity);
+  return Math.max(0, Number(changeStep.value.releasedNormalQuantity) - withoutOriginal);
+});
+const changedDownstream = computed(() => {
+  if (!record.value || !changeStep.value) return null;
+  const index = record.value.steps.findIndex(
+    (step) => step.stepRecordId === changeStep.value?.stepRecordId,
+  );
+  return index < 0 ? null : (record.value.steps[index + 1] ?? null);
+});
+const changeHasDownstreamConflict = computed(
+  () =>
+    changedDownstream.value !== null &&
+    changedEffectiveNormal.value < Number(changedDownstream.value.effectiveNormalQuantity),
+);
+const changeExceedsReleased = computed(
+  () =>
+    changeStep.value !== null &&
+    changedEffectiveNormal.value > Number(changeStep.value.releasedNormalQuantity),
+);
+const changeImpactText = computed(() => {
+  if (!changeStep.value) return '';
+  const quantity = `${formatQuantity(changedEffectiveNormal.value)} ${changeStep.value.unit}`;
+  if (changeHasDownstreamConflict.value)
+    return `调整后有效正常量为 ${quantity}，低于下游工序已报正常量 ${formatQuantity(changedDownstream.value?.effectiveNormalQuantity ?? 0)}，请先从下游冲销。`;
+  if (changeExceedsReleased.value)
+    return `调整后有效正常量为 ${quantity}，超过上游当前放行量，不能提交。`;
+  const willComplete =
+    changedEffectiveNormal.value === Number(changeStep.value.requiredNormalQuantity);
+  return `调整后有效正常量为 ${quantity}；工序将${willComplete ? '保持或进入已完成' : '保持或退回进行中'}。状态和完成时间由服务端重新计算。`;
+});
 const canSubmitChange = computed(
   () =>
     changeForm.reason.trim().length > 0 &&
-    (changeMode.value === 'reverse' || changeForm.normalQuantity + changeForm.abnormalQuantity > 0),
+    (changeMode.value === 'reverse' ||
+      changeForm.normalQuantity + changeForm.abnormalQuantity > 0) &&
+    !changeHasDownstreamConflict.value &&
+    !changeExceedsReleased.value,
 );
 const stepStatusLabel = (status: BatchStepStatus) => BATCH_STEP_STATUS_LABELS[status];
 const reportTypeLabel = (report: BatchStepReportItem) =>
   BATCH_STEP_REPORT_TYPE_LABELS[report.reportType];
-const canChange = (report: BatchStepReportItem) =>
-  report.reportType === 'normal' && report.isEffective && Number(report.abnormalQuantity) === 0;
+const adjustmentBlockReason = (
+  step: BatchStepExecutionRecordItem,
+  report: BatchStepReportItem,
+): string | null => {
+  if (report.reportType !== 'normal' || !report.isEffective) return null;
+  if (step.abnormalDispositions.some((item) => item.sourceReportId === report.reportId))
+    return '该报工已形成异常处置依赖；当前只读阶段尚无合法的处置取消/冲销动作，因此不能直接调整报工';
+  if (step.reports.some((item) => item.correctionOfReportId === report.reportId))
+    return '该报工已有替代事实，不能再次冲销或更正';
+  return null;
+};
+const canChange = (step: BatchStepExecutionRecordItem, report: BatchStepReportItem) =>
+  report.reportType === 'normal' &&
+  report.isEffective &&
+  adjustmentBlockReason(step, report) === null;
 const search = async () => {
   try {
     currentPage.value = 1;
@@ -579,7 +657,19 @@ const submitChange = async () => {
     changeVisible.value = false;
     EMessage.success(changeMode.value === 'correct' ? '报工已按追加事实更正' : '报工已冲销');
   } catch (error) {
-    EMessage.error(error, '报工调整失败，请刷新后重试');
+    const code =
+      typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : '';
+    const fallback =
+      code === 'DOWNSTREAM_QUANTITY_CONFLICT'
+        ? '调整后数量低于下游已报正常量，请先从最下游开始冲销'
+        : code === 'STEP_REPORT_DEPENDENCY_CONFLICT'
+          ? '该报工已有异常处置或替代事实依赖，当前不能直接调整'
+          : code === 'STEP_REPORT_QUANTITY_EXCEEDED'
+            ? '调整后数量超过上游当前放行量，请刷新后核对'
+            : code === 'CONCURRENT_MODIFICATION'
+              ? '工序数据已变化，请刷新后重新核对调整影响'
+              : '报工调整失败，请刷新后重试';
+    EMessage.error(error, fallback);
   }
 };
 const submitCompletion = async () => {

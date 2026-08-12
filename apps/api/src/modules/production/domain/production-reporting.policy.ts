@@ -16,7 +16,7 @@ export const requireNormalWithinRequired = (
   if (scaled(currentEffectiveNormal) + scaled(normalDelta) > scaled(requiredNormal))
     throw new ProductionDomainError(
       'STEP_REPORT_QUANTITY_EXCEEDED',
-      '本次正常数量超过剩余需报数量',
+      '本次正常数量超过当前已放行的可报数量',
     );
 };
 

@@ -24,11 +24,14 @@ describe('production execution contracts', () => {
     const payload: AssignProductionStepPayload = { responsibleUserId: '7', version: 2 };
     const task = {
       requiredNormalQuantity: '10.0000',
+      releasedNormalQuantity: '6.0000',
+      availableNormalQuantity: '2.0000',
       effectiveNormalQuantity: '4.0000',
       canStart: false,
     } as ProductionWorkerTaskItem;
     expect(payload).toEqual({ responsibleUserId: '7', version: 2 });
     expect(task.requiredNormalQuantity).toBe('10.0000');
+    expect(task.availableNormalQuantity).toBe('2.0000');
   });
 
   it('models each report as a delta and correction as a replacement command', () => {

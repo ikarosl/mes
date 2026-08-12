@@ -14,7 +14,7 @@
 ```powershell
 corepack pnpm db:init
 $env:ALLOW_DEMO_SEED='1'
-$env:DEMO_USER_PASSWORD='<至少 8 位的演示密码>'
+$env:DEMO_USER_PASSWORD='<至少 6 位的演示密码>'
 corepack pnpm db:seed:demo
 ```
 

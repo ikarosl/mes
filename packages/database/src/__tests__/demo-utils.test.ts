@@ -5,8 +5,8 @@ describe('demo seed', () => {
   it('requires an explicit gate and a non-trivial password', () => {
     expect(() => assertDemoSeedEnabled({})).toThrow('Demo seed is disabled');
     expect(() =>
-      assertDemoSeedEnabled({ ALLOW_DEMO_SEED: '1', DEMO_USER_PASSWORD: 'short' }),
-    ).toThrow('at least 8 characters');
+      assertDemoSeedEnabled({ ALLOW_DEMO_SEED: '1', DEMO_USER_PASSWORD: '12345' }),
+    ).toThrow('at least 6 characters');
     expect(
       assertDemoSeedEnabled({ ALLOW_DEMO_SEED: '1', DEMO_USER_PASSWORD: 'demo-password' }),
     ).toBe('demo-password');

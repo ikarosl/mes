@@ -28,6 +28,8 @@ const summary = {
   stepStatus: 'doing' as const,
   stepVersion: 3,
   requiredNormalQuantity: '10.0000',
+  releasedNormalQuantity: '6.0000',
+  availableNormalQuantity: '3.0000',
   effectiveReportedQuantity: '4.0000',
   effectiveNormalQuantity: '3.0000',
   effectiveAbnormalQuantity: '1.0000',

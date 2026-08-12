@@ -884,6 +884,8 @@ export interface ProductionWorkerTaskItem {
   unit: string;
   plannedQuantity: string;
   requiredNormalQuantity: string;
+  releasedNormalQuantity: string;
+  availableNormalQuantity: string;
   effectiveNormalQuantity: string;
   effectiveAbnormalQuantity: string;
   startedAt: string | null;
@@ -952,6 +954,8 @@ export interface BatchStepExecutionRecordItem {
   needRecord: boolean;
   unit: string;
   requiredNormalQuantity: string;
+  releasedNormalQuantity: string;
+  availableNormalQuantity: string;
   effectiveReportedQuantity: string;
   effectiveNormalQuantity: string;
   effectiveAbnormalQuantity: string;
@@ -981,6 +985,8 @@ export interface BatchStepReportCommandResult {
   stepStatus: BatchStepStatus;
   stepVersion: number;
   requiredNormalQuantity: string;
+  releasedNormalQuantity: string;
+  availableNormalQuantity: string;
   effectiveReportedQuantity: string;
   effectiveNormalQuantity: string;
   effectiveAbnormalQuantity: string;
@@ -995,6 +1001,8 @@ export interface CorrectBatchStepReportCommandResult {
   stepStatus: BatchStepStatus;
   stepVersion: number;
   requiredNormalQuantity: string;
+  releasedNormalQuantity: string;
+  availableNormalQuantity: string;
   effectiveReportedQuantity: string;
   effectiveNormalQuantity: string;
   effectiveAbnormalQuantity: string;

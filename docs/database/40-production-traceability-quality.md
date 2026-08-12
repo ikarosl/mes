@@ -168,8 +168,9 @@ effective_abnormal = SUM(normal.abnormal_quantity) - SUM(reversal.abnormal_quant
 
 ### 4.2.3 数量与并发约束
 
-- 当前工序要求正常数量 `required_normal`：第一工序取生产批次计划数量；后续工序取上一工序当前的 `effective_normal`。
-- 只要当前工序 `effective_normal < required_normal` 即允许继续新增普通报工；本次提交后的 `effective_normal` 不得超过事务内重新读取的 `required_normal`。`abnormal_quantity` 不计入正常完成量和下工序放行量。
+- 当前不支持短批完工，因此所有必须报工工序的最终要求正常数量 `required_normal` 均取生产批次计划数量。后续工序不得把上一工序当前的 `effective_normal` 误作自身最终完成目标，否则会在上游仅部分放行时提前自动完成。
+- 当前可报正常量上限 `released_normal`：第一工序取生产批次计划数量；后续工序若上一工序必须报工则取其当前 `effective_normal`，若上一工序无需报工则仅在其 `completed` 后取生产批次计划数量，否则为 `0`。
+- 只要当前工序 `effective_normal < required_normal` 且仍有已放行未报数量，即允许继续新增普通报工；本次提交后的 `effective_normal` 不得超过事务内重新读取的 `released_normal`。工序只在 `effective_normal == required_normal` 时自动完成，达到当前部分放行量不得提前完成。`abnormal_quantity` 不计入正常完成量和下工序放行量。
 - 当前阶段不限制 `effective_reported` 的累计上限，不记录报工使用了初始投入、返工还是补料来源，也不要求补料需求、分配或出库完成后才允许再次报工。
 - 当前临时口径把操作员提交的 `normal_quantity` 视为该工序已经完成自检的正常数量；在过程质量模型缺失期间，`effective_normal` 临时作为下工序正常放行数量。该口径只用于生产过程流转，不得解释为最终质量合格结论。
 - 冲销或更正上游事实后，如果新的上游 `effective_normal` 小于下游已经报工的 `effective_normal`，整个命令必须拒绝，不能让下工序正常放行量超过上工序。错误响应必须指出冲突的下游工序及其有效报工数量，并提示管理员按下游到上游顺序先完成冲销；下游数量降到新上限以内后，才能重试上游命令。

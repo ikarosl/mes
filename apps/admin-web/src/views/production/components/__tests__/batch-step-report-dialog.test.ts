@@ -19,6 +19,8 @@ const task = {
   unit: '件',
   plannedQuantity: '10.0000',
   requiredNormalQuantity: '10.0000',
+  releasedNormalQuantity: '6.0000',
+  availableNormalQuantity: '2.0000',
   effectiveNormalQuantity: '4.0000',
   effectiveAbnormalQuantity: '0.0000',
   startedAt: null,
@@ -36,6 +38,7 @@ describe('BatchStepReportDialog', () => {
           'el-dialog': { template: '<div><slot/><slot name="footer"/></div>' },
           'el-form': { template: '<form><slot/></form>' },
           'el-form-item': { template: '<div><slot/></div>' },
+          'el-alert': true,
           'el-input-number': true,
           'el-input': true,
           'el-button': { template: '<button @click="$emit(\'click\')"><slot/></button>' },
@@ -44,10 +47,12 @@ describe('BatchStepReportDialog', () => {
     });
     const vm = wrapper.vm as unknown as {
       remaining: number;
+      available: number;
       form: { normalQuantity: number; abnormalQuantity: number; remark: string };
       submit: () => void;
     };
     expect(vm.remaining).toBe(6);
+    expect(vm.available).toBe(2);
     vm.form.normalQuantity = 2;
     vm.form.abnormalQuantity = 1;
     vm.form.remark = ' 本次异常 ';
@@ -55,5 +60,24 @@ describe('BatchStepReportDialog', () => {
     expect(wrapper.emitted('submit')?.[0]).toEqual([
       { normalQuantity: 2, abnormalQuantity: 1, remark: '本次异常' },
     ]);
+  });
+
+  it('limits this normal report by upstream release without treating it as completion target', async () => {
+    const wrapper = mount(BatchStepReportDialog, {
+      props: { modelValue: true, task: task as never, submitting: false },
+      global: {
+        stubs: {
+          'el-dialog': { template: '<div><slot/><slot name="footer"/></div>' },
+          'el-alert': { props: ['title'], template: '<p>{{ title }}</p>' },
+          'el-form': { template: '<form><slot/></form>' },
+          'el-form-item': { template: '<div><slot/></div>' },
+          'el-input-number': true,
+          'el-input': true,
+          'el-button': { template: '<button><slot/></button>' },
+        },
+      },
+    });
+    expect(wrapper.text()).toContain('达到当前放行量不会提前完成本工序');
+    expect(wrapper.text()).toContain('最终剩余需完成');
   });
 });
