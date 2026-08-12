@@ -176,14 +176,22 @@
               >生成物料</el-button
             >
             <el-button
-              v-if="row.status === 'material_pending' || row.status === 'material_assigned'"
+              v-if="
+                row.status === 'material_pending' ||
+                row.status === 'material_assigned' ||
+                row.status === 'doing'
+              "
               link
               type="primary"
               @click="openMaterialAllocation(row)"
               >分配物料</el-button
             >
             <el-button
-              v-if="row.status === 'material_assigned' || row.status === 'material_outbound'"
+              v-if="
+                row.status === 'material_assigned' ||
+                row.status === 'material_outbound' ||
+                row.status === 'doing'
+              "
               link
               type="primary"
               @click="openMaterialOutbound(row)"
@@ -275,7 +283,7 @@
 
     <MaterialDemandAllocationDialog
       :visible="materialAllocationVisible"
-      :demands="materials.demands.value"
+      :demands="visibleMaterialDemands"
       :available-item-batches="materials.availableItemBatches.value"
       :loading-demands="materials.loadingDemands.value"
       :loading-available="materials.loadingAvailable.value"
@@ -289,7 +297,7 @@
 
     <MaterialOutboundDialog
       :visible="materialOutboundVisible"
-      :demands="materials.demands.value"
+      :demands="visibleMaterialDemands"
       :outbounds="materials.outbounds.value"
       :loading-outbounds="materials.loadingOutbounds.value"
       :submitting="materials.submitting.value"
@@ -393,6 +401,12 @@ const assignmentPendingIds = computed(
 const materialAllocationVisible = ref(false);
 const materialOutboundVisible = ref(false);
 const materials = useProductionMaterials();
+const materialBatchStatus = ref<ProductionBatchItem['status'] | null>(null);
+const visibleMaterialDemands = computed(() =>
+  materialBatchStatus.value === 'doing'
+    ? materials.demands.value.filter((demand) => demand.demandType === 'scrap_supplement')
+    : materials.demands.value,
+);
 const taskFormDialogRef = ref<{
   setForm: (row: ProductionBatchItem) => void;
   resetForm: () => void;
@@ -598,6 +612,7 @@ const generateMaterials = async (row: ProductionBatchItem): Promise<void> => {
 const openMaterialAllocation = async (row: ProductionBatchItem): Promise<void> => {
   if (!(await prepareMaterialBatch(row.id))) return;
   materials.setBatch(row.id);
+  materialBatchStatus.value = row.status;
   materialAllocationVisible.value = true;
   try {
     await materials.loadDemands();
@@ -628,6 +643,7 @@ const handleMaterialRelease = async (
 const openMaterialOutbound = async (row: ProductionBatchItem): Promise<void> => {
   if (!(await prepareMaterialBatch(row.id))) return;
   materials.setBatch(row.id);
+  materialBatchStatus.value = row.status;
   materialOutboundVisible.value = true;
   try {
     await Promise.all([materials.loadDemands(), materials.loadOutbounds()]);

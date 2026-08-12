@@ -40,16 +40,29 @@ describe('AbnormalReworkPanel', () => {
         ] as never,
         pendingKeys: new Set<string>(),
         unit: '件',
+        candidateLoader: async () => [],
       },
       global: {
         stubs: {
           'el-tag': { template: '<span><slot/></span>' },
           'el-button': { template: '<button @click="$emit(\'click\')"><slot/></button>' },
           'el-dialog': true,
+          'el-alert': true,
+          'el-input': true,
+          'el-input-number': true,
+          'el-checkbox': true,
+          'el-form': { template: '<form><slot/></form>' },
+          'el-form-item': { template: '<div><slot/></div>' },
+          'el-table': true,
+          'el-table-column': true,
+          'el-descriptions': true,
+          'el-descriptions-item': true,
         },
+        directives: { loading: () => undefined },
       },
     });
     expect(wrapper.text()).toContain('批准返工');
+    expect(wrapper.text()).toContain('报废并补料');
     expect(wrapper.text()).toContain('2.0000 件');
     expect(wrapper.text()).toContain('开始返工');
   });

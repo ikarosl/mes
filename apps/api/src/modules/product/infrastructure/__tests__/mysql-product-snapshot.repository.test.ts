@@ -4,6 +4,15 @@ import { ProductDomainError } from '../../domain/product.errors.js';
 import { MysqlProductSnapshotRepository } from '../mysql-product-snapshot.repository.js';
 
 describe('MysqlProductSnapshotRepository', () => {
+  it('returns active material bindings for a route step', async () => {
+    const pool = { query: vi.fn().mockResolvedValue([[{ product_material_id: 31 }], []]) };
+    const repository = new MysqlProductSnapshotRepository(pool as never);
+
+    await expect(repository.listRouteStepMaterialIds('41')).resolves.toEqual(['31']);
+    expect(String(pool.query.mock.calls[0]?.[0])).toContain('route_step_materials');
+    expect(pool.query.mock.calls[0]?.[1]).toEqual(['41']);
+  });
+
   it('returns the Product-owned identifiers required by production snapshots', async () => {
     const connection = transactionConnection();
     connection.query.mockResolvedValueOnce([[productRow], []]).mockResolvedValueOnce([

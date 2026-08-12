@@ -503,6 +503,28 @@ describe('productionApi', () => {
     ]);
   });
 
+  it('loads supplement candidates and submits scrap approval with idempotency', async () => {
+    const { productionApi } = await import('../production');
+    const body = {
+      version: 2,
+      details: [{ originalDemandId: '5', supplementQuantity: 1.25 }],
+      remark: '补料',
+    };
+    await productionApi.listSupplementCandidates('8');
+    await productionApi.approveScrapSupplement('8', body, 'supplement-key');
+    expect(request.mock.calls.slice(-2).map(([config]) => config)).toEqual([
+      { url: '/production/abnormal-dispositions/8/supplement-candidates' },
+      {
+        url: '/production/abnormal-dispositions/8/actions/approve-scrap-supplement',
+        method: 'POST',
+        data: body,
+        headers: { 'Idempotency-Key': 'supplement-key' },
+        retryUnsafe: true,
+        retryTimes: 2,
+      },
+    ]);
+  });
+
   it('handles network errors gracefully via toRequestError', async () => {
     const { RequestError } = await import('@company/request');
     const axios = await import('axios');

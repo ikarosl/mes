@@ -9,6 +9,8 @@ const api = vi.hoisted(() => ({
   completeProductionExecution: vi.fn(),
   correctStepReport: vi.fn(),
   reverseStepReport: vi.fn(),
+  listSupplementCandidates: vi.fn(),
+  approveScrapSupplement: vi.fn(),
 }));
 vi.mock('../../../../api/production', () => ({ productionApi: api }));
 
@@ -72,5 +74,25 @@ describe('useProductionExecutionRecords', () => {
     expect(api.completeProductionExecution).toHaveBeenCalledWith('1', 4);
     expect(api.getBatchExecutionRecords).toHaveBeenCalledTimes(2);
     expect(api.getExecutionCompletionCheck).toHaveBeenCalledTimes(2);
+  });
+
+  it('uses an idempotent intent when approving scrap supplement demand', async () => {
+    api.approveScrapSupplement.mockResolvedValue({});
+    api.getBatchExecutionRecords.mockResolvedValue(group('1'));
+    const state = useProductionExecutionRecords();
+    await state.approveScrapSupplement(
+      { dispositionId: '8', productionBatchId: '1', version: 2 } as never,
+      [{ originalDemandId: '5', supplementQuantity: 1.25 }],
+      ' 补料 ',
+    );
+    expect(api.approveScrapSupplement).toHaveBeenCalledWith(
+      '8',
+      {
+        version: 2,
+        details: [{ originalDemandId: '5', supplementQuantity: 1.25 }],
+        remark: '补料',
+      },
+      expect.any(String),
+    );
   });
 });

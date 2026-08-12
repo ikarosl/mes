@@ -57,6 +57,7 @@ const knownIdempotencyScopes = [
   'production.step-report.create.v3',
   'production.step-report.correct.v3',
   'production.rework.complete.v1',
+  'production.abnormal.scrap-supplement.v1',
 ];
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const idempotencyScopeLiteralPattern = new RegExp(
@@ -156,11 +157,13 @@ const checks = [
       'apps/api/src/modules/production/application/production-inbound.service.ts',
       'apps/api/src/modules/production/application/production-reporting.service.ts',
       'apps/api/src/modules/production/application/production-abnormal.service.ts',
+      'apps/api/src/modules/production/application/production-supplement.service.ts',
       'apps/api/src/modules/production/presentation/http/production.controller.ts',
       'apps/api/src/modules/production/presentation/http/production-material.controller.ts',
       'apps/api/src/modules/production/presentation/http/production-inbound.controller.ts',
       'apps/api/src/modules/production/presentation/http/production-reporting.controller.ts',
       'apps/api/src/modules/production/presentation/http/production-abnormal.controller.ts',
+      'apps/api/src/modules/production/presentation/http/production-supplement.controller.ts',
     ],
   },
   {
@@ -174,6 +177,7 @@ const checks = [
       'apps/api/src/modules/production/application/production-inbound.service.ts',
       'apps/api/src/modules/production/application/production-reporting.service.ts',
       'apps/api/src/modules/production/application/production-abnormal.service.ts',
+      'apps/api/src/modules/production/application/production-supplement.service.ts',
     ],
     fileMatch: isApplicationLayerFile,
   },

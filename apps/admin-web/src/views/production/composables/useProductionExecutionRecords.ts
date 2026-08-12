@@ -7,6 +7,7 @@ import type {
   ProductionExecutionCompletionCheck,
   BatchStepAbnormalDispositionItem,
   ReworkRecordItem,
+  ApproveScrapSupplementLinePayload,
 } from '@company/contracts';
 import { productionApi } from '../../../api/production';
 import { useIdempotentIntent } from '../../../composables/idempotency/useIdempotentIntent';
@@ -23,6 +24,7 @@ export const useProductionExecutionRecords = () => {
   const pendingKeys = ref(new Set<string>());
   const correctionIntents = new Map<string, ReturnType<typeof useIdempotentIntent>>();
   const reworkCompletionIntents = new Map<string, ReturnType<typeof useIdempotentIntent>>();
+  const supplementIntents = new Map<string, ReturnType<typeof useIdempotentIntent>>();
 
   const loadBatches = async (keyword = '', page = 1): Promise<void> => {
     loading.value = true;
@@ -208,6 +210,33 @@ export const useProductionExecutionRecords = () => {
       reworkCompletionIntents.delete(rework.reworkId);
       await selectBatch(rework.productionBatchId);
     });
+  const loadSupplementCandidates = (dispositionId: string) =>
+    productionApi.listSupplementCandidates(dispositionId);
+  const approveScrapSupplement = (
+    disposition: BatchStepAbnormalDispositionItem,
+    details: ApproveScrapSupplementLinePayload[],
+    remark: string,
+  ): Promise<void> =>
+    withPending(`approve-scrap:${disposition.dispositionId}`, async () => {
+      const body = {
+        version: disposition.version,
+        details,
+        remark: remark.trim() || null,
+      };
+      const intent = supplementIntents.get(disposition.dispositionId) ?? useIdempotentIntent();
+      supplementIntents.set(disposition.dispositionId, intent);
+      await intent.execute(
+        {
+          intentType: 'production.abnormal.scrap-supplement',
+          params: { dispositionId: disposition.dispositionId },
+          query: {},
+          body,
+        },
+        (key) => productionApi.approveScrapSupplement(disposition.dispositionId, body, key),
+      );
+      supplementIntents.delete(disposition.dispositionId);
+      await selectBatch(disposition.productionBatchId);
+    });
 
   return {
     batches,
@@ -228,5 +257,7 @@ export const useProductionExecutionRecords = () => {
     rejectDisposition,
     startRework,
     completeRework,
+    loadSupplementCandidates,
+    approveScrapSupplement,
   };
 };

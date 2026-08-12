@@ -68,6 +68,19 @@ export class MysqlProductSnapshotRepository implements ProductSnapshotRepository
     }));
   }
 
+  async listRouteStepMaterialIds(routeStepId: string): Promise<string[]> {
+    const [rows] = await this.pool.query<(RowDataPacket & { product_material_id: number })[]>(
+      `SELECT rsm.product_material_id
+       FROM route_step_materials rsm
+       JOIN process_route_steps rs ON rs.id=rsm.route_step_id AND rs.status=1 AND rs.is_deleted=0
+       JOIN product_materials pm ON pm.id=rsm.product_material_id AND pm.status=1 AND pm.is_deleted=0
+       WHERE rsm.route_step_id=?
+       ORDER BY rsm.product_material_id`,
+      [routeStepId],
+    );
+    return rows.map((row) => String(row.product_material_id));
+  }
+
   async getProductionProduct(productId: string): Promise<ProductionProductSnapshot> {
     return withTransaction(this.pool, async (connection) =>
       this.productionProduct(connection, productId, true),

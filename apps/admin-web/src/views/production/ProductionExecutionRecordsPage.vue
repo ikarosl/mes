@@ -308,7 +308,9 @@
                 :reworks="reworks.filter((item) => item.stepRecordId === step.stepRecordId)"
                 :pending-keys="pendingKeys"
                 :unit="step.unit"
+                :candidate-loader="loadSupplementCandidates"
                 @approve="handleApproveRework"
+                @approve-scrap="handleApproveScrapSupplement"
                 @reject="handleRejectDisposition"
                 @start="handleStartRework"
                 @complete="handleCompleteRework"
@@ -469,8 +471,6 @@ import type {
   BatchStepExecutionRecordItem,
   BatchStepReportItem,
   BatchStepStatus,
-  BatchStepAbnormalDispositionItem,
-  ReworkRecordItem,
 } from '@company/contracts';
 import { formatDateTimeForDisplay } from '../../utils/date';
 import { EMessage } from '../../utils/message';
@@ -479,6 +479,7 @@ import { batchStatusMeta, formatQuantity, stepStatusMeta } from './production-st
 import ProductionExecutionBatchList from './components/ProductionExecutionBatchList.vue';
 import AbnormalReworkPanel from './components/AbnormalReworkPanel.vue';
 import { useProductionExecutionRecords } from './composables/useProductionExecutionRecords';
+import { useProductionAbnormalActions } from './composables/useProductionAbnormalActions';
 import {
   executionBatchHasAbnormal,
   executionBatchOverdueDays,
@@ -513,7 +514,22 @@ const {
   rejectDisposition,
   startRework,
   completeRework,
+  loadSupplementCandidates,
+  approveScrapSupplement,
 } = useProductionExecutionRecords();
+const {
+  handleApproveRework,
+  handleRejectDisposition,
+  handleApproveScrapSupplement,
+  handleStartRework,
+  handleCompleteRework,
+} = useProductionAbnormalActions({
+  approveRework,
+  rejectDisposition,
+  approveScrapSupplement,
+  startRework,
+  completeRework,
+});
 const completionPending = computed(() =>
   completionCheck.value
     ? pendingKeys.value.has(`complete:${completionCheck.value.productionBatchId}`)
@@ -724,49 +740,6 @@ const submitCompletion = async () => {
     EMessage.success('生产执行已完工');
   } catch (error) {
     EMessage.error(error, '生产执行完工失败，请刷新后核对完工条件');
-  }
-};
-const handleApproveRework = async (
-  disposition: BatchStepAbnormalDispositionItem,
-  remark: string,
-) => {
-  try {
-    await approveRework(disposition, remark);
-    EMessage.success('异常已批准返工');
-  } catch (error) {
-    EMessage.error(error, '批准返工失败，请刷新后重试');
-  }
-};
-const handleRejectDisposition = async (
-  disposition: BatchStepAbnormalDispositionItem,
-  reason: string,
-) => {
-  try {
-    await rejectDisposition(disposition, reason);
-    EMessage.success('异常处置已驳回');
-  } catch (error) {
-    EMessage.error(error, '异常驳回失败，请刷新后重试');
-  }
-};
-const handleStartRework = async (rework: ReworkRecordItem) => {
-  try {
-    await startRework(rework);
-    EMessage.success('返工已开始');
-  } catch (error) {
-    EMessage.error(error, '返工开始失败，请确认当前账号是返工负责人');
-  }
-};
-const handleCompleteRework = async (
-  rework: ReworkRecordItem,
-  normalQuantity: number,
-  abnormalQuantity: number,
-  remark: string,
-) => {
-  try {
-    await completeRework(rework, normalQuantity, abnormalQuantity, remark);
-    EMessage.success('返工已完成并生成报工事实');
-  } catch (error) {
-    EMessage.error(error, '返工完成失败，请刷新后核对数量和单据状态');
   }
 };
 onMounted(search);

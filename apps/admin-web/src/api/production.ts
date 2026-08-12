@@ -33,6 +33,9 @@ import type {
   ReverseBatchStepReportPayload,
   ProductionTraceWorkOrderGroup,
   ProductionTraceDetail,
+  ApproveScrapSupplementPayload,
+  ApproveScrapSupplementResult,
+  ProductionSupplementCandidateItem,
   ProductionTraceQuery,
   MaterialOutboundQuery,
   MaterialOutboundBatchOption,
@@ -391,6 +394,25 @@ export const productionApi = {
   completeRework: (reworkId: string, data: CompleteReworkPayload, idempotencyKey: string) =>
     request<CompleteReworkResult>({
       url: `/production/reworks/${reworkId}/actions/complete`,
+      method: 'POST',
+      data,
+      headers: { 'Idempotency-Key': idempotencyKey },
+      retryUnsafe: true,
+      retryTimes: 2,
+    }),
+
+  listSupplementCandidates: (dispositionId: string) =>
+    request<ProductionSupplementCandidateItem[]>({
+      url: `/production/abnormal-dispositions/${dispositionId}/supplement-candidates`,
+    }),
+
+  approveScrapSupplement: (
+    dispositionId: string,
+    data: ApproveScrapSupplementPayload,
+    idempotencyKey: string,
+  ) =>
+    request<ApproveScrapSupplementResult>({
+      url: `/production/abnormal-dispositions/${dispositionId}/actions/approve-scrap-supplement`,
       method: 'POST',
       data,
       headers: { 'Idempotency-Key': idempotencyKey },

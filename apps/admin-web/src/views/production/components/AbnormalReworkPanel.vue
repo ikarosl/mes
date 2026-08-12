@@ -27,6 +27,13 @@
           >
           <el-button
             link
+            type="warning"
+            :loading="pendingKeys.has(`approve-scrap:${item.dispositionId}`)"
+            @click="openSupplement(item)"
+            >报废并补料</el-button
+          >
+          <el-button
+            link
             type="danger"
             :loading="pendingKeys.has(`reject:${item.dispositionId}`)"
             @click="openReview(item, 'reject')"
@@ -110,6 +117,86 @@
     </el-dialog>
 
     <el-dialog
+      v-model="supplementVisible"
+      title="批准报废并生成补料需求"
+      width="min(820px, 85vw)"
+    >
+      <el-alert
+        class="dialog-tip"
+        type="warning"
+        :closable="false"
+        show-icon
+        title="报废数量沿用来源异常事实；补料品种和数量必须人工选择，不按异常数量自动推算。"
+      />
+      <el-alert
+        v-if="supplementError"
+        class="dialog-tip"
+        type="error"
+        :closable="false"
+        :title="supplementError"
+      />
+      <el-table
+        v-loading="supplementLoading"
+        :data="supplementRows"
+        empty-text="当前批次没有可用于补料的正常物料需求"
+      >
+        <el-table-column width="54">
+          <template #default="{ row }">
+            <el-checkbox v-model="row.selected" />
+          </template>
+        </el-table-column>
+        <el-table-column
+          prop="candidate.itemCode"
+          label="物料编码"
+          min-width="130"
+        />
+        <el-table-column
+          prop="candidate.itemName"
+          label="物料名称"
+          min-width="150"
+        />
+        <el-table-column
+          prop="candidate.normalDemandQuantity"
+          label="原需求"
+          width="110"
+        />
+        <el-table-column
+          label="补料数量"
+          width="190"
+        >
+          <template #default="{ row }">
+            <el-input-number
+              v-model="row.quantity"
+              :disabled="!row.selected"
+              :min="0.0001"
+              :precision="4"
+            />
+            {{ row.candidate.unit }}
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-form label-position="top">
+        <el-form-item label="审批说明">
+          <el-input
+            v-model="supplementRemark"
+            type="textarea"
+            :rows="3"
+            maxlength="5000"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="supplementVisible = false">取消</el-button>
+        <el-button
+          type="warning"
+          :disabled="!canApproveSupplement"
+          @click="submitSupplement"
+          >确认报废并生成补料</el-button
+        >
+      </template>
+    </el-dialog>
+
+    <el-dialog
       v-model="completionVisible"
       title="完成返工"
       width="min(640px, 75vw)"
@@ -186,6 +273,8 @@ import type {
   BatchStepAbnormalDispositionItem,
   BatchStepReportItem,
   ReworkRecordItem,
+  ProductionSupplementCandidateItem,
+  ApproveScrapSupplementLinePayload,
 } from '@company/contracts';
 
 const props = withDefaults(
@@ -195,6 +284,7 @@ const props = withDefaults(
     reworks: ReworkRecordItem[];
     pendingKeys: Set<string>;
     unit?: string;
+    candidateLoader: (dispositionId: string) => Promise<ProductionSupplementCandidateItem[]>;
   }>(),
   { unit: '' },
 );
@@ -203,6 +293,11 @@ const emit = defineEmits<{
   reject: [item: BatchStepAbnormalDispositionItem, reason: string];
   start: [item: ReworkRecordItem];
   complete: [item: ReworkRecordItem, normal: number, abnormal: number, remark: string];
+  approveScrap: [
+    item: BatchStepAbnormalDispositionItem,
+    details: ApproveScrapSupplementLinePayload[],
+    remark: string,
+  ];
 }>();
 
 const reviewVisible = ref(false);
@@ -212,6 +307,14 @@ const reviewRemark = ref('');
 const completionVisible = ref(false);
 const selectedRework = ref<ReworkRecordItem | null>(null);
 const completionForm = reactive({ normalQuantity: 0, abnormalQuantity: 0, remark: '' });
+const supplementVisible = ref(false);
+const supplementLoading = ref(false);
+const supplementError = ref('');
+const supplementRemark = ref('');
+const supplementDisposition = ref<BatchStepAbnormalDispositionItem | null>(null);
+const supplementRows = ref<
+  Array<{ candidate: ProductionSupplementCandidateItem; selected: boolean; quantity: number }>
+>([]);
 
 const sourceQuantity = (item: BatchStepAbnormalDispositionItem): string =>
   props.reports.find((report) => report.reportId === item.sourceReportId)?.abnormalQuantity ?? '—';
@@ -224,6 +327,11 @@ const canComplete = computed(() => {
     Math.abs(completionForm.normalQuantity + completionForm.abnormalQuantity - expected) < 0.00001
   );
 });
+const canApproveSupplement = computed(
+  () =>
+    !supplementLoading.value &&
+    supplementRows.value.some((row) => row.selected && row.quantity > 0),
+);
 const openReview = (item: BatchStepAbnormalDispositionItem, mode: 'rework' | 'reject') => {
   selectedDisposition.value = item;
   reviewMode.value = mode;
@@ -235,6 +343,43 @@ const submitReview = () => {
   if (reviewMode.value === 'rework') emit('approve', selectedDisposition.value, reviewRemark.value);
   else if (reviewRemark.value.trim()) emit('reject', selectedDisposition.value, reviewRemark.value);
   reviewVisible.value = false;
+};
+const openSupplement = async (item: BatchStepAbnormalDispositionItem) => {
+  supplementDisposition.value = item;
+  supplementRows.value = [];
+  supplementRemark.value = '';
+  supplementError.value = '';
+  supplementVisible.value = true;
+  supplementLoading.value = true;
+  try {
+    const candidates = await props.candidateLoader(item.dispositionId);
+    if (supplementDisposition.value?.dispositionId !== item.dispositionId) return;
+    supplementRows.value = candidates.map((candidate) => ({
+      candidate,
+      selected: false,
+      quantity: 0.0001,
+    }));
+  } catch {
+    supplementError.value = '补料候选加载失败，请关闭后重试。';
+  } finally {
+    if (supplementDisposition.value?.dispositionId === item.dispositionId)
+      supplementLoading.value = false;
+  }
+};
+const submitSupplement = () => {
+  if (!supplementDisposition.value || !canApproveSupplement.value) return;
+  emit(
+    'approveScrap',
+    supplementDisposition.value,
+    supplementRows.value
+      .filter((row) => row.selected && row.quantity > 0)
+      .map((row) => ({
+        originalDemandId: row.candidate.originalDemandId,
+        supplementQuantity: row.quantity,
+      })),
+    supplementRemark.value,
+  );
+  supplementVisible.value = false;
 };
 const openCompletion = (item: ReworkRecordItem) => {
   selectedRework.value = item;

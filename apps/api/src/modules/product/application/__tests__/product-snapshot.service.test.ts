@@ -37,4 +37,12 @@ describe('ProductSnapshotService', () => {
 
     expect(repository.getProductionRouteSnapshot).toHaveBeenCalledWith('1', null);
   });
+
+  it('delegates route-step material candidate reads through the Product boundary', async () => {
+    const repository = { listRouteStepMaterialIds: vi.fn().mockResolvedValue(['31']) };
+    const service = new ProductSnapshotService(repository as never);
+
+    await expect(service.listRouteStepMaterialIds('41')).resolves.toEqual(['31']);
+    expect(repository.listRouteStepMaterialIds).toHaveBeenCalledWith('41');
+  });
 });

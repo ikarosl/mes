@@ -189,8 +189,8 @@ loading 的结束只由当前最新请求负责。
 ### 7.4 写命令的幂等意图
 
 只有接口文档明确声明 `Idempotency-Key` 必填且服务端闭环已经完成的命令，前端才建立幂等意图。当前已
-启用闭环的端点是 createBatch、物料分配创建、待出库单创建、生产领料整单确认和返工整单完成。建批弹窗、
-`useProductionMaterials` 与 `useMaterialOutboundOrders` 分别经 `useIdempotentIntent` 持有键，对应 API
+启用闭环的端点是 createBatch、物料分配创建、待出库单创建、生产领料整单确认、返工整单完成和异常报废补料批准。建批弹窗、
+`useProductionMaterials`、`useMaterialOutboundOrders` 与 `useProductionExecutionRecords` 分别经 `useIdempotentIntent` 持有键，对应 API
 包装函数仅接收并转发键且启用 unsafe 自动重试；释放分配、取消待出库单及其余未启用接口不得生成或发送该头。键状态由发起写操作的页面/弹窗 composable 局部
 持有，`src/api` 只接收并转发键，不生成键、不保存状态；不得放入跨页面 Pinia Store。键绑定“一次尚未
 确认结果的提交意图”，不绑定点击次数或弹窗 visible 状态；第一次正式提交才使用 `crypto.randomUUID()`
