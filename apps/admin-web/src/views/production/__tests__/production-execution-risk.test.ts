@@ -59,4 +59,13 @@ describe('production execution risk presentation', () => {
   it('does not flag completed batches as overdue', () => {
     expect(executionBatchOverdueDays(batch({ status: 'completed' }))).toBe(0);
   });
+
+  it('accepts a date projection serialized as an ISO timestamp', () => {
+    expect(
+      executionBatchOverdueDays(
+        batch({ planEndDate: '2026-08-10T00:00:00.000Z' }),
+        new Date('2026-08-12T00:00:00.000Z'),
+      ),
+    ).toBe(2);
+  });
 });

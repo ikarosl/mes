@@ -90,6 +90,7 @@
         v-loading="loading"
         :data="batches"
         class="tasks-table"
+        :row-class-name="batchRowClass"
       >
         <el-table-column
           label="批次号"
@@ -115,11 +116,20 @@
           </template>
         </el-table-column>
         <el-table-column
-          label="计划数量"
-          width="120"
-          align="right"
+          label="完工进度"
+          min-width="180"
         >
-          <template #default="{ row }">{{ formatQuantity(row.plannedQuantity) }}</template>
+          <template #default="{ row }">
+            <div class="quantity-progress-label">
+              <strong>{{ formatQuantity(row.completedQuantity) }}</strong>
+              <span>/ {{ formatQuantity(row.plannedQuantity) }}</span>
+            </div>
+            <el-progress
+              :percentage="quantityProgressPercentage(row.completedQuantity, row.plannedQuantity)"
+              :stroke-width="6"
+              :show-text="false"
+            />
+          </template>
         </el-table-column>
         <el-table-column
           label="工艺路线"
@@ -141,10 +151,34 @@
           </template>
         </el-table-column>
         <el-table-column
+          label="物料阶段"
+          width="120"
+        >
+          <template #default="{ row }">
+            <el-tag
+              :type="batchMaterialStage(row.status).type"
+              effect="light"
+            >
+              {{ batchMaterialStage(row.status).label }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column
           label="负责人"
           width="120"
         >
           <template #default="{ row }">{{ row.ownerName || '-' }}</template>
+        </el-table-column>
+        <el-table-column
+          label="计划完成"
+          width="140"
+        >
+          <template #default="{ row }">
+            <div>{{ formatDateForDisplay(row.planEndDate) }}</div>
+            <div :class="['deadline-text', `deadline-${batchDeadline(row).tone}`]">
+              {{ batchDeadline(row).label }}
+            </div>
+          </template>
         </el-table-column>
         <el-table-column
           label="操作"
@@ -317,7 +351,14 @@ import { productionApi } from '../../api/production';
 import { EMessage } from '../../utils/message';
 import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
 import { useRowPending } from '../../utils/useRowPending';
+import { formatDateForDisplay } from '../../utils/date';
 import { BATCH_STATUS_META, batchStatusMeta, formatQuantity } from './production-status';
+import {
+  batchIsTerminal,
+  batchMaterialStage,
+  deadlinePresentation,
+  quantityProgressPercentage,
+} from './production-list-presentation';
 import { useProductionBatchesList } from './composables/useProductionBatchesList';
 import { useIdempotentIntent } from '../../composables/idempotency/useIdempotentIntent';
 import { useUserOptions } from '../../composables/options/useUserOptions';
@@ -363,6 +404,11 @@ const userChoices = computed(() =>
     (user) => user.id,
   ),
 );
+
+const batchDeadline = (row: ProductionBatchItem) =>
+  deadlinePresentation(row.planEndDate, batchIsTerminal(row.status));
+const batchRowClass = ({ row }: { row: ProductionBatchItem }): string =>
+  batchDeadline(row).tone === 'warning' ? 'risk-warning-row' : '';
 
 /** 行内写操作守卫（生成物料），同一行只允许一个在途（todo 3.5） */
 const { isRowPending, beginRow, endRow } = useRowPending();
@@ -828,6 +874,9 @@ onActivated(() => {
 .tasks-table :deep(.el-table__cell) {
   border-bottom-color: #e5e7eb;
 }
+.tasks-table :deep(.risk-warning-row > td:first-child) {
+  box-shadow: inset 3px 0 0 #f59e0b;
+}
 .tasks-table :deep(.el-tag) {
   height: 22px;
   padding: 0 10px;
@@ -866,6 +915,41 @@ onActivated(() => {
   margin-top: 2px;
   color: #6b7280;
   font-size: 12px;
+}
+.quantity-progress-label {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  margin-bottom: 6px;
+  white-space: nowrap;
+}
+.quantity-progress-label strong {
+  color: #1f2937;
+  font-weight: 600;
+}
+.quantity-progress-label span {
+  color: #6b7280;
+  font-size: 12px;
+}
+.tasks-table :deep(.el-progress-bar__outer) {
+  background: #e5e7eb;
+}
+.tasks-table :deep(.el-progress-bar__inner) {
+  background: #306188;
+}
+.deadline-text {
+  margin-top: 2px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.deadline-muted {
+  color: #9ca3af;
+}
+.deadline-normal {
+  color: #6b7280;
+}
+.deadline-warning {
+  color: #f59e0b;
 }
 .table-footer {
   display: flex;

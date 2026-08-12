@@ -33,6 +33,8 @@
       <el-table
         v-loading="loading"
         :data="tasks"
+        class="worker-tasks-table"
+        :row-class-name="workerTaskRowClass"
         empty-text="当前没有分配给你的工序"
       >
         <el-table-column
@@ -49,26 +51,49 @@
           label="产品"
           min-width="190"
         >
-          <template #default="{ row }">{{ row.productCode }} / {{ row.productName }}</template>
+          <template #default="{ row }">
+            <div class="primary-text">{{ row.productName }}</div>
+            <div class="secondary-text">{{ row.productCode }}</div>
+          </template>
         </el-table-column>
         <el-table-column
           label="工序"
           min-width="170"
         >
-          <template #default="{ row }">{{ row.stepOrder }}. {{ row.stepName }}</template>
+          <template #default="{ row }">
+            <div class="primary-text">{{ row.stepOrder }}. {{ row.stepName }}</div>
+            <div class="secondary-text">{{ row.stepCode }}</div>
+            <div
+              v-if="row.status === 'assigned' && !row.canStart"
+              class="blocked-reason"
+            >
+              {{ row.startBlockedReason || '开工前置条件尚未满足' }}
+            </div>
+          </template>
         </el-table-column>
         <el-table-column
-          label="正常数量进度"
-          min-width="170"
+          label="正常数量"
+          min-width="230"
         >
           <template #default="{ row }">
-            {{ formatQuantity(row.effectiveNormalQuantity) }} /
-            {{ formatQuantity(row.requiredNormalQuantity) }} {{ row.unit }}
-            <div
-              v-if="row.status === 'doing'"
-              class="quantity-release"
-            >
-              当前可报 {{ formatQuantity(row.availableNormalQuantity) }} {{ row.unit }}
+            <div class="quantity-progress-label">
+              <strong>{{ formatQuantity(row.effectiveNormalQuantity) }}</strong>
+              <span>/ {{ formatQuantity(row.requiredNormalQuantity) }} {{ row.unit }}</span>
+            </div>
+            <el-progress
+              :percentage="workerTaskProgressPercentage(row)"
+              :stroke-width="6"
+              :show-text="false"
+              :status="row.status === 'completed' ? 'success' : undefined"
+            />
+            <div class="quantity-release">
+              <span>剩余 {{ formatQuantity(workerTaskRemainingNormal(row)) }}</span>
+              <template v-if="row.status === 'doing'">
+                <span>上游放行 {{ formatQuantity(row.releasedNormalQuantity) }}</span>
+                <span class="available-quantity"
+                  >当前可报 {{ formatQuantity(row.availableNormalQuantity) }}</span
+                >
+              </template>
             </div>
           </template>
         </el-table-column>
@@ -77,7 +102,15 @@
           min-width="130"
         >
           <template #default="{ row }">
-            {{ formatQuantity(row.effectiveAbnormalQuantity) }} {{ row.unit }}
+            <strong :class="{ 'abnormal-quantity': workerTaskHasAbnormal(row) }">
+              {{ formatQuantity(row.effectiveAbnormalQuantity) }} {{ row.unit }}
+            </strong>
+            <div
+              v-if="workerTaskHasAbnormal(row)"
+              class="abnormal-hint"
+            >
+              已产生待处置异常
+            </div>
           </template>
         </el-table-column>
         <el-table-column
@@ -110,22 +143,27 @@
               @click="startTask(row)"
               >开始工序</el-button
             >
-            <span
-              v-if="row.status === 'assigned' && !row.canStart"
-              class="blocked-reason"
-              >{{ row.startBlockedReason }}</span
-            >
             <el-button
               v-if="row.status === 'doing' && row.needRecord"
               type="success"
               :loading="reportPendingIds.has(row.stepRecordId)"
               @click="openReport(row)"
-              >报工</el-button
+              >提交本次报工</el-button
             >
             <span
-              v-else-if="row.status !== 'assigned' && row.status !== 'doing'"
+              v-else-if="row.status === 'doing' && !row.needRecord"
               class="muted"
-              >无需开工操作</span
+              >本工序无需报工</span
+            >
+            <span
+              v-else-if="row.status === 'completed'"
+              class="muted"
+              >已完成</span
+            >
+            <span
+              v-else-if="row.status === 'pending'"
+              class="muted"
+              >等待派工</span
             >
           </template>
         </el-table-column>
@@ -149,6 +187,12 @@ import { EMessage } from '../../utils/message';
 import { formatDateTimeForDisplay } from '../../utils/date';
 import TableToolbar from '../../components/TableToolbar.vue';
 import { formatQuantity, stepStatusMeta } from './production-status';
+import {
+  workerTaskHasAbnormal,
+  workerTaskProgressPercentage,
+  workerTaskRemainingNormal,
+  workerTaskRiskClass,
+} from './production-worker-task-presentation';
 import { useWorkerTasks } from './composables/useWorkerTasks';
 import BatchStepReportDialog from './components/BatchStepReportDialog.vue';
 
@@ -158,6 +202,8 @@ const { tasks, loading, startPendingIds, reportPendingIds, load, start, report }
 const reportVisible = ref(false);
 const reportTask = ref<ProductionWorkerTaskItem | null>(null);
 const stepStatusLabel = (status: BatchStepStatus): string => BATCH_STEP_STATUS_LABELS[status];
+const workerTaskRowClass = ({ row }: { row: ProductionWorkerTaskItem }): string =>
+  workerTaskRiskClass(row);
 const reload = async (): Promise<void> => {
   try {
     await load();
@@ -259,6 +305,21 @@ onActivated(reload);
 .table-panel :deep(.el-table) {
   border-top: 1px solid #e5e7eb;
 }
+.worker-tasks-table :deep(.risk-error-row > td:first-child) {
+  box-shadow: inset 3px 0 0 #ef4444;
+}
+.worker-tasks-table :deep(.risk-warning-row > td:first-child) {
+  box-shadow: inset 3px 0 0 #f59e0b;
+}
+.primary-text {
+  color: #1f2937;
+  font-weight: 600;
+}
+.secondary-text {
+  margin-top: 2px;
+  color: #6b7280;
+  font-size: 12px;
+}
 .blocked-reason {
   display: block;
   margin-top: 6px;
@@ -270,8 +331,44 @@ onActivated(reload);
   font-size: 13px;
 }
 .quantity-release {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
   margin-top: 4px;
   color: #6b7280;
   font-size: 12px;
+}
+.quantity-progress-label {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+.quantity-progress-label strong {
+  color: #1f2937;
+  font-weight: 600;
+}
+.quantity-progress-label span {
+  color: #6b7280;
+  font-size: 12px;
+}
+.worker-tasks-table :deep(.el-progress-bar__outer) {
+  background: #e5e7eb;
+}
+.worker-tasks-table :deep(.el-progress-bar__inner) {
+  background: #306188;
+}
+.available-quantity {
+  color: #306188;
+  font-weight: 600;
+}
+.abnormal-quantity,
+.abnormal-hint {
+  color: #ef4444;
+}
+.abnormal-hint {
+  margin-top: 3px;
+  font-size: 12px;
+  font-weight: 500;
 }
 </style>

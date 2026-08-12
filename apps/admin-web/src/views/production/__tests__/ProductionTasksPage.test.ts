@@ -131,6 +131,32 @@ describe('ProductionTasksPage', () => {
     expect(wrapper.find('.table-footer').exists()).toBe(true);
   });
 
+  it('shows completion progress, material stage and deadline risk', async () => {
+    listBatches.mockResolvedValue({
+      items: [
+        {
+          ...batchRow,
+          status: 'material_assigned',
+          plannedQuantity: '10.0000',
+          completedQuantity: '2.0000',
+          planEndDate: '2020-01-01',
+        },
+      ],
+      total: 1,
+      page: 1,
+      pageSize: 10,
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    expect(wrapper.find('.quantity-progress-label strong').text()).toBe('2');
+    expect(wrapper.find('.quantity-progress-label span').text()).toBe('/ 10');
+    expect(wrapper.text()).toContain('已预留');
+    expect(wrapper.text()).toContain('已逾期');
+    expect(wrapper.find('.risk-warning-row').exists()).toBe(true);
+  });
+
   it('requests the target page when the pagination page changes', async () => {
     const wrapper = mountPage();
     await flushPromises();

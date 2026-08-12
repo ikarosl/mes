@@ -50,6 +50,7 @@
       <el-table
         v-loading="inbounds.loading.value"
         :data="inbounds.rows.value"
+        :row-class-name="inboundRowClass"
         class="data-table"
         empty-text="暂无外购物料入库单"
       >
@@ -57,14 +58,17 @@
           prop="inboundNo"
           label="入库单号"
           min-width="190"
-        /><el-table-column
+          ><template #default="{ row }"
+            ><strong class="order-no">{{ row.inboundNo }}</strong></template
+          ></el-table-column
+        ><el-table-column
           prop="provider"
           label="供应方"
           min-width="140"
           ><template #default="{ row }">{{ row.provider || '-' }}</template></el-table-column
         ><el-table-column
           label="状态"
-          width="110"
+          width="150"
           ><template #default="{ row }"
             ><el-tag
               :type="
@@ -75,23 +79,31 @@
                     : 'warning'
               "
               >{{ inboundOrderStatusLabel(row.status) }}</el-tag
-            ></template
+            >
+            <div class="status-note">{{ inboundStatusHint(row.status) }}</div></template
           ></el-table-column
         ><el-table-column
-          prop="detailCount"
           label="明细数"
           width="85"
           align="center"
-        /><el-table-column
+          ><template #default="{ row }">{{ row.detailCount }} 条</template></el-table-column
+        ><el-table-column
           label="总入库数量"
           min-width="150"
-          ><template #default="{ row }">{{ summary(row) }}</template></el-table-column
+          ><template #default="{ row }"
+            ><strong class="quantity-summary">{{ summary(row) }}</strong></template
+          ></el-table-column
         ><el-table-column
           label="确认时间"
           width="175"
-          ><template #default="{ row }">{{
-            row.inboundAt ? formatDateTimeForDisplay(row.inboundAt) : '-'
-          }}</template></el-table-column
+          ><template #default="{ row }"
+            ><span v-if="row.inboundAt">{{ formatDateTimeForDisplay(row.inboundAt) }}</span
+            ><span
+              v-else
+              :class="row.status === 'pending' ? 'warning-text' : 'secondary-text'"
+              >{{ row.status === 'pending' ? '等待确认' : '未产生库存' }}</span
+            ></template
+          ></el-table-column
         ><el-table-column
           prop="remark"
           label="备注"
@@ -366,6 +378,7 @@ import { EMessage } from '../../utils/message';
 import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
 import { formatQuantity } from '../production/production-status';
 import { usePurchaseInbounds } from '../production/composables/usePurchaseInbounds';
+import { inboundRowClass, inboundStatusHint } from './warehouse-list-presentation';
 defineOptions({ name: 'InboundOrdersPage' });
 const inbounds = usePurchaseInbounds();
 const query = reactive<PurchaseInboundOrderQuery>({ page: 1, pageSize: 20 });
@@ -587,6 +600,29 @@ onActivated(loadRows);
 }
 .data-table :deep(.el-tag) {
   border: 0;
+}
+.data-table :deep(.status-warning-row td:first-child) {
+  box-shadow: inset 3px 0 #f59e0b;
+}
+.data-table :deep(.status-muted-row) {
+  color: #6b7280;
+  background: #f9fafb;
+}
+.order-no,
+.quantity-summary {
+  color: #1f2937;
+  font-weight: 600;
+}
+.status-note,
+.secondary-text {
+  margin-top: 4px;
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.35;
+}
+.warning-text {
+  color: #f59e0b;
+  font-weight: 500;
 }
 .table-footer {
   display: flex;

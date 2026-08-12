@@ -118,6 +118,33 @@ describe('ProductionOrdersPage', () => {
     expect(wrapper.find('.table-footer').exists()).toBe(true);
   });
 
+  it('shows allocation progress, deadline risk and the derived next action', async () => {
+    listOrders.mockResolvedValue({
+      items: [
+        {
+          ...orderRow,
+          unit: '件',
+          status: 'released',
+          plannedQuantity: '10.0000',
+          assignedQuantity: '4.0000',
+          planEndDate: '2020-01-01',
+        },
+      ],
+      total: 1,
+      page: 1,
+      pageSize: 10,
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    expect(wrapper.find('.quantity-progress-label strong').text()).toBe('4');
+    expect(wrapper.find('.quantity-progress-label span').text()).toBe('/ 10 件');
+    expect(wrapper.text()).toContain('已逾期');
+    expect(wrapper.text()).toContain('待创建生产批次');
+    expect(wrapper.find('.risk-warning-row').exists()).toBe(true);
+  });
+
   it('requests the target page when the pagination page changes', async () => {
     const wrapper = mountPage();
     await flushPromises();

@@ -70,6 +70,7 @@
       <el-table
         v-loading="orders.loading.value"
         :data="orders.rows.value"
+        :row-class-name="outboundRowClass"
         class="data-table"
         empty-text="暂无生产领料出库单"
       >
@@ -93,7 +94,7 @@
         </el-table-column>
         <el-table-column
           label="状态"
-          width="105"
+          width="160"
         >
           <template #default="{ row }">
             <el-tag
@@ -102,6 +103,7 @@
             >
               {{ statusLabel(row.status) }}
             </el-tag>
+            <div class="status-note">{{ outboundStatusHint(row.status) }}</div>
           </template>
         </el-table-column>
         <el-table-column
@@ -109,13 +111,15 @@
           width="80"
           align="center"
         >
-          <template #default="{ row }">{{ row.details.length }}</template>
+          <template #default="{ row }">{{ row.details.length }} 条</template>
         </el-table-column>
         <el-table-column
           label="本单数量"
           min-width="155"
         >
-          <template #default="{ row }">{{ quantitySummary(row) }}</template>
+          <template #default="{ row }"
+            ><strong class="quantity-summary">{{ quantitySummary(row) }}</strong></template
+          >
         </el-table-column>
         <el-table-column
           label="制单人 / 时间"
@@ -133,7 +137,13 @@
           <template #default="{ row }">
             <div>{{ row.operatorName || '-' }}</div>
             <div class="secondary-text">
-              {{ row.outboundAt ? formatTime(row.outboundAt) : '-' }}
+              {{
+                row.outboundAt
+                  ? formatTime(row.outboundAt)
+                  : row.status === 'pending_picking'
+                    ? '等待确认出库'
+                    : '未产生出库'
+              }}
             </div>
           </template>
         </el-table-column>
@@ -250,6 +260,7 @@ import MaterialOutboundOrderCreateDialog from '../production/components/Material
 import MaterialOutboundOrderDetailDialog from '../production/components/MaterialOutboundOrderDetailDialog.vue';
 import { useMaterialOutboundOrders } from '../production/composables/useMaterialOutboundOrders';
 import { formatQuantity } from '../production/production-status';
+import { outboundRowClass, outboundStatusHint } from './warehouse-list-presentation';
 
 defineOptions({ name: 'OutboundOrdersPage' });
 
@@ -515,6 +526,23 @@ onActivated(loadRows);
 .outbound-no {
   color: #1f2937;
   font-weight: 600;
+}
+.quantity-summary {
+  color: #1f2937;
+  font-weight: 600;
+}
+.status-note {
+  margin-top: 4px;
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.35;
+}
+.data-table :deep(.status-warning-row td:first-child) {
+  box-shadow: inset 3px 0 #f59e0b;
+}
+.data-table :deep(.status-muted-row) {
+  color: #6b7280;
+  background: #f9fafb;
 }
 .table-footer {
   display: flex;

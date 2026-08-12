@@ -90,6 +90,7 @@
         v-loading="loading"
         :data="orders"
         class="orders-table"
+        :row-class-name="workOrderRowClass"
       >
         <el-table-column
           label="工单号"
@@ -109,18 +110,20 @@
           </template>
         </el-table-column>
         <el-table-column
-          label="计划数量"
-          width="120"
-          align="right"
+          label="分配进度"
+          min-width="180"
         >
-          <template #default="{ row }">{{ formatQuantity(row.plannedQuantity) }}</template>
-        </el-table-column>
-        <el-table-column
-          label="已分配"
-          width="110"
-          align="right"
-        >
-          <template #default="{ row }">{{ formatQuantity(row.assignedQuantity) }}</template>
+          <template #default="{ row }">
+            <div class="quantity-progress-label">
+              <strong>{{ formatQuantity(row.assignedQuantity) }}</strong>
+              <span>/ {{ formatQuantity(row.plannedQuantity) }} {{ row.unit }}</span>
+            </div>
+            <el-progress
+              :percentage="quantityProgressPercentage(row.assignedQuantity, row.plannedQuantity)"
+              :stroke-width="6"
+              :show-text="false"
+            />
+          </template>
         </el-table-column>
         <el-table-column
           label="负责人"
@@ -142,9 +145,22 @@
         </el-table-column>
         <el-table-column
           label="计划完成"
-          width="110"
+          width="140"
         >
-          <template #default="{ row }">{{ formatDateForDisplay(row.planEndDate) }}</template>
+          <template #default="{ row }">
+            <div>{{ formatDateForDisplay(row.planEndDate) }}</div>
+            <div :class="['deadline-text', `deadline-${orderDeadline(row).tone}`]">
+              {{ orderDeadline(row).label }}
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column
+          label="下一步"
+          width="150"
+        >
+          <template #default="{ row }">
+            <span class="next-action">{{ workOrderNextAction(row) }}</span>
+          </template>
         </el-table-column>
         <el-table-column
           label="状态"
@@ -322,6 +338,12 @@ import { useIdempotentIntent } from '../../composables/idempotency/useIdempotent
 import { useProductOptions } from '../../composables/options/useProductOptions';
 import { useUserOptions } from '../../composables/options/useUserOptions';
 import { ORDER_STATUS_META, formatQuantity, orderStatusMeta } from './production-status';
+import {
+  deadlinePresentation,
+  quantityProgressPercentage,
+  workOrderIsTerminal,
+  workOrderNextAction,
+} from './production-list-presentation';
 import { useWorkOrdersList } from './composables/useWorkOrdersList';
 import WorkOrderFormDialog from './components/WorkOrderFormDialog.vue';
 import type { WorkOrderFormValue } from './components/WorkOrderFormDialog.vue';
@@ -367,6 +389,11 @@ const productChoices = computed(() =>
     (product) => product.id,
   ),
 );
+
+const orderDeadline = (row: WorkOrderItem) =>
+  deadlinePresentation(row.planEndDate, workOrderIsTerminal(row.status));
+const workOrderRowClass = ({ row }: { row: WorkOrderItem }): string =>
+  orderDeadline(row).tone === 'warning' ? 'risk-warning-row' : '';
 
 /** 行内工单状态写操作守卫（下达/关闭/取消），同一行只允许一个在途（todo 3.5） */
 const { isRowPending, beginRow, endRow } = useRowPending();
@@ -718,6 +745,9 @@ onActivated(() => {
 .orders-table :deep(.el-table__cell) {
   border-bottom-color: #e5e7eb;
 }
+.orders-table :deep(.risk-warning-row > td:first-child) {
+  box-shadow: inset 3px 0 0 #f59e0b;
+}
 .orders-table :deep(.el-tag) {
   height: 22px;
   padding: 0 10px;
@@ -765,6 +795,42 @@ onActivated(() => {
   display: block;
   margin-left: 0;
   margin-top: 2px;
+}
+.quantity-progress-label {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  margin-bottom: 6px;
+  white-space: nowrap;
+}
+.quantity-progress-label strong {
+  color: #1f2937;
+  font-weight: 600;
+}
+.quantity-progress-label span,
+.next-action {
+  color: #6b7280;
+  font-size: 12px;
+}
+.orders-table :deep(.el-progress-bar__outer) {
+  background: #e5e7eb;
+}
+.orders-table :deep(.el-progress-bar__inner) {
+  background: #306188;
+}
+.deadline-text {
+  margin-top: 2px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.deadline-muted {
+  color: #9ca3af;
+}
+.deadline-normal {
+  color: #6b7280;
+}
+.deadline-warning {
+  color: #f59e0b;
 }
 .table-footer {
   display: flex;

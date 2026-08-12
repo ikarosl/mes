@@ -47,6 +47,7 @@
       ><el-table
         v-loading="loading"
         :data="rows"
+        :row-class-name="inventoryRowClass"
         class="data-table"
         empty-text="暂无库存批次"
         ><el-table-column
@@ -87,13 +88,20 @@
           ></el-table-column
         ><el-table-column
           label="可分配量"
-          width="130"
+          width="155"
           align="right"
           ><template #default="{ row }"
-            ><strong :class="{ zero: Number(row.availableToAllocateQuantity) <= 0 }">{{
-              formatQuantity(row.availableToAllocateQuantity)
-            }}</strong>
-            {{ row.unit }}</template
+            ><strong :class="{ zero: Number(row.availableToAllocateQuantity) <= 0 }"
+              >{{ formatQuantity(row.availableToAllocateQuantity) }} {{ row.unit }}</strong
+            >
+            <div
+              :class="[
+                'availability-note',
+                { warning: row.batchStatus === 'frozen' || row.batchStatus === 'disabled' },
+              ]"
+            >
+              {{ inventoryAvailabilityHint(row) }}
+            </div></template
           ></el-table-column
         ><el-table-column
           label="批次状态"
@@ -233,6 +241,7 @@ import { DialogWidth } from '../../utils/dialog';
 import { formatDateTimeForDisplay } from '../../utils/date';
 import { EMessage } from '../../utils/message';
 import { formatQuantity } from '../production/production-status';
+import { inventoryAvailabilityHint, inventoryRowClass } from './warehouse-list-presentation';
 defineOptions({ name: 'WarehouseInventoryPage' });
 const query = reactive<InventoryBatchQuery>({ page: 1, pageSize: 20 });
 const rows = ref<InventoryBatchItem[]>([]),
@@ -340,6 +349,25 @@ onActivated(load);
 }
 .zero {
   color: #9ca3af;
+}
+.availability-note {
+  margin-top: 3px;
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.35;
+}
+.availability-note.warning {
+  color: #f59e0b;
+}
+.data-table :deep(.status-warning-row td:first-child) {
+  box-shadow: inset 3px 0 #f59e0b;
+}
+.data-table :deep(.status-muted-row),
+.data-table :deep(.status-empty-row) {
+  background: #f9fafb;
+}
+.data-table :deep(.status-muted-row) {
+  color: #6b7280;
 }
 .table-footer {
   display: flex;
