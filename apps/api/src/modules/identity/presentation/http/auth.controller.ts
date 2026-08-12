@@ -6,7 +6,6 @@ import { CurrentUser, Public } from '../../../../common/security/auth.decorators
 import { AuthenticationError } from '../../domain/auth.errors.js';
 import { LoginDto } from './dto/auth.dto.js';
 
-const COOKIE = 'company_refresh_token';
 @Controller('auth')
 export class AuthController {
   private readonly config = loadAppConfig();
@@ -23,7 +22,7 @@ export class AuthController {
     @Req() request: CookieRequest,
     @Res({ passthrough: true }) response: CookieResponse,
   ) {
-    const token = readCookie(request.headers.cookie, COOKIE);
+    const token = readCookie(request.headers.cookie, this.config.refreshCookieName);
     const result = await this.mapAuth(() => this.auth.refresh(token ?? ''));
     this.setCookie(response, result.refreshToken);
     return result.response;
@@ -32,8 +31,10 @@ export class AuthController {
     @Req() request: CookieRequest,
     @Res({ passthrough: true }) response: CookieResponse,
   ) {
-    await this.auth.logout(readCookie(request.headers.cookie, COOKIE) ?? null);
-    response.clearCookie(COOKIE, this.cookieOptions());
+    await this.auth.logout(
+      readCookie(request.headers.cookie, this.config.refreshCookieName) ?? null,
+    );
+    response.clearCookie(this.config.refreshCookieName, this.cookieOptions());
     return { success: true };
   }
   @Get('me') me(@CurrentUser() user: UserProfile) {
@@ -48,7 +49,7 @@ export class AuthController {
     }
   }
   private setCookie(response: CookieResponse, value: string) {
-    response.cookie(COOKIE, value, {
+    response.cookie(this.config.refreshCookieName, value, {
       ...this.cookieOptions(),
       maxAge: this.config.refreshTokenTtlSeconds * 1000,
     });

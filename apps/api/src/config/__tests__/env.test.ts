@@ -21,6 +21,15 @@ describe('loadAppConfig token TTLs', () => {
 
     expect(() => loadAppConfig()).toThrow('ACCESS_TOKEN_TTL_SECONDS must be a positive integer');
   });
+
+  it('defaults the refresh cookie name and reads an override', () => {
+    stubRequiredEnv();
+
+    expect(loadAppConfig().refreshCookieName).toBe('company_refresh_token');
+
+    vi.stubEnv('REFRESH_TOKEN_COOKIE_NAME', 'company_refresh_token_next');
+    expect(loadAppConfig().refreshCookieName).toBe('company_refresh_token_next');
+  });
 });
 
 describe('loadTechnicalFileStorageConfig', () => {
