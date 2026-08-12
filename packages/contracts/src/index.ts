@@ -886,6 +886,7 @@ export interface ProductionWorkerTaskItem {
   requiredNormalQuantity: string;
   releasedNormalQuantity: string;
   availableNormalQuantity: string;
+  effectiveReportedQuantity: string;
   effectiveNormalQuantity: string;
   effectiveAbnormalQuantity: string;
   startedAt: string | null;

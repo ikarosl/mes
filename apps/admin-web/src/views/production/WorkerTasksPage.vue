@@ -73,6 +73,14 @@
           </template>
         </el-table-column>
         <el-table-column
+          label="累计异常数"
+          min-width="130"
+        >
+          <template #default="{ row }">
+            {{ formatQuantity(row.effectiveAbnormalQuantity) }} {{ row.unit }}
+          </template>
+        </el-table-column>
+        <el-table-column
           label="状态"
           width="110"
         >

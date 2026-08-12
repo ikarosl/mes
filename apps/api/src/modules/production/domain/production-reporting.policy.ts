@@ -8,26 +8,30 @@ export const requireReportQuantities = (normalQuantity: number, abnormalQuantity
     throw new ProductionDomainError('INVALID_INPUT', '本次报工数量必须大于零且不能为负数');
 };
 
-export const requireNormalWithinRequired = (
-  currentEffectiveNormal: number | string,
+export const requireReportWithinReleased = (
+  currentEffectiveReported: number | string,
   normalDelta: number | string,
-  requiredNormal: number | string,
+  abnormalDelta: number | string,
+  releasedQuantity: number | string,
 ): void => {
-  if (scaled(currentEffectiveNormal) + scaled(normalDelta) > scaled(requiredNormal))
+  if (
+    scaled(currentEffectiveReported) + scaled(normalDelta) + scaled(abnormalDelta) >
+    scaled(releasedQuantity)
+  )
     throw new ProductionDomainError(
       'STEP_REPORT_QUANTITY_EXCEEDED',
-      '本次正常数量超过当前已放行的可报数量',
+      '本次正常与异常数量合计超过当前已放行的可报数量',
     );
 };
 
 export const requireNoDownstreamQuantityConflict = (
   correctedEffectiveNormal: number | string,
-  downstreamEffectiveNormal: number | string,
+  downstreamEffectiveReported: number | string,
 ): void => {
-  if (scaled(correctedEffectiveNormal) < scaled(downstreamEffectiveNormal))
+  if (scaled(correctedEffectiveNormal) < scaled(downstreamEffectiveReported))
     throw new ProductionDomainError(
       'DOWNSTREAM_QUANTITY_CONFLICT',
-      '更正后的正常数量低于下游已报正常数量',
+      '更正后的正常放行量低于下游已报正常与异常总量',
     );
 };
 

@@ -54,8 +54,8 @@ const knownIdempotencyScopes = [
   'production.material-outbound.confirm.v1',
   'production.purchase-inbound.create.v1',
   'production.purchase-inbound.confirm.v1',
-  'production.step-report.create.v2',
-  'production.step-report.correct.v2',
+  'production.step-report.create.v3',
+  'production.step-report.correct.v3',
 ];
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const idempotencyScopeLiteralPattern = new RegExp(

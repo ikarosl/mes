@@ -107,7 +107,7 @@ export const mapExecutionStep = (
   unit: row.unit_snapshot,
   requiredNormalQuantity: fixed(required),
   releasedNormalQuantity: fixed(released),
-  availableNormalQuantity: fixed(Math.max(0, Number(released) - Number(row.effective_normal))),
+  availableNormalQuantity: fixed(Math.max(0, Number(released) - Number(row.effective_reported))),
   effectiveReportedQuantity: row.effective_reported,
   effectiveNormalQuantity: row.effective_normal,
   effectiveAbnormalQuantity: row.effective_abnormal,

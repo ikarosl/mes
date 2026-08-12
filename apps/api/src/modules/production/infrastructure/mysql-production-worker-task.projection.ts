@@ -102,7 +102,12 @@ const mapWorkerTask = (row: WorkerTaskRow): ProductionWorkerTaskItem => {
     releasedNormalQuantity: Number(releasedNormalQuantity).toFixed(4),
     availableNormalQuantity: Math.max(
       0,
-      Number(releasedNormalQuantity) - Number(row.effective_normal),
+      Number(releasedNormalQuantity) -
+        Number(row.effective_normal) -
+        Number(row.effective_abnormal),
+    ).toFixed(4),
+    effectiveReportedQuantity: (
+      Number(row.effective_normal) + Number(row.effective_abnormal)
     ).toFixed(4),
     effectiveNormalQuantity: row.effective_normal,
     effectiveAbnormalQuantity: row.effective_abnormal,

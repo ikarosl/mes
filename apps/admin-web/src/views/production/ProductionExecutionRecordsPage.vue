@@ -555,20 +555,23 @@ const changedDownstream = computed(() => {
 const changeHasDownstreamConflict = computed(
   () =>
     changedDownstream.value !== null &&
-    changedEffectiveNormal.value < Number(changedDownstream.value.effectiveNormalQuantity),
+    changedEffectiveNormal.value < Number(changedDownstream.value.effectiveReportedQuantity),
 );
-const changeExceedsReleased = computed(
-  () =>
-    changeStep.value !== null &&
-    changedEffectiveNormal.value > Number(changeStep.value.releasedNormalQuantity),
-);
+const changeExceedsReleased = computed(() => {
+  if (!changeStep.value || !changeReport.value) return false;
+  const withoutOriginal =
+    Number(changeStep.value.effectiveReportedQuantity) -
+    Number(changeReport.value.reportedQuantity);
+  const replacement =
+    changeMode.value === 'correct' ? changeForm.normalQuantity + changeForm.abnormalQuantity : 0;
+  return withoutOriginal + replacement > Number(changeStep.value.releasedNormalQuantity);
+});
 const changeImpactText = computed(() => {
   if (!changeStep.value) return '';
   const quantity = `${formatQuantity(changedEffectiveNormal.value)} ${changeStep.value.unit}`;
   if (changeHasDownstreamConflict.value)
-    return `调整后有效正常量为 ${quantity}，低于下游工序已报正常量 ${formatQuantity(changedDownstream.value?.effectiveNormalQuantity ?? 0)}，请先从下游冲销。`;
-  if (changeExceedsReleased.value)
-    return `调整后有效正常量为 ${quantity}，超过上游当前放行量，不能提交。`;
+    return `调整后有效正常放行量为 ${quantity}，低于下游工序已报正常与异常总量 ${formatQuantity(changedDownstream.value?.effectiveReportedQuantity ?? 0)}，请先从下游冲销。`;
+  if (changeExceedsReleased.value) return `调整后有效总报工量超过上游当前放行量，不能提交。`;
   const willComplete =
     changedEffectiveNormal.value === Number(changeStep.value.requiredNormalQuantity);
   return `调整后有效正常量为 ${quantity}；工序将${willComplete ? '保持或进入已完成' : '保持或退回进行中'}。状态和完成时间由服务端重新计算。`;

@@ -21,6 +21,7 @@ const task = {
   requiredNormalQuantity: '10.0000',
   releasedNormalQuantity: '6.0000',
   availableNormalQuantity: '2.0000',
+  effectiveReportedQuantity: '4.0000',
   effectiveNormalQuantity: '4.0000',
   effectiveAbnormalQuantity: '0.0000',
   startedAt: null,
@@ -53,12 +54,12 @@ describe('BatchStepReportDialog', () => {
     };
     expect(vm.remaining).toBe(6);
     expect(vm.available).toBe(2);
-    vm.form.normalQuantity = 2;
+    vm.form.normalQuantity = 1;
     vm.form.abnormalQuantity = 1;
     vm.form.remark = ' 本次异常 ';
     vm.submit();
     expect(wrapper.emitted('submit')?.[0]).toEqual([
-      { normalQuantity: 2, abnormalQuantity: 1, remark: '本次异常' },
+      { normalQuantity: 1, abnormalQuantity: 1, remark: '本次异常' },
     ]);
   });
 
@@ -79,5 +80,29 @@ describe('BatchStepReportDialog', () => {
     });
     expect(wrapper.text()).toContain('达到当前放行量不会提前完成本工序');
     expect(wrapper.text()).toContain('最终剩余需完成');
+  });
+
+  it('counts abnormal quantity against the same released report capacity', () => {
+    const wrapper = mount(BatchStepReportDialog, {
+      props: { modelValue: true, task: task as never, submitting: false },
+      global: {
+        stubs: {
+          'el-dialog': { template: '<div><slot/><slot name="footer"/></div>' },
+          'el-form': { template: '<form><slot/></form>' },
+          'el-form-item': { template: '<div><slot/></div>' },
+          'el-alert': true,
+          'el-input-number': true,
+          'el-input': true,
+          'el-button': true,
+        },
+      },
+    });
+    const vm = wrapper.vm as unknown as {
+      canSubmit: boolean;
+      form: { normalQuantity: number; abnormalQuantity: number };
+    };
+    vm.form.normalQuantity = 2;
+    vm.form.abnormalQuantity = 1;
+    expect(vm.canSubmit).toBe(false);
   });
 });

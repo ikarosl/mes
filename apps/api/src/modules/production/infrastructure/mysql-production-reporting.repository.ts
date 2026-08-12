@@ -18,7 +18,7 @@ import { ProductionReportingRepository } from '../application/ports/production-r
 import {
   isRequiredNormalCompleted,
   requireNoDownstreamQuantityConflict,
-  requireNormalWithinRequired,
+  requireReportWithinReleased,
   requireReportQuantities,
 } from '../domain/production-reporting.policy.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
@@ -32,6 +32,7 @@ import {
   type ProjectionStepRow,
   type ReportRow,
 } from './mysql-production-reporting.projection.js';
+import { add, fixed, releasedQuantity, subtract } from './mysql-production-reporting-quantity.js';
 
 type LockedStepRow = RowDataPacket & {
   id: number;
@@ -98,7 +99,12 @@ export class MysqlProductionReportingRepository extends ProductionReportingRepos
         throw new ProductionDomainError('STEP_REPORT_NOT_ALLOWED', '该工序无需报工');
       assertVersion(current, payload.version);
       requireReportQuantities(payload.normalQuantity, payload.abnormalQuantity);
-      requireNormalWithinRequired(current.effective_normal, payload.normalQuantity, released);
+      requireReportWithinReleased(
+        current.effective_reported,
+        payload.normalQuantity,
+        payload.abnormalQuantity,
+        released,
+      );
       const reportId = await insertReport(connection, {
         batchId,
         stepRecordId,
@@ -167,7 +173,7 @@ export class MysqlProductionReportingRepository extends ProductionReportingRepos
       requireCorrectable(target);
       assertVersion(current, payload.version);
       const correctedNormal = subtract(current.effective_normal, target.normal_quantity);
-      requireNoDownstreamQuantityConflict(correctedNormal, downstream?.effective_normal ?? 0);
+      requireNoDownstreamQuantityConflict(correctedNormal, downstream?.effective_reported ?? 0);
       const reversalId = await insertReport(connection, {
         batchId,
         stepRecordId,
@@ -212,8 +218,12 @@ export class MysqlProductionReportingRepository extends ProductionReportingRepos
         subtract(current.effective_normal, target.normal_quantity),
         payload.normalQuantity,
       );
-      requireNormalWithinRequired(0, correctedNormal, released);
-      requireNoDownstreamQuantityConflict(correctedNormal, downstream?.effective_normal ?? 0);
+      const correctedReported = add(
+        subtract(current.effective_reported, target.reported_quantity),
+        add(payload.normalQuantity, payload.abnormalQuantity),
+      );
+      requireReportWithinReleased(correctedReported, 0, 0, released);
+      requireNoDownstreamQuantityConflict(correctedNormal, downstream?.effective_reported ?? 0);
       const reversalId = await insertReport(connection, {
         batchId,
         stepRecordId,
@@ -420,7 +430,7 @@ const summaryResult = async (
     stepVersion: row.version,
     requiredNormalQuantity: fixed(required),
     releasedNormalQuantity: fixed(released),
-    availableNormalQuantity: fixed(Math.max(0, Number(released) - Number(row.effective_normal))),
+    availableNormalQuantity: fixed(Math.max(0, Number(released) - Number(row.effective_reported))),
     effectiveReportedQuantity: row.effective_reported,
     effectiveNormalQuantity: row.effective_normal,
     effectiveAbnormalQuantity: row.effective_abnormal,
@@ -458,22 +468,6 @@ const requireActor = (context: CommandContext): string => {
 const assertVersion = (step: LockedStepRow, version: number): void => {
   if (step.version !== version)
     throw new ProductionDomainError('CONCURRENT_MODIFICATION', '工序状态已变化，请刷新后重试');
-};
-const fixed = (value: number | string): string => Number(value).toFixed(4);
-const add = (left: number | string, right: number | string): string =>
-  fixed(Number(left) + Number(right));
-const subtract = (left: number | string, right: number | string): string =>
-  fixed(Number(left) - Number(right));
-const releasedQuantity = (
-  plannedQuantity: string,
-  previous: LockedStepRow | ProjectionStepRow | undefined,
-): string => {
-  if (!previous) return plannedQuantity;
-  return previous.need_record_snapshot
-    ? previous.effective_normal
-    : previous.status === 'completed'
-      ? plannedQuantity
-      : '0.0000';
 };
 const SUMMARY_COLUMNS = `COALESCE(SUM(CASE WHEN r.report_type='normal' THEN r.reported_quantity ELSE -r.reported_quantity END),0) effective_reported,
   COALESCE(SUM(CASE WHEN r.report_type='normal' THEN r.normal_quantity ELSE -r.normal_quantity END),0) effective_normal,

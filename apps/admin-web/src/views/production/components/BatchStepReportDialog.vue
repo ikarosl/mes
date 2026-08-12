@@ -19,6 +19,10 @@
           <strong>{{ formatQuantity(task.effectiveNormalQuantity) }} {{ task.unit }}</strong>
         </div>
         <div>
+          <span>有效异常累计</span>
+          <strong>{{ formatQuantity(task.effectiveAbnormalQuantity) }} {{ task.unit }}</strong>
+        </div>
+        <div>
           <span>最终剩余需完成</span>
           <strong>{{ formatQuantity(remaining) }} {{ task.unit }}</strong>
         </div>
@@ -27,7 +31,7 @@
           <strong>{{ formatQuantity(task.releasedNormalQuantity) }} {{ task.unit }}</strong>
         </div>
         <div>
-          <span>本次最多可报正常量</span>
+          <span>本次正常+异常可报合计</span>
           <strong>{{ formatQuantity(available) }} {{ task.unit }}</strong>
         </div>
       </div>
@@ -49,7 +53,7 @@
           <el-input-number
             v-model="form.normalQuantity"
             :min="0"
-            :max="available"
+            :max="Math.max(0, available - form.abnormalQuantity)"
             :precision="4"
             :step="1"
             controls-position="right"
@@ -62,12 +66,13 @@
           <el-input-number
             v-model="form.abnormalQuantity"
             :min="0"
+            :max="Math.max(0, available - form.normalQuantity)"
             :precision="4"
             :step="1"
             controls-position="right"
           />
           <div class="form-tip">
-            异常数量不计入正常放行量和完工进度；大于零时系统会自动生成待处置记录。
+            异常数量不计入正常放行量和完工进度，但会占用上游已放行的本工序加工数量；大于零时系统会自动生成待处置记录。
           </div>
         </el-form-item>
         <el-form-item label="备注">
@@ -119,7 +124,7 @@ const remaining = computed(() =>
 const available = computed(() => Math.max(0, Number(props.task?.availableNormalQuantity ?? 0)));
 const quantityTip = computed(() =>
   available.value < remaining.value
-    ? `当前上游仅放行 ${formatQuantity(props.task?.releasedNormalQuantity ?? 0)} ${props.task?.unit ?? ''}，本次正常数量最多填写 ${formatQuantity(available.value)}；达到当前放行量不会提前完成本工序。`
+    ? `当前上游仅放行 ${formatQuantity(props.task?.releasedNormalQuantity ?? 0)} ${props.task?.unit ?? ''}，本次正常与异常数量合计最多填写 ${formatQuantity(available.value)}；达到当前放行量不会提前完成本工序。`
     : `当前正常数量已全部放行；有效正常累计达到 ${formatQuantity(props.task?.requiredNormalQuantity ?? 0)} ${props.task?.unit ?? ''} 时，本工序自动完成。`,
 );
 const canSubmit = computed(
@@ -128,7 +133,7 @@ const canSubmit = computed(
     form.normalQuantity >= 0 &&
     form.abnormalQuantity >= 0 &&
     form.normalQuantity + form.abnormalQuantity > 0 &&
-    form.normalQuantity <= available.value,
+    form.normalQuantity + form.abnormalQuantity <= available.value,
 );
 
 watch(

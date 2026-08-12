@@ -198,7 +198,7 @@ describeMysql('Production execution MySQL transactions', () => {
     }
   });
 
-  it('records split reports, creates pending abnormal disposition and completes at exact normal quantity', async () => {
+  it('records split reports, creates pending abnormal disposition and consumes abnormal release capacity', async () => {
     const fixture = await createFixture(pool, 'report');
     try {
       await repository.assignStep(
@@ -225,10 +225,24 @@ describeMysql('Production execution MySQL transactions', () => {
       const second = await reporting.createReport(
         String(fixture.batchId),
         String(fixture.firstStepRecordId),
-        { version: 3, normalQuantity: 6, abnormalQuantity: 0, remark: null },
+        { version: 3, normalQuantity: 5, abnormalQuantity: 0, remark: null },
         context(fixture.workerId, `${fixture.token}-report-2`),
       );
-      expect(second).toMatchObject({ stepStatus: 'completed', effectiveNormalQuantity: '10.0000' });
+      expect(second).toMatchObject({
+        stepStatus: 'doing',
+        effectiveReportedQuantity: '10.0000',
+        effectiveNormalQuantity: '9.0000',
+        effectiveAbnormalQuantity: '1.0000',
+        availableNormalQuantity: '0.0000',
+      });
+      await expect(
+        reporting.createReport(
+          String(fixture.batchId),
+          String(fixture.firstStepRecordId),
+          { version: 4, normalQuantity: 1, abnormalQuantity: 0, remark: null },
+          context(fixture.workerId, `${fixture.token}-report-over-capacity`),
+        ),
+      ).rejects.toMatchObject({ code: 'STEP_REPORT_QUANTITY_EXCEEDED' });
       expect(
         await auditCount(pool, `${fixture.token}-report-2`, 'production-step-report.create'),
       ).toBe(1);
@@ -289,7 +303,7 @@ describeMysql('Production execution MySQL transactions', () => {
         reporting.createReport(
           String(fixture.batchId),
           String(fixture.secondStepRecordId),
-          { version: 3, normalQuantity: 1, abnormalQuantity: 0 },
+          { version: 3, normalQuantity: 0, abnormalQuantity: 1 },
           context(fixture.workerId, `${fixture.token}-report-second-over-release`),
         ),
       ).rejects.toMatchObject({ code: 'STEP_REPORT_QUANTITY_EXCEEDED' });
