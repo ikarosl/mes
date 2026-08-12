@@ -27,6 +27,7 @@ const allowedTables = new Set([
   'batch_step_records',
   'batch_step_reports',
   'batch_step_abnormal_dispositions',
+  'rework_records',
   'production_item_demand',
   'inbound_order',
   'inbound_detail',

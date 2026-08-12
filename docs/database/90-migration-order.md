@@ -14,13 +14,14 @@
 8. work_orders / production_batches / batch_step_records
 8a. batch_step_reports（追加事实表、迁移历史累计量并移除工序节点的累计数量列）
 8b. batch_step_abnormal_dispositions（已追加 migration；同时从 batch_step_records 状态集合移除 abnormal，并同步共享常量和契约）
+8c. rework_records（异常批准返工后创建；完成报工通过 completed_report_id 保持来源唯一）
 9. item_batch / inbound_order / inbound_detail / inventory_transaction
 10. production_item_demand / production_item_allocation
 10a. 将 production_item_demand.demand_type 从历史数字代码追加迁移为字符串代码（已与字段、CHECK、共享常量、契约和 Repository 同步；当前 application 只生成 normal）
 11. outbound_order / outbound_detail / return_order / return_detail / item_scrap
 12. 为 production_item_demand.source_scrap_id 追加外键
 13. stock_check_order / stock_check_detail
-14. inspection_records / rework_records（业务语义未闭环，暂不实施）
+14. inspection_records（过程检验和最终质量语义未闭环，暂不实施）
 15. finished_flow_records（质量放行和入库边界未闭环，暂不实施）
 16. 业务闭环后再创建必要的只读汇总视图
 ```

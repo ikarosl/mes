@@ -12,6 +12,7 @@ import {
   INVENTORY_TRANSACTION_TYPES,
   OUTBOUND_ORDER_STATUSES,
   PRODUCTION_EXECUTION_COMPLETION_BLOCKERS,
+  REWORK_STATUSES,
   SCRAP_SCENES,
   STOCK_STATUSES,
 } from '../index';
@@ -26,6 +27,7 @@ const persistedCodeSets = [
   BATCH_STEP_REPORT_TYPES,
   BATCH_STEP_ABNORMAL_REVIEW_STATUSES,
   BATCH_STEP_ABNORMAL_DISPOSITION_TYPES,
+  REWORK_STATUSES,
   DEMAND_TYPES,
   OUTBOUND_ORDER_STATUSES,
   PRODUCTION_EXECUTION_COMPLETION_BLOCKERS,
@@ -61,6 +63,7 @@ describe('business persisted codes', () => {
     ]);
     expect(BATCH_STEP_ABNORMAL_DISPOSITION_TYPES).toEqual(['rework', 'scrap']);
     expect(BATCH_STEP_REPORT_TYPES).toEqual(['normal', 'reversal']);
+    expect(REWORK_STATUSES).toEqual(['pending', 'doing', 'completed', 'cancelled']);
     expect(DEMAND_TYPES).toEqual(['normal', 'manual_additional']);
   });
 

@@ -91,9 +91,11 @@ export const PERMISSIONS = {
     steps: {
       report: 'production:steps:report',
       manageExecution: 'production:steps:manage-execution',
+      manageAbnormal: 'production:steps:manage-abnormal',
       assign: 'production:steps:assign',
       start: 'production:steps:start',
     },
+    rework: { execute: 'production:rework:execute' },
   },
   warehouse: {
     view: 'warehouse:view',
@@ -175,6 +177,13 @@ export const BATCH_STEP_ABNORMAL_REVIEW_STATUS_LABELS = {
   pending_review: '待处置',
   approved: '已批准',
   rejected: '已驳回',
+  cancelled: '已取消',
+} as const;
+export const REWORK_STATUSES = ['pending', 'doing', 'completed', 'cancelled'] as const;
+export const REWORK_STATUS_LABELS = {
+  pending: '待返工',
+  doing: '返工中',
+  completed: '已完成',
   cancelled: '已取消',
 } as const;
 export const PRODUCTION_EXECUTION_COMPLETION_BLOCKERS = [
@@ -284,7 +293,6 @@ export const STOCK_CHECK_STATUSES = ['pending', 'counting', 'completed', 'cancel
 export const STOCK_CHECK_RESULTS = ['surplus', 'shortage', 'matched'] as const;
 export const INSPECTION_TYPES = ['process', 'final'] as const;
 export const INSPECTION_RESULTS = ['pending', 'passed', 'failed', 'conditional'] as const;
-export const REWORK_STATUSES = ['pending', 'doing', 'completed', 'cancelled'] as const;
 export const REWORK_RESULTS = ['pending', 'passed', 'failed'] as const;
 export const FINISHED_FLOW_TYPES = [
   'warehouse_inbound',

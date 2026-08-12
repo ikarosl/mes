@@ -75,6 +75,11 @@ describe('permissionMatches', () => {
     );
   });
 
+  it('separates abnormal review from rework execution', () => {
+    expect(PERMISSIONS.production.steps.manageAbnormal).toBe('production:steps:manage-abnormal');
+    expect(PERMISSIONS.production.rework.execute).toBe('production:rework:execute');
+  });
+
   it('uses a dedicated read-only Production trace permission', () => {
     expect(PERMISSIONS.production.trace.view).toBe('production:trace:view');
     expect(PERMISSIONS.production.trace.view).not.toBe(PERMISSIONS.production.tasks.view);

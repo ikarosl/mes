@@ -14,6 +14,8 @@ import type {
   CreatePurchaseInboundPayload,
   InventoryBatchItem,
   ProductionExecutionBatchSummary,
+  CompleteReworkPayload,
+  ReworkRecordItem,
 } from '../index.js';
 
 describe('auth contract', () => {
@@ -68,6 +70,23 @@ describe('production execution contracts', () => {
     expect(payload).toEqual({ version: 5 });
     expect(payload).not.toHaveProperty('completedQuantity');
     expect(payload).not.toHaveProperty('qualifiedQuantity');
+  });
+
+  it('binds one full rework completion to its immutable source quantity', () => {
+    const rework = {
+      reworkId: '9',
+      sourceReportId: '3',
+      reworkQuantity: '2.0000',
+      completedReportId: null,
+      status: 'doing',
+    } as ReworkRecordItem;
+    const payload: CompleteReworkPayload = {
+      version: 1,
+      normalQuantity: 2,
+      abnormalQuantity: 0,
+    };
+    expect(rework.completedReportId).toBeNull();
+    expect(payload.normalQuantity + payload.abnormalQuantity).toBe(2);
   });
 
   it('models Production trace from current persisted facts only', () => {
