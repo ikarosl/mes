@@ -302,23 +302,17 @@
                   </template>
                 </el-table-column>
               </el-table>
-              <div
-                v-if="step.abnormalDispositions.length"
-                class="abnormal-list"
-              >
-                <strong>异常处置记录（当前只读）</strong>
-                <el-tag
-                  v-for="item in step.abnormalDispositions"
-                  :key="item.dispositionId"
-                  type="danger"
-                  >{{ item.dispositionNo }} ·
-                  {{ BATCH_STEP_ABNORMAL_REVIEW_STATUS_LABELS[item.reviewStatus] }}</el-tag
-                >
-                <p>
-                  当前 Production
-                  阶段尚未开放返工、报废审批。异常处置与报工更正是两类业务；已形成处置依赖的报工不能直接冲销或更正。
-                </p>
-              </div>
+              <AbnormalReworkPanel
+                :dispositions="step.abnormalDispositions"
+                :reports="step.reports"
+                :reworks="reworks.filter((item) => item.stepRecordId === step.stepRecordId)"
+                :pending-keys="pendingKeys"
+                :unit="step.unit"
+                @approve="handleApproveRework"
+                @reject="handleRejectDisposition"
+                @start="handleStartRework"
+                @complete="handleCompleteRework"
+              />
             </article>
           </template>
           <el-empty
@@ -467,7 +461,6 @@
 import { computed, onActivated, onMounted, reactive, ref } from 'vue';
 import { Refresh } from '@element-plus/icons-vue';
 import {
-  BATCH_STEP_ABNORMAL_REVIEW_STATUS_LABELS,
   BATCH_STEP_REPORT_TYPE_LABELS,
   BATCH_STEP_STATUS_LABELS,
   PRODUCTION_EXECUTION_COMPLETION_BLOCKER_LABELS,
@@ -476,12 +469,15 @@ import type {
   BatchStepExecutionRecordItem,
   BatchStepReportItem,
   BatchStepStatus,
+  BatchStepAbnormalDispositionItem,
+  ReworkRecordItem,
 } from '@company/contracts';
 import { formatDateTimeForDisplay } from '../../utils/date';
 import { EMessage } from '../../utils/message';
 import TableToolbar from '../../components/TableToolbar.vue';
 import { batchStatusMeta, formatQuantity, stepStatusMeta } from './production-status';
 import ProductionExecutionBatchList from './components/ProductionExecutionBatchList.vue';
+import AbnormalReworkPanel from './components/AbnormalReworkPanel.vue';
 import { useProductionExecutionRecords } from './composables/useProductionExecutionRecords';
 import {
   executionBatchHasAbnormal,
@@ -506,12 +502,17 @@ const {
   selectedBatchId,
   record,
   completionCheck,
+  reworks,
   pendingKeys,
   loadBatches,
   selectBatch,
   reverse,
   correct,
   completeExecution,
+  approveRework,
+  rejectDisposition,
+  startRework,
+  completeRework,
 } = useProductionExecutionRecords();
 const completionPending = computed(() =>
   completionCheck.value
@@ -723,6 +724,49 @@ const submitCompletion = async () => {
     EMessage.success('生产执行已完工');
   } catch (error) {
     EMessage.error(error, '生产执行完工失败，请刷新后核对完工条件');
+  }
+};
+const handleApproveRework = async (
+  disposition: BatchStepAbnormalDispositionItem,
+  remark: string,
+) => {
+  try {
+    await approveRework(disposition, remark);
+    EMessage.success('异常已批准返工');
+  } catch (error) {
+    EMessage.error(error, '批准返工失败，请刷新后重试');
+  }
+};
+const handleRejectDisposition = async (
+  disposition: BatchStepAbnormalDispositionItem,
+  reason: string,
+) => {
+  try {
+    await rejectDisposition(disposition, reason);
+    EMessage.success('异常处置已驳回');
+  } catch (error) {
+    EMessage.error(error, '异常驳回失败，请刷新后重试');
+  }
+};
+const handleStartRework = async (rework: ReworkRecordItem) => {
+  try {
+    await startRework(rework);
+    EMessage.success('返工已开始');
+  } catch (error) {
+    EMessage.error(error, '返工开始失败，请确认当前账号是返工负责人');
+  }
+};
+const handleCompleteRework = async (
+  rework: ReworkRecordItem,
+  normalQuantity: number,
+  abnormalQuantity: number,
+  remark: string,
+) => {
+  try {
+    await completeRework(rework, normalQuantity, abnormalQuantity, remark);
+    EMessage.success('返工已完成并生成报工事实');
+  } catch (error) {
+    EMessage.error(error, '返工完成失败，请刷新后核对数量和单据状态');
   }
 };
 onMounted(search);

@@ -314,8 +314,9 @@ const lockReport = async (
   if (!row) throw new ProductionDomainError('NOT_FOUND', '报工事实不存在');
   const [dependencies] = await connection.query<RowDataPacket[]>(
     `SELECT id FROM batch_step_abnormal_dispositions WHERE batch_step_report_id=?
-     UNION ALL SELECT id FROM batch_step_reports WHERE replaces_report_id=? LIMIT 1`,
-    [reportId, reportId],
+     UNION ALL SELECT id FROM batch_step_reports WHERE replaces_report_id=?
+     UNION ALL SELECT id FROM rework_records WHERE completed_report_id=? LIMIT 1`,
+    [reportId, reportId, reportId],
   );
   if (dependencies.length > 0)
     throw new ProductionDomainError(

@@ -5,6 +5,7 @@ const api = vi.hoisted(() => ({
   listExecutionBatchSummaries: vi.fn(),
   getBatchExecutionRecords: vi.fn(),
   getExecutionCompletionCheck: vi.fn(),
+  listBatchReworks: vi.fn(),
   completeProductionExecution: vi.fn(),
   correctStepReport: vi.fn(),
   reverseStepReport: vi.fn(),
@@ -24,6 +25,7 @@ describe('useProductionExecutionRecords', () => {
       canComplete: true,
       blockers: [],
     });
+    api.listBatchReworks.mockResolvedValue([]);
   });
 
   it('keeps the selected detail within the current filtered page', async () => {

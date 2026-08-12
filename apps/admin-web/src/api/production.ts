@@ -42,6 +42,12 @@ import type {
   InventoryBatchQuery,
   PurchaseInboundOrderItem,
   PurchaseInboundOrderQuery,
+  ApproveBatchStepReworkPayload,
+  BatchStepAbnormalDispositionItem,
+  CompleteReworkPayload,
+  CompleteReworkResult,
+  RejectBatchStepAbnormalDispositionPayload,
+  ReworkRecordItem,
 } from '@company/contracts';
 import { toRequestError, type RetryRequestConfig } from '@company/request';
 import { httpClient } from './http';
@@ -348,6 +354,43 @@ export const productionApi = {
   ) =>
     request<CorrectBatchStepReportCommandResult>({
       url: `/production/batches/${batchId}/step-records/${stepRecordId}/reports/${reportId}/actions/correct`,
+      method: 'POST',
+      data,
+      headers: { 'Idempotency-Key': idempotencyKey },
+      retryUnsafe: true,
+      retryTimes: 2,
+    }),
+
+  listBatchReworks: (batchId: string) =>
+    request<ReworkRecordItem[]>({ url: `/production/batches/${batchId}/reworks` }),
+
+  approveDispositionRework: (dispositionId: string, data: ApproveBatchStepReworkPayload) =>
+    request<ReworkRecordItem>({
+      url: `/production/abnormal-dispositions/${dispositionId}/actions/approve-rework`,
+      method: 'POST',
+      data,
+    }),
+
+  rejectAbnormalDisposition: (
+    dispositionId: string,
+    data: RejectBatchStepAbnormalDispositionPayload,
+  ) =>
+    request<BatchStepAbnormalDispositionItem>({
+      url: `/production/abnormal-dispositions/${dispositionId}/actions/reject`,
+      method: 'POST',
+      data,
+    }),
+
+  startRework: (reworkId: string, version: number) =>
+    request<ReworkRecordItem>({
+      url: `/production/reworks/${reworkId}/actions/start`,
+      method: 'POST',
+      data: { version },
+    }),
+
+  completeRework: (reworkId: string, data: CompleteReworkPayload, idempotencyKey: string) =>
+    request<CompleteReworkResult>({
+      url: `/production/reworks/${reworkId}/actions/complete`,
       method: 'POST',
       data,
       headers: { 'Idempotency-Key': idempotencyKey },

@@ -14,11 +14,14 @@ import {
   ValidateNested,
 } from 'class-validator';
 import type {
+  ApproveBatchStepReworkPayload,
+  CompleteReworkPayload,
   CreateProductionBatchPayload,
   CorrectBatchStepReportPayload,
   CreateBatchStepReportPayload,
   CreateWorkOrderPayload,
   ProductionBatchQuery,
+  RejectBatchStepAbnormalDispositionPayload,
   ReverseBatchStepReportPayload,
   UpdateProductionBatchPayload,
   UpdateBatchStepExecutionPayload,
@@ -176,4 +179,32 @@ export class CorrectBatchStepReportDto
   @Type(() => Number) @IsNumber({ maxDecimalPlaces: 4 }) @Min(0) normalQuantity!: number;
   @Type(() => Number) @IsNumber({ maxDecimalPlaces: 4 }) @Min(0) abnormalQuantity!: number;
   @IsString() @IsNotEmpty() @MaxLength(5000) reason!: string;
+}
+
+export class AbnormalDispositionParamDto {
+  @IsString() @IsNotEmpty() @MaxLength(20) dispositionId!: string;
+}
+
+export class ReworkParamDto {
+  @IsString() @IsNotEmpty() @MaxLength(20) reworkId!: string;
+}
+
+export class ApproveBatchStepReworkDto
+  extends VersionedCommandDto
+  implements ApproveBatchStepReworkPayload
+{
+  @IsOptional() @IsString() @MaxLength(5000) remark?: string | null;
+}
+
+export class RejectBatchStepAbnormalDispositionDto
+  extends VersionedCommandDto
+  implements RejectBatchStepAbnormalDispositionPayload
+{
+  @IsString() @IsNotEmpty() @MaxLength(5000) reason!: string;
+}
+
+export class CompleteReworkDto extends VersionedCommandDto implements CompleteReworkPayload {
+  @Type(() => Number) @IsNumber({ maxDecimalPlaces: 4 }) @Min(0) normalQuantity!: number;
+  @Type(() => Number) @IsNumber({ maxDecimalPlaces: 4 }) @Min(0) abnormalQuantity!: number;
+  @IsOptional() @IsString() @MaxLength(5000) remark?: string | null;
 }

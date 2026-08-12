@@ -8,6 +8,7 @@ import {
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { MysqlProductionExecutionRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-execution.repository.js';
 import { MysqlProductionReportingRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-reporting.repository.js';
+import { MysqlProductionAbnormalRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-abnormal.repository.js';
 import { MysqlIdempotencyExecutor } from '../../../apps/api/src/infrastructure/idempotency/mysql-idempotency.executor.js';
 import { IdentityDirectoryService } from '../../../apps/api/src/modules/identity/application/identity-directory.service.js';
 import { MysqlRbacRepository } from '../../../apps/api/src/modules/identity/infrastructure/mysql-rbac.repository.js';
@@ -20,6 +21,7 @@ describeMysql('Production execution MySQL transactions', () => {
   let pool: Pool;
   let repository: MysqlProductionExecutionRepository;
   let reporting: MysqlProductionReportingRepository;
+  let abnormal: MysqlProductionAbnormalRepository;
   let reportingService: ProductionReportingService;
 
   beforeAll(() => {
@@ -35,6 +37,7 @@ describeMysql('Production execution MySQL transactions', () => {
     });
     repository = new MysqlProductionExecutionRepository(pool);
     reporting = new MysqlProductionReportingRepository(pool);
+    abnormal = new MysqlProductionAbnormalRepository(pool);
     reportingService = new ProductionReportingService(
       reporting,
       new IdentityDirectoryService(new MysqlRbacRepository(pool)),
@@ -262,6 +265,80 @@ describeMysql('Production execution MySQL transactions', () => {
       ).rejects.toMatchObject({ code: 'STEP_REPORT_QUANTITY_EXCEEDED' });
       expect(
         await auditCount(pool, `${fixture.token}-report-2`, 'production-step-report.create'),
+      ).toBe(1);
+    } finally {
+      await cleanup(pool, fixture);
+    }
+  });
+
+  it('closes a source-bound rework as a new immutable report in one transaction', async () => {
+    const fixture = await createFixture(pool, 'rework');
+    try {
+      await repository.assignStep(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        String(fixture.workerId),
+        0,
+        context(fixture.actorId, `${fixture.token}-assign`),
+      );
+      await repository.startStep(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        1,
+        context(fixture.workerId, `${fixture.token}-start`),
+      );
+      const source = await reporting.createReport(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        { version: 2, normalQuantity: 8, abnormalQuantity: 2, remark: 'source abnormal' },
+        context(fixture.workerId, `${fixture.token}-source-report`),
+      );
+      const dispositionId = source.abnormalDisposition?.dispositionId;
+      expect(dispositionId).toBeDefined();
+
+      const approved = await abnormal.approveRework(
+        dispositionId!,
+        { version: 0, remark: 'repair it' },
+        context(fixture.actorId, `${fixture.token}-approve`),
+      );
+      expect(approved).toMatchObject({
+        sourceReportId: source.report.reportId,
+        responsibleUserId: String(fixture.workerId),
+        reworkQuantity: '2.0000',
+        status: 'pending',
+      });
+      const started = await abnormal.startRework(
+        approved.reworkId,
+        approved.version,
+        context(fixture.workerId, `${fixture.token}-rework-start`),
+      );
+      const completed = await abnormal.completeRework(
+        approved.reworkId,
+        { version: started.version, normalQuantity: 2, abnormalQuantity: 0, remark: 'repaired' },
+        context(fixture.workerId, `${fixture.token}-rework-complete`),
+      );
+      expect(completed).toMatchObject({
+        rework: { status: 'completed' },
+        report: {
+          normalQuantity: '2.0000',
+          abnormalQuantity: '0.0000',
+          reportType: 'normal',
+        },
+        abnormalDisposition: null,
+      });
+      expect(completed.rework.completedReportId).toBe(completed.report.reportId);
+
+      await expect(
+        reporting.correctReport(
+          String(fixture.batchId),
+          String(fixture.firstStepRecordId),
+          completed.report.reportId,
+          { version: 4, normalQuantity: 1, abnormalQuantity: 1, reason: 'must use rework flow' },
+          context(fixture.actorId, `${fixture.token}-forbidden-correction`),
+        ),
+      ).rejects.toMatchObject({ code: 'STEP_REPORT_DEPENDENCY_CONFLICT' });
+      expect(
+        await auditCount(pool, `${fixture.token}-rework-complete`, 'production-rework.complete'),
       ).toBe(1);
     } finally {
       await cleanup(pool, fixture);
@@ -763,6 +840,7 @@ const cleanup = async (pool: Pool, fixture: Fixture): Promise<void> => {
   await pool.execute('DELETE FROM http_idempotency_records WHERE idempotency_key LIKE ?', [
     `${fixture.token}%`,
   ]);
+  await pool.execute('DELETE FROM rework_records WHERE production_batch_id=?', [fixture.batchId]);
   await pool.execute('DELETE FROM batch_step_abnormal_dispositions WHERE production_batch_id=?', [
     fixture.batchId,
   ]);

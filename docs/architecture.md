@@ -44,7 +44,7 @@ HTTP 幂等也是跨业务模块的平台能力：`common/idempotency` 只定义
 命令上下文与幂等能力分离：`CommandContext` 仅承载 actor/requestId/IP/User-Agent；只有已声明并验收的
 application 用例接收 `IdempotentCommandContext`。幂等键不得进入 application port 或 Repository，Service
 调用业务 Repository 前必须收窄回 `CommandContext`。当前白名单包括 Production createBatch、物料分配创建、
-待出库单创建、生产领料整单确认、报工创建和报工更正；新增命令仍须逐一登记 scope、完整结果 codec 和闭环测试。
+待出库单创建、生产领料整单确认、报工创建、报工更正和返工整单完成；新增命令仍须逐一登记 scope、完整结果 codec 和闭环测试。
 具体实施边界见 [`http-idempotency-implementation-plan.md`](http-idempotency-implementation-plan.md)。
 
 ## 3. 模块内部依赖

@@ -6,6 +6,7 @@ const api = vi.hoisted(() => ({
   listExecutionBatchSummaries: vi.fn(),
   getBatchExecutionRecords: vi.fn(),
   getExecutionCompletionCheck: vi.fn(),
+  listBatchReworks: vi.fn(),
   completeProductionExecution: vi.fn(),
 }));
 vi.mock('../../../api/production', () => ({ productionApi: api }));
@@ -15,6 +16,7 @@ describe('ProductionExecutionRecordsPage', () => {
     api.listExecutionBatchSummaries.mockReset().mockResolvedValue({ items: [], total: 0 });
     api.getBatchExecutionRecords.mockReset();
     api.getExecutionCompletionCheck.mockReset();
+    api.listBatchReworks.mockReset().mockResolvedValue([]);
     api.completeProductionExecution.mockReset();
   });
 
