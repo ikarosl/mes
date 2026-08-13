@@ -13,7 +13,7 @@ import type {
   ProductPayload,
   TechnicalFileQuery,
 } from '@company/contracts';
-import type { AuditContext } from '../../../common/audit/audit.types.js';
+import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { IdentityDirectoryService } from '../../identity/public.js';
 import { ProductDomainError } from '../domain/product.errors.js';
 import { ProcessRouteRepository } from './ports/process-route.repository.js';
@@ -46,7 +46,7 @@ export class ProductService {
   listTechnicalFiles(query: TechnicalFileQuery) {
     return this.technicalFiles.listTechnicalFiles(query);
   }
-  async uploadTechnicalFile(file: TechnicalFileUpload, audit: AuditContext) {
+  async uploadTechnicalFile(file: TechnicalFileUpload, audit: CommandContext) {
     this.validateTechnicalFile(file);
     const stored = await this.storage.storeSop(file);
     try {
@@ -60,7 +60,7 @@ export class ProductService {
     const file = await this.technicalFiles.getTechnicalFile(id);
     return { file, stream: await this.storage.read(file) };
   }
-  deleteTechnicalFile(id: string, audit: AuditContext) {
+  deleteTechnicalFile(id: string, audit: CommandContext) {
     // 软删除：停用并标记删除，对象存储内容保留，供历史路线和生产记录追溯。
     return this.technicalFiles.deleteTechnicalFile(id, audit);
   }
@@ -100,25 +100,25 @@ export class ProductService {
     }));
   }
 
-  createCategory(payload: ProductCategoryPayload, audit: AuditContext) {
+  createCategory(payload: ProductCategoryPayload, audit: CommandContext) {
     return this.categories.createCategory(this.cleanCategory(payload), audit);
   }
-  updateCategory(id: string, payload: ProductCategoryPayload, audit: AuditContext) {
+  updateCategory(id: string, payload: ProductCategoryPayload, audit: CommandContext) {
     return this.categories.updateCategory(id, this.cleanCategory(payload), audit);
   }
-  setCategoryStatus(id: string, status: number, audit: AuditContext) {
+  setCategoryStatus(id: string, status: number, audit: CommandContext) {
     return this.categories.setCategoryStatus(id, status, audit);
   }
-  createProduct(payload: ProductPayload, audit: AuditContext) {
+  createProduct(payload: ProductPayload, audit: CommandContext) {
     return this.catalog.createProduct(this.cleanProduct(payload), audit);
   }
-  updateProduct(id: string, payload: ProductPayload, audit: AuditContext) {
+  updateProduct(id: string, payload: ProductPayload, audit: CommandContext) {
     return this.catalog.updateProduct(id, this.cleanProduct(payload), audit);
   }
-  setProductStatus(id: string, status: number, audit: AuditContext) {
+  setProductStatus(id: string, status: number, audit: CommandContext) {
     return this.catalog.setProductStatus(id, status, audit);
   }
-  replaceMaterials(id: string, items: ProductMaterialPayload[], audit: AuditContext) {
+  replaceMaterials(id: string, items: ProductMaterialPayload[], audit: CommandContext) {
     if (items.length > 200) {
       throw new ProductDomainError('INVALID_INPUT', '一份 BOM 最多包含 200 行明细');
     }
@@ -130,19 +130,19 @@ export class ProductService {
     }
     return this.catalog.replaceMaterials(id, items, audit);
   }
-  setDefaultRoute(id: string, routeId: string | null, audit: AuditContext) {
+  setDefaultRoute(id: string, routeId: string | null, audit: CommandContext) {
     return this.catalog.setDefaultRoute(id, routeId, audit);
   }
-  createProcessStep(payload: ProcessStepPayload, audit: AuditContext) {
+  createProcessStep(payload: ProcessStepPayload, audit: CommandContext) {
     return this.processSteps.createProcessStep(this.cleanProcessStep(payload), audit);
   }
-  updateProcessStep(id: string, payload: ProcessStepPayload, audit: AuditContext) {
+  updateProcessStep(id: string, payload: ProcessStepPayload, audit: CommandContext) {
     return this.processSteps.updateProcessStep(id, this.cleanProcessStep(payload), audit);
   }
-  setProcessStepStatus(id: string, status: number, audit: AuditContext) {
+  setProcessStepStatus(id: string, status: number, audit: CommandContext) {
     return this.processSteps.setProcessStepStatus(id, status, audit);
   }
-  async uploadProcessStepSop(id: string, file: TechnicalFileUpload, audit: AuditContext) {
+  async uploadProcessStepSop(id: string, file: TechnicalFileUpload, audit: CommandContext) {
     this.validateTechnicalFile(file);
     const stored = await this.storage.storeSop(file);
     try {
@@ -152,22 +152,22 @@ export class ProductService {
       throw error;
     }
   }
-  setProcessStepDefaultSop(id: string, fileId: string | null, audit: AuditContext) {
+  setProcessStepDefaultSop(id: string, fileId: string | null, audit: CommandContext) {
     return this.processSteps.setProcessStepDefaultSop(id, fileId, audit);
   }
-  createRoute(payload: ProcessRoutePayload, audit: AuditContext) {
+  createRoute(payload: ProcessRoutePayload, audit: CommandContext) {
     return this.routes.createRoute(this.cleanRoute(payload), audit);
   }
-  updateRoute(id: string, payload: ProcessRoutePayload, audit: AuditContext) {
+  updateRoute(id: string, payload: ProcessRoutePayload, audit: CommandContext) {
     return this.routes.updateRoute(id, this.cleanRoute(payload), audit);
   }
-  setRouteStatus(id: string, status: ProcessRouteStatus, audit: AuditContext) {
+  setRouteStatus(id: string, status: ProcessRouteStatus, audit: CommandContext) {
     return this.routes.setRouteStatus(id, status, audit);
   }
-  deleteRoute(id: string, audit: AuditContext) {
+  deleteRoute(id: string, audit: CommandContext) {
     return this.routes.deleteRoute(id, audit);
   }
-  async replaceRouteSteps(id: string, items: ProcessRouteStepPayload[], audit: AuditContext) {
+  async replaceRouteSteps(id: string, items: ProcessRouteStepPayload[], audit: CommandContext) {
     if (items.length > 200) {
       throw new ProductDomainError('INVALID_INPUT', '一条工艺路线最多包含 200 个工序');
     }

@@ -5,7 +5,6 @@ import { EMessage } from '../../../utils/message';
 
 export interface TaskStepPreview extends ProcessRouteStepItem {
   actualSopFileId: string | null;
-  responsibleUserId: string | null;
 }
 
 /**
@@ -29,7 +28,6 @@ export function useTaskRouteSteps() {
       preview.value = steps.map((step) => ({
         ...step,
         actualSopFileId: null,
-        responsibleUserId: null,
       }));
     } catch (error) {
       if (token !== requestToken) return;

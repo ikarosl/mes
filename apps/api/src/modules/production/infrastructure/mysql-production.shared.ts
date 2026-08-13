@@ -83,7 +83,7 @@ export type StepRow = RowDataPacket & {
   responsible_user_id: number | null;
   need_record_snapshot: number;
   need_inspection_snapshot: number;
-  status: 'pending' | 'assigned' | 'doing' | 'completed' | 'abnormal';
+  status: 'pending' | 'assigned' | 'doing' | 'completed';
   started_at: Date | null;
   completed_at: Date | null;
   output_quantity: string;
@@ -97,7 +97,7 @@ export type StepRow = RowDataPacket & {
 
 export const WORK_ORDER_SELECT = `SELECT wo.id,wo.work_order_no,wo.product_id,wo.product_code_snapshot,wo.product_name_snapshot,wo.unit_snapshot,wo.planned_quantity,wo.customer_name,wo.quality_level,wo.work_order_owner_id,wo.plan_start_date,wo.plan_end_date,COALESCE((SELECT SUM(b.planned_quantity) FROM production_batches b WHERE b.work_order_id=wo.id AND b.status<>'cancelled'),0) assigned_quantity,wo.status,wo.released_at,wo.external_order_no,wo.remark,wo.version,wo.created_at,wo.updated_at FROM work_orders wo`;
 export const BATCH_SELECT = `SELECT b.id,b.work_order_id,wo.work_order_no,b.product_id,wo.product_code_snapshot,wo.product_name_snapshot,b.batch_no,b.route_id,b.route_code_snapshot,b.route_version_snapshot,b.planned_quantity,b.completed_quantity,b.qualified_quantity,b.plan_start_date,b.plan_end_date,b.started_at,b.status,b.batch_owner_id owner_id,b.completed_at,b.completed_by,b.remark,b.version,b.created_at,b.updated_at FROM production_batches b JOIN work_orders wo ON wo.id=b.work_order_id`;
-export const STEP_RECORD_SELECT = `SELECT sr.id,sr.production_batch_id,sr.route_step_id,sr.step_order_snapshot,sr.step_code_snapshot,sr.step_name_snapshot,sr.sop_file_id_snapshot,sr.sop_file_name_snapshot,sr.sop_version_no_snapshot,sr.default_responsible_user_id_snapshot,sr.actual_sop_file_id,sr.actual_sop_file_name_snapshot,sr.actual_sop_object_key_snapshot,sr.actual_sop_version_no_snapshot,sr.responsible_user_id,sr.need_record_snapshot,sr.need_inspection_snapshot,sr.status,sr.started_at,sr.completed_at,sr.output_quantity,sr.qualified_quantity,sr.abnormal_quantity,sr.rework_quantity,sr.unit_snapshot,sr.remark,sr.version FROM batch_step_records sr`;
+export const STEP_RECORD_SELECT = `SELECT sr.id,sr.production_batch_id,sr.route_step_id,sr.step_order_snapshot,sr.step_code_snapshot,sr.step_name_snapshot,sr.sop_file_id_snapshot,sr.sop_file_name_snapshot,sr.sop_version_no_snapshot,sr.default_responsible_user_id_snapshot,sr.actual_sop_file_id,sr.actual_sop_file_name_snapshot,sr.actual_sop_object_key_snapshot,sr.actual_sop_version_no_snapshot,sr.responsible_user_id,sr.need_record_snapshot,sr.need_inspection_snapshot,sr.status,sr.started_at,sr.completed_at,COALESCE(report_summary.reported_quantity,0) output_quantity,COALESCE(report_summary.normal_quantity,0) qualified_quantity,COALESCE(report_summary.abnormal_quantity,0) abnormal_quantity,CAST(0 AS DECIMAL(12,4)) rework_quantity,sr.unit_snapshot,sr.remark,sr.version FROM batch_step_records sr LEFT JOIN (SELECT batch_step_record_id,SUM(CASE WHEN report_type='normal' THEN reported_quantity ELSE -reported_quantity END) reported_quantity,SUM(CASE WHEN report_type='normal' THEN normal_quantity ELSE -normal_quantity END) normal_quantity,SUM(CASE WHEN report_type='normal' THEN abnormal_quantity ELSE -abnormal_quantity END) abnormal_quantity FROM batch_step_reports GROUP BY batch_step_record_id) report_summary ON report_summary.batch_step_record_id=sr.id`;
 
 export async function findWorkOrder(db: Db, id: string, lock = false): Promise<WorkOrderRow> {
   const [rows] = await db.query<WorkOrderRow[]>(
@@ -142,8 +142,8 @@ export const mapWorkOrder = (row: WorkOrderRow): WorkOrderItem => ({
   customerName: row.customer_name,
   qualityLevel: row.quality_level,
   workOrderOwnerId: row.work_order_owner_id === null ? null : String(row.work_order_owner_id),
-  planStartDate: row.plan_start_date,
-  planEndDate: row.plan_end_date,
+  planStartDate: date(row.plan_start_date),
+  planEndDate: date(row.plan_end_date),
   assignedQuantity: row.assigned_quantity,
   status: row.status,
   releasedAt: date(row.released_at),
@@ -168,8 +168,8 @@ export const mapBatch = (row: BatchRow): ProductionBatchItem => ({
   plannedQuantity: row.planned_quantity,
   completedQuantity: row.completed_quantity,
   qualifiedQuantity: row.qualified_quantity,
-  planStartDate: row.plan_start_date,
-  planEndDate: row.plan_end_date,
+  planStartDate: date(row.plan_start_date),
+  planEndDate: date(row.plan_end_date),
   startedAt: date(row.started_at),
   status: row.status,
   ownerId: row.owner_id === null ? null : String(row.owner_id),
@@ -248,5 +248,8 @@ export const stepAudit = (row: StepRow) => ({
 // 十进制定点边界值；详见 docs/todo.md 的待整改项。
 export const multiply = (left: string, right: string): string =>
   (Number(left) * Number(right)).toFixed(4);
-const date = (value: Date | null): string | null =>
-  value === null ? null : toBeijingISOString(value);
+/** 数据库驱动对 DATE/DATETIME 列返回 Date 实例（类型曾误标 string），统一转北京 ISO 字符串。 */
+const date = (value: Date | string | null): string | null => {
+  if (value === null) return null;
+  return typeof value === 'string' ? value : toBeijingISOString(value);
+};

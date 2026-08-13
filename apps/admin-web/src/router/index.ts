@@ -21,6 +21,9 @@ import ProcessRoutesPage from '../views/product/ProcessRoutesPage.vue';
 // 生产管理
 import ProductionOrdersPage from '../views/production/ProductionOrdersPage.vue';
 import ProductionTasksPage from '../views/production/ProductionTasksPage.vue';
+import ProductionWorkerTasksPage from '../views/production/WorkerTasksPage.vue';
+import ProductionExecutionRecordsPage from '../views/production/ProductionExecutionRecordsPage.vue';
+import ProductionTracePage from '../views/production/ProductionTracePage.vue';
 
 // 仓储管理
 import InboundOrdersPage from '../views/warehouse/InboundOrdersPage.vue';
@@ -159,6 +162,30 @@ export const router = createRouter({
           PERMISSIONS.production.tasks.view,
           'ProductionTasksPage',
         ),
+        page(
+          'production/worker-tasks',
+          'production-worker-tasks',
+          '我的工序',
+          ProductionWorkerTasksPage,
+          PERMISSIONS.production.workerTasks.view,
+          'ProductionWorkerTasksPage',
+        ),
+        page(
+          'production/execution-records',
+          'production-execution-records',
+          '生产报工记录',
+          ProductionExecutionRecordsPage,
+          PERMISSIONS.production.tasks.view,
+          'ProductionExecutionRecordsPage',
+        ),
+        page(
+          'production/trace',
+          'production-trace',
+          '生产追溯',
+          ProductionTracePage,
+          PERMISSIONS.production.trace.view,
+          'ProductionTracePage',
+        ),
 
         // 仓储管理
         page(
@@ -166,7 +193,7 @@ export const router = createRouter({
           'warehouse-inventory',
           '库存查询',
           WarehouseInventoryPage,
-          PERMISSIONS.warehouse.inventory.view,
+          PERMISSIONS.production.inventory.view,
           'WarehouseInventoryPage',
         ),
         page(
@@ -174,7 +201,7 @@ export const router = createRouter({
           'warehouse-inbound',
           '入库管理',
           InboundOrdersPage,
-          PERMISSIONS.warehouse.inbound.view,
+          PERMISSIONS.production.inbounds.view,
           'InboundOrdersPage',
         ),
         page(
@@ -182,7 +209,7 @@ export const router = createRouter({
           'warehouse-outbound',
           '出库管理',
           OutboundOrdersPage,
-          PERMISSIONS.warehouse.outbound.view,
+          PERMISSIONS.production.materials.view,
           'OutboundOrdersPage',
         ),
         page(

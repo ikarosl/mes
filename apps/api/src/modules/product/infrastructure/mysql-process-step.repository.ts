@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import { withTransaction } from '@company/database';
-import type { AuditContext } from '../../../common/audit/audit.types.js';
+import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { writeTransactionalAudit } from '../../../common/audit/transactional-audit-writer.js';
 import { toBeijingISOString } from '../../../common/time/beijing-time.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
@@ -94,7 +94,7 @@ export class MysqlProcessStepRepository implements ProcessStepRepository {
     }));
   }
 
-  async createProcessStep(payload: ProcessStepPayload, audit: AuditContext) {
+  async createProcessStep(payload: ProcessStepPayload, audit: CommandContext) {
     return withTransaction(this.pool, async (connection) => {
       const [result] = await connection.execute<ResultSetHeader>(
         `INSERT INTO process_steps (step_code,step_name,description,status,remark,created_by,updated_by) VALUES (?,?,?,?,?,?,?)`,
@@ -104,8 +104,8 @@ export class MysqlProcessStepRepository implements ProcessStepRepository {
           payload.description ?? null,
           payload.status,
           payload.remark ?? null,
-          audit.userId,
-          audit.userId,
+          audit.actorId,
+          audit.actorId,
         ],
       );
       await this.audit(
@@ -122,7 +122,7 @@ export class MysqlProcessStepRepository implements ProcessStepRepository {
     );
   }
 
-  async updateProcessStep(id: string, payload: ProcessStepPayload, audit: AuditContext) {
+  async updateProcessStep(id: string, payload: ProcessStepPayload, audit: CommandContext) {
     await withTransaction(this.pool, async (connection) => {
       const before = await this.processStepRecord(connection, id);
       await connection.execute(
@@ -133,7 +133,7 @@ export class MysqlProcessStepRepository implements ProcessStepRepository {
           payload.description ?? null,
           payload.status,
           payload.remark ?? null,
-          audit.userId,
+          audit.actorId,
           id,
         ],
       );
@@ -143,12 +143,12 @@ export class MysqlProcessStepRepository implements ProcessStepRepository {
     );
   }
 
-  async setProcessStepStatus(id: string, status: number, audit: AuditContext) {
+  async setProcessStepStatus(id: string, status: number, audit: CommandContext) {
     await withTransaction(this.pool, async (connection) => {
       const before = await this.processStepRecord(connection, id);
       await connection.execute(
         'UPDATE process_steps SET status=?,updated_by=? WHERE id=? AND is_deleted=0',
-        [status, audit.userId, id],
+        [status, audit.actorId, id],
       );
       await this.audit(
         connection,
@@ -161,7 +161,7 @@ export class MysqlProcessStepRepository implements ProcessStepRepository {
     });
   }
 
-  async attachProcessStepSop(id: string, file: StoredTechnicalFile, audit: AuditContext) {
+  async attachProcessStepSop(id: string, file: StoredTechnicalFile, audit: CommandContext) {
     await withTransaction(this.pool, async (connection) => {
       const before = await this.processStepRecord(connection, id);
       const [result] = await connection.execute<ResultSetHeader>(
@@ -178,13 +178,13 @@ export class MysqlProcessStepRepository implements ProcessStepRepository {
           file.checksumSha256,
           file.fileType,
           file.versionNo,
-          audit.userId,
-          audit.userId,
+          audit.actorId,
+          audit.actorId,
         ],
       );
       await connection.execute(
         'UPDATE process_steps SET default_sop_file_id=?,updated_by=? WHERE id=? AND is_deleted=0',
-        [result.insertId, audit.userId, id],
+        [result.insertId, audit.actorId, id],
       );
       await this.audit(
         connection,
@@ -197,7 +197,7 @@ export class MysqlProcessStepRepository implements ProcessStepRepository {
     });
   }
 
-  async setProcessStepDefaultSop(id: string, fileId: string | null, audit: AuditContext) {
+  async setProcessStepDefaultSop(id: string, fileId: string | null, audit: CommandContext) {
     await withTransaction(this.pool, async (connection) => {
       const before = await this.processStepRecord(connection, id);
       if (fileId) {
@@ -210,7 +210,7 @@ export class MysqlProcessStepRepository implements ProcessStepRepository {
       }
       await connection.execute(
         'UPDATE process_steps SET default_sop_file_id=?,updated_by=? WHERE id=? AND is_deleted=0',
-        [fileId, audit.userId, id],
+        [fileId, audit.actorId, id],
       );
       await this.audit(
         connection,
@@ -241,7 +241,7 @@ export class MysqlProcessStepRepository implements ProcessStepRepository {
   }
   private async audit(
     db: Db,
-    audit: AuditContext,
+    audit: CommandContext,
     action: string,
     targetId: string,
     beforeData: unknown,
@@ -251,7 +251,7 @@ export class MysqlProcessStepRepository implements ProcessStepRepository {
       logType: 'business',
       module: 'product',
       action,
-      userId: audit.userId,
+      userId: audit.actorId,
       targetId,
       targetType: 'product-master-data',
       result: 'success',

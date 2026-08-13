@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { generateBatchNo } from '@company/code-rules';
+import { DEMAND_TYPE } from '@company/constants';
 import { withTransaction } from '@company/database';
 import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import type {
@@ -171,7 +172,7 @@ export class MysqlProductionBatchRepository {
             step.sop?.objectKey ?? null,
             step.sop?.versionNo ?? null,
             step.defaultOwnerId ?? null,
-            override?.responsibleUserId ?? null,
+            null,
             override?.actualSop?.id ?? null,
             override?.actualSop?.fileName ?? null,
             override?.actualSop?.objectKey ?? null,
@@ -250,13 +251,10 @@ export class MysqlProductionBatchRepository {
         throw new ProductionDomainError('INVALID_STATE', '已取消或已完成批次不能调整工序执行参数');
       const before = await findStepRecord(connection, batchId, recordId, true);
       if (before.status !== 'pending' && before.status !== 'assigned')
-        throw new ProductionDomainError('INVALID_STATE', '工序开始后不能调整实际 SOP 或负责人');
+        throw new ProductionDomainError('INVALID_STATE', '工序开始后不能调整实际 SOP');
       const [result] = await connection.execute<ResultSetHeader>(
-        `UPDATE batch_step_records SET responsible_user_id=?,actual_sop_file_id=?,actual_sop_file_name_snapshot=?,actual_sop_object_key_snapshot=?,actual_sop_version_no_snapshot=?,version=version+1,updated_by=? WHERE id=? AND production_batch_id=? AND version=?`,
+        `UPDATE batch_step_records SET actual_sop_file_id=?,actual_sop_file_name_snapshot=?,actual_sop_object_key_snapshot=?,actual_sop_version_no_snapshot=?,version=version+1,updated_by=? WHERE id=? AND production_batch_id=? AND version=?`,
         [
-          payload.responsibleUserId === undefined
-            ? before.responsible_user_id
-            : payload.responsibleUserId,
           actualSop === undefined ? before.actual_sop_file_id : (actualSop?.id ?? null),
           actualSop === undefined
             ? before.actual_sop_file_name_snapshot
@@ -300,7 +298,7 @@ export class MysqlProductionBatchRepository {
         throw new ProductionDomainError('INVALID_INPUT', 'BOM 与生产批次产品不一致');
       for (const line of bom.lines) {
         await connection.execute(
-          `INSERT INTO production_item_demand (production_batch_id,product_material_id,item_id,quantity_per_unit_snapshot,unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,planned_output_quantity_snapshot,need_number,demand_type,idempotency_key,business_status,created_by,updated_by) VALUES (?,?,?,?,?,?,?,?,?,0,?,'active',?,?)`,
+          `INSERT INTO production_item_demand (production_batch_id,product_material_id,item_id,quantity_per_unit_snapshot,unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,planned_output_quantity_snapshot,need_number,demand_type,idempotency_key,business_status,created_by,updated_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,'active',?,?)`,
           [
             batchId,
             line.productMaterialId,
@@ -311,6 +309,7 @@ export class MysqlProductionBatchRepository {
             Number(line.needBatchRecord),
             batch.planned_quantity,
             multiply(line.quantityPerUnit, batch.planned_quantity),
+            DEMAND_TYPE.normal,
             `NORMAL:${batchId}:${line.productMaterialId}`,
             audit.actorId,
             audit.actorId,

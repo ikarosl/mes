@@ -5,7 +5,7 @@ import type {
   ProductCategoryQuery,
   PageResult,
 } from '@company/contracts';
-import type { AuditContext } from '../../../../common/audit/audit.types.js';
+import type { CommandContext } from '../../../../common/audit/audit.types.js';
 
 export abstract class ProductCategoryRepository {
   abstract listCategories(
@@ -14,12 +14,12 @@ export abstract class ProductCategoryRepository {
   abstract listCategoryOptions(): Promise<ProductCategoryOption[]>;
   abstract createCategory(
     payload: ProductCategoryPayload,
-    audit: AuditContext,
+    audit: CommandContext,
   ): Promise<{ id: string }>;
   abstract updateCategory(
     id: string,
     payload: ProductCategoryPayload,
-    audit: AuditContext,
+    audit: CommandContext,
   ): Promise<void>;
-  abstract setCategoryStatus(id: string, status: number, audit: AuditContext): Promise<void>;
+  abstract setCategoryStatus(id: string, status: number, audit: CommandContext): Promise<void>;
 }

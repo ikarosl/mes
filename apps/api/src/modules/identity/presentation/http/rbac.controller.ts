@@ -13,12 +13,12 @@ import {
   Query,
 } from '@nestjs/common';
 import { PERMISSIONS } from '@company/constants';
-import type { AuditContext } from '../../../../common/audit/audit.types.js';
+import type { CommandContext } from '../../../../common/audit/audit.types.js';
 import { RbacService } from '../../application/rbac.service.js';
 import type { RbacWriteResult } from '../../application/ports/rbac.repository.js';
 import {
   AuditInApplication,
-  CurrentAuditContext,
+  CurrentCommandContext,
   RequirePermission,
 } from '../../../../common/security/auth.decorators.js';
 import {
@@ -55,7 +55,7 @@ export class RbacController {
   @Post('users')
   @RequirePermission(PERMISSIONS.system.users.create)
   @AuditInApplication()
-  async createUser(@Body() body: CreateUserDto, @CurrentAuditContext() audit: AuditContext) {
+  async createUser(@Body() body: CreateUserDto, @CurrentCommandContext() audit: CommandContext) {
     const result = await this.rbac.createUser(body, audit);
     return { id: this.writeResult(result, '用户不存在') };
   }
@@ -75,7 +75,7 @@ export class RbacController {
   async updateUser(
     @Param() { id }: IdParamDto,
     @Body() body: UpdateUserDto,
-    @CurrentAuditContext() audit: AuditContext,
+    @CurrentCommandContext() audit: CommandContext,
   ) {
     this.writeResult(await this.rbac.updateUser(id, body, audit), '用户不存在');
   }
@@ -85,7 +85,7 @@ export class RbacController {
   async setUserStatus(
     @Param() { id }: IdParamDto,
     @Body() body: UpdateUserStatusDto,
-    @CurrentAuditContext() audit: AuditContext,
+    @CurrentCommandContext() audit: CommandContext,
   ) {
     this.writeResult(await this.rbac.setUserStatus(id, body.status, audit), '用户不存在');
   }
@@ -95,7 +95,7 @@ export class RbacController {
   async resetUserPassword(
     @Param() { id }: IdParamDto,
     @Body() body: ResetUserPasswordDto,
-    @CurrentAuditContext() audit: AuditContext,
+    @CurrentCommandContext() audit: CommandContext,
   ) {
     this.writeResult(await this.rbac.resetUserPassword(id, body.password, audit), '用户不存在');
   }
@@ -105,7 +105,7 @@ export class RbacController {
   async setUserRoles(
     @Param() { id }: IdParamDto,
     @Body() body: AssignUserRolesDto,
-    @CurrentAuditContext() audit: AuditContext,
+    @CurrentCommandContext() audit: CommandContext,
   ) {
     this.writeResult(await this.rbac.setUserRoles(id, body.roleIds, audit), '用户不存在');
   }
@@ -124,7 +124,7 @@ export class RbacController {
   @Post('roles')
   @RequirePermission(PERMISSIONS.system.roles.create)
   @AuditInApplication()
-  async createRole(@Body() body: CreateRoleDto, @CurrentAuditContext() audit: AuditContext) {
+  async createRole(@Body() body: CreateRoleDto, @CurrentCommandContext() audit: CommandContext) {
     const result = await this.rbac.createRole(body, audit);
     return { id: this.writeResult(result, '角色不存在') };
   }
@@ -134,14 +134,14 @@ export class RbacController {
   async updateRole(
     @Param() { id }: IdParamDto,
     @Body() body: UpdateRoleDto,
-    @CurrentAuditContext() audit: AuditContext,
+    @CurrentCommandContext() audit: CommandContext,
   ) {
     this.writeResult(await this.rbac.updateRole(id, body, audit), '角色不存在');
   }
   @Delete('roles/:id')
   @RequirePermission(PERMISSIONS.system.roles.delete)
   @AuditInApplication()
-  async deleteRole(@Param() { id }: IdParamDto, @CurrentAuditContext() audit: AuditContext) {
+  async deleteRole(@Param() { id }: IdParamDto, @CurrentCommandContext() audit: CommandContext) {
     this.writeResult(await this.rbac.deleteRole(id, audit), '角色不存在');
   }
   @Get('roles/:id/permissions')
@@ -157,7 +157,7 @@ export class RbacController {
   async setRolePermissions(
     @Param() { id }: IdParamDto,
     @Body() body: AssignRolePermissionsDto,
-    @CurrentAuditContext() audit: AuditContext,
+    @CurrentCommandContext() audit: CommandContext,
   ) {
     this.writeResult(
       await this.rbac.setRolePermissions(id, body.permissionIds, audit),

@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import { withTransaction } from '@company/database';
-import type { AuditContext } from '../../../common/audit/audit.types.js';
+import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { writeTransactionalAudit } from '../../../common/audit/transactional-audit-writer.js';
 import { toBeijingISOString } from '../../../common/time/beijing-time.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
@@ -88,7 +88,7 @@ export class MysqlTechnicalFileRepository implements TechnicalFileRepository {
     return this.mapTechnicalFile(row);
   }
 
-  async createTechnicalFile(file: StoredTechnicalFile, audit: AuditContext) {
+  async createTechnicalFile(file: StoredTechnicalFile, audit: CommandContext) {
     return withTransaction(this.pool, async (connection) => {
       const [result] = await connection.execute<ResultSetHeader>(
         `INSERT INTO technical_files (file_name,original_name,storage_provider,bucket,object_key,mime_type,size_bytes,checksum_sha256,file_type,version_no,status,created_by,updated_by)
@@ -104,8 +104,8 @@ export class MysqlTechnicalFileRepository implements TechnicalFileRepository {
           file.checksumSha256,
           file.fileType,
           file.versionNo,
-          audit.userId,
-          audit.userId,
+          audit.actorId,
+          audit.actorId,
         ],
       );
       const id = String(result.insertId);
@@ -121,14 +121,14 @@ export class MysqlTechnicalFileRepository implements TechnicalFileRepository {
     });
   }
 
-  async deleteTechnicalFile(id: string, audit: AuditContext) {
+  async deleteTechnicalFile(id: string, audit: CommandContext) {
     await withTransaction(this.pool, async (connection) => {
       const file = await this.technicalFileRecord(connection, id, true);
       await this.assertTechnicalFileUnreferenced(connection, id);
       await connection.execute(
         `UPDATE technical_files SET status=0,is_deleted=1,deleted_by=?,deleted_at=NOW(),updated_by=?
           WHERE id=? AND is_deleted=0`,
-        [audit.userId, audit.userId, id],
+        [audit.actorId, audit.actorId, id],
       );
       await this.audit(
         connection,
@@ -149,7 +149,7 @@ export class MysqlTechnicalFileRepository implements TechnicalFileRepository {
 
   private async audit(
     db: Db,
-    audit: AuditContext,
+    audit: CommandContext,
     action: string,
     targetId: string,
     beforeData: unknown,
@@ -159,7 +159,7 @@ export class MysqlTechnicalFileRepository implements TechnicalFileRepository {
       logType: 'business',
       module: 'product',
       action,
-      userId: audit.userId,
+      userId: audit.actorId,
       targetId,
       targetType: 'product-master-data',
       result: 'success',

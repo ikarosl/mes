@@ -11,6 +11,7 @@ describe('AuthController refresh cookie', () => {
     vi.stubEnv('JWT_ISSUER', 'test-issuer');
     vi.stubEnv('JWT_AUDIENCE', 'test-audience');
     vi.stubEnv('REFRESH_TOKEN_TTL_SECONDS', '10');
+    vi.stubEnv('REFRESH_TOKEN_COOKIE_NAME', '');
     const responseBody = {
       user: { id: '1', username: 'admin', displayName: 'Admin', roles: [], permissions: [] },
       accessToken: 'access',
@@ -32,6 +33,35 @@ describe('AuthController refresh cookie', () => {
       'company_refresh_token',
       'refresh',
       expect.objectContaining({ maxAge: 10_000 }),
+    );
+  });
+
+  it('uses the configured refresh cookie name when set', async () => {
+    vi.stubEnv('JWT_SECRET', 'test-secret-with-at-least-32-characters');
+    vi.stubEnv('JWT_ISSUER', 'test-issuer');
+    vi.stubEnv('JWT_AUDIENCE', 'test-audience');
+    vi.stubEnv('REFRESH_TOKEN_COOKIE_NAME', 'company_refresh_token_next');
+    const responseBody = {
+      user: { id: '1', username: 'admin', displayName: 'Admin', roles: [], permissions: [] },
+      accessToken: 'access',
+      accessTokenExpiresAt: '2026-07-23T09:00:10.000Z',
+      refreshTokenExpiresAt: '2026-07-23T09:00:10.000Z',
+    } satisfies TokenResponse;
+    const auth = {
+      login: vi.fn().mockResolvedValue({ response: responseBody, refreshToken: 'refresh' }),
+    } as unknown as AuthService;
+    const cookie = vi.fn();
+    const controller = new AuthController(auth);
+
+    await controller.login(
+      { username: 'admin', password: 'secret' },
+      { cookie, clearCookie: vi.fn() },
+    );
+
+    expect(cookie).toHaveBeenCalledWith(
+      'company_refresh_token_next',
+      'refresh',
+      expect.objectContaining({ maxAge: 7 * 24 * 60 * 60 * 1000 }),
     );
   });
 });

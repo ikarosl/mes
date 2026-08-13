@@ -1,0 +1,78 @@
+import { mount } from '@vue/test-utils';
+import { describe, expect, it } from 'vitest';
+import AbnormalReworkPanel from '../AbnormalReworkPanel.vue';
+
+describe('AbnormalReworkPanel', () => {
+  it('shows actionable pending dispositions and source-bound rework state', () => {
+    const wrapper = mount(AbnormalReworkPanel, {
+      props: {
+        dispositions: [
+          {
+            dispositionId: '1',
+            dispositionNo: 'BAD-1',
+            productionBatchId: '2',
+            stepRecordId: '3',
+            sourceReportId: '4',
+            reviewStatus: 'pending_review',
+            dispositionType: null,
+            remark: null,
+            version: 0,
+            createdAt: '2026-08-13T08:00:00+08:00',
+          },
+        ],
+        reports: [
+          {
+            reportId: '4',
+            abnormalQuantity: '2.0000',
+          },
+        ] as never,
+        reworks: [
+          {
+            reworkId: '5',
+            reworkNo: 'RW-5',
+            stepRecordId: '3',
+            responsibleUserId: '7',
+            responsibleUserName: '员工',
+            reworkQuantity: '2.0000',
+            unit: '件',
+            status: 'pending',
+          },
+        ] as never,
+        pendingKeys: new Set<string>(),
+        unit: '件',
+        sourceStep: {
+          stepRecordId: '3',
+          stepOrder: 2,
+          stepName: '组装',
+        } as never,
+        routeSteps: [
+          { stepRecordId: '2', stepOrder: 1, stepName: '切割' },
+          { stepRecordId: '3', stepOrder: 2, stepName: '组装' },
+        ] as never,
+        candidateLoader: async () => [],
+      },
+      global: {
+        stubs: {
+          'el-tag': { template: '<span><slot/></span>' },
+          'el-button': { template: '<button @click="$emit(\'click\')"><slot/></button>' },
+          'el-dialog': true,
+          'el-alert': true,
+          'el-input': true,
+          'el-input-number': true,
+          'el-checkbox': true,
+          'el-form': { template: '<form><slot/></form>' },
+          'el-form-item': { template: '<div><slot/></div>' },
+          'el-table': true,
+          'el-table-column': true,
+          'el-descriptions': true,
+          'el-descriptions-item': true,
+        },
+        directives: { loading: () => undefined },
+      },
+    });
+    expect(wrapper.text()).toContain('批准返工');
+    expect(wrapper.text()).toContain('报废并补料');
+    expect(wrapper.text()).toContain('2.0000 件');
+    expect(wrapper.text()).toContain('开始返工');
+  });
+});

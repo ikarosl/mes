@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { CommandContext } from '../../../../common/audit/audit.types.js';
 import { ProductDomainError } from '../../domain/product.errors.js';
 import { MysqlProcessRouteRepository } from '../mysql-process-route.repository.js';
 import { MysqlProcessRouteStepRepository } from '../mysql-process-route-step.repository.js';
@@ -6,6 +7,14 @@ import { MysqlProcessStepRepository } from '../mysql-process-step.repository.js'
 import { MysqlProductCatalogRepository } from '../mysql-product-catalog.repository.js';
 import { MysqlProductCategoryRepository } from '../mysql-product-category.repository.js';
 import { MysqlTechnicalFileRepository } from '../mysql-technical-file.repository.js';
+
+const commandContext: CommandContext = {
+  actorId: '1',
+  requestId: 'req-1',
+  ip: '127.0.0.1',
+  userAgent: null,
+};
+const commandContextWithoutIp: CommandContext = { ...commandContext, ip: null };
 
 describe('MySQL product adapters workflow transactions', () => {
   it('includes the configured default route in product form options', async () => {
@@ -170,7 +179,7 @@ describe('MySQL product adapters workflow transactions', () => {
           fileType: 'sop',
           versionNo: '202607240001',
         },
-        { userId: '1', ip: '127.0.0.1' },
+        commandContext,
       ),
     ).resolves.toEqual({ id: '21' });
 
@@ -207,7 +216,7 @@ describe('MySQL product adapters workflow transactions', () => {
     } as never);
 
     await expect(
-      repository.deleteTechnicalFile('21', { userId: '1', ip: null }),
+      repository.deleteTechnicalFile('21', commandContextWithoutIp),
     ).rejects.toBeInstanceOf(ProductDomainError);
     expect(connection.execute).not.toHaveBeenCalled();
     expect(connection.rollback).toHaveBeenCalledOnce();
@@ -251,7 +260,7 @@ describe('MySQL product adapters workflow transactions', () => {
         versionNo: 'V1',
         remark: null,
       },
-      { userId: '1', ip: '127.0.0.1' },
+      commandContext,
     );
 
     expect(result).toEqual({ id: '15' });
@@ -297,7 +306,7 @@ describe('MySQL product adapters workflow transactions', () => {
           versionNo: 'V1',
           remark: null,
         },
-        { userId: '1', ip: null },
+        commandContextWithoutIp,
       ),
     ).rejects.toBeInstanceOf(ProductDomainError);
     expect(connection.rollback).toHaveBeenCalledOnce();
@@ -327,7 +336,7 @@ describe('MySQL product adapters workflow transactions', () => {
     } as never);
 
     await expect(
-      repository.setRouteStatus('15', 'disabled', { userId: '1', ip: null }),
+      repository.setRouteStatus('15', 'disabled', commandContextWithoutIp),
     ).resolves.toBeUndefined();
 
     expect(String(connection.query.mock.calls[1]?.[0])).toContain('default_route_id');
@@ -356,7 +365,7 @@ describe('MySQL product adapters workflow transactions', () => {
     } as never);
 
     await expect(
-      repository.setRouteStatus('15', 'disabled', { userId: '1', ip: null }),
+      repository.setRouteStatus('15', 'disabled', commandContextWithoutIp),
     ).rejects.toMatchObject({ code: 'DEFAULT_ROUTE_IN_USE' });
     expect(connection.rollback).toHaveBeenCalledOnce();
   });
@@ -411,7 +420,7 @@ describe('MySQL product adapters workflow transactions', () => {
           productMaterialIds: [],
         },
       ],
-      { userId: '1', ip: null },
+      commandContextWithoutIp,
     );
 
     expect(String(connection.query.mock.calls[3]?.[0])).toContain('FOR UPDATE');
@@ -444,7 +453,7 @@ describe('MySQL product adapters workflow transactions', () => {
       getConnection: vi.fn().mockResolvedValue(connection),
     } as never);
 
-    await repository.setDefaultRoute('9', '15', { userId: '1', ip: null });
+    await repository.setDefaultRoute('9', '15', commandContextWithoutIp);
 
     expect(String(connection.query.mock.calls[0]?.[0])).toContain('FOR UPDATE');
     expect(String(connection.query.mock.calls[1]?.[0])).toContain('FROM products');

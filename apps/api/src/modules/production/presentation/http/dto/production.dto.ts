@@ -1,9 +1,11 @@
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
+  ArrayMinSize,
   IsArray,
   IsDateString,
   IsIn,
+  IsNotEmpty,
   IsNumber,
   IsOptional,
   IsString,
@@ -13,9 +15,16 @@ import {
   ValidateNested,
 } from 'class-validator';
 import type {
+  ApproveBatchStepReworkPayload,
+  ApproveScrapSupplementPayload,
+  CompleteReworkPayload,
   CreateProductionBatchPayload,
+  CorrectBatchStepReportPayload,
+  CreateBatchStepReportPayload,
   CreateWorkOrderPayload,
   ProductionBatchQuery,
+  RejectBatchStepAbnormalDispositionPayload,
+  ReverseBatchStepReportPayload,
   UpdateProductionBatchPayload,
   UpdateBatchStepExecutionPayload,
   UpdateWorkOrderPayload,
@@ -30,9 +39,15 @@ const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 export class IdParamDto {
   @IsString() @MaxLength(20) id!: string;
 }
+export class WorkOrderIdParamDto {
+  @IsString() @MaxLength(20) workOrderId!: string;
+}
 export class BatchStepRecordParamDto {
   @IsString() @MaxLength(20) batchId!: string;
   @IsString() @MaxLength(20) recordId!: string;
+}
+export class BatchStepReportParamDto extends BatchStepRecordParamDto {
+  @IsString() @MaxLength(20) reportId!: string;
 }
 export class WorkOrderQueryDto extends PageQueryDto implements WorkOrderQuery {
   @IsOptional() @IsString() @MaxLength(100) keyword?: string;
@@ -91,7 +106,6 @@ export class UpdateWorkOrderDto extends VersionedCommandDto implements UpdateWor
 export class CreateBatchStepOverrideDto {
   @IsString() @MaxLength(20) routeStepId!: string;
   @IsOptional() @IsString() @MaxLength(20) actualSopFileId?: string | null;
-  @IsOptional() @IsString() @MaxLength(20) responsibleUserId?: string | null;
 }
 export class CreateProductionBatchDto implements CreateProductionBatchPayload {
   @IsOptional() @IsString() @MaxLength(100) batchNo?: string | null;
@@ -138,5 +152,79 @@ export class UpdateBatchStepExecutionDto
   implements UpdateBatchStepExecutionPayload
 {
   @IsOptional() @IsString() @MaxLength(20) actualSopFileId?: string | null;
-  @IsOptional() @IsString() @MaxLength(20) responsibleUserId?: string | null;
+}
+
+export class AssignProductionStepDto extends VersionedCommandDto {
+  @IsString() @IsNotEmpty() @MaxLength(20) responsibleUserId!: string;
+}
+
+export class CreateBatchStepReportDto
+  extends VersionedCommandDto
+  implements CreateBatchStepReportPayload
+{
+  @Type(() => Number) @IsNumber({ maxDecimalPlaces: 4 }) @Min(0) normalQuantity!: number;
+  @Type(() => Number) @IsNumber({ maxDecimalPlaces: 4 }) @Min(0) abnormalQuantity!: number;
+  @IsOptional() @IsString() @MaxLength(5000) remark?: string | null;
+}
+
+export class ReverseBatchStepReportDto
+  extends VersionedCommandDto
+  implements ReverseBatchStepReportPayload
+{
+  @IsString() @IsNotEmpty() @MaxLength(5000) reason!: string;
+}
+
+export class CorrectBatchStepReportDto
+  extends VersionedCommandDto
+  implements CorrectBatchStepReportPayload
+{
+  @Type(() => Number) @IsNumber({ maxDecimalPlaces: 4 }) @Min(0) normalQuantity!: number;
+  @Type(() => Number) @IsNumber({ maxDecimalPlaces: 4 }) @Min(0) abnormalQuantity!: number;
+  @IsString() @IsNotEmpty() @MaxLength(5000) reason!: string;
+}
+
+export class AbnormalDispositionParamDto {
+  @IsString() @IsNotEmpty() @MaxLength(20) dispositionId!: string;
+}
+
+export class ReworkParamDto {
+  @IsString() @IsNotEmpty() @MaxLength(20) reworkId!: string;
+}
+
+export class ApproveBatchStepReworkDto
+  extends VersionedCommandDto
+  implements ApproveBatchStepReworkPayload
+{
+  @IsOptional() @IsString() @MaxLength(5000) remark?: string | null;
+}
+
+export class RejectBatchStepAbnormalDispositionDto
+  extends VersionedCommandDto
+  implements RejectBatchStepAbnormalDispositionPayload
+{
+  @IsString() @IsNotEmpty() @MaxLength(5000) reason!: string;
+}
+
+export class CompleteReworkDto extends VersionedCommandDto implements CompleteReworkPayload {
+  @Type(() => Number) @IsNumber({ maxDecimalPlaces: 4 }) @Min(0) normalQuantity!: number;
+  @Type(() => Number) @IsNumber({ maxDecimalPlaces: 4 }) @Min(0) abnormalQuantity!: number;
+  @IsOptional() @IsString() @MaxLength(5000) remark?: string | null;
+}
+
+export class ApproveScrapSupplementLineDto {
+  @IsString() @IsNotEmpty() @MaxLength(20) originalDemandId!: string;
+  @Type(() => Number) @IsNumber({ maxDecimalPlaces: 4 }) @Min(0.0001) supplementQuantity!: number;
+}
+
+export class ApproveScrapSupplementDto
+  extends VersionedCommandDto
+  implements ApproveScrapSupplementPayload
+{
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(200)
+  @ValidateNested({ each: true })
+  @Type(() => ApproveScrapSupplementLineDto)
+  details!: ApproveScrapSupplementLineDto[];
+  @IsOptional() @IsString() @MaxLength(5000) remark?: string | null;
 }

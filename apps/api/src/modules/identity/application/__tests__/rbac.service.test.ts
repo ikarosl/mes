@@ -1,5 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { CommandContext } from '../../../../common/audit/audit.types.js';
 import { RbacService } from '../rbac.service.js';
+
+const commandContext: CommandContext = {
+  actorId: '1',
+  requestId: 'req-1',
+  ip: '127.0.0.1',
+  userAgent: null,
+};
 
 describe('RbacService system mutations', () => {
   it('hashes reset passwords and never passes plaintext to the repository', async () => {
@@ -8,10 +16,7 @@ describe('RbacService system mutations', () => {
     };
     const service = new RbacService(repository as never, {} as never);
 
-    const result = await service.resetUserPassword('7', '123456', {
-      userId: '1',
-      ip: '127.0.0.1',
-    });
+    const result = await service.resetUserPassword('7', '123456', commandContext);
 
     expect(result).toEqual({ status: 'success', value: undefined });
     const [, passwordHash] = repository.resetUserPassword.mock.calls[0] as [string, string];
@@ -33,15 +38,16 @@ describe('RbacService system mutations', () => {
     await expect(
       service.createUser(
         { username: 'admin', displayName: '管理员', password: '123456', roleIds: [] },
-        { userId: '1', ip: '127.0.0.1' },
+        commandContext,
       ),
     ).resolves.toEqual({ status: 'conflict', message: '用户名已存在' });
-    await expect(service.setUserRoles('9', [], { userId: '1', ip: '127.0.0.1' })).resolves.toEqual({
+    await expect(service.setUserRoles('9', [], commandContext)).resolves.toEqual({
       status: 'not-found',
     });
-    await expect(
-      service.setRolePermissions('9', ['99'], { userId: '1', ip: '127.0.0.1' }),
-    ).resolves.toEqual({ status: 'invalid-reference', message: '包含无效的权限引用' });
+    await expect(service.setRolePermissions('9', ['99'], commandContext)).resolves.toEqual({
+      status: 'invalid-reference',
+      message: '包含无效的权限引用',
+    });
   });
 
   it('rejects blank names and illegal status with invalid-input without calling the repository', async () => {
@@ -52,7 +58,7 @@ describe('RbacService system mutations', () => {
       resetUserPassword: vi.fn(),
     };
     const service = new RbacService(repository as never, {} as never);
-    const context = { userId: '1', ip: '127.0.0.1' };
+    const context = commandContext;
 
     await expect(
       service.createUser(
@@ -87,7 +93,7 @@ describe('RbacService system mutations', () => {
     };
     const service = new RbacService(repository as never, {} as never);
 
-    await expect(service.deleteRole('2', { userId: '1', ip: '127.0.0.1' })).resolves.toEqual({
+    await expect(service.deleteRole('2', commandContext)).resolves.toEqual({
       status: 'conflict',
       message: '角色仍有关联用户，不能删除',
     });

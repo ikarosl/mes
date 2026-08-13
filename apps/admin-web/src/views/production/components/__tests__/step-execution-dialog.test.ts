@@ -1,11 +1,7 @@
-import { nextTick } from 'vue';
 import { flushPromises, mount } from '@vue/test-utils';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import type { BatchStepRecordItem } from '@company/contracts';
 import StepExecutionDialog from '../StepExecutionDialog.vue';
-
-const { warning } = vi.hoisted(() => ({ warning: vi.fn() }));
-vi.mock('../../../../utils/message', () => ({ EMessage: { warning, error: vi.fn() } }));
 
 const selectStub = {
   emits: ['visible-change', 'change', 'update:modelValue'],
@@ -44,7 +40,6 @@ const openDialog = async (overrides: Record<string, unknown> = {}) => {
       visible: false,
       stepRecord,
       sopFileOptions: [],
-      userOptions: [{ id: 'u1', displayName: '张三' }],
       submitting: false,
       ...overrides,
     },
@@ -61,7 +56,6 @@ const openDialog = async (overrides: Record<string, unknown> = {}) => {
   });
   await wrapper.setProps({ visible: true });
   await flushPromises();
-  await nextTick();
   return wrapper;
 };
 
@@ -75,16 +69,11 @@ const emitVisibleChange = async (wrapper: DialogWrapper, placeholder: string): P
 
 const eventCounts = (wrapper: DialogWrapper) => ({
   sopFiles: wrapper.emitted('refresh-sop-files')?.length ?? 0,
-  users: wrapper.emitted('refresh-users')?.length ?? 0,
   products: wrapper.emitted('refresh-products')?.length ?? 0,
   routes: wrapper.emitted('refresh-routes')?.length ?? 0,
 });
 
 describe('StepExecutionDialog', () => {
-  beforeEach(() => {
-    warning.mockReset();
-  });
-
   it('expanding the SOP file select refreshes only SOP files', async () => {
     const wrapper = await openDialog();
     const before = eventCounts(wrapper);
@@ -93,51 +82,14 @@ describe('StepExecutionDialog', () => {
 
     const after = eventCounts(wrapper);
     expect(after.sopFiles).toBe(before.sopFiles + 1);
-    expect(after.users).toBe(before.users);
     expect(after.products).toBe(0);
     expect(after.routes).toBe(0);
   });
 
-  it('expanding the user select refreshes only users', async () => {
-    const wrapper = await openDialog();
-    const before = eventCounts(wrapper);
-
-    await emitVisibleChange(wrapper, '留空则使用默认负责人');
-
-    const after = eventCounts(wrapper);
-    expect(after.users).toBe(before.users + 1);
-    expect(after.sopFiles).toBe(before.sopFiles);
-    expect(after.products).toBe(0);
-    expect(after.routes).toBe(0);
-  });
-
-  it('opening the dialog refreshes only SOP files and users', async () => {
+  it('opening the dialog refreshes only SOP files', async () => {
     const wrapper = await openDialog();
     expect(wrapper.emitted('refresh-sop-files')).toHaveLength(1);
-    expect(wrapper.emitted('refresh-users')).toHaveLength(1);
     expect(wrapper.emitted('refresh-products')).toBeUndefined();
     expect(wrapper.emitted('refresh-routes')).toBeUndefined();
-  });
-
-  it('shows a responsible user removed from the candidates as expired and blocks submit', async () => {
-    // 既有步骤引用的负责人已不在候选内（候选刷新后被移除）
-    const wrapper = await openDialog({
-      stepRecord: { ...stepRecord, responsibleUserId: 'u2' },
-    });
-    const vm = wrapper.vm as unknown as { userChoices: unknown[] };
-
-    expect(vm.userChoices).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ value: 'u2', option: null, isUnavailable: true }),
-      ]),
-    );
-
-    const saveButton = wrapper.findAll('button').find((b) => b.text().trim() === '保存');
-    expect(saveButton).toBeDefined();
-    await saveButton!.trigger('click');
-    await nextTick();
-
-    expect(wrapper.emitted('save')).toBeUndefined();
-    expect(warning).toHaveBeenCalled();
   });
 });

@@ -23,7 +23,6 @@ import type {
 export interface ResolvedBatchStepOverride {
   routeStepId: string;
   actualSop: { id: string; fileName: string; objectKey: string; versionNo: string } | null;
-  responsibleUserId: string | null;
 }
 
 export abstract class ProductionRepository {

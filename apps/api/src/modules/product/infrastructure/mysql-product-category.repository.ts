@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import { withTransaction } from '@company/database';
-import type { AuditContext } from '../../../common/audit/audit.types.js';
+import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { writeTransactionalAudit } from '../../../common/audit/transactional-audit-writer.js';
 import { toBeijingISOString } from '../../../common/time/beijing-time.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
@@ -94,7 +94,7 @@ export class MysqlProductCategoryRepository implements ProductCategoryRepository
     }));
   }
 
-  async createCategory(payload: ProductCategoryPayload, audit: AuditContext) {
+  async createCategory(payload: ProductCategoryPayload, audit: CommandContext) {
     return withTransaction(this.pool, async (connection) => {
       await this.validateCategoryParent(connection, payload.parentId ?? null, payload.itemKind);
       const [result] = await connection.execute<ResultSetHeader>(
@@ -107,8 +107,8 @@ export class MysqlProductCategoryRepository implements ProductCategoryRepository
           payload.itemKind,
           payload.status,
           payload.remark ?? null,
-          audit.userId,
-          audit.userId,
+          audit.actorId,
+          audit.actorId,
         ],
       );
       await this.audit(
@@ -125,7 +125,7 @@ export class MysqlProductCategoryRepository implements ProductCategoryRepository
     );
   }
 
-  async updateCategory(id: string, payload: ProductCategoryPayload, audit: AuditContext) {
+  async updateCategory(id: string, payload: ProductCategoryPayload, audit: CommandContext) {
     await withTransaction(this.pool, async (connection) => {
       const before = await this.categoryRecord(connection, id);
       if (payload.parentId === id)
@@ -162,7 +162,7 @@ export class MysqlProductCategoryRepository implements ProductCategoryRepository
           payload.itemKind,
           payload.status,
           payload.remark ?? null,
-          audit.userId,
+          audit.actorId,
           id,
         ],
       );
@@ -172,12 +172,12 @@ export class MysqlProductCategoryRepository implements ProductCategoryRepository
     );
   }
 
-  async setCategoryStatus(id: string, status: number, audit: AuditContext) {
+  async setCategoryStatus(id: string, status: number, audit: CommandContext) {
     await withTransaction(this.pool, async (connection) => {
       const before = await this.categoryRecord(connection, id);
       await connection.execute(
         'UPDATE product_categories SET status=?,updated_by=? WHERE id=? AND is_deleted=0',
-        [status, audit.userId, id],
+        [status, audit.actorId, id],
       );
       await this.audit(
         connection,
@@ -220,7 +220,7 @@ export class MysqlProductCategoryRepository implements ProductCategoryRepository
   }
   private async audit(
     db: Db,
-    audit: AuditContext,
+    audit: CommandContext,
     action: string,
     targetId: string,
     beforeData: unknown,
@@ -230,7 +230,7 @@ export class MysqlProductCategoryRepository implements ProductCategoryRepository
       logType: 'business',
       module: 'product',
       action,
-      userId: audit.userId,
+      userId: audit.actorId,
       targetId,
       targetType: 'product-master-data',
       result: 'success',

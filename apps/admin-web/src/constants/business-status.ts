@@ -10,6 +10,12 @@ import type {
   StockCheckStatus,
   StockStatus,
 } from '@company/contracts';
+import {
+  OUTBOUND_ORDER_STATUS_LABELS,
+  RETURN_ORDER_STATUS_LABELS,
+  STOCK_CHECK_RESULT_LABELS,
+  STOCK_CHECK_STATUS_LABELS,
+} from '@company/constants';
 
 export const inventorySourceTypeLabels = {
   self_made: '自产',
@@ -39,20 +45,15 @@ export const inboundOrderStatusLabels = {
   cancelled: '已取消',
 } satisfies Record<InboundOrderStatus, string>;
 
-export const outboundOrderStatusLabels = {
-  pending_picking: '待拣货',
-  picked: '已拣货',
-  partially_outbound: '部分出库',
-  completed: '已完成',
-  cancelled: '已取消',
-} satisfies Record<OutboundOrderStatus, string>;
+export const outboundOrderStatusLabels = OUTBOUND_ORDER_STATUS_LABELS satisfies Record<
+  OutboundOrderStatus,
+  string
+>;
 
-export const returnOrderStatusLabels = {
-  pending: '待处理',
-  returned: '已入库',
-  scrapped: '已报废',
-  cancelled: '已取消',
-} satisfies Record<ReturnOrderStatus, string>;
+export const returnOrderStatusLabels = RETURN_ORDER_STATUS_LABELS satisfies Record<
+  ReturnOrderStatus,
+  string
+>;
 
 export const scrapStatusLabels = {
   pending: '待确认',
@@ -67,18 +68,15 @@ export const scrapSceneLabels = {
   in_stock: '库存内报废',
 } satisfies Record<ScrapScene, string>;
 
-export const stockCheckStatusLabels = {
-  pending: '待盘点',
-  counting: '盘点中',
-  completed: '已完成',
-  cancelled: '已取消',
-} satisfies Record<StockCheckStatus, string>;
+export const stockCheckStatusLabels = STOCK_CHECK_STATUS_LABELS satisfies Record<
+  StockCheckStatus,
+  string
+>;
 
-export const stockCheckResultLabels = {
-  surplus: '盘盈',
-  shortage: '盘亏',
-  matched: '一致',
-} satisfies Record<StockCheckResult, string>;
+export const stockCheckResultLabels = STOCK_CHECK_RESULT_LABELS satisfies Record<
+  StockCheckResult,
+  string
+>;
 
 export const inventorySourceTypeLabel = (value: InventorySourceType) =>
   inventorySourceTypeLabels[value];

@@ -90,6 +90,7 @@ const openDialog = async (
         'el-button': { template: '<button><slot/></button>' },
         'el-input': true,
         'el-input-number': true,
+        'el-date-picker': true,
         'el-form': passthroughStub,
         'el-form-item': passthroughStub,
         'el-tabs': passthroughStub,
@@ -295,6 +296,8 @@ describe('TaskFormDialog', () => {
           routeId: string | null;
           ownerId: string | null;
           plannedQuantity: string | number;
+          planStartDate: string;
+          planEndDate: string;
           remark: string | null;
         }) => void;
       }
@@ -304,6 +307,8 @@ describe('TaskFormDialog', () => {
       routeId: 'r1',
       ownerId: 'u1',
       plannedQuantity: 100,
+      planStartDate: '2026-08-01',
+      planEndDate: '2026-08-31',
       remark: null,
     });
     await flushPromises();
@@ -332,6 +337,8 @@ describe('TaskFormDialog', () => {
           routeId: string | null;
           ownerId: string | null;
           plannedQuantity: string | number;
+          planStartDate: string;
+          planEndDate: string;
           remark: string | null;
         }) => void;
       }
@@ -341,6 +348,8 @@ describe('TaskFormDialog', () => {
       routeId: 'r9',
       ownerId: 'u1',
       plannedQuantity: 50,
+      planStartDate: '2026-08-01',
+      planEndDate: '2026-08-31',
       remark: null,
     });
     await flushPromises();
@@ -364,6 +373,8 @@ describe('TaskFormDialog', () => {
           routeId: string | null;
           ownerId: string | null;
           plannedQuantity: string | number;
+          planStartDate: string;
+          planEndDate: string;
           remark: string | null;
         }) => void;
       }
@@ -373,6 +384,8 @@ describe('TaskFormDialog', () => {
       routeId: 'r1',
       ownerId: 'u9', // 不在负责人候选内
       plannedQuantity: 50,
+      planStartDate: '2026-08-01',
+      planEndDate: '2026-08-31',
       remark: null,
     });
     await flushPromises();
@@ -412,11 +425,6 @@ describe('TaskFormDialog', () => {
     const beforeSop = wrapper.emitted('refresh-sop-files')?.length ?? 0;
     await emitVisibleChange(wrapper, '留空则使用默认文件');
     expect(wrapper.emitted('refresh-sop-files')?.length).toBe(beforeSop + 1);
-
-    // 逐行实际负责人下拉只刷新用户
-    const beforeOwner = wrapper.emitted('refresh-users')?.length ?? 0;
-    await emitVisibleChange(wrapper, '留空则使用默认负责人');
-    expect(wrapper.emitted('refresh-users')?.length).toBe(beforeOwner + 1);
   });
 
   it('uses a local filterable work-order select without remote-method', async () => {
@@ -457,6 +465,12 @@ describe('TaskFormDialog', () => {
     await emitChange(wrapper, '请选择工单', 'wo1');
     await emitVisibleChange(wrapper, '请选择工单');
     await flushPromises();
+
+    const vm = wrapper.vm as unknown as {
+      form: { planStartDate: string; planEndDate: string };
+    };
+    vm.form.planStartDate = '2026-08-01';
+    vm.form.planEndDate = '2026-08-31';
 
     await emitSubmit(wrapper);
 

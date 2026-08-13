@@ -1,121 +1,72 @@
 <template>
-  <div>
-    <div class="query-panel">
+  <div class="inbound-page">
+    <section class="query-panel">
       <el-form
         class="query-form"
         :inline="true"
         :model="query"
-      >
-        <el-form-item label="关键字">
-          <el-input
+        ><el-form-item label="关键字"
+          ><el-input
             v-model="query.keyword"
             clearable
-            placeholder="单号或供应商"
-          />
-        </el-form-item>
-        <el-form-item label="来源">
-          <el-select
-            v-model="query.sourceType"
-            placeholder="全部"
-            clearable
-          >
-            <el-option
-              label="全部"
-              value=""
-            />
-            <el-option
-              v-for="(label, value) in inventorySourceTypeLabels"
-              :key="value"
-              :label="label"
-              :value="value"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="状态">
-          <el-select
+            placeholder="入库单号或供应商" /></el-form-item
+        ><el-form-item label="状态"
+          ><el-select
             v-model="query.status"
-            placeholder="全部"
             clearable
-          >
-            <el-option
-              label="全部"
-              value=""
-            />
-            <el-option
+            placeholder="全部状态"
+            ><el-option
               v-for="(label, value) in inboundOrderStatusLabels"
               :key="value"
               :label="label"
-              :value="value"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item class="query-actions">
-          <el-button
+              :value="value" /></el-select></el-form-item
+        ><el-form-item class="query-actions"
+          ><el-button
             type="primary"
-            :loading="loading"
+            :loading="inbounds.loading.value"
             @click="search"
             >查询</el-button
-          >
-          <el-button @click="resetQuery">重置</el-button>
-        </el-form-item>
-      </el-form>
-    </div>
-
-    <div class="table-panel">
-      <TableToolbar>
-        <template #actions>
-          <el-button
+          ><el-button @click="resetQuery">重置</el-button></el-form-item
+        ></el-form
+      >
+    </section>
+    <section class="table-panel">
+      <TableToolbar
+        ><template #actions
+          ><el-button
             type="primary"
             :icon="Plus"
             @click="openCreate"
-            >新增入库单</el-button
-          >
-        </template>
-        <template #tools>
-          <el-tooltip
-            content="刷新"
-            placement="top"
-          >
-            <el-button
-              :icon="Refresh"
-              text
-              circle
-              :loading="loading"
-              @click="loadRows"
-            />
-          </el-tooltip>
-        </template>
-      </TableToolbar>
-
+            >新增外购物料入库单</el-button
+          ></template
+        ><template #tools
+          ><el-button
+            :icon="Refresh"
+            text
+            circle
+            :loading="inbounds.loading.value"
+            @click="loadRows" /></template
+      ></TableToolbar>
       <el-table
-        v-loading="loading"
-        :data="rows"
+        v-loading="inbounds.loading.value"
+        :data="inbounds.rows.value"
         class="data-table"
+        empty-text="暂无外购物料入库单"
       >
         <el-table-column
           prop="inboundNo"
           label="入库单号"
-          width="180"
-        />
-        <el-table-column
-          label="来源"
-          width="100"
-        >
-          <template #default="{ row }">{{ inventorySourceTypeLabel(row.sourceType) }}</template>
-        </el-table-column>
-        <el-table-column
+          min-width="190"
+        /><el-table-column
           prop="provider"
-          label="供应商"
-          width="150"
-        >
-          <template #default="{ row }">{{ row.provider || '-' }}</template>
-        </el-table-column>
-        <el-table-column
+          label="供应方"
+          min-width="140"
+          ><template #default="{ row }">{{ row.provider || '-' }}</template></el-table-column
+        ><el-table-column
           label="状态"
-          width="100"
-        >
-          <template #default="{ row }">
-            <el-tag
+          width="110"
+          ><template #default="{ row }"
+            ><el-tag
               :type="
                 row.status === 'completed'
                   ? 'success'
@@ -123,551 +74,475 @@
                     ? 'info'
                     : 'warning'
               "
-              effect="light"
               >{{ inboundOrderStatusLabel(row.status) }}</el-tag
-            >
-          </template>
-        </el-table-column>
-        <el-table-column
+            ></template
+          ></el-table-column
+        ><el-table-column
+          prop="detailCount"
           label="明细数"
-          width="80"
+          width="85"
           align="center"
-        >
-          <template #default="{ row }">{{ row.detailCount }}</template>
-        </el-table-column>
-        <el-table-column
-          label="入库数量"
-          width="130"
-          align="right"
-        >
-          <template #default="{ row }">{{ formatQuantity(row.totalInboundNumber) }}</template>
-        </el-table-column>
-        <el-table-column
-          label="入库时间"
-          width="170"
-        >
-          <template #default="{ row }">{{
-            row.inboundAt ? formatTime(row.inboundAt) : '-'
-          }}</template>
-        </el-table-column>
-        <el-table-column
+        /><el-table-column
+          label="总入库数量"
+          min-width="150"
+          ><template #default="{ row }">{{ summary(row) }}</template></el-table-column
+        ><el-table-column
+          label="确认时间"
+          width="175"
+          ><template #default="{ row }">{{
+            row.inboundAt ? formatDateTimeForDisplay(row.inboundAt) : '-'
+          }}</template></el-table-column
+        ><el-table-column
           prop="remark"
           label="备注"
-          min-width="140"
+          min-width="150"
           show-overflow-tooltip
-        />
-        <el-table-column
+        /><el-table-column
           label="操作"
-          width="240"
+          width="220"
           fixed="right"
-        >
-          <template #default="{ row }">
-            <el-button
+          ><template #default="{ row }"
+            ><el-button
               link
               type="primary"
-              @click="openDetail(row)"
+              @click="openDetail(row.inboundId)"
               >详情</el-button
-            >
-            <el-button
+            ><el-button
               v-if="row.status === 'pending'"
               link
               type="success"
-              @click="handleConfirm(row)"
-              >确认</el-button
-            >
-            <el-button
+              :loading="pending('confirm', row.inboundId)"
+              @click="confirmOrder(row)"
+              >确认入库</el-button
+            ><el-button
               v-if="row.status === 'pending'"
               link
               type="danger"
-              @click="handleCancel(row)"
+              :loading="pending('cancel', row.inboundId)"
+              @click="cancelOrder(row)"
               >取消</el-button
-            >
-          </template>
-        </el-table-column>
-      </el-table>
-
-      <div class="table-footer">
-        <span class="total-text">共 {{ total }} 条</span>
-        <el-select
-          v-model="pageSize"
-          class="page-size-select"
-          @change="handlePageSizeChange"
+            ></template
+          ></el-table-column
         >
-          <el-option
-            label="10条/页"
-            :value="10"
-          /><el-option
-            label="20条/页"
-            :value="20"
-          /><el-option
-            label="50条/页"
-            :value="50"
-          />
-        </el-select>
-        <el-pagination
-          v-model:current-page="currentPage"
-          :page-size="pageSize"
-          :total="total"
-          layout="prev, pager, next, jumper"
-          @current-change="loadRows"
-        />
-      </div>
-    </div>
-
+      </el-table>
+      <PaginationFooter
+        :total="inbounds.total.value"
+        :current-page="query.page ?? 1"
+        :page-size="query.pageSize ?? 20"
+        @update:page-size="pageSizeChanged"
+        @page-change="handlePageChange"
+      />
+    </section>
     <el-dialog
       v-model="createVisible"
-      title="新增入库单"
-      :width="DialogWidth.lg"
-    >
-      <el-form
-        class="dialog-form"
-        label-width="100px"
-        :model="createForm"
-      >
-        <el-row :gutter="20">
-          <el-col :span="12">
-            <el-form-item label="入库单号"
-              ><el-input
-                v-model="createForm.inboundNo"
-                placeholder="留空自动生成"
-            /></el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item
-              label="来源类型"
-              required
-            >
-              <el-select
-                v-model="createForm.sourceType"
-                placeholder="请选择"
-                style="width: 100%"
-              >
-                <el-option
-                  v-for="(label, value) in inventorySourceTypeLabels"
-                  :key="value"
-                  :label="label"
-                  :value="value"
-                />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12"
-            ><el-form-item label="供应商"><el-input v-model="createForm.provider" /></el-form-item
-          ></el-col>
-        </el-row>
-        <el-form-item label="备注"
-          ><el-input
-            v-model="createForm.remark"
-            type="textarea"
-            :rows="2"
-        /></el-form-item>
-        <el-divider>入库明细</el-divider>
-        <div
-          v-for="(d, i) in createForm.details"
-          :key="i"
-          class="detail-row"
-        >
-          <el-row
-            :gutter="8"
-            align="middle"
+      title="创建外购物料入库单"
+      :width="DialogWidth.xl"
+      :before-close="beforeCreateClose"
+      :close-on-click-modal="false"
+      ><div class="dialog-body">
+        <el-alert
+          title="保存后仅形成待确认入库单，不增加库存；确认入库前仍可取消。"
+          type="info"
+          :closable="false"
+        /><el-form
+          class="create-form"
+          label-width="90px"
+          ><el-row :gutter="16"
+            ><el-col :span="12"
+              ><el-form-item label="入库单号"
+                ><el-input
+                  v-model="form.inboundNo"
+                  placeholder="留空由系统生成" /></el-form-item></el-col
+            ><el-col :span="12"
+              ><el-form-item label="供应方"
+                ><el-input
+                  v-model="form.provider"
+                  maxlength="100" /></el-form-item></el-col></el-row
+          ><el-form-item label="备注"
+            ><el-input
+              v-model="form.remark"
+              type="textarea"
+              :rows="2"
+              maxlength="5000" /></el-form-item
+        ></el-form>
+        <div class="detail-heading">
+          <strong>入库明细</strong
+          ><el-button
+            type="primary"
+            plain
+            :icon="Plus"
+            @click="addLine"
+            >添加明细</el-button
           >
-            <el-col :span="6"
-              ><el-input
-                v-model="d.itemId"
-                placeholder="库存对象ID"
-                size="small"
-            /></el-col>
-            <el-col :span="5"
-              ><el-input
-                v-model="d.batchCode"
-                placeholder="批次号"
-                size="small"
-            /></el-col>
-            <el-col :span="5"
-              ><el-input-number
-                v-model="d.inboundNumber"
-                :min="0.0001"
-                :precision="4"
-                size="small"
-                style="width: 100%"
-            /></el-col>
-            <el-col :span="5">
-              <el-select
-                v-model="d.stockStatus"
-                placeholder="状态"
-                size="small"
-                style="width: 100%"
+        </div>
+        <el-table
+          :data="form.details"
+          class="detail-table"
+          ><el-table-column
+            label="物料"
+            min-width="230"
+            ><template #default="{ row }"
+              ><el-select
+                v-model="row.itemId"
+                filterable
+                placeholder="选择有效物料"
+                ><el-option
+                  v-for="option in materialOptions"
+                  :key="option.id"
+                  :label="`${option.itemCode} · ${option.productName}`"
+                  :value="option.id"
+              /></el-select>
+              <div
+                v-if="row.itemId && !optionById.has(row.itemId)"
+                class="invalid-text"
               >
-                <el-option
-                  v-for="(label, value) in stockStatusLabels"
-                  :key="value"
-                  :label="label"
-                  :value="value"
-                />
-              </el-select>
-            </el-col>
-            <el-col :span="2">
-              <el-button
+                已失效，请重新选择
+              </div></template
+            ></el-table-column
+          ><el-table-column
+            label="单位"
+            width="80"
+            ><template #default="{ row }">{{
+              optionById.get(row.itemId)?.unit || '-'
+            }}</template></el-table-column
+          ><el-table-column
+            label="库存批次号"
+            min-width="170"
+            ><template #default="{ row }"
+              ><el-input
+                v-model="row.batchCode"
+                maxlength="100"
+                placeholder="必填" /></template></el-table-column
+          ><el-table-column
+            label="入库数量"
+            width="170"
+            ><template #default="{ row }"
+              ><el-input-number
+                v-model="row.inboundQuantity"
+                :min="0.0001"
+                :precision="4" /></template></el-table-column
+          ><el-table-column
+            label="操作"
+            width="70"
+            ><template #default="{ $index }"
+              ><el-button
                 link
                 type="danger"
                 :icon="Delete"
-                size="small"
-                @click="removeDetail(i)"
-              />
-            </el-col>
-          </el-row>
-        </div>
-        <el-button
-          size="small"
-          @click="addDetail"
-          >+ 添加行</el-button
-        >
-      </el-form>
-      <template #footer>
-        <el-button @click="createVisible = false">取消</el-button>
-        <el-button
+                @click="removeLine($index)" /></template></el-table-column
+        ></el-table>
+        <p class="form-hint">
+          同一入库单内不可重复填写相同物料与库存批次；当前没有来料质检，确认后库存状态固定为“可用”。
+        </p>
+      </div>
+      <template #footer
+        ><el-button @click="requestCreateClose">取消</el-button
+        ><el-button
           type="primary"
-          :loading="submitting"
+          :loading="creating"
+          :disabled="!canCreate"
           @click="submitCreate"
-          >保存</el-button
-        >
-      </template>
-    </el-dialog>
-
+          >保存待确认单</el-button
+        ></template
+      ></el-dialog
+    >
     <el-dialog
       v-model="detailVisible"
-      title="入库单详情"
-      :width="DialogWidth.lg"
+      title="外购物料入库单详情"
+      :width="DialogWidth.xl"
+      :close-on-click-modal="false"
+      ><div
+        v-loading="inbounds.detailLoading.value"
+        class="dialog-body"
+      >
+        <template v-if="inbounds.detail.value"
+          ><el-alert
+            :title="detailNotice"
+            :type="
+              inbounds.detail.value.status === 'completed'
+                ? 'success'
+                : inbounds.detail.value.status === 'cancelled'
+                  ? 'info'
+                  : 'warning'
+            "
+            :closable="false"
+          /><el-descriptions
+            :column="3"
+            border
+            class="detail-summary"
+            ><el-descriptions-item label="入库单号">{{
+              inbounds.detail.value.inboundNo
+            }}</el-descriptions-item
+            ><el-descriptions-item label="状态">{{
+              inboundOrderStatusLabel(inbounds.detail.value.status)
+            }}</el-descriptions-item
+            ><el-descriptions-item label="版本">{{
+              inbounds.detail.value.version
+            }}</el-descriptions-item
+            ><el-descriptions-item label="创建人">{{
+              inbounds.detail.value.createdByName || '-'
+            }}</el-descriptions-item
+            ><el-descriptions-item label="创建时间">{{
+              formatDateTimeForDisplay(inbounds.detail.value.createdAt)
+            }}</el-descriptions-item
+            ><el-descriptions-item label="供应方">{{
+              inbounds.detail.value.provider || '-'
+            }}</el-descriptions-item
+            ><el-descriptions-item label="确认人">{{
+              inbounds.detail.value.operatorName || '-'
+            }}</el-descriptions-item
+            ><el-descriptions-item label="确认时间">{{
+              inbounds.detail.value.inboundAt
+                ? formatDateTimeForDisplay(inbounds.detail.value.inboundAt)
+                : '-'
+            }}</el-descriptions-item
+            ><el-descriptions-item label="备注">{{
+              inbounds.detail.value.remark || '-'
+            }}</el-descriptions-item></el-descriptions
+          ><el-table :data="inbounds.detail.value.details"
+            ><el-table-column
+              label="物料"
+              min-width="190"
+              ><template #default="{ row }"
+                >{{ row.itemCode }} · {{ row.itemName }}</template
+              ></el-table-column
+            ><el-table-column
+              prop="batchCode"
+              label="库存批次"
+              min-width="150"
+            /><el-table-column
+              label="数量"
+              width="140"
+              align="right"
+              ><template #default="{ row }"
+                >{{ formatQuantity(row.inboundQuantity) }} {{ row.unit }}</template
+              ></el-table-column
+            ><el-table-column
+              label="库存状态"
+              width="100"
+              ><template #default>可用</template></el-table-column
+            ><el-table-column
+              label="正库存流水"
+              width="130"
+              ><template #default="{ row }">{{
+                row.inventoryTransactionId ? `#${row.inventoryTransactionId}` : '尚未生成'
+              }}</template></el-table-column
+            ></el-table
+          ></template
+        >
+      </div></el-dialog
     >
-      <el-descriptions
-        v-if="detailRow"
-        :column="2"
-        border
-      >
-        <el-descriptions-item label="单号">{{ detailRow.inboundNo }}</el-descriptions-item>
-        <el-descriptions-item label="来源">{{
-          inventorySourceTypeLabels[detailRow.sourceType]
-        }}</el-descriptions-item>
-        <el-descriptions-item label="供应商">{{ detailRow.provider || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="状态"
-          ><el-tag :type="detailRow.status === 'completed' ? 'success' : 'info'">{{
-            inboundOrderStatusLabels[detailRow.status]
-          }}</el-tag></el-descriptions-item
-        >
-        <el-descriptions-item label="入库时间">{{
-          detailRow.inboundAt ? formatTime(detailRow.inboundAt) : '-'
-        }}</el-descriptions-item>
-        <el-descriptions-item label="备注">{{ detailRow.remark || '-' }}</el-descriptions-item>
-      </el-descriptions>
-      <el-table
-        v-if="detailDetails.length"
-        :data="detailDetails"
-        style="margin-top: 16px"
-        class="data-table"
-      >
-        <el-table-column
-          prop="itemCode"
-          label="对象编码"
-          width="140"
-        />
-        <el-table-column
-          prop="itemName"
-          label="名称"
-          width="160"
-        />
-        <el-table-column
-          prop="batchCode"
-          label="批次号"
-          width="140"
-        />
-        <el-table-column
-          prop="inboundNumber"
-          label="数量"
-          width="120"
-          align="right"
-        />
-        <el-table-column
-          label="库存状态"
-          width="100"
-        >
-          <template #default="{ row }">{{ stockStatusLabel(row.stockStatus) }}</template>
-        </el-table-column>
-      </el-table>
-    </el-dialog>
   </div>
 </template>
-
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onActivated, onMounted, reactive, ref } from 'vue';
 import { Delete, Plus, Refresh } from '@element-plus/icons-vue';
-import type { InboundOrderStatus, InventorySourceType, StockStatus } from '@company/contracts';
+import type {
+  CreatePurchaseInboundPayload,
+  ProductOption,
+  PurchaseInboundOrderItem,
+  PurchaseInboundOrderQuery,
+} from '@company/contracts';
+import { productApi } from '../../api/product';
 import TableToolbar from '../../components/TableToolbar.vue';
+import PaginationFooter from '../../components/PaginationFooter.vue';
+import { inboundOrderStatusLabel, inboundOrderStatusLabels } from '../../constants/business-status';
 import { DialogWidth } from '../../utils/dialog';
+import { formatDateTimeForDisplay } from '../../utils/date';
 import { EMessage } from '../../utils/message';
 import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
-import {
-  inboundOrderStatusLabels,
-  inboundOrderStatusLabel,
-  inventorySourceTypeLabels,
-  inventorySourceTypeLabel,
-  stockStatusLabels,
-  stockStatusLabel,
-} from '../../constants/business-status';
-
-/**
- * TODO(warehouse-api): 入库管理页面。当前使用静态演示数据。
- * 后端入库模块（inbound_order/inbound_detail/inventory_transaction）尚未迁移。
- * 待后端实现以下接口后接入：
- *   GET    /warehouse/inbound-orders          — 分页列表
- *   GET    /warehouse/inbound-orders/:id      — 详情（含明细）
- *   POST   /warehouse/inbound-orders          — 创建
- *   POST   /warehouse/inbound-orders/:id/actions/confirm — 确认入库
- *   POST   /warehouse/inbound-orders/:id/actions/cancel  — 取消
- * 参考 contracts: InboundOrderStatus, InventorySourceType, StockStatus
- * 参考 api/warehouse.ts: warehouseApi 注释定义
- */
+import { formatQuantity } from '../production/production-status';
+import { usePurchaseInbounds } from '../production/composables/usePurchaseInbounds';
 defineOptions({ name: 'InboundOrdersPage' });
-
-interface InboundOrderItem {
-  id: string;
-  inboundNo: string;
-  sourceType: InventorySourceType;
-  provider: string;
-  status: InboundOrderStatus;
-  detailCount: number;
-  totalInboundNumber: string;
-  inboundAt: string;
-  remark: string;
-}
-
-interface InboundDetailItem {
-  itemCode: string;
-  itemName: string;
-  batchCode: string;
-  inboundNumber: string;
-  stockStatus: StockStatus;
-}
-
-type CreateDetailRow = {
-  itemId: string;
-  batchCode: string;
-  inboundNumber: number;
-  stockStatus: StockStatus;
-  batchId?: string;
-};
-
-const demoRows: InboundOrderItem[] = [
-  {
-    id: '1',
-    inboundNo: 'RK-20260721-001',
-    sourceType: 'purchased',
-    provider: '供应商A',
-    status: 'completed',
-    detailCount: 3,
-    totalInboundNumber: '150.0000',
-    inboundAt: '2026-07-21T09:30:00',
-    remark: '正常采购入库',
-  },
-  {
-    id: '2',
-    inboundNo: 'RK-20260721-002',
-    sourceType: 'self_made',
-    provider: '',
-    status: 'pending',
-    detailCount: 2,
-    totalInboundNumber: '50.0000',
-    inboundAt: '',
-    remark: '生产完工入库',
-  },
-  {
-    id: '3',
-    inboundNo: 'RK-20260720-003',
-    sourceType: 'return_inbound',
-    provider: '供应商B',
-    status: 'pending',
-    detailCount: 1,
-    totalInboundNumber: '20.0000',
-    inboundAt: '',
-    remark: '质量退货',
-  },
-  {
-    id: '4',
-    inboundNo: 'RK-20260719-004',
-    sourceType: 'outsourced',
-    provider: '委外加工厂',
-    status: 'completed',
-    detailCount: 4,
-    totalInboundNumber: '200.0000',
-    inboundAt: '2026-07-19T16:00:00',
-    remark: '',
-  },
-  {
-    id: '5',
-    inboundNo: 'RK-20260718-005',
-    sourceType: 'other',
-    provider: '',
-    status: 'cancelled',
-    detailCount: 0,
-    totalInboundNumber: '0.0000',
-    inboundAt: '',
-    remark: '作废',
-  },
-];
-
-const rows = ref<InboundOrderItem[]>([...demoRows]);
-const detailRow = ref<InboundOrderItem | null>(null);
-const detailDetails = ref<InboundDetailItem[]>([]);
-const loading = ref(false);
-const submitting = ref(false);
-const total = ref(5);
-const currentPage = ref(1);
-const pageSize = ref(10);
-const createVisible = ref(false);
-const detailVisible = ref(false);
-const query = reactive({ keyword: '', sourceType: '', status: '' });
-const createForm = reactive({
-  inboundNo: '',
-  sourceType: 'purchased' as InventorySourceType,
-  provider: '',
-  remark: '',
-  details: [] as CreateDetailRow[],
+const inbounds = usePurchaseInbounds();
+const query = reactive<PurchaseInboundOrderQuery>({ page: 1, pageSize: 20 });
+const createVisible = ref(false),
+  detailVisible = ref(false),
+  creating = ref(false),
+  options = ref<ProductOption[]>([]);
+const form = reactive<CreatePurchaseInboundPayload>({
+  inboundNo: null,
+  provider: null,
+  remark: null,
+  details: [],
 });
-
-const addDetail = () =>
-  createForm.details.push({
-    itemId: '',
-    batchCode: '',
-    inboundNumber: 0,
-    stockStatus: 'available',
-  });
-const removeDetail = (i: number) => createForm.details.splice(i, 1);
-
-const loadRows = async () => {
-  loading.value = true;
-  setTimeout(() => {
-    const kw = query.keyword.trim().toLowerCase();
-    const st = query.sourceType;
-    const ss = query.status;
-    let filtered = [...demoRows];
-    if (kw)
-      filtered = filtered.filter(
-        (r) =>
-          r.inboundNo.toLowerCase().includes(kw) || (r.provider || '').toLowerCase().includes(kw),
-      );
-    if (st) filtered = filtered.filter((r) => r.sourceType === st);
-    if (ss) filtered = filtered.filter((r) => r.status === ss);
-    rows.value = filtered;
-    total.value = filtered.length;
-    loading.value = false;
-  }, 300);
+const materialOptions = computed(() => options.value.filter((x) => x.itemKind === 'material'));
+const optionById = computed(() => new Map(materialOptions.value.map((x) => [x.id, x])));
+const duplicateKeys = computed(() => {
+  const seen = new Set<string>(),
+    dupes = new Set<string>();
+  for (const x of form.details) {
+    const key = `${x.itemId}:${x.batchCode.trim()}`;
+    if (x.itemId && x.batchCode.trim()) {
+      if (seen.has(key)) dupes.add(key);
+      seen.add(key);
+    }
+  }
+  return dupes;
+});
+const canCreate = computed(
+  () =>
+    form.details.length > 0 &&
+    duplicateKeys.value.size === 0 &&
+    form.details.every(
+      (x) => optionById.value.has(x.itemId) && x.batchCode.trim() && x.inboundQuantity > 0,
+    ),
+);
+const dirty = computed(() =>
+  Boolean(form.inboundNo || form.provider || form.remark || form.details.length),
+);
+const loadRows = () => inbounds.load({ ...query, keyword: query.keyword?.trim() || undefined });
+const search = () => {
+  query.page = 1;
+  return loadRows();
 };
-const search = async () => {
-  currentPage.value = 1;
-  await loadRows();
+const resetQuery = () => {
+  query.keyword = undefined;
+  query.status = undefined;
+  query.page = 1;
+  return loadRows();
 };
-const resetQuery = async () => {
-  query.keyword = '';
-  query.sourceType = '';
-  query.status = '';
-  currentPage.value = 1;
-  await loadRows();
+const pageSizeChanged = (value: number) => {
+  query.pageSize = value;
+  query.page = 1;
+  return loadRows();
 };
-const handlePageSizeChange = async () => {
-  currentPage.value = 1;
-  await loadRows();
+const handlePageChange = (value: number) => {
+  query.page = value;
+  return loadRows();
 };
-
-const openCreate = () => {
-  createForm.inboundNo = '';
-  createForm.sourceType = 'purchased';
-  createForm.provider = '';
-  createForm.remark = '';
-  createForm.details = [];
+const openCreate = async () => {
+  resetForm();
   createVisible.value = true;
+  try {
+    options.value = await productApi.productOptions();
+  } catch (e) {
+    EMessage.error(e, '物料候选加载失败');
+  }
 };
-
+const addLine = () =>
+  form.details.push({ itemId: '', batchCode: '', inboundQuantity: 0.0001, remark: null });
+const removeLine = (i: number) => form.details.splice(i, 1);
 const submitCreate = async () => {
-  if (!createForm.sourceType || createForm.details.length === 0) {
-    EMessage.warning('请选择来源并填写明细');
-    return;
-  }
-  submitting.value = true;
-  setTimeout(() => {
-    EMessage.success('入库单已创建');
+  if (!canCreate.value || creating.value) return;
+  creating.value = true;
+  try {
+    const row = await inbounds.create(form);
+    EMessage.success(`待确认入库单 ${row.inboundNo} 已创建，尚未计入库存`);
     createVisible.value = false;
-    submitting.value = false;
-    loadRows();
-  }, 500);
+    await loadRows();
+    await openDetail(row.inboundId);
+  } catch (e) {
+    EMessage.error(e, duplicateKeys.value.size ? '同一物料与库存批次不能重复' : '入库单创建失败');
+  } finally {
+    creating.value = false;
+  }
 };
-
-const openDetail = (row: InboundOrderItem) => {
-  detailRow.value = row;
-  detailDetails.value = [
-    {
-      itemCode: 'ITEM-001',
-      itemName: '物料A',
-      batchCode: 'BATCH-001',
-      inboundNumber: '80.0000',
-      stockStatus: 'available',
-    },
-    {
-      itemCode: 'ITEM-002',
-      itemName: '物料B',
-      batchCode: 'BATCH-002',
-      inboundNumber: '70.0000',
-      stockStatus: 'pending_inspection',
-    },
-  ];
+const openDetail = async (id: string) => {
   detailVisible.value = true;
-};
-
-const handleConfirm = async (row: InboundOrderItem) => {
   try {
-    await ElMessageBox.confirm('确认入库后将生成库存流水，是否继续？', '确认入库', {
-      confirmButtonText: '确认',
-      cancelButtonText: '取消',
-      type: 'warning',
-    });
-  } catch {
-    return;
+    await inbounds.loadDetail(id);
+  } catch (e) {
+    EMessage.error(e, '入库单详情加载失败');
   }
-  EMessage.success('已确认入库');
-  await loadRows();
 };
-
-const handleCancel = async (row: InboundOrderItem) => {
+const confirmOrder = async (row: PurchaseInboundOrderItem) => {
   try {
-    await ElMessageBox.confirm('确认取消该入库单？', '取消入库', {
-      confirmButtonText: '确认取消',
-      cancelButtonText: '不取消',
-      type: 'warning',
-    });
-  } catch {
-    return;
+    await ElMessageBox.confirm(
+      `本单共 ${row.detailCount} 条明细，涉及 ${new Set(row.details.map((x) => x.itemBatchId)).size} 个库存批次（${summary(row)}）。确认后立即生成可分配库存；当前没有来料质检，且已确认入库当前不能取消或修改，请先核对数据。`,
+      '确认外购物料入库',
+      { type: 'warning', confirmButtonText: '确认入库', cancelButtonText: '返回核对' },
+    );
+    await inbounds.confirm(row);
+    EMessage.success('入库已确认，正库存流水已生成');
+    await loadRows();
+  } catch (e) {
+    if (e === 'cancel' || e === 'close') return;
+    EMessage.error(e, '确认入库失败');
   }
-  EMessage.success('已取消');
-  await loadRows();
 };
-
-const formatQuantity = (v: string | number | null) => {
-  const n = Number(v ?? 0);
-  return Number.isFinite(n) ? n.toLocaleString('zh-CN', { maximumFractionDigits: 4 }) : '-';
+const cancelOrder = async (row: PurchaseInboundOrderItem) => {
+  try {
+    await ElMessageBox.confirm(
+      '取消后不会生成库存；入库单和明细仍作为历史记录保留。',
+      '取消待确认入库单',
+      { type: 'warning', confirmButtonText: '确认取消', cancelButtonText: '返回' },
+    );
+    await inbounds.cancel(row);
+    EMessage.success('待确认入库单已取消，未产生库存');
+    await loadRows();
+  } catch (e) {
+    if (e === 'cancel' || e === 'close') return;
+    EMessage.error(e, '取消入库单失败');
+  }
 };
-const formatTime = (v: string) => v.replace('T', ' ').slice(0, 19);
-
+const pending = (action: string, id: string) => inbounds.pendingKeys.value.has(`${action}:${id}`);
+const summary = (row: PurchaseInboundOrderItem) =>
+  row.quantitySummary.map((x) => `${formatQuantity(x.quantity)} ${x.unit}`).join('；');
+const detailNotice = computed(() =>
+  inbounds.detail.value?.status === 'completed'
+    ? '已确认入库，每条明细均已生成 purchase_inbound 正库存流水。'
+    : inbounds.detail.value?.status === 'cancelled'
+      ? '已取消，未产生库存；单据和明细保留。'
+      : '尚未计入库存，确认前可取消。',
+);
+const beforeCreateClose = async (done: () => void) => {
+  if (await canDiscard()) {
+    resetForm();
+    done();
+  }
+};
+const requestCreateClose = async () => {
+  if (await canDiscard()) {
+    resetForm();
+    createVisible.value = false;
+  }
+};
+const canDiscard = async () => {
+  if (inbounds.getCreateIntentStatus() !== 'idle') {
+    try {
+      await ElMessageBox.confirm(
+        '上次创建结果尚未确认，请先核对列表；放弃安全重试可能造成重复建单。',
+        '放弃幂等意图',
+        { type: 'warning' },
+      );
+      inbounds.resetCreateIntent();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  if (!dirty.value) return true;
+  try {
+    await ElMessageBox.confirm('表单内容尚未提交，是否放弃？', '放弃创建', { type: 'warning' });
+    return true;
+  } catch {
+    return false;
+  }
+};
+const resetForm = () => {
+  form.inboundNo = null;
+  form.provider = null;
+  form.remark = null;
+  form.details = [];
+};
 onMounted(loadRows);
+onActivated(loadRows);
 </script>
-
 <style scoped>
+.inbound-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
 .query-panel,
 .table-panel {
   border: 1px solid #e5e7eb;
   border-radius: 8px;
-  background: #ffffff;
+  background: #fff;
 }
 .query-panel {
-  padding: 20px 20px 8px;
-  margin-bottom: 16px;
+  padding: 20px 20px 4px;
 }
 .query-form {
   display: flex;
@@ -678,159 +553,90 @@ onMounted(loadRows);
   margin-right: 0;
   margin-bottom: 16px;
 }
-.query-form :deep(.el-form-item__label) {
-  height: 34px;
-  padding-right: 8px;
-  color: #1f2937;
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 34px;
-}
 .query-form :deep(.el-input),
 .query-form :deep(.el-select) {
-  width: 142px;
-}
-.query-form :deep(.el-input__wrapper),
-.query-form :deep(.el-select__wrapper) {
-  min-height: 34px;
-  border-radius: 6px;
-  box-shadow: 0 0 0 1px #e5e7eb inset;
+  width: 200px;
 }
 .query-actions {
   margin-left: auto;
 }
-.query-actions :deep(.el-button) {
-  min-width: 67px;
-  height: 32px;
-  border-radius: 6px;
-}
-.query-actions :deep(.el-button + .el-button) {
-  margin-left: 12px;
-}
-
 .table-panel {
   overflow: hidden;
 }
-.table-toolbar {
-  display: flex;
+.table-panel :deep(.table-toolbar) {
+  min-height: 56px;
   align-items: center;
-  justify-content: space-between;
-  height: 56px;
-  padding: 0 16px;
   border-bottom: 1px solid #e5e7eb;
 }
-.batch-actions {
-  display: flex;
-  gap: 8px;
-}
-.batch-actions :deep(.el-button) {
-  height: 34px;
-  border-radius: 6px;
-}
-.table-tools {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  color: #6b7280;
-}
-.table-tools :deep(.el-button) {
-  width: 20px;
-  height: 20px;
-  color: #6b7280;
-}
-
 .data-table {
   width: 100%;
-  color: #1f2937;
   font-size: 14px;
 }
-.data-table :deep(.el-table__header th) {
+.data-table :deep(th.el-table__cell) {
   height: 48px;
   background: #f9fafb;
   color: #1f2937;
-  font-weight: 600;
-}
-.data-table :deep(.el-table__row) {
-  height: 48px;
-}
-.data-table :deep(.el-table__row:hover) {
-  background: #f3f4f6;
-}
-.data-table :deep(.el-table__cell) {
-  border-bottom-color: #e5e7eb;
 }
 .data-table :deep(.el-tag) {
-  height: 22px;
-  padding: 0 10px;
   border: 0;
-  border-radius: 4px;
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 22px;
 }
-.data-table :deep(.el-tag--success) {
-  background: #dcfce7;
-  color: #22c55e;
-}
-.data-table :deep(.el-tag--info) {
-  background: #f3f4f6;
-  color: #6b7280;
-}
-.data-table :deep(.el-tag--warning) {
-  background: #fef3c7;
-  color: #f59e0b;
-}
-.data-table :deep(.el-tag--danger) {
-  background: #fce8e8;
-  color: #ef4444;
-}
-.data-table :deep(.el-button.is-link) {
-  padding: 0;
-  font-weight: 500;
-}
-
 .table-footer {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 12px;
-  height: 56px;
+  min-height: 56px;
   padding: 0 16px;
-}
-.total-text {
   color: #6b7280;
-  font-size: 14px;
 }
 .page-size-select {
   width: 78px;
 }
-.page-size-select :deep(.el-select__wrapper) {
-  min-height: 30px;
-  padding: 0 7px;
-  border-radius: 6px;
+.dialog-body {
+  max-height: 70vh;
+  overflow-y: auto;
 }
-.table-footer :deep(.el-pagination) {
-  gap: 4px;
+.create-form {
+  margin-top: 18px;
 }
-.table-footer :deep(.el-pager li),
-.table-footer :deep(.btn-prev),
-.table-footer :deep(.btn-next) {
-  min-width: 32px;
-  height: 32px;
-  border: 1px solid #e5e7eb;
-  border-radius: 6px;
+.create-form :deep(.el-row) {
+  margin-right: 0 !important;
+  margin-left: 0 !important;
 }
-.table-footer :deep(.el-pager li.is-active) {
-  border-color: #306188;
-  background: #306188;
-  color: #ffffff;
+.create-form :deep(.el-col:first-child) {
+  padding-left: 0 !important;
 }
-
-.dialog-form :deep(.el-select),
-.dialog-form :deep(.el-input) {
+.create-form :deep(.el-col:last-child) {
+  padding-right: 0 !important;
+}
+.detail-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 12px 0;
+}
+.detail-table :deep(.el-select),
+.detail-table :deep(.el-input-number) {
   width: 100%;
 }
-.detail-row {
-  margin-bottom: 8px;
+.form-hint {
+  color: #6b7280;
+  font-size: 12px;
+}
+.invalid-text {
+  color: #ef4444;
+  font-size: 12px;
+}
+.detail-summary {
+  margin: 16px 0;
+}
+@media (max-width: 900px) {
+  .query-form {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+  .query-actions {
+    margin-left: 0;
+  }
 }
 </style>

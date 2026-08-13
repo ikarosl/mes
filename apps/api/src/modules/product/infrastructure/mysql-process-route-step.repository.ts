@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { Pool, PoolConnection, RowDataPacket } from 'mysql2/promise';
 import { withTransaction } from '@company/database';
-import type { AuditContext } from '../../../common/audit/audit.types.js';
+import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { writeTransactionalAudit } from '../../../common/audit/transactional-audit-writer.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
 import { ProductDomainError } from '../domain/product.errors.js';
@@ -67,7 +67,11 @@ export class MysqlProcessRouteStepRepository implements ProcessRouteStepReposito
     }));
   }
 
-  async replaceRouteSteps(routeId: string, items: ProcessRouteStepPayload[], audit: AuditContext) {
+  async replaceRouteSteps(
+    routeId: string,
+    items: ProcessRouteStepPayload[],
+    audit: CommandContext,
+  ) {
     await withTransaction(this.pool, async (connection) => {
       const route = await this.routeRecord(connection, routeId, true);
       if (route.status !== 'draft')
@@ -138,7 +142,7 @@ export class MysqlProcessRouteStepRepository implements ProcessRouteStepReposito
         );
       await connection.execute(
         'UPDATE process_route_steps SET is_deleted=1,deleted_by=?,deleted_at=NOW(),updated_by=? WHERE route_id=? AND is_deleted=0',
-        [audit.userId, audit.userId, routeId],
+        [audit.actorId, audit.actorId, routeId],
       );
       for (const item of snapshots) {
         await connection.execute(
@@ -164,8 +168,8 @@ export class MysqlProcessRouteStepRepository implements ProcessRouteStepReposito
             Number(item.needRecord),
             item.status ?? 1,
             item.remark ?? null,
-            audit.userId,
-            audit.userId,
+            audit.actorId,
+            audit.actorId,
           ],
         );
         const [[routeStep]] = await connection.query<EntityRow[]>(
@@ -175,7 +179,7 @@ export class MysqlProcessRouteStepRepository implements ProcessRouteStepReposito
         for (const materialId of item.productMaterialIds ?? []) {
           await connection.execute(
             'INSERT INTO route_step_materials (route_step_id,product_material_id,created_by) VALUES (?,?,?)',
-            [routeStep!.id, materialId, audit.userId],
+            [routeStep!.id, materialId, audit.actorId],
           );
         }
       }
@@ -224,7 +228,7 @@ export class MysqlProcessRouteStepRepository implements ProcessRouteStepReposito
   }
   private async audit(
     db: Db,
-    audit: AuditContext,
+    audit: CommandContext,
     action: string,
     targetId: string,
     beforeData: unknown,
@@ -234,7 +238,7 @@ export class MysqlProcessRouteStepRepository implements ProcessRouteStepReposito
       logType: 'business',
       module: 'product',
       action,
-      userId: audit.userId,
+      userId: audit.actorId,
       targetId,
       targetType: 'product-master-data',
       result: 'success',

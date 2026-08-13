@@ -187,18 +187,22 @@ describe('productionApi', () => {
     });
   });
 
-  it('creates a batch under a work order', async () => {
+  it('creates a batch under a work order with idempotency key and unsafe retry', async () => {
     const { productionApi } = await import('../production');
 
-    await productionApi.createOrderBatch('1', {
-      batchNo: 'BATCH-001',
-      plannedQuantity: 50,
-    });
+    await productionApi.createOrderBatch(
+      '1',
+      { batchNo: 'BATCH-001', plannedQuantity: 50 },
+      'k1-uuid',
+    );
 
     expect(request).toHaveBeenCalledWith({
       url: '/production/work-orders/1/batches',
       method: 'POST',
       data: { batchNo: 'BATCH-001', plannedQuantity: 50 },
+      headers: { 'Idempotency-Key': 'k1-uuid' },
+      retryUnsafe: true,
+      retryTimes: 2,
     });
   });
 
@@ -216,6 +220,15 @@ describe('productionApi', () => {
     expect(request).toHaveBeenCalledWith({
       url: '/production/batches',
       params: { page: 1, pageSize: 20, status: 'doing', ownerId: 'u1', keyword: 'BATCH' },
+    });
+  });
+
+  it('lists execution batch summaries without per-row detail requests', async () => {
+    const { productionApi } = await import('../production');
+    await productionApi.listExecutionBatchSummaries({ page: 2, pageSize: 20, keyword: 'PB' });
+    expect(request).toHaveBeenCalledWith({
+      url: '/production/execution-batches',
+      params: { page: 2, pageSize: 20, keyword: 'PB' },
     });
   });
 
@@ -251,13 +264,12 @@ describe('productionApi', () => {
     await productionApi.updateBatchStepExecution('1', '9', {
       version: 2,
       actualSopFileId: '7',
-      responsibleUserId: 'u3',
     });
 
     expect(request).toHaveBeenCalledWith({
       url: '/production/batches/1/step-records/9/execution',
       method: 'PATCH',
-      data: { version: 2, actualSopFileId: '7', responsibleUserId: 'u3' },
+      data: { version: 2, actualSopFileId: '7' },
     });
   });
 
@@ -271,6 +283,252 @@ describe('productionApi', () => {
       method: 'POST',
       data: { version: 0 },
     });
+  });
+
+  it('creates material allocations with the supplied idempotency key', async () => {
+    const { productionApi } = await import('../production');
+    const data = { allocations: [{ demandId: '2', itemBatchId: '3', assignedQuantity: 1 }] };
+    await productionApi.createMaterialAllocations('1', data, 'allocation-key');
+    expect(request).toHaveBeenCalledWith({
+      url: '/production/batches/1/material-allocations',
+      method: 'POST',
+      data,
+      headers: { 'Idempotency-Key': 'allocation-key' },
+      retryUnsafe: true,
+      retryTimes: 2,
+    });
+  });
+
+  it('does not send an idempotency key when releasing an allocation', async () => {
+    const { productionApi } = await import('../production');
+    await productionApi.releaseMaterialAllocation('1', '9', 2);
+    expect(request).toHaveBeenCalledWith({
+      url: '/production/batches/1/material-allocations/9/actions/release',
+      method: 'POST',
+      data: { version: 2 },
+    });
+  });
+
+  it('creates production material outbound with unsafe retry under the same key', async () => {
+    const { productionApi } = await import('../production');
+    const data = { details: [{ allocationId: '9', outboundQuantity: 2 }], remark: null };
+    await productionApi.createMaterialOutbound('1', data, 'outbound-key');
+    expect(request).toHaveBeenCalledWith({
+      url: '/production/batches/1/material-outbounds',
+      method: 'POST',
+      data,
+      headers: { 'Idempotency-Key': 'outbound-key' },
+      retryUnsafe: true,
+      retryTimes: 2,
+    });
+  });
+
+  it('uses real material outbound list, detail, candidate, confirm and cancel endpoints', async () => {
+    const { productionApi } = await import('../production');
+    await productionApi.listMaterialOutboundOrders({
+      page: 1,
+      pageSize: 20,
+      status: 'pending_picking',
+    });
+    await productionApi.getMaterialOutbound('8');
+    await productionApi.listMaterialOutboundBatchOptions();
+    await productionApi.listMaterialOutboundCandidates('3');
+    await productionApi.confirmMaterialOutbound('8', 0, 'confirm-key');
+    await productionApi.cancelMaterialOutbound('9', 1);
+    expect(request.mock.calls.slice(-6).map(([config]) => config)).toEqual([
+      {
+        url: '/production/material-outbounds',
+        params: { page: 1, pageSize: 20, status: 'pending_picking' },
+      },
+      { url: '/production/material-outbounds/8' },
+      { url: '/production/material-outbounds/batch-options', skipErrorHandling: true },
+      { url: '/production/batches/3/material-outbound-candidates' },
+      {
+        url: '/production/material-outbounds/8/actions/confirm',
+        method: 'POST',
+        data: { version: 0 },
+        headers: { 'Idempotency-Key': 'confirm-key' },
+        retryUnsafe: true,
+        retryTimes: 2,
+      },
+      {
+        url: '/production/material-outbounds/9/actions/cancel',
+        method: 'POST',
+        data: { version: 1 },
+      },
+    ]);
+  });
+
+  it('uses Production-owned purchase inbound and inventory endpoints with correct idempotency', async () => {
+    const { productionApi } = await import('../production');
+    const data = {
+      inboundNo: null,
+      provider: '供应商 A',
+      remark: null,
+      details: [{ itemId: '2', batchCode: 'LOT-1', inboundQuantity: 5, remark: null }],
+    };
+    await productionApi.listPurchaseInbounds({ page: 1, pageSize: 20, status: 'pending' });
+    await productionApi.getPurchaseInbound('7');
+    await productionApi.createPurchaseInbound(data, 'create-inbound-key');
+    await productionApi.confirmPurchaseInbound('7', 0, 'confirm-inbound-key');
+    await productionApi.cancelPurchaseInbound('8', 1);
+    await productionApi.listInventoryBatches({ page: 1, pageSize: 20 });
+    await productionApi.getInventoryBatch('9');
+    expect(request.mock.calls.slice(-7).map(([config]) => config)).toEqual([
+      {
+        url: '/production/purchase-inbounds',
+        params: { page: 1, pageSize: 20, status: 'pending' },
+      },
+      { url: '/production/purchase-inbounds/7' },
+      {
+        url: '/production/purchase-inbounds',
+        method: 'POST',
+        data,
+        headers: { 'Idempotency-Key': 'create-inbound-key' },
+        retryUnsafe: true,
+        retryTimes: 2,
+      },
+      {
+        url: '/production/purchase-inbounds/7/actions/confirm',
+        method: 'POST',
+        data: { version: 0 },
+        headers: { 'Idempotency-Key': 'confirm-inbound-key' },
+        retryUnsafe: true,
+        retryTimes: 2,
+      },
+      {
+        url: '/production/purchase-inbounds/8/actions/cancel',
+        method: 'POST',
+        data: { version: 1 },
+      },
+      { url: '/production/inventory-batches', params: { page: 1, pageSize: 20 } },
+      { url: '/production/inventory-batches/9' },
+    ]);
+  });
+
+  it('uses semantic step assignment routes without idempotency headers', async () => {
+    const { productionApi } = await import('../production');
+    await productionApi.assignStep('1', '9', '7', 0);
+    await productionApi.unassignStep('1', '9', 1);
+    await productionApi.reassignStep('1', '9', '8', 2);
+    expect(request.mock.calls.slice(-3).map(([config]) => config)).toEqual([
+      {
+        url: '/production/batches/1/step-records/9/actions/assign',
+        method: 'POST',
+        data: { responsibleUserId: '7', version: 0 },
+      },
+      {
+        url: '/production/batches/1/step-records/9/actions/unassign',
+        method: 'POST',
+        data: { version: 1 },
+      },
+      {
+        url: '/production/batches/1/step-records/9/actions/reassign',
+        method: 'POST',
+        data: { responsibleUserId: '8', version: 2 },
+      },
+    ]);
+  });
+
+  it('lists current employee tasks and starts or completes a step with its version', async () => {
+    const { productionApi } = await import('../production');
+    await productionApi.listWorkerTasks();
+    await productionApi.startStep('1', '9', 3);
+    await productionApi.completeStep('1', '9', 4);
+    expect(request.mock.calls.slice(-3).map(([config]) => config)).toEqual([
+      { url: '/production/worker-tasks' },
+      {
+        url: '/production/batches/1/step-records/9/actions/start',
+        method: 'POST',
+        data: { version: 3 },
+      },
+      {
+        url: '/production/batches/1/step-records/9/actions/complete',
+        method: 'POST',
+        data: { version: 4 },
+      },
+    ]);
+  });
+
+  it('checks and completes production execution without an idempotency header or client quantity', async () => {
+    const { productionApi } = await import('../production');
+    await productionApi.getExecutionCompletionCheck('1');
+    await productionApi.completeProductionExecution('1', 4);
+    expect(request.mock.calls.slice(-2).map(([config]) => config)).toEqual([
+      { url: '/production/batches/1/execution-completion-check' },
+      {
+        url: '/production/batches/1/actions/complete-execution',
+        method: 'POST',
+        data: { version: 4 },
+      },
+    ]);
+  });
+
+  it('uses read-only Production trace endpoints without warehouse API ownership', async () => {
+    const { productionApi } = await import('../production');
+    await productionApi.searchProductionTrace({ keyword: 'IB-1', page: 1, pageSize: 20 });
+    await productionApi.getProductionTrace('7');
+    expect(request.mock.calls.slice(-2).map(([config]) => config)).toEqual([
+      {
+        url: '/production/trace',
+        params: { keyword: 'IB-1', page: 1, pageSize: 20 },
+      },
+      { url: '/production/trace/batches/7' },
+    ]);
+  });
+
+  it('uses idempotency only for report creation and correction, not reversal', async () => {
+    const { productionApi } = await import('../production');
+    const createBody = { version: 3, normalQuantity: 2, abnormalQuantity: 1, remark: null };
+    await productionApi.createStepReport('1', '9', createBody, 'report-key');
+    await productionApi.reverseStepReport('1', '9', '12', { version: 4, reason: '录入错误' });
+    const correctBody = { version: 4, normalQuantity: 2, abnormalQuantity: 0, reason: '修正' };
+    await productionApi.correctStepReport('1', '9', '12', correctBody, 'correct-key');
+    expect(request.mock.calls.slice(-3).map(([config]) => config)).toEqual([
+      {
+        url: '/production/batches/1/step-records/9/reports',
+        method: 'POST',
+        data: createBody,
+        headers: { 'Idempotency-Key': 'report-key' },
+        retryUnsafe: true,
+        retryTimes: 2,
+      },
+      {
+        url: '/production/batches/1/step-records/9/reports/12/actions/reverse',
+        method: 'POST',
+        data: { version: 4, reason: '录入错误' },
+      },
+      {
+        url: '/production/batches/1/step-records/9/reports/12/actions/correct',
+        method: 'POST',
+        data: correctBody,
+        headers: { 'Idempotency-Key': 'correct-key' },
+        retryUnsafe: true,
+        retryTimes: 2,
+      },
+    ]);
+  });
+
+  it('loads supplement candidates and submits scrap approval with idempotency', async () => {
+    const { productionApi } = await import('../production');
+    const body = {
+      version: 2,
+      details: [{ originalDemandId: '5', supplementQuantity: 1.25 }],
+      remark: '补料',
+    };
+    await productionApi.listSupplementCandidates('8');
+    await productionApi.approveScrapSupplement('8', body, 'supplement-key');
+    expect(request.mock.calls.slice(-2).map(([config]) => config)).toEqual([
+      { url: '/production/abnormal-dispositions/8/supplement-candidates' },
+      {
+        url: '/production/abnormal-dispositions/8/actions/approve-scrap-supplement',
+        method: 'POST',
+        data: body,
+        headers: { 'Idempotency-Key': 'supplement-key' },
+        retryUnsafe: true,
+        retryTimes: 2,
+      },
+    ]);
   });
 
   it('handles network errors gracefully via toRequestError', async () => {

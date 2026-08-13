@@ -17,10 +17,10 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { PERMISSIONS } from '@company/constants';
-import type { AuditContext } from '../../../../common/audit/audit.types.js';
+import type { CommandContext } from '../../../../common/audit/audit.types.js';
 import {
   AuditInApplication,
-  CurrentAuditContext,
+  CurrentCommandContext,
   RequirePermission,
 } from '../../../../common/security/auth.decorators.js';
 import { ProductService } from '../../application/product.service.js';
@@ -70,7 +70,7 @@ export class ProductController {
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024, files: 1 } }))
   uploadTechnicalFile(
     @UploadedFile() file: UploadedSop | undefined,
-    @CurrentAuditContext() audit: AuditContext,
+    @CurrentCommandContext() audit: CommandContext,
   ) {
     return this.service.uploadTechnicalFile(toTechnicalFileUpload(file), audit);
   }
@@ -94,7 +94,7 @@ export class ProductController {
   @AuditInApplication()
   deleteTechnicalFile(
     @Param() { id }: ProductIdParamDto,
-    @CurrentAuditContext() audit: AuditContext,
+    @CurrentCommandContext() audit: CommandContext,
   ) {
     return this.service.deleteTechnicalFile(id, audit);
   }
@@ -119,7 +119,7 @@ export class ProductController {
   @Post('categories')
   @RequirePermission(PERMISSIONS.product.categories.create)
   @AuditInApplication()
-  createCategory(@Body() body: ProductCategoryDto, @CurrentAuditContext() audit: AuditContext) {
+  createCategory(@Body() body: ProductCategoryDto, @CurrentCommandContext() audit: CommandContext) {
     return this.service.createCategory(body, audit);
   }
   @Patch('categories/:id')
@@ -128,7 +128,7 @@ export class ProductController {
   updateCategory(
     @Param() { id }: ProductIdParamDto,
     @Body() body: ProductCategoryDto,
-    @CurrentAuditContext() audit: AuditContext,
+    @CurrentCommandContext() audit: CommandContext,
   ) {
     return this.service.updateCategory(id, body, audit);
   }
@@ -138,7 +138,7 @@ export class ProductController {
   categoryStatus(
     @Param() { id }: ProductIdParamDto,
     @Body() body: StatusDto,
-    @CurrentAuditContext() audit: AuditContext,
+    @CurrentCommandContext() audit: CommandContext,
   ) {
     return this.service.setCategoryStatus(id, body.status, audit);
   }
@@ -162,6 +162,7 @@ export class ProductController {
     PERMISSIONS.product.routes.view,
     PERMISSIONS.production.orders.view,
     PERMISSIONS.production.tasks.view,
+    PERMISSIONS.production.inbounds.view,
   ])
   productOptions() {
     return this.service.listProductOptions();
@@ -169,7 +170,7 @@ export class ProductController {
   @Post('products')
   @RequirePermission(PERMISSIONS.product.products.create)
   @AuditInApplication()
-  createProduct(@Body() body: ProductDto, @CurrentAuditContext() audit: AuditContext) {
+  createProduct(@Body() body: ProductDto, @CurrentCommandContext() audit: CommandContext) {
     return this.service.createProduct(body, audit);
   }
   @Patch('products/:id')
@@ -178,7 +179,7 @@ export class ProductController {
   updateProduct(
     @Param() { id }: ProductIdParamDto,
     @Body() body: ProductDto,
-    @CurrentAuditContext() audit: AuditContext,
+    @CurrentCommandContext() audit: CommandContext,
   ) {
     return this.service.updateProduct(id, body, audit);
   }
@@ -188,7 +189,7 @@ export class ProductController {
   productStatus(
     @Param() { id }: ProductIdParamDto,
     @Body() body: StatusDto,
-    @CurrentAuditContext() audit: AuditContext,
+    @CurrentCommandContext() audit: CommandContext,
   ) {
     return this.service.setProductStatus(id, body.status, audit);
   }
@@ -203,7 +204,7 @@ export class ProductController {
   replaceMaterials(
     @Param() { id }: ProductIdParamDto,
     @Body() body: ReplaceProductMaterialsDto,
-    @CurrentAuditContext() audit: AuditContext,
+    @CurrentCommandContext() audit: CommandContext,
   ) {
     return this.service.replaceMaterials(id, body.items, audit);
   }
@@ -213,7 +214,7 @@ export class ProductController {
   defaultRoute(
     @Param() { id }: ProductIdParamDto,
     @Body() body: DefaultRouteDto,
-    @CurrentAuditContext() audit: AuditContext,
+    @CurrentCommandContext() audit: CommandContext,
   ) {
     return this.service.setDefaultRoute(id, body.routeId, audit);
   }
@@ -237,7 +238,7 @@ export class ProductController {
   @Post('process-steps')
   @RequirePermission(PERMISSIONS.product.processes.create)
   @AuditInApplication()
-  createProcessStep(@Body() body: ProcessStepDto, @CurrentAuditContext() audit: AuditContext) {
+  createProcessStep(@Body() body: ProcessStepDto, @CurrentCommandContext() audit: CommandContext) {
     return this.service.createProcessStep(body, audit);
   }
   @Patch('process-steps/:id')
@@ -246,7 +247,7 @@ export class ProductController {
   updateProcessStep(
     @Param() { id }: ProductIdParamDto,
     @Body() body: ProcessStepDto,
-    @CurrentAuditContext() audit: AuditContext,
+    @CurrentCommandContext() audit: CommandContext,
   ) {
     return this.service.updateProcessStep(id, body, audit);
   }
@@ -256,7 +257,7 @@ export class ProductController {
   processStepStatus(
     @Param() { id }: ProductIdParamDto,
     @Body() body: StatusDto,
-    @CurrentAuditContext() audit: AuditContext,
+    @CurrentCommandContext() audit: CommandContext,
   ) {
     return this.service.setProcessStepStatus(id, body.status, audit);
   }
@@ -267,7 +268,7 @@ export class ProductController {
   uploadSop(
     @Param() { id }: ProductIdParamDto,
     @UploadedFile() file: UploadedSop | undefined,
-    @CurrentAuditContext() audit: AuditContext,
+    @CurrentCommandContext() audit: CommandContext,
   ) {
     return this.service.uploadProcessStepSop(id, toTechnicalFileUpload(file), audit);
   }
@@ -278,7 +279,7 @@ export class ProductController {
   defaultSop(
     @Param() { id }: ProductIdParamDto,
     @Body() body: SetDefaultSopDto,
-    @CurrentAuditContext() audit: AuditContext,
+    @CurrentCommandContext() audit: CommandContext,
   ) {
     return this.service.setProcessStepDefaultSop(id, body.fileId, audit);
   }
@@ -307,7 +308,7 @@ export class ProductController {
   @Post('process-routes')
   @RequirePermission(PERMISSIONS.product.routes.create)
   @AuditInApplication()
-  createRoute(@Body() body: ProcessRouteDto, @CurrentAuditContext() audit: AuditContext) {
+  createRoute(@Body() body: ProcessRouteDto, @CurrentCommandContext() audit: CommandContext) {
     return this.service.createRoute(body, audit);
   }
   @Patch('process-routes/:id')
@@ -316,7 +317,7 @@ export class ProductController {
   updateRoute(
     @Param() { id }: ProductIdParamDto,
     @Body() body: ProcessRouteDto,
-    @CurrentAuditContext() audit: AuditContext,
+    @CurrentCommandContext() audit: CommandContext,
   ) {
     return this.service.updateRoute(id, body, audit);
   }
@@ -326,14 +327,14 @@ export class ProductController {
   routeStatus(
     @Param() { id }: ProductIdParamDto,
     @Body() body: ProcessRouteStatusDto,
-    @CurrentAuditContext() audit: AuditContext,
+    @CurrentCommandContext() audit: CommandContext,
   ) {
     return this.service.setRouteStatus(id, body.status, audit);
   }
   @Delete('process-routes/:id')
   @RequirePermission(PERMISSIONS.product.routes.delete)
   @AuditInApplication()
-  deleteRoute(@Param() { id }: ProductIdParamDto, @CurrentAuditContext() audit: AuditContext) {
+  deleteRoute(@Param() { id }: ProductIdParamDto, @CurrentCommandContext() audit: CommandContext) {
     return this.service.deleteRoute(id, audit);
   }
   @Get('process-routes/:id/steps')
@@ -347,7 +348,7 @@ export class ProductController {
   replaceRouteSteps(
     @Param() { id }: ProductIdParamDto,
     @Body() body: ReplaceProcessRouteStepsDto,
-    @CurrentAuditContext() audit: AuditContext,
+    @CurrentCommandContext() audit: CommandContext,
   ) {
     return this.service.replaceRouteSteps(id, body.items, audit);
   }

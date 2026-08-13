@@ -21,6 +21,15 @@ describe('loadAppConfig token TTLs', () => {
 
     expect(() => loadAppConfig()).toThrow('ACCESS_TOKEN_TTL_SECONDS must be a positive integer');
   });
+
+  it('defaults the refresh cookie name and reads an override', () => {
+    stubRequiredEnv();
+
+    expect(loadAppConfig().refreshCookieName).toBe('company_refresh_token');
+
+    vi.stubEnv('REFRESH_TOKEN_COOKIE_NAME', 'company_refresh_token_next');
+    expect(loadAppConfig().refreshCookieName).toBe('company_refresh_token_next');
+  });
 });
 
 describe('loadTechnicalFileStorageConfig', () => {
@@ -79,6 +88,7 @@ const stubRequiredEnv = () => {
   vi.stubEnv('JWT_SECRET', 'test-secret-with-at-least-32-characters');
   vi.stubEnv('JWT_ISSUER', 'test-issuer');
   vi.stubEnv('JWT_AUDIENCE', 'test-audience');
+  vi.stubEnv('REFRESH_TOKEN_COOKIE_NAME', '');
 };
 
 const stubS3Env = () => {

@@ -102,10 +102,52 @@ interface PageResult<T> {
 
 - 每个请求使用 `X-Request-Id` 关联响应与审计；只接受 8 到 128 位字母、数字、下划线或连字符，否则服务端生成 UUID。
 - `User-Agent` 属于不可信元数据，进入审计上下文前最多保留 512 个字符，不得让超长头部破坏核心业务事务。
-- 已完成服务端幂等闭环的确认、冲销、库存流水生成等命令统一从 `Idempotency-Key` 请求头读取，不在 body 中重复定义。具体接口必须显式声明该请求头为必填；未声明的接口不得由前端自行生成或发送幂等键。
+- 普通写命令使用 `CommandContext`，它只包含 `actorId`、`requestId`、IP、User-Agent，不包含幂等键；传递命令上下文不代表接口支持 HTTP 幂等。只有显式启用闭环的认证端点使用 `IdempotentCommandContext`，其 `actorId` 与 `idempotencyKey` 均为必填。
+- 确认、冲销、库存流水生成等命令一旦启用服务端幂等闭环，统一从 `Idempotency-Key` 请求头读取，不在 body 中重复定义。具体接口必须显式声明该请求头为必填；未声明的接口不得由前端自行生成或发送幂等键。目标服务端契约中，未启用端点收到该头必须返回 `400 IDEMPOTENCY_NOT_SUPPORTED`（含 `@Public()` 公开端点），不得静默执行并形成伪幂等信号。
 - `Idempotency-Key` 长度为 1 到 150；缺失时是否拒绝由具体命令声明，非法值统一返回 `400 VALIDATION_ERROR`。
 - 同一幂等键和同一规范化请求返回原结果；同一键对应不同请求返回 `409 IDEMPOTENCY_CONFLICT`。
+- 每个启用接口必须在契约中列出参与服务端指纹的语义 path params、query、规范化 body 和 `version`；前端意图签名必须覆盖同一组客户端输入，任一字段变化都要结束旧意图并生成新键。
 - 服务端幂等闭环至少包含键与规范化请求指纹的原子登记、执行状态及原结果持久化；在该闭环完成前，请求头只会形成伪幂等，不得启用。键的生命周期覆盖一次业务意图及其全部重试，不得在 API 包装函数的每次调用中随机生成。
+- `IdempotencyKeyGuard` 负责校验并规范化 header，幂等参数装饰器只读取 Guard 写入的请求局部值；Repository Port/Adapter 只接收 `CommandContext`，不得解析 header、接收 `IdempotentCommandContext` 或读取幂等键。
+- 文件上传、外部 HTTP、消息发送等非 MySQL 事务副作用不能仅套用当前 executor 即宣称幂等；Product 文件上传当前保持非幂等，误带该头必须在对象存储和数据库写入前拒绝。
+- 本项目由管理端在提交意图第一次正式提交时使用 `crypto.randomUUID()` 生成键；服务端不提供预领取键接口，也不以请求内容 hash 代替意图键。相同有效载荷的超时、断网、无响应和可重试 5xx 复用原键；修改有效载荷或上一次已明确成功后重新操作必须使用新键。
+- 键实际绑定“一次尚未确认结果的提交意图”，不绑定点击次数或弹窗开关；第一次正式提交才生成。服务端只能在客户端复用同一键时重放结果，不负责恢复客户端丢失的键。当前前端没有表单草稿/待提交意图持久化，浏览器硬刷新后不能自动恢复 K1；只保存 key 或 payload hash 不构成恢复闭环。
+- 第一阶段只保存并重放成功业务结果，端点使用其固定成功状态码；`X-Request-Id` 等易变响应头按当前重试请求重新生成。DTO、鉴权和请求头校验在幂等登记之前完成，失败结果不缓存。
+- `expires_at` 表示记录允许被清理而非自动失效；最短保留期内必须重放，过期但尚未物理删除时仍重放，物理删除后相同 scope/key 才按新请求处理。具体接口必须声明其最短保证窗口。
+- 首次登记保存 `initial_request_id` 以关联首次业务成功审计；原始幂等键不重复写入 `operation_logs`，成功重放也不新增业务成功审计。
+- 当前已启用闭环的端点包括 `POST /api/production/work-orders/:workOrderId/batches`（scope
+  `production.batch.create.v2`）、`POST /api/production/batches/:batchId/material-allocations`（scope
+  `production.material-allocation.create.v1`）和 `POST /api/production/batches/:batchId/material-outbounds`
+  （scope `production.material-outbound.create.v2`），以及
+  `POST /api/production/material-outbounds/:outboundId/actions/confirm`（scope
+  `production.material-outbound.confirm.v1`）、`POST /api/production/purchase-inbounds`（scope
+  `production.purchase-inbound.create.v1`）以及
+  `POST /api/production/purchase-inbounds/:inboundId/actions/confirm`（scope
+  `production.purchase-inbound.confirm.v1`）、`POST /api/production/batches/:batchId/step-records/:recordId/reports`
+  （scope `production.step-report.create.v3`）以及
+  `POST /api/production/batches/:batchId/step-records/:recordId/reports/:reportId/actions/correct`
+  （scope `production.step-report.correct.v3`）、返工整单完成
+  `POST /api/production/reworks/:reworkId/actions/complete`（scope
+  `production.rework.complete.v1`）和异常报废补料批准
+  `POST /api/production/abnormal-dispositions/:dispositionId/actions/approve-scrap-supplement`（scope
+  `production.abnormal.scrap-supplement.v1`）。取消待确认入库单使用状态与 `version` 天然幂等，禁止发送
+  `Idempotency-Key`。契约与重放语义见
+  [`concurrency-and-idempotency.md`](concurrency-and-idempotency.md) §3.3；全部写端点「需要幂等键 / 有自然
+  键兜底 / 当前做不到」的完整分类见该文 §4.1。未声明启用的端点收到该头返回
+  `400 IDEMPOTENCY_NOT_SUPPORTED`（该门禁已由全局 `IdempotencyKeyGuard` 落地）；其余接口在前端发送该头
+  前必须在其模块契约中显式标记启用。事务、指纹、存储和测试方案见
+  [`http-idempotency-implementation-plan.md`](http-idempotency-implementation-plan.md)。
+
+Production 4.2-B 的工序执行命令采用批次与工序记录双重上下文：
+
+- `POST /api/production/batches/:batchId/step-records/:recordId/actions/assign`
+- `POST /api/production/batches/:batchId/step-records/:recordId/actions/unassign`
+- `POST /api/production/batches/:batchId/step-records/:recordId/actions/reassign`
+- `POST /api/production/batches/:batchId/step-records/:recordId/actions/start`
+- `POST /api/production/batches/:batchId/step-records/:recordId/actions/complete`
+- `GET /api/production/worker-tasks`
+
+五个命令均提交当前工序 `version`，派工与改派额外提交 `responsibleUserId`；它们使用状态短路与乐观锁，禁止发送 `Idempotency-Key`。`complete` 只允许当前负责人完成已经开工的无需报工工序，必须报工工序仍由报工数量自动完成。员工任务查询、开工和无需报工工序完工分别由 `production:worker-tasks:view`、`production:steps:start`、`production:steps:complete` 保护，管理端三个派工命令由 `production:steps:assign` 保护。
 
 ## 8. 乐观锁与冲突
 

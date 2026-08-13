@@ -98,6 +98,28 @@
           :step="1"
         />
       </el-form-item>
+      <el-form-item
+        label="计划开始"
+        :required="!editingTaskId"
+      >
+        <el-date-picker
+          v-model="form.planStartDate"
+          type="date"
+          value-format="YYYY-MM-DD"
+          placeholder="请选择计划开始日期"
+        />
+      </el-form-item>
+      <el-form-item
+        label="计划结束"
+        :required="!editingTaskId"
+      >
+        <el-date-picker
+          v-model="form.planEndDate"
+          type="date"
+          value-format="YYYY-MM-DD"
+          placeholder="请选择计划结束日期"
+        />
+      </el-form-item>
       <el-form-item label="备注">
         <el-input
           v-model="form.remark"
@@ -158,28 +180,6 @@
           >
             <template #default="{ row }">{{ row.defaultOwnerName || '未配置' }}</template>
           </el-table-column>
-          <el-table-column
-            label="实际负责人"
-            min-width="180"
-          >
-            <template #default="{ row }">
-              <el-select
-                v-model="row.responsibleUserId"
-                clearable
-                filterable
-                placeholder="留空则使用默认负责人"
-                @visible-change="(v: boolean) => v && $emit('refresh-users')"
-              >
-                <el-option
-                  v-for="choice in stepOwnerChoices(row)"
-                  :key="choice.value"
-                  :label="choice.option ? choice.option.displayName : `${choice.value}（已失效）`"
-                  :value="choice.value"
-                  :disabled="choice.isUnavailable"
-                />
-              </el-select>
-            </template>
-          </el-table-column>
         </el-table>
         <div
           v-if="!createStepPreview.length"
@@ -211,15 +211,11 @@ import type {
 } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
 import { EMessage } from '../../../utils/message';
-import {
-  buildLiveOptions,
-  hasUnavailableSelection,
-  type LiveOption,
-} from '../../../utils/live-options';
+import { buildLiveOptions, hasUnavailableSelection } from '../../../utils/live-options';
 import { resolveDefaultRouteId } from '../production-route-options';
 import { useProductOptions } from '../../../composables/options/useProductOptions';
 import { useProcessRouteOptions } from '../../../composables/options/useProcessRouteOptions';
-import { useTaskRouteSteps, type TaskStepPreview } from '../composables/useTaskRouteSteps';
+import { useTaskRouteSteps } from '../composables/useTaskRouteSteps';
 import { useWorkOrderOptions } from '../composables/useWorkOrderOptions';
 
 export type TaskFormValue = {
@@ -228,11 +224,12 @@ export type TaskFormValue = {
   routeId: string;
   ownerId: string;
   plannedQuantity: number;
+  planStartDate: string;
+  planEndDate: string;
   remark: string;
   stepOverrides: Array<{
     routeStepId: string;
     actualSopFileId: string | null;
-    responsibleUserId: string | null;
   }>;
 };
 
@@ -257,6 +254,8 @@ const initialForm = (): Omit<TaskFormValue, 'stepOverrides'> => ({
   routeId: '',
   ownerId: '',
   plannedQuantity: 1,
+  planStartDate: '',
+  planEndDate: '',
   remark: '',
 });
 
@@ -343,14 +342,6 @@ const routeChoices = computed(() =>
 const ownerChoices = computed(() =>
   buildLiveOptions(props.userOptions, form.ownerId ? [form.ownerId] : [], (user) => user.id),
 );
-/** 工序预览行内实际负责人：同样合并已选值，刷新后已失效负责人回显「ID（已失效）」并禁用 */
-const stepOwnerChoices = (row: TaskStepPreview): LiveOption<UserOption>[] =>
-  buildLiveOptions(
-    props.userOptions,
-    row.responsibleUserId ? [row.responsibleUserId] : [],
-    (user) => user.id,
-  );
-
 const loadCreateStepPreview = (): void => {
   void fetchStepPreview(form.routeId, Boolean(props.editingTaskId));
 };
@@ -395,6 +386,8 @@ const handleWorkOrderChange = (workOrderId: string): void => {
   pendingRouteWorkOrderId = null;
   form.routeId = '';
   form.ownerId = '';
+  form.planStartDate = '';
+  form.planEndDate = '';
   resetStepPreview();
   if (!order) return;
   form.plannedQuantity = Number(order.remainingQuantity);
@@ -420,6 +413,8 @@ const setForm = (row: {
   routeId: string | null;
   ownerId: string | null;
   plannedQuantity: string | number;
+  planStartDate: string | null;
+  planEndDate: string | null;
   remark: string | null;
 }): void => {
   editingTaskOriginalQuantity.value = Number(row.plannedQuantity);
@@ -430,6 +425,8 @@ const setForm = (row: {
     routeId: row.routeId ?? '',
     ownerId: row.ownerId ?? '',
     plannedQuantity: Number(row.plannedQuantity),
+    planStartDate: row.planStartDate ?? '',
+    planEndDate: row.planEndDate ?? '',
     remark: row.remark ?? '',
   });
   resetStepPreview();
@@ -442,6 +439,14 @@ const handleSubmit = (): void => {
   }
   if (taskQuantityMax.value !== null && form.plannedQuantity > taskQuantityMax.value) {
     EMessage.warning('计划数量不能超过工单剩余数量');
+    return;
+  }
+  if (!props.editingTaskId && (!form.planStartDate || !form.planEndDate)) {
+    EMessage.warning('请填写计划开始和计划结束日期');
+    return;
+  }
+  if (form.planStartDate && form.planEndDate && form.planEndDate < form.planStartDate) {
+    EMessage.warning('计划结束日期不能早于计划开始日期');
     return;
   }
   // 编辑模式工单只读回显，可能不在 released 候选内（已全部分配/状态变化），跳过失效校验
@@ -470,25 +475,13 @@ const handleSubmit = (): void => {
     EMessage.warning('所选负责人已失效，请重新选择');
     return;
   }
-  // 工序执行行内实际负责人：刷新后已失效时前端拦截，不等后端拒绝
-  if (
-    createStepPreview.value.some(
-      (step) =>
-        step.responsibleUserId &&
-        hasUnavailableSelection(props.userOptions, [step.responsibleUserId], (user) => user.id),
-    )
-  ) {
-    EMessage.warning('所选工序实际负责人已失效，请重新选择');
-    return;
-  }
   emit('save', {
     ...form,
     stepOverrides: createStepPreview.value
-      .filter((step) => step.actualSopFileId || step.responsibleUserId)
+      .filter((step) => step.actualSopFileId)
       .map((step) => ({
         routeStepId: step.id,
         actualSopFileId: step.actualSopFileId,
-        responsibleUserId: step.responsibleUserId,
       })),
   });
 };
@@ -500,6 +493,7 @@ defineExpose({ setForm, resetForm });
 .dialog-form :deep(.el-input),
 .dialog-form :deep(.el-select),
 .dialog-form :deep(.el-input-number),
+.dialog-form :deep(.el-date-editor),
 .dialog-form :deep(.el-textarea) {
   width: 100%;
 }

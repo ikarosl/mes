@@ -1,0 +1,106 @@
+import type { BatchStepStatus } from '@company/contracts';
+
+const SCALE = 10_000;
+const scaled = (value: number | string): number => Math.round(Number(value) * SCALE);
+const fixed = (value: number): string => (value / SCALE).toFixed(4);
+
+export type RouteQuantityStep = {
+  id: number | string;
+  stepOrder: number;
+  needRecord: boolean;
+  status: BatchStepStatus;
+  effectiveDirectReported: number | string;
+  effectiveNormal: number | string;
+};
+
+export type RouteSupplementSource = {
+  scrapRecordId: string;
+  supplementId: string;
+  sourceStepRecordId: string;
+  sourceStepOrder: number;
+  sourceStepCode: string;
+  sourceStepName: string;
+  quantity: string;
+  status: 'pending_material' | 'activated';
+};
+
+export type RouteStepQuantity = {
+  requiredNormalQuantity: string;
+  releasedInputQuantity: string;
+  availableReportQuantity: string;
+  remainingNormalQuantity: string;
+  activatedSupplementInputQuantity: string;
+  activatedSupplementTargetQuantity: string;
+  pendingSupplementInputQuantity: string;
+  isSupplementReopened: boolean;
+  supplementBlockedReason: string | null;
+  supplementSources: RouteSupplementSource[];
+};
+
+/**
+ * Calculates the route quantity gates from immutable reports plus activated scrap supplements.
+ * The returned values are projections; callers must never persist them as a second quantity fact.
+ */
+export const calculateRouteStepQuantities = (
+  plannedQuantity: number | string,
+  steps: RouteQuantityStep[],
+  supplements: RouteSupplementSource[],
+): Map<string, RouteStepQuantity> => {
+  const planned = scaled(plannedQuantity);
+  const ordered = [...steps].sort(
+    (left, right) =>
+      left.stepOrder - right.stepOrder || String(left.id).localeCompare(String(right.id)),
+  );
+  const result = new Map<string, RouteStepQuantity>();
+
+  for (const [index, step] of ordered.entries()) {
+    const affecting = supplements.filter((source) => source.sourceStepOrder >= step.stepOrder);
+    const activated = affecting.filter((source) => source.status === 'activated');
+    const downstreamActivated = activated.filter(
+      (source) => source.sourceStepOrder > step.stepOrder,
+    );
+    const activatedInput = activated.reduce((total, source) => total + scaled(source.quantity), 0);
+    const activatedTarget = downstreamActivated.reduce(
+      (total, source) => total + scaled(source.quantity),
+      0,
+    );
+    const pendingInput = affecting
+      .filter((source) => source.status === 'pending_material')
+      .reduce((total, source) => total + scaled(source.quantity), 0);
+    const required = planned + activatedTarget;
+    const previous = ordered[index - 1];
+    const previousQuantity = previous ? result.get(String(previous.id)) : undefined;
+    const released = !previous
+      ? planned + activatedInput
+      : previous.needRecord
+        ? scaled(previous.effectiveNormal)
+        : previous.status === 'completed'
+          ? scaled(previousQuantity?.requiredNormalQuantity ?? 0)
+          : 0;
+    const directReported = scaled(step.effectiveDirectReported);
+    const effectiveNormal = scaled(step.effectiveNormal);
+    const available = Math.max(0, released - directReported);
+    const remaining = Math.max(0, required - effectiveNormal);
+    const isSupplementReopened =
+      activatedTarget > 0 && step.status === 'doing' && effectiveNormal >= planned && remaining > 0;
+    const supplementBlockedReason =
+      index > 0 && activatedInput > 0 && remaining > 0 && available === 0
+        ? '等待前道补产形成新的正常放行量'
+        : null;
+
+    result.set(String(step.id), {
+      requiredNormalQuantity: fixed(required),
+      releasedInputQuantity: fixed(released),
+      availableReportQuantity: fixed(available),
+      remainingNormalQuantity: fixed(remaining),
+      activatedSupplementInputQuantity: fixed(activatedInput),
+      activatedSupplementTargetQuantity: fixed(activatedTarget),
+      pendingSupplementInputQuantity: fixed(pendingInput),
+      isSupplementReopened,
+      supplementBlockedReason,
+      supplementSources: affecting,
+    });
+  }
+
+  return result;
+};

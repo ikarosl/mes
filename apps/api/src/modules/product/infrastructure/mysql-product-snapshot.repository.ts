@@ -8,6 +8,7 @@ import type {
   ProductBomSnapshot,
   ProductionProductSnapshot,
   EnabledSopFileSnapshot,
+  InventoryItemReference,
 } from '../application/product-snapshot.query.js';
 import { ProductSnapshotRepository } from '../application/ports/product-snapshot.repository.js';
 
@@ -17,6 +18,7 @@ type ProductRow = RowDataPacket & {
   product_name: string;
   unit: string;
   default_route_id: number | null;
+  item_kind: InventoryItemReference['itemKind'];
 };
 type Db = Pool | PoolConnection;
 type RouteRow = RowDataPacket & {
@@ -47,6 +49,37 @@ type RouteStepRow = RowDataPacket & {
 @Injectable()
 export class MysqlProductSnapshotRepository implements ProductSnapshotRepository {
   constructor(@Inject(DATABASE_POOL) private readonly pool: Pool) {}
+
+  async listInventoryItemReferencesByIds(itemIds: string[]): Promise<InventoryItemReference[]> {
+    if (itemIds.length === 0) return [];
+    const [rows] = await this.pool.query<ProductRow[]>(
+      `SELECT p.id,p.item_code,p.product_name,p.unit,c.item_kind,p.default_route_id
+         FROM products p
+         JOIN product_categories c ON c.id=p.category_id AND c.status=1 AND c.is_deleted=0
+        WHERE p.status=1 AND p.deleted_at IS NULL AND p.id IN (${itemIds.map(() => '?').join(',')})`,
+      itemIds,
+    );
+    return rows.map((row) => ({
+      id: String(row.id),
+      itemCode: row.item_code,
+      productName: row.product_name,
+      unit: row.unit,
+      itemKind: row.item_kind,
+    }));
+  }
+
+  async listRouteStepMaterialIds(routeStepId: string): Promise<string[]> {
+    const [rows] = await this.pool.query<(RowDataPacket & { product_material_id: number })[]>(
+      `SELECT rsm.product_material_id
+       FROM route_step_materials rsm
+       JOIN process_route_steps rs ON rs.id=rsm.route_step_id AND rs.status=1 AND rs.is_deleted=0
+       JOIN product_materials pm ON pm.id=rsm.product_material_id AND pm.status=1 AND pm.is_deleted=0
+       WHERE rsm.route_step_id=?
+       ORDER BY rsm.product_material_id`,
+      [routeStepId],
+    );
+    return rows.map((row) => String(row.product_material_id));
+  }
 
   async getProductionProduct(productId: string): Promise<ProductionProductSnapshot> {
     return withTransaction(this.pool, async (connection) =>

@@ -1,6 +1,6 @@
 <template>
-  <div class="table-footer">
-    <span class="total-text">共 {{ total }} 条</span>
+  <div class="pagination-footer">
+    <span class="total-text">共 {{ total }} {{ totalSuffix }}</span>
     <div class="table-footer-right">
       <el-select
         :model-value="pageSize"
@@ -40,9 +40,11 @@ withDefaults(
     currentPage: number;
     pageSize: number;
     layout?: string;
+    totalSuffix?: string;
   }>(),
   {
     layout: 'prev, pager, next, jumper',
+    totalSuffix: '条',
   },
 );
 
@@ -53,16 +55,17 @@ defineEmits<{
 </script>
 
 <style scoped>
-.table-footer {
+.pagination-footer {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
+  gap: 16px;
   height: 56px;
   padding: 0 16px;
 }
 
 .total-text {
-  color: #6b7280;
+  color: #303133;
   font-size: 14px;
 }
 
@@ -73,39 +76,55 @@ defineEmits<{
 }
 
 .page-size-select {
-  width: 86px;
+  width: 160px;
 }
 
 .page-size-select :deep(.el-select__wrapper) {
-  min-height: 30px;
-  border-radius: 6px;
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: 4px;
+  box-shadow: 0 0 0 1px #dcdfe6 inset;
 }
 
 .table-footer-right :deep(.el-pagination) {
-  gap: 6px;
+  gap: 10px;
+  color: #303133;
 }
 
 .table-footer-right :deep(.el-pager li),
 .table-footer-right :deep(.btn-prev),
 .table-footer-right :deep(.btn-next) {
-  min-width: 32px;
-  height: 32px;
-  border: 1px solid #e5e7eb;
-  border-radius: 6px;
+  min-width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 2px;
+  background: #f4f6f8;
+  color: #606266;
 }
 
 .table-footer-right :deep(.el-pager li.is-active) {
-  border-color: #306188;
-  background: #306188;
+  background: #409eff;
   color: #ffffff;
+}
+
+.table-footer-right :deep(.btn-prev:disabled),
+.table-footer-right :deep(.btn-next:disabled) {
+  background: #f5f7fa;
+  color: #c0c4cc;
 }
 
 .table-footer-right :deep(.el-pagination__jump) {
   margin-left: 12px;
-  color: #6b7280;
+  color: #303133;
 }
 
 .table-footer-right :deep(.el-pagination__editor) {
-  width: 48px;
+  width: 64px;
+}
+
+.table-footer-right :deep(.el-pagination__editor .el-input__wrapper) {
+  min-height: 40px;
+  border-radius: 4px;
+  box-shadow: 0 0 0 1px #dcdfe6 inset;
 }
 </style>

@@ -12,7 +12,7 @@ import type {
   UserOption,
 } from '@company/contracts';
 import { SYSTEM_STATUS } from '@company/constants';
-import { withTransaction } from '@company/database';
+import { withActiveConnection, withTransaction } from '@company/database';
 import type { AuditLogEntry } from '../../../common/audit/audit.types.js';
 import { writeTransactionalAudit } from '../../../common/audit/transactional-audit-writer.js';
 import { toBeijingISOString } from '../../../common/time/beijing-time.js';
@@ -148,25 +148,35 @@ export class MysqlRbacRepository implements RbacRepository {
   async listActiveUserOptionsByIds(ids: string[]): Promise<UserOption[]> {
     if (ids.length === 0) return [];
     const placeholders = ids.map(() => '?').join(',');
-    const [rows] = await this.pool.query<(RowDataPacket & { id: number; display_name: string })[]>(
-      `SELECT id,display_name FROM users
-       WHERE id IN (${placeholders}) AND status=? AND deleted_at IS NULL
-       ORDER BY display_name,id`,
-      [...ids, SYSTEM_STATUS.enabled],
-    );
-    return rows.map((row) => ({ id: String(row.id), displayName: row.display_name }));
+    // 复用调用栈既有事务连接（幂等 executor 外层事务内的业务校验），使校验与业务写入同一事务上下文。
+    return withActiveConnection(this.pool, async (queryable) => {
+      const [rows] = await queryable.query<
+        (RowDataPacket & { id: number; display_name: string })[]
+      >(
+        `SELECT id,display_name FROM users
+         WHERE id IN (${placeholders}) AND status=? AND deleted_at IS NULL
+         ORDER BY display_name,id`,
+        [...ids, SYSTEM_STATUS.enabled],
+      );
+      return rows.map((row) => ({ id: String(row.id), displayName: row.display_name }));
+    });
   }
 
   async listUserReferencesByIds(ids: string[]): Promise<UserOption[]> {
     if (ids.length === 0) return [];
     const placeholders = ids.map(() => '?').join(',');
-    const [rows] = await this.pool.query<(RowDataPacket & { id: number; display_name: string })[]>(
-      `SELECT id,display_name FROM users
-       WHERE id IN (${placeholders})
-       ORDER BY id`,
-      ids,
-    );
-    return rows.map((row) => ({ id: String(row.id), displayName: row.display_name }));
+    // 幂等结果快照富化读取同样复用事务连接，保证响应快照与业务写入同一事务上下文。
+    return withActiveConnection(this.pool, async (queryable) => {
+      const [rows] = await queryable.query<
+        (RowDataPacket & { id: number; display_name: string })[]
+      >(
+        `SELECT id,display_name FROM users
+         WHERE id IN (${placeholders})
+         ORDER BY id`,
+        ids,
+      );
+      return rows.map((row) => ({ id: String(row.id), displayName: row.display_name }));
+    });
   }
 
   async createUser(

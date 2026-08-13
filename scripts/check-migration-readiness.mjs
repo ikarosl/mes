@@ -13,6 +13,7 @@ const allowedTables = new Set([
   'role_permissions',
   'refresh_tokens',
   'operation_logs',
+  'http_idempotency_records',
   'technical_files',
   'product_categories',
   'products',
@@ -24,7 +25,24 @@ const allowedTables = new Set([
   'work_orders',
   'production_batches',
   'batch_step_records',
+  'batch_step_reports',
+  'batch_step_abnormal_dispositions',
+  'rework_records',
+  'batch_step_scrap_records',
+  'production_material_supplement',
+  'production_material_supplement_detail',
   'production_item_demand',
+  'inbound_order',
+  'inbound_detail',
+  'item_batch',
+  'inventory_transaction',
+  'production_item_allocation',
+  'outbound_order',
+  'outbound_detail',
+  'return_order',
+  'return_detail',
+  'stock_check_order',
+  'stock_check_detail',
 ]);
 const forbiddenModels = [
   'item_type',
@@ -39,6 +57,7 @@ const migrationNames = (await readdir(migrationsDir))
   .filter((file) => file.endsWith('.sql'))
   .sort();
 const migrationNameSet = new Set(migrationNames);
+const migrationPrefixes = new Map();
 
 for (const name of migrationNames) {
   if (!/^\d{12}-[a-z0-9]+(?:-[a-z0-9]+)*\.(?:up|down)\.sql$/.test(name)) {
@@ -46,6 +65,15 @@ for (const name of migrationNames) {
   }
   if (name.endsWith('.up.sql') && !migrationNameSet.has(name.replace(/\.up\.sql$/, '.down.sql'))) {
     violations.push(`${name}: matching down migration is missing`);
+  }
+  if (name.endsWith('.up.sql')) {
+    const prefix = name.slice(0, 12);
+    const existing = migrationPrefixes.get(prefix);
+    if (existing) {
+      violations.push(`${name}: migration number ${prefix} is already used by ${existing}`);
+    } else {
+      migrationPrefixes.set(prefix, name);
+    }
   }
 }
 
@@ -72,6 +100,11 @@ if (baseSha) {
 
 for (const name of migrationNames) {
   const source = await readFile(path.join(migrationsDir, name), 'utf8');
+  const temporaryTables = new Set(
+    [...source.matchAll(/\bCREATE\s+TEMPORARY\s+TABLE\s+`?([a-z_][a-z0-9_]*)`?/gi)].map((match) =>
+      match[1].toLowerCase(),
+    ),
+  );
   for (const model of forbiddenModels) {
     if (
       new RegExp(
@@ -87,6 +120,7 @@ for (const name of migrationNames) {
   );
   for (const match of touchedTables) {
     const table = match[1].toLowerCase();
+    if (temporaryTables.has(table)) continue;
     if (!allowedTables.has(table)) {
       violations.push(
         `${name}: unregistered table ${table}; register ownership and business rules first`,

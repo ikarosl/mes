@@ -3,6 +3,10 @@ import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { describe, expect, it } from 'vitest';
 import {
+  AssignProductionStepDto,
+  ApproveBatchStepReworkDto,
+  CompleteReworkDto,
+  ApproveScrapSupplementDto,
   CreateProductionBatchDto,
   CreateWorkOrderDto,
   UpdateBatchStepExecutionDto,
@@ -17,18 +21,68 @@ describe('Production batch execution DTOs', () => {
       stepOverrides: [{ routeStepId: '41', actualSopFileId: '7', responsibleUserId: '3' }],
     });
 
-    expect(await validate(dto)).toEqual([]);
+    expect(await validate(dto, { whitelist: true })).toEqual([]);
     expect(dto.stepOverrides?.[0]).toMatchObject({
       routeStepId: '41',
       actualSopFileId: '7',
-      responsibleUserId: '3',
     });
+    expect(dto.stepOverrides?.[0]).not.toHaveProperty('responsibleUserId');
   });
 
   it('requires the step-record version for an execution override', async () => {
     const dto = plainToInstance(UpdateBatchStepExecutionDto, { actualSopFileId: '7' });
 
     expect((await validate(dto)).some((error) => error.property === 'version')).toBe(true);
+  });
+
+  it('requires both a responsible employee and version for assignment', async () => {
+    const invalid = plainToInstance(AssignProductionStepDto, { responsibleUserId: '' });
+    expect((await validate(invalid)).map((error) => error.property)).toEqual(
+      expect.arrayContaining(['responsibleUserId', 'version']),
+    );
+    const valid = plainToInstance(AssignProductionStepDto, {
+      responsibleUserId: '7',
+      version: 0,
+    });
+    expect(await validate(valid)).toEqual([]);
+  });
+
+  it('validates versioned rework approval and full-quantity completion inputs', async () => {
+    expect(
+      await validate(plainToInstance(ApproveBatchStepReworkDto, { version: 0, remark: '返工' })),
+    ).toEqual([]);
+    expect(
+      await validate(
+        plainToInstance(CompleteReworkDto, {
+          version: 1,
+          normalQuantity: 1.5,
+          abnormalQuantity: 0.5,
+        }),
+      ),
+    ).toEqual([]);
+    const invalid = plainToInstance(CompleteReworkDto, {
+      version: 1,
+      normalQuantity: -1,
+      abnormalQuantity: 0,
+    });
+    expect((await validate(invalid)).some((error) => error.property === 'normalQuantity')).toBe(
+      true,
+    );
+  });
+
+  it('requires at least one positive manually-entered supplement line', async () => {
+    const valid = plainToInstance(ApproveScrapSupplementDto, {
+      version: 0,
+      details: [{ originalDemandId: '5', supplementQuantity: 1.25 }],
+    });
+    expect(await validate(valid)).toEqual([]);
+    const empty = plainToInstance(ApproveScrapSupplementDto, { version: 0, details: [] });
+    expect((await validate(empty)).some((error) => error.property === 'details')).toBe(true);
+    const invalid = plainToInstance(ApproveScrapSupplementDto, {
+      version: 0,
+      details: [{ originalDemandId: '5', supplementQuantity: 0 }],
+    });
+    expect((await validate(invalid))[0]?.children?.length).toBeGreaterThan(0);
   });
 });
 

@@ -2,6 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import { HttpExceptionFilter } from '../http-exception.filter.js';
 import { ConcurrencyError } from '../../../common/persistence/optimistic-lock.js';
+import { IdempotencyStorageError } from '../../../common/idempotency/idempotency.errors.js';
 
 const invoke = (exception: unknown, url = '/api/system/users') => {
   const json = vi.fn();
@@ -59,6 +60,36 @@ describe('HttpExceptionFilter', () => {
         status: 500,
         code: 'INTERNAL_SERVER_ERROR',
         message: '服务器内部错误，请稍后重试',
+      }),
+    );
+  });
+
+  it('maps retryable idempotency storage failures to 503 with a stable code', () => {
+    const { json, status } = invoke(
+      new IdempotencyStorageError('retryable', '幂等登记竞态，请重试'),
+    );
+
+    expect(status).toHaveBeenCalledWith(503);
+    expect(json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 503,
+        code: 'IDEMPOTENCY_STORAGE_RETRYABLE',
+        message: '幂等登记竞态，请重试',
+      }),
+    );
+  });
+
+  it('maps corrupt idempotency results to 500 with a stable code', () => {
+    const { json, status } = invoke(
+      new IdempotencyStorageError('corrupt', '已保存的幂等结果无法反序列化'),
+    );
+
+    expect(status).toHaveBeenCalledWith(500);
+    expect(json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 500,
+        code: 'IDEMPOTENCY_RESULT_CORRUPT',
+        message: '已保存的幂等结果无法反序列化',
       }),
     );
   });

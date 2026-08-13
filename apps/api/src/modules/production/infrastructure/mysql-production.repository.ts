@@ -25,6 +25,7 @@ import {
   type ResolvedBatchStepOverride,
 } from '../application/ports/production.repository.js';
 import { MysqlProductionBatchRepository } from './mysql-production-batch.repository.js';
+import { MysqlProductionMaterialRepository } from './mysql-production-material.repository.js';
 import { MysqlWorkOrderRepository } from './mysql-work-order.repository.js';
 
 /**
@@ -36,6 +37,7 @@ export class MysqlProductionRepository extends ProductionRepository {
   constructor(
     private readonly workOrders: MysqlWorkOrderRepository,
     private readonly batches: MysqlProductionBatchRepository,
+    private readonly materials: MysqlProductionMaterialRepository,
   ) {
     super();
   }
@@ -86,8 +88,18 @@ export class MysqlProductionRepository extends ProductionRepository {
   ): Promise<WorkOrderDetail> {
     return this.workOrders.transition(id, action, version, audit);
   }
-  listBatches(query: ProductionBatchQuery): Promise<PageResult<ProductionBatchItem>> {
-    return this.batches.list(query);
+  async listBatches(query: ProductionBatchQuery): Promise<PageResult<ProductionBatchItem>> {
+    const page = await this.batches.list(query);
+    const activeOutboundBatchIds = await this.materials.findBatchIdsWithActiveOutbounds(
+      page.items.map((batch) => batch.id),
+    );
+    return {
+      ...page,
+      items: page.items.map((batch) => ({
+        ...batch,
+        hasActiveMaterialOutbound: activeOutboundBatchIds.has(batch.id),
+      })),
+    };
   }
   getBatch(id: string): Promise<ProductionBatchDetail> {
     return this.batches.get(id);

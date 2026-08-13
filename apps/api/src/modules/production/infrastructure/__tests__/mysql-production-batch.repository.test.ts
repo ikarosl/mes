@@ -53,7 +53,6 @@ describe('MysqlProductionBatchRepository persistence', () => {
       [
         {
           routeStepId: '301',
-          responsibleUserId: '9',
           actualSop: {
             id: '502',
             fileName: 'actual.pdf',
@@ -80,7 +79,7 @@ describe('MysqlProductionBatchRepository persistence', () => {
       'sop/default.pdf',
       'v1',
       '7',
-      '9',
+      null,
       '502',
       'actual.pdf',
       'sop/actual.pdf',
@@ -138,7 +137,7 @@ describe('MysqlProductionBatchRepository persistence', () => {
     );
 
     const demandValues = connection.execute.mock.calls[0]?.[1] as unknown[];
-    expect(demandValues.slice(0, 11)).toEqual([
+    expect(demandValues.slice(0, 12)).toEqual([
       '21',
       '401',
       '402',
@@ -148,6 +147,7 @@ describe('MysqlProductionBatchRepository persistence', () => {
       0,
       '10.0000',
       '25.0000',
+      'normal',
       'NORMAL:21:401',
       '1',
     ]);

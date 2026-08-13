@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { migrationsDir } from '../migration-utils.js';
 
 describe('product master data migration', () => {
-  it('implements only the canonical new.md product and process tables', async () => {
+  it('implements only the canonical product and process database chapter tables', async () => {
     const sql = await readFile(
       resolve(migrationsDir, '202607230001-product-master-data.up.sql'),
       'utf8',

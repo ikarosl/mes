@@ -4,6 +4,7 @@ import {
   PROCESS_ROUTE_STATUSES,
   PRODUCT_ITEM_KINDS,
   TECHNICAL_FILE_STORAGE_PROVIDERS,
+  ALLOCATION_STATUS_LABELS,
   permissionMatches,
 } from '../index.js';
 
@@ -52,5 +53,63 @@ describe('permissionMatches', () => {
     expect(PERMISSIONS.product.routes.manageSteps).toBe('product:routes:manage-steps');
     expect(PERMISSIONS.product.files.download).toBe('product:files:download');
     expect(TECHNICAL_FILE_STORAGE_PROVIDERS).toEqual(['s3']);
+  });
+
+  it('centralizes production material permissions and labels', () => {
+    expect(PERMISSIONS.production.materials).toEqual({
+      view: 'production:materials:view',
+      allocate: 'production:materials:allocate',
+      outbound: 'production:materials:outbound',
+      confirmOutbound: 'production:materials:outbound-confirm',
+      cancelOutbound: 'production:materials:outbound-cancel',
+    });
+    expect(ALLOCATION_STATUS_LABELS.released).toBe('已释放');
+  });
+
+  it('separates worker task visibility, assignment, start, and completion permissions', () => {
+    expect(PERMISSIONS.production.workerTasks.view).toBe('production:worker-tasks:view');
+    expect(PERMISSIONS.production.steps.assign).toBe('production:steps:assign');
+    expect(PERMISSIONS.production.steps.start).toBe('production:steps:start');
+    expect(PERMISSIONS.production.steps.complete).toBe('production:steps:complete');
+    expect(PERMISSIONS.production.steps.complete).not.toBe(PERMISSIONS.production.steps.report);
+    expect(PERMISSIONS.production.steps.manageExecution).not.toBe(
+      PERMISSIONS.production.steps.assign,
+    );
+  });
+
+  it('separates abnormal review from rework execution', () => {
+    expect(PERMISSIONS.production.steps.manageAbnormal).toBe('production:steps:manage-abnormal');
+    expect(PERMISSIONS.production.rework.execute).toBe('production:rework:execute');
+  });
+
+  it('uses a dedicated read-only Production trace permission', () => {
+    expect(PERMISSIONS.production.trace.view).toBe('production:trace:view');
+    expect(PERMISSIONS.production.trace.view).not.toBe(PERMISSIONS.production.tasks.view);
+  });
+
+  it('separates purchase inbound commands from read-only inventory access', () => {
+    expect(PERMISSIONS.production.inbounds).toEqual({
+      view: 'production:inbounds:view',
+      create: 'production:inbounds:create',
+      confirm: 'production:inbounds:confirm',
+      cancel: 'production:inbounds:cancel',
+    });
+    expect(PERMISSIONS.production.inventory.view).toBe('production:inventory:view');
+  });
+
+  it('separates warehouse return and stock-check commands', () => {
+    expect(PERMISSIONS.warehouse.returns).toEqual({
+      view: 'warehouse:returns:view',
+      create: 'warehouse:returns:create',
+      confirm: 'warehouse:returns:confirm',
+      cancel: 'warehouse:returns:cancel',
+    });
+    expect(PERMISSIONS.warehouse.stockChecks).toEqual({
+      view: 'warehouse:stock-checks:view',
+      create: 'warehouse:stock-checks:create',
+      count: 'warehouse:stock-checks:count',
+      complete: 'warehouse:stock-checks:complete',
+      cancel: 'warehouse:stock-checks:cancel',
+    });
   });
 });

@@ -5,17 +5,15 @@ export interface CommandContext {
   requestId: string;
   ip: string | null;
   userAgent: string | null;
-  idempotencyKey?: string;
 }
 
-/** @deprecated Use CommandContext for all new commands. */
-export interface AuditContext {
-  userId: string | null;
-  actorId?: string | null;
-  requestId?: string;
-  ip: string | null;
-  userAgent?: string | null;
-  idempotencyKey?: string;
+/**
+ * 仅表示已经由 HTTP 幂等门禁验证过的、显式启用幂等能力的认证命令。
+ * 普通命令、application port 与 repository 只能依赖 CommandContext。
+ */
+export interface IdempotentCommandContext extends CommandContext {
+  actorId: string;
+  idempotencyKey: string;
 }
 
 export interface AuditLogEntry {

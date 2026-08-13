@@ -53,14 +53,14 @@ src/api
 
 新增数据状态前必须先归入下表，不允许先写请求再决定放置位置。
 
-| 数据类别     | 示例                                          | 唯一所有者                              | 生命周期                            |
-| ------------ | --------------------------------------------- | --------------------------------------- | ----------------------------------- |
-| 稳定枚举     | 状态码、获取方式、中文映射                    | `packages/constants` / contracts        | 随构建发布，不请求 API              |
-| 正式分页列表 | 产品、路线、工单、批次                        | 页面级 `useXxxList`                     | 查询、翻页、写成功后刷新            |
-| 页面筛选候选 | 产品筛选中的分类、任务筛选中的负责人          | 页面 composable（`useXxxOptions` 实例） | 首次进入、激活、展开时按需刷新      |
-| 弹窗字段候选 | 弹窗表单里的产品、路线、负责人、工序          | 弹窗 composable（`useXxxOptions` 实例） | 打开、激活（仍打开时）、展开刷新    |
-| ID 绑定明细  | `materials(productId)`、`routeSteps(routeId)` | 当前业务弹窗 `useXxxEditor`             | 每次切换目标重新加载，不进缓存      |
-| 编辑草稿     | 表单字段、BOM 行、路线步骤行                  | 弹窗组件或弹窗 composable               | 随路由 KeepAlive 保留，刷新不得覆盖 |
+| 数据类别     | 示例                                          | 唯一所有者                              | 生命周期                          |
+| ------------ | --------------------------------------------- | --------------------------------------- | --------------------------------- |
+| 稳定枚举     | 状态码、获取方式、中文映射                    | `packages/constants` / contracts        | 随构建发布，不请求 API            |
+| 正式分页列表 | 产品、路线、工单、批次                        | 页面级 `useXxxList`                     | 查询、翻页、写成功后刷新          |
+| 页面筛选候选 | 产品筛选中的分类、任务筛选中的负责人          | 页面 composable（`useXxxOptions` 实例） | 首次进入、激活、展开时按需刷新    |
+| 弹窗字段候选 | 弹窗表单里的产品、路线、负责人、工序          | 弹窗 composable（`useXxxOptions` 实例） | 打开、激活（仍打开时）、展开刷新  |
+| ID 绑定明细  | `materials(productId)`、`routeSteps(routeId)` | 当前业务弹窗 `useXxxEditor`             | 每次切换目标重新加载，不进缓存    |
+| 编辑草稿     | 表单字段、BOM 行、路线步骤行                  | 弹窗组件或弹窗 composable               | 随路由 KeepAlive 保留；不跨硬刷新 |
 
 候选源实例的所有权规则（T1）：
 
@@ -186,6 +186,48 @@ const finishedProducts = computed(() =>
 快速查询、翻页和改变 pageSize 可能响应乱序。列表 composable 使用请求序号确保较旧查询不能覆盖较新查询结果；
 loading 的结束只由当前最新请求负责。
 
+### 7.4 写命令的幂等意图
+
+只有接口文档明确声明 `Idempotency-Key` 必填且服务端闭环已经完成的命令，前端才建立幂等意图。当前已
+启用闭环的端点是 createBatch、物料分配创建、待出库单创建、生产领料整单确认、返工整单完成和异常报废补料批准。建批弹窗、
+`useProductionMaterials`、`useMaterialOutboundOrders` 与 `useProductionExecutionRecords` 分别经 `useIdempotentIntent` 持有键，对应 API
+包装函数仅接收并转发键且启用 unsafe 自动重试；释放分配、取消待出库单及其余未启用接口不得生成或发送该头。键状态由发起写操作的页面/弹窗 composable 局部
+持有，`src/api` 只接收并转发键，不生成键、不保存状态；不得放入跨页面 Pinia Store。键绑定“一次尚未
+确认结果的提交意图”，不绑定点击次数或弹窗 visible 状态；第一次正式提交才使用 `crypto.randomUUID()`
+（12 小时窗口 `firstAttemptAt` 从这次点击起算），相同有效载荷的超时、断网、无响应和可重试 5xx 复用原
+键，明确成功或按接口契约明确无副作用的 4xx 后结束旧意图。**结果未知的意图（模糊失败/提交在途/损坏/
+超窗口）修改业务内容时不得静默替换 K1**：首次结果是否成功不可知，自动换新键盲发会制造重复批次，必须
+提示先核对结果、由用户显式放弃后重新提交。Axios 自动重试必须沿用请求配置中的原键，interceptor 禁止
+生成 UUID；
+`IDEMPOTENCY_RESULT_CORRUPT` 是确定性失败，请求层必须跳过自动重试，立即交回 composable 阻塞意图（已由
+`isCorruptResult` 与 `useIdempotentIntent` 的 blocked 状态落地）。意图超过服务端 12 小时重放保证窗口后
+（`IDEMPOTENT_INTENT_TTL_MS` / `isIntentExpired`）不得复用旧键重试、也不得自动换新键盲发，须先核对业务
+结果后由用户显式放弃。结果未知（模糊失败/提交在途/结果损坏/超出重试窗口）时关闭创建弹窗不得静默丢弃
+K1：关闭守卫（`handleBatchFormDialogClose`/`handleTaskDialogClose`）先提示重复批次风险，用户确认才放弃，
+取消则保留弹窗与 K1，两个页面均补关闭守卫组件测试。
+
+意图签名的输入不能只取表单 body。每个启用接口必须由契约明确提供 `intentType`（本地意图名）、语义 path
+params、query、规范化 body 和 version 的字段清单，前端签名覆盖同一组客户端业务输入；签名用于区分
+「从未提交的草稿」与「已提交但结果未知的意图」：草稿态任意修改（首次提交才生成键），结果未知的意图
+修改业务内容时提交被拦截、不静默换键（见上文）。签名只用于前端生命周期判断，不作为安全指纹发送给
+后端，actorId 等服务端上下文仍由后端计算；用户会话切换时必须销毁尚未闭环的本地意图。物料分配签名覆盖
+`batchId` 与规范化后的多条分配明细；领料出库签名覆盖 `batchId`、规范化明细与备注。
+
+scope 完全由服务端控制，前端不传输、不协商（不发送 `Idempotency-Scope`、`X-Api-Version` 等头）：
+`ClientIntentSnapshot` 用本地意图名 `intentType`（如 `production.batch.create`、
+`production.material-allocation.create`，均不带版本号）区分业务
+意图，只参与签名；服务端 scope（`production.batch.create.v2`）由后端
+`create-batch-idempotency.contract.ts` 独占定义并携带契约版本（见实施方案 §13）。
+
+当前项目没有表单草稿持久化、待提交恢复日志或按幂等键查询结果的接口。局部 composable 只能在自身及
+KeepAlive 页面实例存活期间保留 K1；浏览器硬刷新会丢失表单和 K1。只把 key 或 payload hash 写入
+`sessionStorage` 不能恢复原请求。若高风险命令要覆盖硬刷新，必须另行实现完整 payload 的安全恢复日志和
+恢复 UI，或实现受鉴权的服务端结果查询；当前两者均不存在，不得在文档或测试中宣称已经支持。
+
+幂等键生命周期不能替代弹窗 `submitting` 和行级 pending。完整服务端事务、前端伪代码和启用门槛见
+[`http-idempotency-implementation-plan.md`](http-idempotency-implementation-plan.md)。除已登记的三个
+Production 命令外，前端不得向任何未启用接口发送该 header。
+
 ## 8. 错误边界
 
 | 请求类型            | 是否 best-effort | 失败后的 UI                                | 是否允许继续保存                         |
@@ -290,6 +332,8 @@ apps/admin-web/src/
 - [ ] 页面候选刷新只挂在 `onActivated`（含首帧），`onMounted` 只加载列表与关键明细。
 - [ ] 展开一个下拉不会刷新无关资源（含页面筛选下拉）。
 - [ ] ID 绑定请求具有目标身份和响应乱序守卫。
+- [ ] 写接口只有在服务端闭环和接口契约已启用后才发送幂等键；键由业务意图所有者持有，API wrapper 不生成。
+- [ ] 幂等覆盖范围区分 KeepAlive 与浏览器硬刷新；没有待提交恢复机制时不宣称刷新后可复用原键。
 - [ ] 关键明细失败不会变成可保存的空数据。
 - [ ] 候选刷新不会覆盖 KeepAlive 中的编辑草稿；失效已选值经 `live-options` 合并、可显可拦。
 - [ ] 写后只刷新目标列表，不连带刷新无关候选。

@@ -5,10 +5,12 @@
 ## 1. 使用规则
 
 - `已完成`：已经落地，仅在回归审查发现新证据时重新打开。
+- 幂等闭环相关事项的进度统一使用 `docs/http-idempotency-implementation-plan.md`「进度口径」的四级状态
+  （planned → wired → verified → released）；「已完成」只用于 released 对应的事项。
 - `立即整改`：问题和目标行为已经确认，可以进入实施计划。
 - `阶段实施`：问题已经确认，但必须跟随对应业务迁移阶段实施，不得提前扩大范围。
 - `滞后 / 待决策`：现象或冲突已经发现，但实际业务需求、状态语义或计算口径尚未确定；只记录约束和决策输入，不直接改代码或 migration。
-- 数据库业务设计仍以 `docs/new.md` 为准；本文件记录实施时机和待决策事项。若两者存在冲突，必须先完成评审并同步规范，不能由实现自行选择。
+- 数据库业务设计仍以 `docs/database/README.md` 及其列出的领域章节为准；本文件记录实施时机和待决策事项。若两者存在冲突，必须先完成评审并同步规范，不能由实现自行选择。
 - 数据库结构调整只能追加 migration，已执行 migration 不得修改。
 - 系统管理的文件及其对象存储内容不得硬删除；业务“删除”只能通过停用、归档或软删除表达，并保留历史追溯能力。
 
@@ -105,7 +107,7 @@
 - `process_steps`、`product_categories` 列表改为服务端分页（新增 `ProcessStepQuery`/`ProductCategoryQuery`，返回 `PageResult<T>`），前端 `ProcessesPage.vue`、`ProductCategoriesPage.vue` 不再全量下载后在浏览器切片；分类页父分类下拉改用独立 `/categories/options`，与分页列表解耦。
 - 表单选择统一改为独立、最小字段的 `/options` 接口：新增 `/categories/options`、`/process-steps/options`、`/process-routes/options`，与已有 `/products/options`、`/users/options` 一起由前端 `Promise.all` 并发组合；删除聚合端点 `products/form-options`、`process-routes/form-options`，消除完整列表类型（`ProductCategoryListItem`/`ProcessStepListItem`）泄漏到表单。
 - 按变化原因拆分超长基础设施文件：分类聚合拆为 `MysqlProductCategoryRepository`（新端口 `ProductCategoryRepository`），产品/BOM 聚合保留 `MysqlProductCatalogRepository`；路线生命周期保留 `MysqlProcessRouteRepository`，路线步骤（SOP 快照冻结、BOM 关联）拆为 `MysqlProcessRouteStepRepository`（新端口 `ProcessRouteStepRepository`）。`ProcessesPage.vue`/`ProductCategoriesPage.vue` 抽取 `useProcessSteps`/`useProductCategories` composable（视图与状态分离）。warehouse 演示页、System 模块等在各自迁移阶段再处理，不为压行数机械拆分。
-- 规范与门禁：`docs/api-conventions.md` §5 明确“表单选择必须使用独立 `/options`、禁止复用分页列表接口在浏览器过滤、聚合 form-options 为反模式”；`docs/coding-standards.md` §4/§5 把 500 行定义为聚合/视图内聚警示线并给出拆分原则；`eslint.config.js` 的 `max-lines` 保持 warn 作为内聚信号并补注释说明。
+- 规范与门禁：`docs/api-conventions.md` §5 明确“表单选择必须使用独立 `/options`、禁止复用分页列表接口在浏览器过滤、聚合 form-options 为反模式”；`docs/coding-standards.md` §4/§5 定义聚合/视图内聚警示线（基础设施 500 行、Vue 视图 1000 行）并给出拆分原则；`eslint.config.js` 的 `max-lines` 保持 warn 作为内聚信号并补注释说明。
 - 验证：API 与前端 typecheck、单测、lint、architecture:check、build 全部通过；`form-options` 端点与前端调用在源码中无残留，仅文档作为反模式说明保留。
 
 ### 3.5 前端行内操作提交中守卫
@@ -174,50 +176,154 @@
 
 ### 4.1 Production HTTP 幂等闭环
 
-状态：`阶段 3 实施；分配、出库和库存流水迁移时启用`
+状态：`released（代码契约启用层面，四级口径见 http-idempotency-implementation-plan.md「进度口径」：2026-08-07 pnpm verify 全绿（18/18 任务，apps/api 42 文件 / 310 用例、admin-web 43 文件 / 257 用例）且本地以 PowerShell $env:RUN_MYSQL_INTEGRATION='1'; $env:TEST_DB_NAME='easy_mes_test'; $env:DB_NAME='easy_mes_test'（Bash 等价：RUN_MYSQL_INTEGRATION=1 TEST_DB_NAME=easy_mes_test DB_NAME=easy_mes_test）全量集成套件实测通过（5 文件 / 29 用例，含 HTTP 管线与真实锁等待 1205 用例）；瞬态错误契约已覆盖完整事务边界（登记 INSERT、handler 内业务 SQL、重放 SELECT、completed UPDATE、取连接/开启事务/提交统一映射 retryable 503；rollback 失败不覆盖原始异常；handler 内其他 SDK 网络错误不误判；firstRun/replay 成功指标 commit 后记录）；集成门禁要求 TEST_DB_NAME 必填、DB_NAME 必须与 TEST_DB_NAME 完全相等且库名以 _test 结尾（本地在 easy_mes_test 上完成，CI 使用 company_mes_next_test）；契约已声明 Idempotency-Key 必填、前端已发送；CI 的 integration-mysql 作业待首次运行确认）`
 
 当前状态：
 
 - 数据层已经使用业务唯一约束和 version 乐观锁。
 - `production_item_demand` 使用 `NORMAL:{production_batch_id}:{product_material_id}` 作为内部稳定键。
-- `readIdempotencyKey`、`CommandContext.idempotencyKey` 和 `idempotencyConflict()` 为休眠代码，当前没有业务消费方。
-- 客户端不得发送伪 `Idempotency-Key`；启用时必须在具体接口契约中声明必填。
+- 平台闭环已落地：`202608050001-http-idempotency-records` migration（`UNIQUE(scope,idempotency_key)`、
+  `initial_request_id` 索引、completed 三字段联动 CHECK）、规范化请求指纹 + JSON-safe 校验、MySQL
+  `IdempotencyExecutor` 适配器与平台 module、架构门禁（`http_idempotency_records` 唯一写入口）。
+- 端点级启用元数据已落地：`@IdempotentEndpoint({ scope })` + `IdempotencyKeyGuard`（未启用端点携带键 → 400
+  `IDEMPOTENCY_NOT_SUPPORTED`，启用端点缺少/非法键 → 400 `VALIDATION_ERROR`）；`AuditInterceptor` 已把
+  `ConcurrencyError` 记录为 409/原错误码，与全局 `HttpExceptionFilter` 一致。
+- `IDEMPOTENCY_NOT_SUPPORTED` 已在 `packages/constants` 登记；端口已携带 `requestId`，结果 codec 返回
+  递归 `JsonValue` 且写入前运行时校验。
+- createBatch 试点已接线：Controller 声明 `@IdempotentEndpoint({ scope: CREATE_BATCH_IDEMPOTENCY_SCOPE })`；`ProductionService.createBatch` 经
+  `IdempotencyExecutor` 包装（scope `production.batch.create.v2`、指纹含 workOrderId + 规范化 body、重放
+  不重跑 handler 且不新增成功审计）；管理端 `useIdempotentIntent` 意图 composable 已接入两个建批调用点，
+  `createOrderBatch` 发送 `Idempotency-Key` 并启用 unsafe 重试；幂等键生成仅依赖 Web Crypto
+  （`crypto.randomUUID()`，不可用时经 `getRandomValues` 拼接 UUID v4），环境不支持时直接抛错阻止提交，
+  绝不降级 `Math.random` 等非加密随机数（弱随机键可预测/碰撞会制造重复批次风险）。
+- 试点接线深化：负责人启用等受数据库状态影响的业务校验移入首次执行的 handler，重放不
+  重复校验（避免负责人停用后同键重试返回 400）；首次执行即在 handler 内富化并保存最终响应快照（含用户
+  名），重放返回与首次成功完全一致的响应；`@company/database` 新增 `withActiveConnection`，使 executor
+  外层事务内的校验与富化只读查询复用同一事务连接，保证幂等记录、业务写入、成功审计与 handler 内读取
+  同一事务上下文。
+- 前端意图闭环细化：`useIdempotentIntent` 在 `IDEMPOTENCY_RESULT_CORRUPT` 后置
+  blocked 状态并阻止继续提交（不重试、不自动换新键，首次结果是否成功不可知）；请求层 `isCorruptResult`
+  跳过对该错误码的自动重试；工单页/任务页建批弹窗在结果未知（pending/blocked）关闭时经 `getStatus()`
+  守卫弹确认，用户确认才放弃 K1，取消则保留弹窗与键，避免静默丢弃 K1 导致重复的自动编号批次；两个
+  页面均补关闭守卫组件测试（`ProductionOrdersPage.test.ts`、`ProductionTasksPage.test.ts`）。
+- 真实数据下的 JSON-safe 缺陷已修复并由集成用例覆盖：mysql2 把 `plan_start_date` 等 DATE/DATETIME 列返回
+  Date 实例（映射器类型曾误标 string），幂等结果 codec 断言失败会使 createBatch 整体回滚；
+  `mapBatch`/`mapWorkOrder` 改经 `date()` 统一转北京 ISO 字符串，codec `encode` 改为 JSON 序列化往返固化
+  最终响应快照，与客户端收到的序列化结果一致。
+- 幂等基础设施错误已区分映射并接入失败审计：瞬态错误分类已由 executor 落地并覆盖完整事务边界（登记
+  INSERT、handler 内业务 SQL、重放 SELECT、completed UPDATE，以及取连接/开启事务/提交统一映射为
+  `IdempotencyStorageError('retryable')` → `503 IDEMPOTENCY_STORAGE_RETRYABLE`；rollback 失败 best-effort
+  记录不覆盖原始异常；handler 内其他 SDK 网络错误原样冒泡不误判；firstRun/replay 成功指标只在 commit
+  成功后记录，含真实双事务锁等待用例，随 `RUN_MYSQL_INTEGRATION=1` 套件验证）；结果损坏（已保存结果无法反序列化）→ `500
+IDEMPOTENCY_RESULT_CORRUPT`；`HttpExceptionFilter` 与 `AuditInterceptor` 统一识别。前端
+  `useIdempotentIntent` 对结果损坏阻塞当前意图并提示人工处理，不重试、不自动换新键（首次结果是否成功
+  不可知），直到用户显式放弃（关闭弹窗/重新发起）。
+- createBatch 结果 codec 升级为 Zod 完整嵌套 schema（`production-batch-result.codec.ts`）：encode/decode 都经
+  `productionBatchDetailSchema` 校验，不使用 `coerce`/`preprocess`，结构错误一律拒绝——首次结果结构错误在保存
+  前使事务回滚，重放记录损坏走 `IDEMPOTENCY_RESULT_CORRUPT`；结果结构冻结在 scope `production.batch.create.v2`，
+  形状变更必须 bump scope 并引入新 codec。
+- 到期清理与运行观测已落地：新增 `infrastructure/idempotency/idempotency-housekeeping.service.ts`（平台到期
+  清理唯一写入口，按小批次删除已到期 `completed` 记录，`expires_at` 只表示允许清理、物理删除前同键仍重放；
+  发现持久化 `processing` 记录时告警并停止自动处置）与 `idempotency.metrics.ts`（in-memory 重放/冲突/失败
+  计数，housekeeping 周期性输出重放率/冲突率/失败率摘要并重置窗口）；executor 在重放、冲突、结果损坏、
+  可重试存储失败路径分别记录指标，平台日志只携带 requestId、scope 和脱敏键摘要（`idempotency-key-digest`），
+  不再打印原始幂等键；架构门禁豁免 housekeeping 的到期清理写入。阶段 A 门槛（计划 §10 阶段 A 第 7/8 条、
+  §12 观测项）已满足。
+- 管理端当前没有表单草稿持久化、待提交恢复日志或按幂等键查询结果能力；内存 K1 只能随存活的
+  composable/KeepAlive 实例保留，浏览器硬刷新后无法恢复；createBatch 试点界面/接口文档须声明该覆盖缺口。
+- 前端闭环已加固：请求层对 `IDEMPOTENCY_RESULT_CORRUPT` 跳过自动重试（确定性失败，不得把重试次数浪费在
+  必然失败的请求上，必须立即交回 composable 阻塞意图）；`useIdempotentIntent` 暴露
+  idle/pending/blocked/expired 状态，意图超过服务端 12 小时重放保证窗口（`IDEMPOTENT_INTENT_TTL_MS`，
+  与 executor 的 `expires_at = completed_at + 12 小时` 对齐，窗口从第一次正式提交的 `firstAttemptAt` 起算）
+  后既不复用旧键重试也不自动换新键，须先核对业务结果；**结果未知的意图修改业务内容不得静默换键**（首次
+  结果是否成功不可知，自动换新键盲发会制造重复批次，提交被拦截提示先核对、显式放弃后才生成新键）；
+  两个创建弹窗在结果未知（模糊失败/提交在途/结果损坏/超出重试窗口）时关闭必须先经确认，取消
+  保留弹窗与 K1、确认才 reset，避免静默丢 K1 或按“关闭并重新发起”生成 K2 造成第二个自动编号批次。
+- 单元与契约测试通过，admin-web 类型检查与测试通过；真实 MySQL 集成套件已实测通过（进度 released）：
+  2026-08-07 本地执行（当前可复现的 PowerShell/Bash 命令见根 README；本地 WSL Docker 使用
+  宿主 `3307` 端口与 `easy_mes_test` 专用库）
+  `pnpm test:production:mysql`（先经 `scripts/assert-mysql-integration-enabled.mjs` 校验显式开关与专用
+  测试端点/库门禁——当前 `TEST_DB_HOST/PORT/NAME` 必填、`DB_HOST/PORT/NAME` 必须分别与之完全相等且库名必须以 `_test` 结尾，
+  开发/生产库名一律拒绝；构建 utils/constants/database 后通过 `db:init`
+  完成 migration、系统 seed 和管理员初始化，复验 seed 幂等性后运行
+  `tests/integration` 全套），5 文件 / 29 用例全部通过；CI（`.github/workflows/ci.yml`）已新增
+  `integration-mysql` 作业在专用测试库 `company_mes_next_test` 上执行同一套件（待首次运行确认）；集成文件均以
+  `process.env.RUN_MYSQL_INTEGRATION === '1' ? describe : describe.skip` 门禁。通用 executor 用例
+  （`http-idempotency.mysql.test.ts`）覆盖并发、回滚、重放、冲突、过期清理，并新增 housekeeping 到期清理
+  用例（已到期 completed 被物理删除、未到期保留重放、异常 processing 只告警不处置）；
+  `create-batch-closed-loop.mysql.test.ts` 定位为 **application/database 闭环**（直接构造
+  Controller/ProductionService/executor/真实仓库，未经过 HTTP 管线），证明
+  "http_idempotency_records + production_batches + operation_logs"三者同一事务：成功三表同提交、业务失败
+  三表同回滚、重放不新增写入且返回冻结快照；HTTP 管线部分由新增
+  `create-batch-http-pipeline.mysql.test.ts` 覆盖（启动 Nest 测试应用 + supertest：AuthGuard/
+  IdempotencyKeyGuard 顺序、DTO Pipe、CurrentIdempotentCommandContext、AuditInterceptor、HttpExceptionFilter 最终
+  错误信封，含 Guard 门禁缺键 400、合法键放行）。每个用例前清空 scratch 与 scope 幂等记录，绝对计数断言
+  不受跨用例/跨运行残留污染。
 
 已确认缺口：
 
-- `nextBatchNo` 自动生成批次号；请求成功但响应丢失后重试会生成新的批次号和第二个批次，数据库 UNIQUE 无法识别同一业务意图。
-- 后续状态流转仅依赖 version 时，成功响应丢失后的重试可能返回 409，而不能重放原结果。
+- `nextBatchNo` 自动生成批次号；请求成功但响应丢失后重试会生成新的批次号和第二个批次，数据库 UNIQUE 无法识别同一业务意图（已由 HTTP 幂等闭环覆盖）。
+- 后续状态流转仅依赖 version 时，成功响应丢失后的重试可能返回 409，而不能重放原结果（阶段 C 逐项评估）。
 
 实施要求：
 
-- 使用 MySQL 中与业务写入同事务的幂等记录，保存幂等键、规范化请求指纹、执行状态和原结果；当前阶段不引入 Redis。
-- 相同键和相同指纹重放原结果；相同键和不同指纹返回稳定冲突错误。
-- 自动批次创建、后续确认、分配、出库和库存流水命令按风险逐项启用。
-- 补充“提交成功但响应丢失后重试”、同键不同请求、并发相同键的真实 MySQL 集成测试。
+- 后续动作：按风险评估工单下达/取消/关闭、批次状态确认、物料分配、出库和库存流水命令，逐项满足启用门槛
+  后再扩展；`generateMaterialDemands` 先复验天然幂等再决定是否接入结果重放。
+- 完整实施顺序、事务伪代码、前端生命周期和验收门槛见
+  [`http-idempotency-implementation-plan.md`](http-idempotency-implementation-plan.md)。
 
 待复验项：
 
-- `generateMaterialDemands` 已通过 `SELECT ... FOR UPDATE` 锁定批次；两个并发事务是否仍会同时读到旧状态并触发相同 `idempotency_key` 冲突，必须通过真实 MySQL 双事务测试确认，不能仅凭静态推断认定。
+- `generateMaterialDemands` 已通过 `SELECT ... FOR UPDATE` 锁定批次，但现有真实 MySQL 用例只覆盖顺序
+  重复调用。必须补双事务测试；同时完整 application 路径会在状态短路前重新读取实时 BOM，第一次成功后
+  若 BOM 变化，响应丢失重试可能先失败。因此当前只能认定 Repository 写入路径是天然幂等候选，不能静态
+  断言整个 HTTP 端点无需结果重放。
 
 ### 4.2 Production 业务链路和追溯迁移
 
 状态：`分阶段实施`
 
-- 当前按生产工单、生产批次、工序报工、物料需求、分配和领料出库顺序迁移。
-- 未完成的报工、分配、出库和批次完工状态不是当前已上线缺陷，但未实现按钮不得表现为可用功能。
+- 当前按生产工单、生产批次、物料需求、最小分配与领料出库、工序派工与开工、工序报工的顺序迁移；报工事实表虽已先行追加，但不得据此跳过运行时前置链路。
+- 报工数据库模型已完成第一步：`202608100001-batch-step-reports` 新增不可变的分批报工事实，支持全量冲销和原单更正关系；同时迁移历史累计量并移除 `batch_step_records` 的四个累计数量列。
+- 报工 application、HTTP、管理端、权限接线以及同事务的成功审计/幂等结果已经落地；数据库事实仍保持追加式写入，不恢复旧累计覆盖接口。
+- 当前实施顺序已经收敛，必须按以下切片推进，不能因为报工事实表已经落地就绕过其物料前置链路：
+  1. **4.2-A 最小物料分配与领料出库链路**：以追加 migration 落地本链路依赖的 `item_batch`、`inventory_transaction`、`production_item_allocation`、`outbound_order` 和 `outbound_detail`；只开放可分配库存查询、生产需求分配/释放、生产领料出库及对应的 `production_material_outbound` 库存流水，不提前迁入通用入库、退料、报废、盘点或质量能力。分配必须以库存批次行锁和“账面可用量减有效预留”防止超分配；出库明细、负库存流水、成功审计和幂等结果必须同事务提交。全部正常需求完成有效分配后才允许批次进入 `material_assigned`，全部应领数量完成出库后才进入 `material_outbound`。同步完成 RBAC、HTTP、管理端操作和真实 MySQL 并发/回滚闭环测试。
+  2. **4.2-B 工序派工与开工**：管理员逐工序确认负责人后执行 `pending -> assigned`；已派工员工显式开工后执行 `assigned -> doing` 并写入工序 `started_at`。第一道工序开工只接受 `production_batches.status = material_outbound`，并在同一事务把批次转为 `doing`、写入批次 `started_at`；物料分配或出库本身不得修改工序状态。本切片还必须返工现有临时接口：createBatch 不再接受或写入逐工序 `responsibleUserId`，批次创建后的 `responsible_user_id` 必须为空；现有“执行参数更新”不能继续以只改负责人但不改状态的方式冒充派工，实际 SOP 覆盖与派工/撤回/改派应拆成语义明确的命令和权限。
+  3. **4.2-C 报工创建与管理员更正**：使用 migration 已校正的 `production:steps:report` POST 权限，稳定顺序锁定当前及相邻工序，校验 `required_normal` 和上下游数量，同事务写入普通/冲销/更正事实、异常待处置单、工序状态、成功审计和幂等结果，并补真实 MySQL 与 HTTP 闭环测试。普通报工只接受 `doing`；必报工工序在 `effective_normal == required_normal` 时自动完成。已完成工序更正后数量不足时，无下游冲突则重开为 `doing`，低于下游有效正常量则拒绝并提示先从下游冲销。
+  4. **4.2-D 批次生产执行完工**：全部必报工工序完成后，服务端在事务内重新聚合最后一道必报工工序的 `effective_normal`，将其作为 `production_batches.completed_quantity`，并写入完工状态、时间、确认人和成功审计；客户端不得填写完成数量。没有必报工工序或数量不足时拒绝。当前不实现短批完工，未来必须通过独立生产损失/短批完工命令处理差额；本切片不写 `qualified_quantity`，也不等待尚不存在的最终质检结论。
+- 工序状态规则已定稿，不再列为待决策项：`pending -> assigned -> doing -> completed`；开工前允许 `assigned -> pending` 撤回派工，合法更正导致数量不足或下游报废补产提高目标可触发 `completed -> doing`。权威数据库章节保留的管理员确认完工方案只是互斥备用方案，当前不得实现为并行入口。
+- 2026-08-11：4.2-A 与 4.2-B 已形成当前 UI/API/MySQL 闭环。`202608110002` 落地生产物料分配、出库和窄库存账本；`202608110003` 落地派工/开工权限，`202608110004` 追加员工“我的工序”页面权限，`202608130001` 补齐非必报工工序的员工显式完工权限。创建批次不再接收逐工序负责人，工序以 `pending + NULL responsible_user_id` 创建；管理端可逐工序派工、撤回和改派，员工端查看本人任务并显式开工，已开工的非必报工工序由当前负责人确认完成。必须报工工序仍只在有效正常数量达到要求时自动完成。
+- 2026-08-11：4.2-C 与 4.2-D 已形成当前 UI/API/MySQL 闭环。报工与管理员更正使用不可变普通/冲销/替代事实并聚合有效数量；异常数量只创建待处置记录，不引入异常工序状态。2026-08-12 修正后续工序数量模型：所有必报工工序的最终 `required_normal` 均为批次计划量，上一工序有效正常量只作为当前 `released_normal` 报工上限；下游 `effective_normal + effective_abnormal` 合计不得超过该上限，达到部分放行量不得提前完成。生产执行完工由服务端重新聚合全部必报工工序，以末道必报工工序的有效正常数量写入 `completed_quantity`，客户端只提交 `version`；已完工重试返回既有结果且不重复审计，不写 `qualified_quantity`，不等待质量、返工或成品入库。执行事务套件覆盖未完成拒绝、成功审计同事务、审计失败回滚和天然幂等重放。
+- 2026-08-11：当前 Production 只读生产追溯已落地独立查询投影和 `production:trace:view` 权限。支持按工单号、生产批次号、物料编码和库存批次号检索，只展示需求、分配、生产领料出库、负库存流水、工序、普通/冲销/替代报工链、有效聚合和异常待处置事实；不创建追溯事实表，不返回质量、返工、报废、退料或成品流向占位数组。
+- 2026-08-11：生产领料出库修正为独立单据闭环。创建只形成 `pending_picking` 主单与多行明细，不扣库存；整单确认后才生成负库存流水并按已确认累计推进生产批次；待确认单可取消并释放可制单占用。管理端出库单列表、详情、确认、取消和浏览器打印已接真实 Production API。
+- 2026-08-13：生产工单状态语义已在权威数据库章节定稿：取消只用于未下达草稿；下达后提前终止统一关闭且必须先处理全部未终态批次；足量完成由管理员显式汇总确认，不由批次自动回写。当前 Repository、接口和管理端仍沿用旧转换矩阵，待按新语义实现并补迁移评估、事务测试与交互闭环。
+- 2026-08-13：工序报废补产公式已按路线传播模型落地。全部补料确认出库后，补料单持久化为 `activated`，报废数量从路线首工序形成新增投入；来源工序之前各上游工序提高正常目标并按 `effective_normal` 逐道放行，来源工序不得直接增加可报量。返工完成报工不重复消耗普通投入放行量；管理端已展示目标拆分、待补料、补产重开和等待前道放行。仍需持续补充大数据量查询性能基线。
+- 2026-08-13：异常“驳回”重新定义为专用“驳回并更正”事务，必须以不可变冲销/替代事实修正有效数量，禁止物理删除或只回退处置单状态。当前接口仍是只更新 `review_status` 的旧行为，管理端在新命令落地前不应把它描述为数量已修正。
+- 2026-08-12：补齐 Production 内部窄库存账本的外购物料入库来源。`inbound_order` / `inbound_detail`
+    只支持 purchased 的 pending 创建、整单确认和待确认取消；pending 不增加库存，确认逐明细生成
+    `purchase_inbound` 正流水，取消不生成流水。管理端入库单与库存批次页已接真实 Production API，
+    生产追溯补充入库单/正流水或“期初来源”，不扩展成通用 Warehouse、质量或成品库存能力。
+- 2026-08-12：生产报工记录页增加批次级执行摘要投影，一次分页查询返回必需的工序完成数、工序总数、有效异常累计和待处置异常数；管理端据此同时展示明确数值与进度条，并按北京时间在批次身份附近提示逾期。异常优先使用红色局部边框、标签和数值，逾期使用警告色；只强化既有执行事实，不引入异常工序状态或质量结论。
+- 当前临时自检方案不创建过程检验任务，也不以 `need_inspection_snapshot` 或“无未关闭返工”阻塞下工序和生产执行完工；`effective_normal` 仅临时作为下工序放行量，不是最终质量合格量。批次最终质量确认、`qualified_quantity` 写入和返工闭环属于后续独立切片，不得混入 4.2-A/B/C。
+- 2026-08-11 数据库验证：临时 MySQL 8.4 空库完整应用至 `202608110001-production-abnormal-dispositions-and-demand-type-codes`，第二次执行无重复变更，migration status 全部为 applied；专用 `easy_mes_test` 完成 migration、系统 seed、管理员初始化和重复 seed 后，真实 MySQL 集成套件 5 文件 / 31 用例全部通过。该结果取代早于最新 migration 的 2026-08-10 空库证据。
 - 通用库存、入库、退料、报废、盘点、质量和全链路追溯后端不得提前迁入。
 - 旧项目没有可作为行为基准的完整追溯交互，不得根据页面原型臆造接口和状态。
-- 生产、库存和质量事实链路稳定后，再按 `docs/new.md` 第四章实现 `inspection_records`、`rework_records`、`finished_flow_records` 和只读追溯查询。
-- 批次完工确认必须校验必需报工工序完成、必检工序存在有效结论、没有未关闭返工。
+- 补料、报废确认、质检放行和返工语义仍未闭环。按上述 4.2-A/B/C 顺序完成生产物料与工序执行最小链路；不得提前实现 `inspection_records`、`rework_records`、`finished_flow_records`。
+- 当前批次生产执行完工与最终质量确认必须保持两个语义：前者采用临时自检口径，由最后一道必报工工序的 `effective_normal` 自动形成 `completed_quantity`，不校验尚不存在的有效检验结论或未关闭返工；后者在质量模型、返工模型和 `qualified_quantity` 写入口径定稿前不得开放。未来质量闭环不能反向篡改当前 `normal_quantity` 的自检含义。
 - 追溯记录不得成为第二库存或需求事实来源；库存数量只从 `inventory_transaction` 汇总，生产需求只从 `production_item_demand` 读取。
 
-### 4.3 `CurrentAuditContext` 类型迁移
+### 4.3 命令上下文与幂等能力分离
 
-状态：`滞后；不在当前整改范围`
+状态：`已完成（2026-08-10）`
 
-- Identity `rbac.controller.ts` 和 Product `product.controller.ts` 仍使用已弃用的 `CurrentAuditContext` / `AuditContext`。
-- 旧模块的类型系统后续统一升级；当前不因本项单独发起跨模块重构。
-- 新代码继续使用 `CommandContext`，不得扩大旧接口使用范围。
+- Identity、Product、Production 普通写命令已统一为不含幂等键的 `CommandContext`；废弃的
+  `AuditContext` / `CurrentAuditContext` 已从生产代码删除。
+- 已登记的 createBatch、物料分配创建和生产领料出库使用 `IdempotentCommandContext` 与
+  `CurrentIdempotentCommandContext`；Guard 校验并规范化 header 后写入请求局部私有属性，普通装饰器不再解析幂等键。
+- application port 与 Repository 只接收 `CommandContext`；相关 Production Service 在调用 Repository 前显式
+  去除幂等键。架构门禁禁止旧类型回流、幂等上下文泄漏、未登记 executor/前端 header 使用及重复 Guard。
+- Product 文件上传保持非幂等；HTTP 契约测试验证误带 header 在对象存储与数据库副作用前拒绝。
+- 2026-08-11 验证：`pnpm verify` 全绿（API 43 文件 / 313 用例、管理端 43 文件 / 257 用例，lint 0 error / 18 warning）；包含最新 migration 的临时 MySQL 8.4 空库双执行与状态检查通过，专用 `easy_mes_test` 的完整真实 MySQL 套件 5 文件 / 31 用例通过。
 
 ## 5. 滞后及待业务决策事项
 
@@ -228,8 +334,8 @@
 滞后原因：
 
 - 尚未确认现场是继续从文件列表选择参考文件，还是在工序/任务入口直接上传并发布新版本。
-- 尚未确定 SOP 的逻辑文档身份、版本序列、发布入口、权限和工序状态生命周期。
-- `process_steps.status` 当前只有启用/停用，不能表达“从未启用的草稿”和“历史停用”；是否升级为 `draft -> enabled -> disabled -> archived` 需要同步业务规则、前后端交互、`docs/new.md` 和追加 migration。
+- 尚未确定 SOP 的逻辑文档身份、版本序列、发布入口、权限和 `process_steps` 工序主数据生命周期；这里不指已经定稿的 `batch_step_records` 执行状态机。
+- `process_steps.status` 当前只有启用/停用，不能表达“从未启用的草稿”和“历史停用”；是否升级为 `draft -> enabled -> disabled -> archived` 需要同步业务规则、前后端交互、对应数据库领域章节和追加 migration。
 
 在完整方案确定前必须遵守的最低规则：
 
@@ -243,9 +349,9 @@
 
 实施约束：
 
-- 当前不直接实施完整 SOP 生命周期和工序状态迁移。
+- 当前不直接实施完整 SOP 生命周期和 `process_steps` 工序主数据状态迁移。
 - `DELETE /technical-files/:id` 已改为软删除（停用并标记删除，保留对象存储内容），满足“无硬删除”最低规则，可作为正式可用能力；完整发布、版本和归档生命周期仍滞后，待业务方案确认。
-- 需求确认后先同步 `docs/new.md`、Product 策略和管理端交互，再追加 migration；不得修改已有 migration。
+- 需求确认后先同步对应数据库领域章节、Product 策略和管理端交互，再追加 migration；不得修改已有 migration。
 
 ### 5.2 Production 数量计算精度
 

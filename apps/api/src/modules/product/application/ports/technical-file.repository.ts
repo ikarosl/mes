@@ -4,7 +4,7 @@ import type {
   TechnicalFileQuery,
   TechnicalFileStorageProvider,
 } from '@company/contracts';
-import type { AuditContext } from '../../../../common/audit/audit.types.js';
+import type { CommandContext } from '../../../../common/audit/audit.types.js';
 
 export interface StoredTechnicalFile {
   fileName: string;
@@ -31,11 +31,11 @@ export abstract class TechnicalFileRepository {
   abstract getTechnicalFile(id: string): Promise<TechnicalFileListItem>;
   abstract createTechnicalFile(
     file: StoredTechnicalFile,
-    audit: AuditContext,
+    audit: CommandContext,
   ): Promise<{ id: string }>;
   /**
    * 软删除：停用（status=0）并标记删除（is_deleted=1），保留数据库记录与对象存储内容，
    * 供历史路线和生产记录追溯。对象永不物理删除。
    */
-  abstract deleteTechnicalFile(id: string, audit: AuditContext): Promise<void>;
+  abstract deleteTechnicalFile(id: string, audit: CommandContext): Promise<void>;
 }

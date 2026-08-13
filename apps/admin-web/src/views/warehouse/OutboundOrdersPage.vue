@@ -1,54 +1,54 @@
 <template>
-  <div>
-    <div class="query-panel">
+  <div class="outbound-orders-page">
+    <section class="query-panel">
       <el-form
         class="query-form"
         :inline="true"
         :model="query"
+        @submit.prevent="search"
       >
         <el-form-item label="关键字">
           <el-input
             v-model="query.keyword"
+            class="keyword-input"
             clearable
-            placeholder="单号"
+            placeholder="出库单号、工单号或生产批次号"
           />
         </el-form-item>
         <el-form-item label="状态">
           <el-select
             v-model="query.status"
-            placeholder="全部"
             clearable
+            placeholder="全部状态"
           >
             <el-option
-              label="全部"
-              value=""
-            /><el-option
-              v-for="(label, value) in outboundOrderStatusLabels"
-              :key="value"
-              :label="label"
-              :value="value"
+              v-for="status in OUTBOUND_ORDER_STATUSES"
+              :key="status"
+              :label="OUTBOUND_ORDER_STATUS_LABELS[status]"
+              :value="status"
             />
           </el-select>
         </el-form-item>
         <el-form-item class="query-actions">
           <el-button
             type="primary"
-            :loading="loading"
+            :loading="orders.loading.value"
             @click="search"
             >查询</el-button
-          ><el-button @click="resetQuery">重置</el-button>
+          >
+          <el-button @click="resetQuery">重置</el-button>
         </el-form-item>
       </el-form>
-    </div>
+    </section>
 
-    <div class="table-panel">
+    <section class="table-panel">
       <TableToolbar>
         <template #actions>
           <el-button
             type="primary"
             :icon="Plus"
             @click="openCreate"
-            >新增出库单</el-button
+            >创建生产领料单</el-button
           >
         </template>
         <template #tools>
@@ -60,7 +60,7 @@
               :icon="Refresh"
               text
               circle
-              :loading="loading"
+              :loading="orders.loading.value"
               @click="loadRows"
             />
           </el-tooltip>
@@ -68,54 +68,85 @@
       </TableToolbar>
 
       <el-table
-        v-loading="loading"
-        :data="rows"
+        v-loading="orders.loading.value"
+        :data="orders.rows.value"
+        :row-class-name="outboundRowClass"
         class="data-table"
+        empty-text="暂无生产领料出库单"
       >
         <el-table-column
           prop="outboundNo"
           label="出库单号"
-          width="180"
-        />
-        <el-table-column
-          label="状态"
-          width="100"
+          min-width="190"
         >
           <template #default="{ row }"
-            ><el-tag
-              :type="
-                row.status === 'completed'
-                  ? 'success'
-                  : row.status === 'cancelled'
-                    ? 'info'
-                    : 'warning'
-              "
-              effect="light"
-              >{{ outboundOrderStatusLabel(row.status) }}</el-tag
-            ></template
+            ><span class="outbound-no">{{ row.outboundNo }}</span></template
           >
         </el-table-column>
         <el-table-column
-          label="明细数"
+          label="工单 / 生产批次"
+          min-width="190"
+        >
+          <template #default="{ row }">
+            <div>{{ row.workOrderNo }}</div>
+            <div class="secondary-text">{{ row.batchNo }}</div>
+          </template>
+        </el-table-column>
+        <el-table-column
+          label="状态"
+          width="160"
+        >
+          <template #default="{ row }">
+            <el-tag
+              :type="statusTag(row.status)"
+              effect="light"
+            >
+              {{ statusLabel(row.status) }}
+            </el-tag>
+            <div class="status-note">{{ outboundStatusHint(row.status) }}</div>
+          </template>
+        </el-table-column>
+        <el-table-column
+          label="明细"
           width="80"
           align="center"
-          ><template #default="{ row }">{{ row.detailCount }}</template></el-table-column
         >
+          <template #default="{ row }">{{ row.details.length }} 条</template>
+        </el-table-column>
         <el-table-column
-          label="出库数量"
-          width="130"
-          align="right"
-          ><template #default="{ row }">{{
-            formatQuantity(row.totalOutboundNumber)
-          }}</template></el-table-column
+          label="本单数量"
+          min-width="155"
         >
+          <template #default="{ row }"
+            ><strong class="quantity-summary">{{ quantitySummary(row) }}</strong></template
+          >
+        </el-table-column>
         <el-table-column
-          label="出库时间"
-          width="170"
-          ><template #default="{ row }">{{
-            row.outboundAt ? formatTime(row.outboundAt) : '-'
-          }}</template></el-table-column
+          label="制单人 / 时间"
+          min-width="190"
         >
+          <template #default="{ row }">
+            <div>{{ row.createdByName || '-' }}</div>
+            <div class="secondary-text">{{ formatTime(row.createdAt) }}</div>
+          </template>
+        </el-table-column>
+        <el-table-column
+          label="实际出库"
+          min-width="190"
+        >
+          <template #default="{ row }">
+            <div>{{ row.operatorName || '-' }}</div>
+            <div class="secondary-text">
+              {{
+                row.outboundAt
+                  ? formatTime(row.outboundAt)
+                  : row.status === 'pending_picking'
+                    ? '等待确认出库'
+                    : '未产生出库'
+              }}
+            </div>
+          </template>
+        </el-table-column>
         <el-table-column
           prop="remark"
           label="备注"
@@ -124,665 +155,275 @@
         />
         <el-table-column
           label="操作"
-          width="300"
+          width="280"
           fixed="right"
         >
           <template #default="{ row }">
             <el-button
               link
               type="primary"
-              @click="openDetail(row)"
+              @click="openDetail(row.outboundId)"
               >详情</el-button
+            >
+            <el-button
+              link
+              type="primary"
+              @click="printOrder(row.outboundId)"
+              >打印</el-button
             >
             <el-button
               v-if="row.status === 'pending_picking'"
               link
-              type="warning"
-              @click="handlePick(row)"
-              >拣货</el-button
-            >
-            <el-button
-              v-if="['pending_picking', 'picked', 'partially_outbound'].includes(row.status)"
-              link
               type="success"
-              @click="handleConfirm(row)"
+              :loading="isPending('confirm', row.outboundId)"
+              @click="confirmOrder(row)"
               >确认出库</el-button
             >
             <el-button
-              v-if="!['completed', 'cancelled'].includes(row.status)"
+              v-if="row.status === 'pending_picking'"
               link
               type="danger"
-              @click="handleCancel(row)"
+              :loading="isPending('cancel', row.outboundId)"
+              @click="cancelOrder(row)"
               >取消</el-button
             >
           </template>
         </el-table-column>
       </el-table>
 
-      <div class="table-footer">
-        <span class="total-text">共 {{ total }} 条</span>
-        <el-select
-          v-model="pageSize"
-          class="page-size-select"
-          @change="handlePageSizeChange"
-        >
-          <el-option
-            label="10条/页"
-            :value="10"
-          /><el-option
-            label="20条/页"
-            :value="20"
-          /><el-option
-            label="50条/页"
-            :value="50"
-          />
-        </el-select>
-        <el-pagination
-          v-model:current-page="currentPage"
-          :page-size="pageSize"
-          :total="total"
-          layout="prev, pager, next, jumper"
-          @current-change="loadRows"
-        />
-      </div>
-    </div>
+      <PaginationFooter
+        :total="orders.total.value"
+        :current-page="query.page ?? 1"
+        :page-size="query.pageSize ?? 20"
+        @update:page-size="handlePageSizeChange"
+        @page-change="handlePageChange"
+      />
+    </section>
 
-    <!-- 创建出库单弹窗 -->
-    <el-dialog
+    <MaterialOutboundOrderCreateDialog
       v-model="createVisible"
-      title="新增出库单（生产领料）"
-      :width="DialogWidth.lg"
-    >
-      <el-form
-        class="dialog-form"
-        label-width="100px"
-        :model="createForm"
-      >
-        <el-form-item
-          label="生产批次"
-          required
-        >
-          <div class="batch-selector">
-            <el-select
-              v-model="createForm.selectedBatchId"
-              filterable
-              clearable
-              placeholder="输入批次号搜索"
-              style="width: 320px"
-            >
-              <el-option
-                v-for="b in batchOptions"
-                :key="b.id"
-                :label="`${b.batchNo} — ${b.productName}(${b.itemCode})`"
-                :value="b.id"
-              />
-            </el-select>
-            <el-button
-              :disabled="!createForm.selectedBatchId"
-              type="primary"
-              size="small"
-              style="margin-left: 8px"
-              @click="loadAllocations"
-            >
-              加载分配行
-            </el-button>
-          </div>
-        </el-form-item>
-        <el-form-item label="工单号">
-          <span
-            v-if="selectedBatchInfo"
-            class="info-text"
-            >{{ selectedBatchInfo.workOrderNo || '-' }}</span
-          >
-          <span
-            v-else
-            class="muted-text"
-            >选择批次后自动显示</span
-          >
-        </el-form-item>
-        <el-form-item label="备注"
-          ><el-input
-            v-model="createForm.remark"
-            type="textarea"
-            :rows="2"
-        /></el-form-item>
-        <el-divider>出库明细（分配行）</el-divider>
-        <div
-          v-if="createForm.details.length === 0"
-          class="empty-hint"
-        >
-          请先选择生产批次，点击「加载分配行」获取待出库分配
-        </div>
-        <el-table
-          v-else
-          :data="createForm.details"
-          size="small"
-          style="margin-bottom: 8px"
-          class="data-table"
-        >
-          <el-table-column
-            label="物料编码"
-            prop="itemCode"
-            width="130"
-          />
-          <el-table-column
-            label="物料名称"
-            prop="itemName"
-            min-width="140"
-          />
-          <el-table-column
-            label="批次号"
-            prop="batchCode"
-            width="130"
-          />
-          <el-table-column
-            label="可出库"
-            width="100"
-            align="right"
-          >
-            <template #default="{ row }">{{
-              formatQuantity(row.availableOutboundQuantity)
-            }}</template>
-          </el-table-column>
-          <el-table-column
-            label="出库数量"
-            width="130"
-          >
-            <template #default="{ row }">
-              <el-input-number
-                v-model="row.outboundNumber"
-                :min="0.0001"
-                :max="parseMax(row.availableOutboundQuantity)"
-                :precision="4"
-                size="small"
-                style="width: 120px"
-              />
-            </template>
-          </el-table-column>
-          <el-table-column
-            label="状态"
-            width="100"
-          >
-            <template #default="{ row }">
-              <el-select
-                v-model="row.stockStatus"
-                size="small"
-                style="width: 90px"
-              >
-                <el-option
-                  :label="stockStatusLabels.available"
-                  value="available"
-                />
-              </el-select>
-            </template>
-          </el-table-column>
-          <el-table-column
-            label="操作"
-            width="50"
-          >
-            <template #default="{ row }">
-              <el-button
-                link
-                type="danger"
-                :icon="Delete"
-                size="small"
-                @click="removeDetail(row)"
-              />
-            </template>
-          </el-table-column>
-        </el-table>
-      </el-form>
-      <div
-        v-if="createForm.details.length > 0"
-        class="dialog-footer-note"
-      >
-        共 <strong>{{ createForm.details.length }}</strong> 个分配行，合计出库
-        <strong>{{ formatQuantity(totalOutboundNumber) }}</strong>
-      </div>
-      <template #footer
-        ><el-button @click="createVisible = false">取消</el-button
-        ><el-button
-          type="primary"
-          :loading="submitting"
-          :disabled="createForm.details.length === 0"
-          @click="submitCreate"
-          >保存</el-button
-        ></template
-      >
-    </el-dialog>
+      :batch-options="orders.batchOptions.value"
+      :candidates="orders.candidates.value"
+      :option-loading="orders.optionLoading.value"
+      :candidate-loading="orders.candidateLoading.value"
+      :submitting="createSubmitting"
+      :intent-status="orders.getCreateIntentStatus()"
+      @load-candidates="loadCandidates"
+      @reset-intent="orders.resetCreateIntent"
+      @submit="submitCreate"
+    />
 
-    <el-dialog
+    <MaterialOutboundOrderDetailDialog
       v-model="detailVisible"
-      title="出库单详情"
-      :width="DialogWidth.lg"
-    >
-      <el-descriptions
-        v-if="detailRow"
-        :column="2"
-        border
-      >
-        <el-descriptions-item label="单号">{{ detailRow.outboundNo }}</el-descriptions-item>
-        <el-descriptions-item label="状态"
-          ><el-tag :type="detailRow.status === 'completed' ? 'success' : 'info'">{{
-            outboundOrderStatusLabels[detailRow.status]
-          }}</el-tag></el-descriptions-item
-        >
-        <el-descriptions-item label="出库时间">{{
-          detailRow.outboundAt ? formatTime(detailRow.outboundAt) : '-'
-        }}</el-descriptions-item>
-        <el-descriptions-item label="备注">{{ detailRow.remark || '-' }}</el-descriptions-item>
-      </el-descriptions>
-      <el-divider>明细</el-divider>
-      <el-table
-        v-if="detailDetails.length > 0"
-        :data="detailDetails"
-        size="small"
-        class="data-table"
-      >
-        <el-table-column
-          label="物料编码"
-          prop="itemCode"
-          width="130"
-        />
-        <el-table-column
-          label="物料名称"
-          prop="itemName"
-          width="140"
-        />
-        <el-table-column
-          label="批次号"
-          prop="batchCode"
-          width="130"
-        />
-        <el-table-column
-          label="出库数量"
-          prop="outboundNumber"
-          width="100"
-          align="right"
-        >
-          <template #default="{ row }">{{ formatQuantity(row.outboundNumber) }}</template>
-        </el-table-column>
-        <el-table-column
-          label="状态"
-          width="80"
-        >
-          <template #default="{ row }">{{ stockStatusLabel(row.stockStatus) }}</template>
-        </el-table-column>
-      </el-table>
-    </el-dialog>
+      :loading="orders.detailLoading.value"
+      :detail="orders.detail.value"
+      @print="printDetail"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
-import { Delete, Plus, Refresh } from '@element-plus/icons-vue';
-import type { OutboundOrderStatus, StockStatus } from '@company/contracts';
+import { onActivated, onMounted, reactive, ref } from 'vue';
+import { Plus, Refresh } from '@element-plus/icons-vue';
+import type {
+  CreateMaterialOutboundPayload,
+  MaterialOutboundItem,
+  MaterialOutboundQuery,
+  OutboundOrderStatus,
+} from '@company/contracts';
+import { OUTBOUND_ORDER_STATUSES, OUTBOUND_ORDER_STATUS_LABELS } from '@company/constants';
 import TableToolbar from '../../components/TableToolbar.vue';
-import { DialogWidth } from '../../utils/dialog';
+import PaginationFooter from '../../components/PaginationFooter.vue';
 import { EMessage } from '../../utils/message';
 import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
-import {
-  outboundOrderStatusLabel,
-  outboundOrderStatusLabels,
-  stockStatusLabel,
-  stockStatusLabels,
-} from '../../constants/business-status';
+import MaterialOutboundOrderCreateDialog from '../production/components/MaterialOutboundOrderCreateDialog.vue';
+import MaterialOutboundOrderDetailDialog from '../production/components/MaterialOutboundOrderDetailDialog.vue';
+import { useMaterialOutboundOrders } from '../production/composables/useMaterialOutboundOrders';
+import { formatQuantity } from '../production/production-status';
+import { outboundRowClass, outboundStatusHint } from './warehouse-list-presentation';
 
-/**
- * TODO(warehouse-api): 出库管理页面。当前使用静态演示数据。
- * 后端出库模块（outbound_order/outbound_detail/inventory_transaction）尚未迁移。
- * 待后端实现以下接口后接入：
- *   GET    /warehouse/outbound-orders          — 分页列表
- *   GET    /warehouse/outbound-orders/:id      — 详情（含明细）
- *   POST   /warehouse/outbound-orders          — 创建（需关联分配行）
- *   POST   /warehouse/outbound-orders/:id/actions/confirm — 确认出库
- *   POST   /warehouse/outbound-orders/:id/actions/cancel  — 取消
- * 参考 contracts: OutboundOrderStatus
- */
 defineOptions({ name: 'OutboundOrdersPage' });
 
-interface OutboundOrderItem {
-  id: string;
-  outboundNo: string;
-  status: OutboundOrderStatus;
-  detailCount: number;
-  totalOutboundNumber: string;
-  outboundAt: string;
-  remark: string;
-}
-
-interface OutboundDetailItem {
-  itemCode: string;
-  itemName: string;
-  batchCode: string;
-  outboundNumber: string;
-  stockStatus: StockStatus;
-}
-
-interface BatchItem {
-  id: string;
-  batchNo: string;
-  productName: string;
-  itemCode: string;
-  workOrderNo: string;
-}
-
-interface CreateDetailRow {
-  allocationId: string;
-  itemCode: string;
-  itemName: string;
-  batchCode: string;
-  availableOutboundQuantity: string;
-  outboundNumber: number;
-  stockStatus: StockStatus;
-  remark: string;
-}
-
-interface CreateForm {
-  selectedBatchId: string;
-  remark: string;
-  details: CreateDetailRow[];
-}
-
-const demoRows: OutboundOrderItem[] = [
-  {
-    id: '1',
-    outboundNo: 'CK-20260721-001',
-    status: 'completed',
-    detailCount: 3,
-    totalOutboundNumber: '120.0000',
-    outboundAt: '2026-07-21T10:30:00',
-    remark: '生产领料',
-  },
-  {
-    id: '2',
-    outboundNo: 'CK-20260721-002',
-    status: 'pending_picking',
-    detailCount: 2,
-    totalOutboundNumber: '45.0000',
-    outboundAt: '',
-    remark: '',
-  },
-  {
-    id: '3',
-    outboundNo: 'CK-20260720-003',
-    status: 'picked',
-    detailCount: 4,
-    totalOutboundNumber: '80.0000',
-    outboundAt: '',
-    remark: '紧急领料',
-  },
-  {
-    id: '4',
-    outboundNo: 'CK-20260719-004',
-    status: 'completed',
-    detailCount: 1,
-    totalOutboundNumber: '10.0000',
-    outboundAt: '2026-07-19T14:00:00',
-    remark: '',
-  },
-  {
-    id: '5',
-    outboundNo: 'CK-20260718-005',
-    status: 'cancelled',
-    detailCount: 0,
-    totalOutboundNumber: '0.0000',
-    outboundAt: '',
-    remark: '取消',
-  },
-];
-
-const rows = ref<OutboundOrderItem[]>([...demoRows]);
-const detailRow = ref<OutboundOrderItem | null>(null);
-const detailDetails = ref<OutboundDetailItem[]>([]);
-const loading = ref(false);
-const submitting = ref(false);
-const total = ref(5);
-const currentPage = ref(1);
-const pageSize = ref(10);
+const orders = useMaterialOutboundOrders();
+const query = reactive<MaterialOutboundQuery>({ page: 1, pageSize: 20 });
 const createVisible = ref(false);
+const createSubmitting = ref(false);
 const detailVisible = ref(false);
-const query = reactive({ keyword: '', status: '' });
 
-const batchOptions = ref<BatchItem[]>([]);
-// TODO(api-integration): 接入批次号搜索 API 后接通此状态与函数
-const batchLoading = ref(false);
-const loadingAllocations = ref(false);
-
-const searchBatch = () => {
-  batchOptions.value = [
-    {
-      id: 'b1',
-      batchNo: 'SC-202607-001',
-      productName: '产品A',
-      itemCode: 'A-100',
-      workOrderNo: 'WO-202607-001',
-    },
-    {
-      id: 'b2',
-      batchNo: 'SC-202607-002',
-      productName: '产品B',
-      itemCode: 'B-200',
-      workOrderNo: 'WO-202607-002',
-    },
-    {
-      id: 'b3',
-      batchNo: 'SC-202607-003',
-      productName: '产品C',
-      itemCode: 'C-300',
-      workOrderNo: 'WO-202607-003',
-    },
-  ];
+const loadRows = () => orders.load({ ...query, keyword: query.keyword?.trim() || undefined });
+const search = () => {
+  query.page = 1;
+  return loadRows();
+};
+const resetQuery = () => {
+  query.keyword = undefined;
+  query.status = undefined;
+  query.page = 1;
+  return loadRows();
+};
+const handlePageSizeChange = (value: number) => {
+  query.pageSize = value;
+  query.page = 1;
+  return loadRows();
+};
+const handlePageChange = (value: number) => {
+  query.page = value;
+  return loadRows();
 };
 
-const selectedBatchInfo = computed(() => {
-  if (!createForm.selectedBatchId) return null;
-  return batchOptions.value.find((b) => b.id === createForm.selectedBatchId) ?? null;
-});
-
-const createForm = reactive<CreateForm>({
-  selectedBatchId: '',
-  remark: '',
-  details: [],
-});
-
-const totalOutboundNumber = computed(() => {
-  const sum = createForm.details.reduce((acc, d) => acc + (Number(d.outboundNumber) || 0), 0);
-  return String(sum);
-});
-
-const parseMax = (v: string) => {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : 999999;
-};
-
-const addDetail = (d: {
-  allocationId: string;
-  itemCode: string;
-  itemName: string;
-  batchCode: string;
-  availableOutboundQuantity: string;
-}) => {
-  createForm.details.push({
-    allocationId: d.allocationId,
-    itemCode: d.itemCode,
-    itemName: d.itemName,
-    batchCode: d.batchCode,
-    availableOutboundQuantity: d.availableOutboundQuantity,
-    outboundNumber: Number(d.availableOutboundQuantity),
-    stockStatus: 'available',
-    remark: '',
-  });
-};
-
-const removeDetail = (row: CreateDetailRow) => {
-  const idx = createForm.details.indexOf(row);
-  if (idx !== -1) createForm.details.splice(idx, 1);
-};
-
-const loadAllocations = () => {
-  if (!createForm.selectedBatchId) {
-    EMessage.warning('请先选择生产批次');
-    return;
-  }
-  loadingAllocations.value = true;
-  setTimeout(() => {
-    const items: Array<{
-      allocationId: string;
-      itemCode: string;
-      itemName: string;
-      batchCode: string;
-      availableOutboundQuantity: string;
-    }> = [
-      {
-        allocationId: 'a1',
-        itemCode: 'MAT-001',
-        itemName: '原材料A',
-        batchCode: 'BATCH-A1',
-        availableOutboundQuantity: '50.0000',
-      },
-      {
-        allocationId: 'a2',
-        itemCode: 'MAT-002',
-        itemName: '原材料B',
-        batchCode: 'BATCH-B1',
-        availableOutboundQuantity: '30.0000',
-      },
-    ];
-    createForm.details = [];
-    items.forEach((item) => {
-      const qty = Number(item.availableOutboundQuantity);
-      if (qty > 0) {
-        addDetail(item);
-      }
-    });
-    if (createForm.details.length === 0) {
-      EMessage.info('该批次暂无待出库分配行');
-    } else {
-      EMessage.success(`已加载 ${createForm.details.length} 个分配行`);
-    }
-    loadingAllocations.value = false;
-  }, 500);
-};
-
-const loadRows = async () => {
-  loading.value = true;
-  setTimeout(() => {
-    const kw = query.keyword.trim().toLowerCase();
-    const ss = query.status;
-    let filtered = [...demoRows];
-    if (kw) filtered = filtered.filter((r) => r.outboundNo.toLowerCase().includes(kw));
-    if (ss) filtered = filtered.filter((r) => r.status === ss);
-    rows.value = filtered;
-    total.value = filtered.length;
-    loading.value = false;
-  }, 300);
-};
-const search = async () => {
-  currentPage.value = 1;
-  await loadRows();
-};
-const resetQuery = async () => {
-  query.keyword = '';
-  query.status = '';
-  currentPage.value = 1;
-  await loadRows();
-};
-const handlePageSizeChange = async () => {
-  currentPage.value = 1;
-  await loadRows();
-};
-
-const openCreate = () => {
-  createForm.selectedBatchId = '';
-  createForm.remark = '';
-  createForm.details = [];
-  batchOptions.value = [];
+const openCreate = async (): Promise<void> => {
   createVisible.value = true;
+  try {
+    await orders.loadBatchOptions();
+  } catch (error) {
+    EMessage.error(error, '生产批次候选加载失败');
+  }
 };
-
-const submitCreate = async () => {
-  if (!createForm.selectedBatchId) {
-    EMessage.warning('请选择生产批次');
-    return;
+const loadCandidates = async (batchId: string): Promise<void> => {
+  try {
+    await orders.loadCandidates(batchId);
+  } catch (error) {
+    EMessage.error(error, '待出库分配行加载失败');
   }
-  if (createForm.details.length === 0) {
-    EMessage.warning('请添加出库明细');
-    return;
-  }
-  submitting.value = true;
-  setTimeout(() => {
-    EMessage.success('出库单已创建');
+};
+const submitCreate = async (
+  batchId: string,
+  payload: CreateMaterialOutboundPayload,
+): Promise<void> => {
+  if (createSubmitting.value) return;
+  createSubmitting.value = true;
+  try {
+    const outbound = await orders.create(batchId, payload);
+    EMessage.success(`待出库单 ${outbound.outboundNo} 已创建，库存尚未扣减`);
     createVisible.value = false;
-    submitting.value = false;
-    loadRows();
-  }, 500);
+    await loadRows();
+    await openDetail(outbound.outboundId);
+  } catch (error) {
+    EMessage.error(error, '待出库单创建失败');
+  } finally {
+    createSubmitting.value = false;
+  }
 };
 
-const openDetail = (row: OutboundOrderItem) => {
-  detailRow.value = row;
-  detailDetails.value = [
-    {
-      itemCode: 'MAT-001',
-      itemName: '原材料A',
-      batchCode: 'BATCH-A1',
-      outboundNumber: '80.0000',
-      stockStatus: 'available',
-    },
-    {
-      itemCode: 'MAT-002',
-      itemName: '原材料B',
-      batchCode: 'BATCH-B1',
-      outboundNumber: '40.0000',
-      stockStatus: 'available',
-    },
-  ];
+const openDetail = async (outboundId: string): Promise<void> => {
   detailVisible.value = true;
-};
-
-const handlePick = (_row?: any) => {
-  EMessage.success('已拣货');
-  loadRows();
-};
-
-const handleConfirm = async (_row?: any) => {
   try {
-    await ElMessageBox.confirm('确认出库后将生成库存流水，是否继续？', '确认出库', {
-      confirmButtonText: '确认',
-      cancelButtonText: '取消',
-      type: 'warning',
-    });
-  } catch {
+    await orders.loadDetail(outboundId);
+  } catch (error) {
+    EMessage.error(error, '出库单详情加载失败');
+  }
+};
+const confirmOrder = async (row: MaterialOutboundItem): Promise<void> => {
+  try {
+    await ElMessageBox.confirm(
+      `将确认整张单据 ${row.outboundNo}。确认后每条明细立即生成负库存流水；已确认单当前不能直接取消或修改。若库存不足或分配状态变化，整单失败且不会部分扣减。`,
+      '确认生产领料出库',
+      { type: 'warning', confirmButtonText: '确认整单出库', cancelButtonText: '返回核对' },
+    );
+    const result = await orders.confirm(row);
+    EMessage.success(`${result.outboundNo} 已确认，库存流水已生成`);
+    await loadRows();
+    if (orders.detail.value?.outboundId === row.outboundId) await orders.loadDetail(row.outboundId);
+  } catch (error) {
+    if (error === 'cancel' || error === 'close') return;
+    EMessage.error(error, '整单确认失败，未产生部分库存扣减');
+  }
+};
+const cancelOrder = async (row: MaterialOutboundItem): Promise<void> => {
+  try {
+    await ElMessageBox.confirm(
+      `取消 ${row.outboundNo} 后，单据和明细仍作为历史保留，不会生成库存流水；对应分配数量将恢复为可制单状态。`,
+      '取消待出库单',
+      { type: 'warning', confirmButtonText: '确认取消', cancelButtonText: '返回' },
+    );
+    await orders.cancel(row);
+    EMessage.success('待出库单已取消，未扣减库存');
+    await loadRows();
+    if (orders.detail.value?.outboundId === row.outboundId) await orders.loadDetail(row.outboundId);
+  } catch (error) {
+    if (error === 'cancel' || error === 'close') return;
+    EMessage.error(error, '出库单取消失败');
+  }
+};
+
+const printOrder = async (outboundId: string): Promise<void> => {
+  try {
+    printDetail(await orders.loadDetail(outboundId));
+  } catch (error) {
+    EMessage.error(error, '打印数据加载失败');
+  }
+};
+const printDetail = (row: MaterialOutboundItem): void => {
+  const frame = document.createElement('iframe');
+  frame.dataset.printFrame = 'outbound-order';
+  frame.setAttribute('aria-hidden', 'true');
+  Object.assign(frame.style, {
+    position: 'fixed',
+    right: '0',
+    bottom: '0',
+    width: '0',
+    height: '0',
+    border: '0',
+    opacity: '0',
+    pointerEvents: 'none',
+  });
+  document.body.appendChild(frame);
+
+  const printWindow = frame.contentWindow;
+  if (!printWindow) {
+    frame.remove();
+    EMessage.error(new Error('打印 iframe 初始化失败'), '打印初始化失败');
     return;
   }
-  EMessage.success('已确认出库');
-  await loadRows();
+  let cleanupTimer: number | undefined;
+  const cleanup = (): void => {
+    if (cleanupTimer !== undefined) window.clearTimeout(cleanupTimer);
+    frame.remove();
+  };
+  printWindow.addEventListener('afterprint', cleanup, { once: true });
+  const statusMark =
+    row.status === 'cancelled'
+      ? '已取消 — 不得作为有效出库凭证'
+      : OUTBOUND_ORDER_STATUS_LABELS[row.status];
+  printWindow.document
+    .write(`<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(row.outboundNo)}</title><style>
+    body{font-family:Arial,"Microsoft YaHei",sans-serif;color:#111;padding:24px}h1{text-align:center;font-size:24px;margin:0 0 8px}.mark{text-align:center;font-size:18px;font-weight:700;margin-bottom:20px}.meta{display:grid;grid-template-columns:repeat(3,1fr);gap:8px 20px;margin-bottom:18px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #333;padding:8px;text-align:left}th{background:#f4f4f5}.remark{margin-top:16px}.signatures{display:grid;grid-template-columns:repeat(3,1fr);gap:40px;margin-top:70px}.cancelled{color:#c00}@media print{body{padding:0}}</style></head><body>
+    <h1>生产领料出库单</h1><div class="mark ${row.status === 'cancelled' ? 'cancelled' : ''}">${escapeHtml(statusMark)}</div>
+    <div class="meta"><div>单号：${escapeHtml(row.outboundNo)}</div><div>工单：${escapeHtml(row.workOrderNo)}</div><div>生产批次：${escapeHtml(row.batchNo)}</div><div>产品：${escapeHtml(`${row.productCode} ${row.productName}`)}</div><div>制单时间：${escapeHtml(formatTime(row.createdAt))}</div><div>实际出库：${escapeHtml(row.outboundAt ? formatTime(row.outboundAt) : '-')}</div></div>
+    <table><thead><tr><th>物料编码</th><th>物料名称</th><th>库存批次</th><th>本次数量</th><th>单位</th></tr></thead><tbody>${row.details.map((detail) => `<tr><td>${escapeHtml(detail.itemCode)}</td><td>${escapeHtml(detail.itemName)}</td><td>${escapeHtml(detail.batchCode)}</td><td>${escapeHtml(formatQuantity(detail.outboundQuantity))}</td><td>${escapeHtml(detail.unit)}</td></tr>`).join('')}</tbody></table>
+    <div class="remark">备注：${escapeHtml(row.remark || '-')}</div><div>制单人：${escapeHtml(row.createdByName || '-')}</div>
+    <div class="signatures"><div>发料人：____________</div><div>领料人：____________</div><div>日期：____________</div></div>
+    </body></html>`);
+  printWindow.document.close();
+  printWindow.focus();
+  cleanupTimer = window.setTimeout(cleanup, 60_000);
+  printWindow.print();
 };
 
-const handleCancel = async (_row?: any) => {
-  try {
-    await ElMessageBox.confirm('确认取消该出库单？', '取消出库', {
-      confirmButtonText: '确认取消',
-      cancelButtonText: '不取消',
-      type: 'warning',
-    });
-  } catch {
-    return;
-  }
-  EMessage.success('已取消');
-  await loadRows();
-};
-
-const formatQuantity = (v: string | number | null) => {
-  const n = Number(v ?? 0);
-  return Number.isFinite(n) ? n.toLocaleString('zh-CN', { maximumFractionDigits: 4 }) : '-';
-};
-const formatTime = (v: string) => v.replace('T', ' ').slice(0, 19);
+const quantitySummary = (row: MaterialOutboundItem): string =>
+  row.quantitySummary.map((item) => `${formatQuantity(item.quantity)} ${item.unit}`).join('；');
+const statusTag = (status: OutboundOrderStatus) =>
+  status === 'completed' ? 'success' : status === 'cancelled' ? 'info' : 'warning';
+const statusLabel = (status: OutboundOrderStatus) => OUTBOUND_ORDER_STATUS_LABELS[status];
+const isPending = (action: string, id: string) => orders.pendingKeys.value.has(`${action}:${id}`);
+const formatTime = (value: string): string =>
+  new Date(value).toLocaleString('zh-CN', { hour12: false });
+const escapeHtml = (value: string): string =>
+  value.replace(
+    /[&<>'"]/g,
+    (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[char]!,
+  );
 
 onMounted(loadRows);
+onActivated(loadRows);
 </script>
 
 <style scoped>
+.outbound-orders-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
 .query-panel,
 .table-panel {
   border: 1px solid #e5e7eb;
@@ -790,8 +431,7 @@ onMounted(loadRows);
   background: #ffffff;
 }
 .query-panel {
-  padding: 20px 20px 8px;
-  margin-bottom: 16px;
+  padding: 20px 20px 4px;
 }
 .query-form {
   display: flex;
@@ -812,7 +452,10 @@ onMounted(loadRows);
 }
 .query-form :deep(.el-input),
 .query-form :deep(.el-select) {
-  width: 142px;
+  width: 180px;
+}
+.query-form :deep(.keyword-input) {
+  width: 260px;
 }
 .query-form :deep(.el-input__wrapper),
 .query-form :deep(.el-select__wrapper) {
@@ -831,38 +474,18 @@ onMounted(loadRows);
 .query-actions :deep(.el-button + .el-button) {
   margin-left: 12px;
 }
-
 .table-panel {
   overflow: hidden;
 }
-.table-toolbar {
-  display: flex;
+.table-panel :deep(.table-toolbar) {
+  min-height: 56px;
   align-items: center;
-  justify-content: space-between;
-  height: 56px;
-  padding: 0 16px;
   border-bottom: 1px solid #e5e7eb;
 }
-.batch-actions {
-  display: flex;
-  gap: 8px;
-}
-.batch-actions :deep(.el-button) {
+.table-panel :deep(.table-toolbar .el-button) {
   height: 34px;
   border-radius: 6px;
 }
-.table-tools {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  color: #6b7280;
-}
-.table-tools :deep(.el-button) {
-  width: 20px;
-  height: 20px;
-  color: #6b7280;
-}
-
 .data-table {
   width: 100%;
   color: #1f2937;
@@ -904,21 +527,37 @@ onMounted(loadRows);
   background: #fef3c7;
   color: #f59e0b;
 }
-.data-table :deep(.el-tag--danger) {
-  background: #fce8e8;
-  color: #ef4444;
-}
 .data-table :deep(.el-button.is-link) {
   padding: 0;
   font-weight: 500;
 }
-
+.outbound-no {
+  color: #1f2937;
+  font-weight: 600;
+}
+.quantity-summary {
+  color: #1f2937;
+  font-weight: 600;
+}
+.status-note {
+  margin-top: 4px;
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.35;
+}
+.data-table :deep(.status-warning-row td:first-child) {
+  box-shadow: inset 3px 0 #f59e0b;
+}
+.data-table :deep(.status-muted-row) {
+  color: #6b7280;
+  background: #f9fafb;
+}
 .table-footer {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 12px;
-  height: 56px;
+  min-height: 56px;
   padding: 0 16px;
 }
 .total-text {
@@ -949,33 +588,32 @@ onMounted(loadRows);
   background: #306188;
   color: #ffffff;
 }
-
-.dialog-form :deep(.el-select),
-.dialog-form :deep(.el-input) {
-  width: 100%;
+.secondary-text {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
 }
-.batch-selector {
-  display: flex;
-  align-items: center;
+@media (max-width: 1000px) {
+  .query-form {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(240px, 1fr));
+  }
+  .query-actions {
+    margin-left: 0;
+  }
 }
-.info-text {
-  color: #1f2937;
-  font-size: 14px;
-}
-.muted-text {
-  color: #9ca3af;
-  font-size: 14px;
-}
-.empty-hint {
-  color: #9ca3af;
-  text-align: center;
-  padding: 24px 0;
-  font-size: 14px;
-}
-.dialog-footer-note {
-  text-align: right;
-  padding: 0 20px 12px;
-  color: #6b7280;
-  font-size: 13px;
+@media (max-width: 680px) {
+  .query-form {
+    grid-template-columns: 1fr;
+  }
+  .query-form :deep(.el-input),
+  .query-form :deep(.el-select),
+  .query-form :deep(.keyword-input) {
+    width: 100%;
+  }
+  .table-footer {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    padding: 12px 16px;
+  }
 }
 </style>
