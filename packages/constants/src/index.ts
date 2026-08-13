@@ -102,9 +102,20 @@ export const PERMISSIONS = {
     inventory: { view: 'warehouse:inventory:view' },
     inbound: { view: 'warehouse:inbound:view' },
     outbound: { view: 'warehouse:outbound:view' },
-    returns: { view: 'warehouse:returns:view' },
+    returns: {
+      view: 'warehouse:returns:view',
+      create: 'warehouse:returns:create',
+      confirm: 'warehouse:returns:confirm',
+      cancel: 'warehouse:returns:cancel',
+    },
     scraps: { view: 'warehouse:scraps:view' },
-    stockChecks: { view: 'warehouse:stock-checks:view' },
+    stockChecks: {
+      view: 'warehouse:stock-checks:view',
+      create: 'warehouse:stock-checks:create',
+      count: 'warehouse:stock-checks:count',
+      complete: 'warehouse:stock-checks:complete',
+      cancel: 'warehouse:stock-checks:cancel',
+    },
   },
 } as const;
 
@@ -283,6 +294,12 @@ export const OUTBOUND_ORDER_STATUS_LABELS = {
   cancelled: '已取消',
 } as const;
 export const RETURN_ORDER_STATUSES = ['pending', 'returned', 'scrapped', 'cancelled'] as const;
+export const RETURN_ORDER_STATUS_LABELS = {
+  pending: '待退料',
+  returned: '已入库',
+  scrapped: '已报废',
+  cancelled: '已取消',
+} as const;
 export const SCRAP_SCENES = [
   'warehouse_allocated',
   'return_after_outbound',
@@ -292,6 +309,17 @@ export const SCRAP_SCENES = [
 export const SCRAP_STATUSES = ['pending', 'confirmed', 'cancelled'] as const;
 export const STOCK_CHECK_STATUSES = ['pending', 'counting', 'completed', 'cancelled'] as const;
 export const STOCK_CHECK_RESULTS = ['surplus', 'shortage', 'matched'] as const;
+export const STOCK_CHECK_STATUS_LABELS = {
+  pending: '待盘点',
+  counting: '盘点中',
+  completed: '已完成',
+  cancelled: '已取消',
+} as const;
+export const STOCK_CHECK_RESULT_LABELS = {
+  surplus: '盘盈',
+  shortage: '盘亏',
+  matched: '一致',
+} as const;
 export const INSPECTION_TYPES = ['process', 'final'] as const;
 export const INSPECTION_RESULTS = ['pending', 'passed', 'failed', 'conditional'] as const;
 export const REWORK_RESULTS = ['pending', 'passed', 'failed'] as const;

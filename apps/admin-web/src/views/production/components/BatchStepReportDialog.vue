@@ -23,12 +23,29 @@
           <strong>{{ formatQuantity(task.effectiveAbnormalQuantity) }} {{ task.unit }}</strong>
         </div>
         <div>
-          <span>最终剩余需完成</span>
-          <strong>{{ formatQuantity(remaining) }} {{ task.unit }}</strong>
+          <span>正常目标</span>
+          <strong>{{ formatQuantity(task.requiredNormalQuantity) }} {{ task.unit }}</strong>
+          <small v-if="Number(task.activatedSupplementTargetQuantity) > 0">
+            计划 {{ formatQuantity(task.baseNormalQuantity) }} + 下游补产
+            {{ formatQuantity(task.activatedSupplementTargetQuantity) }}
+          </small>
         </div>
         <div>
-          <span>上游当前放行</span>
+          <span>当前投入放行</span>
           <strong>{{ formatQuantity(task.releasedNormalQuantity) }} {{ task.unit }}</strong>
+          <small v-if="Number(task.activatedSupplementInputQuantity) > 0">
+            含补产 {{ formatQuantity(task.activatedSupplementInputQuantity) }}
+          </small>
+        </div>
+        <div>
+          <span>普通报工已占用</span>
+          <strong
+            >{{ formatQuantity(task.effectiveDirectReportedQuantity) }} {{ task.unit }}</strong
+          >
+        </div>
+        <div>
+          <span>最终剩余需完成</span>
+          <strong>{{ formatQuantity(remaining) }} {{ task.unit }}</strong>
         </div>
         <div>
           <span>本次正常+异常可报合计</span>
@@ -123,9 +140,13 @@ const remaining = computed(() =>
 );
 const available = computed(() => Math.max(0, Number(props.task?.availableNormalQuantity ?? 0)));
 const quantityTip = computed(() =>
-  available.value < remaining.value
-    ? `当前上游仅放行 ${formatQuantity(props.task?.releasedNormalQuantity ?? 0)} ${props.task?.unit ?? ''}，本次正常与异常数量合计最多填写 ${formatQuantity(available.value)}；达到当前放行量不会提前完成本工序。`
-    : `当前正常数量已全部放行；有效正常累计达到 ${formatQuantity(props.task?.requiredNormalQuantity ?? 0)} ${props.task?.unit ?? ''} 时，本工序自动完成。`,
+  props.task?.supplementBlockedReason
+    ? props.task.supplementBlockedReason
+    : Number(props.task?.pendingSupplementInputQuantity ?? 0) > 0
+      ? '报废补料尚未全部确认领用，待激活补产不会计入本次可报量。'
+      : available.value < remaining.value
+        ? `当前上游仅放行 ${formatQuantity(props.task?.releasedNormalQuantity ?? 0)} ${props.task?.unit ?? ''}，本次正常与异常数量合计最多填写 ${formatQuantity(available.value)}；达到当前放行量不会提前完成本工序。`
+        : `当前正常数量已全部放行；有效正常累计达到 ${formatQuantity(props.task?.requiredNormalQuantity ?? 0)} ${props.task?.unit ?? ''} 时，本工序自动完成。`,
 );
 const canSubmit = computed(
   () =>
@@ -173,9 +194,13 @@ const submit = (): void => {
   gap: 4px;
 }
 .report-summary span,
+.report-summary small,
 .form-tip {
   color: var(--el-text-color-secondary);
   font-size: 12px;
+}
+.report-summary small {
+  color: var(--el-color-warning-dark-2);
 }
 .report-form {
   margin-top: 18px;

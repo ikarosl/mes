@@ -98,7 +98,13 @@ export class ProductionSupplementService {
 
   private async availableCandidates(dispositionId: string) {
     const context = await this.repository.getCandidateContext(dispositionId);
-    const routeMaterialIds = await this.products.listRouteStepMaterialIds(context.routeStepId);
+    const routeMaterialIds = (
+      await Promise.all(
+        context.routeStepIds.map((routeStepId) =>
+          this.products.listRouteStepMaterialIds(routeStepId),
+        ),
+      )
+    ).flat();
     if (routeMaterialIds.length === 0) return context.candidates;
     const allowed = new Set(routeMaterialIds);
     return context.candidates.filter((row) => allowed.has(row.productMaterialId));

@@ -40,6 +40,15 @@ describe('AbnormalReworkPanel', () => {
         ] as never,
         pendingKeys: new Set<string>(),
         unit: '件',
+        sourceStep: {
+          stepRecordId: '3',
+          stepOrder: 2,
+          stepName: '组装',
+        } as never,
+        routeSteps: [
+          { stepRecordId: '2', stepOrder: 1, stepName: '切割' },
+          { stepRecordId: '3', stepOrder: 2, stepName: '组装' },
+        ] as never,
         candidateLoader: async () => [],
       },
       global: {

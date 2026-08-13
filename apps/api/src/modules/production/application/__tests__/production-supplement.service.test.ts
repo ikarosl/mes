@@ -5,7 +5,7 @@ describe('ProductionSupplementService', () => {
   it('normalizes an idempotent approval and enriches material references through Product public API', async () => {
     const repository = {
       getCandidateContext: vi.fn().mockResolvedValue({
-        routeStepId: '4',
+        routeStepIds: ['3', '4'],
         candidates: [
           {
             originalDemandId: '5',
@@ -91,5 +91,6 @@ describe('ProductionSupplementService', () => {
       itemCode: 'MAT-7',
       itemName: '材料七',
     });
+    expect(products.listRouteStepMaterialIds).toHaveBeenCalledTimes(2);
   });
 });

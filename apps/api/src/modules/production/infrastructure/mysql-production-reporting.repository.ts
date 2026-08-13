@@ -22,6 +22,10 @@ import {
   requireReportWithinReleased,
   requireReportQuantities,
 } from '../domain/production-reporting.policy.js';
+import {
+  calculateRouteStepQuantities,
+  type RouteQuantityStep,
+} from '../domain/production-route-quantity.policy.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
 import { findBatch } from './mysql-production.shared.js';
 import { selectExecutionBatchSummaries } from './mysql-production-reporting-batch.projection.js';
@@ -34,7 +38,8 @@ import {
   type ProjectionStepRow,
   type ReportRow,
 } from './mysql-production-reporting.projection.js';
-import { add, fixed, releasedQuantity, subtract } from './mysql-production-reporting-quantity.js';
+import { add, fixed, subtract } from './mysql-production-reporting-quantity.js';
+import { selectRouteSupplementSources } from './mysql-production-supplement-activation.js';
 
 type LockedStepRow = RowDataPacket & {
   id: number;
@@ -44,6 +49,7 @@ type LockedStepRow = RowDataPacket & {
   need_record_snapshot: number;
   unit_snapshot: string;
   effective_reported: string;
+  effective_direct_reported: string;
   effective_normal: string;
   effective_abnormal: string;
   version: number;
@@ -65,6 +71,13 @@ export class MysqlProductionReportingRepository extends ProductionReportingRepos
     const [dispositions] = await this.pool.query<DispositionRow[]>(DISPOSITION_SELECT_BATCH, [
       batchId,
     ]);
+    const supplements =
+      (await selectRouteSupplementSources(this.pool, [batchId])).get(batchId) ?? [];
+    const quantities = calculateRouteStepQuantities(
+      batch.planned_quantity,
+      steps.map(toRouteQuantityStep),
+      supplements,
+    );
     const reportsByStep = groupRowsBy(reports, (row) => String(row.batch_step_record_id));
     const dispositionsByStep = groupRowsBy(dispositions, (row) => String(row.batch_step_record_id));
     return {
@@ -76,11 +89,11 @@ export class MysqlProductionReportingRepository extends ProductionReportingRepos
       productName: batch.product_name_snapshot,
       batchStatus: batch.status,
       plannedQuantity: batch.planned_quantity,
-      steps: steps.map((step, index) =>
+      steps: steps.map((step) =>
         mapExecutionStep(
           step,
           batch.planned_quantity,
-          releasedQuantity(batch.planned_quantity, steps[index - 1]),
+          quantities.get(String(step.id))!,
           reportsByStep.get(String(step.id)) ?? [],
           dispositionsByStep.get(String(step.id)) ?? [],
         ),
@@ -106,7 +119,7 @@ export class MysqlProductionReportingRepository extends ProductionReportingRepos
       assertVersion(current, payload.version);
       requireReportQuantities(payload.normalQuantity, payload.abnormalQuantity);
       requireReportWithinReleased(
-        current.effective_reported,
+        current.effective_direct_reported,
         payload.normalQuantity,
         payload.abnormalQuantity,
         released,
@@ -179,7 +192,10 @@ export class MysqlProductionReportingRepository extends ProductionReportingRepos
       requireCorrectable(target);
       assertVersion(current, payload.version);
       const correctedNormal = subtract(current.effective_normal, target.normal_quantity);
-      requireNoDownstreamQuantityConflict(correctedNormal, downstream?.effective_reported ?? 0);
+      requireNoDownstreamQuantityConflict(
+        correctedNormal,
+        downstream?.effective_direct_reported ?? 0,
+      );
       const reversalId = await insertReport(connection, {
         batchId,
         stepRecordId,
@@ -225,11 +241,14 @@ export class MysqlProductionReportingRepository extends ProductionReportingRepos
         payload.normalQuantity,
       );
       const correctedReported = add(
-        subtract(current.effective_reported, target.reported_quantity),
+        subtract(current.effective_direct_reported, target.reported_quantity),
         add(payload.normalQuantity, payload.abnormalQuantity),
       );
       requireReportWithinReleased(correctedReported, 0, 0, released);
-      requireNoDownstreamQuantityConflict(correctedNormal, downstream?.effective_reported ?? 0);
+      requireNoDownstreamQuantityConflict(
+        correctedNormal,
+        downstream?.effective_direct_reported ?? 0,
+      );
       const reversalId = await insertReport(connection, {
         batchId,
         stepRecordId,
@@ -289,8 +308,15 @@ const lockContext = async (connection: PoolConnection, batchId: string, stepReco
   const index = steps.findIndex((row) => String(row.id) === stepRecordId);
   if (index < 0) throw new ProductionDomainError('NOT_FOUND', '批次工序记录不存在');
   const current = steps[index]!;
-  const required = batch.planned_quantity;
-  const released = releasedQuantity(batch.planned_quantity, steps[index - 1]);
+  const supplements =
+    (await selectRouteSupplementSources(connection, [batchId])).get(batchId) ?? [];
+  const quantity = calculateRouteStepQuantities(
+    batch.planned_quantity,
+    steps.map(toRouteQuantityStep),
+    supplements,
+  ).get(stepRecordId)!;
+  const required = quantity.requiredNormalQuantity;
+  const released = quantity.releasedInputQuantity;
   return { batch, steps, current, index, required, released, downstream: steps[index + 1] ?? null };
 };
 
@@ -437,7 +463,9 @@ const summaryResult = async (
     stepVersion: row.version,
     requiredNormalQuantity: fixed(required),
     releasedNormalQuantity: fixed(released),
-    availableNormalQuantity: fixed(Math.max(0, Number(released) - Number(row.effective_reported))),
+    availableNormalQuantity: fixed(
+      Math.max(0, Number(released) - Number(row.effective_direct_reported)),
+    ),
     effectiveReportedQuantity: row.effective_reported,
     effectiveNormalQuantity: row.effective_normal,
     effectiveAbnormalQuantity: row.effective_abnormal,
@@ -477,6 +505,9 @@ const assertVersion = (step: LockedStepRow, version: number): void => {
     throw new ProductionDomainError('CONCURRENT_MODIFICATION', '工序状态已变化，请刷新后重试');
 };
 const SUMMARY_COLUMNS = `COALESCE(SUM(CASE WHEN r.report_type='normal' THEN r.reported_quantity ELSE -r.reported_quantity END),0) effective_reported,
+  COALESCE(SUM(CASE WHEN NOT EXISTS (
+    SELECT 1 FROM rework_records direct_rework WHERE direct_rework.completed_report_id=r.id
+  ) THEN CASE WHEN r.report_type='normal' THEN r.reported_quantity ELSE -r.reported_quantity END ELSE 0 END),0) effective_direct_reported,
   COALESCE(SUM(CASE WHEN r.report_type='normal' THEN r.normal_quantity ELSE -r.normal_quantity END),0) effective_normal,
   COALESCE(SUM(CASE WHEN r.report_type='normal' THEN r.abnormal_quantity ELSE -r.abnormal_quantity END),0) effective_abnormal`;
 const LOCKED_STEP_SELECT = `SELECT sr.id,sr.step_order_snapshot,sr.status,sr.responsible_user_id,sr.need_record_snapshot,sr.unit_snapshot,sr.version,${SUMMARY_COLUMNS}
@@ -515,3 +546,12 @@ const audit = (
     ip: context.ip,
     userAgent: context.userAgent,
   });
+
+const toRouteQuantityStep = (step: LockedStepRow | ProjectionStepRow): RouteQuantityStep => ({
+  id: step.id,
+  stepOrder: step.step_order_snapshot,
+  needRecord: Boolean(step.need_record_snapshot),
+  status: step.status,
+  effectiveDirectReported: step.effective_direct_reported,
+  effectiveNormal: step.effective_normal,
+});

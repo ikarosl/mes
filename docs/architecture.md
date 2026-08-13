@@ -14,9 +14,9 @@
 
 - Identity/System：认证、RBAC、操作日志和管理端权限基础设施。
 - Product：产品分类、产品主数据、产品物料、技术文件、工序和工艺路线。
-- Production：生产工单、生产批次、工序报工追溯，以及其依赖的生产物料需求、分配和领料出库链路；按状态机分阶段迁移。
+- Production：生产工单、生产批次、工序报工追溯，以及其依赖的生产物料需求、分配、领料出库、生产退料和库存盘点链路；按状态机分阶段迁移。
 
-Inventory（库存批次、出入库、盘点）、Quality（检验、返工）和 Traceability（全流程追溯）只能在后续迁移阶段明确更新后追加，不得仅凭已有 UI 原型提前实现。
+通用 Inventory（其他出入库、报废）、Quality（检验）和 Traceability（全流程追溯）只能在后续迁移阶段明确更新后追加，不得仅凭已有 UI 原型提前实现。当前盘点仅覆盖现有 `item_batch × stock_status` 账本，退料仅覆盖已确认生产领料并固定释放到公共可用库存。
 
 ## 2. 模块与功能的划分
 
@@ -95,7 +95,7 @@ Controller 只负责协议映射、DTO、权限装饰器和响应转换，不写
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | Identity/System  | departments、users、roles、permissions、关联表、refresh_tokens                                                                           |
 | Product          | product_categories、products、product_materials、technical_files、process_steps、process_routes 及关联表                                 |
-| Production       | work_orders、production_batches、batch_step_records、batch_step_reports、batch_step_abnormal_dispositions、rework_records、batch_step_scrap_records、production_material_supplement 及明细、production_item_demand、production_item_allocation、inbound_order、inbound_detail、outbound_order、outbound_detail，以及当前生产物料切片内部的窄库存账本 item_batch、inventory_transaction |
+| Production       | work_orders、production_batches、batch_step_records、batch_step_reports、batch_step_abnormal_dispositions、rework_records、batch_step_scrap_records、production_material_supplement 及明细、production_item_demand、production_item_allocation、inbound_order、inbound_detail、outbound_order、outbound_detail、return_order、return_detail、stock_check_order、stock_check_detail，以及当前生产库存切片的 item_batch、inventory_transaction |
 | 平台审计基础设施 | operation_logs                                                                                                                           |
 | 平台幂等基础设施 | http_idempotency_records（已落地）                                                                                                       |
 | common           | 不拥有业务表                                                                                                                             |
@@ -105,10 +105,7 @@ Controller 只负责协议映射、DTO、权限装饰器和响应转换，不写
 
 Product 获取用户选项必须调用 Identity 的公开目录服务，不能直接查询 `users`。
 
-当前 Production 对 `item_batch`、`inventory_transaction`、`inbound_order`、`inbound_detail` 的所有权只覆盖外购物料入库、生产物料分配和
-`production_material_outbound` 领料流水；它们与 allocation/outbound 五表共享同一 Production 外层事务，
-SQL 集中在 material adapter。不得据此新增 Warehouse Controller、通用入库/退料/报废/盘点写入口。
-未来通用库存正式进入范围后，再评审经公开能力提取 Inventory 模块，迁移前禁止形成第二写入口。
+当前 Production 继续作为库存账本的唯一写入所有者，覆盖外购物料入库、生产物料分配、领料出库、生产退料和库存盘点；这些流程共享同一事务设施，库存数量只写 `inventory_transaction`。`/warehouse/return-orders` 与 `/warehouse/stock-checks` 只是 Production 模块的管理端 HTTP 入口，不建立第二 Warehouse Repository 或账本写入口。未来通用库存继续扩展并形成独立生命周期时，再整体评审提取 Inventory 模块；提取前不得复制表访问或形成双写。
 
 ## 5. Port、Adapter 与文件拆分
 

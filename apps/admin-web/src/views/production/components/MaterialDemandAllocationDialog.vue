@@ -201,8 +201,9 @@ watch(
 );
 watch(
   () => props.demands,
-  () => {
+  (demands) => {
     if (selectedDemandId.value && !selectedDemand.value) selectedDemandId.value = null;
+    if (props.visible && !selectedDemandId.value && demands[0]) selectDemand(demands[0]);
   },
   { deep: true },
 );

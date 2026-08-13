@@ -39,6 +39,10 @@ const allowedTables = new Set([
   'production_item_allocation',
   'outbound_order',
   'outbound_detail',
+  'return_order',
+  'return_detail',
+  'stock_check_order',
+  'stock_check_detail',
 ]);
 const forbiddenModels = [
   'item_type',

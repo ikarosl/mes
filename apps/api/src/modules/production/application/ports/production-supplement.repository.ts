@@ -7,7 +7,7 @@ import type { CommandContext } from '../../../../common/audit/audit.types.js';
 
 export abstract class ProductionSupplementRepository {
   abstract getCandidateContext(dispositionId: string): Promise<{
-    routeStepId: string;
+    routeStepIds: string[];
     candidates: ProductionSupplementCandidateItem[];
   }>;
   abstract approve(

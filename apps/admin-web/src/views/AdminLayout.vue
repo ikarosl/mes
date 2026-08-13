@@ -170,6 +170,16 @@ const warehouseMenus = [
     path: '/warehouse/outbound-orders',
     permission: PERMISSIONS.production.materials.view,
   },
+  {
+    title: '退料管理',
+    path: '/warehouse/return-orders',
+    permission: PERMISSIONS.warehouse.returns.view,
+  },
+  {
+    title: '盘点管理',
+    path: '/warehouse/stock-checks',
+    permission: PERMISSIONS.warehouse.stockChecks.view,
+  },
 ];
 const warehouseItems = computed(() => warehouseMenus.filter((item) => auth.can(item.permission)));
 const signOut = async () => {

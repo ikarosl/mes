@@ -803,6 +803,154 @@ export interface MaterialOutboundCandidateItem {
   unit: string;
 }
 
+export interface ReturnOrderQuery extends PageQuery {
+  keyword?: string;
+  status?: ReturnOrderStatus;
+}
+
+export interface ReturnOrderBatchOption {
+  productionBatchId: string;
+  batchNo: string;
+  workOrderNo: string;
+  productCode: string;
+  productName: string;
+}
+
+export interface ReturnOrderCandidateItem {
+  allocationId: string;
+  demandId: string;
+  itemId: string;
+  itemCode: string;
+  itemName: string;
+  itemBatchId: string;
+  batchCode: string;
+  confirmedOutboundQuantity: string;
+  occupiedReturnQuantity: string;
+  returnableQuantity: string;
+  unit: string;
+}
+
+export interface CreateReturnOrderPayload {
+  productionBatchId: string;
+  remark?: string | null;
+  details: Array<{
+    allocationId: string;
+    returnQuantity: number;
+    remark?: string | null;
+  }>;
+}
+
+export interface ReturnOrderDetailItem {
+  id: string;
+  allocationId: string;
+  demandId: string;
+  itemId: string;
+  itemCode: string;
+  itemName: string;
+  itemBatchId: string;
+  batchCode: string;
+  returnQuantity: string;
+  unit: string;
+  returnStockStatus: 'available';
+  releaseAfterReturn: true;
+  inventoryTransactionId: string | null;
+  remark: string | null;
+}
+
+export interface ReturnOrderItem {
+  id: string;
+  returnNo: string;
+  productionBatchId: string;
+  batchNo: string;
+  workOrderId: string;
+  workOrderNo: string;
+  productCode: string;
+  productName: string;
+  status: ReturnOrderStatus;
+  returnAt: string | null;
+  operatorId: string | null;
+  operatorName: string | null;
+  createdById: string;
+  createdByName: string | null;
+  createdAt: string;
+  version: number;
+  remark: string | null;
+  details: ReturnOrderDetailItem[];
+}
+
+export interface StockCheckOrderQuery extends PageQuery {
+  keyword?: string;
+  status?: StockCheckStatus;
+}
+
+export interface StockCheckCandidateItem {
+  itemId: string;
+  itemCode: string;
+  itemName: string;
+  itemBatchId: string;
+  batchCode: string;
+  stockStatus: StockStatus;
+  systemQuantity: string;
+  unit: string;
+}
+
+export interface StockCheckCandidateQuery extends PageQuery {
+  keyword?: string;
+  stockStatus?: StockStatus;
+}
+
+export interface CreateStockCheckPayload {
+  checkNo?: string | null;
+  remark?: string | null;
+  details: Array<{
+    itemBatchId: string;
+    stockStatus: StockStatus;
+  }>;
+}
+
+export interface SaveStockCheckCountsPayload extends VersionedCommand {
+  details: Array<{
+    detailId: string;
+    actualQuantity: number;
+    remark?: string | null;
+  }>;
+}
+
+export interface StockCheckDetailItem {
+  id: string;
+  itemId: string;
+  itemCode: string;
+  itemName: string;
+  itemBatchId: string;
+  batchCode: string;
+  stockStatus: StockStatus;
+  unit: string;
+  systemQuantity: string;
+  actualQuantity: string | null;
+  differenceQuantity: string | null;
+  result: StockCheckResult | null;
+  adjusted: boolean;
+  remark: string | null;
+}
+
+export interface StockCheckOrderItem {
+  id: string;
+  checkNo: string;
+  status: StockCheckStatus;
+  checkAt: string | null;
+  operatorId: string | null;
+  operatorName: string | null;
+  createdById: string;
+  createdByName: string | null;
+  createdAt: string;
+  version: number;
+  remark: string | null;
+  detailCount: number;
+  pendingCount: number;
+  differenceCount: number;
+  details: StockCheckDetailItem[];
+}
+
 export type ConfirmMaterialOutboundPayload = VersionedCommand;
 export type CancelMaterialOutboundPayload = VersionedCommand;
 
@@ -890,12 +1038,19 @@ export interface ProductionWorkerTaskItem {
   needRecord: boolean;
   unit: string;
   plannedQuantity: string;
+  baseNormalQuantity: string;
   requiredNormalQuantity: string;
   releasedNormalQuantity: string;
   availableNormalQuantity: string;
   effectiveReportedQuantity: string;
+  effectiveDirectReportedQuantity: string;
   effectiveNormalQuantity: string;
   effectiveAbnormalQuantity: string;
+  activatedSupplementInputQuantity: string;
+  activatedSupplementTargetQuantity: string;
+  pendingSupplementInputQuantity: string;
+  isSupplementReopened: boolean;
+  supplementBlockedReason: string | null;
   startedAt: string | null;
   version: number;
   canStart: boolean;
@@ -1031,10 +1186,21 @@ export interface ProductionMaterialSupplementItem {
   scrapRecordId: string;
   productionBatchId: string;
   stepRecordId: string;
-  status: 'approved';
+  status: 'approved' | 'activated';
   remark: string | null;
   createdAt: string;
   details: ProductionMaterialSupplementDetailItem[];
+}
+
+export interface ProductionStepSupplementSourceItem {
+  scrapRecordId: string;
+  supplementId: string;
+  sourceStepRecordId: string;
+  sourceStepOrder: number;
+  sourceStepCode: string;
+  sourceStepName: string;
+  quantity: string;
+  status: 'pending_material' | 'activated';
 }
 
 export interface ApproveScrapSupplementResult {
@@ -1059,13 +1225,21 @@ export interface BatchStepExecutionRecordItem {
   status: BatchStepStatus;
   needRecord: boolean;
   unit: string;
+  baseNormalQuantity: string;
   requiredNormalQuantity: string;
   releasedNormalQuantity: string;
   availableNormalQuantity: string;
   effectiveReportedQuantity: string;
+  effectiveDirectReportedQuantity: string;
   effectiveNormalQuantity: string;
   effectiveAbnormalQuantity: string;
   remainingNormalQuantity: string;
+  activatedSupplementInputQuantity: string;
+  activatedSupplementTargetQuantity: string;
+  pendingSupplementInputQuantity: string;
+  isSupplementReopened: boolean;
+  supplementBlockedReason: string | null;
+  supplementSources: ProductionStepSupplementSourceItem[];
   startedAt: string | null;
   completedAt: string | null;
   version: number;

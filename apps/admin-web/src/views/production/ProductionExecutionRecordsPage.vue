@@ -182,19 +182,67 @@
                   <h2>{{ step.stepOrder }}. {{ step.stepName }}</h2>
                   <p>{{ step.stepCode }} · {{ step.responsibleUserName || '未派工' }}</p>
                 </div>
-                <el-tag :type="stepStatusMeta(step.status).type">{{
-                  stepStatusLabel(step.status)
-                }}</el-tag>
+                <div class="step-tags">
+                  <el-tag
+                    v-if="Number(step.pendingSupplementInputQuantity) > 0"
+                    type="warning"
+                    effect="plain"
+                  >
+                    待补料激活 {{ formatQuantity(step.pendingSupplementInputQuantity) }}
+                  </el-tag>
+                  <el-tag
+                    v-if="step.isSupplementReopened"
+                    type="warning"
+                  >
+                    补产重开
+                  </el-tag>
+                  <el-tag :type="stepStatusMeta(step.status).type">{{
+                    stepStatusLabel(step.status)
+                  }}</el-tag>
+                </div>
               </header>
+              <div
+                v-if="step.supplementSources?.length"
+                class="supplement-route"
+              >
+                <strong>补产路线</strong>
+                <span
+                  v-for="source in step.supplementSources"
+                  :key="source.supplementId"
+                >
+                  来源 {{ source.sourceStepOrder }}. {{ source.sourceStepName }} ·
+                  {{ formatQuantity(source.quantity) }} {{ step.unit }} ·
+                  {{ source.status === 'activated' ? '已领料激活' : '等待补料领用' }}
+                </span>
+              </div>
+              <el-alert
+                v-if="step.supplementBlockedReason"
+                class="supplement-blocked"
+                type="warning"
+                :closable="false"
+                show-icon
+                :title="step.supplementBlockedReason"
+              />
               <div class="step-metrics">
                 <span
-                  >需报正常量 <b>{{ formatQuantity(step.requiredNormalQuantity) }}</b></span
+                  >正常目标 <b>{{ formatQuantity(step.requiredNormalQuantity) }}</b>
+                  <small v-if="Number(step.activatedSupplementTargetQuantity) > 0">
+                    计划 {{ formatQuantity(step.baseNormalQuantity) }} + 下游补产
+                    {{ formatQuantity(step.activatedSupplementTargetQuantity) }}
+                  </small></span
                 >
                 <span
-                  >当前放行量 <b>{{ formatQuantity(step.releasedNormalQuantity) }}</b></span
+                  >投入放行 <b>{{ formatQuantity(step.releasedNormalQuantity) }}</b>
+                  <small v-if="Number(step.activatedSupplementInputQuantity) > 0">
+                    含已激活补产 {{ formatQuantity(step.activatedSupplementInputQuantity) }}
+                  </small></span
                 >
                 <span
                   >当前可报量 <b>{{ formatQuantity(step.availableNormalQuantity) }}</b></span
+                >
+                <span
+                  >普通报工累计
+                  <b>{{ formatQuantity(step.effectiveDirectReportedQuantity) }}</b></span
                 >
                 <span
                   >有效正常累计 <b>{{ formatQuantity(step.effectiveNormalQuantity) }}</b></span
@@ -308,6 +356,8 @@
                 :reworks="reworks.filter((item) => item.stepRecordId === step.stepRecordId)"
                 :pending-keys="pendingKeys"
                 :unit="step.unit"
+                :source-step="step"
+                :route-steps="record.steps"
                 :candidate-loader="loadSupplementCandidates"
                 @approve="handleApproveRework"
                 @approve-scrap="handleApproveScrapSupplement"
@@ -925,13 +975,44 @@ onActivated(refreshCurrent);
   margin: 0;
   font-size: 17px;
 }
+.step-tags {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.supplement-route {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--el-color-warning-light-7);
+  border-radius: 6px;
+  background: var(--el-color-warning-light-9);
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+.supplement-route strong {
+  color: var(--el-color-warning-dark-2);
+}
+.supplement-blocked {
+  margin-top: 12px;
+}
 .step-metrics {
   margin: 14px 0;
 }
 .step-metrics span {
+  display: grid;
+  gap: 4px;
   padding: 10px;
   background: var(--el-fill-color-lighter);
   border-radius: 6px;
+}
+.step-metrics small {
+  color: var(--el-color-warning-dark-2);
 }
 .abnormal-list {
   display: flex;

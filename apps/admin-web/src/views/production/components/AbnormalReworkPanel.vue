@@ -128,6 +128,38 @@
         show-icon
         title="报废数量沿用来源异常事实；补料品种和数量必须人工选择，不按异常数量自动推算。"
       />
+      <el-descriptions
+        v-if="supplementDisposition"
+        class="supplement-context"
+        :column="2"
+        border
+      >
+        <el-descriptions-item label="异常来源工序">
+          {{ sourceStep.stepOrder }}. {{ sourceStep.stepName }}
+        </el-descriptions-item>
+        <el-descriptions-item label="产品补产数量">
+          {{ sourceQuantity(supplementDisposition) }} {{ unit }}
+        </el-descriptions-item>
+        <el-descriptions-item label="固定补产起点">
+          {{ supplementPath[0]?.stepOrder }}. {{ supplementPath[0]?.stepName }}
+        </el-descriptions-item>
+        <el-descriptions-item label="受影响路线">
+          {{ supplementPath.map((step) => step.stepName).join(' → ') }}
+        </el-descriptions-item>
+        <el-descriptions-item
+          label="正常目标变化"
+          :span="2"
+        >
+          {{ supplementTargetImpact }}
+        </el-descriptions-item>
+      </el-descriptions>
+      <el-alert
+        class="dialog-tip"
+        type="info"
+        :closable="false"
+        show-icon
+        title="批准后先生成补料需求；只有本单全部补料确认领用，系统才会从首工序激活补产并按正常产出逐道放行。"
+      />
       <el-alert
         v-if="supplementError"
         class="dialog-tip"
@@ -275,6 +307,7 @@ import type {
   ReworkRecordItem,
   ProductionSupplementCandidateItem,
   ApproveScrapSupplementLinePayload,
+  BatchStepExecutionRecordItem,
 } from '@company/contracts';
 
 const props = withDefaults(
@@ -284,6 +317,8 @@ const props = withDefaults(
     reworks: ReworkRecordItem[];
     pendingKeys: Set<string>;
     unit?: string;
+    sourceStep: BatchStepExecutionRecordItem;
+    routeSteps: BatchStepExecutionRecordItem[];
     candidateLoader: (dispositionId: string) => Promise<ProductionSupplementCandidateItem[]>;
   }>(),
   { unit: '' },
@@ -318,6 +353,22 @@ const supplementRows = ref<
 
 const sourceQuantity = (item: BatchStepAbnormalDispositionItem): string =>
   props.reports.find((report) => report.reportId === item.sourceReportId)?.abnormalQuantity ?? '—';
+const supplementPath = computed(() =>
+  [...props.routeSteps]
+    .filter((step) => step.stepOrder <= props.sourceStep.stepOrder)
+    .sort((left, right) => left.stepOrder - right.stepOrder),
+);
+const supplementTargetImpact = computed(() => {
+  if (!supplementDisposition.value) return '—';
+  const quantity = sourceQuantity(supplementDisposition.value);
+  const upstream = supplementPath.value.slice(0, -1);
+  if (upstream.length === 0)
+    return `${props.sourceStep.stepName} 的正常目标维持批次计划量，补料领用后首工序投入上限增加 ${quantity} ${props.unit}`;
+  const upstreamText = upstream.length
+    ? `${upstream.map((step) => step.stepName).join('、')} 的正常目标各增加 ${quantity} ${props.unit}`
+    : '没有前置工序需要提高正常目标';
+  return `${upstreamText}；${props.sourceStep.stepName} 的最终正常目标不增加，等待前道新增正常产出后补报 ${quantity} ${props.unit}`;
+});
 const reworkTagType = (status: ReworkRecordItem['status']) =>
   status === 'completed' ? 'success' : status === 'cancelled' ? 'info' : 'warning';
 const canComplete = computed(() => {
@@ -422,6 +473,9 @@ const submitCompletion = () => {
   margin-top: 8px;
 }
 .dialog-tip {
+  margin-bottom: 16px;
+}
+.supplement-context {
   margin-bottom: 16px;
 }
 </style>

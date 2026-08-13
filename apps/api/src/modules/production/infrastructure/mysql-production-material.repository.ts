@@ -42,6 +42,7 @@ import {
   type OutboundRow,
 } from './mysql-production-material.mapper.js';
 import { findBatch } from './mysql-production.shared.js';
+import { activateReadySupplements } from './mysql-production-supplement-activation.js';
 
 @Injectable()
 export class MysqlProductionMaterialRepository extends ProductionMaterialRepository {
@@ -481,6 +482,7 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
     context: CommandContext,
   ): Promise<MaterialOutboundCommandResult> {
     return withTransaction(this.pool, async (connection) => {
+      if (!context.actorId) throw new ProductionDomainError('INVALID_INPUT', '缺少当前操作人身份');
       const [[order]] = await connection.query<
         (RowDataPacket & {
           id: number;
@@ -505,6 +507,12 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
         throw new ProductionDomainError('OUTBOUND_CONFIRM_NOT_ALLOWED', '只有待出库单可以确认');
       if (order.version !== version)
         throw new ProductionDomainError('CONCURRENT_MODIFICATION', '出库单已变化，请刷新后重试');
+      const lockedBatch = await findBatch(connection, String(order.production_batch_id), true);
+      await connection.query(
+        `SELECT id FROM batch_step_records
+         WHERE production_batch_id=? ORDER BY step_order_snapshot,id FOR UPDATE`,
+        [order.production_batch_id],
+      );
       const [details] = await connection.query<OutboundDetailRow[]>(
         `SELECT od.id,od.outbound_id,od.allocation_id,od.demand_id,od.item_id,od.batch_id,
           ib.batch_code,ib.item_code_snapshot,ib.product_name_snapshot,od.outbound_number,od.unit_snapshot,
@@ -587,13 +595,25 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
           "UPDATE production_batches SET status='material_outbound',version=version+1,updated_by=? WHERE id=? AND status='material_assigned'",
           [context.actorId, order.production_batch_id],
         );
+      const supplementActivation = await activateReadySupplements(
+        connection,
+        String(order.production_batch_id),
+        lockedBatch.planned_quantity,
+        context.actorId,
+      );
       await this.audit(
         connection,
         context,
         'production-material.outbound.confirm',
         outboundId,
         { status: 'pending_picking', version },
-        { status: 'completed', version: version + 1, transactionCount: details.length },
+        {
+          status: 'completed',
+          version: version + 1,
+          transactionCount: details.length,
+          activatedSupplementIds: supplementActivation.activatedSupplementIds,
+          reopenedStepIds: supplementActivation.reopenedStepIds,
+        },
       );
       const batch = await findBatch(connection, String(order.production_batch_id));
       return {

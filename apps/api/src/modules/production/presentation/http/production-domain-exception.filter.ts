@@ -57,6 +57,13 @@ const statusFor = (code: ProductionDomainError['code']): number => {
     code === 'OUTBOUND_CANCEL_NOT_ALLOWED' ||
     code === 'INBOUND_CONFIRM_NOT_ALLOWED' ||
     code === 'INBOUND_CANCEL_NOT_ALLOWED' ||
+    code === 'RETURN_QUANTITY_EXCEEDED' ||
+    code === 'RETURN_CONFIRM_NOT_ALLOWED' ||
+    code === 'RETURN_CANCEL_NOT_ALLOWED' ||
+    code === 'STOCK_CHECK_COUNT_NOT_ALLOWED' ||
+    code === 'STOCK_CHECK_INCOMPLETE' ||
+    code === 'STOCK_CHECK_SNAPSHOT_CHANGED' ||
+    code === 'STOCK_CHECK_CANCEL_NOT_ALLOWED' ||
     code === 'STEP_ASSIGNMENT_CONFLICT' ||
     code === 'STEP_START_NOT_ALLOWED' ||
     code === 'STEP_REPORT_NOT_ALLOWED' ||

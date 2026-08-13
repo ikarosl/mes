@@ -55,14 +55,25 @@ export class MysqlProductionSupplementRepository extends ProductionSupplementRep
   }
 
   async getCandidateContext(dispositionId: string): Promise<{
-    routeStepId: string;
+    routeStepIds: string[];
     candidates: ProductionSupplementCandidateItem[];
   }> {
     const source = await selectSource(this.pool, dispositionId);
     if (source.review_status !== 'pending_review')
       throw new ProductionDomainError('INVALID_STATE', '仅待处置异常可以选择报废补料');
     const rows = await selectCandidates(this.pool, String(source.production_batch_id));
-    return { routeStepId: String(source.route_step_id), candidates: rows.map(mapCandidate) };
+    const [routeSteps] = await this.pool.query<(RowDataPacket & { route_step_id: number })[]>(
+      `SELECT route_step_id FROM batch_step_records
+       WHERE production_batch_id=? AND step_order_snapshot<=(
+         SELECT step_order_snapshot FROM batch_step_records WHERE id=?
+       )
+       ORDER BY step_order_snapshot,id`,
+      [source.production_batch_id, source.batch_step_record_id],
+    );
+    return {
+      routeStepIds: routeSteps.map((row) => String(row.route_step_id)),
+      candidates: rows.map(mapCandidate),
+    };
   }
 
   approve(

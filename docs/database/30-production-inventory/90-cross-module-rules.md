@@ -4,7 +4,7 @@
 
 ## 3.11 跨模块引用说明
 
-本章引用的 `users`、`process_routes`、`process_steps`、`technical_files` 分别由[系统、RBAC 与认证](../10-system-rbac-auth.md)和[文件与工艺](../20-files-and-process.md)定义。报工事实使用[生产报工、追溯与质量边界](../40-production-traceability-quality.md)定义的 `batch_step_reports`；工序异常审批使用已追加 migration 的 `batch_step_abnormal_dispositions`，不得把异常审批状态写入 `batch_step_records.status`。当前处置单创建、审批命令及下游事务尚未实现；当前阶段明确不做返工/补料报工额度来源和激活限制；`rework_records`、工序报废、`quality_check_order` 和 `quality_check_detail` 仍未定稿，不得提前创建。
+本章引用的 `users`、`process_routes`、`process_steps`、`technical_files` 分别由[系统、RBAC 与认证](../10-system-rbac-auth.md)和[文件与工艺](../20-files-and-process.md)定义。报工事实使用[生产报工、追溯与质量边界](../40-production-traceability-quality.md)定义的 `batch_step_reports`；工序异常审批使用 `batch_step_abnormal_dispositions`，不得把异常审批状态写入 `batch_step_records.status`。异常处置、最小返工、工序报废补料及全部补料领用后的路线补产已经落地；`quality_check_order` 和 `quality_check_detail` 仍未定稿，不得提前创建。
 
 跨模块写操作必须由应用服务在同一事务内维护组合外键、快照和操作日志，Controller 不得直接拼接 SQL 修改多张事实表。
 
@@ -76,7 +76,7 @@
 
 ### 3.12.5 半自动报废补料边界（部分已确认）
 
-已确认补料采用管理员半自动决策：系统只给出候选物料，管理员选择物料并填写数量；系统不得根据工序异常数量或 BOM 自动推算补料数量。候选物料优先取异常工序绑定的有效 `route_step_materials`，未绑定时可以降级为当前产品全部有效 BOM 物料。最终选中的物料、人工填写数量、单位和原始需求在补料明细中冻结，未选候选项不需要冻结。
+已确认补料采用管理员半自动决策：系统只给出候选物料，管理员选择物料并填写数量；系统不得根据工序异常数量或 BOM 自动推算补料数量。当前从路线首工序重新投产，因此候选物料优先汇总路线首工序至异常来源工序绑定的有效 `route_step_materials` 并按 BOM 明细去重；该路径未绑定时可以降级为当前产品全部有效 BOM 物料。最终选中的物料、人工填写数量、单位和原始需求在补料明细中冻结，未选候选项不需要冻结。
 
 补料不得改写原需求事实。对于现有 `item_scrap` 表达的库存或生产消耗报废，批准后新增需求使用以下字段：
 
@@ -92,8 +92,8 @@
 - 不得直接修改原始需求的 `need_number`。
 - 目标链路为：原始需求 → 工序报废/补料单及明细 → 补料需求 → 分配 → 出库。
 - 上表的 `source_scrap_id` 只允许引用现有 `item_scrap.id`。工序报废补料不得把 `batch_step_scrap_records.id` 填入该字段，而是由 `source_supplement_detail_id` 关联主动补料明细。
-- 当前阶段补料、分配和出库不形成再次报工额度，也不作为报工开关；工序只按有效正常数量是否达到当前要求数量判断能否继续报工。
-- 该简化方案无法追溯某次补报所使用的补料/返工来源，也不能控制来源剩余额度。未来如升级严格控制，再评审来源授权、出库激活、消费明细和并发规则。
+- 补料物料数量不直接形成产品报工额度。对应补料单的全部追加需求完成确认领料出库后，最后一笔确认事务把 `production_material_supplement.status` 持久化为 `activated`，再以来源 `batch_step_scrap_records.scrap_quantity` 整笔激活从路线首工序到报废来源工序的补产授权；分配、待出库或部分出库状态均不得激活。
+- 来源工序不能直接增加可报量。首工序先获得新增投入量；各上游工序形成新增正常产出后，额度才通过 `effective_normal` 逐道向下放行。报工校验只读跨表派生结果，不修改库存或需求事实。当前不追踪某次补报逐笔消费哪张补料单；未来如需部分激活、指定来源消费、半成品重入或撤销已激活额度，再评审独立消费/重入事实和并发规则。
 - `production_material_supplement`、补料明细、工序报废和需求之间使用批次、工序、BOM 明细、物料和原始需求组合外键保持一致；只允许 Production 模块在批准报废补料事务中写入。
 
 ---
@@ -178,7 +178,7 @@ SELECT id FROM item_batch WHERE id = :batch_id FOR UPDATE;
 
 - 批次完工前校验所有 `need_record_snapshot = 1` 的工序已完成。
 - `need_inspection_snapshot` 当前只保留路线快照，不创建过程检验任务，也不作为批次生产完工或下工序流转的阻塞条件；这是过程质量流程缺失期间的临时方案。
-- 当前尚无 `rework_records`，生产执行完工不得伪造“无未关闭返工”校验；待处理异常继续由 `batch_step_abnormal_dispositions` 独立表达和展示，不复用批次执行状态。
+- 最小 `rework_records` 已落地；返工完成报工计入工序有效正常/异常数量，未完成返工和待处理异常继续由各自业务记录独立表达和展示，不复用批次执行状态。批次生产执行完工按权威报工章节校验必报工工序与末道有效正常量，不伪造尚未定稿的最终质量结论。
 - `completed_quantity` 固定取最后一道必报工工序（`need_record_snapshot = 1` 且 `step_order_snapshot` 最大）的 `effective_normal`。完工命令必须在事务内锁定并校验全部必报工工序、重新聚合该数量，客户端不得提交完成数量；没有必报工工序或任一必报工工序未完成时拒绝。
 - 当前不支持正常数量不足时的短批完工；未来必须以独立的生产损失/短批完工事实确认差额，不得人工覆盖 `completed_quantity`。正常批次完工必须在同一事务写入完成数量、完工时间、完工人、`completed` 状态和成功操作日志。
 - 批次完工不自动创建入库单、库存批次或库存流水。
