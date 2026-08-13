@@ -40,7 +40,7 @@ Production 的事务、并发建批、物料需求快照、报工事实约束/�
 
 根命令 `pnpm verify` 与 CI `quality` 作业使用相同的格式、文档、架构、迁移、密钥、生产依赖审计、Lint、构建、类型及单元测试门禁。生产依赖审计固定使用 `pnpm audit:prod`，高危及以上公告必须先升级或显式完成安全评估，不得因本地 `verify` 漏跑而仅在 CI 暴露。
 
-该命令会先检查显式开关与专用测试端点门禁：`TEST_DB_HOST/PORT/NAME` 必填，`DB_HOST/PORT/NAME` 必须分别与之完全相等，并且库名必须以 `_test` 结尾。通过后构建所需 workspace，复用 `db:init` 执行 migration、系统 seed 和管理员初始化，再重复执行一次 seed 证明幂等性，最后运行 `tests/integration` 全套测试
+该命令会先检查显式开关与专用测试端点门禁：`TEST_DB_HOST/PORT/NAME` 必填，`DB_HOST/PORT/NAME` 必须分别与之完全相等，并且库名必须以 `_test` 结尾。通过后显式构建集成套件运行时需要的 `config`、`utils`、`constants`、`code-rules` 与 `database` workspace，禁止依赖本地遗留的 `dist` 目录；随后复用 `db:init` 执行 migration、系统 seed 和管理员初始化，再重复执行一次 seed 证明幂等性，最后运行 `tests/integration` 全套测试
 （`vitest.mysql.config.ts` 的 include 为 `tests/integration/**/*.test.ts`，当前共 8 个文件：
 `production/production-persistence.mysql.test.ts`、`identity/rbac-persistence.mysql.test.ts`、
 `idempotency/http-idempotency.mysql.test.ts`、`idempotency/create-batch-closed-loop.mysql.test.ts` 与
