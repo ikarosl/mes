@@ -22,6 +22,10 @@ export class ProductSnapshotService extends ProductSnapshotQuery {
     return this.snapshots.listInventoryItemReferencesByIds(itemIds);
   }
 
+  listRouteStepMaterialIds(routeStepId: string): Promise<string[]> {
+    return this.snapshots.listRouteStepMaterialIds(routeStepId);
+  }
+
   getProductionProduct(productId: string): Promise<ProductQueryResult<ProductionProductSnapshot>> {
     return this.toResult(() => this.snapshots.getProductionProduct(productId));
   }

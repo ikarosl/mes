@@ -6,6 +6,7 @@ import type {
   BatchStepStatus,
 } from '@company/contracts';
 import { toBeijingISOString } from '../../../common/time/beijing-time.js';
+import type { RouteStepQuantity } from '../domain/production-route-quantity.policy.js';
 
 export type ReportRow = RowDataPacket & {
   id: number;
@@ -49,6 +50,7 @@ export type ProjectionStepRow = RowDataPacket & {
   need_record_snapshot: number;
   unit_snapshot: string;
   effective_reported: string;
+  effective_direct_reported: string;
   effective_normal: string;
   effective_abnormal: string;
   started_at: Date | null;
@@ -90,8 +92,8 @@ export const mapDisposition = (row: DispositionRow): BatchStepAbnormalDispositio
 
 export const mapExecutionStep = (
   row: ProjectionStepRow,
-  required: string,
-  released: string,
+  plannedQuantity: string,
+  quantity: RouteStepQuantity,
   reports: ReportRow[],
   dispositions: DispositionRow[],
 ): BatchStepExecutionRecordItem => ({
@@ -105,13 +107,21 @@ export const mapExecutionStep = (
   status: row.status,
   needRecord: Boolean(row.need_record_snapshot),
   unit: row.unit_snapshot,
-  requiredNormalQuantity: fixed(required),
-  releasedNormalQuantity: fixed(released),
-  availableNormalQuantity: fixed(Math.max(0, Number(released) - Number(row.effective_reported))),
+  baseNormalQuantity: fixed(plannedQuantity),
+  requiredNormalQuantity: quantity.requiredNormalQuantity,
+  releasedNormalQuantity: quantity.releasedInputQuantity,
+  availableNormalQuantity: quantity.availableReportQuantity,
   effectiveReportedQuantity: row.effective_reported,
+  effectiveDirectReportedQuantity: row.effective_direct_reported,
   effectiveNormalQuantity: row.effective_normal,
   effectiveAbnormalQuantity: row.effective_abnormal,
-  remainingNormalQuantity: fixed(Math.max(0, Number(required) - Number(row.effective_normal))),
+  remainingNormalQuantity: quantity.remainingNormalQuantity,
+  activatedSupplementInputQuantity: quantity.activatedSupplementInputQuantity,
+  activatedSupplementTargetQuantity: quantity.activatedSupplementTargetQuantity,
+  pendingSupplementInputQuantity: quantity.pendingSupplementInputQuantity,
+  isSupplementReopened: quantity.isSupplementReopened,
+  supplementBlockedReason: quantity.supplementBlockedReason,
+  supplementSources: quantity.supplementSources,
   startedAt: row.started_at ? toBeijingISOString(row.started_at) : null,
   completedAt: row.completed_at ? toBeijingISOString(row.completed_at) : null,
   version: row.version,

@@ -38,6 +38,7 @@
 - 退料主单表达一次退料动作。
 - 具体退回哪个分配行、哪个批次、多少数量，由 `return_detail` 记录。
 - 退料后是否继续占用原生产批次，需要由明细字段控制。
+- 当前已实现的最小退料只接受已确认生产领料，固定退回 `available` 并设置 `release_after_return = 1` 释放公共库存。`release_after_return = 0` 的批次专属库存预留和退料报废仅保留设计位置，当前不得开放命令。
 
 ---
 
@@ -81,6 +82,8 @@
 - `release_after_return = 0` 表示退回后仍绑定原生产批次，可再次出给该批次。
 - `release_after_return = 1` 表示退回后释放给公共库存，不再继续占用原生产批次。
 - 退料入库应生成 `inventory_transaction`，类型为 `material_return_inbound`。
+- 创建待退料单时即占用可退数量；可退数量为同一 allocation 已确认领料累计减去其他 `pending/returned` 退料明细累计。取消待退料单释放占用。
+- 确认退料按 `item_batch.id` 升序锁定涉及批次，重新校验可退数量，并将主单更新、正库存流水和成功审计放在同一事务。
 
 ---
 
@@ -204,9 +207,9 @@
 | `stock_status`        | `VARCHAR(20)`     | 盘点的库存状态，例如 `available`、`pending_inspection` |
 | `unit_snapshot`       | `VARCHAR(20)`     | 盘点时单位快照                                         |
 | `system_quantity`     | `DECIMAL(12,4)`   | 盘点时系统账面数量                                     |
-| `actual_quantity`     | `DECIMAL(12,4)`   | 实盘数量                                               |
-| `difference_quantity` | `DECIMAL(12,4)`   | 生成列：实盘数量 - 系统数量                            |
-| `result`              | `VARCHAR(20)`     | 生成列：`surplus`、`shortage`、`matched`               |
+| `actual_quantity`     | `DECIMAL(12,4)`   | 实盘数量；尚未录入时为空                               |
+| `difference_quantity` | `DECIMAL(12,4)`   | 可空生成列：实盘数量 - 系统数量                        |
+| `result`              | `VARCHAR(20)`     | 可空生成列：`surplus`、`shortage`、`matched`           |
 | `adjusted`            | `TINYINT`         | 是否已生成盘点调整流水：`0` 否，`1` 是                 |
 | `remark`              | `TEXT`            | 备注                                                   |
 | `created_by`          | `BIGINT UNSIGNED` | 创建人                                                 |
@@ -219,9 +222,9 @@
 - 外键：`FOREIGN KEY (item_id) REFERENCES products(id)`
 - 外键：`FOREIGN KEY (batch_id, item_id) REFERENCES item_batch(id, item_id)`
 - 检查约束：`CHECK (system_quantity >= 0)`
-- 检查约束：`CHECK (actual_quantity >= 0)`
+- 检查约束：`CHECK (actual_quantity IS NULL OR actual_quantity >= 0)`
 - 检查约束：`CHECK (stock_status IN ('available', 'pending_inspection', 'frozen', 'defective'))`
-- 检查约束：`CHECK (result IN ('surplus', 'shortage', 'matched'))`
+- 检查约束：`CHECK (result IS NULL OR result IN ('surplus', 'shortage', 'matched'))`
 - 检查约束：`CHECK (adjusted IN (0, 1))`
 - 唯一约束：`UNIQUE (stock_check_id, item_id, batch_id, stock_status)`
 
@@ -230,5 +233,9 @@
 - `difference_quantity` 和 `result` 必须使用数据库生成列或只在查询视图中计算，禁止由接口独立写入。
 - 盘点调整应生成 `inventory_transaction`，类型为 `stock_check_adjustment`。
 - 盘点明细应记录盘点时的系统数量快照，避免后续库存变动影响盘点结果。
+- 创建盘点单时由管理员从当前正库存 `item_batch × stock_status` 候选中选择明细，系统在创建事务内冻结账面数量；空明细、重复批次状态组合和非正库存均拒绝。
+- 首次保存任意实盘数量时主单从 `pending` 进入 `counting`；允许分次保存，未录入明细保持 `actual_quantity = NULL`。
+- 完成盘点要求所有明细已录入。事务按批次 ID 升序锁定库存批次并重新汇总当前账面数量；任一当前数量与快照不同则整单拒绝，要求取消后重新建单，禁止用旧快照调整变化后的库存。
+- 校验通过后，差异非零的明细各生成一条 `stock_check_adjustment` 流水，匹配明细不生成零流水；全部明细统一标记 `adjusted = 1`，主单更新为 `completed`，流水、状态和成功审计同事务提交。当前不提供完成后再单独“生成调整”的第二入口。
 
 ---

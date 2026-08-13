@@ -2,12 +2,16 @@ import { loadWorkspaceEnv } from '../../../packages/config/src/index.js';
 import {
   createPool,
   type Pool,
+  type PoolConnection,
   type ResultSetHeader,
   type RowDataPacket,
 } from '../../../apps/api/node_modules/mysql2/promise.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { MysqlProductionExecutionRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-execution.repository.js';
 import { MysqlProductionReportingRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-reporting.repository.js';
+import { MysqlProductionAbnormalRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-abnormal.repository.js';
+import { MysqlProductionSupplementRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-supplement.repository.js';
+import { MysqlProductionMaterialRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-material.repository.js';
 import { MysqlIdempotencyExecutor } from '../../../apps/api/src/infrastructure/idempotency/mysql-idempotency.executor.js';
 import { IdentityDirectoryService } from '../../../apps/api/src/modules/identity/application/identity-directory.service.js';
 import { MysqlRbacRepository } from '../../../apps/api/src/modules/identity/infrastructure/mysql-rbac.repository.js';
@@ -20,6 +24,9 @@ describeMysql('Production execution MySQL transactions', () => {
   let pool: Pool;
   let repository: MysqlProductionExecutionRepository;
   let reporting: MysqlProductionReportingRepository;
+  let abnormal: MysqlProductionAbnormalRepository;
+  let supplement: MysqlProductionSupplementRepository;
+  let materials: MysqlProductionMaterialRepository;
   let reportingService: ProductionReportingService;
 
   beforeAll(() => {
@@ -41,6 +48,9 @@ describeMysql('Production execution MySQL transactions', () => {
     });
     repository = new MysqlProductionExecutionRepository(pool);
     reporting = new MysqlProductionReportingRepository(pool);
+    abnormal = new MysqlProductionAbnormalRepository(pool);
+    supplement = new MysqlProductionSupplementRepository(pool);
+    materials = new MysqlProductionMaterialRepository(pool);
     reportingService = new ProductionReportingService(
       reporting,
       new IdentityDirectoryService(new MysqlRbacRepository(pool)),
@@ -315,6 +325,329 @@ describeMysql('Production execution MySQL transactions', () => {
       expect(
         await auditCount(pool, `${fixture.token}-report-2`, 'production-step-report.create'),
       ).toBe(1);
+    } finally {
+      await cleanup(pool, fixture);
+    }
+  });
+
+  it('closes a source-bound rework as a new immutable report in one transaction', async () => {
+    const fixture = await createFixture(pool, 'rework');
+    try {
+      await repository.assignStep(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        String(fixture.workerId),
+        0,
+        context(fixture.actorId, `${fixture.token}-assign`),
+      );
+      await repository.startStep(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        1,
+        context(fixture.workerId, `${fixture.token}-start`),
+      );
+      const source = await reporting.createReport(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        { version: 2, normalQuantity: 8, abnormalQuantity: 2, remark: 'source abnormal' },
+        context(fixture.workerId, `${fixture.token}-source-report`),
+      );
+      const dispositionId = source.abnormalDisposition?.dispositionId;
+      expect(dispositionId).toBeDefined();
+
+      const approved = await abnormal.approveRework(
+        dispositionId!,
+        { version: 0, remark: 'repair it' },
+        context(fixture.actorId, `${fixture.token}-approve`),
+      );
+      expect(approved).toMatchObject({
+        sourceReportId: source.report.reportId,
+        responsibleUserId: String(fixture.workerId),
+        reworkQuantity: '2.0000',
+        status: 'pending',
+      });
+      const started = await abnormal.startRework(
+        approved.reworkId,
+        approved.version,
+        context(fixture.workerId, `${fixture.token}-rework-start`),
+      );
+      const completed = await abnormal.completeRework(
+        approved.reworkId,
+        { version: started.version, normalQuantity: 2, abnormalQuantity: 0, remark: 'repaired' },
+        context(fixture.workerId, `${fixture.token}-rework-complete`),
+      );
+      expect(completed).toMatchObject({
+        rework: { status: 'completed' },
+        report: {
+          normalQuantity: '2.0000',
+          abnormalQuantity: '0.0000',
+          reportType: 'normal',
+        },
+        abnormalDisposition: null,
+      });
+      expect(completed.rework.completedReportId).toBe(completed.report.reportId);
+
+      await expect(
+        reporting.correctReport(
+          String(fixture.batchId),
+          String(fixture.firstStepRecordId),
+          completed.report.reportId,
+          { version: 4, normalQuantity: 1, abnormalQuantity: 1, reason: 'must use rework flow' },
+          context(fixture.actorId, `${fixture.token}-forbidden-correction`),
+        ),
+      ).rejects.toMatchObject({ code: 'STEP_REPORT_DEPENDENCY_CONFLICT' });
+      expect(
+        await auditCount(pool, `${fixture.token}-rework-complete`, 'production-rework.complete'),
+      ).toBe(1);
+    } finally {
+      await cleanup(pool, fixture);
+    }
+  });
+
+  it('atomically approves step scrap and creates manually-entered supplemental demand facts', async () => {
+    const fixture = await createFixture(pool, 'scrap-supplement');
+    try {
+      await repository.assignStep(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        String(fixture.workerId),
+        0,
+        context(fixture.actorId, `${fixture.token}-assign`),
+      );
+      await repository.startStep(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        1,
+        context(fixture.workerId, `${fixture.token}-start`),
+      );
+      const source = await reporting.createReport(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        { version: 2, normalQuantity: 8, abnormalQuantity: 2, remark: 'scrap source' },
+        context(fixture.workerId, `${fixture.token}-source-report`),
+      );
+      const dispositionId = source.abnormalDisposition!.dispositionId;
+      expect((await supplement.getCandidateContext(dispositionId)).candidates).toMatchObject([
+        {
+          originalDemandId: String(fixture.demandId),
+          productMaterialId: String(fixture.productMaterialId),
+        },
+      ]);
+
+      const result = await supplement.approve(
+        dispositionId,
+        {
+          version: 0,
+          details: [{ originalDemandId: String(fixture.demandId), supplementQuantity: 1.25 }],
+          remark: 'manual quantity',
+        },
+        context(fixture.actorId, `${fixture.token}-approve-scrap`),
+      );
+      expect(result).toMatchObject({
+        disposition: { reviewStatus: 'approved', dispositionType: 'scrap' },
+        scrapRecord: { scrapQuantity: '2.0000' },
+        supplement: {
+          status: 'approved',
+          details: [
+            {
+              originalDemandId: String(fixture.demandId),
+              supplementQuantity: '1.2500',
+            },
+          ],
+        },
+      });
+      const [[demand]] = await pool.query<
+        (RowDataPacket & {
+          demand_type: string;
+          need_number: string;
+          parent_demand_id: number;
+          source_supplement_detail_id: number;
+        })[]
+      >(
+        "SELECT demand_type,need_number,parent_demand_id,source_supplement_detail_id FROM production_item_demand WHERE production_batch_id=? AND demand_type='scrap_supplement'",
+        [fixture.batchId],
+      );
+      expect(demand).toMatchObject({
+        demand_type: 'scrap_supplement',
+        need_number: '1.2500',
+        parent_demand_id: fixture.demandId,
+      });
+      expect(demand?.source_supplement_detail_id).toBeGreaterThan(0);
+      expect(
+        await auditCount(
+          pool,
+          `${fixture.token}-approve-scrap`,
+          'production-abnormal.approve-scrap-supplement',
+        ),
+      ).toBe(1);
+    } finally {
+      await cleanup(pool, fixture);
+    }
+  });
+
+  it('activates downstream scrap replacement only after supplemental outbound and propagates it from the first step', async () => {
+    const fixture = await createFixture(pool, 'supplement-route');
+    try {
+      await repository.assignStep(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        String(fixture.workerId),
+        0,
+        context(fixture.actorId, `${fixture.token}-assign-a`),
+      );
+      await repository.assignStep(
+        String(fixture.batchId),
+        String(fixture.secondStepRecordId),
+        String(fixture.workerId),
+        0,
+        context(fixture.actorId, `${fixture.token}-assign-b`),
+      );
+      await repository.startStep(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        1,
+        context(fixture.workerId, `${fixture.token}-start-a`),
+      );
+      await reporting.createReport(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        { version: 2, normalQuantity: 10, abnormalQuantity: 0 },
+        context(fixture.workerId, `${fixture.token}-report-a`),
+      );
+      await repository.startStep(
+        String(fixture.batchId),
+        String(fixture.secondStepRecordId),
+        1,
+        context(fixture.workerId, `${fixture.token}-start-b`),
+      );
+      const source = await reporting.createReport(
+        String(fixture.batchId),
+        String(fixture.secondStepRecordId),
+        { version: 2, normalQuantity: 8, abnormalQuantity: 2 },
+        context(fixture.workerId, `${fixture.token}-report-b`),
+      );
+      await supplement.approve(
+        source.abnormalDisposition!.dispositionId,
+        {
+          version: 0,
+          details: [{ originalDemandId: String(fixture.demandId), supplementQuantity: 2 }],
+        },
+        context(fixture.actorId, `${fixture.token}-approve`),
+      );
+
+      const beforeOutbound = await reporting.getBatchExecution(String(fixture.batchId));
+      expect(beforeOutbound.steps[0]).toMatchObject({
+        status: 'completed',
+        requiredNormalQuantity: '10.0000',
+        releasedNormalQuantity: '10.0000',
+        pendingSupplementInputQuantity: '2.0000',
+      });
+      const [[supplementDemand]] = await pool.query<(RowDataPacket & { id: number })[]>(
+        "SELECT id FROM production_item_demand WHERE production_batch_id=? AND demand_type='scrap_supplement'",
+        [fixture.batchId],
+      );
+      const itemBatchId = await insert(
+        pool,
+        "INSERT INTO item_batch (item_id,item_code_snapshot,product_name_snapshot,unit_snapshot,batch_code,source_type,created_by,updated_by) VALUES (?,?,?,'kg',?,'purchased',?,?)",
+        [
+          fixture.materialId,
+          `${fixture.token}-m`,
+          'Supplement material',
+          `${fixture.token}-ib`,
+          fixture.actorId,
+          fixture.actorId,
+        ],
+      );
+      await pool.execute(
+        "INSERT INTO inventory_transaction (item_id,batch_id,transaction_type,quantity,unit_snapshot,stock_status,reference_type,reference_detail_id,idempotency_key,created_by) VALUES (?,?,'purchase_inbound','2.0000','kg','available','manual',0,?,?)",
+        [fixture.materialId, itemBatchId, `${fixture.token}-opening`, fixture.actorId],
+      );
+      const allocation = await materials.createAllocations(
+        String(fixture.batchId),
+        {
+          allocations: [
+            {
+              demandId: String(supplementDemand!.id),
+              itemBatchId: String(itemBatchId),
+              assignedQuantity: 2,
+            },
+          ],
+        },
+        context(fixture.actorId, `${fixture.token}-allocate`),
+      );
+      const outbound = await materials.createOutbound(
+        String(fixture.batchId),
+        {
+          details: [
+            {
+              allocationId: allocation.allocations[0]!.allocationId,
+              outboundQuantity: 2,
+            },
+          ],
+        },
+        context(fixture.actorId, `${fixture.token}-outbound`),
+      );
+      await materials.confirmOutbound(
+        outbound.outbound.outboundId,
+        0,
+        context(fixture.actorId, `${fixture.token}-confirm`),
+      );
+
+      const activated = await reporting.getBatchExecution(String(fixture.batchId));
+      expect(activated.steps[0]).toMatchObject({
+        status: 'doing',
+        requiredNormalQuantity: '12.0000',
+        releasedNormalQuantity: '12.0000',
+        availableNormalQuantity: '2.0000',
+        activatedSupplementInputQuantity: '2.0000',
+        activatedSupplementTargetQuantity: '2.0000',
+        isSupplementReopened: true,
+      });
+      expect(activated.steps[1]).toMatchObject({
+        requiredNormalQuantity: '10.0000',
+        releasedNormalQuantity: '10.0000',
+        availableNormalQuantity: '0.0000',
+        remainingNormalQuantity: '2.0000',
+        supplementBlockedReason: '等待前道补产形成新的正常放行量',
+      });
+      const [[activation]] = await pool.query<
+        (RowDataPacket & {
+          status: string;
+          activated_at: Date | null;
+          activated_by: number | null;
+        })[]
+      >(
+        'SELECT status,activated_at,activated_by FROM production_material_supplement WHERE production_batch_id=?',
+        [fixture.batchId],
+      );
+      expect(activation).toMatchObject({
+        status: 'activated',
+        activated_by: fixture.actorId,
+      });
+      expect(activation?.activated_at).not.toBeNull();
+
+      await reporting.createReport(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        { version: activated.steps[0]!.version, normalQuantity: 2, abnormalQuantity: 0 },
+        context(fixture.workerId, `${fixture.token}-replace-a`),
+      );
+      const afterUpstream = await reporting.getBatchExecution(String(fixture.batchId));
+      expect(afterUpstream.steps[1]).toMatchObject({
+        releasedNormalQuantity: '12.0000',
+        availableNormalQuantity: '2.0000',
+        supplementBlockedReason: null,
+      });
+      const completedB = await reporting.createReport(
+        String(fixture.batchId),
+        String(fixture.secondStepRecordId),
+        { version: afterUpstream.steps[1]!.version, normalQuantity: 2, abnormalQuantity: 0 },
+        context(fixture.workerId, `${fixture.token}-replace-b`),
+      );
+      expect(completedB).toMatchObject({
+        stepStatus: 'completed',
+        effectiveNormalQuantity: '10.0000',
+      });
     } finally {
       await cleanup(pool, fixture);
     }
@@ -663,12 +996,16 @@ type Fixture = {
   workerId: number;
   otherWorkerId: number;
   categoryId: number;
+  materialCategoryId: number;
   productId: number;
+  materialId: number;
+  productMaterialId: number;
   processStepIds: [number, number];
   routeId: number;
   routeStepIds: [number, number];
   workOrderId: number;
   batchId: number;
+  demandId: number;
   firstStepRecordId: number;
   secondStepRecordId: number;
 };
@@ -698,6 +1035,21 @@ const createFixture = async (pool: Pool, suffix: string): Promise<Fixture> => {
     pool,
     "INSERT INTO products (item_code,product_name,category_id,unit,acquire_method) VALUES (?,?,?,'pcs','self_made')",
     [`${token}-product`, 'Execution product', categoryId],
+  );
+  const materialCategoryId = await insert(
+    pool,
+    "INSERT INTO product_categories (category_code,category_name,item_kind) VALUES (?,?,'material')",
+    [`${token}-mc`, 'Execution material category'],
+  );
+  const materialId = await insert(
+    pool,
+    "INSERT INTO products (item_code,product_name,category_id,unit,acquire_method) VALUES (?,?,?,'kg','purchased')",
+    [`${token}-m`, 'Execution material', materialCategoryId],
+  );
+  const productMaterialId = await insert(
+    pool,
+    "INSERT INTO product_materials (product_id,material_product_id,quantity_per_unit,unit,is_key_material,need_batch_record) VALUES (?,?,'1.0000','kg',1,1)",
+    [productId, materialId],
   );
   const firstProcessStepId = await insert(
     pool,
@@ -748,6 +1100,18 @@ const createFixture = async (pool: Pool, suffix: string): Promise<Fixture> => {
       actor.id,
     ],
   );
+  const demandId = await insert(
+    pool,
+    "INSERT INTO production_item_demand (production_batch_id,product_material_id,item_id,quantity_per_unit_snapshot,unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,planned_output_quantity_snapshot,need_number,demand_type,idempotency_key,business_status,created_by,updated_by) VALUES (?,?,?,'1.0000','kg',1,1,'10.0000','10.0000','normal',?,'active',?,?)",
+    [
+      batchId,
+      productMaterialId,
+      materialId,
+      `NORMAL:${batchId}:${productMaterialId}`,
+      actor.id,
+      actor.id,
+    ],
+  );
   const secondStepRecordId = await insert(
     pool,
     'INSERT INTO batch_step_records (production_batch_id,route_step_id,step_order_snapshot,step_code_snapshot,step_name_snapshot,need_record_snapshot,need_inspection_snapshot,unit_snapshot,created_by,updated_by) VALUES (?,?,?,?,?,1,0,?,?,?)',
@@ -768,12 +1132,16 @@ const createFixture = async (pool: Pool, suffix: string): Promise<Fixture> => {
     workerId,
     otherWorkerId,
     categoryId,
+    materialCategoryId,
     productId,
+    materialId,
+    productMaterialId,
     processStepIds: [firstProcessStepId, secondProcessStepId],
     routeId,
     routeStepIds: [firstRouteStepId, secondRouteStepId],
     workOrderId,
     batchId,
+    demandId,
     firstStepRecordId,
     secondStepRecordId,
   };
@@ -815,6 +1183,34 @@ const cleanup = async (pool: Pool, fixture: Fixture): Promise<void> => {
   await pool.execute('DELETE FROM http_idempotency_records WHERE idempotency_key LIKE ?', [
     `${fixture.token}%`,
   ]);
+  await pool.execute('DELETE FROM rework_records WHERE production_batch_id=?', [fixture.batchId]);
+  await deleteInventoryTransactions(
+    pool,
+    "DELETE FROM inventory_transaction WHERE reference_type='outbound_detail' AND reference_detail_id IN (SELECT id FROM outbound_detail WHERE production_batch_id=?)",
+    [fixture.batchId],
+  );
+  await pool.execute('DELETE FROM outbound_detail WHERE production_batch_id=?', [fixture.batchId]);
+  await pool.execute('DELETE FROM outbound_order WHERE production_batch_id=?', [fixture.batchId]);
+  await pool.execute('DELETE FROM production_item_allocation WHERE production_batch_id=?', [
+    fixture.batchId,
+  ]);
+  await pool.execute(
+    "DELETE FROM production_item_demand WHERE production_batch_id=? AND demand_type='scrap_supplement'",
+    [fixture.batchId],
+  );
+  await pool.execute(
+    'DELETE FROM production_material_supplement_detail WHERE production_batch_id=?',
+    [fixture.batchId],
+  );
+  await pool.execute('DELETE FROM production_material_supplement WHERE production_batch_id=?', [
+    fixture.batchId,
+  ]);
+  await pool.execute('DELETE FROM batch_step_scrap_records WHERE production_batch_id=?', [
+    fixture.batchId,
+  ]);
+  await pool.execute('DELETE FROM production_item_demand WHERE production_batch_id=?', [
+    fixture.batchId,
+  ]);
   await pool.execute('DELETE FROM batch_step_abnormal_dispositions WHERE production_batch_id=?', [
     fixture.batchId,
   ]);
@@ -830,15 +1226,42 @@ const cleanup = async (pool: Pool, fixture: Fixture): Promise<void> => {
   ]);
   await pool.execute('DELETE FROM production_batches WHERE id=?', [fixture.batchId]);
   await pool.execute('DELETE FROM work_orders WHERE id=?', [fixture.workOrderId]);
+  const [itemBatches] = await pool.query<(RowDataPacket & { id: number })[]>(
+    'SELECT id FROM item_batch WHERE batch_code LIKE ?',
+    [`${fixture.token}%`],
+  );
+  if (itemBatches.length) {
+    const ids = itemBatches.map((row) => row.id);
+    await deleteInventoryTransactions(
+      pool,
+      `DELETE FROM inventory_transaction WHERE batch_id IN (${ids.map(() => '?').join(',')})`,
+      ids,
+    );
+    await pool.query(`DELETE FROM item_batch WHERE id IN (${ids.map(() => '?').join(',')})`, ids);
+  }
   await pool.execute('DELETE FROM process_route_steps WHERE route_id=?', [fixture.routeId]);
   await pool.execute('DELETE FROM process_routes WHERE id=?', [fixture.routeId]);
   await pool.execute('DELETE FROM process_steps WHERE id IN (?,?)', fixture.processStepIds);
+  await pool.execute('DELETE FROM product_materials WHERE id=?', [fixture.productMaterialId]);
   await pool.execute('DELETE FROM products WHERE id=?', [fixture.productId]);
+  await pool.execute('DELETE FROM products WHERE id=?', [fixture.materialId]);
   await pool.execute('DELETE FROM product_categories WHERE id=?', [fixture.categoryId]);
+  await pool.execute('DELETE FROM product_categories WHERE id=?', [fixture.materialCategoryId]);
   await pool.execute('DELETE FROM users WHERE id IN (?,?)', [
     fixture.workerId,
     fixture.otherWorkerId,
   ]);
+};
+
+const deleteInventoryTransactions = async (pool: Pool, sql: string, values: unknown[]) => {
+  const connection: PoolConnection = await pool.getConnection();
+  try {
+    await connection.query('SET @company_inventory_test_cleanup = 1');
+    await connection.execute(sql, values as never);
+  } finally {
+    await connection.query('SET @company_inventory_test_cleanup = NULL');
+    connection.release();
+  }
 };
 
 const insert = async (pool: Pool, sql: string, values: unknown[]): Promise<number> => {

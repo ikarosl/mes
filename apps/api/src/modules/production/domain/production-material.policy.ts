@@ -10,12 +10,18 @@ const OUTBOUND_BATCH_STATUSES: readonly ProductionBatchStatus[] = [
   'material_outbound',
 ];
 
-export const requireMaterialAllocationBatchStatus = (status: ProductionBatchStatus): void => {
-  if (!ALLOCATION_BATCH_STATUSES.includes(status))
+export const requireMaterialAllocationBatchStatus = (
+  status: ProductionBatchStatus,
+  supplementOnly = false,
+): void => {
+  if (!ALLOCATION_BATCH_STATUSES.includes(status) && !(status === 'doing' && supplementOnly))
     throw new ProductionDomainError('INVALID_STATE', '当前生产批次状态不允许分配或释放物料');
 };
 
-export const requireMaterialOutboundBatchStatus = (status: ProductionBatchStatus): void => {
-  if (!OUTBOUND_BATCH_STATUSES.includes(status))
+export const requireMaterialOutboundBatchStatus = (
+  status: ProductionBatchStatus,
+  supplementOnly = false,
+): void => {
+  if (!OUTBOUND_BATCH_STATUSES.includes(status) && !(status === 'doing' && supplementOnly))
     throw new ProductionDomainError('INVALID_STATE', '只有物料已分配的生产批次可以领料出库');
 };

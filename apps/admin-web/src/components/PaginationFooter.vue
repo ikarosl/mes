@@ -1,6 +1,6 @@
 <template>
   <div class="pagination-footer">
-    <span class="total-text">共 {{ total }} 条</span>
+    <span class="total-text">共 {{ total }} {{ totalSuffix }}</span>
     <div class="table-footer-right">
       <el-select
         :model-value="pageSize"
@@ -40,9 +40,11 @@ withDefaults(
     currentPage: number;
     pageSize: number;
     layout?: string;
+    totalSuffix?: string;
   }>(),
   {
     layout: 'prev, pager, next, jumper',
+    totalSuffix: '条',
   },
 );
 

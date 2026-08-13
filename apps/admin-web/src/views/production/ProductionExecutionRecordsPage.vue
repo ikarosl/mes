@@ -182,19 +182,67 @@
                   <h2>{{ step.stepOrder }}. {{ step.stepName }}</h2>
                   <p>{{ step.stepCode }} · {{ step.responsibleUserName || '未派工' }}</p>
                 </div>
-                <el-tag :type="stepStatusMeta(step.status).type">{{
-                  stepStatusLabel(step.status)
-                }}</el-tag>
+                <div class="step-tags">
+                  <el-tag
+                    v-if="Number(step.pendingSupplementInputQuantity) > 0"
+                    type="warning"
+                    effect="plain"
+                  >
+                    待补料激活 {{ formatQuantity(step.pendingSupplementInputQuantity) }}
+                  </el-tag>
+                  <el-tag
+                    v-if="step.isSupplementReopened"
+                    type="warning"
+                  >
+                    补产重开
+                  </el-tag>
+                  <el-tag :type="stepStatusMeta(step.status).type">{{
+                    stepStatusLabel(step.status)
+                  }}</el-tag>
+                </div>
               </header>
+              <div
+                v-if="step.supplementSources?.length"
+                class="supplement-route"
+              >
+                <strong>补产路线</strong>
+                <span
+                  v-for="source in step.supplementSources"
+                  :key="source.supplementId"
+                >
+                  来源 {{ source.sourceStepOrder }}. {{ source.sourceStepName }} ·
+                  {{ formatQuantity(source.quantity) }} {{ step.unit }} ·
+                  {{ source.status === 'activated' ? '已领料激活' : '等待补料领用' }}
+                </span>
+              </div>
+              <el-alert
+                v-if="step.supplementBlockedReason"
+                class="supplement-blocked"
+                type="warning"
+                :closable="false"
+                show-icon
+                :title="step.supplementBlockedReason"
+              />
               <div class="step-metrics">
                 <span
-                  >需报正常量 <b>{{ formatQuantity(step.requiredNormalQuantity) }}</b></span
+                  >正常目标 <b>{{ formatQuantity(step.requiredNormalQuantity) }}</b>
+                  <small v-if="Number(step.activatedSupplementTargetQuantity) > 0">
+                    计划 {{ formatQuantity(step.baseNormalQuantity) }} + 下游补产
+                    {{ formatQuantity(step.activatedSupplementTargetQuantity) }}
+                  </small></span
                 >
                 <span
-                  >当前放行量 <b>{{ formatQuantity(step.releasedNormalQuantity) }}</b></span
+                  >投入放行 <b>{{ formatQuantity(step.releasedNormalQuantity) }}</b>
+                  <small v-if="Number(step.activatedSupplementInputQuantity) > 0">
+                    含已激活补产 {{ formatQuantity(step.activatedSupplementInputQuantity) }}
+                  </small></span
                 >
                 <span
                   >当前可报量 <b>{{ formatQuantity(step.availableNormalQuantity) }}</b></span
+                >
+                <span
+                  >普通报工累计
+                  <b>{{ formatQuantity(step.effectiveDirectReportedQuantity) }}</b></span
                 >
                 <span
                   >有效正常累计 <b>{{ formatQuantity(step.effectiveNormalQuantity) }}</b></span
@@ -302,23 +350,21 @@
                   </template>
                 </el-table-column>
               </el-table>
-              <div
-                v-if="step.abnormalDispositions.length"
-                class="abnormal-list"
-              >
-                <strong>异常处置记录（当前只读）</strong>
-                <el-tag
-                  v-for="item in step.abnormalDispositions"
-                  :key="item.dispositionId"
-                  type="danger"
-                  >{{ item.dispositionNo }} ·
-                  {{ BATCH_STEP_ABNORMAL_REVIEW_STATUS_LABELS[item.reviewStatus] }}</el-tag
-                >
-                <p>
-                  当前 Production
-                  阶段尚未开放返工、报废审批。异常处置与报工更正是两类业务；已形成处置依赖的报工不能直接冲销或更正。
-                </p>
-              </div>
+              <AbnormalReworkPanel
+                :dispositions="step.abnormalDispositions"
+                :reports="step.reports"
+                :reworks="reworks.filter((item) => item.stepRecordId === step.stepRecordId)"
+                :pending-keys="pendingKeys"
+                :unit="step.unit"
+                :source-step="step"
+                :route-steps="record.steps"
+                :candidate-loader="loadSupplementCandidates"
+                @approve="handleApproveRework"
+                @approve-scrap="handleApproveScrapSupplement"
+                @reject="handleRejectDisposition"
+                @start="handleStartRework"
+                @complete="handleCompleteRework"
+              />
             </article>
           </template>
           <el-empty
@@ -469,7 +515,6 @@
 import { computed, onActivated, onMounted, reactive, ref } from 'vue';
 import { Refresh } from '@element-plus/icons-vue';
 import {
-  BATCH_STEP_ABNORMAL_REVIEW_STATUS_LABELS,
   BATCH_STEP_REPORT_TYPE_LABELS,
   BATCH_STEP_STATUS_LABELS,
   PRODUCTION_EXECUTION_COMPLETION_BLOCKER_LABELS,
@@ -486,7 +531,9 @@ import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
 import TableToolbar from '../../components/TableToolbar.vue';
 import { batchStatusMeta, formatQuantity, stepStatusMeta } from './production-status';
 import ProductionExecutionBatchList from './components/ProductionExecutionBatchList.vue';
+import AbnormalReworkPanel from './components/AbnormalReworkPanel.vue';
 import { useProductionExecutionRecords } from './composables/useProductionExecutionRecords';
+import { useProductionAbnormalActions } from './composables/useProductionAbnormalActions';
 import {
   executionBatchHasAbnormal,
   executionBatchOverdueDays,
@@ -510,6 +557,7 @@ const {
   selectedBatchId,
   record,
   completionCheck,
+  reworks,
   pendingKeys,
   loadBatches,
   selectBatch,
@@ -518,7 +566,26 @@ const {
   completeExecution,
   getCorrectionIntentStatus,
   resetCorrectionIntent,
+  approveRework,
+  rejectDisposition,
+  startRework,
+  completeRework,
+  loadSupplementCandidates,
+  approveScrapSupplement,
 } = useProductionExecutionRecords();
+const {
+  handleApproveRework,
+  handleRejectDisposition,
+  handleApproveScrapSupplement,
+  handleStartRework,
+  handleCompleteRework,
+} = useProductionAbnormalActions({
+  approveRework,
+  rejectDisposition,
+  approveScrapSupplement,
+  startRework,
+  completeRework,
+});
 const completionPending = computed(() =>
   completionCheck.value
     ? pendingKeys.value.has(`complete:${completionCheck.value.productionBatchId}`)
@@ -950,13 +1017,44 @@ onActivated(refreshCurrent);
   margin: 0;
   font-size: 17px;
 }
+.step-tags {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.supplement-route {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--el-color-warning-light-7);
+  border-radius: 6px;
+  background: var(--el-color-warning-light-9);
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+.supplement-route strong {
+  color: var(--el-color-warning-dark-2);
+}
+.supplement-blocked {
+  margin-top: 12px;
+}
 .step-metrics {
   margin: 14px 0;
 }
 .step-metrics span {
+  display: grid;
+  gap: 4px;
   padding: 10px;
   background: var(--el-fill-color-lighter);
   border-radius: 6px;
+}
+.step-metrics small {
+  color: var(--el-color-warning-dark-2);
 }
 .abnormal-list {
   display: flex;

@@ -91,19 +91,32 @@ export const PERMISSIONS = {
     steps: {
       report: 'production:steps:report',
       manageExecution: 'production:steps:manage-execution',
+      manageAbnormal: 'production:steps:manage-abnormal',
       assign: 'production:steps:assign',
       start: 'production:steps:start',
       complete: 'production:steps:complete',
     },
+    rework: { execute: 'production:rework:execute' },
   },
   warehouse: {
     view: 'warehouse:view',
     inventory: { view: 'warehouse:inventory:view' },
     inbound: { view: 'warehouse:inbound:view' },
     outbound: { view: 'warehouse:outbound:view' },
-    returns: { view: 'warehouse:returns:view' },
+    returns: {
+      view: 'warehouse:returns:view',
+      create: 'warehouse:returns:create',
+      confirm: 'warehouse:returns:confirm',
+      cancel: 'warehouse:returns:cancel',
+    },
     scraps: { view: 'warehouse:scraps:view' },
-    stockChecks: { view: 'warehouse:stock-checks:view' },
+    stockChecks: {
+      view: 'warehouse:stock-checks:view',
+      create: 'warehouse:stock-checks:create',
+      count: 'warehouse:stock-checks:count',
+      complete: 'warehouse:stock-checks:complete',
+      cancel: 'warehouse:stock-checks:cancel',
+    },
   },
 } as const;
 
@@ -178,6 +191,13 @@ export const BATCH_STEP_ABNORMAL_REVIEW_STATUS_LABELS = {
   rejected: '已驳回',
   cancelled: '已取消',
 } as const;
+export const REWORK_STATUSES = ['pending', 'doing', 'completed', 'cancelled'] as const;
+export const REWORK_STATUS_LABELS = {
+  pending: '待返工',
+  doing: '返工中',
+  completed: '已完成',
+  cancelled: '已取消',
+} as const;
 export const PRODUCTION_EXECUTION_COMPLETION_BLOCKERS = [
   'batch_not_doing',
   'no_required_reporting_step',
@@ -222,10 +242,11 @@ export const INVENTORY_REFERENCE_TYPES = [
   'manual',
 ] as const;
 export const INBOUND_ORDER_STATUSES = ['pending', 'completed', 'cancelled'] as const;
-export const DEMAND_TYPES = ['normal', 'manual_additional'] as const;
+export const DEMAND_TYPES = ['normal', 'manual_additional', 'scrap_supplement'] as const;
 export const DEMAND_TYPE = {
   normal: DEMAND_TYPES[0],
   manualAdditional: DEMAND_TYPES[1],
+  scrapSupplement: DEMAND_TYPES[2],
 } as const;
 export const DEMAND_BUSINESS_STATUSES = [
   'active',
@@ -274,6 +295,12 @@ export const OUTBOUND_ORDER_STATUS_LABELS = {
   cancelled: '已取消',
 } as const;
 export const RETURN_ORDER_STATUSES = ['pending', 'returned', 'scrapped', 'cancelled'] as const;
+export const RETURN_ORDER_STATUS_LABELS = {
+  pending: '待退料',
+  returned: '已入库',
+  scrapped: '已报废',
+  cancelled: '已取消',
+} as const;
 export const SCRAP_SCENES = [
   'warehouse_allocated',
   'return_after_outbound',
@@ -283,9 +310,19 @@ export const SCRAP_SCENES = [
 export const SCRAP_STATUSES = ['pending', 'confirmed', 'cancelled'] as const;
 export const STOCK_CHECK_STATUSES = ['pending', 'counting', 'completed', 'cancelled'] as const;
 export const STOCK_CHECK_RESULTS = ['surplus', 'shortage', 'matched'] as const;
+export const STOCK_CHECK_STATUS_LABELS = {
+  pending: '待盘点',
+  counting: '盘点中',
+  completed: '已完成',
+  cancelled: '已取消',
+} as const;
+export const STOCK_CHECK_RESULT_LABELS = {
+  surplus: '盘盈',
+  shortage: '盘亏',
+  matched: '一致',
+} as const;
 export const INSPECTION_TYPES = ['process', 'final'] as const;
 export const INSPECTION_RESULTS = ['pending', 'passed', 'failed', 'conditional'] as const;
-export const REWORK_STATUSES = ['pending', 'doing', 'completed', 'cancelled'] as const;
 export const REWORK_RESULTS = ['pending', 'passed', 'failed'] as const;
 export const FINISHED_FLOW_TYPES = [
   'warehouse_inbound',

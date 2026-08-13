@@ -35,12 +35,15 @@
 
 Production 的事务、并发建批、物料需求快照、报工事实约束/聚合和幂等键需要在真实 MySQL 中验证。该测试直接调用 Repository 和真实 MySQL，不经过浏览器，因此属于 Integration，不属于 E2E。开发运行使用 Windows 宿主机 `3306`；本地集成测试 WSL Docker 使用 `3307:3306`（宿主:容器）；CI 服务容器使用 `3306`。完整的 PowerShell/Bash 命令见根 [README](../README.md#数据库命令)。
 
+开发与 CI 的 MySQL 8 实例需要允许 migration 用户创建触发器。仓库 Compose 已设置
+`log_bin_trust_function_creators=1`；其他启用 binary log 的环境应由数据库管理员配置等价策略，禁止为应用运行账号授予 `SUPER`。
+
 该命令会先检查显式开关与专用测试端点门禁：`TEST_DB_HOST/PORT/NAME` 必填，`DB_HOST/PORT/NAME` 必须分别与之完全相等，并且库名必须以 `_test` 结尾。通过后构建所需 workspace，复用 `db:init` 执行 migration、系统 seed 和管理员初始化，再重复执行一次 seed 证明幂等性，最后运行 `tests/integration` 全套测试
-（`vitest.mysql.config.ts` 的 include 为 `tests/integration/**/*.test.ts`，当前共 7 个文件：
+（`vitest.mysql.config.ts` 的 include 为 `tests/integration/**/*.test.ts`，当前共 8 个文件：
 `production/production-persistence.mysql.test.ts`、`identity/rbac-persistence.mysql.test.ts`、
 `idempotency/http-idempotency.mysql.test.ts`、`idempotency/create-batch-closed-loop.mysql.test.ts` 与
 `idempotency/create-batch-http-pipeline.mysql.test.ts`，以及 Production 的
-`production-material.mysql.test.ts`、`production-execution.mysql.test.ts`）。未设置开关时，专用命令会在任何数据库操作前失败；IDE 或普通测试发现该文件时则将其跳过，避免误迁移 `.env` 指向的数据库。
+`production-material.mysql.test.ts`、`production-execution.mysql.test.ts`、`production-inventory.mysql.test.ts`）。未设置开关时，专用命令会在任何数据库操作前失败；IDE 或普通测试发现该文件时则将其跳过，避免误迁移 `.env` 指向的数据库。
 
 HTTP 幂等平台的 MySQL 适配器与真实 MySQL 集成用例已落地（与 production 集成测试一样以
 `RUN_MYSQL_INTEGRATION=1` 与 `_test` 专用测试库门禁；CI 已新增 `integration-mysql` 作业在专用测试库
@@ -62,7 +65,7 @@ IdempotencyKeyGuard 顺序、DTO Pipe、CurrentIdempotentCommandContext、AuditI
 
 命令上下文迁移测试同时锁定：普通 `CommandContext` 不含幂等键；Guard 将 trim 后的键写入请求局部私有
 属性；只有已登记的 createBatch、物料分配创建、待出库单创建、生产领料整单确认、外购物料入库单创建、
-外购物料整单确认、报工创建和报工更正使用 `IdempotentCommandContext` 与 executor；
+外购物料整单确认、报工创建、报工更正、返工整单完成和异常报废补料批准使用 `IdempotentCommandContext` 与 executor；
 Repository Port/Adapter 不依赖该子类型。Product 文件上传 HTTP 契约测试必须证明误带 header 返回 `IDEMPOTENCY_NOT_SUPPORTED`，且
 `storage.storeSop()` 与数据库 Repository 均未调用。Production material 事务套件同时覆盖外购物料
 入库：pending 不产生库存流水，多明细确认逐条形成唯一正流水，并发/同键重试不重复入账，取消不入账，

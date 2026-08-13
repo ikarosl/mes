@@ -5,6 +5,9 @@ import type {
   ProductionExecutionBatchSummary,
   ProductionExecutionRecordGroup,
   ProductionExecutionCompletionCheck,
+  BatchStepAbnormalDispositionItem,
+  ReworkRecordItem,
+  ApproveScrapSupplementLinePayload,
 } from '@company/contracts';
 import { productionApi } from '../../../api/production';
 import { useIdempotentIntent } from '../../../composables/idempotency/useIdempotentIntent';
@@ -17,8 +20,11 @@ export const useProductionExecutionRecords = () => {
   const selectedBatchId = ref<string | null>(null);
   const record = ref<ProductionExecutionRecordGroup | null>(null);
   const completionCheck = ref<ProductionExecutionCompletionCheck | null>(null);
+  const reworks = ref<ReworkRecordItem[]>([]);
   const pendingKeys = ref(new Set<string>());
   const correctionIntents = new Map<string, ReturnType<typeof useIdempotentIntent>>();
+  const reworkCompletionIntents = new Map<string, ReturnType<typeof useIdempotentIntent>>();
+  const supplementIntents = new Map<string, ReturnType<typeof useIdempotentIntent>>();
 
   const loadBatches = async (keyword = '', page = 1): Promise<void> => {
     loading.value = true;
@@ -33,6 +39,7 @@ export const useProductionExecutionRecords = () => {
       if (!result.items.some((item) => item.id === selectedBatchId.value)) {
         record.value = null;
         completionCheck.value = null;
+        reworks.value = [];
         selectedBatchId.value = null;
         if (result.items[0]) await selectBatch(result.items[0].id);
       }
@@ -44,12 +51,14 @@ export const useProductionExecutionRecords = () => {
     selectedBatchId.value = batchId;
     detailLoading.value = true;
     try {
-      const [nextRecord, nextCompletionCheck] = await Promise.all([
+      const [nextRecord, nextCompletionCheck, nextReworks] = await Promise.all([
         productionApi.getBatchExecutionRecords(batchId),
         productionApi.getExecutionCompletionCheck(batchId),
+        productionApi.listBatchReworks(batchId),
       ]);
       record.value = nextRecord;
       completionCheck.value = nextCompletionCheck;
+      reworks.value = nextReworks;
       batches.value = batches.value.map((batch) =>
         batch.id === batchId
           ? {
@@ -153,6 +162,87 @@ export const useProductionExecutionRecords = () => {
     correctionIntents.get(reportId)?.reset();
     correctionIntents.delete(reportId);
   };
+  const approveRework = (
+    disposition: BatchStepAbnormalDispositionItem,
+    remark: string,
+  ): Promise<void> =>
+    withPending(`approve-rework:${disposition.dispositionId}`, async () => {
+      await productionApi.approveDispositionRework(disposition.dispositionId, {
+        version: disposition.version,
+        remark: remark.trim() || null,
+      });
+      await selectBatch(disposition.productionBatchId);
+    });
+  const rejectDisposition = (
+    disposition: BatchStepAbnormalDispositionItem,
+    reason: string,
+  ): Promise<void> =>
+    withPending(`reject:${disposition.dispositionId}`, async () => {
+      await productionApi.rejectAbnormalDisposition(disposition.dispositionId, {
+        version: disposition.version,
+        reason: reason.trim(),
+      });
+      await selectBatch(disposition.productionBatchId);
+    });
+  const startRework = (rework: ReworkRecordItem): Promise<void> =>
+    withPending(`start-rework:${rework.reworkId}`, async () => {
+      await productionApi.startRework(rework.reworkId, rework.version);
+      await selectBatch(rework.productionBatchId);
+    });
+  const completeRework = (
+    rework: ReworkRecordItem,
+    normalQuantity: number,
+    abnormalQuantity: number,
+    remark: string,
+  ): Promise<void> =>
+    withPending(`complete-rework:${rework.reworkId}`, async () => {
+      const body = {
+        version: rework.version,
+        normalQuantity,
+        abnormalQuantity,
+        remark: remark.trim() || null,
+      };
+      const intent = reworkCompletionIntents.get(rework.reworkId) ?? useIdempotentIntent();
+      reworkCompletionIntents.set(rework.reworkId, intent);
+      await intent.execute(
+        {
+          intentType: 'production.rework.complete',
+          params: { reworkId: rework.reworkId },
+          query: {},
+          body,
+        },
+        (key) => productionApi.completeRework(rework.reworkId, body, key),
+      );
+      reworkCompletionIntents.delete(rework.reworkId);
+      await selectBatch(rework.productionBatchId);
+    });
+  const loadSupplementCandidates = (dispositionId: string) =>
+    productionApi.listSupplementCandidates(dispositionId);
+  const approveScrapSupplement = (
+    disposition: BatchStepAbnormalDispositionItem,
+    details: ApproveScrapSupplementLinePayload[],
+    remark: string,
+  ): Promise<void> =>
+    withPending(`approve-scrap:${disposition.dispositionId}`, async () => {
+      const body = {
+        version: disposition.version,
+        details,
+        remark: remark.trim() || null,
+      };
+      const intent = supplementIntents.get(disposition.dispositionId) ?? useIdempotentIntent();
+      supplementIntents.set(disposition.dispositionId, intent);
+      await intent.execute(
+        {
+          intentType: 'production.abnormal.scrap-supplement',
+          params: { dispositionId: disposition.dispositionId },
+          query: {},
+          body,
+        },
+        (key) => productionApi.approveScrapSupplement(disposition.dispositionId, body, key),
+      );
+      supplementIntents.delete(disposition.dispositionId);
+      await selectBatch(disposition.productionBatchId);
+    });
 
   return {
     batches,
@@ -162,6 +252,7 @@ export const useProductionExecutionRecords = () => {
     selectedBatchId,
     record,
     completionCheck,
+    reworks,
     pendingKeys,
     loadBatches,
     selectBatch,
@@ -170,5 +261,11 @@ export const useProductionExecutionRecords = () => {
     completeExecution,
     getCorrectionIntentStatus,
     resetCorrectionIntent,
+    approveRework,
+    rejectDisposition,
+    startRework,
+    completeRework,
+    loadSupplementCandidates,
+    approveScrapSupplement,
   };
 };

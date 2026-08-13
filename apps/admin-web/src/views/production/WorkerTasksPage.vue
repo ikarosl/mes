@@ -55,7 +55,24 @@
           label="工序"
           min-width="170"
         >
-          <template #default="{ row }">{{ row.stepOrder }}. {{ row.stepName }}</template>
+          <template #default="{ row }">
+            {{ row.stepOrder }}. {{ row.stepName }}
+            <div class="step-flags">
+              <el-tag
+                v-if="Number(row.pendingSupplementInputQuantity) > 0"
+                size="small"
+                type="warning"
+                effect="plain"
+                >待补料激活</el-tag
+              >
+              <el-tag
+                v-if="row.isSupplementReopened"
+                size="small"
+                type="warning"
+                >补产重开</el-tag
+              >
+            </div>
+          </template>
         </el-table-column>
         <el-table-column
           label="正常数量进度"
@@ -65,10 +82,19 @@
             {{ formatQuantity(row.effectiveNormalQuantity) }} /
             {{ formatQuantity(row.requiredNormalQuantity) }} {{ row.unit }}
             <div
+              v-if="Number(row.activatedSupplementTargetQuantity) > 0"
+              class="quantity-supplement"
+            >
+              计划 {{ formatQuantity(row.baseNormalQuantity) }} + 下游补产
+              {{ formatQuantity(row.activatedSupplementTargetQuantity) }}
+            </div>
+            <div
               v-if="row.status === 'doing'"
               class="quantity-release"
             >
-              当前可报 {{ formatQuantity(row.availableNormalQuantity) }} {{ row.unit }}
+              放行 {{ formatQuantity(row.releasedNormalQuantity) }}，普通报工已占用
+              {{ formatQuantity(row.effectiveDirectReportedQuantity) }}，当前可报
+              {{ formatQuantity(row.availableNormalQuantity) }} {{ row.unit }}
             </div>
           </template>
         </el-table-column>
@@ -119,6 +145,7 @@
               v-if="row.status === 'doing' && row.needRecord"
               type="success"
               :loading="reportPendingIds.has(row.stepRecordId)"
+              :disabled="Number(row.availableNormalQuantity) <= 0"
               @click="openReport(row)"
               >报工</el-button
             >
@@ -134,6 +161,11 @@
               v-if="row.status === 'doing' && !row.needRecord && !row.canComplete"
               class="blocked-reason"
               >{{ row.completeBlockedReason }}</span
+            >
+            <span
+              v-if="row.status === 'doing' && row.needRecord && row.supplementBlockedReason"
+              class="blocked-reason"
+              >{{ row.supplementBlockedReason }}</span
             >
             <span
               v-else-if="row.status !== 'assigned' && row.status !== 'doing'"
@@ -318,5 +350,16 @@ onActivated(reload);
   margin-top: 4px;
   color: #6b7280;
   font-size: 12px;
+}
+.quantity-supplement {
+  margin-top: 4px;
+  color: var(--el-color-warning-dark-2);
+  font-size: 12px;
+}
+.step-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 5px;
 }
 </style>

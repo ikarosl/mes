@@ -354,16 +354,38 @@ const printOrder = async (outboundId: string): Promise<void> => {
   }
 };
 const printDetail = (row: MaterialOutboundItem): void => {
-  const popup = window.open('', '_blank', 'noopener,noreferrer');
-  if (!popup) {
-    EMessage.warning('浏览器阻止了打印窗口，请允许弹窗后重试');
+  const frame = document.createElement('iframe');
+  frame.dataset.printFrame = 'outbound-order';
+  frame.setAttribute('aria-hidden', 'true');
+  Object.assign(frame.style, {
+    position: 'fixed',
+    right: '0',
+    bottom: '0',
+    width: '0',
+    height: '0',
+    border: '0',
+    opacity: '0',
+    pointerEvents: 'none',
+  });
+  document.body.appendChild(frame);
+
+  const printWindow = frame.contentWindow;
+  if (!printWindow) {
+    frame.remove();
+    EMessage.error(new Error('打印 iframe 初始化失败'), '打印初始化失败');
     return;
   }
+  let cleanupTimer: number | undefined;
+  const cleanup = (): void => {
+    if (cleanupTimer !== undefined) window.clearTimeout(cleanupTimer);
+    frame.remove();
+  };
+  printWindow.addEventListener('afterprint', cleanup, { once: true });
   const statusMark =
     row.status === 'cancelled'
       ? '已取消 — 不得作为有效出库凭证'
       : OUTBOUND_ORDER_STATUS_LABELS[row.status];
-  popup.document
+  printWindow.document
     .write(`<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(row.outboundNo)}</title><style>
     body{font-family:Arial,"Microsoft YaHei",sans-serif;color:#111;padding:24px}h1{text-align:center;font-size:24px;margin:0 0 8px}.mark{text-align:center;font-size:18px;font-weight:700;margin-bottom:20px}.meta{display:grid;grid-template-columns:repeat(3,1fr);gap:8px 20px;margin-bottom:18px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #333;padding:8px;text-align:left}th{background:#f4f4f5}.remark{margin-top:16px}.signatures{display:grid;grid-template-columns:repeat(3,1fr);gap:40px;margin-top:70px}.cancelled{color:#c00}@media print{body{padding:0}}</style></head><body>
     <h1>生产领料出库单</h1><div class="mark ${row.status === 'cancelled' ? 'cancelled' : ''}">${escapeHtml(statusMark)}</div>
@@ -372,9 +394,10 @@ const printDetail = (row: MaterialOutboundItem): void => {
     <div class="remark">备注：${escapeHtml(row.remark || '-')}</div><div>制单人：${escapeHtml(row.createdByName || '-')}</div>
     <div class="signatures"><div>发料人：____________</div><div>领料人：____________</div><div>日期：____________</div></div>
     </body></html>`);
-  popup.document.close();
-  popup.focus();
-  popup.print();
+  printWindow.document.close();
+  printWindow.focus();
+  cleanupTimer = window.setTimeout(cleanup, 60_000);
+  printWindow.print();
 };
 
 const quantitySummary = (row: MaterialOutboundItem): string =>

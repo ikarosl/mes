@@ -72,6 +72,7 @@ export type ProductQueryResult<T> = { status: 'success'; value: T } | ProductQue
 /** 生产编排的公共读取边界。返回稳定的结果联合，绝不返回模块内部错误。 */
 export abstract class ProductSnapshotQuery {
   abstract listInventoryItemReferencesByIds(itemIds: string[]): Promise<InventoryItemReference[]>;
+  abstract listRouteStepMaterialIds(routeStepId: string): Promise<string[]>;
   abstract getProductionProduct(
     productId: string,
   ): Promise<ProductQueryResult<ProductionProductSnapshot>>;

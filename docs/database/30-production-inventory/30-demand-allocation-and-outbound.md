@@ -4,7 +4,7 @@
 
 ## 3.5 生产物料需求与分配表
 
-> `202608110001-production-abnormal-dispositions-and-demand-type-codes` 已把 `demand_type` 从历史数字 `0/1` 追加迁移为字符串 `normal/manual_additional`，共享常量、契约和 Production Repository 已同步；当前 application 仍只生成 `normal`，`manual_additional` 尚未开放业务接口。完整目标设计还包含 `scrap_supplement`，但必须等工序报废、补料明细及需求来源外键定稿后再追加 migration 开放，当前数据库 `CHECK` 不接受该值。半自动补料的候选与人工填量边界已经确认；当前阶段明确不把补料、分配或出库状态作为再次报工的限制条件，该缺口及升级方向见本章后文。
+> `202608110001-production-abnormal-dispositions-and-demand-type-codes` 已把 `demand_type` 从历史数字 `0/1` 迁移为字符串。当前设计在保留 `normal/manual_additional` 的基础上定稿 `scrap_supplement`：异常批准报废时由人工补料明细生成新需求，不修改原需求。补料需求可在生产批次 `doing` 阶段继续走现有分配和领料出库链路；批准、分配或创建待出库单均不增加报工额度，只有全部补料需求确认领用后才按来源工序报废数量激活补产额度。
 
 ---
 
@@ -30,6 +30,7 @@
 | `idempotency_key`                  | `VARCHAR(150)`    | 幂等键，同一键重复提交返回既有结果        |
 | `parent_demand_id`                 | `BIGINT UNSIGNED` | 补料需求关联的原始需求 ID                 |
 | `source_scrap_id`                  | `BIGINT UNSIGNED` | 报废补料关联的报废记录 ID，可为空         |
+| `source_supplement_detail_id`      | `BIGINT UNSIGNED` | 工序报废补料来源明细 ID，可为空           |
 | `reason_type`                      | `VARCHAR(50)`     | 补料原因                                  |
 | `business_status`                  | `VARCHAR(30)`     | 业务状态，默认 `active`                   |
 | `version`                          | `INT`             | 乐观锁版本号，默认 `0`                    |
@@ -64,14 +65,14 @@
 - 组合索引：`INDEX (production_batch_id, business_status)`，用于查询批次有效需求
 - 检查约束：正常需求 `demand_type = 'normal'` 时要求 `product_material_id IS NOT NULL`，且 `parent_demand_id IS NULL`、`source_scrap_id IS NULL`
 - 检查约束：人工追加需求 `demand_type = 'manual_additional'` 时要求 `product_material_id IS NOT NULL`、`parent_demand_id IS NOT NULL`，且 `source_scrap_id IS NULL`
-- 检查约束：报废补料 `demand_type = 'scrap_supplement'` 时要求 `product_material_id IS NOT NULL`、`parent_demand_id IS NOT NULL`、`source_scrap_id IS NOT NULL`
+- 检查约束：报废补料 `demand_type = 'scrap_supplement'` 时要求 `product_material_id IS NOT NULL`、`parent_demand_id IS NOT NULL`、`source_scrap_id IS NULL`、`source_supplement_detail_id IS NOT NULL`
 - 检查约束：正常需求的 BOM 快照字段不得为空且均大于 `0`
 - 唯一约束：`UNIQUE (idempotency_key)`
 - 唯一约束：`UNIQUE (id, item_id)`
 - 唯一约束：`UNIQUE (id, production_batch_id)`
 - 索引：`INDEX (source_scrap_id)`
 
-迁移说明：`202608110001-production-abnormal-dispositions-and-demand-type-codes` 会在首个永久 DDL 前校验历史值只包含 `0/1`，再映射为 `normal/manual_additional` 并把字段改为 `VARCHAR(30)`。当前物理约束和共享代码只包含已有语义的 `normal/manual_additional`，Production application 只生成 `normal`。在工序报废、补料明细和需求来源外键定稿后，再通过后续追加 migration 开放 `scrap_supplement`；不得只扩展应用字符串而跳过数据库约束和外键。
+迁移说明：追加 migration 创建工序报废与补料表后，为 `production_item_demand` 增加 `source_supplement_detail_id` 外键并扩展 `demand_type` CHECK；已执行 migration 不修改。历史 `source_scrap_id` 只保留给未来通用库存报废来源，工序报废不得借用该字段。
 
 视图版本删除字段：
 
@@ -88,22 +89,25 @@
 - 如果某个生产批次需要领用上一个生产批次产出的半成品，也应通过该表生成需求。
 - 补料不建议直接修改原需求的 `need_number`，应新增一条需求记录。
 - 正常需求的 `need_number = quantity_per_unit_snapshot * planned_output_quantity_snapshot`；结果生成后作为事实保存，不随 BOM 或批次计划变化自动回写。
-- 幂等键使用稳定格式：正常需求为 `NORMAL:{production_batch_id}:{product_material_id}`，报废补料为 `SCRAP:{source_scrap_id}:{product_material_id}`，人工追加为 `ADDITIONAL:{production_batch_id}:{business_action_no}:{product_material_id}`。
+- 幂等键使用稳定格式：正常需求为 `NORMAL:{production_batch_id}:{product_material_id}`，现有库存报废补料为 `SCRAP:{source_scrap_id}:{product_material_id}`，工序主动补料为 `SCRAPSUP:{source_supplement_detail_id}`，人工追加为 `ADDITIONAL:{production_batch_id}:{business_action_no}:{product_material_id}`。
 - `business_action_no` 必须是一次人工追加动作的稳定唯一编号；相同幂等键重复提交时返回既有需求，不插入新记录，也不得修改既有 `need_number`。
 - 应用事务必须校验 `parent_demand_id` 指向的原需求与当前需求属于同一生产批次，且 `product_material_id` 对应投入对象与 `item_id` 一致。
 - 现有 `item_scrap` 报废补料还必须校验 `source_scrap_id` 指向已确认、未取消的报废记录，且报废、原需求和补料需求属于同一生产批次。未来工序报废补料必须使用与工序报废/补料明细相匹配的新来源外键，不得把对应 ID 填入 `source_scrap_id`。
 - 需求事实和对应操作日志必须在同一事务写入。
 
-### 半自动补料边界（已确认方向，尚未形成可实施表结构）
+### `batch_step_scrap_records` 与半自动补料
 
-- 后续补料流程使用 `production_material_supplement` 及其补料明细承载管理员的主动补料动作；一张补料单可以选择多种物料。
+- `batch_step_scrap_records` 是已批准不可返工的工序损失事实：对 `abnormal_disposition_id` 唯一，保存批次、工序、来源报工、异常数量和单位快照；只追加、不更新、不删除。
+- `production_material_supplement` 对工序报废记录唯一，保存补料单号、批次、工序和审批说明；状态从审批创建时的 `approved` 转为全部补料确认领用后的 `activated`。`activated_at/activated_by` 固化补产授权生效的时间和操作人，激活后不得退回 `approved`；一张补料单包含一到多条 `production_material_supplement_detail`。
 - 系统只提供候选物料，不自动计算每种物料的补料数量。管理员选择物料并手工填写数量，系统不得使用工序异常数量乘 BOM 用量推算补料数量。
-- 候选物料优先来自异常工序绑定的有效 `route_step_materials`；工序没有绑定物料时，可以降级展示当前产品的全部有效 BOM 物料。候选范围只用于辅助选择，不构成数量计算或工序消耗事实。
-- 系统只校验管理员选择的物料属于当前产品、补料数量大于 `0`、单位与物料/BOM 口径一致，并在补料明细中冻结最终选中的 `product_material_id`、`item_id`、人工填写数量、单位快照和原始需求 ID；无需冻结未被选中的候选集合。
-- 批准补料后应新增 `demand_type = 'scrap_supplement'` 的需求，不得修改原始需求的 `need_number`。管理员填写的数量必须保留为人工决策事实，不得描述为系统计算数量。
-- 当前阶段不记录报工额度来源，也不要求补料需求、分配或出库完成后才允许再次报工；是否允许追加报工只按工序有效正常数量是否达到当前要求数量判断。
-- 因此补料单只形成“工序报废 → 人工补料 → 新需求 → 分配 → 出库”的物料业务链，不能证明某次补报消费了哪张补料单。未来如升级严格额度控制，再追加报工来源/授权、出库激活和剩余量消费模型；不得把当前简化流程描述为已经完成该闭环。
-- 补料单/明细的完整字段、补料与工序报废的外键及需求来源外键仍待决策；这些问题定稿前不得创建相应 migration 或 API。
+- 候选物料优先汇总路线首工序至异常来源工序绑定的有效 `route_step_materials`，相同 BOM 明细去重；该路径没有绑定物料时，可以降级展示当前产品的全部有效 BOM 物料。候选范围只用于辅助选择，不构成数量计算或工序消耗事实。
+- 系统只校验管理员选择的物料属于当前产品与当前候选、补料数量大于 `0`、单位与原需求口径一致，并在补料明细中冻结最终选中的 `product_material_id`、`item_id`、人工填写数量、单位快照和原始需求 ID；同一补料单内原始需求不得重复。
+- 批准报废与补料是一个原子命令：处置单批准、工序报废事实、补料单/明细、每条 `demand_type = 'scrap_supplement'` 的需求、成功审计和 HTTP 幂等结果同事务提交。新需求复制原正常需求的 BOM 与单位快照，`need_number` 等于人工填写量，`parent_demand_id` 指向原需求，`source_supplement_detail_id` 指向唯一补料明细。
+- 工序报废数量与物料补料数量是两个口径。管理员填写的补料明细只决定物料需求；产品补产数量固定取 `batch_step_scrap_records.scrap_quantity`，不得按 BOM 或补料明细反推产品数量。
+- 当前最小闭环固定从路线首工序重新投产。报废来源位于后续工序时，补料候选应覆盖路线首工序至来源工序实际需要重新投入的有效路线物料；不得只因异常发生在后续工序，就把候选范围限制为来源工序绑定物料。未配置路线用料时仍可降级到当前产品有效 BOM，由管理员确认实际补料项和数量。
+- 路线补产授权只在本补料单生成的全部 `scrap_supplement` 需求均完成确认领料出库后整笔激活。最后一张相关出库单确认时，在同一事务把补料单更新为 `status = 'activated'` 并写入 `activated_at/activated_by`；分配完成、创建待出库单或部分确认领料均不激活。应用按权威报工章节的公式从已激活补料单、报废事实和路线顺序派生每道工序目标，不接收客户端填写。
+- 因此当前链路闭合为“工序报废 → 人工补料 → 新需求 → 分配 → 确认出库 → 激活路线补产 → 首工序重新生产 → 逐工序正常放行 → 来源工序补报”。当前仍不记录某次补报逐笔消费哪张补料单；未来需要部分激活、指定来源消费或半成品重入时，再追加额度消费/重入事实和版本化接口。
+- 补料审批只接受 `doing` 批次；后续分配、释放分配、创建和确认领料出库在 `doing` 状态下只允许操作 `scrap_supplement` 需求，普通需求仍受原物料阶段状态机约束。批次保持 `doing`，补料物流不得把批次状态退回 `material_pending/material_assigned/material_outbound`。
 
 ---
 

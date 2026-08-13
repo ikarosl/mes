@@ -8,6 +8,7 @@ import type {
 
 export abstract class ProductSnapshotRepository {
   abstract listInventoryItemReferencesByIds(itemIds: string[]): Promise<InventoryItemReference[]>;
+  abstract listRouteStepMaterialIds(routeStepId: string): Promise<string[]>;
   abstract getProductionProduct(productId: string): Promise<ProductionProductSnapshot>;
   abstract getProductionRouteSnapshot(
     productId: string,

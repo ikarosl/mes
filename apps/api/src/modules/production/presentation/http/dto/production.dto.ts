@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
+  ArrayMinSize,
   IsArray,
   IsDateString,
   IsIn,
@@ -14,11 +15,15 @@ import {
   ValidateNested,
 } from 'class-validator';
 import type {
+  ApproveBatchStepReworkPayload,
+  ApproveScrapSupplementPayload,
+  CompleteReworkPayload,
   CreateProductionBatchPayload,
   CorrectBatchStepReportPayload,
   CreateBatchStepReportPayload,
   CreateWorkOrderPayload,
   ProductionBatchQuery,
+  RejectBatchStepAbnormalDispositionPayload,
   ReverseBatchStepReportPayload,
   UpdateProductionBatchPayload,
   UpdateBatchStepExecutionPayload,
@@ -176,4 +181,50 @@ export class CorrectBatchStepReportDto
   @Type(() => Number) @IsNumber({ maxDecimalPlaces: 4 }) @Min(0) normalQuantity!: number;
   @Type(() => Number) @IsNumber({ maxDecimalPlaces: 4 }) @Min(0) abnormalQuantity!: number;
   @IsString() @IsNotEmpty() @MaxLength(5000) reason!: string;
+}
+
+export class AbnormalDispositionParamDto {
+  @IsString() @IsNotEmpty() @MaxLength(20) dispositionId!: string;
+}
+
+export class ReworkParamDto {
+  @IsString() @IsNotEmpty() @MaxLength(20) reworkId!: string;
+}
+
+export class ApproveBatchStepReworkDto
+  extends VersionedCommandDto
+  implements ApproveBatchStepReworkPayload
+{
+  @IsOptional() @IsString() @MaxLength(5000) remark?: string | null;
+}
+
+export class RejectBatchStepAbnormalDispositionDto
+  extends VersionedCommandDto
+  implements RejectBatchStepAbnormalDispositionPayload
+{
+  @IsString() @IsNotEmpty() @MaxLength(5000) reason!: string;
+}
+
+export class CompleteReworkDto extends VersionedCommandDto implements CompleteReworkPayload {
+  @Type(() => Number) @IsNumber({ maxDecimalPlaces: 4 }) @Min(0) normalQuantity!: number;
+  @Type(() => Number) @IsNumber({ maxDecimalPlaces: 4 }) @Min(0) abnormalQuantity!: number;
+  @IsOptional() @IsString() @MaxLength(5000) remark?: string | null;
+}
+
+export class ApproveScrapSupplementLineDto {
+  @IsString() @IsNotEmpty() @MaxLength(20) originalDemandId!: string;
+  @Type(() => Number) @IsNumber({ maxDecimalPlaces: 4 }) @Min(0.0001) supplementQuantity!: number;
+}
+
+export class ApproveScrapSupplementDto
+  extends VersionedCommandDto
+  implements ApproveScrapSupplementPayload
+{
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(200)
+  @ValidateNested({ each: true })
+  @Type(() => ApproveScrapSupplementLineDto)
+  details!: ApproveScrapSupplementLineDto[];
+  @IsOptional() @IsString() @MaxLength(5000) remark?: string | null;
 }

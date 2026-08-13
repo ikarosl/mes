@@ -42,6 +42,7 @@ import {
   type OutboundRow,
 } from './mysql-production-material.mapper.js';
 import { findBatch } from './mysql-production.shared.js';
+import { activateReadySupplements } from './mysql-production-supplement-activation.js';
 
 @Injectable()
 export class MysqlProductionMaterialRepository extends ProductionMaterialRepository {
@@ -115,7 +116,6 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
   ): Promise<MaterialAllocationCommandResult> {
     return withTransaction(this.pool, async (connection) => {
       const batch = await findBatch(connection, batchId, true);
-      requireMaterialAllocationBatchStatus(batch.status);
       const pairs = new Set(
         payload.allocations.map((line) => `${line.demandId}:${line.itemBatchId}`),
       );
@@ -129,6 +129,17 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
       );
       await lockIds(connection, 'item_batch', batchIds);
       await lockIds(connection, 'production_item_demand', demandIds);
+      const [demandTypes] = await connection.query<
+        (RowDataPacket & { id: number; demand_type: string })[]
+      >(
+        `SELECT id,demand_type FROM production_item_demand WHERE id IN (${placeholders(demandIds)}) ORDER BY id`,
+        demandIds,
+      );
+      requireMaterialAllocationBatchStatus(
+        batch.status,
+        demandTypes.length === demandIds.length &&
+          demandTypes.every((row) => row.demand_type === 'scrap_supplement'),
+      );
       const inserted: string[] = [];
       for (const line of payload.allocations) {
         const [[demand]] = await connection.query<
@@ -216,12 +227,12 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
   ): Promise<ProductionMaterialAllocationItem> {
     return withTransaction(this.pool, async (connection) => {
       const batch = await findBatch(connection, batchId, true);
-      requireMaterialAllocationBatchStatus(batch.status);
       const [[row]] = await connection.query<AllocationRow[]>(
         `${ALLOCATION_SELECT} WHERE a.id=? AND a.production_batch_id=? FOR UPDATE`,
         [allocationId, batchId],
       );
       if (!row) throw new ProductionDomainError('NOT_FOUND', '物料分配不存在');
+      requireMaterialAllocationBatchStatus(batch.status, row.demand_type === 'scrap_supplement');
       if (row.allocation_status === 'released') return mapAllocation(row);
       if (row.allocation_status !== 'active')
         throw new ProductionDomainError('INVALID_STATE', '当前分配状态不能释放');
@@ -266,7 +277,6 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
   ): Promise<MaterialOutboundCommandResult> {
     return withTransaction(this.pool, async (connection) => {
       const batch = await findBatch(connection, batchId, true);
-      requireMaterialOutboundBatchStatus(batch.status);
       const allocationIds = [...new Set(payload.details.map((line) => line.allocationId))].sort(
         bigintCompare,
       );
@@ -279,6 +289,10 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
       );
       if (allocations.length !== allocationIds.length)
         throw new ProductionDomainError('NOT_FOUND', '出库分配不存在或不属于当前批次');
+      requireMaterialOutboundBatchStatus(
+        batch.status,
+        allocations.every((row) => row.demand_type === 'scrap_supplement'),
+      );
       const byId = new Map(allocations.map((row) => [String(row.id), row]));
       for (const line of payload.details) {
         const allocation = byId.get(line.allocationId)!;
@@ -404,7 +418,18 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
       `SELECT b.id,b.batch_no,wo.work_order_no,wo.product_code_snapshot product_code,
         wo.product_name_snapshot product_name,b.status
        FROM production_batches b JOIN work_orders wo ON wo.id=b.work_order_id
-       WHERE b.status IN ('material_assigned','material_outbound')
+       WHERE (
+         b.status IN ('material_assigned','material_outbound')
+         OR (
+           b.status='doing'
+           AND EXISTS (
+             SELECT 1 FROM production_item_allocation a
+             JOIN production_item_demand d ON d.id=a.demand_id
+             WHERE a.production_batch_id=b.id AND a.allocation_status='active'
+               AND d.demand_type='scrap_supplement'
+           )
+         )
+       )
          AND EXISTS (SELECT 1 FROM production_item_allocation a WHERE a.production_batch_id=b.id AND a.allocation_status='active')
        ORDER BY b.created_at DESC,b.id DESC`,
     );
@@ -419,7 +444,7 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
   }
 
   async listOutboundCandidates(batchId: string): Promise<MaterialOutboundCandidateItem[]> {
-    await findBatch(this.pool, batchId);
+    const batch = await findBatch(this.pool, batchId);
     const [rows] = await this.pool.query<
       (AllocationRow & { item_code_snapshot: string; product_name_snapshot: string })[]
     >(
@@ -430,6 +455,7 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
       [batchId],
     );
     return rows
+      .filter((row) => batch.status !== 'doing' || row.demand_type === 'scrap_supplement')
       .map((row) => {
         const available = Math.max(
           0,
@@ -464,6 +490,7 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
     context: CommandContext,
   ): Promise<MaterialOutboundCommandResult> {
     return withTransaction(this.pool, async (connection) => {
+      if (!context.actorId) throw new ProductionDomainError('INVALID_INPUT', '缺少当前操作人身份');
       const [[identity]] = await connection.query<
         (RowDataPacket & { production_batch_id: number })[]
       >('SELECT production_batch_id FROM outbound_order WHERE id=?', [outboundId]);
@@ -495,6 +522,11 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
         throw new ProductionDomainError('OUTBOUND_CONFIRM_NOT_ALLOWED', '只有待出库单可以确认');
       if (order.version !== version)
         throw new ProductionDomainError('CONCURRENT_MODIFICATION', '出库单已变化，请刷新后重试');
+      await connection.query(
+        `SELECT id FROM batch_step_records
+         WHERE production_batch_id=? ORDER BY step_order_snapshot,id FOR UPDATE`,
+        [order.production_batch_id],
+      );
       const [details] = await connection.query<OutboundDetailRow[]>(
         `SELECT od.id,od.outbound_id,od.allocation_id,od.demand_id,od.item_id,od.batch_id,
           ib.batch_code,ib.item_code_snapshot,ib.product_name_snapshot,od.outbound_number,od.unit_snapshot,
@@ -577,13 +609,25 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
           "UPDATE production_batches SET status='material_outbound',version=version+1,updated_by=? WHERE id=? AND status='material_assigned'",
           [context.actorId, order.production_batch_id],
         );
+      const supplementActivation = await activateReadySupplements(
+        connection,
+        String(order.production_batch_id),
+        lockedBatch.planned_quantity,
+        context.actorId,
+      );
       await this.audit(
         connection,
         context,
         'production-material.outbound.confirm',
         outboundId,
         { status: 'pending_picking', version },
-        { status: 'completed', version: version + 1, transactionCount: details.length },
+        {
+          status: 'completed',
+          version: version + 1,
+          transactionCount: details.length,
+          activatedSupplementIds: supplementActivation.activatedSupplementIds,
+          reopenedStepIds: supplementActivation.reopenedStepIds,
+        },
       );
       const batch = await findBatch(connection, String(order.production_batch_id));
       return {

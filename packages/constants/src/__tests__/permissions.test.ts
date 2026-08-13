@@ -77,6 +77,11 @@ describe('permissionMatches', () => {
     );
   });
 
+  it('separates abnormal review from rework execution', () => {
+    expect(PERMISSIONS.production.steps.manageAbnormal).toBe('production:steps:manage-abnormal');
+    expect(PERMISSIONS.production.rework.execute).toBe('production:rework:execute');
+  });
+
   it('uses a dedicated read-only Production trace permission', () => {
     expect(PERMISSIONS.production.trace.view).toBe('production:trace:view');
     expect(PERMISSIONS.production.trace.view).not.toBe(PERMISSIONS.production.tasks.view);
@@ -90,5 +95,21 @@ describe('permissionMatches', () => {
       cancel: 'production:inbounds:cancel',
     });
     expect(PERMISSIONS.production.inventory.view).toBe('production:inventory:view');
+  });
+
+  it('separates warehouse return and stock-check commands', () => {
+    expect(PERMISSIONS.warehouse.returns).toEqual({
+      view: 'warehouse:returns:view',
+      create: 'warehouse:returns:create',
+      confirm: 'warehouse:returns:confirm',
+      cancel: 'warehouse:returns:cancel',
+    });
+    expect(PERMISSIONS.warehouse.stockChecks).toEqual({
+      view: 'warehouse:stock-checks:view',
+      create: 'warehouse:stock-checks:create',
+      count: 'warehouse:stock-checks:count',
+      complete: 'warehouse:stock-checks:complete',
+      cancel: 'warehouse:stock-checks:cancel',
+    });
   });
 });

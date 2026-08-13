@@ -89,6 +89,22 @@ describe('production core migration', () => {
     );
   });
 
+  it('adds a source-bound and reversible minimal rework record', async () => {
+    const [up, down] = await Promise.all([
+      readMigration('202608130003-production-rework.up.sql'),
+      readMigration('202608130003-production-rework.down.sql'),
+    ]);
+    expect(up).toContain('CREATE TABLE rework_records');
+    expect(up).toContain('UNIQUE KEY uk_rework_records_disposition');
+    expect(up).toContain('UNIQUE KEY uk_rework_records_completed_report');
+    expect(up).toContain('fk_rework_records_disposition_source');
+    expect(up).toContain("status IN ('pending', 'doing', 'completed', 'cancelled')");
+    expect(up).toContain("'production:steps:manage-abnormal'");
+    expect(up).toContain("'production:rework:execute'");
+    expect(down).toContain('DROP TABLE rework_records;');
+    expect(down).toContain('DROP INDEX uk_batch_step_abnormal_dispositions_source');
+  });
+
   it('removes every seeded Production permission before removing its parent menu', async () => {
     const sql = await readMigration('202607300001-production-core.down.sql');
 

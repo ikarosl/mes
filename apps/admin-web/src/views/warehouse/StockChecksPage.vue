@@ -1,12 +1,12 @@
 <template>
-  <div>
-    <div class="query-panel">
+  <div class="stock-checks-page">
+    <section class="query-panel">
       <el-form
         class="query-form"
         :inline="true"
         :model="query"
       >
-        <el-form-item label="关键字">
+        <el-form-item label="关键词">
           <el-input
             v-model="query.keyword"
             clearable
@@ -16,13 +16,10 @@
         <el-form-item label="状态">
           <el-select
             v-model="query.status"
-            placeholder="全部"
             clearable
+            placeholder="全部状态"
           >
             <el-option
-              label="全部"
-              value=""
-            /><el-option
               v-for="(label, value) in stockCheckStatusLabels"
               :key="value"
               :label="label"
@@ -36,98 +33,91 @@
             :loading="loading"
             @click="search"
             >查询</el-button
-          ><el-button @click="resetQuery">重置</el-button>
+          >
+          <el-button @click="resetQuery">重置</el-button>
         </el-form-item>
       </el-form>
-    </div>
+    </section>
 
-    <div class="table-panel">
+    <section class="table-panel">
       <TableToolbar>
         <template #actions>
           <el-button
             type="primary"
             :icon="Plus"
             @click="openCreate"
-            >新增盘点单</el-button
+            >创建盘点单</el-button
           >
         </template>
         <template #tools>
-          <el-tooltip
-            content="刷新"
-            placement="top"
-          >
-            <el-button
-              :icon="Refresh"
-              text
-              circle
-              :loading="loading"
-              @click="loadRows"
-            />
-          </el-tooltip>
+          <el-button
+            :icon="Refresh"
+            text
+            circle
+            :loading="loading"
+            @click="loadRows"
+          />
         </template>
       </TableToolbar>
-
       <el-table
         v-loading="loading"
         :data="rows"
         class="data-table"
+        empty-text="暂无盘点单"
       >
         <el-table-column
           prop="checkNo"
           label="盘点单号"
-          width="180"
+          min-width="190"
         />
         <el-table-column
-          label="状态"
-          width="100"
+          label="盘点进度"
+          min-width="190"
         >
-          <template #default="{ row }"
-            ><el-tag
-              :type="
-                row.status === 'completed'
-                  ? 'success'
-                  : row.status === 'counting'
-                    ? 'warning'
-                    : row.status === 'cancelled'
-                      ? 'info'
-                      : ''
+          <template #default="{ row }">
+            <div>{{ row.detailCount - row.pendingCount }} / {{ row.detailCount }} 项已录入</div>
+            <el-progress
+              :percentage="
+                row.detailCount
+                  ? Math.round(((row.detailCount - row.pendingCount) / row.detailCount) * 100)
+                  : 0
               "
-              effect="light"
-              >{{ stockCheckStatusLabel(row.status) }}</el-tag
-            ></template
-          >
+              :stroke-width="6"
+              :show-text="false"
+            />
+          </template>
         </el-table-column>
         <el-table-column
-          label="明细数"
-          width="80"
-          align="center"
-          ><template #default="{ row }">{{ row.detailCount }}</template></el-table-column
-        >
-        <el-table-column
-          label="待处理项"
-          width="100"
+          label="差异"
+          width="105"
           align="center"
         >
-          <template #default="{ row }"
-            ><span :class="{ 'danger-text': row.pendingItems > 0 }">{{
-              row.pendingItems
-            }}</span></template
-          >
+          <template #default="{ row }">
+            <span :class="{ 'difference-text': row.differenceCount > 0 }"
+              >{{ row.differenceCount }} 项</span
+            >
+          </template>
         </el-table-column>
         <el-table-column
-          label="开始时间"
-          width="170"
-          ><template #default="{ row }">{{
-            row.startedAt ? formatTime(row.startedAt) : '-'
-          }}</template></el-table-column
+          label="状态"
+          width="105"
         >
+          <template #default="{ row }">
+            <el-tag :type="statusTag(row.status)">{{ stockCheckStatusLabel(row.status) }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column
+          label="盘点人"
+          min-width="120"
+        >
+          <template #default="{ row }">{{ row.operatorName || '-' }}</template>
+        </el-table-column>
         <el-table-column
           label="完成时间"
-          width="170"
-          ><template #default="{ row }">{{
-            row.completedAt ? formatTime(row.completedAt) : '-'
-          }}</template></el-table-column
+          width="175"
         >
+          <template #default="{ row }">{{ formatDateTimeForDisplay(row.checkAt) }}</template>
+        </el-table-column>
         <el-table-column
           prop="remark"
           label="备注"
@@ -136,563 +126,629 @@
         />
         <el-table-column
           label="操作"
-          width="320"
+          width="220"
           fixed="right"
         >
           <template #default="{ row }">
             <el-button
               link
               type="primary"
-              @click="openDetail(row)"
-              >详情</el-button
+              @click="openDetail(row.id)"
             >
+              {{ row.status === 'pending' || row.status === 'counting' ? '盘点录入' : '详情' }}
+            </el-button>
             <el-button
-              v-if="row.status === 'pending'"
+              v-if="row.status === 'pending' || row.status === 'counting'"
               link
-              type="primary"
-              @click="openEdit(row)"
-              >录入实盘</el-button
-            >
-            <el-button
-              v-if="row.status === 'counting'"
-              link
-              type="success"
-              @click="handleComplete(row)"
-              >完成盘点</el-button
-            >
-            <el-button
-              v-if="row.status === 'completed'"
-              link
-              type="primary"
-              @click="handleAdjust(row)"
-              >生成调整</el-button
-            >
-            <el-button
-              v-if="['pending', 'counting'].includes(row.status)"
-              link
-              @click="handleCancel(row)"
+              :loading="pendingAction === `cancel:${row.id}`"
+              @click="cancelOrder(row)"
               >取消</el-button
             >
           </template>
         </el-table-column>
       </el-table>
-
       <PaginationFooter
         :total="total"
-        :current-page="currentPage"
-        :page-size="pageSize"
-        @update:page-size="handlePageSizeChange"
-        @page-change="handlePageChange"
+        :current-page="query.page"
+        :page-size="query.pageSize"
+        @update:page-size="pageSizeChanged"
+        @page-change="pageChanged"
       />
-    </div>
+    </section>
 
     <el-dialog
       v-model="createVisible"
-      title="新增盘点单"
-      :width="DialogWidth.md"
+      title="创建库存盘点单"
+      :width="DialogWidth.xl"
+      :close-on-click-modal="false"
+      :before-close="beforeCreateClose"
     >
-      <el-form
-        class="dialog-form"
-        label-width="100px"
-        :model="createForm"
-      >
-        <el-form-item label="盘点单号"
-          ><el-input
-            v-model="createForm.checkNo"
-            placeholder="留空自动生成"
-        /></el-form-item>
-        <el-form-item label="备注"
-          ><el-input
-            v-model="createForm.remark"
-            type="textarea"
-            :rows="2"
-        /></el-form-item>
-      </el-form>
-      <template #footer
-        ><el-button @click="createVisible = false">取消</el-button
-        ><el-button
+      <div class="dialog-body">
+        <el-alert
+          title="创建时冻结所选库存批次与库存状态的账面数量。完成盘点前若库存流水发生变化，本单将被拒绝完成，需要重新盘点。"
+          type="info"
+          :closable="false"
+        />
+        <el-form
+          class="create-form"
+          label-width="90px"
+        >
+          <el-row :gutter="16">
+            <el-col :span="12"
+              ><el-form-item label="盘点单号"
+                ><el-input
+                  v-model="createForm.checkNo"
+                  placeholder="留空由系统生成"
+                  maxlength="100" /></el-form-item
+            ></el-col>
+            <el-col :span="12"
+              ><el-form-item label="备注"
+                ><el-input
+                  v-model="createForm.remark"
+                  maxlength="5000" /></el-form-item
+            ></el-col>
+          </el-row>
+        </el-form>
+        <div class="candidate-filter">
+          <el-input
+            v-model="candidateQuery.keyword"
+            clearable
+            placeholder="物料编码、名称或库存批次"
+            @keyup.enter="searchCandidates"
+          />
+          <el-select
+            v-model="candidateQuery.stockStatus"
+            clearable
+            placeholder="全部库存状态"
+          >
+            <el-option
+              v-for="(label, value) in stockStatusLabels"
+              :key="value"
+              :label="label"
+              :value="value"
+            />
+          </el-select>
+          <el-button
+            type="primary"
+            :loading="candidatesLoading"
+            @click="searchCandidates"
+            >筛选</el-button
+          >
+          <span class="selected-count">已选 {{ selectedTargets.size }} 项</span>
+        </div>
+        <el-table
+          v-loading="candidatesLoading"
+          :data="candidateRows"
+          class="detail-table"
+          empty-text="暂无正库存批次"
+        >
+          <el-table-column
+            label="选择"
+            width="64"
+            align="center"
+          >
+            <template #default="{ row }">
+              <el-checkbox
+                :model-value="selectedTargets.has(targetKey(row))"
+                @change="toggleTarget(row, $event)"
+              />
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="物料"
+            min-width="220"
+          >
+            <template #default="{ row }"
+              ><div class="primary-cell">{{ row.itemCode }} · {{ row.itemName }}</div>
+              <div class="secondary-cell">{{ row.batchCode }}</div></template
+            >
+          </el-table-column>
+          <el-table-column
+            label="库存状态"
+            width="120"
+            ><template #default="{ row }">{{
+              stockStatusLabel(row.stockStatus)
+            }}</template></el-table-column
+          >
+          <el-table-column
+            label="账面数量"
+            width="150"
+            align="right"
+            ><template #default="{ row }"
+              >{{ quantity(row.systemQuantity) }} {{ row.unit }}</template
+            ></el-table-column
+          >
+        </el-table>
+        <PaginationFooter
+          class="candidate-footer"
+          :total="candidateTotal"
+          :current-page="candidateQuery.page"
+          :page-size="candidateQuery.pageSize"
+          layout="prev, pager, next"
+          total-suffix="项正库存"
+          @update:page-size="candidatePageSizeChanged"
+          @page-change="candidatePageChanged"
+        />
+      </div>
+      <template #footer>
+        <el-button @click="closeCreate">取消</el-button>
+        <el-button
           type="primary"
           :loading="submitting"
           @click="submitCreate"
-          >创建</el-button
-        ></template
-      >
-    </el-dialog>
-
-    <el-dialog
-      v-model="editVisible"
-      title="录入实盘数量"
-      :width="DialogWidth.lg"
-      :close-on-click-modal="false"
-    >
-      <el-table
-        :data="editDetails"
-        max-height="480"
-        class="data-table"
-      >
-        <el-table-column
-          prop="itemCode"
-          label="对象编码"
-          width="130"
-        />
-        <el-table-column
-          prop="itemName"
-          label="对象名称"
-          width="150"
-        />
-        <el-table-column
-          prop="batchCode"
-          label="批次号"
-          width="130"
-        />
-        <el-table-column
-          label="库存状态"
-          width="90"
+          >创建并冻结账面数</el-button
         >
-          <template #default="{ row }">{{ stockStatusLabel(row.stockStatus) }}</template>
-        </el-table-column>
-        <el-table-column
-          prop="systemQuantity"
-          label="账面数量"
-          width="110"
-          align="right"
-        />
-        <el-table-column
-          label="实盘数量"
-          width="140"
-        >
-          <template #default="{ row, $index }">
-            <el-input-number
-              v-model="row.actualQuantity"
-              :min="0"
-              :precision="4"
-              size="small"
-              controls-position="right"
-              style="width: 120px"
-            />
-          </template>
-        </el-table-column>
-      </el-table>
-      <template #footer
-        ><el-button @click="editVisible = false">取消</el-button
-        ><el-button
-          type="primary"
-          :loading="submitting"
-          @click="submitEdit"
-          >保存实盘</el-button
-        ></template
-      >
+      </template>
     </el-dialog>
 
     <el-dialog
       v-model="detailVisible"
-      title="盘点单详情"
+      :title="detailEditable ? '盘点录入' : '盘点单详情'"
       :width="DialogWidth.xl"
+      :close-on-click-modal="false"
+      :before-close="beforeDetailClose"
     >
-      <el-descriptions
-        v-if="detailRow"
-        :column="2"
-        border
-        style="margin-bottom: 16px"
+      <div
+        v-loading="detailLoading"
+        class="dialog-body"
       >
-        <el-descriptions-item label="盘点单号">{{ detailRow.checkNo }}</el-descriptions-item>
-        <el-descriptions-item label="状态">{{
-          stockCheckStatusLabels[detailRow.status]
-        }}</el-descriptions-item>
-        <el-descriptions-item label="开始时间">{{
-          detailRow.startedAt ? formatTime(detailRow.startedAt) : '-'
-        }}</el-descriptions-item>
-        <el-descriptions-item label="完成时间">{{
-          detailRow.completedAt ? formatTime(detailRow.completedAt) : '-'
-        }}</el-descriptions-item>
-      </el-descriptions>
-      <el-table
-        v-if="detailDetails.length"
-        :data="detailDetails"
-        max-height="400"
-        class="data-table"
-      >
-        <el-table-column
-          prop="itemCode"
-          label="编码"
-          width="120"
+        <el-alert
+          v-if="detailEditable"
+          title="可以分次保存实盘数量；全部录入后才能完成盘点。完成时系统会重新核对账面快照，并在同一事务内生成差异调整流水。"
+          type="warning"
+          :closable="false"
         />
-        <el-table-column
-          prop="itemName"
-          label="名称"
-          width="140"
-        />
-        <el-table-column
-          prop="batchCode"
-          label="批次号"
-          width="130"
-        />
-        <el-table-column
-          prop="systemQuantity"
-          label="账面"
-          width="100"
-          align="right"
-        />
-        <el-table-column
-          prop="actualQuantity"
-          label="实盘"
-          width="100"
-          align="right"
-        />
-        <el-table-column
-          prop="differenceQuantity"
-          label="差异"
-          width="100"
-          align="right"
-        />
-        <el-table-column
-          label="结果"
-          width="90"
+        <el-descriptions
+          v-if="detail"
+          :column="3"
+          border
+          class="detail-descriptions"
         >
-          <template #default="{ row }">
-            <el-tag
-              :type="
-                row.result === 'matched'
-                  ? 'success'
-                  : row.result === 'surplus'
-                    ? 'warning'
-                    : 'danger'
-              "
-              size="small"
-              >{{ stockCheckResultLabel(row.result) }}</el-tag
+          <el-descriptions-item label="盘点单号">{{ detail.checkNo }}</el-descriptions-item>
+          <el-descriptions-item label="状态">{{
+            stockCheckStatusLabel(detail.status)
+          }}</el-descriptions-item>
+          <el-descriptions-item label="盘点人">{{
+            detail.operatorName || '-'
+          }}</el-descriptions-item>
+          <el-descriptions-item
+            label="备注"
+            :span="3"
+            >{{ detail.remark || '-' }}</el-descriptions-item
+          >
+        </el-descriptions>
+        <el-table
+          v-if="detail"
+          :data="countRows"
+          class="detail-table"
+        >
+          <el-table-column
+            label="物料"
+            min-width="210"
+            ><template #default="{ row }"
+              ><div class="primary-cell">{{ row.itemCode }} · {{ row.itemName }}</div>
+              <div class="secondary-cell">{{ row.batchCode }}</div></template
+            ></el-table-column
+          >
+          <el-table-column
+            label="库存状态"
+            width="105"
+            ><template #default="{ row }">{{
+              stockStatusLabel(row.stockStatus)
+            }}</template></el-table-column
+          >
+          <el-table-column
+            label="账面数量"
+            width="125"
+            align="right"
+            ><template #default="{ row }"
+              >{{ quantity(row.systemQuantity) }} {{ row.unit }}</template
+            ></el-table-column
+          >
+          <el-table-column
+            label="实盘数量"
+            width="175"
+          >
+            <template #default="{ row }">
+              <el-input-number
+                v-if="detailEditable"
+                v-model="row.actualQuantity"
+                :min="0"
+                :precision="4"
+                @change="detailDirty = true"
+              />
+              <span v-else>{{
+                row.actualQuantity === null ? '-' : `${quantity(row.actualQuantity)} ${row.unit}`
+              }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="差异"
+            width="115"
+            align="right"
+          >
+            <template #default="{ row }"
+              ><span :class="differenceClass(row)">{{ differenceText(row) }}</span></template
             >
-          </template>
-        </el-table-column>
-        <el-table-column
-          prop="adjusted"
-          label="已调整"
-          width="80"
+          </el-table-column>
+          <el-table-column
+            label="结果"
+            width="90"
+          >
+            <template #default="{ row }"
+              ><el-tag
+                v-if="localResult(row)"
+                :type="localResult(row) === 'matched' ? 'success' : 'danger'"
+                effect="plain"
+                >{{ stockCheckResultLabel(localResult(row)!) }}</el-tag
+              ><span v-else>-</span></template
+            >
+          </el-table-column>
+          <el-table-column
+            label="备注"
+            min-width="150"
+          >
+            <template #default="{ row }"
+              ><el-input
+                v-if="detailEditable"
+                v-model="row.remark"
+                maxlength="5000"
+                @input="detailDirty = true"
+              /><span v-else>{{ row.remark || '-' }}</span></template
+            >
+          </el-table-column>
+        </el-table>
+      </div>
+      <template #footer>
+        <el-button @click="closeDetail">关闭</el-button>
+        <el-button
+          v-if="detailEditable"
+          :loading="saving"
+          @click="saveCounts"
+          >保存实盘数</el-button
         >
-          <template #default="{ row }">{{ row.adjusted ? '是' : '否' }}</template>
-        </el-table-column>
-      </el-table>
+        <el-button
+          v-if="detailEditable"
+          type="primary"
+          :disabled="detailDirty || !allCounted"
+          :loading="completing"
+          @click="completeOrder"
+          >完成盘点并调整库存</el-button
+        >
+      </template>
     </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onActivated, onMounted, reactive, ref } from 'vue';
 import { Plus, Refresh } from '@element-plus/icons-vue';
-import type { StockCheckResult, StockCheckStatus, StockStatus } from '@company/contracts';
-import TableToolbar from '../../components/TableToolbar.vue';
+import type {
+  StockCheckCandidateItem,
+  StockCheckDetailItem,
+  StockCheckOrderItem,
+  StockCheckResult,
+  StockCheckStatus,
+  StockStatus,
+} from '@company/contracts';
 import PaginationFooter from '../../components/PaginationFooter.vue';
-import { DialogWidth } from '../../utils/dialog';
-import { EMessage } from '../../utils/message';
-import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
+import TableToolbar from '../../components/TableToolbar.vue';
+import { warehouseApi } from '../../api/warehouse';
 import {
   stockCheckResultLabel,
-  stockCheckStatusLabels,
   stockCheckStatusLabel,
+  stockCheckStatusLabels,
   stockStatusLabel,
+  stockStatusLabels,
 } from '../../constants/business-status';
+import { DialogWidth } from '../../utils/dialog';
+import { formatDateTimeForDisplay } from '../../utils/date';
+import { EMessage } from '../../utils/message';
+import { RouteMessageBox } from '../../utils/route-message-box';
 
-/**
- * TODO(warehouse-api): 盘点管理页面。当前使用静态演示数据。
- * 后端盘点模块（stock_check_order/stock_check_detail/inventory_transaction）尚未迁移。
- * 待后端实现以下接口后接入：
- *   GET    /warehouse/stock-checks              — 分页列表
- *   GET    /warehouse/stock-checks/:id          — 详情（含明细）
- *   POST   /warehouse/stock-checks              — 创建
- *   PATCH  /warehouse/stock-checks/:id          — 更新（录入实盘）
- *   POST   /warehouse/stock-checks/:id/actions/complete — 完成盘点
- *   POST   /warehouse/stock-checks/:id/actions/adjust   — 生成调整流水
- *   POST   /warehouse/stock-checks/:id/actions/cancel   — 取消
- * 参考 contracts: StockCheckStatus, StockCheckResult
- */
 defineOptions({ name: 'StockChecksPage' });
 
-interface StockCheckItem {
-  id: string;
-  checkNo: string;
-  status: StockCheckStatus;
-  detailCount: number;
-  pendingItems: number;
-  startedAt: string;
-  completedAt: string;
-  remark: string;
-}
-
-interface StockCheckDetailItem {
-  itemId: string;
-  itemCode: string;
-  itemName: string;
-  batchCode: string;
-  batchId: string;
-  stockStatus: StockStatus;
-  systemQuantity: string;
-  actualQuantity: number;
-  differenceQuantity: string;
-  result: StockCheckResult;
-  adjusted: boolean;
-  remark: string;
-}
-
-const demoRows: StockCheckItem[] = [
-  {
-    id: '1',
-    checkNo: 'PD-20260721-001',
-    status: 'completed',
-    detailCount: 10,
-    pendingItems: 0,
-    startedAt: '2026-07-21T08:00:00',
-    completedAt: '2026-07-21T12:00:00',
-    remark: '月度盘点A区',
-  },
-  {
-    id: '2',
-    checkNo: 'PD-20260721-002',
-    status: 'counting',
-    detailCount: 8,
-    pendingItems: 3,
-    startedAt: '2026-07-21T09:00:00',
-    completedAt: '',
-    remark: '月度盘点B区',
-  },
-  {
-    id: '3',
-    checkNo: 'PD-20260720-003',
-    status: 'pending',
-    detailCount: 5,
-    pendingItems: 5,
-    startedAt: '',
-    completedAt: '',
-    remark: '随机抽盘',
-  },
-  {
-    id: '4',
-    checkNo: 'PD-20260719-004',
-    status: 'completed',
-    detailCount: 15,
-    pendingItems: 0,
-    startedAt: '2026-07-19T08:00:00',
-    completedAt: '2026-07-19T17:00:00',
-    remark: '全库盘点',
-  },
-  {
-    id: '5',
-    checkNo: 'PD-20260718-005',
-    status: 'cancelled',
-    detailCount: 0,
-    pendingItems: 0,
-    startedAt: '',
-    completedAt: '',
-    remark: '取消',
-  },
-];
-
-const rows = ref<StockCheckItem[]>([...demoRows]);
-const detailRow = ref<StockCheckItem | null>(null);
-const detailDetails = ref<StockCheckDetailItem[]>([]);
-const editDetails = ref<StockCheckDetailItem[]>([]);
-const editingId = ref<string | null>(null);
+type CountRow = Omit<StockCheckDetailItem, 'actualQuantity'> & { actualQuantity: number | null };
+const query = reactive<{
+  page: number;
+  pageSize: number;
+  keyword: string;
+  status?: StockCheckStatus;
+}>({ page: 1, pageSize: 20, keyword: '' });
+const rows = ref<StockCheckOrderItem[]>([]);
+const total = ref(0);
 const loading = ref(false);
-const submitting = ref(false);
-const total = ref(5);
-const currentPage = ref(1);
-const pageSize = ref(10);
+const pendingAction = ref('');
 const createVisible = ref(false);
-const detailVisible = ref(false);
-const editVisible = ref(false);
-const query = reactive({ keyword: '', status: '' });
+const submitting = ref(false);
 const createForm = reactive({ checkNo: '', remark: '' });
+const candidateQuery = reactive<{
+  page: number;
+  pageSize: number;
+  keyword: string;
+  stockStatus?: StockStatus;
+}>({ page: 1, pageSize: 10, keyword: '' });
+const candidateRows = ref<StockCheckCandidateItem[]>([]);
+const candidateTotal = ref(0);
+const candidatesLoading = ref(false);
+const selectedTargets = ref(new Map<string, StockCheckCandidateItem>());
+const detailVisible = ref(false);
+const detailLoading = ref(false);
+const detail = ref<StockCheckOrderItem | null>(null);
+const countRows = ref<CountRow[]>([]);
+const detailDirty = ref(false);
+const saving = ref(false);
+const completing = ref(false);
+const detailEditable = computed(
+  () => detail.value?.status === 'pending' || detail.value?.status === 'counting',
+);
+const allCounted = computed(
+  () => countRows.value.length > 0 && countRows.value.every((row) => row.actualQuantity !== null),
+);
 
-const loadRows = async () => {
+async function loadRows() {
   loading.value = true;
-  setTimeout(() => {
-    const kw = query.keyword.trim().toLowerCase();
-    const ss = query.status;
-    let filtered = [...demoRows];
-    if (kw) filtered = filtered.filter((r) => r.checkNo.toLowerCase().includes(kw));
-    if (ss) filtered = filtered.filter((r) => r.status === ss);
-    rows.value = filtered;
-    total.value = filtered.length;
+  try {
+    const result = await warehouseApi.listStockChecks({
+      page: query.page,
+      pageSize: query.pageSize,
+      keyword: query.keyword.trim() || undefined,
+      status: query.status,
+    });
+    rows.value = result.items;
+    total.value = result.total;
+  } catch (error) {
+    EMessage.error(error, '盘点单加载失败');
+  } finally {
     loading.value = false;
-  }, 300);
-};
-const search = async () => {
-  currentPage.value = 1;
-  await loadRows();
-};
-const resetQuery = async () => {
-  query.keyword = '';
-  query.status = '';
-  currentPage.value = 1;
-  await loadRows();
-};
-const handlePageSizeChange = async (value: number) => {
-  pageSize.value = value;
-  currentPage.value = 1;
-  await loadRows();
-};
-const handlePageChange = async (value: number) => {
-  currentPage.value = value;
-  await loadRows();
-};
-
-const openCreate = () => {
+  }
+}
+async function loadCandidates() {
+  candidatesLoading.value = true;
+  try {
+    const result = await warehouseApi.listStockCheckCandidates({
+      page: candidateQuery.page,
+      pageSize: candidateQuery.pageSize,
+      keyword: candidateQuery.keyword.trim() || undefined,
+      stockStatus: candidateQuery.stockStatus,
+    });
+    candidateRows.value = result.items;
+    candidateTotal.value = result.total;
+  } catch (error) {
+    EMessage.error(error, '库存批次候选加载失败');
+  } finally {
+    candidatesLoading.value = false;
+  }
+}
+function openCreate() {
   createForm.checkNo = '';
   createForm.remark = '';
+  candidateQuery.page = 1;
+  candidateQuery.keyword = '';
+  candidateQuery.stockStatus = undefined;
+  selectedTargets.value = new Map();
   createVisible.value = true;
-};
-
-const submitCreate = async () => {
+  void loadCandidates();
+}
+function targetKey(row: StockCheckCandidateItem) {
+  return `${row.itemBatchId}:${row.stockStatus}`;
+}
+function toggleTarget(row: StockCheckCandidateItem, checked: string | number | boolean) {
+  const next = new Map(selectedTargets.value);
+  if (checked) next.set(targetKey(row), row);
+  else next.delete(targetKey(row));
+  selectedTargets.value = next;
+}
+function searchCandidates() {
+  candidateQuery.page = 1;
+  void loadCandidates();
+}
+function candidatePageSizeChanged(value: number) {
+  candidateQuery.pageSize = value;
+  candidateQuery.page = 1;
+  void loadCandidates();
+}
+function candidatePageChanged(value: number) {
+  candidateQuery.page = value;
+  void loadCandidates();
+}
+async function submitCreate() {
+  if (!selectedTargets.value.size) return EMessage.warning('请至少选择一个库存批次与库存状态');
   submitting.value = true;
-  setTimeout(() => {
-    EMessage.success('盘点单已创建');
+  try {
+    await warehouseApi.createStockCheck({
+      checkNo: createForm.checkNo.trim() || null,
+      remark: createForm.remark.trim() || null,
+      details: [...selectedTargets.value.values()].map((row) => ({
+        itemBatchId: row.itemBatchId,
+        stockStatus: row.stockStatus,
+      })),
+    });
     createVisible.value = false;
+    EMessage.success('盘点单已创建，账面数量已冻结');
+    query.page = 1;
+    await loadRows();
+  } catch (error) {
+    EMessage.error(error, '盘点单创建失败');
+  } finally {
     submitting.value = false;
-    loadRows();
-  }, 500);
-};
-
-const openDetail = (row: StockCheckItem) => {
-  detailRow.value = row;
-  detailDetails.value = [
-    {
-      itemId: 'i1',
-      itemCode: 'MAT-001',
-      itemName: '原材料A',
-      batchCode: 'BATCH-A1',
-      batchId: 'b1',
-      stockStatus: 'available',
-      systemQuantity: '100.0000',
-      actualQuantity: 95,
-      differenceQuantity: '-5.0000',
-      result: 'shortage',
-      adjusted: false,
-      remark: '',
-    },
-    {
-      itemId: 'i2',
-      itemCode: 'MAT-002',
-      itemName: '原材料B',
-      batchCode: 'BATCH-B1',
-      batchId: 'b2',
-      stockStatus: 'available',
-      systemQuantity: '50.0000',
-      actualQuantity: 52,
-      differenceQuantity: '2.0000',
-      result: 'surplus',
-      adjusted: false,
-      remark: '',
-    },
-    {
-      itemId: 'i3',
-      itemCode: 'MAT-003',
-      itemName: '原材料C',
-      batchCode: 'BATCH-C1',
-      batchId: 'b3',
-      stockStatus: 'available',
-      systemQuantity: '200.0000',
-      actualQuantity: 200,
-      differenceQuantity: '0.0000',
-      result: 'matched',
-      adjusted: true,
-      remark: '',
-    },
-  ];
+  }
+}
+async function openDetail(id: string) {
+  detail.value = null;
+  countRows.value = [];
+  detailDirty.value = false;
   detailVisible.value = true;
-};
-
-const openEdit = (row: StockCheckItem) => {
-  editingId.value = row.id;
-  editDetails.value = [
-    {
-      itemId: 'i1',
-      itemCode: 'MAT-001',
-      itemName: '原材料A',
-      batchCode: 'BATCH-A1',
-      batchId: 'b1',
-      stockStatus: 'available',
-      systemQuantity: '100.0000',
-      actualQuantity: 95,
-      differenceQuantity: '-5.0000',
-      result: 'shortage',
-      adjusted: false,
-      remark: '',
-    },
-    {
-      itemId: 'i2',
-      itemCode: 'MAT-002',
-      itemName: '原材料B',
-      batchCode: 'BATCH-B1',
-      batchId: 'b2',
-      stockStatus: 'available',
-      systemQuantity: '50.0000',
-      actualQuantity: 52,
-      differenceQuantity: '2.0000',
-      result: 'surplus',
-      adjusted: false,
-      remark: '',
-    },
-  ];
-  editVisible.value = true;
-};
-
-const submitEdit = async () => {
-  if (!editingId.value) return;
-  submitting.value = true;
-  setTimeout(() => {
+  detailLoading.value = true;
+  try {
+    applyDetail(await warehouseApi.getStockCheck(id));
+  } catch (error) {
+    EMessage.error(error, '盘点单详情加载失败');
+  } finally {
+    detailLoading.value = false;
+  }
+}
+function applyDetail(value: StockCheckOrderItem) {
+  detail.value = value;
+  countRows.value = value.details.map((row) => ({
+    ...row,
+    actualQuantity: row.actualQuantity === null ? null : Number(row.actualQuantity),
+  }));
+  detailDirty.value = false;
+}
+async function saveCounts() {
+  if (!detail.value) return;
+  const entered = countRows.value.filter((row) => row.actualQuantity !== null);
+  if (!entered.length) return EMessage.warning('请至少录入一项实盘数量');
+  saving.value = true;
+  try {
+    applyDetail(
+      await warehouseApi.saveStockCheckCounts(detail.value.id, {
+        version: detail.value.version,
+        details: entered.map((row) => ({
+          detailId: row.id,
+          actualQuantity: row.actualQuantity!,
+          remark: row.remark?.trim() || null,
+        })),
+      }),
+    );
     EMessage.success('实盘数量已保存');
-    editVisible.value = false;
-    submitting.value = false;
-    loadRows();
-  }, 500);
-};
-
-const handleComplete = async (_row?: any) => {
-  try {
-    await ElMessageBox.confirm('确认完成盘点？完成后明细将被锁定。', '完成盘点', {
-      confirmButtonText: '确认',
-      cancelButtonText: '取消',
-      type: 'warning',
-    });
-  } catch {
-    return;
+    await loadRows();
+  } catch (error) {
+    EMessage.error(error, '实盘数量保存失败');
+  } finally {
+    saving.value = false;
   }
-  EMessage.success('盘点已完成');
-  await loadRows();
-};
-
-const handleAdjust = async (_row?: any) => {
+}
+async function completeOrder() {
+  if (!detail.value || !allCounted.value || detailDirty.value) return;
   try {
-    await ElMessageBox.confirm('确认生成盘点调整流水？将自动处理盘盈盘亏。', '生成调整', {
-      confirmButtonText: '确认',
-      cancelButtonText: '取消',
-      type: 'warning',
-    });
-  } catch {
-    return;
+    await RouteMessageBox.confirm(
+      `确认完成盘点单 ${detail.value.checkNo}？系统将重新核对库存快照，并立即生成 ${differenceCount()} 项差异调整流水。`,
+      '完成库存盘点',
+      { type: 'warning', confirmButtonText: '完成并调整库存' },
+    );
+    completing.value = true;
+    applyDetail(await warehouseApi.completeStockCheck(detail.value.id, detail.value.version));
+    EMessage.success('盘点已完成，库存差异已同步调整');
+    await loadRows();
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') EMessage.error(error, '完成盘点失败');
+  } finally {
+    completing.value = false;
   }
-  EMessage.success('盘点调整流水已生成');
-  await loadRows();
-};
-
-const handleCancel = async (_row?: any) => {
+}
+async function cancelOrder(row: StockCheckOrderItem) {
   try {
-    await ElMessageBox.confirm('确认取消该盘点单？', '取消盘点', {
-      confirmButtonText: '确认取消',
-      cancelButtonText: '不取消',
-      type: 'warning',
-    });
-  } catch {
-    return;
+    await RouteMessageBox.confirm(
+      `确认取消盘点单 ${row.checkNo}？已录入的实盘数量将不再生效。`,
+      '取消盘点单',
+      { type: 'warning', confirmButtonText: '确认取消' },
+    );
+    pendingAction.value = `cancel:${row.id}`;
+    await warehouseApi.cancelStockCheck(row.id, row.version);
+    EMessage.success('盘点单已取消');
+    await loadRows();
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') EMessage.error(error, '取消盘点单失败');
+  } finally {
+    pendingAction.value = '';
   }
-  EMessage.success('已取消');
-  await loadRows();
-};
-
-const formatTime = (v: string) => v.replace('T', ' ').slice(0, 19);
+}
+function localResult(row: CountRow): StockCheckResult | null {
+  if (row.actualQuantity === null) return null;
+  const difference = row.actualQuantity - Number(row.systemQuantity);
+  return Math.abs(difference) < 0.00001 ? 'matched' : difference > 0 ? 'surplus' : 'shortage';
+}
+function differenceText(row: CountRow) {
+  if (row.actualQuantity === null) return '-';
+  const value = row.actualQuantity - Number(row.systemQuantity);
+  return `${value > 0 ? '+' : ''}${quantity(value)}`;
+}
+function differenceClass(row: CountRow) {
+  return localResult(row) && localResult(row) !== 'matched' ? 'difference-text' : '';
+}
+function differenceCount() {
+  return countRows.value.filter(
+    (row) => localResult(row) !== null && localResult(row) !== 'matched',
+  ).length;
+}
+function search() {
+  query.page = 1;
+  void loadRows();
+}
+function resetQuery() {
+  query.keyword = '';
+  query.status = undefined;
+  search();
+}
+function pageSizeChanged(value: number) {
+  query.pageSize = value;
+  query.page = 1;
+  void loadRows();
+}
+function pageChanged(value: number) {
+  query.page = value;
+  void loadRows();
+}
+const quantity = (value: string | number) =>
+  Number(value)
+    .toFixed(4)
+    .replace(/\.?0+$/, '');
+const statusTag = (status: StockCheckStatus) =>
+  status === 'completed'
+    ? 'success'
+    : status === 'cancelled'
+      ? 'info'
+      : status === 'counting'
+        ? 'primary'
+        : 'warning';
+function createHasDraft() {
+  return Boolean(
+    createForm.checkNo.trim() || createForm.remark.trim() || selectedTargets.value.size,
+  );
+}
+async function beforeCreateClose(done: () => void) {
+  if (!createHasDraft()) return done();
+  try {
+    await RouteMessageBox.confirm('当前盘点单尚未创建，确认放弃？', '放弃修改', {
+      type: 'warning',
+      confirmButtonText: '放弃修改',
+    });
+    done();
+  } catch {
+    /* Keep editing. */
+  }
+}
+function closeCreate() {
+  void beforeCreateClose(() => (createVisible.value = false));
+}
+async function beforeDetailClose(done: () => void) {
+  if (!detailDirty.value) return done();
+  try {
+    await RouteMessageBox.confirm('实盘数量尚未保存，确认放弃修改？', '放弃修改', {
+      type: 'warning',
+      confirmButtonText: '放弃修改',
+    });
+    done();
+  } catch {
+    /* Keep editing. */
+  }
+}
+function closeDetail() {
+  void beforeDetailClose(() => (detailVisible.value = false));
+}
 
 onMounted(loadRows);
+onActivated(loadRows);
 </script>
 
 <style scoped>
+.stock-checks-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
 .query-panel,
 .table-panel {
   border: 1px solid #e5e7eb;
@@ -700,8 +756,7 @@ onMounted(loadRows);
   background: #ffffff;
 }
 .query-panel {
-  padding: 20px 20px 8px;
-  margin-bottom: 16px;
+  padding: 20px 20px 4px;
 }
 .query-form {
   display: flex;
@@ -712,160 +767,98 @@ onMounted(loadRows);
   margin-right: 0;
   margin-bottom: 16px;
 }
-.query-form :deep(.el-form-item__label) {
-  height: 34px;
-  padding-right: 8px;
-  color: #1f2937;
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 34px;
-}
 .query-form :deep(.el-input),
 .query-form :deep(.el-select) {
-  width: 142px;
-}
-.query-form :deep(.el-input__wrapper),
-.query-form :deep(.el-select__wrapper) {
-  min-height: 34px;
-  border-radius: 6px;
-  box-shadow: 0 0 0 1px #e5e7eb inset;
+  width: 220px;
 }
 .query-actions {
   margin-left: auto;
 }
-.query-actions :deep(.el-button) {
-  min-width: 67px;
-  height: 32px;
-  border-radius: 6px;
-}
-.query-actions :deep(.el-button + .el-button) {
-  margin-left: 12px;
-}
-
 .table-panel {
   overflow: hidden;
 }
-.table-toolbar {
-  display: flex;
+.table-panel :deep(.table-toolbar) {
+  min-height: 56px;
   align-items: center;
-  justify-content: space-between;
-  height: 56px;
-  padding: 0 16px;
   border-bottom: 1px solid #e5e7eb;
 }
-.batch-actions {
-  display: flex;
-  gap: 8px;
-}
-.batch-actions :deep(.el-button) {
-  height: 34px;
-  border-radius: 6px;
-}
-.table-tools {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  color: #6b7280;
-}
-.table-tools :deep(.el-button) {
-  width: 20px;
-  height: 20px;
-  color: #6b7280;
-}
-
 .data-table {
   width: 100%;
-  color: #1f2937;
   font-size: 14px;
 }
-.data-table :deep(.el-table__header th) {
+.data-table :deep(th.el-table__cell) {
   height: 48px;
   background: #f9fafb;
   color: #1f2937;
-  font-weight: 600;
-}
-.data-table :deep(.el-table__row) {
-  height: 48px;
-}
-.data-table :deep(.el-table__row:hover) {
-  background: #f3f4f6;
-}
-.data-table :deep(.el-table__cell) {
-  border-bottom-color: #e5e7eb;
 }
 .data-table :deep(.el-tag) {
-  height: 22px;
-  padding: 0 10px;
   border: 0;
-  border-radius: 4px;
-  font-size: 12px;
+}
+.primary-cell {
   font-weight: 500;
-  line-height: 22px;
+  color: #1f2937;
 }
-.data-table :deep(.el-tag--success) {
-  background: #dcfce7;
-  color: #22c55e;
-}
-.data-table :deep(.el-tag--info) {
-  background: #f3f4f6;
+.secondary-cell {
+  margin-top: 3px;
   color: #6b7280;
+  font-size: 12px;
 }
-.data-table :deep(.el-tag--warning) {
-  background: #fef3c7;
-  color: #f59e0b;
-}
-.data-table :deep(.el-tag--danger) {
-  background: #fce8e8;
-  color: #ef4444;
-}
-.data-table :deep(.el-button.is-link) {
-  padding: 0;
-  font-weight: 500;
-}
-.danger-text {
+.difference-text {
   color: #ef4444;
   font-weight: 600;
 }
-
-.table-footer {
-  display: flex;
+.dialog-body {
+  max-height: 70vh;
+  overflow-y: auto;
+}
+.create-form {
+  margin-top: 18px;
+}
+.create-form :deep(.el-row) {
+  margin-right: 0 !important;
+  margin-left: 0 !important;
+}
+.create-form :deep(.el-col:first-child) {
+  padding-left: 0 !important;
+}
+.create-form :deep(.el-col:last-child) {
+  padding-right: 0 !important;
+}
+.candidate-filter {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) 180px auto auto;
+  gap: 8px;
   align-items: center;
-  justify-content: flex-end;
-  gap: 12px;
-  height: 56px;
-  padding: 0 16px;
+  margin: 4px 0 12px;
 }
-.total-text {
-  color: #6b7280;
-  font-size: 14px;
+.selected-count {
+  color: #306188;
+  font-weight: 500;
+  text-align: right;
 }
-.page-size-select {
-  width: 78px;
+.candidate-footer {
+  margin-top: 12px;
+  padding: 0;
 }
-.page-size-select :deep(.el-select__wrapper) {
-  min-height: 30px;
-  padding: 0 7px;
-  border-radius: 6px;
+.detail-descriptions {
+  margin-top: 16px;
 }
-.table-footer :deep(.el-pagination) {
-  gap: 4px;
+.detail-table {
+  margin-top: 12px;
 }
-.table-footer :deep(.el-pager li),
-.table-footer :deep(.btn-prev),
-.table-footer :deep(.btn-next) {
-  min-width: 32px;
-  height: 32px;
-  border: 1px solid #e5e7eb;
-  border-radius: 6px;
-}
-.table-footer :deep(.el-pager li.is-active) {
-  border-color: #306188;
-  background: #306188;
-  color: #ffffff;
-}
-
-.dialog-form :deep(.el-select),
-.dialog-form :deep(.el-input) {
-  width: 100%;
+@media (max-width: 900px) {
+  .query-form {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+  .query-actions {
+    margin-left: 0;
+  }
+  .candidate-filter {
+    grid-template-columns: 1fr;
+  }
+  .selected-count {
+    text-align: left;
+  }
 }
 </style>

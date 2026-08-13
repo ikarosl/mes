@@ -126,7 +126,11 @@ interface PageResult<T> {
   `production.purchase-inbound.confirm.v1`）、`POST /api/production/batches/:batchId/step-records/:recordId/reports`
   （scope `production.step-report.create.v3`）以及
   `POST /api/production/batches/:batchId/step-records/:recordId/reports/:reportId/actions/correct`
-  （scope `production.step-report.correct.v3`）。取消待确认入库单使用状态与 `version` 天然幂等，禁止发送
+  （scope `production.step-report.correct.v3`）、返工整单完成
+  `POST /api/production/reworks/:reworkId/actions/complete`（scope
+  `production.rework.complete.v1`）和异常报废补料批准
+  `POST /api/production/abnormal-dispositions/:dispositionId/actions/approve-scrap-supplement`（scope
+  `production.abnormal.scrap-supplement.v1`）。取消待确认入库单使用状态与 `version` 天然幂等，禁止发送
   `Idempotency-Key`。契约与重放语义见
   [`concurrency-and-idempotency.md`](concurrency-and-idempotency.md) §3.3；全部写端点「需要幂等键 / 有自然
   键兜底 / 当前做不到」的完整分类见该文 §4.1。未声明启用的端点收到该头返回
