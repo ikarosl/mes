@@ -22,9 +22,10 @@
     "architecture:check": "node scripts/check-api-architecture.mjs",
     "migration:check": "node scripts/check-migration-readiness.mjs",
     "secrets:check": "node scripts/check-secrets.mjs",
+    "audit:prod": "pnpm audit --prod --audit-level=high",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "verify": "corepack pnpm run format:check && corepack pnpm run docs:check && corepack pnpm run architecture:check && corepack pnpm run migration:check && corepack pnpm run secrets:check && corepack pnpm run lint && corepack pnpm run build && corepack pnpm run typecheck && corepack pnpm run typecheck:integration && corepack pnpm run test",
+    "verify": "corepack pnpm run format:check && corepack pnpm run docs:check && corepack pnpm run architecture:check && corepack pnpm run migration:check && corepack pnpm run secrets:check && corepack pnpm run audit:prod && corepack pnpm run lint && corepack pnpm run build && corepack pnpm run typecheck && corepack pnpm run typecheck:integration && corepack pnpm run test",
     "prepare": "husky",
     "precommit": "lint-staged",
     "db:migrate": "turbo run migrate --filter=@company/database",
@@ -45,7 +46,8 @@
   },
   "pnpm": {
     "overrides": {
-      "multer": ">=2.2.0"
+      "multer": ">=2.2.0",
+      "nanoid": "https://github.com/ai/nanoid/archive/refs/tags/3.3.17.tar.gz"
     }
   },
   "lint-staged": {

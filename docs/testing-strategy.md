@@ -36,7 +36,9 @@
 Production 的事务、并发建批、物料需求快照、报工事实约束/聚合和幂等键需要在真实 MySQL 中验证。该测试直接调用 Repository 和真实 MySQL，不经过浏览器，因此属于 Integration，不属于 E2E。开发运行使用 Windows 宿主机 `3306`；本地集成测试 WSL Docker 使用 `3307:3306`（宿主:容器）；CI 服务容器使用 `3306`。完整的 PowerShell/Bash 命令见根 [README](../README.md#数据库命令)。
 
 开发与 CI 的 MySQL 8 实例需要允许 migration 用户创建触发器。仓库 Compose 已设置
-`log_bin_trust_function_creators=1`；其他启用 binary log 的环境应由数据库管理员配置等价策略，禁止为应用运行账号授予 `SUPER`。
+`log_bin_trust_function_creators=1`；GitHub Actions 服务容器启动后由 root 在迁移前设置同一全局变量，migration 和应用账号仍使用最小权限。其他启用 binary log 的环境应由数据库管理员配置等价策略，禁止为应用运行账号授予 `SUPER`。
+
+根命令 `pnpm verify` 与 CI `quality` 作业使用相同的格式、文档、架构、迁移、密钥、生产依赖审计、Lint、构建、类型及单元测试门禁。生产依赖审计固定使用 `pnpm audit:prod`，高危及以上公告必须先升级或显式完成安全评估，不得因本地 `verify` 漏跑而仅在 CI 暴露。
 
 该命令会先检查显式开关与专用测试端点门禁：`TEST_DB_HOST/PORT/NAME` 必填，`DB_HOST/PORT/NAME` 必须分别与之完全相等，并且库名必须以 `_test` 结尾。通过后构建所需 workspace，复用 `db:init` 执行 migration、系统 seed 和管理员初始化，再重复执行一次 seed 证明幂等性，最后运行 `tests/integration` 全套测试
 （`vitest.mysql.config.ts` 的 include 为 `tests/integration/**/*.test.ts`，当前共 8 个文件：
