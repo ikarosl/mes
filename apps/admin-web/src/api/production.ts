@@ -289,6 +289,13 @@ export const productionApi = {
       data: { version },
     }),
 
+  completeStep: (batchId: string, stepRecordId: string, version: number) =>
+    request<ProductionStepCommandResult>({
+      url: `/production/batches/${batchId}/step-records/${stepRecordId}/actions/complete`,
+      method: 'POST',
+      data: { version },
+    }),
+
   getBatchExecutionRecords: (batchId: string) =>
     request<ProductionExecutionRecordGroup>({
       url: `/production/batches/${batchId}/execution-records`,

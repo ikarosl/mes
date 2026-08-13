@@ -147,6 +147,12 @@ export const useProductionExecutionRecords = () => {
       await selectBatch(check.productionBatchId);
     });
   };
+  const getCorrectionIntentStatus = (reportId: string) =>
+    correctionIntents.get(reportId)?.getStatus() ?? 'idle';
+  const resetCorrectionIntent = (reportId: string): void => {
+    correctionIntents.get(reportId)?.reset();
+    correctionIntents.delete(reportId);
+  };
 
   return {
     batches,
@@ -162,5 +168,7 @@ export const useProductionExecutionRecords = () => {
     reverse,
     correct,
     completeExecution,
+    getCorrectionIntentStatus,
+    resetCorrectionIntent,
   };
 };

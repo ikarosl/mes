@@ -122,6 +122,19 @@
               @click="openReport(row)"
               >报工</el-button
             >
+            <el-button
+              v-else-if="row.status === 'doing'"
+              type="success"
+              :loading="completePendingIds.has(row.stepRecordId)"
+              :disabled="!row.canComplete"
+              @click="completeTask(row)"
+              >完成工序</el-button
+            >
+            <span
+              v-if="row.status === 'doing' && !row.needRecord && !row.canComplete"
+              class="blocked-reason"
+              >{{ row.completeBlockedReason }}</span
+            >
             <span
               v-else-if="row.status !== 'assigned' && row.status !== 'doing'"
               class="muted"
@@ -135,6 +148,8 @@
       v-model="reportVisible"
       :task="reportTask"
       :submitting="Boolean(reportTask && reportPendingIds.has(reportTask.stepRecordId))"
+      :intent-status="reportTask ? getReportIntentStatus(reportTask.stepRecordId) : 'idle'"
+      @reset-intent="reportTask && resetReportIntent(reportTask.stepRecordId)"
       @submit="submitReport"
     />
   </div>
@@ -154,7 +169,19 @@ import BatchStepReportDialog from './components/BatchStepReportDialog.vue';
 
 defineOptions({ name: 'ProductionWorkerTasksPage' });
 
-const { tasks, loading, startPendingIds, reportPendingIds, load, start, report } = useWorkerTasks();
+const {
+  tasks,
+  loading,
+  startPendingIds,
+  reportPendingIds,
+  completePendingIds,
+  load,
+  start,
+  report,
+  complete,
+  getReportIntentStatus,
+  resetReportIntent,
+} = useWorkerTasks();
 const reportVisible = ref(false);
 const reportTask = ref<ProductionWorkerTaskItem | null>(null);
 const stepStatusLabel = (status: BatchStepStatus): string => BATCH_STEP_STATUS_LABELS[status];
@@ -187,6 +214,24 @@ const openReport = (task: ProductionWorkerTaskItem): void => {
   reportTask.value = task;
   reportVisible.value = true;
 };
+const completeTask = async (task: ProductionWorkerTaskItem): Promise<void> => {
+  try {
+    await complete(task);
+    EMessage.success('无需报工工序已完成，完成时间已由系统记录');
+  } catch (error) {
+    const code =
+      typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : '';
+    const fallback =
+      code === 'NOT_STEP_ASSIGNEE'
+        ? '该工序已改派，请刷新本人任务'
+        : code === 'STEP_COMPLETION_NOT_ALLOWED'
+          ? '工序完成条件尚未满足，请刷新后查看前置工序状态'
+          : code === 'CONCURRENT_MODIFICATION'
+            ? '工序状态已变化，请刷新后重试'
+            : '工序完成失败';
+    EMessage.error(error, fallback);
+  }
+};
 const submitReport = async (payload: {
   normalQuantity: number;
   abnormalQuantity: number;
@@ -207,7 +252,7 @@ const submitReport = async (payload: {
       typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : '';
     const fallback =
       code === 'STEP_REPORT_QUANTITY_EXCEEDED'
-        ? '正常数量超过上游当前放行的可报数量，请刷新后重试'
+        ? '正常与异常数量合计超过上游当前放行的可报数量，请刷新后重试'
         : code === 'NOT_STEP_ASSIGNEE'
           ? '该工序已改派，请刷新本人任务'
           : code === 'CONCURRENT_MODIFICATION'

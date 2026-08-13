@@ -28,4 +28,18 @@ describe('production reporting policy', () => {
       expect.objectContaining({ code: 'DOWNSTREAM_QUANTITY_CONFLICT' }),
     );
   });
+
+  it('attaches the conflicting downstream step projection to correction errors', () => {
+    const details = {
+      conflictingStepRecordId: '12',
+      conflictingStepOrder: 3,
+      conflictingStepName: '焊接',
+      downstreamEffectiveReportedQuantity: '10.0000',
+      correctedUpstreamNormalQuantity: '9.0000',
+    };
+
+    expect(() => requireNoDownstreamQuantityConflict('9', '10', details)).toThrowError(
+      expect.objectContaining({ code: 'DOWNSTREAM_QUANTITY_CONFLICT', details }),
+    );
+  });
 });

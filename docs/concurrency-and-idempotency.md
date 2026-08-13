@@ -197,8 +197,8 @@ createBatch 试点接线进一步落实「重放返回原结果」的完整语�
 
 现阶段继续依赖业务唯一约束和 `version` 乐观锁避免重复写入或并发覆盖；Production 第一阶段的
 `production_item_demand` 仍使用 `NORMAL:{production_batch_id}:{product_material_id}` 作为内部稳定键。
-`createBatch` 试点以及 4.2-A 的物料分配、生产领料出库已经落地；后续仍按风险逐项扩展：报工创建/更正、
-确认等命令须逐项满足启用门槛后再声明必填键，不得无差别给所有 POST/PATCH 加键。
+`createBatch`、物料分配、生产领料出库创建/确认、外购物料入库创建/确认以及报工创建/更正已经逐项落地；
+其余命令仍须逐项满足启用门槛后再声明必填键，不得无差别给所有 POST/PATCH 加键。
 
 ### 4.1 接口幂等键适用性与当前边界
 
@@ -209,14 +209,14 @@ createBatch 试点接线进一步落实「重放返回原结果」的完整语�
 | 分类                                                   | 判据                                                                                                         | 端点                                                                                                                                                                                                                                               | 当前边界                                                                                                             |
 | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | A. 已启用幂等闭环                                      | 成功响应丢失后的重试会新增不可变事实，且无客户端可复现业务键                                                  | `POST /api/production/work-orders/:workOrderId/batches`；`POST /api/production/batches/:batchId/material-allocations`；`POST /api/production/batches/:batchId/material-outbounds`；`POST /api/production/material-outbounds/:outboundId/actions/confirm`；`POST /api/production/batches/:batchId/step-records/:recordId/reports`；`POST /api/production/batches/:batchId/step-records/:recordId/reports/:reportId/actions/correct` | scope 分别为 `production.batch.create.v2`、`production.material-allocation.create.v1`、`production.material-outbound.create.v2`、`production.material-outbound.confirm.v1`、`production.step-report.create.v3`、`production.step-report.correct.v3`；键必填 |
-| B. 命中判据二「需要」，按风险逐项启用（阶段 C）        | 成功响应丢失后的重试会新增事实，或因 `version` 已变而返回 409，需要结果重放                                  | 工序报工创建/管理员更正（后续命令）；`POST /api/production/work-orders/:workOrderId/actions/release`、`/cancel`、`/close`；批次状态确认（后续命令）                                                                                                    | 尚未启用；尤其报工与更正不得仅依赖 `report_no`，必须逐项满足幂等启用门槛后才可开放                                    |
+| B. 命中判据二「需要」，按风险逐项启用（阶段 C）        | 成功响应丢失后因 `version` 已变而返回 409，需要结果重放                                                      | `POST /api/production/work-orders/:workOrderId/actions/release`、`/cancel`、`/close`；未来新增批次状态确认命令                                                                                                                                        | 尚未启用；逐项满足幂等启用门槛后才可开放                                                                              |
 | C. 有内部稳定键，先复验天然幂等再决定                  | 键可复现（`NORMAL:{production_batch_id}:{product_material_id}`），但完整 application/API 链路未验证          | `POST /api/production/batches/:id/actions/generate-material-demands`                                                                                                                                                                               | 尚未启用；先补真实 MySQL 双事务 + 完整链路重试复验（前置 BOM 读取不破坏重试语义），再决定是否接结果重放              |
 | D. 有自然可复现业务键 / 集合语义更新，暂不需要 HTTP 键 | 创建命令的业务键由用户输入且 UNIQUE 可复现；更新为集合语义（无乐观锁版本门禁），重复应用相同负载最终状态一致 | `POST /api/production/work-orders`（`work_order_no` UNIQUE）；users/roles（`username`/`code`）；categories/products/process-steps/process-routes（`category_code`/`item_code`/`step_code`/`product_id+route_code+version_no`）及其 PATCH/setStatus | 数据层 UNIQUE 兜底；成功响应丢失后重试可能返回 409 而非重放，当前阶段可接受；某命令若需要结果重放，按阶段 C 单独评估 |
 | E. 当前做不到幂等闭环（外部副作用在事务外）            | handler 必须先写对象存储，对象写入无法随数据库事务回滚；重试会重复上传对象形成孤儿对象                       | `POST /api/product/technical-files`、`POST /api/product/process-steps/:id/sop`                                                                                                                                                                     | 不得直接套用 executor；需先设计 outbox/补偿或安全的结果重建方式                                                      |
 | F. 不得仅凭 HTTP method 启用，待单独评估               | 软删除保留对象存储内容，重试语义需单独评审                                                                   | `DELETE /api/product/technical-files/:id`                                                                                                                                                                                                          | 当前不启用                                                                                                           |
 | G. 不适用（匿名命令 / 框架外）                         | 幂等闭环要求已认证 `actorId`，匿名命令不接入                                                                 | `POST /api/auth/login`、`/refresh`、`/logout`                                                                                                                                                                                                      | 不要求键；但收到键与其余未启用端点一致返回 `400 IDEMPOTENCY_NOT_SUPPORTED`，不静默接受                               |
 
-前端边界：只对已启用端点（`createOrderBatch`、创建物料分配、创建待出库单、确认整张出库单）发送 `Idempotency-Key`，其余接口不得自行生成或
+前端边界：只对已启用端点（`createOrderBatch`、创建物料分配、创建/确认待出库单、创建/确认外购物料入库单、创建工序报工、管理员更正报工）发送 `Idempotency-Key`，其余接口不得自行生成或
 发送；内存 K1 不持久化，浏览器硬刷新后无法恢复（见 §3.3、实现方案 §9.1）。
 
 ### 4.2 Production 当前执行阶段命令矩阵
@@ -236,8 +236,7 @@ createBatch 试点接线进一步落实「重放返回原结果」的完整语�
 | 更正报工 | 在单个事务内追加全量冲销和替代事实；服务端单号不可复现 | 已启用，scope `production.step-report.correct.v3`；v3 按更正后有效总量校验当前放行额度；冲销、替代、异常待处置、工序状态、成功审计和幂等结果同事务 |
 | 派工/撤回/改派 | 更新既有工序；`stepId + version` | 使用状态机与 version；不发送 `Idempotency-Key` |
 | 员工开工 | 工序与首工序批次状态转换；`stepId + version` | 使用状态短路与 version；重复请求返回当前等价结果；不发送键 |
-| 创建报工 | 新增不可变报工事实，无自然业务键 | 必须启用版本化 HTTP 幂等后开放 |
-| 管理员更正报工 | 新增冲销与替代事实，无自然业务键 | 必须启用版本化 HTTP 幂等后开放 |
+| 员工完成无需报工工序 | `doing -> completed`；`stepId + version` | 仅当前负责人可执行；状态短路与 version 天然幂等；不发送键 |
 | 生产执行完工 | 批次状态与服务端聚合完成量；`batchId + version` | 使用状态短路与 version；不发送键 |
 
 `inventory_transaction.idempotency_key` 是库存业务流水唯一性键，生产出库采用

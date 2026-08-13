@@ -125,27 +125,13 @@
           ></el-table-column
         >
       </el-table>
-      <div class="table-footer">
-        <span>共 {{ inbounds.total.value }} 条</span
-        ><el-select
-          v-model="query.pageSize"
-          class="page-size-select"
-          @change="pageSizeChanged"
-          ><el-option
-            label="10条/页"
-            :value="10" /><el-option
-            label="20条/页"
-            :value="20" /><el-option
-            label="50条/页"
-            :value="50" /></el-select
-        ><el-pagination
-          v-model:current-page="query.page"
-          :page-size="query.pageSize"
-          :total="inbounds.total.value"
-          layout="prev,pager,next,jumper"
-          @current-change="loadRows"
-        />
-      </div>
+      <PaginationFooter
+        :total="inbounds.total.value"
+        :current-page="query.page ?? 1"
+        :page-size="query.pageSize ?? 20"
+        @update:page-size="pageSizeChanged"
+        @page-change="handlePageChange"
+      />
     </section>
     <el-dialog
       v-model="createVisible"
@@ -359,6 +345,7 @@ import type {
 } from '@company/contracts';
 import { productApi } from '../../api/product';
 import TableToolbar from '../../components/TableToolbar.vue';
+import PaginationFooter from '../../components/PaginationFooter.vue';
 import { inboundOrderStatusLabel, inboundOrderStatusLabels } from '../../constants/business-status';
 import { DialogWidth } from '../../utils/dialog';
 import { formatDateTimeForDisplay } from '../../utils/date';
@@ -415,8 +402,13 @@ const resetQuery = () => {
   query.page = 1;
   return loadRows();
 };
-const pageSizeChanged = () => {
+const pageSizeChanged = (value: number) => {
+  query.pageSize = value;
   query.page = 1;
+  return loadRows();
+};
+const handlePageChange = (value: number) => {
+  query.page = value;
   return loadRows();
 };
 const openCreate = async () => {

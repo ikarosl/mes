@@ -11,6 +11,7 @@ describe('AuthController refresh cookie', () => {
     vi.stubEnv('JWT_ISSUER', 'test-issuer');
     vi.stubEnv('JWT_AUDIENCE', 'test-audience');
     vi.stubEnv('REFRESH_TOKEN_TTL_SECONDS', '10');
+    vi.stubEnv('REFRESH_TOKEN_COOKIE_NAME', '');
     const responseBody = {
       user: { id: '1', username: 'admin', displayName: 'Admin', roles: [], permissions: [] },
       accessToken: 'access',

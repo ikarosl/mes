@@ -51,7 +51,8 @@ JOIN permissions p ON p.code IN (
   'production:view',
   'production:worker-tasks:view',
   'production:steps:start',
-  'production:steps:report'
+  'production:steps:report',
+  'production:steps:complete'
 )
 WHERE r.code = 'operator';
 

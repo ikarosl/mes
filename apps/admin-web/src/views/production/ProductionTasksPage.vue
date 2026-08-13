@@ -89,6 +89,7 @@
       <el-table
         v-loading="loading"
         :data="batches"
+        :row-class-name="batchRowClass"
         class="tasks-table"
       >
         <el-table-column
@@ -134,10 +135,32 @@
           <template #default="{ row }">
             <el-tag
               :type="batchStatusMeta(row.status).type"
+              :class="['task-status-tag', `task-status-${row.status}`]"
               effect="light"
             >
               {{ batchStatusMeta(row.status).label }}
             </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column
+          label="交期"
+          width="140"
+        >
+          <template #default="{ row }">
+            <div>{{ formatDateForDisplay(row.planEndDate, '未设置') }}</div>
+            <span :class="['deadline-badge', `deadline-${batchDeadline(row).tone}`]">
+              {{ batchDeadline(row).label }}
+            </span>
+          </template>
+        </el-table-column>
+        <el-table-column
+          label="下一步"
+          min-width="165"
+        >
+          <template #default="{ row }">
+            <span :class="['next-action', `next-action-${taskNextAction(row).tone}`]">
+              {{ taskNextAction(row).label }}
+            </span>
           </template>
         </el-table-column>
         <el-table-column
@@ -193,34 +216,13 @@
         </el-table-column>
       </el-table>
 
-      <div class="table-footer">
-        <span class="total-text">共 {{ total }} 条</span>
-        <el-select
-          v-model="pageSize"
-          class="page-size-select"
-          @change="handlePageSizeChange"
-        >
-          <el-option
-            label="10条/页"
-            :value="10"
-          />
-          <el-option
-            label="20条/页"
-            :value="20"
-          />
-          <el-option
-            label="50条/页"
-            :value="50"
-          />
-        </el-select>
-        <el-pagination
-          :current-page="currentPage"
-          :page-size="pageSize"
-          :total="total"
-          layout="prev, pager, next, jumper"
-          @current-change="handlePageChange"
-        />
-      </div>
+      <PaginationFooter
+        :total="total"
+        :current-page="currentPage"
+        :page-size="pageSize"
+        @update:page-size="handlePageSizeChange"
+        @page-change="handlePageChange"
+      />
     </section>
 
     <!-- 新增/编辑任务弹窗 -->
@@ -303,6 +305,7 @@
 import { computed, onActivated, onMounted, ref } from 'vue';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import TableToolbar from '../../components/TableToolbar.vue';
+import PaginationFooter from '../../components/PaginationFooter.vue';
 import type {
   BatchStepRecordItem,
   CreateProductionBatchPayload,
@@ -314,6 +317,7 @@ import type {
 } from '@company/contracts';
 import { normalizeCreateBatchPayload } from '@company/utils';
 import { productionApi } from '../../api/production';
+import { formatDateForDisplay } from '../../utils/date';
 import { EMessage } from '../../utils/message';
 import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
 import { useRowPending } from '../../utils/useRowPending';
@@ -332,6 +336,7 @@ import MaterialOutboundDialog from './components/MaterialOutboundDialog.vue';
 import { useProductionMaterials } from './composables/useProductionMaterials';
 import StepAssignmentDialog from './components/StepAssignmentDialog.vue';
 import { useStepAssignments } from './composables/useStepAssignments';
+import { deadlinePresentation, taskNextActionPresentation } from './production-task-presentation';
 
 defineOptions({ name: 'ProductionTasksPage' });
 
@@ -363,6 +368,12 @@ const userChoices = computed(() =>
     (user) => user.id,
   ),
 );
+
+const batchDeadline = (row: ProductionBatchItem) =>
+  deadlinePresentation(row.planEndDate, row.status === 'completed' || row.status === 'cancelled');
+const batchRowClass = ({ row }: { row: ProductionBatchItem }): string =>
+  batchDeadline(row).overdueDays > 0 ? 'deadline-overdue-row' : '';
+const taskNextAction = (row: ProductionBatchItem) => taskNextActionPresentation(row);
 
 /** 行内写操作守卫（生成物料），同一行只允许一个在途（todo 3.5） */
 const { isRowPending, beginRow, endRow } = useRowPending();
@@ -455,6 +466,8 @@ const submitTask = async (data: TaskFormValue): Promise<void> => {
       const batch = batches.value.find((item) => item.id === editId);
       await productionApi.updateBatch(editId, {
         ownerId: data.ownerId || null,
+        planStartDate: data.planStartDate || null,
+        planEndDate: data.planEndDate || null,
         remark: data.remark || null,
         version: batch?.version ?? 0,
       });
@@ -465,6 +478,8 @@ const submitTask = async (data: TaskFormValue): Promise<void> => {
         routeId: data.routeId || null,
         plannedQuantity: data.plannedQuantity,
         ownerId: data.ownerId || null,
+        planStartDate: data.planStartDate,
+        planEndDate: data.planEndDate,
         remark: data.remark || null,
         stepOverrides: data.stepOverrides,
       };
@@ -853,6 +868,87 @@ onActivated(() => {
   background: #e8f0fe;
   color: #306188;
 }
+.tasks-table :deep(.task-status-pending) {
+  background: #f4f4f5;
+  color: #909399;
+}
+.tasks-table :deep(.task-status-material_pending) {
+  background: #fdf6ec;
+  color: #e6a23c;
+}
+.tasks-table :deep(.task-status-material_assigned) {
+  background: #f5f3ff;
+  color: #a78bfa;
+}
+.tasks-table :deep(.task-status-material_outbound) {
+  background: #f0fdfa;
+  color: #14b8a6;
+}
+.tasks-table :deep(.task-status-doing) {
+  background: #ecf5ff;
+  color: #409eff;
+}
+.tasks-table :deep(.task-status-completed) {
+  background: #f0f9eb;
+  color: #67c23a;
+}
+.tasks-table :deep(.task-status-cancelled) {
+  background: #fef0f0;
+  color: #f56c6c;
+}
+.tasks-table :deep(tr.deadline-overdue-row) {
+  --el-table-tr-bg-color: rgb(255, 247, 237);
+  --el-table-row-hover-bg-color: rgb(255, 239, 219);
+}
+.tasks-table :deep(tr.deadline-overdue-row > td.el-table__cell) {
+  background-color: rgb(255, 247, 237) !important;
+}
+.tasks-table :deep(tr.deadline-overdue-row:hover > td.el-table__cell) {
+  background: rgb(255, 239, 219) !important;
+}
+.deadline-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  margin-top: 4px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 20px;
+}
+.deadline-muted {
+  border-color: #e5e7eb;
+  background: #f4f4f5;
+  color: #909399;
+}
+.deadline-normal {
+  border-color: #d9ecff;
+  background: #ecf5ff;
+  color: #409eff;
+}
+.deadline-warning {
+  border-color: #fde2e2;
+  background: #fef0f0;
+  color: #f56c6c;
+}
+.next-action {
+  font-size: 13px;
+  font-weight: 500;
+}
+.next-action-muted {
+  color: #909399;
+}
+.next-action-warning {
+  color: #e6a23c;
+}
+.next-action-primary {
+  color: #409eff;
+}
+.next-action-success {
+  color: #67c23a;
+}
 .tasks-table :deep(.el-button.is-link) {
   padding: 0;
   font-weight: 500;
@@ -876,32 +972,48 @@ onActivated(() => {
   padding: 0 16px;
 }
 .total-text {
-  color: #6b7280;
+  color: #303133;
   font-size: 14px;
 }
 .page-size-select {
-  width: 78px;
+  width: 160px;
 }
 .page-size-select :deep(.el-select__wrapper) {
-  min-height: 30px;
-  padding: 0 7px;
-  border-radius: 6px;
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: 4px;
+  box-shadow: 0 0 0 1px #dcdfe6 inset;
 }
 .table-footer :deep(.el-pagination) {
-  gap: 4px;
+  gap: 10px;
+  color: #303133;
 }
 .table-footer :deep(.el-pager li),
 .table-footer :deep(.btn-prev),
 .table-footer :deep(.btn-next) {
-  min-width: 32px;
-  height: 32px;
-  border: 1px solid #e5e7eb;
-  border-radius: 6px;
+  min-width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 2px;
+  background: #f4f6f8;
+  color: #606266;
 }
 .table-footer :deep(.el-pager li.is-active) {
-  border-color: #306188;
-  background: #306188;
+  background: #409eff;
   color: #ffffff;
+}
+.table-footer :deep(.btn-prev:disabled),
+.table-footer :deep(.btn-next:disabled) {
+  background: #f5f7fa;
+  color: #c0c4cc;
+}
+.table-footer :deep(.el-pagination__jump .el-input) {
+  width: 64px;
+}
+.table-footer :deep(.el-pagination__jump .el-input__wrapper) {
+  min-height: 40px;
+  border-radius: 4px;
+  box-shadow: 0 0 0 1px #dcdfe6 inset;
 }
 @media (max-width: 1120px) {
   .query-form {

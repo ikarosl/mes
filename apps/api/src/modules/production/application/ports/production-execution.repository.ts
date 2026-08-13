@@ -40,4 +40,10 @@ export abstract class ProductionExecutionRepository {
     version: number,
     context: CommandContext & { actorId: string },
   ): Promise<ProductionStepCommandResult>;
+  abstract completeStep(
+    batchId: string,
+    stepRecordId: string,
+    version: number,
+    context: CommandContext & { actorId: string },
+  ): Promise<ProductionStepCommandResult>;
 }

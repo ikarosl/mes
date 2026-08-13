@@ -88,6 +88,7 @@ const stubRequiredEnv = () => {
   vi.stubEnv('JWT_SECRET', 'test-secret-with-at-least-32-characters');
   vi.stubEnv('JWT_ISSUER', 'test-issuer');
   vi.stubEnv('JWT_AUDIENCE', 'test-audience');
+  vi.stubEnv('REFRESH_TOKEN_COOKIE_NAME', '');
 };
 
 const stubS3Env = () => {

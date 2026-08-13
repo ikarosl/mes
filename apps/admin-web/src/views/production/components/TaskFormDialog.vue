@@ -98,6 +98,28 @@
           :step="1"
         />
       </el-form-item>
+      <el-form-item
+        label="计划开始"
+        :required="!editingTaskId"
+      >
+        <el-date-picker
+          v-model="form.planStartDate"
+          type="date"
+          value-format="YYYY-MM-DD"
+          placeholder="请选择计划开始日期"
+        />
+      </el-form-item>
+      <el-form-item
+        label="计划结束"
+        :required="!editingTaskId"
+      >
+        <el-date-picker
+          v-model="form.planEndDate"
+          type="date"
+          value-format="YYYY-MM-DD"
+          placeholder="请选择计划结束日期"
+        />
+      </el-form-item>
       <el-form-item label="备注">
         <el-input
           v-model="form.remark"
@@ -202,6 +224,8 @@ export type TaskFormValue = {
   routeId: string;
   ownerId: string;
   plannedQuantity: number;
+  planStartDate: string;
+  planEndDate: string;
   remark: string;
   stepOverrides: Array<{
     routeStepId: string;
@@ -230,6 +254,8 @@ const initialForm = (): Omit<TaskFormValue, 'stepOverrides'> => ({
   routeId: '',
   ownerId: '',
   plannedQuantity: 1,
+  planStartDate: '',
+  planEndDate: '',
   remark: '',
 });
 
@@ -360,6 +386,8 @@ const handleWorkOrderChange = (workOrderId: string): void => {
   pendingRouteWorkOrderId = null;
   form.routeId = '';
   form.ownerId = '';
+  form.planStartDate = '';
+  form.planEndDate = '';
   resetStepPreview();
   if (!order) return;
   form.plannedQuantity = Number(order.remainingQuantity);
@@ -385,6 +413,8 @@ const setForm = (row: {
   routeId: string | null;
   ownerId: string | null;
   plannedQuantity: string | number;
+  planStartDate: string | null;
+  planEndDate: string | null;
   remark: string | null;
 }): void => {
   editingTaskOriginalQuantity.value = Number(row.plannedQuantity);
@@ -395,6 +425,8 @@ const setForm = (row: {
     routeId: row.routeId ?? '',
     ownerId: row.ownerId ?? '',
     plannedQuantity: Number(row.plannedQuantity),
+    planStartDate: row.planStartDate ?? '',
+    planEndDate: row.planEndDate ?? '',
     remark: row.remark ?? '',
   });
   resetStepPreview();
@@ -407,6 +439,14 @@ const handleSubmit = (): void => {
   }
   if (taskQuantityMax.value !== null && form.plannedQuantity > taskQuantityMax.value) {
     EMessage.warning('计划数量不能超过工单剩余数量');
+    return;
+  }
+  if (!props.editingTaskId && (!form.planStartDate || !form.planEndDate)) {
+    EMessage.warning('请填写计划开始和计划结束日期');
+    return;
+  }
+  if (form.planStartDate && form.planEndDate && form.planEndDate < form.planStartDate) {
+    EMessage.warning('计划结束日期不能早于计划开始日期');
     return;
   }
   // 编辑模式工单只读回显，可能不在 released 候选内（已全部分配/状态变化），跳过失效校验
@@ -453,6 +493,7 @@ defineExpose({ setForm, resetForm });
 .dialog-form :deep(.el-input),
 .dialog-form :deep(.el-select),
 .dialog-form :deep(.el-input-number),
+.dialog-form :deep(.el-date-editor),
 .dialog-form :deep(.el-textarea) {
   width: 100%;
 }

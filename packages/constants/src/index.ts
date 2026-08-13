@@ -93,6 +93,7 @@ export const PERMISSIONS = {
       manageExecution: 'production:steps:manage-execution',
       assign: 'production:steps:assign',
       start: 'production:steps:start',
+      complete: 'production:steps:complete',
     },
   },
   warehouse: {

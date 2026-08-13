@@ -8,6 +8,7 @@ export const useWorkerTasks = () => {
   const loading = ref(false);
   const startPendingIds = ref(new Set<string>());
   const reportPendingIds = ref(new Set<string>());
+  const completePendingIds = ref(new Set<string>());
   const reportIntents = new Map<string, ReturnType<typeof useIdempotentIntent>>();
   let requestToken = 0;
 
@@ -71,5 +72,37 @@ export const useWorkerTasks = () => {
     }
   };
 
-  return { tasks, loading, startPendingIds, reportPendingIds, load, start, report };
+  const complete = async (task: ProductionWorkerTaskItem): Promise<void> => {
+    if (completePendingIds.value.has(task.stepRecordId)) return;
+    completePendingIds.value = new Set(completePendingIds.value).add(task.stepRecordId);
+    try {
+      await productionApi.completeStep(task.productionBatchId, task.stepRecordId, task.version);
+      await load();
+    } finally {
+      const next = new Set(completePendingIds.value);
+      next.delete(task.stepRecordId);
+      completePendingIds.value = next;
+    }
+  };
+
+  const getReportIntentStatus = (stepRecordId: string) =>
+    reportIntents.get(stepRecordId)?.getStatus() ?? 'idle';
+  const resetReportIntent = (stepRecordId: string): void => {
+    reportIntents.get(stepRecordId)?.reset();
+    reportIntents.delete(stepRecordId);
+  };
+
+  return {
+    tasks,
+    loading,
+    startPendingIds,
+    reportPendingIds,
+    completePendingIds,
+    load,
+    start,
+    report,
+    complete,
+    getReportIntentStatus,
+    resetReportIntent,
+  };
 };

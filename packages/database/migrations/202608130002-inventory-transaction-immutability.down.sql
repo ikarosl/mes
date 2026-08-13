@@ -1,0 +1,3 @@
+DROP TRIGGER IF EXISTS trg_inventory_transaction_reject_delete;
+DROP TRIGGER IF EXISTS trg_inventory_transaction_reject_update;
+

@@ -49,7 +49,7 @@
           v-if="batch.planEndDate"
           class="batch-item-deadline"
         >
-          <span>计划完成 {{ batch.planEndDate }}</span>
+          <span>计划完成 {{ formatDateForDisplay(batch.planEndDate) }}</span>
           <strong
             v-if="executionBatchOverdueDays(batch) > 0"
             class="overdue-text"
@@ -78,6 +78,7 @@
 
 <script setup lang="ts">
 import type { ProductionExecutionBatchSummary } from '@company/contracts';
+import { formatDateForDisplay } from '../../../utils/date';
 import { batchStatusMeta, formatQuantity } from '../production-status';
 import {
   executionBatchHasAbnormal,

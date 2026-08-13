@@ -17,6 +17,7 @@ import {
   requireAssignedStep,
   requireFirstStepStartable,
   requireFollowingStepStartable,
+  requireNonReportingStepCompletable,
 } from '../domain/production-execution.policy.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
 import { evaluateProductionExecutionCompletion } from '../domain/production-completion.policy.js';
@@ -201,9 +202,46 @@ export class MysqlProductionExecutionRepository extends ProductionExecutionRepos
           throw new ProductionDomainError('STEP_START_NOT_ALLOWED', '生产批次开工状态已变化');
       }
       await auditStep(connection, context, 'production-step.start', stepRecordId, {
-        status: 'assigned',
+        status: 'doing',
         responsibleUserId: context.actorId,
-        version,
+        version: version + 1,
+        batchStatus: index === 0 ? 'doing' : batch.status,
+      });
+      return this.commandResult(connection, batchId, stepRecordId);
+    });
+  }
+
+  async completeStep(
+    batchId: string,
+    stepRecordId: string,
+    version: number,
+    context: CommandContext & { actorId: string },
+  ): Promise<ProductionStepCommandResult> {
+    return withTransaction(this.pool, async (connection) => {
+      const batch = await findBatch(connection, batchId, true);
+      const steps = await lockExecutionSteps(connection, batchId);
+      const index = steps.findIndex((step) => String(step.id) === stepRecordId);
+      if (index < 0) throw new ProductionDomainError('NOT_FOUND', '批次工序记录不存在');
+      const current = steps[index]!;
+      if (String(current.responsible_user_id) !== context.actorId)
+        throw new ProductionDomainError('NOT_STEP_ASSIGNEE', '只有当前派工员工可以完成该工序');
+      if (!current.need_record_snapshot && current.status === 'completed')
+        return this.commandResult(connection, batchId, stepRecordId);
+      requireNonReportingStepCompletable({
+        batchStatus: batch.status,
+        needRecord: Boolean(current.need_record_snapshot),
+        status: current.status,
+        previousStatus: steps[index - 1]?.status ?? null,
+      });
+      const [updated] = await connection.execute<ResultSetHeader>(
+        "UPDATE batch_step_records SET status='completed',completed_at=NOW(),version=version+1,updated_by=? WHERE id=? AND production_batch_id=? AND status='doing' AND need_record_snapshot=0 AND version=?",
+        [context.actorId, stepRecordId, batchId, version],
+      );
+      assertVersion(updated, '工序状态已变化，请刷新任务后重试');
+      await auditStep(connection, context, 'production-step.complete', stepRecordId, {
+        status: 'completed',
+        responsibleUserId: context.actorId,
+        version: version + 1,
       });
       return this.commandResult(connection, batchId, stepRecordId);
     });

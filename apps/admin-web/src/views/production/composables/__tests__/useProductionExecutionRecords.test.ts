@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { RequestError } from '@company/request';
 import { useProductionExecutionRecords } from '../useProductionExecutionRecords';
 
 const api = vi.hoisted(() => ({
@@ -59,6 +60,25 @@ describe('useProductionExecutionRecords', () => {
       expect.any(String),
     );
     expect(api.getBatchExecutionRecords).toHaveBeenCalledWith('1');
+  });
+
+  it('retains an ambiguous correction intent until the administrator explicitly discards it', async () => {
+    api.correctStepReport.mockRejectedValue(new RequestError('网络断开', 0));
+    const state = useProductionExecutionRecords();
+
+    await expect(
+      state.correct(
+        { productionBatchId: '1', stepRecordId: '9', version: 3 } as never,
+        { reportId: '12' } as never,
+        2,
+        0,
+        '录入更正',
+      ),
+    ).rejects.toBeInstanceOf(RequestError);
+
+    expect(state.getCorrectionIntentStatus('12')).toBe('pending');
+    state.resetCorrectionIntent('12');
+    expect(state.getCorrectionIntentStatus('12')).toBe('idle');
   });
 
   it('uses the server check version and refreshes the projection after completion', async () => {

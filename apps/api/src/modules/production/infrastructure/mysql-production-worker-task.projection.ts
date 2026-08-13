@@ -82,6 +82,11 @@ const mapWorkerTask = (row: WorkerTaskRow): ProductionWorkerTaskItem => {
     : row.previous_need_record
       ? Number(row.previous_effective_normal) > 0
       : row.previous_status === 'completed';
+  const canComplete =
+    row.step_status === 'doing' &&
+    !row.need_record &&
+    row.batch_status === 'doing' &&
+    (isFirst || row.previous_status === 'completed');
   return {
     stepRecordId: String(row.step_record_id),
     productionBatchId: String(row.production_batch_id),
@@ -123,5 +128,12 @@ const mapWorkerTask = (row: WorkerTaskRow): ProductionWorkerTaskItem => {
           : isFirst
             ? '等待生产领料全部出库'
             : '等待上一道工序释放正常数量',
+    canComplete,
+    completeBlockedReason:
+      row.step_status === 'doing' && !row.need_record && !canComplete
+        ? isFirst
+          ? '生产批次尚未进入执行中'
+          : '等待上一道工序完成'
+        : null,
   };
 };

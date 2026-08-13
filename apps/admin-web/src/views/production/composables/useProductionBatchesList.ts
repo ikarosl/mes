@@ -89,7 +89,8 @@ export function useProductionBatchesList() {
     await loadTasks();
   };
 
-  const handlePageSizeChange = async (): Promise<void> => {
+  const handlePageSizeChange = async (value: number): Promise<void> => {
+    pageSize.value = value;
     currentPage.value = 1;
     await loadTasks();
   };

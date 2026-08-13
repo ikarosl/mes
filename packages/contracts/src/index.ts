@@ -84,6 +84,15 @@ export interface ApiErrorResponse {
   requestId: string;
   timestamp: string;
   path: string;
+  details?: Record<string, unknown>;
+}
+
+export interface ProductionStepDependencyConflictDetails extends Record<string, unknown> {
+  conflictingStepRecordId: string;
+  conflictingStepOrder: number;
+  conflictingStepName: string;
+  downstreamEffectiveReportedQuantity: string;
+  correctedUpstreamNormalQuantity: string;
 }
 
 /** Required by future mutable business-document commands. */
@@ -565,6 +574,8 @@ export interface ProductionBatchItem {
   version: number;
   createdAt: string;
   updatedAt: string;
+  /** 批次是否已有未取消的生产领料出库单；批次列表用于区分“待建单”和“已建单”。 */
+  hasActiveMaterialOutbound?: boolean;
 }
 
 export interface ProductionExecutionBatchSummary extends ProductionBatchItem {
@@ -900,6 +911,8 @@ export interface ProductionWorkerTaskItem {
   version: number;
   canStart: boolean;
   startBlockedReason: string | null;
+  canComplete: boolean;
+  completeBlockedReason: string | null;
 }
 
 export interface CreateBatchStepReportPayload extends VersionedCommand {

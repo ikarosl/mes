@@ -16,6 +16,9 @@ export const readDemoSeeds = async () => {
 };
 
 export const assertDemoSeedEnabled = (environment: NodeJS.ProcessEnv) => {
+  if (environment.NODE_ENV === 'production') {
+    throw new Error('Demo seed cannot run when NODE_ENV=production.');
+  }
   if (environment.ALLOW_DEMO_SEED !== '1') {
     throw new Error('Demo seed is disabled. Set ALLOW_DEMO_SEED=1 for an explicit demo load.');
   }

@@ -123,7 +123,10 @@ interface PageResult<T> {
   `production.material-outbound.confirm.v1`）、`POST /api/production/purchase-inbounds`（scope
   `production.purchase-inbound.create.v1`）以及
   `POST /api/production/purchase-inbounds/:inboundId/actions/confirm`（scope
-  `production.purchase-inbound.confirm.v1`）。取消待确认入库单使用状态与 `version` 天然幂等，禁止发送
+  `production.purchase-inbound.confirm.v1`）、`POST /api/production/batches/:batchId/step-records/:recordId/reports`
+  （scope `production.step-report.create.v3`）以及
+  `POST /api/production/batches/:batchId/step-records/:recordId/reports/:reportId/actions/correct`
+  （scope `production.step-report.correct.v3`）。取消待确认入库单使用状态与 `version` 天然幂等，禁止发送
   `Idempotency-Key`。契约与重放语义见
   [`concurrency-and-idempotency.md`](concurrency-and-idempotency.md) §3.3；全部写端点「需要幂等键 / 有自然
   键兜底 / 当前做不到」的完整分类见该文 §4.1。未声明启用的端点收到该头返回
@@ -137,9 +140,10 @@ Production 4.2-B 的工序执行命令采用批次与工序记录双重上下文
 - `POST /api/production/batches/:batchId/step-records/:recordId/actions/unassign`
 - `POST /api/production/batches/:batchId/step-records/:recordId/actions/reassign`
 - `POST /api/production/batches/:batchId/step-records/:recordId/actions/start`
+- `POST /api/production/batches/:batchId/step-records/:recordId/actions/complete`
 - `GET /api/production/worker-tasks`
 
-四个命令均提交当前工序 `version`，派工与改派额外提交 `responsibleUserId`；它们使用状态短路与乐观锁，禁止发送 `Idempotency-Key`。员工任务查询和开工分别由 `production:worker-tasks:view`、`production:steps:start` 保护，管理端三个派工命令由 `production:steps:assign` 保护。
+五个命令均提交当前工序 `version`，派工与改派额外提交 `responsibleUserId`；它们使用状态短路与乐观锁，禁止发送 `Idempotency-Key`。`complete` 只允许当前负责人完成已经开工的无需报工工序，必须报工工序仍由报工数量自动完成。员工任务查询、开工和无需报工工序完工分别由 `production:worker-tasks:view`、`production:steps:start`、`production:steps:complete` 保护，管理端三个派工命令由 `production:steps:assign` 保护。
 
 ## 8. 乐观锁与冲突
 

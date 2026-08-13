@@ -1,6 +1,11 @@
 import { mount } from '@vue/test-utils';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import BatchStepReportDialog from '../BatchStepReportDialog.vue';
+
+const confirm = vi.hoisted(() => vi.fn());
+vi.mock('../../../../utils/route-message-box', () => ({
+  RouteMessageBox: { confirm },
+}));
 
 const task = {
   stepRecordId: '9',
@@ -28,9 +33,13 @@ const task = {
   version: 2,
   canStart: false,
   startBlockedReason: null,
+  canComplete: false,
+  completeBlockedReason: null,
 } as const;
 
 describe('BatchStepReportDialog', () => {
+  beforeEach(() => confirm.mockReset());
+
   it('submits only this report quantities and derives the remaining normal quantity', async () => {
     const wrapper = mount(BatchStepReportDialog, {
       props: { modelValue: true, task: task as never, submitting: false },
@@ -42,7 +51,10 @@ describe('BatchStepReportDialog', () => {
           'el-alert': true,
           'el-input-number': true,
           'el-input': true,
-          'el-button': { template: '<button @click="$emit(\'click\')"><slot/></button>' },
+          'el-button': {
+            emits: ['click'],
+            template: '<button @click="$emit(\'click\')"><slot/></button>',
+          },
         },
       },
     });
@@ -104,5 +116,38 @@ describe('BatchStepReportDialog', () => {
     vm.form.normalQuantity = 2;
     vm.form.abnormalQuantity = 1;
     expect(vm.canSubmit).toBe(false);
+  });
+
+  it('requires explicit confirmation before discarding an ambiguous report intent', async () => {
+    confirm.mockResolvedValue('confirm');
+    const wrapper = mount(BatchStepReportDialog, {
+      props: {
+        modelValue: true,
+        task: task as never,
+        submitting: false,
+        intentStatus: 'pending',
+      },
+      global: {
+        stubs: {
+          'el-dialog': { template: '<div><slot/><slot name="footer"/></div>' },
+          'el-form': { template: '<form><slot/></form>' },
+          'el-form-item': { template: '<div><slot/></div>' },
+          'el-alert': true,
+          'el-input-number': true,
+          'el-input': true,
+          'el-button': {
+            emits: ['click'],
+            template: '<button @click="$emit(\'click\')"><slot/></button>',
+          },
+        },
+      },
+    });
+    const cancel = wrapper.findAll('button').find((button) => button.text() === '取消');
+    expect(cancel).toBeDefined();
+    await cancel!.trigger('click');
+
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(wrapper.emitted('resetIntent')).toHaveLength(1);
+    expect(wrapper.emitted('update:modelValue')?.[0]).toEqual([false]);
   });
 });

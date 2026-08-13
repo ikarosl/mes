@@ -169,32 +169,13 @@
         </el-table-column>
       </el-table>
 
-      <div class="table-footer">
-        <span class="total-text">共 {{ total }} 条</span>
-        <el-select
-          v-model="pageSize"
-          class="page-size-select"
-          @change="handlePageSizeChange"
-        >
-          <el-option
-            label="10条/页"
-            :value="10"
-          /><el-option
-            label="20条/页"
-            :value="20"
-          /><el-option
-            label="50条/页"
-            :value="50"
-          />
-        </el-select>
-        <el-pagination
-          v-model:current-page="currentPage"
-          :page-size="pageSize"
-          :total="total"
-          layout="prev, pager, next, jumper"
-          @current-change="loadRows"
-        />
-      </div>
+      <PaginationFooter
+        :total="total"
+        :current-page="currentPage"
+        :page-size="pageSize"
+        @update:page-size="handlePageSizeChange"
+        @page-change="handlePageChange"
+      />
     </div>
 
     <el-dialog
@@ -298,6 +279,7 @@ import { onMounted, reactive, ref } from 'vue';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import type { ScrapScene, ScrapStatus } from '@company/contracts';
 import TableToolbar from '../../components/TableToolbar.vue';
+import PaginationFooter from '../../components/PaginationFooter.vue';
 import { DialogWidth } from '../../utils/dialog';
 import { EMessage } from '../../utils/message';
 import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
@@ -448,8 +430,13 @@ const resetQuery = async () => {
   currentPage.value = 1;
   await loadRows();
 };
-const handlePageSizeChange = async () => {
+const handlePageSizeChange = async (value: number) => {
+  pageSize.value = value;
   currentPage.value = 1;
+  await loadRows();
+};
+const handlePageChange = async (value: number) => {
+  currentPage.value = value;
   await loadRows();
 };
 

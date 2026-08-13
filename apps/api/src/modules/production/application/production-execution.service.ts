@@ -59,6 +59,14 @@ export class ProductionExecutionService {
     });
   }
 
+  completeStep(batchId: string, stepRecordId: string, version: number, context: CommandContext) {
+    if (!context.actorId) throw new ProductionDomainError('NOT_STEP_ASSIGNEE', '缺少当前员工身份');
+    return this.execution.completeStep(batchId, stepRecordId, version, {
+      ...context,
+      actorId: context.actorId,
+    });
+  }
+
   private async requireActiveUser(userId: string): Promise<void> {
     const users = await this.identity.listActiveUserOptionsByIds([userId]);
     if (users.length !== 1)

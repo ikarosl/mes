@@ -49,6 +49,16 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
     super();
   }
 
+  async findBatchIdsWithActiveOutbounds(batchIds: string[]): Promise<Set<string>> {
+    if (batchIds.length === 0) return new Set();
+    const [rows] = await this.pool.query<(RowDataPacket & { production_batch_id: number })[]>(
+      `SELECT DISTINCT production_batch_id FROM outbound_order
+       WHERE status<>'cancelled' AND production_batch_id IN (${placeholders(batchIds)})`,
+      batchIds,
+    );
+    return new Set(rows.map((row) => String(row.production_batch_id)));
+  }
+
   async listDemands(batchId: string): Promise<ProductionMaterialDemandItem[]> {
     await findBatch(this.pool, batchId);
     const [rows] = await this.pool.query<DemandRow[]>(
@@ -340,7 +350,7 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
       `${OUTBOUND_SELECT} WHERE o.production_batch_id=? ORDER BY o.created_at DESC,o.id DESC`,
       [batchId],
     );
-    return Promise.all(rows.map((row) => this.loadOutbound(this.pool, String(row.id), row)));
+    return this.loadOutbounds(this.pool, rows);
   }
 
   async listOutboundOrders(
@@ -369,9 +379,7 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
       [...values, pageSize, (page - 1) * pageSize],
     );
     return {
-      items: await Promise.all(
-        rows.map((row) => this.loadOutbound(this.pool, String(row.id), row)),
-      ),
+      items: await this.loadOutbounds(this.pool, rows),
       total: Number(count?.total ?? 0),
       page,
       pageSize,
@@ -456,6 +464,12 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
     context: CommandContext,
   ): Promise<MaterialOutboundCommandResult> {
     return withTransaction(this.pool, async (connection) => {
+      const [[identity]] = await connection.query<
+        (RowDataPacket & { production_batch_id: number })[]
+      >('SELECT production_batch_id FROM outbound_order WHERE id=?', [outboundId]);
+      if (!identity) throw new ProductionDomainError('NOT_FOUND', '生产领料出库单不存在');
+      // 所有同批次物料命令统一先锁 production_batches，再锁单据、分配和库存批次，避免交叉等待。
+      const lockedBatch = await findBatch(connection, String(identity.production_batch_id), true);
       const [[order]] = await connection.query<
         (RowDataPacket & {
           id: number;
@@ -467,12 +481,13 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
         outboundId,
       ]);
       if (!order) throw new ProductionDomainError('NOT_FOUND', '生产领料出库单不存在');
+      if (String(order.production_batch_id) !== String(identity.production_batch_id))
+        throw new ProductionDomainError('CONCURRENT_MODIFICATION', '出库单所属批次已变化');
       if (order.status === 'completed') {
-        const batch = await findBatch(connection, String(order.production_batch_id));
         return {
           productionBatchId: String(order.production_batch_id),
-          batchStatus: batch.status,
-          batchVersion: batch.version,
+          batchStatus: lockedBatch.status,
+          batchVersion: lockedBatch.version,
           outbound: await this.loadOutbound(connection, outboundId),
         };
       }
@@ -635,15 +650,33 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
       row = found;
     }
     if (!row) throw new ProductionDomainError('NOT_FOUND', '生产领料出库单不存在');
+    return (await this.loadOutbounds(db, [row]))[0]!;
+  }
+  private async loadOutbounds(
+    db: Pool | PoolConnection,
+    rows: OutboundRow[],
+  ): Promise<MaterialOutboundItem[]> {
+    if (rows.length === 0) return [];
+    const ids = rows.map((row) => String(row.id));
     const [details] = await db.query<OutboundDetailRow[]>(
       `SELECT od.id,od.outbound_id,od.allocation_id,od.demand_id,od.item_id,od.batch_id,ib.batch_code,
         ib.item_code_snapshot,ib.product_name_snapshot,od.outbound_number,od.unit_snapshot,it.id inventory_transaction_id
        FROM outbound_detail od JOIN item_batch ib ON ib.id=od.batch_id
        LEFT JOIN inventory_transaction it ON it.reference_type='outbound_detail'
          AND it.reference_detail_id=od.id AND it.transaction_type='production_material_outbound'
-       WHERE od.outbound_id=? ORDER BY od.id`,
-      [id],
+       WHERE od.outbound_id IN (${placeholders(ids)}) ORDER BY od.outbound_id,od.id`,
+      ids,
     );
+    const detailsByOutbound = new Map<string, OutboundDetailRow[]>();
+    for (const detail of details) {
+      const key = String(detail.outbound_id);
+      const values = detailsByOutbound.get(key) ?? [];
+      values.push(detail);
+      detailsByOutbound.set(key, values);
+    }
+    return rows.map((row) => this.mapOutbound(row, detailsByOutbound.get(String(row.id)) ?? []));
+  }
+  private mapOutbound(row: OutboundRow, details: OutboundDetailRow[]): MaterialOutboundItem {
     return {
       outboundId: String(row.id),
       outboundNo: row.outbound_no,

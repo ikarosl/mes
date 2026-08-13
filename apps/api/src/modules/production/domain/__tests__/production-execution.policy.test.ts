@@ -4,6 +4,7 @@ import {
   requireAssignedStep,
   requireFirstStepStartable,
   requireFollowingStepStartable,
+  requireNonReportingStepCompletable,
 } from '../production-execution.policy.js';
 
 describe('production execution policy', () => {
@@ -50,5 +51,32 @@ describe('production execution policy', () => {
         previousEffectiveNormal: 0,
       }),
     ).toThrowError(expect.objectContaining({ code: 'STEP_START_NOT_ALLOWED' }));
+  });
+
+  it('only explicitly completes a doing non-reporting step after its upstream completed', () => {
+    expect(() =>
+      requireNonReportingStepCompletable({
+        batchStatus: 'doing',
+        needRecord: false,
+        status: 'doing',
+        previousStatus: 'completed',
+      }),
+    ).not.toThrow();
+    expect(() =>
+      requireNonReportingStepCompletable({
+        batchStatus: 'doing',
+        needRecord: true,
+        status: 'doing',
+        previousStatus: 'completed',
+      }),
+    ).toThrowError(expect.objectContaining({ code: 'STEP_COMPLETION_NOT_ALLOWED' }));
+    expect(() =>
+      requireNonReportingStepCompletable({
+        batchStatus: 'doing',
+        needRecord: false,
+        status: 'doing',
+        previousStatus: 'doing',
+      }),
+    ).toThrowError(expect.objectContaining({ code: 'STEP_COMPLETION_NOT_ALLOWED' }));
   });
 });

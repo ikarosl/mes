@@ -5,6 +5,7 @@ import WorkerTasksPage from '../WorkerTasksPage.vue';
 const api = vi.hoisted(() => ({
   listWorkerTasks: vi.fn(),
   startStep: vi.fn(),
+  completeStep: vi.fn(),
   createStepReport: vi.fn(),
 }));
 vi.mock('../../../api/production', () => ({ productionApi: api }));

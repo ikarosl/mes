@@ -66,10 +66,12 @@ describe('permissionMatches', () => {
     expect(ALLOCATION_STATUS_LABELS.released).toBe('已释放');
   });
 
-  it('separates worker task visibility, assignment, and start permissions', () => {
+  it('separates worker task visibility, assignment, start, and completion permissions', () => {
     expect(PERMISSIONS.production.workerTasks.view).toBe('production:worker-tasks:view');
     expect(PERMISSIONS.production.steps.assign).toBe('production:steps:assign');
     expect(PERMISSIONS.production.steps.start).toBe('production:steps:start');
+    expect(PERMISSIONS.production.steps.complete).toBe('production:steps:complete');
+    expect(PERMISSIONS.production.steps.complete).not.toBe(PERMISSIONS.production.steps.report);
     expect(PERMISSIONS.production.steps.manageExecution).not.toBe(
       PERMISSIONS.production.steps.assign,
     );

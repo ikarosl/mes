@@ -4,7 +4,9 @@
     title="工序报工"
     width="560px"
     destroy-on-close
-    @close="close"
+    :before-close="beforeClose"
+    :close-on-click-modal="false"
+    @closed="closed"
   >
     <template v-if="task">
       <div class="report-summary">
@@ -87,7 +89,7 @@
       </el-form>
     </template>
     <template #footer>
-      <el-button @click="close">取消</el-button>
+      <el-button @click="requestClose">取消</el-button>
       <el-button
         type="primary"
         :loading="submitting"
@@ -102,16 +104,20 @@
 <script setup lang="ts">
 import { computed, reactive, watch } from 'vue';
 import type { ProductionWorkerTaskItem } from '@company/contracts';
+import type { IdempotentIntentStatus } from '../../../composables/idempotency/useIdempotentIntent';
+import { RouteMessageBox as ElMessageBox } from '../../../utils/route-message-box';
 import { formatQuantity } from '../production-status';
 
 const props = defineProps<{
   modelValue: boolean;
   task: ProductionWorkerTaskItem | null;
   submitting: boolean;
+  intentStatus?: IdempotentIntentStatus;
 }>();
 const emit = defineEmits<{
   'update:modelValue': [value: boolean];
   submit: [payload: { normalQuantity: number; abnormalQuantity: number; remark: string | null }];
+  resetIntent: [];
 }>();
 const form = reactive({ normalQuantity: 0, abnormalQuantity: 0, remark: '' });
 const remaining = computed(() =>
@@ -145,8 +151,29 @@ watch(
     form.remark = '';
   },
 );
-const close = (): void => {
-  if (!props.submitting) emit('update:modelValue', false);
+const canDiscard = async (): Promise<boolean> => {
+  if (props.submitting) return false;
+  if ((props.intentStatus ?? 'idle') === 'idle') return true;
+  try {
+    await ElMessageBox.confirm(
+      '上次报工结果尚未确认。请先刷新本人任务和报工记录核对；放弃安全重试后再次提交可能重复报工。',
+      '放弃幂等意图确认',
+      { type: 'warning', confirmButtonText: '核对后仍要放弃', cancelButtonText: '继续保留' },
+    );
+    emit('resetIntent');
+    return true;
+  } catch {
+    return false;
+  }
+};
+const beforeClose = async (done: () => void): Promise<void> => {
+  if (await canDiscard()) done();
+};
+const requestClose = async (): Promise<void> => {
+  if (await canDiscard()) emit('update:modelValue', false);
+};
+const closed = (): void => {
+  emit('update:modelValue', false);
 };
 const submit = (): void => {
   if (!canSubmit.value) return;

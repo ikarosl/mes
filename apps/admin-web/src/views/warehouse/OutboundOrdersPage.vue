@@ -70,6 +70,7 @@
       <el-table
         v-loading="orders.loading.value"
         :data="orders.rows.value"
+        :row-class-name="outboundRowClass"
         class="data-table"
         empty-text="暂无生产领料出库单"
       >
@@ -93,7 +94,7 @@
         </el-table-column>
         <el-table-column
           label="状态"
-          width="105"
+          width="160"
         >
           <template #default="{ row }">
             <el-tag
@@ -102,6 +103,7 @@
             >
               {{ statusLabel(row.status) }}
             </el-tag>
+            <div class="status-note">{{ outboundStatusHint(row.status) }}</div>
           </template>
         </el-table-column>
         <el-table-column
@@ -109,13 +111,15 @@
           width="80"
           align="center"
         >
-          <template #default="{ row }">{{ row.details.length }}</template>
+          <template #default="{ row }">{{ row.details.length }} 条</template>
         </el-table-column>
         <el-table-column
           label="本单数量"
           min-width="155"
         >
-          <template #default="{ row }">{{ quantitySummary(row) }}</template>
+          <template #default="{ row }"
+            ><strong class="quantity-summary">{{ quantitySummary(row) }}</strong></template
+          >
         </el-table-column>
         <el-table-column
           label="制单人 / 时间"
@@ -133,7 +137,13 @@
           <template #default="{ row }">
             <div>{{ row.operatorName || '-' }}</div>
             <div class="secondary-text">
-              {{ row.outboundAt ? formatTime(row.outboundAt) : '-' }}
+              {{
+                row.outboundAt
+                  ? formatTime(row.outboundAt)
+                  : row.status === 'pending_picking'
+                    ? '等待确认出库'
+                    : '未产生出库'
+              }}
             </div>
           </template>
         </el-table-column>
@@ -181,34 +191,13 @@
         </el-table-column>
       </el-table>
 
-      <div class="table-footer">
-        <span class="total-text">共 {{ orders.total.value }} 条</span>
-        <el-select
-          v-model="query.pageSize"
-          class="page-size-select"
-          @change="handlePageSizeChange"
-        >
-          <el-option
-            label="10条/页"
-            :value="10"
-          />
-          <el-option
-            label="20条/页"
-            :value="20"
-          />
-          <el-option
-            label="50条/页"
-            :value="50"
-          />
-        </el-select>
-        <el-pagination
-          v-model:current-page="query.page"
-          :total="orders.total.value"
-          :page-size="query.pageSize"
-          layout="prev, pager, next, jumper"
-          @current-change="loadRows"
-        />
-      </div>
+      <PaginationFooter
+        :total="orders.total.value"
+        :current-page="query.page ?? 1"
+        :page-size="query.pageSize ?? 20"
+        @update:page-size="handlePageSizeChange"
+        @page-change="handlePageChange"
+      />
     </section>
 
     <MaterialOutboundOrderCreateDialog
@@ -244,12 +233,14 @@ import type {
 } from '@company/contracts';
 import { OUTBOUND_ORDER_STATUSES, OUTBOUND_ORDER_STATUS_LABELS } from '@company/constants';
 import TableToolbar from '../../components/TableToolbar.vue';
+import PaginationFooter from '../../components/PaginationFooter.vue';
 import { EMessage } from '../../utils/message';
 import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
 import MaterialOutboundOrderCreateDialog from '../production/components/MaterialOutboundOrderCreateDialog.vue';
 import MaterialOutboundOrderDetailDialog from '../production/components/MaterialOutboundOrderDetailDialog.vue';
 import { useMaterialOutboundOrders } from '../production/composables/useMaterialOutboundOrders';
 import { formatQuantity } from '../production/production-status';
+import { outboundRowClass, outboundStatusHint } from './warehouse-list-presentation';
 
 defineOptions({ name: 'OutboundOrdersPage' });
 
@@ -270,8 +261,13 @@ const resetQuery = () => {
   query.page = 1;
   return loadRows();
 };
-const handlePageSizeChange = () => {
+const handlePageSizeChange = (value: number) => {
+  query.pageSize = value;
   query.page = 1;
+  return loadRows();
+};
+const handlePageChange = (value: number) => {
+  query.page = value;
   return loadRows();
 };
 
@@ -515,6 +511,23 @@ onActivated(loadRows);
 .outbound-no {
   color: #1f2937;
   font-weight: 600;
+}
+.quantity-summary {
+  color: #1f2937;
+  font-weight: 600;
+}
+.status-note {
+  margin-top: 4px;
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.35;
+}
+.data-table :deep(.status-warning-row td:first-child) {
+  box-shadow: inset 3px 0 #f59e0b;
+}
+.data-table :deep(.status-muted-row) {
+  color: #6b7280;
+  background: #f9fafb;
 }
 .table-footer {
   display: flex;

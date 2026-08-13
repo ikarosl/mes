@@ -2,6 +2,7 @@ import { loadWorkspaceEnv } from '../../../packages/config/src/index.js';
 import {
   createPool,
   type Pool,
+  type PoolConnection,
   type ResultSetHeader,
   type RowDataPacket,
 } from '../../../apps/api/node_modules/mysql2/promise.js';
@@ -26,12 +27,18 @@ describeMysql('Production material MySQL transactions', () => {
   let service: ProductionMaterialService;
   let actorId: number;
   beforeAll(async () => {
+    const database = req('DB_NAME');
+    if (!/(?:_test|_ci)$/.test(database)) {
+      throw new Error(
+        'production material integration tests require a dedicated *_test or *_ci database',
+      );
+    }
     pool = createPool({
       host: req('DB_HOST'),
       port: Number(req('DB_PORT')),
       user: req('DB_USER'),
       password: req('DB_PASSWORD'),
-      database: req('DB_NAME'),
+      database,
       charset: 'utf8mb4',
       timezone: '+08:00',
       connectionLimit: 6,
@@ -50,6 +57,29 @@ describeMysql('Production material MySQL transactions', () => {
     actorId = actor.id;
   });
   afterAll(async () => pool?.end());
+
+  it('rejects inventory transaction update and delete outside the dedicated fixture cleanup connection', async () => {
+    const fixtureData = await fixture(pool, actorId, 'ledger-immutable');
+    try {
+      await expect(
+        pool.execute('UPDATE inventory_transaction SET quantity=quantity WHERE batch_id=?', [
+          fixtureData.itemBatch1,
+        ]),
+      ).rejects.toBeDefined();
+      await expect(
+        pool.execute('DELETE FROM inventory_transaction WHERE batch_id=?', [
+          fixtureData.itemBatch1,
+        ]),
+      ).rejects.toBeDefined();
+      const [[row]] = await pool.query<(RowDataPacket & { count: number })[]>(
+        'SELECT COUNT(*) count FROM inventory_transaction WHERE batch_id IN (?,?)',
+        [fixtureData.itemBatch1, fixtureData.itemBatch2],
+      );
+      expect(Number(row?.count)).toBe(2);
+    } finally {
+      await cleanup(pool, fixtureData);
+    }
+  });
 
   it('allocates, releases without deleting facts, and recomputes the batch material state', async () => {
     const f = await fixture(pool, actorId, 'release');
@@ -586,7 +616,8 @@ describeMysql('Production material MySQL transactions', () => {
       expect(afterRollback.details[0]?.inventoryTransactionId).toBeNull();
     } finally {
       if (inboundIds.length) {
-        await pool.execute(
+        await deleteInventoryTransactions(
+          pool,
           `DELETE FROM inventory_transaction WHERE reference_type='inbound_detail' AND reference_detail_id IN (SELECT id FROM inbound_detail WHERE inbound_id IN (${inboundIds.map(() => '?').join(',')}))`,
           inboundIds,
         );
@@ -713,7 +744,8 @@ const cleanup = async (pool: Pool, f: Fixture) => {
   await pool.execute('DELETE FROM http_idempotency_records WHERE idempotency_key LIKE ?', [
     `${f.token}-%`,
   ]);
-  await pool.execute(
+  await deleteInventoryTransactions(
+    pool,
     "DELETE FROM inventory_transaction WHERE reference_type='outbound_detail' AND reference_detail_id IN (SELECT id FROM outbound_detail WHERE production_batch_id=?)",
     [f.batchId],
   );
@@ -729,15 +761,26 @@ const cleanup = async (pool: Pool, f: Fixture) => {
   await pool.execute('DELETE FROM products WHERE id=?', [f.productId]);
   await pool.execute('DELETE FROM product_categories WHERE id=?', [f.productCategoryId]);
   if (f.ownsItemBatches) {
-    await pool.execute('DELETE FROM inventory_transaction WHERE batch_id IN (?,?)', [
-      f.itemBatch1,
-      f.itemBatch2,
-    ]);
+    await deleteInventoryTransactions(
+      pool,
+      'DELETE FROM inventory_transaction WHERE batch_id IN (?,?)',
+      [f.itemBatch1, f.itemBatch2],
+    );
     await pool.execute('DELETE FROM item_batch WHERE id IN (?,?)', [f.itemBatch1, f.itemBatch2]);
   }
   if (f.ownsMaterial) {
     await pool.execute('DELETE FROM products WHERE id=?', [f.materialId]);
     await pool.execute('DELETE FROM product_categories WHERE id=?', [f.materialCategoryId]);
+  }
+};
+const deleteInventoryTransactions = async (pool: Pool, sql: string, values: unknown[]) => {
+  const connection: PoolConnection = await pool.getConnection();
+  try {
+    await connection.query('SET @company_inventory_test_cleanup = 1');
+    await connection.execute(sql, values as never);
+  } finally {
+    await connection.query('SET @company_inventory_test_cleanup = NULL');
+    connection.release();
   }
 };
 const ins = async (pool: Pool, sql: string, values: unknown[]) => {

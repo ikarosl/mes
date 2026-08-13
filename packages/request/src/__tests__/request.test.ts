@@ -44,7 +44,12 @@ describe('request errors', () => {
       message: 'Request failed with status code 400',
       response: {
         status: 400,
-        data: { code: 'BAD_REQUEST', message: '参数错误', requestId: 'request_1234' },
+        data: {
+          code: 'BAD_REQUEST',
+          message: '参数错误',
+          requestId: 'request_1234',
+          details: { field: 'quantity' },
+        },
       },
     };
 
@@ -53,6 +58,7 @@ describe('request errors', () => {
       status: 400,
       code: 'BAD_REQUEST',
       requestId: 'request_1234',
+      details: { field: 'quantity' },
       message: '参数错误',
     });
   });

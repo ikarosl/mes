@@ -27,11 +27,13 @@ export const requireReportWithinReleased = (
 export const requireNoDownstreamQuantityConflict = (
   correctedEffectiveNormal: number | string,
   downstreamEffectiveReported: number | string,
+  details?: Record<string, unknown>,
 ): void => {
   if (scaled(correctedEffectiveNormal) < scaled(downstreamEffectiveReported))
     throw new ProductionDomainError(
       'DOWNSTREAM_QUANTITY_CONFLICT',
       '更正后的正常放行量低于下游已报正常与异常总量',
+      details,
     );
 };
 

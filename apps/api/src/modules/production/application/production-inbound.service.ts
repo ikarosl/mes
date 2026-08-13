@@ -33,7 +33,7 @@ export class ProductionInboundService {
   ) {}
   async list(query: PurchaseInboundOrderQuery) {
     const result = await this.repository.list(query);
-    return { ...result, items: await Promise.all(result.items.map((x) => this.enrich(x))) };
+    return { ...result, items: await this.enrichMany(result.items) };
   }
   async get(id: string) {
     return this.enrich(await this.repository.get(id));
@@ -85,14 +85,20 @@ export class ProductionInboundService {
     return this.repository.getInventory(id);
   }
   private async enrich(row: PurchaseInboundOrderItem) {
-    const ids = [row.operatorId, row.createdById].filter((x): x is string => Boolean(x));
+    return (await this.enrichMany([row]))[0]!;
+  }
+  private async enrichMany(rows: PurchaseInboundOrderItem[]) {
+    if (rows.length === 0) return rows;
+    const ids = rows
+      .flatMap((row) => [row.operatorId, row.createdById])
+      .filter((x): x is string => Boolean(x));
     const users = await this.identity.listUserReferencesByIds([...new Set(ids)]);
     const map = new Map(users.map((x) => [x.id, x.displayName]));
-    return {
+    return rows.map((row) => ({
       ...row,
       operatorName: row.operatorId ? (map.get(row.operatorId) ?? null) : null,
       createdByName: row.createdById ? (map.get(row.createdById) ?? null) : null,
-    };
+    }));
   }
 }
 const narrow = (x: IdempotentCommandContext): CommandContext => ({

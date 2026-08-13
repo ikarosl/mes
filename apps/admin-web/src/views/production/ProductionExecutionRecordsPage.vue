@@ -333,6 +333,8 @@
       v-model="changeVisible"
       :title="changeMode === 'correct' ? '更正报工' : '冲销报工'"
       width="min(640px, 75vw)"
+      :before-close="beforeChangeClose"
+      :close-on-click-modal="false"
     >
       <el-alert
         class="dialog-tip"
@@ -410,7 +412,7 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="changeVisible = false">取消</el-button>
+        <el-button @click="requestChangeClose">取消</el-button>
         <el-button
           type="primary"
           :loading="changePending"
@@ -477,8 +479,10 @@ import type {
   BatchStepReportItem,
   BatchStepStatus,
 } from '@company/contracts';
+import { RequestError } from '@company/request';
 import { formatDateTimeForDisplay } from '../../utils/date';
 import { EMessage } from '../../utils/message';
+import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
 import TableToolbar from '../../components/TableToolbar.vue';
 import { batchStatusMeta, formatQuantity, stepStatusMeta } from './production-status';
 import ProductionExecutionBatchList from './components/ProductionExecutionBatchList.vue';
@@ -512,6 +516,8 @@ const {
   reverse,
   correct,
   completeExecution,
+  getCorrectionIntentStatus,
+  resetCorrectionIntent,
 } = useProductionExecutionRecords();
 const completionPending = computed(() =>
   completionCheck.value
@@ -570,6 +576,11 @@ const changeKey = computed(() =>
   changeReport.value ? `${changeMode.value}:${changeReport.value.reportId}` : '',
 );
 const changePending = computed(() => pendingKeys.value.has(changeKey.value));
+const changeIntentStatus = computed(() =>
+  changeMode.value === 'correct' && changeReport.value
+    ? getCorrectionIntentStatus(changeReport.value.reportId)
+    : 'idle',
+);
 const changedEffectiveNormal = computed(() => {
   if (!changeStep.value || !changeReport.value) return 0;
   const withoutOriginal =
@@ -685,6 +696,27 @@ const openCorrection = (step: BatchStepExecutionRecordItem, report: BatchStepRep
   prepareChange('correct', step, report);
 const openReverse = (step: BatchStepExecutionRecordItem, report: BatchStepReportItem) =>
   prepareChange('reverse', step, report);
+const canDiscardChange = async (): Promise<boolean> => {
+  if (changePending.value) return false;
+  if (changeIntentStatus.value === 'idle') return true;
+  try {
+    await ElMessageBox.confirm(
+      '上次更正结果尚未确认。请先刷新报工记录核对；放弃安全重试后再次更正可能追加重复事实。',
+      '放弃幂等意图确认',
+      { type: 'warning', confirmButtonText: '核对后仍要放弃', cancelButtonText: '继续保留' },
+    );
+    if (changeReport.value) resetCorrectionIntent(changeReport.value.reportId);
+    return true;
+  } catch {
+    return false;
+  }
+};
+const beforeChangeClose = async (done: () => void): Promise<void> => {
+  if (await canDiscardChange()) done();
+};
+const requestChangeClose = async (): Promise<void> => {
+  if (await canDiscardChange()) changeVisible.value = false;
+};
 const submitChange = async () => {
   if (!changeStep.value || !changeReport.value || !canSubmitChange.value) return;
   try {
@@ -702,9 +734,19 @@ const submitChange = async () => {
   } catch (error) {
     const code =
       typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : '';
+    const dependency =
+      error instanceof RequestError && error.details
+        ? (error.details as {
+            conflictingStepOrder?: number;
+            conflictingStepName?: string;
+            downstreamEffectiveReportedQuantity?: string;
+          })
+        : null;
     const fallback =
       code === 'DOWNSTREAM_QUANTITY_CONFLICT'
-        ? '调整后数量低于下游已报正常量，请先从最下游开始冲销'
+        ? dependency?.conflictingStepName
+          ? `调整后正常放行量低于第 ${dependency.conflictingStepOrder} 道工序“${dependency.conflictingStepName}”已报正常与异常总量 ${formatQuantity(dependency.downstreamEffectiveReportedQuantity ?? 0)}，请先从最下游开始冲销`
+          : '调整后正常放行量低于下游已报正常与异常总量，请先从最下游开始冲销'
         : code === 'STEP_REPORT_DEPENDENCY_CONFLICT'
           ? '该报工已有异常处置或替代事实依赖，当前不能直接调整'
           : code === 'STEP_REPORT_QUANTITY_EXCEEDED'

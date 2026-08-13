@@ -22,6 +22,7 @@ import { ProductSnapshotService } from '../../../apps/api/src/modules/product/ap
 import { MysqlProductSnapshotRepository } from '../../../apps/api/src/modules/product/infrastructure/mysql-product-snapshot.repository.js';
 import { ProductionService } from '../../../apps/api/src/modules/production/application/production.service.js';
 import { MysqlProductionBatchRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-batch.repository.js';
+import { MysqlProductionMaterialRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-material.repository.js';
 import { MysqlProductionRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production.repository.js';
 import { MysqlWorkOrderRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-work-order.repository.js';
 import { ProductionController } from '../../../apps/api/src/modules/production/presentation/http/production.controller.js';
@@ -68,7 +69,8 @@ describeMysql(
       fixture = await createFixture(pool);
       const workOrders = new MysqlWorkOrderRepository(pool);
       const batches = new MysqlProductionBatchRepository(pool);
-      const production = new MysqlProductionRepository(workOrders, batches);
+      const materials = new MysqlProductionMaterialRepository(pool);
+      const production = new MysqlProductionRepository(workOrders, batches, materials);
       const products = new ProductSnapshotService(new MysqlProductSnapshotRepository(pool));
       const identity = new IdentityDirectoryService(new MysqlRbacRepository(pool));
       const executor = new MysqlIdempotencyExecutor(pool);

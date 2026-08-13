@@ -37,6 +37,7 @@ export class ProductionDomainExceptionFilter implements ExceptionFilter {
       requestId,
       timestamp: toBeijingISOString(new Date()),
       path: request.originalUrl ?? request.url ?? '',
+      ...(exception.details ? { details: exception.details } : {}),
     });
   }
 }
@@ -59,6 +60,7 @@ const statusFor = (code: ProductionDomainError['code']): number => {
     code === 'INBOUND_CANCEL_NOT_ALLOWED' ||
     code === 'STEP_ASSIGNMENT_CONFLICT' ||
     code === 'STEP_START_NOT_ALLOWED' ||
+    code === 'STEP_COMPLETION_NOT_ALLOWED' ||
     code === 'STEP_REPORT_NOT_ALLOWED' ||
     code === 'STEP_REPORT_QUANTITY_EXCEEDED' ||
     code === 'STEP_REPORT_ALREADY_REVERSED' ||

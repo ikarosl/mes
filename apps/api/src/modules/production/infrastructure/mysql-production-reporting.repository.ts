@@ -39,6 +39,7 @@ import { add, fixed, releasedQuantity, subtract } from './mysql-production-repor
 type LockedStepRow = RowDataPacket & {
   id: number;
   step_order_snapshot: number;
+  step_name_snapshot: string;
   status: BatchStepStatus;
   responsible_user_id: number | null;
   need_record_snapshot: number;
@@ -179,7 +180,11 @@ export class MysqlProductionReportingRepository extends ProductionReportingRepos
       requireCorrectable(target);
       assertVersion(current, payload.version);
       const correctedNormal = subtract(current.effective_normal, target.normal_quantity);
-      requireNoDownstreamQuantityConflict(correctedNormal, downstream?.effective_reported ?? 0);
+      requireNoDownstreamQuantityConflict(
+        correctedNormal,
+        downstream?.effective_reported ?? 0,
+        dependencyConflictDetails(correctedNormal, downstream),
+      );
       const reversalId = await insertReport(connection, {
         batchId,
         stepRecordId,
@@ -229,7 +234,11 @@ export class MysqlProductionReportingRepository extends ProductionReportingRepos
         add(payload.normalQuantity, payload.abnormalQuantity),
       );
       requireReportWithinReleased(correctedReported, 0, 0, released);
-      requireNoDownstreamQuantityConflict(correctedNormal, downstream?.effective_reported ?? 0);
+      requireNoDownstreamQuantityConflict(
+        correctedNormal,
+        downstream?.effective_reported ?? 0,
+        dependencyConflictDetails(correctedNormal, downstream),
+      );
       const reversalId = await insertReport(connection, {
         batchId,
         stepRecordId,
@@ -475,10 +484,23 @@ const assertVersion = (step: LockedStepRow, version: number): void => {
   if (step.version !== version)
     throw new ProductionDomainError('CONCURRENT_MODIFICATION', '工序状态已变化，请刷新后重试');
 };
+const dependencyConflictDetails = (
+  correctedNormal: string,
+  downstream: LockedStepRow | null,
+): Record<string, unknown> | undefined =>
+  downstream
+    ? {
+        conflictingStepRecordId: String(downstream.id),
+        conflictingStepOrder: downstream.step_order_snapshot,
+        conflictingStepName: downstream.step_name_snapshot,
+        downstreamEffectiveReportedQuantity: downstream.effective_reported,
+        correctedUpstreamNormalQuantity: correctedNormal,
+      }
+    : undefined;
 const SUMMARY_COLUMNS = `COALESCE(SUM(CASE WHEN r.report_type='normal' THEN r.reported_quantity ELSE -r.reported_quantity END),0) effective_reported,
   COALESCE(SUM(CASE WHEN r.report_type='normal' THEN r.normal_quantity ELSE -r.normal_quantity END),0) effective_normal,
   COALESCE(SUM(CASE WHEN r.report_type='normal' THEN r.abnormal_quantity ELSE -r.abnormal_quantity END),0) effective_abnormal`;
-const LOCKED_STEP_SELECT = `SELECT sr.id,sr.step_order_snapshot,sr.status,sr.responsible_user_id,sr.need_record_snapshot,sr.unit_snapshot,sr.version,${SUMMARY_COLUMNS}
+const LOCKED_STEP_SELECT = `SELECT sr.id,sr.step_order_snapshot,sr.step_name_snapshot,sr.status,sr.responsible_user_id,sr.need_record_snapshot,sr.unit_snapshot,sr.version,${SUMMARY_COLUMNS}
   FROM batch_step_records sr LEFT JOIN batch_step_reports r ON r.batch_step_record_id=sr.id
   WHERE sr.production_batch_id=? GROUP BY sr.id ORDER BY sr.step_order_snapshot,sr.id`;
 const PROJECTION_STEP_SELECT = `SELECT sr.id,sr.production_batch_id,sr.step_order_snapshot,sr.step_code_snapshot,sr.step_name_snapshot,sr.status,sr.responsible_user_id,sr.need_record_snapshot,sr.unit_snapshot,sr.started_at,sr.completed_at,sr.version,${SUMMARY_COLUMNS}

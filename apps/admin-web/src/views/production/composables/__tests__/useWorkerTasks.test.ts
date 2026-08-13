@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ProductionWorkerTaskItem } from '@company/contracts';
+import { RequestError } from '@company/request';
 import { useWorkerTasks } from '../useWorkerTasks';
 
 const api = vi.hoisted(() => ({
   listWorkerTasks: vi.fn(),
   startStep: vi.fn(),
+  completeStep: vi.fn(),
   createStepReport: vi.fn(),
 }));
 vi.mock('../../../../api/production', () => ({ productionApi: api }));
@@ -26,6 +28,16 @@ describe('useWorkerTasks', () => {
     expect(api.startStep).toHaveBeenCalledWith('2', '10', 3);
     expect(api.listWorkerTasks).toHaveBeenCalledOnce();
     expect(state.startPendingIds.value.size).toBe(0);
+  });
+
+  it('completes a non-reporting step with the server version and refreshes the projection', async () => {
+    api.completeStep.mockResolvedValue({});
+    api.listWorkerTasks.mockResolvedValue([]);
+    const state = useWorkerTasks();
+    await state.complete(task);
+    expect(api.completeStep).toHaveBeenCalledWith('2', '10', 3);
+    expect(api.listWorkerTasks).toHaveBeenCalledOnce();
+    expect(state.completePendingIds.value.size).toBe(0);
   });
 
   it('ignores a stale list response after a newer refresh', async () => {
@@ -54,5 +66,16 @@ describe('useWorkerTasks', () => {
     );
     expect(state.reportPendingIds.value.size).toBe(0);
     expect(api.listWorkerTasks).toHaveBeenCalledOnce();
+  });
+
+  it('retains an ambiguous report intent until the caller explicitly discards it', async () => {
+    api.createStepReport.mockRejectedValue(new RequestError('网络断开', 0));
+    const state = useWorkerTasks();
+
+    await expect(state.report(task, 1, 0, null)).rejects.toBeInstanceOf(RequestError);
+
+    expect(state.getReportIntentStatus('10')).toBe('pending');
+    state.resetReportIntent('10');
+    expect(state.getReportIntentStatus('10')).toBe('idle');
   });
 });

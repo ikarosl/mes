@@ -4,7 +4,7 @@
 
 ## 3.11 跨模块引用说明
 
-本章引用的 `users`、`process_routes`、`process_steps`、`technical_files` 分别由[系统、RBAC 与认证](../10-system-rbac-auth.md)和[文件与工艺](../20-files-and-process.md)定义。报工事实使用[生产报工、追溯与质量边界](../40-production-traceability-quality.md)定义的 `batch_step_reports`；工序异常审批使用已追加 migration 的 `batch_step_abnormal_dispositions`，不得把异常审批状态写入 `batch_step_records.status`。当前处置单创建、审批命令及下游事务尚未实现；当前阶段明确不做返工/补料报工额度来源和激活限制；`rework_records`、工序报废、`quality_check_order` 和 `quality_check_detail` 仍未定稿，不得提前创建。
+本章引用的 `users`、`process_routes`、`process_steps`、`technical_files` 分别由[系统、RBAC 与认证](../10-system-rbac-auth.md)和[文件与工艺](../20-files-and-process.md)定义。报工事实使用[生产报工、追溯与质量边界](../40-production-traceability-quality.md)定义的 `batch_step_reports`；工序异常使用已追加 migration 的 `batch_step_abnormal_dispositions`，不得把异常处置状态写入 `batch_step_records.status`。异常报工会创建待处置单，但审批命令及下游事务尚未实现；当前阶段明确不做返工/补料报工额度来源和激活限制；`rework_records`、工序报废、`quality_check_order` 和 `quality_check_detail` 仍未定稿，不得提前创建。
 
 跨模块写操作必须由应用服务在同一事务内维护组合外键、快照和操作日志，Controller 不得直接拼接 SQL 修改多张事实表。
 

@@ -23,6 +23,12 @@ describe('ProductionExecutionController permissions', () => {
       Reflect.getMetadata(REQUIRED_PERMISSION, ProductionExecutionController.prototype.start),
     ).toBe(PERMISSIONS.production.steps.start);
     expect(
+      Reflect.getMetadata(
+        REQUIRED_PERMISSION,
+        ProductionExecutionController.prototype.completeStep,
+      ),
+    ).toBe(PERMISSIONS.production.steps.complete);
+    expect(
       Reflect.getMetadata(REQUIRED_PERMISSION, ProductionExecutionController.prototype.myTasks),
     ).toBe(PERMISSIONS.production.workerTasks.view);
   });
@@ -34,6 +40,13 @@ describe('ProductionExecutionController permissions', () => {
     );
     expect(Reflect.getMetadata(METHOD_METADATA, start)).toBe(RequestMethod.POST);
     expect(Reflect.getMetadata(IDEMPOTENT_ENDPOINT, start)).toBeUndefined();
+
+    const completeStep = ProductionExecutionController.prototype.completeStep;
+    expect(Reflect.getMetadata(PATH_METADATA, completeStep)).toBe(
+      'batches/:batchId/step-records/:recordId/actions/complete',
+    );
+    expect(Reflect.getMetadata(METHOD_METADATA, completeStep)).toBe(RequestMethod.POST);
+    expect(Reflect.getMetadata(IDEMPOTENT_ENDPOINT, completeStep)).toBeUndefined();
 
     const complete = ProductionExecutionController.prototype.completeExecution;
     expect(Reflect.getMetadata(PATH_METADATA, complete)).toBe(
@@ -47,12 +60,19 @@ describe('ProductionExecutionController permissions', () => {
   });
 
   it('forwards authenticated actor and version to the application service', async () => {
-    const service = { startStep: vi.fn().mockResolvedValue({ stepStatus: 'doing' }) };
+    const service = {
+      startStep: vi.fn().mockResolvedValue({ stepStatus: 'doing' }),
+      completeStep: vi.fn().mockResolvedValue({ stepStatus: 'completed' }),
+    };
     const controller = new ProductionExecutionController(service as never);
     const context = { actorId: '7', requestId: 'r1', ip: null, userAgent: null };
     await expect(
       controller.start({ batchId: '1', recordId: '9' }, { version: 2 }, context),
     ).resolves.toEqual({ stepStatus: 'doing' });
     expect(service.startStep).toHaveBeenCalledWith('1', '9', 2, context);
+    await expect(
+      controller.completeStep({ batchId: '1', recordId: '9' }, { version: 3 }, context),
+    ).resolves.toEqual({ stepStatus: 'completed' });
+    expect(service.completeStep).toHaveBeenCalledWith('1', '9', 3, context);
   });
 });

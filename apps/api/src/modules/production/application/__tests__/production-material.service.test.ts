@@ -11,6 +11,36 @@ const context = {
   idempotencyKey: 'key-1',
 };
 describe('ProductionMaterialService', () => {
+  it('enriches outbound list operators with one bulk identity lookup', async () => {
+    const rows = [
+      { outboundId: '1', operatorId: '7', createdById: '8' },
+      { outboundId: '2', operatorId: '8', createdById: '7' },
+    ];
+    const repository = {
+      listOutboundOrders: vi
+        .fn()
+        .mockResolvedValue({ items: rows, total: 2, page: 1, pageSize: 20 }),
+    };
+    const identity = {
+      listUserReferencesByIds: vi.fn().mockResolvedValue([
+        { id: '7', displayName: '操作人' },
+        { id: '8', displayName: '创建人' },
+      ]),
+    };
+    const service = new ProductionMaterialService(
+      repository as never,
+      identity as never,
+      {} as never,
+      {} as never,
+    );
+
+    const result = await service.listOutboundOrders({ page: 1, pageSize: 20 });
+
+    expect(identity.listUserReferencesByIds).toHaveBeenCalledOnce();
+    expect(identity.listUserReferencesByIds).toHaveBeenCalledWith(['7', '8']);
+    expect(result.items[0]).toMatchObject({ operatorName: '操作人', createdByName: '创建人' });
+  });
+
   it('normalizes allocation payload, uses the registered scope, and narrows repository context', async () => {
     const result = {
       productionBatchId: '1',

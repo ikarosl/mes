@@ -28,17 +28,20 @@ describe('ProductionExecutionService', () => {
     expect(execution.assignStep).not.toHaveBeenCalled();
   });
 
-  it('uses the authenticated actor for worker queries and start commands', async () => {
+  it('uses the authenticated actor for worker queries, start, and completion commands', async () => {
     const execution = {
       listWorkerTasks: vi.fn().mockResolvedValue([]),
       startStep: vi.fn().mockResolvedValue({ stepStatus: 'doing' }),
+      completeStep: vi.fn().mockResolvedValue({ stepStatus: 'completed' }),
     };
     const service = new ProductionExecutionService(execution as never, {} as never);
 
     await service.listMyTasks(context);
     await service.startStep('1', '2', 3, context);
+    await service.completeStep('1', '2', 4, context);
     expect(execution.listWorkerTasks).toHaveBeenCalledWith('7');
     expect(execution.startStep).toHaveBeenCalledWith('1', '2', 3, context);
+    expect(execution.completeStep).toHaveBeenCalledWith('1', '2', 4, context);
   });
 
   it('forwards completion checks and completion with the authenticated command context', async () => {

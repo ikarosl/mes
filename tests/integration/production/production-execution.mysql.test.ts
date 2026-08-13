@@ -23,12 +23,18 @@ describeMysql('Production execution MySQL transactions', () => {
   let reportingService: ProductionReportingService;
 
   beforeAll(() => {
+    const database = required('DB_NAME');
+    if (!/(?:_test|_ci)$/.test(database)) {
+      throw new Error(
+        'production execution integration tests require a dedicated *_test or *_ci database',
+      );
+    }
     pool = createPool({
       host: required('DB_HOST'),
       port: Number(required('DB_PORT')),
       user: required('DB_USER'),
       password: required('DB_PASSWORD'),
-      database: required('DB_NAME'),
+      database,
       charset: 'utf8mb4',
       timezone: '+08:00',
       connectionLimit: 6,
@@ -77,6 +83,52 @@ describeMysql('Production execution MySQL transactions', () => {
       expect(row?.batch_started_at).not.toBeNull();
       expect(row?.step_started_at).not.toBeNull();
       expect(await auditCount(pool, `${fixture.token}-start`, 'production-step.start')).toBe(1);
+    } finally {
+      await cleanup(pool, fixture);
+    }
+  });
+
+  it('explicitly completes a started non-reporting step once and replays by state', async () => {
+    const fixture = await createFixture(pool, 'complete-non-reporting');
+    try {
+      await pool.execute('UPDATE batch_step_records SET need_record_snapshot=0 WHERE id=?', [
+        fixture.firstStepRecordId,
+      ]);
+      await repository.assignStep(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        String(fixture.workerId),
+        0,
+        context(fixture.actorId, `${fixture.token}-assign`),
+      );
+      await repository.startStep(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        1,
+        context(fixture.workerId, `${fixture.token}-start`),
+      );
+
+      const completed = await repository.completeStep(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        2,
+        context(fixture.workerId, `${fixture.token}-complete`),
+      );
+      const replay = await repository.completeStep(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        2,
+        context(fixture.workerId, `${fixture.token}-complete-replay`),
+      );
+
+      expect(completed).toMatchObject({ stepStatus: 'completed', version: 3 });
+      expect(replay).toEqual(completed);
+      expect(await auditCount(pool, `${fixture.token}-complete`, 'production-step.complete')).toBe(
+        1,
+      );
+      expect(
+        await auditCount(pool, `${fixture.token}-complete-replay`, 'production-step.complete'),
+      ).toBe(0);
     } finally {
       await cleanup(pool, fixture);
     }

@@ -29,6 +29,7 @@ describe('ProductionDomainExceptionFilter', () => {
     ['INVALID_STATE', 400],
     ['STEP_ASSIGNMENT_CONFLICT', 409],
     ['STEP_START_NOT_ALLOWED', 409],
+    ['STEP_COMPLETION_NOT_ALLOWED', 409],
     ['NOT_STEP_ASSIGNEE', 403],
   ] as const)('maps %s to the expected HTTP envelope', (code, expectedStatus) => {
     const { json, status, setHeader } = invoke(new ProductionDomainError(code, '生产业务错误'));
@@ -45,5 +46,20 @@ describe('ProductionDomainExceptionFilter', () => {
         timestamp: expect.stringMatching(/\+08:00$/),
       }),
     );
+  });
+
+  it('preserves structured conflict details for actionable clients', () => {
+    const details = {
+      conflictingStepRecordId: '9',
+      conflictingStepOrder: 2,
+      conflictingStepName: '装配',
+      downstreamEffectiveReportedQuantity: '10.0000',
+      correctedUpstreamNormalQuantity: '9.0000',
+    };
+    const { json } = invoke(
+      new ProductionDomainError('DOWNSTREAM_QUANTITY_CONFLICT', '下游数量冲突', details),
+    );
+
+    expect(json).toHaveBeenCalledWith(expect.objectContaining({ details }));
   });
 });

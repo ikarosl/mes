@@ -115,7 +115,7 @@ describe('ProductionOrdersPage', () => {
 
   it('shows pagination footer', () => {
     const wrapper = mountPage();
-    expect(wrapper.find('.table-footer').exists()).toBe(true);
+    expect(wrapper.findComponent({ name: 'PaginationFooter' }).exists()).toBe(true);
   });
 
   it('requests the target page when the pagination page changes', async () => {
@@ -123,9 +123,9 @@ describe('ProductionOrdersPage', () => {
     await flushPromises();
     listOrders.mockClear();
 
-    const pagination = wrapper.findComponent({ name: 'ElPagination' });
+    const pagination = wrapper.findComponent({ name: 'PaginationFooter' });
     expect(pagination.exists()).toBe(true);
-    pagination.vm.$emit('current-change', 2);
+    pagination.vm.$emit('pageChange', 2);
     await flushPromises();
 
     expect(listOrders).toHaveBeenCalledTimes(1);

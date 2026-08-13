@@ -102,15 +102,13 @@ export class ProductionMaterialService {
     return execution.result;
   }
   async listOutbounds(batchId: string) {
-    return Promise.all(
-      (await this.materials.listOutbounds(batchId)).map((row) => this.enrichOutbound(row)),
-    );
+    return this.enrichOutbounds(await this.materials.listOutbounds(batchId));
   }
   async listOutboundOrders(query: MaterialOutboundQuery) {
     const result = await this.materials.listOutboundOrders(query);
     return {
       ...result,
-      items: await Promise.all(result.items.map((row) => this.enrichOutbound(row))),
+      items: await this.enrichOutbounds(result.items),
     };
   }
   async getOutbound(outboundId: string) {
@@ -142,14 +140,20 @@ export class ProductionMaterialService {
     return this.enrichOutbound(await this.materials.cancelOutbound(outboundId, version, context));
   }
   private async enrichOutbound(row: MaterialOutboundItem): Promise<MaterialOutboundItem> {
-    const ids = [row.operatorId, row.createdById].filter((id): id is string => Boolean(id));
+    return (await this.enrichOutbounds([row]))[0]!;
+  }
+  private async enrichOutbounds(rows: MaterialOutboundItem[]): Promise<MaterialOutboundItem[]> {
+    if (rows.length === 0) return rows;
+    const ids = rows
+      .flatMap((row) => [row.operatorId, row.createdById])
+      .filter((id): id is string => Boolean(id));
     const users = await this.identity.listUserReferencesByIds([...new Set(ids)]);
     const byId = new Map(users.map((user) => [user.id, user.displayName]));
-    return {
+    return rows.map((row) => ({
       ...row,
       operatorName: row.operatorId ? (byId.get(row.operatorId) ?? null) : null,
       createdByName: row.createdById ? (byId.get(row.createdById) ?? null) : null,
-    };
+    }));
   }
 }
 

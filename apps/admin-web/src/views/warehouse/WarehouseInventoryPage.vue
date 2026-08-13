@@ -128,27 +128,13 @@
           ></el-table-column
         ></el-table
       >
-      <div class="table-footer">
-        <span>共 {{ total }} 条</span
-        ><el-select
-          v-model="query.pageSize"
-          class="page-size-select"
-          @change="pageSizeChanged"
-          ><el-option
-            label="10条/页"
-            :value="10" /><el-option
-            label="20条/页"
-            :value="20" /><el-option
-            label="50条/页"
-            :value="50" /></el-select
-        ><el-pagination
-          v-model:current-page="query.page"
-          :page-size="query.pageSize"
-          :total="total"
-          layout="prev,pager,next,jumper"
-          @current-change="load"
-        />
-      </div>
+      <PaginationFooter
+        :total="total"
+        :current-page="query.page ?? 1"
+        :page-size="query.pageSize ?? 20"
+        @update:page-size="pageSizeChanged"
+        @page-change="handlePageChange"
+      />
     </section>
     <el-dialog
       v-model="detailVisible"
@@ -224,6 +210,7 @@ import { Refresh } from '@element-plus/icons-vue';
 import type { InventoryBatchItem, InventoryBatchQuery } from '@company/contracts';
 import { productionApi } from '../../api/production';
 import TableToolbar from '../../components/TableToolbar.vue';
+import PaginationFooter from '../../components/PaginationFooter.vue';
 import {
   inventoryBatchStatusLabel,
   inventoryBatchStatusLabels,
@@ -272,8 +259,13 @@ const reset = () => {
   query.page = 1;
   return load();
 };
-const pageSizeChanged = () => {
+const pageSizeChanged = (value: number) => {
+  query.pageSize = value;
   query.page = 1;
+  return load();
+};
+const handlePageChange = (value: number) => {
+  query.page = value;
   return load();
 };
 const openDetail = async (id: string) => {

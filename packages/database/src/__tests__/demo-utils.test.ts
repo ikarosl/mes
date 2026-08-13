@@ -3,6 +3,13 @@ import { assertDemoSeedEnabled, readDemoSeeds } from '../demo-utils.js';
 
 describe('demo seed', () => {
   it('requires an explicit gate and a non-trivial password', () => {
+    expect(() =>
+      assertDemoSeedEnabled({
+        NODE_ENV: 'production',
+        ALLOW_DEMO_SEED: '1',
+        DEMO_USER_PASSWORD: 'demo-password',
+      }),
+    ).toThrow('cannot run when NODE_ENV=production');
     expect(() => assertDemoSeedEnabled({})).toThrow('Demo seed is disabled');
     expect(() =>
       assertDemoSeedEnabled({ ALLOW_DEMO_SEED: '1', DEMO_USER_PASSWORD: '12345' }),

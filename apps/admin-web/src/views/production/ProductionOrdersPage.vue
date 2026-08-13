@@ -89,6 +89,7 @@
       <el-table
         v-loading="loading"
         :data="orders"
+        :row-class-name="orderRowClass"
         class="orders-table"
       >
         <el-table-column
@@ -142,9 +143,14 @@
         </el-table-column>
         <el-table-column
           label="计划完成"
-          width="110"
+          width="140"
         >
-          <template #default="{ row }">{{ formatDateForDisplay(row.planEndDate) }}</template>
+          <template #default="{ row }">
+            <div>{{ formatDateForDisplay(row.planEndDate, '未设置') }}</div>
+            <span :class="['deadline-badge', `deadline-${orderDeadline(row).tone}`]">
+              {{ orderDeadline(row).label }}
+            </span>
+          </template>
         </el-table-column>
         <el-table-column
           label="状态"
@@ -153,6 +159,7 @@
           <template #default="{ row }">
             <el-tag
               :type="orderStatusMeta(row.status).type"
+              :class="['order-status-tag', `order-status-${row.status}`]"
               effect="light"
             >
               {{ orderStatusMeta(row.status).label }}
@@ -217,34 +224,13 @@
         </el-table-column>
       </el-table>
 
-      <div class="table-footer">
-        <span class="total-text">共 {{ total }} 条</span>
-        <el-select
-          v-model="pageSize"
-          class="page-size-select"
-          @change="handlePageSizeChange"
-        >
-          <el-option
-            label="10条/页"
-            :value="10"
-          />
-          <el-option
-            label="20条/页"
-            :value="20"
-          />
-          <el-option
-            label="50条/页"
-            :value="50"
-          />
-        </el-select>
-        <el-pagination
-          :current-page="currentPage"
-          :page-size="pageSize"
-          :total="total"
-          layout="prev, pager, next, jumper"
-          @current-change="handlePageChange"
-        />
-      </div>
+      <PaginationFooter
+        :total="total"
+        :current-page="currentPage"
+        :page-size="pageSize"
+        @update:page-size="handlePageSizeChange"
+        @page-change="handlePageChange"
+      />
     </section>
 
     <!-- 新增/编辑工单弹窗 -->
@@ -304,6 +290,7 @@
 import { computed, onActivated, onMounted, ref, watch } from 'vue';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import TableToolbar from '../../components/TableToolbar.vue';
+import PaginationFooter from '../../components/PaginationFooter.vue';
 import type {
   CreateProductionBatchPayload,
   ProductOption,
@@ -318,6 +305,7 @@ import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
 import { useRowPending } from '../../utils/useRowPending';
 import { buildLiveOptions } from '../../utils/live-options';
 import { formatDateForDisplay, toDateInputValue } from '../../utils/date';
+import { deadlinePresentation } from './production-task-presentation';
 import { useIdempotentIntent } from '../../composables/idempotency/useIdempotentIntent';
 import { useProductOptions } from '../../composables/options/useProductOptions';
 import { useUserOptions } from '../../composables/options/useUserOptions';
@@ -367,6 +355,13 @@ const productChoices = computed(() =>
     (product) => product.id,
   ),
 );
+const orderDeadline = (row: WorkOrderItem) =>
+  deadlinePresentation(
+    row.planEndDate,
+    row.status === 'completed' || row.status === 'closed' || row.status === 'cancelled',
+  );
+const orderRowClass = ({ row }: { row: WorkOrderItem }): string =>
+  orderDeadline(row).overdueDays > 0 ? 'deadline-overdue-row' : '';
 
 /** 行内工单状态写操作守卫（下达/关闭/取消），同一行只允许一个在途（todo 3.5） */
 const { isRowPending, beginRow, endRow } = useRowPending();
@@ -746,6 +741,67 @@ onActivated(() => {
 .orders-table :deep(.el-tag--primary) {
   background: #e8f0fe;
   color: #306188;
+}
+.orders-table :deep(.order-status-draft) {
+  background: #f4f4f5;
+  color: #909399;
+}
+.orders-table :deep(.order-status-released) {
+  background: #f5f3ff;
+  color: #a78bfa;
+}
+.orders-table :deep(.order-status-doing) {
+  background: #ecf5ff;
+  color: #409eff;
+}
+.orders-table :deep(.order-status-completed) {
+  background: #f0f9eb;
+  color: #67c23a;
+}
+.orders-table :deep(.order-status-closed) {
+  background: #f0fdfa;
+  color: #14b8a6;
+}
+.orders-table :deep(.order-status-cancelled) {
+  background: #fef0f0;
+  color: #f56c6c;
+}
+.orders-table :deep(tr.deadline-overdue-row) {
+  --el-table-tr-bg-color: rgb(255, 247, 237);
+  --el-table-row-hover-bg-color: rgb(255, 239, 219);
+}
+.orders-table :deep(tr.deadline-overdue-row > td.el-table__cell) {
+  background-color: rgb(255, 247, 237) !important;
+}
+.orders-table :deep(tr.deadline-overdue-row:hover > td.el-table__cell) {
+  background-color: rgb(255, 239, 219) !important;
+}
+.deadline-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  margin-top: 4px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 20px;
+}
+.deadline-muted {
+  border-color: #e5e7eb;
+  background: #f4f4f5;
+  color: #909399;
+}
+.deadline-normal {
+  border-color: #d9ecff;
+  background: #ecf5ff;
+  color: #409eff;
+}
+.deadline-warning {
+  border-color: #fde2e2;
+  background: #fef0f0;
+  color: #f56c6c;
 }
 .orders-table :deep(.el-button.is-link) {
   padding: 0;

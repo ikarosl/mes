@@ -430,16 +430,22 @@ describe('productionApi', () => {
     ]);
   });
 
-  it('lists current employee tasks and starts a step with its version', async () => {
+  it('lists current employee tasks and starts or completes a step with its version', async () => {
     const { productionApi } = await import('../production');
     await productionApi.listWorkerTasks();
     await productionApi.startStep('1', '9', 3);
-    expect(request.mock.calls.slice(-2).map(([config]) => config)).toEqual([
+    await productionApi.completeStep('1', '9', 4);
+    expect(request.mock.calls.slice(-3).map(([config]) => config)).toEqual([
       { url: '/production/worker-tasks' },
       {
         url: '/production/batches/1/step-records/9/actions/start',
         method: 'POST',
         data: { version: 3 },
+      },
+      {
+        url: '/production/batches/1/step-records/9/actions/complete',
+        method: 'POST',
+        data: { version: 4 },
       },
     ]);
   });

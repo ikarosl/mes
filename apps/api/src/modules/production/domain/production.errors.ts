@@ -18,6 +18,7 @@ export class ProductionDomainError extends Error {
       | 'INBOUND_CANCEL_NOT_ALLOWED'
       | 'STEP_ASSIGNMENT_CONFLICT'
       | 'STEP_START_NOT_ALLOWED'
+      | 'STEP_COMPLETION_NOT_ALLOWED'
       | 'NOT_STEP_ASSIGNEE'
       | 'STEP_REPORT_NOT_ALLOWED'
       | 'STEP_REPORT_QUANTITY_EXCEEDED'
@@ -29,6 +30,7 @@ export class ProductionDomainError extends Error {
       | 'REQUIRED_STEP_INCOMPLETE'
       | 'FINAL_STEP_QUANTITY_INSUFFICIENT',
     message: string,
+    readonly details?: Record<string, unknown>,
   ) {
     super(message);
   }

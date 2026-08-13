@@ -19,6 +19,7 @@ interface ApiErrorResponse {
   code?: string;
   message?: string;
   requestId?: string;
+  details?: Record<string, unknown>;
 }
 type InternalRetryConfig = InternalAxiosRequestConfig & RetryRequestConfig;
 const SAFE_RETRY_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
@@ -40,6 +41,7 @@ export class RequestError extends Error {
     public readonly response?: AxiosResponse,
     public readonly code?: string,
     public readonly requestId?: string,
+    public readonly details?: Record<string, unknown>,
   ) {
     super(message);
     this.name = 'RequestError';
@@ -99,6 +101,7 @@ export const toRequestError = (error: unknown) => {
       error.response,
       typeof data?.code === 'string' ? data.code : error.code,
       typeof data?.requestId === 'string' ? data.requestId : undefined,
+      data?.details,
     );
   }
   return error instanceof Error ? error : new Error('Request failed');
