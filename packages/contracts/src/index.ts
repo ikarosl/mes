@@ -507,7 +507,7 @@ export interface WorkOrderQuery extends PageQuery {
   status?: WorkOrderStatus;
 }
 
-/** 任务表单已下达工单候选（/production/work-orders/options）：仅已下达且仍有余量的工单。 */
+/** 任务表单工单候选：已下达或生产中，且仍有可分配余量。 */
 export interface WorkOrderOption {
   id: string;
   workOrderNo: string;
@@ -576,6 +576,21 @@ export interface ProductionBatchItem {
   updatedAt: string;
   /** 批次是否已有未取消的生产领料出库单；批次列表用于区分“待建单”和“已建单”。 */
   hasActiveMaterialOutbound?: boolean;
+}
+
+export type ProductionBatchCancellationBlocker =
+  'batch_already_started' | 'material_already_outbound';
+
+export interface ProductionBatchCancellationCheck {
+  productionBatchId: string;
+  batchStatus: ProductionBatchStatus;
+  version: number;
+  canCancel: boolean;
+  blockers: ProductionBatchCancellationBlocker[];
+  activeDemandCount: number;
+  activeAllocationCount: number;
+  pendingOutboundCount: number;
+  pendingOutbounds: Array<{ id: string; outboundNo: string }>;
 }
 
 export interface ProductionExecutionBatchSummary extends ProductionBatchItem {
@@ -990,6 +1005,17 @@ export interface UpdateWorkOrderPayload extends VersionedCommand {
   remark?: string | null;
 }
 
+/** 管理员复核所属批次汇总后，显式确认工单足量完工。 */
+export type CompleteWorkOrderPayload = VersionedCommand;
+
+/**
+ * 关闭工单。released/doing 提前关闭时 reason 必填；completed 行政归档时可为空。
+ * 必填条件由后端根据事务内重新读取的工单状态判断，不能只依赖 DTO 静态校验。
+ */
+export interface CloseWorkOrderPayload extends VersionedCommand {
+  reason?: string | null;
+}
+
 export interface CreateProductionBatchPayload {
   batchNo?: string | null;
   routeId?: string | null;
@@ -1012,6 +1038,11 @@ export interface UpdateProductionBatchPayload extends VersionedCommand {
   planStartDate?: string | null;
   planEndDate?: string | null;
   remark?: string | null;
+}
+
+/** 取消尚未领料、尚未开工的生产任务；后端同时释放未出库预留并关闭活动需求。 */
+export interface CancelProductionBatchPayload extends VersionedCommand {
+  reason: string;
 }
 
 export interface UpdateBatchStepExecutionPayload extends VersionedCommand {

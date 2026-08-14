@@ -171,7 +171,7 @@
         </el-table-column>
         <el-table-column
           label="操作"
-          width="280"
+          width="330"
           fixed="right"
         >
           <template #default="{ row }">
@@ -220,6 +220,23 @@
               @click="openMaterialOutbound(row)"
               >领料出库</el-button
             >
+            <el-dropdown trigger="click">
+              <el-button
+                link
+                type="primary"
+                :disabled="row.status === 'completed' || row.status === 'cancelled'"
+                >更多</el-button
+              >
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item
+                    :disabled="isRowPending(row.id)"
+                    @click="openBatchCancellation(row)"
+                    >取消任务</el-dropdown-item
+                  >
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </template>
         </el-table-column>
       </el-table>
@@ -306,6 +323,15 @@
       @update:visible="handleMaterialOutboundClose"
       @submit="handleMaterialOutbound"
     />
+
+    <ProductionBatchCancelDialog
+      :visible="batchCancelDialogVisible"
+      :batch="cancellingBatch"
+      :check="batchCancellationCheck"
+      :submitting="batchCancelSubmitting"
+      @update:visible="batchCancelDialogVisible = $event"
+      @confirm="confirmBatchCancellation"
+    />
   </div>
 </template>
 
@@ -318,6 +344,7 @@ import type {
   BatchStepRecordItem,
   CreateProductionBatchPayload,
   ProductionBatchDetail,
+  ProductionBatchCancellationCheck,
   ProductionBatchItem,
   CreateMaterialAllocationsPayload,
   CreateMaterialOutboundPayload,
@@ -345,6 +372,7 @@ import { useProductionMaterials } from './composables/useProductionMaterials';
 import StepAssignmentDialog from './components/StepAssignmentDialog.vue';
 import { useStepAssignments } from './composables/useStepAssignments';
 import { deadlinePresentation, taskNextActionPresentation } from './production-task-presentation';
+import ProductionBatchCancelDialog from './components/ProductionBatchCancelDialog.vue';
 
 defineOptions({ name: 'ProductionTasksPage' });
 
@@ -411,6 +439,10 @@ const assignmentPendingIds = computed(
 );
 const materialAllocationVisible = ref(false);
 const materialOutboundVisible = ref(false);
+const batchCancelDialogVisible = ref(false);
+const batchCancelSubmitting = ref(false);
+const cancellingBatch = ref<ProductionBatchItem | null>(null);
+const batchCancellationCheck = ref<ProductionBatchCancellationCheck | null>(null);
 const materials = useProductionMaterials();
 const materialBatchStatus = ref<ProductionBatchItem['status'] | null>(null);
 const visibleMaterialDemands = computed(() =>
@@ -614,6 +646,19 @@ const stepExecutionErrorFallback = (error: unknown, fallback: string): string =>
 const generateMaterials = async (row: ProductionBatchItem): Promise<void> => {
   if (!beginRow(row.id)) return;
   try {
+    try {
+      await ElMessageBox.confirm(
+        '生成物料需求后，该生产任务将不可再编辑，且本次操作不可撤销。是否继续？',
+        '生成物料需求确认',
+        {
+          confirmButtonText: '确认生成',
+          cancelButtonText: '取消',
+          type: 'warning',
+        },
+      );
+    } catch {
+      return;
+    }
     await productionApi.generateMaterialDemands(row.id, row.version);
     EMessage.success('物料需求已生成');
     await loadTasks();
@@ -758,6 +803,41 @@ const materialErrorFallback = (error: unknown, fallback: string): string => {
     CONCURRENT_MODIFICATION: '数据已被其他操作修改，请刷新后重试',
   };
   return messages[code] ?? fallback;
+};
+
+/* ====== 取消生产任务 ====== */
+const openBatchCancellation = async (row: ProductionBatchItem): Promise<void> => {
+  if (!beginRow(row.id)) return;
+  try {
+    const check = await productionApi.getBatchCancellationCheck(row.id);
+    cancellingBatch.value = { ...row, status: check.batchStatus, version: check.version };
+    batchCancellationCheck.value = check;
+    batchCancelDialogVisible.value = true;
+  } catch (error) {
+    EMessage.error(error, '取消任务影响核对失败');
+  } finally {
+    endRow(row.id);
+  }
+};
+
+const confirmBatchCancellation = async (reason: string): Promise<void> => {
+  const batch = cancellingBatch.value;
+  const check = batchCancellationCheck.value;
+  if (!batch || !check || !beginRow(batch.id)) return;
+  batchCancelSubmitting.value = true;
+  try {
+    await productionApi.cancelBatch(batch.id, { version: check.version, reason });
+    EMessage.success('生产任务已取消，待出库单、物料预留和活动需求已按提示处理');
+    batchCancelDialogVisible.value = false;
+    cancellingBatch.value = null;
+    batchCancellationCheck.value = null;
+    await loadTasks();
+  } catch (error) {
+    EMessage.error(error, '生产任务取消失败');
+  } finally {
+    batchCancelSubmitting.value = false;
+    endRow(batch.id);
+  }
 };
 
 /* ====== 工具函数 ====== */

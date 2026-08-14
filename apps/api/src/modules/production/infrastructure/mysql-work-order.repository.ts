@@ -9,7 +9,6 @@ import type {
   WorkOrderItem,
   WorkOrderOption,
   WorkOrderQuery,
-  WorkOrderStatus,
 } from '@company/contracts';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { writeTransactionalAudit } from '../../../common/audit/transactional-audit-writer.js';
@@ -28,6 +27,21 @@ import {
   WORK_ORDER_SELECT,
   workOrderAudit,
 } from './mysql-production.shared.js';
+
+type WorkOrderBatchSummaryRow = RowDataPacket & {
+  id: number;
+  batch_no: string;
+  status:
+    | 'pending'
+    | 'material_pending'
+    | 'material_assigned'
+    | 'material_outbound'
+    | 'doing'
+    | 'completed'
+    | 'cancelled';
+  planned_quantity: string;
+  completed_quantity: string;
+};
 
 @Injectable()
 export class MysqlWorkOrderRepository {
@@ -66,7 +80,7 @@ export class MysqlWorkOrderRepository {
 
   async listWorkOrderOptions(): Promise<WorkOrderOption[]> {
     const remaining = `(wo.planned_quantity - COALESCE((SELECT SUM(b.planned_quantity) FROM production_batches b WHERE b.work_order_id=wo.id AND b.status<>'cancelled'),0))`;
-    const conditions = [`wo.status='released'`, `${remaining} > 0`];
+    const conditions = [`wo.status IN ('released','doing')`, `${remaining} > 0`];
     const [rows] = await this.pool.query<
       (RowDataPacket & {
         id: number;
@@ -243,31 +257,159 @@ export class MysqlWorkOrderRepository {
     });
   }
 
-  async transition(
-    id: string,
-    action: 'cancel' | 'close',
-    version: number,
-    audit: CommandContext,
-  ): Promise<WorkOrderDetail> {
+  async cancel(id: string, version: number, audit: CommandContext): Promise<WorkOrderDetail> {
     return withTransaction(this.pool, async (connection) => {
-      const before = await findWorkOrder(connection, id);
-      const next: WorkOrderStatus = action === 'cancel' ? 'cancelled' : 'closed';
-      requireWorkOrderTransition(before.status, next);
+      const before = await findWorkOrder(connection, id, true);
+      requireWorkOrderTransition(before.status, 'cancelled');
+      const batches = await this.lockBatchSummaries(connection, id);
+      if (batches.length > 0)
+        throw new ProductionDomainError(
+          'INVALID_STATE',
+          '已有生产批次的工单不能按草稿取消，请核对工单状态',
+        );
       const [result] = await connection.execute<ResultSetHeader>(
-        `UPDATE work_orders SET status=?,version=version+1,updated_by=? WHERE id=? AND version=?`,
-        [next, audit.actorId, id, version],
+        `UPDATE work_orders SET status='cancelled',version=version+1,updated_by=? WHERE id=? AND status='draft' AND version=?`,
+        [audit.actorId, id, version],
       );
       this.assertVersion(result, '工单已被其他操作修改，请刷新后重试');
       await this.audit(
         connection,
         audit,
-        `work-order.${action}`,
+        'work-order.cancel',
         id,
         { status: before.status, version: before.version },
-        { status: next },
+        { status: 'cancelled', version: version + 1 },
       );
       return this.getDetail(connection, id);
     });
+  }
+
+  async complete(id: string, version: number, audit: CommandContext): Promise<WorkOrderDetail> {
+    return withTransaction(this.pool, async (connection) => {
+      const before = await findWorkOrder(connection, id, true);
+      requireWorkOrderTransition(before.status, 'completed');
+      if (before.version !== version)
+        throw new ProductionDomainError(
+          'CONCURRENT_MODIFICATION',
+          '工单已被其他操作修改，请刷新后重试',
+        );
+      const batches = await this.lockBatchSummaries(connection, id);
+      const activeBatches = batches.filter((batch) => batch.status !== 'cancelled');
+      const unfinishedBatches = activeBatches.filter((batch) => batch.status !== 'completed');
+      const completedQuantity = sumCompletedQuantity(activeBatches);
+      if (
+        activeBatches.length === 0 ||
+        unfinishedBatches.length > 0 ||
+        scaledQuantity(completedQuantity) !== scaledQuantity(before.planned_quantity)
+      ) {
+        throw new ProductionDomainError(
+          'WORK_ORDER_COMPLETION_NOT_ALLOWED',
+          '工单尚未达到足量完工条件，请核对所属生产批次',
+          workOrderBatchDetails(before.planned_quantity, completedQuantity, unfinishedBatches),
+        );
+      }
+      const [result] = await connection.execute<ResultSetHeader>(
+        `UPDATE work_orders SET status='completed',version=version+1,updated_by=? WHERE id=? AND status IN ('released','doing') AND version=?`,
+        [audit.actorId, id, version],
+      );
+      this.assertVersion(result, '工单已被其他操作修改，请刷新后重试');
+      await this.audit(
+        connection,
+        audit,
+        'work-order.complete',
+        id,
+        { status: before.status, version: before.version },
+        {
+          status: 'completed',
+          plannedQuantity: before.planned_quantity,
+          completedQuantity,
+          completedBatchCount: activeBatches.length,
+          version: version + 1,
+        },
+      );
+      return this.getDetail(connection, id);
+    });
+  }
+
+  async close(
+    id: string,
+    version: number,
+    reason: string | null,
+    audit: CommandContext,
+  ): Promise<WorkOrderDetail> {
+    return withTransaction(this.pool, async (connection) => {
+      const before = await findWorkOrder(connection, id, true);
+      requireWorkOrderTransition(before.status, 'closed');
+      if (before.version !== version)
+        throw new ProductionDomainError(
+          'CONCURRENT_MODIFICATION',
+          '工单已被其他操作修改，请刷新后重试',
+        );
+      const batches = await this.lockBatchSummaries(connection, id);
+      const activeBatches = batches.filter((batch) => batch.status !== 'cancelled');
+      const unfinishedBatches = activeBatches.filter((batch) => batch.status !== 'completed');
+      const completedQuantity = sumCompletedQuantity(activeBatches);
+      const isEarlyClose = before.status === 'released' || before.status === 'doing';
+      if (isEarlyClose && unfinishedBatches.length > 0)
+        throw new ProductionDomainError(
+          'WORK_ORDER_CLOSE_NOT_ALLOWED',
+          '请先完成或取消所有未结束生产批次',
+          workOrderBatchDetails(before.planned_quantity, completedQuantity, unfinishedBatches),
+        );
+      if (isEarlyClose && !reason)
+        throw new ProductionDomainError('INVALID_INPUT', '提前关闭工单必须填写关闭原因');
+      if (
+        isEarlyClose &&
+        activeBatches.length > 0 &&
+        scaledQuantity(completedQuantity) === scaledQuantity(before.planned_quantity)
+      )
+        throw new ProductionDomainError(
+          'WORK_ORDER_CLOSE_NOT_ALLOWED',
+          '生产数量已足量完成，请先确认工单完工，再执行归档关闭',
+        );
+      const closeType =
+        before.status === 'completed'
+          ? 'completed_archive'
+          : activeBatches.length === 0
+            ? 'unproduced'
+            : 'underproduced';
+      const [result] = await connection.execute<ResultSetHeader>(
+        `UPDATE work_orders SET status='closed',version=version+1,updated_by=? WHERE id=? AND status=? AND version=?`,
+        [audit.actorId, id, before.status, version],
+      );
+      this.assertVersion(result, '工单已被其他操作修改，请刷新后重试');
+      await this.audit(
+        connection,
+        audit,
+        'work-order.close',
+        id,
+        { status: before.status, version: before.version },
+        {
+          status: 'closed',
+          closeType,
+          reason,
+          plannedQuantity: before.planned_quantity,
+          completedQuantity,
+          version: version + 1,
+        },
+      );
+      return this.getDetail(connection, id);
+    });
+  }
+
+  private async lockBatchSummaries(
+    connection: PoolConnection,
+    workOrderId: string,
+  ): Promise<WorkOrderBatchSummaryRow[]> {
+    const [rows] = await connection.query<WorkOrderBatchSummaryRow[]>(
+      `SELECT id,batch_no,status,planned_quantity,completed_quantity
+       FROM production_batches
+       WHERE work_order_id=?
+       ORDER BY id
+       FOR UPDATE`,
+      [workOrderId],
+    );
+    return rows;
   }
 
   private async getDetail(db: Db, id: string): Promise<WorkOrderDetail> {
@@ -308,3 +450,26 @@ export class MysqlWorkOrderRepository {
     });
   }
 }
+
+const scaledQuantity = (value: string): number => Math.round(Number(value) * 10_000);
+
+const sumCompletedQuantity = (batches: WorkOrderBatchSummaryRow[]): string =>
+  (
+    batches.reduce((sum, batch) => sum + scaledQuantity(batch.completed_quantity), 0) / 10_000
+  ).toFixed(4);
+
+const workOrderBatchDetails = (
+  plannedQuantity: string,
+  completedQuantity: string,
+  unfinishedBatches: WorkOrderBatchSummaryRow[],
+): Record<string, unknown> => ({
+  plannedQuantity,
+  completedQuantity,
+  unfinishedBatches: unfinishedBatches.map((batch) => ({
+    id: String(batch.id),
+    batchNo: batch.batch_no,
+    status: batch.status,
+    plannedQuantity: batch.planned_quantity,
+    completedQuantity: batch.completed_quantity,
+  })),
+});

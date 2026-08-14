@@ -15,6 +15,8 @@ import { CREATE_BATCH_IDEMPOTENCY_SCOPE } from '../../application/idempotency/cr
 import { ProductionService } from '../../application/production.service.js';
 import {
   BatchStepRecordParamDto,
+  CancelProductionBatchDto,
+  CloseWorkOrderDto,
   CreateProductionBatchDto,
   CreateWorkOrderDto,
   IdParamDto,
@@ -37,7 +39,7 @@ export class ProductionController {
   workOrders(@Query() query: WorkOrderQueryDto) {
     return this.service.listWorkOrders({ ...query, keyword: query.keyword?.trim() || undefined });
   }
-  // 任务表单工单候选：完整返回全部已下达且仍有可分配余量的工单。
+  // 任务表单工单候选：完整返回全部已下达/生产中且仍有可分配余量的工单。
   // 当前候选规模具有明确小上限，不分页、不截断，前端本地筛选。
   @Get('work-orders/options')
   @RequirePermission([PERMISSIONS.production.tasks.view])
@@ -88,15 +90,25 @@ export class ProductionController {
   ) {
     return this.service.cancelWorkOrder(workOrderId, body.version, audit);
   }
+  @Post('work-orders/:workOrderId/actions/complete')
+  @RequirePermission(PERMISSIONS.production.orders.transition)
+  @AuditInApplication()
+  completeWorkOrder(
+    @Param() { workOrderId }: WorkOrderIdParamDto,
+    @Body() body: VersionedCommandDto,
+    @CurrentCommandContext() audit: CommandContext,
+  ) {
+    return this.service.completeWorkOrder(workOrderId, body.version, audit);
+  }
   @Post('work-orders/:workOrderId/actions/close')
   @RequirePermission(PERMISSIONS.production.orders.transition)
   @AuditInApplication()
   closeWorkOrder(
     @Param() { workOrderId }: WorkOrderIdParamDto,
-    @Body() body: VersionedCommandDto,
+    @Body() body: CloseWorkOrderDto,
     @CurrentCommandContext() audit: CommandContext,
   ) {
-    return this.service.closeWorkOrder(workOrderId, body.version, audit);
+    return this.service.closeWorkOrder(workOrderId, body.version, body.reason ?? null, audit);
   }
   @Get('work-orders/:workOrderId/batches')
   @RequirePermission(PERMISSIONS.production.tasks.view)
@@ -127,6 +139,11 @@ export class ProductionController {
   batch(@Param() { id }: IdParamDto) {
     return this.service.getBatch(id);
   }
+  @Get('batches/:id/cancellation-check')
+  @RequirePermission(PERMISSIONS.production.tasks.view)
+  batchCancellationCheck(@Param() { id }: IdParamDto) {
+    return this.service.getBatchCancellationCheck(id);
+  }
   @Patch('batches/:id')
   @RequirePermission(PERMISSIONS.production.batches.update)
   @AuditInApplication()
@@ -136,6 +153,16 @@ export class ProductionController {
     @CurrentCommandContext() audit: CommandContext,
   ) {
     return this.service.updateBatch(id, body, audit);
+  }
+  @Post('batches/:id/actions/cancel')
+  @RequirePermission(PERMISSIONS.production.batches.transition)
+  @AuditInApplication()
+  cancelBatch(
+    @Param() { id }: IdParamDto,
+    @Body() body: CancelProductionBatchDto,
+    @CurrentCommandContext() audit: CommandContext,
+  ) {
+    return this.service.cancelBatch(id, body.version, body.reason, audit);
   }
   @Patch('batches/:batchId/step-records/:recordId/execution')
   @RequirePermission(PERMISSIONS.production.steps.manageExecution)

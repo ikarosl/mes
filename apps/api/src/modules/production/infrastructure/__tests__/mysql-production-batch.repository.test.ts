@@ -175,6 +175,101 @@ describe('MysqlProductionBatchRepository persistence', () => {
     expect(connection.execute).not.toHaveBeenCalled();
     expect(connection.commit).toHaveBeenCalledOnce();
   });
+
+  it('previews every side effect before a pre-start cancellation', async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce([[{ ...batchRow, status: 'material_assigned' }], []])
+      .mockResolvedValueOnce([
+        [[{ id: 31, outbound_no: 'OUT-001', status: 'pending_picking' }][0]],
+        [],
+      ])
+      .mockResolvedValueOnce([[{ id: 41 }, { id: 42 }], []])
+      .mockResolvedValueOnce([[{ id: 51 }], []]);
+    const repository = new MysqlProductionBatchRepository({ query } as never);
+
+    await expect(repository.getCancellationCheck('21')).resolves.toEqual({
+      productionBatchId: '21',
+      batchStatus: 'material_assigned',
+      version: 2,
+      canCancel: true,
+      blockers: [],
+      activeDemandCount: 1,
+      activeAllocationCount: 2,
+      pendingOutboundCount: 1,
+      pendingOutbounds: [{ id: '31', outboundNo: 'OUT-001' }],
+    });
+  });
+
+  it('blocks cancellation when material has already been outbound', async () => {
+    const connection = transactionConnection();
+    connection.query
+      .mockResolvedValueOnce([[{ ...batchRow, status: 'material_assigned' }], []])
+      .mockResolvedValueOnce([[{ id: 31, outbound_no: 'OUT-001', status: 'completed' }], []])
+      .mockResolvedValueOnce([[{ id: 41 }], []])
+      .mockResolvedValueOnce([[{ id: 51 }], []]);
+    const repository = new MysqlProductionBatchRepository({
+      getConnection: vi.fn().mockResolvedValue(connection),
+    } as never);
+
+    await expect(repository.cancel('21', 2, '计划调整', audit)).rejects.toMatchObject({
+      code: 'BATCH_CANCEL_NOT_ALLOWED',
+      details: {
+        outbounds: [{ id: '31', outboundNo: 'OUT-001', status: 'completed' }],
+      },
+    });
+
+    expect(connection.execute).not.toHaveBeenCalled();
+    expect(connection.rollback).toHaveBeenCalledOnce();
+  });
+
+  it('cancels pending outbounds, allocations, demands and the batch in one transaction', async () => {
+    const connection = transactionConnection();
+    connection.query
+      .mockResolvedValueOnce([[{ ...batchRow, status: 'material_assigned' }], []])
+      .mockResolvedValueOnce([[{ id: 31, outbound_no: 'OUT-001', status: 'pending_picking' }], []])
+      .mockResolvedValueOnce([[{ id: 41 }, { id: 42 }], []])
+      .mockResolvedValueOnce([[{ id: 51 }], []])
+      .mockResolvedValueOnce([[{ ...batchRow, status: 'cancelled', version: 3 }], []])
+      .mockResolvedValueOnce([[], []]);
+    connection.execute.mockResolvedValue([{ affectedRows: 1 }, []]);
+    const repository = new MysqlProductionBatchRepository({
+      getConnection: vi.fn().mockResolvedValue(connection),
+    } as never);
+
+    await expect(repository.cancel('21', 2, '计划调整', audit)).resolves.toMatchObject({
+      status: 'cancelled',
+      version: 3,
+    });
+
+    const mutationSql = connection.execute.mock.calls
+      .slice(0, 4)
+      .map((call) => String(call[0]))
+      .join('\n');
+    expect(mutationSql).toContain('outbound_order');
+    expect(mutationSql).toContain("status='pending_picking'");
+    expect(mutationSql).toContain('production_item_allocation');
+    expect(mutationSql).toContain('production_item_demand');
+    expect(mutationSql).toContain("status IN ('pending','material_pending','material_assigned')");
+    expect(String(connection.execute.mock.calls[4]?.[0])).toContain('INSERT INTO operation_logs');
+    expect(connection.commit).toHaveBeenCalledOnce();
+  });
+
+  it('forbids cancelling a task after material outbound or production start', async () => {
+    for (const status of ['material_outbound', 'doing'] as const) {
+      const connection = transactionConnection();
+      connection.query.mockResolvedValueOnce([[{ ...batchRow, status }], []]);
+      const repository = new MysqlProductionBatchRepository({
+        getConnection: vi.fn().mockResolvedValue(connection),
+      } as never);
+
+      await expect(repository.cancel('21', 2, '计划调整', audit)).rejects.toMatchObject({
+        code: 'INVALID_STATE',
+      });
+      expect(connection.execute).not.toHaveBeenCalled();
+      expect(connection.rollback).toHaveBeenCalledOnce();
+    }
+  });
 });
 
 const transactionConnection = () => ({

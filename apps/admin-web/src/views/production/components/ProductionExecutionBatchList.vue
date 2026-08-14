@@ -103,6 +103,10 @@ defineEmits<{
 
 <style scoped>
 .batch-list {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
   padding: 16px;
   border-right: 1px solid #e5e7eb;
   background: #f9fafb;
@@ -116,6 +120,9 @@ defineEmits<{
   justify-content: space-between;
   gap: 8px;
 }
+.batch-list-heading {
+  flex: 0 0 auto;
+}
 .batch-list-heading strong {
   color: #1f2937;
   font-size: 14px;
@@ -126,8 +133,12 @@ defineEmits<{
 }
 .batch-items {
   display: grid;
+  flex: 1;
+  align-content: start;
   gap: 8px;
+  min-height: 0;
   margin-top: 14px;
+  overflow-y: auto;
 }
 .batch-item {
   display: grid;
@@ -171,6 +182,7 @@ defineEmits<{
   color: var(--el-color-danger);
 }
 .batch-pagination {
+  flex: 0 0 auto;
   justify-content: center;
   margin-top: 14px;
 }

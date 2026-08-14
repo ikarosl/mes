@@ -141,10 +141,10 @@ describe('productionApi', () => {
     });
   });
 
-  it('changes order status via actions endpoint', async () => {
+  it('releases an order via the semantic action endpoint', async () => {
     const { productionApi } = await import('../production');
 
-    await productionApi.changeOrderStatus('1', 'release', 1);
+    await productionApi.releaseOrder('1', 1);
 
     expect(request).toHaveBeenCalledWith({
       url: '/production/work-orders/1/actions/release',
@@ -156,7 +156,7 @@ describe('productionApi', () => {
   it('cancels order via cancel action', async () => {
     const { productionApi } = await import('../production');
 
-    await productionApi.changeOrderStatus('2', 'cancel', 0);
+    await productionApi.cancelOrder('2', 0);
 
     expect(request).toHaveBeenCalledWith({
       url: '/production/work-orders/2/actions/cancel',
@@ -168,12 +168,40 @@ describe('productionApi', () => {
   it('closes order via close action', async () => {
     const { productionApi } = await import('../production');
 
-    await productionApi.changeOrderStatus('3', 'close', 2);
+    await productionApi.closeOrder('3', { version: 2, reason: '计划终止' });
 
     expect(request).toHaveBeenCalledWith({
       url: '/production/work-orders/3/actions/close',
       method: 'POST',
+      data: { version: 2, reason: '计划终止' },
+    });
+  });
+
+  it('completes an order only through the explicit completion endpoint', async () => {
+    const { productionApi } = await import('../production');
+
+    await productionApi.completeOrder('3', 2);
+
+    expect(request).toHaveBeenCalledWith({
+      url: '/production/work-orders/3/actions/complete',
+      method: 'POST',
       data: { version: 2 },
+    });
+  });
+
+  it('loads the cancellation impact and cancels a production task with a reason', async () => {
+    const { productionApi } = await import('../production');
+
+    await productionApi.getBatchCancellationCheck('8');
+    await productionApi.cancelBatch('8', { version: 4, reason: '计划调整' });
+
+    expect(request).toHaveBeenNthCalledWith(1, {
+      url: '/production/batches/8/cancellation-check',
+    });
+    expect(request).toHaveBeenNthCalledWith(2, {
+      url: '/production/batches/8/actions/cancel',
+      method: 'POST',
+      data: { version: 4, reason: '计划调整' },
     });
   });
 

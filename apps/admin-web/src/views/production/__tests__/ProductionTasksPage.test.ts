@@ -12,6 +12,8 @@ const {
   listBatches,
   listOrders,
   generateMaterialDemands,
+  getBatchCancellationCheck,
+  cancelBatch,
   productOptions,
   routeOptions,
   userOptions,
@@ -23,6 +25,8 @@ const {
   listBatches: vi.fn(),
   listOrders: vi.fn(),
   generateMaterialDemands: vi.fn(),
+  getBatchCancellationCheck: vi.fn(),
+  cancelBatch: vi.fn(),
   productOptions: vi.fn(),
   routeOptions: vi.fn(),
   userOptions: vi.fn(),
@@ -42,7 +46,13 @@ vi.mock('../../../api/product', () => ({
   },
 }));
 vi.mock('../../../api/production', () => ({
-  productionApi: { listBatches, listOrders, generateMaterialDemands },
+  productionApi: {
+    listBatches,
+    listOrders,
+    generateMaterialDemands,
+    getBatchCancellationCheck,
+    cancelBatch,
+  },
 }));
 vi.mock('../../../utils/route-message-box', () => ({
   RouteMessageBox: { confirm },
@@ -65,6 +75,8 @@ const batchRow = {
   productCode: 'P001',
   productName: '环形器',
   plannedQuantity: 100,
+  completedQuantity: 0,
+  qualifiedQuantity: 0,
   routeId: null,
   routeCode: null,
   status: 'pending',
@@ -72,10 +84,20 @@ const batchRow = {
   version: 0,
 };
 
+const productionBatchCancelDialogStub = {
+  name: 'ProductionBatchCancelDialog',
+  props: ['visible', 'batch', 'check', 'submitting'],
+  emits: ['update:visible', 'confirm'],
+  template: '<div />',
+};
+
 describe('ProductionTasksPage', () => {
   const mountPage = () =>
     mount(ProductionTasksPage, {
-      global: { plugins: [ElementPlus, router, createPinia()] },
+      global: {
+        plugins: [ElementPlus, router, createPinia()],
+        stubs: { ProductionBatchCancelDialog: productionBatchCancelDialogStub },
+      },
     });
 
   /** 放入 KeepAlive：让 onActivated 首次挂载即触发，验证页面激活的候选刷新行为 */
@@ -85,7 +107,12 @@ describe('ProductionTasksPage', () => {
         components: { KeepAlive, ProductionTasksPage },
         template: '<KeepAlive><ProductionTasksPage /></KeepAlive>',
       },
-      { global: { plugins: [ElementPlus, router, createPinia()] } },
+      {
+        global: {
+          plugins: [ElementPlus, router, createPinia()],
+          stubs: { ProductionBatchCancelDialog: productionBatchCancelDialogStub },
+        },
+      },
     );
 
   beforeEach(() => {
@@ -95,6 +122,20 @@ describe('ProductionTasksPage', () => {
     listOrders.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 50 });
     generateMaterialDemands.mockReset();
     generateMaterialDemands.mockResolvedValue(undefined);
+    getBatchCancellationCheck.mockReset();
+    getBatchCancellationCheck.mockResolvedValue({
+      productionBatchId: 'b1',
+      batchStatus: 'material_assigned',
+      version: 2,
+      canCancel: true,
+      blockers: [],
+      activeDemandCount: 2,
+      activeAllocationCount: 2,
+      pendingOutboundCount: 1,
+      pendingOutbounds: [{ id: 'ob1', outboundNo: 'OUT-001' }],
+    });
+    cancelBatch.mockReset();
+    cancelBatch.mockResolvedValue(undefined);
     productOptions.mockReset();
     productOptions.mockResolvedValue([]);
     routeOptions.mockReset();
@@ -104,6 +145,7 @@ describe('ProductionTasksPage', () => {
     technicalFiles.mockReset();
     technicalFiles.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 100 });
     confirm.mockReset();
+    confirm.mockResolvedValue(undefined);
   });
 
   it('renders the query panel', () => {
@@ -131,6 +173,30 @@ describe('ProductionTasksPage', () => {
     expect(wrapper.findComponent({ name: 'PaginationFooter' }).exists()).toBe(true);
   });
 
+  it('shows cancellation effects and submits the server check version with a reason', async () => {
+    listBatches.mockResolvedValue({ items: [batchRow], total: 1, page: 1, pageSize: 10 });
+    const wrapper = mountPage();
+    await flushPromises();
+    const vm = wrapper.vm as unknown as {
+      openBatchCancellation: (row: typeof batchRow) => Promise<void>;
+    };
+
+    await vm.openBatchCancellation(batchRow);
+    await flushPromises();
+
+    const dialog = wrapper.findComponent({ name: 'ProductionBatchCancelDialog' });
+    expect(dialog.props('check')).toMatchObject({
+      activeDemandCount: 2,
+      activeAllocationCount: 2,
+      pendingOutboundCount: 1,
+    });
+    dialog.vm.$emit('confirm', '计划调整');
+    await flushPromises();
+
+    expect(cancelBatch).toHaveBeenCalledWith('b1', { version: 2, reason: '计划调整' });
+    expect(success).toHaveBeenCalledWith(expect.stringContaining('生产任务已取消'));
+  });
+
   it('requests the target page when the pagination page changes', async () => {
     const wrapper = mountPage();
     await flushPromises();
@@ -153,7 +219,6 @@ describe('ProductionTasksPage', () => {
   it('disables the generate-materials button while the write is pending and submits once', async () => {
     // 行必须持续存在：写操作成功后页面会重新加载列表
     listBatches.mockResolvedValue({ items: [batchRow], total: 1, page: 1, pageSize: 10 });
-    // generateMaterials 无确认框：直接调用 generateMaterialDemands，以在途请求作为 pending 窗口
     let resolveDemands!: (value: unknown) => void;
     generateMaterialDemands.mockReturnValue(new Promise((resolve) => (resolveDemands = resolve)));
 
@@ -168,12 +233,34 @@ describe('ProductionTasksPage', () => {
     await findGenerate()!.trigger('click');
     await nextTick();
     expect(findGenerate()!.attributes('disabled')).toBeDefined(); // 写操作在途：按钮禁用
+    expect(confirm).toHaveBeenCalledWith(
+      expect.stringContaining('该生产任务将不可再编辑'),
+      '生成物料需求确认',
+      expect.objectContaining({ confirmButtonText: '确认生成', type: 'warning' }),
+    );
     expect(generateMaterialDemands).toHaveBeenCalledTimes(1);
     expect(generateMaterialDemands).toHaveBeenCalledWith('b1', 0);
 
     resolveDemands(undefined);
     await flushPromises();
     expect(findGenerate()!.attributes('disabled')).toBeUndefined(); // 写操作结束释放
+  });
+
+  it('does not generate material demands when the irreversible-action warning is cancelled', async () => {
+    listBatches.mockResolvedValue({ items: [batchRow], total: 1, page: 1, pageSize: 10 });
+    confirm.mockRejectedValueOnce('cancel');
+    const wrapper = mountPage();
+    await flushPromises();
+
+    const generateButton = wrapper
+      .findAll('button')
+      .find((button) => button.text().trim() === '生成物料');
+    expect(generateButton).toBeDefined();
+    await generateButton!.trigger('click');
+    await flushPromises();
+
+    expect(generateMaterialDemands).not.toHaveBeenCalled();
+    expect(generateButton!.attributes('disabled')).toBeUndefined();
   });
 
   it('expanding the 负责人 filter refreshes only the user options source', async () => {
@@ -264,7 +351,10 @@ const intentSnapshot = {
 describe('ProductionTasksPage task dialog close guard', () => {
   const mountPage = () =>
     mount(ProductionTasksPage, {
-      global: { plugins: [ElementPlus, router, createPinia()] },
+      global: {
+        plugins: [ElementPlus, router, createPinia()],
+        stubs: { ProductionBatchCancelDialog: productionBatchCancelDialogStub },
+      },
     });
   const guardVm = (wrapper: VueWrapper) => wrapper.vm as unknown as TaskGuardVm;
 

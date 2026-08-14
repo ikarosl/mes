@@ -3,8 +3,8 @@ import { ProductionDomainError } from './production.errors.js';
 
 const workOrderTransitions: Readonly<Record<WorkOrderStatus, readonly WorkOrderStatus[]>> = {
   draft: ['released', 'cancelled'],
-  released: ['doing', 'cancelled'],
-  doing: ['completed', 'cancelled'],
+  released: ['doing', 'completed', 'closed'],
+  doing: ['completed', 'closed'],
   completed: ['closed'],
   cancelled: [],
   closed: [],
@@ -15,8 +15,8 @@ const batchTransitions: Readonly<Record<ProductionBatchStatus, readonly Producti
     pending: ['material_pending', 'cancelled'],
     material_pending: ['material_assigned', 'cancelled'],
     material_assigned: ['material_outbound', 'cancelled'],
-    material_outbound: ['doing', 'cancelled'],
-    doing: ['completed', 'cancelled'],
+    material_outbound: ['doing'],
+    doing: ['completed'],
     completed: [],
     cancelled: [],
   };

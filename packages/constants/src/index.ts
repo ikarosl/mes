@@ -109,7 +109,6 @@ export const PERMISSIONS = {
       confirm: 'warehouse:returns:confirm',
       cancel: 'warehouse:returns:cancel',
     },
-    scraps: { view: 'warehouse:scraps:view' },
     stockChecks: {
       view: 'warehouse:stock-checks:view',
       create: 'warehouse:stock-checks:create',

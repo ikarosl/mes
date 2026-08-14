@@ -7,6 +7,7 @@ import type {
   CreateProductionBatchPayload,
   PageResult,
   ProductionBatchDetail,
+  ProductionBatchCancellationCheck,
   ProductionBatchItem,
   ProductionBatchQuery,
   UpdateBatchStepExecutionPayload,
@@ -35,6 +36,11 @@ import {
   stepAudit,
   type StepRow,
 } from './mysql-production.shared.js';
+
+import {
+  buildBatchCancellationCheck,
+  loadBatchCancellationState,
+} from './mysql-production-batch-cancellation.js';
 
 @Injectable()
 export class MysqlProductionBatchRepository {
@@ -84,6 +90,12 @@ export class MysqlProductionBatchRepository {
     return this.getDetail(this.pool, id);
   }
 
+  async getCancellationCheck(id: string): Promise<ProductionBatchCancellationCheck> {
+    const batch = await findBatch(this.pool, id);
+    const state = await loadBatchCancellationState(this.pool, id, false);
+    return buildBatchCancellationCheck(id, batch, state);
+  }
+
   async listForWorkOrder(workOrderId: string): Promise<ProductionBatchItem[]> {
     await findWorkOrder(this.pool, workOrderId);
     return this.listForWorkOrderIn(this.pool, workOrderId);
@@ -104,8 +116,11 @@ export class MysqlProductionBatchRepository {
   ): Promise<T> {
     return withTransaction(this.pool, async (connection) => {
       const order = await findWorkOrder(connection, workOrderId, true);
-      if (order.status !== 'released')
-        throw new ProductionDomainError('INVALID_STATE', '只有已下达工单可以创建生产批次');
+      if (order.status !== 'released' && order.status !== 'doing')
+        throw new ProductionDomainError(
+          'INVALID_STATE',
+          '只有已下达或生产中的工单可以创建生产批次',
+        );
       return action(String(order.product_id));
     });
   }
@@ -119,8 +134,11 @@ export class MysqlProductionBatchRepository {
   ): Promise<ProductionBatchDetail> {
     return withTransaction(this.pool, async (connection) => {
       const order = await findWorkOrder(connection, workOrderId, true);
-      if (order.status !== 'released')
-        throw new ProductionDomainError('INVALID_STATE', '只有已下达工单可以创建生产批次');
+      if (order.status !== 'released' && order.status !== 'doing')
+        throw new ProductionDomainError(
+          'INVALID_STATE',
+          '只有已下达或生产中的工单可以创建生产批次',
+        );
       const batchNo = payload.batchNo ?? (await this.nextBatchNo(connection));
       const [[duplicate]] = await connection.query<RowDataPacket[]>(
         'SELECT id FROM production_batches WHERE work_order_id=? AND batch_no=? FOR UPDATE',
@@ -233,6 +251,77 @@ export class MysqlProductionBatchRepository {
         batchAudit(before),
         payload,
       );
+      return this.getDetail(connection, id);
+    });
+  }
+
+  async cancel(
+    id: string,
+    version: number,
+    reason: string,
+    audit: CommandContext,
+  ): Promise<ProductionBatchDetail> {
+    return withTransaction(this.pool, async (connection) => {
+      const before = await findBatch(connection, id, true);
+      if (before.status === 'cancelled') return this.getDetail(connection, id);
+      requireBatchTransition(before.status, 'cancelled');
+      if (before.version !== version)
+        throw new ProductionDomainError(
+          'CONCURRENT_MODIFICATION',
+          '生产任务已被其他操作修改，请刷新后重试',
+        );
+
+      const cancellationState = await loadBatchCancellationState(connection, id, true);
+      const confirmedOutbounds = cancellationState.outbounds.filter(
+        (outbound) => outbound.status !== 'pending_picking',
+      );
+      if (confirmedOutbounds.length > 0)
+        throw new ProductionDomainError(
+          'BATCH_CANCEL_NOT_ALLOWED',
+          '生产任务已有物料出库事实，不能取消',
+          {
+            outbounds: confirmedOutbounds.map((outbound) => ({
+              id: String(outbound.id),
+              outboundNo: outbound.outbound_no,
+              status: outbound.status,
+            })),
+          },
+        );
+
+      const pendingOutboundIds = cancellationState.outbounds.map((outbound) => String(outbound.id));
+      await connection.execute(
+        `UPDATE outbound_order
+         SET status='cancelled',version=version+1,updated_by=?
+         WHERE production_batch_id=? AND status='pending_picking'`,
+        [audit.actorId, id],
+      );
+      await connection.execute(
+        `UPDATE production_item_allocation
+         SET allocation_status='cancelled',version=version+1,updated_by=?
+         WHERE production_batch_id=? AND allocation_status='active'`,
+        [audit.actorId, id],
+      );
+      await connection.execute(
+        `UPDATE production_item_demand
+         SET business_status='cancelled',version=version+1,updated_by=?
+         WHERE production_batch_id=? AND business_status='active'`,
+        [audit.actorId, id],
+      );
+      const [updated] = await connection.execute<ResultSetHeader>(
+        `UPDATE production_batches
+         SET status='cancelled',version=version+1,updated_by=?
+         WHERE id=? AND status IN ('pending','material_pending','material_assigned') AND version=?`,
+        [audit.actorId, id, version],
+      );
+      this.assertVersion(updated, '生产任务已被其他操作修改，请刷新后重试');
+      await this.audit(connection, audit, 'production-batch.cancel', id, batchAudit(before), {
+        status: 'cancelled',
+        reason,
+        cancelledPendingOutboundIds: pendingOutboundIds,
+        cancelledAllocationCount: cancellationState.allocationIds.length,
+        cancelledDemandCount: cancellationState.demandIds.length,
+        version: version + 1,
+      });
       return this.getDetail(connection, id);
     });
   }

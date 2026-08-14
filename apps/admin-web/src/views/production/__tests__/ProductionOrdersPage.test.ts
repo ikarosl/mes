@@ -11,7 +11,11 @@ import ProductionOrdersPage from '../ProductionOrdersPage.vue';
 const {
   listOrders,
   listOrderBatches,
-  changeOrderStatus,
+  getOrder,
+  releaseOrder,
+  cancelOrder,
+  completeOrder,
+  closeOrder,
   confirm,
   success,
   error,
@@ -21,7 +25,11 @@ const {
 } = vi.hoisted(() => ({
   listOrders: vi.fn(),
   listOrderBatches: vi.fn(),
-  changeOrderStatus: vi.fn(),
+  getOrder: vi.fn(),
+  releaseOrder: vi.fn(),
+  cancelOrder: vi.fn(),
+  completeOrder: vi.fn(),
+  closeOrder: vi.fn(),
   confirm: vi.fn(),
   success: vi.fn(),
   error: vi.fn(),
@@ -39,7 +47,15 @@ vi.mock('../../../api/product', () => ({
   },
 }));
 vi.mock('../../../api/production', () => ({
-  productionApi: { listOrders, listOrderBatches, changeOrderStatus },
+  productionApi: {
+    listOrders,
+    listOrderBatches,
+    getOrder,
+    releaseOrder,
+    cancelOrder,
+    completeOrder,
+    closeOrder,
+  },
 }));
 vi.mock('../../../utils/route-message-box', () => ({
   RouteMessageBox: { confirm },
@@ -69,10 +85,20 @@ const orderRow = {
   version: 0,
 };
 
+const workOrderTransitionDialogStub = {
+  name: 'WorkOrderTransitionDialog',
+  props: ['visible', 'mode', 'order', 'submitting'],
+  emits: ['update:visible', 'confirm'],
+  template: '<div />',
+};
+
 describe('ProductionOrdersPage', () => {
   const mountPage = () =>
     mount(ProductionOrdersPage, {
-      global: { plugins: [ElementPlus, router, createPinia()] },
+      global: {
+        plugins: [ElementPlus, router, createPinia()],
+        stubs: { WorkOrderTransitionDialog: workOrderTransitionDialogStub },
+      },
     });
 
   beforeEach(() => {
@@ -80,8 +106,16 @@ describe('ProductionOrdersPage', () => {
     listOrders.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 10 });
     listOrderBatches.mockReset();
     listOrderBatches.mockResolvedValue([]);
-    changeOrderStatus.mockReset();
-    changeOrderStatus.mockResolvedValue(undefined);
+    getOrder.mockReset();
+    getOrder.mockResolvedValue({ ...orderRow, unit: '个', batches: [] });
+    releaseOrder.mockReset();
+    releaseOrder.mockResolvedValue(undefined);
+    cancelOrder.mockReset();
+    cancelOrder.mockResolvedValue(undefined);
+    completeOrder.mockReset();
+    completeOrder.mockResolvedValue(undefined);
+    closeOrder.mockReset();
+    closeOrder.mockResolvedValue(undefined);
     confirm.mockReset();
     productOptions.mockReset();
     productOptions.mockResolvedValue([]);
@@ -204,13 +238,54 @@ describe('ProductionOrdersPage', () => {
     await findRelease()!.trigger('click');
     await nextTick();
     expect(findRelease()!.attributes('disabled')).toBeDefined(); // 确认框期间行内写操作被占用
-    expect(changeOrderStatus).not.toHaveBeenCalled();
+    expect(releaseOrder).not.toHaveBeenCalled();
 
     confirmResolve('confirm');
     await flushPromises();
-    expect(changeOrderStatus).toHaveBeenCalledTimes(1);
-    expect(changeOrderStatus).toHaveBeenCalledWith('o1', 'release', 0);
+    expect(releaseOrder).toHaveBeenCalledTimes(1);
+    expect(releaseOrder).toHaveBeenCalledWith('o1', 0);
     expect(findRelease()!.attributes('disabled')).toBeUndefined(); // 写操作结束释放
+  });
+
+  it('keeps cancel, completion and close actions aligned with the work-order state machine', () => {
+    const wrapper = mountPage();
+    const vm = wrapper.vm as unknown as {
+      canCancelOrder: (row: typeof orderRow) => boolean;
+      canCompleteOrder: (row: typeof orderRow) => boolean;
+      canCloseOrder: (row: typeof orderRow) => boolean;
+    };
+
+    expect(vm.canCancelOrder({ ...orderRow, status: 'draft' })).toBe(true);
+    expect(vm.canCancelOrder({ ...orderRow, status: 'released' })).toBe(false);
+    expect(vm.canCancelOrder({ ...orderRow, status: 'doing' })).toBe(false);
+    expect(vm.canCompleteOrder({ ...orderRow, status: 'released' })).toBe(true);
+    expect(vm.canCompleteOrder({ ...orderRow, status: 'doing' })).toBe(true);
+    expect(vm.canCloseOrder({ ...orderRow, status: 'released' })).toBe(true);
+    expect(vm.canCloseOrder({ ...orderRow, status: 'completed' })).toBe(true);
+  });
+
+  it('submits explicit completion and early-close commands from the review dialog', async () => {
+    const released = { ...orderRow, status: 'released', version: 3 };
+    getOrder.mockResolvedValue({ ...released, unit: '个', batches: [] });
+    const wrapper = mountPage();
+    const vm = wrapper.vm as unknown as {
+      openWorkOrderTransition: (
+        row: typeof released,
+        mode: 'complete' | 'early-close' | 'archive',
+      ) => Promise<void>;
+      confirmWorkOrderTransition: (value: {
+        mode: 'complete' | 'early-close' | 'archive';
+        reason: string | null;
+      }) => Promise<void>;
+    };
+
+    await vm.openWorkOrderTransition(released, 'complete');
+    await vm.confirmWorkOrderTransition({ mode: 'complete', reason: null });
+    expect(completeOrder).toHaveBeenCalledWith('o1', 3);
+
+    await vm.openWorkOrderTransition(released, 'early-close');
+    await vm.confirmWorkOrderTransition({ mode: 'early-close', reason: '客户取消' });
+    expect(closeOrder).toHaveBeenCalledWith('o1', { version: 3, reason: '客户取消' });
   });
 });
 
@@ -233,7 +308,10 @@ const intentSnapshot = {
 describe('ProductionOrdersPage batch dialog close guard', () => {
   const mountPage = () =>
     mount(ProductionOrdersPage, {
-      global: { plugins: [ElementPlus, router, createPinia()] },
+      global: {
+        plugins: [ElementPlus, router, createPinia()],
+        stubs: { WorkOrderTransitionDialog: workOrderTransitionDialogStub },
+      },
     });
   const guardVm = (wrapper: ReturnType<typeof mountPage>) => wrapper.vm as unknown as GuardVm;
 

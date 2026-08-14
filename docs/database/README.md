@@ -47,8 +47,8 @@ production_batches
 
 | 流程位置 | 设计表 | 事实/职责 | 权威定义 | 当前实现状态 |
 | --- | --- | --- | --- | --- |
-| 生产计划 | `work_orders` | 生产工单可变聚合 | [产品主数据与生产批次](30-production-inventory/10-master-data-and-batches.md) | 已实现 |
-| 生产计划 | `production_batches` | 工单下的生产执行批次 | [产品主数据与生产批次](30-production-inventory/10-master-data-and-batches.md) | 已实现 |
+| 生产计划 | `work_orders` | 生产工单可变聚合 | [产品主数据与生产批次](30-production-inventory/10-master-data-and-batches.md) | 已实现下达、草稿取消、开工联动、显式完工、提前关闭和归档关闭 |
+| 生产计划 | `production_batches` | 工单下的生产执行批次 | [产品主数据与生产批次](30-production-inventory/10-master-data-and-batches.md) | 已实现生产中工单继续拆批及未开工、未出库任务取消；已出库/开工禁止取消 |
 | 工序执行 | `batch_step_records` | 某批次 × 某工序的可变执行节点 | [生产报工、追溯与质量边界](40-production-traceability-quality.md) | 已实现派工、开工、报工与工序数量状态闭环 |
 | 报工事实 | `batch_step_reports` | 每次报工、冲销和更正的不可变事实 | [生产报工、追溯与质量边界](40-production-traceability-quality.md) | 已实现；报废补产按首工序重投并逐工序放行 |
 | 异常审批 | `batch_step_abnormal_dispositions` | 每次有效异常报工的独立审批处置单 | [生产报工、追溯与质量边界](40-production-traceability-quality.md) | 返工/报废审批已实现；驳回并更正尚待按新语义改造 |

@@ -4,6 +4,7 @@ import type {
   CreateProductionBatchPayload,
   CreateWorkOrderPayload,
   ProductionBatchDetail,
+  ProductionBatchCancellationCheck,
   ProductionBatchItem,
   ProductionBatchQuery,
   UpdateProductionBatchPayload,
@@ -55,6 +56,9 @@ export class ProductionService {
   async getBatch(id: string) {
     return this.enrichBatchDetail(await this.production.getBatch(id));
   }
+  getBatchCancellationCheck(id: string): Promise<ProductionBatchCancellationCheck> {
+    return this.production.getBatchCancellationCheck(id);
+  }
   async listWorkOrderBatches(id: string) {
     return this.enrichBatches(await this.production.listWorkOrderBatches(id));
   }
@@ -92,13 +96,14 @@ export class ProductionService {
     return this.enrichWorkOrder(workOrder);
   }
   async cancelWorkOrder(id: string, version: number, audit: CommandContext) {
-    return this.enrichWorkOrder(
-      await this.production.transitionWorkOrder(id, 'cancel', version, audit),
-    );
+    return this.enrichWorkOrder(await this.production.cancelWorkOrder(id, version, audit));
   }
-  async closeWorkOrder(id: string, version: number, audit: CommandContext) {
+  async completeWorkOrder(id: string, version: number, audit: CommandContext) {
+    return this.enrichWorkOrder(await this.production.completeWorkOrder(id, version, audit));
+  }
+  async closeWorkOrder(id: string, version: number, reason: string | null, audit: CommandContext) {
     return this.enrichWorkOrder(
-      await this.production.transitionWorkOrder(id, 'close', version, audit),
+      await this.production.closeWorkOrder(id, version, reason?.trim() || null, audit),
     );
   }
 
@@ -172,6 +177,14 @@ export class ProductionService {
     this.assertPlanDates(payload.planStartDate, payload.planEndDate);
     return this.enrichBatchDetail(
       await this.production.updateBatch(id, this.cleanBatchUpdate(payload), audit),
+    );
+  }
+  async cancelBatch(id: string, version: number, reason: string, audit: CommandContext) {
+    const normalizedReason = reason.trim();
+    if (!normalizedReason)
+      throw new ProductionDomainError('INVALID_INPUT', '取消生产任务必须填写原因');
+    return this.enrichBatchDetail(
+      await this.production.cancelBatch(id, version, normalizedReason, audit),
     );
   }
   async generateMaterialDemands(id: string, version: number, audit: CommandContext) {

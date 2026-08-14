@@ -83,15 +83,22 @@ describeMysql('Production execution MySQL transactions', () => {
       expect(started.startedAt).not.toBeNull();
 
       const [[row]] = await pool.query<
-        (RowDataPacket & { batch_started_at: Date | null; step_started_at: Date | null })[]
+        (RowDataPacket & {
+          batch_started_at: Date | null;
+          step_started_at: Date | null;
+          work_order_status: string;
+        })[]
       >(
-        `SELECT b.started_at batch_started_at,s.started_at step_started_at
-         FROM production_batches b JOIN batch_step_records s ON s.production_batch_id=b.id
+        `SELECT b.started_at batch_started_at,s.started_at step_started_at,wo.status work_order_status
+         FROM production_batches b
+         JOIN batch_step_records s ON s.production_batch_id=b.id
+         JOIN work_orders wo ON wo.id=b.work_order_id
          WHERE b.id=? AND s.id=?`,
         [fixture.batchId, fixture.firstStepRecordId],
       );
       expect(row?.batch_started_at).not.toBeNull();
       expect(row?.step_started_at).not.toBeNull();
+      expect(row?.work_order_status).toBe('doing');
       expect(await auditCount(pool, `${fixture.token}-start`, 'production-step.start')).toBe(1);
     } finally {
       await cleanup(pool, fixture);

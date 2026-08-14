@@ -275,10 +275,155 @@ describe('MysqlWorkOrderRepository data ownership', () => {
       3,
     ]);
   });
+
+  it('only cancels draft work orders without production batches', async () => {
+    const connection = transactionConnection();
+    connection.query
+      .mockResolvedValueOnce([[workOrderRow], []])
+      .mockResolvedValueOnce([[], []])
+      .mockResolvedValueOnce([[{ ...workOrderRow, status: 'cancelled', version: 4 }], []])
+      .mockResolvedValueOnce([[], []]);
+    connection.execute.mockResolvedValue([{ affectedRows: 1 }, []]);
+    const repository = new MysqlWorkOrderRepository({
+      getConnection: vi.fn().mockResolvedValue(connection),
+    } as never);
+
+    await expect(repository.cancel('6', 3, audit)).resolves.toMatchObject({
+      status: 'cancelled',
+      version: 4,
+    });
+
+    expect(String(connection.execute.mock.calls[0]?.[0])).toContain("status='draft'");
+    expect(String(connection.execute.mock.calls[1]?.[0])).toContain('INSERT INTO operation_logs');
+    expect(connection.commit).toHaveBeenCalledOnce();
+  });
+
+  it('does not treat cancellation as an early-close shortcut after release', async () => {
+    const connection = transactionConnection();
+    connection.query.mockResolvedValueOnce([[{ ...workOrderRow, status: 'released' }], []]);
+    const repository = new MysqlWorkOrderRepository({
+      getConnection: vi.fn().mockResolvedValue(connection),
+    } as never);
+
+    await expect(repository.cancel('6', 3, audit)).rejects.toMatchObject({ code: 'INVALID_STATE' });
+    expect(connection.execute).not.toHaveBeenCalled();
+    expect(connection.rollback).toHaveBeenCalledOnce();
+  });
+
+  it('completes only after all active batches finish the exact planned quantity', async () => {
+    const releasedOrder = { ...workOrderRow, status: 'released', version: 3 };
+    const connection = transactionConnection();
+    connection.query
+      .mockResolvedValueOnce([[releasedOrder], []])
+      .mockResolvedValueOnce([
+        [
+          {
+            id: 21,
+            batch_no: 'B-001',
+            status: 'completed',
+            planned_quantity: '60.0000',
+            completed_quantity: '60.0000',
+          },
+          {
+            id: 22,
+            batch_no: 'B-002',
+            status: 'completed',
+            planned_quantity: '40.0000',
+            completed_quantity: '40.0000',
+          },
+        ],
+        [],
+      ])
+      .mockResolvedValueOnce([[{ ...releasedOrder, status: 'completed', version: 4 }], []])
+      .mockResolvedValueOnce([[], []]);
+    connection.execute.mockResolvedValue([{ affectedRows: 1 }, []]);
+    const repository = new MysqlWorkOrderRepository({
+      getConnection: vi.fn().mockResolvedValue(connection),
+    } as never);
+
+    await expect(repository.complete('6', 3, audit)).resolves.toMatchObject({
+      status: 'completed',
+      version: 4,
+    });
+
+    expect(String(connection.execute.mock.calls[0]?.[0])).toContain("status='completed'");
+    expect(String(connection.execute.mock.calls[1]?.[0])).toContain('INSERT INTO operation_logs');
+    expect(connection.commit).toHaveBeenCalledOnce();
+  });
+
+  it('returns unfinished batch details instead of completing the work order', async () => {
+    const connection = transactionConnection();
+    connection.query
+      .mockResolvedValueOnce([[{ ...workOrderRow, status: 'doing' }], []])
+      .mockResolvedValueOnce([
+        [
+          {
+            id: 21,
+            batch_no: 'B-001',
+            status: 'doing',
+            planned_quantity: '100.0000',
+            completed_quantity: '80.0000',
+          },
+        ],
+        [],
+      ]);
+    const repository = new MysqlWorkOrderRepository({
+      getConnection: vi.fn().mockResolvedValue(connection),
+    } as never);
+
+    await expect(repository.complete('6', 3, audit)).rejects.toMatchObject({
+      code: 'WORK_ORDER_COMPLETION_NOT_ALLOWED',
+      details: {
+        plannedQuantity: '100.0000',
+        completedQuantity: '80.0000',
+        unfinishedBatches: [{ id: '21', batchNo: 'B-001', status: 'doing' }],
+      },
+    });
+    expect(connection.execute).not.toHaveBeenCalled();
+    expect(connection.rollback).toHaveBeenCalledOnce();
+  });
+
+  it('requires an early-close reason and rejects unfinished batches', async () => {
+    const repositoryForReason = new MysqlWorkOrderRepository({
+      getConnection: vi.fn().mockResolvedValue(
+        transactionConnectionWithQueries([
+          [[{ ...workOrderRow, status: 'released' }], []],
+          [[], []],
+        ]),
+      ),
+    } as never);
+    await expect(repositoryForReason.close('6', 3, null, audit)).rejects.toMatchObject({
+      code: 'INVALID_INPUT',
+    });
+
+    const unfinishedConnection = transactionConnectionWithQueries([
+      [[{ ...workOrderRow, status: 'doing' }], []],
+      [
+        [
+          {
+            id: 21,
+            batch_no: 'B-001',
+            status: 'doing',
+            planned_quantity: '100.0000',
+            completed_quantity: '20.0000',
+          },
+        ],
+        [],
+      ],
+    ]);
+    const repositoryForBatches = new MysqlWorkOrderRepository({
+      getConnection: vi.fn().mockResolvedValue(unfinishedConnection),
+    } as never);
+    await expect(repositoryForBatches.close('6', 3, '需求终止', audit)).rejects.toMatchObject({
+      code: 'WORK_ORDER_CLOSE_NOT_ALLOWED',
+      details: { unfinishedBatches: [{ id: '21', batchNo: 'B-001', status: 'doing' }] },
+    });
+    expect(unfinishedConnection.execute).not.toHaveBeenCalled();
+  });
 });
 
 describe('MysqlWorkOrderRepository work-order options', () => {
-  it('returns only released work orders that still have remaining quantity', async () => {
+  it('returns released or doing work orders that still have remaining quantity', async () => {
     const query = vi.fn().mockResolvedValue([[], []]);
     const repository = new MysqlWorkOrderRepository({ query } as never);
 
@@ -286,7 +431,7 @@ describe('MysqlWorkOrderRepository work-order options', () => {
 
     const sql = String(query.mock.calls[0]?.[0]);
     expect(sql).toContain('FROM work_orders wo');
-    expect(sql).toContain("wo.status='released'");
+    expect(sql).toContain("wo.status IN ('released','doing')");
     expect(sql).toContain('> 0');
   });
 
@@ -340,6 +485,14 @@ const transactionConnection = () => ({
   rollback: vi.fn(),
   release: vi.fn(),
 });
+
+const transactionConnectionWithQueries = (results: unknown[]) => {
+  const connection = transactionConnection();
+  for (const result of results) connection.query.mockResolvedValueOnce(result);
+  return connection;
+};
+
+const audit = { actorId: '1', ip: null, requestId: 'test-request', userAgent: null };
 
 const workOrderRow = {
   id: 6,

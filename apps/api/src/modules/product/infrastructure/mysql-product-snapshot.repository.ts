@@ -8,6 +8,7 @@ import type {
   ProductBomSnapshot,
   ProductionProductSnapshot,
   EnabledSopFileSnapshot,
+  InventoryItemDisplayReference,
   InventoryItemReference,
 } from '../application/product-snapshot.query.js';
 import { ProductSnapshotRepository } from '../application/ports/product-snapshot.repository.js';
@@ -19,6 +20,12 @@ type ProductRow = RowDataPacket & {
   unit: string;
   default_route_id: number | null;
   item_kind: InventoryItemReference['itemKind'];
+};
+type ProductDisplayRow = RowDataPacket & {
+  id: number;
+  item_code: string;
+  product_name: string;
+  unit: string;
 };
 type Db = Pool | PoolConnection;
 type RouteRow = RowDataPacket & {
@@ -65,6 +72,23 @@ export class MysqlProductSnapshotRepository implements ProductSnapshotRepository
       productName: row.product_name,
       unit: row.unit,
       itemKind: row.item_kind,
+    }));
+  }
+
+  async listInventoryItemDisplayReferencesByIds(
+    itemIds: string[],
+  ): Promise<InventoryItemDisplayReference[]> {
+    if (itemIds.length === 0) return [];
+    const [rows] = await this.pool.query<ProductDisplayRow[]>(
+      `SELECT id,item_code,product_name,unit FROM products
+       WHERE id IN (${itemIds.map(() => '?').join(',')})`,
+      itemIds,
+    );
+    return rows.map((row) => ({
+      id: String(row.id),
+      itemCode: row.item_code,
+      productName: row.product_name,
+      unit: row.unit,
     }));
   }
 

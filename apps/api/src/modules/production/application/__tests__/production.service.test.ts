@@ -221,6 +221,43 @@ describe('ProductionService first-stage commands', () => {
     });
   });
 
+  it('forwards semantic work-order commands and normalizes close reasons', async () => {
+    const repository = {
+      cancelWorkOrder: vi.fn().mockResolvedValue({ id: '11', batches: [] }),
+      completeWorkOrder: vi.fn().mockResolvedValue({ id: '11', batches: [] }),
+      closeWorkOrder: vi.fn().mockResolvedValue({ id: '11', batches: [] }),
+    };
+    const service = new ProductionService(
+      repository as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await service.cancelWorkOrder('11', 2, audit);
+    await service.completeWorkOrder('11', 3, audit);
+    await service.closeWorkOrder('11', 4, '  计划调整  ', audit);
+
+    expect(repository.cancelWorkOrder).toHaveBeenCalledWith('11', 2, audit);
+    expect(repository.completeWorkOrder).toHaveBeenCalledWith('11', 3, audit);
+    expect(repository.closeWorkOrder).toHaveBeenCalledWith('11', 4, '计划调整', audit);
+  });
+
+  it('requires a non-empty task cancellation reason', async () => {
+    const repository = { cancelBatch: vi.fn() };
+    const service = new ProductionService(
+      repository as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await expect(service.cancelBatch('8', 2, '   ', audit)).rejects.toMatchObject({
+      code: 'INVALID_INPUT',
+    });
+    expect(repository.cancelBatch).not.toHaveBeenCalled();
+  });
+
   it('preserves omitted remarks while forwarding an explicit null to clear it', async () => {
     const repository = {
       updateWorkOrder: vi.fn().mockResolvedValue({ id: '11', batches: [] }),

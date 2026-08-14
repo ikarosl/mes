@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { flushPromises, mount } from '@vue/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ProductionTracePage from '../ProductionTracePage.vue';
@@ -77,5 +79,23 @@ describe('ProductionTracePage', () => {
     expect(tabs).toEqual(['物料需求与分配', '物料入库来源', '领料出库与库存流水', '工序与报工']);
     expect(tabs).not.toContain('质量/返工');
     expect(tabs).not.toContain('成品流转');
+  });
+
+  it('keeps the result sidebar within the allocated workspace height', () => {
+    const pagePath = [
+      resolve(process.cwd(), 'src/views/production/ProductionTracePage.vue'),
+      resolve(process.cwd(), 'apps/admin-web/src/views/production/ProductionTracePage.vue'),
+    ].find(existsSync);
+
+    expect(pagePath).toBeDefined();
+    const pageSource = readFileSync(pagePath!, 'utf8');
+
+    expect(pageSource).toMatch(
+      /\.trace-page\s*\{[^}]*grid-template-rows: auto minmax\(0, 1fr\);[^}]*height: 100%;[^}]*min-height: 0;/s,
+    );
+    expect(pageSource).toMatch(
+      /\.trace-workspace\s*\{[^}]*flex: 1;[^}]*min-height: 0;[^}]*overflow: hidden;/s,
+    );
+    expect(pageSource).toMatch(/\.trace-results\s*\{[^}]*min-height: 0;[^}]*overflow-y: auto;/s);
   });
 });

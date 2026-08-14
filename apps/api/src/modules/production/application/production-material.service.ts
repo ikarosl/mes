@@ -34,7 +34,7 @@ export class ProductionMaterialService {
 
   async listDemands(batchId: string) {
     const rows = await this.materials.listDemands(batchId);
-    const references = await this.products.listInventoryItemReferencesByIds([
+    const references = await this.products.listInventoryItemDisplayReferencesByIds([
       ...new Set(rows.map((row) => row.itemId)),
     ]);
     const byId = new Map(references.map((item) => [item.id, item]));

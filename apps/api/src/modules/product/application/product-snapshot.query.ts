@@ -14,6 +14,14 @@ export interface InventoryItemReference {
   itemKind: 'material' | 'semi_finished' | 'finished_product';
 }
 
+/** 历史单据展示引用：允许读取已停用或软删除的库存对象，不得用于写操作有效性校验。 */
+export interface InventoryItemDisplayReference {
+  id: string;
+  itemCode: string;
+  productName: string;
+  unit: string;
+}
+
 export interface ProductBomLineSnapshot {
   productMaterialId: string;
   materialProductId: string;
@@ -72,6 +80,9 @@ export type ProductQueryResult<T> = { status: 'success'; value: T } | ProductQue
 /** 生产编排的公共读取边界。返回稳定的结果联合，绝不返回模块内部错误。 */
 export abstract class ProductSnapshotQuery {
   abstract listInventoryItemReferencesByIds(itemIds: string[]): Promise<InventoryItemReference[]>;
+  abstract listInventoryItemDisplayReferencesByIds(
+    itemIds: string[],
+  ): Promise<InventoryItemDisplayReference[]>;
   abstract listRouteStepMaterialIds(routeStepId: string): Promise<string[]>;
   abstract getProductionProduct(
     productId: string,

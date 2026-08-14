@@ -471,7 +471,10 @@ onActivated(refresh);
 <style scoped>
 .trace-page {
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 16px;
+  height: 100%;
+  min-height: 0;
 }
 .query-panel,
 .trace-section,
@@ -495,7 +498,13 @@ onActivated(refresh);
   margin-left: auto;
 }
 .trace-section {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   overflow: hidden;
+}
+.trace-section :deep(.table-toolbar) {
+  flex: 0 0 auto;
 }
 .trace-caption {
   display: flex;
@@ -511,18 +520,23 @@ onActivated(refresh);
   font-size: 12px;
 }
 .scope-tip {
+  flex: 0 0 auto;
   margin: 16px 20px 0;
   width: auto;
 }
 .trace-workspace {
   display: grid;
+  flex: 1;
   grid-template-columns: 300px minmax(0, 1fr);
-  min-height: 560px;
+  min-height: 0;
+  overflow: hidden;
 }
 .trace-results {
   display: grid;
   align-content: start;
   gap: 8px;
+  min-height: 0;
+  overflow-y: auto;
   padding: 16px;
   border-right: 1px solid var(--el-border-color-lighter);
   background: var(--el-fill-color-lighter);
@@ -568,6 +582,8 @@ onActivated(refresh);
 }
 .trace-detail {
   min-width: 0;
+  min-height: 0;
+  overflow: auto;
   padding: 16px 20px 20px;
 }
 .trace-overview {
@@ -619,6 +635,7 @@ onActivated(refresh);
 @media (max-width: 1000px) {
   .trace-workspace {
     grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 2fr) minmax(0, 3fr);
   }
   .trace-results {
     border-right: 0;

@@ -31,3 +31,39 @@ describe('ProductionController work-order options', () => {
     ).toEqual([PERMISSIONS.production.tasks.view]);
   });
 });
+
+describe('ProductionController status commands', () => {
+  const context = { actorId: '7', requestId: 'r1', ip: null, userAgent: null };
+
+  it('forwards explicit work-order complete and close semantics', async () => {
+    const service = {
+      completeWorkOrder: vi.fn().mockResolvedValue({ status: 'completed' }),
+      closeWorkOrder: vi.fn().mockResolvedValue({ status: 'closed' }),
+    };
+    const controller = new ProductionController(service as never);
+
+    await controller.completeWorkOrder({ workOrderId: '3' }, { version: 4 }, context);
+    await controller.closeWorkOrder(
+      { workOrderId: '3' },
+      { version: 5, reason: '  计划调整  ' },
+      context,
+    );
+
+    expect(service.completeWorkOrder).toHaveBeenCalledWith('3', 4, context);
+    expect(service.closeWorkOrder).toHaveBeenCalledWith('3', 5, '  计划调整  ', context);
+  });
+
+  it('returns a cancellation preview and forwards task cancellation reason', async () => {
+    const service = {
+      getBatchCancellationCheck: vi.fn().mockResolvedValue({ canCancel: true }),
+      cancelBatch: vi.fn().mockResolvedValue({ status: 'cancelled' }),
+    };
+    const controller = new ProductionController(service as never);
+
+    await controller.batchCancellationCheck({ id: '8' });
+    await controller.cancelBatch({ id: '8' }, { version: 2, reason: '计划调整' }, context);
+
+    expect(service.getBatchCancellationCheck).toHaveBeenCalledWith('8');
+    expect(service.cancelBatch).toHaveBeenCalledWith('8', 2, '计划调整', context);
+  });
+});

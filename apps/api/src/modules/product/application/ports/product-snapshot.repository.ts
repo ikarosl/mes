@@ -3,11 +3,15 @@ import type {
   ProcessRouteSnapshot,
   EnabledSopFileSnapshot,
   ProductionProductSnapshot,
+  InventoryItemDisplayReference,
   InventoryItemReference,
 } from '../product-snapshot.query.js';
 
 export abstract class ProductSnapshotRepository {
   abstract listInventoryItemReferencesByIds(itemIds: string[]): Promise<InventoryItemReference[]>;
+  abstract listInventoryItemDisplayReferencesByIds(
+    itemIds: string[],
+  ): Promise<InventoryItemDisplayReference[]>;
   abstract listRouteStepMaterialIds(routeStepId: string): Promise<string[]>;
   abstract getProductionProduct(productId: string): Promise<ProductionProductSnapshot>;
   abstract getProductionRouteSnapshot(

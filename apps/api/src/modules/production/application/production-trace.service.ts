@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { ProductionTraceDetail, ProductionTraceQuery } from '@company/contracts';
-import { ProductionMaterialRepository } from './ports/production-material.repository.js';
+import { ProductionMaterialService } from './production-material.service.js';
 import { ProductionReportingRepository } from './ports/production-reporting.repository.js';
 import { ProductionTraceRepository } from './ports/production-trace.repository.js';
 
@@ -8,7 +8,7 @@ import { ProductionTraceRepository } from './ports/production-trace.repository.j
 export class ProductionTraceService {
   constructor(
     private readonly trace: ProductionTraceRepository,
-    private readonly materials: ProductionMaterialRepository,
+    private readonly materials: ProductionMaterialService,
     private readonly reporting: ProductionReportingRepository,
   ) {}
 
