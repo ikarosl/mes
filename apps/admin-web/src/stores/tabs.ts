@@ -8,7 +8,7 @@ export interface ViewTab {
   keepAliveName?: string;
   closable: boolean;
 }
-const KEY = 'company-mes-view-tabs';
+const KEY = 'easy-mes-view-tabs';
 const read = (): ViewTab[] => {
   try {
     return JSON.parse(sessionStorage.getItem(KEY) ?? '[]') as ViewTab[];

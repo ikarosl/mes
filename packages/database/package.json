@@ -5,6 +5,11 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./src/index.ts",
+  "files": [
+    "migrations",
+    "seed",
+    "dist"
+  ],
   "exports": {
     ".": {
       "types": "./src/index.ts",
@@ -16,10 +21,15 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --config ../../vitest.config.ts src",
     "migrate": "tsx src/migrate.ts",
+    "migrate:compiled": "node dist/migrate.js",
     "migrate:status": "tsx src/migrate-status.ts",
+    "migrate:status:compiled": "node dist/migrate-status.js",
     "seed": "tsx src/seed.ts",
+    "seed:compiled": "node dist/seed.js",
     "seed:demo": "tsx src/seed-demo.ts",
-    "bootstrap-admin": "tsx src/bootstrap-admin.ts"
+    "seed:demo:compiled": "node dist/seed-demo.js",
+    "bootstrap-admin": "tsx src/bootstrap-admin.ts",
+    "bootstrap-admin:compiled": "node dist/bootstrap-admin.js"
   },
   "dependencies": {
     "@company/config": "workspace:*",

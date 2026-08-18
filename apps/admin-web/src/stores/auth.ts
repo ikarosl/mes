@@ -6,7 +6,7 @@ import { permissionMatches } from '@company/constants';
 import { createAuthClient } from '../api/auth';
 
 const channel =
-  typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('company-mes-auth');
+  typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('easy-mes-auth');
 export const useAuthStore = defineStore('auth', () => {
   const session = ref<AuthSession | null>(null);
   const restoring = ref<Promise<AuthSession> | null>(null);

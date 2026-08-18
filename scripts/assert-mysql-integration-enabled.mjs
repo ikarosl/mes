@@ -122,7 +122,7 @@ export const assertMysqlIntegrationEnabled = (environment = process.env) => {
         '修复（二选一）：' +
         '① 本地：在仓库根 .env 中设置 `DB_NAME=easy_mes_test` 与 `TEST_DB_NAME=easy_mes_test`；' +
         `② 临时环境变量：${psPrefix}；或 ${bashPrefix}。` +
-        '开发/生产库名（easy_mes、company_mes_next）一律拒绝。' +
+        '开发/生产库名（easy_mes、easy_mes_next）一律拒绝。' +
         envFixHint,
     );
   }

@@ -176,7 +176,7 @@
 
 ### 4.1 Production HTTP 幂等闭环
 
-状态：`released（代码契约启用层面，四级口径见 http-idempotency-implementation-plan.md「进度口径」：2026-08-07 pnpm verify 全绿（18/18 任务，apps/api 42 文件 / 310 用例、admin-web 43 文件 / 257 用例）且本地以 PowerShell $env:RUN_MYSQL_INTEGRATION='1'; $env:TEST_DB_NAME='easy_mes_test'; $env:DB_NAME='easy_mes_test'（Bash 等价：RUN_MYSQL_INTEGRATION=1 TEST_DB_NAME=easy_mes_test DB_NAME=easy_mes_test）全量集成套件实测通过（5 文件 / 29 用例，含 HTTP 管线与真实锁等待 1205 用例）；瞬态错误契约已覆盖完整事务边界（登记 INSERT、handler 内业务 SQL、重放 SELECT、completed UPDATE、取连接/开启事务/提交统一映射 retryable 503；rollback 失败不覆盖原始异常；handler 内其他 SDK 网络错误不误判；firstRun/replay 成功指标 commit 后记录）；集成门禁要求 TEST_DB_NAME 必填、DB_NAME 必须与 TEST_DB_NAME 完全相等且库名以 _test 结尾（本地在 easy_mes_test 上完成，CI 使用 company_mes_next_test）；契约已声明 Idempotency-Key 必填、前端已发送；CI 的 integration-mysql 作业待首次运行确认）`
+状态：`released（代码契约启用层面，四级口径见 http-idempotency-implementation-plan.md「进度口径」：2026-08-07 pnpm verify 全绿（18/18 任务，apps/api 42 文件 / 310 用例、admin-web 43 文件 / 257 用例）且本地以 PowerShell $env:RUN_MYSQL_INTEGRATION='1'; $env:TEST_DB_NAME='easy_mes_test'; $env:DB_NAME='easy_mes_test'（Bash 等价：RUN_MYSQL_INTEGRATION=1 TEST_DB_NAME=easy_mes_test DB_NAME=easy_mes_test）全量集成套件实测通过（5 文件 / 29 用例，含 HTTP 管线与真实锁等待 1205 用例）；瞬态错误契约已覆盖完整事务边界（登记 INSERT、handler 内业务 SQL、重放 SELECT、completed UPDATE、取连接/开启事务/提交统一映射 retryable 503；rollback 失败不覆盖原始异常；handler 内其他 SDK 网络错误不误判；firstRun/replay 成功指标 commit 后记录）；集成门禁要求 TEST_DB_NAME 必填、DB_NAME 必须与 TEST_DB_NAME 完全相等且库名以 _test 结尾（本地在 easy_mes_test 上完成，CI 使用 easy_mes_next_test）；契约已声明 Idempotency-Key 必填、前端已发送；CI 的 integration-mysql 作业待首次运行确认）`
 
 当前状态：
 
@@ -247,7 +247,7 @@ IDEMPOTENCY_RESULT_CORRUPT`；`HttpExceptionFilter` 与 `AuditInterceptor` 统�
   开发/生产库名一律拒绝；构建 utils/constants/database 后通过 `db:init`
   完成 migration、系统 seed 和管理员初始化，复验 seed 幂等性后运行
   `tests/integration` 全套），5 文件 / 29 用例全部通过；CI（`.github/workflows/ci.yml`）已新增
-  `integration-mysql` 作业在专用测试库 `company_mes_next_test` 上执行同一套件（待首次运行确认）；集成文件均以
+  `integration-mysql` 作业在专用测试库 `easy_mes_next_test` 上执行同一套件（待首次运行确认）；集成文件均以
   `process.env.RUN_MYSQL_INTEGRATION === '1' ? describe : describe.skip` 门禁。通用 executor 用例
   （`http-idempotency.mysql.test.ts`）覆盖并发、回滚、重放、冲突、过期清理，并新增 housekeeping 到期清理
   用例（已到期 completed 被物理删除、未到期保留重放、异常 processing 只告警不处置）；

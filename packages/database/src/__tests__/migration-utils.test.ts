@@ -17,7 +17,7 @@ describe('migration checksum', () => {
 
 describe('migration advisory lock', () => {
   it('uses MySQL advisory-lock queries with a stable lock name', () => {
-    expect(migrationLockName).toBe('company_mes_migration');
+    expect(migrationLockName).toBe('easy_mes_migration');
     expect(acquireMigrationLockQuery).toContain('GET_LOCK');
     expect(releaseMigrationLockQuery).toContain('RELEASE_LOCK');
   });

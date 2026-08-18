@@ -5,10 +5,10 @@ const validEnvironment = {
   RUN_MYSQL_INTEGRATION: '1',
   TEST_DB_HOST: '127.0.0.1',
   TEST_DB_PORT: '3307',
-  TEST_DB_NAME: 'company_mes_next_test',
+  TEST_DB_NAME: 'easy_mes_next_test',
   DB_HOST: '127.0.0.1',
   DB_PORT: '3307',
-  DB_NAME: 'company_mes_next_test',
+  DB_NAME: 'easy_mes_next_test',
 };
 const environmentWithoutTestDbName: Record<string, string> = { ...validEnvironment };
 delete environmentWithoutTestDbName.TEST_DB_NAME;
@@ -61,7 +61,7 @@ describe('assertMysqlIntegrationEnabled', () => {
     expect(() =>
       assertMysqlIntegrationEnabled({
         ...validEnvironment,
-        DB_NAME: 'company_mes_next',
+        DB_NAME: 'easy_mes_next',
       }),
     ).toThrow('完全相等');
   });
@@ -70,8 +70,8 @@ describe('assertMysqlIntegrationEnabled', () => {
     expect(() =>
       assertMysqlIntegrationEnabled({
         ...validEnvironment,
-        TEST_DB_NAME: 'company_mes_next',
-        DB_NAME: 'company_mes_next',
+        TEST_DB_NAME: 'easy_mes_next',
+        DB_NAME: 'easy_mes_next',
       }),
     ).toThrow('必须以 _test 结尾');
   });

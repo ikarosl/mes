@@ -1,0 +1,121 @@
+name: easy-mes
+
+services:
+  mysql:
+    image: ${MYSQL_IMAGE:-mysql:8.4}
+    command:
+      - --default-time-zone=+08:00
+      - --log-bin-trust-function-creators=1
+    env_file:
+      - /etc/easy-mes/mysql.env
+    volumes:
+      - type: bind
+        source: /srv/easy-mes/mysql
+        target: /var/lib/mysql
+      - type: bind
+        source: /srv/easy-mes/backups/mysql
+        target: /backups/mysql
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - mysqladmin ping --host=127.0.0.1 --user=root --password="$$MYSQL_ROOT_PASSWORD" --silent
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - backend
+
+  minio:
+    image: ${MINIO_IMAGE:-quay.io/minio/aistor/minio:RELEASE.2026-04-14T21-32-45Z}
+    command:
+      - minio
+      - server
+      - /mnt/data
+      - --license
+      - /run/secrets/minio.license
+      - --console-address
+      - :9001
+    env_file:
+      - /etc/easy-mes/minio.env
+    volumes:
+      - type: bind
+        source: /srv/easy-mes/minio
+        target: /mnt/data
+      - type: bind
+        source: /srv/easy-mes/backups/minio
+        target: /backups/minio
+      - type: bind
+        source: /etc/easy-mes/minio.license
+        target: /run/secrets/minio.license
+        read_only: true
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - --fail
+        - http://127.0.0.1:9000/minio/health/live
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+    restart: unless-stopped
+    networks:
+      - backend
+
+  api:
+    image: ${API_IMAGE:-easy-mes-api:release-not-configured}
+    env_file:
+      - /etc/easy-mes/api.env
+    depends_on:
+      mysql:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:3000/api/health/live').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    init: true
+    restart: unless-stopped
+    networks:
+      - backend
+
+  web:
+    image: ${WEB_IMAGE:-easy-mes-web:release-not-configured}
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      # 这是暴露到宿主机的端口，和使用的是服务器下/etc/easy-mes/deploy.env.example中的HTTP_BIND_ADDRESS和HTTP_PORT变量
+      # 左宿主机端口，右容器端口
+      - ${HTTP_BIND_ADDRESS:-0.0.0.0}:${HTTP_PORT:-8091}:8091
+    volumes:
+      - type: bind
+        source: /srv/easy-mes/nginx-logs
+        target: /var/log/nginx
+    healthcheck:
+      test:
+        - CMD
+        - wget
+        - --quiet
+        - --output-document=/dev/null
+        - http://127.0.0.1:8091/api/health/live
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - backend
+
+networks:
+  backend:
+    driver: bridge

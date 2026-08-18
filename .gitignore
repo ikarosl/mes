@@ -4,6 +4,7 @@ coverage/
 .turbo/
 .pnpm-store/
 .env
+.env.production
 .env.*.local
 infra/compose/secrets/*.license
 *.log

@@ -19,7 +19,7 @@ export const schemaMigrationsTableExistsQuery = `
   LIMIT 1
 `;
 
-export const migrationLockName = 'company_mes_migration';
+export const migrationLockName = 'easy_mes_migration';
 export const acquireMigrationLockQuery = 'SELECT GET_LOCK(?, ?) acquired';
 export const releaseMigrationLockQuery = 'SELECT RELEASE_LOCK(?) released';
 

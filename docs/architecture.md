@@ -1,4 +1,4 @@
-# Company MES Next 架构规范
+# Easy MES Next 架构规范
 
 本文是项目代码架构与模块边界的唯一基准。数据库业务设计以 `database/README.md` 及其列出的领域章节为准，HTTP 接口以
 `api-conventions.md` 为准，编码细节以 `coding-standards.md` 为准，管理端视觉交互以根目录

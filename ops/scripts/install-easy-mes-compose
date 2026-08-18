@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+IFS=$'\n\t'
+export PATH='/usr/sbin:/usr/bin:/sbin:/bin'
+umask 077
+
+readonly SOURCE_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+readonly STACK_DIR='/opt/easy-mes'
+readonly CONFIG_DIR='/etc/easy-mes'
+readonly DATA_DIR='/srv/easy-mes'
+
+fail() {
+  printf 'ERROR: %s\n' "$*" >&2
+  exit 1
+}
+
+install_example_if_missing() {
+  local source="$1"
+  local target="$2"
+
+  if [[ ! -e "${target}" ]]; then
+    install -o root -g root -m 600 "${source}" "${target}"
+    printf 'created %s; replace its placeholder values before startup\n' "${target}"
+  fi
+}
+
+main() {
+  [[ "${EUID}" -eq 0 ]] || fail 'run this installer as root'
+  command -v docker >/dev/null 2>&1 || fail 'docker is required'
+  docker compose version >/dev/null 2>&1 || fail 'the Docker Compose plugin is required'
+
+  install -d -o root -g root -m 755 "${STACK_DIR}" "${DATA_DIR}"
+  install -d -o root -g root -m 700 "${CONFIG_DIR}"
+  install -d -o 999 -g 999 -m 750 "${DATA_DIR}/mysql"
+  install -d -o root -g root -m 750 "${DATA_DIR}/minio"
+  install -d -o root -g root -m 750 "${DATA_DIR}/backups"
+  install -d -o root -g root -m 750 "${DATA_DIR}/backups/mysql"
+  install -d -o root -g root -m 750 "${DATA_DIR}/backups/minio"
+  install -d -o root -g root -m 750 "${DATA_DIR}/nginx-logs"
+
+  install -o root -g root -m 644 "${SOURCE_ROOT}/infra/compose/compose.prod.yml" \
+    "${STACK_DIR}/compose.prod.yml"
+  install -o root -g root -m 755 "${SOURCE_ROOT}/ops/scripts/deploy-api.sh" \
+    "${STACK_DIR}/deploy-api.sh"
+  install -o root -g root -m 755 "${SOURCE_ROOT}/ops/scripts/deploy-web.sh" \
+    "${STACK_DIR}/deploy-web.sh"
+  install -o root -g root -m 755 "${SOURCE_ROOT}/ops/scripts/apply-control.sh" \
+    "${STACK_DIR}/apply-control.sh"
+
+  install_example_if_missing "${SOURCE_ROOT}/ops/config/etc/easy_mes/deploy.env.example" "${CONFIG_DIR}/deploy.env"
+  install_example_if_missing "${SOURCE_ROOT}/ops/config/etc/easy_mes/mysql.env.example" "${CONFIG_DIR}/mysql.env"
+  install_example_if_missing "${SOURCE_ROOT}/ops/config/etc/easy_mes/minio.env.example" "${CONFIG_DIR}/minio.env"
+  install_example_if_missing "${SOURCE_ROOT}/ops/config/etc/easy_mes/api.env.example" "${CONFIG_DIR}/api.env"
+
+  printf '\nInstalled the Compose stack. Next:\n'
+  printf '  1. edit files under %s\n' "${CONFIG_DIR}"
+  printf '  2. install %s/minio.license\n' "${CONFIG_DIR}"
+  printf '  3. deploy API/Web digests with %s/deploy-api.sh and deploy-web.sh\n' "${STACK_DIR}"
+}
+
+main "$@"

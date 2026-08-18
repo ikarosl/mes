@@ -30,7 +30,7 @@ describe('AuthController refresh cookie', () => {
     );
 
     expect(cookie).toHaveBeenCalledWith(
-      'company_refresh_token',
+      'easy_mes_refresh_token',
       'refresh',
       expect.objectContaining({ maxAge: 10_000 }),
     );
@@ -40,7 +40,7 @@ describe('AuthController refresh cookie', () => {
     vi.stubEnv('JWT_SECRET', 'test-secret-with-at-least-32-characters');
     vi.stubEnv('JWT_ISSUER', 'test-issuer');
     vi.stubEnv('JWT_AUDIENCE', 'test-audience');
-    vi.stubEnv('REFRESH_TOKEN_COOKIE_NAME', 'company_refresh_token_next');
+    vi.stubEnv('REFRESH_TOKEN_COOKIE_NAME', 'easy_mes_refresh_token_next');
     const responseBody = {
       user: { id: '1', username: 'admin', displayName: 'Admin', roles: [], permissions: [] },
       accessToken: 'access',
@@ -59,7 +59,7 @@ describe('AuthController refresh cookie', () => {
     );
 
     expect(cookie).toHaveBeenCalledWith(
-      'company_refresh_token_next',
+      'easy_mes_refresh_token_next',
       'refresh',
       expect.objectContaining({ maxAge: 7 * 24 * 60 * 60 * 1000 }),
     );

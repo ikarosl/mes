@@ -25,10 +25,10 @@ describe('loadAppConfig token TTLs', () => {
   it('defaults the refresh cookie name and reads an override', () => {
     stubRequiredEnv();
 
-    expect(loadAppConfig().refreshCookieName).toBe('company_refresh_token');
+    expect(loadAppConfig().refreshCookieName).toBe('easy_mes_refresh_token');
 
-    vi.stubEnv('REFRESH_TOKEN_COOKIE_NAME', 'company_refresh_token_next');
-    expect(loadAppConfig().refreshCookieName).toBe('company_refresh_token_next');
+    vi.stubEnv('REFRESH_TOKEN_COOKIE_NAME', 'easy_mes_refresh_token_next');
+    expect(loadAppConfig().refreshCookieName).toBe('easy_mes_refresh_token_next');
   });
 });
 

@@ -49,7 +49,7 @@ Production 的事务、并发建批、物料需求快照、报工事实约束/�
 
 HTTP 幂等平台的 MySQL 适配器与真实 MySQL 集成用例已落地（与 production 集成测试一样以
 `RUN_MYSQL_INTEGRATION=1` 与 `_test` 专用测试库门禁；CI 已新增 `integration-mysql` 作业在专用测试库
-`company_mes_next_test` 上执行同一套件，待首次运行确认，跑通记录见 `docs/todo.md` 4.1 的进度口径）：
+`easy_mes_next_test` 上执行同一套件，待首次运行确认，跑通记录见 `docs/todo.md` 4.1 的进度口径）：
 
 Production 库存事务测试清理 `inventory_transaction` 时，必须使用名称以 `_test` 或 `_ci` 结尾的专用库，并在同一独占连接上临时设置 `@company_inventory_test_cleanup = 1`；清理语句只能命中当前 fixture 的唯一前缀或明确 ID，随后立即清空会话变量再释放连接。非专用数据库即使设置该变量，库存不可变触发器仍会拒绝删除。
 `tests/integration/idempotency/http-idempotency.mysql.test.ts` 覆盖同键并发只执行一次、同键同指纹重放、

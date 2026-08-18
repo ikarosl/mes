@@ -1,4 +1,4 @@
-# Company MES Next
+# Easy MES Next
 
 当前已落地范围：RBAC、认证、操作日志、管理端权限控制、多标签页路由缓存、产品主数据、技术文件、工序和工艺路线，以及 Production 的生产工单、生产批次、工序报工追溯、异常返工、工序异常报废产生人工补料需求、生产物料需求、外购物料入库、库存批次查询、分配、领料出库、生产退料和库存盘点链路。通用其他入库、通用报废、质量和全链路追溯后端尚未迁移；这里的工序异常报废只属于 Production 的最小闭环，不代表通用库存报废已经迁移。
 
@@ -18,6 +18,8 @@
 - `pnpm db:bootstrap-admin`：使用 `ADMIN_USERNAME`、`ADMIN_PASSWORD`、`ADMIN_DISPLAY_NAME` 创建或更新管理员账号；要求先执行 seed。
 - `pnpm db:init`：依次执行上述三步，用于从空库初始化到可登录状态。对已有库重跑会按当前 `ADMIN_PASSWORD` 更新管理员密码，生产环境仅升级 schema 时应使用 `db:migrate`。
 - `pnpm test:production:mysql`：真实 MySQL 集成测试，仅针对专用测试端点与以 `_test` 结尾的专用测试库。`TEST_DB_HOST/PORT/NAME` 必填，且 `DB_HOST/PORT/NAME` 必须与之完全相等。本地 WSL Docker 默认映射为宿主 `3307` 到容器 `3306`；CI 服务容器继续使用 `3306`。
+
+仓库根目录的数据库命令是开发与 CI 入口，由 `tsx` 直接执行 `packages/database/src`，修改运行器后无需先手工构建。`@company/database` 同时提供成对的 `*:compiled` 脚本，用 Node 执行构建后的 `dist`，用于验证编译产物。生产镜像不安装 `tsx`，CD 应使用同一 API 镜像运行一次性迁移任务 `node node_modules/@company/database/dist/migrate.js`，迁移成功后再启动 API；不得在每个 API 副本启动时自动执行迁移。
 
 PowerShell：
 

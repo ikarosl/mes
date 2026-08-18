@@ -96,7 +96,7 @@ catalogs:
 
 overrides:
   multer: '>=2.2.0'
-  nanoid: https://github.com/ai/nanoid/archive/refs/tags/3.3.17.tar.gz
+  nanoid: https://github.com/ai/nanoid/archive/refs/tags/3.3.18.tar.gz
 
 importers:
 
@@ -2427,9 +2427,9 @@ packages:
     resolution: {integrity: sha512-Tz09sEL2EEuv5fFowm419c1+a/jSMiBjI9gHxVLrVdbUkkNUUfjsVYs9pVZu5oCon/kmRh9TfLEObFtkVxmY0w==}
     engines: {node: '>=8.0.0'}
 
-  nanoid@https://github.com/ai/nanoid/archive/refs/tags/3.3.17.tar.gz:
-    resolution: {tarball: https://github.com/ai/nanoid/archive/refs/tags/3.3.17.tar.gz}
-    version: 3.3.17
+  nanoid@https://github.com/ai/nanoid/archive/refs/tags/3.3.18.tar.gz:
+    resolution: {tarball: https://github.com/ai/nanoid/archive/refs/tags/3.3.18.tar.gz}
+    version: 3.3.18
     engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
     hasBin: true
 
@@ -5082,7 +5082,7 @@ snapshots:
     dependencies:
       lru.min: 1.1.4
 
-  nanoid@https://github.com/ai/nanoid/archive/refs/tags/3.3.17.tar.gz: {}
+  nanoid@https://github.com/ai/nanoid/archive/refs/tags/3.3.18.tar.gz: {}
 
   natural-compare@1.4.0: {}
 
@@ -5186,7 +5186,7 @@ snapshots:
 
   postcss@8.5.20:
     dependencies:
-      nanoid: https://github.com/ai/nanoid/archive/refs/tags/3.3.17.tar.gz
+      nanoid: https://github.com/ai/nanoid/archive/refs/tags/3.3.18.tar.gz
       picocolors: 1.1.1
       source-map-js: 1.2.1
 

@@ -8,7 +8,7 @@
 > WSL Docker 使用宿主 `3307` 端口与 `easy_mes_test` 专用库）
 > 全量集成套件实测通过，
 > 5 文件 / 29 用例，含 HTTP 管线、真实锁等待与过期清理用例，见 §11；CI 已新增 `integration-mysql`
-> 作业在专用测试库 `company_mes_next_test` 上执行同一套件，待首次运行确认）。瞬态错误契约已覆盖完整
+> 作业在专用测试库 `easy_mes_next_test` 上执行同一套件，待首次运行确认）。瞬态错误契约已覆盖完整
 > 事务边界：登记 INSERT、handler 内业务 SQL（含网络中断，事务内查询由数据库包来源标记）、重放 SELECT、
 > completed UPDATE 以及取连接/开启事务/提交的瞬态错误统一映射 retryable 503；rollback 失败 best-effort
 > 记录不覆盖原始异常；handler 内其他 SDK
@@ -52,7 +52,7 @@ UPDATE）的 mysql2 服务器形态瞬态错误与事务边界操作（取连接
 best-effort 记录不覆盖原始异常；handler 内其他 SDK 网络错误（无 mysql2 形态）原样冒泡不误判；
 firstRun/replay 成功指标只在事务 commit 成功后记录。所有集成测试文件均以
 `process.env.RUN_MYSQL_INTEGRATION === '1' ? describe : describe.skip` 门禁；CI（`.github/workflows/ci.yml`）
-已新增 `integration-mysql` 作业在专用测试库 `company_mes_next_test` 上执行同一套件，待首次运行确认。
+已新增 `integration-mysql` 作业在专用测试库 `easy_mes_next_test` 上执行同一套件，待首次运行确认。
 released 只表示代码契约启用层面，与「部署完成/上线」无关；阶段 C 其余端点按风险逐项评估，满足 §12
 门槛前不得标记 released。
 
@@ -590,7 +590,7 @@ Repository 的 `material_pending` 短路之前，会先重新查询批次产品�
 > ```
 >
 > Bash 等价形式见根 README；本地 WSL Docker 默认使用 `3307:3306`，CI 服务容器使用 `3306`；
-> CI 已新增 `integration-mysql` 作业在专用测试库 `company_mes_next_test` 上执行同一套件（待首次运行确认）。
+> CI 已新增 `integration-mysql` 作业在专用测试库 `easy_mes_next_test` 上执行同一套件（待首次运行确认）。
 > 集成套件运行说明：`vitest.mysql.config.ts` 使用 SWC 变换（esbuild 不发射 `emitDecoratorMetadata`，Nest 构造器注入
 > 会得到 undefined；与 apps/api tsconfig 开启的 tsc 构建行为一致）；HTTP 管线用例以 jose 用同一
 > JWT_SECRET/JWT_ISSUER/JWT_AUDIENCE 为真实存在且经 roles→role_permissions→permissions 拥有
