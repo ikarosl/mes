@@ -111,6 +111,7 @@ docker compose 端口映射**到容器内的端口**与nginx conf 监听端口�
 1. migration：CD 已自动执行。
 2. system seed：需要首次手动执行，创建管理员角色和权限。
 3. bootstrap-admin：需要首次手动执行，创建管理员用户。
+4. demo seed：仅演示或联调环境按需手动执行，正式生产数据库禁止执行。
 
 不应在每次 CD 中自动执行 `bootstrap-admin`，因为重复执行会按环境变量重置管理员密码。
 
@@ -171,3 +172,41 @@ SELECT id, username, display_name, status FROM users;
 ```
 
 system seed 可以幂等重跑；`bootstrap-admin` 也能重跑，但会重置该管理员的密码，所以后续不要把它放进普通 CD。
+
+### 可选：初始化演示数据
+
+本步骤只适用于演示或联调服务器，必须在 migration 和 system seed 完成后执行。正式生产数据库不要执行，也不要把它加入普通 CD。
+
+当前演示数据包括生产操作工、生产管理员等演示角色与账号，以及产品、物料、BOM、工序和工艺路线。`admin` 管理员不属于演示数据，仍由前面的 `bootstrap-admin` 单独创建。
+
+安全输入演示账号的共用密码，不把密码写入命令历史：
+
+```bash
+read -rsp '请输入演示账号密码（至少 6 位）: ' DEMO_USER_PASSWORD
+echo
+export DEMO_USER_PASSWORD
+```
+
+执行 demo seed。部署容器默认使用 `NODE_ENV=production`，因此这里只对该一次性演示数据任务显式覆盖为 `development`：
+
+```bash
+docker compose \
+  --project-name easy-mes \
+  --env-file /etc/easy-mes/deploy.env \
+  --env-file /opt/easy-mes/release.env \
+  --file /opt/easy-mes/compose.prod.yml \
+  run --rm --no-deps \
+  -e NODE_ENV=development \
+  -e ALLOW_DEMO_SEED=1 \
+  -e DEMO_USER_PASSWORD \
+  api \
+  node node_modules/@company/database/dist/seed-demo.js
+```
+
+成功时会逐项显示 `Applied demo seed ...`。完成后立即清除当前 Shell 中的密码：
+
+```bash
+unset DEMO_USER_PASSWORD
+```
+
+demo seed 按业务编码幂等更新，可以在演示或联调环境重复执行；它不会删除其他业务数据。
