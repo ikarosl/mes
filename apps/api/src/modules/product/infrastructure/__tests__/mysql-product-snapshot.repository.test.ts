@@ -4,6 +4,26 @@ import { ProductDomainError } from '../../domain/product.errors.js';
 import { MysqlProductSnapshotRepository } from '../mysql-product-snapshot.repository.js';
 
 describe('MysqlProductSnapshotRepository', () => {
+  it('returns disabled inventory items for historical display without enabling write validation', async () => {
+    const pool = {
+      query: vi
+        .fn()
+        .mockResolvedValue([
+          [{ id: 2, item_code: 'MAT-2', product_name: '停用物料', unit: 'pcs' }],
+          [],
+        ]),
+    };
+    const repository = new MysqlProductSnapshotRepository(pool as never);
+
+    await expect(repository.listInventoryItemDisplayReferencesByIds(['2'])).resolves.toEqual([
+      { id: '2', itemCode: 'MAT-2', productName: '停用物料', unit: 'pcs' },
+    ]);
+    const sql = String(pool.query.mock.calls[0]?.[0]);
+    expect(sql).not.toContain('status=1');
+    expect(sql).not.toContain('deleted_at IS NULL');
+    expect(pool.query.mock.calls[0]?.[1]).toEqual(['2']);
+  });
+
   it('returns active material bindings for a route step', async () => {
     const pool = { query: vi.fn().mockResolvedValue([[{ product_material_id: 31 }], []]) };
     const repository = new MysqlProductSnapshotRepository(pool as never);

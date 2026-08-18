@@ -9,8 +9,10 @@ import type {
   ProductionMaterialAllocationItem,
   ProductionMaterialDemandItem,
   CreateWorkOrderPayload,
+  CloseWorkOrderPayload,
   PageResult,
   ProductionBatchDetail,
+  ProductionBatchCancellationCheck,
   ProductionBatchItem,
   ProductionBatchQuery,
   UpdateProductionBatchPayload,
@@ -51,6 +53,7 @@ import type {
   CompleteReworkResult,
   RejectBatchStepAbnormalDispositionPayload,
   ReworkRecordItem,
+  CancelProductionBatchPayload,
 } from '@company/contracts';
 import { toRequestError, type RetryRequestConfig } from '@company/request';
 import { httpClient } from './http';
@@ -106,7 +109,7 @@ export const productionApi = {
   listOrders: (params: WorkOrderQuery) =>
     request<PageResult<WorkOrderItem>>({ url: '/production/work-orders', params }),
 
-  /** 任务表单已下达工单候选（/options 契约）：完整返回全部 released 且仍有余量的工单，前端本地过滤 */
+  /** 任务表单工单候选：完整返回 released/doing 且仍有余量的工单，前端本地过滤 */
   workOrderOptions: () =>
     request<WorkOrderOption[]>({
       url: '/production/work-orders/options',
@@ -124,12 +127,36 @@ export const productionApi = {
   updateOrder: (id: string, data: UpdateWorkOrderPayload) =>
     request<WorkOrderDetail>({ url: `/production/work-orders/${id}`, method: 'PATCH', data }),
 
-  /** 工单状态变更 */
-  changeOrderStatus: (id: string, action: 'release' | 'cancel' | 'close', version: number) =>
+  /** 下达草稿工单 */
+  releaseOrder: (id: string, version: number) =>
     request<WorkOrderDetail>({
-      url: `/production/work-orders/${id}/actions/${action}`,
+      url: `/production/work-orders/${id}/actions/release`,
       method: 'POST',
       data: { version },
+    }),
+
+  /** 取消尚未下达的草稿工单 */
+  cancelOrder: (id: string, version: number) =>
+    request<WorkOrderDetail>({
+      url: `/production/work-orders/${id}/actions/cancel`,
+      method: 'POST',
+      data: { version },
+    }),
+
+  /** 管理员显式确认工单足量完工 */
+  completeOrder: (id: string, version: number) =>
+    request<WorkOrderDetail>({
+      url: `/production/work-orders/${id}/actions/complete`,
+      method: 'POST',
+      data: { version },
+    }),
+
+  /** 提前结案或完工后行政归档 */
+  closeOrder: (id: string, data: CloseWorkOrderPayload) =>
+    request<WorkOrderDetail>({
+      url: `/production/work-orders/${id}/actions/close`,
+      method: 'POST',
+      data,
     }),
 
   /** 查询工单下的生产批次列表 */
@@ -158,6 +185,12 @@ export const productionApi = {
   /** 获取生产批次详情（含工序记录） */
   getBatch: (id: string) => request<ProductionBatchDetail>({ url: `/production/batches/${id}` }),
 
+  /** 取消任务前读取服务端实时影响摘要；提交时后端仍会再次校验。 */
+  getBatchCancellationCheck: (id: string) =>
+    request<ProductionBatchCancellationCheck>({
+      url: `/production/batches/${id}/cancellation-check`,
+    }),
+
   /** 更新生产批次 */
   updateBatch: (id: string, data: UpdateProductionBatchPayload) =>
     request<ProductionBatchDetail>({ url: `/production/batches/${id}`, method: 'PATCH', data }),
@@ -170,6 +203,13 @@ export const productionApi = {
     request<ProductionBatchDetail>({
       url: `/production/batches/${batchId}/step-records/${recordId}/execution`,
       method: 'PATCH',
+      data,
+    }),
+
+  cancelBatch: (id: string, data: CancelProductionBatchPayload) =>
+    request<ProductionBatchDetail>({
+      url: `/production/batches/${id}/actions/cancel`,
+      method: 'POST',
       data,
     }),
 

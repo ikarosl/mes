@@ -841,7 +841,10 @@ onActivated(refreshCurrent);
 <style scoped>
 .execution-page {
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 16px;
+  height: 100%;
+  min-height: 0;
 }
 .query-panel,
 .records-section,
@@ -877,9 +880,13 @@ onActivated(refreshCurrent);
   margin-left: auto;
 }
 .records-section {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   overflow: hidden;
 }
 .records-section :deep(.table-toolbar) {
+  flex: 0 0 auto;
   min-height: 56px;
   align-items: center;
   border-bottom: 1px solid #e5e7eb;
@@ -900,11 +907,18 @@ onActivated(refreshCurrent);
 }
 .workspace {
   display: grid;
+  flex: 1;
   grid-template-columns: 300px minmax(0, 1fr);
-  min-height: 540px;
+  min-height: 0;
+  overflow: hidden;
 }
 .record-panel {
+  height: 100%;
+  max-height: 100%;
   min-width: 0;
+  min-height: 0;
+  overflow-x: auto;
+  overflow-y: auto;
   padding: 16px 20px 20px;
 }
 .fact-tip {
@@ -1090,6 +1104,7 @@ onActivated(refreshCurrent);
 @media (max-width: 1000px) {
   .workspace {
     grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 2fr) minmax(0, 3fr);
   }
   .record-overview,
   .step-metrics {

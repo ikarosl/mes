@@ -8,6 +8,7 @@ import {
   type ProductQueryFailure,
   type ProductQueryResult,
   type ProductionProductSnapshot,
+  type InventoryItemDisplayReference,
   type InventoryItemReference,
 } from './product-snapshot.query.js';
 import { ProductSnapshotRepository } from './ports/product-snapshot.repository.js';
@@ -20,6 +21,12 @@ export class ProductSnapshotService extends ProductSnapshotQuery {
 
   listInventoryItemReferencesByIds(itemIds: string[]): Promise<InventoryItemReference[]> {
     return this.snapshots.listInventoryItemReferencesByIds(itemIds);
+  }
+
+  listInventoryItemDisplayReferencesByIds(
+    itemIds: string[],
+  ): Promise<InventoryItemDisplayReference[]> {
+    return this.snapshots.listInventoryItemDisplayReferencesByIds(itemIds);
   }
 
   listRouteStepMaterialIds(routeStepId: string): Promise<string[]> {

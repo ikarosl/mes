@@ -4,6 +4,7 @@ import type {
   CreateWorkOrderPayload,
   PageResult,
   ProductionBatchDetail,
+  ProductionBatchCancellationCheck,
   ProductionBatchItem,
   ProductionBatchQuery,
   UpdateBatchStepExecutionPayload,
@@ -80,13 +81,19 @@ export class MysqlProductionRepository extends ProductionRepository {
   ): Promise<WorkOrderDetail> {
     return this.workOrders.release(id, version, product, audit);
   }
-  transitionWorkOrder(
+  cancelWorkOrder(id: string, version: number, audit: CommandContext): Promise<WorkOrderDetail> {
+    return this.workOrders.cancel(id, version, audit);
+  }
+  completeWorkOrder(id: string, version: number, audit: CommandContext): Promise<WorkOrderDetail> {
+    return this.workOrders.complete(id, version, audit);
+  }
+  closeWorkOrder(
     id: string,
-    action: 'cancel' | 'close',
     version: number,
+    reason: string | null,
     audit: CommandContext,
   ): Promise<WorkOrderDetail> {
-    return this.workOrders.transition(id, action, version, audit);
+    return this.workOrders.close(id, version, reason, audit);
   }
   async listBatches(query: ProductionBatchQuery): Promise<PageResult<ProductionBatchItem>> {
     const page = await this.batches.list(query);
@@ -103,6 +110,9 @@ export class MysqlProductionRepository extends ProductionRepository {
   }
   getBatch(id: string): Promise<ProductionBatchDetail> {
     return this.batches.get(id);
+  }
+  getBatchCancellationCheck(id: string): Promise<ProductionBatchCancellationCheck> {
+    return this.batches.getCancellationCheck(id);
   }
   listWorkOrderBatches(workOrderId: string): Promise<ProductionBatchItem[]> {
     return this.batches.listForWorkOrder(workOrderId);
@@ -128,6 +138,14 @@ export class MysqlProductionRepository extends ProductionRepository {
     audit: CommandContext,
   ): Promise<ProductionBatchDetail> {
     return this.batches.update(id, payload, audit);
+  }
+  cancelBatch(
+    id: string,
+    version: number,
+    reason: string,
+    audit: CommandContext,
+  ): Promise<ProductionBatchDetail> {
+    return this.batches.cancel(id, version, reason, audit);
   }
   updateBatchStepExecution(
     batchId: string,

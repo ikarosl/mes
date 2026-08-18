@@ -48,7 +48,7 @@ const page = (
   name: string,
   title: string,
   component: Component,
-  permission: string,
+  permission: string | undefined,
   keepAliveName: string,
 ): RouteRecordRaw => ({
   path,
@@ -225,7 +225,7 @@ export const router = createRouter({
           'warehouse-scraps',
           '报废管理',
           ScrapsPage,
-          PERMISSIONS.warehouse.scraps.view,
+          undefined,
           'ScrapsPage',
         ),
         page(

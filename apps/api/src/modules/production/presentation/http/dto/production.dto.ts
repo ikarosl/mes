@@ -19,9 +19,11 @@ import type {
   ApproveScrapSupplementPayload,
   CompleteReworkPayload,
   CreateProductionBatchPayload,
+  CancelProductionBatchPayload,
   CorrectBatchStepReportPayload,
   CreateBatchStepReportPayload,
   CreateWorkOrderPayload,
+  CloseWorkOrderPayload,
   ProductionBatchQuery,
   RejectBatchStepAbnormalDispositionPayload,
   ReverseBatchStepReportPayload,
@@ -103,6 +105,10 @@ export class UpdateWorkOrderDto extends VersionedCommandDto implements UpdateWor
   @IsOptional() @IsString() @MaxLength(100) externalOrderNo?: string | null;
   @IsOptional() @IsString() @MaxLength(5000) remark?: string | null;
 }
+
+export class CloseWorkOrderDto extends VersionedCommandDto implements CloseWorkOrderPayload {
+  @IsOptional() @IsString() @MaxLength(5000) reason?: string | null;
+}
 export class CreateBatchStepOverrideDto {
   @IsString() @MaxLength(20) routeStepId!: string;
   @IsOptional() @IsString() @MaxLength(20) actualSopFileId?: string | null;
@@ -146,6 +152,13 @@ export class UpdateProductionBatchDto
   @IsDateString({ strict: true })
   planEndDate?: string | null;
   @IsOptional() @IsString() @MaxLength(5000) remark?: string | null;
+}
+
+export class CancelProductionBatchDto
+  extends VersionedCommandDto
+  implements CancelProductionBatchPayload
+{
+  @IsString() @IsNotEmpty() @MaxLength(5000) reason!: string;
 }
 export class UpdateBatchStepExecutionDto
   extends VersionedCommandDto

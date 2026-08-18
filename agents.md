@@ -1,7 +1,7 @@
 # Easy MES Next — Agent Rules
 
 1. 本项目是 50 人以内轻量 MES 的模块化单体，不得擅自拆微服务或引入完整 ERP/MES 范围。
-2. 当前正式范围包括认证、RBAC、操作日志、前端权限基础设施、产品主数据、技术文件、工序和工艺路线，以及分阶段迁移的 Production：生产工单、生产批次、工序报工追溯和其依赖的生产物料需求、分配、领料出库链路。通用库存、入库、退料、报废、盘点、质量和全链路追溯后端不得提前迁入。
+2. 当前正式范围包括认证、RBAC、操作日志、前端权限基础设施、产品主数据、技术文件、工序和工艺路线，以及分阶段迁移的 Production：生产工单、生产批次、工序报工追溯和其依赖的生产物料需求、分配、领料出库、外购物料窄入库、生产退料和现有库存批次盘点链路。外购物料入库仅支持 `purchased` 来源；生产退料仅覆盖已确认领料退回公共可用库存；盘点仅覆盖现有 `item_batch × stock_status`。通用 Inventory 的其他出入库与库存报废、Quality 和全链路 Traceability 后端不得提前迁入。
 3. 数据库业务设计只以 `docs/database/README.md` 及其列出的领域章节为准；代码架构以 `docs/architecture.md` 为准；管理端前端分层、数据所有权、共享状态和异步生命周期以 `docs/frontend-architecture.md` 为准；接口以 `docs/api-conventions.md` 为准；编码以 `docs/coding-standards.md` 为准；管理端视觉交互以 `design.md` 为准。
 4. 数据库变更只能在 `packages/database/migrations` 追加 migration，已执行文件不可修改。
 5. 库存只以 `inventory_transaction` 为事实来源；生产需求只以 `production_item_demand` 为事实来源；汇总视图不得写入。

@@ -45,4 +45,17 @@ describe('ProductSnapshotService', () => {
     await expect(service.listRouteStepMaterialIds('41')).resolves.toEqual(['31']);
     expect(repository.listRouteStepMaterialIds).toHaveBeenCalledWith('41');
   });
+
+  it('delegates inactive-safe display reference reads through the Product boundary', async () => {
+    const references = [{ id: '2', itemCode: 'MAT-2', productName: '停用物料', unit: 'pcs' }];
+    const repository = {
+      listInventoryItemDisplayReferencesByIds: vi.fn().mockResolvedValue(references),
+    };
+    const service = new ProductSnapshotService(repository as never);
+
+    await expect(service.listInventoryItemDisplayReferencesByIds(['2'])).resolves.toEqual(
+      references,
+    );
+    expect(repository.listInventoryItemDisplayReferencesByIds).toHaveBeenCalledWith(['2']);
+  });
 });

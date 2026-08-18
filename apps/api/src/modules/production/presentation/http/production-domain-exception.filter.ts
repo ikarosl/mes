@@ -48,6 +48,9 @@ const statusFor = (code: ProductionDomainError['code']): number => {
   if (
     code === 'CONFLICT' ||
     code === 'CONCURRENT_MODIFICATION' ||
+    code === 'WORK_ORDER_COMPLETION_NOT_ALLOWED' ||
+    code === 'WORK_ORDER_CLOSE_NOT_ALLOWED' ||
+    code === 'BATCH_CANCEL_NOT_ALLOWED' ||
     code === 'INSUFFICIENT_AVAILABLE_STOCK' ||
     code === 'ALLOCATION_EXCEEDS_DEMAND' ||
     code === 'ALLOCATION_ALREADY_OUTBOUND' ||

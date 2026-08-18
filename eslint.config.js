@@ -176,20 +176,4 @@ export default tseslint.config(
       'max-lines': ['warn', { max: 1000, skipBlankLines: true, skipComments: true }],
     },
   },
-  // ⚠ 债务隔离：已知的迁移占位区，待接通真实 API 后逐步解除
-  //   已重构完成的模块（完成文件拆分 + 类型修复）不再需要豁免：
-  //   - apps/admin-web/src/views/system/**/*.{ts,vue}   ✓ 已重构
-  //   - apps/admin-web/src/views/product/**/*.{ts,vue}   ✓ 已重构
-  //   TODO(api-integration): 以下目录接入 API 时，改为对应的严格类型并删除对应 override
-  {
-    files: [
-      'apps/admin-web/src/views/warehouse/**/*.{ts,vue}',
-      'apps/admin-web/src/views/production/**/*.{ts,vue}',
-    ],
-    rules: {
-      '@typescript-eslint/no-explicit-any': 'warn',
-      '@typescript-eslint/no-unused-vars': 'warn',
-      'vue/no-unused-vars': 'warn',
-    },
-  },
 );

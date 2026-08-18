@@ -4,6 +4,7 @@ import type {
   CreateWorkOrderPayload,
   PageResult,
   ProductionBatchDetail,
+  ProductionBatchCancellationCheck,
   ProductionBatchItem,
   ProductionBatchQuery,
   UpdateProductionBatchPayload,
@@ -50,14 +51,25 @@ export abstract class ProductionRepository {
     product: ProductionProductSnapshot,
     audit: CommandContext,
   ): Promise<WorkOrderDetail>;
-  abstract transitionWorkOrder(
+  abstract cancelWorkOrder(
     id: string,
-    action: 'cancel' | 'close',
     version: number,
+    audit: CommandContext,
+  ): Promise<WorkOrderDetail>;
+  abstract completeWorkOrder(
+    id: string,
+    version: number,
+    audit: CommandContext,
+  ): Promise<WorkOrderDetail>;
+  abstract closeWorkOrder(
+    id: string,
+    version: number,
+    reason: string | null,
     audit: CommandContext,
   ): Promise<WorkOrderDetail>;
   abstract listBatches(query: ProductionBatchQuery): Promise<PageResult<ProductionBatchItem>>;
   abstract getBatch(id: string): Promise<ProductionBatchDetail>;
+  abstract getBatchCancellationCheck(id: string): Promise<ProductionBatchCancellationCheck>;
   abstract listWorkOrderBatches(workOrderId: string): Promise<ProductionBatchItem[]>;
   abstract withBatchCreationTransaction<T>(
     workOrderId: string,
@@ -73,6 +85,12 @@ export abstract class ProductionRepository {
   abstract updateBatch(
     id: string,
     payload: UpdateProductionBatchPayload,
+    audit: CommandContext,
+  ): Promise<ProductionBatchDetail>;
+  abstract cancelBatch(
+    id: string,
+    version: number,
+    reason: string,
     audit: CommandContext,
   ): Promise<ProductionBatchDetail>;
   abstract updateBatchStepExecution(

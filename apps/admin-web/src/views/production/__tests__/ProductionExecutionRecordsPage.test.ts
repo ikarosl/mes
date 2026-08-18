@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { flushPromises, mount } from '@vue/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ProductionExecutionRecordsPage from '../ProductionExecutionRecordsPage.vue';
@@ -18,6 +20,44 @@ describe('ProductionExecutionRecordsPage', () => {
     api.getExecutionCompletionCheck.mockReset();
     api.listBatchReworks.mockReset().mockResolvedValue([]);
     api.completeProductionExecution.mockReset();
+  });
+
+  it('keeps the batch sidebar within the allocated workspace height', () => {
+    const pagePath = [
+      resolve(process.cwd(), 'src/views/production/ProductionExecutionRecordsPage.vue'),
+      resolve(
+        process.cwd(),
+        'apps/admin-web/src/views/production/ProductionExecutionRecordsPage.vue',
+      ),
+    ].find(existsSync);
+    const batchListPath = [
+      resolve(process.cwd(), 'src/views/production/components/ProductionExecutionBatchList.vue'),
+      resolve(
+        process.cwd(),
+        'apps/admin-web/src/views/production/components/ProductionExecutionBatchList.vue',
+      ),
+    ].find(existsSync);
+
+    expect(pagePath).toBeDefined();
+    expect(batchListPath).toBeDefined();
+    const pageSource = readFileSync(pagePath!, 'utf8');
+    const batchListSource = readFileSync(batchListPath!, 'utf8');
+
+    expect(pageSource).toMatch(
+      /\.execution-page\s*\{[^}]*grid-template-rows: auto minmax\(0, 1fr\);[^}]*height: 100%;[^}]*min-height: 0;/s,
+    );
+    expect(pageSource).toMatch(
+      /\.workspace\s*\{[^}]*flex: 1;[^}]*min-height: 0;[^}]*overflow: hidden;/s,
+    );
+    expect(pageSource).toMatch(
+      /\.record-panel\s*\{[^}]*height: 100%;[^}]*max-height: 100%;[^}]*min-height: 0;[^}]*overflow-y: auto;/s,
+    );
+    expect(batchListSource).toMatch(
+      /\.batch-list\s*\{[^}]*display: flex;[^}]*flex-direction: column;[^}]*min-height: 0;[^}]*overflow: hidden;/s,
+    );
+    expect(batchListSource).toMatch(
+      /\.batch-items\s*\{[^}]*flex: 1;[^}]*min-height: 0;[^}]*overflow-y: auto;/s,
+    );
   });
 
   it('uses the current project query-panel shell without duplicating the route title', () => {

@@ -1,5 +1,7 @@
 ## 初始化工作
 
+**本文最后一段是数据库初始化引导，这个需要手动执行** 详见最后一段 **这个会初始化管理员的密码 初始化请不要使用**
+
 **请注意：** bash ops/scripts/install-easy-mes-compose 该脚本会初始化所有配置文件
 对于/etc/easy-mes 下这是持久化配置,**不会覆盖**
 对于/opt/easy-mes 这是随版本更新的配置,**将会进行覆盖**
@@ -101,3 +103,71 @@ docker compose 端口映射**到容器内的端口**与nginx conf 监听端口�
 也就是\etc\api.env.APP_PORT（这是node 服务启动使用的配置）、infra\nginx\default.conf、infra\docker\api.Dockerfile（不强制但有提醒）
 
 ### 服务器 配置项对齐（待补充）
+
+## 数据库初始化引导
+
+首次数据库初始化，（**请确保ci cd流程自动完成后执行**）：
+
+1. migration：CD 已自动执行。
+2. system seed：需要首次手动执行，创建管理员角色和权限。
+3. bootstrap-admin：需要首次手动执行，创建管理员用户。
+
+不应在每次 CD 中自动执行 `bootstrap-admin`，因为重复执行会按环境变量重置管理员密码。
+
+先以 root 执行 system seed：
+
+```bash
+docker compose \
+  --project-name easy-mes \
+  --env-file /etc/easy-mes/deploy.env \
+  --env-file /opt/easy-mes/release.env \
+  --file /opt/easy-mes/compose.prod.yml \
+  run --rm --no-deps api \
+  node node_modules/@company/database/dist/seed.js
+```
+
+然后安全输入管理员密码，不把密码写进命令历史：
+
+```bash
+read -rsp '请输入管理员密码: ' ADMIN_PASSWORD
+echo
+export ADMIN_PASSWORD
+export ADMIN_USERNAME=admin
+export ADMIN_DISPLAY_NAME='系统管理员'
+```
+
+执行管理员初始化：
+
+```bash
+docker compose \
+  --project-name easy-mes \
+  --env-file /etc/easy-mes/deploy.env \
+  --env-file /opt/easy-mes/release.env \
+  --file /opt/easy-mes/compose.prod.yml \
+  run --rm --no-deps \
+  -e ADMIN_USERNAME \
+  -e ADMIN_PASSWORD \
+  -e ADMIN_DISPLAY_NAME \
+  api \
+  node node_modules/@company/database/dist/bootstrap-admin.js
+```
+
+成功时会显示：
+
+```text
+Administrator ready: admin
+```
+
+立即清除当前 Shell 中的密码：
+
+```bash
+unset ADMIN_PASSWORD ADMIN_USERNAME ADMIN_DISPLAY_NAME
+```
+
+然后查询：
+
+```sql
+SELECT id, username, display_name, status FROM users;
+```
+
+system seed 可以幂等重跑；`bootstrap-admin` 也能重跑，但会重置该管理员的密码，所以后续不要把它放进普通 CD。

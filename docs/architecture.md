@@ -85,6 +85,10 @@ Controller 只负责协议映射、DTO、权限装饰器和响应转换，不写
   Controller、Service 和 Repository 均不得直接查询或修改该表。重放、冲突与失败通过平台 in-memory
   指标（`idempotency.metrics`）与带脱敏键摘要的日志观测，不伪造第二条业务成功审计。
 - 跨模块读通过目标模块公开 Query/Directory Facade；跨模块写通过目标模块公开应用服务。
+- 公开 Query 必须按用途区分过滤语义，不能用同一个默认带状态过滤的方法同时承担写操作校验与历史展示：
+  写操作校验只返回当前启用、未删除且满足业务条件的数据；历史、审计和既有单据展示允许解析已停用或软删除
+  的引用，但不得把该结果用于新增、编辑、分配、入库等写操作。方法名和返回类型必须体现 `enabled/current`
+  与 `display/history` 等语义差异，Adapter 测试分别覆盖“停用数据被校验查询排除”和“停用数据仍可用于历史展示”。
 - 组合根 `AppModule` 只能引用业务模块 `public.ts` 公开的装配对象，以及项目级基础设施/展示装配，不得
   深入模块内部层（application/domain/presentation/infrastructure），也不写业务逻辑；该规则由
   `scripts/check-api-architecture.mjs` 强制执行。

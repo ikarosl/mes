@@ -200,12 +200,28 @@ export class MysqlProductionExecutionRepository extends ProductionExecutionRepos
         );
         if (batchUpdated.affectedRows !== 1)
           throw new ProductionDomainError('STEP_START_NOT_ALLOWED', '生产批次开工状态已变化');
+        const [workOrderUpdated] = await connection.execute<ResultSetHeader>(
+          "UPDATE work_orders SET status='doing',version=version+1,updated_by=? WHERE id=? AND status='released'",
+          [context.actorId, String(batch.work_order_id)],
+        );
+        if (workOrderUpdated.affectedRows !== 1) {
+          const [[workOrder]] = await connection.query<(RowDataPacket & { status: string })[]>(
+            'SELECT status FROM work_orders WHERE id=? FOR UPDATE',
+            [String(batch.work_order_id)],
+          );
+          if (workOrder?.status !== 'doing')
+            throw new ProductionDomainError(
+              'STEP_START_NOT_ALLOWED',
+              '生产工单当前状态不允许批次开工',
+            );
+        }
       }
       await auditStep(connection, context, 'production-step.start', stepRecordId, {
         status: 'doing',
         responsibleUserId: context.actorId,
         version: version + 1,
         batchStatus: index === 0 ? 'doing' : batch.status,
+        ...(index === 0 ? { workOrderStatus: 'doing' } : {}),
       });
       return this.commandResult(connection, batchId, stepRecordId);
     });

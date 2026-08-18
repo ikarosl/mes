@@ -203,17 +203,33 @@
               <el-button
                 link
                 type="primary"
+                :disabled="!hasMoreActions(row)"
                 >更多</el-button
               >
               <template #dropdown>
                 <el-dropdown-menu>
                   <el-dropdown-item
-                    :disabled="!canCloseOrder(row) || isRowPending(row.id)"
-                    @click="closeOrder(row)"
-                    >关闭工单</el-dropdown-item
+                    v-if="canCompleteOrder(row)"
+                    :disabled="isRowPending(row.id)"
+                    @click="openWorkOrderTransition(row, 'complete')"
+                    >确认工单完工</el-dropdown-item
                   >
                   <el-dropdown-item
-                    :disabled="!canCancelOrder(row) || isRowPending(row.id)"
+                    v-if="canCloseOrder(row)"
+                    :disabled="isRowPending(row.id)"
+                    @click="
+                      openWorkOrderTransition(
+                        row,
+                        row.status === 'completed' ? 'archive' : 'early-close',
+                      )
+                    "
+                    >{{
+                      row.status === 'completed' ? '归档关闭工单' : '提前关闭工单'
+                    }}</el-dropdown-item
+                  >
+                  <el-dropdown-item
+                    v-if="canCancelOrder(row)"
+                    :disabled="isRowPending(row.id)"
                     @click="cancelOrder(row)"
                     >取消工单</el-dropdown-item
                   >
@@ -283,6 +299,15 @@
       @refresh-users="userSource.refresh"
       @save="submitBatch"
     />
+
+    <WorkOrderTransitionDialog
+      :visible="transitionDialogVisible"
+      :mode="transitionMode"
+      :order="transitionOrder"
+      :submitting="transitionSubmitting"
+      @update:visible="transitionDialogVisible = $event"
+      @confirm="confirmWorkOrderTransition"
+    />
   </div>
 </template>
 
@@ -317,6 +342,7 @@ import WorkOrderDetailDialog from './components/WorkOrderDetailDialog.vue';
 import BatchListDialog from './components/BatchListDialog.vue';
 import BatchFormDialog from './components/BatchFormDialog.vue';
 import type { BatchFormValue } from './components/BatchFormDialog.vue';
+import WorkOrderTransitionDialog from './components/WorkOrderTransitionDialog.vue';
 
 defineOptions({ name: 'ProductionOrdersPage' });
 
@@ -374,12 +400,16 @@ const orderDialogVisible = ref(false);
 const detailDialogVisible = ref(false);
 const taskDialogVisible = ref(false);
 const batchFormDialogVisible = ref(false);
+const transitionDialogVisible = ref(false);
 const editingOrderId = ref<string | null>(null);
 const editingBatchId = ref<string | null>(null);
 const submitting = ref(false);
+const transitionSubmitting = ref(false);
 const activeOrder = ref<WorkOrderDetail | null>(null);
 const taskOrder = ref<WorkOrderItem | null>(null);
 const taskBatches = ref<ProductionBatchItem[]>([]);
+const transitionOrder = ref<WorkOrderDetail | null>(null);
+const transitionMode = ref<'complete' | 'early-close' | 'archive'>('complete');
 const workOrderFormDialogRef = ref<{
   setForm: (row: WorkOrderItem) => void;
   resetForm: () => void;
@@ -403,7 +433,7 @@ const batchQuantityMax = computed(() => {
 });
 const canCreateBatch = computed(
   () =>
-    taskOrder.value?.status === 'released' &&
+    (taskOrder.value?.status === 'released' || taskOrder.value?.status === 'doing') &&
     Number(taskOrder.value.plannedQuantity) > Number(taskOrder.value.assignedQuantity),
 );
 
@@ -473,23 +503,24 @@ const openDetail = async (row: WorkOrderItem): Promise<void> => {
 };
 
 /* ====== 工单状态变更 ====== */
-const releaseOrder = (row: WorkOrderItem) => changeOrderStatus(row, 'release', '下达');
-const closeOrder = (row: WorkOrderItem) => changeOrderStatus(row, 'close', '关闭');
-const cancelOrder = (row: WorkOrderItem) => changeOrderStatus(row, 'cancel', '取消');
+const releaseOrder = (row: WorkOrderItem) =>
+  runSimpleOrderAction(row, '下达', () => productionApi.releaseOrder(row.id, row.version));
+const cancelOrder = (row: WorkOrderItem) =>
+  runSimpleOrderAction(row, '取消', () => productionApi.cancelOrder(row.id, row.version));
 
-const changeOrderStatus = async (
+const runSimpleOrderAction = async (
   row: WorkOrderItem,
-  action: 'release' | 'close' | 'cancel',
   label: string,
+  command: () => Promise<unknown>,
 ): Promise<void> => {
   if (!beginRow(row.id)) return;
   try {
     await ElMessageBox.confirm(`确认${label}该工单？`, `${label}工单`, {
       confirmButtonText: `确认${label}`,
       cancelButtonText: '取消',
-      type: action === 'cancel' ? 'warning' : 'info',
+      type: label === '取消' ? 'warning' : 'info',
     });
-    await productionApi.changeOrderStatus(row.id, action, row.version);
+    await command();
     EMessage.success(`工单已${label}`);
     await loadOrders();
   } catch (error) {
@@ -499,10 +530,59 @@ const changeOrderStatus = async (
   }
 };
 
+const openWorkOrderTransition = async (
+  row: WorkOrderItem,
+  mode: 'complete' | 'early-close' | 'archive',
+): Promise<void> => {
+  if (!beginRow(row.id)) return;
+  try {
+    transitionOrder.value = await productionApi.getOrder(row.id);
+    transitionMode.value = mode;
+    transitionDialogVisible.value = true;
+  } catch (error) {
+    EMessage.error(error, '工单状态核对失败');
+  } finally {
+    endRow(row.id);
+  }
+};
+
+const confirmWorkOrderTransition = async (value: {
+  mode: 'complete' | 'early-close' | 'archive';
+  reason: string | null;
+}): Promise<void> => {
+  const order = transitionOrder.value;
+  if (!order || !beginRow(order.id)) return;
+  transitionSubmitting.value = true;
+  try {
+    if (value.mode === 'complete') {
+      await productionApi.completeOrder(order.id, order.version);
+      EMessage.success('工单已确认完工');
+    } else {
+      await productionApi.closeOrder(order.id, {
+        version: order.version,
+        reason: value.reason,
+      });
+      EMessage.success(value.mode === 'archive' ? '工单已归档关闭' : '工单已提前关闭');
+    }
+    transitionDialogVisible.value = false;
+    transitionOrder.value = null;
+    await loadOrders();
+  } catch (error) {
+    EMessage.error(error, value.mode === 'complete' ? '工单完工确认失败' : '工单关闭失败');
+  } finally {
+    transitionSubmitting.value = false;
+    endRow(order.id);
+  }
+};
+
 const canEditOrder = (row: WorkOrderItem): boolean => row.status === 'draft';
-const canCloseOrder = (row: WorkOrderItem): boolean => row.status === 'completed';
-const canCancelOrder = (row: WorkOrderItem): boolean =>
-  ['draft', 'released', 'doing'].includes(row.status);
+const canCompleteOrder = (row: WorkOrderItem): boolean =>
+  row.status === 'released' || row.status === 'doing';
+const canCloseOrder = (row: WorkOrderItem): boolean =>
+  row.status === 'released' || row.status === 'doing' || row.status === 'completed';
+const canCancelOrder = (row: WorkOrderItem): boolean => row.status === 'draft';
+const hasMoreActions = (row: WorkOrderItem): boolean =>
+  canCompleteOrder(row) || canCloseOrder(row) || canCancelOrder(row);
 
 /* ====== 批次管理 ====== */
 const openTasks = async (row: WorkOrderItem): Promise<void> => {

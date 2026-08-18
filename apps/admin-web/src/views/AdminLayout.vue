@@ -176,6 +176,11 @@ const warehouseMenus = [
     permission: PERMISSIONS.warehouse.returns.view,
   },
   {
+    title: '报废管理（未开放）',
+    path: '/warehouse/scraps',
+    permission: undefined,
+  },
+  {
     title: '盘点管理',
     path: '/warehouse/stock-checks',
     permission: PERMISSIONS.warehouse.stockChecks.view,
