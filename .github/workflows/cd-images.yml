@@ -1,0 +1,320 @@
+name: cd-images
+
+on:
+  workflow_call:
+    inputs:
+      base_sha:
+        description: Git SHA immediately before this main push
+        required: true
+        type: string
+      head_sha:
+        description: CI-verified Git SHA to publish
+        required: true
+        type: string
+    outputs:
+      api_digest:
+        description: Published API digest, or empty when API was unaffected
+        value: ${{ jobs.publish-api.outputs.digest }}
+      web_digest:
+        description: Published Web digest, or empty when Web was unaffected
+        value: ${{ jobs.publish-web.outputs.digest }}
+
+permissions:
+  contents: read
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      api_changed: ${{ steps.changes.outputs.api_changed }}
+      web_changed: ${{ steps.changes.outputs.web_changed }}
+      control_changed: ${{ steps.changes.outputs.control_changed }}
+    steps:
+      - name: Check out the CI-verified commit with history
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.head_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Resolve affected application images
+        id: changes
+        run: node scripts/detect-release-changes.mjs "$BASE_SHA" "$HEAD_SHA"
+        env:
+          BASE_SHA: ${{ inputs.base_sha }}
+          HEAD_SHA: ${{ inputs.head_sha }}
+
+      - name: Write change summary
+        env:
+          API_CHANGED: ${{ steps.changes.outputs.api_changed }}
+          WEB_CHANGED: ${{ steps.changes.outputs.web_changed }}
+          CONTROL_CHANGED: ${{ steps.changes.outputs.control_changed }}
+        run: |
+          {
+            echo "### Release impact"
+            echo
+            echo "- API image changed: \`$API_CHANGED\`"
+            echo "- Web image changed: \`$WEB_CHANGED\`"
+            echo "- Server control files changed: \`$CONTROL_CHANGED\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  publish-api:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.api_changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    env:
+      IMAGE_NAME: ${{ secrets.DOCKER_HUB_USERNAME }}/easy-mes-api
+      IMAGE_SHA: ${{ inputs.head_sha }}
+    steps:
+      - name: Validate Docker Hub credentials
+        env:
+          DOCKER_HUB_USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}
+          DOCKER_HUB_TOKEN: ${{ secrets.DOCKER_HUB_TOKEN }}
+        run: |
+          test -n "$DOCKER_HUB_USERNAME"
+          test -n "$DOCKER_HUB_TOKEN"
+
+      - name: Check out the CI-verified commit
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.IMAGE_SHA }}
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+
+      - name: Build and push API image
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: infra/docker/api.Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:sha-${{ env.IMAGE_SHA }}
+            ${{ env.IMAGE_NAME }}:latest
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ env.IMAGE_SHA }}
+          cache-from: type=gha,scope=easy-mes-api-main
+          cache-to: type=gha,mode=max,scope=easy-mes-api-main
+          provenance: mode=max
+          sbom: true
+
+      - name: Write API release summary
+        env:
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          {
+            echo "### API image published"
+            echo
+            echo "- Image: \`$IMAGE_NAME\`"
+            echo "- Commit tag: \`sha-$IMAGE_SHA\`"
+            echo "- Digest: \`$IMAGE_DIGEST\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  publish-web:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.web_changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    env:
+      IMAGE_NAME: ${{ secrets.DOCKER_HUB_USERNAME }}/easy-mes-web
+      IMAGE_SHA: ${{ inputs.head_sha }}
+    steps:
+      - name: Validate Docker Hub credentials
+        env:
+          DOCKER_HUB_USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}
+          DOCKER_HUB_TOKEN: ${{ secrets.DOCKER_HUB_TOKEN }}
+        run: |
+          test -n "$DOCKER_HUB_USERNAME"
+          test -n "$DOCKER_HUB_TOKEN"
+
+      - name: Check out the CI-verified commit
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.IMAGE_SHA }}
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+
+      - name: Build and push Web image
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: infra/docker/web.Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:sha-${{ env.IMAGE_SHA }}
+            ${{ env.IMAGE_NAME }}:latest
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ env.IMAGE_SHA }}
+          cache-from: type=gha,scope=easy-mes-web-main
+          cache-to: type=gha,mode=max,scope=easy-mes-web-main
+          provenance: mode=max
+          sbom: true
+
+      - name: Write Web release summary
+        env:
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          {
+            echo "### Web image published"
+            echo
+            echo "- Image: \`$IMAGE_NAME\`"
+            echo "- Commit tag: \`sha-$IMAGE_SHA\`"
+            echo "- Digest: \`$IMAGE_DIGEST\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy-test-server:
+    needs: [detect-changes, publish-api, publish-web]
+    if: >-
+      always() &&
+      needs.detect-changes.result == 'success' &&
+      (needs.publish-api.result == 'success' || needs.publish-api.result == 'skipped') &&
+      (needs.publish-web.result == 'success' || needs.publish-web.result == 'skipped') &&
+      (needs.detect-changes.outputs.control_changed == 'true' ||
+       needs.publish-api.outputs.digest != '' ||
+       needs.publish-web.outputs.digest != '')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DEPLOY_HOST: ${{ secrets.SSH_DEPLOY_HOST }}
+      DEPLOY_PORT: ${{ secrets.SSH_DEPLOY_PORT }}
+      DEPLOY_USER: ${{ secrets.SSH_DEPLOY_USER_NAME || secrets.SSH_DEPOLY_USER_NAME }}
+      SSH_PRIVATE_KEY: ${{ secrets.SSH_DEPLOY_SECRET }}
+      SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+      CONTROL_CHANGED: ${{ needs.detect-changes.outputs.control_changed }}
+      API_DIGEST: ${{ needs.publish-api.outputs.digest }}
+      WEB_DIGEST: ${{ needs.publish-web.outputs.digest }}
+      RELEASE_SHA: ${{ inputs.head_sha }}
+    steps:
+      - name: Check out server control files
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+          persist-credentials: false
+
+      - name: Configure verified SSH access
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          fail() {
+            echo "::error::$1"
+            exit 1
+          }
+
+          [[ -n "$DEPLOY_HOST" ]] || fail 'SSH_DEPLOY_HOST is empty.'
+          [[ "$DEPLOY_HOST" =~ ^[A-Za-z0-9._-]+$ ]] || fail 'SSH_DEPLOY_HOST has an unsupported format.'
+          [[ "$DEPLOY_PORT" =~ ^[0-9]{1,5}$ ]] || fail 'SSH_DEPLOY_PORT must be numeric.'
+          (( DEPLOY_PORT >= 1 && DEPLOY_PORT <= 65535 )) || fail 'SSH_DEPLOY_PORT is outside 1-65535.'
+          [[ "$DEPLOY_USER" =~ ^[a-z_][a-z0-9_-]*$ ]] || fail 'SSH deployment username has an unsupported format.'
+          [[ -n "$SSH_PRIVATE_KEY" ]] || fail 'SSH_DEPLOY_SECRET is empty.'
+          [[ -n "$SSH_KNOWN_HOSTS" ]] || fail 'SSH_KNOWN_HOSTS is empty.'
+
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > "$HOME/.ssh/easy_mes_deploy"
+          chmod 600 "$HOME/.ssh/easy_mes_deploy"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" | tr -d '\r' > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+          ssh-keygen -y -f "$HOME/.ssh/easy_mes_deploy" >/dev/null || \
+            fail 'SSH_DEPLOY_SECRET is not a readable, unencrypted OpenSSH private key.'
+
+          known_host_target="$DEPLOY_HOST"
+          if [[ "$DEPLOY_PORT" != '22' ]]; then
+            known_host_target="[$DEPLOY_HOST]:$DEPLOY_PORT"
+          fi
+          ssh-keygen -F "$known_host_target" -f "$HOME/.ssh/known_hosts" >/dev/null || \
+            fail 'SSH_KNOWN_HOSTS has no entry matching SSH_DEPLOY_HOST and SSH_DEPLOY_PORT.'
+
+          ssh -i "$HOME/.ssh/easy_mes_deploy" \
+            -p "$DEPLOY_PORT" \
+            -o BatchMode=yes \
+            -o ConnectTimeout=15 \
+            -o StrictHostKeyChecking=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" true || \
+            fail 'Verified SSH connection failed; check host reachability, authorized_keys, and the deployment username.'
+
+      - name: Synchronize changed server control files
+        if: env.CONTROL_CHANGED == 'true'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          remote="$DEPLOY_USER@$DEPLOY_HOST"
+          bundle="/tmp/easy-mes-control-$RELEASE_SHA"
+          ssh_args=(-i "$HOME/.ssh/easy_mes_deploy" -p "$DEPLOY_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes)
+          scp_args=(-i "$HOME/.ssh/easy_mes_deploy" -P "$DEPLOY_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes)
+
+          printf -v remote_command 'umask 077; install -d -m 700 %q' "$bundle"
+          printf '%s\n' "$remote_command" | ssh "${ssh_args[@]}" "$remote" bash -se
+          scp "${scp_args[@]}" \
+            infra/compose/compose.prod.yml \
+            ops/scripts/deploy-api.sh \
+            ops/scripts/deploy-web.sh \
+            ops/scripts/apply-control.sh \
+            "$remote:$bundle/"
+          printf -v remote_command 'sudo -n /opt/easy-mes/apply-control.sh %q' "$RELEASE_SHA"
+          printf '%s\n' "$remote_command" | ssh "${ssh_args[@]}" "$remote" bash -se
+
+      - name: Deploy changed image digests
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          remote="$DEPLOY_USER@$DEPLOY_HOST"
+          ssh_args=(-i "$HOME/.ssh/easy_mes_deploy" -p "$DEPLOY_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes)
+
+          if [[ -n "$API_DIGEST" ]]; then
+            [[ "$API_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+            printf -v remote_command 'sudo -n /opt/easy-mes/deploy-api.sh %q' "$API_DIGEST"
+            printf '%s\n' "$remote_command" | ssh "${ssh_args[@]}" "$remote" bash -se
+          fi
+          if [[ -n "$WEB_DIGEST" ]]; then
+            [[ "$WEB_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+            printf -v remote_command 'sudo -n /opt/easy-mes/deploy-web.sh %q' "$WEB_DIGEST"
+            printf '%s\n' "$remote_command" | ssh "${ssh_args[@]}" "$remote" bash -se
+          fi
+
+      - name: Write deployment summary
+        if: success()
+        shell: bash
+        run: |
+          {
+            echo "### Test server deployed"
+            echo
+            echo "- Revision: \`$RELEASE_SHA\`"
+            echo "- Control files synchronized: \`$CONTROL_CHANGED\`"
+            echo "- API digest: \`${API_DIGEST:-unchanged}\`"
+            echo "- Web digest: \`${WEB_DIGEST:-unchanged}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
