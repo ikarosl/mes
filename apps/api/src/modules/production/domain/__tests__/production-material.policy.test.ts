@@ -16,6 +16,7 @@ describe('production material policy', () => {
     expect(() => requireMaterialOutboundBatchStatus('material_pending')).toThrow();
   });
   it('allows only supplemental material logistics while production is doing', () => {
+    expect(() => requireMaterialAllocationBatchStatus('material_outbound', true)).not.toThrow();
     expect(() => requireMaterialAllocationBatchStatus('doing', true)).not.toThrow();
     expect(() => requireMaterialOutboundBatchStatus('doing', true)).not.toThrow();
     expect(() => requireMaterialAllocationBatchStatus('doing', false)).toThrow();

@@ -57,11 +57,17 @@ describe('useWorkerTasks', () => {
     api.createStepReport.mockResolvedValue({});
     api.listWorkerTasks.mockResolvedValue([]);
     const state = useWorkerTasks();
-    await state.report(task, 2, 1, '  本次异常  ');
+    await state.report(task, 2, 1, 'current_step', '  本次异常  ');
     expect(api.createStepReport).toHaveBeenCalledWith(
       '2',
       '10',
-      { version: 3, normalQuantity: 2, abnormalQuantity: 1, remark: '本次异常' },
+      {
+        version: 3,
+        normalQuantity: 2,
+        abnormalQuantity: 1,
+        abnormalOrigin: 'current_step',
+        remark: '本次异常',
+      },
       expect.any(String),
     );
     expect(state.reportPendingIds.value.size).toBe(0);
@@ -72,7 +78,7 @@ describe('useWorkerTasks', () => {
     api.createStepReport.mockRejectedValue(new RequestError('网络断开', 0));
     const state = useWorkerTasks();
 
-    await expect(state.report(task, 1, 0, null)).rejects.toBeInstanceOf(RequestError);
+    await expect(state.report(task, 1, 0, null, null)).rejects.toBeInstanceOf(RequestError);
 
     expect(state.getReportIntentStatus('10')).toBe('pending');
     state.resetReportIntent('10');

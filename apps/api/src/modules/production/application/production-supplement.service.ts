@@ -1,10 +1,16 @@
 import { Injectable } from '@nestjs/common';
-import type { ApproveScrapSupplementPayload } from '@company/contracts';
-import type { IdempotentCommandContext } from '../../../common/audit/audit.types.js';
+import type {
+  ConfirmProductionScrapSupplementPlanPayload,
+  SaveProductionScrapSupplementPlanPayload,
+} from '@company/contracts';
+import type {
+  CommandContext,
+  IdempotentCommandContext,
+} from '../../../common/audit/audit.types.js';
 import { IdempotencyExecutor } from '../../../common/idempotency/idempotency-executor.js';
 import { ProductSnapshotQuery } from '../../product/public.js';
-import { APPROVE_SCRAP_SUPPLEMENT_IDEMPOTENCY_SCOPE } from './idempotency/approve-scrap-supplement-idempotency.contract.js';
 import { productionSupplementResultCodec } from './idempotency/production-supplement-result.codec.js';
+import { CONFIRM_SCRAP_SUPPLEMENT_PLAN_IDEMPOTENCY_SCOPE } from './idempotency/confirm-scrap-supplement-plan-idempotency.contract.js';
 import { ProductionSupplementRepository } from './ports/production-supplement.repository.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
 
@@ -16,46 +22,100 @@ export class ProductionSupplementService {
     private readonly idempotency: IdempotencyExecutor,
   ) {}
 
-  async listCandidates(dispositionId: string) {
-    return this.enrich(await this.availableCandidates(dispositionId));
+  async listCandidates(dispositionId: string, materialEndStepRecordId: string) {
+    return this.enrich(await this.availableCandidates(dispositionId, materialEndStepRecordId));
   }
 
-  async approve(
+  async getPlan(dispositionId: string) {
+    const plan = await this.repository.getPlan(dispositionId);
+    if (!plan) return null;
+    const lines = await this.enrich(plan.lines);
+    return { ...plan, lines };
+  }
+
+  async savePlan(
     dispositionId: string,
-    payload: ApproveScrapSupplementPayload,
-    context: IdempotentCommandContext,
+    payload: SaveProductionScrapSupplementPlanPayload,
+    context: CommandContext,
   ) {
     const normalized = {
-      version: payload.version,
+      planVersion: payload.planVersion,
+      dispositionVersion: payload.dispositionVersion,
+      materialEndStepRecordId: payload.materialEndStepRecordId,
       remark: payload.remark?.trim() || null,
       details: payload.details.map((line) => ({
         originalDemandId: line.originalDemandId,
         supplementQuantity: line.supplementQuantity,
       })),
     };
+    const candidates = await this.availableCandidates(
+      dispositionId,
+      normalized.materialEndStepRecordId,
+    );
+    const allowed = new Set(candidates.map((row) => row.originalDemandId));
+    if (normalized.details.some((line) => !allowed.has(line.originalDemandId)))
+      throw new ProductionDomainError(
+        'INVALID_INPUT',
+        '补料物料不属于异常工序绑定物料或当前产品有效 BOM',
+      );
+    const plan = await this.repository.savePlan(dispositionId, normalized, {
+      actorId: context.actorId,
+      requestId: context.requestId,
+      ip: context.ip,
+      userAgent: context.userAgent,
+    });
+    const lines = await this.enrich(plan.lines);
+    return { ...plan, lines };
+  }
+
+  async confirmPlan(
+    dispositionId: string,
+    payload: ConfirmProductionScrapSupplementPlanPayload,
+    context: IdempotentCommandContext,
+  ) {
     const execution = await this.idempotency.execute({
-      scope: APPROVE_SCRAP_SUPPLEMENT_IDEMPOTENCY_SCOPE,
+      scope: CONFIRM_SCRAP_SUPPLEMENT_PLAN_IDEMPOTENCY_SCOPE,
       key: context.idempotencyKey,
       actorId: context.actorId,
       requestId: context.requestId,
-      request: { params: { dispositionId }, body: normalized },
+      request: { params: { dispositionId }, body: payload },
       resultCodec: productionSupplementResultCodec,
       handler: async () => {
-        const candidates = await this.availableCandidates(dispositionId);
+        const plan = await this.repository.getPlan(dispositionId);
+        if (!plan) throw new ProductionDomainError('NOT_FOUND', '报废补料暂存方案不存在');
+        if (plan.status !== 'draft')
+          throw new ProductionDomainError('INVALID_STATE', '报废补料方案已经确认');
+        const candidates = await this.availableCandidates(
+          dispositionId,
+          plan.materialEndStepRecordId,
+        );
         const allowed = new Set(candidates.map((row) => row.originalDemandId));
-        if (normalized.details.some((line) => !allowed.has(line.originalDemandId)))
+        if (plan.lines.some((line) => !allowed.has(line.originalDemandId)))
           throw new ProductionDomainError(
             'INVALID_INPUT',
-            '补料物料不属于异常工序绑定物料或当前产品有效 BOM',
+            '暂存方案中的物料已不属于当前有效候选，请重新编辑后确认',
           );
-        const result = await this.repository.approve(dispositionId, normalized, {
-          actorId: context.actorId,
-          requestId: context.requestId,
-          ip: context.ip,
-          userAgent: context.userAgent,
-        });
-        const details = await this.enrich(
-          result.supplement.details.map((line) => ({
+        const result = await this.repository.approve(
+          dispositionId,
+          {
+            version: payload.dispositionVersion,
+            materialEndStepRecordId: plan.materialEndStepRecordId,
+            details: plan.lines.map((line) => ({
+              originalDemandId: line.originalDemandId,
+              supplementQuantity: Number(line.plannedQuantity),
+            })),
+            remark: plan.remark,
+          },
+          {
+            actorId: context.actorId,
+            requestId: context.requestId,
+            ip: context.ip,
+            userAgent: context.userAgent,
+          },
+          { planId: plan.planId, version: payload.version },
+        );
+        const demands = await this.enrich(
+          result.supplement.demands.map((line) => ({
             originalDemandId: line.originalDemandId,
             productionBatchId: result.supplement.productionBatchId,
             productMaterialId: line.productMaterialId,
@@ -70,10 +130,10 @@ export class ProductionSupplementService {
           ...result,
           supplement: {
             ...result.supplement,
-            details: result.supplement.details.map((line, index) => ({
+            demands: result.supplement.demands.map((line, index) => ({
               ...line,
-              itemCode: details[index]?.itemCode ?? '',
-              itemName: details[index]?.itemName ?? '',
+              itemCode: demands[index]?.itemCode ?? '',
+              itemName: demands[index]?.itemName ?? '',
             })),
           },
         };
@@ -96,8 +156,11 @@ export class ProductionSupplementService {
     }));
   }
 
-  private async availableCandidates(dispositionId: string) {
-    const context = await this.repository.getCandidateContext(dispositionId);
+  private async availableCandidates(dispositionId: string, materialEndStepRecordId: string) {
+    const context = await this.repository.getCandidateContext(
+      dispositionId,
+      materialEndStepRecordId,
+    );
     const routeMaterialIds = (
       await Promise.all(
         context.routeStepIds.map((routeStepId) =>

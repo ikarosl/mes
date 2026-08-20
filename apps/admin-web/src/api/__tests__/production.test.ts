@@ -537,26 +537,55 @@ describe('productionApi', () => {
     ]);
   });
 
-  it('loads supplement candidates and submits scrap approval with idempotency', async () => {
+  it('loads supplement candidates and walks the draft save and confirm flow with idempotency', async () => {
     const { productionApi } = await import('../production');
-    const body = {
-      version: 2,
+    const saveBody = {
+      planVersion: null,
+      dispositionVersion: 0,
+      materialEndStepRecordId: '3',
       details: [{ originalDemandId: '5', supplementQuantity: 1.25 }],
       remark: '补料',
     };
-    await productionApi.listSupplementCandidates('8');
-    await productionApi.approveScrapSupplement('8', body, 'supplement-key');
-    expect(request.mock.calls.slice(-2).map(([config]) => config)).toEqual([
-      { url: '/production/abnormal-dispositions/8/supplement-candidates' },
+    await productionApi.listSupplementCandidates('8', '3');
+    await productionApi.getScrapSupplementPlan('8');
+    await productionApi.saveScrapSupplementPlan('8', saveBody);
+    await productionApi.confirmScrapSupplementPlan(
+      '8',
+      { version: 0, dispositionVersion: 0 },
+      'supplement-key',
+    );
+    expect(request.mock.calls.slice(-4).map(([config]) => config)).toEqual([
       {
-        url: '/production/abnormal-dispositions/8/actions/approve-scrap-supplement',
+        url: '/production/abnormal-dispositions/8/supplement-candidates',
+        params: { materialEndStepRecordId: '3' },
+      },
+      { url: '/production/abnormal-dispositions/8/scrap-supplement-plan' },
+      {
+        url: '/production/abnormal-dispositions/8/scrap-supplement-plan',
+        method: 'PUT',
+        data: saveBody,
+      },
+      {
+        url: '/production/abnormal-dispositions/8/scrap-supplement-plan/actions/confirm',
         method: 'POST',
-        data: body,
+        data: { version: 0, dispositionVersion: 0 },
         headers: { 'Idempotency-Key': 'supplement-key' },
         retryUnsafe: true,
         retryTimes: 2,
       },
     ]);
+  });
+
+  it('passes through a null scrap supplement plan for a disposition without a draft', async () => {
+    const { productionApi } = await import('../production');
+    request.mockResolvedValue({ data: null });
+
+    const plan = await productionApi.getScrapSupplementPlan('8');
+
+    expect(plan).toBeNull();
+    expect(request).toHaveBeenCalledWith({
+      url: '/production/abnormal-dispositions/8/scrap-supplement-plan',
+    });
   });
 
   it('handles network errors gracefully via toRequestError', async () => {

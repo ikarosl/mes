@@ -29,7 +29,11 @@ const allowedTables = new Set([
   'batch_step_abnormal_dispositions',
   'rework_records',
   'batch_step_scrap_records',
+  'batch_step_scrap_reproduction_authorization',
+  'production_scrap_supplement_plan',
+  'production_scrap_supplement_plan_line',
   'production_material_supplement',
+  // Historical table removed by 202608200001; retained so immutable older migrations stay valid.
   'production_material_supplement_detail',
   'production_item_demand',
   'inbound_order',
@@ -41,6 +45,7 @@ const allowedTables = new Set([
   'outbound_detail',
   'return_order',
   'return_detail',
+  'item_scrap',
   'stock_check_order',
   'stock_check_detail',
 ]);

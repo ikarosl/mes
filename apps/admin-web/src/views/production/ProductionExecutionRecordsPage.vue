@@ -212,7 +212,7 @@
                 >
                   来源 {{ source.sourceStepOrder }}. {{ source.sourceStepName }} ·
                   {{ formatQuantity(source.quantity) }} {{ step.unit }} ·
-                  {{ source.status === 'activated' ? '已领料激活' : '等待补料领用' }}
+                  {{ source.status === 'material_ready' ? '补料已齐，可执行' : '等待补料领用' }}
                 </span>
               </div>
               <el-alert
@@ -359,6 +359,8 @@
                 :source-step="step"
                 :route-steps="record.steps"
                 :candidate-loader="loadSupplementCandidates"
+                :plan-loader="loadScrapSupplementPlan"
+                :plan-saver="saveScrapSupplementPlan"
                 @approve="handleApproveRework"
                 @approve-scrap="handleApproveScrapSupplement"
                 @reject="handleRejectDisposition"
@@ -443,6 +445,16 @@
               :precision="4"
             />
           </el-form-item>
+          <el-form-item
+            v-if="changeForm.abnormalQuantity > 0"
+            label="替代异常来源"
+            required
+          >
+            <el-radio-group v-model="changeForm.abnormalOrigin">
+              <el-radio value="current_step">当前工序异常</el-radio>
+              <el-radio value="previous_step">前置工序异常</el-radio>
+            </el-radio-group>
+          </el-form-item>
         </template>
         <el-form-item
           label="原因"
@@ -521,6 +533,7 @@ import {
 } from '@company/constants';
 import type {
   BatchStepExecutionRecordItem,
+  BatchStepAbnormalOrigin,
   BatchStepReportItem,
   BatchStepStatus,
 } from '@company/contracts';
@@ -548,7 +561,12 @@ const completionVisible = ref(false);
 const changeMode = ref<'correct' | 'reverse'>('correct');
 const changeStep = ref<BatchStepExecutionRecordItem | null>(null);
 const changeReport = ref<BatchStepReportItem | null>(null);
-const changeForm = reactive({ normalQuantity: 0, abnormalQuantity: 0, reason: '' });
+const changeForm = reactive<{
+  normalQuantity: number;
+  abnormalQuantity: number;
+  abnormalOrigin: BatchStepAbnormalOrigin | null;
+  reason: string;
+}>({ normalQuantity: 0, abnormalQuantity: 0, abnormalOrigin: null, reason: '' });
 const {
   batches,
   total,
@@ -571,6 +589,8 @@ const {
   startRework,
   completeRework,
   loadSupplementCandidates,
+  loadScrapSupplementPlan,
+  saveScrapSupplementPlan,
   approveScrapSupplement,
 } = useProductionExecutionRecords();
 const {
@@ -698,7 +718,8 @@ const canSubmitChange = computed(
   () =>
     changeForm.reason.trim().length > 0 &&
     (changeMode.value === 'reverse' ||
-      changeForm.normalQuantity + changeForm.abnormalQuantity > 0) &&
+      (changeForm.normalQuantity + changeForm.abnormalQuantity > 0 &&
+        (changeForm.abnormalQuantity === 0 || changeForm.abnormalOrigin !== null))) &&
     !changeHasDownstreamConflict.value &&
     !changeExceedsReleased.value,
 );
@@ -756,6 +777,7 @@ const prepareChange = (
   changeReport.value = report;
   changeForm.normalQuantity = Number(report.normalQuantity);
   changeForm.abnormalQuantity = Number(report.abnormalQuantity);
+  changeForm.abnormalOrigin = report.abnormalOrigin;
   changeForm.reason = '';
   changeVisible.value = true;
 };
@@ -793,6 +815,7 @@ const submitChange = async () => {
         changeReport.value,
         changeForm.normalQuantity,
         changeForm.abnormalQuantity,
+        changeForm.abnormalQuantity > 0 ? changeForm.abnormalOrigin : null,
         changeForm.reason,
       );
     else await reverse(changeStep.value, changeReport.value, changeForm.reason);

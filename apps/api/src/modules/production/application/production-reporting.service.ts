@@ -47,6 +47,7 @@ export class ProductionReportingService {
       version: payload.version,
       normalQuantity: payload.normalQuantity,
       abnormalQuantity: payload.abnormalQuantity,
+      abnormalOrigin: payload.abnormalOrigin ?? null,
       remark: payload.remark?.trim() || null,
     };
     const execution = await this.idempotency.execute({
@@ -93,6 +94,7 @@ export class ProductionReportingService {
       version: payload.version,
       normalQuantity: payload.normalQuantity,
       abnormalQuantity: payload.abnormalQuantity,
+      abnormalOrigin: payload.abnormalOrigin ?? null,
       reason: payload.reason.trim(),
     };
     const execution = await this.idempotency.execute({

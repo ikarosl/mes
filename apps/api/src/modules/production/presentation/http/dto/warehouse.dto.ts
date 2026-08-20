@@ -12,10 +12,17 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
-import { RETURN_ORDER_STATUSES, STOCK_CHECK_STATUSES, STOCK_STATUSES } from '@company/constants';
+import {
+  RETURN_ORDER_STATUSES,
+  SCRAP_STATUSES,
+  STOCK_CHECK_STATUSES,
+  STOCK_STATUSES,
+} from '@company/constants';
 import type {
   CreateReturnOrderPayload,
   CreateStockCheckPayload,
+  CreateMaterialLossPayload,
+  MaterialLossQuery,
   ReturnOrderQuery,
   SaveStockCheckCountsPayload,
   StockCheckCandidateQuery,
@@ -25,6 +32,9 @@ import { PageQueryDto } from '../../../../../presentation/http/dto/page-query.dt
 
 export class ReturnIdParamDto {
   @IsString() @MaxLength(20) returnId!: string;
+}
+export class ScrapIdParamDto {
+  @IsString() @MaxLength(20) scrapId!: string;
 }
 export class StockCheckIdParamDto {
   @IsString() @MaxLength(20) stockCheckId!: string;
@@ -50,6 +60,17 @@ export class CreateReturnOrderDto implements CreateReturnOrderPayload {
   @ValidateNested({ each: true })
   @Type(() => CreateReturnOrderLineDto)
   details!: CreateReturnOrderLineDto[];
+}
+export class MaterialLossQueryDto extends PageQueryDto implements MaterialLossQuery {
+  @IsOptional() @IsString() @MaxLength(100) keyword?: string;
+  @IsOptional() @IsIn(SCRAP_STATUSES) status?: MaterialLossQuery['status'];
+}
+export class CreateMaterialLossDto implements CreateMaterialLossPayload {
+  @IsString() @MaxLength(20) productionBatchId!: string;
+  @IsString() @MaxLength(20) allocationId!: string;
+  @Type(() => Number) @IsNumber({ maxDecimalPlaces: 4 }) @Min(0.0001) scrapQuantity!: number;
+  @IsString() @MaxLength(50) reasonType!: string;
+  @IsOptional() @IsString() @MaxLength(5000) remark?: string | null;
 }
 export class StockCheckOrderQueryDto extends PageQueryDto implements StockCheckOrderQuery {
   @IsOptional() @IsString() @MaxLength(100) keyword?: string;

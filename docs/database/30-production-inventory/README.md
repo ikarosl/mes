@@ -6,8 +6,8 @@
 
 1. [产品主数据与生产批次](10-master-data-and-batches.md)：设计原则、产品分类、产品/BOM、生产工单和生产批次。
 2. [库存批次、库存流水与入库](20-inventory-ledger-and-inbound.md)：库存批次、唯一库存事实来源、入库主单和明细。
-3. [生产需求、分配与领料出库](30-demand-allocation-and-outbound.md)：生产投入需求、库存预留和生产领料出库。
-4. [退料、报废与盘点](40-return-scrap-and-stocktake.md)：退料、报废草案边界及库存盘点。
+3. [生产需求、分配与领料出库](30-demand-allocation-and-outbound.md)：报废补料方案、正式生产投入需求、库存预留和生产领料出库。
+4. [退料、报废与盘点](40-return-scrap-and-stocktake.md)：退料、生产领料损耗补料、其他报废场景边界及库存盘点。
 5. [核心汇总视图](50-summary-views.md)：库存、需求、分配和生产产出的只读汇总口径。
 6. [跨模块规则、关系与总结](90-cross-module-rules.md)：跨模块引用、并发锁序、关键业务规则和关系图。
 

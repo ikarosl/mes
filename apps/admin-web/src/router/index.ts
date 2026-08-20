@@ -225,7 +225,7 @@ export const router = createRouter({
           'warehouse-scraps',
           '报废管理',
           ScrapsPage,
-          undefined,
+          PERMISSIONS.warehouse.scraps.view,
           'ScrapsPage',
         ),
         page(

@@ -28,7 +28,7 @@ const steps = (aNormal: number, aReported: number, bNormal: number, bReported: n
 const supplement = (
   sourceStepRecordId: 'a' | 'b',
   sourceStepOrder: 1 | 2,
-  status: RouteSupplementSource['status'] = 'activated',
+  status: RouteSupplementSource['status'] = 'material_ready',
 ): RouteSupplementSource => ({
   scrapRecordId: '81',
   supplementId: '91',

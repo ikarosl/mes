@@ -16,6 +16,7 @@ import { MysqlIdempotencyExecutor } from '../../../apps/api/src/infrastructure/i
 import { IdentityDirectoryService } from '../../../apps/api/src/modules/identity/application/identity-directory.service.js';
 import { MysqlRbacRepository } from '../../../apps/api/src/modules/identity/infrastructure/mysql-rbac.repository.js';
 import { ProductionReportingService } from '../../../apps/api/src/modules/production/application/production-reporting.service.js';
+import { ProductionSupplementService } from '../../../apps/api/src/modules/production/application/production-supplement.service.js';
 
 loadWorkspaceEnv();
 const describeMysql = process.env.RUN_MYSQL_INTEGRATION === '1' ? describe : describe.skip;
@@ -28,6 +29,7 @@ describeMysql('Production execution MySQL transactions', () => {
   let supplement: MysqlProductionSupplementRepository;
   let materials: MysqlProductionMaterialRepository;
   let reportingService: ProductionReportingService;
+  let supplementService: ProductionSupplementService;
 
   beforeAll(() => {
     const database = required('DB_NAME');
@@ -54,6 +56,14 @@ describeMysql('Production execution MySQL transactions', () => {
     reportingService = new ProductionReportingService(
       reporting,
       new IdentityDirectoryService(new MysqlRbacRepository(pool)),
+      new MysqlIdempotencyExecutor(pool),
+    );
+    supplementService = new ProductionSupplementService(
+      supplement,
+      {
+        listRouteStepMaterialIds: async () => [],
+        listInventoryItemReferencesByIds: async () => [],
+      } as never,
       new MysqlIdempotencyExecutor(pool),
     );
   });
@@ -283,18 +293,30 @@ describeMysql('Production execution MySQL transactions', () => {
         1,
         context(fixture.workerId, `${fixture.token}-start`),
       );
+      await reporting.createReport(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        { version: 2, normalQuantity: 4, abnormalQuantity: 0, remark: 'normal split' },
+        context(fixture.workerId, `${fixture.token}-report-normal`),
+      );
       const first = await reporting.createReport(
         String(fixture.batchId),
         String(fixture.firstStepRecordId),
-        { version: 2, normalQuantity: 4, abnormalQuantity: 1, remark: 'split one' },
-        context(fixture.workerId, `${fixture.token}-report-1`),
+        {
+          version: 3,
+          normalQuantity: 0,
+          abnormalQuantity: 1,
+          abnormalOrigin: 'current_step',
+          remark: 'abnormal split',
+        },
+        context(fixture.workerId, `${fixture.token}-report-abnormal`),
       );
       expect(first).toMatchObject({ stepStatus: 'doing', effectiveNormalQuantity: '4.0000' });
       expect(first.abnormalDisposition).toMatchObject({ reviewStatus: 'pending_review' });
       const second = await reporting.createReport(
         String(fixture.batchId),
         String(fixture.firstStepRecordId),
-        { version: 3, normalQuantity: 5, abnormalQuantity: 0, remark: null },
+        { version: 4, normalQuantity: 5, abnormalQuantity: 0, remark: null },
         context(fixture.workerId, `${fixture.token}-report-2`),
       );
       expect(second).toMatchObject({
@@ -325,7 +347,7 @@ describeMysql('Production execution MySQL transactions', () => {
         reporting.createReport(
           String(fixture.batchId),
           String(fixture.firstStepRecordId),
-          { version: 4, normalQuantity: 1, abnormalQuantity: 0, remark: null },
+          { version: 5, normalQuantity: 1, abnormalQuantity: 0, remark: null },
           context(fixture.workerId, `${fixture.token}-report-over-capacity`),
         ),
       ).rejects.toMatchObject({ code: 'STEP_REPORT_QUANTITY_EXCEEDED' });
@@ -353,11 +375,23 @@ describeMysql('Production execution MySQL transactions', () => {
         1,
         context(fixture.workerId, `${fixture.token}-start`),
       );
+      await reporting.createReport(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        { version: 2, normalQuantity: 8, abnormalQuantity: 0, remark: 'source normal' },
+        context(fixture.workerId, `${fixture.token}-source-normal-report`),
+      );
       const source = await reporting.createReport(
         String(fixture.batchId),
         String(fixture.firstStepRecordId),
-        { version: 2, normalQuantity: 8, abnormalQuantity: 2, remark: 'source abnormal' },
-        context(fixture.workerId, `${fixture.token}-source-report`),
+        {
+          version: 3,
+          normalQuantity: 0,
+          abnormalQuantity: 2,
+          abnormalOrigin: 'current_step',
+          remark: 'source abnormal',
+        },
+        context(fixture.workerId, `${fixture.token}-source-abnormal-report`),
       );
       const dispositionId = source.abnormalDisposition?.dispositionId;
       expect(dispositionId).toBeDefined();
@@ -399,7 +433,7 @@ describeMysql('Production execution MySQL transactions', () => {
           String(fixture.batchId),
           String(fixture.firstStepRecordId),
           completed.report.reportId,
-          { version: 4, normalQuantity: 1, abnormalQuantity: 1, reason: 'must use rework flow' },
+          { version: 5, normalQuantity: 1, abnormalQuantity: 0, reason: 'must use rework flow' },
           context(fixture.actorId, `${fixture.token}-forbidden-correction`),
         ),
       ).rejects.toMatchObject({ code: 'STEP_REPORT_DEPENDENCY_CONFLICT' });
@@ -411,7 +445,7 @@ describeMysql('Production execution MySQL transactions', () => {
     }
   });
 
-  it('atomically approves step scrap and creates manually-entered supplemental demand facts', async () => {
+  it('keeps a scrap supplement plan non-allocatable until atomic confirmation creates formal facts', async () => {
     const fixture = await createFixture(pool, 'scrap-supplement');
     try {
       await repository.assignStep(
@@ -427,38 +461,119 @@ describeMysql('Production execution MySQL transactions', () => {
         1,
         context(fixture.workerId, `${fixture.token}-start`),
       );
+      await reporting.createReport(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        { version: 2, normalQuantity: 8, abnormalQuantity: 0, remark: 'scrap source normal' },
+        context(fixture.workerId, `${fixture.token}-source-normal-report`),
+      );
       const source = await reporting.createReport(
         String(fixture.batchId),
         String(fixture.firstStepRecordId),
-        { version: 2, normalQuantity: 8, abnormalQuantity: 2, remark: 'scrap source' },
-        context(fixture.workerId, `${fixture.token}-source-report`),
+        {
+          version: 3,
+          normalQuantity: 0,
+          abnormalQuantity: 2,
+          abnormalOrigin: 'current_step',
+          remark: 'scrap source abnormal',
+        },
+        context(fixture.workerId, `${fixture.token}-source-abnormal-report`),
       );
       const dispositionId = source.abnormalDisposition!.dispositionId;
-      expect((await supplement.getCandidateContext(dispositionId)).candidates).toMatchObject([
+      expect(
+        (await supplement.getCandidateContext(dispositionId, String(fixture.firstStepRecordId)))
+          .candidates,
+      ).toMatchObject([
         {
           originalDemandId: String(fixture.demandId),
           productMaterialId: String(fixture.productMaterialId),
         },
       ]);
 
-      const result = await supplement.approve(
+      const draft = await supplement.savePlan(
         dispositionId,
         {
-          version: 0,
+          planVersion: null,
+          dispositionVersion: 0,
+          materialEndStepRecordId: String(fixture.firstStepRecordId),
           details: [{ originalDemandId: String(fixture.demandId), supplementQuantity: 1.25 }],
           remark: 'manual quantity',
         },
-        context(fixture.actorId, `${fixture.token}-approve-scrap`),
+        context(fixture.actorId, `${fixture.token}-save-plan`),
+      );
+      expect(draft).toMatchObject({
+        status: 'draft',
+        version: 0,
+        lines: [{ plannedQuantity: '1.2500' }],
+      });
+      const [[draftCount]] = await pool.query<(RowDataPacket & { count: number })[]>(
+        "SELECT COUNT(*) count FROM production_scrap_supplement_plan WHERE id=? AND status='draft'",
+        [draft.planId],
+      );
+      expect(draftCount?.count).toBe(1);
+      const [[formalBeforeConfirm]] = await pool.query<(RowDataPacket & { count: number })[]>(
+        "SELECT COUNT(*) count FROM production_item_demand WHERE production_batch_id=? AND demand_type='scrap_supplement'",
+        [fixture.batchId],
+      );
+      expect(formalBeforeConfirm?.count).toBe(0);
+      // 草稿只存在于方案表，物料分配/出库查询都发现不了草稿内容。
+      const visibleDemands = await materials.listDemands(String(fixture.batchId));
+      expect(visibleDemands).toHaveLength(1);
+      expect(visibleDemands[0]).toMatchObject({
+        demandId: String(fixture.demandId),
+        demandType: 'normal',
+      });
+      expect(await materials.listOutboundCandidates(String(fixture.batchId))).toEqual([]);
+
+      const edited = await supplement.savePlan(
+        dispositionId,
+        {
+          planVersion: draft.version,
+          dispositionVersion: 0,
+          materialEndStepRecordId: String(fixture.firstStepRecordId),
+          details: [{ originalDemandId: String(fixture.demandId), supplementQuantity: 1.5 }],
+          remark: 'edited quantity',
+        },
+        context(fixture.actorId, `${fixture.token}-edit-plan`),
+      );
+      expect(edited.version).toBe(1);
+      await expect(
+        supplement.savePlan(
+          dispositionId,
+          {
+            planVersion: draft.version,
+            dispositionVersion: 0,
+            materialEndStepRecordId: String(fixture.firstStepRecordId),
+            details: [{ originalDemandId: String(fixture.demandId), supplementQuantity: 2 }],
+          },
+          context(fixture.actorId, `${fixture.token}-stale-plan`),
+        ),
+      ).rejects.toMatchObject({ code: 'CONCURRENT_MODIFICATION' });
+
+      const confirmContext = context(fixture.actorId, `${fixture.token}-confirm-plan`);
+      const result = await supplementService.confirmPlan(
+        dispositionId,
+        {
+          version: edited.version,
+          dispositionVersion: 0,
+        },
+        { ...confirmContext, idempotencyKey: `${fixture.token}-confirm-key` },
       );
       expect(result).toMatchObject({
         disposition: { reviewStatus: 'approved', dispositionType: 'scrap' },
         scrapRecord: { scrapQuantity: '2.0000' },
+        reproductionAuthorization: {
+          entryStepRecordId: String(fixture.firstStepRecordId),
+          quotaEndStepRecordId: String(fixture.firstStepRecordId),
+          materialEndStepRecordId: String(fixture.firstStepRecordId),
+          authorizedQuantity: '2.0000',
+        },
         supplement: {
           status: 'approved',
-          details: [
+          demands: [
             {
               originalDemandId: String(fixture.demandId),
-              supplementQuantity: '1.2500',
+              supplementQuantity: '1.5000',
             },
           ],
         },
@@ -468,25 +583,454 @@ describeMysql('Production execution MySQL transactions', () => {
           demand_type: string;
           need_number: string;
           parent_demand_id: number;
-          source_supplement_detail_id: number;
+          supplement_id: number;
         })[]
       >(
-        "SELECT demand_type,need_number,parent_demand_id,source_supplement_detail_id FROM production_item_demand WHERE production_batch_id=? AND demand_type='scrap_supplement'",
+        "SELECT demand_type,need_number,parent_demand_id,supplement_id FROM production_item_demand WHERE production_batch_id=? AND demand_type='scrap_supplement'",
         [fixture.batchId],
       );
       expect(demand).toMatchObject({
         demand_type: 'scrap_supplement',
-        need_number: '1.2500',
+        need_number: '1.5000',
         parent_demand_id: fixture.demandId,
       });
-      expect(demand?.source_supplement_detail_id).toBeGreaterThan(0);
+      expect(demand?.supplement_id).toBeGreaterThan(0);
       expect(
         await auditCount(
           pool,
-          `${fixture.token}-approve-scrap`,
-          'production-abnormal.approve-scrap-supplement',
+          `${fixture.token}-confirm-plan`,
+          'production-abnormal.confirm-scrap-supplement-plan',
         ),
       ).toBe(1);
+      const [[confirmedPlan]] = await pool.query<
+        (RowDataPacket & { status: string; confirmed_supplement_id: number | null })[]
+      >('SELECT status,confirmed_supplement_id FROM production_scrap_supplement_plan WHERE id=?', [
+        edited.planId,
+      ]);
+      expect(confirmedPlan).toMatchObject({ status: 'confirmed' });
+      expect(confirmedPlan?.confirmed_supplement_id).toBeGreaterThan(0);
+      await expect(
+        supplementService.confirmPlan(
+          dispositionId,
+          { version: edited.version, dispositionVersion: 0 },
+          { ...confirmContext, idempotencyKey: `${fixture.token}-confirm-key` },
+        ),
+      ).resolves.toMatchObject({ supplement: { supplementId: result.supplement.supplementId } });
+      await expect(
+        supplementService.confirmPlan(
+          dispositionId,
+          {
+            version: edited.version,
+            dispositionVersion: 0,
+          },
+          {
+            ...context(fixture.actorId, `${fixture.token}-confirm-again`),
+            idempotencyKey: `${fixture.token}-confirm-again-key`,
+          },
+        ),
+      ).rejects.toMatchObject({ code: 'INVALID_STATE' });
+    } finally {
+      await cleanup(pool, fixture);
+    }
+  });
+
+  it('rolls back every scrap-supplement confirmation write when any in-transaction write fails', async () => {
+    const fixture = await createFixture(pool, 'supp-rollback');
+    try {
+      await repository.assignStep(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        String(fixture.workerId),
+        0,
+        context(fixture.actorId, `${fixture.token}-assign`),
+      );
+      await repository.startStep(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        1,
+        context(fixture.workerId, `${fixture.token}-start`),
+      );
+      await reporting.createReport(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        { version: 2, normalQuantity: 8, abnormalQuantity: 0, remark: 'scrap source normal' },
+        context(fixture.workerId, `${fixture.token}-source-normal-report`),
+      );
+      const source = await reporting.createReport(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        {
+          version: 3,
+          normalQuantity: 0,
+          abnormalQuantity: 2,
+          abnormalOrigin: 'current_step',
+          remark: 'scrap source abnormal',
+        },
+        context(fixture.workerId, `${fixture.token}-source-abnormal-report`),
+      );
+      const dispositionId = source.abnormalDisposition!.dispositionId;
+      const draft = await supplement.savePlan(
+        dispositionId,
+        {
+          planVersion: null,
+          dispositionVersion: 0,
+          materialEndStepRecordId: String(fixture.firstStepRecordId),
+          details: [{ originalDemandId: String(fixture.demandId), supplementQuantity: 1.5 }],
+        },
+        context(fixture.actorId, `${fixture.token}-save-plan`),
+      );
+
+      // 预置一条与本处置单绑定的报废事实（模拟此前已生成）：确认事务内第一步业务写入
+      // （处置单批准）成功后，报废事实 INSERT 触发唯一键冲突 → 同事务全部回滚。
+      await pool.execute(
+        `INSERT INTO batch_step_scrap_records
+         (abnormal_disposition_id,production_batch_id,batch_step_record_id,source_report_id,
+          scrap_quantity,unit_snapshot,created_by)
+         VALUES (?,?,?,?,'2.0000','pcs',?)`,
+        [
+          dispositionId,
+          fixture.batchId,
+          fixture.firstStepRecordId,
+          source.report.reportId,
+          fixture.actorId,
+        ],
+      );
+      await expect(
+        supplementService.confirmPlan(
+          dispositionId,
+          { version: draft.version, dispositionVersion: 0 },
+          {
+            ...context(fixture.actorId, `${fixture.token}-rollback-confirm`),
+            idempotencyKey: `${fixture.token}-rollback-key`,
+          },
+        ),
+      ).rejects.toMatchObject({ code: 'ER_DUP_ENTRY' });
+      const [[disposition]] = await pool.query<
+        (RowDataPacket & {
+          review_status: string;
+          disposition_type: string | null;
+          version: number;
+        })[]
+      >(
+        'SELECT review_status,disposition_type,version FROM batch_step_abnormal_dispositions WHERE id=?',
+        [dispositionId],
+      );
+      expect(disposition).toMatchObject({
+        review_status: 'pending_review',
+        disposition_type: null,
+        version: 0,
+      });
+      // 事务内已写入的处置单批准被回滚；报废事实只有事务外预置的那一条。
+      const [[scrapCount]] = await pool.query<(RowDataPacket & { count: number })[]>(
+        'SELECT COUNT(*) count FROM batch_step_scrap_records WHERE production_batch_id=?',
+        [fixture.batchId],
+      );
+      expect(Number(scrapCount?.count)).toBe(1);
+      for (const sql of [
+        'SELECT COUNT(*) count FROM batch_step_scrap_reproduction_authorization WHERE production_batch_id=?',
+        'SELECT COUNT(*) count FROM production_material_supplement WHERE production_batch_id=?',
+        "SELECT COUNT(*) count FROM production_item_demand WHERE production_batch_id=? AND demand_type='scrap_supplement'",
+      ]) {
+        const [[row]] = await pool.query<(RowDataPacket & { count: number })[]>(sql, [
+          fixture.batchId,
+        ]);
+        expect(Number(row?.count)).toBe(0);
+      }
+      const [[plan]] = await pool.query<(RowDataPacket & { status: string; version: number })[]>(
+        'SELECT status,version FROM production_scrap_supplement_plan WHERE id=?',
+        [draft.planId],
+      );
+      expect(plan).toMatchObject({ status: 'draft', version: 0 });
+      expect(
+        await auditCount(
+          pool,
+          `${fixture.token}-rollback-confirm`,
+          'production-abnormal.confirm-scrap-supplement-plan',
+        ),
+      ).toBe(0);
+      const [[idempotencyCount]] = await pool.query<(RowDataPacket & { count: number })[]>(
+        'SELECT COUNT(*) count FROM http_idempotency_records WHERE idempotency_key=?',
+        [`${fixture.token}-rollback-key`],
+      );
+      expect(Number(idempotencyCount?.count)).toBe(0);
+
+      // 失败无残留：移除冲突事实后，全新幂等键再次确认成功，正式需求只在此刻出现。
+      await pool.execute('DELETE FROM batch_step_scrap_records WHERE abnormal_disposition_id=?', [
+        dispositionId,
+      ]);
+      const recovered = await supplementService.confirmPlan(
+        dispositionId,
+        { version: draft.version, dispositionVersion: 0 },
+        {
+          ...context(fixture.actorId, `${fixture.token}-recover-confirm`),
+          idempotencyKey: `${fixture.token}-recover-key`,
+        },
+      );
+      expect(recovered).toMatchObject({ supplement: { status: 'approved' } });
+      const [[formalDemand]] = await pool.query<(RowDataPacket & { count: number })[]>(
+        "SELECT COUNT(*) count FROM production_item_demand WHERE production_batch_id=? AND demand_type='scrap_supplement'",
+        [fixture.batchId],
+      );
+      expect(Number(formalDemand?.count)).toBe(1);
+    } finally {
+      await cleanup(pool, fixture);
+    }
+  });
+
+  it('rejects staging and confirmation once the abnormal is approved for rework', async () => {
+    const fixture = await createFixture(pool, 'supp-rework');
+    try {
+      await repository.assignStep(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        String(fixture.workerId),
+        0,
+        context(fixture.actorId, `${fixture.token}-assign`),
+      );
+      await repository.startStep(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        1,
+        context(fixture.workerId, `${fixture.token}-start`),
+      );
+      await reporting.createReport(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        { version: 2, normalQuantity: 8, abnormalQuantity: 0, remark: 'scrap source normal' },
+        context(fixture.workerId, `${fixture.token}-source-normal-report`),
+      );
+      const source = await reporting.createReport(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        {
+          version: 3,
+          normalQuantity: 0,
+          abnormalQuantity: 2,
+          abnormalOrigin: 'current_step',
+          remark: 'scrap source abnormal',
+        },
+        context(fixture.workerId, `${fixture.token}-source-abnormal-report`),
+      );
+      const dispositionId = source.abnormalDisposition!.dispositionId;
+      const draft = await supplement.savePlan(
+        dispositionId,
+        {
+          planVersion: null,
+          dispositionVersion: 0,
+          materialEndStepRecordId: String(fixture.firstStepRecordId),
+          details: [{ originalDemandId: String(fixture.demandId), supplementQuantity: 1.5 }],
+        },
+        context(fixture.actorId, `${fixture.token}-save-plan`),
+      );
+      await abnormal.approveRework(
+        dispositionId,
+        { version: 0, remark: 'repair it' },
+        context(fixture.actorId, `${fixture.token}-approve-rework`),
+      );
+      await expect(
+        supplement.savePlan(
+          dispositionId,
+          {
+            planVersion: draft.version,
+            dispositionVersion: 1,
+            materialEndStepRecordId: String(fixture.firstStepRecordId),
+            details: [{ originalDemandId: String(fixture.demandId), supplementQuantity: 2 }],
+          },
+          context(fixture.actorId, `${fixture.token}-edit-plan`),
+        ),
+      ).rejects.toMatchObject({ code: 'INVALID_STATE' });
+      await expect(
+        supplementService.confirmPlan(
+          dispositionId,
+          { version: draft.version, dispositionVersion: 1 },
+          {
+            ...context(fixture.actorId, `${fixture.token}-confirm`),
+            idempotencyKey: `${fixture.token}-confirm-key`,
+          },
+        ),
+      ).rejects.toMatchObject({ code: 'INVALID_STATE' });
+      const [[plan]] = await pool.query<(RowDataPacket & { status: string })[]>(
+        'SELECT status FROM production_scrap_supplement_plan WHERE id=?',
+        [draft.planId],
+      );
+      expect(plan?.status).toBe('draft');
+      const [[demandCount]] = await pool.query<(RowDataPacket & { count: number })[]>(
+        "SELECT COUNT(*) count FROM production_item_demand WHERE production_batch_id=? AND demand_type='scrap_supplement'",
+        [fixture.batchId],
+      );
+      expect(Number(demandCount?.count)).toBe(0);
+    } finally {
+      await cleanup(pool, fixture);
+    }
+  });
+
+  it('rejects staging and confirmation once the abnormal is rejected', async () => {
+    const fixture = await createFixture(pool, 'supp-reject');
+    try {
+      await repository.assignStep(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        String(fixture.workerId),
+        0,
+        context(fixture.actorId, `${fixture.token}-assign`),
+      );
+      await repository.startStep(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        1,
+        context(fixture.workerId, `${fixture.token}-start`),
+      );
+      await reporting.createReport(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        { version: 2, normalQuantity: 8, abnormalQuantity: 0, remark: 'scrap source normal' },
+        context(fixture.workerId, `${fixture.token}-source-normal-report`),
+      );
+      const source = await reporting.createReport(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        {
+          version: 3,
+          normalQuantity: 0,
+          abnormalQuantity: 2,
+          abnormalOrigin: 'current_step',
+          remark: 'scrap source abnormal',
+        },
+        context(fixture.workerId, `${fixture.token}-source-abnormal-report`),
+      );
+      const dispositionId = source.abnormalDisposition!.dispositionId;
+      const draft = await supplement.savePlan(
+        dispositionId,
+        {
+          planVersion: null,
+          dispositionVersion: 0,
+          materialEndStepRecordId: String(fixture.firstStepRecordId),
+          details: [{ originalDemandId: String(fixture.demandId), supplementQuantity: 1.5 }],
+        },
+        context(fixture.actorId, `${fixture.token}-save-plan`),
+      );
+      await abnormal.rejectDisposition(
+        dispositionId,
+        { version: 0, reason: 'not a real scrap' },
+        context(fixture.actorId, `${fixture.token}-reject`),
+      );
+      await expect(
+        supplement.savePlan(
+          dispositionId,
+          {
+            planVersion: draft.version,
+            dispositionVersion: 1,
+            materialEndStepRecordId: String(fixture.firstStepRecordId),
+            details: [{ originalDemandId: String(fixture.demandId), supplementQuantity: 2 }],
+          },
+          context(fixture.actorId, `${fixture.token}-edit-plan`),
+        ),
+      ).rejects.toMatchObject({ code: 'INVALID_STATE' });
+      await expect(
+        supplementService.confirmPlan(
+          dispositionId,
+          { version: draft.version, dispositionVersion: 1 },
+          {
+            ...context(fixture.actorId, `${fixture.token}-confirm`),
+            idempotencyKey: `${fixture.token}-confirm-key`,
+          },
+        ),
+      ).rejects.toMatchObject({ code: 'INVALID_STATE' });
+      const [[plan]] = await pool.query<(RowDataPacket & { status: string })[]>(
+        'SELECT status FROM production_scrap_supplement_plan WHERE id=?',
+        [draft.planId],
+      );
+      expect(plan?.status).toBe('draft');
+      const [[demandCount]] = await pool.query<(RowDataPacket & { count: number })[]>(
+        "SELECT COUNT(*) count FROM production_item_demand WHERE production_batch_id=? AND demand_type='scrap_supplement'",
+        [fixture.batchId],
+      );
+      expect(Number(demandCount?.count)).toBe(0);
+    } finally {
+      await cleanup(pool, fixture);
+    }
+  });
+
+  it('rejects staging and confirmation once the batch is no longer in production', async () => {
+    const fixture = await createFixture(pool, 'supp-closed');
+    try {
+      await repository.assignStep(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        String(fixture.workerId),
+        0,
+        context(fixture.actorId, `${fixture.token}-assign`),
+      );
+      await repository.startStep(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        1,
+        context(fixture.workerId, `${fixture.token}-start`),
+      );
+      await reporting.createReport(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        { version: 2, normalQuantity: 8, abnormalQuantity: 0, remark: 'scrap source normal' },
+        context(fixture.workerId, `${fixture.token}-source-normal-report`),
+      );
+      const source = await reporting.createReport(
+        String(fixture.batchId),
+        String(fixture.firstStepRecordId),
+        {
+          version: 3,
+          normalQuantity: 0,
+          abnormalQuantity: 2,
+          abnormalOrigin: 'current_step',
+          remark: 'scrap source abnormal',
+        },
+        context(fixture.workerId, `${fixture.token}-source-abnormal-report`),
+      );
+      const dispositionId = source.abnormalDisposition!.dispositionId;
+      const draft = await supplement.savePlan(
+        dispositionId,
+        {
+          planVersion: null,
+          dispositionVersion: 0,
+          materialEndStepRecordId: String(fixture.firstStepRecordId),
+          details: [{ originalDemandId: String(fixture.demandId), supplementQuantity: 1.5 }],
+        },
+        context(fixture.actorId, `${fixture.token}-save-plan`),
+      );
+      await pool.execute("UPDATE production_batches SET status='cancelled' WHERE id=?", [
+        fixture.batchId,
+      ]);
+      await expect(
+        supplement.savePlan(
+          dispositionId,
+          {
+            planVersion: draft.version,
+            dispositionVersion: 0,
+            materialEndStepRecordId: String(fixture.firstStepRecordId),
+            details: [{ originalDemandId: String(fixture.demandId), supplementQuantity: 2 }],
+          },
+          context(fixture.actorId, `${fixture.token}-edit-plan`),
+        ),
+      ).rejects.toMatchObject({ code: 'INVALID_STATE' });
+      await expect(
+        supplementService.confirmPlan(
+          dispositionId,
+          { version: draft.version, dispositionVersion: 0 },
+          {
+            ...context(fixture.actorId, `${fixture.token}-confirm`),
+            idempotencyKey: `${fixture.token}-confirm-key`,
+          },
+        ),
+      ).rejects.toMatchObject({ code: 'INVALID_STATE' });
+      const [[plan]] = await pool.query<(RowDataPacket & { status: string })[]>(
+        'SELECT status FROM production_scrap_supplement_plan WHERE id=?',
+        [draft.planId],
+      );
+      expect(plan?.status).toBe('draft');
+      const [[demandCount]] = await pool.query<(RowDataPacket & { count: number })[]>(
+        "SELECT COUNT(*) count FROM production_item_demand WHERE production_batch_id=? AND demand_type='scrap_supplement'",
+        [fixture.batchId],
+      );
+      expect(Number(demandCount?.count)).toBe(0);
     } finally {
       await cleanup(pool, fixture);
     }
@@ -527,16 +1071,28 @@ describeMysql('Production execution MySQL transactions', () => {
         1,
         context(fixture.workerId, `${fixture.token}-start-b`),
       );
+      await reporting.createReport(
+        String(fixture.batchId),
+        String(fixture.secondStepRecordId),
+        { version: 2, normalQuantity: 8, abnormalQuantity: 0 },
+        context(fixture.workerId, `${fixture.token}-report-b-normal`),
+      );
       const source = await reporting.createReport(
         String(fixture.batchId),
         String(fixture.secondStepRecordId),
-        { version: 2, normalQuantity: 8, abnormalQuantity: 2 },
-        context(fixture.workerId, `${fixture.token}-report-b`),
+        {
+          version: 3,
+          normalQuantity: 0,
+          abnormalQuantity: 2,
+          abnormalOrigin: 'current_step',
+        },
+        context(fixture.workerId, `${fixture.token}-report-b-abnormal`),
       );
       await supplement.approve(
         source.abnormalDisposition!.dispositionId,
         {
           version: 0,
+          materialEndStepRecordId: String(fixture.secondStepRecordId),
           details: [{ originalDemandId: String(fixture.demandId), supplementQuantity: 2 }],
         },
         context(fixture.actorId, `${fixture.token}-approve`),
@@ -620,18 +1176,18 @@ describeMysql('Production execution MySQL transactions', () => {
       const [[activation]] = await pool.query<
         (RowDataPacket & {
           status: string;
-          activated_at: Date | null;
-          activated_by: number | null;
+          fulfilled_at: Date | null;
+          fulfilled_by: number | null;
         })[]
       >(
-        'SELECT status,activated_at,activated_by FROM production_material_supplement WHERE production_batch_id=?',
+        'SELECT status,fulfilled_at,fulfilled_by FROM production_material_supplement WHERE production_batch_id=?',
         [fixture.batchId],
       );
       expect(activation).toMatchObject({
-        status: 'activated',
-        activated_by: fixture.actorId,
+        status: 'fulfilled',
+        fulfilled_by: fixture.actorId,
       });
-      expect(activation?.activated_at).not.toBeNull();
+      expect(activation?.fulfilled_at).not.toBeNull();
 
       await reporting.createReport(
         String(fixture.batchId),
@@ -712,7 +1268,12 @@ describeMysql('Production execution MySQL transactions', () => {
         reporting.createReport(
           String(fixture.batchId),
           String(fixture.secondStepRecordId),
-          { version: 3, normalQuantity: 0, abnormalQuantity: 1 },
+          {
+            version: 3,
+            normalQuantity: 0,
+            abnormalQuantity: 1,
+            abnormalOrigin: 'current_step',
+          },
           context(fixture.workerId, `${fixture.token}-report-second-over-release`),
         ),
       ).rejects.toMatchObject({ code: 'STEP_REPORT_QUANTITY_EXCEEDED' });
@@ -1206,7 +1767,14 @@ const cleanup = async (pool: Pool, fixture: Fixture): Promise<void> => {
     [fixture.batchId],
   );
   await pool.execute(
-    'DELETE FROM production_material_supplement_detail WHERE production_batch_id=?',
+    'DELETE FROM production_scrap_supplement_plan_line WHERE production_batch_id=?',
+    [fixture.batchId],
+  );
+  await pool.execute('DELETE FROM production_scrap_supplement_plan WHERE production_batch_id=?', [
+    fixture.batchId,
+  ]);
+  await pool.execute(
+    'DELETE FROM batch_step_scrap_reproduction_authorization WHERE production_batch_id=?',
     [fixture.batchId],
   );
   await pool.execute('DELETE FROM production_material_supplement WHERE production_batch_id=?', [

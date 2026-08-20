@@ -32,6 +32,6 @@ describe('WorkerTasksPage', () => {
     expect(wrapper.find('.page-heading').exists()).toBe(false);
     expect(wrapper.find('h1').exists()).toBe(false);
     expect(wrapper.find('.tasks-caption').text()).toContain('仅显示当前分配给你的');
-    expect(wrapper.find('el-alert-stub').attributes('title')).toContain('报工填写本次数量');
+    expect(wrapper.find('el-alert-stub').attributes('title')).toContain('分别提交本次数量');
   });
 });

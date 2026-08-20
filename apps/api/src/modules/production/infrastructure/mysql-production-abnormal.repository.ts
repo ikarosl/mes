@@ -374,8 +374,8 @@ const insertReworkReport = async (
 ): Promise<string> => {
   const [result] = await connection.execute<ResultSetHeader>(
     `INSERT INTO batch_step_reports
-     (report_no,production_batch_id,batch_step_record_id,report_type,reported_quantity,normal_quantity,abnormal_quantity,unit_snapshot,remark,created_by)
-     VALUES (?,?,?,'normal',?,?,?,?,?,?)`,
+     (report_no,production_batch_id,batch_step_record_id,report_type,reported_quantity,normal_quantity,abnormal_quantity,abnormal_origin,unit_snapshot,remark,created_by)
+     VALUES (?,?,?,'normal',?,?,?,?,?,?,?)`,
     [
       `SR-RW-${Date.now()}-${randomUUID().slice(0, 10)}`,
       rework.productionBatchId,
@@ -383,6 +383,7 @@ const insertReworkReport = async (
       fixed(payload.normalQuantity + payload.abnormalQuantity),
       fixed(payload.normalQuantity),
       fixed(payload.abnormalQuantity),
+      payload.abnormalQuantity > 0 ? 'current_step' : null,
       rework.unit,
       payload.remark ?? `返工单 ${rework.reworkNo} 完成报工`,
       actorId,
@@ -458,7 +459,7 @@ const REWORK_SELECT = `SELECT rw.id,rw.rework_no,rw.abnormal_disposition_id,rw.p
 
 const DISPOSITION_SOURCE_SELECT = `SELECT d.id,d.disposition_no,d.production_batch_id,
   d.batch_step_record_id,d.batch_step_report_id,d.review_status,d.disposition_type,d.remark,d.version,
-  d.created_at,r.abnormal_quantity,r.unit_snapshot,r.report_type,
+  d.created_at,r.abnormal_quantity,r.abnormal_origin,r.unit_snapshot,r.report_type,
   CASE WHEN NOT EXISTS (SELECT 1 FROM batch_step_reports reversal WHERE reversal.reversal_of_report_id=r.id) THEN 1 ELSE 0 END is_effective,
   sr.responsible_user_id
   FROM batch_step_abnormal_dispositions d
@@ -467,6 +468,6 @@ const DISPOSITION_SOURCE_SELECT = `SELECT d.id,d.disposition_no,d.production_bat
 
 const REPORT_SELECT = `SELECT r.id,r.report_no,r.production_batch_id,r.batch_step_record_id,
   r.report_type,r.reversal_of_report_id,r.replaces_report_id,r.reported_quantity,r.normal_quantity,
-  r.abnormal_quantity,r.unit_snapshot,r.remark,r.created_by,r.created_at,
+  r.abnormal_quantity,r.abnormal_origin,r.unit_snapshot,r.remark,r.created_by,r.created_at,
   CASE WHEN r.report_type='reversal' THEN 1 WHEN NOT EXISTS (SELECT 1 FROM batch_step_reports reversal WHERE reversal.reversal_of_report_id=r.id) THEN 1 ELSE 0 END is_effective
   FROM batch_step_reports r`;

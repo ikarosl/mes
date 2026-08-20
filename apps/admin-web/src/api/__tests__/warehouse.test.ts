@@ -75,4 +75,49 @@ describe('warehouseApi', () => {
       data: { version: 0 },
     });
   });
+
+  it('uses production material-loss list, candidate and versioned action endpoints', async () => {
+    const { warehouseApi } = await import('../warehouse');
+    await warehouseApi.listMaterialLosses({ page: 1, pageSize: 20, status: 'pending' });
+    await warehouseApi.listMaterialLossCandidates('8');
+    await warehouseApi.createMaterialLoss(
+      {
+        productionBatchId: '8',
+        allocationId: '12',
+        scrapQuantity: 1,
+        reasonType: '搬运损坏',
+      },
+      'create-loss-key',
+    );
+    await warehouseApi.confirmMaterialLoss('20', 2, 'confirm-loss-key');
+
+    expect(request).toHaveBeenNthCalledWith(1, {
+      url: '/warehouse/scraps',
+      params: { page: 1, pageSize: 20, status: 'pending' },
+    });
+    expect(request).toHaveBeenNthCalledWith(2, {
+      url: '/warehouse/scraps/batches/8/candidates',
+    });
+    expect(request).toHaveBeenNthCalledWith(3, {
+      url: '/warehouse/scraps',
+      method: 'POST',
+      data: {
+        productionBatchId: '8',
+        allocationId: '12',
+        scrapQuantity: 1,
+        reasonType: '搬运损坏',
+      },
+      headers: { 'Idempotency-Key': 'create-loss-key' },
+      retryUnsafe: true,
+      retryTimes: 2,
+    });
+    expect(request).toHaveBeenNthCalledWith(4, {
+      url: '/warehouse/scraps/20/actions/confirm',
+      method: 'POST',
+      data: { version: 2 },
+      headers: { 'Idempotency-Key': 'confirm-loss-key' },
+      retryUnsafe: true,
+      retryTimes: 2,
+    });
+  });
 });

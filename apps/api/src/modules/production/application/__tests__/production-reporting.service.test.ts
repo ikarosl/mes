@@ -47,7 +47,13 @@ describe('ProductionReportingService', () => {
     expect(reporting.createReport).toHaveBeenCalledWith(
       '1',
       '2',
-      { version: 3, normalQuantity: 2, abnormalQuantity: 1, remark: 'note' },
+      {
+        version: 3,
+        normalQuantity: 2,
+        abnormalQuantity: 1,
+        abnormalOrigin: null,
+        remark: 'note',
+      },
       expect.not.objectContaining({ idempotencyKey: expect.anything() }),
     );
   });
@@ -76,7 +82,13 @@ describe('ProductionReportingService', () => {
       '1',
       '2',
       '9',
-      { version: 4, normalQuantity: 2, abnormalQuantity: 0, reason: '修正' },
+      {
+        version: 4,
+        normalQuantity: 2,
+        abnormalQuantity: 0,
+        abnormalOrigin: null,
+        reason: '修正',
+      },
       expect.not.objectContaining({ idempotencyKey: expect.anything() }),
     );
   });

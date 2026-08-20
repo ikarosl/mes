@@ -35,9 +35,11 @@ import type {
   ReverseBatchStepReportPayload,
   ProductionTraceWorkOrderGroup,
   ProductionTraceDetail,
-  ApproveScrapSupplementPayload,
   ApproveScrapSupplementResult,
   ProductionSupplementCandidateItem,
+  ProductionScrapSupplementPlanItem,
+  SaveProductionScrapSupplementPlanPayload,
+  ConfirmProductionScrapSupplementPlanPayload,
   ProductionTraceQuery,
   MaterialOutboundQuery,
   MaterialOutboundBatchOption,
@@ -448,18 +450,34 @@ export const productionApi = {
       retryTimes: 2,
     }),
 
-  listSupplementCandidates: (dispositionId: string) =>
+  listSupplementCandidates: (dispositionId: string, materialEndStepRecordId: string) =>
     request<ProductionSupplementCandidateItem[]>({
       url: `/production/abnormal-dispositions/${dispositionId}/supplement-candidates`,
+      params: { materialEndStepRecordId },
     }),
 
-  approveScrapSupplement: (
+  getScrapSupplementPlan: (dispositionId: string) =>
+    request<ProductionScrapSupplementPlanItem | null>({
+      url: `/production/abnormal-dispositions/${dispositionId}/scrap-supplement-plan`,
+    }),
+
+  saveScrapSupplementPlan: (
     dispositionId: string,
-    data: ApproveScrapSupplementPayload,
+    data: SaveProductionScrapSupplementPlanPayload,
+  ) =>
+    request<ProductionScrapSupplementPlanItem>({
+      url: `/production/abnormal-dispositions/${dispositionId}/scrap-supplement-plan`,
+      method: 'PUT',
+      data,
+    }),
+
+  confirmScrapSupplementPlan: (
+    dispositionId: string,
+    data: ConfirmProductionScrapSupplementPlanPayload,
     idempotencyKey: string,
   ) =>
     request<ApproveScrapSupplementResult>({
-      url: `/production/abnormal-dispositions/${dispositionId}/actions/approve-scrap-supplement`,
+      url: `/production/abnormal-dispositions/${dispositionId}/scrap-supplement-plan/actions/confirm`,
       method: 'POST',
       data,
       headers: { 'Idempotency-Key': idempotencyKey },

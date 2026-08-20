@@ -98,9 +98,9 @@
 | `product_material_id`          | `BIGINT UNSIGNED` | BOM 行 ID          |
 | `item_id`                      | `BIGINT UNSIGNED` | 需求对象 ID        |
 | `need_number`                  | `DECIMAL(12,4)`   | 需求数量           |
-| `demand_type`                  | `VARCHAR(30)`     | 需求类型：`normal`、`manual_additional`、`scrap_supplement` |
+| `demand_type`                  | `VARCHAR(30)`     | 需求类型：`normal`、`manual_additional`、`scrap_supplement`、`material_loss_supplement` |
 | `parent_demand_id`             | `BIGINT UNSIGNED` | 原始需求 ID        |
-| `source_scrap_id`              | `BIGINT UNSIGNED` | 来源报废记录 ID    |
+| `supplement_id`                | `BIGINT UNSIGNED` | 补料物流单 ID      |
 | `business_status`              | `VARCHAR(30)`     | 业务状态           |
 | `allocated_quantity`           | `DECIMAL(12,4)`   | 累计已分配数量     |
 | `unallocated_quantity`         | `DECIMAL(12,4)`   | 未分配数量         |

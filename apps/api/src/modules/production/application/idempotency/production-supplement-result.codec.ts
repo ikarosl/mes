@@ -12,6 +12,7 @@ const schema: z.ZodType<ApproveScrapSupplementResult> = z.object({
     productionBatchId: z.string(),
     stepRecordId: z.string(),
     sourceReportId: z.string(),
+    abnormalOrigin: z.enum(['current_step', 'previous_step']),
     reviewStatus: z.enum(['pending_review', 'approved', 'rejected', 'cancelled']),
     dispositionType: z.enum(['rework', 'scrap']).nullable(),
     remark: z.string().nullable(),
@@ -24,6 +25,17 @@ const schema: z.ZodType<ApproveScrapSupplementResult> = z.object({
     scrapQuantity: z.string(),
     unit: z.string(),
   }),
+  reproductionAuthorization: z.object({
+    authorizationId: z.string(),
+    scrapRecordId: z.string(),
+    supplementId: z.string(),
+    entryStepRecordId: z.string(),
+    quotaEndStepRecordId: z.string(),
+    materialEndStepRecordId: z.string(),
+    authorizedQuantity: z.string(),
+    authorizedBy: z.string(),
+    authorizedAt: z.string(),
+  }),
   supplement: z.object({
     supplementId: z.string(),
     supplementNo: z.string(),
@@ -33,9 +45,8 @@ const schema: z.ZodType<ApproveScrapSupplementResult> = z.object({
     status: z.literal('approved'),
     remark: z.string().nullable(),
     createdAt: z.string(),
-    details: z.array(
+    demands: z.array(
       z.object({
-        detailId: z.string(),
         originalDemandId: z.string(),
         demandId: z.string(),
         productMaterialId: z.string(),

@@ -6,8 +6,10 @@ import type {
   ProductionExecutionRecordGroup,
   ProductionExecutionCompletionCheck,
   BatchStepAbnormalDispositionItem,
+  BatchStepAbnormalOrigin,
   ReworkRecordItem,
   ApproveScrapSupplementLinePayload,
+  ProductionScrapSupplementPlanItem,
 } from '@company/contracts';
 import { productionApi } from '../../../api/production';
 import { useIdempotentIntent } from '../../../composables/idempotency/useIdempotentIntent';
@@ -114,6 +116,7 @@ export const useProductionExecutionRecords = () => {
     report: BatchStepReportItem,
     normalQuantity: number,
     abnormalQuantity: number,
+    abnormalOrigin: BatchStepAbnormalOrigin | null,
     reason: string,
   ): Promise<void> =>
     withPending(`correct:${report.reportId}`, async () => {
@@ -121,6 +124,7 @@ export const useProductionExecutionRecords = () => {
         version: step.version,
         normalQuantity,
         abnormalQuantity,
+        abnormalOrigin: abnormalQuantity > 0 ? abnormalOrigin : null,
         reason: reason.trim(),
       };
       const intent = correctionIntents.get(report.reportId) ?? useIdempotentIntent();
@@ -216,34 +220,47 @@ export const useProductionExecutionRecords = () => {
       reworkCompletionIntents.delete(rework.reworkId);
       await selectBatch(rework.productionBatchId);
     });
-  const loadSupplementCandidates = (dispositionId: string) =>
-    productionApi.listSupplementCandidates(dispositionId);
-  const approveScrapSupplement = (
+  const loadSupplementCandidates = (dispositionId: string, materialEndStepRecordId: string) =>
+    productionApi.listSupplementCandidates(dispositionId, materialEndStepRecordId);
+  const loadScrapSupplementPlan = (dispositionId: string) =>
+    productionApi.getScrapSupplementPlan(dispositionId);
+  const saveScrapSupplementPlan = (
     disposition: BatchStepAbnormalDispositionItem,
+    materialEndStepRecordId: string,
     details: ApproveScrapSupplementLinePayload[],
     remark: string,
+    planVersion: number | null,
+  ): Promise<ProductionScrapSupplementPlanItem> =>
+    productionApi.saveScrapSupplementPlan(disposition.dispositionId, {
+      planVersion,
+      dispositionVersion: disposition.version,
+      materialEndStepRecordId,
+      details,
+      remark: remark.trim() || null,
+    });
+  const approveScrapSupplement = (
+    disposition: BatchStepAbnormalDispositionItem,
+    planVersion: number,
   ): Promise<void> =>
     withPending(`approve-scrap:${disposition.dispositionId}`, async () => {
       const body = {
-        version: disposition.version,
-        details,
-        remark: remark.trim() || null,
+        version: planVersion,
+        dispositionVersion: disposition.version,
       };
       const intent = supplementIntents.get(disposition.dispositionId) ?? useIdempotentIntent();
       supplementIntents.set(disposition.dispositionId, intent);
       await intent.execute(
         {
-          intentType: 'production.abnormal.scrap-supplement',
+          intentType: 'production.abnormal.scrap-supplement-plan.confirm',
           params: { dispositionId: disposition.dispositionId },
           query: {},
           body,
         },
-        (key) => productionApi.approveScrapSupplement(disposition.dispositionId, body, key),
+        (key) => productionApi.confirmScrapSupplementPlan(disposition.dispositionId, body, key),
       );
       supplementIntents.delete(disposition.dispositionId);
       await selectBatch(disposition.productionBatchId);
     });
-
   return {
     batches,
     total,
@@ -266,6 +283,8 @@ export const useProductionExecutionRecords = () => {
     startRework,
     completeRework,
     loadSupplementCandidates,
+    loadScrapSupplementPlan,
+    saveScrapSupplementPlan,
     approveScrapSupplement,
   };
 };

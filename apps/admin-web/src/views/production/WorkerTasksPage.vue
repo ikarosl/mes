@@ -28,7 +28,7 @@
         type="info"
         :closable="false"
         show-icon
-        title="只有当前负责人可以开工，开工时间由系统记录；报工填写本次数量，不填写累计数。异常数量大于零时系统会自动生成待处置记录。"
+        title="只有当前负责人可以开工，开工时间由系统记录；正常报工与异常报工分别提交本次数量，不填写累计数。异常报工会自动生成待处置记录。"
       />
       <el-table
         v-loading="loading"
@@ -124,7 +124,7 @@
         </el-table-column>
         <el-table-column
           label="操作"
-          width="230"
+          width="300"
           fixed="right"
         >
           <template #default="{ row }">
@@ -146,8 +146,17 @@
               type="success"
               :loading="reportPendingIds.has(row.stepRecordId)"
               :disabled="Number(row.availableNormalQuantity) <= 0"
-              @click="openReport(row)"
-              >报工</el-button
+              @click="openReport(row, 'normal')"
+              >正常报工</el-button
+            >
+            <el-button
+              v-if="row.status === 'doing' && row.needRecord"
+              type="danger"
+              plain
+              :loading="reportPendingIds.has(row.stepRecordId)"
+              :disabled="Number(row.availableNormalQuantity) <= 0"
+              @click="openReport(row, 'abnormal')"
+              >异常报工</el-button
             >
             <el-button
               v-else-if="row.status === 'doing'"
@@ -179,6 +188,7 @@
     <BatchStepReportDialog
       v-model="reportVisible"
       :task="reportTask"
+      :mode="reportMode"
       :submitting="Boolean(reportTask && reportPendingIds.has(reportTask.stepRecordId))"
       :intent-status="reportTask ? getReportIntentStatus(reportTask.stepRecordId) : 'idle'"
       @reset-intent="reportTask && resetReportIntent(reportTask.stepRecordId)"
@@ -191,7 +201,11 @@
 import { onActivated, onMounted, ref } from 'vue';
 import { Refresh } from '@element-plus/icons-vue';
 import { BATCH_STEP_STATUS_LABELS } from '@company/constants';
-import type { BatchStepStatus, ProductionWorkerTaskItem } from '@company/contracts';
+import type {
+  BatchStepAbnormalOrigin,
+  BatchStepStatus,
+  ProductionWorkerTaskItem,
+} from '@company/contracts';
 import { EMessage } from '../../utils/message';
 import { formatDateTimeForDisplay } from '../../utils/date';
 import TableToolbar from '../../components/TableToolbar.vue';
@@ -216,6 +230,7 @@ const {
 } = useWorkerTasks();
 const reportVisible = ref(false);
 const reportTask = ref<ProductionWorkerTaskItem | null>(null);
+const reportMode = ref<'normal' | 'abnormal'>('normal');
 const stepStatusLabel = (status: BatchStepStatus): string => BATCH_STEP_STATUS_LABELS[status];
 const reload = async (): Promise<void> => {
   try {
@@ -242,8 +257,9 @@ const startTask = async (task: ProductionWorkerTaskItem): Promise<void> => {
     EMessage.error(error, fallback);
   }
 };
-const openReport = (task: ProductionWorkerTaskItem): void => {
+const openReport = (task: ProductionWorkerTaskItem, mode: 'normal' | 'abnormal'): void => {
   reportTask.value = task;
+  reportMode.value = mode;
   reportVisible.value = true;
 };
 const completeTask = async (task: ProductionWorkerTaskItem): Promise<void> => {
@@ -267,6 +283,7 @@ const completeTask = async (task: ProductionWorkerTaskItem): Promise<void> => {
 const submitReport = async (payload: {
   normalQuantity: number;
   abnormalQuantity: number;
+  abnormalOrigin: BatchStepAbnormalOrigin | null;
   remark: string | null;
 }): Promise<void> => {
   if (!reportTask.value) return;
@@ -275,21 +292,24 @@ const submitReport = async (payload: {
       reportTask.value,
       payload.normalQuantity,
       payload.abnormalQuantity,
+      payload.abnormalOrigin,
       payload.remark,
     );
     reportVisible.value = false;
-    EMessage.success('本次报工已记录');
+    EMessage.success(reportMode.value === 'normal' ? '正常报工已记录' : '异常报工已提交待处置');
   } catch (error) {
     const code =
       typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : '';
     const fallback =
       code === 'STEP_REPORT_QUANTITY_EXCEEDED'
-        ? '正常与异常数量合计超过上游当前放行的可报数量，请刷新后重试'
-        : code === 'NOT_STEP_ASSIGNEE'
-          ? '该工序已改派，请刷新本人任务'
-          : code === 'CONCURRENT_MODIFICATION'
-            ? '工序数据已变化，请刷新后重新报工'
-            : '报工失败';
+        ? '本次报工数量超过上游当前放行的可报数量，请刷新后重试'
+        : code === 'INVALID_INPUT'
+          ? '正常报工与异常报工必须分别提交，请重新填写'
+          : code === 'NOT_STEP_ASSIGNEE'
+            ? '该工序已改派，请刷新本人任务'
+            : code === 'CONCURRENT_MODIFICATION'
+              ? '工序数据已变化，请刷新后重新报工'
+              : '报工失败';
     EMessage.error(error, fallback);
   }
 };

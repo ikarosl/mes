@@ -1,6 +1,11 @@
 import type {
   CreateReturnOrderPayload,
   CreateStockCheckPayload,
+  CreateMaterialLossPayload,
+  MaterialLossBatchOption,
+  MaterialLossCandidateItem,
+  MaterialLossItem,
+  MaterialLossQuery,
   PageResult,
   ReturnOrderBatchOption,
   ReturnOrderCandidateItem,
@@ -15,6 +20,25 @@ import type {
 import type { CommandContext } from '../../../../common/audit/audit.types.js';
 
 export abstract class ProductionInventoryRepository {
+  abstract listMaterialLosses(query: MaterialLossQuery): Promise<PageResult<MaterialLossItem>>;
+  abstract getMaterialLoss(scrapId: string): Promise<MaterialLossItem>;
+  abstract listMaterialLossBatchOptions(): Promise<MaterialLossBatchOption[]>;
+  abstract listMaterialLossCandidates(batchId: string): Promise<MaterialLossCandidateItem[]>;
+  abstract createMaterialLoss(
+    payload: CreateMaterialLossPayload,
+    context: CommandContext,
+  ): Promise<MaterialLossItem>;
+  abstract confirmMaterialLoss(
+    scrapId: string,
+    version: number,
+    context: CommandContext,
+  ): Promise<MaterialLossItem>;
+  abstract cancelMaterialLoss(
+    scrapId: string,
+    version: number,
+    context: CommandContext,
+  ): Promise<MaterialLossItem>;
+
   abstract listReturnOrders(query: ReturnOrderQuery): Promise<PageResult<ReturnOrderItem>>;
   abstract getReturnOrder(returnId: string): Promise<ReturnOrderItem>;
   abstract listReturnBatchOptions(): Promise<ReturnOrderBatchOption[]>;

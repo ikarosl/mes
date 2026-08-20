@@ -15,6 +15,7 @@ const report = {
   reportedQuantity: '4.0000',
   normalQuantity: '3.0000',
   abnormalQuantity: '1.0000',
+  abnormalOrigin: 'current_step' as const,
   unit: '件',
   remark: null,
   createdById: '7',

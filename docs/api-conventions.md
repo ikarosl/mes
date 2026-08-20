@@ -138,6 +138,14 @@ interface PageResult<T> {
   前必须在其模块契约中显式标记启用。事务、指纹、存储和测试方案见
   [`http-idempotency-implementation-plan.md`](http-idempotency-implementation-plan.md)。
 
+工序普通报工仍使用同一个 `reports` 端点，但业务意图必须互斥：正常报工提交 `normalQuantity > 0, abnormalQuantity = 0, abnormalOrigin = null`；异常报工提交 `normalQuantity = 0, abnormalQuantity > 0` 并填写 `abnormalOrigin`。后端拒绝两个数量同时大于 `0`，员工端必须以“正常报工/异常报工”两个入口表达，不能仅依赖前端隐藏字段。
+
+异常报废补料页面的“暂存需求”保存服务端可恢复草稿，而不是创建正式物料需求。草稿写入 `production_scrap_supplement_plan/_line`，不得改变异常处置状态，不得写入 `production_item_demand`，因而不能参与分配或出库；保存命令使用 `planVersion` 做方案乐观并发控制，并使用 `dispositionVersion` 防止基于过期异常暂存。只有复核页的“确定报废并生成”才提交最终确认命令，并在一个事务内批准异常、生成报废事实、补产授权、补料单和正式需求，再将方案转为 `confirmed`。管理端不再调用可跳过方案复核的直接批准入口。
+
+- `GET /production/abnormal-dispositions/:dispositionId/scrap-supplement-plan`：返回当前方案或 `null`。
+- `PUT /production/abnormal-dispositions/:dispositionId/scrap-supplement-plan`：创建或按 `planVersion` 整体替换草稿明细。
+- `POST /production/abnormal-dispositions/:dispositionId/scrap-supplement-plan/actions/confirm`：按方案版本幂等确认并生成正式闭环事实。
+
 Production 4.2-B 的工序执行命令采用批次与工序记录双重上下文：
 
 - `POST /api/production/batches/:batchId/step-records/:recordId/actions/assign`

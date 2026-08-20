@@ -2,6 +2,9 @@ import { Injectable } from '@nestjs/common';
 import type {
   CreateReturnOrderPayload,
   CreateStockCheckPayload,
+  CreateMaterialLossPayload,
+  MaterialLossItem,
+  MaterialLossQuery,
   ReturnOrderItem,
   ReturnOrderQuery,
   SaveStockCheckCountsPayload,
@@ -9,9 +12,19 @@ import type {
   StockCheckOrderItem,
   StockCheckOrderQuery,
 } from '@company/contracts';
-import type { CommandContext } from '../../../common/audit/audit.types.js';
+import type {
+  CommandContext,
+  IdempotentCommandContext,
+} from '../../../common/audit/audit.types.js';
+import { IdempotencyExecutor } from '../../../common/idempotency/idempotency-executor.js';
 import { IdentityDirectoryService } from '../../identity/public.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
+import { CONFIRM_MATERIAL_LOSS_IDEMPOTENCY_SCOPE } from './idempotency/confirm-material-loss-idempotency.contract.js';
+import { CREATE_MATERIAL_LOSS_IDEMPOTENCY_SCOPE } from './idempotency/create-material-loss-idempotency.contract.js';
+import {
+  confirmMaterialLossResultCodec,
+  createMaterialLossResultCodec,
+} from './idempotency/production-material-loss-result.codec.js';
 import { ProductionInventoryRepository } from './ports/production-inventory.repository.js';
 
 @Injectable()
@@ -19,7 +32,59 @@ export class ProductionInventoryService {
   constructor(
     private readonly inventory: ProductionInventoryRepository,
     private readonly identity: IdentityDirectoryService,
+    private readonly idempotency: IdempotencyExecutor,
   ) {}
+
+  async listMaterialLosses(query: MaterialLossQuery) {
+    const result = await this.inventory.listMaterialLosses(query);
+    return { ...result, items: await this.enrichMaterialLosses(result.items) };
+  }
+  async getMaterialLoss(scrapId: string) {
+    return (await this.enrichMaterialLosses([await this.inventory.getMaterialLoss(scrapId)]))[0]!;
+  }
+  listMaterialLossBatchOptions() {
+    return this.inventory.listMaterialLossBatchOptions();
+  }
+  listMaterialLossCandidates(batchId: string) {
+    return this.inventory.listMaterialLossCandidates(batchId);
+  }
+  async createMaterialLoss(payload: CreateMaterialLossPayload, context: IdempotentCommandContext) {
+    const reasonType = payload.reasonType.trim();
+    if (!reasonType) throw new ProductionDomainError('INVALID_INPUT', '损耗原因不能为空');
+    const normalized = { ...payload, reasonType, remark: clean(payload.remark) };
+    const execution = await this.idempotency.execute({
+      scope: CREATE_MATERIAL_LOSS_IDEMPOTENCY_SCOPE,
+      key: context.idempotencyKey,
+      actorId: context.actorId,
+      requestId: context.requestId,
+      request: { body: normalized },
+      resultCodec: createMaterialLossResultCodec,
+      handler: async () => {
+        const item = await this.inventory.createMaterialLoss(normalized, context);
+        return (await this.enrichMaterialLosses([item]))[0]!;
+      },
+    });
+    return execution.result;
+  }
+  async confirmMaterialLoss(scrapId: string, version: number, context: IdempotentCommandContext) {
+    const execution = await this.idempotency.execute({
+      scope: CONFIRM_MATERIAL_LOSS_IDEMPOTENCY_SCOPE,
+      key: context.idempotencyKey,
+      actorId: context.actorId,
+      requestId: context.requestId,
+      request: { params: { scrapId }, body: { version } },
+      resultCodec: confirmMaterialLossResultCodec,
+      handler: async () => {
+        const item = await this.inventory.confirmMaterialLoss(scrapId, version, context);
+        return (await this.enrichMaterialLosses([item]))[0]!;
+      },
+    });
+    return execution.result;
+  }
+  async cancelMaterialLoss(scrapId: string, version: number, context: CommandContext) {
+    const item = await this.inventory.cancelMaterialLoss(scrapId, version, context);
+    return (await this.enrichMaterialLosses([item]))[0]!;
+  }
 
   async listReturnOrders(query: ReturnOrderQuery) {
     const result = await this.inventory.listReturnOrders(query);
@@ -122,6 +187,16 @@ export class ProductionInventoryService {
     return items.map((item) => ({
       ...item,
       operatorName: item.operatorId ? (names.get(item.operatorId) ?? null) : null,
+      createdByName: names.get(item.createdById) ?? null,
+    }));
+  }
+  private async enrichMaterialLosses(items: MaterialLossItem[]): Promise<MaterialLossItem[]> {
+    const names = await this.userNames(
+      items.flatMap((item) => [item.confirmedById, item.createdById]),
+    );
+    return items.map((item) => ({
+      ...item,
+      confirmedByName: item.confirmedById ? (names.get(item.confirmedById) ?? null) : null,
       createdByName: names.get(item.createdById) ?? null,
     }));
   }

@@ -19,6 +19,7 @@ export type ReportRow = RowDataPacket & {
   reported_quantity: string;
   normal_quantity: string;
   abnormal_quantity: string;
+  abnormal_origin: BatchStepReportItem['abnormalOrigin'];
   unit_snapshot: string;
   remark: string | null;
   created_by: number;
@@ -32,6 +33,7 @@ export type DispositionRow = RowDataPacket & {
   production_batch_id: number;
   batch_step_record_id: number;
   batch_step_report_id: number;
+  abnormal_origin: BatchStepAbnormalDispositionItem['abnormalOrigin'];
   review_status: BatchStepAbnormalDispositionItem['reviewStatus'];
   disposition_type: 'rework' | 'scrap' | null;
   remark: string | null;
@@ -69,6 +71,7 @@ export const mapReport = (row: ReportRow): BatchStepReportItem => ({
   reportedQuantity: row.reported_quantity,
   normalQuantity: row.normal_quantity,
   abnormalQuantity: row.abnormal_quantity,
+  abnormalOrigin: row.abnormal_origin,
   unit: row.unit_snapshot,
   remark: row.remark,
   createdById: String(row.created_by),
@@ -83,6 +86,7 @@ export const mapDisposition = (row: DispositionRow): BatchStepAbnormalDispositio
   productionBatchId: String(row.production_batch_id),
   stepRecordId: String(row.batch_step_record_id),
   sourceReportId: String(row.batch_step_report_id),
+  abnormalOrigin: row.abnormal_origin,
   reviewStatus: row.review_status,
   dispositionType: row.disposition_type,
   remark: row.remark,

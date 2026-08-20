@@ -114,6 +114,8 @@ jobs:
             DB_PASSWORD: mes-test,
             DB_NAME: easy_mes_next_test,
             TEST_DB_NAME: easy_mes_next_test,
+            TEST_DB_ADMIN_USER: root,
+            TEST_DB_ADMIN_PASSWORD: root-test,
             DB_CONNECTION_LIMIT: 5,
             ADMIN_PASSWORD: ci-admin-password,
             JWT_SECRET: ci-jwt-secret-0123456789abcdef0123456789abcdef,

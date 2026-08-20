@@ -42,7 +42,7 @@ import {
   type OutboundRow,
 } from './mysql-production-material.mapper.js';
 import { findBatch } from './mysql-production.shared.js';
-import { activateReadySupplements } from './mysql-production-supplement-activation.js';
+import { fulfillReadySupplements } from './mysql-production-supplement-activation.js';
 
 @Injectable()
 export class MysqlProductionMaterialRepository extends ProductionMaterialRepository {
@@ -138,7 +138,7 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
       requireMaterialAllocationBatchStatus(
         batch.status,
         demandTypes.length === demandIds.length &&
-          demandTypes.every((row) => row.demand_type === 'scrap_supplement'),
+          demandTypes.every((row) => isSupplementDemand(row.demand_type)),
       );
       const inserted: string[] = [];
       for (const line of payload.allocations) {
@@ -232,7 +232,7 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
         [allocationId, batchId],
       );
       if (!row) throw new ProductionDomainError('NOT_FOUND', '物料分配不存在');
-      requireMaterialAllocationBatchStatus(batch.status, row.demand_type === 'scrap_supplement');
+      requireMaterialAllocationBatchStatus(batch.status, isSupplementDemand(row.demand_type));
       if (row.allocation_status === 'released') return mapAllocation(row);
       if (row.allocation_status !== 'active')
         throw new ProductionDomainError('INVALID_STATE', '当前分配状态不能释放');
@@ -291,7 +291,7 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
         throw new ProductionDomainError('NOT_FOUND', '出库分配不存在或不属于当前批次');
       requireMaterialOutboundBatchStatus(
         batch.status,
-        allocations.every((row) => row.demand_type === 'scrap_supplement'),
+        allocations.every((row) => isSupplementDemand(row.demand_type)),
       );
       const byId = new Map(allocations.map((row) => [String(row.id), row]));
       for (const line of payload.details) {
@@ -426,7 +426,7 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
              SELECT 1 FROM production_item_allocation a
              JOIN production_item_demand d ON d.id=a.demand_id
              WHERE a.production_batch_id=b.id AND a.allocation_status='active'
-               AND d.demand_type='scrap_supplement'
+               AND d.demand_type IN ('scrap_supplement','material_loss_supplement')
            )
          )
        )
@@ -455,7 +455,7 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
       [batchId],
     );
     return rows
-      .filter((row) => batch.status !== 'doing' || row.demand_type === 'scrap_supplement')
+      .filter((row) => batch.status !== 'doing' || isSupplementDemand(row.demand_type))
       .map((row) => {
         const available = Math.max(
           0,
@@ -609,7 +609,7 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
           "UPDATE production_batches SET status='material_outbound',version=version+1,updated_by=? WHERE id=? AND status='material_assigned'",
           [context.actorId, order.production_batch_id],
         );
-      const supplementActivation = await activateReadySupplements(
+      const supplementFulfillment = await fulfillReadySupplements(
         connection,
         String(order.production_batch_id),
         lockedBatch.planned_quantity,
@@ -625,8 +625,8 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
           status: 'completed',
           version: version + 1,
           transactionCount: details.length,
-          activatedSupplementIds: supplementActivation.activatedSupplementIds,
-          reopenedStepIds: supplementActivation.reopenedStepIds,
+          fulfilledSupplementIds: supplementFulfillment.fulfilledSupplementIds,
+          reopenedStepIds: supplementFulfillment.reopenedStepIds,
         },
       );
       const batch = await findBatch(connection, String(order.production_batch_id));
@@ -800,6 +800,8 @@ const allDemandsAllocated = async (db: PoolConnection, batchId: string) => {
   );
   return Number(row?.missing ?? 1) === 0;
 };
+const isSupplementDemand = (value: string) =>
+  value === 'scrap_supplement' || value === 'material_loss_supplement';
 const allDemandsOutbound = async (db: PoolConnection, batchId: string) => {
   const [[row]] = await db.query<(RowDataPacket & { missing: number })[]>(
     `SELECT COUNT(*) missing FROM production_item_demand d WHERE d.production_batch_id=? AND d.business_status='active' AND COALESCE((SELECT SUM(od.outbound_number) FROM outbound_detail od JOIN outbound_order oo ON oo.id=od.outbound_id WHERE od.demand_id=d.id AND oo.status='completed'),0)<d.need_number`,

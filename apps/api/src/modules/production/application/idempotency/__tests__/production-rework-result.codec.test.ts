@@ -34,6 +34,7 @@ describe('completeReworkResultCodec', () => {
         reportedQuantity: '2.0000',
         normalQuantity: '2.0000',
         abnormalQuantity: '0.0000',
+        abnormalOrigin: null,
         unit: '件',
         remark: null,
         createdById: '6',

@@ -231,7 +231,7 @@ createBatch 试点接线进一步落实「重放返回原结果」的完整语�
 | 取消待确认外购物料入库 | `pending -> cancelled`，不产生库存流水 | 状态 + version 天然幂等；前端不发送 `Idempotency-Key` |
 | 确认生产领料出库 | 整单生成负库存流水并推进批次；`outboundId + version` | 已启用，scope `production.material-outbound.confirm.v1`；单据状态、内部库存流水键、批次状态、审计和结果同事务 |
 | 取消待出库单 | `pending_picking -> cancelled`；`outboundId + version` | 使用状态短路与 version；不发送 `Idempotency-Key`，取消后待制单占用立即释放 |
-| 创建工序报工 | 新增不可变报工事实；异常数量还会新增待处置记录 | 已启用，scope `production.step-report.create.v3`；v3 按正常+异常有效总量消耗当前放行额度；报工、异常待处置、工序状态、成功审计和幂等结果同事务 |
+| 创建工序报工 | 正常报工或异常报工新增一条不可变事实；异常报工还会新增待处置记录 | 已启用，scope `production.step-report.create.v3`；员工普通报工禁止正常与异常混报，两类命令均按本次单一数量消耗当前放行额度；报工、异常待处置、工序状态、成功审计和幂等结果同事务 |
 | 冲销报工 | 按原事实追加一条全量冲销；目标报工是唯一自然业务键 | 不发送 HTTP 幂等键；`UNIQUE(reversal_of_report_id)`、批次/工序状态和 `version` 提供天然幂等与并发保护，重放返回已存在的冲销事实 |
 | 更正报工 | 在单个事务内追加全量冲销和替代事实；服务端单号不可复现 | 已启用，scope `production.step-report.correct.v3`；v3 按更正后有效总量校验当前放行额度；冲销、替代、异常待处置、工序状态、成功审计和幂等结果同事务 |
 | 完成返工 | 追加来源唯一的报工事实，返工再次异常还会新增待处置记录 | 已启用，scope `production.rework.complete.v1`；返工单、报工、工序状态、成功审计和幂等结果同事务 |

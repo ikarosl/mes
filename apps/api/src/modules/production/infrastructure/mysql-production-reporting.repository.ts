@@ -18,6 +18,8 @@ import { DATABASE_POOL } from '../../../infrastructure/database/database.module.
 import { ProductionReportingRepository } from '../application/ports/production-reporting.repository.js';
 import {
   isRequiredNormalCompleted,
+  requireAbnormalOrigin,
+  requireDirectReportQuantities,
   requireNoDownstreamQuantityConflict,
   requireReportWithinReleased,
   requireReportQuantities,
@@ -118,7 +120,11 @@ export class MysqlProductionReportingRepository extends ProductionReportingRepos
       if (!current.need_record_snapshot)
         throw new ProductionDomainError('STEP_REPORT_NOT_ALLOWED', '该工序无需报工');
       assertVersion(current, payload.version);
-      requireReportQuantities(payload.normalQuantity, payload.abnormalQuantity);
+      requireDirectReportQuantities(payload.normalQuantity, payload.abnormalQuantity);
+      const abnormalOrigin = requireAbnormalOrigin(
+        payload.abnormalQuantity,
+        payload.abnormalOrigin,
+      );
       requireReportWithinReleased(
         current.effective_direct_reported,
         payload.normalQuantity,
@@ -131,6 +137,7 @@ export class MysqlProductionReportingRepository extends ProductionReportingRepos
         reportType: 'normal',
         normalQuantity: payload.normalQuantity,
         abnormalQuantity: payload.abnormalQuantity,
+        abnormalOrigin,
         unit: current.unit_snapshot,
         remark: payload.remark ?? null,
         actorId: context.actorId,
@@ -208,6 +215,7 @@ export class MysqlProductionReportingRepository extends ProductionReportingRepos
         reportType: 'reversal',
         normalQuantity: Number(target.normal_quantity),
         abnormalQuantity: Number(target.abnormal_quantity),
+        abnormalOrigin: target.abnormal_origin,
         unit: target.unit_snapshot,
         remark: payload.reason,
         actorId,
@@ -240,6 +248,10 @@ export class MysqlProductionReportingRepository extends ProductionReportingRepos
       );
       assertVersion(current, payload.version);
       requireReportQuantities(payload.normalQuantity, payload.abnormalQuantity);
+      const abnormalOrigin = requireAbnormalOrigin(
+        payload.abnormalQuantity,
+        payload.abnormalOrigin,
+      );
       const target = await lockReport(connection, batchId, stepRecordId, reportId);
       requireCorrectable(target);
       const correctedNormal = add(
@@ -266,6 +278,7 @@ export class MysqlProductionReportingRepository extends ProductionReportingRepos
         reportType: 'reversal',
         normalQuantity: Number(target.normal_quantity),
         abnormalQuantity: Number(target.abnormal_quantity),
+        abnormalOrigin: target.abnormal_origin,
         unit: target.unit_snapshot,
         remark: payload.reason,
         actorId,
@@ -277,6 +290,7 @@ export class MysqlProductionReportingRepository extends ProductionReportingRepos
         reportType: 'normal',
         normalQuantity: payload.normalQuantity,
         abnormalQuantity: payload.abnormalQuantity,
+        abnormalOrigin,
         unit: target.unit_snapshot,
         remark: payload.reason,
         actorId,
@@ -371,6 +385,7 @@ const insertReport = async (
     reportType: 'normal' | 'reversal';
     normalQuantity: number;
     abnormalQuantity: number;
+    abnormalOrigin: CreateBatchStepReportPayload['abnormalOrigin'];
     unit: string;
     remark: string | null;
     actorId: string;
@@ -380,8 +395,8 @@ const insertReport = async (
 ): Promise<string> => {
   const [result] = await connection.execute<ResultSetHeader>(
     `INSERT INTO batch_step_reports
-     (report_no,production_batch_id,batch_step_record_id,report_type,reversal_of_report_id,replaces_report_id,reported_quantity,normal_quantity,abnormal_quantity,unit_snapshot,remark,created_by)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+     (report_no,production_batch_id,batch_step_record_id,report_type,reversal_of_report_id,replaces_report_id,reported_quantity,normal_quantity,abnormal_quantity,abnormal_origin,unit_snapshot,remark,created_by)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [
       `SR-${Date.now()}-${randomUUID().slice(0, 12)}`,
       input.batchId,
@@ -392,6 +407,7 @@ const insertReport = async (
       fixed(input.normalQuantity + input.abnormalQuantity),
       fixed(input.normalQuantity),
       fixed(input.abnormalQuantity),
+      input.abnormalOrigin ?? null,
       input.unit,
       input.remark,
       input.actorId,
@@ -541,13 +557,13 @@ const LOCKED_STEP_SELECT = `SELECT sr.id,sr.step_order_snapshot,sr.step_name_sna
 const PROJECTION_STEP_SELECT = `SELECT sr.id,sr.production_batch_id,sr.step_order_snapshot,sr.step_code_snapshot,sr.step_name_snapshot,sr.status,sr.responsible_user_id,sr.need_record_snapshot,sr.unit_snapshot,sr.started_at,sr.completed_at,sr.version,${SUMMARY_COLUMNS}
   FROM batch_step_records sr LEFT JOIN batch_step_reports r ON r.batch_step_record_id=sr.id
   WHERE sr.production_batch_id=? GROUP BY sr.id ORDER BY sr.step_order_snapshot,sr.id`;
-const REPORT_FIELDS = `r.id,r.report_no,r.production_batch_id,r.batch_step_record_id,r.report_type,r.reversal_of_report_id,r.replaces_report_id,r.reported_quantity,r.normal_quantity,r.abnormal_quantity,r.unit_snapshot,r.remark,r.created_by,r.created_at,
+const REPORT_FIELDS = `r.id,r.report_no,r.production_batch_id,r.batch_step_record_id,r.report_type,r.reversal_of_report_id,r.replaces_report_id,r.reported_quantity,r.normal_quantity,r.abnormal_quantity,r.abnormal_origin,r.unit_snapshot,r.remark,r.created_by,r.created_at,
   CASE WHEN r.report_type='reversal' THEN 1 WHEN NOT EXISTS (SELECT 1 FROM batch_step_reports reversal WHERE reversal.reversal_of_report_id=r.id) THEN 1 ELSE 0 END is_effective`;
 const REPORT_SELECT = `SELECT ${REPORT_FIELDS} FROM batch_step_reports r WHERE r.production_batch_id=? AND r.batch_step_record_id=?`;
 const REPORT_SELECT_BY_ID = `SELECT ${REPORT_FIELDS} FROM batch_step_reports r WHERE r.id=?`;
 const REPORT_SELECT_BY_REVERSAL = `SELECT ${REPORT_FIELDS} FROM batch_step_reports r WHERE r.reversal_of_report_id=?`;
 const REPORT_SELECT_BATCH = `SELECT ${REPORT_FIELDS} FROM batch_step_reports r WHERE r.production_batch_id=? ORDER BY r.created_at,r.id`;
-const DISPOSITION_SELECT = `SELECT d.id,d.disposition_no,d.production_batch_id,d.batch_step_record_id,d.batch_step_report_id,d.review_status,d.disposition_type,d.remark,d.version,d.created_at FROM batch_step_abnormal_dispositions d`;
+const DISPOSITION_SELECT = `SELECT d.id,d.disposition_no,d.production_batch_id,d.batch_step_record_id,d.batch_step_report_id,source_report.abnormal_origin,d.review_status,d.disposition_type,d.remark,d.version,d.created_at FROM batch_step_abnormal_dispositions d JOIN batch_step_reports source_report ON source_report.id=d.batch_step_report_id`;
 const DISPOSITION_SELECT_BATCH = `${DISPOSITION_SELECT} WHERE d.production_batch_id=? ORDER BY d.created_at,d.id`;
 
 const audit = (

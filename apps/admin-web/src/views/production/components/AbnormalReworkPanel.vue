@@ -16,6 +16,7 @@
             {{ BATCH_STEP_ABNORMAL_REVIEW_STATUS_LABELS[item.reviewStatus] }}
           </el-tag>
           <span>{{ sourceQuantity(item) }} {{ unit }}</span>
+          <span>{{ item.abnormalOrigin === 'previous_step' ? '前置异常' : '当前工序异常' }}</span>
         </div>
         <div v-if="item.reviewStatus === 'pending_review'">
           <el-button
@@ -118,7 +119,7 @@
 
     <el-dialog
       v-model="supplementVisible"
-      title="批准报废并生成补料需求"
+      :title="supplementStage === 'edit' ? '编制报废补料需求' : '复核报废补料需求'"
       width="min(820px, 85vw)"
     >
       <el-alert
@@ -146,6 +147,16 @@
         <el-descriptions-item label="受影响路线">
           {{ supplementPath.map((step) => step.stepName).join(' → ') }}
         </el-descriptions-item>
+        <el-descriptions-item label="异常来源类型">
+          {{
+            supplementDisposition.abnormalOrigin === 'previous_step'
+              ? '前置工序异常'
+              : '当前工序异常'
+          }}
+        </el-descriptions-item>
+        <el-descriptions-item label="候选物料范围">
+          {{ materialPath.map((step) => step.stepName).join(' → ') || '待选择截止工序' }}
+        </el-descriptions-item>
         <el-descriptions-item
           label="正常目标变化"
           :span="2"
@@ -153,78 +164,165 @@
           {{ supplementTargetImpact }}
         </el-descriptions-item>
       </el-descriptions>
-      <el-alert
-        class="dialog-tip"
-        type="info"
-        :closable="false"
-        show-icon
-        title="批准后先生成补料需求；只有本单全部补料确认领用，系统才会从首工序激活补产并按正常产出逐道放行。"
-      />
-      <el-alert
-        v-if="supplementError"
-        class="dialog-tip"
-        type="error"
-        :closable="false"
-        :title="supplementError"
-      />
-      <el-table
-        v-loading="supplementLoading"
-        :data="supplementRows"
-        empty-text="当前批次没有可用于补料的正常物料需求"
-      >
-        <el-table-column width="54">
-          <template #default="{ row }">
-            <el-checkbox v-model="row.selected" />
-          </template>
-        </el-table-column>
-        <el-table-column
-          prop="candidate.itemCode"
-          label="物料编码"
-          min-width="130"
+      <template v-if="supplementStage === 'edit'">
+        <el-form label-position="top">
+          <el-form-item
+            label="候选物料截止工序"
+            required
+          >
+            <el-select
+              v-model="materialEndStepRecordId"
+              placeholder="请选择实际需要重制到的最后一道工序"
+              @change="() => loadSupplementCandidates()"
+            >
+              <el-option
+                v-for="step in materialEndOptions"
+                :key="step.stepRecordId"
+                :label="`${step.stepOrder}. ${step.stepName}`"
+                :value="step.stepRecordId"
+              />
+            </el-select>
+            <div class="field-tip">
+              系统只推荐首工序至该工序使用的候选物料，补料数量由管理员填写；补产上限数量仍从首工序逐道放行到异常上报工序。
+            </div>
+          </el-form-item>
+        </el-form>
+        <el-alert
+          class="dialog-tip"
+          type="info"
+          :closable="false"
+          show-icon
+          title="先把需求保存为不可分配的草稿并复核；只有最终确定报废并生成后才会创建正式需求。补料全部确认领用后，补产才从首工序开始逐道放行。"
         />
-        <el-table-column
-          prop="candidate.itemName"
-          label="物料名称"
-          min-width="150"
+        <el-alert
+          v-if="supplementError"
+          class="dialog-tip"
+          type="error"
+          :closable="false"
+          :title="supplementError"
         />
-        <el-table-column
-          prop="candidate.normalDemandQuantity"
-          label="原需求"
-          width="110"
-        />
-        <el-table-column
-          label="补料数量"
-          width="190"
+        <el-table
+          v-loading="supplementLoading"
+          :data="supplementRows"
+          empty-text="当前批次没有可用于补料的正常物料需求"
         >
-          <template #default="{ row }">
-            <el-input-number
-              v-model="row.quantity"
-              :disabled="!row.selected"
-              :min="0.0001"
-              :precision="4"
-            />
-            {{ row.candidate.unit }}
-          </template>
-        </el-table-column>
-      </el-table>
-      <el-form label-position="top">
-        <el-form-item label="审批说明">
-          <el-input
-            v-model="supplementRemark"
-            type="textarea"
-            :rows="3"
-            maxlength="5000"
+          <el-table-column width="54">
+            <template #default="{ row }">
+              <el-checkbox v-model="row.selected" />
+            </template>
+          </el-table-column>
+          <el-table-column
+            prop="candidate.itemCode"
+            label="物料编码"
+            min-width="130"
           />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="supplementVisible = false">取消</el-button>
-        <el-button
+          <el-table-column
+            prop="candidate.itemName"
+            label="物料名称"
+            min-width="150"
+          />
+          <el-table-column
+            prop="candidate.normalDemandQuantity"
+            label="原需求"
+            width="110"
+          />
+          <el-table-column
+            label="补料数量"
+            width="190"
+          >
+            <template #default="{ row }">
+              <el-input-number
+                v-model="row.quantity"
+                :disabled="!row.selected"
+                :min="0.0001"
+                :precision="4"
+              />
+              {{ row.candidate.unit }}
+            </template>
+          </el-table-column>
+        </el-table>
+        <el-form label-position="top">
+          <el-form-item label="审批说明">
+            <el-input
+              v-model="supplementRemark"
+              type="textarea"
+              :rows="3"
+              maxlength="5000"
+            />
+          </el-form-item>
+        </el-form>
+      </template>
+      <template v-else-if="stagedSupplement">
+        <el-alert
+          class="dialog-tip"
           type="warning"
-          :disabled="!canApproveSupplement"
-          @click="submitSupplement"
-          >确认报废并生成补料</el-button
+          :closable="false"
+          show-icon
+          title="以下内容已保存为服务端草稿，但尚未创建正式物料需求，不能分配或出库。请核对物料、数量和候选物料截止工序；最终确定后不可直接修改。"
+        />
+        <el-descriptions
+          class="supplement-context"
+          :column="2"
+          border
         >
+          <el-descriptions-item label="候选物料截止工序">
+            {{ stagedSupplement.materialEndStepLabel }}
+          </el-descriptions-item>
+          <el-descriptions-item label="需求物料种类">
+            {{ stagedSupplement.lines.length }} 种
+          </el-descriptions-item>
+          <el-descriptions-item
+            label="审批说明"
+            :span="2"
+          >
+            {{ stagedSupplement.remark || '—' }}
+          </el-descriptions-item>
+        </el-descriptions>
+        <el-table :data="stagedSupplement.lines">
+          <el-table-column
+            prop="itemCode"
+            label="物料编码"
+            min-width="130"
+          />
+          <el-table-column
+            prop="itemName"
+            label="物料名称"
+            min-width="150"
+          />
+          <el-table-column
+            label="补料数量"
+            width="180"
+          >
+            <template #default="{ row }">{{ row.quantity }} {{ row.unit }}</template>
+          </el-table-column>
+        </el-table>
+      </template>
+      <template #footer>
+        <template v-if="supplementStage === 'edit'">
+          <el-button @click="supplementVisible = false">取消</el-button>
+          <el-button
+            type="warning"
+            :loading="supplementSaving"
+            :disabled="!canStageSupplement"
+            @click="stageSupplement"
+            >暂存需求</el-button
+          >
+        </template>
+        <template v-else>
+          <el-button @click="supplementVisible = false">关闭</el-button>
+          <el-button @click="supplementStage = 'edit'">重新编辑</el-button>
+          <el-button
+            type="danger"
+            :loading="
+              supplementDisposition
+                ? pendingKeys.has(`approve-scrap:${supplementDisposition.dispositionId}`)
+                : false
+            "
+            :disabled="!stagedSupplement || persistedPlan?.status !== 'draft'"
+            @click="submitSupplement"
+            >确定报废并生成</el-button
+          >
+        </template>
       </template>
     </el-dialog>
 
@@ -306,6 +404,7 @@ import type {
   BatchStepReportItem,
   ReworkRecordItem,
   ProductionSupplementCandidateItem,
+  ProductionScrapSupplementPlanItem,
   ApproveScrapSupplementLinePayload,
   BatchStepExecutionRecordItem,
 } from '@company/contracts';
@@ -319,7 +418,18 @@ const props = withDefaults(
     unit?: string;
     sourceStep: BatchStepExecutionRecordItem;
     routeSteps: BatchStepExecutionRecordItem[];
-    candidateLoader: (dispositionId: string) => Promise<ProductionSupplementCandidateItem[]>;
+    candidateLoader: (
+      dispositionId: string,
+      materialEndStepRecordId: string,
+    ) => Promise<ProductionSupplementCandidateItem[]>;
+    planLoader: (dispositionId: string) => Promise<ProductionScrapSupplementPlanItem | null>;
+    planSaver: (
+      disposition: BatchStepAbnormalDispositionItem,
+      materialEndStepRecordId: string,
+      details: ApproveScrapSupplementLinePayload[],
+      remark: string,
+      planVersion: number | null,
+    ) => Promise<ProductionScrapSupplementPlanItem>;
   }>(),
   { unit: '' },
 );
@@ -328,11 +438,7 @@ const emit = defineEmits<{
   reject: [item: BatchStepAbnormalDispositionItem, reason: string];
   start: [item: ReworkRecordItem];
   complete: [item: ReworkRecordItem, normal: number, abnormal: number, remark: string];
-  approveScrap: [
-    item: BatchStepAbnormalDispositionItem,
-    details: ApproveScrapSupplementLinePayload[],
-    remark: string,
-  ];
+  approveScrap: [item: BatchStepAbnormalDispositionItem, planVersion: number];
 }>();
 
 const reviewVisible = ref(false);
@@ -344,9 +450,26 @@ const selectedRework = ref<ReworkRecordItem | null>(null);
 const completionForm = reactive({ normalQuantity: 0, abnormalQuantity: 0, remark: '' });
 const supplementVisible = ref(false);
 const supplementLoading = ref(false);
+const supplementSaving = ref(false);
 const supplementError = ref('');
 const supplementRemark = ref('');
 const supplementDisposition = ref<BatchStepAbnormalDispositionItem | null>(null);
+const materialEndStepRecordId = ref('');
+const supplementStage = ref<'edit' | 'review'>('edit');
+const stagedSupplement = ref<{
+  materialEndStepRecordId: string;
+  materialEndStepLabel: string;
+  lines: Array<{
+    originalDemandId: string;
+    itemCode: string;
+    itemName: string;
+    quantity: number;
+    unit: string;
+  }>;
+  remark: string;
+} | null>(null);
+const persistedPlan = ref<ProductionScrapSupplementPlanItem | null>(null);
+let supplementRequestSerial = 0;
 const supplementRows = ref<
   Array<{ candidate: ProductionSupplementCandidateItem; selected: boolean; quantity: number }>
 >([]);
@@ -358,6 +481,23 @@ const supplementPath = computed(() =>
     .filter((step) => step.stepOrder <= props.sourceStep.stepOrder)
     .sort((left, right) => left.stepOrder - right.stepOrder),
 );
+const materialEndOptions = computed(() => {
+  const disposition = supplementDisposition.value;
+  if (!disposition) return [];
+  return [...props.routeSteps]
+    .filter((step) =>
+      disposition.abnormalOrigin === 'previous_step'
+        ? step.stepOrder < props.sourceStep.stepOrder
+        : step.stepOrder <= props.sourceStep.stepOrder,
+    )
+    .sort((left, right) => left.stepOrder - right.stepOrder);
+});
+const materialPath = computed(() => {
+  const end = materialEndOptions.value.find(
+    (step) => step.stepRecordId === materialEndStepRecordId.value,
+  );
+  return end ? materialEndOptions.value.filter((step) => step.stepOrder <= end.stepOrder) : [];
+});
 const supplementTargetImpact = computed(() => {
   if (!supplementDisposition.value) return '—';
   const quantity = sourceQuantity(supplementDisposition.value);
@@ -378,9 +518,12 @@ const canComplete = computed(() => {
     Math.abs(completionForm.normalQuantity + completionForm.abnormalQuantity - expected) < 0.00001
   );
 });
-const canApproveSupplement = computed(
+const canStageSupplement = computed(
   () =>
     !supplementLoading.value &&
+    !supplementSaving.value &&
+    Boolean(supplementDisposition.value) &&
+    Boolean(materialEndStepRecordId.value) &&
     supplementRows.value.some((row) => row.selected && row.quantity > 0),
 );
 const openReview = (item: BatchStepAbnormalDispositionItem, mode: 'rework' | 'reject') => {
@@ -400,36 +543,116 @@ const openSupplement = async (item: BatchStepAbnormalDispositionItem) => {
   supplementRows.value = [];
   supplementRemark.value = '';
   supplementError.value = '';
+  supplementStage.value = 'edit';
+  stagedSupplement.value = null;
+  persistedPlan.value = null;
   supplementVisible.value = true;
+  const allowedEnds = [...props.routeSteps]
+    .filter((step) =>
+      item.abnormalOrigin === 'previous_step'
+        ? step.stepOrder < props.sourceStep.stepOrder
+        : step.stepOrder <= props.sourceStep.stepOrder,
+    )
+    .sort((left, right) => left.stepOrder - right.stepOrder);
+  materialEndStepRecordId.value = allowedEnds.at(-1)?.stepRecordId ?? '';
+  if (!materialEndStepRecordId.value) {
+    supplementError.value = '前置异常没有可选的前置截止工序，请先核对异常来源。';
+    return;
+  }
   supplementLoading.value = true;
   try {
-    const candidates = await props.candidateLoader(item.dispositionId);
-    if (supplementDisposition.value?.dispositionId !== item.dispositionId) return;
+    const plan = await props.planLoader(item.dispositionId);
+    if (plan?.status === 'draft') {
+      persistedPlan.value = plan;
+      materialEndStepRecordId.value = plan.materialEndStepRecordId;
+      supplementRemark.value = plan.remark ?? '';
+      await loadSupplementCandidates(plan);
+      return;
+    }
+    await loadSupplementCandidates();
+  } catch {
+    supplementError.value = '暂存方案加载失败，请关闭后重试。';
+  } finally {
+    supplementLoading.value = false;
+  }
+};
+const loadSupplementCandidates = async (restoredPlan?: ProductionScrapSupplementPlanItem) => {
+  const item = supplementDisposition.value;
+  const materialEndId = materialEndStepRecordId.value;
+  if (!item || !materialEndId) return;
+  const requestSerial = ++supplementRequestSerial;
+  supplementLoading.value = true;
+  supplementRows.value = [];
+  supplementError.value = '';
+  try {
+    const candidates = await props.candidateLoader(item.dispositionId, materialEndId);
+    if (
+      requestSerial !== supplementRequestSerial ||
+      supplementDisposition.value?.dispositionId !== item.dispositionId ||
+      materialEndStepRecordId.value !== materialEndId
+    )
+      return;
+    const restored = new Map(
+      (restoredPlan?.lines ?? []).map((line) => [line.originalDemandId, line.plannedQuantity]),
+    );
     supplementRows.value = candidates.map((candidate) => ({
       candidate,
-      selected: false,
-      quantity: 0.0001,
+      selected: restored.has(candidate.originalDemandId),
+      quantity: restored.has(candidate.originalDemandId)
+        ? Number(restored.get(candidate.originalDemandId))
+        : 0.0001,
     }));
   } catch {
     supplementError.value = '补料候选加载失败，请关闭后重试。';
   } finally {
-    if (supplementDisposition.value?.dispositionId === item.dispositionId)
-      supplementLoading.value = false;
+    if (requestSerial === supplementRequestSerial) supplementLoading.value = false;
+  }
+};
+const stageSupplement = async () => {
+  if (!canStageSupplement.value) return;
+  const endStep = materialEndOptions.value.find(
+    (step) => step.stepRecordId === materialEndStepRecordId.value,
+  );
+  if (!endStep) return;
+  const details = supplementRows.value
+    .filter((row) => row.selected && row.quantity > 0)
+    .map((row) => ({
+      originalDemandId: row.candidate.originalDemandId,
+      supplementQuantity: row.quantity,
+    }));
+  supplementSaving.value = true;
+  supplementError.value = '';
+  try {
+    const plan = await props.planSaver(
+      supplementDisposition.value!,
+      materialEndStepRecordId.value,
+      details,
+      supplementRemark.value,
+      persistedPlan.value?.version ?? null,
+    );
+    persistedPlan.value = plan;
+    stagedSupplement.value = {
+      materialEndStepRecordId: plan.materialEndStepRecordId,
+      materialEndStepLabel: `${endStep.stepOrder}. ${endStep.stepName}`,
+      lines: plan.lines.map((line) => ({
+        originalDemandId: line.originalDemandId,
+        itemCode: line.itemCode,
+        itemName: line.itemName,
+        quantity: Number(line.plannedQuantity),
+        unit: line.unit,
+      })),
+      remark: plan.remark ?? '',
+    };
+    supplementStage.value = 'review';
+  } catch {
+    supplementError.value = '暂存需求失败，可能已被其他管理员修改，请关闭后重新打开。';
+  } finally {
+    supplementSaving.value = false;
   }
 };
 const submitSupplement = () => {
-  if (!supplementDisposition.value || !canApproveSupplement.value) return;
-  emit(
-    'approveScrap',
-    supplementDisposition.value,
-    supplementRows.value
-      .filter((row) => row.selected && row.quantity > 0)
-      .map((row) => ({
-        originalDemandId: row.candidate.originalDemandId,
-        supplementQuantity: row.quantity,
-      })),
-    supplementRemark.value,
-  );
+  if (!supplementDisposition.value || !persistedPlan.value) return;
+  emit('approveScrap', supplementDisposition.value, persistedPlan.value.version);
   supplementVisible.value = false;
 };
 const openCompletion = (item: ReworkRecordItem) => {
@@ -477,5 +700,11 @@ const submitCompletion = () => {
 }
 .supplement-context {
   margin-bottom: 16px;
+}
+.field-tip {
+  margin-top: 6px;
+  /* color: var(--el-text-color-secondary); */
+  color: #e35454;
+  font-size: 12px;
 }
 </style>

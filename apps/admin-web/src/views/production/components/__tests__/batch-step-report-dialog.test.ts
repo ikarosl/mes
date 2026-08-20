@@ -44,111 +44,109 @@ const task = {
   completeBlockedReason: null,
 } as const;
 
+const mountDialog = (props: Record<string, unknown>) =>
+  mount(BatchStepReportDialog, {
+    props: { modelValue: true, task: task as never, mode: 'normal', submitting: false, ...props },
+    global: {
+      stubs: {
+        'el-dialog': { template: '<div><slot/><slot name="footer"/></div>' },
+        'el-form': { template: '<form><slot/></form>' },
+        'el-form-item': { template: '<div><slot/></div>' },
+        'el-alert': { props: ['title'], template: '<p>{{ title }}</p>' },
+        'el-input-number': true,
+        'el-input': true,
+        'el-radio-group': { template: '<div><slot/></div>' },
+        'el-radio': { template: '<label><slot/></label>' },
+        'el-button': {
+          emits: ['click'],
+          template: '<button @click="$emit(\'click\')"><slot/></button>',
+        },
+      },
+    },
+  });
+
 describe('BatchStepReportDialog', () => {
   beforeEach(() => confirm.mockReset());
 
   it('submits only this report quantities and derives the remaining normal quantity', async () => {
-    const wrapper = mount(BatchStepReportDialog, {
-      props: { modelValue: true, task: task as never, submitting: false },
-      global: {
-        stubs: {
-          'el-dialog': { template: '<div><slot/><slot name="footer"/></div>' },
-          'el-form': { template: '<form><slot/></form>' },
-          'el-form-item': { template: '<div><slot/></div>' },
-          'el-alert': true,
-          'el-input-number': true,
-          'el-input': true,
-          'el-button': {
-            emits: ['click'],
-            template: '<button @click="$emit(\'click\')"><slot/></button>',
-          },
-        },
-      },
-    });
+    const wrapper = mountDialog({});
     const vm = wrapper.vm as unknown as {
       remaining: number;
       available: number;
-      form: { normalQuantity: number; abnormalQuantity: number; remark: string };
+      canSubmit: boolean;
+      form: {
+        quantity: number;
+        abnormalOrigin: 'current_step' | 'previous_step' | null;
+        remark: string;
+      };
       submit: () => void;
     };
     expect(vm.remaining).toBe(6);
     expect(vm.available).toBe(2);
-    vm.form.normalQuantity = 1;
-    vm.form.abnormalQuantity = 1;
-    vm.form.remark = ' 本次异常 ';
+    vm.form.quantity = 1;
+    vm.form.remark = ' 本次正常 ';
+    expect(vm.canSubmit).toBe(true);
     vm.submit();
     expect(wrapper.emitted('submit')?.[0]).toEqual([
-      { normalQuantity: 1, abnormalQuantity: 1, remark: '本次异常' },
+      {
+        normalQuantity: 1,
+        abnormalQuantity: 0,
+        abnormalOrigin: null,
+        remark: '本次正常',
+      },
     ]);
   });
 
-  it('limits this normal report by upstream release without treating it as completion target', async () => {
-    const wrapper = mount(BatchStepReportDialog, {
-      props: { modelValue: true, task: task as never, submitting: false },
-      global: {
-        stubs: {
-          'el-dialog': { template: '<div><slot/><slot name="footer"/></div>' },
-          'el-alert': { props: ['title'], template: '<p>{{ title }}</p>' },
-          'el-form': { template: '<form><slot/></form>' },
-          'el-form-item': { template: '<div><slot/></div>' },
-          'el-input-number': true,
-          'el-input': true,
-          'el-button': { template: '<button><slot/></button>' },
-        },
+  it('submits only the abnormal quantity with a required origin in abnormal mode', async () => {
+    const wrapper = mountDialog({ mode: 'abnormal' });
+    const vm = wrapper.vm as unknown as {
+      canSubmit: boolean;
+      form: {
+        quantity: number;
+        abnormalOrigin: 'current_step' | 'previous_step' | null;
+        remark: string;
+      };
+      submit: () => void;
+    };
+    vm.form.quantity = 2;
+    // 异常报工必须选择异常来源
+    expect(vm.canSubmit).toBe(false);
+    vm.form.abnormalOrigin = 'current_step';
+    expect(vm.canSubmit).toBe(true);
+    vm.submit();
+    expect(wrapper.emitted('submit')?.[0]).toEqual([
+      {
+        normalQuantity: 0,
+        abnormalQuantity: 2,
+        abnormalOrigin: 'current_step',
+        remark: null,
       },
-    });
+    ]);
+  });
+
+  it('limits this normal report by upstream release without treating it as completion target', () => {
+    const wrapper = mountDialog({});
     expect(wrapper.text()).toContain('达到当前放行量不会提前完成本工序');
     expect(wrapper.text()).toContain('最终剩余需完成');
   });
 
   it('counts abnormal quantity against the same released report capacity', () => {
-    const wrapper = mount(BatchStepReportDialog, {
-      props: { modelValue: true, task: task as never, submitting: false },
-      global: {
-        stubs: {
-          'el-dialog': { template: '<div><slot/><slot name="footer"/></div>' },
-          'el-form': { template: '<form><slot/></form>' },
-          'el-form-item': { template: '<div><slot/></div>' },
-          'el-alert': true,
-          'el-input-number': true,
-          'el-input': true,
-          'el-button': true,
-        },
-      },
-    });
+    const wrapper = mountDialog({ mode: 'abnormal' });
     const vm = wrapper.vm as unknown as {
       canSubmit: boolean;
-      form: { normalQuantity: number; abnormalQuantity: number };
+      form: { quantity: number; abnormalOrigin: string | null };
     };
-    vm.form.normalQuantity = 2;
-    vm.form.abnormalQuantity = 1;
+    // 超过本次可报数量（available = 2）不可提交
+    vm.form.quantity = 2.5;
+    vm.form.abnormalOrigin = 'current_step';
     expect(vm.canSubmit).toBe(false);
+    vm.form.quantity = 2;
+    expect(vm.canSubmit).toBe(true);
   });
 
   it('requires explicit confirmation before discarding an ambiguous report intent', async () => {
     confirm.mockResolvedValue('confirm');
-    const wrapper = mount(BatchStepReportDialog, {
-      props: {
-        modelValue: true,
-        task: task as never,
-        submitting: false,
-        intentStatus: 'pending',
-      },
-      global: {
-        stubs: {
-          'el-dialog': { template: '<div><slot/><slot name="footer"/></div>' },
-          'el-form': { template: '<form><slot/></form>' },
-          'el-form-item': { template: '<div><slot/></div>' },
-          'el-alert': true,
-          'el-input-number': true,
-          'el-input': true,
-          'el-button': {
-            emits: ['click'],
-            template: '<button @click="$emit(\'click\')"><slot/></button>',
-          },
-        },
-      },
-    });
+    const wrapper = mountDialog({ intentStatus: 'pending' });
     const cancel = wrapper.findAll('button').find((button) => button.text() === '取消');
     expect(cancel).toBeDefined();
     await cancel!.trigger('click');

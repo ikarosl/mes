@@ -904,6 +904,81 @@ export interface ReturnOrderItem {
   details: ReturnOrderDetailItem[];
 }
 
+export interface MaterialLossQuery extends PageQuery {
+  keyword?: string;
+  status?: ScrapStatus;
+}
+
+export interface MaterialLossBatchOption {
+  productionBatchId: string;
+  batchNo: string;
+  workOrderNo: string;
+  productCode: string;
+  productName: string;
+  batchStatus: 'material_outbound' | 'doing';
+}
+
+export interface MaterialLossCandidateItem {
+  allocationId: string;
+  demandId: string;
+  itemId: string;
+  itemCode: string;
+  itemName: string;
+  itemBatchId: string;
+  batchCode: string;
+  confirmedOutboundQuantity: string;
+  occupiedReturnQuantity: string;
+  occupiedLossQuantity: string;
+  availableLossQuantity: string;
+  unit: string;
+}
+
+export interface CreateMaterialLossPayload {
+  productionBatchId: string;
+  allocationId: string;
+  scrapQuantity: number;
+  reasonType: string;
+  remark?: string | null;
+}
+
+export interface MaterialLossItem {
+  id: string;
+  scrapNo: string;
+  productionBatchId: string;
+  batchNo: string;
+  workOrderId: string;
+  workOrderNo: string;
+  productCode: string;
+  productName: string;
+  allocationId: string;
+  demandId: string;
+  itemId: string;
+  itemCode: string;
+  itemName: string;
+  itemBatchId: string;
+  batchCode: string;
+  scrapScene: 'production_consumed';
+  scrapQuantity: string;
+  unit: string;
+  reasonType: string;
+  status: ScrapStatus;
+  confirmedById: string | null;
+  confirmedByName: string | null;
+  confirmedAt: string | null;
+  createdById: string;
+  createdByName: string | null;
+  createdAt: string;
+  version: number;
+  remark: string | null;
+  supplement: null | {
+    supplementId: string;
+    supplementNo: string;
+    status: 'approved' | 'fulfilled';
+    demandId: string;
+    demandQuantity: string;
+  };
+}
+
 export interface StockCheckOrderQuery extends PageQuery {
   keyword?: string;
   status?: StockCheckStatus;
@@ -1104,12 +1179,14 @@ export interface ProductionWorkerTaskItem {
 export interface CreateBatchStepReportPayload extends VersionedCommand {
   normalQuantity: number;
   abnormalQuantity: number;
+  abnormalOrigin?: BatchStepAbnormalOrigin | null;
   remark?: string | null;
 }
 
 export interface CorrectBatchStepReportPayload extends VersionedCommand {
   normalQuantity: number;
   abnormalQuantity: number;
+  abnormalOrigin?: BatchStepAbnormalOrigin | null;
   reason: string;
 }
 
@@ -1128,6 +1205,7 @@ export interface BatchStepReportItem {
   reportedQuantity: string;
   normalQuantity: string;
   abnormalQuantity: string;
+  abnormalOrigin: BatchStepAbnormalOrigin | null;
   unit: string;
   remark: string | null;
   createdById: string;
@@ -1142,6 +1220,7 @@ export interface BatchStepAbnormalDispositionItem {
   productionBatchId: string;
   stepRecordId: string;
   sourceReportId: string;
+  abnormalOrigin: BatchStepAbnormalOrigin;
   reviewStatus: BatchStepAbnormalReviewStatus;
   dispositionType: 'rework' | 'scrap' | null;
   remark: string | null;
@@ -1208,12 +1287,50 @@ export interface ApproveScrapSupplementLinePayload {
 }
 
 export interface ApproveScrapSupplementPayload extends VersionedCommand {
+  materialEndStepRecordId: string;
   details: ApproveScrapSupplementLinePayload[];
   remark?: string | null;
 }
 
-export interface ProductionMaterialSupplementDetailItem {
-  detailId: string;
+export interface ProductionScrapSupplementPlanLineItem {
+  originalDemandId: string;
+  productMaterialId: string;
+  itemId: string;
+  itemCode: string;
+  itemName: string;
+  plannedQuantity: string;
+  unit: string;
+}
+
+export interface ProductionScrapSupplementPlanItem {
+  planId: string;
+  planNo: string;
+  dispositionId: string;
+  productionBatchId: string;
+  sourceStepRecordId: string;
+  sourceReportId: string;
+  materialEndStepRecordId: string;
+  status: 'draft' | 'confirmed';
+  confirmedSupplementId: string | null;
+  remark: string | null;
+  version: number;
+  updatedAt: string;
+  lines: ProductionScrapSupplementPlanLineItem[];
+}
+
+export interface SaveProductionScrapSupplementPlanPayload {
+  planVersion: number | null;
+  dispositionVersion: number;
+  materialEndStepRecordId: string;
+  details: ApproveScrapSupplementLinePayload[];
+  remark?: string | null;
+}
+
+export interface ConfirmProductionScrapSupplementPlanPayload extends VersionedCommand {
+  dispositionVersion: number;
+}
+
+export interface ProductionMaterialSupplementDemandItem {
   originalDemandId: string;
   demandId: string;
   productMaterialId: string;
@@ -1230,10 +1347,10 @@ export interface ProductionMaterialSupplementItem {
   scrapRecordId: string;
   productionBatchId: string;
   stepRecordId: string;
-  status: 'approved' | 'activated';
+  status: 'approved' | 'fulfilled';
   remark: string | null;
   createdAt: string;
-  details: ProductionMaterialSupplementDetailItem[];
+  demands: ProductionMaterialSupplementDemandItem[];
 }
 
 export interface ProductionStepSupplementSourceItem {
@@ -1244,7 +1361,19 @@ export interface ProductionStepSupplementSourceItem {
   sourceStepCode: string;
   sourceStepName: string;
   quantity: string;
-  status: 'pending_material' | 'activated';
+  status: 'pending_material' | 'material_ready';
+}
+
+export interface BatchStepScrapReproductionAuthorizationItem {
+  authorizationId: string;
+  scrapRecordId: string;
+  supplementId: string;
+  entryStepRecordId: string;
+  quotaEndStepRecordId: string;
+  materialEndStepRecordId: string;
+  authorizedQuantity: string;
+  authorizedBy: string;
+  authorizedAt: string;
 }
 
 export interface ApproveScrapSupplementResult {
@@ -1255,6 +1384,7 @@ export interface ApproveScrapSupplementResult {
     scrapQuantity: string;
     unit: string;
   };
+  reproductionAuthorization: BatchStepScrapReproductionAuthorizationItem;
   supplement: ProductionMaterialSupplementItem;
 }
 
@@ -1567,8 +1697,10 @@ export interface InventoryBatchItem {
     inventoryTransactionId: string;
   }>;
 }
-export type DemandType = 'normal' | 'manual_additional' | 'scrap_supplement';
-export type DemandBusinessStatus = 'active' | 'cancelled' | 'closed' | 'frozen' | 'abnormal';
+export type DemandType =
+  'normal' | 'manual_additional' | 'scrap_supplement' | 'material_loss_supplement';
+export type DemandBusinessStatus = 'active' | 'cancelled';
+export type BatchStepAbnormalOrigin = 'current_step' | 'previous_step';
 export type AllocationStatus = 'active' | 'released' | 'cancelled' | 'frozen' | 'abnormal';
 export type OutboundOrderStatus =
   'pending_picking' | 'picked' | 'partially_outbound' | 'completed' | 'cancelled';

@@ -21,7 +21,7 @@ export type RouteSupplementSource = {
   sourceStepCode: string;
   sourceStepName: string;
   quantity: string;
-  status: 'pending_material' | 'activated';
+  status: 'pending_material' | 'material_ready';
 };
 
 export type RouteStepQuantity = {
@@ -38,7 +38,8 @@ export type RouteStepQuantity = {
 };
 
 /**
- * Calculates the route quantity gates from immutable reports plus activated scrap supplements.
+ * Calculates route quantity gates from immutable reports and authorized scrap reproduction whose
+ * material supplement has been fulfilled.
  * The returned values are projections; callers must never persist them as a second quantity fact.
  */
 export const calculateRouteStepQuantities = (
@@ -55,11 +56,14 @@ export const calculateRouteStepQuantities = (
 
   for (const [index, step] of ordered.entries()) {
     const affecting = supplements.filter((source) => source.sourceStepOrder >= step.stepOrder);
-    const activated = affecting.filter((source) => source.status === 'activated');
-    const downstreamActivated = activated.filter(
+    const materialReady = affecting.filter((source) => source.status === 'material_ready');
+    const downstreamActivated = materialReady.filter(
       (source) => source.sourceStepOrder > step.stepOrder,
     );
-    const activatedInput = activated.reduce((total, source) => total + scaled(source.quantity), 0);
+    const activatedInput = materialReady.reduce(
+      (total, source) => total + scaled(source.quantity),
+      0,
+    );
     const activatedTarget = downstreamActivated.reduce(
       (total, source) => total + scaled(source.quantity),
       0,

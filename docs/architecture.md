@@ -89,6 +89,7 @@ Controller 只负责协议映射、DTO、权限装饰器和响应转换，不写
   写操作校验只返回当前启用、未删除且满足业务条件的数据；历史、审计和既有单据展示允许解析已停用或软删除
   的引用，但不得把该结果用于新增、编辑、分配、入库等写操作。方法名和返回类型必须体现 `enabled/current`
   与 `display/history` 等语义差异，Adapter 测试分别覆盖“停用数据被校验查询排除”和“停用数据仍可用于历史展示”。
+  （该问题在多表联查出现，历史追溯查询使用了正常的产品列表查询，这里正常的产品列表过滤了停用产品，但是历史追溯不应该过滤此状态）
 - 组合根 `AppModule` 只能引用业务模块 `public.ts` 公开的装配对象，以及项目级基础设施/展示装配，不得
   深入模块内部层（application/domain/presentation/infrastructure），也不写业务逻辑；该规则由
   `scripts/check-api-architecture.mjs` 强制执行。
@@ -99,7 +100,7 @@ Controller 只负责协议映射、DTO、权限装饰器和响应转换，不写
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | Identity/System  | departments、users、roles、permissions、关联表、refresh_tokens                                                                           |
 | Product          | product_categories、products、product_materials、technical_files、process_steps、process_routes 及关联表                                 |
-| Production       | work_orders、production_batches、batch_step_records、batch_step_reports、batch_step_abnormal_dispositions、rework_records、batch_step_scrap_records、production_material_supplement 及明细、production_item_demand、production_item_allocation、inbound_order、inbound_detail、outbound_order、outbound_detail、return_order、return_detail、stock_check_order、stock_check_detail，以及当前生产库存切片的 item_batch、inventory_transaction |
+| Production       | work_orders、production_batches、batch_step_records、batch_step_reports、batch_step_abnormal_dispositions、rework_records、batch_step_scrap_records、batch_step_scrap_reproduction_authorization、production_scrap_supplement_plan、production_scrap_supplement_plan_line、production_material_supplement、production_item_demand、production_item_allocation、item_scrap、inbound_order、inbound_detail、outbound_order、outbound_detail、return_order、return_detail、stock_check_order、stock_check_detail，以及当前生产库存切片的 item_batch、inventory_transaction |
 | 平台审计基础设施 | operation_logs                                                                                                                           |
 | 平台幂等基础设施 | http_idempotency_records（已落地）                                                                                                       |
 | common           | 不拥有业务表                                                                                                                             |

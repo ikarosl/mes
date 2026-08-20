@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     :model-value="modelValue"
-    title="工序报工"
+    :title="dialogTitle"
     width="560px"
     destroy-on-close
     :before-close="beforeClose"
@@ -50,13 +50,13 @@
           <strong>{{ formatQuantity(remaining) }} {{ task.unit }}</strong>
         </div>
         <div>
-          <span>本次正常+异常可报合计</span>
+          <span>本次可报数量</span>
           <strong>{{ formatQuantity(available) }} {{ task.unit }}</strong>
         </div>
       </div>
       <el-alert
         class="quantity-tip"
-        type="info"
+        :type="mode === 'abnormal' ? 'warning' : 'info'"
         :closable="false"
         show-icon
         :title="quantityTip"
@@ -66,35 +66,38 @@
         class="report-form"
       >
         <el-form-item
-          label="本次正常数量"
+          :label="mode === 'normal' ? '本次正常数量' : '本次异常数量'"
           required
         >
           <el-input-number
-            v-model="form.normalQuantity"
+            v-model="form.quantity"
             :min="0"
-            :max="Math.max(0, available - form.abnormalQuantity)"
+            :max="available"
             :precision="4"
             :step="1"
             controls-position="right"
           />
-        </el-form-item>
-        <el-form-item
-          label="本次异常数量"
-          required
-        >
-          <el-input-number
-            v-model="form.abnormalQuantity"
-            :min="0"
-            :max="Math.max(0, available - form.normalQuantity)"
-            :precision="4"
-            :step="1"
-            controls-position="right"
-          />
-          <div class="form-tip">
+          <div
+            v-if="mode === 'abnormal'"
+            class="form-tip"
+          >
             异常数量不计入正常放行量和完工进度，但会占用上游已放行的本工序加工数量；大于零时系统会自动生成待处置记录。
           </div>
         </el-form-item>
-        <el-form-item label="备注">
+        <el-form-item
+          v-if="mode === 'abnormal'"
+          label="异常来源"
+          required
+        >
+          <el-radio-group v-model="form.abnormalOrigin">
+            <el-radio value="current_step">当前工序异常</el-radio>
+            <el-radio value="previous_step">前置工序异常</el-radio>
+          </el-radio-group>
+          <div class="form-tip">
+            前置工序异常表示在当前工序接手时发现上游问题；管理员判定报废时还需选择实际重制与补料的截止工序。
+          </div>
+        </el-form-item>
+        <el-form-item :label="mode === 'normal' ? '备注' : '异常说明（选填）'">
           <el-input
             v-model="form.remark"
             type="textarea"
@@ -108,11 +111,11 @@
     <template #footer>
       <el-button @click="requestClose">取消</el-button>
       <el-button
-        type="primary"
+        :type="mode === 'abnormal' ? 'danger' : 'primary'"
         :loading="submitting"
         :disabled="!canSubmit"
         @click="submit"
-        >提交本次报工</el-button
+        >{{ submitLabel }}</el-button
       >
     </template>
   </el-dialog>
@@ -120,7 +123,7 @@
 
 <script setup lang="ts">
 import { computed, reactive, watch } from 'vue';
-import type { ProductionWorkerTaskItem } from '@company/contracts';
+import type { BatchStepAbnormalOrigin, ProductionWorkerTaskItem } from '@company/contracts';
 import type { IdempotentIntentStatus } from '../../../composables/idempotency/useIdempotentIntent';
 import { RouteMessageBox as ElMessageBox } from '../../../utils/route-message-box';
 import { formatQuantity } from '../production-status';
@@ -128,15 +131,29 @@ import { formatQuantity } from '../production-status';
 const props = defineProps<{
   modelValue: boolean;
   task: ProductionWorkerTaskItem | null;
+  mode: 'normal' | 'abnormal';
   submitting: boolean;
   intentStatus?: IdempotentIntentStatus;
 }>();
 const emit = defineEmits<{
   'update:modelValue': [value: boolean];
-  submit: [payload: { normalQuantity: number; abnormalQuantity: number; remark: string | null }];
+  submit: [
+    payload: {
+      normalQuantity: number;
+      abnormalQuantity: number;
+      abnormalOrigin: BatchStepAbnormalOrigin | null;
+      remark: string | null;
+    },
+  ];
   resetIntent: [];
 }>();
-const form = reactive({ normalQuantity: 0, abnormalQuantity: 0, remark: '' });
+const form = reactive<{
+  quantity: number;
+  abnormalOrigin: BatchStepAbnormalOrigin | null;
+  remark: string;
+}>({ quantity: 0, abnormalOrigin: null, remark: '' });
+const dialogTitle = computed(() => (props.mode === 'normal' ? '正常报工' : '异常报工'));
+const submitLabel = computed(() => (props.mode === 'normal' ? '提交正常报工' : '提交异常报工'));
 const remaining = computed(() =>
   Math.max(
     0,
@@ -150,25 +167,26 @@ const quantityTip = computed(() =>
     ? props.task.supplementBlockedReason
     : Number(props.task?.pendingSupplementInputQuantity ?? 0) > 0
       ? '报废补料尚未全部确认领用，待激活补产不会计入本次可报量。'
-      : available.value < remaining.value
-        ? `当前上游仅放行 ${formatQuantity(props.task?.releasedNormalQuantity ?? 0)} ${props.task?.unit ?? ''}，本次正常与异常数量合计最多填写 ${formatQuantity(available.value)}；达到当前放行量不会提前完成本工序。`
-        : `当前正常数量已全部放行；有效正常累计达到 ${formatQuantity(props.task?.requiredNormalQuantity ?? 0)} ${props.task?.unit ?? ''} 时，本工序自动完成。`,
+      : props.mode === 'abnormal'
+        ? `本次最多上报 ${formatQuantity(available.value)} ${props.task?.unit ?? ''} 异常数量；提交后将生成待管理员处置记录。`
+        : available.value < remaining.value
+          ? `当前上游仅放行 ${formatQuantity(props.task?.releasedNormalQuantity ?? 0)} ${props.task?.unit ?? ''}，本次正常数量最多填写 ${formatQuantity(available.value)}；达到当前放行量不会提前完成本工序。`
+          : `当前正常数量已全部放行；有效正常累计达到 ${formatQuantity(props.task?.requiredNormalQuantity ?? 0)} ${props.task?.unit ?? ''} 时，本工序自动完成。`,
 );
 const canSubmit = computed(
   () =>
     !props.submitting &&
-    form.normalQuantity >= 0 &&
-    form.abnormalQuantity >= 0 &&
-    form.normalQuantity + form.abnormalQuantity > 0 &&
-    form.normalQuantity + form.abnormalQuantity <= available.value,
+    form.quantity > 0 &&
+    form.quantity <= available.value &&
+    (props.mode === 'normal' || form.abnormalOrigin !== null),
 );
 
 watch(
-  () => [props.modelValue, props.task?.stepRecordId] as const,
+  () => [props.modelValue, props.task?.stepRecordId, props.mode] as const,
   ([open]) => {
     if (!open) return;
-    form.normalQuantity = 0;
-    form.abnormalQuantity = 0;
+    form.quantity = 0;
+    form.abnormalOrigin = null;
     form.remark = '';
   },
 );
@@ -199,8 +217,9 @@ const closed = (): void => {
 const submit = (): void => {
   if (!canSubmit.value) return;
   emit('submit', {
-    normalQuantity: form.normalQuantity,
-    abnormalQuantity: form.abnormalQuantity,
+    normalQuantity: props.mode === 'normal' ? form.quantity : 0,
+    abnormalQuantity: props.mode === 'abnormal' ? form.quantity : 0,
+    abnormalOrigin: props.mode === 'abnormal' ? form.abnormalOrigin : null,
     remark: form.remark.trim() || null,
   });
 };

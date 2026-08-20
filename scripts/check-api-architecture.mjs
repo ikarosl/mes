@@ -58,6 +58,9 @@ const knownIdempotencyScopes = [
   'production.step-report.correct.v3',
   'production.rework.complete.v1',
   'production.abnormal.scrap-supplement.v1',
+  'production.abnormal.scrap-supplement-plan.confirm.v1',
+  'production.material-loss.create.v1',
+  'production.material-loss.confirm.v1',
 ];
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const idempotencyScopeLiteralPattern = new RegExp(
@@ -158,12 +161,14 @@ const checks = [
       'apps/api/src/modules/production/application/production-reporting.service.ts',
       'apps/api/src/modules/production/application/production-abnormal.service.ts',
       'apps/api/src/modules/production/application/production-supplement.service.ts',
+      'apps/api/src/modules/production/application/production-inventory.service.ts',
       'apps/api/src/modules/production/presentation/http/production.controller.ts',
       'apps/api/src/modules/production/presentation/http/production-material.controller.ts',
       'apps/api/src/modules/production/presentation/http/production-inbound.controller.ts',
       'apps/api/src/modules/production/presentation/http/production-reporting.controller.ts',
       'apps/api/src/modules/production/presentation/http/production-abnormal.controller.ts',
       'apps/api/src/modules/production/presentation/http/production-supplement.controller.ts',
+      'apps/api/src/modules/production/presentation/http/warehouse.controller.ts',
     ],
   },
   {
@@ -178,6 +183,7 @@ const checks = [
       'apps/api/src/modules/production/application/production-reporting.service.ts',
       'apps/api/src/modules/production/application/production-abnormal.service.ts',
       'apps/api/src/modules/production/application/production-supplement.service.ts',
+      'apps/api/src/modules/production/application/production-inventory.service.ts',
     ],
     fileMatch: isApplicationLayerFile,
   },
@@ -194,7 +200,7 @@ const checks = [
     pattern: /(?:['"]Idempotency-Key['"]\s*:|\bretryUnsafe\s*:)/,
     message:
       '只有已登记的 production API wrapper 可设置 Idempotency-Key/retryUnsafe；新增调用必须先登记后端幂等契约',
-    exclude: ['apps/admin-web/src/api/production.ts'],
+    exclude: ['apps/admin-web/src/api/production.ts', 'apps/admin-web/src/api/warehouse.ts'],
   },
   // 通用 persistence helper 不得依赖 Nest HTTP/框架异常
   {

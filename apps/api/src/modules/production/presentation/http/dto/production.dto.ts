@@ -4,7 +4,9 @@ import {
   ArrayMinSize,
   IsArray,
   IsDateString,
+  IsDefined,
   IsIn,
+  IsInt,
   IsNotEmpty,
   IsNumber,
   IsOptional,
@@ -12,6 +14,7 @@ import {
   MaxLength,
   Matches,
   Min,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import type {
@@ -32,7 +35,11 @@ import type {
   UpdateWorkOrderPayload,
   WorkOrderQuery,
 } from '@company/contracts';
-import { PRODUCTION_BATCH_STATUSES, WORK_ORDER_STATUSES } from '@company/constants';
+import {
+  BATCH_STEP_ABNORMAL_ORIGINS,
+  PRODUCTION_BATCH_STATUSES,
+  WORK_ORDER_STATUSES,
+} from '@company/constants';
 import { PageQueryDto } from '../../../../../presentation/http/dto/page-query.dto.js';
 import { VersionedCommandDto } from '../../../../../presentation/http/dto/versioned-command.dto.js';
 
@@ -177,6 +184,8 @@ export class CreateBatchStepReportDto
 {
   @Type(() => Number) @IsNumber({ maxDecimalPlaces: 4 }) @Min(0) normalQuantity!: number;
   @Type(() => Number) @IsNumber({ maxDecimalPlaces: 4 }) @Min(0) abnormalQuantity!: number;
+  @IsOptional() @IsIn(BATCH_STEP_ABNORMAL_ORIGINS) abnormalOrigin?:
+    'current_step' | 'previous_step' | null;
   @IsOptional() @IsString() @MaxLength(5000) remark?: string | null;
 }
 
@@ -193,6 +202,8 @@ export class CorrectBatchStepReportDto
 {
   @Type(() => Number) @IsNumber({ maxDecimalPlaces: 4 }) @Min(0) normalQuantity!: number;
   @Type(() => Number) @IsNumber({ maxDecimalPlaces: 4 }) @Min(0) abnormalQuantity!: number;
+  @IsOptional() @IsIn(BATCH_STEP_ABNORMAL_ORIGINS) abnormalOrigin?:
+    'current_step' | 'previous_step' | null;
   @IsString() @IsNotEmpty() @MaxLength(5000) reason!: string;
 }
 
@@ -233,6 +244,7 @@ export class ApproveScrapSupplementDto
   extends VersionedCommandDto
   implements ApproveScrapSupplementPayload
 {
+  @IsString() @IsNotEmpty() @MaxLength(20) materialEndStepRecordId!: string;
   @IsArray()
   @ArrayMinSize(1)
   @ArrayMaxSize(200)
@@ -240,4 +252,30 @@ export class ApproveScrapSupplementDto
   @Type(() => ApproveScrapSupplementLineDto)
   details!: ApproveScrapSupplementLineDto[];
   @IsOptional() @IsString() @MaxLength(5000) remark?: string | null;
+}
+
+export class SupplementCandidateQueryDto {
+  @IsString() @IsNotEmpty() @MaxLength(20) materialEndStepRecordId!: string;
+}
+
+export class SaveProductionScrapSupplementPlanDto {
+  @IsDefined()
+  @ValidateIf((_, value: unknown) => value !== null)
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  planVersion!: number | null;
+  @Type(() => Number) @IsInt() @Min(0) dispositionVersion!: number;
+  @IsString() @IsNotEmpty() @MaxLength(20) materialEndStepRecordId!: string;
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(200)
+  @ValidateNested({ each: true })
+  @Type(() => ApproveScrapSupplementLineDto)
+  details!: ApproveScrapSupplementLineDto[];
+  @IsOptional() @IsString() @MaxLength(5000) remark?: string | null;
+}
+
+export class ConfirmProductionScrapSupplementPlanDto extends VersionedCommandDto {
+  @Type(() => Number) @IsInt() @Min(0) dispositionVersion!: number;
 }

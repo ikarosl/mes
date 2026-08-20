@@ -298,7 +298,8 @@ IDEMPOTENCY_RESULT_CORRUPT`；`HttpExceptionFilter` 与 `AuditInterceptor` 统�
 - 2026-08-11：生产领料出库修正为独立单据闭环。创建只形成 `pending_picking` 主单与多行明细，不扣库存；整单确认后才生成负库存流水并按已确认累计推进生产批次；待确认单可取消并释放可制单占用。管理端出库单列表、详情、确认、取消和浏览器打印已接真实 Production API。
 - 2026-08-14：生产工单新状态语义已落地 Repository、HTTP 与管理端：取消只用于未下达草稿；首批次开工同事务推动工单进入 `doing`；下达后提前终止统一关闭且必须先处理全部未终态批次；足量完成由管理员在批次汇总弹窗显式确认，不由批次自动回写；`completed -> closed` 为行政归档。关闭原因进入事务审计，不新增高频查询字段，因此本次不需要 migration。
 - 2026-08-14：生产任务生成与取消交互补齐。`released/doing` 工单只要仍有余量均可继续拆分批次；取消前展示待出库单、预留和需求影响，要求原因，并在事务中取消尚未确认的出库单、释放预留、关闭活动需求。第一版只允许 `pending/material_pending/material_assigned -> cancelled`，明确禁止已出库、已开工或已完成任务取消。
-- 2026-08-13：工序报废补产公式已按路线传播模型落地。全部补料确认出库后，补料单持久化为 `activated`，报废数量从路线首工序形成新增投入；来源工序之前各上游工序提高正常目标并按 `effective_normal` 逐道放行，来源工序不得直接增加可报量。返工完成报工不重复消耗普通投入放行量；管理端已展示目标拆分、待补料、补产重开和等待前道放行。仍需持续补充大数据量查询性能基线。
+- 2026-08-20：工序报废补产已拆分为不可变 `batch_step_scrap_reproduction_authorization` 与补料单 `approved/fulfilled` 物流状态；需求直接关联补料单，异常报工区分当前/前置来源，并支持管理员选择物料计算截止工序。补料齐套后授权从首工序形成新增投入，按 `effective_normal` 逐道放行到额度截止工序。返工完成报工不重复消耗普通投入放行量；仍需持续补充大数据量查询性能基线。
+- 2026-08-20：生产领料损耗补料已落地：只开放 `item_scrap.production_consumed`，管理员确认后固定一比一生成 `production_material_supplement(material_loss)` 与单条 `material_loss_supplement` 需求；只补实物，不增加产品补产授权或工序可报上限。migration、RBAC、后端事务、HTTP 幂等、统一管理端表格和测试已同步，其他库存报废场景继续禁用。
 - 2026-08-13：异常“驳回”重新定义为专用“驳回并更正”事务，必须以不可变冲销/替代事实修正有效数量，禁止物理删除或只回退处置单状态。当前接口仍是只更新 `review_status` 的旧行为，管理端在新命令落地前不应把它描述为数量已修正。
 - 2026-08-12：补齐 Production 内部窄库存账本的外购物料入库来源。`inbound_order` / `inbound_detail`
     只支持 purchased 的 pending 创建、整单确认和待确认取消；pending 不增加库存，确认逐明细生成

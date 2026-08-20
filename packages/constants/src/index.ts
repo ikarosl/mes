@@ -109,6 +109,12 @@ export const PERMISSIONS = {
       confirm: 'warehouse:returns:confirm',
       cancel: 'warehouse:returns:cancel',
     },
+    scraps: {
+      view: 'warehouse:scraps:view',
+      create: 'warehouse:scraps:create',
+      confirm: 'warehouse:scraps:confirm',
+      cancel: 'warehouse:scraps:cancel',
+    },
     stockChecks: {
       view: 'warehouse:stock-checks:view',
       create: 'warehouse:stock-checks:create',
@@ -191,6 +197,7 @@ export const BATCH_STEP_ABNORMAL_REVIEW_STATUS_LABELS = {
   cancelled: '已取消',
 } as const;
 export const REWORK_STATUSES = ['pending', 'doing', 'completed', 'cancelled'] as const;
+export const PRODUCTION_SCRAP_SUPPLEMENT_PLAN_STATUSES = ['draft', 'confirmed'] as const;
 export const REWORK_STATUS_LABELS = {
   pending: '待返工',
   doing: '返工中',
@@ -241,19 +248,24 @@ export const INVENTORY_REFERENCE_TYPES = [
   'manual',
 ] as const;
 export const INBOUND_ORDER_STATUSES = ['pending', 'completed', 'cancelled'] as const;
-export const DEMAND_TYPES = ['normal', 'manual_additional', 'scrap_supplement'] as const;
+export const DEMAND_TYPES = [
+  'normal',
+  'manual_additional',
+  'scrap_supplement',
+  'material_loss_supplement',
+] as const;
 export const DEMAND_TYPE = {
   normal: DEMAND_TYPES[0],
   manualAdditional: DEMAND_TYPES[1],
   scrapSupplement: DEMAND_TYPES[2],
+  materialLossSupplement: DEMAND_TYPES[3],
 } as const;
-export const DEMAND_BUSINESS_STATUSES = [
-  'active',
-  'cancelled',
-  'closed',
-  'frozen',
-  'abnormal',
-] as const;
+export const DEMAND_BUSINESS_STATUSES = ['active', 'cancelled'] as const;
+export const BATCH_STEP_ABNORMAL_ORIGINS = ['current_step', 'previous_step'] as const;
+export const BATCH_STEP_ABNORMAL_ORIGIN_LABELS = {
+  current_step: '本工序异常',
+  previous_step: '前置异常',
+} as const;
 export const ALLOCATION_STATUSES = [
   'active',
   'released',

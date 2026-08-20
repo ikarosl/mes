@@ -32,17 +32,23 @@
 production_batches
 ├─ normal BOM 需求 -> production_item_demand -> production_item_allocation -> outbound_detail
 │                                                             └-> inventory_transaction
-└─ batch_step_records
+├─ batch_step_records
    └─ batch_step_reports（每次报工一条不可变事实）
       ├─ normal_quantity -> 临时作为下工序正常放行量
       └─ abnormal_quantity > 0
          └─ batch_step_abnormal_dispositions（每次异常报工一张处置单）
             ├─ rework -> rework_records -> 负责人完成返工并原子追加报工
-             └─ scrap  -> batch_step_scrap_records（路线补产数量来源）
-                          └─ production_material_supplement
+            └─ scrap plan -> production_scrap_supplement_plan / _line（可编辑方案）
+               └─ confirm -> batch_step_scrap_records（工序损失事实）
+                          ├─ batch_step_scrap_reproduction_authorization（补产授权）
+                          └─ production_material_supplement（补料物流）
                              └─ production_item_demand(scrap_supplement)
                                 └─ 分配 -> 确认领料出库 -> inventory_transaction
-                                           └─ 激活首工序至来源工序的等量补产
+                                           └─ 补料齐套后授权可执行
+└─ 已确认生产领料 -> item_scrap(production_consumed)
+                    └─ production_material_supplement(material_loss)
+                       └─ production_item_demand(material_loss_supplement)
+                          └─ 分配 -> 确认领料出库；不增加产品补产额度
 ```
 
 | 流程位置 | 设计表 | 事实/职责 | 权威定义 | 当前实现状态 |
@@ -54,13 +60,16 @@ production_batches
 | 异常审批 | `batch_step_abnormal_dispositions` | 每次有效异常报工的独立审批处置单 | [生产报工、追溯与质量边界](40-production-traceability-quality.md) | 返工/报废审批已实现；驳回并更正尚待按新语义改造 |
 | 返工 | `rework_records` | 异常处置为可返工后的返工业务单及完成报工来源 | [生产报工、追溯与质量边界](40-production-traceability-quality.md) | 已实现批准、开工与整笔完成；取消状态已预留但当前没有操作入口 |
 | 工序报废 | `batch_step_scrap_records` | 审批为不可返工的工序损失 | [生产报工、追溯与质量边界](40-production-traceability-quality.md) | 已落地 |
-| 主动补料 | `production_material_supplement` / 明细 | 管理员选择候选物料并人工填量，全部确认领用后持久化激活补产 | [生产需求、分配与领料出库](30-production-inventory/30-demand-allocation-and-outbound.md) | 已落地审批、物流激活与路线补产闭环 |
-| 物料需求 | `production_item_demand` | 生产需求唯一事实来源 | [生产需求、分配与领料出库](30-production-inventory/30-demand-allocation-and-outbound.md) | `normal/scrap_supplement` 已实现；`manual_additional` 仅数据库允许 |
+| 报废补料方案 | `production_scrap_supplement_plan` / `_line` | 正式批准报废前可编辑、可复核且不可分配的补料方案 | [生产需求、分配与领料出库](30-production-inventory/30-demand-allocation-and-outbound.md) | `202608200003`、草稿查询/保存/确认事务及管理端恢复接线已落地；测试待统一补充 |
+| 报废补产 | `batch_step_scrap_reproduction_authorization` | 管理员批准后形成的不可变产品补产授权 | [生产报工、追溯与质量边界](40-production-traceability-quality.md) | 已落地；补料齐套后进入路线额度计算 |
+| 生产补料 | `production_material_supplement` | 工序报废补产与生产领料损耗共用的补料物流单 | [生产需求、分配与领料出库](30-production-inventory/30-demand-allocation-and-outbound.md) | 双来源已由 `202608200002-production-material-loss-supplement` 落地 |
+| 物料需求 | `production_item_demand` | 生产需求唯一事实来源 | [生产需求、分配与领料出库](30-production-inventory/30-demand-allocation-and-outbound.md) | `normal/scrap_supplement/material_loss_supplement` 已实现；`manual_additional` 仅数据库允许 |
 | 物料预留 | `production_item_allocation` | 需求到库存批次的分配事实 | [生产需求、分配与领料出库](30-production-inventory/30-demand-allocation-and-outbound.md) | 已实现 |
 | 领料出库 | `outbound_order` | 按生产批次组织的出库主单 | [生产需求、分配与领料出库](30-production-inventory/30-demand-allocation-and-outbound.md) | 已实现待确认、整单确认和取消闭环 |
 | 领料出库 | `outbound_detail` | 每个分配行的实际出库事实 | [生产需求、分配与领料出库](30-production-inventory/30-demand-allocation-and-outbound.md) | 已实现 |
 | 库存扣减 | `inventory_transaction` | 出库后的库存数量唯一事实来源 | [库存批次、库存流水与入库](30-production-inventory/20-inventory-ledger-and-inbound.md) | 已实现当前 Production 库存切片 |
 | 生产退料 | `return_order` / `return_detail` | 已确认领料退回公共可用库存 | [退料、报废与盘点](30-production-inventory/40-return-scrap-and-stocktake.md) | 已实现最小闭环；批次专属退回与退料报废未开放 |
+| 生产领料损耗 | `item_scrap(production_consumed)` | 已确认领料在生产现场损坏或丢失，并固定一比一触发损耗补料 | [退料、报废与盘点](30-production-inventory/40-return-scrap-and-stocktake.md) | migration、后端、RBAC 与管理端已落地；其他报废场景仍未开放 |
 | 库存盘点 | `stock_check_order` / `stock_check_detail` | 账面快照、实盘录入和原子差异调整 | [退料、报废与盘点](30-production-inventory/40-return-scrap-and-stocktake.md) | 已实现现有库存批次与状态维度盘点 |
 
 复核时还必须同时阅读 [跨模块规则](30-production-inventory/90-cross-module-rules.md) 和 [建表与迁移顺序](90-migration-order.md)。表存在只证明持久化结构可用，不证明业务命令、RBAC、审计、界面与下游事务已经闭环。

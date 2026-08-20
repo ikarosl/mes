@@ -1,6 +1,11 @@
 import type {
   CreateReturnOrderPayload,
   CreateStockCheckPayload,
+  CreateMaterialLossPayload,
+  MaterialLossBatchOption,
+  MaterialLossCandidateItem,
+  MaterialLossItem,
+  MaterialLossQuery,
   PageResult,
   ReturnOrderBatchOption,
   ReturnOrderCandidateItem,
@@ -24,6 +29,41 @@ const request = async <T>(config: RetryRequestConfig) => {
 };
 
 export const warehouseApi = {
+  listMaterialLosses: (params: MaterialLossQuery) =>
+    request<PageResult<MaterialLossItem>>({ url: '/warehouse/scraps', params }),
+  getMaterialLoss: (scrapId: string) =>
+    request<MaterialLossItem>({ url: `/warehouse/scraps/${scrapId}` }),
+  listMaterialLossBatchOptions: () =>
+    request<MaterialLossBatchOption[]>({ url: '/warehouse/scraps/batch-options' }),
+  listMaterialLossCandidates: (batchId: string) =>
+    request<MaterialLossCandidateItem[]>({
+      url: `/warehouse/scraps/batches/${batchId}/candidates`,
+    }),
+  createMaterialLoss: (data: CreateMaterialLossPayload, idempotencyKey: string) =>
+    request<MaterialLossItem>({
+      url: '/warehouse/scraps',
+      method: 'POST',
+      data,
+      headers: { 'Idempotency-Key': idempotencyKey },
+      retryUnsafe: true,
+      retryTimes: 2,
+    }),
+  confirmMaterialLoss: (scrapId: string, version: number, idempotencyKey: string) =>
+    request<MaterialLossItem>({
+      url: `/warehouse/scraps/${scrapId}/actions/confirm`,
+      method: 'POST',
+      data: { version },
+      headers: { 'Idempotency-Key': idempotencyKey },
+      retryUnsafe: true,
+      retryTimes: 2,
+    }),
+  cancelMaterialLoss: (scrapId: string, version: number) =>
+    request<MaterialLossItem>({
+      url: `/warehouse/scraps/${scrapId}/actions/cancel`,
+      method: 'POST',
+      data: { version },
+    }),
+
   listReturnOrders: (params: ReturnOrderQuery) =>
     request<PageResult<ReturnOrderItem>>({ url: '/warehouse/return-orders', params }),
   getReturnOrder: (returnId: string) =>

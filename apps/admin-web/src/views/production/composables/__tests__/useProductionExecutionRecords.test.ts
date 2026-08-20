@@ -11,12 +11,15 @@ const api = vi.hoisted(() => ({
   correctStepReport: vi.fn(),
   reverseStepReport: vi.fn(),
   listSupplementCandidates: vi.fn(),
-  approveScrapSupplement: vi.fn(),
+  getScrapSupplementPlan: vi.fn(),
+  saveScrapSupplementPlan: vi.fn(),
+  confirmScrapSupplementPlan: vi.fn(),
 }));
 vi.mock('../../../../api/production', () => ({ productionApi: api }));
 
 const batch = (id: string) => ({ id, batchNo: `PB-${id}` });
 const group = (id: string) => ({ productionBatchId: id, batchNo: `PB-${id}`, steps: [] });
+const disposition = { dispositionId: '8', productionBatchId: '1', version: 2 };
 
 describe('useProductionExecutionRecords', () => {
   beforeEach(() => {
@@ -54,13 +57,20 @@ describe('useProductionExecutionRecords', () => {
       { reportId: '12' } as never,
       2,
       0,
+      null,
       '  录入更正  ',
     );
     expect(api.correctStepReport).toHaveBeenCalledWith(
       '1',
       '9',
       '12',
-      { version: 3, normalQuantity: 2, abnormalQuantity: 0, reason: '录入更正' },
+      {
+        version: 3,
+        normalQuantity: 2,
+        abnormalQuantity: 0,
+        abnormalOrigin: null,
+        reason: '录入更正',
+      },
       expect.any(String),
     );
     expect(api.getBatchExecutionRecords).toHaveBeenCalledWith('1');
@@ -76,6 +86,7 @@ describe('useProductionExecutionRecords', () => {
         { reportId: '12' } as never,
         2,
         0,
+        null,
         '录入更正',
       ),
     ).rejects.toBeInstanceOf(RequestError);
@@ -96,23 +107,84 @@ describe('useProductionExecutionRecords', () => {
     expect(api.getExecutionCompletionCheck).toHaveBeenCalledTimes(2);
   });
 
-  it('uses an idempotent intent when approving scrap supplement demand', async () => {
-    api.approveScrapSupplement.mockResolvedValue({});
+  it('loads supplement candidates for the chosen material end step', async () => {
+    api.listSupplementCandidates.mockResolvedValue([]);
+    const state = useProductionExecutionRecords();
+    await state.loadSupplementCandidates('8', '3');
+    expect(api.listSupplementCandidates).toHaveBeenCalledWith('8', '3');
+  });
+
+  it('loads the persisted supplement draft for a disposition', async () => {
+    api.getScrapSupplementPlan.mockResolvedValue(null);
+    const state = useProductionExecutionRecords();
+    await state.loadScrapSupplementPlan('8');
+    expect(api.getScrapSupplementPlan).toHaveBeenCalledWith('8');
+  });
+
+  it('saves the staged supplement draft with plan and disposition versions', async () => {
+    api.saveScrapSupplementPlan.mockResolvedValue({ status: 'draft' });
+    const state = useProductionExecutionRecords();
+    await state.saveScrapSupplementPlan(
+      disposition as never,
+      '3',
+      [{ originalDemandId: '5', supplementQuantity: 1.25 }],
+      '  补料备注  ',
+      5,
+    );
+    expect(api.saveScrapSupplementPlan).toHaveBeenCalledWith('8', {
+      planVersion: 5,
+      dispositionVersion: 2,
+      materialEndStepRecordId: '3',
+      details: [{ originalDemandId: '5', supplementQuantity: 1.25 }],
+      remark: '补料备注',
+    });
+  });
+
+  it('saves a first-time draft without a plan version and trims an empty remark to null', async () => {
+    api.saveScrapSupplementPlan.mockResolvedValue({ status: 'draft' });
+    const state = useProductionExecutionRecords();
+    await state.saveScrapSupplementPlan(disposition as never, '3', [], '   ', null);
+    expect(api.saveScrapSupplementPlan).toHaveBeenCalledWith('8', {
+      planVersion: null,
+      dispositionVersion: 2,
+      materialEndStepRecordId: '3',
+      details: [],
+      remark: null,
+    });
+  });
+
+  it('confirms the scrap supplement with only the plan and disposition versions and an idempotent intent', async () => {
+    api.confirmScrapSupplementPlan.mockResolvedValue({});
     api.getBatchExecutionRecords.mockResolvedValue(group('1'));
     const state = useProductionExecutionRecords();
-    await state.approveScrapSupplement(
-      { dispositionId: '8', productionBatchId: '1', version: 2 } as never,
-      [{ originalDemandId: '5', supplementQuantity: 1.25 }],
-      ' 补料 ',
-    );
-    expect(api.approveScrapSupplement).toHaveBeenCalledWith(
+    await state.approveScrapSupplement(disposition as never, 3);
+    expect(api.confirmScrapSupplementPlan).toHaveBeenCalledWith(
       '8',
-      {
-        version: 2,
-        details: [{ originalDemandId: '5', supplementQuantity: 1.25 }],
-        remark: '补料',
-      },
+      { version: 3, dispositionVersion: 2 },
       expect.any(String),
     );
+    // 确认请求不携带物料明细、备注或截止工序
+    const body = api.confirmScrapSupplementPlan.mock.calls[0][1] as Record<string, unknown>;
+    expect(body).not.toHaveProperty('details');
+    expect(body).not.toHaveProperty('remark');
+    expect(body).not.toHaveProperty('materialEndStepRecordId');
+    // 确认成功后刷新批次投影
+    expect(api.getBatchExecutionRecords).toHaveBeenCalledWith('1');
+  });
+
+  it('prevents a second confirm while the first approval is still in flight', async () => {
+    let resolveConfirm!: (value: unknown) => void;
+    api.confirmScrapSupplementPlan.mockReturnValue(
+      new Promise((resolve) => (resolveConfirm = resolve)),
+    );
+    api.getBatchExecutionRecords.mockResolvedValue(group('1'));
+    const state = useProductionExecutionRecords();
+    const first = state.approveScrapSupplement(disposition as never, 3);
+    const second = state.approveScrapSupplement(disposition as never, 3);
+    await second;
+    expect(api.confirmScrapSupplementPlan).toHaveBeenCalledTimes(1);
+    resolveConfirm({});
+    await first;
+    expect(state.pendingKeys.value.has('approve-scrap:8')).toBe(false);
   });
 });

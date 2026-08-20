@@ -47,7 +47,12 @@ const main = () => {
     throw new Error('usage: node scripts/detect-release-changes.mjs <base-sha> <head-sha>');
   }
 
-  const forceAll = ZERO_SHA.test(base);
+  const forceAll = ZERO_SHA.test(base) || !isUsableReleaseRange(base, head);
+  if (forceAll && !ZERO_SHA.test(base)) {
+    process.stderr.write(
+      `::warning::Release base ${base} is unavailable or unrelated to ${head}; forcing a full release.\n`,
+    );
+  }
   const changedFiles = forceAll ? [] : gitChangedFiles(base, head);
   const affectedPackages = forceAll ? [] : turboAffectedPackages(base, head);
   const result = classifyReleaseChanges({ affectedPackages, changedFiles, forceAll });
@@ -76,6 +81,11 @@ const gitChangedFiles = (base, head) =>
     .filter(Boolean)
     .map(normalizePath);
 
+export const isUsableReleaseRange = (base, head, git = tryRun) =>
+  git('git', ['cat-file', '-e', `${base}^{commit}`]) &&
+  git('git', ['cat-file', '-e', `${head}^{commit}`]) &&
+  git('git', ['merge-base', base, head]);
+
 const turboAffectedPackages = (base, head) => {
   const corepack = process.platform === 'win32' ? 'corepack.cmd' : 'corepack';
   const json = run(
@@ -103,6 +113,15 @@ const run = (command, args, env = process.env, shell = false) => {
     );
   }
   return result.stdout;
+};
+
+const tryRun = (command, args) => {
+  const result = spawnSync(command, args, {
+    encoding: 'utf8',
+    env: process.env,
+    windowsHide: true,
+  });
+  return !result.error && result.status === 0;
 };
 
 const normalizePath = (path) => path.replaceAll('\\', '/');

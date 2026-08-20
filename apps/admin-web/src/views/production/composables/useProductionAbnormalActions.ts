@@ -1,8 +1,4 @@
-import type {
-  ApproveScrapSupplementLinePayload,
-  BatchStepAbnormalDispositionItem,
-  ReworkRecordItem,
-} from '@company/contracts';
+import type { BatchStepAbnormalDispositionItem, ReworkRecordItem } from '@company/contracts';
 import { EMessage } from '../../../utils/message';
 
 type Actions = {
@@ -10,8 +6,7 @@ type Actions = {
   rejectDisposition: (item: BatchStepAbnormalDispositionItem, reason: string) => Promise<void>;
   approveScrapSupplement: (
     item: BatchStepAbnormalDispositionItem,
-    details: ApproveScrapSupplementLinePayload[],
-    remark: string,
+    planVersion: number,
   ) => Promise<void>;
   startRework: (item: ReworkRecordItem) => Promise<void>;
   completeRework: (
@@ -41,11 +36,10 @@ export const useProductionAbnormalActions = (actions: Actions) => ({
   },
   handleApproveScrapSupplement: async (
     item: BatchStepAbnormalDispositionItem,
-    details: ApproveScrapSupplementLinePayload[],
-    remark: string,
+    planVersion: number,
   ) => {
     try {
-      await actions.approveScrapSupplement(item, details, remark);
+      await actions.approveScrapSupplement(item, planVersion);
       EMessage.success('异常已批准报废并生成补料需求');
     } catch (error) {
       EMessage.error(error, '报废补料批准失败，请刷新后核对候选物料和数量');

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { classifyReleaseChanges } from './detect-release-changes.mjs';
+import { classifyReleaseChanges, isUsableReleaseRange } from './detect-release-changes.mjs';
 
 test('only the API is released when Turbo marks the API as affected', () => {
   assert.deepEqual(
@@ -48,6 +48,22 @@ test('an unknown base forces a conservative full release', () => {
     classifyReleaseChanges({ affectedPackages: [], changedFiles: [], forceAll: true }),
     { apiChanged: true, webChanged: true, controlChanged: true },
   );
+});
+
+test('a release range is unusable when either commit is missing or the histories are unrelated', () => {
+  const calls = [];
+  const missingBase = (command, args) => {
+    calls.push([command, args]);
+    return false;
+  };
+  assert.equal(isUsableReleaseRange('old', 'new', missingBase), false);
+  assert.deepEqual(calls, [['git', ['cat-file', '-e', 'old^{commit}']]]);
+
+  const unrelated = (_command, args) => args[0] !== 'merge-base';
+  assert.equal(isUsableReleaseRange('old', 'new', unrelated), false);
+
+  const related = () => true;
+  assert.equal(isUsableReleaseRange('old', 'new', related), true);
 });
 
 test('Compose and deployment entry changes request a server control sync', () => {

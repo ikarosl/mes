@@ -64,7 +64,12 @@ describe('business persisted codes', () => {
     expect(BATCH_STEP_ABNORMAL_DISPOSITION_TYPES).toEqual(['rework', 'scrap']);
     expect(BATCH_STEP_REPORT_TYPES).toEqual(['normal', 'reversal']);
     expect(REWORK_STATUSES).toEqual(['pending', 'doing', 'completed', 'cancelled']);
-    expect(DEMAND_TYPES).toEqual(['normal', 'manual_additional', 'scrap_supplement']);
+    expect(DEMAND_TYPES).toEqual([
+      'normal',
+      'manual_additional',
+      'scrap_supplement',
+      'material_loss_supplement',
+    ]);
   });
 
   it('keeps production execution completion blockers stable', () => {

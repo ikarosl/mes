@@ -7,8 +7,10 @@ import {
   ApproveBatchStepReworkDto,
   CompleteReworkDto,
   ApproveScrapSupplementDto,
+  ConfirmProductionScrapSupplementPlanDto,
   CreateProductionBatchDto,
   CreateWorkOrderDto,
+  SaveProductionScrapSupplementPlanDto,
   UpdateBatchStepExecutionDto,
   UpdateProductionBatchDto,
   UpdateWorkOrderDto,
@@ -73,16 +75,184 @@ describe('Production batch execution DTOs', () => {
   it('requires at least one positive manually-entered supplement line', async () => {
     const valid = plainToInstance(ApproveScrapSupplementDto, {
       version: 0,
+      materialEndStepRecordId: '4',
       details: [{ originalDemandId: '5', supplementQuantity: 1.25 }],
     });
     expect(await validate(valid)).toEqual([]);
-    const empty = plainToInstance(ApproveScrapSupplementDto, { version: 0, details: [] });
+    const empty = plainToInstance(ApproveScrapSupplementDto, {
+      version: 0,
+      materialEndStepRecordId: '4',
+      details: [],
+    });
     expect((await validate(empty)).some((error) => error.property === 'details')).toBe(true);
     const invalid = plainToInstance(ApproveScrapSupplementDto, {
       version: 0,
+      materialEndStepRecordId: '4',
       details: [{ originalDemandId: '5', supplementQuantity: 0 }],
     });
     expect((await validate(invalid))[0]?.children?.length).toBeGreaterThan(0);
+  });
+});
+
+describe('SaveProductionScrapSupplementPlanDto', () => {
+  const basePlan = {
+    planVersion: null,
+    dispositionVersion: 0,
+    materialEndStepRecordId: '4',
+    details: [{ originalDemandId: '5', supplementQuantity: 1.25 }],
+  };
+
+  it('accepts a first-created draft with null planVersion and an optional remark', async () => {
+    expect(await validate(plainToInstance(SaveProductionScrapSupplementPlanDto, basePlan))).toEqual(
+      [],
+    );
+    expect(
+      await validate(
+        plainToInstance(SaveProductionScrapSupplementPlanDto, {
+          ...basePlan,
+          remark: '待复核补料',
+        }),
+      ),
+    ).toEqual([]);
+  });
+
+  it('accepts a subsequent draft with a non-negative integer planVersion', async () => {
+    const dto = plainToInstance(SaveProductionScrapSupplementPlanDto, {
+      ...basePlan,
+      planVersion: 3,
+    });
+    expect(await validate(dto)).toEqual([]);
+    expect(dto.planVersion).toBe(3);
+  });
+
+  it('coerces a numeric-string planVersion to a number', async () => {
+    const dto = plainToInstance(SaveProductionScrapSupplementPlanDto, {
+      ...basePlan,
+      planVersion: '2',
+    });
+    expect(await validate(dto)).toEqual([]);
+    expect(dto.planVersion).toBe(2);
+  });
+
+  it('rejects a missing, negative or fractional planVersion', async () => {
+    for (const planVersion of [undefined, -1, 1.5]) {
+      const dto = plainToInstance(SaveProductionScrapSupplementPlanDto, {
+        ...basePlan,
+        planVersion,
+      });
+      expect((await validate(dto)).some((error) => error.property === 'planVersion')).toBe(true);
+    }
+  });
+
+  it('requires dispositionVersion and materialEndStepRecordId', async () => {
+    const dto = plainToInstance(SaveProductionScrapSupplementPlanDto, {
+      planVersion: null,
+      dispositionVersion: undefined,
+      materialEndStepRecordId: '',
+      details: [{ originalDemandId: '5', supplementQuantity: 1 }],
+    });
+    expect((await validate(dto)).map((error) => error.property)).toEqual(
+      expect.arrayContaining(['dispositionVersion', 'materialEndStepRecordId']),
+    );
+  });
+
+  it('rejects a negative dispositionVersion', async () => {
+    const dto = plainToInstance(SaveProductionScrapSupplementPlanDto, {
+      ...basePlan,
+      dispositionVersion: -1,
+    });
+    expect((await validate(dto)).some((error) => error.property === 'dispositionVersion')).toBe(
+      true,
+    );
+  });
+
+  it('requires between one and two hundred detail lines', async () => {
+    const empty = plainToInstance(SaveProductionScrapSupplementPlanDto, {
+      ...basePlan,
+      details: [],
+    });
+    expect((await validate(empty)).some((error) => error.property === 'details')).toBe(true);
+    const tooMany = plainToInstance(SaveProductionScrapSupplementPlanDto, {
+      ...basePlan,
+      details: Array.from({ length: 201 }, (_, i) => ({
+        originalDemandId: `demand-${i}`,
+        supplementQuantity: 1,
+      })),
+    });
+    expect((await validate(tooMany)).some((error) => error.property === 'details')).toBe(true);
+  });
+
+  it('rejects lines with a missing originalDemandId or non-positive over-precise quantities', async () => {
+    const invalidLines: Array<Record<string, unknown>> = [
+      { supplementQuantity: 1 },
+      { originalDemandId: '', supplementQuantity: 1 },
+      { originalDemandId: '5', supplementQuantity: 0 },
+      { originalDemandId: '5', supplementQuantity: -0.5 },
+      { originalDemandId: '5', supplementQuantity: 1.12345 },
+    ];
+    for (const line of invalidLines) {
+      const dto = plainToInstance(SaveProductionScrapSupplementPlanDto, {
+        ...basePlan,
+        details: [line],
+      });
+      expect((await validate(dto))[0]?.children?.length).toBeGreaterThan(0);
+    }
+    const valid = plainToInstance(SaveProductionScrapSupplementPlanDto, {
+      ...basePlan,
+      details: [{ originalDemandId: '5', supplementQuantity: 1.1234 }],
+    });
+    expect(await validate(valid)).toEqual([]);
+  });
+});
+
+describe('ConfirmProductionScrapSupplementPlanDto', () => {
+  it('accepts a versioned confirmation', async () => {
+    expect(
+      await validate(
+        plainToInstance(ConfirmProductionScrapSupplementPlanDto, {
+          version: 2,
+          dispositionVersion: 1,
+        }),
+      ),
+    ).toEqual([]);
+  });
+
+  it('requires both the plan version and the disposition version', async () => {
+    const missingDisposition = await validate(
+      plainToInstance(ConfirmProductionScrapSupplementPlanDto, { version: 2 }),
+    );
+    expect(missingDisposition.map((error) => error.property)).toEqual(
+      expect.arrayContaining(['dispositionVersion']),
+    );
+    const missingVersion = await validate(
+      plainToInstance(ConfirmProductionScrapSupplementPlanDto, { dispositionVersion: 0 }),
+    );
+    expect(missingVersion.map((error) => error.property)).toEqual(
+      expect.arrayContaining(['version']),
+    );
+  });
+
+  it('rejects negative versions', async () => {
+    for (const [property, value] of [
+      ['version', -1],
+      ['dispositionVersion', -1],
+    ] as const) {
+      const dto = plainToInstance(ConfirmProductionScrapSupplementPlanDto, {
+        version: 0,
+        dispositionVersion: 0,
+        [property]: value,
+      });
+      expect((await validate(dto)).some((error) => error.property === property)).toBe(true);
+    }
+  });
+
+  it('coerces a numeric-string dispositionVersion', async () => {
+    const dto = plainToInstance(ConfirmProductionScrapSupplementPlanDto, {
+      version: 2,
+      dispositionVersion: '1',
+    });
+    expect(await validate(dto)).toEqual([]);
+    expect(dto.dispositionVersion).toBe(1);
   });
 });
 

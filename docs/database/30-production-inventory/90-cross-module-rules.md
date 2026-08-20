@@ -76,25 +76,46 @@
 
 ### 3.12.5 半自动报废补料边界（部分已确认）
 
-已确认补料采用管理员半自动决策：系统只给出候选物料，管理员选择物料并填写数量；系统不得根据工序异常数量或 BOM 自动推算补料数量。当前从路线首工序重新投产，因此候选物料优先汇总路线首工序至异常来源工序绑定的有效 `route_step_materials` 并按 BOM 明细去重；该路径未绑定时可以降级为当前产品全部有效 BOM 物料。最终选中的物料、人工填写数量、单位和原始需求在补料明细中冻结，未选候选项不需要冻结。
+已确认补料采用管理员半自动决策：系统只给出候选物料，管理员选择物料并填写数量；系统不得根据工序异常数量或 BOM 自动推算补料数量。补产从路线首工序重新投产，候选物料则只汇总首工序至管理员确认的 `material_end_step_record_id`。编辑和复核阶段先写入不可分配的 `production_scrap_supplement_plan/_line`；最终确认事务才把方案固化为 `production_item_demand`，不再设置与正式需求重复的补料明细表。
 
-补料不得改写原需求事实。对于现有 `item_scrap` 表达的库存或生产消耗报废，批准后新增需求使用以下字段：
+补料不得改写原需求事实。工序报废批准后新增需求使用以下字段：
 
 | 字段               | 值          |
 | ------------------ | ----------- |
 | `demand_type`      | `scrap_supplement` |
 | `parent_demand_id` | 原始需求 ID |
-| `source_scrap_id`  | 报废记录 ID |
+| `supplement_id`    | 补料单 ID   |
 | `need_number`      | 补料数量    |
 
 说明：
 
 - 不得直接修改原始需求的 `need_number`。
-- 目标链路为：原始需求 → 工序报废/补料单及明细 → 补料需求 → 分配 → 出库。
-- 上表的 `source_scrap_id` 只允许引用现有 `item_scrap.id`。工序报废补料不得把 `batch_step_scrap_records.id` 填入该字段，而是由 `source_supplement_detail_id` 关联主动补料明细。
-- 补料物料数量不直接形成产品报工额度。对应补料单的全部追加需求完成确认领料出库后，最后一笔确认事务把 `production_material_supplement.status` 持久化为 `activated`，再以来源 `batch_step_scrap_records.scrap_quantity` 整笔激活从路线首工序到报废来源工序的补产授权；分配、待出库或部分出库状态均不得激活。
+- 目标链路为：异常报工 → 报废事实与补产授权 → 补料单 → 补料需求 → 分配 → 出库齐套 → 授权可执行。
+- 补料物料数量不直接形成产品报工额度。批准时已把报废数量固化到 `batch_step_scrap_reproduction_authorization.authorized_quantity`；对应补料单的全部需求完成确认领料后改为 `fulfilled`，该授权才进入路线计算。分配、待出库或部分出库均不可执行。
 - 来源工序不能直接增加可报量。首工序先获得新增投入量；各上游工序形成新增正常产出后，额度才通过 `effective_normal` 逐道向下放行。报工校验只读跨表派生结果，不修改库存或需求事实。当前不追踪某次补报逐笔消费哪张补料单；未来如需部分激活、指定来源消费、半成品重入或撤销已激活额度，再评审独立消费/重入事实和并发规则。
-- `production_material_supplement`、补料明细、工序报废和需求之间使用批次、工序、BOM 明细、物料和原始需求组合外键保持一致；只允许 Production 模块在批准报废补料事务中写入。
+- `production_scrap_supplement_plan/_line` 只归 Production 模块所有，草稿不能被仓库分配或出库；`production_material_supplement`、工序报废、补产授权和正式需求之间使用批次、工序、BOM 明细、物料和原始需求组合外键保持一致；只允许 Production 模块在最终批准工序报废补料事务中写入正式来源链路。
+
+#### 3.12.5.1 生产领料损耗补料
+
+生产领料损耗是“已经确认领出的某种物料发生损坏或丢失”，不是产品工序报废。现场按生产批次和已确认领料分配行创建 `item_scrap(scrap_scene = 'production_consumed')`；管理员确认后固定一比一补回同物料、同单位、同损耗数量，不提供不补料或改量选择。
+
+本流程明确采用“生产授权上限与现场物料可用量解耦”：产品授权是数量边界，现场领料是物流事实。领后损耗不会撤销、减少或暂停既有产品授权；系统只追加损耗事实及等量物料补料需求。这样避免引入授权逐笔消费、物料实时绑定、额度回收和历史报工反向重算等超出轻量 MES 当前收益的复杂状态。
+
+| 字段 | 值 |
+| --- | --- |
+| `production_material_supplement.source_type` | `material_loss` |
+| `production_item_demand.demand_type` | `material_loss_supplement` |
+| `production_item_demand.parent_demand_id` | 来源链路的原始正常需求 ID |
+| `production_item_demand.supplement_id` | 损耗补料单 ID |
+| `production_item_demand.need_number` | 已确认 `item_scrap.scrap_number` |
+
+说明：
+
+- 目标链路为：现场申报领料损耗 → 管理员确认 `item_scrap` → 损耗补料单 → 单条损耗补料需求 → 分配 → 确认领料 → 补料单 `fulfilled`。
+- 确认 `production_consumed` 损耗时不得再次扣库存；库存已经由原领料出库流水扣减。损耗记录用于物料去向、责任和后续补料追溯。
+- 损耗补料不创建 `batch_step_scrap_records` 或 `batch_step_scrap_reproduction_authorization`，不增加 `authorized_quantity`，也不改变任一工序的产品可报上限。现场没有替代物料时由物理条件阻止生产，系统不通过伪造新产品额度表达物料短缺。
+- 普通退料不是损耗，不得创建虚假 `production_consumed` 报废记录获得补料。`return_after_outbound` 退料后报废仍保持未开放。
+- Production 模块只允许在管理员确认生产领料损耗的同一事务中写入 `item_scrap` 终态、`production_material_supplement(source_type = 'material_loss')`、单条 `material_loss_supplement` 需求、成功审计和幂等结果。
 
 ---
 
@@ -145,7 +166,7 @@
 ### 3.12.9 需求幂等与报废补料候选条件
 
 - 正常需求幂等键为 `NORMAL:{production_batch_id}:{product_material_id}`。
-- 当前库存/生产消耗报废补料候选内部键为 `SCRAP:{source_scrap_id}:{product_material_id}`；工序主动补料需求使用 `SCRAPSUP:{source_supplement_detail_id}`，不得复用不匹配的 `item_scrap` ID。
+- 工序报废补料需求幂等键为 `SCRAPSUP:{supplement_id}:{parent_demand_id}`。
 - 人工追加候选内部键为 `ADDITIONAL:{production_batch_id}:{business_action_no}:{product_material_id}`。
 - 相同幂等键重复提交返回既有需求，不新增记录、不修改原需求数量。
 - 一条已确认报废可以为不同 BOM 行生成多条补料需求，但报废、原需求和补料需求必须属于同一生产批次。
@@ -250,11 +271,13 @@ item_scrap
   ↓
 inventory_transaction
 
-production_item_demand
+production_item_allocation
+  ↓（已确认生产领料发生损耗）
+item_scrap(production_consumed)
   ↓
-item_scrap
+production_material_supplement(material_loss)
   ↓
-production_item_demand 报废补料
+production_item_demand(material_loss_supplement)
 
 stock_check_order
   ↓

@@ -1,19 +1,29 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, UseFilters } from '@nestjs/common';
 import { PERMISSIONS } from '@company/constants';
-import type { CommandContext } from '../../../../common/audit/audit.types.js';
+import type {
+  CommandContext,
+  IdempotentCommandContext,
+} from '../../../../common/audit/audit.types.js';
 import {
   AuditInApplication,
   CurrentCommandContext,
+  CurrentIdempotentCommandContext,
+  IdempotentEndpoint,
   RequirePermission,
 } from '../../../../common/security/auth.decorators.js';
 import { VersionedCommandDto } from '../../../../presentation/http/dto/versioned-command.dto.js';
 import { ProductionInventoryService } from '../../application/production-inventory.service.js';
+import { CONFIRM_MATERIAL_LOSS_IDEMPOTENCY_SCOPE } from '../../application/idempotency/confirm-material-loss-idempotency.contract.js';
+import { CREATE_MATERIAL_LOSS_IDEMPOTENCY_SCOPE } from '../../application/idempotency/create-material-loss-idempotency.contract.js';
 import { ProductionDomainExceptionFilter } from './production-domain-exception.filter.js';
 import {
   CreateReturnOrderDto,
+  CreateMaterialLossDto,
+  MaterialLossQueryDto,
   CreateStockCheckDto,
   ReturnIdParamDto,
   ReturnOrderQueryDto,
+  ScrapIdParamDto,
   SaveStockCheckCountsDto,
   StockCheckCandidateQueryDto,
   StockCheckIdParamDto,
@@ -25,6 +35,63 @@ import {
 @UseFilters(ProductionDomainExceptionFilter)
 export class WarehouseController {
   constructor(private readonly service: ProductionInventoryService) {}
+
+  @Get('scraps')
+  @RequirePermission(PERMISSIONS.warehouse.scraps.view)
+  listMaterialLosses(@Query() query: MaterialLossQueryDto) {
+    return this.service.listMaterialLosses({
+      page: query.page,
+      pageSize: query.pageSize,
+      keyword: query.keyword?.trim() || undefined,
+      status: query.status,
+    });
+  }
+  @Get('scraps/batch-options')
+  @RequirePermission(PERMISSIONS.warehouse.scraps.view)
+  materialLossBatchOptions() {
+    return this.service.listMaterialLossBatchOptions();
+  }
+  @Get('scraps/batches/:batchId/candidates')
+  @RequirePermission(PERMISSIONS.warehouse.scraps.view)
+  materialLossCandidates(@Param() { batchId }: WarehouseBatchIdParamDto) {
+    return this.service.listMaterialLossCandidates(batchId);
+  }
+  @Get('scraps/:scrapId')
+  @RequirePermission(PERMISSIONS.warehouse.scraps.view)
+  getMaterialLoss(@Param() { scrapId }: ScrapIdParamDto) {
+    return this.service.getMaterialLoss(scrapId);
+  }
+  @Post('scraps')
+  @RequirePermission(PERMISSIONS.warehouse.scraps.create)
+  @AuditInApplication()
+  @IdempotentEndpoint({ scope: CREATE_MATERIAL_LOSS_IDEMPOTENCY_SCOPE })
+  createMaterialLoss(
+    @Body() body: CreateMaterialLossDto,
+    @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
+  ) {
+    return this.service.createMaterialLoss(body, context);
+  }
+  @Post('scraps/:scrapId/actions/confirm')
+  @RequirePermission(PERMISSIONS.warehouse.scraps.confirm)
+  @AuditInApplication()
+  @IdempotentEndpoint({ scope: CONFIRM_MATERIAL_LOSS_IDEMPOTENCY_SCOPE })
+  confirmMaterialLoss(
+    @Param() { scrapId }: ScrapIdParamDto,
+    @Body() body: VersionedCommandDto,
+    @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
+  ) {
+    return this.service.confirmMaterialLoss(scrapId, body.version, context);
+  }
+  @Post('scraps/:scrapId/actions/cancel')
+  @RequirePermission(PERMISSIONS.warehouse.scraps.cancel)
+  @AuditInApplication()
+  cancelMaterialLoss(
+    @Param() { scrapId }: ScrapIdParamDto,
+    @Body() body: VersionedCommandDto,
+    @CurrentCommandContext() context: CommandContext,
+  ) {
+    return this.service.cancelMaterialLoss(scrapId, body.version, context);
+  }
 
   @Get('return-orders')
   @RequirePermission(PERMISSIONS.warehouse.returns.view)

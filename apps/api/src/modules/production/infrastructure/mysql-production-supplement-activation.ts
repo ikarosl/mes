@@ -16,7 +16,7 @@ type SupplementSourceRow = RowDataPacket & {
   source_step_code: string;
   source_step_name: string;
   scrap_quantity: string;
-  supplement_status: 'approved' | 'activated';
+  supplement_status: 'approved' | 'fulfilled';
   production_batch_id: number;
 };
 
@@ -29,7 +29,7 @@ type ReopenStepRow = RowDataPacket & {
 };
 
 export type SupplementActivationResult = {
-  activatedSupplementIds: string[];
+  fulfilledSupplementIds: string[];
   reopenedStepIds: string[];
 };
 
@@ -40,17 +40,18 @@ export const selectRouteSupplementSources = async (
   const byBatch = new Map<string, RouteSupplementSource[]>();
   if (batchIds.length === 0) return byBatch;
   const [rows] = await db.query<SupplementSourceRow[]>(
-    `SELECT scrap.id scrap_record_id,supplement.id supplement_id,
-      scrap.production_batch_id,scrap.batch_step_record_id source_step_record_id,
+    `SELECT authorization.scrap_record_id,supplement.id supplement_id,
+      authorization.production_batch_id,
+      authorization.quota_end_step_record_id source_step_record_id,
       step_record.step_order_snapshot source_step_order,
       step_record.step_code_snapshot source_step_code,
       step_record.step_name_snapshot source_step_name,
-      scrap.scrap_quantity,supplement.status supplement_status
-     FROM production_material_supplement supplement
-     JOIN batch_step_scrap_records scrap ON scrap.id=supplement.scrap_record_id
-     JOIN batch_step_records step_record ON step_record.id=scrap.batch_step_record_id
-     WHERE scrap.production_batch_id IN (${batchIds.map(() => '?').join(',')})
-     ORDER BY scrap.production_batch_id,step_record.step_order_snapshot,scrap.id`,
+      authorization.authorized_quantity scrap_quantity,supplement.status supplement_status
+     FROM batch_step_scrap_reproduction_authorization authorization
+     JOIN production_material_supplement supplement ON supplement.id=authorization.supplement_id
+     JOIN batch_step_records step_record ON step_record.id=authorization.quota_end_step_record_id
+     WHERE authorization.production_batch_id IN (${batchIds.map(() => '?').join(',')})
+     ORDER BY authorization.production_batch_id,step_record.step_order_snapshot,authorization.id`,
     batchIds,
   );
   for (const row of rows) {
@@ -63,7 +64,7 @@ export const selectRouteSupplementSources = async (
       sourceStepCode: row.source_step_code,
       sourceStepName: row.source_step_name,
       quantity: row.scrap_quantity,
-      status: row.supplement_status === 'activated' ? 'activated' : 'pending_material',
+      status: row.supplement_status === 'fulfilled' ? 'material_ready' : 'pending_material',
     };
     byBatch.set(batchId, [...(byBatch.get(batchId) ?? []), source]);
   }
@@ -71,10 +72,10 @@ export const selectRouteSupplementSources = async (
 };
 
 /**
- * Must be called after the outbound order has changed to completed while the batch and all of its
- * step records are locked. This persists the activation fact and reopens only the affected route.
+ * Must be called after outbound confirmation while the batch and all of its step records are
+ * locked. The supplement records only material fulfillment; the authorization remains immutable.
  */
-export const activateReadySupplements = async (
+export const fulfillReadySupplements = async (
   connection: PoolConnection,
   batchId: string,
   plannedQuantity: string,
@@ -90,19 +91,17 @@ export const activateReadySupplements = async (
      FROM production_material_supplement supplement
      WHERE supplement.production_batch_id=? AND supplement.status='approved'
        AND EXISTS (
-         SELECT 1 FROM production_material_supplement_detail detail
-         WHERE detail.supplement_id=supplement.id
+         SELECT 1 FROM production_item_demand demand
+         WHERE demand.supplement_id=supplement.id
+           AND demand.demand_type IN ('scrap_supplement','material_loss_supplement')
        )
        AND NOT EXISTS (
          SELECT 1
-         FROM production_material_supplement_detail detail
-         LEFT JOIN production_item_demand demand
-           ON demand.source_supplement_detail_id=detail.id
-           AND demand.demand_type='scrap_supplement'
-           AND demand.business_status='active'
-         WHERE detail.supplement_id=supplement.id
+         FROM production_item_demand demand
+         WHERE demand.supplement_id=supplement.id
+           AND demand.demand_type IN ('scrap_supplement','material_loss_supplement')
            AND (
-             demand.id IS NULL
+             demand.business_status<>'active'
              OR COALESCE((
                SELECT SUM(outbound_detail.outbound_number)
                FROM outbound_detail outbound_detail
@@ -116,15 +115,15 @@ export const activateReadySupplements = async (
      ORDER BY supplement.id`,
     [batchId],
   );
-  const activatedSupplementIds = ready.map((row) => String(row.id));
-  if (activatedSupplementIds.length === 0)
-    return { activatedSupplementIds: [], reopenedStepIds: [] };
+  const fulfilledSupplementIds = ready.map((row) => String(row.id));
+  if (fulfilledSupplementIds.length === 0)
+    return { fulfilledSupplementIds: [], reopenedStepIds: [] };
 
   await connection.execute(
     `UPDATE production_material_supplement
-     SET status='activated',activated_at=NOW(),activated_by=?
-     WHERE id IN (${activatedSupplementIds.map(() => '?').join(',')}) AND status='approved'`,
-    [actorId, ...activatedSupplementIds],
+     SET status='fulfilled',fulfilled_at=NOW(),fulfilled_by=?,version=version+1,updated_by=?
+     WHERE id IN (${fulfilledSupplementIds.map(() => '?').join(',')}) AND status='approved'`,
+    [actorId, actorId, ...fulfilledSupplementIds],
   );
 
   const [steps] = await connection.query<ReopenStepRow[]>(
@@ -153,12 +152,12 @@ export const activateReadySupplements = async (
     })),
     sources,
   );
-  const newlyActivatedOrders = sources
-    .filter((source) => activatedSupplementIds.includes(source.supplementId))
+  const newlyFulfilledOrders = sources
+    .filter((source) => fulfilledSupplementIds.includes(source.supplementId))
     .map((source) => source.sourceStepOrder);
   const reopenedStepIds: string[] = [];
   for (const step of steps) {
-    const isOnNewRoute = newlyActivatedOrders.some(
+    const isOnNewRoute = newlyFulfilledOrders.some(
       (sourceStepOrder) => step.step_order_snapshot <= sourceStepOrder,
     );
     const quantity = quantities.get(String(step.id));
@@ -176,5 +175,5 @@ export const activateReadySupplements = async (
     );
     reopenedStepIds.push(String(step.id));
   }
-  return { activatedSupplementIds, reopenedStepIds };
+  return { fulfilledSupplementIds, reopenedStepIds };
 };

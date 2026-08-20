@@ -92,7 +92,7 @@ describeMysql('Production MySQL persistence', () => {
       ],
     };
     const commandContext: CommandContext = {
-      actorId: null,
+      actorId: String(fixture.actorId),
       ip: null,
       requestId: fixture.requestId,
       userAgent: null,
@@ -155,7 +155,7 @@ describeMysql('Production MySQL persistence', () => {
   it('serializes concurrent batch creation by locking the work order and duplicate batch number', async () => {
     const payload = { batchNo: fixture.concurrentBatchNo, plannedQuantity: 1 };
     const commandContext: CommandContext = {
-      actorId: null,
+      actorId: String(fixture.actorId),
       ip: null,
       requestId: fixture.requestId,
       userAgent: null,

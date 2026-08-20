@@ -1,5 +1,5 @@
 import { ref } from 'vue';
-import type { ProductionWorkerTaskItem } from '@company/contracts';
+import type { BatchStepAbnormalOrigin, ProductionWorkerTaskItem } from '@company/contracts';
 import { productionApi } from '../../../api/production';
 import { useIdempotentIntent } from '../../../composables/idempotency/useIdempotentIntent';
 
@@ -40,6 +40,7 @@ export const useWorkerTasks = () => {
     task: ProductionWorkerTaskItem,
     normalQuantity: number,
     abnormalQuantity: number,
+    abnormalOrigin: BatchStepAbnormalOrigin | null,
     remark: string | null,
   ): Promise<void> => {
     if (reportPendingIds.value.has(task.stepRecordId)) return;
@@ -48,6 +49,7 @@ export const useWorkerTasks = () => {
       version: task.version,
       normalQuantity,
       abnormalQuantity,
+      abnormalOrigin: abnormalQuantity > 0 ? abnormalOrigin : null,
       remark: remark?.trim() || null,
     };
     const intent = reportIntents.get(task.stepRecordId) ?? useIdempotentIntent();

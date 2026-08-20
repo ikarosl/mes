@@ -14,7 +14,9 @@ export const requireMaterialAllocationBatchStatus = (
   status: ProductionBatchStatus,
   supplementOnly = false,
 ): void => {
-  if (!ALLOCATION_BATCH_STATUSES.includes(status) && !(status === 'doing' && supplementOnly))
+  const supplementalStatus =
+    supplementOnly && (status === 'material_outbound' || status === 'doing');
+  if (!ALLOCATION_BATCH_STATUSES.includes(status) && !supplementalStatus)
     throw new ProductionDomainError('INVALID_STATE', '当前生产批次状态不允许分配或释放物料');
 };
 

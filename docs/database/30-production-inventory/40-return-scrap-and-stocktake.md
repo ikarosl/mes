@@ -93,63 +93,67 @@
 
 ### 16. `item_scrap`
 
-职责：维护报废记录，支持生产消耗报废、仓库侧报废、退料后报废、库存内报废等场景。
+设计类型：可变业务单据；确认后业务事实不可覆盖，错误处理留给后续冲销设计。
+
+职责：当前只维护 `production_consumed` 生产领料损耗。仓库侧报废、退料后报废和库存内报废仍是未来场景，不在本表当前物理结构与应用能力中预建。
+
+设计决策：系统将“生产授权上限”与“现场物料可用量”解耦。授权只控制批次允许生产的数量，不因领料后的现场损耗动态回收额度；实际物料损耗通过“损耗报废 → 损耗补料 → 物料需求 → 分配与出库”闭环处理，以适度降低系统复杂度，避免为追求实时物料联动而引入过高的状态维护成本。
 
 | 字段                  | 类型              | 说明                                      |
 | --------------------- | ----------------- | ----------------------------------------- |
 | `id`                  | `BIGINT UNSIGNED` | 主键                                      |
 | `scrap_no`            | `VARCHAR(100)`    | 报废单号                                  |
-| `production_batch_id` | `BIGINT UNSIGNED` | 生产批次 ID，可为空                       |
-| `demand_id`           | `BIGINT UNSIGNED` | 需求 ID，可为空                           |
-| `allocation_id`       | `BIGINT UNSIGNED` | 分配明细 ID，可为空                       |
-| `return_detail_id`    | `BIGINT UNSIGNED` | 来源退料明细 ID，退料后报废时填写，可为空 |
+| `production_batch_id` | `BIGINT UNSIGNED` | 生产批次 ID，非空                         |
+| `demand_id`           | `BIGINT UNSIGNED` | 来源需求 ID，非空                         |
+| `allocation_id`       | `BIGINT UNSIGNED` | 来源分配明细 ID，非空                     |
 | `item_id`             | `BIGINT UNSIGNED` | 报废对象 ID                               |
-| `batch_id`            | `BIGINT UNSIGNED` | 报废库存批次 ID，可为空                   |
-| `scrap_scene`         | `VARCHAR(40)`     | 报废场景                                  |
+| `batch_id`            | `BIGINT UNSIGNED` | 已确认领料的库存批次 ID，非空             |
+| `scrap_scene`         | `VARCHAR(40)`     | 当前固定为 `production_consumed`          |
 | `scrap_number`        | `DECIMAL(12,4)`   | 报废数量                                  |
 | `unit_snapshot`       | `VARCHAR(20)`     | 报废时单位快照                            |
 | `reason_type`         | `VARCHAR(50)`     | 报废原因                                  |
 | `status`              | `VARCHAR(30)`     | 状态，默认 `pending`                      |
+| `confirmed_by`        | `BIGINT UNSIGNED` | 确认损耗/报废的管理员；待处理或取消时为空 |
+| `confirmed_at`        | `DATETIME`        | 确认时间；待处理或取消时为空              |
 | `remark`              | `TEXT`            | 备注                                      |
 | `version`             | `INT`             | 乐观锁版本号，默认 `0`                    |
 | 业务审计字段          | 见统一规则        | 可变业务单据审计字段                      |
 
-`scrap_scene` 可选语义：
+未来扩展场景语义：
 
 | 值                      | 含义                                 | 是否影响 allocation 可再次出库量 |
 | ----------------------- | ------------------------------------ | -------------------------------- |
 | `warehouse_allocated`   | 已分配但未出库，在仓库侧报废         | 是                               |
 | `return_after_outbound` | 出库后退回，再发生报废               | 是                               |
-| `production_consumed`   | 已出库到生产后，在生产过程中消耗报废 | 否                               |
+| `production_consumed`   | 已出库到生产后，在生产现场损坏或丢失 | 否                               |
 | `in_stock`              | 库存内直接报废，例如成品库存报废     | 不涉及 allocation                |
 
 约束：
 
 - 主键：`id`
 - 唯一约束：`UNIQUE (scrap_no)`
+- 唯一约束：`UNIQUE (id, production_batch_id)`，供损耗补料单以组合外键保证同批次来源
 - 外键：`FOREIGN KEY (production_batch_id) REFERENCES production_batches(id)`
 - 外键：`FOREIGN KEY (demand_id, production_batch_id) REFERENCES production_item_demand(id, production_batch_id)`
 - 外键：`FOREIGN KEY (allocation_id, demand_id, production_batch_id, item_id, batch_id) REFERENCES production_item_allocation(id, demand_id, production_batch_id, item_id, batch_id)`
-- 外键：`FOREIGN KEY (return_detail_id, allocation_id, demand_id, production_batch_id, item_id, batch_id) REFERENCES return_detail(id, allocation_id, demand_id, production_batch_id, item_id, batch_id)`
-- 外键：`FOREIGN KEY (item_id) REFERENCES products(id)`
 - 外键：`FOREIGN KEY (batch_id, item_id) REFERENCES item_batch(id, item_id)`
+- 外键：`confirmed_by` 及业务审计操作者字段关联 `users.id`
 - 检查约束：`CHECK (scrap_number > 0)`
-- 检查约束：`CHECK (scrap_scene IN ('warehouse_allocated', 'return_after_outbound', 'production_consumed', 'in_stock'))`
+- 检查约束：`CHECK (scrap_scene = 'production_consumed')`
 - 检查约束：`CHECK (status IN ('pending', 'confirmed', 'cancelled'))`
-- 检查约束：`warehouse_allocated` 要求 `production_batch_id`、`demand_id`、`allocation_id`、`batch_id` 非空，且 `return_detail_id` 为空
-- 检查约束：`return_after_outbound` 要求 `production_batch_id`、`demand_id`、`allocation_id`、`return_detail_id`、`batch_id` 均非空
-- 检查约束：`production_consumed` 要求 `production_batch_id`、`demand_id`、`allocation_id`、`batch_id` 非空，且 `return_detail_id` 为空
-- 检查约束：`in_stock` 要求 `batch_id` 非空，且 `production_batch_id`、`demand_id`、`allocation_id`、`return_detail_id` 均为空
+- 检查约束：`pending` 要求 `confirmed_by/confirmed_at` 为空；`confirmed` 要求二者均非空；`cancelled` 要求二者为空
+- 非空来源列和组合外键共同保证 `production_consumed` 必须来自同一生产批次、需求、分配行、物料和库存批次
 - 组合索引：`INDEX (status, created_at)`，用于报废单状态分页
 
 说明：
 
 - 生产消耗报废不应直接扣减原 allocation 的可再次出库量。
-- 生产消耗报废如果需要补料，应新增 `production_item_demand`，并设置：
-
-  - `demand_type = 'scrap_supplement'`
-  - `parent_demand_id = 原始需求 ID`
-  - `source_scrap_id = 报废记录 ID`
+- `production_consumed` 创建时只允许选择状态为 `material_outbound/doing` 的生产批次及其已确认领料分配行；物料、库存批次、需求、单位和生产批次都从服务端候选复制，不接受客户端自由拼接 ID 或单位。
+- 同一分配行当前可申报损耗量为“累计确认出库量 - `pending/returned` 退料占用量 - `pending/confirmed` 的 `production_consumed` 损耗占用量”；创建和确认事务都必须重新锁定来源分配行并校验，损耗数量必须大于 `0` 且不得超过该上限。取消待确认损耗释放占用。
+- 现场创建损耗记录后状态为 `pending`。管理员确认时不提供“不补料”或修改补料数量的分支；同一事务把本单改为 `confirmed`、创建一张 `source_type = 'material_loss'` 的 `production_material_supplement`，并创建且仅创建一条 `material_loss_supplement` 需求。需求物料与单位固定取来源分配行，`need_number = scrap_number`。
+- 生产领料损耗补料只恢复损失的实物，不创建 `batch_step_scrap_records` 或 `batch_step_scrap_reproduction_authorization`，不增加产品补产额度，不修改批次计划量和工序可报上限。它与工序异常审批中的“产品报废并补产”是两条不同链路。
+- 损耗确认、补料单、补料需求、状态版本、成功审计和 HTTP 幂等结果必须同事务提交；任一写入失败全部回滚。已确认损耗不得改量或取消，错误修正必须等待独立冲销设计。
+- 通用库存报废仍未进入当前正式范围。`warehouse_allocated/return_after_outbound/in_stock` 的命令、接口和页面操作继续禁用，不得因实现生产领料损耗而一并开放。
 
 - 库存内报废应生成 `inventory_transaction`，类型为 `scrap_outbound`。
 - 只有 `status = confirmed` 的报废记录参与视图汇总。
