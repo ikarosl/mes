@@ -20,7 +20,7 @@ import { AppModule } from '../../../apps/api/src/app.module.js';
 import { requestContextMiddleware } from '../../../apps/api/src/common/http/request-context.middleware.js';
 import { DATABASE_POOL } from '../../../apps/api/src/infrastructure/database/database.module.js';
 import { createValidationPipe } from '../../../apps/api/src/presentation/http/validation.pipe.js';
-import { CREATE_BATCH_IDEMPOTENCY_SCOPE } from '../../../apps/api/src/modules/production/application/idempotency/create-batch-idempotency.contract.js';
+import { CREATE_BATCH_IDEMPOTENCY_SCOPE } from '../../../apps/api/src/modules/production/application/idempotency/production-idempotency-scopes.contract.js';
 
 loadWorkspaceEnv();
 

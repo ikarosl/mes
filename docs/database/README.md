@@ -60,7 +60,7 @@ production_batches
 | 异常审批 | `batch_step_abnormal_dispositions` | 每次有效异常报工的独立审批处置单 | [生产报工、追溯与质量边界](40-production-traceability-quality.md) | 返工/报废审批已实现；驳回并更正尚待按新语义改造 |
 | 返工 | `rework_records` | 异常处置为可返工后的返工业务单及完成报工来源 | [生产报工、追溯与质量边界](40-production-traceability-quality.md) | 已实现批准、开工与整笔完成；取消状态已预留但当前没有操作入口 |
 | 工序报废 | `batch_step_scrap_records` | 审批为不可返工的工序损失 | [生产报工、追溯与质量边界](40-production-traceability-quality.md) | 已落地 |
-| 报废补料方案 | `production_scrap_supplement_plan` / `_line` | 正式批准报废前可编辑、可复核且不可分配的补料方案 | [生产需求、分配与领料出库](30-production-inventory/30-demand-allocation-and-outbound.md) | `202608200003`、草稿查询/保存/确认事务及管理端恢复接线已落地；测试待统一补充 |
+| 报废补料方案 | `production_scrap_supplement_plan` / `_line` | 正式批准报废前可编辑、可复核且不可分配的补料方案 | [生产需求、分配与领料出库](30-production-inventory/30-demand-allocation-and-outbound.md) | `202608200003`、草稿查询/保存/确认事务、管理端恢复接线及测试已落地 |
 | 报废补产 | `batch_step_scrap_reproduction_authorization` | 管理员批准后形成的不可变产品补产授权 | [生产报工、追溯与质量边界](40-production-traceability-quality.md) | 已落地；补料齐套后进入路线额度计算 |
 | 生产补料 | `production_material_supplement` | 工序报废补产与生产领料损耗共用的补料物流单 | [生产需求、分配与领料出库](30-production-inventory/30-demand-allocation-and-outbound.md) | 双来源已由 `202608200002-production-material-loss-supplement` 落地 |
 | 物料需求 | `production_item_demand` | 生产需求唯一事实来源 | [生产需求、分配与领料出库](30-production-inventory/30-demand-allocation-and-outbound.md) | `normal/scrap_supplement/material_loss_supplement` 已实现；`manual_additional` 仅数据库允许 |

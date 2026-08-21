@@ -11,7 +11,7 @@ import {
   IdempotentEndpoint,
   RequirePermission,
 } from '../../../../common/security/auth.decorators.js';
-import { CONFIRM_SCRAP_SUPPLEMENT_PLAN_IDEMPOTENCY_SCOPE } from '../../application/idempotency/confirm-scrap-supplement-plan-idempotency.contract.js';
+import { CONFIRM_SCRAP_SUPPLEMENT_PLAN_IDEMPOTENCY_SCOPE } from '../../application/idempotency/production-idempotency-scopes.contract.js';
 import { ProductionSupplementService } from '../../application/production-supplement.service.js';
 import { ProductionDomainExceptionFilter } from './production-domain-exception.filter.js';
 import {

@@ -36,6 +36,7 @@ jobs:
         with:
           ref: ${{ inputs.head_sha }}
           fetch-depth: 0
+          fetch-tags: true
           persist-credentials: false
 
       - uses: pnpm/action-setup@v4
@@ -197,6 +198,28 @@ jobs:
             echo "- Commit tag: \`sha-$IMAGE_SHA\`"
             echo "- Digest: \`$IMAGE_DIGEST\`"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  record-release:
+    needs: deploy-test-server
+    if: needs.deploy-test-server.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.head_sha }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Record the successful release point
+        env:
+          RELEASE_SHA: ${{ inputs.head_sha }}
+        run: |
+          git tag -f released "$RELEASE_SHA"
+          git push origin "refs/tags/released" --force
 
   deploy-test-server:
     needs: [detect-changes, publish-api, publish-web]

@@ -10,7 +10,7 @@ import type {
 import { IdempotencyExecutor } from '../../../common/idempotency/idempotency-executor.js';
 import { ProductSnapshotQuery } from '../../product/public.js';
 import { productionSupplementResultCodec } from './idempotency/production-supplement-result.codec.js';
-import { CONFIRM_SCRAP_SUPPLEMENT_PLAN_IDEMPOTENCY_SCOPE } from './idempotency/confirm-scrap-supplement-plan-idempotency.contract.js';
+import { CONFIRM_SCRAP_SUPPLEMENT_PLAN_IDEMPOTENCY_SCOPE } from './idempotency/production-idempotency-scopes.contract.js';
 import { ProductionSupplementRepository } from './ports/production-supplement.repository.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
 

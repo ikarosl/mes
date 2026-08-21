@@ -41,7 +41,7 @@ const idempotencyRecordsWritePattern =
   /\b(?:INSERT\s+(?:IGNORE\s+)?INTO\s+|REPLACE(?:\s+INTO)?\s+|UPDATE\s+|DELETE\s+FROM\s+)`?(?:`?\w+`?[.])?`?http_idempotency_records\b/i;
 
 /**
- * 已冻结的幂等 scope 值清单：镜像各模块 `*-idempotency.contract.ts` 中
+ * 已冻结的幂等 scope 值清单：镜像各模块 `*-idempotency.contract.ts / *-idempotency-scopes.contract.ts` 中
  * `export const ..._SCOPE = '<value>' as const`。清单由架构检查自校验
  * （见 applyIdempotencyBindingChecks 规则 1）：契约文件导出未登记的 scope 值会被直接拦截，
  * 新增 scope 时无需人工记得同步。生产源码（契约常量文件除外）禁止出现这些值的字符串字面量
@@ -57,7 +57,6 @@ const knownIdempotencyScopes = [
   'production.step-report.create.v3',
   'production.step-report.correct.v3',
   'production.rework.complete.v1',
-  'production.abnormal.scrap-supplement.v1',
   'production.abnormal.scrap-supplement-plan.confirm.v1',
   'production.material-loss.create.v1',
   'production.material-loss.confirm.v1',
@@ -72,9 +71,18 @@ const isApplicationLayerFile = (relative) => relative.includes('/application/');
 const isRepositoryBoundaryFile = (relative) =>
   relative.includes('/application/ports/') || relative.includes('/infrastructure/');
 
-/** 幂等契约文件：*-idempotency.contract.ts（scope 值的唯一事实来源）。 */
-const isContractFile = (relative) =>
-  relative.startsWith('apps/api/src/') && relative.endsWith('-idempotency.contract.ts');
+/**
+ * 幂等契约文件：*-idempotency.contract.ts / *-idempotency-scopes.contract.ts
+ * （scope 值的唯一事实来源）。
+ */
+const isIdempotencyContractFile = (relative) => {
+  if (!relative.startsWith('apps/api/src/')) return false;
+  return (
+    relative.endsWith('-idempotency.contract.ts') ||
+    relative.endsWith('-idempotency-scopes.contract.ts')
+  );
+};
+const isContractFile = isIdempotencyContractFile;
 
 /**
  * 具名 import 解析：返回 [{ local, exported, specifier }]。
@@ -310,7 +318,7 @@ const checks = [
     fileMatch: (relative) => relative === 'apps/api/src/app.module.ts',
   },
   // 幂等「声明↔scope↔executor 接入」交叉校验：@IdempotentEndpoint 携带稳定 scope，
-  // 但 scope 唯一事实来源是各模块 *-idempotency.contract.ts 契约常量；任何字面量副本都会让
+  // 但 scope 唯一事实来源是各模块 *-idempotency.contract.ts / *-idempotency-scopes.contract.ts 契约常量；任何字面量副本都会让
   // 「Guard 证明启用了幂等」与「Service 真的经 executor 接入同一 scope」脱钩，构成伪幂等。
   // 规则 a：scope 字面量只能出现在契约常量文件内，其余生产源码禁止硬编码。
   // 契约文件按命名自动豁免（isContractFile），新增契约文件无需维护 exclude 清单
@@ -337,9 +345,9 @@ const checks = [
   {
     directory: 'apps/api/src',
     pattern: /@IdempotentEndpoint\(/,
-    requires: [/from\s+['"][^'"]+idempotency\.contract\.js['"]/],
+    requires: [/from\s+['"][^'"]+idempotency(?:-scopes)?\.contract\.js['"]/],
     message:
-      '声明 @IdempotentEndpoint 的 Controller 必须 import 本模块幂等契约 scope 常量（*-idempotency.contract.ts）',
+      '声明 @IdempotentEndpoint 的 Controller 必须 import 本模块幂等契约 scope 常量（*-idempotency.contract.ts / *-idempotency-scopes.contract.ts）',
     fileMatch: isPresentationHttpFile,
   },
   {
@@ -397,7 +405,7 @@ const applyChecks = (sources, violations) => {
 
 /**
  * 幂等「声明↔scope↔executor 接入」显式绑定（跨文件关联，正则 checks 表覆盖不到的深度）：
- * 1. 契约文件（*-idempotency.contract.ts）导出的每个 scope 值必须登记在 knownIdempotencyScopes
+ * 1. 契约文件（*-idempotency.contract.ts / *-idempotency-scopes.contract.ts）导出的每个 scope 值必须登记在 knownIdempotencyScopes
  *    ——清单自校验，新增 scope 无法绕过登记，也不用人工记得同步；
  * 2. 每个 `@IdempotentEndpoint({ scope: X })` 的 X 必须是本文件对模块幂等契约文件的具名导入，
  *    且是契约文件实际导出的常量（防止「import 了契约却用别的标识符」）；
@@ -429,15 +437,15 @@ const applyIdempotencyBindingChecks = (sources, violations) => {
       const imported = parseNamedImports(source).find((imp) => imp.local === scopeName);
       if (!imported || !imported.specifier.startsWith('.')) {
         violations.push(
-          `${relative}: @IdempotentEndpoint 的 scope '${scopeName}' 必须来自本模块幂等契约文件（*-idempotency.contract.ts）的具名导入`,
+          `${relative}: @IdempotentEndpoint 的 scope '${scopeName}' 必须来自本模块幂等契约文件（*-idempotency.contract.ts / *-idempotency-scopes.contract.ts）的具名导入`,
         );
         continue;
       }
       const contractPath = resolveRelativeImport(relative, imported.specifier);
       const contractSource = contractPath ? byPath.get(contractPath) : undefined;
-      if (!contractPath?.endsWith('-idempotency.contract.ts') || !contractSource) {
+      if (!isIdempotencyContractFile(contractPath) || !contractSource) {
         violations.push(
-          `${relative}: @IdempotentEndpoint 的 scope '${scopeName}' 必须来自模块幂等契约文件（*-idempotency.contract.ts），当前来源 ${imported.specifier}`,
+          `${relative}: @IdempotentEndpoint 的 scope '${scopeName}' 必须来自模块幂等契约文件（*-idempotency.contract.ts / *-idempotency-scopes.contract.ts），当前来源 ${imported.specifier}`,
         );
         continue;
       }

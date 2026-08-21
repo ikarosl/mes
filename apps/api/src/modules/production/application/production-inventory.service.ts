@@ -19,8 +19,8 @@ import type {
 import { IdempotencyExecutor } from '../../../common/idempotency/idempotency-executor.js';
 import { IdentityDirectoryService } from '../../identity/public.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
-import { CONFIRM_MATERIAL_LOSS_IDEMPOTENCY_SCOPE } from './idempotency/confirm-material-loss-idempotency.contract.js';
-import { CREATE_MATERIAL_LOSS_IDEMPOTENCY_SCOPE } from './idempotency/create-material-loss-idempotency.contract.js';
+import { CONFIRM_MATERIAL_LOSS_IDEMPOTENCY_SCOPE } from './idempotency/production-idempotency-scopes.contract.js';
+import { CREATE_MATERIAL_LOSS_IDEMPOTENCY_SCOPE } from './idempotency/production-idempotency-scopes.contract.js';
 import {
   confirmMaterialLossResultCodec,
   createMaterialLossResultCodec,

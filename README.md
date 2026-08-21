@@ -5,9 +5,9 @@
 ## 快速开始
 
 1. 复制 `.env.example` 为 `.env`，设置数据库、长度不少于 32 位的 JWT 密钥，以及管理员账号（`ADMIN_PASSWORD` 不少于 6 位）。
-2. 启动基础设施：`pnpm infra:up`。该命令显式读取仓库根目录唯一的 `.env`，启动 MinIO 以及映射到宿主 `3307` 的专用集成测试 MySQL。
+2. 启动基础设施：`pnpm infra:up`。该命令显式读取仓库根目录唯一的 `.env`，启动 MySQL（容器名 `dev_test_sql`，宿主 `3307` 映射容器 `3306`）与 MinIO（容器名 `dev_test_minio`）。MySQL 数据库名与 `.env` 的 `DB_NAME` 保持一致。
 3. 安装依赖：`pnpm install --frozen-lockfile`。
-4. 初始化开发库：`pnpm db:init`。默认 `.env.example` 保持 `DB_PORT=3306`，因此该命令使用 Windows 宿主机 MySQL，不会连接 WSL 集成测试实例。
+4. 初始化开发库：`pnpm db:init`。默认 `.env.example` 保持 `DB_HOST=127.0.0.1`、`DB_PORT=3307`，因此该命令直接连接第 2 步启动的 Docker MySQL。
 5. 启动 API：`pnpm dev:api`。
 6. 启动管理端：`pnpm dev:admin`。
 
@@ -17,7 +17,7 @@
 - `pnpm db:seed`：幂等写入不含凭证的系统基础数据，包括内置管理员角色、通配权限及其关联。
 - `pnpm db:bootstrap-admin`：使用 `ADMIN_USERNAME`、`ADMIN_PASSWORD`、`ADMIN_DISPLAY_NAME` 创建或更新管理员账号；要求先执行 seed。
 - `pnpm db:init`：依次执行上述三步，用于从空库初始化到可登录状态。对已有库重跑会按当前 `ADMIN_PASSWORD` 更新管理员密码，生产环境仅升级 schema 时应使用 `db:migrate`。
-- `pnpm test:production:mysql`：真实 MySQL 集成测试，仅针对专用测试端点与以 `_test` 结尾的专用测试库。`TEST_DB_HOST/PORT/NAME` 必填，且 `DB_HOST/PORT/NAME` 必须与之完全相等。本地 WSL Docker 默认映射为宿主 `3307` 到容器 `3306`；CI 服务容器继续使用 `3306`。
+- `pnpm test:production:mysql`：真实 MySQL 集成测试，仅针对专用测试端点与以 `_test` 结尾的专用测试库。`TEST_DB_HOST/PORT/NAME` 必填，且 `DB_HOST/PORT/NAME` 必须与之完全相等。本地 Docker 默认映射为宿主 `3307` 到容器 `3306`；CI 服务容器继续使用 `3306`。
 
 仓库根目录的数据库命令是开发与 CI 入口，由 `tsx` 直接执行 `packages/database/src`，修改运行器后无需先手工构建。`@company/database` 同时提供成对的 `*:compiled` 脚本，用 Node 执行构建后的 `dist`，用于验证编译产物。生产镜像不安装 `tsx`，CD 应使用同一 API 镜像运行一次性迁移任务 `node node_modules/@company/database/dist/migrate.js`，迁移成功后再启动 API；不得在每个 API 副本启动时自动执行迁移。
 

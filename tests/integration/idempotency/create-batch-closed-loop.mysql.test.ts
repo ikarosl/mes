@@ -26,7 +26,7 @@ import { MysqlProductionMaterialRepository } from '../../../apps/api/src/modules
 import { MysqlProductionRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production.repository.js';
 import { MysqlWorkOrderRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-work-order.repository.js';
 import { ProductionController } from '../../../apps/api/src/modules/production/presentation/http/production.controller.js';
-import { CREATE_BATCH_IDEMPOTENCY_SCOPE } from '../../../apps/api/src/modules/production/application/idempotency/create-batch-idempotency.contract.js';
+import { CREATE_BATCH_IDEMPOTENCY_SCOPE } from '../../../apps/api/src/modules/production/application/idempotency/production-idempotency-scopes.contract.js';
 
 loadWorkspaceEnv();
 

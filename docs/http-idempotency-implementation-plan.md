@@ -653,7 +653,7 @@ Repository 的 `material_pending` 短路之前，会先重新查询批次产品�
   `Idempotency-Key: <uuid>`；不增加 `Idempotency-Scope`、`X-Api-Version`、`X-Idempotency-Version`，
   也不做前端构建版本协商。客户端只能提供键，不能决定服务端存储命名空间。
 - scope 由后端集中定义：`CREATE_BATCH_IDEMPOTENCY_SCOPE`（当前为 `production.batch.create.v2`，位于
-  `apps/api/src/modules/production/application/idempotency/create-batch-idempotency.contract.ts`），
+  `apps/api/src/modules/production/application/idempotency/production-idempotency-scopes.contract.ts`），
   被 `ProductionService.createBatch`、`productionBatchResultCodec`（codec 附带 `scope` 字段并与执行
   契约共用同一常量）、后端单元测试与 MySQL 集成测试共同引用，是模块内唯一事实来源。
 - scope **不放入**前后端共享的 `packages/constants`：前端只使用本地意图名 `intentType`

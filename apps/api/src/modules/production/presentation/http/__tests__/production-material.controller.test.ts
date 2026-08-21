@@ -4,9 +4,9 @@ import {
   IDEMPOTENT_ENDPOINT,
   REQUIRED_PERMISSION,
 } from '../../../../../common/security/auth.decorators.js';
-import { CREATE_MATERIAL_ALLOCATION_IDEMPOTENCY_SCOPE } from '../../../application/idempotency/create-material-allocation-idempotency.contract.js';
-import { CREATE_MATERIAL_OUTBOUND_IDEMPOTENCY_SCOPE } from '../../../application/idempotency/create-material-outbound-idempotency.contract.js';
-import { CONFIRM_MATERIAL_OUTBOUND_IDEMPOTENCY_SCOPE } from '../../../application/idempotency/confirm-material-outbound-idempotency.contract.js';
+import { CREATE_MATERIAL_ALLOCATION_IDEMPOTENCY_SCOPE } from '../../../application/idempotency/production-idempotency-scopes.contract.js';
+import { CREATE_MATERIAL_OUTBOUND_IDEMPOTENCY_SCOPE } from '../../../application/idempotency/production-idempotency-scopes.contract.js';
+import { CONFIRM_MATERIAL_OUTBOUND_IDEMPOTENCY_SCOPE } from '../../../application/idempotency/production-idempotency-scopes.contract.js';
 import { ProductionMaterialController } from '../production-material.controller.js';
 
 describe('ProductionMaterialController permissions', () => {

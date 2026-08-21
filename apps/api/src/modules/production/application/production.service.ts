@@ -28,7 +28,7 @@ import {
 import { ProductionDomainError } from '../domain/production.errors.js';
 import { ProductionRepository } from './ports/production.repository.js';
 import type { ResolvedBatchStepOverride } from './ports/production.repository.js';
-import { CREATE_BATCH_IDEMPOTENCY_SCOPE } from './idempotency/create-batch-idempotency.contract.js';
+import { CREATE_BATCH_IDEMPOTENCY_SCOPE } from './idempotency/production-idempotency-scopes.contract.js';
 import { productionBatchResultCodec } from './idempotency/production-batch-result.codec.js';
 
 @Injectable()

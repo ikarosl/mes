@@ -12,8 +12,8 @@ import type {
 import { IdempotencyExecutor } from '../../../common/idempotency/idempotency-executor.js';
 import { IdentityDirectoryService } from '../../identity/public.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
-import { CORRECT_STEP_REPORT_IDEMPOTENCY_SCOPE } from './idempotency/correct-step-report-idempotency.contract.js';
-import { CREATE_STEP_REPORT_IDEMPOTENCY_SCOPE } from './idempotency/create-step-report-idempotency.contract.js';
+import { CORRECT_STEP_REPORT_IDEMPOTENCY_SCOPE } from './idempotency/production-idempotency-scopes.contract.js';
+import { CREATE_STEP_REPORT_IDEMPOTENCY_SCOPE } from './idempotency/production-idempotency-scopes.contract.js';
 import {
   correctStepReportResultCodec,
   createStepReportResultCodec,

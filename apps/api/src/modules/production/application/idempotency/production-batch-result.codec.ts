@@ -5,7 +5,7 @@ import type {
   IdempotencyResultCodec,
   JsonValue,
 } from '../../../../common/idempotency/idempotency-executor.js';
-import { CREATE_BATCH_IDEMPOTENCY_SCOPE } from './create-batch-idempotency.contract.js';
+import { CREATE_BATCH_IDEMPOTENCY_SCOPE } from './production-idempotency-scopes.contract.js';
 
 /**
  * createBatch 幂等结果 codec（scope `production.batch.create.v2`）。

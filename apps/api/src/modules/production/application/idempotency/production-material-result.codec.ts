@@ -13,9 +13,9 @@ import type {
   IdempotencyResultCodec,
   JsonValue,
 } from '../../../../common/idempotency/idempotency-executor.js';
-import { CREATE_MATERIAL_ALLOCATION_IDEMPOTENCY_SCOPE } from './create-material-allocation-idempotency.contract.js';
-import { CREATE_MATERIAL_OUTBOUND_IDEMPOTENCY_SCOPE } from './create-material-outbound-idempotency.contract.js';
-import { CONFIRM_MATERIAL_OUTBOUND_IDEMPOTENCY_SCOPE } from './confirm-material-outbound-idempotency.contract.js';
+import { CREATE_MATERIAL_ALLOCATION_IDEMPOTENCY_SCOPE } from './production-idempotency-scopes.contract.js';
+import { CREATE_MATERIAL_OUTBOUND_IDEMPOTENCY_SCOPE } from './production-idempotency-scopes.contract.js';
+import { CONFIRM_MATERIAL_OUTBOUND_IDEMPOTENCY_SCOPE } from './production-idempotency-scopes.contract.js';
 
 const nullableString = z.string().nullable();
 const allocationSchema: z.ZodType<ProductionMaterialAllocationItem> = z

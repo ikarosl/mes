@@ -5,8 +5,8 @@ import type {
   IdempotencyResultCodec,
   JsonValue,
 } from '../../../../common/idempotency/idempotency-executor.js';
-import { CREATE_PURCHASE_INBOUND_IDEMPOTENCY_SCOPE } from './create-purchase-inbound-idempotency.contract.js';
-import { CONFIRM_PURCHASE_INBOUND_IDEMPOTENCY_SCOPE } from './confirm-purchase-inbound-idempotency.contract.js';
+import { CREATE_PURCHASE_INBOUND_IDEMPOTENCY_SCOPE } from './production-idempotency-scopes.contract.js';
+import { CONFIRM_PURCHASE_INBOUND_IDEMPOTENCY_SCOPE } from './production-idempotency-scopes.contract.js';
 
 const schema: z.ZodType<PurchaseInboundOrderItem> = z
   .object({

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { BatchStepRecordItem, ProductionBatchDetail } from '@company/contracts';
-import { CREATE_BATCH_IDEMPOTENCY_SCOPE } from '../create-batch-idempotency.contract.js';
+import { CREATE_BATCH_IDEMPOTENCY_SCOPE } from '../production-idempotency-scopes.contract.js';
 import { productionBatchResultCodec } from '../production-batch-result.codec.js';
 
 const validStepRecord: BatchStepRecordItem = {
