@@ -129,6 +129,8 @@ jobs:
   publish-images:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [quality, migration-fresh, integration-mysql]
+    permissions:
+      contents: write
     uses: ./.github/workflows/cd-images.yml
     with:
       base_sha: ${{ github.event.before }}

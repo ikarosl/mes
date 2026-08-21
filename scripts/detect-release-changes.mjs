@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url';
 const API_PACKAGE = '@company/api';
 const WEB_PACKAGE = '@company/admin-web';
 const ZERO_SHA = /^0+$/;
+export const RELEASED_TAG = 'released';
 
 const BOTH_COMPONENT_INPUTS = new Set([
   '.dockerignore',
@@ -40,24 +41,62 @@ export const classifyReleaseChanges = ({ affectedPackages, changedFiles, forceAl
   };
 };
 
+export const chooseReleaseBase = ({
+  releasedBase,
+  baseArg,
+  head,
+  allowFallback = false,
+  isUsable = () => true,
+}) => {
+  if (releasedBase) {
+    return isUsable(releasedBase, head)
+      ? { base: releasedBase, forceAll: false, reason: 'released-tag' }
+      : { base: null, forceAll: true, reason: 'released-tag-unusable' };
+  }
+  if (allowFallback && baseArg && !ZERO_SHA.test(baseArg) && isUsable(baseArg, head)) {
+    return { base: baseArg, forceAll: false, reason: 'supplied-base-fallback' };
+  }
+  return { base: null, forceAll: true, reason: 'no-released-tag' };
+};
+
 const main = () => {
-  const base = process.argv[2]?.trim();
+  const baseArg = process.argv[2]?.trim();
   const head = process.argv[3]?.trim();
-  if (!base || !head) {
+  if (!baseArg || !head) {
     throw new Error('usage: node scripts/detect-release-changes.mjs <base-sha> <head-sha>');
   }
 
-  const forceAll = ZERO_SHA.test(base) || !isUsableReleaseRange(base, head);
-  if (forceAll && !ZERO_SHA.test(base)) {
+  const releasedBase = tryStdout('git', ['rev-parse', '--verify', `${RELEASED_TAG}^{commit}`]);
+  const allowFallback = process.env.ALLOW_BASE_WITHOUT_RELEASED_TAG === '1';
+  const choice = chooseReleaseBase({
+    releasedBase,
+    baseArg,
+    head,
+    allowFallback,
+    isUsable: (base) => isUsableReleaseRange(base, head),
+  });
+
+  if (choice.forceAll) {
     process.stderr.write(
-      `::warning::Release base ${base} is unavailable or unrelated to ${head}; forcing a full release.\n`,
+      choice.reason === 'no-released-tag'
+        ? `::warning::No ${RELEASED_TAG} tag found; forcing a full release.\n`
+        : `::warning::Release base is unavailable or unrelated to ${head}; forcing a full release.\n`,
+    );
+  } else if (choice.reason === 'supplied-base-fallback') {
+    process.stderr.write(
+      `::warning::No ${RELEASED_TAG} tag found; using supplied base ${baseArg} because ALLOW_BASE_WITHOUT_RELEASED_TAG=1.\n`,
     );
   }
-  const changedFiles = forceAll ? [] : gitChangedFiles(base, head);
-  const affectedPackages = forceAll ? [] : turboAffectedPackages(base, head);
+
+  const base = choice.base;
+  const forceAll = choice.forceAll;
+  const changedFiles = forceAll || base === head ? [] : gitChangedFiles(base, head);
+  const affectedPackages = forceAll || base === head ? [] : turboAffectedPackages(base, head);
   const result = classifyReleaseChanges({ affectedPackages, changedFiles, forceAll });
   const output = {
-    base,
+    base: base ?? null,
+    requestedBase: baseArg,
+    releasedBase,
     head,
     changedFiles,
     affectedPackages,
@@ -122,6 +161,15 @@ const tryRun = (command, args) => {
     windowsHide: true,
   });
   return !result.error && result.status === 0;
+};
+
+const tryStdout = (command, args) => {
+  const result = spawnSync(command, args, {
+    encoding: 'utf8',
+    env: process.env,
+    windowsHide: true,
+  });
+  return !result.error && result.status === 0 ? result.stdout.trim() : null;
 };
 
 const normalizePath = (path) => path.replaceAll('\\', '/');

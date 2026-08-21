@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { classifyReleaseChanges, isUsableReleaseRange } from './detect-release-changes.mjs';
+import {
+  classifyReleaseChanges,
+  chooseReleaseBase,
+  isUsableReleaseRange,
+  RELEASED_TAG,
+} from './detect-release-changes.mjs';
 
 test('only the API is released when Turbo marks the API as affected', () => {
   assert.deepEqual(
@@ -64,6 +69,82 @@ test('a release range is unusable when either commit is missing or the histories
 
   const related = () => true;
   assert.equal(isUsableReleaseRange('old', 'new', related), true);
+});
+
+test('a released tag is the preferred base over the supplied base', () => {
+  assert.deepEqual(
+    chooseReleaseBase({
+      releasedBase: 'released-sha',
+      baseArg: 'previous-main-sha',
+      head: 'head-sha',
+      isUsable: (base, head) => base === 'released-sha' && head === 'head-sha',
+    }),
+    { base: 'released-sha', forceAll: false, reason: 'released-tag' },
+  );
+});
+
+test('a missing released tag forces a full release by default', () => {
+  assert.deepEqual(
+    chooseReleaseBase({
+      releasedBase: null,
+      baseArg: 'previous-main-sha',
+      head: 'head-sha',
+      isUsable: () => true,
+    }),
+    { base: null, forceAll: true, reason: 'no-released-tag' },
+  );
+});
+
+test('a missing released tag may fall back to the supplied base only for local debugging', () => {
+  assert.deepEqual(
+    chooseReleaseBase({
+      releasedBase: null,
+      baseArg: 'previous-main-sha',
+      head: 'head-sha',
+      allowFallback: true,
+      isUsable: (base, head) => base === 'previous-main-sha' && head === 'head-sha',
+    }),
+    { base: 'previous-main-sha', forceAll: false, reason: 'supplied-base-fallback' },
+  );
+});
+
+test('an unusable released tag forces a full release', () => {
+  assert.deepEqual(
+    chooseReleaseBase({
+      releasedBase: 'released-sha',
+      baseArg: 'previous-main-sha',
+      head: 'head-sha',
+      isUsable: () => false,
+    }),
+    { base: null, forceAll: true, reason: 'released-tag-unusable' },
+  );
+});
+
+test('a zero or empty supplied base never becomes the release base', () => {
+  assert.deepEqual(
+    chooseReleaseBase({
+      releasedBase: null,
+      baseArg: '0000000000000000000000000000000000000000',
+      head: 'head-sha',
+      allowFallback: true,
+      isUsable: () => true,
+    }),
+    { base: null, forceAll: true, reason: 'no-released-tag' },
+  );
+  assert.deepEqual(
+    chooseReleaseBase({
+      releasedBase: null,
+      baseArg: '',
+      head: 'head-sha',
+      allowFallback: true,
+      isUsable: () => true,
+    }),
+    { base: null, forceAll: true, reason: 'no-released-tag' },
+  );
+});
+
+test('released tag constant keeps the stable ref name', () => {
+  assert.equal(RELEASED_TAG, 'released');
 });
 
 test('Compose and deployment entry changes request a server control sync', () => {
