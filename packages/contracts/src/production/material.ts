@@ -1,0 +1,109 @@
+import type { VersionedCommand } from '../common.js';
+import type {
+  ProductionBatchStatus,
+  DemandType,
+  DemandBusinessStatus,
+  AllocationStatus,
+  InventorySourceType,
+} from './statuses.js';
+
+export interface ProductionItemDemandItem {
+  id: string;
+  productionBatchId: string;
+  productMaterialId: string;
+  itemId: string;
+  itemCode: string;
+  itemName: string;
+  quantityPerUnit: string;
+  unit: string;
+  isKeyMaterial: boolean;
+  needBatchRecord: boolean;
+  plannedOutputQuantity: string;
+  needNumber: string;
+  demandType: DemandType;
+  businessStatus: DemandBusinessStatus;
+  version: number;
+}
+
+export type MaterialDemandProgressStatus =
+  | 'pending_allocation'
+  | 'partially_allocated'
+  | 'allocated'
+  | 'shortage'
+  | 'partially_outbound'
+  | 'outbound'
+  | 'unknown'
+  | DemandBusinessStatus;
+
+export interface ProductionMaterialAllocationItem {
+  allocationId: string;
+  demandId: string;
+  productionBatchId: string;
+  itemId: string;
+  itemBatchId: string;
+  batchCode: string;
+  assignedQuantity: string;
+  outboundQuantity: string;
+  pendingOutboundQuantity: string;
+  availableToOrderQuantity: string;
+  remainingOutboundQuantity: string;
+  unit: string;
+  allocationStatus: AllocationStatus;
+  version: number;
+  remark: string | null;
+  createdAt: string;
+}
+
+export interface ProductionMaterialDemandItem {
+  demandId: string;
+  productionBatchId: string;
+  productMaterialId: string;
+  itemId: string;
+  itemCode: string;
+  itemName: string;
+  unit: string;
+  demandQuantity: string;
+  allocatedQuantity: string;
+  outboundQuantity: string;
+  remainingQuantity: string;
+  demandType: DemandType;
+  businessStatus: DemandBusinessStatus;
+  progressStatus: MaterialDemandProgressStatus;
+  version: number;
+  allocations: ProductionMaterialAllocationItem[];
+}
+
+export interface AvailableItemBatchItem {
+  itemBatchId: string;
+  itemId: string;
+  itemCode: string;
+  itemName: string;
+  batchCode: string;
+  unit: string;
+  sourceType: InventorySourceType;
+  provider: string | null;
+  productionDate: string | null;
+  onHandAvailableQuantity: string;
+  reservedQuantity: string;
+  availableToAllocateQuantity: string;
+}
+
+export interface CreateMaterialAllocationLinePayload {
+  demandId: string;
+  itemBatchId: string;
+  assignedQuantity: number;
+  remark?: string | null;
+}
+
+export interface CreateMaterialAllocationsPayload {
+  allocations: CreateMaterialAllocationLinePayload[];
+}
+
+export interface MaterialAllocationCommandResult {
+  productionBatchId: string;
+  batchStatus: ProductionBatchStatus;
+  batchVersion: number;
+  allocations: ProductionMaterialAllocationItem[];
+}
+
+export type ReleaseMaterialAllocationPayload = VersionedCommand;
