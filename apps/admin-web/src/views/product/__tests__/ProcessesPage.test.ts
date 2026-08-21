@@ -1,22 +1,24 @@
 import { flushPromises, mount } from '@vue/test-utils';
 import ElementPlus from 'element-plus';
 import { nextTick } from 'vue';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { createPinia } from 'pinia';
 import ProcessesPage from '../ProcessesPage.vue';
 
-const { list, setStatus, confirm, success, error } = vi.hoisted(() => ({
+const { list, setStatus, confirm, success, error, technicalFileContent } = vi.hoisted(() => ({
   list: vi.fn(),
   setStatus: vi.fn(),
   confirm: vi.fn(),
   success: vi.fn(),
   error: vi.fn(),
+  technicalFileContent: vi.fn(),
 }));
 
 vi.mock('../../../api/product', () => ({
   productApi: {
     processSteps: list,
     setProcessStepStatus: setStatus,
+    technicalFileContent,
   },
 }));
 vi.mock('../../../stores/auth', () => ({
@@ -38,20 +40,34 @@ const processRow = {
   status: 1,
 };
 
-describe('ProcessesPage row write guard', () => {
-  const mountPage = () =>
-    mount(ProcessesPage, {
-      global: {
-        plugins: [ElementPlus, createPinia()],
-        stubs: {
-          TableToolbar: true,
-          PaginationFooter: true,
-          ProcessStepFormDialog: true,
-          ProcessStepDetailDialog: true,
-        },
-      },
-    });
+const sopRow = {
+  id: 's2',
+  stepCode: 'S002',
+  stepName: '焊接',
+  description: null,
+  defaultSopFileId: 'f1',
+  sopFileName: '焊接SOP.pdf',
+  status: 1,
+};
 
+const createObjectURL = vi.fn(() => 'blob:sop-1');
+const revokeObjectURL = vi.fn();
+const windowOpen = vi.fn();
+
+const mountPage = () =>
+  mount(ProcessesPage, {
+    global: {
+      plugins: [ElementPlus, createPinia()],
+      stubs: {
+        TableToolbar: true,
+        PaginationFooter: true,
+        ProcessStepFormDialog: true,
+        ProcessStepDetailDialog: true,
+      },
+    },
+  });
+
+describe('ProcessesPage row write guard', () => {
   beforeEach(() => {
     list.mockReset();
     list.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 10 });
@@ -82,5 +98,72 @@ describe('ProcessesPage row write guard', () => {
     expect(setStatus).toHaveBeenCalledTimes(1);
     expect(setStatus).toHaveBeenCalledWith('s1', 0);
     expect(findToggle()!.attributes('disabled')).toBeUndefined(); // 写操作结束释放
+  });
+});
+
+describe('ProcessesPage SOP file actions', () => {
+  beforeEach(() => {
+    list.mockReset();
+    list.mockResolvedValue({ items: [sopRow], total: 1, page: 1, pageSize: 10 });
+    technicalFileContent.mockReset();
+    technicalFileContent.mockResolvedValue(new Blob(['pdf'], { type: 'application/pdf' }));
+    createObjectURL.mockReset().mockReturnValue('blob:sop-1');
+    revokeObjectURL.mockReset();
+    windowOpen.mockReset();
+    Object.defineProperty(URL, 'createObjectURL', { writable: true, value: createObjectURL });
+    Object.defineProperty(URL, 'revokeObjectURL', { writable: true, value: revokeObjectURL });
+    Object.defineProperty(window, 'open', { writable: true, value: windowOpen });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('previews a browser-safe SOP through an authenticated blob url', async () => {
+    const wrapper = mountPage();
+    await flushPromises();
+
+    const previewButton = wrapper.findAll('button').find((b) => b.text().trim() === '预览');
+    expect(previewButton).toBeDefined();
+
+    await previewButton!.trigger('click');
+    await flushPromises();
+
+    expect(technicalFileContent).toHaveBeenCalledTimes(1);
+    expect(technicalFileContent).toHaveBeenCalledWith('f1');
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+    expect(windowOpen).toHaveBeenCalledWith('blob:sop-1', '_blank', 'noopener');
+  });
+
+  it('downloads an SOP through an authenticated blob url and a temporary anchor', async () => {
+    const wrapper = mountPage();
+    await flushPromises();
+
+    const downloadButton = wrapper.findAll('button').find((b) => b.text().trim() === '下载');
+    expect(downloadButton).toBeDefined();
+
+    await downloadButton!.trigger('click');
+    await flushPromises();
+
+    expect(technicalFileContent).toHaveBeenCalledTimes(1);
+    expect(technicalFileContent).toHaveBeenCalledWith('f1');
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+    expect(windowOpen).not.toHaveBeenCalled();
+  });
+
+  it('shows preview only for browser-safe SOP files', async () => {
+    list.mockResolvedValue({
+      items: [{ ...sopRow, sopFileName: '焊接SOP.docx' }],
+      total: 1,
+      page: 1,
+      pageSize: 10,
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    const buttons = wrapper.findAll('button').map((b) => b.text().trim());
+    expect(buttons).toContain('下载');
+    expect(buttons).not.toContain('预览');
   });
 });

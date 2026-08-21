@@ -120,4 +120,16 @@ describe('productApi contract mapping', () => {
       skipErrorHandling: true,
     });
   });
+
+  it('fetches technical file content as an authenticated blob', async () => {
+    request.mockResolvedValue({ data: new Blob(['pdf'], { type: 'application/pdf' }) });
+    const { productApi } = await import('../product');
+
+    await expect(productApi.technicalFileContent('5')).resolves.toBeInstanceOf(Blob);
+    expect(request).toHaveBeenCalledWith({
+      url: '/product/technical-files/5/content',
+      responseType: 'blob',
+      timeout: 0,
+    });
+  });
 });

@@ -96,14 +96,34 @@
         />
         <el-table-column
           label="技术文件"
-          min-width="190"
+          min-width="230"
         >
           <template #default="{ row }">
-            <el-link
-              v-if="row.sopFileName"
-              type="primary"
-              >{{ row.sopFileName }}</el-link
-            >
+            <template v-if="row.sopFileName">
+              <div class="sop-file-name">{{ row.sopFileName }}</div>
+              <div
+                v-if="auth.can(PERMISSIONS.product.files.download)"
+                class="sop-file-actions"
+              >
+                <el-button
+                  v-if="canPreviewFile(row.sopFileName)"
+                  link
+                  type="primary"
+                  :loading="isFileActionPending(row.id, 'preview')"
+                  :disabled="fileActionPending?.id === row.id"
+                  @click="previewSop(row)"
+                  >预览</el-button
+                >
+                <el-button
+                  link
+                  type="primary"
+                  :loading="isFileActionPending(row.id, 'download')"
+                  :disabled="fileActionPending?.id === row.id"
+                  @click="downloadSop(row)"
+                  >下载</el-button
+                >
+              </div>
+            </template>
             <span
               v-else
               class="empty-text"
@@ -231,6 +251,7 @@ import { useRowPending } from '../../utils/useRowPending';
 import { productApi } from '../../api/product';
 import { useAuthStore } from '../../stores/auth';
 import { useProcessSteps } from './composables/useProcessSteps';
+import { canPreviewFile, previewMimeOf } from '../../utils/file-preview';
 import ProcessStepDetailDialog from './components/ProcessStepDetailDialog.vue';
 import ProcessStepFormDialog from './components/ProcessStepFormDialog.vue';
 
@@ -263,6 +284,7 @@ const selectedFile = ref<File | null>(null);
 const uploadProcessId = ref<string | null>(null);
 const detailRow = ref<ProcessStepListItem | null>(null);
 const submitting = ref(false);
+const fileActionPending = ref<{ id: string; action: 'preview' | 'download' } | null>(null);
 const processFormDialogRef = ref<InstanceType<typeof ProcessStepFormDialog> | null>(null);
 
 const openCreate = () => {
@@ -284,6 +306,57 @@ const openUpload = (row: ProcessStepListItem) => {
 const openDetail = (row: ProcessStepListItem) => {
   detailRow.value = row;
   detailDialogVisible.value = true;
+};
+
+const isFileActionPending = (id: string, action: 'preview' | 'download') =>
+  fileActionPending.value?.id === id && fileActionPending.value.action === action;
+
+const fetchSopBlob = (row: ProcessStepListItem) => {
+  if (!row.defaultSopFileId) throw new Error('该工序未关联技术文件');
+  return productApi.technicalFileContent(row.defaultSopFileId);
+};
+
+const createPreviewObjectUrl = (blob: Blob, fileName: string) => {
+  const previewMime = previewMimeOf(fileName, blob.type);
+  const target =
+    previewMime && previewMime !== blob.type ? new Blob([blob], { type: previewMime }) : blob;
+  return URL.createObjectURL(target);
+};
+
+const previewSop = async (row: ProcessStepListItem) => {
+  if (fileActionPending.value) return;
+  fileActionPending.value = { id: row.id, action: 'preview' };
+  try {
+    const blob = await fetchSopBlob(row);
+    const url = createPreviewObjectUrl(blob, row.sopFileName ?? '');
+    window.open(url, '_blank', 'noopener');
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  } catch (error) {
+    EMessage.error(error, 'SOP 文件预览失败');
+  } finally {
+    fileActionPending.value = null;
+  }
+};
+
+const downloadSop = async (row: ProcessStepListItem) => {
+  if (fileActionPending.value) return;
+  fileActionPending.value = { id: row.id, action: 'download' };
+  try {
+    const blob = await fetchSopBlob(row);
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = row.sopFileName ?? 'download';
+    anchor.style.display = 'none';
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  } catch (error) {
+    EMessage.error(error, 'SOP 文件下载失败');
+  } finally {
+    fileActionPending.value = null;
+  }
 };
 
 const submitProcess = async (payload: ProcessStepPayload) => {
@@ -441,6 +514,17 @@ onMounted(loadSteps);
 }
 .empty-text {
   color: #9ca3af;
+}
+.sop-file-name {
+  color: #1f2937;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sop-file-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 2px;
 }
 
 .upload-icon {

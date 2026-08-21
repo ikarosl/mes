@@ -51,6 +51,12 @@ const cleanProductPayload = (data: ProductPayload): ProductPayload => ({
 export const productApi = {
   technicalFiles: (params: TechnicalFileQuery) =>
     request<PageResult<TechnicalFileListItem>>({ url: `${base}/technical-files`, params }),
+  technicalFileContent: (id: string) =>
+    request<Blob>({
+      url: `${base}/technical-files/${id}/content`,
+      responseType: 'blob',
+      timeout: 0,
+    }),
   categories: (params: ProductCategoryQuery) =>
     request<PageResult<ProductCategoryListItem>>({ url: `${base}/categories`, params }),
   // options 为表单参考读取（best-effort）：失败不触发全局 403 跳转/提示，由调用方 composable 降级
