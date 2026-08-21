@@ -13,8 +13,8 @@ import type {
 import { IdempotencyExecutor } from '../../../common/idempotency/idempotency-executor.js';
 import { IdentityDirectoryService } from '../../identity/public.js';
 import { ProductSnapshotQuery } from '../../product/public.js';
-import { CREATE_PURCHASE_INBOUND_IDEMPOTENCY_SCOPE } from './idempotency/create-purchase-inbound-idempotency.contract.js';
-import { CONFIRM_PURCHASE_INBOUND_IDEMPOTENCY_SCOPE } from './idempotency/confirm-purchase-inbound-idempotency.contract.js';
+import { CREATE_PURCHASE_INBOUND_IDEMPOTENCY_SCOPE } from './idempotency/production-idempotency-scopes.contract.js';
+import { CONFIRM_PURCHASE_INBOUND_IDEMPOTENCY_SCOPE } from './idempotency/production-idempotency-scopes.contract.js';
 import {
   confirmPurchaseInboundResultCodec,
   createPurchaseInboundResultCodec,

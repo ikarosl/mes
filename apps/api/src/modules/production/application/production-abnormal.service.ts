@@ -11,7 +11,7 @@ import type {
 } from '../../../common/audit/audit.types.js';
 import { IdempotencyExecutor } from '../../../common/idempotency/idempotency-executor.js';
 import { IdentityDirectoryService } from '../../identity/public.js';
-import { COMPLETE_REWORK_IDEMPOTENCY_SCOPE } from './idempotency/complete-rework-idempotency.contract.js';
+import { COMPLETE_REWORK_IDEMPOTENCY_SCOPE } from './idempotency/production-idempotency-scopes.contract.js';
 import { completeReworkResultCodec } from './idempotency/production-rework-result.codec.js';
 import { ProductionAbnormalRepository } from './ports/production-abnormal.repository.js';
 

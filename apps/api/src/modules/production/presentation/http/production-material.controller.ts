@@ -12,9 +12,9 @@ import {
   RequirePermission,
 } from '../../../../common/security/auth.decorators.js';
 import { VersionedCommandDto } from '../../../../presentation/http/dto/versioned-command.dto.js';
-import { CREATE_MATERIAL_ALLOCATION_IDEMPOTENCY_SCOPE } from '../../application/idempotency/create-material-allocation-idempotency.contract.js';
-import { CREATE_MATERIAL_OUTBOUND_IDEMPOTENCY_SCOPE } from '../../application/idempotency/create-material-outbound-idempotency.contract.js';
-import { CONFIRM_MATERIAL_OUTBOUND_IDEMPOTENCY_SCOPE } from '../../application/idempotency/confirm-material-outbound-idempotency.contract.js';
+import { CREATE_MATERIAL_ALLOCATION_IDEMPOTENCY_SCOPE } from '../../application/idempotency/production-idempotency-scopes.contract.js';
+import { CREATE_MATERIAL_OUTBOUND_IDEMPOTENCY_SCOPE } from '../../application/idempotency/production-idempotency-scopes.contract.js';
+import { CONFIRM_MATERIAL_OUTBOUND_IDEMPOTENCY_SCOPE } from '../../application/idempotency/production-idempotency-scopes.contract.js';
 import { ProductionMaterialService } from '../../application/production-material.service.js';
 import { ProductionDomainExceptionFilter } from './production-domain-exception.filter.js';
 import {

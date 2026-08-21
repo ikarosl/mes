@@ -36,7 +36,7 @@ export const AuditInApplication = () => SetMetadata(AUDIT_IN_APPLICATION, true);
 
 /**
  * @IdempotentEndpoint 元数据形状：scope 是稳定契约标识（如 `production.batch.create.v1`），
- * 与 application 层幂等契约常量（*-idempotency.contract.ts）一一对应。架构门禁
+ * 与 application 层幂等契约常量（*-idempotency.contract.ts / *-idempotency-scopes.contract.ts）一一对应。架构门禁
  * （scripts/check-api-architecture.mjs）交叉校验「声明启用端点 — scope — executor 接入」：
  * 装饰器实参必须引用契约常量，禁止字面量。
  */

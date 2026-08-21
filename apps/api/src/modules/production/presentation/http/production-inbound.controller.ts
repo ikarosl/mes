@@ -12,8 +12,8 @@ import {
   RequirePermission,
 } from '../../../../common/security/auth.decorators.js';
 import { VersionedCommandDto } from '../../../../presentation/http/dto/versioned-command.dto.js';
-import { CONFIRM_PURCHASE_INBOUND_IDEMPOTENCY_SCOPE } from '../../application/idempotency/confirm-purchase-inbound-idempotency.contract.js';
-import { CREATE_PURCHASE_INBOUND_IDEMPOTENCY_SCOPE } from '../../application/idempotency/create-purchase-inbound-idempotency.contract.js';
+import { CONFIRM_PURCHASE_INBOUND_IDEMPOTENCY_SCOPE } from '../../application/idempotency/production-idempotency-scopes.contract.js';
+import { CREATE_PURCHASE_INBOUND_IDEMPOTENCY_SCOPE } from '../../application/idempotency/production-idempotency-scopes.contract.js';
 import { ProductionInboundService } from '../../application/production-inbound.service.js';
 import { ProductionDomainExceptionFilter } from './production-domain-exception.filter.js';
 import {

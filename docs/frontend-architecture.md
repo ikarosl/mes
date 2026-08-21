@@ -217,7 +217,7 @@ scope 完全由服务端控制，前端不传输、不协商（不发送 `Idempo
 `ClientIntentSnapshot` 用本地意图名 `intentType`（如 `production.batch.create`、
 `production.material-allocation.create`，均不带版本号）区分业务
 意图，只参与签名；服务端 scope（`production.batch.create.v2`）由后端
-`create-batch-idempotency.contract.ts` 独占定义并携带契约版本（见实施方案 §13）。
+`production-idempotency-scopes.contract.ts` 独占定义并携带契约版本（见实施方案 §13）。
 
 当前项目没有表单草稿持久化、待提交恢复日志或按幂等键查询结果的接口。局部 composable 只能在自身及
 KeepAlive 页面实例存活期间保留 K1；浏览器硬刷新会丢失表单和 K1。只把 key 或 payload hash 写入

@@ -8,7 +8,7 @@ import {
   IDEMPOTENT_ENDPOINT,
   REQUIRED_PERMISSION,
 } from '../../../../../common/security/auth.decorators.js';
-import { CONFIRM_SCRAP_SUPPLEMENT_PLAN_IDEMPOTENCY_SCOPE } from '../../../application/idempotency/confirm-scrap-supplement-plan-idempotency.contract.js';
+import { CONFIRM_SCRAP_SUPPLEMENT_PLAN_IDEMPOTENCY_SCOPE } from '../../../application/idempotency/production-idempotency-scopes.contract.js';
 import { ProductionSupplementController } from '../production-supplement.controller.js';
 
 describe('ProductionSupplementController', () => {

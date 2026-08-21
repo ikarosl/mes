@@ -6,7 +6,7 @@ import { IDEMPOTENCY_RESULT_CORRUPT } from '@company/constants';
  * 仅用于前端内容变化判定，不是安全指纹；服务端指纹见实现方案 §6，actorId 等上下文由后端计算。
  *
  * `intentType` 是本地业务意图名（如 `production.batch.create`），不是服务端 scope：scope 由后端
- * `create-batch-idempotency.contract.ts` 独占定义并携带契约版本，客户端只发送 `Idempotency-Key`，
+ * `production-idempotency-scopes.contract.ts` 独占定义并携带契约版本，客户端只发送 `Idempotency-Key`，
  * 不传输、不协商 scope，也不能决定服务端存储命名空间。
  */
 export interface ClientIntentSnapshot {

@@ -215,7 +215,7 @@ describe('checkApiArchitecture', () => {
     const violations = await checkApiArchitecture([
       {
         path: 'apps/api/src/modules/production/application/leak.ts',
-        source: `const legacy = 'production.batch.create.v1';\n`,
+        source: `const legacy = 'production.batch.create.v2';\n`,
       },
     ]);
 
@@ -225,12 +225,12 @@ describe('checkApiArchitecture', () => {
   it('does not flag the contract constant file that defines the scope literal', async () => {
     const violations = await checkApiArchitecture([
       {
-        path: 'apps/api/src/modules/production/application/idempotency/create-batch-idempotency.contract.ts',
-        source: `export const CREATE_BATCH_IDEMPOTENCY_SCOPE = 'production.batch.create.v1' as const;\n`,
+        path: 'apps/api/src/modules/production/application/idempotency/fixture-idempotency-scopes.contract.ts',
+        source: `export const CREATE_BATCH_IDEMPOTENCY_SCOPE = 'production.batch.create.v2' as const;\n`,
       },
     ]);
 
-    expect(flagsPath(violations, 'create-batch-idempotency.contract.ts')).toBe(false);
+    expect(flagsPath(violations, 'fixture-idempotency-scopes.contract.ts')).toBe(false);
   });
 
   it('flags an @IdempotentEndpoint whose scope argument is a string literal', async () => {
@@ -271,7 +271,7 @@ describe('checkApiArchitecture', () => {
       {
         path: 'apps/api/src/modules/production/presentation/http/leak.controller.ts',
         source: [
-          `import { CREATE_BATCH_IDEMPOTENCY_SCOPE } from '../../application/idempotency/create-batch-idempotency.contract.js';`,
+          `import { CREATE_BATCH_IDEMPOTENCY_SCOPE } from '../../application/idempotency/production-idempotency-scopes.contract.js';`,
           `@IdempotentEndpoint({ scope: CREATE_BATCH_IDEMPOTENCY_SCOPE })`,
           `create(@CurrentCommandContext() context: CommandContext) {}`,
         ].join('\n'),
@@ -297,7 +297,7 @@ describe('checkApiArchitecture', () => {
       {
         path: 'apps/api/src/modules/production/presentation/http/compliant.controller.ts',
         source: [
-          `import { CREATE_BATCH_IDEMPOTENCY_SCOPE } from '../../application/idempotency/create-batch-idempotency.contract.js';`,
+          `import { CREATE_BATCH_IDEMPOTENCY_SCOPE } from '../../application/idempotency/production-idempotency-scopes.contract.js';`,
           `import { CurrentIdempotentCommandContext } from '../../../../../common/security/auth.decorators.js';`,
           `@IdempotentEndpoint({ scope: CREATE_BATCH_IDEMPOTENCY_SCOPE })`,
           `create(@CurrentIdempotentCommandContext() context: unknown) {}`,
@@ -326,7 +326,7 @@ describe('checkApiArchitecture', () => {
       {
         path: 'apps/api/src/modules/production/presentation/http/leak.controller.ts',
         source: [
-          `import { NOT_THE_SCOPE } from '../../application/idempotency/create-batch-idempotency.contract.js';`,
+          `import { NOT_THE_SCOPE } from '../../application/idempotency/production-idempotency-scopes.contract.js';`,
           `@IdempotentEndpoint({ scope: NOT_THE_SCOPE })`,
         ].join('\n'),
       },

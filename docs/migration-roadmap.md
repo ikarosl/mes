@@ -15,7 +15,7 @@
 ## 阶段 2：数据与基础设施
 
 - 建立 baseline migration、迁移状态检查、fresh/upgrade CI。
-- 实现 StoragePort 的 local + S3 compatible adapter。
+- 实现统一的 S3 标准对象存储接口（本地 AIStor/MinIO，生产环境兼容 S3），不再保留 local 文件适配器。
 - 实现 CachePort/LockPort 的 Noop + Redis adapter，但默认关闭 Redis。
 - 建立备份恢复与迁移失败 runbook。
 
@@ -25,7 +25,7 @@
 
 推荐顺序：identity -> product/process -> production -> inventory -> quality -> traceability。每个模块均执行：契约冻结、特征测试、数据迁移、代码迁移、双写/影子读（必要时）、验收、切流、旧入口下线。
 
-当前进度：identity 已完成认证、RBAC 和操作日志迁移；product/process 已完成产品主数据、技术文件、工序和工艺路线的初期迁移。Production 已落地工单、生产批次、工序快照、物料需求及不可变报工事实表；报工 application/API/管理端仍未开放。下一步先闭合报工事务、幂等、审计和上下工序约束，再迁移物料分配与领料出库。通用 inventory、quality、traceability 仍未进入后端迁移阶段。
+当前进度：identity 已完成认证、RBAC 和操作日志迁移；product/process 已完成产品主数据、技术文件、工序和工艺路线的迁移；Production 已落地工单、生产批次、工序派工/开工/报工/追溯、异常返工、工序报废补料、生产物料需求、分配/领料出库、外购物料窄入库、生产退料和现有库存批次盘点链路。通用 inventory 的其他出入库/库存报废、quality 和全链路 traceability 仍未进入后端迁移阶段。
 
 ## 阶段 4：上线治理
 

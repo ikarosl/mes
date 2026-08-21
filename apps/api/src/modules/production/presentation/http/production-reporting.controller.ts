@@ -11,8 +11,8 @@ import {
   IdempotentEndpoint,
   RequirePermission,
 } from '../../../../common/security/auth.decorators.js';
-import { CORRECT_STEP_REPORT_IDEMPOTENCY_SCOPE } from '../../application/idempotency/correct-step-report-idempotency.contract.js';
-import { CREATE_STEP_REPORT_IDEMPOTENCY_SCOPE } from '../../application/idempotency/create-step-report-idempotency.contract.js';
+import { CORRECT_STEP_REPORT_IDEMPOTENCY_SCOPE } from '../../application/idempotency/production-idempotency-scopes.contract.js';
+import { CREATE_STEP_REPORT_IDEMPOTENCY_SCOPE } from '../../application/idempotency/production-idempotency-scopes.contract.js';
 import { ProductionReportingService } from '../../application/production-reporting.service.js';
 import { ProductionDomainExceptionFilter } from './production-domain-exception.filter.js';
 import {

@@ -12,8 +12,8 @@ import type {
   IdempotencyResultCodec,
   JsonValue,
 } from '../../../../common/idempotency/idempotency-executor.js';
-import { CORRECT_STEP_REPORT_IDEMPOTENCY_SCOPE } from './correct-step-report-idempotency.contract.js';
-import { CREATE_STEP_REPORT_IDEMPOTENCY_SCOPE } from './create-step-report-idempotency.contract.js';
+import { CORRECT_STEP_REPORT_IDEMPOTENCY_SCOPE } from './production-idempotency-scopes.contract.js';
+import { CREATE_STEP_REPORT_IDEMPOTENCY_SCOPE } from './production-idempotency-scopes.contract.js';
 
 const reportSchema = z
   .object({

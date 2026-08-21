@@ -11,7 +11,7 @@ import {
   IdempotentEndpoint,
   RequirePermission,
 } from '../../../../common/security/auth.decorators.js';
-import { COMPLETE_REWORK_IDEMPOTENCY_SCOPE } from '../../application/idempotency/complete-rework-idempotency.contract.js';
+import { COMPLETE_REWORK_IDEMPOTENCY_SCOPE } from '../../application/idempotency/production-idempotency-scopes.contract.js';
 import { ProductionAbnormalService } from '../../application/production-abnormal.service.js';
 import { VersionedCommandDto } from '../../../../presentation/http/dto/versioned-command.dto.js';
 import { ProductionDomainExceptionFilter } from './production-domain-exception.filter.js';

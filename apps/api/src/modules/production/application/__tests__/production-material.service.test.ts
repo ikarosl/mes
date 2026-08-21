@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ProductionMaterialService } from '../production-material.service.js';
-import { CREATE_MATERIAL_ALLOCATION_IDEMPOTENCY_SCOPE } from '../idempotency/create-material-allocation-idempotency.contract.js';
-import { CREATE_MATERIAL_OUTBOUND_IDEMPOTENCY_SCOPE } from '../idempotency/create-material-outbound-idempotency.contract.js';
+import { CREATE_MATERIAL_ALLOCATION_IDEMPOTENCY_SCOPE } from '../idempotency/production-idempotency-scopes.contract.js';
+import { CREATE_MATERIAL_OUTBOUND_IDEMPOTENCY_SCOPE } from '../idempotency/production-idempotency-scopes.contract.js';
 
 const context = {
   actorId: '7',

@@ -5,7 +5,7 @@ import type {
   IdempotentCommandContext,
 } from '../../../../common/audit/audit.types.js';
 import { ProductionService } from '../production.service.js';
-import { CREATE_BATCH_IDEMPOTENCY_SCOPE } from '../idempotency/create-batch-idempotency.contract.js';
+import { CREATE_BATCH_IDEMPOTENCY_SCOPE } from '../idempotency/production-idempotency-scopes.contract.js';
 
 const audit: CommandContext = {
   actorId: '1',

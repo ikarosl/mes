@@ -47,7 +47,7 @@ API 包装函数必须接收调用方传入的键，禁止在每次调用内部�
 - scope 完全由服务端控制：客户端只发送 `Idempotency-Key`，不传输、不协商 scope，也不能决定服务端存储
   命名空间。项目不增加 `Idempotency-Scope`、`X-Api-Version`、`X-Idempotency-Version` 等头，也不做前端
   构建版本协商；scope 是后端唯一事实来源（createBatch 见
-  `apps/api/src/modules/production/application/idempotency/create-batch-idempotency.contract.ts`），前端只
+  `apps/api/src/modules/production/application/idempotency/production-idempotency-scopes.contract.ts`），前端只
   用本地意图名（`intentType`）区分业务意图，不带版本、不发送给后端（见实施方案 §13）；
 - 键绑定“一次尚未确认结果的提交意图”，不绑定某次点击，也不简单绑定弹窗是否打开；第一次正式提交时
   才生成 K1，打开弹窗或编辑草稿本身不生成键；12 小时重放保证窗口（前端 `firstAttemptAt`）也从这次点击
@@ -235,7 +235,7 @@ createBatch 试点接线进一步落实「重放返回原结果」的完整语�
 | 冲销报工 | 按原事实追加一条全量冲销；目标报工是唯一自然业务键 | 不发送 HTTP 幂等键；`UNIQUE(reversal_of_report_id)`、批次/工序状态和 `version` 提供天然幂等与并发保护，重放返回已存在的冲销事实 |
 | 更正报工 | 在单个事务内追加全量冲销和替代事实；服务端单号不可复现 | 已启用，scope `production.step-report.correct.v3`；v3 按更正后有效总量校验当前放行额度；冲销、替代、异常待处置、工序状态、成功审计和幂等结果同事务 |
 | 完成返工 | 追加来源唯一的报工事实，返工再次异常还会新增待处置记录 | 已启用，scope `production.rework.complete.v1`；返工单、报工、工序状态、成功审计和幂等结果同事务 |
-| 批准报废补料 | 同时追加报废、补料单/明细和补料需求事实 | 已启用，scope `production.abnormal.scrap-supplement.v1`；处置审批、全部事实、成功审计和幂等结果同事务 |
+| 批准报废补料 | 同时追加报废、补料单/明细和补料需求事实 | 已启用，scope `production.abnormal.scrap-supplement-plan.confirm.v1`；处置审批、全部事实、成功审计和幂等结果同事务 |
 | 派工/撤回/改派 | 更新既有工序；`stepId + version` | 使用状态机与 version；不发送 `Idempotency-Key` |
 | 员工开工 | 工序与首工序批次状态转换；`stepId + version` | 使用状态短路与 version；重复请求返回当前等价结果；不发送键 |
 | 员工完成无需报工工序 | `doing -> completed`；`stepId + version` | 仅当前负责人可执行；状态短路与 version 天然幂等；不发送键 |

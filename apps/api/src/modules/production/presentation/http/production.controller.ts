@@ -11,7 +11,7 @@ import {
   IdempotentEndpoint,
   RequirePermission,
 } from '../../../../common/security/auth.decorators.js';
-import { CREATE_BATCH_IDEMPOTENCY_SCOPE } from '../../application/idempotency/create-batch-idempotency.contract.js';
+import { CREATE_BATCH_IDEMPOTENCY_SCOPE } from '../../application/idempotency/production-idempotency-scopes.contract.js';
 import { ProductionService } from '../../application/production.service.js';
 import {
   BatchStepRecordParamDto,
@@ -118,7 +118,7 @@ export class ProductionController {
   @Post('work-orders/:workOrderId/batches')
   @RequirePermission(PERMISSIONS.production.batches.create)
   @AuditInApplication()
-  // scope 引用 application 层幂等契约常量（唯一事实来源，见 create-batch-idempotency.contract.ts）。
+  // scope 引用 application 层幂等契约常量（唯一事实来源，见 production-idempotency-scopes.contract.ts）。
   // 本控制器已 import application 层 ProductionService，presentation→application 是既有合规依赖方向，
   // 模块内直接 import 契约文件即可，不涉及跨模块 public.ts 约束。
   @IdempotentEndpoint({ scope: CREATE_BATCH_IDEMPOTENCY_SCOPE })

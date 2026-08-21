@@ -13,8 +13,8 @@ import {
 } from '../../../../common/security/auth.decorators.js';
 import { VersionedCommandDto } from '../../../../presentation/http/dto/versioned-command.dto.js';
 import { ProductionInventoryService } from '../../application/production-inventory.service.js';
-import { CONFIRM_MATERIAL_LOSS_IDEMPOTENCY_SCOPE } from '../../application/idempotency/confirm-material-loss-idempotency.contract.js';
-import { CREATE_MATERIAL_LOSS_IDEMPOTENCY_SCOPE } from '../../application/idempotency/create-material-loss-idempotency.contract.js';
+import { CONFIRM_MATERIAL_LOSS_IDEMPOTENCY_SCOPE } from '../../application/idempotency/production-idempotency-scopes.contract.js';
+import { CREATE_MATERIAL_LOSS_IDEMPOTENCY_SCOPE } from '../../application/idempotency/production-idempotency-scopes.contract.js';
 import { ProductionDomainExceptionFilter } from './production-domain-exception.filter.js';
 import {
   CreateReturnOrderDto,

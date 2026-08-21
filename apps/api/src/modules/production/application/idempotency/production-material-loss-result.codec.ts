@@ -4,8 +4,8 @@ import type {
   IdempotencyResultCodec,
   JsonValue,
 } from '../../../../common/idempotency/idempotency-executor.js';
-import { CONFIRM_MATERIAL_LOSS_IDEMPOTENCY_SCOPE } from './confirm-material-loss-idempotency.contract.js';
-import { CREATE_MATERIAL_LOSS_IDEMPOTENCY_SCOPE } from './create-material-loss-idempotency.contract.js';
+import { CONFIRM_MATERIAL_LOSS_IDEMPOTENCY_SCOPE } from './production-idempotency-scopes.contract.js';
+import { CREATE_MATERIAL_LOSS_IDEMPOTENCY_SCOPE } from './production-idempotency-scopes.contract.js';
 
 const schema: z.ZodType<MaterialLossItem> = z
   .object({

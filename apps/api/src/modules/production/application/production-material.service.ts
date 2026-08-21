@@ -13,9 +13,9 @@ import type {
 import { IdempotencyExecutor } from '../../../common/idempotency/idempotency-executor.js';
 import { IdentityDirectoryService } from '../../identity/public.js';
 import { ProductSnapshotQuery } from '../../product/public.js';
-import { CREATE_MATERIAL_ALLOCATION_IDEMPOTENCY_SCOPE } from './idempotency/create-material-allocation-idempotency.contract.js';
-import { CREATE_MATERIAL_OUTBOUND_IDEMPOTENCY_SCOPE } from './idempotency/create-material-outbound-idempotency.contract.js';
-import { CONFIRM_MATERIAL_OUTBOUND_IDEMPOTENCY_SCOPE } from './idempotency/confirm-material-outbound-idempotency.contract.js';
+import { CREATE_MATERIAL_ALLOCATION_IDEMPOTENCY_SCOPE } from './idempotency/production-idempotency-scopes.contract.js';
+import { CREATE_MATERIAL_OUTBOUND_IDEMPOTENCY_SCOPE } from './idempotency/production-idempotency-scopes.contract.js';
+import { CONFIRM_MATERIAL_OUTBOUND_IDEMPOTENCY_SCOPE } from './idempotency/production-idempotency-scopes.contract.js';
 import {
   materialAllocationResultCodec,
   materialOutboundResultCodec,

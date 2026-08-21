@@ -6,8 +6,8 @@ import {
   IDEMPOTENT_ENDPOINT,
   REQUIRED_PERMISSION,
 } from '../../../../../common/security/auth.decorators.js';
-import { CREATE_STEP_REPORT_IDEMPOTENCY_SCOPE } from '../../../application/idempotency/create-step-report-idempotency.contract.js';
-import { CORRECT_STEP_REPORT_IDEMPOTENCY_SCOPE } from '../../../application/idempotency/correct-step-report-idempotency.contract.js';
+import { CREATE_STEP_REPORT_IDEMPOTENCY_SCOPE } from '../../../application/idempotency/production-idempotency-scopes.contract.js';
+import { CORRECT_STEP_REPORT_IDEMPOTENCY_SCOPE } from '../../../application/idempotency/production-idempotency-scopes.contract.js';
 import { ProductionReportingController } from '../production-reporting.controller.js';
 
 describe('ProductionReportingController contract', () => {
