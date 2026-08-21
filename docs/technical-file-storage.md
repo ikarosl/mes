@@ -34,7 +34,7 @@ Compose 固定使用 `quay.io/minio/aistor/minio:RELEASE.2026-04-14T21-32-45Z`�
 pnpm infra:up
 ```
 
-Windows 开发环境的默认脚本通过 `wsl docker compose` 使用 Ubuntu WSL 内的 Docker Engine；如果改用 Docker Desktop，则执行 `pnpm infra:up:desktop`。启动命令会运行 MySQL 和对象存储，等待 S3 服务可用，并自动保证 `S3_BUCKET` 存在。对象数据写入命名卷 `minio-data`，容器重建不会删除数据；`pnpm infra:down` 也不会删除卷。不要使用 `docker compose down -v`，除非明确要销毁全部本地对象。
+本地开发统一使用根目录 `pnpm infra:up`，不再区分 WSL 与 Desktop。该命令通过 `docker compose` 启动 MySQL（容器名 `dev_test_sql`，宿主 `3307` 映射容器 `3306`）和对象存储（容器名 `dev_test_minio`），随后自动保证 `S3_BUCKET` 存在。MySQL 数据库名与 `.env` 的 `DB_NAME` 一致。对象数据写入命名卷，容器重建不会删除数据；`pnpm infra:down` 也不会删除卷。不要使用 `docker compose down -v`，除非明确要销毁全部本地对象。
 
 Console 地址为 `http://127.0.0.1:9001`。开发环境可以在 Console 中管理对象和 Bucket，不要求使用命令行删除。正在被应用使用的 Bucket 不应日常删除；如确需删除，应先确认没有业务引用并清空对象，再从 Console 删除。当前项目不自动开启 Bucket 版本控制，避免删除时还需额外清理历史版本和删除标记。
 
