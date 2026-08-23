@@ -49,8 +49,8 @@
         >
           <el-input-number
             v-model="form.plannedQuantity"
-            :min="0.0001"
-            :precision="4"
+            :min="1"
+            :precision="0"
             :step="1"
           />
         </el-form-item>
@@ -228,7 +228,12 @@ const setForm = (row: WorkOrderItem): void => {
 };
 
 const handleSubmit = (): void => {
-  if (!form.workOrderNo.trim() || !form.productId || form.plannedQuantity <= 0) {
+  if (
+    !form.workOrderNo.trim() ||
+    !form.productId ||
+    !Number.isInteger(form.plannedQuantity) ||
+    form.plannedQuantity <= 0
+  ) {
     EMessage.warning('请填写工单号、产品和计划数量');
     return;
   }

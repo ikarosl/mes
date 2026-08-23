@@ -5,6 +5,7 @@ import type {
   ProductionExecutionBatchSummary,
 } from '@company/contracts';
 import { BATCH_SELECT, mapBatch, type BatchRow } from './mysql-production.shared.js';
+import { fixedIntegerQuantity } from '../domain/integer-quantity.js';
 
 type ExecutionBatchRow = BatchRow & {
   completed_step_count: number;
@@ -53,7 +54,7 @@ export const selectExecutionBatchSummaries = async (
       ...mapBatch(row),
       completedStepCount: Number(row.completed_step_count),
       totalStepCount: Number(row.total_step_count),
-      effectiveAbnormalQuantity: Number(row.effective_abnormal).toFixed(4),
+      effectiveAbnormalQuantity: fixedIntegerQuantity(row.effective_abnormal),
       pendingAbnormalCount: Number(row.pending_abnormal_count),
     })),
     total: Number(count?.total ?? 0),

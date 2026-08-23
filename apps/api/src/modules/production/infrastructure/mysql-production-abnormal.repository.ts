@@ -16,6 +16,7 @@ import { toBeijingISOString } from '../../../common/time/beijing-time.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
 import { ProductionAbnormalRepository } from '../application/ports/production-abnormal.repository.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
+import { integerQuantity } from '../domain/integer-quantity.js';
 import { isRequiredNormalCompleted } from '../domain/production-reporting.policy.js';
 import { requireReworkCompletionQuantities } from '../domain/production-rework.policy.js';
 import { findBatch } from './mysql-production.shared.js';
@@ -205,7 +206,7 @@ export class MysqlProductionAbnormalRepository extends ProductionAbnormalReposit
       );
       const step = await selectStepAggregate(connection, rework.stepRecordId);
       const nextNormal = add(step.effective_normal, payload.normalQuantity);
-      if (Number(nextNormal) > Number(batch.planned_quantity) + 0.0000001)
+      if (integerQuantity(nextNormal) > integerQuantity(batch.planned_quantity))
         throw new ProductionDomainError(
           'STEP_REPORT_QUANTITY_EXCEEDED',
           '返工正常数量超过工序计划量',
@@ -296,7 +297,7 @@ const requireEffectiveAbnormalSource = (source: DispositionSourceRow): void => {
   if (
     source.report_type !== 'normal' ||
     !source.is_effective ||
-    Number(source.abnormal_quantity) <= 0
+    integerQuantity(source.abnormal_quantity) <= 0
   )
     throw new ProductionDomainError('INVALID_STATE', '来源异常报工已失效或没有异常数量');
 };

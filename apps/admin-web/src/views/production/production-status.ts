@@ -51,11 +51,11 @@ export const batchStatusMeta = (status: ProductionBatchStatus): StatusMeta<Produ
 export const stepStatusMeta = (status: BatchStepStatus): StatusMeta<BatchStepStatus> =>
   STEP_STATUS_META.find((item) => item.value === status) ?? STEP_STATUS_META[0];
 
-/** 数量格式化：千分位分隔，最多保留 4 位小数；非法值显示 `-` */
+/** 整数数量格式化：千分位分隔；非法值显示 `-` */
 export const formatQuantity = (value: string | number | null | undefined): string => {
   const amount = Number(value ?? 0);
   return Number.isFinite(amount)
-    ? amount.toLocaleString('zh-CN', { minimumFractionDigits: 0, maximumFractionDigits: 4 })
+    ? amount.toLocaleString('zh-CN', { maximumFractionDigits: 0 })
     : '-';
 };
 

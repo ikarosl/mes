@@ -1,4 +1,5 @@
 import type { BatchStepStatus } from '@company/contracts';
+import { fixedIntegerQuantity, integerQuantity } from '../domain/integer-quantity.js';
 
 type PreviousStepQuantity = {
   need_record_snapshot: number;
@@ -6,11 +7,11 @@ type PreviousStepQuantity = {
   effective_normal: string;
 };
 
-export const fixed = (value: number | string): string => Number(value).toFixed(4);
+export const fixed = fixedIntegerQuantity;
 export const add = (left: number | string, right: number | string): string =>
-  fixed(Number(left) + Number(right));
+  fixed(integerQuantity(left) + integerQuantity(right));
 export const subtract = (left: number | string, right: number | string): string =>
-  fixed(Number(left) - Number(right));
+  fixed(integerQuantity(left) - integerQuantity(right));
 
 export const releasedQuantity = (
   plannedQuantity: string,

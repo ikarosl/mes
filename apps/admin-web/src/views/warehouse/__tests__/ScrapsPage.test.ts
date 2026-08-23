@@ -105,6 +105,8 @@ describe('ScrapsPage', () => {
 
     const quantityInput = wrapper.find('input[type="number"]');
     expect(quantityInput.exists()).toBe(true);
+    expect(quantityInput.attributes('min')).toBe('1');
+    expect(quantityInput.attributes('step')).toBe('1');
     expect(Number(quantityInput.attributes('max'))).toBeGreaterThanOrEqual(
       Number(quantityInput.attributes('min')),
     );

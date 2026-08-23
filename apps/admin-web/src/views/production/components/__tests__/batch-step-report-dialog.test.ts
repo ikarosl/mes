@@ -137,7 +137,7 @@ describe('BatchStepReportDialog', () => {
       form: { quantity: number; abnormalOrigin: string | null };
     };
     // 超过本次可报数量（available = 2）不可提交
-    vm.form.quantity = 2.5;
+    vm.form.quantity = 3;
     vm.form.abnormalOrigin = 'current_step';
     expect(vm.canSubmit).toBe(false);
     vm.form.quantity = 2;

@@ -7,11 +7,11 @@ import {
   IsIn,
   IsInt,
   IsNotEmpty,
-  IsNumber,
   IsNumberString,
   IsOptional,
   IsString,
   MaxLength,
+  Max,
   Min,
   ValidateIf,
   ValidateNested,
@@ -105,7 +105,7 @@ export class ProductDto {
 }
 export class ProductMaterialDto {
   @IsNumberString() materialProductId!: string;
-  @IsNumber() @Min(0.0001) quantityPerUnit!: number;
+  @Type(() => Number) @IsInt() @Min(1) @Max(99_999_999) quantityPerUnit!: number;
   @IsString() @IsNotEmpty() @MaxLength(20) unit!: string;
   @IsBoolean() isKeyMaterial!: boolean;
   @IsBoolean() needBatchRecord!: boolean;

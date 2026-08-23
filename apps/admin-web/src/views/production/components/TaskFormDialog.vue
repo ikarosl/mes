@@ -92,9 +92,9 @@
       >
         <el-input-number
           v-model="form.plannedQuantity"
-          :min="0.0001"
+          :min="1"
           :max="taskQuantityMax ?? undefined"
-          :precision="4"
+          :precision="0"
           :step="1"
         />
       </el-form-item>
@@ -391,7 +391,7 @@ const handleWorkOrderChange = (workOrderId: string): void => {
   resetStepPreview();
   if (!order) return;
   form.plannedQuantity = Number(order.remainingQuantity);
-  if (form.plannedQuantity <= 0) {
+  if (!Number.isInteger(form.plannedQuantity) || form.plannedQuantity <= 0) {
     EMessage.warning('该工单已无可分配数量');
   }
   if (productSource.status.value === 'ready' && routeSource.status.value === 'ready') {
@@ -433,7 +433,11 @@ const setForm = (row: {
 };
 
 const handleSubmit = (): void => {
-  if ((!props.editingTaskId && !form.workOrderId) || form.plannedQuantity <= 0) {
+  if (
+    (!props.editingTaskId && !form.workOrderId) ||
+    !Number.isInteger(form.plannedQuantity) ||
+    form.plannedQuantity <= 0
+  ) {
     EMessage.warning('请选择所属工单并填写计划数量');
     return;
   }

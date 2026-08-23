@@ -28,6 +28,7 @@ import { toBeijingISOString } from '../../../common/time/beijing-time.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
 import { ProductionInventoryRepository } from '../application/ports/production-inventory.repository.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
+import { fixedIntegerQuantity, integerQuantity } from '../domain/integer-quantity.js';
 
 type Executor = Pool | PoolConnection;
 
@@ -272,7 +273,7 @@ export class MysqlProductionInventoryRepository extends ProductionInventoryRepos
       const candidate = candidates.find(
         (row) => String(row.allocation_id) === payload.allocationId,
       );
-      if (!candidate || payload.scrapQuantity > materialLossAvailable(candidate) + 0.00001)
+      if (!candidate || payload.scrapQuantity > materialLossAvailable(candidate))
         throw new ProductionDomainError(
           'SCRAP_QUANTITY_EXCEEDED',
           '损耗数量超过当前已确认领料的可申报数量，请刷新后重试',
@@ -331,7 +332,7 @@ export class MysqlProductionInventoryRepository extends ProductionInventoryRepos
         String(scrap.production_batch_id),
       );
       const candidate = candidates.find((row) => row.allocation_id === scrap.allocation_id);
-      if (!candidate || materialLossAvailable(candidate) < -0.00001)
+      if (!candidate || materialLossAvailable(candidate) < 0)
         throw new ProductionDomainError(
           'SCRAP_QUANTITY_EXCEEDED',
           '当前领料、退料或损耗占用已变化，请刷新后重试',
@@ -518,7 +519,9 @@ export class MysqlProductionInventoryRepository extends ProductionInventoryRepos
   async listReturnCandidates(batchId: string): Promise<ReturnOrderCandidateItem[]> {
     const rows = await this.findReturnCandidates(this.pool, batchId);
     return rows
-      .filter((row) => Number(row.confirmed_quantity) > Number(row.occupied_quantity))
+      .filter(
+        (row) => integerQuantity(row.confirmed_quantity) > integerQuantity(row.occupied_quantity),
+      )
       .map(mapReturnCandidate);
   }
 
@@ -531,9 +534,10 @@ export class MysqlProductionInventoryRepository extends ProductionInventoryRepos
       for (const line of payload.details) {
         const candidate = candidates.get(line.allocationId);
         const remaining = candidate
-          ? Number(candidate.confirmed_quantity) - Number(candidate.occupied_quantity)
+          ? integerQuantity(candidate.confirmed_quantity) -
+            integerQuantity(candidate.occupied_quantity)
           : 0;
-        if (!candidate || line.returnQuantity <= 0 || line.returnQuantity > remaining + 0.00001) {
+        if (!candidate || line.returnQuantity <= 0 || line.returnQuantity > remaining) {
           throw new ProductionDomainError(
             'RETURN_QUANTITY_EXCEEDED',
             '退料数量超过当前已确认领料的可退数量，请刷新后重试',
@@ -622,7 +626,7 @@ export class MysqlProductionInventoryRepository extends ProductionInventoryRepos
               WHERE rd.allocation_id=? AND ro.status IN ('pending','returned')),0) occupied`,
           [line.allocation_id, line.allocation_id],
         );
-        if (Number(quantity?.confirmed ?? 0) + 0.00001 < Number(quantity?.occupied ?? 0)) {
+        if (integerQuantity(quantity?.confirmed ?? 0) < integerQuantity(quantity?.occupied ?? 0)) {
           throw new ProductionDomainError(
             'RETURN_QUANTITY_EXCEEDED',
             '退料数量超过当前已确认领料的可退数量，请刷新后重试',
@@ -800,7 +804,7 @@ export class MysqlProductionInventoryRepository extends ProductionInventoryRepos
           [line.stockStatus, line.itemBatchId],
         );
         if (!target) throw new ProductionDomainError('NOT_FOUND', '库存批次不存在');
-        if (Number(target.system_quantity) <= 0)
+        if (integerQuantity(target.system_quantity) <= 0)
           throw new ProductionDomainError('CONFLICT', '所选库存批次或状态已无正库存，请刷新后重试');
         await db.execute(
           `INSERT INTO stock_check_detail
@@ -902,7 +906,7 @@ export class MysqlProductionInventoryRepository extends ProductionInventoryRepos
            WHERE item_id=? AND batch_id=? AND stock_status=?`,
           [line.item_id, line.batch_id, line.stock_status],
         );
-        if (Math.abs(Number(balance?.quantity ?? 0) - Number(line.system_quantity)) > 0.00001) {
+        if (integerQuantity(balance?.quantity ?? 0) !== integerQuantity(line.system_quantity)) {
           throw new ProductionDomainError(
             'STOCK_CHECK_SNAPSHOT_CHANGED',
             '盘点期间库存已变化，本单不能完成，请取消后重新创建盘点单',
@@ -910,8 +914,9 @@ export class MysqlProductionInventoryRepository extends ProductionInventoryRepos
         }
       }
       for (const line of details) {
-        const difference = Number(line.actual_quantity) - Number(line.system_quantity);
-        if (Math.abs(difference) > 0.00001) {
+        const difference =
+          integerQuantity(line.actual_quantity!) - integerQuantity(line.system_quantity);
+        if (difference !== 0) {
           await db.execute(
             `INSERT INTO inventory_transaction
              (item_id,batch_id,transaction_type,quantity,unit_snapshot,stock_status,
@@ -1164,16 +1169,18 @@ const mapReturnCandidate = (row: ReturnCandidateRow): ReturnOrderCandidateItem =
   itemName: row.product_name_snapshot,
   itemBatchId: String(row.batch_id),
   batchCode: row.batch_code,
-  confirmedOutboundQuantity: decimal(Number(row.confirmed_quantity)),
-  occupiedReturnQuantity: decimal(Number(row.occupied_quantity)),
-  returnableQuantity: decimal(Number(row.confirmed_quantity) - Number(row.occupied_quantity)),
+  confirmedOutboundQuantity: decimal(integerQuantity(row.confirmed_quantity)),
+  occupiedReturnQuantity: decimal(integerQuantity(row.occupied_quantity)),
+  returnableQuantity: decimal(
+    integerQuantity(row.confirmed_quantity) - integerQuantity(row.occupied_quantity),
+  ),
   unit: row.unit_snapshot,
 });
 
 const materialLossAvailable = (row: MaterialLossCandidateRow) =>
-  Number(row.confirmed_quantity) -
-  Number(row.occupied_return_quantity) -
-  Number(row.occupied_loss_quantity);
+  integerQuantity(row.confirmed_quantity) -
+  integerQuantity(row.occupied_return_quantity) -
+  integerQuantity(row.occupied_loss_quantity);
 
 const mapMaterialLossCandidate = (row: MaterialLossCandidateRow): MaterialLossCandidateItem => ({
   allocationId: String(row.allocation_id),
@@ -1323,7 +1330,7 @@ const pagination = (query: { page?: number; pageSize?: number }) => {
 };
 const placeholders = (values: { length: number }) => Array(values.length).fill('?').join(',');
 const numericSort = (a: string, b: string) => Number(a) - Number(b);
-const decimal = (value: number) => value.toFixed(4);
+const decimal = fixedIntegerQuantity;
 const iso = (value: Date | null) => (value ? toBeijingISOString(value) : null);
 const businessNo = (prefix: string) =>
   `${prefix}-${new Date().toISOString().slice(0, 10).replaceAll('-', '')}-${randomUUID().slice(0, 8).toUpperCase()}`;

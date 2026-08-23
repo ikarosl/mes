@@ -462,8 +462,8 @@ describe('ProductionSupplementService', () => {
         makeIdempotency() as never,
       );
 
-      // 0、负数、超过四位小数在此层均不被拦截：数量规则（@Min(0.0001) 与 maxDecimalPlaces: 4）
-      // 由 SaveProductionScrapSupplementPlanDto 在 presentation 层强制，service 只做候选范围校验
+      // presentation DTO 强制 1..99999999 整数，数据库再以 CHECK 兜底；application
+      // service 只做候选范围校验，不重复 DTO 的形状和值域校验。
       for (const supplementQuantity of [0, -1, 1.23456]) {
         await service.savePlan(
           '8',

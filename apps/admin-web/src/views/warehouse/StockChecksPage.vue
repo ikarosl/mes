@@ -354,7 +354,8 @@
                 v-if="detailEditable"
                 v-model="row.actualQuantity"
                 :min="0"
-                :precision="4"
+                :step="1"
+                :precision="0"
                 @change="detailDirty = true"
               />
               <span v-else>{{
@@ -483,7 +484,14 @@ const detailEditable = computed(
   () => detail.value?.status === 'pending' || detail.value?.status === 'counting',
 );
 const allCounted = computed(
-  () => countRows.value.length > 0 && countRows.value.every((row) => row.actualQuantity !== null),
+  () =>
+    countRows.value.length > 0 &&
+    countRows.value.every(
+      (row) =>
+        row.actualQuantity !== null &&
+        Number.isInteger(row.actualQuantity) &&
+        row.actualQuantity >= 0,
+    ),
 );
 
 async function loadRows() {
@@ -658,7 +666,7 @@ async function cancelOrder(row: StockCheckOrderItem) {
 function localResult(row: CountRow): StockCheckResult | null {
   if (row.actualQuantity === null) return null;
   const difference = row.actualQuantity - Number(row.systemQuantity);
-  return Math.abs(difference) < 0.00001 ? 'matched' : difference > 0 ? 'surplus' : 'shortage';
+  return difference === 0 ? 'matched' : difference > 0 ? 'surplus' : 'shortage';
 }
 function differenceText(row: CountRow) {
   if (row.actualQuantity === null) return '-';
@@ -691,10 +699,7 @@ function pageChanged(value: number) {
   query.page = value;
   void loadRows();
 }
-const quantity = (value: string | number) =>
-  Number(value)
-    .toFixed(4)
-    .replace(/\.?0+$/, '');
+const quantity = (value: string | number) => Number(value).toFixed(0);
 const statusTag = (status: StockCheckStatus) =>
   status === 'completed'
     ? 'success'

@@ -24,6 +24,7 @@ import {
   requireReportWithinReleased,
   requireReportQuantities,
 } from '../domain/production-reporting.policy.js';
+import { integerQuantity } from '../domain/integer-quantity.js';
 import {
   calculateRouteStepQuantities,
   type RouteQuantityStep,
@@ -213,8 +214,8 @@ export class MysqlProductionReportingRepository extends ProductionReportingRepos
         batchId,
         stepRecordId,
         reportType: 'reversal',
-        normalQuantity: Number(target.normal_quantity),
-        abnormalQuantity: Number(target.abnormal_quantity),
+        normalQuantity: integerQuantity(target.normal_quantity),
+        abnormalQuantity: integerQuantity(target.abnormal_quantity),
         abnormalOrigin: target.abnormal_origin,
         unit: target.unit_snapshot,
         remark: payload.reason,
@@ -276,8 +277,8 @@ export class MysqlProductionReportingRepository extends ProductionReportingRepos
         batchId,
         stepRecordId,
         reportType: 'reversal',
-        normalQuantity: Number(target.normal_quantity),
-        abnormalQuantity: Number(target.abnormal_quantity),
+        normalQuantity: integerQuantity(target.normal_quantity),
+        abnormalQuantity: integerQuantity(target.abnormal_quantity),
         abnormalOrigin: target.abnormal_origin,
         unit: target.unit_snapshot,
         remark: payload.reason,

@@ -24,9 +24,9 @@
       >
         <el-input-number
           v-model="form.plannedQuantity"
-          :min="0.0001"
+          :min="1"
           :max="maxQuantity ?? undefined"
-          :precision="4"
+          :precision="0"
           :step="1"
         />
       </el-form-item>
@@ -205,8 +205,8 @@ const setForm = (row: ProductionBatchItem): void => {
 };
 
 const handleSubmit = (): void => {
-  if (form.plannedQuantity <= 0) {
-    EMessage.warning('请填写生产批次数量');
+  if (!Number.isInteger(form.plannedQuantity) || form.plannedQuantity <= 0) {
+    EMessage.warning('生产批次数量必须是大于零的整数');
     return;
   }
   if (props.maxQuantity !== null && form.plannedQuantity > props.maxQuantity) {

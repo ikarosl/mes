@@ -106,7 +106,7 @@ describe('MysqlProductionBatchRepository persistence', () => {
     expect(connection.rollback).toHaveBeenCalledOnce();
   });
 
-  it('writes material-demand snapshots, stable idempotency keys and four-place quantities', async () => {
+  it('writes integer material-demand snapshots and stable idempotency keys', async () => {
     const connection = transactionConnection();
     connection.query
       .mockResolvedValueOnce([[batchRow], []])
@@ -126,7 +126,7 @@ describe('MysqlProductionBatchRepository persistence', () => {
           {
             productMaterialId: '401',
             materialProductId: '402',
-            quantityPerUnit: '2.5000',
+            quantityPerUnit: '2.0000',
             unit: 'kg',
             isKeyMaterial: true,
             needBatchRecord: false,
@@ -141,12 +141,12 @@ describe('MysqlProductionBatchRepository persistence', () => {
       '21',
       '401',
       '402',
-      '2.5000',
+      '2.0000',
       'kg',
       1,
       0,
       '10.0000',
-      '25.0000',
+      '20.0000',
       'normal',
       'NORMAL:21:401',
       '1',

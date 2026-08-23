@@ -125,8 +125,19 @@ export class ProductService {
     if (new Set(items.map((item) => item.materialProductId)).size !== items.length) {
       throw new ProductDomainError('INVALID_INPUT', '同一投入物料不能在一份 BOM 中重复');
     }
-    if (items.some((item) => item.quantityPerUnit <= 0 || !item.unit.trim())) {
-      throw new ProductDomainError('INVALID_INPUT', 'BOM 单位用量必须大于 0，且用量单位不能为空');
+    if (
+      items.some(
+        (item) =>
+          !Number.isInteger(item.quantityPerUnit) ||
+          item.quantityPerUnit <= 0 ||
+          item.quantityPerUnit > 99_999_999 ||
+          !item.unit.trim(),
+      )
+    ) {
+      throw new ProductDomainError(
+        'INVALID_INPUT',
+        'BOM 单位用量必须是 1 到 99999999 的整数，且用量单位不能为空',
+      );
     }
     return this.catalog.replaceMaterials(id, items, audit);
   }

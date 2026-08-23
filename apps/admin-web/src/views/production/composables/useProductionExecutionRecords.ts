@@ -71,7 +71,7 @@ export const useProductionExecutionRecords = () => {
               totalStepCount: nextRecord.steps.length,
               effectiveAbnormalQuantity: nextRecord.steps
                 .reduce((total, step) => total + Number(step.effectiveAbnormalQuantity), 0)
-                .toFixed(4),
+                .toFixed(0),
               pendingAbnormalCount: nextRecord.steps.reduce(
                 (total, step) =>
                   total +

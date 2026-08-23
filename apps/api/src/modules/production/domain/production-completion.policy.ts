@@ -4,6 +4,7 @@ import type {
   ProductionExecutionCompletionBlocker,
   ProductionExecutionCompletionCheck,
 } from '@company/contracts';
+import { integerQuantity } from './integer-quantity.js';
 
 export interface RequiredCompletionStep {
   id: string;
@@ -12,8 +13,6 @@ export interface RequiredCompletionStep {
   status: BatchStepStatus;
   effectiveNormalQuantity: string;
 }
-
-const scaledQuantity = (value: string): number => Math.round(Number(value) * 10_000);
 
 export const evaluateProductionExecutionCompletion = (input: {
   productionBatchId: string;
@@ -33,7 +32,7 @@ export const evaluateProductionExecutionCompletion = (input: {
     blockers.push('required_step_incomplete');
   if (
     finalStep &&
-    scaledQuantity(finalStep.effectiveNormalQuantity) !== scaledQuantity(input.plannedQuantity)
+    integerQuantity(finalStep.effectiveNormalQuantity) !== integerQuantity(input.plannedQuantity)
   )
     blockers.push('final_step_quantity_insufficient');
 

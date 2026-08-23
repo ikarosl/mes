@@ -79,8 +79,9 @@
           <el-form-item label="分配数量"
             ><el-input-number
               v-model="form.assignedQuantity"
-              :min="0.0001"
-              :precision="4"
+              :min="1"
+              :step="1"
+              :precision="0"
           /></el-form-item>
           <el-form-item
             ><el-button
@@ -188,6 +189,7 @@ const canAllocate = computed(() =>
   Boolean(
     selectedDemand.value &&
     form.itemBatchId &&
+    Number.isInteger(form.assignedQuantity) &&
     form.assignedQuantity > 0 &&
     form.assignedQuantity <= Number(selectedDemand.value.remainingQuantity) &&
     form.assignedQuantity <= Number(selectedBatch.value?.availableToAllocateQuantity ?? 0),
@@ -211,7 +213,7 @@ const selectDemand = (row: ProductionMaterialDemandItem | null) => {
   if (!row) return;
   selectedDemandId.value = row.demandId;
   form.itemBatchId = '';
-  form.assignedQuantity = Math.max(0.0001, Number(row.remainingQuantity));
+  form.assignedQuantity = Math.max(1, Number(row.remainingQuantity));
   emit('load-available', row.demandId);
 };
 const submitAllocation = () => {

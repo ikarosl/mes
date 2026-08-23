@@ -5,10 +5,10 @@ import {
   IsArray,
   IsIn,
   IsInt,
-  IsNumber,
   IsOptional,
   IsString,
   MaxLength,
+  Max,
   Min,
   ValidateNested,
 } from 'class-validator';
@@ -48,7 +48,7 @@ export class ReturnOrderQueryDto extends PageQueryDto implements ReturnOrderQuer
 }
 export class CreateReturnOrderLineDto {
   @IsString() @MaxLength(20) allocationId!: string;
-  @Type(() => Number) @IsNumber({ maxDecimalPlaces: 4 }) @Min(0.0001) returnQuantity!: number;
+  @Type(() => Number) @IsInt() @Min(1) @Max(99_999_999) returnQuantity!: number;
   @IsOptional() @IsString() @MaxLength(5000) remark?: string | null;
 }
 export class CreateReturnOrderDto implements CreateReturnOrderPayload {
@@ -68,7 +68,7 @@ export class MaterialLossQueryDto extends PageQueryDto implements MaterialLossQu
 export class CreateMaterialLossDto implements CreateMaterialLossPayload {
   @IsString() @MaxLength(20) productionBatchId!: string;
   @IsString() @MaxLength(20) allocationId!: string;
-  @Type(() => Number) @IsNumber({ maxDecimalPlaces: 4 }) @Min(0.0001) scrapQuantity!: number;
+  @Type(() => Number) @IsInt() @Min(1) @Max(99_999_999) scrapQuantity!: number;
   @IsString() @MaxLength(50) reasonType!: string;
   @IsOptional() @IsString() @MaxLength(5000) remark?: string | null;
 }
@@ -96,7 +96,7 @@ export class CreateStockCheckDto implements CreateStockCheckPayload {
 }
 export class SaveStockCheckCountLineDto {
   @IsString() @MaxLength(20) detailId!: string;
-  @Type(() => Number) @IsNumber({ maxDecimalPlaces: 4 }) @Min(0) actualQuantity!: number;
+  @Type(() => Number) @IsInt() @Min(0) @Max(99_999_999) actualQuantity!: number;
   @IsOptional() @IsString() @MaxLength(5000) remark?: string | null;
 }
 export class SaveStockCheckCountsDto implements SaveStockCheckCountsPayload {

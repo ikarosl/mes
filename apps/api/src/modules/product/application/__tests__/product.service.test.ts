@@ -78,6 +78,37 @@ describe('ProductService workflow safeguards', () => {
     expect(repository.replaceMaterials).not.toHaveBeenCalled();
   });
 
+  it('rejects fractional BOM quantities before opening a repository transaction', () => {
+    const repository = { replaceMaterials: vi.fn() };
+    const service = new ProductService(
+      {} as never,
+      {} as never,
+      repository as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    expect(() =>
+      service.replaceMaterials(
+        '10',
+        [
+          {
+            materialProductId: '20',
+            quantityPerUnit: 1.5,
+            unit: 'pcs',
+            isKeyMaterial: true,
+            needBatchRecord: true,
+          },
+        ],
+        audit,
+      ),
+    ).toThrow('必须是 1 到 99999999 的整数');
+    expect(repository.replaceMaterials).not.toHaveBeenCalled();
+  });
+
   it('requires route step orders to be continuous from one', async () => {
     const repository = { replaceRouteSteps: vi.fn() };
     const service = new ProductService(

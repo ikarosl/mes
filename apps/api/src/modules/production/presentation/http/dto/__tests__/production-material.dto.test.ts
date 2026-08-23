@@ -8,16 +8,23 @@ import {
 } from '../production-material.dto.js';
 
 describe('production material DTOs', () => {
-  it('requires non-empty positive four-place allocation lines', async () => {
+  it('requires non-empty positive integer allocation lines', async () => {
+    expect(
+      await validate(
+        plainToInstance(CreateMaterialAllocationsDto, {
+          allocations: [{ demandId: '1', itemBatchId: '2', assignedQuantity: 1 }],
+        }),
+      ),
+    ).toHaveLength(0);
+    expect(
+      await validate(plainToInstance(CreateMaterialAllocationsDto, { allocations: [] })),
+    ).not.toHaveLength(0);
     expect(
       await validate(
         plainToInstance(CreateMaterialAllocationsDto, {
           allocations: [{ demandId: '1', itemBatchId: '2', assignedQuantity: 1.25 }],
         }),
       ),
-    ).toHaveLength(0);
-    expect(
-      await validate(plainToInstance(CreateMaterialAllocationsDto, { allocations: [] })),
     ).not.toHaveLength(0);
   });
   it('rejects zero outbound quantities', async () => {

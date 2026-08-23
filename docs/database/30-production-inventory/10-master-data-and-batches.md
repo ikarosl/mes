@@ -6,6 +6,8 @@
 
 本方案用于管理生产过程中的物料需求、物料分配、生产领料出库、退料、报废补料、半成品入库、成品入库、库存流水和盘点。
 
+本章所有 BOM 单位用量、工单数量和生产批次数量均为整数，除既有正数/非负约束外还必须满足 `值 = TRUNCATE(值, 0)`；`DECIMAL(12,4)` 仅保留为兼容性物理表示，不表示允许小数。`products.spec_values` 是不参与数量计算的 JSON 记录，数值文本按用户原始内容保存，不套用本规则。
+
 核心设计原则：
 
 1. 物料、半成品、成品统一作为库存对象管理。
@@ -67,7 +69,7 @@
 | `default_route_id` | `BIGINT UNSIGNED` | 默认工艺路线，可为空                    |
 | `unit`             | `VARCHAR(20)`     | 唯一基础计量单位，例如 `g`、`kg`、`pcs` |
 | `acquire_method`   | `VARCHAR(32)`     | `self_made`、`outsourced`、`purchased`  |
-| `spec_values`      | `JSON`            | 轻量规格参数                            |
+| `spec_values`      | `JSON`            | 轻量规格参数；纯记录，不参与整数数量计算 |
 | `status`           | `TINYINT`         | `1` 启用、`0` 停用                      |
 | `remark`           | `TEXT`            | 备注                                    |
 | 审计字段           | 见统一规则        | 主数据审计字段                          |

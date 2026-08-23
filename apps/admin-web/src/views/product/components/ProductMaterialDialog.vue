@@ -90,8 +90,8 @@
           <template #default="{ row }">
             <el-input-number
               v-model="row.quantityPerUnit"
-              :min="0.0001"
-              :precision="4"
+              :min="1"
+              :precision="0"
               :step="1"
               controls-position="right"
             />
@@ -291,6 +291,12 @@ const handleSubmit = (): void => {
   }
   if (new Set(localRows.value.map((r) => r.materialProductId)).size !== localRows.value.length) {
     EMessage.warning('同一物料不能重复添加');
+    return;
+  }
+  if (
+    localRows.value.some((row) => !Number.isInteger(row.quantityPerUnit) || row.quantityPerUnit < 1)
+  ) {
+    EMessage.warning('单位用量必须是大于零的整数');
     return;
   }
   emit('save', localRows.value);

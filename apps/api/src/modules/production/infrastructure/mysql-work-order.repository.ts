@@ -16,6 +16,7 @@ import { DATABASE_POOL } from '../../../infrastructure/database/database.module.
 import type { ProductionProductSnapshot } from '../../product/public.js';
 import { requireWorkOrderTransition } from '../domain/production-status.policy.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
+import { fixedIntegerQuantity, integerQuantity } from '../domain/integer-quantity.js';
 import {
   BATCH_SELECT,
   type Db,
@@ -300,7 +301,7 @@ export class MysqlWorkOrderRepository {
       if (
         activeBatches.length === 0 ||
         unfinishedBatches.length > 0 ||
-        scaledQuantity(completedQuantity) !== scaledQuantity(before.planned_quantity)
+        integerQuantity(completedQuantity) !== integerQuantity(before.planned_quantity)
       ) {
         throw new ProductionDomainError(
           'WORK_ORDER_COMPLETION_NOT_ALLOWED',
@@ -361,7 +362,7 @@ export class MysqlWorkOrderRepository {
       if (
         isEarlyClose &&
         activeBatches.length > 0 &&
-        scaledQuantity(completedQuantity) === scaledQuantity(before.planned_quantity)
+        integerQuantity(completedQuantity) === integerQuantity(before.planned_quantity)
       )
         throw new ProductionDomainError(
           'WORK_ORDER_CLOSE_NOT_ALLOWED',
@@ -451,12 +452,10 @@ export class MysqlWorkOrderRepository {
   }
 }
 
-const scaledQuantity = (value: string): number => Math.round(Number(value) * 10_000);
-
 const sumCompletedQuantity = (batches: WorkOrderBatchSummaryRow[]): string =>
-  (
-    batches.reduce((sum, batch) => sum + scaledQuantity(batch.completed_quantity), 0) / 10_000
-  ).toFixed(4);
+  fixedIntegerQuantity(
+    batches.reduce((sum, batch) => sum + integerQuantity(batch.completed_quantity), 0),
+  );
 
 const workOrderBatchDetails = (
   plannedQuantity: string,

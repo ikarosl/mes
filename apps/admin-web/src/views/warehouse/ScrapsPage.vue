@@ -233,8 +233,9 @@
           required
           ><el-input-number
             v-model="form.scrapQuantity"
-            :min="0.0001"
-            :precision="4"
+            :min="1"
+            :step="1"
+            :precision="0"
             :max="scrapInputMax"
           /><span class="unit-hint">{{ selectedCandidate?.unit || '' }}</span></el-form-item
         >
@@ -314,7 +315,7 @@ const selectedCandidate = computed(() =>
 );
 const selectedMax = computed(() => Number(selectedCandidate.value?.availableLossQuantity ?? 0));
 // 未选中候选或可损耗量为 0 时 max 会小于 min，需保证 max 不低于 min，避免 InputNumber 校验报错
-const scrapInputMax = computed(() => Math.max(selectedMax.value, 0.0001));
+const scrapInputMax = computed(() => Math.max(selectedMax.value, 1));
 
 async function loadRows() {
   loading.value = true;
@@ -368,7 +369,11 @@ async function batchChanged(batchId: string) {
 async function submitCreate() {
   if (!form.productionBatchId || !selectedCandidate.value)
     return EMessage.warning('请选择生产批次和领料明细');
-  if (form.scrapQuantity <= 0 || form.scrapQuantity > selectedMax.value)
+  if (
+    !Number.isInteger(form.scrapQuantity) ||
+    form.scrapQuantity <= 0 ||
+    form.scrapQuantity > selectedMax.value
+  )
     return EMessage.warning('损耗数量必须大于零且不能超过当前可申报数量');
   if (!form.reasonType.trim()) return EMessage.warning('请填写损耗原因');
   const payload = {
@@ -455,10 +460,7 @@ function pageChanged(value: number) {
   query.page = value;
   void loadRows();
 }
-const quantity = (value: string | number) =>
-  Number(value)
-    .toFixed(4)
-    .replace(/\.?0+$/, '');
+const quantity = (value: string | number) => Number(value).toFixed(0);
 const statusTag = (status: ScrapStatus) =>
   status === 'confirmed' ? 'success' : status === 'cancelled' ? 'info' : 'warning';
 onMounted(loadRows);

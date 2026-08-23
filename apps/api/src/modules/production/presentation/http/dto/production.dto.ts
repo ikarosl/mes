@@ -8,10 +8,10 @@ import {
   IsIn,
   IsInt,
   IsNotEmpty,
-  IsNumber,
   IsOptional,
   IsString,
   MaxLength,
+  Max,
   Matches,
   Min,
   ValidateIf,
@@ -44,6 +44,7 @@ import { PageQueryDto } from '../../../../../presentation/http/dto/page-query.dt
 import { VersionedCommandDto } from '../../../../../presentation/http/dto/versioned-command.dto.js';
 
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const MAX_QUANTITY = 99_999_999;
 
 export class IdParamDto {
   @IsString() @MaxLength(20) id!: string;
@@ -72,7 +73,7 @@ export class ProductionBatchQueryDto extends PageQueryDto implements ProductionB
 export class CreateWorkOrderDto implements CreateWorkOrderPayload {
   @IsString() @MaxLength(100) workOrderNo!: string;
   @IsString() @MaxLength(20) productId!: string;
-  @Type(() => Number) @IsNumber({ maxDecimalPlaces: 4 }) @Min(0.0001) plannedQuantity!: number;
+  @Type(() => Number) @IsInt() @Min(1) @Max(MAX_QUANTITY) plannedQuantity!: number;
   @IsOptional() @IsString() @MaxLength(255) customerName?: string | null;
   @IsOptional() @IsString() @MaxLength(50) qualityLevel?: string | null;
   @IsOptional() @IsString() @MaxLength(20) workOrderOwnerId?: string | null;
@@ -93,8 +94,9 @@ export class UpdateWorkOrderDto extends VersionedCommandDto implements UpdateWor
   @IsOptional() @IsString() @MaxLength(20) productId?: string;
   @IsOptional()
   @Type(() => Number)
-  @IsNumber({ maxDecimalPlaces: 4 })
-  @Min(0.0001)
+  @IsInt()
+  @Min(1)
+  @Max(MAX_QUANTITY)
   plannedQuantity?: number;
   @IsOptional() @IsString() @MaxLength(255) customerName?: string | null;
   @IsOptional() @IsString() @MaxLength(50) qualityLevel?: string | null;
@@ -123,7 +125,7 @@ export class CreateBatchStepOverrideDto {
 export class CreateProductionBatchDto implements CreateProductionBatchPayload {
   @IsOptional() @IsString() @MaxLength(100) batchNo?: string | null;
   @IsOptional() @IsString() @MaxLength(20) routeId?: string | null;
-  @Type(() => Number) @IsNumber({ maxDecimalPlaces: 4 }) @Min(0.0001) plannedQuantity!: number;
+  @Type(() => Number) @IsInt() @Min(1) @Max(MAX_QUANTITY) plannedQuantity!: number;
   @IsOptional() @IsString() @MaxLength(20) ownerId?: string | null;
   @IsOptional()
   @IsString()
@@ -182,8 +184,8 @@ export class CreateBatchStepReportDto
   extends VersionedCommandDto
   implements CreateBatchStepReportPayload
 {
-  @Type(() => Number) @IsNumber({ maxDecimalPlaces: 4 }) @Min(0) normalQuantity!: number;
-  @Type(() => Number) @IsNumber({ maxDecimalPlaces: 4 }) @Min(0) abnormalQuantity!: number;
+  @Type(() => Number) @IsInt() @Min(0) @Max(MAX_QUANTITY) normalQuantity!: number;
+  @Type(() => Number) @IsInt() @Min(0) @Max(MAX_QUANTITY) abnormalQuantity!: number;
   @IsOptional() @IsIn(BATCH_STEP_ABNORMAL_ORIGINS) abnormalOrigin?:
     'current_step' | 'previous_step' | null;
   @IsOptional() @IsString() @MaxLength(5000) remark?: string | null;
@@ -200,8 +202,8 @@ export class CorrectBatchStepReportDto
   extends VersionedCommandDto
   implements CorrectBatchStepReportPayload
 {
-  @Type(() => Number) @IsNumber({ maxDecimalPlaces: 4 }) @Min(0) normalQuantity!: number;
-  @Type(() => Number) @IsNumber({ maxDecimalPlaces: 4 }) @Min(0) abnormalQuantity!: number;
+  @Type(() => Number) @IsInt() @Min(0) @Max(MAX_QUANTITY) normalQuantity!: number;
+  @Type(() => Number) @IsInt() @Min(0) @Max(MAX_QUANTITY) abnormalQuantity!: number;
   @IsOptional() @IsIn(BATCH_STEP_ABNORMAL_ORIGINS) abnormalOrigin?:
     'current_step' | 'previous_step' | null;
   @IsString() @IsNotEmpty() @MaxLength(5000) reason!: string;
@@ -230,14 +232,14 @@ export class RejectBatchStepAbnormalDispositionDto
 }
 
 export class CompleteReworkDto extends VersionedCommandDto implements CompleteReworkPayload {
-  @Type(() => Number) @IsNumber({ maxDecimalPlaces: 4 }) @Min(0) normalQuantity!: number;
-  @Type(() => Number) @IsNumber({ maxDecimalPlaces: 4 }) @Min(0) abnormalQuantity!: number;
+  @Type(() => Number) @IsInt() @Min(0) @Max(MAX_QUANTITY) normalQuantity!: number;
+  @Type(() => Number) @IsInt() @Min(0) @Max(MAX_QUANTITY) abnormalQuantity!: number;
   @IsOptional() @IsString() @MaxLength(5000) remark?: string | null;
 }
 
 export class ApproveScrapSupplementLineDto {
   @IsString() @IsNotEmpty() @MaxLength(20) originalDemandId!: string;
-  @Type(() => Number) @IsNumber({ maxDecimalPlaces: 4 }) @Min(0.0001) supplementQuantity!: number;
+  @Type(() => Number) @IsInt() @Min(1) @Max(MAX_QUANTITY) supplementQuantity!: number;
 }
 
 export class ApproveScrapSupplementDto

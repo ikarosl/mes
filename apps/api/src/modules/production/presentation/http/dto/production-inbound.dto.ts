@@ -4,10 +4,11 @@ import {
   ArrayMinSize,
   IsArray,
   IsIn,
-  IsNumber,
+  IsInt,
   IsOptional,
   IsString,
   MaxLength,
+  Max,
   Min,
   ValidateNested,
 } from 'class-validator';
@@ -37,7 +38,7 @@ export class InventoryBatchQueryDto extends PageQueryDto implements InventoryBat
 export class CreatePurchaseInboundLineDto {
   @IsString() @MaxLength(20) itemId!: string;
   @IsString() @MaxLength(100) batchCode!: string;
-  @Type(() => Number) @IsNumber({ maxDecimalPlaces: 4 }) @Min(0.0001) inboundQuantity!: number;
+  @Type(() => Number) @IsInt() @Min(1) @Max(99_999_999) inboundQuantity!: number;
   @IsOptional() @IsString() @MaxLength(5000) remark?: string | null;
 }
 export class CreatePurchaseInboundDto implements CreatePurchaseInboundPayload {

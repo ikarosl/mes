@@ -89,11 +89,11 @@ describeMysql('Production scrap supplement migrations', () => {
     const tempDb = `ssp_mig_upgrade_${Date.now()}_test`;
     const connection = await createTempDatabase(tempDb);
     try {
-      await applyMigrations(connection, await upMigrationsExcluding(SCRAP_REPLENISHMENT_PREFIXES));
+      await applyMigrations(connection, await upMigrationsBefore(SCRAP_REPLENISHMENT_PREFIXES[0]!));
       const legacy = await insertLegacyFixture(connection);
       await expectLegacyShape(connection, legacy);
 
-      await applyMigrations(connection, await upMigrationsFor(SCRAP_REPLENISHMENT_PREFIXES));
+      await applyMigrations(connection, await upMigrationsFrom(SCRAP_REPLENISHMENT_PREFIXES[0]!));
       await expectNewSchema(connection);
       await expectLegacyDataMigrated(connection, legacy);
     } finally {
@@ -133,9 +133,14 @@ const upMigrationsFor = async (prefixes: string[]): Promise<string[]> => {
   return names.filter((name) => prefixes.includes(name.slice(0, 12)));
 };
 
-const upMigrationsExcluding = async (prefixes: string[]): Promise<string[]> => {
+const upMigrationsBefore = async (prefix: string): Promise<string[]> => {
   const names = await upMigrations();
-  return names.filter((name) => !prefixes.includes(name.slice(0, 12)));
+  return names.filter((name) => name.slice(0, 12) < prefix);
+};
+
+const upMigrationsFrom = async (prefix: string): Promise<string[]> => {
+  const names = await upMigrations();
+  return names.filter((name) => name.slice(0, 12) >= prefix);
 };
 
 const tableExists = async (connection: Connection, table: string): Promise<boolean> => {

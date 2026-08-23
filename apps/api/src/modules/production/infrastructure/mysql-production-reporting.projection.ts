@@ -7,6 +7,7 @@ import type {
 } from '@company/contracts';
 import { toBeijingISOString } from '../../../common/time/beijing-time.js';
 import type { RouteStepQuantity } from '../domain/production-route-quantity.policy.js';
+import { fixedIntegerQuantity } from '../domain/integer-quantity.js';
 
 export type ReportRow = RowDataPacket & {
   id: number;
@@ -139,4 +140,4 @@ export const groupRowsBy = <T>(rows: T[], key: (row: T) => string): Map<string, 
   return result;
 };
 
-const fixed = (value: number | string): string => Number(value).toFixed(4);
+const fixed = fixedIntegerQuantity;
