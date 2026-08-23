@@ -108,9 +108,10 @@
           <template #default="{ row }">
             <el-input-number
               v-model="quantities[row.allocationId]"
-              :min="0.0001"
+              :min="1"
               :max="Number(row.availableToOrderQuantity)"
-              :precision="4"
+              :step="1"
+              :precision="0"
             />
             <span class="unit-text">{{ row.unit }}</span>
           </template>
@@ -174,7 +175,11 @@ const canSubmit = computed(
     selectedCandidates.value.length > 0 &&
     selectedCandidates.value.every((row) => {
       const quantity = quantities[row.allocationId];
-      return quantity > 0 && quantity <= Number(row.availableToOrderQuantity);
+      return (
+        Number.isInteger(quantity) &&
+        quantity > 0 &&
+        quantity <= Number(row.availableToOrderQuantity)
+      );
     }),
 );
 const dirty = computed(() =>

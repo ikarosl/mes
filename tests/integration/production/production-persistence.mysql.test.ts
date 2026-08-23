@@ -84,7 +84,7 @@ describeMysql('Production MySQL persistence', () => {
         {
           productMaterialId: String(fixture.productMaterialId),
           materialProductId: String(fixture.materialId),
-          quantityPerUnit: '0.1000',
+          quantityPerUnit: '1.0000',
           unit: 'kg',
           isKeyMaterial: true,
           needBatchRecord: false,
@@ -117,12 +117,12 @@ describeMysql('Production MySQL persistence', () => {
     );
     expect(demands).toEqual([
       {
-        quantity_per_unit_snapshot: '0.1000',
+        quantity_per_unit_snapshot: '1.0000',
         unit_snapshot: 'kg',
         is_key_material_snapshot: 1,
         need_batch_record_snapshot: 0,
         planned_output_quantity_snapshot: '3.0000',
-        need_number: '0.3000',
+        need_number: '3.0000',
         demand_type: 'normal',
         idempotency_key: `NORMAL:${fixture.batchId}:${fixture.productMaterialId}`,
       },
@@ -425,7 +425,7 @@ const createFixture = async (pool: Pool): Promise<Fixture> => {
   const productMaterialId = await insert(
     pool,
     'INSERT INTO product_materials (product_id,material_product_id,quantity_per_unit,unit,is_key_material,need_batch_record) VALUES (?,?,?,?,?,?)',
-    [productId, materialId, '0.1000', 'kg', 1, 0],
+    [productId, materialId, '1.0000', 'kg', 1, 0],
   );
   const processStepId = await insert(
     pool,

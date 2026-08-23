@@ -20,6 +20,7 @@ import type { ProcessRouteSnapshot, ProductBomSnapshot } from '../../product/pub
 import type { ResolvedBatchStepOverride } from '../application/ports/production.repository.js';
 import { requireBatchTransition } from '../domain/production-status.policy.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
+import { integerQuantity } from '../domain/integer-quantity.js';
 import {
   BATCH_SELECT,
   batchAudit,
@@ -150,8 +151,8 @@ export class MysqlProductionBatchRepository {
         [workOrderId],
       );
       if (
-        Number(assigned?.quantity ?? 0) + Number(payload.plannedQuantity) >
-        Number(order.planned_quantity)
+        integerQuantity(assigned?.quantity ?? 0) + integerQuantity(payload.plannedQuantity) >
+        integerQuantity(order.planned_quantity)
       )
         throw new ProductionDomainError('INVALID_INPUT', '生产批次计划数量超过工单剩余数量');
       if (route && route.product.id !== String(order.product_id))

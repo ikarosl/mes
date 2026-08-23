@@ -1,11 +1,22 @@
 import { ProductionDomainError } from './production.errors.js';
+import { integerQuantity, MAX_PERSISTED_INTEGER_QUANTITY } from './integer-quantity.js';
 import type { BatchStepAbnormalOrigin } from '@company/contracts';
 
-const SCALE = 10_000;
-const scaled = (value: number | string): number => Math.round(Number(value) * SCALE);
-
 export const requireReportQuantities = (normalQuantity: number, abnormalQuantity: number): void => {
-  if (normalQuantity < 0 || abnormalQuantity < 0 || normalQuantity + abnormalQuantity <= 0)
+  let normal: number;
+  let abnormal: number;
+  try {
+    normal = integerQuantity(normalQuantity);
+    abnormal = integerQuantity(abnormalQuantity);
+  } catch {
+    throw new ProductionDomainError('INVALID_INPUT', '本次报工数量必须为整数');
+  }
+  if (
+    normal < 0 ||
+    abnormal < 0 ||
+    normal + abnormal <= 0 ||
+    normal + abnormal > MAX_PERSISTED_INTEGER_QUANTITY
+  )
     throw new ProductionDomainError('INVALID_INPUT', '本次报工数量必须大于零且不能为负数');
 };
 
@@ -36,8 +47,10 @@ export const requireReportWithinReleased = (
   releasedQuantity: number | string,
 ): void => {
   if (
-    scaled(currentEffectiveReported) + scaled(normalDelta) + scaled(abnormalDelta) >
-    scaled(releasedQuantity)
+    integerQuantity(currentEffectiveReported) +
+      integerQuantity(normalDelta) +
+      integerQuantity(abnormalDelta) >
+    integerQuantity(releasedQuantity)
   )
     throw new ProductionDomainError(
       'STEP_REPORT_QUANTITY_EXCEEDED',
@@ -50,7 +63,7 @@ export const requireNoDownstreamQuantityConflict = (
   downstreamEffectiveReported: number | string,
   details?: Record<string, unknown>,
 ): void => {
-  if (scaled(correctedEffectiveNormal) < scaled(downstreamEffectiveReported))
+  if (integerQuantity(correctedEffectiveNormal) < integerQuantity(downstreamEffectiveReported))
     throw new ProductionDomainError(
       'DOWNSTREAM_QUANTITY_CONFLICT',
       '更正后的正常放行量低于下游已报正常与异常总量',
@@ -61,4 +74,4 @@ export const requireNoDownstreamQuantityConflict = (
 export const isRequiredNormalCompleted = (
   effectiveNormal: number | string,
   requiredNormal: number | string,
-): boolean => scaled(effectiveNormal) === scaled(requiredNormal);
+): boolean => integerQuantity(effectiveNormal) === integerQuantity(requiredNormal);

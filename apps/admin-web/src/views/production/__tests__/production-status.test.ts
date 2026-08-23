@@ -47,7 +47,7 @@ describe('production-status', () => {
   });
 
   it('formatQuantity 格式化数量并处理非法值', () => {
-    expect(formatQuantity('1234.5678')).toBe('1,234.5678');
+    expect(formatQuantity('1234.0000')).toBe('1,234');
     expect(formatQuantity(0)).toBe('0');
     expect(formatQuantity(null)).toBe('0');
     expect(formatQuantity(undefined)).toBe('0');

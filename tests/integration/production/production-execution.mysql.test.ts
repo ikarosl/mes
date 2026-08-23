@@ -496,7 +496,7 @@ describeMysql('Production execution MySQL transactions', () => {
           planVersion: null,
           dispositionVersion: 0,
           materialEndStepRecordId: String(fixture.firstStepRecordId),
-          details: [{ originalDemandId: String(fixture.demandId), supplementQuantity: 1.25 }],
+          details: [{ originalDemandId: String(fixture.demandId), supplementQuantity: 1 }],
           remark: 'manual quantity',
         },
         context(fixture.actorId, `${fixture.token}-save-plan`),
@@ -504,7 +504,7 @@ describeMysql('Production execution MySQL transactions', () => {
       expect(draft).toMatchObject({
         status: 'draft',
         version: 0,
-        lines: [{ plannedQuantity: '1.2500' }],
+        lines: [{ plannedQuantity: '1.0000' }],
       });
       const [[draftCount]] = await pool.query<(RowDataPacket & { count: number })[]>(
         "SELECT COUNT(*) count FROM production_scrap_supplement_plan WHERE id=? AND status='draft'",
@@ -531,7 +531,7 @@ describeMysql('Production execution MySQL transactions', () => {
           planVersion: draft.version,
           dispositionVersion: 0,
           materialEndStepRecordId: String(fixture.firstStepRecordId),
-          details: [{ originalDemandId: String(fixture.demandId), supplementQuantity: 1.5 }],
+          details: [{ originalDemandId: String(fixture.demandId), supplementQuantity: 2 }],
           remark: 'edited quantity',
         },
         context(fixture.actorId, `${fixture.token}-edit-plan`),
@@ -544,7 +544,7 @@ describeMysql('Production execution MySQL transactions', () => {
             planVersion: draft.version,
             dispositionVersion: 0,
             materialEndStepRecordId: String(fixture.firstStepRecordId),
-            details: [{ originalDemandId: String(fixture.demandId), supplementQuantity: 2 }],
+            details: [{ originalDemandId: String(fixture.demandId), supplementQuantity: 3 }],
           },
           context(fixture.actorId, `${fixture.token}-stale-plan`),
         ),
@@ -573,7 +573,7 @@ describeMysql('Production execution MySQL transactions', () => {
           demands: [
             {
               originalDemandId: String(fixture.demandId),
-              supplementQuantity: '1.5000',
+              supplementQuantity: '2.0000',
             },
           ],
         },
@@ -591,7 +591,7 @@ describeMysql('Production execution MySQL transactions', () => {
       );
       expect(demand).toMatchObject({
         demand_type: 'scrap_supplement',
-        need_number: '1.5000',
+        need_number: '2.0000',
         parent_demand_id: fixture.demandId,
       });
       expect(demand?.supplement_id).toBeGreaterThan(0);
@@ -675,7 +675,7 @@ describeMysql('Production execution MySQL transactions', () => {
           planVersion: null,
           dispositionVersion: 0,
           materialEndStepRecordId: String(fixture.firstStepRecordId),
-          details: [{ originalDemandId: String(fixture.demandId), supplementQuantity: 1.5 }],
+          details: [{ originalDemandId: String(fixture.demandId), supplementQuantity: 1 }],
         },
         context(fixture.actorId, `${fixture.token}-save-plan`),
       );
@@ -818,7 +818,7 @@ describeMysql('Production execution MySQL transactions', () => {
           planVersion: null,
           dispositionVersion: 0,
           materialEndStepRecordId: String(fixture.firstStepRecordId),
-          details: [{ originalDemandId: String(fixture.demandId), supplementQuantity: 1.5 }],
+          details: [{ originalDemandId: String(fixture.demandId), supplementQuantity: 1 }],
         },
         context(fixture.actorId, `${fixture.token}-save-plan`),
       );
@@ -905,7 +905,7 @@ describeMysql('Production execution MySQL transactions', () => {
           planVersion: null,
           dispositionVersion: 0,
           materialEndStepRecordId: String(fixture.firstStepRecordId),
-          details: [{ originalDemandId: String(fixture.demandId), supplementQuantity: 1.5 }],
+          details: [{ originalDemandId: String(fixture.demandId), supplementQuantity: 1 }],
         },
         context(fixture.actorId, `${fixture.token}-save-plan`),
       );
@@ -992,7 +992,7 @@ describeMysql('Production execution MySQL transactions', () => {
           planVersion: null,
           dispositionVersion: 0,
           materialEndStepRecordId: String(fixture.firstStepRecordId),
-          details: [{ originalDemandId: String(fixture.demandId), supplementQuantity: 1.5 }],
+          details: [{ originalDemandId: String(fixture.demandId), supplementQuantity: 1 }],
         },
         context(fixture.actorId, `${fixture.token}-save-plan`),
       );

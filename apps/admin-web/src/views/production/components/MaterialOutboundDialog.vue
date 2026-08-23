@@ -64,9 +64,10 @@
           ><template #default="{ row }"
             ><el-input-number
               v-model="quantities[row.allocationId]"
-              :min="0.0001"
+              :min="1"
               :max="Number(row.availableToOrderQuantity)"
-              :precision="4" /></template
+              :step="1"
+              :precision="0" /></template
         ></el-table-column>
       </el-table>
       <el-input
@@ -118,7 +119,7 @@
       ><el-button
         type="primary"
         :loading="submitting"
-        :disabled="selection.length === 0"
+        :disabled="!canSubmit"
         @click="submit"
         >创建待出库单</el-button
       ></template
@@ -163,6 +164,18 @@ const availableAllocations = computed<OutboundAllocation[]>(() =>
       .filter((a) => a.allocationStatus === 'active' && Number(a.availableToOrderQuantity) > 0)
       .map((a) => ({ ...a, itemName: d.itemName })),
   ),
+);
+const canSubmit = computed(
+  () =>
+    selection.value.length > 0 &&
+    selection.value.every((row) => {
+      const quantity = quantities[row.allocationId];
+      return (
+        Number.isInteger(quantity) &&
+        quantity > 0 &&
+        quantity <= Number(row.availableToOrderQuantity)
+      );
+    }),
 );
 watch(
   () => props.visible,

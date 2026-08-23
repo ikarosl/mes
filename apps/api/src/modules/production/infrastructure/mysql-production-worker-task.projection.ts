@@ -10,6 +10,7 @@ import {
   type RouteQuantityStep,
   type RouteStepQuantity,
 } from '../domain/production-route-quantity.policy.js';
+import { integerQuantity } from '../domain/integer-quantity.js';
 import { selectRouteSupplementSources } from './mysql-production-supplement-activation.js';
 
 type WorkerTaskRow = RowDataPacket & {
@@ -138,7 +139,7 @@ const mapWorkerTask = (
 ): ProductionWorkerTaskItem => {
   const upstreamReady = isFirst
     ? row.batch_status === 'material_outbound'
-    : Number(quantity.releasedInputQuantity) > 0;
+    : integerQuantity(quantity.releasedInputQuantity) > 0;
   const canComplete =
     row.step_status === 'doing' &&
     !row.need_record &&

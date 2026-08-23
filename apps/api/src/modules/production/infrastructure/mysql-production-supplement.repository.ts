@@ -18,6 +18,7 @@ import { toBeijingISOString } from '../../../common/time/beijing-time.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
 import { ProductionSupplementRepository } from '../application/ports/production-supplement.repository.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
+import { fixedIntegerQuantity, integerQuantity } from '../domain/integer-quantity.js';
 import { findBatch } from './mysql-production.shared.js';
 
 type SourceRow = RowDataPacket & {
@@ -280,7 +281,7 @@ export class MysqlProductionSupplementRepository extends ProductionSupplementRep
       if (
         source.report_type !== 'normal' ||
         !source.is_effective ||
-        Number(source.abnormal_quantity) <= 0
+        integerQuantity(source.abnormal_quantity) <= 0
       )
         throw new ProductionDomainError('INVALID_STATE', '来源异常报工已失效或没有异常数量');
       let effectivePayload = payload;
@@ -642,4 +643,4 @@ const requireMaterialEndStep = (
   return selected;
 };
 
-const fixed = (value: number): string => value.toFixed(4);
+const fixed = fixedIntegerQuantity;

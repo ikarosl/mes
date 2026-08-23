@@ -2,6 +2,7 @@ import { toBeijingISOString } from '../../../common/time/beijing-time.js';
 import type { Pool, PoolConnection, RowDataPacket } from 'mysql2/promise';
 import type { ProductionBatchItem, WorkOrderItem, WorkOrderStatus } from '@company/contracts';
 import { ProductionDomainError } from '../domain/production.errors.js';
+import { multiplyIntegerQuantities } from '../domain/integer-quantity.js';
 
 /**
  * 把数据库驱动错误映射为稳定的模块错误。application 层不得识别 `ER_DUP_ENTRY` 等驱动错误码，
@@ -243,11 +244,16 @@ export const stepAudit = (row: StepRow) => ({
   responsibleUserId: row.responsible_user_id === null ? null : String(row.responsible_user_id),
   version: row.version,
 });
-// TODO(decimal-precision): `need_number` 是不可变的 DECIMAL 事实，但这里为了兼容现有
-// 数量语义仍用 JavaScript Number 相乘。确认是否允许保留浮点计算前，不得依赖此结果处理
-// 十进制定点边界值；详见 docs/todo.md 的待整改项。
-export const multiply = (left: string, right: string): string =>
-  (Number(left) * Number(right)).toFixed(4);
+export const multiply = (left: string, right: string): string => {
+  try {
+    return multiplyIntegerQuantities(left, right);
+  } catch {
+    throw new ProductionDomainError(
+      'INVALID_INPUT',
+      'BOM 单位用量与批次计划量必须为整数，且需求数量不能超过 99999999',
+    );
+  }
+};
 /** 数据库驱动对 DATE/DATETIME 列返回 Date 实例（类型曾误标 string），统一转北京 ISO 字符串。 */
 const date = (value: Date | string | null): string | null => {
   if (value === null) return null;

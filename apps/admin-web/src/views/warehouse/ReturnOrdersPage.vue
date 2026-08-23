@@ -272,9 +272,10 @@
               <el-input-number
                 v-model="row.returnQuantity"
                 :disabled="!row.selected"
-                :min="0.0001"
+                :min="1"
                 :max="Number(row.returnableQuantity)"
-                :precision="4"
+                :step="1"
+                :precision="0"
               />
             </template>
           </el-table-column>
@@ -481,7 +482,10 @@ async function submitCreate() {
   if (!selected.length) return EMessage.warning('请至少选择一条退料明细');
   if (
     selected.some(
-      (item) => item.returnQuantity <= 0 || item.returnQuantity > Number(item.returnableQuantity),
+      (item) =>
+        !Number.isInteger(item.returnQuantity) ||
+        item.returnQuantity <= 0 ||
+        item.returnQuantity > Number(item.returnableQuantity),
     )
   )
     return EMessage.warning('本次退料数量必须大于零且不能超过可退数量');
@@ -574,10 +578,7 @@ function returnSummary(row: ReturnOrderItem) {
     byUnit.set(line.unit, (byUnit.get(line.unit) ?? 0) + Number(line.returnQuantity));
   return [...byUnit].map(([unit, value]) => `${quantity(value)} ${unit}`).join('；') || '0';
 }
-const quantity = (value: string | number) =>
-  Number(value)
-    .toFixed(4)
-    .replace(/\.?0+$/, '');
+const quantity = (value: string | number) => Number(value).toFixed(0);
 const statusTag = (status: ReturnOrderStatus) =>
   status === 'returned'
     ? 'success'

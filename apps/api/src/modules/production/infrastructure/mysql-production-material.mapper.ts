@@ -7,6 +7,7 @@ import type {
   ProductionMaterialDemandItem,
 } from '@company/contracts';
 import { toBeijingISOString } from '../../../common/time/beijing-time.js';
+import { fixedIntegerQuantity, integerQuantity } from '../domain/integer-quantity.js';
 
 export type DemandRow = RowDataPacket & {
   id: number;
@@ -114,13 +115,13 @@ export const mapAllocation = (row: AllocationRow): ProductionMaterialAllocationI
   availableToOrderQuantity: decimal(
     Math.max(
       0,
-      Number(row.assigned_number) -
-        Number(row.outbound_quantity) -
-        Number(row.pending_outbound_quantity),
+      integerQuantity(row.assigned_number) -
+        integerQuantity(row.outbound_quantity) -
+        integerQuantity(row.pending_outbound_quantity),
     ),
   ),
   remainingOutboundQuantity: decimal(
-    Math.max(0, Number(row.assigned_number) - Number(row.outbound_quantity)),
+    Math.max(0, integerQuantity(row.assigned_number) - integerQuantity(row.outbound_quantity)),
   ),
   unit: row.unit_snapshot,
   allocationStatus: row.allocation_status,
@@ -143,7 +144,9 @@ export const mapDemand = (
   demandQuantity: row.need_number,
   allocatedQuantity: row.allocated_quantity,
   outboundQuantity: row.outbound_quantity,
-  remainingQuantity: decimal(Math.max(0, Number(row.need_number) - Number(row.allocated_quantity))),
+  remainingQuantity: decimal(
+    Math.max(0, integerQuantity(row.need_number) - integerQuantity(row.allocated_quantity)),
+  ),
   demandType: row.demand_type,
   businessStatus: row.business_status,
   progressStatus: progress(row),
@@ -153,9 +156,9 @@ export const mapDemand = (
 
 const progress = (row: DemandRow): MaterialDemandProgressStatus => {
   if (row.business_status !== 'active') return row.business_status;
-  const need = Number(row.need_number);
-  const allocated = Number(row.allocated_quantity);
-  const outbound = Number(row.outbound_quantity);
+  const need = integerQuantity(row.need_number);
+  const allocated = integerQuantity(row.allocated_quantity);
+  const outbound = integerQuantity(row.outbound_quantity);
   if (outbound >= need) return 'outbound';
   if (outbound > 0 && allocated < need) return 'shortage';
   if (outbound > 0) return 'partially_outbound';
@@ -164,7 +167,7 @@ const progress = (row: DemandRow): MaterialDemandProgressStatus => {
   return 'pending_allocation';
 };
 
-export const decimal = (value: number): string => value.toFixed(4);
+export const decimal = fixedIntegerQuantity;
 export const placeholders = (ids: string[]): string => ids.map(() => '?').join(',');
 export const bigintCompare = (a: string, b: string): number =>
   BigInt(a) < BigInt(b) ? -1 : BigInt(a) > BigInt(b) ? 1 : 0;

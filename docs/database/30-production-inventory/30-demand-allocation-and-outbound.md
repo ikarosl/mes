@@ -2,6 +2,8 @@
 
 > [返回生产与库存总览](README.md) · [返回数据库设计总览](../README.md)。本章是生产与库存规范的组成部分，不是独立副本。
 
+本章所有单位用量快照、计划产量快照、需求、补料、分配和出库数量均为正整数并由数据库整数 `CHECK` 兜底。正常需求使用整数乘法 `need_number = quantity_per_unit_snapshot × planned_output_quantity_snapshot`；结果超过 `DECIMAL(12,4)` 可表示的最大整数 `99999999` 时必须拒绝，禁止浮点计算、舍入或截断。
+
 ## 3.5 生产物料需求与分配表
 
 > `demand_type` 已从历史数字迁移为字符串。当前设计使用 `normal/manual_additional/scrap_supplement/material_loss_supplement` 四种产生规则；工序报废补料和生产领料损耗补料均由补料单直接生成新需求，不修改原需求，也不再维护与需求重复的补料明细。工序报废批准时写入不可变补产授权，只有对应补料单全部需求确认领用并进入 `fulfilled` 后，该授权才成为可执行额度；生产领料损耗补料只恢复实物，不产生或增加产品补产额度。

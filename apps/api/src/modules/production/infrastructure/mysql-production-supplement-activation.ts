@@ -5,6 +5,7 @@ import {
   type RouteQuantityStep,
   type RouteSupplementSource,
 } from '../domain/production-route-quantity.policy.js';
+import { integerQuantity } from '../domain/integer-quantity.js';
 
 type Db = Pool | PoolConnection;
 
@@ -165,7 +166,8 @@ export const fulfillReadySupplements = async (
       isOnNewRoute &&
       step.status === 'completed' &&
       (!step.need_record_snapshot ||
-        Number(step.effective_normal) < Number(quantity?.requiredNormalQuantity ?? 0));
+        integerQuantity(step.effective_normal) <
+          integerQuantity(quantity?.requiredNormalQuantity ?? 0));
     if (!shouldReopen) continue;
     await connection.execute(
       `UPDATE batch_step_records

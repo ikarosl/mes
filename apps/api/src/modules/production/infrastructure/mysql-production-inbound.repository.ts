@@ -19,6 +19,7 @@ import {
   type PurchaseInboundItemSnapshot,
 } from '../application/ports/production-inbound.repository.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
+import { fixedIntegerQuantity, integerQuantity } from '../domain/integer-quantity.js';
 
 type OrderRow = RowDataPacket & {
   id: number;
@@ -347,7 +348,10 @@ export class MysqlProductionInboundRepository extends ProductionInboundRepositor
   private mapOrder(row: OrderRow, details: DetailRow[]): PurchaseInboundOrderItem {
     const summary = new Map<string, number>();
     for (const x of details)
-      summary.set(x.unit_snapshot, (summary.get(x.unit_snapshot) ?? 0) + Number(x.inbound_number));
+      summary.set(
+        x.unit_snapshot,
+        (summary.get(x.unit_snapshot) ?? 0) + integerQuantity(x.inbound_number),
+      );
     return {
       inboundId: String(row.id),
       inboundNo: row.inbound_no,
@@ -363,7 +367,9 @@ export class MysqlProductionInboundRepository extends ProductionInboundRepositor
       version: row.version,
       remark: row.remark,
       detailCount: details.length,
-      totalInboundQuantity: decimal(details.reduce((n, x) => n + Number(x.inbound_number), 0)),
+      totalInboundQuantity: decimal(
+        details.reduce((n, x) => n + integerQuantity(x.inbound_number), 0),
+      ),
       quantitySummary: [...summary].map(([unit, quantity]) => ({
         unit,
         quantity: decimal(quantity),
@@ -431,7 +437,9 @@ export class MysqlProductionInboundRepository extends ProductionInboundRepositor
       batchStatus: row.batch_status,
       onHandAvailableQuantity: row.on_hand,
       reservedQuantity: row.reserved,
-      availableToAllocateQuantity: decimal(Math.max(0, Number(row.on_hand) - Number(row.reserved))),
+      availableToAllocateQuantity: decimal(
+        Math.max(0, integerQuantity(row.on_hand) - integerQuantity(row.reserved)),
+      ),
       inboundSources: sources.map((x) => ({
         inboundId: String(x.inbound_id),
         inboundNo: x.inbound_no,
@@ -466,7 +474,7 @@ export class MysqlProductionInboundRepository extends ProductionInboundRepositor
     });
   }
 }
-const decimal = (n: number) => n.toFixed(4);
+const decimal = fixedIntegerQuantity;
 const iso = (d: Date | null) => (d ? toBeijingISOString(d) : null);
 const isDuplicate = (e: unknown) =>
   typeof e === 'object' &&

@@ -1,8 +1,7 @@
 import type { BatchStepStatus } from '@company/contracts';
+import { fixedIntegerQuantity, integerQuantity } from './integer-quantity.js';
 
-const SCALE = 10_000;
-const scaled = (value: number | string): number => Math.round(Number(value) * SCALE);
-const fixed = (value: number): string => (value / SCALE).toFixed(4);
+const fixed = fixedIntegerQuantity;
 
 export type RouteQuantityStep = {
   id: number | string;
@@ -47,7 +46,7 @@ export const calculateRouteStepQuantities = (
   steps: RouteQuantityStep[],
   supplements: RouteSupplementSource[],
 ): Map<string, RouteStepQuantity> => {
-  const planned = scaled(plannedQuantity);
+  const planned = integerQuantity(plannedQuantity);
   const ordered = [...steps].sort(
     (left, right) =>
       left.stepOrder - right.stepOrder || String(left.id).localeCompare(String(right.id)),
@@ -61,28 +60,28 @@ export const calculateRouteStepQuantities = (
       (source) => source.sourceStepOrder > step.stepOrder,
     );
     const activatedInput = materialReady.reduce(
-      (total, source) => total + scaled(source.quantity),
+      (total, source) => total + integerQuantity(source.quantity),
       0,
     );
     const activatedTarget = downstreamActivated.reduce(
-      (total, source) => total + scaled(source.quantity),
+      (total, source) => total + integerQuantity(source.quantity),
       0,
     );
     const pendingInput = affecting
       .filter((source) => source.status === 'pending_material')
-      .reduce((total, source) => total + scaled(source.quantity), 0);
+      .reduce((total, source) => total + integerQuantity(source.quantity), 0);
     const required = planned + activatedTarget;
     const previous = ordered[index - 1];
     const previousQuantity = previous ? result.get(String(previous.id)) : undefined;
     const released = !previous
       ? planned + activatedInput
       : previous.needRecord
-        ? scaled(previous.effectiveNormal)
+        ? integerQuantity(previous.effectiveNormal)
         : previous.status === 'completed'
-          ? scaled(previousQuantity?.requiredNormalQuantity ?? 0)
+          ? integerQuantity(previousQuantity?.requiredNormalQuantity ?? 0)
           : 0;
-    const directReported = scaled(step.effectiveDirectReported);
-    const effectiveNormal = scaled(step.effectiveNormal);
+    const directReported = integerQuantity(step.effectiveDirectReported);
+    const effectiveNormal = integerQuantity(step.effectiveNormal);
     const available = Math.max(0, released - directReported);
     const remaining = Math.max(0, required - effectiveNormal);
     const isSupplementReopened =

@@ -65,7 +65,7 @@ const draftPlan = (
       itemId: 'i1',
       itemCode: 'MAT-1',
       itemName: '主料',
-      plannedQuantity: '1.2500',
+      plannedQuantity: '2.0000',
       unit: '件',
     },
   ],
@@ -247,17 +247,17 @@ describe('AbnormalReworkPanel', () => {
     const vm = vmOf(wrapper);
     expect(vm.materialEndStepRecordId).toBe('s1');
     expect(vm.supplementRemark).toBe('先补主料');
-    expect(vm.supplementRows[0]).toMatchObject({ selected: true, quantity: 1.25 });
+    expect(vm.supplementRows[0]).toMatchObject({ selected: true, quantity: 2 });
     expect(vm.supplementRows[1]).toMatchObject({ selected: false });
-    await selectRow(wrapper, 1, 0.5);
+    await selectRow(wrapper, 1, 1);
     await stageSupplement(wrapper);
     // 保存时携带恢复的方案版本号
     expect(planSaver).toHaveBeenCalledWith(
       disposition,
       's1',
       [
-        { originalDemandId: 'd1', supplementQuantity: 1.25 },
-        { originalDemandId: 'd2', supplementQuantity: 0.5 },
+        { originalDemandId: 'd1', supplementQuantity: 2 },
+        { originalDemandId: 'd2', supplementQuantity: 1 },
       ],
       '先补主料',
       5,
@@ -267,14 +267,14 @@ describe('AbnormalReworkPanel', () => {
   it('stages the demand without confirming the scrap supplement', async () => {
     const { wrapper, planSaver } = mountPanel();
     await openSupplement(wrapper);
-    await selectRow(wrapper, 0, 1.2345);
+    await selectRow(wrapper, 0, 2);
     vmOf(wrapper).supplementRemark = ' 备注 ';
     await nextTick();
     await stageSupplement(wrapper);
     expect(planSaver).toHaveBeenCalledWith(
       disposition,
       's2',
-      [{ originalDemandId: 'd1', supplementQuantity: 1.2345 }],
+      [{ originalDemandId: 'd1', supplementQuantity: 2 }],
       ' 备注 ',
       null,
     );
@@ -288,30 +288,30 @@ describe('AbnormalReworkPanel', () => {
         version: 6,
         remark: '补料备注',
         lines: [
-          { ...draftPlan().lines[0], plannedQuantity: '1.2500' },
+          { ...draftPlan().lines[0], plannedQuantity: '2.0000' },
           {
             originalDemandId: 'd2',
             productMaterialId: 'm2',
             itemId: 'i2',
             itemCode: 'MAT-2',
             itemName: '辅料',
-            plannedQuantity: '0.5000',
+            plannedQuantity: '1.0000',
             unit: '件',
           },
         ],
       }),
     );
     await openSupplement(wrapper);
-    await selectRow(wrapper, 0, 1.25);
-    await selectRow(wrapper, 1, 0.5);
+    await selectRow(wrapper, 0, 2);
+    await selectRow(wrapper, 1, 1);
     await stageSupplement(wrapper);
     const vm = vmOf(wrapper);
     expect(vm.supplementStage).toBe('review');
     expect(wrapper.find('.dialog').text()).toContain('复核报废补料需求');
     expect(vm.stagedSupplement?.materialEndStepLabel).toBe('2. 组装');
     expect(vm.stagedSupplement?.lines).toEqual([
-      { originalDemandId: 'd1', itemCode: 'MAT-1', itemName: '主料', quantity: 1.25, unit: '件' },
-      { originalDemandId: 'd2', itemCode: 'MAT-2', itemName: '辅料', quantity: 0.5, unit: '件' },
+      { originalDemandId: 'd1', itemCode: 'MAT-1', itemName: '主料', quantity: 2, unit: '件' },
+      { originalDemandId: 'd2', itemCode: 'MAT-2', itemName: '辅料', quantity: 1, unit: '件' },
     ]);
     expect(vm.stagedSupplement?.remark).toBe('补料备注');
     expect(vm.persistedPlan?.version).toBe(6);
@@ -320,7 +320,7 @@ describe('AbnormalReworkPanel', () => {
   it('keeps the staged data when returning to edit', async () => {
     const { wrapper, planSaver } = mountPanel();
     await openSupplement(wrapper);
-    await selectRow(wrapper, 0, 1.25);
+    await selectRow(wrapper, 0, 2);
     vmOf(wrapper).supplementRemark = ' 先补主料 ';
     await nextTick();
     await stageSupplement(wrapper);
@@ -328,7 +328,7 @@ describe('AbnormalReworkPanel', () => {
     await nextTick();
     const vm = vmOf(wrapper);
     expect(vm.supplementStage).toBe('edit');
-    expect(vm.supplementRows[0]).toMatchObject({ selected: true, quantity: 1.25 });
+    expect(vm.supplementRows[0]).toMatchObject({ selected: true, quantity: 2 });
     expect(vm.supplementRemark).toBe(' 先补主料 ');
     expect(vm.materialEndStepRecordId).toBe('s2');
     // 再次暂存不清空已选数据，并携带上次保存得到的方案版本号
@@ -337,7 +337,7 @@ describe('AbnormalReworkPanel', () => {
     expect(planSaver).toHaveBeenCalledWith(
       disposition,
       's2',
-      [{ originalDemandId: 'd1', supplementQuantity: 1.25 }],
+      [{ originalDemandId: 'd1', supplementQuantity: 2 }],
       ' 先补主料 ',
       6,
     );
@@ -358,13 +358,13 @@ describe('AbnormalReworkPanel', () => {
     expect(planLoader).toHaveBeenLastCalledWith('1');
     // 重新打开后从服务端草稿再次恢复
     expect(vmOf(wrapper).materialEndStepRecordId).toBe('s1');
-    expect(vmOf(wrapper).supplementRows[0]).toMatchObject({ selected: true, quantity: 1.25 });
+    expect(vmOf(wrapper).supplementRows[0]).toMatchObject({ selected: true, quantity: 2 });
   });
 
   it('emits only the plan and disposition versions when confirming the scrap supplement', async () => {
     const { wrapper } = mountPanel();
     await openSupplement(wrapper);
-    await selectRow(wrapper, 0, 1.25);
+    await selectRow(wrapper, 0, 2);
     await stageSupplement(wrapper);
     vmOf(wrapper).submitSupplement();
     expect(wrapper.emitted('approveScrap')).toEqual([[disposition, 6]]);
@@ -375,7 +375,7 @@ describe('AbnormalReworkPanel', () => {
     const { wrapper, planSaver } = mountPanel();
     planSaver.mockRejectedValueOnce(new RequestError('方案已被其他管理员修改', 409));
     await openSupplement(wrapper);
-    await selectRow(wrapper, 0, 1.25);
+    await selectRow(wrapper, 0, 2);
     await stageSupplement(wrapper);
     expect(vmOf(wrapper).supplementError).toBe(
       '暂存需求失败，可能已被其他管理员修改，请关闭后重新打开。',
@@ -403,7 +403,7 @@ describe('AbnormalReworkPanel', () => {
     const { wrapper, planSaver } = mountPanel();
     planSaver.mockReturnValueOnce(new Promise((resolve) => (resolveSave = resolve)));
     await openSupplement(wrapper);
-    await selectRow(wrapper, 0, 1.25);
+    await selectRow(wrapper, 0, 2);
     const pendingStage = vmOf(wrapper).stageSupplement();
     await nextTick();
     expect(vmOf(wrapper).supplementSaving).toBe(true);

@@ -432,7 +432,8 @@
               v-model="changeForm.normalQuantity"
               :min="0"
               :max="replacementNormalMaximum"
-              :precision="4"
+              :step="1"
+              :precision="0"
             />
           </el-form-item>
           <el-form-item
@@ -442,7 +443,8 @@
             <el-input-number
               v-model="changeForm.abnormalQuantity"
               :min="0"
-              :precision="4"
+              :step="1"
+              :precision="0"
             />
           </el-form-item>
           <el-form-item

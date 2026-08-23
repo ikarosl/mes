@@ -143,23 +143,22 @@ const emit = defineEmits<{
 
 const reason = ref('');
 const reasonTouched = ref(false);
-const scaled = (value: string | number): number => Math.round(Number(value) * 10_000);
+const integerQuantity = (value: string | number): number => Number(value);
 const activeBatches = computed(() =>
   (props.order?.batches ?? []).filter((batch) => batch.status !== 'cancelled'),
 );
 const unfinishedBatches = computed(() =>
   activeBatches.value.filter((batch) => batch.status !== 'completed'),
 );
-const completedQuantityScaled = computed(() =>
-  activeBatches.value.reduce((sum, batch) => sum + scaled(batch.completedQuantity), 0),
+const completedQuantity = computed(() =>
+  activeBatches.value.reduce((sum, batch) => sum + integerQuantity(batch.completedQuantity), 0),
 );
-const completedQuantity = computed(() => (completedQuantityScaled.value / 10_000).toFixed(4));
-const plannedQuantityScaled = computed(() => scaled(props.order?.plannedQuantity ?? 0));
+const plannedQuantity = computed(() => integerQuantity(props.order?.plannedQuantity ?? 0));
 const isFullyProduced = computed(
   () =>
     activeBatches.value.length > 0 &&
     unfinishedBatches.value.length === 0 &&
-    completedQuantityScaled.value === plannedQuantityScaled.value,
+    completedQuantity.value === plannedQuantity.value,
 );
 const canComplete = computed(() => isFullyProduced.value);
 const trimmedReason = computed(() => reason.value.trim());

@@ -219,8 +219,9 @@
             ><template #default="{ row }"
               ><el-input-number
                 v-model="row.inboundQuantity"
-                :min="0.0001"
-                :precision="4" /></template></el-table-column
+                :min="1"
+                :step="1"
+                :precision="0" /></template></el-table-column
           ><el-table-column
             label="操作"
             width="70"
@@ -385,7 +386,11 @@ const canCreate = computed(
     form.details.length > 0 &&
     duplicateKeys.value.size === 0 &&
     form.details.every(
-      (x) => optionById.value.has(x.itemId) && x.batchCode.trim() && x.inboundQuantity > 0,
+      (x) =>
+        optionById.value.has(x.itemId) &&
+        x.batchCode.trim() &&
+        Number.isInteger(x.inboundQuantity) &&
+        x.inboundQuantity > 0,
     ),
 );
 const dirty = computed(() =>
@@ -421,7 +426,7 @@ const openCreate = async () => {
   }
 };
 const addLine = () =>
-  form.details.push({ itemId: '', batchCode: '', inboundQuantity: 0.0001, remark: null });
+  form.details.push({ itemId: '', batchCode: '', inboundQuantity: 1, remark: null });
 const removeLine = (i: number) => form.details.splice(i, 1);
 const submitCreate = async () => {
   if (!canCreate.value || creating.value) return;

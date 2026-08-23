@@ -73,7 +73,7 @@
             v-model="form.quantity"
             :min="0"
             :max="available"
-            :precision="4"
+            :precision="0"
             :step="1"
             controls-position="right"
           />
@@ -176,6 +176,7 @@ const quantityTip = computed(() =>
 const canSubmit = computed(
   () =>
     !props.submitting &&
+    Number.isInteger(form.quantity) &&
     form.quantity > 0 &&
     form.quantity <= available.value &&
     (props.mode === 'normal' || form.abnormalOrigin !== null),

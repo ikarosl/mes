@@ -3,11 +3,12 @@ import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
-  IsNumber,
+  IsInt,
   IsOptional,
   IsIn,
   IsString,
   MaxLength,
+  Max,
   Min,
   ValidateNested,
 } from 'class-validator';
@@ -40,7 +41,7 @@ export class MaterialOutboundQueryDto extends PageQueryDto implements MaterialOu
 export class CreateMaterialAllocationLineDto {
   @IsString() @MaxLength(20) demandId!: string;
   @IsString() @MaxLength(20) itemBatchId!: string;
-  @Type(() => Number) @IsNumber({ maxDecimalPlaces: 4 }) @Min(0.0001) assignedQuantity!: number;
+  @Type(() => Number) @IsInt() @Min(1) @Max(99_999_999) assignedQuantity!: number;
   @IsOptional() @IsString() @MaxLength(5000) remark?: string | null;
 }
 export class CreateMaterialAllocationsDto implements CreateMaterialAllocationsPayload {
@@ -53,7 +54,7 @@ export class CreateMaterialAllocationsDto implements CreateMaterialAllocationsPa
 }
 export class CreateMaterialOutboundDetailDto {
   @IsString() @MaxLength(20) allocationId!: string;
-  @Type(() => Number) @IsNumber({ maxDecimalPlaces: 4 }) @Min(0.0001) outboundQuantity!: number;
+  @Type(() => Number) @IsInt() @Min(1) @Max(99_999_999) outboundQuantity!: number;
 }
 export class CreateMaterialOutboundDto implements CreateMaterialOutboundPayload {
   @IsArray()

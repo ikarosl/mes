@@ -234,8 +234,9 @@
               <el-input-number
                 v-model="row.quantity"
                 :disabled="!row.selected"
-                :min="0.0001"
-                :precision="4"
+                :min="1"
+                :step="1"
+                :precision="0"
               />
               {{ row.candidate.unit }}
             </template>
@@ -357,7 +358,8 @@
             v-model="completionForm.normalQuantity"
             :min="0"
             :max="Number(selectedRework?.reworkQuantity || 0)"
-            :precision="4"
+            :step="1"
+            :precision="0"
           />
         </el-form-item>
         <el-form-item
@@ -368,7 +370,8 @@
             v-model="completionForm.abnormalQuantity"
             :min="0"
             :max="Number(selectedRework?.reworkQuantity || 0)"
-            :precision="4"
+            :step="1"
+            :precision="0"
           />
         </el-form-item>
         <el-form-item label="备注">
@@ -515,7 +518,9 @@ const canComplete = computed(() => {
   const expected = Number(selectedRework.value?.reworkQuantity ?? 0);
   return (
     expected > 0 &&
-    Math.abs(completionForm.normalQuantity + completionForm.abnormalQuantity - expected) < 0.00001
+    Number.isInteger(completionForm.normalQuantity) &&
+    Number.isInteger(completionForm.abnormalQuantity) &&
+    completionForm.normalQuantity + completionForm.abnormalQuantity === expected
   );
 });
 const canStageSupplement = computed(
@@ -524,7 +529,9 @@ const canStageSupplement = computed(
     !supplementSaving.value &&
     Boolean(supplementDisposition.value) &&
     Boolean(materialEndStepRecordId.value) &&
-    supplementRows.value.some((row) => row.selected && row.quantity > 0),
+    supplementRows.value.some(
+      (row) => row.selected && Number.isInteger(row.quantity) && row.quantity > 0,
+    ),
 );
 const openReview = (item: BatchStepAbnormalDispositionItem, mode: 'rework' | 'reject') => {
   selectedDisposition.value = item;
@@ -600,7 +607,7 @@ const loadSupplementCandidates = async (restoredPlan?: ProductionScrapSupplement
       selected: restored.has(candidate.originalDemandId),
       quantity: restored.has(candidate.originalDemandId)
         ? Number(restored.get(candidate.originalDemandId))
-        : 0.0001,
+        : 1,
     }));
   } catch {
     supplementError.value = '补料候选加载失败，请关闭后重试。';

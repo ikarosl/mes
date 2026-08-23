@@ -26,6 +26,7 @@
 13c. 历史补产激活后的已完成路线重开回填（`202608130007-production-supplement-reopen-backfill`）
 13d. 报工异常来源、工序报废补产授权、补料需求去重及补料单 `fulfilled` 物流状态（`202608200001-production-scrap-reproduction-authorization`）
 13e. 生产领料损耗、补料单双来源及 `material_loss_supplement` 需求类型（`202608200002-production-material-loss-supplement`）
+13f. 当前全部业务数量列追加整数 `CHECK`，拒绝历史和新增小数（`202608240001-integer-production-quantities`）
 14. inspection_records（过程检验和最终质量语义未闭环，暂不实施）
 15. finished_flow_records（质量放行和入库边界未闭环，暂不实施）
 16. 业务闭环后再创建必要的只读汇总视图
@@ -46,3 +47,5 @@
 `202608200002-production-material-loss-supplement` 按已定稿口径创建只支持 `production_consumed` 的 `item_scrap`；将 `production_material_supplement.scrap_record_id` 语义化重命名为 `step_scrap_record_id`，新增 `source_type/material_loss_scrap_id/version/updated_by/updated_at` 并把历史行回填为 `step_scrap_reproduction`；同时扩展 `production_item_demand.demand_type` 为 `material_loss_supplement`，追加报废管理 RBAC。该迁移没有开放 `warehouse_allocated/return_after_outbound/in_stock` 报废结构或命令。
 
 `202608200003-production-scrap-supplement-plan` 新增 `production_scrap_supplement_plan` 与 `production_scrap_supplement_plan_line`，把正式批准报废前可反复编辑的补料方案与 `production_item_demand` 正式需求事实隔离。方案明细只保存管理员填写数量，不自动计算推荐量；草稿查询、乐观锁整体保存、原子确认接口与管理端恢复接线已经落地。
+
+`202608240001-integer-production-quantities` 按 2026-08-24 最终业务决策，为 BOM、工单、批次、需求、报工、分配、出入库、退料、损耗、补产授权、返工和盘点的现存数量列追加整数 `CHECK`。迁移保留 `DECIMAL(12,4)` 兼容表示，但任何非零小数位都会被拒绝；升级库若已有小数会在添加约束时失败，必须先由业务人工确认并修正，migration 不做自动舍入或截断。`products.spec_values` 等纯 JSON 记录不在本迁移范围内。

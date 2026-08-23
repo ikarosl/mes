@@ -22,6 +22,7 @@ import { toBeijingISOString } from '../../../common/time/beijing-time.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
 import { ProductionMaterialRepository } from '../application/ports/production-material.repository.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
+import { integerQuantity } from '../domain/integer-quantity.js';
 import {
   requireMaterialAllocationBatchStatus,
   requireMaterialOutboundBatchStatus,
@@ -177,11 +178,14 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
           [line.demandId, line.itemBatchId, demand.item_id, line.itemBatchId],
         );
         if (
-          Number(totals!.allocated) + line.assignedQuantity >
-          Number(demand.need_number) + 0.0000001
+          integerQuantity(totals!.allocated) + line.assignedQuantity >
+          integerQuantity(demand.need_number)
         )
           throw new ProductionDomainError('ALLOCATION_EXCEEDS_DEMAND', '分配数量超过需求剩余缺口');
-        if (line.assignedQuantity > Number(totals!.on_hand) - Number(totals!.reserved) + 0.0000001)
+        if (
+          line.assignedQuantity >
+          integerQuantity(totals!.on_hand) - integerQuantity(totals!.reserved)
+        )
           throw new ProductionDomainError('INSUFFICIENT_AVAILABLE_STOCK', '库存批次可分配数量不足');
         const [result] = await connection.execute<ResultSetHeader>(
           `INSERT INTO production_item_allocation (demand_id,production_batch_id,item_id,batch_id,assigned_number,unit_snapshot,remark,created_by,updated_by) VALUES (?,?,?,?,?,?,?,?,?)`,
@@ -236,9 +240,9 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
       if (row.allocation_status === 'released') return mapAllocation(row);
       if (row.allocation_status !== 'active')
         throw new ProductionDomainError('INVALID_STATE', '当前分配状态不能释放');
-      if (Number(row.outbound_quantity) > 0)
+      if (integerQuantity(row.outbound_quantity) > 0)
         throw new ProductionDomainError('ALLOCATION_ALREADY_OUTBOUND', '已发生出库的分配不能释放');
-      if (Number(row.pending_outbound_quantity) > 0)
+      if (integerQuantity(row.pending_outbound_quantity) > 0)
         throw new ProductionDomainError(
           'ALLOCATION_PENDING_OUTBOUND',
           '该分配存在待确认出库单，请先取消相关单据',
@@ -300,10 +304,9 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
           throw new ProductionDomainError('INVALID_STATE', '只有有效分配可以出库');
         if (
           line.outboundQuantity >
-          Number(allocation.assigned_number) -
-            Number(allocation.outbound_quantity) -
-            Number(allocation.pending_outbound_quantity) +
-            0.0000001
+          integerQuantity(allocation.assigned_number) -
+            integerQuantity(allocation.outbound_quantity) -
+            integerQuantity(allocation.pending_outbound_quantity)
         )
           throw new ProductionDomainError(
             'OUTBOUND_EXCEEDS_ALLOCATION',
@@ -459,9 +462,9 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
       .map((row) => {
         const available = Math.max(
           0,
-          Number(row.assigned_number) -
-            Number(row.outbound_quantity) -
-            Number(row.pending_outbound_quantity),
+          integerQuantity(row.assigned_number) -
+            integerQuantity(row.outbound_quantity) -
+            integerQuantity(row.pending_outbound_quantity),
         );
         return {
           allocationId: String(row.id),
@@ -476,7 +479,10 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
           pendingOutboundQuantity: row.pending_outbound_quantity,
           availableToOrderQuantity: decimal(available),
           remainingActualOutboundQuantity: decimal(
-            Math.max(0, Number(row.assigned_number) - Number(row.outbound_quantity)),
+            Math.max(
+              0,
+              integerQuantity(row.assigned_number) - integerQuantity(row.outbound_quantity),
+            ),
           ),
           unit: row.unit_snapshot,
         };
@@ -560,15 +566,15 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
         )
           throw new ProductionDomainError('OUTBOUND_ALLOCATION_CHANGED', '出库单对应分配已失效');
         if (
-          Number(allocation.outbound_quantity) + Number(detail.outbound_number) >
-          Number(allocation.assigned_number) + 0.0000001
+          integerQuantity(allocation.outbound_quantity) + integerQuantity(detail.outbound_number) >
+          integerQuantity(allocation.assigned_number)
         )
           throw new ProductionDomainError('OUTBOUND_EXCEEDS_ALLOCATION', '出库数量超过分配剩余量');
         const key = String(detail.batch_id);
         const current = requestedByBatch.get(key);
         requestedByBatch.set(key, {
           itemId: detail.item_id,
-          quantity: (current?.quantity ?? 0) + Number(detail.outbound_number),
+          quantity: (current?.quantity ?? 0) + integerQuantity(detail.outbound_number),
         });
       }
       for (const [batchId, requested] of requestedByBatch) {
@@ -576,7 +582,7 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
           "SELECT COALESCE(SUM(quantity),0) quantity FROM inventory_transaction WHERE batch_id=? AND item_id=? AND stock_status='available'",
           [batchId, requested.itemId],
         );
-        if (requested.quantity > Number(stock?.quantity ?? 0) + 0.0000001)
+        if (requested.quantity > integerQuantity(stock?.quantity ?? 0))
           throw new ProductionDomainError(
             'INSUFFICIENT_AVAILABLE_STOCK',
             '库存账面可用数量不足，整单未扣减',
@@ -821,7 +827,7 @@ const summarizeQuantities = (details: OutboundDetailRow[]) => {
   for (const detail of details)
     byUnit.set(
       detail.unit_snapshot,
-      (byUnit.get(detail.unit_snapshot) ?? 0) + Number(detail.outbound_number),
+      (byUnit.get(detail.unit_snapshot) ?? 0) + integerQuantity(detail.outbound_number),
     );
   return [...byUnit.entries()].map(([unit, quantity]) => ({ unit, quantity: decimal(quantity) }));
 };
