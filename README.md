@@ -2,21 +2,21 @@
 
 当前已落地范围：RBAC、认证、操作日志、管理端权限控制、多标签页路由缓存、产品主数据、技术文件、工序和工艺路线，以及 Production 的生产工单、生产批次、工序报工追溯、异常返工、工序异常报废产生人工补料需求、生产物料需求、外购物料入库、库存批次查询、分配、领料出库、生产退料和库存盘点链路。通用其他入库、通用报废、质量和全链路追溯后端尚未迁移；这里的工序异常报废只属于 Production 的最小闭环，不代表通用库存报废已经迁移。
 
-## 快速开始
+## 快速开始（测试环境）
 
 1. 复制 `.env.example` 为 `.env`，设置数据库、长度不少于 32 位的 JWT 密钥，以及管理员账号（`ADMIN_PASSWORD` 不少于 6 位）。
-2. 启动基础设施：`pnpm infra:up`。该命令显式读取仓库根目录唯一的 `.env`，启动 MySQL（容器名 `dev_test_sql`，宿主 `3307` 映射容器 `3306`）与 MinIO（容器名 `dev_test_minio`）。MySQL 数据库名与 `.env` 的 `DB_NAME` 保持一致。
-3. 安装依赖：`pnpm install --frozen-lockfile`。
-4. 初始化开发库：`pnpm db:init`。默认 `.env.example` 保持 `DB_HOST=127.0.0.1`、`DB_PORT=3307`，因此该命令直接连接第 2 步启动的 Docker MySQL。
-5. 启动 API：`pnpm dev:api`。
-6. 启动管理端：`pnpm dev:admin`。
-
+2. 安装依赖：`pnpm install --frozen-lockfile`。
+3. 启动基础设施并初始化数据库：`pnpm infra:init`。该命令会先启动 MySQL（容器名 `dev_test_sql`，宿主 `3307` 映射容器 `3306`）与 MinIO（容器名 `dev_test_minio`），确保对象存储 Bucket 存在，然后依次执行 `db:ensure`（按 `.env` 创建数据库）、`db:migrate`、`db:seed`、`db:bootstrap-admin`。仅想启动容器不初始化数据库时，可单独使用 `pnpm infra:up`。
+4. 启动 API：`pnpm dev:api`。
+5. 启动管理端：`pnpm dev:admin`。
+-- 数据库集成测试请按照提示，将env 配置规范化，并使用infra:init 一键完成测试环境部署
 ## 数据库命令
 
-- `pnpm db:migrate`：只应用 schema 与随代码发布的权限目录，不创建角色或账号；用于生产 schema upgrade。
+- `pnpm db:ensure`：按 `.env` 创建数据库（若不存在）；通常由 `db:init` 自动调用。
+- `pnpm db:migrate`：只应用 schema 与随代码发布的权限目录，不创建角色或账号；要求数据库已存在，用于生产 schema upgrade。
 - `pnpm db:seed`：幂等写入不含凭证的系统基础数据，包括内置管理员角色、通配权限及其关联。
 - `pnpm db:bootstrap-admin`：使用 `ADMIN_USERNAME`、`ADMIN_PASSWORD`、`ADMIN_DISPLAY_NAME` 创建或更新管理员账号；要求先执行 seed。
-- `pnpm db:init`：依次执行上述三步，用于从空库初始化到可登录状态。对已有库重跑会按当前 `ADMIN_PASSWORD` 更新管理员密码，生产环境仅升级 schema 时应使用 `db:migrate`。
+- `pnpm db:init`：先按 `.env` 创建数据库（若不存在），再依次执行上述三步，用于从空库初始化到可登录状态。对已有库重跑会按当前 `ADMIN_PASSWORD` 更新管理员密码，生产环境仅升级 schema 时应使用 `db:migrate`。
 - `pnpm test:production:mysql`：真实 MySQL 集成测试，仅针对专用测试端点与以 `_test` 结尾的专用测试库。`TEST_DB_HOST/PORT/NAME` 必填，且 `DB_HOST/PORT/NAME` 必须与之完全相等。本地 Docker 默认映射为宿主 `3307` 到容器 `3306`；CI 服务容器继续使用 `3306`。
 
 仓库根目录的数据库命令是开发与 CI 入口，由 `tsx` 直接执行 `packages/database/src`，修改运行器后无需先手工构建。`@company/database` 同时提供成对的 `*:compiled` 脚本，用 Node 执行构建后的 `dist`，用于验证编译产物。生产镜像不安装 `tsx`，CD 应使用同一 API 镜像运行一次性迁移任务 `node node_modules/@company/database/dist/migrate.js`，迁移成功后再启动 API；不得在每个 API 副本启动时自动执行迁移。
