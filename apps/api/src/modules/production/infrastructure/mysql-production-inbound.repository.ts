@@ -264,7 +264,12 @@ export class MysqlProductionInboundRepository extends ProductionInboundRepositor
     });
   }
   async listInventory(query: InventoryBatchQuery): Promise<PageResult<InventoryBatchItem>> {
-    const where = ['1=1'];
+    const where = [
+      '1=1',
+      // 库存列表只显示已产生真实库存流水的批次；待确认入库单会先创建 item_batch，
+      // 但 inventory_transaction 仍为空，不能作为库存列表返回。
+      'EXISTS (SELECT 1 FROM inventory_transaction it WHERE it.batch_id = ib.id)',
+    ];
     const params: Array<string | number | null> = [];
     if (query.keyword) {
       where.push('(ib.item_code_snapshot LIKE ? OR ib.product_name_snapshot LIKE ?)');
