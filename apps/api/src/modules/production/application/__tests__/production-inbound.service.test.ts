@@ -103,4 +103,29 @@ describe('ProductionInboundService', () => {
     ).resolves.toBe(replay);
     expect(products.listInventoryItemReferencesByIds).not.toHaveBeenCalled();
   });
+
+  it('trims and persists a mandatory cancellation reason', async () => {
+    const repository = {
+      cancel: vi.fn().mockResolvedValue({
+        inboundId: '2',
+        operatorId: null,
+        createdById: null,
+        cancelledById: '1',
+      }),
+    };
+    const identity = { listUserReferencesByIds: vi.fn().mockResolvedValue([]) };
+    const service = new ProductionInboundService(
+      repository as never,
+      {} as never,
+      identity as never,
+      {} as never,
+    );
+
+    await service.cancel('2', 1, '  供应商变更  ', context);
+
+    expect(repository.cancel).toHaveBeenCalledWith('2', 1, '供应商变更', context);
+    await expect(service.cancel('2', 1, '   ', context)).rejects.toMatchObject({
+      code: 'INVALID_INPUT',
+    });
+  });
 });

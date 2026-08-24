@@ -298,6 +298,10 @@ approved -> fulfilled
 | `operator_id`         | `BIGINT UNSIGNED` | 操作人 ID                                 |
 | `version`             | `INT`             | 乐观锁版本号，默认 `0`                    |
 | `remark`              | `TEXT`            | 备注                                      |
+| `cancel_source`       | `VARCHAR(30)`     | `manual` 人工取消或 `production_batch` 任务级联取消 |
+| `cancel_reason`       | `TEXT`            | 取消原因；历史未记录数据可为空            |
+| `cancelled_by`        | `BIGINT UNSIGNED` | 取消人；历史未记录数据可为空              |
+| `cancelled_at`        | `DATETIME`        | 取消时间；历史未记录数据可为空            |
 | 业务审计字段          | 见统一规则        | 可变业务单据审计字段                      |
 
 约束：
@@ -307,6 +311,8 @@ approved -> fulfilled
 - 唯一约束：`UNIQUE (id, production_batch_id)`
 - 外键：`FOREIGN KEY (production_batch_id, work_order_id) REFERENCES production_batches(id, work_order_id)`
 - 外键：`FOREIGN KEY (operator_id) REFERENCES users(id)`
+- 外键：`FOREIGN KEY (cancelled_by) REFERENCES users(id)`
+- 检查约束：`CHECK (cancel_source IS NULL OR cancel_source IN ('manual', 'production_batch'))`
 - 检查约束：`CHECK (status IN ('pending_picking', 'picked', 'partially_outbound', 'completed', 'cancelled'))`
 - 组合索引：`INDEX (status, created_at)`，用于出库单状态分页
 
@@ -316,6 +322,7 @@ approved -> fulfilled
 - 一张出库单可以包含多个物料、多个需求、多个库存批次。
 - 出库单主表建议关联 `production_batch_id`，而不是单个 `demand_id`。
 - 具体出了哪些物料、哪些批次、多少数量，由 `outbound_detail` 记录。
+- 人工取消必须填写原因；生产任务级联取消继承任务取消原因，并以 `cancel_source` 明确来源。
 
 ---
 

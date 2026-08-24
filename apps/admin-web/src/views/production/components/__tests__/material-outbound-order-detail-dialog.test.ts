@@ -62,4 +62,37 @@ describe('MaterialOutboundOrderDetailDialog', () => {
     expect(wrapper.text()).toContain('待出库');
     expect(wrapper.text()).toContain('打印');
   });
+
+  it('does not mislabel a historical unknown cancellation source as manual', () => {
+    const wrapper = mount(MaterialOutboundOrderDetailDialog, {
+      props: {
+        modelValue: true,
+        loading: false,
+        detail: {
+          ...pendingOrder,
+          status: 'cancelled',
+          cancelSource: null,
+          cancelReason: null,
+          cancelledById: null,
+          cancelledByName: null,
+          cancelledAt: null,
+        },
+      },
+      global: {
+        stubs: {
+          'el-dialog': { template: '<div><slot/><slot name="footer"/></div>' },
+          'el-alert': { props: ['title'], template: '<p>{{ title }}</p>' },
+          'el-descriptions': { template: '<div><slot/></div>' },
+          'el-descriptions-item': { props: ['label'], template: '<div>{{ label }}<slot/></div>' },
+          'el-table': { template: '<div><slot/></div>' },
+          'el-table-column': true,
+          'el-button': { template: '<button><slot/></button>' },
+        },
+        directives: { loading: () => undefined },
+      },
+    });
+
+    expect(wrapper.text()).toContain('取消来源历史数据未记录');
+    expect(wrapper.text()).not.toContain('取消来源人工取消');
+  });
 });

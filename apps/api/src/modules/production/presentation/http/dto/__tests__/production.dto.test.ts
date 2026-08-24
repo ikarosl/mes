@@ -8,6 +8,7 @@ import {
   CompleteReworkDto,
   ApproveScrapSupplementDto,
   ConfirmProductionScrapSupplementPlanDto,
+  CancelWorkOrderDto,
   CreateProductionBatchDto,
   CreateWorkOrderDto,
   SaveProductionScrapSupplementPlanDto,
@@ -15,6 +16,16 @@ import {
   UpdateProductionBatchDto,
   UpdateWorkOrderDto,
 } from '../production.dto.js';
+
+describe('Work-order terminal command DTOs', () => {
+  it('requires a version and cancellation reason', async () => {
+    const valid = plainToInstance(CancelWorkOrderDto, { version: 2, reason: '计划取消' });
+    expect(await validate(valid)).toEqual([]);
+
+    const invalid = plainToInstance(CancelWorkOrderDto, { version: 2, reason: '' });
+    expect((await validate(invalid)).some((error) => error.property === 'reason')).toBe(true);
+  });
+});
 
 describe('Production batch execution DTOs', () => {
   it('transforms and validates route-generated step overrides on batch creation', async () => {

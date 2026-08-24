@@ -92,7 +92,10 @@ describe('MysqlProductionBatchRepository persistence', () => {
 
   it('rolls back and does not audit a stale batch update', async () => {
     const connection = transactionConnection();
-    connection.query.mockResolvedValueOnce([[batchRow], []]);
+    connection.query
+      .mockResolvedValueOnce([[batchRow], []])
+      .mockResolvedValueOnce([[releasedWorkOrder], []])
+      .mockResolvedValueOnce([[batchRow], []]);
     connection.execute.mockResolvedValueOnce([{ affectedRows: 0 }, []]);
     const repository = new MysqlProductionBatchRepository({
       getConnection: vi.fn().mockResolvedValue(connection),
@@ -102,7 +105,56 @@ describe('MysqlProductionBatchRepository persistence', () => {
       code: 'CONCURRENT_MODIFICATION',
     });
 
+    expect(String(connection.query.mock.calls[1]?.[0])).toContain('FOR UPDATE');
+    expect(String(connection.query.mock.calls[2]?.[0])).toContain('FOR UPDATE');
     expect(connection.execute).toHaveBeenCalledOnce();
+    expect(connection.rollback).toHaveBeenCalledOnce();
+  });
+
+  it('rejects creation dates outside the locked work-order plan window', async () => {
+    const connection = transactionConnection();
+    connection.query
+      .mockResolvedValueOnce([[releasedWorkOrder], []])
+      .mockResolvedValueOnce([[], []])
+      .mockResolvedValueOnce([[{ quantity: '0.0000' }], []]);
+    const repository = new MysqlProductionBatchRepository({
+      getConnection: vi.fn().mockResolvedValue(connection),
+    } as never);
+
+    await expect(
+      repository.create(
+        '6',
+        {
+          batchNo: 'B-001',
+          plannedQuantity: 10,
+          planStartDate: '2026-07-31',
+          planEndDate: '2026-08-31',
+        },
+        null,
+        [],
+        audit,
+      ),
+    ).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+
+    expect(connection.execute).not.toHaveBeenCalled();
+    expect(connection.rollback).toHaveBeenCalledOnce();
+  });
+
+  it('rejects update dates outside the locked work-order plan window', async () => {
+    const connection = transactionConnection();
+    connection.query
+      .mockResolvedValueOnce([[batchRow], []])
+      .mockResolvedValueOnce([[releasedWorkOrder], []])
+      .mockResolvedValueOnce([[batchRow], []]);
+    const repository = new MysqlProductionBatchRepository({
+      getConnection: vi.fn().mockResolvedValue(connection),
+    } as never);
+
+    await expect(
+      repository.update('21', { version: 2, planEndDate: '2026-09-01' }, audit),
+    ).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+
+    expect(connection.execute).not.toHaveBeenCalled();
     expect(connection.rollback).toHaveBeenCalledOnce();
   });
 
@@ -251,6 +303,8 @@ describe('MysqlProductionBatchRepository persistence', () => {
     expect(mutationSql).toContain('production_item_allocation');
     expect(mutationSql).toContain('production_item_demand');
     expect(mutationSql).toContain("status IN ('pending','material_pending','material_assigned')");
+    expect(mutationSql).toContain('cancel_reason=?');
+    expect(connection.execute.mock.calls[3]?.[1]).toEqual(['计划调整', '1', '1', '21', 2]);
     expect(String(connection.execute.mock.calls[4]?.[0])).toContain('INSERT INTO operation_logs');
     expect(connection.commit).toHaveBeenCalledOnce();
   });
@@ -288,6 +342,8 @@ const releasedWorkOrder = {
   planned_quantity: '100.0000',
   unit_snapshot: 'pcs',
   status: 'released',
+  plan_start_date: '2026-08-01',
+  plan_end_date: '2026-08-31',
 };
 const batchRow = {
   id: 21,
@@ -310,6 +366,9 @@ const batchRow = {
   completed_at: null,
   started_at: null,
   completed_by: null,
+  cancel_reason: null,
+  cancelled_by: null,
+  cancelled_at: null,
   remark: null,
   version: 2,
   created_at: new Date('2026-08-01T00:00:00.000Z'),

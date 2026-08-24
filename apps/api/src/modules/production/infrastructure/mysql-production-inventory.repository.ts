@@ -48,6 +48,9 @@ type ReturnOrderRow = RowDataPacket & {
   created_at: Date;
   version: number;
   remark: string | null;
+  cancel_reason: string | null;
+  cancelled_by: number | null;
+  cancelled_at: Date | null;
 };
 
 type ReturnDetailRow = RowDataPacket & {
@@ -113,6 +116,9 @@ type MaterialLossRow = RowDataPacket & {
   created_at: Date;
   version: number;
   remark: string | null;
+  cancel_reason: string | null;
+  cancelled_by: number | null;
+  cancelled_at: Date | null;
   supplement_id: number | null;
   supplement_no: string | null;
   supplement_status: 'approved' | 'fulfilled' | null;
@@ -130,6 +136,9 @@ type StockCheckOrderRow = RowDataPacket & {
   created_at: Date;
   version: number;
   remark: string | null;
+  cancel_reason: string | null;
+  cancelled_by: number | null;
+  cancelled_at: Date | null;
 };
 
 type StockCheckDetailRow = RowDataPacket & {
@@ -163,7 +172,7 @@ type StockCandidateRow = RowDataPacket & {
 const RETURN_ORDER_SELECT = `SELECT ro.id,ro.return_no,ro.production_batch_id,pb.batch_no,
   ro.work_order_id,wo.work_order_no,wo.product_code_snapshot product_code,
   wo.product_name_snapshot product_name,ro.status,ro.return_at,ro.operator_id,
-  ro.created_by,ro.created_at,ro.version,ro.remark
+  ro.created_by,ro.created_at,ro.version,ro.remark,ro.cancel_reason,ro.cancelled_by,ro.cancelled_at
  FROM return_order ro
  JOIN production_batches pb ON pb.id=ro.production_batch_id
  JOIN work_orders wo ON wo.id=ro.work_order_id`;
@@ -174,6 +183,7 @@ const MATERIAL_LOSS_SELECT = `SELECT scrap.id,scrap.scrap_no,scrap.production_ba
   scrap.batch_id,ib.item_code_snapshot,ib.product_name_snapshot,ib.batch_code,
   scrap.scrap_number,scrap.unit_snapshot,scrap.reason_type,scrap.status,scrap.confirmed_by,
   scrap.confirmed_at,scrap.created_by,scrap.created_at,scrap.version,scrap.remark,
+  scrap.cancel_reason,scrap.cancelled_by,scrap.cancelled_at,
   supplement.id supplement_id,supplement.supplement_no,supplement.status supplement_status,
   supplement_demand.id supplement_demand_id,
   supplement_demand.need_number supplement_demand_quantity
@@ -188,7 +198,8 @@ const MATERIAL_LOSS_SELECT = `SELECT scrap.id,scrap.scrap_no,scrap.production_ba
   AND supplement_demand.demand_type='material_loss_supplement'`;
 
 const STOCK_CHECK_ORDER_SELECT = `SELECT so.id,so.check_no,so.status,so.check_at,
-  so.operator_id,so.created_by,so.created_at,so.version,so.remark
+  so.operator_id,so.created_by,so.created_at,so.version,so.remark,
+  so.cancel_reason,so.cancelled_by,so.cancelled_at
  FROM stock_check_order so`;
 
 @Injectable()
@@ -423,7 +434,12 @@ export class MysqlProductionInventoryRepository extends ProductionInventoryRepos
     });
   }
 
-  async cancelMaterialLoss(scrapId: string, version: number, context: CommandContext) {
+  async cancelMaterialLoss(
+    scrapId: string,
+    version: number,
+    reason: string,
+    context: CommandContext,
+  ) {
     return withTransaction(this.pool, async (db) => {
       const scrap = await this.findMaterialLoss(db, scrapId, true);
       if (scrap.status === 'cancelled') return mapMaterialLoss(scrap);
@@ -431,9 +447,9 @@ export class MysqlProductionInventoryRepository extends ProductionInventoryRepos
         throw new ProductionDomainError('SCRAP_CANCEL_NOT_ALLOWED', '仅待确认损耗可以取消');
       requireVersion(scrap.version, version, '损耗记录');
       const [updated] = await db.execute<ResultSetHeader>(
-        `UPDATE item_scrap SET status='cancelled',updated_by=?,version=version+1
+        `UPDATE item_scrap SET status='cancelled',cancel_reason=?,cancelled_by=?,cancelled_at=NOW(),updated_by=?,version=version+1
          WHERE id=? AND status='pending' AND version=?`,
-        [context.actorId, scrapId, version],
+        [reason, context.actorId, context.actorId, scrapId, version],
       );
       requireAffected(updated, '损耗记录');
       await this.audit(
@@ -443,7 +459,7 @@ export class MysqlProductionInventoryRepository extends ProductionInventoryRepos
         'item_scrap',
         scrapId,
         { status: 'pending', version },
-        { status: 'cancelled', version: version + 1 },
+        { status: 'cancelled', reason, version: version + 1 },
       );
       return mapMaterialLoss(await this.findMaterialLoss(db, scrapId));
     });
@@ -672,7 +688,12 @@ export class MysqlProductionInventoryRepository extends ProductionInventoryRepos
     });
   }
 
-  async cancelReturnOrder(returnId: string, version: number, context: CommandContext) {
+  async cancelReturnOrder(
+    returnId: string,
+    version: number,
+    reason: string,
+    context: CommandContext,
+  ) {
     return withTransaction(this.pool, async (db) => {
       const order = await this.findReturnOrder(db, returnId, true);
       if (order.status === 'cancelled') return this.loadReturnOrder(db, returnId, order);
@@ -680,9 +701,9 @@ export class MysqlProductionInventoryRepository extends ProductionInventoryRepos
         throw new ProductionDomainError('RETURN_CANCEL_NOT_ALLOWED', '仅待确认退料单可以取消');
       requireVersion(order.version, version, '退料单');
       const [updated] = await db.execute<ResultSetHeader>(
-        `UPDATE return_order SET status='cancelled',updated_by=?,version=version+1
+        `UPDATE return_order SET status='cancelled',cancel_reason=?,cancelled_by=?,cancelled_at=NOW(),updated_by=?,version=version+1
          WHERE id=? AND status='pending' AND version=?`,
-        [context.actorId, returnId, version],
+        [reason, context.actorId, context.actorId, returnId, version],
       );
       requireAffected(updated, '退料单');
       await this.audit(
@@ -692,7 +713,7 @@ export class MysqlProductionInventoryRepository extends ProductionInventoryRepos
         'return_order',
         returnId,
         { status: 'pending', version },
-        { status: 'cancelled', version: version + 1 },
+        { status: 'cancelled', reason, version: version + 1 },
       );
       return this.loadReturnOrder(db, returnId);
     });
@@ -960,7 +981,12 @@ export class MysqlProductionInventoryRepository extends ProductionInventoryRepos
     });
   }
 
-  async cancelStockCheck(stockCheckId: string, version: number, context: CommandContext) {
+  async cancelStockCheck(
+    stockCheckId: string,
+    version: number,
+    reason: string,
+    context: CommandContext,
+  ) {
     return withTransaction(this.pool, async (db) => {
       const order = await this.findStockCheck(db, stockCheckId, true);
       if (order.status === 'cancelled') return this.loadStockCheck(db, stockCheckId, order);
@@ -971,9 +997,9 @@ export class MysqlProductionInventoryRepository extends ProductionInventoryRepos
         );
       requireVersion(order.version, version, '盘点单');
       const [updated] = await db.execute<ResultSetHeader>(
-        `UPDATE stock_check_order SET status='cancelled',updated_by=?,version=version+1
+        `UPDATE stock_check_order SET status='cancelled',cancel_reason=?,cancelled_by=?,cancelled_at=NOW(),updated_by=?,version=version+1
          WHERE id=? AND status IN ('pending','counting') AND version=?`,
-        [context.actorId, stockCheckId, version],
+        [reason, context.actorId, context.actorId, stockCheckId, version],
       );
       requireAffected(updated, '盘点单');
       await this.audit(
@@ -983,7 +1009,7 @@ export class MysqlProductionInventoryRepository extends ProductionInventoryRepos
         'stock_check_order',
         stockCheckId,
         { status: order.status, version },
-        { status: 'cancelled', version: version + 1 },
+        { status: 'cancelled', reason, version: version + 1 },
       );
       return this.loadStockCheck(db, stockCheckId);
     });
@@ -1226,6 +1252,10 @@ const mapMaterialLoss = (row: MaterialLossRow): MaterialLossItem => ({
   createdAt: toBeijingISOString(row.created_at),
   version: row.version,
   remark: row.remark,
+  cancelReason: row.cancel_reason,
+  cancelledById: row.cancelled_by === null ? null : String(row.cancelled_by),
+  cancelledByName: null,
+  cancelledAt: iso(row.cancelled_at),
   supplement:
     row.supplement_id === null || row.supplement_demand_id === null
       ? null
@@ -1256,6 +1286,10 @@ const mapReturnOrder = (row: ReturnOrderRow, details: ReturnDetailRow[]): Return
   createdAt: toBeijingISOString(row.created_at),
   version: row.version,
   remark: row.remark,
+  cancelReason: row.cancel_reason,
+  cancelledById: row.cancelled_by === null ? null : String(row.cancelled_by),
+  cancelledByName: null,
+  cancelledAt: iso(row.cancelled_at),
   details: details.map((line) => ({
     id: String(line.id),
     allocationId: String(line.allocation_id),
@@ -1301,6 +1335,10 @@ const mapStockCheck = (
   createdAt: toBeijingISOString(row.created_at),
   version: row.version,
   remark: row.remark,
+  cancelReason: row.cancel_reason,
+  cancelledById: row.cancelled_by === null ? null : String(row.cancelled_by),
+  cancelledByName: null,
+  cancelledAt: iso(row.cancelled_at),
   detailCount: details.length,
   pendingCount: details.filter((line) => line.actual_quantity === null).length,
   differenceCount: details.filter((line) => line.result === 'surplus' || line.result === 'shortage')

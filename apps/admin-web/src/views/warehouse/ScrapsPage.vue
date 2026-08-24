@@ -129,6 +129,20 @@
           ></el-table-column
         >
         <el-table-column
+          label="取消信息"
+          min-width="220"
+        >
+          <template #default="{ row }">
+            <template v-if="row.status === 'cancelled'">
+              <div>{{ row.cancelReason || '-' }}</div>
+              <div class="secondary-cell">
+                {{ row.cancelledByName || '-' }} · {{ formatDateTimeForDisplay(row.cancelledAt) }}
+              </div>
+            </template>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
+        <el-table-column
           label="操作"
           width="190"
           fixed="right"
@@ -284,6 +298,7 @@ import { useIdempotentIntent } from '../../composables/idempotency/useIdempotent
 import { scrapStatusLabel, scrapStatusLabels } from '../../constants/business-status';
 import { EMessage } from '../../utils/message';
 import { RouteMessageBox } from '../../utils/route-message-box';
+import { formatDateTimeForDisplay } from '../../utils/date';
 
 defineOptions({ name: 'ScrapsPage' });
 const query = reactive<{ page: number; pageSize: number; keyword: string; status?: ScrapStatus }>({
@@ -428,12 +443,20 @@ async function confirmLoss(row: MaterialLossItem) {
 }
 async function cancelLoss(row: MaterialLossItem) {
   try {
-    await RouteMessageBox.confirm(`确认取消损耗单 ${row.scrapNo}？`, '取消损耗申报', {
-      type: 'warning',
-      confirmButtonText: '确认取消',
-    });
+    const { value } = await RouteMessageBox.prompt(
+      `确认取消损耗单 ${row.scrapNo}？请输入取消原因。`,
+      '取消损耗申报',
+      {
+        type: 'warning',
+        confirmButtonText: '确认取消',
+        cancelButtonText: '返回',
+        inputType: 'textarea',
+        inputPlaceholder: '请填写取消原因',
+        inputValidator: cancellationReasonValidator,
+      },
+    );
     pendingAction.value = `cancel:${row.id}`;
-    await warehouseApi.cancelMaterialLoss(row.id, row.version);
+    await warehouseApi.cancelMaterialLoss(row.id, { version: row.version, reason: value.trim() });
     EMessage.success('损耗申报已取消');
     await loadRows();
   } catch (error) {
@@ -442,6 +465,9 @@ async function cancelLoss(row: MaterialLossItem) {
     pendingAction.value = '';
   }
 }
+
+const cancellationReasonValidator = (input: string) =>
+  input.trim() ? input.trim().length <= 5000 || '取消原因不能超过 5000 个字符' : '请填写取消原因';
 function search() {
   query.page = 1;
   void loadRows();

@@ -30,6 +30,11 @@ export interface ProductionBatchItem {
   ownerName: string | null;
   completedAt: string | null;
   completedBy: string | null;
+  /** Present for cancelled batches; omitted from non-terminal create responses for v2 idempotency compatibility. */
+  cancelReason?: string | null;
+  cancelledBy?: string | null;
+  cancelledByName?: string | null;
+  cancelledAt?: string | null;
   remark: string | null;
   version: number;
   createdAt: string;

@@ -36,6 +36,7 @@ export abstract class ProductionInventoryRepository {
   abstract cancelMaterialLoss(
     scrapId: string,
     version: number,
+    reason: string,
     context: CommandContext,
   ): Promise<MaterialLossItem>;
 
@@ -55,6 +56,7 @@ export abstract class ProductionInventoryRepository {
   abstract cancelReturnOrder(
     returnId: string,
     version: number,
+    reason: string,
     context: CommandContext,
   ): Promise<ReturnOrderItem>;
 
@@ -80,6 +82,7 @@ export abstract class ProductionInventoryRepository {
   abstract cancelStockCheck(
     stockCheckId: string,
     version: number,
+    reason: string,
     context: CommandContext,
   ): Promise<StockCheckOrderItem>;
 }

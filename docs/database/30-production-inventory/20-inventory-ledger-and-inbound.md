@@ -180,6 +180,9 @@
 | `operator_id`         | `BIGINT UNSIGNED` | 操作人 ID                                   |
 | `version`             | `INT`             | 乐观锁版本号，默认 `0`                      |
 | `remark`              | `TEXT`            | 备注                                        |
+| `cancel_reason`       | `TEXT`            | 取消原因；历史未记录数据可为空              |
+| `cancelled_by`        | `BIGINT UNSIGNED` | 取消人；历史未记录数据可为空                |
+| `cancelled_at`        | `DATETIME`        | 取消时间；历史未记录数据可为空              |
 | 业务审计字段          | 见统一规则        | 可变业务单据审计字段                        |
 
 约束：
@@ -191,6 +194,7 @@
 - 外键：`FOREIGN KEY (production_batch_id) REFERENCES production_batches(id)`
 - 当两个字段同时存在时，使用组合外键 `(production_batch_id, work_order_id) -> production_batches(id, work_order_id)` 保证一致
 - 外键：`FOREIGN KEY (operator_id) REFERENCES users(id)`
+- 外键：`FOREIGN KEY (cancelled_by) REFERENCES users(id)`
 - 检查约束：`CHECK (source_type IN ('self_made', 'purchased', 'outsourced', 'return_inbound', 'stock_check_generated', 'other'))`
 - 检查约束：`CHECK (status IN ('pending', 'completed', 'cancelled'))`
 - 组合索引：`INDEX (status, created_at)`，用于入库单状态分页
@@ -202,6 +206,7 @@
 - 半成品入库和成品入库都可以使用该表。
 - 自产入库时，`provider` 可以为空，`production_batch_id` 应建议填写。
 - 外购入库时，`provider` 建议填写，`production_batch_id` 为空。
+- 待确认入库单取消必须填写原因；取消事实与状态、成功操作日志在同一事务中提交，不覆盖制单备注。
 
 ---
 

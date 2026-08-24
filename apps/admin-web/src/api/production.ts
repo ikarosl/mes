@@ -9,6 +9,7 @@ import type {
   ProductionMaterialAllocationItem,
   ProductionMaterialDemandItem,
   CreateWorkOrderPayload,
+  CancelWorkOrderPayload,
   CloseWorkOrderPayload,
   PageResult,
   ProductionBatchDetail,
@@ -45,6 +46,8 @@ import type {
   MaterialOutboundBatchOption,
   MaterialOutboundCandidateItem,
   CreatePurchaseInboundPayload,
+  CancelPurchaseInboundPayload,
+  CancelMaterialOutboundPayload,
   InventoryBatchItem,
   InventoryBatchQuery,
   PurchaseInboundOrderItem,
@@ -91,11 +94,11 @@ export const productionApi = {
       retryUnsafe: true,
       retryTimes: 2,
     }),
-  cancelPurchaseInbound: (id: string, version: number) =>
+  cancelPurchaseInbound: (id: string, data: CancelPurchaseInboundPayload) =>
     request<PurchaseInboundOrderItem>({
       url: `/production/purchase-inbounds/${id}/actions/cancel`,
       method: 'POST',
-      data: { version },
+      data,
     }),
   listInventoryBatches: (params: InventoryBatchQuery) =>
     request<PageResult<InventoryBatchItem>>({ url: '/production/inventory-batches', params }),
@@ -138,11 +141,11 @@ export const productionApi = {
     }),
 
   /** 取消尚未下达的草稿工单 */
-  cancelOrder: (id: string, version: number) =>
+  cancelOrder: (id: string, data: CancelWorkOrderPayload) =>
     request<WorkOrderDetail>({
       url: `/production/work-orders/${id}/actions/cancel`,
       method: 'POST',
-      data: { version },
+      data,
     }),
 
   /** 管理员显式确认工单足量完工 */
@@ -298,11 +301,11 @@ export const productionApi = {
       retryTimes: 2,
     }),
 
-  cancelMaterialOutbound: (outboundId: string, version: number) =>
+  cancelMaterialOutbound: (outboundId: string, data: CancelMaterialOutboundPayload) =>
     request<MaterialOutboundItem>({
       url: `/production/material-outbounds/${outboundId}/actions/cancel`,
       method: 'POST',
-      data: { version },
+      data,
     }),
 
   listWorkerTasks: () => request<ProductionWorkerTaskItem[]>({ url: '/production/worker-tasks' }),

@@ -11,7 +11,10 @@ import {
   IdempotentEndpoint,
   RequirePermission,
 } from '../../../../common/security/auth.decorators.js';
-import { VersionedCommandDto } from '../../../../presentation/http/dto/versioned-command.dto.js';
+import {
+  ReasonedVersionedCommandDto,
+  VersionedCommandDto,
+} from '../../../../presentation/http/dto/versioned-command.dto.js';
 import { CREATE_MATERIAL_ALLOCATION_IDEMPOTENCY_SCOPE } from '../../application/idempotency/production-idempotency-scopes.contract.js';
 import { CREATE_MATERIAL_OUTBOUND_IDEMPOTENCY_SCOPE } from '../../application/idempotency/production-idempotency-scopes.contract.js';
 import { CONFIRM_MATERIAL_OUTBOUND_IDEMPOTENCY_SCOPE } from '../../application/idempotency/production-idempotency-scopes.contract.js';
@@ -131,9 +134,9 @@ export class ProductionMaterialController {
   @AuditInApplication()
   cancelOutbound(
     @Param() { outboundId }: OutboundIdParamDto,
-    @Body() body: VersionedCommandDto,
+    @Body() body: ReasonedVersionedCommandDto,
     @CurrentCommandContext() context: CommandContext,
   ) {
-    return this.service.cancelOutbound(outboundId, body.version, context);
+    return this.service.cancelOutbound(outboundId, body.version, body.reason, context);
   }
 }

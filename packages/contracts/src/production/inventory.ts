@@ -1,4 +1,4 @@
-import type { PageQuery, VersionedCommand } from '../common.js';
+import type { PageQuery, ReasonedVersionedCommand, VersionedCommand } from '../common.js';
 import type {
   ReturnOrderStatus,
   ScrapStatus,
@@ -81,8 +81,14 @@ export interface ReturnOrderItem {
   createdAt: string;
   version: number;
   remark: string | null;
+  cancelReason?: string | null;
+  cancelledById?: string | null;
+  cancelledByName?: string | null;
+  cancelledAt?: string | null;
   details: ReturnOrderDetailItem[];
 }
+
+export type CancelReturnOrderPayload = ReasonedVersionedCommand;
 
 export interface MaterialLossQuery extends PageQuery {
   keyword?: string;
@@ -150,6 +156,10 @@ export interface MaterialLossItem {
   createdAt: string;
   version: number;
   remark: string | null;
+  cancelReason?: string | null;
+  cancelledById?: string | null;
+  cancelledByName?: string | null;
+  cancelledAt?: string | null;
   supplement: null | {
     supplementId: string;
     supplementNo: string;
@@ -158,6 +168,8 @@ export interface MaterialLossItem {
     demandQuantity: string;
   };
 }
+
+export type CancelMaterialLossPayload = ReasonedVersionedCommand;
 
 export interface StockCheckOrderQuery extends PageQuery {
   keyword?: string;
@@ -214,6 +226,8 @@ export interface StockCheckDetailItem {
   remark: string | null;
 }
 
+export type CancelStockCheckPayload = ReasonedVersionedCommand;
+
 export interface StockCheckOrderItem {
   id: string;
   checkNo: string;
@@ -226,6 +240,10 @@ export interface StockCheckOrderItem {
   createdAt: string;
   version: number;
   remark: string | null;
+  cancelReason?: string | null;
+  cancelledById?: string | null;
+  cancelledByName?: string | null;
+  cancelledAt?: string | null;
   detailCount: number;
   pendingCount: number;
   differenceCount: number;

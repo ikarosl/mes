@@ -33,8 +33,11 @@ describe('useMaterialOutboundOrders', () => {
     const row = { outboundId: '8', version: 2 } as never;
     api.cancelMaterialOutbound.mockResolvedValue(row);
     const state = useMaterialOutboundOrders();
-    await state.cancel(row);
-    expect(api.cancelMaterialOutbound).toHaveBeenCalledWith('8', 2);
+    await state.cancel(row, '计划调整');
+    expect(api.cancelMaterialOutbound).toHaveBeenCalledWith('8', {
+      version: 2,
+      reason: '计划调整',
+    });
     expect(state.pendingKeys.value.size).toBe(0);
   });
 });

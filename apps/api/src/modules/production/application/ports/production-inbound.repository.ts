@@ -32,6 +32,7 @@ export abstract class ProductionInboundRepository {
   abstract cancel(
     inboundId: string,
     version: number,
+    reason: string,
     context: CommandContext,
   ): Promise<PurchaseInboundOrderItem>;
   abstract listInventory(query: InventoryBatchQuery): Promise<PageResult<InventoryBatchItem>>;

@@ -143,6 +143,8 @@ const releasedOrder = (id: string): Record<string, unknown> => ({
   productCode: 'P001',
   productName: '环形器',
   remainingQuantity: '100',
+  planStartDate: '2026-08-01',
+  planEndDate: '2026-08-31',
 });
 
 const defaultProduct = {
@@ -246,10 +248,32 @@ describe('TaskFormDialog', () => {
     await emitChange(wrapper, '请选择工单', 'wo1');
 
     const vm = wrapper.vm as unknown as {
-      form: { routeId: string; plannedQuantity: number };
+      form: {
+        routeId: string;
+        plannedQuantity: number;
+        planStartDate: string;
+        planEndDate: string;
+      };
     };
     expect(vm.form.routeId).toBe('r2'); // 默认路线 r2（产品 defaultRouteId）优先，其次第一条
     expect(vm.form.plannedQuantity).toBe(100); // 剩余 = WorkOrderOption.remainingQuantity
+    expect(vm.form.planStartDate).toBe('2026-08-01');
+    expect(vm.form.planEndDate).toBe('2026-08-31');
+  });
+
+  it('blocks task dates outside the selected work-order plan window', async () => {
+    workOrderOptions.mockResolvedValue([releasedOrder('wo1')]);
+    const wrapper = await openDialog();
+    await emitChange(wrapper, '请选择工单', 'wo1');
+
+    const vm = wrapper.vm as unknown as {
+      form: { planStartDate: string; planEndDate: string };
+    };
+    vm.form.planStartDate = '2026-07-31';
+    await emitSubmit(wrapper);
+
+    expect(wrapper.emitted('save')).toBeUndefined();
+    expect(EMessage.warning).toHaveBeenCalledWith('任务计划日期必须位于工单计划区间内');
   });
 
   it('defers default-route resolution until product/route candidates are ready', async () => {

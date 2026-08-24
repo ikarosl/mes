@@ -20,6 +20,7 @@ import {
 import type {
   ApproveBatchStepReworkPayload,
   ApproveScrapSupplementPayload,
+  CancelWorkOrderPayload,
   CompleteReworkPayload,
   CreateProductionBatchPayload,
   CancelProductionBatchPayload,
@@ -117,6 +118,9 @@ export class UpdateWorkOrderDto extends VersionedCommandDto implements UpdateWor
 
 export class CloseWorkOrderDto extends VersionedCommandDto implements CloseWorkOrderPayload {
   @IsOptional() @IsString() @MaxLength(5000) reason?: string | null;
+}
+export class CancelWorkOrderDto extends VersionedCommandDto implements CancelWorkOrderPayload {
+  @IsString() @IsNotEmpty() @MaxLength(5000) reason!: string;
 }
 export class CreateBatchStepOverrideDto {
   @IsString() @MaxLength(20) routeStepId!: string;

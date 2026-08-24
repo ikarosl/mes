@@ -272,11 +272,18 @@ describeMysql('Production material MySQL transactions', () => {
       if (!created || created.status !== 'fulfilled') throw new Error('pending order required');
       const beforeCancel = await repository.listOutboundCandidates(String(f.batchId));
       expect(beforeCancel).toHaveLength(0);
-      await repository.cancelOutbound(
+      const cancelledOutbound = await repository.cancelOutbound(
         created.value.outbound.outboundId,
         created.value.outbound.version,
+        '测试取消',
         ctx(actorId, `${f.token}-cancel`),
       );
+      expect(cancelledOutbound).toMatchObject({
+        status: 'cancelled',
+        cancelSource: 'manual',
+        cancelReason: '测试取消',
+        cancelledById: String(actorId),
+      });
       const afterCancel = await repository.listOutboundCandidates(String(f.batchId));
       expect(Number(afterCancel[0]?.availableToOrderQuantity)).toBe(10);
       const [[ledger]] = await pool.query<(RowDataPacket & { count: number })[]>(
@@ -572,6 +579,7 @@ describeMysql('Production material MySQL transactions', () => {
         inboundService.cancel(
           created.inboundId,
           confirmed.version,
+          '测试取消',
           ctx(actorId, `${f.token}-bad-cancel`),
         ),
       ).rejects.toMatchObject({ code: 'INBOUND_CANCEL_NOT_ALLOWED' });
@@ -585,10 +593,17 @@ describeMysql('Production material MySQL transactions', () => {
         idemCtx(actorId, `${f.token}-cancel-create`, `${f.token}-cancel-create-key`),
       );
       inboundIds.push(pending.inboundId);
-      expect(
-        (await inboundService.cancel(pending.inboundId, 0, ctx(actorId, `${f.token}-cancel`)))
-          .status,
-      ).toBe('cancelled');
+      const cancelled = await inboundService.cancel(
+        pending.inboundId,
+        0,
+        '测试取消',
+        ctx(actorId, `${f.token}-cancel`),
+      );
+      expect(cancelled).toMatchObject({
+        status: 'cancelled',
+        cancelReason: '测试取消',
+        cancelledById: String(actorId),
+      });
       const [[cancelLedger]] = await pool.query<(RowDataPacket & { count: number })[]>(
         "SELECT COUNT(*) count FROM inventory_transaction WHERE reference_type='inbound_detail' AND reference_detail_id=?",
         [pending.details[0]!.id],

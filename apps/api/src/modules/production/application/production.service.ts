@@ -95,8 +95,13 @@ export class ProductionService {
     );
     return this.enrichWorkOrder(workOrder);
   }
-  async cancelWorkOrder(id: string, version: number, audit: CommandContext) {
-    return this.enrichWorkOrder(await this.production.cancelWorkOrder(id, version, audit));
+  async cancelWorkOrder(id: string, version: number, reason: string, audit: CommandContext) {
+    const normalizedReason = reason.trim();
+    if (!normalizedReason)
+      throw new ProductionDomainError('INVALID_INPUT', '取消生产工单必须填写原因');
+    return this.enrichWorkOrder(
+      await this.production.cancelWorkOrder(id, version, normalizedReason, audit),
+    );
   }
   async completeWorkOrder(id: string, version: number, audit: CommandContext) {
     return this.enrichWorkOrder(await this.production.completeWorkOrder(id, version, audit));
@@ -228,14 +233,27 @@ export class ProductionService {
     );
   }
   private async enrichWorkOrder(workOrder: WorkOrderDetail): Promise<WorkOrderDetail> {
-    return { ...workOrder, batches: await this.enrichBatches(workOrder.batches ?? []) };
+    const names = await this.resolveUserNames([workOrder.cancelledBy, workOrder.closedBy]);
+    return {
+      ...workOrder,
+      cancelledByName: workOrder.cancelledBy ? (names.get(workOrder.cancelledBy) ?? null) : null,
+      closedByName: workOrder.closedBy ? (names.get(workOrder.closedBy) ?? null) : null,
+      batches: await this.enrichBatches(workOrder.batches ?? []),
+    };
   }
 
   private async enrichBatches(batches: ProductionBatchItem[]): Promise<ProductionBatchItem[]> {
-    const names = await this.resolveUserNames(batches.map((batch) => batch.ownerId));
+    const names = await this.resolveUserNames(
+      batches.flatMap((batch) => [batch.ownerId, batch.cancelledBy]),
+    );
     return batches.map((batch) => ({
       ...batch,
       ownerName: batch.ownerId ? (names.get(batch.ownerId) ?? null) : null,
+      ...(batch.status === 'cancelled'
+        ? {
+            cancelledByName: batch.cancelledBy ? (names.get(batch.cancelledBy) ?? null) : null,
+          }
+        : {}),
     }));
   }
 
@@ -243,11 +261,17 @@ export class ProductionService {
     const stepRecords = batch.stepRecords ?? [];
     const names = await this.resolveUserNames([
       batch.ownerId,
+      batch.cancelledBy,
       ...stepRecords.flatMap((step) => [step.defaultResponsibleUserId, step.responsibleUserId]),
     ]);
     return {
       ...batch,
       ownerName: batch.ownerId ? (names.get(batch.ownerId) ?? null) : null,
+      ...(batch.status === 'cancelled'
+        ? {
+            cancelledByName: batch.cancelledBy ? (names.get(batch.cancelledBy) ?? null) : null,
+          }
+        : {}),
       stepRecords: stepRecords.map((step) => ({
         ...step,
         defaultResponsibleUserName: step.defaultResponsibleUserId

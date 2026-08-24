@@ -650,6 +650,7 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
   async cancelOutbound(
     outboundId: string,
     version: number,
+    reason: string,
     context: CommandContext,
   ): Promise<MaterialOutboundItem> {
     return withTransaction(this.pool, async (connection) => {
@@ -663,8 +664,8 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
       if (order.version !== version)
         throw new ProductionDomainError('CONCURRENT_MODIFICATION', '出库单已变化，请刷新后重试');
       const [updated] = await connection.execute<ResultSetHeader>(
-        "UPDATE outbound_order SET status='cancelled',version=version+1,updated_by=? WHERE id=? AND status='pending_picking' AND version=?",
-        [context.actorId, outboundId, version],
+        "UPDATE outbound_order SET status='cancelled',cancel_source='manual',cancel_reason=?,cancelled_by=?,cancelled_at=NOW(),version=version+1,updated_by=? WHERE id=? AND status='pending_picking' AND version=?",
+        [reason, context.actorId, context.actorId, outboundId, version],
       );
       if (updated.affectedRows !== 1)
         throw new ProductionDomainError('CONCURRENT_MODIFICATION', '出库单已变化，请刷新后重试');
@@ -674,7 +675,7 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
         'production-material.outbound.cancel',
         outboundId,
         { status: 'pending_picking', version },
-        { status: 'cancelled', version: version + 1 },
+        { status: 'cancelled', cancelSource: 'manual', reason, version: version + 1 },
       );
       return this.loadOutbound(connection, outboundId);
     });
@@ -748,6 +749,11 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
       createdAt: toBeijingISOString(row.created_at),
       version: row.version,
       remark: row.remark,
+      cancelSource: row.cancel_source,
+      cancelReason: row.cancel_reason,
+      cancelledById: row.cancelled_by === null ? null : String(row.cancelled_by),
+      cancelledByName: null,
+      cancelledAt: row.cancelled_at ? toBeijingISOString(row.cancelled_at) : null,
       quantitySummary: summarizeQuantities(details),
       details: details.map((detail) => ({
         id: String(detail.id),
@@ -820,7 +826,8 @@ const allDemandsOutbound = async (db: PoolConnection, batchId: string) => {
 
 const OUTBOUND_SELECT = `SELECT o.id,o.outbound_no,o.production_batch_id,b.batch_no,o.work_order_id,
   wo.work_order_no,b.product_id,wo.product_code_snapshot product_code,wo.product_name_snapshot product_name,
-  o.status,o.outbound_at,o.operator_id,o.created_by,o.created_at,o.version,o.remark
+  o.status,o.outbound_at,o.operator_id,o.created_by,o.created_at,o.version,o.remark,
+  o.cancel_source,o.cancel_reason,o.cancelled_by,o.cancelled_at
   FROM outbound_order o JOIN production_batches b ON b.id=o.production_batch_id
   JOIN work_orders wo ON wo.id=o.work_order_id`;
 

@@ -1,5 +1,8 @@
 import type {
   CreateReturnOrderPayload,
+  CancelReturnOrderPayload,
+  CancelMaterialLossPayload,
+  CancelStockCheckPayload,
   CreateStockCheckPayload,
   CreateMaterialLossPayload,
   MaterialLossBatchOption,
@@ -57,11 +60,11 @@ export const warehouseApi = {
       retryUnsafe: true,
       retryTimes: 2,
     }),
-  cancelMaterialLoss: (scrapId: string, version: number) =>
+  cancelMaterialLoss: (scrapId: string, data: CancelMaterialLossPayload) =>
     request<MaterialLossItem>({
       url: `/warehouse/scraps/${scrapId}/actions/cancel`,
       method: 'POST',
-      data: { version },
+      data,
     }),
 
   listReturnOrders: (params: ReturnOrderQuery) =>
@@ -82,11 +85,11 @@ export const warehouseApi = {
       method: 'POST',
       data: { version },
     }),
-  cancelReturnOrder: (returnId: string, version: number) =>
+  cancelReturnOrder: (returnId: string, data: CancelReturnOrderPayload) =>
     request<ReturnOrderItem>({
       url: `/warehouse/return-orders/${returnId}/actions/cancel`,
       method: 'POST',
-      data: { version },
+      data,
     }),
 
   listStockChecks: (params: StockCheckOrderQuery) =>
@@ -112,10 +115,10 @@ export const warehouseApi = {
       method: 'POST',
       data: { version },
     }),
-  cancelStockCheck: (stockCheckId: string, version: number) =>
+  cancelStockCheck: (stockCheckId: string, data: CancelStockCheckPayload) =>
     request<StockCheckOrderItem>({
       url: `/warehouse/stock-checks/${stockCheckId}/actions/cancel`,
       method: 'POST',
-      data: { version },
+      data,
     }),
 };

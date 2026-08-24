@@ -111,4 +111,28 @@ describe('ProductionMaterialService', () => {
       expect.not.objectContaining({ idempotencyKey: expect.anything() }),
     );
   });
+
+  it('trims and persists a mandatory manual outbound cancellation reason', async () => {
+    const repository = {
+      cancelOutbound: vi.fn().mockResolvedValue({
+        outboundId: '8',
+        operatorId: null,
+        createdById: null,
+        cancelledById: '7',
+      }),
+    };
+    const service = new ProductionMaterialService(
+      repository as never,
+      { listUserReferencesByIds: vi.fn().mockResolvedValue([]) } as never,
+      {} as never,
+      {} as never,
+    );
+
+    await service.cancelOutbound('8', 2, '  计划调整  ', context);
+
+    expect(repository.cancelOutbound).toHaveBeenCalledWith('8', 2, '计划调整', context);
+    await expect(service.cancelOutbound('8', 2, '   ', context)).rejects.toMatchObject({
+      code: 'INVALID_INPUT',
+    });
+  });
 });

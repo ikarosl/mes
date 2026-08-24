@@ -156,12 +156,12 @@ describe('productionApi', () => {
   it('cancels order via cancel action', async () => {
     const { productionApi } = await import('../production');
 
-    await productionApi.cancelOrder('2', 0);
+    await productionApi.cancelOrder('2', { version: 0, reason: '计划取消' });
 
     expect(request).toHaveBeenCalledWith({
       url: '/production/work-orders/2/actions/cancel',
       method: 'POST',
-      data: { version: 0 },
+      data: { version: 0, reason: '计划取消' },
     });
   });
 
@@ -362,7 +362,7 @@ describe('productionApi', () => {
     await productionApi.listMaterialOutboundBatchOptions();
     await productionApi.listMaterialOutboundCandidates('3');
     await productionApi.confirmMaterialOutbound('8', 0, 'confirm-key');
-    await productionApi.cancelMaterialOutbound('9', 1);
+    await productionApi.cancelMaterialOutbound('9', { version: 1, reason: '计划调整' });
     expect(request.mock.calls.slice(-6).map(([config]) => config)).toEqual([
       {
         url: '/production/material-outbounds',
@@ -382,7 +382,7 @@ describe('productionApi', () => {
       {
         url: '/production/material-outbounds/9/actions/cancel',
         method: 'POST',
-        data: { version: 1 },
+        data: { version: 1, reason: '计划调整' },
       },
     ]);
   });
@@ -399,7 +399,7 @@ describe('productionApi', () => {
     await productionApi.getPurchaseInbound('7');
     await productionApi.createPurchaseInbound(data, 'create-inbound-key');
     await productionApi.confirmPurchaseInbound('7', 0, 'confirm-inbound-key');
-    await productionApi.cancelPurchaseInbound('8', 1);
+    await productionApi.cancelPurchaseInbound('8', { version: 1, reason: '供应商变更' });
     await productionApi.listInventoryBatches({ page: 1, pageSize: 20 });
     await productionApi.getInventoryBatch('9');
     expect(request.mock.calls.slice(-7).map(([config]) => config)).toEqual([
@@ -427,7 +427,7 @@ describe('productionApi', () => {
       {
         url: '/production/purchase-inbounds/8/actions/cancel',
         method: 'POST',
-        data: { version: 1 },
+        data: { version: 1, reason: '供应商变更' },
       },
       { url: '/production/inventory-batches', params: { page: 1, pageSize: 20 } },
       { url: '/production/inventory-batches/9' },

@@ -54,6 +54,7 @@ export abstract class ProductionRepository {
   abstract cancelWorkOrder(
     id: string,
     version: number,
+    reason: string,
     audit: CommandContext,
   ): Promise<WorkOrderDetail>;
   abstract completeWorkOrder(
