@@ -129,6 +129,9 @@
       v-model="supplementVisible"
       :title="supplementStage === 'edit' ? '编制报废补料需求' : '复核报废补料需求'"
       width="min(820px, 85vw)"
+      :show-close="!supplementConfirming"
+      :close-on-click-modal="!supplementConfirming"
+      :close-on-press-escape="!supplementConfirming"
     >
       <el-alert
         class="dialog-tip"
@@ -263,6 +266,21 @@
       </template>
       <template v-else-if="stagedSupplement">
         <el-alert
+          v-if="supplementIntentStatus !== 'idle'"
+          class="dialog-tip"
+          type="warning"
+          :closable="false"
+          show-icon
+          :title="supplementIntentMessage"
+        />
+        <el-alert
+          v-if="supplementError"
+          class="dialog-tip"
+          type="error"
+          :closable="false"
+          :title="supplementError"
+        />
+        <el-alert
           class="dialog-tip"
           type="warning"
           :closable="false"
@@ -318,18 +336,35 @@
           >
         </template>
         <template v-else>
-          <el-button @click="supplementVisible = false">关闭</el-button>
-          <el-button @click="supplementStage = 'edit'">重新编辑</el-button>
+          <el-button
+            :disabled="supplementConfirming"
+            @click="supplementVisible = false"
+            >关闭</el-button
+          >
+          <el-button
+            v-if="supplementIntentStatus === 'idle'"
+            :disabled="supplementConfirming"
+            @click="supplementStage = 'edit'"
+            >重新编辑</el-button
+          >
+          <el-button
+            v-else
+            :disabled="supplementConfirming"
+            @click="abandonSupplementIntent"
+            >放弃旧提交并重新编辑</el-button
+          >
           <el-button
             type="danger"
-            :loading="
-              supplementDisposition
-                ? pendingKeys.has(`approve-scrap:${supplementDisposition.dispositionId}`)
-                : false
+            :loading="supplementConfirming"
+            :disabled="
+              !stagedSupplement ||
+              persistedPlan?.status !== 'draft' ||
+              ['blocked', 'expired'].includes(supplementIntentStatus)
             "
-            :disabled="!stagedSupplement || persistedPlan?.status !== 'draft'"
             @click="submitSupplement"
-            >确定报废并生成</el-button
+            >{{
+              supplementIntentStatus === 'pending' ? '重试最终确认' : '确定报废并生成'
+            }}</el-button
           >
         </template>
       </template>
@@ -419,6 +454,8 @@ import type {
   ApproveScrapSupplementLinePayload,
   BatchStepExecutionRecordItem,
 } from '@company/contracts';
+import type { IdempotentIntentStatus } from '../../../composables/idempotency/useIdempotentIntent';
+import { RouteMessageBox } from '../../../utils/route-message-box';
 
 const props = withDefaults(
   defineProps<{
@@ -441,6 +478,12 @@ const props = withDefaults(
       remark: string,
       planVersion: number | null,
     ) => Promise<ProductionScrapSupplementPlanItem>;
+    planConfirmer: (
+      disposition: BatchStepAbnormalDispositionItem,
+      planVersion: number,
+    ) => Promise<void>;
+    intentStatusLoader: (dispositionId: string) => IdempotentIntentStatus;
+    intentResetter: (dispositionId: string) => void;
   }>(),
   { unit: '' },
 );
@@ -449,7 +492,6 @@ const emit = defineEmits<{
   reject: [item: BatchStepAbnormalDispositionItem, reason: string];
   start: [item: ReworkRecordItem];
   complete: [item: ReworkRecordItem, normal: number, abnormal: number, remark: string];
-  approveScrap: [item: BatchStepAbnormalDispositionItem, planVersion: number];
 }>();
 
 const reviewVisible = ref(false);
@@ -462,6 +504,7 @@ const completionForm = reactive({ normalQuantity: 0, abnormalQuantity: 0, remark
 const supplementVisible = ref(false);
 const supplementLoading = ref(false);
 const supplementSaving = ref(false);
+const supplementConfirming = ref(false);
 const supplementError = ref('');
 const supplementRemark = ref('');
 const supplementDisposition = ref<BatchStepAbnormalDispositionItem | null>(null);
@@ -480,6 +523,7 @@ const stagedSupplement = ref<{
   remark: string;
 } | null>(null);
 const persistedPlan = ref<ProductionScrapSupplementPlanItem | null>(null);
+const supplementIntentStatus = ref<IdempotentIntentStatus>('idle');
 let supplementRequestSerial = 0;
 const supplementRows = ref<
   Array<{ candidate: ProductionSupplementCandidateItem; selected: boolean; quantity: number }>
@@ -541,6 +585,13 @@ const canStageSupplement = computed(
       (row) => row.selected && Number.isInteger(row.quantity) && row.quantity > 0,
     ),
 );
+const supplementIntentMessage = computed(() => {
+  if (supplementIntentStatus.value === 'blocked')
+    return '上次最终确认的幂等结果已损坏。请先在异常处置和正式补料需求中核对结果；确认未生成后，放弃旧提交再重新编辑。';
+  if (supplementIntentStatus.value === 'expired')
+    return '上次最终确认已超过安全重试窗口。请先核对异常处置和正式补料需求；确认未生成后，放弃旧提交再重新编辑。';
+  return '上次最终确认结果尚未明确。系统已查询服务端方案但仍未确认；可保持当前方案重试，修改前必须先核对结果并放弃旧提交。';
+});
 const openReview = (item: BatchStepAbnormalDispositionItem, mode: 'rework' | 'reject') => {
   selectedDisposition.value = item;
   reviewMode.value = mode;
@@ -555,6 +606,7 @@ const submitReview = () => {
 };
 const openSupplement = async (item: BatchStepAbnormalDispositionItem) => {
   supplementDisposition.value = item;
+  supplementIntentStatus.value = props.intentStatusLoader(item.dispositionId);
   supplementRows.value = [];
   supplementRemark.value = '';
   supplementError.value = '';
@@ -582,6 +634,26 @@ const openSupplement = async (item: BatchStepAbnormalDispositionItem) => {
       materialEndStepRecordId.value = plan.materialEndStepRecordId;
       supplementRemark.value = plan.remark ?? '';
       await loadSupplementCandidates(plan);
+      if (supplementIntentStatus.value !== 'idle') {
+        const endStep = allowedEnds.find(
+          (step) => step.stepRecordId === plan.materialEndStepRecordId,
+        );
+        stagedSupplement.value = {
+          materialEndStepRecordId: plan.materialEndStepRecordId,
+          materialEndStepLabel: endStep
+            ? `${endStep.stepOrder}. ${endStep.stepName}`
+            : plan.materialEndStepRecordId,
+          lines: plan.lines.map((line) => ({
+            originalDemandId: line.originalDemandId,
+            itemCode: line.itemCode,
+            itemName: line.itemName,
+            quantity: Number(line.plannedQuantity),
+            unit: line.unit,
+          })),
+          remark: plan.remark ?? '',
+        };
+        supplementStage.value = 'review';
+      }
       return;
     }
     await loadSupplementCandidates();
@@ -665,10 +737,39 @@ const stageSupplement = async () => {
     supplementSaving.value = false;
   }
 };
-const submitSupplement = () => {
-  if (!supplementDisposition.value || !persistedPlan.value) return;
-  emit('approveScrap', supplementDisposition.value, persistedPlan.value.version);
-  supplementVisible.value = false;
+const submitSupplement = async () => {
+  if (!supplementDisposition.value || !persistedPlan.value || supplementConfirming.value) return;
+  supplementConfirming.value = true;
+  supplementError.value = '';
+  try {
+    await props.planConfirmer(supplementDisposition.value, persistedPlan.value.version);
+    supplementVisible.value = false;
+  } catch {
+    supplementError.value =
+      '最终确认未完成。系统会保留原幂等提交；请按上方提示重试或核对结果后放弃旧提交。';
+  } finally {
+    supplementConfirming.value = false;
+    supplementIntentStatus.value = supplementDisposition.value
+      ? props.intentStatusLoader(supplementDisposition.value.dispositionId)
+      : 'idle';
+  }
+};
+const abandonSupplementIntent = async () => {
+  const disposition = supplementDisposition.value;
+  if (!disposition) return;
+  try {
+    await RouteMessageBox.confirm(
+      '请确认你已在异常处置和正式补料需求中核对，本次最终确认没有成功。放弃后将不能再用原幂等键安全重试，重新提交可能生成重复业务事实。',
+      '放弃上次最终确认',
+      { type: 'warning', confirmButtonText: '已核对，放弃旧提交' },
+    );
+    props.intentResetter(disposition.dispositionId);
+    supplementIntentStatus.value = props.intentStatusLoader(disposition.dispositionId);
+    supplementError.value = '';
+    supplementStage.value = 'edit';
+  } catch {
+    // 用户取消时继续保留旧幂等意图。
+  }
 };
 const openCompletion = (item: ReworkRecordItem) => {
   selectedRework.value = item;

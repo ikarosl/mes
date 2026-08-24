@@ -12,7 +12,10 @@ import type {
   ProductionScrapSupplementPlanItem,
 } from '@company/contracts';
 import { productionApi } from '../../../api/production';
-import { useIdempotentIntent } from '../../../composables/idempotency/useIdempotentIntent';
+import {
+  isAmbiguousFailure,
+  useIdempotentIntent,
+} from '../../../composables/idempotency/useIdempotentIntent';
 
 export const useProductionExecutionRecords = () => {
   const batches = ref<ProductionExecutionBatchSummary[]>([]);
@@ -249,18 +252,40 @@ export const useProductionExecutionRecords = () => {
       };
       const intent = supplementIntents.get(disposition.dispositionId) ?? useIdempotentIntent();
       supplementIntents.set(disposition.dispositionId, intent);
-      await intent.execute(
-        {
-          intentType: 'production.abnormal.scrap-supplement-plan.confirm',
-          params: { dispositionId: disposition.dispositionId },
-          query: {},
-          body,
-        },
-        (key) => productionApi.confirmScrapSupplementPlan(disposition.dispositionId, body, key),
-      );
+      try {
+        await intent.execute(
+          {
+            intentType: 'production.abnormal.scrap-supplement-plan.confirm',
+            params: { dispositionId: disposition.dispositionId },
+            query: {},
+            body,
+          },
+          (key) => productionApi.confirmScrapSupplementPlan(disposition.dispositionId, body, key),
+        );
+      } catch (error) {
+        if (isAmbiguousFailure(error)) {
+          try {
+            const plan = await productionApi.getScrapSupplementPlan(disposition.dispositionId);
+            if (plan?.status === 'confirmed') {
+              supplementIntents.delete(disposition.dispositionId);
+              await selectBatch(disposition.productionBatchId);
+              return;
+            }
+          } catch {
+            // 查询也失败时保留原始模糊失败和幂等键，供用户稍后安全重试。
+          }
+        }
+        throw error;
+      }
       supplementIntents.delete(disposition.dispositionId);
       await selectBatch(disposition.productionBatchId);
     });
+  const getSupplementIntentStatus = (dispositionId: string) =>
+    supplementIntents.get(dispositionId)?.getStatus() ?? 'idle';
+  const resetSupplementIntent = (dispositionId: string): void => {
+    supplementIntents.get(dispositionId)?.reset();
+    supplementIntents.delete(dispositionId);
+  };
   return {
     batches,
     total,
@@ -286,5 +311,7 @@ export const useProductionExecutionRecords = () => {
     loadScrapSupplementPlan,
     saveScrapSupplementPlan,
     approveScrapSupplement,
+    getSupplementIntentStatus,
+    resetSupplementIntent,
   };
 };

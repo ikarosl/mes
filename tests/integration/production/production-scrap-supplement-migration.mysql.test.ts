@@ -11,7 +11,12 @@ loadWorkspaceEnv();
 const describeMysql = process.env.RUN_MYSQL_INTEGRATION === '1' ? describe : describe.skip;
 
 const MIGRATIONS_DIR = new URL('../../../packages/database/migrations/', import.meta.url);
-const SCRAP_REPLENISHMENT_PREFIXES = ['202608200001', '202608200002', '202608200003'];
+const SCRAP_REPLENISHMENT_PREFIXES = [
+  '202608200001',
+  '202608200002',
+  '202608200003',
+  '202608240004',
+];
 
 type ConnectionOptions = {
   host: string;
@@ -23,8 +28,8 @@ type ConnectionOptions = {
 /**
  * 生产报废补料方案链路的 MySQL 迁移验证：
  *  - fresh：空库全量 up 到最新 schema；
- *  - 配对：三条新 migration 的 down 可逆执行并再次 up（在空库上 guard 必须放行）；
- *  - upgrade：已有旧 schema 与旧数据时，三条新 up 幂等搬迁数据、不丢数据不失败。
+ *  - 配对：报废补料及其约束修复 migration 的 down 可逆执行并再次 up（空库 guard 必须放行）；
+ *  - upgrade：已有旧 schema 与旧数据时，相关 up 能搬迁数据且不丢数据、不失败。
  * 临时数据库一律使用 `*_test` 命名并在用例结束/套件结束时删除，绝不触碰其他库。
  */
 describeMysql('Production scrap supplement migrations', () => {
@@ -68,8 +73,9 @@ describeMysql('Production scrap supplement migrations', () => {
       await applyMigrations(connection, await upMigrations());
       await expectNewSchema(connection);
 
-      // 配对验证：逆序执行三条 down（空库 guard 必须放行），schema 回到旧形状。
+      // 配对验证：逆序执行相关 down（空库 guard 必须放行），schema 回到旧形状。
       await applyMigrations(connection, [
+        `${SCRAP_REPLENISHMENT_PREFIXES[3]}-material-loss-demand-type-constraint.down.sql`,
         `${SCRAP_REPLENISHMENT_PREFIXES[2]}-production-scrap-supplement-plan.down.sql`,
         `${SCRAP_REPLENISHMENT_PREFIXES[1]}-production-material-loss-supplement.down.sql`,
         `${SCRAP_REPLENISHMENT_PREFIXES[0]}-production-scrap-reproduction-authorization.down.sql`,
@@ -164,6 +170,20 @@ const columnExists = async (
   return Number(row?.count ?? 0) === 1;
 };
 
+const checkClause = async (
+  connection: Connection,
+  table: string,
+  constraint: string,
+): Promise<string> => {
+  const [[row]] = await connection.query<(RowDataPacket & { clause: string })[]>(
+    `SELECT check_clause clause FROM information_schema.check_constraints
+     WHERE constraint_schema=DATABASE() AND constraint_name=?`,
+    [constraint],
+  );
+  if (!row) throw new Error(`${table}.${constraint} check constraint is missing`);
+  return row.clause;
+};
+
 const expectNewSchema = async (connection: Connection): Promise<void> => {
   for (const table of [
     'batch_step_scrap_reproduction_authorization',
@@ -193,6 +213,9 @@ const expectNewSchema = async (connection: Connection): Promise<void> => {
   expect(await columnExists(connection, 'production_material_supplement', 'activated_at')).toBe(
     false,
   );
+  expect(
+    await checkClause(connection, 'production_item_demand', 'chk_production_item_demand_type'),
+  ).toContain('material_loss_supplement');
 };
 
 const expectOldSchema = async (connection: Connection): Promise<void> => {

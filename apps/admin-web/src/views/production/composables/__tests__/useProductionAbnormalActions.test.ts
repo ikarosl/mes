@@ -69,7 +69,9 @@ describe('useProductionAbnormalActions', () => {
         throw error;
       }),
     });
-    await handlers.handleApproveScrapSupplement(disposition as never, 3);
+    await expect(handlers.handleApproveScrapSupplement(disposition as never, 3)).rejects.toBe(
+      error,
+    );
     expect(EMessage.error).toHaveBeenCalledWith(
       error,
       '报废补料批准失败，请刷新后核对候选物料和数量',
