@@ -2,7 +2,7 @@
 
 `apps/api/src/modules/product/public.ts` 导出 `ProductSnapshotQuery`，作为供生产编排使用的 Product 模块唯一读入口。
 
-它仅返回稳定的产品、BOM、工艺路线、工序和 SOP 快照。BOM 行暴露 Product 模块拥有的 `productMaterialId`；工艺路线工序暴露 `routeStepId`、默认负责人和冻结的 SOP 对象键，使生产消费者无需直接查询 Product 模块的表。多查询的 BOM 与工艺路线快照在单个数据库事务中完成读取。
+它仅返回稳定的产品、BOM、工艺路线、工序和 SOP 快照。BOM 行暴露 Product 模块拥有的 `productMaterialId`；工艺路线工序暴露 `routeStepId`、默认负责人和冻结的 SOP 对象键，使生产消费者无需直接查询 Product 模块的表。多查询的 BOM 与工艺路线快照在单个数据库事务中完成读取。`TechnicalFileContentQuery` 是独立的只读对象内容边界：调用模块必须先完成自身业务授权并提供已冻结的对象定位信息，Product 模块只负责读取私有对象。
 
 ## 稳定结果契约
 

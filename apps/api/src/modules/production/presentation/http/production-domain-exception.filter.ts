@@ -45,6 +45,7 @@ export class ProductionDomainExceptionFilter implements ExceptionFilter {
 const statusFor = (code: ProductionDomainError['code']): number => {
   if (code === 'NOT_FOUND') return HttpStatus.NOT_FOUND;
   if (code === 'NOT_STEP_ASSIGNEE') return HttpStatus.FORBIDDEN;
+  if (code === 'SOP_SNAPSHOT_UNAVAILABLE') return HttpStatus.SERVICE_UNAVAILABLE;
   if (
     code === 'CONFLICT' ||
     code === 'CONCURRENT_MODIFICATION' ||

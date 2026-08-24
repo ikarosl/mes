@@ -41,7 +41,8 @@ export class ProductionDomainError extends Error {
       | 'BATCH_EXECUTION_COMPLETION_NOT_ALLOWED'
       | 'NO_REQUIRED_REPORTING_STEP'
       | 'REQUIRED_STEP_INCOMPLETE'
-      | 'FINAL_STEP_QUANTITY_INSUFFICIENT',
+      | 'FINAL_STEP_QUANTITY_INSUFFICIENT'
+      | 'SOP_SNAPSHOT_UNAVAILABLE',
     message: string,
     readonly details?: Record<string, unknown>,
   ) {

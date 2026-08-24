@@ -155,8 +155,12 @@ Production 4.2-B 的工序执行命令采用批次与工序记录双重上下文
 - `POST /api/production/batches/:batchId/step-records/:recordId/actions/start`
 - `POST /api/production/batches/:batchId/step-records/:recordId/actions/complete`
 - `GET /api/production/worker-tasks`
+- `GET /api/production/batches/:batchId/step-records/:recordId/sop-content`
+- `GET /api/production/worker-tasks/batches/:batchId/step-records/:recordId/sop-content`
 
 五个命令均提交当前工序 `version`，派工与改派额外提交 `responsibleUserId`；它们使用状态短路与乐观锁，禁止发送 `Idempotency-Key`。`complete` 只允许当前负责人完成已经开工的无需报工工序，必须报工工序仍由报工数量自动完成。员工任务查询、开工和无需报工工序完工分别由 `production:worker-tasks:view`、`production:steps:start`、`production:steps:complete` 保护，管理端三个派工命令由 `production:steps:assign` 保护。
+
+两个 SOP 内容端点都从 `batch_step_records` 解析默认或现场实际 SOP 的冻结文件名、对象键和版本号，不读取当前工序配置。管理端端点由 `production:tasks:view` 保护；员工端点由 `production:worker-tasks:view` 保护，并在数据库查询中强制工序 `responsible_user_id` 等于当前用户，禁止仅凭 URL 下载他人任务。追溯等其他业务页面应新增与自身查看权限匹配的端点并复用同一快照读取服务，不得扩大员工端点的数据范围。
 
 ## 8. 乐观锁与冲突
 

@@ -354,7 +354,7 @@ IDEMPOTENCY_RESULT_CORRUPT`；`HttpExceptionFilter` 与 `AuditInterceptor` 统�
 实施约束：
 
 - 当前不直接实施完整 SOP 生命周期和 `process_steps` 工序主数据状态迁移。
-- `DELETE /technical-files/:id` 已改为软删除（停用并标记删除，保留对象存储内容），满足“无硬删除”最低规则，可作为正式可用能力；完整发布、版本和归档生命周期仍滞后，待业务方案确认。
+- `DELETE /technical-files/:id` 当前不对外开放。仓储保留“软删除元数据、永不物理删除对象”的基础实现。基于 `batch_step_records` 冻结对象定位快照的管理端与员工本人 SOP 下载已经落地；恢复删除接口前仍须补齐当前引用、历史追溯与并发删除测试。
 - 需求确认后先同步对应数据库领域章节、Product 策略和管理端交互，再追加 migration；不得修改已有 migration。
 
 ### 5.2 Production 数量计算精度

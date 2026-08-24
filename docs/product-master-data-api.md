@@ -51,7 +51,8 @@
 | `GET /technical-files`                 | 分页查询 SOP 技术文件                                        | `product:files:view`                                                                                |
 | `POST /technical-files`                | 独立上传 SOP，最大 20 MiB                                    | `product:files:upload`                                                                              |
 | `GET /technical-files/:id/content`     | 鉴权后流式下载私有文件                                       | `product:files:download`                                                                            |
-| `DELETE /technical-files/:id`          | 软删除未被引用的技术文件（停用并标记删除，对象存储内容保留） | `product:files:delete`                                                                              |
+
+技术文件删除接口当前不开放。生产模块已经提供基于 `batch_step_records` 冻结对象定位快照的管理端与员工本人 SOP 下载；未来恢复删除能力时仍只能软删除元数据并保留对象存储内容，同时校验工序和有效工艺路线的当前引用。
 | `PATCH /process-steps/:id/default-sop` | 关联、替换或解除默认 SOP                                     | `product:files:attach`                                                                              |
 | `GET /process-routes`                  | 工艺路线版本列表                                             | `product:routes:view`                                                                               |
 | `GET /process-routes/options`          | 已启用路线选项（最小字段）                                   | `product:products:view`、`product:routes:view`、`production:orders:view` 或 `production:tasks:view` |

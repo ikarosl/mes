@@ -17,6 +17,34 @@ const commandContext: CommandContext = {
 const commandContextWithoutIp: CommandContext = { ...commandContext, ip: null };
 
 describe('MySQL product adapters workflow transactions', () => {
+  it('resolves historical technical-file storage metadata without active/deleted filters', async () => {
+    const query = vi.fn().mockResolvedValue([
+      [
+        {
+          storage_provider: 's3',
+          bucket: 'technical-files',
+          object_key: 'sop/history.pdf',
+          mime_type: 'application/pdf',
+          size_bytes: 12,
+        },
+      ],
+      [],
+    ]);
+    const repository = new MysqlTechnicalFileRepository({ query } as never);
+
+    await expect(repository.getHistoricalTechnicalFileLocator('21')).resolves.toEqual({
+      storageProvider: 's3',
+      bucket: 'technical-files',
+      objectKey: 'sop/history.pdf',
+      mimeType: 'application/pdf',
+      sizeBytes: 12,
+    });
+
+    const sql = String(query.mock.calls[0]?.[0]);
+    expect(sql).not.toContain('is_deleted=0');
+    expect(sql).not.toContain('status=1');
+  });
+
   it('includes the configured default route in product form options', async () => {
     const query = vi.fn().mockResolvedValue([
       [

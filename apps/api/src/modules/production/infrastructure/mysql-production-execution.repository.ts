@@ -24,6 +24,7 @@ import { evaluateProductionExecutionCompletion } from '../domain/production-comp
 import { findBatch } from './mysql-production.shared.js';
 import type { BatchRow, Db } from './mysql-production.shared.js';
 import { selectWorkerTasks } from './mysql-production-worker-task.projection.js';
+import { selectProductionStepSopSnapshot } from './mysql-production-step-sop.projection.js';
 
 type ExecutionStepRow = RowDataPacket & {
   id: number;
@@ -110,6 +111,10 @@ export class MysqlProductionExecutionRepository extends ProductionExecutionRepos
   }
   async listWorkerTasks(actorId: string) {
     return selectWorkerTasks(this.pool, actorId);
+  }
+
+  async getStepSopSnapshot(batchId: string, stepRecordId: string, responsibleUserId?: string) {
+    return selectProductionStepSopSnapshot(this.pool, batchId, stepRecordId, responsibleUserId);
   }
 
   assignStep(

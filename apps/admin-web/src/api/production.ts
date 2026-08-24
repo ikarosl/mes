@@ -307,6 +307,20 @@ export const productionApi = {
 
   listWorkerTasks: () => request<ProductionWorkerTaskItem[]>({ url: '/production/worker-tasks' }),
 
+  batchStepSopContent: (batchId: string, stepRecordId: string) =>
+    request<Blob>({
+      url: `/production/batches/${batchId}/step-records/${stepRecordId}/sop-content`,
+      responseType: 'blob',
+      timeout: 0,
+    }),
+
+  workerTaskSopContent: (batchId: string, stepRecordId: string) =>
+    request<Blob>({
+      url: `/production/worker-tasks/batches/${batchId}/step-records/${stepRecordId}/sop-content`,
+      responseType: 'blob',
+      timeout: 0,
+    }),
+
   assignStep: (batchId: string, stepRecordId: string, responsibleUserId: string, version: number) =>
     request<ProductionStepCommandResult>({
       url: `/production/batches/${batchId}/step-records/${stepRecordId}/actions/assign`,

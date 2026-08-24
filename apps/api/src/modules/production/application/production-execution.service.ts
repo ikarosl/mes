@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { IdentityDirectoryService } from '../../identity/public.js';
+import { TechnicalFileContentQuery } from '../../product/public.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
 import { ProductionExecutionRepository } from './ports/production-execution.repository.js';
 
@@ -9,6 +10,7 @@ export class ProductionExecutionService {
   constructor(
     private readonly execution: ProductionExecutionRepository,
     private readonly identity: IdentityDirectoryService,
+    private readonly technicalFileContent: TechnicalFileContentQuery,
   ) {}
 
   getCompletionCheck(batchId: string) {
@@ -23,6 +25,15 @@ export class ProductionExecutionService {
   listMyTasks(context: CommandContext) {
     if (!context.actorId) throw new ProductionDomainError('NOT_STEP_ASSIGNEE', '缺少当前员工身份');
     return this.execution.listWorkerTasks(context.actorId);
+  }
+
+  getStepSopContent(batchId: string, stepRecordId: string) {
+    return this.loadStepSopContent(batchId, stepRecordId);
+  }
+
+  getMyStepSopContent(batchId: string, stepRecordId: string, context: CommandContext) {
+    if (!context.actorId) throw new ProductionDomainError('NOT_STEP_ASSIGNEE', '缺少当前员工身份');
+    return this.loadStepSopContent(batchId, stepRecordId, context.actorId);
   }
 
   async assignStep(
@@ -71,5 +82,22 @@ export class ProductionExecutionService {
     const users = await this.identity.listActiveUserOptionsByIds([userId]);
     if (users.length !== 1)
       throw new ProductionDomainError('INVALID_INPUT', '派工员工不存在或已停用');
+  }
+
+  private async loadStepSopContent(
+    batchId: string,
+    stepRecordId: string,
+    responsibleUserId?: string,
+  ) {
+    const file = await this.execution.getStepSopSnapshot(batchId, stepRecordId, responsibleUserId);
+    try {
+      const content = await this.technicalFileContent.readHistoricalSnapshot(file);
+      return {
+        file: { ...file, mimeType: content.mimeType, sizeBytes: content.sizeBytes },
+        stream: content.stream,
+      };
+    } catch {
+      throw new ProductionDomainError('SOP_SNAPSHOT_UNAVAILABLE', '历史 SOP 文件暂时无法读取');
+    }
   }
 }

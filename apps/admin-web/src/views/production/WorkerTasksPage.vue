@@ -75,6 +75,28 @@
           </template>
         </el-table-column>
         <el-table-column
+          label="SOP"
+          min-width="190"
+        >
+          <template #default="{ row }">
+            <template v-if="row.sopFileName">
+              <div>{{ row.sopFileName }}</div>
+              <el-button
+                link
+                type="primary"
+                :loading="sopPendingIds.has(row.stepRecordId)"
+                @click="downloadSop(row)"
+                >下载 SOP</el-button
+              >
+            </template>
+            <span
+              v-else
+              class="muted"
+              >未配置</span
+            >
+          </template>
+        </el-table-column>
+        <el-table-column
           label="正常数量进度"
           min-width="170"
         >
@@ -207,6 +229,7 @@ import type {
   ProductionWorkerTaskItem,
 } from '@company/contracts';
 import { EMessage } from '../../utils/message';
+import { productionApi } from '../../api/production';
 import { formatDateTimeForDisplay } from '../../utils/date';
 import TableToolbar from '../../components/TableToolbar.vue';
 import { formatQuantity, stepStatusMeta } from './production-status';
@@ -231,6 +254,7 @@ const {
 const reportVisible = ref(false);
 const reportTask = ref<ProductionWorkerTaskItem | null>(null);
 const reportMode = ref<'normal' | 'abnormal'>('normal');
+const sopPendingIds = ref(new Set<string>());
 const stepStatusLabel = (status: BatchStepStatus): string => BATCH_STEP_STATUS_LABELS[status];
 const reload = async (): Promise<void> => {
   try {
@@ -261,6 +285,31 @@ const openReport = (task: ProductionWorkerTaskItem, mode: 'normal' | 'abnormal')
   reportTask.value = task;
   reportMode.value = mode;
   reportVisible.value = true;
+};
+const downloadSop = async (task: ProductionWorkerTaskItem): Promise<void> => {
+  if (!task.sopFileName || sopPendingIds.value.has(task.stepRecordId)) return;
+  sopPendingIds.value = new Set(sopPendingIds.value).add(task.stepRecordId);
+  try {
+    const blob = await productionApi.workerTaskSopContent(
+      task.productionBatchId,
+      task.stepRecordId,
+    );
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = task.sopFileName;
+    anchor.style.display = 'none';
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  } catch (error) {
+    EMessage.error(error, 'SOP 文件下载失败');
+  } finally {
+    const next = new Set(sopPendingIds.value);
+    next.delete(task.stepRecordId);
+    sopPendingIds.value = next;
+  }
 };
 const completeTask = async (task: ProductionWorkerTaskItem): Promise<void> => {
   try {
