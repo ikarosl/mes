@@ -4,7 +4,7 @@ import type {
   ProductionBatchStatus,
   ProductionWorkerTaskItem,
 } from '@company/contracts';
-import { toBeijingISOString } from '../../../common/time/beijing-time.js';
+import { toBeijingISOString } from '../../../common/time/date-time.js';
 import {
   calculateRouteStepQuantities,
   type RouteQuantityStep,

@@ -5,7 +5,7 @@ import type {
   BatchStepReportItem,
   BatchStepStatus,
 } from '@company/contracts';
-import { toBeijingISOString } from '../../../common/time/beijing-time.js';
+import { toBeijingISOString } from '../../../common/time/date-time.js';
 import type { RouteStepQuantity } from '../domain/production-route-quantity.policy.js';
 import { fixedIntegerQuantity } from '../domain/integer-quantity.js';
 

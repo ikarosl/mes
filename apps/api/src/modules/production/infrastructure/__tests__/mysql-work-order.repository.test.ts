@@ -13,7 +13,7 @@ describe('MysqlWorkOrderRepository data ownership', () => {
     expect(sql).not.toContain('products');
   });
 
-  it('persists explicit nulls when clearing optional work-order fields', async () => {
+  it('rejects clearing required work-order plan dates', async () => {
     const connection = transactionConnection();
     connection.query
       .mockResolvedValueOnce([[workOrderRow], []])
@@ -24,39 +24,24 @@ describe('MysqlWorkOrderRepository data ownership', () => {
       getConnection: vi.fn().mockResolvedValue(connection),
     } as never);
 
-    await repository.update(
-      '6',
-      {
-        version: 3,
-        customerName: null,
-        qualityLevel: null,
-        workOrderOwnerId: null,
-        planStartDate: null,
-        planEndDate: null,
-        externalOrderNo: null,
-        remark: null,
-      },
-      undefined,
-      { actorId: '1', ip: null, requestId: 'test-request', userAgent: null },
-    );
-
-    expect(connection.execute.mock.calls[0]?.[1]).toEqual([
-      8,
-      'P-001',
-      'Product A',
-      'pcs',
-      '100.0000',
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      '1',
-      '6',
-      3,
-    ]);
+    await expect(
+      repository.update(
+        '6',
+        {
+          version: 3,
+          customerName: null,
+          qualityLevel: null,
+          workOrderOwnerId: null,
+          planStartDate: null,
+          planEndDate: null,
+          externalOrderNo: null,
+          remark: null,
+        },
+        undefined,
+        { actorId: '1', ip: null, requestId: 'test-request', userAgent: null },
+      ),
+    ).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+    expect(connection.execute).not.toHaveBeenCalled();
   });
 
   it('retains optional values omitted from a work-order update', async () => {
@@ -168,7 +153,13 @@ describe('MysqlWorkOrderRepository data ownership', () => {
     } as never);
 
     await repository.create(
-      { workOrderNo: 'WO-001', productId: '8', plannedQuantity: 100 },
+      {
+        workOrderNo: 'WO-001',
+        productId: '8',
+        plannedQuantity: 100,
+        planStartDate: '2026-08-01',
+        planEndDate: '2026-08-31',
+      },
       { id: '8', itemCode: 'P-001', productName: 'Product A', unit: 'pcs', defaultRouteId: null },
       { actorId: '1', ip: null, requestId: 'test-request', userAgent: null },
     );
@@ -192,7 +183,13 @@ describe('MysqlWorkOrderRepository data ownership', () => {
 
     await expect(
       repository.create(
-        { workOrderNo: 'WO-001', productId: '8', plannedQuantity: 100 },
+        {
+          workOrderNo: 'WO-001',
+          productId: '8',
+          plannedQuantity: 100,
+          planStartDate: '2026-08-01',
+          planEndDate: '2026-08-31',
+        },
         {
           id: '8',
           itemCode: 'P-001',
@@ -575,8 +572,8 @@ const workOrderRow = {
   customer_name: 'Customer A',
   quality_level: 'A',
   work_order_owner_id: 9,
-  plan_start_date: '2026-08-01',
-  plan_end_date: '2026-08-31',
+  plan_start_date: new Date('2026-07-31T16:00:00.000Z'),
+  plan_end_date: new Date('2026-08-30T16:00:00.000Z'),
   external_order_no: 'EXT-001',
   remark: 'existing remark',
   version: 3,

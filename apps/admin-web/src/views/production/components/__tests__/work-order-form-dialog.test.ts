@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import WorkOrderFormDialog from '../WorkOrderFormDialog.vue';
 
 vi.mock('../../../../utils/message', () => ({ EMessage: { warning: vi.fn(), error: vi.fn() } }));
+import { EMessage } from '../../../../utils/message';
 
 /** 按下拉占位符区分；点击模拟展开下拉（visible-change=true） */
 const selectStub = {
@@ -55,7 +56,7 @@ const openDialog = async (overrides: Record<string, unknown> = {}) => {
         'el-dialog': dialogStub,
         'el-select': selectStub,
         'el-option': true,
-        'el-button': { template: '<button><slot/></button>' },
+        'el-button': { template: '<button @click="$emit(\'click\')"><slot/></button>' },
         'el-input': true,
         'el-input-number': true,
         'el-date-picker': true,
@@ -125,5 +126,57 @@ describe('WorkOrderFormDialog', () => {
     const userButton = wrapper.findAll('.select-stub').find((b) => b.text() === '请选择工单负责人');
     expect(productButton!.attributes('loading')).toBe('true');
     expect(userButton!.attributes('loading')).toBe('true');
+  });
+
+  it('requires both work-order plan dates', async () => {
+    const wrapper = await openDialog();
+    const vm = wrapper.vm as unknown as {
+      form: {
+        workOrderNo: string;
+        productId: string;
+        plannedQuantity: number;
+        planStartDate: string;
+        planEndDate: string;
+      };
+    };
+    Object.assign(vm.form, {
+      workOrderNo: 'WO-001',
+      productId: 'p1',
+      plannedQuantity: 10,
+      planStartDate: '',
+      planEndDate: '',
+    });
+
+    const save = wrapper.findAll('button').find((button) => button.text() === '保存工单');
+    await save!.trigger('click');
+
+    expect(wrapper.emitted('save')).toBeUndefined();
+    expect(EMessage.warning).toHaveBeenCalledWith('请填写计划开始和计划完成日期');
+  });
+
+  it('rejects a work-order plan end date before its start date', async () => {
+    const wrapper = await openDialog();
+    const vm = wrapper.vm as unknown as {
+      form: {
+        workOrderNo: string;
+        productId: string;
+        plannedQuantity: number;
+        planStartDate: string;
+        planEndDate: string;
+      };
+    };
+    Object.assign(vm.form, {
+      workOrderNo: 'WO-001',
+      productId: 'p1',
+      plannedQuantity: 10,
+      planStartDate: '2026-08-31',
+      planEndDate: '2026-08-01',
+    });
+
+    const save = wrapper.findAll('button').find((button) => button.text() === '保存工单');
+    await save!.trigger('click');
+
+    expect(wrapper.emitted('save')).toBeUndefined();
+    expect(EMessage.warning).toHaveBeenCalledWith('计划完成日期不能早于计划开始日期');
   });
 });

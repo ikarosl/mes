@@ -213,6 +213,7 @@ import type {
 } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
 import { EMessage } from '../../../utils/message';
+import { toDateInputValue } from '../../../utils/date';
 import { buildLiveOptions, hasUnavailableSelection } from '../../../utils/live-options';
 import { resolveDefaultRouteId } from '../production-route-options';
 import { useProductOptions } from '../../../composables/options/useProductOptions';
@@ -337,9 +338,10 @@ const disableTaskDate = (date: Date): boolean => {
   const order = selectedWorkOrder.value;
   if (!order) return false;
   const value = toLocalDateValue(date);
+  const orderStartDate = toDateInputValue(order.planStartDate);
+  const orderEndDate = toDateInputValue(order.planEndDate);
   return Boolean(
-    (order.planStartDate && value < order.planStartDate) ||
-    (order.planEndDate && value > order.planEndDate),
+    (orderStartDate && value < orderStartDate) || (orderEndDate && value > orderEndDate),
   );
 };
 
@@ -405,8 +407,8 @@ const handleWorkOrderChange = (workOrderId: string): void => {
   pendingRouteWorkOrderId = null;
   form.routeId = '';
   form.ownerId = '';
-  form.planStartDate = order?.planStartDate ?? '';
-  form.planEndDate = order?.planEndDate ?? '';
+  form.planStartDate = toDateInputValue(order?.planStartDate);
+  form.planEndDate = toDateInputValue(order?.planEndDate);
   resetStepPreview();
   if (!order) return;
   form.plannedQuantity = Number(order.remainingQuantity);
@@ -444,8 +446,8 @@ const setForm = (row: {
     routeId: row.routeId ?? '',
     ownerId: row.ownerId ?? '',
     plannedQuantity: Number(row.plannedQuantity),
-    planStartDate: row.planStartDate ?? '',
-    planEndDate: row.planEndDate ?? '',
+    planStartDate: toDateInputValue(row.planStartDate),
+    planEndDate: toDateInputValue(row.planEndDate),
     remark: row.remark ?? '',
   });
   resetStepPreview();
@@ -464,7 +466,7 @@ const handleSubmit = (): void => {
     EMessage.warning('计划数量不能超过工单剩余数量');
     return;
   }
-  if (!props.editingTaskId && (!form.planStartDate || !form.planEndDate)) {
+  if (!form.planStartDate || !form.planEndDate) {
     EMessage.warning('请填写计划开始和计划结束日期');
     return;
   }
@@ -473,10 +475,12 @@ const handleSubmit = (): void => {
     return;
   }
   const order = selectedWorkOrder.value;
+  const orderStartDate = toDateInputValue(order?.planStartDate);
+  const orderEndDate = toDateInputValue(order?.planEndDate);
   if (
     order &&
-    ((order.planStartDate && form.planStartDate && form.planStartDate < order.planStartDate) ||
-      (order.planEndDate && form.planEndDate && form.planEndDate > order.planEndDate))
+    ((orderStartDate && form.planStartDate < orderStartDate) ||
+      (orderEndDate && form.planEndDate > orderEndDate))
   ) {
     EMessage.warning('任务计划日期必须位于工单计划区间内');
     return;

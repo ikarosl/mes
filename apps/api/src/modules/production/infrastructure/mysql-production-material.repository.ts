@@ -18,7 +18,7 @@ import type {
 } from '@company/contracts';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { writeTransactionalAudit } from '../../../common/audit/transactional-audit-writer.js';
-import { toBeijingISOString } from '../../../common/time/beijing-time.js';
+import { toBeijingISOString, toDateOnlyString } from '../../../common/time/date-time.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
 import { ProductionMaterialRepository } from '../application/ports/production-material.repository.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
@@ -31,7 +31,6 @@ import {
   ALLOCATION_SELECT,
   DEMAND_SELECT,
   bigintCompare,
-  dateOnly,
   decimal,
   mapAllocation,
   mapDemand,
@@ -105,7 +104,7 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
       unit: row.unit_snapshot,
       sourceType: row.source_type,
       provider: row.provider,
-      productionDate: dateOnly(row.production_date),
+      productionDate: toDateOnlyString(row.production_date),
       onHandAvailableQuantity: row.on_hand,
       reservedQuantity: row.reserved,
       availableToAllocateQuantity: decimal(Math.max(0, Number(row.on_hand) - Number(row.reserved))),

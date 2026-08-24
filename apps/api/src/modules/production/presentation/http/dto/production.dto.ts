@@ -78,16 +78,16 @@ export class CreateWorkOrderDto implements CreateWorkOrderPayload {
   @IsOptional() @IsString() @MaxLength(255) customerName?: string | null;
   @IsOptional() @IsString() @MaxLength(50) qualityLevel?: string | null;
   @IsOptional() @IsString() @MaxLength(20) workOrderOwnerId?: string | null;
-  @IsOptional()
+  @IsDefined()
   @IsString()
   @Matches(DATE_ONLY_PATTERN)
   @IsDateString({ strict: true })
-  planStartDate?: string | null;
-  @IsOptional()
+  planStartDate!: string;
+  @IsDefined()
   @IsString()
   @Matches(DATE_ONLY_PATTERN)
   @IsDateString({ strict: true })
-  planEndDate?: string | null;
+  planEndDate!: string;
   @IsOptional() @IsString() @MaxLength(100) externalOrderNo?: string | null;
   @IsOptional() @IsString() @MaxLength(5000) remark?: string | null;
 }

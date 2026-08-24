@@ -8,10 +8,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { extname } from 'node:path';
 import { Readable } from 'node:stream';
 import type { TechnicalFileStorageConfig } from '../../../config/env.js';
-import {
-  toBeijingCompactTimestamp,
-  toBeijingISOString,
-} from '../../../common/time/beijing-time.js';
+import { toBeijingCompactTimestamp, toBeijingISOString } from '../../../common/time/date-time.js';
 import {
   type TechnicalFileStorage,
   type TechnicalFileUpload,

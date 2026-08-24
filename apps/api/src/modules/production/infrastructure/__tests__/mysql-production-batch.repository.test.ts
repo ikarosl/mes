@@ -342,8 +342,8 @@ const releasedWorkOrder = {
   planned_quantity: '100.0000',
   unit_snapshot: 'pcs',
   status: 'released',
-  plan_start_date: '2026-08-01',
-  plan_end_date: '2026-08-31',
+  plan_start_date: new Date('2026-07-31T16:00:00.000Z'),
+  plan_end_date: new Date('2026-08-30T16:00:00.000Z'),
 };
 const batchRow = {
   id: 21,

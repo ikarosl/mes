@@ -12,6 +12,7 @@ import type {
 } from '@company/contracts';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { writeTransactionalAudit } from '../../../common/audit/transactional-audit-writer.js';
+import { toDateOnlyString } from '../../../common/time/date-time.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
 import type { ProductionProductSnapshot } from '../../product/public.js';
 import { requireWorkOrderTransition } from '../domain/production-status.policy.js';
@@ -42,6 +43,16 @@ type WorkOrderBatchSummaryRow = RowDataPacket & {
     | 'cancelled';
   planned_quantity: string;
   completed_quantity: string;
+};
+
+const requirePlanDates = (
+  planStartDate: string | null | undefined,
+  planEndDate: string | null | undefined,
+): void => {
+  if (!planStartDate || !planEndDate)
+    throw new ProductionDomainError('INVALID_INPUT', '工单计划开始日期和计划完成日期均为必填项');
+  if (planEndDate < planStartDate)
+    throw new ProductionDomainError('INVALID_INPUT', '计划完工日期不能早于计划开始日期');
 };
 
 @Injectable()
@@ -90,8 +101,8 @@ export class MysqlWorkOrderRepository {
         product_code_snapshot: string;
         product_name_snapshot: string;
         remaining_quantity: string;
-        plan_start_date: string | null;
-        plan_end_date: string | null;
+        plan_start_date: Date | string | null;
+        plan_end_date: Date | string | null;
       })[]
     >(
       `SELECT wo.id,wo.work_order_no,wo.product_id,wo.product_code_snapshot,wo.product_name_snapshot,${remaining} AS remaining_quantity,wo.plan_start_date,wo.plan_end_date
@@ -106,8 +117,8 @@ export class MysqlWorkOrderRepository {
       productCode: row.product_code_snapshot,
       productName: row.product_name_snapshot,
       remainingQuantity: row.remaining_quantity,
-      planStartDate: row.plan_start_date,
-      planEndDate: row.plan_end_date,
+      planStartDate: toDateOnlyString(row.plan_start_date),
+      planEndDate: toDateOnlyString(row.plan_end_date),
     }));
   }
 
@@ -130,6 +141,7 @@ export class MysqlWorkOrderRepository {
     audit: CommandContext,
   ): Promise<WorkOrderDetail> {
     return withTransaction(this.pool, async (connection) => {
+      requirePlanDates(payload.planStartDate, payload.planEndDate);
       const [[existing]] = await connection.query<RowDataPacket[]>(
         'SELECT id FROM work_orders WHERE work_order_no=? FOR UPDATE',
         [payload.workOrderNo],
@@ -178,6 +190,15 @@ export class MysqlWorkOrderRepository {
       const before = await findWorkOrder(connection, id);
       if (before.status !== 'draft')
         throw new ProductionDomainError('INVALID_STATE', '只有草稿工单可以编辑');
+      const planStartDate =
+        payload.planStartDate === undefined
+          ? toDateOnlyString(before.plan_start_date)
+          : payload.planStartDate;
+      const planEndDate =
+        payload.planEndDate === undefined
+          ? toDateOnlyString(before.plan_end_date)
+          : payload.planEndDate;
+      requirePlanDates(planStartDate, planEndDate);
       const [result] = await connection.execute<ResultSetHeader>(
         'UPDATE work_orders SET product_id=?,product_code_snapshot=?,product_name_snapshot=?,unit_snapshot=?,planned_quantity=?,customer_name=?,quality_level=?,work_order_owner_id=?,plan_start_date=?,plan_end_date=?,external_order_no=?,remark=?,version=version+1,updated_by=? WHERE id=? AND version=?',
         [
@@ -191,8 +212,8 @@ export class MysqlWorkOrderRepository {
           payload.workOrderOwnerId === undefined
             ? before.work_order_owner_id
             : payload.workOrderOwnerId,
-          payload.planStartDate === undefined ? before.plan_start_date : payload.planStartDate,
-          payload.planEndDate === undefined ? before.plan_end_date : payload.planEndDate,
+          planStartDate,
+          planEndDate,
           payload.externalOrderNo === undefined
             ? before.external_order_no
             : payload.externalOrderNo,
@@ -238,6 +259,10 @@ export class MysqlWorkOrderRepository {
     return withTransaction(this.pool, async (connection) => {
       const before = await findWorkOrder(connection, id, true);
       requireWorkOrderTransition(before.status, 'released');
+      requirePlanDates(
+        toDateOnlyString(before.plan_start_date),
+        toDateOnlyString(before.plan_end_date),
+      );
       const [result] = await connection.execute<ResultSetHeader>(
         `UPDATE work_orders SET product_id=?,product_code_snapshot=?,product_name_snapshot=?,unit_snapshot=?,status='released',released_at=NOW(),version=version+1,updated_by=? WHERE id=? AND version=?`,
         [

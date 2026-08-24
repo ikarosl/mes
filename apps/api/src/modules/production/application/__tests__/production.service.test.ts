@@ -70,7 +70,16 @@ describe('ProductionService first-stage commands', () => {
     const service = new ProductionService({} as never, products as never, {} as never, {} as never);
 
     await expect(
-      service.createWorkOrder({ productId: '8', workOrderNo: 'WO-001', plannedQuantity: 1 }, audit),
+      service.createWorkOrder(
+        {
+          productId: '8',
+          workOrderNo: 'WO-001',
+          plannedQuantity: 1,
+          planStartDate: '2026-08-01',
+          planEndDate: '2026-08-31',
+        },
+        audit,
+      ),
     ).rejects.toMatchObject({
       code: 'NOT_FOUND',
       message: '产品不存在',
