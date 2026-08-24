@@ -14,7 +14,7 @@ import type {
 } from '@company/contracts';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { writeTransactionalAudit } from '../../../common/audit/transactional-audit-writer.js';
-import { toBeijingISOString } from '../../../common/time/beijing-time.js';
+import { toBeijingISOString } from '../../../common/time/date-time.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
 import { ProductionSupplementRepository } from '../application/ports/production-supplement.repository.js';
 import { ProductionDomainError } from '../domain/production.errors.js';

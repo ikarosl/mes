@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import { jwtVerify, SignJWT } from 'jose';
 import { randomUUID } from 'node:crypto';
 import type { JwtClaims, LoginRequest, TokenResponse, UserProfile } from '@company/contracts';
-import { toBeijingISOString } from '../../../common/time/beijing-time.js';
+import { toBeijingISOString } from '../../../common/time/date-time.js';
 import { loadAppConfig } from '../../../config/env.js';
 import { AuthenticationError } from '../domain/auth.errors.js';
 import { AuthRepository } from './ports/auth.repository.js';

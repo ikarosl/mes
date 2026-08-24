@@ -361,8 +361,10 @@
                 :candidate-loader="loadSupplementCandidates"
                 :plan-loader="loadScrapSupplementPlan"
                 :plan-saver="saveScrapSupplementPlan"
+                :plan-confirmer="handleApproveScrapSupplement"
+                :intent-status-loader="getSupplementIntentStatus"
+                :intent-resetter="resetSupplementIntent"
                 @approve="handleApproveRework"
-                @approve-scrap="handleApproveScrapSupplement"
                 @reject="handleRejectDisposition"
                 @start="handleStartRework"
                 @complete="handleCompleteRework"
@@ -594,6 +596,8 @@ const {
   loadScrapSupplementPlan,
   saveScrapSupplementPlan,
   approveScrapSupplement,
+  getSupplementIntentStatus,
+  resetSupplementIntent,
 } = useProductionExecutionRecords();
 const {
   handleApproveRework,

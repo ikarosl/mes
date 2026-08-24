@@ -65,6 +65,8 @@ export class ProductionService {
 
   async createWorkOrder(payload: CreateWorkOrderPayload, audit: CommandContext) {
     if (payload.workOrderOwnerId) await this.requireActiveUser(payload.workOrderOwnerId);
+    if (!payload.planStartDate || !payload.planEndDate)
+      throw new ProductionDomainError('INVALID_INPUT', '工单计划开始日期和计划完成日期均为必填项');
     this.assertPlanDates(payload.planStartDate, payload.planEndDate);
     const product = this.requireProduct(
       await this.products.getProductionProduct(payload.productId),

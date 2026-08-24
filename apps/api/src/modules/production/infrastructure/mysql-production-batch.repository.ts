@@ -15,6 +15,7 @@ import type {
 } from '@company/contracts';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { writeTransactionalAudit } from '../../../common/audit/transactional-audit-writer.js';
+import { toDateOnlyString } from '../../../common/time/date-time.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
 import type { ProcessRouteSnapshot, ProductBomSnapshot } from '../../product/public.js';
 import type { ResolvedBatchStepOverride } from '../application/ports/production.repository.js';
@@ -233,9 +234,13 @@ export class MysqlProductionBatchRepository {
       if (before.status !== 'pending')
         throw new ProductionDomainError('INVALID_STATE', '仅待处理生产批次可编辑');
       const planStartDate =
-        payload.planStartDate === undefined ? before.plan_start_date : payload.planStartDate;
+        payload.planStartDate === undefined
+          ? toDateOnlyString(before.plan_start_date)
+          : payload.planStartDate;
       const planEndDate =
-        payload.planEndDate === undefined ? before.plan_end_date : payload.planEndDate;
+        payload.planEndDate === undefined
+          ? toDateOnlyString(before.plan_end_date)
+          : payload.planEndDate;
       if (planStartDate && planEndDate && planEndDate < planStartDate)
         throw new ProductionDomainError('INVALID_INPUT', '计划完工日期不能早于计划开始日期');
       this.assertPlanWithinWorkOrder(planStartDate, planEndDate, order);
@@ -267,14 +272,19 @@ export class MysqlProductionBatchRepository {
   private assertPlanWithinWorkOrder(
     planStartDate: string | null,
     planEndDate: string | null,
-    order: { plan_start_date: string | null; plan_end_date: string | null },
+    order: {
+      plan_start_date: Date | string | null;
+      plan_end_date: Date | string | null;
+    },
   ): void {
-    if (planStartDate && order.plan_start_date && planStartDate < order.plan_start_date)
+    const orderStartDate = toDateOnlyString(order.plan_start_date);
+    const orderEndDate = toDateOnlyString(order.plan_end_date);
+    if (planStartDate && orderStartDate && planStartDate < orderStartDate)
       throw new ProductionDomainError(
         'INVALID_INPUT',
         '生产任务计划开始日期不能早于工单计划开始日期',
       );
-    if (planEndDate && order.plan_end_date && planEndDate > order.plan_end_date)
+    if (planEndDate && orderEndDate && planEndDate > orderEndDate)
       throw new ProductionDomainError(
         'INVALID_INPUT',
         '生产任务计划结束日期不能晚于工单计划结束日期',

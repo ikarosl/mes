@@ -4,7 +4,7 @@ import {
   createRequestId,
   isRequestId,
 } from '../../../../common/http/request-context.middleware.js';
-import { toBeijingISOString } from '../../../../common/time/beijing-time.js';
+import { toBeijingISOString } from '../../../../common/time/date-time.js';
 import { ProductDomainError, type ProductErrorCode } from '../../domain/product.errors.js';
 
 interface RequestWithContext {

@@ -65,8 +65,8 @@ export interface CreateWorkOrderPayload {
   customerName?: string | null;
   qualityLevel?: string | null;
   workOrderOwnerId?: string | null;
-  planStartDate?: string | null;
-  planEndDate?: string | null;
+  planStartDate: string;
+  planEndDate: string;
   externalOrderNo?: string | null;
   remark?: string | null;
 }

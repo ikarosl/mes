@@ -45,19 +45,27 @@ describe('productionApi', () => {
     });
   });
 
-  it('creates a work order with basic fields', async () => {
+  it('creates a work order with required fields', async () => {
     const { productionApi } = await import('../production');
 
     await productionApi.createOrder({
       workOrderNo: 'WO-2026-0001',
       productId: '1',
       plannedQuantity: 100,
+      planStartDate: '2026-08-01',
+      planEndDate: '2026-08-31',
     });
 
     expect(request).toHaveBeenCalledWith({
       url: '/production/work-orders',
       method: 'POST',
-      data: { workOrderNo: 'WO-2026-0001', productId: '1', plannedQuantity: 100 },
+      data: {
+        workOrderNo: 'WO-2026-0001',
+        productId: '1',
+        plannedQuantity: 100,
+        planStartDate: '2026-08-01',
+        planEndDate: '2026-08-31',
+      },
     });
   });
 

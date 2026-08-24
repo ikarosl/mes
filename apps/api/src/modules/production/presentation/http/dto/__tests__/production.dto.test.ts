@@ -277,7 +277,12 @@ describe('Production date-only DTO fields', () => {
     [
       'create work order',
       CreateWorkOrderDto,
-      { workOrderNo: 'WO-001', productId: '8', plannedQuantity: 1 },
+      {
+        workOrderNo: 'WO-001',
+        productId: '8',
+        plannedQuantity: 1,
+        planEndDate: '2024-03-01',
+      },
     ],
     ['update work order', UpdateWorkOrderDto, { version: 1 }],
     ['create batch', CreateProductionBatchDto, { plannedQuantity: 1 }],
@@ -295,5 +300,18 @@ describe('Production date-only DTO fields', () => {
     const dto = plainToInstance(Dto, { ...base, planStartDate: '2024-02-29' });
 
     expect(await validate(dto)).toEqual([]);
+  });
+
+  it('requires both work-order plan dates on creation', async () => {
+    const dto = plainToInstance(CreateWorkOrderDto, {
+      workOrderNo: 'WO-001',
+      productId: '8',
+      plannedQuantity: 1,
+    });
+
+    const errors = await validate(dto);
+    expect(errors.map((error) => error.property)).toEqual(
+      expect.arrayContaining(['planStartDate', 'planEndDate']),
+    );
   });
 });

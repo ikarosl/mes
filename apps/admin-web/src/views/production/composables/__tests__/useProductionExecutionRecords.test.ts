@@ -170,6 +170,34 @@ describe('useProductionExecutionRecords', () => {
     expect(body).not.toHaveProperty('materialEndStepRecordId');
     // 确认成功后刷新批次投影
     expect(api.getBatchExecutionRecords).toHaveBeenCalledWith('1');
+    expect(state.getSupplementIntentStatus('8')).toBe('idle');
+  });
+
+  it('reconciles an ambiguous supplement confirmation that the server already completed', async () => {
+    api.confirmScrapSupplementPlan.mockRejectedValue(new RequestError('响应中断', 500));
+    api.getScrapSupplementPlan.mockResolvedValue({ status: 'confirmed' });
+    api.getBatchExecutionRecords.mockResolvedValue(group('1'));
+    const state = useProductionExecutionRecords();
+
+    await state.approveScrapSupplement(disposition as never, 3);
+
+    expect(api.getScrapSupplementPlan).toHaveBeenCalledWith('8');
+    expect(api.getBatchExecutionRecords).toHaveBeenCalledWith('1');
+    expect(state.getSupplementIntentStatus('8')).toBe('idle');
+  });
+
+  it('retains and explicitly discards an unresolved supplement confirmation', async () => {
+    api.confirmScrapSupplementPlan.mockRejectedValue(new RequestError('响应中断', 500));
+    api.getScrapSupplementPlan.mockResolvedValue({ status: 'draft' });
+    const state = useProductionExecutionRecords();
+
+    await expect(state.approveScrapSupplement(disposition as never, 3)).rejects.toBeInstanceOf(
+      RequestError,
+    );
+    expect(state.getSupplementIntentStatus('8')).toBe('pending');
+
+    state.resetSupplementIntent('8');
+    expect(state.getSupplementIntentStatus('8')).toBe('idle');
   });
 
   it('prevents a second confirm while the first approval is still in flight', async () => {

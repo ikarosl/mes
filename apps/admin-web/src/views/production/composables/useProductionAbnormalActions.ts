@@ -43,6 +43,7 @@ export const useProductionAbnormalActions = (actions: Actions) => ({
       EMessage.success('异常已批准报废并生成补料需求');
     } catch (error) {
       EMessage.error(error, '报废补料批准失败，请刷新后核对候选物料和数量');
+      throw error;
     }
   },
   handleStartRework: async (item: ReworkRecordItem) => {

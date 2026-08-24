@@ -241,7 +241,13 @@ describe('TaskFormDialog', () => {
   it('handleWorkOrderChange picks the default route via resolveDefaultRouteId', async () => {
     productOptions.mockResolvedValue([defaultProduct]);
     routeOptions.mockResolvedValue(defaultRoutes);
-    workOrderOptions.mockResolvedValue([releasedOrder('wo1')]);
+    workOrderOptions.mockResolvedValue([
+      {
+        ...releasedOrder('wo1'),
+        planStartDate: '2026-08-01T00:00:00+08:00',
+        planEndDate: '2026-08-31T00:00:00+08:00',
+      },
+    ]);
 
     const wrapper = await openDialog();
 

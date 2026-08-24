@@ -24,7 +24,7 @@ import type {
 import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { writeTransactionalAudit } from '../../../common/audit/transactional-audit-writer.js';
-import { toBeijingISOString } from '../../../common/time/beijing-time.js';
+import { toBeijingISOString } from '../../../common/time/date-time.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
 import { ProductionInventoryRepository } from '../application/ports/production-inventory.repository.js';
 import { ProductionDomainError } from '../domain/production.errors.js';

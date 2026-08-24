@@ -7,7 +7,7 @@ import type {
   ProductionTraceQuery,
   ProductionTraceWorkOrderGroup,
 } from '@company/contracts';
-import { toBeijingISOString } from '../../../common/time/beijing-time.js';
+import { toBeijingISOString } from '../../../common/time/date-time.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
 import { ProductionTraceRepository } from '../application/ports/production-trace.repository.js';
 import { ProductionDomainError } from '../domain/production.errors.js';

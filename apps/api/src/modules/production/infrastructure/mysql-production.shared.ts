@@ -1,4 +1,4 @@
-import { toBeijingISOString } from '../../../common/time/beijing-time.js';
+import { toBeijingISOString, toDateOnlyString } from '../../../common/time/date-time.js';
 import type { Pool, PoolConnection, RowDataPacket } from 'mysql2/promise';
 import type {
   ProductionBatchItem,
@@ -42,8 +42,8 @@ export type WorkOrderRow = RowDataPacket & {
   customer_name: string | null;
   quality_level: string | null;
   work_order_owner_id: number | null;
-  plan_start_date: string | null;
-  plan_end_date: string | null;
+  plan_start_date: Date | string | null;
+  plan_end_date: Date | string | null;
   external_order_no: string | null;
   remark: string | null;
   version: number;
@@ -65,8 +65,8 @@ export type BatchRow = RowDataPacket & {
   planned_quantity: string;
   completed_quantity: string;
   qualified_quantity: string;
-  plan_start_date: string | null;
-  plan_end_date: string | null;
+  plan_start_date: Date | string | null;
+  plan_end_date: Date | string | null;
   status: ProductionBatchItem['status'];
   owner_id: number | null;
   completed_at: Date | null;
@@ -158,8 +158,8 @@ export const mapWorkOrder = (row: WorkOrderRow): WorkOrderItem => ({
   customerName: row.customer_name,
   qualityLevel: row.quality_level,
   workOrderOwnerId: row.work_order_owner_id === null ? null : String(row.work_order_owner_id),
-  planStartDate: date(row.plan_start_date),
-  planEndDate: date(row.plan_end_date),
+  planStartDate: toDateOnlyString(row.plan_start_date),
+  planEndDate: toDateOnlyString(row.plan_end_date),
   assignedQuantity: row.assigned_quantity,
   status: row.status,
   releasedAt: date(row.released_at),
@@ -193,8 +193,8 @@ export const mapBatch = (row: BatchRow): ProductionBatchItem => ({
   plannedQuantity: row.planned_quantity,
   completedQuantity: row.completed_quantity,
   qualifiedQuantity: row.qualified_quantity,
-  planStartDate: date(row.plan_start_date),
-  planEndDate: date(row.plan_end_date),
+  planStartDate: toDateOnlyString(row.plan_start_date),
+  planEndDate: toDateOnlyString(row.plan_end_date),
   startedAt: date(row.started_at),
   status: row.status,
   ownerId: row.owner_id === null ? null : String(row.owner_id),

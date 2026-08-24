@@ -117,6 +117,48 @@ describeMysql('Production return and stock-check MySQL transactions', () => {
       await cleanup(pool, fixture);
     }
   });
+
+  it('creates and confirms a material loss with an equal formal supplement demand', async () => {
+    const fixture = await createFixture(pool, actorId);
+    try {
+      const created = await repository.createMaterialLoss(
+        {
+          productionBatchId: String(fixture.productionBatchId),
+          allocationId: String(fixture.allocationId),
+          scrapQuantity: 2,
+          reasonType: '现场损耗',
+          remark: '确认后等量补料',
+        },
+        context(actorId, `${fixture.token}-loss-create`),
+      );
+      expect(created).toMatchObject({ status: 'pending', scrapQuantity: '2.0000' });
+
+      const confirmed = await repository.confirmMaterialLoss(
+        created.id,
+        created.version,
+        context(actorId, `${fixture.token}-loss-confirm`),
+      );
+      expect(confirmed).toMatchObject({
+        status: 'confirmed',
+        version: 1,
+        supplement: {
+          status: 'approved',
+          demandQuantity: '2.0000',
+        },
+      });
+      const [[demand]] = await pool.query<
+        (RowDataPacket & { demand_type: string; need_number: string })[]
+      >('SELECT demand_type,need_number FROM production_item_demand WHERE id=?', [
+        confirmed.supplement!.demandId,
+      ]);
+      expect(demand).toMatchObject({
+        demand_type: 'material_loss_supplement',
+        need_number: '2.0000',
+      });
+    } finally {
+      await cleanup(pool, fixture);
+    }
+  });
 });
 
 type Fixture = {
@@ -251,6 +293,17 @@ async function cleanup(pool: Pool, fixture: Fixture) {
   ]);
   await pool.execute('DELETE FROM outbound_detail WHERE outbound_id=?', [fixture.outboundOrderId]);
   await pool.execute('DELETE FROM outbound_order WHERE id=?', [fixture.outboundOrderId]);
+  await pool.execute(
+    "DELETE FROM production_item_demand WHERE production_batch_id=? AND demand_type='material_loss_supplement'",
+    [fixture.productionBatchId],
+  );
+  await pool.execute(
+    "DELETE FROM production_material_supplement WHERE production_batch_id=? AND source_type='material_loss'",
+    [fixture.productionBatchId],
+  );
+  await pool.execute('DELETE FROM item_scrap WHERE production_batch_id=?', [
+    fixture.productionBatchId,
+  ]);
   await pool.execute('DELETE FROM production_item_allocation WHERE id=?', [fixture.allocationId]);
   await pool.execute('DELETE FROM production_item_demand WHERE id=?', [fixture.demandId]);
   await pool.execute('DELETE FROM item_batch WHERE id=?', [fixture.itemBatchId]);

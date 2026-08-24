@@ -84,14 +84,20 @@
             placeholder="客户质量等级代码"
           />
         </el-form-item>
-        <el-form-item label="计划开始">
+        <el-form-item
+          label="计划开始"
+          required
+        >
           <el-date-picker
             v-model="form.planStartDate"
             type="date"
             value-format="YYYY-MM-DD"
           />
         </el-form-item>
-        <el-form-item label="计划完成">
+        <el-form-item
+          label="计划完成"
+          required
+        >
           <el-date-picker
             v-model="form.planEndDate"
             type="date"
@@ -235,6 +241,14 @@ const handleSubmit = (): void => {
     form.plannedQuantity <= 0
   ) {
     EMessage.warning('请填写工单号、产品和计划数量');
+    return;
+  }
+  if (!form.planStartDate || !form.planEndDate) {
+    EMessage.warning('请填写计划开始和计划完成日期');
+    return;
+  }
+  if (form.planEndDate < form.planStartDate) {
+    EMessage.warning('计划完成日期不能早于计划开始日期');
     return;
   }
   if (

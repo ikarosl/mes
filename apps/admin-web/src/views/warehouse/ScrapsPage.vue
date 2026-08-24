@@ -433,6 +433,7 @@ async function confirmLoss(row: MaterialLossItem) {
       },
       (key) => warehouseApi.confirmMaterialLoss(row.id, row.version, key),
     );
+    confirmIntents.delete(row.id);
     EMessage.success('损耗已确认，等量补料需求已生成');
     await loadRows();
   } catch (error) {

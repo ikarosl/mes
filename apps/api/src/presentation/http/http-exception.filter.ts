@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import type { ApiErrorResponse } from '@company/contracts';
 import { IDEMPOTENCY_RESULT_CORRUPT, IDEMPOTENCY_STORAGE_RETRYABLE } from '@company/constants';
-import { toBeijingISOString } from '../../common/time/beijing-time.js';
+import { toBeijingISOString } from '../../common/time/date-time.js';
 import { createRequestId, isRequestId } from '../../common/http/request-context.middleware.js';
 import { IdempotencyStorageError } from '../../common/idempotency/idempotency.errors.js';
 import { ConcurrencyError } from '../../common/persistence/optimistic-lock.js';

@@ -6,7 +6,7 @@ import type {
   ProductionMaterialAllocationItem,
   ProductionMaterialDemandItem,
 } from '@company/contracts';
-import { toBeijingISOString } from '../../../common/time/beijing-time.js';
+import { toBeijingISOString } from '../../../common/time/date-time.js';
 import { fixedIntegerQuantity, integerQuantity } from '../domain/integer-quantity.js';
 
 export type DemandRow = RowDataPacket & {
@@ -175,5 +175,3 @@ export const decimal = fixedIntegerQuantity;
 export const placeholders = (ids: string[]): string => ids.map(() => '?').join(',');
 export const bigintCompare = (a: string, b: string): number =>
   BigInt(a) < BigInt(b) ? -1 : BigInt(a) > BigInt(b) ? 1 : 0;
-export const dateOnly = (value: Date | string | null): string | null =>
-  value === null ? null : typeof value === 'string' ? value : value.toISOString().slice(0, 10);
