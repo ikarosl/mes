@@ -44,6 +44,36 @@
         <el-descriptions-item label="创建时间">{{
           formatDateForDisplay(order.createdAt)
         }}</el-descriptions-item>
+        <template v-if="order.status === 'cancelled'">
+          <el-descriptions-item label="取消人">{{
+            order.cancelledByName || order.cancelledBy || '-'
+          }}</el-descriptions-item>
+          <el-descriptions-item label="取消时间">{{
+            formatDateTimeForDisplay(order.cancelledAt)
+          }}</el-descriptions-item>
+          <el-descriptions-item
+            label="取消原因"
+            :span="3"
+            >{{ order.cancelReason || '历史数据未记录' }}</el-descriptions-item
+          >
+        </template>
+        <template v-if="order.status === 'closed'">
+          <el-descriptions-item label="关闭类型">{{
+            closeTypeLabels[order.closeType ?? ''] || '-'
+          }}</el-descriptions-item>
+          <el-descriptions-item label="关闭人">{{
+            order.closedByName || order.closedBy || '-'
+          }}</el-descriptions-item>
+          <el-descriptions-item label="关闭时间">{{
+            formatDateTimeForDisplay(order.closedAt)
+          }}</el-descriptions-item>
+          <el-descriptions-item
+            v-if="order.closeType !== 'completed_archive'"
+            label="关闭原因"
+            :span="3"
+            >{{ order.closeReason || '历史数据未记录' }}</el-descriptions-item
+          >
+        </template>
         <el-descriptions-item
           label="备注"
           :span="3"
@@ -103,9 +133,9 @@
 </template>
 
 <script setup lang="ts">
-import type { UserOption, WorkOrderDetail } from '@company/contracts';
+import type { UserOption, WorkOrderCloseType, WorkOrderDetail } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
-import { formatDateForDisplay } from '../../../utils/date';
+import { formatDateForDisplay, formatDateTimeForDisplay } from '../../../utils/date';
 import {
   batchStatusMeta,
   formatQuantity,
@@ -122,6 +152,13 @@ defineProps<{
 defineEmits<{
   (e: 'update:visible', val: boolean): void;
 }>();
+
+const closeTypeLabels: Record<WorkOrderCloseType | '', string> = {
+  '': '',
+  unproduced: '未生产结案',
+  underproduced: '不足量结案',
+  completed_archive: '完工归档',
+};
 </script>
 
 <style scoped>

@@ -24,6 +24,10 @@ export interface VersionedCommand {
   version: number;
 }
 
+export interface ReasonedVersionedCommand extends VersionedCommand {
+  reason: string;
+}
+
 export type PermissionType = 'menu' | 'page' | 'button' | 'api';
 
 export type OperationResult = 'success' | 'failed';

@@ -83,6 +83,11 @@ const outboundSchema = z
     createdAt: z.string(),
     version: z.number().int().nonnegative(),
     remark: nullableString,
+    cancelSource: z.enum(['manual', 'production_batch']).nullable().optional(),
+    cancelReason: nullableString.optional(),
+    cancelledById: nullableString.optional(),
+    cancelledByName: nullableString.optional(),
+    cancelledAt: nullableString.optional(),
     quantitySummary: z.array(z.object({ unit: z.string(), quantity: z.string() }).strict()),
     details: z.array(outboundDetailSchema),
   })

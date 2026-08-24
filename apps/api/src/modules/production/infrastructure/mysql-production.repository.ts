@@ -81,8 +81,13 @@ export class MysqlProductionRepository extends ProductionRepository {
   ): Promise<WorkOrderDetail> {
     return this.workOrders.release(id, version, product, audit);
   }
-  cancelWorkOrder(id: string, version: number, audit: CommandContext): Promise<WorkOrderDetail> {
-    return this.workOrders.cancel(id, version, audit);
+  cancelWorkOrder(
+    id: string,
+    version: number,
+    reason: string,
+    audit: CommandContext,
+  ): Promise<WorkOrderDetail> {
+    return this.workOrders.cancel(id, version, reason, audit);
   }
   completeWorkOrder(id: string, version: number, audit: CommandContext): Promise<WorkOrderDetail> {
     return this.workOrders.complete(id, version, audit);

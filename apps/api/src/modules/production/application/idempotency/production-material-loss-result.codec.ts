@@ -37,6 +37,10 @@ const schema: z.ZodType<MaterialLossItem> = z
     createdAt: z.string(),
     version: z.number().int().nonnegative(),
     remark: z.string().nullable(),
+    cancelReason: z.string().nullable().optional(),
+    cancelledById: z.string().nullable().optional(),
+    cancelledByName: z.string().nullable().optional(),
+    cancelledAt: z.string().nullable().optional(),
     supplement: z
       .object({
         supplementId: z.string(),

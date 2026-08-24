@@ -31,6 +31,7 @@ describe('ProductionDomainExceptionFilter', () => {
     ['STEP_START_NOT_ALLOWED', 409],
     ['STEP_COMPLETION_NOT_ALLOWED', 409],
     ['NOT_STEP_ASSIGNEE', 403],
+    ['SOP_SNAPSHOT_UNAVAILABLE', 503],
   ] as const)('maps %s to the expected HTTP envelope', (code, expectedStatus) => {
     const { json, status, setHeader } = invoke(new ProductionDomainError(code, '生产业务错误'));
 

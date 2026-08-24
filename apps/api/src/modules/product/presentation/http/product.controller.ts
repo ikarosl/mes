@@ -89,15 +89,16 @@ export class ProductController {
     return new StreamableFile(stream);
   }
 
-  @Delete('technical-files/:id')
-  @RequirePermission(PERMISSIONS.product.files.delete)
-  @AuditInApplication()
-  deleteTechnicalFile(
-    @Param() { id }: ProductIdParamDto,
-    @CurrentCommandContext() audit: CommandContext,
-  ) {
-    return this.service.deleteTechnicalFile(id, audit);
-  }
+  /**
+   * 技术文件删除能力暂不对外开放。
+   *
+   * 恢复 DELETE /technical-files/:id 前必须同时满足：
+   * 1. 仅软删除 technical_files 元数据，禁止物理删除对象存储内容；
+   * 2. 删除前校验 process_steps 与有效 process_route_steps 的当前引用；
+   * 3. 历史生产任务必须通过 batch_step_records 冻结的对象定位快照下载 SOP，
+   *    不得再依赖 technical_files 当前状态或通用有效文件下载接口；
+   * 4. 保留删除审计，并补齐当前引用、历史快照和并发场景的集成测试。
+   */
 
   @Get('categories')
   @RequirePermission(PERMISSIONS.product.categories.view)

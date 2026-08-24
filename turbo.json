@@ -17,6 +17,18 @@
       "cache": false,
       "persistent": true
     },
+    "ensure-database": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "passThroughEnv": [
+        "DB_HOST",
+        "DB_PORT",
+        "DB_USER",
+        "DB_PASSWORD",
+        "DB_NAME",
+        "DB_CONNECTION_LIMIT"
+      ]
+    },
     "migrate": {
       "dependsOn": ["^build"],
       "cache": false,

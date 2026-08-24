@@ -13,6 +13,7 @@ import type {
 import { IdempotencyExecutor } from '../../../common/idempotency/idempotency-executor.js';
 import { IdentityDirectoryService } from '../../identity/public.js';
 import { ProductSnapshotQuery } from '../../product/public.js';
+import { ProductionDomainError } from '../domain/production.errors.js';
 import { CREATE_MATERIAL_ALLOCATION_IDEMPOTENCY_SCOPE } from './idempotency/production-idempotency-scopes.contract.js';
 import { CREATE_MATERIAL_OUTBOUND_IDEMPOTENCY_SCOPE } from './idempotency/production-idempotency-scopes.contract.js';
 import { CONFIRM_MATERIAL_OUTBOUND_IDEMPOTENCY_SCOPE } from './idempotency/production-idempotency-scopes.contract.js';
@@ -136,8 +137,17 @@ export class ProductionMaterialService {
     });
     return execution.result;
   }
-  async cancelOutbound(outboundId: string, version: number, context: CommandContext) {
-    return this.enrichOutbound(await this.materials.cancelOutbound(outboundId, version, context));
+  async cancelOutbound(
+    outboundId: string,
+    version: number,
+    reason: string,
+    context: CommandContext,
+  ) {
+    const normalizedReason = reason.trim();
+    if (!normalizedReason) throw new ProductionDomainError('INVALID_INPUT', '取消原因不能为空');
+    return this.enrichOutbound(
+      await this.materials.cancelOutbound(outboundId, version, normalizedReason, context),
+    );
   }
   private async enrichOutbound(row: MaterialOutboundItem): Promise<MaterialOutboundItem> {
     return (await this.enrichOutbounds([row]))[0]!;
@@ -145,7 +155,7 @@ export class ProductionMaterialService {
   private async enrichOutbounds(rows: MaterialOutboundItem[]): Promise<MaterialOutboundItem[]> {
     if (rows.length === 0) return rows;
     const ids = rows
-      .flatMap((row) => [row.operatorId, row.createdById])
+      .flatMap((row) => [row.operatorId, row.createdById, row.cancelledById])
       .filter((id): id is string => Boolean(id));
     const users = await this.identity.listUserReferencesByIds([...new Set(ids)]);
     const byId = new Map(users.map((user) => [user.id, user.displayName]));
@@ -153,6 +163,7 @@ export class ProductionMaterialService {
       ...row,
       operatorName: row.operatorId ? (byId.get(row.operatorId) ?? null) : null,
       createdByName: row.createdById ? (byId.get(row.createdById) ?? null) : null,
+      cancelledByName: row.cancelledById ? (byId.get(row.cancelledById) ?? null) : null,
     }));
   }
 }

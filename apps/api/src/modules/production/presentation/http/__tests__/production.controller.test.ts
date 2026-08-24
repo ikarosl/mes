@@ -14,6 +14,8 @@ describe('ProductionController work-order options', () => {
         productCode: 'P-001',
         productName: 'Product A',
         remainingQuantity: '50.0000',
+        planStartDate: '2026-08-01',
+        planEndDate: '2026-08-31',
       },
     ];
     const service = { listWorkOrderOptions: vi.fn().mockResolvedValue(options) };
@@ -37,11 +39,17 @@ describe('ProductionController status commands', () => {
 
   it('forwards explicit work-order complete and close semantics', async () => {
     const service = {
+      cancelWorkOrder: vi.fn().mockResolvedValue({ status: 'cancelled' }),
       completeWorkOrder: vi.fn().mockResolvedValue({ status: 'completed' }),
       closeWorkOrder: vi.fn().mockResolvedValue({ status: 'closed' }),
     };
     const controller = new ProductionController(service as never);
 
+    await controller.cancelWorkOrder(
+      { workOrderId: '3' },
+      { version: 3, reason: '计划取消' },
+      context,
+    );
     await controller.completeWorkOrder({ workOrderId: '3' }, { version: 4 }, context);
     await controller.closeWorkOrder(
       { workOrderId: '3' },
@@ -49,6 +57,7 @@ describe('ProductionController status commands', () => {
       context,
     );
 
+    expect(service.cancelWorkOrder).toHaveBeenCalledWith('3', 3, '计划取消', context);
     expect(service.completeWorkOrder).toHaveBeenCalledWith('3', 4, context);
     expect(service.closeWorkOrder).toHaveBeenCalledWith('3', 5, '  计划调整  ', context);
   });

@@ -331,12 +331,12 @@ const confirmOrder = async (row: MaterialOutboundItem): Promise<void> => {
 };
 const cancelOrder = async (row: MaterialOutboundItem): Promise<void> => {
   try {
-    await ElMessageBox.confirm(
-      `取消 ${row.outboundNo} 后，单据和明细仍作为历史保留，不会生成库存流水；对应分配数量将恢复为可制单状态。`,
+    const { value } = await ElMessageBox.prompt(
+      `取消 ${row.outboundNo} 后，单据和明细仍作为历史保留，不会生成库存流水；对应分配数量将恢复为可制单状态。请输入取消原因。`,
       '取消待出库单',
-      { type: 'warning', confirmButtonText: '确认取消', cancelButtonText: '返回' },
+      cancellationPromptOptions,
     );
-    await orders.cancel(row);
+    await orders.cancel(row, value);
     EMessage.success('待出库单已取消，未扣减库存');
     await loadRows();
     if (orders.detail.value?.outboundId === row.outboundId) await orders.loadDetail(row.outboundId);
@@ -344,6 +344,16 @@ const cancelOrder = async (row: MaterialOutboundItem): Promise<void> => {
     if (error === 'cancel' || error === 'close') return;
     EMessage.error(error, '出库单取消失败');
   }
+};
+
+const cancellationPromptOptions = {
+  type: 'warning' as const,
+  confirmButtonText: '确认取消',
+  cancelButtonText: '返回',
+  inputType: 'textarea',
+  inputPlaceholder: '请填写取消原因',
+  inputValidator: (input: string) =>
+    input.trim() ? input.trim().length <= 5000 || '取消原因不能超过 5000 个字符' : '请填写取消原因',
 };
 
 const printOrder = async (outboundId: string): Promise<void> => {

@@ -27,6 +27,8 @@ type WorkerTaskRow = RowDataPacket & {
   step_order: number;
   step_code: string;
   step_name: string;
+  sop_file_name: string | null;
+  sop_version_no: string | null;
   step_status: BatchStepStatus;
   need_record: number;
   unit_snapshot: string;
@@ -52,6 +54,8 @@ SELECT current.id step_record_id,current.production_batch_id,b.batch_no,b.status
   wo.id work_order_id,wo.work_order_no,b.product_id,wo.product_code_snapshot product_code,
   wo.product_name_snapshot product_name,b.planned_quantity,current.step_order_snapshot step_order,
   current.step_code_snapshot step_code,current.step_name_snapshot step_name,current.status step_status,
+  COALESCE(current.actual_sop_file_name_snapshot,current.sop_file_name_snapshot) sop_file_name,
+  COALESCE(current.actual_sop_version_no_snapshot,current.sop_version_no_snapshot) sop_version_no,
   current.need_record_snapshot need_record,current.unit_snapshot,
   COALESCE(current_reports.effective_reported,0) effective_reported,
   COALESCE(current_reports.effective_direct_reported,0) effective_direct_reported,
@@ -157,6 +161,8 @@ const mapWorkerTask = (
     stepOrder: row.step_order,
     stepCode: row.step_code,
     stepName: row.step_name,
+    sopFileName: row.sop_file_name,
+    sopVersionNo: row.sop_version_no,
     status: row.step_status,
     needRecord: Boolean(row.need_record),
     unit: row.unit_snapshot,

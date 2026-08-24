@@ -17,6 +17,14 @@
           </el-tag>
           <span>{{ sourceQuantity(item) }} {{ unit }}</span>
           <span>{{ item.abnormalOrigin === 'previous_step' ? '前置异常' : '当前工序异常' }}</span>
+          <span
+            v-if="item.reviewStatus !== 'pending_review'"
+            class="disposition-remark"
+          >
+            {{ item.reviewStatus === 'rejected' ? '驳回原因' : '处置说明' }}：{{
+              item.remark || '—'
+            }}
+          </span>
         </div>
         <div v-if="item.reviewStatus === 'pending_review'">
           <el-button

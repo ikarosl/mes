@@ -78,6 +78,8 @@ export class MysqlTechnicalFileRepository implements TechnicalFileRepository {
   }
 
   async getTechnicalFile(id: string): Promise<TechnicalFileListItem> {
+    // 通用文件读取只面向当前有效技术文件，因此保留 status/is_deleted 过滤。
+    // 历史生产任务不能调用本入口；后续应按 batch_step_records 冻结的对象定位快照读取。
     const [[row]] = await this.pool.query<TechnicalFileRow[]>(
       `SELECT id,file_name,original_name,storage_provider,bucket,object_key,mime_type,size_bytes,
               checksum_sha256,file_type,version_no,status,created_at,updated_at
@@ -86,6 +88,30 @@ export class MysqlTechnicalFileRepository implements TechnicalFileRepository {
     );
     if (!row) throw new ProductDomainError('NOT_FOUND', '技术文件不存在或已停用');
     return this.mapTechnicalFile(row);
+  }
+
+  async getHistoricalTechnicalFileLocator(id: string) {
+    const [[row]] = await this.pool.query<
+      (RowDataPacket & {
+        storage_provider: TechnicalFileStorageProvider;
+        bucket: string | null;
+        object_key: string;
+        mime_type: string;
+        size_bytes: number;
+      })[]
+    >(
+      `SELECT storage_provider,bucket,object_key,mime_type,size_bytes
+         FROM technical_files WHERE id=? AND file_type='sop'`,
+      [id],
+    );
+    if (!row) throw new ProductDomainError('NOT_FOUND', '历史技术文件记录不存在');
+    return {
+      storageProvider: row.storage_provider,
+      bucket: row.bucket,
+      objectKey: row.object_key,
+      mimeType: row.mime_type,
+      sizeBytes: Number(row.size_bytes),
+    };
   }
 
   async createTechnicalFile(file: StoredTechnicalFile, audit: CommandContext) {
@@ -122,6 +148,8 @@ export class MysqlTechnicalFileRepository implements TechnicalFileRepository {
   }
 
   async deleteTechnicalFile(id: string, audit: CommandContext) {
+    // 当前没有 HTTP 删除入口。本实现仅保留未来恢复删除能力时的软删除基础语义；
+    // 历史任务已通过 batch_step_records 快照独立下载；开放删除前仍须补齐引用与并发删除测试。
     await withTransaction(this.pool, async (connection) => {
       const file = await this.technicalFileRecord(connection, id, true);
       await this.assertTechnicalFileUnreferenced(connection, id);

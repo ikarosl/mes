@@ -11,3 +11,5 @@ var/
 .claude/worktrees/
 # 设计规范由人工维护，避免格式化器重排表格、流程和 SQL 示例。
 docs/
+# 所有 Markdown 文档由人工维护，不参与 Prettier 格式检查或自动改写。
+**/*.md

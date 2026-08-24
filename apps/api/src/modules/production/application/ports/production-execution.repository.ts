@@ -6,6 +6,13 @@ import type {
 } from '@company/contracts';
 import type { CommandContext } from '../../../../common/audit/audit.types.js';
 
+export interface ProductionStepSopSnapshot {
+  fileId: string;
+  fileName: string;
+  versionNo: string;
+  objectKey: string;
+}
+
 export abstract class ProductionExecutionRepository {
   abstract getCompletionCheck(batchId: string): Promise<ProductionExecutionCompletionCheck>;
   abstract completeExecution(
@@ -14,6 +21,11 @@ export abstract class ProductionExecutionRepository {
     context: CommandContext,
   ): Promise<ProductionExecutionCompletionResult>;
   abstract listWorkerTasks(actorId: string): Promise<ProductionWorkerTaskItem[]>;
+  abstract getStepSopSnapshot(
+    batchId: string,
+    stepRecordId: string,
+    responsibleUserId?: string,
+  ): Promise<ProductionStepSopSnapshot>;
   abstract assignStep(
     batchId: string,
     stepRecordId: string,

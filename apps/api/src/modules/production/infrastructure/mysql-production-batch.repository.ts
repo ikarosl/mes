@@ -155,6 +155,11 @@ export class MysqlProductionBatchRepository {
         integerQuantity(order.planned_quantity)
       )
         throw new ProductionDomainError('INVALID_INPUT', '生产批次计划数量超过工单剩余数量');
+      this.assertPlanWithinWorkOrder(
+        payload.planStartDate ?? null,
+        payload.planEndDate ?? null,
+        order,
+      );
       if (route && route.product.id !== String(order.product_id))
         throw new ProductionDomainError('INVALID_INPUT', '工艺路线不属于工单产品');
       const [result] = await connection.execute<ResultSetHeader>(
@@ -222,7 +227,9 @@ export class MysqlProductionBatchRepository {
     audit: CommandContext,
   ): Promise<ProductionBatchDetail> {
     return withTransaction(this.pool, async (connection) => {
-      const before = await findBatch(connection, id);
+      const unlocked = await findBatch(connection, id);
+      const order = await findWorkOrder(connection, String(unlocked.work_order_id), true);
+      const before = await findBatch(connection, id, true);
       if (before.status !== 'pending')
         throw new ProductionDomainError('INVALID_STATE', '仅待处理生产批次可编辑');
       const planStartDate =
@@ -231,6 +238,7 @@ export class MysqlProductionBatchRepository {
         payload.planEndDate === undefined ? before.plan_end_date : payload.planEndDate;
       if (planStartDate && planEndDate && planEndDate < planStartDate)
         throw new ProductionDomainError('INVALID_INPUT', '计划完工日期不能早于计划开始日期');
+      this.assertPlanWithinWorkOrder(planStartDate, planEndDate, order);
       const [result] = await connection.execute<ResultSetHeader>(
         'UPDATE production_batches SET batch_owner_id=?,plan_start_date=?,plan_end_date=?,remark=?,version=version+1,updated_by=? WHERE id=? AND version=?',
         [
@@ -254,6 +262,23 @@ export class MysqlProductionBatchRepository {
       );
       return this.getDetail(connection, id);
     });
+  }
+
+  private assertPlanWithinWorkOrder(
+    planStartDate: string | null,
+    planEndDate: string | null,
+    order: { plan_start_date: string | null; plan_end_date: string | null },
+  ): void {
+    if (planStartDate && order.plan_start_date && planStartDate < order.plan_start_date)
+      throw new ProductionDomainError(
+        'INVALID_INPUT',
+        '生产任务计划开始日期不能早于工单计划开始日期',
+      );
+    if (planEndDate && order.plan_end_date && planEndDate > order.plan_end_date)
+      throw new ProductionDomainError(
+        'INVALID_INPUT',
+        '生产任务计划结束日期不能晚于工单计划结束日期',
+      );
   }
 
   async cancel(
@@ -292,9 +317,10 @@ export class MysqlProductionBatchRepository {
       const pendingOutboundIds = cancellationState.outbounds.map((outbound) => String(outbound.id));
       await connection.execute(
         `UPDATE outbound_order
-         SET status='cancelled',version=version+1,updated_by=?
+         SET status='cancelled',cancel_source='production_batch',cancel_reason=?,cancelled_by=?,
+             cancelled_at=NOW(),version=version+1,updated_by=?
          WHERE production_batch_id=? AND status='pending_picking'`,
-        [audit.actorId, id],
+        [reason, audit.actorId, audit.actorId, id],
       );
       await connection.execute(
         `UPDATE production_item_allocation
@@ -310,9 +336,9 @@ export class MysqlProductionBatchRepository {
       );
       const [updated] = await connection.execute<ResultSetHeader>(
         `UPDATE production_batches
-         SET status='cancelled',version=version+1,updated_by=?
+         SET status='cancelled',cancel_reason=?,cancelled_by=?,cancelled_at=NOW(),version=version+1,updated_by=?
          WHERE id=? AND status IN ('pending','material_pending','material_assigned') AND version=?`,
-        [audit.actorId, id, version],
+        [reason, audit.actorId, audit.actorId, id, version],
       );
       this.assertVersion(updated, '生产任务已被其他操作修改，请刷新后重试');
       await this.audit(connection, audit, 'production-batch.cancel', id, batchAudit(before), {

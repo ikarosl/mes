@@ -1,4 +1,4 @@
-import type { PageQuery, VersionedCommand } from '../common.js';
+import type { PageQuery, ReasonedVersionedCommand, VersionedCommand } from '../common.js';
 import type { ProductionBatchStatus, OutboundOrderStatus } from './statuses.js';
 
 export interface CreateMaterialOutboundDetailPayload {
@@ -49,6 +49,11 @@ export interface MaterialOutboundItem {
   createdAt: string;
   version: number;
   remark: string | null;
+  cancelSource?: 'manual' | 'production_batch' | null;
+  cancelReason?: string | null;
+  cancelledById?: string | null;
+  cancelledByName?: string | null;
+  cancelledAt?: string | null;
   quantitySummary: MaterialOutboundQuantitySummary[];
   details: MaterialOutboundDetailItem[];
 }
@@ -92,4 +97,4 @@ export interface MaterialOutboundCandidateItem {
 
 export type ConfirmMaterialOutboundPayload = VersionedCommand;
 
-export type CancelMaterialOutboundPayload = VersionedCommand;
+export type CancelMaterialOutboundPayload = ReasonedVersionedCommand;

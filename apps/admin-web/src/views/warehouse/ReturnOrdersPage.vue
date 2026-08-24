@@ -332,6 +332,17 @@
             :span="3"
             >{{ detail.remark || '-' }}</el-descriptions-item
           >
+          <template v-if="detail.status === 'cancelled'">
+            <el-descriptions-item label="取消人">{{
+              detail.cancelledByName || '-'
+            }}</el-descriptions-item>
+            <el-descriptions-item label="取消时间">{{
+              formatDateTimeForDisplay(detail.cancelledAt)
+            }}</el-descriptions-item>
+            <el-descriptions-item label="取消原因">{{
+              detail.cancelReason || '-'
+            }}</el-descriptions-item>
+          </template>
         </el-descriptions>
         <el-table
           v-if="detail"
@@ -528,12 +539,20 @@ async function confirmOrder(row: ReturnOrderItem) {
 }
 async function cancelOrder(row: ReturnOrderItem) {
   try {
-    await RouteMessageBox.confirm(`确认取消退料单 ${row.returnNo}？`, '取消退料单', {
-      type: 'warning',
-      confirmButtonText: '确认取消',
-    });
+    const { value } = await RouteMessageBox.prompt(
+      `确认取消退料单 ${row.returnNo}？请输入取消原因。`,
+      '取消退料单',
+      {
+        type: 'warning',
+        confirmButtonText: '确认取消',
+        cancelButtonText: '返回',
+        inputType: 'textarea',
+        inputPlaceholder: '请填写取消原因',
+        inputValidator: cancellationReasonValidator,
+      },
+    );
     pendingAction.value = `cancel:${row.id}`;
-    await warehouseApi.cancelReturnOrder(row.id, row.version);
+    await warehouseApi.cancelReturnOrder(row.id, { version: row.version, reason: value.trim() });
     EMessage.success('退料单已取消');
     await loadRows();
   } catch (error) {
@@ -542,6 +561,9 @@ async function cancelOrder(row: ReturnOrderItem) {
     pendingAction.value = '';
   }
 }
+
+const cancellationReasonValidator = (input: string) =>
+  input.trim() ? input.trim().length <= 5000 || '取消原因不能超过 5000 个字符' : '请填写取消原因';
 async function openDetail(id: string) {
   detail.value = null;
   detailVisible.value = true;

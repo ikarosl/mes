@@ -15,6 +15,10 @@ const commandContext: CommandContext = {
 };
 
 describe('ProductController technical files', () => {
+  it('does not expose technical-file deletion before historical snapshot download is complete', () => {
+    expect('deleteTechnicalFile' in ProductController.prototype).toBe(false);
+  });
+
   it('streams a private download with safe response headers and RBAC metadata', async () => {
     const service = {
       downloadTechnicalFile: vi.fn().mockResolvedValue({

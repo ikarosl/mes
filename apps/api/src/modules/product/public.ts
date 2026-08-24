@@ -1,5 +1,10 @@
 export { ProductModule } from './product.module.js';
 export {
+  TechnicalFileContentQuery,
+  type HistoricalTechnicalFileContent,
+  type HistoricalTechnicalFileSnapshotLocator,
+} from './application/technical-file-content.query.js';
+export {
   ProductSnapshotQuery,
   type ProductQueryFailure,
   type ProductQueryResult,

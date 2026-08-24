@@ -23,6 +23,9 @@
 | `operator_id`         | `BIGINT UNSIGNED` | 操作人 ID                                 |
 | `version`             | `INT`             | 乐观锁版本号，默认 `0`                    |
 | `remark`              | `TEXT`            | 备注                                      |
+| `cancel_reason`       | `TEXT`            | 取消原因；历史未记录数据可为空            |
+| `cancelled_by`        | `BIGINT UNSIGNED` | 取消人；历史未记录数据可为空              |
+| `cancelled_at`        | `DATETIME`        | 取消时间；历史未记录数据可为空            |
 | 业务审计字段          | 见统一规则        | 可变业务单据审计字段                      |
 
 约束：
@@ -32,6 +35,7 @@
 - 唯一约束：`UNIQUE (id, production_batch_id)`
 - 外键：`FOREIGN KEY (production_batch_id, work_order_id) REFERENCES production_batches(id, work_order_id)`
 - 外键：`FOREIGN KEY (operator_id) REFERENCES users(id)`
+- 外键：`FOREIGN KEY (cancelled_by) REFERENCES users(id)`
 - 检查约束：`CHECK (status IN ('pending', 'returned', 'scrapped', 'cancelled'))`
 - 组合索引：`INDEX (status, created_at)`，用于退料单状态分页
 
@@ -118,6 +122,9 @@
 | `confirmed_by`        | `BIGINT UNSIGNED` | 确认损耗/报废的管理员；待处理或取消时为空 |
 | `confirmed_at`        | `DATETIME`        | 确认时间；待处理或取消时为空              |
 | `remark`              | `TEXT`            | 备注                                      |
+| `cancel_reason`       | `TEXT`            | 取消申报原因；不得覆盖损耗原因或制单备注  |
+| `cancelled_by`        | `BIGINT UNSIGNED` | 取消人；历史未记录数据可为空              |
+| `cancelled_at`        | `DATETIME`        | 取消时间；历史未记录数据可为空            |
 | `version`             | `INT`             | 乐观锁版本号，默认 `0`                    |
 | 业务审计字段          | 见统一规则        | 可变业务单据审计字段                      |
 
@@ -139,7 +146,7 @@
 - 外键：`FOREIGN KEY (demand_id, production_batch_id) REFERENCES production_item_demand(id, production_batch_id)`
 - 外键：`FOREIGN KEY (allocation_id, demand_id, production_batch_id, item_id, batch_id) REFERENCES production_item_allocation(id, demand_id, production_batch_id, item_id, batch_id)`
 - 外键：`FOREIGN KEY (batch_id, item_id) REFERENCES item_batch(id, item_id)`
-- 外键：`confirmed_by` 及业务审计操作者字段关联 `users.id`
+- 外键：`confirmed_by`、`cancelled_by` 及业务审计操作者字段关联 `users.id`
 - 检查约束：`CHECK (scrap_number > 0)`
 - 检查约束：`CHECK (scrap_scene = 'production_consumed')`
 - 检查约束：`CHECK (status IN ('pending', 'confirmed', 'cancelled'))`
@@ -151,7 +158,7 @@
 
 - 生产消耗报废不应直接扣减原 allocation 的可再次出库量。
 - `production_consumed` 创建时只允许选择状态为 `material_outbound/doing` 的生产批次及其已确认领料分配行；物料、库存批次、需求、单位和生产批次都从服务端候选复制，不接受客户端自由拼接 ID 或单位。
-- 同一分配行当前可申报损耗量为“累计确认出库量 - `pending/returned` 退料占用量 - `pending/confirmed` 的 `production_consumed` 损耗占用量”；创建和确认事务都必须重新锁定来源分配行并校验，损耗数量必须大于 `0` 且不得超过该上限。取消待确认损耗释放占用。
+- 同一分配行当前可申报损耗量为“累计确认出库量 - `pending/returned` 退料占用量 - `pending/confirmed` 的 `production_consumed` 损耗占用量”；创建和确认事务都必须重新锁定来源分配行并校验，损耗数量必须大于 `0` 且不得超过该上限。取消待确认损耗必须填写原因并释放占用。
 - 现场创建损耗记录后状态为 `pending`。管理员确认时不提供“不补料”或修改补料数量的分支；同一事务把本单改为 `confirmed`、创建一张 `source_type = 'material_loss'` 的 `production_material_supplement`，并创建且仅创建一条 `material_loss_supplement` 需求。需求物料与单位固定取来源分配行，`need_number = scrap_number`。
 - 生产领料损耗补料只恢复损失的实物，不创建 `batch_step_scrap_records` 或 `batch_step_scrap_reproduction_authorization`，不增加产品补产额度，不修改批次计划量和工序可报上限。它与工序异常审批中的“产品报废并补产”是两条不同链路。
 - 损耗确认、补料单、补料需求、状态版本、成功审计和 HTTP 幂等结果必须同事务提交；任一写入失败全部回滚。已确认损耗不得改量或取消，错误修正必须等待独立冲销设计。
@@ -174,22 +181,26 @@
 
 职责：维护库存盘点主单，记录一次盘点任务的基本信息。
 
-| 字段          | 类型              | 说明                     |
-| ------------- | ----------------- | ------------------------ |
-| `id`          | `BIGINT UNSIGNED` | 主键                     |
-| `check_no`    | `VARCHAR(100)`    | 盘点单号                 |
-| `status`      | `VARCHAR(30)`     | 盘点状态，默认 `pending` |
-| `check_at`    | `DATETIME`        | 实际盘点时间             |
-| `operator_id` | `BIGINT UNSIGNED` | 操作人 ID                |
-| `remark`      | `TEXT`            | 备注                     |
-| `version`     | `INT`             | 乐观锁版本号，默认 `0`   |
-| 业务审计字段  | 见统一规则        | 可变业务单据审计字段     |
+| 字段             | 类型              | 说明                                |
+| ---------------- | ----------------- | ----------------------------------- |
+| `id`             | `BIGINT UNSIGNED` | 主键                                |
+| `check_no`       | `VARCHAR(100)`    | 盘点单号                            |
+| `status`         | `VARCHAR(30)`     | 盘点状态，默认 `pending`            |
+| `check_at`       | `DATETIME`        | 实际盘点时间                        |
+| `operator_id`    | `BIGINT UNSIGNED` | 操作人 ID                           |
+| `remark`         | `TEXT`            | 备注                                |
+| `cancel_reason`  | `TEXT`            | 取消原因；历史未记录数据可为空      |
+| `cancelled_by`   | `BIGINT UNSIGNED` | 取消人；历史未记录数据可为空        |
+| `cancelled_at`   | `DATETIME`        | 取消时间；历史未记录数据可为空      |
+| `version`        | `INT`             | 乐观锁版本号，默认 `0`              |
+| 业务审计字段     | 见统一规则        | 可变业务单据审计字段                |
 
 约束：
 
 - 主键：`id`
 - 唯一约束：`UNIQUE (check_no)`
 - 外键：`FOREIGN KEY (operator_id) REFERENCES users(id)`
+- 外键：`FOREIGN KEY (cancelled_by) REFERENCES users(id)`
 - 检查约束：`CHECK (status IN ('pending', 'counting', 'completed', 'cancelled'))`
 - 组合索引：`INDEX (status, created_at)`，用于盘点单状态分页
 

@@ -505,8 +505,30 @@ const openDetail = async (row: WorkOrderItem): Promise<void> => {
 /* ====== 工单状态变更 ====== */
 const releaseOrder = (row: WorkOrderItem) =>
   runSimpleOrderAction(row, '下达', () => productionApi.releaseOrder(row.id, row.version));
-const cancelOrder = (row: WorkOrderItem) =>
-  runSimpleOrderAction(row, '取消', () => productionApi.cancelOrder(row.id, row.version));
+const cancelOrder = async (row: WorkOrderItem): Promise<void> => {
+  if (!beginRow(row.id)) return;
+  try {
+    const { value } = await ElMessageBox.prompt('请输入草稿工单的取消原因', '取消工单', {
+      confirmButtonText: '确认取消',
+      cancelButtonText: '返回',
+      inputType: 'textarea',
+      inputPlaceholder: '请填写取消原因',
+      inputValidator: (input) => {
+        const reason = input.trim();
+        if (!reason) return '请填写取消原因';
+        return reason.length <= 5000 || '取消原因不能超过 5000 个字符';
+      },
+      type: 'warning',
+    });
+    await productionApi.cancelOrder(row.id, { version: row.version, reason: value.trim() });
+    EMessage.success('工单已取消');
+    await loadOrders();
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') EMessage.error(error, '工单取消失败');
+  } finally {
+    endRow(row.id);
+  }
+};
 
 const runSimpleOrderAction = async (
   row: WorkOrderItem,

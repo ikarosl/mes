@@ -11,7 +11,10 @@ import {
   IdempotentEndpoint,
   RequirePermission,
 } from '../../../../common/security/auth.decorators.js';
-import { VersionedCommandDto } from '../../../../presentation/http/dto/versioned-command.dto.js';
+import {
+  ReasonedVersionedCommandDto,
+  VersionedCommandDto,
+} from '../../../../presentation/http/dto/versioned-command.dto.js';
 import { CONFIRM_PURCHASE_INBOUND_IDEMPOTENCY_SCOPE } from '../../application/idempotency/production-idempotency-scopes.contract.js';
 import { CREATE_PURCHASE_INBOUND_IDEMPOTENCY_SCOPE } from '../../application/idempotency/production-idempotency-scopes.contract.js';
 import { ProductionInboundService } from '../../application/production-inbound.service.js';
@@ -69,10 +72,10 @@ export class ProductionInboundController {
   @AuditInApplication()
   cancel(
     @Param() p: InboundIdParamDto,
-    @Body() body: VersionedCommandDto,
+    @Body() body: ReasonedVersionedCommandDto,
     @CurrentCommandContext() context: CommandContext,
   ) {
-    return this.service.cancel(p.inboundId, body.version, context);
+    return this.service.cancel(p.inboundId, body.version, body.reason, context);
   }
   @Get('inventory-batches') @RequirePermission(PERMISSIONS.production.inventory.view) inventory(
     @Query() q: InventoryBatchQueryDto,

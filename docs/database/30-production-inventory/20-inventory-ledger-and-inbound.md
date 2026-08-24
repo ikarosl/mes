@@ -47,8 +47,15 @@
 
 - `item_batch` 是统一库存批次表。
 - 物料、半成品、成品都使用该表。
-- `batch_status` 只表示批次业务状态，不表示库存是否用完。
-- 库存是否用完应通过 `inventory_transaction` 汇总判断。
+- `batch_status` 只表示批次是否允许参与库存业务，不表示批次是否已经入库或库存是否用完：
+  - `available`：允许参与库存分配和出库，但仍须存在正数可用库存。
+  - `frozen`：临时冻结，不允许新增库存分配和出库；历史库存及流水继续保留。
+  - `disabled`：批次已停用，不允许继续参与库存业务；历史库存及流水继续保留。
+- 库存是否存在、是否用完应通过 `inventory_transaction` 按批次和库存状态汇总判断，不得仅凭 `batch_status='available'` 判断。
+- `GET /production/material-demands/:demandId/available-item-batches` 必须同时满足批次状态为 `available`，且 `available` 库存流水聚合数量大于 `0`；没有流水、聚合为 `0` 或负数的批次不得返回。
+- 创建待确认入库单时可以先创建或复用 `item_batch`，确认入库后才写入库存流水；取消待确认入库单不写库存流水，也不联动修改批次状态。
+- 场景示例：入库单 A 使用物料批号 `B001`，在待确认阶段创建批次记录，随后 A 被取消，因此该批次没有库存流水。之后入库单 B 仍可能收到同一物料批号 `B001`，并复用该批次记录完成真实入库。如果取消 A 时把批次改成 `disabled`，就会导致 B 后续形成的真实库存也无法使用。因此单据取消与批次停用必须分别处理。
+- `frozen`、`disabled` 应由独立的批次管理操作触发，不由入库单取消、库存归零等事件自动触发。
 - `source_production_batch_id` 用于追溯自产半成品或成品来自哪个生产批次。
 - 编码、名称和单位快照用于历史批次标签及客户审核，不随产品主数据变化。
 - 不建议将 `production_batches.id` 直接作为库存流水的 `batch_id`。
@@ -173,6 +180,9 @@
 | `operator_id`         | `BIGINT UNSIGNED` | 操作人 ID                                   |
 | `version`             | `INT`             | 乐观锁版本号，默认 `0`                      |
 | `remark`              | `TEXT`            | 备注                                        |
+| `cancel_reason`       | `TEXT`            | 取消原因；历史未记录数据可为空              |
+| `cancelled_by`        | `BIGINT UNSIGNED` | 取消人；历史未记录数据可为空                |
+| `cancelled_at`        | `DATETIME`        | 取消时间；历史未记录数据可为空              |
 | 业务审计字段          | 见统一规则        | 可变业务单据审计字段                        |
 
 约束：
@@ -184,6 +194,7 @@
 - 外键：`FOREIGN KEY (production_batch_id) REFERENCES production_batches(id)`
 - 当两个字段同时存在时，使用组合外键 `(production_batch_id, work_order_id) -> production_batches(id, work_order_id)` 保证一致
 - 外键：`FOREIGN KEY (operator_id) REFERENCES users(id)`
+- 外键：`FOREIGN KEY (cancelled_by) REFERENCES users(id)`
 - 检查约束：`CHECK (source_type IN ('self_made', 'purchased', 'outsourced', 'return_inbound', 'stock_check_generated', 'other'))`
 - 检查约束：`CHECK (status IN ('pending', 'completed', 'cancelled'))`
 - 组合索引：`INDEX (status, created_at)`，用于入库单状态分页
@@ -195,6 +206,7 @@
 - 半成品入库和成品入库都可以使用该表。
 - 自产入库时，`provider` 可以为空，`production_batch_id` 应建议填写。
 - 外购入库时，`provider` 建议填写，`production_batch_id` 为空。
+- 待确认入库单取消必须填写原因；取消事实与状态、成功操作日志在同一事务中提交，不覆盖制单备注。
 
 ---
 

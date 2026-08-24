@@ -39,7 +39,10 @@ describe('usePurchaseInbounds', () => {
   it('does not send an idempotency key when cancelling', async () => {
     vi.mocked(productionApi.cancelPurchaseInbound).mockResolvedValue({ inboundId: '1' } as never);
     const subject = usePurchaseInbounds();
-    await subject.cancel({ inboundId: '1', version: 0 } as never);
-    expect(productionApi.cancelPurchaseInbound).toHaveBeenCalledWith('1', 0);
+    await subject.cancel({ inboundId: '1', version: 0 } as never, '供应商变更');
+    expect(productionApi.cancelPurchaseInbound).toHaveBeenCalledWith('1', {
+      version: 0,
+      reason: '供应商变更',
+    });
   });
 });

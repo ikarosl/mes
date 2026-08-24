@@ -75,8 +75,10 @@ export class ProductionInboundService {
     });
     return execution.result;
   }
-  async cancel(id: string, version: number, context: CommandContext) {
-    return this.enrich(await this.repository.cancel(id, version, context));
+  async cancel(id: string, version: number, reason: string, context: CommandContext) {
+    const normalizedReason = reason.trim();
+    if (!normalizedReason) throw new ProductionDomainError('INVALID_INPUT', '取消原因不能为空');
+    return this.enrich(await this.repository.cancel(id, version, normalizedReason, context));
   }
   listInventory(query: InventoryBatchQuery) {
     return this.repository.listInventory(query);
@@ -90,7 +92,7 @@ export class ProductionInboundService {
   private async enrichMany(rows: PurchaseInboundOrderItem[]) {
     if (rows.length === 0) return rows;
     const ids = rows
-      .flatMap((row) => [row.operatorId, row.createdById])
+      .flatMap((row) => [row.operatorId, row.createdById, row.cancelledById])
       .filter((x): x is string => Boolean(x));
     const users = await this.identity.listUserReferencesByIds([...new Set(ids)]);
     const map = new Map(users.map((x) => [x.id, x.displayName]));
@@ -98,6 +100,7 @@ export class ProductionInboundService {
       ...row,
       operatorName: row.operatorId ? (map.get(row.operatorId) ?? null) : null,
       createdByName: row.createdById ? (map.get(row.createdById) ?? null) : null,
+      cancelledByName: row.cancelledById ? (map.get(row.cancelledById) ?? null) : null,
     }));
   }
 }

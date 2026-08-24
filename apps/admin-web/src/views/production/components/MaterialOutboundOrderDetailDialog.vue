@@ -54,6 +54,26 @@
             :span="3"
             >{{ detail.remark || '-' }}</el-descriptions-item
           >
+          <template v-if="detail.status === 'cancelled'">
+            <el-descriptions-item label="取消来源">{{
+              detail.cancelSource === 'production_batch'
+                ? '生产任务取消'
+                : detail.cancelSource === 'manual'
+                  ? '人工取消'
+                  : '历史数据未记录'
+            }}</el-descriptions-item>
+            <el-descriptions-item label="取消人">{{
+              detail.cancelledByName || '-'
+            }}</el-descriptions-item>
+            <el-descriptions-item label="取消时间">{{
+              formatDateTimeForDisplay(detail.cancelledAt)
+            }}</el-descriptions-item>
+            <el-descriptions-item
+              label="取消原因"
+              :span="3"
+              >{{ detail.cancelReason || '-' }}</el-descriptions-item
+            >
+          </template>
         </el-descriptions>
         <el-table :data="detail.details">
           <el-table-column

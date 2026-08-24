@@ -33,6 +33,9 @@ type OrderRow = RowDataPacket & {
   created_at: Date;
   version: number;
   remark: string | null;
+  cancel_reason: string | null;
+  cancelled_by: number | null;
+  cancelled_at: Date | null;
 };
 type DetailRow = RowDataPacket & {
   id: number;
@@ -240,7 +243,7 @@ export class MysqlProductionInboundRepository extends ProductionInboundRepositor
       return this.loadOrder(db, await this.findOrder(db, id));
     });
   }
-  async cancel(id: string, version: number, context: CommandContext) {
+  async cancel(id: string, version: number, reason: string, context: CommandContext) {
     return withTransaction(this.pool, async (db) => {
       const order = await this.findOrder(db, id, true);
       if (order.status === 'cancelled') return this.loadOrder(db, order);
@@ -249,8 +252,8 @@ export class MysqlProductionInboundRepository extends ProductionInboundRepositor
       if (order.version !== version)
         throw new ProductionDomainError('CONCURRENT_MODIFICATION', '入库单版本已变化');
       await db.execute(
-        "UPDATE inbound_order SET status='cancelled',updated_by=?,version=version+1 WHERE id=? AND version=?",
-        [context.actorId, id, version],
+        "UPDATE inbound_order SET status='cancelled',cancel_reason=?,cancelled_by=?,cancelled_at=NOW(),updated_by=?,version=version+1 WHERE id=? AND status='pending' AND version=?",
+        [reason, context.actorId, context.actorId, id, version],
       );
       await this.audit(
         db,
@@ -258,7 +261,7 @@ export class MysqlProductionInboundRepository extends ProductionInboundRepositor
         'production-inbound.cancel',
         id,
         { status: 'pending', version },
-        { status: 'cancelled', version: version + 1 },
+        { status: 'cancelled', reason, version: version + 1 },
       );
       return this.loadOrder(db, await this.findOrder(db, id));
     });
@@ -371,6 +374,10 @@ export class MysqlProductionInboundRepository extends ProductionInboundRepositor
       createdAt: toBeijingISOString(row.created_at),
       version: row.version,
       remark: row.remark,
+      cancelReason: row.cancel_reason,
+      cancelledById: row.cancelled_by === null ? null : String(row.cancelled_by),
+      cancelledByName: null,
+      cancelledAt: iso(row.cancelled_at),
       detailCount: details.length,
       totalInboundQuantity: decimal(
         details.reduce((n, x) => n + integerQuantity(x.inbound_number), 0),

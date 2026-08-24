@@ -21,6 +21,8 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --config ../../vitest.config.ts src",
+    "ensure-database": "tsx src/ensure-database.ts",
+    "ensure-database:compiled": "node dist/ensure-database.js",
     "migrate": "tsx src/migrate.ts",
     "migrate:compiled": "node dist/migrate.js",
     "migrate:status": "tsx src/migrate-status.ts",

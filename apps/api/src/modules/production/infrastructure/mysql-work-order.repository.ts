@@ -90,9 +90,11 @@ export class MysqlWorkOrderRepository {
         product_code_snapshot: string;
         product_name_snapshot: string;
         remaining_quantity: string;
+        plan_start_date: string | null;
+        plan_end_date: string | null;
       })[]
     >(
-      `SELECT wo.id,wo.work_order_no,wo.product_id,wo.product_code_snapshot,wo.product_name_snapshot,${remaining} AS remaining_quantity
+      `SELECT wo.id,wo.work_order_no,wo.product_id,wo.product_code_snapshot,wo.product_name_snapshot,${remaining} AS remaining_quantity,wo.plan_start_date,wo.plan_end_date
          FROM work_orders wo
          WHERE ${conditions.join(' AND ')}
          ORDER BY wo.work_order_no ASC,wo.id ASC`,
@@ -104,6 +106,8 @@ export class MysqlWorkOrderRepository {
       productCode: row.product_code_snapshot,
       productName: row.product_name_snapshot,
       remainingQuantity: row.remaining_quantity,
+      planStartDate: row.plan_start_date,
+      planEndDate: row.plan_end_date,
     }));
   }
 
@@ -258,7 +262,12 @@ export class MysqlWorkOrderRepository {
     });
   }
 
-  async cancel(id: string, version: number, audit: CommandContext): Promise<WorkOrderDetail> {
+  async cancel(
+    id: string,
+    version: number,
+    reason: string,
+    audit: CommandContext,
+  ): Promise<WorkOrderDetail> {
     return withTransaction(this.pool, async (connection) => {
       const before = await findWorkOrder(connection, id, true);
       requireWorkOrderTransition(before.status, 'cancelled');
@@ -269,8 +278,8 @@ export class MysqlWorkOrderRepository {
           '已有生产批次的工单不能按草稿取消，请核对工单状态',
         );
       const [result] = await connection.execute<ResultSetHeader>(
-        `UPDATE work_orders SET status='cancelled',version=version+1,updated_by=? WHERE id=? AND status='draft' AND version=?`,
-        [audit.actorId, id, version],
+        `UPDATE work_orders SET status='cancelled',cancel_reason=?,cancelled_by=?,cancelled_at=NOW(),version=version+1,updated_by=? WHERE id=? AND status='draft' AND version=?`,
+        [reason, audit.actorId, audit.actorId, id, version],
       );
       this.assertVersion(result, '工单已被其他操作修改，请刷新后重试');
       await this.audit(
@@ -279,7 +288,7 @@ export class MysqlWorkOrderRepository {
         'work-order.cancel',
         id,
         { status: before.status, version: before.version },
-        { status: 'cancelled', version: version + 1 },
+        { status: 'cancelled', reason, version: version + 1 },
       );
       return this.getDetail(connection, id);
     });
@@ -375,8 +384,8 @@ export class MysqlWorkOrderRepository {
             ? 'unproduced'
             : 'underproduced';
       const [result] = await connection.execute<ResultSetHeader>(
-        `UPDATE work_orders SET status='closed',version=version+1,updated_by=? WHERE id=? AND status=? AND version=?`,
-        [audit.actorId, id, before.status, version],
+        `UPDATE work_orders SET status='closed',close_type=?,close_reason=?,closed_by=?,closed_at=NOW(),version=version+1,updated_by=? WHERE id=? AND status=? AND version=?`,
+        [closeType, reason, audit.actorId, audit.actorId, id, before.status, version],
       );
       this.assertVersion(result, '工单已被其他操作修改，请刷新后重试');
       await this.audit(

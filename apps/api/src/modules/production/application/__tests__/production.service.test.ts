@@ -86,6 +86,8 @@ describe('ProductionService first-stage commands', () => {
         productCode: 'FG-002',
         productName: 'Finished good',
         remainingQuantity: '50.0000',
+        planStartDate: '2026-08-01',
+        planEndDate: '2026-08-31',
       },
     ];
     const repository = { listWorkOrderOptions: vi.fn().mockResolvedValue(options) };
@@ -234,11 +236,11 @@ describe('ProductionService first-stage commands', () => {
       {} as never,
     );
 
-    await service.cancelWorkOrder('11', 2, audit);
+    await service.cancelWorkOrder('11', 2, '  计划取消  ', audit);
     await service.completeWorkOrder('11', 3, audit);
     await service.closeWorkOrder('11', 4, '  计划调整  ', audit);
 
-    expect(repository.cancelWorkOrder).toHaveBeenCalledWith('11', 2, audit);
+    expect(repository.cancelWorkOrder).toHaveBeenCalledWith('11', 2, '计划取消', audit);
     expect(repository.completeWorkOrder).toHaveBeenCalledWith('11', 3, audit);
     expect(repository.closeWorkOrder).toHaveBeenCalledWith('11', 4, '计划调整', audit);
   });

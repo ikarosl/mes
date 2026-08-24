@@ -18,6 +18,8 @@ const order = (id: string): WorkOrderOption => ({
   productCode: 'P-001',
   productName: '环形器',
   remainingQuantity: '50.0000',
+  planStartDate: '2026-08-01',
+  planEndDate: '2026-08-31',
 });
 
 describe('useWorkOrderOptions', () => {
@@ -89,6 +91,8 @@ describe('useWorkOrderOptions', () => {
         productCode: 'P-001',
         productName: '环形器',
         remainingQuantity: '100.0000',
+        planStartDate: null,
+        planEndDate: null,
       }),
     ).toBe('WO-001 / P-001 / 环形器 / 剩余 100');
   });

@@ -107,6 +107,7 @@
           type="date"
           value-format="YYYY-MM-DD"
           placeholder="请选择计划开始日期"
+          :disabled-date="disableTaskDate"
         />
       </el-form-item>
       <el-form-item
@@ -118,6 +119,7 @@
           type="date"
           value-format="YYYY-MM-DD"
           placeholder="请选择计划结束日期"
+          :disabled-date="disableTaskDate"
         />
       </el-form-item>
       <el-form-item label="备注">
@@ -324,6 +326,23 @@ const taskQuantityMax = computed(() => {
     : selectedWorkOrderRemaining.value;
 });
 
+const toLocalDateValue = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const disableTaskDate = (date: Date): boolean => {
+  const order = selectedWorkOrder.value;
+  if (!order) return false;
+  const value = toLocalDateValue(date);
+  return Boolean(
+    (order.planStartDate && value < order.planStartDate) ||
+    (order.planEndDate && value > order.planEndDate),
+  );
+};
+
 const formatRoute = (route: ProcessRouteOption): string =>
   `${route.routeName}${route.versionNo ? ` / ${route.versionNo}` : ''}`;
 
@@ -386,8 +405,8 @@ const handleWorkOrderChange = (workOrderId: string): void => {
   pendingRouteWorkOrderId = null;
   form.routeId = '';
   form.ownerId = '';
-  form.planStartDate = '';
-  form.planEndDate = '';
+  form.planStartDate = order?.planStartDate ?? '';
+  form.planEndDate = order?.planEndDate ?? '';
   resetStepPreview();
   if (!order) return;
   form.plannedQuantity = Number(order.remainingQuantity);
@@ -451,6 +470,15 @@ const handleSubmit = (): void => {
   }
   if (form.planStartDate && form.planEndDate && form.planEndDate < form.planStartDate) {
     EMessage.warning('计划结束日期不能早于计划开始日期');
+    return;
+  }
+  const order = selectedWorkOrder.value;
+  if (
+    order &&
+    ((order.planStartDate && form.planStartDate && form.planStartDate < order.planStartDate) ||
+      (order.planEndDate && form.planEndDate && form.planEndDate > order.planEndDate))
+  ) {
+    EMessage.warning('任务计划日期必须位于工单计划区间内');
     return;
   }
   // 编辑模式工单只读回显，可能不在 released 候选内（已全部分配/状态变化），跳过失效校验

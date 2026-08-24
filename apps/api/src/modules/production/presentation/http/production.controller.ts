@@ -15,6 +15,7 @@ import { CREATE_BATCH_IDEMPOTENCY_SCOPE } from '../../application/idempotency/pr
 import { ProductionService } from '../../application/production.service.js';
 import {
   BatchStepRecordParamDto,
+  CancelWorkOrderDto,
   CancelProductionBatchDto,
   CloseWorkOrderDto,
   CreateProductionBatchDto,
@@ -85,10 +86,10 @@ export class ProductionController {
   @AuditInApplication()
   cancelWorkOrder(
     @Param() { workOrderId }: WorkOrderIdParamDto,
-    @Body() body: VersionedCommandDto,
+    @Body() body: CancelWorkOrderDto,
     @CurrentCommandContext() audit: CommandContext,
   ) {
-    return this.service.cancelWorkOrder(workOrderId, body.version, audit);
+    return this.service.cancelWorkOrder(workOrderId, body.version, body.reason, audit);
   }
   @Post('work-orders/:workOrderId/actions/complete')
   @RequirePermission(PERMISSIONS.production.orders.transition)

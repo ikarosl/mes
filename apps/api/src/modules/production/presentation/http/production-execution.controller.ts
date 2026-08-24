@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Param, Post, UseFilters } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Res,
+  StreamableFile,
+  UseFilters,
+} from '@nestjs/common';
 import { PERMISSIONS } from '@company/constants';
 import type { CommandContext } from '../../../../common/audit/audit.types.js';
 import {
@@ -38,6 +47,28 @@ export class ProductionExecutionController {
   @RequirePermission(PERMISSIONS.production.workerTasks.view)
   myTasks(@CurrentCommandContext() context: CommandContext) {
     return this.service.listMyTasks(context);
+  }
+
+  @Get('batches/:batchId/step-records/:recordId/sop-content')
+  @RequirePermission(PERMISSIONS.production.tasks.view)
+  async taskStepSop(
+    @Param() { batchId, recordId }: BatchStepRecordParamDto,
+    @Res({ passthrough: true }) response: ResponseHeaders,
+  ) {
+    return this.streamSop(await this.service.getStepSopContent(batchId, recordId), response);
+  }
+
+  @Get('worker-tasks/batches/:batchId/step-records/:recordId/sop-content')
+  @RequirePermission(PERMISSIONS.production.workerTasks.view)
+  async myTaskStepSop(
+    @Param() { batchId, recordId }: BatchStepRecordParamDto,
+    @CurrentCommandContext() context: CommandContext,
+    @Res({ passthrough: true }) response: ResponseHeaders,
+  ) {
+    return this.streamSop(
+      await this.service.getMyStepSopContent(batchId, recordId, context),
+      response,
+    );
   }
 
   @Post('batches/:batchId/step-records/:recordId/actions/assign')
@@ -106,4 +137,27 @@ export class ProductionExecutionController {
   ) {
     return this.service.completeStep(batchId, recordId, body.version, context);
   }
+
+  private streamSop(
+    content: {
+      file: { fileName: string; mimeType: string; sizeBytes: number };
+      stream: ConstructorParameters<typeof StreamableFile>[0];
+    },
+    response: ResponseHeaders,
+  ) {
+    response.setHeader('Content-Type', content.file.mimeType || 'application/octet-stream');
+    response.setHeader('Content-Length', String(content.file.sizeBytes));
+    response.setHeader('Content-Disposition', contentDisposition(content.file.fileName));
+    response.setHeader('X-Content-Type-Options', 'nosniff');
+    return new StreamableFile(content.stream);
+  }
 }
+
+interface ResponseHeaders {
+  setHeader(name: string, value: string): void;
+}
+
+const contentDisposition = (fileName: string): string => {
+  const fallback = fileName.replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 150) || 'download';
+  return `attachment; filename="${fallback}"; filename*=UTF-8''${encodeURIComponent(fileName)}`;
+};

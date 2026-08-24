@@ -114,12 +114,18 @@ export const useMaterialOutboundOrders = () => {
     }
   };
 
-  const cancel = async (row: MaterialOutboundItem): Promise<MaterialOutboundItem> => {
+  const cancel = async (
+    row: MaterialOutboundItem,
+    reason: string,
+  ): Promise<MaterialOutboundItem> => {
     const pendingKey = `cancel:${row.outboundId}`;
     if (pendingKeys.value.has(pendingKey)) return row;
     pendingKeys.value = new Set(pendingKeys.value).add(pendingKey);
     try {
-      return await productionApi.cancelMaterialOutbound(row.outboundId, row.version);
+      return await productionApi.cancelMaterialOutbound(row.outboundId, {
+        version: row.version,
+        reason: reason.trim(),
+      });
     } finally {
       removePending(pendingKey);
     }

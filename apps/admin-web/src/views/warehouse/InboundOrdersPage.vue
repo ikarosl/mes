@@ -299,7 +299,18 @@
             }}</el-descriptions-item
             ><el-descriptions-item label="备注">{{
               inbounds.detail.value.remark || '-'
-            }}</el-descriptions-item></el-descriptions
+            }}</el-descriptions-item
+            ><template v-if="inbounds.detail.value.status === 'cancelled'"
+              ><el-descriptions-item label="取消人">{{
+                inbounds.detail.value.cancelledByName || '-'
+              }}</el-descriptions-item
+              ><el-descriptions-item label="取消时间">{{
+                formatDateTimeForDisplay(inbounds.detail.value.cancelledAt)
+              }}</el-descriptions-item
+              ><el-descriptions-item label="取消原因">{{
+                inbounds.detail.value.cancelReason || '-'
+              }}</el-descriptions-item></template
+            ></el-descriptions
           ><el-table :data="inbounds.detail.value.details"
             ><el-table-column
               label="物料"
@@ -468,18 +479,28 @@ const confirmOrder = async (row: PurchaseInboundOrderItem) => {
 };
 const cancelOrder = async (row: PurchaseInboundOrderItem) => {
   try {
-    await ElMessageBox.confirm(
-      '取消后不会生成库存；入库单和明细仍作为历史记录保留。',
+    const { value } = await ElMessageBox.prompt(
+      '取消后不会生成库存；入库单和明细仍作为历史记录保留。请输入取消原因。',
       '取消待确认入库单',
-      { type: 'warning', confirmButtonText: '确认取消', cancelButtonText: '返回' },
+      cancellationPromptOptions,
     );
-    await inbounds.cancel(row);
+    await inbounds.cancel(row, value);
     EMessage.success('待确认入库单已取消，未产生库存');
     await loadRows();
   } catch (e) {
     if (e === 'cancel' || e === 'close') return;
     EMessage.error(e, '取消入库单失败');
   }
+};
+
+const cancellationPromptOptions = {
+  type: 'warning' as const,
+  confirmButtonText: '确认取消',
+  cancelButtonText: '返回',
+  inputType: 'textarea',
+  inputPlaceholder: '请填写取消原因',
+  inputValidator: (input: string) =>
+    input.trim() ? input.trim().length <= 5000 || '取消原因不能超过 5000 个字符' : '请填写取消原因',
 };
 const pending = (action: string, id: string) => inbounds.pendingKeys.value.has(`${action}:${id}`);
 const summary = (row: PurchaseInboundOrderItem) =>

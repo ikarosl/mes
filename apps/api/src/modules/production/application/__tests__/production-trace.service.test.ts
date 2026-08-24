@@ -50,7 +50,9 @@ describe('ProductionTraceService', () => {
           itemName: '追溯物料',
         },
       ],
-      materialOutbounds: [{ outboundId: '3', operatorName: null, createdByName: null }],
+      materialOutbounds: [
+        { outboundId: '3', operatorName: null, createdByName: null, cancelledByName: null },
+      ],
       inventoryTransactions: [{ transactionId: '8' }],
       materialInboundSources: [{ inboundNo: 'PI-1' }],
       steps: [{ stepRecordId: '4' }],

@@ -1,6 +1,11 @@
 import { toBeijingISOString } from '../../../common/time/beijing-time.js';
 import type { Pool, PoolConnection, RowDataPacket } from 'mysql2/promise';
-import type { ProductionBatchItem, WorkOrderItem, WorkOrderStatus } from '@company/contracts';
+import type {
+  ProductionBatchItem,
+  WorkOrderCloseType,
+  WorkOrderItem,
+  WorkOrderStatus,
+} from '@company/contracts';
 import { ProductionDomainError } from '../domain/production.errors.js';
 import { multiplyIntegerQuantities } from '../domain/integer-quantity.js';
 
@@ -27,6 +32,13 @@ export type WorkOrderRow = RowDataPacket & {
   assigned_quantity: string;
   status: WorkOrderStatus;
   released_at: Date | null;
+  cancel_reason: string | null;
+  cancelled_by: number | null;
+  cancelled_at: Date | null;
+  close_type: WorkOrderCloseType | null;
+  close_reason: string | null;
+  closed_by: number | null;
+  closed_at: Date | null;
   customer_name: string | null;
   quality_level: string | null;
   work_order_owner_id: number | null;
@@ -60,6 +72,9 @@ export type BatchRow = RowDataPacket & {
   completed_at: Date | null;
   started_at: Date | null;
   completed_by: number | null;
+  cancel_reason: string | null;
+  cancelled_by: number | null;
+  cancelled_at: Date | null;
   remark: string | null;
   version: number;
   created_at: Date;
@@ -96,8 +111,8 @@ export type StepRow = RowDataPacket & {
   version: number;
 };
 
-export const WORK_ORDER_SELECT = `SELECT wo.id,wo.work_order_no,wo.product_id,wo.product_code_snapshot,wo.product_name_snapshot,wo.unit_snapshot,wo.planned_quantity,wo.customer_name,wo.quality_level,wo.work_order_owner_id,wo.plan_start_date,wo.plan_end_date,COALESCE((SELECT SUM(b.planned_quantity) FROM production_batches b WHERE b.work_order_id=wo.id AND b.status<>'cancelled'),0) assigned_quantity,wo.status,wo.released_at,wo.external_order_no,wo.remark,wo.version,wo.created_at,wo.updated_at FROM work_orders wo`;
-export const BATCH_SELECT = `SELECT b.id,b.work_order_id,wo.work_order_no,b.product_id,wo.product_code_snapshot,wo.product_name_snapshot,b.batch_no,b.route_id,b.route_code_snapshot,b.route_version_snapshot,b.planned_quantity,b.completed_quantity,b.qualified_quantity,b.plan_start_date,b.plan_end_date,b.started_at,b.status,b.batch_owner_id owner_id,b.completed_at,b.completed_by,b.remark,b.version,b.created_at,b.updated_at FROM production_batches b JOIN work_orders wo ON wo.id=b.work_order_id`;
+export const WORK_ORDER_SELECT = `SELECT wo.id,wo.work_order_no,wo.product_id,wo.product_code_snapshot,wo.product_name_snapshot,wo.unit_snapshot,wo.planned_quantity,wo.customer_name,wo.quality_level,wo.work_order_owner_id,wo.plan_start_date,wo.plan_end_date,COALESCE((SELECT SUM(b.planned_quantity) FROM production_batches b WHERE b.work_order_id=wo.id AND b.status<>'cancelled'),0) assigned_quantity,wo.status,wo.released_at,wo.cancel_reason,wo.cancelled_by,wo.cancelled_at,wo.close_type,wo.close_reason,wo.closed_by,wo.closed_at,wo.external_order_no,wo.remark,wo.version,wo.created_at,wo.updated_at FROM work_orders wo`;
+export const BATCH_SELECT = `SELECT b.id,b.work_order_id,wo.work_order_no,b.product_id,wo.product_code_snapshot,wo.product_name_snapshot,b.batch_no,b.route_id,b.route_code_snapshot,b.route_version_snapshot,b.planned_quantity,b.completed_quantity,b.qualified_quantity,b.plan_start_date,b.plan_end_date,b.started_at,b.status,b.batch_owner_id owner_id,b.completed_at,b.completed_by,b.cancel_reason,b.cancelled_by,b.cancelled_at,b.remark,b.version,b.created_at,b.updated_at FROM production_batches b JOIN work_orders wo ON wo.id=b.work_order_id`;
 export const STEP_RECORD_SELECT = `SELECT sr.id,sr.production_batch_id,sr.route_step_id,sr.step_order_snapshot,sr.step_code_snapshot,sr.step_name_snapshot,sr.sop_file_id_snapshot,sr.sop_file_name_snapshot,sr.sop_version_no_snapshot,sr.default_responsible_user_id_snapshot,sr.actual_sop_file_id,sr.actual_sop_file_name_snapshot,sr.actual_sop_object_key_snapshot,sr.actual_sop_version_no_snapshot,sr.responsible_user_id,sr.need_record_snapshot,sr.need_inspection_snapshot,sr.status,sr.started_at,sr.completed_at,COALESCE(report_summary.reported_quantity,0) output_quantity,COALESCE(report_summary.normal_quantity,0) qualified_quantity,COALESCE(report_summary.abnormal_quantity,0) abnormal_quantity,CAST(0 AS DECIMAL(12,4)) rework_quantity,sr.unit_snapshot,sr.remark,sr.version FROM batch_step_records sr LEFT JOIN (SELECT batch_step_record_id,SUM(CASE WHEN report_type='normal' THEN reported_quantity ELSE -reported_quantity END) reported_quantity,SUM(CASE WHEN report_type='normal' THEN normal_quantity ELSE -normal_quantity END) normal_quantity,SUM(CASE WHEN report_type='normal' THEN abnormal_quantity ELSE -abnormal_quantity END) abnormal_quantity FROM batch_step_reports GROUP BY batch_step_record_id) report_summary ON report_summary.batch_step_record_id=sr.id`;
 
 export async function findWorkOrder(db: Db, id: string, lock = false): Promise<WorkOrderRow> {
@@ -148,6 +163,15 @@ export const mapWorkOrder = (row: WorkOrderRow): WorkOrderItem => ({
   assignedQuantity: row.assigned_quantity,
   status: row.status,
   releasedAt: date(row.released_at),
+  cancelReason: row.cancel_reason,
+  cancelledBy: row.cancelled_by === null ? null : String(row.cancelled_by),
+  cancelledByName: null,
+  cancelledAt: date(row.cancelled_at),
+  closeType: row.close_type,
+  closeReason: row.close_reason,
+  closedBy: row.closed_by === null ? null : String(row.closed_by),
+  closedByName: null,
+  closedAt: date(row.closed_at),
   externalOrderNo: row.external_order_no,
   remark: row.remark,
   version: row.version,
@@ -177,6 +201,14 @@ export const mapBatch = (row: BatchRow): ProductionBatchItem => ({
   ownerName: null,
   completedAt: date(row.completed_at),
   completedBy: row.completed_by === null ? null : String(row.completed_by),
+  ...(row.status === 'cancelled'
+    ? {
+        cancelReason: row.cancel_reason,
+        cancelledBy: row.cancelled_by === null ? null : String(row.cancelled_by),
+        cancelledByName: null,
+        cancelledAt: date(row.cancelled_at),
+      }
+    : {}),
   remark: row.remark,
   version: row.version,
   createdAt: toBeijingISOString(row.created_at),

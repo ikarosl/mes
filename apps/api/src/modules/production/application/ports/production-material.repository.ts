@@ -48,6 +48,7 @@ export abstract class ProductionMaterialRepository {
   abstract cancelOutbound(
     outboundId: string,
     version: number,
+    reason: string,
     context: CommandContext,
   ): Promise<MaterialOutboundItem>;
 }

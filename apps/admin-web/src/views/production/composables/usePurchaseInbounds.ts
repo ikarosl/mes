@@ -73,12 +73,15 @@ export const usePurchaseInbounds = () => {
       remove(key);
     }
   };
-  const cancel = async (row: PurchaseInboundOrderItem) => {
+  const cancel = async (row: PurchaseInboundOrderItem, reason: string) => {
     const key = `cancel:${row.inboundId}`;
     if (pendingKeys.value.has(key)) return row;
     pendingKeys.value = new Set(pendingKeys.value).add(key);
     try {
-      return await productionApi.cancelPurchaseInbound(row.inboundId, row.version);
+      return await productionApi.cancelPurchaseInbound(row.inboundId, {
+        version: row.version,
+        reason: reason.trim(),
+      });
     } finally {
       remove(key);
     }

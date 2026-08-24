@@ -5,6 +5,7 @@ import { IdentityModule } from '../identity/public.js';
 import { ProductService } from './application/product.service.js';
 import { ProductSnapshotQuery } from './application/product-snapshot.query.js';
 import { ProductSnapshotService } from './application/product-snapshot.service.js';
+import { TechnicalFileContentQuery } from './application/technical-file-content.query.js';
 import { ProductSnapshotRepository } from './application/ports/product-snapshot.repository.js';
 import { ProcessRouteRepository } from './application/ports/process-route.repository.js';
 import { ProcessRouteStepRepository } from './application/ports/process-route-step.repository.js';
@@ -29,6 +30,7 @@ import { ProductController } from './presentation/http/product.controller.js';
   providers: [
     ProductService,
     ProductSnapshotService,
+    TechnicalFileContentQuery,
     MysqlProductSnapshotRepository,
     MysqlTechnicalFileRepository,
     MysqlProductCatalogRepository,
@@ -49,6 +51,6 @@ import { ProductController } from './presentation/http/product.controller.js';
       useFactory: () => new S3TechnicalFileStorage(loadTechnicalFileStorageConfig()),
     },
   ],
-  exports: [ProductSnapshotQuery],
+  exports: [ProductSnapshotQuery, TechnicalFileContentQuery],
 })
 export class ProductModule {}

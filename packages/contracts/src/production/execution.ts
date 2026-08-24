@@ -47,6 +47,8 @@ export interface ProductionWorkerTaskItem {
   stepOrder: number;
   stepCode: string;
   stepName: string;
+  sopFileName: string | null;
+  sopVersionNo: string | null;
   status: BatchStepStatus;
   needRecord: boolean;
   unit: string;

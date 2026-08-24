@@ -17,6 +17,7 @@ const {
   completeOrder,
   closeOrder,
   confirm,
+  prompt,
   success,
   error,
   productOptions,
@@ -31,6 +32,7 @@ const {
   completeOrder: vi.fn(),
   closeOrder: vi.fn(),
   confirm: vi.fn(),
+  prompt: vi.fn(),
   success: vi.fn(),
   error: vi.fn(),
   productOptions: vi.fn(),
@@ -58,7 +60,7 @@ vi.mock('../../../api/production', () => ({
   },
 }));
 vi.mock('../../../utils/route-message-box', () => ({
-  RouteMessageBox: { confirm },
+  RouteMessageBox: { confirm, prompt },
 }));
 vi.mock('../../../utils/message', () => ({
   EMessage: { success, error, warning: vi.fn() },
@@ -117,6 +119,7 @@ describe('ProductionOrdersPage', () => {
     closeOrder.mockReset();
     closeOrder.mockResolvedValue(undefined);
     confirm.mockReset();
+    prompt.mockReset();
     productOptions.mockReset();
     productOptions.mockResolvedValue([]);
     routeOptions.mockReset();
@@ -262,6 +265,21 @@ describe('ProductionOrdersPage', () => {
     expect(vm.canCompleteOrder({ ...orderRow, status: 'doing' })).toBe(true);
     expect(vm.canCloseOrder({ ...orderRow, status: 'released' })).toBe(true);
     expect(vm.canCloseOrder({ ...orderRow, status: 'completed' })).toBe(true);
+  });
+
+  it('requires and trims a reason when cancelling a draft work order', async () => {
+    prompt.mockResolvedValue({ value: '  计划取消  ' });
+    const wrapper = mountPage();
+    await flushPromises();
+    const vm = wrapper.vm as unknown as {
+      cancelOrder: (row: typeof orderRow) => Promise<void>;
+    };
+
+    await vm.cancelOrder(orderRow);
+
+    expect(prompt).toHaveBeenCalledOnce();
+    expect(cancelOrder).toHaveBeenCalledWith('o1', { version: 0, reason: '计划取消' });
+    expect(success).toHaveBeenCalledWith('工单已取消');
   });
 
   it('submits explicit completion and early-close commands from the review dialog', async () => {

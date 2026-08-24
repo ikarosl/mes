@@ -24,11 +24,17 @@ export type TechnicalFileLocator = Pick<
   'storageProvider' | 'bucket' | 'objectKey'
 >;
 
+export interface HistoricalTechnicalFileLocator extends TechnicalFileLocator {
+  mimeType: string;
+  sizeBytes: number;
+}
+
 export abstract class TechnicalFileRepository {
   abstract listTechnicalFiles(
     query: TechnicalFileQuery,
   ): Promise<PageResult<TechnicalFileListItem>>;
   abstract getTechnicalFile(id: string): Promise<TechnicalFileListItem>;
+  abstract getHistoricalTechnicalFileLocator(id: string): Promise<HistoricalTechnicalFileLocator>;
   abstract createTechnicalFile(
     file: StoredTechnicalFile,
     audit: CommandContext,

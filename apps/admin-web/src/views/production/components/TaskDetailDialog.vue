@@ -26,6 +26,19 @@
         }}</el-descriptions-item>
         <el-descriptions-item label="负责人">{{ batch.ownerName || '-' }}</el-descriptions-item>
         <el-descriptions-item label="版本号">{{ batch.version }}</el-descriptions-item>
+        <template v-if="batch.status === 'cancelled'">
+          <el-descriptions-item label="取消人">{{
+            batch.cancelledByName || batch.cancelledBy || '-'
+          }}</el-descriptions-item>
+          <el-descriptions-item label="取消时间">{{
+            formatDateTimeForDisplay(batch.cancelledAt)
+          }}</el-descriptions-item>
+          <el-descriptions-item
+            label="取消原因"
+            :span="3"
+            >{{ batch.cancelReason || '历史数据未记录' }}</el-descriptions-item
+          >
+        </template>
       </el-descriptions>
 
       <el-tabs class="detail-tabs">
@@ -162,6 +175,7 @@
 <script setup lang="ts">
 import type { BatchStepRecordItem, ProductionBatchDetail } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
+import { formatDateTimeForDisplay } from '../../../utils/date';
 import { STEP_STATUS_LABELS, batchStatusMeta, formatQuantity } from '../production-status';
 
 defineProps<{

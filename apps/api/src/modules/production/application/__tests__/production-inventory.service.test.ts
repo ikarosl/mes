@@ -122,4 +122,30 @@ describe('ProductionInventoryService', () => {
       ),
     ).rejects.toMatchObject({ code: 'INVALID_INPUT' });
   });
+
+  it.each([
+    ['cancelMaterialLoss', '5'],
+    ['cancelReturnOrder', '6'],
+    ['cancelStockCheck', '7'],
+  ] as const)('trims and persists cancellation reason through %s', async (method, id) => {
+    const repository = {
+      [method]: vi.fn().mockResolvedValue({
+        id,
+        operatorId: null,
+        confirmedById: null,
+        createdById: '1',
+        cancelledById: '1',
+      }),
+    };
+    const identity = { listUserReferencesByIds: vi.fn().mockResolvedValue([]) };
+    const service = new ProductionInventoryService(
+      repository as never,
+      identity as never,
+      idempotency as never,
+    );
+
+    await service[method](id, 1, '  计划调整  ', context);
+
+    expect(repository[method]).toHaveBeenCalledWith(id, 1, '计划调整', context);
+  });
 });

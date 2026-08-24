@@ -53,7 +53,7 @@ describe('warehouseApi', () => {
       details: [{ detailId: '9', actualQuantity: 10 }],
     });
     await warehouseApi.completeStockCheck('5', 2);
-    await warehouseApi.cancelStockCheck('6', 0);
+    await warehouseApi.cancelStockCheck('6', { version: 0, reason: '盘点范围错误' });
 
     expect(request).toHaveBeenNthCalledWith(1, {
       url: '/warehouse/stock-checks/candidates',
@@ -72,7 +72,7 @@ describe('warehouseApi', () => {
     expect(request).toHaveBeenNthCalledWith(4, {
       url: '/warehouse/stock-checks/6/actions/cancel',
       method: 'POST',
-      data: { version: 0 },
+      data: { version: 0, reason: '盘点范围错误' },
     });
   });
 

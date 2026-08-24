@@ -288,12 +288,14 @@ describe('MysqlWorkOrderRepository data ownership', () => {
       getConnection: vi.fn().mockResolvedValue(connection),
     } as never);
 
-    await expect(repository.cancel('6', 3, audit)).resolves.toMatchObject({
+    await expect(repository.cancel('6', 3, '计划取消', audit)).resolves.toMatchObject({
       status: 'cancelled',
       version: 4,
     });
 
     expect(String(connection.execute.mock.calls[0]?.[0])).toContain("status='draft'");
+    expect(String(connection.execute.mock.calls[0]?.[0])).toContain('cancel_reason=?');
+    expect(connection.execute.mock.calls[0]?.[1]).toEqual(['计划取消', '1', '1', '6', 3]);
     expect(String(connection.execute.mock.calls[1]?.[0])).toContain('INSERT INTO operation_logs');
     expect(connection.commit).toHaveBeenCalledOnce();
   });
@@ -305,7 +307,9 @@ describe('MysqlWorkOrderRepository data ownership', () => {
       getConnection: vi.fn().mockResolvedValue(connection),
     } as never);
 
-    await expect(repository.cancel('6', 3, audit)).rejects.toMatchObject({ code: 'INVALID_STATE' });
+    await expect(repository.cancel('6', 3, '计划取消', audit)).rejects.toMatchObject({
+      code: 'INVALID_STATE',
+    });
     expect(connection.execute).not.toHaveBeenCalled();
     expect(connection.rollback).toHaveBeenCalledOnce();
   });
@@ -420,6 +424,60 @@ describe('MysqlWorkOrderRepository data ownership', () => {
     });
     expect(unfinishedConnection.execute).not.toHaveBeenCalled();
   });
+
+  it('persists the close classification, reason, actor and timestamp in the work order', async () => {
+    const doingOrder = { ...workOrderRow, status: 'doing', version: 3 };
+    const closedOrder = {
+      ...doingOrder,
+      status: 'closed',
+      version: 4,
+      close_type: 'underproduced',
+      close_reason: '需求终止',
+      closed_by: 1,
+      closed_at: new Date('2026-08-02T00:00:00.000Z'),
+    };
+    const connection = transactionConnectionWithQueries([
+      [[doingOrder], []],
+      [
+        [
+          {
+            id: 21,
+            batch_no: 'B-001',
+            status: 'completed',
+            planned_quantity: '60.0000',
+            completed_quantity: '60.0000',
+          },
+        ],
+        [],
+      ],
+      [[closedOrder], []],
+      [[], []],
+    ]);
+    connection.execute.mockResolvedValue([{ affectedRows: 1 }, []]);
+    const repository = new MysqlWorkOrderRepository({
+      getConnection: vi.fn().mockResolvedValue(connection),
+    } as never);
+
+    await expect(repository.close('6', 3, '需求终止', audit)).resolves.toMatchObject({
+      status: 'closed',
+      closeType: 'underproduced',
+      closeReason: '需求终止',
+      closedBy: '1',
+    });
+
+    expect(String(connection.execute.mock.calls[0]?.[0])).toContain('close_type=?');
+    expect(connection.execute.mock.calls[0]?.[1]).toEqual([
+      'underproduced',
+      '需求终止',
+      '1',
+      '1',
+      '6',
+      'doing',
+      3,
+    ]);
+    expect(String(connection.execute.mock.calls[1]?.[0])).toContain('INSERT INTO operation_logs');
+    expect(connection.commit).toHaveBeenCalledOnce();
+  });
 });
 
 describe('MysqlWorkOrderRepository work-order options', () => {
@@ -447,6 +505,8 @@ describe('MysqlWorkOrderRepository work-order options', () => {
         productCode: 'P-001',
         productName: 'Product A',
         remainingQuantity: '50.0000',
+        planStartDate: '2026-08-01',
+        planEndDate: '2026-08-31',
       },
     ]);
   });
@@ -505,6 +565,13 @@ const workOrderRow = {
   assigned_quantity: '0.0000',
   status: 'draft',
   released_at: null,
+  cancel_reason: null,
+  cancelled_by: null,
+  cancelled_at: null,
+  close_type: null,
+  close_reason: null,
+  closed_by: null,
+  closed_at: null,
   customer_name: 'Customer A',
   quality_level: 'A',
   work_order_owner_id: 9,
@@ -524,4 +591,6 @@ const optionRow = {
   product_code_snapshot: 'P-001',
   product_name_snapshot: 'Product A',
   remaining_quantity: '50.0000',
+  plan_start_date: '2026-08-01',
+  plan_end_date: '2026-08-31',
 };

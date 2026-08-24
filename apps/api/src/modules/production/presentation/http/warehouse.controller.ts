@@ -11,7 +11,10 @@ import {
   IdempotentEndpoint,
   RequirePermission,
 } from '../../../../common/security/auth.decorators.js';
-import { VersionedCommandDto } from '../../../../presentation/http/dto/versioned-command.dto.js';
+import {
+  ReasonedVersionedCommandDto,
+  VersionedCommandDto,
+} from '../../../../presentation/http/dto/versioned-command.dto.js';
 import { ProductionInventoryService } from '../../application/production-inventory.service.js';
 import { CONFIRM_MATERIAL_LOSS_IDEMPOTENCY_SCOPE } from '../../application/idempotency/production-idempotency-scopes.contract.js';
 import { CREATE_MATERIAL_LOSS_IDEMPOTENCY_SCOPE } from '../../application/idempotency/production-idempotency-scopes.contract.js';
@@ -87,10 +90,10 @@ export class WarehouseController {
   @AuditInApplication()
   cancelMaterialLoss(
     @Param() { scrapId }: ScrapIdParamDto,
-    @Body() body: VersionedCommandDto,
+    @Body() body: ReasonedVersionedCommandDto,
     @CurrentCommandContext() context: CommandContext,
   ) {
-    return this.service.cancelMaterialLoss(scrapId, body.version, context);
+    return this.service.cancelMaterialLoss(scrapId, body.version, body.reason, context);
   }
 
   @Get('return-orders')
@@ -142,10 +145,10 @@ export class WarehouseController {
   @AuditInApplication()
   cancelReturn(
     @Param() { returnId }: ReturnIdParamDto,
-    @Body() body: VersionedCommandDto,
+    @Body() body: ReasonedVersionedCommandDto,
     @CurrentCommandContext() context: CommandContext,
   ) {
-    return this.service.cancelReturnOrder(returnId, body.version, context);
+    return this.service.cancelReturnOrder(returnId, body.version, body.reason, context);
   }
 
   @Get('stock-checks')
@@ -207,9 +210,9 @@ export class WarehouseController {
   @AuditInApplication()
   cancelStockCheck(
     @Param() { stockCheckId }: StockCheckIdParamDto,
-    @Body() body: VersionedCommandDto,
+    @Body() body: ReasonedVersionedCommandDto,
     @CurrentCommandContext() context: CommandContext,
   ) {
-    return this.service.cancelStockCheck(stockCheckId, body.version, context);
+    return this.service.cancelStockCheck(stockCheckId, body.version, body.reason, context);
   }
 }

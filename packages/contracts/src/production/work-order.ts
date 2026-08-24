@@ -2,6 +2,8 @@ import type { PageQuery, VersionedCommand } from '../common.js';
 import type { WorkOrderStatus } from './statuses.js';
 import type { ProductionBatchItem } from './batch.js';
 
+export type WorkOrderCloseType = 'unproduced' | 'underproduced' | 'completed_archive';
+
 export interface WorkOrderQuery extends PageQuery {
   keyword?: string;
   productId?: string;
@@ -16,6 +18,8 @@ export interface WorkOrderOption {
   productName: string;
   /** 剩余可分配数量 = 计划数量 - 已分配数量 */
   remainingQuantity: string;
+  planStartDate: string | null;
+  planEndDate: string | null;
 }
 
 export interface WorkOrderItem {
@@ -34,6 +38,15 @@ export interface WorkOrderItem {
   assignedQuantity: string;
   status: WorkOrderStatus;
   releasedAt: string | null;
+  cancelReason: string | null;
+  cancelledBy: string | null;
+  cancelledByName: string | null;
+  cancelledAt: string | null;
+  closeType: WorkOrderCloseType | null;
+  closeReason: string | null;
+  closedBy: string | null;
+  closedByName: string | null;
+  closedAt: string | null;
   externalOrderNo: string | null;
   remark: string | null;
   version: number;
@@ -71,6 +84,10 @@ export interface UpdateWorkOrderPayload extends VersionedCommand {
 }
 
 export type CompleteWorkOrderPayload = VersionedCommand;
+
+export interface CancelWorkOrderPayload extends VersionedCommand {
+  reason: string;
+}
 
 export interface CloseWorkOrderPayload extends VersionedCommand {
   reason?: string | null;

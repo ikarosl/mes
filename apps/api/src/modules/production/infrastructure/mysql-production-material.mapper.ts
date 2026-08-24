@@ -74,6 +74,10 @@ export type OutboundRow = RowDataPacket & {
   created_at: Date;
   version: number;
   remark: string | null;
+  cancel_source: MaterialOutboundItem['cancelSource'];
+  cancel_reason: string | null;
+  cancelled_by: number | null;
+  cancelled_at: Date | null;
 };
 
 export type OutboundDetailRow = RowDataPacket & {

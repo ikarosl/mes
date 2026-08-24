@@ -81,8 +81,18 @@ export class ProductionInventoryService {
     });
     return execution.result;
   }
-  async cancelMaterialLoss(scrapId: string, version: number, context: CommandContext) {
-    const item = await this.inventory.cancelMaterialLoss(scrapId, version, context);
+  async cancelMaterialLoss(
+    scrapId: string,
+    version: number,
+    reason: string,
+    context: CommandContext,
+  ) {
+    const item = await this.inventory.cancelMaterialLoss(
+      scrapId,
+      version,
+      requireReason(reason),
+      context,
+    );
     return (await this.enrichMaterialLosses([item]))[0]!;
   }
 
@@ -122,8 +132,18 @@ export class ProductionInventoryService {
     const item = await this.inventory.confirmReturnOrder(returnId, version, context);
     return (await this.enrichReturns([item]))[0]!;
   }
-  async cancelReturnOrder(returnId: string, version: number, context: CommandContext) {
-    const item = await this.inventory.cancelReturnOrder(returnId, version, context);
+  async cancelReturnOrder(
+    returnId: string,
+    version: number,
+    reason: string,
+    context: CommandContext,
+  ) {
+    const item = await this.inventory.cancelReturnOrder(
+      returnId,
+      version,
+      requireReason(reason),
+      context,
+    );
     return (await this.enrichReturns([item]))[0]!;
   }
 
@@ -175,42 +195,55 @@ export class ProductionInventoryService {
     const completed = await this.inventory.completeStockCheck(stockCheckId, version, context);
     return (await this.enrichStockChecks([completed]))[0]!;
   }
-  async cancelStockCheck(stockCheckId: string, version: number, context: CommandContext) {
-    const cancelled = await this.inventory.cancelStockCheck(stockCheckId, version, context);
+  async cancelStockCheck(
+    stockCheckId: string,
+    version: number,
+    reason: string,
+    context: CommandContext,
+  ) {
+    const cancelled = await this.inventory.cancelStockCheck(
+      stockCheckId,
+      version,
+      requireReason(reason),
+      context,
+    );
     return (await this.enrichStockChecks([cancelled]))[0]!;
   }
 
   private async enrichReturns(items: ReturnOrderItem[]): Promise<ReturnOrderItem[]> {
     const names = await this.userNames(
-      items.flatMap((item) => [item.operatorId, item.createdById]),
+      items.flatMap((item) => [item.operatorId, item.createdById, item.cancelledById]),
     );
     return items.map((item) => ({
       ...item,
       operatorName: item.operatorId ? (names.get(item.operatorId) ?? null) : null,
       createdByName: names.get(item.createdById) ?? null,
+      cancelledByName: item.cancelledById ? (names.get(item.cancelledById) ?? null) : null,
     }));
   }
   private async enrichMaterialLosses(items: MaterialLossItem[]): Promise<MaterialLossItem[]> {
     const names = await this.userNames(
-      items.flatMap((item) => [item.confirmedById, item.createdById]),
+      items.flatMap((item) => [item.confirmedById, item.createdById, item.cancelledById]),
     );
     return items.map((item) => ({
       ...item,
       confirmedByName: item.confirmedById ? (names.get(item.confirmedById) ?? null) : null,
       createdByName: names.get(item.createdById) ?? null,
+      cancelledByName: item.cancelledById ? (names.get(item.cancelledById) ?? null) : null,
     }));
   }
   private async enrichStockChecks(items: StockCheckOrderItem[]): Promise<StockCheckOrderItem[]> {
     const names = await this.userNames(
-      items.flatMap((item) => [item.operatorId, item.createdById]),
+      items.flatMap((item) => [item.operatorId, item.createdById, item.cancelledById]),
     );
     return items.map((item) => ({
       ...item,
       operatorName: item.operatorId ? (names.get(item.operatorId) ?? null) : null,
       createdByName: names.get(item.createdById) ?? null,
+      cancelledByName: item.cancelledById ? (names.get(item.cancelledById) ?? null) : null,
     }));
   }
-  private async userNames(ids: Array<string | null>): Promise<Map<string, string>> {
+  private async userNames(ids: Array<string | null | undefined>): Promise<Map<string, string>> {
     const unique = [...new Set(ids.filter((id): id is string => Boolean(id)))];
     const users = await this.identity.listUserReferencesByIds(unique);
     return new Map(users.map((user) => [user.id, user.displayName]));
@@ -218,6 +251,11 @@ export class ProductionInventoryService {
 }
 
 const clean = (value: string | null | undefined): string | null => value?.trim() || null;
+const requireReason = (value: string): string => {
+  const reason = clean(value);
+  if (!reason) throw new ProductionDomainError('INVALID_INPUT', '取消原因不能为空');
+  return reason;
+};
 const requireUnique = (values: string[], message: string): void => {
   if (new Set(values).size !== values.length)
     throw new ProductionDomainError('INVALID_INPUT', message);
