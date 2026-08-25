@@ -456,8 +456,18 @@
           >
             <el-radio-group v-model="changeForm.abnormalOrigin">
               <el-radio value="current_step">当前工序异常</el-radio>
-              <el-radio value="previous_step">前置工序异常</el-radio>
+              <el-radio
+                v-if="changeHasPreviousStep"
+                value="previous_step"
+                >前置工序异常</el-radio
+              >
             </el-radio-group>
+            <div
+              v-if="!changeHasPreviousStep"
+              class="form-tip"
+            >
+              当前为首道工序，只能选择当前工序异常。
+            </div>
           </el-form-item>
         </template>
         <el-form-item
@@ -696,6 +706,12 @@ const changedDownstream = computed(() => {
   );
   return index < 0 ? null : (record.value.steps[index + 1] ?? null);
 });
+const changeHasPreviousStep = computed(() => {
+  if (!record.value || !changeStep.value) return false;
+  return (
+    record.value.steps.findIndex((step) => step.stepRecordId === changeStep.value?.stepRecordId) > 0
+  );
+});
 const changeHasDownstreamConflict = computed(
   () =>
     changedDownstream.value !== null &&
@@ -726,6 +742,7 @@ const canSubmitChange = computed(
     (changeMode.value === 'reverse' ||
       (changeForm.normalQuantity + changeForm.abnormalQuantity > 0 &&
         (changeForm.abnormalQuantity === 0 || changeForm.abnormalOrigin !== null))) &&
+    (changeForm.abnormalOrigin !== 'previous_step' || changeHasPreviousStep.value) &&
     !changeHasDownstreamConflict.value &&
     !changeExceedsReleased.value,
 );
@@ -783,7 +800,11 @@ const prepareChange = (
   changeReport.value = report;
   changeForm.normalQuantity = Number(report.normalQuantity);
   changeForm.abnormalQuantity = Number(report.abnormalQuantity);
-  changeForm.abnormalOrigin = report.abnormalOrigin;
+  const stepIndex = record.value?.steps.findIndex(
+    (item) => item.stepRecordId === step.stepRecordId,
+  );
+  changeForm.abnormalOrigin =
+    Number(report.abnormalQuantity) > 0 && stepIndex === 0 ? 'current_step' : report.abnormalOrigin;
   changeForm.reason = '';
   changeVisible.value = true;
 };

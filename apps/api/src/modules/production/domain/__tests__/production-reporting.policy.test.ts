@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   isRequiredNormalCompleted,
   requireNoDownstreamQuantityConflict,
+  requireAbnormalOrigin,
   requireDirectReportQuantities,
   requireReportWithinReleased,
   requireReportQuantities,
@@ -35,6 +36,14 @@ describe('production reporting policy', () => {
     expect(() => requireDirectReportQuantities(0, 2)).not.toThrow();
     expect(() => requireDirectReportQuantities(3, 2)).toThrowError(
       expect.objectContaining({ code: 'INVALID_INPUT' }),
+    );
+  });
+
+  it('rejects a previous-step abnormal origin for the first route step', () => {
+    expect(requireAbnormalOrigin(2, 'current_step', false)).toBe('current_step');
+    expect(requireAbnormalOrigin(2, 'previous_step', true)).toBe('previous_step');
+    expect(() => requireAbnormalOrigin(2, 'previous_step', false)).toThrowError(
+      expect.objectContaining({ code: 'INVALID_INPUT', message: '首道工序不能上报前置工序异常' }),
     );
   });
 

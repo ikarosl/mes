@@ -159,6 +159,7 @@ const mapWorkerTask = (
     productCode: row.product_code,
     productName: row.product_name,
     stepOrder: row.step_order,
+    hasPreviousStep: !isFirst,
     stepCode: row.step_code,
     stepName: row.step_name,
     sopFileName: row.sop_file_name,

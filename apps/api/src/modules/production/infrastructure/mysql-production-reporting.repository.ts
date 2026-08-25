@@ -112,7 +112,11 @@ export class MysqlProductionReportingRepository extends ProductionReportingRepos
     context: CommandContext & { actorId: string },
   ): Promise<BatchStepReportCommandResult> {
     return withTransaction(this.pool, async (connection) => {
-      const { current, required, released } = await lockContext(connection, batchId, stepRecordId);
+      const { current, index, required, released } = await lockContext(
+        connection,
+        batchId,
+        stepRecordId,
+      );
       if (current.status !== 'doing' || String(current.responsible_user_id) !== context.actorId)
         throw new ProductionDomainError(
           current.status !== 'doing' ? 'STEP_REPORT_NOT_ALLOWED' : 'NOT_STEP_ASSIGNEE',
@@ -125,6 +129,7 @@ export class MysqlProductionReportingRepository extends ProductionReportingRepos
       const abnormalOrigin = requireAbnormalOrigin(
         payload.abnormalQuantity,
         payload.abnormalOrigin,
+        index > 0,
       );
       requireReportWithinReleased(
         current.effective_direct_reported,
@@ -242,7 +247,7 @@ export class MysqlProductionReportingRepository extends ProductionReportingRepos
   ): Promise<CorrectBatchStepReportCommandResult> {
     return withTransaction(this.pool, async (connection) => {
       const actorId = requireActor(context);
-      const { current, required, released, downstream } = await lockContext(
+      const { current, index, required, released, downstream } = await lockContext(
         connection,
         batchId,
         stepRecordId,
@@ -252,6 +257,7 @@ export class MysqlProductionReportingRepository extends ProductionReportingRepos
       const abnormalOrigin = requireAbnormalOrigin(
         payload.abnormalQuantity,
         payload.abnormalOrigin,
+        index > 0,
       );
       const target = await lockReport(connection, batchId, stepRecordId, reportId);
       requireCorrectable(target);

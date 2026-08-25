@@ -32,11 +32,14 @@ export const requireDirectReportQuantities = (
 export const requireAbnormalOrigin = (
   abnormalQuantity: number,
   abnormalOrigin: BatchStepAbnormalOrigin | null | undefined,
+  hasPreviousStep: boolean,
 ): BatchStepAbnormalOrigin | null => {
   if (abnormalQuantity > 0 && !abnormalOrigin)
     throw new ProductionDomainError('INVALID_INPUT', '存在异常数量时必须选择本工序异常或前置异常');
   if (abnormalQuantity === 0 && abnormalOrigin)
     throw new ProductionDomainError('INVALID_INPUT', '没有异常数量时不得填写异常来源');
+  if (abnormalOrigin === 'previous_step' && !hasPreviousStep)
+    throw new ProductionDomainError('INVALID_INPUT', '首道工序不能上报前置工序异常');
   return abnormalQuantity > 0 ? abnormalOrigin! : null;
 };
 
