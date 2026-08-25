@@ -46,7 +46,7 @@
             type="danger"
             :loading="pendingKeys.has(`reject:${item.dispositionId}`)"
             @click="openReview(item, 'reject')"
-            >驳回</el-button
+            >驳回并退回重报</el-button
           >
         </div>
       </div>
@@ -86,7 +86,7 @@
 
     <el-dialog
       v-model="reviewVisible"
-      :title="reviewMode === 'rework' ? '批准异常返工' : '驳回异常处置'"
+      :title="reviewMode === 'rework' ? '批准异常返工' : '驳回异常并退回重报'"
       width="min(640px, 75vw)"
     >
       <el-alert
@@ -97,7 +97,7 @@
         :title="
           reviewMode === 'rework'
             ? '批准后将按来源异常数量创建整单返工，固定返回当前工序并沿用当前负责人。'
-            : '驳回只结束当前处置待办，不会消除原异常报工事实。'
+            : '驳回将全量冲销本次异常报工，不生成正常报工或补产授权；员工需要按正确数量和异常来源重新报工。'
         "
       />
       <el-form label-position="top">
@@ -120,7 +120,7 @@
           :type="reviewMode === 'rework' ? 'primary' : 'danger'"
           :disabled="reviewMode === 'reject' && !reviewRemark.trim()"
           @click="submitReview"
-          >{{ reviewMode === 'rework' ? '确认批准返工' : '确认驳回' }}</el-button
+          >{{ reviewMode === 'rework' ? '确认批准返工' : '确认驳回并退回' }}</el-button
         >
       </template>
     </el-dialog>
