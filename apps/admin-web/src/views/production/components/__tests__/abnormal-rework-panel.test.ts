@@ -45,7 +45,7 @@ describe('AbnormalReworkPanel', () => {
     expect(wrapper.text()).toContain('驳回原因：尺寸复核无异常');
   });
 
-  it('keeps the review dialog open until final confirmation succeeds', async () => {
+  it('opens an existing draft in review, enters editing explicitly, and waits for confirmation', async () => {
     let resolveConfirm!: () => void;
     const planConfirmer = vi.fn(() => new Promise<void>((resolve) => (resolveConfirm = resolve)));
     const wrapper = mount(AbnormalReworkPanel, {
@@ -93,7 +93,7 @@ describe('AbnormalReworkPanel', () => {
         ),
         planSaver: vi.fn(),
         planConfirmer,
-        intentStatusLoader: vi.fn(() => 'pending' as const),
+        intentStatusLoader: vi.fn(() => 'idle' as const),
         intentResetter: vi.fn(),
       },
       global: {
@@ -123,18 +123,30 @@ describe('AbnormalReworkPanel', () => {
     const openButton = wrapper.findAll('button').find((button) => button.text() === '报废并补料');
     await openButton!.trigger('click');
     await flushPromises();
-    expect(wrapper.text()).toContain('重试最终确认');
+    expect(wrapper.text()).toContain('确定报废并生成');
+    expect(wrapper.text()).toContain('重新编辑');
+    expect(wrapper.text()).not.toContain('暂存需求');
+
+    const editButton = wrapper.findAll('button').find((button) => button.text() === '重新编辑');
+    await editButton!.trigger('click');
+    expect(wrapper.text()).toContain('暂存需求');
+
+    // 再次打开同一草稿仍从复核页开始，而不是沿用上一次弹窗的编辑状态。
+    await openButton!.trigger('click');
+    await flushPromises();
+    expect(wrapper.text()).toContain('确定报废并生成');
+    expect(wrapper.text()).not.toContain('暂存需求');
 
     const confirmButton = wrapper
       .findAll('button')
-      .find((button) => button.text() === '重试最终确认');
+      .find((button) => button.text() === '确定报废并生成');
     await confirmButton!.trigger('click');
     await flushPromises();
     expect(planConfirmer).toHaveBeenCalledWith(expect.objectContaining({ dispositionId: '8' }), 3);
-    expect(wrapper.text()).toContain('重试最终确认');
+    expect(wrapper.text()).toContain('确定报废并生成');
 
     resolveConfirm();
     await flushPromises();
-    expect(wrapper.text()).not.toContain('重试最终确认');
+    expect(wrapper.text()).not.toContain('确定报废并生成');
   });
 });

@@ -598,6 +598,10 @@ describe('ProductionSupplementService', () => {
     });
 
     it('confirms from the server-side draft only and forwards both version references for concurrency control', async () => {
+      class ConfirmPlanDtoLike {
+        version = 3;
+        dispositionVersion = 2;
+      }
       const repository = {
         getPlan: vi.fn().mockResolvedValue(makePlan()),
         getCandidateContext: vi.fn().mockResolvedValue(makeCandidateContext()),
@@ -616,11 +620,7 @@ describe('ProductionSupplementService', () => {
         idempotency as never,
       );
 
-      const result = await service.confirmPlan(
-        '8',
-        { version: 3, dispositionVersion: 2 },
-        idempotentContext,
-      );
+      const result = await service.confirmPlan('8', new ConfirmPlanDtoLike(), idempotentContext);
 
       // 确认请求体只携带版本号，不接受客户端重新提交物料明细
       expect(idempotency.execute).toHaveBeenCalledWith(

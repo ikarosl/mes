@@ -1,5 +1,10 @@
 import axios, { AxiosError, type AxiosResponse, type InternalAxiosRequestConfig } from 'axios';
 import { describe, expect, it, vi } from 'vitest';
+import {
+  CONCURRENCY_ERROR_CODES,
+  IDEMPOTENCY_RESULT_CORRUPT,
+  IDEMPOTENCY_STORAGE_RETRYABLE,
+} from '@company/constants';
 import { RequestError } from '@company/request';
 import { handleHttpError, installHttpErrorHandler } from '../error-handler.js';
 import { isHttpErrorHandled } from '../http-error-state.js';
@@ -83,5 +88,51 @@ describe('handleHttpError', () => {
     handleHttpError(new RequestError('Network Error', 0), options);
 
     expect(options.notify).toHaveBeenCalledWith('网络连接失败，请检查网络后重试');
+  });
+
+  it.each([
+    {
+      code: CONCURRENCY_ERROR_CODES.idempotencyConflict,
+      status: 409,
+      expected: '本次提交标识已用于不同内容，请刷新数据后重新操作（请求编号：request_conflict）',
+    },
+    {
+      code: IDEMPOTENCY_STORAGE_RETRYABLE,
+      status: 503,
+      expected: '提交服务暂时不可用，请稍后重试（请求编号：request_conflict）',
+    },
+    {
+      code: IDEMPOTENCY_RESULT_CORRUPT,
+      status: 500,
+      expected: '服务端保存的提交结果异常，请联系管理员核对业务结果（请求编号：request_conflict）',
+    },
+  ])('maps the explicit idempotency error $code globally', ({ code, status, expected }) => {
+    const options = createOptions();
+
+    handleHttpError(
+      new RequestError('raw backend message', status, undefined, code, 'request_conflict'),
+      options,
+    );
+
+    expect(options.notify).toHaveBeenCalledWith(expected);
+  });
+
+  it('keeps an unknown backend bug generic and includes its request id', () => {
+    const options = createOptions();
+
+    handleHttpError(
+      new RequestError(
+        '服务器内部错误，请稍后重试',
+        500,
+        undefined,
+        'INTERNAL_SERVER_ERROR',
+        'request_internal',
+      ),
+      options,
+    );
+
+    expect(options.notify).toHaveBeenCalledWith(
+      '服务器内部错误，请稍后重试（请求编号：request_internal）',
+    );
   });
 });

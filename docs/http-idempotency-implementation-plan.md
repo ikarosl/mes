@@ -278,6 +278,12 @@ createBatch 试点已落地为 Zod 完整嵌套 schema（`production-batch-resul
 稳定 JSON 计算 SHA-256，保存 64 位小写十六进制字符串。算法与测试向量一经发布即成为兼容性契约；
 变更算法时必须通过新的 scope 版本隔离，不能让旧记录与新算法混用。
 
+Nest 全局 `ValidationPipe({ transform: true })` 会把 HTTP body 转换为 DTO 类实例，但类实例不得直接进入上述
+稳定 JSON 算法。Application Service 必须先显式挑选全部语义字段并构造普通对象，再把同一个规范化对象用于
+指纹和业务 handler。不能通过放宽指纹器来接受任意类实例，否则 `Date`、getter、自定义原型及未来新增的
+非语义 DTO 字段可能污染兼容性契约。每个启用端点必须有测试覆盖“传入 DTO 类实例，交给 executor 的 body
+仍是普通 JSON 对象”。
+
 示例：
 
 ```ts
@@ -368,16 +374,23 @@ async function execute(command) {
 | 数据库/审计/结果序列化失败                          | 整体回滚；不得保存 completed；可重试存储失败映射 `503 IDEMPOTENCY_STORAGE_RETRYABLE`           |
 | 并发首请求尚未完成                                  | 依赖唯一键等待；超时按可重试基础设施失败处理（`503 IDEMPOTENCY_STORAGE_RETRYABLE`）            |
 | 已完成记录的结果无法反序列化                        | `500 IDEMPOTENCY_RESULT_CORRUPT`，服务端告警；前端阻塞意图、提示人工处理，不重试、不自动换新键 |
+| 指纹生成、executor 或业务 handler 的未预期代码异常   | `500 INTERNAL_SERVER_ERROR`；记录异常类型与脱敏堆栈，不得误报成幂等冲突或结果损坏              |
 
 第一阶段不缓存失败响应。这样不会把临时数据库失败长期绑定到键，但客户端在收到明确业务 4xx 后应结束该意图；
-只有无响应、超时、连接中断和按契约可重试的 5xx 才保留原键。`IDEMPOTENCY_RESULT_CORRUPT`（结果损坏）是例外：
+只有无响应、超时、连接中断和 `502/503/504` 才允许请求层自动复用原键重试；明确普通 500 不自动重试，但页面可
+在业务结果仍无法确认时保留原意图供人工核对或后续同键重试。`IDEMPOTENCY_RESULT_CORRUPT`（结果损坏）是例外：
 它是确定性的 5xx，请求层必须跳过自动重试，客户端不得保留原键重试、也不得清除意图自动换新键，应阻塞当前
 意图并提示人工处理（首次结果是否成功不可知）。
 
 协议无关幂等错误必须同时接入全局 `HttpExceptionFilter` 与 best-effort `AuditInterceptor` 的错误识别，确保
-冲突在响应和失败审计中都表现为 409/`IDEMPOTENCY_CONFLICT`，不得被后者误记为 500。当前全局 Filter
-已经识别 `ConcurrencyError`，但 `AuditInterceptor` 仍只识别 `HttpException`，这是阶段 A（平台闭环）必须修复并测试
-的现存缺口。成功重放不再写第二条业务成功审计；重放次数通过独立指标观测，不伪造一次新的业务动作。
+冲突在响应和失败审计中都表现为 409/`IDEMPOTENCY_CONFLICT`，不得被后者误记为 500。当前全局 Filter 与
+`AuditInterceptor` 均已识别这些协议无关错误。成功重放不再写第二条业务成功审计；重放次数通过独立指标
+观测，不伪造一次新的业务动作。
+
+错误提示同样必须以服务端稳定 code 为依据。管理端全局 HTTP 错误处理器统一映射
+`IDEMPOTENCY_CONFLICT`、`IDEMPOTENCY_STORAGE_RETRYABLE`、`IDEMPOTENCY_RESULT_CORRUPT`；业务组件不得
+因端点启用了幂等而给普通 `INTERNAL_SERVER_ERROR` 追加幂等诊断。页面保留 K1 属于防重复恢复策略，不是
+错误来源判定。
 
 ## 9. 前端键生命周期
 
@@ -447,6 +460,7 @@ async function submit(workOrderId, payload) {
   给出。漏掉任一字段会让内容已变化的请求错误复用旧键并得到 409；
 - 用户会话切换必须销毁旧意图，服务端专有的 `actorId` 仍由后端指纹负责；
 - Axios 自动重试必须复用调用方已经放入请求配置的同一键；请求 interceptor 不得生成 UUID；
+  幂等写请求只在无响应或 `502/503/504` 时自动重试，明确普通 500 不自动重试；
   `IDEMPOTENCY_RESULT_CORRUPT` 是确定性失败，请求层必须跳过自动重试（同键重试必然再次失败），立即交回
   composable 阻塞意图；
 - 接口若明确返回“仍在处理”，该结果仍属于未闭环，后续重试继续使用原键。当前单事务方案尚未定义

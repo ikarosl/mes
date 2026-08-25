@@ -72,18 +72,28 @@ describe('request errors', () => {
 });
 
 describe('unsafe request auto-retry', () => {
-  it('auto-retries a generic 5xx for an unsafe request up to retryTimes', async () => {
+  it('does NOT auto-retry a deterministic 500 for an unsafe request', async () => {
+    const { adapter, calls } = failingAdapter(500);
+    const client = createRequestClient();
+    const retryConfig: RetryRequestConfig = { adapter, retryUnsafe: true, retryTimes: 2 };
+    const error = await client.post('/x', {}, retryConfig).catch((err: unknown) => err);
+
+    expect(calls).toHaveLength(1);
+    expect((error as AxiosError).response?.status).toBe(500);
+  });
+
+  it('auto-retries a temporary 503 for an unsafe request up to retryTimes', async () => {
     vi.useFakeTimers();
     try {
-      const { adapter, calls } = failingAdapter(500);
+      const { adapter, calls } = failingAdapter(503);
       const client = createRequestClient();
       const retryConfig: RetryRequestConfig = { adapter, retryUnsafe: true, retryTimes: 2 };
-      const pending = client.get('/x', retryConfig).catch((error: unknown) => error);
+      const pending = client.post('/x', {}, retryConfig).catch((error: unknown) => error);
       await vi.runAllTimersAsync();
       const error = await pending;
 
       expect(calls).toHaveLength(3); // 首次 + 2 次自动重试（复用同一请求配置/同一幂等键）
-      expect((error as AxiosError).response?.status).toBe(500);
+      expect((error as AxiosError).response?.status).toBe(503);
     } finally {
       vi.useRealTimers();
     }

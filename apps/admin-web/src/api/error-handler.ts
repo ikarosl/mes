@@ -1,4 +1,9 @@
 import type { AxiosInstance } from 'axios';
+import {
+  CONCURRENCY_ERROR_CODES,
+  IDEMPOTENCY_RESULT_CORRUPT,
+  IDEMPOTENCY_STORAGE_RETRYABLE,
+} from '@company/constants';
 import { RequestError, toRequestError, type RetryRequestConfig } from '@company/request';
 import { isHttpErrorHandled, markHttpErrorHandled } from './http-error-state';
 
@@ -60,5 +65,18 @@ export const handleHttpError = (
     options.notify('请求超时，请稍后重试');
     return;
   }
-  options.notify(requestError.message || '操作失败，请稍后重试');
+  options.notify(httpErrorMessage(requestError));
+};
+
+const httpErrorMessage = (error: RequestError): string => {
+  const requestReference = error.requestId ? `（请求编号：${error.requestId}）` : '';
+  if (error.code === CONCURRENCY_ERROR_CODES.idempotencyConflict)
+    return `本次提交标识已用于不同内容，请刷新数据后重新操作${requestReference}`;
+  if (error.code === IDEMPOTENCY_STORAGE_RETRYABLE)
+    return `提交服务暂时不可用，请稍后重试${requestReference}`;
+  if (error.code === IDEMPOTENCY_RESULT_CORRUPT)
+    return `服务端保存的提交结果异常，请联系管理员核对业务结果${requestReference}`;
+  if (error.code === 'INTERNAL_SERVER_ERROR' || error.status === 500)
+    return `${error.message || '服务器内部错误，请稍后重试'}${requestReference}`;
+  return error.message || '操作失败，请稍后重试';
 };
