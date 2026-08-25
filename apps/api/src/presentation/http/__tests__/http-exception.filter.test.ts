@@ -1,5 +1,6 @@
-import { BadRequestException } from '@nestjs/common';
-import { describe, expect, it, vi } from 'vitest';
+import { BadRequestException, Logger } from '@nestjs/common';
+import { DatabaseError } from '@company/database';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { HttpExceptionFilter } from '../http-exception.filter.js';
 import { ConcurrencyError } from '../../../common/persistence/optimistic-lock.js';
 import { IdempotencyStorageError } from '../../../common/idempotency/idempotency.errors.js';
@@ -20,6 +21,8 @@ const invoke = (exception: unknown, url = '/api/system/users') => {
 };
 
 describe('HttpExceptionFilter', () => {
+  afterEach(() => vi.restoreAllMocks());
+
   it('returns one safe envelope for expected HTTP exceptions', () => {
     const { json, status, setHeader } = invoke(new BadRequestException('参数错误'));
 
@@ -62,6 +65,31 @@ describe('HttpExceptionFilter', () => {
         message: '服务器内部错误，请稍后重试',
       }),
     );
+  });
+
+  it('logs safe exception types, MySQL fields, stage and redacted stack for unexpected errors', () => {
+    const cause = Object.assign(new Error('SQL contains a secret value'), {
+      code: 'ER_CHECK_CONSTRAINT_VIOLATED',
+      errno: 3819,
+      sqlState: 'HY000',
+      sqlMessage: 'secret SQL text',
+    });
+    const error = new DatabaseError(cause, '数据库查询失败');
+    const log = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+
+    invoke(error, '/api/production/abnormal-dispositions/2/actions/confirm?token=secret');
+
+    expect(log).toHaveBeenCalledOnce();
+    const [message, stack] = log.mock.calls[0]!;
+    expect(message).toContain('exceptionType=DatabaseError');
+    expect(message).toContain('causeType=Error');
+    expect(message).toContain('stage=query');
+    expect(message).toContain('code=ER_CHECK_CONSTRAINT_VIOLATED');
+    expect(message).toContain('errno=3819');
+    expect(message).toContain('sqlState=HY000');
+    expect(message).toContain('path=/api/production/abnormal-dispositions/2/actions/confirm');
+    expect(`${message}\n${stack}`).not.toContain('secret');
+    expect(stack).toContain('DatabaseError: [message redacted]');
   });
 
   it('maps retryable idempotency storage failures to 503 with a stable code', () => {
