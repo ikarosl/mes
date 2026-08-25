@@ -26,6 +26,18 @@ const SAFE_RETRY_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 export const canRetryRequest = (method: string | undefined, retryUnsafe = false) =>
   retryUnsafe || SAFE_RETRY_METHODS.has((method ?? 'GET').toUpperCase());
 
+const canRetryResponse = (error: AxiosError, config: InternalRetryConfig): boolean => {
+  // 没有收到响应时，服务端是否已处理未知；显式启用幂等重试的写请求必须复用原键重试。
+  if (!error.response) return true;
+
+  const status = error.response.status;
+  if (SAFE_RETRY_METHODS.has((config.method ?? 'GET').toUpperCase())) return status >= 500;
+
+  // 写请求的普通 500 通常是确定性代码/数据错误，立即重复只会制造噪声。仅重试常见的
+  // 网关/临时不可用响应；调用方只有显式设置 retryUnsafe 时才会到达此分支。
+  return status === 502 || status === 503 || status === 504;
+};
+
 /**
  * 幂等结果损坏（500 IDEMPOTENCY_RESULT_CORRUPT）是确定性服务端数据错误：同键重试必然再次失败，
  * 且首次结果是否成功不可知，必须交由上层提示人工处理。请求层不得把它当普通 5xx 自动重试。
@@ -78,7 +90,7 @@ export const createRequestClient = (
         !config.skipRetry &&
         canRetryRequest(config.method, config.retryUnsafe) &&
         (config.retryCount ?? 0) < attempts &&
-        (!error.response || error.response.status >= 500) &&
+        canRetryResponse(error, config) &&
         !isCorruptResult(error)
       ) {
         config.retryCount = (config.retryCount ?? 0) + 1;

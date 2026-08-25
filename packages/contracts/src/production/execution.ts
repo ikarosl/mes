@@ -45,6 +45,7 @@ export interface ProductionWorkerTaskItem {
   productCode: string;
   productName: string;
   stepOrder: number;
+  hasPreviousStep: boolean;
   stepCode: string;
   stepName: string;
   sopFileName: string | null;

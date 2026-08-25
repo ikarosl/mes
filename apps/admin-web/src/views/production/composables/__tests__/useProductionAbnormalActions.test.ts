@@ -52,7 +52,7 @@ describe('useProductionAbnormalActions', () => {
     const { actions, handlers } = createActions();
     await handlers.handleRejectDisposition(disposition as never, '原因');
     expect(actions.rejectDisposition).toHaveBeenCalledWith(disposition, '原因');
-    expect(EMessage.success).toHaveBeenCalledWith('异常处置已驳回');
+    expect(EMessage.success).toHaveBeenCalledWith('异常报工已冲销并退回重报');
   });
 
   it('approves the scrap supplement with the staged plan version and reports success', async () => {

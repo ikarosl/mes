@@ -159,6 +159,7 @@ effective_abnormal = SUM(normal.abnormal_quantity) - SUM(reversal.abnormal_quant
 
 - 普通报工只插入 `normal` 事实，不得覆盖同工序的历史行。
 - 员工任务页把普通报工拆成“正常报工”和“异常报工”两个独立业务意图。普通报工创建命令必须保证 `normal_quantity` 与 `abnormal_quantity` 恰好只有一个大于 `0`：正常报工固定异常量为 `0`，异常报工固定正常量为 `0` 并要求填写 `abnormal_origin`。同一批现场结果包含正常和异常数量时，应连续提交两条独立事实，不得在一次普通报工中混报。
+- 冻结路线首工序不存在前置工序，异常报工只能选择 `current_step`；前端不得展示 `previous_step` 选项，后端必须根据同批次冻结工序顺序再次校验并拒绝绕过前端的请求。不得只按 `step_order_snapshot = 1` 判断首工序，应以该批次按 `step_order_snapshot,id` 排序后的首条工序为准，否则会留下无法确定前置补料计算范围的异常事实。
 - 上述互斥规则属于员工普通报工命令，不追加为 `batch_step_reports` 的全表 `CHECK`。原因是本表还承载历史混合报工的冲销/更正以及返工整单完成事实；返工完成仍允许正常量和再次异常量同时大于 `0`，且两者合计必须等于整笔返工数量。
 - 冲销只能全量冲销一条仍有效的 `normal` 事实，冲销数量、正常数量、异常数量和单位必须与原事实一致；禁止部分冲销、冲销冲销行或重复冲销。
 - 更正不是先冲销后由客户端另发一次普通报工。单个更正命令必须同时插入冲销行和新的 `normal` 行；新行以 `replaces_report_id` 指向被更正的原行。任一校验、审计或结果保存失败时全部回滚。
@@ -180,6 +181,7 @@ effective_abnormal = SUM(normal.abnormal_quantity) - SUM(reversal.abnormal_quant
 - 当前工序投入放行量 `released_input[i]`：首工序等于批次计划量加上全路线可执行补产授权量；后续工序只读取紧邻前工序已经形成的正常产出。若紧邻前工序无需报工，则必须等待其本轮显式完成，再取该前工序当前 `required_normal`。来源工序不能因自己的报废审批直接获得额度，必须等补产对象实际走完全部上游工序。
 - 物料补料需求数量由管理员填写，只决定补什么料、补多少料；产品补产数量来自不可变授权的 `authorized_quantity`，两者不得相乘或互相冒充。
 - 直接报工有效总量 `effective_direct_reported` 只汇总操作员普通报工及其冲销/替代，不包含被 `rework_records.completed_report_id` 引用的返工完成报工。返工完成报工继续计入本工序总 `effective_normal/effective_abnormal`，但它是在重新处理原异常对象，不能再次消耗普通投入放行量。
+- 令 `rejected_abnormal_reversal[i]` 表示本次“驳回并退回重报”为工序 `i` 追加的员工纯异常报工全量冲销量。它只用于说明本次事务引起的有效直接报工量变化，不是数据库中的独立额度字段，也不属于报废补产授权 `S[j]`。该值等于来源异常报工的 `reported_quantity`；历史混合报工、返工完成事实和更正替代事实不能使用该命令，因此不进入此变量。
 
 ```text
 Q                          = production_batches.planned_quantity
@@ -201,9 +203,22 @@ available_report[i]        = MAX(
                                released_input[i] - effective_direct_reported[i]
                              )
 
+effective_direct_reported_after_reject[i]
+                           = effective_direct_reported_before_reject[i]
+                             - rejected_abnormal_reversal[i]
+
+available_report_after_reject[i]
+                           = MAX(
+                               0,
+                               released_input[i]
+                                 - effective_direct_reported_after_reject[i]
+                             )
+
 current_submit.normal_quantity
   + current_submit.abnormal_quantity <= available_report[i]
 ```
+
+`rejected_abnormal_reversal[i]` 不是在查询时额外加回 `available_report[i]` 的第二份额度。驳回事务写入的 `reversal` 已按负号参与 `effective_direct_reported[i]` 聚合，所以上述 `after_reject` 公式只是状态变化的展开说明；实际查询仍统一使用 `released_input[i] - effective_direct_reported[i]`，不得再叠加该变量造成重复返还。驳回也不会改变 `released_input[i]`、`required_normal[i]` 或任何 `batch_step_scrap_reproduction_authorization`。
 
 数据库字段口径必须明确：系统没有名为“投入上限”的可写列，也不会把 `6` 回写到 `production_batches` 或 `batch_step_records`。`5 -> 6` 来自以下事实关联：
 
@@ -308,17 +323,19 @@ current_step_released_quantity = effective_normal
 - `CHECK (version >= 0)`
 - `pending_review` 必须满足 `disposition_type/reviewed_by/reviewed_at` 均为空
 - `approved` 必须满足 `disposition_type/reviewed_by/reviewed_at` 均非空
-- `rejected/cancelled` 必须满足 `disposition_type` 为空且 `reviewed_by/reviewed_at` 非空；状态本身不删除来源报工事实，来源事实是否有效只由冲销链决定
+- `rejected/cancelled` 必须满足 `disposition_type` 为空且 `reviewed_by/reviewed_at` 非空；`rejected` 命令必须同时追加来源报工冲销，`cancelled` 状态本身不改变来源事实；来源事实是否有效始终只由冲销链决定
 - 索引：`INDEX (batch_step_record_id, review_status, created_at)`、`INDEX (production_batch_id, review_status, created_at)`
 
 业务规则：
 
 - 创建处置单前，application 必须确认来源是仍有效的 `normal` 报工且 `abnormal_quantity > 0`；冲销行和纯正常报工不得创建处置单。
-- 普通状态转换为 `pending_review -> approved/rejected/cancelled`。`approved` 表示异常属实并选择返工或报废；`rejected` 只用于管理员确认来源报工存在填写错误，并且必须通过下述“驳回并更正”命令进入；`cancelled` 只用于来源报工已被其他合法冲销链终止后的处置单收口。终态处置单不得恢复为 `pending_review`。
+- 普通状态转换为 `pending_review -> approved/rejected/cancelled`。`approved` 表示异常属实并选择返工或报废；`rejected` 只用于管理员确认整笔员工异常报工的数量或异常来源填写错误，并通过下述“驳回并退回重报”命令进入；`cancelled` 只用于来源报工已被其他合法冲销链终止后的处置单收口。终态处置单不得恢复为 `pending_review`。
 - 审批使用 `version` 乐观锁。批准为 `rework` 时，在同一事务创建一条以本处置单为来源的 `rework_records`；批准为 `scrap` 时，审批请求必须选择物料计算截止工序并提交至少一条人工补料需求，在同一事务创建 `batch_step_scrap_records`、`batch_step_scrap_reproduction_authorization`、`production_material_supplement` 和 `scrap_supplement` 需求。两个处置目标均对来源处置单建立唯一约束。
 - 管理端批准报废前必须经过“编辑需求 -> 暂存需求 -> 复核并确定报废生成”三段交互。暂存写入 `production_scrap_supplement_plan/_line` 服务端草稿，不创建正式 `production_item_demand`、不改变处置状态，也不允许分配或出库；管理员可以重新打开或返回继续编辑。只有最终点击“确定报废并生成”才执行上一条所述的同事务写入，并把方案转为 `confirmed`。草稿查询、乐观锁整体保存、最终确认事务与管理端恢复接线已经落地。
-- 管理端不得提供“只把处置单改成 `rejected`”的空驳回，也不得物理删除来源报工。管理员选择“驳回并更正”时必须填写原因和更正后的正常/异常数量；后端在一个事务内锁定来源报工与处置单，追加原报工全量冲销，并在更正后总量大于 `0` 时追加替代报工，再把原处置单转为 `rejected`。替代报工仍有异常数量时必须生成一张新的 `pending_review` 处置单。若整笔报工均为误录，更正结果允许为 `0`，此时只追加冲销、不追加替代事实。
-- “驳回并更正”是异常审批场景的专用级联更正命令，必须复用普通更正的上下游数量校验，并额外处理来源处置单；冲销、替代报工、新待处置单、工序状态重算、原处置单终结、成功审计和幂等结果同事务提交。存在已批准返工、报废、补料、出库或其他不可逆下游依赖时拒绝，不允许删除或覆盖历史事实。已批准处置的审批错误留给后续独立业务冲销设计修正。
+- 员工普通报工必须把正常和异常分成不同请求；每张异常报工只能选择一个 `abnormal_origin`。同一来源下更细的异常类别当前由上报人整笔判断并写入说明，系统尚无结构化异常类型字典；混入不同来源、数量填错或整笔误报时，管理员必须驳回整笔，不允许部分处置。
+- 管理端不得提供“只把处置单改成 `rejected`”的空驳回，也不得物理删除来源报工。“驳回并退回重报”必须填写原因；后端在一个事务内锁定来源员工异常报工与处置单，追加原报工的全量同值冲销，把原处置单转为 `rejected`，递增工序版本并写成功审计。该命令不追加正常报工、替代报工、报废事实或补产授权；员工随后按正确数量和异常来源重新提交，形成可追溯的新报工及新待处置单。
+- “驳回并退回重报”只适用于 `normal_quantity = 0` 的员工直接异常报工。返工完成事实或历史正常/异常混合事实必须拒绝该命令，并使用保留冲销/替代链的专用报工更正流程；存在已批准返工、报废、补料、出库或其他不可逆下游依赖时同样拒绝。已批准处置的审批错误留给后续独立业务冲销设计修正。
+- 修复迁移只为历史上已经标记为 `rejected`、仍有效、`normal_quantity = 0`、不是更正替代事实且不属于返工完成的直接异常报工追加确定性的全量冲销。历史混合及更正链事实不做猜测性回填。
 - 追加 migration 会为未被冲销的历史有效异常报工生成 `LEGACY-BSAD-{reportId}` 待审批处置单；已被全量冲销的异常报工不会生成待办。
 - 报工冲销或更正必须检查本表及其下游依赖；存在依赖时遵守本章“下游依赖与连带冲销升级边界”。
 - 页面上的待审批数和异常标志从本表查询派生，不写回 `batch_step_records`。未来需要同一次异常报工拆分多种处置时，应追加处置明细表并版本化调整当前唯一整体处置规则，不得修改原报工事实。

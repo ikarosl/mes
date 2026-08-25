@@ -91,10 +91,14 @@
         >
           <el-radio-group v-model="form.abnormalOrigin">
             <el-radio value="current_step">当前工序异常</el-radio>
-            <el-radio value="previous_step">前置工序异常</el-radio>
+            <el-radio
+              v-if="task.hasPreviousStep"
+              value="previous_step"
+              >前置工序异常</el-radio
+            >
           </el-radio-group>
           <div class="form-tip">
-            前置工序异常表示在当前工序接手时发现上游问题；管理员判定报废时还需选择实际重制与补料的截止工序。
+            {{ abnormalOriginTip }}
           </div>
         </el-form-item>
         <el-form-item :label="mode === 'normal' ? '备注' : '异常说明（选填）'">
@@ -151,7 +155,12 @@ const form = reactive<{
   quantity: number;
   abnormalOrigin: BatchStepAbnormalOrigin | null;
   remark: string;
-}>({ quantity: 0, abnormalOrigin: null, remark: '' });
+}>({
+  quantity: 0,
+  abnormalOrigin:
+    props.mode === 'abnormal' && props.task && !props.task.hasPreviousStep ? 'current_step' : null,
+  remark: '',
+});
 const dialogTitle = computed(() => (props.mode === 'normal' ? '正常报工' : '异常报工'));
 const submitLabel = computed(() => (props.mode === 'normal' ? '提交正常报工' : '提交异常报工'));
 const remaining = computed(() =>
@@ -162,6 +171,11 @@ const remaining = computed(() =>
   ),
 );
 const available = computed(() => Math.max(0, Number(props.task?.availableNormalQuantity ?? 0)));
+const abnormalOriginTip = computed(() =>
+  props.task?.hasPreviousStep
+    ? '前置工序异常表示在当前工序接手时发现上游问题；管理员判定报废时还需选择实际重制与补料的截止工序。'
+    : '当前为首道工序，只能上报当前工序发生的异常。',
+);
 const quantityTip = computed(() =>
   props.task?.supplementBlockedReason
     ? props.task.supplementBlockedReason
@@ -179,7 +193,9 @@ const canSubmit = computed(
     Number.isInteger(form.quantity) &&
     form.quantity > 0 &&
     form.quantity <= available.value &&
-    (props.mode === 'normal' || form.abnormalOrigin !== null),
+    (props.mode === 'normal' ||
+      (form.abnormalOrigin !== null &&
+        (form.abnormalOrigin !== 'previous_step' || Boolean(props.task?.hasPreviousStep)))),
 );
 
 watch(
@@ -187,7 +203,8 @@ watch(
   ([open]) => {
     if (!open) return;
     form.quantity = 0;
-    form.abnormalOrigin = null;
+    form.abnormalOrigin =
+      props.mode === 'abnormal' && !props.task?.hasPreviousStep ? 'current_step' : null;
     form.remark = '';
   },
 );

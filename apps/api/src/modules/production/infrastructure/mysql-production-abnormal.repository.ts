@@ -48,10 +48,13 @@ type ReworkRow = RowDataPacket & {
 };
 
 type DispositionSourceRow = DispositionRow & {
+  reported_quantity: string;
+  normal_quantity: string;
   abnormal_quantity: string;
   unit_snapshot: string;
   report_type: 'normal' | 'reversal';
   is_effective: number;
+  is_direct_report: number;
   responsible_user_id: number | null;
 };
 
@@ -146,6 +149,13 @@ export class MysqlProductionAbnormalRepository extends ProductionAbnormalReposit
       if (source.review_status !== 'pending_review')
         throw new ProductionDomainError('INVALID_STATE', '只有待处置异常可以驳回');
       if (source.version !== payload.version) throw concurrentDisposition();
+      requireRejectableDirectAbnormalSource(source);
+      const reversalReportId = await insertRejectedSourceReversal(
+        connection,
+        source,
+        payload.reason,
+        actorId,
+      );
       const [updated] = await connection.execute<ResultSetHeader>(
         `UPDATE batch_step_abnormal_dispositions
          SET review_status='rejected',disposition_type=NULL,reviewed_by=?,reviewed_at=NOW(),remark=?,version=version+1,updated_by=?
@@ -155,6 +165,8 @@ export class MysqlProductionAbnormalRepository extends ProductionAbnormalReposit
       if (updated.affectedRows !== 1) throw concurrentDisposition();
       await audit(connection, context, 'production-abnormal.reject', dispositionId, {
         reason: payload.reason,
+        sourceReportId: String(source.batch_step_report_id),
+        reversalReportId,
       });
       return mapDisposition(await selectDispositionSource(connection, dispositionId));
     });
@@ -300,6 +312,46 @@ const requireEffectiveAbnormalSource = (source: DispositionSourceRow): void => {
     integerQuantity(source.abnormal_quantity) <= 0
   )
     throw new ProductionDomainError('INVALID_STATE', '来源异常报工已失效或没有异常数量');
+};
+
+const requireRejectableDirectAbnormalSource = (source: DispositionSourceRow): void => {
+  requireEffectiveAbnormalSource(source);
+  if (!source.is_direct_report || integerQuantity(source.normal_quantity) > 0)
+    throw new ProductionDomainError(
+      'INVALID_STATE',
+      '该异常来自返工完成或历史混合报工，不能整笔驳回，请使用报工更正流程',
+    );
+};
+
+const insertRejectedSourceReversal = async (
+  connection: PoolConnection,
+  source: DispositionSourceRow,
+  reason: string,
+  actorId: string,
+): Promise<string> => {
+  const [result] = await connection.execute<ResultSetHeader>(
+    `INSERT INTO batch_step_reports
+     (report_no,production_batch_id,batch_step_record_id,report_type,reversal_of_report_id,replaces_report_id,reported_quantity,normal_quantity,abnormal_quantity,abnormal_origin,unit_snapshot,remark,created_by)
+     VALUES (?,?,?,'reversal',?,NULL,?,?,?,?,?,?,?)`,
+    [
+      `SR-${Date.now()}-${randomUUID().slice(0, 12)}`,
+      source.production_batch_id,
+      source.batch_step_record_id,
+      source.batch_step_report_id,
+      source.reported_quantity,
+      source.normal_quantity,
+      source.abnormal_quantity,
+      source.abnormal_origin,
+      source.unit_snapshot,
+      reason,
+      actorId,
+    ],
+  );
+  await connection.execute(
+    'UPDATE batch_step_records SET version=version+1,updated_by=? WHERE id=?',
+    [actorId, source.batch_step_record_id],
+  );
+  return String(result.insertId);
 };
 
 const selectRework = async (
@@ -460,8 +512,11 @@ const REWORK_SELECT = `SELECT rw.id,rw.rework_no,rw.abnormal_disposition_id,rw.p
 
 const DISPOSITION_SOURCE_SELECT = `SELECT d.id,d.disposition_no,d.production_batch_id,
   d.batch_step_record_id,d.batch_step_report_id,d.review_status,d.disposition_type,d.remark,d.version,
-  d.created_at,r.abnormal_quantity,r.abnormal_origin,r.unit_snapshot,r.report_type,
+  d.created_at,r.reported_quantity,r.normal_quantity,r.abnormal_quantity,r.abnormal_origin,r.unit_snapshot,r.report_type,
   CASE WHEN NOT EXISTS (SELECT 1 FROM batch_step_reports reversal WHERE reversal.reversal_of_report_id=r.id) THEN 1 ELSE 0 END is_effective,
+  CASE WHEN r.replaces_report_id IS NULL
+    AND NOT EXISTS (SELECT 1 FROM rework_records completed_rework WHERE completed_rework.completed_report_id=r.id)
+    THEN 1 ELSE 0 END is_direct_report,
   sr.responsible_user_id
   FROM batch_step_abnormal_dispositions d
   JOIN batch_step_reports r ON r.id=d.batch_step_report_id

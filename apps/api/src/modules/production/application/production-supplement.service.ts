@@ -73,12 +73,18 @@ export class ProductionSupplementService {
     payload: ConfirmProductionScrapSupplementPlanPayload,
     context: IdempotentCommandContext,
   ) {
+    // HTTP ValidationPipe 会把请求体转换为 DTO 类实例；幂等指纹只接受稳定的普通 JSON 结构。
+    // 在应用层显式挑选参与命令语义的字段，也避免未来 DTO 新增展示/传输字段时意外改变既有指纹。
+    const normalized = {
+      version: payload.version,
+      dispositionVersion: payload.dispositionVersion,
+    };
     const execution = await this.idempotency.execute({
       scope: CONFIRM_SCRAP_SUPPLEMENT_PLAN_IDEMPOTENCY_SCOPE,
       key: context.idempotencyKey,
       actorId: context.actorId,
       requestId: context.requestId,
-      request: { params: { dispositionId }, body: payload },
+      request: { params: { dispositionId }, body: normalized },
       resultCodec: productionSupplementResultCodec,
       handler: async () => {
         const plan = await this.repository.getPlan(dispositionId);
@@ -98,7 +104,7 @@ export class ProductionSupplementService {
         const result = await this.repository.approve(
           dispositionId,
           {
-            version: payload.dispositionVersion,
+            version: normalized.dispositionVersion,
             materialEndStepRecordId: plan.materialEndStepRecordId,
             details: plan.lines.map((line) => ({
               originalDemandId: line.originalDemandId,
@@ -112,7 +118,7 @@ export class ProductionSupplementService {
             ip: context.ip,
             userAgent: context.userAgent,
           },
-          { planId: plan.planId, version: payload.version },
+          { planId: plan.planId, version: normalized.version },
         );
         const demands = await this.enrich(
           result.supplement.demands.map((line) => ({

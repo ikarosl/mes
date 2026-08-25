@@ -46,7 +46,7 @@
             type="danger"
             :loading="pendingKeys.has(`reject:${item.dispositionId}`)"
             @click="openReview(item, 'reject')"
-            >驳回</el-button
+            >驳回并退回重报</el-button
           >
         </div>
       </div>
@@ -86,7 +86,7 @@
 
     <el-dialog
       v-model="reviewVisible"
-      :title="reviewMode === 'rework' ? '批准异常返工' : '驳回异常处置'"
+      :title="reviewMode === 'rework' ? '批准异常返工' : '驳回异常并退回重报'"
       width="min(640px, 75vw)"
     >
       <el-alert
@@ -97,7 +97,7 @@
         :title="
           reviewMode === 'rework'
             ? '批准后将按来源异常数量创建整单返工，固定返回当前工序并沿用当前负责人。'
-            : '驳回只结束当前处置待办，不会消除原异常报工事实。'
+            : '驳回将全量冲销本次异常报工，不生成正常报工或补产授权；员工需要按正确数量和异常来源重新报工。'
         "
       />
       <el-form label-position="top">
@@ -120,7 +120,7 @@
           :type="reviewMode === 'rework' ? 'primary' : 'danger'"
           :disabled="reviewMode === 'reject' && !reviewRemark.trim()"
           @click="submitReview"
-          >{{ reviewMode === 'rework' ? '确认批准返工' : '确认驳回' }}</el-button
+          >{{ reviewMode === 'rework' ? '确认批准返工' : '确认驳回并退回' }}</el-button
         >
       </template>
     </el-dialog>
@@ -266,7 +266,7 @@
       </template>
       <template v-else-if="stagedSupplement">
         <el-alert
-          v-if="supplementIntentStatus !== 'idle'"
+          v-if="['blocked', 'expired'].includes(supplementIntentStatus)"
           class="dialog-tip"
           type="warning"
           :closable="false"
@@ -445,6 +445,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue';
 import { BATCH_STEP_ABNORMAL_REVIEW_STATUS_LABELS, REWORK_STATUS_LABELS } from '@company/constants';
+import { RequestError } from '@company/request';
 import type {
   BatchStepAbnormalDispositionItem,
   BatchStepReportItem,
@@ -587,10 +588,8 @@ const canStageSupplement = computed(
 );
 const supplementIntentMessage = computed(() => {
   if (supplementIntentStatus.value === 'blocked')
-    return '上次最终确认的幂等结果已损坏。请先在异常处置和正式补料需求中核对结果；确认未生成后，放弃旧提交再重新编辑。';
-  if (supplementIntentStatus.value === 'expired')
-    return '上次最终确认已超过安全重试窗口。请先核对异常处置和正式补料需求；确认未生成后，放弃旧提交再重新编辑。';
-  return '上次最终确认结果尚未明确。系统已查询服务端方案但仍未确认；可保持当前方案重试，修改前必须先核对结果并放弃旧提交。';
+    return '服务端保存的上次确认结果异常，请联系管理员并核对异常处置和正式补料需求。';
+  return '上次确认已超过可安全重试时间，请先核对异常处置和正式补料需求。';
 });
 const openReview = (item: BatchStepAbnormalDispositionItem, mode: 'rework' | 'reject') => {
   selectedDisposition.value = item;
@@ -634,26 +633,25 @@ const openSupplement = async (item: BatchStepAbnormalDispositionItem) => {
       materialEndStepRecordId.value = plan.materialEndStepRecordId;
       supplementRemark.value = plan.remark ?? '';
       await loadSupplementCandidates(plan);
-      if (supplementIntentStatus.value !== 'idle') {
-        const endStep = allowedEnds.find(
-          (step) => step.stepRecordId === plan.materialEndStepRecordId,
-        );
-        stagedSupplement.value = {
-          materialEndStepRecordId: plan.materialEndStepRecordId,
-          materialEndStepLabel: endStep
-            ? `${endStep.stepOrder}. ${endStep.stepName}`
-            : plan.materialEndStepRecordId,
-          lines: plan.lines.map((line) => ({
-            originalDemandId: line.originalDemandId,
-            itemCode: line.itemCode,
-            itemName: line.itemName,
-            quantity: Number(line.plannedQuantity),
-            unit: line.unit,
-          })),
-          remark: plan.remark ?? '',
-        };
-        supplementStage.value = 'review';
-      }
+      const endStep = allowedEnds.find(
+        (step) => step.stepRecordId === plan.materialEndStepRecordId,
+      );
+      stagedSupplement.value = {
+        materialEndStepRecordId: plan.materialEndStepRecordId,
+        materialEndStepLabel: endStep
+          ? `${endStep.stepOrder}. ${endStep.stepName}`
+          : plan.materialEndStepRecordId,
+        lines: plan.lines.map((line) => ({
+          originalDemandId: line.originalDemandId,
+          itemCode: line.itemCode,
+          itemName: line.itemName,
+          quantity: Number(line.plannedQuantity),
+          unit: line.unit,
+        })),
+        remark: plan.remark ?? '',
+      };
+      // 已有服务端草稿时先展示不可编辑的复核页，避免打开弹窗即误改已暂存需求。
+      supplementStage.value = 'review';
       return;
     }
     await loadSupplementCandidates();
@@ -744,9 +742,9 @@ const submitSupplement = async () => {
   try {
     await props.planConfirmer(supplementDisposition.value, persistedPlan.value.version);
     supplementVisible.value = false;
-  } catch {
-    supplementError.value =
-      '最终确认未完成。系统会保留原幂等提交；请按上方提示重试或核对结果后放弃旧提交。';
+  } catch (error) {
+    // HTTP 错误由全局处理器按服务端 code 统一提示；组件只补充尚未进入 HTTP 链路的本地失败。
+    if (!(error instanceof RequestError)) supplementError.value = '无法发起最终确认，请稍后重试。';
   } finally {
     supplementConfirming.value = false;
     supplementIntentStatus.value = supplementDisposition.value
@@ -759,7 +757,7 @@ const abandonSupplementIntent = async () => {
   if (!disposition) return;
   try {
     await RouteMessageBox.confirm(
-      '请确认你已在异常处置和正式补料需求中核对，本次最终确认没有成功。放弃后将不能再用原幂等键安全重试，重新提交可能生成重复业务事实。',
+      '请确认你已核对异常处置和正式补料需求。放弃后将无法继续复用本次提交标识，重新提交可能生成重复业务事实。',
       '放弃上次最终确认',
       { type: 'warning', confirmButtonText: '已核对，放弃旧提交' },
     );

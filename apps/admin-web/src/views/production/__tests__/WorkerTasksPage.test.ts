@@ -52,6 +52,7 @@ describe('WorkerTasksPage', () => {
       productCode: 'P-001',
       productName: '产品',
       stepOrder: 1,
+      hasPreviousStep: false,
       stepCode: 'CUT',
       stepName: '下料',
       sopFileName: 'SOP-v1.pdf',

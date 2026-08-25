@@ -17,6 +17,7 @@ const task = {
   productCode: 'P-1',
   productName: '产品',
   stepOrder: 1,
+  hasPreviousStep: false,
   stepCode: 'S-1',
   stepName: '切割',
   status: 'doing',
@@ -98,7 +99,10 @@ describe('BatchStepReportDialog', () => {
   });
 
   it('submits only the abnormal quantity with a required origin in abnormal mode', async () => {
-    const wrapper = mountDialog({ mode: 'abnormal' });
+    const wrapper = mountDialog({
+      mode: 'abnormal',
+      task: { ...task, hasPreviousStep: true } as never,
+    });
     const vm = wrapper.vm as unknown as {
       canSubmit: boolean;
       form: {
@@ -124,6 +128,22 @@ describe('BatchStepReportDialog', () => {
     ]);
   });
 
+  it('only allows current-step abnormal origin for the first route step', () => {
+    const wrapper = mountDialog({ mode: 'abnormal' });
+    const vm = wrapper.vm as unknown as {
+      canSubmit: boolean;
+      form: { quantity: number; abnormalOrigin: string | null };
+    };
+
+    expect(wrapper.text()).not.toContain('前置工序异常');
+    expect(wrapper.text()).toContain('当前为首道工序，只能上报当前工序发生的异常');
+    expect(vm.form.abnormalOrigin).toBe('current_step');
+    vm.form.quantity = 1;
+    expect(vm.canSubmit).toBe(true);
+    vm.form.abnormalOrigin = 'previous_step';
+    expect(vm.canSubmit).toBe(false);
+  });
+
   it('limits this normal report by upstream release without treating it as completion target', () => {
     const wrapper = mountDialog({});
     expect(wrapper.text()).toContain('达到当前放行量不会提前完成本工序');
@@ -131,7 +151,10 @@ describe('BatchStepReportDialog', () => {
   });
 
   it('counts abnormal quantity against the same released report capacity', () => {
-    const wrapper = mountDialog({ mode: 'abnormal' });
+    const wrapper = mountDialog({
+      mode: 'abnormal',
+      task: { ...task, hasPreviousStep: true } as never,
+    });
     const vm = wrapper.vm as unknown as {
       canSubmit: boolean;
       form: { quantity: number; abnormalOrigin: string | null };

@@ -29,7 +29,7 @@ export const useProductionAbnormalActions = (actions: Actions) => ({
   handleRejectDisposition: async (item: BatchStepAbnormalDispositionItem, reason: string) => {
     try {
       await actions.rejectDisposition(item, reason);
-      EMessage.success('异常处置已驳回');
+      EMessage.success('异常报工已冲销并退回重报');
     } catch (error) {
       EMessage.error(error, '异常驳回失败，请刷新后重试');
     }
