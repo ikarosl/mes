@@ -69,13 +69,15 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
         spec_values: string | object | null;
         status: number;
         material_count: number;
+        bom_locked_at: Date | null;
+        bom_locked_by: number | null;
         remark: string | null;
         updated_at: Date | null;
       })[]
     >(
       `SELECT p.id,p.item_code,p.product_name,p.category_id,c.category_code,c.category_name,c.item_kind,
                     p.default_route_id,r.route_name default_route_name,p.unit,p.acquire_method,p.spec_values,p.status,
-                    COUNT(pm.id) material_count,p.remark,p.updated_at
+                    COUNT(pm.id) material_count,p.bom_locked_at,p.bom_locked_by,p.remark,p.updated_at
              FROM products p JOIN product_categories c ON c.id=p.category_id
              LEFT JOIN process_routes r ON r.id=p.default_route_id AND r.is_deleted=0
              LEFT JOIN product_materials pm ON pm.product_id=p.id AND pm.is_deleted=0 AND pm.status=1
@@ -98,6 +100,8 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
       specValues: this.json<ProductListItem['specValues'][number]>(row.spec_values),
       status: row.status,
       materialCount: Number(row.material_count),
+      bomLockedAt: this.date(row.bom_locked_at),
+      bomLockedById: row.bom_locked_by === null ? null : String(row.bom_locked_by),
       remark: row.remark,
       updatedAt: this.date(row.updated_at),
     }));
@@ -157,7 +161,23 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
 
   async updateProduct(id: string, payload: ProductPayload, audit: CommandContext) {
     await withTransaction(this.pool, async (connection) => {
-      const before = await this.productRecord(connection, id);
+      const before = await this.productRecord(connection, id, true);
+      if (payload.itemCode !== before.item_code || payload.unit !== before.unit) {
+        throw new ProductDomainError(
+          'CONFLICT',
+          '产品编码和基础单位创建后不可修改；原则变化请新建产品',
+        );
+      }
+      if (
+        before.bom_locked_at !== null &&
+        (payload.categoryId !== String(before.category_id) ||
+          payload.acquireMethod !== before.acquire_method)
+      ) {
+        throw new ProductDomainError(
+          'CONFLICT',
+          'BOM 锁定后不能修改产品分类或获取方式；原则变化请新建产品',
+        );
+      }
       const category = await this.requireCategory(connection, payload.categoryId);
       if (payload.acquireMethod !== 'self_made' || category.item_kind === 'material') {
         const [[dependent]] = await connection.query<
@@ -197,7 +217,7 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
 
   async setProductStatus(id: string, status: number, audit: CommandContext) {
     await withTransaction(this.pool, async (connection) => {
-      const before = await this.productRecord(connection, id);
+      const before = await this.productRecord(connection, id, true);
       await connection.execute(
         'UPDATE products SET status=?,updated_by=? WHERE id=? AND is_deleted=0',
         [status, audit.actorId, id],
@@ -259,6 +279,12 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
   ) {
     await withTransaction(this.pool, async (connection) => {
       const product = await this.productRecord(connection, productId, true);
+      if (product.bom_locked_at !== null) {
+        throw new ProductDomainError(
+          'CONFLICT',
+          'BOM 已被生产任务引用并永久锁定；原则变化请新建产品和产品编码',
+        );
+      }
       requireConfigurableProduct({
         status: product.status,
         acquireMethod: product.acquire_method,
@@ -269,8 +295,19 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
       }
       const before = await this.listMaterialRecords(connection, productId);
       const desiredIds = items.map((item) => item.materialProductId);
-      for (const item of items)
-        await this.requireMaterialCandidate(connection, productId, item.materialProductId);
+      for (const item of items) {
+        const material = await this.requireMaterialCandidate(
+          connection,
+          productId,
+          item.materialProductId,
+        );
+        if (item.unit !== material.unit) {
+          throw new ProductDomainError(
+            'INVALID_MATERIAL',
+            'BOM 用量单位必须等于投入物料的基础单位',
+          );
+        }
+      }
       const removed = before.filter(
         (item) => !desiredIds.includes(String(item.material_product_id)),
       );
@@ -385,9 +422,11 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
         acquire_method: ProductListItem['acquireMethod'];
         status: number;
         default_route_id: number | null;
+        unit: string;
+        bom_locked_at: Date | null;
       })[]
     >(
-      `SELECT p.id,p.item_code,p.product_name,p.category_id,c.item_kind,p.acquire_method,p.status,p.default_route_id
+      `SELECT p.id,p.item_code,p.product_name,p.category_id,c.item_kind,p.acquire_method,p.status,p.default_route_id,p.unit,p.bom_locked_at
            FROM products p JOIN product_categories c ON c.id=p.category_id WHERE p.id=? AND p.is_deleted=0${lock ? ' FOR UPDATE' : ''}`,
       [id],
     );
@@ -406,6 +445,7 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
         'BOM 投入对象必须是已启用的物料或半成品，且不能引用产品自身',
       );
     }
+    return material;
   }
   private async listMaterialRecords(db: Db, productId: string) {
     const [rows] = await db.query<

@@ -76,6 +76,80 @@ describe('MySQL product adapters workflow transactions', () => {
     expect(String(query.mock.calls[0]?.[0])).toContain('p.default_route_id');
   });
 
+  it('returns persisted BOM lock facts in the product list projection', async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce([[{ total: 1 }], []])
+      .mockResolvedValueOnce([
+        [
+          {
+            id: 9,
+            item_code: 'FG-1',
+            product_name: '成品',
+            category_id: 3,
+            category_code: 'FG',
+            category_name: '成品',
+            item_kind: 'finished_product',
+            default_route_id: null,
+            default_route_name: null,
+            unit: 'pcs',
+            acquire_method: 'self_made',
+            spec_values: null,
+            status: 1,
+            material_count: 2,
+            bom_locked_at: new Date('2026-08-28T02:00:00Z'),
+            bom_locked_by: 7,
+            remark: null,
+            updated_at: null,
+          },
+        ],
+        [],
+      ]);
+    const repository = new MysqlProductCatalogRepository({ query } as never);
+
+    await expect(repository.listProducts({ page: 1, pageSize: 10 })).resolves.toMatchObject({
+      items: [{ id: '9', bomLockedAt: expect.any(String), bomLockedById: '7' }],
+    });
+    expect(String(query.mock.calls[1]?.[0])).toContain('p.bom_locked_at');
+  });
+
+  it('rejects every BOM replacement after the product has been locked by production', async () => {
+    const connection = {
+      beginTransaction: vi.fn(),
+      query: vi.fn().mockResolvedValue([
+        [
+          {
+            id: 9,
+            item_code: 'FG-1',
+            product_name: '成品',
+            category_id: 3,
+            item_kind: 'finished_product',
+            acquire_method: 'self_made',
+            status: 1,
+            default_route_id: null,
+            unit: 'pcs',
+            bom_locked_at: new Date('2026-08-28T02:00:00Z'),
+          },
+        ],
+        [],
+      ]),
+      execute: vi.fn(),
+      commit: vi.fn(),
+      rollback: vi.fn(),
+      release: vi.fn(),
+    };
+    const repository = new MysqlProductCatalogRepository({
+      getConnection: vi.fn().mockResolvedValue(connection),
+    } as never);
+
+    await expect(repository.replaceMaterials('9', [], commandContext)).rejects.toMatchObject({
+      code: 'CONFLICT',
+      message: expect.stringContaining('永久锁定'),
+    });
+    expect(connection.execute).not.toHaveBeenCalled();
+    expect(connection.rollback).toHaveBeenCalledOnce();
+  });
+
   it('returns a stable server-paginated route list', async () => {
     const query = vi
       .fn()

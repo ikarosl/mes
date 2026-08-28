@@ -1,4 +1,5 @@
 export { ProductModule } from './product.module.js';
+export { ProductProductionDefinitionCommand } from './application/product-production-definition.command.js';
 export {
   TechnicalFileContentQuery,
   type HistoricalTechnicalFileContent,

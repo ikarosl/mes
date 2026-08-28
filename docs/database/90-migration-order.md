@@ -31,6 +31,7 @@
 13g. 工单与生产批次追加可查询的取消/关闭终态事实，并从成功操作日志回填历史可恢复数据（`202608240002-production-terminal-facts`）
 13h. 入库、出库、退料、盘点和损耗单追加可查询的取消终态事实，出库单区分人工与生产任务级联来源（`202608240003-production-document-cancellation-facts`）
 13i. 为历史已驳回、仍有效的员工纯异常报工追加全量冲销事实（`202608250001-rejected-direct-abnormal-report-reversals`）
+13j. 产品追加不可逆 BOM 锁定事实，并从既有生产任务回填（`202608280001-product-bom-lock-facts`）
 14. inspection_records（过程检验和最终质量语义未闭环，暂不实施）
 15. finished_flow_records（质量放行和入库边界未闭环，暂不实施）
 16. 业务闭环后再创建必要的只读汇总视图
@@ -61,3 +62,5 @@
 `202608240003-production-document-cancellation-facts` 为 `inbound_order`、`outbound_order`、`return_order`、`stock_check_order` 和 `item_scrap` 追加取消原因、操作人和时间。`outbound_order.cancel_source` 区分人工取消与生产任务级联取消；级联路径继承生产任务取消原因。迁移从成功操作日志回填可靠的历史操作人和时间，并根据独立出库取消日志或生产任务日志中的 `cancelledPendingOutboundIds` 恢复出库单取消来源；历史原因不稳定可得，因此不虚构或回填原因。
 
 `202608250001-rejected-direct-abnormal-report-reversals` 衔接“驳回并退回重报”语义，只为历史上已标记 `rejected`、尚未冲销、正常数量为零、不是更正替代事实且不属于返工完成的员工直接异常报工追加全量同值冲销。迁移不创建正常替代报工、报废事实或补产授权，也不猜测处理历史混合报工及更正链。
+
+`202608280001-product-bom-lock-facts` 为 `products` 追加 `bom_locked_at/bom_locked_by`。迁移按每个产品最早创建的生产任务回填既有锁定事实；此后创建首个任务与写入锁定事实同事务完成。锁定不可逆，BOM 原地编辑接口必须拒绝所有后续写入。

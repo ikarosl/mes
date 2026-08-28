@@ -68,3 +68,4 @@ Access Token 只存在页面内存；刷新页面或打开新浏览器标签时�
 - 数据库设计：[docs/database/README.md](docs/database/README.md)
 - 管理端设计：[design.md](design.md)
 - 测试策略：[docs/testing-strategy.md](docs/testing-strategy.md)
+- 系统使用断言：[docs/system-usage-assertions.md](docs/system-usage-assertions.md)

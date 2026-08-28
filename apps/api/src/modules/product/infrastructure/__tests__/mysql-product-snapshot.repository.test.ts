@@ -187,6 +187,55 @@ describe('MysqlProductSnapshotRepository', () => {
     expect(connection.query.mock.calls[1]?.[1]).toEqual(['15', '9']);
     expect(connection.commit).toHaveBeenCalledOnce();
   });
+
+  it('locks a valid single BOM when the first production task is created', async () => {
+    const connection = transactionConnection();
+    connection.query
+      .mockResolvedValueOnce([[{ ...productRow, default_route_id: null }], []])
+      .mockResolvedValueOnce([[{ bom_locked_at: null }], []])
+      .mockResolvedValueOnce([
+        [
+          {
+            unit: 'kg',
+            material_unit: 'kg',
+            material_status: 1,
+            material_is_deleted: 0,
+            material_kind: 'material',
+            category_status: 1,
+            category_is_deleted: 0,
+          },
+        ],
+        [],
+      ]);
+    const repository = repositoryWith(connection);
+    const audit = { actorId: '7', requestId: 'req-1', ip: null, userAgent: null };
+
+    await expect(repository.lockBomForProductionTask('9', null, audit)).resolves.toBeNull();
+
+    expect(String(connection.execute.mock.calls[0]?.[0])).toContain('bom_locked_at=NOW()');
+    expect(String(connection.execute.mock.calls[1]?.[0])).toContain('INSERT INTO operation_logs');
+    expect(connection.commit).toHaveBeenCalledOnce();
+  });
+
+  it('rejects the first task when the product has no enabled BOM line', async () => {
+    const connection = transactionConnection();
+    connection.query
+      .mockResolvedValueOnce([[{ ...productRow, default_route_id: null }], []])
+      .mockResolvedValueOnce([[{ bom_locked_at: null }], []])
+      .mockResolvedValueOnce([[], []]);
+    const repository = repositoryWith(connection);
+
+    await expect(
+      repository.lockBomForProductionTask('9', null, {
+        actorId: '7',
+        requestId: 'req-1',
+        ip: null,
+        userAgent: null,
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_MATERIAL' });
+    expect(connection.execute).not.toHaveBeenCalled();
+    expect(connection.rollback).toHaveBeenCalledOnce();
+  });
 });
 
 const productRow = {

@@ -22,6 +22,7 @@ import { IdempotencyExecutor } from '../../../common/idempotency/idempotency-exe
 import { IdentityDirectoryService } from '../../identity/public.js';
 import {
   ProductSnapshotQuery,
+  ProductProductionDefinitionCommand,
   type ProcessRouteSnapshot,
   type ProductQueryResult,
 } from '../../product/public.js';
@@ -38,6 +39,7 @@ export class ProductionService {
     private readonly products: ProductSnapshotQuery,
     private readonly identity: IdentityDirectoryService,
     private readonly idempotency: IdempotencyExecutor,
+    private readonly productDefinitions?: ProductProductionDefinitionCommand,
   ) {}
 
   listWorkOrders(query: WorkOrderQuery) {
@@ -150,13 +152,18 @@ export class ProductionService {
         // 会变化的业务校验：负责人是否启用，只在首次执行时校验；读取经 withActiveConnection 复用
         // executor 外层事务连接，与批次创建、成功审计、幂等结果处于同一事务上下文。
         await this.requireActiveUser(normalizedPayload.ownerId ?? null);
+        const productDefinitions = this.productDefinitions;
+        if (!productDefinitions) {
+          throw new Error('Product production definition command is not configured');
+        }
         return this.production.withBatchCreationTransaction(
           workOrderId,
           async (workOrderProductId) => {
             const route = this.requireProduct(
-              await this.products.getProductionRouteSnapshot(
+              await productDefinitions.lockBomForProductionTask(
                 workOrderProductId,
                 normalizedPayload.routeId ?? null,
+                commandContext,
               ),
             );
             const stepOverrides = await this.resolveStepOverrides(
