@@ -57,6 +57,8 @@
 
 `202608250002-inventory-balances-and-demand-fulfillment` 在不修改库存流水事实的前提下增加 `inventory_batch_balance` 与 `inventory_item_balance` 同步可重建投影；历史余额从流水一次性回填，后续由触发器随流水和批次状态同事务维护。需求增加整数 `remaining_number` 和 `active -> fulfilled` 终态，历史完成事实从已确认出库单回填，后续确认出库在同事务扣减剩余量。
 
+`202608290001-production-short-batch-authorization` 增加批次 `material_plan_version`、`material_partially_outbound` 状态、短批授权主从表和出库单授权来源。授权明细按需求冻结允许缺口；需求增加显式关闭原因、操作人和时间。该迁移只实现最终短批模型，不保留旧状态双写或兼容读取。
+
 `202608240002-production-terminal-facts` 为 `work_orders` 追加草稿取消事实和关闭类型、原因、操作人、时间，为 `production_batches` 追加取消事实；迁移从对应成功 `operation_logs` 回填能够恢复的历史数据，无法恢复的历史原因保持 `NULL`，不虚构业务事实。新命令在同一业务主表更新中写入终态字段，并继续与成功操作日志同事务提交。
 
 `202608240003-production-document-cancellation-facts` 为 `inbound_order`、`outbound_order`、`return_order`、`stock_check_order` 和 `item_scrap` 追加取消原因、操作人和时间。`outbound_order.cancel_source` 区分人工取消与生产任务级联取消；级联路径继承生产任务取消原因。迁移从成功操作日志回填可靠的历史操作人和时间，并根据独立出库取消日志或生产任务日志中的 `cancelledPendingOutboundIds` 恢复出库单取消来源；历史原因不稳定可得，因此不虚构或回填原因。

@@ -48,6 +48,20 @@ export class ProductionMaterialService {
   listAvailableItemBatches(demandId: string) {
     return this.materials.listAvailableItemBatches(demandId);
   }
+  getShortBatchAuthorizationPreview(batchId: string) {
+    return this.materials.getShortBatchAuthorizationPreview(batchId);
+  }
+  authorizeShortBatch(batchId: string, version: number, reason: string, context: CommandContext) {
+    const normalizedReason = reason.trim();
+    if (!normalizedReason) throw new ProductionDomainError('INVALID_INPUT', '短批授权原因不能为空');
+    return this.materials.authorizeShortBatch(batchId, version, normalizedReason, context);
+  }
+  closeRemainingDemands(batchId: string, version: number, reason: string, context: CommandContext) {
+    const normalizedReason = reason.trim();
+    if (!normalizedReason)
+      throw new ProductionDomainError('INVALID_INPUT', '关闭剩余物料需求的原因不能为空');
+    return this.materials.closeRemainingDemands(batchId, version, normalizedReason, context);
+  }
   async createAllocations(
     batchId: string,
     payload: CreateMaterialAllocationsPayload,

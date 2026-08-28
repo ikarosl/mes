@@ -44,6 +44,8 @@ const allowedTables = new Set([
   'inventory_batch_balance',
   'inventory_item_balance',
   'production_item_allocation',
+  'production_short_batch_authorization',
+  'production_short_batch_authorization_detail',
   'outbound_order',
   'outbound_detail',
   'return_order',

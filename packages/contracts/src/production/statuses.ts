@@ -4,6 +4,7 @@ export type ProductionBatchStatus =
   | 'pending'
   | 'material_pending'
   | 'material_assigned'
+  | 'material_partially_outbound'
   | 'material_outbound'
   | 'doing'
   | 'completed'

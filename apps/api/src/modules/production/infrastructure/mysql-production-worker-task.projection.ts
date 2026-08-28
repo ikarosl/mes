@@ -38,6 +38,7 @@ type WorkerTaskRow = RowDataPacket & {
   effective_abnormal: string;
   started_at: Date | null;
   version: number;
+  short_batch_startable: number;
 };
 
 const REPORT_SUMMARY = `SELECT batch_step_record_id,
@@ -60,7 +61,22 @@ SELECT current.id step_record_id,current.production_batch_id,b.batch_no,b.status
   COALESCE(current_reports.effective_reported,0) effective_reported,
   COALESCE(current_reports.effective_direct_reported,0) effective_direct_reported,
   COALESCE(current_reports.effective_normal,0) effective_normal,
-  COALESCE(current_reports.effective_abnormal,0) effective_abnormal,current.started_at,current.version
+  COALESCE(current_reports.effective_abnormal,0) effective_abnormal,current.started_at,current.version,
+  CASE WHEN b.status='material_partially_outbound'
+    AND EXISTS (
+      SELECT 1 FROM production_short_batch_authorization authorization
+      WHERE authorization.production_batch_id=b.id
+        AND authorization.material_plan_version=b.material_plan_version
+        AND authorization.status='active'
+        AND EXISTS (SELECT 1 FROM outbound_order outbound WHERE outbound.production_batch_id=b.id AND outbound.status='completed')
+        AND NOT EXISTS (
+          SELECT 1 FROM production_item_demand demand
+          LEFT JOIN production_short_batch_authorization_detail detail
+            ON detail.authorization_id=authorization.id AND detail.demand_id=demand.id
+          WHERE demand.production_batch_id=b.id AND demand.business_status='active'
+            AND (detail.id IS NULL OR demand.remaining_number>detail.authorized_remaining_quantity)
+        )
+    ) THEN 1 ELSE 0 END short_batch_startable
 FROM batch_step_records current
 JOIN production_batches b ON b.id=current.production_batch_id
 JOIN work_orders wo ON wo.id=b.work_order_id
@@ -142,7 +158,7 @@ const mapWorkerTask = (
   isFirst: boolean,
 ): ProductionWorkerTaskItem => {
   const upstreamReady = isFirst
-    ? row.batch_status === 'material_outbound'
+    ? row.batch_status === 'material_outbound' || Boolean(row.short_batch_startable)
     : integerQuantity(quantity.releasedInputQuantity) > 0;
   const canComplete =
     row.step_status === 'doing' &&

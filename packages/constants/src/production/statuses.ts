@@ -11,6 +11,7 @@ export const PRODUCTION_BATCH_STATUSES = [
   'pending',
   'material_pending',
   'material_assigned',
+  'material_partially_outbound',
   'material_outbound',
   'doing',
   'completed',
@@ -72,6 +73,7 @@ export const PRODUCTION_EXECUTION_COMPLETION_BLOCKER_LABELS = {
   no_required_reporting_step: '批次没有必报工工序',
   required_step_incomplete: '仍有必报工工序未完成',
   final_step_quantity_insufficient: '最后一道必报工工序的有效正常数量尚未达到计划数量',
+  active_material_demand_remains: '仍有未完成物料需求，请继续领料或显式关闭剩余需求',
 } as const;
 
 export const DEMAND_TYPES = [

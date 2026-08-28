@@ -422,6 +422,12 @@ export class MysqlProductionSupplementRepository extends ProductionSupplementRep
           unit: original.unit_snapshot,
         });
       }
+      await connection.execute(
+        `UPDATE production_batches
+         SET material_plan_version=material_plan_version+1,version=version+1,updated_by=?
+         WHERE id=?`,
+        [actorId, source.production_batch_id],
+      );
       if (planReference) {
         const [confirmed] = await connection.execute<ResultSetHeader>(
           `UPDATE production_scrap_supplement_plan

@@ -26,6 +26,10 @@ export interface ProductionBatchItem {
   planEndDate: string | null;
   startedAt: string | null;
   status: ProductionBatchStatus;
+  /** 整组物料需求计划版本，用于使短批授权在需求集变化后失效。 */
+  materialPlanVersion: number;
+  /** 列表页的短批授权派生状态；写接口仍由后端事务重新校验。 */
+  shortBatchAuthorizationStatus: 'none' | 'valid' | 'stale' | 'consumed';
   ownerId: string | null;
   ownerName: string | null;
   completedAt: string | null;

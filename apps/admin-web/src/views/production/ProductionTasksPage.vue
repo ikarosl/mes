@@ -202,6 +202,7 @@
               v-if="
                 row.status === 'material_pending' ||
                 row.status === 'material_assigned' ||
+                row.status === 'material_partially_outbound' ||
                 row.status === 'doing'
               "
               link
@@ -211,9 +212,20 @@
             >
             <el-button
               v-if="
+                row.status === 'material_pending' || row.status === 'material_partially_outbound'
+              "
+              link
+              type="warning"
+              @click="openShortBatchAuthorization(row)"
+              >短批授权</el-button
+            >
+            <el-button
+              v-if="
                 row.status === 'material_assigned' ||
+                row.status === 'material_partially_outbound' ||
                 row.status === 'material_outbound' ||
-                row.status === 'doing'
+                row.status === 'doing' ||
+                (row.status === 'material_pending' && row.shortBatchAuthorizationStatus === 'valid')
               "
               link
               type="primary"
@@ -229,6 +241,14 @@
               >
               <template #dropdown>
                 <el-dropdown-menu>
+                  <el-dropdown-item
+                    v-if="
+                      row.status === 'doing' && row.shortBatchAuthorizationStatus === 'consumed'
+                    "
+                    :disabled="isRowPending(row.id)"
+                    @click="closeRemainingMaterialDemands(row)"
+                    >关闭剩余物料需求</el-dropdown-item
+                  >
                   <el-dropdown-item
                     :disabled="isRowPending(row.id)"
                     @click="openBatchCancellation(row)"
@@ -320,8 +340,18 @@
       :outbounds="materials.outbounds.value"
       :loading-outbounds="materials.loadingOutbounds.value"
       :submitting="materials.submitting.value"
+      :short-batch="materialBatchIsShortBatch"
       @update:visible="handleMaterialOutboundClose"
       @submit="handleMaterialOutbound"
+    />
+
+    <ShortBatchAuthorizationDialog
+      :visible="shortBatchAuthorizationVisible"
+      :preview="shortBatchAuthorizationPreview"
+      :loading="shortBatchAuthorizationLoading"
+      :submitting="shortBatchAuthorizationSubmitting"
+      @update:visible="shortBatchAuthorizationVisible = $event"
+      @submit="submitShortBatchAuthorization"
     />
 
     <ProductionBatchCancelDialog
@@ -349,6 +379,7 @@ import type {
   CreateMaterialAllocationsPayload,
   CreateMaterialOutboundPayload,
   ProductionMaterialAllocationItem,
+  ShortBatchAuthorizationPreview,
 } from '@company/contracts';
 import { normalizeCreateBatchPayload } from '@company/utils';
 import { productionApi } from '../../api/production';
@@ -368,6 +399,7 @@ import StepExecutionDialog from './components/StepExecutionDialog.vue';
 import type { StepExecutionValue } from './components/StepExecutionDialog.vue';
 import MaterialDemandAllocationDialog from './components/MaterialDemandAllocationDialog.vue';
 import MaterialOutboundDialog from './components/MaterialOutboundDialog.vue';
+import ShortBatchAuthorizationDialog from './components/ShortBatchAuthorizationDialog.vue';
 import { useProductionMaterials } from './composables/useProductionMaterials';
 import StepAssignmentDialog from './components/StepAssignmentDialog.vue';
 import { useStepAssignments } from './composables/useStepAssignments';
@@ -439,17 +471,18 @@ const assignmentPendingIds = computed(
 );
 const materialAllocationVisible = ref(false);
 const materialOutboundVisible = ref(false);
+const shortBatchAuthorizationVisible = ref(false);
+const shortBatchAuthorizationLoading = ref(false);
+const shortBatchAuthorizationSubmitting = ref(false);
+const shortBatchAuthorizationPreview = ref<ShortBatchAuthorizationPreview | null>(null);
+const shortBatchAuthorizationBatchId = ref<string | null>(null);
 const batchCancelDialogVisible = ref(false);
 const batchCancelSubmitting = ref(false);
 const cancellingBatch = ref<ProductionBatchItem | null>(null);
 const batchCancellationCheck = ref<ProductionBatchCancellationCheck | null>(null);
 const materials = useProductionMaterials();
-const materialBatchStatus = ref<ProductionBatchItem['status'] | null>(null);
-const visibleMaterialDemands = computed(() =>
-  materialBatchStatus.value === 'doing'
-    ? materials.demands.value.filter((demand) => demand.demandType === 'scrap_supplement')
-    : materials.demands.value,
-);
+const materialBatchIsShortBatch = ref(false);
+const visibleMaterialDemands = computed(() => materials.demands.value);
 const taskFormDialogRef = ref<{
   setForm: (row: ProductionBatchItem) => void;
   resetForm: () => void;
@@ -672,7 +705,6 @@ const generateMaterials = async (row: ProductionBatchItem): Promise<void> => {
 const openMaterialAllocation = async (row: ProductionBatchItem): Promise<void> => {
   if (!(await prepareMaterialBatch(row.id))) return;
   materials.setBatch(row.id);
-  materialBatchStatus.value = row.status;
   materialAllocationVisible.value = true;
   try {
     await materials.loadDemands();
@@ -703,12 +735,83 @@ const handleMaterialRelease = async (
 const openMaterialOutbound = async (row: ProductionBatchItem): Promise<void> => {
   if (!(await prepareMaterialBatch(row.id))) return;
   materials.setBatch(row.id);
-  materialBatchStatus.value = row.status;
+  materialBatchIsShortBatch.value =
+    row.status === 'material_partially_outbound' ||
+    row.shortBatchAuthorizationStatus === 'valid' ||
+    row.shortBatchAuthorizationStatus === 'consumed';
   materialOutboundVisible.value = true;
   try {
     await Promise.all([materials.loadDemands(), materials.loadOutbounds()]);
   } catch (error) {
     EMessage.error(error, '生产领料数据查询失败');
+  }
+};
+const openShortBatchAuthorization = async (row: ProductionBatchItem): Promise<void> => {
+  shortBatchAuthorizationBatchId.value = row.id;
+  shortBatchAuthorizationPreview.value = null;
+  shortBatchAuthorizationVisible.value = true;
+  shortBatchAuthorizationLoading.value = true;
+  try {
+    shortBatchAuthorizationPreview.value = await productionApi.getShortBatchAuthorizationPreview(
+      row.id,
+    );
+  } catch (error) {
+    EMessage.error(error, '短批授权缺口查询失败');
+  } finally {
+    shortBatchAuthorizationLoading.value = false;
+  }
+};
+const submitShortBatchAuthorization = async (reason: string): Promise<void> => {
+  const batchId = shortBatchAuthorizationBatchId.value;
+  const preview = shortBatchAuthorizationPreview.value;
+  if (!batchId || !preview?.canAuthorize || shortBatchAuthorizationSubmitting.value) return;
+  shortBatchAuthorizationSubmitting.value = true;
+  try {
+    await productionApi.authorizeShortBatch(batchId, {
+      version: preview.batchVersion,
+      reason,
+    });
+    EMessage.success('短批开工已授权，可对已分配物料制领料出库单');
+    shortBatchAuthorizationVisible.value = false;
+    await loadTasks();
+  } catch (error) {
+    EMessage.error(error, '短批授权失败');
+    try {
+      shortBatchAuthorizationPreview.value =
+        await productionApi.getShortBatchAuthorizationPreview(batchId);
+    } catch {
+      // 保留原窗口与错误信息，由用户重新打开时刷新。
+    }
+  } finally {
+    shortBatchAuthorizationSubmitting.value = false;
+  }
+};
+const closeRemainingMaterialDemands = async (row: ProductionBatchItem): Promise<void> => {
+  if (!beginRow(row.id)) return;
+  try {
+    const result = await ElMessageBox.prompt(
+      '关闭后，所有剩余活动需求将取消，未出库分配将释放。该操作不会冲销已确认领料，请填写原因。',
+      '关闭剩余物料需求',
+      {
+        confirmButtonText: '确认关闭',
+        cancelButtonText: '取消',
+        type: 'warning',
+        inputType: 'textarea',
+        inputPlaceholder: '填写不再需要剩余物料的原因',
+        inputValidator: (value) => value.trim().length > 0 || '关闭原因不能为空',
+      },
+    );
+    await productionApi.closeRemainingMaterialDemands(row.id, {
+      version: row.version,
+      reason: result.value.trim(),
+    });
+    EMessage.success('剩余物料需求已关闭，未出库分配已释放');
+    await loadTasks();
+  } catch (error) {
+    if (error === 'cancel' || error === 'close') return;
+    EMessage.error(error, '关闭剩余物料需求失败');
+  } finally {
+    endRow(row.id);
   }
 };
 const handleMaterialOutbound = async (payload: CreateMaterialOutboundPayload): Promise<void> => {

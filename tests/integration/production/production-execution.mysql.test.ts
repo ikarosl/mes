@@ -1670,7 +1670,7 @@ const createFixture = async (pool: Pool, suffix: string): Promise<Fixture> => {
   );
   const demandId = await insert(
     pool,
-    "INSERT INTO production_item_demand (production_batch_id,product_material_id,item_id,item_code_snapshot,item_name_snapshot,quantity_per_unit_snapshot,unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,planned_output_quantity_snapshot,need_number,remaining_number,demand_type,idempotency_key,business_status,created_by,updated_by) VALUES (?,?,?,?,?,'1.0000','kg',1,1,'10.0000','10.0000',10,'normal',?,'active',?,?)",
+    "INSERT INTO production_item_demand (production_batch_id,product_material_id,item_id,item_code_snapshot,item_name_snapshot,quantity_per_unit_snapshot,unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,planned_output_quantity_snapshot,need_number,remaining_number,demand_type,idempotency_key,business_status,fulfilled_by,fulfilled_at,created_by,updated_by) VALUES (?,?,?,?,?,'1.0000','kg',1,1,'10.0000','10.0000',0,'normal',?,'fulfilled',?,NOW(),?,?)",
     [
       batchId,
       productMaterialId,
@@ -1678,6 +1678,7 @@ const createFixture = async (pool: Pool, suffix: string): Promise<Fixture> => {
       'EXEC-MATERIAL',
       '执行物料',
       `NORMAL:${batchId}:${productMaterialId}`,
+      actor.id,
       actor.id,
       actor.id,
     ],

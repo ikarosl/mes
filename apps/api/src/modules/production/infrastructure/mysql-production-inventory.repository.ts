@@ -29,6 +29,7 @@ import { DATABASE_POOL } from '../../../infrastructure/database/database.module.
 import { ProductionInventoryRepository } from '../application/ports/production-inventory.repository.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
 import { fixedIntegerQuantity, integerQuantity } from '../domain/integer-quantity.js';
+import { findBatch } from './mysql-production.shared.js';
 
 type Executor = Pool | PoolConnection;
 
@@ -332,6 +333,12 @@ export class MysqlProductionInventoryRepository extends ProductionInventoryRepos
 
   async confirmMaterialLoss(scrapId: string, version: number, context: CommandContext) {
     return withTransaction(this.pool, async (db) => {
+      const [[identity]] = await db.query<(RowDataPacket & { production_batch_id: number })[]>(
+        'SELECT production_batch_id FROM item_scrap WHERE id=?',
+        [scrapId],
+      );
+      if (!identity) throw new ProductionDomainError('NOT_FOUND', '损耗记录不存在');
+      await findBatch(db, String(identity.production_batch_id), true);
       const scrap = await this.findMaterialLoss(db, scrapId, true);
       if (scrap.status === 'confirmed') return mapMaterialLoss(scrap);
       if (scrap.status !== 'pending')
@@ -419,6 +426,12 @@ export class MysqlProductionInventoryRepository extends ProductionInventoryRepos
           context.actorId,
           context.actorId,
         ],
+      );
+      await db.execute(
+        `UPDATE production_batches
+         SET material_plan_version=material_plan_version+1,version=version+1,updated_by=?
+         WHERE id=?`,
+        [context.actorId, scrap.production_batch_id],
       );
       await this.audit(
         db,
@@ -548,6 +561,7 @@ export class MysqlProductionInventoryRepository extends ProductionInventoryRepos
 
   async createReturnOrder(payload: CreateReturnOrderPayload, context: CommandContext) {
     return withTransaction(this.pool, async (db) => {
+      const batch = await findBatch(db, payload.productionBatchId, true);
       const allocationIds = payload.details.map((line) => line.allocationId).sort(numericSort);
       await lockIds(db, 'production_item_allocation', allocationIds);
       const candidateRows = await this.findReturnCandidates(db, payload.productionBatchId);
@@ -565,11 +579,6 @@ export class MysqlProductionInventoryRepository extends ProductionInventoryRepos
           );
         }
       }
-      const [[batch]] = await db.query<(RowDataPacket & { work_order_id: number })[]>(
-        'SELECT work_order_id FROM production_batches WHERE id=? FOR UPDATE',
-        [payload.productionBatchId],
-      );
-      if (!batch) throw new ProductionDomainError('NOT_FOUND', '生产批次不存在');
       const returnNo = businessNo('TL');
       const [created] = await db.execute<ResultSetHeader>(
         `INSERT INTO return_order
@@ -618,7 +627,15 @@ export class MysqlProductionInventoryRepository extends ProductionInventoryRepos
 
   async confirmReturnOrder(returnId: string, version: number, context: CommandContext) {
     return withTransaction(this.pool, async (db) => {
+      const [[identity]] = await db.query<(RowDataPacket & { production_batch_id: number })[]>(
+        'SELECT production_batch_id FROM return_order WHERE id=?',
+        [returnId],
+      );
+      if (!identity) throw new ProductionDomainError('NOT_FOUND', '退料单不存在');
+      const batch = await findBatch(db, String(identity.production_batch_id), true);
       const order = await this.findReturnOrder(db, returnId, true);
+      if (String(order.production_batch_id) !== String(identity.production_batch_id))
+        throw new ProductionDomainError('CONCURRENT_MODIFICATION', '退料单所属批次已变化');
       if (order.status === 'returned') return this.loadReturnOrder(db, returnId, order);
       if (order.status !== 'pending')
         throw new ProductionDomainError('RETURN_CONFIRM_NOT_ALLOWED', '仅待确认退料单可以确认入库');
@@ -673,6 +690,50 @@ export class MysqlProductionInventoryRepository extends ProductionInventoryRepos
           ],
         );
       }
+      if (batch.status === 'material_partially_outbound') {
+        const returnedByDemand = new Map<string, number>();
+        for (const line of details) {
+          const demandId = String(line.demand_id);
+          returnedByDemand.set(
+            demandId,
+            (returnedByDemand.get(demandId) ?? 0) + integerQuantity(line.return_number),
+          );
+        }
+        for (const [demandId, returnedQuantity] of returnedByDemand) {
+          const [reopened] = await db.execute<ResultSetHeader>(
+            `UPDATE production_item_demand
+             SET remaining_number=remaining_number+?,business_status='active',
+                 fulfilled_by=NULL,fulfilled_at=NULL,version=version+1,updated_by=?
+             WHERE id=? AND production_batch_id=?
+               AND business_status IN ('active','fulfilled')
+               AND remaining_number+?<=need_number`,
+            [
+              returnedQuantity,
+              context.actorId,
+              demandId,
+              identity.production_batch_id,
+              returnedQuantity,
+            ],
+          );
+          if (reopened.affectedRows !== 1)
+            throw new ProductionDomainError(
+              'CONCURRENT_MODIFICATION',
+              '退料对应物料需求已变化，请刷新后重试',
+            );
+        }
+        await db.execute(
+          `UPDATE production_short_batch_authorization
+           SET status='superseded',version=version+1
+           WHERE production_batch_id=? AND status='active'`,
+          [identity.production_batch_id],
+        );
+        await db.execute(
+          `UPDATE production_batches
+           SET material_plan_version=material_plan_version+1,version=version+1,updated_by=?
+           WHERE id=?`,
+          [context.actorId, identity.production_batch_id],
+        );
+      }
       const [updated] = await db.execute<ResultSetHeader>(
         `UPDATE return_order SET status='returned',return_at=CURRENT_TIMESTAMP,
          operator_id=?,updated_by=?,version=version+1
@@ -687,7 +748,11 @@ export class MysqlProductionInventoryRepository extends ProductionInventoryRepos
         'return_order',
         returnId,
         { status: 'pending', version },
-        { status: 'returned', version: version + 1 },
+        {
+          status: 'returned',
+          version: version + 1,
+          shortBatchMaterialPlanInvalidated: batch.status === 'material_partially_outbound',
+        },
       );
       return this.loadReturnOrder(db, returnId);
     });

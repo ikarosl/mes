@@ -340,13 +340,22 @@ export class MysqlProductionBatchRepository {
       );
       await connection.execute(
         `UPDATE production_item_demand
-         SET business_status='cancelled',version=version+1,updated_by=?
+         SET business_status='cancelled',cancel_source='production_batch',cancel_reason=?,
+             cancelled_by=?,cancelled_at=NOW(),
+             version=version+1,updated_by=?
          WHERE production_batch_id=? AND business_status='active'`,
-        [audit.actorId, id],
+        [reason, audit.actorId, audit.actorId, id],
+      );
+      await connection.execute(
+        `UPDATE production_short_batch_authorization
+         SET status='superseded',version=version+1
+         WHERE production_batch_id=? AND status='active'`,
+        [id],
       );
       const [updated] = await connection.execute<ResultSetHeader>(
         `UPDATE production_batches
-         SET status='cancelled',cancel_reason=?,cancelled_by=?,cancelled_at=NOW(),version=version+1,updated_by=?
+         SET status='cancelled',material_plan_version=material_plan_version+1,
+             cancel_reason=?,cancelled_by=?,cancelled_at=NOW(),version=version+1,updated_by=?
          WHERE id=? AND status IN ('pending','material_pending','material_assigned') AND version=?`,
         [reason, audit.actorId, audit.actorId, id, version],
       );
@@ -446,7 +455,7 @@ export class MysqlProductionBatchRepository {
         );
       }
       const [result] = await connection.execute<ResultSetHeader>(
-        "UPDATE production_batches SET status='material_pending',version=version+1,updated_by=? WHERE id=? AND version=?",
+        "UPDATE production_batches SET status='material_pending',material_plan_version=material_plan_version+1,version=version+1,updated_by=? WHERE id=? AND version=?",
         [audit.actorId, batchId, version],
       );
       this.assertVersion(result, '生产批次已被其他操作修改，请刷新后重试');

@@ -67,6 +67,7 @@ export type OutboundRow = RowDataPacket & {
   batch_no: string;
   work_order_id: number;
   work_order_no: string;
+  short_batch_authorization_id: number | null;
   product_id: number;
   product_code: string;
   product_name: string;
@@ -99,8 +100,11 @@ export type OutboundDetailRow = RowDataPacket & {
 };
 
 export const DEMAND_SELECT = `SELECT d.id,d.production_batch_id,d.product_material_id,d.item_id,d.item_code_snapshot,d.item_name_snapshot,d.unit_snapshot,d.need_number,d.remaining_number,d.demand_type,d.business_status,d.fulfilled_by,d.fulfilled_at,d.version,
-  COALESCE((SELECT SUM(a.assigned_number) FROM production_item_allocation a WHERE a.demand_id=d.id AND a.allocation_status NOT IN ('released','cancelled')),0) allocated_quantity,
-  COALESCE((SELECT SUM(od.outbound_number) FROM outbound_detail od JOIN outbound_order oo ON oo.id=od.outbound_id WHERE od.demand_id=d.id AND oo.status='completed'),0) outbound_quantity
+  COALESCE((SELECT SUM(GREATEST(a.assigned_number-COALESCE((
+    SELECT SUM(rd.return_number) FROM return_detail rd JOIN return_order ro ON ro.id=rd.return_id
+    WHERE rd.allocation_id=a.id AND ro.status='returned' AND rd.release_after_return=1
+  ),0),0)) FROM production_item_allocation a WHERE a.demand_id=d.id AND a.allocation_status NOT IN ('released','cancelled')),0) allocated_quantity,
+  GREATEST(COALESCE((SELECT SUM(od.outbound_number) FROM outbound_detail od JOIN outbound_order oo ON oo.id=od.outbound_id WHERE od.demand_id=d.id AND oo.status='completed'),0)-COALESCE((SELECT SUM(rd.return_number) FROM return_detail rd JOIN return_order ro ON ro.id=rd.return_id WHERE rd.demand_id=d.id AND ro.status='returned' AND rd.release_after_return=1),0),0) outbound_quantity
   FROM production_item_demand d`;
 
 export const ALLOCATION_SELECT = `SELECT a.id,a.demand_id,a.production_batch_id,a.item_id,a.batch_id,ib.batch_code,a.assigned_number,d.demand_type,

@@ -10,9 +10,13 @@
 
 核心设计原则：系统将“生产授权上限”与“现场物料可用量”解耦。授权只控制生产批次允许生产的产品数量，不因确认领料后的现场损耗动态回收额度；实际物料损耗通过“损耗报废 → 损耗补料 → 物料需求 → 分配与出库”独立闭环处理。该取舍用于控制轻量 MES 的状态维护成本：系统不建立授权额度与每一份现场物料的实时占用、回收或消费映射，也不得为了物料损耗修改 `authorized_quantity`、回退已齐套工序报废补料单或收缩已经形成的产品可报上限。现场缺料由实物条件和待完成损耗补料物流约束，不能通过重复申请产品补产授权解决。
 
-同一原则适用于短批开工：部分领料后的管理授权只表示允许承担当前缺料风险开始生产，不形成精确的物料可生产数量，也不增加基于物料的报工上限。系统必须持续展示活动需求缺口，并允许开工后继续分配和领用；报工仍只受产品流转额度约束。如果未来要把已领物料作为报工硬门槛，必须先建立可审计的现场物料事务、余额和自动耗料/冲销模型，禁止直接以仓库出库量近似现场可用量。短批授权还必须保存批次当前 `material_plan_version`；需求集合变化或开工前确认退料导致净领用量减少后旧授权失效，继续确认出库只改善缺口，不使授权失效。该字段只属于批次授权并发控制，不能下沉为需求版本；需求是否有效仍由 `business_status` 和 `remaining_number` 判断。
+同一原则适用于短批开工：部分领料后的管理授权只表示允许承担当前缺料风险开始生产，不形成精确的物料可生产数量，也不增加基于物料的报工上限。系统必须持续展示活动需求缺口，并允许开工后继续分配和领用；报工仍只受产品流转额度约束。如果未来要把已领物料作为报工硬门槛，必须先建立可审计的现场物料事务、余额和自动耗料/冲销模型，禁止直接以仓库出库量近似现场可用量。短批授权还必须保存批次当前 `material_plan_version`；需求集合变化或开工前确认退料导致净领用量减少后旧授权失效，继续确认出库只改善缺口，不使授权失效。短批开工前确认退料时，相应退料数量必须重新计入需求 `remaining_number`，已经完成的需求要恢复为 `active`，释放回公共库存的数量不再计入原批次已分配量。该字段只属于批次授权并发控制，不能下沉为需求版本；需求是否有效仍由 `business_status` 和 `remaining_number` 判断。
 
 短批开工不得造成物料待办丢失：批次进入 `doing` 后，普通 `active` 需求仍必须出现在仓库待分配、待出库和生产缺料查询中，并继续接受分配与确认出库。生产执行完工必须阻断仍有活动需求的批次；确实不再需要的剩余需求只能通过带来源、原因、操作人和时间的独立管理动作显式取消，禁止因达到报工数量自动关闭。
+
+普通任务保持原有门禁：部分分配可以分多次保存，但必须全部活动普通需求完成分配后才能制领料出库单。只有当前 `material_plan_version` 上的有效短批授权可以在 `material_pending` 放开该门禁。首笔部分出库确认后批次进入 `material_partially_outbound`；该状态是物料事实，不是授权状态。
+
+短批授权必须发生在未齐套制单之前，并按需求固化 `authorized_remaining_quantity`，即管理员明确批准的开工时最大允许缺口。开工事务必须重新断言：授权仍处于 `active`、授权版本等于批次 `material_plan_version`、至少有一笔已确认领料，且每条当前活动需求的 `remaining_number` 不大于对应授权缺口。新增或取消需求必须递增 `material_plan_version`，使旧授权自动失效；继续确认出库只改善缺口，不改变该版本。
 
 ---
 
@@ -44,6 +48,10 @@
 | `business_status`                  | `VARCHAR(30)`     | 业务状态，默认 `active`                   |
 | `fulfilled_by`                     | `BIGINT UNSIGNED` | 最后一笔确认领用操作人；未满足时为空      |
 | `fulfilled_at`                     | `DATETIME`        | 需求全部确认领用时间；未满足时为空        |
+| `cancel_source`                    | `VARCHAR(40)`     | `production_batch` 或 `short_batch_remaining_close` |
+| `cancel_reason`                    | `TEXT`            | 取消任务或显式关闭剩余需求的原因          |
+| `cancelled_by`                     | `BIGINT UNSIGNED` | 取消操作人                                |
+| `cancelled_at`                     | `DATETIME`        | 取消时间                                  |
 | `version`                          | `INT`             | 乐观锁版本号，默认 `0`                    |
 | 业务审计字段                       | 见统一规则        | 可变业务单据审计字段                      |
 
@@ -64,6 +72,7 @@
 | `idempotency_key`                              | 幂等键，同一键重复提交返回既有结果               |
 | `business_status`                              | `active` 未满足、`fulfilled` 已满足、`cancelled` 已取消 |
 | `remaining_number`                             | 确认出库时原子扣减；为 `0` 时进入 `fulfilled`    |
+| `cancel_source`                                | 区分任务取消级联与短批剩余需求显式关闭           |
 
 约束：
 
@@ -77,6 +86,7 @@
 - 检查约束：`CHECK (demand_type IN ('normal', 'manual_additional', 'scrap_supplement', 'material_loss_supplement'))`
 - 检查约束：`CHECK (business_status IN ('active', 'fulfilled', 'cancelled'))`
 - 检查约束：`0 <= remaining_number <= need_number`；`active` 必须大于 `0`，`fulfilled` 必须等于 `0` 并填写完成事实
+- 检查约束：`cancelled` 必须同时填写受控 `cancel_source`、非空原因、操作人和时间；非取消状态这些字段必须全部为空
 - 组合索引：`INDEX (production_batch_id, business_status)`，用于查询批次有效需求
 - 检查约束：正常需求要求 `parent_demand_id IS NULL AND supplement_id IS NULL`
 - 检查约束：人工追加需求要求 `parent_demand_id IS NOT NULL AND supplement_id IS NULL`
@@ -238,7 +248,7 @@ approved -> fulfilled
 - 补产固定从路线首工序重新投产，补产额度的 `quota_end_step_record_id` 固定为异常上报工序；物料截止工序只缩小补料推荐范围，不能缩短产品额度的逐道传播。例如 A→B→C 中，C 上手发现前置异常并选择 B 为物料截止：物料推荐 A..B，补产仍从 A 逐道放行至 C。
 - 可执行补产额度只读取“授权事实 + 对应补料单 `fulfilled`”。最后一项需求达到全量确认出库时，同一事务只把补料单改为 `fulfilled` 并重开受影响已完成工序；不得再次创建或修改授权。分配、待出库或部分确认领料均不可执行额度。
 - 因此当前链路闭合为“工序报废与补产授权 → 人工补料 → 新需求 → 分配 → 确认出库 → 授权可执行 → 首工序重新生产 → 逐工序正常放行 → 来源工序补报”。当前仍不记录某次补报逐笔消费哪张授权；未来需要部分执行、指定来源消费或半成品重入时，再追加额度消费/重入事实和版本化接口。
-- 工序报废补料审批只接受 `doing` 批次；生产领料损耗申报与确认接受 `material_outbound/doing` 批次。后续分配、释放分配、创建和确认领料出库在这两个状态下只允许操作符合来源状态的 `scrap_supplement/material_loss_supplement` 需求，普通需求仍受原物料阶段状态机约束。补料物流不得把批次状态退回 `material_pending/material_assigned/material_outbound`，也不得代替首工序开工把 `material_outbound` 推进为 `doing`。
+- 工序报废补料审批只接受 `doing` 批次；生产领料损耗申报与确认接受 `material_outbound/doing` 批次。短批开工后，普通活动需求和两类补料需求均可继续分配、释放未出库分配、制单和确认出库；任务进入 `doing` 不得隐藏普通剩余需求。物料物流不得代替首工序开工推进为 `doing`。
 
 ---
 

@@ -17,6 +17,8 @@ export class ProductionDomainError extends Error {
       | 'OUTBOUND_ALLOCATION_CHANGED'
       | 'OUTBOUND_CONFIRM_NOT_ALLOWED'
       | 'OUTBOUND_CANCEL_NOT_ALLOWED'
+      | 'SHORT_BATCH_AUTHORIZATION_NOT_ALLOWED'
+      | 'SHORT_BATCH_AUTHORIZATION_STALE'
       | 'INBOUND_CONFIRM_NOT_ALLOWED'
       | 'INBOUND_CANCEL_NOT_ALLOWED'
       | 'RETURN_QUANTITY_EXCEEDED'
@@ -42,6 +44,7 @@ export class ProductionDomainError extends Error {
       | 'NO_REQUIRED_REPORTING_STEP'
       | 'REQUIRED_STEP_INCOMPLETE'
       | 'FINAL_STEP_QUANTITY_INSUFFICIENT'
+      | 'ACTIVE_MATERIAL_DEMAND_REMAINS'
       | 'SOP_SNAPSHOT_UNAVAILABLE',
     message: string,
     readonly details?: Record<string, unknown>,

@@ -76,6 +76,57 @@ export interface ProductionMaterialDemandItem {
   allocations: ProductionMaterialAllocationItem[];
 }
 
+export type ShortBatchAuthorizationStatus = 'none' | 'valid' | 'stale' | 'consumed';
+
+export interface ShortBatchAuthorizationPreviewLine {
+  demandId: string;
+  itemId: string;
+  itemCode: string;
+  itemName: string;
+  unit: string;
+  demandQuantity: string;
+  confirmedOutboundQuantity: string;
+  expectedOutboundQuantity: string;
+  authorizedRemainingQuantity: string;
+}
+
+export interface ShortBatchAuthorizationPreview {
+  productionBatchId: string;
+  batchStatus: ProductionBatchStatus;
+  batchVersion: number;
+  materialPlanVersion: number;
+  authorizationStatus: ShortBatchAuthorizationStatus;
+  canAuthorize: boolean;
+  blockedReason: string | null;
+  lines: ShortBatchAuthorizationPreviewLine[];
+}
+
+export interface AuthorizeShortBatchPayload extends VersionedCommand {
+  reason: string;
+}
+
+export interface ShortBatchAuthorizationResult {
+  authorizationId: string;
+  productionBatchId: string;
+  batchStatus: ProductionBatchStatus;
+  batchVersion: number;
+  materialPlanVersion: number;
+  status: 'active';
+  reason: string;
+  authorizedById: string;
+  authorizedAt: string;
+  lines: ShortBatchAuthorizationPreviewLine[];
+}
+
+export interface CloseRemainingMaterialDemandsResult {
+  productionBatchId: string;
+  batchStatus: ProductionBatchStatus;
+  batchVersion: number;
+  materialPlanVersion: number;
+  cancelledDemandCount: number;
+  releasedAllocationCount: number;
+}
+
 export interface AvailableItemBatchItem {
   itemBatchId: string;
   itemId: string;

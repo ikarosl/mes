@@ -25,6 +25,7 @@ import { findBatch } from './mysql-production.shared.js';
 import type { BatchRow, Db } from './mysql-production.shared.js';
 import { selectWorkerTasks } from './mysql-production-worker-task.projection.js';
 import { selectProductionStepSopSnapshot } from './mysql-production-step-sop.projection.js';
+import { evaluateShortBatchStart } from './mysql-production-short-batch.js';
 
 type ExecutionStepRow = RowDataPacket & {
   id: number;
@@ -52,7 +53,12 @@ export class MysqlProductionExecutionRepository extends ProductionExecutionRepos
   async getCompletionCheck(batchId: string): Promise<ProductionExecutionCompletionCheck> {
     const batch = await findBatch(this.pool, batchId);
     const steps = await selectRequiredCompletionSteps(this.pool, batchId);
-    return mapCompletionCheck(batchId, batch, steps);
+    return mapCompletionCheck(
+      batchId,
+      batch,
+      steps,
+      await countActiveMaterialDemands(this.pool, batchId),
+    );
   }
   async completeExecution(
     batchId: string,
@@ -78,8 +84,17 @@ export class MysqlProductionExecutionRepository extends ProductionExecutionRepos
         'SELECT id FROM batch_step_records WHERE production_batch_id=? ORDER BY step_order_snapshot,id FOR UPDATE',
         [batchId],
       );
+      await connection.query(
+        'SELECT id FROM production_item_demand WHERE production_batch_id=? ORDER BY id FOR UPDATE',
+        [batchId],
+      );
       const steps = await selectRequiredCompletionSteps(connection, batchId);
-      const check = mapCompletionCheck(batchId, batch, steps);
+      const check = mapCompletionCheck(
+        batchId,
+        batch,
+        steps,
+        await countActiveMaterialDemands(connection, batchId),
+      );
       if (!check.canComplete) throwCompletionBlocker(check);
       const [updated] = await connection.execute<ResultSetHeader>(
         `UPDATE production_batches
@@ -183,7 +198,16 @@ export class MysqlProductionExecutionRepository extends ProductionExecutionRepos
         throw new ProductionDomainError('STEP_START_NOT_ALLOWED', '当前工序状态不允许开工');
 
       if (index === 0) {
-        requireFirstStepStartable(batch.status);
+        const shortBatchStart =
+          batch.status === 'material_partially_outbound'
+            ? await evaluateShortBatchStart(connection, batchId, batch.material_plan_version, true)
+            : null;
+        if (shortBatchStart && !shortBatchStart.canStart)
+          throw new ProductionDomainError(
+            'STEP_START_NOT_ALLOWED',
+            shortBatchStart.blockedReason ?? '当前短批授权不允许开工',
+          );
+        requireFirstStepStartable(batch.status, shortBatchStart?.canStart ?? false);
       } else {
         const previous = steps[index - 1]!;
         requireFollowingStepStartable({
@@ -200,7 +224,7 @@ export class MysqlProductionExecutionRepository extends ProductionExecutionRepos
       assertVersion(updated, '工序派工状态已变化，请刷新任务后重试');
       if (index === 0) {
         const [batchUpdated] = await connection.execute<ResultSetHeader>(
-          "UPDATE production_batches SET status='doing',started_at=COALESCE(started_at,NOW()),version=version+1,updated_by=? WHERE id=? AND status='material_outbound'",
+          "UPDATE production_batches SET status='doing',started_at=COALESCE(started_at,NOW()),version=version+1,updated_by=? WHERE id=? AND status IN ('material_outbound','material_partially_outbound')",
           [context.actorId, batchId],
         );
         if (batchUpdated.affectedRows !== 1)
@@ -220,6 +244,13 @@ export class MysqlProductionExecutionRepository extends ProductionExecutionRepos
               '生产工单当前状态不允许批次开工',
             );
         }
+        if (batch.status === 'material_partially_outbound')
+          await connection.execute(
+            `UPDATE production_short_batch_authorization
+             SET status='consumed',used_at=NOW(),version=version+1
+             WHERE production_batch_id=? AND material_plan_version=? AND status='active'`,
+            [batchId, batch.material_plan_version],
+          );
       }
       await auditStep(connection, context, 'production-step.start', stepRecordId, {
         status: 'doing',
@@ -424,12 +455,14 @@ const mapCompletionCheck = (
   batchId: string,
   batch: BatchRow,
   steps: CompletionStepRow[],
+  activeMaterialDemandCount: number,
 ): ProductionExecutionCompletionCheck =>
   evaluateProductionExecutionCompletion({
     productionBatchId: batchId,
     batchStatus: batch.status,
     version: batch.version,
     plannedQuantity: batch.planned_quantity,
+    activeMaterialDemandCount,
     requiredSteps: steps.map((step) => ({
       id: String(step.id),
       order: step.step_order_snapshot,
@@ -453,10 +486,24 @@ const throwCompletionBlocker = (check: ProductionExecutionCompletionCheck): neve
       'FINAL_STEP_QUANTITY_INSUFFICIENT',
       '末道必报工工序的有效正常数量未达到批次计划数量',
     );
+  if (blocker === 'active_material_demand_remains')
+    throw new ProductionDomainError(
+      'ACTIVE_MATERIAL_DEMAND_REMAINS',
+      '仍有未完成物料需求，请继续领料或显式关闭剩余需求后再完工',
+    );
   throw new ProductionDomainError(
     'BATCH_EXECUTION_COMPLETION_NOT_ALLOWED',
     '只有生产执行中的批次可以确认完工',
   );
+};
+
+const countActiveMaterialDemands = async (db: Db, batchId: string): Promise<number> => {
+  const [[row]] = await db.query<(RowDataPacket & { count: number })[]>(
+    `SELECT COUNT(*) count FROM production_item_demand
+     WHERE production_batch_id=? AND business_status='active'`,
+    [batchId],
+  );
+  return Number(row?.count ?? 0);
 };
 
 const completionResult = (

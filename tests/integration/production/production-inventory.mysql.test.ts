@@ -118,6 +118,65 @@ describeMysql('Production return and stock-check MySQL transactions', () => {
     }
   });
 
+  it('invalidates a short-batch authorization and restores its demand gap on pre-start return', async () => {
+    const fixture = await createFixture(pool, actorId);
+    try {
+      await pool.execute(
+        `UPDATE production_batches
+         SET status='material_partially_outbound',material_plan_version=3
+         WHERE id=?`,
+        [fixture.productionBatchId],
+      );
+      await pool.execute(
+        `UPDATE production_item_demand
+         SET remaining_number=5,business_status='active'
+         WHERE id=?`,
+        [fixture.demandId],
+      );
+      const authorizationId = await insert(
+        pool,
+        `INSERT INTO production_short_batch_authorization
+         (production_batch_id,material_plan_version,status,reason,authorized_by)
+         VALUES (?,3,'active','退料前授权',?)`,
+        [fixture.productionBatchId, actorId],
+      );
+      const pendingReturn = await repository.createReturnOrder(
+        {
+          productionBatchId: String(fixture.productionBatchId),
+          details: [{ allocationId: String(fixture.allocationId), returnQuantity: 3 }],
+        },
+        context(actorId, `${fixture.token}-short-return-create`),
+      );
+
+      await repository.confirmReturnOrder(
+        pendingReturn.id,
+        pendingReturn.version,
+        context(actorId, `${fixture.token}-short-return-confirm`),
+      );
+
+      const [[batch]] = await pool.query<
+        (RowDataPacket & { material_plan_version: number; version: number })[]
+      >('SELECT material_plan_version,version FROM production_batches WHERE id=?', [
+        fixture.productionBatchId,
+      ]);
+      expect(batch?.material_plan_version).toBe(4);
+      const [[authorization]] = await pool.query<(RowDataPacket & { status: string })[]>(
+        'SELECT status FROM production_short_batch_authorization WHERE id=?',
+        [authorizationId],
+      );
+      expect(authorization?.status).toBe('superseded');
+      const [[demand]] = await pool.query<
+        (RowDataPacket & { remaining_number: string; business_status: string })[]
+      >('SELECT remaining_number,business_status FROM production_item_demand WHERE id=?', [
+        fixture.demandId,
+      ]);
+      expect(Number(demand?.remaining_number)).toBe(8);
+      expect(demand?.business_status).toBe('active');
+    } finally {
+      await cleanup(pool, fixture);
+    }
+  });
+
   it('creates and confirms a material loss with an equal formal supplement demand', async () => {
     const fixture = await createFixture(pool, actorId);
     try {
@@ -293,6 +352,17 @@ async function cleanup(pool: Pool, fixture: Fixture) {
   await pool.execute('DELETE FROM return_order WHERE production_batch_id=?', [
     fixture.productionBatchId,
   ]);
+  await pool.execute(
+    `DELETE FROM production_short_batch_authorization_detail
+     WHERE authorization_id IN (
+       SELECT id FROM production_short_batch_authorization WHERE production_batch_id=?
+     )`,
+    [fixture.productionBatchId],
+  );
+  await pool.execute(
+    'DELETE FROM production_short_batch_authorization WHERE production_batch_id=?',
+    [fixture.productionBatchId],
+  );
   await pool.execute('DELETE FROM outbound_detail WHERE outbound_id=?', [fixture.outboundOrderId]);
   await pool.execute('DELETE FROM outbound_order WHERE id=?', [fixture.outboundOrderId]);
   await pool.execute(

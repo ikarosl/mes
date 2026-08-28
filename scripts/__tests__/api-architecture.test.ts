@@ -215,7 +215,7 @@ describe('checkApiArchitecture', () => {
     const violations = await checkApiArchitecture([
       {
         path: 'apps/api/src/modules/production/application/leak.ts',
-        source: `const legacy = 'production.batch.create.v2';\n`,
+        source: `const legacy = 'production.batch.create.v3';\n`,
       },
     ]);
 
@@ -226,7 +226,7 @@ describe('checkApiArchitecture', () => {
     const violations = await checkApiArchitecture([
       {
         path: 'apps/api/src/modules/production/application/idempotency/fixture-idempotency-scopes.contract.ts',
-        source: `export const CREATE_BATCH_IDEMPOTENCY_SCOPE = 'production.batch.create.v2' as const;\n`,
+        source: `export const CREATE_BATCH_IDEMPOTENCY_SCOPE = 'production.batch.create.v3' as const;\n`,
       },
     ]);
 

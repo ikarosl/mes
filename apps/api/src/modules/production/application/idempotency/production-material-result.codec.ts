@@ -70,6 +70,7 @@ const outboundSchema = z
     productionBatchId: z.string(),
     batchNo: z.string(),
     workOrderId: z.string(),
+    shortBatchAuthorizationId: nullableString.optional(),
     workOrderNo: z.string(),
     productId: z.string(),
     productCode: z.string(),

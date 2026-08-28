@@ -14,8 +14,14 @@ export const requireAssignedStep = (status: BatchStepStatus): void => {
     );
 };
 
-export const requireFirstStepStartable = (batchStatus: ProductionBatchStatus): void => {
-  if (batchStatus !== 'material_outbound')
+export const requireFirstStepStartable = (
+  batchStatus: ProductionBatchStatus,
+  shortBatchStartAllowed = false,
+): void => {
+  if (
+    batchStatus !== 'material_outbound' &&
+    !(batchStatus === 'material_partially_outbound' && shortBatchStartAllowed)
+  )
     throw new ProductionDomainError(
       'STEP_START_NOT_ALLOWED',
       '第一道工序只能在生产领料全部出库后开工',
