@@ -84,6 +84,8 @@ describeMysql('Production MySQL persistence', () => {
         {
           productMaterialId: String(fixture.productMaterialId),
           materialProductId: String(fixture.materialId),
+          itemCode: 'MAT-PERSISTENCE',
+          productName: 'Persistence material',
           quantityPerUnit: '1.0000',
           unit: 'kg',
           isKeyMaterial: true,

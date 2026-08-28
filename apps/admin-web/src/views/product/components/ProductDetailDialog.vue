@@ -23,6 +23,11 @@
       <el-descriptions-item label="物料清单">{{
         row.materialCount > 0 ? `${row.materialCount} 项` : '未配置'
       }}</el-descriptions-item>
+      <el-descriptions-item label="BOM 锁定状态">{{
+        row.bomLockedAt
+          ? `已永久锁定（${formatDateTimeForDisplay(row.bomLockedAt)}${row.bomLockedById ? `，操作人 ID ${row.bomLockedById}` : ''}）`
+          : '未锁定，可编辑'
+      }}</el-descriptions-item>
       <el-descriptions-item label="默认路线">{{
         row.defaultRouteName || '未设置'
       }}</el-descriptions-item>
@@ -58,6 +63,7 @@
 <script setup lang="ts">
 import type { ProductItemKind, ProductListItem } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
+import { formatDateTimeForDisplay } from '../../../utils/date';
 
 defineProps<{
   visible: boolean;

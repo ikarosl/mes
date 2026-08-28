@@ -37,6 +37,7 @@ export interface MaterialOutboundItem {
   batchNo: string;
   workOrderId: string;
   workOrderNo: string;
+  shortBatchAuthorizationId?: string | null;
   productId: string;
   productCode: string;
   productName: string;

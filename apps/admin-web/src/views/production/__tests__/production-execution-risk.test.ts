@@ -27,6 +27,8 @@ const batch = (
   planEndDate: '2026-08-10',
   startedAt: null,
   status: 'doing',
+  materialPlanVersion: 1,
+  shortBatchAuthorizationStatus: 'none',
   ownerId: null,
   ownerName: null,
   completedAt: null,

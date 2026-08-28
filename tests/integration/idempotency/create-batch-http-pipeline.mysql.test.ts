@@ -129,8 +129,13 @@ describeMysql('createBatch HTTP pipeline (real Nest app + real MySQL)', () => {
         fixture.workOrderId,
       ]);
       await pool.execute('DELETE FROM work_orders WHERE id=?', [fixture.workOrderId]);
+      await pool.execute('DELETE FROM product_materials WHERE id=?', [fixture.productMaterialId]);
       await pool.execute('DELETE FROM products WHERE id=?', [fixture.productId]);
-      await pool.execute('DELETE FROM product_categories WHERE id=?', [fixture.categoryId]);
+      await pool.execute('DELETE FROM products WHERE id=?', [fixture.materialId]);
+      await pool.execute('DELETE FROM product_categories WHERE id IN (?,?)', [
+        fixture.categoryId,
+        fixture.materialCategoryId,
+      ]);
       await pool.execute('DELETE FROM users WHERE id IN (?,?)', [fixture.actorId, fixture.ownerId]);
       await pool.execute('DELETE FROM roles WHERE id=?', [fixture.roleId]);
     }
@@ -202,7 +207,7 @@ describeMysql('createBatch HTTP pipeline (real Nest app + real MySQL)', () => {
     });
 
     // 成功路径无统一 envelope（HttpExceptionFilter 注释：成功负载原样返回），断言批次详情结构
-    expect(first.status).toBe(201);
+    expect(first.status, JSON.stringify(first.body)).toBe(201);
     expect(first.body).toMatchObject({
       workOrderId: String(fixture.workOrderId),
       batchNo: fixture.batchNo,
@@ -236,9 +241,12 @@ describeMysql('createBatch HTTP pipeline (real Nest app + real MySQL)', () => {
         log_type: string;
         user_id: number;
       })[]
-    >('SELECT module,result,target_type,log_type,user_id FROM operation_logs WHERE request_id=?', [
-      fixture.createRequestId,
-    ]);
+    >(
+      `SELECT module,result,target_type,log_type,user_id
+       FROM operation_logs
+       WHERE request_id=? AND module='production' AND target_type='production_batch'`,
+      [fixture.createRequestId],
+    );
     expect(successAudit).toMatchObject({
       module: 'production',
       result: 'success',
@@ -281,7 +289,7 @@ describeMysql('createBatch HTTP pipeline (real Nest app + real MySQL)', () => {
       requestId: fixture.conflictCreateRequestId,
       body: createPayload(),
     });
-    expect(first.status).toBe(201);
+    expect(first.status, JSON.stringify(first.body)).toBe(201);
 
     const conflict = await postBatch({
       key: fixture.conflictKey,
@@ -366,7 +374,10 @@ interface Fixture {
   ownerId: number;
   roleId: number;
   categoryId: number;
+  materialCategoryId: number;
   productId: number;
+  materialId: number;
+  productMaterialId: number;
   workOrderId: number;
   batchNo: string;
   createKey: string;
@@ -422,9 +433,26 @@ const createFixture = async (pool: Pool): Promise<Fixture> => {
     'INSERT INTO products (item_code,product_name,category_id,unit,acquire_method) VALUES (?,?,?,?,?)',
     [`${token}-product`, 'HTTP 管线测试产品', categoryId, 'pcs', 'self_made'],
   );
+  const materialCategoryId = await insert(
+    pool,
+    'INSERT INTO product_categories (category_code,category_name,item_kind) VALUES (?,?,?)',
+    [`${token}-material-cat`, 'HTTP 管线测试物料分类', 'material'],
+  );
+  const materialId = await insert(
+    pool,
+    'INSERT INTO products (item_code,product_name,category_id,unit,acquire_method) VALUES (?,?,?,?,?)',
+    [`${token}-material`, 'HTTP 管线测试物料', materialCategoryId, 'kg', 'purchased'],
+  );
+  const productMaterialId = await insert(
+    pool,
+    `INSERT INTO product_materials
+     (product_id,material_product_id,quantity_per_unit,unit,is_key_material,need_batch_record)
+     VALUES (?,?,'1.0000','kg',1,1)`,
+    [productId, materialId],
+  );
   const workOrderId = await insert(
     pool,
-    'INSERT INTO work_orders (work_order_no,product_id,product_code_snapshot,product_name_snapshot,unit_snapshot,planned_quantity,status) VALUES (?,?,?,?,?,?,?)',
+    'INSERT INTO work_orders (work_order_no,product_id,product_code_snapshot,product_name_snapshot,unit_snapshot,planned_quantity,plan_start_date,plan_end_date,status) VALUES (?,?,?,?,?,?,?,?,?)',
     [
       `${token}-wo`,
       productId,
@@ -432,6 +460,8 @@ const createFixture = async (pool: Pool): Promise<Fixture> => {
       'HTTP 管线测试产品',
       'pcs',
       '10.0000',
+      '2026-08-01',
+      '2026-08-31',
       'released',
     ],
   );
@@ -442,7 +472,10 @@ const createFixture = async (pool: Pool): Promise<Fixture> => {
     ownerId,
     roleId,
     categoryId,
+    materialCategoryId,
     productId,
+    materialId,
+    productMaterialId,
     workOrderId,
     batchNo: `task_batch-${numericSuffix}`,
     createKey: `${token}-create-key`,

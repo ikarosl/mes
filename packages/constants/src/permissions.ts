@@ -75,6 +75,8 @@ export const PERMISSIONS = {
       outbound: 'production:materials:outbound',
       confirmOutbound: 'production:materials:outbound-confirm',
       cancelOutbound: 'production:materials:outbound-cancel',
+      authorizeShortBatch: 'production:materials:authorize-short-batch',
+      closeRemainingDemands: 'production:materials:close-remaining-demands',
     },
     inventory: { view: 'production:inventory:view' },
     inbounds: {

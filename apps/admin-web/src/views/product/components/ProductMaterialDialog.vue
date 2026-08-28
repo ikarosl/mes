@@ -7,6 +7,14 @@
   >
     <template v-if="product">
       <el-alert
+        v-if="product.bomLockedAt"
+        title="该 BOM 已被生产任务引用并永久锁定，当前仅可查看。原则变化请新建产品和产品编码。"
+        type="info"
+        :closable="false"
+        show-icon
+        class="bom-alert"
+      />
+      <el-alert
         v-if="detailStatus === 'error'"
         title="物料清单加载失败，当前不可保存，请点击刷新物料重试。"
         type="error"
@@ -15,7 +23,7 @@
         class="bom-alert"
       />
       <el-alert
-        v-else-if="detailReady && !localRows.length"
+        v-else-if="detailReady && !localRows.length && !product.bomLockedAt"
         title="当前产品尚未配置物料清单。生产任务生成物料需求前，需要先维护这里的用料。"
         type="warning"
         :closable="false"
@@ -37,7 +45,7 @@
           <el-button
             type="primary"
             :icon="Plus"
-            :disabled="!detailReady"
+            :disabled="!detailReady || Boolean(product.bomLockedAt)"
             @click="addRow"
             >添加已有物料</el-button
           >
@@ -56,6 +64,8 @@
               v-model="row.materialProductId"
               filterable
               placeholder="请选择物料"
+              :disabled="Boolean(product.bomLockedAt)"
+              @change="syncRowUnit(row)"
               @visible-change="(visible: boolean) => visible && refreshCandidates()"
             >
               <el-option
@@ -80,6 +90,7 @@
             <el-input
               v-model="row.unit"
               placeholder="pcs"
+              disabled
             />
           </template>
         </el-table-column>
@@ -94,6 +105,7 @@
               :precision="0"
               :step="1"
               controls-position="right"
+              :disabled="Boolean(product.bomLockedAt)"
             />
           </template>
         </el-table-column>
@@ -102,14 +114,22 @@
           width="110"
           align="center"
         >
-          <template #default="{ row }"><el-switch v-model="row.isKeyMaterial" /></template>
+          <template #default="{ row }"
+            ><el-switch
+              v-model="row.isKeyMaterial"
+              :disabled="Boolean(product?.bomLockedAt)"
+          /></template>
         </el-table-column>
         <el-table-column
           label="记录批次"
           width="110"
           align="center"
         >
-          <template #default="{ row }"><el-switch v-model="row.needBatchRecord" /></template>
+          <template #default="{ row }"
+            ><el-switch
+              v-model="row.needBatchRecord"
+              :disabled="Boolean(product?.bomLockedAt)"
+          /></template>
         </el-table-column>
         <el-table-column
           label="备注"
@@ -119,6 +139,7 @@
             <el-input
               v-model="row.remark"
               placeholder="可选"
+              :disabled="Boolean(product.bomLockedAt)"
             />
           </template>
         </el-table-column>
@@ -131,6 +152,7 @@
             <el-button
               link
               type="danger"
+              :disabled="Boolean(product?.bomLockedAt)"
               @click="removeRow($index)"
               >删除</el-button
             >
@@ -141,6 +163,7 @@
     <template #footer>
       <el-button @click="$emit('update:visible', false)">取消</el-button>
       <el-button
+        v-if="!product?.bomLockedAt"
         type="primary"
         :loading="submitting"
         :disabled="!detailReady"
@@ -254,7 +277,7 @@ const addRow = (): void => {
   localRows.value.push({
     materialProductId: '',
     quantityPerUnit: 1,
-    unit: props.product?.unit ?? 'pcs',
+    unit: '',
     isKeyMaterial: true,
     needBatchRecord: true,
     remark: '',
@@ -267,6 +290,11 @@ const removeRow = (index: number): void => {
 
 const materialChoices = (selectedValue: string) =>
   buildLiveOptions(materialOptions.value, selectedValue ? [selectedValue] : [], (item) => item.id);
+
+const syncRowUnit = (row: MaterialRow): void => {
+  const selected = materialOptions.value.find((item) => item.id === row.materialProductId);
+  if (selected) row.unit = selected.unit;
+};
 
 const handleSubmit = (): void => {
   if (!detailReady.value) {

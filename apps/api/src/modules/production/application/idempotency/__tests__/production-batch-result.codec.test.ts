@@ -52,6 +52,8 @@ const validDetail: ProductionBatchDetail = {
   planEndDate: '2026-08-31',
   startedAt: null,
   status: 'pending',
+  materialPlanVersion: 1,
+  shortBatchAuthorizationStatus: 'none',
   ownerId: '5',
   ownerName: '张三',
   completedAt: null,

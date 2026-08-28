@@ -68,6 +68,8 @@ export type BatchRow = RowDataPacket & {
   plan_start_date: Date | string | null;
   plan_end_date: Date | string | null;
   status: ProductionBatchItem['status'];
+  material_plan_version: number;
+  short_batch_authorization_status: 'none' | 'valid' | 'stale' | 'consumed';
   owner_id: number | null;
   completed_at: Date | null;
   started_at: Date | null;
@@ -112,7 +114,17 @@ export type StepRow = RowDataPacket & {
 };
 
 export const WORK_ORDER_SELECT = `SELECT wo.id,wo.work_order_no,wo.product_id,wo.product_code_snapshot,wo.product_name_snapshot,wo.unit_snapshot,wo.planned_quantity,wo.customer_name,wo.quality_level,wo.work_order_owner_id,wo.plan_start_date,wo.plan_end_date,COALESCE((SELECT SUM(b.planned_quantity) FROM production_batches b WHERE b.work_order_id=wo.id AND b.status<>'cancelled'),0) assigned_quantity,wo.status,wo.released_at,wo.cancel_reason,wo.cancelled_by,wo.cancelled_at,wo.close_type,wo.close_reason,wo.closed_by,wo.closed_at,wo.external_order_no,wo.remark,wo.version,wo.created_at,wo.updated_at FROM work_orders wo`;
-export const BATCH_SELECT = `SELECT b.id,b.work_order_id,wo.work_order_no,b.product_id,wo.product_code_snapshot,wo.product_name_snapshot,b.batch_no,b.route_id,b.route_code_snapshot,b.route_version_snapshot,b.planned_quantity,b.completed_quantity,b.qualified_quantity,b.plan_start_date,b.plan_end_date,b.started_at,b.status,b.batch_owner_id owner_id,b.completed_at,b.completed_by,b.cancel_reason,b.cancelled_by,b.cancelled_at,b.remark,b.version,b.created_at,b.updated_at FROM production_batches b JOIN work_orders wo ON wo.id=b.work_order_id`;
+export const BATCH_SELECT = `SELECT b.id,b.work_order_id,wo.work_order_no,b.product_id,wo.product_code_snapshot,wo.product_name_snapshot,b.batch_no,b.route_id,b.route_code_snapshot,b.route_version_snapshot,b.planned_quantity,b.completed_quantity,b.qualified_quantity,b.plan_start_date,b.plan_end_date,b.started_at,b.status,b.material_plan_version,
+  CASE
+    WHEN EXISTS (SELECT 1 FROM production_short_batch_authorization authorization WHERE authorization.production_batch_id=b.id AND authorization.status='active' AND authorization.material_plan_version=b.material_plan_version) THEN 'valid'
+    WHEN EXISTS (SELECT 1 FROM production_short_batch_authorization authorization WHERE authorization.production_batch_id=b.id AND authorization.status='active') THEN 'stale'
+    WHEN EXISTS (SELECT 1 FROM production_short_batch_authorization authorization WHERE authorization.production_batch_id=b.id AND authorization.status='consumed') THEN 'consumed'
+    ELSE 'none'
+  END short_batch_authorization_status,
+  b.batch_owner_id owner_id,b.completed_at,b.completed_by,b.cancel_reason,b.cancelled_by,b.cancelled_at,b.remark,b.version,b.created_at,b.updated_at FROM production_batches b JOIN work_orders wo ON wo.id=b.work_order_id`;
+const BATCH_LOCK_SELECT = `SELECT b.id,b.work_order_id,wo.work_order_no,b.product_id,wo.product_code_snapshot,wo.product_name_snapshot,b.batch_no,b.route_id,b.route_code_snapshot,b.route_version_snapshot,b.planned_quantity,b.completed_quantity,b.qualified_quantity,b.plan_start_date,b.plan_end_date,b.started_at,b.status,b.material_plan_version,
+  'none' short_batch_authorization_status,
+  b.batch_owner_id owner_id,b.completed_at,b.completed_by,b.cancel_reason,b.cancelled_by,b.cancelled_at,b.remark,b.version,b.created_at,b.updated_at FROM production_batches b JOIN work_orders wo ON wo.id=b.work_order_id`;
 export const STEP_RECORD_SELECT = `SELECT sr.id,sr.production_batch_id,sr.route_step_id,sr.step_order_snapshot,sr.step_code_snapshot,sr.step_name_snapshot,sr.sop_file_id_snapshot,sr.sop_file_name_snapshot,sr.sop_version_no_snapshot,sr.default_responsible_user_id_snapshot,sr.actual_sop_file_id,sr.actual_sop_file_name_snapshot,sr.actual_sop_object_key_snapshot,sr.actual_sop_version_no_snapshot,sr.responsible_user_id,sr.need_record_snapshot,sr.need_inspection_snapshot,sr.status,sr.started_at,sr.completed_at,COALESCE(report_summary.reported_quantity,0) output_quantity,COALESCE(report_summary.normal_quantity,0) qualified_quantity,COALESCE(report_summary.abnormal_quantity,0) abnormal_quantity,CAST(0 AS DECIMAL(12,4)) rework_quantity,sr.unit_snapshot,sr.remark,sr.version FROM batch_step_records sr LEFT JOIN (SELECT batch_step_record_id,SUM(CASE WHEN report_type='normal' THEN reported_quantity ELSE -reported_quantity END) reported_quantity,SUM(CASE WHEN report_type='normal' THEN normal_quantity ELSE -normal_quantity END) normal_quantity,SUM(CASE WHEN report_type='normal' THEN abnormal_quantity ELSE -abnormal_quantity END) abnormal_quantity FROM batch_step_reports GROUP BY batch_step_record_id) report_summary ON report_summary.batch_step_record_id=sr.id`;
 
 export async function findWorkOrder(db: Db, id: string, lock = false): Promise<WorkOrderRow> {
@@ -126,10 +138,12 @@ export async function findWorkOrder(db: Db, id: string, lock = false): Promise<W
 
 export async function findBatch(db: Db, id: string, lock = false): Promise<BatchRow> {
   const [rows] = await db.query<BatchRow[]>(
-    `${BATCH_SELECT} WHERE b.id=?${lock ? ' FOR UPDATE' : ''}`,
+    `${lock ? BATCH_LOCK_SELECT : BATCH_SELECT} WHERE b.id=?${lock ? ' FOR UPDATE' : ''}`,
     [id],
   );
   if (!rows[0]) throw new ProductionDomainError('NOT_FOUND', '生产批次不存在');
+  // 事务锁定读取只返回批次持久字段，避免派生授权子查询提前建立一致性快照。
+  // 需要作短批判定的写事务必须调用专用授权校验并锁定授权事实，不能依赖该展示字段。
   return rows[0];
 }
 
@@ -197,6 +211,8 @@ export const mapBatch = (row: BatchRow): ProductionBatchItem => ({
   planEndDate: toDateOnlyString(row.plan_end_date),
   startedAt: date(row.started_at),
   status: row.status,
+  materialPlanVersion: row.material_plan_version,
+  shortBatchAuthorizationStatus: row.short_batch_authorization_status,
   ownerId: row.owner_id === null ? null : String(row.owner_id),
   ownerName: null,
   completedAt: date(row.completed_at),

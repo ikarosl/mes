@@ -24,6 +24,7 @@ export const BATCH_STATUS_META: StatusMeta<ProductionBatchStatus>[] = [
   { value: 'pending', label: '已生成批次', type: 'info' },
   { value: 'material_pending', label: '已生成物料需求', type: 'primary' },
   { value: 'material_assigned', label: '已分配物料批次', type: 'primary' },
+  { value: 'material_partially_outbound', label: '部分领料', type: 'warning' },
   { value: 'material_outbound', label: '已领料出库', type: 'primary' },
   { value: 'doing', label: '执行中', type: 'primary' },
   { value: 'completed', label: '已完成', type: 'success' },

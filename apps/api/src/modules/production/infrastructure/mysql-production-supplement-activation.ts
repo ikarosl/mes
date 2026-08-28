@@ -101,17 +101,7 @@ export const fulfillReadySupplements = async (
          FROM production_item_demand demand
          WHERE demand.supplement_id=supplement.id
            AND demand.demand_type IN ('scrap_supplement','material_loss_supplement')
-           AND (
-             demand.business_status<>'active'
-             OR COALESCE((
-               SELECT SUM(outbound_detail.outbound_number)
-               FROM outbound_detail outbound_detail
-               JOIN outbound_order outbound_order
-                 ON outbound_order.id=outbound_detail.outbound_id
-                 AND outbound_order.status='completed'
-               WHERE outbound_detail.demand_id=demand.id
-             ),0) < demand.need_number
-           )
+           AND demand.business_status<>'fulfilled'
        )
      ORDER BY supplement.id`,
     [batchId],

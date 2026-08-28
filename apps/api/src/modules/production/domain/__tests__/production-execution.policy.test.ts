@@ -21,6 +21,10 @@ describe('production execution policy', () => {
 
   it('only releases the first step after all material is outbound', () => {
     expect(() => requireFirstStepStartable('material_outbound')).not.toThrow();
+    expect(() => requireFirstStepStartable('material_partially_outbound', true)).not.toThrow();
+    expect(() => requireFirstStepStartable('material_partially_outbound', false)).toThrowError(
+      expect.objectContaining({ code: 'STEP_START_NOT_ALLOWED' }),
+    );
     expect(() => requireFirstStepStartable('material_assigned')).toThrowError(
       expect.objectContaining({ code: 'STEP_START_NOT_ALLOWED' }),
     );

@@ -7,6 +7,7 @@ import type {
   StockStatus,
   InventoryBatchStatus,
   InventorySourceType,
+  DemandType,
 } from './statuses.js';
 
 export interface ReturnOrderQuery extends PageQuery {
@@ -254,6 +255,44 @@ export interface InventoryBatchQuery extends PageQuery {
   keyword?: string;
   batchCode?: string;
   batchStatus?: InventoryBatchStatus;
+}
+
+export interface InventoryMaterialSupplyDemandQuery extends PageQuery {
+  keyword?: string;
+}
+
+export interface InventoryMaterialSupplyDemandItem {
+  itemId: string;
+  itemCode: string;
+  itemName: string;
+  unit: string;
+  totalInventoryQuantity: string;
+  availableInventoryQuantity: string;
+  unavailableInventoryQuantity: string;
+  openDemandQuantity: string;
+  shortageQuantity: string;
+  isShortage: boolean;
+}
+
+export type InventoryMaterialDemandTraceQuery = PageQuery;
+
+export interface InventoryMaterialDemandTraceItem {
+  demandId: string;
+  itemId: string;
+  productionBatchId: string;
+  batchNo: string;
+  workOrderId: string;
+  workOrderNo: string;
+  demandType: DemandType;
+  demandQuantity: string;
+  remainingDemandQuantity: string;
+  unit: string;
+  parentDemandId: string | null;
+  supplementId: string | null;
+  supplementNo: string | null;
+  abnormalDispositionNo: string | null;
+  materialLossScrapNo: string | null;
+  createdAt: string;
 }
 
 export interface InventoryBatchItem {

@@ -19,7 +19,9 @@ import { IdentityDirectoryService } from '../../../apps/api/src/modules/identity
 import { MysqlRbacRepository } from '../../../apps/api/src/modules/identity/infrastructure/mysql-rbac.repository.js';
 import { IdempotencyKeyGuard } from '../../../apps/api/src/infrastructure/idempotency/idempotency-key.guard.js';
 import { ProductSnapshotService } from '../../../apps/api/src/modules/product/application/product-snapshot.service.js';
+import { ProductProductionDefinitionService } from '../../../apps/api/src/modules/product/application/product-production-definition.service.js';
 import { MysqlProductSnapshotRepository } from '../../../apps/api/src/modules/product/infrastructure/mysql-product-snapshot.repository.js';
+import { MysqlProductCatalogRepository } from '../../../apps/api/src/modules/product/infrastructure/mysql-product-catalog.repository.js';
 import { ProductionService } from '../../../apps/api/src/modules/production/application/production.service.js';
 import { MysqlProductionBatchRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-batch.repository.js';
 import { MysqlProductionMaterialRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-material.repository.js';
@@ -71,10 +73,18 @@ describeMysql(
       const batches = new MysqlProductionBatchRepository(pool);
       const materials = new MysqlProductionMaterialRepository(pool);
       const production = new MysqlProductionRepository(workOrders, batches, materials);
-      const products = new ProductSnapshotService(new MysqlProductSnapshotRepository(pool));
+      const productRepository = new MysqlProductSnapshotRepository(pool);
+      const products = new ProductSnapshotService(productRepository);
+      const productDefinitions = new ProductProductionDefinitionService(productRepository);
       const identity = new IdentityDirectoryService(new MysqlRbacRepository(pool));
       const executor = new MysqlIdempotencyExecutor(pool);
-      const service = new ProductionService(production, products, identity, executor);
+      const service = new ProductionService(
+        production,
+        products,
+        identity,
+        executor,
+        productDefinitions,
+      );
       controller = new ProductionController(service);
       guard = new IdempotencyKeyGuard(new Reflector());
     });
@@ -95,8 +105,13 @@ describeMysql(
           fixture.workOrderId,
         ]);
         await pool.execute('DELETE FROM work_orders WHERE id=?', [fixture.workOrderId]);
+        await pool.execute('DELETE FROM product_materials WHERE product_id=?', [fixture.productId]);
         await pool.execute('DELETE FROM products WHERE id=?', [fixture.productId]);
+        await pool.execute('DELETE FROM products WHERE id=?', [fixture.materialId]);
         await pool.execute('DELETE FROM product_categories WHERE id=?', [fixture.categoryId]);
+        await pool.execute('DELETE FROM product_categories WHERE id=?', [
+          fixture.materialCategoryId,
+        ]);
         await pool.execute('DELETE FROM users WHERE id IN (?,?)', [
           fixture.actorId,
           fixture.ownerId,
@@ -136,6 +151,12 @@ describeMysql(
       );
       expect(batch).toMatchObject({ planned_quantity: '2.0000' });
 
+      const [[bomLock]] = await pool.query<
+        (RowDataPacket & { bom_locked_at: Date | null; bom_locked_by: number | null })[]
+      >('SELECT bom_locked_at,bom_locked_by FROM products WHERE id=?', [fixture.productId]);
+      expect(bomLock.bom_locked_at).not.toBeNull();
+      expect(Number(bomLock.bom_locked_by)).toBe(fixture.actorId);
+
       const [[record]] = await pool.query<
         (RowDataPacket & {
           status: string;
@@ -165,9 +186,10 @@ describeMysql(
           target_type: string;
           log_type: string;
         })[]
-      >('SELECT module,result,target_type,log_type FROM operation_logs WHERE request_id=?', [
-        fixture.requestId,
-      ]);
+      >(
+        "SELECT module,result,target_type,log_type FROM operation_logs WHERE request_id=? AND action='production-batch.create'",
+        [fixture.requestId],
+      );
       expect(audit).toMatchObject({
         module: 'production',
         result: 'success',
@@ -200,9 +222,35 @@ describeMysql(
         [fixture.replayRequestId],
       );
       expect(Number(replayAuditCount.total)).toBe(0);
+
+      const [[lockAuditCount]] = await pool.query<(RowDataPacket & { total: number })[]>(
+        "SELECT COUNT(*) total FROM operation_logs WHERE request_id=? AND action='product.bom-lock'",
+        [fixture.requestId],
+      );
+      expect(Number(lockAuditCount.total)).toBe(1);
+
+      await expect(
+        new MysqlProductCatalogRepository(pool).replaceMaterials(
+          String(fixture.productId),
+          [
+            {
+              materialProductId: String(fixture.materialId),
+              quantityPerUnit: 1,
+              unit: 'pcs',
+              isKeyMaterial: true,
+              needBatchRecord: true,
+            },
+          ],
+          commandContext(fixture.actorId, 'not-used', `${fixture.requestId}-locked-edit`),
+        ),
+      ).rejects.toMatchObject({ code: 'CONFLICT', message: expect.stringContaining('永久锁定') });
     });
 
     it('业务失败整体回滚：不残留幂等记录、批次或成功审计', async () => {
+      // 专用夹具显式清空锁，验证本次失败事务不会留下 Product 锁定事实。
+      await pool.execute('UPDATE products SET bom_locked_at=NULL,bom_locked_by=NULL WHERE id=?', [
+        fixture.productId,
+      ]);
       const payload = {
         batchNo: fixture.failureBatchNo,
         plannedQuantity: 999, // 超过工单剩余数量 -> 首次执行 handler 内业务校验失败
@@ -235,6 +283,11 @@ describeMysql(
         [fixture.failureRequestId],
       );
       expect(Number(successAuditCount.total)).toBe(0);
+
+      const [[bomLock]] = await pool.query<
+        (RowDataPacket & { bom_locked_at: Date | null; bom_locked_by: number | null })[]
+      >('SELECT bom_locked_at,bom_locked_by FROM products WHERE id=?', [fixture.productId]);
+      expect(bomLock).toMatchObject({ bom_locked_at: null, bom_locked_by: null });
     });
 
     it('IdempotencyKeyGuard 门禁（直接调用 canActivate）：已启用端点缺少 Idempotency-Key 返回 400，合法键放行', async () => {
@@ -249,7 +302,9 @@ interface Fixture {
   actorId: number;
   ownerId: number;
   categoryId: number;
+  materialCategoryId: number;
   productId: number;
+  materialId: number;
   workOrderId: number;
   successBatchNo: string;
   failureBatchNo: string;
@@ -304,6 +359,22 @@ const createFixture = async (pool: Pool): Promise<Fixture> => {
     'INSERT INTO products (item_code,product_name,category_id,unit,acquire_method) VALUES (?,?,?,?,?)',
     [`${token}-product`, '闭环测试产品', categoryId, 'pcs', 'self_made'],
   );
+  const materialCategoryId = await insert(
+    pool,
+    'INSERT INTO product_categories (category_code,category_name,item_kind) VALUES (?,?,?)',
+    [`${token}-material-cat`, '闭环测试物料分类', 'material'],
+  );
+  const materialId = await insert(
+    pool,
+    'INSERT INTO products (item_code,product_name,category_id,unit,acquire_method) VALUES (?,?,?,?,?)',
+    [`${token}-material`, '闭环测试物料', materialCategoryId, 'pcs', 'purchased'],
+  );
+  await pool.execute(
+    `INSERT INTO product_materials
+       (product_id,material_product_id,quantity_per_unit,unit,is_key_material,need_batch_record)
+     VALUES (?,?,?,?,1,1)`,
+    [productId, materialId, 1, 'pcs'],
+  );
   const workOrderId = await insert(
     pool,
     'INSERT INTO work_orders (work_order_no,product_id,product_code_snapshot,product_name_snapshot,unit_snapshot,planned_quantity,status) VALUES (?,?,?,?,?,?,?)',
@@ -315,7 +386,9 @@ const createFixture = async (pool: Pool): Promise<Fixture> => {
     actorId,
     ownerId,
     categoryId,
+    materialCategoryId,
     productId,
+    materialId,
     workOrderId,
     successBatchNo: `task_batch-${numericSuffix}`,
     failureBatchNo: `task_batch-${numericSuffix}9`,

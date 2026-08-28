@@ -67,12 +67,14 @@
 | `product_name`     | `VARCHAR(200)`    | 名称                                    |
 | `category_id`      | `BIGINT UNSIGNED` | 分类 ID                                 |
 | `default_route_id` | `BIGINT UNSIGNED` | 默认工艺路线，可为空                    |
+| `bom_locked_at`    | `DATETIME`        | 首次生产任务引用并永久锁定 BOM 的时间   |
+| `bom_locked_by`    | `BIGINT UNSIGNED` | 触发首次锁定的操作人，可为空            |
 | `unit`             | `VARCHAR(20)`     | 唯一基础计量单位，例如 `g`、`kg`、`pcs` |
 | `acquire_method`   | `VARCHAR(32)`     | `self_made`、`outsourced`、`purchased`  |
 | `spec_values`      | `JSON`            | 轻量规格参数；纯记录，不参与整数数量计算 |
 | `status`           | `TINYINT`         | `1` 启用、`0` 停用                      |
 | `remark`           | `TEXT`            | 备注                                    |
-| 审计字段           | 见统一规则        | 主数据审计字段                          |
+| 审计字段            | 见统一规则        | 主数据审计字段                          |
 
 约束：
 
@@ -80,6 +82,8 @@
 - 唯一约束：`UNIQUE (item_code)`
 - 外键：`FOREIGN KEY (category_id) REFERENCES product_categories(id)`
 - 外键：`default_route_id -> process_routes.id ON DELETE SET NULL`，在工艺表创建后追加
+- 外键：`bom_locked_by -> users.id`
+- 检查约束：`CHECK (bom_locked_at IS NOT NULL OR bom_locked_by IS NULL)`
 - 检查约束：`CHECK (acquire_method IN ('self_made', 'outsourced', 'purchased'))`
 - 检查约束：`CHECK (status IN (0, 1))`
 
@@ -88,7 +92,7 @@
 - 物料、半成品、成品都进入该表，不再创建 `item_info` 或独立物料主表。
 - 是否是物料、半成品或成品，通过 `category_id -> product_categories.item_kind` 判断。
 - `item_code` 是产品、物料和半成品的唯一业务编码；编码软删除后不得被新记录复用，需要继续使用时恢复原记录。
-- 一期只允许一个基础单位；需要多单位时必须另行设计单位换算，不能同时维护同义的 `unit/default_unit`。
+- 系统只允许一个固定基础单位且不建设单位换算；产品编码和基础单位创建后不可修改。
 
 示例：
 
@@ -110,7 +114,7 @@
 | `product_id`          | `BIGINT UNSIGNED` | 被生产对象 ID                  |
 | `material_product_id` | `BIGINT UNSIGNED` | 消耗对象 ID                    |
 | `quantity_per_unit`   | `DECIMAL(12,4)`   | 每生产一个目标对象的需求数量   |
-| `unit`                | `VARCHAR(20)`     | 用量单位，默认等于物料基础单位 |
+| `unit`                | `VARCHAR(20)`     | 用量单位，必须等于物料基础单位 |
 | `is_key_material`     | `TINYINT`         | 是否关键物料，默认 `1`         |
 | `need_batch_record`   | `TINYINT`         | 是否要求批次追溯，默认 `1`     |
 | `status`              | `TINYINT`         | `1` 启用、`0` 停用             |
@@ -124,6 +128,7 @@
 - 外键：`FOREIGN KEY (material_product_id) REFERENCES products(id)`
 - 检查约束：`CHECK (product_id <> material_product_id)`
 - 检查约束：`CHECK (quantity_per_unit > 0)`
+- 检查约束：`CHECK (quantity_per_unit = FLOOR(quantity_per_unit))`
 - 检查约束：布尔字段与 `status` 只允许 `0/1`
 - 唯一约束：`UNIQUE (product_id, material_product_id)`
 - 组合引用索引：`UNIQUE (id, material_product_id)`
@@ -133,7 +138,9 @@
 - `product_id` 可以是成品，也可以是半成品。
 - `material_product_id` 可以是物料，也可以是半成品。
 - `production_item_demand` 必须保存 `product_material_id` 和 BOM 数量、单位、追溯标志快照。
-- 修改 BOM 不得回写已经生成的生产需求。
+- 产品首次成功创建生产任务时，`products.bom_locked_at` 与任务同事务写入；此后本表所有新增、修改、删除、停用、恢复和批量替换操作均拒绝。
+- 任务取消、需求完成或库存归零不能解除锁定。原则性用料变化必须新建产品和编码。
+- 锁定前修改 BOM 不得回写已经生成的生产需求。
 - 同一产品和投入对象的 BOM 行软删除后需要再次使用时恢复原记录，不创建相同自然键的新记录。
 
 ---
@@ -199,6 +206,8 @@
 - 产品快照在工单下达时冻结，后续修改产品主数据不得回写历史工单。
 - `quality_level` 是客户自定义等级，不建立固定状态字典或 `CHECK`；如后续需要客户级等级主数据，必须另行建模，不能把自由文本解释为质量结论。
 - 工单实际开工时间不单独持久化，由所属批次的最早 `started_at` 推导；工单实际完工时间由已完工批次的 `completed_at` 汇总，避免形成第二执行事实来源。
+
+当前采用单一 BOM 模型，不建设 BOM 版本头、版本行或当前版本指针。产品首次创建生产任务时，在任务创建事务内写入 `products.bom_locked_at/bom_locked_by`；此后 `product_materials` 永久只读。任务取消、需求完成、库存归零和路线状态变化都不能解锁。原则性用料变化必须创建新产品和新编码，再显式复制、复核 BOM 与路线。产品名称等展示字段修改不改变稳定产品身份，也不破坏既有 ID 引用。
 
 #### 生产工单状态与管理动作
 

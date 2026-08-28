@@ -16,6 +16,7 @@ import { INBOUND_ORDER_STATUSES, INVENTORY_BATCH_STATUSES } from '@company/const
 import type {
   CreatePurchaseInboundPayload,
   InventoryBatchQuery,
+  InventoryMaterialSupplyDemandQuery,
   PurchaseInboundOrderQuery,
 } from '@company/contracts';
 import { PageQueryDto } from '../../../../../presentation/http/dto/page-query.dto.js';
@@ -26,6 +27,9 @@ export class InboundIdParamDto {
 export class InventoryBatchIdParamDto {
   @IsString() @MaxLength(20) itemBatchId!: string;
 }
+export class InventoryItemIdParamDto {
+  @IsString() @MaxLength(20) itemId!: string;
+}
 export class PurchaseInboundQueryDto extends PageQueryDto implements PurchaseInboundOrderQuery {
   @IsOptional() @IsString() @MaxLength(100) keyword?: string;
   @IsOptional() @IsIn(INBOUND_ORDER_STATUSES) status?: PurchaseInboundOrderQuery['status'];
@@ -35,6 +39,13 @@ export class InventoryBatchQueryDto extends PageQueryDto implements InventoryBat
   @IsOptional() @IsString() @MaxLength(100) batchCode?: string;
   @IsOptional() @IsIn(INVENTORY_BATCH_STATUSES) batchStatus?: InventoryBatchQuery['batchStatus'];
 }
+export class InventoryMaterialSupplyDemandQueryDto
+  extends PageQueryDto
+  implements InventoryMaterialSupplyDemandQuery
+{
+  @IsOptional() @IsString() @MaxLength(100) keyword?: string;
+}
+export class InventoryMaterialDemandTraceQueryDto extends PageQueryDto {}
 export class CreatePurchaseInboundLineDto {
   @IsString() @MaxLength(20) itemId!: string;
   @IsString() @MaxLength(100) batchCode!: string;

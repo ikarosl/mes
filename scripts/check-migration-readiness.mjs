@@ -40,7 +40,12 @@ const allowedTables = new Set([
   'inbound_detail',
   'item_batch',
   'inventory_transaction',
+  // Production-owned rebuildable projections; inventory_transaction remains authoritative.
+  'inventory_batch_balance',
+  'inventory_item_balance',
   'production_item_allocation',
+  'production_short_batch_authorization',
+  'production_short_batch_authorization_detail',
   'outbound_order',
   'outbound_detail',
   'return_order',

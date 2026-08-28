@@ -159,6 +159,12 @@
               >无</el-tag
             >
             <el-tag
+              v-else-if="row.bomLockedAt"
+              type="info"
+              effect="light"
+              >已锁定 · {{ row.materialCount }} 项</el-tag
+            >
+            <el-tag
               v-else-if="row.materialCount > 0"
               type="success"
               effect="light"
@@ -258,6 +264,7 @@
       ref="productFormDialogRef"
       :visible="productDialogVisible"
       :editing-product-id="editingProductId"
+      :editing-product-locked="editingProductLocked"
       :category-options="categorySource.options.value"
       :item-kind-labels="itemKindLabels"
       :submitting="submittingProduct"
@@ -364,6 +371,7 @@ const detailDialogVisible = ref(false);
 const materialDialogVisible = ref(false);
 const defaultRouteDialogVisible = ref(false);
 const editingProductId = ref<string | null>(null);
+const editingProductLocked = ref(false);
 const detailRow = ref<ProductListItem | null>(null);
 const materialProduct = ref<ProductListItem | null>(null);
 const defaultRouteProduct = ref<ProductListItem | null>(null);
@@ -382,12 +390,14 @@ const loadData = async (): Promise<void> => {
 // openCreate/openEdit 不再主动 refresh，避免每次打开重复请求 /categories/options。
 const openCreate = (): void => {
   editingProductId.value = null;
+  editingProductLocked.value = false;
   productFormDialogRef.value?.resetForm();
   productDialogVisible.value = true;
 };
 
 const openEdit = (row: ProductListItem): void => {
   editingProductId.value = row.id;
+  editingProductLocked.value = Boolean(row.bomLockedAt);
   productFormDialogRef.value?.setForm(row);
   productDialogVisible.value = true;
 };

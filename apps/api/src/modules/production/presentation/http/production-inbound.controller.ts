@@ -18,19 +18,26 @@ import {
 import { CONFIRM_PURCHASE_INBOUND_IDEMPOTENCY_SCOPE } from '../../application/idempotency/production-idempotency-scopes.contract.js';
 import { CREATE_PURCHASE_INBOUND_IDEMPOTENCY_SCOPE } from '../../application/idempotency/production-idempotency-scopes.contract.js';
 import { ProductionInboundService } from '../../application/production-inbound.service.js';
+import { ProductionSupplyDemandService } from '../../application/production-supply-demand.service.js';
 import { ProductionDomainExceptionFilter } from './production-domain-exception.filter.js';
 import {
   CreatePurchaseInboundDto,
   InboundIdParamDto,
   InventoryBatchIdParamDto,
   InventoryBatchQueryDto,
+  InventoryItemIdParamDto,
+  InventoryMaterialDemandTraceQueryDto,
+  InventoryMaterialSupplyDemandQueryDto,
   PurchaseInboundQueryDto,
 } from './dto/production-inbound.dto.js';
 
 @Controller('production')
 @UseFilters(ProductionDomainExceptionFilter)
 export class ProductionInboundController {
-  constructor(private readonly service: ProductionInboundService) {}
+  constructor(
+    private readonly service: ProductionInboundService,
+    private readonly supplyDemand: ProductionSupplyDemandService,
+  ) {}
   @Get('purchase-inbounds') @RequirePermission(PERMISSIONS.production.inbounds.view) list(
     @Query() q: PurchaseInboundQueryDto,
   ) {
@@ -92,5 +99,25 @@ export class ProductionInboundController {
   @RequirePermission(PERMISSIONS.production.inventory.view)
   inventoryDetail(@Param() p: InventoryBatchIdParamDto) {
     return this.service.getInventory(p.itemBatchId);
+  }
+  @Get('inventory-material-supply-demand')
+  @RequirePermission(PERMISSIONS.production.inventory.view)
+  materialSupplyDemand(@Query() q: InventoryMaterialSupplyDemandQueryDto) {
+    return this.supplyDemand.list({
+      page: q.page,
+      pageSize: q.pageSize,
+      keyword: q.keyword?.trim() || undefined,
+    });
+  }
+  @Get('inventory-material-supply-demand/:itemId/demands')
+  @RequirePermission(PERMISSIONS.production.inventory.view)
+  materialDemandTrace(
+    @Param() p: InventoryItemIdParamDto,
+    @Query() q: InventoryMaterialDemandTraceQueryDto,
+  ) {
+    return this.supplyDemand.listDemandTrace(p.itemId, {
+      page: q.page,
+      pageSize: q.pageSize,
+    });
   }
 }

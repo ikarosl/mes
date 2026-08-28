@@ -1,6 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { Pool, PoolConnection, RowDataPacket } from 'mysql2/promise';
 import { withTransaction } from '@company/database';
+import type { CommandContext } from '../../../common/audit/audit.types.js';
+import { writeTransactionalAudit } from '../../../common/audit/transactional-audit-writer.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
 import { ProductDomainError } from '../domain/product.errors.js';
 import type {
@@ -12,6 +14,7 @@ import type {
   InventoryItemReference,
 } from '../application/product-snapshot.query.js';
 import { ProductSnapshotRepository } from '../application/ports/product-snapshot.repository.js';
+import { ProductProductionDefinitionRepository } from '../application/ports/product-production-definition.repository.js';
 
 type ProductRow = RowDataPacket & {
   id: number;
@@ -54,7 +57,9 @@ type RouteStepRow = RowDataPacket & {
 };
 
 @Injectable()
-export class MysqlProductSnapshotRepository implements ProductSnapshotRepository {
+export class MysqlProductSnapshotRepository
+  implements ProductSnapshotRepository, ProductProductionDefinitionRepository
+{
   constructor(@Inject(DATABASE_POOL) private readonly pool: Pool) {}
 
   async listInventoryItemReferencesByIds(itemIds: string[]): Promise<InventoryItemReference[]> {
@@ -120,6 +125,89 @@ export class MysqlProductSnapshotRepository implements ProductSnapshotRepository
       const routeId = requestedRouteId ?? product.defaultRouteId;
       if (!routeId) return null;
       return this.routeSnapshot(connection, routeId, product.id, true);
+    });
+  }
+
+  async lockBomForProductionTask(
+    productId: string,
+    requestedRouteId: string | null,
+    audit: CommandContext,
+  ): Promise<ProcessRouteSnapshot | null> {
+    return withTransaction(this.pool, async (connection) => {
+      const product = await this.productionProduct(connection, productId, true);
+      const [[lockFact]] = await connection.query<
+        (RowDataPacket & { bom_locked_at: Date | null })[]
+      >('SELECT bom_locked_at FROM products WHERE id=? AND is_deleted=0 FOR UPDATE', [productId]);
+      if (!lockFact) throw new ProductDomainError('NOT_FOUND', '已启用的生产产品不存在');
+
+      const [bomLines] = await connection.query<
+        (RowDataPacket & {
+          unit: string;
+          material_unit: string;
+          material_status: number;
+          material_is_deleted: number;
+          material_kind: InventoryItemReference['itemKind'];
+          category_status: number;
+          category_is_deleted: number;
+        })[]
+      >(
+        `SELECT pm.unit,p.unit material_unit,p.status material_status,p.is_deleted material_is_deleted,
+                c.item_kind material_kind,c.status category_status,c.is_deleted category_is_deleted
+           FROM product_materials pm
+           JOIN products p ON p.id=pm.material_product_id
+           JOIN product_categories c ON c.id=p.category_id
+          WHERE pm.product_id=? AND pm.status=1 AND pm.is_deleted=0
+          ORDER BY pm.material_product_id
+          FOR UPDATE`,
+        [productId],
+      );
+      if (bomLines.length === 0) {
+        throw new ProductDomainError('INVALID_MATERIAL', '产品未配置启用的 BOM，不能创建生产任务');
+      }
+      if (
+        bomLines.some(
+          (line) =>
+            line.material_status !== 1 ||
+            line.material_is_deleted !== 0 ||
+            !['material', 'semi_finished'].includes(line.material_kind) ||
+            line.category_status !== 1 ||
+            line.category_is_deleted !== 0 ||
+            line.unit !== line.material_unit,
+        )
+      ) {
+        throw new ProductDomainError(
+          'INVALID_MATERIAL',
+          'BOM 包含不可用物料或用量单位与物料基础单位不一致，不能创建生产任务',
+        );
+      }
+
+      const routeId = requestedRouteId ?? product.defaultRouteId;
+      const route = routeId
+        ? await this.routeSnapshot(connection, routeId, product.id, true)
+        : null;
+      if (lockFact.bom_locked_at === null) {
+        await connection.execute(
+          `UPDATE products
+              SET bom_locked_at=NOW(),bom_locked_by=?,updated_by=?
+            WHERE id=? AND is_deleted=0 AND bom_locked_at IS NULL`,
+          [audit.actorId, audit.actorId, productId],
+        );
+        await writeTransactionalAudit(connection, {
+          logType: 'business',
+          module: 'product',
+          action: 'product.bom-lock',
+          userId: audit.actorId,
+          targetId: productId,
+          targetType: 'product-master-data',
+          result: 'success',
+          beforeData: { bomLockedAt: null, bomLockedBy: null },
+          afterData: { trigger: 'production-task-created' },
+          ip: audit.ip,
+          requestId: audit.requestId,
+          userAgent: audit.userAgent,
+        });
+      }
+      return route;
     });
   }
 
