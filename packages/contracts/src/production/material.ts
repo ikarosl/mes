@@ -63,11 +63,14 @@ export interface ProductionMaterialDemandItem {
   itemName: string;
   unit: string;
   demandQuantity: string;
+  remainingDemandQuantity: string;
   allocatedQuantity: string;
   outboundQuantity: string;
   remainingQuantity: string;
   demandType: DemandType;
   businessStatus: DemandBusinessStatus;
+  fulfilledById: string | null;
+  fulfilledAt: string | null;
   progressStatus: MaterialDemandProgressStatus;
   version: number;
   allocations: ProductionMaterialAllocationItem[];

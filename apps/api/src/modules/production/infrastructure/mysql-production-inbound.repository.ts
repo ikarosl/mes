@@ -413,9 +413,10 @@ export class MysqlProductionInboundRepository extends ProductionInboundRepositor
     if (ids.length === 0) return [];
     const placeholders = ids.map(() => '?').join(',');
     const [rows] = await db.query<InventoryRow[]>(
-      `SELECT ib.*,COALESCE(SUM(CASE WHEN it.stock_status='available' THEN it.quantity ELSE 0 END),0) on_hand,
+      `SELECT ib.*,COALESCE(MAX(balance.current_quantity),0) on_hand,
        COALESCE((SELECT SUM(GREATEST(a.assigned_number-COALESCE((SELECT SUM(od.outbound_number) FROM outbound_detail od JOIN outbound_order oo ON oo.id=od.outbound_id WHERE od.allocation_id=a.id AND oo.status='completed'),0),0)) FROM production_item_allocation a WHERE a.batch_id=ib.id AND a.allocation_status NOT IN ('released','cancelled')),0) reserved
-       FROM item_batch ib LEFT JOIN inventory_transaction it ON it.batch_id=ib.id
+       FROM item_batch ib LEFT JOIN inventory_batch_balance balance
+         ON balance.batch_id=ib.id AND balance.stock_status='available'
        WHERE ib.id IN (${placeholders}) GROUP BY ib.id ORDER BY ib.id DESC`,
       ids,
     );

@@ -14,12 +14,15 @@ export type DemandRow = RowDataPacket & {
   production_batch_id: number;
   product_material_id: number;
   item_id: number;
-  item_code: string;
-  item_name: string;
+  item_code_snapshot: string;
+  item_name_snapshot: string;
   unit_snapshot: string;
   need_number: string;
+  remaining_number: string;
   demand_type: ProductionMaterialDemandItem['demandType'];
   business_status: ProductionMaterialDemandItem['businessStatus'];
+  fulfilled_by: number | null;
+  fulfilled_at: Date | null;
   version: number;
   allocated_quantity: string;
   outbound_quantity: string;
@@ -95,7 +98,7 @@ export type OutboundDetailRow = RowDataPacket & {
   inventory_transaction_id: number | null;
 };
 
-export const DEMAND_SELECT = `SELECT d.id,d.production_batch_id,d.product_material_id,d.item_id,'' item_code,'' item_name,d.unit_snapshot,d.need_number,d.demand_type,d.business_status,d.version,
+export const DEMAND_SELECT = `SELECT d.id,d.production_batch_id,d.product_material_id,d.item_id,d.item_code_snapshot,d.item_name_snapshot,d.unit_snapshot,d.need_number,d.remaining_number,d.demand_type,d.business_status,d.fulfilled_by,d.fulfilled_at,d.version,
   COALESCE((SELECT SUM(a.assigned_number) FROM production_item_allocation a WHERE a.demand_id=d.id AND a.allocation_status NOT IN ('released','cancelled')),0) allocated_quantity,
   COALESCE((SELECT SUM(od.outbound_number) FROM outbound_detail od JOIN outbound_order oo ON oo.id=od.outbound_id WHERE od.demand_id=d.id AND oo.status='completed'),0) outbound_quantity
   FROM production_item_demand d`;
@@ -142,10 +145,11 @@ export const mapDemand = (
   productionBatchId: String(row.production_batch_id),
   productMaterialId: String(row.product_material_id),
   itemId: String(row.item_id),
-  itemCode: row.item_code,
-  itemName: row.item_name,
+  itemCode: row.item_code_snapshot,
+  itemName: row.item_name_snapshot,
   unit: row.unit_snapshot,
   demandQuantity: row.need_number,
+  remainingDemandQuantity: row.remaining_number,
   allocatedQuantity: row.allocated_quantity,
   outboundQuantity: row.outbound_quantity,
   remainingQuantity: decimal(
@@ -153,6 +157,8 @@ export const mapDemand = (
   ),
   demandType: row.demand_type,
   businessStatus: row.business_status,
+  fulfilledById: row.fulfilled_by === null ? null : String(row.fulfilled_by),
+  fulfilledAt: row.fulfilled_at === null ? null : toBeijingISOString(row.fulfilled_at),
   progressStatus: progress(row),
   version: row.version,
   allocations,

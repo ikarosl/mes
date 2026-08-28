@@ -17,6 +17,7 @@ import { MysqlProductionMaterialRepository } from '../../../apps/api/src/modules
 import { MysqlProductionTraceRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-trace.repository.js';
 import { ProductionInboundService } from '../../../apps/api/src/modules/production/application/production-inbound.service.js';
 import { MysqlProductionInboundRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-inbound.repository.js';
+import { MysqlProductionSupplyDemandRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-supply-demand.repository.js';
 
 loadWorkspaceEnv();
 const describeMysql = process.env.RUN_MYSQL_INTEGRATION === '1' ? describe : describe.skip;
@@ -157,6 +158,33 @@ describeMysql('Production material MySQL transactions', () => {
       const demandsWhilePending = await repository.listDemands(String(f.batchId));
       expect(Number(demandsWhilePending[0]?.outboundQuantity)).toBe(0);
       expect(Number(demandsWhilePending[0]?.allocations[0]?.pendingOutboundQuantity)).toBe(4);
+      const supplyDemand = new MysqlProductionSupplyDemandRepository(pool);
+      const supplyBeforeConfirm = await supplyDemand.list({
+        keyword: f.token + '-m',
+        page: 1,
+        pageSize: 20,
+      });
+      expect(supplyBeforeConfirm.items[0]).toMatchObject({
+        itemId: String(f.materialId),
+        availableInventoryQuantity: '20',
+        openDemandQuantity: '10',
+        shortageQuantity: '0',
+        isShortage: false,
+      });
+      const demandTraceBeforeConfirm = await supplyDemand.listDemandTrace(String(f.materialId), {
+        page: 1,
+        pageSize: 20,
+      });
+      expect(demandTraceBeforeConfirm.items).toContainEqual(
+        expect.objectContaining({
+          demandId: String(f.demandId),
+          productionBatchId: String(f.batchId),
+          demandType: 'normal',
+          demandQuantity: '10.0000',
+          remainingDemandQuantity: '10',
+          supplementId: null,
+        }),
+      );
       const confirmed = await repository.confirmOutbound(
         result.outbound.outboundId,
         0,
@@ -172,6 +200,29 @@ describeMysql('Production material MySQL transactions', () => {
       );
       expect(Number(confirmedLedger?.quantity)).toBe(-10);
       expect(Number(confirmedLedger?.count)).toBe(2);
+      const [[fulfilledDemand]] = await pool.query<
+        (RowDataPacket & { business_status: string; remaining_number: string })[]
+      >('SELECT business_status,remaining_number FROM production_item_demand WHERE id=?', [
+        f.demandId,
+      ]);
+      expect(fulfilledDemand).toMatchObject({
+        business_status: 'fulfilled',
+        remaining_number: 0,
+      });
+      const [[materialBalance]] = await pool.query<
+        (RowDataPacket & { current_quantity: string })[]
+      >(
+        `SELECT current_quantity FROM inventory_item_balance
+         WHERE item_id=? AND stock_status='available' AND batch_status='available'`,
+        [f.materialId],
+      );
+      expect(Number(materialBalance?.current_quantity)).toBe(10);
+      const supplyAfterConfirm = await supplyDemand.list({
+        keyword: f.token + '-m',
+        page: 1,
+        pageSize: 20,
+      });
+      expect(supplyAfterConfirm.items).toHaveLength(0);
       const [[audit]] = await pool.query<(RowDataPacket & { count: number })[]>(
         "SELECT COUNT(*) count FROM operation_logs WHERE request_id=? AND action='production-material.outbound.create'",
         [f.token],
@@ -714,8 +765,8 @@ const fixture = async (
   );
   const demand = await ins(
     pool,
-    "INSERT INTO production_item_demand (production_batch_id,product_material_id,item_id,quantity_per_unit_snapshot,unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,planned_output_quantity_snapshot,need_number,demand_type,idempotency_key,business_status,created_by,updated_by) VALUES (?,?,?,'1.0000','kg',1,1,'10.0000','10.0000','normal',?,'active',?,?)",
-    [batch, pm, material, `NORMAL:${batch}:${pm}`, actorId, actorId],
+    "INSERT INTO production_item_demand (production_batch_id,product_material_id,item_id,item_code_snapshot,item_name_snapshot,quantity_per_unit_snapshot,unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,planned_output_quantity_snapshot,need_number,remaining_number,demand_type,idempotency_key,business_status,created_by,updated_by) VALUES (?,?,?,?,?,'1.0000','kg',1,1,'10.0000','10.0000',10,'normal',?,'active',?,?)",
+    [batch, pm, material, token + '-m', '物料', 'NORMAL:' + batch + ':' + pm, actorId, actorId],
   );
   let ib1 = shared?.sharedItemBatchId ?? 0,
     ib2 = 0;

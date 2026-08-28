@@ -558,6 +558,7 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
       );
       await lockIds(connection, 'item_batch', itemBatchIds);
       const requestedByBatch = new Map<string, { itemId: number; quantity: number }>();
+      const requestedByDemand = new Map<string, number>();
       for (const detail of details) {
         const allocation = byAllocation.get(String(detail.allocation_id));
         if (
@@ -577,7 +578,17 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
           itemId: detail.item_id,
           quantity: (current?.quantity ?? 0) + integerQuantity(detail.outbound_number),
         });
+        const demandId = String(detail.demand_id);
+        requestedByDemand.set(
+          demandId,
+          (requestedByDemand.get(demandId) ?? 0) + integerQuantity(detail.outbound_number),
+        );
       }
+      await lockIds(
+        connection,
+        'production_item_demand',
+        [...requestedByDemand.keys()].sort(bigintCompare),
+      );
       for (const [batchId, requested] of requestedByBatch) {
         const [[stock]] = await connection.query<(RowDataPacket & { quantity: string })[]>(
           "SELECT COALESCE(SUM(quantity),0) quantity FROM inventory_transaction WHERE batch_id=? AND item_id=? AND stock_status='available'",
@@ -587,6 +598,33 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
           throw new ProductionDomainError(
             'INSUFFICIENT_AVAILABLE_STOCK',
             '库存账面可用数量不足，整单未扣减',
+          );
+      }
+      for (const [demandId, quantity] of [...requestedByDemand].sort(([left], [right]) =>
+        bigintCompare(left, right),
+      )) {
+        const [demandUpdated] = await connection.execute<ResultSetHeader>(
+          `UPDATE production_item_demand
+           SET fulfilled_by=IF(remaining_number=?, ?, NULL),
+               fulfilled_at=IF(remaining_number=?, NOW(), NULL),
+               business_status=IF(remaining_number=?,'fulfilled','active'),
+               remaining_number=remaining_number-?,version=version+1,updated_by=?
+           WHERE id=? AND business_status='active' AND remaining_number>=?`,
+          [
+            quantity,
+            context.actorId,
+            quantity,
+            quantity,
+            quantity,
+            context.actorId,
+            demandId,
+            quantity,
+          ],
+        );
+        if (demandUpdated.affectedRows !== 1)
+          throw new ProductionDomainError(
+            'OUTBOUND_EXCEEDS_ALLOCATION',
+            '出库数量超过需求剩余数量，请刷新后重试',
           );
       }
       for (const detail of details) {
@@ -817,7 +855,8 @@ const isSupplementDemand = (value: string) =>
   value === 'scrap_supplement' || value === 'material_loss_supplement';
 const allDemandsOutbound = async (db: PoolConnection, batchId: string) => {
   const [[row]] = await db.query<(RowDataPacket & { missing: number })[]>(
-    `SELECT COUNT(*) missing FROM production_item_demand d WHERE d.production_batch_id=? AND d.business_status='active' AND COALESCE((SELECT SUM(od.outbound_number) FROM outbound_detail od JOIN outbound_order oo ON oo.id=od.outbound_id WHERE od.demand_id=d.id AND oo.status='completed'),0)<d.need_number`,
+    `SELECT COUNT(*) missing FROM production_item_demand d
+     WHERE d.production_batch_id=? AND d.business_status='active'`,
     [batchId],
   );
   return Number(row?.missing ?? 1) === 0;

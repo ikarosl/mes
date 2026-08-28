@@ -424,16 +424,19 @@ export class MysqlProductionBatchRepository {
         throw new ProductionDomainError('INVALID_INPUT', 'BOM 与生产批次产品不一致');
       for (const line of bom.lines) {
         await connection.execute(
-          `INSERT INTO production_item_demand (production_batch_id,product_material_id,item_id,quantity_per_unit_snapshot,unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,planned_output_quantity_snapshot,need_number,demand_type,idempotency_key,business_status,created_by,updated_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,'active',?,?)`,
+          `INSERT INTO production_item_demand (production_batch_id,product_material_id,item_id,item_code_snapshot,item_name_snapshot,quantity_per_unit_snapshot,unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,planned_output_quantity_snapshot,need_number,remaining_number,demand_type,idempotency_key,business_status,created_by,updated_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,CAST(? AS SIGNED),?,?,'active',?,?)`,
           [
             batchId,
             line.productMaterialId,
             line.materialProductId,
+            line.itemCode,
+            line.productName,
             line.quantityPerUnit,
             line.unit,
             Number(line.isKeyMaterial),
             Number(line.needBatchRecord),
             batch.planned_quantity,
+            multiply(line.quantityPerUnit, batch.planned_quantity),
             multiply(line.quantityPerUnit, batch.planned_quantity),
             DEMAND_TYPE.normal,
             `NORMAL:${batchId}:${line.productMaterialId}`,

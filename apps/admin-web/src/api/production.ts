@@ -50,6 +50,10 @@ import type {
   CancelMaterialOutboundPayload,
   InventoryBatchItem,
   InventoryBatchQuery,
+  InventoryMaterialSupplyDemandItem,
+  InventoryMaterialSupplyDemandQuery,
+  InventoryMaterialDemandTraceItem,
+  InventoryMaterialDemandTraceQuery,
   PurchaseInboundOrderItem,
   PurchaseInboundOrderQuery,
   ApproveBatchStepReworkPayload,
@@ -102,6 +106,16 @@ export const productionApi = {
     }),
   listInventoryBatches: (params: InventoryBatchQuery) =>
     request<PageResult<InventoryBatchItem>>({ url: '/production/inventory-batches', params }),
+  listInventoryMaterialSupplyDemand: (params: InventoryMaterialSupplyDemandQuery) =>
+    request<PageResult<InventoryMaterialSupplyDemandItem>>({
+      url: '/production/inventory-material-supply-demand',
+      params,
+    }),
+  listInventoryMaterialDemandTrace: (itemId: string, params: InventoryMaterialDemandTraceQuery) =>
+    request<PageResult<InventoryMaterialDemandTraceItem>>({
+      url: `/production/inventory-material-supply-demand/${itemId}/demands`,
+      params,
+    }),
   getInventoryBatch: (id: string) =>
     request<InventoryBatchItem>({ url: `/production/inventory-batches/${id}` }),
   searchProductionTrace: (params: ProductionTraceQuery) =>

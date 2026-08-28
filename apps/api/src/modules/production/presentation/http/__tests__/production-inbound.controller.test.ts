@@ -26,6 +26,18 @@ describe('ProductionInboundController contract', () => {
     expect(
       Reflect.getMetadata(REQUIRED_PERMISSION, ProductionInboundController.prototype.inventory),
     ).toBe(PERMISSIONS.production.inventory.view);
+    expect(
+      Reflect.getMetadata(
+        REQUIRED_PERMISSION,
+        ProductionInboundController.prototype.materialSupplyDemand,
+      ),
+    ).toBe(PERMISSIONS.production.inventory.view);
+    expect(
+      Reflect.getMetadata(
+        REQUIRED_PERMISSION,
+        ProductionInboundController.prototype.materialDemandTrace,
+      ),
+    ).toBe(PERMISSIONS.production.inventory.view);
   });
 
   it('enables HTTP idempotency only for create and confirm', () => {

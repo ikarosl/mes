@@ -178,6 +178,8 @@ describe('MysqlProductionBatchRepository persistence', () => {
           {
             productMaterialId: '401',
             materialProductId: '402',
+            itemCode: 'MAT-402',
+            productName: '测试物料',
             quantityPerUnit: '2.0000',
             unit: 'kg',
             isKeyMaterial: true,
@@ -189,19 +191,21 @@ describe('MysqlProductionBatchRepository persistence', () => {
     );
 
     const demandValues = connection.execute.mock.calls[0]?.[1] as unknown[];
-    expect(demandValues.slice(0, 12)).toEqual([
+    expect(demandValues.slice(0, 14)).toEqual([
       '21',
       '401',
       '402',
+      'MAT-402',
+      '测试物料',
       '2.0000',
       'kg',
       1,
       0,
       '10.0000',
       '20.0000',
+      '20.0000',
       'normal',
       'NORMAL:21:401',
-      '1',
     ]);
     expect(String(connection.execute.mock.calls[2]?.[0])).toContain('INSERT INTO operation_logs');
     expect(connection.commit).toHaveBeenCalledOnce();

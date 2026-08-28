@@ -52,6 +52,8 @@ type CandidateRow = RowDataPacket & {
   production_batch_id: number;
   product_material_id: number;
   item_id: number;
+  item_code_snapshot: string;
+  item_name_snapshot: string;
   quantity_per_unit_snapshot: string;
   unit_snapshot: string;
   is_key_material_snapshot: number;
@@ -387,17 +389,20 @@ export class MysqlProductionSupplementRepository extends ProductionSupplementRep
         const original = byId.get(line.originalDemandId)!;
         const [demand] = await connection.execute<ResultSetHeader>(
           `INSERT INTO production_item_demand
-           (production_batch_id,product_material_id,item_id,quantity_per_unit_snapshot,unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,planned_output_quantity_snapshot,need_number,demand_type,idempotency_key,parent_demand_id,supplement_id,business_status,created_by,updated_by)
-           VALUES (?,?,?,?,?,?,?,?,?,'scrap_supplement',?,?,?,'active',?,?)`,
+           (production_batch_id,product_material_id,item_id,item_code_snapshot,item_name_snapshot,quantity_per_unit_snapshot,unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,planned_output_quantity_snapshot,need_number,remaining_number,demand_type,idempotency_key,parent_demand_id,supplement_id,business_status,created_by,updated_by)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,CAST(? AS SIGNED),'scrap_supplement',?,?,?,'active',?,?)`,
           [
             source.production_batch_id,
             original.product_material_id,
             original.item_id,
+            original.item_code_snapshot,
+            original.item_name_snapshot,
             original.quantity_per_unit_snapshot,
             original.unit_snapshot,
             original.is_key_material_snapshot,
             original.need_batch_record_snapshot,
             original.planned_output_quantity_snapshot,
+            line.supplementQuantity,
             line.supplementQuantity,
             `SCRAPSUP:${supplement.insertId}:${original.id}`,
             original.id,
@@ -521,10 +526,11 @@ const selectCandidates = async (
 ): Promise<CandidateRow[]> => {
   const filter = ids.length ? ` AND id IN (${ids.map(() => '?').join(',')})` : '';
   const [rows] = await connection.query<CandidateRow[]>(
-    `SELECT id,production_batch_id,product_material_id,item_id,quantity_per_unit_snapshot,unit_snapshot,
+    `SELECT id,production_batch_id,product_material_id,item_id,item_code_snapshot,item_name_snapshot,quantity_per_unit_snapshot,unit_snapshot,
       is_key_material_snapshot,need_batch_record_snapshot,planned_output_quantity_snapshot,need_number
      FROM production_item_demand
-     WHERE production_batch_id=? AND demand_type='normal' AND business_status='active'${filter}
+     WHERE production_batch_id=? AND demand_type='normal'
+       AND business_status IN ('active','fulfilled')${filter}
      ORDER BY id${lock ? ' FOR UPDATE' : ''}`,
     [batchId, ...ids],
   );

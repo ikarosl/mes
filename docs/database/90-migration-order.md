@@ -27,6 +27,7 @@
 13d. 报工异常来源、工序报废补产授权、补料需求去重及补料单 `fulfilled` 物流状态（`202608200001-production-scrap-reproduction-authorization`）
 13e. 生产领料损耗、补料单双来源及 `material_loss_supplement` 需求类型（`202608200002-production-material-loss-supplement`）
 13f. 当前全部业务数量列追加整数 `CHECK`，拒绝历史和新增小数（`202608240001-integer-production-quantities`）
+13g. 需求剩余数量与 `fulfilled` 终态、批次级/物料级库存余额投影（`202608250002-inventory-balances-and-demand-fulfillment`）
 13g. 工单与生产批次追加可查询的取消/关闭终态事实，并从成功操作日志回填历史可恢复数据（`202608240002-production-terminal-facts`）
 13h. 入库、出库、退料、盘点和损耗单追加可查询的取消终态事实，出库单区分人工与生产任务级联来源（`202608240003-production-document-cancellation-facts`）
 13i. 为历史已驳回、仍有效的员工纯异常报工追加全量冲销事实（`202608250001-rejected-direct-abnormal-report-reversals`）
@@ -52,6 +53,8 @@
 `202608200003-production-scrap-supplement-plan` 新增 `production_scrap_supplement_plan` 与 `production_scrap_supplement_plan_line`，把正式批准报废前可反复编辑的补料方案与 `production_item_demand` 正式需求事实隔离。方案明细只保存管理员填写数量，不自动计算推荐量；草稿查询、乐观锁整体保存、原子确认接口与管理端恢复接线已经落地。
 
 `202608240001-integer-production-quantities` 按 2026-08-24 最终业务决策，为 BOM、工单、批次、需求、报工、分配、出入库、退料、损耗、补产授权、返工和盘点的现存数量列追加整数 `CHECK`。迁移保留 `DECIMAL(12,4)` 兼容表示，但任何非零小数位都会被拒绝；升级库若已有小数会在添加约束时失败，必须先由业务人工确认并修正，migration 不做自动舍入或截断。`products.spec_values` 等纯 JSON 记录不在本迁移范围内。
+
+`202608250002-inventory-balances-and-demand-fulfillment` 在不修改库存流水事实的前提下增加 `inventory_batch_balance` 与 `inventory_item_balance` 同步可重建投影；历史余额从流水一次性回填，后续由触发器随流水和批次状态同事务维护。需求增加整数 `remaining_number` 和 `active -> fulfilled` 终态，历史完成事实从已确认出库单回填，后续确认出库在同事务扣减剩余量。
 
 `202608240002-production-terminal-facts` 为 `work_orders` 追加草稿取消事实和关闭类型、原因、操作人、时间，为 `production_batches` 追加取消事实；迁移从对应成功 `operation_logs` 回填能够恢复的历史数据，无法恢复的历史原因保持 `NULL`，不虚构业务事实。新命令在同一业务主表更新中写入终态字段，并继续与成功操作日志同事务提交。
 

@@ -88,7 +88,7 @@ export const DEMAND_TYPE = {
   materialLossSupplement: DEMAND_TYPES[3],
 } as const;
 
-export const DEMAND_BUSINESS_STATUSES = ['active', 'cancelled'] as const;
+export const DEMAND_BUSINESS_STATUSES = ['active', 'fulfilled', 'cancelled'] as const;
 
 export const BATCH_STEP_ABNORMAL_ORIGINS = ['current_step', 'previous_step'] as const;
 

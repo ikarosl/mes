@@ -10,13 +10,17 @@
 
 核心设计原则：系统将“生产授权上限”与“现场物料可用量”解耦。授权只控制生产批次允许生产的产品数量，不因确认领料后的现场损耗动态回收额度；实际物料损耗通过“损耗报废 → 损耗补料 → 物料需求 → 分配与出库”独立闭环处理。该取舍用于控制轻量 MES 的状态维护成本：系统不建立授权额度与每一份现场物料的实时占用、回收或消费映射，也不得为了物料损耗修改 `authorized_quantity`、回退已齐套工序报废补料单或收缩已经形成的产品可报上限。现场缺料由实物条件和待完成损耗补料物流约束，不能通过重复申请产品补产授权解决。
 
+同一原则适用于短批开工：部分领料后的管理授权只表示允许承担当前缺料风险开始生产，不形成精确的物料可生产数量，也不增加基于物料的报工上限。系统必须持续展示活动需求缺口，并允许开工后继续分配和领用；报工仍只受产品流转额度约束。如果未来要把已领物料作为报工硬门槛，必须先建立可审计的现场物料事务、余额和自动耗料/冲销模型，禁止直接以仓库出库量近似现场可用量。短批授权还必须保存批次当前 `material_plan_version`；需求集合变化或开工前确认退料导致净领用量减少后旧授权失效，继续确认出库只改善缺口，不使授权失效。该字段只属于批次授权并发控制，不能下沉为需求版本；需求是否有效仍由 `business_status` 和 `remaining_number` 判断。
+
+短批开工不得造成物料待办丢失：批次进入 `doing` 后，普通 `active` 需求仍必须出现在仓库待分配、待出库和生产缺料查询中，并继续接受分配与确认出库。生产执行完工必须阻断仍有活动需求的批次；确实不再需要的剩余需求只能通过带来源、原因、操作人和时间的独立管理动作显式取消，禁止因达到报工数量自动关闭。
+
 ---
 
 ### 10. `production_item_demand`
 
 职责：维护生产批次的投入需求，是物料、半成品、辅料等生产投入对象的需求来源表。
 
-视图汇总版本中，该表只保存需求事实，不保存累计分配、累计出库、累计退料、累计报废等缓存字段。
+该表保存不可变需求数量，并保存由确认出库事务同步维护、可从已确认出库明细重建的剩余需求投影；不保存累计分配、退料或报废数量。物料编码、名称和单位随需求冻结；Production 查询使用这些快照，不得为了展示或筛选直接读取 Product 模块拥有的 `products` 表。正常需求从 Product 公开的 BOM 快照取得字段，补料需求继承原需求快照。
 
 | 字段                               | 类型              | 说明                                      |
 | ---------------------------------- | ----------------- | ----------------------------------------- |
@@ -24,17 +28,22 @@
 | `production_batch_id`              | `BIGINT UNSIGNED` | 生产批次 ID，关联 `production_batches.id` |
 | `product_material_id`              | `BIGINT UNSIGNED` | 统一 BOM 明细 ID；正常需求必须保存        |
 | `item_id`                          | `BIGINT UNSIGNED` | 需求对象 ID，关联 `products.id`           |
+| `item_code_snapshot`               | `VARCHAR(100)`    | 生成需求时的物料编码快照                  |
+| `item_name_snapshot`               | `VARCHAR(200)`    | 生成需求时的物料名称快照                  |
 | `quantity_per_unit_snapshot`       | `DECIMAL(12,4)`   | 生成需求时的 BOM 单件用量快照             |
 | `unit_snapshot`                    | `VARCHAR(20)`     | 生成需求时的用量单位快照                  |
 | `is_key_material_snapshot`         | `TINYINT`         | 关键物料标志快照                          |
 | `need_batch_record_snapshot`       | `TINYINT`         | 批次追溯要求快照                          |
 | `planned_output_quantity_snapshot` | `DECIMAL(12,4)`   | 生成需求时的批次计划产量快照              |
 | `need_number`                      | `DECIMAL(12,4)`   | 需求数量                                  |
+| `remaining_number`                 | `BIGINT`          | 尚未确认领用的整数数量，可从出库事实重建  |
 | `demand_type`                      | `VARCHAR(30)`     | 需求类型，默认 `normal`                   |
 | `idempotency_key`                  | `VARCHAR(150)`    | 幂等键，同一键重复提交返回既有结果        |
 | `parent_demand_id`                 | `BIGINT UNSIGNED` | 追加需求关联的原始正常需求 ID             |
 | `supplement_id`                    | `BIGINT UNSIGNED` | 补料物流单 ID，仅两类补料需求填写         |
 | `business_status`                  | `VARCHAR(30)`     | 业务状态，默认 `active`                   |
+| `fulfilled_by`                     | `BIGINT UNSIGNED` | 最后一笔确认领用操作人；未满足时为空      |
+| `fulfilled_at`                     | `DATETIME`        | 需求全部确认领用时间；未满足时为空        |
 | `version`                          | `INT`             | 乐观锁版本号，默认 `0`                    |
 | 业务审计字段                       | 见统一规则        | 可变业务单据审计字段                      |
 
@@ -53,7 +62,8 @@
 | `parent_demand_id`                             | 补料需求关联的原始需求                           |
 | `supplement_id`                                | 补料需求的物流来源单据；具体业务来源由补料单的 `source_type` 和受约束来源外键确定 |
 | `idempotency_key`                              | 幂等键，同一键重复提交返回既有结果               |
-| `business_status`                              | 业务状态，不表达数量进度                         |
+| `business_status`                              | `active` 未满足、`fulfilled` 已满足、`cancelled` 已取消 |
+| `remaining_number`                             | 确认出库时原子扣减；为 `0` 时进入 `fulfilled`    |
 
 约束：
 
@@ -65,7 +75,8 @@
 - 组合外键：`(supplement_id, production_batch_id) -> production_material_supplement(id, production_batch_id)`
 - 检查约束：`CHECK (need_number > 0)`
 - 检查约束：`CHECK (demand_type IN ('normal', 'manual_additional', 'scrap_supplement', 'material_loss_supplement'))`
-- 检查约束：`CHECK (business_status IN ('active', 'cancelled'))`；它只表示需求是否仍有效，数量进度从分配和出库事实派生
+- 检查约束：`CHECK (business_status IN ('active', 'fulfilled', 'cancelled'))`
+- 检查约束：`0 <= remaining_number <= need_number`；`active` 必须大于 `0`，`fulfilled` 必须等于 `0` 并填写完成事实
 - 组合索引：`INDEX (production_batch_id, business_status)`，用于查询批次有效需求
 - 检查约束：正常需求要求 `parent_demand_id IS NULL AND supplement_id IS NULL`
 - 检查约束：人工追加需求要求 `parent_demand_id IS NOT NULL AND supplement_id IS NULL`
@@ -101,6 +112,10 @@
 - 报废补料必须校验补料单、授权、原需求和新增需求属于同一生产批次，且 BOM 明细与物料一致。
 - 生产领料损耗补料必须从损耗事实所指向的需求/分配行取得 BOM、物料、单位和批次关系；`need_number` 固定等于已确认损耗数量，不接受客户端填写，不允许改量或选择不补料。
 - 需求事实和对应操作日志必须在同一事务写入。
+- 确认出库在写出库明细、负库存流水和单据终态的同一事务中扣减涉及需求的 `remaining_number`；扣至 `0` 时写入 `fulfilled/fulfilled_by/fulfilled_at`。部分出库继续保持 `active`。退料不重新打开原需求，生产损耗继续创建独立补料需求。
+- 历史已满足需求由 `202608250002` 根据 `completed` 出库单一次性回填。物料供需预警只汇总 `active.remaining_number`，不再扫描已满足需求的历史出库明细。
+- 供需预警关键词匹配同一 `item_id` 的任一活动需求编码/名称快照；命中物料后必须汇总该物料的全部活动需求，不能只累计匹配关键词的需求行。列表以该物料 ID 最大的活动需求快照作为确定性展示文本，禁止用 `MAX(item_name_snapshot)` 等字典序值冒充当前名称。
+- 供需预警的物料行必须能够下钻活动需求来源，至少展示需求类型、需求 ID、所属工单、生产任务、原始需求以及补料/异常处置/领料损耗单据编号；来源查询仍只读取 Production 所有的生产事实，不反查 Product 当前主数据。
 
 ### 10.1 `production_scrap_supplement_plan` / `production_scrap_supplement_plan_line`
 
