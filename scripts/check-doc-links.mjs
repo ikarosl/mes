@@ -10,6 +10,7 @@ const ignored = new Set([
   'dist',
   'node_modules',
   'ai_output', // 本地 AI 审查输出目录（已 gitignore），不属于文档源
+  'temp',
 ]);
 
 const markdownFiles = [];
