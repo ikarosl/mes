@@ -65,6 +65,8 @@ export interface ProductListItem {
   specValues: ProductSpecValue[];
   status: number;
   materialCount: number;
+  bomLockedAt: string | null;
+  bomLockedById: string | null;
   remark: string | null;
   updatedAt: string | null;
 }

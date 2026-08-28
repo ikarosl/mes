@@ -16,7 +16,7 @@
  */
 
 /** createBatch 创建生产批次；v2 移除了创建时逐工序负责人覆盖。 */
-export const CREATE_BATCH_IDEMPOTENCY_SCOPE = 'production.batch.create.v2' as const;
+export const CREATE_BATCH_IDEMPOTENCY_SCOPE = 'production.batch.create.v3' as const;
 /** 创建物料分配。 */
 export const CREATE_MATERIAL_ALLOCATION_IDEMPOTENCY_SCOPE =
   'production.material-allocation.create.v1' as const;

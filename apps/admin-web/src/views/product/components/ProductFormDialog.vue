@@ -21,6 +21,7 @@
           <el-input
             v-model="form.itemCode"
             placeholder="请输入产品编码"
+            :disabled="Boolean(editingProductId)"
           />
         </el-form-item>
         <el-form-item
@@ -39,6 +40,7 @@
           <el-select
             v-model="form.categoryId"
             placeholder="请选择产品分类"
+            :disabled="editingProductLocked"
             @visible-change="(visible: boolean) => visible && $emit('refresh-options')"
           >
             <el-option
@@ -61,13 +63,17 @@
           <el-input
             v-model="form.unit"
             placeholder="pcs"
+            :disabled="Boolean(editingProductId)"
           />
         </el-form-item>
         <el-form-item
           label="获取方式"
           required
         >
-          <el-select v-model="form.acquireMethod">
+          <el-select
+            v-model="form.acquireMethod"
+            :disabled="editingProductLocked"
+          >
             <el-option
               label="自制"
               value="self_made"
@@ -202,6 +208,7 @@ export type ProductFormValue = {
 const props = defineProps<{
   visible: boolean;
   editingProductId: string | null;
+  editingProductLocked: boolean;
   categoryOptions: ProductCategoryOption[];
   itemKindLabels: Record<ProductItemKind, string>;
   submitting: boolean;

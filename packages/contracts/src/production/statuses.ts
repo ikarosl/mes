@@ -4,6 +4,7 @@ export type ProductionBatchStatus =
   | 'pending'
   | 'material_pending'
   | 'material_assigned'
+  | 'material_partially_outbound'
   | 'material_outbound'
   | 'doing'
   | 'completed'
@@ -46,7 +47,7 @@ export type InboundOrderStatus = 'pending' | 'completed' | 'cancelled';
 export type DemandType =
   'normal' | 'manual_additional' | 'scrap_supplement' | 'material_loss_supplement';
 
-export type DemandBusinessStatus = 'active' | 'cancelled';
+export type DemandBusinessStatus = 'active' | 'fulfilled' | 'cancelled';
 
 export type BatchStepAbnormalOrigin = 'current_step' | 'previous_step';
 

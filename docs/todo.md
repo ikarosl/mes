@@ -375,6 +375,15 @@ IDEMPOTENCY_RESULT_CORRUPT`；`HttpExceptionFilter` 与 `AuditInterceptor` 统�
 - 需求乘法使用整数解析和 `BigInt` 计算后检查数据库上限；路线放行、报工、返工、完工、库存和盘点比较均改为整数加减与精确比较。
 - 已补小数拒绝、最大值、乘法溢出、DTO 和 migration 结构测试。
 
+### 5.3 物料供需预警与大流水余额
+
+状态：`已完成（2026-08-25，基础单位变更规则待单独确认）`
+
+- `production_item_demand` 已增加整数 `remaining_number` 与 `active -> fulfilled` 终态；确认出库在同事务扣减剩余量，历史完成需求按已确认出库事实回填。
+- `inventory_batch_balance` 与 `inventory_item_balance` 作为库存流水的同步、可重建和可对账投影，分别服务批次库存和按物料汇总；库存流水仍是唯一事实来源。
+- `/warehouse/inventory` 已增加物料供需预警，以可用库存余额减活动需求剩余量显示库存缺口，不扫描历史已满足需求和全量库存流水。
+- 尚待确认：物料已有 BOM、库存批次或需求后是否禁止修改基础单位；本轮没有实施单位变更限制或单位换算模型。
+
 ## 6. 后续工程与部署任务
 
 1. 其余正式范围模块的业务逻辑按批准顺序迁移。

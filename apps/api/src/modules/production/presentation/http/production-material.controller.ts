@@ -22,6 +22,7 @@ import { ProductionMaterialService } from '../../application/production-material
 import { ProductionDomainExceptionFilter } from './production-domain-exception.filter.js';
 import {
   AllocationParamDto,
+  AuthorizeShortBatchDto,
   BatchIdParamDto,
   CreateMaterialAllocationsDto,
   CreateMaterialOutboundDto,
@@ -45,6 +46,34 @@ export class ProductionMaterialController {
   @RequirePermission(PERMISSIONS.production.materials.view)
   available(@Param() { demandId }: DemandIdParamDto) {
     return this.service.listAvailableItemBatches(demandId);
+  }
+
+  @Get('batches/:batchId/short-batch-authorization-preview')
+  @RequirePermission(PERMISSIONS.production.materials.view)
+  shortBatchAuthorizationPreview(@Param() { batchId }: BatchIdParamDto) {
+    return this.service.getShortBatchAuthorizationPreview(batchId);
+  }
+
+  @Post('batches/:batchId/actions/authorize-short-batch')
+  @RequirePermission(PERMISSIONS.production.materials.authorizeShortBatch)
+  @AuditInApplication()
+  authorizeShortBatch(
+    @Param() { batchId }: BatchIdParamDto,
+    @Body() body: AuthorizeShortBatchDto,
+    @CurrentCommandContext() context: CommandContext,
+  ) {
+    return this.service.authorizeShortBatch(batchId, body.version, body.reason, context);
+  }
+
+  @Post('batches/:batchId/actions/close-remaining-material-demands')
+  @RequirePermission(PERMISSIONS.production.materials.closeRemainingDemands)
+  @AuditInApplication()
+  closeRemainingMaterialDemands(
+    @Param() { batchId }: BatchIdParamDto,
+    @Body() body: ReasonedVersionedCommandDto,
+    @CurrentCommandContext() context: CommandContext,
+  ) {
+    return this.service.closeRemainingDemands(batchId, body.version, body.reason, context);
   }
 
   @Post('batches/:batchId/material-allocations')

@@ -31,6 +31,8 @@ const product = (id: string): ProductListItem =>
     specValues: [],
     status: 1,
     materialCount: 0,
+    bomLockedAt: null,
+    bomLockedById: null,
     remark: null,
     updatedAt: null,
   }) as ProductListItem;
@@ -284,6 +286,20 @@ describe('ProductMaterialDialog', () => {
     expect(saveButton(wrapper)?.attributes('disabled')).toBeUndefined();
     await saveButton(wrapper)?.trigger('click');
     expect(savedRows(wrapper)?.map((r) => r.materialProductId)).toEqual(['b1']);
+  });
+
+  it('keeps a locked BOM visible but removes every write entry', async () => {
+    materials.mockResolvedValue([bomRow('b1')]);
+    productOptions.mockResolvedValue([materialOption('b1')]);
+    const wrapper = mountDialog();
+    const locked = { ...product('B'), bomLockedAt: '2026-08-28T10:00:00+08:00' };
+
+    await wrapper.setProps({ visible: true, product: locked });
+    await flushPromises();
+
+    expect(wrapper.find('.el-alert-stub').attributes('data-title')).toContain('永久锁定');
+    expect(buttonByText(wrapper, '添加已有物料')?.attributes('disabled')).toBeDefined();
+    expect(saveButton(wrapper)).toBeUndefined();
   });
 
   it('on page activation only refreshes candidates, never retries a failed BOM detail', async () => {

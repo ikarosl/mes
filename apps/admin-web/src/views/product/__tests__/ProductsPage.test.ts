@@ -49,6 +49,8 @@ const productRow = {
   specValues: [],
   status: 1,
   materialCount: 0,
+  bomLockedAt: null,
+  bomLockedById: null,
   remark: null,
   updatedAt: null,
 };

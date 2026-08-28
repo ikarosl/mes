@@ -1,6 +1,180 @@
 <template>
   <div class="inventory-page">
-    <section class="query-panel">
+    <el-tabs v-model="viewMode">
+      <el-tab-pane
+        label="物料供需预警"
+        name="supply-demand"
+      />
+      <el-tab-pane
+        label="库存批次"
+        name="inventory-batches"
+      />
+    </el-tabs>
+    <section
+      v-if="viewMode === 'supply-demand'"
+      class="query-panel"
+    >
+      <el-form
+        class="query-form"
+        :inline="true"
+        :model="supplyDemandQuery"
+        ><el-form-item label="物料"
+          ><el-input
+            v-model="supplyDemandQuery.keyword"
+            clearable
+            placeholder="编码或名称" /></el-form-item
+        ><el-form-item class="query-actions"
+          ><el-button
+            type="primary"
+            :loading="supplyDemandLoading"
+            @click="searchSupplyDemand"
+            >查询</el-button
+          ><el-button @click="resetSupplyDemandQuery">重置</el-button></el-form-item
+        ></el-form
+      >
+    </section>
+    <section
+      v-if="viewMode === 'supply-demand'"
+      class="table-panel"
+    >
+      <TableToolbar :total="supplyDemandTotal"
+        ><template #tools
+          ><el-button
+            :icon="Refresh"
+            text
+            circle
+            :loading="supplyDemandLoading"
+            @click="loadSupplyDemand" /></template></TableToolbar
+      ><el-table
+        v-loading="supplyDemandLoading"
+        :data="supplyDemandItems"
+        class="data-table supply-demand-table"
+        empty-text="暂无活动物料需求"
+        @row-click="openDemandTrace"
+        ><el-table-column
+          label="物料"
+          min-width="220"
+          ><template #default="{ row }"
+            ><strong class="trace-link">{{ row.itemName }}</strong>
+            <div class="secondary">{{ row.itemCode }}</div></template
+          ></el-table-column
+        ><el-table-column
+          label="可用库存"
+          min-width="140"
+          align="right"
+          ><template #default="{ row }"
+            >{{ formatQuantity(row.availableInventoryQuantity) }} {{ row.unit }}</template
+          ></el-table-column
+        ><el-table-column
+          label="其他状态库存"
+          min-width="140"
+          align="right"
+          ><template #default="{ row }"
+            >{{ formatQuantity(row.unavailableInventoryQuantity) }} {{ row.unit }}</template
+          ></el-table-column
+        ><el-table-column
+          label="未完成需求"
+          min-width="140"
+          align="right"
+          ><template #default="{ row }"
+            >{{ formatQuantity(row.openDemandQuantity) }} {{ row.unit }}</template
+          ></el-table-column
+        ><el-table-column
+          label="库存缺口"
+          min-width="130"
+          align="right"
+          ><template #default="{ row }"
+            ><strong :class="row.isShortage ? 'shortage' : 'zero'">{{
+              formatQuantity(row.shortageQuantity)
+            }}</strong>
+            {{ row.unit }}</template
+          ></el-table-column
+        ></el-table
+      >
+      <PaginationFooter
+        :total="supplyDemandTotal"
+        :current-page="supplyDemandCurrentPage"
+        :page-size="supplyDemandPageSize"
+        @update:page-size="changeSupplyDemandPageSize"
+        @page-change="changeSupplyDemandPage"
+      />
+    </section>
+    <el-dialog
+      v-model="demandTraceVisible"
+      :title="`${demandTraceSelectedItem?.itemName ?? '物料'} · 未完成需求来源`"
+      :width="DialogWidth.xl"
+    >
+      <div
+        v-loading="demandTraceLoading"
+        class="detail-body"
+      >
+        <el-table
+          :data="demandTraceItems"
+          empty-text="暂无未完成需求"
+        >
+          <el-table-column
+            label="需求来源"
+            min-width="160"
+          >
+            <template #default="{ row }">
+              <strong>{{ demandTypeLabel(row.demandType) }}</strong>
+              <div class="secondary">需求 #{{ row.demandId }}</div>
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="工单 / 生产任务"
+            min-width="210"
+          >
+            <template #default="{ row }">
+              <div>{{ row.workOrderNo }}</div>
+              <div class="secondary">{{ row.batchNo }}</div>
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="来源单据"
+            min-width="220"
+          >
+            <template #default="{ row }">{{ demandSourceText(row) }}</template>
+          </el-table-column>
+          <el-table-column
+            label="需求数量"
+            width="130"
+            align="right"
+          >
+            <template #default="{ row }">
+              {{ formatQuantity(row.demandQuantity) }} {{ row.unit }}
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="未完成数量"
+            width="140"
+            align="right"
+          >
+            <template #default="{ row }">
+              <strong class="shortage">{{ formatQuantity(row.remainingDemandQuantity) }}</strong>
+              {{ row.unit }}
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="产生时间"
+            width="170"
+          >
+            <template #default="{ row }">{{ formatDateTimeForDisplay(row.createdAt) }}</template>
+          </el-table-column>
+        </el-table>
+      </div>
+      <PaginationFooter
+        :total="demandTraceTotal"
+        :current-page="demandTraceCurrentPage"
+        :page-size="demandTracePageSize"
+        @update:page-size="changeDemandTracePageSize"
+        @page-change="changeDemandTracePage"
+      />
+    </el-dialog>
+    <section
+      v-if="viewMode === 'inventory-batches'"
+      class="query-panel"
+    >
       <el-form
         class="query-form"
         :inline="true"
@@ -35,7 +209,10 @@
         ></el-form
       >
     </section>
-    <section class="table-panel">
+    <section
+      v-if="viewMode === 'inventory-batches'"
+      class="table-panel"
+    >
       <TableToolbar :total="total"
         ><template #tools
           ><el-button
@@ -205,9 +382,14 @@
   </div>
 </template>
 <script setup lang="ts">
-import { onActivated, onMounted, reactive, ref } from 'vue';
+import { onActivated, onMounted, reactive, ref, watch } from 'vue';
 import { Refresh } from '@element-plus/icons-vue';
-import type { InventoryBatchItem, InventoryBatchQuery } from '@company/contracts';
+import type {
+  DemandType,
+  InventoryBatchItem,
+  InventoryBatchQuery,
+  InventoryMaterialDemandTraceItem,
+} from '@company/contracts';
 import { productionApi } from '../../api/production';
 import TableToolbar from '../../components/TableToolbar.vue';
 import PaginationFooter from '../../components/PaginationFooter.vue';
@@ -220,7 +402,35 @@ import { DialogWidth } from '../../utils/dialog';
 import { formatDateTimeForDisplay } from '../../utils/date';
 import { EMessage } from '../../utils/message';
 import { formatQuantity } from '../production/production-status';
+import { useInventoryMaterialSupplyDemandList } from './composables/useInventoryMaterialSupplyDemandList';
+import { useInventoryMaterialDemandTrace } from './composables/useInventoryMaterialDemandTrace';
 defineOptions({ name: 'WarehouseInventoryPage' });
+const viewMode = ref<'supply-demand' | 'inventory-batches'>('supply-demand');
+const {
+  items: supplyDemandItems,
+  loading: supplyDemandLoading,
+  total: supplyDemandTotal,
+  currentPage: supplyDemandCurrentPage,
+  pageSize: supplyDemandPageSize,
+  query: supplyDemandQuery,
+  loadSupplyDemand,
+  searchSupplyDemand,
+  resetSupplyDemandQuery,
+  changeSupplyDemandPageSize,
+  changeSupplyDemandPage,
+} = useInventoryMaterialSupplyDemandList();
+const {
+  visible: demandTraceVisible,
+  loading: demandTraceLoading,
+  selectedItem: demandTraceSelectedItem,
+  items: demandTraceItems,
+  total: demandTraceTotal,
+  currentPage: demandTraceCurrentPage,
+  pageSize: demandTracePageSize,
+  open: openDemandTrace,
+  changePageSize: changeDemandTracePageSize,
+  changePage: changeDemandTracePage,
+} = useInventoryMaterialDemandTrace();
 const query = reactive<InventoryBatchQuery>({ page: 1, pageSize: 20 });
 const rows = ref<InventoryBatchItem[]>([]),
   total = ref(0),
@@ -279,14 +489,61 @@ const openDetail = async (id: string) => {
     detailLoading.value = false;
   }
 };
-onMounted(load);
-onActivated(load);
+const demandTypeLabels: Record<DemandType, string> = {
+  normal: '任务正常用料',
+  manual_additional: '人工追加需求',
+  scrap_supplement: '工序报废补料',
+  material_loss_supplement: '领料损耗补料',
+};
+const demandTypeLabel = (type: DemandType) => demandTypeLabels[type];
+const demandSourceText = (row: InventoryMaterialDemandTraceItem) => {
+  if (row.demandType === 'scrap_supplement')
+    return (
+      [
+        row.supplementNo ? `补料单 ${row.supplementNo}` : null,
+        row.abnormalDispositionNo ? `异常处置 ${row.abnormalDispositionNo}` : null,
+      ]
+        .filter(Boolean)
+        .join(' · ') || '-'
+    );
+  if (row.demandType === 'material_loss_supplement')
+    return (
+      [
+        row.supplementNo ? `补料单 ${row.supplementNo}` : null,
+        row.materialLossScrapNo ? `报废单 ${row.materialLossScrapNo}` : null,
+      ]
+        .filter(Boolean)
+        .join(' · ') || '-'
+    );
+  if (row.demandType === 'manual_additional')
+    return row.parentDemandId ? `源需求 #${row.parentDemandId}` : '人工追加';
+  return row.batchNo;
+};
+const refreshCurrentView = () => {
+  if (viewMode.value === 'inventory-batches') return load();
+  return loadSupplyDemand();
+};
+onMounted(refreshCurrentView);
+onActivated(refreshCurrentView);
+watch(viewMode, (mode) => {
+  if (mode === 'inventory-batches') void load();
+  else void loadSupplyDemand();
+});
 </script>
 <style scoped>
 .inventory-page {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+.shortage {
+  color: #ef4444;
+}
+.supply-demand-table :deep(.el-table__row) {
+  cursor: pointer;
+}
+.trace-link {
+  color: var(--el-color-primary);
 }
 .query-panel,
 .table-panel {

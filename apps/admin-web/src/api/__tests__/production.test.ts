@@ -10,6 +10,17 @@ describe('productionApi', () => {
     request.mockResolvedValue({ data: undefined });
   });
 
+  it('lists one material active demand trace with server pagination', async () => {
+    const { productionApi } = await import('../production');
+
+    await productionApi.listInventoryMaterialDemandTrace('9', { page: 2, pageSize: 20 });
+
+    expect(request).toHaveBeenCalledWith({
+      url: '/production/inventory-material-supply-demand/9/demands',
+      params: { page: 2, pageSize: 20 },
+    });
+  });
+
   it('lists work orders with query params', async () => {
     const { productionApi } = await import('../production');
     request.mockResolvedValue({

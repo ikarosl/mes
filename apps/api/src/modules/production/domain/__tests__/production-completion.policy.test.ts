@@ -47,4 +47,12 @@ describe('production execution completion policy', () => {
       'final_step_quantity_insufficient',
     ]);
   });
+
+  it('blocks completion while short-batch material demands remain active', () => {
+    expect(evaluate({ activeMaterialDemandCount: 2 })).toMatchObject({
+      canComplete: false,
+      activeMaterialDemandCount: 2,
+      blockers: ['active_material_demand_remains'],
+    });
+  });
 });

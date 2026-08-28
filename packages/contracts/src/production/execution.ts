@@ -195,7 +195,8 @@ export type ProductionExecutionCompletionBlocker =
   | 'batch_not_doing'
   | 'no_required_reporting_step'
   | 'required_step_incomplete'
-  | 'final_step_quantity_insufficient';
+  | 'final_step_quantity_insufficient'
+  | 'active_material_demand_remains';
 
 export interface ProductionExecutionCompletionCheck {
   productionBatchId: string;
@@ -207,6 +208,7 @@ export interface ProductionExecutionCompletionCheck {
   finalRequiredStepId: string | null;
   finalRequiredStepName: string | null;
   finalEffectiveNormalQuantity: string;
+  activeMaterialDemandCount: number;
   canComplete: boolean;
   blockers: ProductionExecutionCompletionBlocker[];
 }

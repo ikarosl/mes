@@ -11,6 +11,13 @@
         type="info"
         :closable="false"
       />
+      <el-alert
+        v-if="shortBatch"
+        class="short-batch-alert"
+        title="当前任务按短批授权领料。仅可对已分配数量制单；未完成需求会继续保留在仓库待办和供需预警中。"
+        type="warning"
+        :closable="false"
+      />
       <el-table
         :data="availableAllocations"
         class="outbound-table"
@@ -144,6 +151,7 @@ const props = defineProps<{
   outbounds: MaterialOutboundItem[];
   loadingOutbounds: boolean;
   submitting: boolean;
+  shortBatch?: boolean;
 }>();
 const emit = defineEmits<{
   (e: 'update:visible', value: boolean): void;
@@ -206,6 +214,9 @@ const statusLabel = (status: MaterialOutboundItem['status']) =>
 }
 .outbound-table {
   margin-top: 16px;
+}
+.short-batch-alert {
+  margin-top: 12px;
 }
 .remark {
   margin: 16px 0;

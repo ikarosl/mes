@@ -5,8 +5,11 @@ import { IdentityModule } from '../identity/public.js';
 import { ProductService } from './application/product.service.js';
 import { ProductSnapshotQuery } from './application/product-snapshot.query.js';
 import { ProductSnapshotService } from './application/product-snapshot.service.js';
+import { ProductProductionDefinitionCommand } from './application/product-production-definition.command.js';
+import { ProductProductionDefinitionService } from './application/product-production-definition.service.js';
 import { TechnicalFileContentQuery } from './application/technical-file-content.query.js';
 import { ProductSnapshotRepository } from './application/ports/product-snapshot.repository.js';
+import { ProductProductionDefinitionRepository } from './application/ports/product-production-definition.repository.js';
 import { ProcessRouteRepository } from './application/ports/process-route.repository.js';
 import { ProcessRouteStepRepository } from './application/ports/process-route-step.repository.js';
 import { ProcessStepRepository } from './application/ports/process-step.repository.js';
@@ -30,6 +33,7 @@ import { ProductController } from './presentation/http/product.controller.js';
   providers: [
     ProductService,
     ProductSnapshotService,
+    ProductProductionDefinitionService,
     TechnicalFileContentQuery,
     MysqlProductSnapshotRepository,
     MysqlTechnicalFileRepository,
@@ -45,12 +49,20 @@ import { ProductController } from './presentation/http/product.controller.js';
     { provide: ProcessRouteRepository, useExisting: MysqlProcessRouteRepository },
     { provide: ProcessRouteStepRepository, useExisting: MysqlProcessRouteStepRepository },
     { provide: ProductSnapshotRepository, useExisting: MysqlProductSnapshotRepository },
+    {
+      provide: ProductProductionDefinitionRepository,
+      useExisting: MysqlProductSnapshotRepository,
+    },
     { provide: ProductSnapshotQuery, useExisting: ProductSnapshotService },
+    {
+      provide: ProductProductionDefinitionCommand,
+      useExisting: ProductProductionDefinitionService,
+    },
     {
       provide: TechnicalFileStorage,
       useFactory: () => new S3TechnicalFileStorage(loadTechnicalFileStorageConfig()),
     },
   ],
-  exports: [ProductSnapshotQuery, TechnicalFileContentQuery],
+  exports: [ProductSnapshotQuery, ProductProductionDefinitionCommand, TechnicalFileContentQuery],
 })
 export class ProductModule {}

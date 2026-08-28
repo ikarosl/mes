@@ -50,6 +50,10 @@ import type {
   CancelMaterialOutboundPayload,
   InventoryBatchItem,
   InventoryBatchQuery,
+  InventoryMaterialSupplyDemandItem,
+  InventoryMaterialSupplyDemandQuery,
+  InventoryMaterialDemandTraceItem,
+  InventoryMaterialDemandTraceQuery,
   PurchaseInboundOrderItem,
   PurchaseInboundOrderQuery,
   ApproveBatchStepReworkPayload,
@@ -59,6 +63,10 @@ import type {
   RejectBatchStepAbnormalDispositionPayload,
   ReworkRecordItem,
   CancelProductionBatchPayload,
+  AuthorizeShortBatchPayload,
+  ShortBatchAuthorizationPreview,
+  ShortBatchAuthorizationResult,
+  CloseRemainingMaterialDemandsResult,
 } from '@company/contracts';
 import { toRequestError, type RetryRequestConfig } from '@company/request';
 import { httpClient } from './http';
@@ -102,6 +110,16 @@ export const productionApi = {
     }),
   listInventoryBatches: (params: InventoryBatchQuery) =>
     request<PageResult<InventoryBatchItem>>({ url: '/production/inventory-batches', params }),
+  listInventoryMaterialSupplyDemand: (params: InventoryMaterialSupplyDemandQuery) =>
+    request<PageResult<InventoryMaterialSupplyDemandItem>>({
+      url: '/production/inventory-material-supply-demand',
+      params,
+    }),
+  listInventoryMaterialDemandTrace: (itemId: string, params: InventoryMaterialDemandTraceQuery) =>
+    request<PageResult<InventoryMaterialDemandTraceItem>>({
+      url: `/production/inventory-material-supply-demand/${itemId}/demands`,
+      params,
+    }),
   getInventoryBatch: (id: string) =>
     request<InventoryBatchItem>({ url: `/production/inventory-batches/${id}` }),
   searchProductionTrace: (params: ProductionTraceQuery) =>
@@ -234,6 +252,25 @@ export const productionApi = {
   listAvailableItemBatches: (demandId: string) =>
     request<AvailableItemBatchItem[]>({
       url: `/production/material-demands/${demandId}/available-item-batches`,
+    }),
+
+  getShortBatchAuthorizationPreview: (batchId: string) =>
+    request<ShortBatchAuthorizationPreview>({
+      url: `/production/batches/${batchId}/short-batch-authorization-preview`,
+    }),
+
+  authorizeShortBatch: (batchId: string, data: AuthorizeShortBatchPayload) =>
+    request<ShortBatchAuthorizationResult>({
+      url: `/production/batches/${batchId}/actions/authorize-short-batch`,
+      method: 'POST',
+      data,
+    }),
+
+  closeRemainingMaterialDemands: (batchId: string, data: { version: number; reason: string }) =>
+    request<CloseRemainingMaterialDemandsResult>({
+      url: `/production/batches/${batchId}/actions/close-remaining-material-demands`,
+      method: 'POST',
+      data,
     }),
 
   createMaterialAllocations: (

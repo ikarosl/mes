@@ -9,6 +9,7 @@ import { ProductionExecutionService } from './application/production-execution.s
 import { ProductionReportingService } from './application/production-reporting.service.js';
 import { ProductionTraceService } from './application/production-trace.service.js';
 import { ProductionInboundService } from './application/production-inbound.service.js';
+import { ProductionSupplyDemandService } from './application/production-supply-demand.service.js';
 import { ProductionAbnormalService } from './application/production-abnormal.service.js';
 import { ProductionSupplementService } from './application/production-supplement.service.js';
 import { ProductionInventoryService } from './application/production-inventory.service.js';
@@ -18,6 +19,7 @@ import { ProductionExecutionRepository } from './application/ports/production-ex
 import { ProductionReportingRepository } from './application/ports/production-reporting.repository.js';
 import { ProductionTraceRepository } from './application/ports/production-trace.repository.js';
 import { ProductionInboundRepository } from './application/ports/production-inbound.repository.js';
+import { ProductionSupplyDemandRepository } from './application/ports/production-supply-demand.repository.js';
 import { ProductionAbnormalRepository } from './application/ports/production-abnormal.repository.js';
 import { ProductionSupplementRepository } from './application/ports/production-supplement.repository.js';
 import { ProductionInventoryRepository } from './application/ports/production-inventory.repository.js';
@@ -29,6 +31,7 @@ import { MysqlProductionExecutionRepository } from './infrastructure/mysql-produ
 import { MysqlProductionReportingRepository } from './infrastructure/mysql-production-reporting.repository.js';
 import { MysqlProductionTraceRepository } from './infrastructure/mysql-production-trace.repository.js';
 import { MysqlProductionInboundRepository } from './infrastructure/mysql-production-inbound.repository.js';
+import { MysqlProductionSupplyDemandRepository } from './infrastructure/mysql-production-supply-demand.repository.js';
 import { MysqlProductionAbnormalRepository } from './infrastructure/mysql-production-abnormal.repository.js';
 import { MysqlProductionSupplementRepository } from './infrastructure/mysql-production-supplement.repository.js';
 import { MysqlProductionInventoryRepository } from './infrastructure/mysql-production-inventory.repository.js';
@@ -62,6 +65,7 @@ import { WarehouseController } from './presentation/http/warehouse.controller.js
     ProductionReportingService,
     ProductionTraceService,
     ProductionInboundService,
+    ProductionSupplyDemandService,
     ProductionAbnormalService,
     ProductionSupplementService,
     ProductionInventoryService,
@@ -73,6 +77,7 @@ import { WarehouseController } from './presentation/http/warehouse.controller.js
     MysqlProductionReportingRepository,
     MysqlProductionTraceRepository,
     MysqlProductionInboundRepository,
+    MysqlProductionSupplyDemandRepository,
     MysqlProductionAbnormalRepository,
     MysqlProductionSupplementRepository,
     MysqlProductionInventoryRepository,
@@ -82,6 +87,10 @@ import { WarehouseController } from './presentation/http/warehouse.controller.js
     { provide: ProductionReportingRepository, useExisting: MysqlProductionReportingRepository },
     { provide: ProductionTraceRepository, useExisting: MysqlProductionTraceRepository },
     { provide: ProductionInboundRepository, useExisting: MysqlProductionInboundRepository },
+    {
+      provide: ProductionSupplyDemandRepository,
+      useExisting: MysqlProductionSupplyDemandRepository,
+    },
     { provide: ProductionAbnormalRepository, useExisting: MysqlProductionAbnormalRepository },
     { provide: ProductionSupplementRepository, useExisting: MysqlProductionSupplementRepository },
     { provide: ProductionInventoryRepository, useExisting: MysqlProductionInventoryRepository },

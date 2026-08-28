@@ -34,17 +34,18 @@
 
 | 字段                 | 计算来源                                            |
 | -------------------- | --------------------------------------------------- |
-| `available_quantity` | 汇总 `stock_status = available` 的库存流水          |
-| `pending_quantity`   | 汇总 `stock_status = pending_inspection` 的库存流水 |
-| `frozen_quantity`    | 汇总 `stock_status = frozen` 的库存流水             |
-| `defective_quantity` | 汇总 `stock_status = defective` 的库存流水          |
-| `total_quantity`     | 汇总该批次所有库存流水                              |
+| `available_quantity` | 读取批次余额投影中 `stock_status = available` 的数量          |
+| `pending_quantity`   | 读取批次余额投影中 `stock_status = pending_inspection` 的数量 |
+| `frozen_quantity`    | 读取批次余额投影中 `stock_status = frozen` 的数量             |
+| `defective_quantity` | 读取批次余额投影中 `stock_status = defective` 的数量          |
+| `total_quantity`     | 汇总该批次的 `inventory_batch_balance`                        |
 
 说明：
 
 - 该视图只表达账面库存。
 - 是否可被新生产批次分配，还需要结合预留数量，通过 `v_item_batch_available_to_allocate` 判断。
 - 批次是否用完不写回 `item_batch.batch_status`。
+- `inventory_transaction` 仍是事实来源；余额投影用于避免查询成本随历史流水线性增长。
 
 ---
 

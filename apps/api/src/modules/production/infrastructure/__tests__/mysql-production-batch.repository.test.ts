@@ -178,6 +178,8 @@ describe('MysqlProductionBatchRepository persistence', () => {
           {
             productMaterialId: '401',
             materialProductId: '402',
+            itemCode: 'MAT-402',
+            productName: '测试物料',
             quantityPerUnit: '2.0000',
             unit: 'kg',
             isKeyMaterial: true,
@@ -189,19 +191,21 @@ describe('MysqlProductionBatchRepository persistence', () => {
     );
 
     const demandValues = connection.execute.mock.calls[0]?.[1] as unknown[];
-    expect(demandValues.slice(0, 12)).toEqual([
+    expect(demandValues.slice(0, 14)).toEqual([
       '21',
       '401',
       '402',
+      'MAT-402',
+      '测试物料',
       '2.0000',
       'kg',
       1,
       0,
       '10.0000',
       '20.0000',
+      '20.0000',
       'normal',
       'NORMAL:21:401',
-      '1',
     ]);
     expect(String(connection.execute.mock.calls[2]?.[0])).toContain('INSERT INTO operation_logs');
     expect(connection.commit).toHaveBeenCalledOnce();
@@ -295,7 +299,7 @@ describe('MysqlProductionBatchRepository persistence', () => {
     });
 
     const mutationSql = connection.execute.mock.calls
-      .slice(0, 4)
+      .slice(0, 5)
       .map((call) => String(call[0]))
       .join('\n');
     expect(mutationSql).toContain('outbound_order');
@@ -304,8 +308,9 @@ describe('MysqlProductionBatchRepository persistence', () => {
     expect(mutationSql).toContain('production_item_demand');
     expect(mutationSql).toContain("status IN ('pending','material_pending','material_assigned')");
     expect(mutationSql).toContain('cancel_reason=?');
-    expect(connection.execute.mock.calls[3]?.[1]).toEqual(['计划调整', '1', '1', '21', 2]);
-    expect(String(connection.execute.mock.calls[4]?.[0])).toContain('INSERT INTO operation_logs');
+    expect(mutationSql).toContain('production_short_batch_authorization');
+    expect(connection.execute.mock.calls[4]?.[1]).toEqual(['计划调整', '1', '1', '21', 2]);
+    expect(String(connection.execute.mock.calls[5]?.[0])).toContain('INSERT INTO operation_logs');
     expect(connection.commit).toHaveBeenCalledOnce();
   });
 

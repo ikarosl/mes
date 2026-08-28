@@ -53,6 +53,7 @@ export const taskNextActionPresentation = (batch: {
     | 'pending'
     | 'material_pending'
     | 'material_assigned'
+    | 'material_partially_outbound'
     | 'material_outbound'
     | 'doing'
     | 'completed'
@@ -60,6 +61,8 @@ export const taskNextActionPresentation = (batch: {
   hasActiveMaterialOutbound?: boolean;
 }): TaskNextActionPresentation => {
   if (batch.status === 'cancelled') return { label: '任务已取消', tone: 'muted' };
+  if (batch.status === 'material_partially_outbound')
+    return { label: '短批已部分领料', tone: 'warning' };
   if (
     batch.hasActiveMaterialOutbound ||
     !['pending', 'material_pending', 'material_assigned'].includes(batch.status)

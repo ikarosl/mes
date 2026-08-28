@@ -5,6 +5,12 @@ import WarehouseInventoryPage from '../WarehouseInventoryPage.vue';
 vi.mock('../../../api/production', () => ({
   productionApi: {
     listInventoryBatches: vi.fn().mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 20 }),
+    listInventoryMaterialSupplyDemand: vi
+      .fn()
+      .mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 10 }),
+    listInventoryMaterialDemandTrace: vi
+      .fn()
+      .mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 10 }),
     getInventoryBatch: vi.fn(),
   },
 }));
@@ -15,6 +21,8 @@ describe('WarehouseInventoryPage', () => {
       global: {
         stubs: {
           'el-form': { template: '<form><slot/></form>' },
+          'el-tabs': { template: '<div><slot/></div>' },
+          'el-tab-pane': { template: '<div><slot/></div>' },
           'el-form-item': { template: '<div><slot/></div>' },
           'el-input': true,
           'el-select': { template: '<div><slot/></div>' },

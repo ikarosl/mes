@@ -10,4 +10,4 @@ infra/compose/secrets/*.license
 *.log
 claude.md
 ai_output/
-temp/
+temp/*

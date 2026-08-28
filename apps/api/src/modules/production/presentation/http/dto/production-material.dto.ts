@@ -14,10 +14,12 @@ import {
 } from 'class-validator';
 import { OUTBOUND_ORDER_STATUSES } from '@company/constants';
 import type {
+  AuthorizeShortBatchPayload,
   CreateMaterialAllocationsPayload,
   CreateMaterialOutboundPayload,
   MaterialOutboundQuery,
 } from '@company/contracts';
+import { VersionedCommandDto } from '../../../../../presentation/http/dto/versioned-command.dto.js';
 import { PageQueryDto } from '../../../../../presentation/http/dto/page-query.dto.js';
 
 export class BatchIdParamDto {
@@ -64,4 +66,11 @@ export class CreateMaterialOutboundDto implements CreateMaterialOutboundPayload 
   @Type(() => CreateMaterialOutboundDetailDto)
   details!: CreateMaterialOutboundDetailDto[];
   @IsOptional() @IsString() @MaxLength(5000) remark?: string | null;
+}
+
+export class AuthorizeShortBatchDto
+  extends VersionedCommandDto
+  implements AuthorizeShortBatchPayload
+{
+  @IsString() @MaxLength(5000) reason!: string;
 }
