@@ -37,8 +37,9 @@ import {
   ProductDto,
   ProductListQueryDto,
   ProductIdParamDto,
+  PublishBomVersionDto,
+  ReplaceBomVersionLinesDto,
   ReplaceProcessRouteStepsDto,
-  ReplaceProductMaterialsDto,
   StatusDto,
   SetDefaultSopDto,
   TechnicalFileQueryDto,
@@ -199,16 +200,6 @@ export class ProductController {
   materials(@Param() { id }: ProductIdParamDto) {
     return this.service.listMaterials(id);
   }
-  @Put('products/:id/materials')
-  @RequirePermission(PERMISSIONS.product.products.manageBom)
-  @AuditInApplication()
-  replaceMaterials(
-    @Param() { id }: ProductIdParamDto,
-    @Body() body: ReplaceProductMaterialsDto,
-    @CurrentCommandContext() audit: CommandContext,
-  ) {
-    return this.service.replaceMaterials(id, body.items, audit);
-  }
   @Patch('products/:id/default-route')
   @RequirePermission(PERMISSIONS.product.products.setDefaultRoute)
   @AuditInApplication()
@@ -218,6 +209,69 @@ export class ProductController {
     @CurrentCommandContext() audit: CommandContext,
   ) {
     return this.service.setDefaultRoute(id, body.routeId, audit);
+  }
+
+  @Get('products/:id/bom-versions')
+  @RequirePermission(PERMISSIONS.product.bomVersions.view)
+  bomVersions(@Param() { id }: ProductIdParamDto) {
+    return this.service.listBomVersions(id);
+  }
+  @Post('products/:id/bom-version-drafts')
+  @RequirePermission(PERMISSIONS.product.bomVersions.editDraft)
+  @AuditInApplication()
+  createBomVersionDraft(
+    @Param() { id }: ProductIdParamDto,
+    @CurrentCommandContext() audit: CommandContext,
+  ) {
+    return this.service.createBomVersionDraft(id, audit);
+  }
+  @Get('bom-versions/:id')
+  @RequirePermission(PERMISSIONS.product.bomVersions.view)
+  bomVersion(@Param() { id }: ProductIdParamDto) {
+    return this.service.getBomVersion(id);
+  }
+  @Post('bom-versions/:id/draft')
+  @RequirePermission(PERMISSIONS.product.bomVersions.editDraft)
+  @AuditInApplication()
+  copyBomVersionAsDraft(
+    @Param() { id }: ProductIdParamDto,
+    @CurrentCommandContext() audit: CommandContext,
+  ) {
+    return this.service.copyBomVersionAsDraft(id, audit);
+  }
+  @Put('bom-versions/:id/lines')
+  @RequirePermission(PERMISSIONS.product.bomVersions.editDraft)
+  @AuditInApplication()
+  replaceBomVersionLines(
+    @Param() { id }: ProductIdParamDto,
+    @Body() body: ReplaceBomVersionLinesDto,
+    @CurrentCommandContext() audit: CommandContext,
+  ) {
+    return this.service.replaceBomVersionLines(id, body.items, audit);
+  }
+  @Post('bom-versions/:id/publish')
+  @RequirePermission(PERMISSIONS.product.bomVersions.publish)
+  @AuditInApplication()
+  publishBomVersion(
+    @Param() { id }: ProductIdParamDto,
+    @Body() body: PublishBomVersionDto,
+    @CurrentCommandContext() audit: CommandContext,
+  ) {
+    return this.service.publishBomVersion(
+      id,
+      body.changeReason,
+      body.outputCompatibilityConfirmed,
+      audit,
+    );
+  }
+  @Delete('bom-versions/:id')
+  @RequirePermission(PERMISSIONS.product.bomVersions.editDraft)
+  @AuditInApplication()
+  deleteBomVersionDraft(
+    @Param() { id }: ProductIdParamDto,
+    @CurrentCommandContext() audit: CommandContext,
+  ) {
+    return this.service.deleteBomVersionDraft(id, audit);
   }
 
   @Get('process-steps')

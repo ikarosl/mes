@@ -2,7 +2,7 @@ import 'reflect-metadata';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { describe, expect, it } from 'vitest';
-import { ProductDto, ReplaceProductMaterialsDto } from '../product.dto.js';
+import { ProductDto, ReplaceBomVersionLinesDto } from '../product.dto.js';
 
 describe('product quantity DTOs', () => {
   it('accepts integer BOM quantities and rejects fractional quantities', async () => {
@@ -14,14 +14,14 @@ describe('product quantity DTOs', () => {
     };
     expect(
       await validate(
-        plainToInstance(ReplaceProductMaterialsDto, {
+        plainToInstance(ReplaceBomVersionLinesDto, {
           items: [{ ...base, quantityPerUnit: 2 }],
         }),
       ),
     ).toEqual([]);
     expect(
       await validate(
-        plainToInstance(ReplaceProductMaterialsDto, {
+        plainToInstance(ReplaceBomVersionLinesDto, {
           items: [{ ...base, quantityPerUnit: 1.5 }],
         }),
       ),

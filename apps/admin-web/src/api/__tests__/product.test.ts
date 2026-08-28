@@ -9,27 +9,6 @@ describe('productApi contract mapping', () => {
     request.mockResolvedValue({ data: undefined });
   });
 
-  it('replaces the canonical product BOM at the product route', async () => {
-    const { productApi } = await import('../product');
-    const items = [
-      {
-        materialProductId: '2',
-        quantityPerUnit: 1.25,
-        unit: 'kg',
-        isKeyMaterial: true,
-        needBatchRecord: true,
-      },
-    ];
-
-    await productApi.replaceMaterials('1', items);
-
-    expect(request).toHaveBeenCalledWith({
-      url: '/product/products/1/materials',
-      method: 'PUT',
-      data: { items },
-    });
-  });
-
   it('uses dedicated endpoints for immutable route version steps and status', async () => {
     const { productApi } = await import('../product');
     const items = [{ processStepId: '8', stepOrder: 1, needInspection: true, needRecord: true }];

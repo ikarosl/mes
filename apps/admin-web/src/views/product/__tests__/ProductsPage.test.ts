@@ -48,7 +48,9 @@ const productRow = {
   acquireMethod: 'self_made',
   specValues: [],
   status: 1,
-  materialCount: 0,
+  currentBomVersionId: null,
+  currentBomVersionNo: null,
+  currentBomLineCount: 0,
   remark: null,
   updatedAt: null,
 };

@@ -37,6 +37,7 @@ export class ProductDomainExceptionFilter implements ExceptionFilter {
       requestId,
       timestamp: toBeijingISOString(new Date()),
       path: request.originalUrl ?? request.url ?? '',
+      ...(exception.details ? { details: exception.details } : {}),
     });
   }
 }

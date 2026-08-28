@@ -6,7 +6,7 @@
 
 - `item_type` 统一为 `product_categories`。
 - `item_info` 统一为 `products`。
-- `product_bom` 统一为 `product_materials`，不保留第二套 BOM 表。
+- BOM 统一使用 `product_bom_versions` / `product_bom_version_lines`；旧 `product_materials` 不迁移数据、不回填、不双写，待路线和 Production 消费者切换后直接删除。
 - RBAC 与认证字段以新项目已落地迁移为准。
 - 工序主数据只保留 `process_steps`，不再创建职责重复的 `processes`。
 - 数量事实保存在业务明细或库存流水；为历史追溯补充必要快照，不创建可随意写回的累计缓存字段。

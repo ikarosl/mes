@@ -20,8 +20,10 @@
         acquireMethodLabels[row.acquireMethod]
       }}</el-descriptions-item>
       <el-descriptions-item label="单位">{{ row.unit }}</el-descriptions-item>
-      <el-descriptions-item label="物料清单">{{
-        row.materialCount > 0 ? `${row.materialCount} 项` : '未配置'
+      <el-descriptions-item label="当前 BOM">{{
+        row.currentBomVersionId
+          ? `${row.currentBomVersionNo} / ${row.currentBomLineCount} 项`
+          : '未配置'
       }}</el-descriptions-item>
       <el-descriptions-item label="默认路线">{{
         row.defaultRouteName || '未设置'

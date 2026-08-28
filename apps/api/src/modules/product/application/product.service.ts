@@ -8,7 +8,6 @@ import type {
   ProcessStepQuery,
   ProductCategoryPayload,
   ProductCategoryQuery,
-  ProductMaterialPayload,
   ProductListQuery,
   ProductPayload,
   TechnicalFileQuery,
@@ -19,6 +18,10 @@ import { ProductDomainError } from '../domain/product.errors.js';
 import { ProcessRouteRepository } from './ports/process-route.repository.js';
 import { ProcessRouteStepRepository } from './ports/process-route-step.repository.js';
 import { ProcessStepRepository } from './ports/process-step.repository.js';
+import {
+  ProductBomVersionRepository,
+  type ProductBomVersionLinePayload,
+} from './ports/product-bom-version.repository.js';
 import { ProductCatalogRepository } from './ports/product-catalog.repository.js';
 import { ProductCategoryRepository } from './ports/product-category.repository.js';
 import { TechnicalFileRepository } from './ports/technical-file.repository.js';
@@ -35,6 +38,7 @@ export class ProductService {
     private readonly routeSteps: ProcessRouteStepRepository,
     private readonly storage: TechnicalFileStorage,
     private readonly identityDirectory: IdentityDirectoryService,
+    private readonly bomVersions: ProductBomVersionRepository,
   ) {}
 
   listCategories(query: ProductCategoryQuery) {
@@ -88,6 +92,64 @@ export class ProductService {
   listMaterials(productId: string) {
     return this.catalog.listMaterials(productId);
   }
+  listBomVersions(productId: string) {
+    return this.bomVersions.listByProduct(productId);
+  }
+  getBomVersion(id: string) {
+    return this.bomVersions.getDetail(id);
+  }
+  createBomVersionDraft(productId: string, audit: CommandContext) {
+    return this.bomVersions.createDraft(productId, audit);
+  }
+  copyBomVersionAsDraft(sourceVersionId: string, audit: CommandContext) {
+    return this.bomVersions.copyAsDraft(sourceVersionId, audit);
+  }
+  replaceBomVersionLines(id: string, items: ProductBomVersionLinePayload[], audit: CommandContext) {
+    if (items.length > 200) {
+      throw new ProductDomainError('INVALID_INPUT', '一份 BOM 最多包含 200 行明细');
+    }
+    if (new Set(items.map((item) => item.materialProductId)).size !== items.length) {
+      throw new ProductDomainError('INVALID_INPUT', '同一投入物料不能在一份 BOM 中重复');
+    }
+    if (
+      items.some(
+        (item) =>
+          !Number.isInteger(item.quantityPerUnit) ||
+          item.quantityPerUnit <= 0 ||
+          item.quantityPerUnit > 99_999_999,
+      )
+    ) {
+      throw new ProductDomainError('INVALID_INPUT', 'BOM 单位用量必须是 1 到 99999999 的整数');
+    }
+    return this.bomVersions.replaceDraftLines(
+      id,
+      items.map((item) => ({
+        materialProductId: item.materialProductId,
+        quantityPerUnit: item.quantityPerUnit,
+        isKeyMaterial: item.isKeyMaterial,
+        needBatchRecord: item.needBatchRecord,
+        remark: item.remark?.trim() || null,
+      })),
+      audit,
+    );
+  }
+  publishBomVersion(
+    id: string,
+    changeReason: string,
+    outputCompatibilityConfirmed: boolean,
+    audit: CommandContext,
+  ) {
+    if (!outputCompatibilityConfirmed) {
+      throw new ProductDomainError(
+        'INVALID_INPUT',
+        '发布 BOM 前必须确认新版成品与旧版成品可混用；不能确认时请创建迭代产品',
+      );
+    }
+    return this.bomVersions.publish(id, changeReason.trim(), audit);
+  }
+  deleteBomVersionDraft(id: string, audit: CommandContext) {
+    return this.bomVersions.deleteDraft(id, audit);
+  }
   async listRouteSteps(routeId: string) {
     const items = await this.routeSteps.listRouteSteps(routeId);
     const ownerIds = [...new Set(items.flatMap((item) => item.defaultOwnerId ?? []))];
@@ -117,29 +179,6 @@ export class ProductService {
   }
   setProductStatus(id: string, status: number, audit: CommandContext) {
     return this.catalog.setProductStatus(id, status, audit);
-  }
-  replaceMaterials(id: string, items: ProductMaterialPayload[], audit: CommandContext) {
-    if (items.length > 200) {
-      throw new ProductDomainError('INVALID_INPUT', '一份 BOM 最多包含 200 行明细');
-    }
-    if (new Set(items.map((item) => item.materialProductId)).size !== items.length) {
-      throw new ProductDomainError('INVALID_INPUT', '同一投入物料不能在一份 BOM 中重复');
-    }
-    if (
-      items.some(
-        (item) =>
-          !Number.isInteger(item.quantityPerUnit) ||
-          item.quantityPerUnit <= 0 ||
-          item.quantityPerUnit > 99_999_999 ||
-          !item.unit.trim(),
-      )
-    ) {
-      throw new ProductDomainError(
-        'INVALID_INPUT',
-        'BOM 单位用量必须是 1 到 99999999 的整数，且用量单位不能为空',
-      );
-    }
-    return this.catalog.replaceMaterials(id, items, audit);
   }
   setDefaultRoute(id: string, routeId: string | null, audit: CommandContext) {
     return this.catalog.setDefaultRoute(id, routeId, audit);

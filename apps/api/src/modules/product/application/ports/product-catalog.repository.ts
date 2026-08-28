@@ -1,7 +1,6 @@
 import type {
   ProductListItem,
   ProductMaterialItem,
-  ProductMaterialPayload,
   ProductListQuery,
   PageResult,
   ProductOption,
@@ -16,11 +15,6 @@ export abstract class ProductCatalogRepository {
   abstract updateProduct(id: string, payload: ProductPayload, audit: CommandContext): Promise<void>;
   abstract setProductStatus(id: string, status: number, audit: CommandContext): Promise<void>;
   abstract listMaterials(productId: string): Promise<ProductMaterialItem[]>;
-  abstract replaceMaterials(
-    productId: string,
-    items: ProductMaterialPayload[],
-    audit: CommandContext,
-  ): Promise<void>;
   abstract setDefaultRoute(
     productId: string,
     routeId: string | null,

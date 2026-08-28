@@ -20,6 +20,8 @@ const allowedTables = new Set([
   'process_steps',
   'process_routes',
   'product_materials',
+  'product_bom_versions',
+  'product_bom_version_lines',
   'process_route_steps',
   'route_step_materials',
   'work_orders',

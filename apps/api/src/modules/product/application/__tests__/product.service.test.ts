@@ -11,104 +11,6 @@ const audit: CommandContext = {
 };
 
 describe('ProductService workflow safeguards', () => {
-  it('rejects duplicate BOM inputs before opening a repository transaction', async () => {
-    const repository = { replaceMaterials: vi.fn() };
-    const service = new ProductService(
-      {} as never,
-      {} as never,
-      repository as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-    );
-
-    expect(() =>
-      service.replaceMaterials(
-        '10',
-        [
-          {
-            materialProductId: '20',
-            quantityPerUnit: 1,
-            unit: 'pcs',
-            isKeyMaterial: true,
-            needBatchRecord: true,
-          },
-          {
-            materialProductId: '20',
-            quantityPerUnit: 2,
-            unit: 'pcs',
-            isKeyMaterial: false,
-            needBatchRecord: true,
-          },
-        ],
-        audit,
-      ),
-    ).toThrow(ProductDomainError);
-    expect(repository.replaceMaterials).not.toHaveBeenCalled();
-  });
-
-  it('rejects more than 200 BOM lines before opening a repository transaction', () => {
-    const repository = { replaceMaterials: vi.fn() };
-    const service = new ProductService(
-      {} as never,
-      {} as never,
-      repository as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-    );
-
-    expect(() =>
-      service.replaceMaterials(
-        '10',
-        Array.from({ length: 201 }, (_, index) => ({
-          materialProductId: String(index + 1),
-          quantityPerUnit: 1,
-          unit: 'pcs',
-          isKeyMaterial: false,
-          needBatchRecord: false,
-        })),
-        audit,
-      ),
-    ).toThrow(ProductDomainError);
-    expect(repository.replaceMaterials).not.toHaveBeenCalled();
-  });
-
-  it('rejects fractional BOM quantities before opening a repository transaction', () => {
-    const repository = { replaceMaterials: vi.fn() };
-    const service = new ProductService(
-      {} as never,
-      {} as never,
-      repository as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-    );
-
-    expect(() =>
-      service.replaceMaterials(
-        '10',
-        [
-          {
-            materialProductId: '20',
-            quantityPerUnit: 1.5,
-            unit: 'pcs',
-            isKeyMaterial: true,
-            needBatchRecord: true,
-          },
-        ],
-        audit,
-      ),
-    ).toThrow('必须是 1 到 99999999 的整数');
-    expect(repository.replaceMaterials).not.toHaveBeenCalled();
-  });
-
   it('requires route step orders to be continuous from one', async () => {
     const repository = { replaceRouteSteps: vi.fn() };
     const service = new ProductService(
@@ -118,6 +20,7 @@ describe('ProductService workflow safeguards', () => {
       {} as never,
       {} as never,
       repository as never,
+      {} as never,
       {} as never,
       {} as never,
     );
@@ -147,6 +50,7 @@ describe('ProductService workflow safeguards', () => {
       repository as never,
       {} as never,
       identityDirectory as never,
+      {} as never,
     );
 
     await expect(
@@ -185,6 +89,7 @@ describe('ProductService workflow safeguards', () => {
       repository as never,
       {} as never,
       identityDirectory as never,
+      {} as never,
     );
 
     await expect(service.listRouteSteps('30')).resolves.toEqual([
@@ -211,6 +116,7 @@ describe('ProductService workflow safeguards', () => {
       {} as never,
       {} as never,
       storage as never,
+      {} as never,
       {} as never,
     );
 
@@ -240,6 +146,7 @@ describe('ProductService workflow safeguards', () => {
       {} as never,
       storage as never,
       {} as never,
+      {} as never,
     );
 
     await service.deleteTechnicalFile('2', audit);
@@ -259,6 +166,7 @@ describe('ProductService workflow safeguards', () => {
       {} as never,
       {} as never,
       storage as never,
+      {} as never,
       {} as never,
     );
 

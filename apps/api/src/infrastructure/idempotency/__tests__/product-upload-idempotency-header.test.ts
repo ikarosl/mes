@@ -34,6 +34,7 @@ describe('Product upload idempotency header contract', () => {
       {} as never,
       storage as never,
       {} as never,
+      {} as never,
     );
     const moduleRef = await Test.createTestingModule({
       controllers: [ProductController],

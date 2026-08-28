@@ -26,8 +26,12 @@ export const PERMISSIONS = {
       create: 'product:products:create',
       update: 'product:products:update',
       changeStatus: 'product:products:change-status',
-      manageBom: 'product:products:manage-bom',
       setDefaultRoute: 'product:products:set-default-route',
+    },
+    bomVersions: {
+      view: 'product:bom-versions:view',
+      editDraft: 'product:bom-versions:edit-draft',
+      publish: 'product:bom-versions:publish',
     },
     categories: {
       view: 'product:categories:view',

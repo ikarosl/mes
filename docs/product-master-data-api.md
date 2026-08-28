@@ -13,7 +13,7 @@
 | 标准工序 | `product-processes`      | `/product/processes`      | `product:processes:view`  |
 | 工艺路线 | `product-process-routes` | `/product/process-routes` | `product:routes:view`     |
 
-前端统一使用表中的页面权限控制菜单、路由和整页入口，不对页面内操作按钮做细粒度权限隐藏。写接口权限编码集中定义在 `@company/constants`，并由后端 `RequirePermission` 对每个接口独立校验。关键写权限包括 `product:products:manage-bom`、`product:products:set-default-route`、`product:processes:upload-sop` 和 `product:routes:manage-steps`。
+前端统一使用表中的页面权限控制菜单、路由和整页入口，不对页面内操作按钮做细粒度权限隐藏。写接口权限编码集中定义在 `@company/constants`，并由后端 `RequirePermission` 对每个接口独立校验。关键写权限包括 `product:bom-versions:edit-draft`、`product:bom-versions:publish`、`product:products:set-default-route`、`product:processes:upload-sop` 和 `product:routes:manage-steps`。
 
 ## 3. HTTP 接口
 
@@ -40,7 +40,13 @@
 | `PATCH /products/:id`                  | 编辑基础资料                                                 | `product:products:update`                                                                           |
 | `PATCH /products/:id/status`           | 启停基础资料                                                 | `product:products:change-status`                                                                    |
 | `GET /products/:id/materials`          | 查询统一 BOM                                                 | `product:products:view`                                                                             |
-| `PUT /products/:id/materials`          | 事务替换统一 BOM                                             | `product:products:manage-bom`                                                                       |
+| `GET /products/:id/bom-versions`       | 查询产品全部 BOM 版本                                        | `product:bom-versions:view`                                                                         |
+| `POST /products/:id/bom-version-drafts` | 为产品创建唯一草稿 BOM                                      | `product:bom-versions:edit-draft`                                                                   |
+| `GET /bom-versions/:id`                | 查询 BOM 版本头及不可变行明细                                | `product:bom-versions:view`                                                                         |
+| `POST /bom-versions/:id/draft`         | 从已发布或历史版本复制为唯一草稿                             | `product:bom-versions:edit-draft`                                                                   |
+| `PUT /bom-versions/:id/lines`          | 原子替换草稿 BOM 行                                          | `product:bom-versions:edit-draft`                                                                   |
+| `POST /bom-versions/:id/publish`       | 发布草稿并原子切换产品当前 BOM                               | `product:bom-versions:publish`                                                                      |
+| `DELETE /bom-versions/:id`             | 删除未发布草稿                                               | `product:bom-versions:edit-draft`                                                                   |
 | `PATCH /products/:id/default-route`    | 设置同产品已启用的默认路线                                   | `product:products:set-default-route`                                                                |
 | `GET /process-steps`                   | 分页查询标准工序列表                                         | `product:processes:view`                                                                            |
 | `GET /process-steps/options`           | 标准工序选项（最小字段，仅启用）                             | `product:processes:view` 或 `product:routes:view`                                                   |
@@ -84,11 +90,12 @@
 1. 分类仅使用 `item_kind = material | semi_finished | finished_product`；分类说明“是什么”，`acquire_method` 说明“如何获得”。
 2. 物料、半成品和成品统一写入 `products`，业务编码只使用永久唯一的 `item_code`。
 3. 只有已启用的自制半成品或成品可以配置 `product_materials`、工艺路线和默认路线；采购物料不能配置生产工艺。
-4. BOM 投入对象只能是已启用的物料或半成品，不能引用产品自身；BOM 是以后生成 `production_item_demand` 的唯一来源。本模块只维护 BOM，不生成需求，也不回写任何历史需求。
-5. 路线创建时固定为 `draft`。只有草稿可以编辑路线内容与步骤；首次启用后，即使后来停用也不可原地修改，调整必须新建版本。
-6. 启用路线前必须至少包含一个启用步骤。保存步骤时后端从 `process_steps` 和 `technical_files` 复制工序与 SOP 快照，并验证步骤关联的 `product_materials` 属于路线产品。
-7. 默认路线必须属于同一产品且状态为 `enabled`。将来生产批次仍可选择同产品的其他已启用路线。
-8. 所有产品资料写操作和 `operation_logs` 在同一数据库事务中提交；审计信息不记录文件内容、Token、Cookie 或其他密钥。
+4. 新 BOM 只允许自制成品配置，投入对象只能是已启用的 `material`，不能引用产品自身；同一产品最多一个草稿。发布后版本头与行永久只读，后续修订必须复制为新草稿。
+5. 发布必须填写变更原因并显式确认新版成品与旧版成品在规格、质量标准、用途和库存混用上兼容；不能确认时必须创建新的迭代产品。发布、旧版本替代、`products.current_bom_version_id` 切换和成功审计同事务完成。
+6. 路线创建时固定为 `draft`。只有草稿可以编辑路线内容与步骤；首次启用后，即使后来停用也不可原地修改，调整必须新建版本。
+7. 启用路线前必须至少包含一个启用步骤。保存步骤时后端从 `process_steps` 和 `technical_files` 复制工序与 SOP 快照；路线对 BOM 版本的设计依据与兼容性将在独立阶段接入。
+8. 默认路线必须属于同一产品且状态为 `enabled`。将来生产批次仍可选择同产品的其他已启用路线。
+9. 所有产品资料写操作和 `operation_logs` 在同一数据库事务中提交；审计信息不记录文件内容、Token、Cookie 或其他密钥。
 
 ## 5. 数据库与文件存储
 

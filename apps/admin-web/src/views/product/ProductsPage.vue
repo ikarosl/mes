@@ -148,7 +148,7 @@
           <template #default="{ row }">{{ formatSpecSummary(row.specValues) }}</template>
         </el-table-column>
         <el-table-column
-          label="物料清单"
+          label="当前 BOM"
           width="120"
         >
           <template #default="{ row }">
@@ -159,10 +159,10 @@
               >无</el-tag
             >
             <el-tag
-              v-else-if="row.materialCount > 0"
+              v-else-if="row.currentBomVersionId"
               type="success"
               effect="light"
-              >{{ row.materialCount }} 项</el-tag
+              >{{ row.currentBomVersionNo }} / {{ row.currentBomLineCount }} 项</el-tag
             >
             <el-tag
               v-else
@@ -197,7 +197,7 @@
         </el-table-column>
         <el-table-column
           label="操作"
-          width="280"
+          width="360"
           fixed="right"
         >
           <template #default="{ row }">
@@ -215,11 +215,15 @@
               >编辑</el-button
             >
             <el-button
-              v-if="canConfigureProduction(row) && auth.can(PERMISSIONS.product.products.manageBom)"
+              v-if="
+                row.itemKind === 'finished_product' &&
+                row.acquireMethod === 'self_made' &&
+                auth.can(PERMISSIONS.product.bomVersions.view)
+              "
               link
-              :type="row.materialCount > 0 ? 'primary' : 'warning'"
-              @click="openMaterials(row)"
-              >物料清单</el-button
+              :type="row.currentBomVersionId ? 'primary' : 'warning'"
+              @click="openBomVersions(row)"
+              >BOM 版本</el-button
             >
             <el-button
               v-if="
@@ -276,13 +280,11 @@
       @update:visible="detailDialogVisible = $event"
     />
 
-    <!-- 物料清单弹窗（自持候选数据与 BOM 明细） -->
-    <ProductMaterialDialog
-      :visible="materialDialogVisible"
-      :product="materialProduct"
-      :submitting="submittingMaterials"
-      @update:visible="materialDialogVisible = $event"
-      @save="submitMaterials"
+    <ProductBomVersionDialog
+      :visible="bomVersionDialogVisible"
+      :product="bomVersionProduct"
+      @update:visible="bomVersionDialogVisible = $event"
+      @changed="loadProducts"
     />
 
     <!-- 默认路线弹窗（自持路线候选） -->
@@ -315,8 +317,7 @@ import { buildLiveOptions } from '../../utils/live-options';
 import ProductFormDialog from './components/ProductFormDialog.vue';
 import type { ProductFormValue } from './components/ProductFormDialog.vue';
 import ProductDetailDialog from './components/ProductDetailDialog.vue';
-import ProductMaterialDialog from './components/ProductMaterialDialog.vue';
-import type { MaterialRow } from './components/ProductMaterialDialog.vue';
+import ProductBomVersionDialog from './components/ProductBomVersionDialog.vue';
 import ProductDefaultRouteDialog from './components/ProductDefaultRouteDialog.vue';
 
 defineOptions({ name: 'ProductsPage' });
@@ -361,13 +362,12 @@ const { isRowPending, beginRow, endRow } = useRowPending();
 /* ----- dialog state ----- */
 const productDialogVisible = ref(false);
 const detailDialogVisible = ref(false);
-const materialDialogVisible = ref(false);
+const bomVersionDialogVisible = ref(false);
 const defaultRouteDialogVisible = ref(false);
 const editingProductId = ref<string | null>(null);
 const detailRow = ref<ProductListItem | null>(null);
-const materialProduct = ref<ProductListItem | null>(null);
+const bomVersionProduct = ref<ProductListItem | null>(null);
 const defaultRouteProduct = ref<ProductListItem | null>(null);
-const submittingMaterials = ref(false);
 const productFormDialogRef = ref();
 const submittingProduct = ref(false);
 const submittingDefaultRoute = ref(false);
@@ -395,6 +395,11 @@ const openEdit = (row: ProductListItem): void => {
 const openDetail = (row: ProductListItem): void => {
   detailRow.value = row;
   detailDialogVisible.value = true;
+};
+
+const openBomVersions = (row: ProductListItem): void => {
+  bomVersionProduct.value = row;
+  bomVersionDialogVisible.value = true;
 };
 
 const submitProduct = async (data: ProductFormValue): Promise<void> => {
@@ -436,27 +441,6 @@ const toggleStatus = async (row: ProductListItem): Promise<void> => {
     if (error !== 'cancel' && error !== 'close') EMessage.error(error, `${text}产品失败`);
   } finally {
     endRow(row.id);
-  }
-};
-
-/* ----- BOM materials ----- */
-const openMaterials = (row: ProductListItem): void => {
-  materialProduct.value = row;
-  materialDialogVisible.value = true;
-};
-
-const submitMaterials = async (rows: MaterialRow[]): Promise<void> => {
-  if (!materialProduct.value) return;
-  submittingMaterials.value = true;
-  try {
-    await productApi.replaceMaterials(materialProduct.value.id, rows);
-    EMessage.success('物料清单已保存');
-    materialDialogVisible.value = false;
-    await loadProducts();
-  } catch (error) {
-    EMessage.error(error, '物料清单保存失败');
-  } finally {
-    submittingMaterials.value = false;
   }
 };
 

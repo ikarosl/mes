@@ -2,6 +2,7 @@ import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   ArrayUnique,
+  Equals,
   IsArray,
   IsBoolean,
   IsIn,
@@ -103,21 +104,25 @@ export class ProductDto {
   @IsIn([SYSTEM_STATUS.disabled, SYSTEM_STATUS.enabled]) status!: number;
   @IsOptional() @IsString() remark?: string | null;
 }
-export class ProductMaterialDto {
+export class ProductBomVersionLineDto {
   @IsNumberString() materialProductId!: string;
   @Type(() => Number) @IsInt() @Min(1) @Max(99_999_999) quantityPerUnit!: number;
-  @IsString() @IsNotEmpty() @MaxLength(20) unit!: string;
   @IsBoolean() isKeyMaterial!: boolean;
   @IsBoolean() needBatchRecord!: boolean;
-  @IsOptional() @IsIn([0, 1]) status?: number;
-  @IsOptional() @IsString() remark?: string | null;
+  @IsOptional() @IsString() @MaxLength(2000) remark?: string | null;
 }
-export class ReplaceProductMaterialsDto {
+export class ReplaceBomVersionLinesDto {
   @IsArray()
   @ArrayMaxSize(200)
   @ValidateNested({ each: true })
-  @Type(() => ProductMaterialDto)
-  items!: ProductMaterialDto[];
+  @Type(() => ProductBomVersionLineDto)
+  items!: ProductBomVersionLineDto[];
+}
+export class PublishBomVersionDto {
+  @IsString() @IsNotEmpty() @MaxLength(2000) changeReason!: string;
+  @IsBoolean()
+  @Equals(true, { message: '必须确认新版成品与旧版成品可混用' })
+  outputCompatibilityConfirmed!: boolean;
 }
 export class DefaultRouteDto {
   @ValidateIf((_, value) => value !== null) @IsNumberString() routeId!: string | null;

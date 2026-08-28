@@ -14,7 +14,6 @@ import type {
   ProductItemKind,
   ProductListItem,
   ProductMaterialItem,
-  ProductMaterialPayload,
   ProductListQuery,
   PageResult,
   ProductOption,
@@ -68,18 +67,22 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
         acquire_method: ProductListItem['acquireMethod'];
         spec_values: string | object | null;
         status: number;
-        material_count: number;
+        current_bom_version_id: number | null;
+        current_bom_version_no: string | null;
+        current_bom_line_count: number;
         remark: string | null;
         updated_at: Date | null;
       })[]
     >(
       `SELECT p.id,p.item_code,p.product_name,p.category_id,c.category_code,c.category_name,c.item_kind,
                     p.default_route_id,r.route_name default_route_name,p.unit,p.acquire_method,p.spec_values,p.status,
-                    COUNT(pm.id) material_count,p.remark,p.updated_at
+                    p.current_bom_version_id,bv.version_no current_bom_version_no,
+                    COUNT(bvl.id) current_bom_line_count,p.remark,p.updated_at
              FROM products p JOIN product_categories c ON c.id=p.category_id
              LEFT JOIN process_routes r ON r.id=p.default_route_id AND r.is_deleted=0
-             LEFT JOIN product_materials pm ON pm.product_id=p.id AND pm.is_deleted=0 AND pm.status=1
-             WHERE ${where} GROUP BY p.id,c.category_code,c.category_name,c.item_kind,r.route_name
+             LEFT JOIN product_bom_versions bv ON bv.id=p.current_bom_version_id AND bv.product_id=p.id AND bv.status='published' AND bv.is_deleted=0
+             LEFT JOIN product_bom_version_lines bvl ON bvl.bom_version_id=bv.id AND bvl.is_deleted=0
+             WHERE ${where} GROUP BY p.id,c.category_code,c.category_name,c.item_kind,r.route_name,bv.version_no
              ORDER BY p.item_code,p.id LIMIT ? OFFSET ?`,
       [...parameters, pageSize, (page - 1) * pageSize],
     );
@@ -97,7 +100,10 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
       acquireMethod: row.acquire_method,
       specValues: this.json<ProductListItem['specValues'][number]>(row.spec_values),
       status: row.status,
-      materialCount: Number(row.material_count),
+      currentBomVersionId:
+        row.current_bom_version_id === null ? null : String(row.current_bom_version_id),
+      currentBomVersionNo: row.current_bom_version_no,
+      currentBomLineCount: Number(row.current_bom_line_count),
       remark: row.remark,
       updatedAt: this.date(row.updated_at),
     }));
@@ -252,64 +258,6 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
     }));
   }
 
-  async replaceMaterials(
-    productId: string,
-    items: ProductMaterialPayload[],
-    audit: CommandContext,
-  ) {
-    await withTransaction(this.pool, async (connection) => {
-      const product = await this.productRecord(connection, productId, true);
-      requireConfigurableProduct({
-        status: product.status,
-        acquireMethod: product.acquire_method,
-        itemKind: product.item_kind,
-      });
-      if (product.acquire_method !== 'self_made' || product.item_kind === 'material') {
-        throw new ProductDomainError('INVALID_PRODUCT_KIND', '只有自制半成品或成品可以配置 BOM');
-      }
-      const before = await this.listMaterialRecords(connection, productId);
-      const desiredIds = items.map((item) => item.materialProductId);
-      for (const item of items)
-        await this.requireMaterialCandidate(connection, productId, item.materialProductId);
-      const removed = before.filter(
-        (item) => !desiredIds.includes(String(item.material_product_id)),
-      );
-      if (removed.length) {
-        const [used] = await connection.query<RowDataPacket[]>(
-          `SELECT rsm.id FROM route_step_materials rsm WHERE rsm.product_material_id IN (${removed.map(() => '?').join(',')}) LIMIT 1`,
-          removed.map((item) => item.id),
-        );
-        if (used.length)
-          throw new ProductDomainError('CONFLICT', 'BOM 明细已被工艺路线步骤使用，不能移除');
-      }
-      await connection.execute(
-        'UPDATE product_materials SET is_deleted=1,deleted_by=?,deleted_at=NOW(),updated_by=? WHERE product_id=? AND is_deleted=0',
-        [audit.actorId, audit.actorId, productId],
-      );
-      for (const item of items) {
-        await connection.execute(
-          `INSERT INTO product_materials (product_id,material_product_id,quantity_per_unit,unit,is_key_material,need_batch_record,status,remark,created_by,updated_by)
-           VALUES (?,?,?,?,?,?,?,?,?,?)
-           ON DUPLICATE KEY UPDATE quantity_per_unit=VALUES(quantity_per_unit),unit=VALUES(unit),is_key_material=VALUES(is_key_material),
-             need_batch_record=VALUES(need_batch_record),status=VALUES(status),remark=VALUES(remark),updated_by=VALUES(updated_by),is_deleted=0,deleted_by=NULL,deleted_at=NULL`,
-          [
-            productId,
-            item.materialProductId,
-            item.quantityPerUnit,
-            item.unit,
-            Number(item.isKeyMaterial),
-            Number(item.needBatchRecord),
-            item.status ?? 1,
-            item.remark ?? null,
-            audit.actorId,
-            audit.actorId,
-          ],
-        );
-      }
-      await this.audit(connection, audit, 'bom.replace', productId, before, items);
-    });
-  }
-
   async setDefaultRoute(productId: string, routeId: string | null, audit: CommandContext) {
     await withTransaction(this.pool, async (connection) => {
       let route: (RowDataPacket & { product_id: number; status: string }) | undefined;
@@ -393,33 +341,6 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
     );
     if (!row) throw new ProductDomainError('NOT_FOUND', '产品或物料不存在');
     return row;
-  }
-  private async requireMaterialCandidate(db: Db, productId: string, materialId: string) {
-    const material = await this.productRecord(db, materialId);
-    if (
-      materialId === productId ||
-      material.status !== 1 ||
-      !['material', 'semi_finished'].includes(material.item_kind)
-    ) {
-      throw new ProductDomainError(
-        'INVALID_MATERIAL',
-        'BOM 投入对象必须是已启用的物料或半成品，且不能引用产品自身',
-      );
-    }
-  }
-  private async listMaterialRecords(db: Db, productId: string) {
-    const [rows] = await db.query<
-      (RowDataPacket & {
-        id: number;
-        material_product_id: number;
-        quantity_per_unit: string;
-        unit: string;
-      })[]
-    >(
-      'SELECT id,material_product_id,quantity_per_unit,unit FROM product_materials WHERE product_id=? AND is_deleted=0 ORDER BY id',
-      [productId],
-    );
-    return rows;
   }
   private async audit(
     db: Db,

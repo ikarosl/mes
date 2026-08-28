@@ -16,6 +16,7 @@ export class ProductDomainError extends Error {
   constructor(
     readonly code: ProductErrorCode,
     message: string,
+    readonly details?: Record<string, unknown>,
   ) {
     super(message);
   }

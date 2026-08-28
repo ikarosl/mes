@@ -99,7 +99,7 @@ Controller 只负责协议映射、DTO、权限装饰器和响应转换，不写
 | 所有者/类别      | 拥有或管理的数据                                                                                                                         |
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | Identity/System  | departments、users、roles、permissions、关联表、refresh_tokens                                                                           |
-| Product          | product_categories、products、product_materials、technical_files、process_steps、process_routes 及关联表                                 |
+| Product          | product_categories、products、product_bom_versions、product_bom_version_lines、technical_files、process_steps、process_routes 及关联表；product_materials 为待消费者迁移后删除的旧结构，不是兼容入口 |
 | Production       | work_orders、production_batches、batch_step_records、batch_step_reports、batch_step_abnormal_dispositions、rework_records、batch_step_scrap_records、batch_step_scrap_reproduction_authorization、production_scrap_supplement_plan、production_scrap_supplement_plan_line、production_material_supplement、production_item_demand、production_item_allocation、item_scrap、inbound_order、inbound_detail、outbound_order、outbound_detail、return_order、return_detail、stock_check_order、stock_check_detail，以及当前生产库存切片的 item_batch、inventory_transaction |
 | 平台审计基础设施 | operation_logs                                                                                                                           |
 | 平台幂等基础设施 | http_idempotency_records（已落地）                                                                                                       |

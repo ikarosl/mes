@@ -132,7 +132,7 @@ const stripComments = (source) =>
 const identityOwnedTables =
   'departments|users|roles|permissions|user_roles|role_permissions|refresh_tokens';
 const productOwnedTables =
-  'product_categories|products|product_materials|technical_files|process_steps|process_routes|process_route_steps';
+  'product_categories|products|product_materials|product_bom_versions|product_bom_version_lines|technical_files|process_steps|process_routes|process_route_steps';
 
 /** 检查定义：directory（相对 root）+ pattern + message；可选 exclude / fileMatch。 */
 const checks = [

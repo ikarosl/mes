@@ -58,3 +58,5 @@
 `202608240003-production-document-cancellation-facts` 为 `inbound_order`、`outbound_order`、`return_order`、`stock_check_order` 和 `item_scrap` 追加取消原因、操作人和时间。`outbound_order.cancel_source` 区分人工取消与生产任务级联取消；级联路径继承生产任务取消原因。迁移从成功操作日志回填可靠的历史操作人和时间，并根据独立出库取消日志或生产任务日志中的 `cancelledPendingOutboundIds` 恢复出库单取消来源；历史原因不稳定可得，因此不虚构或回填原因。
 
 `202608250001-rejected-direct-abnormal-report-reversals` 衔接“驳回并退回重报”语义，只为历史上已标记 `rejected`、尚未冲销、正常数量为零、不是更正替代事实且不属于返工完成的员工直接异常报工追加全量同值冲销。迁移不创建正常替代报工、报废事实或补产授权，也不猜测处理历史混合报工及更正链。
+
+`202608270001-product-bom-versions` 新增 `product_bom_versions`、`product_bom_version_lines` 和 `products.current_bom_version_id`。当前数据库允许清空重建，本迁移不读取、回填或兼容 `product_materials` 数据；BOM 版本统一通过新入口重新创建。

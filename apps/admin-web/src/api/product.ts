@@ -14,10 +14,13 @@ import type {
   ProductCategoryOption,
   ProductCategoryPayload,
   ProductCategoryQuery,
+  ProductBomVersionDetail,
+  ProductBomVersionListItem,
+  PublishProductBomVersionPayload,
+  ReplaceProductBomVersionLinesPayload,
   ProductListItem,
   ProductListQuery,
   ProductMaterialItem,
-  ProductMaterialPayload,
   ProductOption,
   PageResult,
   ProductPayload,
@@ -90,10 +93,36 @@ export const productApi = {
     }),
   setProductStatus: (id: string, status: number) =>
     request<void>({ url: `${base}/products/${id}/status`, method: 'PATCH', data: { status } }),
+  bomVersions: (productId: string) =>
+    request<ProductBomVersionListItem[]>({ url: `${base}/products/${productId}/bom-versions` }),
+  bomVersion: (bomVersionId: string) =>
+    request<ProductBomVersionDetail>({ url: `${base}/bom-versions/${bomVersionId}` }),
+  createBomVersionDraft: (productId: string) =>
+    request<ProductBomVersionDetail>({
+      url: `${base}/products/${productId}/bom-version-drafts`,
+      method: 'POST',
+    }),
+  copyBomVersionAsDraft: (bomVersionId: string) =>
+    request<ProductBomVersionDetail>({
+      url: `${base}/bom-versions/${bomVersionId}/draft`,
+      method: 'POST',
+    }),
+  replaceBomVersionLines: (bomVersionId: string, data: ReplaceProductBomVersionLinesPayload) =>
+    request<ProductBomVersionDetail>({
+      url: `${base}/bom-versions/${bomVersionId}/lines`,
+      method: 'PUT',
+      data,
+    }),
+  publishBomVersion: (bomVersionId: string, data: PublishProductBomVersionPayload) =>
+    request<ProductBomVersionDetail>({
+      url: `${base}/bom-versions/${bomVersionId}/publish`,
+      method: 'POST',
+      data,
+    }),
+  deleteBomVersionDraft: (bomVersionId: string) =>
+    request<void>({ url: `${base}/bom-versions/${bomVersionId}`, method: 'DELETE' }),
   materials: (id: string) =>
     request<ProductMaterialItem[]>({ url: `${base}/products/${id}/materials` }),
-  replaceMaterials: (id: string, items: ProductMaterialPayload[]) =>
-    request<void>({ url: `${base}/products/${id}/materials`, method: 'PUT', data: { items } }),
   setDefaultRoute: (id: string, routeId: string | null) =>
     request<void>({
       url: `${base}/products/${id}/default-route`,

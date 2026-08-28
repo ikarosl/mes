@@ -67,6 +67,7 @@
 | `product_name`     | `VARCHAR(200)`    | 名称                                    |
 | `category_id`      | `BIGINT UNSIGNED` | 分类 ID                                 |
 | `default_route_id` | `BIGINT UNSIGNED` | 默认工艺路线，可为空                    |
+| `current_bom_version_id` | `BIGINT UNSIGNED` | 当前已发布 BOM 版本，可为空        |
 | `unit`             | `VARCHAR(20)`     | 唯一基础计量单位，例如 `g`、`kg`、`pcs` |
 | `acquire_method`   | `VARCHAR(32)`     | `self_made`、`outsourced`、`purchased`  |
 | `spec_values`      | `JSON`            | 轻量规格参数；纯记录，不参与整数数量计算 |
@@ -80,6 +81,7 @@
 - 唯一约束：`UNIQUE (item_code)`
 - 外键：`FOREIGN KEY (category_id) REFERENCES product_categories(id)`
 - 外键：`default_route_id -> process_routes.id ON DELETE SET NULL`，在工艺表创建后追加
+- 外键：`current_bom_version_id -> product_bom_versions.id`，只允许指向本产品已发布版本；当前指针是后续新工单冻结 BOM 的唯一权威来源
 - 检查约束：`CHECK (acquire_method IN ('self_made', 'outsourced', 'purchased'))`
 - 检查约束：`CHECK (status IN (0, 1))`
 
@@ -102,7 +104,9 @@
 
 ### 3. `product_materials`
 
-职责：维护产品或半成品的统一 BOM 明细，是生产需求生成的唯一 BOM 数据源。
+职责：待删除的旧 BOM 结构，不再作为产品 BOM 的业务入口。
+
+> 施工说明：数据库允许清空重建，因此不迁移、不回填且不双写本表数据。它只在路线和 Production 现有外键尚未完成切换期间保留物理结构，消费者迁完后直接追加删除迁移；最终验收文档将移除此节。
 
 | 字段                  | 类型              | 说明                           |
 | --------------------- | ----------------- | ------------------------------ |
@@ -142,7 +146,82 @@
 
 ---
 
-### 4. `work_orders`
+### 4. `product_bom_versions`
+
+职责：维护产品的轻量不可变 BOM 版本。版本发布后永久不可修改；调整 BOM 时复制生成新版本，只影响后续工单。
+
+| 字段            | 类型              | 说明                                                         |
+| --------------- | ----------------- | ------------------------------------------------------------ |
+| `id`            | `BIGINT UNSIGNED` | 主键，自增                                                   |
+| `product_id`    | `BIGINT UNSIGNED` | 成品 ID                                                      |
+| `version_no`    | `VARCHAR(64)`     | 产品内唯一版本号，由后端生成                                 |
+| `status`        | `VARCHAR(20)`     | `draft`、`published`、`superseded`                           |
+| `change_reason` | `TEXT`            | 发布变更原因，发布时必填                                     |
+| `remark`        | `TEXT`            | 版本备注，草稿可编辑                                         |
+| `published_by`  | `BIGINT UNSIGNED` | 发布人，可为空                                               |
+| `published_at`  | `DATETIME`        | 发布时间，可为空                                             |
+| 审计字段        | 见统一规则        | 主数据审计字段                                               |
+
+约束：
+
+- 主键：`id`
+- 外键：`FOREIGN KEY (product_id) REFERENCES products(id)`
+- 外键：`published_by -> users.id`
+- 检查约束：`CHECK (status IN ('draft', 'published', 'superseded'))`
+- 唯一约束：`UNIQUE (product_id, version_no)`
+- 生成列唯一约束：草稿状态下以产品 ID 生成 `draft_product_guard`，保证同一产品最多一个草稿
+- 组合引用索引：`UNIQUE (id, product_id)`
+- 索引：`INDEX (current_bom_version_id)` 由 `products` 表持有
+
+说明：
+
+- `products.current_bom_version_id` 通过 `(current_bom_version_id, products.id) -> (product_bom_versions.id, product_id)` 组合外键保证只能指向本产品版本；发布事务再校验目标为 `published`。禁止用 `MAX(version_no)` 判断当前 BOM。
+- 同一产品一期最多保留一个草稿；发布新版本、旧版本转 `superseded`、切换 `products.current_bom_version_id` 和审计同事务完成。
+- 已发布或已被工单引用的 BOM 版本永久不可修改、不可删除；草稿可编辑、可删除。
+- 旧版本虽然不再用于新工单，但继续供历史工单和需求追溯。
+- 只有自制成品允许维护 BOM；物料不要求、也不得配置 `current_bom_version_id`。
+
+### 5. `product_bom_version_lines`
+
+职责：维护某个 BOM 版本的明细行，保存组件身份和发布时快照。
+
+| 字段                  | 类型              | 说明                           |
+| --------------------- | ----------------- | ------------------------------ |
+| `id`                  | `BIGINT UNSIGNED` | 主键，自增                     |
+| `bom_version_id`      | `BIGINT UNSIGNED` | BOM 版本 ID                    |
+| `line_no`             | `INT`             | 行号，版本内从 1 连续排列      |
+| `material_product_id` | `BIGINT UNSIGNED` | 稳定组件身份                   |
+| `quantity_per_unit`   | `DECIMAL(12,4)`   | 单位用量，正整数               |
+| `item_code_snapshot`  | `VARCHAR(100)`    | 组件编码快照                   |
+| `item_name_snapshot`  | `VARCHAR(200)`    | 组件名称快照                   |
+| `unit_snapshot`       | `VARCHAR(20)`     | 组件固定基础单位快照           |
+| `is_key_material`     | `TINYINT`         | 是否关键物料，默认 `1`         |
+| `need_batch_record`   | `TINYINT`         | 是否要求批次追溯，默认 `1`     |
+| `remark`              | `TEXT`            | 行备注                         |
+| 审计字段              | 见统一规则        | 主数据审计字段                 |
+
+约束：
+
+- 主键：`id`
+- 外键：`FOREIGN KEY (bom_version_id) REFERENCES product_bom_versions(id)`
+- 外键：`FOREIGN KEY (material_product_id) REFERENCES products(id)`
+- 检查约束：`CHECK (line_no > 0)`
+- 检查约束：`CHECK (quantity_per_unit > 0 AND quantity_per_unit = TRUNCATE(quantity_per_unit, 0))`
+- 检查约束：布尔字段与 `is_deleted` 只允许 `0/1`
+- 唯一约束：`UNIQUE (bom_version_id, material_product_id)`
+- 唯一约束：`UNIQUE (bom_version_id, line_no)`
+- 组合引用索引：`UNIQUE (id, bom_version_id)`
+
+说明：
+
+- `material_product_id` 只能引用 `item_kind = material` 的启用物料，且不得等于 BOM 所属产品；`unit_snapshot` 必须等于物料固定基础单位。
+- 发布时校验组件身份、固定单位、整数数量、自引用和循环引用；当前单层、物料限定已使环路无法正常产生，校验仍作为数据库异常数据兜底。
+- 已发布版本行不得通过编辑、批量替换、软删除、恢复或内部接口绕过不可变约束。
+- 数据库触发器只允许 `draft` 版本增删改行，作为应用状态校验之外的不可变兜底。
+
+---
+
+### 6. `work_orders`
 
 职责：维护生产工单，记录某个产品的整体生产计划。
 
@@ -223,7 +302,7 @@
 
 ---
 
-### 5. `production_batches`
+### 7. `production_batches`
 
 职责：维护生产批次，表示某个工单被拆分后的实际生产批次。
 

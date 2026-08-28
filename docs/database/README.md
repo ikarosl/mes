@@ -53,6 +53,7 @@ production_batches
 
 | 流程位置 | 设计表 | 事实/职责 | 权威定义 | 当前实现状态 |
 | --- | --- | --- | --- | --- |
+| 产品 BOM | `product_bom_versions` / `product_bom_version_lines` | 轻量不可变 BOM 版本和版本行；发布后永久只读 | [产品主数据与生产批次](30-production-inventory/10-master-data-and-batches.md) | `202608270001-product-bom-versions` 建表；不迁移旧 BOM 数据，产品模块 BOM 版本 API 按阶段接入 |
 | 生产计划 | `work_orders` | 生产工单可变聚合 | [产品主数据与生产批次](30-production-inventory/10-master-data-and-batches.md) | 已实现下达、草稿取消、开工联动、显式完工、提前关闭和归档关闭 |
 | 生产计划 | `production_batches` | 工单下的生产执行批次 | [产品主数据与生产批次](30-production-inventory/10-master-data-and-batches.md) | 已实现生产中工单继续拆批及未开工、未出库任务取消；已出库/开工禁止取消 |
 | 工序执行 | `batch_step_records` | 某批次 × 某工序的可变执行节点 | [生产报工、追溯与质量边界](40-production-traceability-quality.md) | 已实现派工、开工、报工与工序数量状态闭环 |
