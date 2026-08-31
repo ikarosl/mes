@@ -17,14 +17,14 @@ export const readDemoSeeds = async () => {
 
 export const assertDemoSeedEnabled = (environment: NodeJS.ProcessEnv) => {
   if (environment.NODE_ENV === 'production') {
-    throw new Error('Demo seed cannot run when NODE_ENV=production.');
+    throw new Error('生产环境不能运行演示数据种子。');
   }
   if (environment.ALLOW_DEMO_SEED !== '1') {
-    throw new Error('Demo seed is disabled. Set ALLOW_DEMO_SEED=1 for an explicit demo load.');
+    throw new Error('演示数据种子已禁用；如需显式加载，请设置 ALLOW_DEMO_SEED=1。');
   }
   const password = environment.DEMO_USER_PASSWORD;
   if (!password || password.length < 6) {
-    throw new Error('DEMO_USER_PASSWORD must contain at least 6 characters.');
+    throw new Error('DEMO_USER_PASSWORD 长度必须至少为 6 个字符。');
   }
   return password;
 };

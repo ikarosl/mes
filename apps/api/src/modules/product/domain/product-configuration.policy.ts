@@ -7,7 +7,7 @@ export interface ConfigurableProduct {
   itemKind: ProductItemKind;
 }
 
-/** Product records that may own a BOM or a process route. */
+/** 可以拥有物料清单或工艺路线的产品记录。 */
 export function requireConfigurableProduct(product: ConfigurableProduct): void {
   if (
     product.status !== 1 ||

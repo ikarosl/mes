@@ -132,4 +132,37 @@ describe('productApi contract mapping', () => {
       timeout: 0,
     });
   });
+
+  it('uploads a process step SOP without timeout or auto-retry and forwards cancel/progress', async () => {
+    request.mockResolvedValue({ data: undefined });
+    const { productApi } = await import('../product');
+    const file = new File(['sop'], '焊接SOP.pdf', { type: 'application/pdf' });
+    const controller = new AbortController();
+    const onUploadProgress = vi.fn();
+
+    await productApi.uploadProcessStepSop('9', file, {
+      signal: controller.signal,
+      onUploadProgress,
+    });
+
+    expect(request).toHaveBeenCalledTimes(1);
+    const config = request.mock.calls[0][0];
+    expect(config).toMatchObject({
+      url: '/product/process-steps/9/sop',
+      method: 'POST',
+      timeout: 0,
+      skipRetry: true,
+      skipErrorHandling: true,
+      signal: controller.signal,
+    });
+    expect(config.data).toBeInstanceOf(FormData);
+
+    // 进度回调按百分比换算且封顶 100
+    config.onUploadProgress({ loaded: 50, total: 200 });
+    expect(onUploadProgress).toHaveBeenCalledWith(25);
+    config.onUploadProgress({ loaded: 500, total: 200 });
+    expect(onUploadProgress).toHaveBeenLastCalledWith(100);
+    config.onUploadProgress({ loaded: 10 });
+    expect(onUploadProgress).toHaveBeenCalledTimes(2);
+  });
 });

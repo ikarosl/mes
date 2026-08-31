@@ -623,7 +623,7 @@ async function beforeCreateClose(done: () => void) {
     });
     done();
   } catch {
-    // Keep editing.
+    // 继续编辑。
   }
 }
 function closeCreate() {

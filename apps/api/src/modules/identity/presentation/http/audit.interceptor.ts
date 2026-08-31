@@ -82,12 +82,12 @@ export class AuditInterceptor implements NestInterceptor {
     try {
       await this.repository.writeLog(entry);
     } catch {
-      this.logger.warn('Audit log write failed');
+      this.logger.warn('操作日志写入失败');
     }
   }
 }
 
-/** Keep operation logs useful without persisting raw exception messages or secrets. */
+/** 在不持久化原始异常消息或凭证的前提下，保留操作日志的诊断价值。 */
 export const auditFailureRemark = (error: unknown) =>
   error instanceof HttpException
     ? `HTTP ${error.getStatus()}`
@@ -95,7 +95,7 @@ export const auditFailureRemark = (error: unknown) =>
       ? 'HTTP 409'
       : error instanceof IdempotencyStorageError
         ? `HTTP ${idempotencyStorageStatus(error)}`
-        : 'Unhandled request failure';
+        : '未处理的请求失败';
 
 /** 幂等存储错误与 HttpExceptionFilter 保持一致的 HTTP 状态：可重试 503，结果损坏 500。 */
 export const idempotencyStorageStatus = (error: IdempotencyStorageError) =>

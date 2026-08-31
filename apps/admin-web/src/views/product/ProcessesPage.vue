@@ -204,12 +204,16 @@
       v-model="uploadDialogVisible"
       title="上传工序技术文件"
       :width="DialogWidth.sm"
+      :close-on-click-modal="!uploading"
+      :close-on-press-escape="!uploading"
+      :show-close="!uploading"
     >
       <el-upload
         drag
         action=""
         :auto-upload="false"
         :limit="1"
+        :accept="UPLOAD_ACCEPT"
         :file-list="uploadFileList"
         :on-change="handleUploadChange"
         :on-remove="handleUploadRemove"
@@ -217,11 +221,32 @@
         <el-icon class="upload-icon"><UploadFilled /></el-icon>
         <div class="upload-text">将文件拖到这里，或点击选择文件</div>
       </el-upload>
+      <p class="upload-hint">支持常见图片、PDF 和 Word/Excel 文件，单个文件不超过 20MB。</p>
+      <div
+        v-if="uploading"
+        class="upload-progress"
+      >
+        <el-progress
+          :percentage="uploadProgress"
+          :stroke-width="8"
+        />
+        <span>{{ uploadProgress }}%</span>
+      </div>
       <template #footer>
-        <el-button @click="uploadDialogVisible = false">取消</el-button>
+        <el-button
+          v-if="uploading"
+          @click="cancelUpload"
+          >取消上传</el-button
+        >
+        <el-button
+          v-else
+          @click="uploadDialogVisible = false"
+          >取消</el-button
+        >
         <el-button
           type="primary"
-          :loading="submitting"
+          :loading="uploading"
+          :disabled="uploading"
           @click="submitUpload"
           >上传文件</el-button
         >
@@ -252,6 +277,7 @@ import { productApi } from '../../api/product';
 import { useAuthStore } from '../../stores/auth';
 import { useProcessSteps } from './composables/useProcessSteps';
 import { canPreviewFile, previewMimeOf } from '../../utils/file-preview';
+import { UPLOAD_ACCEPT, validateTechnicalFileUpload } from '../../utils/file-validation';
 import ProcessStepDetailDialog from './components/ProcessStepDetailDialog.vue';
 import ProcessStepFormDialog from './components/ProcessStepFormDialog.vue';
 
@@ -284,6 +310,9 @@ const selectedFile = ref<File | null>(null);
 const uploadProcessId = ref<string | null>(null);
 const detailRow = ref<ProcessStepListItem | null>(null);
 const submitting = ref(false);
+const uploading = ref(false);
+const uploadProgress = ref(0);
+const uploadAbortController = ref<AbortController | null>(null);
 const fileActionPending = ref<{ id: string; action: 'preview' | 'download' } | null>(null);
 const processFormDialogRef = ref<InstanceType<typeof ProcessStepFormDialog> | null>(null);
 
@@ -301,6 +330,8 @@ const openUpload = (row: ProcessStepListItem) => {
   uploadFileList.value = [];
   selectedFile.value = null;
   uploadProcessId.value = row.id;
+  uploadProgress.value = 0;
+  uploadAbortController.value = null;
   uploadDialogVisible.value = true;
 };
 const openDetail = (row: ProcessStepListItem) => {
@@ -374,29 +405,61 @@ const submitProcess = async (payload: ProcessStepPayload) => {
   }
 };
 
-const handleUploadChange = (_uploadFile: UploadFile, uploadFiles: UploadFiles) => {
-  uploadFileList.value = uploadFiles.slice(-1);
-  selectedFile.value = uploadFiles.at(-1)?.raw ?? null;
+const handleUploadChange = (uploadFile: UploadFile, uploadFiles: UploadFiles) => {
+  const file = uploadFile.raw;
+  if (!file) {
+    EMessage.warning('无法读取所选文件');
+    uploadFileList.value = uploadFiles.filter((item) => item.uid !== uploadFile.uid);
+    selectedFile.value = uploadFileList.value.at(-1)?.raw ?? null;
+    return;
+  }
+  const validationMessage = validateTechnicalFileUpload(file);
+  if (validationMessage) {
+    EMessage.warning(validationMessage);
+    uploadFileList.value = uploadFiles.filter((item) => item.uid !== uploadFile.uid);
+    selectedFile.value = uploadFileList.value.at(-1)?.raw ?? null;
+    return;
+  }
+  uploadFileList.value = [uploadFile];
+  selectedFile.value = file;
 };
 const handleUploadRemove = () => {
   uploadFileList.value = [];
   selectedFile.value = null;
 };
+const isUploadCanceled = (error: unknown) =>
+  error && typeof error === 'object' && (error as { code?: unknown }).code === 'ERR_CANCELED';
+const cancelUpload = () => uploadAbortController.value?.abort();
 const submitUpload = async () => {
   if (!selectedFile.value || !uploadProcessId.value) {
     EMessage.warning('请选择要上传的技术文件');
     return;
   }
-  submitting.value = true;
+  const validationMessage = validateTechnicalFileUpload(selectedFile.value);
+  if (validationMessage) {
+    EMessage.warning(validationMessage);
+    return;
+  }
+  const controller = new AbortController();
+  uploadAbortController.value = controller;
+  uploadProgress.value = 0;
+  uploading.value = true;
   try {
-    await productApi.uploadProcessStepSop(uploadProcessId.value, selectedFile.value);
+    await productApi.uploadProcessStepSop(uploadProcessId.value, selectedFile.value, {
+      signal: controller.signal,
+      onUploadProgress: (percentage) => {
+        uploadProgress.value = percentage;
+      },
+    });
     EMessage.success('技术文件已上传');
     uploadDialogVisible.value = false;
     await loadSteps();
   } catch (error) {
-    EMessage.error(error, '技术文件上传失败');
+    if (isUploadCanceled(error)) EMessage.info('上传已取消，请确认后手动重新上传');
+    else EMessage.error(error, '技术文件上传失败');
   } finally {
-    submitting.value = false;
+    uploading.value = false;
+    uploadAbortController.value = null;
   }
 };
 
@@ -533,6 +596,22 @@ onMounted(loadSteps);
 }
 .upload-text {
   color: #1f2937;
+}
+.upload-hint {
+  margin: 8px 0 0;
+  color: #6b7280;
+  font-size: 12px;
+}
+.upload-progress {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+  color: #6b7280;
+  font-size: 12px;
+}
+.upload-progress :deep(.el-progress) {
+  flex: 1;
 }
 
 @media (max-width: 1120px) {

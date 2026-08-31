@@ -111,10 +111,27 @@ export const productApi = {
     request<void>({ url: `${base}/process-steps/${id}`, method: 'PATCH', data }),
   setProcessStepStatus: (id: string, status: number) =>
     request<void>({ url: `${base}/process-steps/${id}/status`, method: 'PATCH', data: { status } }),
-  uploadProcessStepSop: (id: string, file: File) => {
+  // 上传接口带宽受限：不设客户端超时（由进度条与可取消代替），显式跳过自动重试与全局错误弹窗（取消不当作网络错误）。
+  uploadProcessStepSop: (
+    id: string,
+    file: File,
+    options: { signal?: AbortSignal; onUploadProgress?: (percentage: number) => void } = {},
+  ) => {
     const data = new FormData();
     data.append('file', file);
-    return request<void>({ url: `${base}/process-steps/${id}/sop`, method: 'POST', data });
+    return request<void>({
+      url: `${base}/process-steps/${id}/sop`,
+      method: 'POST',
+      data,
+      timeout: 0,
+      skipRetry: true,
+      skipErrorHandling: true,
+      signal: options.signal,
+      onUploadProgress: (event) => {
+        if (!options.onUploadProgress || !event.total) return;
+        options.onUploadProgress(Math.min(100, Math.round((event.loaded / event.total) * 100)));
+      },
+    });
   },
 
   routes: (params: ProcessRouteQuery) =>

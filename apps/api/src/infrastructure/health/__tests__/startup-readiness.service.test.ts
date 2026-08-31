@@ -18,9 +18,7 @@ describe('StartupReadinessService', () => {
     ).resolves.toBeUndefined();
 
     expect(check).toHaveBeenCalledOnce();
-    expect(log).toHaveBeenCalledWith(
-      'Startup dependency check passed: database=up objectStorage=up',
-    );
+    expect(log).toHaveBeenCalledWith('启动依赖检查通过：database=up objectStorage=up');
   });
 
   it('allows startup but warns that readiness is unavailable when dependencies are down', async () => {
@@ -36,7 +34,7 @@ describe('StartupReadinessService', () => {
 
     await expect(service.onApplicationBootstrap()).resolves.toBeUndefined();
     expect(warn).toHaveBeenCalledWith(
-      'Startup dependency check degraded; API will start but readiness remains unavailable: database=down(code=ECONNREFUSED) objectStorage=down(code=HTTP_503)',
+      '启动依赖检查未通过；API 将继续启动，但就绪状态仍不可用：database=down(code=ECONNREFUSED) objectStorage=down(code=HTTP_503)',
     );
   });
 });

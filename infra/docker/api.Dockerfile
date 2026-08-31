@@ -14,10 +14,10 @@ COPY . .
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm install --frozen-lockfile
 
-# Build the API and all of its workspace dependencies.
+# 构建 API 及其全部工作区依赖。
 RUN pnpm --filter @company/api... build
 
-# Produce a self-contained production deployment directory for the API.
+# 生成 API 的自包含生产部署目录。
 RUN pnpm --filter @company/api --prod deploy --legacy /prod/api
 
 

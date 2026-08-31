@@ -8,8 +8,7 @@ loadWorkspaceEnv();
 const username = process.env.ADMIN_USERNAME ?? 'admin';
 const password = process.env.ADMIN_PASSWORD;
 const displayName = process.env.ADMIN_DISPLAY_NAME ?? '系统管理员';
-if (!password || password.length < 6)
-  throw new Error('ADMIN_PASSWORD must contain at least 6 characters');
+if (!password || password.length < 6) throw new Error('ADMIN_PASSWORD 长度必须至少为 6 个字符');
 const pool = createDatabasePool();
 try {
   await withTransaction(pool, async (connection) => {
@@ -24,7 +23,7 @@ try {
        FOR UPDATE`,
     );
     const adminRole = roles[0];
-    if (!adminRole) throw new Error('System access seed is missing; run pnpm db:seed first');
+    if (!adminRole) throw new Error('系统权限种子数据缺失，请先运行 pnpm db:seed');
 
     const passwordHash = await bcrypt.hash(password, 12);
     await connection.execute(
@@ -39,7 +38,7 @@ try {
       [adminRole.id, username],
     );
   });
-  console.log(`Administrator ready: ${username}`);
+  console.log(`管理员已就绪：${username}`);
 } finally {
   await pool.end();
 }

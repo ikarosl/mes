@@ -37,9 +37,8 @@ export type RouteStepQuantity = {
 };
 
 /**
- * Calculates route quantity gates from immutable reports and authorized scrap reproduction whose
- * material supplement has been fulfilled.
- * The returned values are projections; callers must never persist them as a second quantity fact.
+ * 根据不可变报工事实和已完成补料的获批报废补产，计算工艺路线的数量闸门。
+ * 返回值是汇总投影，调用方不得将其作为第二份数量事实持久化。
  */
 export const calculateRouteStepQuantities = (
   plannedQuantity: number | string,

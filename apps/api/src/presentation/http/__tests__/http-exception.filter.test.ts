@@ -1,4 +1,4 @@
-import { BadRequestException, Logger } from '@nestjs/common';
+import { BadRequestException, Logger, PayloadTooLargeException } from '@nestjs/common';
 import { DatabaseError } from '@company/database';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { HttpExceptionFilter } from '../http-exception.filter.js';
@@ -40,6 +40,38 @@ describe('HttpExceptionFilter', () => {
     );
   });
 
+  it('maps Multer file-size rejections to a clear 413 response', () => {
+    const multerError = Object.assign(new Error('File too large'), {
+      name: 'MulterError',
+      code: 'LIMIT_FILE_SIZE',
+    });
+
+    const { json, status } = invoke(multerError, '/api/product/process-steps/1/sop');
+
+    expect(status).toHaveBeenCalledWith(413);
+    expect(json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        code: 'PAYLOAD_TOO_LARGE',
+        message: '文件大小不能超过 20MB',
+      }),
+    );
+  });
+
+  it('translates framework file-size messages to Chinese', () => {
+    const { json, status } = invoke(
+      new PayloadTooLargeException('File too large'),
+      '/api/product/process-steps/1/sop',
+    );
+
+    expect(status).toHaveBeenCalledWith(413);
+    expect(json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        code: 'PAYLOAD_TOO_LARGE',
+        message: '文件大小不能超过 20MB',
+      }),
+    );
+  });
+
   it('maps protocol-independent concurrency errors to the stable 409 envelope', () => {
     const { json, status } = invoke(
       new ConcurrencyError('CONCURRENT_MODIFICATION', 'Refresh and retry'),
@@ -50,7 +82,7 @@ describe('HttpExceptionFilter', () => {
       expect.objectContaining({
         status: 409,
         code: 'CONCURRENT_MODIFICATION',
-        message: 'Refresh and retry',
+        message: '请刷新后重试',
       }),
     );
   });
@@ -89,7 +121,7 @@ describe('HttpExceptionFilter', () => {
     expect(message).toContain('sqlState=HY000');
     expect(message).toContain('path=/api/production/abnormal-dispositions/2/actions/confirm');
     expect(`${message}\n${stack}`).not.toContain('secret');
-    expect(stack).toContain('DatabaseError: [message redacted]');
+    expect(stack).toContain('DatabaseError：[消息已脱敏]');
   });
 
   it('maps retryable idempotency storage failures to 503 with a stable code', () => {

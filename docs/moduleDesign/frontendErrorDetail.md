@@ -85,9 +85,9 @@ Axios 响应拦截器按照注册顺序进入后续 Promise 链。当前错误�
 
 1. 请求存在有效 `config`；
 2. 没有设置 `skipRetry`；
-3. 请求方法为 `GET`、`HEAD`、`OPTIONS`，或者显式设置 `retryUnsafe`；
+3. 请求方法为 `GET`、`HEAD`、`OPTIONS`，或者显式设置 `retryIdempotentWrite: true` 且携带 `Idempotency-Key`；
 4. 当前重试次数小于 `retryTimes`，`retryTimes` 默认值为 1；
-5. 没有收到响应；或者只读安全请求收到不小于 500 的响应；或者显式启用 `retryUnsafe` 的写请求收到
+5. 没有收到响应；或者只读安全请求收到不小于 500 的响应；或者显式启用 `retryIdempotentWrite` 的写请求收到
    `502`、`503`、`504`。
 
 重试等待时间为 `300ms × 当前重试次数`。如果不满足重试条件或重试后仍失败，基础拦截器继续返回 rejected Promise，将错误交给后续拦截器。

@@ -63,11 +63,13 @@ describe('request errors', () => {
     });
   });
 
-  it('retries only safe methods unless an unsafe retry is explicitly enabled', () => {
+  it('retries only safe methods, or unsafe methods bound to an idempotency key', () => {
     expect(canRetryRequest('GET')).toBe(true);
     expect(canRetryRequest('post')).toBe(false);
     expect(canRetryRequest('PATCH')).toBe(false);
-    expect(canRetryRequest('POST', true)).toBe(true);
+    expect(canRetryRequest('POST', true, true)).toBe(true);
+    // 无幂等键的写请求结果不可知，禁止自动重试
+    expect(canRetryRequest('POST', true)).toBe(false);
   });
 });
 
@@ -75,34 +77,68 @@ describe('unsafe request auto-retry', () => {
   it('does NOT auto-retry a deterministic 500 for an unsafe request', async () => {
     const { adapter, calls } = failingAdapter(500);
     const client = createRequestClient();
-    const retryConfig: RetryRequestConfig = { adapter, retryUnsafe: true, retryTimes: 2 };
+    const retryConfig: RetryRequestConfig = {
+      adapter,
+      headers: { 'Idempotency-Key': 'key-1' },
+      retryIdempotentWrite: true,
+      retryTimes: 2,
+    };
     const error = await client.post('/x', {}, retryConfig).catch((err: unknown) => err);
 
     expect(calls).toHaveLength(1);
     expect((error as AxiosError).response?.status).toBe(500);
   });
 
-  it('auto-retries a temporary 503 for an unsafe request up to retryTimes', async () => {
+  it('auto-retries a temporary 503 for an unsafe request up to retryTimes with the same key', async () => {
     vi.useFakeTimers();
     try {
       const { adapter, calls } = failingAdapter(503);
       const client = createRequestClient();
-      const retryConfig: RetryRequestConfig = { adapter, retryUnsafe: true, retryTimes: 2 };
+      const retryConfig: RetryRequestConfig = {
+        adapter,
+        headers: { 'Idempotency-Key': 'key-1' },
+        retryIdempotentWrite: true,
+        retryTimes: 2,
+      };
       const pending = client.post('/x', {}, retryConfig).catch((error: unknown) => error);
       await vi.runAllTimersAsync();
       const error = await pending;
 
       expect(calls).toHaveLength(3); // 首次 + 2 次自动重试（复用同一请求配置/同一幂等键）
+      expect(
+        calls.every(
+          (call) => (call.headers as Record<string, unknown>)['Idempotency-Key'] === 'key-1',
+        ),
+      ).toBe(true);
       expect((error as AxiosError).response?.status).toBe(503);
     } finally {
       vi.useRealTimers();
     }
   });
 
+  it('does NOT auto-retry an unsafe request without an idempotency key', async () => {
+    const { adapter, calls } = failingAdapter(503);
+    const client = createRequestClient();
+    const retryConfig: RetryRequestConfig = {
+      adapter,
+      retryIdempotentWrite: true,
+      retryTimes: 2,
+    };
+    const error = await client.post('/x', {}, retryConfig).catch((err: unknown) => err);
+
+    expect(calls).toHaveLength(1);
+    expect((error as AxiosError).response?.status).toBe(503);
+  });
+
   it('does NOT auto-retry a corrupt idempotency result (deterministic 500)', async () => {
     const { adapter, calls } = failingAdapter(500, IDEMPOTENCY_RESULT_CORRUPT);
     const client = createRequestClient();
-    const retryConfig: RetryRequestConfig = { adapter, retryUnsafe: true, retryTimes: 2 };
+    const retryConfig: RetryRequestConfig = {
+      adapter,
+      headers: { 'Idempotency-Key': 'key-1' },
+      retryIdempotentWrite: true,
+      retryTimes: 2,
+    };
     const error = await client.get('/x', retryConfig).catch((err: unknown) => err);
 
     // 结果损坏必须立即交给上层（composable）阻塞意图并提示人工处理，不得重试

@@ -73,8 +73,8 @@ export const selectRouteSupplementSources = async (
 };
 
 /**
- * Must be called after outbound confirmation while the batch and all of its step records are
- * locked. The supplement records only material fulfillment; the authorization remains immutable.
+ * 必须在出库确认后、生产批次及其全部工序记录均已锁定时调用。
+ * 补料记录只记录物料履约情况，授权记录保持不可变。
  */
 export const fulfillReadySupplements = async (
   connection: PoolConnection,

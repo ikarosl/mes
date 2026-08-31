@@ -120,11 +120,11 @@ describe('checkApiArchitecture', () => {
     expect(flagsPath(violations, 'identity/presentation/http/idempotency-key.guard.ts')).toBe(true);
   });
 
-  it('flags an unregistered frontend wrapper setting idempotency headers or unsafe retry', async () => {
+  it('flags an unregistered frontend wrapper setting idempotency headers or idempotent-write retry', async () => {
     const violations = await checkApiArchitecture([
       {
         path: 'apps/admin-web/src/api/product.ts',
-        source: `client.post('/products', body, { headers: { 'Idempotency-Key': key }, retryUnsafe: true });\n`,
+        source: `client.post('/products', body, { headers: { 'Idempotency-Key': key }, retryIdempotentWrite: true });\n`,
       },
     ]);
 

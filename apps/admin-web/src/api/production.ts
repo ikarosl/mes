@@ -68,7 +68,7 @@ import type {
   ShortBatchAuthorizationResult,
   CloseRemainingMaterialDemandsResult,
 } from '@company/contracts';
-import { toRequestError, type RetryRequestConfig } from '@company/request';
+import { IDEMPOTENCY_KEY_HEADER, toRequestError, type RetryRequestConfig } from '@company/request';
 import { httpClient } from './http';
 
 const request = async <T>(config: RetryRequestConfig) => {
@@ -89,8 +89,8 @@ export const productionApi = {
       url: '/production/purchase-inbounds',
       method: 'POST',
       data,
-      headers: { 'Idempotency-Key': idempotencyKey },
-      retryUnsafe: true,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      retryIdempotentWrite: true,
       retryTimes: 2,
     }),
   confirmPurchaseInbound: (id: string, version: number, idempotencyKey: string) =>
@@ -98,8 +98,8 @@ export const productionApi = {
       url: `/production/purchase-inbounds/${id}/actions/confirm`,
       method: 'POST',
       data: { version },
-      headers: { 'Idempotency-Key': idempotencyKey },
-      retryUnsafe: true,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      retryIdempotentWrite: true,
       retryTimes: 2,
     }),
   cancelPurchaseInbound: (id: string, data: CancelPurchaseInboundPayload) =>
@@ -196,8 +196,8 @@ export const productionApi = {
       url: `/production/work-orders/${workOrderId}/batches`,
       method: 'POST',
       data,
-      headers: { 'Idempotency-Key': idempotencyKey },
-      retryUnsafe: true,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      retryIdempotentWrite: true,
       retryTimes: 2,
     }),
 
@@ -282,8 +282,8 @@ export const productionApi = {
       url: `/production/batches/${batchId}/material-allocations`,
       method: 'POST',
       data,
-      headers: { 'Idempotency-Key': idempotencyKey },
-      retryUnsafe: true,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      retryIdempotentWrite: true,
       retryTimes: 2,
     }),
 
@@ -303,8 +303,8 @@ export const productionApi = {
       url: `/production/batches/${batchId}/material-outbounds`,
       method: 'POST',
       data,
-      headers: { 'Idempotency-Key': idempotencyKey },
-      retryUnsafe: true,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      retryIdempotentWrite: true,
       retryTimes: 2,
     }),
 
@@ -333,8 +333,8 @@ export const productionApi = {
       url: `/production/material-outbounds/${outboundId}/actions/confirm`,
       method: 'POST',
       data: { version },
-      headers: { 'Idempotency-Key': idempotencyKey },
-      retryUnsafe: true,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      retryIdempotentWrite: true,
       retryTimes: 2,
     }),
 
@@ -434,8 +434,8 @@ export const productionApi = {
       url: `/production/batches/${batchId}/step-records/${stepRecordId}/reports`,
       method: 'POST',
       data,
-      headers: { 'Idempotency-Key': idempotencyKey },
-      retryUnsafe: true,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      retryIdempotentWrite: true,
       retryTimes: 2,
     }),
 
@@ -462,8 +462,8 @@ export const productionApi = {
       url: `/production/batches/${batchId}/step-records/${stepRecordId}/reports/${reportId}/actions/correct`,
       method: 'POST',
       data,
-      headers: { 'Idempotency-Key': idempotencyKey },
-      retryUnsafe: true,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      retryIdempotentWrite: true,
       retryTimes: 2,
     }),
 
@@ -499,8 +499,8 @@ export const productionApi = {
       url: `/production/reworks/${reworkId}/actions/complete`,
       method: 'POST',
       data,
-      headers: { 'Idempotency-Key': idempotencyKey },
-      retryUnsafe: true,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      retryIdempotentWrite: true,
       retryTimes: 2,
     }),
 
@@ -534,8 +534,8 @@ export const productionApi = {
       url: `/production/abnormal-dispositions/${dispositionId}/scrap-supplement-plan/actions/confirm`,
       method: 'POST',
       data,
-      headers: { 'Idempotency-Key': idempotencyKey },
-      retryUnsafe: true,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      retryIdempotentWrite: true,
       retryTimes: 2,
     }),
 };

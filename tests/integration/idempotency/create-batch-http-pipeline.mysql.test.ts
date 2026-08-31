@@ -302,7 +302,7 @@ describeMysql('createBatch HTTP pipeline (real Nest app + real MySQL)', () => {
     expect(conflict.body).toMatchObject({
       status: 409,
       code: 'IDEMPOTENCY_CONFLICT',
-      message: 'The idempotency key was already used with a different request.',
+      message: '幂等键已被其他请求使用，请勿复用同一幂等键提交不同内容。',
       path: createBatchUrl,
     });
     expect(conflict.body.requestId).toBe(fixture.conflictRequestId);

@@ -14,7 +14,7 @@ export class IdentityDirectoryService {
     return ids.length === 0 ? Promise.resolve([]) : this.repository.listActiveUserOptionsByIds(ids);
   }
 
-  /** Resolve display data for persisted references, including disabled or soft-deleted users. */
+  /** 解析持久化引用的显示数据，包括已停用或软删除的用户。 */
   listUserReferencesByIds(ids: string[]): Promise<UserOption[]> {
     return ids.length === 0 ? Promise.resolve([]) : this.repository.listUserReferencesByIds(ids);
   }

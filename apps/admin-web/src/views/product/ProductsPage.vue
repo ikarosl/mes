@@ -385,7 +385,7 @@ const loadData = async (): Promise<void> => {
   await loadProducts();
 };
 
-/* ----- product CRUD ----- */
+/* ----- 产品增删改查 ----- */
 // 弹窗打开时的分类候选刷新由 ProductFormDialog 的 @open 统一触发（@refresh-options），
 // openCreate/openEdit 不再主动 refresh，避免每次打开重复请求 /categories/options。
 const openCreate = (): void => {
@@ -470,7 +470,7 @@ const submitMaterials = async (rows: MaterialRow[]): Promise<void> => {
   }
 };
 
-/* ----- default route ----- */
+/* ----- 默认工艺路线 ----- */
 const openDefaultRoute = (row: ProductListItem): void => {
   defaultRouteProduct.value = row;
   defaultRouteDialogVisible.value = true;

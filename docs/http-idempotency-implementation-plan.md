@@ -476,7 +476,7 @@ async function submit(workOrderId, payload) {
   放弃（reset），取消则保留弹窗与 K1 以便安全重试；不能把关闭静默等同于“后端一定没有执行”，也不能静默
   丢弃 K1 后让用户重新发起生成重复批次；
 - UUID 不是凭证，但不得写入日志时连带打印请求体、Token 或 Cookie；
-- 只有明确启用的 API 才传 header，并只对这些接口设置 `retryUnsafe: true`；重试次数保持小且可观测；
+- 只有明确启用的 API 才传 header，并只对这些接口设置 `retryIdempotentWrite: true`；重试次数保持小且可观测；
 - 行内 pending、弹窗 `submitting` 和禁用关闭仍保留，不能因为有后端幂等就允许连续点击。
 
 生命周期矩阵：

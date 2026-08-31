@@ -14,6 +14,7 @@ export interface HttpErrorHandlerOptions {
 }
 
 type ErrorHandlingRequestConfig = RetryRequestConfig;
+const UNAUTHORIZED_NOTICE_WINDOW_MS = 3_000;
 
 // 判断是否保留 API 返回的错误信息，若为 true，则不使用默认的错误提示，而是使用 API 返回的错误信息。
 // 保护登录接口这种不需要登录的接口，避免在登录失败时覆盖 API 返回的 真实的错误提示信息。
@@ -21,15 +22,24 @@ const shouldPreserveApiMessage = (error: RequestError, config?: ErrorHandlingReq
   (config ?? (error.response?.config as ErrorHandlingRequestConfig | undefined))
     ?.preserveErrorMessage === true;
 
-/** Auth refresh runs first; this handles only the final failed request. */
+/** 认证刷新优先执行；此处只处理最终仍然失败的请求。 */
 export const installHttpErrorHandler = (
   client: AxiosInstance,
   options: HttpErrorHandlerOptions,
 ) => {
+  let unauthorizedNoticeUntil = 0;
   client.interceptors.response.use(undefined, (error: unknown) => {
     const config = (error as { config?: ErrorHandlingRequestConfig }).config;
     const requestError = toRequestError(error);
-    if (!config?.skipErrorHandling) handleHttpError(requestError, options, config);
+    if (!config?.skipErrorHandling)
+      handleHttpError(requestError, options, config, {
+        shouldHandleUnauthorized: () => {
+          const now = Date.now();
+          if (now < unauthorizedNoticeUntil) return false;
+          unauthorizedNoticeUntil = now + UNAUTHORIZED_NOTICE_WINDOW_MS;
+          return true;
+        },
+      });
     return Promise.reject(requestError);
   });
 };
@@ -38,6 +48,7 @@ export const handleHttpError = (
   error: unknown,
   options: HttpErrorHandlerOptions,
   config?: ErrorHandlingRequestConfig,
+  state: { shouldHandleUnauthorized?: () => boolean } = {},
 ) => {
   if (isHttpErrorHandled(error)) return;
   markHttpErrorHandled(error);
@@ -48,6 +59,7 @@ export const handleHttpError = (
     return;
   }
   if (requestError.status === 401 && !shouldPreserveApiMessage(requestError, config)) {
+    if (state.shouldHandleUnauthorized && !state.shouldHandleUnauthorized()) return;
     options.onUnauthorized();
     options.notify('登录状态已失效，请重新登录');
     return;

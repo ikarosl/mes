@@ -33,7 +33,7 @@ const allowedTables = new Set([
   'production_scrap_supplement_plan',
   'production_scrap_supplement_plan_line',
   'production_material_supplement',
-  // Historical table removed by 202608200001; retained so immutable older migrations stay valid.
+  // 历史表已由 202608200001 移除；保留该检查以确保不可变的旧迁移仍然有效。
   'production_material_supplement_detail',
   'production_item_demand',
   'inbound_order',

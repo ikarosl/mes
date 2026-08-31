@@ -1,6 +1,6 @@
 import type { GenerateBatchNoInput } from './batch-no.types.js';
 
-/** Generates a batch code only; persistence uniqueness belongs to the caller. */
+/** 只负责生成批次编码；持久化唯一性由调用方负责。 */
 export const generateBatchNo = ({ prefix, sequence, padding }: GenerateBatchNoInput): string => {
   const normalizedPrefix = prefix.trim();
   if (!normalizedPrefix) throw new Error('批次号前缀不能为空');

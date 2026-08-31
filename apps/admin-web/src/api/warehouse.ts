@@ -20,7 +20,7 @@ import type {
   StockCheckOrderItem,
   StockCheckOrderQuery,
 } from '@company/contracts';
-import { toRequestError, type RetryRequestConfig } from '@company/request';
+import { IDEMPOTENCY_KEY_HEADER, toRequestError, type RetryRequestConfig } from '@company/request';
 import { httpClient } from './http';
 
 const request = async <T>(config: RetryRequestConfig) => {
@@ -47,8 +47,8 @@ export const warehouseApi = {
       url: '/warehouse/scraps',
       method: 'POST',
       data,
-      headers: { 'Idempotency-Key': idempotencyKey },
-      retryUnsafe: true,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      retryIdempotentWrite: true,
       retryTimes: 2,
     }),
   confirmMaterialLoss: (scrapId: string, version: number, idempotencyKey: string) =>
@@ -56,8 +56,8 @@ export const warehouseApi = {
       url: `/warehouse/scraps/${scrapId}/actions/confirm`,
       method: 'POST',
       data: { version },
-      headers: { 'Idempotency-Key': idempotencyKey },
-      retryUnsafe: true,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      retryIdempotentWrite: true,
       retryTimes: 2,
     }),
   cancelMaterialLoss: (scrapId: string, data: CancelMaterialLossPayload) =>

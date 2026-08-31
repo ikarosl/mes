@@ -248,7 +248,7 @@ describe('productionApi', () => {
       method: 'POST',
       data: { batchNo: 'BATCH-001', plannedQuantity: 50 },
       headers: { 'Idempotency-Key': 'k1-uuid' },
-      retryUnsafe: true,
+      retryIdempotentWrite: true,
       retryTimes: 2,
     });
   });
@@ -341,7 +341,7 @@ describe('productionApi', () => {
       method: 'POST',
       data,
       headers: { 'Idempotency-Key': 'allocation-key' },
-      retryUnsafe: true,
+      retryIdempotentWrite: true,
       retryTimes: 2,
     });
   });
@@ -365,7 +365,7 @@ describe('productionApi', () => {
       method: 'POST',
       data,
       headers: { 'Idempotency-Key': 'outbound-key' },
-      retryUnsafe: true,
+      retryIdempotentWrite: true,
       retryTimes: 2,
     });
   });
@@ -395,7 +395,7 @@ describe('productionApi', () => {
         method: 'POST',
         data: { version: 0 },
         headers: { 'Idempotency-Key': 'confirm-key' },
-        retryUnsafe: true,
+        retryIdempotentWrite: true,
         retryTimes: 2,
       },
       {
@@ -432,7 +432,7 @@ describe('productionApi', () => {
         method: 'POST',
         data,
         headers: { 'Idempotency-Key': 'create-inbound-key' },
-        retryUnsafe: true,
+        retryIdempotentWrite: true,
         retryTimes: 2,
       },
       {
@@ -440,7 +440,7 @@ describe('productionApi', () => {
         method: 'POST',
         data: { version: 0 },
         headers: { 'Idempotency-Key': 'confirm-inbound-key' },
-        retryUnsafe: true,
+        retryIdempotentWrite: true,
         retryTimes: 2,
       },
       {
@@ -558,7 +558,7 @@ describe('productionApi', () => {
         method: 'POST',
         data: createBody,
         headers: { 'Idempotency-Key': 'report-key' },
-        retryUnsafe: true,
+        retryIdempotentWrite: true,
         retryTimes: 2,
       },
       {
@@ -571,7 +571,7 @@ describe('productionApi', () => {
         method: 'POST',
         data: correctBody,
         headers: { 'Idempotency-Key': 'correct-key' },
-        retryUnsafe: true,
+        retryIdempotentWrite: true,
         retryTimes: 2,
       },
     ]);
@@ -610,7 +610,7 @@ describe('productionApi', () => {
         method: 'POST',
         data: { version: 0, dispositionVersion: 0 },
         headers: { 'Idempotency-Key': 'supplement-key' },
-        retryUnsafe: true,
+        retryIdempotentWrite: true,
         retryTimes: 2,
       },
     ]);
@@ -652,7 +652,7 @@ describe('productionApi', () => {
 
     await productionApi.listOrders({ keyword: '  WO-001  ' });
 
-    // The API client passes params as-is; the controller handles trimming
+    // API 客户端原样传递参数；裁剪处理由控制器负责。
     expect(request).toHaveBeenCalledWith({
       url: '/production/work-orders',
       params: { keyword: '  WO-001  ' },

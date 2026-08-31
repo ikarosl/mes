@@ -3,7 +3,7 @@ import { ProductDomainError } from '../domain/product.errors.js';
 
 type Db = Pool | PoolConnection;
 
-/** Prevents technical-file deletion from racing a newly persisted Product reference. */
+/** 防止技术文件删除与新持久化的产品引用发生并发竞态。 */
 export const lockTechnicalFileSnapshot = async (
   db: Db,
   fileId: string,

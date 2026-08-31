@@ -62,7 +62,7 @@ export class IdempotencyKeyGuard implements CanActivate {
     if (key.length === 0 || key.length > 150) {
       throw new BadRequestException({
         code: 'VALIDATION_ERROR',
-        message: 'Idempotency-Key must contain between 1 and 150 characters',
+        message: '幂等键长度必须在 1 到 150 个字符之间',
       });
     }
     request[VALIDATED_IDEMPOTENCY_KEY] = key;

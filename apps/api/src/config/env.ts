@@ -28,7 +28,7 @@ export const loadAppConfig = (): AppConfig => {
   // 启动 API 前统一加载工作区根目录 .env，避免受 Turbo 包工作目录影响。
   loadWorkspaceEnv();
   const secret = required('JWT_SECRET');
-  if (secret.length < 32) throw new Error('JWT_SECRET must contain at least 32 characters');
+  if (secret.length < 32) throw new Error('JWT_SECRET 长度必须至少为 32 个字符');
   return {
     port: integer('APP_PORT', 3000),
     jwtSecret: new TextEncoder().encode(secret),
@@ -63,19 +63,18 @@ export const loadTechnicalFileStorageConfig = (): TechnicalFileStorageConfig => 
 /** 读取非空环境变量，避免带着不完整配置启动服务。 */
 const required = (name: string) => {
   const value = process.env[name]?.trim();
-  if (!value) throw new Error(`Missing required environment variable: ${name}`);
+  if (!value) throw new Error(`缺少必填环境变量：${name}`);
   return value;
 };
 /** 读取正整数环境变量；端口等数值配置缺失时使用安全默认值。 */
 const integer = (name: string, fallback: number) => {
   const value = Number(process.env[name] ?? fallback);
-  if (!Number.isInteger(value) || value <= 0) throw new Error(`${name} must be a positive integer`);
+  if (!Number.isInteger(value) || value <= 0) throw new Error(`${name} 必须是正整数`);
   return value;
 };
 const nonNegativeInteger = (name: string, fallback: number) => {
   const value = Number(process.env[name] ?? fallback);
-  if (!Number.isInteger(value) || value < 0)
-    throw new Error(`${name} must be a non-negative integer`);
+  if (!Number.isInteger(value) || value < 0) throw new Error(`${name} 必须是非负整数`);
   return value;
 };
 
@@ -84,7 +83,7 @@ const boolean = (name: string, fallback: boolean) => {
   if (!value) return fallback;
   if (value === 'true') return true;
   if (value === 'false') return false;
-  throw new Error(`${name} must be true or false`);
+  throw new Error(`${name} 必须是 true 或 false`);
 };
 
 const optionalUrl = (name: string) => {
@@ -93,6 +92,6 @@ const optionalUrl = (name: string) => {
   try {
     return new URL(value).toString().replace(/\/$/, '');
   } catch {
-    throw new Error(`${name} must be a valid URL`);
+    throw new Error(`${name} 必须是有效的 URL`);
   }
 };

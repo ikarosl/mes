@@ -108,7 +108,7 @@ describe('warehouseApi', () => {
         reasonType: '搬运损坏',
       },
       headers: { 'Idempotency-Key': 'create-loss-key' },
-      retryUnsafe: true,
+      retryIdempotentWrite: true,
       retryTimes: 2,
     });
     expect(request).toHaveBeenNthCalledWith(4, {
@@ -116,7 +116,7 @@ describe('warehouseApi', () => {
       method: 'POST',
       data: { version: 2 },
       headers: { 'Idempotency-Key': 'confirm-loss-key' },
-      retryUnsafe: true,
+      retryIdempotentWrite: true,
       retryTimes: 2,
     });
   });

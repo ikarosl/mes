@@ -66,4 +66,20 @@ describe('HTTP validation pipe', () => {
       },
     });
   });
+
+  it('translates class-validator default messages to Chinese', async () => {
+    const pipe = createValidationPipe();
+
+    try {
+      await pipe.transform({ itemCode: 123 }, { type: 'body', metatype: ProductDto });
+      throw new Error('预期校验应失败');
+    } catch (error) {
+      const response = (
+        error as { getResponse: () => { code: string; message: string } }
+      ).getResponse();
+      expect(response).toMatchObject({ code: 'VALIDATION_ERROR' });
+      expect(response.message).toContain('itemCode:');
+      expect(response.message).not.toMatch(/\b(must|should|be|characters|property)\b/i);
+    }
+  });
 });

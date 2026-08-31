@@ -71,9 +71,9 @@ describe('MysqlRbacRepository audited mutations', () => {
       beginTransaction: vi.fn(),
       query: vi
         .fn()
-        .mockResolvedValueOnce([[{ id: 10 }], []]) // lock target user
-        .mockResolvedValueOnce([[{ id: 2 }], []]) // role reference exists
-        .mockResolvedValueOnce([[{ role_id: 1 }], []]), // existing user_roles
+        .mockResolvedValueOnce([[{ id: 10 }], []]) // 锁定目标用户
+        .mockResolvedValueOnce([[{ id: 2 }], []]) // 角色引用存在
+        .mockResolvedValueOnce([[{ role_id: 1 }], []]), // 已有 user_roles 记录
       execute: vi.fn().mockResolvedValue([{ affectedRows: 1 }, []]),
       commit: vi.fn(),
       rollback: vi.fn(),

@@ -180,7 +180,7 @@ housekeeping 周期性输出重放率/冲突率/失败率摘要并重置窗口�
 该端点外，Product、Identity 和 Production 的其他客户端**仍不得发送** `Idempotency-Key`——未启用端点收到
 该头会被全局守卫拒绝（`400 IDEMPOTENCY_NOT_SUPPORTED`），不存在静默伪幂等。
 Product 技术文件上传与工序 SOP 上传包含对象存储副作用，不在当前 MySQL executor 的原子事务范围内，因而
-明确保持非幂等且不得开启 `retryUnsafe`；误带 header 必须在 `storage.storeSop()` 之前拒绝。
+明确保持非幂等且不得开启 `retryIdempotentWrite`；误带 header 必须在 `storage.storeSop()` 之前拒绝。
 
 createBatch 试点接线进一步落实「重放返回原结果」的完整语义：
 

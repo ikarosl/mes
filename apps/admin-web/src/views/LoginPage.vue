@@ -52,7 +52,7 @@ const submit = async () => {
     await auth.login(form);
     await router.replace(typeof route.query.redirect === 'string' ? route.query.redirect : '/');
   } catch {
-    // The centralized HTTP handler already presented the API failure.
+    // 全局 HTTP 处理器已经展示了 API 失败信息。
   } finally {
     loading.value = false;
   }

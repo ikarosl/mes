@@ -19,7 +19,7 @@ describe('loadAppConfig token TTLs', () => {
     stubRequiredEnv();
     vi.stubEnv('ACCESS_TOKEN_TTL_SECONDS', '0');
 
-    expect(() => loadAppConfig()).toThrow('ACCESS_TOKEN_TTL_SECONDS must be a positive integer');
+    expect(() => loadAppConfig()).toThrow('ACCESS_TOKEN_TTL_SECONDS 必须是正整数');
   });
 
   it('defaults the refresh cookie name and reads an override', () => {
@@ -78,7 +78,7 @@ describe('loadTechnicalFileStorageConfig', () => {
       loadTechnicalFileStorageConfig();
       throw new Error('expected config validation to fail');
     } catch (error) {
-      expect(String(error)).toContain('S3_ENDPOINT must be a valid URL');
+      expect(String(error)).toContain('S3_ENDPOINT 必须是有效的 URL');
       expect(String(error)).not.toContain('top-secret');
     }
   });

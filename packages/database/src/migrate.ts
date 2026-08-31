@@ -18,7 +18,7 @@ try {
       acquireMigrationLockQuery,
       [migrationLockName, 30],
     );
-    if (lock?.acquired !== 1) throw new Error('Could not acquire migration advisory lock');
+    if (lock?.acquired !== 1) throw new Error('无法获取迁移 advisory 锁');
     try {
       await connection.query(`CREATE TABLE IF NOT EXISTS _schema_migrations (
     name VARCHAR(255) PRIMARY KEY,
@@ -32,14 +32,14 @@ try {
       for (const migration of await readMigrations()) {
         const existing = applied.get(migration.name);
         if (existing && existing !== migration.checksum)
-          throw new Error(`Applied migration changed: ${migration.name}`);
+          throw new Error(`已执行的 migration 内容发生变化：${migration.name}`);
         if (existing) continue;
         await connection.query(migration.sql);
         await connection.execute('INSERT INTO _schema_migrations (name, checksum) VALUES (?, ?)', [
           migration.name,
           migration.checksum,
         ]);
-        console.log(`Applied ${migration.name}`);
+        console.log(`已执行 migration：${migration.name}`);
       }
     } finally {
       await connection.query(releaseMigrationLockQuery, [migrationLockName]);
