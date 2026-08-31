@@ -8,7 +8,7 @@ const FIXED_INPUT = {
   query: {},
   body: { plannedQuantity: '2.0000', routeId: '18' },
 };
-// docs/http-idempotency-implementation-plan.md §6 示例的固定 SHA-256 测试向量（兼容性契约）
+// apps/api/docs/idempotency.md §6 示例的固定 SHA-256 测试向量（兼容性契约）
 const FIXED_FINGERPRINT = 'e6138c319f8d59537d6812947f08c0e85b2afe7f590aacedd7a666f3a4ea7a8c';
 
 describe('canonicalJson', () => {
@@ -95,7 +95,7 @@ describe('requestFingerprint', () => {
   });
 
   it('不同 scope 产生不同指纹', () => {
-    expect(requestFingerprint({ ...FIXED_INPUT, scope: 'production.batch.create.v2' })).not.toBe(
+    expect(requestFingerprint({ ...FIXED_INPUT, scope: 'test.alternate-scope.v1' })).not.toBe(
       FIXED_FINGERPRINT,
     );
   });

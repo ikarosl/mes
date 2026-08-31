@@ -12,10 +12,10 @@
  * `useIdempotentIntent.ts`），该值若进入共享包会被误认为需要传输的协议字段。
  *
  * 未来发生不兼容变更时必须继续 bump scope 并引入新 codec，通过临时服务端兼容窗口过渡
- * （见 docs/http-idempotency-implementation-plan.md §13），不允许用新 schema 去猜旧记录。
+ * （见 apps/api/docs/idempotency.md §13），不允许用新 schema 去猜旧记录。
  */
 
-/** createBatch 创建生产批次；v2 移除了创建时逐工序负责人覆盖。 */
+/** createBatch 创建生产批次；scope 与当前请求及结果 codec 绑定。 */
 export const CREATE_BATCH_IDEMPOTENCY_SCOPE = 'production.batch.create.v3' as const;
 /** 创建物料分配。 */
 export const CREATE_MATERIAL_ALLOCATION_IDEMPOTENCY_SCOPE =

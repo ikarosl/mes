@@ -103,7 +103,7 @@ export const productionBatchDetailSchema: z.ZodType<ProductionBatchDetail> = z
 
 /**
  * 幂等结果 codec：encode/decode 都经 `productionBatchDetailSchema` 完整校验。
- * 校验失败抛 ZodError，由 executor 统一映射为 corrupt（见 http-idempotency-implementation-plan.md §5/§8）。
+ * 校验失败抛 ZodError，由 executor 统一映射为 corrupt（见 idempotency.md §5/§8）。
  * `scope` 字段与执行契约共用同一常量：结果结构与 scope 冻结在同一契约版本，形状变更必须 bump scope。
  */
 export const productionBatchResultCodec: IdempotencyResultCodec<ProductionBatchDetail> & {

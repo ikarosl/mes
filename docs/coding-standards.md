@@ -47,7 +47,7 @@
 - 使用 Composition API 和 `<script setup lang="ts">`，Props、Emits、模板引用必须有类型。
 - 页面保存用例状态；可复用状态和副作用提取为 `useXxx` composable；跨页面同一候选接口复用 composable 实现，
   但实例局部持有，不默认共享状态。
-- 前端数据必须先按 `frontend-architecture.md` 归类再实现：正式列表属于页面，候选与 ID 绑定明细属于最近
+- 前端数据必须先按 `architecture.md` 归类再实现：正式列表属于页面，候选与 ID 绑定明细属于最近
   共同所有者（页面或弹窗）；禁止页面级大而全加载、模块级可变单例、进程级隐式缓存和跨页面 Pinia 候选缓存。
 - 候选加载是 best-effort，单个资源失败不得拖累列表、其他候选或关键明细；候选刷新失败保留实例内上次成功值，
   关键明细失败不得转换成可保存的空数据。谁持有候选实例谁负责页面激活刷新；下拉展开只刷新对应资源，
@@ -65,7 +65,7 @@
 - migration 只能追加，命名为时间戳加 kebab-case 目的，同时提供 up/down。
 - 已执行 migration 不可修改；每个 migration 只承担一个明确目标。
 - 新增封闭状态值时同步更新数据库 CHECK、constants、contracts 和测试。
-- 时间遵守 `database/00-foundations.md` 的 `+08:00` 规则。
+- 时间遵守 [`database-conventions.md`](database-conventions.md) 的 `+08:00` 规则。
 
 ## 7. 注释、错误、日志与安全
 

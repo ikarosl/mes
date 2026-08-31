@@ -12,7 +12,7 @@ export interface RefreshableOptions<T> {
 }
 
 /**
- * 局部候选实例（frontend-architecture.md §4.1）：
+ * 局部候选实例（architecture.md §4.1）：
  *  - 只负责保存当前实例的候选、refresh() 重新请求、last-request-wins、失败保留上次成功快照。
  *  - 无单飞合并：每次 refresh() 都重新请求；并发调用由 request token 保证最后一次生效。
  *  - 无全局缓存 / 无失效标记：跨页新鲜度由消费方在页面激活、弹窗打开、下拉展开时调用 refresh() 保证。

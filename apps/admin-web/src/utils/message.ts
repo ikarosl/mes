@@ -31,7 +31,7 @@ const notifyError = (message: string) => {
   mergeTimer = setTimeout(flushMergedErrors, ERROR_MERGE_WINDOW_MS);
 };
 
-/** 管理端统一消息入口，符合 design.md §7 表单规范。 */
+/** 管理端统一消息入口，符合 visual-design.md §7 表单规范。 */
 export const EMessage = {
   success: (message: string) => ElMessage.success(message),
   warning: (message: string) => ElMessage.warning(message),
