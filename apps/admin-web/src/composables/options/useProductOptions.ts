@@ -1,7 +1,7 @@
 import { productApi } from '../../api/product';
 import { useRefreshableOptions } from './useRefreshableOptions';
 
-/** 产品候选（/products/options）：跨页复用实现、每消费方独立实例（frontend-architecture.md） */
+/** 产品候选（/products/options）：跨页复用实现、每消费方独立实例（architecture.md） */
 export function useProductOptions() {
   return useRefreshableOptions(
     () => productApi.productOptions(),

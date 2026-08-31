@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 
 /**
- * 规范化请求指纹（docs/http-idempotency-implementation-plan.md §6）。
+ * 规范化请求指纹（apps/api/docs/idempotency.md §6）。
  *
  * 指纹由后端计算，调用方不得直接提交 hash。输入包含稳定 `scope`、已认证 `actorId`、会改变语义的
  * path params、query，以及 DTO 转换和 trim 后的 body（含乐观锁 `version`）。明确排除

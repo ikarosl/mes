@@ -43,7 +43,7 @@ interface IdempotencyRecordRow extends RowDataPacket {
  * 开启外层事务，幂等记录、业务写入和成功审计在同一数据库连接上原子提交。
  * 到期物理清理由 `IdempotencyHousekeepingService` 承担，二者同属平台幂等基础设施。
  *
- * 业务流程（docs/http-idempotency-implementation-plan.md §7）：
+ * 业务流程（apps/api/docs/idempotency.md §7）：
  *  - 首次出现：INSERT processing -> 执行业务 handler -> 校验并保存 JSON-safe 结果 -> 置为 completed；
  *  - 已有相同指纹：不执行 handler，读取并返回原业务结果（重放）；
  *  - 已有不同指纹：抛出 `IDEMPOTENCY_CONFLICT`；
@@ -63,7 +63,7 @@ interface IdempotencyRecordRow extends RowDataPacket {
  *  - 成功指标（firstRun/replay）只在事务提交成功后记录，commit 失败不虚增。
  *
  * 重放、冲突与失败通过 `IdempotencyMetrics` 记录运行观测，日志只携带 requestId、scope 和脱敏键摘要，
- * 不打印原始幂等键（docs/http-idempotency-implementation-plan.md §8）。
+ * 不打印原始幂等键（apps/api/docs/idempotency.md §8）。
  */
 @Injectable()
 export class MysqlIdempotencyExecutor implements IdempotencyExecutor {

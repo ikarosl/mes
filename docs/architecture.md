@@ -1,9 +1,8 @@
 # Easy MES Next 架构规范
 
-本文是项目代码架构与模块边界的唯一基准。数据库业务设计以 `database/README.md` 及其列出的领域章节为准，HTTP 接口以
-`api-conventions.md` 为准，编码细节以 `coding-standards.md` 为准，管理端视觉交互以根目录
-`design.md` 为准；管理端前端分层、数据所有权、共享状态、缓存和异步生命周期以
-`frontend-architecture.md` 为准。
+本文是项目代码架构与模块边界的唯一基准。数据库公共规则以 `database-conventions.md` 为准，业务表设计由各 API 模块就近维护；HTTP 接口以
+`api-conventions.md` 为准，编码细节以 `coding-standards.md` 为准；管理端规则以
+`../apps/admin-web/docs/` 为准。
 
 ## 1. 架构风格与当前范围
 
@@ -43,9 +42,8 @@ HTTP 幂等也是跨业务模块的平台能力：`common/idempotency` 只定义
 业务代码不注册直通实现，未启用端点收到幂等键一律返回 `400 IDEMPOTENCY_NOT_SUPPORTED`，不静默放行。
 命令上下文与幂等能力分离：`CommandContext` 仅承载 actor/requestId/IP/User-Agent；只有已声明并验收的
 application 用例接收 `IdempotentCommandContext`。幂等键不得进入 application port 或 Repository，Service
-调用业务 Repository 前必须收窄回 `CommandContext`。当前白名单包括 Production createBatch、物料分配创建、
-待出库单创建、生产领料整单确认、报工创建、报工更正、返工整单完成和异常报废补料批准；新增命令仍须逐一登记 scope、完整结果 codec 和闭环测试。
-具体实施边界见 [`http-idempotency-implementation-plan.md`](http-idempotency-implementation-plan.md)。
+调用业务 Repository 前必须收窄回 `CommandContext`。启用范围由 Production scope 常量和 Controller 装饰器定义，并汇总在幂等专题；新增命令仍须逐一登记 scope、完整结果 codec 和闭环测试。
+具体实施边界见 [`idempotency.md`](../apps/api/docs/idempotency.md)。
 
 ## 3. 模块内部依赖
 
@@ -142,12 +140,12 @@ Controller、Service 和 SQL 不得混写在同一文件。
   幂等键预领取接口。
 - 技术文件统一使用 S3 标准对象存储接口，业务只保存 bucket、objectKey、版本、校验和和元数据。
 - domain、application 和 presentation 不得直接依赖具体数据库或存储 SDK；infrastructure adapter 可以。
-- 数据库时间和公共接口时间遵守 `database/00-foundations.md` 的 `Asia/Shanghai / +08:00` 规则。
+- 数据库时间和公共接口时间遵守 [`database-conventions.md`](database-conventions.md) 的 `Asia/Shanghai / +08:00` 规则。
 
 ## 8. 前端结构
 
 - 前端依赖方向为“页面/业务弹窗 -> list/options/editor composable -> `src/api`”；候选数据所有权为
-  “composable 实现复用、所有者实例局部化”，详细的数据分类、所有权和刷新矩阵见 `frontend-architecture.md`。
+  “composable 实现复用、所有者实例局部化”，详细的数据分类、所有权和刷新矩阵见 `../apps/admin-web/docs/architecture.md`。
 - 正式分页列表属于页面，ID 绑定关键明细属于当前业务弹窗；同一候选接口被多个页面/弹窗消费时复用 composable
   实现，但实例局部持有，禁止模块级可变单例、进程级隐式缓存或跨页面 Pinia 候选缓存。
 - 谁持有候选实例谁负责它的页面激活刷新；下拉展开只刷新自身资源；写操作成功只刷新受影响列表，禁止用全页面

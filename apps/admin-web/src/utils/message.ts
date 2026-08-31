@@ -1,7 +1,7 @@
 import { ElMessage } from 'element-plus';
 import { isHttpErrorHandled } from '../api/http-error-state';
 
-/** 管理端统一消息入口，符合 design.md §7 表单规范。 */
+/** 管理端统一消息入口，符合视觉设计 §7 表单规范。 */
 export const EMessage = {
   success: (message: string) => ElMessage.success(message),
   warning: (message: string) => ElMessage.warning(message),

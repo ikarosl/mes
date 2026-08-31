@@ -9,7 +9,8 @@
 3. 启动基础设施并初始化数据库：`pnpm infra:init`。该命令会先启动 MySQL（容器名 `dev_test_sql`，宿主 `3307` 映射容器 `3306`）与 MinIO（容器名 `dev_test_minio`），确保对象存储 Bucket 存在，然后依次执行 `db:ensure`（按 `.env` 创建数据库）、`db:migrate`、`db:seed`、`db:bootstrap-admin`。仅想启动容器不初始化数据库时，可单独使用 `pnpm infra:up`。
 4. 启动 API：`pnpm dev:api`。
 5. 启动管理端：`pnpm dev:admin`。
--- 数据库集成测试请按照提示，将env 配置规范化，并使用infra:init 一键完成测试环境部署
+
+数据库集成测试必须使用专用测试库；基础设施和初始化可通过 `pnpm infra:init` 完成。
 ## 数据库命令
 
 - `pnpm db:ensure`：按 `.env` 创建数据库（若不存在）；通常由 `db:init` 自动调用。
@@ -44,7 +45,7 @@ DB_NAME=easy_mes_test pnpm test:production:mysql
 
 也可在仓库根 `.env` 配置 `TEST_DB_*`，但为避免常规开发连接被改为测试库，建议只在执行命令的终端临时覆盖 `DB_*`。系统环境变量优先于 `.env`。
 
-- `pnpm db:seed:demo`（未来按需增加）：加载演示或联调环境的样例数据（产品、物料、工艺路线、工单等），SQL 置于独立的 `packages/database/demo` 目录（如 `001-demo-users.sql`、`002-demo-products.sql`）；仅用于演示/联调环境，`db:init`、生产部署与 CI 均不会自动加载。
+- `pnpm db:seed:demo`：显式加载 `packages/database/demo` 中的演示或联调数据；要求 `ALLOW_DEMO_SEED=1` 和独立的 `DEMO_USER_PASSWORD`，`db:init`、生产部署与 CI 均不会自动执行。
 
 ## 验证
 
@@ -58,14 +59,18 @@ Access Token 只存在页面内存；刷新页面或打开新浏览器标签时�
 
 ## 项目规范
 
-- 执行规则：[agents.md](agents.md)
+- 执行规则：[AGENTS.md](AGENTS.md)
+- 全局文档索引：[docs/README.md](docs/README.md)
 - 代码架构：[docs/architecture.md](docs/architecture.md)
-- 前端架构：[docs/frontend-architecture.md](docs/frontend-architecture.md)
+- 管理端文档：[apps/admin-web/README.md](apps/admin-web/README.md)
+- API 文档：[apps/api/README.md](apps/api/README.md)
 - HTTP 接口：[docs/api-conventions.md](docs/api-conventions.md)
-- 并发与幂等规则：[docs/concurrency-and-idempotency.md](docs/concurrency-and-idempotency.md)
-- HTTP 幂等实施方案：[docs/http-idempotency-implementation-plan.md](docs/http-idempotency-implementation-plan.md)
+- 并发与幂等规则：[apps/api/docs/idempotency.md](apps/api/docs/idempotency.md)
 - 编码规范：[docs/coding-standards.md](docs/coding-standards.md)
-- 数据库设计：[docs/database/README.md](docs/database/README.md)
-- 管理端设计：[design.md](design.md)
+- 数据库公共约定：[docs/database-conventions.md](docs/database-conventions.md)
+- 数据库运行与迁移：[packages/database/README.md](packages/database/README.md)
+- 技术文件存储：[apps/api/src/modules/product/docs/technical-files.md](apps/api/src/modules/product/docs/technical-files.md)
 - 测试策略：[docs/testing-strategy.md](docs/testing-strategy.md)
-- 系统使用断言：[docs/system-usage-assertions.md](docs/system-usage-assertions.md)
+- 产品范围：[docs/product-scope.md](docs/product-scope.md)
+- 路线图：[docs/roadmap.md](docs/roadmap.md)
+- 运维入口：[ops/README.md](ops/README.md)
