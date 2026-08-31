@@ -13,7 +13,7 @@ export const ensureDatabaseExists = async (
   databaseName: string,
 ): Promise<void> => {
   const normalized = databaseName.trim();
-  if (!normalized) throw new Error('DB_NAME is required');
+  if (!normalized) throw new Error('DB_NAME 为必填项');
   await connection.query(
     'CREATE DATABASE IF NOT EXISTS ?? CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci',
     [normalized],
@@ -23,7 +23,7 @@ export const ensureDatabaseExists = async (
 const requiredEnv = (name: string, allowEmpty = false): string => {
   const value = process.env[name];
   if (value === undefined || (!allowEmpty && value.trim() === '')) {
-    throw new Error(`Missing required environment variable: ${name}`);
+    throw new Error(`缺少必填环境变量：${name}`);
   }
   return value;
 };
@@ -40,7 +40,7 @@ const main = async (): Promise<void> => {
   try {
     const databaseName = requiredEnv('DB_NAME');
     await ensureDatabaseExists(connection, databaseName);
-    console.log(`Database ${databaseName} is ready`);
+    console.log(`数据库 ${databaseName} 已就绪`);
   } finally {
     await connection.end();
   }

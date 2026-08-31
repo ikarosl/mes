@@ -154,8 +154,8 @@ describe('withTransaction rollback 失败日志', () => {
       const output = consoleSpy.mock.calls.map((call) => call.join(' ')).join('\n');
       expect(output).not.toContain('password=secret');
       expect(output).not.toContain('username=admin');
-      expect(output).toContain('original error type: Error');
-      expect(output).toContain('rollback error type: Error');
+      expect(output).toContain('原始异常类型：Error');
+      expect(output).toContain('回滚异常类型：Error');
       expect(output).toContain('ECONNRESET'); // 网络错误码白名单内，可记录
       expect(output).toContain('ER_DUP_ENTRY'); // 服务器错误码形态白名单内，可记录
     } finally {
@@ -202,7 +202,7 @@ describe('withTransaction rollback 失败日志', () => {
 
       const output = consoleSpy.mock.calls.map((call) => call.join(' ')).join('\n');
       expect(output).not.toContain('credential-string-value');
-      expect(output).toContain('original error type: string');
+      expect(output).toContain('原始异常类型：string');
     } finally {
       consoleSpy.mockRestore();
     }

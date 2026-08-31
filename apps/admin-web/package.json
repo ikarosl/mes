@@ -4,10 +4,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite --host 0.0.0.0",
-    "build": "vue-tsc --noEmit && vite build",
-    "typecheck": "vue-tsc --noEmit",
-    "test": "vitest run --config ../../vitest.config.ts src"
+    "dev": "corepack pnpm --workspace-root exec turbo watch dev:serve --filter=@company/admin-web",
+    "dev:serve": "vite --host 0.0.0.0",
+    "build": "corepack pnpm --workspace-root exec turbo run build:run --filter=@company/admin-web",
+    "build:run": "vue-tsc --noEmit && vite build",
+    "typecheck": "corepack pnpm --workspace-root exec turbo run typecheck:run --filter=@company/admin-web",
+    "typecheck:run": "vue-tsc --noEmit",
+    "test": "corepack pnpm --workspace-root exec turbo run test:run --filter=@company/admin-web",
+    "test:run": "vitest run --config ../../vitest.config.ts src"
   },
   "dependencies": {
     "@company/auth-client": "workspace:*",

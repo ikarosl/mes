@@ -66,7 +66,7 @@ interface PageResult<T> {
 ## 5. 列表、选项与批量操作
 
 - 正式业务列表不得全量下载后在浏览器切片；持续增长的用户、日志、主数据、单据和事实记录必须服务端分页（见第 3 节）。
-- 表单下拉选择必须通过独立、最小字段的 `/options` 接口获取，禁止复用分页列表接口在浏览器过滤/切片；一个 `/options` 只承载一类可选项，不提供把多类选项打包返回的聚合端点（如 `form-options`）。前端只在弹窗打开等确需多类候选的生命周期并发组合独立 loader；展开某个下拉时只刷新对应资源，不得重新形成前端聚合端点语义。候选实例的所有权与局部边界见 `frontend-architecture.md`。多个页面消费同一 `/options` 端点只代表复用同一后端契约，不代表前端共享缓存状态；前端候选实例按消费方局部持有。
+- 表单下拉选择必须通过独立、最小字段的 `/options` 接口获取，禁止复用分页列表接口在浏览器过滤/切片；一个 `/options` 只承载一类可选项，不提供把多类选项打包返回的聚合端点（如 `form-options`）。前端只在弹窗打开等确需多类候选的生命周期并发组合独立 loader；展开某个下拉时只刷新对应资源，不得重新形成前端聚合端点语义。候选实例的所有权与局部边界见 `architecture.md`。多个页面消费同一 `/options` 端点只代表复用同一后端契约，不代表前端共享缓存状态；前端候选实例按消费方局部持有。
 - `/options` 只返回表单需要的最小字段，并默认排除停用、删除记录；根据候选集合是否完整，明确采用“全量候选”或“窗口候选”契约，不得在未改变契约的情况下静默增加分页、关键词窗口或 `LIMIT`。
 - 跨页面 `/options` 授权契约：`/options` 是只读参考数据，端点按「任意一个合法消费页面的视图权限」放行（any-of，`RequirePermission` 传权限数组）。新增或拆分 `/options` 时授权集必须是其全部消费页面视图权限的并集，不得收紧消费页面的授权；每个端点须在模块 API 文档列明消费页面与授权集。前端把选项请求视为 best-effort（`skipErrorHandling`），单个选项失败只影响该项下拉，不得让成功选项整体丢失或触发全局 403 跳转。
 - 批量写操作必须设置 DTO 数组上限，返回明确的整体成功或原子失败语义。
@@ -124,28 +124,7 @@ interface PageResult<T> {
 - 第一阶段只保存并重放成功业务结果，端点使用其固定成功状态码；`X-Request-Id` 等易变响应头按当前重试请求重新生成。DTO、鉴权和请求头校验在幂等登记之前完成，失败结果不缓存。
 - `expires_at` 表示记录允许被清理而非自动失效；最短保留期内必须重放，过期但尚未物理删除时仍重放，物理删除后相同 scope/key 才按新请求处理。具体接口必须声明其最短保证窗口。
 - 首次登记保存 `initial_request_id` 以关联首次业务成功审计；原始幂等键不重复写入 `operation_logs`，成功重放也不新增业务成功审计。
-- 当前已启用闭环的端点包括 `POST /api/production/work-orders/:workOrderId/batches`（scope
-  `production.batch.create.v2`）、`POST /api/production/batches/:batchId/material-allocations`（scope
-  `production.material-allocation.create.v1`）和 `POST /api/production/batches/:batchId/material-outbounds`
-  （scope `production.material-outbound.create.v2`），以及
-  `POST /api/production/material-outbounds/:outboundId/actions/confirm`（scope
-  `production.material-outbound.confirm.v1`）、`POST /api/production/purchase-inbounds`（scope
-  `production.purchase-inbound.create.v1`）以及
-  `POST /api/production/purchase-inbounds/:inboundId/actions/confirm`（scope
-  `production.purchase-inbound.confirm.v1`）、`POST /api/production/batches/:batchId/step-records/:recordId/reports`
-  （scope `production.step-report.create.v3`）以及
-  `POST /api/production/batches/:batchId/step-records/:recordId/reports/:reportId/actions/correct`
-  （scope `production.step-report.correct.v3`）、返工整单完成
-  `POST /api/production/reworks/:reworkId/actions/complete`（scope
-  `production.rework.complete.v1`）和异常报废补料批准
-  `POST /api/production/abnormal-dispositions/:dispositionId/actions/approve-scrap-supplement`（scope
-  `production.abnormal.scrap-supplement-plan.confirm.v1`）。取消待确认入库单使用状态与 `version` 天然幂等，禁止发送
-  `Idempotency-Key`。契约与重放语义见
-  [`concurrency-and-idempotency.md`](concurrency-and-idempotency.md) §3.3；全部写端点「需要幂等键 / 有自然
-  键兜底 / 当前做不到」的完整分类见该文 §4.1。未声明启用的端点收到该头返回
-  `400 IDEMPOTENCY_NOT_SUPPORTED`（该门禁已由全局 `IdempotencyKeyGuard` 落地）；其余接口在前端发送该头
-  前必须在其模块契约中显式标记启用。事务、指纹、存储和测试方案见
-  [`http-idempotency-implementation-plan.md`](http-idempotency-implementation-plan.md)。
+- 当前启用端点与 scope 以服务端 scope 常量和 Controller 的 `@IdempotentEndpoint` 为事实来源，汇总见[幂等契约](../apps/api/docs/idempotency.md#1-当前启用范围)。未声明启用的端点收到该头返回 `400 IDEMPOTENCY_NOT_SUPPORTED`；前端不得自行扩大启用范围。取消等依赖状态短路与 `version` 的命令是否发送该头，以各模块当前契约为准。
 
 工序普通报工仍使用同一个 `reports` 端点，但业务意图必须互斥：正常报工提交 `normalQuantity > 0, abnormalQuantity = 0, abnormalOrigin = null`；异常报工提交 `normalQuantity = 0, abnormalQuantity > 0` 并填写 `abnormalOrigin`。后端拒绝两个数量同时大于 `0`，员工端必须以“正常报工/异常报工”两个入口表达，不能仅依赖前端隐藏字段。
 

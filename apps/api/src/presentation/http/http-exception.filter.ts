@@ -27,7 +27,7 @@ interface ResponseWriter {
   status(status: number): { json(body: ApiErrorResponse): void };
 }
 
-/** The API's single error exit. Success payloads are intentionally unchanged. */
+/** API 的统一错误出口；成功载荷保持原样，不做额外改动。 */
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(HttpExceptionFilter.name);
@@ -39,21 +39,29 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const isHttpException = exception instanceof HttpException;
     const isConcurrencyError = exception instanceof ConcurrencyError;
     const isIdempotencyStorageError = exception instanceof IdempotencyStorageError;
-    const status = isHttpException
-      ? exception.getStatus()
-      : isConcurrencyError
-        ? HttpStatus.CONFLICT
-        : isIdempotencyStorageError
-          ? idempotencyStorageStatus(exception)
-          : HttpStatus.INTERNAL_SERVER_ERROR;
+    const isMulterFileTooLarge = isMulterFileSizeError(exception);
+    const status = isMulterFileTooLarge
+      ? HttpStatus.PAYLOAD_TOO_LARGE
+      : isHttpException
+        ? exception.getStatus()
+        : isConcurrencyError
+          ? HttpStatus.CONFLICT
+          : isIdempotencyStorageError
+            ? idempotencyStorageStatus(exception)
+            : HttpStatus.INTERNAL_SERVER_ERROR;
     const requestId =
       request.requestId ?? readRequestId(request.headers?.['x-request-id']) ?? createRequestId();
 
-    if (!isHttpException && !isConcurrencyError && !isIdempotencyStorageError) {
+    if (
+      !isHttpException &&
+      !isConcurrencyError &&
+      !isIdempotencyStorageError &&
+      !isMulterFileTooLarge
+    ) {
       const diagnostic = safeExceptionDiagnostic(exception);
       this.logger.error(
         [
-          'Unhandled HTTP exception:',
+          '未处理的 HTTP 异常：',
           `requestId=${requestId}`,
           `status=${status}`,
           `method=${safeLogValue(request.method ?? 'UNKNOWN')}`,
@@ -72,11 +80,13 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const body: ApiErrorResponse = {
       status,
       code: errorCode(status, exception),
-      message: isHttpException
-        ? exceptionMessage(exception, status)
-        : isConcurrencyError || isIdempotencyStorageError
-          ? exception.message
-          : '服务器内部错误，请稍后重试',
+      message: isMulterFileTooLarge
+        ? '文件大小不能超过 20MB'
+        : isHttpException
+          ? exceptionMessage(exception, status)
+          : isConcurrencyError || isIdempotencyStorageError
+            ? translateBackendMessage(exception.message, status)
+            : '服务器内部错误，请稍后重试',
       requestId,
       timestamp: toBeijingISOString(new Date()),
       path: request.originalUrl ?? request.url ?? '',
@@ -91,6 +101,14 @@ const readRequestId = (value: string | string[] | undefined) => {
   const requestId = Array.isArray(value) ? value[0] : value;
   return isRequestId(requestId) ? requestId : undefined;
 };
+
+const isMulterFileSizeError = (exception: unknown): boolean =>
+  Boolean(
+    exception &&
+    typeof exception === 'object' &&
+    Reflect.get(exception, 'name') === 'MulterError' &&
+    Reflect.get(exception, 'code') === 'LIMIT_FILE_SIZE',
+  );
 
 interface SafeExceptionDiagnostic {
   exceptionType: string;
@@ -167,7 +185,7 @@ const safeStack = (
     safeStackSection(exception, exceptionType),
     cause ? safeStackSection(cause, causeType ?? 'UnknownError') : undefined,
   ].filter((section): section is string => Boolean(section));
-  return sections.length ? sections.join('\nCaused by: ') : undefined;
+  return sections.length ? sections.join('\n原因：') : undefined;
 };
 
 const safeStackSection = (error: unknown, type: string): string | undefined => {
@@ -178,7 +196,7 @@ const safeStackSection = (error: unknown, type: string): string | undefined => {
     .slice(1, 13)
     .filter((line) => /^\s*at\s/.test(line))
     .map((line) => line.replace(/[\r\n]/g, ''));
-  return frames.length ? [`${type}: [message redacted]`, ...frames].join('\n') : undefined;
+  return frames.length ? [`${type}：[消息已脱敏]`, ...frames].join('\n') : undefined;
 };
 
 const safeRequestPath = (value: string): string => safeLogValue(value.split('?', 1)[0] || '/');
@@ -211,11 +229,51 @@ const errorCode = (status: number, exception: unknown) => {
 
 const exceptionMessage = (exception: HttpException, status: number) => {
   const payload = exception.getResponse();
-  if (typeof payload === 'string') return payload;
+  if (typeof payload === 'string') return translateBackendMessage(payload, status);
   if (payload && typeof payload === 'object' && 'message' in payload) {
     const { message } = payload;
-    if (typeof message === 'string') return message;
+    if (typeof message === 'string') return translateBackendMessage(message, status);
     if (Array.isArray(message)) return '请求参数不符合要求';
   }
-  return HttpStatus[status] ?? '请求失败';
+  return defaultHttpMessage(status);
+};
+
+const defaultHttpMessage = (status: number): string =>
+  ({
+    [HttpStatus.BAD_REQUEST]: '请求参数不符合要求',
+    [HttpStatus.UNAUTHORIZED]: '未授权，请先登录',
+    [HttpStatus.FORBIDDEN]: '无权执行此操作',
+    [HttpStatus.NOT_FOUND]: '请求的资源不存在',
+    [HttpStatus.METHOD_NOT_ALLOWED]: '不支持当前请求方法',
+    [HttpStatus.REQUEST_TIMEOUT]: '请求超时，请稍后重试',
+    [HttpStatus.CONFLICT]: '请求存在冲突，请刷新后重试',
+    [HttpStatus.PAYLOAD_TOO_LARGE]: '文件大小不能超过 20MB',
+    [HttpStatus.UNSUPPORTED_MEDIA_TYPE]: '不支持当前媒体类型',
+    [HttpStatus.UNPROCESSABLE_ENTITY]: '请求内容无法处理',
+    [HttpStatus.TOO_MANY_REQUESTS]: '请求过于频繁，请稍后重试',
+    [HttpStatus.INTERNAL_SERVER_ERROR]: '服务器内部错误，请稍后重试',
+    [HttpStatus.BAD_GATEWAY]: '上游服务异常，请稍后重试',
+    [HttpStatus.SERVICE_UNAVAILABLE]: '服务暂不可用，请稍后重试',
+    [HttpStatus.GATEWAY_TIMEOUT]: '上游服务响应超时，请稍后重试',
+  })[status] ?? '请求失败';
+
+const translateBackendMessage = (message: string, status: number): string => {
+  const normalized = message.trim();
+  const translations: Record<string, string> = {
+    'File too large': '文件大小不能超过 20MB',
+    'Payload Too Large': '文件大小不能超过 20MB',
+    'Request Entity Too Large': '请求内容过大',
+    'Bad Request': '请求参数不符合要求',
+    Unauthorized: '未授权，请先登录',
+    'Forbidden resource': '无权执行此操作',
+    Forbidden: '无权执行此操作',
+    'Not Found': '请求的资源不存在',
+    'Method Not Allowed': '不支持当前请求方法',
+    'Internal Server Error': '服务器内部错误，请稍后重试',
+    'Refresh and retry': '请刷新后重试',
+  };
+  if (translations[normalized]) return translations[normalized];
+  return /\b[A-Za-z]{2,}\b(?:\s+\b[A-Za-z]{2,}\b)+/.test(normalized)
+    ? defaultHttpMessage(status)
+    : message;
 };

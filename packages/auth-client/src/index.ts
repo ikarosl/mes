@@ -85,7 +85,7 @@ export class AuthClient {
   }
   private freshSession() {
     const session = this.options.getSession();
-    if (!session) throw new Error('Not authenticated');
+    if (!session) throw new Error('当前未登录');
     const expiresAt = Date.parse(session.accessTokenExpiresAt);
     return Number.isNaN(expiresAt) || expiresAt - Date.now() <= REFRESH_LEEWAY_MS
       ? this.refresh()
@@ -93,7 +93,7 @@ export class AuthClient {
   }
   private refresh() {
     const session = this.options.getSession();
-    if (!session) return Promise.reject(new Error('Not authenticated'));
+    if (!session) return Promise.reject(new Error('当前未登录'));
     const version = this.sessionVersion;
     this.refreshPromise ??= this.options.api
       .refresh()
@@ -108,8 +108,7 @@ export class AuthClient {
     return this.refreshPromise;
   }
   private apply(data: TokenResponse, version: number) {
-    if (version !== this.sessionVersion)
-      throw new Error('Session changed before token response was applied');
+    if (version !== this.sessionVersion) throw new Error('令牌响应应用前会话已发生变化');
     const session: AuthSession = {
       user: data.user,
       accessToken: data.accessToken,

@@ -39,7 +39,7 @@ describe('ensureS3Bucket', () => {
 
     await expect(
       ensureS3Bucket(config, { send } as never, { maxAttempts: 1, retryDelayMs: 0 }),
-    ).rejects.toThrow('Unable to ensure S3 bucket "technical-files" (HTTP 403)');
+    ).rejects.toThrow('无法确认 S3 存储桶“technical-files”状态（HTTP 403）');
     await expect(
       ensureS3Bucket(config, { send } as never, { maxAttempts: 1, retryDelayMs: 0 }),
     ).rejects.not.toThrow('password');

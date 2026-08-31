@@ -70,6 +70,45 @@ describe('handleHttpError', () => {
     expect(options.notify).toHaveBeenCalledWith('编码或版本已存在');
   });
 
+  it('coalesces concurrent 401 responses into one logout flow for a short window', async () => {
+    vi.useFakeTimers();
+    try {
+      const options = createOptions();
+      const client = axios.create({
+        adapter: async (config) => {
+          const response = {
+            config,
+            data: { message: '登录已失效' },
+            headers: {},
+            status: 401,
+            statusText: 'Unauthorized',
+          } as AxiosResponse;
+          throw new AxiosError(
+            'Request failed with status code 401',
+            undefined,
+            config,
+            undefined,
+            response,
+          );
+        },
+      });
+      installHttpErrorHandler(client, options);
+
+      await Promise.all([
+        client.get('/one').catch(() => undefined),
+        client.get('/two').catch(() => undefined),
+      ]);
+      expect(options.onUnauthorized).toHaveBeenCalledOnce();
+      expect(options.notify).toHaveBeenCalledOnce();
+
+      vi.advanceTimersByTime(3_000);
+      await client.get('/three').catch(() => undefined);
+      expect(options.onUnauthorized).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('shows the API message for an anonymous login request that returns 401', () => {
     const options = createOptions();
     const error = new RequestError('用户名或密码错误', 401, {

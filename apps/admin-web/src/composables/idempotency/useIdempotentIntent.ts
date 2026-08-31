@@ -2,7 +2,7 @@ import { RequestError } from '@company/request';
 import { IDEMPOTENCY_RESULT_CORRUPT } from '@company/constants';
 
 /**
- * 客户端业务输入快照（http-idempotency-implementation-plan.md §9）：
+ * 客户端业务输入快照（idempotency.md §9）：
  * 仅用于前端内容变化判定，不是安全指纹；服务端指纹见实现方案 §6，actorId 等上下文由后端计算。
  *
  * `intentType` 是本地业务意图名（如 `production.batch.create`），不是服务端 scope：scope 由后端

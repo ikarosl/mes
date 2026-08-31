@@ -30,8 +30,8 @@ import { MysqlProductionMaterialRepository } from './mysql-production-material.r
 import { MysqlWorkOrderRepository } from './mysql-work-order.repository.js';
 
 /**
- * Application-port composition root. SQL and transactional concerns remain in
- * the work-order and production-batch adapters, each grouped by business capability.
+ * application 端口的组合根。SQL 与事务关注点分别保留在工单和生产批次适配器中，
+ * 并按业务能力进行分组。
  */
 @Injectable()
 export class MysqlProductionRepository extends ProductionRepository {

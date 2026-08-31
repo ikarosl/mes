@@ -34,7 +34,7 @@ export interface ProductionBatchItem {
   ownerName: string | null;
   completedAt: string | null;
   completedBy: string | null;
-  /** Present for cancelled batches; omitted from non-terminal create responses for v2 idempotency compatibility. */
+  /** 取消批次返回该字段；为兼容 v2 幂等契约，非终态创建响应省略该字段。 */
   cancelReason?: string | null;
   cancelledBy?: string | null;
   cancelledByName?: string | null;

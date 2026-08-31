@@ -105,10 +105,12 @@
           ><template #default="{ row }">{{ statusLabel(row.status) }}</template></el-table-column
         >
         <el-table-column
-          prop="createdAt"
           label="制单时间"
           min-width="180"
-        />
+          ><template #default="{ row }">{{
+            formatDateTimeForDisplay(row.createdAt)
+          }}</template></el-table-column
+        >
         <el-table-column
           prop="createdByName"
           label="制单人"
@@ -142,6 +144,7 @@ import type {
   ProductionMaterialDemandItem,
 } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
+import { formatDateTimeForDisplay } from '../../../utils/date';
 import { formatQuantity } from '../production-status';
 import { OUTBOUND_ORDER_STATUS_LABELS } from '@company/constants';
 type OutboundAllocation = ProductionMaterialAllocationItem & { itemName: string };

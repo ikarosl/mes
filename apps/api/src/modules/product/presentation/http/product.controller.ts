@@ -44,6 +44,10 @@ import {
   TechnicalFileQueryDto,
 } from './dto/product.dto.js';
 import { decodeMultipartFileName } from './multipart-file-name.js';
+import {
+  assertTechnicalFileType,
+  technicalFileUploadOptions,
+} from './technical-file-upload.validation.js';
 
 type UploadedSop = { originalname: string; mimetype: string; buffer: Buffer; size: number };
 
@@ -67,7 +71,7 @@ export class ProductController {
   @Post('technical-files')
   @RequirePermission(PERMISSIONS.product.files.upload)
   @AuditInApplication()
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024, files: 1 } }))
+  @UseInterceptors(FileInterceptor('file', technicalFileUploadOptions))
   uploadTechnicalFile(
     @UploadedFile() file: UploadedSop | undefined,
     @CurrentCommandContext() audit: CommandContext,
@@ -265,7 +269,7 @@ export class ProductController {
   @Post('process-steps/:id/sop')
   @RequirePermission(PERMISSIONS.product.processes.uploadSop)
   @AuditInApplication()
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024, files: 1 } }))
+  @UseInterceptors(FileInterceptor('file', technicalFileUploadOptions))
   uploadSop(
     @Param() { id }: ProductIdParamDto,
     @UploadedFile() file: UploadedSop | undefined,
@@ -371,8 +375,10 @@ interface ResponseHeaders {
 
 const toTechnicalFileUpload = (file: UploadedSop | undefined) => {
   if (!file) throw new BadRequestException('请选择要上传的 SOP 文件');
+  const originalName = decodeMultipartFileName(file.originalname);
+  assertTechnicalFileType(originalName, file.mimetype);
   return {
-    originalName: decodeMultipartFileName(file.originalname),
+    originalName,
     mimeType: file.mimetype || 'application/octet-stream',
     buffer: file.buffer,
   };

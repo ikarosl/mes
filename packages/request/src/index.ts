@@ -10,7 +10,11 @@ export interface RetryRequestConfig extends AxiosRequestConfig {
   retryTimes?: number;
   retryCount?: number;
   skipRetry?: boolean;
-  retryUnsafe?: boolean;
+  /**
+   * 仅供已由服务端幂等闭环保护的写请求显式开启自动重试。
+   * 必须同时复用同一个 Idempotency-Key；普通写请求不得设置。
+   */
+  retryIdempotentWrite?: boolean;
   skipErrorHandling?: boolean;
   preserveErrorMessage?: boolean;
 }
@@ -23,8 +27,26 @@ interface ApiErrorResponse {
 }
 type InternalRetryConfig = InternalAxiosRequestConfig & RetryRequestConfig;
 const SAFE_RETRY_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
-export const canRetryRequest = (method: string | undefined, retryUnsafe = false) =>
-  retryUnsafe || SAFE_RETRY_METHODS.has((method ?? 'GET').toUpperCase());
+
+export const IDEMPOTENCY_KEY_HEADER = 'Idempotency-Key';
+
+const hasIdempotencyKey = (headers: unknown): boolean => {
+  if (!headers || typeof headers !== 'object') return false;
+  const getter = (headers as { get?: (name: string) => unknown }).get;
+  if (typeof getter === 'function') return Boolean(getter.call(headers, IDEMPOTENCY_KEY_HEADER));
+  return Boolean((headers as Record<string, unknown>)[IDEMPOTENCY_KEY_HEADER]);
+};
+
+export const canRetryRequest = (
+  method: string | undefined,
+  retryIdempotentWrite = false,
+  hasKey = false,
+) => {
+  if (SAFE_RETRY_METHODS.has((method ?? 'GET').toUpperCase())) return true;
+  // 写请求结果未知时（无响应/网关错误）自动重试只有复用同一 Idempotency-Key 才安全；
+  // retryIdempotentWrite 必须绑定幂等键，否则一律视为不可自动重试的普通写请求。
+  return retryIdempotentWrite && hasKey;
+};
 
 const canRetryResponse = (error: AxiosError, config: InternalRetryConfig): boolean => {
   // 没有收到响应时，服务端是否已处理未知；显式启用幂等重试的写请求必须复用原键重试。
@@ -34,7 +56,7 @@ const canRetryResponse = (error: AxiosError, config: InternalRetryConfig): boole
   if (SAFE_RETRY_METHODS.has((config.method ?? 'GET').toUpperCase())) return status >= 500;
 
   // 写请求的普通 500 通常是确定性代码/数据错误，立即重复只会制造噪声。仅重试常见的
-  // 网关/临时不可用响应；调用方只有显式设置 retryUnsafe 时才会到达此分支。
+  // 网关/临时不可用响应；调用方只有显式设置 retryIdempotentWrite 时才会到达此分支。
   return status === 502 || status === 503 || status === 504;
 };
 
@@ -88,7 +110,11 @@ export const createRequestClient = (
       if (
         config &&
         !config.skipRetry &&
-        canRetryRequest(config.method, config.retryUnsafe) &&
+        canRetryRequest(
+          config.method,
+          config.retryIdempotentWrite,
+          hasIdempotencyKey(config.headers),
+        ) &&
         (config.retryCount ?? 0) < attempts &&
         canRetryResponse(error, config) &&
         !isCorruptResult(error)
@@ -108,7 +134,7 @@ export const toRequestError = (error: unknown) => {
     const data = error.response?.data as ApiErrorResponse | undefined;
     const message = data && typeof data.message === 'string' ? data.message : error.message;
     return new RequestError(
-      message || 'Request failed',
+      message || '请求失败',
       error.response?.status ?? 0,
       error.response,
       typeof data?.code === 'string' ? data.code : error.code,
@@ -116,5 +142,5 @@ export const toRequestError = (error: unknown) => {
       data?.details,
     );
   }
-  return error instanceof Error ? error : new Error('Request failed');
+  return error instanceof Error ? error : new Error('请求失败');
 };

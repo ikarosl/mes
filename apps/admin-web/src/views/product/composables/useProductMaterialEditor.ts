@@ -8,7 +8,7 @@ import { EMessage } from '../../../utils/message';
 export type ProductMaterialDetailStatus = 'idle' | 'loading' | 'ready' | 'error';
 
 /**
- * 产品物料清单弹窗关键明细与候选（docs/frontend-architecture.md §5.3 Editor）：
+ * 产品物料清单弹窗关键明细与候选（apps/admin-web/docs/architecture.md §5.3 Editor）：
  *  - 当前产品 BOM 明细（materials(productId)）为 ID-bound 关键明细，本地加载并带 productId 请求守卫：
  *    过期响应不得覆盖新目标；失败返回 null（不转换成可保存的空数据）。
  *    通过 detailStatus + loadedProductId 记录明细就绪状态，调用方仅在
@@ -44,7 +44,7 @@ export function useProductMaterialEditor() {
   };
 
   /**
-   * 打开弹窗：候选 best-effort 独立启动，仅等待当前产品 BOM 明细（frontend-architecture.md §5.3/§8）。
+   * 打开弹窗：候选 best-effort 独立启动，仅等待当前产品 BOM 明细（architecture.md §5.3/§8）。
    * 明细成功返回数组，并置 detailStatus='ready' / loadedProductId=productId；
    * 明细失败或目标产品已变化返回 null（不覆盖为可保存空数据），失败置 detailStatus='error'。
    * 候选刷新（useRefreshableOptions.refresh()）不 reject：失败保留上次快照并提示，

@@ -49,7 +49,7 @@ export const ensureS3Bucket = async (
     await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
   }
 
-  throw new Error(`Unable to ensure S3 bucket "${config.bucket}"`);
+  throw new Error(`无法确认 S3 存储桶“${config.bucket}”状态`);
 };
 
 const httpStatus = (error: unknown) => {
@@ -67,5 +67,5 @@ const isRetryable = (error: unknown) => {
 
 const safeBucketError = (bucket: string, error: unknown) => {
   const status = httpStatus(error);
-  return new Error(`Unable to ensure S3 bucket "${bucket}"${status ? ` (HTTP ${status})` : ''}`);
+  return new Error(`无法确认 S3 存储桶“${bucket}”状态${status ? `（HTTP ${status}）` : ''}`);
 };

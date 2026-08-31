@@ -1,6 +1,6 @@
 /**
  * 管理端统一弹窗宽度。
- * 符合 design.md §5 弹窗规范：使用 CSS min() 同时限制推荐宽度和最大视口占比。
+ * 符合管理端视觉设计 §5 弹窗规范：使用 CSS min() 同时限制推荐宽度和最大视口占比。
  */
 export const DialogWidth = {
   sm: 'min(420px, 90vw)',

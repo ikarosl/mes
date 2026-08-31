@@ -266,7 +266,7 @@ const submittingSteps = ref(false);
 const routeFormDialogRef = ref();
 const submittingRoute = ref(false);
 
-/* ----- route CRUD ----- */
+/* ----- 工艺路线增删改查 ----- */
 const openCreate = (): void => {
   editingRouteId.value = null;
   routeFormDialogRef.value?.resetForm();

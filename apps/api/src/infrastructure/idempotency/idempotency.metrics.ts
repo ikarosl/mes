@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 /**
- * 幂等平台 in-memory 运行指标（docs/http-idempotency-implementation-plan.md §8、§12）。
+ * 幂等平台 in-memory 运行指标（apps/api/docs/idempotency.md §8、§12）。
  *
  * 由 `MysqlIdempotencyExecutor` 在关键路径记录，`IdempotencyHousekeepingService` 周期性读取摘要并
  * 重置窗口。摘要中各「率」以全部记录事件数（firstRun + replay + conflict + storageRetryable +

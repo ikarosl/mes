@@ -2,8 +2,8 @@ const DATE_PREFIX_PATTERN = /^\d{4}-\d{2}-\d{2}/;
 const DATETIME_PATTERN = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})/;
 
 /**
- * Converts an API date/time string to the date-only value required by date inputs.
- * It deliberately avoids Date parsing so an ISO offset cannot move the calendar day.
+ * 将 API 日期时间字符串转换为日期输入框所需的纯日期值。
+ * 有意避免解析 Date，防止 ISO 偏移量导致日期发生跨日变化。
  */
 export function toDateInputValue(value: string | null | undefined): string {
   const normalizedValue = value?.trim();
@@ -12,14 +12,14 @@ export function toDateInputValue(value: string | null | undefined): string {
     : '';
 }
 
-/** Formats an API date/time value for date-only business fields. */
+/** 将 API 日期时间值格式化为日期业务字段所需的显示值。 */
 export function formatDateForDisplay(value: string | null | undefined, fallback = '-'): string {
   return toDateInputValue(value) || fallback;
 }
 
 /**
- * Formats an API date/time value to 'YYYY-MM-DD HH:mm:ss' for audit-trail
- * and other time-sensitive fields where the time-of-day matters.
+ * 将 API 日期时间值格式化为审计记录及其他需要体现具体时刻的字段所需的
+ * “YYYY-MM-DD HH:mm:ss”格式。
  */
 export function formatDateTimeForDisplay(value: string | null | undefined, fallback = '-'): string {
   const trimmed = value?.trim();

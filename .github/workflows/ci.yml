@@ -6,7 +6,7 @@ on:
 
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
-  # Do not interrupt a main release after one component image has been published.
+  # 一个组件镜像发布后，不要中断主发布流程。
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -22,6 +22,7 @@ jobs:
       - run: pnpm format:check
       - run: pnpm docs:check
       - run: pnpm architecture:check
+      - run: pnpm workspace:tasks:check
       - run: pnpm migration:check
         env:
           MIGRATION_BASE_SHA: ${{ github.event.pull_request.base.sha }}

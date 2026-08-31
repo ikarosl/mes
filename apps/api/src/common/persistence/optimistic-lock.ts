@@ -9,12 +9,12 @@ export class ConcurrencyError extends Error {
   }
 }
 
-/** Maps a zero-row versioned update to a protocol-independent business error. */
+/** 将受版本控制的零行更新映射为与协议无关的业务错误。 */
 export const requireOptimisticUpdate = (affectedRows: number): void => {
   if (affectedRows === 0) {
     throw new ConcurrencyError(
       CONCURRENCY_ERROR_CODES.concurrentModification,
-      'The record was modified by another request. Refresh and retry.',
+      '记录已被其他请求修改，请刷新后重试。',
     );
   }
 };
@@ -22,5 +22,5 @@ export const requireOptimisticUpdate = (affectedRows: number): void => {
 export const idempotencyConflict = (): ConcurrencyError =>
   new ConcurrencyError(
     CONCURRENCY_ERROR_CODES.idempotencyConflict,
-    'The idempotency key was already used with a different request.',
+    '幂等键已被其他请求使用，请勿复用同一幂等键提交不同内容。',
   );

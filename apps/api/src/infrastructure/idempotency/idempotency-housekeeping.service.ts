@@ -10,7 +10,7 @@ import { DATABASE_POOL } from '../database/database.module.js';
 import { IdempotencyMetrics } from './idempotency.metrics.js';
 import { maskedKeyDigest } from './idempotency-key-digest.js';
 
-/** 小批次删除上限：避免单条 DELETE 长时间锁表（docs/http-idempotency-implementation-plan.md §5）。 */
+/** 小批次删除上限：避免单条 DELETE 长时间锁表（apps/api/docs/idempotency.md §5）。 */
 const SWEEP_BATCH_SIZE = 500;
 /** 默认清理周期 1 小时；可用 IDEMPOTENCY_SWEEP_INTERVAL_MS 覆盖。 */
 const DEFAULT_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
@@ -36,7 +36,7 @@ export interface IdempotencySweepResult {
 }
 
 /**
- * 幂等平台到期清理与运行观测（docs/http-idempotency-implementation-plan.md §10 阶段 A）：
+ * 幂等平台到期清理与运行观测（apps/api/docs/idempotency.md §10 阶段 A）：
  *  - 按小批次删除已到期 `completed` 记录（到达 expires_at 不会自动失效，只有物理删除后同 scope/key
  *    才可能作为新请求再次执行）；
  *  - 发现持久化 `processing` 记录时告警并停止自动处置（单事务设计下它本不应对其他事务可见）；

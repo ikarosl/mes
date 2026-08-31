@@ -13,7 +13,7 @@ try {
     await connection.query('SET @demo_password_hash = ?', [passwordHash]);
     for (const seed of await readDemoSeeds()) {
       await connection.query(seed.sql);
-      console.log(`Applied demo seed ${seed.name}`);
+      console.log(`已执行演示数据种子：${seed.name}`);
     }
   });
 } finally {

@@ -65,8 +65,8 @@ export class HealthCheckService {
 }
 
 /**
- * Health responses must not leak endpoints, credentials or SDK request text.
- * Keep the stable error code (ECONNREFUSED/ETIMEDOUT/HTTP status) only.
+ * 健康检查响应不得泄露端点、凭证或 SDK 请求文本。
+ * 只保留稳定的错误码（ECONNREFUSED/ETIMEDOUT/HTTP 状态码）。
  */
 const safeErrorCode = (error: unknown): string | undefined => {
   if (!error || typeof error !== 'object') return undefined;

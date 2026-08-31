@@ -79,7 +79,7 @@
           <el-input
             v-model="query.targetType"
             clearable
-            placeholder="work_order / user"
+            placeholder="工单 / 用户"
           />
         </el-form-item>
         <el-form-item label="对象ID">

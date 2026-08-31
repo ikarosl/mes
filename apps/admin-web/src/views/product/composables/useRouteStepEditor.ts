@@ -6,7 +6,7 @@ import { EMessage } from '../../../utils/message';
 export type StepsStatus = 'idle' | 'loading' | 'success' | 'error';
 
 /**
- * 路线步骤弹窗关键明细（docs/frontend-architecture.md §5.3 Editor）：
+ * 路线步骤弹窗关键明细（apps/admin-web/docs/architecture.md §5.3 Editor）：
  *  - routeSteps(routeId)：关键编辑明细，本地加载；用 stepsRequestToken + loadedRouteId 做
  *    last-request-wins 守卫（快速切换路线或弹窗关闭后丢弃迟到响应/迟到失败），独立 stepsStatus
  *    （idle/loading/success/error）表达加载结果，非 success 时禁止保存，不转为可编辑空明细。

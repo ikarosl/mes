@@ -9,11 +9,11 @@ describe('demo seed', () => {
         ALLOW_DEMO_SEED: '1',
         DEMO_USER_PASSWORD: 'demo-password',
       }),
-    ).toThrow('cannot run when NODE_ENV=production');
-    expect(() => assertDemoSeedEnabled({})).toThrow('Demo seed is disabled');
+    ).toThrow('生产环境不能运行演示数据种子');
+    expect(() => assertDemoSeedEnabled({})).toThrow('演示数据种子已禁用');
     expect(() =>
       assertDemoSeedEnabled({ ALLOW_DEMO_SEED: '1', DEMO_USER_PASSWORD: '12345' }),
-    ).toThrow('at least 6 characters');
+    ).toThrow('长度必须至少为 6 个字符');
     expect(
       assertDemoSeedEnabled({ ALLOW_DEMO_SEED: '1', DEMO_USER_PASSWORD: 'demo-password' }),
     ).toBe('demo-password');

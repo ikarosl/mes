@@ -205,9 +205,10 @@ const checks = [
   // 管理端只有已完成后端闭环的 API wrapper 可发送幂等头并开启非安全方法重试。
   {
     directory: 'apps/admin-web/src',
-    pattern: /(?:['"]Idempotency-Key['"]\s*:|\bretryUnsafe\s*:)/,
+    pattern:
+      /(?:['"]Idempotency-Key['"]\s*:|\[\s*IDEMPOTENCY_KEY_HEADER\s*\]\s*:|\bretryIdempotentWrite\s*:)/,
     message:
-      '只有已登记的 production API wrapper 可设置 Idempotency-Key/retryUnsafe；新增调用必须先登记后端幂等契约',
+      '只有已登记的 production API wrapper 可设置 Idempotency-Key/retryIdempotentWrite；新增调用必须先登记后端幂等契约',
     exclude: ['apps/admin-web/src/api/production.ts', 'apps/admin-web/src/api/warehouse.ts'],
   },
   // 通用 persistence helper 不得依赖 Nest HTTP/框架异常

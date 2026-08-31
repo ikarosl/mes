@@ -178,10 +178,10 @@ export const withTransaction = async <T>(
       // 凭证，绝不打印原始 message。只记录异常类型（constructor.name）与经过白名单筛选的
       // mysql2 数据库错误码（服务器错误码形态 /^ER_[A-Z0-9_]+$/ 或连接/池网络错误码）。
       console.error(
-        `[database] withTransaction rollback failed; original error type: ${errorTypeLabel(error)}` +
-          mysqlCodeLabel('original error code', error) +
-          `; rollback error type: ${errorTypeLabel(rollbackError)}` +
-          mysqlCodeLabel('rollback error code', rollbackError),
+        `[数据库] withTransaction 回滚失败；原始异常类型：${errorTypeLabel(error)}` +
+          mysqlCodeLabel('原始错误码', error) +
+          `；回滚异常类型：${errorTypeLabel(rollbackError)}` +
+          mysqlCodeLabel('回滚错误码', rollbackError),
       );
     }
     throw error;
@@ -209,7 +209,7 @@ export const withActiveConnection = <T>(
 const requiredEnv = (name: string, allowEmpty = false) => {
   const value = process.env[name];
   if (value === undefined || (!allowEmpty && value.trim() === '')) {
-    throw new Error(`Missing required environment variable: ${name}`);
+    throw new Error(`缺少必填环境变量：${name}`);
   }
   return value;
 };
@@ -217,7 +217,7 @@ const requiredEnv = (name: string, allowEmpty = false) => {
 const positiveIntegerEnv = (name: string) => {
   const value = Number(requiredEnv(name));
   if (!Number.isInteger(value) || value <= 0) {
-    throw new Error(`${name} must be a positive integer`);
+    throw new Error(`${name} 必须是正整数`);
   }
   return value;
 };
@@ -250,5 +250,5 @@ const mysqlCodeLabel = (label: string, error: unknown): string => {
   const code = (error as { code?: unknown }).code;
   if (typeof code !== 'string' || code.length === 0) return '';
   if (!MYSQL_CODE_WHITELIST.has(code) && !/^ER_[A-Z0-9_]+$/.test(code)) return '';
-  return `; ${label}: ${code}`;
+  return `；${label}：${code}`;
 };

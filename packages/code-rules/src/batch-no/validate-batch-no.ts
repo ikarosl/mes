@@ -1,6 +1,6 @@
 import type { BatchNoRule } from './batch-no.types.js';
 
-/** Validates a manually entered batch code against one explicit, pure formatting rule. */
+/** 根据明确且纯粹的格式规则校验手工输入的批次编码。 */
 export const isBatchNoValid = (value: string, { prefix, padding }: BatchNoRule): boolean => {
   const normalizedPrefix = prefix.trim();
   if (!normalizedPrefix || !Number.isSafeInteger(padding) || padding < 1) return false;

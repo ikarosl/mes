@@ -20,12 +20,10 @@ export class StartupReadinessService implements OnApplicationBootstrap {
     const readiness = await this.health.check();
     const summary = dependencySummary(readiness);
     if (readiness.status !== 'ok') {
-      this.logger.warn(
-        `Startup dependency check degraded; API will start but readiness remains unavailable: ${summary}`,
-      );
+      this.logger.warn(`启动依赖检查未通过；API 将继续启动，但就绪状态仍不可用：${summary}`);
       return;
     }
-    this.logger.log(`Startup dependency check passed: ${summary}`);
+    this.logger.log(`启动依赖检查通过：${summary}`);
   }
 }
 

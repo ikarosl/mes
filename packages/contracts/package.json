@@ -12,9 +12,12 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --config ../../vitest.config.ts src"
+    "build": "corepack pnpm --workspace-root exec turbo run build:run --filter=@company/contracts",
+    "build:run": "tsc -p tsconfig.json",
+    "typecheck": "corepack pnpm --workspace-root exec turbo run typecheck:run --filter=@company/contracts",
+    "typecheck:run": "tsc -p tsconfig.json --noEmit",
+    "test": "corepack pnpm --workspace-root exec turbo run test:run --filter=@company/contracts",
+    "test:run": "vitest run --config ../../vitest.config.ts src"
   },
   "devDependencies": {
     "typescript": "catalog:",

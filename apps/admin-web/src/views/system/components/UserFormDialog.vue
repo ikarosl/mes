@@ -144,7 +144,7 @@ const handleOpen = (): void => {
   if (!props.editingUserId) emit('refresh-roles');
 };
 
-/** 缓存页重新激活且弹窗仍打开：重新刷新自持的部门候选（frontend-architecture.md §6 仍打开的弹窗自持刷新） */
+/** 缓存页重新激活且弹窗仍打开：重新刷新自持的部门候选（architecture.md §6 仍打开的弹窗自持刷新） */
 onActivated(() => {
   if (props.visible) void departmentSource.refresh();
 });

@@ -9,7 +9,7 @@ export interface TaskStepPreview extends ProcessRouteStepItem {
 
 /**
  * 新增任务弹窗的工序执行预览。
- * routeSteps(routeId) 关联具体路线，属 ID-bound 明细（docs/frontend-architecture.md §7.2），
+ * routeSteps(routeId) 关联具体路线，属 ID-bound 明细（apps/admin-web/docs/architecture.md §7.2），
  * 不进入共享候选 Store；带 routeId 请求身份守卫（last-request-wins），路线切换后旧响应必须丢弃。
  */
 export function useTaskRouteSteps() {

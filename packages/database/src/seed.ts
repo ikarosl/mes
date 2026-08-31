@@ -9,7 +9,7 @@ try {
   await withTransaction(pool, async (connection) => {
     for (const seed of await readSeeds()) {
       await connection.query(seed.sql);
-      console.log(`Applied seed ${seed.name}`);
+      console.log(`已执行数据种子：${seed.name}`);
     }
   });
 } finally {

@@ -15,7 +15,7 @@ import {
 describe('audit failure remarks', () => {
   it('does not persist raw exception messages', () => {
     expect(auditFailureRemark(new Error('SELECT password_hash FROM users'))).toBe(
-      'Unhandled request failure',
+      '未处理的请求失败',
     );
   });
 

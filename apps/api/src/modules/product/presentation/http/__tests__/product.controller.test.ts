@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { BadRequestException, StreamableFile } from '@nestjs/common';
+import { BadRequestException, StreamableFile, UnsupportedMediaTypeException } from '@nestjs/common';
 import { Readable } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
 import { PERMISSIONS, permissionMatches } from '@company/constants';
@@ -73,6 +73,24 @@ describe('ProductController technical files', () => {
       expect.objectContaining({ originalName: '12- 成品包装检验规程.docx' }),
       audit,
     );
+  });
+
+  it('rejects a disallowed technical-file extension before calling the service', () => {
+    const service = { uploadTechnicalFile: vi.fn() };
+    const controller = new ProductController(service as never);
+
+    expect(() =>
+      controller.uploadTechnicalFile(
+        {
+          originalname: '工艺说明.pptx',
+          mimetype: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+          buffer: Buffer.from('presentation'),
+          size: 8,
+        },
+        commandContext,
+      ),
+    ).toThrow(UnsupportedMediaTypeException);
+    expect(service.uploadTechnicalFile).not.toHaveBeenCalled();
   });
 });
 

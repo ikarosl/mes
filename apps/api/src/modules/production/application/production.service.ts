@@ -154,7 +154,7 @@ export class ProductionService {
         await this.requireActiveUser(normalizedPayload.ownerId ?? null);
         const productDefinitions = this.productDefinitions;
         if (!productDefinitions) {
-          throw new Error('Product production definition command is not configured');
+          throw new Error('产品生产定义命令未配置');
         }
         return this.production.withBatchCreationTransaction(
           workOrderId,

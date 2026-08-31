@@ -14,7 +14,7 @@ import {
 } from '../../common/security/auth.decorators.js';
 
 /**
- * 端点级 Idempotency-Key 启用门禁（阶段 A 矩阵，见 docs/http-idempotency-implementation-plan.md §8）。
+ * 端点级 Idempotency-Key 启用门禁（阶段 A 矩阵，见 apps/api/docs/idempotency.md §8）。
  *
  * 严格契约：任何未启用端点——包括 `@Public()` 匿名端点——携带任意 Idempotency-Key（含空串/超长）都返回
  * `400 IDEMPOTENCY_NOT_SUPPORTED`，不登记、不静默忽略；已启用端点（`@IdempotentEndpoint({ scope })`）缺少键或
@@ -62,7 +62,7 @@ export class IdempotencyKeyGuard implements CanActivate {
     if (key.length === 0 || key.length > 150) {
       throw new BadRequestException({
         code: 'VALIDATION_ERROR',
-        message: 'Idempotency-Key must contain between 1 and 150 characters',
+        message: '幂等键长度必须在 1 到 150 个字符之间',
       });
     }
     request[VALIDATED_IDEMPOTENCY_KEY] = key;

@@ -36,7 +36,7 @@ const {
   error: vi.fn(),
 }));
 
-// Mock API modules to prevent real HTTP calls (ECONNREFUSED)
+// 模拟 API 模块，避免发起真实 HTTP 请求（ECONNREFUSED）。
 vi.mock('../../../api/product', () => ({
   productApi: {
     productOptions,

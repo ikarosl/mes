@@ -18,7 +18,7 @@ describe('ensureDatabaseExists', () => {
     const query = vi.fn();
     const connection = { query } as never;
 
-    await expect(ensureDatabaseExists(connection, '   ')).rejects.toThrow('DB_NAME is required');
+    await expect(ensureDatabaseExists(connection, '   ')).rejects.toThrow('DB_NAME 为必填项');
     expect(query).not.toHaveBeenCalled();
   });
 });

@@ -3,7 +3,7 @@
  *
  * 幂等 executor 的登记 INSERT 处于短小事务中，锁等待/死锁/连接中断属于可安全重试的瞬态失败，
  * 应映射为 `IdempotencyStorageError('retryable')`（HTTP 503），而不是让驱动错误原样冒泡成通用
- * 500（docs/http-idempotency-implementation-plan.md：锁等待/死锁/连接中断 → 503 语义）。
+ * 500（apps/api/docs/idempotency.md：锁等待/死锁/连接中断 → 503 语义）。
  *
  * 判定依据（mysql2 3.23.1）：
  *  - 服务器 SQL 错误：`{ code: 'ER_*', errno: <数字>, sqlState: <5 位串>, sqlMessage }`，

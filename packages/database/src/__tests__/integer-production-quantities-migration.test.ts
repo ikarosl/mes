@@ -42,7 +42,7 @@ describe('integer production quantities migration', () => {
       }
     }
 
-    // 202608100001 moved these aggregates to batch_step_reports and dropped the legacy columns.
+    // 202608100001 已将这些汇总迁移到 batch_step_reports，并删除历史列。
     expect(up).not.toContain('ALTER TABLE batch_step_records');
     expect(up).not.toContain('spec_values');
   });

@@ -73,7 +73,7 @@ export class AuthGuard implements CanActivate {
         remark,
       });
     } catch {
-      this.logger.warn('Security audit log write failed');
+      this.logger.warn('安全审计日志写入失败');
     }
   }
 }
