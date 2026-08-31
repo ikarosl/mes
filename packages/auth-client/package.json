@@ -12,9 +12,12 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --config ../../vitest.config.ts src"
+    "build": "corepack pnpm --workspace-root exec turbo run build:run --filter=@company/auth-client",
+    "build:run": "tsc -p tsconfig.json",
+    "typecheck": "corepack pnpm --workspace-root exec turbo run typecheck:run --filter=@company/auth-client",
+    "typecheck:run": "tsc -p tsconfig.json --noEmit",
+    "test": "corepack pnpm --workspace-root exec turbo run test:run --filter=@company/auth-client",
+    "test:run": "vitest run --config ../../vitest.config.ts src"
   },
   "dependencies": {
     "@company/contracts": "workspace:*",

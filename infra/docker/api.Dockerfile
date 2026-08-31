@@ -14,8 +14,8 @@ COPY . .
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm install --frozen-lockfile
 
-# 构建 API 及其全部工作区依赖。
-RUN pnpm --filter @company/api... build
+# 包级 build 入口由 Turbo 按依赖拓扑构建 API 及其全部工作区依赖。
+RUN pnpm --filter @company/api build
 
 # 生成 API 的自包含生产部署目录。
 RUN pnpm --filter @company/api --prod deploy --legacy /prod/api

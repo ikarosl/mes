@@ -4,11 +4,16 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsc-watch -p tsconfig.json --onSuccess \"node dist/main.js\"",
-    "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --config ../../vitest.config.ts src",
-    "storage:ensure-bucket": "tsx src/scripts/ensure-technical-file-bucket.ts"
+    "dev": "corepack pnpm --workspace-root exec turbo watch dev:serve --filter=@company/api",
+    "dev:serve": "tsc-watch -p tsconfig.json --onSuccess \"node dist/main.js\"",
+    "build": "corepack pnpm --workspace-root exec turbo run build:run --filter=@company/api",
+    "build:run": "tsc -p tsconfig.json",
+    "typecheck": "corepack pnpm --workspace-root exec turbo run typecheck:run --filter=@company/api",
+    "typecheck:run": "tsc -p tsconfig.json --noEmit",
+    "test": "corepack pnpm --workspace-root exec turbo run test:run --filter=@company/api",
+    "test:run": "vitest run --config ../../vitest.config.ts src",
+    "storage:ensure-bucket": "corepack pnpm --workspace-root exec turbo run storage:ensure-bucket:run --filter=@company/api",
+    "storage:ensure-bucket:run": "tsx src/scripts/ensure-technical-file-bucket.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "catalog:",

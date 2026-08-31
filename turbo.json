@@ -2,23 +2,24 @@
   "$schema": "https://turbo.build/schema.json",
   "globalDependencies": ["tsconfig.base.json", "vitest.config.ts"],
   "tasks": {
-    "build": {
-      "dependsOn": ["^build"],
+    "build:run": {
+      "dependsOn": ["^build:run"],
       "outputs": ["dist/**"]
     },
-    "typecheck": {
-      "dependsOn": ["^build"]
+    "typecheck:run": {
+      "dependsOn": ["^build:run"]
     },
-    "test": {
-      "dependsOn": ["^build"]
+    "test:run": {
+      "dependsOn": ["^build:run"]
     },
-    "dev": {
-      "dependsOn": ["^build"],
+    "dev:serve": {
+      "dependsOn": ["^build:run"],
       "cache": false,
-      "persistent": true
+      "persistent": true,
+      "interruptible": true
     },
-    "storage:ensure-bucket": {
-      "dependsOn": ["^build"],
+    "storage:ensure-bucket:run": {
+      "dependsOn": ["^build:run"],
       "cache": false,
       "passThroughEnv": [
         "S3_ENDPOINT",
@@ -30,8 +31,8 @@
         "S3_FORCE_PATH_STYLE"
       ]
     },
-    "ensure-database": {
-      "dependsOn": ["^build"],
+    "ensure-database:run": {
+      "dependsOn": ["^build:run"],
       "cache": false,
       "passThroughEnv": [
         "DB_HOST",
@@ -42,8 +43,8 @@
         "DB_CONNECTION_LIMIT"
       ]
     },
-    "migrate": {
-      "dependsOn": ["^build"],
+    "migrate:run": {
+      "dependsOn": ["^build:run"],
       "cache": false,
       "passThroughEnv": [
         "DB_HOST",
@@ -54,8 +55,8 @@
         "DB_CONNECTION_LIMIT"
       ]
     },
-    "migrate:status": {
-      "dependsOn": ["^build"],
+    "migrate:status:run": {
+      "dependsOn": ["^build:run"],
       "cache": false,
       "passThroughEnv": [
         "DB_HOST",
@@ -66,8 +67,8 @@
         "DB_CONNECTION_LIMIT"
       ]
     },
-    "seed": {
-      "dependsOn": ["^build"],
+    "seed:run": {
+      "dependsOn": ["^build:run"],
       "cache": false,
       "passThroughEnv": [
         "DB_HOST",
@@ -78,8 +79,8 @@
         "DB_CONNECTION_LIMIT"
       ]
     },
-    "seed:demo": {
-      "dependsOn": ["^build"],
+    "seed:demo:run": {
+      "dependsOn": ["^build:run"],
       "cache": false,
       "passThroughEnv": [
         "DB_HOST",
@@ -92,8 +93,85 @@
         "DEMO_USER_PASSWORD"
       ]
     },
-    "bootstrap-admin": {
-      "dependsOn": ["^build"],
+    "bootstrap-admin:run": {
+      "dependsOn": ["^build:run"],
+      "cache": false,
+      "passThroughEnv": [
+        "DB_HOST",
+        "DB_PORT",
+        "DB_USER",
+        "DB_PASSWORD",
+        "DB_NAME",
+        "DB_CONNECTION_LIMIT",
+        "ADMIN_USERNAME",
+        "ADMIN_PASSWORD",
+        "ADMIN_DISPLAY_NAME"
+      ]
+    },
+    "ensure-database:compiled:run": {
+      "dependsOn": ["build:run"],
+      "cache": false,
+      "passThroughEnv": [
+        "DB_HOST",
+        "DB_PORT",
+        "DB_USER",
+        "DB_PASSWORD",
+        "DB_NAME",
+        "DB_CONNECTION_LIMIT"
+      ]
+    },
+    "migrate:compiled:run": {
+      "dependsOn": ["build:run"],
+      "cache": false,
+      "passThroughEnv": [
+        "DB_HOST",
+        "DB_PORT",
+        "DB_USER",
+        "DB_PASSWORD",
+        "DB_NAME",
+        "DB_CONNECTION_LIMIT"
+      ]
+    },
+    "migrate:status:compiled:run": {
+      "dependsOn": ["build:run"],
+      "cache": false,
+      "passThroughEnv": [
+        "DB_HOST",
+        "DB_PORT",
+        "DB_USER",
+        "DB_PASSWORD",
+        "DB_NAME",
+        "DB_CONNECTION_LIMIT"
+      ]
+    },
+    "seed:compiled:run": {
+      "dependsOn": ["build:run"],
+      "cache": false,
+      "passThroughEnv": [
+        "DB_HOST",
+        "DB_PORT",
+        "DB_USER",
+        "DB_PASSWORD",
+        "DB_NAME",
+        "DB_CONNECTION_LIMIT"
+      ]
+    },
+    "seed:demo:compiled:run": {
+      "dependsOn": ["build:run"],
+      "cache": false,
+      "passThroughEnv": [
+        "DB_HOST",
+        "DB_PORT",
+        "DB_USER",
+        "DB_PASSWORD",
+        "DB_NAME",
+        "DB_CONNECTION_LIMIT",
+        "ALLOW_DEMO_SEED",
+        "DEMO_USER_PASSWORD"
+      ]
+    },
+    "bootstrap-admin:compiled:run": {
+      "dependsOn": ["build:run"],
       "cache": false,
       "passThroughEnv": [
         "DB_HOST",

@@ -53,7 +53,7 @@ DB_NAME=easy_mes_test pnpm test:production:mysql
 pnpm verify
 ```
 
-项目使用 pnpm workspace 管理依赖，并由 Turborepo 编排 `dev`、`build`、`typecheck` 和 `test`。构建与测试任务可缓存；数据库迁移、迁移状态检查和管理员初始化明确禁止缓存。
+项目使用 pnpm workspace 管理依赖，并由 Turborepo 编排 `dev`、`build`、`typecheck` 和 `test`。根入口与包级公开脚本都会进入同一条依赖拓扑；`dev` 使用 Turbo watch，在共享包源码变化后先重建受影响依赖，再重启应用。带 `:run` 或 `:serve` 后缀的脚本是供 Turbo 调度的内部任务，不作为手工入口。构建与测试任务可缓存；数据库迁移、迁移状态检查和管理员初始化明确禁止缓存。
 
 Access Token 只存在页面内存；刷新页面或打开新浏览器标签时，前端通过 HttpOnly Refresh Cookie 恢复会话。应用内部多标签页由 Pinia 维护，并使用 Vue KeepAlive 缓存页面实例。
 
