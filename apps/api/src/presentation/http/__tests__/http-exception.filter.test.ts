@@ -1,4 +1,5 @@
 import { BadRequestException, Logger, PayloadTooLargeException } from '@nestjs/common';
+import { TECHNICAL_FILE_MAX_SIZE_BYTES } from '@company/constants';
 import { DatabaseError } from '@company/database';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { HttpExceptionFilter } from '../http-exception.filter.js';
@@ -21,6 +22,8 @@ const invoke = (exception: unknown, url = '/api/system/users') => {
 };
 
 describe('HttpExceptionFilter', () => {
+  const technicalFileMaxSizeMiB = TECHNICAL_FILE_MAX_SIZE_BYTES / 1024 / 1024;
+
   afterEach(() => vi.restoreAllMocks());
 
   it('returns one safe envelope for expected HTTP exceptions', () => {
@@ -52,7 +55,7 @@ describe('HttpExceptionFilter', () => {
     expect(json).toHaveBeenCalledWith(
       expect.objectContaining({
         code: 'PAYLOAD_TOO_LARGE',
-        message: '文件大小不能超过 20MB',
+        message: `文件大小不能超过 ${technicalFileMaxSizeMiB} MiB`,
       }),
     );
   });
@@ -67,7 +70,19 @@ describe('HttpExceptionFilter', () => {
     expect(json).toHaveBeenCalledWith(
       expect.objectContaining({
         code: 'PAYLOAD_TOO_LARGE',
-        message: '文件大小不能超过 20MB',
+        message: `文件大小不能超过 ${technicalFileMaxSizeMiB} MiB`,
+      }),
+    );
+  });
+
+  it('does not report the technical-file limit for a generic oversized request', () => {
+    const { json, status } = invoke(new PayloadTooLargeException('Payload Too Large'));
+
+    expect(status).toHaveBeenCalledWith(413);
+    expect(json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        code: 'PAYLOAD_TOO_LARGE',
+        message: '请求内容过大',
       }),
     );
   });

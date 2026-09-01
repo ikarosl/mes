@@ -221,7 +221,10 @@
         <el-icon class="upload-icon"><UploadFilled /></el-icon>
         <div class="upload-text">将文件拖到这里，或点击选择文件</div>
       </el-upload>
-      <p class="upload-hint">支持常见图片、PDF 和 Word/Excel 文件，单个文件不超过 20MB。</p>
+      <p class="upload-hint">
+        支持常见图片、PDF 和 Word/Excel 文件，单个文件不超过
+        {{ TECHNICAL_FILE_MAX_SIZE_MIB }} MiB。
+      </p>
       <div
         v-if="uploading"
         class="upload-progress"
@@ -277,7 +280,11 @@ import { productApi } from '../../api/product';
 import { useAuthStore } from '../../stores/auth';
 import { useProcessSteps } from './composables/useProcessSteps';
 import { canPreviewFile, previewMimeOf } from '../../utils/file-preview';
-import { UPLOAD_ACCEPT, validateTechnicalFileUpload } from '../../utils/file-validation';
+import {
+  TECHNICAL_FILE_MAX_SIZE_MIB,
+  UPLOAD_ACCEPT,
+  validateTechnicalFileUpload,
+} from '../../utils/file-validation';
 import ProcessStepDetailDialog from './components/ProcessStepDetailDialog.vue';
 import ProcessStepFormDialog from './components/ProcessStepFormDialog.vue';
 

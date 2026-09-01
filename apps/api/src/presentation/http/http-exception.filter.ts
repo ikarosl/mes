@@ -7,7 +7,11 @@ import {
   Logger,
 } from '@nestjs/common';
 import type { ApiErrorResponse } from '@company/contracts';
-import { IDEMPOTENCY_RESULT_CORRUPT, IDEMPOTENCY_STORAGE_RETRYABLE } from '@company/constants';
+import {
+  IDEMPOTENCY_RESULT_CORRUPT,
+  IDEMPOTENCY_STORAGE_RETRYABLE,
+  TECHNICAL_FILE_MAX_SIZE_BYTES,
+} from '@company/constants';
 import { DatabaseError } from '@company/database';
 import { toBeijingISOString } from '../../common/time/date-time.js';
 import { createRequestId, isRequestId } from '../../common/http/request-context.middleware.js';
@@ -81,7 +85,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       status,
       code: errorCode(status, exception),
       message: isMulterFileTooLarge
-        ? '文件大小不能超过 20MB'
+        ? technicalFileTooLargeMessage
         : isHttpException
           ? exceptionMessage(exception, status)
           : isConcurrencyError || isIdempotencyStorageError
@@ -109,6 +113,9 @@ const isMulterFileSizeError = (exception: unknown): boolean =>
     Reflect.get(exception, 'name') === 'MulterError' &&
     Reflect.get(exception, 'code') === 'LIMIT_FILE_SIZE',
   );
+
+const technicalFileMaxSizeMiB = TECHNICAL_FILE_MAX_SIZE_BYTES / 1024 / 1024;
+const technicalFileTooLargeMessage = `文件大小不能超过 ${technicalFileMaxSizeMiB} MiB`;
 
 interface SafeExceptionDiagnostic {
   exceptionType: string;
@@ -247,7 +254,7 @@ const defaultHttpMessage = (status: number): string =>
     [HttpStatus.METHOD_NOT_ALLOWED]: '不支持当前请求方法',
     [HttpStatus.REQUEST_TIMEOUT]: '请求超时，请稍后重试',
     [HttpStatus.CONFLICT]: '请求存在冲突，请刷新后重试',
-    [HttpStatus.PAYLOAD_TOO_LARGE]: '文件大小不能超过 20MB',
+    [HttpStatus.PAYLOAD_TOO_LARGE]: '请求内容过大',
     [HttpStatus.UNSUPPORTED_MEDIA_TYPE]: '不支持当前媒体类型',
     [HttpStatus.UNPROCESSABLE_ENTITY]: '请求内容无法处理',
     [HttpStatus.TOO_MANY_REQUESTS]: '请求过于频繁，请稍后重试',
@@ -260,8 +267,8 @@ const defaultHttpMessage = (status: number): string =>
 const translateBackendMessage = (message: string, status: number): string => {
   const normalized = message.trim();
   const translations: Record<string, string> = {
-    'File too large': '文件大小不能超过 20MB',
-    'Payload Too Large': '文件大小不能超过 20MB',
+    'File too large': technicalFileTooLargeMessage,
+    'Payload Too Large': '请求内容过大',
     'Request Entity Too Large': '请求内容过大',
     'Bad Request': '请求参数不符合要求',
     Unauthorized: '未授权，请先登录',

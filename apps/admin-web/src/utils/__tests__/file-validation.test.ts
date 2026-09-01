@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { TECHNICAL_FILE_EXTENSIONS } from '@company/constants';
-import { UPLOAD_ACCEPT, validateTechnicalFileUpload } from '../file-validation';
+import {
+  TECHNICAL_FILE_MAX_SIZE_MIB,
+  UPLOAD_ACCEPT,
+  validateTechnicalFileUpload,
+} from '../file-validation';
 
 const fileOf = (name: string, size = 1024) => ({ name, size });
 
@@ -12,7 +16,7 @@ describe('validateTechnicalFileUpload', () => {
     expect(validateTechnicalFileUpload(fileOf('说明文档.docx'))).toBeNull();
   });
 
-  it('accepts a file exactly at the 20MB cap', () => {
+  it('accepts a file exactly at the 20 MiB cap', () => {
     expect(validateTechnicalFileUpload(fileOf('a.pdf', 20 * 1024 * 1024))).toBeNull();
   });
 
@@ -23,9 +27,9 @@ describe('validateTechnicalFileUpload', () => {
     expect(validateTechnicalFileUpload(fileOf('无扩展名'))).toContain('不支持的文件类型');
   });
 
-  it('rejects files beyond the 20MB cap', () => {
+  it('rejects files beyond the 20 MiB cap', () => {
     expect(validateTechnicalFileUpload(fileOf('a.pdf', 20 * 1024 * 1024 + 1))).toBe(
-      '文件大小不能超过 20MB',
+      `文件大小不能超过 ${TECHNICAL_FILE_MAX_SIZE_MIB} MiB`,
     );
   });
 });
