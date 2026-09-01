@@ -24,7 +24,10 @@ const invoke = (exception: unknown, url = '/api/system/users') => {
 describe('HttpExceptionFilter', () => {
   const technicalFileMaxSizeMiB = TECHNICAL_FILE_MAX_SIZE_BYTES / 1024 / 1024;
 
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
 
   it('returns one safe envelope for expected HTTP exceptions', () => {
     const { json, status, setHeader } = invoke(new BadRequestException('参数错误'));
@@ -114,7 +117,41 @@ describe('HttpExceptionFilter', () => {
     );
   });
 
-  it('logs safe exception types, MySQL fields, stage and redacted stack for unexpected errors', () => {
+  it('logs the original exception chain in development without exposing it to the client', () => {
+    vi.stubEnv('NODE_ENV', 'development');
+    const cause = Object.assign(new Error('SQL contains a secret value'), {
+      code: 'ER_CHECK_CONSTRAINT_VIOLATED',
+      errno: 3819,
+      sqlState: 'HY000',
+      sqlMessage: 'secret SQL text',
+    });
+    const error = new DatabaseError(cause, '数据库查询失败');
+    const log = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+
+    const { json } = invoke(
+      error,
+      '/api/production/abnormal-dispositions/2/actions/confirm?token=secret',
+    );
+
+    expect(log).toHaveBeenCalledOnce();
+    const [message, stack] = log.mock.calls[0]!;
+    expect(message).toContain('exceptionType=DatabaseError');
+    expect(message).toContain('causeType=Error');
+    expect(message).toContain('stage=query');
+    expect(message).toContain('code=ER_CHECK_CONSTRAINT_VIOLATED');
+    expect(message).toContain('errno=3819');
+    expect(message).toContain('sqlState=HY000');
+    expect(message).toContain('path=/api/production/abnormal-dispositions/2/actions/confirm');
+    expect(stack).toContain('DatabaseError: 数据库查询失败');
+    expect(stack).toContain('Error: SQL contains a secret value');
+
+    expect(json).toHaveBeenCalledWith(
+      expect.objectContaining({ message: '服务器内部错误，请稍后重试' }),
+    );
+  });
+
+  it('logs structured MySQL diagnostics and a redacted stack in production', () => {
+    vi.stubEnv('NODE_ENV', 'production');
     const cause = Object.assign(new Error('SQL contains a secret value'), {
       code: 'ER_CHECK_CONSTRAINT_VIOLATED',
       errno: 3819,
@@ -129,14 +166,14 @@ describe('HttpExceptionFilter', () => {
     expect(log).toHaveBeenCalledOnce();
     const [message, stack] = log.mock.calls[0]!;
     expect(message).toContain('exceptionType=DatabaseError');
-    expect(message).toContain('causeType=Error');
     expect(message).toContain('stage=query');
     expect(message).toContain('code=ER_CHECK_CONSTRAINT_VIOLATED');
     expect(message).toContain('errno=3819');
     expect(message).toContain('sqlState=HY000');
     expect(message).toContain('path=/api/production/abnormal-dispositions/2/actions/confirm');
     expect(`${message}\n${stack}`).not.toContain('secret');
-    expect(stack).toContain('DatabaseError：[消息已脱敏]');
+    expect(stack).toContain('DatabaseError');
+    expect(stack).not.toContain('[消息已脱敏]');
   });
 
   it('maps retryable idempotency storage failures to 503 with a stable code', () => {
