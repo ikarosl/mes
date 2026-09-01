@@ -7,8 +7,10 @@ import {
   BATCH_STEP_REPORT_TYPES,
   DEMAND_TYPES,
   FINISHED_FLOW_TYPES,
+  INVENTORY_REFERENCE_TYPE_LABELS,
   INVENTORY_REFERENCE_TYPES,
   INVENTORY_SOURCE_TYPES,
+  INVENTORY_TRANSACTION_TYPE_LABELS,
   INVENTORY_TRANSACTION_TYPES,
   OUTBOUND_ORDER_STATUSES,
   PRODUCTION_EXECUTION_COMPLETION_BLOCKERS,
@@ -51,6 +53,13 @@ describe('business persisted codes', () => {
       'production_consumed',
       'in_stock',
     ]);
+  });
+
+  it('provides complete inventory transaction and reference labels', () => {
+    expect(Object.keys(INVENTORY_TRANSACTION_TYPE_LABELS)).toEqual(INVENTORY_TRANSACTION_TYPES);
+    expect(Object.keys(INVENTORY_REFERENCE_TYPE_LABELS)).toEqual(INVENTORY_REFERENCE_TYPES);
+    expect(INVENTORY_TRANSACTION_TYPE_LABELS.production_material_outbound).toBe('生产领料出库');
+    expect(INVENTORY_REFERENCE_TYPE_LABELS.outbound_detail).toBe('出库明细');
   });
 
   it('separates step execution, abnormal review and current demand type codes', () => {

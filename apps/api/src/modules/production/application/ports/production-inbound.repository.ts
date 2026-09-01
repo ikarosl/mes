@@ -1,5 +1,6 @@
 import type {
   CreatePurchaseInboundPayload,
+  InventoryBatchDetailItem,
   InventoryBatchItem,
   InventoryBatchQuery,
   PageResult,
@@ -36,5 +37,5 @@ export abstract class ProductionInboundRepository {
     context: CommandContext,
   ): Promise<PurchaseInboundOrderItem>;
   abstract listInventory(query: InventoryBatchQuery): Promise<PageResult<InventoryBatchItem>>;
-  abstract getInventory(itemBatchId: string): Promise<InventoryBatchItem>;
+  abstract getInventory(itemBatchId: string): Promise<InventoryBatchDetailItem>;
 }

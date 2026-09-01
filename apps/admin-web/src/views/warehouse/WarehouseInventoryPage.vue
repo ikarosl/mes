@@ -316,7 +316,7 @@
     <el-dialog
       v-model="detailVisible"
       title="物料库存批次详情"
-      :width="DialogWidth.lg"
+      :width="DialogWidth.xl"
       ><div
         v-loading="detailLoading"
         class="detail-body"
@@ -332,6 +332,9 @@
               inventorySourceTypeLabel(detail.sourceType)
             }}</el-descriptions-item
             ><el-descriptions-item label="供应方">{{ detail.provider || '-' }}</el-descriptions-item
+            ><el-descriptions-item label="批次状态">{{
+              inventoryBatchStatusLabel(detail.batchStatus)
+            }}</el-descriptions-item
             ><el-descriptions-item label="账面可用量"
               >{{ formatQuantity(detail.onHandAvailableQuantity) }}
               {{ detail.unit }}</el-descriptions-item
@@ -369,11 +372,69 @@
                 formatQuantity(row.inboundQuantity)
               }}</template></el-table-column
             ><el-table-column
-              label="正库存流水"
+              label="库存流水"
               width="120"
               ><template #default="{ row }"
                 >#{{ row.inventoryTransactionId }}</template
               ></el-table-column
+            ></el-table
+          >
+          <h3>库存流水（全部正负记录）</h3>
+          <el-table
+            :data="detail.inventoryTransactions"
+            empty-text="该库存批次暂无库存流水"
+            ><el-table-column
+              label="流水 ID"
+              width="100"
+              ><template #default="{ row }"
+                >#{{ row.inventoryTransactionId }}</template
+              ></el-table-column
+            ><el-table-column
+              label="发生时间"
+              width="180"
+              ><template #default="{ row }">{{
+                formatDateTimeForDisplay(row.transactionAt)
+              }}</template></el-table-column
+            ><el-table-column
+              label="流水类型"
+              min-width="150"
+              ><template #default="{ row }">{{
+                inventoryTransactionTypeLabel(row.transactionType)
+              }}</template></el-table-column
+            ><el-table-column
+              label="变动数量"
+              width="130"
+              align="right"
+              ><template #default="{ row }"
+                ><span
+                  :class="Number(row.quantity) > 0 ? 'quantity-increase' : 'quantity-decrease'"
+                >
+                  {{ Number(row.quantity) > 0 ? '+' : '' }}{{ formatQuantity(row.quantity) }}
+                  {{ row.unit }}
+                </span></template
+              ></el-table-column
+            ><el-table-column
+              label="库存状态"
+              width="100"
+              ><template #default="{ row }">{{
+                stockStatusLabel(row.stockStatus)
+              }}</template></el-table-column
+            ><el-table-column
+              label="业务来源"
+              min-width="150"
+              ><template #default="{ row }">
+                {{ inventoryReferenceTypeLabel(row.referenceType) }} #{{ row.referenceDetailId }}
+              </template></el-table-column
+            ><el-table-column
+              label="关联信息"
+              min-width="150"
+              ><template #default="{ row }">
+                {{ inventoryTransactionAssociationText(row) }}
+              </template></el-table-column
+            ><el-table-column
+              label="备注"
+              min-width="140"
+              ><template #default="{ row }">{{ row.remark || '-' }}</template></el-table-column
             ></el-table
           ></template
         >
@@ -386,6 +447,7 @@ import { onActivated, onMounted, reactive, ref, watch } from 'vue';
 import { Refresh } from '@element-plus/icons-vue';
 import type {
   DemandType,
+  InventoryBatchDetailItem,
   InventoryBatchItem,
   InventoryBatchQuery,
   InventoryMaterialDemandTraceItem,
@@ -396,7 +458,10 @@ import PaginationFooter from '../../components/PaginationFooter.vue';
 import {
   inventoryBatchStatusLabel,
   inventoryBatchStatusLabels,
+  inventoryReferenceTypeLabel,
   inventorySourceTypeLabel,
+  inventoryTransactionTypeLabel,
+  stockStatusLabel,
 } from '../../constants/business-status';
 import { DialogWidth } from '../../utils/dialog';
 import { formatDateTimeForDisplay } from '../../utils/date';
@@ -404,6 +469,7 @@ import { EMessage } from '../../utils/message';
 import { formatQuantity } from '../production/production-status';
 import { useInventoryMaterialSupplyDemandList } from './composables/useInventoryMaterialSupplyDemandList';
 import { useInventoryMaterialDemandTrace } from './composables/useInventoryMaterialDemandTrace';
+import { inventoryTransactionAssociationText } from './warehouse-inventory-presentation';
 defineOptions({ name: 'WarehouseInventoryPage' });
 const viewMode = ref<'supply-demand' | 'inventory-batches'>('supply-demand');
 const {
@@ -435,10 +501,11 @@ const query = reactive<InventoryBatchQuery>({ page: 1, pageSize: 20 });
 const rows = ref<InventoryBatchItem[]>([]),
   total = ref(0),
   loading = ref(false),
-  detail = ref<InventoryBatchItem | null>(null),
+  detail = ref<InventoryBatchDetailItem | null>(null),
   detailLoading = ref(false),
   detailVisible = ref(false);
 let token = 0;
+let detailToken = 0;
 const load = async () => {
   const current = ++token;
   loading.value = true;
@@ -479,14 +546,17 @@ const handlePageChange = (value: number) => {
   return load();
 };
 const openDetail = async (id: string) => {
+  const current = ++detailToken;
   detailVisible.value = true;
+  detail.value = null;
   detailLoading.value = true;
   try {
-    detail.value = await productionApi.getInventoryBatch(id);
+    const result = await productionApi.getInventoryBatch(id);
+    if (current === detailToken) detail.value = result;
   } catch (e) {
-    EMessage.error(e, '库存批次详情加载失败');
+    if (current === detailToken) EMessage.error(e, '库存批次详情加载失败');
   } finally {
-    detailLoading.value = false;
+    if (current === detailToken) detailLoading.value = false;
   }
 };
 const demandTypeLabels: Record<DemandType, string> = {
@@ -538,6 +608,14 @@ watch(viewMode, (mode) => {
 }
 .shortage {
   color: #ef4444;
+}
+.quantity-increase {
+  color: var(--el-color-success);
+  font-weight: 600;
+}
+.quantity-decrease {
+  color: var(--el-color-danger);
+  font-weight: 600;
 }
 .supply-demand-table :deep(.el-table__row) {
   cursor: pointer;

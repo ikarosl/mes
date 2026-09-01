@@ -35,6 +35,81 @@ describe('MysqlProductionInboundRepository inventory list', () => {
     expect(String(query.mock.calls[1]?.[0])).toContain(existsClause);
   });
 
+  it('returns every positive and negative ledger transaction in inventory batch detail', async () => {
+    const inventoryRow = {
+      id: 101,
+      item_id: 5,
+      item_code_snapshot: 'MAT-1',
+      product_name_snapshot: '测试物料',
+      unit_snapshot: '件',
+      batch_code: 'B001',
+      source_type: 'purchased',
+      provider: '供应商 A',
+      batch_status: 'available',
+      on_hand: '6',
+      reserved: '0',
+    };
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce([[inventoryRow], []])
+      .mockResolvedValueOnce([[], []])
+      .mockResolvedValueOnce([
+        [
+          {
+            id: 12,
+            transaction_type: 'production_material_outbound',
+            quantity: '-4',
+            unit_snapshot: '件',
+            stock_status: 'available',
+            reference_type: 'outbound_detail',
+            reference_detail_id: 31,
+            transaction_group_key: null,
+            reversal_of_transaction_id: null,
+            remark: '领料',
+            created_at: new Date('2026-08-31T02:00:00.000Z'),
+          },
+          {
+            id: 11,
+            transaction_type: 'purchase_inbound',
+            quantity: '10',
+            unit_snapshot: '件',
+            stock_status: 'available',
+            reference_type: 'inbound_detail',
+            reference_detail_id: 21,
+            transaction_group_key: null,
+            reversal_of_transaction_id: null,
+            remark: null,
+            created_at: new Date('2026-08-30T02:00:00.000Z'),
+          },
+        ],
+        [],
+      ]);
+    const repository = new MysqlProductionInboundRepository({ query } as never);
+
+    const result = await repository.getInventory('101');
+
+    expect(result.inventoryTransactions).toEqual([
+      expect.objectContaining({
+        inventoryTransactionId: '12',
+        transactionType: 'production_material_outbound',
+        quantity: '-4',
+        referenceType: 'outbound_detail',
+        referenceDetailId: '31',
+      }),
+      expect.objectContaining({
+        inventoryTransactionId: '11',
+        transactionType: 'purchase_inbound',
+        quantity: '10',
+        referenceType: 'inbound_detail',
+        referenceDetailId: '21',
+      }),
+    ]);
+    const transactionSql = String(query.mock.calls[2]?.[0]);
+    expect(transactionSql).toContain('FROM inventory_transaction WHERE batch_id=?');
+    expect(transactionSql).not.toContain('quantity>0');
+    expect(transactionSql).toContain('ORDER BY created_at DESC,id DESC');
+  });
+
   it('matches demand snapshots but aggregates every active demand for the matched item', async () => {
     const query = vi
       .fn()

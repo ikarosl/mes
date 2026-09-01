@@ -342,7 +342,7 @@ approved -> fulfilled
 | `id`                  | `BIGINT UNSIGNED` | 主键                                                  |
 | `demand_id`           | `BIGINT UNSIGNED` | 需求 ID，关联 `production_item_demand.id`             |
 | `production_batch_id` | `BIGINT UNSIGNED` | 生产批次 ID，冗余保存，便于查询和约束                 |
-| `item_id`             | `BIGINT UNSIGNED` | 库存对象 ID，冗余保存，用于约束需求对象与批次对象一致 |
+| `item_id`             | `BIGINT UNSIGNED` | 库存对象 ID，冗余保存，用于约束需求对象与批次对象一致(products表) |
 | `batch_id`            | `BIGINT UNSIGNED` | 分配的库存批次 ID，关联 `item_batch.id`               |
 | `assigned_number`     | `DECIMAL(12,4)`   | 分配数量                                              |
 | `unit_snapshot`       | `VARCHAR(20)`     | 分配时单位快照                                        |

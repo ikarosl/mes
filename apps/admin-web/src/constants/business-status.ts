@@ -1,7 +1,9 @@
 import type {
   InboundOrderStatus,
   InventoryBatchStatus,
+  InventoryReferenceType,
   InventorySourceType,
+  InventoryTransactionType,
   OutboundOrderStatus,
   ReturnOrderStatus,
   ScrapScene,
@@ -11,11 +13,23 @@ import type {
   StockStatus,
 } from '@company/contracts';
 import {
+  INVENTORY_REFERENCE_TYPE_LABELS,
+  INVENTORY_TRANSACTION_TYPE_LABELS,
   OUTBOUND_ORDER_STATUS_LABELS,
   RETURN_ORDER_STATUS_LABELS,
   STOCK_CHECK_RESULT_LABELS,
   STOCK_CHECK_STATUS_LABELS,
 } from '@company/constants';
+
+export const inventoryTransactionTypeLabels = INVENTORY_TRANSACTION_TYPE_LABELS satisfies Record<
+  InventoryTransactionType,
+  string
+>;
+
+export const inventoryReferenceTypeLabels = INVENTORY_REFERENCE_TYPE_LABELS satisfies Record<
+  InventoryReferenceType,
+  string
+>;
 
 export const inventorySourceTypeLabels = {
   self_made: '自产',
@@ -83,6 +97,10 @@ export const inventorySourceTypeLabel = (value: InventorySourceType) =>
 export const inventoryBatchStatusLabel = (value: InventoryBatchStatus) =>
   inventoryBatchStatusLabels[value];
 export const stockStatusLabel = (value: StockStatus) => stockStatusLabels[value];
+export const inventoryTransactionTypeLabel = (value: InventoryTransactionType) =>
+  inventoryTransactionTypeLabels[value];
+export const inventoryReferenceTypeLabel = (value: InventoryReferenceType) =>
+  inventoryReferenceTypeLabels[value];
 export const inboundOrderStatusLabel = (value: InboundOrderStatus) =>
   inboundOrderStatusLabels[value];
 export const outboundOrderStatusLabel = (value: OutboundOrderStatus) =>
