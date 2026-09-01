@@ -47,7 +47,20 @@ export type InboundOrderStatus = 'pending' | 'completed' | 'cancelled';
 export type DemandType =
   'normal' | 'manual_additional' | 'scrap_supplement' | 'material_loss_supplement';
 
+/** 同一次需求生成动作的分组类型。 */
+export type DemandGenerationGroupType = DemandType;
+
 export type DemandBusinessStatus = 'active' | 'fulfilled' | 'cancelled';
+
+/** 单条生产物料需求的分配/出库展示进度。 */
+export type MaterialDemandProgressStatus =
+  | 'pending_allocation'
+  | 'partially_allocated'
+  | 'allocated'
+  | 'shortage'
+  | 'partially_outbound'
+  | 'outbound'
+  | 'cancelled';
 
 export type BatchStepAbnormalOrigin = 'current_step' | 'previous_step';
 

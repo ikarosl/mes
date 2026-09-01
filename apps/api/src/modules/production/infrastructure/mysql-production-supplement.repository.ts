@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
+import { DEMAND_GENERATION_GROUP_TYPE } from '@company/constants';
 import { withTransaction } from '@company/database';
 import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import type {
@@ -19,6 +20,7 @@ import { DATABASE_POOL } from '../../../infrastructure/database/database.module.
 import { ProductionSupplementRepository } from '../application/ports/production-supplement.repository.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
 import { fixedIntegerQuantity, integerQuantity } from '../domain/integer-quantity.js';
+import { buildDemandGenerationKeys } from '../domain/production-demand-generation-group.js';
 import { findBatch } from './mysql-production.shared.js';
 
 type SourceRow = RowDataPacket & {
@@ -387,10 +389,17 @@ export class MysqlProductionSupplementRepository extends ProductionSupplementRep
       const demands: ProductionMaterialSupplementDemandItem[] = [];
       for (const line of effectivePayload.details) {
         const original = byId.get(line.originalDemandId)!;
+        const generationKeys = buildDemandGenerationKeys(
+          {
+            type: DEMAND_GENERATION_GROUP_TYPE.scrapSupplement,
+            supplementId: supplement.insertId,
+          },
+          original.id,
+        );
         const [demand] = await connection.execute<ResultSetHeader>(
           `INSERT INTO production_item_demand
-           (production_batch_id,product_material_id,item_id,item_code_snapshot,item_name_snapshot,quantity_per_unit_snapshot,unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,planned_output_quantity_snapshot,need_number,remaining_number,demand_type,idempotency_key,parent_demand_id,supplement_id,business_status,created_by,updated_by)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,CAST(? AS SIGNED),'scrap_supplement',?,?,?,'active',?,?)`,
+           (production_batch_id,product_material_id,item_id,item_code_snapshot,item_name_snapshot,quantity_per_unit_snapshot,unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,planned_output_quantity_snapshot,need_number,remaining_number,demand_type,generation_group_key,idempotency_key,parent_demand_id,supplement_id,business_status,created_by,updated_by)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,CAST(? AS SIGNED),'scrap_supplement',?,?,?,?,'active',?,?)`,
           [
             source.production_batch_id,
             original.product_material_id,
@@ -404,7 +413,8 @@ export class MysqlProductionSupplementRepository extends ProductionSupplementRep
             original.planned_output_quantity_snapshot,
             line.supplementQuantity,
             line.supplementQuantity,
-            `SCRAPSUP:${supplement.insertId}:${original.id}`,
+            generationKeys.generationGroupKey,
+            generationKeys.idempotencyKey,
             original.id,
             supplement.insertId,
             actorId,

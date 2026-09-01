@@ -2,7 +2,9 @@ import type { VersionedCommand } from '../common.js';
 import type {
   ProductionBatchStatus,
   DemandType,
+  DemandGenerationGroupType,
   DemandBusinessStatus,
+  MaterialDemandProgressStatus,
   AllocationStatus,
   InventorySourceType,
 } from './statuses.js';
@@ -24,16 +26,6 @@ export interface ProductionItemDemandItem {
   businessStatus: DemandBusinessStatus;
   version: number;
 }
-
-export type MaterialDemandProgressStatus =
-  | 'pending_allocation'
-  | 'partially_allocated'
-  | 'allocated'
-  | 'shortage'
-  | 'partially_outbound'
-  | 'outbound'
-  | 'unknown'
-  | DemandBusinessStatus;
 
 export interface ProductionMaterialAllocationItem {
   allocationId: string;
@@ -68,10 +60,16 @@ export interface ProductionMaterialDemandItem {
   outboundQuantity: string;
   remainingQuantity: string;
   demandType: DemandType;
+  generationGroupKey: string;
+  generationGroupType: DemandGenerationGroupType;
+  supplementId: string | null;
+  supplementNo: string | null;
+  createdAt: string;
   businessStatus: DemandBusinessStatus;
   fulfilledById: string | null;
   fulfilledAt: string | null;
-  progressStatus: MaterialDemandProgressStatus;
+  /** 当前需求行自身的分配/出库进度，不是生产任务级汇总状态。 */
+  demandProgressStatus: MaterialDemandProgressStatus;
   version: number;
   allocations: ProductionMaterialAllocationItem[];
 }

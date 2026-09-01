@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
+import { DEMAND_GENERATION_GROUP_TYPE } from '@company/constants';
 import { withTransaction } from '@company/database';
 import type {
   CreateReturnOrderPayload,
@@ -29,6 +30,7 @@ import { DATABASE_POOL } from '../../../infrastructure/database/database.module.
 import { ProductionInventoryRepository } from '../application/ports/production-inventory.repository.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
 import { fixedIntegerQuantity, integerQuantity } from '../domain/integer-quantity.js';
+import { buildDemandGenerationKeys } from '../domain/production-demand-generation-group.js';
 import { findBatch } from './mysql-production.shared.js';
 
 type Executor = Pool | PoolConnection;
@@ -400,13 +402,20 @@ export class MysqlProductionInventoryRepository extends ProductionInventoryRepos
       );
       if (!sourceDemand) throw new ProductionDomainError('NOT_FOUND', '损耗来源需求不存在');
       const rootDemandId = sourceDemand.parent_demand_id ?? sourceDemand.id;
+      const generationKeys = buildDemandGenerationKeys(
+        {
+          type: DEMAND_GENERATION_GROUP_TYPE.materialLossSupplement,
+          supplementId: supplement.insertId,
+        },
+        scrapId,
+      );
       const [demand] = await db.execute<ResultSetHeader>(
         `INSERT INTO production_item_demand
          (production_batch_id,product_material_id,item_id,item_code_snapshot,item_name_snapshot,quantity_per_unit_snapshot,
           unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,
-          planned_output_quantity_snapshot,need_number,remaining_number,demand_type,idempotency_key,
+          planned_output_quantity_snapshot,need_number,remaining_number,demand_type,generation_group_key,idempotency_key,
           parent_demand_id,supplement_id,business_status,created_by,updated_by)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'material_loss_supplement',?,?,?,'active',?,?)`,
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'material_loss_supplement',?,?,?,?, 'active',?,?)`,
         [
           scrap.production_batch_id,
           sourceDemand.product_material_id,
@@ -420,7 +429,8 @@ export class MysqlProductionInventoryRepository extends ProductionInventoryRepos
           sourceDemand.planned_output_quantity_snapshot,
           scrap.scrap_number,
           integerQuantity(scrap.scrap_number),
-          `LOSSSUP:${supplement.insertId}:${scrapId}`,
+          generationKeys.generationGroupKey,
+          generationKeys.idempotencyKey,
           rootDemandId,
           supplement.insertId,
           context.actorId,

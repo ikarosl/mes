@@ -191,12 +191,9 @@
             <el-button
               link
               type="primary"
-              :disabled="
-                (row.status !== 'material_pending' && row.status !== 'pending') ||
-                isRowPending(row.id)
-              "
+              :disabled="row.status !== 'pending' || isRowPending(row.id)"
               @click="generateMaterials(row)"
-              >生成物料</el-button
+              >{{ materialGenerationButtonLabel(row) }}</el-button
             >
             <el-button
               v-if="
@@ -676,6 +673,12 @@ const stepExecutionErrorFallback = (error: unknown, fallback: string): string =>
 };
 
 /* ====== 生成物料需求 ====== */
+const materialGenerationButtonLabel = (row: ProductionBatchItem): string => {
+  if (row.status === 'pending') return '生成物料';
+  if (row.status === 'cancelled') return '任务已取消';
+  return '需求已生成';
+};
+
 const generateMaterials = async (row: ProductionBatchItem): Promise<void> => {
   if (!beginRow(row.id)) return;
   try {

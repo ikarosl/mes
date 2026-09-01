@@ -31,6 +31,7 @@ import {
   requireMaterialAllocationBatchStatus,
   requireMaterialOutboundBatchStatus,
 } from '../domain/production-material.policy.js';
+import { requireBatchTransition } from '../domain/production-status.policy.js';
 import {
   ALLOCATION_SELECT,
   DEMAND_SELECT,
@@ -63,6 +64,18 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
       batchIds,
     );
     return new Set(rows.map((row) => String(row.production_batch_id)));
+  }
+
+  async hasGeneratedNormalDemands(batchId: string): Promise<boolean> {
+    await findBatch(this.pool, batchId);
+    const [[row]] = await this.pool.query<(RowDataPacket & { has_normal_demands: number })[]>(
+      `SELECT EXISTS(
+         SELECT 1 FROM production_item_demand
+         WHERE production_batch_id=? AND demand_type='normal'
+       ) AS has_normal_demands`,
+      [batchId],
+    );
+    return Number(row?.has_normal_demands ?? 0) === 1;
   }
 
   async listDemands(batchId: string): Promise<ProductionMaterialDemandItem[]> {
@@ -351,6 +364,8 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
   ): Promise<MaterialAllocationCommandResult> {
     return withTransaction(this.pool, async (connection) => {
       const batch = await findBatch(connection, batchId, true);
+      if (new Set(payload.allocations.map((line) => line.demandId)).size !== 1)
+        throw new ProductionDomainError('INVALID_INPUT', '一次只能为一条物料需求分配库存');
       const pairs = new Set(
         payload.allocations.map((line) => `${line.demandId}:${line.itemBatchId}`),
       );
@@ -450,6 +465,7 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
       }
       const complete = await allDemandsAllocated(connection, batchId);
       if (complete && batch.status === 'material_pending') {
+        requireBatchTransition(batch.status, 'material_assigned');
         await connection.execute(
           "UPDATE production_batches SET status='material_assigned',version=version+1,updated_by=? WHERE id=?",
           [context.actorId, batchId],
@@ -514,11 +530,16 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
           'CONCURRENT_MODIFICATION',
           '物料分配已被其他操作修改，请刷新后重试',
         );
-      if (!(await allDemandsAllocated(connection, batchId)) && batch.status === 'material_assigned')
+      if (
+        !(await allDemandsAllocated(connection, batchId)) &&
+        batch.status === 'material_assigned'
+      ) {
+        requireBatchTransition(batch.status, 'material_pending');
         await connection.execute(
           "UPDATE production_batches SET status='material_pending',version=version+1,updated_by=? WHERE id=?",
           [context.actorId, batchId],
         );
+      }
       await this.audit(
         connection,
         context,
@@ -959,6 +980,12 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
         throw new ProductionDomainError('CONCURRENT_MODIFICATION', '出库单已变化，请刷新后重试');
       const allOutbound = await allDemandsOutbound(connection, String(order.production_batch_id));
       if (allOutbound) {
+        if (
+          lockedBatch.status === 'material_pending' ||
+          lockedBatch.status === 'material_assigned' ||
+          lockedBatch.status === 'material_partially_outbound'
+        )
+          requireBatchTransition(lockedBatch.status, 'material_outbound');
         await connection.execute(
           "UPDATE production_batches SET status='material_outbound',version=version+1,updated_by=? WHERE id=? AND status IN ('material_pending','material_assigned','material_partially_outbound')",
           [context.actorId, order.production_batch_id],
@@ -972,11 +999,13 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
       } else if (
         order.short_batch_authorization_id !== null &&
         lockedBatch.status === 'material_pending'
-      )
+      ) {
+        requireBatchTransition(lockedBatch.status, 'material_partially_outbound');
         await connection.execute(
           "UPDATE production_batches SET status='material_partially_outbound',version=version+1,updated_by=? WHERE id=? AND status='material_pending'",
           [context.actorId, order.production_batch_id],
         );
+      }
       const supplementFulfillment = await fulfillReadySupplements(
         connection,
         String(order.production_batch_id),

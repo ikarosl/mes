@@ -6,12 +6,16 @@ import {
   BATCH_STEP_STATUSES,
   BATCH_STEP_REPORT_TYPES,
   DEMAND_TYPES,
+  DEMAND_GENERATION_GROUP_TYPES,
+  DEMAND_GENERATION_GROUP_TYPE_LABELS,
   FINISHED_FLOW_TYPES,
   INVENTORY_REFERENCE_TYPE_LABELS,
   INVENTORY_REFERENCE_TYPES,
   INVENTORY_SOURCE_TYPES,
   INVENTORY_TRANSACTION_TYPE_LABELS,
   INVENTORY_TRANSACTION_TYPES,
+  MATERIAL_DEMAND_PROGRESS_LABELS,
+  MATERIAL_DEMAND_PROGRESS_STATUSES,
   OUTBOUND_ORDER_STATUSES,
   PRODUCTION_EXECUTION_COMPLETION_BLOCKERS,
   REWORK_STATUSES,
@@ -62,6 +66,13 @@ describe('business persisted codes', () => {
     expect(INVENTORY_REFERENCE_TYPE_LABELS.outbound_detail).toBe('出库明细');
   });
 
+  it('provides complete demand progress labels', () => {
+    expect(Object.keys(MATERIAL_DEMAND_PROGRESS_LABELS)).toEqual(MATERIAL_DEMAND_PROGRESS_STATUSES);
+    expect(MATERIAL_DEMAND_PROGRESS_LABELS.shortage).toBe('短批缺料');
+    expect(MATERIAL_DEMAND_PROGRESS_LABELS.outbound).toBe('已出库');
+    expect(MATERIAL_DEMAND_PROGRESS_LABELS.cancelled).toBe('已取消');
+  });
+
   it('separates step execution, abnormal review and current demand type codes', () => {
     expect(BATCH_STEP_STATUSES).toEqual(['pending', 'assigned', 'doing', 'completed']);
     expect(BATCH_STEP_ABNORMAL_REVIEW_STATUSES).toEqual([
@@ -79,6 +90,8 @@ describe('business persisted codes', () => {
       'scrap_supplement',
       'material_loss_supplement',
     ]);
+    expect(DEMAND_GENERATION_GROUP_TYPES).toBe(DEMAND_TYPES);
+    expect(Object.keys(DEMAND_GENERATION_GROUP_TYPE_LABELS)).toEqual(DEMAND_TYPES);
   });
 
   it('keeps production execution completion blockers stable', () => {

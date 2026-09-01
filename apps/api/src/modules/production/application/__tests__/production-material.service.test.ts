@@ -79,6 +79,35 @@ describe('ProductionMaterialService', () => {
     );
   });
 
+  it('rejects aggregating allocations from different demands in one command', async () => {
+    const repository = { createAllocations: vi.fn() };
+    const executor = { execute: vi.fn() };
+    const service = new ProductionMaterialService(
+      repository as never,
+      {} as never,
+      {} as never,
+      executor as never,
+    );
+
+    await expect(
+      service.createAllocations(
+        '1',
+        {
+          allocations: [
+            { demandId: '2', itemBatchId: '3', assignedQuantity: 1 },
+            { demandId: '4', itemBatchId: '5', assignedQuantity: 1 },
+          ],
+        },
+        context,
+      ),
+    ).rejects.toMatchObject({
+      code: 'INVALID_INPUT',
+      message: '一次只能为一条物料需求分配库存',
+    });
+    expect(executor.execute).not.toHaveBeenCalled();
+    expect(repository.createAllocations).not.toHaveBeenCalled();
+  });
+
   it('normalizes pending outbound creation and never leaks the HTTP key into the repository', async () => {
     const result = { outbound: { operatorId: null, createdById: null }, productionBatchId: '1' };
     const repository = { createOutbound: vi.fn().mockResolvedValue(result) };

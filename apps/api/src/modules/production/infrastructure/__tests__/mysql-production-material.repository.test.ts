@@ -35,3 +35,19 @@ describe('MysqlProductionMaterialRepository available item batches', () => {
     expect(sql).toContain('HAVING on_hand > 0');
   });
 });
+
+describe('MysqlProductionMaterialRepository normal demand lookup', () => {
+  it('uses a non-reserved alias for the EXISTS result', async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce([[{ id: 7 }], []])
+      .mockResolvedValueOnce([[{ has_normal_demands: 1 }], []]);
+    const repository = new MysqlProductionMaterialRepository({ query } as never);
+
+    await expect(repository.hasGeneratedNormalDemands('7')).resolves.toBe(true);
+
+    const sql = String(query.mock.calls[1]?.[0]);
+    expect(sql).toContain('AS has_normal_demands');
+    expect(sql).not.toContain(') generated');
+  });
+});

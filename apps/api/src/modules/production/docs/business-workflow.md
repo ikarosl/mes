@@ -157,6 +157,7 @@
 - 批次追溯要求快照；
 - 生产批次计划数量快照；
 - 最终需求数量；
+- 需求生成分组键，同一次生成动作产生的需求使用同一个分组键；
 - 幂等键，防止重复点击或重试重复创建需求。
 
 幂等键生成规则：
@@ -166,6 +167,10 @@
 - 人工追加：`ADDITIONAL:{production_batch_id}:{business_action_no}:{product_material_id}`
 
 同一个幂等键重复提交时返回既有结果，不再插入新需求。
+
+需求生成分组键由同一类型安全构造器生成：正常需求为 `NORMAL:{production_batch_id}`，工序报废补料为 `SCRAPSUP:{supplement_id}`，生产领料损耗补料为 `LOSSSUP:{supplement_id}`，人工追加为 `ADDITIONAL:{production_batch_id}:{business_action_no}`。逐条需求幂等键在对应分组键后追加该行的稳定来源 ID，不允许各生成路径自行拼接。
+
+一个生产批次的正常 BOM 需求集合只允许生成一次。正常需求已经存在后再次调用生成动作时，系统直接返回当前生产批次，不再读取或校验后来变化的 BOM；工序报废补料和生产领料损耗补料只新增各自来源的补料需求，不重新开放正常需求生成动作。
 
 需求生成后作为历史事实保存。后续修改 BOM 或生产批次计划数量，不得自动覆盖原有需求；如需调整，应取消原需求或新增追加需求。
 
@@ -190,6 +195,8 @@
 - 物料；
 - 库存批次；
 - 分配数量。
+
+分配按需求逐条办理：一次分配命令只能包含一个 `production_item_demand`，但允许该需求同时从多个库存批次拆分分配。管理端先按 `generation_group_key` 展示每一次需求生成，再在组内使用单选切换需求；默认选中最早一个仍有缺口的需求组及其最早可分配需求。不得把一个组或多个组聚合成一次分配动作；已完成的组和需求继续展示，但不得新增分配。
 
 创建物料分配记录即表示完成库存预留。物料需求本身只表示计划，不会占用库存。
 
@@ -451,14 +458,19 @@ draft → cancelled
 
 ```text
 pending
-→ material_pending
-→ material_assigned
-→ material_outbound
-→ doing
-→ completed
+  → material_pending
+      ⇄ material_assigned
+      → material_partially_outbound
+      → material_outbound
+  material_assigned → material_outbound
+  material_partially_outbound → material_outbound / doing
+  material_outbound → doing
+  doing → completed
 
 pending / material_pending / material_assigned → cancelled
 ```
+
+`material_assigned → material_pending` 只发生在释放尚未出库的有效分配后，表示批次重新出现分配缺口；任何已有批次都禁止回到初始 `pending`。所有生产批次和工单状态写入必须先通过 `production-status.policy.ts` 的统一转换校验，SQL 的旧状态条件只承担并发保护，不能替代领域状态机。
 
 第一版“取消任务”只允许尚未开工且物料尚未实际出库的批次。取消确认弹窗必须展示将联动取消的待确认出库单、有效预留和活动需求，并要求填写原因；后端在同一事务取消这些未形成库存事实的业务状态。`material_outbound`、`doing` 和 `completed` 均禁止取消，不提供强制入口。工单处于 `released` 或 `doing` 且仍有未分配计划量时，可以继续创建后续生产批次。
 

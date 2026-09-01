@@ -584,9 +584,10 @@ describeMysql('Production execution MySQL transactions', () => {
           need_number: string;
           parent_demand_id: number;
           supplement_id: number;
+          generation_group_key: string;
         })[]
       >(
-        "SELECT demand_type,need_number,parent_demand_id,supplement_id FROM production_item_demand WHERE production_batch_id=? AND demand_type='scrap_supplement'",
+        "SELECT demand_type,need_number,parent_demand_id,supplement_id,generation_group_key FROM production_item_demand WHERE production_batch_id=? AND demand_type='scrap_supplement'",
         [fixture.batchId],
       );
       expect(demand).toMatchObject({
@@ -595,6 +596,7 @@ describeMysql('Production execution MySQL transactions', () => {
         parent_demand_id: fixture.demandId,
       });
       expect(demand?.supplement_id).toBeGreaterThan(0);
+      expect(demand?.generation_group_key).toBe(`SCRAPSUP:${demand.supplement_id}`);
       expect(
         await auditCount(
           pool,
@@ -1670,13 +1672,14 @@ const createFixture = async (pool: Pool, suffix: string): Promise<Fixture> => {
   );
   const demandId = await insert(
     pool,
-    "INSERT INTO production_item_demand (production_batch_id,product_material_id,item_id,item_code_snapshot,item_name_snapshot,quantity_per_unit_snapshot,unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,planned_output_quantity_snapshot,need_number,remaining_number,demand_type,idempotency_key,business_status,fulfilled_by,fulfilled_at,created_by,updated_by) VALUES (?,?,?,?,?,'1.0000','kg',1,1,'10.0000','10.0000',0,'normal',?,'fulfilled',?,NOW(),?,?)",
+    "INSERT INTO production_item_demand (production_batch_id,product_material_id,item_id,item_code_snapshot,item_name_snapshot,quantity_per_unit_snapshot,unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,planned_output_quantity_snapshot,need_number,remaining_number,demand_type,generation_group_key,idempotency_key,business_status,fulfilled_by,fulfilled_at,created_by,updated_by) VALUES (?,?,?,?,?,'1.0000','kg',1,1,'10.0000','10.0000',0,'normal',?,?,'fulfilled',?,NOW(),?,?)",
     [
       batchId,
       productMaterialId,
       materialId,
       'EXEC-MATERIAL',
       '执行物料',
+      `NORMAL:${batchId}`,
       `NORMAL:${batchId}:${productMaterialId}`,
       actor.id,
       actor.id,

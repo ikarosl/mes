@@ -114,7 +114,7 @@ describeMysql('Production MySQL persistence', () => {
     );
 
     const [demands] = await pool.query<DemandRow[]>(
-      'SELECT quantity_per_unit_snapshot,unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,planned_output_quantity_snapshot,need_number,demand_type,idempotency_key FROM production_item_demand WHERE production_batch_id=?',
+      'SELECT quantity_per_unit_snapshot,unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,planned_output_quantity_snapshot,need_number,demand_type,generation_group_key,idempotency_key FROM production_item_demand WHERE production_batch_id=?',
       [fixture.batchId],
     );
     expect(demands).toEqual([
@@ -126,6 +126,7 @@ describeMysql('Production MySQL persistence', () => {
         planned_output_quantity_snapshot: '3.0000',
         need_number: '3.0000',
         demand_type: 'normal',
+        generation_group_key: `NORMAL:${fixture.batchId}`,
         idempotency_key: `NORMAL:${fixture.batchId}:${fixture.productMaterialId}`,
       },
     ]);
@@ -392,6 +393,7 @@ type DemandRow = RowDataPacket & {
   planned_output_quantity_snapshot: string;
   need_number: string;
   demand_type: string;
+  generation_group_key: string;
   idempotency_key: string;
 };
 

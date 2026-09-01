@@ -9,46 +9,74 @@
       v-loading="loadingDemands"
       class="dialog-body"
     >
-      <el-table
-        :data="demands"
-        highlight-current-row
-        @current-change="selectDemand"
+      <el-empty
+        v-if="demandGroups.length === 0 && !loadingDemands"
+        description="当前任务没有物料需求"
+      />
+      <section
+        v-for="group in demandGroups"
+        :key="group.generationGroupKey"
+        class="demand-group"
       >
-        <el-table-column
-          prop="itemCode"
-          label="物料编码"
-          min-width="130"
-        />
-        <el-table-column
-          prop="itemName"
-          label="物料名称"
-          min-width="170"
-        />
-        <el-table-column
-          label="需求/已分配/已出库"
-          min-width="210"
+        <header class="demand-group-header">
+          <strong>{{ generationGroupLabel(group) }}</strong>
+          <span>{{ formatDateForDisplay(group.createdAt) }}</span>
+        </header>
+        <el-table
+          :data="group.demands"
+          :row-class-name="demandRowClassName"
+          @row-click="selectDemand"
         >
-          <template #default="{ row }"
-            >{{ formatQuantity(row.demandQuantity) }} /
-            {{ formatQuantity(row.allocatedQuantity) }} / {{ formatQuantity(row.outboundQuantity) }}
-            {{ row.unit }}</template
+          <el-table-column
+            label="选择"
+            width="64"
+            align="center"
           >
-        </el-table-column>
-        <el-table-column
-          label="剩余缺口"
-          width="120"
-          ><template #default="{ row }">{{
-            formatQuantity(row.remainingQuantity)
-          }}</template></el-table-column
-        >
-        <el-table-column
-          label="进度"
-          width="110"
-          ><template #default="{ row }"
-            ><el-tag>{{ progressLabel(row.progressStatus) }}</el-tag></template
-          ></el-table-column
-        >
-      </el-table>
+            <template #default="{ row }">
+              <el-radio
+                v-model="selectedDemandId"
+                :value="row.demandId"
+                :aria-label="`选择需求 ${row.itemCode}`"
+                @change="selectDemand(row)"
+              />
+            </template>
+          </el-table-column>
+          <el-table-column
+            prop="itemCode"
+            label="物料编码"
+            min-width="130"
+          />
+          <el-table-column
+            prop="itemName"
+            label="物料名称"
+            min-width="170"
+          />
+          <el-table-column
+            label="需求/已分配/已出库"
+            min-width="210"
+          >
+            <template #default="{ row }"
+              >{{ formatQuantity(row.demandQuantity) }} /
+              {{ formatQuantity(row.allocatedQuantity) }} /
+              {{ formatQuantity(row.outboundQuantity) }} {{ row.unit }}</template
+            >
+          </el-table-column>
+          <el-table-column
+            label="剩余缺口"
+            width="120"
+            ><template #default="{ row }">{{
+              formatQuantity(row.remainingQuantity)
+            }}</template></el-table-column
+          >
+          <el-table-column
+            label="进度"
+            width="110"
+            ><template #default="{ row }"
+              ><el-tag>{{ progressLabel(row.demandProgressStatus) }}</el-tag></template
+            ></el-table-column
+          >
+        </el-table>
+      </section>
 
       <section
         v-if="selectedDemand"
@@ -56,6 +84,7 @@
       >
         <h3>{{ selectedDemand.itemName }} · 库存批次分配</h3>
         <el-form
+          v-if="selectedDemandCanAllocate"
           :inline="true"
           class="allocation-form"
         >
@@ -93,6 +122,13 @@
             ></el-form-item
           >
         </el-form>
+        <el-alert
+          v-else
+          title="当前需求已无可分配缺口，仅可查看历史分配记录"
+          type="info"
+          :closable="false"
+          show-icon
+        />
         <el-table
           :data="selectedDemand.allocations"
           empty-text="暂无分配记录"
@@ -149,13 +185,27 @@ import { computed, reactive, ref, watch } from 'vue';
 import type {
   AllocationStatus,
   AvailableItemBatchItem,
+  DemandGenerationGroupType,
   ProductionMaterialAllocationItem,
   ProductionMaterialDemandItem,
 } from '@company/contracts';
-import { ALLOCATION_STATUS_LABELS, MATERIAL_DEMAND_PROGRESS_LABELS } from '@company/constants';
+import {
+  ALLOCATION_STATUS_LABELS,
+  DEMAND_GENERATION_GROUP_TYPE_LABELS,
+  MATERIAL_DEMAND_PROGRESS_LABELS,
+} from '@company/constants';
 import { DialogWidth } from '../../../utils/dialog';
 import { RouteMessageBox } from '../../../utils/route-message-box';
+import { formatDateForDisplay } from '../../../utils/date';
 import { formatQuantity } from '../production-status';
+
+interface DemandGenerationGroupView {
+  generationGroupKey: string;
+  generationGroupType: DemandGenerationGroupType;
+  supplementNo: string | null;
+  createdAt: string;
+  demands: ProductionMaterialDemandItem[];
+}
 
 const props = defineProps<{
   visible: boolean;
@@ -182,39 +232,76 @@ const form = reactive({ itemBatchId: '', assignedQuantity: 1 });
 const selectedDemand = computed(
   () => props.demands.find((item) => item.demandId === selectedDemandId.value) ?? null,
 );
+const demandGroups = computed<DemandGenerationGroupView[]>(() => {
+  const groups = new Map<string, DemandGenerationGroupView>();
+  for (const demand of props.demands) {
+    const existing = groups.get(demand.generationGroupKey);
+    if (existing) {
+      existing.demands.push(demand);
+      continue;
+    }
+    groups.set(demand.generationGroupKey, {
+      generationGroupKey: demand.generationGroupKey,
+      generationGroupType: demand.generationGroupType,
+      supplementNo: demand.supplementNo,
+      createdAt: demand.createdAt,
+      demands: [demand],
+    });
+  }
+  return [...groups.values()];
+});
 const selectedBatch = computed(() =>
   props.availableItemBatches.find((item) => item.itemBatchId === form.itemBatchId),
 );
+const selectedDemandCanAllocate = computed(() => {
+  const demand = selectedDemand.value;
+  return Boolean(
+    demand && demand.businessStatus === 'active' && Number(demand.remainingQuantity) > 0,
+  );
+});
 const canAllocate = computed(() =>
   Boolean(
-    selectedDemand.value &&
+    selectedDemandCanAllocate.value &&
     form.itemBatchId &&
     Number.isInteger(form.assignedQuantity) &&
     form.assignedQuantity > 0 &&
-    form.assignedQuantity <= Number(selectedDemand.value.remainingQuantity) &&
+    form.assignedQuantity <= Number(selectedDemand.value?.remainingQuantity ?? 0) &&
     form.assignedQuantity <= Number(selectedBatch.value?.availableToAllocateQuantity ?? 0),
   ),
 );
 watch(
   () => props.visible,
   (visible) => {
-    if (visible && props.demands[0]) selectDemand(props.demands[0]);
+    if (visible) selectDefaultDemand();
   },
 );
 watch(
   () => props.demands,
-  (demands) => {
+  () => {
     if (selectedDemandId.value && !selectedDemand.value) selectedDemandId.value = null;
-    if (props.visible && !selectedDemandId.value && demands[0]) selectDemand(demands[0]);
+    if (props.visible && !selectedDemandId.value) selectDefaultDemand();
   },
   { deep: true },
 );
+const selectDefaultDemand = (): void => {
+  const oldestActionableGroup = demandGroups.value.find((group) =>
+    group.demands.some(
+      (item) => item.businessStatus === 'active' && Number(item.remainingQuantity) > 0,
+    ),
+  );
+  const demand =
+    oldestActionableGroup?.demands.find(
+      (item) => item.businessStatus === 'active' && Number(item.remainingQuantity) > 0,
+    ) ?? demandGroups.value[0]?.demands[0];
+  if (demand) selectDemand(demand);
+};
 const selectDemand = (row: ProductionMaterialDemandItem | null) => {
   if (!row) return;
   selectedDemandId.value = row.demandId;
   form.itemBatchId = '';
   form.assignedQuantity = Math.max(1, Number(row.remainingQuantity));
-  emit('load-available', row.demandId);
+  if (row.businessStatus === 'active' && Number(row.remainingQuantity) > 0)
+    emit('load-available', row.demandId);
 };
 const submitAllocation = () => {
   if (!selectedDemand.value || !canAllocate.value) return;
@@ -229,7 +316,8 @@ const submitAllocation = () => {
   });
 };
 const handleAvailableVisible = (visible: boolean) => {
-  if (visible && selectedDemand.value) emit('load-available', selectedDemand.value.demandId);
+  if (visible && selectedDemand.value && selectedDemandCanAllocate.value)
+    emit('load-available', selectedDemand.value.demandId);
 };
 const confirmRelease = async (row: ProductionMaterialAllocationItem) => {
   try {
@@ -243,15 +331,38 @@ const confirmRelease = async (row: ProductionMaterialAllocationItem) => {
     /* 用户取消 */
   }
 };
-const progressLabel = (status: ProductionMaterialDemandItem['progressStatus']) =>
-  MATERIAL_DEMAND_PROGRESS_LABELS[status as keyof typeof MATERIAL_DEMAND_PROGRESS_LABELS] ?? status;
+const progressLabel = (status: ProductionMaterialDemandItem['demandProgressStatus']): string =>
+  MATERIAL_DEMAND_PROGRESS_LABELS[status];
 const allocationLabel = (status: AllocationStatus) => ALLOCATION_STATUS_LABELS[status];
+const generationGroupLabel = (group: DemandGenerationGroupView): string => {
+  const label = DEMAND_GENERATION_GROUP_TYPE_LABELS[group.generationGroupType];
+  return group.supplementNo ? `${label} ${group.supplementNo}` : label;
+};
+const demandRowClassName = ({ row }: { row: ProductionMaterialDemandItem }): string =>
+  row.demandId === selectedDemandId.value ? 'selected-demand-row' : '';
 </script>
 
 <style scoped>
 .dialog-body {
   max-height: 70vh;
   overflow-y: auto;
+}
+.demand-group + .demand-group {
+  margin-top: 18px;
+}
+.demand-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  color: #1f2937;
+}
+.demand-group-header span {
+  color: #6b7280;
+  font-size: 13px;
+}
+.demand-group :deep(.selected-demand-row) {
+  --el-table-tr-bg-color: var(--el-color-primary-light-9);
 }
 .allocation-section {
   margin-top: 20px;

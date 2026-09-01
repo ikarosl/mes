@@ -90,6 +90,23 @@ export const DEMAND_TYPE = {
   materialLossSupplement: DEMAND_TYPES[3],
 } as const;
 
+/** 一次需求生成动作的类型；与该组内需求的 demand_type 保持一致。 */
+export const DEMAND_GENERATION_GROUP_TYPES = DEMAND_TYPES;
+
+export const DEMAND_GENERATION_GROUP_TYPE = {
+  normal: DEMAND_TYPE.normal,
+  manualAdditional: DEMAND_TYPE.manualAdditional,
+  scrapSupplement: DEMAND_TYPE.scrapSupplement,
+  materialLossSupplement: DEMAND_TYPE.materialLossSupplement,
+} as const;
+
+export const DEMAND_GENERATION_GROUP_TYPE_LABELS = {
+  normal: '初始物料需求',
+  manual_additional: '人工追加需求',
+  scrap_supplement: '报废补料',
+  material_loss_supplement: '损耗补料',
+} as const;
+
 export const DEMAND_BUSINESS_STATUSES = ['active', 'fulfilled', 'cancelled'] as const;
 
 export const BATCH_STEP_ABNORMAL_ORIGINS = ['current_step', 'previous_step'] as const;
@@ -123,14 +140,25 @@ export const ALLOCATION_STATUS_LABELS = {
   abnormal: '异常',
 } as const;
 
+/** 单条生产物料需求的分配/出库展示进度，不包含需求持久化业务状态。 */
+export const MATERIAL_DEMAND_PROGRESS_STATUSES = [
+  'pending_allocation',
+  'partially_allocated',
+  'allocated',
+  'shortage',
+  'partially_outbound',
+  'outbound',
+  'cancelled',
+] as const;
+
 export const MATERIAL_DEMAND_PROGRESS_LABELS = {
   pending_allocation: '待分配',
   partially_allocated: '部分分配',
   allocated: '已分配',
-  shortage: '缺料',
+  shortage: '短批缺料',
   partially_outbound: '部分出库',
   outbound: '已出库',
-  unknown: '未知',
+  cancelled: '已取消',
 } as const;
 
 export const OUTBOUND_ORDER_STATUS_LABELS = {

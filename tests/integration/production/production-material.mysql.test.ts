@@ -940,8 +940,18 @@ const fixture = async (
   );
   const demand = await ins(
     pool,
-    "INSERT INTO production_item_demand (production_batch_id,product_material_id,item_id,item_code_snapshot,item_name_snapshot,quantity_per_unit_snapshot,unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,planned_output_quantity_snapshot,need_number,remaining_number,demand_type,idempotency_key,business_status,created_by,updated_by) VALUES (?,?,?,?,?,'1.0000','kg',1,1,'10.0000','10.0000',10,'normal',?,'active',?,?)",
-    [batch, pm, material, token + '-m', '物料', 'NORMAL:' + batch + ':' + pm, actorId, actorId],
+    "INSERT INTO production_item_demand (production_batch_id,product_material_id,item_id,item_code_snapshot,item_name_snapshot,quantity_per_unit_snapshot,unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,planned_output_quantity_snapshot,need_number,remaining_number,demand_type,generation_group_key,idempotency_key,business_status,created_by,updated_by) VALUES (?,?,?,?,?,'1.0000','kg',1,1,'10.0000','10.0000',10,'normal',?,?,'active',?,?)",
+    [
+      batch,
+      pm,
+      material,
+      token + '-m',
+      '物料',
+      `NORMAL:${batch}`,
+      `NORMAL:${batch}:${pm}`,
+      actorId,
+      actorId,
+    ],
   );
   let ib1 = shared?.sharedItemBatchId ?? 0,
     ib2 = 0;

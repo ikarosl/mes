@@ -80,6 +80,8 @@ const batchRow = {
   routeId: null,
   routeCode: null,
   status: 'pending',
+  materialPlanVersion: 1,
+  shortBatchAuthorizationStatus: 'none',
   ownerName: null,
   version: 0,
 };
@@ -261,6 +263,25 @@ describe('ProductionTasksPage', () => {
 
     expect(generateMaterialDemands).not.toHaveBeenCalled();
     expect(generateButton!.attributes('disabled')).toBeUndefined();
+  });
+
+  it('keeps normal material-demand generation disabled after the task generated it once', async () => {
+    listBatches.mockResolvedValue({
+      items: [{ ...batchRow, status: 'material_pending', materialPlanVersion: 2 }],
+      total: 1,
+      page: 1,
+      pageSize: 10,
+    });
+    const wrapper = mountPage();
+    await flushPromises();
+
+    const generatedButton = wrapper
+      .findAll('button')
+      .find((button) => button.text().trim() === '需求已生成');
+    expect(generatedButton).toBeDefined();
+    expect(generatedButton!.attributes('disabled')).toBeDefined();
+    await generatedButton!.trigger('click');
+    expect(generateMaterialDemands).not.toHaveBeenCalled();
   });
 
   it('expanding the 负责人 filter refreshes only the user options source', async () => {

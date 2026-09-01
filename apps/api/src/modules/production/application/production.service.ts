@@ -202,6 +202,8 @@ export class ProductionService {
     );
   }
   async generateMaterialDemands(id: string, version: number, audit: CommandContext) {
+    if (await this.production.hasGeneratedNormalMaterialDemands(id))
+      return this.enrichBatchDetail(await this.production.getBatch(id));
     const productId = await this.production.getBatchProductId(id);
     const bom = this.requireProduct(await this.products.getBomSnapshot(productId));
     if (bom.lines.length === 0)

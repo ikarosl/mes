@@ -42,6 +42,7 @@
 | `need_number`                      | `DECIMAL(12,4)`   | 需求数量                                  |
 | `remaining_number`                 | `BIGINT`          | 尚未确认领用的整数数量，可从出库事实重建  |
 | `demand_type`                      | `VARCHAR(30)`     | 需求类型，默认 `normal`                   |
+| `generation_group_key`             | `VARCHAR(150)`    | 同一次需求生成动作的稳定分组键            |
 | `idempotency_key`                  | `VARCHAR(150)`    | 幂等键，同一键重复提交返回既有结果        |
 | `parent_demand_id`                 | `BIGINT UNSIGNED` | 追加需求关联的原始正常需求 ID             |
 | `supplement_id`                    | `BIGINT UNSIGNED` | 补料物流单 ID，仅两类补料需求填写         |
@@ -67,6 +68,7 @@
 | `quantity_per_unit_snapshot` / `unit_snapshot` | 保证 BOM 修改后仍可还原需求计算口径              |
 | `need_number`                                  | 需求事实，不应因为出库、退料、报废而直接修改     |
 | `demand_type`                                  | `normal` 正常需求、`manual_additional` 人工追加、`scrap_supplement` 工序报废补料、`material_loss_supplement` 生产领料损耗补料 |
+| `generation_group_key`                         | 同一次生成的全部需求共享；只表达生成动作分组，不替代补料来源外键 |
 | `parent_demand_id`                             | 补料需求关联的原始需求                           |
 | `supplement_id`                                | 补料需求的物流来源单据；具体业务来源由补料单的 `source_type` 和受约束来源外键确定 |
 | `idempotency_key`                              | 幂等键，同一键重复提交返回既有结果               |
@@ -88,6 +90,7 @@
 - 检查约束：`0 <= remaining_number <= need_number`；`active` 必须大于 `0`，`fulfilled` 必须等于 `0` 并填写完成事实
 - 检查约束：`cancelled` 必须同时填写受控 `cancel_source`、非空原因、操作人和时间；非取消状态这些字段必须全部为空
 - 组合索引：`INDEX (production_batch_id, business_status)`，用于查询批次有效需求
+- 组合索引：`INDEX (production_batch_id, generation_group_key, id)`，用于按生成先后稳定分组展示
 - 组合索引：`INDEX (business_status, item_id, id)`，用于从活动需求出发按物料汇总供需预警
 - 检查约束：正常需求要求 `parent_demand_id IS NULL AND supplement_id IS NULL`
 - 检查约束：人工追加需求要求 `parent_demand_id IS NOT NULL AND supplement_id IS NULL`
@@ -95,6 +98,7 @@
 - 检查约束：生产领料损耗补料要求 `parent_demand_id IS NOT NULL AND supplement_id IS NOT NULL`
 - 检查约束：正常需求的 BOM 快照字段不得为空且均大于 `0`
 - 唯一约束：`UNIQUE (idempotency_key)`
+- 检查约束：`idempotency_key` 必须以 `generation_group_key + ':'` 开头，且分组键前缀必须与 `demand_type` 对应
 - 唯一约束：`UNIQUE (id, item_id)`
 - 唯一约束：`UNIQUE (id, production_batch_id)`
 - 唯一约束：`UNIQUE (supplement_id, parent_demand_id)`；当前工序报废补料对同一原始需求最多生成一条需求，生产领料损耗补料固定只有一条需求
@@ -117,13 +121,18 @@
 - 如果某个生产批次需要领用上一个生产批次产出的半成品，也应通过该表生成需求。
 - 补料不建议直接修改原需求的 `need_number`，应新增一条需求记录。
 - 正常需求的 `need_number = quantity_per_unit_snapshot * planned_output_quantity_snapshot`；结果生成后作为事实保存，不随 BOM 或批次计划变化自动回写。
-- 幂等键使用稳定格式：正常需求为 `NORMAL:{production_batch_id}:{product_material_id}`，工序报废补料为 `SCRAPSUP:{supplement_id}:{parent_demand_id}`，生产领料损耗补料为 `LOSSSUP:{supplement_id}:{material_loss_scrap_id}`，人工追加为 `ADDITIONAL:{production_batch_id}:{business_action_no}:{product_material_id}`。
+- 一个生产批次的正常 BOM 需求集合只生成一次；只要该批次已经存在 `normal` 需求，重复生成动作必须返回当前批次，不得再次读取当前 BOM 或新增正常需求。补料需求不重新开放正常需求生成动作。
+- 分组键使用稳定格式：正常需求为 `NORMAL:{production_batch_id}`，工序报废补料为 `SCRAPSUP:{supplement_id}`，生产领料损耗补料为 `LOSSSUP:{supplement_id}`，人工追加为 `ADDITIONAL:{production_batch_id}:{business_action_no}`。这些格式由共享类型和领域构造器集中拥有，业务写入路径不得直接拼接。
+- 逐条幂等键在分组键后追加稳定行来源：正常需求追加 `product_material_id`，工序报废补料追加 `parent_demand_id`，生产领料损耗补料追加 `material_loss_scrap_id`，人工追加追加 `product_material_id`。
 - `business_action_no` 必须是一次人工追加动作的稳定唯一编号；相同幂等键重复提交时返回既有需求，不插入新记录，也不得修改既有 `need_number`。
 - 应用事务必须校验 `parent_demand_id` 指向的原需求与当前需求属于同一生产批次，且 `product_material_id` 对应投入对象与 `item_id` 一致。
 - 报废补料必须校验补料单、授权、原需求和新增需求属于同一生产批次，且 BOM 明细与物料一致。
 - 生产领料损耗补料必须从损耗事实所指向的需求/分配行取得 BOM、物料、单位和批次关系；`need_number` 固定等于已确认损耗数量，不接受客户端填写，不允许改量或选择不补料。
 - 需求事实和对应操作日志必须在同一事务写入。
+- 分配写命令一次只能处理一个需求，但允许同一需求在一个命令内拆分到多个库存批次；后端必须拒绝混合不同 `demand_id` 的聚合分配。需求列表按 `id ASC` 返回，管理端按 `generation_group_key` 分组，默认选中最早未完成组中的最早可分配需求，但不强制只能处理最早组或最早需求。
+- 全部活动需求完成分配时批次从 `material_pending` 进入 `material_assigned`；释放尚未出库的有效分配并重新产生缺口时允许从 `material_assigned` 回到 `material_pending`。该回退只表达分配齐套状态变化，不得回到初始 `pending`，也不得重新开放正常需求生成。
 - 确认出库在写出库明细、负库存流水和单据终态的同一事务中扣减涉及需求的 `remaining_number`；扣至 `0` 时写入 `fulfilled/fulfilled_by/fulfilled_at`。部分出库继续保持 `active`。
+- `fulfilled` 属于需求持久化业务状态；需求列表的 `demandProgressStatus` 将其统一投影为 `outbound`。取消需求投影为 `cancelled`，活动需求才按分配量和净出库量计算其余进度。
 - 一般生产退料不重新打开原需求，生产损耗继续创建独立补料需求。唯一例外是短批首工序尚未开工、批次仍为 `material_partially_outbound` 时确认退料：退回数量重新加回 `remaining_number`，已满足需求恢复为 `active`，批次 `material_plan_version` 递增并使旧授权失效。
 - 历史已满足需求由 `202608250002` 根据 `completed` 出库单一次性回填。物料供需预警只汇总 `active.remaining_number`，不再扫描已满足需求的历史出库明细。
 - 供需预警关键词匹配同一 `item_id` 的任一活动需求编码/名称快照；命中物料后必须汇总该物料的全部活动需求，不能只累计匹配关键词的需求行。列表以该物料 ID 最大的活动需求快照作为确定性展示文本，禁止用 `MAX(item_name_snapshot)` 等字典序值冒充当前名称。
