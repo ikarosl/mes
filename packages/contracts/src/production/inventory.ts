@@ -104,7 +104,7 @@ export interface MaterialLossBatchOption {
   workOrderNo: string;
   productCode: string;
   productName: string;
-  batchStatus: 'material_outbound' | 'doing';
+  batchStatus: 'material_partially_outbound' | 'material_outbound' | 'doing';
 }
 
 export interface MaterialLossCandidateItem {

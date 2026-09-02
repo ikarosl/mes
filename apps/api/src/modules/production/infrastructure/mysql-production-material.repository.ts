@@ -47,6 +47,7 @@ import {
   type OutboundRow,
 } from './mysql-production-material.mapper.js';
 import { findBatch } from './mysql-production.shared.js';
+import { mysqlProductionDemandPlanWriter } from './mysql-production-demand-plan.writer.js';
 import { fulfillReadySupplements } from './mysql-production-supplement-activation.js';
 import { hasConsumedShortBatchAuthorization } from './mysql-production-short-batch.js';
 
@@ -309,28 +310,10 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
            ),0)`,
         [context.actorId, ...demandIds],
       );
-      const [cancelled] = await connection.execute<ResultSetHeader>(
-        `UPDATE production_item_demand
-         SET business_status='cancelled',cancel_source='short_batch_remaining_close',cancel_reason=?,
-             cancelled_by=?,cancelled_at=NOW(),
-           version=version+1,updated_by=?
-         WHERE production_batch_id=? AND business_status='active'`,
-        [reason, context.actorId, context.actorId, batchId],
+      const cancelledDemandCount = await mysqlProductionDemandPlanWriter.cancelRemainingDemands(
+        connection,
+        { batchId, actorId: context.actorId, reason, expectedBatchVersion: version },
       );
-      await connection.execute(
-        `UPDATE production_short_batch_authorization
-         SET status='superseded',version=version+1
-         WHERE production_batch_id=? AND status='active'`,
-        [batchId],
-      );
-      const [updated] = await connection.execute<ResultSetHeader>(
-        `UPDATE production_batches
-         SET material_plan_version=material_plan_version+1,version=version+1,updated_by=?
-         WHERE id=? AND version=?`,
-        [context.actorId, batchId, version],
-      );
-      if (updated.affectedRows !== 1)
-        throw new ProductionDomainError('CONCURRENT_MODIFICATION', '生产任务已变化，请刷新后重试');
       await this.audit(
         connection,
         context,
@@ -339,7 +322,7 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
         { activeDemandCount: demands.length },
         {
           reason,
-          cancelledDemandCount: cancelled.affectedRows,
+          cancelledDemandCount,
           releasedAllocationCount: released.affectedRows,
           materialPlanVersion: batch.material_plan_version + 1,
           shortBatchAuthorizationId: String(consumedAuthorization.id),
@@ -351,7 +334,7 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
         batchStatus: batch.status,
         batchVersion: version + 1,
         materialPlanVersion: batch.material_plan_version + 1,
-        cancelledDemandCount: cancelled.affectedRows,
+        cancelledDemandCount,
         releasedAllocationCount: released.affectedRows,
       };
     });

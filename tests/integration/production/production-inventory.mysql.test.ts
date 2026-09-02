@@ -177,9 +177,25 @@ describeMysql('Production return and stock-check MySQL transactions', () => {
     }
   });
 
-  it('creates and confirms a material loss with an equal formal supplement demand', async () => {
+  it('creates and confirms a material loss for a partially outbound batch and advances its plan', async () => {
     const fixture = await createFixture(pool, actorId);
     try {
+      await pool.execute(
+        "UPDATE production_batches SET status='material_partially_outbound' WHERE id=?",
+        [fixture.productionBatchId],
+      );
+      const options = await repository.listMaterialLossBatchOptions();
+      expect(options).toContainEqual(
+        expect.objectContaining({
+          productionBatchId: String(fixture.productionBatchId),
+          batchStatus: 'material_partially_outbound',
+        }),
+      );
+      const [[beforeBatch]] = await pool.query<
+        (RowDataPacket & { material_plan_version: number; version: number })[]
+      >('SELECT material_plan_version,version FROM production_batches WHERE id=?', [
+        fixture.productionBatchId,
+      ]);
       const created = await repository.createMaterialLoss(
         {
           productionBatchId: String(fixture.productionBatchId),
@@ -221,6 +237,15 @@ describeMysql('Production return and stock-check MySQL transactions', () => {
         need_number: '2.0000',
       });
       expect(demand?.generation_group_key).toBe(`LOSSSUP:${demand.supplement_id}`);
+      const [[batch]] = await pool.query<
+        (RowDataPacket & { material_plan_version: number; version: number })[]
+      >('SELECT material_plan_version,version FROM production_batches WHERE id=?', [
+        fixture.productionBatchId,
+      ]);
+      expect(batch).toMatchObject({
+        material_plan_version: beforeBatch!.material_plan_version + 1,
+        version: beforeBatch!.version + 1,
+      });
     } finally {
       await cleanup(pool, fixture);
     }

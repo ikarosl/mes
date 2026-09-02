@@ -22,7 +22,7 @@ import type { ResolvedBatchStepOverride } from '../application/ports/production.
 import { requireBatchTransition } from '../domain/production-status.policy.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
 import { integerQuantity } from '../domain/integer-quantity.js';
-import { buildDemandGenerationKeys } from '../domain/production-demand-generation-group.js';
+import { mysqlProductionDemandPlanWriter } from './mysql-production-demand-plan.writer.js';
 import {
   BATCH_SELECT,
   batchAudit,
@@ -339,28 +339,12 @@ export class MysqlProductionBatchRepository {
          WHERE production_batch_id=? AND allocation_status='active'`,
         [audit.actorId, id],
       );
-      await connection.execute(
-        `UPDATE production_item_demand
-         SET business_status='cancelled',cancel_source='production_batch',cancel_reason=?,
-             cancelled_by=?,cancelled_at=NOW(),
-             version=version+1,updated_by=?
-         WHERE production_batch_id=? AND business_status='active'`,
-        [reason, audit.actorId, audit.actorId, id],
-      );
-      await connection.execute(
-        `UPDATE production_short_batch_authorization
-         SET status='superseded',version=version+1
-         WHERE production_batch_id=? AND status='active'`,
-        [id],
-      );
-      const [updated] = await connection.execute<ResultSetHeader>(
-        `UPDATE production_batches
-         SET status='cancelled',material_plan_version=material_plan_version+1,
-             cancel_reason=?,cancelled_by=?,cancelled_at=NOW(),version=version+1,updated_by=?
-         WHERE id=? AND status IN ('pending','material_pending','material_assigned') AND version=?`,
-        [reason, audit.actorId, audit.actorId, id, version],
-      );
-      this.assertVersion(updated, '生产任务已被其他操作修改，请刷新后重试');
+      await mysqlProductionDemandPlanWriter.cancelBatchDemands(connection, {
+        batchId: id,
+        actorId: audit.actorId,
+        reason,
+        expectedBatchVersion: version,
+      });
       await this.audit(connection, audit, 'production-batch.cancel', id, batchAudit(before), {
         status: 'cancelled',
         reason,
@@ -432,42 +416,27 @@ export class MysqlProductionBatchRepository {
       requireBatchTransition(batch.status, 'material_pending');
       if (String(batch.product_id) !== bom.product.id)
         throw new ProductionDomainError('INVALID_INPUT', 'BOM 与生产批次产品不一致');
-      for (const line of bom.lines) {
-        const generationKeys = buildDemandGenerationKeys(
-          {
-            type: DEMAND_GENERATION_GROUP_TYPE.normal,
-            productionBatchId: batchId,
-          },
-          line.productMaterialId,
-        );
-        await connection.execute(
-          `INSERT INTO production_item_demand (production_batch_id,product_material_id,item_id,item_code_snapshot,item_name_snapshot,quantity_per_unit_snapshot,unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,planned_output_quantity_snapshot,need_number,remaining_number,demand_type,generation_group_key,idempotency_key,business_status,created_by,updated_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,CAST(? AS SIGNED),?,?,?,'active',?,?)`,
-          [
-            batchId,
-            line.productMaterialId,
-            line.materialProductId,
-            line.itemCode,
-            line.productName,
-            line.quantityPerUnit,
-            line.unit,
-            Number(line.isKeyMaterial),
-            Number(line.needBatchRecord),
-            batch.planned_quantity,
-            multiply(line.quantityPerUnit, batch.planned_quantity),
-            multiply(line.quantityPerUnit, batch.planned_quantity),
-            DEMAND_TYPE.normal,
-            generationKeys.generationGroupKey,
-            generationKeys.idempotencyKey,
-            audit.actorId,
-            audit.actorId,
-          ],
-        );
-      }
-      const [result] = await connection.execute<ResultSetHeader>(
-        "UPDATE production_batches SET status='material_pending',material_plan_version=material_plan_version+1,version=version+1,updated_by=? WHERE id=? AND version=?",
-        [audit.actorId, batchId, version],
-      );
-      this.assertVersion(result, '生产批次已被其他操作修改，请刷新后重试');
+      await mysqlProductionDemandPlanWriter.createDemandGroup(connection, {
+        batchId,
+        actorId: audit.actorId,
+        source: { type: DEMAND_GENERATION_GROUP_TYPE.normal, productionBatchId: batchId },
+        expectedBatchVersion: version,
+        transitionToMaterialPending: true,
+        lines: bom.lines.map((line) => ({
+          identityId: line.productMaterialId,
+          productMaterialId: line.productMaterialId,
+          itemId: line.materialProductId,
+          itemCode: line.itemCode,
+          itemName: line.productName,
+          quantityPerUnit: line.quantityPerUnit,
+          unit: line.unit,
+          isKeyMaterial: line.isKeyMaterial,
+          needBatchRecord: line.needBatchRecord,
+          plannedOutputQuantity: batch.planned_quantity,
+          needNumber: multiply(line.quantityPerUnit, batch.planned_quantity),
+          demandType: DEMAND_TYPE.normal,
+        })),
+      });
       await this.audit(
         connection,
         audit,

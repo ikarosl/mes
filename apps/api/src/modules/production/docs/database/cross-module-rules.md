@@ -115,7 +115,7 @@
 - 确认 `production_consumed` 损耗时不得再次扣库存；库存已经由原领料出库流水扣减。损耗记录用于物料去向、责任和后续补料追溯。
 - 损耗补料不创建 `batch_step_scrap_records` 或 `batch_step_scrap_reproduction_authorization`，不增加 `authorized_quantity`，也不改变任一工序的产品可报上限。现场没有替代物料时由物理条件阻止生产，系统不通过伪造新产品额度表达物料短缺。
 - 普通退料不是损耗，不得创建虚假 `production_consumed` 报废记录获得补料。`return_after_outbound` 退料后报废仍保持未开放。
-- Production 模块只允许在管理员确认生产领料损耗的同一事务中写入 `item_scrap` 终态、`production_material_supplement(source_type = 'material_loss')`、单条 `material_loss_supplement` 需求、成功审计和幂等结果。
+- Production 模块只允许在管理员确认生产领料损耗的同一事务中写入 `item_scrap` 终态、`production_material_supplement(source_type = 'material_loss')`、单条 `material_loss_supplement` 需求、批次 `material_plan_version/version`、成功审计和幂等结果。需求新增及批次版本推进必须由事务内需求计划写入器共同完成。
 
 #### 3.12.5.2 短批开工不形成物料产能授权
 
