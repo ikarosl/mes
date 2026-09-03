@@ -213,8 +213,9 @@
               "
               link
               type="warning"
+              :disabled="row.shortBatchAuthorizationAction === 'not_required'"
               @click="openShortBatchAuthorization(row)"
-              >短批授权</el-button
+              >{{ shortBatchAuthorizationActionLabel(row) }}</el-button
             >
             <el-button
               v-if="
@@ -364,6 +365,7 @@
 
 <script setup lang="ts">
 import { computed, onActivated, onMounted, ref } from 'vue';
+import { useRoute } from 'vue-router';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import TableToolbar from '../../components/TableToolbar.vue';
 import PaginationFooter from '../../components/PaginationFooter.vue';
@@ -379,6 +381,7 @@ import type {
   ShortBatchAuthorizationPreview,
 } from '@company/contracts';
 import { normalizeCreateBatchPayload } from '@company/utils';
+import { SHORT_BATCH_AUTHORIZATION_ACTION_LABELS } from '@company/constants';
 import { productionApi } from '../../api/production';
 import { formatDateForDisplay } from '../../utils/date';
 import { EMessage } from '../../utils/message';
@@ -404,6 +407,8 @@ import { deadlinePresentation, taskNextActionPresentation } from './production-t
 import ProductionBatchCancelDialog from './components/ProductionBatchCancelDialog.vue';
 
 defineOptions({ name: 'ProductionTasksPage' });
+
+const route = useRoute();
 
 const {
   batches,
@@ -764,17 +769,26 @@ const openShortBatchAuthorization = async (row: ProductionBatchItem): Promise<vo
     shortBatchAuthorizationLoading.value = false;
   }
 };
+const shortBatchAuthorizationActionLabel = (row: ProductionBatchItem): string =>
+  SHORT_BATCH_AUTHORIZATION_ACTION_LABELS[row.shortBatchAuthorizationAction];
 const submitShortBatchAuthorization = async (reason: string): Promise<void> => {
   const batchId = shortBatchAuthorizationBatchId.value;
   const preview = shortBatchAuthorizationPreview.value;
-  if (!batchId || !preview?.canAuthorize || shortBatchAuthorizationSubmitting.value) return;
+  if (
+    !batchId ||
+    !preview ||
+    preview.blockedReason !== null ||
+    !['authorize', 'reauthorize', 'adjust'].includes(preview.authorizationAction) ||
+    shortBatchAuthorizationSubmitting.value
+  )
+    return;
   shortBatchAuthorizationSubmitting.value = true;
   try {
     await productionApi.authorizeShortBatch(batchId, {
       version: preview.batchVersion,
       reason,
     });
-    EMessage.success('短批开工已授权，可对已分配物料制领料出库单');
+    EMessage.success('短批开工已授权，后续可继续分配和领料');
     shortBatchAuthorizationVisible.value = false;
     await loadTasks();
   } catch (error) {
@@ -906,6 +920,8 @@ const materialErrorFallback = (error: unknown, fallback: string): string => {
     ALLOCATION_ALREADY_OUTBOUND: '该分配已发生出库，不能释放',
     OUTBOUND_EXCEEDS_ALLOCATION: '出库数量超过当前未出库量，请刷新后重试',
     ALLOCATION_PENDING_OUTBOUND: '该分配已有待确认出库单，请先取消相关单据',
+    SHORT_BATCH_AUTHORIZATION_STALE:
+      '物料需求计划已变化：仍有分配缺口时请重新短批授权；全部活动需求完成分配后可按普通齐套方式继续领料',
     CONCURRENT_MODIFICATION: '数据已被其他操作修改，请刷新后重试',
   };
   return messages[code] ?? fallback;
@@ -949,7 +965,11 @@ const confirmBatchCancellation = async (reason: string): Promise<void> => {
 /* ====== 工具函数 ====== */
 const canEditBatch = (row: ProductionBatchItem): boolean => row.status === 'pending';
 
-onMounted(loadPageData);
+onMounted(() => {
+  const keyword = route.query.keyword;
+  if (typeof keyword === 'string') query.keyword = keyword;
+  void loadPageData();
+});
 /** 页面重新激活：定向刷新页面持有的候选（负责人 + SOP 文件）；弹窗自持候选由弹窗自身刷新 */
 onActivated(() => {
   void userSource.refresh();

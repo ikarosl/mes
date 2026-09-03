@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     :model-value="visible"
-    title="短批开工授权"
+    :title="dialogTitle"
     :width="DialogWidth.xl"
     @update:model-value="$emit('update:visible', $event)"
   >
@@ -18,6 +18,13 @@
         :data="preview?.lines ?? []"
         class="preview-table"
       >
+        <el-table-column
+          label="需求来源"
+          min-width="210"
+          show-overflow-tooltip
+        >
+          <template #default="{ row }">{{ materialDemandGroupLabel(row) }}</template>
+        </el-table-column>
         <el-table-column
           prop="itemCode"
           label="物料编码"
@@ -58,6 +65,19 @@
             <span class="shortage">{{ formatQuantity(row.authorizedRemainingQuantity) }}</span>
           </template>
         </el-table-column>
+        <el-table-column
+          v-if="hasExistingAuthorization"
+          label="既有授权允许缺口"
+          width="155"
+        >
+          <template #default="{ row }">
+            {{
+              row.existingAuthorizedRemainingQuantity === null
+                ? '—'
+                : formatQuantity(row.existingAuthorizedRemainingQuantity)
+            }}
+          </template>
+        </el-table-column>
       </el-table>
 
       <el-alert
@@ -69,6 +89,7 @@
       />
 
       <el-form
+        v-if="isWritableAction"
         label-position="top"
         class="authorization-form"
       >
@@ -88,14 +109,17 @@
       </el-form>
     </div>
     <template #footer>
-      <el-button @click="$emit('update:visible', false)">取消</el-button>
+      <el-button @click="$emit('update:visible', false)">{{
+        isWritableAction ? '取消' : '关闭'
+      }}</el-button>
       <el-button
+        v-if="isWritableAction"
         type="warning"
         :loading="submitting"
         :disabled="!canSubmit"
         @click="$emit('submit', reason.trim())"
       >
-        确认承担风险并授权
+        {{ submitLabel }}
       </el-button>
     </template>
   </el-dialog>
@@ -104,8 +128,10 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import type { ShortBatchAuthorizationPreview } from '@company/contracts';
+import { SHORT_BATCH_AUTHORIZATION_ACTION_LABELS } from '@company/constants';
 import { DialogWidth } from '../../../utils/dialog';
 import { formatQuantity } from '../production-status';
+import { materialDemandGroupLabel } from '../material-demand-group-presentation';
 
 const props = defineProps<{
   visible: boolean;
@@ -121,9 +147,31 @@ defineEmits<{
 
 const reason = ref('');
 const acknowledged = ref(false);
+const isWritableAction = computed(
+  () =>
+    !props.preview?.blockedReason &&
+    ['authorize', 'reauthorize', 'adjust'].includes(
+      props.preview?.authorizationAction ?? 'not_required',
+    ),
+);
+const dialogTitle = computed(() =>
+  props.preview
+    ? SHORT_BATCH_AUTHORIZATION_ACTION_LABELS[props.preview.authorizationAction]
+    : '短批开工授权',
+);
+const submitLabel = computed(() =>
+  props.preview?.authorizationAction === 'reauthorize'
+    ? '确认重新授权'
+    : props.preview?.authorizationAction === 'adjust'
+      ? '确认调整授权'
+      : '确认承担风险并授权',
+);
+const hasExistingAuthorization = computed(() =>
+  Boolean(props.preview?.lines.some((line) => line.existingAuthorizedRemainingQuantity !== null)),
+);
 const canSubmit = computed(
   () =>
-    Boolean(props.preview?.canAuthorize) &&
+    isWritableAction.value &&
     acknowledged.value &&
     reason.value.trim().length > 0 &&
     !props.submitting,

@@ -28,12 +28,14 @@
             placeholder="选择同一生产批次"
             @change="handleBatchChange"
           >
-            <el-option
-              v-for="option in batchOptions"
-              :key="option.productionBatchId"
-              :value="option.productionBatchId"
-              :label="`${option.batchNo} · ${option.workOrderNo} · ${option.productName}`"
-            />
+            <el-option-group label="可制单生产批次">
+              <el-option
+                v-for="option in eligibleBatchOptions"
+                :key="option.productionBatchId"
+                :value="option.productionBatchId"
+                :label="`${option.batchNo} · ${option.workOrderNo} · ${option.productName}`"
+              />
+            </el-option-group>
           </el-select>
         </el-form-item>
         <el-form-item label="备注">
@@ -46,79 +48,127 @@
         </el-form-item>
       </el-form>
 
-      <el-table
-        v-loading="candidateLoading"
-        :data="candidates"
-        class="candidate-table"
-        empty-text="请选择生产批次，或当前批次没有可制单分配行"
-        @selection-change="selectedCandidates = $event"
+      <el-alert
+        v-if="blockedBatchOptions.length > 0"
+        class="blocked-summary"
+        type="warning"
+        :closable="false"
+        :title="`另有 ${blockedBatchOptions.length} 个生产批次暂不可制单，请按下列原因处理`"
+      />
+      <div
+        v-if="blockedBatchOptions.length > 0"
+        class="blocked-batches"
       >
-        <el-table-column
-          type="selection"
-          width="50"
+        <div
+          v-for="option in blockedBatchOptions"
+          :key="option.productionBatchId"
+          class="blocked-batch"
+        >
+          <span>{{ option.batchNo }} · {{ option.workOrderNo }} · {{ option.productName }}</span>
+          <el-tag type="warning">{{ option.outboundEligibility.blockedReason }}</el-tag>
+          <el-button
+            link
+            type="primary"
+            @click="$emit('resolveBatch', option.batchNo)"
+            >前往生产任务处理</el-button
+          >
+        </div>
+      </div>
+
+      <div
+        v-loading="candidateLoading"
+        class="candidate-groups"
+      >
+        <el-empty
+          v-if="candidateGroups.length === 0"
+          description="请选择生产批次，或当前批次没有可制单分配行"
         />
-        <el-table-column
-          label="物料"
-          min-width="170"
+        <section
+          v-for="group in candidateGroups"
+          :key="group.generationGroupKey"
+          class="candidate-group"
         >
-          <template #default="{ row }">
-            <div>{{ row.itemName }}</div>
-            <div class="secondary-text">{{ row.itemCode }}</div>
-          </template>
-        </el-table-column>
-        <el-table-column
-          prop="batchCode"
-          label="库存批次"
-          min-width="140"
-        />
-        <el-table-column
-          label="分配"
-          width="95"
-          align="right"
-        >
-          <template #default="{ row }">{{ formatQuantity(row.assignedQuantity) }}</template>
-        </el-table-column>
-        <el-table-column
-          label="已确认"
-          width="95"
-          align="right"
-        >
-          <template #default="{ row }">{{
-            formatQuantity(row.confirmedOutboundQuantity)
-          }}</template>
-        </el-table-column>
-        <el-table-column
-          label="待确认占用"
-          width="105"
-          align="right"
-        >
-          <template #default="{ row }">{{ formatQuantity(row.pendingOutboundQuantity) }}</template>
-        </el-table-column>
-        <el-table-column
-          label="可制单"
-          width="95"
-          align="right"
-        >
-          <template #default="{ row }">{{ formatQuantity(row.availableToOrderQuantity) }}</template>
-        </el-table-column>
-        <el-table-column
-          label="本次数量"
-          width="180"
-        >
-          <template #default="{ row }">
-            <el-input-number
-              v-model="quantities[row.allocationId]"
-              :min="1"
-              :max="Number(row.availableToOrderQuantity)"
-              :step="1"
-              :precision="0"
+          <div class="group-header">
+            <strong>{{ group.label }}</strong>
+            <span>{{ group.rows.length }} 条可制单分配</span>
+          </div>
+          <el-table
+            :data="group.rows"
+            @selection-change="handleGroupSelection(group.generationGroupKey, $event)"
+          >
+            <el-table-column
+              type="selection"
+              width="50"
             />
-            <span class="unit-text">{{ row.unit }}</span>
-          </template>
-        </el-table-column>
-      </el-table>
+            <el-table-column
+              label="物料"
+              min-width="170"
+            >
+              <template #default="{ row }">
+                <div>{{ row.itemName }}</div>
+                <div class="secondary-text">{{ row.itemCode }}</div>
+              </template>
+            </el-table-column>
+            <el-table-column
+              prop="batchCode"
+              label="库存批次"
+              min-width="140"
+            />
+            <el-table-column
+              label="分配"
+              width="95"
+              align="right"
+            >
+              <template #default="{ row }">{{ formatQuantity(row.assignedQuantity) }}</template>
+            </el-table-column>
+            <el-table-column
+              label="已确认"
+              width="95"
+              align="right"
+            >
+              <template #default="{ row }">{{
+                formatQuantity(row.confirmedOutboundQuantity)
+              }}</template>
+            </el-table-column>
+            <el-table-column
+              label="待确认占用"
+              width="105"
+              align="right"
+            >
+              <template #default="{ row }">{{
+                formatQuantity(row.pendingOutboundQuantity)
+              }}</template>
+            </el-table-column>
+            <el-table-column
+              label="可制单"
+              width="95"
+              align="right"
+            >
+              <template #default="{ row }">{{
+                formatQuantity(row.availableToOrderQuantity)
+              }}</template>
+            </el-table-column>
+            <el-table-column
+              label="本次数量"
+              width="180"
+            >
+              <template #default="{ row }">
+                <el-input-number
+                  v-model="quantities[row.allocationId]"
+                  :min="1"
+                  :max="Number(row.availableToOrderQuantity)"
+                  :step="1"
+                  :precision="0"
+                />
+                <span class="unit-text">{{ row.unit }}</span>
+              </template>
+            </el-table-column>
+          </el-table>
+        </section>
+      </div>
       <div class="form-hint">
-        已选择 {{ selectedCandidates.length }} 条；不同单位不会合并为误导性的总数量。
+        已选择 {{ selectedGroupCount }} 个需求组、{{ selectedCandidates.length }}
+        条分配明细；不同单位不会合并为误导性的总数量。
       </div>
     </div>
     <template #footer>
@@ -146,6 +196,7 @@ import { DialogWidth } from '../../../utils/dialog';
 import { RouteMessageBox as ElMessageBox } from '../../../utils/route-message-box';
 import type { IdempotentIntentStatus } from '../../../composables/idempotency/useIdempotentIntent';
 import { formatQuantity } from '../production-status';
+import { groupMaterialDemandRows } from '../material-demand-group-presentation';
 
 defineOptions({ name: 'MaterialOutboundOrderCreateDialog' });
 
@@ -162,13 +213,30 @@ const emit = defineEmits<{
   'update:modelValue': [value: boolean];
   loadCandidates: [batchId: string];
   resetIntent: [];
+  resolveBatch: [batchNo: string];
   submit: [batchId: string, payload: CreateMaterialOutboundPayload];
 }>();
 
 const batchId = ref('');
 const remark = ref('');
 const quantities = reactive<Record<string, number>>({});
-const selectedCandidates = ref<MaterialOutboundCandidateItem[]>([]);
+const selectedByGroup = reactive<Record<string, MaterialOutboundCandidateItem[]>>({});
+const candidateGroups = computed(() => groupMaterialDemandRows(props.candidates));
+const eligibleBatchOptions = computed(() =>
+  props.batchOptions.filter((option) => option.outboundEligibility.eligible),
+);
+const blockedBatchOptions = computed(() =>
+  props.batchOptions.filter((option) => !option.outboundEligibility.eligible),
+);
+const selectedCandidates = computed(() => {
+  const currentIds = new Set(props.candidates.map((row) => row.allocationId));
+  return Object.values(selectedByGroup)
+    .flat()
+    .filter((row) => currentIds.has(row.allocationId));
+});
+const selectedGroupCount = computed(
+  () => new Set(selectedCandidates.value.map((row) => row.generationGroupKey)).size,
+);
 const canSubmit = computed(
   () =>
     Boolean(batchId.value) &&
@@ -201,9 +269,15 @@ watch(
 );
 
 const handleBatchChange = (value: string): void => {
-  selectedCandidates.value = [];
+  clearSelections();
   for (const key of Object.keys(quantities)) delete quantities[key];
   if (value) emit('loadCandidates', value);
+};
+const handleGroupSelection = (
+  generationGroupKey: string,
+  rows: MaterialOutboundCandidateItem[],
+): void => {
+  selectedByGroup[generationGroupKey] = rows;
 };
 const submit = (): void => {
   if (!canSubmit.value || props.submitting) return;
@@ -254,8 +328,11 @@ const canDiscard = async (): Promise<boolean> => {
 const reset = (): void => {
   batchId.value = '';
   remark.value = '';
-  selectedCandidates.value = [];
+  clearSelections();
   for (const key of Object.keys(quantities)) delete quantities[key];
+};
+const clearSelections = (): void => {
+  for (const key of Object.keys(selectedByGroup)) delete selectedByGroup[key];
 };
 </script>
 
@@ -271,8 +348,39 @@ const reset = (): void => {
 .create-form :deep(.el-select) {
   width: min(560px, 100%);
 }
-.candidate-table {
+.candidate-groups {
   margin-top: 8px;
+}
+.blocked-summary {
+  margin-bottom: 8px;
+}
+.blocked-batches {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.blocked-batch {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+}
+.candidate-group + .candidate-group {
+  margin-top: 18px;
+}
+.group-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  color: var(--el-text-color-primary);
+}
+.group-header span {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
 }
 .secondary-text,
 .form-hint,

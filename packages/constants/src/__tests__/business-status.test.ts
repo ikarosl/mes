@@ -16,8 +16,12 @@ import {
   INVENTORY_TRANSACTION_TYPES,
   MATERIAL_DEMAND_PROGRESS_LABELS,
   MATERIAL_DEMAND_PROGRESS_STATUSES,
+  MATERIAL_OUTBOUND_BLOCKED_CODES,
+  MATERIAL_OUTBOUND_BLOCKED_LABELS,
   OUTBOUND_ORDER_STATUSES,
   PRODUCTION_EXECUTION_COMPLETION_BLOCKERS,
+  SHORT_BATCH_AUTHORIZATION_ACTIONS,
+  SHORT_BATCH_AUTHORIZATION_ACTION_LABELS,
   REWORK_STATUSES,
   SCRAP_SCENES,
   STOCK_STATUSES,
@@ -71,6 +75,17 @@ describe('business persisted codes', () => {
     expect(MATERIAL_DEMAND_PROGRESS_LABELS.shortage).toBe('短批缺料');
     expect(MATERIAL_DEMAND_PROGRESS_LABELS.outbound).toBe('已出库');
     expect(MATERIAL_DEMAND_PROGRESS_LABELS.cancelled).toBe('已取消');
+  });
+
+  it('provides complete outbound eligibility and short batch action labels', () => {
+    expect(Object.keys(MATERIAL_OUTBOUND_BLOCKED_LABELS)).toEqual(MATERIAL_OUTBOUND_BLOCKED_CODES);
+    expect(Object.keys(SHORT_BATCH_AUTHORIZATION_ACTION_LABELS)).toEqual(
+      SHORT_BATCH_AUTHORIZATION_ACTIONS,
+    );
+    expect(MATERIAL_OUTBOUND_BLOCKED_LABELS.short_batch_authorization_stale).toContain(
+      '需求计划已变化',
+    );
+    expect(SHORT_BATCH_AUTHORIZATION_ACTION_LABELS.view).toBe('查看短批授权');
   });
 
   it('separates step execution, abnormal review and current demand type codes', () => {

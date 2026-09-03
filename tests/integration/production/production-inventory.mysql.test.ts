@@ -8,6 +8,7 @@ import {
 } from '../../../apps/api/node_modules/mysql2/promise.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { MysqlProductionInventoryRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-inventory.repository.js';
+import { getNetConfirmedMaterialOutboundQuantity } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-short-batch.js';
 
 loadWorkspaceEnv();
 const describeMysql = process.env.RUN_MYSQL_INTEGRATION === '1' ? describe : describe.skip;
@@ -143,7 +144,7 @@ describeMysql('Production return and stock-check MySQL transactions', () => {
       const pendingReturn = await repository.createReturnOrder(
         {
           productionBatchId: String(fixture.productionBatchId),
-          details: [{ allocationId: String(fixture.allocationId), returnQuantity: 3 }],
+          details: [{ allocationId: String(fixture.allocationId), returnQuantity: 5 }],
         },
         context(actorId, `${fixture.token}-short-return-create`),
       );
@@ -170,8 +171,11 @@ describeMysql('Production return and stock-check MySQL transactions', () => {
       >('SELECT remaining_number,business_status FROM production_item_demand WHERE id=?', [
         fixture.demandId,
       ]);
-      expect(Number(demand?.remaining_number)).toBe(8);
+      expect(Number(demand?.remaining_number)).toBe(10);
       expect(demand?.business_status).toBe('active');
+      expect(
+        await getNetConfirmedMaterialOutboundQuantity(pool, String(fixture.productionBatchId)),
+      ).toBe(0);
     } finally {
       await cleanup(pool, fixture);
     }

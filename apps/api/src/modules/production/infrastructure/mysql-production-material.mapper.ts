@@ -48,6 +48,8 @@ export type AllocationRow = RowDataPacket & {
   remark: string | null;
   created_at: Date;
   demand_type: ProductionMaterialDemandItem['demandType'];
+  generation_group_key: string;
+  supplement_no: string | null;
 };
 
 export type AvailableRow = RowDataPacket & {
@@ -98,6 +100,9 @@ export type OutboundDetailRow = RowDataPacket & {
   batch_code: string;
   item_code_snapshot: string;
   product_name_snapshot: string;
+  generation_group_key: string;
+  generation_group_type: ProductionMaterialDemandItem['generationGroupType'];
+  supplement_no: string | null;
   outbound_number: string;
   unit_snapshot: string;
   inventory_transaction_id: number | null;
@@ -112,11 +117,11 @@ export const DEMAND_SELECT = `SELECT d.id,d.production_batch_id,d.product_materi
   FROM production_item_demand d
   LEFT JOIN production_material_supplement s ON s.id=d.supplement_id`;
 
-export const ALLOCATION_SELECT = `SELECT a.id,a.demand_id,a.production_batch_id,a.item_id,a.batch_id,ib.batch_code,a.assigned_number,d.demand_type,
+export const ALLOCATION_SELECT = `SELECT a.id,a.demand_id,a.production_batch_id,a.item_id,a.batch_id,ib.batch_code,a.assigned_number,d.demand_type,d.generation_group_key,s.supplement_no,
   COALESCE((SELECT SUM(od.outbound_number) FROM outbound_detail od JOIN outbound_order oo ON oo.id=od.outbound_id WHERE od.allocation_id=a.id AND oo.status='completed'),0) outbound_quantity,
-  COALESCE((SELECT SUM(od.outbound_number) FROM outbound_detail od JOIN outbound_order oo ON oo.id=od.outbound_id WHERE od.allocation_id=a.id AND oo.status='pending_picking'),0) pending_outbound_quantity,
+  COALESCE((SELECT SUM(od.outbound_number) FROM outbound_detail od JOIN outbound_order oo ON oo.id=od.outbound_id WHERE od.allocation_id=a.id AND oo.status IN ('pending_picking','picked','partially_outbound')),0) pending_outbound_quantity,
   a.unit_snapshot,a.allocation_status,a.version,a.remark,a.created_at
-  FROM production_item_allocation a JOIN item_batch ib ON ib.id=a.batch_id JOIN production_item_demand d ON d.id=a.demand_id`;
+  FROM production_item_allocation a JOIN item_batch ib ON ib.id=a.batch_id JOIN production_item_demand d ON d.id=a.demand_id LEFT JOIN production_material_supplement s ON s.id=d.supplement_id`;
 
 export const mapAllocation = (row: AllocationRow): ProductionMaterialAllocationItem => ({
   allocationId: String(row.id),

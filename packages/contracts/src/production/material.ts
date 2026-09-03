@@ -5,6 +5,8 @@ import type {
   DemandGenerationGroupType,
   DemandBusinessStatus,
   MaterialDemandProgressStatus,
+  ShortBatchAuthorizationAction,
+  ShortBatchAuthorizationCoverage,
   AllocationStatus,
   InventorySourceType,
 } from './statuses.js';
@@ -27,6 +29,13 @@ export interface ProductionItemDemandItem {
   version: number;
 }
 
+/** 需求生成动作的稳定追溯投影；展示文案由前端共享映射生成。 */
+export interface DemandGenerationSource {
+  generationGroupKey: string;
+  generationGroupType: DemandGenerationGroupType;
+  supplementNo: string | null;
+}
+
 export interface ProductionMaterialAllocationItem {
   allocationId: string;
   demandId: string;
@@ -46,7 +55,7 @@ export interface ProductionMaterialAllocationItem {
   createdAt: string;
 }
 
-export interface ProductionMaterialDemandItem {
+export interface ProductionMaterialDemandItem extends DemandGenerationSource {
   demandId: string;
   productionBatchId: string;
   productMaterialId: string;
@@ -60,10 +69,7 @@ export interface ProductionMaterialDemandItem {
   outboundQuantity: string;
   remainingQuantity: string;
   demandType: DemandType;
-  generationGroupKey: string;
-  generationGroupType: DemandGenerationGroupType;
   supplementId: string | null;
-  supplementNo: string | null;
   createdAt: string;
   businessStatus: DemandBusinessStatus;
   fulfilledById: string | null;
@@ -76,7 +82,7 @@ export interface ProductionMaterialDemandItem {
 
 export type ShortBatchAuthorizationStatus = 'none' | 'valid' | 'stale' | 'consumed';
 
-export interface ShortBatchAuthorizationPreviewLine {
+export interface ShortBatchAuthorizationPreviewLine extends DemandGenerationSource {
   demandId: string;
   itemId: string;
   itemCode: string;
@@ -86,6 +92,8 @@ export interface ShortBatchAuthorizationPreviewLine {
   confirmedOutboundQuantity: string;
   expectedOutboundQuantity: string;
   authorizedRemainingQuantity: string;
+  /** 既有有效或失效授权的允许缺口；从未授权时为空。 */
+  existingAuthorizedRemainingQuantity: string | null;
 }
 
 export interface ShortBatchAuthorizationPreview {
@@ -94,7 +102,8 @@ export interface ShortBatchAuthorizationPreview {
   batchVersion: number;
   materialPlanVersion: number;
   authorizationStatus: ShortBatchAuthorizationStatus;
-  canAuthorize: boolean;
+  authorizationAction: ShortBatchAuthorizationAction;
+  authorizationCoverage: ShortBatchAuthorizationCoverage;
   blockedReason: string | null;
   lines: ShortBatchAuthorizationPreviewLine[];
 }

@@ -146,8 +146,8 @@
 | `pending`           | 待开始                 |
 | `material_pending`  | 待生成或待确认物料需求 |
 | `material_assigned` | 物料已分配             |
-| `material_partially_outbound` | 已确认一部分领料，但仍有活动物料需求 |
-| `material_outbound` | 物料已领料出库         |
+| `material_partially_outbound` | 已确认一部分领料，但仍有活动物料需求 （该状态仅在短批授权的批次下才会出现，正常情况原始物料需求应该被整体满足出库，不可能出部分出库的情况） |
+| `material_outbound` | 尚未开工，且已经完成当时全部活动需求的确认领用；后续补料需求不使本状态回退 |
 | `doing`             | 生产中                 |
 | `completed`         | 生产完成               |
 | `cancelled`         | 已取消                 |
@@ -166,8 +166,12 @@
 
 - `material_plan_version` 不是单条需求版本，而是“管理员授权时看到的整组物料计划编号”。创建或取消需求、短批开工前确认退料导致需求缺口恢复时递增；继续确认出库只会缩小缺口，不递增。
 - 有效短批授权确认首笔部分领料后，批次从 `material_pending` 进入 `material_partially_outbound`；该状态只表达已经发生部分出库，不表达授权是否仍有效。
-- 首工序开工事务重新检查授权仍有效、版本匹配、至少存在一笔确认出库且实际缺口没有超过逐需求批准值，成功后进入 `doing` 并消费授权。
+- `material_partially_outbound` 不因后续完成分配而回退到 `material_assigned/material_pending`。当前版本授权失效但全部活动需求已经完成分配时，可以不关联短批授权继续普通领料；全部需求确认出库后前进到 `material_outbound`。
+- `material_outbound` 与此前是否使用短批授权无关：普通任务由 `material_assigned` 进入；短批任务若在实际开工前补齐全部领料，也由 `material_partially_outbound` 进入。批次已经凭短批授权进入 `doing` 后，后续补齐物料不回退到 `material_outbound`。
+- `material_outbound` 形成后新增的工序报废或生产领料损耗补料需求由 `production_item_demand.business_status` 表达，不要求批次状态回退。此时只有活动补料需求可以重新进入分配、候选与制单链路，已经满足的正常需求及其历史分配不得重新成为出库候选。
+- 首工序开工事务重新检查授权仍有效、版本匹配、扣除已确认且释放回公共库存的退料后净确认领料量仍大于零，且实际缺口没有超过逐需求批准值，成功后进入 `doing` 并消费授权。
 - 短批开工后剩余活动需求继续分配和出库；存在活动需求时批次不得完成。完整授权表、剩余需求关闭和出库关联规则见 [生产需求、分配与领料出库](demand-allocation-and-outbound.md)。
+- 批次查询除授权状态外还派生短批授权动作，供管理端决定显示“授权、重新授权、调整、查看、无需授权”。该字段不是写入事实，授权预览和提交事务必须按锁内最新需求、分配及授权明细重新计算。
 
 当前生产执行完工数量规则：
 

@@ -11,6 +11,7 @@ import {
   type RouteStepQuantity,
 } from '../domain/production-route-quantity.policy.js';
 import { integerQuantity } from '../domain/integer-quantity.js';
+import { selectShortBatchStartabilityByBatch } from './mysql-production-short-batch.js';
 import { selectRouteSupplementSources } from './mysql-production-supplement-activation.js';
 
 type WorkerTaskRow = RowDataPacket & {
@@ -38,7 +39,6 @@ type WorkerTaskRow = RowDataPacket & {
   effective_abnormal: string;
   started_at: Date | null;
   version: number;
-  short_batch_startable: number;
 };
 
 const REPORT_SUMMARY = `SELECT batch_step_record_id,
@@ -61,22 +61,7 @@ SELECT current.id step_record_id,current.production_batch_id,b.batch_no,b.status
   COALESCE(current_reports.effective_reported,0) effective_reported,
   COALESCE(current_reports.effective_direct_reported,0) effective_direct_reported,
   COALESCE(current_reports.effective_normal,0) effective_normal,
-  COALESCE(current_reports.effective_abnormal,0) effective_abnormal,current.started_at,current.version,
-  CASE WHEN b.status='material_partially_outbound'
-    AND EXISTS (
-      SELECT 1 FROM production_short_batch_authorization authorization
-      WHERE authorization.production_batch_id=b.id
-        AND authorization.material_plan_version=b.material_plan_version
-        AND authorization.status='active'
-        AND EXISTS (SELECT 1 FROM outbound_order outbound WHERE outbound.production_batch_id=b.id AND outbound.status='completed')
-        AND NOT EXISTS (
-          SELECT 1 FROM production_item_demand demand
-          LEFT JOIN production_short_batch_authorization_detail detail
-            ON detail.authorization_id=authorization.id AND detail.demand_id=demand.id
-          WHERE demand.production_batch_id=b.id AND demand.business_status='active'
-            AND (detail.id IS NULL OR demand.remaining_number>detail.authorized_remaining_quantity)
-        )
-    ) THEN 1 ELSE 0 END short_batch_startable
+  COALESCE(current_reports.effective_abnormal,0) effective_abnormal,current.started_at,current.version
 FROM batch_step_records current
 JOIN production_batches b ON b.id=current.production_batch_id
 JOIN work_orders wo ON wo.id=b.work_order_id
@@ -110,12 +95,16 @@ export const selectWorkerTasks = async (
   const [rows] = await pool.query<WorkerTaskRow[]>(WORKER_TASK_SELECT, [actorId]);
   const batchIds = [...new Set(rows.map((row) => String(row.production_batch_id)))];
   if (batchIds.length === 0) return [];
-  const [quantityRows] = await pool.query<QuantityStepRow[]>(
-    `${QUANTITY_STEP_SELECT} (${batchIds.map(() => '?').join(',')})
-     ORDER BY step_record.production_batch_id,step_record.step_order_snapshot,step_record.id`,
-    batchIds,
-  );
-  const supplementsByBatch = await selectRouteSupplementSources(pool, batchIds);
+  const [quantityResult, supplementsByBatch, shortBatchStartabilityByBatch] = await Promise.all([
+    pool.query<QuantityStepRow[]>(
+      `${QUANTITY_STEP_SELECT} (${batchIds.map(() => '?').join(',')})
+       ORDER BY step_record.production_batch_id,step_record.step_order_snapshot,step_record.id`,
+      batchIds,
+    ),
+    selectRouteSupplementSources(pool, batchIds),
+    selectShortBatchStartabilityByBatch(pool, batchIds),
+  ]);
+  const [quantityRows] = quantityResult;
   const stepsByBatch = new Map<string, QuantityStepRow[]>();
   for (const step of quantityRows) {
     const batchId = String(step.production_batch_id);
@@ -148,6 +137,7 @@ export const selectWorkerTasks = async (
       row,
       quantitiesByStep.get(String(row.step_record_id))!,
       firstStepIds.has(String(row.step_record_id)),
+      shortBatchStartabilityByBatch.get(String(row.production_batch_id)) ?? false,
     ),
   );
 };
@@ -156,9 +146,10 @@ const mapWorkerTask = (
   row: WorkerTaskRow,
   quantity: RouteStepQuantity,
   isFirst: boolean,
+  shortBatchStartable: boolean,
 ): ProductionWorkerTaskItem => {
   const upstreamReady = isFirst
-    ? row.batch_status === 'material_outbound' || Boolean(row.short_batch_startable)
+    ? row.batch_status === 'material_outbound' || shortBatchStartable
     : integerQuantity(quantity.releasedInputQuantity) > 0;
   const canComplete =
     row.step_status === 'doing' &&

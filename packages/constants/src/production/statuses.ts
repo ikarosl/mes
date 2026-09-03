@@ -168,3 +168,43 @@ export const OUTBOUND_ORDER_STATUS_LABELS = {
   completed: '已出库',
   cancelled: '已取消',
 } as const;
+
+export const SHORT_BATCH_AUTHORIZATION_ACTIONS = [
+  'authorize',
+  'reauthorize',
+  'adjust',
+  'view',
+  'not_required',
+] as const;
+
+export const SHORT_BATCH_AUTHORIZATION_ACTION_LABELS = {
+  authorize: '短批授权',
+  reauthorize: '重新短批授权',
+  adjust: '调整短批授权',
+  view: '查看短批授权',
+  not_required: '物料已齐套',
+} as const;
+
+export const SHORT_BATCH_AUTHORIZATION_COVERAGES = [
+  'none',
+  'covered',
+  'insufficient',
+  'stale',
+  'consumed',
+] as const;
+
+export const MATERIAL_OUTBOUND_MODES = ['normal', 'short_batch'] as const;
+
+export const MATERIAL_OUTBOUND_BLOCKED_CODES = [
+  'allocation_incomplete',
+  'short_batch_authorization_required',
+  'short_batch_authorization_stale',
+  'no_orderable_allocation',
+] as const;
+
+export const MATERIAL_OUTBOUND_BLOCKED_LABELS = {
+  allocation_incomplete: '物料尚未形成可制单分配，请先完成分配',
+  short_batch_authorization_required: '物料尚未齐套，请先完成分配或办理短批授权',
+  short_batch_authorization_stale: '需求计划已变化，请到生产任务重新复核短批授权',
+  no_orderable_allocation: '暂无可制单分配，可能已被其他待出库单占用',
+} as const;

@@ -50,6 +50,7 @@ const validBatchDetail = (
   status: 'pending',
   materialPlanVersion: 1,
   shortBatchAuthorizationStatus: 'none',
+  shortBatchAuthorizationAction: 'authorize',
   ownerId: null,
   ownerName: null,
   completedAt: null,

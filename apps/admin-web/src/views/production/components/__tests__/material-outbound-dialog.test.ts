@@ -75,6 +75,37 @@ const StubTableColumn = defineComponent({
 });
 
 describe('MaterialOutboundDialog', () => {
+  it('explains both stale-authorization and fully-allocated continuation paths', () => {
+    const wrapper = mount(MaterialOutboundDialog, {
+      props: {
+        visible: true,
+        demands: [],
+        outbounds: [],
+        loadingOutbounds: false,
+        submitting: false,
+        shortBatch: true,
+      },
+      global: {
+        stubs: {
+          'el-dialog': { template: '<div><slot/><slot name="footer"/></div>' },
+          'el-alert': {
+            props: ['title'],
+            template: '<div class="stub-alert">{{ title }}</div>',
+          },
+          'el-table': true,
+          'el-table-column': true,
+          'el-input': true,
+          'el-input-number': true,
+          'el-button': true,
+        },
+        directives: { loading: () => undefined },
+      },
+    });
+    const alerts = wrapper.findAll('.stub-alert').map((row) => row.text());
+    expect(alerts).toContainEqual(expect.stringContaining('仍有分配缺口时需要'));
+    expect(alerts).toContainEqual(expect.stringContaining('全部活动需求分配完成后'));
+  });
+
   it('offers only active allocations with positive orderable quantity', () => {
     const wrapper = mount(MaterialOutboundDialog, {
       props: {
@@ -121,6 +152,52 @@ describe('MaterialOutboundDialog', () => {
     expect(vm.availableAllocations.map((row) => row.allocationId)).toEqual(['a1']);
   });
 
+  it('keeps selections from different demand groups in one outbound payload', async () => {
+    const wrapper = mount(MaterialOutboundDialog, {
+      props: {
+        visible: true,
+        demands: [
+          demand('d1', 'NORMAL:b1', 'normal', null, 'a1'),
+          demand('d2', 'LOSSSUP:9', 'material_loss_supplement', 'SUP-00009', 'a2'),
+        ] as never,
+        outbounds: [],
+        loadingOutbounds: false,
+        submitting: false,
+      },
+      global: {
+        stubs: {
+          'el-dialog': { template: '<div><slot/><slot name="footer"/></div>' },
+          'el-alert': true,
+          'el-table': { template: '<div><slot/></div>' },
+          'el-table-column': true,
+          'el-input': true,
+          'el-input-number': true,
+          'el-button': true,
+        },
+        directives: { loading: () => undefined },
+      },
+    });
+    await wrapper.vm.$nextTick();
+    const vm = wrapper.vm as unknown as {
+      availableAllocations: Array<{ allocationId: string; generationGroupKey: string }>;
+      selectedGroupCount: number;
+      handleGroupSelection: (key: string, rows: unknown[]) => void;
+      submit: () => void;
+    };
+    const [normal, loss] = vm.availableAllocations;
+    vm.handleGroupSelection(normal!.generationGroupKey, [normal!]);
+    vm.handleGroupSelection(loss!.generationGroupKey, [loss!]);
+    vm.submit();
+
+    expect(vm.selectedGroupCount).toBe(2);
+    expect(wrapper.emitted('submit')?.[0]?.[0]).toMatchObject({
+      details: [
+        { allocationId: 'a1', outboundQuantity: 1 },
+        { allocationId: 'a2', outboundQuantity: 1 },
+      ],
+    });
+  });
+
   it('formats the outbound created time with the shared datetime formatter', () => {
     const wrapper = mount(MaterialOutboundDialog, {
       props: {
@@ -148,4 +225,28 @@ describe('MaterialOutboundDialog', () => {
     expect(timeColumn.text()).toContain('2026-08-31 08:05:09');
     expect(timeColumn.text()).not.toContain('2026-08-31T08:05:09');
   });
+});
+
+const demand = (
+  demandId: string,
+  generationGroupKey: string,
+  generationGroupType: 'normal' | 'material_loss_supplement',
+  supplementNo: string | null,
+  allocationId: string,
+) => ({
+  demandId,
+  itemName: `物料-${demandId}`,
+  generationGroupKey,
+  generationGroupType,
+  supplementNo,
+  allocations: [
+    {
+      allocationId,
+      allocationStatus: 'active',
+      assignedQuantity: '1',
+      outboundQuantity: '0',
+      availableToOrderQuantity: '1',
+      pendingOutboundQuantity: '0',
+    },
+  ],
 });

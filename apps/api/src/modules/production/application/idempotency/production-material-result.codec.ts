@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
   ALLOCATION_STATUSES,
+  DEMAND_GENERATION_GROUP_TYPES,
   OUTBOUND_ORDER_STATUSES,
   PRODUCTION_BATCH_STATUSES,
 } from '@company/constants';
@@ -58,6 +59,9 @@ const outboundDetailSchema = z
     batchCode: z.string(),
     itemCode: z.string(),
     itemName: z.string(),
+    generationGroupKey: z.string(),
+    generationGroupType: z.enum(DEMAND_GENERATION_GROUP_TYPES),
+    supplementNo: nullableString,
     outboundQuantity: z.string(),
     unit: z.string(),
     inventoryTransactionId: nullableString,
