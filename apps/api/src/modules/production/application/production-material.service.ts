@@ -67,6 +67,8 @@ export class ProductionMaterialService {
     payload: CreateMaterialAllocationsPayload,
     context: IdempotentCommandContext,
   ) {
+    if (new Set(payload.allocations.map((line) => line.demandId)).size !== 1)
+      throw new ProductionDomainError('INVALID_INPUT', '一次只能为一条物料需求分配库存');
     const normalized = {
       allocations: payload.allocations.map((line) => ({
         demandId: line.demandId,

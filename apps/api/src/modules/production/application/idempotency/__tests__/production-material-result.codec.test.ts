@@ -1,10 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import {
+  confirmMaterialOutboundResultCodec,
   materialAllocationResultCodec,
   materialOutboundResultCodec,
 } from '../production-material-result.codec.js';
 
 describe('production material result codecs', () => {
+  it('出库结果 codec 使用包含需求来源投影的新 scope', () => {
+    expect(materialOutboundResultCodec.scope).toBe('production.material-outbound.create.v3');
+    expect(confirmMaterialOutboundResultCodec.scope).toBe(
+      'production.material-outbound.confirm.v2',
+    );
+  });
+
   it('round-trips the complete allocation command result and rejects damaged snapshots', () => {
     const value = {
       productionBatchId: '1',
@@ -74,6 +82,9 @@ describe('production material result codecs', () => {
             batchCode: 'IB-1',
             itemCode: 'MAT-1',
             itemName: '物料',
+            generationGroupKey: 'NORMAL:1',
+            generationGroupType: 'normal' as const,
+            supplementNo: null,
             outboundQuantity: '2.0000',
             unit: 'kg',
             inventoryTransactionId: '12',

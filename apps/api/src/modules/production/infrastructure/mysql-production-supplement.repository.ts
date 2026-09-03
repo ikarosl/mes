@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
+import { DEMAND_GENERATION_GROUP_TYPE } from '@company/constants';
 import { withTransaction } from '@company/database';
 import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import type {
@@ -19,6 +20,7 @@ import { DATABASE_POOL } from '../../../infrastructure/database/database.module.
 import { ProductionSupplementRepository } from '../application/ports/production-supplement.repository.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
 import { fixedIntegerQuantity, integerQuantity } from '../domain/integer-quantity.js';
+import { mysqlProductionDemandPlanWriter } from './mysql-production-demand-plan.writer.js';
 import { findBatch } from './mysql-production.shared.js';
 
 type SourceRow = RowDataPacket & {
@@ -384,49 +386,45 @@ export class MysqlProductionSupplementRepository extends ProductionSupplementRep
           actorId,
         ],
       );
-      const demands: ProductionMaterialSupplementDemandItem[] = [];
-      for (const line of effectivePayload.details) {
+      const demandLines = effectivePayload.details.map((line) => {
         const original = byId.get(line.originalDemandId)!;
-        const [demand] = await connection.execute<ResultSetHeader>(
-          `INSERT INTO production_item_demand
-           (production_batch_id,product_material_id,item_id,item_code_snapshot,item_name_snapshot,quantity_per_unit_snapshot,unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,planned_output_quantity_snapshot,need_number,remaining_number,demand_type,idempotency_key,parent_demand_id,supplement_id,business_status,created_by,updated_by)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,CAST(? AS SIGNED),'scrap_supplement',?,?,?,'active',?,?)`,
-          [
-            source.production_batch_id,
-            original.product_material_id,
-            original.item_id,
-            original.item_code_snapshot,
-            original.item_name_snapshot,
-            original.quantity_per_unit_snapshot,
-            original.unit_snapshot,
-            original.is_key_material_snapshot,
-            original.need_batch_record_snapshot,
-            original.planned_output_quantity_snapshot,
-            line.supplementQuantity,
-            line.supplementQuantity,
-            `SCRAPSUP:${supplement.insertId}:${original.id}`,
-            original.id,
-            supplement.insertId,
-            actorId,
-            actorId,
-          ],
-        );
-        demands.push({
+        return { line, original };
+      });
+      const demandIds = await mysqlProductionDemandPlanWriter.createDemandGroup(connection, {
+        batchId: source.production_batch_id,
+        actorId,
+        source: {
+          type: DEMAND_GENERATION_GROUP_TYPE.scrapSupplement,
+          supplementId: supplement.insertId,
+        },
+        lines: demandLines.map(({ line, original }) => ({
+          identityId: original.id,
+          productMaterialId: original.product_material_id,
+          itemId: original.item_id,
+          itemCode: original.item_code_snapshot,
+          itemName: original.item_name_snapshot,
+          quantityPerUnit: original.quantity_per_unit_snapshot,
+          unit: original.unit_snapshot,
+          isKeyMaterial: original.is_key_material_snapshot,
+          needBatchRecord: original.need_batch_record_snapshot,
+          plannedOutputQuantity: original.planned_output_quantity_snapshot,
+          needNumber: line.supplementQuantity,
+          demandType: 'scrap_supplement',
+          parentDemandId: original.id,
+          supplementId: supplement.insertId,
+        })),
+      });
+      const demands: ProductionMaterialSupplementDemandItem[] = demandLines.map(
+        ({ line, original }, index) => ({
           originalDemandId: String(original.id),
-          demandId: String(demand.insertId),
+          demandId: demandIds[index]!,
           productMaterialId: String(original.product_material_id),
           itemId: String(original.item_id),
           itemCode: '',
           itemName: '',
           supplementQuantity: fixed(line.supplementQuantity),
           unit: original.unit_snapshot,
-        });
-      }
-      await connection.execute(
-        `UPDATE production_batches
-         SET material_plan_version=material_plan_version+1,version=version+1,updated_by=?
-         WHERE id=?`,
-        [actorId, source.production_batch_id],
+        }),
       );
       if (planReference) {
         const [confirmed] = await connection.execute<ResultSetHeader>(

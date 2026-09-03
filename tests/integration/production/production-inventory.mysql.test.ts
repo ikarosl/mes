@@ -8,6 +8,7 @@ import {
 } from '../../../apps/api/node_modules/mysql2/promise.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { MysqlProductionInventoryRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-inventory.repository.js';
+import { getNetConfirmedMaterialOutboundQuantity } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-short-batch.js';
 
 loadWorkspaceEnv();
 const describeMysql = process.env.RUN_MYSQL_INTEGRATION === '1' ? describe : describe.skip;
@@ -143,7 +144,7 @@ describeMysql('Production return and stock-check MySQL transactions', () => {
       const pendingReturn = await repository.createReturnOrder(
         {
           productionBatchId: String(fixture.productionBatchId),
-          details: [{ allocationId: String(fixture.allocationId), returnQuantity: 3 }],
+          details: [{ allocationId: String(fixture.allocationId), returnQuantity: 5 }],
         },
         context(actorId, `${fixture.token}-short-return-create`),
       );
@@ -170,16 +171,35 @@ describeMysql('Production return and stock-check MySQL transactions', () => {
       >('SELECT remaining_number,business_status FROM production_item_demand WHERE id=?', [
         fixture.demandId,
       ]);
-      expect(Number(demand?.remaining_number)).toBe(8);
+      expect(Number(demand?.remaining_number)).toBe(10);
       expect(demand?.business_status).toBe('active');
+      expect(
+        await getNetConfirmedMaterialOutboundQuantity(pool, String(fixture.productionBatchId)),
+      ).toBe(0);
     } finally {
       await cleanup(pool, fixture);
     }
   });
 
-  it('creates and confirms a material loss with an equal formal supplement demand', async () => {
+  it('creates and confirms a material loss for a partially outbound batch and advances its plan', async () => {
     const fixture = await createFixture(pool, actorId);
     try {
+      await pool.execute(
+        "UPDATE production_batches SET status='material_partially_outbound' WHERE id=?",
+        [fixture.productionBatchId],
+      );
+      const options = await repository.listMaterialLossBatchOptions();
+      expect(options).toContainEqual(
+        expect.objectContaining({
+          productionBatchId: String(fixture.productionBatchId),
+          batchStatus: 'material_partially_outbound',
+        }),
+      );
+      const [[beforeBatch]] = await pool.query<
+        (RowDataPacket & { material_plan_version: number; version: number })[]
+      >('SELECT material_plan_version,version FROM production_batches WHERE id=?', [
+        fixture.productionBatchId,
+      ]);
       const created = await repository.createMaterialLoss(
         {
           productionBatchId: String(fixture.productionBatchId),
@@ -206,13 +226,29 @@ describeMysql('Production return and stock-check MySQL transactions', () => {
         },
       });
       const [[demand]] = await pool.query<
-        (RowDataPacket & { demand_type: string; need_number: string })[]
-      >('SELECT demand_type,need_number FROM production_item_demand WHERE id=?', [
-        confirmed.supplement!.demandId,
-      ]);
+        (RowDataPacket & {
+          demand_type: string;
+          need_number: string;
+          supplement_id: number;
+          generation_group_key: string;
+        })[]
+      >(
+        'SELECT demand_type,need_number,supplement_id,generation_group_key FROM production_item_demand WHERE id=?',
+        [confirmed.supplement!.demandId],
+      );
       expect(demand).toMatchObject({
         demand_type: 'material_loss_supplement',
         need_number: '2.0000',
+      });
+      expect(demand?.generation_group_key).toBe(`LOSSSUP:${demand.supplement_id}`);
+      const [[batch]] = await pool.query<
+        (RowDataPacket & { material_plan_version: number; version: number })[]
+      >('SELECT material_plan_version,version FROM production_batches WHERE id=?', [
+        fixture.productionBatchId,
+      ]);
+      expect(batch).toMatchObject({
+        material_plan_version: beforeBatch!.material_plan_version + 1,
+        version: beforeBatch!.version + 1,
       });
     } finally {
       await cleanup(pool, fixture);
@@ -274,13 +310,14 @@ async function createFixture(pool: Pool, actorId: number): Promise<Fixture> {
   );
   const demandId = await insert(
     pool,
-    "INSERT INTO production_item_demand(production_batch_id,product_material_id,item_id,item_code_snapshot,item_name_snapshot,quantity_per_unit_snapshot,unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,planned_output_quantity_snapshot,need_number,remaining_number,demand_type,idempotency_key,business_status,created_by,updated_by) VALUES (?,?,?,?,?,'1.0000','kg',1,1,'10.0000','10.0000',10,'normal',?,'active',?,?)",
+    "INSERT INTO production_item_demand(production_batch_id,product_material_id,item_id,item_code_snapshot,item_name_snapshot,quantity_per_unit_snapshot,unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,planned_output_quantity_snapshot,need_number,remaining_number,demand_type,generation_group_key,idempotency_key,business_status,created_by,updated_by) VALUES (?,?,?,?,?,'1.0000','kg',1,1,'10.0000','10.0000',10,'normal',?,?,'active',?,?)",
     [
       productionBatchId,
       productMaterialId,
       materialId,
       token + '-m',
       '原料',
+      `NORMAL:${productionBatchId}`,
       `NORMAL:${productionBatchId}:${productMaterialId}`,
       actorId,
       actorId,

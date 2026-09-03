@@ -4,7 +4,9 @@ import { withTransaction } from '@company/database';
 import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import type {
   CreatePurchaseInboundPayload,
+  InventoryBatchDetailItem,
   InventoryBatchItem,
+  InventoryBatchTransactionItem,
   InventoryBatchQuery,
   PageResult,
   PurchaseInboundOrderItem,
@@ -71,6 +73,19 @@ type InventorySourceRow = RowDataPacket & {
   inbound_at: Date;
   inbound_number: string;
   transaction_id: number;
+};
+type InventoryTransactionRow = RowDataPacket & {
+  id: number;
+  transaction_type: InventoryBatchTransactionItem['transactionType'];
+  quantity: string;
+  unit_snapshot: string;
+  stock_status: InventoryBatchTransactionItem['stockStatus'];
+  reference_type: InventoryBatchTransactionItem['referenceType'];
+  reference_detail_id: number;
+  transaction_group_key: string | null;
+  reversal_of_transaction_id: number | null;
+  remark: string | null;
+  created_at: Date;
 };
 
 @Injectable()
@@ -401,10 +416,37 @@ export class MysqlProductionInboundRepository extends ProductionInboundRepositor
       })),
     };
   }
-  private async loadInventory(db: Pool | PoolConnection, id: string): Promise<InventoryBatchItem> {
+  private async loadInventory(
+    db: Pool | PoolConnection,
+    id: string,
+  ): Promise<InventoryBatchDetailItem> {
     const rows = await this.loadInventories(db, [id]);
     if (!rows[0]) throw new ProductionDomainError('NOT_FOUND', '库存批次不存在');
-    return rows[0];
+    const [transactions] = await db.query<InventoryTransactionRow[]>(
+      `SELECT id,transaction_type,quantity,unit_snapshot,stock_status,reference_type,
+       reference_detail_id,transaction_group_key,reversal_of_transaction_id,remark,created_at
+       FROM inventory_transaction WHERE batch_id=? ORDER BY created_at DESC,id DESC`,
+      [id],
+    );
+    return {
+      ...rows[0],
+      inventoryTransactions: transactions.map((transaction) => ({
+        inventoryTransactionId: String(transaction.id),
+        transactionType: transaction.transaction_type,
+        quantity: transaction.quantity,
+        unit: transaction.unit_snapshot,
+        stockStatus: transaction.stock_status,
+        referenceType: transaction.reference_type,
+        referenceDetailId: String(transaction.reference_detail_id),
+        transactionGroupKey: transaction.transaction_group_key,
+        reversalOfInventoryTransactionId:
+          transaction.reversal_of_transaction_id === null
+            ? null
+            : String(transaction.reversal_of_transaction_id),
+        remark: transaction.remark,
+        transactionAt: toBeijingISOString(transaction.created_at),
+      })),
+    };
   }
   private async loadInventories(
     db: Pool | PoolConnection,

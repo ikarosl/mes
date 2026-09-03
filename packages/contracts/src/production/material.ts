@@ -2,7 +2,11 @@ import type { VersionedCommand } from '../common.js';
 import type {
   ProductionBatchStatus,
   DemandType,
+  DemandGenerationGroupType,
   DemandBusinessStatus,
+  MaterialDemandProgressStatus,
+  ShortBatchAuthorizationAction,
+  ShortBatchAuthorizationCoverage,
   AllocationStatus,
   InventorySourceType,
 } from './statuses.js';
@@ -25,15 +29,12 @@ export interface ProductionItemDemandItem {
   version: number;
 }
 
-export type MaterialDemandProgressStatus =
-  | 'pending_allocation'
-  | 'partially_allocated'
-  | 'allocated'
-  | 'shortage'
-  | 'partially_outbound'
-  | 'outbound'
-  | 'unknown'
-  | DemandBusinessStatus;
+/** 需求生成动作的稳定追溯投影；展示文案由前端共享映射生成。 */
+export interface DemandGenerationSource {
+  generationGroupKey: string;
+  generationGroupType: DemandGenerationGroupType;
+  supplementNo: string | null;
+}
 
 export interface ProductionMaterialAllocationItem {
   allocationId: string;
@@ -54,7 +55,7 @@ export interface ProductionMaterialAllocationItem {
   createdAt: string;
 }
 
-export interface ProductionMaterialDemandItem {
+export interface ProductionMaterialDemandItem extends DemandGenerationSource {
   demandId: string;
   productionBatchId: string;
   productMaterialId: string;
@@ -68,17 +69,20 @@ export interface ProductionMaterialDemandItem {
   outboundQuantity: string;
   remainingQuantity: string;
   demandType: DemandType;
+  supplementId: string | null;
+  createdAt: string;
   businessStatus: DemandBusinessStatus;
   fulfilledById: string | null;
   fulfilledAt: string | null;
-  progressStatus: MaterialDemandProgressStatus;
+  /** 当前需求行自身的分配/出库进度，不是生产任务级汇总状态。 */
+  demandProgressStatus: MaterialDemandProgressStatus;
   version: number;
   allocations: ProductionMaterialAllocationItem[];
 }
 
 export type ShortBatchAuthorizationStatus = 'none' | 'valid' | 'stale' | 'consumed';
 
-export interface ShortBatchAuthorizationPreviewLine {
+export interface ShortBatchAuthorizationPreviewLine extends DemandGenerationSource {
   demandId: string;
   itemId: string;
   itemCode: string;
@@ -88,6 +92,8 @@ export interface ShortBatchAuthorizationPreviewLine {
   confirmedOutboundQuantity: string;
   expectedOutboundQuantity: string;
   authorizedRemainingQuantity: string;
+  /** 既有有效或失效授权的允许缺口；从未授权时为空。 */
+  existingAuthorizedRemainingQuantity: string | null;
 }
 
 export interface ShortBatchAuthorizationPreview {
@@ -96,7 +102,8 @@ export interface ShortBatchAuthorizationPreview {
   batchVersion: number;
   materialPlanVersion: number;
   authorizationStatus: ShortBatchAuthorizationStatus;
-  canAuthorize: boolean;
+  authorizationAction: ShortBatchAuthorizationAction;
+  authorizationCoverage: ShortBatchAuthorizationCoverage;
   blockedReason: string | null;
   lines: ShortBatchAuthorizationPreviewLine[];
 }

@@ -16,16 +16,16 @@
  */
 
 /** createBatch 创建生产批次；scope 与当前请求及结果 codec 绑定。 */
-export const CREATE_BATCH_IDEMPOTENCY_SCOPE = 'production.batch.create.v3' as const;
+export const CREATE_BATCH_IDEMPOTENCY_SCOPE = 'production.batch.create.v4' as const;
 /** 创建物料分配。 */
 export const CREATE_MATERIAL_ALLOCATION_IDEMPOTENCY_SCOPE =
   'production.material-allocation.create.v1' as const;
 /** 创建生产领料出库单。 */
 export const CREATE_MATERIAL_OUTBOUND_IDEMPOTENCY_SCOPE =
-  'production.material-outbound.create.v2' as const;
+  'production.material-outbound.create.v3' as const;
 /** 确认生产领料出库单。 */
 export const CONFIRM_MATERIAL_OUTBOUND_IDEMPOTENCY_SCOPE =
-  'production.material-outbound.confirm.v1' as const;
+  'production.material-outbound.confirm.v2' as const;
 /** 创建外购物料入库单。 */
 export const CREATE_PURCHASE_INBOUND_IDEMPOTENCY_SCOPE =
   'production.purchase-inbound.create.v1' as const;

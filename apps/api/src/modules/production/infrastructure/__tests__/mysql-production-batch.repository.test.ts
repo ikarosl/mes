@@ -191,7 +191,7 @@ describe('MysqlProductionBatchRepository persistence', () => {
     );
 
     const demandValues = connection.execute.mock.calls[0]?.[1] as unknown[];
-    expect(demandValues.slice(0, 14)).toEqual([
+    expect(demandValues.slice(0, 15)).toEqual([
       '21',
       '401',
       '402',
@@ -205,6 +205,7 @@ describe('MysqlProductionBatchRepository persistence', () => {
       '20.0000',
       '20.0000',
       'normal',
+      'NORMAL:21',
       'NORMAL:21:401',
     ]);
     expect(String(connection.execute.mock.calls[2]?.[0])).toContain('INSERT INTO operation_logs');

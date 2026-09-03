@@ -14,9 +14,13 @@
 
 短批开工不得造成物料待办丢失：批次进入 `doing` 后，普通 `active` 需求仍必须出现在仓库待分配、待出库和生产缺料查询中，并继续接受分配与确认出库。生产执行完工必须阻断仍有活动需求的批次；确实不再需要的剩余需求只能通过带来源、原因、操作人和时间的独立管理动作显式取消，禁止因达到报工数量自动关闭。
 
-普通任务保持原有门禁：部分分配可以分多次保存，但必须全部活动普通需求完成分配后才能制领料出库单。只有当前 `material_plan_version` 上的有效短批授权可以在 `material_pending` 放开该门禁。首笔部分出库确认后批次进入 `material_partially_outbound`；该状态是物料事实，不是授权状态。
+普通任务保持原有门禁：部分分配可以分多次保存，但必须全部活动需求完成分配后才能制领料出库单。只有当前 `material_plan_version` 上的有效短批授权可以在 `material_pending` 放开该门禁。首笔部分出库确认后批次进入 `material_partially_outbound`；该状态是物料事实，不是授权状态。该状态下需求计划变化会使旧授权失效：若当前全部活动需求（含正常、人工追加、工序报废补料和生产领料损耗补料）已经完成分配，则缺料风险已经消失，可以按普通齐套模式继续制单且新单不关联短批授权；若仍有任一分配缺口，则必须先对当前计划版本重新授权。
 
-短批授权必须发生在未齐套制单之前，并按需求固化 `authorized_remaining_quantity`，即管理员明确批准的开工时最大允许缺口。开工事务必须重新断言：授权仍处于 `active`、授权版本等于批次 `material_plan_version`、至少有一笔已确认领料，且每条当前活动需求的 `remaining_number` 不大于对应授权缺口。新增或取消需求必须递增 `material_plan_version`，使旧授权自动失效；继续确认出库只改善缺口，不改变该版本。
+短批授权必须发生在未齐套制单之前，并按需求固化 `authorized_remaining_quantity`，即管理员明确批准的开工时最大允许缺口。首次授权尚未形成确认领料时，必须至少存在一笔当前预计可出库分配；需求计划变化后的重新授权或调整授权如果批次仍有大于零的净确认领料，则不要求当前活动需求必须已有分配。净确认领料按“全批次已确认出库量 - 已确认且释放回公共库存的退料量”计算，已满足需求的历史出库仍属于该批次的现场领料事实。开工事务必须重新断言：授权仍处于 `active`、授权版本等于批次 `material_plan_version`、净确认领料量大于零，且每条当前活动需求的 `remaining_number` 不大于对应授权缺口。新增或取消需求必须递增 `material_plan_version`，使旧授权自动失效；继续确认出库只改善缺口，不改变该版本。
+
+查询层不得用授权版本条件把异常批次静默过滤掉。出库批次候选必须返回显式 `outboundEligibility`：可操作时给出 `normal/short_batch` 制单模式；不可操作时给出稳定阻断码和说明。至少区分“尚未形成分配”“短批授权缺失”“需求计划变化导致授权失效”和“分配已被待出库单占用”。管理端只允许选择可制单批次，同时把待处理批次及原因展示给操作员。该投影只用于交互，制单与确认事务仍必须在锁内重新校验全部活动需求、有效分配和授权版本。
+
+候选集合必须先要求存在活动需求，再只统计这些活动需求关联的分配事实。`has_active_allocation`、`has_orderable_allocation` 和 `has_orderable_supplement_allocation` 均不得包含 `fulfilled/cancelled` 需求的历史分配。`has_active_allocation` 还必须要求分配数量扣除已确认出库后仍有余额，已被确认出库耗尽但状态仍为 `active` 的分配行不得伪装成待出库占用。活动需求不存在时批次直接退出候选；活动需求存在但尚无剩余有效分配时返回 `allocation_incomplete`；活动需求已有剩余有效分配但可制单数量被待出库单占满时返回 `no_orderable_allocation`。`doing` 只继续承载已消费短批授权的普通剩余需求或活动补料需求；`material_outbound` 只因后续活动补料需求重新进入候选。
 
 ---
 
@@ -42,6 +46,7 @@
 | `need_number`                      | `DECIMAL(12,4)`   | 需求数量                                  |
 | `remaining_number`                 | `BIGINT`          | 尚未确认领用的整数数量，可从出库事实重建  |
 | `demand_type`                      | `VARCHAR(30)`     | 需求类型，默认 `normal`                   |
+| `generation_group_key`             | `VARCHAR(150)`    | 同一次需求生成动作的稳定分组键            |
 | `idempotency_key`                  | `VARCHAR(150)`    | 幂等键，同一键重复提交返回既有结果        |
 | `parent_demand_id`                 | `BIGINT UNSIGNED` | 追加需求关联的原始正常需求 ID             |
 | `supplement_id`                    | `BIGINT UNSIGNED` | 补料物流单 ID，仅两类补料需求填写         |
@@ -67,6 +72,7 @@
 | `quantity_per_unit_snapshot` / `unit_snapshot` | 保证 BOM 修改后仍可还原需求计算口径              |
 | `need_number`                                  | 需求事实，不应因为出库、退料、报废而直接修改     |
 | `demand_type`                                  | `normal` 正常需求、`manual_additional` 人工追加、`scrap_supplement` 工序报废补料、`material_loss_supplement` 生产领料损耗补料 |
+| `generation_group_key`                         | 同一次生成的全部需求共享；只表达生成动作分组，不替代补料来源外键 |
 | `parent_demand_id`                             | 补料需求关联的原始需求                           |
 | `supplement_id`                                | 补料需求的物流来源单据；具体业务来源由补料单的 `source_type` 和受约束来源外键确定 |
 | `idempotency_key`                              | 幂等键，同一键重复提交返回既有结果               |
@@ -88,6 +94,7 @@
 - 检查约束：`0 <= remaining_number <= need_number`；`active` 必须大于 `0`，`fulfilled` 必须等于 `0` 并填写完成事实
 - 检查约束：`cancelled` 必须同时填写受控 `cancel_source`、非空原因、操作人和时间；非取消状态这些字段必须全部为空
 - 组合索引：`INDEX (production_batch_id, business_status)`，用于查询批次有效需求
+- 组合索引：`INDEX (production_batch_id, generation_group_key, id)`，用于按生成先后稳定分组展示
 - 组合索引：`INDEX (business_status, item_id, id)`，用于从活动需求出发按物料汇总供需预警
 - 检查约束：正常需求要求 `parent_demand_id IS NULL AND supplement_id IS NULL`
 - 检查约束：人工追加需求要求 `parent_demand_id IS NOT NULL AND supplement_id IS NULL`
@@ -95,6 +102,7 @@
 - 检查约束：生产领料损耗补料要求 `parent_demand_id IS NOT NULL AND supplement_id IS NOT NULL`
 - 检查约束：正常需求的 BOM 快照字段不得为空且均大于 `0`
 - 唯一约束：`UNIQUE (idempotency_key)`
+- 检查约束：`idempotency_key` 必须以 `generation_group_key + ':'` 开头，且分组键前缀必须与 `demand_type` 对应
 - 唯一约束：`UNIQUE (id, item_id)`
 - 唯一约束：`UNIQUE (id, production_batch_id)`
 - 唯一约束：`UNIQUE (supplement_id, parent_demand_id)`；当前工序报废补料对同一原始需求最多生成一条需求，生产领料损耗补料固定只有一条需求
@@ -117,13 +125,18 @@
 - 如果某个生产批次需要领用上一个生产批次产出的半成品，也应通过该表生成需求。
 - 补料不建议直接修改原需求的 `need_number`，应新增一条需求记录。
 - 正常需求的 `need_number = quantity_per_unit_snapshot * planned_output_quantity_snapshot`；结果生成后作为事实保存，不随 BOM 或批次计划变化自动回写。
-- 幂等键使用稳定格式：正常需求为 `NORMAL:{production_batch_id}:{product_material_id}`，工序报废补料为 `SCRAPSUP:{supplement_id}:{parent_demand_id}`，生产领料损耗补料为 `LOSSSUP:{supplement_id}:{material_loss_scrap_id}`，人工追加为 `ADDITIONAL:{production_batch_id}:{business_action_no}:{product_material_id}`。
+- 一个生产批次的正常 BOM 需求集合只生成一次；只要该批次已经存在 `normal` 需求，重复生成动作必须返回当前批次，不得再次读取当前 BOM 或新增正常需求。补料需求不重新开放正常需求生成动作。
+- 分组键使用稳定格式：正常需求为 `NORMAL:{production_batch_id}`，工序报废补料为 `SCRAPSUP:{supplement_id}`，生产领料损耗补料为 `LOSSSUP:{supplement_id}`，人工追加为 `ADDITIONAL:{production_batch_id}:{business_action_no}`。这些格式由共享类型和领域构造器集中拥有，业务写入路径不得直接拼接。
+- 逐条幂等键在分组键后追加稳定行来源：正常需求追加 `product_material_id`，工序报废补料追加 `parent_demand_id`，生产领料损耗补料追加 `material_loss_scrap_id`，人工追加追加 `product_material_id`。
 - `business_action_no` 必须是一次人工追加动作的稳定唯一编号；相同幂等键重复提交时返回既有需求，不插入新记录，也不得修改既有 `need_number`。
 - 应用事务必须校验 `parent_demand_id` 指向的原需求与当前需求属于同一生产批次，且 `product_material_id` 对应投入对象与 `item_id` 一致。
 - 报废补料必须校验补料单、授权、原需求和新增需求属于同一生产批次，且 BOM 明细与物料一致。
 - 生产领料损耗补料必须从损耗事实所指向的需求/分配行取得 BOM、物料、单位和批次关系；`need_number` 固定等于已确认损耗数量，不接受客户端填写，不允许改量或选择不补料。
-- 需求事实和对应操作日志必须在同一事务写入。
+- 需求事实和对应操作日志必须在同一事务写入。Production infrastructure 中新增、重开或取消需求统一经过事务内需求计划写入器，并在同一事务把 `production_batches.material_plan_version` 和批次 `version` 各递增一次；业务仓储不得直接散落此类 SQL。确认出库扣减既有需求属于履约，不改变需求集合，因此不经过该写入器，也不递增物料计划版本。
+- 分配写命令一次只能处理一个需求，但允许同一需求在一个命令内拆分到多个库存批次；后端必须拒绝混合不同 `demand_id` 的聚合分配。需求列表按 `id ASC` 返回，管理端按 `generation_group_key` 分组，默认选中最早未完成组中的最早可分配需求，但不强制只能处理最早组或最早需求。
+- 全部活动需求完成分配时批次从 `material_pending` 进入 `material_assigned`；释放尚未出库的有效分配并重新产生缺口时允许从 `material_assigned` 回到 `material_pending`。该回退只表达分配齐套状态变化，不得回到初始 `pending`，也不得重新开放正常需求生成。
 - 确认出库在写出库明细、负库存流水和单据终态的同一事务中扣减涉及需求的 `remaining_number`；扣至 `0` 时写入 `fulfilled/fulfilled_by/fulfilled_at`。部分出库继续保持 `active`。
+- `fulfilled` 属于需求持久化业务状态；需求列表的 `demandProgressStatus` 将其统一投影为 `outbound`。取消需求投影为 `cancelled`，活动需求才按分配量和净出库量计算其余进度。
 - 一般生产退料不重新打开原需求，生产损耗继续创建独立补料需求。唯一例外是短批首工序尚未开工、批次仍为 `material_partially_outbound` 时确认退料：退回数量重新加回 `remaining_number`，已满足需求恢复为 `active`，批次 `material_plan_version` 递增并使旧授权失效。
 - 历史已满足需求由 `202608250002` 根据 `completed` 出库单一次性回填。物料供需预警只汇总 `active.remaining_number`，不再扫描已满足需求的历史出库明细。
 - 供需预警关键词匹配同一 `item_id` 的任一活动需求编码/名称快照；命中物料后必须汇总该物料的全部活动需求，不能只累计匹配关键词的需求行。列表以该物料 ID 最大的活动需求快照作为确定性展示文本，禁止用 `MAX(item_name_snapshot)` 等字典序值冒充当前名称。
@@ -167,6 +180,9 @@ active -> superseded
 - `active -> superseded`：管理员重新授权、普通备料恢复为完整分配或确认全部出库时写入；已替代授权不得恢复。
 - 需求计划版本变化可以只递增批次版本，使旧行保留 `active` 但在业务上成为 `stale`，便于保留原批准事实；判断是否可开工不能只看 `status='active'`，还必须要求授权的 `material_plan_version` 等于批次当前版本。
 - 授权只表示管理员接受缺料风险，不形成精确物料产能，不增加报工上限。
+- 授权预览返回唯一动作：`authorize` 首次授权、`reauthorize` 需求版本变化后重授、`adjust` 当前缺口超过既有授权快照、`view` 既有授权仍覆盖或已经消费、`not_required` 当前无需短批授权。批次既无当前预计可出库分配、也无大于零的净确认领料时，动作仍表达后续应执行的首次授权、重授或调整，同时通过非空 `blockedReason` 禁止当前提交；已存在净确认领料时，即使当前活动需求均无分配，也允许管理员重新复核全部缺口并授权。管理端不得把无分配的待授权情形显示为“物料已齐套”。当前版本且仍覆盖缺口时禁止重复写授权；管理端保留只读查看入口，不再显示可提交表单。
+- 授权覆盖关系独立返回 `none/covered/insufficient/stale/consumed`。按钮文字只使用动作字段，不能由前端自行组合批次状态和版本猜测。
+- 首次和重新授权预览的每条需求均经 `demand_id` 返回 `generation_group_key`、需求组类型及补料单号；管理端统一展示“初始物料需求”“人工追加需求”“报废补料 {补料单号}”或“损耗补料 {补料单号}”。来源属于需求事实的查询投影，不在短批授权明细重复保存，也不得逐行查询补料单。
 
 ### 10.2 `production_short_batch_authorization_detail`
 
@@ -327,7 +343,7 @@ approved -> fulfilled
 - 补产固定从路线首工序重新投产，补产额度的 `quota_end_step_record_id` 固定为异常上报工序；物料截止工序只缩小补料推荐范围，不能缩短产品额度的逐道传播。例如 A→B→C 中，C 上手发现前置异常并选择 B 为物料截止：物料推荐 A..B，补产仍从 A 逐道放行至 C。
 - 可执行补产额度只读取“授权事实 + 对应补料单 `fulfilled`”。最后一项需求达到全量确认出库时，同一事务只把补料单改为 `fulfilled` 并重开受影响已完成工序；不得再次创建或修改授权。分配、待出库或部分确认领料均不可执行额度。
 - 因此当前链路闭合为“工序报废与补产授权 → 人工补料 → 新需求 → 分配 → 确认出库 → 授权可执行 → 首工序重新生产 → 逐工序正常放行 → 来源工序补报”。当前仍不记录某次补报逐笔消费哪张授权；未来需要部分执行、指定来源消费或半成品重入时，再追加额度消费/重入事实和版本化接口。
-- 工序报废补料审批只接受 `doing` 批次；生产领料损耗申报与确认接受 `material_outbound/doing` 批次。短批开工后，普通活动需求和两类补料需求均可继续分配、释放未出库分配、制单和确认出库；任务进入 `doing` 不得隐藏普通剩余需求。物料物流不得代替首工序开工推进为 `doing`。
+- 工序报废补料审批只接受 `doing` 批次；生产领料损耗申报与确认接受 `material_partially_outbound/material_outbound/doing` 批次。`material_partially_outbound` 已存在确认领料事实，现场暂存或搬运中的已领物料同样可能损耗；确认损耗产生补料需求并推进 `material_plan_version` 后，旧短批授权按版本失效。若当前计划仍有分配缺口，继续短批领料或开工必须重新授权；若正常需求与补料需求均已完全分配，则后续领料按普通齐套模式继续，全部确认出库后进入 `material_outbound` 再正常开工。短批开工后，普通活动需求和两类补料需求均可继续分配、释放未出库分配、制单和确认出库；任务进入 `doing` 不得隐藏普通剩余需求。物料物流不得代替首工序开工推进为 `doing`。
 
 ---
 
@@ -342,7 +358,7 @@ approved -> fulfilled
 | `id`                  | `BIGINT UNSIGNED` | 主键                                                  |
 | `demand_id`           | `BIGINT UNSIGNED` | 需求 ID，关联 `production_item_demand.id`             |
 | `production_batch_id` | `BIGINT UNSIGNED` | 生产批次 ID，冗余保存，便于查询和约束                 |
-| `item_id`             | `BIGINT UNSIGNED` | 库存对象 ID，冗余保存，用于约束需求对象与批次对象一致 |
+| `item_id`             | `BIGINT UNSIGNED` | 库存对象 ID，冗余保存，用于约束需求对象与批次对象一致(products表) |
 | `batch_id`            | `BIGINT UNSIGNED` | 分配的库存批次 ID，关联 `item_batch.id`               |
 | `assigned_number`     | `DECIMAL(12,4)`   | 分配数量                                              |
 | `unit_snapshot`       | `VARCHAR(20)`     | 分配时单位快照                                        |
@@ -425,11 +441,12 @@ approved -> fulfilled
 说明：
 
 - `outbound_order` 表示一次出库动作。
-- 一张出库单可以包含多个物料、多个需求、多个库存批次。
+- 一张出库单可以包含同一生产批次内的多个需求生成组、多个需求、多个物料和多个库存批次；前提是这些明细属于同一次实际拣货与领料交接。不同时间才能备齐的明细不得只为减少单据而提前并单，因为当前确认和取消均按整单执行。
 - 出库单主表建议关联 `production_batch_id`，而不是单个 `demand_id`。
 - 具体出了哪些物料、哪些批次、多少数量，由 `outbound_detail` 记录。
+- 管理端按 `production_item_demand.generation_group_key` 分组展示候选，但选择可以跨组；提交前显示选中的需求组数和分配明细数。出库详情与打印单通过 `outbound_detail.demand_id` 关联需求和补料单，派生展示需求组类型、分组键及补料单号，不在 `outbound_detail` 冗余保存组字段。
 - 人工取消必须填写原因；生产任务级联取消继承任务取消原因，并以 `cancel_source` 明确来源。
-- 普通齐套出库的 `short_batch_authorization_id` 为空。批次尚未齐套时，只有当前物料计划版本上的有效授权才能制单，且必须把授权 ID 固化到出库单；确认出库时重新校验该 ID 仍是当前有效授权，防止需求变化后确认旧单。
+- 普通齐套出库的 `short_batch_authorization_id` 为空。`material_partially_outbound` 批次在全部活动需求完成分配后也按普通齐套模式创建新单，不关联已经失效或不再需要的短批授权。批次尚未齐套时，只有当前物料计划版本上的有效授权才能制单，且必须把授权 ID 固化到出库单；确认已关联授权的出库单时重新校验该 ID 仍是当前有效授权，防止需求变化后确认旧单。旧授权单失效后必须取消并重新制单，不得改写其授权来源；无授权单确认时必须重新校验当前全部活动需求仍已完全分配。
 
 ---
 
@@ -468,6 +485,7 @@ approved -> fulfilled
 - 出库明细用于判断某条分配是否已经出库、某条需求是否已经满足。
 - `outbound_id` 用于表达哪些明细属于同一次出库动作。
 - `production_batch_id` 是有价值的冗余字段，便于按生产批次查询出库记录。
+- `generation_group_key`、需求组类型和补料单号属于查询时追溯投影，必须经 `demand_id` 关联需求事实取得；不得为展示便利在本表复制并双写。
 
 当前 Production 实施口径：创建单据只允许写入 `pending_picking`，不生成库存流水；整单确认执行
 `pending_picking -> completed` 并为每条明细生成一条负数 `production_material_outbound` 流水；取消执行

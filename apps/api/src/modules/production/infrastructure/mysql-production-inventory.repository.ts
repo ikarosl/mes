@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
+import { DEMAND_GENERATION_GROUP_TYPE } from '@company/constants';
 import { withTransaction } from '@company/database';
 import type {
   CreateReturnOrderPayload,
@@ -29,6 +30,7 @@ import { DATABASE_POOL } from '../../../infrastructure/database/database.module.
 import { ProductionInventoryRepository } from '../application/ports/production-inventory.repository.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
 import { fixedIntegerQuantity, integerQuantity } from '../domain/integer-quantity.js';
+import { mysqlProductionDemandPlanWriter } from './mysql-production-demand-plan.writer.js';
 import { findBatch } from './mysql-production.shared.js';
 
 type Executor = Pool | PoolConnection;
@@ -250,14 +252,14 @@ export class MysqlProductionInventoryRepository extends ProductionInventoryRepos
         work_order_no: string;
         product_code: string;
         product_name: string;
-        status: 'material_outbound' | 'doing';
+        status: 'material_partially_outbound' | 'material_outbound' | 'doing';
       })[]
     >(
       `SELECT DISTINCT pb.id,pb.batch_no,wo.work_order_no,
         wo.product_code_snapshot product_code,wo.product_name_snapshot product_name,pb.status
        FROM production_batches pb JOIN work_orders wo ON wo.id=pb.work_order_id
        JOIN production_item_allocation allocation ON allocation.production_batch_id=pb.id
-       WHERE pb.status IN ('material_outbound','doing')
+       WHERE pb.status IN ('material_partially_outbound','material_outbound','doing')
          AND EXISTS (SELECT 1 FROM outbound_detail detail
            JOIN outbound_order outbound ON outbound.id=detail.outbound_id
            WHERE detail.allocation_id=allocation.id AND outbound.status='completed')
@@ -400,39 +402,32 @@ export class MysqlProductionInventoryRepository extends ProductionInventoryRepos
       );
       if (!sourceDemand) throw new ProductionDomainError('NOT_FOUND', '损耗来源需求不存在');
       const rootDemandId = sourceDemand.parent_demand_id ?? sourceDemand.id;
-      const [demand] = await db.execute<ResultSetHeader>(
-        `INSERT INTO production_item_demand
-         (production_batch_id,product_material_id,item_id,item_code_snapshot,item_name_snapshot,quantity_per_unit_snapshot,
-          unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,
-          planned_output_quantity_snapshot,need_number,remaining_number,demand_type,idempotency_key,
-          parent_demand_id,supplement_id,business_status,created_by,updated_by)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'material_loss_supplement',?,?,?,'active',?,?)`,
-        [
-          scrap.production_batch_id,
-          sourceDemand.product_material_id,
-          sourceDemand.item_id,
-          sourceDemand.item_code_snapshot,
-          sourceDemand.item_name_snapshot,
-          sourceDemand.quantity_per_unit_snapshot,
-          sourceDemand.unit_snapshot,
-          sourceDemand.is_key_material_snapshot,
-          sourceDemand.need_batch_record_snapshot,
-          sourceDemand.planned_output_quantity_snapshot,
-          scrap.scrap_number,
-          integerQuantity(scrap.scrap_number),
-          `LOSSSUP:${supplement.insertId}:${scrapId}`,
-          rootDemandId,
-          supplement.insertId,
-          context.actorId,
-          context.actorId,
+      const [demandId] = await mysqlProductionDemandPlanWriter.createDemandGroup(db, {
+        batchId: scrap.production_batch_id,
+        actorId: context.actorId,
+        source: {
+          type: DEMAND_GENERATION_GROUP_TYPE.materialLossSupplement,
+          supplementId: supplement.insertId,
+        },
+        lines: [
+          {
+            identityId: scrapId,
+            productMaterialId: sourceDemand.product_material_id,
+            itemId: sourceDemand.item_id,
+            itemCode: sourceDemand.item_code_snapshot,
+            itemName: sourceDemand.item_name_snapshot,
+            quantityPerUnit: sourceDemand.quantity_per_unit_snapshot,
+            unit: sourceDemand.unit_snapshot,
+            isKeyMaterial: sourceDemand.is_key_material_snapshot,
+            needBatchRecord: sourceDemand.need_batch_record_snapshot,
+            plannedOutputQuantity: sourceDemand.planned_output_quantity_snapshot,
+            needNumber: String(integerQuantity(scrap.scrap_number)),
+            demandType: 'material_loss_supplement',
+            parentDemandId: rootDemandId,
+            supplementId: supplement.insertId,
+          },
         ],
-      );
-      await db.execute(
-        `UPDATE production_batches
-         SET material_plan_version=material_plan_version+1,version=version+1,updated_by=?
-         WHERE id=?`,
-        [context.actorId, scrap.production_batch_id],
-      );
+      });
       await this.audit(
         db,
         context,
@@ -444,7 +439,7 @@ export class MysqlProductionInventoryRepository extends ProductionInventoryRepos
           status: 'confirmed',
           version: version + 1,
           supplementId: String(supplement.insertId),
-          demandId: String(demand.insertId),
+          demandId: demandId!,
           demandQuantity: scrap.scrap_number,
         },
       );
@@ -699,40 +694,11 @@ export class MysqlProductionInventoryRepository extends ProductionInventoryRepos
             (returnedByDemand.get(demandId) ?? 0) + integerQuantity(line.return_number),
           );
         }
-        for (const [demandId, returnedQuantity] of returnedByDemand) {
-          const [reopened] = await db.execute<ResultSetHeader>(
-            `UPDATE production_item_demand
-             SET remaining_number=remaining_number+?,business_status='active',
-                 fulfilled_by=NULL,fulfilled_at=NULL,version=version+1,updated_by=?
-             WHERE id=? AND production_batch_id=?
-               AND business_status IN ('active','fulfilled')
-               AND remaining_number+?<=need_number`,
-            [
-              returnedQuantity,
-              context.actorId,
-              demandId,
-              identity.production_batch_id,
-              returnedQuantity,
-            ],
-          );
-          if (reopened.affectedRows !== 1)
-            throw new ProductionDomainError(
-              'CONCURRENT_MODIFICATION',
-              '退料对应物料需求已变化，请刷新后重试',
-            );
-        }
-        await db.execute(
-          `UPDATE production_short_batch_authorization
-           SET status='superseded',version=version+1
-           WHERE production_batch_id=? AND status='active'`,
-          [identity.production_batch_id],
-        );
-        await db.execute(
-          `UPDATE production_batches
-           SET material_plan_version=material_plan_version+1,version=version+1,updated_by=?
-           WHERE id=?`,
-          [context.actorId, identity.production_batch_id],
-        );
+        await mysqlProductionDemandPlanWriter.reopenAfterPreStartReturn(db, {
+          batchId: identity.production_batch_id,
+          actorId: context.actorId,
+          returnedByDemand,
+        });
       }
       const [updated] = await db.execute<ResultSetHeader>(
         `UPDATE return_order SET status='returned',return_at=CURRENT_TIMESTAMP,
@@ -1107,7 +1073,7 @@ export class MysqlProductionInventoryRepository extends ProductionInventoryRepos
        JOIN item_batch item_batch ON item_batch.id=allocation.batch_id
        JOIN production_batches batch ON batch.id=allocation.production_batch_id
        WHERE allocation.production_batch_id=?
-         AND batch.status IN ('material_outbound','doing')
+         AND batch.status IN ('material_partially_outbound','material_outbound','doing')
        ORDER BY allocation.id`,
       [batchId],
     );

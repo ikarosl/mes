@@ -62,7 +62,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       !isIdempotencyStorageError &&
       !isMulterFileTooLarge
     ) {
-      const diagnostic = safeExceptionDiagnostic(exception);
+      const diagnostic = exceptionDiagnostic(exception);
       this.logger.error(
         [
           '未处理的 HTTP 异常：',
@@ -128,10 +128,10 @@ interface SafeExceptionDiagnostic {
 }
 
 /**
- * 未预期异常只记录结构化诊断字段。绝不记录 message/sqlMessage；stack 首行同样会被替换，避免
- * SQL、请求载荷或凭证随驱动异常文本进入日志。
+ * 生产及未明确声明的环境只保留错误分类与脱敏堆栈；本地 development 保留原始异常链，便于定位。
+ * 两种模式都不读取请求体、请求头或 URL 查询串，客户端响应也始终使用独立的安全消息。
  */
-const safeExceptionDiagnostic = (exception: unknown): SafeExceptionDiagnostic => {
+const exceptionDiagnostic = (exception: unknown): SafeExceptionDiagnostic => {
   const cause = readCause(exception);
   const source = cause ?? exception;
   const code = safeErrorCode(readField(source, 'code') ?? readField(exception, 'code'));
@@ -140,7 +140,10 @@ const safeExceptionDiagnostic = (exception: unknown): SafeExceptionDiagnostic =>
   const stage = exception instanceof DatabaseError ? databaseStage(exception.message) : undefined;
   const exceptionType = safeTypeName(exception);
   const causeType = cause ? safeTypeName(cause) : undefined;
-  const stack = safeStack(exception, cause, exceptionType, causeType);
+  const stack =
+    process.env.NODE_ENV === 'development'
+      ? developmentStack(exception, cause, exceptionType, causeType)
+      : safeStack(exception, cause, exceptionType, causeType);
   return {
     exceptionType,
     ...(causeType ? { causeType } : {}),
@@ -203,7 +206,27 @@ const safeStackSection = (error: unknown, type: string): string | undefined => {
     .slice(1, 13)
     .filter((line) => /^\s*at\s/.test(line))
     .map((line) => line.replace(/[\r\n]/g, ''));
-  return frames.length ? [`${type}：[消息已脱敏]`, ...frames].join('\n') : undefined;
+  return frames.length ? [type, ...frames].join('\n') : undefined;
+};
+
+const developmentStack = (
+  exception: unknown,
+  cause: unknown,
+  exceptionType: string,
+  causeType: string | undefined,
+): string | undefined => {
+  const sections = [
+    developmentStackSection(exception, exceptionType),
+    cause ? developmentStackSection(cause, causeType ?? 'UnknownError') : undefined,
+  ].filter((section): section is string => Boolean(section));
+  return sections.length ? sections.join('\n原因：') : undefined;
+};
+
+const developmentStackSection = (error: unknown, type: string): string | undefined => {
+  const stack = readField(error, 'stack');
+  if (typeof stack === 'string') return stack;
+  const message = readField(error, 'message');
+  return typeof message === 'string' ? `${type}: ${message}` : undefined;
 };
 
 const safeRequestPath = (value: string): string => safeLogValue(value.split('?', 1)[0] || '/');

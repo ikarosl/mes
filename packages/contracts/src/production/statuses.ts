@@ -47,7 +47,20 @@ export type InboundOrderStatus = 'pending' | 'completed' | 'cancelled';
 export type DemandType =
   'normal' | 'manual_additional' | 'scrap_supplement' | 'material_loss_supplement';
 
+/** 同一次需求生成动作的分组类型。 */
+export type DemandGenerationGroupType = DemandType;
+
 export type DemandBusinessStatus = 'active' | 'fulfilled' | 'cancelled';
+
+/** 单条生产物料需求的分配/出库展示进度。 */
+export type MaterialDemandProgressStatus =
+  | 'pending_allocation'
+  | 'partially_allocated'
+  | 'allocated'
+  | 'shortage'
+  | 'partially_outbound'
+  | 'outbound'
+  | 'cancelled';
 
 export type BatchStepAbnormalOrigin = 'current_step' | 'previous_step';
 
@@ -55,6 +68,22 @@ export type AllocationStatus = 'active' | 'released' | 'cancelled' | 'frozen' | 
 
 export type OutboundOrderStatus =
   'pending_picking' | 'picked' | 'partially_outbound' | 'completed' | 'cancelled';
+
+/** 短批授权窗口当前应提供的唯一业务动作。 */
+export type ShortBatchAuthorizationAction =
+  'authorize' | 'reauthorize' | 'adjust' | 'view' | 'not_required';
+
+/** 当前物料缺口相对于既有短批授权快照的覆盖关系。 */
+export type ShortBatchAuthorizationCoverage =
+  'none' | 'covered' | 'insufficient' | 'stale' | 'consumed';
+
+export type MaterialOutboundMode = 'normal' | 'short_batch';
+
+export type MaterialOutboundBlockedCode =
+  | 'allocation_incomplete'
+  | 'short_batch_authorization_required'
+  | 'short_batch_authorization_stale'
+  | 'no_orderable_allocation';
 
 export type BatchStepReportType = 'normal' | 'reversal';
 

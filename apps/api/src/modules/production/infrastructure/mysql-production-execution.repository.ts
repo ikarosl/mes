@@ -6,6 +6,7 @@ import type {
   ProductionExecutionCompletionCheck,
   ProductionExecutionCompletionResult,
   ProductionStepCommandResult,
+  WorkOrderStatus,
 } from '@company/contracts';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { writeTransactionalAudit } from '../../../common/audit/transactional-audit-writer.js';
@@ -21,6 +22,10 @@ import {
 } from '../domain/production-execution.policy.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
 import { evaluateProductionExecutionCompletion } from '../domain/production-completion.policy.js';
+import {
+  requireBatchTransition,
+  requireWorkOrderTransition,
+} from '../domain/production-status.policy.js';
 import { findBatch } from './mysql-production.shared.js';
 import type { BatchRow, Db } from './mysql-production.shared.js';
 import { selectWorkerTasks } from './mysql-production-worker-task.projection.js';
@@ -75,6 +80,7 @@ export class MysqlProductionExecutionRepository extends ProductionExecutionRepos
           'BATCH_EXECUTION_COMPLETION_NOT_ALLOWED',
           '只有生产执行中的批次可以确认完工',
         );
+      requireBatchTransition(batch.status, 'completed');
       if (batch.version !== version)
         throw new ProductionDomainError(
           'CONCURRENT_MODIFICATION',
@@ -208,6 +214,7 @@ export class MysqlProductionExecutionRepository extends ProductionExecutionRepos
             shortBatchStart.blockedReason ?? '当前短批授权不允许开工',
           );
         requireFirstStepStartable(batch.status, shortBatchStart?.canStart ?? false);
+        requireBatchTransition(batch.status, 'doing');
       } else {
         const previous = steps[index - 1]!;
         requireFollowingStepStartable({
@@ -229,20 +236,22 @@ export class MysqlProductionExecutionRepository extends ProductionExecutionRepos
         );
         if (batchUpdated.affectedRows !== 1)
           throw new ProductionDomainError('STEP_START_NOT_ALLOWED', '生产批次开工状态已变化');
-        const [workOrderUpdated] = await connection.execute<ResultSetHeader>(
-          "UPDATE work_orders SET status='doing',version=version+1,updated_by=? WHERE id=? AND status='released'",
-          [context.actorId, String(batch.work_order_id)],
-        );
-        if (workOrderUpdated.affectedRows !== 1) {
-          const [[workOrder]] = await connection.query<(RowDataPacket & { status: string })[]>(
-            'SELECT status FROM work_orders WHERE id=? FOR UPDATE',
-            [String(batch.work_order_id)],
+        const [[workOrder]] = await connection.query<
+          (RowDataPacket & { status: WorkOrderStatus })[]
+        >('SELECT status FROM work_orders WHERE id=? FOR UPDATE', [String(batch.work_order_id)]);
+        if (!workOrder || (workOrder.status !== 'released' && workOrder.status !== 'doing'))
+          throw new ProductionDomainError(
+            'STEP_START_NOT_ALLOWED',
+            '生产工单当前状态不允许批次开工',
           );
-          if (workOrder?.status !== 'doing')
-            throw new ProductionDomainError(
-              'STEP_START_NOT_ALLOWED',
-              '生产工单当前状态不允许批次开工',
-            );
+        if (workOrder.status === 'released') {
+          requireWorkOrderTransition(workOrder.status, 'doing');
+          const [workOrderUpdated] = await connection.execute<ResultSetHeader>(
+            "UPDATE work_orders SET status='doing',version=version+1,updated_by=? WHERE id=? AND status='released'",
+            [context.actorId, String(batch.work_order_id)],
+          );
+          if (workOrderUpdated.affectedRows !== 1)
+            throw new ProductionDomainError('STEP_START_NOT_ALLOWED', '生产工单开工状态已变化');
         }
         if (batch.status === 'material_partially_outbound')
           await connection.execute(

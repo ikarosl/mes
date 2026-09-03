@@ -6,7 +6,9 @@ import type {
   StockCheckResult,
   StockStatus,
   InventoryBatchStatus,
+  InventoryReferenceType,
   InventorySourceType,
+  InventoryTransactionType,
   DemandType,
 } from './statuses.js';
 
@@ -102,7 +104,7 @@ export interface MaterialLossBatchOption {
   workOrderNo: string;
   productCode: string;
   productName: string;
-  batchStatus: 'material_outbound' | 'doing';
+  batchStatus: 'material_partially_outbound' | 'material_outbound' | 'doing';
 }
 
 export interface MaterialLossCandidateItem {
@@ -316,4 +318,22 @@ export interface InventoryBatchItem {
     inboundQuantity: string;
     inventoryTransactionId: string;
   }>;
+}
+
+export interface InventoryBatchTransactionItem {
+  inventoryTransactionId: string;
+  transactionType: InventoryTransactionType;
+  quantity: string;
+  unit: string;
+  stockStatus: StockStatus;
+  referenceType: InventoryReferenceType;
+  referenceDetailId: string;
+  transactionGroupKey: string | null;
+  reversalOfInventoryTransactionId: string | null;
+  remark: string | null;
+  transactionAt: string;
+}
+
+export interface InventoryBatchDetailItem extends InventoryBatchItem {
+  inventoryTransactions: InventoryBatchTransactionItem[];
 }

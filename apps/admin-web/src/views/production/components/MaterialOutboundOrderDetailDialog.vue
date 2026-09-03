@@ -77,6 +77,12 @@
         </el-descriptions>
         <el-table :data="detail.details">
           <el-table-column
+            label="需求来源"
+            min-width="170"
+          >
+            <template #default="{ row }">{{ materialDemandGroupLabel(row) }}</template>
+          </el-table-column>
+          <el-table-column
             prop="demandId"
             label="需求 ID"
             width="105"
@@ -135,6 +141,7 @@ import type { MaterialOutboundItem } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
 import { formatDateTimeForDisplay } from '../../../utils/date';
 import { formatQuantity } from '../production-status';
+import { materialDemandGroupLabel } from '../material-demand-group-presentation';
 
 defineOptions({ name: 'MaterialOutboundOrderDetailDialog' });
 

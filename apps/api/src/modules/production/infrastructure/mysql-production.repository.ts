@@ -170,6 +170,9 @@ export class MysqlProductionRepository extends ProductionRepository {
   ): Promise<ProductionBatchDetail> {
     return this.batches.generateMaterialDemands(batchId, version, bom, audit);
   }
+  hasGeneratedNormalMaterialDemands(batchId: string): Promise<boolean> {
+    return this.materials.hasGeneratedNormalDemands(batchId);
+  }
   getBatchProductId(batchId: string): Promise<string> {
     return this.batches.getProductId(batchId);
   }

@@ -157,6 +157,7 @@
 - 批次追溯要求快照；
 - 生产批次计划数量快照；
 - 最终需求数量；
+- 需求生成分组键，同一次生成动作产生的需求使用同一个分组键；
 - 幂等键，防止重复点击或重试重复创建需求。
 
 幂等键生成规则：
@@ -166,6 +167,10 @@
 - 人工追加：`ADDITIONAL:{production_batch_id}:{business_action_no}:{product_material_id}`
 
 同一个幂等键重复提交时返回既有结果，不再插入新需求。
+
+需求生成分组键由同一类型安全构造器生成：正常需求为 `NORMAL:{production_batch_id}`，工序报废补料为 `SCRAPSUP:{supplement_id}`，生产领料损耗补料为 `LOSSSUP:{supplement_id}`，人工追加为 `ADDITIONAL:{production_batch_id}:{business_action_no}`。逐条需求幂等键在对应分组键后追加该行的稳定来源 ID，不允许各生成路径自行拼接。
+
+一个生产批次的正常 BOM 需求集合只允许生成一次。正常需求已经存在后再次调用生成动作时，系统直接返回当前生产批次，不再读取或校验后来变化的 BOM；工序报废补料和生产领料损耗补料只新增各自来源的补料需求，不重新开放正常需求生成动作。
 
 需求生成后作为历史事实保存。后续修改 BOM 或生产批次计划数量，不得自动覆盖原有需求；如需调整，应取消原需求或新增追加需求。
 
@@ -190,6 +195,8 @@
 - 物料；
 - 库存批次；
 - 分配数量。
+
+分配按需求逐条办理：一次分配命令只能包含一个 `production_item_demand`，但允许该需求同时从多个库存批次拆分分配。管理端先按 `generation_group_key` 展示每一次需求生成，再在组内使用单选切换需求；默认选中最早一个仍有缺口的需求组及其最早可分配需求。不得把一个组或多个组聚合成一次分配动作；已完成的组和需求继续展示，但不得新增分配。
 
 创建物料分配记录即表示完成库存预留。物料需求本身只表示计划，不会占用库存。
 
@@ -224,6 +231,12 @@
 5. 生产批次进入 `material_outbound` 状态。
 
 物料分配只表示预留，不会减少账面库存；只有领料出库才会实际扣减库存。
+
+领料出库以“同一生产批次的一次实际拣货和交接”为聚合边界。管理端按需求生成组展示可制单分配，允许在一次操作中跨组、跨需求、跨物料和跨库存批次选择；后端仍逐 `allocation_id` 保存独立 `outbound_detail`。出库详情和打印单从每条明细的 `demand_id` 派生展示“初始物料需求”“报废补料 SUP-xxx”“损耗补料 SUP-xxx”等来源，不在出库明细重复保存需求组字段。当前出库单整单确认、整单取消，因此不同时间才能备齐的物料应拆成不同单据。
+
+“出库管理 → 创建生产领料出库单”加载批次候选时，可制单批次和待处理批次一并返回。待处理批次不可选择，但必须展示批次号及“未分配、短批未授权、需求计划变化需重新授权、暂无可制单分配”等具体原因，禁止用 SQL 直接隐藏。生产任务页的短批按钮使用后端派生动作显示为首次授权、重新授权、调整授权、查看授权或物料已齐套；同版本有效授权进入只读查看，不允许再次提交。
+
+出库批次候选以 `production_item_demand.business_status='active'` 为待办入口，再只汇总这些活动需求关联的有效分配；历史已满足需求即使仍保留 `active` allocation 事实，也不得使批次重新进入候选或影响阻断原因。`doing` 批次只有在已消费短批授权且仍有普通活动需求，或存在活动补料需求时保留；`material_outbound` 批次只有因后续活动补料需求重新进入候选。候选明细和制单事务使用同一活动需求边界。
 
 因此，标准流程应为：
 
@@ -451,14 +464,21 @@ draft → cancelled
 
 ```text
 pending
-→ material_pending
-→ material_assigned
-→ material_outbound
-→ doing
-→ completed
+  → material_pending
+      ⇄ material_assigned
+      → material_partially_outbound
+      → material_outbound
+  material_assigned → material_outbound
+  material_partially_outbound → material_outbound / doing
+  material_outbound → doing
+  doing → completed
 
 pending / material_pending / material_assigned → cancelled
 ```
+
+`material_assigned → material_pending` 只发生在释放尚未出库的有效分配后，表示批次重新出现分配缺口；任何已有批次都禁止回到初始 `pending`。所有生产批次和工单状态写入必须先通过 `production-status.policy.ts` 的统一转换校验，SQL 的旧状态条件只承担并发保护，不能替代领域状态机。
+
+`material_partially_outbound` 已经形成确认领料事实，不因短批授权失效或后续分配齐套而回退。需求计划变化后若仍有分配缺口，必须对当前计划重新短批授权；只要扣除已确认且释放回公共库存的退料后仍有净确认领料，重新授权不要求新增或剩余活动需求必须先形成分配。若全部活动需求已经分配，则按普通齐套模式继续领料，全部确认后进入 `material_outbound`。
 
 第一版“取消任务”只允许尚未开工且物料尚未实际出库的批次。取消确认弹窗必须展示将联动取消的待确认出库单、有效预留和活动需求，并要求填写原因；后端在同一事务取消这些未形成库存事实的业务状态。`material_outbound`、`doing` 和 `completed` 均禁止取消，不提供强制入口。工单处于 `released` 或 `doing` 且仍有未分配计划量时，可以继续创建后续生产批次。
 

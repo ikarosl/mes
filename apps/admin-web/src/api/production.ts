@@ -48,6 +48,7 @@ import type {
   CreatePurchaseInboundPayload,
   CancelPurchaseInboundPayload,
   CancelMaterialOutboundPayload,
+  InventoryBatchDetailItem,
   InventoryBatchItem,
   InventoryBatchQuery,
   InventoryMaterialSupplyDemandItem,
@@ -121,7 +122,7 @@ export const productionApi = {
       params,
     }),
   getInventoryBatch: (id: string) =>
-    request<InventoryBatchItem>({ url: `/production/inventory-batches/${id}` }),
+    request<InventoryBatchDetailItem>({ url: `/production/inventory-batches/${id}` }),
   searchProductionTrace: (params: ProductionTraceQuery) =>
     request<PageResult<ProductionTraceWorkOrderGroup>>({ url: '/production/trace', params }),
 

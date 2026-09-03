@@ -111,8 +111,9 @@ interface PageResult<T> {
   `503 IDEMPOTENCY_STORAGE_RETRYABLE`，已保存结果损坏为 `500 IDEMPOTENCY_RESULT_CORRUPT`。缺少、非法或
   端点不支持幂等键才属于 400；不得把同键不同内容误报为 400。
 - 指纹生成器、幂等 executor 或业务 handler 内部出现 `TypeError` 等未预期代码异常时，保持
-  `500 INTERNAL_SERVER_ERROR`。服务端记录异常类型、请求路径、`requestId` 与脱敏堆栈，对外不得暴露源码
-  细节，也不得仅因异常发生在幂等调用链就改写为幂等错误。
+  `500 INTERNAL_SERVER_ERROR`。服务端记录异常类型、请求路径、`requestId` 与诊断堆栈：仅本地
+  `development` 环境保留原始异常链，其他环境使用脱敏堆栈并保留稳定错误分类；对外不得暴露源码细节，
+  也不得仅因异常发生在幂等调用链就改写为幂等错误。
 - 每个启用接口必须在契约中列出参与服务端指纹的语义 path params、query、规范化 body 和 `version`；前端意图签名必须覆盖同一组客户端输入，任一字段变化都要结束旧意图并生成新键。
 - 服务端幂等闭环至少包含键与规范化请求指纹的原子登记、执行状态及原结果持久化；在该闭环完成前，请求头只会形成伪幂等，不得启用。键的生命周期覆盖一次业务意图及其全部重试，不得在 API 包装函数的每次调用中随机生成。
 - `IdempotencyKeyGuard` 负责校验并规范化 header，幂等参数装饰器只读取 Guard 写入的请求局部值；Repository Port/Adapter 只接收 `CommandContext`，不得解析 header、接收 `IdempotentCommandContext` 或读取幂等键。

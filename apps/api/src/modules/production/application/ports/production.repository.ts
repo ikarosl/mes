@@ -108,6 +108,7 @@ export abstract class ProductionRepository {
     bom: ProductBomSnapshot,
     audit: CommandContext,
   ): Promise<ProductionBatchDetail>;
+  abstract hasGeneratedNormalMaterialDemands(batchId: string): Promise<boolean>;
   abstract getBatchProductId(batchId: string): Promise<string>;
   abstract getWorkOrderProductId(workOrderId: string): Promise<string>;
 }

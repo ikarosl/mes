@@ -14,69 +14,83 @@
       <el-alert
         v-if="shortBatch"
         class="short-batch-alert"
-        title="当前任务按短批授权领料。仅可对已分配数量制单；未完成需求会继续保留在仓库待办和供需预警中。"
+        title="当前任务已有短批或部分领料记录。仍有分配缺口时需要当前需求版本的短批授权；全部活动需求分配完成后可按普通齐套方式继续领料。"
         type="warning"
         :closable="false"
       />
-      <el-table
-        :data="availableAllocations"
-        class="outbound-table"
-        @selection-change="selection = $event"
-      >
-        <el-table-column
-          type="selection"
-          width="50"
-        />
-        <el-table-column
-          prop="itemName"
-          label="物料"
-          min-width="170"
-        />
-        <el-table-column
-          prop="batchCode"
-          label="库存批次"
-          min-width="140"
-        />
-        <el-table-column
-          label="分配数量"
-          width="110"
-          ><template #default="{ row }">{{
-            formatQuantity(row.assignedQuantity)
-          }}</template></el-table-column
+      <div class="outbound-groups">
+        <section
+          v-for="group in allocationGroups"
+          :key="group.generationGroupKey"
+          class="outbound-group"
         >
-        <el-table-column
-          label="已确认出库"
-          width="120"
-          ><template #default="{ row }">{{
-            formatQuantity(row.outboundQuantity)
-          }}</template></el-table-column
-        >
-        <el-table-column
-          label="待确认占用"
-          width="120"
-          ><template #default="{ row }">{{
-            formatQuantity(row.pendingOutboundQuantity)
-          }}</template></el-table-column
-        >
-        <el-table-column
-          label="可制单"
-          width="110"
-          ><template #default="{ row }">{{
-            formatQuantity(row.availableToOrderQuantity)
-          }}</template></el-table-column
-        >
-        <el-table-column
-          label="本次出库"
-          width="180"
-          ><template #default="{ row }"
-            ><el-input-number
-              v-model="quantities[row.allocationId]"
-              :min="1"
-              :max="Number(row.availableToOrderQuantity)"
-              :step="1"
-              :precision="0" /></template
-        ></el-table-column>
-      </el-table>
+          <div class="group-header">
+            <strong>{{ group.label }}</strong>
+            <span>{{ group.rows.length }} 条可制单分配</span>
+          </div>
+          <el-table
+            :data="group.rows"
+            @selection-change="handleGroupSelection(group.generationGroupKey, $event)"
+          >
+            <el-table-column
+              type="selection"
+              width="50"
+            />
+            <el-table-column
+              prop="itemName"
+              label="物料"
+              min-width="170"
+            />
+            <el-table-column
+              prop="batchCode"
+              label="库存批次"
+              min-width="140"
+            />
+            <el-table-column
+              label="分配数量"
+              width="110"
+            >
+              <template #default="{ row }">{{ formatQuantity(row.assignedQuantity) }}</template>
+            </el-table-column>
+            <el-table-column
+              label="已确认出库"
+              width="120"
+            >
+              <template #default="{ row }">{{ formatQuantity(row.outboundQuantity) }}</template>
+            </el-table-column>
+            <el-table-column
+              label="待确认占用"
+              width="120"
+            >
+              <template #default="{ row }">{{
+                formatQuantity(row.pendingOutboundQuantity)
+              }}</template>
+            </el-table-column>
+            <el-table-column
+              label="可制单"
+              width="110"
+            >
+              <template #default="{ row }">{{
+                formatQuantity(row.availableToOrderQuantity)
+              }}</template>
+            </el-table-column>
+            <el-table-column
+              label="本次出库"
+              width="180"
+            >
+              <template #default="{ row }">
+                <el-input-number
+                  v-model="quantities[row.allocationId]"
+                  :min="1"
+                  :max="Number(row.availableToOrderQuantity)"
+                  :step="1"
+                  :precision="0"
+                />
+              </template>
+            </el-table-column>
+          </el-table>
+        </section>
+      </div>
       <el-input
         v-model="remark"
         class="remark"
@@ -86,7 +100,8 @@
         placeholder="出库备注（可选）"
       />
       <div class="selection-summary">
-        已选择 {{ selection.length }} 条分配行；数量按各行单位分别记录，不跨单位合计。
+        已选择 {{ selectedGroupCount }} 个需求组、{{ selection.length }}
+        条分配明细；数量按各行单位分别记录，不跨单位合计。
       </div>
       <h3>本批次出库记录</h3>
       <el-table
@@ -147,7 +162,13 @@ import { DialogWidth } from '../../../utils/dialog';
 import { formatDateTimeForDisplay } from '../../../utils/date';
 import { formatQuantity } from '../production-status';
 import { OUTBOUND_ORDER_STATUS_LABELS } from '@company/constants';
-type OutboundAllocation = ProductionMaterialAllocationItem & { itemName: string };
+import { groupMaterialDemandRows } from '../material-demand-group-presentation';
+type OutboundAllocation = ProductionMaterialAllocationItem & {
+  itemName: string;
+  generationGroupKey: string;
+  generationGroupType: ProductionMaterialDemandItem['generationGroupType'];
+  supplementNo: string | null;
+};
 const props = defineProps<{
   visible: boolean;
   demands: ProductionMaterialDemandItem[];
@@ -166,15 +187,31 @@ const emit = defineEmits<{
     },
   ): void;
 }>();
-const selection = ref<OutboundAllocation[]>([]);
+const selectedByGroup = reactive<Record<string, OutboundAllocation[]>>({});
 const quantities = reactive<Record<string, number>>({});
 const remark = ref('');
 const availableAllocations = computed<OutboundAllocation[]>(() =>
   props.demands.flatMap((d) =>
     d.allocations
       .filter((a) => a.allocationStatus === 'active' && Number(a.availableToOrderQuantity) > 0)
-      .map((a) => ({ ...a, itemName: d.itemName })),
+      .map((a) => ({
+        ...a,
+        itemName: d.itemName,
+        generationGroupKey: d.generationGroupKey,
+        generationGroupType: d.generationGroupType,
+        supplementNo: d.supplementNo,
+      })),
   ),
+);
+const selection = computed(() => {
+  const currentIds = new Set(availableAllocations.value.map((row) => row.allocationId));
+  return Object.values(selectedByGroup)
+    .flat()
+    .filter((row) => currentIds.has(row.allocationId));
+});
+const allocationGroups = computed(() => groupMaterialDemandRows(availableAllocations.value));
+const selectedGroupCount = computed(
+  () => new Set(selection.value.map((row) => row.generationGroupKey)).size,
 );
 const canSubmit = computed(
   () =>
@@ -192,12 +229,18 @@ watch(
   () => props.visible,
   (visible) => {
     if (!visible) return;
-    selection.value = [];
+    clearSelections();
     remark.value = '';
     for (const row of availableAllocations.value)
       quantities[row.allocationId] = Number(row.availableToOrderQuantity);
   },
 );
+const handleGroupSelection = (generationGroupKey: string, rows: OutboundAllocation[]): void => {
+  selectedByGroup[generationGroupKey] = rows;
+};
+const clearSelections = (): void => {
+  for (const key of Object.keys(selectedByGroup)) delete selectedByGroup[key];
+};
 const submit = () =>
   emit('submit', {
     details: selection.value.map((row) => ({
@@ -215,8 +258,20 @@ const statusLabel = (status: MaterialOutboundItem['status']) =>
   max-height: 70vh;
   overflow-y: auto;
 }
-.outbound-table {
+.outbound-groups {
   margin-top: 16px;
+}
+.outbound-group + .outbound-group {
+  margin-top: 18px;
+}
+.group-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.group-header span {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
 }
 .short-batch-alert {
   margin-top: 12px;

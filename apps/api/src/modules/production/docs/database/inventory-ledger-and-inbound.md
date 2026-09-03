@@ -156,6 +156,7 @@
 - 一期冲销流水必须与原流水保持相同的 `item_id`、`batch_id`、`stock_status`、`unit_snapshot`、`transaction_type` 和原业务引用，`quantity` 必须等于原流水数量的相反数，并填写新的唯一 `idempotency_key`。
 - 原流水、冲销流水和操作日志必须保留，均不得更新或删除。未来如确需部分冲销，应通过追加迁移调整唯一约束，并增加累计冲销数量不超过原流水绝对数量的事务校验；该能力不属于一期范围。
 - 状态转换流水必须填写 `transaction_group_key`；非状态转换流水可以为空。
+- `GET /production/inventory-batches/:itemBatchId` 的批次详情必须按发生时间和流水 ID 倒序返回该批次全部正、负库存流水，不得只投影入库正流水；返回信息包含流水类型、数量、库存状态、业务明细引用、发生时间、备注、状态转换分组和冲销关联。
 
 ### 7.1 `inventory_batch_balance`
 

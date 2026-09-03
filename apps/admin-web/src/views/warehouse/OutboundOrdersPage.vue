@@ -210,6 +210,7 @@
       :intent-status="orders.getCreateIntentStatus()"
       @load-candidates="loadCandidates"
       @reset-intent="orders.resetCreateIntent"
+      @resolve-batch="resolveBlockedBatch"
       @submit="submitCreate"
     />
 
@@ -224,6 +225,7 @@
 
 <script setup lang="ts">
 import { onActivated, onMounted, reactive, ref } from 'vue';
+import { useRouter } from 'vue-router';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import type {
   CreateMaterialOutboundPayload,
@@ -239,12 +241,14 @@ import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
 import MaterialOutboundOrderCreateDialog from '../production/components/MaterialOutboundOrderCreateDialog.vue';
 import MaterialOutboundOrderDetailDialog from '../production/components/MaterialOutboundOrderDetailDialog.vue';
 import { useMaterialOutboundOrders } from '../production/composables/useMaterialOutboundOrders';
+import { materialDemandGroupLabel } from '../production/material-demand-group-presentation';
 import { formatQuantity } from '../production/production-status';
 import { outboundRowClass, outboundStatusHint } from './warehouse-list-presentation';
 
 defineOptions({ name: 'OutboundOrdersPage' });
 
 const orders = useMaterialOutboundOrders();
+const router = useRouter();
 const query = reactive<MaterialOutboundQuery>({ page: 1, pageSize: 20 });
 const createVisible = ref(false);
 const createSubmitting = ref(false);
@@ -260,6 +264,10 @@ const resetQuery = () => {
   query.status = undefined;
   query.page = 1;
   return loadRows();
+};
+const resolveBlockedBatch = async (batchNo: string): Promise<void> => {
+  createVisible.value = false;
+  await router.push({ name: 'production-tasks', query: { keyword: batchNo } });
 };
 const handlePageSizeChange = (value: number) => {
   query.pageSize = value;
@@ -400,7 +408,7 @@ const printDetail = (row: MaterialOutboundItem): void => {
     body{font-family:Arial,"Microsoft YaHei",sans-serif;color:#111;padding:24px}h1{text-align:center;font-size:24px;margin:0 0 8px}.mark{text-align:center;font-size:18px;font-weight:700;margin-bottom:20px}.meta{display:grid;grid-template-columns:repeat(3,1fr);gap:8px 20px;margin-bottom:18px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #333;padding:8px;text-align:left}th{background:#f4f4f5}.remark{margin-top:16px}.signatures{display:grid;grid-template-columns:repeat(3,1fr);gap:40px;margin-top:70px}.cancelled{color:#c00}@media print{body{padding:0}}</style></head><body>
     <h1>生产领料出库单</h1><div class="mark ${row.status === 'cancelled' ? 'cancelled' : ''}">${escapeHtml(statusMark)}</div>
     <div class="meta"><div>单号：${escapeHtml(row.outboundNo)}</div><div>工单：${escapeHtml(row.workOrderNo)}</div><div>生产批次：${escapeHtml(row.batchNo)}</div><div>产品：${escapeHtml(`${row.productCode} ${row.productName}`)}</div><div>制单时间：${escapeHtml(formatTime(row.createdAt))}</div><div>实际出库：${escapeHtml(row.outboundAt ? formatTime(row.outboundAt) : '-')}</div></div>
-    <table><thead><tr><th>物料编码</th><th>物料名称</th><th>库存批次</th><th>本次数量</th><th>单位</th></tr></thead><tbody>${row.details.map((detail) => `<tr><td>${escapeHtml(detail.itemCode)}</td><td>${escapeHtml(detail.itemName)}</td><td>${escapeHtml(detail.batchCode)}</td><td>${escapeHtml(formatQuantity(detail.outboundQuantity))}</td><td>${escapeHtml(detail.unit)}</td></tr>`).join('')}</tbody></table>
+    <table><thead><tr><th>需求来源</th><th>物料编码</th><th>物料名称</th><th>库存批次</th><th>本次数量</th><th>单位</th></tr></thead><tbody>${row.details.map((detail) => `<tr><td>${escapeHtml(materialDemandGroupLabel(detail))}</td><td>${escapeHtml(detail.itemCode)}</td><td>${escapeHtml(detail.itemName)}</td><td>${escapeHtml(detail.batchCode)}</td><td>${escapeHtml(formatQuantity(detail.outboundQuantity))}</td><td>${escapeHtml(detail.unit)}</td></tr>`).join('')}</tbody></table>
     <div class="remark">备注：${escapeHtml(row.remark || '-')}</div><div>制单人：${escapeHtml(row.createdByName || '-')}</div>
     <div class="signatures"><div>发料人：____________</div><div>领料人：____________</div><div>日期：____________</div></div>
     </body></html>`);

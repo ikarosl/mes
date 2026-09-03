@@ -29,6 +29,7 @@ const batch = (
   status: 'doing',
   materialPlanVersion: 1,
   shortBatchAuthorizationStatus: 'none',
+  shortBatchAuthorizationAction: 'not_required',
   ownerId: null,
   ownerName: null,
   completedAt: null,

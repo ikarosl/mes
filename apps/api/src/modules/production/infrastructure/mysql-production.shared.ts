@@ -8,6 +8,10 @@ import type {
 } from '@company/contracts';
 import { ProductionDomainError } from '../domain/production.errors.js';
 import { multiplyIntegerQuantities } from '../domain/integer-quantity.js';
+import {
+  activeDemandAllocationGapExistsSql,
+  shortBatchAuthorizationCoverageInsufficientExistsSql,
+} from './mysql-production-material.sql.js';
 
 /**
  * 把数据库驱动错误映射为稳定的模块错误。application 层不得识别 `ER_DUP_ENTRY` 等驱动错误码，
@@ -70,6 +74,7 @@ export type BatchRow = RowDataPacket & {
   status: ProductionBatchItem['status'];
   material_plan_version: number;
   short_batch_authorization_status: 'none' | 'valid' | 'stale' | 'consumed';
+  short_batch_authorization_action: ProductionBatchItem['shortBatchAuthorizationAction'];
   owner_id: number | null;
   completed_at: Date | null;
   started_at: Date | null;
@@ -121,9 +126,18 @@ export const BATCH_SELECT = `SELECT b.id,b.work_order_id,wo.work_order_no,b.prod
     WHEN EXISTS (SELECT 1 FROM production_short_batch_authorization authorization WHERE authorization.production_batch_id=b.id AND authorization.status='consumed') THEN 'consumed'
     ELSE 'none'
   END short_batch_authorization_status,
+  CASE
+    WHEN EXISTS (SELECT 1 FROM production_short_batch_authorization authorization WHERE authorization.production_batch_id=b.id AND authorization.status='active' AND authorization.material_plan_version=b.material_plan_version)
+      AND ${shortBatchAuthorizationCoverageInsufficientExistsSql('b.id')} THEN 'adjust'
+    WHEN EXISTS (SELECT 1 FROM production_short_batch_authorization authorization WHERE authorization.production_batch_id=b.id AND authorization.status='active' AND authorization.material_plan_version=b.material_plan_version) THEN 'view'
+    WHEN NOT ${activeDemandAllocationGapExistsSql('b.id')} THEN 'not_required'
+    WHEN EXISTS (SELECT 1 FROM production_short_batch_authorization authorization WHERE authorization.production_batch_id=b.id AND authorization.status='active') THEN 'reauthorize'
+    WHEN EXISTS (SELECT 1 FROM production_short_batch_authorization authorization WHERE authorization.production_batch_id=b.id AND authorization.status='consumed') THEN 'view'
+    ELSE 'authorize'
+  END short_batch_authorization_action,
   b.batch_owner_id owner_id,b.completed_at,b.completed_by,b.cancel_reason,b.cancelled_by,b.cancelled_at,b.remark,b.version,b.created_at,b.updated_at FROM production_batches b JOIN work_orders wo ON wo.id=b.work_order_id`;
 const BATCH_LOCK_SELECT = `SELECT b.id,b.work_order_id,wo.work_order_no,b.product_id,wo.product_code_snapshot,wo.product_name_snapshot,b.batch_no,b.route_id,b.route_code_snapshot,b.route_version_snapshot,b.planned_quantity,b.completed_quantity,b.qualified_quantity,b.plan_start_date,b.plan_end_date,b.started_at,b.status,b.material_plan_version,
-  'none' short_batch_authorization_status,
+  'none' short_batch_authorization_status,'not_required' short_batch_authorization_action,
   b.batch_owner_id owner_id,b.completed_at,b.completed_by,b.cancel_reason,b.cancelled_by,b.cancelled_at,b.remark,b.version,b.created_at,b.updated_at FROM production_batches b JOIN work_orders wo ON wo.id=b.work_order_id`;
 export const STEP_RECORD_SELECT = `SELECT sr.id,sr.production_batch_id,sr.route_step_id,sr.step_order_snapshot,sr.step_code_snapshot,sr.step_name_snapshot,sr.sop_file_id_snapshot,sr.sop_file_name_snapshot,sr.sop_version_no_snapshot,sr.default_responsible_user_id_snapshot,sr.actual_sop_file_id,sr.actual_sop_file_name_snapshot,sr.actual_sop_object_key_snapshot,sr.actual_sop_version_no_snapshot,sr.responsible_user_id,sr.need_record_snapshot,sr.need_inspection_snapshot,sr.status,sr.started_at,sr.completed_at,COALESCE(report_summary.reported_quantity,0) output_quantity,COALESCE(report_summary.normal_quantity,0) qualified_quantity,COALESCE(report_summary.abnormal_quantity,0) abnormal_quantity,CAST(0 AS DECIMAL(12,4)) rework_quantity,sr.unit_snapshot,sr.remark,sr.version FROM batch_step_records sr LEFT JOIN (SELECT batch_step_record_id,SUM(CASE WHEN report_type='normal' THEN reported_quantity ELSE -reported_quantity END) reported_quantity,SUM(CASE WHEN report_type='normal' THEN normal_quantity ELSE -normal_quantity END) normal_quantity,SUM(CASE WHEN report_type='normal' THEN abnormal_quantity ELSE -abnormal_quantity END) abnormal_quantity FROM batch_step_reports GROUP BY batch_step_record_id) report_summary ON report_summary.batch_step_record_id=sr.id`;
 
@@ -213,6 +227,7 @@ export const mapBatch = (row: BatchRow): ProductionBatchItem => ({
   status: row.status,
   materialPlanVersion: row.material_plan_version,
   shortBatchAuthorizationStatus: row.short_batch_authorization_status,
+  shortBatchAuthorizationAction: row.short_batch_authorization_action,
   ownerId: row.owner_id === null ? null : String(row.owner_id),
   ownerName: null,
   completedAt: date(row.completed_at),

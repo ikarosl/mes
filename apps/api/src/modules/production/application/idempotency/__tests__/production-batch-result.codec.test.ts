@@ -54,6 +54,7 @@ const validDetail: ProductionBatchDetail = {
   status: 'pending',
   materialPlanVersion: 1,
   shortBatchAuthorizationStatus: 'none',
+  shortBatchAuthorizationAction: 'authorize',
   ownerId: '5',
   ownerName: '张三',
   completedAt: null,

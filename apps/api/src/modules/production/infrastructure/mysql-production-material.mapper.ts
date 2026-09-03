@@ -20,10 +20,14 @@ export type DemandRow = RowDataPacket & {
   need_number: string;
   remaining_number: string;
   demand_type: ProductionMaterialDemandItem['demandType'];
+  generation_group_key: string;
+  supplement_id: number | null;
+  supplement_no: string | null;
   business_status: ProductionMaterialDemandItem['businessStatus'];
   fulfilled_by: number | null;
   fulfilled_at: Date | null;
   version: number;
+  created_at: Date;
   allocated_quantity: string;
   outbound_quantity: string;
 };
@@ -44,6 +48,8 @@ export type AllocationRow = RowDataPacket & {
   remark: string | null;
   created_at: Date;
   demand_type: ProductionMaterialDemandItem['demandType'];
+  generation_group_key: string;
+  supplement_no: string | null;
 };
 
 export type AvailableRow = RowDataPacket & {
@@ -94,24 +100,28 @@ export type OutboundDetailRow = RowDataPacket & {
   batch_code: string;
   item_code_snapshot: string;
   product_name_snapshot: string;
+  generation_group_key: string;
+  generation_group_type: ProductionMaterialDemandItem['generationGroupType'];
+  supplement_no: string | null;
   outbound_number: string;
   unit_snapshot: string;
   inventory_transaction_id: number | null;
 };
 
-export const DEMAND_SELECT = `SELECT d.id,d.production_batch_id,d.product_material_id,d.item_id,d.item_code_snapshot,d.item_name_snapshot,d.unit_snapshot,d.need_number,d.remaining_number,d.demand_type,d.business_status,d.fulfilled_by,d.fulfilled_at,d.version,
+export const DEMAND_SELECT = `SELECT d.id,d.production_batch_id,d.product_material_id,d.item_id,d.item_code_snapshot,d.item_name_snapshot,d.unit_snapshot,d.need_number,d.remaining_number,d.demand_type,d.generation_group_key,d.supplement_id,s.supplement_no,d.business_status,d.fulfilled_by,d.fulfilled_at,d.version,d.created_at,
   COALESCE((SELECT SUM(GREATEST(a.assigned_number-COALESCE((
     SELECT SUM(rd.return_number) FROM return_detail rd JOIN return_order ro ON ro.id=rd.return_id
     WHERE rd.allocation_id=a.id AND ro.status='returned' AND rd.release_after_return=1
   ),0),0)) FROM production_item_allocation a WHERE a.demand_id=d.id AND a.allocation_status NOT IN ('released','cancelled')),0) allocated_quantity,
   GREATEST(COALESCE((SELECT SUM(od.outbound_number) FROM outbound_detail od JOIN outbound_order oo ON oo.id=od.outbound_id WHERE od.demand_id=d.id AND oo.status='completed'),0)-COALESCE((SELECT SUM(rd.return_number) FROM return_detail rd JOIN return_order ro ON ro.id=rd.return_id WHERE rd.demand_id=d.id AND ro.status='returned' AND rd.release_after_return=1),0),0) outbound_quantity
-  FROM production_item_demand d`;
+  FROM production_item_demand d
+  LEFT JOIN production_material_supplement s ON s.id=d.supplement_id`;
 
-export const ALLOCATION_SELECT = `SELECT a.id,a.demand_id,a.production_batch_id,a.item_id,a.batch_id,ib.batch_code,a.assigned_number,d.demand_type,
+export const ALLOCATION_SELECT = `SELECT a.id,a.demand_id,a.production_batch_id,a.item_id,a.batch_id,ib.batch_code,a.assigned_number,d.demand_type,d.generation_group_key,s.supplement_no,
   COALESCE((SELECT SUM(od.outbound_number) FROM outbound_detail od JOIN outbound_order oo ON oo.id=od.outbound_id WHERE od.allocation_id=a.id AND oo.status='completed'),0) outbound_quantity,
-  COALESCE((SELECT SUM(od.outbound_number) FROM outbound_detail od JOIN outbound_order oo ON oo.id=od.outbound_id WHERE od.allocation_id=a.id AND oo.status='pending_picking'),0) pending_outbound_quantity,
+  COALESCE((SELECT SUM(od.outbound_number) FROM outbound_detail od JOIN outbound_order oo ON oo.id=od.outbound_id WHERE od.allocation_id=a.id AND oo.status IN ('pending_picking','picked','partially_outbound')),0) pending_outbound_quantity,
   a.unit_snapshot,a.allocation_status,a.version,a.remark,a.created_at
-  FROM production_item_allocation a JOIN item_batch ib ON ib.id=a.batch_id JOIN production_item_demand d ON d.id=a.demand_id`;
+  FROM production_item_allocation a JOIN item_batch ib ON ib.id=a.batch_id JOIN production_item_demand d ON d.id=a.demand_id LEFT JOIN production_material_supplement s ON s.id=d.supplement_id`;
 
 export const mapAllocation = (row: AllocationRow): ProductionMaterialAllocationItem => ({
   allocationId: String(row.id),
@@ -144,32 +154,42 @@ export const mapAllocation = (row: AllocationRow): ProductionMaterialAllocationI
 export const mapDemand = (
   row: DemandRow,
   allocations: ProductionMaterialAllocationItem[],
-): ProductionMaterialDemandItem => ({
-  demandId: String(row.id),
-  productionBatchId: String(row.production_batch_id),
-  productMaterialId: String(row.product_material_id),
-  itemId: String(row.item_id),
-  itemCode: row.item_code_snapshot,
-  itemName: row.item_name_snapshot,
-  unit: row.unit_snapshot,
-  demandQuantity: row.need_number,
-  remainingDemandQuantity: row.remaining_number,
-  allocatedQuantity: row.allocated_quantity,
-  outboundQuantity: row.outbound_quantity,
-  remainingQuantity: decimal(
-    Math.max(0, integerQuantity(row.need_number) - integerQuantity(row.allocated_quantity)),
-  ),
-  demandType: row.demand_type,
-  businessStatus: row.business_status,
-  fulfilledById: row.fulfilled_by === null ? null : String(row.fulfilled_by),
-  fulfilledAt: row.fulfilled_at === null ? null : toBeijingISOString(row.fulfilled_at),
-  progressStatus: progress(row),
-  version: row.version,
-  allocations,
-});
+): ProductionMaterialDemandItem => {
+  const demandProgressStatus = progress(row);
+  return {
+    demandId: String(row.id),
+    productionBatchId: String(row.production_batch_id),
+    productMaterialId: String(row.product_material_id),
+    itemId: String(row.item_id),
+    itemCode: row.item_code_snapshot,
+    itemName: row.item_name_snapshot,
+    unit: row.unit_snapshot,
+    demandQuantity: row.need_number,
+    remainingDemandQuantity: row.remaining_number,
+    allocatedQuantity: row.allocated_quantity,
+    outboundQuantity: row.outbound_quantity,
+    remainingQuantity: decimal(
+      Math.max(0, integerQuantity(row.need_number) - integerQuantity(row.allocated_quantity)),
+    ),
+    demandType: row.demand_type,
+    generationGroupKey: row.generation_group_key,
+    generationGroupType: row.demand_type,
+    supplementId: row.supplement_id === null ? null : String(row.supplement_id),
+    supplementNo: row.supplement_no,
+    createdAt: toBeijingISOString(row.created_at),
+    businessStatus: row.business_status,
+    fulfilledById: row.fulfilled_by === null ? null : String(row.fulfilled_by),
+    fulfilledAt: row.fulfilled_at === null ? null : toBeijingISOString(row.fulfilled_at),
+    demandProgressStatus,
+    version: row.version,
+    allocations,
+  };
+};
 
 const progress = (row: DemandRow): MaterialDemandProgressStatus => {
-  if (row.business_status !== 'active') return row.business_status;
+  // fulfilled 是确认领料出库完成后的持久化业务终态；对外进度统一投影为 outbound。
+  if (row.business_status === 'fulfilled') return 'outbound';
+  if (row.business_status === 'cancelled') return 'cancelled';
   const need = integerQuantity(row.need_number);
   const allocated = integerQuantity(row.allocated_quantity);
   const outbound = integerQuantity(row.outbound_quantity);

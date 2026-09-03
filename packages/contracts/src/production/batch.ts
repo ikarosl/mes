@@ -1,5 +1,9 @@
 import type { PageQuery, VersionedCommand } from '../common.js';
-import type { ProductionBatchStatus, BatchStepStatus } from './statuses.js';
+import type {
+  ProductionBatchStatus,
+  BatchStepStatus,
+  ShortBatchAuthorizationAction,
+} from './statuses.js';
 
 export interface ProductionBatchQuery extends PageQuery {
   keyword?: string;
@@ -30,6 +34,8 @@ export interface ProductionBatchItem {
   materialPlanVersion: number;
   /** 列表页的短批授权派生状态；写接口仍由后端事务重新校验。 */
   shortBatchAuthorizationStatus: 'none' | 'valid' | 'stale' | 'consumed';
+  /** 列表页短批授权按钮动作；提交时仍由授权预览事务重新计算。 */
+  shortBatchAuthorizationAction: ShortBatchAuthorizationAction;
   ownerId: string | null;
   ownerName: string | null;
   completedAt: string | null;

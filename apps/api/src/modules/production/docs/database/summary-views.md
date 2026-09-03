@@ -102,6 +102,7 @@
 | `item_id`                      | `BIGINT UNSIGNED` | 需求对象 ID        |
 | `need_number`                  | `DECIMAL(12,4)`   | 需求数量           |
 | `demand_type`                  | `VARCHAR(30)`     | 需求类型：`normal`、`manual_additional`、`scrap_supplement`、`material_loss_supplement` |
+| `generation_group_key`         | `VARCHAR(150)`    | 同一次需求生成动作的分组键 |
 | `parent_demand_id`             | `BIGINT UNSIGNED` | 原始需求 ID        |
 | `supplement_id`                | `BIGINT UNSIGNED` | 补料物流单 ID      |
 | `business_status`              | `VARCHAR(30)`     | 业务状态           |
@@ -128,22 +129,25 @@
 | `returned_quantity`     | 汇总该需求下所有退料数量                          |
 | `is_shortage`           | 当 `unallocated_quantity > 0` 时为 1              |
 
-`progress_status` 推荐规则：
+`demandProgressStatus` 规则：
 
-| 条件                                                             | 状态                  |
-| ---------------------------------------------------------------- | --------------------- |
-| `business_status` 为 `cancelled`、`closed`、`frozen`、`abnormal` | 直接使用业务状态代码  |
-| 已分配数量 = 0                                                   | `pending_allocation`  |
-| 已分配数量 < 需求数量，且已出库数量 = 0                          | `partially_allocated` |
-| 已分配数量 >= 需求数量，且已出库数量 = 0                         | `allocated`           |
-| 已出库数量 > 0，已出库数量 < 需求数量，且已分配数量 < 需求数量   | `shortage`            |
-| 已出库数量 > 0，已出库数量 < 需求数量                            | `partially_outbound`  |
-| 已出库数量 >= 需求数量                                           | `outbound`            |
-| 其他情况                                                         | `unknown`             |
+| 优先级 | 条件                                                   | 状态                  |
+| ------ | ------------------------------------------------------ | --------------------- |
+| 1      | `business_status = 'fulfilled'`                        | `outbound`            |
+| 2      | `business_status = 'cancelled'`                        | `cancelled`           |
+| 3      | 已出库数量 >= 需求数量                                 | `outbound`            |
+| 4      | 已出库数量 > 0，且已分配数量 < 需求数量                | `shortage`            |
+| 5      | 已出库数量 > 0                                         | `partially_outbound`  |
+| 6      | 已分配数量 >= 需求数量                                 | `allocated`           |
+| 7      | 已分配数量 > 0                                         | `partially_allocated` |
+| 8      | 其他情况                                               | `pending_allocation`  |
 
 说明：
 
-- `progress_status` 是视图计算字段，不建议写入需求表。
+- `demandProgressStatus` 是接口计算字段，不写入需求表。
+- HTTP 契约只使用 `demandProgressStatus`，明确它只表示单条需求的进度，不是生产任务级汇总状态；不保留旧 `progressStatus` 字段。
+- `fulfilled` 是确认领料出库完成后的需求业务终态，对外进度统一投影为 `outbound`；`businessStatus` 仍保留原始业务状态供业务判断。
+- `shortage` 只表示该需求已经发生领料但仍有未分配缺口，管理端显示为“短批缺料”。同一任务的不同需求可以同时处于不同进度，不得按优先级折叠成一个需求进度标签。
 - `business_status` 是业务流程状态，应该存入基础表。
 - 该视图适合生产批次详情、领料进度、缺料提醒使用。
 

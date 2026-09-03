@@ -1,5 +1,25 @@
 import type { PageQuery, ReasonedVersionedCommand, VersionedCommand } from '../common.js';
-import type { ProductionBatchStatus, OutboundOrderStatus } from './statuses.js';
+import type {
+  ProductionBatchStatus,
+  OutboundOrderStatus,
+  MaterialOutboundBlockedCode,
+  MaterialOutboundMode,
+} from './statuses.js';
+import type { DemandGenerationSource } from './material.js';
+
+export type MaterialOutboundEligibility =
+  | {
+      eligible: true;
+      outboundMode: MaterialOutboundMode;
+      blockedCode: null;
+      blockedReason: null;
+    }
+  | {
+      eligible: false;
+      outboundMode: null;
+      blockedCode: MaterialOutboundBlockedCode;
+      blockedReason: string;
+    };
 
 export interface CreateMaterialOutboundDetailPayload {
   allocationId: string;
@@ -11,7 +31,7 @@ export interface CreateMaterialOutboundPayload {
   remark?: string | null;
 }
 
-export interface MaterialOutboundDetailItem {
+export interface MaterialOutboundDetailItem extends DemandGenerationSource {
   id: string;
   allocationId: string;
   demandId: string;
@@ -78,9 +98,10 @@ export interface MaterialOutboundBatchOption {
   productCode: string;
   productName: string;
   batchStatus: ProductionBatchStatus;
+  outboundEligibility: MaterialOutboundEligibility;
 }
 
-export interface MaterialOutboundCandidateItem {
+export interface MaterialOutboundCandidateItem extends DemandGenerationSource {
   allocationId: string;
   demandId: string;
   itemId: string;

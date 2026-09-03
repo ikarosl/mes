@@ -48,10 +48,10 @@ const idempotencyRecordsWritePattern =
  * ——scope 只能经由契约常量标识符引用。
  */
 const knownIdempotencyScopes = [
-  'production.batch.create.v3',
+  'production.batch.create.v4',
   'production.material-allocation.create.v1',
-  'production.material-outbound.create.v2',
-  'production.material-outbound.confirm.v1',
+  'production.material-outbound.create.v3',
+  'production.material-outbound.confirm.v2',
   'production.purchase-inbound.create.v1',
   'production.purchase-inbound.confirm.v1',
   'production.step-report.create.v3',
@@ -269,6 +269,26 @@ const checks = [
       'i',
     ),
     message: 'Production 不得直接访问 Identity/System 或 Product 拥有的表',
+  },
+  // 需求计划事实与批次 material_plan_version 必须由同一事务写入口联动，避免新增调用者漏推版本。
+  {
+    directory: 'apps/api/src/modules/production',
+    pattern: /\bINSERT\s+INTO\s+production_item_demand\b/i,
+    message:
+      'production_item_demand 新增只能经 mysql-production-demand-plan.writer，确保同步推进 material_plan_version',
+    exclude: [
+      'apps/api/src/modules/production/infrastructure/mysql-production-demand-plan.writer.ts',
+    ],
+  },
+  {
+    directory: 'apps/api/src/modules/production',
+    pattern:
+      /\bUPDATE\s+production_item_demand[\s\S]{0,500}?(?:cancel_source\s*=|remaining_number\s*=\s*remaining_number\s*\+)/i,
+    message:
+      '需求计划取消或重开只能经 mysql-production-demand-plan.writer，确保同步推进 material_plan_version',
+    exclude: [
+      'apps/api/src/modules/production/infrastructure/mysql-production-demand-plan.writer.ts',
+    ],
   },
   // 跨模块深层 import：只能通过目标模块 public.ts
   {
