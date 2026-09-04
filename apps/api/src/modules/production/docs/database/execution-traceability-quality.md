@@ -4,7 +4,7 @@
 
 本章所有计划、报工、异常、报废、补产授权与返工数量均为整数。普通正向事实的正常与异常数量可以分别为 `0`，但合计必须是 `1..99999999` 的整数；数据库以整数 `CHECK` 拒绝小数，路线放行、比较和累计只做整数运算，不使用缩放小数或误差阈值。
 
-本章将“分批报工事实、异常整体处置、最小返工和报废补料”固化为当前可实施设计。异常处置仍以一次有效异常报工为最小审批对象，不拆分数量；返工以来源异常数量整体执行并在完成时追加一条报工事实；报废补料由管理员选择物料并人工填量，同一审批事务生成工序报废、补产授权、补料单和追加需求。过程质检、最终质量结论、短批完工和返工报工的部分完成仍不在当前范围。
+本章将“分批报工事实、异常整体处置、最小返工和报废补料”固化为当前可实施设计。异常处置仍以一次有效异常报工为最小审批对象，不拆分数量；返工以来源异常数量整体执行并在完成时追加一条报工事实；报废补料由管理员从当前批次完整 BOM 基础中选择启用的精确物料版本并人工填量，同一审批事务生成工序报废、补产授权、补料单和追加需求。过程质检、最终质量结论、短批完工和返工报工的部分完成仍不在当前范围。
 
 ## 4.1 `batch_step_records`
 
@@ -231,7 +231,7 @@ GROUP BY batch.id, batch.planned_quantity;
 
 - 例一：批次 `Q = 5`，路线 `A -> B`，A 先正常报工 `4`，再单独异常报工 `1`。A 报废补料确认领用后 `S[A] = 1`，所以 `required_normal[A] = 5`、`released_input[A] = 6`、A 剩余可报 `6 - (4 + 1) = 1`；A 再正常报工 `1` 后达到正常目标 `5`，B 获得正常放行 `5`。
 - 例二：A 已正常报工 `5`，B 先正常报工 `4`，再单独异常报工 `1`。B 报废补料确认领用后 `S[B] = 1`，A 的 `required_normal[A]` 和 `released_input[A]` 都从 `5` 增为 `6`，A 重新打开并补报正常 `1`；在 A 形成第 `6` 件正常产出前，B 的 `released_input[B]` 仍为 `5`、剩余可报为 `0`。A 补产完成后 B 的投入放行才变为 `6`，此时 B 可再报正常 `1`，最终 B 正常量达到批次目标 `5`。
-- 例三：路线 A→B→C，C 接手时发现一个前置异常。报工保存 `abnormal_origin = 'previous_step'`，管理员批准报废并选择 B 为 `material_end_step_record_id`；候选物料只汇总 A..B，但授权的 `quota_end_step_record_id` 仍是 C。补料齐套后 A、B 依次补产并形成新增正常量，C 才获得第六个投入并补报一个正常量。
+- 例三：路线 A→B→C，C 接手时发现一个前置异常。报工保存 `abnormal_origin = 'previous_step'`，管理员批准报废并从该批次完整 BOM 基础选择启用的精确物料版本；授权的 `quota_end_step_record_id` 仍是 C。补料齐套后 A、B 依次补产并形成新增正常量，C 才获得第六个投入并补报一个正常量。
 - 只要当前工序 `effective_normal < required_normal[i]` 且 `available_report[i] > 0`，就允许继续新增普通报工。工序只在包含普通报工和返工完成报工在内的总 `effective_normal == required_normal[i]` 时自动完成；达到当前部分放行量不得提前完成。`abnormal_quantity` 不计入正常完成量和下工序放行量，但会消耗本工序投入放行量。
 - 补料齐套使授权可执行时，所有位于路线起点至额度截止工序之前、且因 `required_normal` 增加而数量不足的已完成必报工工序，必须在同一事务重开为 `doing` 并清空 `completed_at`；已在执行中的工序保持 `doing`。这类重开保留原负责人和 `started_at`，页面标记为“下游报废补产”，不得要求重新派工或伪造新的首次开工时间。
 - 位于补产路径中的非必报工工序如果已经完成，也必须重开为 `doing`，由原负责人再次显式确认本轮补产已经通过该工序；完成后下游才能按更新后的 `required_normal` 获得放行。当前聚合工序节点只表达最新执行状态，重复完成历史由报废来源、操作日志及状态时间追溯。
@@ -320,7 +320,7 @@ current_step_released_quantity = effective_normal
 
 - 创建处置单前，application 必须确认来源是仍有效的 `normal` 报工且 `abnormal_quantity > 0`；冲销行和纯正常报工不得创建处置单。
 - 普通状态转换为 `pending_review -> approved/rejected/cancelled`。`approved` 表示异常属实并选择返工或报废；`rejected` 只用于管理员确认整笔员工异常报工的数量或异常来源填写错误，并通过下述“驳回并退回重报”命令进入；`cancelled` 只用于来源报工已被其他合法冲销链终止后的处置单收口。终态处置单不得恢复为 `pending_review`。
-- 审批使用 `version` 乐观锁。批准为 `rework` 时，在同一事务创建一条以本处置单为来源的 `rework_records`；批准为 `scrap` 时，审批请求必须选择物料计算截止工序并提交至少一条人工补料需求，在同一事务创建 `batch_step_scrap_records`、`batch_step_scrap_reproduction_authorization`、`production_material_supplement` 和 `scrap_supplement` 需求。两个处置目标均对来源处置单建立唯一约束。
+- 审批使用 `version` 乐观锁。批准为 `rework` 时，在同一事务创建一条以本处置单为来源的 `rework_records`；批准为 `scrap` 时，审批请求必须按批次 BOM 基础选择至少一条启用的精确物料版本并填写数量，在同一事务创建 `batch_step_scrap_records`、`batch_step_scrap_reproduction_authorization`、`production_material_supplement` 和 `scrap_supplement` 需求。两个处置目标均对来源处置单建立唯一约束。
 - 管理端批准报废前必须经过“编辑需求 -> 暂存需求 -> 复核并确定报废生成”三段交互。暂存写入 `production_scrap_supplement_plan/_line` 服务端草稿，不创建正式 `production_item_demand`、不改变处置状态，也不允许分配或出库；管理员可以重新打开或返回继续编辑。只有最终点击“确定报废并生成”才执行上一条所述的同事务写入，并把方案转为 `confirmed`。草稿查询、乐观锁整体保存、最终确认事务与管理端恢复接线已经落地。
 - 员工普通报工必须把正常和异常分成不同请求；每张异常报工只能选择一个 `abnormal_origin`。同一来源下更细的异常类别当前由上报人整笔判断并写入说明，系统尚无结构化异常类型字典；混入不同来源、数量填错或整笔误报时，管理员必须驳回整笔，不允许部分处置。
 - 管理端不得提供“只把处置单改成 `rejected`”的空驳回，也不得物理删除来源报工。“驳回并退回重报”必须填写原因；后端在一个事务内锁定来源员工异常报工与处置单，追加原报工的全量同值冲销，把原处置单转为 `rejected`，递增工序版本并写成功审计。该命令不追加正常报工、替代报工、报废事实或补产授权；员工随后按正确数量和异常来源重新提交，形成可追溯的新报工及新待处置单。
@@ -363,7 +363,7 @@ current_step_released_quantity = effective_normal
 
 设计类型：不可变业务事实表。
 
-职责：保存一条工序报废事实对应的产品补产授权，明确补产产品数量、固定从哪一道工序重新投入、额度传播到哪一道工序，以及补料候选物料计算到哪一道工序。授权在管理员批准报废时与报废事实、补料单和补料需求同事务创建；物流进度不得回写本表。
+职责：保存一条工序报废事实对应的产品补产授权，明确补产产品数量、固定从哪一道工序重新投入和额度传播到哪一道工序。补料候选由批次完整 BOM 基础和启用物料版本决定，不再按工序计算截止范围。授权在管理员批准报废时与报废事实、补料单和补料需求同事务创建；物流进度不得回写本表。
 
 | 字段                        | 类型              | 说明                                                         |
 | --------------------------- | ----------------- | ------------------------------------------------------------ |
@@ -373,7 +373,6 @@ current_step_released_quantity = effective_normal
 | `supplement_id`             | `BIGINT UNSIGNED` | 唯一关联补料物流单 ID                                        |
 | `entry_step_record_id`      | `BIGINT UNSIGNED` | 补产重新投入工序；当前固定为生产批次路线首工序               |
 | `quota_end_step_record_id`  | `BIGINT UNSIGNED` | 补产额度传播截止工序；固定为异常上报工序                     |
-| `material_end_step_record_id` | `BIGINT UNSIGNED` | 管理员确认的物料计算截止工序，决定补料候选所覆盖的路线区间   |
 | `authorized_quantity`       | `DECIMAL(12,4)`   | 产品补产授权数量；批准时等于报废数量且必须大于 `0`           |
 | `authorized_by`             | `BIGINT UNSIGNED` | 批准补产的管理员 ID                                          |
 | `authorized_at`             | `DATETIME`        | 管理员批准补产的时间                                         |
@@ -385,7 +384,7 @@ current_step_released_quantity = effective_normal
 - `UNIQUE (supplement_id)`，一张补料物流单只能服务一条补产授权。
 - `(scrap_record_id, production_batch_id, quota_end_step_record_id) -> batch_step_scrap_records(id, production_batch_id, batch_step_record_id)`，保证授权批次及额度截止工序与报废事实同源。
 - `(supplement_id, production_batch_id) -> production_material_supplement(id, production_batch_id)`。
-- 入口工序、物料截止工序分别以组合外键关联同一生产批次的 `batch_step_records`；`authorized_by -> users.id`。
+- 入口工序以组合外键关联同一生产批次的 `batch_step_records`；`authorized_by -> users.id`。
 - `CHECK (authorized_quantity > 0)`。
 - 表只保存批准和创建事实，不提供状态、更新、软删除或删除审计字段。
 - 索引：`INDEX (production_batch_id, quota_end_step_record_id, authorized_at)`。
@@ -394,8 +393,7 @@ current_step_released_quantity = effective_normal
 
 - `authorized_quantity` 必须等于 `batch_step_scrap_records.scrap_quantity`；数据库只保证两者同源，数值相等由批准事务校验。
 - `supplement_id` 必须指向 `source_type = 'step_scrap_reproduction'` 且与当前报废事实同源的补料单；`material_loss` 补料单不得关联产品补产授权。
-- `entry_step_record_id` 必须是路线首工序；`material_end_step_record_id` 不得晚于 `quota_end_step_record_id`。
-- `abnormal_origin = 'previous_step'` 时，物料截止工序必须严格早于异常上报工序；当前工序异常可以选择异常上报工序作为物料截止。
+- `entry_step_record_id` 必须是路线首工序；物料版本选择与路线工序范围无关。
 - 本表没有“待生效/已生效”状态。`source_type = 'step_scrap_reproduction'` 的关联补料单进入 `fulfilled` 后，授权进入路线额度公式；此后发生生产领料损耗时走 `item_scrap(production_consumed) -> production_material_supplement(material_loss)` 的一比一实物补料链路，原授权数量和产品可报上限不变。普通退料不是损耗，不得借此生成新的产品授权或损耗补料。
 
 ## 4.5 `rework_records`（当前最小返工）

@@ -11,7 +11,7 @@ export interface InventoryItemReference {
   itemCode: string;
   productName: string;
   unit: string;
-  itemKind: 'material' | 'semi_finished' | 'finished_product';
+  itemKind: 'material' | 'finished_product';
 }
 
 /** 历史单据展示引用：允许读取已停用或软删除的库存对象，不得用于写操作有效性校验。 */
@@ -83,7 +83,6 @@ export abstract class ProductSnapshotQuery {
   abstract listInventoryItemDisplayReferencesByIds(
     itemIds: string[],
   ): Promise<InventoryItemDisplayReference[]>;
-  abstract listRouteStepMaterialIds(routeStepId: string): Promise<string[]>;
   abstract getProductionProduct(
     productId: string,
   ): Promise<ProductQueryResult<ProductionProductSnapshot>>;

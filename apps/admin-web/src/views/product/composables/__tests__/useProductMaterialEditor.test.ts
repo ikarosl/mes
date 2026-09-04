@@ -36,7 +36,8 @@ describe('useProductMaterialEditor', () => {
   it('loads BOM rows and material candidates independently', async () => {
     materials.mockResolvedValue([bomRow]);
     productOptions.mockResolvedValue([
-      option('1', 'semi_finished'),
+      // 半成品仍可作为分类名称，但底层业务 kind 统一为 material。
+      option('1', 'material'),
       option('2', 'material'),
       option('9', 'material'),
     ]);

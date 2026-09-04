@@ -9,6 +9,12 @@ import {
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { CommandContext } from '../../../apps/api/src/common/audit/audit.types.js';
 import { MysqlProductionBatchRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-batch.repository.js';
+import { MysqlProductionMaterialDemandConfigurationRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-material-demand-configuration.repository.js';
+import { ProductionMaterialDemandService } from '../../../apps/api/src/modules/production/application/production-material-demand.service.js';
+import { MysqlProductSnapshotRepository } from '../../../apps/api/src/modules/product/infrastructure/mysql-product-snapshot.repository.js';
+import { ProductSnapshotService } from '../../../apps/api/src/modules/product/application/product-snapshot.service.js';
+import { MysqlMaterialVariantRepository } from '../../../apps/api/src/modules/product/infrastructure/mysql-material-variant.repository.js';
+import { MysqlIdempotencyExecutor } from '../../../apps/api/src/infrastructure/idempotency/mysql-idempotency.executor.js';
 
 loadWorkspaceEnv();
 
@@ -17,6 +23,8 @@ const describeMysql = process.env.RUN_MYSQL_INTEGRATION === '1' ? describe : des
 describeMysql('Production MySQL persistence', () => {
   let pool: Pool;
   let repository: MysqlProductionBatchRepository;
+  let demandService: ProductionMaterialDemandService;
+  let variants: MysqlMaterialVariantRepository;
   let fixture: Fixture;
 
   beforeAll(async () => {
@@ -31,6 +39,15 @@ describeMysql('Production MySQL persistence', () => {
       connectionLimit: 4,
     });
     repository = new MysqlProductionBatchRepository(pool);
+    variants = new MysqlMaterialVariantRepository(pool);
+    demandService = new ProductionMaterialDemandService(
+      new MysqlProductionMaterialDemandConfigurationRepository(
+        pool,
+        new ProductSnapshotService(new MysqlProductSnapshotRepository(pool)),
+        variants,
+      ),
+      new MysqlIdempotencyExecutor(pool),
+    );
     fixture = await createFixture(pool);
   });
 
@@ -40,6 +57,10 @@ describeMysql('Production MySQL persistence', () => {
       await pool.execute('DELETE FROM production_item_demand WHERE production_batch_id=?', [
         fixture.batchId,
       ]);
+      await pool.execute(
+        'DELETE FROM production_material_requirement_basis WHERE production_batch_id=?',
+        [fixture.batchId],
+      );
       await pool.execute(
         'DELETE FROM batch_step_abnormal_dispositions WHERE production_batch_id=?',
         [fixture.batchId],
@@ -65,6 +86,9 @@ describeMysql('Production MySQL persistence', () => {
       await pool.execute('DELETE FROM process_routes WHERE id=?', [fixture.processRouteId]);
       await pool.execute('DELETE FROM process_steps WHERE id=?', [fixture.processStepId]);
       await pool.execute('DELETE FROM product_materials WHERE product_id=?', [fixture.productId]);
+      await pool.execute('DELETE FROM material_variants WHERE material_product_id=?', [
+        fixture.materialId,
+      ]);
       await pool.execute('DELETE FROM products WHERE id IN (?,?)', [
         fixture.productId,
         fixture.materialId,
@@ -77,82 +101,86 @@ describeMysql('Production MySQL persistence', () => {
     await pool?.end();
   });
 
-  it('persists BOM and batch snapshots with a stable demand key, then avoids duplicate generation', async () => {
-    const bom = {
-      product: { id: String(fixture.productId) },
-      lines: [
+  it('persists administrator-selected exact versions, supports a split and replays the same intent', async () => {
+    const payload = {
+      requirements: [
         {
           productMaterialId: String(fixture.productMaterialId),
-          materialProductId: String(fixture.materialId),
-          itemCode: 'MAT-PERSISTENCE',
-          productName: 'Persistence material',
-          quantityPerUnit: '1.0000',
-          unit: 'kg',
-          isKeyMaterial: true,
-          needBatchRecord: false,
+          splits: [
+            { materialVariantId: String(fixture.materialVariant1Id), quantity: 2 },
+            { materialVariantId: String(fixture.materialVariant2Id), quantity: 1 },
+          ],
         },
       ],
     };
-    const commandContext: CommandContext = {
-      actorId: String(fixture.actorId),
-      ip: null,
-      requestId: fixture.requestId,
-      userAgent: null,
-    };
-
-    await repository.generateMaterialDemands(
+    const first = await demandService.configure(
       String(fixture.batchId),
-      0,
-      bom as never,
-      commandContext,
+      payload,
+      idemCtx(fixture.actorId, `${fixture.token}-configure`, `${fixture.token}-configure-key`),
     );
-    await repository.generateMaterialDemands(
+    const replay = await demandService.configure(
       String(fixture.batchId),
-      1,
-      bom as never,
-      commandContext,
+      payload,
+      idemCtx(
+        fixture.actorId,
+        `${fixture.token}-configure-replay`,
+        `${fixture.token}-configure-key`,
+      ),
     );
+    expect(first).toEqual({ configured: true });
+    expect(replay).toEqual(first);
 
-    const [demands] = await pool.query<DemandRow[]>(
-      'SELECT quantity_per_unit_snapshot,unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,planned_output_quantity_snapshot,need_number,demand_type,generation_group_key,idempotency_key FROM production_item_demand WHERE production_batch_id=?',
+    const [demands] = await pool.query<
+      (RowDataPacket & {
+        requirement_basis_id: number;
+        material_variant_id: number;
+        material_variant_code_snapshot: string;
+        need_number: string;
+        demand_type: string;
+      })[]
+    >(
+      `SELECT requirement_basis_id,material_variant_id,material_variant_code_snapshot,need_number,demand_type
+       FROM production_item_demand WHERE production_batch_id=? ORDER BY material_variant_id`,
       [fixture.batchId],
     );
-    expect(demands).toEqual([
-      {
-        quantity_per_unit_snapshot: '1.0000',
-        unit_snapshot: 'kg',
-        is_key_material_snapshot: 1,
-        need_batch_record_snapshot: 0,
-        planned_output_quantity_snapshot: '3.0000',
-        need_number: '3.0000',
-        demand_type: 'normal',
-        generation_group_key: `NORMAL:${fixture.batchId}`,
-        idempotency_key: `NORMAL:${fixture.batchId}:${fixture.productMaterialId}`,
-      },
+    expect(demands).toHaveLength(2);
+    expect(demands.map((row) => Number(row.need_number))).toEqual([1, 2]);
+    expect(demands.map((row) => row.material_variant_id)).toEqual([
+      fixture.materialVariant1Id,
+      fixture.materialVariant2Id,
     ]);
-    const [[demandTypeColumn]] = await pool.query<
-      (RowDataPacket & { data_type_value: string; column_default_value: string })[]
+    expect(demands.every((row) => row.requirement_basis_id > 0)).toBe(true);
+    expect(demands.every((row) => row.demand_type === 'normal')).toBe(true);
+    expect(demands.map((row) => row.material_variant_code_snapshot)).toEqual([
+      `${fixture.token}-m-v1-A`,
+      `${fixture.token}-m-v2-A`,
+    ]);
+    const [[basis]] = await pool.query<
+      (RowDataPacket & { required_number: string; material_product_id: number })[]
     >(
-      `SELECT data_type AS data_type_value,column_default AS column_default_value
-       FROM information_schema.columns
-       WHERE table_schema=DATABASE() AND table_name='production_item_demand'
-         AND column_name='demand_type'`,
+      'SELECT required_number,material_product_id FROM production_material_requirement_basis WHERE production_batch_id=?',
+      [fixture.batchId],
     );
-    expect(demandTypeColumn).toEqual({
-      data_type_value: 'varchar',
-      column_default_value: 'normal',
+    expect(basis).toMatchObject({
+      required_number: '3.0000',
+      material_product_id: fixture.materialId,
     });
-    await expect(
-      pool.execute(
-        "UPDATE production_item_demand SET demand_type='manual_additional' WHERE production_batch_id=?",
-        [fixture.batchId],
-      ),
-    ).rejects.toMatchObject({ code: 'ER_CHECK_CONSTRAINT_VIOLATED' });
     const [[batch]] = await pool.query<(RowDataPacket & { status: string; version: number })[]>(
       'SELECT status,version FROM production_batches WHERE id=?',
       [fixture.batchId],
     );
     expect(batch).toEqual({ status: 'material_pending', version: 1 });
+    await expect(
+      demandService.configure(
+        String(fixture.batchId),
+        payload,
+        idemCtx(
+          fixture.actorId,
+          `${fixture.token}-configure-conflict`,
+          `${fixture.token}-other-key`,
+        ),
+      ),
+    ).rejects.toMatchObject({ code: 'CONFLICT' });
   });
 
   it('serializes concurrent batch creation by locking the work order and duplicate batch number', async () => {
@@ -370,11 +398,14 @@ describeMysql('Production MySQL persistence', () => {
 });
 
 interface Fixture {
+  token: string;
   requestId: string;
   productCategoryId: number;
   materialCategoryId: number;
   productId: number;
   materialId: number;
+  materialVariant1Id: number;
+  materialVariant2Id: number;
   productMaterialId: number;
   processStepId: number;
   processRouteId: number;
@@ -384,18 +415,6 @@ interface Fixture {
   actorId: number;
   concurrentBatchNo: string;
 }
-
-type DemandRow = RowDataPacket & {
-  quantity_per_unit_snapshot: string;
-  unit_snapshot: string;
-  is_key_material_snapshot: number;
-  need_batch_record_snapshot: number;
-  planned_output_quantity_snapshot: string;
-  need_number: string;
-  demand_type: string;
-  generation_group_key: string;
-  idempotency_key: string;
-};
 
 type DispositionRow = RowDataPacket & {
   review_status: string;
@@ -425,6 +444,16 @@ const createFixture = async (pool: Pool): Promise<Fixture> => {
     pool,
     'INSERT INTO products (item_code,product_name,category_id,unit,acquire_method) VALUES (?,?,?,?,?)',
     [`${token}-material`, 'Production test material', materialCategoryId, 'kg', 'purchased'],
+  );
+  const materialVariant1Id = await insert(
+    pool,
+    "INSERT INTO material_variants(material_product_id,major_version,minor_version,variant_code,created_by,updated_by) VALUES (?, 'v1','A',?,?,?)",
+    [materialId, `${token}-material-v1-A`, 1, 1],
+  );
+  const materialVariant2Id = await insert(
+    pool,
+    "INSERT INTO material_variants(material_product_id,major_version,minor_version,variant_code,created_by,updated_by) VALUES (?, 'v2','A',?,?,?)",
+    [materialId, `${token}-material-v2-A`, 1, 1],
   );
   const productMaterialId = await insert(
     pool,
@@ -478,11 +507,14 @@ const createFixture = async (pool: Pool): Promise<Fixture> => {
   );
   if (!actor) throw new Error('Production MySQL test requires seeded users');
   return {
+    token,
     requestId: `${token}-request`,
     productCategoryId,
     materialCategoryId,
     productId,
     materialId,
+    materialVariant1Id,
+    materialVariant2Id,
     productMaterialId,
     processStepId,
     processRouteId,
@@ -504,3 +536,11 @@ const requiredEnv = (name: string) => {
   if (!value) throw new Error(`Missing ${name} for MySQL integration test`);
   return value;
 };
+
+const idemCtx = (actorId: number, requestId: string, idempotencyKey: string) => ({
+  actorId: String(actorId),
+  requestId,
+  ip: null,
+  userAgent: null,
+  idempotencyKey,
+});

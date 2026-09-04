@@ -12,7 +12,7 @@ import type {
 } from '../../../common/audit/audit.types.js';
 import { IdempotencyExecutor } from '../../../common/idempotency/idempotency-executor.js';
 import { IdentityDirectoryService } from '../../identity/public.js';
-import { ProductSnapshotQuery } from '../../product/public.js';
+import { MaterialVariantQuery, ProductSnapshotQuery } from '../../product/public.js';
 import { CREATE_PURCHASE_INBOUND_IDEMPOTENCY_SCOPE } from './idempotency/production-idempotency-scopes.contract.js';
 import { CONFIRM_PURCHASE_INBOUND_IDEMPOTENCY_SCOPE } from './idempotency/production-idempotency-scopes.contract.js';
 import {
@@ -28,6 +28,7 @@ export class ProductionInboundService {
   constructor(
     private readonly repository: ProductionInboundRepository,
     private readonly products: ProductSnapshotQuery,
+    private readonly materialVariants: MaterialVariantQuery,
     private readonly identity: IdentityDirectoryService,
     private readonly idempotency: IdempotencyExecutor,
   ) {}
@@ -57,7 +58,21 @@ export class ProductionInboundService {
           snapshots.some((item) => item.itemKind !== 'material')
         )
           throw new ProductionDomainError('NOT_FOUND', '存在无效或已失效物料');
-        return this.enrich(await this.repository.create(normalized, snapshots, command));
+        const variants = await this.materialVariants.listEnabledByMaterials(ids, { lock: true });
+        const variantById = new Map(variants.map((variant) => [variant.id, variant]));
+        const snapshotById = new Map(snapshots.map((snapshot) => [snapshot.id, snapshot]));
+        const inboundSnapshots = normalized.details.map((line) => {
+          const base = snapshotById.get(line.itemId);
+          const variant = variantById.get(line.materialVariantId);
+          if (!base || !variant || variant.materialProductId !== line.itemId)
+            throw new ProductionDomainError('NOT_FOUND', '存在无效或已失效物料版本');
+          return {
+            ...base,
+            materialVariantId: variant.id,
+            materialVariantCode: variant.variantCode,
+          };
+        });
+        return this.enrich(await this.repository.create(normalized, inboundSnapshots, command));
       },
     });
     return execution.result;

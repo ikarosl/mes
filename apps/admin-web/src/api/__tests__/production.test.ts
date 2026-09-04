@@ -320,15 +320,45 @@ describe('productionApi', () => {
     });
   });
 
-  it('generates material demands with version', async () => {
+  it('configures explicit material variants with an idempotency key', async () => {
     const { productionApi } = await import('../production');
+    const data = {
+      requirements: [
+        {
+          productMaterialId: 'pm-1',
+          splits: [
+            { materialVariantId: 'mv-1', quantity: 3 },
+            { materialVariantId: 'mv-2', quantity: 2 },
+          ],
+        },
+      ],
+    };
 
-    await productionApi.generateMaterialDemands('1', 0);
+    await productionApi.configureMaterialDemands('1', data, 'configure-key');
 
     expect(request).toHaveBeenCalledWith({
-      url: '/production/batches/1/actions/generate-material-demands',
+      url: '/production/batches/1/material-demands/configurations',
       method: 'POST',
-      data: { version: 0 },
+      data,
+      headers: { 'Idempotency-Key': 'configure-key' },
+      retryIdempotentWrite: true,
+      retryTimes: 2,
+    });
+  });
+
+  it('adds a manually selected variant under the parent demand with an idempotency key', async () => {
+    const { productionApi } = await import('../production');
+    const data = { materialVariantId: 'mv-3', quantity: 1, reason: '生产补充' };
+
+    await productionApi.addManualMaterialDemand('demand-1', data, 'manual-key');
+
+    expect(request).toHaveBeenCalledWith({
+      url: '/production/material-demands/demand-1/additions',
+      method: 'POST',
+      data,
+      headers: { 'Idempotency-Key': 'manual-key' },
+      retryIdempotentWrite: true,
+      retryTimes: 2,
     });
   });
 
@@ -412,7 +442,15 @@ describe('productionApi', () => {
       inboundNo: null,
       provider: '供应商 A',
       remark: null,
-      details: [{ itemId: '2', batchCode: 'LOT-1', inboundQuantity: 5, remark: null }],
+      details: [
+        {
+          itemId: '2',
+          materialVariantId: 'mv-2',
+          batchCode: 'LOT-1',
+          inboundQuantity: 5,
+          remark: null,
+        },
+      ],
     };
     await productionApi.listPurchaseInbounds({ page: 1, pageSize: 20, status: 'pending' });
     await productionApi.getPurchaseInbound('7');
@@ -582,11 +620,17 @@ describe('productionApi', () => {
     const saveBody = {
       planVersion: null,
       dispositionVersion: 0,
-      materialEndStepRecordId: '3',
-      details: [{ originalDemandId: '5', supplementQuantity: 1.25 }],
+      details: [
+        {
+          originalDemandId: '5',
+          requirementBasisId: 'basis-5',
+          materialVariantId: 'mv-5',
+          supplementQuantity: 1.25,
+        },
+      ],
       remark: '补料',
     };
-    await productionApi.listSupplementCandidates('8', '3');
+    await productionApi.listSupplementCandidates('8');
     await productionApi.getScrapSupplementPlan('8');
     await productionApi.saveScrapSupplementPlan('8', saveBody);
     await productionApi.confirmScrapSupplementPlan(
@@ -597,7 +641,6 @@ describe('productionApi', () => {
     expect(request.mock.calls.slice(-4).map(([config]) => config)).toEqual([
       {
         url: '/production/abnormal-dispositions/8/supplement-candidates',
-        params: { materialEndStepRecordId: '3' },
       },
       { url: '/production/abnormal-dispositions/8/scrap-supplement-plan' },
       {

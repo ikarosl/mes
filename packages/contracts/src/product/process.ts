@@ -86,7 +86,6 @@ export interface ProcessRouteStepItem {
   needRecord: boolean;
   status: number;
   remark: string | null;
-  productMaterialIds: string[];
 }
 
 export interface ProcessRouteStepPayload {
@@ -98,5 +97,4 @@ export interface ProcessRouteStepPayload {
   needRecord: boolean;
   status?: number;
   remark?: string | null;
-  productMaterialIds?: string[];
 }

@@ -243,6 +243,8 @@ export class CompleteReworkDto extends VersionedCommandDto implements CompleteRe
 
 export class ApproveScrapSupplementLineDto {
   @IsString() @IsNotEmpty() @MaxLength(20) originalDemandId!: string;
+  @IsString() @IsNotEmpty() @MaxLength(20) requirementBasisId!: string;
+  @IsString() @IsNotEmpty() @MaxLength(20) materialVariantId!: string;
   @Type(() => Number) @IsInt() @Min(1) @Max(MAX_QUANTITY) supplementQuantity!: number;
 }
 
@@ -250,7 +252,6 @@ export class ApproveScrapSupplementDto
   extends VersionedCommandDto
   implements ApproveScrapSupplementPayload
 {
-  @IsString() @IsNotEmpty() @MaxLength(20) materialEndStepRecordId!: string;
   @IsArray()
   @ArrayMinSize(1)
   @ArrayMaxSize(200)
@@ -260,9 +261,7 @@ export class ApproveScrapSupplementDto
   @IsOptional() @IsString() @MaxLength(5000) remark?: string | null;
 }
 
-export class SupplementCandidateQueryDto {
-  @IsString() @IsNotEmpty() @MaxLength(20) materialEndStepRecordId!: string;
-}
+export class SupplementCandidateQueryDto {}
 
 export class SaveProductionScrapSupplementPlanDto {
   @IsDefined()
@@ -272,7 +271,6 @@ export class SaveProductionScrapSupplementPlanDto {
   @Min(0)
   planVersion!: number | null;
   @Type(() => Number) @IsInt() @Min(0) dispositionVersion!: number;
-  @IsString() @IsNotEmpty() @MaxLength(20) materialEndStepRecordId!: string;
   @IsArray()
   @ArrayMinSize(1)
   @ArrayMaxSize(200)

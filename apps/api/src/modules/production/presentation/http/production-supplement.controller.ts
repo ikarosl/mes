@@ -30,9 +30,9 @@ export class ProductionSupplementController {
   @RequirePermission(PERMISSIONS.production.steps.manageAbnormal)
   candidates(
     @Param() { dispositionId }: AbnormalDispositionParamDto,
-    @Query() { materialEndStepRecordId }: SupplementCandidateQueryDto,
+    @Query() _query: SupplementCandidateQueryDto,
   ) {
-    return this.service.listCandidates(dispositionId, materialEndStepRecordId);
+    return this.service.listCandidates(dispositionId);
   }
 
   @Get(':dispositionId/scrap-supplement-plan')

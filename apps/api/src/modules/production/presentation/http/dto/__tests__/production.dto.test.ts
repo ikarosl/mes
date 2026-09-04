@@ -94,20 +94,31 @@ describe('Production batch execution DTOs', () => {
   it('requires at least one positive manually-entered supplement line', async () => {
     const valid = plainToInstance(ApproveScrapSupplementDto, {
       version: 0,
-      materialEndStepRecordId: '4',
-      details: [{ originalDemandId: '5', supplementQuantity: 1 }],
+      details: [
+        {
+          originalDemandId: '5',
+          requirementBasisId: 'basis-1',
+          materialVariantId: 'variant-1',
+          supplementQuantity: 1,
+        },
+      ],
     });
     expect(await validate(valid)).toEqual([]);
     const empty = plainToInstance(ApproveScrapSupplementDto, {
       version: 0,
-      materialEndStepRecordId: '4',
       details: [],
     });
     expect((await validate(empty)).some((error) => error.property === 'details')).toBe(true);
     const invalid = plainToInstance(ApproveScrapSupplementDto, {
       version: 0,
-      materialEndStepRecordId: '4',
-      details: [{ originalDemandId: '5', supplementQuantity: 0 }],
+      details: [
+        {
+          originalDemandId: '5',
+          requirementBasisId: 'basis-1',
+          materialVariantId: 'variant-1',
+          supplementQuantity: 0,
+        },
+      ],
     });
     expect((await validate(invalid))[0]?.children?.length).toBeGreaterThan(0);
   });
@@ -117,8 +128,14 @@ describe('SaveProductionScrapSupplementPlanDto', () => {
   const basePlan = {
     planVersion: null,
     dispositionVersion: 0,
-    materialEndStepRecordId: '4',
-    details: [{ originalDemandId: '5', supplementQuantity: 1 }],
+    details: [
+      {
+        originalDemandId: '5',
+        requirementBasisId: 'basis-1',
+        materialVariantId: 'variant-1',
+        supplementQuantity: 1,
+      },
+    ],
   };
 
   it('accepts a first-created draft with null planVersion and an optional remark', async () => {
@@ -163,15 +180,21 @@ describe('SaveProductionScrapSupplementPlanDto', () => {
     }
   });
 
-  it('requires dispositionVersion and materialEndStepRecordId', async () => {
+  it('requires dispositionVersion and complete exact-version detail fields', async () => {
     const dto = plainToInstance(SaveProductionScrapSupplementPlanDto, {
       planVersion: null,
       dispositionVersion: undefined,
-      materialEndStepRecordId: '',
-      details: [{ originalDemandId: '5', supplementQuantity: 1 }],
+      details: [
+        {
+          originalDemandId: '5',
+          requirementBasisId: '',
+          materialVariantId: '',
+          supplementQuantity: 1,
+        },
+      ],
     });
     expect((await validate(dto)).map((error) => error.property)).toEqual(
-      expect.arrayContaining(['dispositionVersion', 'materialEndStepRecordId']),
+      expect.arrayContaining(['dispositionVersion', 'details']),
     );
   });
 
@@ -203,18 +226,38 @@ describe('SaveProductionScrapSupplementPlanDto', () => {
 
   it('rejects lines with a missing originalDemandId or non-integer quantity', async () => {
     const invalidLines: Array<Record<string, unknown>> = [
-      { supplementQuantity: 1 },
-      { originalDemandId: '', supplementQuantity: 1 },
-      { originalDemandId: '5', supplementQuantity: 0 },
-      { originalDemandId: '5', supplementQuantity: -0.5 },
-      { originalDemandId: '5', supplementQuantity: 1.12345 },
+      { requirementBasisId: 'basis-1', materialVariantId: 'variant-1', supplementQuantity: 1 },
+      {
+        originalDemandId: '',
+        requirementBasisId: 'basis-1',
+        materialVariantId: 'variant-1',
+        supplementQuantity: 1,
+      },
+      {
+        originalDemandId: '5',
+        requirementBasisId: 'basis-1',
+        materialVariantId: 'variant-1',
+        supplementQuantity: 0,
+      },
+      {
+        originalDemandId: '5',
+        requirementBasisId: 'basis-1',
+        materialVariantId: 'variant-1',
+        supplementQuantity: -0.5,
+      },
+      {
+        originalDemandId: '5',
+        requirementBasisId: 'basis-1',
+        materialVariantId: 'variant-1',
+        supplementQuantity: 1.12345,
+      },
     ];
     for (const line of invalidLines) {
       const dto = plainToInstance(SaveProductionScrapSupplementPlanDto, {
         ...basePlan,
         details: [line],
       });
-      expect((await validate(dto))[0]?.children?.length).toBeGreaterThan(0);
+      expect((await validate(dto)).length).toBeGreaterThan(0);
     }
     const valid = plainToInstance(SaveProductionScrapSupplementPlanDto, basePlan);
     expect(await validate(valid)).toEqual([]);

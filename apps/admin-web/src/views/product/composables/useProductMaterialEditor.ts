@@ -15,7 +15,7 @@ export type ProductMaterialDetailStatus = 'idle' | 'loading' | 'ready' | 'error'
  *    detailStatus === 'ready' 且 loadedProductId === 当前产品时才允许保存，
  *    否则旧产品的行可能被保存到新产品，或失败后用空数组清空新产品的 BOM。
  *  - 可选物料候选来自本弹窗自持的产品候选实例（useProductOptions），按当前产品过滤
- *    （排除自身、保留物料/半成品）；刷新失败保留上次成功快照并提示，不拖累 BOM 明细。
+ *    （排除自身、仅保留物料）；刷新失败保留上次成功快照并提示，不拖累 BOM 明细。
  */
 export function useProductMaterialEditor() {
   const productSource = useProductOptions();
@@ -29,9 +29,7 @@ export function useProductMaterialEditor() {
 
   const materialOptions = computed(() =>
     productSource.options.value.filter(
-      (item) =>
-        (item.itemKind === 'material' || item.itemKind === 'semi_finished') &&
-        item.id !== currentProductId.value,
+      (item) => item.itemKind === 'material' && item.id !== currentProductId.value,
     ),
   );
   /** BOM 明细加载或产品候选刷新进行中，供刷新按钮展示 loading */

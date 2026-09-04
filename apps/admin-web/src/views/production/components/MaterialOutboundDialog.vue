@@ -42,6 +42,13 @@
               min-width="170"
             />
             <el-table-column
+              prop="materialVariantCode"
+              label="物料版本"
+              min-width="190"
+            >
+              <template #default="{ row }">{{ row.materialVariantCode || '未记录版本' }}</template>
+            </el-table-column>
+            <el-table-column
               prop="batchCode"
               label="库存批次"
               min-width="140"

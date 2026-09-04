@@ -36,6 +36,8 @@ export interface ProductionTraceInventoryTransaction {
   transactionId: string;
   outboundDetailId: string;
   itemId: string;
+  materialVariantId: string;
+  materialVariantCode: string;
   itemCode: string;
   itemName: string;
   itemBatchId: string;
@@ -52,6 +54,8 @@ export interface ProductionTraceDetail {
   inventoryTransactions: ProductionTraceInventoryTransaction[];
   materialInboundSources: Array<{
     itemBatchId: string;
+    materialVariantId: string;
+    materialVariantCode: string;
     batchCode: string;
     itemCode: string;
     itemName: string;

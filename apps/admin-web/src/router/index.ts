@@ -17,6 +17,7 @@ import ProductsPage from '../views/product/ProductsPage.vue';
 import ProductCategoriesPage from '../views/product/ProductCategoriesPage.vue';
 import ProcessesPage from '../views/product/ProcessesPage.vue';
 import ProcessRoutesPage from '../views/product/ProcessRoutesPage.vue';
+import MaterialVariantsPage from '../views/product/MaterialVariantsPage.vue';
 
 // 生产管理
 import ProductionOrdersPage from '../views/production/ProductionOrdersPage.vue';
@@ -24,6 +25,7 @@ import ProductionTasksPage from '../views/production/ProductionTasksPage.vue';
 import ProductionWorkerTasksPage from '../views/production/WorkerTasksPage.vue';
 import ProductionExecutionRecordsPage from '../views/production/ProductionExecutionRecordsPage.vue';
 import ProductionTracePage from '../views/production/ProductionTracePage.vue';
+import MaterialDemandsPage from '../views/production/MaterialDemandsPage.vue';
 
 // 仓储管理
 import InboundOrdersPage from '../views/warehouse/InboundOrdersPage.vue';
@@ -144,6 +146,14 @@ export const router = createRouter({
           PERMISSIONS.product.routes.view,
           'ProcessRoutesPage',
         ),
+        page(
+          'product/material-variants',
+          'product-material-variants',
+          '物料版本',
+          MaterialVariantsPage,
+          PERMISSIONS.product.materialVariants.view,
+          'MaterialVariantsPage',
+        ),
 
         // 生产管理
         page(
@@ -177,6 +187,14 @@ export const router = createRouter({
           ProductionExecutionRecordsPage,
           PERMISSIONS.production.tasks.view,
           'ProductionExecutionRecordsPage',
+        ),
+        page(
+          'production/material-demands',
+          'production-material-demands',
+          '物料需求管理',
+          MaterialDemandsPage,
+          PERMISSIONS.production.materialDemands.view,
+          'MaterialDemandsPage',
         ),
         page(
           'production/trace',

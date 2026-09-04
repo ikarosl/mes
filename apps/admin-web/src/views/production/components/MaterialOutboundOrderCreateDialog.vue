@@ -102,11 +102,12 @@
             />
             <el-table-column
               label="物料"
-              min-width="170"
+              min-width="240"
             >
               <template #default="{ row }">
                 <div>{{ row.itemName }}</div>
-                <div class="secondary-text">{{ row.itemCode }}</div>
+                <div class="secondary-text">基础编码 {{ row.itemCode }}</div>
+                <div class="variant-text">版本 {{ variantCode(row) }}</div>
               </template>
             </el-table-column>
             <el-table-column
@@ -253,6 +254,8 @@ const canSubmit = computed(
 const dirty = computed(() =>
   Boolean(batchId.value || remark.value.trim() || selectedCandidates.value.length),
 );
+const variantCode = (row: { materialVariantCode?: string | null }): string =>
+  row.materialVariantCode || '未记录版本';
 
 watch(
   () => props.candidates,
@@ -383,10 +386,14 @@ const clearSelections = (): void => {
   font-size: 12px;
 }
 .secondary-text,
+.variant-text,
 .form-hint,
 .unit-text {
   color: var(--el-text-color-secondary);
   font-size: 12px;
+}
+.variant-text {
+  color: var(--el-color-primary);
 }
 .unit-text {
   margin-left: 6px;

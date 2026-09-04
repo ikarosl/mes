@@ -23,6 +23,7 @@ describe('ProductionInboundService', () => {
     const service = new ProductionInboundService(
       repository as never,
       {} as never,
+      {} as never,
       identity as never,
       {} as never,
     );
@@ -48,17 +49,37 @@ describe('ProductionInboundService', () => {
     const identity = {
       listUserReferencesByIds: vi.fn().mockResolvedValue([{ id: '1', displayName: '管理员' }]),
     };
+    const materialVariants = {
+      listEnabledByMaterials: vi.fn().mockResolvedValue([
+        {
+          id: 'v9',
+          materialProductId: '9',
+          materialCode: 'M1',
+          materialName: '物料',
+          majorVersion: 'v1',
+          minorVersion: 'A',
+          variantCode: 'M1-v1-A',
+          status: 1,
+          remark: null,
+          updatedAt: null,
+        },
+      ]),
+    };
     const idempotency = {
       execute: vi.fn(async (command) => ({ result: await command.handler(), isReplay: false })),
     };
     const service = new ProductionInboundService(
       repository as never,
       products as never,
+      materialVariants as never,
       identity as never,
       idempotency as never,
     );
     const result = await service.create(
-      { provider: ' 供应商 ', details: [{ itemId: '9', batchCode: ' B1 ', inboundQuantity: 2 }] },
+      {
+        provider: ' 供应商 ',
+        details: [{ itemId: '9', materialVariantId: 'v9', batchCode: ' B1 ', inboundQuantity: 2 }],
+      },
       context,
     );
     expect(repository.create).toHaveBeenCalledWith(
@@ -69,6 +90,13 @@ describe('ProductionInboundService', () => {
       expect.any(Array),
       expect.not.objectContaining({ idempotencyKey: expect.anything() }),
     );
+    expect(repository.create.mock.calls[0]?.[1]).toEqual([
+      expect.objectContaining({
+        id: '9',
+        materialVariantId: 'v9',
+        materialVariantCode: 'M1-v1-A',
+      }),
+    ]);
     expect(result.createdByName).toBe('管理员');
   });
   it('rejects non-material references', async () => {
@@ -80,12 +108,18 @@ describe('ProductionInboundService', () => {
           .mockResolvedValue([{ id: '9', itemKind: 'finished_product' }]),
       } as never,
       {} as never,
+      {} as never,
       {
         execute: vi.fn(async (command) => ({ result: await command.handler(), isReplay: false })),
       } as never,
     );
     await expect(
-      service.create({ details: [{ itemId: '9', batchCode: 'B1', inboundQuantity: 1 }] }, context),
+      service.create(
+        {
+          details: [{ itemId: '9', materialVariantId: 'v9', batchCode: 'B1', inboundQuantity: 1 }],
+        },
+        context,
+      ),
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
 
@@ -95,11 +129,17 @@ describe('ProductionInboundService', () => {
     const service = new ProductionInboundService(
       {} as never,
       products as never,
+      {} as never,
       { listUserReferencesByIds: vi.fn().mockResolvedValue([]) } as never,
       { execute: vi.fn().mockResolvedValue({ result: replay, isReplay: true }) } as never,
     );
     await expect(
-      service.create({ details: [{ itemId: '9', batchCode: 'B1', inboundQuantity: 1 }] }, context),
+      service.create(
+        {
+          details: [{ itemId: '9', materialVariantId: 'v9', batchCode: 'B1', inboundQuantity: 1 }],
+        },
+        context,
+      ),
     ).resolves.toBe(replay);
     expect(products.listInventoryItemReferencesByIds).not.toHaveBeenCalled();
   });
@@ -116,6 +156,7 @@ describe('ProductionInboundService', () => {
     const identity = { listUserReferencesByIds: vi.fn().mockResolvedValue([]) };
     const service = new ProductionInboundService(
       repository as never,
+      {} as never,
       {} as never,
       identity as never,
       {} as never,

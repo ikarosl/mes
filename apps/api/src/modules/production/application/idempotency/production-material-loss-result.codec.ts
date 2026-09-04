@@ -20,6 +20,8 @@ const schema: z.ZodType<MaterialLossItem> = z
     allocationId: z.string(),
     demandId: z.string(),
     itemId: z.string(),
+    materialVariantId: z.string(),
+    materialVariantCode: z.string(),
     itemCode: z.string(),
     itemName: z.string(),
     itemBatchId: z.string(),

@@ -103,25 +103,29 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
   }
 
   async listAvailableItemBatches(demandId: string): Promise<AvailableItemBatchItem[]> {
-    const [[demand]] = await this.pool.query<(RowDataPacket & { item_id: number })[]>(
-      "SELECT item_id FROM production_item_demand WHERE id=? AND business_status='active'",
+    const [[demand]] = await this.pool.query<
+      (RowDataPacket & { item_id: number; material_variant_id: number })[]
+    >(
+      "SELECT item_id,material_variant_id FROM production_item_demand WHERE id=? AND business_status='active'",
       [demandId],
     );
     if (!demand) throw new ProductionDomainError('NOT_FOUND', '有效物料需求不存在');
     const [rows] = await this.pool.query<AvailableRow[]>(
-      `SELECT ib.id,ib.item_id,ib.item_code_snapshot,ib.product_name_snapshot,ib.batch_code,ib.unit_snapshot,ib.source_type,ib.provider,ib.production_date,
+      `SELECT ib.id,ib.item_id,ib.material_variant_id,ib.material_variant_code_snapshot,ib.item_code_snapshot,ib.product_name_snapshot,ib.batch_code,ib.unit_snapshot,ib.source_type,ib.provider,ib.production_date,
        COALESCE(SUM(CASE WHEN it.stock_status='available' THEN it.quantity ELSE 0 END),0) on_hand,
        COALESCE((SELECT SUM(GREATEST(a.assigned_number-COALESCE((SELECT SUM(od.outbound_number) FROM outbound_detail od JOIN outbound_order oo ON oo.id=od.outbound_id WHERE od.allocation_id=a.id AND oo.status='completed'),0),0)) FROM production_item_allocation a WHERE a.batch_id=ib.id AND a.allocation_status NOT IN ('released','cancelled')),0) reserved
-       FROM item_batch ib LEFT JOIN inventory_transaction it ON it.batch_id=ib.id AND it.item_id=ib.item_id
-       WHERE ib.item_id=? AND ib.batch_status='available'
+       FROM item_batch ib LEFT JOIN inventory_transaction it ON it.batch_id=ib.id AND it.item_id=ib.item_id AND it.material_variant_id=ib.material_variant_id
+       WHERE ib.item_id=? AND ib.material_variant_id=? AND ib.batch_status='available'
        GROUP BY ib.id
        HAVING on_hand > 0
        ORDER BY ib.id`,
-      [demand.item_id],
+      [demand.item_id, demand.material_variant_id],
     );
     return rows.map((row) => ({
       itemBatchId: String(row.id),
       itemId: String(row.item_id),
+      materialVariantId: String(row.material_variant_id),
+      materialVariantCode: row.material_variant_code_snapshot,
       itemCode: row.item_code_snapshot,
       itemName: row.product_name_snapshot,
       batchCode: row.batch_code,
@@ -191,14 +195,15 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
       for (const line of preview.lines) {
         await connection.execute(
           `INSERT INTO production_short_batch_authorization_detail
-           (authorization_id,demand_id,item_id,demand_quantity_snapshot,
+           (authorization_id,demand_id,item_id,material_variant_id,demand_quantity_snapshot,
             confirmed_outbound_quantity_snapshot,expected_outbound_quantity_snapshot,
             authorized_remaining_quantity,unit_snapshot)
-           VALUES (?,?,?,?,?,?,?,?)`,
+           VALUES (?,?,?,?,?,?,?,?,?)`,
           [
             inserted.insertId,
             line.demandId,
             line.itemId,
+            line.materialVariantId,
             integerQuantity(line.demandQuantity),
             integerQuantity(line.confirmedOutboundQuantity),
             integerQuantity(line.expectedOutboundQuantity),
@@ -392,17 +397,24 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
           (RowDataPacket & {
             production_batch_id: number;
             item_id: number;
+            material_variant_id: number;
             unit_snapshot: string;
             need_number: string;
             business_status: string;
           })[]
         >(
-          'SELECT production_batch_id,item_id,unit_snapshot,need_number,business_status FROM production_item_demand WHERE id=?',
+          'SELECT production_batch_id,item_id,material_variant_id,unit_snapshot,need_number,business_status FROM production_item_demand WHERE id=?',
           [line.demandId],
         );
         const [[stockBatch]] = await connection.query<
-          (RowDataPacket & { item_id: number; batch_status: string })[]
-        >('SELECT item_id,batch_status FROM item_batch WHERE id=?', [line.itemBatchId]);
+          (RowDataPacket & {
+            item_id: number;
+            material_variant_id: number;
+            batch_status: string;
+          })[]
+        >('SELECT item_id,material_variant_id,batch_status FROM item_batch WHERE id=?', [
+          line.itemBatchId,
+        ]);
         if (!demand || String(demand.production_batch_id) !== batchId)
           throw new ProductionDomainError('NOT_FOUND', '物料需求不属于当前生产批次');
         if (demand.business_status !== 'active')
@@ -410,6 +422,7 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
         if (
           !stockBatch ||
           stockBatch.item_id !== demand.item_id ||
+          stockBatch.material_variant_id !== demand.material_variant_id ||
           stockBatch.batch_status !== 'available'
         )
           throw new ProductionDomainError('INVALID_INPUT', '库存批次不可用或物料不匹配');
@@ -424,9 +437,17 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
                AND return_order.status='returned' AND return_detail.release_after_return=1
            ),0),0)) FROM production_item_allocation allocation
              WHERE allocation.demand_id=? AND allocation.allocation_status NOT IN ('released','cancelled')),0) allocated,
-           COALESCE((SELECT SUM(quantity) FROM inventory_transaction WHERE batch_id=? AND item_id=? AND stock_status='available'),0) on_hand,
-           COALESCE((SELECT SUM(GREATEST(a.assigned_number-COALESCE((SELECT SUM(od.outbound_number) FROM outbound_detail od JOIN outbound_order oo ON oo.id=od.outbound_id WHERE od.allocation_id=a.id AND oo.status='completed'),0),0)) FROM production_item_allocation a WHERE a.batch_id=? AND a.allocation_status NOT IN ('released','cancelled')),0) reserved`,
-          [line.demandId, line.itemBatchId, demand.item_id, line.itemBatchId],
+           COALESCE((SELECT SUM(quantity) FROM inventory_transaction WHERE batch_id=? AND item_id=? AND material_variant_id=? AND stock_status='available'),0) on_hand,
+           COALESCE((SELECT SUM(GREATEST(a.assigned_number-COALESCE((SELECT SUM(od.outbound_number) FROM outbound_detail od JOIN outbound_order oo ON oo.id=od.outbound_id WHERE od.allocation_id=a.id AND oo.status='completed'),0),0)) FROM production_item_allocation a WHERE a.batch_id=? AND a.item_id=? AND a.material_variant_id=? AND a.allocation_status NOT IN ('released','cancelled')),0) reserved`,
+          [
+            line.demandId,
+            line.itemBatchId,
+            demand.item_id,
+            demand.material_variant_id,
+            line.itemBatchId,
+            demand.item_id,
+            demand.material_variant_id,
+          ],
         );
         if (
           integerQuantity(totals!.allocated) + line.assignedQuantity >
@@ -439,11 +460,12 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
         )
           throw new ProductionDomainError('INSUFFICIENT_AVAILABLE_STOCK', '库存批次可分配数量不足');
         const [result] = await connection.execute<ResultSetHeader>(
-          `INSERT INTO production_item_allocation (demand_id,production_batch_id,item_id,batch_id,assigned_number,unit_snapshot,remark,created_by,updated_by) VALUES (?,?,?,?,?,?,?,?,?)`,
+          `INSERT INTO production_item_allocation (demand_id,production_batch_id,item_id,material_variant_id,batch_id,assigned_number,unit_snapshot,remark,created_by,updated_by) VALUES (?,?,?,?,?,?,?,?,?,?)`,
           [
             line.demandId,
             batchId,
             demand.item_id,
+            demand.material_variant_id,
             line.itemBatchId,
             line.assignedQuantity,
             demand.unit_snapshot,
@@ -619,13 +641,14 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
       for (const line of payload.details) {
         const allocation = byId.get(line.allocationId)!;
         await connection.execute<ResultSetHeader>(
-          `INSERT INTO outbound_detail (outbound_id,production_batch_id,demand_id,allocation_id,item_id,batch_id,outbound_number,unit_snapshot,created_by) VALUES (?,?,?,?,?,?,?,?,?)`,
+          `INSERT INTO outbound_detail (outbound_id,production_batch_id,demand_id,allocation_id,item_id,material_variant_id,batch_id,outbound_number,unit_snapshot,created_by) VALUES (?,?,?,?,?,?,?,?,?,?)`,
           [
             orderResult.insertId,
             batchId,
             allocation.demand_id,
             allocation.id,
             allocation.item_id,
+            allocation.material_variant_id,
             allocation.batch_id,
             line.outboundQuantity,
             allocation.unit_snapshot,
@@ -820,6 +843,8 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
           allocationId: String(row.id),
           demandId: String(row.demand_id),
           itemId: String(row.item_id),
+          materialVariantId: String(row.material_variant_id),
+          materialVariantCode: row.material_variant_code_snapshot,
           itemCode: row.item_code_snapshot,
           itemName: row.product_name_snapshot,
           generationGroupKey: row.generation_group_key,
@@ -919,7 +944,7 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
       );
       const [details] = await connection.query<OutboundDetailRow[]>(
         `SELECT od.id,od.outbound_id,od.allocation_id,od.demand_id,od.item_id,od.batch_id,
-          ib.batch_code,ib.item_code_snapshot,ib.product_name_snapshot,od.outbound_number,od.unit_snapshot,
+          ib.batch_code,ib.material_variant_id,ib.material_variant_code_snapshot,ib.item_code_snapshot,ib.product_name_snapshot,od.outbound_number,od.unit_snapshot,
           NULL inventory_transaction_id
          FROM outbound_detail od JOIN item_batch ib ON ib.id=od.batch_id
          WHERE od.outbound_id=? ORDER BY od.id FOR UPDATE`,
@@ -940,7 +965,10 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
         bigintCompare,
       );
       await lockIds(connection, 'item_batch', itemBatchIds);
-      const requestedByBatch = new Map<string, { itemId: number; quantity: number }>();
+      const requestedByBatch = new Map<
+        string,
+        { itemId: number; materialVariantId: number; quantity: number }
+      >();
       const requestedByDemand = new Map<string, number>();
       for (const detail of details) {
         const allocation = byAllocation.get(String(detail.allocation_id));
@@ -959,6 +987,7 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
         const current = requestedByBatch.get(key);
         requestedByBatch.set(key, {
           itemId: detail.item_id,
+          materialVariantId: detail.material_variant_id,
           quantity: (current?.quantity ?? 0) + integerQuantity(detail.outbound_number),
         });
         const demandId = String(detail.demand_id);
@@ -974,8 +1003,8 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
       );
       for (const [batchId, requested] of requestedByBatch) {
         const [[stock]] = await connection.query<(RowDataPacket & { quantity: string })[]>(
-          "SELECT COALESCE(SUM(quantity),0) quantity FROM inventory_transaction WHERE batch_id=? AND item_id=? AND stock_status='available'",
-          [batchId, requested.itemId],
+          "SELECT COALESCE(SUM(quantity),0) quantity FROM inventory_transaction WHERE batch_id=? AND item_id=? AND material_variant_id=? AND stock_status='available'",
+          [batchId, requested.itemId, requested.materialVariantId],
         );
         if (requested.quantity > integerQuantity(stock?.quantity ?? 0))
           throw new ProductionDomainError(
@@ -1012,10 +1041,11 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
       }
       for (const detail of details) {
         await connection.execute(
-          `INSERT INTO inventory_transaction (item_id,batch_id,transaction_type,quantity,unit_snapshot,stock_status,reference_type,reference_detail_id,idempotency_key,created_by)
-           VALUES (?,?,'production_material_outbound',? * -1,?,'available','outbound_detail',?,?,?)`,
+          `INSERT INTO inventory_transaction (item_id,material_variant_id,batch_id,transaction_type,quantity,unit_snapshot,stock_status,reference_type,reference_detail_id,idempotency_key,created_by)
+           VALUES (?,?,?,'production_material_outbound',? * -1,?,'available','outbound_detail',?,?,?)`,
           [
             detail.item_id,
+            detail.material_variant_id,
             detail.batch_id,
             detail.outbound_number,
             detail.unit_snapshot,
@@ -1155,8 +1185,8 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
     if (rows.length === 0) return [];
     const ids = rows.map((row) => String(row.id));
     const [details] = await db.query<OutboundDetailRow[]>(
-      `SELECT od.id,od.outbound_id,od.allocation_id,od.demand_id,od.item_id,od.batch_id,ib.batch_code,
-        ib.item_code_snapshot,ib.product_name_snapshot,d.generation_group_key,d.demand_type generation_group_type,
+      `SELECT od.id,od.outbound_id,od.allocation_id,od.demand_id,od.item_id,od.material_variant_id,od.batch_id,ib.batch_code,
+        ib.material_variant_code_snapshot,ib.item_code_snapshot,ib.product_name_snapshot,d.generation_group_key,d.demand_type generation_group_type,
         s.supplement_no,od.outbound_number,od.unit_snapshot,it.id inventory_transaction_id
        FROM outbound_detail od JOIN item_batch ib ON ib.id=od.batch_id
        JOIN production_item_demand d ON d.id=od.demand_id
@@ -1208,6 +1238,8 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
         allocationId: String(detail.allocation_id),
         demandId: String(detail.demand_id),
         itemId: String(detail.item_id),
+        materialVariantId: String(detail.material_variant_id),
+        materialVariantCode: detail.material_variant_code_snapshot,
         itemBatchId: String(detail.batch_id),
         batchCode: detail.batch_code,
         itemCode: detail.item_code_snapshot,
@@ -1302,6 +1334,8 @@ const summarizeQuantities = (details: OutboundDetailRow[]) => {
 type ShortBatchPreviewRow = RowDataPacket & {
   demand_id: number;
   item_id: number;
+  material_variant_id: number;
+  material_variant_code_snapshot: string;
   item_code: string;
   item_name: string;
   generation_group_key: string;
@@ -1326,7 +1360,8 @@ const buildShortBatchAuthorizationPreview = async (
   batch: Awaited<ReturnType<typeof findBatch>>,
 ): Promise<ShortBatchAuthorizationPreview> => {
   const [rows] = await db.query<ShortBatchPreviewRow[]>(
-    `SELECT demand.id demand_id,demand.item_id,demand.item_code_snapshot item_code,
+    `SELECT demand.id demand_id,demand.item_id,demand.material_variant_id,demand.material_variant_code_snapshot,
+      demand.item_code_snapshot item_code,
       demand.item_name_snapshot item_name,demand.generation_group_key,
       demand.demand_type generation_group_type,supplement.supplement_no,
       demand.unit_snapshot,demand.need_number,
@@ -1375,6 +1410,8 @@ const buildShortBatchAuthorizationPreview = async (
     return {
       demandId: String(row.demand_id),
       itemId: String(row.item_id),
+      materialVariantId: String(row.material_variant_id),
+      materialVariantCode: row.material_variant_code_snapshot,
       itemCode: row.item_code,
       itemName: row.item_name,
       generationGroupKey: row.generation_group_key,

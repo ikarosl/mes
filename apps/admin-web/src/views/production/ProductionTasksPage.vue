@@ -189,13 +189,6 @@
               >编辑</el-button
             >
             <el-button
-              link
-              type="primary"
-              :disabled="row.status !== 'pending' || isRowPending(row.id)"
-              @click="generateMaterials(row)"
-              >{{ materialGenerationButtonLabel(row) }}</el-button
-            >
-            <el-button
               v-if="
                 row.status === 'material_pending' ||
                 row.status === 'material_assigned' ||
@@ -206,6 +199,13 @@
               type="primary"
               @click="openMaterialAllocation(row)"
               >分配物料</el-button
+            >
+            <el-button
+              v-if="row.status === 'pending'"
+              link
+              type="primary"
+              @click="openMaterialDemandConfiguration(row)"
+              >配置物料需求</el-button
             >
             <el-button
               v-if="
@@ -365,7 +365,7 @@
 
 <script setup lang="ts">
 import { computed, onActivated, onMounted, ref } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import TableToolbar from '../../components/TableToolbar.vue';
 import PaginationFooter from '../../components/PaginationFooter.vue';
@@ -409,6 +409,7 @@ import ProductionBatchCancelDialog from './components/ProductionBatchCancelDialo
 defineOptions({ name: 'ProductionTasksPage' });
 
 const route = useRoute();
+const router = useRouter();
 
 const {
   batches,
@@ -445,7 +446,7 @@ const batchRowClass = ({ row }: { row: ProductionBatchItem }): string =>
   batchDeadline(row).overdueDays > 0 ? 'deadline-overdue-row' : '';
 const taskNextAction = (row: ProductionBatchItem) => taskNextActionPresentation(row);
 
-/** 行内写操作守卫（生成物料），同一行只允许一个在途（todo 3.5） */
+/** 行内写操作守卫（关闭剩余需求、取消任务），同一行只允许一个在途。 */
 const { isRowPending, beginRow, endRow } = useRowPending();
 
 /** 创建生产批次任务的幂等意图（试点端点）：页面局部持有，弹窗打开/关闭时清除旧意图 */
@@ -675,39 +676,6 @@ const stepExecutionErrorFallback = (error: unknown, fallback: string): string =>
     CONCURRENT_MODIFICATION: '工序已被其他操作修改，请刷新后重试',
   };
   return messages[code] ?? fallback;
-};
-
-/* ====== 生成物料需求 ====== */
-const materialGenerationButtonLabel = (row: ProductionBatchItem): string => {
-  if (row.status === 'pending') return '生成物料';
-  if (row.status === 'cancelled') return '任务已取消';
-  return '需求已生成';
-};
-
-const generateMaterials = async (row: ProductionBatchItem): Promise<void> => {
-  if (!beginRow(row.id)) return;
-  try {
-    try {
-      await ElMessageBox.confirm(
-        '生成物料需求后，该生产任务将不可再编辑，且本次操作不可撤销。是否继续？',
-        '生成物料需求确认',
-        {
-          confirmButtonText: '确认生成',
-          cancelButtonText: '取消',
-          type: 'warning',
-        },
-      );
-    } catch {
-      return;
-    }
-    await productionApi.generateMaterialDemands(row.id, row.version);
-    EMessage.success('物料需求已生成');
-    await loadTasks();
-  } catch (error) {
-    EMessage.error(error, '物料需求生成失败');
-  } finally {
-    endRow(row.id);
-  }
 };
 
 const openMaterialAllocation = async (row: ProductionBatchItem): Promise<void> => {
@@ -964,6 +932,9 @@ const confirmBatchCancellation = async (reason: string): Promise<void> => {
 
 /* ====== 工具函数 ====== */
 const canEditBatch = (row: ProductionBatchItem): boolean => row.status === 'pending';
+const openMaterialDemandConfiguration = async (row: ProductionBatchItem): Promise<void> => {
+  await router.push({ name: 'production-material-demands', query: { productionBatchId: row.id } });
+};
 
 onMounted(() => {
   const keyword = route.query.keyword;

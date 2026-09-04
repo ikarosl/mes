@@ -31,8 +31,10 @@ type TraceInventoryRow = RowDataPacket & {
   transaction_id: number;
   outbound_detail_id: number;
   item_id: number;
+  material_variant_id: number;
   item_code: string;
   item_name: string;
+  material_variant_code: string;
   item_batch_id: number;
   batch_code: string;
   quantity: string;
@@ -117,7 +119,8 @@ export class MysqlProductionTraceRepository extends ProductionTraceRepository {
   async listInventoryTransactions(batchId: string): Promise<ProductionTraceInventoryTransaction[]> {
     const [rows] = await this.pool.query<TraceInventoryRow[]>(
       `SELECT tx.id transaction_id,tx.reference_detail_id outbound_detail_id,tx.item_id,
-        ib.item_code_snapshot item_code,ib.product_name_snapshot item_name,tx.batch_id item_batch_id,ib.batch_code,
+        tx.material_variant_id,ib.item_code_snapshot item_code,ib.product_name_snapshot item_name,
+        ib.material_variant_code_snapshot material_variant_code,tx.batch_id item_batch_id,ib.batch_code,
         tx.quantity,tx.unit_snapshot,tx.created_at
        FROM outbound_order o
        JOIN outbound_detail od ON od.outbound_id=o.id
@@ -132,6 +135,8 @@ export class MysqlProductionTraceRepository extends ProductionTraceRepository {
       transactionId: String(row.transaction_id),
       outboundDetailId: String(row.outbound_detail_id),
       itemId: String(row.item_id),
+      materialVariantId: String(row.material_variant_id),
+      materialVariantCode: row.material_variant_code,
       itemCode: row.item_code,
       itemName: row.item_name,
       itemBatchId: String(row.item_batch_id),
@@ -146,9 +151,11 @@ export class MysqlProductionTraceRepository extends ProductionTraceRepository {
     const [rows] = await this.pool.query<
       (RowDataPacket & {
         item_batch_id: number;
+        material_variant_id: number;
         batch_code: string;
         item_code: string;
         item_name: string;
+        material_variant_code: string;
         inbound_no: string | null;
         provider: string | null;
         confirmed_at: Date | null;
@@ -157,11 +164,13 @@ export class MysqlProductionTraceRepository extends ProductionTraceRepository {
         reference_type: string;
       })[]
     >(
-      `SELECT DISTINCT ib.id item_batch_id,ib.batch_code,ib.item_code_snapshot item_code,
-        ib.product_name_snapshot item_name,o.inbound_no,o.provider,o.inbound_at confirmed_at,
+      `SELECT DISTINCT ib.id item_batch_id,ib.material_variant_id,ib.batch_code,ib.item_code_snapshot item_code,
+        ib.product_name_snapshot item_name,ib.material_variant_code_snapshot material_variant_code,
+        o.inbound_no,o.provider,o.inbound_at confirmed_at,
         tx.quantity,tx.id transaction_id,tx.reference_type
        FROM production_item_allocation a JOIN item_batch ib ON ib.id=a.batch_id
-       JOIN inventory_transaction tx ON tx.batch_id=ib.id AND tx.quantity>0
+       JOIN inventory_transaction tx ON tx.batch_id=ib.id AND tx.item_id=ib.item_id
+         AND tx.material_variant_id=ib.material_variant_id AND tx.quantity>0
        LEFT JOIN inbound_detail d ON tx.reference_type='inbound_detail' AND tx.reference_detail_id=d.id
        LEFT JOIN inbound_order o ON o.id=d.inbound_id AND o.status='completed'
        WHERE a.production_batch_id=? AND tx.stock_status='available'
@@ -170,6 +179,8 @@ export class MysqlProductionTraceRepository extends ProductionTraceRepository {
     );
     return rows.map((row) => ({
       itemBatchId: String(row.item_batch_id),
+      materialVariantId: String(row.material_variant_id),
+      materialVariantCode: row.material_variant_code,
       batchCode: row.batch_code,
       itemCode: row.item_code,
       itemName: row.item_name,

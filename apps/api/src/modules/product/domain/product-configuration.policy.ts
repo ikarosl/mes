@@ -14,9 +14,6 @@ export function requireConfigurableProduct(product: ConfigurableProduct): void {
     product.acquireMethod !== 'self_made' ||
     product.itemKind === 'material'
   ) {
-    throw new ProductDomainError(
-      'INVALID_PRODUCT_KIND',
-      '只有已启用的自制半成品或成品可以配置工艺路线',
-    );
+    throw new ProductDomainError('INVALID_PRODUCT_KIND', '只有已启用的自制成品可以配置工艺路线');
   }
 }

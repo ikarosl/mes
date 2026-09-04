@@ -6,8 +6,8 @@ describe('production inbound policy', () => {
     expect(() =>
       assertValidPurchaseInboundDraft({
         details: [
-          { itemId: '1', batchCode: 'LOT-1', inboundQuantity: 1 },
-          { itemId: '1', batchCode: 'LOT-2', inboundQuantity: 2 },
+          { itemId: '1', materialVariantId: 'v1', batchCode: 'LOT-1', inboundQuantity: 1 },
+          { itemId: '1', materialVariantId: 'v1', batchCode: 'LOT-2', inboundQuantity: 2 },
         ],
       }),
     ).not.toThrow();
@@ -17,14 +17,14 @@ describe('production inbound policy', () => {
     expect(() => assertValidPurchaseInboundDraft({ details: [] })).toThrow();
     expect(() =>
       assertValidPurchaseInboundDraft({
-        details: [{ itemId: '1', batchCode: 'LOT-1', inboundQuantity: 0 }],
+        details: [{ itemId: '1', materialVariantId: 'v1', batchCode: 'LOT-1', inboundQuantity: 0 }],
       }),
     ).toThrow();
     expect(() =>
       assertValidPurchaseInboundDraft({
         details: [
-          { itemId: '1', batchCode: 'LOT-1', inboundQuantity: 1 },
-          { itemId: '1', batchCode: 'LOT-1', inboundQuantity: 2 },
+          { itemId: '1', materialVariantId: 'v1', batchCode: 'LOT-1', inboundQuantity: 1 },
+          { itemId: '1', materialVariantId: 'v1', batchCode: 'LOT-1', inboundQuantity: 2 },
         ],
       }),
     ).toThrow();

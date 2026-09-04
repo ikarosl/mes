@@ -12,10 +12,13 @@ import { fixedIntegerQuantity, integerQuantity } from '../domain/integer-quantit
 export type DemandRow = RowDataPacket & {
   id: number;
   production_batch_id: number;
+  requirement_basis_id: number;
   product_material_id: number;
   item_id: number;
+  material_variant_id: number;
   item_code_snapshot: string;
   item_name_snapshot: string;
+  material_variant_code_snapshot: string;
   unit_snapshot: string;
   need_number: string;
   remaining_number: string;
@@ -37,8 +40,10 @@ export type AllocationRow = RowDataPacket & {
   demand_id: number;
   production_batch_id: number;
   item_id: number;
+  material_variant_id: number;
   batch_id: number;
   batch_code: string;
+  material_variant_code_snapshot: string;
   assigned_number: string;
   outbound_quantity: string;
   pending_outbound_quantity: string;
@@ -55,8 +60,10 @@ export type AllocationRow = RowDataPacket & {
 export type AvailableRow = RowDataPacket & {
   id: number;
   item_id: number;
+  material_variant_id: number;
   item_code_snapshot: string;
   product_name_snapshot: string;
+  material_variant_code_snapshot: string;
   batch_code: string;
   unit_snapshot: string;
   source_type: AvailableItemBatchItem['sourceType'];
@@ -96,8 +103,10 @@ export type OutboundDetailRow = RowDataPacket & {
   allocation_id: number;
   demand_id: number;
   item_id: number;
+  material_variant_id: number;
   batch_id: number;
   batch_code: string;
+  material_variant_code_snapshot: string;
   item_code_snapshot: string;
   product_name_snapshot: string;
   generation_group_key: string;
@@ -108,7 +117,7 @@ export type OutboundDetailRow = RowDataPacket & {
   inventory_transaction_id: number | null;
 };
 
-export const DEMAND_SELECT = `SELECT d.id,d.production_batch_id,d.product_material_id,d.item_id,d.item_code_snapshot,d.item_name_snapshot,d.unit_snapshot,d.need_number,d.remaining_number,d.demand_type,d.generation_group_key,d.supplement_id,s.supplement_no,d.business_status,d.fulfilled_by,d.fulfilled_at,d.version,d.created_at,
+export const DEMAND_SELECT = `SELECT d.id,d.production_batch_id,d.requirement_basis_id,d.product_material_id,d.item_id,d.material_variant_id,d.item_code_snapshot,d.item_name_snapshot,d.material_variant_code_snapshot,d.unit_snapshot,d.need_number,d.remaining_number,d.demand_type,d.generation_group_key,d.supplement_id,s.supplement_no,d.business_status,d.fulfilled_by,d.fulfilled_at,d.version,d.created_at,
   COALESCE((SELECT SUM(GREATEST(a.assigned_number-COALESCE((
     SELECT SUM(rd.return_number) FROM return_detail rd JOIN return_order ro ON ro.id=rd.return_id
     WHERE rd.allocation_id=a.id AND ro.status='returned' AND rd.release_after_return=1
@@ -117,7 +126,7 @@ export const DEMAND_SELECT = `SELECT d.id,d.production_batch_id,d.product_materi
   FROM production_item_demand d
   LEFT JOIN production_material_supplement s ON s.id=d.supplement_id`;
 
-export const ALLOCATION_SELECT = `SELECT a.id,a.demand_id,a.production_batch_id,a.item_id,a.batch_id,ib.batch_code,a.assigned_number,d.demand_type,d.generation_group_key,s.supplement_no,
+export const ALLOCATION_SELECT = `SELECT a.id,a.demand_id,a.production_batch_id,a.item_id,a.material_variant_id,a.batch_id,ib.batch_code,ib.material_variant_code_snapshot,d.demand_type,d.generation_group_key,s.supplement_no,
   COALESCE((SELECT SUM(od.outbound_number) FROM outbound_detail od JOIN outbound_order oo ON oo.id=od.outbound_id WHERE od.allocation_id=a.id AND oo.status='completed'),0) outbound_quantity,
   COALESCE((SELECT SUM(od.outbound_number) FROM outbound_detail od JOIN outbound_order oo ON oo.id=od.outbound_id WHERE od.allocation_id=a.id AND oo.status IN ('pending_picking','picked','partially_outbound')),0) pending_outbound_quantity,
   a.unit_snapshot,a.allocation_status,a.version,a.remark,a.created_at
@@ -128,6 +137,8 @@ export const mapAllocation = (row: AllocationRow): ProductionMaterialAllocationI
   demandId: String(row.demand_id),
   productionBatchId: String(row.production_batch_id),
   itemId: String(row.item_id),
+  materialVariantId: String(row.material_variant_id),
+  materialVariantCode: row.material_variant_code_snapshot,
   itemBatchId: String(row.batch_id),
   batchCode: row.batch_code,
   assignedQuantity: row.assigned_number,
@@ -161,6 +172,9 @@ export const mapDemand = (
     productionBatchId: String(row.production_batch_id),
     productMaterialId: String(row.product_material_id),
     itemId: String(row.item_id),
+    requirementBasisId: String(row.requirement_basis_id),
+    materialVariantId: String(row.material_variant_id),
+    materialVariantCode: row.material_variant_code_snapshot,
     itemCode: row.item_code_snapshot,
     itemName: row.item_name_snapshot,
     unit: row.unit_snapshot,

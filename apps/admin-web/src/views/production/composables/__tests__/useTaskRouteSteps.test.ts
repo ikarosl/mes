@@ -19,7 +19,6 @@ const stepItem = {
   needRecord: true,
   status: 1,
   remark: null,
-  productMaterialIds: [],
 };
 
 describe('useTaskRouteSteps', () => {

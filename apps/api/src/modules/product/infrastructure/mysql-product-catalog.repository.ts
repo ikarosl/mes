@@ -162,10 +162,16 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
   async updateProduct(id: string, payload: ProductPayload, audit: CommandContext) {
     await withTransaction(this.pool, async (connection) => {
       const before = await this.productRecord(connection, id, true);
-      if (payload.itemCode !== before.item_code || payload.unit !== before.unit) {
+      if (payload.itemCode !== before.item_code) {
         throw new ProductDomainError(
           'CONFLICT',
-          '产品编码和基础单位创建后不可修改；原则变化请新建产品',
+          '物料/产品编码创建后不可修改；原则变化请新建产品和编码',
+        );
+      }
+      if (payload.unit !== before.unit) {
+        throw new ProductDomainError(
+          'CONFLICT',
+          '物料/产品基础单位创建后不可修改；原则变化请新建产品和编码',
         );
       }
       if (
@@ -190,14 +196,13 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
         if ((dependent?.bom_count ?? 0) > 0 || (dependent?.route_count ?? 0) > 0) {
           throw new ProductDomainError(
             'INVALID_PRODUCT_KIND',
-            '已有 BOM 或工艺路线的对象必须保持为自制半成品或成品',
+            '已有 BOM 或工艺路线的对象必须保持为自制成品',
           );
         }
       }
       await connection.execute(
-        `UPDATE products SET item_code=?,product_name=?,category_id=?,unit=?,acquire_method=?,spec_values=?,status=?,remark=?,updated_by=? WHERE id=? AND is_deleted=0`,
+        `UPDATE products SET product_name=?,category_id=?,unit=?,acquire_method=?,spec_values=?,status=?,remark=?,updated_by=? WHERE id=? AND is_deleted=0`,
         [
-          payload.itemCode,
           payload.productName,
           payload.categoryId,
           payload.unit,
@@ -291,10 +296,9 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
         itemKind: product.item_kind,
       });
       if (product.acquire_method !== 'self_made' || product.item_kind === 'material') {
-        throw new ProductDomainError('INVALID_PRODUCT_KIND', '只有自制半成品或成品可以配置 BOM');
+        throw new ProductDomainError('INVALID_PRODUCT_KIND', '只有自制成品可以配置 BOM');
       }
       const before = await this.listMaterialRecords(connection, productId);
-      const desiredIds = items.map((item) => item.materialProductId);
       for (const item of items) {
         const material = await this.requireMaterialCandidate(
           connection,
@@ -307,17 +311,6 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
             'BOM 用量单位必须等于投入物料的基础单位',
           );
         }
-      }
-      const removed = before.filter(
-        (item) => !desiredIds.includes(String(item.material_product_id)),
-      );
-      if (removed.length) {
-        const [used] = await connection.query<RowDataPacket[]>(
-          `SELECT rsm.id FROM route_step_materials rsm WHERE rsm.product_material_id IN (${removed.map(() => '?').join(',')}) LIMIT 1`,
-          removed.map((item) => item.id),
-        );
-        if (used.length)
-          throw new ProductDomainError('CONFLICT', 'BOM 明细已被工艺路线步骤使用，不能移除');
       }
       await connection.execute(
         'UPDATE product_materials SET is_deleted=1,deleted_by=?,deleted_at=NOW(),updated_by=? WHERE product_id=? AND is_deleted=0',
@@ -364,10 +357,7 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
         itemKind: product.item_kind,
       });
       if (product.acquire_method !== 'self_made' || product.item_kind === 'material') {
-        throw new ProductDomainError(
-          'INVALID_PRODUCT_KIND',
-          '只有自制半成品或成品可以设置默认工艺路线',
-        );
+        throw new ProductDomainError('INVALID_PRODUCT_KIND', '只有自制成品可以设置默认工艺路线');
       }
       if (routeId) {
         if (!route || String(route.product_id) !== productId || route.status !== 'enabled') {
@@ -435,14 +425,10 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
   }
   private async requireMaterialCandidate(db: Db, productId: string, materialId: string) {
     const material = await this.productRecord(db, materialId);
-    if (
-      materialId === productId ||
-      material.status !== 1 ||
-      !['material', 'semi_finished'].includes(material.item_kind)
-    ) {
+    if (materialId === productId || material.status !== 1 || material.item_kind !== 'material') {
       throw new ProductDomainError(
         'INVALID_MATERIAL',
-        'BOM 投入对象必须是已启用的物料或半成品，且不能引用产品自身',
+        'BOM 投入对象必须是已启用的物料，且不能引用产品自身',
       );
     }
     return material;

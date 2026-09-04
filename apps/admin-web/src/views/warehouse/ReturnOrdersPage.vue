@@ -87,6 +87,12 @@
           <template #default="{ row }">{{ returnSummary(row) }}</template>
         </el-table-column>
         <el-table-column
+          label="物料版本"
+          min-width="190"
+        >
+          <template #default="{ row }">{{ returnVariantSummary(row) }}</template>
+        </el-table-column>
+        <el-table-column
           label="退回去向"
           width="145"
         >
@@ -243,6 +249,7 @@
           >
             <template #default="{ row }">
               <div class="primary-cell">{{ row.itemCode }} · {{ row.itemName }}</div>
+              <div class="variant-cell">版本 {{ row.materialVariantCode }}</div>
               <div class="secondary-cell">库存批次 {{ row.batchCode }}</div>
             </template>
           </el-table-column>
@@ -351,8 +358,13 @@
         >
           <el-table-column
             prop="itemCode"
-            label="物料编码"
-            width="150"
+            label="基础物料编码"
+            width="160"
+          />
+          <el-table-column
+            prop="materialVariantCode"
+            label="物料版本"
+            min-width="190"
           />
           <el-table-column
             prop="itemName"
@@ -600,6 +612,9 @@ function returnSummary(row: ReturnOrderItem) {
     byUnit.set(line.unit, (byUnit.get(line.unit) ?? 0) + Number(line.returnQuantity));
   return [...byUnit].map(([unit, value]) => `${quantity(value)} ${unit}`).join('；') || '0';
 }
+function returnVariantSummary(row: ReturnOrderItem): string {
+  return [...new Set(row.details.map((line) => line.materialVariantCode))].join('；') || '—';
+}
 const quantity = (value: string | number) => Number(value).toFixed(0);
 const statusTag = (status: ReturnOrderStatus) =>
   status === 'returned'
@@ -698,6 +713,11 @@ onActivated(() => {
 .secondary-cell {
   margin-top: 3px;
   color: #6b7280;
+  font-size: 12px;
+}
+.variant-cell {
+  margin-top: 3px;
+  color: var(--el-color-primary);
   font-size: 12px;
 }
 .dialog-body {

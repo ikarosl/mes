@@ -11,10 +11,12 @@ import type { CommandContext } from '../../../../common/audit/audit.types.js';
 
 export interface PurchaseInboundItemSnapshot {
   id: string;
+  materialVariantId: string;
+  materialVariantCode: string;
   itemCode: string;
   productName: string;
   unit: string;
-  itemKind: 'material' | 'semi_finished' | 'finished_product';
+  itemKind: 'material' | 'finished_product';
 }
 
 export abstract class ProductionInboundRepository {

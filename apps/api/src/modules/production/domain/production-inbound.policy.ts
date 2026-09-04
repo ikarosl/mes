@@ -6,7 +6,7 @@ export function assertValidPurchaseInboundDraft(payload: CreatePurchaseInboundPa
     throw new ProductionDomainError('INVALID_INPUT', '入库单至少需要一条明细');
   const seen = new Set<string>();
   for (const detail of payload.details) {
-    const key = `${detail.itemId}:${detail.batchCode}`;
+    const key = `${detail.itemId}:${detail.materialVariantId}:${detail.batchCode}`;
     if (!detail.batchCode || detail.inboundQuantity <= 0 || seen.has(key))
       throw new ProductionDomainError(
         'INVALID_INPUT',

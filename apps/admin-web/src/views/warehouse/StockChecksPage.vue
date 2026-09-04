@@ -236,10 +236,11 @@
           </el-table-column>
           <el-table-column
             label="物料"
-            min-width="220"
+            min-width="300"
           >
             <template #default="{ row }"
               ><div class="primary-cell">{{ row.itemCode }} · {{ row.itemName }}</div>
+              <div class="variant-cell">版本 {{ row.materialVariantCode }}</div>
               <div class="secondary-cell">{{ row.batchCode }}</div></template
             >
           </el-table-column>
@@ -335,9 +336,10 @@
         >
           <el-table-column
             label="物料"
-            min-width="210"
+            min-width="300"
             ><template #default="{ row }"
               ><div class="primary-cell">{{ row.itemCode }} · {{ row.itemName }}</div>
+              <div class="variant-cell">版本 {{ row.materialVariantCode }}</div>
               <div class="secondary-cell">{{ row.batchCode }}</div></template
             ></el-table-column
           >
@@ -827,6 +829,11 @@ onActivated(loadRows);
 .secondary-cell {
   margin-top: 3px;
   color: #6b7280;
+  font-size: 12px;
+}
+.variant-cell {
+  margin-top: 3px;
+  color: var(--el-color-primary);
   font-size: 12px;
 }
 .difference-text {

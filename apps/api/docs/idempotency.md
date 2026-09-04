@@ -13,6 +13,8 @@
 | 创建物料分配 | `POST /api/production/batches/:batchId/material-allocations` | `production.material-allocation.create.v1` |
 | 创建生产领料出库单 | `POST /api/production/batches/:batchId/material-outbounds` | `production.material-outbound.create.v3` |
 | 确认生产领料出库单 | `POST /api/production/material-outbounds/:outboundId/actions/confirm` | `production.material-outbound.confirm.v2` |
+| 管理员确认基础 BOM 明细的精确版本需求 | `POST /api/production/batches/:batchId/material-demands/configurations` | `production.material-demands.configure.v1` |
+| 创建人工追加物料需求 | `POST /api/production/material-demands/:demandId/additions` | `production.material-demands.add-manual.v1` |
 | 创建外购物料入库单 | `POST /api/production/purchase-inbounds` | `production.purchase-inbound.create.v1` |
 | 确认外购物料入库单 | `POST /api/production/purchase-inbounds/:inboundId/actions/confirm` | `production.purchase-inbound.confirm.v1` |
 | 创建工序报工 | `POST /api/production/batches/:batchId/step-records/:recordId/reports` | `production.step-report.create.v3` |
@@ -100,6 +102,8 @@ modules/production/application/idempotency/
 scope/key 仍按既有记录仲裁。清理后该 scope/key 才可能成为新的首次请求。
 
 客户端不得在超过 12 小时后自动重试旧键，也不得自动换新键盲发。首次结果可能已经成功，必须先核对业务结果，再由用户显式放弃旧意图。
+
+物料需求配置按基础 BOM 明细逐行确认，两个新增命令均通过 `IdempotencyExecutor` 写入：配置命令在同一事务内锁定批次、重新读取 Product 公共 BOM 与启用的精确物料版本，写入需求基础和对应需求事实；人工追加命令按具体父需求重新校验批次/BOM/启用版本后写入追加动作与需求事实。所有需求事实写入必须经 Production 的需求计划写入器推进 `material_plan_version`，不得恢复旧的一键整批生成入口。
 
 ## 6. 规范化请求指纹
 

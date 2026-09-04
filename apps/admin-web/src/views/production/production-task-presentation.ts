@@ -69,7 +69,7 @@ export const taskNextActionPresentation = (batch: {
   ) {
     return { label: '物料操作已完成', tone: 'success' };
   }
-  if (batch.status === 'pending') return { label: '待生成物料需求', tone: 'warning' };
+  if (batch.status === 'pending') return { label: '待配置物料需求', tone: 'warning' };
   if (batch.status === 'material_pending') return { label: '待完成物料分配', tone: 'warning' };
   return { label: '待创建领料出库单', tone: 'primary' };
 };

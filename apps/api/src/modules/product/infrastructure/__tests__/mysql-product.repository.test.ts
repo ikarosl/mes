@@ -519,7 +519,6 @@ describe('MySQL product adapters workflow transactions', () => {
           sopFileId: '6',
           needInspection: false,
           needRecord: true,
-          productMaterialIds: [],
         },
       ],
       commandContextWithoutIp,

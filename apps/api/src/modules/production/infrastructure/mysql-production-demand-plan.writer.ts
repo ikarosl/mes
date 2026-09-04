@@ -9,8 +9,12 @@ import type { Db } from './mysql-production.shared.js';
 
 export type DemandPlanLine = {
   identityId: string | number | bigint;
+  /** Frozen base-BOM formula that this exact demand consumes. */
+  requirementBasisId: string | number;
   productMaterialId: string | number;
   itemId: string | number;
+  materialVariantId: string | number;
+  materialVariantCode: string;
   itemCode: string;
   itemName: string;
   quantityPerUnit: string;
@@ -22,6 +26,7 @@ export type DemandPlanLine = {
   demandType: DemandType;
   parentDemandId?: string | number | null;
   supplementId?: string | number | null;
+  manualAdditionId?: string | number | null;
 };
 
 type CreateDemandGroupParams = {
@@ -46,17 +51,21 @@ export class MysqlProductionDemandPlanWriter {
       const keys = buildDemandGenerationKeys(params.source, line.identityId);
       const [created] = await db.execute<ResultSetHeader>(
         `INSERT INTO production_item_demand
-         (production_batch_id,product_material_id,item_id,item_code_snapshot,item_name_snapshot,
+         (production_batch_id,requirement_basis_id,product_material_id,item_id,material_variant_id,
+          item_code_snapshot,item_name_snapshot,material_variant_code_snapshot,
           quantity_per_unit_snapshot,unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,
           planned_output_quantity_snapshot,need_number,remaining_number,demand_type,generation_group_key,
-          idempotency_key,parent_demand_id,supplement_id,business_status,created_by,updated_by)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'active',?,?)`,
+          idempotency_key,parent_demand_id,manual_addition_id,supplement_id,business_status,created_by,updated_by)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'active',?,?)`,
         [
           params.batchId,
+          line.requirementBasisId,
           line.productMaterialId,
           line.itemId,
+          line.materialVariantId,
           line.itemCode,
           line.itemName,
+          line.materialVariantCode,
           line.quantityPerUnit,
           line.unit,
           Number(line.isKeyMaterial),
@@ -68,6 +77,7 @@ export class MysqlProductionDemandPlanWriter {
           keys.generationGroupKey,
           keys.idempotencyKey,
           line.parentDemandId ?? null,
+          line.manualAdditionId ?? null,
           line.supplementId ?? null,
           params.actorId,
           params.actorId,

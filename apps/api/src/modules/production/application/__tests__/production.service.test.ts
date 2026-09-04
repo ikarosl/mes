@@ -144,29 +144,6 @@ describe('ProductionService first-stage commands', () => {
     );
   });
 
-  it('maps a BOM public query failure to HTTP 400', async () => {
-    const repository = {
-      hasGeneratedNormalMaterialDemands: vi.fn().mockResolvedValue(false),
-      getBatchProductId: vi.fn().mockResolvedValue('8'),
-    };
-    const products = {
-      getBomSnapshot: vi
-        .fn()
-        .mockResolvedValue({ status: 'invalid-input', message: '产品不可生成 BOM' }),
-    };
-    const service = new ProductionService(
-      repository as never,
-      products as never,
-      {} as never,
-      {} as never,
-    );
-
-    await expect(service.generateMaterialDemands('6', 2, audit)).rejects.toMatchObject({
-      code: 'INVALID_INPUT',
-      message: '产品不可生成 BOM',
-    });
-  });
-
   it('maps an SOP public query failure to HTTP 404', async () => {
     const products = {
       getEnabledSopFileSnapshot: vi
@@ -337,72 +314,6 @@ describe('ProductionService first-stage commands', () => {
 
     expect(products.getProductionProduct).toHaveBeenCalledWith('9');
     expect(repository.updateWorkOrder).toHaveBeenCalledWith('11', payload, product, audit);
-  });
-
-  it('forwards the client version when generating immutable material demands', async () => {
-    const repository = {
-      hasGeneratedNormalMaterialDemands: vi.fn().mockResolvedValue(false),
-      getBatchProductId: vi.fn().mockResolvedValue('8'),
-      generateMaterialDemands: vi.fn().mockResolvedValue({ id: '6', status: 'material_pending' }),
-    };
-    const products = {
-      getBomSnapshot: vi.fn().mockResolvedValue({
-        status: 'success',
-        value: {
-          product: { id: '8' },
-          lines: [
-            {
-              productMaterialId: '3',
-              materialProductId: '5',
-              quantityPerUnit: '2.0000',
-              unit: 'pcs',
-              isKeyMaterial: true,
-              needBatchRecord: true,
-            },
-          ],
-        },
-      }),
-    };
-    const service = new ProductionService(
-      repository as never,
-      products as never,
-      {} as never,
-      {} as never,
-    );
-
-    await service.generateMaterialDemands('6', 2, audit);
-
-    expect(repository.generateMaterialDemands).toHaveBeenCalledWith(
-      '6',
-      2,
-      expect.any(Object),
-      audit,
-    );
-  });
-
-  it('returns existing batch details without reading the current BOM after normal demands exist', async () => {
-    const existing = validBatchDetail({ status: 'material_assigned', materialPlanVersion: 3 });
-    const repository = {
-      hasGeneratedNormalMaterialDemands: vi.fn().mockResolvedValue(true),
-      getBatch: vi.fn().mockResolvedValue(existing),
-      getBatchProductId: vi.fn(),
-      generateMaterialDemands: vi.fn(),
-    };
-    const products = { getBomSnapshot: vi.fn() };
-    const service = new ProductionService(
-      repository as never,
-      products as never,
-      { listUserReferencesByIds: vi.fn().mockResolvedValue([]) } as never,
-      {} as never,
-    );
-
-    await expect(service.generateMaterialDemands('6', 1, audit)).resolves.toMatchObject({
-      id: '6',
-      status: 'material_assigned',
-    });
-    expect(repository.getBatchProductId).not.toHaveBeenCalled();
-    expect(products.getBomSnapshot).not.toHaveBeenCalled();
-    expect(repository.generateMaterialDemands).not.toHaveBeenCalled();
   });
 
   it('rejects a production batch plan whose end date precedes its start date', async () => {

@@ -47,7 +47,7 @@ describe('permissionMatches', () => {
   });
 
   it('centralizes product workflow status and mutation permission codes', () => {
-    expect(PRODUCT_ITEM_KINDS).toEqual(['material', 'semi_finished', 'finished_product']);
+    expect(PRODUCT_ITEM_KINDS).toEqual(['material', 'finished_product']);
     expect(PROCESS_ROUTE_STATUSES).toContain('archived');
     expect(PERMISSIONS.product.products.manageBom).toBe('product:products:manage-bom');
     expect(PERMISSIONS.product.routes.manageSteps).toBe('product:routes:manage-steps');

@@ -5,7 +5,10 @@
 当前数据集包含：
 
 - System：生产操作工、生产管理员角色，`operator-001`、`operator-002`、`production-001` 三个演示账号及其授权；
-- Product：微带成品、两种外购物料、BOM、装配/粘接工序、启用的 V1.0 工艺路线及工序物料绑定。
+- Product：微带成品、两种外购物料、BOM、每种物料的启用版本、装配/粘接工序和启用的 V1.0 工艺路线。
+
+物料基础编码属于 BOM 身份；`material_variants` 中的精确版本是需求、采购入库和补料
+时由管理员明确选择的库存身份。路线只表达工序顺序，不再绑定 BOM 行。
 
 `admin` 账号不在演示数据中，仍由 `pnpm db:bootstrap-admin` 通过环境变量初始化。演示账号共用的密码不会写入 SQL，执行时由 `DEMO_USER_PASSWORD` 生成 bcrypt 哈希。
 

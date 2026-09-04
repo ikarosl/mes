@@ -17,6 +17,7 @@ import { IdentityDirectoryService } from '../../../apps/api/src/modules/identity
 import { MysqlRbacRepository } from '../../../apps/api/src/modules/identity/infrastructure/mysql-rbac.repository.js';
 import { ProductionReportingService } from '../../../apps/api/src/modules/production/application/production-reporting.service.js';
 import { ProductionSupplementService } from '../../../apps/api/src/modules/production/application/production-supplement.service.js';
+import { MysqlMaterialVariantRepository } from '../../../apps/api/src/modules/product/infrastructure/mysql-material-variant.repository.js';
 
 loadWorkspaceEnv();
 const describeMysql = process.env.RUN_MYSQL_INTEGRATION === '1' ? describe : describe.skip;
@@ -51,7 +52,10 @@ describeMysql('Production execution MySQL transactions', () => {
     repository = new MysqlProductionExecutionRepository(pool);
     reporting = new MysqlProductionReportingRepository(pool);
     abnormal = new MysqlProductionAbnormalRepository(pool);
-    supplement = new MysqlProductionSupplementRepository(pool);
+    supplement = new MysqlProductionSupplementRepository(
+      pool,
+      new MysqlMaterialVariantRepository(pool),
+    );
     materials = new MysqlProductionMaterialRepository(pool);
     reportingService = new ProductionReportingService(
       reporting,
@@ -60,10 +64,6 @@ describeMysql('Production execution MySQL transactions', () => {
     );
     supplementService = new ProductionSupplementService(
       supplement,
-      {
-        listRouteStepMaterialIds: async () => [],
-        listInventoryItemReferencesByIds: async () => [],
-      } as never,
       new MysqlIdempotencyExecutor(pool),
     );
   });
@@ -480,13 +480,21 @@ describeMysql('Production execution MySQL transactions', () => {
         context(fixture.workerId, `${fixture.token}-source-abnormal-report`),
       );
       const dispositionId = source.abnormalDisposition!.dispositionId;
-      expect(
-        (await supplement.getCandidateContext(dispositionId, String(fixture.firstStepRecordId)))
-          .candidates,
-      ).toMatchObject([
+      expect((await supplement.getCandidateContext(dispositionId)).candidates).toMatchObject([
         {
           originalDemandId: String(fixture.demandId),
           productMaterialId: String(fixture.productMaterialId),
+          requirementBasisId: String(fixture.requirementBasisId),
+          itemCode: `${fixture.token}-m`,
+          itemName: 'Execution material',
+          materialVariantId: String(fixture.materialVariantId),
+          materialVariantCode: `${fixture.token}-m-v1-A`,
+          variants: [
+            expect.objectContaining({
+              id: String(fixture.materialVariantId),
+              variantCode: `${fixture.token}-m-v1-A`,
+            }),
+          ],
         },
       ]);
 
@@ -495,8 +503,14 @@ describeMysql('Production execution MySQL transactions', () => {
         {
           planVersion: null,
           dispositionVersion: 0,
-          materialEndStepRecordId: String(fixture.firstStepRecordId),
-          details: [{ originalDemandId: String(fixture.demandId), supplementQuantity: 1 }],
+          details: [
+            {
+              originalDemandId: String(fixture.demandId),
+              requirementBasisId: String(fixture.requirementBasisId),
+              materialVariantId: String(fixture.materialVariantId),
+              supplementQuantity: 1,
+            },
+          ],
           remark: 'manual quantity',
         },
         context(fixture.actorId, `${fixture.token}-save-plan`),
@@ -504,7 +518,15 @@ describeMysql('Production execution MySQL transactions', () => {
       expect(draft).toMatchObject({
         status: 'draft',
         version: 0,
-        lines: [{ plannedQuantity: '1.0000' }],
+        lines: [
+          {
+            plannedQuantity: '1.0000',
+            itemCode: `${fixture.token}-m`,
+            itemName: 'Execution material',
+            materialVariantId: String(fixture.materialVariantId),
+            materialVariantCode: `${fixture.token}-m-v1-A`,
+          },
+        ],
       });
       const [[draftCount]] = await pool.query<(RowDataPacket & { count: number })[]>(
         "SELECT COUNT(*) count FROM production_scrap_supplement_plan WHERE id=? AND status='draft'",
@@ -530,8 +552,14 @@ describeMysql('Production execution MySQL transactions', () => {
         {
           planVersion: draft.version,
           dispositionVersion: 0,
-          materialEndStepRecordId: String(fixture.firstStepRecordId),
-          details: [{ originalDemandId: String(fixture.demandId), supplementQuantity: 2 }],
+          details: [
+            {
+              originalDemandId: String(fixture.demandId),
+              requirementBasisId: String(fixture.requirementBasisId),
+              materialVariantId: String(fixture.materialVariantId),
+              supplementQuantity: 2,
+            },
+          ],
           remark: 'edited quantity',
         },
         context(fixture.actorId, `${fixture.token}-edit-plan`),
@@ -543,8 +571,14 @@ describeMysql('Production execution MySQL transactions', () => {
           {
             planVersion: draft.version,
             dispositionVersion: 0,
-            materialEndStepRecordId: String(fixture.firstStepRecordId),
-            details: [{ originalDemandId: String(fixture.demandId), supplementQuantity: 3 }],
+            details: [
+              {
+                originalDemandId: String(fixture.demandId),
+                requirementBasisId: String(fixture.requirementBasisId),
+                materialVariantId: String(fixture.materialVariantId),
+                supplementQuantity: 3,
+              },
+            ],
           },
           context(fixture.actorId, `${fixture.token}-stale-plan`),
         ),
@@ -565,7 +599,6 @@ describeMysql('Production execution MySQL transactions', () => {
         reproductionAuthorization: {
           entryStepRecordId: String(fixture.firstStepRecordId),
           quotaEndStepRecordId: String(fixture.firstStepRecordId),
-          materialEndStepRecordId: String(fixture.firstStepRecordId),
           authorizedQuantity: '2.0000',
         },
         supplement: {
@@ -573,6 +606,11 @@ describeMysql('Production execution MySQL transactions', () => {
           demands: [
             {
               originalDemandId: String(fixture.demandId),
+              requirementBasisId: String(fixture.requirementBasisId),
+              itemCode: `${fixture.token}-m`,
+              itemName: 'Execution material',
+              materialVariantId: String(fixture.materialVariantId),
+              materialVariantCode: `${fixture.token}-m-v1-A`,
               supplementQuantity: '2.0000',
             },
           ],
@@ -585,15 +623,27 @@ describeMysql('Production execution MySQL transactions', () => {
           parent_demand_id: number;
           supplement_id: number;
           generation_group_key: string;
+          requirement_basis_id: number;
+          material_variant_id: number;
+          material_variant_code_snapshot: string;
+          item_id: number;
+          item_code_snapshot: string;
+          item_name_snapshot: string;
         })[]
       >(
-        "SELECT demand_type,need_number,parent_demand_id,supplement_id,generation_group_key FROM production_item_demand WHERE production_batch_id=? AND demand_type='scrap_supplement'",
+        "SELECT demand_type,need_number,parent_demand_id,supplement_id,generation_group_key,requirement_basis_id,material_variant_id,material_variant_code_snapshot,item_id,item_code_snapshot,item_name_snapshot FROM production_item_demand WHERE production_batch_id=? AND demand_type='scrap_supplement'",
         [fixture.batchId],
       );
       expect(demand).toMatchObject({
         demand_type: 'scrap_supplement',
         need_number: '2.0000',
         parent_demand_id: fixture.demandId,
+        requirement_basis_id: fixture.requirementBasisId,
+        material_variant_id: fixture.materialVariantId,
+        material_variant_code_snapshot: `${fixture.token}-m-v1-A`,
+        item_id: fixture.materialId,
+        item_code_snapshot: `${fixture.token}-m`,
+        item_name_snapshot: 'Execution material',
       });
       expect(demand?.supplement_id).toBeGreaterThan(0);
       expect(demand?.generation_group_key).toBe(`SCRAPSUP:${demand.supplement_id}`);
@@ -676,8 +726,14 @@ describeMysql('Production execution MySQL transactions', () => {
         {
           planVersion: null,
           dispositionVersion: 0,
-          materialEndStepRecordId: String(fixture.firstStepRecordId),
-          details: [{ originalDemandId: String(fixture.demandId), supplementQuantity: 1 }],
+          details: [
+            {
+              originalDemandId: String(fixture.demandId),
+              requirementBasisId: String(fixture.requirementBasisId),
+              materialVariantId: String(fixture.materialVariantId),
+              supplementQuantity: 1,
+            },
+          ],
         },
         context(fixture.actorId, `${fixture.token}-save-plan`),
       );
@@ -819,8 +875,14 @@ describeMysql('Production execution MySQL transactions', () => {
         {
           planVersion: null,
           dispositionVersion: 0,
-          materialEndStepRecordId: String(fixture.firstStepRecordId),
-          details: [{ originalDemandId: String(fixture.demandId), supplementQuantity: 1 }],
+          details: [
+            {
+              originalDemandId: String(fixture.demandId),
+              requirementBasisId: String(fixture.requirementBasisId),
+              materialVariantId: String(fixture.materialVariantId),
+              supplementQuantity: 1,
+            },
+          ],
         },
         context(fixture.actorId, `${fixture.token}-save-plan`),
       );
@@ -835,8 +897,14 @@ describeMysql('Production execution MySQL transactions', () => {
           {
             planVersion: draft.version,
             dispositionVersion: 1,
-            materialEndStepRecordId: String(fixture.firstStepRecordId),
-            details: [{ originalDemandId: String(fixture.demandId), supplementQuantity: 2 }],
+            details: [
+              {
+                originalDemandId: String(fixture.demandId),
+                requirementBasisId: String(fixture.requirementBasisId),
+                materialVariantId: String(fixture.materialVariantId),
+                supplementQuantity: 2,
+              },
+            ],
           },
           context(fixture.actorId, `${fixture.token}-edit-plan`),
         ),
@@ -906,8 +974,14 @@ describeMysql('Production execution MySQL transactions', () => {
         {
           planVersion: null,
           dispositionVersion: 0,
-          materialEndStepRecordId: String(fixture.firstStepRecordId),
-          details: [{ originalDemandId: String(fixture.demandId), supplementQuantity: 1 }],
+          details: [
+            {
+              originalDemandId: String(fixture.demandId),
+              requirementBasisId: String(fixture.requirementBasisId),
+              materialVariantId: String(fixture.materialVariantId),
+              supplementQuantity: 1,
+            },
+          ],
         },
         context(fixture.actorId, `${fixture.token}-save-plan`),
       );
@@ -922,8 +996,14 @@ describeMysql('Production execution MySQL transactions', () => {
           {
             planVersion: draft.version,
             dispositionVersion: 1,
-            materialEndStepRecordId: String(fixture.firstStepRecordId),
-            details: [{ originalDemandId: String(fixture.demandId), supplementQuantity: 2 }],
+            details: [
+              {
+                originalDemandId: String(fixture.demandId),
+                requirementBasisId: String(fixture.requirementBasisId),
+                materialVariantId: String(fixture.materialVariantId),
+                supplementQuantity: 2,
+              },
+            ],
           },
           context(fixture.actorId, `${fixture.token}-edit-plan`),
         ),
@@ -993,8 +1073,14 @@ describeMysql('Production execution MySQL transactions', () => {
         {
           planVersion: null,
           dispositionVersion: 0,
-          materialEndStepRecordId: String(fixture.firstStepRecordId),
-          details: [{ originalDemandId: String(fixture.demandId), supplementQuantity: 1 }],
+          details: [
+            {
+              originalDemandId: String(fixture.demandId),
+              requirementBasisId: String(fixture.requirementBasisId),
+              materialVariantId: String(fixture.materialVariantId),
+              supplementQuantity: 1,
+            },
+          ],
         },
         context(fixture.actorId, `${fixture.token}-save-plan`),
       );
@@ -1007,8 +1093,14 @@ describeMysql('Production execution MySQL transactions', () => {
           {
             planVersion: draft.version,
             dispositionVersion: 0,
-            materialEndStepRecordId: String(fixture.firstStepRecordId),
-            details: [{ originalDemandId: String(fixture.demandId), supplementQuantity: 2 }],
+            details: [
+              {
+                originalDemandId: String(fixture.demandId),
+                requirementBasisId: String(fixture.requirementBasisId),
+                materialVariantId: String(fixture.materialVariantId),
+                supplementQuantity: 2,
+              },
+            ],
           },
           context(fixture.actorId, `${fixture.token}-edit-plan`),
         ),
@@ -1094,8 +1186,14 @@ describeMysql('Production execution MySQL transactions', () => {
         source.abnormalDisposition!.dispositionId,
         {
           version: 0,
-          materialEndStepRecordId: String(fixture.secondStepRecordId),
-          details: [{ originalDemandId: String(fixture.demandId), supplementQuantity: 2 }],
+          details: [
+            {
+              originalDemandId: String(fixture.demandId),
+              requirementBasisId: String(fixture.requirementBasisId),
+              materialVariantId: String(fixture.materialVariantId),
+              supplementQuantity: 2,
+            },
+          ],
         },
         context(fixture.actorId, `${fixture.token}-approve`),
       );
@@ -1569,7 +1667,9 @@ type Fixture = {
   materialCategoryId: number;
   productId: number;
   materialId: number;
+  materialVariantId: number;
   productMaterialId: number;
+  requirementBasisId: number;
   processStepIds: [number, number];
   routeId: number;
   routeStepIds: [number, number];
@@ -1616,6 +1716,11 @@ const createFixture = async (pool: Pool, suffix: string): Promise<Fixture> => {
     "INSERT INTO products (item_code,product_name,category_id,unit,acquire_method) VALUES (?,?,?,'kg','purchased')",
     [`${token}-m`, 'Execution material', materialCategoryId],
   );
+  const materialVariantId = await insert(
+    pool,
+    "INSERT INTO material_variants(material_product_id,major_version,minor_version,variant_code,created_by,updated_by) VALUES (?, 'v1','A',?,?,?)",
+    [materialId, `${token}-m-v1-A`, actor.id, actor.id],
+  );
   const productMaterialId = await insert(
     pool,
     "INSERT INTO product_materials (product_id,material_product_id,quantity_per_unit,unit,is_key_material,need_batch_record) VALUES (?,?,'1.0000','kg',1,1)",
@@ -1656,6 +1761,15 @@ const createFixture = async (pool: Pool, suffix: string): Promise<Fixture> => {
     "INSERT INTO production_batches (work_order_id,product_id,batch_no,route_id,planned_quantity,status) VALUES (?,?,?,?,'10.0000','material_outbound')",
     [workOrderId, productId, `${token}-batch`, routeId],
   );
+  const requirementBasisId = await insert(
+    pool,
+    `INSERT INTO production_material_requirement_basis
+      (production_batch_id,product_material_id,material_product_id,material_code_snapshot,material_name_snapshot,
+       unit_snapshot,quantity_per_unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,
+       planned_output_quantity_snapshot,required_number,created_by)
+     VALUES (?,?,?,?,'Execution material','kg','1.0000',1,1,'10.0000','10.0000',?)`,
+    [batchId, productMaterialId, materialId, `${token}-m`, actor.id],
+  );
   const firstStepRecordId = await insert(
     pool,
     'INSERT INTO batch_step_records (production_batch_id,route_step_id,step_order_snapshot,step_code_snapshot,step_name_snapshot,need_record_snapshot,need_inspection_snapshot,unit_snapshot,created_by,updated_by) VALUES (?,?,?,?,?,1,0,?,?,?)',
@@ -1672,13 +1786,16 @@ const createFixture = async (pool: Pool, suffix: string): Promise<Fixture> => {
   );
   const demandId = await insert(
     pool,
-    "INSERT INTO production_item_demand (production_batch_id,product_material_id,item_id,item_code_snapshot,item_name_snapshot,quantity_per_unit_snapshot,unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,planned_output_quantity_snapshot,need_number,remaining_number,demand_type,generation_group_key,idempotency_key,business_status,fulfilled_by,fulfilled_at,created_by,updated_by) VALUES (?,?,?,?,?,'1.0000','kg',1,1,'10.0000','10.0000',0,'normal',?,?,'fulfilled',?,NOW(),?,?)",
+    "INSERT INTO production_item_demand (production_batch_id,requirement_basis_id,product_material_id,item_id,material_variant_id,item_code_snapshot,item_name_snapshot,material_variant_code_snapshot,quantity_per_unit_snapshot,unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,planned_output_quantity_snapshot,need_number,remaining_number,demand_type,generation_group_key,idempotency_key,business_status,fulfilled_by,fulfilled_at,created_by,updated_by) VALUES (?,?,?,?,?,?,?,?,'1.0000','kg',1,1,'10.0000','10.0000',0,'normal',?,?,'fulfilled',?,NOW(),?,?)",
     [
       batchId,
+      requirementBasisId,
       productMaterialId,
       materialId,
+      materialVariantId,
       'EXEC-MATERIAL',
       '执行物料',
+      `${token}-m-v1-A`,
       `NORMAL:${batchId}`,
       `NORMAL:${batchId}:${productMaterialId}`,
       actor.id,
@@ -1709,7 +1826,9 @@ const createFixture = async (pool: Pool, suffix: string): Promise<Fixture> => {
     materialCategoryId,
     productId,
     materialId,
+    materialVariantId,
     productMaterialId,
+    requirementBasisId,
     processStepIds: [firstProcessStepId, secondProcessStepId],
     routeId,
     routeStepIds: [firstRouteStepId, secondRouteStepId],
@@ -1792,6 +1911,10 @@ const cleanup = async (pool: Pool, fixture: Fixture): Promise<void> => {
   await pool.execute('DELETE FROM production_item_demand WHERE production_batch_id=?', [
     fixture.batchId,
   ]);
+  await pool.execute(
+    'DELETE FROM production_material_requirement_basis WHERE production_batch_id=?',
+    [fixture.batchId],
+  );
   await pool.execute('DELETE FROM batch_step_abnormal_dispositions WHERE production_batch_id=?', [
     fixture.batchId,
   ]);
@@ -1825,6 +1948,9 @@ const cleanup = async (pool: Pool, fixture: Fixture): Promise<void> => {
   await pool.execute('DELETE FROM process_steps WHERE id IN (?,?)', fixture.processStepIds);
   await pool.execute('DELETE FROM product_materials WHERE id=?', [fixture.productMaterialId]);
   await pool.execute('DELETE FROM products WHERE id=?', [fixture.productId]);
+  await pool.execute('DELETE FROM material_variants WHERE material_product_id=?', [
+    fixture.materialId,
+  ]);
   await pool.execute('DELETE FROM products WHERE id=?', [fixture.materialId]);
   await pool.execute('DELETE FROM product_categories WHERE id=?', [fixture.categoryId]);
   await pool.execute('DELETE FROM product_categories WHERE id=?', [fixture.materialCategoryId]);

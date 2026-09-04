@@ -24,7 +24,7 @@
       />
       <el-alert
         v-else-if="detailReady && !localRows.length && !product.bomLockedAt"
-        title="当前产品尚未配置物料清单。生产任务生成物料需求前，需要先维护这里的用料。"
+        title="当前产品尚未配置物料清单。生产任务配置物料需求前，需要先维护这里的用料。"
         type="warning"
         :closable="false"
         show-icon

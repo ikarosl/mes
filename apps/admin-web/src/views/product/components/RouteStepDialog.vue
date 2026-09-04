@@ -69,33 +69,6 @@
         <template #default="{ row }">{{ getProcessSop(row.processStepId) || '-' }}</template>
       </el-table-column>
       <el-table-column
-        label="使用BOM明细"
-        min-width="240"
-      >
-        <template #default="{ row }">
-          <el-select
-            v-model="row.productMaterialIds"
-            multiple
-            clearable
-            collapse-tags
-            placeholder="可选"
-            @visible-change="(visible: boolean) => visible && refreshMaterials()"
-          >
-            <el-option
-              v-for="choice in materialChoices(row.productMaterialIds)"
-              :key="choice.value"
-              :label="
-                choice.option
-                  ? `${choice.option.itemCode} / ${choice.option.productName}`
-                  : `${choice.value}（已失效）`
-              "
-              :value="choice.value"
-              :disabled="choice.isUnavailable"
-            />
-          </el-select>
-        </template>
-      </el-table-column>
-      <el-table-column
         label="需报工"
         width="90"
         align="center"
@@ -199,13 +172,11 @@ export type StepRow = {
   needRecord: boolean;
   status: number;
   remark: string;
-  productMaterialIds: string[];
 };
 
 const props = defineProps<{
   visible: boolean;
   routeId: string | null;
-  productId: string | null;
   submitting: boolean;
 }>();
 
@@ -216,24 +187,22 @@ const emit = defineEmits<{
 
 const processSource = useProcessStepOptions();
 const userSource = useUserOptions();
-const { routeMaterialOptions, stepsStatus, loadSteps, loadMaterialOptions, invalidateSteps } =
-  useRouteStepEditor();
+const { stepsStatus, loadSteps, invalidateSteps } = useRouteStepEditor();
 const localSteps = ref<StepRow[]>([]);
 
 const setSteps = (initial: StepRow[]): void => {
   localSteps.value = initial;
 };
 
-/** 刷新弹窗自持的未绑定候选（工序 / 负责人 / 物料），不重载步骤行 */
+/** 刷新弹窗自持的工序与负责人候选，不重载步骤行；BOM 不属于路线步骤。 */
 const refreshDialogOptions = (): void => {
   void processSource.refresh();
   void userSource.refresh();
-  if (props.productId) void loadMaterialOptions(props.productId, true);
 };
 
 /** 打开弹窗时并发加载路线步骤明细与候选；关闭时推进请求代际，迟到的步骤响应不得写回 localSteps */
 watch(
-  () => [props.visible, props.routeId, props.productId] as const,
+  () => [props.visible, props.routeId] as const,
   async ([visible, routeId]) => {
     if (!visible) {
       invalidateSteps();
@@ -257,7 +226,6 @@ watch(
         needRecord: step.needRecord,
         status: step.status,
         remark: step.remark ?? '',
-        productMaterialIds: step.productMaterialIds,
       })),
     );
   },
@@ -268,10 +236,6 @@ onActivated(() => {
   if (props.visible) refreshDialogOptions();
 });
 
-const refreshMaterials = (): void => {
-  if (props.productId) void loadMaterialOptions(props.productId, true);
-};
-
 const addStep = (): void => {
   localSteps.value.push({
     processStepId: '',
@@ -281,7 +245,6 @@ const addStep = (): void => {
     needInspection: false,
     needRecord: true,
     status: 1,
-    productMaterialIds: [],
     remark: '',
   });
 };
@@ -317,9 +280,6 @@ const processChoices = (selectedValue: string) =>
     (item) => item.id,
   );
 
-const materialChoices = (selectedValues: string[]) =>
-  buildLiveOptions(routeMaterialOptions.value, selectedValues, (item) => item.id);
-
 const userChoices = (selectedValue: string) =>
   buildLiveOptions(
     userSource.options.value,
@@ -350,18 +310,13 @@ const handleSubmit = (): void => {
           (item) => item.id,
         ) ||
         hasUnavailableSelection(
-          routeMaterialOptions.value,
-          step.productMaterialIds,
-          (item) => item.id,
-        ) ||
-        hasUnavailableSelection(
           userSource.options.value,
           step.defaultOwnerId ? [step.defaultOwnerId] : [],
           (item) => item.id,
         ),
     )
   ) {
-    EMessage.warning('工序、物料或负责人候选项已失效，请重新选择');
+    EMessage.warning('工序或负责人候选项已失效，请重新选择');
     return;
   }
   normalizeStepOrders();

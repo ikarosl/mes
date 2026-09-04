@@ -11,7 +11,6 @@ import ProductionTasksPage from '../ProductionTasksPage.vue';
 const {
   listBatches,
   listOrders,
-  generateMaterialDemands,
   getBatchCancellationCheck,
   cancelBatch,
   productOptions,
@@ -24,7 +23,6 @@ const {
 } = vi.hoisted(() => ({
   listBatches: vi.fn(),
   listOrders: vi.fn(),
-  generateMaterialDemands: vi.fn(),
   getBatchCancellationCheck: vi.fn(),
   cancelBatch: vi.fn(),
   productOptions: vi.fn(),
@@ -49,7 +47,6 @@ vi.mock('../../../api/production', () => ({
   productionApi: {
     listBatches,
     listOrders,
-    generateMaterialDemands,
     getBatchCancellationCheck,
     cancelBatch,
   },
@@ -63,7 +60,14 @@ vi.mock('../../../utils/message', () => ({
 
 const router = createRouter({
   history: createWebHistory(),
-  routes: [{ path: '/:pathMatch(.*)*', name: 'test', component: { template: '<div />' } }],
+  routes: [
+    {
+      path: '/production/material-demands',
+      name: 'production-material-demands',
+      component: { template: '<div />' },
+    },
+    { path: '/:pathMatch(.*)*', name: 'test', component: { template: '<div />' } },
+  ],
 });
 
 const batchRow = {
@@ -123,8 +127,6 @@ describe('ProductionTasksPage', () => {
     listBatches.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 10 });
     listOrders.mockReset();
     listOrders.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 50 });
-    generateMaterialDemands.mockReset();
-    generateMaterialDemands.mockResolvedValue(undefined);
     getBatchCancellationCheck.mockReset();
     getBatchCancellationCheck.mockResolvedValue({
       productionBatchId: 'b1',
@@ -219,54 +221,24 @@ describe('ProductionTasksPage', () => {
     expect(wrapper.vm.$options.name).toBe('ProductionTasksPage');
   });
 
-  it('disables the generate-materials button while the write is pending and submits once', async () => {
-    // 行必须持续存在：写操作成功后页面会重新加载列表
+  it('routes pending tasks to material-demand management instead of auto-generating demands', async () => {
     listBatches.mockResolvedValue({ items: [batchRow], total: 1, page: 1, pageSize: 10 });
-    let resolveDemands!: (value: unknown) => void;
-    generateMaterialDemands.mockReturnValue(new Promise((resolve) => (resolveDemands = resolve)));
-
     const wrapper = mountPage();
     await flushPromises();
 
-    const findGenerate = () =>
-      wrapper.findAll('button').find((b) => b.text().trim() === '生成物料');
-    expect(findGenerate()).toBeDefined();
-    expect(findGenerate()!.attributes('disabled')).toBeUndefined();
-
-    await findGenerate()!.trigger('click');
-    await nextTick();
-    expect(findGenerate()!.attributes('disabled')).toBeDefined(); // 写操作在途：按钮禁用
-    expect(confirm).toHaveBeenCalledWith(
-      expect.stringContaining('该生产任务将不可再编辑'),
-      '生成物料需求确认',
-      expect.objectContaining({ confirmButtonText: '确认生成', type: 'warning' }),
-    );
-    expect(generateMaterialDemands).toHaveBeenCalledTimes(1);
-    expect(generateMaterialDemands).toHaveBeenCalledWith('b1', 0);
-
-    resolveDemands(undefined);
-    await flushPromises();
-    expect(findGenerate()!.attributes('disabled')).toBeUndefined(); // 写操作结束释放
-  });
-
-  it('does not generate material demands when the irreversible-action warning is cancelled', async () => {
-    listBatches.mockResolvedValue({ items: [batchRow], total: 1, page: 1, pageSize: 10 });
-    confirm.mockRejectedValueOnce('cancel');
-    const wrapper = mountPage();
-    await flushPromises();
-
-    const generateButton = wrapper
+    const configureButton = wrapper
       .findAll('button')
-      .find((button) => button.text().trim() === '生成物料');
-    expect(generateButton).toBeDefined();
-    await generateButton!.trigger('click');
+      .find((button) => button.text().trim() === '配置物料需求');
+    expect(configureButton).toBeDefined();
+    await configureButton!.trigger('click');
     await flushPromises();
 
-    expect(generateMaterialDemands).not.toHaveBeenCalled();
-    expect(generateButton!.attributes('disabled')).toBeUndefined();
+    expect(router.currentRoute.value.name).toBe('production-material-demands');
+    expect(router.currentRoute.value.query).toEqual({ productionBatchId: 'b1' });
+    expect(wrapper.text()).not.toContain('生成物料');
   });
 
-  it('keeps normal material-demand generation disabled after the task generated it once', async () => {
+  it('does not expose the removed one-click generation action after a batch is material-pending', async () => {
     listBatches.mockResolvedValue({
       items: [{ ...batchRow, status: 'material_pending', materialPlanVersion: 2 }],
       total: 1,
@@ -276,13 +248,8 @@ describe('ProductionTasksPage', () => {
     const wrapper = mountPage();
     await flushPromises();
 
-    const generatedButton = wrapper
-      .findAll('button')
-      .find((button) => button.text().trim() === '需求已生成');
-    expect(generatedButton).toBeDefined();
-    expect(generatedButton!.attributes('disabled')).toBeDefined();
-    await generatedButton!.trigger('click');
-    expect(generateMaterialDemands).not.toHaveBeenCalled();
+    expect(wrapper.text()).not.toContain('生成物料');
+    expect(wrapper.text()).not.toContain('需求已生成');
   });
 
   it('turns a current short-batch authorization into a read-only entry instead of another submit', async () => {

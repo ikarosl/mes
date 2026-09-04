@@ -9,6 +9,8 @@ import type {
   ProductCategoryPayload,
   ProductCategoryQuery,
   ProductMaterialPayload,
+  MaterialVariantListQuery,
+  MaterialVariantPayload,
   ProductListQuery,
   ProductPayload,
   TechnicalFileQuery,
@@ -23,6 +25,7 @@ import { ProductCatalogRepository } from './ports/product-catalog.repository.js'
 import { ProductCategoryRepository } from './ports/product-category.repository.js';
 import { TechnicalFileRepository } from './ports/technical-file.repository.js';
 import { TechnicalFileStorage, type TechnicalFileUpload } from './ports/technical-file.storage.js';
+import { MaterialVariantRepository } from './ports/material-variant.repository.js';
 
 @Injectable()
 export class ProductService {
@@ -35,6 +38,7 @@ export class ProductService {
     private readonly routeSteps: ProcessRouteStepRepository,
     private readonly storage: TechnicalFileStorage,
     private readonly identityDirectory: IdentityDirectoryService,
+    private readonly materialVariants: MaterialVariantRepository,
   ) {}
 
   listCategories(query: ProductCategoryQuery) {
@@ -69,6 +73,12 @@ export class ProductService {
   }
   listProductOptions() {
     return this.catalog.listProductOptions();
+  }
+  listMaterialVariants(query: MaterialVariantListQuery) {
+    return this.materialVariants.list(query);
+  }
+  listMaterialVariantsByMaterial(materialProductId: string) {
+    return this.materialVariants.listByMaterial(materialProductId);
   }
   listProcessSteps(query: ProcessStepQuery) {
     return this.processSteps.listProcessSteps(query);
@@ -117,6 +127,20 @@ export class ProductService {
   }
   setProductStatus(id: string, status: number, audit: CommandContext) {
     return this.catalog.setProductStatus(id, status, audit);
+  }
+  createMaterialVariant(payload: MaterialVariantPayload, audit: CommandContext) {
+    return this.materialVariants.create(
+      {
+        materialProductId: payload.materialProductId,
+        majorVersion: payload.majorVersion.trim(),
+        minorVersion: payload.minorVersion.trim(),
+        remark: payload.remark?.trim() || null,
+      },
+      audit,
+    );
+  }
+  setMaterialVariantStatus(id: string, status: number, audit: CommandContext) {
+    return this.materialVariants.setStatus(id, status, audit);
   }
   replaceMaterials(id: string, items: ProductMaterialPayload[], audit: CommandContext) {
     if (items.length > 200) {

@@ -153,6 +153,17 @@ describe('checkApiArchitecture', () => {
     expect(flagsPath(violations, 'identity/infrastructure/leak.ts')).toBe(true);
   });
 
+  it('flags Production infrastructure from directly querying Product material variants', async () => {
+    const violations = await checkApiArchitecture([
+      {
+        path: 'apps/api/src/modules/production/infrastructure/leak.ts',
+        source: `await connection.execute('SELECT id FROM material_variants WHERE material_product_id=?', [id]);\n`,
+      },
+    ]);
+
+    expect(flagsPath(violations, 'production/infrastructure/leak.ts')).toBe(true);
+  });
+
   it('flags a write to http_idempotency_records outside the idempotency platform', async () => {
     const violations = await checkApiArchitecture([
       {

@@ -175,14 +175,4 @@ export class ProductionController {
   ) {
     return this.service.updateBatchStepExecution(batchId, recordId, body, audit);
   }
-  @Post('batches/:id/actions/generate-material-demands')
-  @RequirePermission(PERMISSIONS.production.batches.transition)
-  @AuditInApplication()
-  generateMaterialDemands(
-    @Param() { id }: IdParamDto,
-    @Body() body: VersionedCommandDto,
-    @CurrentCommandContext() audit: CommandContext,
-  ) {
-    return this.service.generateMaterialDemands(id, body.version, audit);
-  }
 }

@@ -35,6 +35,8 @@ const schema: z.ZodType<PurchaseInboundOrderItem> = z
         .object({
           id: z.string(),
           itemId: z.string(),
+          materialVariantId: z.string(),
+          materialVariantCode: z.string(),
           itemCode: z.string(),
           itemName: z.string(),
           itemBatchId: z.string(),

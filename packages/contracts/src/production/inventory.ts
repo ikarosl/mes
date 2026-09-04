@@ -29,6 +29,8 @@ export interface ReturnOrderCandidateItem {
   allocationId: string;
   demandId: string;
   itemId: string;
+  materialVariantId: string;
+  materialVariantCode: string;
   itemCode: string;
   itemName: string;
   itemBatchId: string;
@@ -54,6 +56,8 @@ export interface ReturnOrderDetailItem {
   allocationId: string;
   demandId: string;
   itemId: string;
+  materialVariantId: string;
+  materialVariantCode: string;
   itemCode: string;
   itemName: string;
   itemBatchId: string;
@@ -111,6 +115,8 @@ export interface MaterialLossCandidateItem {
   allocationId: string;
   demandId: string;
   itemId: string;
+  materialVariantId: string;
+  materialVariantCode: string;
   itemCode: string;
   itemName: string;
   itemBatchId: string;
@@ -142,6 +148,8 @@ export interface MaterialLossItem {
   allocationId: string;
   demandId: string;
   itemId: string;
+  materialVariantId: string;
+  materialVariantCode: string;
   itemCode: string;
   itemName: string;
   itemBatchId: string;
@@ -181,6 +189,8 @@ export interface StockCheckOrderQuery extends PageQuery {
 
 export interface StockCheckCandidateItem {
   itemId: string;
+  materialVariantId: string;
+  materialVariantCode: string;
   itemCode: string;
   itemName: string;
   itemBatchId: string;
@@ -215,6 +225,8 @@ export interface SaveStockCheckCountsPayload extends VersionedCommand {
 export interface StockCheckDetailItem {
   id: string;
   itemId: string;
+  materialVariantId: string;
+  materialVariantCode: string;
   itemCode: string;
   itemName: string;
   itemBatchId: string;
@@ -265,6 +277,8 @@ export interface InventoryMaterialSupplyDemandQuery extends PageQuery {
 
 export interface InventoryMaterialSupplyDemandItem {
   itemId: string;
+  materialVariantId?: string;
+  materialVariantCode?: string;
   itemCode: string;
   itemName: string;
   unit: string;
@@ -281,6 +295,8 @@ export type InventoryMaterialDemandTraceQuery = PageQuery;
 export interface InventoryMaterialDemandTraceItem {
   demandId: string;
   itemId: string;
+  materialVariantId?: string;
+  materialVariantCode?: string;
   productionBatchId: string;
   batchNo: string;
   workOrderId: string;
@@ -300,6 +316,8 @@ export interface InventoryMaterialDemandTraceItem {
 export interface InventoryBatchItem {
   itemBatchId: string;
   itemId: string;
+  materialVariantId: string;
+  materialVariantCode: string;
   itemCode: string;
   itemName: string;
   unit: string;

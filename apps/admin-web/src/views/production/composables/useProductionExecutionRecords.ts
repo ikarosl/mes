@@ -223,13 +223,12 @@ export const useProductionExecutionRecords = () => {
       reworkCompletionIntents.delete(rework.reworkId);
       await selectBatch(rework.productionBatchId);
     });
-  const loadSupplementCandidates = (dispositionId: string, materialEndStepRecordId: string) =>
-    productionApi.listSupplementCandidates(dispositionId, materialEndStepRecordId);
+  const loadSupplementCandidates = (dispositionId: string) =>
+    productionApi.listSupplementCandidates(dispositionId);
   const loadScrapSupplementPlan = (dispositionId: string) =>
     productionApi.getScrapSupplementPlan(dispositionId);
   const saveScrapSupplementPlan = (
     disposition: BatchStepAbnormalDispositionItem,
-    materialEndStepRecordId: string,
     details: ApproveScrapSupplementLinePayload[],
     remark: string,
     planVersion: number | null,
@@ -237,7 +236,6 @@ export const useProductionExecutionRecords = () => {
     productionApi.saveScrapSupplementPlan(disposition.dispositionId, {
       planVersion,
       dispositionVersion: disposition.version,
-      materialEndStepRecordId,
       details,
       remark: remark.trim() || null,
     });

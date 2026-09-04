@@ -12,7 +12,6 @@ export abstract class ProductSnapshotRepository {
   abstract listInventoryItemDisplayReferencesByIds(
     itemIds: string[],
   ): Promise<InventoryItemDisplayReference[]>;
-  abstract listRouteStepMaterialIds(routeStepId: string): Promise<string[]>;
   abstract getProductionProduct(productId: string): Promise<ProductionProductSnapshot>;
   abstract getProductionRouteSnapshot(
     productId: string,

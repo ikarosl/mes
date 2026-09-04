@@ -24,14 +24,29 @@ describe('usePurchaseInbounds', () => {
     const subject = usePurchaseInbounds();
     await subject.create({
       provider: ' A ',
-      details: [{ itemId: '2', batchCode: ' B ', inboundQuantity: 1 }],
+      details: [
+        {
+          itemId: '2',
+          materialVariantId: 'mv-2',
+          batchCode: ' B ',
+          inboundQuantity: 1,
+        },
+      ],
     });
     expect(productionApi.createPurchaseInbound).toHaveBeenCalledWith(
       {
         inboundNo: null,
         provider: 'A',
         remark: null,
-        details: [{ itemId: '2', batchCode: 'B', inboundQuantity: 1, remark: null }],
+        details: [
+          {
+            itemId: '2',
+            materialVariantId: 'mv-2',
+            batchCode: 'B',
+            inboundQuantity: 1,
+            remark: null,
+          },
+        ],
       },
       'intent-key',
     );

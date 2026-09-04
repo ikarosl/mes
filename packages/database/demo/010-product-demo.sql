@@ -52,6 +52,24 @@ SET @finished_product_id = (SELECT id FROM products WHERE item_code = 'p-micro-2
 SET @ferrite_id = (SELECT id FROM products WHERE item_code = 'm-ferrite-20*20-circular');
 SET @shell_id = (SELECT id FROM products WHERE item_code = 'm-shell-25*25-square');
 
+-- 物料基础编码是 BOM 身份；物料版本是管理员在需求、采购入库和补料时
+-- 明确选择的精确库存身份。重复执行演示种子时只更新可变状态/备注，不改版本身份。
+INSERT INTO material_variants (
+  material_product_id, major_version, minor_version, variant_code, status, remark,
+  created_by, updated_by, is_deleted, deleted_by, deleted_at
+)
+VALUES
+  (@ferrite_id, 'V1', 'A', 'm-ferrite-20*20-circular-V1-A', 1, '演示启用版本 A', @demo_actor_id, @demo_actor_id, 0, NULL, NULL),
+  (@ferrite_id, 'V1', 'B', 'm-ferrite-20*20-circular-V1-B', 1, '演示启用版本 B', @demo_actor_id, @demo_actor_id, 0, NULL, NULL),
+  (@shell_id, 'V1', 'A', 'm-shell-25*25-square-V1-A', 1, '演示启用版本 A', @demo_actor_id, @demo_actor_id, 0, NULL, NULL)
+ON DUPLICATE KEY UPDATE
+  status = 1,
+  remark = VALUES(remark),
+  updated_by = @demo_actor_id,
+  is_deleted = 0,
+  deleted_by = NULL,
+  deleted_at = NULL;
+
 INSERT INTO product_materials (
   product_id, material_product_id, quantity_per_unit, unit, is_key_material,
   need_batch_record, status, remark, created_by, updated_by, is_deleted, deleted_by, deleted_at
@@ -143,23 +161,6 @@ ON DUPLICATE KEY UPDATE
   is_deleted = 0,
   deleted_by = NULL,
   deleted_at = NULL;
-
-SET @assembly_route_step_id = (SELECT id FROM process_route_steps WHERE route_id = @route_id AND step_order = 1);
-SET @bonding_route_step_id = (SELECT id FROM process_route_steps WHERE route_id = @route_id AND step_order = 2);
-SET @ferrite_material_id = (
-  SELECT id FROM product_materials
-  WHERE product_id = @finished_product_id AND material_product_id = @ferrite_id
-);
-SET @shell_material_id = (
-  SELECT id FROM product_materials
-  WHERE product_id = @finished_product_id AND material_product_id = @shell_id
-);
-
-INSERT INTO route_step_materials (route_step_id, product_material_id, remark, created_by)
-VALUES
-  (@assembly_route_step_id, @ferrite_material_id, NULL, @demo_actor_id),
-  (@bonding_route_step_id, @shell_material_id, NULL, @demo_actor_id)
-ON DUPLICATE KEY UPDATE remark = VALUES(remark);
 
 UPDATE products
 SET default_route_id = @route_id, updated_by = @demo_actor_id

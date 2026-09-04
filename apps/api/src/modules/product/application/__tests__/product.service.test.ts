@@ -16,6 +16,7 @@ describe('ProductService workflow safeguards', () => {
     const service = new ProductService(
       {} as never,
       {} as never,
+      {} as never,
       repository as never,
       {} as never,
       {} as never,
@@ -54,6 +55,7 @@ describe('ProductService workflow safeguards', () => {
     const service = new ProductService(
       {} as never,
       {} as never,
+      {} as never,
       repository as never,
       {} as never,
       {} as never,
@@ -84,6 +86,7 @@ describe('ProductService workflow safeguards', () => {
       {} as never,
       {} as never,
       repository as never,
+      {} as never,
       {} as never,
       {} as never,
       {} as never,
@@ -120,6 +123,7 @@ describe('ProductService workflow safeguards', () => {
       repository as never,
       {} as never,
       {} as never,
+      {} as never,
     );
 
     await expect(
@@ -147,6 +151,7 @@ describe('ProductService workflow safeguards', () => {
       repository as never,
       {} as never,
       identityDirectory as never,
+      {} as never,
     );
 
     await expect(
@@ -185,6 +190,7 @@ describe('ProductService workflow safeguards', () => {
       repository as never,
       {} as never,
       identityDirectory as never,
+      {} as never,
     );
 
     await expect(service.listRouteSteps('30')).resolves.toEqual([
@@ -211,6 +217,7 @@ describe('ProductService workflow safeguards', () => {
       {} as never,
       {} as never,
       storage as never,
+      {} as never,
       {} as never,
     );
 
@@ -240,6 +247,7 @@ describe('ProductService workflow safeguards', () => {
       {} as never,
       storage as never,
       {} as never,
+      {} as never,
     );
 
     await service.deleteTechnicalFile('2', audit);
@@ -259,6 +267,7 @@ describe('ProductService workflow safeguards', () => {
       {} as never,
       {} as never,
       storage as never,
+      {} as never,
       {} as never,
     );
 

@@ -1,6 +1,6 @@
 # Product
 
-负责产品分类、产品、BOM、标准工序、工艺路线和技术文件。
+负责产品分类、产品、物料精确版本、BOM、标准工序、工艺路线和技术文件。
 
 ## 范围与边界
 
@@ -26,10 +26,11 @@
 
 | 页面     | 稳定路由名               | 路径                      | 页面权限                  |
 | -------- | ------------------------ | ------------------------- | ------------------------- |
-| 产品管理 | `product-products`       | `/product/products`       | `product:products:view`   |
-| 产品分类 | `product-categories`     | `/product/categories`     | `product:categories:view` |
-| 标准工序 | `product-processes`      | `/product/processes`      | `product:processes:view`  |
-| 工艺路线 | `product-process-routes` | `/product/process-routes` | `product:routes:view`     |
+| 产品管理 | `product-products`       | `/product/products`       | `product:products:view`          |
+| 物料版本 | `product-material-variants` | `/product/material-variants` | `product:material-variants:view` |
+| 产品分类 | `product-categories`     | `/product/categories`      | `product:categories:view`        |
+| 标准工序 | `product-processes`      | `/product/processes`       | `product:processes:view`         |
+| 工艺路线 | `product-process-routes` | `/product/process-routes`  | `product:routes:view`            |
 
 前端统一使用表中的页面权限控制菜单、路由和整页入口，不对页面内操作按钮做细粒度权限隐藏。写接口权限编码集中定义在 `@company/constants`，并由后端 `RequirePermission` 对每个接口独立校验。关键写权限包括 `product:products:manage-bom`、`product:products:set-default-route`、`product:processes:upload-sop` 和 `product:routes:manage-steps`。
 
@@ -52,8 +53,12 @@
 | `POST /categories`                     | 新增分类                                                     | `product:categories:create`                                                                         |
 | `PATCH /categories/:id`                | 编辑分类                                                     | `product:categories:update`                                                                         |
 | `PATCH /categories/:id/status`         | 启停分类                                                     | `product:categories:change-status`                                                                  |
-| `GET /products`                        | 产品、物料和半成品统一列表                                   | `product:products:view`                                                                             |
-| `GET /products/options`                | 产品、物料和半成品选项（最小字段，仅启用）                   | `product:products:view`、`product:routes:view`、`production:orders:view` 或 `production:tasks:view` |
+| `GET /products`                        | 产品和物料统一列表                                           | `product:products:view`                                                                             |
+| `GET /products/options`                | 产品和物料选项（最小字段，仅启用）                           | `product:products:view`、`product:routes:view`、`production:orders:view`、`production:tasks:view` 或 `product:material-variants:view` |
+| `GET /material-variants`               | 物料精确版本分页列表                                         | `product:material-variants:view`                                                                    |
+| `GET /material-variants/by-material/:materialProductId` | 指定基础物料的启用版本候选（历史事实不在此查询） | `product:material-variants:view`、`product:products:view`、`production:materials:view`、`production:material-demands:view` 或 `production:inbounds:view` |
+| `POST /material-variants`              | 新增物料精确版本                                             | `product:material-variants:create`                                                                  |
+| `PATCH /material-variants/:id/status`  | 启停物料精确版本                                             | `product:material-variants:change-status`                                                          |
 | `POST /products`                       | 新增统一库存对象                                             | `product:products:create`                                                                           |
 | `PATCH /products/:id`                  | 编辑基础资料                                                 | `product:products:update`                                                                           |
 | `PATCH /products/:id/status`           | 启停基础资料                                                 | `product:products:change-status`                                                                    |
@@ -79,8 +84,8 @@
 | `PATCH /process-routes/:id`            | 编辑草稿路线                                                 | `product:routes:update`                                                                             |
 | `PATCH /process-routes/:id/status`     | 路线状态流转                                                 | `product:routes:change-status`                                                                      |
 | `DELETE /process-routes/:id`           | 软删除从未启用的草稿路线                                     | `product:routes:delete`                                                                             |
-| `GET /process-routes/:id/steps`        | 路线步骤与 BOM 关联                                          | `product:routes:view`                                                                               |
-| `PUT /process-routes/:id/steps`        | 保存步骤顺序、SOP/规则快照及 BOM 关联                        | `product:routes:manage-steps`                                                                       |
+| `GET /process-routes/:id/steps`        | 路线步骤、SOP 与规则快照                                     | `product:routes:view`                                                                               |
+| `PUT /process-routes/:id/steps`        | 保存步骤顺序、SOP/规则快照                                   | `product:routes:manage-steps`                                                                       |
 
 ### 跨模块 /options 契约（不属于 `/api/product`）
 
@@ -99,10 +104,12 @@
 
 ## 4. 工作流不变量
 
-1. 分类仅使用 `item_kind = material | semi_finished | finished_product`；分类说明“是什么”，`acquire_method` 说明“如何获得”。
-2. 物料、半成品和成品统一写入 `products`，业务编码只使用永久唯一的 `item_code`。
-3. 只有已启用的自制半成品或成品可以配置 `product_materials`、工艺路线和默认路线；采购物料不能配置生产工艺。
-4. BOM 投入对象只能是已启用的物料或半成品，不能引用产品自身；BOM 是以后生成 `production_item_demand` 的唯一来源。本模块只维护 BOM，不生成需求，也不回写任何历史需求。
+1. 分类仅使用 `item_kind = material | finished_product`；分类说明“是什么”，`acquire_method` 说明“如何获得”。半成品不再是独立产品类型。
+2. 产品和物料统一写入 `products`，业务编码只使用永久唯一的 `item_code`；编码和基础单位创建后不可修改，原则变化必须新建产品和编码。
+3. 只有已启用的自制成品可以配置 `product_materials`、工艺路线和默认路线；采购物料不能配置生产工艺。
+4. BOM 投入对象只能是已启用的物料，不能引用产品自身；BOM 是 Production 生成需求基础的唯一来源。本模块只维护 BOM，不生成需求，也不回写任何历史需求。
+5. `material_variants` 是物料库存的精确身份。版本编码由服务端按基础物料编码和版本号生成，创建后不可改；启用版本由 Production 在写入需求、入库或补料时要求管理员明确选择。
+6. 工艺路线只表达工序顺序、负责人、SOP 与规则快照，不绑定 BOM 行；物料需求统一按批次冻结的完整 BOM 基础配置。
 5. 路线创建时固定为 `draft`。只有草稿可以编辑路线内容与步骤；首次启用后，即使后来停用也不可原地修改，调整必须新建版本。
 6. 启用路线前必须至少包含一个启用步骤。保存步骤时后端从 `process_steps` 和 `technical_files` 复制工序与 SOP 快照，并验证步骤关联的 `product_materials` 属于路线产品。
 7. 默认路线必须属于同一产品且状态为 `enabled`。将来生产批次仍可选择同产品的其他已启用路线。

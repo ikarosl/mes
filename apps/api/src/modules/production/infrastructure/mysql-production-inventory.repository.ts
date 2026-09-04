@@ -30,6 +30,7 @@ import { DATABASE_POOL } from '../../../infrastructure/database/database.module.
 import { ProductionInventoryRepository } from '../application/ports/production-inventory.repository.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
 import { fixedIntegerQuantity, integerQuantity } from '../domain/integer-quantity.js';
+import { requireSameVariantForMaterialLoss } from '../domain/production-material-requirement.policy.js';
 import { mysqlProductionDemandPlanWriter } from './mysql-production-demand-plan.writer.js';
 import { findBatch } from './mysql-production.shared.js';
 
@@ -62,9 +63,11 @@ type ReturnDetailRow = RowDataPacket & {
   allocation_id: number;
   demand_id: number;
   item_id: number;
+  material_variant_id: number;
   batch_id: number;
   item_code_snapshot: string;
   product_name_snapshot: string;
+  material_variant_code_snapshot: string;
   batch_code: string;
   return_number: string;
   unit_snapshot: string;
@@ -79,9 +82,11 @@ type ReturnCandidateRow = RowDataPacket & {
   demand_id: number;
   production_batch_id: number;
   item_id: number;
+  material_variant_id: number;
   batch_id: number;
   item_code_snapshot: string;
   product_name_snapshot: string;
+  material_variant_code_snapshot: string;
   batch_code: string;
   unit_snapshot: string;
   confirmed_quantity: string;
@@ -105,9 +110,11 @@ type MaterialLossRow = RowDataPacket & {
   allocation_id: number;
   demand_id: number;
   item_id: number;
+  material_variant_id: number;
   batch_id: number;
   item_code_snapshot: string;
   product_name_snapshot: string;
+  material_variant_code_snapshot: string;
   batch_code: string;
   scrap_number: string;
   unit_snapshot: string;
@@ -147,9 +154,11 @@ type StockCheckOrderRow = RowDataPacket & {
 type StockCheckDetailRow = RowDataPacket & {
   id: number;
   item_id: number;
+  material_variant_id: number;
   batch_id: number;
   item_code_snapshot: string;
   product_name_snapshot: string;
+  material_variant_code_snapshot: string;
   batch_code: string;
   stock_status: StockStatus;
   unit_snapshot: string;
@@ -163,9 +172,11 @@ type StockCheckDetailRow = RowDataPacket & {
 
 type StockCandidateRow = RowDataPacket & {
   item_id: number;
+  material_variant_id: number;
   batch_id: number;
   item_code_snapshot: string;
   product_name_snapshot: string;
+  material_variant_code_snapshot: string;
   batch_code: string;
   stock_status: StockStatus;
   unit_snapshot: string;
@@ -183,7 +194,8 @@ const RETURN_ORDER_SELECT = `SELECT ro.id,ro.return_no,ro.production_batch_id,pb
 const MATERIAL_LOSS_SELECT = `SELECT scrap.id,scrap.scrap_no,scrap.production_batch_id,
   pb.batch_no,pb.work_order_id,wo.work_order_no,wo.product_code_snapshot product_code,
   wo.product_name_snapshot product_name,scrap.allocation_id,scrap.demand_id,scrap.item_id,
-  scrap.batch_id,ib.item_code_snapshot,ib.product_name_snapshot,ib.batch_code,
+  scrap.material_variant_id,scrap.batch_id,ib.item_code_snapshot,ib.product_name_snapshot,
+  ib.material_variant_code_snapshot,ib.batch_code,
   scrap.scrap_number,scrap.unit_snapshot,scrap.reason_type,scrap.status,scrap.confirmed_by,
   scrap.confirmed_at,scrap.created_by,scrap.created_at,scrap.version,scrap.remark,
   scrap.cancel_reason,scrap.cancelled_by,scrap.cancelled_at,
@@ -295,15 +307,16 @@ export class MysqlProductionInventoryRepository extends ProductionInventoryRepos
       const scrapNo = businessNo('SH');
       const [created] = await db.execute<ResultSetHeader>(
         `INSERT INTO item_scrap
-         (scrap_no,production_batch_id,demand_id,allocation_id,item_id,batch_id,scrap_scene,
+         (scrap_no,production_batch_id,demand_id,allocation_id,item_id,material_variant_id,batch_id,scrap_scene,
           scrap_number,unit_snapshot,reason_type,status,remark,created_by,updated_by)
-         VALUES (?,?,?,?,?,?,'production_consumed',?,?,?,'pending',?,?,?)`,
+         VALUES (?,?,?,?,?,?,?,'production_consumed',?,?,?,'pending',?,?,?)`,
         [
           scrapNo,
           payload.productionBatchId,
           candidate.demand_id,
           candidate.allocation_id,
           candidate.item_id,
+          candidate.material_variant_id,
           candidate.batch_id,
           payload.scrapQuantity,
           candidate.unit_snapshot,
@@ -357,6 +370,10 @@ export class MysqlProductionInventoryRepository extends ProductionInventoryRepos
           'SCRAP_QUANTITY_EXCEEDED',
           '当前领料、退料或损耗占用已变化，请刷新后重试',
         );
+      requireSameVariantForMaterialLoss(
+        String(scrap.material_variant_id),
+        String(candidate.material_variant_id),
+      );
       const [updated] = await db.execute<ResultSetHeader>(
         `UPDATE item_scrap SET status='confirmed',confirmed_by=?,confirmed_at=NOW(),
          updated_by=?,version=version+1 WHERE id=? AND status='pending' AND version=?`,
@@ -383,10 +400,13 @@ export class MysqlProductionInventoryRepository extends ProductionInventoryRepos
         (RowDataPacket & {
           id: number;
           parent_demand_id: number | null;
+          requirement_basis_id: number;
           product_material_id: number;
           item_id: number;
+          material_variant_id: number;
           item_code_snapshot: string;
           item_name_snapshot: string;
+          material_variant_code_snapshot: string;
           quantity_per_unit_snapshot: string;
           unit_snapshot: string;
           is_key_material_snapshot: number;
@@ -394,13 +414,17 @@ export class MysqlProductionInventoryRepository extends ProductionInventoryRepos
           planned_output_quantity_snapshot: string;
         })[]
       >(
-        `SELECT id,parent_demand_id,product_material_id,item_id,item_code_snapshot,item_name_snapshot,quantity_per_unit_snapshot,
+        `SELECT id,parent_demand_id,requirement_basis_id,product_material_id,item_id,material_variant_id,item_code_snapshot,item_name_snapshot,material_variant_code_snapshot,quantity_per_unit_snapshot,
           unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,
           planned_output_quantity_snapshot
          FROM production_item_demand WHERE id=? FOR UPDATE`,
         [scrap.demand_id],
       );
       if (!sourceDemand) throw new ProductionDomainError('NOT_FOUND', '损耗来源需求不存在');
+      requireSameVariantForMaterialLoss(
+        String(scrap.material_variant_id),
+        String(sourceDemand.material_variant_id),
+      );
       const rootDemandId = sourceDemand.parent_demand_id ?? sourceDemand.id;
       const [demandId] = await mysqlProductionDemandPlanWriter.createDemandGroup(db, {
         batchId: scrap.production_batch_id,
@@ -412,8 +436,11 @@ export class MysqlProductionInventoryRepository extends ProductionInventoryRepos
         lines: [
           {
             identityId: scrapId,
+            requirementBasisId: sourceDemand.requirement_basis_id,
             productMaterialId: sourceDemand.product_material_id,
             itemId: sourceDemand.item_id,
+            materialVariantId: sourceDemand.material_variant_id,
+            materialVariantCode: sourceDemand.material_variant_code_snapshot,
             itemCode: sourceDemand.item_code_snapshot,
             itemName: sourceDemand.item_name_snapshot,
             quantityPerUnit: sourceDemand.quantity_per_unit_snapshot,
@@ -593,7 +620,7 @@ export class MysqlProductionInventoryRepository extends ProductionInventoryRepos
         const candidate = candidates.get(line.allocationId)!;
         await db.execute(
           `INSERT INTO return_detail
-           (return_id,production_batch_id,demand_id,allocation_id,item_id,batch_id,
+           (return_id,production_batch_id,demand_id,allocation_id,item_id,material_variant_id,batch_id,
             return_number,unit_snapshot,return_stock_status,release_after_return,remark,created_by)
            VALUES (?,?,?,?,?,?,?,?,'available',1,?,?)`,
           [
@@ -602,6 +629,7 @@ export class MysqlProductionInventoryRepository extends ProductionInventoryRepos
             candidate.demand_id,
             candidate.allocation_id,
             candidate.item_id,
+            candidate.material_variant_id,
             candidate.batch_id,
             line.returnQuantity,
             candidate.unit_snapshot,
@@ -669,11 +697,12 @@ export class MysqlProductionInventoryRepository extends ProductionInventoryRepos
       for (const line of details) {
         await db.execute(
           `INSERT INTO inventory_transaction
-           (item_id,batch_id,transaction_type,quantity,unit_snapshot,stock_status,
+           (item_id,material_variant_id,batch_id,transaction_type,quantity,unit_snapshot,stock_status,
             reference_type,reference_detail_id,idempotency_key,transaction_group_key,remark,created_by)
-           VALUES (?,?,'material_return_inbound',?,?,'available','return_detail',?,?,?,?,?)`,
+           VALUES (?,?,?,'material_return_inbound',?,?,'available','return_detail',?,?,?,?,?)`,
           [
             line.item_id,
+            line.material_variant_id,
             line.batch_id,
             line.return_number,
             line.unit_snapshot,
@@ -805,7 +834,7 @@ export class MysqlProductionInventoryRepository extends ProductionInventoryRepos
     }
     const clause = where.length ? ` WHERE ${where.join(' AND ')}` : '';
     const base = `FROM item_batch ib JOIN inventory_transaction it
-      ON it.batch_id=ib.id AND it.item_id=ib.item_id${clause}
+      ON it.batch_id=ib.id AND it.item_id=ib.item_id AND it.material_variant_id=ib.material_variant_id${clause}
       GROUP BY ib.id,it.stock_status HAVING SUM(it.quantity)>0`;
     const [[count]] = await this.pool.query<(RowDataPacket & { total: number })[]>(
       `SELECT COUNT(*) total FROM (SELECT ib.id ${base}) candidates`,
@@ -813,8 +842,8 @@ export class MysqlProductionInventoryRepository extends ProductionInventoryRepos
     );
     const { page, pageSize, offset } = pagination(query);
     const [rows] = await this.pool.query<StockCandidateRow[]>(
-      `SELECT ib.item_id,ib.id batch_id,ib.item_code_snapshot,ib.product_name_snapshot,
-       ib.batch_code,it.stock_status,ib.unit_snapshot,SUM(it.quantity) system_quantity
+      `SELECT ib.item_id,ib.material_variant_id,ib.id batch_id,ib.item_code_snapshot,ib.product_name_snapshot,
+       ib.material_variant_code_snapshot,ib.batch_code,it.stock_status,ib.unit_snapshot,SUM(it.quantity) system_quantity
        ${base} ORDER BY ib.id DESC,it.stock_status LIMIT ? OFFSET ?`,
       [...params, pageSize, offset],
     );
@@ -850,13 +879,14 @@ export class MysqlProductionInventoryRepository extends ProductionInventoryRepos
         const [[target]] = await db.query<
           (RowDataPacket & {
             item_id: number;
+            material_variant_id: number;
             unit_snapshot: string;
             system_quantity: string;
           })[]
         >(
-          `SELECT ib.item_id,ib.unit_snapshot,COALESCE(SUM(it.quantity),0) system_quantity
+          `SELECT ib.item_id,ib.material_variant_id,ib.unit_snapshot,COALESCE(SUM(it.quantity),0) system_quantity
            FROM item_batch ib LEFT JOIN inventory_transaction it
-             ON it.batch_id=ib.id AND it.item_id=ib.item_id AND it.stock_status=?
+             ON it.batch_id=ib.id AND it.item_id=ib.item_id AND it.material_variant_id=ib.material_variant_id AND it.stock_status=?
            WHERE ib.id=? GROUP BY ib.id`,
           [line.stockStatus, line.itemBatchId],
         );
@@ -865,11 +895,12 @@ export class MysqlProductionInventoryRepository extends ProductionInventoryRepos
           throw new ProductionDomainError('CONFLICT', '所选库存批次或状态已无正库存，请刷新后重试');
         await db.execute(
           `INSERT INTO stock_check_detail
-           (stock_check_id,item_id,batch_id,stock_status,unit_snapshot,system_quantity,created_by)
-           VALUES (?,?,?,?,?,?,?)`,
+           (stock_check_id,item_id,material_variant_id,batch_id,stock_status,unit_snapshot,system_quantity,created_by)
+           VALUES (?,?,?,?,?,?,?,?)`,
           [
             stockCheckId,
             target.item_id,
+            target.material_variant_id,
             line.itemBatchId,
             line.stockStatus,
             target.unit_snapshot,
@@ -960,8 +991,8 @@ export class MysqlProductionInventoryRepository extends ProductionInventoryRepos
       for (const line of details) {
         const [[balance]] = await db.query<(RowDataPacket & { quantity: string })[]>(
           `SELECT COALESCE(SUM(quantity),0) quantity FROM inventory_transaction
-           WHERE item_id=? AND batch_id=? AND stock_status=?`,
-          [line.item_id, line.batch_id, line.stock_status],
+           WHERE item_id=? AND material_variant_id=? AND batch_id=? AND stock_status=?`,
+          [line.item_id, line.material_variant_id, line.batch_id, line.stock_status],
         );
         if (integerQuantity(balance?.quantity ?? 0) !== integerQuantity(line.system_quantity)) {
           throw new ProductionDomainError(
@@ -976,11 +1007,12 @@ export class MysqlProductionInventoryRepository extends ProductionInventoryRepos
         if (difference !== 0) {
           await db.execute(
             `INSERT INTO inventory_transaction
-             (item_id,batch_id,transaction_type,quantity,unit_snapshot,stock_status,
+             (item_id,material_variant_id,batch_id,transaction_type,quantity,unit_snapshot,stock_status,
               reference_type,reference_detail_id,idempotency_key,transaction_group_key,remark,created_by)
-             VALUES (?,?,'stock_check_adjustment',?,?,?,'stock_check_detail',?,?,?,?,?)`,
+             VALUES (?,?,?,'stock_check_adjustment',?,?,?,'stock_check_detail',?,?,?,?,?)`,
             [
               line.item_id,
+              line.material_variant_id,
               line.batch_id,
               decimal(difference),
               line.unit_snapshot,
@@ -1054,8 +1086,8 @@ export class MysqlProductionInventoryRepository extends ProductionInventoryRepos
   private async findMaterialLossCandidates(db: Executor, batchId: string) {
     const [rows] = await db.query<MaterialLossCandidateRow[]>(
       `SELECT allocation.id allocation_id,allocation.demand_id,
-        allocation.production_batch_id,allocation.item_id,allocation.batch_id,
-        item_batch.item_code_snapshot,item_batch.product_name_snapshot,item_batch.batch_code,
+        allocation.production_batch_id,allocation.item_id,allocation.material_variant_id,allocation.batch_id,
+        item_batch.item_code_snapshot,item_batch.product_name_snapshot,item_batch.material_variant_code_snapshot,item_batch.batch_code,
         allocation.unit_snapshot,
         COALESCE((SELECT SUM(detail.outbound_number) FROM outbound_detail detail
           JOIN outbound_order outbound ON outbound.id=detail.outbound_id
@@ -1097,8 +1129,8 @@ export class MysqlProductionInventoryRepository extends ProductionInventoryRepos
 
   private async findReturnCandidates(db: Executor, batchId: string) {
     const [rows] = await db.query<ReturnCandidateRow[]>(
-      `SELECT a.id allocation_id,a.demand_id,a.production_batch_id,a.item_id,a.batch_id,
-        ib.item_code_snapshot,ib.product_name_snapshot,ib.batch_code,a.unit_snapshot,
+      `SELECT a.id allocation_id,a.demand_id,a.production_batch_id,a.item_id,a.material_variant_id,a.batch_id,
+        ib.item_code_snapshot,ib.product_name_snapshot,ib.material_variant_code_snapshot,ib.batch_code,a.unit_snapshot,
         COALESCE((SELECT SUM(od.outbound_number) FROM outbound_detail od
           JOIN outbound_order oo ON oo.id=od.outbound_id
           WHERE od.allocation_id=a.id AND oo.status='completed'),0) confirmed_quantity,
@@ -1125,8 +1157,8 @@ export class MysqlProductionInventoryRepository extends ProductionInventoryRepos
   private async findReturnDetails(db: Executor, orderIds: string[], lock = false) {
     if (!orderIds.length) return [];
     const [rows] = await db.query<ReturnDetailRow[]>(
-      `SELECT rd.id,rd.return_id,rd.allocation_id,rd.demand_id,rd.item_id,rd.batch_id,
-       ib.item_code_snapshot,ib.product_name_snapshot,ib.batch_code,rd.return_number,
+      `SELECT rd.id,rd.return_id,rd.allocation_id,rd.demand_id,rd.item_id,rd.material_variant_id,rd.batch_id,
+       ib.item_code_snapshot,ib.product_name_snapshot,ib.material_variant_code_snapshot,ib.batch_code,rd.return_number,
        rd.unit_snapshot,rd.return_stock_status,rd.release_after_return,it.id inventory_transaction_id,
        rd.remark
        FROM return_detail rd JOIN item_batch ib ON ib.id=rd.batch_id
@@ -1166,8 +1198,8 @@ export class MysqlProductionInventoryRepository extends ProductionInventoryRepos
   private async findStockCheckDetails(db: Executor, orderIds: string[], lock = false) {
     if (!orderIds.length) return [];
     const [rows] = await db.query<StockCheckDetailRow[]>(
-      `SELECT sd.id,sd.stock_check_id,sd.item_id,sd.batch_id,ib.item_code_snapshot,
-       ib.product_name_snapshot,ib.batch_code,sd.stock_status,sd.unit_snapshot,
+      `SELECT sd.id,sd.stock_check_id,sd.item_id,sd.material_variant_id,sd.batch_id,ib.item_code_snapshot,
+       ib.product_name_snapshot,ib.material_variant_code_snapshot,ib.batch_code,sd.stock_status,sd.unit_snapshot,
        sd.system_quantity,sd.actual_quantity,sd.difference_quantity,sd.result,sd.adjusted,sd.remark
        FROM stock_check_detail sd JOIN item_batch ib ON ib.id=sd.batch_id
        WHERE sd.stock_check_id IN (${placeholders(orderIds)})
@@ -1180,8 +1212,8 @@ export class MysqlProductionInventoryRepository extends ProductionInventoryRepos
   private async mapStockChecks(db: Executor, rows: StockCheckOrderRow[]) {
     if (!rows.length) return [];
     const [details] = await db.query<(StockCheckDetailRow & { stock_check_id: number })[]>(
-      `SELECT sd.id,sd.stock_check_id,sd.item_id,sd.batch_id,ib.item_code_snapshot,
-       ib.product_name_snapshot,ib.batch_code,sd.stock_status,sd.unit_snapshot,
+      `SELECT sd.id,sd.stock_check_id,sd.item_id,sd.material_variant_id,sd.batch_id,ib.item_code_snapshot,
+       ib.product_name_snapshot,ib.material_variant_code_snapshot,ib.batch_code,sd.stock_status,sd.unit_snapshot,
        sd.system_quantity,sd.actual_quantity,sd.difference_quantity,sd.result,sd.adjusted,sd.remark
        FROM stock_check_detail sd JOIN item_batch ib ON ib.id=sd.batch_id
        WHERE sd.stock_check_id IN (${placeholders(rows)}) ORDER BY sd.stock_check_id,sd.id`,
@@ -1227,6 +1259,8 @@ const mapReturnCandidate = (row: ReturnCandidateRow): ReturnOrderCandidateItem =
   allocationId: String(row.allocation_id),
   demandId: String(row.demand_id),
   itemId: String(row.item_id),
+  materialVariantId: String(row.material_variant_id),
+  materialVariantCode: row.material_variant_code_snapshot,
   itemCode: row.item_code_snapshot,
   itemName: row.product_name_snapshot,
   itemBatchId: String(row.batch_id),
@@ -1248,6 +1282,8 @@ const mapMaterialLossCandidate = (row: MaterialLossCandidateRow): MaterialLossCa
   allocationId: String(row.allocation_id),
   demandId: String(row.demand_id),
   itemId: String(row.item_id),
+  materialVariantId: String(row.material_variant_id),
+  materialVariantCode: row.material_variant_code_snapshot,
   itemCode: row.item_code_snapshot,
   itemName: row.product_name_snapshot,
   itemBatchId: String(row.batch_id),
@@ -1271,6 +1307,8 @@ const mapMaterialLoss = (row: MaterialLossRow): MaterialLossItem => ({
   allocationId: String(row.allocation_id),
   demandId: String(row.demand_id),
   itemId: String(row.item_id),
+  materialVariantId: String(row.material_variant_id),
+  materialVariantCode: row.material_variant_code_snapshot,
   itemCode: row.item_code_snapshot,
   itemName: row.product_name_snapshot,
   itemBatchId: String(row.batch_id),
@@ -1331,6 +1369,8 @@ const mapReturnOrder = (row: ReturnOrderRow, details: ReturnDetailRow[]): Return
     allocationId: String(line.allocation_id),
     demandId: String(line.demand_id),
     itemId: String(line.item_id),
+    materialVariantId: String(line.material_variant_id),
+    materialVariantCode: line.material_variant_code_snapshot,
     itemCode: line.item_code_snapshot,
     itemName: line.product_name_snapshot,
     itemBatchId: String(line.batch_id),
@@ -1347,6 +1387,8 @@ const mapReturnOrder = (row: ReturnOrderRow, details: ReturnDetailRow[]): Return
 
 const mapStockCandidate = (row: StockCandidateRow): StockCheckCandidateItem => ({
   itemId: String(row.item_id),
+  materialVariantId: String(row.material_variant_id),
+  materialVariantCode: row.material_variant_code_snapshot,
   itemCode: row.item_code_snapshot,
   itemName: row.product_name_snapshot,
   itemBatchId: String(row.batch_id),
@@ -1382,6 +1424,8 @@ const mapStockCheck = (
   details: details.map((line) => ({
     id: String(line.id),
     itemId: String(line.item_id),
+    materialVariantId: String(line.material_variant_id),
+    materialVariantCode: line.material_variant_code_snapshot,
     itemCode: line.item_code_snapshot,
     itemName: line.product_name_snapshot,
     itemBatchId: String(line.batch_id),

@@ -29,6 +29,8 @@ const pendingOrder: MaterialOutboundItem = {
       demandId: '5',
       allocationId: '6',
       itemId: '7',
+      materialVariantId: 'mv-7',
+      materialVariantCode: 'M-001-v1-A',
       itemCode: 'M-001',
       itemName: '测试物料',
       generationGroupKey: 'NORMAL:2',

@@ -37,6 +37,9 @@ import {
   ProductDto,
   ProductListQueryDto,
   ProductIdParamDto,
+  MaterialVariantDto,
+  MaterialVariantQueryDto,
+  MaterialVariantMaterialParamDto,
   ReplaceProcessRouteStepsDto,
   ReplaceProductMaterialsDto,
   StatusDto,
@@ -168,9 +171,51 @@ export class ProductController {
     PERMISSIONS.production.orders.view,
     PERMISSIONS.production.tasks.view,
     PERMISSIONS.production.inbounds.view,
+    PERMISSIONS.product.materialVariants.view,
   ])
   productOptions() {
     return this.service.listProductOptions();
+  }
+  @Get('material-variants')
+  @RequirePermission(PERMISSIONS.product.materialVariants.view)
+  materialVariants(@Query() query: MaterialVariantQueryDto) {
+    return this.service.listMaterialVariants({
+      page: query.page,
+      pageSize: query.pageSize,
+      materialProductId: query.materialProductId,
+      keyword: query.keyword?.trim() || undefined,
+      status: query.status,
+    });
+  }
+  @Get('material-variants/by-material/:materialProductId')
+  @RequirePermission([
+    PERMISSIONS.product.materialVariants.view,
+    PERMISSIONS.product.products.view,
+    PERMISSIONS.production.materials.view,
+    PERMISSIONS.production.materialDemands.view,
+    PERMISSIONS.production.inbounds.view,
+  ])
+  materialVariantsByMaterial(@Param() { materialProductId }: MaterialVariantMaterialParamDto) {
+    return this.service.listMaterialVariantsByMaterial(materialProductId);
+  }
+  @Post('material-variants')
+  @RequirePermission(PERMISSIONS.product.materialVariants.create)
+  @AuditInApplication()
+  createMaterialVariant(
+    @Body() body: MaterialVariantDto,
+    @CurrentCommandContext() audit: CommandContext,
+  ) {
+    return this.service.createMaterialVariant(body, audit);
+  }
+  @Patch('material-variants/:id/status')
+  @RequirePermission(PERMISSIONS.product.materialVariants.changeStatus)
+  @AuditInApplication()
+  materialVariantStatus(
+    @Param() { id }: ProductIdParamDto,
+    @Body() body: StatusDto,
+    @CurrentCommandContext() audit: CommandContext,
+  ) {
+    return this.service.setMaterialVariantStatus(id, body.status, audit);
   }
   @Post('products')
   @RequirePermission(PERMISSIONS.product.products.create)

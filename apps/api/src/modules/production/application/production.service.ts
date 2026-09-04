@@ -201,17 +201,6 @@ export class ProductionService {
       await this.production.cancelBatch(id, version, normalizedReason, audit),
     );
   }
-  async generateMaterialDemands(id: string, version: number, audit: CommandContext) {
-    if (await this.production.hasGeneratedNormalMaterialDemands(id))
-      return this.enrichBatchDetail(await this.production.getBatch(id));
-    const productId = await this.production.getBatchProductId(id);
-    const bom = this.requireProduct(await this.products.getBomSnapshot(productId));
-    if (bom.lines.length === 0)
-      throw new ProductionDomainError('INVALID_INPUT', '产品未配置启用的 BOM，无法生成物料需求');
-    return this.enrichBatchDetail(
-      await this.production.generateMaterialDemands(id, version, bom, audit),
-    );
-  }
   async updateBatchStepExecution(
     batchId: string,
     recordId: string,

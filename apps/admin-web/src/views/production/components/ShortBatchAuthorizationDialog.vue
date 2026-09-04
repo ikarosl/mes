@@ -27,9 +27,16 @@
         </el-table-column>
         <el-table-column
           prop="itemCode"
-          label="物料编码"
-          min-width="130"
+          label="基础物料编码"
+          min-width="150"
         />
+        <el-table-column
+          prop="materialVariantCode"
+          label="物料版本"
+          min-width="190"
+        >
+          <template #default="{ row }">{{ row.materialVariantCode || '未记录版本' }}</template>
+        </el-table-column>
         <el-table-column
           prop="itemName"
           label="物料"
@@ -194,6 +201,10 @@ watch(
 .shortage {
   color: var(--el-color-danger);
   font-weight: 600;
+}
+.secondary {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
 }
 .blocked-alert,
 .authorization-form {

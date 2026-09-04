@@ -158,9 +158,16 @@
                 >
                   <el-table-column
                     prop="itemCode"
-                    label="物料编码"
-                    min-width="130"
+                    label="基础物料编码"
+                    min-width="150"
                   />
+                  <el-table-column
+                    prop="materialVariantCode"
+                    label="物料版本"
+                    min-width="190"
+                  >
+                    <template #default="{ row }">{{ variantCode(row) }}</template>
+                  </el-table-column>
                   <el-table-column
                     prop="itemName"
                     label="物料名称"
@@ -222,6 +229,12 @@
                     </template>
                   </el-table-column>
                   <el-table-column
+                    label="物料版本"
+                    min-width="190"
+                  >
+                    <template #default="{ row }">{{ variantCode(row) }}</template>
+                  </el-table-column>
+                  <el-table-column
                     label="来源"
                     width="120"
                   >
@@ -278,9 +291,16 @@
                   >
                     <el-table-column
                       prop="itemCode"
-                      label="物料"
-                      min-width="130"
+                      label="基础物料"
+                      min-width="150"
                     />
+                    <el-table-column
+                      prop="materialVariantCode"
+                      label="物料版本"
+                      min-width="190"
+                    >
+                      <template #default="{ row }">{{ variantCode(row) }}</template>
+                    </el-table-column>
                     <el-table-column
                       prop="batchCode"
                       label="库存批次"
@@ -313,9 +333,16 @@
                   />
                   <el-table-column
                     prop="itemCode"
-                    label="物料编码"
-                    min-width="130"
+                    label="基础物料编码"
+                    min-width="150"
                   />
+                  <el-table-column
+                    prop="materialVariantCode"
+                    label="物料版本"
+                    min-width="190"
+                  >
+                    <template #default="{ row }">{{ variantCode(row) }}</template>
+                  </el-table-column>
                   <el-table-column
                     prop="batchCode"
                     label="库存批次"
@@ -440,6 +467,8 @@ const currentPage = ref(1);
 const activeTab = ref('materials');
 const { items, total, loading, detailLoading, selectedBatchId, detail, search, selectBatch } =
   useProductionTrace();
+const variantCode = (row: { materialVariantCode?: string | null }): string =>
+  row.materialVariantCode || '未记录版本';
 
 const runSearch = async () => {
   currentPage.value = 1;

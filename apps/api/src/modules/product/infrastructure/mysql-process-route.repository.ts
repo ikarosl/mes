@@ -216,10 +216,6 @@ export class MysqlProcessRouteRepository implements ProcessRouteRepository {
       if (before.status !== 'draft')
         throw new ProductDomainError('IMMUTABLE_ROUTE', '只有从未启用的草稿路线可以删除');
       await connection.execute(
-        `DELETE rsm FROM route_step_materials rsm JOIN process_route_steps rs ON rs.id=rsm.route_step_id WHERE rs.route_id=?`,
-        [id],
-      );
-      await connection.execute(
         'UPDATE process_route_steps SET is_deleted=1,deleted_by=?,deleted_at=NOW(),updated_by=? WHERE route_id=? AND is_deleted=0',
         [audit.actorId, audit.actorId, id],
       );
@@ -263,10 +259,7 @@ export class MysqlProcessRouteRepository implements ProcessRouteRepository {
       product.acquire_method !== 'self_made' ||
       product.item_kind === 'material'
     ) {
-      throw new ProductDomainError(
-        'INVALID_PRODUCT_KIND',
-        '工艺路线只能绑定已启用的自制半成品或成品',
-      );
+      throw new ProductDomainError('INVALID_PRODUCT_KIND', '工艺路线只能绑定已启用的自制成品');
     }
     return product;
   }

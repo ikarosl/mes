@@ -4,6 +4,10 @@
 
 本章退料、生产领料损耗和盘点数量均为整数：退料与损耗最小为 `1`，实盘数量允许为 `0`，盘点差异允许为负整数。数据库必须以整数 `CHECK` 拒绝小数，前后端不得用误差阈值比较或自动舍入小数。
 
+退料、生产领料损耗和盘点均以精确物料版本为事实边界。明细必须同时保存 `item_id` 与
+`material_variant_id`，并沿 allocation/batch 的组合外键校验一致；停用版本仍可在历史明细和
+库存流水中展示，不能回落到基础物料或默认版本。
+
 ## 3.7 退料表
 
 ---
@@ -60,6 +64,7 @@
 | `demand_id`            | `BIGINT UNSIGNED` | 需求 ID                                  |
 | `allocation_id`        | `BIGINT UNSIGNED` | 分配明细 ID                              |
 | `item_id`              | `BIGINT UNSIGNED` | 退料对象 ID                              |
+| `material_variant_id`  | `BIGINT UNSIGNED` | 退料精确物料版本 ID                      |
 | `batch_id`             | `BIGINT UNSIGNED` | 退料库存批次 ID                          |
 | `return_number`        | `DECIMAL(12,4)`   | 本次退料数量                             |
 | `unit_snapshot`        | `VARCHAR(20)`     | 退料时单位快照                           |
@@ -74,13 +79,13 @@
 - 主键：`id`
 - 外键：`FOREIGN KEY (return_id, production_batch_id) REFERENCES return_order(id, production_batch_id)`
 - 外键：`FOREIGN KEY (demand_id, production_batch_id) REFERENCES production_item_demand(id, production_batch_id)`
-- 外键：`FOREIGN KEY (allocation_id, demand_id, production_batch_id, item_id, batch_id) REFERENCES production_item_allocation(id, demand_id, production_batch_id, item_id, batch_id)`
-- 外键：`FOREIGN KEY (batch_id, item_id) REFERENCES item_batch(id, item_id)`
+- 外键：`FOREIGN KEY (allocation_id, demand_id, production_batch_id, item_id, batch_id, material_variant_id) REFERENCES production_item_allocation(id, demand_id, production_batch_id, item_id, batch_id, material_variant_id)`
+- 外键：`FOREIGN KEY (batch_id, item_id, material_variant_id) REFERENCES item_batch(id, item_id, material_variant_id)`
 - 检查约束：`CHECK (return_number > 0)`
 - 检查约束：`CHECK (return_stock_status IN ('available', 'pending_inspection', 'frozen', 'defective'))`
 - 检查约束：`CHECK (release_after_return IN (0, 1))`
 - 唯一约束：`UNIQUE (return_id, allocation_id)`
-- 组合候选键：`UNIQUE (id, allocation_id, demand_id, production_batch_id, item_id, batch_id)`，供退料后报废精确引用具体退料明细
+- 组合候选键：`UNIQUE (id, allocation_id, demand_id, production_batch_id, item_id, batch_id, material_variant_id)`，供退料后报废精确引用具体退料明细
 
 说明：
 
@@ -113,6 +118,7 @@
 | `demand_id`           | `BIGINT UNSIGNED` | 来源需求 ID，非空                         |
 | `allocation_id`       | `BIGINT UNSIGNED` | 来源分配明细 ID，非空                     |
 | `item_id`             | `BIGINT UNSIGNED` | 报废对象 ID                               |
+| `material_variant_id` | `BIGINT UNSIGNED` | 报废精确物料版本 ID                       |
 | `batch_id`            | `BIGINT UNSIGNED` | 已确认领料的库存批次 ID，非空             |
 | `scrap_scene`         | `VARCHAR(40)`     | 当前固定为 `production_consumed`          |
 | `scrap_number`        | `DECIMAL(12,4)`   | 报废数量                                  |
@@ -144,8 +150,8 @@
 - 唯一约束：`UNIQUE (id, production_batch_id)`，供损耗补料单以组合外键保证同批次来源
 - 外键：`FOREIGN KEY (production_batch_id) REFERENCES production_batches(id)`
 - 外键：`FOREIGN KEY (demand_id, production_batch_id) REFERENCES production_item_demand(id, production_batch_id)`
-- 外键：`FOREIGN KEY (allocation_id, demand_id, production_batch_id, item_id, batch_id) REFERENCES production_item_allocation(id, demand_id, production_batch_id, item_id, batch_id)`
-- 外键：`FOREIGN KEY (batch_id, item_id) REFERENCES item_batch(id, item_id)`
+- 外键：`FOREIGN KEY (allocation_id, demand_id, production_batch_id, item_id, batch_id, material_variant_id) REFERENCES production_item_allocation(id, demand_id, production_batch_id, item_id, batch_id, material_variant_id)`
+- 外键：`FOREIGN KEY (batch_id, item_id, material_variant_id) REFERENCES item_batch(id, item_id, material_variant_id)`
 - 外键：`confirmed_by`、`cancelled_by` 及业务审计操作者字段关联 `users.id`
 - 检查约束：`CHECK (scrap_number > 0)`
 - 检查约束：`CHECK (scrap_scene = 'production_consumed')`
@@ -220,6 +226,7 @@
 | `id`                  | `BIGINT UNSIGNED` | 主键                                                   |
 | `stock_check_id`      | `BIGINT UNSIGNED` | 盘点主单 ID，关联 `stock_check_order.id`               |
 | `item_id`             | `BIGINT UNSIGNED` | 库存对象 ID                                            |
+| `material_variant_id` | `BIGINT UNSIGNED` | 盘点的精确物料版本 ID                                  |
 | `batch_id`            | `BIGINT UNSIGNED` | 库存批次 ID                                            |
 | `stock_status`        | `VARCHAR(20)`     | 盘点的库存状态，例如 `available`、`pending_inspection` |
 | `unit_snapshot`       | `VARCHAR(20)`     | 盘点时单位快照                                         |
@@ -237,13 +244,14 @@
 - 主键：`id`
 - 外键：`FOREIGN KEY (stock_check_id) REFERENCES stock_check_order(id)`
 - 外键：`FOREIGN KEY (item_id) REFERENCES products(id)`
-- 外键：`FOREIGN KEY (batch_id, item_id) REFERENCES item_batch(id, item_id)`
+- 外键：`FOREIGN KEY (material_variant_id, item_id) REFERENCES material_variants(id, material_product_id)`
+- 外键：`FOREIGN KEY (batch_id, item_id, material_variant_id) REFERENCES item_batch(id, item_id, material_variant_id)`
 - 检查约束：`CHECK (system_quantity >= 0)`
 - 检查约束：`CHECK (actual_quantity IS NULL OR actual_quantity >= 0)`
 - 检查约束：`CHECK (stock_status IN ('available', 'pending_inspection', 'frozen', 'defective'))`
 - 检查约束：`CHECK (result IS NULL OR result IN ('surplus', 'shortage', 'matched'))`
 - 检查约束：`CHECK (adjusted IN (0, 1))`
-- 唯一约束：`UNIQUE (stock_check_id, item_id, batch_id, stock_status)`
+- 唯一约束：`UNIQUE (stock_check_id, item_id, material_variant_id, batch_id, stock_status)`
 
 说明：
 

@@ -20,6 +20,8 @@ const allowedTables = new Set([
   'process_steps',
   'process_routes',
   'product_materials',
+  // Product-owned exact identities below a stable base material/BOM identity.
+  'material_variants',
   'process_route_steps',
   'route_step_materials',
   'work_orders',
@@ -36,6 +38,9 @@ const allowedTables = new Set([
   // 历史表已由 202608200001 移除；保留该检查以确保不可变的旧迁移仍然有效。
   'production_material_supplement_detail',
   'production_item_demand',
+  // Production-owned frozen formula basis and auditable manual-addition action.
+  'production_material_requirement_basis',
+  'production_manual_demand_addition',
   'inbound_order',
   'inbound_detail',
   'item_batch',
@@ -43,6 +48,7 @@ const allowedTables = new Set([
   // Production-owned rebuildable projections; inventory_transaction remains authoritative.
   'inventory_batch_balance',
   'inventory_item_balance',
+  'inventory_material_variant_balance',
   'production_item_allocation',
   'production_short_batch_authorization',
   'production_short_batch_authorization_detail',

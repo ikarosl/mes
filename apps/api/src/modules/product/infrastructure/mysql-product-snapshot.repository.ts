@@ -97,19 +97,6 @@ export class MysqlProductSnapshotRepository
     }));
   }
 
-  async listRouteStepMaterialIds(routeStepId: string): Promise<string[]> {
-    const [rows] = await this.pool.query<(RowDataPacket & { product_material_id: number })[]>(
-      `SELECT rsm.product_material_id
-       FROM route_step_materials rsm
-       JOIN process_route_steps rs ON rs.id=rsm.route_step_id AND rs.status=1 AND rs.is_deleted=0
-       JOIN product_materials pm ON pm.id=rsm.product_material_id AND pm.status=1 AND pm.is_deleted=0
-       WHERE rsm.route_step_id=?
-       ORDER BY rsm.product_material_id`,
-      [routeStepId],
-    );
-    return rows.map((row) => String(row.product_material_id));
-  }
-
   async getProductionProduct(productId: string): Promise<ProductionProductSnapshot> {
     return withTransaction(this.pool, async (connection) =>
       this.productionProduct(connection, productId, true),
@@ -169,7 +156,7 @@ export class MysqlProductSnapshotRepository
           (line) =>
             line.material_status !== 1 ||
             line.material_is_deleted !== 0 ||
-            !['material', 'semi_finished'].includes(line.material_kind) ||
+            line.material_kind !== 'material' ||
             line.category_status !== 1 ||
             line.category_is_deleted !== 0 ||
             line.unit !== line.material_unit,
@@ -296,7 +283,7 @@ export class MysqlProductSnapshotRepository
          FROM process_routes r JOIN products p ON p.id=r.product_id JOIN product_categories c ON c.id=p.category_id
         WHERE r.id=? AND r.status='enabled' AND r.is_deleted=0
           AND p.status=1 AND p.acquire_method='self_made' AND p.is_deleted=0
-          AND c.item_kind<>'material' AND c.status=1 AND c.is_deleted=0${productCondition}${lock ? ' FOR UPDATE' : ''}`,
+          AND c.item_kind='finished_product' AND c.status=1 AND c.is_deleted=0${productCondition}${lock ? ' FOR UPDATE' : ''}`,
       expectedProductId ? [routeId, expectedProductId] : [routeId],
     );
     if (!route) throw new ProductDomainError('NOT_FOUND', '已启用的生产工艺路线不存在');
@@ -365,7 +352,7 @@ export class MysqlProductSnapshotRepository
       `SELECT p.id,p.item_code,p.product_name,p.unit,p.default_route_id
          FROM products p JOIN product_categories c ON c.id=p.category_id
         WHERE p.id=? AND p.status=1 AND p.acquire_method='self_made' AND p.is_deleted=0
-          AND c.item_kind<>'material' AND c.status=1 AND c.is_deleted=0${lock ? ' FOR UPDATE' : ''}`,
+          AND c.item_kind='finished_product' AND c.status=1 AND c.is_deleted=0${lock ? ' FOR UPDATE' : ''}`,
       [productId],
     );
     if (!row) throw new ProductDomainError('NOT_FOUND', '已启用的生产产品不存在');

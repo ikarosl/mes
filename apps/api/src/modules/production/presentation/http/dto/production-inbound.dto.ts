@@ -48,6 +48,7 @@ export class InventoryMaterialSupplyDemandQueryDto
 export class InventoryMaterialDemandTraceQueryDto extends PageQueryDto {}
 export class CreatePurchaseInboundLineDto {
   @IsString() @MaxLength(20) itemId!: string;
+  @IsString() @MaxLength(20) materialVariantId!: string;
   @IsString() @MaxLength(100) batchCode!: string;
   @Type(() => Number) @IsInt() @Min(1) @Max(99_999_999) inboundQuantity!: number;
   @IsOptional() @IsString() @MaxLength(5000) remark?: string | null;

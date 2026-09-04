@@ -29,6 +29,11 @@ export const PERMISSIONS = {
       manageBom: 'product:products:manage-bom',
       setDefaultRoute: 'product:products:set-default-route',
     },
+    materialVariants: {
+      view: 'product:material-variants:view',
+      create: 'product:material-variants:create',
+      changeStatus: 'product:material-variants:change-status',
+    },
     categories: {
       view: 'product:categories:view',
       create: 'product:categories:create',
@@ -77,6 +82,11 @@ export const PERMISSIONS = {
       cancelOutbound: 'production:materials:outbound-cancel',
       authorizeShortBatch: 'production:materials:authorize-short-batch',
       closeRemainingDemands: 'production:materials:close-remaining-demands',
+    },
+    materialDemands: {
+      view: 'production:material-demands:view',
+      configure: 'production:material-demands:configure',
+      addManual: 'production:material-demands:add-manual',
     },
     inventory: { view: 'production:inventory:view' },
     inbounds: {

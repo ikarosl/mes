@@ -1,19 +1,12 @@
 import { flushPromises, mount } from '@vue/test-utils';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import RouteDetailDialog from '../RouteDetailDialog.vue';
 
-const { routeSteps, materials } = vi.hoisted(() => ({
-  routeSteps: vi.fn(),
-  materials: vi.fn(),
-}));
-vi.mock('../../../../api/product', () => ({
-  productApi: { routeSteps, materials },
-}));
+const { routeSteps } = vi.hoisted(() => ({ routeSteps: vi.fn() }));
+vi.mock('../../../../api/product', () => ({ productApi: { routeSteps } }));
 
 const passthrough = { template: '<div><slot/><slot name="footer"/></div>' };
-const alertStub = {
-  template: '<div class="alert-stub"><slot name="title"/><slot/></div>',
-};
+const alertStub = { template: '<div class="alert-stub"><slot name="title"/><slot/></div>' };
 const tagStub = { template: '<span class="tag-stub"><slot/></span>' };
 const emptyStub = {
   props: ['description'],
@@ -39,7 +32,7 @@ const routeRow = {
   updatedAt: null,
 } as never;
 
-const stepRow = (productMaterialIds: string[]) =>
+const stepRow = () =>
   ({
     id: 'rs1',
     processStepId: 's1',
@@ -55,30 +48,9 @@ const stepRow = (productMaterialIds: string[]) =>
     needRecord: true,
     status: 1,
     remark: null,
-    productMaterialIds,
-  }) as never;
-
-const materialRow = () =>
-  ({
-    id: 'bm1',
-    materialProductId: 'm1',
-    itemCode: 'MAT-1',
-    productName: '物料1',
-    itemKind: 'material',
-    quantityPerUnit: '2.0000',
-    unit: 'kg',
-    isKeyMaterial: true,
-    needBatchRecord: false,
-    status: 1,
-    remark: null,
   }) as never;
 
 describe('RouteDetailDialog', () => {
-  beforeEach(() => {
-    routeSteps.mockReset();
-    materials.mockReset();
-  });
-
   const mountDialog = () =>
     mount(RouteDetailDialog, {
       props: {
@@ -106,22 +78,19 @@ describe('RouteDetailDialog', () => {
     await flushPromises();
   };
 
-  it('loads route steps and product BOM when opened', async () => {
-    routeSteps.mockResolvedValue([stepRow(['bm1'])]);
-    materials.mockResolvedValue([materialRow()]);
+  it('loads only route steps when opened; it never requests a BOM', async () => {
+    routeSteps.mockResolvedValue([stepRow()]);
     const wrapper = mountDialog();
 
     await openDialog(wrapper);
 
     expect(routeSteps).toHaveBeenCalledTimes(1);
     expect(routeSteps).toHaveBeenCalledWith('r1');
-    expect(materials).toHaveBeenCalledTimes(1);
-    expect(materials).toHaveBeenCalledWith('p1');
+    expect(wrapper.text()).toContain('工序顺序（路线不绑定 BOM）');
   });
 
-  it('renders step info and BOM material code/name/quantity/unit', async () => {
-    routeSteps.mockResolvedValue([stepRow(['bm1'])]);
-    materials.mockResolvedValue([materialRow()]);
+  it('renders step information without any BOM section', async () => {
+    routeSteps.mockResolvedValue([stepRow()]);
     const wrapper = mountDialog();
 
     await openDialog(wrapper);
@@ -130,36 +99,22 @@ describe('RouteDetailDialog', () => {
     expect(wrapper.text()).toContain('首道装配');
     expect(wrapper.text()).toContain('张三');
     expect(wrapper.text()).toContain('sop.pdf');
-    expect(wrapper.text()).toContain('MAT-1');
-    expect(wrapper.text()).toContain('物料1');
-    expect(wrapper.text()).toContain('2.0000');
-    expect(wrapper.text()).toContain('kg');
+    expect(wrapper.text()).not.toContain('使用 BOM');
+    expect(wrapper.text()).not.toContain('单件用量');
   });
 
-  it('shows a failed state when the BOM request fails, not an empty BOM', async () => {
-    routeSteps.mockResolvedValue([stepRow(['bm1'])]);
-    materials.mockRejectedValue(new Error('500'));
+  it('shows a failed route-step state without presenting an empty BOM', async () => {
+    routeSteps.mockRejectedValue(new Error('500'));
     const wrapper = mountDialog();
 
     await openDialog(wrapper);
 
-    expect(wrapper.text()).toContain('BOM 明细加载失败');
-    expect(wrapper.text()).not.toContain('该工序未关联 BOM 明细');
-  });
-
-  it('marks linked materials that are missing from the BOM as unavailable', async () => {
-    routeSteps.mockResolvedValue([stepRow(['bm1'])]);
-    materials.mockResolvedValue([]);
-    const wrapper = mountDialog();
-
-    await openDialog(wrapper);
-
-    expect(wrapper.text()).toContain('已失效物料');
+    expect(wrapper.text()).toContain('工序明细加载失败');
+    expect(wrapper.text()).not.toContain('BOM 明细加载失败');
   });
 
   it('shows an empty state when the route has no steps', async () => {
     routeSteps.mockResolvedValue([]);
-    materials.mockResolvedValue([]);
     const wrapper = mountDialog();
 
     await openDialog(wrapper);

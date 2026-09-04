@@ -26,6 +26,12 @@ export const CREATE_MATERIAL_OUTBOUND_IDEMPOTENCY_SCOPE =
 /** 确认生产领料出库单。 */
 export const CONFIRM_MATERIAL_OUTBOUND_IDEMPOTENCY_SCOPE =
   'production.material-outbound.confirm.v2' as const;
+/** 管理员确认基础 BOM 明细的精确版本需求。 */
+export const CONFIGURE_MATERIAL_DEMANDS_IDEMPOTENCY_SCOPE =
+  'production.material-demands.configure.v1' as const;
+/** 创建人工追加物料需求。 */
+export const ADD_MANUAL_MATERIAL_DEMAND_IDEMPOTENCY_SCOPE =
+  'production.material-demands.add-manual.v1' as const;
 /** 创建外购物料入库单。 */
 export const CREATE_PURCHASE_INBOUND_IDEMPOTENCY_SCOPE =
   'production.purchase-inbound.create.v1' as const;

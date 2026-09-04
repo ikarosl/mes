@@ -8,7 +8,7 @@
 
 ### 1. `product_categories`
 
-职责：统一维护物料、半成品和成品分类，不再创建第二套库存分类表。
+职责：统一维护物料和成品分类，不再创建第二套库存分类表。
 
 | 字段            | 类型              | 说明                                            |
 | --------------- | ----------------- | ----------------------------------------------- |
@@ -16,7 +16,7 @@
 | `parent_id`     | `BIGINT UNSIGNED` | 父分类 ID，可为空                               |
 | `category_code` | `VARCHAR(64)`     | 分类编码                                        |
 | `category_name` | `VARCHAR(100)`    | 分类名称                                        |
-| `item_kind`     | `VARCHAR(30)`     | `material`、`semi_finished`、`finished_product` |
+| `item_kind`     | `VARCHAR(30)`     | `material`、`finished_product`                 |
 | `status`        | `TINYINT`         | `1` 启用、`0` 停用                              |
 | `remark`        | `TEXT`            | 备注                                            |
 | 审计字段        | 见统一规则        | 主数据审计字段                                  |
@@ -25,26 +25,25 @@
 
 - 主键：`id`
 - 自关联：`parent_id -> product_categories.id`
-- 检查约束：`CHECK (item_kind IN ('material', 'semi_finished', 'finished_product'))`
+- 检查约束：`CHECK (item_kind IN ('material', 'finished_product'))`
 - 唯一约束：`UNIQUE (category_code)`
 
 说明：
 
-- `material` 表示原材料、辅料、零部件等。
-- `semi_finished` 表示生产过程中产生的半成品。
-- `finished_product` 表示最终成品。
+- `material` 表示原材料、辅料、零部件等；库存中需要精确区分的版本由 `material_variants` 表示。
+- `finished_product` 表示最终成品；半成品不再是独立产品类型。
 - 分类表达“是什么”，`products.acquire_method` 表达“如何获得”，两者不得混用。
 
 ---
 
 ### 2. `products`
 
-职责：维护所有可生产、可采购或可库存对象，是物料、半成品和成品的唯一主数据。
+职责：维护所有可生产、可采购或可库存对象，是物料和成品的唯一主数据。
 
 | 字段               | 类型              | 说明                                    |
 | ------------------ | ----------------- | --------------------------------------- |
 | `id`               | `BIGINT UNSIGNED` | 主键，自增                              |
-| `item_code`        | `VARCHAR(100)`    | 统一库存对象编码                        |
+| `item_code`        | `VARCHAR(100)`    | 统一库存对象编码（创建后不可修改）      |
 | `product_name`     | `VARCHAR(200)`    | 名称                                    |
 | `category_id`      | `BIGINT UNSIGNED` | 分类 ID                                 |
 | `default_route_id` | `BIGINT UNSIGNED` | 默认工艺路线，可为空                    |
@@ -70,24 +69,23 @@
 
 说明：
 
-- 物料、半成品、成品都进入该表，不再创建 `item_info` 或独立物料主表。
-- 是否是物料、半成品或成品，通过 `category_id -> product_categories.item_kind` 判断。
-- `item_code` 是产品、物料和半成品的唯一业务编码；编码软删除后不得被新记录复用，需要继续使用时恢复原记录。
-- 系统只允许一个固定基础单位且不建设单位换算；产品编码和基础单位创建后不可修改。
+- 物料和成品都进入该表，不再创建 `item_info` 或独立物料主表；基础物料身份是 `products.id`。
+- 是否是物料或成品，通过 `category_id -> product_categories.item_kind` 判断。
+- `item_code` 是产品和物料的唯一业务编码；编码软删除后不得被新记录复用，需要继续使用时恢复原记录。
+- 系统只允许一个固定基础单位且不建设单位换算；产品编码和基础单位创建后不可修改。更新接口必须拒绝任何编码变更，数据库触发器同时兜底。
 
 示例：
 
 | id  | product_name           | item_kind        | unit |
 | --- | ---------------------- | ---------------- | ---- |
 | pi2 | 粘合-h822              | material         | g    |
-| pi3 | 6g-20g微带环形器半成品 | semi_finished    | pcs  |
 | pi4 | 10g-30g微带环形器成品  | finished_product | pcs  |
 
 ---
 
 ### 3. `product_materials`
 
-职责：维护产品或半成品的统一 BOM 明细，是生产需求生成的唯一 BOM 数据源。
+职责：维护成品的统一 BOM 明细，是生产需求基础生成的唯一 BOM 数据源。
 
 | 字段                  | 类型              | 说明                           |
 | --------------------- | ----------------- | ------------------------------ |
@@ -116,8 +114,8 @@
 
 说明：
 
-- `product_id` 可以是成品，也可以是半成品。
-- `material_product_id` 可以是物料，也可以是半成品。
+- `product_id` 只能是成品。
+- `material_product_id` 只能是物料；需要精确库存版本时由 Production 在需求或物流事实中选择 `material_variant_id`。
 - `production_item_demand` 必须保存 `product_material_id` 和 BOM 数量、单位、追溯标志快照。
 - 产品首次成功创建生产任务时，`products.bom_locked_at` 与任务同事务写入；此后本表所有新增、修改、删除、停用、恢复和批量替换操作均拒绝。
 - 任务取消、需求完成或库存归零不能解除锁定。原则性用料变化必须新建产品和编码。
@@ -231,17 +229,28 @@
 
 约束：`UNIQUE (route_id, step_order)`；`UNIQUE (id, route_id)`；检查布尔字段和 `step_order > 0`。软删除后需要恢复同一路线顺序时恢复原步骤记录，不创建相同顺序的新记录。
 
-## 2.5 `route_step_materials`
+## 2.5 路线与 BOM 的边界
 
-职责：关联工艺路线步骤与统一 BOM 明细，只表达“哪道工序使用哪条 BOM”，不重复保存产品级单件用量。
+当前模型不再建立 `route_step_materials`。`process_route_steps` 只保存路线工序顺序、负责人、SOP
+和规则快照；物料消耗统一来自产品级 `product_materials`，生产批次在创建时冻结完整 BOM，随后由
+Production 按 BOM 行逐行配置精确 `material_variant_id`。任何按工序绑定 BOM、按路线步骤推导需求
+或以工序范围筛选补料的语义均已删除，不得恢复旁路表。
 
-| 字段                  | 类型              | 说明                   |
-| --------------------- | ----------------- | ---------------------- |
-| `id`                  | `BIGINT UNSIGNED` | 主键，自增             |
-| `route_step_id`       | `BIGINT UNSIGNED` | 路线步骤 ID            |
-| `product_material_id` | `BIGINT UNSIGNED` | `product_materials.id` |
-| `remark`              | `TEXT`            | 备注                   |
-| `created_by`          | `BIGINT UNSIGNED` | 创建人                 |
-| `created_at`          | `DATETIME`        | 创建时间               |
+## 2.6 `material_variants`
 
-约束：`UNIQUE (route_step_id, product_material_id)`；两个外键均使用 `RESTRICT`。应用事务必须校验 `product_materials.product_id = process_routes.product_id`。
+职责：维护同一基础物料下可供管理员选择的精确版本。`products.id` 仍是 BOM 的稳定基础物料身份，
+`material_variants.id` 才是采购批次、生产需求和库存流水中不可替代的版本身份。
+
+| 字段                  | 类型              | 说明                              |
+| --------------------- | ----------------- | --------------------------------- |
+| `id`                  | `BIGINT UNSIGNED` | 主键                              |
+| `material_product_id` | `BIGINT UNSIGNED` | `products.id`，必须是启用物料      |
+| `major_version`       | `VARCHAR(32)`     | 主版本                            |
+| `minor_version`       | `VARCHAR(32)`     | 次版本                            |
+| `variant_code`        | `VARCHAR(180)`    | 服务端生成且创建后不可修改的编码   |
+| `status`              | `TINYINT`         | `1` 启用、`0` 停用                 |
+| `is_deleted`          | `TINYINT`         | 软删除标记                         |
+
+同一基础物料的启用、未删除版本构成候选集合；停用只阻止新选择，不改变需求、批次、分配、出入库、退料、
+报废、盘点及库存流水中已冻结的版本快照。跨模块只能通过 Product 的 `MaterialVariantQuery` 读取候选，
+不得直接查询本表。

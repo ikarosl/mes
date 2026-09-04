@@ -18,6 +18,9 @@ import type {
   ProductListQuery,
   ProductMaterialItem,
   ProductMaterialPayload,
+  MaterialVariantItem,
+  MaterialVariantListQuery,
+  MaterialVariantPayload,
   ProductOption,
   PageResult,
   ProductPayload,
@@ -90,6 +93,25 @@ export const productApi = {
     }),
   setProductStatus: (id: string, status: number) =>
     request<void>({ url: `${base}/products/${id}/status`, method: 'PATCH', data: { status } }),
+  materialVariants: (params: MaterialVariantListQuery) =>
+    request<PageResult<MaterialVariantItem>>({ url: `${base}/material-variants`, params }),
+  materialVariantsByMaterial: (materialProductId: string) =>
+    request<MaterialVariantItem[]>({
+      url: `${base}/material-variants/by-material/${materialProductId}`,
+      skipErrorHandling: true,
+    }),
+  createMaterialVariant: (data: MaterialVariantPayload) =>
+    request<{ id: string; variantCode: string }>({
+      url: `${base}/material-variants`,
+      method: 'POST',
+      data,
+    }),
+  setMaterialVariantStatus: (id: string, status: number) =>
+    request<void>({
+      url: `${base}/material-variants/${id}/status`,
+      method: 'PATCH',
+      data: { status },
+    }),
   materials: (id: string) =>
     request<ProductMaterialItem[]>({ url: `${base}/products/${id}/materials` }),
   replaceMaterials: (id: string, items: ProductMaterialPayload[]) =>

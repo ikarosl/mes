@@ -14,11 +14,7 @@ export abstract class ProductionSupplementRepository {
     payload: SaveProductionScrapSupplementPlanPayload,
     context: CommandContext,
   ): Promise<ProductionScrapSupplementPlanItem>;
-  abstract getCandidateContext(
-    dispositionId: string,
-    materialEndStepRecordId: string,
-  ): Promise<{
-    routeStepIds: string[];
+  abstract getCandidateContext(dispositionId: string): Promise<{
     candidates: ProductionSupplementCandidateItem[];
   }>;
   abstract approve(

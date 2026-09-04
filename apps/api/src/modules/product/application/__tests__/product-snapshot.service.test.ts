@@ -38,14 +38,6 @@ describe('ProductSnapshotService', () => {
     expect(repository.getProductionRouteSnapshot).toHaveBeenCalledWith('1', null);
   });
 
-  it('delegates route-step material candidate reads through the Product boundary', async () => {
-    const repository = { listRouteStepMaterialIds: vi.fn().mockResolvedValue(['31']) };
-    const service = new ProductSnapshotService(repository as never);
-
-    await expect(service.listRouteStepMaterialIds('41')).resolves.toEqual(['31']);
-    expect(repository.listRouteStepMaterialIds).toHaveBeenCalledWith('41');
-  });
-
   it('delegates inactive-safe display reference reads through the Product boundary', async () => {
     const references = [{ id: '2', itemCode: 'MAT-2', productName: '停用物料', unit: 'pcs' }];
     const repository = {

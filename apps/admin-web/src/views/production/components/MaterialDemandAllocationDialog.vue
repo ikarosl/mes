@@ -43,9 +43,16 @@
           </el-table-column>
           <el-table-column
             prop="itemCode"
-            label="物料编码"
+            label="基础物料编码"
             min-width="130"
           />
+          <el-table-column
+            prop="materialVariantCode"
+            label="物料版本"
+            min-width="190"
+          >
+            <template #default="{ row }">{{ row.materialVariantCode || '未选择版本' }}</template>
+          </el-table-column>
           <el-table-column
             prop="itemName"
             label="物料名称"
@@ -97,10 +104,10 @@
               @visible-change="handleAvailableVisible"
             >
               <el-option
-                v-for="item in availableItemBatches"
+                v-for="item in exactAvailableItemBatches"
                 :key="item.itemBatchId"
                 :value="item.itemBatchId"
-                :label="`${item.batchCode}（可分配 ${formatQuantity(item.availableToAllocateQuantity)}）`"
+                :label="`${item.materialVariantCode || item.itemCode} · ${item.batchCode}（可分配 ${formatQuantity(item.availableToAllocateQuantity)}）`"
                 :disabled="Number(item.availableToAllocateQuantity) <= 0"
               />
             </el-select>
@@ -135,9 +142,14 @@
         >
           <el-table-column
             prop="batchCode"
-            label="库存批次"
+            label="库存批次 / 版本"
             min-width="150"
-          />
+          >
+            <template #default="{ row }">
+              <div>{{ row.batchCode }}</div>
+              <div class="secondary">{{ row.materialVariantCode || '未记录版本' }}</div>
+            </template>
+          </el-table-column>
           <el-table-column
             label="分配数量"
             width="110"
@@ -253,6 +265,18 @@ const demandGroups = computed<DemandGenerationGroupView[]>(() => {
 const selectedBatch = computed(() =>
   props.availableItemBatches.find((item) => item.itemBatchId === form.itemBatchId),
 );
+const exactAvailableItemBatches = computed(() => {
+  const variantId = selectedDemand.value?.materialVariantId;
+  return variantId
+    ? props.availableItemBatches.filter((item) => item.materialVariantId === variantId)
+    : [];
+});
+const selectedBatchMatchesDemand = computed(
+  () =>
+    Boolean(selectedDemand.value) &&
+    Boolean(selectedBatch.value) &&
+    selectedBatch.value?.materialVariantId === selectedDemand.value?.materialVariantId,
+);
 const selectedDemandCanAllocate = computed(() => {
   const demand = selectedDemand.value;
   return Boolean(
@@ -262,6 +286,7 @@ const selectedDemandCanAllocate = computed(() => {
 const canAllocate = computed(() =>
   Boolean(
     selectedDemandCanAllocate.value &&
+    selectedBatchMatchesDemand.value &&
     form.itemBatchId &&
     Number.isInteger(form.assignedQuantity) &&
     form.assignedQuantity > 0 &&
@@ -360,6 +385,10 @@ const demandRowClassName = ({ row }: { row: ProductionMaterialDemandItem }): str
 .demand-group-header span {
   color: #6b7280;
   font-size: 13px;
+}
+.secondary {
+  color: #6b7280;
+  font-size: 12px;
 }
 .demand-group :deep(.selected-demand-row) {
   --el-table-tr-bg-color: var(--el-color-primary-light-9);

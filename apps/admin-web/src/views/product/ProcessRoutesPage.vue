@@ -194,11 +194,10 @@
       @save="submitRoute"
     />
 
-    <!-- 配置工序顺序弹窗（自持路线步骤明细与工序/用户/物料候选） -->
+    <!-- 配置工序顺序弹窗（路线只描述执行顺序；BOM 由产品配置） -->
     <RouteStepDialog
       :visible="stepsDialogVisible"
       :route-id="editingRouteId"
-      :product-id="editingRouteProductId"
       :submitting="submittingSteps"
       @update:visible="stepsDialogVisible = $event"
       @save="submitSteps"
@@ -260,7 +259,6 @@ const routeDialogVisible = ref(false);
 const stepsDialogVisible = ref(false);
 const detailDialogVisible = ref(false);
 const editingRouteId = ref<string | null>(null);
-const editingRouteProductId = ref<string | null>(null);
 const detailRow = ref<ProcessRouteListItem | null>(null);
 const submittingSteps = ref(false);
 const routeFormDialogRef = ref();
@@ -347,7 +345,6 @@ const deleteRoute = async (row: ProcessRouteListItem): Promise<void> => {
 /* ----- steps（弹窗自持路线步骤明细与候选） ----- */
 const openSteps = (row: ProcessRouteListItem): void => {
   editingRouteId.value = row.id;
-  editingRouteProductId.value = row.productId;
   stepsDialogVisible.value = true;
 };
 
@@ -366,7 +363,6 @@ const submitSteps = async (steps: StepRow[]): Promise<void> => {
         needRecord: step.needRecord,
         status: step.status,
         remark: step.remark || null,
-        productMaterialIds: step.productMaterialIds,
       })),
     );
     EMessage.success('工序顺序和规则快照已保存');

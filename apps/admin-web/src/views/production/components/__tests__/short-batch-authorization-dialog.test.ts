@@ -20,6 +20,8 @@ describe('ShortBatchAuthorizationDialog', () => {
             {
               demandId: '10',
               itemId: '20',
+              materialVariantId: 'mv-20',
+              materialVariantCode: 'M-001-v1-A',
               itemCode: 'M-001',
               itemName: '物料 A',
               generationGroupKey: 'LOSSSUP:52',
@@ -168,6 +170,8 @@ describe('ShortBatchAuthorizationDialog', () => {
             {
               demandId: '12',
               itemId: '20',
+              materialVariantId: 'mv-20',
+              materialVariantCode: 'M-001-v1-A',
               itemCode: 'M-001',
               itemName: '物料 A',
               generationGroupKey: 'LOSSSUP:52',

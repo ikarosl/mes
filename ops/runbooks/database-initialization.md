@@ -1,6 +1,17 @@
 # 数据库首次初始化与演示数据
 
-API 发布脚本负责执行 migration，但不会在每次部署时创建或重置管理员账号。首次环境初始化在 API migration 成功后手工执行 system seed 和 `bootstrap-admin`。
+``` bash migration
+docker compose \
+  --project-name easy-mes \
+  --env-file /etc/easy-mes/deploy.env \
+  --env-file /opt/easy-mes/release.env \
+  --file /opt/easy-mes/compose.prod.yml \
+  run --rm --no-deps api \
+  node node_modules/@company/database/dist/migrate.js
+  
+```
+
+API 发布脚本负责执行 **migration**，但不会在每次部署时创建或重置管理员账号。首次环境初始化在 API migration 成功后手工执行 system seed 和 `bootstrap-admin`。
 
 ## System seed
 
@@ -46,7 +57,7 @@ unset ADMIN_PASSWORD ADMIN_USERNAME ADMIN_DISPLAY_NAME
 
 ## 可选演示数据
 
-演示或联调环境可以在 migration 和 system seed 后显式执行；正式生产数据库禁止执行：
+演示或联调环境可以在 **migration 和 system seed** 后显式执行；正式生产数据库禁止执行：
 
 ```bash
 read -rsp '请输入演示账号密码（至少 6 位）: ' DEMO_USER_PASSWORD

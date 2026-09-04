@@ -166,7 +166,7 @@
           }}
         </el-descriptions-item>
         <el-descriptions-item label="候选物料范围">
-          {{ materialPath.map((step) => step.stepName).join(' → ') || '待选择截止工序' }}
+          当前批次 BOM 的全部基础物料（版本由管理员逐行选择）
         </el-descriptions-item>
         <el-descriptions-item
           label="正常目标变化"
@@ -176,28 +176,6 @@
         </el-descriptions-item>
       </el-descriptions>
       <template v-if="supplementStage === 'edit'">
-        <el-form label-position="top">
-          <el-form-item
-            label="候选物料截止工序"
-            required
-          >
-            <el-select
-              v-model="materialEndStepRecordId"
-              placeholder="请选择实际需要重制到的最后一道工序"
-              @change="() => loadSupplementCandidates()"
-            >
-              <el-option
-                v-for="step in materialEndOptions"
-                :key="step.stepRecordId"
-                :label="`${step.stepOrder}. ${step.stepName}`"
-                :value="step.stepRecordId"
-              />
-            </el-select>
-            <div class="field-tip">
-              系统只推荐首工序至该工序使用的候选物料，补料数量由管理员填写；补产上限数量仍从首工序逐道放行到异常上报工序。
-            </div>
-          </el-form-item>
-        </el-form>
         <el-alert
           class="dialog-tip"
           type="info"
@@ -224,7 +202,7 @@
           </el-table-column>
           <el-table-column
             prop="candidate.itemCode"
-            label="物料编码"
+            label="基础物料编码"
             min-width="130"
           />
           <el-table-column
@@ -232,6 +210,26 @@
             label="物料名称"
             min-width="150"
           />
+          <el-table-column
+            label="补料版本"
+            min-width="220"
+          >
+            <template #default="{ row }">
+              <el-select
+                v-model="row.materialVariantId"
+                :disabled="!row.selected"
+                filterable
+                placeholder="选择启用版本"
+              >
+                <el-option
+                  v-for="variant in row.candidate.variants"
+                  :key="variant.id"
+                  :label="variant.variantCode"
+                  :value="variant.id"
+                />
+              </el-select>
+            </template>
+          </el-table-column>
           <el-table-column
             prop="candidate.normalDemandQuantity"
             label="原需求"
@@ -292,9 +290,6 @@
           :column="2"
           border
         >
-          <el-descriptions-item label="候选物料截止工序">
-            {{ stagedSupplement.materialEndStepLabel }}
-          </el-descriptions-item>
           <el-descriptions-item label="需求物料种类">
             {{ stagedSupplement.lines.length }} 种
           </el-descriptions-item>
@@ -315,6 +310,11 @@
             prop="itemName"
             label="物料名称"
             min-width="150"
+          />
+          <el-table-column
+            prop="materialVariantCode"
+            label="补料版本"
+            min-width="200"
           />
           <el-table-column
             label="补料数量"
@@ -467,14 +467,10 @@ const props = withDefaults(
     unit?: string;
     sourceStep: BatchStepExecutionRecordItem;
     routeSteps: BatchStepExecutionRecordItem[];
-    candidateLoader: (
-      dispositionId: string,
-      materialEndStepRecordId: string,
-    ) => Promise<ProductionSupplementCandidateItem[]>;
+    candidateLoader: (dispositionId: string) => Promise<ProductionSupplementCandidateItem[]>;
     planLoader: (dispositionId: string) => Promise<ProductionScrapSupplementPlanItem | null>;
     planSaver: (
       disposition: BatchStepAbnormalDispositionItem,
-      materialEndStepRecordId: string,
       details: ApproveScrapSupplementLinePayload[],
       remark: string,
       planVersion: number | null,
@@ -509,13 +505,13 @@ const supplementConfirming = ref(false);
 const supplementError = ref('');
 const supplementRemark = ref('');
 const supplementDisposition = ref<BatchStepAbnormalDispositionItem | null>(null);
-const materialEndStepRecordId = ref('');
 const supplementStage = ref<'edit' | 'review'>('edit');
 const stagedSupplement = ref<{
-  materialEndStepRecordId: string;
-  materialEndStepLabel: string;
   lines: Array<{
     originalDemandId: string;
+    requirementBasisId: string;
+    materialVariantId: string;
+    materialVariantCode: string;
     itemCode: string;
     itemName: string;
     quantity: number;
@@ -527,7 +523,12 @@ const persistedPlan = ref<ProductionScrapSupplementPlanItem | null>(null);
 const supplementIntentStatus = ref<IdempotentIntentStatus>('idle');
 let supplementRequestSerial = 0;
 const supplementRows = ref<
-  Array<{ candidate: ProductionSupplementCandidateItem; selected: boolean; quantity: number }>
+  Array<{
+    candidate: ProductionSupplementCandidateItem;
+    materialVariantId: string;
+    selected: boolean;
+    quantity: number;
+  }>
 >([]);
 
 const sourceQuantity = (item: BatchStepAbnormalDispositionItem): string =>
@@ -537,23 +538,6 @@ const supplementPath = computed(() =>
     .filter((step) => step.stepOrder <= props.sourceStep.stepOrder)
     .sort((left, right) => left.stepOrder - right.stepOrder),
 );
-const materialEndOptions = computed(() => {
-  const disposition = supplementDisposition.value;
-  if (!disposition) return [];
-  return [...props.routeSteps]
-    .filter((step) =>
-      disposition.abnormalOrigin === 'previous_step'
-        ? step.stepOrder < props.sourceStep.stepOrder
-        : step.stepOrder <= props.sourceStep.stepOrder,
-    )
-    .sort((left, right) => left.stepOrder - right.stepOrder);
-});
-const materialPath = computed(() => {
-  const end = materialEndOptions.value.find(
-    (step) => step.stepRecordId === materialEndStepRecordId.value,
-  );
-  return end ? materialEndOptions.value.filter((step) => step.stepOrder <= end.stepOrder) : [];
-});
 const supplementTargetImpact = computed(() => {
   if (!supplementDisposition.value) return '—';
   const quantity = sourceQuantity(supplementDisposition.value);
@@ -581,9 +565,12 @@ const canStageSupplement = computed(
     !supplementLoading.value &&
     !supplementSaving.value &&
     Boolean(supplementDisposition.value) &&
-    Boolean(materialEndStepRecordId.value) &&
     supplementRows.value.some(
-      (row) => row.selected && Number.isInteger(row.quantity) && row.quantity > 0,
+      (row) =>
+        row.selected &&
+        row.candidate.variants.some((variant) => variant.id === row.materialVariantId) &&
+        Number.isInteger(row.quantity) &&
+        row.quantity > 0,
     ),
 );
 const supplementIntentMessage = computed(() => {
@@ -613,36 +600,19 @@ const openSupplement = async (item: BatchStepAbnormalDispositionItem) => {
   stagedSupplement.value = null;
   persistedPlan.value = null;
   supplementVisible.value = true;
-  const allowedEnds = [...props.routeSteps]
-    .filter((step) =>
-      item.abnormalOrigin === 'previous_step'
-        ? step.stepOrder < props.sourceStep.stepOrder
-        : step.stepOrder <= props.sourceStep.stepOrder,
-    )
-    .sort((left, right) => left.stepOrder - right.stepOrder);
-  materialEndStepRecordId.value = allowedEnds.at(-1)?.stepRecordId ?? '';
-  if (!materialEndStepRecordId.value) {
-    supplementError.value = '前置异常没有可选的前置截止工序，请先核对异常来源。';
-    return;
-  }
   supplementLoading.value = true;
   try {
     const plan = await props.planLoader(item.dispositionId);
     if (plan?.status === 'draft') {
       persistedPlan.value = plan;
-      materialEndStepRecordId.value = plan.materialEndStepRecordId;
       supplementRemark.value = plan.remark ?? '';
       await loadSupplementCandidates(plan);
-      const endStep = allowedEnds.find(
-        (step) => step.stepRecordId === plan.materialEndStepRecordId,
-      );
       stagedSupplement.value = {
-        materialEndStepRecordId: plan.materialEndStepRecordId,
-        materialEndStepLabel: endStep
-          ? `${endStep.stepOrder}. ${endStep.stepName}`
-          : plan.materialEndStepRecordId,
         lines: plan.lines.map((line) => ({
           originalDemandId: line.originalDemandId,
+          requirementBasisId: line.requirementBasisId,
+          materialVariantId: line.materialVariantId,
+          materialVariantCode: line.materialVariantCode,
           itemCode: line.itemCode,
           itemName: line.itemName,
           quantity: Number(line.plannedQuantity),
@@ -663,30 +633,36 @@ const openSupplement = async (item: BatchStepAbnormalDispositionItem) => {
 };
 const loadSupplementCandidates = async (restoredPlan?: ProductionScrapSupplementPlanItem) => {
   const item = supplementDisposition.value;
-  const materialEndId = materialEndStepRecordId.value;
-  if (!item || !materialEndId) return;
+  if (!item) return;
   const requestSerial = ++supplementRequestSerial;
   supplementLoading.value = true;
   supplementRows.value = [];
   supplementError.value = '';
   try {
-    const candidates = await props.candidateLoader(item.dispositionId, materialEndId);
+    const candidates = await props.candidateLoader(item.dispositionId);
     if (
       requestSerial !== supplementRequestSerial ||
-      supplementDisposition.value?.dispositionId !== item.dispositionId ||
-      materialEndStepRecordId.value !== materialEndId
+      supplementDisposition.value?.dispositionId !== item.dispositionId
     )
       return;
-    const restored = new Map(
-      (restoredPlan?.lines ?? []).map((line) => [line.originalDemandId, line.plannedQuantity]),
+    const restoredByDemandId = new Map(
+      (restoredPlan?.lines ?? []).map((line) => [line.originalDemandId, line]),
     );
-    supplementRows.value = candidates.map((candidate) => ({
-      candidate,
-      selected: restored.has(candidate.originalDemandId),
-      quantity: restored.has(candidate.originalDemandId)
-        ? Number(restored.get(candidate.originalDemandId))
-        : 1,
-    }));
+    supplementRows.value = candidates.map((candidate) => {
+      const restored = restoredByDemandId.get(candidate.originalDemandId);
+      const restoredVariantId = restored?.materialVariantId;
+      const hasRestoredVariant = Boolean(
+        restoredVariantId && candidate.variants.some((variant) => variant.id === restoredVariantId),
+      );
+      return {
+        candidate,
+        // Restore only an explicitly saved draft selection; a new row must not recommend
+        // the original demand's version on the operator's behalf.
+        materialVariantId: hasRestoredVariant ? restoredVariantId! : '',
+        selected: Boolean(restored),
+        quantity: restored ? Number(restored.plannedQuantity) : 1,
+      };
+    });
   } catch {
     supplementError.value = '补料候选加载失败，请关闭后重试。';
   } finally {
@@ -695,14 +671,17 @@ const loadSupplementCandidates = async (restoredPlan?: ProductionScrapSupplement
 };
 const stageSupplement = async () => {
   if (!canStageSupplement.value) return;
-  const endStep = materialEndOptions.value.find(
-    (step) => step.stepRecordId === materialEndStepRecordId.value,
-  );
-  if (!endStep) return;
   const details = supplementRows.value
-    .filter((row) => row.selected && row.quantity > 0)
+    .filter(
+      (row) =>
+        row.selected &&
+        row.candidate.variants.some((variant) => variant.id === row.materialVariantId) &&
+        row.quantity > 0,
+    )
     .map((row) => ({
       originalDemandId: row.candidate.originalDemandId,
+      requirementBasisId: row.candidate.requirementBasisId,
+      materialVariantId: row.materialVariantId,
       supplementQuantity: row.quantity,
     }));
   supplementSaving.value = true;
@@ -710,17 +689,17 @@ const stageSupplement = async () => {
   try {
     const plan = await props.planSaver(
       supplementDisposition.value!,
-      materialEndStepRecordId.value,
       details,
       supplementRemark.value,
       persistedPlan.value?.version ?? null,
     );
     persistedPlan.value = plan;
     stagedSupplement.value = {
-      materialEndStepRecordId: plan.materialEndStepRecordId,
-      materialEndStepLabel: `${endStep.stepOrder}. ${endStep.stepName}`,
       lines: plan.lines.map((line) => ({
         originalDemandId: line.originalDemandId,
+        requirementBasisId: line.requirementBasisId,
+        materialVariantId: line.materialVariantId,
+        materialVariantCode: line.materialVariantCode,
         itemCode: line.itemCode,
         itemName: line.itemName,
         quantity: Number(line.plannedQuantity),

@@ -4,7 +4,7 @@
 
 ## 3.11 跨模块引用说明
 
-本章引用的 `users` 由 [Identity](../../../identity/docs/database.md) 定义，`process_routes`、`process_steps`、`technical_files` 由 [Product](../../../product/docs/database.md) 定义。报工事实使用[生产执行、报工、追溯与质量边界](execution-traceability-quality.md)定义的 `batch_step_reports`；工序异常审批使用 `batch_step_abnormal_dispositions`，不得把异常审批状态写入 `batch_step_records.status`。异常处置、最小返工、工序报废补料及全部补料领用后的路线补产已经落地；`quality_check_order` 和 `quality_check_detail` 仍未定稿，不得提前创建。
+本章引用的 `users` 由 [Identity](../../../identity/docs/database.md) 定义，`process_routes`、`process_steps`、`technical_files` 由 [Product](../../../product/docs/database.md) 定义。物料精确版本只通过 Product 的 `MaterialVariantQuery` 公开能力读取，Production 不得直接查询 `material_variants`。报工事实使用[生产执行、报工、追溯与质量边界](execution-traceability-quality.md)定义的 `batch_step_reports`；工序异常审批使用 `batch_step_abnormal_dispositions`，不得把异常审批状态写入 `batch_step_records.status`。异常处置、最小返工、工序报废补料及全部补料领用后的路线补产已经落地；`quality_check_order` 和 `quality_check_detail` 仍未定稿，不得提前创建。
 
 跨模块写操作必须由应用服务在同一事务内维护组合外键、快照和操作日志，Controller 不得直接拼接 SQL 修改多张事实表。
 
@@ -57,6 +57,7 @@
 - `inventory_transaction.reference_detail_id` 应指向 `outbound_detail.id`。
 - 一张 `outbound_order` 可以有多条 `outbound_detail`。
 - `outbound_order.production_batch_id` 表示本次出库服务哪个生产批次。
+- `outbound_detail` 同时保存 `item_id` 与 `material_variant_id`，并由 demand/allocation/batch 组合外键阻止跨版本出库。
 
 ---
 
@@ -69,14 +70,15 @@
 
 说明：
 
-- 物料采购入库、半成品入库、成品入库都走 `inbound_order` + `inbound_detail`。
+- 当前正式范围仅支持 `source_type = purchased` 的外购物料采购入库，统一走 `inbound_order` + `inbound_detail`；自产/半成品/成品入库不在本期能力内。
 - `inventory_transaction.reference_detail_id` 应指向 `inbound_detail.id`。
+- 采购入库创建命令只能从 Product 公共能力取得启用版本；入库明细、库存批次和流水必须保存同一 `material_variant_id`。
 
 ---
 
 ### 3.12.5 半自动报废补料边界（部分已确认）
 
-已确认补料采用管理员半自动决策：系统只给出候选物料，管理员选择物料并填写数量；系统不得根据工序异常数量或 BOM 自动推算补料数量。补产从路线首工序重新投产，候选物料则只汇总首工序至管理员确认的 `material_end_step_record_id`。编辑和复核阶段先写入不可分配的 `production_scrap_supplement_plan/_line`；最终确认事务才把方案固化为 `production_item_demand`，不再设置与正式需求重复的补料明细表。
+已确认补料采用管理员半自动决策：系统只给出当前批次完整 BOM 基础下的启用版本候选，管理员按基础行明确选择精确 `material_variant_id` 并填写数量；系统不得根据工序异常数量或 BOM 自动推算补料数量，也不再选择物料截止工序。补产从路线首工序重新投产。编辑和复核阶段先写入不可分配的 `production_scrap_supplement_plan/_line`；最终确认事务才把方案固化为 `production_item_demand`，不再设置与正式需求重复的补料明细表。
 
 补料不得改写原需求事实。工序报废批准后新增需求使用以下字段：
 
@@ -85,6 +87,8 @@
 | `demand_type`      | `scrap_supplement` |
 | `parent_demand_id` | 原始需求 ID |
 | `supplement_id`    | 补料单 ID   |
+| `requirement_basis_id` | 批次冻结的 BOM 基础 ID |
+| `material_variant_id` | 管理员选择的精确物料版本 ID |
 | `need_number`      | 补料数量    |
 
 说明：
@@ -93,7 +97,7 @@
 - 目标链路为：异常报工 → 报废事实与补产授权 → 补料单 → 补料需求 → 分配 → 出库齐套 → 授权可执行。
 - 补料物料数量不直接形成产品报工额度。批准时已把报废数量固化到 `batch_step_scrap_reproduction_authorization.authorized_quantity`；对应补料单的全部需求完成确认领料后改为 `fulfilled`，该授权才进入路线计算。分配、待出库或部分出库均不可执行。
 - 来源工序不能直接增加可报量。首工序先获得新增投入量；各上游工序形成新增正常产出后，额度才通过 `effective_normal` 逐道向下放行。报工校验只读跨表派生结果，不修改库存或需求事实。当前不追踪某次补报逐笔消费哪张补料单；未来如需部分激活、指定来源消费、半成品重入或撤销已激活额度，再评审独立消费/重入事实和并发规则。
-- `production_scrap_supplement_plan/_line` 只归 Production 模块所有，草稿不能被仓库分配或出库；`production_material_supplement`、工序报废、补产授权和正式需求之间使用批次、工序、BOM 明细、物料和原始需求组合外键保持一致；只允许 Production 模块在最终批准工序报废补料事务中写入正式来源链路。
+- `production_scrap_supplement_plan/_line` 只归 Production 模块所有，草稿不能被仓库分配或出库；`production_material_supplement`、工序报废、补产授权和正式需求之间使用批次、BOM 基础、BOM 明细、基础物料、精确物料版本和原始需求组合外键保持一致；只允许 Production 模块在最终批准工序报废补料事务中写入正式来源链路。
 
 #### 3.12.5.1 生产领料损耗补料
 
@@ -107,13 +111,14 @@
 | `production_item_demand.demand_type` | `material_loss_supplement` |
 | `production_item_demand.parent_demand_id` | 来源链路的原始正常需求 ID |
 | `production_item_demand.supplement_id` | 损耗补料单 ID |
+| `production_item_demand.material_variant_id` | 来源分配行锁定的精确物料版本 ID |
 | `production_item_demand.need_number` | 已确认 `item_scrap.scrap_number` |
 
 说明：
 
 - 目标链路为：现场申报领料损耗 → 管理员确认 `item_scrap` → 损耗补料单 → 单条损耗补料需求 → 分配 → 确认领料 → 补料单 `fulfilled`。
 - 确认 `production_consumed` 损耗时不得再次扣库存；库存已经由原领料出库流水扣减。损耗记录用于物料去向、责任和后续补料追溯。
-- 损耗补料不创建 `batch_step_scrap_records` 或 `batch_step_scrap_reproduction_authorization`，不增加 `authorized_quantity`，也不改变任一工序的产品可报上限。现场没有替代物料时由物理条件阻止生产，系统不通过伪造新产品额度表达物料短缺。
+- 损耗补料不创建 `batch_step_scrap_records` 或 `batch_step_scrap_reproduction_authorization`，不增加 `authorized_quantity`，也不改变任一工序的产品可报上限；需求仍锁定来源分配的精确物料版本。现场没有替代物料时由物理条件阻止生产，系统不通过伪造新产品额度表达物料短缺。
 - 普通退料不是损耗，不得创建虚假 `production_consumed` 报废记录获得补料。`return_after_outbound` 退料后报废仍保持未开放。
 - Production 模块只允许在管理员确认生产领料损耗的同一事务中写入 `item_scrap` 终态、`production_material_supplement(source_type = 'material_loss')`、单条 `material_loss_supplement` 需求、批次 `material_plan_version/version`、成功审计和幂等结果。需求新增及批次版本推进必须由事务内需求计划写入器共同完成。
 
@@ -180,14 +185,17 @@
 - 创建生产批次时，以工单产品为准；未指定路线时读取产品默认路线，指定路线时允许使用同产品的非默认路线。
 - 生产批次不得使用其他产品的路线或未启用路线。
 - 批次工序必须由后端查询所选路线的有效 `process_route_steps` 后按顺序自动生成，不接受前端提交任意 `route_step_id` 集合。
+- 路线只描述工序顺序和执行快照，不绑定 `product_materials`；生产物料需求只能从批次冻结的完整 BOM 基础按行确认，不得恢复 route-step BOM 语义。
 - 上述读取、校验、批次创建和批次工序生成必须处于同一应用事务。
 
 ### 3.12.9 需求幂等与报废补料候选条件
 
-- 正常需求幂等键为 `NORMAL:{production_batch_id}:{product_material_id}`。
+- 正常需求幂等键为 `NORMAL:{production_batch_id}:{requirement_basis_id}:{material_variant_id}`。
 - 工序报废补料需求幂等键为 `SCRAPSUP:{supplement_id}:{parent_demand_id}`。
 - 人工追加候选内部键为 `ADDITIONAL:{production_batch_id}:{business_action_no}:{product_material_id}`。
 - 相同幂等键重复提交返回既有需求，不新增记录、不修改原需求数量。
+- 正常需求配置、人工追加、补料、采购入库等新增写入均必须通过 `IdempotencyExecutor`；写事务内重新读取并锁定批次、BOM 基础和 Product 公共启用版本，不能依赖事务外预检。
+- 需求管理查询必须返回全部需求类型和取消历史；具体需求行提供人工追加入口，历史停用版本使用需求快照展示。
 - 一条已确认报废可以为不同 BOM 行生成多条补料需求，但报废、原需求和补料需求必须属于同一生产批次。
 
 ### 3.12.10 库存分配并发行锁
@@ -199,10 +207,11 @@
 1. 锁定目标 `item_batch` 行；多批次操作按稳定的批次 ID 升序加锁，避免死锁。
 2. 在锁内从 `inventory_transaction` 重新汇总账面可用库存。
 3. 在锁内汇总有效、未释放、未取消的生产分配占用。
-4. 计算最新可分配数量并校验本次分配。
-5. 写入 `production_item_allocation`。
-6. 更新必要的业务状态并写操作日志。
-7. 提交事务后再向调用方返回成功。
+4. 校验 demand、allocation、item_batch 的 `material_variant_id` 完全一致；分配只履约既有需求选择，不在此处重新选择或回落默认版本。
+5. 计算最新可分配数量并校验本次分配。
+6. 写入 `production_item_allocation`。
+7. 更新必要的业务状态并写操作日志。
+8. 提交事务后再向调用方返回成功。
 
 单库存批次的行锁查询：
 
@@ -231,7 +240,7 @@ SELECT id FROM item_batch WHERE id = :batch_id FOR UPDATE;
 
 - 待检 → 可用：一条 `stock_status = pending_inspection` 的负数流水 + 一条 `stock_status = available` 的正数流水。
 - 两条流水共享相同 `transaction_group_key`，使用不同且分别唯一的 `idempotency_key`。
-- 两条流水具有相同 `item_id`、`batch_id`、单位和数量绝对值。
+- 两条流水具有相同 `item_id`、`material_variant_id`、`batch_id`、单位和数量绝对值。
 - `reference_type` 和 `reference_detail_id` 必须指向未来定稿的质量放行事实；当前不得预设为尚不存在的 `inspection_records`。
 - 状态转换流水必须填写 `transaction_group_key`；该字段建立普通索引用于成对核查，两条流水仍分别依靠 `idempotency_key` 防止重复。
 - 质量结论、检验人员和报告只保存在未来的质量模型，库存流水只记录数量和状态维度。
@@ -255,6 +264,12 @@ product_categories
 products
   ↓
 product_materials
+  ↓（批次配置时冻结）
+production_material_requirement_basis
+  ↓（管理员逐行选择精确版本）
+production_item_demand
+  ↓
+material_variants
 
 work_orders
   ↓
@@ -322,9 +337,10 @@ inventory_transaction
 
 主要优点：
 
-- 物料、半成品、成品统一库存模型。
+- 基础物料与精确版本分层，需求和物流事实沿组合外键保持版本一致。
+- 物料、成品统一库存模型；半成品不再是独立产品类型。
 - 生产批次和库存批次语义清晰，不互相混用。
-- 可支持半成品入库、成品入库、外购入库、委外入库。
+- 当前正式范围支持 `purchased` 外购物料采购入库；半成品不是独立产品类型，成品/委外等其他入库场景留待后续范围评审。
 - 可支持生产领料、退料、报废补料、盘点调整。
 - 主表不保存可随意覆盖的累计缓存字段，减少数据不一致风险。
 - 库存大流水查询已使用与流水同事务维护、可重建对账的批次级和物料级余额投影；需求使用同事务维护的剩余数量投影。投影不得替代事实表或获得独立业务写入口。

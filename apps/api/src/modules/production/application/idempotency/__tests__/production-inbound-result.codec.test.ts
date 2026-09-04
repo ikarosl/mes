@@ -25,6 +25,8 @@ const value = {
     {
       id: '2',
       itemId: '3',
+      materialVariantId: 'v3',
+      materialVariantCode: 'MAT-1-v1-A',
       itemCode: 'MAT-1',
       itemName: '物料一',
       itemBatchId: '4',

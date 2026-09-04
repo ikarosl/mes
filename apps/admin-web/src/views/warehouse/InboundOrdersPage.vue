@@ -186,6 +186,7 @@
                 v-model="row.itemId"
                 filterable
                 placeholder="选择有效物料"
+                @change="materialChanged(row)"
                 ><el-option
                   v-for="option in materialOptions"
                   :key="option.id"
@@ -197,6 +198,29 @@
                 class="invalid-text"
               >
                 已失效，请重新选择
+              </div></template
+            ></el-table-column
+          ><el-table-column
+            label="物料版本"
+            min-width="220"
+            ><template #default="{ row }"
+              ><el-select
+                v-model="row.materialVariantId"
+                filterable
+                :loading="variantLoading(row.itemId)"
+                :disabled="!row.itemId"
+                placeholder="选择精确版本"
+                ><el-option
+                  v-for="variant in variantsOf(row.itemId)"
+                  :key="variant.id"
+                  :label="variant.variantCode"
+                  :value="variant.id"
+              /></el-select>
+              <div
+                v-if="row.materialVariantId && !variantById(row.itemId, row.materialVariantId)"
+                class="invalid-text"
+              >
+                版本已失效，请重新选择
               </div></template
             ></el-table-column
           ><el-table-column
@@ -314,9 +338,12 @@
           ><el-table :data="inbounds.detail.value.details"
             ><el-table-column
               label="物料"
-              min-width="190"
+              min-width="280"
               ><template #default="{ row }"
-                >{{ row.itemCode }} · {{ row.itemName }}</template
+                ><div>{{ row.itemCode }} · {{ row.itemName }}</div>
+                <div class="secondary-cell">
+                  版本 {{ row.materialVariantCode || '未记录版本' }}
+                </div></template
               ></el-table-column
             ><el-table-column
               prop="batchCode"
@@ -351,6 +378,7 @@ import { computed, onActivated, onMounted, reactive, ref } from 'vue';
 import { Delete, Plus, Refresh } from '@element-plus/icons-vue';
 import type {
   CreatePurchaseInboundPayload,
+  MaterialVariantItem,
   ProductOption,
   PurchaseInboundOrderItem,
   PurchaseInboundOrderQuery,
@@ -372,6 +400,8 @@ const createVisible = ref(false),
   detailVisible = ref(false),
   creating = ref(false),
   options = ref<ProductOption[]>([]);
+const variantsByMaterial = ref(new Map<string, MaterialVariantItem[]>());
+const loadingVariantMaterialIds = ref(new Set<string>());
 const form = reactive<CreatePurchaseInboundPayload>({
   inboundNo: null,
   provider: null,
@@ -380,12 +410,36 @@ const form = reactive<CreatePurchaseInboundPayload>({
 });
 const materialOptions = computed(() => options.value.filter((x) => x.itemKind === 'material'));
 const optionById = computed(() => new Map(materialOptions.value.map((x) => [x.id, x])));
+const variantsOf = (materialId: string): MaterialVariantItem[] =>
+  (variantsByMaterial.value.get(materialId) ?? []).filter((item) => item.status === 1);
+const variantById = (materialId: string, variantId: string): MaterialVariantItem | undefined =>
+  variantsOf(materialId).find((item) => item.id === variantId);
+const variantLoading = (materialId: string): boolean =>
+  loadingVariantMaterialIds.value.has(materialId);
+const materialChanged = (row: CreatePurchaseInboundPayload['details'][number]): void => {
+  row.materialVariantId = '';
+  if (row.itemId) void loadVariants(row.itemId);
+};
+const loadVariants = async (materialId: string): Promise<void> => {
+  if (!materialId || variantsByMaterial.value.has(materialId)) return;
+  loadingVariantMaterialIds.value = new Set(loadingVariantMaterialIds.value).add(materialId);
+  try {
+    const variants = await productApi.materialVariantsByMaterial(materialId);
+    variantsByMaterial.value = new Map(variantsByMaterial.value).set(materialId, variants);
+  } catch (error) {
+    EMessage.error(error, '物料版本候选加载失败');
+  } finally {
+    const next = new Set(loadingVariantMaterialIds.value);
+    next.delete(materialId);
+    loadingVariantMaterialIds.value = next;
+  }
+};
 const duplicateKeys = computed(() => {
   const seen = new Set<string>(),
     dupes = new Set<string>();
   for (const x of form.details) {
-    const key = `${x.itemId}:${x.batchCode.trim()}`;
-    if (x.itemId && x.batchCode.trim()) {
+    const key = `${x.materialVariantId}:${x.batchCode.trim()}`;
+    if (x.materialVariantId && x.batchCode.trim()) {
       if (seen.has(key)) dupes.add(key);
       seen.add(key);
     }
@@ -399,6 +453,8 @@ const canCreate = computed(
     form.details.every(
       (x) =>
         optionById.value.has(x.itemId) &&
+        Boolean(x.materialVariantId) &&
+        Boolean(variantById(x.itemId, x.materialVariantId)) &&
         x.batchCode.trim() &&
         Number.isInteger(x.inboundQuantity) &&
         x.inboundQuantity > 0,
@@ -430,6 +486,7 @@ const handlePageChange = (value: number) => {
 const openCreate = async () => {
   resetForm();
   createVisible.value = true;
+  variantsByMaterial.value = new Map();
   try {
     options.value = await productApi.productOptions();
   } catch (e) {
@@ -437,7 +494,13 @@ const openCreate = async () => {
   }
 };
 const addLine = () =>
-  form.details.push({ itemId: '', batchCode: '', inboundQuantity: 1, remark: null });
+  form.details.push({
+    itemId: '',
+    materialVariantId: '',
+    batchCode: '',
+    inboundQuantity: 1,
+    remark: null,
+  });
 const removeLine = (i: number) => form.details.splice(i, 1);
 const submitCreate = async () => {
   if (!canCreate.value || creating.value) return;

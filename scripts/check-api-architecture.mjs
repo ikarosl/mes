@@ -60,6 +60,8 @@ const knownIdempotencyScopes = [
   'production.abnormal.scrap-supplement-plan.confirm.v1',
   'production.material-loss.create.v1',
   'production.material-loss.confirm.v1',
+  'production.material-demands.configure.v1',
+  'production.material-demands.add-manual.v1',
 ];
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const idempotencyScopeLiteralPattern = new RegExp(
@@ -132,7 +134,7 @@ const stripComments = (source) =>
 const identityOwnedTables =
   'departments|users|roles|permissions|user_roles|role_permissions|refresh_tokens';
 const productOwnedTables =
-  'product_categories|products|product_materials|technical_files|process_steps|process_routes|process_route_steps';
+  'product_categories|products|product_materials|material_variants|technical_files|process_steps|process_routes|process_route_steps';
 
 /** 检查定义：directory（相对 root）+ pattern + message；可选 exclude / fileMatch。 */
 const checks = [
@@ -170,6 +172,7 @@ const checks = [
       'apps/api/src/modules/production/application/production-abnormal.service.ts',
       'apps/api/src/modules/production/application/production-supplement.service.ts',
       'apps/api/src/modules/production/application/production-inventory.service.ts',
+      'apps/api/src/modules/production/application/production-material-demand.service.ts',
       'apps/api/src/modules/production/presentation/http/production.controller.ts',
       'apps/api/src/modules/production/presentation/http/production-material.controller.ts',
       'apps/api/src/modules/production/presentation/http/production-inbound.controller.ts',
@@ -177,6 +180,7 @@ const checks = [
       'apps/api/src/modules/production/presentation/http/production-abnormal.controller.ts',
       'apps/api/src/modules/production/presentation/http/production-supplement.controller.ts',
       'apps/api/src/modules/production/presentation/http/warehouse.controller.ts',
+      'apps/api/src/modules/production/presentation/http/production-material-demand.controller.ts',
     ],
   },
   {
@@ -192,6 +196,7 @@ const checks = [
       'apps/api/src/modules/production/application/production-abnormal.service.ts',
       'apps/api/src/modules/production/application/production-supplement.service.ts',
       'apps/api/src/modules/production/application/production-inventory.service.ts',
+      'apps/api/src/modules/production/application/production-material-demand.service.ts',
     ],
     fileMatch: isApplicationLayerFile,
   },

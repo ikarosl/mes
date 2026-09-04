@@ -130,6 +130,11 @@ const productMenus = [
     path: '/product/process-routes',
     permission: PERMISSIONS.product.routes.view,
   },
+  {
+    title: '物料版本',
+    path: '/product/material-variants',
+    permission: PERMISSIONS.product.materialVariants.view,
+  },
 ];
 const productItems = computed(() => productMenus.filter((item) => auth.can(item.permission)));
 
@@ -145,6 +150,11 @@ const productionMenus = [
     title: '生产报工记录',
     path: '/production/execution-records',
     permission: PERMISSIONS.production.tasks.view,
+  },
+  {
+    title: '物料需求管理',
+    path: '/production/material-demands',
+    permission: PERMISSIONS.production.materialDemands.view,
   },
   {
     title: '生产追溯',

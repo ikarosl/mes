@@ -27,9 +27,9 @@ type ConnectionOptions = {
 
 /**
  * 生产报废补料方案链路的 MySQL 迁移验证：
- *  - fresh：空库全量 up 到最新 schema；
- *  - 配对：报废补料及其约束修复 migration 的 down 可逆执行并再次 up（空库 guard 必须放行）；
- *  - upgrade：已有旧 schema 与旧数据时，相关 up 能搬迁数据且不丢数据、不失败。
+ *  - historical：在物料版本迁移之前验证报废补料迁移的历史语义与数据升级；
+ *  - fresh：空库全量 up 到最新 schema，并验证物料版本迁移的 up/down guard；
+ *  - reset：新物料版本 migration 不承诺旧数据升级，开发数据库允许重置。
  * 临时数据库一律使用 `*_test` 命名并在用例结束/套件结束时删除，绝不触碰其他库。
  */
 describeMysql('Production scrap supplement migrations', () => {
@@ -72,8 +72,14 @@ describeMysql('Production scrap supplement migrations', () => {
     try {
       await applyMigrations(connection, await upMigrations());
       await expectNewSchema(connection);
+      await expectLatestVariantSchema(connection);
 
-      // 配对验证：逆序执行相关 down（空库 guard 必须放行），schema 回到旧形状。
+      // 新迁移先回滚；它们只允许在没有新事实数据时回滚。
+      await applyMigrations(connection, [
+        '202609040002-production-material-variant-demand.down.sql',
+        '202609040001-material-variant-foundation.down.sql',
+      ]);
+      // 历史报废补料迁移再逆序执行，schema 回到更早的旧形状。
       await applyMigrations(connection, [
         `${SCRAP_REPLENISHMENT_PREFIXES[3]}-material-loss-demand-type-constraint.down.sql`,
         `${SCRAP_REPLENISHMENT_PREFIXES[2]}-production-scrap-supplement-plan.down.sql`,
@@ -84,7 +90,12 @@ describeMysql('Production scrap supplement migrations', () => {
 
       // 再次 up：验证 down/up 配对闭环后可重新升级到新形状。
       await applyMigrations(connection, await upMigrationsFor(SCRAP_REPLENISHMENT_PREFIXES));
+      await applyMigrations(connection, [
+        '202609040001-material-variant-foundation.up.sql',
+        '202609040002-production-material-variant-demand.up.sql',
+      ]);
       await expectNewSchema(connection);
+      await expectLatestVariantSchema(connection);
     } finally {
       await connection.end();
       await dropTempDatabase(tempDb);
@@ -146,7 +157,7 @@ const upMigrationsBefore = async (prefix: string): Promise<string[]> => {
 
 const upMigrationsFrom = async (prefix: string): Promise<string[]> => {
   const names = await upMigrations();
-  return names.filter((name) => name.slice(0, 12) >= prefix);
+  return names.filter((name) => name.slice(0, 12) >= prefix && name.slice(0, 12) < '202609040001');
 };
 
 const tableExists = async (connection: Connection, table: string): Promise<boolean> => {
@@ -216,6 +227,58 @@ const expectNewSchema = async (connection: Connection): Promise<void> => {
   expect(
     await checkClause(connection, 'production_item_demand', 'chk_production_item_demand_type'),
   ).toContain('material_loss_supplement');
+};
+
+const expectLatestVariantSchema = async (connection: Connection): Promise<void> => {
+  for (const table of [
+    'material_variants',
+    'production_material_requirement_basis',
+    'production_manual_demand_addition',
+    'inventory_material_variant_balance',
+  ]) {
+    expect(await tableExists(connection, table)).toBe(true);
+  }
+  expect(await tableExists(connection, 'route_step_materials')).toBe(false);
+  for (const [table, column] of [
+    ['production_item_demand', 'requirement_basis_id'],
+    ['production_item_demand', 'material_variant_id'],
+    ['production_item_demand', 'material_variant_code_snapshot'],
+    ['item_batch', 'material_variant_id'],
+    ['item_batch', 'material_variant_code_snapshot'],
+    ['production_item_allocation', 'material_variant_id'],
+    ['outbound_detail', 'material_variant_id'],
+    ['inbound_detail', 'material_variant_id'],
+    ['return_detail', 'material_variant_id'],
+    ['item_scrap', 'material_variant_id'],
+    ['stock_check_detail', 'material_variant_id'],
+    ['inventory_transaction', 'material_variant_id'],
+    ['production_scrap_supplement_plan_line', 'requirement_basis_id'],
+    ['production_scrap_supplement_plan_line', 'material_variant_id'],
+  ] as const) {
+    expect(await columnExists(connection, table, column)).toBe(true);
+  }
+  expect(
+    await columnExists(
+      connection,
+      'production_scrap_supplement_plan',
+      'material_end_step_record_id',
+    ),
+  ).toBe(false);
+  expect(
+    await columnExists(
+      connection,
+      'batch_step_scrap_reproduction_authorization',
+      'material_end_step_record_id',
+    ),
+  ).toBe(false);
+  const [[triggerCount]] = await connection.query<(RowDataPacket & { count: number })[]>(
+    `SELECT COUNT(*) count FROM information_schema.triggers
+     WHERE trigger_schema=DATABASE() AND trigger_name IN
+       ('trg_products_reject_item_code_update','trg_material_variants_reject_identity_update',
+        'trg_item_batch_reject_material_identity_update','trg_inventory_transaction_update_variant_balance',
+        'trg_inventory_transaction_cleanup_variant_balance','trg_item_batch_move_variant_balance')`,
+  );
+  expect(Number(triggerCount?.count)).toBe(6);
 };
 
 const expectOldSchema = async (connection: Connection): Promise<void> => {

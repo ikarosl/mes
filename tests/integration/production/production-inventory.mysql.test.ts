@@ -262,7 +262,9 @@ type Fixture = {
   materialCategoryId: number;
   productId: number;
   materialId: number;
+  materialVariantId: number;
   productMaterialId: number;
+  requirementBasisId: number;
   workOrderId: number;
   productionBatchId: number;
   demandId: number;
@@ -293,6 +295,11 @@ async function createFixture(pool: Pool, actorId: number): Promise<Fixture> {
     "INSERT INTO products(item_code,product_name,category_id,unit,acquire_method) VALUES (?,?,?,'kg','purchased')",
     [`${token}-m`, '原料', materialCategoryId],
   );
+  const materialVariantId = await insert(
+    pool,
+    "INSERT INTO material_variants(material_product_id,major_version,minor_version,variant_code,created_by,updated_by) VALUES (?, 'v1','A',?,?,?)",
+    [materialId, `${token}-m-v1-A`, actorId, actorId],
+  );
   const productMaterialId = await insert(
     pool,
     "INSERT INTO product_materials(product_id,material_product_id,quantity_per_unit,unit,is_key_material,need_batch_record) VALUES (?,?,'1.0000','kg',1,1)",
@@ -308,15 +315,27 @@ async function createFixture(pool: Pool, actorId: number): Promise<Fixture> {
     "INSERT INTO production_batches(work_order_id,product_id,batch_no,planned_quantity,status) VALUES (?,?,?,'10.0000','material_outbound')",
     [workOrderId, productId, `${token}-batch`],
   );
+  const requirementBasisId = await insert(
+    pool,
+    `INSERT INTO production_material_requirement_basis
+      (production_batch_id,product_material_id,material_product_id,material_code_snapshot,material_name_snapshot,
+       unit_snapshot,quantity_per_unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,
+       planned_output_quantity_snapshot,required_number,created_by)
+     VALUES (?,?,?,?,'原料','kg','1.0000',1,1,'10.0000','10.0000',?)`,
+    [productionBatchId, productMaterialId, materialId, `${token}-m`, actorId],
+  );
   const demandId = await insert(
     pool,
-    "INSERT INTO production_item_demand(production_batch_id,product_material_id,item_id,item_code_snapshot,item_name_snapshot,quantity_per_unit_snapshot,unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,planned_output_quantity_snapshot,need_number,remaining_number,demand_type,generation_group_key,idempotency_key,business_status,created_by,updated_by) VALUES (?,?,?,?,?,'1.0000','kg',1,1,'10.0000','10.0000',10,'normal',?,?,'active',?,?)",
+    "INSERT INTO production_item_demand(production_batch_id,requirement_basis_id,product_material_id,item_id,material_variant_id,item_code_snapshot,item_name_snapshot,material_variant_code_snapshot,quantity_per_unit_snapshot,unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,planned_output_quantity_snapshot,need_number,remaining_number,demand_type,generation_group_key,idempotency_key,business_status,created_by,updated_by) VALUES (?,?,?,?,?,?,?,?,'1.0000','kg',1,1,'10.0000','10.0000',10,'normal',?,?,'active',?,?)",
     [
       productionBatchId,
+      requirementBasisId,
       productMaterialId,
       materialId,
+      materialVariantId,
       token + '-m',
       '原料',
+      `${token}-m-v1-A`,
       `NORMAL:${productionBatchId}`,
       `NORMAL:${productionBatchId}:${productMaterialId}`,
       actorId,
@@ -325,17 +344,26 @@ async function createFixture(pool: Pool, actorId: number): Promise<Fixture> {
   );
   const itemBatchId = await insert(
     pool,
-    "INSERT INTO item_batch(item_id,item_code_snapshot,product_name_snapshot,unit_snapshot,batch_code,source_type,created_by,updated_by) VALUES (?,?,?,'kg',?,'purchased',?,?)",
-    [materialId, `${token}-m`, '原料', `${token}-ib`, actorId, actorId],
+    "INSERT INTO item_batch(item_id,material_variant_id,item_code_snapshot,material_variant_code_snapshot,product_name_snapshot,unit_snapshot,batch_code,source_type,created_by,updated_by) VALUES (?,?,?,? ,?,'kg',?,'purchased',?,?)",
+    [
+      materialId,
+      materialVariantId,
+      `${token}-m`,
+      `${token}-m-v1-A`,
+      '原料',
+      `${token}-ib`,
+      actorId,
+      actorId,
+    ],
   );
   await pool.execute(
-    "INSERT INTO inventory_transaction(item_id,batch_id,transaction_type,quantity,unit_snapshot,stock_status,reference_type,reference_detail_id,idempotency_key,created_by) VALUES (?,?,'purchase_inbound','10.0000','kg','available','manual',0,?,?)",
-    [materialId, itemBatchId, `${token}-opening`, actorId],
+    "INSERT INTO inventory_transaction(item_id,material_variant_id,batch_id,transaction_type,quantity,unit_snapshot,stock_status,reference_type,reference_detail_id,idempotency_key,created_by) VALUES (?,?,?,'purchase_inbound','10.0000','kg','available','manual',0,?,?)",
+    [materialId, materialVariantId, itemBatchId, `${token}-opening`, actorId],
   );
   const allocationId = await insert(
     pool,
-    "INSERT INTO production_item_allocation(demand_id,production_batch_id,item_id,batch_id,assigned_number,unit_snapshot,created_by,updated_by) VALUES (?,?,?,?, '5.0000','kg',?,?)",
-    [demandId, productionBatchId, materialId, itemBatchId, actorId, actorId],
+    "INSERT INTO production_item_allocation(demand_id,production_batch_id,item_id,material_variant_id,batch_id,assigned_number,unit_snapshot,created_by,updated_by) VALUES (?,?,?,?,?,'5.0000','kg',?,?)",
+    [demandId, productionBatchId, materialId, materialVariantId, itemBatchId, actorId, actorId],
   );
   const outboundOrderId = await insert(
     pool,
@@ -344,12 +372,28 @@ async function createFixture(pool: Pool, actorId: number): Promise<Fixture> {
   );
   const outboundDetailId = await insert(
     pool,
-    "INSERT INTO outbound_detail(outbound_id,production_batch_id,demand_id,allocation_id,item_id,batch_id,outbound_number,unit_snapshot,created_by) VALUES (?,?,?,?,?,?,'5.0000','kg',?)",
-    [outboundOrderId, productionBatchId, demandId, allocationId, materialId, itemBatchId, actorId],
+    "INSERT INTO outbound_detail(outbound_id,production_batch_id,demand_id,allocation_id,item_id,material_variant_id,batch_id,outbound_number,unit_snapshot,created_by) VALUES (?,?,?,?,?,?,?,'5.0000','kg',?)",
+    [
+      outboundOrderId,
+      productionBatchId,
+      demandId,
+      allocationId,
+      materialId,
+      materialVariantId,
+      itemBatchId,
+      actorId,
+    ],
   );
   await pool.execute(
-    "INSERT INTO inventory_transaction(item_id,batch_id,transaction_type,quantity,unit_snapshot,stock_status,reference_type,reference_detail_id,idempotency_key,created_by) VALUES (?,?,'production_material_outbound','-5.0000','kg','available','outbound_detail',?,?,?)",
-    [materialId, itemBatchId, outboundDetailId, `${token}-outbound-ledger`, actorId],
+    "INSERT INTO inventory_transaction(item_id,material_variant_id,batch_id,transaction_type,quantity,unit_snapshot,stock_status,reference_type,reference_detail_id,idempotency_key,created_by) VALUES (?,?,?,'production_material_outbound','-5.0000','kg','available','outbound_detail',?,?,?)",
+    [
+      materialId,
+      materialVariantId,
+      itemBatchId,
+      outboundDetailId,
+      `${token}-outbound-ledger`,
+      actorId,
+    ],
   );
   return {
     token,
@@ -357,6 +401,8 @@ async function createFixture(pool: Pool, actorId: number): Promise<Fixture> {
     materialCategoryId,
     productId,
     materialId,
+    materialVariantId,
+    requirementBasisId,
     productMaterialId,
     workOrderId,
     productionBatchId,
@@ -416,9 +462,15 @@ async function cleanup(pool: Pool, fixture: Fixture) {
   await pool.execute('DELETE FROM production_item_allocation WHERE id=?', [fixture.allocationId]);
   await pool.execute('DELETE FROM production_item_demand WHERE id=?', [fixture.demandId]);
   await pool.execute('DELETE FROM item_batch WHERE id=?', [fixture.itemBatchId]);
+  await pool.execute('DELETE FROM production_material_requirement_basis WHERE id=?', [
+    fixture.requirementBasisId,
+  ]);
   await pool.execute('DELETE FROM production_batches WHERE id=?', [fixture.productionBatchId]);
   await pool.execute('DELETE FROM work_orders WHERE id=?', [fixture.workOrderId]);
   await pool.execute('DELETE FROM product_materials WHERE id=?', [fixture.productMaterialId]);
+  await pool.execute('DELETE FROM material_variants WHERE material_product_id=?', [
+    fixture.materialId,
+  ]);
   await pool.execute('DELETE FROM products WHERE id IN (?,?)', [
     fixture.productId,
     fixture.materialId,

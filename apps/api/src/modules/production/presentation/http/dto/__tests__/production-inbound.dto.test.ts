@@ -18,7 +18,7 @@ describe('CreatePurchaseInboundDto', () => {
   });
 
   it('accepts positive integers and rejects fractional inbound quantities', async () => {
-    const line = { itemId: '1', batchCode: 'B' };
+    const line = { itemId: '1', materialVariantId: 'v1', batchCode: 'B' };
     expect(
       await validate(
         plainToInstance(CreatePurchaseInboundDto, {

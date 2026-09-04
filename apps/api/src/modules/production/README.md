@@ -11,7 +11,15 @@
 
 ## 关键不变量
 
-生产任务创建与 Product BOM 首次锁定同事务；库存事实来自 `inventory_transaction`，需求事实来自 `production_item_demand`；可变单据使用 `version` 乐观锁，不可变执行事实不得更新。
+生产任务创建与 Product BOM 首次锁定同事务；库存事实来自 `inventory_transaction`，需求事实来自
+`production_item_demand`；可变单据使用 `version` 乐观锁，不可变执行事实不得更新。生产批次创建时
+只冻结 Product BOM 快照，不自动生成可执行需求；管理员必须按 BOM 行逐行明确选择启用的精确
+`material_variant_id` 和数量，最后一行确认后批次才进入 `material_pending`。人工补充按具体父需求
+写入，需求管理查询保留 normal、manual、补料等全部已生成需求及取消历史，停用版本仍从需求/物流快照展示。
+
+所有新增需求、补料、入库等命令均通过 `IdempotencyExecutor`；涉及新版本选择的写事务在事务内锁定
+并重新校验 Product 公共 BOM/启用版本。路线只表达执行顺序，不再提供 route-step BOM 绑定或按工序
+自动生成物料需求。
 
 详细流程见 [business-workflow.md](docs/business-workflow.md)，数据库设计见[数据库索引](docs/database/README.md)，范围边界见[全局产品范围](../../../../../docs/product-scope.md)。
 

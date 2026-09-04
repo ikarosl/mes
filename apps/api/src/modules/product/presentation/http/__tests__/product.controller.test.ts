@@ -165,6 +165,7 @@ describe('Product options cross-page authorization contract', () => {
       PERMISSIONS.production.orders.view,
       PERMISSIONS.production.tasks.view,
       PERMISSIONS.production.inbounds.view,
+      PERMISSIONS.product.materialVariants.view,
     ],
     processStepOptions: [PERMISSIONS.product.processes.view, PERMISSIONS.product.routes.view],
     routeOptions: [

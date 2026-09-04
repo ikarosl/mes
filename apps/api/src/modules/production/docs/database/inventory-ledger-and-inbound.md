@@ -4,6 +4,11 @@
 
 本章所有入库数量与库存流水数量均为整数；库存流水可正可负但不能为 `0`，入库数量最小为 `1`。所有持久化数量除原有值域约束外还必须满足整数 `CHECK`，不得舍入或截断小数后保存。
 
+物料的基础 `item_id` 与精确 `material_variant_id` 必须成对传播：`item_batch` 保存版本 ID 和版本
+编码快照；入库、出库、退料、报废、盘点明细及 `inventory_transaction` 均保存同一版本 ID，并以组合
+外键校验它与 `item_id`、库存批次、需求/分配的一致性。版本停用只阻止新的选择，不使已经形成的历史
+需求、库存批次或库存流水失效。库存汇总既可按基础物料聚合，也必须支持按精确版本对账。
+
 ## 3.3 库存批次与库存流水表
 
 ---
@@ -16,7 +21,9 @@
 | ---------------------------- | ----------------- | --------------------------------------- |
 | `id`                         | `BIGINT UNSIGNED` | 主键，库存批次 ID                       |
 | `item_id`                    | `BIGINT UNSIGNED` | 库存对象 ID，关联 `products.id`         |
+| `material_variant_id`        | `BIGINT UNSIGNED` | 物料精确版本 ID                         |
 | `item_code_snapshot`         | `VARCHAR(100)`    | 建批时库存对象编码快照                  |
+| `material_variant_code_snapshot` | `VARCHAR(180)` | 建批时物料版本编码快照                  |
 | `product_name_snapshot`      | `VARCHAR(200)`    | 建批时名称快照                          |
 | `unit_snapshot`              | `VARCHAR(20)`     | 建批时基础单位快照                      |
 | `batch_code`                 | `VARCHAR(100)`    | 库存批次号                              |
@@ -37,8 +44,9 @@
 - 外键：`FOREIGN KEY (source_work_order_id) REFERENCES work_orders(id)`
 - 外键：`FOREIGN KEY (source_production_batch_id) REFERENCES production_batches(id)`
 - 当两个来源字段同时存在时，使用组合外键 `(source_production_batch_id, source_work_order_id) -> production_batches(id, work_order_id)` 保证一致
-- 唯一约束：`UNIQUE (item_id, batch_code)`
-- 唯一约束：`UNIQUE (id, item_id)`
+- 唯一约束：`UNIQUE (material_variant_id, batch_code)`
+- 唯一约束：`UNIQUE (id, item_id, material_variant_id)`
+- 外键：`FOREIGN KEY (material_variant_id, item_id) REFERENCES material_variants(id, material_product_id)`
 - 检查约束：`CHECK (source_type IN ('self_made', 'purchased', 'outsourced', 'return_inbound', 'stock_check_generated', 'other'))`
 - 检查约束：`CHECK (batch_status IN ('available', 'frozen', 'disabled'))`
 - 组合索引：`INDEX (item_id, batch_status)`，用于按库存对象查询可用批次
@@ -80,6 +88,7 @@
 | ---------------------------- | ----------------- | ---------------------------------------------------- |
 | `id`                         | `BIGINT UNSIGNED` | 主键                                                 |
 | `item_id`                    | `BIGINT UNSIGNED` | 库存对象 ID，关联 `products.id`                      |
+| `material_variant_id`         | `BIGINT UNSIGNED` | 精确物料版本 ID，与批次和基础物料一致                 |
 | `batch_id`                   | `BIGINT UNSIGNED` | 库存批次 ID，关联 `item_batch.id`                    |
 | `transaction_type`           | `VARCHAR(30)`     | 库存变动类型                                         |
 | `quantity`                   | `DECIMAL(12,4)`   | 库存变动数量。正数表示增加，负数表示减少，不能为 `0` |
@@ -141,6 +150,7 @@
 - 组合索引：`INDEX (item_id, batch_id, stock_status, created_at)`，用于库存汇总和批次流水查询
 - 外键：`FOREIGN KEY (item_id) REFERENCES products(id)`
 - 外键：`FOREIGN KEY (batch_id, item_id) REFERENCES item_batch(id, item_id)`
+- 外键：`FOREIGN KEY (batch_id, item_id, material_variant_id) REFERENCES item_batch(id, item_id, material_variant_id)`
 - 外键：`reversal_of_transaction_id -> inventory_transaction.id`
 - 唯一约束：`UNIQUE (reversal_of_transaction_id)`；一期仅允许对同一原流水执行一次整笔全额冲销，不支持部分冲销或重复冲销
 
@@ -280,6 +290,7 @@
 | `id`             | `BIGINT UNSIGNED` | 主键                                 |
 | `inbound_id`     | `BIGINT UNSIGNED` | 入库主单 ID，关联 `inbound_order.id` |
 | `item_id`        | `BIGINT UNSIGNED` | 入库对象 ID，关联 `products.id`      |
+| `material_variant_id` | `BIGINT UNSIGNED` | 入库选择的精确物料版本 ID             |
 | `batch_id`       | `BIGINT UNSIGNED` | 入库批次 ID，关联 `item_batch.id`    |
 | `inbound_number` | `DECIMAL(12,4)`   | 本次入库数量                         |
 | `unit_snapshot`  | `VARCHAR(20)`     | 入库时单位快照                       |
@@ -295,6 +306,8 @@
 - 外键：`FOREIGN KEY (inbound_id) REFERENCES inbound_order(id)`
 - 外键：`FOREIGN KEY (item_id) REFERENCES products(id)`
 - 外键：`FOREIGN KEY (batch_id, item_id) REFERENCES item_batch(id, item_id)`
+- 外键：`FOREIGN KEY (material_variant_id, item_id) REFERENCES material_variants(id, material_product_id)`
+- 外键：`FOREIGN KEY (batch_id, item_id, material_variant_id) REFERENCES item_batch(id, item_id, material_variant_id)`
 - 检查约束：`CHECK (inbound_number > 0)`
 - 检查约束：`CHECK (stock_status IN ('available', 'pending_inspection', 'frozen', 'defective'))`
 - 唯一约束：`UNIQUE (inbound_id, batch_id, item_id)`

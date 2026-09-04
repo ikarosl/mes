@@ -1,32 +1,51 @@
 import type { VersionedCommand } from '../common.js';
 import type { BatchStepAbnormalDispositionItem } from './abnormal.js';
 
+export interface ProductionSupplementVariantCandidate {
+  id: string;
+  variantCode: string;
+  majorVersion: string;
+  minorVersion: string;
+}
+
 export interface ProductionSupplementCandidateItem {
   originalDemandId: string;
   productionBatchId: string;
+  requirementBasisId: string;
   productMaterialId: string;
   itemId: string;
+  materialVariantId: string;
+  materialVariantCode: string;
+  variants: ProductionSupplementVariantCandidate[];
   itemCode: string;
   itemName: string;
+  quantityPerUnit: string;
   unit: string;
+  isKeyMaterial: boolean;
+  needBatchRecord: boolean;
+  plannedOutputQuantity: string;
   normalDemandQuantity: string;
 }
 
 export interface ApproveScrapSupplementLinePayload {
   originalDemandId: string;
+  requirementBasisId: string;
+  materialVariantId: string;
   supplementQuantity: number;
 }
 
 export interface ApproveScrapSupplementPayload extends VersionedCommand {
-  materialEndStepRecordId: string;
   details: ApproveScrapSupplementLinePayload[];
   remark?: string | null;
 }
 
 export interface ProductionScrapSupplementPlanLineItem {
   originalDemandId: string;
+  requirementBasisId: string;
   productMaterialId: string;
   itemId: string;
+  materialVariantId: string;
+  materialVariantCode: string;
   itemCode: string;
   itemName: string;
   plannedQuantity: string;
@@ -40,7 +59,6 @@ export interface ProductionScrapSupplementPlanItem {
   productionBatchId: string;
   sourceStepRecordId: string;
   sourceReportId: string;
-  materialEndStepRecordId: string;
   status: 'draft' | 'confirmed';
   confirmedSupplementId: string | null;
   remark: string | null;
@@ -52,7 +70,6 @@ export interface ProductionScrapSupplementPlanItem {
 export interface SaveProductionScrapSupplementPlanPayload {
   planVersion: number | null;
   dispositionVersion: number;
-  materialEndStepRecordId: string;
   details: ApproveScrapSupplementLinePayload[];
   remark?: string | null;
 }
@@ -64,8 +81,11 @@ export interface ConfirmProductionScrapSupplementPlanPayload extends VersionedCo
 export interface ProductionMaterialSupplementDemandItem {
   originalDemandId: string;
   demandId: string;
+  requirementBasisId: string;
   productMaterialId: string;
   itemId: string;
+  materialVariantId: string;
+  materialVariantCode: string;
   itemCode: string;
   itemName: string;
   supplementQuantity: string;
@@ -101,7 +121,6 @@ export interface BatchStepScrapReproductionAuthorizationItem {
   supplementId: string;
   entryStepRecordId: string;
   quotaEndStepRecordId: string;
-  materialEndStepRecordId: string;
   authorizedQuantity: string;
   authorizedBy: string;
   authorizedAt: string;

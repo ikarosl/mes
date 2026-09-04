@@ -43,9 +43,11 @@ type DetailRow = RowDataPacket & {
   id: number;
   inbound_id: number;
   item_id: number;
+  material_variant_id: number;
   batch_id: number;
   item_code_snapshot: string;
   product_name_snapshot: string;
+  material_variant_code_snapshot: string;
   batch_code: string;
   inbound_number: string;
   unit_snapshot: string;
@@ -55,8 +57,10 @@ type DetailRow = RowDataPacket & {
 type InventoryRow = RowDataPacket & {
   id: number;
   item_id: number;
+  material_variant_id: number;
   item_code_snapshot: string;
   product_name_snapshot: string;
+  material_variant_code_snapshot: string;
   unit_snapshot: string;
   batch_code: string;
   source_type: InventoryBatchItem['sourceType'];
@@ -137,7 +141,7 @@ export class MysqlProductionInboundRepository extends ProductionInboundRepositor
     return withTransaction(this.pool, async (db) => {
       const seen = new Set<string>();
       for (const line of payload.details) {
-        const key = `${line.itemId}:${line.batchCode}`;
+        const key = `${line.itemId}:${line.materialVariantId}:${line.batchCode}`;
         if (!line.batchCode || seen.has(key) || line.inboundQuantity <= 0)
           throw new ProductionDomainError(
             'INVALID_INPUT',
@@ -145,7 +149,7 @@ export class MysqlProductionInboundRepository extends ProductionInboundRepositor
           );
         seen.add(key);
       }
-      const byId = new Map(snapshots.map((x) => [x.id, x]));
+      const byId = new Map(snapshots.map((x) => [`${x.id}:${x.materialVariantId}`, x]));
       const inboundNo =
         payload.inboundNo ||
         `PI-${new Date().toISOString().slice(0, 10).replaceAll('-', '')}-${randomUUID().slice(0, 8).toUpperCase()}`;
@@ -167,13 +171,15 @@ export class MysqlProductionInboundRepository extends ProductionInboundRepositor
       }
       const inboundId = String(result.insertId);
       for (const line of payload.details) {
-        const snapshot = byId.get(line.itemId);
+        const snapshot = byId.get(`${line.itemId}:${line.materialVariantId}`);
         if (!snapshot) throw new ProductionDomainError('NOT_FOUND', '入库物料不存在');
         await db.execute(
-          "INSERT INTO item_batch(item_id,item_code_snapshot,product_name_snapshot,unit_snapshot,batch_code,source_type,provider,batch_status,remark,created_by,updated_by) VALUES(?,?,?,?,?,'purchased',?,'available',?,?,?) ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id)",
+          "INSERT INTO item_batch(item_id,material_variant_id,item_code_snapshot,material_variant_code_snapshot,product_name_snapshot,unit_snapshot,batch_code,source_type,provider,batch_status,remark,created_by,updated_by) VALUES(?,?,?,?,?,?,?,'purchased',?,'available',?,?,?) ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id)",
           [
             line.itemId,
+            line.materialVariantId,
             snapshot.itemCode,
+            snapshot.materialVariantCode,
             snapshot.productName,
             snapshot.unit,
             line.batchCode,
@@ -184,14 +190,15 @@ export class MysqlProductionInboundRepository extends ProductionInboundRepositor
           ],
         );
         const [[batch]] = await db.query<(RowDataPacket & { id: number })[]>(
-          'SELECT id FROM item_batch WHERE item_id=? AND batch_code=?',
-          [line.itemId, line.batchCode],
+          'SELECT id FROM item_batch WHERE item_id=? AND material_variant_id=? AND batch_code=?',
+          [line.itemId, line.materialVariantId, line.batchCode],
         );
         await db.execute(
-          "INSERT INTO inbound_detail(inbound_id,item_id,batch_id,item_code_snapshot,product_name_snapshot,inbound_number,unit_snapshot,stock_status,remark,created_by) VALUES(?,?,?,?,?,? ,?,'available',?,?)",
+          "INSERT INTO inbound_detail(inbound_id,item_id,material_variant_id,batch_id,item_code_snapshot,product_name_snapshot,inbound_number,unit_snapshot,stock_status,remark,created_by) VALUES(?,?,?,?,?,?,? ,?,'available',?,?)",
           [
             inboundId,
             line.itemId,
+            line.materialVariantId,
             batch!.id,
             snapshot.itemCode,
             snapshot.productName,
@@ -229,9 +236,10 @@ export class MysqlProductionInboundRepository extends ProductionInboundRepositor
         );
       for (const line of details)
         await db.execute(
-          "INSERT INTO inventory_transaction(item_id,batch_id,transaction_type,quantity,unit_snapshot,stock_status,reference_type,reference_detail_id,idempotency_key,remark,created_by) VALUES(?,?,'purchase_inbound',?,?,'available','inbound_detail',?,?,?,?)",
+          "INSERT INTO inventory_transaction(item_id,material_variant_id,batch_id,transaction_type,quantity,unit_snapshot,stock_status,reference_type,reference_detail_id,idempotency_key,remark,created_by) VALUES(?,?,?,'purchase_inbound',?,?,'available','inbound_detail',?,?,?,?)",
           [
             line.item_id,
+            line.material_variant_id,
             line.batch_id,
             line.inbound_number,
             line.unit_snapshot,
@@ -404,6 +412,8 @@ export class MysqlProductionInboundRepository extends ProductionInboundRepositor
       details: details.map((x) => ({
         id: String(x.id),
         itemId: String(x.item_id),
+        materialVariantId: String(x.material_variant_id),
+        materialVariantCode: x.material_variant_code_snapshot,
         itemCode: x.item_code_snapshot,
         itemName: x.product_name_snapshot,
         itemBatchId: String(x.batch_id),
@@ -456,7 +466,7 @@ export class MysqlProductionInboundRepository extends ProductionInboundRepositor
     const placeholders = ids.map(() => '?').join(',');
     const [rows] = await db.query<InventoryRow[]>(
       `SELECT ib.*,COALESCE(MAX(balance.current_quantity),0) on_hand,
-       COALESCE((SELECT SUM(GREATEST(a.assigned_number-COALESCE((SELECT SUM(od.outbound_number) FROM outbound_detail od JOIN outbound_order oo ON oo.id=od.outbound_id WHERE od.allocation_id=a.id AND oo.status='completed'),0),0)) FROM production_item_allocation a WHERE a.batch_id=ib.id AND a.allocation_status NOT IN ('released','cancelled')),0) reserved
+       COALESCE((SELECT SUM(GREATEST(a.assigned_number-COALESCE((SELECT SUM(od.outbound_number) FROM outbound_detail od JOIN outbound_order oo ON oo.id=od.outbound_id WHERE od.allocation_id=a.id AND oo.status='completed'),0),0)) FROM production_item_allocation a WHERE a.batch_id=ib.id AND a.item_id=ib.item_id AND a.material_variant_id=ib.material_variant_id AND a.allocation_status NOT IN ('released','cancelled')),0) reserved
        FROM item_batch ib LEFT JOIN inventory_batch_balance balance
          ON balance.batch_id=ib.id AND balance.stock_status='available'
        WHERE ib.id IN (${placeholders}) GROUP BY ib.id ORDER BY ib.id DESC`,
@@ -483,6 +493,8 @@ export class MysqlProductionInboundRepository extends ProductionInboundRepositor
     return {
       itemBatchId: String(row.id),
       itemId: String(row.item_id),
+      materialVariantId: String(row.material_variant_id),
+      materialVariantCode: row.material_variant_code_snapshot,
       itemCode: row.item_code_snapshot,
       itemName: row.product_name_snapshot,
       unit: row.unit_snapshot,

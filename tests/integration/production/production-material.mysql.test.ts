@@ -23,6 +23,7 @@ import { MysqlProductionTraceRepository } from '../../../apps/api/src/modules/pr
 import { ProductionInboundService } from '../../../apps/api/src/modules/production/application/production-inbound.service.js';
 import { MysqlProductionInboundRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-inbound.repository.js';
 import { MysqlProductionSupplyDemandRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-supply-demand.repository.js';
+import { MysqlMaterialVariantRepository } from '../../../apps/api/src/modules/product/infrastructure/mysql-material-variant.repository.js';
 
 loadWorkspaceEnv();
 const describeMysql = process.env.RUN_MYSQL_INTEGRATION === '1' ? describe : describe.skip;
@@ -31,6 +32,7 @@ describeMysql('Production material MySQL transactions', () => {
   let pool: Pool;
   let repository: MysqlProductionMaterialRepository;
   let service: ProductionMaterialService;
+  let materialVariants: MysqlMaterialVariantRepository;
   let actorId: number;
   beforeAll(async () => {
     const database = req('DB_NAME');
@@ -50,6 +52,7 @@ describeMysql('Production material MySQL transactions', () => {
       connectionLimit: 6,
     });
     repository = new MysqlProductionMaterialRepository(pool);
+    materialVariants = new MysqlMaterialVariantRepository(pool);
     service = new ProductionMaterialService(
       repository,
       new IdentityDirectoryService(new MysqlRbacRepository(pool)),
@@ -831,6 +834,8 @@ describeMysql('Production material MySQL transactions', () => {
       sharedItemId: a.materialId,
       sharedCategoryId: a.materialCategoryId,
       sharedItemBatchId: a.itemBatch1,
+      sharedMaterialVariant1Id: a.materialVariant1Id,
+      sharedMaterialVariant2Id: a.materialVariant2Id,
     });
     try {
       const results = await Promise.allSettled([
@@ -1133,6 +1138,7 @@ describeMysql('Production material MySQL transactions', () => {
     const inboundService = new ProductionInboundService(
       new MysqlProductionInboundRepository(pool),
       new ProductSnapshotService(new MysqlProductSnapshotRepository(pool)),
+      materialVariants,
       new IdentityDirectoryService(new MysqlRbacRepository(pool)),
       new MysqlIdempotencyExecutor(pool),
     );
@@ -1149,8 +1155,18 @@ describeMysql('Production material MySQL transactions', () => {
           inboundNo: `${f.token}-PI1`,
           provider: '供应商',
           details: [
-            { itemId: String(f.materialId), batchCode: batchCodes[0]!, inboundQuantity: 7 },
-            { itemId: String(f.materialId), batchCode: batchCodes[1]!, inboundQuantity: 5 },
+            {
+              itemId: String(f.materialId),
+              materialVariantId: String(f.materialVariant1Id),
+              batchCode: batchCodes[0]!,
+              inboundQuantity: 7,
+            },
+            {
+              itemId: String(f.materialId),
+              materialVariantId: String(f.materialVariant1Id),
+              batchCode: batchCodes[1]!,
+              inboundQuantity: 5,
+            },
           ],
         },
         idemCtx(actorId, `${f.token}-create`, `${f.token}-create-key`),
@@ -1164,8 +1180,18 @@ describeMysql('Production material MySQL transactions', () => {
           inboundNo: `${f.token}-PI1`,
           provider: '供应商',
           details: [
-            { itemId: String(f.materialId), batchCode: batchCodes[0]!, inboundQuantity: 7 },
-            { itemId: String(f.materialId), batchCode: batchCodes[1]!, inboundQuantity: 5 },
+            {
+              itemId: String(f.materialId),
+              materialVariantId: String(f.materialVariant1Id),
+              batchCode: batchCodes[0]!,
+              inboundQuantity: 7,
+            },
+            {
+              itemId: String(f.materialId),
+              materialVariantId: String(f.materialVariant1Id),
+              batchCode: batchCodes[1]!,
+              inboundQuantity: 5,
+            },
           ],
         },
         idemCtx(actorId, `${f.token}-create-replay`, `${f.token}-create-key`),
@@ -1213,7 +1239,12 @@ describeMysql('Production material MySQL transactions', () => {
         {
           inboundNo: `${f.token}-PI2`,
           details: [
-            { itemId: String(f.materialId), batchCode: batchCodes[2]!, inboundQuantity: 3 },
+            {
+              itemId: String(f.materialId),
+              materialVariantId: String(f.materialVariant1Id),
+              batchCode: batchCodes[2]!,
+              inboundQuantity: 3,
+            },
           ],
         },
         idemCtx(actorId, `${f.token}-cancel-create`, `${f.token}-cancel-create-key`),
@@ -1239,7 +1270,12 @@ describeMysql('Production material MySQL transactions', () => {
         {
           inboundNo: `${f.token}-PI3`,
           details: [
-            { itemId: String(f.materialId), batchCode: batchCodes[3]!, inboundQuantity: 4 },
+            {
+              itemId: String(f.materialId),
+              materialVariantId: String(f.materialVariant1Id),
+              batchCode: batchCodes[3]!,
+              inboundQuantity: 4,
+            },
           ],
         },
         idemCtx(actorId, `${f.token}-rollback-create`, `${f.token}-rollback-create-key`),
@@ -1283,6 +1319,8 @@ type Fixture = {
   materialCategoryId: number;
   productId: number;
   materialId: number;
+  materialVariant1Id: number;
+  materialVariant2Id: number;
   productMaterialId: number;
   workOrderId: number;
   batchId: number;
@@ -1296,7 +1334,13 @@ const fixture = async (
   pool: Pool,
   actorId: number,
   suffix: string,
-  shared?: { sharedItemId: number; sharedCategoryId: number; sharedItemBatchId: number },
+  shared?: {
+    sharedItemId: number;
+    sharedCategoryId: number;
+    sharedItemBatchId: number;
+    sharedMaterialVariant1Id: number;
+    sharedMaterialVariant2Id: number;
+  },
 ): Promise<Fixture> => {
   const token = `pm-${suffix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const pc = await ins(
@@ -1323,6 +1367,20 @@ const fixture = async (
       "INSERT INTO products (item_code,product_name,category_id,unit,acquire_method) VALUES (?,?,?,'kg','purchased')",
       [`${token}-m`, '物料', mc],
     ));
+  const materialVariant1Id =
+    shared?.sharedMaterialVariant1Id ??
+    (await ins(
+      pool,
+      "INSERT INTO material_variants(material_product_id,major_version,minor_version,variant_code,created_by,updated_by) VALUES (?, 'v1','A',?,?,?)",
+      [material, `${token}-m-v1-A`, actorId, actorId],
+    ));
+  const materialVariant2Id =
+    shared?.sharedMaterialVariant2Id ??
+    (await ins(
+      pool,
+      "INSERT INTO material_variants(material_product_id,major_version,minor_version,variant_code,created_by,updated_by) VALUES (?, 'v2','A',?,?,?)",
+      [material, `${token}-m-v2-A`, actorId, actorId],
+    ));
   const pm = await ins(
     pool,
     "INSERT INTO product_materials (product_id,material_product_id,quantity_per_unit,unit,is_key_material,need_batch_record) VALUES (?,?,'1.0000','kg',1,1)",
@@ -1338,15 +1396,27 @@ const fixture = async (
     "INSERT INTO production_batches (work_order_id,product_id,batch_no,planned_quantity,status) VALUES (?,?,?,'10.0000','material_pending')",
     [wo, product, `${token}-batch`],
   );
+  const basis = await ins(
+    pool,
+    `INSERT INTO production_material_requirement_basis
+      (production_batch_id,product_material_id,material_product_id,material_code_snapshot,material_name_snapshot,
+       unit_snapshot,quantity_per_unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,
+       planned_output_quantity_snapshot,required_number,created_by)
+     VALUES (?,?,?,?,'物料','kg','1.0000',1,1,'10.0000','10.0000',?)`,
+    [batch, pm, material, `${token}-m`, actorId],
+  );
   const demand = await ins(
     pool,
-    "INSERT INTO production_item_demand (production_batch_id,product_material_id,item_id,item_code_snapshot,item_name_snapshot,quantity_per_unit_snapshot,unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,planned_output_quantity_snapshot,need_number,remaining_number,demand_type,generation_group_key,idempotency_key,business_status,created_by,updated_by) VALUES (?,?,?,?,?,'1.0000','kg',1,1,'10.0000','10.0000',10,'normal',?,?,'active',?,?)",
+    "INSERT INTO production_item_demand (production_batch_id,requirement_basis_id,product_material_id,item_id,material_variant_id,item_code_snapshot,item_name_snapshot,material_variant_code_snapshot,quantity_per_unit_snapshot,unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,planned_output_quantity_snapshot,need_number,remaining_number,demand_type,generation_group_key,idempotency_key,business_status,created_by,updated_by) VALUES (?,?,?,?,?,?,? ,?,'1.0000','kg',1,1,'10.0000','10.0000',10,'normal',?,?,'active',?,?)",
     [
       batch,
+      basis,
       pm,
       material,
+      materialVariant1Id,
       token + '-m',
       '物料',
+      `${token}-m-v1-A`,
       `NORMAL:${batch}`,
       `NORMAL:${batch}:${pm}`,
       actorId,
@@ -1358,17 +1428,46 @@ const fixture = async (
   if (!shared) {
     ib1 = await ins(
       pool,
-      "INSERT INTO item_batch (item_id,item_code_snapshot,product_name_snapshot,unit_snapshot,batch_code,source_type,created_by,updated_by) VALUES (?,?,?,'kg',?,'purchased',?,?)",
-      [material, `${token}-m`, '物料', `${token}-ib1`, actorId, actorId],
+      "INSERT INTO item_batch (item_id,material_variant_id,item_code_snapshot,material_variant_code_snapshot,product_name_snapshot,unit_snapshot,batch_code,source_type,created_by,updated_by) VALUES (?,?,?,? ,?,'kg',?,'purchased',?,?)",
+      [
+        material,
+        materialVariant1Id,
+        `${token}-m`,
+        `${token}-m-v1-A`,
+        '物料',
+        `${token}-ib1`,
+        actorId,
+        actorId,
+      ],
     );
     ib2 = await ins(
       pool,
-      "INSERT INTO item_batch (item_id,item_code_snapshot,product_name_snapshot,unit_snapshot,batch_code,source_type,created_by,updated_by) VALUES (?,?,?,'kg',?,'purchased',?,?)",
-      [material, `${token}-m`, '物料', `${token}-ib2`, actorId, actorId],
+      "INSERT INTO item_batch (item_id,material_variant_id,item_code_snapshot,material_variant_code_snapshot,product_name_snapshot,unit_snapshot,batch_code,source_type,created_by,updated_by) VALUES (?,?,?,? ,?,'kg',?,'purchased',?,?)",
+      [
+        material,
+        materialVariant1Id,
+        `${token}-m`,
+        `${token}-m-v1-A`,
+        '物料',
+        `${token}-ib2`,
+        actorId,
+        actorId,
+      ],
     );
     await pool.execute(
-      "INSERT INTO inventory_transaction (item_id,batch_id,transaction_type,quantity,unit_snapshot,stock_status,reference_type,reference_detail_id,idempotency_key,created_by) VALUES (?,?,'purchase_inbound','10.0000','kg','available','manual',0,?,?),(?,?,'purchase_inbound','10.0000','kg','available','manual',0,?,?)",
-      [material, ib1, `${token}-opening-1`, actorId, material, ib2, `${token}-opening-2`, actorId],
+      "INSERT INTO inventory_transaction (item_id,material_variant_id,batch_id,transaction_type,quantity,unit_snapshot,stock_status,reference_type,reference_detail_id,idempotency_key,created_by) VALUES (?, ?, ?,'purchase_inbound','10.0000','kg','available','manual',0,?,?),(?, ?, ?,'purchase_inbound','10.0000','kg','available','manual',0,?,?)",
+      [
+        material,
+        materialVariant1Id,
+        ib1,
+        `${token}-opening-1`,
+        actorId,
+        material,
+        materialVariant1Id,
+        ib2,
+        `${token}-opening-2`,
+        actorId,
+      ],
     );
   }
   return {
@@ -1378,6 +1477,8 @@ const fixture = async (
     productId: product,
     materialId: material,
     productMaterialId: pm,
+    materialVariant1Id,
+    materialVariant2Id,
     workOrderId: wo,
     batchId: batch,
     demandId: demand,
@@ -1431,11 +1532,13 @@ const cleanup = async (pool: Pool, f: Fixture) => {
     f.batchId,
   ]);
   await pool.execute('DELETE FROM production_item_demand WHERE production_batch_id=?', [f.batchId]);
+  await pool.execute(
+    'DELETE FROM production_material_requirement_basis WHERE production_batch_id=?',
+    [f.batchId],
+  );
   await pool.execute('DELETE FROM production_batches WHERE id=?', [f.batchId]);
   await pool.execute('DELETE FROM work_orders WHERE id=?', [f.workOrderId]);
   await pool.execute('DELETE FROM product_materials WHERE id=?', [f.productMaterialId]);
-  await pool.execute('DELETE FROM products WHERE id=?', [f.productId]);
-  await pool.execute('DELETE FROM product_categories WHERE id=?', [f.productCategoryId]);
   if (f.ownsItemBatches) {
     await deleteInventoryTransactions(
       pool,
@@ -1444,7 +1547,10 @@ const cleanup = async (pool: Pool, f: Fixture) => {
     );
     await pool.execute('DELETE FROM item_batch WHERE id IN (?,?)', [f.itemBatch1, f.itemBatch2]);
   }
+  await pool.execute('DELETE FROM products WHERE id=?', [f.productId]);
+  await pool.execute('DELETE FROM product_categories WHERE id=?', [f.productCategoryId]);
   if (f.ownsMaterial) {
+    await pool.execute('DELETE FROM material_variants WHERE material_product_id=?', [f.materialId]);
     await pool.execute('DELETE FROM products WHERE id=?', [f.materialId]);
     await pool.execute('DELETE FROM product_categories WHERE id=?', [f.materialCategoryId]);
   }

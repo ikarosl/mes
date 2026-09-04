@@ -94,9 +94,12 @@
           />
           <el-table-column
             label="物料"
-            min-width="170"
+            min-width="250"
           >
-            <template #default="{ row }">{{ row.itemCode }} · {{ row.itemName }}</template>
+            <template #default="{ row }">
+              <div>{{ row.itemCode }} · {{ row.itemName }}</div>
+              <div class="secondary">版本 {{ row.materialVariantCode || '未记录版本' }}</div>
+            </template>
           </el-table-column>
           <el-table-column
             prop="batchCode"
@@ -171,5 +174,9 @@ const notice = computed(() => {
 }
 .detail-summary {
   margin: 16px 0;
+}
+.secondary {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
 }
 </style>

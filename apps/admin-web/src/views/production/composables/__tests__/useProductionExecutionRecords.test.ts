@@ -107,11 +107,11 @@ describe('useProductionExecutionRecords', () => {
     expect(api.getExecutionCompletionCheck).toHaveBeenCalledTimes(2);
   });
 
-  it('loads supplement candidates for the chosen material end step', async () => {
+  it('loads supplement candidates for the whole batch BOM without a process-step selector', async () => {
     api.listSupplementCandidates.mockResolvedValue([]);
     const state = useProductionExecutionRecords();
-    await state.loadSupplementCandidates('8', '3');
-    expect(api.listSupplementCandidates).toHaveBeenCalledWith('8', '3');
+    await state.loadSupplementCandidates('8');
+    expect(api.listSupplementCandidates).toHaveBeenCalledWith('8');
   });
 
   it('loads the persisted supplement draft for a disposition', async () => {
@@ -126,16 +126,28 @@ describe('useProductionExecutionRecords', () => {
     const state = useProductionExecutionRecords();
     await state.saveScrapSupplementPlan(
       disposition as never,
-      '3',
-      [{ originalDemandId: '5', supplementQuantity: 1.25 }],
+      [
+        {
+          originalDemandId: '5',
+          requirementBasisId: 'basis-5',
+          materialVariantId: 'variant-5',
+          supplementQuantity: 1.25,
+        },
+      ],
       '  补料备注  ',
       5,
     );
     expect(api.saveScrapSupplementPlan).toHaveBeenCalledWith('8', {
       planVersion: 5,
       dispositionVersion: 2,
-      materialEndStepRecordId: '3',
-      details: [{ originalDemandId: '5', supplementQuantity: 1.25 }],
+      details: [
+        {
+          originalDemandId: '5',
+          requirementBasisId: 'basis-5',
+          materialVariantId: 'variant-5',
+          supplementQuantity: 1.25,
+        },
+      ],
       remark: '补料备注',
     });
   });
@@ -143,11 +155,10 @@ describe('useProductionExecutionRecords', () => {
   it('saves a first-time draft without a plan version and trims an empty remark to null', async () => {
     api.saveScrapSupplementPlan.mockResolvedValue({ status: 'draft' });
     const state = useProductionExecutionRecords();
-    await state.saveScrapSupplementPlan(disposition as never, '3', [], '   ', null);
+    await state.saveScrapSupplementPlan(disposition as never, [], '   ', null);
     expect(api.saveScrapSupplementPlan).toHaveBeenCalledWith('8', {
       planVersion: null,
       dispositionVersion: 2,
-      materialEndStepRecordId: '3',
       details: [],
       remark: null,
     });

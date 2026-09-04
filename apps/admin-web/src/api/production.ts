@@ -68,6 +68,8 @@ import type {
   ShortBatchAuthorizationPreview,
   ShortBatchAuthorizationResult,
   CloseRemainingMaterialDemandsResult,
+  MaterialDemandManagementPage,
+  MaterialDemandManagementQuery,
 } from '@company/contracts';
 import { IDEMPOTENCY_KEY_HEADER, toRequestError, type RetryRequestConfig } from '@company/request';
 import { httpClient } from './http';
@@ -237,17 +239,48 @@ export const productionApi = {
       data,
     }),
 
-  /** 生成物料需求 */
-  generateMaterialDemands: (batchId: string, version: number) =>
-    request<ProductionBatchDetail>({
-      url: `/production/batches/${batchId}/actions/generate-material-demands`,
-      method: 'POST',
-      data: { version },
-    }),
-
   listMaterialDemands: (batchId: string) =>
     request<ProductionMaterialDemandItem[]>({
       url: `/production/batches/${batchId}/material-demands`,
+    }),
+
+  /**
+   * Cross-batch administrator view. Normal demand is configured explicitly by
+   * base BOM line; this endpoint must return every enabled variant and advisory
+   * stock, but must not auto-select a version on the client's behalf.
+   */
+  listMaterialDemandManagement: (params: MaterialDemandManagementQuery) =>
+    request<MaterialDemandManagementPage>({ url: '/production/material-demands', params }),
+  configureMaterialDemands: (
+    batchId: string,
+    data: {
+      requirements: Array<{
+        productMaterialId: string;
+        splits: Array<{ materialVariantId: string; quantity: number }>;
+      }>;
+    },
+    idempotencyKey: string,
+  ) =>
+    request<{ configured: true }>({
+      url: `/production/batches/${batchId}/material-demands/configurations`,
+      method: 'POST',
+      data,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      retryIdempotentWrite: true,
+      retryTimes: 2,
+    }),
+  addManualMaterialDemand: (
+    demandId: string,
+    data: { materialVariantId: string; quantity: number; reason: string },
+    idempotencyKey: string,
+  ) =>
+    request<{ demandId: string }>({
+      url: `/production/material-demands/${demandId}/additions`,
+      method: 'POST',
+      data,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      retryIdempotentWrite: true,
+      retryTimes: 2,
     }),
 
   listAvailableItemBatches: (demandId: string) =>
@@ -505,10 +538,9 @@ export const productionApi = {
       retryTimes: 2,
     }),
 
-  listSupplementCandidates: (dispositionId: string, materialEndStepRecordId: string) =>
+  listSupplementCandidates: (dispositionId: string) =>
     request<ProductionSupplementCandidateItem[]>({
       url: `/production/abnormal-dispositions/${dispositionId}/supplement-candidates`,
-      params: { materialEndStepRecordId },
     }),
 
   getScrapSupplementPlan: (dispositionId: string) =>

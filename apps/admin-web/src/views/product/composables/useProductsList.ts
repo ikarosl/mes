@@ -21,8 +21,8 @@ export function useProductsList() {
   }>({ keyword: '', categoryId: '', acquireMethod: '', status: '' });
 
   const itemKindLabels: Record<ProductItemKind, string> = {
-    material: '物料',
-    semi_finished: '半成品',
+    // 半成品保留为可检索的分类名称，但底层业务类型与物料一致。
+    material: '物料（含半成品）',
     finished_product: '成品',
   };
 

@@ -1,6 +1,6 @@
 import type { PageQuery } from '../common.js';
 
-export type ProductItemKind = 'material' | 'semi_finished' | 'finished_product';
+export type ProductItemKind = 'material' | 'finished_product';
 
 export type ProductAcquireMethod = 'self_made' | 'outsourced' | 'purchased';
 
@@ -72,6 +72,7 @@ export interface ProductListItem {
 }
 
 export interface ProductPayload {
+  /** 创建时必填；更新请求必须原样回传，服务端拒绝修改稳定编码。 */
   itemCode: string;
   productName: string;
   categoryId: string;
@@ -113,5 +114,35 @@ export interface ProductMaterialPayload {
   isKeyMaterial: boolean;
   needBatchRecord: boolean;
   status?: number;
+  remark?: string | null;
+}
+
+/**
+ * Exact stock/demand identity below one stable base material. The base product
+ * remains the only BOM identity; these rows are selected only at demand time.
+ */
+export interface MaterialVariantListQuery extends PageQuery {
+  materialProductId?: string;
+  keyword?: string;
+  status?: number;
+}
+
+export interface MaterialVariantItem {
+  id: string;
+  materialProductId: string;
+  materialCode: string;
+  materialName: string;
+  majorVersion: string;
+  minorVersion: string;
+  variantCode: string;
+  status: number;
+  remark: string | null;
+  updatedAt: string | null;
+}
+
+export interface MaterialVariantPayload {
+  materialProductId: string;
+  majorVersion: string;
+  minorVersion: string;
   remark?: string | null;
 }
