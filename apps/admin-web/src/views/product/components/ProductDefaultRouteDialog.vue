@@ -66,9 +66,7 @@ const routeSource = useProcessRouteOptions();
 const selectedRouteId = ref('');
 
 const availableRoutes = computed(() =>
-  routeSource.options.value.filter(
-    (route) => route.productId === props.product?.id && route.status === 'enabled',
-  ),
+  routeSource.options.value.filter((route) => route.status === 'enabled'),
 );
 
 const routeChoices = computed(() =>

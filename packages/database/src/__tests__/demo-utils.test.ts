@@ -19,13 +19,19 @@ describe('demo seed', () => {
     ).toBe('demo-password');
   });
 
-  it('discovers only the scoped system and product demo data', async () => {
+  it('discovers the scoped system, product and draft production demo data', async () => {
     const seeds = await readDemoSeeds();
-    expect(seeds.map((seed) => seed.name)).toEqual(['001-system-demo.sql', '010-product-demo.sql']);
+    expect(seeds.map((seed) => seed.name)).toEqual([
+      '001-system-demo.sql',
+      '010-product-demo.sql',
+      '020-production-demo.sql',
+    ]);
     const sql = seeds.map((seed) => seed.sql).join('\n');
     expect(sql).toContain('operator-001');
     expect(sql).toContain('p-micro-20-30');
-    expect(sql).not.toMatch(/production_orders|production_batches|inventory_transaction/);
+    expect(sql).toContain('demo-mass-001');
+    expect(sql).toContain('demo-research-001');
+    expect(sql).not.toMatch(/production_batches|inventory_transaction/);
     expect(sql).not.toMatch(/password_hash\s*=\s*['"]/i);
   });
 });

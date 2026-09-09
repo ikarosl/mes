@@ -1,6 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { generateBatchNo } from '@company/code-rules';
-import { DEMAND_GENERATION_GROUP_TYPE, DEMAND_TYPE } from '@company/constants';
 import { withTransaction } from '@company/database';
 import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import type {
@@ -17,7 +16,7 @@ import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { writeTransactionalAudit } from '../../../common/audit/transactional-audit-writer.js';
 import { toDateOnlyString } from '../../../common/time/date-time.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
-import type { ProcessRouteSnapshot, ProductBomSnapshot } from '../../product/public.js';
+import type { ProcessRouteSnapshot } from '../../product/public.js';
 import type { ResolvedBatchStepOverride } from '../application/ports/production.repository.js';
 import { requireBatchTransition } from '../domain/production-status.policy.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
@@ -34,7 +33,6 @@ import {
   findWorkOrder,
   mapBatch,
   mapStep,
-  multiply,
   STEP_RECORD_SELECT,
   stepAudit,
   type StepRow,
@@ -162,8 +160,6 @@ export class MysqlProductionBatchRepository {
         payload.planEndDate ?? null,
         order,
       );
-      if (route && route.product.id !== String(order.product_id))
-        throw new ProductionDomainError('INVALID_INPUT', '工艺路线不属于工单产品');
       const [result] = await connection.execute<ResultSetHeader>(
         `INSERT INTO production_batches (work_order_id,product_id,batch_no,route_id,route_code_snapshot,route_version_snapshot,planned_quantity,plan_start_date,plan_end_date,batch_owner_id,remark,created_by,updated_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         [
@@ -186,7 +182,7 @@ export class MysqlProductionBatchRepository {
       for (const step of route?.steps ?? []) {
         const override = overrides.get(step.routeStepId);
         await connection.execute(
-          `INSERT INTO batch_step_records (production_batch_id,route_step_id,step_order_snapshot,step_code_snapshot,step_name_snapshot,sop_file_id_snapshot,sop_file_name_snapshot,sop_object_key_snapshot,sop_version_no_snapshot,default_responsible_user_id_snapshot,responsible_user_id,actual_sop_file_id,actual_sop_file_name_snapshot,actual_sop_object_key_snapshot,actual_sop_version_no_snapshot,need_record_snapshot,need_inspection_snapshot,unit_snapshot,created_by,updated_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          `INSERT INTO batch_step_records (production_batch_id,route_step_id,step_order_snapshot,step_code_snapshot,step_name_snapshot,sop_file_id_snapshot,sop_file_name_snapshot,sop_object_key_snapshot,sop_version_no_snapshot,default_responsible_user_id_snapshot,responsible_user_id,actual_sop_file_id,actual_sop_file_name_snapshot,actual_sop_object_key_snapshot,actual_sop_version_no_snapshot,need_inspection_snapshot,unit_snapshot,created_by,updated_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
           [
             result.insertId,
             step.routeStepId,
@@ -203,7 +199,6 @@ export class MysqlProductionBatchRepository {
             override?.actualSop?.fileName ?? null,
             override?.actualSop?.objectKey ?? null,
             override?.actualSop?.versionNo ?? null,
-            Number(step.needRecord),
             Number(step.needInspection),
             order.unit_snapshot,
             audit.actorId,
@@ -399,51 +394,6 @@ export class MysqlProductionBatchRepository {
         recordId,
         stepAudit(before),
         payload,
-      );
-      return this.getDetail(connection, batchId);
-    });
-  }
-
-  async generateMaterialDemands(
-    batchId: string,
-    version: number,
-    bom: ProductBomSnapshot,
-    audit: CommandContext,
-  ): Promise<ProductionBatchDetail> {
-    return withTransaction(this.pool, async (connection) => {
-      const batch = await findBatch(connection, batchId, true);
-      if (batch.status === 'material_pending') return this.getDetail(connection, batchId);
-      requireBatchTransition(batch.status, 'material_pending');
-      if (String(batch.product_id) !== bom.product.id)
-        throw new ProductionDomainError('INVALID_INPUT', 'BOM 与生产批次产品不一致');
-      await mysqlProductionDemandPlanWriter.createDemandGroup(connection, {
-        batchId,
-        actorId: audit.actorId,
-        source: { type: DEMAND_GENERATION_GROUP_TYPE.normal, productionBatchId: batchId },
-        expectedBatchVersion: version,
-        transitionToMaterialPending: true,
-        lines: bom.lines.map((line) => ({
-          identityId: line.productMaterialId,
-          productMaterialId: line.productMaterialId,
-          itemId: line.materialProductId,
-          itemCode: line.itemCode,
-          itemName: line.productName,
-          quantityPerUnit: line.quantityPerUnit,
-          unit: line.unit,
-          isKeyMaterial: line.isKeyMaterial,
-          needBatchRecord: line.needBatchRecord,
-          plannedOutputQuantity: batch.planned_quantity,
-          needNumber: multiply(line.quantityPerUnit, batch.planned_quantity),
-          demandType: DEMAND_TYPE.normal,
-        })),
-      });
-      await this.audit(
-        connection,
-        audit,
-        'production-batch.generate-material-demands',
-        batchId,
-        { status: batch.status, version: batch.version },
-        { status: 'material_pending', demandCount: bom.lines.length },
       );
       return this.getDetail(connection, batchId);
     });

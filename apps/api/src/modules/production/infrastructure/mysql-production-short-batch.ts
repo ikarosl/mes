@@ -4,37 +4,24 @@ import { integerQuantity } from '../domain/integer-quantity.js';
 type Db = Pool | PoolConnection;
 type BatchIdExpression = '?' | 'b.id';
 
-/**
- * 批次仍留在生产现场的净确认领料量；只接受受控 SQL 表达式。
- * 生产领料损耗不从这里扣除，因为损耗没有把物料退回公共库存。
- */
-export const netConfirmedMaterialOutboundQuantitySql = (
+/** 已确认领料事实；短批授权与开工不扣除退料或损耗，不据此推算现场余额。 */
+export const confirmedMaterialOutboundQuantitySql = (
   batchIdExpression: BatchIdExpression,
-): string => `GREATEST(
-  COALESCE((
-    SELECT SUM(outbound_detail.outbound_number)
-    FROM outbound_detail
-    JOIN outbound_order ON outbound_order.id=outbound_detail.outbound_id
-    WHERE outbound_order.production_batch_id=${batchIdExpression}
-      AND outbound_order.status='completed'
-  ),0)
-  - COALESCE((
-    SELECT SUM(return_detail.return_number)
-    FROM return_detail
-    JOIN return_order ON return_order.id=return_detail.return_id
-    WHERE return_order.production_batch_id=${batchIdExpression}
-      AND return_order.status='returned'
-      AND return_detail.release_after_return=1
-  ),0),
-0)`;
+): string => `COALESCE((
+  SELECT SUM(outbound_detail.outbound_number)
+  FROM outbound_detail
+  JOIN outbound_order ON outbound_order.id=outbound_detail.outbound_id
+  WHERE outbound_order.production_batch_id=${batchIdExpression}
+    AND outbound_order.status='completed'
+),0)`;
 
-export const getNetConfirmedMaterialOutboundQuantity = async (
+export const getConfirmedMaterialOutboundQuantity = async (
   db: Db,
   batchId: string,
 ): Promise<number> => {
   const [[row]] = await db.query<(RowDataPacket & { quantity: string })[]>(
-    `SELECT ${netConfirmedMaterialOutboundQuantitySql('?')} quantity`,
-    [batchId, batchId],
+    `SELECT ${confirmedMaterialOutboundQuantitySql('?')} quantity`,
+    [batchId],
   );
   return integerQuantity(row?.quantity ?? 0);
 };
@@ -46,7 +33,7 @@ type ShortBatchStartabilityRow = RowDataPacket & {
 
 /**
  * 员工任务投影使用的批次级批量判定。调用方可以传入工序行提取出的批次 ID；
- * 本方法会再次去重，并且只执行一条查询，避免相同批次按工序重复聚合领退料事实。
+ * 本方法会再次去重，并且只执行一条查询，避免相同批次按工序重复聚合领料事实。
  */
 export const selectShortBatchStartabilityByBatch = async (
   db: Db,
@@ -59,7 +46,7 @@ export const selectShortBatchStartabilityByBatch = async (
   const [rows] = await db.query<ShortBatchStartabilityRow[]>(
     `SELECT b.id production_batch_id,
        CASE WHEN b.status='material_partially_outbound'
-         AND ${netConfirmedMaterialOutboundQuantitySql('b.id')} > 0
+         AND ${confirmedMaterialOutboundQuantitySql('b.id')} > 0
          AND EXISTS (
            SELECT 1 FROM production_short_batch_authorization authorization
            WHERE authorization.production_batch_id=b.id
@@ -122,11 +109,11 @@ export const evaluateShortBatchStart = async (
       canStart: false,
       blockedReason: '短批授权不存在或已因物料需求计划变化而失效',
     };
-  if ((await getNetConfirmedMaterialOutboundQuantity(db, batchId)) <= 0)
+  if ((await getConfirmedMaterialOutboundQuantity(db, batchId)) <= 0)
     return {
       authorizationId: String(authorization.id),
       canStart: false,
-      blockedReason: '短批开工前必须仍有大于零的净确认领料量',
+      blockedReason: '短批开工前必须已发生确认领料',
     };
   const [[violation]] = await db.query<(RowDataPacket & { count: number })[]>(
     `SELECT COUNT(*) count

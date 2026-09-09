@@ -120,7 +120,7 @@ export type BatchFormValue = {
 const props = defineProps<{
   visible: boolean;
   editingBatchId: string | null;
-  /** 当前工单产品 id：工艺路线候选按该产品过滤 */
+  /** 当前工单产品 id：保留给父页面上下文，路线候选不按产品过滤 */
   productId: string | null | undefined;
   userOptions: UserOption[];
   /** 本批次计划数量上限；null 表示不限制 */
@@ -138,13 +138,9 @@ const emit = defineEmits<{
   (e: 'save', data: BatchFormValue): void;
 }>();
 
-/** 工艺路线候选：弹窗自持实例，页面仅传入产品 id 供过滤 */
+/** 工艺路线候选：路线可跨成品复用。 */
 const routeSource = useProcessRouteOptions();
-/** 当前工单可用路线：按工单产品过滤（原页面 availableRouteOptions 过滤逻辑移入弹窗） */
-const availableRouteOptions = computed<ProcessRouteOption[]>(() => {
-  if (!props.productId) return [];
-  return routeSource.options.value.filter((route) => route.productId === props.productId);
-});
+const availableRouteOptions = computed<ProcessRouteOption[]>(() => routeSource.options.value);
 
 /** 打开弹窗：刷新负责人候选；路线候选由 visible watch / onActivated / 下拉展开负责 */
 const onOpen = (): void => {

@@ -7,6 +7,13 @@ export const WORK_ORDER_STATUSES = [
   'closed',
 ] as const;
 
+export const WORK_ORDER_TYPES = ['mass_production', 'research'] as const;
+
+export const WORK_ORDER_TYPE_LABELS = {
+  mass_production: '批量生产',
+  research: '研发任务',
+} as const;
+
 export const PRODUCTION_BATCH_STATUSES = [
   'pending',
   'material_pending',
@@ -63,16 +70,16 @@ export const REWORK_STATUS_LABELS = {
 
 export const PRODUCTION_EXECUTION_COMPLETION_BLOCKERS = [
   'batch_not_doing',
-  'no_required_reporting_step',
+  'no_route_step',
   'required_step_incomplete',
   'final_step_quantity_insufficient',
 ] as const;
 
 export const PRODUCTION_EXECUTION_COMPLETION_BLOCKER_LABELS = {
   batch_not_doing: '批次尚未进入生产执行状态',
-  no_required_reporting_step: '批次没有必报工工序',
-  required_step_incomplete: '仍有必报工工序未完成',
-  final_step_quantity_insufficient: '最后一道必报工工序的有效正常数量尚未达到计划数量',
+  no_route_step: '批次没有工序',
+  required_step_incomplete: '仍有工序未完成',
+  final_step_quantity_insufficient: '最后一道工序的有效正常数量尚未达到计划数量',
   active_material_demand_remains: '仍有未完成物料需求，请继续领料或显式关闭剩余需求',
 } as const;
 

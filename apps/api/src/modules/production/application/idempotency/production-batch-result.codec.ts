@@ -8,7 +8,7 @@ import type {
 import { CREATE_BATCH_IDEMPOTENCY_SCOPE } from './production-idempotency-scopes.contract.js';
 
 /**
- * createBatch 幂等结果 codec（scope `production.batch.create.v4`）。
+ * createBatch 幂等结果 codec（scope `production.batch.create.v5`）。
  *
  * v1 契约冻结：请求指纹规则、成功结果结构、本 Zod schema 三者在 scope v1 上线后不再演进；结果形状一旦
  * 后续不兼容变更必须 bump scope 并引入新 codec；旧 scope 记录不得由新 schema 猜测解析，
@@ -42,8 +42,6 @@ const batchStepRecordSchema: z.ZodType<BatchStepRecordItem> = z
     defaultResponsibleUserName: nullableString,
     responsibleUserId: nullableString,
     responsibleUserName: nullableString,
-
-    needRecord: z.boolean(),
     needInspection: z.boolean(),
     status: z.enum(BATCH_STEP_STATUSES),
 

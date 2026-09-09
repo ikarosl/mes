@@ -16,6 +16,8 @@ const value = {
   allocationId: '4',
   demandId: '5',
   itemId: '6',
+  materialVariantId: 'v6',
+  materialVariantCode: 'RM-1-v1-A',
   itemCode: 'RM-1',
   itemName: '原料一',
   itemBatchId: '7',

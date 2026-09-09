@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { CommandContext } from '../../../../common/audit/audit.types.js';
 import { RbacService } from '../rbac.service.js';
+import { PasswordHasher } from '../ports/password-hasher.js';
 
 const commandContext: CommandContext = {
   actorId: '1',
@@ -14,14 +15,15 @@ describe('RbacService system mutations', () => {
     const repository = {
       resetUserPassword: vi.fn().mockResolvedValue({ status: 'success', value: undefined }),
     };
-    const service = new RbacService(repository as never, {} as never);
+    const passwords = { hash: vi.fn().mockResolvedValue('hashed-password'), verify: vi.fn() };
+    const service = new RbacService(repository as never, {} as never, passwords as PasswordHasher);
 
     const result = await service.resetUserPassword('7', '123456', commandContext);
 
     expect(result).toEqual({ status: 'success', value: undefined });
     const [, passwordHash] = repository.resetUserPassword.mock.calls[0] as [string, string];
-    expect(passwordHash).not.toBe('123456');
-    expect(passwordHash.startsWith('$2')).toBe(true);
+    expect(passwords.hash).toHaveBeenCalledWith('123456');
+    expect(passwordHash).toBe('hashed-password');
   });
 
   it('passes through repository write results without translating to HTTP exceptions', async () => {
@@ -33,7 +35,8 @@ describe('RbacService system mutations', () => {
         message: '包含无效的权限引用',
       }),
     };
-    const service = new RbacService(repository as never, {} as never);
+    const passwords = { hash: vi.fn().mockResolvedValue('hashed-password'), verify: vi.fn() };
+    const service = new RbacService(repository as never, {} as never, passwords as PasswordHasher);
 
     await expect(
       service.createUser(
@@ -57,7 +60,14 @@ describe('RbacService system mutations', () => {
       setUserStatus: vi.fn(),
       resetUserPassword: vi.fn(),
     };
-    const service = new RbacService(repository as never, {} as never);
+    const service = new RbacService(
+      repository as never,
+      {} as never,
+      {
+        hash: vi.fn(),
+        verify: vi.fn(),
+      } as PasswordHasher,
+    );
     const context = commandContext;
 
     await expect(
@@ -91,7 +101,14 @@ describe('RbacService system mutations', () => {
         .fn()
         .mockResolvedValue({ status: 'conflict', message: '角色仍有关联用户，不能删除' }),
     };
-    const service = new RbacService(repository as never, {} as never);
+    const service = new RbacService(
+      repository as never,
+      {} as never,
+      {
+        hash: vi.fn(),
+        verify: vi.fn(),
+      } as PasswordHasher,
+    );
 
     await expect(service.deleteRole('2', commandContext)).resolves.toEqual({
       status: 'conflict',

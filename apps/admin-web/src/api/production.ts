@@ -68,6 +68,11 @@ import type {
   ShortBatchAuthorizationPreview,
   ShortBatchAuthorizationResult,
   CloseRemainingMaterialDemandsResult,
+  MaterialDemandManagementPage,
+  MaterialDemandManagementQuery,
+  ConfigureMaterialDemandsPayload,
+  AddManualMaterialDemandsPayload,
+  AddManualMaterialDemandsResult,
 } from '@company/contracts';
 import { IDEMPOTENCY_KEY_HEADER, toRequestError, type RetryRequestConfig } from '@company/request';
 import { httpClient } from './http';
@@ -123,11 +128,18 @@ export const productionApi = {
     }),
   getInventoryBatch: (id: string) =>
     request<InventoryBatchDetailItem>({ url: `/production/inventory-batches/${id}` }),
-  searchProductionTrace: (params: ProductionTraceQuery) =>
-    request<PageResult<ProductionTraceWorkOrderGroup>>({ url: '/production/trace', params }),
+  searchProductionTrace: (
+    params: ProductionTraceQuery,
+    options: { skipErrorHandling?: boolean } = {},
+  ) =>
+    request<PageResult<ProductionTraceWorkOrderGroup>>({
+      ...options,
+      url: '/production/trace',
+      params,
+    }),
 
-  getProductionTrace: (batchId: string) =>
-    request<ProductionTraceDetail>({ url: `/production/trace/batches/${batchId}` }),
+  getProductionTrace: (batchId: string, options: { skipErrorHandling?: boolean } = {}) =>
+    request<ProductionTraceDetail>({ ...options, url: `/production/trace/batches/${batchId}` }),
 
   /** 分页查询生产工单 */
   listOrders: (params: WorkOrderQuery) =>
@@ -237,17 +249,43 @@ export const productionApi = {
       data,
     }),
 
-  /** 生成物料需求 */
-  generateMaterialDemands: (batchId: string, version: number) =>
-    request<ProductionBatchDetail>({
-      url: `/production/batches/${batchId}/actions/generate-material-demands`,
-      method: 'POST',
-      data: { version },
-    }),
-
   listMaterialDemands: (batchId: string) =>
     request<ProductionMaterialDemandItem[]>({
       url: `/production/batches/${batchId}/material-demands`,
+    }),
+
+  /**
+   * Cross-batch administrator view. Normal demand is configured explicitly by
+   * base BOM line; this endpoint must return every enabled variant, but must not
+   * query or display inventory and must not auto-select a version on the client's behalf.
+   */
+  listMaterialDemandManagement: (params: MaterialDemandManagementQuery) =>
+    request<MaterialDemandManagementPage>({ url: '/production/material-demands', params }),
+  configureMaterialDemands: (
+    batchId: string,
+    data: ConfigureMaterialDemandsPayload,
+    idempotencyKey: string,
+  ) =>
+    request<{ configured: true }>({
+      url: `/production/batches/${batchId}/material-demands/configurations`,
+      method: 'POST',
+      data,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      retryIdempotentWrite: true,
+      retryTimes: 2,
+    }),
+  addManualMaterialDemands: (
+    batchId: string,
+    data: AddManualMaterialDemandsPayload,
+    idempotencyKey: string,
+  ) =>
+    request<AddManualMaterialDemandsResult>({
+      url: `/production/batches/${batchId}/material-demands/additions`,
+      method: 'POST',
+      data,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      retryIdempotentWrite: true,
+      retryTimes: 2,
     }),
 
   listAvailableItemBatches: (demandId: string) =>
@@ -395,26 +433,25 @@ export const productionApi = {
       data: { version },
     }),
 
-  completeStep: (batchId: string, stepRecordId: string, version: number) =>
-    request<ProductionStepCommandResult>({
-      url: `/production/batches/${batchId}/step-records/${stepRecordId}/actions/complete`,
-      method: 'POST',
-      data: { version },
-    }),
-
-  getBatchExecutionRecords: (batchId: string) =>
+  getBatchExecutionRecords: (batchId: string, options: { skipErrorHandling?: boolean } = {}) =>
     request<ProductionExecutionRecordGroup>({
+      ...options,
       url: `/production/batches/${batchId}/execution-records`,
     }),
 
-  listExecutionBatchSummaries: (params: ProductionBatchQuery) =>
+  listExecutionBatchSummaries: (
+    params: ProductionBatchQuery,
+    options: { skipErrorHandling?: boolean } = {},
+  ) =>
     request<PageResult<ProductionExecutionBatchSummary>>({
+      ...options,
       url: '/production/execution-batches',
       params,
     }),
 
-  getExecutionCompletionCheck: (batchId: string) =>
+  getExecutionCompletionCheck: (batchId: string, options: { skipErrorHandling?: boolean } = {}) =>
     request<ProductionExecutionCompletionCheck>({
+      ...options,
       url: `/production/batches/${batchId}/execution-completion-check`,
     }),
 
@@ -468,8 +505,8 @@ export const productionApi = {
       retryTimes: 2,
     }),
 
-  listBatchReworks: (batchId: string) =>
-    request<ReworkRecordItem[]>({ url: `/production/batches/${batchId}/reworks` }),
+  listBatchReworks: (batchId: string, options: { skipErrorHandling?: boolean } = {}) =>
+    request<ReworkRecordItem[]>({ ...options, url: `/production/batches/${batchId}/reworks` }),
 
   approveDispositionRework: (dispositionId: string, data: ApproveBatchStepReworkPayload) =>
     request<ReworkRecordItem>({
@@ -505,10 +542,9 @@ export const productionApi = {
       retryTimes: 2,
     }),
 
-  listSupplementCandidates: (dispositionId: string, materialEndStepRecordId: string) =>
+  listSupplementCandidates: (dispositionId: string) =>
     request<ProductionSupplementCandidateItem[]>({
       url: `/production/abnormal-dispositions/${dispositionId}/supplement-candidates`,
-      params: { materialEndStepRecordId },
     }),
 
   getScrapSupplementPlan: (dispositionId: string) =>

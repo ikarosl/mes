@@ -4,6 +4,8 @@ import type { InboundOrderStatus } from './statuses.js';
 export interface PurchaseInboundDetailItem {
   id: string;
   itemId: string;
+  materialVariantId: string;
+  materialVariantCode: string;
   itemCode: string;
   itemName: string;
   itemBatchId: string;
@@ -51,6 +53,7 @@ export interface CreatePurchaseInboundPayload {
   remark?: string | null;
   details: Array<{
     itemId: string;
+    materialVariantId: string;
     batchCode: string;
     inboundQuantity: number;
     remark?: string | null;

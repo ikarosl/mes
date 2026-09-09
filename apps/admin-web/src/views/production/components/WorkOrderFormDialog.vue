@@ -24,6 +24,22 @@
           />
         </el-form-item>
         <el-form-item
+          label="工单类型"
+          required
+        >
+          <el-select
+            v-model="form.orderType"
+            placeholder="请选择工单类型"
+          >
+            <el-option
+              v-for="(label, value) in WORK_ORDER_TYPE_LABELS"
+              :key="value"
+              :label="label"
+              :value="value"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item
           label="产品"
           required
         >
@@ -78,12 +94,6 @@
             placeholder="可选填写"
           />
         </el-form-item>
-        <el-form-item label="质量等级">
-          <el-input
-            v-model="form.qualityLevel"
-            placeholder="客户质量等级代码"
-          />
-        </el-form-item>
         <el-form-item
           label="计划开始"
           required
@@ -102,6 +112,12 @@
             v-model="form.planEndDate"
             type="date"
             value-format="YYYY-MM-DD"
+          />
+        </el-form-item>
+        <el-form-item label="质量等级">
+          <el-input
+            v-model="form.qualityLevel"
+            placeholder="客户质量等级代码"
           />
         </el-form-item>
         <el-form-item label="外部订单号">
@@ -134,7 +150,8 @@
 
 <script setup lang="ts">
 import { computed, reactive } from 'vue';
-import type { ProductOption, UserOption, WorkOrderItem } from '@company/contracts';
+import type { ProductOption, UserOption, WorkOrderItem, WorkOrderType } from '@company/contracts';
+import { WORK_ORDER_TYPE_LABELS } from '@company/constants';
 import { DialogWidth } from '../../../utils/dialog';
 import { toDateInputValue } from '../../../utils/date';
 import { EMessage } from '../../../utils/message';
@@ -143,6 +160,7 @@ import type { RefreshableStatus } from '../../../composables/options/useRefresha
 
 export type WorkOrderFormValue = {
   workOrderNo: string;
+  orderType: WorkOrderType;
   productId: string;
   plannedQuantity: number;
   workOrderOwnerId: string;
@@ -179,6 +197,7 @@ const onOpen = (): void => {
 
 const initialForm = (): WorkOrderFormValue => ({
   workOrderNo: '',
+  orderType: 'mass_production',
   productId: '',
   plannedQuantity: 1,
   workOrderOwnerId: '',
@@ -193,9 +212,7 @@ const initialForm = (): WorkOrderFormValue => ({
 const form = reactive<WorkOrderFormValue>(initialForm());
 
 /** 实时选项：产品和负责人（产品业务投影：仅成品） */
-const finishedProducts = computed(() =>
-  props.productOptions.filter((p) => p.itemKind === 'finished_product'),
-);
+const finishedProducts = computed(() => props.productOptions);
 const productChoices = computed(() =>
   buildLiveOptions(
     finishedProducts.value,
@@ -221,6 +238,7 @@ const resetForm = (): void => {
 const setForm = (row: WorkOrderItem): void => {
   Object.assign(form, {
     workOrderNo: row.workOrderNo,
+    orderType: row.orderType,
     productId: row.productId,
     plannedQuantity: Number(row.plannedQuantity),
     workOrderOwnerId: row.workOrderOwnerId ?? '',

@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import bcrypt from 'bcryptjs';
 import { SYSTEM_STATUS } from '@company/constants';
 import type {
   CreateSystemRolePayload,
@@ -13,12 +12,14 @@ import type {
 import type { CommandContext, AuditLogEntry } from '../../../common/audit/audit.types.js';
 import { AuditRepository } from './ports/audit.repository.js';
 import { RbacRepository, type RbacWriteResult } from './ports/rbac.repository.js';
+import { PasswordHasher } from './ports/password-hasher.js';
 
 @Injectable()
 export class RbacService {
   constructor(
     private readonly repository: RbacRepository,
     private readonly auditRepository: AuditRepository,
+    private readonly passwords: PasswordHasher,
   ) {}
   listUsers(query: SystemUserQuery) {
     return this.repository.listUsers(query);
@@ -37,7 +38,7 @@ export class RbacService {
       return { status: 'invalid-input', message: '用户名、姓名必填，密码至少 6 位' };
     return this.repository.createUser(
       payload,
-      await bcrypt.hash(payload.password, 12),
+      await this.passwords.hash(payload.password),
       this.audit('创建用户', context),
     );
   }
@@ -65,7 +66,7 @@ export class RbacService {
     if (password.length < 6) return { status: 'invalid-input', message: '密码至少 6 位' };
     return this.repository.resetUserPassword(
       id,
-      await bcrypt.hash(password, 12),
+      await this.passwords.hash(password),
       this.audit('重置用户密码', context),
     );
   }

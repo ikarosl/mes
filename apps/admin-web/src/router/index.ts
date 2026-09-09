@@ -115,7 +115,7 @@ export const router = createRouter({
         page(
           'product/products',
           'product-products',
-          '产品管理',
+          '成品与物料',
           ProductsPage,
           PERMISSIONS.product.products.view,
           'ProductsPage',
@@ -123,7 +123,7 @@ export const router = createRouter({
         page(
           'product/categories',
           'product-categories',
-          '产品分类',
+          '分类配置',
           ProductCategoriesPage,
           PERMISSIONS.product.categories.view,
           'ProductCategoriesPage',
@@ -144,6 +144,10 @@ export const router = createRouter({
           PERMISSIONS.product.routes.view,
           'ProcessRoutesPage',
         ),
+        {
+          path: 'product/material-variants',
+          redirect: { name: 'product-products', query: { tab: 'materials' } },
+        },
 
         // 生产管理
         page(

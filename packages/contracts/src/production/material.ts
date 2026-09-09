@@ -16,6 +16,10 @@ export interface ProductionItemDemandItem {
   productionBatchId: string;
   productMaterialId: string;
   itemId: string;
+  /** Frozen base-material formula and exact selected stock identity. */
+  requirementBasisId: string;
+  materialVariantId: string;
+  materialVariantCode: string;
   itemCode: string;
   itemName: string;
   quantityPerUnit: string;
@@ -34,6 +38,8 @@ export interface DemandGenerationSource {
   generationGroupKey: string;
   generationGroupType: DemandGenerationGroupType;
   supplementNo: string | null;
+  /** 生成动作的说明；当前用于人工追加原因。 */
+  generationReason?: string | null;
 }
 
 export interface ProductionMaterialAllocationItem {
@@ -41,6 +47,8 @@ export interface ProductionMaterialAllocationItem {
   demandId: string;
   productionBatchId: string;
   itemId: string;
+  materialVariantId: string;
+  materialVariantCode: string;
   itemBatchId: string;
   batchCode: string;
   assignedQuantity: string;
@@ -60,6 +68,9 @@ export interface ProductionMaterialDemandItem extends DemandGenerationSource {
   productionBatchId: string;
   productMaterialId: string;
   itemId: string;
+  requirementBasisId: string;
+  materialVariantId: string;
+  materialVariantCode: string;
   itemCode: string;
   itemName: string;
   unit: string;
@@ -85,6 +96,8 @@ export type ShortBatchAuthorizationStatus = 'none' | 'valid' | 'stale' | 'consum
 export interface ShortBatchAuthorizationPreviewLine extends DemandGenerationSource {
   demandId: string;
   itemId: string;
+  materialVariantId: string;
+  materialVariantCode: string;
   itemCode: string;
   itemName: string;
   unit: string;
@@ -137,6 +150,8 @@ export interface CloseRemainingMaterialDemandsResult {
 export interface AvailableItemBatchItem {
   itemBatchId: string;
   itemId: string;
+  materialVariantId: string;
+  materialVariantCode: string;
   itemCode: string;
   itemName: string;
   batchCode: string;

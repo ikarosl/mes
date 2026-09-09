@@ -10,7 +10,6 @@ const steps = (aNormal: number, aReported: number, bNormal: number, bReported: n
     {
       id: 'a',
       stepOrder: 1,
-      needRecord: true,
       status: aNormal >= 5 ? 'completed' : 'doing',
       effectiveDirectReported: aReported,
       effectiveNormal: aNormal,
@@ -18,7 +17,6 @@ const steps = (aNormal: number, aReported: number, bNormal: number, bReported: n
     {
       id: 'b',
       stepOrder: 2,
-      needRecord: true,
       status: 'doing',
       effectiveDirectReported: bReported,
       effectiveNormal: bNormal,
@@ -108,7 +106,6 @@ describe('production route supplement quantity policy', () => {
         {
           id: 'a',
           stepOrder: 1,
-          needRecord: true,
           status: 'doing',
           effectiveDirectReported: '5.0000',
           effectiveNormal: '5.0000',

@@ -113,6 +113,7 @@ describe('MaterialOutboundDialog', () => {
         demands: [
           {
             itemName: '物料A',
+            businessStatus: 'active',
             allocations: [
               {
                 allocationId: 'a1',
@@ -185,6 +186,12 @@ describe('MaterialOutboundDialog', () => {
       submit: () => void;
     };
     const [normal, loss] = vm.availableAllocations;
+    expect(vm.availableAllocations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ allocationId: 'a1', materialVariantId: 'variant-1' }),
+        expect.objectContaining({ allocationId: 'a2', materialVariantId: 'variant-2' }),
+      ]),
+    );
     vm.handleGroupSelection(normal!.generationGroupKey, [normal!]);
     vm.handleGroupSelection(loss!.generationGroupKey, [loss!]);
     vm.submit();
@@ -235,13 +242,22 @@ const demand = (
   allocationId: string,
 ) => ({
   demandId,
+  itemId: `item-${demandId}`,
+  materialVariantId: allocationId === 'a1' ? 'variant-1' : 'variant-2',
+  materialVariantCode: allocationId === 'a1' ? 'RM-001-V1' : 'RM-001-V2',
+  itemCode: `RM-${demandId}`,
   itemName: `物料-${demandId}`,
+  businessStatus: 'active',
   generationGroupKey,
   generationGroupType,
   supplementNo,
   allocations: [
     {
       allocationId,
+      itemId: `item-${demandId}`,
+      materialVariantId: allocationId === 'a1' ? 'variant-1' : 'variant-2',
+      materialVariantCode: allocationId === 'a1' ? 'RM-001-V1' : 'RM-001-V2',
+      itemCode: `RM-${demandId}`,
       allocationStatus: 'active',
       assignedQuantity: '1',
       outboundQuantity: '0',

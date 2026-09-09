@@ -2,6 +2,8 @@
 
 状态：Accepted
 
+跨模块展示读取的限制由 [ADR-0005](0005-controlled-display-reads.md) 调整；代码导入、业务写入和审计边界继续适用。
+
 ## 决策
 
 - 业务模块只通过根级 `public.ts` 向其他模块公开 Facade 或注入 token。

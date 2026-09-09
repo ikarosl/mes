@@ -33,7 +33,6 @@ export class ProductionDomainError extends Error {
       | 'STOCK_CHECK_CANCEL_NOT_ALLOWED'
       | 'STEP_ASSIGNMENT_CONFLICT'
       | 'STEP_START_NOT_ALLOWED'
-      | 'STEP_COMPLETION_NOT_ALLOWED'
       | 'NOT_STEP_ASSIGNEE'
       | 'STEP_REPORT_NOT_ALLOWED'
       | 'STEP_REPORT_QUANTITY_EXCEEDED'

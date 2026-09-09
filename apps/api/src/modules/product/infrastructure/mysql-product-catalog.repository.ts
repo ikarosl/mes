@@ -13,6 +13,8 @@ type Db = Pool | PoolConnection;
 import type {
   ProductItemKind,
   ProductListItem,
+  ProductGroupItem,
+  ProductGroupQuery,
   ProductMaterialItem,
   ProductMaterialPayload,
   ProductListQuery,
@@ -29,7 +31,7 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
   async listProducts(query: ProductListQuery): Promise<PageResult<ProductListItem>> {
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 10;
-    const conditions = ['p.is_deleted=0'];
+    const conditions = ['p.is_deleted=0', 'c.is_deleted=0', "c.item_kind='finished_product'"];
     const parameters: Array<string | number> = [];
     if (query.keyword) {
       const keyword = `%${query.keyword}%`;
@@ -50,7 +52,7 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
     }
     const where = conditions.join(' AND ');
     const [[countRow]] = await this.pool.query<(RowDataPacket & { total: number })[]>(
-      `SELECT COUNT(*) total FROM products p WHERE ${where}`,
+      `SELECT COUNT(*) total FROM products p JOIN product_categories c ON c.id=p.category_id WHERE ${where}`,
       parameters,
     );
     const [rows] = await this.pool.query<
@@ -108,25 +110,136 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
     return { items, total: Number(countRow?.total ?? 0), page, pageSize };
   }
 
+  async listProductGroups(query: ProductGroupQuery): Promise<PageResult<ProductGroupItem>> {
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? 10;
+    const conditions = ['p.is_deleted=0', 'c.is_deleted=0', "c.item_kind='finished_product'"];
+    const parameters: Array<string | number> = [];
+    if (query.keyword) {
+      const keyword = `%${query.keyword}%`;
+      conditions.push('(p.product_name LIKE ? OR p.item_code LIKE ?)');
+      parameters.push(keyword, keyword);
+    }
+    if (query.categoryId) {
+      conditions.push('p.category_id=?');
+      parameters.push(query.categoryId);
+    }
+    if (query.status !== undefined) {
+      conditions.push('p.status=?');
+      parameters.push(query.status);
+    }
+    const where = conditions.join(' AND ');
+    const [[count]] = await this.pool.query<(RowDataPacket & { total: number })[]>(
+      `SELECT COUNT(*) total FROM (
+         SELECT p.product_name,p.category_id
+           FROM products p JOIN product_categories c ON c.id=p.category_id
+          WHERE ${where} GROUP BY p.product_name,p.category_id
+       ) grouped_products`,
+      parameters,
+    );
+    const [groups] = await this.pool.query<
+      (RowDataPacket & {
+        product_name: string;
+        category_id: number;
+        category_code: string;
+        category_name: string;
+      })[]
+    >(
+      `SELECT p.product_name,p.category_id,c.category_code,c.category_name
+         FROM products p JOIN product_categories c ON c.id=p.category_id
+        WHERE ${where}
+        GROUP BY p.product_name,p.category_id,c.category_code,c.category_name
+        ORDER BY p.product_name,p.category_id LIMIT ? OFFSET ?`,
+      [...parameters, pageSize, (page - 1) * pageSize],
+    );
+    if (groups.length === 0) return { items: [], total: Number(count?.total ?? 0), page, pageSize };
+    const selectedGroups = groups
+      .map(() => 'SELECT ? group_index, ? product_name, ? category_id')
+      .join(' UNION ALL ');
+    const groupParameters = groups.flatMap((group, index) => [
+      index,
+      group.product_name,
+      group.category_id,
+    ]);
+    const [rows] = await this.pool.query<
+      (RowDataPacket & {
+        group_index: number;
+        id: number;
+        item_code: string;
+        product_name: string;
+        category_id: number;
+        category_code: string;
+        category_name: string;
+        item_kind: ProductItemKind;
+        default_route_id: number | null;
+        default_route_name: string | null;
+        unit: string;
+        acquire_method: ProductListItem['acquireMethod'];
+        spec_values: string | object | null;
+        status: number;
+        material_count: number;
+        bom_locked_at: Date | null;
+        bom_locked_by: number | null;
+        remark: string | null;
+        updated_at: Date | null;
+      })[]
+    >(
+      `SELECT selected.group_index,p.id,p.item_code,p.product_name,p.category_id,c.category_code,c.category_name,c.item_kind,
+              p.default_route_id,r.route_name default_route_name,p.unit,p.acquire_method,p.spec_values,p.status,
+              COUNT(pm.id) material_count,p.bom_locked_at,p.bom_locked_by,p.remark,p.updated_at
+         FROM products p JOIN product_categories c ON c.id=p.category_id
+         JOIN (${selectedGroups}) selected ON p.product_name=selected.product_name AND p.category_id=selected.category_id
+         LEFT JOIN process_routes r ON r.id=p.default_route_id AND r.is_deleted=0
+         LEFT JOIN product_materials pm ON pm.product_id=p.id AND pm.is_deleted=0 AND pm.status=1
+        WHERE p.is_deleted=0
+        GROUP BY selected.group_index,p.id,c.category_code,c.category_name,c.item_kind,r.route_name
+        ORDER BY p.product_name,p.category_id,p.item_code,p.id`,
+      groupParameters,
+    );
+    const byKey = new Map<number, ProductListItem[]>();
+    for (const row of rows) {
+      const key = Number(row.group_index);
+      const current = byKey.get(key) ?? [];
+      current.push(this.mapProduct(row));
+      byKey.set(key, current);
+    }
+    return {
+      items: groups.map((group, index) => {
+        const codes = byKey.get(index) ?? [];
+        return {
+          groupKey: `${group.category_id}:${encodeURIComponent(group.product_name)}`,
+          productName: group.product_name,
+          categoryId: String(group.category_id),
+          categoryCode: group.category_code,
+          categoryName: group.category_name,
+          codeCount: codes.length,
+          codes,
+        };
+      }),
+      total: Number(count?.total ?? 0),
+      page,
+      pageSize,
+    };
+  }
+
   async listProductOptions(): Promise<ProductOption[]> {
     const [rows] = await this.pool.query<
       (RowDataPacket & {
         id: number;
         item_code: string;
         product_name: string;
-        item_kind: ProductItemKind;
         acquire_method: ProductOption['acquireMethod'];
         unit: string;
         default_route_id: number | null;
       })[]
-    >(`SELECT p.id,p.item_code,p.product_name,c.item_kind,p.acquire_method,p.unit,p.default_route_id
+    >(`SELECT p.id,p.item_code,p.product_name,p.acquire_method,p.unit,p.default_route_id
              FROM products p JOIN product_categories c ON c.id=p.category_id
-             WHERE p.is_deleted=0 AND p.status=1 AND c.is_deleted=0 AND c.status=1 ORDER BY p.item_code`);
+             WHERE p.is_deleted=0 AND p.status=1 AND c.is_deleted=0 AND c.status=1
+               AND c.item_kind='finished_product' ORDER BY p.item_code`);
     return rows.map((row) => ({
       id: String(row.id),
       itemCode: row.item_code,
       productName: row.product_name,
-      itemKind: row.item_kind,
       acquireMethod: row.acquire_method,
       unit: row.unit,
       defaultRouteId: row.default_route_id === null ? null : String(row.default_route_id),
@@ -135,7 +248,7 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
 
   async createProduct(payload: ProductPayload, audit: CommandContext) {
     return withTransaction(this.pool, async (connection) => {
-      await this.requireCategory(connection, payload.categoryId);
+      await this.requireProductCategory(connection, payload.categoryId);
       const [result] = await connection.execute<ResultSetHeader>(
         `INSERT INTO products (item_code,product_name,category_id,unit,acquire_method,spec_values,status,remark,created_by,updated_by)
          VALUES (?,?,?,?,?,?,?,?,?,?)`,
@@ -162,10 +275,16 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
   async updateProduct(id: string, payload: ProductPayload, audit: CommandContext) {
     await withTransaction(this.pool, async (connection) => {
       const before = await this.productRecord(connection, id, true);
-      if (payload.itemCode !== before.item_code || payload.unit !== before.unit) {
+      if (payload.itemCode !== before.item_code) {
         throw new ProductDomainError(
           'CONFLICT',
-          '产品编码和基础单位创建后不可修改；原则变化请新建产品',
+          '物料/产品编码创建后不可修改；原则变化请新建产品和编码',
+        );
+      }
+      if (payload.unit !== before.unit) {
+        throw new ProductDomainError(
+          'CONFLICT',
+          '物料/产品基础单位创建后不可修改；原则变化请新建产品和编码',
         );
       }
       if (
@@ -178,26 +297,22 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
           'BOM 锁定后不能修改产品分类或获取方式；原则变化请新建产品',
         );
       }
-      const category = await this.requireCategory(connection, payload.categoryId);
-      if (payload.acquireMethod !== 'self_made' || category.item_kind === 'material') {
-        const [[dependent]] = await connection.query<
-          (RowDataPacket & { bom_count: number; route_count: number })[]
-        >(
-          `SELECT (SELECT COUNT(*) FROM product_materials WHERE product_id=? AND is_deleted=0) bom_count,
-                  (SELECT COUNT(*) FROM process_routes WHERE product_id=? AND is_deleted=0) route_count`,
-          [id, id],
+      await this.requireProductCategory(connection, payload.categoryId);
+      if (payload.acquireMethod !== 'self_made') {
+        const [[dependent]] = await connection.query<(RowDataPacket & { bom_count: number })[]>(
+          `SELECT (SELECT COUNT(*) FROM product_materials WHERE product_id=? AND is_deleted=0) bom_count`,
+          [id],
         );
-        if ((dependent?.bom_count ?? 0) > 0 || (dependent?.route_count ?? 0) > 0) {
+        if ((dependent?.bom_count ?? 0) > 0) {
           throw new ProductDomainError(
             'INVALID_PRODUCT_KIND',
-            '已有 BOM 或工艺路线的对象必须保持为自制半成品或成品',
+            '已有 BOM 的成品必须保持为自制获取方式',
           );
         }
       }
       await connection.execute(
-        `UPDATE products SET item_code=?,product_name=?,category_id=?,unit=?,acquire_method=?,spec_values=?,status=?,remark=?,updated_by=? WHERE id=? AND is_deleted=0`,
+        `UPDATE products SET product_name=?,category_id=?,unit=?,acquire_method=?,spec_values=?,status=?,remark=?,updated_by=? WHERE id=? AND is_deleted=0`,
         [
-          payload.itemCode,
           payload.productName,
           payload.categoryId,
           payload.unit,
@@ -238,7 +353,7 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
     const [rows] = await this.pool.query<
       (RowDataPacket & {
         id: number;
-        material_product_id: number;
+        material_id: number;
         item_code: string;
         product_name: string;
         item_kind: ProductItemKind;
@@ -250,16 +365,16 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
         remark: string | null;
       })[]
     >(
-      `SELECT pm.id,pm.material_product_id,p.item_code,p.product_name,c.item_kind,pm.quantity_per_unit,
+      `SELECT pm.id,pm.material_id,p.material_code item_code,p.material_name product_name,c.item_kind,pm.quantity_per_unit,
                     pm.unit,pm.is_key_material,pm.need_batch_record,pm.status,pm.remark
-             FROM product_materials pm JOIN products p ON p.id=pm.material_product_id
+             FROM product_materials pm JOIN materials p ON p.id=pm.material_id
              JOIN product_categories c ON c.id=p.category_id
              WHERE pm.product_id=? AND pm.is_deleted=0 ORDER BY pm.id`,
       [productId],
     );
     return rows.map((row) => ({
       id: String(row.id),
-      materialProductId: String(row.material_product_id),
+      materialId: String(row.material_id),
       itemCode: row.item_code,
       productName: row.product_name,
       itemKind: row.item_kind,
@@ -290,16 +405,15 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
         acquireMethod: product.acquire_method,
         itemKind: product.item_kind,
       });
-      if (product.acquire_method !== 'self_made' || product.item_kind === 'material') {
-        throw new ProductDomainError('INVALID_PRODUCT_KIND', '只有自制半成品或成品可以配置 BOM');
+      if (product.acquire_method !== 'self_made') {
+        throw new ProductDomainError('INVALID_PRODUCT_KIND', '只有自制成品可以配置 BOM');
       }
       const before = await this.listMaterialRecords(connection, productId);
-      const desiredIds = items.map((item) => item.materialProductId);
       for (const item of items) {
         const material = await this.requireMaterialCandidate(
           connection,
           productId,
-          item.materialProductId,
+          item.materialId,
         );
         if (item.unit !== material.unit) {
           throw new ProductDomainError(
@@ -308,30 +422,19 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
           );
         }
       }
-      const removed = before.filter(
-        (item) => !desiredIds.includes(String(item.material_product_id)),
-      );
-      if (removed.length) {
-        const [used] = await connection.query<RowDataPacket[]>(
-          `SELECT rsm.id FROM route_step_materials rsm WHERE rsm.product_material_id IN (${removed.map(() => '?').join(',')}) LIMIT 1`,
-          removed.map((item) => item.id),
-        );
-        if (used.length)
-          throw new ProductDomainError('CONFLICT', 'BOM 明细已被工艺路线步骤使用，不能移除');
-      }
       await connection.execute(
         'UPDATE product_materials SET is_deleted=1,deleted_by=?,deleted_at=NOW(),updated_by=? WHERE product_id=? AND is_deleted=0',
         [audit.actorId, audit.actorId, productId],
       );
       for (const item of items) {
         await connection.execute(
-          `INSERT INTO product_materials (product_id,material_product_id,quantity_per_unit,unit,is_key_material,need_batch_record,status,remark,created_by,updated_by)
+          `INSERT INTO product_materials (product_id,material_id,quantity_per_unit,unit,is_key_material,need_batch_record,status,remark,created_by,updated_by)
            VALUES (?,?,?,?,?,?,?,?,?,?)
            ON DUPLICATE KEY UPDATE quantity_per_unit=VALUES(quantity_per_unit),unit=VALUES(unit),is_key_material=VALUES(is_key_material),
              need_batch_record=VALUES(need_batch_record),status=VALUES(status),remark=VALUES(remark),updated_by=VALUES(updated_by),is_deleted=0,deleted_by=NULL,deleted_at=NULL`,
           [
             productId,
-            item.materialProductId,
+            item.materialId,
             item.quantityPerUnit,
             item.unit,
             Number(item.isKeyMaterial),
@@ -349,13 +452,12 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
 
   async setDefaultRoute(productId: string, routeId: string | null, audit: CommandContext) {
     await withTransaction(this.pool, async (connection) => {
-      let route: (RowDataPacket & { product_id: number; status: string }) | undefined;
+      let route: (RowDataPacket & { status: string }) | undefined;
       if (routeId) {
-        [[route]] = await connection.query<
-          (RowDataPacket & { product_id: number; status: string })[]
-        >('SELECT product_id,status FROM process_routes WHERE id=? AND is_deleted=0 FOR UPDATE', [
-          routeId,
-        ]);
+        [[route]] = await connection.query<(RowDataPacket & { status: string })[]>(
+          'SELECT status FROM process_routes WHERE id=? AND is_deleted=0 FOR UPDATE',
+          [routeId],
+        );
       }
       const product = await this.productRecord(connection, productId, true);
       requireConfigurableProduct({
@@ -363,15 +465,12 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
         acquireMethod: product.acquire_method,
         itemKind: product.item_kind,
       });
-      if (product.acquire_method !== 'self_made' || product.item_kind === 'material') {
-        throw new ProductDomainError(
-          'INVALID_PRODUCT_KIND',
-          '只有自制半成品或成品可以设置默认工艺路线',
-        );
+      if (product.acquire_method !== 'self_made') {
+        throw new ProductDomainError('INVALID_PRODUCT_KIND', '只有自制成品可以设置默认工艺路线');
       }
       if (routeId) {
-        if (!route || String(route.product_id) !== productId || route.status !== 'enabled') {
-          throw new ProductDomainError('INVALID_ROUTE', '默认路线必须是该产品已启用的工艺路线');
+        if (!route || route.status !== 'enabled') {
+          throw new ProductDomainError('INVALID_ROUTE', '默认路线必须是已启用的工艺路线');
         }
       }
       await connection.execute(
@@ -411,6 +510,12 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
       throw new ProductDomainError('INVALID_CATEGORY', '只能选择已启用的产品分类');
     return row;
   }
+  private async requireProductCategory(db: Db, id: string) {
+    const row = await this.requireCategory(db, id);
+    if (row.item_kind !== 'finished_product')
+      throw new ProductDomainError('INVALID_CATEGORY', '成品只能选择成品分类');
+    return row;
+  }
   private async productRecord(db: Db, id: string, lock = false) {
     const [[row]] = await db.query<
       (RowDataPacket & {
@@ -434,16 +539,15 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
     return row;
   }
   private async requireMaterialCandidate(db: Db, productId: string, materialId: string) {
-    const material = await this.productRecord(db, materialId);
-    if (
-      materialId === productId ||
-      material.status !== 1 ||
-      !['material', 'semi_finished'].includes(material.item_kind)
-    ) {
-      throw new ProductDomainError(
-        'INVALID_MATERIAL',
-        'BOM 投入对象必须是已启用的物料或半成品，且不能引用产品自身',
-      );
+    const [[material]] = await db.query<
+      (RowDataPacket & { status: number; unit: string; item_kind: ProductItemKind })[]
+    >(
+      `SELECT m.status,m.unit,c.item_kind FROM materials m JOIN product_categories c ON c.id=m.category_id
+       WHERE m.id=? AND m.is_deleted=0 AND c.is_deleted=0`,
+      [materialId],
+    );
+    if (!material || material.status !== 1 || material.item_kind !== 'material') {
+      throw new ProductDomainError('INVALID_MATERIAL', 'BOM 投入对象必须是已启用的基础物料');
     }
     return material;
   }
@@ -451,12 +555,12 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
     const [rows] = await db.query<
       (RowDataPacket & {
         id: number;
-        material_product_id: number;
+        material_id: number;
         quantity_per_unit: string;
         unit: string;
       })[]
     >(
-      'SELECT id,material_product_id,quantity_per_unit,unit FROM product_materials WHERE product_id=? AND is_deleted=0 ORDER BY id',
+      'SELECT id,material_id,quantity_per_unit,unit FROM product_materials WHERE product_id=? AND is_deleted=0 ORDER BY id',
       [productId],
     );
     return rows;
@@ -490,5 +594,47 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
   private json<T>(value: string | object | null): T[] {
     if (!value) return [];
     return (typeof value === 'string' ? JSON.parse(value) : value) as T[];
+  }
+
+  private mapProduct(row: {
+    id: number;
+    item_code: string;
+    product_name: string;
+    category_id: number;
+    category_code: string;
+    category_name: string;
+    item_kind: ProductItemKind;
+    default_route_id: number | null;
+    default_route_name: string | null;
+    unit: string;
+    acquire_method: ProductListItem['acquireMethod'];
+    spec_values: string | object | null;
+    status: number;
+    material_count: number;
+    bom_locked_at: Date | null;
+    bom_locked_by: number | null;
+    remark: string | null;
+    updated_at: Date | null;
+  }): ProductListItem {
+    return {
+      id: String(row.id),
+      itemCode: row.item_code,
+      productName: row.product_name,
+      categoryId: String(row.category_id),
+      categoryCode: row.category_code,
+      categoryName: row.category_name,
+      itemKind: row.item_kind,
+      defaultRouteId: row.default_route_id === null ? null : String(row.default_route_id),
+      defaultRouteName: row.default_route_name,
+      unit: row.unit,
+      acquireMethod: row.acquire_method,
+      specValues: this.json<ProductListItem['specValues'][number]>(row.spec_values),
+      status: row.status,
+      materialCount: Number(row.material_count),
+      bomLockedAt: this.date(row.bom_locked_at),
+      bomLockedById: row.bom_locked_by === null ? null : String(row.bom_locked_by),
+      remark: row.remark,
+      updatedAt: this.date(row.updated_at),
+    };
   }
 }

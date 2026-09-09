@@ -53,8 +53,11 @@ describe('MysqlProductionDemandPlanWriter', () => {
 
 const demandLine = (productMaterialId: number, itemCode: string) => ({
   identityId: productMaterialId,
+  requirementBasisId: productMaterialId + 1000,
   productMaterialId,
   itemId: productMaterialId + 100,
+  materialVariantId: productMaterialId + 200,
+  materialVariantCode: `${itemCode}-v1-A`,
   itemCode,
   itemName: itemCode,
   quantityPerUnit: '1.0000',

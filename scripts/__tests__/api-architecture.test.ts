@@ -153,6 +153,67 @@ describe('checkApiArchitecture', () => {
     expect(flagsPath(violations, 'identity/infrastructure/leak.ts')).toBe(true);
   });
 
+  it('flags Production infrastructure from directly querying Product material variants', async () => {
+    const violations = await checkApiArchitecture([
+      {
+        path: 'apps/api/src/modules/production/infrastructure/leak.ts',
+        source: `await connection.execute('SELECT id FROM material_variants WHERE material_product_id=?', [id]);\n`,
+      },
+    ]);
+
+    expect(flagsPath(violations, 'production/infrastructure/leak.ts')).toBe(true);
+  });
+
+  it('flags an unregistered Production read of Product material names', async () => {
+    const violations = await checkApiArchitecture([
+      {
+        path: 'apps/api/src/modules/production/infrastructure/leak.ts',
+        source: `await connection.execute('SELECT id, material_name FROM materials WHERE id=?', [id]);\n`,
+      },
+    ]);
+
+    expect(flagsPath(violations, 'production/infrastructure/leak.ts')).toBe(true);
+  });
+
+  it('allows the registered read-only Production display query to read approved material fields', async () => {
+    const fixturePath =
+      'apps/api/src/modules/production/infrastructure/queries/material-display.fixture.ts';
+    const violations = await checkApiArchitecture([
+      {
+        path: fixturePath,
+        source: `const sql = 'SELECT m.id, m.material_name FROM materials m WHERE m.id=?';\n`,
+      },
+    ]);
+
+    expect(flagsPath(violations, fixturePath)).toBe(false);
+  });
+
+  it('flags an unapproved field in a registered Production display query', async () => {
+    const fixturePath =
+      'apps/api/src/modules/production/infrastructure/queries/material-display-field-leak.ts';
+    const violations = await checkApiArchitecture([
+      {
+        path: fixturePath,
+        source: `const sql = 'SELECT m.id, m.material_code FROM materials m WHERE m.id=?';\n`,
+      },
+    ]);
+
+    expect(flagsPath(violations, fixturePath)).toBe(true);
+  });
+
+  it('flags writes from the registered display-query directory', async () => {
+    const fixturePath =
+      'apps/api/src/modules/production/infrastructure/queries/material-display-write-leak.ts';
+    const violations = await checkApiArchitecture([
+      {
+        path: fixturePath,
+        source: `const sql = 'UPDATE materials SET material_name=? WHERE id=?';\n`,
+      },
+    ]);
+
+    expect(flagsPath(violations, fixturePath)).toBe(true);
+  });
+
   it('flags a write to http_idempotency_records outside the idempotency platform', async () => {
     const violations = await checkApiArchitecture([
       {
@@ -215,7 +276,7 @@ describe('checkApiArchitecture', () => {
     const violations = await checkApiArchitecture([
       {
         path: 'apps/api/src/modules/production/application/leak.ts',
-        source: `const legacy = 'production.batch.create.v4';\n`,
+        source: `const duplicated = 'production.batch.create.v5';\n`,
       },
     ]);
 
@@ -226,7 +287,7 @@ describe('checkApiArchitecture', () => {
     const violations = await checkApiArchitecture([
       {
         path: 'apps/api/src/modules/production/application/idempotency/fixture-idempotency-scopes.contract.ts',
-        source: `export const CREATE_BATCH_IDEMPOTENCY_SCOPE = 'production.batch.create.v4' as const;\n`,
+        source: `export const CREATE_BATCH_IDEMPOTENCY_SCOPE = 'production.batch.create.v5' as const;\n`,
       },
     ]);
 

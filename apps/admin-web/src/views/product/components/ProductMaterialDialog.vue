@@ -24,7 +24,7 @@
       />
       <el-alert
         v-else-if="detailReady && !localRows.length && !product.bomLockedAt"
-        title="当前产品尚未配置物料清单。生产任务生成物料需求前，需要先维护这里的用料。"
+        title="当前产品尚未配置物料清单。生产任务配置物料需求前，需要先维护这里的用料。"
         type="warning"
         :closable="false"
         show-icon
@@ -61,7 +61,7 @@
         >
           <template #default="{ row }">
             <el-select
-              v-model="row.materialProductId"
+              v-model="row.materialId"
               filterable
               placeholder="请选择物料"
               :disabled="Boolean(product.bomLockedAt)"
@@ -69,11 +69,11 @@
               @visible-change="(visible: boolean) => visible && refreshCandidates()"
             >
               <el-option
-                v-for="choice in materialChoices(row.materialProductId)"
+                v-for="choice in materialChoices(row.materialId)"
                 :key="choice.value"
                 :label="
                   choice.option
-                    ? `${choice.option.itemCode} / ${choice.option.productName}`
+                    ? `${choice.option.materialCode} / ${choice.option.materialName}`
                     : `${choice.value}（已失效）`
                 "
                 :value="choice.value"
@@ -184,7 +184,7 @@ import { EMessage } from '../../../utils/message';
 import { useProductMaterialEditor } from '../composables/useProductMaterialEditor';
 
 export type MaterialRow = {
-  materialProductId: string;
+  materialId: string;
   quantityPerUnit: number;
   unit: string;
   isKeyMaterial: boolean;
@@ -229,7 +229,7 @@ const loadRows = async (productId: string): Promise<void> => {
   if (!rows) return;
   setRows(
     rows.map((item) => ({
-      materialProductId: item.materialProductId,
+      materialId: item.materialId,
       quantityPerUnit: Number(item.quantityPerUnit),
       unit: item.unit,
       isKeyMaterial: item.isKeyMaterial,
@@ -275,7 +275,7 @@ onActivated(() => {
 
 const addRow = (): void => {
   localRows.value.push({
-    materialProductId: '',
+    materialId: '',
     quantityPerUnit: 1,
     unit: '',
     isKeyMaterial: true,
@@ -292,7 +292,7 @@ const materialChoices = (selectedValue: string) =>
   buildLiveOptions(materialOptions.value, selectedValue ? [selectedValue] : [], (item) => item.id);
 
 const syncRowUnit = (row: MaterialRow): void => {
-  const selected = materialOptions.value.find((item) => item.id === row.materialProductId);
+  const selected = materialOptions.value.find((item) => item.id === row.materialId);
   if (selected) row.unit = selected.unit;
 };
 
@@ -301,7 +301,7 @@ const handleSubmit = (): void => {
     EMessage.warning('物料清单尚未加载完成，请稍后重试');
     return;
   }
-  if (localRows.value.some((r) => !r.materialProductId)) {
+  if (localRows.value.some((r) => !r.materialId)) {
     EMessage.warning('请选择物料');
     return;
   }
@@ -309,7 +309,7 @@ const handleSubmit = (): void => {
     localRows.value.some((row) =>
       hasUnavailableSelection(
         materialOptions.value,
-        row.materialProductId ? [row.materialProductId] : [],
+        row.materialId ? [row.materialId] : [],
         (item) => item.id,
       ),
     )
@@ -317,7 +317,7 @@ const handleSubmit = (): void => {
     EMessage.warning('物料候选项已失效，请重新选择');
     return;
   }
-  if (new Set(localRows.value.map((r) => r.materialProductId)).size !== localRows.value.length) {
+  if (new Set(localRows.value.map((r) => r.materialId)).size !== localRows.value.length) {
     EMessage.warning('同一物料不能重复添加');
     return;
   }

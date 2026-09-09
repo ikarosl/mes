@@ -118,9 +118,9 @@ const all = [
 const systemItems = computed(() => all.filter((item) => auth.can(item.permission)));
 
 const productMenus = [
-  { title: '产品管理', path: '/product/products', permission: PERMISSIONS.product.products.view },
+  { title: '成品与物料', path: '/product/products', permission: PERMISSIONS.product.products.view },
   {
-    title: '产品分类',
+    title: '分类配置',
     path: '/product/categories',
     permission: PERMISSIONS.product.categories.view,
   },

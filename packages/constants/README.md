@@ -10,3 +10,5 @@
 corepack pnpm --filter @company/constants typecheck
 corepack pnpm --filter @company/constants test
 ```
+
+生产工序只通过报工数量达标自动完成，不定义员工单独完成工序权限。

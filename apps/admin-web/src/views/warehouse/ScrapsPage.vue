@@ -85,9 +85,10 @@
         >
         <el-table-column
           label="损耗物料"
-          min-width="230"
+          min-width="300"
           ><template #default="{ row }"
             ><div class="primary-cell">{{ row.itemCode }} · {{ row.itemName }}</div>
+            <div class="variant-cell">版本 {{ variantCode(row) }}</div>
             <div class="secondary-cell">库存批次 {{ row.batchCode }}</div></template
           ></el-table-column
         >
@@ -221,13 +222,18 @@
             ></el-table-column>
             <el-table-column
               prop="itemCode"
-              label="物料编码"
-              width="140"
+              label="基础物料编码"
+              width="150"
             /><el-table-column
               prop="itemName"
               label="物料名称"
               min-width="180"
             /><el-table-column
+              prop="materialVariantCode"
+              label="物料版本"
+              min-width="190"
+              ><template #default="{ row }">{{ variantCode(row) }}</template></el-table-column
+            ><el-table-column
               prop="batchCode"
               label="库存批次"
               width="150"
@@ -329,6 +335,8 @@ const selectedCandidate = computed(() =>
   candidates.value.find((item) => item.allocationId === form.allocationId),
 );
 const selectedMax = computed(() => Number(selectedCandidate.value?.availableLossQuantity ?? 0));
+const variantCode = (row: { materialVariantCode?: string | null }): string =>
+  row.materialVariantCode || '未记录版本';
 // 未选中候选或可损耗量为 0 时 max 会小于 min，需保证 max 不低于 min，避免 InputNumber 校验报错
 const scrapInputMax = computed(() => Math.max(selectedMax.value, 1));
 
@@ -518,6 +526,11 @@ onActivated(loadRows);
 .secondary-cell {
   margin-top: 4px;
   color: #909399;
+  font-size: 12px;
+}
+.variant-cell {
+  margin-top: 4px;
+  color: var(--el-color-primary);
   font-size: 12px;
 }
 .loss-form {

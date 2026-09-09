@@ -87,6 +87,12 @@
           <template #default="{ row }">{{ returnSummary(row) }}</template>
         </el-table-column>
         <el-table-column
+          label="物料版本"
+          min-width="190"
+        >
+          <template #default="{ row }">{{ returnVariantSummary(row) }}</template>
+        </el-table-column>
+        <el-table-column
           label="退回去向"
           width="145"
         >
@@ -174,8 +180,10 @@
     >
       <div class="dialog-body">
         <el-alert
-          title="仅可退回已确认领料的剩余物料。确认后统一进入可用公共库存，不再保留给原生产批次。"
-          type="info"
+          title="退料不会产生或恢复物料需求"
+          description="仅用于现场多余物料或订单中途关闭后的余料回仓，确认后进入公共可用库存。物料损坏或丢失请申报生产领料损耗；确需额外领料请创建人工追加需求。"
+          type="warning"
+          show-icon
           :closable="false"
         />
         <el-form
@@ -202,14 +210,8 @@
               />
             </el-select>
           </el-form-item>
-          <el-form-item label="退回策略">
-            <el-radio-group
-              model-value="public"
-              disabled
-            >
-              <el-radio value="public">释放到公共库存</el-radio>
-              <el-radio value="reserved">保留给原生产批次（暂未开放）</el-radio>
-            </el-radio-group>
+          <el-form-item label="物料去向">
+            <span class="return-destination">物料将退回原库存批次，成为公共可用库存。</span>
           </el-form-item>
           <el-form-item label="备注">
             <el-input
@@ -243,6 +245,7 @@
           >
             <template #default="{ row }">
               <div class="primary-cell">{{ row.itemCode }} · {{ row.itemName }}</div>
+              <div class="variant-cell">版本 {{ row.materialVariantCode }}</div>
               <div class="secondary-cell">库存批次 {{ row.batchCode }}</div>
             </template>
           </el-table-column>
@@ -351,8 +354,13 @@
         >
           <el-table-column
             prop="itemCode"
-            label="物料编码"
-            width="150"
+            label="基础物料编码"
+            width="160"
+          />
+          <el-table-column
+            prop="materialVariantCode"
+            label="物料版本"
+            min-width="190"
           />
           <el-table-column
             prop="itemName"
@@ -523,7 +531,7 @@ async function submitCreate() {
 async function confirmOrder(row: ReturnOrderItem) {
   try {
     await RouteMessageBox.confirm(
-      `确认退回 ${returnSummary(row)}？确认后库存立即增加并释放为公共可用库存。`,
+      `确认退回 ${returnSummary(row)}？确认后物料退回原库存批次，增加公共可用库存，不再为原生产任务保留。`,
       '确认生产退料',
       { type: 'warning', confirmButtonText: '确认退料入库' },
     );
@@ -600,6 +608,9 @@ function returnSummary(row: ReturnOrderItem) {
     byUnit.set(line.unit, (byUnit.get(line.unit) ?? 0) + Number(line.returnQuantity));
   return [...byUnit].map(([unit, value]) => `${quantity(value)} ${unit}`).join('；') || '0';
 }
+function returnVariantSummary(row: ReturnOrderItem): string {
+  return [...new Set(row.details.map((line) => line.materialVariantCode))].join('；') || '—';
+}
 const quantity = (value: string | number) => Number(value).toFixed(0);
 const statusTag = (status: ReturnOrderStatus) =>
   status === 'returned'
@@ -638,6 +649,10 @@ onActivated(() => {
 </script>
 
 <style scoped>
+.return-destination {
+  color: var(--el-color-warning-dark-2);
+}
+
 .return-orders-page {
   display: flex;
   flex-direction: column;
@@ -698,6 +713,11 @@ onActivated(() => {
 .secondary-cell {
   margin-top: 3px;
   color: #6b7280;
+  font-size: 12px;
+}
+.variant-cell {
+  margin-top: 3px;
+  color: var(--el-color-primary);
   font-size: 12px;
 }
 .dialog-body {

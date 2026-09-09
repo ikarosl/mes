@@ -7,8 +7,10 @@ describe('MysqlProductionInboundRepository inventory list', () => {
     const inventoryRow = {
       id: 101,
       item_id: 5,
+      material_variant_id: 6,
       item_code_snapshot: 'MAT-1',
-      product_name_snapshot: '测试物料',
+      item_name: '停用后的当前名称',
+      material_variant_code_snapshot: 'V-6',
       unit_snapshot: 'kg',
       batch_code: 'B001',
       source_type: 'purchased',
@@ -28,7 +30,12 @@ describe('MysqlProductionInboundRepository inventory list', () => {
     const result = await repository.listInventory({ page: 1, pageSize: 20 });
 
     expect(result.items).toHaveLength(1);
-    expect(result.items[0]).toMatchObject({ itemBatchId: '101', batchCode: 'B001' });
+    expect(result.items[0]).toMatchObject({
+      itemBatchId: '101',
+      materialVariantId: '6',
+      itemName: '停用后的当前名称',
+      batchCode: 'B001',
+    });
     const existsClause =
       'EXISTS (SELECT 1 FROM inventory_transaction it WHERE it.batch_id = ib.id)';
     expect(String(query.mock.calls[0]?.[0])).toContain(existsClause);
@@ -39,8 +46,10 @@ describe('MysqlProductionInboundRepository inventory list', () => {
     const inventoryRow = {
       id: 101,
       item_id: 5,
+      material_variant_id: 6,
       item_code_snapshot: 'MAT-1',
-      product_name_snapshot: '测试物料',
+      item_name: '当前物料名称',
+      material_variant_code_snapshot: 'V-6',
       unit_snapshot: '件',
       batch_code: 'B001',
       source_type: 'purchased',
@@ -110,6 +119,46 @@ describe('MysqlProductionInboundRepository inventory list', () => {
     expect(transactionSql).toContain('ORDER BY created_at DESC,id DESC');
   });
 
+  it('searches inventory by the current material name without status-based history loss', async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce([[{ total: 1 }], []])
+      .mockResolvedValueOnce([[{ id: 101 }], []])
+      .mockResolvedValueOnce([
+        [
+          {
+            id: 101,
+            item_id: 5,
+            material_variant_id: 6,
+            item_code_snapshot: 'MAT-1',
+            item_name: '停用后的当前名称',
+            material_variant_code_snapshot: 'V-6',
+            unit_snapshot: '件',
+            batch_code: 'B001',
+            source_type: 'purchased',
+            provider: null,
+            batch_status: 'available',
+            on_hand: '6',
+            reserved: '0',
+          },
+        ],
+        [],
+      ])
+      .mockResolvedValueOnce([[], []]);
+    const repository = new MysqlProductionInboundRepository({ query } as never);
+
+    await expect(
+      repository.listInventory({ keyword: '当前名称', page: 1, pageSize: 20 }),
+    ).resolves.toMatchObject({
+      items: [expect.objectContaining({ itemName: '停用后的当前名称', materialVariantId: '6' })],
+    });
+
+    expect(String(query.mock.calls[0]?.[0])).toContain('display_material.material_name');
+    expect(String(query.mock.calls[1]?.[0])).toContain('display_material.material_name');
+    expect(query.mock.calls[0]?.[1]).toEqual(['%当前名称%', '%当前名称%']);
+    expect(query.mock.calls[1]?.[1]).toEqual(['%当前名称%', '%当前名称%', 20, 0]);
+  });
+
   it('matches demand snapshots but aggregates every active demand for the matched item', async () => {
     const query = vi
       .fn()
@@ -118,8 +167,10 @@ describe('MysqlProductionInboundRepository inventory list', () => {
         [
           {
             item_id: 5,
+            material_variant_id: 6,
             item_code: 'MAT-NEW',
             item_name: '新名称',
+            material_variant_code: 'V-6',
             unit: 'kg',
             total_inventory: '8',
             available_inventory: '6',
@@ -139,16 +190,27 @@ describe('MysqlProductionInboundRepository inventory list', () => {
 
     expect(result.items[0]).toMatchObject({
       itemId: '5',
+      materialVariantId: '6',
+      itemName: '新名称',
       openDemandQuantity: '10',
       shortageQuantity: '4',
       isShortage: true,
     });
     const dataSql = String(query.mock.calls[1]?.[0]);
     expect(dataSql).toContain('EXISTS (');
-    expect(dataSql).toContain('SUM(demand.remaining_number)');
-    expect(dataSql).toContain('MAX(demand.id) representative_demand_id');
+    expect(dataSql).toContain('SUM(remaining_number)');
+    expect(dataSql).toContain('MAX(id) representative_demand_id');
     expect(dataSql).not.toContain('MAX(demand.item_name_snapshot)');
-    expect(query.mock.calls[1]?.[1]).toEqual(['%旧名称%', '%旧名称%', 10, 0]);
+    expect(query.mock.calls[1]?.[1]).toEqual([
+      '%旧名称%',
+      '%旧名称%',
+      '%旧名称%',
+      '%旧名称%',
+      '%旧名称%',
+      '%旧名称%',
+      10,
+      0,
+    ]);
   });
 
   it('traces each active demand to its work order, task and supplement source', async () => {
@@ -160,6 +222,8 @@ describe('MysqlProductionInboundRepository inventory list', () => {
           {
             id: 81,
             item_id: 5,
+            material_variant_id: 6,
+            material_variant_code: 'V-5',
             production_batch_id: 7,
             batch_no: 'TASK-007',
             work_order_id: 3,
@@ -180,10 +244,16 @@ describe('MysqlProductionInboundRepository inventory list', () => {
       ]);
     const repository = new MysqlProductionSupplyDemandRepository({ query } as never);
 
-    const result = await repository.listDemandTrace('5', { page: 1, pageSize: 10 });
+    const result = await repository.listDemandTrace('5', {
+      materialVariantId: 'v5',
+      page: 1,
+      pageSize: 10,
+    });
 
     expect(result.items[0]).toMatchObject({
       demandId: '81',
+      materialVariantId: '6',
+      materialVariantCode: 'V-5',
       batchNo: 'TASK-007',
       workOrderNo: 'WO-003',
       demandType: 'scrap_supplement',
@@ -196,6 +266,6 @@ describe('MysqlProductionInboundRepository inventory list', () => {
     expect(sql).toContain('JOIN production_batches');
     expect(sql).toContain('JOIN work_orders');
     expect(sql).toContain('LEFT JOIN production_material_supplement');
-    expect(query.mock.calls[1]?.[1]).toEqual(['5', 10, 0]);
+    expect(query.mock.calls[1]?.[1]).toEqual(['5', 'v5', 10, 0]);
   });
 });

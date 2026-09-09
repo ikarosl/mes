@@ -112,7 +112,7 @@ describe('business persisted codes', () => {
   it('keeps production execution completion blockers stable', () => {
     expect(PRODUCTION_EXECUTION_COMPLETION_BLOCKERS).toEqual([
       'batch_not_doing',
-      'no_required_reporting_step',
+      'no_route_step',
       'required_step_incomplete',
       'final_step_quantity_insufficient',
     ]);

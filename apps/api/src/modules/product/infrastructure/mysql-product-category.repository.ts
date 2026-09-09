@@ -128,6 +128,8 @@ export class MysqlProductCategoryRepository implements ProductCategoryRepository
   async updateCategory(id: string, payload: ProductCategoryPayload, audit: CommandContext) {
     await withTransaction(this.pool, async (connection) => {
       const before = await this.categoryRecord(connection, id);
+      if (before.item_kind !== payload.itemKind)
+        throw new ProductDomainError('INVALID_CATEGORY', '分类对象类型创建后不可修改，请新建分类');
       if (payload.parentId === id)
         throw new ProductDomainError('INVALID_CATEGORY', '分类不能将自身设为父分类');
       await this.validateCategoryParent(connection, payload.parentId ?? null, payload.itemKind);
@@ -146,20 +148,12 @@ export class MysqlProductCategoryRepository implements ProductCategoryRepository
             '父分类不能指向当前分类的下级，避免形成循环',
           );
       }
-      const [[usage]] = await connection.query<(RowDataPacket & { count: number })[]>(
-        'SELECT COUNT(*) count FROM products WHERE category_id=? AND is_deleted=0',
-        [id],
-      );
-      if ((usage?.count ?? 0) > 0 && before.item_kind !== payload.itemKind) {
-        throw new ProductDomainError('INVALID_CATEGORY', '已被产品使用的分类不能修改对象类型');
-      }
       await connection.execute(
-        `UPDATE product_categories SET parent_id=?,category_code=?,category_name=?,item_kind=?,status=?,remark=?,updated_by=? WHERE id=? AND is_deleted=0`,
+        `UPDATE product_categories SET parent_id=?,category_code=?,category_name=?,status=?,remark=?,updated_by=? WHERE id=? AND is_deleted=0`,
         [
           payload.parentId ?? null,
           payload.categoryCode,
           payload.categoryName,
-          payload.itemKind,
           payload.status,
           payload.remark ?? null,
           audit.actorId,

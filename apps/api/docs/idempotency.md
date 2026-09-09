@@ -9,10 +9,12 @@
 
 | 命令 | HTTP 入口 | scope |
 | --- | --- | --- |
-| 创建生产批次 | `POST /api/production/work-orders/:workOrderId/batches` | `production.batch.create.v4` |
+| 创建生产批次 | `POST /api/production/work-orders/:workOrderId/batches` | `production.batch.create.v5` |
 | 创建物料分配 | `POST /api/production/batches/:batchId/material-allocations` | `production.material-allocation.create.v1` |
 | 创建生产领料出库单 | `POST /api/production/batches/:batchId/material-outbounds` | `production.material-outbound.create.v3` |
 | 确认生产领料出库单 | `POST /api/production/material-outbounds/:outboundId/actions/confirm` | `production.material-outbound.confirm.v2` |
+| 管理员一次确认全部 BOM 行的精确版本需求 | `POST /api/production/batches/:batchId/material-demands/configurations` | `production.material-demands.configure.v1` |
+| 创建任务级人工追加物料需求 | `POST /api/production/batches/:batchId/material-demands/additions` | `production.material-demands.add-manual.v2` |
 | 创建外购物料入库单 | `POST /api/production/purchase-inbounds` | `production.purchase-inbound.create.v1` |
 | 确认外购物料入库单 | `POST /api/production/purchase-inbounds/:inboundId/actions/confirm` | `production.purchase-inbound.confirm.v1` |
 | 创建工序报工 | `POST /api/production/batches/:batchId/step-records/:recordId/reports` | `production.step-report.create.v3` |
@@ -86,20 +88,70 @@ modules/production/application/idempotency/
 
 ## 5. 数据库记录与保留期
 
-表结构由 `202608050001-http-idempotency-records` 创建，核心字段包括：
+### `http_idempotency_records` 结构
 
-- `scope + idempotency_key`：区分命令契约并形成唯一键，使用区分大小写的二进制排序规则；
-- `request_fingerprint`：同键是否仍代表同一业务输入；
-- `actor_id`：认证操作者；
-- `initial_request_id`：首次请求追踪 ID；
-- `status`：仅允许 `processing/completed`；
-- `result_json`：完成结果的 JSON 快照；
-- `completed_at/expires_at`：完成与允许清理时间。
+表由 [202608050001-http-idempotency-records.up.sql](../../../packages/database/migrations/202608050001-http-idempotency-records.up.sql) 创建，属于 API 平台幂等基础设施。使用 InnoDB、`utf8mb4`，表默认排序规则为 `utf8mb4_0900_ai_ci`。
+
+| 字段 | 类型 | 允许 NULL | 默认值 / 自动生成 | 说明 |
+| --- | --- | --- | --- | --- |
+| `id` | `BIGINT UNSIGNED` | 否 | `AUTO_INCREMENT` | 幂等记录主键 |
+| `scope` | `VARCHAR(128)` | 否 | 无 | 服务端命令契约范围，列排序规则 `utf8mb4_bin` |
+| `idempotency_key` | `VARCHAR(150)` | 否 | 无 | 客户端业务意图键，列排序规则 `utf8mb4_bin` |
+| `request_fingerprint` | `CHAR(64)` | 否 | 无 | 规范化请求的 SHA-256 十六进制摘要，列排序规则 `ascii_bin` |
+| `actor_id` | `BIGINT UNSIGNED` | 否 | 无 | 首次请求的认证操作者 |
+| `initial_request_id` | `VARCHAR(128)` | 否 | 无 | 首次请求追踪 ID，重放不覆盖 |
+| `status` | `VARCHAR(16)` | 否 | 无 | `processing` 或 `completed`，由 executor 显式写入 |
+| `result_json` | `JSON` | 是 | `NULL` | 经结果 codec 校验的完成结果快照 |
+| `created_at` | `DATETIME` | 否 | `CURRENT_TIMESTAMP` | 首次登记时间 |
+| `completed_at` | `DATETIME` | 是 | `NULL` | 完成时间，由 executor 写入 |
+| `expires_at` | `DATETIME` | 是 | `NULL` | 允许清理时间，由 executor 按完成时间加 12 小时写入 |
+
+可空列未显式声明 `DEFAULT`，其隐式默认值为 SQL `NULL`。本表采用专用生命周期字段，不继承业务单据的 `updated_by`、`updated_at`、`version` 或软删除字段。
+
+| 物理约束 / 索引 | 定义与用途 |
+| --- | --- |
+| `PRIMARY KEY` | `(id)` |
+| `uk_http_idempotency_scope_key` | `UNIQUE (scope, idempotency_key)`，区分大小写地仲裁同一命令范围内的键；不按操作者另分唯一键 |
+| `idx_http_idempotency_expires_at` | `INDEX (expires_at)`，支持到期清理 |
+| `idx_http_idempotency_initial_request` | `INDEX (initial_request_id)`，支持首次请求追踪 |
+| `fk_http_idempotency_actor` | `FOREIGN KEY (actor_id) REFERENCES users(id)`；InnoDB 为外键列提供支撑索引 |
+| `chk_http_idempotency_status` | `CHECK (status IN ('processing', 'completed'))` |
+| `chk_http_idempotency_completed` | `completed` 时 `result_json`、`completed_at`、`expires_at` 必须全部非 SQL `NULL`；`processing` 时三列必须全部为 SQL `NULL` |
+
+完成条件的完整 CHECK 表达式为：
+
+```sql
+CHECK (
+  (status = 'completed' AND result_json IS NOT NULL AND completed_at IS NOT NULL AND expires_at IS NOT NULL)
+  OR (status = 'processing' AND result_json IS NULL AND completed_at IS NULL AND expires_at IS NULL)
+)
+```
+
+该 CHECK 不校验结果业务形状或时间先后，也不在数据库层强制 12 小时间隔；这些由结果 codec 和 executor 保证。JSON 字面值 `null` 与 SQL `NULL` 不同，是否允许该结果由对应 codec 决定。
+
+### 保留期与业务使用
 
 `completed` 记录提供至少 12 小时的服务端重放保证。到达 `expires_at` 只表示允许清理；记录物理删除前，同
 scope/key 仍按既有记录仲裁。清理后该 scope/key 才可能成为新的首次请求。
 
 客户端不得在超过 12 小时后自动重试旧键，也不得自动换新键盲发。首次结果可能已经成功，必须先核对业务结果，再由用户显式放弃旧意图。
+
+物料需求配置和人工追加均由 application service 调用 `IdempotencyExecutor`，业务规则以
+[Production 需求设计](../src/modules/production/docs/database/demand-allocation-and-outbound.md)及
+[需求配置 Repository](../src/modules/production/infrastructure/mysql-production-material-demand-configuration.repository.ts)为准：
+
+- 初始配置必须一次覆盖任务的全部 BOM 行，明确每行的精确物料版本及数量。写事务先锁定工单和批次，
+  重新读取 Product 公共 BOM，并锁定、校验启用版本；每行拆分数量之和必须等于该行应需量。全部校验
+  通过后，在同一事务写入所有需求基础与初始需求，并将批次从 `pending` 推进至 `material_pending`。
+  任一行缺失或不合法均整单回滚，不产生部分配置事实。
+- 人工追加是针对已生成初始需求的进行中任务的一次动作，可以选取任务冻结 BOM 中的多种基础物料，
+  无需覆盖全部 BOM 行。事务内锁定工单、批次和冻结需求基础，校验启用版本、正整数追加数量及工单
+  物料版本规则后，写入一条 `production_manual_demand_addition` 和对应的多条需求。需求通过
+  `manual_addition_id` 关联追加动作，`parent_demand_id` 为空；不读取当前 BOM 替代任务冻结基础。
+- 两类命令均遵守工单类型约束：批量单同一基础物料只能选择一个版本并遵守工单级版本锁，研发单允许
+  多版本拆分。新增需求统一经 Production 需求计划写入器推进 `material_plan_version`；幂等记录、
+  业务事实、批次更新和成功审计同事务提交。同 scope/key、同请求的成功重放只返回已保存结果，
+  不再次生成需求、推进计划版本或追加成功审计。
 
 ## 6. 规范化请求指纹
 
@@ -229,3 +281,5 @@ scope 是服务端独占的命令契约版本，客户端不得传输、选择�
 4. 窗口结束且旧记录已自然过期/清理后，再删除旧兼容分支。
 
 不得用新 codec 猜测旧结果，也不得覆盖旧 scope 记录。兼容示例和算法测试中的旧版本字符串不是当前端点版本；当前版本以 scope 常量为准。
+
+创建批次当前结果不包含报工开关快照；所有工序统一报工。开发阶段不保留旧 scope 的兼容解码，发布前结束旧客户端操作并刷新页面，不将旧意图自动迁入新 scope。

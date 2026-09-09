@@ -10,3 +10,5 @@
 corepack pnpm --filter @company/contracts typecheck
 corepack pnpm --filter @company/contracts test
 ```
+
+路线步骤、生产快照和员工任务均不包含是否报工字段；所有工序统一报工，员工任务不提供手工完成工序能力字段。

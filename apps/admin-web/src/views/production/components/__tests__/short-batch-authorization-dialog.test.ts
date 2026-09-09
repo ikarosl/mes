@@ -20,6 +20,8 @@ describe('ShortBatchAuthorizationDialog', () => {
             {
               demandId: '10',
               itemId: '20',
+              materialVariantId: 'mv-20',
+              materialVariantCode: 'M-001-v1-A',
               itemCode: 'M-001',
               itemName: '物料 A',
               generationGroupKey: 'LOSSSUP:52',
@@ -120,7 +122,7 @@ describe('ShortBatchAuthorizationDialog', () => {
           authorizationStatus: 'none',
           authorizationAction: 'authorize',
           authorizationCoverage: 'none',
-          blockedReason: '当前尚无可预计出库分配，且批次没有净确认领料',
+          blockedReason: '当前尚无可预计出库分配，且批次没有已确认领料',
           lines: [],
         },
         loading: false,
@@ -146,12 +148,12 @@ describe('ShortBatchAuthorizationDialog', () => {
     });
 
     expect(wrapper.text()).toContain('短批授权');
-    expect(wrapper.text()).toContain('当前尚无可预计出库分配，且批次没有净确认领料');
+    expect(wrapper.text()).toContain('当前尚无可预计出库分配，且批次没有已确认领料');
     expect(wrapper.text()).not.toContain('物料已齐套');
     expect(wrapper.text()).not.toContain('确认承担风险并授权');
   });
 
-  it('已有净确认领料时允许对无当前分配的活动需求重新授权', async () => {
+  it('已有确认领料时允许对无当前分配的活动需求重新授权', async () => {
     const wrapper = mount(ShortBatchAuthorizationDialog, {
       props: {
         visible: true,
@@ -168,6 +170,8 @@ describe('ShortBatchAuthorizationDialog', () => {
             {
               demandId: '12',
               itemId: '20',
+              materialVariantId: 'mv-20',
+              materialVariantCode: 'M-001-v1-A',
               itemCode: 'M-001',
               itemName: '物料 A',
               generationGroupKey: 'LOSSSUP:52',

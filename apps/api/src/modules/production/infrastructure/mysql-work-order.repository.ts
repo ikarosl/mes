@@ -97,6 +97,7 @@ export class MysqlWorkOrderRepository {
       (RowDataPacket & {
         id: number;
         work_order_no: string;
+        order_type: WorkOrderOption['orderType'];
         product_id: number;
         product_code_snapshot: string;
         product_name_snapshot: string;
@@ -105,7 +106,7 @@ export class MysqlWorkOrderRepository {
         plan_end_date: Date | string | null;
       })[]
     >(
-      `SELECT wo.id,wo.work_order_no,wo.product_id,wo.product_code_snapshot,wo.product_name_snapshot,${remaining} AS remaining_quantity,wo.plan_start_date,wo.plan_end_date
+      `SELECT wo.id,wo.work_order_no,wo.order_type,wo.product_id,wo.product_code_snapshot,wo.product_name_snapshot,${remaining} AS remaining_quantity,wo.plan_start_date,wo.plan_end_date
          FROM work_orders wo
          WHERE ${conditions.join(' AND ')}
          ORDER BY wo.work_order_no ASC,wo.id ASC`,
@@ -113,6 +114,7 @@ export class MysqlWorkOrderRepository {
     return rows.map((row) => ({
       id: String(row.id),
       workOrderNo: row.work_order_no,
+      orderType: row.order_type,
       productId: String(row.product_id),
       productCode: row.product_code_snapshot,
       productName: row.product_name_snapshot,
@@ -148,10 +150,11 @@ export class MysqlWorkOrderRepository {
       );
       if (existing) throw new ProductionDomainError('CONFLICT', '工单号已存在');
       const [result] = await connection.execute<ResultSetHeader>(
-        `INSERT INTO work_orders (work_order_no,product_id,product_code_snapshot,product_name_snapshot,unit_snapshot,planned_quantity,customer_name,quality_level,work_order_owner_id,plan_start_date,plan_end_date,external_order_no,remark,created_by,updated_by)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        `INSERT INTO work_orders (work_order_no,order_type,product_id,product_code_snapshot,product_name_snapshot,unit_snapshot,planned_quantity,customer_name,quality_level,work_order_owner_id,plan_start_date,plan_end_date,external_order_no,remark,created_by,updated_by)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         [
           payload.workOrderNo,
+          payload.orderType,
           product.id,
           product.itemCode,
           product.productName,
@@ -187,7 +190,7 @@ export class MysqlWorkOrderRepository {
     audit: CommandContext,
   ): Promise<WorkOrderDetail> {
     return withTransaction(this.pool, async (connection) => {
-      const before = await findWorkOrder(connection, id);
+      const before = await findWorkOrder(connection, id, true);
       if (before.status !== 'draft')
         throw new ProductionDomainError('INVALID_STATE', '只有草稿工单可以编辑');
       const planStartDate =
@@ -200,8 +203,9 @@ export class MysqlWorkOrderRepository {
           : payload.planEndDate;
       requirePlanDates(planStartDate, planEndDate);
       const [result] = await connection.execute<ResultSetHeader>(
-        'UPDATE work_orders SET product_id=?,product_code_snapshot=?,product_name_snapshot=?,unit_snapshot=?,planned_quantity=?,customer_name=?,quality_level=?,work_order_owner_id=?,plan_start_date=?,plan_end_date=?,external_order_no=?,remark=?,version=version+1,updated_by=? WHERE id=? AND version=?',
+        'UPDATE work_orders SET order_type=?,product_id=?,product_code_snapshot=?,product_name_snapshot=?,unit_snapshot=?,planned_quantity=?,customer_name=?,quality_level=?,work_order_owner_id=?,plan_start_date=?,plan_end_date=?,external_order_no=?,remark=?,version=version+1,updated_by=? WHERE id=? AND version=?',
         [
+          payload.orderType ?? before.order_type,
           product?.id ?? before.product_id,
           product?.itemCode ?? before.product_code_snapshot,
           product?.productName ?? before.product_name_snapshot,

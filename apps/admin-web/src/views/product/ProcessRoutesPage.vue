@@ -97,14 +97,6 @@
           min-width="150"
         />
         <el-table-column
-          label="适用产品"
-          min-width="160"
-        >
-          <template #default="{ row }">{{
-            row.itemCode && row.productName ? `${row.itemCode} / ${row.productName}` : '-'
-          }}</template>
-        </el-table-column>
-        <el-table-column
           label="工序顺序"
           min-width="260"
         >
@@ -184,7 +176,7 @@
       />
     </div>
 
-    <!-- 新增/编辑工艺路线弹窗（自持适用产品候选） -->
+    <!-- 新增/编辑工艺路线弹窗 -->
     <RouteFormDialog
       ref="routeFormDialogRef"
       :visible="routeDialogVisible"
@@ -194,11 +186,10 @@
       @save="submitRoute"
     />
 
-    <!-- 配置工序顺序弹窗（自持路线步骤明细与工序/用户/物料候选） -->
+    <!-- 配置工序顺序弹窗（路线只描述执行顺序；BOM 由产品配置） -->
     <RouteStepDialog
       :visible="stepsDialogVisible"
       :route-id="editingRouteId"
-      :product-id="editingRouteProductId"
       :submitting="submittingSteps"
       @update:visible="stepsDialogVisible = $event"
       @save="submitSteps"
@@ -260,7 +251,6 @@ const routeDialogVisible = ref(false);
 const stepsDialogVisible = ref(false);
 const detailDialogVisible = ref(false);
 const editingRouteId = ref<string | null>(null);
-const editingRouteProductId = ref<string | null>(null);
 const detailRow = ref<ProcessRouteListItem | null>(null);
 const submittingSteps = ref(false);
 const routeFormDialogRef = ref();
@@ -288,7 +278,6 @@ const submitRoute = async (data: RouteFormValue): Promise<void> => {
   const payload = {
     routeCode: data.routeCode,
     routeName: data.routeName,
-    productId: data.productId,
     versionNo: data.versionNo,
     remark: data.remark || null,
   };
@@ -347,7 +336,6 @@ const deleteRoute = async (row: ProcessRouteListItem): Promise<void> => {
 /* ----- steps（弹窗自持路线步骤明细与候选） ----- */
 const openSteps = (row: ProcessRouteListItem): void => {
   editingRouteId.value = row.id;
-  editingRouteProductId.value = row.productId;
   stepsDialogVisible.value = true;
 };
 
@@ -363,10 +351,8 @@ const submitSteps = async (steps: StepRow[]): Promise<void> => {
         defaultOwnerId: step.defaultOwnerId || null,
         sopFileId: step.sopFileId || null,
         needInspection: step.needInspection,
-        needRecord: step.needRecord,
         status: step.status,
         remark: step.remark || null,
-        productMaterialIds: step.productMaterialIds,
       })),
     );
     EMessage.success('工序顺序和规则快照已保存');

@@ -50,7 +50,7 @@
   },
   "pnpm": {
     "overrides": {
-      "multer": ">=2.2.0",
+      "multer": "2.3.0",
       "nanoid": "https://github.com/ai/nanoid/archive/refs/tags/3.3.18.tar.gz"
     }
   },

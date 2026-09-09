@@ -36,6 +36,8 @@ export interface MaterialOutboundDetailItem extends DemandGenerationSource {
   allocationId: string;
   demandId: string;
   itemId: string;
+  materialVariantId: string;
+  materialVariantCode: string;
   itemBatchId: string;
   batchCode: string;
   itemCode: string;
@@ -105,6 +107,8 @@ export interface MaterialOutboundCandidateItem extends DemandGenerationSource {
   allocationId: string;
   demandId: string;
   itemId: string;
+  materialVariantId: string;
+  materialVariantCode: string;
   itemCode: string;
   itemName: string;
   itemBatchId: string;

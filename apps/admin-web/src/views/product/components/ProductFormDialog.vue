@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     :model-value="visible"
-    :title="editingProductId ? '编辑产品' : '新增产品'"
+    :title="editingProductId ? '编辑成品编码' : creatingInGroup ? '新增成品编码' : '新增成品'"
     :width="DialogWidth.lg"
     @update:model-value="$emit('update:visible', $event)"
     @open="$emit('refresh-options')"
@@ -15,32 +15,33 @@
       <div class="form-section-title">基础信息</div>
       <div class="form-grid">
         <el-form-item
-          label="产品编码"
+          label="成品编码"
           required
         >
           <el-input
             v-model="form.itemCode"
-            placeholder="请输入产品编码"
+            placeholder="请输入成品编码"
             :disabled="Boolean(editingProductId)"
           />
         </el-form-item>
         <el-form-item
-          label="产品名称"
+          label="成品名称"
           required
         >
           <el-input
             v-model="form.productName"
-            placeholder="请输入产品名称"
+            placeholder="请输入成品名称"
+            :disabled="creatingInGroup"
           />
         </el-form-item>
         <el-form-item
-          label="产品分类"
+          label="分类"
           required
         >
           <el-select
             v-model="form.categoryId"
-            placeholder="请选择产品分类"
-            :disabled="editingProductLocked"
+            placeholder="请选择分类"
+            :disabled="editingProductLocked || creatingInGroup"
             @visible-change="(visible: boolean) => visible && $emit('refresh-options')"
           >
             <el-option
@@ -209,6 +210,7 @@ const props = defineProps<{
   visible: boolean;
   editingProductId: string | null;
   editingProductLocked: boolean;
+  creatingInGroup: boolean;
   categoryOptions: ProductCategoryOption[];
   itemKindLabels: Record<ProductItemKind, string>;
   submitting: boolean;
@@ -234,7 +236,7 @@ const initialForm = (): ProductFormValue => ({
 const form = reactive<ProductFormValue>(initialForm());
 const categoryChoices = computed(() =>
   buildLiveOptions(
-    props.categoryOptions,
+    props.categoryOptions.filter((item) => item.itemKind === 'finished_product'),
     form.categoryId ? [form.categoryId] : [],
     (item) => item.id,
   ),
@@ -242,6 +244,13 @@ const categoryChoices = computed(() =>
 
 const resetForm = (): void => {
   Object.assign(form, initialForm());
+};
+
+const setCreateDefaults = (group: { productName: string; categoryId: string }): void => {
+  Object.assign(form, initialForm(), {
+    productName: group.productName,
+    categoryId: group.categoryId,
+  });
 };
 
 const setForm = (row: {
@@ -281,21 +290,21 @@ const removeSpecRow = (index: number): void => {
 
 const handleSubmit = (): void => {
   if (!form.itemCode.trim() || !form.productName.trim() || !form.unit.trim()) {
-    EMessage.warning('请填写产品编码、产品名称和单位');
+    EMessage.warning('请填写成品编码、成品名称和单位');
     return;
   }
   if (!form.categoryId) {
-    EMessage.warning('请选择产品分类');
+    EMessage.warning('请选择分类');
     return;
   }
   if (hasUnavailableSelection(props.categoryOptions, [form.categoryId], (item) => item.id)) {
-    EMessage.warning('产品分类已失效，请重新选择');
+    EMessage.warning('分类已失效，请重新选择');
     return;
   }
   emit('save', { ...form });
 };
 
-defineExpose({ setForm, resetForm });
+defineExpose({ setForm, setCreateDefaults, resetForm });
 </script>
 
 <style scoped>

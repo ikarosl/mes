@@ -11,6 +11,9 @@
         border
       >
         <el-descriptions-item label="工单号">{{ order.workOrderNo }}</el-descriptions-item>
+        <el-descriptions-item label="工单类型">{{
+          WORK_ORDER_TYPE_LABELS[order.orderType]
+        }}</el-descriptions-item>
         <el-descriptions-item label="产品">{{ order.productName }}</el-descriptions-item>
         <el-descriptions-item label="产品编码">{{ order.productCode }}</el-descriptions-item>
         <el-descriptions-item label="计划数量">{{
@@ -133,6 +136,7 @@
 </template>
 
 <script setup lang="ts">
+import { WORK_ORDER_TYPE_LABELS } from '@company/constants';
 import type { UserOption, WorkOrderCloseType, WorkOrderDetail } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
 import { formatDateForDisplay, formatDateTimeForDisplay } from '../../../utils/date';

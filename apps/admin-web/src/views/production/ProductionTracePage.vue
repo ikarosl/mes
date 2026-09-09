@@ -158,9 +158,16 @@
                 >
                   <el-table-column
                     prop="itemCode"
-                    label="物料编码"
-                    min-width="130"
+                    label="基础物料编码"
+                    min-width="150"
                   />
+                  <el-table-column
+                    prop="materialVariantCode"
+                    label="物料版本"
+                    min-width="190"
+                  >
+                    <template #default="{ row }">{{ variantCode(row) }}</template>
+                  </el-table-column>
                   <el-table-column
                     prop="itemName"
                     label="物料名称"
@@ -205,7 +212,7 @@
                 name="inbound"
               >
                 <el-alert
-                  title="这里只展示本批次实际分配库存批次的正库存来源；没有入库明细的历史正流水标记为期初来源。"
+                  title="这里展示本生产批次所分配库存批次的可用库存增加记录，包括外购入库、生产退料和盘点调整；不代表每笔入库数量均由本任务领用。"
                   type="info"
                   :closable="false"
                 />
@@ -222,19 +229,23 @@
                     </template>
                   </el-table-column>
                   <el-table-column
+                    label="物料版本"
+                    min-width="190"
+                  >
+                    <template #default="{ row }">{{ variantCode(row) }}</template>
+                  </el-table-column>
+                  <el-table-column
                     label="来源"
                     width="120"
                   >
-                    <template #default="{ row }">{{
-                      row.sourceLabel === 'purchase_inbound' ? '外购入库' : '期初来源'
-                    }}</template>
+                    <template #default="{ row }">{{ sourceLabel(row.sourceLabel) }}</template>
                   </el-table-column>
                   <el-table-column
-                    label="入库单 / 供应方"
+                    label="来源单据 / 供应方"
                     min-width="190"
                   >
                     <template #default="{ row }">
-                      {{ row.inboundNo || '—' }} / {{ row.provider || '—' }}
+                      {{ row.sourceDocumentNo || '—' }} / {{ row.provider || '—' }}
                     </template>
                   </el-table-column>
                   <el-table-column
@@ -278,9 +289,16 @@
                   >
                     <el-table-column
                       prop="itemCode"
-                      label="物料"
-                      min-width="130"
+                      label="基础物料"
+                      min-width="150"
                     />
+                    <el-table-column
+                      prop="materialVariantCode"
+                      label="物料版本"
+                      min-width="190"
+                    >
+                      <template #default="{ row }">{{ variantCode(row) }}</template>
+                    </el-table-column>
                     <el-table-column
                       prop="batchCode"
                       label="库存批次"
@@ -313,9 +331,16 @@
                   />
                   <el-table-column
                     prop="itemCode"
-                    label="物料编码"
-                    min-width="130"
+                    label="基础物料编码"
+                    min-width="150"
                   />
+                  <el-table-column
+                    prop="materialVariantCode"
+                    label="物料版本"
+                    min-width="190"
+                  >
+                    <template #default="{ row }">{{ variantCode(row) }}</template>
+                  </el-table-column>
                   <el-table-column
                     prop="batchCode"
                     label="库存批次"
@@ -426,8 +451,10 @@
 
 <script setup lang="ts">
 import { onActivated, onMounted, ref } from 'vue';
+import type { InventoryTransactionType } from '@company/contracts';
+
 import { Refresh } from '@element-plus/icons-vue';
-import { BATCH_STEP_STATUS_LABELS } from '@company/constants';
+import { BATCH_STEP_STATUS_LABELS, INVENTORY_TRANSACTION_TYPE_LABELS } from '@company/constants';
 import TableToolbar from '../../components/TableToolbar.vue';
 import { formatDateTimeForDisplay } from '../../utils/date';
 import { EMessage } from '../../utils/message';
@@ -435,11 +462,16 @@ import { batchStatusMeta, formatQuantity, stepStatusMeta } from './production-st
 import { useProductionTrace } from './composables/useProductionTrace';
 
 defineOptions({ name: 'ProductionTracePage' });
+const sourceLabel = (value: InventoryTransactionType) =>
+  INVENTORY_TRANSACTION_TYPE_LABELS[value] ?? value;
+
 const keyword = ref('');
 const currentPage = ref(1);
 const activeTab = ref('materials');
 const { items, total, loading, detailLoading, selectedBatchId, detail, search, selectBatch } =
   useProductionTrace();
+const variantCode = (row: { materialVariantCode?: string | null }): string =>
+  row.materialVariantCode || '未记录版本';
 
 const runSearch = async () => {
   currentPage.value = 1;

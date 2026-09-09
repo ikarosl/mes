@@ -53,4 +53,115 @@ describe('useProductionMaterials', () => {
     ).rejects.toThrow('网络断开');
     expect(state.getAllocationIntentStatus()).toBe('pending');
   });
+
+  it('forwards one idempotency key for allocation and refreshes only material demands', async () => {
+    api.createMaterialAllocations.mockResolvedValue({});
+    api.listMaterialDemands.mockResolvedValue([]);
+    const state = useProductionMaterials();
+    state.setBatch('batch-1');
+
+    await state.allocate({
+      allocations: [
+        { demandId: 'd-1', itemBatchId: 'ib-1', assignedQuantity: 2, remark: '  预留  ' },
+      ],
+    });
+
+    expect(api.createMaterialAllocations).toHaveBeenCalledWith(
+      'batch-1',
+      {
+        allocations: [
+          { demandId: 'd-1', itemBatchId: 'ib-1', assignedQuantity: 2, remark: '预留' },
+        ],
+      },
+      expect.any(String),
+    );
+    expect(api.listMaterialDemands).toHaveBeenCalledWith('batch-1');
+    expect(api.listMaterialOutbounds).not.toHaveBeenCalled();
+    expect(state.getAllocationIntentStatus()).toBe('idle');
+  });
+
+  it('does not send a duplicate allocation while the first confirmation is pending', async () => {
+    let resolveAllocation!: (value: unknown) => void;
+    api.createMaterialAllocations.mockReturnValue(
+      new Promise((resolve) => {
+        resolveAllocation = resolve;
+      }),
+    );
+    api.listMaterialDemands.mockResolvedValue([]);
+    const state = useProductionMaterials();
+    state.setBatch('batch-1');
+    const payload = {
+      allocations: [{ demandId: 'd-1', itemBatchId: 'ib-1', assignedQuantity: 1 }],
+    };
+
+    const first = state.allocate(payload);
+    const second = state.allocate(payload);
+    expect(api.createMaterialAllocations).toHaveBeenCalledTimes(1);
+    expect(state.submitting.value).toBe(true);
+
+    resolveAllocation({});
+    await Promise.all([first, second]);
+    expect(state.submitting.value).toBe(false);
+  });
+
+  it('guards a duplicate release while the first confirmation is still pending', async () => {
+    let resolveRelease!: (value: unknown) => void;
+    api.releaseMaterialAllocation.mockReturnValue(
+      new Promise((resolve) => {
+        resolveRelease = resolve;
+      }),
+    );
+    api.listMaterialDemands.mockResolvedValue([]);
+    const state = useProductionMaterials();
+    state.setBatch('batch-1');
+
+    const first = state.release('allocation-1', 3);
+    const second = state.release('allocation-1', 3);
+    expect(api.releaseMaterialAllocation).toHaveBeenCalledTimes(1);
+    expect(state.releasePendingIds.value).toEqual(new Set(['allocation-1']));
+
+    resolveRelease({});
+    await Promise.all([first, second]);
+    expect(state.releasePendingIds.value).toEqual(new Set());
+    expect(api.listMaterialDemands).toHaveBeenCalledTimes(1);
+  });
+
+  it('drops a late available-batch response after a newer demand selection', async () => {
+    let resolveOld!: (value: unknown[]) => void;
+    api.listAvailableItemBatches.mockImplementation((demandId: string) =>
+      demandId === 'old-demand'
+        ? new Promise((resolve) => (resolveOld = resolve))
+        : Promise.resolve([{ itemBatchId: 'new-batch' }]),
+    );
+    const state = useProductionMaterials();
+
+    const oldRequest = state.loadAvailable('old-demand');
+    await state.loadAvailable('new-demand');
+    resolveOld([{ itemBatchId: 'old-batch' }]);
+    await oldRequest;
+
+    expect(state.availableItemBatches.value).toEqual([{ itemBatchId: 'new-batch' }]);
+  });
+
+  it('uses the same idempotency key for outbound retry and refreshes demands plus outbounds', async () => {
+    api.createMaterialOutbound.mockResolvedValue({});
+    api.listMaterialDemands.mockResolvedValue([]);
+    api.listMaterialOutbounds.mockResolvedValue([]);
+    const state = useProductionMaterials();
+    state.setBatch('batch-1');
+
+    await state.outbound({
+      details: [{ allocationId: 'allocation-1', outboundQuantity: 2 }],
+      remark: '  领料  ',
+    });
+
+    expect(api.createMaterialOutbound).toHaveBeenCalledWith(
+      'batch-1',
+      { details: [{ allocationId: 'allocation-1', outboundQuantity: 2 }], remark: '领料' },
+      expect.any(String),
+    );
+    expect(api.listMaterialDemands).toHaveBeenCalledWith('batch-1');
+    expect(api.listMaterialOutbounds).toHaveBeenCalledWith('batch-1');
+    expect(state.getOutboundIntentStatus()).toBe('idle');
+  });
 });

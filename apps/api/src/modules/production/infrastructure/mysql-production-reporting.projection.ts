@@ -50,7 +50,6 @@ export type ProjectionStepRow = RowDataPacket & {
   step_name_snapshot: string;
   status: BatchStepStatus;
   responsible_user_id: number | null;
-  need_record_snapshot: number;
   unit_snapshot: string;
   effective_reported: string;
   effective_direct_reported: string;
@@ -110,7 +109,6 @@ export const mapExecutionStep = (
   responsibleUserId: row.responsible_user_id === null ? null : String(row.responsible_user_id),
   responsibleUserName: null,
   status: row.status,
-  needRecord: Boolean(row.need_record_snapshot),
   unit: row.unit_snapshot,
   baseNormalQuantity: fixed(plannedQuantity),
   requiredNormalQuantity: quantity.requiredNormalQuantity,
