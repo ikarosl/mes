@@ -28,7 +28,7 @@ export const evaluateProductionExecutionCompletion = (input: {
   const finalStep = requiredSteps.at(-1) ?? null;
   const blockers: ProductionExecutionCompletionBlocker[] = [];
   if (input.batchStatus !== 'doing') blockers.push('batch_not_doing');
-  if (requiredSteps.length === 0) blockers.push('no_required_reporting_step');
+  if (requiredSteps.length === 0) blockers.push('no_route_step');
   if (requiredSteps.some((step) => step.status !== 'completed'))
     blockers.push('required_step_incomplete');
   if (

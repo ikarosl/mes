@@ -1,6 +1,6 @@
 import 'reflect-metadata';
 import { PERMISSIONS } from '@company/constants';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   IDEMPOTENT_ENDPOINT,
   REQUIRED_PERMISSION,
@@ -50,5 +50,27 @@ describe('ProductionInboundController contract', () => {
     expect(
       Reflect.getMetadata(IDEMPOTENT_ENDPOINT, ProductionInboundController.prototype.cancel),
     ).toBeUndefined();
+  });
+
+  it('forwards the material variant when listing demand trace', async () => {
+    const list = vi.fn();
+    const listDemandTrace = vi.fn();
+    const controller = new ProductionInboundController(
+      {} as never,
+      { list, listDemandTrace } as never,
+    );
+
+    await controller.materialSupplyDemand({ page: 2, pageSize: 5, keyword: '  MAT-42  ' });
+    expect(list).toHaveBeenCalledWith({ page: 2, pageSize: 5, keyword: 'MAT-42' });
+
+    await controller.materialDemandTrace(
+      { itemId: '7' },
+      { materialVariantId: '42', page: 3, pageSize: 10 },
+    );
+    expect(listDemandTrace).toHaveBeenCalledWith('7', {
+      materialVariantId: '42',
+      page: 3,
+      pageSize: 10,
+    });
   });
 });

@@ -14,6 +14,7 @@ vi.mock('../../../../api/production', () => ({
 const order = (id: string): WorkOrderOption => ({
   id,
   workOrderNo: `WO-${id}`,
+  orderType: 'mass_production',
   productId: '8',
   productCode: 'P-001',
   productName: '环形器',
@@ -87,6 +88,7 @@ describe('useWorkOrderOptions', () => {
       source.formatOption({
         id: '6',
         workOrderNo: 'WO-001',
+        orderType: 'mass_production',
         productId: '8',
         productCode: 'P-001',
         productName: '环形器',

@@ -110,6 +110,12 @@
           </template>
         </el-table-column>
         <el-table-column
+          label="工单类型"
+          width="120"
+        >
+          <template #default="{ row }">{{ formatWorkOrderType(row.orderType) }}</template>
+        </el-table-column>
+        <el-table-column
           label="计划数量"
           width="120"
           align="right"
@@ -314,6 +320,7 @@
 <script setup lang="ts">
 import { computed, onActivated, onMounted, ref, watch } from 'vue';
 import { Plus, Refresh } from '@element-plus/icons-vue';
+import { WORK_ORDER_TYPE_LABELS } from '@company/constants';
 import TableToolbar from '../../components/TableToolbar.vue';
 import PaginationFooter from '../../components/PaginationFooter.vue';
 import type {
@@ -366,13 +373,13 @@ const productSource = useProductOptions();
 const userSource = useUserOptions();
 
 /** 工单产品候选：仅成品 */
-const finishedProducts = computed(() =>
-  productSource.options.value.filter((p) => p.itemKind === 'finished_product'),
-);
+const finishedProducts = computed(() => productSource.options.value);
 const getOwnerName = (ownerId: string | null | undefined): string =>
   userSource.options.value.find((user) => user.id === ownerId)?.displayName ?? '-';
 const formatProduct = (product: ProductOption): string =>
   `${product.itemCode} / ${product.productName}`;
+const formatWorkOrderType = (orderType: WorkOrderItem['orderType']): string =>
+  WORK_ORDER_TYPE_LABELS[orderType];
 /** 产品筛选下拉实时选项：已选产品在候选被移除时显示「ID（已失效）」并禁用（筛选允许清除） */
 const productChoices = computed(() =>
   buildLiveOptions(
@@ -457,6 +464,7 @@ const submitOrder = async (data: WorkOrderFormValue): Promise<void> => {
     if (editId) {
       const order = orders.value.find((item) => item.id === editId);
       await productionApi.updateOrder(editId, {
+        orderType: data.orderType,
         productId: data.productId,
         plannedQuantity: data.plannedQuantity,
         workOrderOwnerId: data.workOrderOwnerId || null,
@@ -472,6 +480,7 @@ const submitOrder = async (data: WorkOrderFormValue): Promise<void> => {
     } else {
       await productionApi.createOrder({
         workOrderNo: data.workOrderNo.trim(),
+        orderType: data.orderType,
         productId: data.productId,
         plannedQuantity: data.plannedQuantity,
         workOrderOwnerId: data.workOrderOwnerId || null,

@@ -26,7 +26,9 @@ describe('ProductionInventoryService', () => {
       listUserReferencesByIds: vi.fn().mockResolvedValue([{ id: '1', displayName: '管理员' }]),
     };
     const service = new ProductionInventoryService(
+      {} as never,
       repository as never,
+      {} as never,
       identity as never,
       idempotency as never,
     );
@@ -52,7 +54,13 @@ describe('ProductionInventoryService', () => {
   });
 
   it('rejects duplicate return allocations before entering the repository transaction', async () => {
-    const service = new ProductionInventoryService({} as never, {} as never, idempotency as never);
+    const service = new ProductionInventoryService(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      idempotency as never,
+    );
     await expect(
       service.createReturnOrder(
         {
@@ -80,6 +88,8 @@ describe('ProductionInventoryService', () => {
     };
     const service = new ProductionInventoryService(
       repository as never,
+      {} as never,
+      {} as never,
       identity as never,
       idempotency as never,
     );
@@ -103,13 +113,24 @@ describe('ProductionInventoryService', () => {
         reasonType: '搬运损坏',
         remark: '外壳破损',
       },
-      context,
+      expect.objectContaining({
+        actorId: context.actorId,
+        requestId: context.requestId,
+        ip: context.ip,
+        userAgent: context.userAgent,
+      }),
     );
     expect(result.createdByName).toBe('管理员');
   });
 
   it('rejects duplicate batch/status stock-check targets', async () => {
-    const service = new ProductionInventoryService({} as never, {} as never, idempotency as never);
+    const service = new ProductionInventoryService(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      idempotency as never,
+    );
     await expect(
       service.createStockCheck(
         {
@@ -139,7 +160,9 @@ describe('ProductionInventoryService', () => {
     };
     const identity = { listUserReferencesByIds: vi.fn().mockResolvedValue([]) };
     const service = new ProductionInventoryService(
-      repository as never,
+      method === 'cancelMaterialLoss' ? (repository as never) : ({} as never),
+      method === 'cancelReturnOrder' ? (repository as never) : ({} as never),
+      method === 'cancelStockCheck' ? (repository as never) : ({} as never),
       identity as never,
       idempotency as never,
     );

@@ -24,22 +24,13 @@ describe('MysqlProductSnapshotRepository', () => {
     expect(pool.query.mock.calls[0]?.[1]).toEqual(['2']);
   });
 
-  it('returns active material bindings for a route step', async () => {
-    const pool = { query: vi.fn().mockResolvedValue([[{ product_material_id: 31 }], []]) };
-    const repository = new MysqlProductSnapshotRepository(pool as never);
-
-    await expect(repository.listRouteStepMaterialIds('41')).resolves.toEqual(['31']);
-    expect(String(pool.query.mock.calls[0]?.[0])).toContain('route_step_materials');
-    expect(pool.query.mock.calls[0]?.[1]).toEqual(['41']);
-  });
-
   it('returns the Product-owned identifiers required by production snapshots', async () => {
     const connection = transactionConnection();
     connection.query.mockResolvedValueOnce([[productRow], []]).mockResolvedValueOnce([
       [
         {
           product_material_id: 31,
-          material_product_id: 21,
+          material_id: 21,
           item_code: 'MAT-1',
           product_name: 'Material',
           unit: 'kg',
@@ -57,7 +48,7 @@ describe('MysqlProductSnapshotRepository', () => {
     const repository = repositoryWith(connection);
 
     await expect(repository.getBomSnapshot('9')).resolves.toMatchObject({
-      lines: [{ productMaterialId: '31', materialProductId: '21' }],
+      lines: [{ productMaterialId: '31', materialId: '21' }],
     });
     expect(connection.commit).toHaveBeenCalledOnce();
   });
@@ -81,7 +72,7 @@ describe('MysqlProductSnapshotRepository', () => {
       [
         {
           product_material_id: 31,
-          material_product_id: 21,
+          material_id: 21,
           material_status: 0,
           material_is_deleted: 0,
           category_status: 1,
@@ -100,10 +91,9 @@ describe('MysqlProductSnapshotRepository', () => {
     const connection = transactionConnection();
     connection.query
       .mockResolvedValueOnce([
-        [{ id: 15, route_code: 'R-1', route_name: 'Route', version_no: 'V1', product_id: 9 }],
+        [{ id: 15, route_code: 'R-1', route_name: 'Route', version_no: 'V1' }],
         [],
       ])
-      .mockResolvedValueOnce([[productRow], []])
       .mockResolvedValueOnce([
         [
           {
@@ -121,7 +111,6 @@ describe('MysqlProductSnapshotRepository', () => {
             sop_status: 1,
             sop_is_deleted: 0,
             need_inspection: 0,
-            need_record: 1,
           },
         ],
         [],
@@ -137,8 +126,8 @@ describe('MysqlProductSnapshotRepository', () => {
         },
       ],
     });
-    expect(String(connection.query.mock.calls[2]?.[0])).toContain('rs.sop_version_no_snapshot');
-    expect(String(connection.query.mock.calls[2]?.[0])).not.toContain('tf.version_no');
+    expect(String(connection.query.mock.calls[1]?.[0])).toContain('rs.sop_version_no_snapshot');
+    expect(String(connection.query.mock.calls[1]?.[0])).not.toContain('tf.version_no');
     expect(connection.commit).toHaveBeenCalledOnce();
   });
 
@@ -148,10 +137,9 @@ describe('MysqlProductSnapshotRepository', () => {
     connection.query
       .mockResolvedValueOnce([[productRow], []])
       .mockResolvedValueOnce([
-        [{ id: 15, route_code: 'R-1', route_name: 'Route', version_no: 'V1', product_id: 9 }],
+        [{ id: 15, route_code: 'R-1', route_name: 'Route', version_no: 'V1' }],
         [],
       ])
-      .mockResolvedValueOnce([[productRow], []])
       .mockResolvedValueOnce([
         [
           {
@@ -169,7 +157,6 @@ describe('MysqlProductSnapshotRepository', () => {
             sop_status: null,
             sop_is_deleted: null,
             need_inspection: 0,
-            need_record: 1,
           },
         ],
         [],
@@ -183,8 +170,8 @@ describe('MysqlProductSnapshotRepository', () => {
     expect(pool.getConnection).toHaveBeenCalledOnce();
     expect(String(connection.query.mock.calls[0]?.[0])).toContain('FOR UPDATE');
     expect(String(connection.query.mock.calls[1]?.[0])).toContain('FOR UPDATE');
-    expect(String(connection.query.mock.calls[3]?.[0])).toContain('FOR UPDATE');
-    expect(connection.query.mock.calls[1]?.[1]).toEqual(['15', '9']);
+    expect(String(connection.query.mock.calls[2]?.[0])).toContain('FOR UPDATE');
+    expect(connection.query.mock.calls[1]?.[1]).toEqual(['15']);
     expect(connection.commit).toHaveBeenCalledOnce();
   });
 

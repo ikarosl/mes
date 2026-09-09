@@ -16,11 +16,7 @@ import type {
   WorkOrderQuery,
 } from '@company/contracts';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
-import type {
-  ProcessRouteSnapshot,
-  ProductBomSnapshot,
-  ProductionProductSnapshot,
-} from '../../product/public.js';
+import type { ProcessRouteSnapshot, ProductionProductSnapshot } from '../../product/public.js';
 import {
   ProductionRepository,
   type ResolvedBatchStepOverride,
@@ -161,17 +157,6 @@ export class MysqlProductionRepository extends ProductionRepository {
     audit: CommandContext,
   ): Promise<ProductionBatchDetail> {
     return this.batches.updateStepExecution(batchId, recordId, payload, actualSop, audit);
-  }
-  generateMaterialDemands(
-    batchId: string,
-    version: number,
-    bom: ProductBomSnapshot,
-    audit: CommandContext,
-  ): Promise<ProductionBatchDetail> {
-    return this.batches.generateMaterialDemands(batchId, version, bom, audit);
-  }
-  hasGeneratedNormalMaterialDemands(batchId: string): Promise<boolean> {
-    return this.materials.hasGeneratedNormalDemands(batchId);
   }
   getBatchProductId(batchId: string): Promise<string> {
     return this.batches.getProductId(batchId);

@@ -3,6 +3,7 @@ import ElementPlus from 'element-plus';
 import { nextTick } from 'vue';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia } from 'pinia';
+import { createRouter, createWebHistory } from 'vue-router';
 import ProductsPage from '../ProductsPage.vue';
 
 const { list, setStatus, categoryOptions, confirm, success, error } = vi.hoisted(() => ({
@@ -17,6 +18,7 @@ const { list, setStatus, categoryOptions, confirm, success, error } = vi.hoisted
 vi.mock('../../../api/product', () => ({
   productApi: {
     products: list,
+    productGroups: list,
     categoryOptions,
     productOptions: vi.fn().mockResolvedValue([]),
     routeOptions: vi.fn().mockResolvedValue([]),
@@ -33,6 +35,14 @@ vi.mock('../../../utils/route-message-box', () => ({
 vi.mock('../../../utils/message', () => ({
   EMessage: { success, error, warning: vi.fn() },
 }));
+
+const router = createRouter({
+  history: createWebHistory(),
+  routes: [
+    { path: '/product/products', name: 'product-products', component: { template: '<div />' } },
+    { path: '/:pathMatch(.*)*', name: 'test', component: { template: '<div />' } },
+  ],
+});
 
 const productRow = {
   id: 'p1',
@@ -59,7 +69,7 @@ describe('ProductsPage row write guard', () => {
   const mountPage = () =>
     mount(ProductsPage, {
       global: {
-        plugins: [ElementPlus, createPinia()],
+        plugins: [ElementPlus, router, createPinia()],
         stubs: {
           TableToolbar: true,
           PaginationFooter: true,
@@ -81,30 +91,51 @@ describe('ProductsPage row write guard', () => {
     confirm.mockReset();
   });
 
-  it('disables the toggle-status button while the write is pending and submits once', async () => {
+  it('routes the status change through the more menu and submits once after confirmation', async () => {
     // 行必须持续存在：写操作成功后页面会重新加载列表
-    list.mockResolvedValue({ items: [productRow], total: 1, page: 1, pageSize: 10 });
+    list.mockResolvedValue({
+      items: [
+        {
+          groupKey: 'P001',
+          productName: productRow.productName,
+          categoryId: productRow.categoryId,
+          categoryCode: productRow.categoryCode,
+          categoryName: productRow.categoryName,
+          codeCount: 1,
+          codes: [productRow],
+        },
+      ],
+      total: 1,
+      page: 1,
+      pageSize: 10,
+    });
     let confirmResolve!: (value: unknown) => void;
     confirm.mockReturnValue(new Promise((resolve) => (confirmResolve = resolve)));
 
     const wrapper = mountPage();
     await flushPromises();
 
-    const findToggle = () =>
-      wrapper.findAll('button').find((b) => ['启用', '停用'].includes(b.text().trim()));
-    expect(findToggle()).toBeDefined();
-    expect(findToggle()!.attributes('disabled')).toBeUndefined();
-
-    await findToggle()!.trigger('click');
+    const findMore = () =>
+      wrapper.findAll('button').find((b) => b.text().trim().startsWith('更多'));
+    expect(findMore()).toBeDefined();
+    await findMore()!.trigger('click');
     await nextTick();
-    expect(findToggle()!.attributes('disabled')).toBeDefined(); // 确认框期间行内写操作被占用
+    const findToggle = () =>
+      Array.from(document.body.querySelectorAll<HTMLElement>('.el-dropdown-menu__item')).find(
+        (item) => item.textContent?.trim() === '停用',
+      );
+    expect(findToggle()).toBeDefined();
+    expect(findToggle()!.getAttribute('aria-disabled')).not.toBe('true');
+
+    findToggle()!.click();
+    await nextTick();
     expect(setStatus).not.toHaveBeenCalled();
 
     confirmResolve('confirm');
     await flushPromises();
     expect(setStatus).toHaveBeenCalledTimes(1);
     expect(setStatus).toHaveBeenCalledWith('p1', 0);
-    expect(findToggle()!.attributes('disabled')).toBeUndefined(); // 写操作结束释放
+    expect(success).toHaveBeenCalledWith('已停用');
   });
 
   it('opens the create form with exactly one category-options request (single open entry)', async () => {
@@ -128,7 +159,7 @@ describe('ProductsPage row write guard', () => {
     // TableToolbar 用真实组件渲染，保证 #actions 插槽里的“新增产品”按钮可点击。
     const wrapper = mount(ProductsPage, {
       global: {
-        plugins: [ElementPlus, createPinia()],
+        plugins: [ElementPlus, router, createPinia()],
         stubs: {
           PaginationFooter: true,
           ProductFormDialog: formDialogStub,
@@ -140,7 +171,7 @@ describe('ProductsPage row write guard', () => {
     });
     await flushPromises();
 
-    const createButton = wrapper.findAll('button').find((b) => b.text().includes('新增产品'));
+    const createButton = wrapper.findAll('button').find((b) => b.text().includes('新增成品'));
     expect(createButton).toBeDefined();
 
     const callsBefore = categoryOptions.mock.calls.length;

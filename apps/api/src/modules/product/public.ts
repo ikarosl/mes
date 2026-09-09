@@ -18,3 +18,8 @@ export {
   type InventoryItemReference,
   type EnabledSopFileSnapshot,
 } from './application/product-snapshot.query.js';
+export {
+  MaterialVariantQuery,
+  type MaterialVariantRecord,
+  type MaterialVariantDisplayReference,
+} from './application/ports/material-variant.repository.js';

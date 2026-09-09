@@ -218,8 +218,8 @@ const submitting = ref(false);
 /** 行内写操作守卫（启停分类），同一行只允许一个在途（todo 3.5） */
 const { isRowPending, beginRow, endRow } = useRowPending();
 const itemKindLabels: Record<ProductItemKind, string> = {
-  material: '物料',
-  semi_finished: '半成品',
+  // 分类名称仍可为“半成品”；这里只表达它与物料共用同一业务语义。
+  material: '物料（含半成品）',
   finished_product: '成品',
 };
 const itemKindLabel = (kind: ProductItemKind) => itemKindLabels[kind];

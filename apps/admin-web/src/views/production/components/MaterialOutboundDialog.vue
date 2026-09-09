@@ -42,6 +42,13 @@
               min-width="170"
             />
             <el-table-column
+              prop="materialVariantCode"
+              label="物料版本"
+              min-width="190"
+            >
+              <template #default="{ row }">{{ row.materialVariantCode || '未记录版本' }}</template>
+            </el-table-column>
+            <el-table-column
               prop="batchCode"
               label="库存批次"
               min-width="140"
@@ -191,17 +198,19 @@ const selectedByGroup = reactive<Record<string, OutboundAllocation[]>>({});
 const quantities = reactive<Record<string, number>>({});
 const remark = ref('');
 const availableAllocations = computed<OutboundAllocation[]>(() =>
-  props.demands.flatMap((d) =>
-    d.allocations
-      .filter((a) => a.allocationStatus === 'active' && Number(a.availableToOrderQuantity) > 0)
-      .map((a) => ({
-        ...a,
-        itemName: d.itemName,
-        generationGroupKey: d.generationGroupKey,
-        generationGroupType: d.generationGroupType,
-        supplementNo: d.supplementNo,
-      })),
-  ),
+  props.demands
+    .filter((d) => d.businessStatus === 'active')
+    .flatMap((d) =>
+      d.allocations
+        .filter((a) => a.allocationStatus === 'active' && Number(a.availableToOrderQuantity) > 0)
+        .map((a) => ({
+          ...a,
+          itemName: d.itemName,
+          generationGroupKey: d.generationGroupKey,
+          generationGroupType: d.generationGroupType,
+          supplementNo: d.supplementNo,
+        })),
+    ),
 );
 const selection = computed(() => {
   const currentIds = new Set(availableAllocations.value.map((row) => row.allocationId));

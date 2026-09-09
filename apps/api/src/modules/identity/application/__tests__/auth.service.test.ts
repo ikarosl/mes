@@ -1,32 +1,17 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import bcrypt from 'bcryptjs';
-import { decodeJwt } from 'jose';
+import { describe, expect, it, vi } from 'vitest';
 import { AuthService } from '../auth.service.js';
 import type { AuthRepository } from '../ports/auth.repository.js';
+import type { PasswordHasher } from '../ports/password-hasher.js';
+import type { TokenService } from '../ports/token.service.js';
 
 describe('AuthService token TTLs', () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-07-23T09:00:00.000Z'));
-    vi.stubEnv('JWT_SECRET', 'test-secret-with-at-least-32-characters');
-    vi.stubEnv('JWT_ISSUER', 'test-issuer');
-    vi.stubEnv('JWT_AUDIENCE', 'test-audience');
-    vi.stubEnv('ACCESS_TOKEN_TTL_SECONDS', '10');
-    vi.stubEnv('REFRESH_TOKEN_TTL_SECONDS', '20');
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-    vi.unstubAllEnvs();
-  });
-
-  it('uses configured TTLs for JWTs, response timestamps and the database record', async () => {
+  it('uses token-port expirations for response timestamps and the database record', async () => {
     const saveRefreshToken = vi.fn();
     const repository = {
       findCredentials: vi.fn().mockResolvedValue({
         id: '1',
         username: 'admin',
-        passwordHash: bcrypt.hashSync('secret', 4),
+        passwordHash: 'stored-password-hash',
         displayName: 'Admin',
       }),
       findProfile: vi.fn().mockResolvedValue({
@@ -39,15 +24,23 @@ describe('AuthService token TTLs', () => {
       touchLastLogin: vi.fn(),
       saveRefreshToken,
     } as unknown as AuthRepository;
-    const service = new AuthService(repository);
+    const passwords = { verify: vi.fn().mockResolvedValue(true) } as unknown as PasswordHasher;
+    const tokens = {
+      issue: vi.fn().mockResolvedValue({
+        accessToken: 'access-token',
+        refreshToken: 'refresh-token',
+        accessExpiresAt: new Date('2026-07-23T09:00:10.000Z'),
+        refreshExpiresAt: new Date('2026-07-23T09:00:20.000Z'),
+        refreshTokenId: 'refresh-token-id',
+      }),
+    } as unknown as TokenService;
+    const service = new AuthService(repository, passwords, tokens);
 
     const result = await service.login({ username: 'admin', password: 'secret' });
-    const accessClaims = decodeJwt(result.response.accessToken);
-    const refreshClaims = decodeJwt(result.refreshToken);
     const savedRecord = saveRefreshToken.mock.calls[0]?.[0] as { expiresAt: Date };
 
-    expect(accessClaims.exp! - accessClaims.iat!).toBe(10);
-    expect(refreshClaims.exp! - refreshClaims.iat!).toBe(20);
+    expect(result.response.accessToken).toBe('access-token');
+    expect(result.refreshToken).toBe('refresh-token');
     expect(result.response.accessTokenExpiresAt).toBe('2026-07-23T17:00:10.000+08:00');
     expect(result.response.refreshTokenExpiresAt).toBe('2026-07-23T17:00:20.000+08:00');
     expect(savedRecord.expiresAt.toISOString()).toBe('2026-07-23T09:00:20.000Z');

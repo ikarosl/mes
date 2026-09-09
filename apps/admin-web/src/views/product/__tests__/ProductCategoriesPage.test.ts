@@ -85,4 +85,18 @@ describe('ProductCategoriesPage row write guard', () => {
     expect(setStatus).toHaveBeenCalledWith('c1', 0);
     expect(findToggle()!.attributes('disabled')).toBeUndefined(); // 写操作结束释放
   });
+
+  it('keeps 半成品 as a searchable category while presenting it with material semantics', async () => {
+    list.mockResolvedValue({
+      items: [{ ...categoryRow, categoryName: '半成品', itemKind: 'material' }],
+      total: 1,
+      page: 1,
+      pageSize: 10,
+    });
+    const wrapper = mountPage();
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('半成品');
+    expect(wrapper.text()).toContain('物料（含半成品）');
+  });
 });

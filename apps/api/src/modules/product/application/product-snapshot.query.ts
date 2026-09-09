@@ -11,7 +11,7 @@ export interface InventoryItemReference {
   itemCode: string;
   productName: string;
   unit: string;
-  itemKind: 'material' | 'semi_finished' | 'finished_product';
+  itemKind: 'material' | 'finished_product';
 }
 
 /** 历史单据展示引用：允许读取已停用或软删除的库存对象，不得用于写操作有效性校验。 */
@@ -24,7 +24,7 @@ export interface InventoryItemDisplayReference {
 
 export interface ProductBomLineSnapshot {
   productMaterialId: string;
-  materialProductId: string;
+  materialId: string;
   itemCode: string;
   productName: string;
   unit: string;
@@ -48,7 +48,6 @@ export interface ProcessRouteStepSnapshot {
   defaultOwnerId: string | null;
   sop: { id: string; fileName: string; objectKey: string; versionNo: string } | null;
   needInspection: boolean;
-  needRecord: boolean;
 }
 
 export interface ProcessRouteSnapshot {
@@ -56,7 +55,6 @@ export interface ProcessRouteSnapshot {
   routeCode: string;
   routeName: string;
   versionNo: string;
-  product: ProductionProductSnapshot;
   steps: ProcessRouteStepSnapshot[];
 }
 
@@ -83,7 +81,6 @@ export abstract class ProductSnapshotQuery {
   abstract listInventoryItemDisplayReferencesByIds(
     itemIds: string[],
   ): Promise<InventoryItemDisplayReference[]>;
-  abstract listRouteStepMaterialIds(routeStepId: string): Promise<string[]>;
   abstract getProductionProduct(
     productId: string,
   ): Promise<ProductQueryResult<ProductionProductSnapshot>>;

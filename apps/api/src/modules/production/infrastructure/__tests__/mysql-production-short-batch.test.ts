@@ -23,8 +23,8 @@ describe('short-batch startability projection', () => {
     expect(sql).toContain('FROM production_batches b');
     expect(sql).toContain('WHERE b.id IN (?,?)');
     expect(sql).toContain("outbound_order.status='completed'");
-    expect(sql).toContain("return_order.status='returned'");
-    expect(sql).toContain('return_detail.release_after_return=1');
+    expect(sql).not.toContain('return_order');
+    expect(sql).not.toContain('return_detail');
     expect(sql).not.toContain('batch_step_records');
     expect(result).toEqual(
       new Map([

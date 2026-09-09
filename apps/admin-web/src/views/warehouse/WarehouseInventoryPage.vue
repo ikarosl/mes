@@ -2,7 +2,7 @@
   <div class="inventory-page">
     <el-tabs v-model="viewMode">
       <el-tab-pane
-        label="物料供需预警"
+        label="物料库存"
         name="supply-demand"
       />
       <el-tab-pane
@@ -22,7 +22,7 @@
           ><el-input
             v-model="supplyDemandQuery.keyword"
             clearable
-            placeholder="编码或名称" /></el-form-item
+            placeholder="物料编码、名称或版本编码" /></el-form-item
         ><el-form-item class="query-actions"
           ><el-button
             type="primary"
@@ -48,8 +48,9 @@
       ><el-table
         v-loading="supplyDemandLoading"
         :data="supplyDemandItems"
+        row-key="materialVariantId"
         class="data-table supply-demand-table"
-        empty-text="暂无活动物料需求"
+        empty-text="暂无物料库存或活动需求"
         @row-click="openDemandTrace"
         ><el-table-column
           label="物料"
@@ -58,6 +59,10 @@
             ><strong class="trace-link">{{ row.itemName }}</strong>
             <div class="secondary">{{ row.itemCode }}</div></template
           ></el-table-column
+        ><el-table-column
+          label="物料版本"
+          min-width="180"
+          ><template #default="{ row }">{{ row.materialVariantCode }}</template></el-table-column
         ><el-table-column
           label="可用库存"
           min-width="140"
@@ -101,7 +106,7 @@
     </section>
     <el-dialog
       v-model="demandTraceVisible"
-      :title="`${demandTraceSelectedItem?.itemName ?? '物料'} · 未完成需求来源`"
+      :title="`${demandTraceSelectedItem?.itemName ?? '物料'} · ${demandTraceSelectedItem?.materialVariantCode ?? ''} · 未完成需求来源`"
       :width="DialogWidth.xl"
     >
       <div
@@ -135,6 +140,12 @@
             min-width="220"
           >
             <template #default="{ row }">{{ demandSourceText(row) }}</template>
+          </el-table-column>
+          <el-table-column
+            label="物料版本"
+            min-width="190"
+          >
+            <template #default="{ row }">{{ variantCode(row) }}</template>
           </el-table-column>
           <el-table-column
             label="需求数量"
@@ -231,7 +242,8 @@
           min-width="210"
           ><template #default="{ row }"
             ><strong>{{ row.itemName }}</strong>
-            <div class="secondary">{{ row.itemCode }}</div></template
+            <div class="secondary">{{ row.itemCode }}</div>
+            <div class="variant-text">版本 {{ variantCode(row) }}</div></template
           ></el-table-column
         ><el-table-column
           prop="batchCode"
@@ -327,6 +339,7 @@
             border
             ><el-descriptions-item label="物料"
               >{{ detail.itemCode }} · {{ detail.itemName }}</el-descriptions-item
+            ><el-descriptions-item label="物料版本">{{ variantCode(detail) }}</el-descriptions-item
             ><el-descriptions-item label="库存批次">{{ detail.batchCode }}</el-descriptions-item
             ><el-descriptions-item label="来源">{{
               inventorySourceTypeLabel(detail.sourceType)
@@ -445,6 +458,7 @@
 <script setup lang="ts">
 import { onActivated, onMounted, reactive, ref, watch } from 'vue';
 import { Refresh } from '@element-plus/icons-vue';
+import { DEMAND_GENERATION_GROUP_TYPE_LABELS } from '@company/constants';
 import type {
   DemandType,
   InventoryBatchDetailItem,
@@ -559,13 +573,9 @@ const openDetail = async (id: string) => {
     if (current === detailToken) detailLoading.value = false;
   }
 };
-const demandTypeLabels: Record<DemandType, string> = {
-  normal: '任务正常用料',
-  manual_additional: '人工追加需求',
-  scrap_supplement: '工序报废补料',
-  material_loss_supplement: '领料损耗补料',
-};
-const demandTypeLabel = (type: DemandType) => demandTypeLabels[type];
+const demandTypeLabel = (type: DemandType): string => DEMAND_GENERATION_GROUP_TYPE_LABELS[type];
+const variantCode = (row: { materialVariantCode?: string | null }): string =>
+  row.materialVariantCode || '未记录版本';
 const demandSourceText = (row: InventoryMaterialDemandTraceItem) => {
   if (row.demandType === 'scrap_supplement')
     return (
@@ -663,6 +673,10 @@ watch(viewMode, (mode) => {
 }
 .secondary {
   color: #6b7280;
+  font-size: 12px;
+}
+.variant-text {
+  color: var(--el-color-primary);
   font-size: 12px;
 }
 .zero {

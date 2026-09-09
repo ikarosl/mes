@@ -4,6 +4,10 @@ import { AuthService } from './application/auth.service.js';
 import { IdentityDirectoryService } from './application/identity-directory.service.js';
 import { RbacService } from './application/rbac.service.js';
 import { AuthRepository } from './application/ports/auth.repository.js';
+import { PasswordHasher } from './application/ports/password-hasher.js';
+import { TokenService } from './application/ports/token.service.js';
+import { BcryptPasswordHasher } from './infrastructure/bcrypt-password-hasher.js';
+import { JwtTokenService } from './infrastructure/jwt-token.service.js';
 import { AuditRepository } from './application/ports/audit.repository.js';
 import { RbacRepository } from './application/ports/rbac.repository.js';
 import { MysqlAuditRepository } from './infrastructure/mysql-audit.repository.js';
@@ -16,6 +20,8 @@ import { AuthGuard } from './presentation/http/auth.guard.js';
   imports: [DatabaseModule],
   controllers: [AuthController, RbacController],
   providers: [
+    { provide: PasswordHasher, useClass: BcryptPasswordHasher },
+    { provide: TokenService, useClass: JwtTokenService },
     MysqlAuthRepository,
     MysqlRbacRepository,
     MysqlAuditRepository,

@@ -13,11 +13,15 @@ describe('productionApi', () => {
   it('lists one material active demand trace with server pagination', async () => {
     const { productionApi } = await import('../production');
 
-    await productionApi.listInventoryMaterialDemandTrace('9', { page: 2, pageSize: 20 });
+    await productionApi.listInventoryMaterialDemandTrace('9', {
+      materialVariantId: 'mv-9',
+      page: 2,
+      pageSize: 20,
+    });
 
     expect(request).toHaveBeenCalledWith({
       url: '/production/inventory-material-supply-demand/9/demands',
-      params: { page: 2, pageSize: 20 },
+      params: { materialVariantId: 'mv-9', page: 2, pageSize: 20 },
     });
   });
 
@@ -61,6 +65,7 @@ describe('productionApi', () => {
 
     await productionApi.createOrder({
       workOrderNo: 'WO-2026-0001',
+      orderType: 'mass_production',
       productId: '1',
       plannedQuantity: 100,
       planStartDate: '2026-08-01',
@@ -72,6 +77,7 @@ describe('productionApi', () => {
       method: 'POST',
       data: {
         workOrderNo: 'WO-2026-0001',
+        orderType: 'mass_production',
         productId: '1',
         plannedQuantity: 100,
         planStartDate: '2026-08-01',
@@ -85,6 +91,7 @@ describe('productionApi', () => {
 
     await productionApi.createOrder({
       workOrderNo: 'WO-2026-0002',
+      orderType: 'research',
       productId: '2',
       plannedQuantity: 50,
       workOrderOwnerId: 'u1',
@@ -101,6 +108,7 @@ describe('productionApi', () => {
       method: 'POST',
       data: {
         workOrderNo: 'WO-2026-0002',
+        orderType: 'research',
         productId: '2',
         plannedQuantity: 50,
         workOrderOwnerId: 'u1',
@@ -320,15 +328,53 @@ describe('productionApi', () => {
     });
   });
 
-  it('generates material demands with version', async () => {
+  it('configures explicit material variants with an idempotency key', async () => {
     const { productionApi } = await import('../production');
+    const data = {
+      requirements: [
+        {
+          productMaterialId: 'pm-1',
+          splits: [
+            { materialVariantId: 'mv-1', quantity: 3 },
+            { materialVariantId: 'mv-2', quantity: 2 },
+          ],
+        },
+      ],
+    };
 
-    await productionApi.generateMaterialDemands('1', 0);
+    await productionApi.configureMaterialDemands('1', data, 'configure-key');
 
     expect(request).toHaveBeenCalledWith({
-      url: '/production/batches/1/actions/generate-material-demands',
+      url: '/production/batches/1/material-demands/configurations',
       method: 'POST',
-      data: { version: 0 },
+      data,
+      headers: { 'Idempotency-Key': 'configure-key' },
+      retryIdempotentWrite: true,
+      retryTimes: 2,
+    });
+  });
+
+  it('adds manually selected variants under the production batch with an idempotency key', async () => {
+    const { productionApi } = await import('../production');
+    const data = {
+      reason: '生产补充',
+      requirements: [
+        {
+          productMaterialId: 'pm-1',
+          splits: [{ materialVariantId: 'mv-3', quantity: 1 }],
+        },
+      ],
+    };
+
+    await productionApi.addManualMaterialDemands('batch-1', data, 'manual-key');
+
+    expect(request).toHaveBeenCalledWith({
+      url: '/production/batches/batch-1/material-demands/additions',
+      method: 'POST',
+      data,
+      headers: { 'Idempotency-Key': 'manual-key' },
+      retryIdempotentWrite: true,
+      retryTimes: 2,
     });
   });
 
@@ -412,7 +458,15 @@ describe('productionApi', () => {
       inboundNo: null,
       provider: '供应商 A',
       remark: null,
-      details: [{ itemId: '2', batchCode: 'LOT-1', inboundQuantity: 5, remark: null }],
+      details: [
+        {
+          itemId: '2',
+          materialVariantId: 'mv-2',
+          batchCode: 'LOT-1',
+          inboundQuantity: 5,
+          remark: null,
+        },
+      ],
     };
     await productionApi.listPurchaseInbounds({ page: 1, pageSize: 20, status: 'pending' });
     await productionApi.getPurchaseInbound('7');
@@ -498,22 +552,16 @@ describe('productionApi', () => {
     ]);
   });
 
-  it('lists current employee tasks and starts or completes a step with its version', async () => {
+  it('lists current employee tasks and starts a step with its version', async () => {
     const { productionApi } = await import('../production');
     await productionApi.listWorkerTasks();
     await productionApi.startStep('1', '9', 3);
-    await productionApi.completeStep('1', '9', 4);
-    expect(request.mock.calls.slice(-3).map(([config]) => config)).toEqual([
+    expect(request.mock.calls.slice(-2).map(([config]) => config)).toEqual([
       { url: '/production/worker-tasks' },
       {
         url: '/production/batches/1/step-records/9/actions/start',
         method: 'POST',
         data: { version: 3 },
-      },
-      {
-        url: '/production/batches/1/step-records/9/actions/complete',
-        method: 'POST',
-        data: { version: 4 },
       },
     ]);
   });
@@ -582,11 +630,17 @@ describe('productionApi', () => {
     const saveBody = {
       planVersion: null,
       dispositionVersion: 0,
-      materialEndStepRecordId: '3',
-      details: [{ originalDemandId: '5', supplementQuantity: 1.25 }],
+      details: [
+        {
+          originalDemandId: '5',
+          requirementBasisId: 'basis-5',
+          materialVariantId: 'mv-5',
+          supplementQuantity: 1.25,
+        },
+      ],
       remark: '补料',
     };
-    await productionApi.listSupplementCandidates('8', '3');
+    await productionApi.listSupplementCandidates('8');
     await productionApi.getScrapSupplementPlan('8');
     await productionApi.saveScrapSupplementPlan('8', saveBody);
     await productionApi.confirmScrapSupplementPlan(
@@ -597,7 +651,6 @@ describe('productionApi', () => {
     expect(request.mock.calls.slice(-4).map(([config]) => config)).toEqual([
       {
         url: '/production/abnormal-dispositions/8/supplement-candidates',
-        params: { materialEndStepRecordId: '3' },
       },
       { url: '/production/abnormal-dispositions/8/scrap-supplement-plan' },
       {

@@ -8,5 +8,6 @@
     "verbatimModuleSyntax": false,
     "declaration": false
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/**/__tests__/**/*.ts", "src/**/*.test.ts", "src/**/*.spec.ts"]
 }

@@ -131,7 +131,15 @@ describe('production material contracts', () => {
       inboundNo: null,
       provider: '供应商 A',
       remark: null,
-      details: [{ itemId: '1', batchCode: 'LOT-1', inboundQuantity: 5, remark: null }],
+      details: [
+        {
+          itemId: '1',
+          materialVariantId: 'variant-1',
+          batchCode: 'LOT-1',
+          inboundQuantity: 5,
+          remark: null,
+        },
+      ],
     };
     const inventory = {
       itemBatchId: '2',

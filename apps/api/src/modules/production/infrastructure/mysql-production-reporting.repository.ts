@@ -50,7 +50,6 @@ type LockedStepRow = RowDataPacket & {
   step_name_snapshot: string;
   status: BatchStepStatus;
   responsible_user_id: number | null;
-  need_record_snapshot: number;
   unit_snapshot: string;
   effective_reported: string;
   effective_direct_reported: string;
@@ -122,8 +121,6 @@ export class MysqlProductionReportingRepository extends ProductionReportingRepos
           current.status !== 'doing' ? 'STEP_REPORT_NOT_ALLOWED' : 'NOT_STEP_ASSIGNEE',
           current.status !== 'doing' ? '只有进行中的工序可以报工' : '只有当前负责人可以报工',
         );
-      if (!current.need_record_snapshot)
-        throw new ProductionDomainError('STEP_REPORT_NOT_ALLOWED', '该工序无需报工');
       assertVersion(current, payload.version);
       requireDirectReportQuantities(payload.normalQuantity, payload.abnormalQuantity);
       const abnormalOrigin = requireAbnormalOrigin(
@@ -484,7 +481,7 @@ const summaryResult = async (
   released: string,
 ) => {
   const [rows] = await connection.query<LockedStepRow[]>(
-    `SELECT sr.id,sr.step_order_snapshot,sr.status,sr.responsible_user_id,sr.need_record_snapshot,sr.unit_snapshot,sr.version,${SUMMARY_COLUMNS}
+    `SELECT sr.id,sr.step_order_snapshot,sr.status,sr.responsible_user_id,sr.unit_snapshot,sr.version,${SUMMARY_COLUMNS}
      FROM batch_step_records sr LEFT JOIN batch_step_reports r ON r.batch_step_record_id=sr.id
      WHERE sr.production_batch_id=? AND sr.id=? GROUP BY sr.id`,
     [batchId, stepRecordId],
@@ -558,10 +555,10 @@ const SUMMARY_COLUMNS = `COALESCE(SUM(CASE WHEN r.report_type='normal' THEN r.re
   ) THEN CASE WHEN r.report_type='normal' THEN r.reported_quantity ELSE -r.reported_quantity END ELSE 0 END),0) effective_direct_reported,
   COALESCE(SUM(CASE WHEN r.report_type='normal' THEN r.normal_quantity ELSE -r.normal_quantity END),0) effective_normal,
   COALESCE(SUM(CASE WHEN r.report_type='normal' THEN r.abnormal_quantity ELSE -r.abnormal_quantity END),0) effective_abnormal`;
-const LOCKED_STEP_SELECT = `SELECT sr.id,sr.step_order_snapshot,sr.step_name_snapshot,sr.status,sr.responsible_user_id,sr.need_record_snapshot,sr.unit_snapshot,sr.version,${SUMMARY_COLUMNS}
+const LOCKED_STEP_SELECT = `SELECT sr.id,sr.step_order_snapshot,sr.step_name_snapshot,sr.status,sr.responsible_user_id,sr.unit_snapshot,sr.version,${SUMMARY_COLUMNS}
   FROM batch_step_records sr LEFT JOIN batch_step_reports r ON r.batch_step_record_id=sr.id
   WHERE sr.production_batch_id=? GROUP BY sr.id ORDER BY sr.step_order_snapshot,sr.id`;
-const PROJECTION_STEP_SELECT = `SELECT sr.id,sr.production_batch_id,sr.step_order_snapshot,sr.step_code_snapshot,sr.step_name_snapshot,sr.status,sr.responsible_user_id,sr.need_record_snapshot,sr.unit_snapshot,sr.started_at,sr.completed_at,sr.version,${SUMMARY_COLUMNS}
+const PROJECTION_STEP_SELECT = `SELECT sr.id,sr.production_batch_id,sr.step_order_snapshot,sr.step_code_snapshot,sr.step_name_snapshot,sr.status,sr.responsible_user_id,sr.unit_snapshot,sr.started_at,sr.completed_at,sr.version,${SUMMARY_COLUMNS}
   FROM batch_step_records sr LEFT JOIN batch_step_reports r ON r.batch_step_record_id=sr.id
   WHERE sr.production_batch_id=? GROUP BY sr.id ORDER BY sr.step_order_snapshot,sr.id`;
 const REPORT_FIELDS = `r.id,r.report_no,r.production_batch_id,r.batch_step_record_id,r.report_type,r.reversal_of_report_id,r.replaces_report_id,r.reported_quantity,r.normal_quantity,r.abnormal_quantity,r.abnormal_origin,r.unit_snapshot,r.remark,r.created_by,r.created_at,
@@ -598,7 +595,6 @@ const audit = (
 const toRouteQuantityStep = (step: LockedStepRow | ProjectionStepRow): RouteQuantityStep => ({
   id: step.id,
   stepOrder: step.step_order_snapshot,
-  needRecord: Boolean(step.need_record_snapshot),
   status: step.status,
   effectiveDirectReported: step.effective_direct_reported,
   effectiveNormal: step.effective_normal,

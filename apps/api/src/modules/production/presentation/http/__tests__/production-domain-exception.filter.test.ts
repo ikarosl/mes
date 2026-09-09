@@ -29,7 +29,6 @@ describe('ProductionDomainExceptionFilter', () => {
     ['INVALID_STATE', 400],
     ['STEP_ASSIGNMENT_CONFLICT', 409],
     ['STEP_START_NOT_ALLOWED', 409],
-    ['STEP_COMPLETION_NOT_ALLOWED', 409],
     ['NOT_STEP_ASSIGNEE', 403],
     ['SOP_SNAPSHOT_UNAVAILABLE', 503],
   ] as const)('maps %s to the expected HTTP envelope', (code, expectedStatus) => {

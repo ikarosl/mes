@@ -107,7 +107,7 @@ describeMysql(
         await pool.execute('DELETE FROM work_orders WHERE id=?', [fixture.workOrderId]);
         await pool.execute('DELETE FROM product_materials WHERE product_id=?', [fixture.productId]);
         await pool.execute('DELETE FROM products WHERE id=?', [fixture.productId]);
-        await pool.execute('DELETE FROM products WHERE id=?', [fixture.materialId]);
+        await pool.execute('DELETE FROM materials WHERE id=?', [fixture.materialId]);
         await pool.execute('DELETE FROM product_categories WHERE id=?', [fixture.categoryId]);
         await pool.execute('DELETE FROM product_categories WHERE id=?', [
           fixture.materialCategoryId,
@@ -234,7 +234,7 @@ describeMysql(
           String(fixture.productId),
           [
             {
-              materialProductId: String(fixture.materialId),
+              materialId: String(fixture.materialId),
               quantityPerUnit: 1,
               unit: 'pcs',
               isKeyMaterial: true,
@@ -366,19 +366,28 @@ const createFixture = async (pool: Pool): Promise<Fixture> => {
   );
   const materialId = await insert(
     pool,
-    'INSERT INTO products (item_code,product_name,category_id,unit,acquire_method) VALUES (?,?,?,?,?)',
+    'INSERT INTO materials (material_code,material_name,category_id,unit,acquire_method) VALUES (?,?,?,?,?)',
     [`${token}-material`, '闭环测试物料', materialCategoryId, 'pcs', 'purchased'],
   );
   await pool.execute(
     `INSERT INTO product_materials
-       (product_id,material_product_id,quantity_per_unit,unit,is_key_material,need_batch_record)
+       (product_id,material_id,quantity_per_unit,unit,is_key_material,need_batch_record)
      VALUES (?,?,?,?,1,1)`,
     [productId, materialId, 1, 'pcs'],
   );
   const workOrderId = await insert(
     pool,
-    'INSERT INTO work_orders (work_order_no,product_id,product_code_snapshot,product_name_snapshot,unit_snapshot,planned_quantity,status) VALUES (?,?,?,?,?,?,?)',
-    [`${token}-wo`, productId, `${token}-product`, '闭环测试产品', 'pcs', '10.0000', 'released'],
+    'INSERT INTO work_orders (work_order_no,order_type,product_id,product_code_snapshot,product_name_snapshot,unit_snapshot,planned_quantity,status) VALUES (?,?,?,?,?,?,?,?)',
+    [
+      `${token}-wo`,
+      'mass_production',
+      productId,
+      `${token}-product`,
+      '闭环测试产品',
+      'pcs',
+      '10.0000',
+      'released',
+    ],
   );
   const numericSuffix = `${process.pid}${Math.floor(Math.random() * 10_000)}`;
   return {

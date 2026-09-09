@@ -1,6 +1,8 @@
 import { readFile, readdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import ts from 'typescript';
+import { API_DATA_OWNERSHIP, API_DISPLAY_READ_ACCESS } from './api-data-ownership.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -29,7 +31,7 @@ const dbDriverCodePattern = /['"]ER_[A-Z_]+['"]/;
 
 /** SDK / 基础设施包：application 层禁止直接依赖。 */
 const applicationSdkPattern =
-  /from ['"](?:@aws-sdk(?:\/[\w-]+)?|mysql2(?:\/promise)?|typeorm|knex|prisma|sequelize|@company\/database)['"]/i;
+  /from ['"](?:@aws-sdk(?:\/[\w-]+)?|mysql2(?:\/promise)?|typeorm|knex|prisma|sequelize|bcryptjs|jose|@company\/database)['"]/i;
 
 /** 模块根 public.ts 不得导出内部 domain 错误类作为跨模块契约。 */
 const domainErrorExportPattern = /export\s*\{[\s\S]*?\b[A-Z][A-Za-z]*DomainError\b/;
@@ -48,7 +50,7 @@ const idempotencyRecordsWritePattern =
  * ——scope 只能经由契约常量标识符引用。
  */
 const knownIdempotencyScopes = [
-  'production.batch.create.v4',
+  'production.batch.create.v5',
   'production.material-allocation.create.v1',
   'production.material-outbound.create.v3',
   'production.material-outbound.confirm.v2',
@@ -60,6 +62,8 @@ const knownIdempotencyScopes = [
   'production.abnormal.scrap-supplement-plan.confirm.v1',
   'production.material-loss.create.v1',
   'production.material-loss.confirm.v1',
+  'production.material-demands.configure.v1',
+  'production.material-demands.add-manual.v2',
 ];
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const idempotencyScopeLiteralPattern = new RegExp(
@@ -129,11 +133,6 @@ const extractContractExports = (source) => {
 const stripComments = (source) =>
   source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
 
-const identityOwnedTables =
-  'departments|users|roles|permissions|user_roles|role_permissions|refresh_tokens';
-const productOwnedTables =
-  'product_categories|products|product_materials|technical_files|process_steps|process_routes|process_route_steps';
-
 /** 检查定义：directory（相对 root）+ pattern + message；可选 exclude / fileMatch。 */
 const checks = [
   // 命令审计上下文与 HTTP 幂等能力必须正交：旧兼容类型已完成迁移，不得重新引入。
@@ -170,6 +169,7 @@ const checks = [
       'apps/api/src/modules/production/application/production-abnormal.service.ts',
       'apps/api/src/modules/production/application/production-supplement.service.ts',
       'apps/api/src/modules/production/application/production-inventory.service.ts',
+      'apps/api/src/modules/production/application/production-material-demand.service.ts',
       'apps/api/src/modules/production/presentation/http/production.controller.ts',
       'apps/api/src/modules/production/presentation/http/production-material.controller.ts',
       'apps/api/src/modules/production/presentation/http/production-inbound.controller.ts',
@@ -177,6 +177,7 @@ const checks = [
       'apps/api/src/modules/production/presentation/http/production-abnormal.controller.ts',
       'apps/api/src/modules/production/presentation/http/production-supplement.controller.ts',
       'apps/api/src/modules/production/presentation/http/warehouse.controller.ts',
+      'apps/api/src/modules/production/presentation/http/production-material-demand.controller.ts',
     ],
   },
   {
@@ -192,6 +193,7 @@ const checks = [
       'apps/api/src/modules/production/application/production-abnormal.service.ts',
       'apps/api/src/modules/production/application/production-supplement.service.ts',
       'apps/api/src/modules/production/application/production-inventory.service.ts',
+      'apps/api/src/modules/production/application/production-material-demand.service.ts',
     ],
     fileMatch: isApplicationLayerFile,
   },
@@ -251,25 +253,6 @@ const checks = [
       message: `${module} application port 不得泄漏 mysql2 类型`,
     },
   ]),
-  // 数据表所有权：禁止跨模块直接访问其他模块拥有的表
-  {
-    directory: 'apps/api/src/modules/product/infrastructure',
-    pattern: new RegExp(`\\b(?:FROM|JOIN|INTO|UPDATE)\\s+(?:${identityOwnedTables})\\b`, 'i'),
-    message: 'Product 不得直接访问 Identity/System 拥有的业务表',
-  },
-  {
-    directory: 'apps/api/src/modules/identity/infrastructure',
-    pattern: new RegExp(`\\b(?:FROM|JOIN|INTO|UPDATE)\\s+(?:${productOwnedTables})\\b`, 'i'),
-    message: 'Identity/System 不得直接访问 Product 拥有的表',
-  },
-  {
-    directory: 'apps/api/src/modules/production/infrastructure',
-    pattern: new RegExp(
-      `\\b(?:FROM|JOIN|INTO|UPDATE)\\s+(?:${identityOwnedTables}|${productOwnedTables})\\b`,
-      'i',
-    ),
-    message: 'Production 不得直接访问 Identity/System 或 Product 拥有的表',
-  },
   // 需求计划事实与批次 material_plan_version 必须由同一事务写入口联动，避免新增调用者漏推版本。
   {
     directory: 'apps/api/src/modules/production',
@@ -424,6 +407,127 @@ const applyChecks = (sources, violations) => {
   }
 };
 
+/** 使用 TS AST 解码 SQL 字符串与模板，避免源码注释误报及转义反引号漏检。 */
+const sqlFragments = (relative, source) => {
+  const file = ts.createSourceFile(relative, source, ts.ScriptTarget.Latest, true);
+  const fragments = [];
+  const visit = (node) => {
+    if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
+      fragments.push(node.text);
+    } else if (ts.isTemplateExpression(node)) {
+      fragments.push(
+        node.head.text + node.templateSpans.map((span) => ` ${span.literal.text}`).join(''),
+      );
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  return fragments.map((fragment) =>
+    fragment.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' '),
+  );
+};
+
+const applyDataOwnershipChecks = async (sources, violations) => {
+  const owners = new Map();
+  for (const [owner, tables] of Object.entries(API_DATA_OWNERSHIP)) {
+    for (const table of tables) {
+      if (owners.has(table)) violations.push(`数据所有权重复登记：${table}`);
+      owners.set(table, owner);
+    }
+  }
+  const tableNames = [...owners.keys()].map(escapeRegExp).join('|');
+  // 支持裸表名、反引号、schema 限定名、读写与 TRUNCATE；SQL 动态表名仍须人工核对固定白名单。
+  const accessPattern = new RegExp(
+    '\\b(?:FROM|JOIN|INTO|UPDATE|REPLACE(?:\\s+INTO)?|TRUNCATE(?:\\s+TABLE)?)\\s+' +
+      '(?:(?:`[\\w$]+`|[\\w$]+)\\s*\\.\\s*)?`?(' +
+      tableNames +
+      ')(?:`|\\b)',
+    'gi',
+  );
+  for (const { path: relative, source } of sources) {
+    if (!relative.startsWith('apps/api/src/')) continue;
+    const moduleName = relative.match(/^apps\/api\/src\/modules\/([^/]+)\//)?.[1];
+    const sourceOwner =
+      moduleName ??
+      (relative.startsWith('apps/api/src/infrastructure/idempotency/')
+        ? 'platform-idempotency'
+        : relative === 'apps/api/src/common/audit/transactional-audit-writer.ts'
+          ? 'platform-audit'
+          : null);
+    const forbidden = new Set();
+    const displayAccess = API_DISPLAY_READ_ACCESS.find((rule) =>
+      relative.startsWith(rule.directory),
+    );
+    for (const sql of sqlFragments(relative, source)) {
+      const writesOrLocks =
+        /\b(?:INSERT|UPDATE|DELETE|REPLACE|TRUNCATE|ALTER|DROP|CREATE|CALL|INTO|LOCK|SHARE)\b/i.test(
+          sql,
+        );
+      if (displayAccess && writesOrLocks) {
+        violations.push(`${relative}: 展示查询目录不得包含写入、DDL 或锁定 SQL`);
+      }
+      for (const match of sql.matchAll(accessPattern)) {
+        const table = match[1].toLowerCase();
+        const owner = owners.get(table);
+        if (owner === sourceOwner) continue;
+        // Identity 提供审计查询；operation_logs 的写入仍由上方唯一 Writer 规则限制。
+        if (table === 'operation_logs' && moduleName === 'identity') continue;
+        if (
+          displayAccess?.tables[table] &&
+          !writesOrLocks &&
+          /^\s*\(?\s*(?:SELECT|WITH)\b/i.test(sql)
+        ) {
+          // 仅限声明的只读表；完整字段依赖、动态 SQL 与调用用途仍须评审。
+          if (/\bSELECT\s+(?:\w+\.)?\*/i.test(sql)) {
+            violations.push(`${relative}: 跨模块展示读取须显式列出批准字段，禁止 SELECT *`);
+          }
+          const alias = sql
+            .slice(match.index + match[0].length)
+            .match(/^\s+(?:AS\s+)?([a-z_]\w*)/i)?.[1];
+          if (alias && !/^(?:WHERE|ON|JOIN|LEFT|RIGHT|INNER|GROUP|ORDER|LIMIT)$/i.test(alias)) {
+            const columns = new RegExp(
+              '\\b' + escapeRegExp(alias) + '\\s*\\.\\s*`?([a-z_]\\w*|\\*)',
+              'gi',
+            );
+            for (const field of sql.matchAll(columns)) {
+              if (!displayAccess.tables[table].includes(field[1].toLowerCase())) {
+                violations.push(`${relative}: ${table}.${field[1]} 未批准用于跨模块展示读取`);
+              }
+            }
+          }
+          continue;
+        }
+        forbidden.add(`${table}（${owner}）`);
+      }
+    }
+    for (const table of forbidden) {
+      violations.push(
+        `${relative}: ${sourceOwner ?? '平台代码'} 不得直接访问其他所有者的表 ${table}；须经 public.ts 或登记的只读展示查询目录`,
+      );
+    }
+  }
+
+  // 新增 schema 对象不能绕过所有者登记；无需连接数据库或执行 migration。
+  const migrationDirectory = path.join(root, 'packages/database/migrations');
+  const migrations = (await readdir(migrationDirectory)).filter((name) => name.endsWith('.up.sql'));
+  const migrationSources = await Promise.all(
+    migrations.map(async (name) => ({
+      name,
+      source: await readFile(path.join(migrationDirectory, name), 'utf8'),
+    })),
+  );
+  for (const { name, source } of migrationSources) {
+    const sql = source.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ');
+    for (const match of sql.matchAll(
+      /\bCREATE\s+(?:OR\s+REPLACE\s+)?(?:TABLE|VIEW)\s+(?:IF\s+NOT\s+EXISTS\s+)?`?(\w+)`?/gi,
+    )) {
+      if (!owners.has(match[1].toLowerCase())) {
+        violations.push(`${name}: ${match[1]} 未登记到 scripts/api-data-ownership.mjs`);
+      }
+    }
+  }
+};
+
 /**
  * 幂等「声明↔scope↔executor 接入」显式绑定（跨文件关联，正则 checks 表覆盖不到的深度）：
  * 1. 契约文件（*-idempotency.contract.ts / *-idempotency-scopes.contract.ts）导出的每个 scope 值必须登记在 knownIdempotencyScopes
@@ -530,6 +634,7 @@ export const checkApiArchitecture = async (extraSources = []) => {
   const violations = [];
   const sources = [...((await collectSources()) ?? []), ...extraSources];
   applyChecks(sources, violations);
+  await applyDataOwnershipChecks(sources, violations);
   applyIdempotencyBindingChecks(sources, violations);
   return violations;
 };

@@ -14,7 +14,6 @@ import type {
 import { type ProcessRouteStepRepository } from '../application/ports/process-route-step.repository.js';
 
 type Db = Pool | PoolConnection;
-type EntityRow = RowDataPacket & { id: number; status?: number | string; is_deleted?: number };
 
 @Injectable()
 export class MysqlProcessRouteStepRepository implements ProcessRouteStepRepository {
@@ -34,18 +33,15 @@ export class MysqlProcessRouteStepRepository implements ProcessRouteStepReposito
         sop_file_id: number | null;
         sop_file_name_snapshot: string | null;
         need_inspection: number;
-        need_record: number;
         status: number;
         remark: string | null;
-        product_material_ids: string | null;
       })[]
     >(
       `SELECT rs.id,rs.process_step_id,rs.step_order,rs.step_code_snapshot,rs.step_name_snapshot,rs.description_snapshot,
                     rs.default_owner_id,rs.sop_file_id,rs.sop_file_name_snapshot,
-                    rs.need_inspection,rs.need_record,rs.status,rs.remark,GROUP_CONCAT(rsm.product_material_id ORDER BY rsm.product_material_id) product_material_ids
+                    rs.need_inspection,rs.status,rs.remark
              FROM process_route_steps rs
-             LEFT JOIN route_step_materials rsm ON rsm.route_step_id=rs.id
-             WHERE rs.route_id=? AND rs.is_deleted=0 GROUP BY rs.id ORDER BY rs.step_order`,
+             WHERE rs.route_id=? AND rs.is_deleted=0 ORDER BY rs.step_order`,
       [routeId],
     );
     return rows.map((row) => ({
@@ -60,10 +56,8 @@ export class MysqlProcessRouteStepRepository implements ProcessRouteStepReposito
       sopFileId: row.sop_file_id === null ? null : String(row.sop_file_id),
       sopFileName: row.sop_file_name_snapshot,
       needInspection: Boolean(row.need_inspection),
-      needRecord: Boolean(row.need_record),
       status: row.status,
       remark: row.remark,
-      productMaterialIds: row.product_material_ids?.split(',') ?? [],
     }));
   }
 
@@ -112,17 +106,6 @@ export class MysqlProcessRouteStepRepository implements ProcessRouteStepReposito
         const sop = resolvedSopFileId
           ? await lockTechnicalFileSnapshot(connection, resolvedSopFileId)
           : null;
-        for (const materialId of item.productMaterialIds ?? []) {
-          const [[material]] = await connection.query<EntityRow[]>(
-            'SELECT id FROM product_materials WHERE id=? AND product_id=? AND status=1 AND is_deleted=0',
-            [materialId, route.product_id],
-          );
-          if (!material)
-            throw new ProductDomainError(
-              'INVALID_MATERIAL',
-              '路线步骤引用的 BOM 明细不属于该产品或已停用',
-            );
-        }
         snapshots.push({
           ...item,
           stepCode: step.step_code,
@@ -134,24 +117,18 @@ export class MysqlProcessRouteStepRepository implements ProcessRouteStepReposito
           sopVersionNo: sop?.version_no ?? null,
         });
       }
-      const existingIds = before.map((item) => item.id);
-      if (existingIds.length)
-        await connection.query(
-          `DELETE FROM route_step_materials WHERE route_step_id IN (${existingIds.map(() => '?').join(',')})`,
-          existingIds,
-        );
       await connection.execute(
         'UPDATE process_route_steps SET is_deleted=1,deleted_by=?,deleted_at=NOW(),updated_by=? WHERE route_id=? AND is_deleted=0',
         [audit.actorId, audit.actorId, routeId],
       );
       for (const item of snapshots) {
         await connection.execute(
-          `INSERT INTO process_route_steps (route_id,process_step_id,step_order,step_code_snapshot,step_name_snapshot,description_snapshot,default_owner_id,sop_file_id,sop_file_name_snapshot,sop_object_key_snapshot,sop_version_no_snapshot,need_inspection,need_record,status,remark,created_by,updated_by)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+          `INSERT INTO process_route_steps (route_id,process_step_id,step_order,step_code_snapshot,step_name_snapshot,description_snapshot,default_owner_id,sop_file_id,sop_file_name_snapshot,sop_object_key_snapshot,sop_version_no_snapshot,need_inspection,status,remark,created_by,updated_by)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
            ON DUPLICATE KEY UPDATE process_step_id=VALUES(process_step_id),step_code_snapshot=VALUES(step_code_snapshot),step_name_snapshot=VALUES(step_name_snapshot),
              description_snapshot=VALUES(description_snapshot),default_owner_id=VALUES(default_owner_id),sop_file_id=VALUES(sop_file_id),
              sop_file_name_snapshot=VALUES(sop_file_name_snapshot),sop_object_key_snapshot=VALUES(sop_object_key_snapshot),sop_version_no_snapshot=VALUES(sop_version_no_snapshot),need_inspection=VALUES(need_inspection),
-             need_record=VALUES(need_record),status=VALUES(status),remark=VALUES(remark),updated_by=VALUES(updated_by),is_deleted=0,deleted_by=NULL,deleted_at=NULL`,
+             status=VALUES(status),remark=VALUES(remark),updated_by=VALUES(updated_by),is_deleted=0,deleted_by=NULL,deleted_at=NULL`,
           [
             routeId,
             item.processStepId,
@@ -165,23 +142,12 @@ export class MysqlProcessRouteStepRepository implements ProcessRouteStepReposito
             item.sopObjectKey,
             item.sopVersionNo,
             Number(item.needInspection),
-            Number(item.needRecord),
             item.status ?? 1,
             item.remark ?? null,
             audit.actorId,
             audit.actorId,
           ],
         );
-        const [[routeStep]] = await connection.query<EntityRow[]>(
-          'SELECT id FROM process_route_steps WHERE route_id=? AND step_order=?',
-          [routeId, item.stepOrder],
-        );
-        for (const materialId of item.productMaterialIds ?? []) {
-          await connection.execute(
-            'INSERT INTO route_step_materials (route_step_id,product_material_id,created_by) VALUES (?,?,?)',
-            [routeStep!.id, materialId, audit.actorId],
-          );
-        }
       }
       await this.audit(
         connection,
@@ -200,12 +166,11 @@ export class MysqlProcessRouteStepRepository implements ProcessRouteStepReposito
         id: number;
         route_code: string;
         route_name: string;
-        product_id: number;
         version_no: string;
         status: ProcessRouteStatus;
       })[]
     >(
-      `SELECT id,route_code,route_name,product_id,version_no,status FROM process_routes WHERE id=? AND is_deleted=0${lock ? ' FOR UPDATE' : ''}`,
+      `SELECT id,route_code,route_name,version_no,status FROM process_routes WHERE id=? AND is_deleted=0${lock ? ' FOR UPDATE' : ''}`,
       [id],
     );
     if (!row) throw new ProductDomainError('NOT_FOUND', '工艺路线不存在');

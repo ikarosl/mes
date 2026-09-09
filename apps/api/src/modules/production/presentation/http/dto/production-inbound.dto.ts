@@ -8,6 +8,7 @@ import {
   IsOptional,
   IsString,
   MaxLength,
+  Matches,
   Max,
   Min,
   ValidateNested,
@@ -17,6 +18,7 @@ import type {
   CreatePurchaseInboundPayload,
   InventoryBatchQuery,
   InventoryMaterialSupplyDemandQuery,
+  InventoryMaterialDemandTraceQuery,
   PurchaseInboundOrderQuery,
 } from '@company/contracts';
 import { PageQueryDto } from '../../../../../presentation/http/dto/page-query.dto.js';
@@ -45,9 +47,15 @@ export class InventoryMaterialSupplyDemandQueryDto
 {
   @IsOptional() @IsString() @MaxLength(100) keyword?: string;
 }
-export class InventoryMaterialDemandTraceQueryDto extends PageQueryDto {}
+export class InventoryMaterialDemandTraceQueryDto
+  extends PageQueryDto
+  implements InventoryMaterialDemandTraceQuery
+{
+  @IsString() @Matches(/^[1-9]\d{0,19}$/) materialVariantId!: string;
+}
 export class CreatePurchaseInboundLineDto {
   @IsString() @MaxLength(20) itemId!: string;
+  @IsString() @MaxLength(20) materialVariantId!: string;
   @IsString() @MaxLength(100) batchCode!: string;
   @Type(() => Number) @IsInt() @Min(1) @Max(99_999_999) inboundQuantity!: number;
   @IsOptional() @IsString() @MaxLength(5000) remark?: string | null;

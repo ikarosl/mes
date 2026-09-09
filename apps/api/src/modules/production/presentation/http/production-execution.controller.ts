@@ -127,17 +127,6 @@ export class ProductionExecutionController {
     return this.service.startStep(batchId, recordId, body.version, context);
   }
 
-  @Post('batches/:batchId/step-records/:recordId/actions/complete')
-  @RequirePermission(PERMISSIONS.production.steps.complete)
-  @AuditInApplication()
-  completeStep(
-    @Param() { batchId, recordId }: BatchStepRecordParamDto,
-    @Body() body: VersionedCommandDto,
-    @CurrentCommandContext() context: CommandContext,
-  ) {
-    return this.service.completeStep(batchId, recordId, body.version, context);
-  }
-
   private streamSop(
     content: {
       file: { fileName: string; mimeType: string; sizeBytes: number };

@@ -7,7 +7,7 @@ const base = {
   allActiveDemandsAllocated: false,
   hasActiveAllocation: true,
   hasOrderableAllocation: true,
-  hasOrderableSupplementAllocation: false,
+  hasOrderableAdditionalAllocation: false,
 };
 
 describe('evaluateMaterialOutboundEligibility', () => {
@@ -56,14 +56,14 @@ describe('evaluateMaterialOutboundEligibility', () => {
       evaluateMaterialOutboundEligibility({
         ...base,
         batchStatus: 'material_outbound',
-        hasOrderableSupplementAllocation: false,
+        hasOrderableAdditionalAllocation: false,
       }),
     ).toMatchObject({ eligible: false, blockedCode: 'allocation_incomplete' });
     expect(
       evaluateMaterialOutboundEligibility({
         ...base,
         batchStatus: 'material_outbound',
-        hasOrderableSupplementAllocation: true,
+        hasOrderableAdditionalAllocation: true,
       }),
     ).toMatchObject({ eligible: true, outboundMode: 'normal' });
   });

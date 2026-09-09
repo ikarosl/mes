@@ -15,11 +15,7 @@ import type {
   UpdateWorkOrderPayload,
 } from '@company/contracts';
 import type { CommandContext } from '../../../../common/audit/audit.types.js';
-import type {
-  ProcessRouteSnapshot,
-  ProductBomSnapshot,
-  ProductionProductSnapshot,
-} from '../../../product/public.js';
+import type { ProcessRouteSnapshot, ProductionProductSnapshot } from '../../../product/public.js';
 
 export interface ResolvedBatchStepOverride {
   routeStepId: string;
@@ -102,13 +98,6 @@ export abstract class ProductionRepository {
       { id: string; fileName: string; objectKey: string; versionNo: string } | null | undefined,
     audit: CommandContext,
   ): Promise<ProductionBatchDetail>;
-  abstract generateMaterialDemands(
-    batchId: string,
-    version: number,
-    bom: ProductBomSnapshot,
-    audit: CommandContext,
-  ): Promise<ProductionBatchDetail>;
-  abstract hasGeneratedNormalMaterialDemands(batchId: string): Promise<boolean>;
   abstract getBatchProductId(batchId: string): Promise<string>;
   abstract getWorkOrderProductId(workOrderId: string): Promise<string>;
 }

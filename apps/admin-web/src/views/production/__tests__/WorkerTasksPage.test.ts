@@ -7,7 +7,6 @@ import WorkerTasksPage from '../WorkerTasksPage.vue';
 const api = vi.hoisted(() => ({
   listWorkerTasks: vi.fn(),
   startStep: vi.fn(),
-  completeStep: vi.fn(),
   createStepReport: vi.fn(),
   workerTaskSopContent: vi.fn(),
 }));
@@ -26,7 +25,7 @@ describe('WorkerTasksPage', () => {
           TableToolbar: { template: '<div><slot name="actions"/><slot name="tools"/></div>' },
           BatchStepReportDialog: true,
           'el-tooltip': { template: '<div><slot/></div>' },
-          'el-button': true,
+          'el-button': { template: '<button><slot/></button>' },
           'el-alert': true,
           'el-table': true,
           'el-table-column': true,
@@ -58,7 +57,6 @@ describe('WorkerTasksPage', () => {
       sopFileName: 'SOP-v1.pdf',
       sopVersionNo: 'V1',
       status: 'completed',
-      needRecord: true,
       unit: 'pcs',
       plannedQuantity: '10',
       baseNormalQuantity: '10',
@@ -78,8 +76,6 @@ describe('WorkerTasksPage', () => {
       version: 1,
       canStart: false,
       startBlockedReason: null,
-      canComplete: false,
-      completeBlockedReason: null,
     } satisfies ProductionWorkerTaskItem;
     api.listWorkerTasks.mockResolvedValue([task]);
     Object.defineProperty(URL, 'createObjectURL', {
@@ -129,5 +125,80 @@ describe('WorkerTasksPage', () => {
     await flushPromises();
 
     expect(api.workerTaskSopContent).toHaveBeenCalledWith('1', '9');
+  });
+
+  it('keeps employee actions limited to start/report and has no complete-task command', async () => {
+    const task = {
+      stepRecordId: '9',
+      productionBatchId: '1',
+      batchNo: 'PB-001',
+      workOrderId: '2',
+      workOrderNo: 'WO-001',
+      productId: '3',
+      productCode: 'P-001',
+      productName: '产品',
+      stepOrder: 1,
+      hasPreviousStep: false,
+      stepCode: 'CUT',
+      stepName: '下料',
+      sopFileName: null,
+      sopVersionNo: null,
+      status: 'doing',
+      unit: 'pcs',
+      plannedQuantity: '10',
+      baseNormalQuantity: '10',
+      requiredNormalQuantity: '10',
+      releasedNormalQuantity: '10',
+      availableNormalQuantity: '4',
+      effectiveReportedQuantity: '6',
+      effectiveDirectReportedQuantity: '6',
+      effectiveNormalQuantity: '6',
+      effectiveAbnormalQuantity: '0',
+      activatedSupplementInputQuantity: '0',
+      activatedSupplementTargetQuantity: '0',
+      pendingSupplementInputQuantity: '0',
+      isSupplementReopened: false,
+      supplementBlockedReason: null,
+      startedAt: '2026-09-01T09:00:00+08:00',
+      version: 1,
+      canStart: false,
+      startBlockedReason: null,
+    } satisfies ProductionWorkerTaskItem;
+    api.listWorkerTasks.mockResolvedValue([task]);
+
+    const wrapper = mount(WorkerTasksPage, {
+      global: {
+        stubs: {
+          TableToolbar: { template: '<div><slot name="actions"/><slot name="tools"/></div>' },
+          BatchStepReportDialog: true,
+          'el-tooltip': { template: '<div><slot/></div>' },
+          'el-button': { template: '<button><slot/></button>' },
+          'el-alert': true,
+          'el-table': { template: '<div><slot/></div>' },
+          'el-table-column': {
+            setup(
+              _props: unknown,
+              {
+                slots,
+              }: {
+                slots: { default?: (scope: { row: ProductionWorkerTaskItem }) => VNode[] };
+              },
+            ) {
+              return () => h('div', slots.default?.({ row: task }));
+            },
+          },
+          'el-tag': { template: '<span><slot/></span>' },
+        },
+        directives: { loading: () => undefined },
+      },
+    });
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('正常报工');
+    expect(wrapper.text()).toContain('异常报工');
+    expect(wrapper.findAll('button').map((button) => button.text().trim())).not.toContain(
+      '完成工序',
+    );
+    expect(Object.keys(api).some((key) => key.toLowerCase().includes('complete'))).toBe(false);
   });
 });

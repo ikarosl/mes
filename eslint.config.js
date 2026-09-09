@@ -118,6 +118,8 @@ export default tseslint.config(
                 'knex',
                 'prisma',
                 'sequelize',
+                'bcryptjs',
+                'jose',
                 '**/infrastructure/**',
                 '**/presentation/**',
               ],

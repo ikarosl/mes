@@ -1,6 +1,6 @@
 import type { PageQuery } from '../common.js';
 
-export type ProductItemKind = 'material' | 'semi_finished' | 'finished_product';
+export type ProductItemKind = 'material' | 'finished_product';
 
 export type ProductAcquireMethod = 'self_made' | 'outsourced' | 'purchased';
 
@@ -8,6 +8,12 @@ export interface ProductListQuery extends PageQuery {
   keyword?: string;
   categoryId?: string;
   acquireMethod?: ProductAcquireMethod;
+  status?: number;
+}
+
+export interface ProductGroupQuery extends PageQuery {
+  keyword?: string;
+  categoryId?: string;
   status?: number;
 }
 
@@ -71,7 +77,18 @@ export interface ProductListItem {
   updatedAt: string | null;
 }
 
+export interface ProductGroupItem {
+  groupKey: string;
+  productName: string;
+  categoryId: string;
+  categoryCode: string;
+  categoryName: string;
+  codeCount: number;
+  codes: ProductListItem[];
+}
+
 export interface ProductPayload {
+  /** 创建时必填；更新请求必须原样回传，服务端拒绝修改稳定编码。 */
   itemCode: string;
   productName: string;
   categoryId: string;
@@ -86,7 +103,6 @@ export interface ProductOption {
   id: string;
   itemCode: string;
   productName: string;
-  itemKind: ProductItemKind;
   acquireMethod: ProductAcquireMethod;
   unit: string;
   defaultRouteId: string | null;
@@ -94,7 +110,7 @@ export interface ProductOption {
 
 export interface ProductMaterialItem {
   id: string;
-  materialProductId: string;
+  materialId: string;
   itemCode: string;
   productName: string;
   itemKind: ProductItemKind;
@@ -107,11 +123,84 @@ export interface ProductMaterialItem {
 }
 
 export interface ProductMaterialPayload {
-  materialProductId: string;
+  materialId: string;
   quantityPerUnit: number;
   unit: string;
   isKeyMaterial: boolean;
   needBatchRecord: boolean;
   status?: number;
   remark?: string | null;
+}
+
+/**
+ * Exact stock/demand identity below one stable base material. The base material
+ * remains the only BOM identity; these rows are selected only at demand time.
+ */
+export interface MaterialVariantListQuery extends PageQuery {
+  materialId?: string;
+  keyword?: string;
+  status?: number;
+}
+
+export interface MaterialVariantItem {
+  id: string;
+  materialId: string;
+  materialCode: string;
+  materialName: string;
+  majorVersion: string;
+  minorVersion: string;
+  variantCode: string;
+  status: number;
+  remark: string | null;
+  updatedAt: string | null;
+}
+
+export interface MaterialVariantPayload {
+  materialId: string;
+  majorVersion: string;
+  minorVersion: string;
+  remark?: string | null;
+}
+
+export interface MaterialListQuery extends PageQuery {
+  keyword?: string;
+  categoryId?: string;
+  acquireMethod?: ProductAcquireMethod;
+  status?: number;
+}
+
+export interface MaterialListItem {
+  id: string;
+  materialCode: string;
+  materialName: string;
+  categoryId: string;
+  categoryCode: string;
+  categoryName: string;
+  unit: string;
+  acquireMethod: ProductAcquireMethod;
+  specValues: ProductSpecValue[];
+  status: number;
+  variantCount: number;
+  variants: MaterialVariantItem[];
+  remark: string | null;
+  updatedAt: string | null;
+}
+
+export interface MaterialPayload {
+  materialCode: string;
+  materialName: string;
+  categoryId: string;
+  unit: string;
+  acquireMethod: ProductAcquireMethod;
+  specValues?: ProductSpecValue[];
+  status: number;
+  remark?: string | null;
+}
+
+export interface MaterialOption {
+  id: string;
+  materialCode: string;
+  materialName: string;
+  acquireMethod: ProductAcquireMethod;
+  unit: string;
 }

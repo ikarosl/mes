@@ -312,9 +312,7 @@ const workOrderChoices = computed(() =>
   ),
 );
 const availableRouteOptions = computed(() => {
-  const order = selectedWorkOrder.value;
-  if (!order) return routeSource.options.value;
-  return routeSource.options.value.filter((route) => route.productId === order.productId);
+  return routeSource.options.value;
 });
 const selectedWorkOrderRemaining = computed(() => {
   if (!selectedWorkOrder.value) return null;

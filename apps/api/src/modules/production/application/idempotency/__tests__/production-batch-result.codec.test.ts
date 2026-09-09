@@ -20,7 +20,6 @@ const validStepRecord: BatchStepRecordItem = {
   defaultResponsibleUserName: null,
   responsibleUserId: null,
   responsibleUserName: null,
-  needRecord: true,
   needInspection: false,
   status: 'pending',
   startedAt: null,

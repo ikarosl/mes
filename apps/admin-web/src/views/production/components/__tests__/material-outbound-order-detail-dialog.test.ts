@@ -1,4 +1,5 @@
 import { mount } from '@vue/test-utils';
+import { defineComponent, h } from 'vue';
 import { describe, expect, it } from 'vitest';
 import type { MaterialOutboundItem } from '@company/contracts';
 import MaterialOutboundOrderDetailDialog from '../MaterialOutboundOrderDetailDialog.vue';
@@ -29,6 +30,8 @@ const pendingOrder: MaterialOutboundItem = {
       demandId: '5',
       allocationId: '6',
       itemId: '7',
+      materialVariantId: 'mv-7',
+      materialVariantCode: 'M-001-v1-A',
       itemCode: 'M-001',
       itemName: '测试物料',
       generationGroupKey: 'NORMAL:2',
@@ -42,6 +45,20 @@ const pendingOrder: MaterialOutboundItem = {
     },
   ],
 };
+
+const detailColumnStub = defineComponent({
+  props: { prop: { type: String, default: '' } },
+  setup(props, { slots }) {
+    const row = pendingOrder.details[0]!;
+    return () =>
+      h(
+        'div',
+        slots.default
+          ? [slots.default({ row })]
+          : [props.prop ? String(row[props.prop as keyof typeof row] ?? '') : ''],
+      );
+  },
+});
 
 describe('MaterialOutboundOrderDetailDialog', () => {
   it('makes pending stock effects and missing ledger facts explicit', () => {
@@ -97,5 +114,27 @@ describe('MaterialOutboundOrderDetailDialog', () => {
 
     expect(wrapper.text()).toContain('取消来源历史数据未记录');
     expect(wrapper.text()).not.toContain('取消来源人工取消');
+  });
+
+  it('keeps the demand generation source and exact material version in detail rows', () => {
+    const wrapper = mount(MaterialOutboundOrderDetailDialog, {
+      props: { modelValue: true, loading: false, detail: pendingOrder },
+      global: {
+        stubs: {
+          'el-dialog': { template: '<div><slot/><slot name="footer"/></div>' },
+          'el-alert': { props: ['title'], template: '<p>{{ title }}</p>' },
+          'el-descriptions': { template: '<div><slot/></div>' },
+          'el-descriptions-item': { props: ['label'], template: '<div>{{ label }}<slot/></div>' },
+          'el-table': { template: '<div><slot/></div>' },
+          'el-table-column': detailColumnStub,
+          'el-button': { template: '<button><slot/></button>' },
+        },
+        directives: { loading: () => undefined },
+      },
+    });
+
+    expect(wrapper.text()).toContain('初始物料需求');
+    expect(wrapper.text()).toContain('M-001-v1-A');
+    expect(wrapper.text()).toContain('IB-001');
   });
 });

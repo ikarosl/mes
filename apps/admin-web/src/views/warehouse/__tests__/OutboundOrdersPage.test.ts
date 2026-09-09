@@ -3,9 +3,18 @@ import { h, type VNode } from 'vue';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import OutboundOrdersPage from '../OutboundOrdersPage.vue';
 
-const { getMaterialOutbound, listMaterialOutboundOrders } = vi.hoisted(() => ({
+const {
+  getMaterialOutbound,
+  listMaterialOutboundOrders,
+  confirmMaterialOutbound,
+  cancelMaterialOutbound,
+  confirm,
+} = vi.hoisted(() => ({
   getMaterialOutbound: vi.fn(),
   listMaterialOutboundOrders: vi.fn(),
+  confirmMaterialOutbound: vi.fn(),
+  cancelMaterialOutbound: vi.fn(),
+  confirm: vi.fn(),
 }));
 
 vi.mock('../../../api/production', () => ({
@@ -13,7 +22,12 @@ vi.mock('../../../api/production', () => ({
     getMaterialOutbound,
     listMaterialOutboundOrders,
     listMaterialOutboundBatchOptions: vi.fn().mockResolvedValue([]),
+    confirmMaterialOutbound,
+    cancelMaterialOutbound,
   },
+}));
+vi.mock('../../../utils/route-message-box', () => ({
+  RouteMessageBox: { confirm, prompt: vi.fn() },
 }));
 vi.mock('../../../utils/message', () => ({
   EMessage: { error: vi.fn(), success: vi.fn(), warning: vi.fn() },
@@ -106,6 +120,9 @@ describe('OutboundOrdersPage', () => {
       page: 1,
       pageSize: 20,
     });
+    confirmMaterialOutbound.mockReset();
+    cancelMaterialOutbound.mockReset();
+    confirm.mockReset().mockResolvedValue(undefined);
   });
 
   it('uses current query/table layout and exposes only the supported pending order actions', () => {
@@ -164,5 +181,30 @@ describe('OutboundOrdersPage', () => {
 
     afterPrint?.();
     expect(document.querySelector('[data-print-frame="outbound-order"]')).toBeNull();
+  });
+
+  it('confirms the exact outbound row version and refreshes the list after success', async () => {
+    confirmMaterialOutbound.mockResolvedValue({ outbound: { ...outbound, status: 'completed' } });
+    const wrapper = mountPage(true);
+    await flushPromises();
+
+    const confirmButton = wrapper
+      .findAll('button')
+      .find((button) => button.text().trim() === '确认出库');
+    expect(confirmButton).toBeDefined();
+    await confirmButton!.trigger('click');
+    await flushPromises();
+
+    expect(confirm).toHaveBeenCalledWith(
+      expect.stringContaining('确认整张单据'),
+      '确认生产领料出库',
+      expect.objectContaining({ confirmButtonText: '确认整单出库' }),
+    );
+    expect(confirmMaterialOutbound).toHaveBeenCalledWith(
+      outbound.outboundId,
+      outbound.version,
+      expect.any(String),
+    );
+    expect(listMaterialOutboundOrders).toHaveBeenCalledTimes(2);
   });
 });

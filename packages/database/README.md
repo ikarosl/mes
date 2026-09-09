@@ -32,6 +32,20 @@ docs/         # 迁移运行与安全说明
 
 数据库变更只能追加成对 migration，已经执行的文件不可修改。详细规则见[迁移顺序](docs/90-migration-order.md)、[迁移门禁](docs/migration-readiness.md)和[迁移安全](docs/migration-safety.md)。
 
+## 迁移登记表 `_schema_migrations`
+
+本表由本包的[迁移运行器](src/migrate.ts)在执行版本化 migration 前通过 `CREATE TABLE IF NOT EXISTS` 创建，属于数据库基础设施，不归任何业务模块所有。使用 InnoDB、`utf8mb4`；建表语句未显式指定排序规则。
+
+| 字段 | 类型 | 允许 NULL | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `name` | `VARCHAR(255)` | 否（主键隐含） | 无 | 已执行的 `.up.sql` 文件名，包含扩展名；不自增 |
+| `checksum` | `CHAR(64)` | 否 | 无 | 迁移 SQL 文件内容的 SHA-256 十六进制校验和 |
+| `applied_at` | `DATETIME` | 否 | `CURRENT_TIMESTAMP` | SQL 执行成功后登记该迁移的时间 |
+
+物理约束只有 `PRIMARY KEY (name)`；没有额外唯一键、二级索引、外键或 CHECK。`checksum` 的摘要算法及已执行文件内容不可变由运行器校验，不由数据库 CHECK 保证。本表不继承业务审计、乐观锁或软删除字段。
+
+运行器持有迁移建议锁后读取登记记录：同名且校验和相同则跳过，不同则报错；尚未登记的迁移在 SQL 执行成功后插入记录。MySQL DDL 与登记写入不构成可整体回滚的事务；失败恢复边界见[迁移安全](docs/migration-safety.md)。
+
 ## 业务数据库设计
 
 migration 的物理位置不表示业务所有权。业务表设计跟随代码所有者维护：

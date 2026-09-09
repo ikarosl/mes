@@ -51,7 +51,6 @@ export interface ProductionWorkerTaskItem {
   sopFileName: string | null;
   sopVersionNo: string | null;
   status: BatchStepStatus;
-  needRecord: boolean;
   unit: string;
   plannedQuantity: string;
   baseNormalQuantity: string;
@@ -71,8 +70,6 @@ export interface ProductionWorkerTaskItem {
   version: number;
   canStart: boolean;
   startBlockedReason: string | null;
-  canComplete: boolean;
-  completeBlockedReason: string | null;
 }
 
 export interface CreateBatchStepReportPayload extends VersionedCommand {
@@ -122,7 +119,6 @@ export interface BatchStepExecutionRecordItem {
   responsibleUserId: string | null;
   responsibleUserName: string | null;
   status: BatchStepStatus;
-  needRecord: boolean;
   unit: string;
   baseNormalQuantity: string;
   requiredNormalQuantity: string;
@@ -193,7 +189,7 @@ export interface CorrectBatchStepReportCommandResult {
 
 export type ProductionExecutionCompletionBlocker =
   | 'batch_not_doing'
-  | 'no_required_reporting_step'
+  | 'no_route_step'
   | 'required_step_incomplete'
   | 'final_step_quantity_insufficient'
   | 'active_material_demand_remains';

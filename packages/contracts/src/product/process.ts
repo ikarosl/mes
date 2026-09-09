@@ -43,9 +43,6 @@ export interface ProcessRouteListItem {
   id: string;
   routeCode: string;
   routeName: string;
-  productId: string;
-  itemCode: string;
-  productName: string;
   versionNo: string;
   status: ProcessRouteStatus;
   processSummary: string | null;
@@ -58,7 +55,6 @@ export interface ProcessRouteOption {
   id: string;
   routeCode: string;
   routeName: string;
-  productId: string;
   versionNo: string;
   status: ProcessRouteStatus;
 }
@@ -66,7 +62,6 @@ export interface ProcessRouteOption {
 export interface ProcessRoutePayload {
   routeCode: string;
   routeName: string;
-  productId: string;
   versionNo: string;
   remark?: string | null;
 }
@@ -83,10 +78,8 @@ export interface ProcessRouteStepItem {
   sopFileId: string | null;
   sopFileName: string | null;
   needInspection: boolean;
-  needRecord: boolean;
   status: number;
   remark: string | null;
-  productMaterialIds: string[];
 }
 
 export interface ProcessRouteStepPayload {
@@ -95,8 +88,6 @@ export interface ProcessRouteStepPayload {
   defaultOwnerId?: string | null;
   sopFileId?: string | null;
   needInspection: boolean;
-  needRecord: boolean;
   status?: number;
   remark?: string | null;
-  productMaterialIds?: string[];
 }

@@ -92,7 +92,6 @@ export interface BatchStepRecordItem {
   defaultResponsibleUserName: string | null;
   responsibleUserId: string | null;
   responsibleUserName: string | null;
-  needRecord: boolean;
   needInspection: boolean;
   status: BatchStepStatus;
   startedAt: string | null;

@@ -62,13 +62,16 @@ domain -> 纯 TypeScript，不依赖 NestJS、MySQL、HTTP、存储 SDK
 
 Controller 只负责协议映射、DTO、权限装饰器和响应转换，不写 SQL、不管理事务、不处理 Token 密钥。
 
+Identity 的密码算法和令牌签发/验证通过 `PasswordHasher`、`TokenService` 应用端口访问，bcrypt、JWT SDK
+与签名密钥配置由该模块 infrastructure 所有；application 不直接导入 `bcryptjs` 或 `jose`。
+
 ## 4. 模块公开边界与数据所有权
 
 - 可被其他模块使用的模块必须提供根级 `public.ts`。
 - 跨模块只能引用目标模块 `public.ts` 导出的 Facade、抽象 token 或稳定契约。
 - 禁止引用其他模块的 Repository、domain、presentation、infrastructure 或深层 application 文件。
 - `@company/contracts` 只保存传输契约，不保存 Pool、PoolConnection、事务 executor 或 SDK 类型。
-- 每张业务表有唯一所属模块；模块不能直接查询或修改其他模块的表。
+- 每张业务表有唯一所属模块；模块不能直接修改其他模块的表。跨模块只读展示查询适用下述正式规则，未登记读取仍禁止。
 - `operation_logs` 是项目级平台审计基础设施，不属于 Identity/System、Product、Production 或 `common`
   的业务数据。其结构由项目数据库规范定义，变更统一在 `packages/database/migrations` 追加 migration；
   历史上与 RBAC 表位于同一初始 migration 不构成 Identity/System 所有权。写入通道由
@@ -82,7 +85,7 @@ Controller 只负责协议映射、DTO、权限装饰器和响应转换，不写
   基础设施，由 `infrastructure/idempotency` 装配并公开导出，组合根只经该装配对象引用。业务
   Controller、Service 和 Repository 均不得直接查询或修改该表。重放、冲突与失败通过平台 in-memory
   指标（`idempotency.metrics`）与带脱敏键摘要的日志观测，不伪造第二条业务成功审计。
-- 跨模块读通过目标模块公开 Query/Directory Facade；跨模块写通过目标模块公开应用服务。
+- 跨模块业务校验读通过目标模块公开 Query/Directory Facade；跨模块写通过目标模块公开应用服务。页面展示读允许登记的数据库联查，不要求为纯展示字段增加 Facade 调用链。
 - 公开 Query 必须按用途区分过滤语义，不能用同一个默认带状态过滤的方法同时承担写操作校验与历史展示：
   写操作校验只返回当前启用、未删除且满足业务条件的数据；历史、审计和既有单据展示允许解析已停用或软删除
   的引用，但不得把该结果用于新增、编辑、分配、入库等写操作。方法名和返回类型必须体现 `enabled/current`
@@ -97,8 +100,8 @@ Controller 只负责协议映射、DTO、权限装饰器和响应转换，不写
 | 所有者/类别      | 拥有或管理的数据                                                                                                                         |
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | Identity/System  | departments、users、roles、permissions、关联表、refresh_tokens                                                                           |
-| Product          | product_categories、products、product_materials、technical_files、process_steps、process_routes 及关联表                                 |
-| Production       | work_orders、production_batches、batch_step_records、batch_step_reports、batch_step_abnormal_dispositions、rework_records、batch_step_scrap_records、batch_step_scrap_reproduction_authorization、production_scrap_supplement_plan、production_scrap_supplement_plan_line、production_material_supplement、production_item_demand、production_item_allocation、item_scrap、inbound_order、inbound_detail、outbound_order、outbound_detail、return_order、return_detail、stock_check_order、stock_check_detail，以及当前生产库存切片的 item_batch、inventory_transaction 和可重建查询投影 inventory_batch_balance、inventory_item_balance |
+| Product          | product_categories、products、materials、material_variants、product_materials、technical_files、process_steps、process_routes 及关联表                                 |
+| Production       | work_orders、work_order_material_versions、production_batches、batch_step_records、batch_step_reports、batch_step_abnormal_dispositions、rework_records、batch_step_scrap_records、batch_step_scrap_reproduction_authorization、production_scrap_supplement_plan、production_scrap_supplement_plan_line、production_material_supplement、production_material_requirement_basis、production_manual_demand_addition、production_item_demand、production_item_allocation、production_short_batch_authorization、production_short_batch_authorization_detail、item_scrap、inbound_order、inbound_detail、outbound_order、outbound_detail、return_order、return_detail、stock_check_order、stock_check_detail，以及当前生产库存切片的 item_batch、inventory_transaction 和可重建查询投影 inventory_batch_balance、inventory_material_variant_balance |
 | 平台审计基础设施 | operation_logs                                                                                                                           |
 | 平台幂等基础设施 | http_idempotency_records（已落地）                                                                                                       |
 | common           | 不拥有业务表                                                                                                                             |
@@ -109,6 +112,17 @@ Controller 只负责协议映射、DTO、权限装饰器和响应转换，不写
 Product 获取用户选项必须调用 Identity 的公开目录服务，不能直接查询 `users`。
 
 当前 Production 继续作为库存账本的唯一写入所有者，覆盖外购物料入库、生产物料分配、领料出库、生产退料和库存盘点；这些流程共享同一事务设施，库存数量只写 `inventory_transaction`。`/warehouse/return-orders` 与 `/warehouse/stock-checks` 只是 Production 模块的管理端 HTTP 入口，不建立第二 Warehouse Repository 或账本写入口。未来通用库存继续扩展并形成独立生命周期时，再整体评审提取 Inventory 模块；提取前不得复制表访问或形成双写。
+
+Production 内部退料只负责现场余料回仓，禁止通过需求计划 Writer 创建或恢复需求，也不得修改分配履约、物料计划版本或短批授权。损耗确认与人工追加分别负责产生其明确来源的新需求；执行模块独立校验开工/完工，短批授权与开工不读取退料或按净领用量设置门槛。仓库 UI 属于这些能力的展示入口，不能另行定义退料补领语义。修改任一相关能力须遵守 [Production 写入职责表](../apps/api/src/modules/production/docs/database/return-scrap-and-stocktake.md#业务语义与写入职责)。
+
+### 展示查询的跨模块读取
+
+决策依据见 [ADR-0005](adr/0005-controlled-display-reads.md)。
+
+- 专用目录为各模块 `infrastructure/queries/`，通过 `scripts/api-data-ownership.mjs` 的 `API_DISPLAY_READ_ACCESS` 登记目录、目标表和批准字段。当前 Production 仅批准读取 Product `materials.id/material_name`；联查或相关子查询 SQL 可以在本模块 infrastructure 查询中组合复用，不暴露到 application port、Controller 或前端。
+- 展示查询只提供名称、搜索、排序和页面组合结果；禁止跨模块写入、DDL、锁定或存储过程调用。命令中的权限、启用状态、选版、库存资格和事务规则继续经过所属模块业务能力；SELECT 是否参与业务决策比方法名是否叫 Query 更重要。
+- 名称按稳定物料 ID 读取当前值，不过滤停用或软删除。历史记录不会因主数据状态变化被排除；编码、版本、数量、单位继续读取相应业务事实。搜索必须使用同一当前名称来源，筛选先于分页，不在应用层逐行查名称。
+- 表结构修改须检查已登记目录及 SQL 组合调用方。保持公开查询契约、筛选语义、行数和分页稳定；不因为内部 SQL 改动而向上层泄漏表或 SDK 类型。此规则不开放跨模块深层 import，不引入新服务或第二套读库。
 
 ## 5. Port、Adapter 与文件拆分
 
@@ -160,6 +174,13 @@ Controller、Service 和 SQL 不得混写在同一文件。
 - 超长页面按筛选、表格、表单、详情弹窗和 composable 拆分，不机械拆纯展示片段。
 
 ## 9. 自动约束
+
+SQL 对象所有者集中登记在 [`scripts/api-data-ownership.mjs`](../scripts/api-data-ownership.mjs)，包括业务表、
+可重建余额投影及平台表。架构检查从 TypeScript AST 解码字符串和模板，对所有 API 层生成按所有者隔离的
+访问检查，覆盖三个业务模块之间的双向访问、反引号表名、schema 限定名和常见读写/清空语句。
+新增 migration 的 `CREATE TABLE/VIEW` 必须同时登记所有者；历史已删除表的登记只用于边界检查，不代表
+可以恢复该表。专用展示目录按 `API_DISPLAY_READ_ACCESS` 放行只读目标表，并检查常见写入/锁定 SQL、通配读取和显式别名字段；这不是完整 SQL 权限解析器，未限定字段、动态组合和业务用途必须人工评审。Identity 的审计查询与唯一审计 Writer、平台幂等表规则仍按 §4 执行。
+动态拼接的表名不能由静态扫描完整推断，必须采用固定白名单并由代码评审核对归属；检查通过不替代 SQL 评审。
 
 | 规则                    | 自动措施                                                        |
 | ----------------------- | --------------------------------------------------------------- |

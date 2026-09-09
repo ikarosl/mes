@@ -24,7 +24,6 @@ type SupplementSourceRow = RowDataPacket & {
 type ReopenStepRow = RowDataPacket & {
   id: number;
   step_order_snapshot: number;
-  need_record_snapshot: number;
   status: BatchStepStatus;
   effective_normal: string;
 };
@@ -118,14 +117,14 @@ export const fulfillReadySupplements = async (
   );
 
   const [steps] = await connection.query<ReopenStepRow[]>(
-    `SELECT step_record.id,step_record.step_order_snapshot,step_record.need_record_snapshot,
+    `SELECT step_record.id,step_record.step_order_snapshot,
       step_record.status,
       COALESCE(SUM(CASE WHEN report.report_type='normal'
         THEN report.normal_quantity ELSE -report.normal_quantity END),0) effective_normal
      FROM batch_step_records step_record
      LEFT JOIN batch_step_reports report ON report.batch_step_record_id=step_record.id
      WHERE step_record.production_batch_id=?
-     GROUP BY step_record.id,step_record.step_order_snapshot,step_record.need_record_snapshot,
+     GROUP BY step_record.id,step_record.step_order_snapshot,
        step_record.status
      ORDER BY step_record.step_order_snapshot,step_record.id`,
     [batchId],
@@ -136,7 +135,6 @@ export const fulfillReadySupplements = async (
     steps.map<RouteQuantityStep>((step) => ({
       id: step.id,
       stepOrder: step.step_order_snapshot,
-      needRecord: Boolean(step.need_record_snapshot),
       status: step.status,
       effectiveDirectReported: 0,
       effectiveNormal: step.effective_normal,
@@ -155,9 +153,8 @@ export const fulfillReadySupplements = async (
     const shouldReopen =
       isOnNewRoute &&
       step.status === 'completed' &&
-      (!step.need_record_snapshot ||
-        integerQuantity(step.effective_normal) <
-          integerQuantity(quantity?.requiredNormalQuantity ?? 0));
+      integerQuantity(step.effective_normal) <
+        integerQuantity(quantity?.requiredNormalQuantity ?? 0);
     if (!shouldReopen) continue;
     await connection.execute(
       `UPDATE batch_step_records

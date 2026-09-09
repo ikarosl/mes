@@ -1,9 +1,14 @@
 import { mount } from '@vue/test-utils';
 import { nextTick } from 'vue';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import MaterialDemandAllocationDialog from '../MaterialDemandAllocationDialog.vue';
 
+const { confirm } = vi.hoisted(() => ({ confirm: vi.fn() }));
+vi.mock('../../../../utils/route-message-box', () => ({ RouteMessageBox: { confirm } }));
+
 describe('MaterialDemandAllocationDialog', () => {
+  beforeEach(() => confirm.mockReset());
+
   it('selects the first demand when demands finish loading after the dialog opens', async () => {
     const wrapper = mount(MaterialDemandAllocationDialog, {
       props: {
@@ -224,5 +229,146 @@ describe('MaterialDemandAllocationDialog', () => {
     expect(vm.selectedDemandId).toBe('d-oldest-fulfilled');
     expect(vm.canAllocate).toBe(false);
     expect(wrapper.emitted('load-available')).toEqual([['d-oldest-actionable']]);
+  });
+
+  it('keeps allocation candidates isolated by exact material variant identity', async () => {
+    const wrapper = mount(MaterialDemandAllocationDialog, {
+      props: {
+        visible: false,
+        demands: [
+          {
+            demandId: 'd-v1',
+            itemId: 'item-1',
+            materialVariantId: 'variant-1',
+            materialVariantCode: 'RM-001-V1',
+            itemName: '物料 A',
+            businessStatus: 'active',
+            generationGroupKey: 'NORMAL:b1',
+            generationGroupType: 'normal',
+            supplementNo: null,
+            createdAt: '2026-09-01T09:00:00+08:00',
+            remainingQuantity: '5',
+            allocations: [],
+          },
+        ] as never,
+        availableItemBatches: [
+          {
+            itemBatchId: 'batch-v1',
+            itemId: 'item-1',
+            materialVariantId: 'variant-1',
+            materialVariantCode: 'RM-001-V1',
+            batchCode: 'IB-V1',
+            availableToAllocateQuantity: '5',
+          },
+          {
+            itemBatchId: 'batch-v2',
+            itemId: 'item-1',
+            materialVariantId: 'variant-2',
+            materialVariantCode: 'RM-001-V2',
+            batchCode: 'IB-V2',
+            availableToAllocateQuantity: '5',
+          },
+        ] as never,
+        loadingDemands: false,
+        loadingAvailable: false,
+        submitting: false,
+        releasePendingIds: new Set<string>(),
+      },
+      global: {
+        stubs: {
+          'el-dialog': { template: '<div><slot/><slot name="footer"/></div>' },
+          'el-empty': true,
+          'el-table': { template: '<div><slot/></div>' },
+          'el-table-column': true,
+          'el-form': { template: '<div><slot/></div>' },
+          'el-form-item': { template: '<div><slot/></div>' },
+          'el-select': true,
+          'el-radio': true,
+          'el-option': true,
+          'el-input-number': true,
+          'el-button': true,
+          'el-tag': true,
+          'el-alert': true,
+        },
+        directives: { loading: () => undefined },
+      },
+    });
+    await wrapper.setProps({ visible: true });
+    await nextTick();
+
+    const vm = wrapper.vm as unknown as {
+      exactAvailableItemBatches: Array<{ itemBatchId: string; materialVariantId: string }>;
+      form: { itemBatchId: string; assignedQuantity: number };
+      canAllocate: boolean;
+      submitAllocation: () => void;
+    };
+    expect(vm.exactAvailableItemBatches.map((row) => row.itemBatchId)).toEqual(['batch-v1']);
+
+    vm.form.itemBatchId = 'batch-v2';
+    await nextTick();
+    expect(vm.canAllocate).toBe(false);
+
+    vm.form.itemBatchId = 'batch-v1';
+    vm.form.assignedQuantity = 2;
+    await nextTick();
+    expect(vm.canAllocate).toBe(true);
+    vm.submitAllocation();
+    expect(wrapper.emitted('allocate')).toEqual([
+      [{ allocations: [{ demandId: 'd-v1', itemBatchId: 'batch-v1', assignedQuantity: 2 }] }],
+    ]);
+  });
+
+  it('requires confirmation before releasing an allocation and preserves it on cancel', async () => {
+    const wrapper = mount(MaterialDemandAllocationDialog, {
+      props: {
+        visible: true,
+        demands: [],
+        availableItemBatches: [],
+        loadingDemands: false,
+        loadingAvailable: false,
+        submitting: false,
+        releasePendingIds: new Set<string>(),
+      },
+      global: {
+        stubs: {
+          'el-dialog': { template: '<div><slot/><slot name="footer"/></div>' },
+          'el-empty': true,
+          'el-table': { template: '<div><slot/></div>' },
+          'el-table-column': true,
+          'el-form': { template: '<div><slot/></div>' },
+          'el-form-item': { template: '<div><slot/></div>' },
+          'el-select': true,
+          'el-radio': true,
+          'el-option': true,
+          'el-input-number': true,
+          'el-button': true,
+          'el-tag': true,
+          'el-alert': true,
+        },
+        directives: { loading: () => undefined },
+      },
+    });
+    const allocation = {
+      allocationId: 'allocation-1',
+      batchCode: 'IB-001',
+      allocationStatus: 'active',
+      outboundQuantity: '0',
+    } as never;
+    const vm = wrapper.vm as unknown as {
+      confirmRelease: (row: never) => Promise<void>;
+    };
+
+    confirm.mockResolvedValueOnce(undefined);
+    await vm.confirmRelease(allocation);
+    expect(wrapper.emitted('release')).toEqual([[allocation]]);
+    expect(confirm).toHaveBeenCalledWith(
+      expect.stringContaining('IB-001'),
+      '释放分配',
+      expect.objectContaining({ confirmButtonText: '确认释放' }),
+    );
+
+    confirm.mockRejectedValueOnce('cancel');
+    await vm.confirmRelease(allocation);
+    expect(wrapper.emitted('release')).toHaveLength(1);
   });
 });

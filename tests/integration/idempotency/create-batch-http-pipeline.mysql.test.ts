@@ -131,7 +131,7 @@ describeMysql('createBatch HTTP pipeline (real Nest app + real MySQL)', () => {
       await pool.execute('DELETE FROM work_orders WHERE id=?', [fixture.workOrderId]);
       await pool.execute('DELETE FROM product_materials WHERE id=?', [fixture.productMaterialId]);
       await pool.execute('DELETE FROM products WHERE id=?', [fixture.productId]);
-      await pool.execute('DELETE FROM products WHERE id=?', [fixture.materialId]);
+      await pool.execute('DELETE FROM materials WHERE id=?', [fixture.materialId]);
       await pool.execute('DELETE FROM product_categories WHERE id IN (?,?)', [
         fixture.categoryId,
         fixture.materialCategoryId,
@@ -440,21 +440,22 @@ const createFixture = async (pool: Pool): Promise<Fixture> => {
   );
   const materialId = await insert(
     pool,
-    'INSERT INTO products (item_code,product_name,category_id,unit,acquire_method) VALUES (?,?,?,?,?)',
+    'INSERT INTO materials (material_code,material_name,category_id,unit,acquire_method) VALUES (?,?,?,?,?)',
     [`${token}-material`, 'HTTP 管线测试物料', materialCategoryId, 'kg', 'purchased'],
   );
   const productMaterialId = await insert(
     pool,
     `INSERT INTO product_materials
-     (product_id,material_product_id,quantity_per_unit,unit,is_key_material,need_batch_record)
+     (product_id,material_id,quantity_per_unit,unit,is_key_material,need_batch_record)
      VALUES (?,?,'1.0000','kg',1,1)`,
     [productId, materialId],
   );
   const workOrderId = await insert(
     pool,
-    'INSERT INTO work_orders (work_order_no,product_id,product_code_snapshot,product_name_snapshot,unit_snapshot,planned_quantity,plan_start_date,plan_end_date,status) VALUES (?,?,?,?,?,?,?,?,?)',
+    'INSERT INTO work_orders (work_order_no,order_type,product_id,product_code_snapshot,product_name_snapshot,unit_snapshot,planned_quantity,plan_start_date,plan_end_date,status) VALUES (?,?,?,?,?,?,?,?,?,?)',
     [
       `${token}-wo`,
+      'mass_production',
       productId,
       `${token}-product`,
       'HTTP 管线测试产品',

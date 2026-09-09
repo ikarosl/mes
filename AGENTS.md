@@ -1,6 +1,7 @@
 # Easy MES Next — Agent Rules
 
-！！明确声明“本项目目前处于开发阶段，数据库结构可能随时调整，允许在任何时候完全重置数据库数据（清空或重建），无需保留兼容性数据。”
+！！明确声明“本项目目前处于开发阶段，数据库结构可能随时调整，允许在任何时候完全重置数据库数据（清空或重建），无需保留兼容性数据。
+！！测试用例仅当我完成黑盒测试后最后编码，编写完成后保证程序可启动，随后我会进行手动测试，并观察ui设计，中途返回修改问题，最后我会告知没有设计问题再编写测试集并使用子代理让luna MAX做全量测试 保证通过。
 
 2. **禁止双写或影子表**  
    为了保持开发效率，不要为了兼容旧版或过渡而制作双写表、影子表等冗余设计，所有变更直接迁移或重置。
@@ -22,7 +23,7 @@
 5. 库存只以 `inventory_transaction` 为事实来源；生产需求只以 `production_item_demand` 为事实来源；汇总视图不得写入。
 6. 主数据、可变业务单据和不可变事实遵守 `docs/database-conventions.md` 及所属模块数据库章节的审计、快照、乐观锁和冲销规则。
 7. 后端依赖为 `presentation -> application -> domain`，infrastructure 实现 application ports；application port 不得暴露数据库或 SDK 类型。
-8. 跨模块只能引用目标模块 `public.ts`；禁止访问其他模块内部层或直接查询、修改其他模块拥有的表。唯一豁免是操作日志审计写入，统一由 `common/audit/transactional-audit-writer` 承担，不经过任何模块 public 能力转发（见 `docs/architecture.md` §4）。
+8. 跨模块代码导入只能引用目标模块 `public.ts`；禁止访问其他模块内部层或直接修改其他模块拥有的表。业务命令的权限、状态、选版及写入资格校验继续通过所属模块公开能力。展示、搜索、排序、分页查询允许在已登记的 `infrastructure/queries/` 专用目录中只读访问其他模块批准的表/字段，依赖登记于 `scripts/api-data-ownership.mjs`，禁止借此写入、锁定目标模块数据或绕过业务校验；未登记读取仍禁止。操作日志审计写入例外统一由 `common/audit/transactional-audit-writer` 承担，不经过任何模块 public 能力转发（见 `docs/architecture.md` §4）。
 9. Controller 不写 SQL、不处理 Token 密钥、不承担业务事务。
 10. RBAC 后端校验是安全边界；前端只按页面权限控制菜单、路由和整页可见性，不要求对页面内操作按钮做细粒度权限隐藏；每个后端接口仍须独立鉴权。匿名接口必须显式 `@Public()`。
 11. Access Token 只在内存；Refresh Token 只通过 HttpOnly Cookie，不得写入 Web Storage。
@@ -42,3 +43,9 @@
 - 改变公开契约、业务不变量、数据所有权、状态机、配置方式或验证命令时，必须同步更新最近的所有者文档。
 - 活跃设计文档不记录已完成实施流水；长期决策写 ADR，未完成事项写根 docs/roadmap.md，其余历史由 Git 保存。
 - 文档与代码、测试或 migration 出现冲突时，不得自行选择新的业务语义；先报告冲突并同步权威设计。
+
+### 物料名称展示规则
+
+- 基础物料名称仅用于当前展示、搜索和排序，按稳定物料 ID 读取 `materials.material_name`，不在需求基础、需求、库存批次或入库明细持久化名称快照；历史物料展示也使用当前名称，不因物料停用或软删除而丢失。
+- 当前批准 Production 的 `infrastructure/queries/` 只读使用 `materials.id/material_name`，其 SQL 可在本模块查询中组合复用；不得将展示名称当作物料身份、版本替代条件或写入资格。
+- 物料编码、单位、精确版本和业务数量仍按原规则固化；工单成品名称、工序/SOP 快照不属于本次物料名称规则。改名审批属于后续待办，当前不得宣称已实现。

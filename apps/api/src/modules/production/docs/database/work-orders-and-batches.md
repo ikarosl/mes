@@ -1,5 +1,37 @@
 # Production 工单与批次数据库设计
 
+## 工单类型与物料版本规则
+
+`work_orders.order_type` 是必填 `VARCHAR(30)`，只允许 `mass_production`（批量生产）和 `research`（研发任务），不设数据库默认值。草稿可修改类型，下达后永久固定；生产批次沿工单读取类型，不重复维护可变任务类型。
+
+| 规则 | 批量生产 | 研发任务 |
+| --- | --- | --- |
+| 基础物料候选 | 产品 BOM | 产品 BOM，不开放 BOM 外物料 |
+| 同一基础物料版本 | 整个工单仅一个版本，覆盖全部批次 | 可选择多个启用版本 |
+| 首次正常需求数量 | BOM 单耗 × 批次计划量，选一个版本 | 可按多个版本拆分，合计仍等于 BOM 应需量 |
+| 人工追加、报废补料、损耗补料 | 必须使用工单已锁定版本 | 管理员可另选同一基础物料启用版本并输入数量 |
+| 父需求 | 同批次、同 BOM 基础；版本遵守工单锁定 | 同批次、同 BOM 基础；允许与父需求版本不同 |
+
+“同物料”按 `materials.id` 判断，不按名称或分类判断。“研发不限版本”不取消基础物料归属、正整数数量、启用状态、审计和幂等校验，也不改变现有 BOM 锁定规则。研发正常需求的超额数量通过人工追加需求表达。
+
+### `work_order_material_versions`
+
+职责：记录批量工单第一次确认某基础物料时作出的版本选择，属于 Production 的不可变配置决策。不是需求或库存副本，不保存数量，也不代替 `production_item_demand`。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `work_order_id` | `BIGINT UNSIGNED` | `work_orders.id` |
+| `material_id` | `BIGINT UNSIGNED` | 工单 BOM 中的基础物料 |
+| `material_variant_id` | `BIGINT UNSIGNED` | 工单锁定的具体版本 |
+| `created_by` | `BIGINT UNSIGNED` | 首次确认版本的管理员，必填 |
+| `created_at` | `DATETIME` | 确认时间 |
+
+约束：`PRIMARY KEY (work_order_id, material_id)`；`FOREIGN KEY (material_variant_id, material_id) REFERENCES material_variants(id, material_id)`；工单及操作者外键。更新和删除触发器拒绝改写已确认的选择。研发工单不写该表。
+
+所有正常需求、人工追加、报废方案确认和损耗补料写事务必须先锁工单，再锁批次，以同一顺序串行检查版本选择。批量单首次写入选择与需求、成功审计同事务；后续只能复用相同版本，不以 upsert 覆盖选择。失败整体回滚。取消需求、取消批次、出库完成和库存归零均不能解锁；换版本必须新建工单。版本停用不篡改历史，若需新增需求则必须先由有权限管理员恢复版本启用。
+
+数据库主键与组合外键负责唯一性和版本归属；“仅批量单可写选择表”、BOM 成员、候选启用、各需求入口的一致校验由应用事务实现，尚未适配的入口不得视为已支持新规则。应用待办见[roadmap](../../../../../../../docs/roadmap.md)。
+
 ## 3.2 生产执行表
 
 ---
@@ -12,6 +44,7 @@
 | ----------------------- | ----------------- | ---------------------------------------------------------------- |
 | `id`                    | `BIGINT UNSIGNED` | 主键，自增                                                       |
 | `work_order_no`         | `VARCHAR(100)`    | 工单编号                                                         |
+| `order_type` | `VARCHAR(30)` | 必填：`mass_production` 批量生产、`research` 研发任务 |
 | `product_id`            | `BIGINT UNSIGNED` | 计划生产对象 ID                                                  |
 | `product_code_snapshot` | `VARCHAR(100)`    | 下达时产品编码快照                                               |
 | `product_name_snapshot` | `VARCHAR(200)`    | 下达时产品名称快照                                               |
@@ -152,6 +185,20 @@
 | `completed`         | 生产完成               |
 | `cancelled`         | 已取消                 |
 
+批次状态转换以 `production-status.policy.ts` 为代码入口，与[数据库公共状态矩阵](../../../../../../../docs/database-conventions.md#核心状态转换矩阵)一致：
+
+| 当前状态 | 允许的下一状态 |
+| --- | --- |
+| `pending` | `material_pending`、`cancelled` |
+| `material_pending` | `material_assigned`、`material_partially_outbound`、`material_outbound`、`cancelled` |
+| `material_assigned` | `material_pending`、`material_outbound`、`cancelled` |
+| `material_partially_outbound` | `material_outbound`、`doing` |
+| `material_outbound` | `doing` |
+| `doing` | `completed` |
+| `completed`、`cancelled` | 无，终态 |
+
+状态边仅是必要条件；实际命令还必须满足下面的取消、齐套、短批授权和执行门禁。
+
 任务生成与取消规则：
 
 - 创建生产批次只接受 `released`、`doing` 工单，并在事务内重新汇总非取消批次计划量；本次新增后不得超过工单计划量。创建批次本身不推动工单进入 `doing`。
@@ -164,20 +211,20 @@
 
 短批状态与版本规则：
 
-- `material_plan_version` 不是单条需求版本，而是“管理员授权时看到的整组物料计划编号”。创建或取消需求、短批开工前确认退料导致需求缺口恢复时递增；继续确认出库只会缩小缺口，不递增。
+- `material_plan_version` 不是单条需求版本，而是“管理员授权时看到的整组物料计划编号”。创建或取消需求时递增；继续确认出库只会缩小缺口，不递增。退料是余料回仓，不恢复需求、不推进该版本、不改变授权状态；短批开工只要求已发生确认领料，不扣除退料。
 - 有效短批授权确认首笔部分领料后，批次从 `material_pending` 进入 `material_partially_outbound`；该状态只表达已经发生部分出库，不表达授权是否仍有效。
 - `material_partially_outbound` 不因后续完成分配而回退到 `material_assigned/material_pending`。当前版本授权失效但全部活动需求已经完成分配时，可以不关联短批授权继续普通领料；全部需求确认出库后前进到 `material_outbound`。
 - `material_outbound` 与此前是否使用短批授权无关：普通任务由 `material_assigned` 进入；短批任务若在实际开工前补齐全部领料，也由 `material_partially_outbound` 进入。批次已经凭短批授权进入 `doing` 后，后续补齐物料不回退到 `material_outbound`。
 - `material_outbound` 形成后新增的工序报废或生产领料损耗补料需求由 `production_item_demand.business_status` 表达，不要求批次状态回退。此时只有活动补料需求可以重新进入分配、候选与制单链路，已经满足的正常需求及其历史分配不得重新成为出库候选。
-- 首工序开工事务重新检查授权仍有效、版本匹配、扣除已确认且释放回公共库存的退料后净确认领料量仍大于零，且实际缺口没有超过逐需求批准值，成功后进入 `doing` 并消费授权。
+- 首工序开工事务重新检查授权仍有效、版本匹配、已发生确认领料（不扣除退料，全部退回也不影响开工资格），且实际缺口没有超过逐需求批准值，成功后进入 `doing` 并消费授权。
 - 短批开工后剩余活动需求继续分配和出库；存在活动需求时批次不得完成。完整授权表、剩余需求关闭和出库关联规则见 [生产需求、分配与领料出库](demand-allocation-and-outbound.md)。
 - 批次查询除授权状态外还派生短批授权动作，供管理端决定显示“授权、重新授权、调整、查看、无需授权”。该字段不是写入事实，授权预览和提交事务必须按锁内最新需求、分配及授权明细重新计算。
 
 当前生产执行完工数量规则：
 
-- 以本批次中 `need_record_snapshot = 1` 且 `step_order_snapshot` 最大的工序作为数量来源工序；`completed_quantity` 等于该工序从 `batch_step_reports` 聚合得到的 `effective_normal`。
-- 完工命令必须在事务内重新锁定并校验所有必报工工序均为 `completed`，重新聚合数量后写入；客户端不得提交或覆盖 `completed_quantity`。
-- 当前至少需要存在一道必报工工序；没有数量来源工序的批次不得执行完工确认。
+- 以本批次中 `step_order_snapshot` 最大的工序作为数量来源工序；`completed_quantity` 等于该工序从 `batch_step_reports` 聚合得到的 `effective_normal`。
+- 完工命令必须在事务内重新锁定并校验所有工序均为 `completed`，重新聚合数量后写入；客户端不得提交或覆盖 `completed_quantity`。
+- 当前至少需要存在一道工序；没有数量来源工序的批次不得执行完工确认。
 - 当前不支持正常数量低于要求数量时的短批完工。确需按不足数量结束时，未来以独立的短批完工/生产损失确认命令记录差额、原因、确认人与审计，不得通过人工填写 `completed_quantity` 绕过报工事实。
 - `qualified_quantity` 不由生产执行完工命令写入；它只允许来自未来独立的最终质量结论。
 
@@ -188,7 +235,6 @@
 - `product_id` 是受组合外键保护的查询冗余，不允许与工单产品不一致。
 - 路线快照在批次创建时冻结；批次执行期间不能跟随路线主数据变化。
 - `plan_start_date`、`plan_end_date` 是批次排程，不是实际执行事实；实际开工、完工分别只以 `started_at`、`completed_at` 为准。
-- 成品或半成品入库后，应生成 `item_batch` 库存批次，并通过 `item_batch.source_production_batch_id` 关联回生产批次。
-- 一个生产批次可以产生多个库存批次，例如半成品批次、成品批次、待检批次。
+- 自产/成品入库尚未开放；当前 `item_batch` 的对象只引用基础物料及精确版本。未来产出库存与生产批次的关联方案须在范围扩展时重新评审。
 
 ---

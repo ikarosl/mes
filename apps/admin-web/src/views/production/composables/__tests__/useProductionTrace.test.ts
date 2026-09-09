@@ -21,12 +21,15 @@ describe('useProductionTrace', () => {
     api.getProductionTrace.mockResolvedValue({ summary: { productionBatchId: '9' } });
     const state = useProductionTrace();
     await state.search('  IB-001  ', 1);
-    expect(api.searchProductionTrace).toHaveBeenCalledWith({
-      keyword: 'IB-001',
-      page: 1,
-      pageSize: 20,
-    });
-    expect(api.getProductionTrace).toHaveBeenCalledWith('9');
+    expect(api.searchProductionTrace).toHaveBeenCalledWith(
+      {
+        keyword: 'IB-001',
+        page: 1,
+        pageSize: 20,
+      },
+      { skipErrorHandling: true },
+    );
+    expect(api.getProductionTrace).toHaveBeenCalledWith('9', { skipErrorHandling: true });
     expect(state.selectedBatchId.value).toBe('9');
   });
 });

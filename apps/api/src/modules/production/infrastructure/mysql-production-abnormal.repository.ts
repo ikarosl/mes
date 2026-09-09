@@ -5,6 +5,7 @@ import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql
 import type {
   ApproveBatchStepReworkPayload,
   BatchStepAbnormalDispositionItem,
+  BatchStepStatus,
   CompleteReworkPayload,
   CompleteReworkResult,
   RejectBatchStepAbnormalDispositionPayload,
@@ -19,6 +20,8 @@ import { ProductionDomainError } from '../domain/production.errors.js';
 import { integerQuantity } from '../domain/integer-quantity.js';
 import { isRequiredNormalCompleted } from '../domain/production-reporting.policy.js';
 import { requireReworkCompletionQuantities } from '../domain/production-rework.policy.js';
+import { calculateRouteStepQuantities } from '../domain/production-route-quantity.policy.js';
+import { selectRouteSupplementSources } from './mysql-production-supplement-activation.js';
 import { findBatch } from './mysql-production.shared.js';
 import {
   mapDisposition,
@@ -60,8 +63,9 @@ type DispositionSourceRow = DispositionRow & {
 
 type StepAggregateRow = RowDataPacket & {
   id: number;
-  status: string;
-  version: number;
+  status: BatchStepStatus;
+  step_order_snapshot: number;
+  effective_direct_reported: string;
   effective_normal: string;
 };
 
@@ -216,19 +220,38 @@ export class MysqlProductionAbnormalRepository extends ProductionAbnormalReposit
         payload.normalQuantity,
         payload.abnormalQuantity,
       );
-      const step = await selectStepAggregate(connection, rework.stepRecordId);
+      const steps = await selectStepAggregates(connection, rework.productionBatchId);
+      const step = steps.find((row) => String(row.id) === rework.stepRecordId);
+      if (!step) throw new ProductionDomainError('NOT_FOUND', '返工工序不存在');
+      const supplements =
+        (await selectRouteSupplementSources(connection, [rework.productionBatchId])).get(
+          rework.productionBatchId,
+        ) ?? [];
+      const quantity = calculateRouteStepQuantities(
+        batch.planned_quantity,
+        steps.map((row) => ({
+          id: row.id,
+          stepOrder: row.step_order_snapshot,
+          status: row.status,
+          effectiveDirectReported: row.effective_direct_reported,
+          effectiveNormal: row.effective_normal,
+        })),
+        supplements,
+      ).get(rework.stepRecordId)!;
+      // 返工恢复已有异常对象，只校验当前正常目标，不再次消耗普通报工投入额度。
+      const required = quantity.requiredNormalQuantity;
       const nextNormal = add(step.effective_normal, payload.normalQuantity);
-      if (integerQuantity(nextNormal) > integerQuantity(batch.planned_quantity))
+      if (integerQuantity(nextNormal) > integerQuantity(required))
         throw new ProductionDomainError(
           'STEP_REPORT_QUANTITY_EXCEEDED',
-          '返工正常数量超过工序计划量',
+          '返工正常数量超过工序当前正常目标',
         );
       const reportId = await insertReworkReport(connection, rework, payload, actorId);
       const dispositionId =
         payload.abnormalQuantity > 0
           ? await insertDisposition(connection, rework, reportId, actorId)
           : null;
-      const completed = isRequiredNormalCompleted(nextNormal, batch.planned_quantity);
+      const completed = isRequiredNormalCompleted(nextNormal, required);
       await connection.execute(
         `UPDATE batch_step_records
          SET status=?,completed_at=${completed ? 'COALESCE(completed_at,NOW())' : 'NULL'},version=version+1,updated_by=?
@@ -404,19 +427,24 @@ const requireReworkActor = (row: ReworkRecordItem, actorId: string): void => {
     throw new ProductionDomainError('NOT_STEP_ASSIGNEE', '只有返工负责人可以执行返工');
 };
 
-const selectStepAggregate = async (
+const selectStepAggregates = async (
   connection: PoolConnection,
-  stepRecordId: string,
-): Promise<StepAggregateRow> => {
+  batchId: string,
+): Promise<StepAggregateRow[]> => {
   const [rows] = await connection.query<StepAggregateRow[]>(
-    `SELECT sr.id,sr.status,sr.version,
-      COALESCE(SUM(CASE WHEN r.report_type='normal' THEN r.normal_quantity ELSE -r.normal_quantity END),0) effective_normal
-     FROM batch_step_records sr LEFT JOIN batch_step_reports r ON r.batch_step_record_id=sr.id
-     WHERE sr.id=? GROUP BY sr.id`,
-    [stepRecordId],
+    `SELECT sr.id,sr.status,sr.step_order_snapshot,
+      COALESCE(SUM(CASE WHEN r.report_type='normal' THEN r.normal_quantity ELSE -r.normal_quantity END),0) effective_normal,
+      COALESCE(SUM(CASE WHEN rw.id IS NULL THEN
+        CASE WHEN r.report_type='normal' THEN r.reported_quantity ELSE -r.reported_quantity END
+        ELSE 0 END),0) effective_direct_reported
+     FROM batch_step_records sr
+     LEFT JOIN batch_step_reports r ON r.batch_step_record_id=sr.id
+     LEFT JOIN rework_records rw ON rw.completed_report_id=r.id
+     WHERE sr.production_batch_id=? GROUP BY sr.id
+     ORDER BY sr.step_order_snapshot,sr.id`,
+    [batchId],
   );
-  if (!rows[0]) throw new ProductionDomainError('NOT_FOUND', '返工工序不存在');
-  return rows[0];
+  return rows;
 };
 
 const insertReworkReport = async (

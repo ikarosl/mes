@@ -7,7 +7,14 @@ describe('ProductionTraceService', () => {
     const trace = {
       getSummary: vi.fn().mockResolvedValue({ productionBatchId: '1' }),
       listInventoryTransactions: vi.fn().mockResolvedValue([{ transactionId: '8' }]),
-      listMaterialInboundSources: vi.fn().mockResolvedValue([{ inboundNo: 'PI-1' }]),
+      listMaterialInboundSources: vi.fn().mockResolvedValue([
+        {
+          sourceLabel: 'material_return_inbound',
+          sourceDocumentNo: 'TL-1',
+          itemBatchId: '10',
+          materialVariantId: '6',
+        },
+      ]),
     };
     const materialRepository = {
       listDemands: vi.fn().mockResolvedValue([
@@ -54,7 +61,14 @@ describe('ProductionTraceService', () => {
         { outboundId: '3', operatorName: null, createdByName: null, cancelledByName: null },
       ],
       inventoryTransactions: [{ transactionId: '8' }],
-      materialInboundSources: [{ inboundNo: 'PI-1' }],
+      materialInboundSources: [
+        {
+          sourceLabel: 'material_return_inbound',
+          sourceDocumentNo: 'TL-1',
+          itemBatchId: '10',
+          materialVariantId: '6',
+        },
+      ],
       steps: [{ stepRecordId: '4' }],
     });
     expect(products.listInventoryItemDisplayReferencesByIds).toHaveBeenCalledWith(['7']);

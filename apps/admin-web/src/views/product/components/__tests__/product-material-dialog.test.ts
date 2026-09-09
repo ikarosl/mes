@@ -4,14 +4,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ProductListItem } from '@company/contracts';
 import ProductMaterialDialog, { type MaterialRow } from '../ProductMaterialDialog.vue';
 
-const { materials, productOptions, error, warning } = vi.hoisted(() => ({
-  materials: vi.fn(),
-  productOptions: vi.fn(),
+const { productMaterials, materialOptions, error, warning } = vi.hoisted(() => ({
+  productMaterials: vi.fn(),
+  materialOptions: vi.fn(),
   error: vi.fn(),
   warning: vi.fn(),
 }));
 vi.mock('../../../../api/product', () => ({
-  productApi: { materials, productOptions },
+  productApi: { productMaterials, materialOptions },
 }));
 vi.mock('../../../../utils/message', () => ({ EMessage: { error, warning } }));
 
@@ -38,7 +38,8 @@ const product = (id: string): ProductListItem =>
   }) as ProductListItem;
 
 const bomRow = (id: string) => ({
-  materialProductId: id,
+  id: `bom-${id}`,
+  materialId: id,
   quantityPerUnit: '1',
   unit: 'kg',
   isKeyMaterial: true,
@@ -49,12 +50,10 @@ const bomRow = (id: string) => ({
 /** 候选物料：BOM 行引用的物料必须在候选中，否则会被 hasUnavailableSelection 拦下 */
 const materialOption = (id: string) => ({
   id,
-  itemCode: id,
-  productName: `物料${id}`,
-  itemKind: 'material' as const,
+  materialCode: id,
+  materialName: `物料${id}`,
   acquireMethod: 'purchased' as const,
   unit: 'kg',
-  defaultRouteId: null,
 });
 
 const passthrough = { template: '<div><slot/><slot name="footer"/></div>' };
@@ -73,7 +72,7 @@ const tableColumnStub = {
     ctx: { slots: { default?: (scope: Record<string, unknown>) => unknown } },
   ) {
     const row = {
-      materialProductId: 'b1',
+      materialId: 'b1',
       quantityPerUnit: 1,
       unit: 'kg',
       isKeyMaterial: true,
@@ -90,7 +89,7 @@ const tableStub = {
   template: `
     <div class="table-stub">
       <div class="table-rows">
-        <span v-for="(row, i) in data" :key="i" class="row-material">{{ row.materialProductId }}</span>
+        <span v-for="(row, i) in data" :key="i" class="row-material">{{ row.materialId }}</span>
       </div>
       <slot />
     </div>
@@ -119,8 +118,8 @@ const dialogStubs = {
 
 describe('ProductMaterialDialog', () => {
   beforeEach(() => {
-    materials.mockReset();
-    productOptions.mockReset();
+    productMaterials.mockReset();
+    materialOptions.mockReset();
     error.mockReset();
     warning.mockReset();
   });
@@ -184,44 +183,44 @@ describe('ProductMaterialDialog', () => {
   const savedRows = (wrapper: ReturnType<typeof mountDialog>): MaterialRow[] | undefined =>
     wrapper.emitted<[MaterialRow[]]>('save')?.[0]?.[0];
 
-  it('opening the dialog loads BOM detail and refreshes product candidates', async () => {
-    materials.mockResolvedValue([bomRow('b1')]);
-    productOptions.mockResolvedValue([materialOption('b1')]);
+  it('opening the dialog loads BOM detail and refreshes material candidates', async () => {
+    productMaterials.mockResolvedValue([bomRow('b1')]);
+    materialOptions.mockResolvedValue([materialOption('b1')]);
     const wrapper = mountDialog();
 
     await wrapper.setProps({ visible: true, product: product('B') });
     await flushPromises();
 
-    expect(materials).toHaveBeenCalledWith('B');
-    expect(productOptions).toHaveBeenCalledTimes(1);
+    expect(productMaterials).toHaveBeenCalledWith('B');
+    expect(materialOptions).toHaveBeenCalledTimes(1);
   });
 
-  it('expanding the material select refreshes only product candidates, never BOM detail', async () => {
-    materials.mockResolvedValue([bomRow('b1')]);
-    productOptions.mockResolvedValue([materialOption('b1')]);
+  it('expanding the material select refreshes only material candidates, never BOM detail', async () => {
+    productMaterials.mockResolvedValue([bomRow('b1')]);
+    materialOptions.mockResolvedValue([materialOption('b1')]);
     const wrapper = mountDialog();
 
     await wrapper.setProps({ visible: true, product: product('B') });
     await flushPromises();
-    const optionsBefore = productOptions.mock.calls.length;
+    const optionsBefore = materialOptions.mock.calls.length;
 
     await wrapper.find('.select-stub').trigger('click');
     await flushPromises();
 
-    expect(productOptions).toHaveBeenCalledTimes(optionsBefore + 1);
-    expect(materials).toHaveBeenCalledTimes(1);
+    expect(materialOptions).toHaveBeenCalledTimes(optionsBefore + 1);
+    expect(productMaterials).toHaveBeenCalledTimes(1);
   });
 
   it('cannot save the previous product rows while the new product detail is loading or after it resolves', async () => {
     let resolveB!: (value: unknown) => void;
-    materials.mockImplementation((productId: string) =>
+    productMaterials.mockImplementation((productId: string) =>
       productId === 'A'
         ? Promise.resolve([bomRow('a1')])
         : new Promise((resolve) => {
             resolveB = resolve;
           }),
     );
-    productOptions.mockResolvedValue([materialOption('a1'), materialOption('b1')]);
+    materialOptions.mockResolvedValue([materialOption('a1'), materialOption('b1')]);
     const wrapper = mountDialog();
 
     // 打开产品 A：BOM 就绪，可保存
@@ -241,12 +240,12 @@ describe('ProductMaterialDialog', () => {
     await flushPromises();
     expect(saveButton(wrapper)?.attributes('disabled')).toBeUndefined();
     await saveButton(wrapper)?.trigger('click');
-    expect(savedRows(wrapper)?.map((r) => r.materialProductId)).toEqual(['b1']);
+    expect(savedRows(wrapper)?.map((r) => r.materialId)).toEqual(['b1']);
   });
 
   it('disables save and shows the error alert when the BOM detail fails to load', async () => {
-    materials.mockRejectedValue(new Error('500'));
-    productOptions.mockResolvedValue([materialOption('b1')]);
+    productMaterials.mockRejectedValue(new Error('500'));
+    materialOptions.mockResolvedValue([materialOption('b1')]);
     const wrapper = mountDialog();
 
     await wrapper.setProps({ visible: true, product: product('B') });
@@ -260,9 +259,9 @@ describe('ProductMaterialDialog', () => {
   });
 
   it('enables editing as soon as the BOM detail is ready while candidate refresh is pending', async () => {
-    materials.mockResolvedValue([bomRow('b1')]);
+    productMaterials.mockResolvedValue([bomRow('b1')]);
     // 候选请求挂起（promise 不 resolve）：不拖累关键明细，明细就绪后即可编辑
-    productOptions.mockImplementation(() => new Promise(() => {}));
+    materialOptions.mockImplementation(() => new Promise(() => {}));
     const wrapper = mountDialog();
 
     await wrapper.setProps({ visible: true, product: product('B') });
@@ -276,8 +275,8 @@ describe('ProductMaterialDialog', () => {
   });
 
   it('saves normally once the detail is ready for the current product', async () => {
-    materials.mockResolvedValue([bomRow('b1')]);
-    productOptions.mockResolvedValue([materialOption('b1')]);
+    productMaterials.mockResolvedValue([bomRow('b1')]);
+    materialOptions.mockResolvedValue([materialOption('b1')]);
     const wrapper = mountDialog();
 
     await wrapper.setProps({ visible: true, product: product('B') });
@@ -285,12 +284,12 @@ describe('ProductMaterialDialog', () => {
 
     expect(saveButton(wrapper)?.attributes('disabled')).toBeUndefined();
     await saveButton(wrapper)?.trigger('click');
-    expect(savedRows(wrapper)?.map((r) => r.materialProductId)).toEqual(['b1']);
+    expect(savedRows(wrapper)?.map((r) => r.materialId)).toEqual(['b1']);
   });
 
   it('keeps a locked BOM visible but removes every write entry', async () => {
-    materials.mockResolvedValue([bomRow('b1')]);
-    productOptions.mockResolvedValue([materialOption('b1')]);
+    productMaterials.mockResolvedValue([bomRow('b1')]);
+    materialOptions.mockResolvedValue([materialOption('b1')]);
     const wrapper = mountDialog();
     const locked = { ...product('B'), bomLockedAt: '2026-08-28T10:00:00+08:00' };
 
@@ -303,27 +302,27 @@ describe('ProductMaterialDialog', () => {
   });
 
   it('on page activation only refreshes candidates, never retries a failed BOM detail', async () => {
-    materials.mockRejectedValue(new Error('500'));
-    productOptions.mockResolvedValue([materialOption('b1')]);
+    productMaterials.mockRejectedValue(new Error('500'));
+    materialOptions.mockResolvedValue([materialOption('b1')]);
     const harness = mountDialogWithKeepAlive();
 
     // 打开弹窗：BOM 明细加载失败
     await harness.open(product('B'));
-    expect(materials).toHaveBeenCalledTimes(1);
+    expect(productMaterials).toHaveBeenCalledTimes(1);
     expect(harness.wrapper.find('.el-alert-stub').attributes('data-title')).toContain('加载失败');
 
     // 页面重新激活：只刷新候选，不得重试明细、不得覆盖 localRows
     await harness.deactivate();
     await harness.activate();
-    expect(materials).toHaveBeenCalledTimes(1); // 明细未被再次请求
-    expect(productOptions).toHaveBeenCalledTimes(2); // 打开时 + 激活时各刷新一次候选
+    expect(productMaterials).toHaveBeenCalledTimes(1); // 明细未被再次请求
+    expect(materialOptions).toHaveBeenCalledTimes(2); // 打开时 + 激活时各刷新一次候选
     expect(harness.wrapper.findAll('.row-material')).toHaveLength(0); // localRows 未被覆盖
     expect(harness.wrapper.find('.el-alert-stub').attributes('data-title')).toContain('加载失败');
   });
 
   it('disables adding a material and blocks save when the BOM detail failed', async () => {
-    materials.mockRejectedValue(new Error('500'));
-    productOptions.mockResolvedValue([materialOption('b1')]);
+    productMaterials.mockRejectedValue(new Error('500'));
+    materialOptions.mockResolvedValue([materialOption('b1')]);
     const wrapper = mountDialog();
 
     await wrapper.setProps({ visible: true, product: product('B') });
@@ -338,14 +337,14 @@ describe('ProductMaterialDialog', () => {
 
   it('discards a late BOM response that arrives after the dialog is closed', async () => {
     let resolveB!: (value: unknown) => void;
-    materials.mockImplementation((productId: string) =>
+    productMaterials.mockImplementation((productId: string) =>
       productId === 'A'
         ? Promise.resolve([bomRow('a1')])
         : new Promise((resolve) => {
             resolveB = resolve;
           }),
     );
-    productOptions.mockResolvedValue([materialOption('a1'), materialOption('b1')]);
+    materialOptions.mockResolvedValue([materialOption('a1'), materialOption('b1')]);
     const wrapper = mountDialog();
 
     // 打开产品 A：BOM 就绪，localRows 写入 A 的行

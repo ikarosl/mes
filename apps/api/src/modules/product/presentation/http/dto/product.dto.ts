@@ -1,7 +1,6 @@
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
-  ArrayUnique,
   IsArray,
   IsBoolean,
   IsIn,
@@ -34,6 +33,9 @@ import { PageQueryDto } from '../../../../../presentation/http/dto/page-query.dt
 export class ProductIdParamDto {
   @IsNumberString() id!: string;
 }
+export class MaterialVariantMaterialParamDto {
+  @IsNumberString() materialId!: string;
+}
 export class ProductCategoryDto {
   @ValidateIf((_, value) => value !== null && value !== undefined) @IsNumberString() parentId?:
     string | null;
@@ -64,6 +66,35 @@ export class ProductListQueryDto extends PageQueryDto {
   @Type(() => Number)
   @IsIn([SYSTEM_STATUS.disabled, SYSTEM_STATUS.enabled])
   status?: number;
+}
+export class MaterialListQueryDto extends ProductListQueryDto {}
+export class MaterialDto {
+  @IsString() @IsNotEmpty() @MaxLength(100) materialCode!: string;
+  @IsString() @IsNotEmpty() @MaxLength(200) materialName!: string;
+  @IsNumberString() categoryId!: string;
+  @IsString() @IsNotEmpty() @MaxLength(20) unit!: string;
+  @IsIn(PRODUCT_ACQUIRE_METHODS) acquireMethod!: ProductAcquireMethod;
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ProductSpecValueDto)
+  specValues?: ProductSpecValueDto[];
+  @IsIn([SYSTEM_STATUS.disabled, SYSTEM_STATUS.enabled]) status!: number;
+  @IsOptional() @IsString() remark?: string | null;
+}
+export class MaterialVariantQueryDto extends PageQueryDto {
+  @IsOptional() @IsNumberString() materialId?: string;
+  @IsOptional() @IsString() @MaxLength(255) keyword?: string;
+  @IsOptional()
+  @Type(() => Number)
+  @IsIn([SYSTEM_STATUS.disabled, SYSTEM_STATUS.enabled])
+  status?: number;
+}
+export class MaterialVariantDto {
+  @IsNumberString() materialId!: string;
+  @IsString() @IsNotEmpty() @MaxLength(32) majorVersion!: string;
+  @IsString() @IsNotEmpty() @MaxLength(32) minorVersion!: string;
+  @IsOptional() @IsString() @MaxLength(255) remark?: string | null;
 }
 export class ProcessRouteQueryDto extends PageQueryDto {
   @IsOptional() @IsString() @MaxLength(255) keyword?: string;
@@ -104,7 +135,7 @@ export class ProductDto {
   @IsOptional() @IsString() remark?: string | null;
 }
 export class ProductMaterialDto {
-  @IsNumberString() materialProductId!: string;
+  @IsNumberString() materialId!: string;
   @Type(() => Number) @IsInt() @Min(1) @Max(99_999_999) quantityPerUnit!: number;
   @IsString() @IsNotEmpty() @MaxLength(20) unit!: string;
   @IsBoolean() isKeyMaterial!: boolean;
@@ -135,7 +166,6 @@ export class SetDefaultSopDto {
 export class ProcessRouteDto {
   @IsString() @IsNotEmpty() @MaxLength(64) routeCode!: string;
   @IsString() @IsNotEmpty() @MaxLength(128) routeName!: string;
-  @IsNumberString() productId!: string;
   @IsString() @IsNotEmpty() @MaxLength(64) versionNo!: string;
   @IsOptional() @IsString() @MaxLength(255) remark?: string | null;
 }
@@ -152,14 +182,8 @@ export class ProcessRouteStepDto {
   @IsNumberString()
   sopFileId?: string | null;
   @IsBoolean() needInspection!: boolean;
-  @IsBoolean() needRecord!: boolean;
   @IsOptional() @IsIn([0, 1]) status?: number;
   @IsOptional() @IsString() @MaxLength(255) remark?: string | null;
-  @IsOptional()
-  @IsArray()
-  @ArrayUnique()
-  @IsNumberString({}, { each: true })
-  productMaterialIds?: string[];
 }
 export class ReplaceProcessRouteStepsDto {
   @IsArray()

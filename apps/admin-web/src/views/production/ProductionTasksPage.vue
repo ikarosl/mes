@@ -189,23 +189,31 @@
               >编辑</el-button
             >
             <el-button
-              link
-              type="primary"
-              :disabled="row.status !== 'pending' || isRowPending(row.id)"
-              @click="generateMaterials(row)"
-              >{{ materialGenerationButtonLabel(row) }}</el-button
-            >
-            <el-button
               v-if="
                 row.status === 'material_pending' ||
                 row.status === 'material_assigned' ||
                 row.status === 'material_partially_outbound' ||
+                row.status === 'material_outbound' ||
                 row.status === 'doing'
               "
               link
               type="primary"
               @click="openMaterialAllocation(row)"
               >分配物料</el-button
+            >
+            <el-button
+              v-if="row.status === 'pending'"
+              link
+              type="primary"
+              @click="openMaterialDemandConfiguration(row)"
+              >配置需求</el-button
+            >
+            <el-button
+              v-else
+              link
+              type="primary"
+              @click="openMaterialDemandOverview(row)"
+              >物料需求</el-button
             >
             <el-button
               v-if="
@@ -318,6 +326,29 @@
       @submit="submitStepAssignment"
     />
 
+    <MaterialDemandConfigurationDialog
+      :visible="materialDemandConfigurationVisible"
+      :batch="materialDemandBatch"
+      @update:visible="materialDemandConfigurationVisible = $event"
+      @configured="handleMaterialDemandsConfigured"
+    />
+
+    <MaterialDemandOverviewDialog
+      :visible="materialDemandOverviewVisible"
+      :batch="materialDemandBatch"
+      :demands="materialOverviewDemands"
+      :loading="materialOverviewLoading"
+      @update:visible="materialDemandOverviewVisible = $event"
+      @add-manual="openManualMaterialDemand"
+    />
+
+    <ManualMaterialDemandDialog
+      :visible="manualMaterialDemandVisible"
+      :batch="materialDemandBatch"
+      @update:visible="manualMaterialDemandVisible = $event"
+      @added="handleManualMaterialDemandAdded"
+    />
+
     <MaterialDemandAllocationDialog
       :visible="materialAllocationVisible"
       :demands="visibleMaterialDemands"
@@ -378,6 +409,7 @@ import type {
   CreateMaterialAllocationsPayload,
   CreateMaterialOutboundPayload,
   ProductionMaterialAllocationItem,
+  ProductionMaterialDemandItem,
   ShortBatchAuthorizationPreview,
 } from '@company/contracts';
 import { normalizeCreateBatchPayload } from '@company/utils';
@@ -405,6 +437,9 @@ import StepAssignmentDialog from './components/StepAssignmentDialog.vue';
 import { useStepAssignments } from './composables/useStepAssignments';
 import { deadlinePresentation, taskNextActionPresentation } from './production-task-presentation';
 import ProductionBatchCancelDialog from './components/ProductionBatchCancelDialog.vue';
+import MaterialDemandConfigurationDialog from './components/MaterialDemandConfigurationDialog.vue';
+import MaterialDemandOverviewDialog from './components/MaterialDemandOverviewDialog.vue';
+import ManualMaterialDemandDialog from './components/ManualMaterialDemandDialog.vue';
 
 defineOptions({ name: 'ProductionTasksPage' });
 
@@ -445,7 +480,7 @@ const batchRowClass = ({ row }: { row: ProductionBatchItem }): string =>
   batchDeadline(row).overdueDays > 0 ? 'deadline-overdue-row' : '';
 const taskNextAction = (row: ProductionBatchItem) => taskNextActionPresentation(row);
 
-/** 行内写操作守卫（生成物料），同一行只允许一个在途（todo 3.5） */
+/** 行内写操作守卫（关闭剩余需求、取消任务），同一行只允许一个在途。 */
 const { isRowPending, beginRow, endRow } = useRowPending();
 
 /** 创建生产批次任务的幂等意图（试点端点）：页面局部持有，弹窗打开/关闭时清除旧意图 */
@@ -472,6 +507,12 @@ const assignmentPendingIds = computed(
     ),
 );
 const materialAllocationVisible = ref(false);
+const materialDemandConfigurationVisible = ref(false);
+const materialDemandOverviewVisible = ref(false);
+const manualMaterialDemandVisible = ref(false);
+const materialDemandBatch = ref<ProductionBatchItem | null>(null);
+const materialOverviewDemands = ref<ProductionMaterialDemandItem[]>([]);
+const materialOverviewLoading = ref(false);
 const materialOutboundVisible = ref(false);
 const shortBatchAuthorizationVisible = ref(false);
 const shortBatchAuthorizationLoading = ref(false);
@@ -675,39 +716,6 @@ const stepExecutionErrorFallback = (error: unknown, fallback: string): string =>
     CONCURRENT_MODIFICATION: '工序已被其他操作修改，请刷新后重试',
   };
   return messages[code] ?? fallback;
-};
-
-/* ====== 生成物料需求 ====== */
-const materialGenerationButtonLabel = (row: ProductionBatchItem): string => {
-  if (row.status === 'pending') return '生成物料';
-  if (row.status === 'cancelled') return '任务已取消';
-  return '需求已生成';
-};
-
-const generateMaterials = async (row: ProductionBatchItem): Promise<void> => {
-  if (!beginRow(row.id)) return;
-  try {
-    try {
-      await ElMessageBox.confirm(
-        '生成物料需求后，该生产任务将不可再编辑，且本次操作不可撤销。是否继续？',
-        '生成物料需求确认',
-        {
-          confirmButtonText: '确认生成',
-          cancelButtonText: '取消',
-          type: 'warning',
-        },
-      );
-    } catch {
-      return;
-    }
-    await productionApi.generateMaterialDemands(row.id, row.version);
-    EMessage.success('物料需求已生成');
-    await loadTasks();
-  } catch (error) {
-    EMessage.error(error, '物料需求生成失败');
-  } finally {
-    endRow(row.id);
-  }
 };
 
 const openMaterialAllocation = async (row: ProductionBatchItem): Promise<void> => {
@@ -964,6 +972,37 @@ const confirmBatchCancellation = async (reason: string): Promise<void> => {
 
 /* ====== 工具函数 ====== */
 const canEditBatch = (row: ProductionBatchItem): boolean => row.status === 'pending';
+const openMaterialDemandConfiguration = (row: ProductionBatchItem): void => {
+  materialDemandBatch.value = row;
+  materialDemandConfigurationVisible.value = true;
+};
+const loadMaterialDemandOverview = async (): Promise<void> => {
+  if (!materialDemandBatch.value) return;
+  const batchId = materialDemandBatch.value.id;
+  materialOverviewLoading.value = true;
+  try {
+    materialOverviewDemands.value = await productionApi.listMaterialDemands(batchId);
+  } catch (error) {
+    EMessage.error(error, '物料需求查询失败');
+  } finally {
+    materialOverviewLoading.value = false;
+  }
+};
+const openMaterialDemandOverview = (row: ProductionBatchItem): void => {
+  materialDemandBatch.value = row;
+  materialOverviewDemands.value = [];
+  materialDemandOverviewVisible.value = true;
+  void loadMaterialDemandOverview();
+};
+const openManualMaterialDemand = (): void => {
+  manualMaterialDemandVisible.value = true;
+};
+const handleMaterialDemandsConfigured = async (): Promise<void> => {
+  await loadTasks();
+};
+const handleManualMaterialDemandAdded = async (): Promise<void> => {
+  await Promise.all([loadMaterialDemandOverview(), loadTasks()]);
+};
 
 onMounted(() => {
   const keyword = route.query.keyword;

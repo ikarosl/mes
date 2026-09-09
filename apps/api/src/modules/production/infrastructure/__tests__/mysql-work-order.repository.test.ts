@@ -63,6 +63,7 @@ describe('MysqlWorkOrderRepository data ownership', () => {
     });
 
     expect(connection.execute.mock.calls[0]?.[1]).toEqual([
+      'mass_production',
       8,
       'P-001',
       'Product A',
@@ -155,6 +156,7 @@ describe('MysqlWorkOrderRepository data ownership', () => {
     await repository.create(
       {
         workOrderNo: 'WO-001',
+        orderType: 'mass_production',
         productId: '8',
         plannedQuantity: 100,
         planStartDate: '2026-08-01',
@@ -185,6 +187,7 @@ describe('MysqlWorkOrderRepository data ownership', () => {
       repository.create(
         {
           workOrderNo: 'WO-001',
+          orderType: 'mass_production',
           productId: '8',
           plannedQuantity: 100,
           planStartDate: '2026-08-01',
@@ -255,6 +258,7 @@ describe('MysqlWorkOrderRepository data ownership', () => {
 
     expect(String(connection.execute.mock.calls[0]?.[0])).toContain('product_id=?');
     expect(connection.execute.mock.calls[0]?.[1]).toEqual([
+      'mass_production',
       '10',
       'FG-010',
       'Replacement product',
@@ -498,6 +502,7 @@ describe('MysqlWorkOrderRepository work-order options', () => {
       {
         id: '6',
         workOrderNo: 'WO-001',
+        orderType: 'mass_production',
         productId: '8',
         productCode: 'P-001',
         productName: 'Product A',
@@ -554,6 +559,7 @@ const audit = { actorId: '1', ip: null, requestId: 'test-request', userAgent: nu
 const workOrderRow = {
   id: 6,
   work_order_no: 'WO-001',
+  order_type: 'mass_production',
   product_id: 8,
   product_code_snapshot: 'P-001',
   product_name_snapshot: 'Product A',
@@ -584,6 +590,7 @@ const workOrderRow = {
 const optionRow = {
   id: 6,
   work_order_no: 'WO-001',
+  order_type: 'mass_production',
   product_id: 8,
   product_code_snapshot: 'P-001',
   product_name_snapshot: 'Product A',

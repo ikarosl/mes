@@ -11,7 +11,7 @@ export interface MaterialOutboundEligibilityContext {
   allActiveDemandsAllocated: boolean;
   hasActiveAllocation: boolean;
   hasOrderableAllocation: boolean;
-  hasOrderableSupplementAllocation: boolean;
+  hasOrderableAdditionalAllocation: boolean;
 }
 
 const blocked = (
@@ -40,15 +40,15 @@ export const evaluateMaterialOutboundEligibility = (
   if (context.batchStatus === 'material_assigned')
     return { eligible: true, outboundMode: 'normal', blockedCode: null, blockedReason: null };
 
-  // 已完成过整组领料的未开工批次，只能因后续活动补料需求重新进入出库候选。
+  // 已完成过整组领料的未开工批次，只能因后续活动人工追加或补料需求重新进入出库候选。
   if (context.batchStatus === 'material_outbound') {
-    if (context.hasOrderableSupplementAllocation)
+    if (context.hasOrderableAdditionalAllocation)
       return { eligible: true, outboundMode: 'normal', blockedCode: null, blockedReason: null };
     return blocked('allocation_incomplete');
   }
 
   if (context.batchStatus === 'doing') {
-    // doing 表示批次已通过短批开工门禁；消耗过的授权只允许继续补齐缺料，不能再次按普通齐套制单。
+    // 只有消费过短批授权的执行中批次，才允许普通剩余需求继续按短批模式领用。
     if (context.authorizationStatus === 'consumed')
       return {
         eligible: true,
@@ -56,8 +56,8 @@ export const evaluateMaterialOutboundEligibility = (
         blockedCode: null,
         blockedReason: null,
       };
-    // 开工后的新增补料需求属于独立补料物流；有可制单补料分配时按普通模式继续出库。
-    if (context.hasOrderableSupplementAllocation)
+    // 开工后的人工追加和补料需求可独立领用；有对应可制单分配时按普通模式继续出库。
+    if (context.hasOrderableAdditionalAllocation)
       return { eligible: true, outboundMode: 'normal', blockedCode: null, blockedReason: null };
     return blocked('allocation_incomplete');
   }

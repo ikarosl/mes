@@ -2,6 +2,7 @@ export * from './statuses.js';
 export * from './work-order.js';
 export * from './batch.js';
 export * from './material.js';
+export * from './material-demand-management.js';
 export * from './outbound.js';
 export * from './inbound.js';
 export * from './inventory.js';

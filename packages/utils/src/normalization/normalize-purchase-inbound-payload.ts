@@ -8,6 +8,7 @@ export const normalizePurchaseInboundPayload = (
   remark: payload.remark?.trim() || null,
   details: payload.details.map((line) => ({
     itemId: line.itemId,
+    materialVariantId: line.materialVariantId,
     batchCode: line.batchCode.trim(),
     inboundQuantity: Number(line.inboundQuantity),
     remark: line.remark?.trim() || null,

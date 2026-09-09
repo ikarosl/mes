@@ -85,12 +85,6 @@
               }}</template>
             </el-table-column>
             <el-table-column
-              label="需报工"
-              width="80"
-            >
-              <template #default="{ row }">{{ row.needRecord ? '是' : '否' }}</template>
-            </el-table-column>
-            <el-table-column
               label="需检验"
               width="80"
             >

@@ -4,6 +4,18 @@
 
 迁移始终为仅追加（append-only）。新鲜验证会对一个干净的 MySQL 8.4 数据库应用所有迁移，然后再次运行迁移命令以证明待处理状态处理的幂等性，若存在待处理或校验和不匹配的文件则状态验证失败。升级和并发迁移器集成测试仍是下一个必需的测试环境里程碑。
 
-系统基础数据位于 `packages/database/seed`，由 `pnpm db:seed` 幂等写入；测试业务数据仍由各 integration fixture 自行创建和清理。`pnpm db:init` 统一编排 migration、seed 和管理员账号初始化，但不能替代 migration fresh、升级迁移或并发迁移器测试。权限目录与应用代码和接口版本绑定，继续由对应的不可变 migration 管理，不与账号或测试 fixture 混放。演示或联调样例数据不属于系统基础数据，置于独立的 `packages/database/demo` 目录，由显式命令 `pnpm db:seed:demo` 加载。命令要求 `ALLOW_DEMO_SEED=1` 和单独的 `DEMO_USER_PASSWORD`，按业务编码幂等更新 System 演示角色/账号与 Product 主数据；`db:init`、生产部署与 CI 均不得自动加载。
+回滚验证须覆盖空库全量 up/down/up，并在物料版本需求迁移边界比较回滚前后的索引定义。删除外键不会自动删除其支撑索引；down 必须清理本迁移引入且不再被使用的索引，不能依靠后续删表掩盖残留。恢复旧外键所需的支撑索引后，才能删除替代它们的组合索引。
+
+系统基础数据位于 `packages/database/seed`，由 `pnpm db:seed` 幂等写入；测试业务数据仍由各 integration fixture 自行创建和清理。`pnpm db:init` 统一编排 migration、seed 和管理员账号初始化，但不能替代 migration fresh、升级迁移或并发迁移器测试。权限目录与应用代码和接口版本绑定，继续由对应的不可变 migration 管理，不与账号或测试 fixture 混放。演示或联调样例数据不属于系统基础数据，置于独立的 `packages/database/demo` 目录，由显式命令 `pnpm db:seed:demo` 加载。命令要求 `ALLOW_DEMO_SEED=1` 和单独的 `DEMO_USER_PASSWORD`，按业务编码幂等更新 System 演示角色/账号与 Product 主数据和 Production 草稿工单；`db:init`、生产部署与 CI 均不得自动加载。
 
 数据库运行器保留两类入口：开发与 CI 使用 `tsx src/*.ts`，避免每次修改后手工构建；对应的 `*:compiled` 脚本使用 `node dist/*.js`，只消费构建产物。两类公开包脚本都先交给 Turbo 构建 workspace 依赖，带 `:run` 后缀的内部任务只供 Turbo 调度。API 生产镜像通过 `pnpm --filter @company/api build` 预先构建 `@company/database`，并通过 deploy 产物携带 `dist`、`migrations` 和 `seed`，不安装或运行 `tsx`。CD 迁移阶段必须以同一不可变 API 镜像执行一次性命令 `node node_modules/@company/database/dist/migrate.js`；成功后才允许启动或更新 API 工作负载。
+
+成品/物料拆表与工单类型迁移只接受空业务表，失败守卫位于结构变更之前；旧业务数据无需保留，可重建开发库。回滚同样仅限空业务表，不尝试恢复路线产品归属或推断历史工单类型。完整 schema 验证须覆盖 up/down/up 与 demo 重复加载；应用接入新结构的待办见[roadmap](../../../docs/roadmap.md)。
+
+移除基础物料余额投影的迁移及回滚须暂停库存写入，避免 MySQL 非事务 DDL 替换触发器期间产生漏记。升级保留批次与精确版本余额及其维护，只删除冗余物料余额；回滚从库存流水和当前批次状态重建物料余额，并恢复相应触发器，不改写流水或其他余额，重建投影的版本计数从零开始。迁移锁只互斥迁移运行器，不代替业务写入暂停；若 DDL 中途失败，应保持写入暂停并检查、修复实际结构后再恢复服务。
+
+库存版本余额触发器的局部字符变量显式使用业务 schema 的 `utf8mb4_0900_ai_ci`，不得继承部署连接的 `collation_connection`；否则连接排序规则不同时，库存流水写入会在批次状态比较处失败。替换该触发器同样要求暂停库存写入。
+
+物料名称实时展示迁移删除需求基础、需求、库存批次和入库明细的四个名称快照列，不改编码、单位、版本、流水或余额。须暂停相关 API 写入并与新应用一起发布，避免旧写入器引用已删除字段。MySQL DDL 非事务性，中途失败需检查实际结构后恢复。回滚只允许四张表为空：当前名称无法重建原历史名称，down 在任何结构变更前检查并拒绝非空表；开发环境可按统一流程重置，不生成伪历史名称。
+
+全工序报工迁移删除路线的报工开关与批次对应快照列，并移除员工单独完成工序权限及角色关联。升级前暂停相关 API；若存在旧免报工批次工序，迁移在 DDL 前拒绝，应按开发约定重置业务数据，不补造报工事实。回滚要求路线步骤及批次工序表为空，恢复权限目录但不重建旧角色授权。MySQL DDL 非事务性，中途失败须检查实际结构后恢复。

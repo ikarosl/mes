@@ -1,5 +1,5 @@
 import type { PageQuery } from '../common.js';
-import type { ProductionBatchStatus } from './statuses.js';
+import type { InventoryTransactionType, ProductionBatchStatus } from './statuses.js';
 import type { ProductionMaterialDemandItem } from './material.js';
 import type { MaterialOutboundItem } from './outbound.js';
 import type { BatchStepExecutionRecordItem } from './execution.js';
@@ -36,6 +36,8 @@ export interface ProductionTraceInventoryTransaction {
   transactionId: string;
   outboundDetailId: string;
   itemId: string;
+  materialVariantId: string;
+  materialVariantCode: string;
   itemCode: string;
   itemName: string;
   itemBatchId: string;
@@ -52,11 +54,15 @@ export interface ProductionTraceDetail {
   inventoryTransactions: ProductionTraceInventoryTransaction[];
   materialInboundSources: Array<{
     itemBatchId: string;
+    materialVariantId: string;
+    materialVariantCode: string;
     batchCode: string;
     itemCode: string;
     itemName: string;
-    sourceLabel: 'purchase_inbound' | 'initial_stock';
-    inboundNo: string | null;
+    /** 原始正库存流水的业务类型，不根据关联单据是否存在推断。 */
+    sourceLabel: InventoryTransactionType;
+    /** 外购入库单号或退料单号；其他未解析来源为 null。 */
+    sourceDocumentNo: string | null;
     provider: string | null;
     confirmedAt: string | null;
     inboundQuantity: string;

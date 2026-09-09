@@ -147,24 +147,110 @@ describe('ProductController paginated lists and options', () => {
     expect(controller.routeOptions()).toEqual([{ id: '15' }]);
     expect(service.listRouteOptions).toHaveBeenCalledOnce();
   });
+
+  it('normalizes product-group filters without turning groups into product options', () => {
+    const service = { listProductGroups: vi.fn().mockReturnValue({ items: [], total: 0 }) };
+    const controller = new ProductController(service as never);
+
+    controller.productGroups({
+      page: 2,
+      pageSize: 20,
+      keyword: ' 微带 ',
+      categoryId: '3',
+      status: 1,
+    });
+
+    expect(service.listProductGroups).toHaveBeenCalledWith({
+      page: 2,
+      pageSize: 20,
+      keyword: '微带',
+      categoryId: '3',
+      status: 1,
+    });
+  });
+
+  it('serves material options through the material repository boundary', () => {
+    const service = { listMaterialOptions: vi.fn().mockReturnValue([{ id: '9' }]) };
+    const controller = new ProductController(service as never);
+
+    expect(controller.materialOptions()).toEqual([{ id: '9' }]);
+    expect(service.listMaterialOptions).toHaveBeenCalledOnce();
+  });
+
+  it('forwards material CRUD with the stable material id and audit context', () => {
+    const service = {
+      createMaterial: vi.fn().mockReturnValue({ id: '9' }),
+      updateMaterial: vi.fn(),
+      setMaterialStatus: vi.fn(),
+    };
+    const controller = new ProductController(service as never);
+    const body = {
+      materialCode: 'M-1',
+      materialName: '微带',
+      categoryId: '3',
+      unit: 'pcs',
+      acquireMethod: 'purchased',
+      status: 1,
+    } as never;
+
+    expect(controller.createMaterial(body, commandContext)).toEqual({ id: '9' });
+    expect(controller.updateMaterial({ id: '9' }, body, commandContext)).toBeUndefined();
+    expect(controller.materialStatus({ id: '9' }, { status: 0 }, commandContext)).toBeUndefined();
+
+    expect(service.createMaterial).toHaveBeenCalledWith(body, commandContext);
+    expect(service.updateMaterial).toHaveBeenCalledWith('9', body, commandContext);
+    expect(service.setMaterialStatus).toHaveBeenCalledWith('9', 0, commandContext);
+  });
+
+  it('forwards independent route CRUD without a product id', () => {
+    const service = {
+      createRoute: vi.fn().mockReturnValue({ id: '15' }),
+      updateRoute: vi.fn(),
+    };
+    const controller = new ProductController(service as never);
+    const body = { routeCode: 'R-1', routeName: '路线', versionNo: 'V1' } as never;
+
+    expect(controller.createRoute(body, commandContext)).toEqual({ id: '15' });
+    expect(controller.updateRoute({ id: '15' }, body, commandContext)).toBeUndefined();
+
+    expect(service.createRoute).toHaveBeenCalledWith(body, commandContext);
+    expect(service.updateRoute).toHaveBeenCalledWith('15', body, commandContext);
+    expect(service.createRoute.mock.calls[0]?.[0]).not.toHaveProperty('productId');
+  });
 });
 
 describe('Product options cross-page authorization contract', () => {
   type OptionsMethod =
-    'categoryOptions' | 'productOptions' | 'processStepOptions' | 'routeOptions' | 'userOptions';
+    | 'categoryOptions'
+    | 'productOptions'
+    | 'materialOptions'
+    | 'processStepOptions'
+    | 'routeOptions'
+    | 'userOptions';
 
   const readOptionsPermissions = (method: OptionsMethod): string | readonly string[] =>
     Reflect.getMetadata(REQUIRED_PERMISSION, ProductController.prototype[method]) as
       string | readonly string[];
 
   const optionsPermissions: Record<OptionsMethod, string[]> = {
-    categoryOptions: [PERMISSIONS.product.products.view, PERMISSIONS.product.categories.view],
+    categoryOptions: [
+      PERMISSIONS.product.products.view,
+      PERMISSIONS.product.materials.view,
+      PERMISSIONS.product.categories.view,
+    ],
     productOptions: [
       PERMISSIONS.product.products.view,
       PERMISSIONS.product.routes.view,
       PERMISSIONS.production.orders.view,
       PERMISSIONS.production.tasks.view,
+    ],
+    materialOptions: [
+      PERMISSIONS.product.materials.view,
+      PERMISSIONS.product.products.view,
+      PERMISSIONS.production.materials.view,
+      PERMISSIONS.production.materialDemands.view,
       PERMISSIONS.production.inbounds.view,
+      PERMISSIONS.product.materialVariants.view,
     ],
     processStepOptions: [PERMISSIONS.product.processes.view, PERMISSIONS.product.routes.view],
     routeOptions: [
@@ -193,7 +279,7 @@ describe('Product options cross-page authorization contract', () => {
       {
         page: '产品管理',
         permission: PERMISSIONS.product.products.view,
-        endpoints: ['categoryOptions', 'productOptions', 'routeOptions'],
+        endpoints: ['categoryOptions', 'productOptions', 'materialOptions', 'routeOptions'],
       },
       {
         page: '产品分类',
@@ -215,6 +301,11 @@ describe('Product options cross-page authorization contract', () => {
         permission: PERMISSIONS.production.tasks.view,
         endpoints: ['productOptions', 'routeOptions', 'userOptions'],
       },
+      {
+        page: '外购物料入库',
+        permission: PERMISSIONS.production.inbounds.view,
+        endpoints: ['materialOptions'],
+      },
     ];
     for (const { page, permission, endpoints } of pageOptions) {
       for (const method of endpoints) {
@@ -235,19 +326,19 @@ describe('Product options cross-page authorization contract', () => {
     ).toBe(false);
   });
 
-  it('allows the purchase inbound page to read product options only', () => {
+  it('allows the purchase inbound page to read material options only', () => {
     expect(
       permissionMatches(
         [PERMISSIONS.production.inbounds.view],
         readOptionsPermissions('productOptions'),
       ),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       permissionMatches(
         [PERMISSIONS.production.inbounds.view],
-        readOptionsPermissions('routeOptions'),
+        readOptionsPermissions('materialOptions'),
       ),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it('does not open options beyond the consuming pages to a production-only role', () => {
@@ -262,5 +353,35 @@ describe('Product options cross-page authorization contract', () => {
         false,
       );
     }
+  });
+
+  it('keeps material CRUD, BOM and independent route writes behind their owning permissions', () => {
+    const writePermissions = {
+      createMaterial: PERMISSIONS.product.materials.create,
+      updateMaterial: PERMISSIONS.product.materials.update,
+      materialStatus: PERMISSIONS.product.materials.changeStatus,
+      replaceMaterials: PERMISSIONS.product.products.manageBom,
+      createRoute: PERMISSIONS.product.routes.create,
+      updateRoute: PERMISSIONS.product.routes.update,
+      routeStatus: PERMISSIONS.product.routes.changeStatus,
+      deleteRoute: PERMISSIONS.product.routes.delete,
+      replaceRouteSteps: PERMISSIONS.product.routes.manageSteps,
+    } as const;
+
+    for (const [method, permission] of Object.entries(writePermissions)) {
+      expect(
+        Reflect.getMetadata(
+          REQUIRED_PERMISSION,
+          ProductController.prototype[method as keyof ProductController],
+        ),
+        method,
+      ).toBe(permission);
+    }
+    expect(
+      Reflect.getMetadata(REQUIRED_PERMISSION, ProductController.prototype.materialOptions),
+    ).toEqual(optionsPermissions.materialOptions);
+    expect(
+      Reflect.getMetadata(REQUIRED_PERMISSION, ProductController.prototype.routeOptions),
+    ).toEqual(optionsPermissions.routeOptions);
   });
 });
