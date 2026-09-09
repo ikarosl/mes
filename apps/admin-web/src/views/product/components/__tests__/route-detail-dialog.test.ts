@@ -101,6 +101,7 @@ describe('RouteDetailDialog', () => {
     expect(wrapper.text()).toContain('sop.pdf');
     expect(wrapper.text()).not.toContain('使用 BOM');
     expect(wrapper.text()).not.toContain('单件用量');
+    expect(wrapper.text()).not.toContain('需报工');
   });
 
   it('shows a failed route-step state without presenting an empty BOM', async () => {

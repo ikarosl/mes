@@ -73,7 +73,6 @@ const statusFor = (code: ProductionDomainError['code']): number => {
     code === 'STOCK_CHECK_CANCEL_NOT_ALLOWED' ||
     code === 'STEP_ASSIGNMENT_CONFLICT' ||
     code === 'STEP_START_NOT_ALLOWED' ||
-    code === 'STEP_COMPLETION_NOT_ALLOWED' ||
     code === 'STEP_REPORT_NOT_ALLOWED' ||
     code === 'STEP_REPORT_QUANTITY_EXCEEDED' ||
     code === 'STEP_REPORT_ALREADY_REVERSED' ||

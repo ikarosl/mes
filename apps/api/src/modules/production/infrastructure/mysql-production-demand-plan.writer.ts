@@ -16,7 +16,6 @@ export type DemandPlanLine = {
   materialVariantId: string | number;
   materialVariantCode: string;
   itemCode: string;
-  itemName: string;
   quantityPerUnit: string;
   unit: string;
   isKeyMaterial: boolean | number;
@@ -52,11 +51,11 @@ export class MysqlProductionDemandPlanWriter {
       const [created] = await db.execute<ResultSetHeader>(
         `INSERT INTO production_item_demand
          (production_batch_id,requirement_basis_id,product_material_id,item_id,material_variant_id,
-          item_code_snapshot,item_name_snapshot,material_variant_code_snapshot,
+          item_code_snapshot,material_variant_code_snapshot,
           quantity_per_unit_snapshot,unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,
           planned_output_quantity_snapshot,need_number,remaining_number,demand_type,generation_group_key,
           idempotency_key,parent_demand_id,manual_addition_id,supplement_id,business_status,created_by,updated_by)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'active',?,?)`,
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'active',?,?)`,
         [
           params.batchId,
           line.requirementBasisId,
@@ -64,7 +63,6 @@ export class MysqlProductionDemandPlanWriter {
           line.itemId,
           line.materialVariantId,
           line.itemCode,
-          line.itemName,
           line.materialVariantCode,
           line.quantityPerUnit,
           line.unit,
@@ -87,34 +85,6 @@ export class MysqlProductionDemandPlanWriter {
     }
     await this.advanceBatchPlan(db, params);
     return demandIds;
-  }
-
-  async reopenAfterPreStartReturn(
-    db: Db,
-    params: {
-      batchId: string | number;
-      actorId: string | null;
-      returnedByDemand: ReadonlyMap<string, number>;
-    },
-  ): Promise<void> {
-    for (const [demandId, returnedQuantity] of params.returnedByDemand) {
-      const [reopened] = await db.execute<ResultSetHeader>(
-        `UPDATE production_item_demand
-         SET remaining_number=remaining_number+?,business_status='active',
-             fulfilled_by=NULL,fulfilled_at=NULL,version=version+1,updated_by=?
-         WHERE id=? AND production_batch_id=?
-           AND business_status IN ('active','fulfilled')
-           AND remaining_number+?<=need_number`,
-        [returnedQuantity, params.actorId, demandId, params.batchId, returnedQuantity],
-      );
-      if (reopened.affectedRows !== 1)
-        throw new ProductionDomainError(
-          'CONCURRENT_MODIFICATION',
-          '退料对应物料需求已变化，请刷新后重试',
-        );
-    }
-    await this.supersedeActiveAuthorization(db, params.batchId);
-    await this.advanceBatchPlan(db, params);
   }
 
   async cancelRemainingDemands(

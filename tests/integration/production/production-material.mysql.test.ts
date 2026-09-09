@@ -13,11 +13,11 @@ import { MysqlRbacRepository } from '../../../apps/api/src/modules/identity/infr
 import { ProductSnapshotService } from '../../../apps/api/src/modules/product/application/product-snapshot.service.js';
 import { MysqlProductSnapshotRepository } from '../../../apps/api/src/modules/product/infrastructure/mysql-product-snapshot.repository.js';
 import { ProductionMaterialService } from '../../../apps/api/src/modules/production/application/production-material.service.js';
-import { MysqlProductionInventoryRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-inventory.repository.js';
+import { MysqlProductionMaterialLossRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-material-loss.repository.js';
 import { MysqlProductionMaterialRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-material.repository.js';
 import {
   evaluateShortBatchStart,
-  getNetConfirmedMaterialOutboundQuantity,
+  getConfirmedMaterialOutboundQuantity,
 } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-short-batch.js';
 import { MysqlProductionTraceRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-trace.repository.js';
 import { ProductionInboundService } from '../../../apps/api/src/modules/production/application/production-inbound.service.js';
@@ -47,7 +47,7 @@ describeMysql('Production material MySQL transactions', () => {
       user: req('DB_USER'),
       password: req('DB_PASSWORD'),
       database,
-      charset: 'utf8mb4',
+      charset: 'utf8mb4_0900_ai_ci',
       timezone: '+08:00',
       connectionLimit: 6,
     });
@@ -133,7 +133,7 @@ describeMysql('Production material MySQL transactions', () => {
       expect(allocationBlockedPreview).toMatchObject({
         authorizationAction: 'authorize',
         authorizationCoverage: 'none',
-        blockedReason: '当前尚无可预计出库分配，且批次没有净确认领料',
+        blockedReason: '当前尚无可预计出库分配，且批次没有已确认领料',
       });
       await expect(
         repository.authorizeShortBatch(
@@ -349,7 +349,7 @@ describeMysql('Production material MySQL transactions', () => {
 
   it('continues ordinary outbound after a material loss plan change becomes fully allocated', async () => {
     const f = await fixture(pool, actorId, 'short-loss');
-    const inventory = new MysqlProductionInventoryRepository(pool);
+    const inventory = new MysqlProductionMaterialLossRepository(pool);
     try {
       const firstAllocation = await repository.createAllocations(
         String(f.batchId),
@@ -540,27 +540,34 @@ describeMysql('Production material MySQL transactions', () => {
 
   it('reauthorizes current shortages without new allocations when fulfilled demand still has net confirmed outbound', async () => {
     const f = await fixture(pool, actorId, 'short-loss-reauthorize');
-    const inventory = new MysqlProductionInventoryRepository(pool);
+    const inventory = new MysqlProductionMaterialLossRepository(pool);
     try {
       const additionalGroupKey = `ADDITIONAL:${f.batchId}:missing-b`;
+      const manualAdditionId = await ins(
+        pool,
+        'INSERT INTO production_manual_demand_addition (addition_no,production_batch_id,reason,created_by) VALUES (?,?,?,?)',
+        [`${additionalGroupKey}:NO`, f.batchId, '验证人工追加沿用当前需求', actorId],
+      );
       const missingDemandId = await ins(
         pool,
         `INSERT INTO production_item_demand
-         (production_batch_id,product_material_id,item_id,item_code_snapshot,item_name_snapshot,
-          quantity_per_unit_snapshot,unit_snapshot,is_key_material_snapshot,
+         (production_batch_id,requirement_basis_id,product_material_id,item_id,material_variant_id,
+          item_code_snapshot,material_variant_code_snapshot,quantity_per_unit_snapshot,unit_snapshot,is_key_material_snapshot,
           need_batch_record_snapshot,planned_output_quantity_snapshot,need_number,
-          remaining_number,demand_type,generation_group_key,parent_demand_id,idempotency_key,
+          remaining_number,demand_type,generation_group_key,manual_addition_id,idempotency_key,
           business_status,created_by,updated_by)
-         VALUES (?,?,?,?,?,'1.0000','kg',1,1,'10.0000','10.0000',10,
+         VALUES (?,?,?,?,?,?,?,'1.0000','kg',1,1,'10.0000','10.0000',10,
           'manual_additional',?,?,?,'active',?,?)`,
         [
           f.batchId,
+          f.requirementBasisId,
           f.productMaterialId,
           f.materialId,
+          f.materialVariant1Id,
           `${f.token}-missing-b`,
-          '待补物料 B',
+          `${f.token}-m-v1-A`,
           additionalGroupKey,
-          f.demandId,
+          manualAdditionId,
           `${additionalGroupKey}:${f.demandId}`,
           actorId,
           actorId,
@@ -651,7 +658,7 @@ describeMysql('Production material MySQL transactions', () => {
           }),
         ]),
       );
-      expect(await getNetConfirmedMaterialOutboundQuantity(pool, String(f.batchId))).toBe(10);
+      expect(await getConfirmedMaterialOutboundQuantity(pool, String(f.batchId))).toBe(10);
 
       const renewedAuthorization = await repository.authorizeShortBatch(
         String(f.batchId),
@@ -750,6 +757,7 @@ describeMysql('Production material MySQL transactions', () => {
         isShortage: false,
       });
       const demandTraceBeforeConfirm = await supplyDemand.listDemandTrace(String(f.materialId), {
+        materialVariantId: String(f.materialVariant1Id),
         page: 1,
         pageSize: 20,
       });
@@ -790,9 +798,9 @@ describeMysql('Production material MySQL transactions', () => {
       const [[materialBalance]] = await pool.query<
         (RowDataPacket & { current_quantity: string })[]
       >(
-        `SELECT current_quantity FROM inventory_item_balance
-         WHERE item_id=? AND stock_status='available' AND batch_status='available'`,
-        [f.materialId],
+        `SELECT current_quantity FROM inventory_material_variant_balance
+         WHERE material_id=? AND material_variant_id=? AND stock_status='available' AND batch_status='available'`,
+        [f.materialId, f.materialVariant1Id],
       );
       expect(Number(materialBalance?.current_quantity)).toBe(10);
       const supplyAfterConfirm = await supplyDemand.list({
@@ -800,7 +808,16 @@ describeMysql('Production material MySQL transactions', () => {
         page: 1,
         pageSize: 20,
       });
-      expect(supplyAfterConfirm.items).toHaveLength(0);
+      expect(supplyAfterConfirm.items).toMatchObject([
+        expect.objectContaining({
+          itemId: String(f.materialId),
+          materialVariantId: String(f.materialVariant1Id),
+          availableInventoryQuantity: '10',
+          openDemandQuantity: '0',
+          shortageQuantity: '0',
+          isShortage: false,
+        }),
+      ]);
       const [[audit]] = await pool.query<(RowDataPacket & { count: number })[]>(
         "SELECT COUNT(*) count FROM operation_logs WHERE request_id=? AND action='production-material.outbound.create'",
         [f.token],
@@ -824,6 +841,481 @@ describeMysql('Production material MySQL transactions', () => {
         result.outbound.details.map((detail) => detail.id).sort(),
       );
     } finally {
+      await cleanup(pool, f);
+    }
+  });
+
+  it('aggregates supply and demand independently for each material variant', async () => {
+    const f = await fixture(pool, actorId, 'supply-demand-variants');
+    let g: Fixture | null = null;
+    let h: Fixture | null = null;
+    let variant3Id: number;
+    let variant4Id = 0;
+    let frozenItemBatchId = 0;
+    const token = `${f.token}-variant-list`;
+    try {
+      const shared = {
+        sharedItemId: f.materialId,
+        sharedCategoryId: f.materialCategoryId,
+        sharedItemBatchId: f.itemBatch1,
+        sharedMaterialVariant1Id: f.materialVariant1Id,
+        sharedMaterialVariant2Id: f.materialVariant2Id,
+      };
+      g = await fixture(pool, actorId, 'sd-g', shared);
+      h = await fixture(pool, actorId, 'sd-h', shared);
+      variant3Id = await ins(
+        pool,
+        "INSERT INTO material_variants(material_id,major_version,minor_version,variant_code,created_by,updated_by) VALUES (?, 'v3','A',?,?,?)",
+        [f.materialId, `${token}-v3-A`, actorId, actorId],
+      );
+      variant4Id = await ins(
+        pool,
+        "INSERT INTO material_variants(material_id,major_version,minor_version,variant_code,created_by,updated_by) VALUES (?, 'v4','A',?,?,?)",
+        [f.materialId, `${token}-v4-A`, actorId, actorId],
+      );
+      await pool.execute(
+        'UPDATE production_item_demand SET need_number=?,remaining_number=? WHERE id=?',
+        ['5.0000', '5.0000', g.demandId],
+      );
+      await pool.execute(
+        'UPDATE production_item_demand SET material_variant_id=?,material_variant_code_snapshot=?,need_number=?,remaining_number=? WHERE id=?',
+        [variant3Id, `${token}-v3-A`, '4.0000', '4.0000', h.demandId],
+      );
+      frozenItemBatchId = await ins(
+        pool,
+        "INSERT INTO item_batch (item_id,material_variant_id,item_code_snapshot,material_variant_code_snapshot,unit_snapshot,batch_code,source_type,created_by,updated_by) VALUES (?,?,?,?,'kg',?,'purchased',?,?)",
+        [
+          f.materialId,
+          f.materialVariant2Id,
+          `${f.token}-m`,
+          `${f.token}-m-v2-A`,
+          `${token}-frozen-batch`,
+          actorId,
+          actorId,
+        ],
+      );
+      await pool.execute(
+        "INSERT INTO inventory_transaction (item_id,material_variant_id,batch_id,transaction_type,quantity,unit_snapshot,stock_status,reference_type,reference_detail_id,idempotency_key,created_by) VALUES (?,?,?,'purchase_inbound','8.0000','kg','available','manual',0,?,?)",
+        [f.materialId, f.materialVariant2Id, frozenItemBatchId, `${token}-frozen-inbound`, actorId],
+      );
+      await pool.execute("UPDATE item_batch SET batch_status='frozen' WHERE id=?", [
+        frozenItemBatchId,
+      ]);
+
+      const supplyDemand = new MysqlProductionSupplyDemandRepository(pool);
+      const result = await supplyDemand.list({ page: 1, pageSize: 100 });
+      const trackedVariantIds = new Set([
+        String(f.materialVariant1Id),
+        String(f.materialVariant2Id),
+        String(variant3Id),
+      ]);
+      const rows = result.items.filter(
+        (item) =>
+          item.itemId === String(f.materialId) && trackedVariantIds.has(item.materialVariantId),
+      );
+      expect(rows).toHaveLength(3);
+      const byVariant = new Map(rows.map((item) => [item.materialVariantId, item]));
+      expect(byVariant.get(String(f.materialVariant1Id))).toMatchObject({
+        totalInventoryQuantity: '20',
+        availableInventoryQuantity: '20',
+        unavailableInventoryQuantity: '0',
+        openDemandQuantity: '15',
+        shortageQuantity: '0',
+        isShortage: false,
+      });
+      expect(byVariant.get(String(f.materialVariant2Id))).toMatchObject({
+        totalInventoryQuantity: '8',
+        availableInventoryQuantity: '0',
+        unavailableInventoryQuantity: '8',
+        openDemandQuantity: '0',
+        shortageQuantity: '0',
+        isShortage: false,
+      });
+      expect(byVariant.get(String(variant3Id))).toMatchObject({
+        totalInventoryQuantity: '0',
+        availableInventoryQuantity: '0',
+        unavailableInventoryQuantity: '0',
+        openDemandQuantity: '4',
+        shortageQuantity: '4',
+        isShortage: true,
+      });
+      expect(rows.find((item) => item.materialVariantId === String(variant4Id))).toBeUndefined();
+      const indexByVariant = new Map(
+        result.items.map((item, index) => [item.materialVariantId, index]),
+      );
+      expect(indexByVariant.get(String(f.materialVariant1Id))!).toBeLessThan(
+        indexByVariant.get(String(f.materialVariant2Id))!,
+      );
+      expect(indexByVariant.get(String(variant3Id))!).toBeLessThan(
+        indexByVariant.get(String(f.materialVariant2Id))!,
+      );
+      const [[missingBalance]] = await pool.query<(RowDataPacket & { total: number })[]>(
+        'SELECT COUNT(*) total FROM inventory_material_variant_balance WHERE material_id=? AND material_variant_id=?',
+        [f.materialId, variant3Id],
+      );
+      expect(Number(missingBalance?.total ?? 0)).toBe(0);
+    } finally {
+      if (frozenItemBatchId) {
+        await deleteInventoryTransactions(
+          pool,
+          'DELETE FROM inventory_transaction WHERE batch_id=?',
+          [frozenItemBatchId],
+        );
+        await pool.execute('DELETE FROM item_batch WHERE id=?', [frozenItemBatchId]);
+      }
+      if (h) await cleanup(pool, h);
+      if (g) await cleanup(pool, g);
+      await cleanup(pool, f);
+    }
+  });
+
+  it('paginates version supply demand and keeps keyword matches and demand drill-down isolated', async () => {
+    const f = await fixture(pool, actorId, 'c2');
+    let g: Fixture | null = null;
+    let h: Fixture | null = null;
+    let variant3Id: number;
+    let inventoryBatch3Id = 0;
+    try {
+      const shared = {
+        sharedItemId: f.materialId,
+        sharedCategoryId: f.materialCategoryId,
+        sharedItemBatchId: f.itemBatch1,
+        sharedMaterialVariant1Id: f.materialVariant1Id,
+        sharedMaterialVariant2Id: f.materialVariant2Id,
+      };
+      g = await fixture(pool, actorId, 'c2-g', shared);
+      h = await fixture(pool, actorId, 'c2-h', shared);
+
+      // Keep two active demands on v1 so keyword-filtered rows can be drilled
+      // down without losing a demand belonging to another work order/batch.
+      await pool.execute(
+        'UPDATE production_item_demand SET need_number=?,remaining_number=? WHERE id=?',
+        ['5.0000', '5.0000', h.demandId],
+      );
+      await pool.execute(
+        'UPDATE production_item_demand SET material_variant_id=?,material_variant_code_snapshot=?,need_number=?,remaining_number=? WHERE id=?',
+        [f.materialVariant2Id, `${f.token}-m-v2-A`, '7.0000', '7.0000', g.demandId],
+      );
+
+      variant3Id = await ins(
+        pool,
+        "INSERT INTO material_variants(material_id,major_version,minor_version,variant_code,created_by,updated_by) VALUES (?, 'v3','A',?,?,?)",
+        [f.materialId, `${f.token}-m-v3-A`, actorId, actorId],
+      );
+      inventoryBatch3Id = await ins(
+        pool,
+        "INSERT INTO item_batch (item_id,material_variant_id,item_code_snapshot,material_variant_code_snapshot,unit_snapshot,batch_code,source_type,created_by,updated_by) VALUES (?,?,?,?,'kg',?,'purchased',?,?)",
+        [
+          f.materialId,
+          variant3Id,
+          `${f.token}-m`,
+          `${f.token}-m-v3-A`,
+          `${f.token}-ib3`,
+          actorId,
+          actorId,
+        ],
+      );
+      await pool.execute(
+        "INSERT INTO inventory_transaction (item_id,material_variant_id,batch_id,transaction_type,quantity,unit_snapshot,stock_status,reference_type,reference_detail_id,idempotency_key,created_by) VALUES (?,?,?,'purchase_inbound','5.0000','kg','available','manual',0,?,?)",
+        [f.materialId, variant3Id, inventoryBatch3Id, `${f.token}-opening-3`, actorId],
+      );
+
+      const supplyDemand = new MysqlProductionSupplyDemandRepository(pool);
+      const keyword = f.token;
+      const page1 = await supplyDemand.list({ keyword, page: 1, pageSize: 2 });
+      const page2 = await supplyDemand.list({ keyword, page: 2, pageSize: 2 });
+      const page3 = await supplyDemand.list({ keyword, page: 3, pageSize: 2 });
+      expect(page1.total).toBe(3);
+      expect(page2.total).toBe(3);
+      expect(page3.total).toBe(3);
+      expect(page1.items).toHaveLength(2);
+      expect(page2.items).toHaveLength(1);
+      expect(page3.items).toHaveLength(0);
+      const pagedItems = [...page1.items, ...page2.items];
+      expect(pagedItems.map((item) => item.materialVariantId).sort()).toEqual(
+        [String(f.materialVariant1Id), String(f.materialVariant2Id), String(variant3Id)].sort(),
+      );
+
+      const v1 = pagedItems.find((item) => item.materialVariantId === String(f.materialVariant1Id));
+      expect(v1).toMatchObject({
+        itemId: String(f.materialId),
+        totalInventoryQuantity: '20',
+        availableInventoryQuantity: '20',
+        openDemandQuantity: '15',
+        shortageQuantity: '0',
+      });
+
+      const v1Trace = await supplyDemand.listDemandTrace(String(f.materialId), {
+        materialVariantId: String(f.materialVariant1Id),
+        page: 1,
+        pageSize: 20,
+      });
+      expect(v1Trace.total).toBe(2);
+      expect(v1Trace.items.map((item) => item.demandId).sort()).toEqual(
+        [String(f.demandId), String(h.demandId)].sort(),
+      );
+      expect(
+        v1Trace.items.every((item) => item.materialVariantId === String(f.materialVariant1Id)),
+      ).toBe(true);
+      expect(v1Trace.items.map((item) => item.productionBatchId).sort()).toEqual(
+        [String(f.batchId), String(h.batchId)].sort(),
+      );
+
+      const v2Trace = await supplyDemand.listDemandTrace(String(f.materialId), {
+        materialVariantId: String(f.materialVariant2Id),
+        page: 1,
+        pageSize: 20,
+      });
+      expect(v2Trace.total).toBe(1);
+      expect(v2Trace.items).toEqual([
+        expect.objectContaining({
+          demandId: String(g.demandId),
+          materialVariantId: String(f.materialVariant2Id),
+          productionBatchId: String(g.batchId),
+        }),
+      ]);
+    } finally {
+      if (inventoryBatch3Id) {
+        await deleteInventoryTransactions(
+          pool,
+          'DELETE FROM inventory_transaction WHERE batch_id=?',
+          [inventoryBatch3Id],
+        );
+        await pool.execute('DELETE FROM item_batch WHERE id=?', [inventoryBatch3Id]);
+      }
+      if (h) await cleanup(pool, h);
+      if (g) await cleanup(pool, g);
+      await cleanup(pool, f);
+    }
+  });
+
+  it('reads the current material name across demand, outbound, inbound and inventory history', async () => {
+    const f = await fixture(pool, actorId, 'current-name');
+    const inboundBatchCode = `${f.token}-renamed-inbound`;
+    let inboundId: string | null = null;
+    try {
+      const allocated = await repository.createAllocations(
+        String(f.batchId),
+        {
+          allocations: [
+            {
+              demandId: String(f.demandId),
+              itemBatchId: String(f.itemBatch1),
+              assignedQuantity: 10,
+            },
+          ],
+        },
+        ctx(actorId, `${f.token}-allocate`),
+      );
+      const outbound = await repository.createOutbound(
+        String(f.batchId),
+        {
+          details: [
+            {
+              allocationId: allocated.allocations[0]!.allocationId,
+              outboundQuantity: 5,
+            },
+          ],
+        },
+        ctx(actorId, `${f.token}-outbound-create`),
+      );
+      const inboundService = new ProductionInboundService(
+        new MysqlProductionInboundRepository(pool),
+        new ProductSnapshotService(new MysqlProductSnapshotRepository(pool)),
+        materialVariants,
+        new IdentityDirectoryService(new MysqlRbacRepository(pool)),
+        new MysqlIdempotencyExecutor(pool),
+      );
+      const inbound = await inboundService.create(
+        {
+          inboundNo: `${f.token}-PI-current-name`,
+          provider: '改名测试供应商',
+          details: [
+            {
+              itemId: String(f.materialId),
+              materialVariantId: String(f.materialVariant1Id),
+              batchCode: inboundBatchCode,
+              inboundQuantity: 7,
+            },
+          ],
+        },
+        idemCtx(actorId, `${f.token}-inbound-create`, `${f.token}-inbound-create-key`),
+      );
+      inboundId = inbound.inboundId;
+      const confirmedInbound = await inboundService.confirm(
+        inbound.inboundId,
+        inbound.version,
+        idemCtx(actorId, `${f.token}-inbound-confirm`, `${f.token}-inbound-confirm-key`),
+      );
+      const inboundBatchId = confirmedInbound.details[0]!.itemBatchId;
+      const supplyDemand = new MysqlProductionSupplyDemandRepository(pool);
+      const beforeSupply = await supplyDemand.list({
+        keyword: `${f.token}-m`,
+        page: 1,
+        pageSize: 20,
+      });
+      const beforeSupplyRow = beforeSupply.items.find(
+        (item) =>
+          item.itemId === String(f.materialId) &&
+          item.materialVariantId === String(f.materialVariant1Id),
+      );
+      if (!beforeSupplyRow) throw new Error('current-name fixture supply row missing');
+      const beforeDemands = await repository.listDemands(String(f.batchId));
+      const beforeBatches = await repository.listAvailableItemBatches(String(f.demandId));
+      const beforeCandidates = await repository.listOutboundCandidates(String(f.batchId));
+      const beforeOutbounds = await repository.listOutbounds(String(f.batchId));
+      const beforeInbound = await inboundService.get(inbound.inboundId);
+      const beforeInventory = await inboundService.getInventory(inboundBatchId);
+      const renamedName = `当前物料名称-${f.token}`;
+
+      await pool.execute(
+        `UPDATE materials
+         SET material_name=?,status=0,is_deleted=1,deleted_by=?,deleted_at=NOW(),updated_by=?
+         WHERE id=?`,
+        [renamedName, actorId, actorId, f.materialId],
+      );
+
+      const afterSupply = await supplyDemand.list({
+        keyword: renamedName,
+        page: 1,
+        pageSize: 20,
+      });
+      const afterSupplyRow = afterSupply.items.find(
+        (item) =>
+          item.itemId === String(f.materialId) &&
+          item.materialVariantId === String(f.materialVariant1Id),
+      );
+      expect(afterSupplyRow).toMatchObject({
+        itemId: beforeSupplyRow.itemId,
+        materialVariantId: beforeSupplyRow.materialVariantId,
+        itemName: renamedName,
+        totalInventoryQuantity: beforeSupplyRow.totalInventoryQuantity,
+        availableInventoryQuantity: beforeSupplyRow.availableInventoryQuantity,
+        openDemandQuantity: beforeSupplyRow.openDemandQuantity,
+        shortageQuantity: beforeSupplyRow.shortageQuantity,
+      });
+
+      const afterDemands = await repository.listDemands(String(f.batchId));
+      expect(afterDemands).toHaveLength(beforeDemands.length);
+      expect(afterDemands[0]).toMatchObject({
+        demandId: beforeDemands[0]!.demandId,
+        itemId: String(f.materialId),
+        materialVariantId: String(f.materialVariant1Id),
+        itemName: renamedName,
+        demandQuantity: beforeDemands[0]!.demandQuantity,
+        remainingDemandQuantity: beforeDemands[0]!.remainingDemandQuantity,
+      });
+      expect(afterDemands[0]!.allocations[0]).toMatchObject({
+        itemId: String(f.materialId),
+        materialVariantId: String(f.materialVariant1Id),
+        assignedQuantity: beforeDemands[0]!.allocations[0]!.assignedQuantity,
+      });
+
+      const afterBatches = await repository.listAvailableItemBatches(String(f.demandId));
+      expect(
+        afterBatches
+          .map((item) => ({
+            itemBatchId: item.itemBatchId,
+            itemId: item.itemId,
+            materialVariantId: item.materialVariantId,
+            itemName: item.itemName,
+            onHandAvailableQuantity: item.onHandAvailableQuantity,
+            reservedQuantity: item.reservedQuantity,
+            availableToAllocateQuantity: item.availableToAllocateQuantity,
+          }))
+          .sort((left, right) => Number(left.itemBatchId) - Number(right.itemBatchId)),
+      ).toEqual(
+        beforeBatches
+          .map((item) => ({
+            itemBatchId: item.itemBatchId,
+            itemId: item.itemId,
+            materialVariantId: item.materialVariantId,
+            itemName: renamedName,
+            onHandAvailableQuantity: item.onHandAvailableQuantity,
+            reservedQuantity: item.reservedQuantity,
+            availableToAllocateQuantity: item.availableToAllocateQuantity,
+          }))
+          .sort((left, right) => Number(left.itemBatchId) - Number(right.itemBatchId)),
+      );
+
+      const afterCandidates = await repository.listOutboundCandidates(String(f.batchId));
+      expect(afterCandidates).toHaveLength(beforeCandidates.length);
+      expect(afterCandidates[0]).toMatchObject({
+        allocationId: beforeCandidates[0]!.allocationId,
+        itemId: String(f.materialId),
+        materialVariantId: String(f.materialVariant1Id),
+        itemName: renamedName,
+        assignedQuantity: beforeCandidates[0]!.assignedQuantity,
+      });
+      const afterOutbounds = await repository.listOutbounds(String(f.batchId));
+      expect(afterOutbounds[0]).toMatchObject({ outboundId: outbound.outbound.outboundId });
+      expect(afterOutbounds[0]!.details[0]).toMatchObject({
+        itemId: String(f.materialId),
+        materialVariantId: String(f.materialVariant1Id),
+        itemName: renamedName,
+        outboundQuantity: beforeOutbounds[0]!.details[0]!.outboundQuantity,
+      });
+      expect((await repository.getOutbound(outbound.outbound.outboundId)).details[0]).toMatchObject(
+        {
+          itemName: renamedName,
+          itemId: String(f.materialId),
+          materialVariantId: String(f.materialVariant1Id),
+        },
+      );
+
+      const afterInbound = await inboundService.get(inbound.inboundId);
+      expect(afterInbound.details[0]).toMatchObject({
+        itemId: String(f.materialId),
+        materialVariantId: String(f.materialVariant1Id),
+        itemName: renamedName,
+        inboundQuantity: beforeInbound.details[0]!.inboundQuantity,
+      });
+      const listedInbounds = await inboundService.list({
+        keyword: `${f.token}-PI-current-name`,
+        page: 1,
+        pageSize: 20,
+      });
+      expect(listedInbounds.items[0]?.details[0]).toMatchObject({
+        itemName: renamedName,
+        itemId: String(f.materialId),
+        materialVariantId: String(f.materialVariant1Id),
+      });
+      const inventoryByName = await inboundService.listInventory({
+        keyword: renamedName,
+        page: 1,
+        pageSize: 20,
+      });
+      expect(inventoryByName.items).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            itemBatchId: inboundBatchId,
+            itemId: String(f.materialId),
+            materialVariantId: String(f.materialVariant1Id),
+            itemName: renamedName,
+            onHandAvailableQuantity: beforeInventory.onHandAvailableQuantity,
+          }),
+        ]),
+      );
+      expect(await inboundService.getInventory(inboundBatchId)).toMatchObject({
+        itemBatchId: inboundBatchId,
+        itemId: String(f.materialId),
+        materialVariantId: String(f.materialVariant1Id),
+        itemName: renamedName,
+        onHandAvailableQuantity: beforeInventory.onHandAvailableQuantity,
+      });
+    } finally {
+      if (inboundId) {
+        await deleteInventoryTransactions(
+          pool,
+          `DELETE FROM inventory_transaction
+           WHERE reference_type='inbound_detail'
+             AND reference_detail_id IN (SELECT id FROM inbound_detail WHERE inbound_id=?)`,
+          [inboundId],
+        );
+        await pool.execute('DELETE FROM inbound_detail WHERE inbound_id=?', [inboundId]);
+        await pool.execute('DELETE FROM inbound_order WHERE id=?', [inboundId]);
+        await pool.execute('DELETE FROM item_batch WHERE batch_code=?', [inboundBatchCode]);
+      }
       await cleanup(pool, f);
     }
   });
@@ -957,8 +1449,8 @@ describeMysql('Production material MySQL transactions', () => {
         ctx(actorId, f.token),
       );
       await pool.execute(
-        "INSERT INTO inventory_transaction (item_id,batch_id,transaction_type,quantity,unit_snapshot,stock_status,reference_type,reference_detail_id,idempotency_key,created_by) VALUES (?,?,'production_material_outbound','-2.0000','kg','available','manual',0,?,?)",
-        [f.materialId, f.itemBatch1, `${f.token}-external-outbound`, actorId],
+        "INSERT INTO inventory_transaction (item_id,material_variant_id,batch_id,transaction_type,quantity,unit_snapshot,stock_status,reference_type,reference_detail_id,idempotency_key,created_by) VALUES (?,?,?,'production_material_outbound','-2.0000','kg','available','manual',0,?,?)",
+        [f.materialId, f.materialVariant1Id, f.itemBatch1, `${f.token}-external-outbound`, actorId],
       );
 
       const pending = await repository.createOutbound(
@@ -1324,6 +1816,7 @@ type Fixture = {
   productMaterialId: number;
   workOrderId: number;
   batchId: number;
+  requirementBasisId: number;
   demandId: number;
   itemBatch1: number;
   itemBatch2: number;
@@ -1364,32 +1857,32 @@ const fixture = async (
     shared?.sharedItemId ??
     (await ins(
       pool,
-      "INSERT INTO products (item_code,product_name,category_id,unit,acquire_method) VALUES (?,?,?,'kg','purchased')",
+      "INSERT INTO materials (material_code,material_name,category_id,unit,acquire_method) VALUES (?,?,?,'kg','purchased')",
       [`${token}-m`, '物料', mc],
     ));
   const materialVariant1Id =
     shared?.sharedMaterialVariant1Id ??
     (await ins(
       pool,
-      "INSERT INTO material_variants(material_product_id,major_version,minor_version,variant_code,created_by,updated_by) VALUES (?, 'v1','A',?,?,?)",
+      "INSERT INTO material_variants(material_id,major_version,minor_version,variant_code,created_by,updated_by) VALUES (?, 'v1','A',?,?,?)",
       [material, `${token}-m-v1-A`, actorId, actorId],
     ));
   const materialVariant2Id =
     shared?.sharedMaterialVariant2Id ??
     (await ins(
       pool,
-      "INSERT INTO material_variants(material_product_id,major_version,minor_version,variant_code,created_by,updated_by) VALUES (?, 'v2','A',?,?,?)",
+      "INSERT INTO material_variants(material_id,major_version,minor_version,variant_code,created_by,updated_by) VALUES (?, 'v2','A',?,?,?)",
       [material, `${token}-m-v2-A`, actorId, actorId],
     ));
   const pm = await ins(
     pool,
-    "INSERT INTO product_materials (product_id,material_product_id,quantity_per_unit,unit,is_key_material,need_batch_record) VALUES (?,?,'1.0000','kg',1,1)",
+    "INSERT INTO product_materials (product_id,material_id,quantity_per_unit,unit,is_key_material,need_batch_record) VALUES (?,?,'1.0000','kg',1,1)",
     [product, material],
   );
   const wo = await ins(
     pool,
-    "INSERT INTO work_orders (work_order_no,product_id,product_code_snapshot,product_name_snapshot,unit_snapshot,planned_quantity,status) VALUES (?,?,?,?,?,'10.0000','released')",
-    [`${token}-wo`, product, `${token}-p`, '产品', 'pcs'],
+    "INSERT INTO work_orders (work_order_no,order_type,product_id,product_code_snapshot,product_name_snapshot,unit_snapshot,planned_quantity,status) VALUES (?,?,?,?,?,?,'10.0000','released')",
+    [`${token}-wo`, 'research', product, `${token}-p`, '产品', 'pcs'],
   );
   const batch = await ins(
     pool,
@@ -1399,15 +1892,15 @@ const fixture = async (
   const basis = await ins(
     pool,
     `INSERT INTO production_material_requirement_basis
-      (production_batch_id,product_material_id,material_product_id,material_code_snapshot,material_name_snapshot,
+      (production_batch_id,product_material_id,material_id,material_code_snapshot,
        unit_snapshot,quantity_per_unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,
        planned_output_quantity_snapshot,required_number,created_by)
-     VALUES (?,?,?,?,'物料','kg','1.0000',1,1,'10.0000','10.0000',?)`,
+     VALUES (?,?,?,?,'kg','1.0000',1,1,'10.0000','10.0000',?)`,
     [batch, pm, material, `${token}-m`, actorId],
   );
   const demand = await ins(
     pool,
-    "INSERT INTO production_item_demand (production_batch_id,requirement_basis_id,product_material_id,item_id,material_variant_id,item_code_snapshot,item_name_snapshot,material_variant_code_snapshot,quantity_per_unit_snapshot,unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,planned_output_quantity_snapshot,need_number,remaining_number,demand_type,generation_group_key,idempotency_key,business_status,created_by,updated_by) VALUES (?,?,?,?,?,?,? ,?,'1.0000','kg',1,1,'10.0000','10.0000',10,'normal',?,?,'active',?,?)",
+    "INSERT INTO production_item_demand (production_batch_id,requirement_basis_id,product_material_id,item_id,material_variant_id,item_code_snapshot,material_variant_code_snapshot,quantity_per_unit_snapshot,unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,planned_output_quantity_snapshot,need_number,remaining_number,demand_type,generation_group_key,idempotency_key,business_status,created_by,updated_by) VALUES (?,?,?,?,?,?,?,'1.0000','kg',1,1,'10.0000','10.0000',10,'normal',?,?,'active',?,?)",
     [
       batch,
       basis,
@@ -1415,7 +1908,6 @@ const fixture = async (
       material,
       materialVariant1Id,
       token + '-m',
-      '物料',
       `${token}-m-v1-A`,
       `NORMAL:${batch}`,
       `NORMAL:${batch}:${pm}`,
@@ -1428,13 +1920,12 @@ const fixture = async (
   if (!shared) {
     ib1 = await ins(
       pool,
-      "INSERT INTO item_batch (item_id,material_variant_id,item_code_snapshot,material_variant_code_snapshot,product_name_snapshot,unit_snapshot,batch_code,source_type,created_by,updated_by) VALUES (?,?,?,? ,?,'kg',?,'purchased',?,?)",
+      "INSERT INTO item_batch (item_id,material_variant_id,item_code_snapshot,material_variant_code_snapshot,unit_snapshot,batch_code,source_type,created_by,updated_by) VALUES (?,?,?,?,'kg',?,'purchased',?,?)",
       [
         material,
         materialVariant1Id,
         `${token}-m`,
         `${token}-m-v1-A`,
-        '物料',
         `${token}-ib1`,
         actorId,
         actorId,
@@ -1442,13 +1933,12 @@ const fixture = async (
     );
     ib2 = await ins(
       pool,
-      "INSERT INTO item_batch (item_id,material_variant_id,item_code_snapshot,material_variant_code_snapshot,product_name_snapshot,unit_snapshot,batch_code,source_type,created_by,updated_by) VALUES (?,?,?,? ,?,'kg',?,'purchased',?,?)",
+      "INSERT INTO item_batch (item_id,material_variant_id,item_code_snapshot,material_variant_code_snapshot,unit_snapshot,batch_code,source_type,created_by,updated_by) VALUES (?,?,?,?,'kg',?,'purchased',?,?)",
       [
         material,
         materialVariant1Id,
         `${token}-m`,
         `${token}-m-v1-A`,
-        '物料',
         `${token}-ib2`,
         actorId,
         actorId,
@@ -1481,6 +1971,7 @@ const fixture = async (
     materialVariant2Id,
     workOrderId: wo,
     batchId: batch,
+    requirementBasisId: basis,
     demandId: demand,
     itemBatch1: ib1,
     itemBatch2: ib2,
@@ -1532,11 +2023,17 @@ const cleanup = async (pool: Pool, f: Fixture) => {
     f.batchId,
   ]);
   await pool.execute('DELETE FROM production_item_demand WHERE production_batch_id=?', [f.batchId]);
+  await pool.execute('DELETE FROM production_manual_demand_addition WHERE production_batch_id=?', [
+    f.batchId,
+  ]);
   await pool.execute(
     'DELETE FROM production_material_requirement_basis WHERE production_batch_id=?',
     [f.batchId],
   );
   await pool.execute('DELETE FROM production_batches WHERE id=?', [f.batchId]);
+  await pool.execute('DELETE FROM work_order_material_versions WHERE work_order_id=?', [
+    f.workOrderId,
+  ]);
   await pool.execute('DELETE FROM work_orders WHERE id=?', [f.workOrderId]);
   await pool.execute('DELETE FROM product_materials WHERE id=?', [f.productMaterialId]);
   if (f.ownsItemBatches) {
@@ -1550,8 +2047,8 @@ const cleanup = async (pool: Pool, f: Fixture) => {
   await pool.execute('DELETE FROM products WHERE id=?', [f.productId]);
   await pool.execute('DELETE FROM product_categories WHERE id=?', [f.productCategoryId]);
   if (f.ownsMaterial) {
-    await pool.execute('DELETE FROM material_variants WHERE material_product_id=?', [f.materialId]);
-    await pool.execute('DELETE FROM products WHERE id=?', [f.materialId]);
+    await pool.execute('DELETE FROM material_variants WHERE material_id=?', [f.materialId]);
+    await pool.execute('DELETE FROM materials WHERE id=?', [f.materialId]);
     await pool.execute('DELETE FROM product_categories WHERE id=?', [f.materialCategoryId]);
   }
 };

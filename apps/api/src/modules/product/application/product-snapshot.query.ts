@@ -24,7 +24,7 @@ export interface InventoryItemDisplayReference {
 
 export interface ProductBomLineSnapshot {
   productMaterialId: string;
-  materialProductId: string;
+  materialId: string;
   itemCode: string;
   productName: string;
   unit: string;
@@ -48,7 +48,6 @@ export interface ProcessRouteStepSnapshot {
   defaultOwnerId: string | null;
   sop: { id: string; fileName: string; objectKey: string; versionNo: string } | null;
   needInspection: boolean;
-  needRecord: boolean;
 }
 
 export interface ProcessRouteSnapshot {
@@ -56,7 +55,6 @@ export interface ProcessRouteSnapshot {
   routeCode: string;
   routeName: string;
   versionNo: string;
-  product: ProductionProductSnapshot;
   steps: ProcessRouteStepSnapshot[];
 }
 

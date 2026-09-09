@@ -121,3 +121,32 @@ ALTER TABLE production_item_demand
   DROP COLUMN requirement_basis_id;
 
 DROP TABLE production_material_requirement_basis;
+
+-- MySQL may replace an existing FK support index with the wider variant index.
+-- Dropping the variant column shortens that index but keeps its new name.
+-- Restore the original names and remove indexes introduced only for the basis.
+ALTER TABLE inventory_transaction
+  RENAME INDEX fk_inventory_transaction_batch_variant TO fk_inventory_transaction_batch_item;
+ALTER TABLE inbound_detail
+  RENAME INDEX fk_inbound_detail_batch_variant TO fk_inbound_detail_batch_item;
+ALTER TABLE stock_check_detail
+  RENAME INDEX fk_stock_check_detail_batch_variant TO fk_stock_check_detail_batch_item;
+ALTER TABLE production_short_batch_authorization_detail
+  RENAME INDEX fk_short_batch_authorization_detail_demand_variant TO fk_short_batch_authorization_detail_demand_item;
+ALTER TABLE production_item_allocation
+  RENAME INDEX fk_production_item_allocation_demand_variant TO fk_production_item_allocation_demand_item,
+  RENAME INDEX fk_production_item_allocation_batch_variant TO fk_production_item_allocation_stock_batch;
+ALTER TABLE outbound_detail
+  RENAME INDEX fk_outbound_detail_allocation_variant TO fk_outbound_detail_allocation,
+  RENAME INDEX fk_outbound_detail_batch_variant TO fk_outbound_detail_stock_batch;
+ALTER TABLE return_detail
+  RENAME INDEX fk_return_detail_allocation_variant TO fk_return_detail_allocation,
+  RENAME INDEX fk_return_detail_batch_variant TO fk_return_detail_stock_batch;
+ALTER TABLE item_scrap
+  RENAME INDEX fk_item_scrap_allocation_variant TO fk_item_scrap_allocation,
+  RENAME INDEX fk_item_scrap_batch_variant TO fk_item_scrap_batch_item;
+ALTER TABLE production_item_demand
+  DROP INDEX fk_production_item_demand_basis;
+ALTER TABLE production_scrap_supplement_plan_line
+  DROP INDEX fk_scrap_supplement_plan_line_basis,
+  DROP INDEX fk_scrap_supplement_plan_line_variant;

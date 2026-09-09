@@ -277,8 +277,8 @@ export interface InventoryMaterialSupplyDemandQuery extends PageQuery {
 
 export interface InventoryMaterialSupplyDemandItem {
   itemId: string;
-  materialVariantId?: string;
-  materialVariantCode?: string;
+  materialVariantId: string;
+  materialVariantCode: string;
   itemCode: string;
   itemName: string;
   unit: string;
@@ -290,13 +290,15 @@ export interface InventoryMaterialSupplyDemandItem {
   isShortage: boolean;
 }
 
-export type InventoryMaterialDemandTraceQuery = PageQuery;
+export interface InventoryMaterialDemandTraceQuery extends PageQuery {
+  materialVariantId: string;
+}
 
 export interface InventoryMaterialDemandTraceItem {
   demandId: string;
   itemId: string;
-  materialVariantId?: string;
-  materialVariantCode?: string;
+  materialVariantId: string;
+  materialVariantCode: string;
   productionBatchId: string;
   batchNo: string;
   workOrderId: string;

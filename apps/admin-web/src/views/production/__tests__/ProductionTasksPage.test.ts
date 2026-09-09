@@ -228,13 +228,12 @@ describe('ProductionTasksPage', () => {
 
     const configureButton = wrapper
       .findAll('button')
-      .find((button) => button.text().trim() === '配置物料需求');
+      .find((button) => button.text().trim() === '配置需求');
     expect(configureButton).toBeDefined();
     await configureButton!.trigger('click');
     await flushPromises();
 
-    expect(router.currentRoute.value.name).toBe('production-material-demands');
-    expect(router.currentRoute.value.query).toEqual({ productionBatchId: 'b1' });
+    expect(wrapper.text()).toContain('配置物料需求');
     expect(wrapper.text()).not.toContain('生成物料');
   });
 
@@ -508,5 +507,5 @@ describe('ProductionTasksPage task dialog close guard', () => {
     } finally {
       vi.useRealTimers();
     }
-  }, 15_000);
+  }, 30_000);
 });

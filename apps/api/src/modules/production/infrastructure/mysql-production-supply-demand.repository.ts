@@ -1,3 +1,4 @@
+import { currentMaterialNameSql } from './queries/material-name.sql.js';
 import { Inject, Injectable } from '@nestjs/common';
 import type {
   DemandType,
@@ -21,45 +22,65 @@ export class MysqlProductionSupplyDemandRepository extends ProductionSupplyDeman
   async list(
     query: InventoryMaterialSupplyDemandQuery,
   ): Promise<PageResult<InventoryMaterialSupplyDemandItem>> {
+    const inventorySql = `WITH demand_totals AS (
+      SELECT item_id,material_variant_id,SUM(remaining_number) open_demand,
+        MAX(id) representative_demand_id
+      FROM production_item_demand WHERE business_status='active'
+      GROUP BY item_id,material_variant_id
+    ), balance_totals AS (
+      SELECT material_id item_id,material_variant_id,SUM(current_quantity) total_inventory,
+        SUM(CASE WHEN stock_status='available' AND batch_status='available'
+          THEN current_quantity ELSE 0 END) available_inventory
+      FROM inventory_material_variant_balance
+      GROUP BY material_id,material_variant_id HAVING SUM(current_quantity)>0
+    ), identities AS (
+      SELECT item_id,material_variant_id FROM demand_totals
+      UNION SELECT item_id,material_variant_id FROM balance_totals
+    ), inventory AS (
+      SELECT identity.item_id,identity.material_variant_id,
+        COALESCE(demand.material_variant_code_snapshot,batch.material_variant_code_snapshot) material_variant_code,
+        COALESCE(demand.item_code_snapshot,batch.item_code_snapshot) item_code,
+        ${currentMaterialNameSql('identity.item_id')} item_name,
+        COALESCE(demand.unit_snapshot,batch.unit_snapshot) unit,
+        COALESCE(balance.total_inventory,0) total_inventory,
+        COALESCE(balance.available_inventory,0) available_inventory,
+        COALESCE(totals.open_demand,0) open_demand,
+        GREATEST(COALESCE(totals.open_demand,0)-COALESCE(balance.available_inventory,0),0) shortage
+      FROM identities identity
+      LEFT JOIN demand_totals totals ON totals.item_id=identity.item_id
+        AND totals.material_variant_id=identity.material_variant_id
+      LEFT JOIN production_item_demand demand ON demand.id=totals.representative_demand_id
+      LEFT JOIN balance_totals balance ON balance.item_id=identity.item_id
+        AND balance.material_variant_id=identity.material_variant_id
+      LEFT JOIN item_batch batch ON batch.id=(
+        SELECT MAX(ib.id) FROM item_batch ib WHERE ib.item_id=identity.item_id
+          AND ib.material_variant_id=identity.material_variant_id
+      )
+    )`;
     const keywordFilter = query.keyword
-      ? ` AND EXISTS (
-          SELECT 1 FROM production_item_demand matched
-          WHERE matched.item_id=demand.item_id AND matched.business_status='active'
-            AND (matched.item_code_snapshot LIKE ? OR matched.item_name_snapshot LIKE ?)
-        )`
+      ? ` WHERE (item_code LIKE ? OR item_name LIKE ? OR material_variant_code LIKE ?
+          OR EXISTS (
+            SELECT 1 FROM production_item_demand matched
+            WHERE matched.item_id=inventory.item_id
+              AND matched.material_variant_id=inventory.material_variant_id
+              AND matched.business_status='active'
+              AND (matched.item_code_snapshot LIKE ? OR ${currentMaterialNameSql('matched.item_id')} LIKE ?
+                OR matched.material_variant_code_snapshot LIKE ?)
+          ))`
       : '';
-    const keywordParams = query.keyword ? [`%${query.keyword}%`, `%${query.keyword}%`] : [];
+    const keywordParams = query.keyword ? Array<string>(6).fill(`%${query.keyword}%`) : [];
     const [[count]] = await this.pool.query<(RowDataPacket & { total: number })[]>(
-      `SELECT COUNT(DISTINCT demand.item_id) total
-       FROM production_item_demand demand
-       WHERE demand.business_status='active'${keywordFilter}`,
+      `${inventorySql} SELECT COUNT(*) total FROM inventory${keywordFilter}`,
       keywordParams,
     );
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 10;
     const [rows] = await this.pool.query<SupplyDemandRow[]>(
-      `SELECT totals.item_id,representative.item_code_snapshot item_code,
-         representative.item_name_snapshot item_name,representative.unit_snapshot unit,
-         COALESCE(balance.total_inventory,0) total_inventory,
-         COALESCE(balance.available_inventory,0) available_inventory,
-         totals.open_demand,
-         GREATEST(totals.open_demand-COALESCE(balance.available_inventory,0),0) shortage
-       FROM (
-         SELECT demand.item_id,SUM(demand.remaining_number) open_demand,
-           MAX(demand.id) representative_demand_id
-         FROM production_item_demand demand
-         WHERE demand.business_status='active'${keywordFilter}
-         GROUP BY demand.item_id
-       ) totals
-       JOIN production_item_demand representative ON representative.id=totals.representative_demand_id
-       LEFT JOIN (
-         SELECT item_id,SUM(current_quantity) total_inventory,
-           SUM(CASE WHEN stock_status='available' AND batch_status='available'
-             THEN current_quantity ELSE 0 END) available_inventory
-         FROM inventory_item_balance
-         GROUP BY item_id
-       ) balance ON balance.item_id=totals.item_id
-       ORDER BY shortage DESC,item_code,totals.item_id
+      `${inventorySql}
+       SELECT item_id,material_variant_id,material_variant_code,item_code,item_name,unit,
+         total_inventory,available_inventory,open_demand,shortage
+       FROM inventory${keywordFilter}
+       ORDER BY (open_demand>0) DESC,shortage DESC,item_code,item_id,material_variant_id
        LIMIT ? OFFSET ?`,
       [...keywordParams, pageSize, (page - 1) * pageSize],
     );
@@ -77,13 +98,13 @@ export class MysqlProductionSupplyDemandRepository extends ProductionSupplyDeman
   ): Promise<PageResult<InventoryMaterialDemandTraceItem>> {
     const [[count]] = await this.pool.query<(RowDataPacket & { total: number })[]>(
       `SELECT COUNT(*) total FROM production_item_demand demand
-       WHERE demand.item_id=? AND demand.business_status='active'`,
-      [itemId],
+       WHERE demand.item_id=? AND demand.material_variant_id=? AND demand.business_status='active'`,
+      [itemId, query.materialVariantId],
     );
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 10;
     const [rows] = await this.pool.query<DemandTraceRow[]>(
-      `SELECT demand.id,demand.item_id,demand.production_batch_id,batch.batch_no,
+      `SELECT demand.id,demand.item_id,demand.material_variant_id,demand.material_variant_code_snapshot material_variant_code,demand.production_batch_id,batch.batch_no,
          work_order.id work_order_id,work_order.work_order_no,demand.demand_type,
          demand.need_number,demand.remaining_number,demand.unit_snapshot,
          demand.parent_demand_id,demand.supplement_id,supplement.supplement_no,
@@ -98,10 +119,10 @@ export class MysqlProductionSupplyDemandRepository extends ProductionSupplyDeman
          ON step_scrap.id=supplement.step_scrap_record_id
        LEFT JOIN batch_step_abnormal_dispositions disposition
          ON disposition.id=step_scrap.abnormal_disposition_id
-       WHERE demand.item_id=? AND demand.business_status='active'
+       WHERE demand.item_id=? AND demand.material_variant_id=? AND demand.business_status='active'
        ORDER BY demand.created_at DESC,demand.id DESC
        LIMIT ? OFFSET ?`,
-      [itemId, pageSize, (page - 1) * pageSize],
+      [itemId, query.materialVariantId, pageSize, (page - 1) * pageSize],
     );
     return {
       items: rows.map(mapDemandTrace),
@@ -114,6 +135,8 @@ export class MysqlProductionSupplyDemandRepository extends ProductionSupplyDeman
 
 type SupplyDemandRow = RowDataPacket & {
   item_id: number;
+  material_variant_id: number;
+  material_variant_code: string;
   item_code: string;
   item_name: string;
   unit: string;
@@ -129,6 +152,8 @@ const mapSupplyDemand = (row: SupplyDemandRow): InventoryMaterialSupplyDemandIte
   const shortage = BigInt(row.shortage);
   return {
     itemId: String(row.item_id),
+    materialVariantId: String(row.material_variant_id),
+    materialVariantCode: row.material_variant_code,
     itemCode: row.item_code,
     itemName: row.item_name,
     unit: row.unit,
@@ -144,6 +169,8 @@ const mapSupplyDemand = (row: SupplyDemandRow): InventoryMaterialSupplyDemandIte
 type DemandTraceRow = RowDataPacket & {
   id: number;
   item_id: number;
+  material_variant_id: number;
+  material_variant_code: string;
   production_batch_id: number;
   batch_no: string;
   work_order_id: number;
@@ -163,6 +190,8 @@ type DemandTraceRow = RowDataPacket & {
 const mapDemandTrace = (row: DemandTraceRow): InventoryMaterialDemandTraceItem => ({
   demandId: String(row.id),
   itemId: String(row.item_id),
+  materialVariantId: String(row.material_variant_id),
+  materialVariantCode: row.material_variant_code,
   productionBatchId: String(row.production_batch_id),
   batchNo: row.batch_no,
   workOrderId: String(row.work_order_id),

@@ -77,6 +77,7 @@ describe('ProductionService first-stage commands', () => {
         {
           productId: '8',
           workOrderNo: 'WO-001',
+          orderType: 'mass_production',
           plannedQuantity: 1,
           planStartDate: '2026-08-01',
           planEndDate: '2026-08-31',

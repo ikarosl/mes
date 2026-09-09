@@ -1,4 +1,6 @@
-import { ref } from 'vue';
+import { EMessage } from '../../../utils/message';
+import { ref, watch } from 'vue';
+import { useLatestRequest } from '../../../composables/requests/useLatestRequest';
 import type {
   BatchStepExecutionRecordItem,
   BatchStepReportItem,
@@ -31,14 +33,33 @@ export const useProductionExecutionRecords = () => {
   const reworkCompletionIntents = new Map<string, ReturnType<typeof useIdempotentIntent>>();
   const supplementIntents = new Map<string, ReturnType<typeof useIdempotentIntent>>();
 
+  const listRequests = useLatestRequest();
+  const detailRequests = useLatestRequest();
+  watch(
+    selectedBatchId,
+    () => {
+      detailRequests.invalidate();
+      detailLoading.value = false;
+      record.value = null;
+      completionCheck.value = null;
+      reworks.value = [];
+    },
+    { flush: 'sync' },
+  );
+
   const loadBatches = async (keyword = '', page = 1): Promise<void> => {
+    const isCurrent = listRequests.begin();
     loading.value = true;
     try {
-      const result = await productionApi.listExecutionBatchSummaries({
-        keyword: keyword || undefined,
-        page,
-        pageSize: 20,
-      });
+      const result = await productionApi.listExecutionBatchSummaries(
+        {
+          keyword: keyword || undefined,
+          page,
+          pageSize: 20,
+        },
+        { skipErrorHandling: true },
+      );
+      if (!isCurrent()) return;
       batches.value = result.items;
       total.value = result.total;
       if (!result.items.some((item) => item.id === selectedBatchId.value)) {
@@ -48,19 +69,31 @@ export const useProductionExecutionRecords = () => {
         selectedBatchId.value = null;
         if (result.items[0]) await selectBatch(result.items[0].id);
       }
+    } catch (error) {
+      if (isCurrent()) EMessage.error(error, '加载失败，请重试');
     } finally {
-      loading.value = false;
+      if (isCurrent()) loading.value = false;
     }
   };
   const selectBatch = async (batchId: string): Promise<void> => {
     selectedBatchId.value = batchId;
+    const isCurrent = detailRequests.begin(() => selectedBatchId.value === batchId);
+    record.value = null;
+    completionCheck.value = null;
+    reworks.value = [];
     detailLoading.value = true;
     try {
       const [nextRecord, nextCompletionCheck, nextReworks] = await Promise.all([
-        productionApi.getBatchExecutionRecords(batchId),
-        productionApi.getExecutionCompletionCheck(batchId),
-        productionApi.listBatchReworks(batchId),
+        productionApi.getBatchExecutionRecords(batchId, { skipErrorHandling: true }),
+        productionApi.getExecutionCompletionCheck(batchId, { skipErrorHandling: true }),
+        productionApi.listBatchReworks(batchId, { skipErrorHandling: true }),
       ]);
+      if (!isCurrent()) return;
+      if (
+        nextRecord.productionBatchId !== batchId ||
+        nextCompletionCheck.productionBatchId !== batchId
+      )
+        throw new Error('批次详情与当前选择不一致，请刷新');
       record.value = nextRecord;
       completionCheck.value = nextCompletionCheck;
       reworks.value = nextReworks;
@@ -85,9 +118,22 @@ export const useProductionExecutionRecords = () => {
             }
           : batch,
       );
+    } catch (error) {
+      if (isCurrent()) EMessage.error(error, '加载失败，请重试');
     } finally {
-      detailLoading.value = false;
+      if (isCurrent()) detailLoading.value = false;
     }
+  };
+  const requireCurrentBatch = (batchId: string): void => {
+    if (
+      detailLoading.value ||
+      selectedBatchId.value !== batchId ||
+      record.value?.productionBatchId !== batchId
+    )
+      throw new Error('当前批次详情已变化或正在加载，请重新选择操作');
+  };
+  const refreshSelectedBatch = async (batchId: string): Promise<void> => {
+    if (selectedBatchId.value === batchId) await selectBatch(batchId);
   };
   const withPending = async (key: string, action: () => Promise<void>): Promise<void> => {
     if (pendingKeys.value.has(key)) return;
@@ -106,13 +152,14 @@ export const useProductionExecutionRecords = () => {
     reason: string,
   ): Promise<void> =>
     withPending(`reverse:${report.reportId}`, async () => {
+      requireCurrentBatch(step.productionBatchId);
       await productionApi.reverseStepReport(
         step.productionBatchId,
         step.stepRecordId,
         report.reportId,
         { version: step.version, reason: reason.trim() },
       );
-      await selectBatch(step.productionBatchId);
+      await refreshSelectedBatch(step.productionBatchId);
     });
   const correct = (
     step: BatchStepExecutionRecordItem,
@@ -123,6 +170,7 @@ export const useProductionExecutionRecords = () => {
     reason: string,
   ): Promise<void> =>
     withPending(`correct:${report.reportId}`, async () => {
+      requireCurrentBatch(step.productionBatchId);
       const body = {
         version: step.version,
         normalQuantity,
@@ -153,14 +201,15 @@ export const useProductionExecutionRecords = () => {
           ),
       );
       correctionIntents.delete(report.reportId);
-      await selectBatch(step.productionBatchId);
+      await refreshSelectedBatch(step.productionBatchId);
     });
   const completeExecution = (): Promise<void> => {
     const check = completionCheck.value;
     if (!check) return Promise.resolve();
     return withPending(`complete:${check.productionBatchId}`, async () => {
+      requireCurrentBatch(check.productionBatchId);
       await productionApi.completeProductionExecution(check.productionBatchId, check.version);
-      await selectBatch(check.productionBatchId);
+      await refreshSelectedBatch(check.productionBatchId);
     });
   };
   const getCorrectionIntentStatus = (reportId: string) =>
@@ -174,27 +223,30 @@ export const useProductionExecutionRecords = () => {
     remark: string,
   ): Promise<void> =>
     withPending(`approve-rework:${disposition.dispositionId}`, async () => {
+      requireCurrentBatch(disposition.productionBatchId);
       await productionApi.approveDispositionRework(disposition.dispositionId, {
         version: disposition.version,
         remark: remark.trim() || null,
       });
-      await selectBatch(disposition.productionBatchId);
+      await refreshSelectedBatch(disposition.productionBatchId);
     });
   const rejectDisposition = (
     disposition: BatchStepAbnormalDispositionItem,
     reason: string,
   ): Promise<void> =>
     withPending(`reject:${disposition.dispositionId}`, async () => {
+      requireCurrentBatch(disposition.productionBatchId);
       await productionApi.rejectAbnormalDisposition(disposition.dispositionId, {
         version: disposition.version,
         reason: reason.trim(),
       });
-      await selectBatch(disposition.productionBatchId);
+      await refreshSelectedBatch(disposition.productionBatchId);
     });
   const startRework = (rework: ReworkRecordItem): Promise<void> =>
     withPending(`start-rework:${rework.reworkId}`, async () => {
+      requireCurrentBatch(rework.productionBatchId);
       await productionApi.startRework(rework.reworkId, rework.version);
-      await selectBatch(rework.productionBatchId);
+      await refreshSelectedBatch(rework.productionBatchId);
     });
   const completeRework = (
     rework: ReworkRecordItem,
@@ -203,6 +255,7 @@ export const useProductionExecutionRecords = () => {
     remark: string,
   ): Promise<void> =>
     withPending(`complete-rework:${rework.reworkId}`, async () => {
+      requireCurrentBatch(rework.productionBatchId);
       const body = {
         version: rework.version,
         normalQuantity,
@@ -221,7 +274,7 @@ export const useProductionExecutionRecords = () => {
         (key) => productionApi.completeRework(rework.reworkId, body, key),
       );
       reworkCompletionIntents.delete(rework.reworkId);
-      await selectBatch(rework.productionBatchId);
+      await refreshSelectedBatch(rework.productionBatchId);
     });
   const loadSupplementCandidates = (dispositionId: string) =>
     productionApi.listSupplementCandidates(dispositionId);
@@ -232,18 +285,21 @@ export const useProductionExecutionRecords = () => {
     details: ApproveScrapSupplementLinePayload[],
     remark: string,
     planVersion: number | null,
-  ): Promise<ProductionScrapSupplementPlanItem> =>
-    productionApi.saveScrapSupplementPlan(disposition.dispositionId, {
+  ): Promise<ProductionScrapSupplementPlanItem> => {
+    requireCurrentBatch(disposition.productionBatchId);
+    return productionApi.saveScrapSupplementPlan(disposition.dispositionId, {
       planVersion,
       dispositionVersion: disposition.version,
       details,
       remark: remark.trim() || null,
     });
+  };
   const approveScrapSupplement = (
     disposition: BatchStepAbnormalDispositionItem,
     planVersion: number,
   ): Promise<void> =>
     withPending(`approve-scrap:${disposition.dispositionId}`, async () => {
+      requireCurrentBatch(disposition.productionBatchId);
       const body = {
         version: planVersion,
         dispositionVersion: disposition.version,
@@ -266,7 +322,7 @@ export const useProductionExecutionRecords = () => {
             const plan = await productionApi.getScrapSupplementPlan(disposition.dispositionId);
             if (plan?.status === 'confirmed') {
               supplementIntents.delete(disposition.dispositionId);
-              await selectBatch(disposition.productionBatchId);
+              await refreshSelectedBatch(disposition.productionBatchId);
               return;
             }
           } catch {
@@ -276,7 +332,7 @@ export const useProductionExecutionRecords = () => {
         throw error;
       }
       supplementIntents.delete(disposition.dispositionId);
-      await selectBatch(disposition.productionBatchId);
+      await refreshSelectedBatch(disposition.productionBatchId);
     });
   const getSupplementIntentStatus = (dispositionId: string) =>
     supplementIntents.get(dispositionId)?.getStatus() ?? 'idle';

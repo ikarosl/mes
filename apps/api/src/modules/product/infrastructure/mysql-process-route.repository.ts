@@ -6,7 +6,6 @@ import { writeTransactionalAudit } from '../../../common/audit/transactional-aud
 import { toBeijingISOString } from '../../../common/time/date-time.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
 import { ProductDomainError } from '../domain/product.errors.js';
-import { requireConfigurableProduct } from '../domain/product-configuration.policy.js';
 import { mapProductWriteError } from './mysql-product.shared.js';
 
 type Db = Pool | PoolConnection;
@@ -17,8 +16,6 @@ import type {
   ProcessRoutePayload,
   ProcessRouteQuery,
   ProcessRouteStatus,
-  ProductItemKind,
-  ProductListItem,
   PageResult,
 } from '@company/contracts';
 import { type ProcessRouteRepository } from '../application/ports/process-route.repository.js';
@@ -51,9 +48,6 @@ export class MysqlProcessRouteRepository implements ProcessRouteRepository {
         id: number;
         route_code: string;
         route_name: string;
-        product_id: number;
-        item_code: string;
-        product_name: string;
         version_no: string;
         status: ProcessRouteStatus;
         process_summary: string | null;
@@ -62,12 +56,12 @@ export class MysqlProcessRouteRepository implements ProcessRouteRepository {
         updated_at: Date | null;
       })[]
     >(
-      `SELECT r.id,r.route_code,r.route_name,r.product_id,p.item_code,p.product_name,r.version_no,r.status,
+      `SELECT r.id,r.route_code,r.route_name,r.version_no,r.status,
                     GROUP_CONCAT(CASE WHEN rs.is_deleted=0 THEN rs.step_name_snapshot END ORDER BY rs.step_order SEPARATOR ' → ') process_summary,
                     COUNT(CASE WHEN rs.is_deleted=0 THEN 1 END) step_count,r.remark,r.updated_at
-             FROM process_routes r JOIN products p ON p.id=r.product_id
+             FROM process_routes r
              LEFT JOIN process_route_steps rs ON rs.route_id=r.id
-             WHERE ${where} GROUP BY r.id,p.item_code,p.product_name ORDER BY r.created_at DESC,r.id DESC
+             WHERE ${where} GROUP BY r.id ORDER BY r.created_at DESC,r.id DESC
              LIMIT ? OFFSET ?`,
       [...parameters, pageSize, (page - 1) * pageSize],
     );
@@ -75,9 +69,6 @@ export class MysqlProcessRouteRepository implements ProcessRouteRepository {
       id: String(row.id),
       routeCode: row.route_code,
       routeName: row.route_name,
-      productId: String(row.product_id),
-      itemCode: row.item_code,
-      productName: row.product_name,
       versionNo: row.version_no,
       status: row.status,
       processSummary: row.process_summary,
@@ -94,18 +85,16 @@ export class MysqlProcessRouteRepository implements ProcessRouteRepository {
         id: number;
         route_code: string;
         route_name: string;
-        product_id: number;
         version_no: string;
         status: ProcessRouteStatus;
       })[]
-    >(`SELECT id,route_code,route_name,product_id,version_no,status
+    >(`SELECT id,route_code,route_name,version_no,status
        FROM process_routes WHERE is_deleted=0 AND status='enabled'
        ORDER BY route_code,version_no,id`);
     return rows.map((row) => ({
       id: String(row.id),
       routeCode: row.route_code,
       routeName: row.route_name,
-      productId: String(row.product_id),
       versionNo: row.version_no,
       status: row.status,
     }));
@@ -113,13 +102,11 @@ export class MysqlProcessRouteRepository implements ProcessRouteRepository {
 
   async createRoute(payload: ProcessRoutePayload, audit: CommandContext) {
     return withTransaction(this.pool, async (connection) => {
-      await this.requireRoutableProduct(connection, payload.productId);
       const [result] = await connection.execute<ResultSetHeader>(
-        `INSERT INTO process_routes (route_code,route_name,product_id,version_no,status,remark,created_by,updated_by) VALUES (?,?,?,?,'draft',?,?,?)`,
+        `INSERT INTO process_routes (route_code,route_name,version_no,status,remark,created_by,updated_by) VALUES (?,?,?,'draft',?,?,?)`,
         [
           payload.routeCode,
           payload.routeName,
-          payload.productId,
           payload.versionNo,
           payload.remark ?? null,
           audit.actorId,
@@ -144,21 +131,11 @@ export class MysqlProcessRouteRepository implements ProcessRouteRepository {
           'IMMUTABLE_ROUTE',
           '路线启用后版本内容不可原地修改，请创建新版本',
         );
-      await this.requireRoutableProduct(connection, payload.productId);
-      if (String(before.product_id) !== payload.productId) {
-        const [[steps]] = await connection.query<(RowDataPacket & { count: number })[]>(
-          'SELECT COUNT(*) count FROM process_route_steps WHERE route_id=? AND is_deleted=0',
-          [id],
-        );
-        if ((steps?.count ?? 0) > 0)
-          throw new ProductDomainError('INVALID_ROUTE', '已有步骤的草稿路线不能更换所属产品');
-      }
       await connection.execute(
-        `UPDATE process_routes SET route_code=?,route_name=?,product_id=?,version_no=?,remark=?,updated_by=? WHERE id=? AND is_deleted=0`,
+        `UPDATE process_routes SET route_code=?,route_name=?,version_no=?,remark=?,updated_by=? WHERE id=? AND is_deleted=0`,
         [
           payload.routeCode,
           payload.routeName,
-          payload.productId,
           payload.versionNo,
           payload.remark ?? null,
           audit.actorId,
@@ -191,7 +168,6 @@ export class MysqlProcessRouteRepository implements ProcessRouteRepository {
         );
       }
       if (status === 'enabled') {
-        await this.requireRoutableProduct(connection, String(before.product_id));
         const [[steps]] = await connection.query<(RowDataPacket & { count: number })[]>(
           'SELECT COUNT(*) count FROM process_route_steps WHERE route_id=? AND is_deleted=0 AND status=1',
           [id],
@@ -227,55 +203,17 @@ export class MysqlProcessRouteRepository implements ProcessRouteRepository {
     });
   }
 
-  private async productRecord(db: Db, id: string, lock = false) {
-    const [[row]] = await db.query<
-      (RowDataPacket & {
-        id: number;
-        item_code: string;
-        product_name: string;
-        category_id: number;
-        item_kind: ProductItemKind;
-        acquire_method: ProductListItem['acquireMethod'];
-        status: number;
-        default_route_id: number | null;
-      })[]
-    >(
-      `SELECT p.id,p.item_code,p.product_name,p.category_id,c.item_kind,p.acquire_method,p.status,p.default_route_id
-           FROM products p JOIN product_categories c ON c.id=p.category_id WHERE p.id=? AND p.is_deleted=0${lock ? ' FOR UPDATE' : ''}`,
-      [id],
-    );
-    if (!row) throw new ProductDomainError('NOT_FOUND', '产品或物料不存在');
-    return row;
-  }
-  private async requireRoutableProduct(db: Db, id: string) {
-    const product = await this.productRecord(db, id);
-    requireConfigurableProduct({
-      status: product.status,
-      acquireMethod: product.acquire_method,
-      itemKind: product.item_kind,
-    });
-    if (
-      product.status !== 1 ||
-      product.acquire_method !== 'self_made' ||
-      product.item_kind === 'material'
-    ) {
-      throw new ProductDomainError('INVALID_PRODUCT_KIND', '工艺路线只能绑定已启用的自制成品');
-    }
-    return product;
-  }
-
   private async routeRecord(db: Db, id: string, lock = false) {
     const [[row]] = await db.query<
       (RowDataPacket & {
         id: number;
         route_code: string;
         route_name: string;
-        product_id: number;
         version_no: string;
         status: ProcessRouteStatus;
       })[]
     >(
-      `SELECT id,route_code,route_name,product_id,version_no,status FROM process_routes WHERE id=? AND is_deleted=0${lock ? ' FOR UPDATE' : ''}`,
+      `SELECT id,route_code,route_name,version_no,status FROM process_routes WHERE id=? AND is_deleted=0${lock ? ' FOR UPDATE' : ''}`,
       [id],
     );
     if (!row) throw new ProductDomainError('NOT_FOUND', '工艺路线不存在');

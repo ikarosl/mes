@@ -13,11 +13,15 @@ describe('productionApi', () => {
   it('lists one material active demand trace with server pagination', async () => {
     const { productionApi } = await import('../production');
 
-    await productionApi.listInventoryMaterialDemandTrace('9', { page: 2, pageSize: 20 });
+    await productionApi.listInventoryMaterialDemandTrace('9', {
+      materialVariantId: 'mv-9',
+      page: 2,
+      pageSize: 20,
+    });
 
     expect(request).toHaveBeenCalledWith({
       url: '/production/inventory-material-supply-demand/9/demands',
-      params: { page: 2, pageSize: 20 },
+      params: { materialVariantId: 'mv-9', page: 2, pageSize: 20 },
     });
   });
 
@@ -61,6 +65,7 @@ describe('productionApi', () => {
 
     await productionApi.createOrder({
       workOrderNo: 'WO-2026-0001',
+      orderType: 'mass_production',
       productId: '1',
       plannedQuantity: 100,
       planStartDate: '2026-08-01',
@@ -72,6 +77,7 @@ describe('productionApi', () => {
       method: 'POST',
       data: {
         workOrderNo: 'WO-2026-0001',
+        orderType: 'mass_production',
         productId: '1',
         plannedQuantity: 100,
         planStartDate: '2026-08-01',
@@ -85,6 +91,7 @@ describe('productionApi', () => {
 
     await productionApi.createOrder({
       workOrderNo: 'WO-2026-0002',
+      orderType: 'research',
       productId: '2',
       plannedQuantity: 50,
       workOrderOwnerId: 'u1',
@@ -101,6 +108,7 @@ describe('productionApi', () => {
       method: 'POST',
       data: {
         workOrderNo: 'WO-2026-0002',
+        orderType: 'research',
         productId: '2',
         plannedQuantity: 50,
         workOrderOwnerId: 'u1',
@@ -346,14 +354,22 @@ describe('productionApi', () => {
     });
   });
 
-  it('adds a manually selected variant under the parent demand with an idempotency key', async () => {
+  it('adds manually selected variants under the production batch with an idempotency key', async () => {
     const { productionApi } = await import('../production');
-    const data = { materialVariantId: 'mv-3', quantity: 1, reason: '生产补充' };
+    const data = {
+      reason: '生产补充',
+      requirements: [
+        {
+          productMaterialId: 'pm-1',
+          splits: [{ materialVariantId: 'mv-3', quantity: 1 }],
+        },
+      ],
+    };
 
-    await productionApi.addManualMaterialDemand('demand-1', data, 'manual-key');
+    await productionApi.addManualMaterialDemands('batch-1', data, 'manual-key');
 
     expect(request).toHaveBeenCalledWith({
-      url: '/production/material-demands/demand-1/additions',
+      url: '/production/batches/batch-1/material-demands/additions',
       method: 'POST',
       data,
       headers: { 'Idempotency-Key': 'manual-key' },
@@ -536,22 +552,16 @@ describe('productionApi', () => {
     ]);
   });
 
-  it('lists current employee tasks and starts or completes a step with its version', async () => {
+  it('lists current employee tasks and starts a step with its version', async () => {
     const { productionApi } = await import('../production');
     await productionApi.listWorkerTasks();
     await productionApi.startStep('1', '9', 3);
-    await productionApi.completeStep('1', '9', 4);
-    expect(request.mock.calls.slice(-3).map(([config]) => config)).toEqual([
+    expect(request.mock.calls.slice(-2).map(([config]) => config)).toEqual([
       { url: '/production/worker-tasks' },
       {
         url: '/production/batches/1/step-records/9/actions/start',
         method: 'POST',
         data: { version: 3 },
-      },
-      {
-        url: '/production/batches/1/step-records/9/actions/complete',
-        method: 'POST',
-        data: { version: 4 },
       },
     ]);
   });

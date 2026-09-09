@@ -25,28 +25,34 @@ import {
   confirmMaterialLossResultCodec,
   createMaterialLossResultCodec,
 } from './idempotency/production-material-loss-result.codec.js';
-import { ProductionInventoryRepository } from './ports/production-inventory.repository.js';
+import { ProductionMaterialLossRepository } from './ports/production-material-loss.repository.js';
+import { ProductionReturnRepository } from './ports/production-return.repository.js';
+import { ProductionStockCheckRepository } from './ports/production-stock-check.repository.js';
 
 @Injectable()
 export class ProductionInventoryService {
   constructor(
-    private readonly inventory: ProductionInventoryRepository,
+    private readonly materialLosses: ProductionMaterialLossRepository,
+    private readonly returns: ProductionReturnRepository,
+    private readonly stockChecks: ProductionStockCheckRepository,
     private readonly identity: IdentityDirectoryService,
     private readonly idempotency: IdempotencyExecutor,
   ) {}
 
   async listMaterialLosses(query: MaterialLossQuery) {
-    const result = await this.inventory.listMaterialLosses(query);
+    const result = await this.materialLosses.listMaterialLosses(query);
     return { ...result, items: await this.enrichMaterialLosses(result.items) };
   }
   async getMaterialLoss(scrapId: string) {
-    return (await this.enrichMaterialLosses([await this.inventory.getMaterialLoss(scrapId)]))[0]!;
+    return (
+      await this.enrichMaterialLosses([await this.materialLosses.getMaterialLoss(scrapId)])
+    )[0]!;
   }
   listMaterialLossBatchOptions() {
-    return this.inventory.listMaterialLossBatchOptions();
+    return this.materialLosses.listMaterialLossBatchOptions();
   }
   listMaterialLossCandidates(batchId: string) {
-    return this.inventory.listMaterialLossCandidates(batchId);
+    return this.materialLosses.listMaterialLossCandidates(batchId);
   }
   async createMaterialLoss(payload: CreateMaterialLossPayload, context: IdempotentCommandContext) {
     const reasonType = payload.reasonType.trim();
@@ -60,7 +66,10 @@ export class ProductionInventoryService {
       request: { body: normalized },
       resultCodec: createMaterialLossResultCodec,
       handler: async () => {
-        const item = await this.inventory.createMaterialLoss(normalized, context);
+        const item = await this.materialLosses.createMaterialLoss(
+          normalized,
+          toCommandContext(context),
+        );
         return (await this.enrichMaterialLosses([item]))[0]!;
       },
     });
@@ -75,7 +84,11 @@ export class ProductionInventoryService {
       request: { params: { scrapId }, body: { version } },
       resultCodec: confirmMaterialLossResultCodec,
       handler: async () => {
-        const item = await this.inventory.confirmMaterialLoss(scrapId, version, context);
+        const item = await this.materialLosses.confirmMaterialLoss(
+          scrapId,
+          version,
+          toCommandContext(context),
+        );
         return (await this.enrichMaterialLosses([item]))[0]!;
       },
     });
@@ -87,7 +100,7 @@ export class ProductionInventoryService {
     reason: string,
     context: CommandContext,
   ) {
-    const item = await this.inventory.cancelMaterialLoss(
+    const item = await this.materialLosses.cancelMaterialLoss(
       scrapId,
       version,
       requireReason(reason),
@@ -97,24 +110,24 @@ export class ProductionInventoryService {
   }
 
   async listReturnOrders(query: ReturnOrderQuery) {
-    const result = await this.inventory.listReturnOrders(query);
+    const result = await this.returns.listReturnOrders(query);
     return { ...result, items: await this.enrichReturns(result.items) };
   }
   async getReturnOrder(returnId: string) {
-    return (await this.enrichReturns([await this.inventory.getReturnOrder(returnId)]))[0]!;
+    return (await this.enrichReturns([await this.returns.getReturnOrder(returnId)]))[0]!;
   }
   listReturnBatchOptions() {
-    return this.inventory.listReturnBatchOptions();
+    return this.returns.listReturnBatchOptions();
   }
   listReturnCandidates(batchId: string) {
-    return this.inventory.listReturnCandidates(batchId);
+    return this.returns.listReturnCandidates(batchId);
   }
   async createReturnOrder(payload: CreateReturnOrderPayload, context: CommandContext) {
     requireUnique(
       payload.details.map((line) => line.allocationId),
       '同一退料单不能重复选择分配行',
     );
-    const created = await this.inventory.createReturnOrder(
+    const created = await this.returns.createReturnOrder(
       {
         productionBatchId: payload.productionBatchId,
         remark: clean(payload.remark),
@@ -129,7 +142,7 @@ export class ProductionInventoryService {
     return (await this.enrichReturns([created]))[0]!;
   }
   async confirmReturnOrder(returnId: string, version: number, context: CommandContext) {
-    const item = await this.inventory.confirmReturnOrder(returnId, version, context);
+    const item = await this.returns.confirmReturnOrder(returnId, version, context);
     return (await this.enrichReturns([item]))[0]!;
   }
   async cancelReturnOrder(
@@ -138,7 +151,7 @@ export class ProductionInventoryService {
     reason: string,
     context: CommandContext,
   ) {
-    const item = await this.inventory.cancelReturnOrder(
+    const item = await this.returns.cancelReturnOrder(
       returnId,
       version,
       requireReason(reason),
@@ -148,21 +161,21 @@ export class ProductionInventoryService {
   }
 
   async listStockChecks(query: StockCheckOrderQuery) {
-    const result = await this.inventory.listStockChecks(query);
+    const result = await this.stockChecks.listStockChecks(query);
     return { ...result, items: await this.enrichStockChecks(result.items) };
   }
   async getStockCheck(stockCheckId: string) {
-    return (await this.enrichStockChecks([await this.inventory.getStockCheck(stockCheckId)]))[0]!;
+    return (await this.enrichStockChecks([await this.stockChecks.getStockCheck(stockCheckId)]))[0]!;
   }
   listStockCheckCandidates(query: StockCheckCandidateQuery) {
-    return this.inventory.listStockCheckCandidates(query);
+    return this.stockChecks.listStockCheckCandidates(query);
   }
   async createStockCheck(payload: CreateStockCheckPayload, context: CommandContext) {
     requireUnique(
       payload.details.map((line) => `${line.itemBatchId}:${line.stockStatus}`),
       '同一盘点单不能重复选择库存批次与状态',
     );
-    const created = await this.inventory.createStockCheck(
+    const created = await this.stockChecks.createStockCheck(
       { checkNo: clean(payload.checkNo), remark: clean(payload.remark), details: payload.details },
       context,
     );
@@ -177,7 +190,7 @@ export class ProductionInventoryService {
       payload.details.map((line) => line.detailId),
       '盘点明细不能重复提交',
     );
-    const saved = await this.inventory.saveStockCheckCounts(
+    const saved = await this.stockChecks.saveStockCheckCounts(
       stockCheckId,
       {
         version: payload.version,
@@ -192,7 +205,7 @@ export class ProductionInventoryService {
     return (await this.enrichStockChecks([saved]))[0]!;
   }
   async completeStockCheck(stockCheckId: string, version: number, context: CommandContext) {
-    const completed = await this.inventory.completeStockCheck(stockCheckId, version, context);
+    const completed = await this.stockChecks.completeStockCheck(stockCheckId, version, context);
     return (await this.enrichStockChecks([completed]))[0]!;
   }
   async cancelStockCheck(
@@ -201,7 +214,7 @@ export class ProductionInventoryService {
     reason: string,
     context: CommandContext,
   ) {
-    const cancelled = await this.inventory.cancelStockCheck(
+    const cancelled = await this.stockChecks.cancelStockCheck(
       stockCheckId,
       version,
       requireReason(reason),
@@ -251,6 +264,12 @@ export class ProductionInventoryService {
 }
 
 const clean = (value: string | null | undefined): string | null => value?.trim() || null;
+const toCommandContext = (context: CommandContext): CommandContext => ({
+  actorId: context.actorId,
+  requestId: context.requestId,
+  ip: context.ip,
+  userAgent: context.userAgent,
+});
 const requireReason = (value: string): string => {
   const reason = clean(value);
   if (!reason) throw new ProductionDomainError('INVALID_INPUT', '取消原因不能为空');

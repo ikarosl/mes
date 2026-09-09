@@ -21,4 +21,5 @@ export {
 export {
   MaterialVariantQuery,
   type MaterialVariantRecord,
+  type MaterialVariantDisplayReference,
 } from './application/ports/material-variant.repository.js';

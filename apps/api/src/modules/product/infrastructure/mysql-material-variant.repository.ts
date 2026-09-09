@@ -12,13 +12,14 @@ import {
   MaterialVariantRepository,
   type CreateMaterialVariantCommand,
   type MaterialVariantRecord,
+  type MaterialVariantDisplayReference,
 } from '../application/ports/material-variant.repository.js';
 import { mapProductWriteError } from './mysql-product.shared.js';
 
 type Db = Pool | PoolConnection;
 type VariantRow = RowDataPacket & {
   id: number;
-  material_product_id: number;
+  material_id: number;
   material_code: string;
   material_name: string;
   major_version: string;
@@ -33,7 +34,7 @@ type VariantRow = RowDataPacket & {
 /**
  * MySQL adapter for the exact material-version master.
  *
- * `products` stays the stable BOM identity. This adapter is the only Product
+ * `materials` stays the stable BOM identity. This adapter is the only Product
  * implementation that writes `material_variants`; Production consumes the
  * read-only capability exposed by Product public.ts. Variant code is generated
  * from immutable values and is never accepted as a client supplied field.
@@ -51,19 +52,19 @@ export class MysqlMaterialVariantRepository extends MaterialVariantRepository {
     const [[count]] = await this.pool.query<(RowDataPacket & { total: number })[]>(
       `SELECT COUNT(*) total
          FROM material_variants v
-         JOIN products p ON p.id=v.material_product_id
+         JOIN materials p ON p.id=v.material_id
          JOIN product_categories c ON c.id=p.category_id
         WHERE ${where}`,
       parameters,
     );
     const [rows] = await this.pool.query<VariantRow[]>(
-      `SELECT v.id,v.material_product_id,p.item_code material_code,p.product_name material_name,
+      `SELECT v.id,v.material_id,p.material_code,p.material_name,
               v.major_version,v.minor_version,v.variant_code,v.status,v.is_deleted,v.remark,v.updated_at
          FROM material_variants v
-         JOIN products p ON p.id=v.material_product_id
+         JOIN materials p ON p.id=v.material_id
          JOIN product_categories c ON c.id=p.category_id
         WHERE ${where}
-        ORDER BY p.item_code,v.major_version,v.minor_version,v.id
+        ORDER BY p.material_code,v.major_version,v.minor_version,v.id
         LIMIT ? OFFSET ?`,
       [...parameters, pageSize, (page - 1) * pageSize],
     );
@@ -75,48 +76,44 @@ export class MysqlMaterialVariantRepository extends MaterialVariantRepository {
     };
   }
 
-  async listByMaterial(
-    materialProductId: string,
-    options: { lock?: boolean } = {},
-  ): Promise<MaterialVariantRecord[]> {
+  async listDisplayReferencesByIds(
+    variantIds: string[],
+  ): Promise<MaterialVariantDisplayReference[]> {
+    if (variantIds.length === 0) return [];
     return withActiveConnection(this.pool, async (queryable) => {
-      const [rows] = await queryable.query<VariantRow[]>(
-        `SELECT v.id,v.material_product_id,p.item_code material_code,p.product_name material_name,
-                v.major_version,v.minor_version,v.variant_code,v.status,v.is_deleted,v.remark,v.updated_at
-           FROM material_variants v
-           JOIN products p ON p.id=v.material_product_id
-           JOIN product_categories c ON c.id=p.category_id
-          WHERE v.material_product_id=? AND v.is_deleted=0
-            AND p.is_deleted=0 AND c.is_deleted=0
-          ORDER BY v.major_version,v.minor_version,v.id${options.lock ? ' FOR UPDATE' : ''}`,
-        [materialProductId],
+      const [rows] = await queryable.query<
+        (RowDataPacket & { id: number; variant_code: string })[]
+      >(
+        `SELECT id,variant_code FROM material_variants
+          WHERE id IN (${variantIds.map(() => '?').join(',')}) ORDER BY id`,
+        variantIds,
       );
-      return rows.map((row) => this.toRecord(row));
+      return rows.map((row) => ({ id: String(row.id), variantCode: row.variant_code }));
     });
   }
 
   async listEnabledByMaterials(
-    materialProductIds: string[],
+    materialIds: string[],
     options: { lock?: boolean } = {},
   ): Promise<MaterialVariantRecord[]> {
-    if (materialProductIds.length === 0) return [];
+    if (materialIds.length === 0) return [];
     return withActiveConnection(this.pool, async (queryable) => {
       const [rows] = await queryable.query<VariantRow[]>(
-        `SELECT v.id,v.material_product_id,p.item_code material_code,p.product_name material_name,
+        `SELECT v.id,v.material_id,p.material_code,p.material_name,
                 v.major_version,v.minor_version,v.variant_code,v.status,v.is_deleted,v.remark,v.updated_at
            FROM material_variants v
-           JOIN products p ON p.id=v.material_product_id
+           JOIN materials p ON p.id=v.material_id
            JOIN product_categories c ON c.id=p.category_id
-          WHERE v.material_product_id IN (${materialProductIds.map(() => '?').join(',')})
+          WHERE v.material_id IN (${materialIds.map(() => '?').join(',')})
             AND v.status=1 AND v.is_deleted=0 AND p.status=1 AND p.is_deleted=0
             AND c.status=1 AND c.is_deleted=0 AND c.item_kind='material'
-          ORDER BY v.material_product_id,v.major_version,v.minor_version,v.id${options.lock ? ' FOR UPDATE' : ''}`,
-        materialProductIds,
+          ORDER BY v.material_id,v.major_version,v.minor_version,v.id${options.lock ? ' FOR UPDATE' : ''}`,
+        materialIds,
       );
       return rows.map((row) => {
-        requireEnabledCompatibleMaterialVariant(String(row.material_product_id), {
+        requireEnabledCompatibleMaterialVariant(String(row.material_id), {
           id: String(row.id),
-          materialProductId: String(row.material_product_id),
+          materialId: String(row.material_id),
           status: row.status,
           isDeleted: row.is_deleted,
         });
@@ -128,7 +125,7 @@ export class MysqlMaterialVariantRepository extends MaterialVariantRepository {
   private toRecord(row: VariantRow): MaterialVariantRecord {
     return {
       id: String(row.id),
-      materialProductId: String(row.material_product_id),
+      materialId: String(row.material_id),
       materialCode: row.material_code,
       materialName: row.material_name,
       majorVersion: row.major_version,
@@ -150,30 +147,29 @@ export class MysqlMaterialVariantRepository extends MaterialVariantRepository {
       const [[material]] = await connection.query<
         (RowDataPacket & {
           id: number;
-          item_code: string;
-          item_kind: string;
+          material_code: string;
           status: number;
           is_deleted: number;
         })[]
       >(
-        `SELECT p.id,p.item_code,c.item_kind,p.status,p.is_deleted
-           FROM products p JOIN product_categories c ON c.id=p.category_id
+        `SELECT p.id,p.material_code,p.status,p.is_deleted
+           FROM materials p JOIN product_categories c ON c.id=p.category_id
           WHERE p.id=? AND p.is_deleted=0 FOR UPDATE`,
-        [command.materialProductId],
+        [command.materialId],
       );
       if (!material) throw new ProductDomainError('NOT_FOUND', '基础物料不存在');
-      if (material.item_kind !== 'material' || material.status !== 1) {
+      if (material.status !== 1) {
         throw new ProductDomainError('INVALID_MATERIAL', '只有已启用的物料可以创建版本');
       }
       // The external code is deterministic and server-owned. Keep the base
       // code intact so all BOMs continue to resolve to the same material.
-      const variantCode = `${material.item_code}-${majorVersion}-${minorVersion}`;
+      const variantCode = `${material.material_code}-${majorVersion}-${minorVersion}`;
       const [result] = await connection.execute<ResultSetHeader>(
         `INSERT INTO material_variants
-          (material_product_id,major_version,minor_version,variant_code,remark,created_by,updated_by)
+          (material_id,major_version,minor_version,variant_code,remark,created_by,updated_by)
          VALUES (?,?,?,?,?,?,?)`,
         [
-          command.materialProductId,
+          command.materialId,
           majorVersion,
           minorVersion,
           variantCode,
@@ -189,7 +185,7 @@ export class MysqlMaterialVariantRepository extends MaterialVariantRepository {
         String(result.insertId),
         null,
         {
-          materialProductId: command.materialProductId,
+          materialId: command.materialId,
           majorVersion,
           minorVersion,
           variantCode,
@@ -204,9 +200,9 @@ export class MysqlMaterialVariantRepository extends MaterialVariantRepository {
       throw new ProductDomainError('INVALID_INPUT', '物料版本状态不合法');
     await withTransaction(this.pool, async (connection) => {
       const [[before]] = await connection.query<VariantRow[]>(
-        `SELECT v.id,v.material_product_id,p.item_code material_code,p.product_name material_name,
+        `SELECT v.id,v.material_id,p.material_code,p.material_name,
                 v.major_version,v.minor_version,v.variant_code,v.status,v.remark,v.updated_at
-           FROM material_variants v JOIN products p ON p.id=v.material_product_id
+           FROM material_variants v JOIN materials p ON p.id=v.material_id
           WHERE v.id=? AND v.is_deleted=0 FOR UPDATE`,
         [id],
       );
@@ -235,12 +231,14 @@ export class MysqlMaterialVariantRepository extends MaterialVariantRepository {
       "c.item_kind='material'",
     ];
     const parameters: Array<string | number> = [];
-    if (query.materialProductId) {
-      conditions.push('v.material_product_id=?');
-      parameters.push(query.materialProductId);
+    if (query.materialId) {
+      conditions.push('v.material_id=?');
+      parameters.push(query.materialId);
     }
     if (query.keyword) {
-      conditions.push('(p.item_code LIKE ? OR p.product_name LIKE ? OR v.variant_code LIKE ?)');
+      conditions.push(
+        '(p.material_code LIKE ? OR p.material_name LIKE ? OR v.variant_code LIKE ?)',
+      );
       const keyword = `%${query.keyword}%`;
       parameters.push(keyword, keyword, keyword);
     }
@@ -254,7 +252,7 @@ export class MysqlMaterialVariantRepository extends MaterialVariantRepository {
   private map(row: VariantRow): MaterialVariantItem {
     return {
       id: String(row.id),
-      materialProductId: String(row.material_product_id),
+      materialId: String(row.material_id),
       materialCode: row.material_code,
       materialName: row.material_name,
       majorVersion: row.major_version,

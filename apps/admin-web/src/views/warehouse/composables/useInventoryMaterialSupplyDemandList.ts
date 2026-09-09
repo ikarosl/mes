@@ -3,7 +3,7 @@ import type { InventoryMaterialSupplyDemandItem } from '@company/contracts';
 import { productionApi } from '../../../api/production';
 import { EMessage } from '../../../utils/message';
 
-/** 库存页物料供需正式列表：按活动需求分页，较旧响应不得覆盖较新查询。 */
+/** 库存页精确版本列表：按有库存或活动需求的版本分页，较旧响应不得覆盖较新查询。 */
 export function useInventoryMaterialSupplyDemandList() {
   const items = ref<InventoryMaterialSupplyDemandItem[]>([]);
   const loading = ref(false);
@@ -27,7 +27,7 @@ export function useInventoryMaterialSupplyDemandList() {
       total.value = result.total;
     } catch (error) {
       if (token !== requestToken) return;
-      EMessage.error(error, '物料供需预警查询失败');
+      EMessage.error(error, '物料库存查询失败');
     } finally {
       if (token === requestToken) loading.value = false;
     }

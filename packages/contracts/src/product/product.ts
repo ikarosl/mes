@@ -11,6 +11,12 @@ export interface ProductListQuery extends PageQuery {
   status?: number;
 }
 
+export interface ProductGroupQuery extends PageQuery {
+  keyword?: string;
+  categoryId?: string;
+  status?: number;
+}
+
 export interface ProductCategoryQuery extends PageQuery {
   categoryCode?: string;
   categoryName?: string;
@@ -71,6 +77,16 @@ export interface ProductListItem {
   updatedAt: string | null;
 }
 
+export interface ProductGroupItem {
+  groupKey: string;
+  productName: string;
+  categoryId: string;
+  categoryCode: string;
+  categoryName: string;
+  codeCount: number;
+  codes: ProductListItem[];
+}
+
 export interface ProductPayload {
   /** 创建时必填；更新请求必须原样回传，服务端拒绝修改稳定编码。 */
   itemCode: string;
@@ -87,7 +103,6 @@ export interface ProductOption {
   id: string;
   itemCode: string;
   productName: string;
-  itemKind: ProductItemKind;
   acquireMethod: ProductAcquireMethod;
   unit: string;
   defaultRouteId: string | null;
@@ -95,7 +110,7 @@ export interface ProductOption {
 
 export interface ProductMaterialItem {
   id: string;
-  materialProductId: string;
+  materialId: string;
   itemCode: string;
   productName: string;
   itemKind: ProductItemKind;
@@ -108,7 +123,7 @@ export interface ProductMaterialItem {
 }
 
 export interface ProductMaterialPayload {
-  materialProductId: string;
+  materialId: string;
   quantityPerUnit: number;
   unit: string;
   isKeyMaterial: boolean;
@@ -118,18 +133,18 @@ export interface ProductMaterialPayload {
 }
 
 /**
- * Exact stock/demand identity below one stable base material. The base product
+ * Exact stock/demand identity below one stable base material. The base material
  * remains the only BOM identity; these rows are selected only at demand time.
  */
 export interface MaterialVariantListQuery extends PageQuery {
-  materialProductId?: string;
+  materialId?: string;
   keyword?: string;
   status?: number;
 }
 
 export interface MaterialVariantItem {
   id: string;
-  materialProductId: string;
+  materialId: string;
   materialCode: string;
   materialName: string;
   majorVersion: string;
@@ -141,8 +156,51 @@ export interface MaterialVariantItem {
 }
 
 export interface MaterialVariantPayload {
-  materialProductId: string;
+  materialId: string;
   majorVersion: string;
   minorVersion: string;
   remark?: string | null;
+}
+
+export interface MaterialListQuery extends PageQuery {
+  keyword?: string;
+  categoryId?: string;
+  acquireMethod?: ProductAcquireMethod;
+  status?: number;
+}
+
+export interface MaterialListItem {
+  id: string;
+  materialCode: string;
+  materialName: string;
+  categoryId: string;
+  categoryCode: string;
+  categoryName: string;
+  unit: string;
+  acquireMethod: ProductAcquireMethod;
+  specValues: ProductSpecValue[];
+  status: number;
+  variantCount: number;
+  variants: MaterialVariantItem[];
+  remark: string | null;
+  updatedAt: string | null;
+}
+
+export interface MaterialPayload {
+  materialCode: string;
+  materialName: string;
+  categoryId: string;
+  unit: string;
+  acquireMethod: ProductAcquireMethod;
+  specValues?: ProductSpecValue[];
+  status: number;
+  remark?: string | null;
+}
+
+export interface MaterialOption {
+  id: string;
+  materialCode: string;
+  materialName: string;
+  acquireMethod: ProductAcquireMethod;
+  unit: string;
 }

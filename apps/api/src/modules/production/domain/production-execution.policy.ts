@@ -30,41 +30,13 @@ export const requireFirstStepStartable = (
 
 export const requireFollowingStepStartable = (input: {
   batchStatus: ProductionBatchStatus;
-  previousNeedRecord: boolean;
-  previousStatus: BatchStepStatus;
   previousEffectiveNormal: number;
 }): void => {
   if (input.batchStatus !== 'doing')
     throw new ProductionDomainError('STEP_START_NOT_ALLOWED', '生产批次尚未进入执行中');
-  const released = input.previousNeedRecord
-    ? input.previousEffectiveNormal > 0
-    : input.previousStatus === 'completed';
-  if (!released)
+  if (input.previousEffectiveNormal <= 0)
     throw new ProductionDomainError(
       'STEP_START_NOT_ALLOWED',
       '上一道工序尚无可供下游执行的正常数量',
-    );
-};
-
-export const requireNonReportingStepCompletable = (input: {
-  batchStatus: ProductionBatchStatus;
-  needRecord: boolean;
-  status: BatchStepStatus;
-  previousStatus: BatchStepStatus | null;
-}): void => {
-  if (input.needRecord)
-    throw new ProductionDomainError(
-      'STEP_COMPLETION_NOT_ALLOWED',
-      '必须报工工序只能在有效正常数量达到要求时自动完成',
-    );
-  if (input.batchStatus !== 'doing' || input.status !== 'doing')
-    throw new ProductionDomainError(
-      'STEP_COMPLETION_NOT_ALLOWED',
-      '只有生产执行中且已开工的无需报工工序可以完成',
-    );
-  if (input.previousStatus !== null && input.previousStatus !== 'completed')
-    throw new ProductionDomainError(
-      'STEP_COMPLETION_NOT_ALLOWED',
-      '上一道工序尚未完成，当前工序不能确认完成',
     );
 };

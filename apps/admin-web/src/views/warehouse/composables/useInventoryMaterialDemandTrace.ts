@@ -6,7 +6,7 @@ import type {
 import { productionApi } from '../../../api/production';
 import { EMessage } from '../../../utils/message';
 
-/** 活动物料需求溯源：按物料分页，并避免较旧响应覆盖新打开的物料。 */
+/** 活动物料需求溯源：按精确版本分页，并避免较旧响应覆盖新打开的版本。 */
 export function useInventoryMaterialDemandTrace() {
   const visible = ref(false);
   const loading = ref(false);
@@ -24,7 +24,11 @@ export function useInventoryMaterialDemandTrace() {
     try {
       const result = await productionApi.listInventoryMaterialDemandTrace(
         selectedItem.value.itemId,
-        { page: currentPage.value, pageSize: pageSize.value },
+        {
+          materialVariantId: selectedItem.value.materialVariantId,
+          page: currentPage.value,
+          pageSize: pageSize.value,
+        },
       );
       if (token !== requestToken) return;
       items.value = result.items;

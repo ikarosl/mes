@@ -11,9 +11,9 @@ import type { NormalDemandVariantSplit } from '../../domain/production-material-
  * The repository transaction locks the production batch and current BOM, creates
  * one immutable basis per confirmed BOM line, and creates exact-variant demand
  * facts. A basis without its complete normal split must never be committed.
- * Configuration is intentionally row-by-row: an already confirmed BOM line is
- * immutable, while the batch remains `pending` until every BOM line is confirmed.
- * Stock quantities shown during selection are advisory and never auto-select a row.
+ * Configuration must contain the complete frozen BOM and is committed atomically.
+ * Inventory is outside this management projection and is not queried during
+ * demand configuration.
  */
 export interface ConfigureMaterialRequirementCommand {
   productMaterialId: string;
@@ -21,9 +21,8 @@ export interface ConfigureMaterialRequirementCommand {
 }
 
 export interface AddManualMaterialDemandCommand {
-  parentDemandId: string;
-  materialVariantId: string;
-  quantity: number;
+  productionBatchId: string;
+  requirements: ConfigureMaterialRequirementCommand[];
   reason: string;
 }
 
@@ -39,5 +38,5 @@ export abstract class ProductionMaterialDemandConfigurationRepository {
   abstract addManualDemand(
     command: AddManualMaterialDemandCommand,
     context: CommandContext,
-  ): Promise<{ demandId: string }>;
+  ): Promise<{ additionId: string; additionNo: string; demandIds: string[] }>;
 }

@@ -37,7 +37,7 @@
           <el-button
             v-if="completionCheck?.batchStatus === 'doing'"
             type="primary"
-            :disabled="!completionCheck.canComplete"
+            :disabled="detailLoading || !completionCheck.canComplete"
             :loading="completionPending"
             @click="completionVisible = true"
             >生产执行完工</el-button
@@ -153,7 +153,7 @@
                 <strong>生产执行完工检查</strong>
                 <p>
                   {{ completionCheck.completedRequiredStepCount }} /
-                  {{ completionCheck.requiredStepCount }} 道必报工工序已完成；末道必报工工序
+                  {{ completionCheck.requiredStepCount }} 道工序已完成；末道工序
                   {{ completionCheck.finalRequiredStepName || '—' }} 有效正常数量
                   {{ formatQuantity(completionCheck.finalEffectiveNormalQuantity) }} /
                   {{ formatQuantity(completionCheck.plannedQuantity) }}。
@@ -505,7 +505,7 @@
         type="warning"
         :closable="false"
         show-icon
-        title="确认后，服务端将以末道必报工工序的有效正常数量作为批次完成数量，并记录完工人和完工时间。"
+        title="确认后，服务端将以末道工序的有效正常数量作为批次完成数量，并记录完工人和完工时间。"
       />
       <el-descriptions
         v-if="record && completionCheck"
@@ -528,7 +528,7 @@
         <el-button
           type="primary"
           :loading="completionPending"
-          :disabled="!completionCheck?.canComplete"
+          :disabled="detailLoading || !completionCheck?.canComplete"
           @click="submitCompletion"
           >确认生产执行完工</el-button
         >
@@ -538,7 +538,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onActivated, onMounted, reactive, ref } from 'vue';
+import { computed, onActivated, onMounted, reactive, ref, watch } from 'vue';
 import { Refresh } from '@element-plus/icons-vue';
 import {
   BATCH_STEP_REPORT_TYPE_LABELS,
@@ -609,6 +609,14 @@ const {
   getSupplementIntentStatus,
   resetSupplementIntent,
 } = useProductionExecutionRecords();
+watch(
+  selectedBatchId,
+  () => {
+    completionVisible.value = false;
+    changeVisible.value = false;
+  },
+  { flush: 'sync' },
+);
 const {
   handleApproveRework,
   handleRejectDisposition,

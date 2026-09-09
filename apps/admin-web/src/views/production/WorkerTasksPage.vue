@@ -164,7 +164,7 @@
               >{{ row.startBlockedReason }}</span
             >
             <el-button
-              v-if="row.status === 'doing' && row.needRecord"
+              v-if="row.status === 'doing'"
               type="success"
               :loading="reportPendingIds.has(row.stepRecordId)"
               :disabled="Number(row.availableNormalQuantity) <= 0"
@@ -172,7 +172,7 @@
               >正常报工</el-button
             >
             <el-button
-              v-if="row.status === 'doing' && row.needRecord"
+              v-if="row.status === 'doing'"
               type="danger"
               plain
               :loading="reportPendingIds.has(row.stepRecordId)"
@@ -180,21 +180,8 @@
               @click="openReport(row, 'abnormal')"
               >异常报工</el-button
             >
-            <el-button
-              v-else-if="row.status === 'doing'"
-              type="success"
-              :loading="completePendingIds.has(row.stepRecordId)"
-              :disabled="!row.canComplete"
-              @click="completeTask(row)"
-              >完成工序</el-button
-            >
             <span
-              v-if="row.status === 'doing' && !row.needRecord && !row.canComplete"
-              class="blocked-reason"
-              >{{ row.completeBlockedReason }}</span
-            >
-            <span
-              v-if="row.status === 'doing' && row.needRecord && row.supplementBlockedReason"
+              v-if="row.status === 'doing' && row.supplementBlockedReason"
               class="blocked-reason"
               >{{ row.supplementBlockedReason }}</span
             >
@@ -243,11 +230,9 @@ const {
   loading,
   startPendingIds,
   reportPendingIds,
-  completePendingIds,
   load,
   start,
   report,
-  complete,
   getReportIntentStatus,
   resetReportIntent,
 } = useWorkerTasks();
@@ -309,24 +294,6 @@ const downloadSop = async (task: ProductionWorkerTaskItem): Promise<void> => {
     const next = new Set(sopPendingIds.value);
     next.delete(task.stepRecordId);
     sopPendingIds.value = next;
-  }
-};
-const completeTask = async (task: ProductionWorkerTaskItem): Promise<void> => {
-  try {
-    await complete(task);
-    EMessage.success('无需报工工序已完成，完成时间已由系统记录');
-  } catch (error) {
-    const code =
-      typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : '';
-    const fallback =
-      code === 'NOT_STEP_ASSIGNEE'
-        ? '该工序已改派，请刷新本人任务'
-        : code === 'STEP_COMPLETION_NOT_ALLOWED'
-          ? '工序完成条件尚未满足，请刷新后查看前置工序状态'
-          : code === 'CONCURRENT_MODIFICATION'
-            ? '工序状态已变化，请刷新后重试'
-            : '工序完成失败';
-    EMessage.error(error, fallback);
   }
 };
 const submitReport = async (payload: {

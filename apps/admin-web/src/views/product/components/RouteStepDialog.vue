@@ -69,13 +69,6 @@
         <template #default="{ row }">{{ getProcessSop(row.processStepId) || '-' }}</template>
       </el-table-column>
       <el-table-column
-        label="需报工"
-        width="90"
-        align="center"
-      >
-        <template #default="{ row }"><el-switch v-model="row.needRecord" /></template>
-      </el-table-column>
-      <el-table-column
         label="需检验"
         width="90"
         align="center"
@@ -169,7 +162,6 @@ export type StepRow = {
   defaultOwnerId: string;
   sopFileId: string;
   needInspection: boolean;
-  needRecord: boolean;
   status: number;
   remark: string;
 };
@@ -223,7 +215,6 @@ watch(
         defaultOwnerId: step.defaultOwnerId ?? '',
         sopFileId: step.sopFileId ?? '',
         needInspection: step.needInspection,
-        needRecord: step.needRecord,
         status: step.status,
         remark: step.remark ?? '',
       })),
@@ -243,7 +234,6 @@ const addStep = (): void => {
     defaultOwnerId: '',
     sopFileId: '',
     needInspection: false,
-    needRecord: true,
     status: 1,
     remark: '',
   });

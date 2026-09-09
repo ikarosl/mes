@@ -14,6 +14,8 @@ import type {
   ProductCategoryOption,
   ProductCategoryPayload,
   ProductCategoryQuery,
+  ProductGroupItem,
+  ProductGroupQuery,
   ProductListItem,
   ProductListQuery,
   ProductMaterialItem,
@@ -21,6 +23,10 @@ import type {
   MaterialVariantItem,
   MaterialVariantListQuery,
   MaterialVariantPayload,
+  MaterialListItem,
+  MaterialListQuery,
+  MaterialOption,
+  MaterialPayload,
   ProductOption,
   PageResult,
   ProductPayload,
@@ -77,6 +83,8 @@ export const productApi = {
 
   products: (params: ProductListQuery) =>
     request<PageResult<ProductListItem>>({ url: `${base}/products`, params }),
+  productGroups: (params: ProductGroupQuery) =>
+    request<PageResult<ProductGroupItem>>({ url: `${base}/product-groups`, params }),
   productOptions: () =>
     request<ProductOption[]>({ url: `${base}/products/options`, skipErrorHandling: true }),
   createProduct: (data: ProductPayload) =>
@@ -95,9 +103,9 @@ export const productApi = {
     request<void>({ url: `${base}/products/${id}/status`, method: 'PATCH', data: { status } }),
   materialVariants: (params: MaterialVariantListQuery) =>
     request<PageResult<MaterialVariantItem>>({ url: `${base}/material-variants`, params }),
-  materialVariantsByMaterial: (materialProductId: string) =>
+  materialVariantsByMaterial: (materialId: string) =>
     request<MaterialVariantItem[]>({
-      url: `${base}/material-variants/by-material/${materialProductId}`,
+      url: `${base}/material-variants/by-material/${materialId}`,
       skipErrorHandling: true,
     }),
   createMaterialVariant: (data: MaterialVariantPayload) =>
@@ -112,7 +120,17 @@ export const productApi = {
       method: 'PATCH',
       data: { status },
     }),
-  materials: (id: string) =>
+  materialList: (params: MaterialListQuery) =>
+    request<PageResult<MaterialListItem>>({ url: `${base}/materials`, params }),
+  materialOptions: () =>
+    request<MaterialOption[]>({ url: `${base}/materials/options`, skipErrorHandling: true }),
+  createMaterial: (data: MaterialPayload) =>
+    request<{ id: string }>({ url: `${base}/materials`, method: 'POST', data }),
+  updateMaterial: (id: string, data: MaterialPayload) =>
+    request<void>({ url: `${base}/materials/${id}`, method: 'PATCH', data }),
+  setMaterialStatus: (id: string, status: number) =>
+    request<void>({ url: `${base}/materials/${id}/status`, method: 'PATCH', data: { status } }),
+  productMaterials: (id: string) =>
     request<ProductMaterialItem[]>({ url: `${base}/products/${id}/materials` }),
   replaceMaterials: (id: string, items: ProductMaterialPayload[]) =>
     request<void>({ url: `${base}/products/${id}/materials`, method: 'PUT', data: { items } }),

@@ -1,20 +1,21 @@
 import { Injectable } from '@nestjs/common';
-import bcrypt from 'bcryptjs';
-import { jwtVerify, SignJWT } from 'jose';
-import { randomUUID } from 'node:crypto';
-import type { JwtClaims, LoginRequest, TokenResponse, UserProfile } from '@company/contracts';
+import type { LoginRequest, TokenResponse, UserProfile } from '@company/contracts';
 import { toBeijingISOString } from '../../../common/time/date-time.js';
-import { loadAppConfig } from '../../../config/env.js';
 import { AuthenticationError } from '../domain/auth.errors.js';
 import { AuthRepository } from './ports/auth.repository.js';
+import { PasswordHasher } from './ports/password-hasher.js';
+import { TokenService } from './ports/token.service.js';
 
 @Injectable()
 export class AuthService {
-  private readonly config = loadAppConfig();
-  constructor(private readonly repository: AuthRepository) {}
+  constructor(
+    private readonly repository: AuthRepository,
+    private readonly passwords: PasswordHasher,
+    private readonly tokens: TokenService,
+  ) {}
   async login(payload: LoginRequest) {
     const user = await this.repository.findCredentials(payload.username);
-    if (!user || !(await bcrypt.compare(payload.password, user.passwordHash)))
+    if (!user || !(await this.passwords.verify(payload.password, user.passwordHash)))
       throw new AuthenticationError('INVALID_CREDENTIALS', '用户名或密码错误');
     const profile = await this.requireProfile(user.id);
     await this.repository.touchLastLogin(user.id);
@@ -23,26 +24,30 @@ export class AuthService {
     return { response: pair.response, refreshToken: pair.refreshToken };
   }
   async refresh(token: string) {
-    const claims = await this.verify(token, 'refresh');
-    if (!claims.jti) throw new AuthenticationError('REFRESH_TOKEN_INVALID', '刷新令牌无效');
-    const profile = await this.requireProfile(claims.sub);
+    const identity = await this.tokens.verify(token, 'refresh');
+    if (!identity.tokenId) throw new AuthenticationError('REFRESH_TOKEN_INVALID', '刷新令牌无效');
+    const profile = await this.requireProfile(identity.userId);
     const pair = await this.issue(profile);
-    const rotated = await this.repository.rotateRefreshToken(claims.jti, claims.sub, pair.record);
+    const rotated = await this.repository.rotateRefreshToken(
+      identity.tokenId,
+      identity.userId,
+      pair.record,
+    );
     if (!rotated) throw new AuthenticationError('REFRESH_TOKEN_EXPIRED', '刷新令牌已失效');
     return { response: pair.response, refreshToken: pair.refreshToken };
   }
   async logout(token: string | null) {
     if (!token) return;
     try {
-      const claims = await this.verify(token, 'refresh');
-      if (claims.jti) await this.repository.revokeRefreshToken(claims.jti);
+      const identity = await this.tokens.verify(token, 'refresh');
+      if (identity.tokenId) await this.repository.revokeRefreshToken(identity.tokenId);
     } catch {
       return;
     }
   }
   async authenticate(token: string) {
-    const claims = await this.verify(token, 'access');
-    return this.requireProfile(claims.sub);
+    const identity = await this.tokens.verify(token, 'access');
+    return this.requireProfile(identity.userId);
   }
   private async requireProfile(userId: string) {
     const profile = await this.repository.findProfile(userId);
@@ -50,46 +55,16 @@ export class AuthService {
     return profile;
   }
   private async issue(profile: UserProfile) {
-    const now = Math.floor(Date.now() / 1000);
-    const jti = randomUUID();
-    const accessExpiresAt = now + this.config.accessTokenTtlSeconds;
-    const refreshExpiresAt = now + this.config.refreshTokenTtlSeconds;
-    const accessToken = await this.sign(profile, 'access', accessExpiresAt);
-    const refreshToken = await this.sign(profile, 'refresh', refreshExpiresAt, jti);
+    const pair = await this.tokens.issue(profile);
     return {
-      refreshToken,
-      record: { userId: profile.id, jti, expiresAt: new Date(refreshExpiresAt * 1000) },
+      refreshToken: pair.refreshToken,
+      record: { userId: profile.id, jti: pair.refreshTokenId, expiresAt: pair.refreshExpiresAt },
       response: {
         user: profile,
-        accessToken,
-        accessTokenExpiresAt: toBeijingISOString(accessExpiresAt * 1000),
-        refreshTokenExpiresAt: toBeijingISOString(refreshExpiresAt * 1000),
+        accessToken: pair.accessToken,
+        accessTokenExpiresAt: toBeijingISOString(pair.accessExpiresAt),
+        refreshTokenExpiresAt: toBeijingISOString(pair.refreshExpiresAt),
       } satisfies TokenResponse,
     };
-  }
-  private sign(profile: UserProfile, kind: 'access' | 'refresh', exp: number, jti?: string) {
-    let jwt = new SignJWT({ username: profile.username, kind })
-      .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
-      .setSubject(profile.id)
-      .setIssuer(this.config.jwtIssuer)
-      .setAudience(this.config.jwtAudience)
-      .setIssuedAt()
-      .setExpirationTime(exp);
-    if (jti) jwt = jwt.setJti(jti);
-    return jwt.sign(this.config.jwtSecret);
-  }
-  private async verify(token: string, kind: 'access' | 'refresh') {
-    try {
-      const { payload } = await jwtVerify(token, this.config.jwtSecret, {
-        algorithms: ['HS256'],
-        issuer: this.config.jwtIssuer,
-        audience: this.config.jwtAudience,
-      });
-      const claims = payload as unknown as JwtClaims;
-      if (claims.kind !== kind || !claims.sub) throw new Error('kind');
-      return claims;
-    } catch {
-      throw new AuthenticationError('TOKEN_INVALID', '令牌已过期或无效');
-    }
   }
 }

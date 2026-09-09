@@ -3,6 +3,7 @@ import type { WorkOrderStatus } from './statuses.js';
 import type { ProductionBatchItem } from './batch.js';
 
 export type WorkOrderCloseType = 'unproduced' | 'underproduced' | 'completed_archive';
+export type WorkOrderType = 'mass_production' | 'research';
 
 export interface WorkOrderQuery extends PageQuery {
   keyword?: string;
@@ -13,6 +14,7 @@ export interface WorkOrderQuery extends PageQuery {
 export interface WorkOrderOption {
   id: string;
   workOrderNo: string;
+  orderType: WorkOrderType;
   productId: string;
   productCode: string;
   productName: string;
@@ -25,6 +27,7 @@ export interface WorkOrderOption {
 export interface WorkOrderItem {
   id: string;
   workOrderNo: string;
+  orderType: WorkOrderType;
   productId: string;
   productCode: string;
   productName: string;
@@ -60,6 +63,7 @@ export interface WorkOrderDetail extends WorkOrderItem {
 
 export interface CreateWorkOrderPayload {
   workOrderNo: string;
+  orderType: WorkOrderType;
   productId: string;
   plannedQuantity: number;
   customerName?: string | null;
@@ -72,6 +76,7 @@ export interface CreateWorkOrderPayload {
 }
 
 export interface UpdateWorkOrderPayload extends VersionedCommand {
+  orderType?: WorkOrderType;
   productId?: string;
   plannedQuantity?: number;
   customerName?: string | null;

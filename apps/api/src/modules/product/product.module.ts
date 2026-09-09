@@ -27,6 +27,8 @@ import { MysqlProcessStepRepository } from './infrastructure/mysql-process-step.
 import { MysqlProductCatalogRepository } from './infrastructure/mysql-product-catalog.repository.js';
 import { MysqlProductCategoryRepository } from './infrastructure/mysql-product-category.repository.js';
 import { MysqlMaterialVariantRepository } from './infrastructure/mysql-material-variant.repository.js';
+import { MaterialRepository } from './application/ports/material.repository.js';
+import { MysqlMaterialRepository } from './infrastructure/mysql-material.repository.js';
 import { MysqlTechnicalFileRepository } from './infrastructure/mysql-technical-file.repository.js';
 import { MysqlProductSnapshotRepository } from './infrastructure/mysql-product-snapshot.repository.js';
 import { S3TechnicalFileStorage } from './infrastructure/s3-technical-file.storage.js';
@@ -45,6 +47,7 @@ import { ProductController } from './presentation/http/product.controller.js';
     MysqlProductCatalogRepository,
     MysqlProductCategoryRepository,
     MysqlMaterialVariantRepository,
+    MysqlMaterialRepository,
     MysqlProcessStepRepository,
     MysqlProcessRouteRepository,
     MysqlProcessRouteStepRepository,
@@ -53,6 +56,7 @@ import { ProductController } from './presentation/http/product.controller.js';
     { provide: ProductCategoryRepository, useExisting: MysqlProductCategoryRepository },
     { provide: MaterialVariantRepository, useExisting: MysqlMaterialVariantRepository },
     { provide: MaterialVariantQuery, useExisting: MysqlMaterialVariantRepository },
+    { provide: MaterialRepository, useExisting: MysqlMaterialRepository },
     { provide: ProcessStepRepository, useExisting: MysqlProcessStepRepository },
     { provide: ProcessRouteRepository, useExisting: MysqlProcessRouteRepository },
     { provide: ProcessRouteStepRepository, useExisting: MysqlProcessRouteStepRepository },

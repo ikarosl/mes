@@ -1,3 +1,4 @@
+import { currentMaterialNameSql } from './queries/material-name.sql.js';
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import { withTransaction } from '@company/database';
@@ -46,7 +47,7 @@ type DetailRow = RowDataPacket & {
   material_variant_id: number;
   batch_id: number;
   item_code_snapshot: string;
-  product_name_snapshot: string;
+  item_name: string;
   material_variant_code_snapshot: string;
   batch_code: string;
   inbound_number: string;
@@ -59,7 +60,7 @@ type InventoryRow = RowDataPacket & {
   item_id: number;
   material_variant_id: number;
   item_code_snapshot: string;
-  product_name_snapshot: string;
+  item_name: string;
   material_variant_code_snapshot: string;
   unit_snapshot: string;
   batch_code: string;
@@ -174,13 +175,12 @@ export class MysqlProductionInboundRepository extends ProductionInboundRepositor
         const snapshot = byId.get(`${line.itemId}:${line.materialVariantId}`);
         if (!snapshot) throw new ProductionDomainError('NOT_FOUND', '入库物料不存在');
         await db.execute(
-          "INSERT INTO item_batch(item_id,material_variant_id,item_code_snapshot,material_variant_code_snapshot,product_name_snapshot,unit_snapshot,batch_code,source_type,provider,batch_status,remark,created_by,updated_by) VALUES(?,?,?,?,?,?,?,'purchased',?,'available',?,?,?) ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id)",
+          "INSERT INTO item_batch(item_id,material_variant_id,item_code_snapshot,material_variant_code_snapshot,unit_snapshot,batch_code,source_type,provider,batch_status,remark,created_by,updated_by) VALUES(?,?,?,?,?,?,'purchased',?,'available',?,?,?) ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id)",
           [
             line.itemId,
             line.materialVariantId,
             snapshot.itemCode,
             snapshot.materialVariantCode,
-            snapshot.productName,
             snapshot.unit,
             line.batchCode,
             payload.provider ?? null,
@@ -194,14 +194,13 @@ export class MysqlProductionInboundRepository extends ProductionInboundRepositor
           [line.itemId, line.materialVariantId, line.batchCode],
         );
         await db.execute(
-          "INSERT INTO inbound_detail(inbound_id,item_id,material_variant_id,batch_id,item_code_snapshot,product_name_snapshot,inbound_number,unit_snapshot,stock_status,remark,created_by) VALUES(?,?,?,?,?,?,? ,?,'available',?,?)",
+          "INSERT INTO inbound_detail(inbound_id,item_id,material_variant_id,batch_id,item_code_snapshot,inbound_number,unit_snapshot,stock_status,remark,created_by) VALUES(?,?,?,?,?,?,?,'available',?,?)",
           [
             inboundId,
             line.itemId,
             line.materialVariantId,
             batch!.id,
             snapshot.itemCode,
-            snapshot.productName,
             line.inboundQuantity,
             snapshot.unit,
             line.remark ?? null,
@@ -298,7 +297,9 @@ export class MysqlProductionInboundRepository extends ProductionInboundRepositor
     ];
     const params: Array<string | number | null> = [];
     if (query.keyword) {
-      where.push('(ib.item_code_snapshot LIKE ? OR ib.product_name_snapshot LIKE ?)');
+      where.push(
+        `(ib.item_code_snapshot LIKE ? OR ${currentMaterialNameSql('ib.item_id')} LIKE ?)`,
+      );
       params.push(`%${query.keyword}%`, `%${query.keyword}%`);
     }
     if (query.batchCode) {
@@ -343,7 +344,13 @@ export class MysqlProductionInboundRepository extends ProductionInboundRepositor
   }
   private async loadDetails(db: Pool | PoolConnection, id: string, lock = false) {
     const [rows] = await db.query<DetailRow[]>(
-      `SELECT d.*,ib.batch_code,it.id inventory_transaction_id FROM inbound_detail d JOIN item_batch ib ON ib.id=d.batch_id LEFT JOIN inventory_transaction it ON it.reference_type='inbound_detail' AND it.reference_detail_id=d.id AND it.transaction_type='purchase_inbound' WHERE d.inbound_id=? ORDER BY d.id${lock ? ' FOR UPDATE' : ''}`,
+      `SELECT d.*,${currentMaterialNameSql('d.item_id')} item_name,ib.batch_code,ib.material_variant_code_snapshot,
+       it.id inventory_transaction_id
+       FROM inbound_detail d
+       JOIN item_batch ib ON ib.id=d.batch_id
+       LEFT JOIN inventory_transaction it ON it.reference_type='inbound_detail'
+         AND it.reference_detail_id=d.id AND it.transaction_type='purchase_inbound'
+       WHERE d.inbound_id=? ORDER BY d.id${lock ? ' FOR UPDATE' : ''}`,
       [id],
     );
     return rows;
@@ -352,7 +359,8 @@ export class MysqlProductionInboundRepository extends ProductionInboundRepositor
     const grouped = new Map<string, DetailRow[]>();
     if (ids.length === 0) return grouped;
     const [rows] = await db.query<DetailRow[]>(
-      `SELECT d.*,ib.batch_code,it.id inventory_transaction_id
+      `SELECT d.*,${currentMaterialNameSql('d.item_id')} item_name,ib.batch_code,ib.material_variant_code_snapshot,
+       it.id inventory_transaction_id
        FROM inbound_detail d
        JOIN item_batch ib ON ib.id=d.batch_id
        LEFT JOIN inventory_transaction it ON it.reference_type='inbound_detail'
@@ -415,7 +423,7 @@ export class MysqlProductionInboundRepository extends ProductionInboundRepositor
         materialVariantId: String(x.material_variant_id),
         materialVariantCode: x.material_variant_code_snapshot,
         itemCode: x.item_code_snapshot,
-        itemName: x.product_name_snapshot,
+        itemName: x.item_name,
         itemBatchId: String(x.batch_id),
         batchCode: x.batch_code,
         inboundQuantity: x.inbound_number,
@@ -465,7 +473,7 @@ export class MysqlProductionInboundRepository extends ProductionInboundRepositor
     if (ids.length === 0) return [];
     const placeholders = ids.map(() => '?').join(',');
     const [rows] = await db.query<InventoryRow[]>(
-      `SELECT ib.*,COALESCE(MAX(balance.current_quantity),0) on_hand,
+      `SELECT ib.*,${currentMaterialNameSql('ib.item_id')} item_name,COALESCE(MAX(balance.current_quantity),0) on_hand,
        COALESCE((SELECT SUM(GREATEST(a.assigned_number-COALESCE((SELECT SUM(od.outbound_number) FROM outbound_detail od JOIN outbound_order oo ON oo.id=od.outbound_id WHERE od.allocation_id=a.id AND oo.status='completed'),0),0)) FROM production_item_allocation a WHERE a.batch_id=ib.id AND a.item_id=ib.item_id AND a.material_variant_id=ib.material_variant_id AND a.allocation_status NOT IN ('released','cancelled')),0) reserved
        FROM item_batch ib LEFT JOIN inventory_batch_balance balance
          ON balance.batch_id=ib.id AND balance.stock_status='available'
@@ -496,7 +504,7 @@ export class MysqlProductionInboundRepository extends ProductionInboundRepositor
       materialVariantId: String(row.material_variant_id),
       materialVariantCode: row.material_variant_code_snapshot,
       itemCode: row.item_code_snapshot,
-      itemName: row.product_name_snapshot,
+      itemName: row.item_name,
       unit: row.unit_snapshot,
       batchCode: row.batch_code,
       sourceType: row.source_type,

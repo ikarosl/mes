@@ -95,7 +95,7 @@ catalogs:
       version: 3.25.76
 
 overrides:
-  multer: '>=2.2.0'
+  multer: 2.3.0
   nanoid: https://github.com/ai/nanoid/archive/refs/tags/3.3.18.tar.gz
 
 importers:
@@ -2416,8 +2416,8 @@ packages:
   muggle-string@0.4.1:
     resolution: {integrity: sha512-VNTrAak/KhO2i8dqqnqnAHOa3cYBwXEZe9h+D5h/1ZqFSTEFHdM65lR7RoIqq3tBBYavsOXV84NoHXZ0AkPyqQ==}
 
-  multer@2.2.0:
-    resolution: {integrity: sha512-6rdyFg2kLrMh9Jee7/BMPuV9lEAd7lLW2YUpF9/YxR7njyoUwwQ0ZPh3TaIY50Sw6vlyD2HW3wGOkTS4P79xrQ==}
+  multer@2.3.0:
+    resolution: {integrity: sha512-cjNbm3sttszgZeGfJR124D+jFEfkXCVAsoPBmFn9X7UxmDSFHWqE2CoEj0vrmSpuAFnqWR1Szcm9QTsiHr60Xw==}
     engines: {node: '>= 10.16.0'}
 
   mysql2@3.23.1:
@@ -3574,7 +3574,7 @@ snapshots:
       body-parser: 1.20.4
       cors: 2.8.5
       express: 4.22.1
-      multer: 2.2.0
+      multer: 2.3.0
       tslib: 2.8.1
     transitivePeerDependencies:
       - supports-color
@@ -5062,7 +5062,7 @@ snapshots:
 
   muggle-string@0.4.1: {}
 
-  multer@2.2.0:
+  multer@2.3.0:
     dependencies:
       append-field: 1.0.0
       busboy: 1.6.0

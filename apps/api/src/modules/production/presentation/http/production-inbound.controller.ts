@@ -116,6 +116,7 @@ export class ProductionInboundController {
     @Query() q: InventoryMaterialDemandTraceQueryDto,
   ) {
     return this.supplyDemand.listDemandTrace(p.itemId, {
+      materialVariantId: q.materialVariantId,
       page: q.page,
       pageSize: q.pageSize,
     });

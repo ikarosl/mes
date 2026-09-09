@@ -1,3 +1,4 @@
+import { currentMaterialNameSql } from './queries/material-name.sql.js';
 import type { RowDataPacket } from 'mysql2/promise';
 import type {
   AvailableItemBatchItem,
@@ -17,7 +18,7 @@ export type DemandRow = RowDataPacket & {
   item_id: number;
   material_variant_id: number;
   item_code_snapshot: string;
-  item_name_snapshot: string;
+  item_name: string;
   material_variant_code_snapshot: string;
   unit_snapshot: string;
   need_number: string;
@@ -26,6 +27,7 @@ export type DemandRow = RowDataPacket & {
   generation_group_key: string;
   supplement_id: number | null;
   supplement_no: string | null;
+  generation_reason: string | null;
   business_status: ProductionMaterialDemandItem['businessStatus'];
   fulfilled_by: number | null;
   fulfilled_at: Date | null;
@@ -62,7 +64,7 @@ export type AvailableRow = RowDataPacket & {
   item_id: number;
   material_variant_id: number;
   item_code_snapshot: string;
-  product_name_snapshot: string;
+  item_name: string;
   material_variant_code_snapshot: string;
   batch_code: string;
   unit_snapshot: string;
@@ -108,7 +110,7 @@ export type OutboundDetailRow = RowDataPacket & {
   batch_code: string;
   material_variant_code_snapshot: string;
   item_code_snapshot: string;
-  product_name_snapshot: string;
+  item_name: string;
   generation_group_key: string;
   generation_group_type: ProductionMaterialDemandItem['generationGroupType'];
   supplement_no: string | null;
@@ -117,20 +119,18 @@ export type OutboundDetailRow = RowDataPacket & {
   inventory_transaction_id: number | null;
 };
 
-export const DEMAND_SELECT = `SELECT d.id,d.production_batch_id,d.requirement_basis_id,d.product_material_id,d.item_id,d.material_variant_id,d.item_code_snapshot,d.item_name_snapshot,d.material_variant_code_snapshot,d.unit_snapshot,d.need_number,d.remaining_number,d.demand_type,d.generation_group_key,d.supplement_id,s.supplement_no,d.business_status,d.fulfilled_by,d.fulfilled_at,d.version,d.created_at,
-  COALESCE((SELECT SUM(GREATEST(a.assigned_number-COALESCE((
-    SELECT SUM(rd.return_number) FROM return_detail rd JOIN return_order ro ON ro.id=rd.return_id
-    WHERE rd.allocation_id=a.id AND ro.status='returned' AND rd.release_after_return=1
-  ),0),0)) FROM production_item_allocation a WHERE a.demand_id=d.id AND a.allocation_status NOT IN ('released','cancelled')),0) allocated_quantity,
-  GREATEST(COALESCE((SELECT SUM(od.outbound_number) FROM outbound_detail od JOIN outbound_order oo ON oo.id=od.outbound_id WHERE od.demand_id=d.id AND oo.status='completed'),0)-COALESCE((SELECT SUM(rd.return_number) FROM return_detail rd JOIN return_order ro ON ro.id=rd.return_id WHERE rd.demand_id=d.id AND ro.status='returned' AND rd.release_after_return=1),0),0) outbound_quantity
+export const DEMAND_SELECT = `SELECT d.id,d.production_batch_id,d.requirement_basis_id,d.product_material_id,d.item_id,d.material_variant_id,d.item_code_snapshot,${currentMaterialNameSql('d.item_id')} item_name,d.material_variant_code_snapshot,d.unit_snapshot,d.need_number,d.remaining_number,d.demand_type,d.generation_group_key,d.supplement_id,COALESCE(s.supplement_no,mda.addition_no) supplement_no,mda.reason generation_reason,d.business_status,d.fulfilled_by,d.fulfilled_at,d.version,d.created_at,
+  COALESCE((SELECT SUM(a.assigned_number) FROM production_item_allocation a WHERE a.demand_id=d.id AND a.allocation_status NOT IN ('released','cancelled')),0) allocated_quantity,
+  COALESCE((SELECT SUM(od.outbound_number) FROM outbound_detail od JOIN outbound_order oo ON oo.id=od.outbound_id WHERE od.demand_id=d.id AND oo.status='completed'),0) outbound_quantity
   FROM production_item_demand d
-  LEFT JOIN production_material_supplement s ON s.id=d.supplement_id`;
+  LEFT JOIN production_material_supplement s ON s.id=d.supplement_id
+  LEFT JOIN production_manual_demand_addition mda ON mda.id=d.manual_addition_id`;
 
-export const ALLOCATION_SELECT = `SELECT a.id,a.demand_id,a.production_batch_id,a.item_id,a.material_variant_id,a.batch_id,ib.batch_code,ib.material_variant_code_snapshot,d.demand_type,d.generation_group_key,s.supplement_no,
+export const ALLOCATION_SELECT = `SELECT a.id,a.demand_id,a.production_batch_id,a.item_id,a.material_variant_id,a.batch_id,a.assigned_number,ib.batch_code,ib.material_variant_code_snapshot,d.demand_type,d.generation_group_key,COALESCE(s.supplement_no,mda.addition_no) supplement_no,
   COALESCE((SELECT SUM(od.outbound_number) FROM outbound_detail od JOIN outbound_order oo ON oo.id=od.outbound_id WHERE od.allocation_id=a.id AND oo.status='completed'),0) outbound_quantity,
   COALESCE((SELECT SUM(od.outbound_number) FROM outbound_detail od JOIN outbound_order oo ON oo.id=od.outbound_id WHERE od.allocation_id=a.id AND oo.status IN ('pending_picking','picked','partially_outbound')),0) pending_outbound_quantity,
   a.unit_snapshot,a.allocation_status,a.version,a.remark,a.created_at
-  FROM production_item_allocation a JOIN item_batch ib ON ib.id=a.batch_id JOIN production_item_demand d ON d.id=a.demand_id LEFT JOIN production_material_supplement s ON s.id=d.supplement_id`;
+  FROM production_item_allocation a JOIN item_batch ib ON ib.id=a.batch_id JOIN production_item_demand d ON d.id=a.demand_id LEFT JOIN production_material_supplement s ON s.id=d.supplement_id LEFT JOIN production_manual_demand_addition mda ON mda.id=d.manual_addition_id`;
 
 export const mapAllocation = (row: AllocationRow): ProductionMaterialAllocationItem => ({
   allocationId: String(row.id),
@@ -176,7 +176,7 @@ export const mapDemand = (
     materialVariantId: String(row.material_variant_id),
     materialVariantCode: row.material_variant_code_snapshot,
     itemCode: row.item_code_snapshot,
-    itemName: row.item_name_snapshot,
+    itemName: row.item_name,
     unit: row.unit_snapshot,
     demandQuantity: row.need_number,
     remainingDemandQuantity: row.remaining_number,
@@ -190,6 +190,7 @@ export const mapDemand = (
     generationGroupType: row.demand_type,
     supplementId: row.supplement_id === null ? null : String(row.supplement_id),
     supplementNo: row.supplement_no,
+    generationReason: row.generation_reason,
     createdAt: toBeijingISOString(row.created_at),
     businessStatus: row.business_status,
     fulfilledById: row.fulfilled_by === null ? null : String(row.fulfilled_by),

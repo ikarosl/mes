@@ -53,7 +53,7 @@ describe('ProductionInboundService', () => {
       listEnabledByMaterials: vi.fn().mockResolvedValue([
         {
           id: 'v9',
-          materialProductId: '9',
+          materialId: '9',
           materialCode: 'M1',
           materialName: '物料',
           majorVersion: 'v1',

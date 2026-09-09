@@ -15,7 +15,7 @@ describe('production material policy', () => {
     expect(() => requireMaterialOutboundBatchStatus('material_assigned')).not.toThrow();
     expect(() => requireMaterialOutboundBatchStatus('material_outbound')).toThrow();
     expect(() =>
-      requireMaterialOutboundBatchStatus('material_outbound', { supplementOnly: true }),
+      requireMaterialOutboundBatchStatus('material_outbound', { additionalDemandOnly: true }),
     ).not.toThrow();
     expect(() => requireMaterialOutboundBatchStatus('material_pending')).toThrow();
     expect(() =>
@@ -43,7 +43,7 @@ describe('production material policy', () => {
     expect(() => requireMaterialAllocationBatchStatus('material_outbound', true)).not.toThrow();
     expect(() => requireMaterialAllocationBatchStatus('doing', true)).not.toThrow();
     expect(() =>
-      requireMaterialOutboundBatchStatus('doing', { supplementOnly: true }),
+      requireMaterialOutboundBatchStatus('doing', { additionalDemandOnly: true }),
     ).not.toThrow();
     expect(() => requireMaterialAllocationBatchStatus('doing', false)).toThrow();
     expect(() => requireMaterialOutboundBatchStatus('doing')).toThrow();

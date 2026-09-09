@@ -13,14 +13,16 @@ export interface ConfigureMaterialDemandsResult {
 }
 
 export interface AddManualMaterialDemandResult {
-  demandId: string;
+  additionId: string;
+  additionNo: string;
+  demandIds: string[];
 }
 
 const configureSchema: z.ZodType<ConfigureMaterialDemandsResult> = z
   .object({ configured: z.literal(true) })
   .strict();
 const manualSchema: z.ZodType<AddManualMaterialDemandResult> = z
-  .object({ demandId: z.string() })
+  .object({ additionId: z.string(), additionNo: z.string(), demandIds: z.array(z.string()) })
   .strict();
 
 const codec = <T>(schema: z.ZodType<T>): IdempotencyResultCodec<T> => ({

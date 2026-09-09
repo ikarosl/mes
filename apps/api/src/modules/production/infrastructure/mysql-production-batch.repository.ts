@@ -160,8 +160,6 @@ export class MysqlProductionBatchRepository {
         payload.planEndDate ?? null,
         order,
       );
-      if (route && route.product.id !== String(order.product_id))
-        throw new ProductionDomainError('INVALID_INPUT', '工艺路线不属于工单产品');
       const [result] = await connection.execute<ResultSetHeader>(
         `INSERT INTO production_batches (work_order_id,product_id,batch_no,route_id,route_code_snapshot,route_version_snapshot,planned_quantity,plan_start_date,plan_end_date,batch_owner_id,remark,created_by,updated_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         [
@@ -184,7 +182,7 @@ export class MysqlProductionBatchRepository {
       for (const step of route?.steps ?? []) {
         const override = overrides.get(step.routeStepId);
         await connection.execute(
-          `INSERT INTO batch_step_records (production_batch_id,route_step_id,step_order_snapshot,step_code_snapshot,step_name_snapshot,sop_file_id_snapshot,sop_file_name_snapshot,sop_object_key_snapshot,sop_version_no_snapshot,default_responsible_user_id_snapshot,responsible_user_id,actual_sop_file_id,actual_sop_file_name_snapshot,actual_sop_object_key_snapshot,actual_sop_version_no_snapshot,need_record_snapshot,need_inspection_snapshot,unit_snapshot,created_by,updated_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          `INSERT INTO batch_step_records (production_batch_id,route_step_id,step_order_snapshot,step_code_snapshot,step_name_snapshot,sop_file_id_snapshot,sop_file_name_snapshot,sop_object_key_snapshot,sop_version_no_snapshot,default_responsible_user_id_snapshot,responsible_user_id,actual_sop_file_id,actual_sop_file_name_snapshot,actual_sop_object_key_snapshot,actual_sop_version_no_snapshot,need_inspection_snapshot,unit_snapshot,created_by,updated_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
           [
             result.insertId,
             step.routeStepId,
@@ -201,7 +199,6 @@ export class MysqlProductionBatchRepository {
             override?.actualSop?.fileName ?? null,
             override?.actualSop?.objectKey ?? null,
             override?.actualSop?.versionNo ?? null,
-            Number(step.needRecord),
             Number(step.needInspection),
             order.unit_snapshot,
             audit.actorId,

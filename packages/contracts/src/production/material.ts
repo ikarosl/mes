@@ -38,6 +38,8 @@ export interface DemandGenerationSource {
   generationGroupKey: string;
   generationGroupType: DemandGenerationGroupType;
   supplementNo: string | null;
+  /** 生成动作的说明；当前用于人工追加原因。 */
+  generationReason?: string | null;
 }
 
 export interface ProductionMaterialAllocationItem {

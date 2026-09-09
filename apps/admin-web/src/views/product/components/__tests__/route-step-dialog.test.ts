@@ -145,7 +145,9 @@ describe('RouteStepDialog', () => {
     expect(emitted).toHaveLength(1);
     const saved = (emitted?.[0]?.[0] as Array<Record<string, unknown>>) ?? [];
     expect(saved[0]).not.toHaveProperty('productMaterialIds');
+    expect(saved[0]).not.toHaveProperty('needRecord');
     expect(saved[0]).toMatchObject({ processStepId: 's1', stepOrder: 1 });
+    expect(wrapper.text()).not.toContain('需报工');
   });
 
   it('expanding a process or user select refreshes only that candidate source', async () => {

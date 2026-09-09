@@ -190,7 +190,7 @@
                 ><el-option
                   v-for="option in materialOptions"
                   :key="option.id"
-                  :label="`${option.itemCode} · ${option.productName}`"
+                  :label="`${option.materialCode} · ${option.materialName}`"
                   :value="option.id"
               /></el-select>
               <div
@@ -379,7 +379,7 @@ import { Delete, Plus, Refresh } from '@element-plus/icons-vue';
 import type {
   CreatePurchaseInboundPayload,
   MaterialVariantItem,
-  ProductOption,
+  MaterialOption,
   PurchaseInboundOrderItem,
   PurchaseInboundOrderQuery,
 } from '@company/contracts';
@@ -399,7 +399,7 @@ const query = reactive<PurchaseInboundOrderQuery>({ page: 1, pageSize: 20 });
 const createVisible = ref(false),
   detailVisible = ref(false),
   creating = ref(false),
-  options = ref<ProductOption[]>([]);
+  options = ref<MaterialOption[]>([]);
 const variantsByMaterial = ref(new Map<string, MaterialVariantItem[]>());
 const loadingVariantMaterialIds = ref(new Set<string>());
 const form = reactive<CreatePurchaseInboundPayload>({
@@ -408,7 +408,7 @@ const form = reactive<CreatePurchaseInboundPayload>({
   remark: null,
   details: [],
 });
-const materialOptions = computed(() => options.value.filter((x) => x.itemKind === 'material'));
+const materialOptions = computed(() => options.value);
 const optionById = computed(() => new Map(materialOptions.value.map((x) => [x.id, x])));
 const variantsOf = (materialId: string): MaterialVariantItem[] =>
   (variantsByMaterial.value.get(materialId) ?? []).filter((item) => item.status === 1);
@@ -488,7 +488,7 @@ const openCreate = async () => {
   createVisible.value = true;
   variantsByMaterial.value = new Map();
   try {
-    options.value = await productApi.productOptions();
+    options.value = await productApi.materialOptions();
   } catch (e) {
     EMessage.error(e, '物料候选加载失败');
   }

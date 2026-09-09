@@ -84,7 +84,7 @@ describe('MysqlProductionBatchRepository persistence', () => {
       'actual.pdf',
       'sop/actual.pdf',
       'v2',
-      1,
+      0,
     ]);
     expect(String(connection.execute.mock.calls[2]?.[0])).toContain('INSERT INTO operation_logs');
     expect(connection.commit).toHaveBeenCalledOnce();

@@ -5,7 +5,7 @@
 本章定义所有数据库领域共同遵守的基础规则，并完成以下统一：
 
 - `item_type` 统一为 `product_categories`。
-- `item_info` 统一为 `products`。
+- 成品主数据使用 `products`，基础物料使用 `materials`，精确物料版本使用 `material_variants`；不恢复 `item_info`。
 - `product_bom` 统一为 `product_materials`，不保留第二套 BOM 表。
 - RBAC 与认证字段以新项目已落地迁移为准。
 - 工序主数据只保留 `process_steps`，不再创建职责重复的 `processes`。
@@ -20,6 +20,10 @@
 - 纯关联表使用复合主键并至少保留 `created_at`；当前 RBAC 关联表的操作者通过 `operation_logs` 追溯。
 - 所有冗余 ID 必须由组合外键或事务校验保证一致，不能成为第二事实来源。
 - MES 主数据编码和配置自然键永久不复用，唯一约束不包含布尔 `is_deleted`；软删除后需要再次使用时恢复原记录，不创建相同编码或自然键的新记录。
+
+## 基础物料名称与历史身份
+
+基础物料名称是当前展示属性：需求基础、需求、库存批次和入库明细不保存名称快照，按稳定 ID 读取 Product 当前 `materials.material_name`，展示、名称搜索和排序保持一致；停用或软删除不丢失历史引用。编码、单位、精确物料版本和数量仍按所属模块约束固化。此规则不改变工单成品名称、工序/SOP 快照、不可变审计前后值及 HTTP 幂等响应重放。跨模块读取按[架构登记规则](architecture.md)执行，写入资格继续通过所属模块业务能力校验。
 
 ## 统一类型与状态规则
 
@@ -54,13 +58,34 @@
 | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 工艺路线 | `draft -> enabled/archived`；`enabled -> disabled/archived`；`disabled -> enabled/archived`；`archived` 为终态                                                                                                                                       |
 | 生产工单 | `draft -> released/cancelled`；`released -> doing/completed/closed`；`doing -> completed/closed`；`completed -> closed`；`closed/cancelled` 为终态                                                                                                      |
-| 生产批次 | `pending -> material_pending/cancelled`；`material_pending -> material_assigned/cancelled`；`material_assigned -> material_outbound/cancelled`；`material_outbound -> doing`；`doing -> completed`；`completed/cancelled` 为终态。第一版明确禁止已出库或已开工批次取消 |
-| 工序执行 | `pending -> assigned`；`assigned -> pending/doing`；`doing -> completed`；报工更正导致数量不足或下游报废补产提高目标时 `completed -> doing`。`assigned -> doing` 只由员工显式开工触发；必报工工序数量达标时自动完工；普通物料状态不得驱动工序状态 |
+| 生产批次 | 各状态允许转换见下表；`completed/cancelled` 为终态，已出库或已开工批次禁止取消。 |
+| 工序执行 | `pending -> assigned`；`assigned -> pending/doing`；`doing -> completed`；报工更正导致数量不足或下游报废补产提高目标时 `completed -> doing`。`assigned -> doing` 只由员工显式开工触发；工序数量达标时自动完工；普通物料状态不得驱动工序状态 |
 | 入库单   | `pending -> completed/cancelled`                                                                                                                                                                                                                     |
-| 出库单   | `pending_picking -> picked/cancelled`；`picked -> partially_outbound/completed/cancelled`；`partially_outbound -> completed/cancelled`                                                                                                               |
-| 退料单   | `pending -> returned/scrapped/cancelled`                                                                                                                                                                                                             |
+| 出库单 | `pending_picking -> completed/cancelled`；当前确认命令整单出库，不开放 `picked/partially_outbound` 转换。 |
+| 退料单 | `pending -> returned/cancelled`；当前只支持退回公共可用库存，不开放退料报废。 |
 | 报废单   | `pending -> confirmed/cancelled`                                                                                                                                                                                                                     |
-| 盘点单   | `pending -> counting/cancelled`；`counting -> completed/cancelled`                                                                                                                                                                                   |
-| 返工单   | `pending -> doing/cancelled`；`doing -> completed/cancelled`                                                                                                                                                                                         |
+| 盘点单 | `pending -> counting/completed/cancelled`；`counting -> completed/cancelled`。完成命令须全部明细已录入且库存快照未变化，正常流程先保存实盘数量进入 `counting`。 |
+| 返工单 | `pending -> doing`；`doing -> completed`；当前未开放返工取消命令。 |
+
+生产批次转换与 [production-status.policy.ts](../apps/api/src/modules/production/domain/production-status.policy.ts) 保持一致：
+
+| 当前状态 | 允许的下一状态 |
+| --- | --- |
+| `pending` | `material_pending`、`cancelled` |
+| `material_pending` | `material_assigned`、`material_partially_outbound`、`material_outbound`、`cancelled` |
+| `material_assigned` | `material_pending`、`material_outbound`、`cancelled` |
+| `material_partially_outbound` | `material_outbound`、`doing` |
+| `material_outbound` | `doing` |
+| `doing` | `completed` |
+| `completed` | 无，终态 |
+| `cancelled` | 无，终态 |
+
+转换表只定义允许的状态边，不能替代命令中的数量、权限、授权和版本校验。释放未出库分配导致不再齐套时，
+允许 `material_assigned -> material_pending`；有效短批授权下确认部分领料后进入 `material_partially_outbound`，
+首工序开工仍须校验当前授权、净领料量和缺口。全部活动需求已确认领用时可进入 `material_outbound`；已进入
+`doing` 的批次后续补齐物料不回退状态。详细门禁见 [Production 批次规则](../apps/api/src/modules/production/docs/database/work-orders-and-batches.md)。
+
+上表描述当前代码已开放的命令转换；数据库保留的状态值不代表对应命令已实现。同状态重试按各命令幂等或
+状态短路规则处理，不构成新的状态转换。
 
 矩阵之外的转换必须拒绝。终态不得恢复；若未来确需恢复，必须增加独立业务动作、权限、审计和追加迁移评审，不得通过通用更新接口绕过。

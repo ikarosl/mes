@@ -10,6 +10,7 @@
     "build:run": "tsc -p tsconfig.json",
     "typecheck": "corepack pnpm --workspace-root exec turbo run typecheck:run --filter=@company/api",
     "typecheck:run": "tsc -p tsconfig.json --noEmit",
+    "typecheck:test": "tsc -p tsconfig.test.json --noEmit",
     "test": "corepack pnpm --workspace-root exec turbo run test:run --filter=@company/api",
     "test:run": "vitest run --config ../../vitest.config.ts src",
     "storage:ensure-bucket": "corepack pnpm --workspace-root exec turbo run storage:ensure-bucket:run --filter=@company/api",

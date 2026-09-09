@@ -13,7 +13,7 @@ describe('productApi contract mapping', () => {
     const { productApi } = await import('../product');
     const items = [
       {
-        materialProductId: '2',
+        materialId: '2',
         quantityPerUnit: 1.25,
         unit: 'kg',
         isKeyMaterial: true,
@@ -86,6 +86,145 @@ describe('productApi contract mapping', () => {
     expect(request).toHaveBeenNthCalledWith(2, {
       url: '/product/process-routes',
       params: { page: 1, pageSize: 10, status: 'draft' },
+    });
+  });
+
+  it('maps grouped product, material, and material-version queries to their routes', async () => {
+    request.mockResolvedValue({ data: { items: [], total: 0, page: 1, pageSize: 10 } });
+    const { productApi } = await import('../product');
+
+    await productApi.productGroups({
+      page: 2,
+      pageSize: 20,
+      keyword: '连接器',
+      categoryId: 'c1',
+      status: 1,
+    });
+    await productApi.materialList({
+      page: 3,
+      pageSize: 50,
+      keyword: '电阻',
+      categoryId: 'c2',
+      acquireMethod: 'purchased',
+      status: 1,
+    });
+    await productApi.materialOptions();
+    await productApi.materialVariants({
+      page: 1,
+      pageSize: 10,
+      materialId: 'm1',
+      keyword: 'v1',
+      status: 1,
+    });
+    await productApi.materialVariantsByMaterial('m1');
+
+    expect(request).toHaveBeenNthCalledWith(1, {
+      url: '/product/product-groups',
+      params: { page: 2, pageSize: 20, keyword: '连接器', categoryId: 'c1', status: 1 },
+    });
+    expect(request).toHaveBeenNthCalledWith(2, {
+      url: '/product/materials',
+      params: {
+        page: 3,
+        pageSize: 50,
+        keyword: '电阻',
+        categoryId: 'c2',
+        acquireMethod: 'purchased',
+        status: 1,
+      },
+    });
+    expect(request).toHaveBeenNthCalledWith(3, {
+      url: '/product/materials/options',
+      skipErrorHandling: true,
+    });
+    expect(request).toHaveBeenNthCalledWith(4, {
+      url: '/product/material-variants',
+      params: { page: 1, pageSize: 10, materialId: 'm1', keyword: 'v1', status: 1 },
+    });
+    expect(request).toHaveBeenNthCalledWith(5, {
+      url: '/product/material-variants/by-material/m1',
+      skipErrorHandling: true,
+    });
+  });
+
+  it('uses the dedicated product and material CRUD routes', async () => {
+    const { productApi } = await import('../product');
+    const productPayload = {
+      itemCode: 'FG-1',
+      productName: '成品',
+      categoryId: 'c1',
+      unit: 'pcs',
+      acquireMethod: 'self_made' as const,
+      status: 1,
+      specValues: [],
+    };
+    const materialPayload = {
+      materialCode: 'M-1',
+      materialName: '物料',
+      categoryId: 'c2',
+      unit: 'kg',
+      acquireMethod: 'purchased' as const,
+      status: 1,
+      specValues: [{ key: '厚度', value: '1', unit: 'mm' }],
+    };
+
+    await productApi.updateProduct('p1', productPayload);
+    await productApi.setProductStatus('p1', 0);
+    await productApi.createMaterial(materialPayload);
+    await productApi.updateMaterial('m1', materialPayload);
+    await productApi.setMaterialStatus('m1', 0);
+    await productApi.createMaterialVariant({
+      materialId: 'm1',
+      majorVersion: 'v1',
+      minorVersion: 'A',
+      remark: '首版',
+    });
+    await productApi.setMaterialVariantStatus('mv1', 1);
+
+    expect(request).toHaveBeenNthCalledWith(1, {
+      url: '/product/products/p1',
+      method: 'PATCH',
+      data: productPayload,
+    });
+    expect(request).toHaveBeenNthCalledWith(2, {
+      url: '/product/products/p1/status',
+      method: 'PATCH',
+      data: { status: 0 },
+    });
+    expect(request).toHaveBeenNthCalledWith(3, {
+      url: '/product/materials',
+      method: 'POST',
+      data: materialPayload,
+    });
+    expect(request).toHaveBeenNthCalledWith(4, {
+      url: '/product/materials/m1',
+      method: 'PATCH',
+      data: materialPayload,
+    });
+    expect(request).toHaveBeenNthCalledWith(5, {
+      url: '/product/materials/m1/status',
+      method: 'PATCH',
+      data: { status: 0 },
+    });
+    expect(request).toHaveBeenNthCalledWith(6, {
+      url: '/product/material-variants',
+      method: 'POST',
+      data: { materialId: 'm1', majorVersion: 'v1', minorVersion: 'A', remark: '首版' },
+    });
+    expect(request).toHaveBeenNthCalledWith(7, {
+      url: '/product/material-variants/mv1/status',
+      method: 'PATCH',
+      data: { status: 1 },
+    });
+  });
+
+  it('reads product materials from the product-scoped route', async () => {
+    const { productApi } = await import('../product');
+
+    await productApi.productMaterials('p1');
+
+    expect(request).toHaveBeenCalledWith({
+      url: '/product/products/p1/materials',
     });
   });
 

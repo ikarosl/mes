@@ -40,6 +40,8 @@ import {
   MaterialVariantDto,
   MaterialVariantQueryDto,
   MaterialVariantMaterialParamDto,
+  MaterialListQueryDto,
+  MaterialDto,
   ReplaceProcessRouteStepsDto,
   ReplaceProductMaterialsDto,
   StatusDto,
@@ -120,7 +122,11 @@ export class ProductController {
   }
   @Get('categories/options')
   // 跨页面选项授权：产品页（分类筛选/表单）或分类页（父分类）任一视图权限即可读取
-  @RequirePermission([PERMISSIONS.product.products.view, PERMISSIONS.product.categories.view])
+  @RequirePermission([
+    PERMISSIONS.product.products.view,
+    PERMISSIONS.product.materials.view,
+    PERMISSIONS.product.categories.view,
+  ])
   categoryOptions() {
     return this.service.listCategoryOptions();
   }
@@ -163,18 +169,77 @@ export class ProductController {
       status: query.status,
     });
   }
+  @Get('product-groups')
+  @RequirePermission(PERMISSIONS.product.products.view)
+  productGroups(@Query() query: ProductListQueryDto) {
+    return this.service.listProductGroups({
+      page: query.page,
+      pageSize: query.pageSize,
+      keyword: query.keyword?.trim() || undefined,
+      categoryId: query.categoryId,
+      status: query.status,
+    });
+  }
   @Get('products/options')
-  // 跨页面选项授权：产品页（BOM 候选）、工艺路线页（产品/BOM 候选）、生产工单/任务页（产品下拉）任一视图权限即可读取
+  // 跨页面选项授权：成品页、工艺路线页或生产工单/任务页任一视图权限即可读取
   @RequirePermission([
     PERMISSIONS.product.products.view,
     PERMISSIONS.product.routes.view,
     PERMISSIONS.production.orders.view,
     PERMISSIONS.production.tasks.view,
-    PERMISSIONS.production.inbounds.view,
-    PERMISSIONS.product.materialVariants.view,
   ])
   productOptions() {
     return this.service.listProductOptions();
+  }
+  @Get('materials')
+  @RequirePermission([PERMISSIONS.product.products.view, PERMISSIONS.product.materials.view])
+  materialMasterData(@Query() query: MaterialListQueryDto) {
+    return this.service.listMaterialMasterData({
+      page: query.page,
+      pageSize: query.pageSize,
+      keyword: query.keyword?.trim() || undefined,
+      categoryId: query.categoryId,
+      acquireMethod: query.acquireMethod,
+      status: query.status,
+    });
+  }
+  @Get('materials/options')
+  @RequirePermission([
+    PERMISSIONS.product.materials.view,
+    PERMISSIONS.product.products.view,
+    PERMISSIONS.production.materials.view,
+    PERMISSIONS.production.materialDemands.view,
+    PERMISSIONS.production.inbounds.view,
+    PERMISSIONS.product.materialVariants.view,
+  ])
+  materialOptions() {
+    return this.service.listMaterialOptions();
+  }
+  @Post('materials')
+  @RequirePermission(PERMISSIONS.product.materials.create)
+  @AuditInApplication()
+  createMaterial(@Body() body: MaterialDto, @CurrentCommandContext() audit: CommandContext) {
+    return this.service.createMaterial(body, audit);
+  }
+  @Patch('materials/:id')
+  @RequirePermission(PERMISSIONS.product.materials.update)
+  @AuditInApplication()
+  updateMaterial(
+    @Param() { id }: ProductIdParamDto,
+    @Body() body: MaterialDto,
+    @CurrentCommandContext() audit: CommandContext,
+  ) {
+    return this.service.updateMaterial(id, body, audit);
+  }
+  @Patch('materials/:id/status')
+  @RequirePermission(PERMISSIONS.product.materials.changeStatus)
+  @AuditInApplication()
+  materialStatus(
+    @Param() { id }: ProductIdParamDto,
+    @Body() body: StatusDto,
+    @CurrentCommandContext() audit: CommandContext,
+  ) {
+    return this.service.setMaterialStatus(id, body.status, audit);
   }
   @Get('material-variants')
   @RequirePermission(PERMISSIONS.product.materialVariants.view)
@@ -182,12 +247,12 @@ export class ProductController {
     return this.service.listMaterialVariants({
       page: query.page,
       pageSize: query.pageSize,
-      materialProductId: query.materialProductId,
+      materialId: query.materialId,
       keyword: query.keyword?.trim() || undefined,
       status: query.status,
     });
   }
-  @Get('material-variants/by-material/:materialProductId')
+  @Get('material-variants/by-material/:materialId')
   @RequirePermission([
     PERMISSIONS.product.materialVariants.view,
     PERMISSIONS.product.products.view,
@@ -195,8 +260,8 @@ export class ProductController {
     PERMISSIONS.production.materialDemands.view,
     PERMISSIONS.production.inbounds.view,
   ])
-  materialVariantsByMaterial(@Param() { materialProductId }: MaterialVariantMaterialParamDto) {
-    return this.service.listMaterialVariantsByMaterial(materialProductId);
+  materialVariantsByMaterial(@Param() { materialId }: MaterialVariantMaterialParamDto) {
+    return this.service.listMaterialVariantsByMaterial(materialId);
   }
   @Post('material-variants')
   @RequirePermission(PERMISSIONS.product.materialVariants.create)

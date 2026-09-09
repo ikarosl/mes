@@ -2,12 +2,18 @@ import 'reflect-metadata';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { describe, expect, it } from 'vitest';
-import { ProductDto, ReplaceProductMaterialsDto } from '../product.dto.js';
+import {
+  MaterialDto,
+  MaterialVariantDto,
+  ProcessRouteDto,
+  ProductDto,
+  ReplaceProductMaterialsDto,
+} from '../product.dto.js';
 
 describe('product quantity DTOs', () => {
   it('accepts integer BOM quantities and rejects fractional quantities', async () => {
     const base = {
-      materialProductId: '2',
+      materialId: '2',
       unit: 'pcs',
       isKeyMaterial: true,
       needBatchRecord: true,
@@ -26,6 +32,13 @@ describe('product quantity DTOs', () => {
         }),
       ),
     ).not.toEqual([]);
+    expect(
+      await validate(
+        plainToInstance(ReplaceProductMaterialsDto, {
+          items: [{ ...base, materialId: undefined, materialProductId: '2', quantityPerUnit: 2 }],
+        }),
+      ),
+    ).not.toEqual([]);
   });
 
   it('keeps product specification values as JSON records outside quantity arithmetic', async () => {
@@ -40,5 +53,39 @@ describe('product quantity DTOs', () => {
     });
     expect(await validate(dto)).toEqual([]);
     expect(dto.specValues?.[0]?.value).toBe('1.25');
+  });
+});
+
+describe('Product material and independent route DTOs', () => {
+  it('validates material CRUD payloads and exact versions by stable materialId', async () => {
+    const material = plainToInstance(MaterialDto, {
+      materialCode: 'M-1',
+      materialName: '微带',
+      categoryId: '3',
+      unit: 'pcs',
+      acquireMethod: 'purchased',
+      status: 1,
+    });
+    const variant = plainToInstance(MaterialVariantDto, {
+      materialId: '3',
+      majorVersion: '1',
+      minorVersion: '0',
+    });
+
+    expect(await validate(material)).toEqual([]);
+    expect(await validate(variant)).toEqual([]);
+    expect(variant.materialId).toBe('3');
+    expect('materialProductId' in variant).toBe(false);
+  });
+
+  it('models routes independently without requiring a product id', async () => {
+    const route = plainToInstance(ProcessRouteDto, {
+      routeCode: 'R-1',
+      routeName: '路线',
+      versionNo: 'V1',
+    });
+
+    expect(await validate(route)).toEqual([]);
+    expect(route).not.toHaveProperty('productId');
   });
 });

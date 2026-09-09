@@ -1,3 +1,4 @@
+import { currentMaterialNameSql } from './queries/material-name.sql.js';
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import { DEMAND_GENERATION_GROUP_TYPE } from '@company/constants';
@@ -23,6 +24,10 @@ import { ProductionDomainError } from '../domain/production.errors.js';
 import { fixedIntegerQuantity, integerQuantity } from '../domain/integer-quantity.js';
 import { mysqlProductionDemandPlanWriter } from './mysql-production-demand-plan.writer.js';
 import { findBatch } from './mysql-production.shared.js';
+import {
+  lockWorkOrderForBatch,
+  requireWorkOrderMaterialVariant,
+} from './mysql-work-order-material-version.js';
 import { MaterialVariantQuery } from '../../product/public.js';
 
 type SourceRow = RowDataPacket & {
@@ -60,7 +65,7 @@ type CandidateRow = RowDataPacket & {
   material_variant_id: number;
   material_variant_code_snapshot: string;
   item_code_snapshot: string;
-  item_name_snapshot: string;
+  item_name: string;
   quantity_per_unit_snapshot: string;
   unit_snapshot: string;
   is_key_material_snapshot: number;
@@ -91,7 +96,7 @@ type PlanLineRow = RowDataPacket & {
   material_variant_id: number;
   material_variant_code_snapshot: string;
   item_code_snapshot: string;
-  item_name_snapshot: string;
+  item_name: string;
   planned_quantity: string;
   unit_snapshot: string;
 };
@@ -119,6 +124,7 @@ export class MysqlProductionSupplementRepository extends ProductionSupplementRep
     return withTransaction(this.pool, async (connection) => {
       const actorId = requireActor(context);
       const sourceIdentity = await selectSource(connection, dispositionId);
+      await lockWorkOrderForBatch(connection, String(sourceIdentity.production_batch_id));
       const batch = await findBatch(connection, String(sourceIdentity.production_batch_id), true);
       if (batch.status !== 'doing')
         throw new ProductionDomainError('INVALID_STATE', '仅生产执行中的异常可以暂存报废补料方案');
@@ -254,13 +260,9 @@ export class MysqlProductionSupplementRepository extends ProductionSupplementRep
     plan: ProductionScrapSupplementPlanItem,
   ): Promise<ProductionScrapSupplementPlanItem> {
     if (plan.lines.length === 0) return plan;
-    const variants = (
-      await Promise.all(
-        [...new Set(plan.lines.map((line) => line.itemId))].map((itemId) =>
-          this.materialVariants.listByMaterial(itemId),
-        ),
-      )
-    ).flat();
+    const variants = await this.materialVariants.listDisplayReferencesByIds([
+      ...new Set(plan.lines.map((line) => line.materialVariantId)),
+    ]);
     const byId = new Map(variants.map((variant) => [variant.id, variant.variantCode]));
     return {
       ...plan,
@@ -292,7 +294,7 @@ export class MysqlProductionSupplementRepository extends ProductionSupplementRep
       baseIds.map((id) => [id, []]),
     );
     for (const variant of variants) {
-      const candidate = byBase.get(variant.materialProductId);
+      const candidate = byBase.get(variant.materialId);
       candidate?.push({
         id: variant.id,
         variantCode: variant.variantCode,
@@ -327,6 +329,10 @@ export class MysqlProductionSupplementRepository extends ProductionSupplementRep
     return withTransaction(this.pool, async (connection) => {
       const actorId = requireActor(context);
       const sourceIdentity = await selectSource(connection, dispositionId);
+      const orderPolicy = await lockWorkOrderForBatch(
+        connection,
+        String(sourceIdentity.production_batch_id),
+      );
       const batch = await findBatch(connection, String(sourceIdentity.production_batch_id), true);
       if (batch.status !== 'doing')
         throw new ProductionDomainError('INVALID_STATE', '仅生产执行中的异常可以批准报废补料');
@@ -459,6 +465,15 @@ export class MysqlProductionSupplementRepository extends ProductionSupplementRep
         }
         return { line, original };
       });
+      for (const { line, original } of demandLines) {
+        await requireWorkOrderMaterialVariant(
+          connection,
+          orderPolicy,
+          original.itemId,
+          line.materialVariantId,
+          actorId,
+        );
+      }
       const demandIds = await mysqlProductionDemandPlanWriter.createDemandGroup(connection, {
         batchId: source.production_batch_id,
         actorId,
@@ -476,7 +491,6 @@ export class MysqlProductionSupplementRepository extends ProductionSupplementRep
             original.variants.find((variant) => variant.id === line.materialVariantId)
               ?.variantCode ?? '',
           itemCode: original.itemCode,
-          itemName: original.itemName,
           quantityPerUnit: original.quantityPerUnit,
           unit: original.unit,
           isKeyMaterial: original.isKeyMaterial,
@@ -500,8 +514,8 @@ export class MysqlProductionSupplementRepository extends ProductionSupplementRep
             original.variants.find((variant) => variant.id === line.materialVariantId)
               ?.variantCode ?? '',
           itemCode: original.itemCode,
-          itemName: original.itemName,
           supplementQuantity: fixed(line.supplementQuantity),
+          itemName: original.itemName,
           unit: original.unit,
         }),
       );
@@ -609,7 +623,7 @@ const selectCandidates = async (
   const filter = ids.length ? ` AND id IN (${ids.map(() => '?').join(',')})` : '';
   const [rows] = await connection.query<CandidateRow[]>(
     `SELECT id,production_batch_id,requirement_basis_id,product_material_id,item_id,material_variant_id,
-      material_variant_code_snapshot,item_code_snapshot,item_name_snapshot,quantity_per_unit_snapshot,unit_snapshot,
+      material_variant_code_snapshot,item_code_snapshot,${currentMaterialNameSql('production_item_demand.item_id')} item_name,quantity_per_unit_snapshot,unit_snapshot,
       is_key_material_snapshot,need_batch_record_snapshot,planned_output_quantity_snapshot,need_number
      FROM production_item_demand
      WHERE production_batch_id=? AND demand_type='normal'
@@ -637,7 +651,7 @@ const selectPlan = async (
   const [lines] = await connection.query<PlanLineRow[]>(
     `SELECT line.original_demand_id,line.requirement_basis_id,line.product_material_id,line.item_id,
             line.material_variant_id,demand.material_variant_code_snapshot,demand.item_code_snapshot,
-            demand.item_name_snapshot,line.planned_quantity,line.unit_snapshot
+            ${currentMaterialNameSql('demand.item_id')} item_name,line.planned_quantity,line.unit_snapshot
      FROM production_scrap_supplement_plan_line line
      JOIN production_item_demand demand ON demand.id=line.original_demand_id
      WHERE line.plan_id=? ORDER BY line.id${lock ? ' FOR UPDATE' : ''}`,
@@ -664,7 +678,7 @@ const selectPlan = async (
       materialVariantId: String(line.material_variant_id),
       materialVariantCode: line.material_variant_code_snapshot,
       itemCode: line.item_code_snapshot,
-      itemName: line.item_name_snapshot,
+      itemName: line.item_name,
       plannedQuantity: line.planned_quantity,
       unit: line.unit_snapshot,
     })),
@@ -684,7 +698,7 @@ const mapCandidate = (
   materialVariantCode: row.material_variant_code_snapshot,
   variants,
   itemCode: row.item_code_snapshot,
-  itemName: row.item_name_snapshot,
+  itemName: row.item_name,
   quantityPerUnit: row.quantity_per_unit_snapshot,
   unit: row.unit_snapshot,
   isKeyMaterial: Boolean(row.is_key_material_snapshot),

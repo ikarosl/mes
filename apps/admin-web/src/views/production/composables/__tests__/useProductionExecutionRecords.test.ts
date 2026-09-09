@@ -24,13 +24,16 @@ const disposition = { dispositionId: '8', productionBatchId: '1', version: 2 };
 describe('useProductionExecutionRecords', () => {
   beforeEach(() => {
     Object.values(api).forEach((mock) => mock.mockReset());
-    api.getExecutionCompletionCheck.mockResolvedValue({
-      productionBatchId: '1',
-      batchStatus: 'doing',
-      version: 4,
-      canComplete: true,
-      blockers: [],
-    });
+    api.getBatchExecutionRecords.mockImplementation((id: string) => Promise.resolve(group(id)));
+    api.getExecutionCompletionCheck.mockImplementation((id: string) =>
+      Promise.resolve({
+        productionBatchId: id,
+        batchStatus: 'doing',
+        version: 4,
+        canComplete: true,
+        blockers: [],
+      }),
+    );
     api.listBatchReworks.mockResolvedValue([]);
   });
 
@@ -50,8 +53,8 @@ describe('useProductionExecutionRecords', () => {
 
   it('uses an idempotent intent for correction and refreshes the batch projection', async () => {
     api.correctStepReport.mockResolvedValue({});
-    api.getBatchExecutionRecords.mockResolvedValue(group('1'));
     const state = useProductionExecutionRecords();
+    await state.selectBatch('1');
     await state.correct(
       { productionBatchId: '1', stepRecordId: '9', version: 3 } as never,
       { reportId: '12' } as never,
@@ -73,12 +76,13 @@ describe('useProductionExecutionRecords', () => {
       },
       expect.any(String),
     );
-    expect(api.getBatchExecutionRecords).toHaveBeenCalledWith('1');
+    expect(api.getBatchExecutionRecords).toHaveBeenCalledWith('1', { skipErrorHandling: true });
   });
 
   it('retains an ambiguous correction intent until the administrator explicitly discards it', async () => {
     api.correctStepReport.mockRejectedValue(new RequestError('网络断开', 0));
     const state = useProductionExecutionRecords();
+    await state.selectBatch('1');
 
     await expect(
       state.correct(
@@ -124,6 +128,7 @@ describe('useProductionExecutionRecords', () => {
   it('saves the staged supplement draft with plan and disposition versions', async () => {
     api.saveScrapSupplementPlan.mockResolvedValue({ status: 'draft' });
     const state = useProductionExecutionRecords();
+    await state.selectBatch('1');
     await state.saveScrapSupplementPlan(
       disposition as never,
       [
@@ -155,6 +160,7 @@ describe('useProductionExecutionRecords', () => {
   it('saves a first-time draft without a plan version and trims an empty remark to null', async () => {
     api.saveScrapSupplementPlan.mockResolvedValue({ status: 'draft' });
     const state = useProductionExecutionRecords();
+    await state.selectBatch('1');
     await state.saveScrapSupplementPlan(disposition as never, [], '   ', null);
     expect(api.saveScrapSupplementPlan).toHaveBeenCalledWith('8', {
       planVersion: null,
@@ -166,8 +172,8 @@ describe('useProductionExecutionRecords', () => {
 
   it('confirms the scrap supplement with only the plan and disposition versions and an idempotent intent', async () => {
     api.confirmScrapSupplementPlan.mockResolvedValue({});
-    api.getBatchExecutionRecords.mockResolvedValue(group('1'));
     const state = useProductionExecutionRecords();
+    await state.selectBatch('1');
     await state.approveScrapSupplement(disposition as never, 3);
     expect(api.confirmScrapSupplementPlan).toHaveBeenCalledWith(
       '8',
@@ -180,20 +186,20 @@ describe('useProductionExecutionRecords', () => {
     expect(body).not.toHaveProperty('remark');
     expect(body).not.toHaveProperty('materialEndStepRecordId');
     // 确认成功后刷新批次投影
-    expect(api.getBatchExecutionRecords).toHaveBeenCalledWith('1');
+    expect(api.getBatchExecutionRecords).toHaveBeenCalledWith('1', { skipErrorHandling: true });
     expect(state.getSupplementIntentStatus('8')).toBe('idle');
   });
 
   it('reconciles an ambiguous supplement confirmation that the server already completed', async () => {
     api.confirmScrapSupplementPlan.mockRejectedValue(new RequestError('响应中断', 500));
     api.getScrapSupplementPlan.mockResolvedValue({ status: 'confirmed' });
-    api.getBatchExecutionRecords.mockResolvedValue(group('1'));
     const state = useProductionExecutionRecords();
+    await state.selectBatch('1');
 
     await state.approveScrapSupplement(disposition as never, 3);
 
     expect(api.getScrapSupplementPlan).toHaveBeenCalledWith('8');
-    expect(api.getBatchExecutionRecords).toHaveBeenCalledWith('1');
+    expect(api.getBatchExecutionRecords).toHaveBeenCalledWith('1', { skipErrorHandling: true });
     expect(state.getSupplementIntentStatus('8')).toBe('idle');
   });
 
@@ -201,6 +207,7 @@ describe('useProductionExecutionRecords', () => {
     api.confirmScrapSupplementPlan.mockRejectedValue(new RequestError('响应中断', 500));
     api.getScrapSupplementPlan.mockResolvedValue({ status: 'draft' });
     const state = useProductionExecutionRecords();
+    await state.selectBatch('1');
 
     await expect(state.approveScrapSupplement(disposition as never, 3)).rejects.toBeInstanceOf(
       RequestError,
@@ -216,8 +223,8 @@ describe('useProductionExecutionRecords', () => {
     api.confirmScrapSupplementPlan.mockReturnValue(
       new Promise((resolve) => (resolveConfirm = resolve)),
     );
-    api.getBatchExecutionRecords.mockResolvedValue(group('1'));
     const state = useProductionExecutionRecords();
+    await state.selectBatch('1');
     const first = state.approveScrapSupplement(disposition as never, 3);
     const second = state.approveScrapSupplement(disposition as never, 3);
     await second;

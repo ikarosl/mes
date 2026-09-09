@@ -40,6 +40,12 @@
 
 ## 数据与平台边界
 
+认证用例通过 [`PasswordHasher`](application/ports/password-hasher.ts) 验证或生成密码哈希，通过
+[`TokenService`](application/ports/token.service.ts) 签发令牌对、验证令牌并取得身份。`AuthService` 负责账号
+状态校验和 Refresh Token 轮换，`RbacService` 负责用户及权限用例；两者不依赖 bcrypt、JWT SDK 或密钥配置。
+`IdentityModule` 把端口绑定到 `BcryptPasswordHasher`（成本参数 12）和 `JwtTokenService`（HS256、现有
+issuer/audience/TTL 配置）。端口不暴露 JWT SDK 类型或签名密钥，HTTP 契约和 Cookie 传输方式保持一致。
+
 System 现有 `departments`、`users`、`roles`、`permissions`、`user_roles`、`role_permissions` 和
 `refresh_tokens` 已满足业务数据结构，无需新增业务表。`operation_logs` 是项目级平台审计基础设施，
 不属于 System 业务数据；System 仅提供当前审计查询入口，业务模块写入时可直接调用唯一事务审计

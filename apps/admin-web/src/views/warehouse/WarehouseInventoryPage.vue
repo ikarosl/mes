@@ -2,7 +2,7 @@
   <div class="inventory-page">
     <el-tabs v-model="viewMode">
       <el-tab-pane
-        label="物料供需预警"
+        label="物料库存"
         name="supply-demand"
       />
       <el-tab-pane
@@ -22,7 +22,7 @@
           ><el-input
             v-model="supplyDemandQuery.keyword"
             clearable
-            placeholder="编码或名称" /></el-form-item
+            placeholder="物料编码、名称或版本编码" /></el-form-item
         ><el-form-item class="query-actions"
           ><el-button
             type="primary"
@@ -48,8 +48,9 @@
       ><el-table
         v-loading="supplyDemandLoading"
         :data="supplyDemandItems"
+        row-key="materialVariantId"
         class="data-table supply-demand-table"
-        empty-text="暂无活动物料需求"
+        empty-text="暂无物料库存或活动需求"
         @row-click="openDemandTrace"
         ><el-table-column
           label="物料"
@@ -59,9 +60,9 @@
             <div class="secondary">{{ row.itemCode }}</div></template
           ></el-table-column
         ><el-table-column
-          label="版本口径"
+          label="物料版本"
           min-width="180"
-          ><template #default>基础物料合计（批次含精确版本）</template></el-table-column
+          ><template #default="{ row }">{{ row.materialVariantCode }}</template></el-table-column
         ><el-table-column
           label="可用库存"
           min-width="140"
@@ -105,7 +106,7 @@
     </section>
     <el-dialog
       v-model="demandTraceVisible"
-      :title="`${demandTraceSelectedItem?.itemName ?? '物料'} · 未完成需求来源`"
+      :title="`${demandTraceSelectedItem?.itemName ?? '物料'} · ${demandTraceSelectedItem?.materialVariantCode ?? ''} · 未完成需求来源`"
       :width="DialogWidth.xl"
     >
       <div

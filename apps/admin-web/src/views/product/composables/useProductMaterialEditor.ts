@@ -1,7 +1,7 @@
 import { computed, ref } from 'vue';
 import type { ProductMaterialItem } from '@company/contracts';
 import { productApi } from '../../../api/product';
-import { useProductOptions } from '../../../composables/options/useProductOptions';
+import { useMaterialOptions } from '../../../composables/options/useMaterialOptions';
 import { EMessage } from '../../../utils/message';
 
 /** 当前产品 BOM 明细的就绪状态：loading/error 时禁止保存 */
@@ -18,8 +18,7 @@ export type ProductMaterialDetailStatus = 'idle' | 'loading' | 'ready' | 'error'
  *    （排除自身、仅保留物料）；刷新失败保留上次成功快照并提示，不拖累 BOM 明细。
  */
 export function useProductMaterialEditor() {
-  const productSource = useProductOptions();
-  const currentProductId = ref<string | null>(null);
+  const materialSource = useMaterialOptions();
   /** BOM 明细已加载完成归属的产品；明细失败/过期不更新，表示 localRows 仍属于上一个产品 */
   const loadedProductId = ref<string | null>(null);
   /** 当前目标产品 BOM 明细的就绪状态：loading/error 时禁止保存 */
@@ -27,18 +26,14 @@ export function useProductMaterialEditor() {
   const bomLoading = ref(false);
   let requestToken = 0;
 
-  const materialOptions = computed(() =>
-    productSource.options.value.filter(
-      (item) => item.itemKind === 'material' && item.id !== currentProductId.value,
-    ),
-  );
+  const materialOptions = computed(() => materialSource.options.value);
   /** BOM 明细加载或产品候选刷新进行中，供刷新按钮展示 loading */
-  const loading = computed(() => bomLoading.value || productSource.loading.value);
+  const loading = computed(() => bomLoading.value || materialSource.loading.value);
 
   /** 下拉展开 / 刷新按钮 / 页面激活：只刷新产品候选，不重载 BOM 行 */
   const refreshOptions = (productId: string): Promise<void> => {
-    currentProductId.value = productId;
-    return productSource.refresh();
+    void productId;
+    return materialSource.refresh();
   };
 
   /**
@@ -49,14 +44,13 @@ export function useProductMaterialEditor() {
    * 结果就绪后单独更新候选 loading/options，不拖累明细的 loading/status。
    */
   const load = async (productId: string): Promise<ProductMaterialItem[] | null> => {
-    currentProductId.value = productId;
     const token = ++requestToken;
     detailStatus.value = 'loading';
     bomLoading.value = true;
     // 候选刷新独立启动、不 await：候选再慢/再失败也不阻塞 BOM 明细就绪
-    void productSource.refresh();
+    void materialSource.refresh();
     try {
-      const rows = await productApi.materials(productId);
+      const rows = await productApi.productMaterials(productId);
       if (token !== requestToken) return null; // 目标产品已变化，过期响应丢弃
       loadedProductId.value = productId;
       detailStatus.value = 'ready';

@@ -322,6 +322,7 @@ describe('Production date-only DTO fields', () => {
       CreateWorkOrderDto,
       {
         workOrderNo: 'WO-001',
+        orderType: 'mass_production',
         productId: '8',
         plannedQuantity: 1,
         planEndDate: '2024-03-01',

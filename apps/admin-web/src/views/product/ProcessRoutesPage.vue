@@ -97,14 +97,6 @@
           min-width="150"
         />
         <el-table-column
-          label="适用产品"
-          min-width="160"
-        >
-          <template #default="{ row }">{{
-            row.itemCode && row.productName ? `${row.itemCode} / ${row.productName}` : '-'
-          }}</template>
-        </el-table-column>
-        <el-table-column
           label="工序顺序"
           min-width="260"
         >
@@ -184,7 +176,7 @@
       />
     </div>
 
-    <!-- 新增/编辑工艺路线弹窗（自持适用产品候选） -->
+    <!-- 新增/编辑工艺路线弹窗 -->
     <RouteFormDialog
       ref="routeFormDialogRef"
       :visible="routeDialogVisible"
@@ -286,7 +278,6 @@ const submitRoute = async (data: RouteFormValue): Promise<void> => {
   const payload = {
     routeCode: data.routeCode,
     routeName: data.routeName,
-    productId: data.productId,
     versionNo: data.versionNo,
     remark: data.remark || null,
   };
@@ -360,7 +351,6 @@ const submitSteps = async (steps: StepRow[]): Promise<void> => {
         defaultOwnerId: step.defaultOwnerId || null,
         sopFileId: step.sopFileId || null,
         needInspection: step.needInspection,
-        needRecord: step.needRecord,
         status: step.status,
         remark: step.remark || null,
       })),

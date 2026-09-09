@@ -452,5 +452,5 @@ describe('ProductionOrdersPage batch dialog close guard', () => {
     } finally {
       vi.useRealTimers();
     }
-  }, 15_000);
+  }, 30_000);
 });

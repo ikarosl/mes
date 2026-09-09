@@ -193,6 +193,7 @@
                 row.status === 'material_pending' ||
                 row.status === 'material_assigned' ||
                 row.status === 'material_partially_outbound' ||
+                row.status === 'material_outbound' ||
                 row.status === 'doing'
               "
               link
@@ -205,7 +206,14 @@
               link
               type="primary"
               @click="openMaterialDemandConfiguration(row)"
-              >配置物料需求</el-button
+              >配置需求</el-button
+            >
+            <el-button
+              v-else
+              link
+              type="primary"
+              @click="openMaterialDemandOverview(row)"
+              >物料需求</el-button
             >
             <el-button
               v-if="
@@ -318,6 +326,29 @@
       @submit="submitStepAssignment"
     />
 
+    <MaterialDemandConfigurationDialog
+      :visible="materialDemandConfigurationVisible"
+      :batch="materialDemandBatch"
+      @update:visible="materialDemandConfigurationVisible = $event"
+      @configured="handleMaterialDemandsConfigured"
+    />
+
+    <MaterialDemandOverviewDialog
+      :visible="materialDemandOverviewVisible"
+      :batch="materialDemandBatch"
+      :demands="materialOverviewDemands"
+      :loading="materialOverviewLoading"
+      @update:visible="materialDemandOverviewVisible = $event"
+      @add-manual="openManualMaterialDemand"
+    />
+
+    <ManualMaterialDemandDialog
+      :visible="manualMaterialDemandVisible"
+      :batch="materialDemandBatch"
+      @update:visible="manualMaterialDemandVisible = $event"
+      @added="handleManualMaterialDemandAdded"
+    />
+
     <MaterialDemandAllocationDialog
       :visible="materialAllocationVisible"
       :demands="visibleMaterialDemands"
@@ -365,7 +396,7 @@
 
 <script setup lang="ts">
 import { computed, onActivated, onMounted, ref } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { useRoute } from 'vue-router';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import TableToolbar from '../../components/TableToolbar.vue';
 import PaginationFooter from '../../components/PaginationFooter.vue';
@@ -378,6 +409,7 @@ import type {
   CreateMaterialAllocationsPayload,
   CreateMaterialOutboundPayload,
   ProductionMaterialAllocationItem,
+  ProductionMaterialDemandItem,
   ShortBatchAuthorizationPreview,
 } from '@company/contracts';
 import { normalizeCreateBatchPayload } from '@company/utils';
@@ -405,11 +437,13 @@ import StepAssignmentDialog from './components/StepAssignmentDialog.vue';
 import { useStepAssignments } from './composables/useStepAssignments';
 import { deadlinePresentation, taskNextActionPresentation } from './production-task-presentation';
 import ProductionBatchCancelDialog from './components/ProductionBatchCancelDialog.vue';
+import MaterialDemandConfigurationDialog from './components/MaterialDemandConfigurationDialog.vue';
+import MaterialDemandOverviewDialog from './components/MaterialDemandOverviewDialog.vue';
+import ManualMaterialDemandDialog from './components/ManualMaterialDemandDialog.vue';
 
 defineOptions({ name: 'ProductionTasksPage' });
 
 const route = useRoute();
-const router = useRouter();
 
 const {
   batches,
@@ -473,6 +507,12 @@ const assignmentPendingIds = computed(
     ),
 );
 const materialAllocationVisible = ref(false);
+const materialDemandConfigurationVisible = ref(false);
+const materialDemandOverviewVisible = ref(false);
+const manualMaterialDemandVisible = ref(false);
+const materialDemandBatch = ref<ProductionBatchItem | null>(null);
+const materialOverviewDemands = ref<ProductionMaterialDemandItem[]>([]);
+const materialOverviewLoading = ref(false);
 const materialOutboundVisible = ref(false);
 const shortBatchAuthorizationVisible = ref(false);
 const shortBatchAuthorizationLoading = ref(false);
@@ -932,8 +972,36 @@ const confirmBatchCancellation = async (reason: string): Promise<void> => {
 
 /* ====== 工具函数 ====== */
 const canEditBatch = (row: ProductionBatchItem): boolean => row.status === 'pending';
-const openMaterialDemandConfiguration = async (row: ProductionBatchItem): Promise<void> => {
-  await router.push({ name: 'production-material-demands', query: { productionBatchId: row.id } });
+const openMaterialDemandConfiguration = (row: ProductionBatchItem): void => {
+  materialDemandBatch.value = row;
+  materialDemandConfigurationVisible.value = true;
+};
+const loadMaterialDemandOverview = async (): Promise<void> => {
+  if (!materialDemandBatch.value) return;
+  const batchId = materialDemandBatch.value.id;
+  materialOverviewLoading.value = true;
+  try {
+    materialOverviewDemands.value = await productionApi.listMaterialDemands(batchId);
+  } catch (error) {
+    EMessage.error(error, '物料需求查询失败');
+  } finally {
+    materialOverviewLoading.value = false;
+  }
+};
+const openMaterialDemandOverview = (row: ProductionBatchItem): void => {
+  materialDemandBatch.value = row;
+  materialOverviewDemands.value = [];
+  materialDemandOverviewVisible.value = true;
+  void loadMaterialDemandOverview();
+};
+const openManualMaterialDemand = (): void => {
+  manualMaterialDemandVisible.value = true;
+};
+const handleMaterialDemandsConfigured = async (): Promise<void> => {
+  await loadTasks();
+};
+const handleManualMaterialDemandAdded = async (): Promise<void> => {
+  await Promise.all([loadMaterialDemandOverview(), loadTasks()]);
 };
 
 onMounted(() => {

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Put, Query, UseFilters } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Put, UseFilters } from '@nestjs/common';
 import { PERMISSIONS } from '@company/constants';
 import type {
   CommandContext,
@@ -18,7 +18,6 @@ import {
   AbnormalDispositionParamDto,
   ConfirmProductionScrapSupplementPlanDto,
   SaveProductionScrapSupplementPlanDto,
-  SupplementCandidateQueryDto,
 } from './dto/production.dto.js';
 
 @Controller('production/abnormal-dispositions')
@@ -28,10 +27,7 @@ export class ProductionSupplementController {
 
   @Get(':dispositionId/supplement-candidates')
   @RequirePermission(PERMISSIONS.production.steps.manageAbnormal)
-  candidates(
-    @Param() { dispositionId }: AbnormalDispositionParamDto,
-    @Query() _query: SupplementCandidateQueryDto,
-  ) {
+  candidates(@Param() { dispositionId }: AbnormalDispositionParamDto) {
     return this.service.listCandidates(dispositionId);
   }
 

@@ -64,7 +64,7 @@ export class ProductionInboundService {
         const inboundSnapshots = normalized.details.map((line) => {
           const base = snapshotById.get(line.itemId);
           const variant = variantById.get(line.materialVariantId);
-          if (!base || !variant || variant.materialProductId !== line.itemId)
+          if (!base || !variant || variant.materialId !== line.itemId)
             throw new ProductionDomainError('NOT_FOUND', '存在无效或已失效物料版本');
           return {
             ...base,

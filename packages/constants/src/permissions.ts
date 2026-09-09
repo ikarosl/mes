@@ -29,6 +29,12 @@ export const PERMISSIONS = {
       manageBom: 'product:products:manage-bom',
       setDefaultRoute: 'product:products:set-default-route',
     },
+    materials: {
+      view: 'product:materials:view',
+      create: 'product:materials:create',
+      update: 'product:materials:update',
+      changeStatus: 'product:materials:change-status',
+    },
     materialVariants: {
       view: 'product:material-variants:view',
       create: 'product:material-variants:create',
@@ -106,7 +112,6 @@ export const PERMISSIONS = {
       manageAbnormal: 'production:steps:manage-abnormal',
       assign: 'production:steps:assign',
       start: 'production:steps:start',
-      complete: 'production:steps:complete',
     },
     rework: { execute: 'production:rework:execute' },
   },

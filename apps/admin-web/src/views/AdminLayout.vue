@@ -118,9 +118,9 @@ const all = [
 const systemItems = computed(() => all.filter((item) => auth.can(item.permission)));
 
 const productMenus = [
-  { title: '产品管理', path: '/product/products', permission: PERMISSIONS.product.products.view },
+  { title: '成品与物料', path: '/product/products', permission: PERMISSIONS.product.products.view },
   {
-    title: '产品分类',
+    title: '分类配置',
     path: '/product/categories',
     permission: PERMISSIONS.product.categories.view,
   },
@@ -129,11 +129,6 @@ const productMenus = [
     title: '工艺路线',
     path: '/product/process-routes',
     permission: PERMISSIONS.product.routes.view,
-  },
-  {
-    title: '物料版本',
-    path: '/product/material-variants',
-    permission: PERMISSIONS.product.materialVariants.view,
   },
 ];
 const productItems = computed(() => productMenus.filter((item) => auth.can(item.permission)));
@@ -150,11 +145,6 @@ const productionMenus = [
     title: '生产报工记录',
     path: '/production/execution-records',
     permission: PERMISSIONS.production.tasks.view,
-  },
-  {
-    title: '物料需求管理',
-    path: '/production/material-demands',
-    permission: PERMISSIONS.production.materialDemands.view,
   },
   {
     title: '生产追溯',

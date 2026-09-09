@@ -24,7 +24,9 @@ import { ProductionInboundRepository } from './application/ports/production-inbo
 import { ProductionSupplyDemandRepository } from './application/ports/production-supply-demand.repository.js';
 import { ProductionAbnormalRepository } from './application/ports/production-abnormal.repository.js';
 import { ProductionSupplementRepository } from './application/ports/production-supplement.repository.js';
-import { ProductionInventoryRepository } from './application/ports/production-inventory.repository.js';
+import { ProductionMaterialLossRepository } from './application/ports/production-material-loss.repository.js';
+import { ProductionReturnRepository } from './application/ports/production-return.repository.js';
+import { ProductionStockCheckRepository } from './application/ports/production-stock-check.repository.js';
 import { MysqlProductionBatchRepository } from './infrastructure/mysql-production-batch.repository.js';
 import { MysqlProductionRepository } from './infrastructure/mysql-production.repository.js';
 import { MysqlWorkOrderRepository } from './infrastructure/mysql-work-order.repository.js';
@@ -37,7 +39,9 @@ import { MysqlProductionInboundRepository } from './infrastructure/mysql-product
 import { MysqlProductionSupplyDemandRepository } from './infrastructure/mysql-production-supply-demand.repository.js';
 import { MysqlProductionAbnormalRepository } from './infrastructure/mysql-production-abnormal.repository.js';
 import { MysqlProductionSupplementRepository } from './infrastructure/mysql-production-supplement.repository.js';
-import { MysqlProductionInventoryRepository } from './infrastructure/mysql-production-inventory.repository.js';
+import { MysqlProductionMaterialLossRepository } from './infrastructure/mysql-production-material-loss.repository.js';
+import { MysqlProductionReturnRepository } from './infrastructure/mysql-production-return.repository.js';
+import { MysqlProductionStockCheckRepository } from './infrastructure/mysql-production-stock-check.repository.js';
 import { ProductionController } from './presentation/http/production.controller.js';
 import { ProductionMaterialController } from './presentation/http/production-material.controller.js';
 import { ProductionMaterialDemandController } from './presentation/http/production-material-demand.controller.js';
@@ -87,7 +91,9 @@ import { WarehouseController } from './presentation/http/warehouse.controller.js
     MysqlProductionSupplyDemandRepository,
     MysqlProductionAbnormalRepository,
     MysqlProductionSupplementRepository,
-    MysqlProductionInventoryRepository,
+    MysqlProductionMaterialLossRepository,
+    MysqlProductionReturnRepository,
+    MysqlProductionStockCheckRepository,
     { provide: ProductionRepository, useExisting: MysqlProductionRepository },
     { provide: ProductionMaterialRepository, useExisting: MysqlProductionMaterialRepository },
     {
@@ -104,7 +110,12 @@ import { WarehouseController } from './presentation/http/warehouse.controller.js
     },
     { provide: ProductionAbnormalRepository, useExisting: MysqlProductionAbnormalRepository },
     { provide: ProductionSupplementRepository, useExisting: MysqlProductionSupplementRepository },
-    { provide: ProductionInventoryRepository, useExisting: MysqlProductionInventoryRepository },
+    {
+      provide: ProductionMaterialLossRepository,
+      useExisting: MysqlProductionMaterialLossRepository,
+    },
+    { provide: ProductionReturnRepository, useExisting: MysqlProductionReturnRepository },
+    { provide: ProductionStockCheckRepository, useExisting: MysqlProductionStockCheckRepository },
   ],
 })
 export class ProductionModule {}

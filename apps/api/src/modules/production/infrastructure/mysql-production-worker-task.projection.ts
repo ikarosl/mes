@@ -31,7 +31,6 @@ type WorkerTaskRow = RowDataPacket & {
   sop_file_name: string | null;
   sop_version_no: string | null;
   step_status: BatchStepStatus;
-  need_record: number;
   unit_snapshot: string;
   effective_reported: string;
   effective_direct_reported: string;
@@ -57,7 +56,7 @@ SELECT current.id step_record_id,current.production_batch_id,b.batch_no,b.status
   current.step_code_snapshot step_code,current.step_name_snapshot step_name,current.status step_status,
   COALESCE(current.actual_sop_file_name_snapshot,current.sop_file_name_snapshot) sop_file_name,
   COALESCE(current.actual_sop_version_no_snapshot,current.sop_version_no_snapshot) sop_version_no,
-  current.need_record_snapshot need_record,current.unit_snapshot,
+  current.unit_snapshot,
   COALESCE(current_reports.effective_reported,0) effective_reported,
   COALESCE(current_reports.effective_direct_reported,0) effective_direct_reported,
   COALESCE(current_reports.effective_normal,0) effective_normal,
@@ -73,7 +72,6 @@ type QuantityStepRow = RowDataPacket & {
   id: number;
   production_batch_id: number;
   step_order_snapshot: number;
-  need_record_snapshot: number;
   status: BatchStepStatus;
   effective_direct_reported: string;
   effective_normal: string;
@@ -81,7 +79,7 @@ type QuantityStepRow = RowDataPacket & {
 
 const QUANTITY_STEP_SELECT = `WITH report_summary AS (${REPORT_SUMMARY})
 SELECT step_record.id,step_record.production_batch_id,step_record.step_order_snapshot,
-  step_record.need_record_snapshot,step_record.status,
+  step_record.status,
   COALESCE(report_summary.effective_direct_reported,0) effective_direct_reported,
   COALESCE(report_summary.effective_normal,0) effective_normal
 FROM batch_step_records step_record
@@ -123,7 +121,6 @@ export const selectWorkerTasks = async (
       batchSteps.map<RouteQuantityStep>((step) => ({
         id: step.id,
         stepOrder: step.step_order_snapshot,
-        needRecord: Boolean(step.need_record_snapshot),
         status: step.status,
         effectiveDirectReported: step.effective_direct_reported,
         effectiveNormal: step.effective_normal,
@@ -151,11 +148,6 @@ const mapWorkerTask = (
   const upstreamReady = isFirst
     ? row.batch_status === 'material_outbound' || shortBatchStartable
     : integerQuantity(quantity.releasedInputQuantity) > 0;
-  const canComplete =
-    row.step_status === 'doing' &&
-    !row.need_record &&
-    row.batch_status === 'doing' &&
-    (isFirst || row.previous_status === 'completed');
   return {
     stepRecordId: String(row.step_record_id),
     productionBatchId: String(row.production_batch_id),
@@ -172,7 +164,6 @@ const mapWorkerTask = (
     sopFileName: row.sop_file_name,
     sopVersionNo: row.sop_version_no,
     status: row.step_status,
-    needRecord: Boolean(row.need_record),
     unit: row.unit_snapshot,
     plannedQuantity: row.planned_quantity,
     baseNormalQuantity: row.planned_quantity,
@@ -200,12 +191,5 @@ const mapWorkerTask = (
           : isFirst
             ? '等待生产领料全部出库'
             : '等待上一道工序释放正常数量',
-    canComplete,
-    completeBlockedReason:
-      row.step_status === 'doing' && !row.need_record && !canComplete
-        ? isFirst
-          ? '生产批次尚未进入执行中'
-          : '等待上一道工序完成'
-        : null,
   };
 };

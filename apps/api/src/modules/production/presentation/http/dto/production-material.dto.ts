@@ -110,8 +110,12 @@ export class ConfigureMaterialDemandsDto {
   requirements!: ConfigureMaterialRequirementDto[];
 }
 
-export class AddManualMaterialDemandDto {
-  @IsString() @MaxLength(20) materialVariantId!: string;
-  @Type(() => Number) @IsInt() @Min(1) @Max(99_999_999) quantity!: number;
+export class AddManualMaterialDemandsDto {
   @IsString() @IsNotEmpty() @MaxLength(5000) reason!: string;
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(200)
+  @ValidateNested({ each: true })
+  @Type(() => ConfigureMaterialRequirementDto)
+  requirements!: ConfigureMaterialRequirementDto[];
 }

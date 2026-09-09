@@ -36,7 +36,6 @@ type RouteRow = RowDataPacket & {
   route_code: string;
   route_name: string;
   version_no: string;
-  product_id: number;
 };
 type RouteStepRow = RowDataPacket & {
   route_step_id: number;
@@ -53,7 +52,6 @@ type RouteStepRow = RowDataPacket & {
   sop_status: number | null;
   sop_is_deleted: number | null;
   need_inspection: number;
-  need_record: number;
 };
 
 @Injectable()
@@ -65,10 +63,12 @@ export class MysqlProductSnapshotRepository
   async listInventoryItemReferencesByIds(itemIds: string[]): Promise<InventoryItemReference[]> {
     if (itemIds.length === 0) return [];
     const [rows] = await this.pool.query<ProductRow[]>(
-      `SELECT p.id,p.item_code,p.product_name,p.unit,c.item_kind,p.default_route_id
-         FROM products p
-         JOIN product_categories c ON c.id=p.category_id AND c.status=1 AND c.is_deleted=0
-        WHERE p.status=1 AND p.deleted_at IS NULL AND p.id IN (${itemIds.map(() => '?').join(',')})`,
+      `SELECT m.id,m.material_code item_code,m.material_name product_name,m.unit,
+              'material' item_kind,NULL default_route_id
+         FROM materials m
+         JOIN product_categories c ON c.id=m.category_id AND c.status=1 AND c.is_deleted=0
+        WHERE m.status=1 AND m.deleted_at IS NULL AND c.item_kind='material'
+          AND m.id IN (${itemIds.map(() => '?').join(',')})`,
       itemIds,
     );
     return rows.map((row) => ({
@@ -85,7 +85,7 @@ export class MysqlProductSnapshotRepository
   ): Promise<InventoryItemDisplayReference[]> {
     if (itemIds.length === 0) return [];
     const [rows] = await this.pool.query<ProductDisplayRow[]>(
-      `SELECT id,item_code,product_name,unit FROM products
+      `SELECT id,material_code item_code,material_name product_name,unit FROM materials
        WHERE id IN (${itemIds.map(() => '?').join(',')})`,
       itemIds,
     );
@@ -111,7 +111,7 @@ export class MysqlProductSnapshotRepository
       const product = await this.productionProduct(connection, productId, true);
       const routeId = requestedRouteId ?? product.defaultRouteId;
       if (!routeId) return null;
-      return this.routeSnapshot(connection, routeId, product.id, true);
+      return this.routeSnapshot(connection, routeId, true);
     });
   }
 
@@ -141,10 +141,10 @@ export class MysqlProductSnapshotRepository
         `SELECT pm.unit,p.unit material_unit,p.status material_status,p.is_deleted material_is_deleted,
                 c.item_kind material_kind,c.status category_status,c.is_deleted category_is_deleted
            FROM product_materials pm
-           JOIN products p ON p.id=pm.material_product_id
+           JOIN materials p ON p.id=pm.material_id
            JOIN product_categories c ON c.id=p.category_id
           WHERE pm.product_id=? AND pm.status=1 AND pm.is_deleted=0
-          ORDER BY pm.material_product_id
+          ORDER BY pm.material_id
           FOR UPDATE`,
         [productId],
       );
@@ -169,9 +169,7 @@ export class MysqlProductSnapshotRepository
       }
 
       const routeId = requestedRouteId ?? product.defaultRouteId;
-      const route = routeId
-        ? await this.routeSnapshot(connection, routeId, product.id, true)
-        : null;
+      const route = routeId ? await this.routeSnapshot(connection, routeId, true) : null;
       if (lockFact.bom_locked_at === null) {
         await connection.execute(
           `UPDATE products
@@ -202,10 +200,11 @@ export class MysqlProductSnapshotRepository
     return withTransaction(this.pool, async (connection) => {
       const product = await this.productionProduct(connection, productId);
       const [rows] = await connection.query<BomRow[]>(
-        `SELECT pm.id product_material_id,pm.material_product_id,p.item_code,p.product_name,pm.unit,
+        `SELECT pm.id product_material_id,pm.material_id,p.material_code item_code,
+                p.material_name product_name,pm.unit,
                 pm.quantity_per_unit,pm.is_key_material,pm.need_batch_record,p.status material_status,
                 p.is_deleted material_is_deleted,c.status category_status,c.is_deleted category_is_deleted
-           FROM product_materials pm JOIN products p ON p.id=pm.material_product_id
+           FROM product_materials pm JOIN materials p ON p.id=pm.material_id
            JOIN product_categories c ON c.id=p.category_id
           WHERE pm.product_id=? AND pm.status=1 AND pm.is_deleted=0
           ORDER BY pm.id`,
@@ -229,7 +228,7 @@ export class MysqlProductSnapshotRepository
         product,
         lines: rows.map((row) => ({
           productMaterialId: String(row.product_material_id),
-          materialProductId: String(row.material_product_id),
+          materialId: String(row.material_id),
           itemCode: row.item_code,
           productName: row.product_name,
           unit: row.unit,
@@ -274,25 +273,20 @@ export class MysqlProductSnapshotRepository
   private async routeSnapshot(
     db: Db,
     routeId: string,
-    expectedProductId?: string,
     lock = false,
   ): Promise<ProcessRouteSnapshot> {
-    const productCondition = expectedProductId ? ' AND r.product_id=?' : '';
     const [[route]] = await db.query<RouteRow[]>(
-      `SELECT r.id,r.route_code,r.route_name,r.version_no,r.product_id
-         FROM process_routes r JOIN products p ON p.id=r.product_id JOIN product_categories c ON c.id=p.category_id
-        WHERE r.id=? AND r.status='enabled' AND r.is_deleted=0
-          AND p.status=1 AND p.acquire_method='self_made' AND p.is_deleted=0
-          AND c.item_kind='finished_product' AND c.status=1 AND c.is_deleted=0${productCondition}${lock ? ' FOR UPDATE' : ''}`,
-      expectedProductId ? [routeId, expectedProductId] : [routeId],
+      `SELECT r.id,r.route_code,r.route_name,r.version_no
+         FROM process_routes r
+        WHERE r.id=? AND r.status='enabled' AND r.is_deleted=0${lock ? ' FOR UPDATE' : ''}`,
+      [routeId],
     );
     if (!route) throw new ProductDomainError('NOT_FOUND', '已启用的生产工艺路线不存在');
-    const product = await this.productionProduct(db, String(route.product_id), lock);
     const [steps] = await db.query<RouteStepRow[]>(
       `SELECT rs.id route_step_id,rs.step_order,rs.process_step_id,rs.step_code_snapshot,rs.step_name_snapshot,
                 rs.description_snapshot,rs.default_owner_id,rs.sop_file_id,rs.sop_file_name_snapshot,
                 rs.sop_object_key_snapshot,rs.sop_version_no_snapshot,tf.status sop_status,
-                tf.is_deleted sop_is_deleted,rs.need_inspection,rs.need_record
+                tf.is_deleted sop_is_deleted,rs.need_inspection
          FROM process_route_steps rs
          LEFT JOIN technical_files tf ON tf.id=rs.sop_file_id AND tf.file_type='sop'
         WHERE rs.route_id=? AND rs.status=1 AND rs.is_deleted=0
@@ -319,7 +313,6 @@ export class MysqlProductSnapshotRepository
       routeCode: route.route_code,
       routeName: route.route_name,
       versionNo: route.version_no,
-      product,
       steps: steps.map((step) => ({
         routeStepId: String(step.route_step_id),
         stepOrder: step.step_order,
@@ -338,7 +331,6 @@ export class MysqlProductSnapshotRepository
                 versionNo: step.sop_version_no_snapshot!,
               },
         needInspection: Boolean(step.need_inspection),
-        needRecord: Boolean(step.need_record),
       })),
     };
   }
@@ -368,7 +360,7 @@ export class MysqlProductSnapshotRepository
 
 type BomRow = RowDataPacket & {
   product_material_id: number;
-  material_product_id: number;
+  material_id: number;
   item_code: string;
   product_name: string;
   unit: string;

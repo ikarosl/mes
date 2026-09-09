@@ -11,6 +11,9 @@ import type {
   ProductMaterialPayload,
   MaterialVariantListQuery,
   MaterialVariantPayload,
+  MaterialListQuery,
+  MaterialPayload,
+  ProductGroupQuery,
   ProductListQuery,
   ProductPayload,
   TechnicalFileQuery,
@@ -26,6 +29,7 @@ import { ProductCategoryRepository } from './ports/product-category.repository.j
 import { TechnicalFileRepository } from './ports/technical-file.repository.js';
 import { TechnicalFileStorage, type TechnicalFileUpload } from './ports/technical-file.storage.js';
 import { MaterialVariantRepository } from './ports/material-variant.repository.js';
+import { MaterialRepository } from './ports/material.repository.js';
 
 @Injectable()
 export class ProductService {
@@ -39,6 +43,7 @@ export class ProductService {
     private readonly storage: TechnicalFileStorage,
     private readonly identityDirectory: IdentityDirectoryService,
     private readonly materialVariants: MaterialVariantRepository,
+    private readonly materials: MaterialRepository,
   ) {}
 
   listCategories(query: ProductCategoryQuery) {
@@ -71,14 +76,23 @@ export class ProductService {
   listProducts(query: ProductListQuery) {
     return this.catalog.listProducts(query);
   }
+  listProductGroups(query: ProductGroupQuery) {
+    return this.catalog.listProductGroups(query);
+  }
   listProductOptions() {
     return this.catalog.listProductOptions();
   }
   listMaterialVariants(query: MaterialVariantListQuery) {
     return this.materialVariants.list(query);
   }
-  listMaterialVariantsByMaterial(materialProductId: string) {
-    return this.materialVariants.listByMaterial(materialProductId);
+  listMaterialVariantsByMaterial(materialId: string) {
+    return this.materialVariants.listEnabledByMaterials([materialId]);
+  }
+  listMaterialMasterData(query: MaterialListQuery) {
+    return this.materials.list(query);
+  }
+  listMaterialOptions() {
+    return this.materials.listOptions();
   }
   listProcessSteps(query: ProcessStepQuery) {
     return this.processSteps.listProcessSteps(query);
@@ -128,10 +142,19 @@ export class ProductService {
   setProductStatus(id: string, status: number, audit: CommandContext) {
     return this.catalog.setProductStatus(id, status, audit);
   }
+  createMaterial(payload: MaterialPayload, audit: CommandContext) {
+    return this.materials.create(this.cleanMaterial(payload), audit);
+  }
+  updateMaterial(id: string, payload: MaterialPayload, audit: CommandContext) {
+    return this.materials.update(id, this.cleanMaterial(payload), audit);
+  }
+  setMaterialStatus(id: string, status: number, audit: CommandContext) {
+    return this.materials.setStatus(id, status, audit);
+  }
   createMaterialVariant(payload: MaterialVariantPayload, audit: CommandContext) {
     return this.materialVariants.create(
       {
-        materialProductId: payload.materialProductId,
+        materialId: payload.materialId,
         majorVersion: payload.majorVersion.trim(),
         minorVersion: payload.minorVersion.trim(),
         remark: payload.remark?.trim() || null,
@@ -146,7 +169,7 @@ export class ProductService {
     if (items.length > 200) {
       throw new ProductDomainError('INVALID_INPUT', '一份 BOM 最多包含 200 行明细');
     }
-    if (new Set(items.map((item) => item.materialProductId)).size !== items.length) {
+    if (new Set(items.map((item) => item.materialId)).size !== items.length) {
       throw new ProductDomainError('INVALID_INPUT', '同一投入物料不能在一份 BOM 中重复');
     }
     if (
@@ -248,6 +271,22 @@ export class ProductService {
       ...payload,
       itemCode: payload.itemCode.trim(),
       productName: payload.productName.trim(),
+      unit: payload.unit.trim(),
+      remark: payload.remark?.trim() || null,
+      specValues: (payload.specValues ?? [])
+        .filter((item) => item.key.trim())
+        .map((item) => ({
+          key: item.key.trim(),
+          value: item.value.trim(),
+          unit: item.unit?.trim() || undefined,
+        })),
+    };
+  }
+  private cleanMaterial(payload: MaterialPayload): MaterialPayload {
+    return {
+      ...payload,
+      materialCode: payload.materialCode.trim(),
+      materialName: payload.materialName.trim(),
       unit: payload.unit.trim(),
       remark: payload.remark?.trim() || null,
       specValues: (payload.specValues ?? [])

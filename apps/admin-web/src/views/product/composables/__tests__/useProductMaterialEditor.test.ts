@@ -2,59 +2,60 @@ import { flushPromises } from '@vue/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useProductMaterialEditor } from '../useProductMaterialEditor';
 
-const { materials, productOptions, error, warning } = vi.hoisted(() => ({
-  materials: vi.fn(),
-  productOptions: vi.fn(),
+const { productMaterials, materialOptions, error, warning } = vi.hoisted(() => ({
+  productMaterials: vi.fn(),
+  materialOptions: vi.fn(),
   error: vi.fn(),
   warning: vi.fn(),
 }));
 vi.mock('../../../../api/product', () => ({
-  productApi: { materials, productOptions },
+  productApi: { productMaterials, materialOptions },
 }));
 vi.mock('../../../../utils/message', () => ({ EMessage: { error, warning } }));
 
-const option = (id: string, itemKind: string) => ({
+const option = (id: string) => ({
   id,
-  itemCode: `C-${id}`,
-  productName: `物料${id}`,
-  itemKind,
+  materialCode: `C-${id}`,
+  materialName: `物料${id}`,
   acquireMethod: 'purchased',
   unit: 'kg',
-  defaultRouteId: null,
 });
 
-const bomRow = { materialProductId: '2', quantityPerUnit: '1.5', unit: 'kg' };
+const bomRow = {
+  id: 'bom-1',
+  materialId: '2',
+  quantityPerUnit: '1.5',
+  unit: 'kg',
+  isKeyMaterial: true,
+  needBatchRecord: false,
+  remark: null,
+};
 
 describe('useProductMaterialEditor', () => {
   beforeEach(() => {
-    materials.mockReset();
-    productOptions.mockReset();
+    productMaterials.mockReset();
+    materialOptions.mockReset();
     error.mockReset();
     warning.mockReset();
   });
 
   it('loads BOM rows and material candidates independently', async () => {
-    materials.mockResolvedValue([bomRow]);
-    productOptions.mockResolvedValue([
-      // 半成品仍可作为分类名称，但底层业务 kind 统一为 material。
-      option('1', 'material'),
-      option('2', 'material'),
-      option('9', 'material'),
-    ]);
+    productMaterials.mockResolvedValue([bomRow]);
+    materialOptions.mockResolvedValue([option('1'), option('2'), option('9')]);
     const state = useProductMaterialEditor();
 
     const rows = await state.load('1');
 
     expect(rows).toHaveLength(1);
-    // 排除自身产品，保留物料/半成品候选
-    expect(state.materialOptions.value.map((o) => o.id)).toEqual(['2', '9']);
+    // 产品与基础物料已拆为独立资源，候选来自 /materials/options，不再按产品 ID 排除。
+    expect(state.materialOptions.value.map((o) => o.id)).toEqual(['1', '2', '9']);
     expect(state.detailStatus.value).toBe('ready');
     expect(state.loadedProductId.value).toBe('1');
   });
 
   it('keeps BOM rows when candidate options fail (candidate source stays empty)', async () => {
-    materials.mockResolvedValue([bomRow]);
-    productOptions.mockRejectedValue(new Error('403'));
+    productMaterials.mockResolvedValue([bomRow]);
+    materialOptions.mockRejectedValue(new Error('403'));
     const state = useProductMaterialEditor();
 
     const rows = await state.load('1');
@@ -70,9 +71,9 @@ describe('useProductMaterialEditor', () => {
   });
 
   it('becomes ready as soon as BOM detail resolves even if candidate refresh is pending', async () => {
-    materials.mockResolvedValue([bomRow]);
+    productMaterials.mockResolvedValue([bomRow]);
     // 候选请求挂起（promise 不 resolve）：不得阻塞关键明细就绪
-    productOptions.mockImplementation(() => new Promise(() => {}));
+    materialOptions.mockImplementation(() => new Promise(() => {}));
     const state = useProductMaterialEditor();
 
     const rows = await state.load('1');
@@ -87,8 +88,8 @@ describe('useProductMaterialEditor', () => {
 
   it('updates candidate options after a slow candidate refresh finally resolves', async () => {
     let resolveOptions!: (value: Array<ReturnType<typeof option>>) => void;
-    materials.mockResolvedValue([bomRow]);
-    productOptions.mockImplementation(
+    productMaterials.mockResolvedValue([bomRow]);
+    materialOptions.mockImplementation(
       () =>
         new Promise((resolve) => {
           resolveOptions = resolve;
@@ -102,7 +103,7 @@ describe('useProductMaterialEditor', () => {
     expect(state.materialOptions.value).toEqual([]);
 
     // 候选迟到返回：options 正常写回，不影响已就绪的明细状态
-    resolveOptions([option('2', 'material'), option('9', 'material')]);
+    resolveOptions([option('2'), option('9')]);
     await flushPromises();
 
     expect(state.materialOptions.value.map((o) => o.id)).toEqual(['2', '9']);
@@ -111,8 +112,8 @@ describe('useProductMaterialEditor', () => {
   });
 
   it('returns null and reports when BOM detail fails', async () => {
-    materials.mockRejectedValue(new Error('500'));
-    productOptions.mockResolvedValue([]);
+    productMaterials.mockRejectedValue(new Error('500'));
+    materialOptions.mockResolvedValue([]);
     const state = useProductMaterialEditor();
 
     const rows = await state.load('1');
@@ -123,9 +124,9 @@ describe('useProductMaterialEditor', () => {
   });
 
   it('keeps previous loadedProductId and marks error when a newer product detail fails', async () => {
-    materials.mockResolvedValueOnce([bomRow]);
-    materials.mockRejectedValueOnce(new Error('500'));
-    productOptions.mockResolvedValue([]);
+    productMaterials.mockResolvedValueOnce([bomRow]);
+    productMaterials.mockRejectedValueOnce(new Error('500'));
+    materialOptions.mockResolvedValue([]);
     const state = useProductMaterialEditor();
 
     await state.load('1');
@@ -140,13 +141,13 @@ describe('useProductMaterialEditor', () => {
   });
 
   it('refreshOptions reloads only candidates, never BOM rows', async () => {
-    materials.mockResolvedValue([bomRow]);
-    productOptions.mockResolvedValue([option('2', 'material')]);
+    productMaterials.mockResolvedValue([bomRow]);
+    materialOptions.mockResolvedValue([option('2')]);
     const state = useProductMaterialEditor();
 
     await state.refreshOptions('1');
 
-    expect(materials).not.toHaveBeenCalled();
+    expect(productMaterials).not.toHaveBeenCalled();
     expect(state.materialOptions.value).toHaveLength(1);
     // 候选刷新不影响明细就绪状态
     expect(state.detailStatus.value).toBe('idle');
@@ -155,14 +156,14 @@ describe('useProductMaterialEditor', () => {
 
   it('discards a late load response for a previous product (last-request-wins)', async () => {
     let resolveA!: (value: Array<typeof bomRow>) => void;
-    materials.mockImplementation((productId: string) =>
+    productMaterials.mockImplementation((productId: string) =>
       productId === 'A'
         ? new Promise((resolve) => {
             resolveA = resolve;
           })
         : Promise.resolve([bomRow]),
     );
-    productOptions.mockResolvedValue([option('2', 'material')]);
+    materialOptions.mockResolvedValue([option('2')]);
     const state = useProductMaterialEditor();
 
     const pendingA = state.load('A');

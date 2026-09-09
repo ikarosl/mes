@@ -6,7 +6,6 @@ const fixed = fixedIntegerQuantity;
 export type RouteQuantityStep = {
   id: number | string;
   stepOrder: number;
-  needRecord: boolean;
   status: BatchStepStatus;
   effectiveDirectReported: number | string;
   effectiveNormal: number | string;
@@ -71,14 +70,9 @@ export const calculateRouteStepQuantities = (
       .reduce((total, source) => total + integerQuantity(source.quantity), 0);
     const required = planned + activatedTarget;
     const previous = ordered[index - 1];
-    const previousQuantity = previous ? result.get(String(previous.id)) : undefined;
     const released = !previous
       ? planned + activatedInput
-      : previous.needRecord
-        ? integerQuantity(previous.effectiveNormal)
-        : previous.status === 'completed'
-          ? integerQuantity(previousQuantity?.requiredNormalQuantity ?? 0)
-          : 0;
+      : integerQuantity(previous.effectiveNormal);
     const directReported = integerQuantity(step.effectiveDirectReported);
     const effectiveNormal = integerQuantity(step.effectiveNormal);
     const available = Math.max(0, released - directReported);

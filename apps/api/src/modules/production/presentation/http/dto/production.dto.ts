@@ -40,6 +40,7 @@ import {
   BATCH_STEP_ABNORMAL_ORIGINS,
   PRODUCTION_BATCH_STATUSES,
   WORK_ORDER_STATUSES,
+  WORK_ORDER_TYPES,
 } from '@company/constants';
 import { PageQueryDto } from '../../../../../presentation/http/dto/page-query.dto.js';
 import { VersionedCommandDto } from '../../../../../presentation/http/dto/versioned-command.dto.js';
@@ -73,6 +74,7 @@ export class ProductionBatchQueryDto extends PageQueryDto implements ProductionB
 }
 export class CreateWorkOrderDto implements CreateWorkOrderPayload {
   @IsString() @MaxLength(100) workOrderNo!: string;
+  @IsIn(WORK_ORDER_TYPES) orderType!: CreateWorkOrderPayload['orderType'];
   @IsString() @MaxLength(20) productId!: string;
   @Type(() => Number) @IsInt() @Min(1) @Max(MAX_QUANTITY) plannedQuantity!: number;
   @IsOptional() @IsString() @MaxLength(255) customerName?: string | null;
@@ -92,6 +94,7 @@ export class CreateWorkOrderDto implements CreateWorkOrderPayload {
   @IsOptional() @IsString() @MaxLength(5000) remark?: string | null;
 }
 export class UpdateWorkOrderDto extends VersionedCommandDto implements UpdateWorkOrderPayload {
+  @IsOptional() @IsIn(WORK_ORDER_TYPES) orderType?: UpdateWorkOrderPayload['orderType'];
   @IsOptional() @IsString() @MaxLength(20) productId?: string;
   @IsOptional()
   @Type(() => Number)
@@ -260,8 +263,6 @@ export class ApproveScrapSupplementDto
   details!: ApproveScrapSupplementLineDto[];
   @IsOptional() @IsString() @MaxLength(5000) remark?: string | null;
 }
-
-export class SupplementCandidateQueryDto {}
 
 export class SaveProductionScrapSupplementPlanDto {
   @IsDefined()

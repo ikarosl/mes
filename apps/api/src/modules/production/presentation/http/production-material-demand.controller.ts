@@ -14,10 +14,9 @@ import {
 import { ProductionMaterialDemandService } from '../../application/production-material-demand.service.js';
 import { ProductionDomainExceptionFilter } from './production-domain-exception.filter.js';
 import {
-  AddManualMaterialDemandDto,
+  AddManualMaterialDemandsDto,
   BatchIdParamDto,
   ConfigureMaterialDemandsDto,
-  DemandIdParamDto,
   MaterialDemandManagementQueryDto,
 } from './dto/production-material.dto.js';
 
@@ -50,15 +49,15 @@ export class ProductionMaterialDemandController {
     return this.service.configure(params.batchId, body, context);
   }
 
-  @Post('material-demands/:demandId/additions')
+  @Post('batches/:batchId/material-demands/additions')
   @RequirePermission(PERMISSIONS.production.materialDemands.addManual)
   @AuditInApplication()
   @IdempotentEndpoint({ scope: ADD_MANUAL_MATERIAL_DEMAND_IDEMPOTENCY_SCOPE })
   addManual(
-    @Param() params: DemandIdParamDto,
-    @Body() body: AddManualMaterialDemandDto,
+    @Param() params: BatchIdParamDto,
+    @Body() body: AddManualMaterialDemandsDto,
     @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
   ) {
-    return this.service.addManual(params.demandId, body, context);
+    return this.service.addManual(params.batchId, body, context);
   }
 }

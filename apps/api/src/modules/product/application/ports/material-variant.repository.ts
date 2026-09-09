@@ -8,25 +8,30 @@ import type { CommandContext } from '../../../../common/audit/audit.types.js';
 /** Shared public shape for paged Product lists and cross-module option reads. */
 export type MaterialVariantRecord = MaterialVariantItem;
 
+/** 仅供既有单据展示；包含停用、软删除版本，不得用于写操作校验。 */
+export interface MaterialVariantDisplayReference {
+  id: string;
+  variantCode: string;
+}
+
 export interface CreateMaterialVariantCommand {
-  materialProductId: string;
+  materialId: string;
   majorVersion: string;
   minorVersion: string;
   remark: string | null;
 }
 
 export abstract class MaterialVariantQuery {
+  abstract listDisplayReferencesByIds(
+    variantIds: string[],
+  ): Promise<MaterialVariantDisplayReference[]>;
   /**
    * `lock` is a domain-level concurrency hint. It is meaningful only when the
    * caller is already inside the shared application transaction; the adapter
    * reuses that transaction and locks the selected master rows before a write.
    */
-  abstract listByMaterial(
-    materialProductId: string,
-    options?: { lock?: boolean },
-  ): Promise<MaterialVariantRecord[]>;
   abstract listEnabledByMaterials(
-    materialProductIds: string[],
+    materialIds: string[],
     options?: { lock?: boolean },
   ): Promise<MaterialVariantRecord[]>;
 }

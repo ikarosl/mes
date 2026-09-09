@@ -24,7 +24,7 @@ describe('resolveDefaultRouteId', () => {
     ).toBe('route-1');
   });
 
-  it('returns an empty value when the product has no route', () => {
-    expect(resolveDefaultRouteId('product-3', [], routes)).toBe('');
+  it('falls back to the first available route when no product default is available', () => {
+    expect(resolveDefaultRouteId('product-3', [], routes)).toBe('route-1');
   });
 });

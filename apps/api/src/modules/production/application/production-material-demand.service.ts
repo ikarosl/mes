@@ -63,16 +63,27 @@ export class ProductionMaterialDemandService {
   }
 
   async addManual(
-    demandId: string,
-    payload: { materialVariantId: string; quantity: number; reason: string },
+    batchId: string,
+    payload: {
+      requirements: Array<{
+        productMaterialId: string;
+        splits: Array<{ materialVariantId: string; quantity: number }>;
+      }>;
+      reason: string;
+    },
     context: IdempotentCommandContext,
   ) {
     const reason = payload.reason.trim();
-    if (!reason) throw new ProductionDomainError('INVALID_INPUT', '人工补充原因不能为空');
+    if (!reason) throw new ProductionDomainError('INVALID_INPUT', '人工追加原因不能为空');
     const normalized = {
-      parentDemandId: demandId,
-      materialVariantId: payload.materialVariantId,
-      quantity: Number(payload.quantity),
+      productionBatchId: batchId,
+      requirements: payload.requirements.map((requirement) => ({
+        productMaterialId: requirement.productMaterialId,
+        splits: requirement.splits.map((split) => ({
+          materialVariantId: split.materialVariantId,
+          quantity: Number(split.quantity),
+        })),
+      })),
       reason,
     };
     const command = narrow(context);
@@ -81,7 +92,7 @@ export class ProductionMaterialDemandService {
       key: context.idempotencyKey,
       actorId: context.actorId,
       requestId: context.requestId,
-      request: { params: { demandId }, body: normalized },
+      request: { params: { batchId }, body: normalized },
       resultCodec: addManualMaterialDemandResultCodec,
       handler: () => this.repository.addManualDemand(normalized, command),
     });

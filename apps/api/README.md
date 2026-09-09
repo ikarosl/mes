@@ -34,4 +34,7 @@ src/
 
 ## 验证
 
-`corepack pnpm --filter @company/api typecheck`，并运行相邻测试和根架构门禁。
+`corepack pnpm --filter @company/api typecheck` 只检查可运行 API 代码，不包含相邻测试文件；开发启动也使用同一边界。
+
+测试由独立的 `corepack pnpm --filter @company/api test` 执行。需要单独检查测试文件类型时运行
+`corepack pnpm --filter @company/api typecheck:test`，该命令不会被 `dev` 或运行时构建调用。
