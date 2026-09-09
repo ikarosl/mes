@@ -1,9 +1,10 @@
 # 数据库首次初始化与演示数据
 
-**重置流程 前提**
+**重置流程 重置引导**
 **将现有数据打包到备份文件夹下，并移除了原数据目录**
 MySQL 官方镜像明确说明：数据目录已初始化时，MYSQL_ROOT_PASSWORD、MYSQL_USER 等初始化变量会被忽略，不会修改已有账号。**所以必须移除原数据目录**
 ``` bash
+//备份数据并重新启动
 compose=(
   docker compose
   --project-name easy-mes
@@ -12,7 +13,7 @@ compose=(
   --file /opt/easy-mes/compose.prod.yml
 )
 
-"${compose[@]}" down
+"${compose[@]}" down mysql
 
 reset_stamp="$(date +%Y%m%d-%H%M%S)"
 mv -- /srv/easy-mes/mysql \
@@ -21,9 +22,8 @@ mv -- /srv/easy-mes/mysql \
 install -d -o 999 -g 999 -m 750 /srv/easy-mes/mysql
 
 "${compose[@]}" up -d --wait mysql
+//这一步完成后数据清空变为空表
 
-此时 root 密码就是你刚写入 MYSQL_ROOT_PASSWORD 的新值。交互式登录，避免密码进入命令历史：
-"${compose[@]}" exec mysql mysql -uroot -p
 
 然后初始化最新数据库结构和基础数据：
 "${compose[@]}" run --rm --no-deps api \
@@ -32,8 +32,6 @@ install -d -o 999 -g 999 -m 750 /srv/easy-mes/mysql
 "${compose[@]}" run --rm --no-deps api \
   node node_modules/@company/database/dist/seed.js
 ```
-
-
 
 
 ## System seed
