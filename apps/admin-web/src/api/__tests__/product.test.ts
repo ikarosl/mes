@@ -16,17 +16,15 @@ describe('productApi contract mapping', () => {
         materialId: '2',
         quantityPerUnit: 1.25,
         unit: 'kg',
-        isKeyMaterial: true,
-        needBatchRecord: true,
       },
     ];
 
-    await productApi.replaceMaterials('1', items);
+    await productApi.replaceMaterials('1', items, 7);
 
     expect(request).toHaveBeenCalledWith({
       url: '/product/products/1/materials',
       method: 'PUT',
-      data: { items },
+      data: { items, version: 7 },
     });
   });
 

@@ -12,7 +12,11 @@
 
 ## 当前能力与不变量
 
-产品编码和基础单位表达不可复用的稳定身份；BOM 首次被生产任务引用后永久锁定。创建任务时冻结路线、工序与 SOP 快照。公开契约不得暴露数据库行、连接、SDK 类型或内部 domain 错误。
+产品编码和基础单位表达不可复用的稳定身份；BOM 最后一级审批通过后永久锁定，审批中冻结编辑。创建任务时冻结路线、工序与 SOP 快照。公开契约不得暴露数据库行、连接、SDK 类型或内部 domain 错误。
+
+`ProductBomApprovalHandler` 负责声明 BOM 受审快照的结构版本，并通过 `readSnapshotForDisplay()` 校验历史证据、按物料 ID 补充当前名称。Approval 通用提交调用其准备、绑定及终态方法；冻结版本取绑定返回值。BOM 资格和永久锁定规则仍由 Product 实现，不进入审批通用配置仓储。
+
+BOM 明细仅配置基础物料、单位用量、单位、状态和备注，不再配置关键物料或是否记录批次开关；生产侧仍按精确物料版本和库存批次追溯。
 
 详细技术文件规则见 [technical-files.md](docs/technical-files.md)；业务表规则见[数据库设计](docs/database.md)。
 
@@ -115,6 +119,8 @@
 不冲突，前端以 `skipErrorHandling` best-effort 读取。
 
 `GET /product-groups`、`GET /materials`、`GET /process-routes`、`GET /categories` 和 `GET /process-steps` 使用通用 `PageResult<T>` 响应。成品组、物料和路线列表支持关键字、状态及各自业务筛选；表单选择统一使用独立 `/options` 接口，默认排除停用和删除记录。
+
+`PUT /products/:id/materials` 的请求体为 `{ version, items }`，不是裸数组。`version` 必填，使用成品列表返回的聚合版本；DTO 校验非负整数，Product 在同一事务锁成品根后核对版本，再替换明细、递增版本并写成功审计。旧版本返回 `409 CONFLICT`，缺失或非法版本返回 `400 VALIDATION_ERROR`。保存成功后重新读取成品版本，再用新版本提交 BOM 审批；未保存的本地修改不能直接送审。
 
 ## 4. 工作流不变量
 

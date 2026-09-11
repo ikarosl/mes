@@ -13,6 +13,7 @@
 
 - Identity/System：认证、RBAC、操作日志和管理端权限基础设施。
 - Product：产品分类、产品主数据、产品物料、技术文件、工序和工艺路线。
+- Approval：BOM 场景的角色顺序多级配置、申请、待办与决定；工单审批及 Notification 尚未接入。
 - Production：生产工单、生产批次、工序报工追溯，以及其依赖的生产物料需求、分配、领料出库、生产退料和库存盘点链路；按状态机分阶段迁移。
 
 通用 Inventory（其他出入库、报废）、Quality（检验）和 Traceability（全流程追溯）只能在后续迁移阶段明确更新后追加，不得仅凭已有 UI 原型提前实现。当前盘点仅覆盖现有 `item_batch × stock_status` 账本，退料仅覆盖已确认生产领料并固定释放到公共可用库存。
@@ -102,6 +103,7 @@ Identity 的密码算法和令牌签发/验证通过 `PasswordHasher`、`TokenSe
 | Identity/System  | departments、users、roles、permissions、关联表、refresh_tokens                                                                           |
 | Product          | product_categories、products、materials、material_variants、product_materials、technical_files、process_steps、process_routes 及关联表                                 |
 | Production       | work_orders、work_order_material_versions、production_batches、batch_step_records、batch_step_reports、batch_step_abnormal_dispositions、rework_records、batch_step_scrap_records、batch_step_scrap_reproduction_authorization、production_scrap_supplement_plan、production_scrap_supplement_plan_line、production_material_supplement、production_material_requirement_basis、production_manual_demand_addition、production_item_demand、production_item_allocation、production_short_batch_authorization、production_short_batch_authorization_detail、item_scrap、inbound_order、inbound_detail、outbound_order、outbound_detail、return_order、return_detail、stock_check_order、stock_check_detail，以及当前生产库存切片的 item_batch、inventory_transaction 和可重建查询投影 inventory_batch_balance、inventory_material_variant_balance |
+| Approval | approval_flow_definitions、approval_flow_versions、approval_flow_steps、approval_instances、approval_instance_steps、approval_tasks、approval_actions |
 | 平台审计基础设施 | operation_logs                                                                                                                           |
 | 平台幂等基础设施 | http_idempotency_records（已落地）                                                                                                       |
 | common           | 不拥有业务表                                                                                                                             |
@@ -177,7 +179,7 @@ Controller、Service 和 SQL 不得混写在同一文件。
 
 SQL 对象所有者集中登记在 [`scripts/api-data-ownership.mjs`](../scripts/api-data-ownership.mjs)，包括业务表、
 可重建余额投影及平台表。架构检查从 TypeScript AST 解码字符串和模板，对所有 API 层生成按所有者隔离的
-访问检查，覆盖三个业务模块之间的双向访问、反引号表名、schema 限定名和常见读写/清空语句。
+访问检查，覆盖已登记业务模块之间的双向访问、反引号表名、schema 限定名和常见读写/清空语句。
 新增 migration 的 `CREATE TABLE/VIEW` 必须同时登记所有者；历史已删除表的登记只用于边界检查，不代表
 可以恢复该表。专用展示目录按 `API_DISPLAY_READ_ACCESS` 放行只读目标表，并检查常见写入/锁定 SQL、通配读取和显式别名字段；这不是完整 SQL 权限解析器，未限定字段、动态组合和业务用途必须人工评审。Identity 的审计查询与唯一审计 Writer、平台幂等表规则仍按 §4 执行。
 动态拼接的表名不能由静态扫描完整推断，必须采用固定白名单并由代码评审核对归属；检查通过不替代 SQL 评审。

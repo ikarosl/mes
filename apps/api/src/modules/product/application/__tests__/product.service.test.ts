@@ -163,22 +163,21 @@ describe('ProductService workflow safeguards', () => {
     expect(() =>
       service.replaceMaterials(
         '10',
-        [
-          {
-            materialId: '20',
-            quantityPerUnit: 1,
-            unit: 'pcs',
-            isKeyMaterial: true,
-            needBatchRecord: true,
-          },
-          {
-            materialId: '20',
-            quantityPerUnit: 2,
-            unit: 'pcs',
-            isKeyMaterial: false,
-            needBatchRecord: true,
-          },
-        ],
+        {
+          version: 0,
+          items: [
+            {
+              materialId: '20',
+              quantityPerUnit: 1,
+              unit: 'pcs',
+            },
+            {
+              materialId: '20',
+              quantityPerUnit: 2,
+              unit: 'pcs',
+            },
+          ],
+        },
         audit,
       ),
     ).toThrow(ProductDomainError);
@@ -203,13 +202,14 @@ describe('ProductService workflow safeguards', () => {
     expect(() =>
       service.replaceMaterials(
         '10',
-        Array.from({ length: 201 }, (_, index) => ({
-          materialId: String(index + 1),
-          quantityPerUnit: 1,
-          unit: 'pcs',
-          isKeyMaterial: false,
-          needBatchRecord: false,
-        })),
+        {
+          version: 0,
+          items: Array.from({ length: 201 }, (_, index) => ({
+            materialId: String(index + 1),
+            quantityPerUnit: 1,
+            unit: 'pcs',
+          })),
+        },
         audit,
       ),
     ).toThrow(ProductDomainError);
@@ -234,15 +234,16 @@ describe('ProductService workflow safeguards', () => {
     expect(() =>
       service.replaceMaterials(
         '10',
-        [
-          {
-            materialId: '20',
-            quantityPerUnit: 1.5,
-            unit: 'pcs',
-            isKeyMaterial: true,
-            needBatchRecord: true,
-          },
-        ],
+        {
+          version: 0,
+          items: [
+            {
+              materialId: '20',
+              quantityPerUnit: 1.5,
+              unit: 'pcs',
+            },
+          ],
+        },
         audit,
       ),
     ).toThrow('必须是 1 到 99999999 的整数');

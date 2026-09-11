@@ -58,8 +58,6 @@ type BasisRow = RowDataPacket & {
   material_name: string;
   unit_snapshot: string;
   quantity_per_unit_snapshot: string;
-  is_key_material_snapshot: number;
-  need_batch_record_snapshot: number;
   planned_output_quantity_snapshot: string;
   required_number: string;
 };
@@ -120,8 +118,7 @@ export class MysqlProductionMaterialDemandConfigurationRepository extends Produc
     const [basisRows] = await this.pool.query<BasisRow[]>(
       `SELECT id,production_batch_id,product_material_id,material_id,
           material_code_snapshot,${currentMaterialNameSql('production_material_requirement_basis.material_id')} material_name,unit_snapshot,
-          quantity_per_unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,
-          planned_output_quantity_snapshot,required_number
+          quantity_per_unit_snapshot,planned_output_quantity_snapshot,required_number
        FROM production_material_requirement_basis
        WHERE production_batch_id IN (${placeholders(batchIds)})
        ORDER BY production_batch_id,id`,
@@ -190,8 +187,6 @@ export class MysqlProductionMaterialDemandConfigurationRepository extends Produc
           productName: basis.material_name,
           unit: basis.unit_snapshot,
           quantityPerUnit: basis.quantity_per_unit_snapshot,
-          isKeyMaterial: Boolean(basis.is_key_material_snapshot),
-          needBatchRecord: Boolean(basis.need_batch_record_snapshot),
         }));
       for (const line of [...currentLines, ...frozenOnlyLines]) {
         const basis = basisByProductMaterial.get(line.productMaterialId);
@@ -355,8 +350,6 @@ export class MysqlProductionMaterialDemandConfigurationRepository extends Produc
         itemCode: string;
         quantityPerUnit: string;
         unit: string;
-        isKeyMaterial: boolean;
-        needBatchRecord: boolean;
         plannedOutputQuantity: string;
         needNumber: string;
         demandType: 'normal';
@@ -368,9 +361,8 @@ export class MysqlProductionMaterialDemandConfigurationRepository extends Produc
         const [basis] = await db.execute<ResultSetHeader>(
           `INSERT INTO production_material_requirement_basis
            (production_batch_id,product_material_id,material_id,material_code_snapshot,
-            unit_snapshot,quantity_per_unit_snapshot,is_key_material_snapshot,
-            need_batch_record_snapshot,planned_output_quantity_snapshot,required_number,created_by)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+            unit_snapshot,quantity_per_unit_snapshot,planned_output_quantity_snapshot,required_number,created_by)
+           VALUES (?,?,?,?,?,?,?,?,?)`,
           [
             productionBatchId,
             line.productMaterialId,
@@ -378,8 +370,6 @@ export class MysqlProductionMaterialDemandConfigurationRepository extends Produc
             line.itemCode,
             line.unit,
             line.quantityPerUnit,
-            Number(line.isKeyMaterial),
-            Number(line.needBatchRecord),
             batch.planned_quantity,
             multiplyIntegerQuantities(line.quantityPerUnit, batch.planned_quantity),
             context.actorId,
@@ -397,8 +387,6 @@ export class MysqlProductionMaterialDemandConfigurationRepository extends Produc
             itemCode: line.itemCode,
             quantityPerUnit: line.quantityPerUnit,
             unit: line.unit,
-            isKeyMaterial: line.isKeyMaterial,
-            needBatchRecord: line.needBatchRecord,
             plannedOutputQuantity: batch.planned_quantity,
             needNumber: `${split.quantity}.0000`,
             demandType: 'normal',
@@ -451,8 +439,7 @@ export class MysqlProductionMaterialDemandConfigurationRepository extends Produc
       const [basisRows] = await db.query<BasisRow[]>(
         `SELECT id,production_batch_id,product_material_id,material_id,
             material_code_snapshot,${currentMaterialNameSql('production_material_requirement_basis.material_id')} material_name,unit_snapshot,
-            quantity_per_unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,
-            planned_output_quantity_snapshot,required_number
+            quantity_per_unit_snapshot,planned_output_quantity_snapshot,required_number
          FROM production_material_requirement_basis WHERE production_batch_id=? FOR UPDATE`,
         [command.productionBatchId],
       );
@@ -520,8 +507,6 @@ export class MysqlProductionMaterialDemandConfigurationRepository extends Produc
             itemCode: basis.material_code_snapshot,
             quantityPerUnit: basis.quantity_per_unit_snapshot,
             unit: basis.unit_snapshot,
-            isKeyMaterial: basis.is_key_material_snapshot,
-            needBatchRecord: basis.need_batch_record_snapshot,
             plannedOutputQuantity: basis.planned_output_quantity_snapshot,
             needNumber: `${split.quantity}.0000`,
             demandType: 'manual_additional',

@@ -60,7 +60,7 @@ echo
 export ADMIN_PASSWORD
 export ADMIN_USERNAME=admin
 export ADMIN_DISPLAY_NAME='系统管理员'
-
+-----
 docker compose \
   --project-name easy-mes \
   --env-file /etc/easy-mes/deploy.env \
@@ -104,7 +104,7 @@ unset DEMO_USER_PASSWORD
 
 Demo seed 按业务编码幂等更新，不删除其他业务数据；`admin` 管理员仍由 `bootstrap-admin` 单独创建。
 
-# 发布脚本自动执行脚本（只是提示本段不用参考）
+# 发布脚本自动执行脚本（只是**提示本段不用参考**）
 
 ---
 

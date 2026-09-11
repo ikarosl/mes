@@ -7,9 +7,33 @@
   >
     <template v-if="product">
       <el-alert
-        v-if="product.bomLockedAt"
-        title="该 BOM 已被生产任务引用并永久锁定，当前仅可查看。原则变化请新建产品和产品编码。"
+        v-if="isBomApproved"
+        title="该 BOM 已审批通过并永久锁定，当前仅可查看。原则变化请新建产品和产品编码。"
         type="info"
+        :closable="false"
+        show-icon
+        class="bom-alert"
+      />
+      <el-alert
+        v-else-if="isBomPending"
+        title="该 BOM 已提交审批，审批完成前不能编辑。请在审批中心查看处理进度。"
+        type="warning"
+        :closable="false"
+        show-icon
+        class="bom-alert"
+      />
+      <el-alert
+        v-if="detailReady && bomDirty && !isBomLocked"
+        title="BOM 有未保存的修改，请先保存物料清单，再提交审批。"
+        type="info"
+        :closable="false"
+        show-icon
+        class="bom-alert"
+      />
+      <el-alert
+        v-if="hasStaleDraft"
+        title="产品已发生变化，未保存的修改已保留。请核对后重新加载最新 BOM，再进行编辑。"
+        type="warning"
         :closable="false"
         show-icon
         class="bom-alert"
@@ -23,7 +47,7 @@
         class="bom-alert"
       />
       <el-alert
-        v-else-if="detailReady && !localRows.length && !product.bomLockedAt"
+        v-else-if="detailReady && !localRows.length && !isBomLocked"
         title="当前产品尚未配置物料清单。生产任务配置物料需求前，需要先维护这里的用料。"
         type="warning"
         :closable="false"
@@ -37,6 +61,12 @@
         </div>
         <div class="bom-actions">
           <el-button
+            v-if="hasStaleDraft"
+            :loading="loading"
+            @click="reloadLatest"
+            >重新加载 BOM</el-button
+          >
+          <el-button
             :icon="Refresh"
             :loading="loading"
             @click="retryNow"
@@ -45,9 +75,16 @@
           <el-button
             type="primary"
             :icon="Plus"
-            :disabled="!detailReady || Boolean(product.bomLockedAt)"
+            :disabled="!detailReady || isBomLocked"
             @click="addRow"
             >添加已有物料</el-button
+          >
+          <el-button
+            v-if="(isBomPending || isBomApproved) && product.bomApprovalInstanceId"
+            link
+            type="primary"
+            @click="$emit('view-approval')"
+            >查看审批进度</el-button
           >
         </div>
       </div>
@@ -64,7 +101,7 @@
               v-model="row.materialId"
               filterable
               placeholder="请选择物料"
-              :disabled="Boolean(product.bomLockedAt)"
+              :disabled="!detailReady || isBomLocked"
               @change="syncRowUnit(row)"
               @visible-change="(visible: boolean) => visible && refreshCandidates()"
             >
@@ -105,31 +142,9 @@
               :precision="0"
               :step="1"
               controls-position="right"
-              :disabled="Boolean(product.bomLockedAt)"
+              :disabled="!detailReady || isBomLocked"
             />
           </template>
-        </el-table-column>
-        <el-table-column
-          label="关键物料"
-          width="110"
-          align="center"
-        >
-          <template #default="{ row }"
-            ><el-switch
-              v-model="row.isKeyMaterial"
-              :disabled="Boolean(product?.bomLockedAt)"
-          /></template>
-        </el-table-column>
-        <el-table-column
-          label="记录批次"
-          width="110"
-          align="center"
-        >
-          <template #default="{ row }"
-            ><el-switch
-              v-model="row.needBatchRecord"
-              :disabled="Boolean(product?.bomLockedAt)"
-          /></template>
         </el-table-column>
         <el-table-column
           label="备注"
@@ -139,7 +154,7 @@
             <el-input
               v-model="row.remark"
               placeholder="可选"
-              :disabled="Boolean(product.bomLockedAt)"
+              :disabled="!detailReady || isBomLocked"
             />
           </template>
         </el-table-column>
@@ -152,7 +167,7 @@
             <el-button
               link
               type="danger"
-              :disabled="Boolean(product?.bomLockedAt)"
+              :disabled="!detailReady || isBomLocked"
               @click="removeRow($index)"
               >删除</el-button
             >
@@ -163,12 +178,20 @@
     <template #footer>
       <el-button @click="$emit('update:visible', false)">取消</el-button>
       <el-button
-        v-if="!product?.bomLockedAt"
+        v-if="!isBomLocked"
         type="primary"
         :loading="submitting"
         :disabled="!detailReady"
         @click="handleSubmit"
         >保存物料清单</el-button
+      >
+      <el-button
+        v-if="product?.bomStatus === 'draft' && !product?.bomLockedAt"
+        type="warning"
+        :loading="submitting"
+        :disabled="!canSubmitApproval"
+        @click="handleSubmitApproval"
+        >提交 BOM 审批</el-button
       >
     </template>
   </el-dialog>
@@ -181,14 +204,13 @@ import type { ProductListItem } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
 import { buildLiveOptions, hasUnavailableSelection } from '../../../utils/live-options';
 import { EMessage } from '../../../utils/message';
+import { RouteMessageBox } from '../../../utils/route-message-box';
 import { useProductMaterialEditor } from '../composables/useProductMaterialEditor';
 
 export type MaterialRow = {
   materialId: string;
   quantityPerUnit: number;
   unit: string;
-  isKeyMaterial: boolean;
-  needBatchRecord: boolean;
   remark: string;
 };
 
@@ -201,6 +223,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'update:visible', val: boolean): void;
   (e: 'save', rows: MaterialRow[]): void;
+  (e: 'submit-approval'): void;
+  (e: 'view-approval'): void;
 }>();
 
 const {
@@ -213,27 +237,64 @@ const {
   invalidate,
 } = useProductMaterialEditor();
 const localRows = ref<MaterialRow[]>([]);
+const savedFingerprint = ref('');
+const loadedProductVersion = ref<number | null>(null);
+const hasStaleDraft = ref(false);
 
 /** 仅当当前产品 BOM 明细已就绪（且属于当前产品）时才允许保存，避免把上一个产品的行保存到新目标 */
 const detailReady = computed(
-  () => detailStatus.value === 'ready' && loadedProductId.value === props.product?.id,
+  () =>
+    detailStatus.value === 'ready' &&
+    loadedProductId.value === props.product?.id &&
+    loadedProductVersion.value === props.product?.version &&
+    !hasStaleDraft.value,
+);
+const isBomPending = computed(() => props.product?.bomStatus === 'pending_approval');
+const isBomApproved = computed(
+  () => props.product?.bomStatus === 'approved' || Boolean(props.product?.bomLockedAt),
+);
+const isBomLocked = computed(() => isBomPending.value || isBomApproved.value);
+const fingerprint = (rows: MaterialRow[]): string =>
+  JSON.stringify(
+    rows.map((row) => ({
+      materialId: row.materialId,
+      quantityPerUnit: row.quantityPerUnit,
+      unit: row.unit,
+      remark: row.remark,
+    })),
+  );
+const bomDirty = computed(
+  () =>
+    loadedProductId.value === props.product?.id &&
+    fingerprint(localRows.value) !== savedFingerprint.value,
+);
+const canSubmitApproval = computed(
+  () => detailReady.value && !bomDirty.value && localRows.value.length > 0,
 );
 
 const setRows = (initial: MaterialRow[]): void => {
   localRows.value = initial;
+  savedFingerprint.value = fingerprint(initial);
 };
 
 /** 加载当前产品 BOM 明细并写入 localRows；失败/过期不覆盖为可保存空数据 */
 const loadRows = async (productId: string): Promise<void> => {
+  const version = props.product?.version;
   const rows = await load(productId);
-  if (!rows) return;
+  if (
+    !rows ||
+    !props.visible ||
+    props.product?.id !== productId ||
+    props.product.version !== version
+  )
+    return;
+  loadedProductVersion.value = version;
+  hasStaleDraft.value = false;
   setRows(
     rows.map((item) => ({
       materialId: item.materialId,
       quantityPerUnit: Number(item.quantityPerUnit),
       unit: item.unit,
-      isKeyMaterial: item.isKeyMaterial,
-      needBatchRecord: item.needBatchRecord,
       remark: item.remark ?? '',
     })),
   );
@@ -241,16 +302,40 @@ const loadRows = async (productId: string): Promise<void> => {
 
 /** 打开弹窗时加载当前产品 BOM 明细与候选；关闭时推进请求代际，迟到的明细响应不得写回草稿行 */
 watch(
-  () => [props.visible, props.product?.id] as const,
-  async ([visible, productId]) => {
+  () => [props.visible, props.product?.id, props.product?.version] as const,
+  async ([visible, productId], previous) => {
     if (!visible) {
       invalidate();
       return;
     }
     if (!productId) return;
+    if (previous?.[0] && previous[1] === productId && bomDirty.value) {
+      // 保留旧版本草稿，不把新版本号用于提交旧内容。
+      invalidate();
+      hasStaleDraft.value = true;
+      return;
+    }
     await loadRows(productId);
   },
 );
+
+const reloadLatest = async (): Promise<void> => {
+  const productId = props.product?.id;
+  if (!productId) return;
+  try {
+    await RouteMessageBox.confirm(
+      '重新加载将放弃当前未保存的 BOM 修改，是否继续？',
+      '重新加载 BOM',
+      {
+        type: 'warning',
+        confirmButtonText: '放弃修改并重新加载',
+      },
+    );
+    if (props.visible && props.product?.id === productId) await loadRows(productId);
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') EMessage.error(error, '重新加载失败');
+  }
+};
 
 /** 下拉展开 / 页面激活：只刷新候选，不重载 BOM 明细（避免覆盖用户草稿行） */
 const refreshCandidates = (): void => {
@@ -278,8 +363,6 @@ const addRow = (): void => {
     materialId: '',
     quantityPerUnit: 1,
     unit: '',
-    isKeyMaterial: true,
-    needBatchRecord: true,
     remark: '',
   });
 };
@@ -297,6 +380,7 @@ const syncRowUnit = (row: MaterialRow): void => {
 };
 
 const handleSubmit = (): void => {
+  if (isBomLocked.value) return;
   if (!detailReady.value) {
     EMessage.warning('物料清单尚未加载完成，请稍后重试');
     return;
@@ -328,6 +412,23 @@ const handleSubmit = (): void => {
     return;
   }
   emit('save', localRows.value);
+};
+
+const handleSubmitApproval = (): void => {
+  if (isBomLocked.value) return;
+  if (!detailReady.value) {
+    EMessage.warning('物料清单尚未加载完成，请稍后重试');
+    return;
+  }
+  if (!localRows.value.length) {
+    EMessage.warning('请先配置 BOM 明细');
+    return;
+  }
+  if (bomDirty.value) {
+    EMessage.warning('BOM 有未保存的修改，请先保存后再提交审批');
+    return;
+  }
+  emit('submit-approval');
 };
 
 defineExpose({ setRows });

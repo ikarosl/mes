@@ -26,6 +26,7 @@ import type {
   ProcessRouteStatus,
   ProductAcquireMethod,
   ProductItemKind,
+  ReplaceProductMaterialsCommand,
   TechnicalFileStorageProvider,
 } from '@company/contracts';
 import { PageQueryDto } from '../../../../../presentation/http/dto/page-query.dto.js';
@@ -138,12 +139,11 @@ export class ProductMaterialDto {
   @IsNumberString() materialId!: string;
   @Type(() => Number) @IsInt() @Min(1) @Max(99_999_999) quantityPerUnit!: number;
   @IsString() @IsNotEmpty() @MaxLength(20) unit!: string;
-  @IsBoolean() isKeyMaterial!: boolean;
-  @IsBoolean() needBatchRecord!: boolean;
   @IsOptional() @IsIn([0, 1]) status?: number;
   @IsOptional() @IsString() remark?: string | null;
 }
-export class ReplaceProductMaterialsDto {
+export class ReplaceProductMaterialsDto implements ReplaceProductMaterialsCommand {
+  @IsInt() @Min(0) @Max(2_147_483_647) version!: number;
   @IsArray()
   @ArrayMaxSize(200)
   @ValidateNested({ each: true })

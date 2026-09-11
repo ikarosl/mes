@@ -4,16 +4,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ProductListItem } from '@company/contracts';
 import ProductMaterialDialog, { type MaterialRow } from '../ProductMaterialDialog.vue';
 
-const { productMaterials, materialOptions, error, warning } = vi.hoisted(() => ({
+const { productMaterials, materialOptions, error, warning, confirm } = vi.hoisted(() => ({
   productMaterials: vi.fn(),
   materialOptions: vi.fn(),
   error: vi.fn(),
   warning: vi.fn(),
+  confirm: vi.fn(),
 }));
 vi.mock('../../../../api/product', () => ({
   productApi: { productMaterials, materialOptions },
 }));
 vi.mock('../../../../utils/message', () => ({ EMessage: { error, warning } }));
+vi.mock('../../../../utils/route-message-box', () => ({ RouteMessageBox: { confirm } }));
 
 const product = (id: string): ProductListItem =>
   ({
@@ -33,6 +35,9 @@ const product = (id: string): ProductListItem =>
     materialCount: 0,
     bomLockedAt: null,
     bomLockedById: null,
+    bomStatus: 'draft',
+    bomApprovalInstanceId: null,
+    version: 1,
     remark: null,
     updatedAt: null,
   }) as ProductListItem;
@@ -42,8 +47,6 @@ const bomRow = (id: string) => ({
   materialId: id,
   quantityPerUnit: '1',
   unit: 'kg',
-  isKeyMaterial: true,
-  needBatchRecord: false,
   remark: null,
 });
 
@@ -75,8 +78,6 @@ const tableColumnStub = {
       materialId: 'b1',
       quantityPerUnit: 1,
       unit: 'kg',
-      isKeyMaterial: true,
-      needBatchRecord: false,
       remark: '',
     };
     return () => h('div', { class: 'column-stub' }, [ctx.slots.default?.({ row })] as VNode[]);
@@ -122,6 +123,7 @@ describe('ProductMaterialDialog', () => {
     materialOptions.mockReset();
     error.mockReset();
     warning.mockReset();
+    confirm.mockReset();
   });
 
   const mountDialog = () =>
@@ -365,5 +367,131 @@ describe('ProductMaterialDialog', () => {
     resolveB([bomRow('b1')]);
     await flushPromises();
     expect(wrapper.findAll('.row-material').map((w) => w.text())).toEqual(['a1']);
+  });
+
+  it('blocks BOM submission while the local draft is dirty', async () => {
+    productMaterials.mockResolvedValue([bomRow('b1')]);
+    materialOptions.mockResolvedValue([materialOption('b1')]);
+    const wrapper = mountDialog();
+
+    await wrapper.setProps({ visible: true, product: product('B') });
+    await flushPromises();
+    const vm = wrapper.vm as unknown as { localRows: MaterialRow[] };
+    vm.localRows[0]!.quantityPerUnit = 2;
+    await flushPromises();
+
+    const submit = buttonByText(wrapper, '提交 BOM 审批');
+    expect(submit?.attributes('disabled')).toBeDefined();
+    await submit?.trigger('click');
+    expect(wrapper.emitted('submit-approval')).toBeUndefined();
+  });
+
+  it('emits a BOM row without the removed traceability flags', async () => {
+    productMaterials.mockResolvedValue([bomRow('b1')]);
+    materialOptions.mockResolvedValue([materialOption('b1')]);
+    const wrapper = mountDialog();
+
+    await wrapper.setProps({ visible: true, product: product('B') });
+    await flushPromises();
+    await saveButton(wrapper)?.trigger('click');
+
+    expect(savedRows(wrapper)?.[0]).toEqual({
+      materialId: 'b1',
+      quantityPerUnit: 1,
+      unit: 'kg',
+      remark: '',
+    });
+    expect(savedRows(wrapper)?.[0]).not.toHaveProperty('isKeyMaterial');
+    expect(savedRows(wrapper)?.[0]).not.toHaveProperty('needBatchRecord');
+  });
+
+  it('freezes pending and approved BOMs and removes their write controls', async () => {
+    productMaterials.mockResolvedValue([bomRow('b1')]);
+    materialOptions.mockResolvedValue([materialOption('b1')]);
+    const wrapper = mountDialog();
+
+    await wrapper.setProps({
+      visible: true,
+      product: { ...product('B'), bomStatus: 'pending_approval', bomApprovalInstanceId: 'i1' },
+    });
+    await flushPromises();
+    expect(buttonByText(wrapper, '添加已有物料')?.attributes('disabled')).toBeDefined();
+    expect(saveButton(wrapper)).toBeUndefined();
+    expect(buttonByText(wrapper, '提交 BOM 审批')).toBeUndefined();
+
+    await wrapper.setProps({
+      product: {
+        ...product('B'),
+        bomStatus: 'approved',
+        bomApprovalInstanceId: 'i1',
+        bomLockedAt: '2026-09-10T10:00:00+08:00',
+      },
+    });
+    await flushPromises();
+    expect(
+      wrapper
+        .findAll('.el-alert-stub')
+        .some((alert) => alert.attributes('data-title')?.includes('永久锁定')),
+    ).toBe(true);
+    expect(saveButton(wrapper)).toBeUndefined();
+    expect(buttonByText(wrapper, '添加已有物料')?.attributes('disabled')).toBeDefined();
+  });
+
+  it('reloads a draft after a rejected or withdrawn approval refreshes its product version', async () => {
+    productMaterials.mockResolvedValueOnce([bomRow('b1')]).mockResolvedValueOnce([bomRow('b2')]);
+    materialOptions.mockResolvedValue([materialOption('b1'), materialOption('b2')]);
+    const wrapper = mountDialog();
+
+    await wrapper.setProps({
+      visible: true,
+      product: { ...product('B'), bomStatus: 'pending_approval', bomApprovalInstanceId: 'i1' },
+    });
+    await flushPromises();
+    await wrapper.setProps({
+      product: { ...product('B'), version: 2, bomStatus: 'draft', bomApprovalInstanceId: null },
+    });
+    await flushPromises();
+
+    expect(productMaterials).toHaveBeenCalledTimes(2);
+    expect(wrapper.findAll('.row-material').map((w) => w.text())).toEqual(['b2']);
+    expect(saveButton(wrapper)?.attributes('disabled')).toBeUndefined();
+  });
+
+  it('preserves a dirty draft across a version change until the user explicitly reloads latest BOM', async () => {
+    productMaterials.mockResolvedValueOnce([bomRow('b1')]).mockResolvedValueOnce([bomRow('b2')]);
+    materialOptions.mockResolvedValue([materialOption('b1'), materialOption('b2')]);
+    confirm.mockResolvedValue(true);
+    const wrapper = mountDialog();
+
+    await wrapper.setProps({ visible: true, product: product('B') });
+    await flushPromises();
+    const vm = wrapper.vm as unknown as { localRows: MaterialRow[] };
+    vm.localRows[0]!.quantityPerUnit = 9;
+    await flushPromises();
+
+    await wrapper.setProps({ product: { ...product('B'), version: 2 } });
+    await flushPromises();
+    expect(
+      wrapper
+        .findAll('.el-alert-stub')
+        .some((alert) => alert.attributes('data-title')?.includes('未保存的修改已保留')),
+    ).toBe(true);
+    expect(wrapper.findAll('.row-material').map((w) => w.text())).toEqual(['b1']);
+    expect(productMaterials).toHaveBeenCalledTimes(1);
+
+    await buttonByText(wrapper, '重新加载 BOM')!.trigger('click');
+    await flushPromises();
+    expect(confirm).toHaveBeenCalledWith(
+      '重新加载将放弃当前未保存的 BOM 修改，是否继续？',
+      '重新加载 BOM',
+      expect.objectContaining({ confirmButtonText: '放弃修改并重新加载' }),
+    );
+    expect(productMaterials).toHaveBeenCalledTimes(2);
+    expect(wrapper.findAll('.row-material').map((w) => w.text())).toEqual(['b2']);
+    expect(
+      wrapper
+        .findAll('.el-alert-stub')
+        .some((alert) => alert.attributes('data-title')?.includes('未保存的修改已保留')),
+    ).toBe(false);
   });
 });

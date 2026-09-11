@@ -23,11 +23,7 @@
       <el-descriptions-item label="物料清单">{{
         row.materialCount > 0 ? `${row.materialCount} 项` : '未配置'
       }}</el-descriptions-item>
-      <el-descriptions-item label="BOM 锁定状态">{{
-        row.bomLockedAt
-          ? `已永久锁定（${formatDateTimeForDisplay(row.bomLockedAt)}${row.bomLockedById ? `，操作人 ID ${row.bomLockedById}` : ''}）`
-          : '未锁定，可编辑'
-      }}</el-descriptions-item>
+      <el-descriptions-item label="BOM 状态">{{ bomStatusLabel(row) }}</el-descriptions-item>
       <el-descriptions-item label="默认路线">{{
         row.defaultRouteName || '未设置'
       }}</el-descriptions-item>
@@ -61,6 +57,7 @@
 </template>
 
 <script setup lang="ts">
+import { PRODUCT_BOM_STATUS_LABELS } from '@company/constants';
 import type { ProductItemKind, ProductListItem } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
 import { formatDateTimeForDisplay } from '../../../utils/date';
@@ -76,6 +73,14 @@ defineProps<{
 defineEmits<{
   (e: 'update:visible', val: boolean): void;
 }>();
+
+const bomStatusLabel = (row: ProductListItem): string => {
+  if (row.bomStatus === 'approved' || row.bomLockedAt) {
+    return `已永久锁定（${row.bomLockedAt ? formatDateTimeForDisplay(row.bomLockedAt) : '已批准'}${row.bomLockedById ? `，操作人 ID ${row.bomLockedById}` : ''}）`;
+  }
+  if (row.bomStatus === 'pending_approval') return '审批中，暂不可编辑';
+  return `${PRODUCT_BOM_STATUS_LABELS.draft}，可编辑`;
+};
 </script>
 
 <style scoped>

@@ -8,7 +8,7 @@ import type {
   ProcessStepQuery,
   ProductCategoryPayload,
   ProductCategoryQuery,
-  ProductMaterialPayload,
+  ReplaceProductMaterialsCommand,
   MaterialVariantListQuery,
   MaterialVariantPayload,
   MaterialListQuery,
@@ -165,7 +165,11 @@ export class ProductService {
   setMaterialVariantStatus(id: string, status: number, audit: CommandContext) {
     return this.materialVariants.setStatus(id, status, audit);
   }
-  replaceMaterials(id: string, items: ProductMaterialPayload[], audit: CommandContext) {
+  replaceMaterials(id: string, command: ReplaceProductMaterialsCommand, audit: CommandContext) {
+    const { items, version } = command;
+    if (!Number.isInteger(version) || version < 0 || version > 2_147_483_647) {
+      throw new ProductDomainError('INVALID_INPUT', '请提供有效的产品版本');
+    }
     if (items.length > 200) {
       throw new ProductDomainError('INVALID_INPUT', '一份 BOM 最多包含 200 行明细');
     }
@@ -186,7 +190,7 @@ export class ProductService {
         'BOM 单位用量必须是 1 到 99999999 的整数，且用量单位不能为空',
       );
     }
-    return this.catalog.replaceMaterials(id, items, audit);
+    return this.catalog.replaceMaterials(id, command, audit);
   }
   setDefaultRoute(id: string, routeId: string | null, audit: CommandContext) {
     return this.catalog.setDefaultRoute(id, routeId, audit);

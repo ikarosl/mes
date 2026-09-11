@@ -151,6 +151,7 @@
                       v-if="auth.can(PERMISSIONS.product.products.update)"
                       link
                       type="primary"
+                      :disabled="row.bomStatus === 'pending_approval'"
                       @click="openEditProduct(row)"
                       >编辑</el-button
                     >
@@ -172,11 +173,13 @@
                         ><el-dropdown-menu>
                           <el-dropdown-item
                             v-if="auth.can(PERMISSIONS.product.products.setDefaultRoute)"
+                            :disabled="row.bomStatus === 'pending_approval'"
                             command="route"
                             >设置默认路线</el-dropdown-item
                           >
                           <el-dropdown-item
                             v-if="auth.can(PERMISSIONS.product.products.changeStatus)"
+                            :disabled="row.bomStatus === 'pending_approval'"
                             command="status"
                             >{{ row.status === 1 ? '停用' : '启用' }}</el-dropdown-item
                           >
@@ -377,6 +380,8 @@
       :submitting="submitting"
       @update:visible="bomVisible = $event"
       @save="saveBom"
+      @submit-approval="submitBomApproval"
+      @view-approval="viewBomApproval"
     />
     <ProductDefaultRouteDialog
       :visible="routeVisible"
@@ -410,7 +415,7 @@
 import { computed, onActivated, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ArrowDown, Plus, Refresh } from '@element-plus/icons-vue';
-import { PERMISSIONS } from '@company/constants';
+import { PERMISSIONS, PRODUCT_BOM_STATUS_LABELS } from '@company/constants';
 import type {
   MaterialListItem,
   MaterialPayload,
@@ -421,6 +426,7 @@ import type {
   ProductListItem,
 } from '@company/contracts';
 import { productApi } from '../../api/product';
+import { approvalApi } from '../../api/approval';
 import TableToolbar from '../../components/TableToolbar.vue';
 import PaginationFooter from '../../components/PaginationFooter.vue';
 import { useAuthStore } from '../../stores/auth';
@@ -498,18 +504,29 @@ const editingMaterialId = ref<string | null>(null);
 const activeProduct = ref<ProductListItem | null>(null);
 const activeMaterial = ref<MaterialListItem | null>(null);
 const detailRow = ref<ProductListItem | null>(null);
+// 列表刷新会替换行对象；弹窗不能继续持有审批前的旧状态和版本。
+watch(productGroups.groups, (groups) => {
+  const products = groups.flatMap((group) => group.codes);
+  const current = products.find((product) => product.id === activeProduct.value?.id);
+  if (current) activeProduct.value = current;
+  const detail = products.find((product) => product.id === detailRow.value?.id);
+  if (detail) detailRow.value = detail;
+});
 const productFormRef = ref<InstanceType<typeof ProductFormDialog>>();
 const materialFormRef = ref<InstanceType<typeof MaterialFormDialog>>();
 const formatSpecItem = (i: { key: string; value: string; unit?: string }) =>
   `${i.key}：${i.value}${i.unit ? ` ${i.unit}` : ''}`;
 const formatSpecSummary = (items: ProductListItem['specValues']) =>
   items.length ? items.map(formatSpecItem).join('，') : '—';
-const bomTag = (r: ProductListItem): { label: string; type: 'info' | 'success' | 'warning' } =>
-  r.bomLockedAt
-    ? { label: `已锁定 · ${r.materialCount}项`, type: 'info' }
-    : r.materialCount
-      ? { label: `可编辑 · ${r.materialCount}项`, type: 'success' }
-      : { label: '未配置', type: 'warning' };
+const bomTag = (r: ProductListItem): { label: string; type: 'info' | 'success' | 'warning' } => {
+  if (r.bomStatus === 'pending_approval') return { label: '审批中', type: 'warning' };
+  if (r.bomStatus === 'approved' || r.bomLockedAt) {
+    return { label: `${PRODUCT_BOM_STATUS_LABELS.approved} · ${r.materialCount}项`, type: 'info' };
+  }
+  return r.materialCount
+    ? { label: `可编辑 · ${r.materialCount}项`, type: 'success' }
+    : { label: PRODUCT_BOM_STATUS_LABELS.draft, type: 'warning' };
+};
 const openCreateProduct = () => {
   editingProductId.value = null;
   creatingInGroup.value = false;
@@ -527,7 +544,7 @@ const openCreateCode = (g: ProductGroupItem) => {
 const openEditProduct = (r: ProductListItem) => {
   editingProductId.value = r.id;
   creatingInGroup.value = false;
-  editingProductLocked.value = Boolean(r.bomLockedAt);
+  editingProductLocked.value = r.bomStatus ? r.bomStatus !== 'draft' : Boolean(r.bomLockedAt);
   productFormRef.value?.setForm(r);
   productDialogVisible.value = true;
 };
@@ -594,7 +611,11 @@ const saveBom = (rows: MaterialRow[]) =>
   activeProduct.value
     ? runSave(
         async () => {
-          await productApi.replaceMaterials(activeProduct.value!.id, rows);
+          await productApi.replaceMaterials(
+            activeProduct.value!.id,
+            rows,
+            activeProduct.value!.version,
+          );
           bomVisible.value = false;
           await productGroups.load();
         },
@@ -602,6 +623,31 @@ const saveBom = (rows: MaterialRow[]) =>
         'BOM 保存失败',
       )
     : undefined;
+const submitBomApproval = () =>
+  activeProduct.value
+    ? runSave(
+        async () => {
+          await approvalApi.submitBom(activeProduct.value!.id, activeProduct.value!.version);
+          bomVisible.value = false;
+          await productGroups.load();
+        },
+        'BOM 已提交审批',
+        'BOM 提交审批失败',
+      )
+    : undefined;
+const viewBomApproval = (): void => {
+  if (!activeProduct.value) return;
+  bomVisible.value = false;
+  void router.push({
+    name: 'approval-inbox',
+    query: {
+      subjectId: activeProduct.value.id,
+      ...(activeProduct.value.bomApprovalInstanceId
+        ? { instanceId: activeProduct.value.bomApprovalInstanceId }
+        : {}),
+    },
+  });
+};
 const saveDefaultRoute = (id: string | null) =>
   activeProduct.value
     ? runSave(
@@ -676,10 +722,18 @@ const toggleVariantStatus = (r: MaterialVariantItem) =>
     await productApi.setMaterialVariantStatus(r.id, r.status === 1 ? 0 : 1);
     await materials.load();
   });
-onMounted(async () => {
-  await Promise.all([loadActive(), categorySource.refresh()]);
+onMounted(() => {
+  void loadActive();
+  void categorySource.refresh();
 });
+let hasActivated = false;
 onActivated(() => {
+  // KeepAlive 首次挂载也会激活；初次加载由 onMounted 负责。
+  if (!hasActivated) {
+    hasActivated = true;
+    return;
+  }
+  void loadActive();
   void categorySource.refresh();
 });
 </script>

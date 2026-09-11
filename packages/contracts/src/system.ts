@@ -216,6 +216,7 @@ export const OPERATION_LOG_MODULE_OPTIONS = [
   { label: '系统管理', value: 'system' },
   { label: '产品资料', value: 'product' },
   { label: '生产管理', value: 'production' },
+  { label: '审批管理', value: 'approval' },
   { label: '生产物料分配', value: 'material-allocation' },
   { label: '仓储管理', value: 'warehouse' },
   { label: '质量管理', value: 'quality' },

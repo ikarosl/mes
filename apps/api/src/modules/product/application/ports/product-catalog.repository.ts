@@ -3,11 +3,12 @@ import type {
   ProductGroupItem,
   ProductGroupQuery,
   ProductMaterialItem,
-  ProductMaterialPayload,
+  ReplaceProductMaterialsCommand,
   ProductListQuery,
   PageResult,
   ProductOption,
   ProductPayload,
+  BomApprovalSnapshot,
 } from '@company/contracts';
 import type { CommandContext } from '../../../../common/audit/audit.types.js';
 
@@ -21,7 +22,7 @@ export abstract class ProductCatalogRepository {
   abstract listMaterials(productId: string): Promise<ProductMaterialItem[]>;
   abstract replaceMaterials(
     productId: string,
-    items: ProductMaterialPayload[],
+    command: ReplaceProductMaterialsCommand,
     audit: CommandContext,
   ): Promise<void>;
   abstract setDefaultRoute(
@@ -29,4 +30,33 @@ export abstract class ProductCatalogRepository {
     routeId: string | null,
     audit: CommandContext,
   ): Promise<void>;
+  abstract lockCurrentBomApproval(
+    productId: string,
+    instanceId: string,
+    expectedVersion: number,
+  ): Promise<void>;
+  abstract prepareBomApproval(
+    productId: string,
+    expectedVersion: number,
+    audit: CommandContext,
+  ): Promise<{ title: string; subjectVersion: number; snapshot: BomApprovalSnapshot }>;
+  abstract bindBomApproval(
+    productId: string,
+    instanceId: string,
+    expectedVersion: number,
+    audit: CommandContext,
+  ): Promise<number>;
+  abstract finalizeBomApproval(
+    productId: string,
+    instanceId: string,
+    expectedVersion: number,
+    audit: CommandContext,
+  ): Promise<void>;
+  abstract restoreBomAfterApprovalEnd(
+    productId: string,
+    instanceId: string,
+    expectedVersion: number,
+    audit: CommandContext,
+  ): Promise<void>;
+  abstract listMaterialNames(materialIds: string[]): Promise<Record<string, string>>;
 }

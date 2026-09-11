@@ -29,7 +29,9 @@ API 的运行时构建和开发启动不编译相邻测试文件；测试通过 
 
 新增或修复业务规则必须补相邻测试；跨模块契约、数据库事务或 HTTP 管线发生变化时，补对应根 Integration/API 测试。历史代码重构前先以 characterization test 锁定现有行为。
 
-## Production MySQL Integration
+## 业务 MySQL Integration
+
+现有 `test:production:mysql` 命令覆盖根 `tests/integration` 下全部真实 MySQL 套件，包括 Production、Identity、审批 BOM 闭环和 BOM 字段移除迁移；命令名称不限制测试目录。
 
 真实 MySQL 套件通过根命令运行：
 

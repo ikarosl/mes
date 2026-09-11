@@ -306,14 +306,11 @@ export class MysqlProductionMaterialLossRepository extends ProductionMaterialLos
           material_variant_code_snapshot: string;
           quantity_per_unit_snapshot: string;
           unit_snapshot: string;
-          is_key_material_snapshot: number;
-          need_batch_record_snapshot: number;
           planned_output_quantity_snapshot: string;
         })[]
       >(
         `SELECT id,parent_demand_id,requirement_basis_id,product_material_id,item_id,material_variant_id,item_code_snapshot,material_variant_code_snapshot,quantity_per_unit_snapshot,
-          unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,
-          planned_output_quantity_snapshot
+          unit_snapshot,planned_output_quantity_snapshot
          FROM production_item_demand WHERE id=? FOR UPDATE`,
         [scrap.demand_id],
       );
@@ -348,8 +345,6 @@ export class MysqlProductionMaterialLossRepository extends ProductionMaterialLos
             itemCode: sourceDemand.item_code_snapshot,
             quantityPerUnit: sourceDemand.quantity_per_unit_snapshot,
             unit: sourceDemand.unit_snapshot,
-            isKeyMaterial: sourceDemand.is_key_material_snapshot,
-            needBatchRecord: sourceDemand.need_batch_record_snapshot,
             plannedOutputQuantity: sourceDemand.planned_output_quantity_snapshot,
             needNumber: String(integerQuantity(scrap.scrap_number)),
             demandType: 'material_loss_supplement',

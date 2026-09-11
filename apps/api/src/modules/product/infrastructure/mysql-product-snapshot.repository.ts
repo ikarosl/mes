@@ -2,7 +2,6 @@ import { Inject, Injectable } from '@nestjs/common';
 import type { Pool, PoolConnection, RowDataPacket } from 'mysql2/promise';
 import { withTransaction } from '@company/database';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
-import { writeTransactionalAudit } from '../../../common/audit/transactional-audit-writer.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
 import { ProductDomainError } from '../domain/product.errors.js';
 import type {
@@ -115,17 +114,31 @@ export class MysqlProductSnapshotRepository
     });
   }
 
-  async lockBomForProductionTask(
+  async requireApprovedBomForProductionTask(
     productId: string,
     requestedRouteId: string | null,
-    audit: CommandContext,
+    _audit: CommandContext,
   ): Promise<ProcessRouteSnapshot | null> {
     return withTransaction(this.pool, async (connection) => {
       const product = await this.productionProduct(connection, productId, true);
       const [[lockFact]] = await connection.query<
-        (RowDataPacket & { bom_locked_at: Date | null })[]
-      >('SELECT bom_locked_at FROM products WHERE id=? AND is_deleted=0 FOR UPDATE', [productId]);
+        (RowDataPacket & {
+          bom_status: string;
+          bom_locked_at: Date | null;
+          bom_approval_instance_id: string | null;
+        })[]
+      >(
+        'SELECT bom_status,bom_locked_at,bom_approval_instance_id FROM products WHERE id=? AND is_deleted=0 FOR UPDATE',
+        [productId],
+      );
       if (!lockFact) throw new ProductDomainError('NOT_FOUND', '已启用的生产产品不存在');
+      if (
+        lockFact.bom_status !== 'approved' ||
+        !lockFact.bom_locked_at ||
+        !lockFact.bom_approval_instance_id
+      ) {
+        throw new ProductDomainError('INVALID_MATERIAL', 'BOM 尚未审批通过，不能创建生产任务');
+      }
 
       const [bomLines] = await connection.query<
         (RowDataPacket & {
@@ -170,28 +183,6 @@ export class MysqlProductSnapshotRepository
 
       const routeId = requestedRouteId ?? product.defaultRouteId;
       const route = routeId ? await this.routeSnapshot(connection, routeId, true) : null;
-      if (lockFact.bom_locked_at === null) {
-        await connection.execute(
-          `UPDATE products
-              SET bom_locked_at=NOW(),bom_locked_by=?,updated_by=?
-            WHERE id=? AND is_deleted=0 AND bom_locked_at IS NULL`,
-          [audit.actorId, audit.actorId, productId],
-        );
-        await writeTransactionalAudit(connection, {
-          logType: 'business',
-          module: 'product',
-          action: 'product.bom-lock',
-          userId: audit.actorId,
-          targetId: productId,
-          targetType: 'product-master-data',
-          result: 'success',
-          beforeData: { bomLockedAt: null, bomLockedBy: null },
-          afterData: { trigger: 'production-task-created' },
-          ip: audit.ip,
-          requestId: audit.requestId,
-          userAgent: audit.userAgent,
-        });
-      }
       return route;
     });
   }
@@ -202,7 +193,7 @@ export class MysqlProductSnapshotRepository
       const [rows] = await connection.query<BomRow[]>(
         `SELECT pm.id product_material_id,pm.material_id,p.material_code item_code,
                 p.material_name product_name,pm.unit,
-                pm.quantity_per_unit,pm.is_key_material,pm.need_batch_record,p.status material_status,
+                pm.quantity_per_unit,p.status material_status,
                 p.is_deleted material_is_deleted,c.status category_status,c.is_deleted category_is_deleted
            FROM product_materials pm JOIN materials p ON p.id=pm.material_id
            JOIN product_categories c ON c.id=p.category_id
@@ -233,8 +224,6 @@ export class MysqlProductSnapshotRepository
           productName: row.product_name,
           unit: row.unit,
           quantityPerUnit: row.quantity_per_unit,
-          isKeyMaterial: Boolean(row.is_key_material),
-          needBatchRecord: Boolean(row.need_batch_record),
         })),
       };
     });
@@ -365,8 +354,6 @@ type BomRow = RowDataPacket & {
   product_name: string;
   unit: string;
   quantity_per_unit: string;
-  is_key_material: number;
-  need_batch_record: number;
   material_status: number;
   material_is_deleted: number;
   category_status: number;

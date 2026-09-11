@@ -29,6 +29,11 @@ import { MysqlProductionRepository } from '../../../apps/api/src/modules/product
 import { MysqlWorkOrderRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-work-order.repository.js';
 import { ProductionController } from '../../../apps/api/src/modules/production/presentation/http/production.controller.js';
 import { CREATE_BATCH_IDEMPOTENCY_SCOPE } from '../../../apps/api/src/modules/production/application/idempotency/production-idempotency-scopes.contract.js';
+import {
+  approveBomForProduction,
+  cleanupApprovedBom,
+  type ApprovedBomFixture,
+} from './approval-bom-fixture.js';
 
 loadWorkspaceEnv();
 
@@ -69,6 +74,14 @@ describeMysql(
         connectionLimit: 4,
       });
       fixture = await createFixture(pool);
+      fixture.approval = await approveBomForProduction({
+        pool,
+        token: fixture.token,
+        actorId: fixture.actorId,
+        roleId: fixture.roleId,
+        productId: fixture.productId,
+        expectedProductVersion: 0,
+      });
       const workOrders = new MysqlWorkOrderRepository(pool);
       const batches = new MysqlProductionBatchRepository(pool);
       const materials = new MysqlProductionMaterialRepository(pool);
@@ -91,6 +104,7 @@ describeMysql(
 
     afterAll(async () => {
       if (pool && fixture) {
+        if (fixture.approval) await cleanupApprovedBom(pool, fixture.approval);
         const requestIds = [fixture.requestId, fixture.replayRequestId, fixture.failureRequestId];
         const placeholders = requestIds.map(() => '?').join(',');
         await pool.execute(
@@ -112,6 +126,12 @@ describeMysql(
         await pool.execute('DELETE FROM product_categories WHERE id=?', [
           fixture.materialCategoryId,
         ]);
+        await pool.execute('DELETE FROM role_permissions WHERE role_id=?', [fixture.roleId]);
+        await pool.execute('DELETE FROM user_roles WHERE user_id IN (?,?)', [
+          fixture.actorId,
+          fixture.ownerId,
+        ]);
+        await pool.execute('DELETE FROM roles WHERE id=?', [fixture.roleId]);
         await pool.execute('DELETE FROM users WHERE id IN (?,?)', [
           fixture.actorId,
           fixture.ownerId,
@@ -152,10 +172,24 @@ describeMysql(
       expect(batch).toMatchObject({ planned_quantity: '2.0000' });
 
       const [[bomLock]] = await pool.query<
-        (RowDataPacket & { bom_locked_at: Date | null; bom_locked_by: number | null })[]
-      >('SELECT bom_locked_at,bom_locked_by FROM products WHERE id=?', [fixture.productId]);
+        (RowDataPacket & {
+          bom_status: string;
+          bom_approval_instance_id: number | null;
+          bom_locked_at: Date | null;
+          bom_locked_by: number | null;
+          version: number;
+        })[]
+      >(
+        'SELECT bom_status,bom_approval_instance_id,bom_locked_at,bom_locked_by,version FROM products WHERE id=?',
+        [fixture.productId],
+      );
+      expect(bomLock).toMatchObject({
+        bom_status: 'approved',
+        bom_approval_instance_id: fixture.approval?.approvalInstanceId,
+        bom_locked_by: fixture.actorId,
+        version: 2,
+      });
       expect(bomLock.bom_locked_at).not.toBeNull();
-      expect(Number(bomLock.bom_locked_by)).toBe(fixture.actorId);
 
       const [[record]] = await pool.query<
         (RowDataPacket & {
@@ -224,33 +258,38 @@ describeMysql(
       expect(Number(replayAuditCount.total)).toBe(0);
 
       const [[lockAuditCount]] = await pool.query<(RowDataPacket & { total: number })[]>(
-        "SELECT COUNT(*) total FROM operation_logs WHERE request_id=? AND action='product.bom-lock'",
+        "SELECT COUNT(*) total FROM operation_logs WHERE request_id=? AND action='bom.approve'",
         [fixture.requestId],
       );
-      expect(Number(lockAuditCount.total)).toBe(1);
+      // 生产任务只读取批准事实；BOM 的永久锁定审计来自审批事务，不能被任务创建重复写入。
+      expect(Number(lockAuditCount.total)).toBe(0);
 
       await expect(
         new MysqlProductCatalogRepository(pool).replaceMaterials(
           String(fixture.productId),
-          [
-            {
-              materialId: String(fixture.materialId),
-              quantityPerUnit: 1,
-              unit: 'pcs',
-              isKeyMaterial: true,
-              needBatchRecord: true,
-            },
-          ],
+          {
+            version: 2,
+            items: [
+              {
+                materialId: String(fixture.materialId),
+                quantityPerUnit: 1,
+                unit: 'pcs',
+              },
+            ],
+          },
           commandContext(fixture.actorId, 'not-used', `${fixture.requestId}-locked-edit`),
         ),
       ).rejects.toMatchObject({ code: 'CONFLICT', message: expect.stringContaining('永久锁定') });
     });
 
     it('业务失败整体回滚：不残留幂等记录、批次或成功审计', async () => {
-      // 专用夹具显式清空锁，验证本次失败事务不会留下 Product 锁定事实。
-      await pool.execute('UPDATE products SET bom_locked_at=NULL,bom_locked_by=NULL WHERE id=?', [
-        fixture.productId,
-      ]);
+      const beforeBom = await productLockState(pool, fixture.productId);
+      expect(beforeBom).toMatchObject({
+        bom_status: 'approved',
+        bom_approval_instance_id: fixture.approval?.approvalInstanceId,
+        bom_locked_by: fixture.actorId,
+        version: 2,
+      });
       const payload = {
         batchNo: fixture.failureBatchNo,
         plannedQuantity: 999, // 超过工单剩余数量 -> 首次执行 handler 内业务校验失败
@@ -263,7 +302,10 @@ describeMysql(
           payload,
           commandContext(fixture.actorId, fixture.failureKey, fixture.failureRequestId),
         ),
-      ).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+      ).rejects.toMatchObject({
+        code: 'INVALID_INPUT',
+        message: '生产批次计划数量超过工单剩余数量',
+      });
 
       const [[batchCount]] = await pool.query<(RowDataPacket & { total: number })[]>(
         'SELECT COUNT(*) total FROM production_batches WHERE work_order_id=? AND batch_no=?',
@@ -284,10 +326,7 @@ describeMysql(
       );
       expect(Number(successAuditCount.total)).toBe(0);
 
-      const [[bomLock]] = await pool.query<
-        (RowDataPacket & { bom_locked_at: Date | null; bom_locked_by: number | null })[]
-      >('SELECT bom_locked_at,bom_locked_by FROM products WHERE id=?', [fixture.productId]);
-      expect(bomLock).toMatchObject({ bom_locked_at: null, bom_locked_by: null });
+      expect(await productLockState(pool, fixture.productId)).toMatchObject(beforeBom);
     });
 
     it('IdempotencyKeyGuard 门禁（直接调用 canActivate）：已启用端点缺少 Idempotency-Key 返回 400，合法键放行', async () => {
@@ -301,6 +340,7 @@ interface Fixture {
   token: string;
   actorId: number;
   ownerId: number;
+  roleId: number;
   categoryId: number;
   materialCategoryId: number;
   productId: number;
@@ -313,6 +353,7 @@ interface Fixture {
   replayRequestId: string;
   failureKey: string;
   failureRequestId: string;
+  approval?: ApprovedBomFixture;
 }
 
 const commandContext = (
@@ -349,6 +390,11 @@ const createFixture = async (pool: Pool): Promise<Fixture> => {
     'INSERT INTO users (username,password_hash,display_name) VALUES (?,?,?)',
     [`${token}-owner`, 'hash', '闭环测试负责人'],
   );
+  const roleId = await insert(
+    pool,
+    'INSERT INTO roles (name,code,description,status) VALUES (?,?,?,1)',
+    [`${token}-role`, `${token}-role`, '闭环测试审批角色'],
+  );
   const categoryId = await insert(
     pool,
     'INSERT INTO product_categories (category_code,category_name,item_kind) VALUES (?,?,?)',
@@ -371,8 +417,8 @@ const createFixture = async (pool: Pool): Promise<Fixture> => {
   );
   await pool.execute(
     `INSERT INTO product_materials
-       (product_id,material_id,quantity_per_unit,unit,is_key_material,need_batch_record)
-     VALUES (?,?,?,?,1,1)`,
+       (product_id,material_id,quantity_per_unit,unit)
+     VALUES (?,?,?,?)`,
     [productId, materialId, 1, 'pcs'],
   );
   const workOrderId = await insert(
@@ -394,6 +440,7 @@ const createFixture = async (pool: Pool): Promise<Fixture> => {
     token,
     actorId,
     ownerId,
+    roleId,
     categoryId,
     materialCategoryId,
     productId,
@@ -407,6 +454,22 @@ const createFixture = async (pool: Pool): Promise<Fixture> => {
     failureKey: `${token}-fail-key`,
     failureRequestId: `${token}-req-fail`,
   };
+};
+
+const productLockState = async (pool: Pool, productId: number) => {
+  const [[row]] = await pool.query<
+    (RowDataPacket & {
+      bom_status: string;
+      bom_approval_instance_id: number | null;
+      bom_locked_at: Date | null;
+      bom_locked_by: number | null;
+      version: number;
+    })[]
+  >(
+    'SELECT bom_status,bom_approval_instance_id,bom_locked_at,bom_locked_by,version FROM products WHERE id=?',
+    [productId],
+  );
+  return row;
 };
 
 const insert = async (pool: Pool, sql: string, values: ExecuteValues[]) => {

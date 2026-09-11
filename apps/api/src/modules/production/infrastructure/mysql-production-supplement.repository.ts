@@ -68,8 +68,6 @@ type CandidateRow = RowDataPacket & {
   item_name: string;
   quantity_per_unit_snapshot: string;
   unit_snapshot: string;
-  is_key_material_snapshot: number;
-  need_batch_record_snapshot: number;
   planned_output_quantity_snapshot: string;
   need_number: string;
 };
@@ -493,8 +491,6 @@ export class MysqlProductionSupplementRepository extends ProductionSupplementRep
           itemCode: original.itemCode,
           quantityPerUnit: original.quantityPerUnit,
           unit: original.unit,
-          isKeyMaterial: original.isKeyMaterial,
-          needBatchRecord: original.needBatchRecord,
           plannedOutputQuantity: original.plannedOutputQuantity,
           needNumber: line.supplementQuantity,
           demandType: 'scrap_supplement',
@@ -624,7 +620,7 @@ const selectCandidates = async (
   const [rows] = await connection.query<CandidateRow[]>(
     `SELECT id,production_batch_id,requirement_basis_id,product_material_id,item_id,material_variant_id,
       material_variant_code_snapshot,item_code_snapshot,${currentMaterialNameSql('production_item_demand.item_id')} item_name,quantity_per_unit_snapshot,unit_snapshot,
-      is_key_material_snapshot,need_batch_record_snapshot,planned_output_quantity_snapshot,need_number
+      planned_output_quantity_snapshot,need_number
      FROM production_item_demand
      WHERE production_batch_id=? AND demand_type='normal'
        AND business_status IN ('active','fulfilled')${filter}
@@ -701,8 +697,6 @@ const mapCandidate = (
   itemName: row.item_name,
   quantityPerUnit: row.quantity_per_unit_snapshot,
   unit: row.unit_snapshot,
-  isKeyMaterial: Boolean(row.is_key_material_snapshot),
-  needBatchRecord: Boolean(row.need_batch_record_snapshot),
   plannedOutputQuantity: row.planned_output_quantity_snapshot,
   normalDemandQuantity: row.need_number,
 });

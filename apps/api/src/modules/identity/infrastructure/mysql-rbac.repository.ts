@@ -10,8 +10,9 @@ import type {
   UpdateSystemRolePayload,
   UpdateSystemUserPayload,
   UserOption,
+  ApprovalRoleOption,
 } from '@company/contracts';
-import { SYSTEM_STATUS } from '@company/constants';
+import { PERMISSIONS, SYSTEM_STATUS, permissionMatches } from '@company/constants';
 import { withActiveConnection, withTransaction } from '@company/database';
 import type { AuditLogEntry } from '../../../common/audit/audit.types.js';
 import { writeTransactionalAudit } from '../../../common/audit/transactional-audit-writer.js';
@@ -135,6 +136,71 @@ export class MysqlRbacRepository implements RbacRepository {
       SYSTEM_STATUS.enabled,
     ]);
     return rows.map((row) => ({ id: String(row.id), name: row.name, code: row.code }));
+  }
+
+  async listRoleReferencesByIds(ids: string[]): Promise<IdentityRoleOption[]> {
+    if (ids.length === 0) return [];
+    return withActiveConnection(this.pool, async (connection) => {
+      const [rows] = await connection.query<
+        (RowDataPacket & { id: string; name: string; code: string })[]
+      >('SELECT id,name,code FROM roles WHERE id IN (?) ORDER BY id', [ids]);
+      return rows.map((row) => ({ id: String(row.id), name: row.name, code: row.code }));
+    });
+  }
+
+  async listApprovalRoleOptions(): Promise<ApprovalRoleOption[]> {
+    return withActiveConnection(this.pool, async (connection) => {
+      const [roles] = await connection.query<
+        (RowDataPacket & { id: string; name: string; code: string })[]
+      >('SELECT id,name,code FROM roles WHERE status=? AND deleted_at IS NULL ORDER BY name,id', [
+        SYSTEM_STATUS.enabled,
+      ]);
+      const candidates = await this.approvalCandidates();
+      return roles.map((role) => ({
+        id: String(role.id),
+        name: role.name,
+        code: role.code,
+        eligibleUserCount: candidates.get(String(role.id))?.length ?? 0,
+      }));
+    });
+  }
+
+  async listApprovalEligibleUserIds(roleId: string): Promise<string[]> {
+    return (await this.approvalCandidates(roleId)).get(roleId) ?? [];
+  }
+
+  /**
+   * 配置角色只限定成员范围；审批权限按用户全部有效角色的并集计算。
+   * 当前读复用调用事务并锁住所用资格，避免 RR 快照继续授权已撤销人员。
+   */
+  private async approvalCandidates(roleId?: string): Promise<Map<string, string[]>> {
+    return withActiveConnection(this.pool, async (connection) => {
+      const [rows] = await connection.query<
+        (RowDataPacket & { role_id: string; user_id: string; permission_code: string })[]
+      >(
+        `SELECT r.id role_id,u.id user_id,p.code permission_code
+           FROM roles r
+           JOIN user_roles candidate_membership ON candidate_membership.role_id=r.id
+           JOIN users u ON u.id=candidate_membership.user_id AND u.status=1 AND u.deleted_at IS NULL
+           JOIN user_roles grant_membership ON grant_membership.user_id=u.id
+           JOIN roles grant_role ON grant_role.id=grant_membership.role_id
+                AND grant_role.status=1 AND grant_role.deleted_at IS NULL
+           JOIN role_permissions rp ON rp.role_id=grant_role.id
+           JOIN permissions p ON p.id=rp.permission_id AND p.status=1 AND p.deleted_at IS NULL
+          WHERE r.status=1 AND r.deleted_at IS NULL ${roleId === undefined ? '' : 'AND r.id=?'}
+          ORDER BY r.id,u.id,grant_role.id,p.id FOR SHARE`,
+        roleId === undefined ? [] : [roleId],
+      );
+      const eligible = new Map<string, Set<string>>();
+      for (const row of rows) {
+        if (!permissionMatches([row.permission_code], PERMISSIONS.approval.decide)) continue;
+        const key = String(row.role_id);
+        const members = eligible.get(key) ?? new Set<string>();
+        members.add(String(row.user_id));
+        eligible.set(key, members);
+      }
+      return new Map([...eligible].map(([key, members]) => [key, [...members]]));
+    });
   }
 
   async listActiveUserOptions(): Promise<UserOption[]> {

@@ -11,6 +11,7 @@ src/
     identity/
     product/
     production/
+    approval/
   presentation/
   scripts/
   app.module.ts
@@ -26,6 +27,7 @@ src/
 ## 相关文档
 
 - [Identity](src/modules/identity/README.md)
+- [Approval](src/modules/approval/README.md)
 - [Product](src/modules/product/README.md)
 - [Production](src/modules/production/README.md)
 - [命令上下文](docs/command-context.md)

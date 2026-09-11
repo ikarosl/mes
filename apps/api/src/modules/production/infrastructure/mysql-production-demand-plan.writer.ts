@@ -18,8 +18,6 @@ export type DemandPlanLine = {
   itemCode: string;
   quantityPerUnit: string;
   unit: string;
-  isKeyMaterial: boolean | number;
-  needBatchRecord: boolean | number;
   plannedOutputQuantity: string;
   needNumber: string | number;
   demandType: DemandType;
@@ -52,10 +50,9 @@ export class MysqlProductionDemandPlanWriter {
         `INSERT INTO production_item_demand
          (production_batch_id,requirement_basis_id,product_material_id,item_id,material_variant_id,
           item_code_snapshot,material_variant_code_snapshot,
-          quantity_per_unit_snapshot,unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,
-          planned_output_quantity_snapshot,need_number,remaining_number,demand_type,generation_group_key,
+          quantity_per_unit_snapshot,unit_snapshot,planned_output_quantity_snapshot,need_number,remaining_number,demand_type,generation_group_key,
           idempotency_key,parent_demand_id,manual_addition_id,supplement_id,business_status,created_by,updated_by)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'active',?,?)`,
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'active',?,?)`,
         [
           params.batchId,
           line.requirementBasisId,
@@ -66,8 +63,6 @@ export class MysqlProductionDemandPlanWriter {
           line.materialVariantCode,
           line.quantityPerUnit,
           line.unit,
-          Number(line.isKeyMaterial),
-          Number(line.needBatchRecord),
           line.plannedOutputQuantity,
           line.needNumber,
           line.needNumber,

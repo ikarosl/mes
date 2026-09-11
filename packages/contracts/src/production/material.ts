@@ -24,8 +24,6 @@ export interface ProductionItemDemandItem {
   itemName: string;
   quantityPerUnit: string;
   unit: string;
-  isKeyMaterial: boolean;
-  needBatchRecord: boolean;
   plannedOutputQuantity: string;
   needNumber: string;
   demandType: DemandType;

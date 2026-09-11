@@ -59,7 +59,7 @@ INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id
 FROM roles r
 JOIN permissions p ON
-  p.code = 'dashboard:view'
+  p.code IN ('dashboard:view','approval:view','approval:decide')
   OR p.code LIKE 'product:%'
   OR p.code LIKE 'production:%'
 WHERE r.code = 'production';

@@ -19,6 +19,17 @@
           ></el-sub-menu
         >
         <el-sub-menu
+          v-if="approvalItems.length"
+          index="approval"
+          ><template #title>审批中心</template
+          ><el-menu-item
+            v-for="item in approvalItems"
+            :key="item.path"
+            :index="item.path"
+            >{{ item.title }}</el-menu-item
+          ></el-sub-menu
+        >
+        <el-sub-menu
           v-if="productItems.length"
           index="product"
           ><template #title>产品资料</template
@@ -116,6 +127,21 @@ const all = [
   { title: '操作日志', path: '/system/logs', permission: PERMISSIONS.system.logs.view },
 ];
 const systemItems = computed(() => all.filter((item) => auth.can(item.permission)));
+
+const approvalMenus = [
+  {
+    title: '审批待办',
+    path: '/approval/inbox',
+    permission: [
+      PERMISSIONS.approval.view,
+      PERMISSIONS.approval.decide,
+      PERMISSIONS.approval.reassign,
+      PERMISSIONS.product.products.manageBom,
+    ] as const,
+  },
+  { title: '审批流程配置', path: '/approval/flows', permission: PERMISSIONS.approval.configure },
+];
+const approvalItems = computed(() => approvalMenus.filter((item) => auth.can(item.permission)));
 
 const productMenus = [
   { title: '成品与物料', path: '/product/products', permission: PERMISSIONS.product.products.view },

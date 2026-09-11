@@ -51,6 +51,12 @@ System 现有 `departments`、`users`、`roles`、`permissions`、`user_roles`�
 不属于 System 业务数据；System 仅提供当前审计查询入口，业务模块写入时可直接调用唯一事务审计
 Writer，无需通过 Identity `public.ts`。`operation_logs` 的字段和唯一写入口由[审计专题](../../../docs/audit.md)维护；业务表字段由[Identity 数据库设计](docs/database.md)维护。
 
+## 审批资格公开能力
+
+`IdentityDirectoryService` 提供审批角色选项及该角色当前合格成员。角色仅表示职责分组，不表示职级；候选必须是所配置有效角色的成员，账号启用且未删除，用户全部有效角色的权限并集须匹配 `approval:decide`，包括既有通配权限。配置角色本身不必独占审批权限，管理员也仍须属于该节点所选角色。
+
+审批资格查询复用调用者事务，以当前锁定读复核账号、角色、成员关系和权限；历史姓名查询保持包括停用用户的展示语义，不用于授权。角色选项人数与实际待办候选使用同一规则。Identity 不写审批任务或业务状态，本次无需调整 Identity 表结构。
+
 ## 验证
 
 运行 `corepack pnpm --filter @company/api typecheck`，并执行 Identity 相邻单元测试、HTTP 契约测试和根架构门禁。

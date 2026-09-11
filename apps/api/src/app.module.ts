@@ -6,9 +6,10 @@ import { IdempotencyKeyGuard } from './infrastructure/idempotency/idempotency.mo
 import { HealthModule } from './infrastructure/health/health.module.js';
 import { ProductModule } from './modules/product/public.js';
 import { ProductionModule } from './modules/production/public.js';
+import { ApprovalModule } from './modules/approval/public.js';
 import { HttpExceptionFilter } from './presentation/http/http-exception.filter.js';
 @Module({
-  imports: [HealthModule, IdentityModule, ProductModule, ProductionModule],
+  imports: [HealthModule, IdentityModule, ApprovalModule, ProductModule, ProductionModule],
   controllers: [AppController],
   providers: [
     { provide: APP_FILTER, useClass: HttpExceptionFilter },

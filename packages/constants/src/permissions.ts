@@ -1,5 +1,11 @@
 export const PERMISSIONS = {
   dashboard: { view: 'dashboard:view' },
+  approval: {
+    view: 'approval:view',
+    configure: 'approval:configure',
+    decide: 'approval:decide',
+    reassign: 'approval:reassign',
+  },
   system: {
     view: 'system:view',
     users: {

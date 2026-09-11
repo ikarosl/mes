@@ -62,8 +62,6 @@ const demandLine = (productMaterialId: number, itemCode: string) => ({
   itemName: itemCode,
   quantityPerUnit: '1.0000',
   unit: 'kg',
-  isKeyMaterial: true,
-  needBatchRecord: true,
   plannedOutputQuantity: '10.0000',
   needNumber: '10',
   demandType: 'normal' as const,

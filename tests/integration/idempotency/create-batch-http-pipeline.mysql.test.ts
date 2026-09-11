@@ -21,6 +21,11 @@ import { requestContextMiddleware } from '../../../apps/api/src/common/http/requ
 import { DATABASE_POOL } from '../../../apps/api/src/infrastructure/database/database.module.js';
 import { createValidationPipe } from '../../../apps/api/src/presentation/http/validation.pipe.js';
 import { CREATE_BATCH_IDEMPOTENCY_SCOPE } from '../../../apps/api/src/modules/production/application/idempotency/production-idempotency-scopes.contract.js';
+import {
+  approveBomForProduction,
+  cleanupApprovedBom,
+  type ApprovedBomFixture,
+} from './approval-bom-fixture.js';
 
 loadWorkspaceEnv();
 
@@ -88,6 +93,14 @@ describeMysql('createBatch HTTP pipeline (real Nest app + real MySQL)', () => {
       connectionLimit: 4,
     });
     fixture = await createFixture(pool);
+    fixture.approval = await approveBomForProduction({
+      pool,
+      token: fixture.token,
+      actorId: fixture.actorId,
+      roleId: fixture.roleId,
+      productId: fixture.productId,
+      expectedProductVersion: 0,
+    });
     accessToken = await signAccessToken(fixture.actorId, `${fixture.token}-actor`);
     createBatchUrl = `/api/production/work-orders/${fixture.workOrderId}/batches`;
 
@@ -102,6 +115,7 @@ describeMysql('createBatch HTTP pipeline (real Nest app + real MySQL)', () => {
   afterAll(async () => {
     await app?.close();
     if (pool && fixture) {
+      if (fixture.approval) await cleanupApprovedBom(pool, fixture.approval);
       // 所有请求都带确定性的 x-request-id，按 request_id 精确清理审计行；
       // AuthGuard 的 401 安全审计行不写 request_id，按本次 fixture 唯一的 action 精确清理。
       const requestIds = [
@@ -135,6 +149,11 @@ describeMysql('createBatch HTTP pipeline (real Nest app + real MySQL)', () => {
       await pool.execute('DELETE FROM product_categories WHERE id IN (?,?)', [
         fixture.categoryId,
         fixture.materialCategoryId,
+      ]);
+      await pool.execute('DELETE FROM role_permissions WHERE role_id=?', [fixture.roleId]);
+      await pool.execute('DELETE FROM user_roles WHERE user_id IN (?,?)', [
+        fixture.actorId,
+        fixture.ownerId,
       ]);
       await pool.execute('DELETE FROM users WHERE id IN (?,?)', [fixture.actorId, fixture.ownerId]);
       await pool.execute('DELETE FROM roles WHERE id=?', [fixture.roleId]);
@@ -390,6 +409,7 @@ interface Fixture {
   conflictCreateRequestId: string;
   conflictRequestId: string;
   validationRequestId: string;
+  approval?: ApprovedBomFixture;
 }
 
 const createFixture = async (pool: Pool): Promise<Fixture> => {
@@ -446,8 +466,8 @@ const createFixture = async (pool: Pool): Promise<Fixture> => {
   const productMaterialId = await insert(
     pool,
     `INSERT INTO product_materials
-     (product_id,material_id,quantity_per_unit,unit,is_key_material,need_batch_record)
-     VALUES (?,?,'1.0000','kg',1,1)`,
+     (product_id,material_id,quantity_per_unit,unit)
+     VALUES (?,?,'1.0000','kg')`,
     [productId, materialId],
   );
   const workOrderId = await insert(

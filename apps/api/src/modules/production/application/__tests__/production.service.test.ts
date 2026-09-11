@@ -120,7 +120,7 @@ describe('ProductionService first-stage commands', () => {
       withBatchCreationTransaction: vi.fn(async (_workOrderId, action) => action('8')),
     };
     const productDefinitions = {
-      lockBomForProductionTask: vi
+      requireApprovedBomForProductionTask: vi
         .fn()
         .mockResolvedValue({ status: 'not-found', message: '工艺路线不可用' }),
     };
@@ -138,7 +138,7 @@ describe('ProductionService first-stage commands', () => {
       code: 'NOT_FOUND',
       message: '工艺路线不可用',
     });
-    expect(productDefinitions.lockBomForProductionTask).toHaveBeenCalledWith(
+    expect(productDefinitions.requireApprovedBomForProductionTask).toHaveBeenCalledWith(
       '8',
       null,
       expect.objectContaining({ actorId: '1', requestId: 'test-request' }),
@@ -361,7 +361,7 @@ describe('ProductionService first-stage commands', () => {
       withBatchCreationTransaction: vi.fn(async (_workOrderId, action) => action('8')),
     };
     const productDefinitions = {
-      lockBomForProductionTask: vi.fn().mockResolvedValue({
+      requireApprovedBomForProductionTask: vi.fn().mockResolvedValue({
         status: 'success',
         value: { id: '9', steps: [{ routeStepId: '41' }] },
       }),
@@ -393,7 +393,7 @@ describe('ProductionService first-stage commands', () => {
       createBatch: vi.fn().mockResolvedValue({ id: '6', ownerId: null, stepRecords: [] }),
     };
     const productDefinitions = {
-      lockBomForProductionTask: vi.fn().mockResolvedValue({
+      requireApprovedBomForProductionTask: vi.fn().mockResolvedValue({
         status: 'success',
         value: { id: '9', product: { id: '8' }, steps: [] },
       }),
@@ -409,7 +409,11 @@ describe('ProductionService first-stage commands', () => {
     await service.createBatch('6', { plannedQuantity: 1 }, idempotentAudit);
 
     expect(repository.withBatchCreationTransaction).toHaveBeenCalledWith('6', expect.any(Function));
-    expect(productDefinitions.lockBomForProductionTask).toHaveBeenCalledWith('8', null, audit);
+    expect(productDefinitions.requireApprovedBomForProductionTask).toHaveBeenCalledWith(
+      '8',
+      null,
+      audit,
+    );
     expect(repository.createBatch).toHaveBeenCalledWith(
       '6',
       { plannedQuantity: 1, batchNo: null, remark: null },
@@ -425,7 +429,7 @@ describe('ProductionService first-stage commands', () => {
       createBatch: vi.fn().mockResolvedValue({ id: '6', ownerId: null, stepRecords: [] }),
     };
     const productDefinitions = {
-      lockBomForProductionTask: vi.fn().mockResolvedValue({
+      requireApprovedBomForProductionTask: vi.fn().mockResolvedValue({
         status: 'success',
         value: { id: '9', product: { id: '8' }, steps: [] },
       }),

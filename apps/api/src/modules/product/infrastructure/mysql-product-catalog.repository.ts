@@ -11,12 +11,13 @@ import { mapProductWriteError } from './mysql-product.shared.js';
 
 type Db = Pool | PoolConnection;
 import type {
+  BomApprovalSnapshot,
   ProductItemKind,
   ProductListItem,
   ProductGroupItem,
   ProductGroupQuery,
   ProductMaterialItem,
-  ProductMaterialPayload,
+  ReplaceProductMaterialsCommand,
   ProductListQuery,
   PageResult,
   ProductOption,
@@ -73,13 +74,17 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
         material_count: number;
         bom_locked_at: Date | null;
         bom_locked_by: number | null;
+        bom_status: ProductListItem['bomStatus'];
+        bom_approval_instance_id: number | null;
+        version: number;
         remark: string | null;
         updated_at: Date | null;
       })[]
     >(
       `SELECT p.id,p.item_code,p.product_name,p.category_id,c.category_code,c.category_name,c.item_kind,
                     p.default_route_id,r.route_name default_route_name,p.unit,p.acquire_method,p.spec_values,p.status,
-                    COUNT(pm.id) material_count,p.bom_locked_at,p.bom_locked_by,p.remark,p.updated_at
+                    COUNT(pm.id) material_count,p.bom_locked_at,p.bom_locked_by,p.bom_status,
+                    p.bom_approval_instance_id,p.version,p.remark,p.updated_at
              FROM products p JOIN product_categories c ON c.id=p.category_id
              LEFT JOIN process_routes r ON r.id=p.default_route_id AND r.is_deleted=0
              LEFT JOIN product_materials pm ON pm.product_id=p.id AND pm.is_deleted=0 AND pm.status=1
@@ -104,6 +109,10 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
       materialCount: Number(row.material_count),
       bomLockedAt: this.date(row.bom_locked_at),
       bomLockedById: row.bom_locked_by === null ? null : String(row.bom_locked_by),
+      bomStatus: row.bom_status,
+      bomApprovalInstanceId:
+        row.bom_approval_instance_id === null ? null : String(row.bom_approval_instance_id),
+      version: Number(row.version),
       remark: row.remark,
       updatedAt: this.date(row.updated_at),
     }));
@@ -180,13 +189,17 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
         material_count: number;
         bom_locked_at: Date | null;
         bom_locked_by: number | null;
+        bom_status: ProductListItem['bomStatus'];
+        bom_approval_instance_id: number | null;
+        version: number;
         remark: string | null;
         updated_at: Date | null;
       })[]
     >(
       `SELECT selected.group_index,p.id,p.item_code,p.product_name,p.category_id,c.category_code,c.category_name,c.item_kind,
               p.default_route_id,r.route_name default_route_name,p.unit,p.acquire_method,p.spec_values,p.status,
-              COUNT(pm.id) material_count,p.bom_locked_at,p.bom_locked_by,p.remark,p.updated_at
+              COUNT(pm.id) material_count,p.bom_locked_at,p.bom_locked_by,p.bom_status,
+              p.bom_approval_instance_id,p.version,p.remark,p.updated_at
          FROM products p JOIN product_categories c ON c.id=p.category_id
          JOIN (${selectedGroups}) selected ON p.product_name=selected.product_name AND p.category_id=selected.category_id
          LEFT JOIN process_routes r ON r.id=p.default_route_id AND r.is_deleted=0
@@ -275,6 +288,9 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
   async updateProduct(id: string, payload: ProductPayload, audit: CommandContext) {
     await withTransaction(this.pool, async (connection) => {
       const before = await this.productRecord(connection, id, true);
+      if (before.bom_status === 'pending_approval') {
+        throw new ProductDomainError('CONFLICT', 'BOM 审批中，产品资料暂时不能修改');
+      }
       if (payload.itemCode !== before.item_code) {
         throw new ProductDomainError(
           'CONFLICT',
@@ -311,7 +327,7 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
         }
       }
       await connection.execute(
-        `UPDATE products SET product_name=?,category_id=?,unit=?,acquire_method=?,spec_values=?,status=?,remark=?,updated_by=? WHERE id=? AND is_deleted=0`,
+        `UPDATE products SET product_name=?,category_id=?,unit=?,acquire_method=?,spec_values=?,status=?,remark=?,version=version+1,updated_by=? WHERE id=? AND is_deleted=0`,
         [
           payload.productName,
           payload.categoryId,
@@ -333,8 +349,11 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
   async setProductStatus(id: string, status: number, audit: CommandContext) {
     await withTransaction(this.pool, async (connection) => {
       const before = await this.productRecord(connection, id, true);
+      if (before.bom_status === 'pending_approval') {
+        throw new ProductDomainError('CONFLICT', 'BOM 审批中，产品状态暂时不能修改');
+      }
       await connection.execute(
-        'UPDATE products SET status=?,updated_by=? WHERE id=? AND is_deleted=0',
+        'UPDATE products SET status=?,version=version+1,updated_by=? WHERE id=? AND is_deleted=0',
         [status, audit.actorId, id],
       );
       await this.audit(
@@ -359,14 +378,12 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
         item_kind: ProductItemKind;
         quantity_per_unit: string;
         unit: string;
-        is_key_material: number;
-        need_batch_record: number;
         status: number;
         remark: string | null;
       })[]
     >(
       `SELECT pm.id,pm.material_id,p.material_code item_code,p.material_name product_name,c.item_kind,pm.quantity_per_unit,
-                    pm.unit,pm.is_key_material,pm.need_batch_record,pm.status,pm.remark
+                    pm.unit,pm.status,pm.remark
              FROM product_materials pm JOIN materials p ON p.id=pm.material_id
              JOIN product_categories c ON c.id=p.category_id
              WHERE pm.product_id=? AND pm.is_deleted=0 ORDER BY pm.id`,
@@ -380,8 +397,6 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
       itemKind: row.item_kind,
       quantityPerUnit: String(row.quantity_per_unit),
       unit: row.unit,
-      isKeyMaterial: Boolean(row.is_key_material),
-      needBatchRecord: Boolean(row.need_batch_record),
       status: row.status,
       remark: row.remark,
     }));
@@ -389,16 +404,23 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
 
   async replaceMaterials(
     productId: string,
-    items: ProductMaterialPayload[],
+    command: ReplaceProductMaterialsCommand,
     audit: CommandContext,
   ) {
+    const { items, version } = command;
     await withTransaction(this.pool, async (connection) => {
       const product = await this.productRecord(connection, productId, true);
+      if (product.version !== version) {
+        throw new ProductDomainError('CONFLICT', '产品资料已被其他操作修改，请重新加载 BOM 后重试');
+      }
       if (product.bom_locked_at !== null) {
         throw new ProductDomainError(
           'CONFLICT',
-          'BOM 已被生产任务引用并永久锁定；原则变化请新建产品和产品编码',
+          'BOM 已审批通过并永久锁定；原则变化请新建产品和产品编码',
         );
+      }
+      if (product.bom_status === 'pending_approval') {
+        throw new ProductDomainError('CONFLICT', 'BOM 审批中，不能修改 BOM');
       }
       requireConfigurableProduct({
         status: product.status,
@@ -428,17 +450,14 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
       );
       for (const item of items) {
         await connection.execute(
-          `INSERT INTO product_materials (product_id,material_id,quantity_per_unit,unit,is_key_material,need_batch_record,status,remark,created_by,updated_by)
-           VALUES (?,?,?,?,?,?,?,?,?,?)
-           ON DUPLICATE KEY UPDATE quantity_per_unit=VALUES(quantity_per_unit),unit=VALUES(unit),is_key_material=VALUES(is_key_material),
-             need_batch_record=VALUES(need_batch_record),status=VALUES(status),remark=VALUES(remark),updated_by=VALUES(updated_by),is_deleted=0,deleted_by=NULL,deleted_at=NULL`,
+          `INSERT INTO product_materials (product_id,material_id,quantity_per_unit,unit,status,remark,created_by,updated_by)
+           VALUES (?,?,?,?,?,?,?,?)
+           ON DUPLICATE KEY UPDATE quantity_per_unit=VALUES(quantity_per_unit),unit=VALUES(unit),status=VALUES(status),remark=VALUES(remark),updated_by=VALUES(updated_by),is_deleted=0,deleted_by=NULL,deleted_at=NULL`,
           [
             productId,
             item.materialId,
             item.quantityPerUnit,
             item.unit,
-            Number(item.isKeyMaterial),
-            Number(item.needBatchRecord),
             item.status ?? 1,
             item.remark ?? null,
             audit.actorId,
@@ -446,6 +465,10 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
           ],
         );
       }
+      await connection.execute(
+        'UPDATE products SET version=version+1,updated_by=? WHERE id=? AND is_deleted=0',
+        [audit.actorId, productId],
+      );
       await this.audit(connection, audit, 'bom.replace', productId, before, items);
     });
   }
@@ -460,6 +483,9 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
         );
       }
       const product = await this.productRecord(connection, productId, true);
+      if (product.bom_status === 'pending_approval') {
+        throw new ProductDomainError('CONFLICT', 'BOM 审批中，默认工艺路线暂时不能修改');
+      }
       requireConfigurableProduct({
         status: product.status,
         acquireMethod: product.acquire_method,
@@ -474,7 +500,7 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
         }
       }
       await connection.execute(
-        'UPDATE products SET default_route_id=?,updated_by=? WHERE id=? AND is_deleted=0',
+        'UPDATE products SET default_route_id=?,version=version+1,updated_by=? WHERE id=? AND is_deleted=0',
         [routeId, audit.actorId, productId],
       );
       await this.audit(
@@ -486,6 +512,236 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
         { defaultRouteId: routeId },
       );
     });
+  }
+
+  async lockCurrentBomApproval(
+    productId: string,
+    instanceId: string,
+    expectedVersion: number,
+  ): Promise<void> {
+    await withTransaction(this.pool, async (connection) => {
+      const product = await this.productRecord(connection, productId, true);
+      if (
+        product.bom_status !== 'pending_approval' ||
+        String(product.bom_approval_instance_id) !== instanceId ||
+        Number(product.version) !== expectedVersion
+      ) {
+        throw new ProductDomainError('CONFLICT', 'BOM 当前审批关联已变化，请刷新后重试');
+      }
+    });
+  }
+
+  async prepareBomApproval(
+    productId: string,
+    expectedVersion: number,
+    _audit: CommandContext,
+  ): Promise<{ title: string; subjectVersion: number; snapshot: BomApprovalSnapshot }> {
+    return withTransaction(this.pool, async (connection) => {
+      const product = await this.productRecord(connection, productId, true);
+      if (product.bom_status === 'pending_approval')
+        throw new ProductDomainError('CONFLICT', '该产品已有进行中的 BOM 审批');
+      if (product.bom_status === 'approved' || product.bom_locked_at !== null)
+        throw new ProductDomainError('CONFLICT', 'BOM 已批准并永久锁定，原则变化请新建产品编码');
+      await this.requireProductCategory(connection, String(product.category_id));
+      if (product.version !== expectedVersion)
+        throw new ProductDomainError('CONFLICT', '产品资料已被其他操作修改，请刷新后重试');
+      if (
+        product.status !== 1 ||
+        product.item_kind !== 'finished_product' ||
+        product.acquire_method !== 'self_made'
+      )
+        throw new ProductDomainError(
+          'INVALID_PRODUCT_KIND',
+          '只有已启用的自制成品可以提交 BOM 审批',
+        );
+      const [rows] = await connection.query<
+        (RowDataPacket & {
+          id: number;
+          material_id: number;
+          item_code: string;
+          quantity_per_unit: string;
+          unit: string;
+          remark: string | null;
+          material_unit: string;
+          material_status: number;
+          material_is_deleted: number;
+          item_kind: ProductItemKind;
+          category_status: number;
+          category_is_deleted: number;
+        })[]
+      >(
+        `SELECT pm.id,pm.material_id,m.material_code item_code,pm.quantity_per_unit,pm.unit,
+                pm.remark,m.unit material_unit,
+                m.status material_status,m.is_deleted material_is_deleted,c.item_kind,
+                c.status category_status,c.is_deleted category_is_deleted
+           FROM product_materials pm
+           JOIN materials m ON m.id=pm.material_id
+           JOIN product_categories c ON c.id=m.category_id
+          WHERE pm.product_id=? AND pm.status=1 AND pm.is_deleted=0
+          ORDER BY pm.id FOR UPDATE`,
+        [productId],
+      );
+      if (rows.length === 0)
+        throw new ProductDomainError('INVALID_MATERIAL', 'BOM 至少需要一条有效物料明细');
+      if (
+        rows.some(
+          (row) =>
+            row.material_status !== 1 ||
+            row.material_is_deleted !== 0 ||
+            row.item_kind !== 'material' ||
+            row.category_status !== 1 ||
+            row.category_is_deleted !== 0 ||
+            row.unit !== row.material_unit,
+        )
+      )
+        throw new ProductDomainError('INVALID_MATERIAL', 'BOM 包含不可用物料或用量单位不一致');
+      const snapshot: BomApprovalSnapshot = {
+        productId: String(product.id),
+        itemCode: product.item_code,
+        productName: product.product_name,
+        unit: product.unit,
+        specValues: this.json<BomApprovalSnapshot['specValues'][number]>(product.spec_values),
+        materials: rows.map((row) => ({
+          id: String(row.id),
+          materialId: String(row.material_id),
+          itemCode: row.item_code,
+          quantityPerUnit: String(row.quantity_per_unit),
+          unit: row.unit,
+          remark: row.remark,
+        })),
+      };
+      return {
+        title: `${product.item_code} BOM审批`,
+        subjectVersion: product.version,
+        snapshot,
+      };
+    });
+  }
+
+  async bindBomApproval(
+    productId: string,
+    instanceId: string,
+    expectedVersion: number,
+    audit: CommandContext,
+  ): Promise<number> {
+    return withTransaction(this.pool, async (connection) => {
+      const [result] = await connection.execute<ResultSetHeader>(
+        `UPDATE products SET bom_status='pending_approval',bom_approval_instance_id=?,version=version+1,updated_by=?
+          WHERE id=? AND is_deleted=0 AND bom_status='draft' AND bom_locked_at IS NULL AND version=?`,
+        [instanceId, audit.actorId, productId, expectedVersion],
+      );
+      if (result.affectedRows !== 1)
+        throw new ProductDomainError('CONFLICT', '产品资料已被其他操作修改，请刷新后重试');
+      await this.audit(
+        connection,
+        audit,
+        'bom.submit',
+        productId,
+        { bomStatus: 'draft', version: expectedVersion },
+        {
+          bomStatus: 'pending_approval',
+          approvalInstanceId: instanceId,
+          version: expectedVersion + 1,
+        },
+      );
+      return expectedVersion + 1;
+    });
+  }
+
+  async finalizeBomApproval(
+    productId: string,
+    instanceId: string,
+    expectedVersion: number,
+    audit: CommandContext,
+  ): Promise<void> {
+    await withTransaction(this.pool, async (connection) => {
+      const product = await this.productRecord(connection, productId, true);
+      await this.requireProductCategory(connection, String(product.category_id));
+      const [materials] = await connection.query<
+        (RowDataPacket & {
+          status: number;
+          is_deleted: number;
+          unit: string;
+          bom_unit: string;
+          category_status: number;
+          category_deleted: number;
+          item_kind: string;
+        })[]
+      >(
+        `SELECT m.status,m.is_deleted,m.unit,pm.unit bom_unit,c.status category_status,c.is_deleted category_deleted,c.item_kind
+         FROM product_materials pm JOIN materials m ON m.id=pm.material_id JOIN product_categories c ON c.id=m.category_id
+         WHERE pm.product_id=? AND pm.status=1 AND pm.is_deleted=0 ORDER BY pm.material_id FOR UPDATE`,
+        [productId],
+      );
+      if (
+        !materials.length ||
+        materials.some(
+          (m) =>
+            m.status !== 1 ||
+            m.is_deleted !== 0 ||
+            m.category_status !== 1 ||
+            m.category_deleted !== 0 ||
+            m.item_kind !== 'material' ||
+            m.unit !== m.bom_unit,
+        )
+      ) {
+        throw new ProductDomainError(
+          'INVALID_MATERIAL',
+          'BOM 物料当前不可用，请先恢复有效资料或撤回申请',
+        );
+      }
+      const [result] = await connection.execute<ResultSetHeader>(
+        `UPDATE products SET bom_status='approved',bom_locked_at=NOW(),bom_locked_by=?,version=version+1,updated_by=?
+          WHERE id=? AND is_deleted=0 AND bom_status='pending_approval' AND bom_approval_instance_id=?
+            AND bom_locked_at IS NULL AND version=?`,
+        [audit.actorId, audit.actorId, productId, instanceId, expectedVersion],
+      );
+      if (result.affectedRows !== 1)
+        throw new ProductDomainError('CONFLICT', 'BOM 当前状态已变化，不能完成审批');
+      await this.audit(
+        connection,
+        audit,
+        'bom.approve',
+        productId,
+        { bomStatus: 'pending_approval', approvalInstanceId: instanceId, version: expectedVersion },
+        { bomStatus: 'approved', approvalInstanceId: instanceId, bomLockedBy: audit.actorId },
+      );
+    });
+  }
+
+  async restoreBomAfterApprovalEnd(
+    productId: string,
+    instanceId: string,
+    expectedVersion: number,
+    audit: CommandContext,
+  ): Promise<void> {
+    await withTransaction(this.pool, async (connection) => {
+      const [result] = await connection.execute<ResultSetHeader>(
+        `UPDATE products SET bom_status='draft',bom_approval_instance_id=NULL,version=version+1,updated_by=?
+          WHERE id=? AND is_deleted=0 AND bom_status='pending_approval' AND bom_approval_instance_id=?
+            AND bom_locked_at IS NULL AND version=?`,
+        [audit.actorId, productId, instanceId, expectedVersion],
+      );
+      if (result.affectedRows !== 1)
+        throw new ProductDomainError('CONFLICT', 'BOM 当前状态已变化，不能恢复草稿');
+      await this.audit(
+        connection,
+        audit,
+        'bom.approval-end',
+        productId,
+        { bomStatus: 'pending_approval', approvalInstanceId: instanceId, version: expectedVersion },
+        { bomStatus: 'draft', version: expectedVersion + 1 },
+      );
+    });
+  }
+
+  async listMaterialNames(materialIds: string[]): Promise<Record<string, string>> {
+    if (materialIds.length === 0) return {};
+    const [rows] = await this.pool.query<(RowDataPacket & { id: number; material_name: string })[]>(
+      `SELECT id,material_name FROM materials WHERE id IN (${materialIds.map(() => '?').join(',')})`,
+      materialIds,
+    );
+    return Object.fromEntries(rows.map((row) => [String(row.id), row.material_name]));
   }
 
   private async categoryRecord(db: Db, id: string) {
@@ -529,9 +785,13 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
         default_route_id: number | null;
         unit: string;
         bom_locked_at: Date | null;
+        bom_status: ProductListItem['bomStatus'];
+        bom_approval_instance_id: number | null;
+        version: number;
+        spec_values: string | object | null;
       })[]
     >(
-      `SELECT p.id,p.item_code,p.product_name,p.category_id,c.item_kind,p.acquire_method,p.status,p.default_route_id,p.unit,p.bom_locked_at
+      `SELECT p.id,p.item_code,p.product_name,p.category_id,c.item_kind,p.acquire_method,p.status,p.default_route_id,p.unit,p.bom_locked_at,p.bom_status,p.bom_approval_instance_id,p.version,p.spec_values
            FROM products p JOIN product_categories c ON c.id=p.category_id WHERE p.id=? AND p.is_deleted=0${lock ? ' FOR UPDATE' : ''}`,
       [id],
     );
@@ -613,6 +873,9 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
     material_count: number;
     bom_locked_at: Date | null;
     bom_locked_by: number | null;
+    bom_status: ProductListItem['bomStatus'];
+    bom_approval_instance_id: number | null;
+    version: number;
     remark: string | null;
     updated_at: Date | null;
   }): ProductListItem {
@@ -633,6 +896,10 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
       materialCount: Number(row.material_count),
       bomLockedAt: this.date(row.bom_locked_at),
       bomLockedById: row.bom_locked_by === null ? null : String(row.bom_locked_by),
+      bomStatus: row.bom_status,
+      bomApprovalInstanceId:
+        row.bom_approval_instance_id === null ? null : String(row.bom_approval_instance_id),
+      version: Number(row.version),
       remark: row.remark,
       updatedAt: this.date(row.updated_at),
     };

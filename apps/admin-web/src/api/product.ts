@@ -20,6 +20,7 @@ import type {
   ProductListQuery,
   ProductMaterialItem,
   ProductMaterialPayload,
+  ReplaceProductMaterialsCommand,
   MaterialVariantItem,
   MaterialVariantListQuery,
   MaterialVariantPayload,
@@ -132,8 +133,12 @@ export const productApi = {
     request<void>({ url: `${base}/materials/${id}/status`, method: 'PATCH', data: { status } }),
   productMaterials: (id: string) =>
     request<ProductMaterialItem[]>({ url: `${base}/products/${id}/materials` }),
-  replaceMaterials: (id: string, items: ProductMaterialPayload[]) =>
-    request<void>({ url: `${base}/products/${id}/materials`, method: 'PUT', data: { items } }),
+  replaceMaterials: (id: string, items: ProductMaterialPayload[], version: number) =>
+    request<void>({
+      url: `${base}/products/${id}/materials`,
+      method: 'PUT',
+      data: { items, version } satisfies ReplaceProductMaterialsCommand,
+    }),
   setDefaultRoute: (id: string, routeId: string | null) =>
     request<void>({
       url: `${base}/products/${id}/default-route`,

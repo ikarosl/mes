@@ -35,8 +35,6 @@ describe('MysqlProductSnapshotRepository', () => {
           product_name: 'Material',
           unit: 'kg',
           quantity_per_unit: '2.5000',
-          is_key_material: 1,
-          need_batch_record: 1,
           material_status: 1,
           material_is_deleted: 0,
           category_status: 1,
@@ -175,11 +173,14 @@ describe('MysqlProductSnapshotRepository', () => {
     expect(connection.commit).toHaveBeenCalledOnce();
   });
 
-  it('locks a valid single BOM when the first production task is created', async () => {
+  it('allows a production task only when the BOM approval is final and locked', async () => {
     const connection = transactionConnection();
     connection.query
       .mockResolvedValueOnce([[{ ...productRow, default_route_id: null }], []])
-      .mockResolvedValueOnce([[{ bom_locked_at: null }], []])
+      .mockResolvedValueOnce([
+        [{ bom_status: 'approved', bom_locked_at: new Date(), bom_approval_instance_id: 12 }],
+        [],
+      ])
       .mockResolvedValueOnce([
         [
           {
@@ -197,23 +198,28 @@ describe('MysqlProductSnapshotRepository', () => {
     const repository = repositoryWith(connection);
     const audit = { actorId: '7', requestId: 'req-1', ip: null, userAgent: null };
 
-    await expect(repository.lockBomForProductionTask('9', null, audit)).resolves.toBeNull();
+    await expect(
+      repository.requireApprovedBomForProductionTask('9', null, audit),
+    ).resolves.toBeNull();
 
-    expect(String(connection.execute.mock.calls[0]?.[0])).toContain('bom_locked_at=NOW()');
-    expect(String(connection.execute.mock.calls[1]?.[0])).toContain('INSERT INTO operation_logs');
+    expect(String(connection.query.mock.calls[1]?.[0])).toContain('bom_status,bom_locked_at');
+    expect(String(connection.query.mock.calls[2]?.[0])).toContain('FOR UPDATE');
+    expect(connection.execute).not.toHaveBeenCalled();
     expect(connection.commit).toHaveBeenCalledOnce();
   });
 
-  it('rejects the first task when the product has no enabled BOM line', async () => {
+  it('rejects a production task before reading BOM lines when approval is not final', async () => {
     const connection = transactionConnection();
     connection.query
       .mockResolvedValueOnce([[{ ...productRow, default_route_id: null }], []])
-      .mockResolvedValueOnce([[{ bom_locked_at: null }], []])
-      .mockResolvedValueOnce([[], []]);
+      .mockResolvedValueOnce([
+        [{ bom_status: 'pending_approval', bom_locked_at: null, bom_approval_instance_id: 12 }],
+        [],
+      ]);
     const repository = repositoryWith(connection);
 
     await expect(
-      repository.lockBomForProductionTask('9', null, {
+      repository.requireApprovedBomForProductionTask('9', null, {
         actorId: '7',
         requestId: 'req-1',
         ip: null,
@@ -221,6 +227,7 @@ describe('MysqlProductSnapshotRepository', () => {
       }),
     ).rejects.toMatchObject({ code: 'INVALID_MATERIAL' });
     expect(connection.execute).not.toHaveBeenCalled();
+    expect(connection.query).toHaveBeenCalledTimes(2);
     expect(connection.rollback).toHaveBeenCalledOnce();
   });
 });

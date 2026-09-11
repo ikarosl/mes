@@ -112,7 +112,7 @@ describe('MySQL product adapters workflow transactions', () => {
     expect(String(query.mock.calls[1]?.[0])).toContain('p.bom_locked_at');
   });
 
-  it('rejects every BOM replacement after the product has been locked by production', async () => {
+  it('rejects every BOM replacement after the product has been locked by approval', async () => {
     const connection = {
       beginTransaction: vi.fn(),
       query: vi.fn().mockResolvedValue([
@@ -127,6 +127,8 @@ describe('MySQL product adapters workflow transactions', () => {
             status: 1,
             default_route_id: null,
             unit: 'pcs',
+            bom_status: 'approved',
+            version: 0,
             bom_locked_at: new Date('2026-08-28T02:00:00Z'),
           },
         ],
@@ -141,7 +143,9 @@ describe('MySQL product adapters workflow transactions', () => {
       getConnection: vi.fn().mockResolvedValue(connection),
     } as never);
 
-    await expect(repository.replaceMaterials('9', [], commandContext)).rejects.toMatchObject({
+    await expect(
+      repository.replaceMaterials('9', { version: 0, items: [] }, commandContext),
+    ).rejects.toMatchObject({
       code: 'CONFLICT',
       message: expect.stringContaining('永久锁定'),
     });

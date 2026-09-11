@@ -47,8 +47,8 @@
 | `product_name`     | `VARCHAR(200)`    | 名称                                    |
 | `category_id`      | `BIGINT UNSIGNED` | 分类 ID                                 |
 | `default_route_id` | `BIGINT UNSIGNED` | 默认工艺路线，可为空                    |
-| `bom_locked_at`    | `DATETIME`        | 首次生产任务引用并永久锁定 BOM 的时间   |
-| `bom_locked_by`    | `BIGINT UNSIGNED` | 触发首次锁定的操作人，可为空            |
+| `bom_locked_at`    | `DATETIME`        | BOM 最终审批通过并永久锁定的时间   |
+| `bom_locked_by`    | `BIGINT UNSIGNED` | BOM 最后一级批准人；未批准时为空            |
 | `unit`             | `VARCHAR(20)`     | 唯一基础计量单位，例如 `g`、`kg`、`pcs` |
 | `acquire_method`   | `VARCHAR(32)`     | `self_made`、`outsourced`、`purchased`  |
 | `spec_values`      | `JSON`            | 轻量规格参数；纯记录，不参与整数数量计算 |
@@ -114,8 +114,6 @@ products.default_route_id → process_routes → process_route_steps
 | `material_id` | `BIGINT UNSIGNED` | 消耗对象 ID                    |
 | `quantity_per_unit`   | `DECIMAL(12,4)`   | 每生产一个目标对象的需求数量   |
 | `unit`                | `VARCHAR(20)`     | 用量单位，必须等于物料基础单位 |
-| `is_key_material`     | `TINYINT`         | 是否关键物料，默认 `1`         |
-| `need_batch_record`   | `TINYINT`         | 是否要求批次追溯，默认 `1`     |
 | `status`              | `TINYINT`         | `1` 启用、`0` 停用             |
 | `remark`              | `TEXT`            | 备注                           |
 | 审计字段              | 见统一规则        | 主数据审计字段                 |
@@ -127,7 +125,7 @@ products.default_route_id → process_routes → process_route_steps
 - 外键：`FOREIGN KEY (material_id) REFERENCES materials(id)`
 - 检查约束：`CHECK (quantity_per_unit > 0)`
 - 检查约束：`CHECK (quantity_per_unit = FLOOR(quantity_per_unit))`
-- 检查约束：布尔字段与 `status` 只允许 `0/1`
+- 检查约束：`status` 与 `is_deleted` 只允许 `0/1`
 - 唯一约束：`UNIQUE (product_id, material_id)`
 - 组合引用索引：`UNIQUE (id, material_id)`
 
@@ -135,29 +133,50 @@ products.default_route_id → process_routes → process_route_steps
 
 - `product_id` 指向成品表；成品 ID 与物料 ID 可以数值相同，不再保留自引用不等式。
 - `material_id` 指向 `materials.id`；需要精确库存版本时由 Production 在需求或物流事实中选择 `material_variant_id`。
-- `production_item_demand` 必须保存 `product_material_id` 和 BOM 数量、单位、追溯标志快照。
-- 产品首次成功创建生产任务时，`products.bom_locked_at` 与任务同事务写入；此后本表所有新增、修改、删除、停用、恢复和批量替换操作均拒绝。
+- `production_item_demand` 必须保存 `product_material_id` 和 BOM 数量、单位快照；批次追溯统一依靠精确版本及库存批次引用，不配置 BOM 追溯开关。
+- BOM 最后一级审批通过时，`products.bom_locked_at` 与审批终态同事务写入；此后本表所有新增、修改、删除、停用、恢复和批量替换操作均拒绝。
 - 任务取消、需求完成或库存归零不能解除锁定。原则性用料变化必须新建产品和编码。
 - 锁定前修改 BOM 不得回写已经生成的生产需求。
 - 同一产品和投入对象的 BOM 行软删除后需要再次使用时恢复原记录，不创建相同自然键的新记录。
 
 #### 单版本 BOM 锁定事实
 
+审批业务边界见 [ADR-0006](../../../../../../docs/adr/0006-approval-workflow-boundaries.md)。本次只接入 BOM，工单审批仍未实施。
+
 这两个既有表在 BOM 锁定中的白话分工是：
 
-- `products`：记住“这个产品的 BOM 是否已经真正拿去生产，以及第一次是谁、什么时候锁定的”。
+- `products`：记住“这个产品的 BOM 是否已最终批准，以及谁、什么时候批准并锁定”。
 - `product_materials`：保存“生产这个产品固定要用哪些物料和各用多少”；产品一旦锁定，这些行就只能查看，不能再改。
 
 正式规则：
 
 1. 系统不建立 BOM 版本头、版本行或当前版本指针；同一个 `products.id` 只有一份有效 BOM 定义。
-2. 首次成功创建引用该产品的生产批次时，创建批次、冻结路线工序快照以及写入 `products.bom_locked_at/bom_locked_by` 必须处于同一事务。
+2. BOM 末级批准、申请结束及写入 `products.bom_locked_at/bom_locked_by` 必须处于同一事务。生产任务只校验已有批准事实并冻结路线工序快照。
 3. 锁定事实只允许从“未锁定”写成“已锁定”，没有解锁命令。任务取消、需求完成、库存归零或所有路线停用均不能清空锁定事实。
-4. `bom_locked_by` 可以为空，用于历史事实只能确定锁定时间、无法可靠恢复操作人的情况；一旦记录了操作人，`bom_locked_at` 必须同时存在。
+4. 批准后 `bom_locked_by` 与 `bom_locked_at` 必须同时非空，记录最后一级实际处理人。没有审批证据的旧锁定数据须按开发约定重置。
 5. 已锁定产品拒绝 BOM 行新增、修改、删除、停用、恢复和批量替换。产品确需发生原则性用料变化时，管理员新建产品和编码，再复制并重新复核 BOM 与路线。
 6. 名称等不改变稳定产品身份的展示字段仍可按产品主数据规则修改；产品编码和固定基础单位不可修改。
 
-`202608280001-product-bom-lock-facts` 为 `products` 增加上述锁定时间与操作人，并按每个产品最早的历史生产批次回填已有锁定事实。该迁移只补事实字段，不创建 BOM 版本模型。
+#### BOM 审批接入结构
+
+`202609100001-approval-bom-pilot` 追加以下字段与约束。审批运行表见 [Approval 数据库设计](../../approval/docs/database.md)。
+
+| `products` 字段 | 类型 | 语义 |
+| --- | --- | --- |
+| 新增 `bom_status` | `VARCHAR(30) NOT NULL DEFAULT 'draft'` | `draft/pending_approval/approved`，独立于成品启停 |
+| 新增 `bom_approval_instance_id` | `BIGINT UNSIGNED NULL` | 当前送审或最终批准的申请 FK `approval_instances.id` |
+| 新增 `version` | `INT NOT NULL DEFAULT 0` | 聚合乐观锁，不是 BOM 业务版本 |
+| 既有 `bom_locked_at/by` | 保留原类型 | 由最终 BOM 批准写入永久锁定事实，操作人是最后一级实际批准人 |
+
+CHECK：`version >= 0`；`draft` 时申请关联和锁定字段均为空；`pending_approval` 时申请关联非空、锁定字段为空；`approved` 时申请关联、锁定时间和操作人均非空。索引 `bom_approval_instance_id`；外键仅保证申请存在，Product 与 Approval 同事务验证申请场景、对象类型、`subject_id`、状态及业务关联相符。完整各级人员从审批事实查询，不把最后一人误当全部审批人员。
+
+送审期间冻结成品主表的普通编辑、启停、默认路线变更及所有 BOM 明细修改，确保聚合版本和受审内容稳定；要修改先由申请人撤回。所有成品主表及 BOM 写入口均纳入聚合版本管理，BOM 批量修改也须锁成品根并递增同一 `version`。此冻结范围限于当前成品；基础物料自身的改名仍遵守当前名称展示规则，不冻结整个物料目录。
+
+BOM 替换命令必须包含客户端读取的 `version` 与完整 `items`；锁成品根后，先核对当前版本与命令版本一致，再进行任何明细写入。不一致则返回冲突，不能仅递增版本而允许旧页面覆盖新 BOM。
+
+提交时校验客户端期望版本，写待审批及申请关联并递增 `version`；申请保存提交冻结后的版本。非末级审批不改 Product。最终批准核对当前申请和冻结版本，检查 BOM 资格后写 `approved` 与锁定事实并递增版本。驳回或撤回清空当前申请关联、恢复 `draft` 并递增版本；旧申请和证据保留在 Approval，不复用旧申请。
+
+已批准产品的名称等原本允许修改的展示字段仍遵守既有主数据规则；BOM 原则性变更继续新建成品编码。后续创建任务只校验批准及当前业务资格，不再触发首次锁定。单一 `product_materials` 结构保留，不增加版本头、版本行、`bom_revision` 或名称影子表。改表只能追加 migration；开发环境可重置，不把既有任务锁定回填成不存在的人工审批。
 
 ---
 

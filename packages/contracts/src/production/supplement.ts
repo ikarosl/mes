@@ -21,8 +21,6 @@ export interface ProductionSupplementCandidateItem {
   itemName: string;
   quantityPerUnit: string;
   unit: string;
-  isKeyMaterial: boolean;
-  needBatchRecord: boolean;
   plannedOutputQuantity: string;
   normalDemandQuantity: string;
 }

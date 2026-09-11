@@ -825,7 +825,7 @@ async function createFixture(pool: Pool, actorId: number): Promise<Fixture> {
   );
   const productMaterialId = await insert(
     pool,
-    "INSERT INTO product_materials(product_id,material_id,quantity_per_unit,unit,is_key_material,need_batch_record) VALUES (?,?,'1.0000','kg',1,1)",
+    "INSERT INTO product_materials(product_id,material_id,quantity_per_unit,unit) VALUES (?,?,'1.0000','kg')",
     [productId, materialId],
   );
   const workOrderId = await insert(
@@ -842,14 +842,13 @@ async function createFixture(pool: Pool, actorId: number): Promise<Fixture> {
     pool,
     `INSERT INTO production_material_requirement_basis
       (production_batch_id,product_material_id,material_id,material_code_snapshot,
-       unit_snapshot,quantity_per_unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,
-       planned_output_quantity_snapshot,required_number,created_by)
-     VALUES (?,?,?,?,'kg','1.0000',1,1,'10.0000','10.0000',?)`,
+       unit_snapshot,quantity_per_unit_snapshot,planned_output_quantity_snapshot,required_number,created_by)
+     VALUES (?,?,?,?,'kg','1.0000','10.0000','10.0000',?)`,
     [productionBatchId, productMaterialId, materialId, `${token}-m`, actorId],
   );
   const demandId = await insert(
     pool,
-    "INSERT INTO production_item_demand(production_batch_id,requirement_basis_id,product_material_id,item_id,material_variant_id,item_code_snapshot,material_variant_code_snapshot,quantity_per_unit_snapshot,unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,planned_output_quantity_snapshot,need_number,remaining_number,demand_type,generation_group_key,idempotency_key,business_status,created_by,updated_by) VALUES (?,?,?,?,?,?,?,'1.0000','kg',1,1,'10.0000','10.0000',10,'normal',?,?,'active',?,?)",
+    "INSERT INTO production_item_demand(production_batch_id,requirement_basis_id,product_material_id,item_id,material_variant_id,item_code_snapshot,material_variant_code_snapshot,quantity_per_unit_snapshot,unit_snapshot,planned_output_quantity_snapshot,need_number,remaining_number,demand_type,generation_group_key,idempotency_key,business_status,created_by,updated_by) VALUES (?,?,?,?,?,?,?,'1.0000','kg','10.0000','10.0000',10,'normal',?,?,'active',?,?)",
     [
       productionBatchId,
       requirementBasisId,

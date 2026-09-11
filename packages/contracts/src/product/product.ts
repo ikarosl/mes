@@ -3,6 +3,7 @@ import type { PageQuery } from '../common.js';
 export type ProductItemKind = 'material' | 'finished_product';
 
 export type ProductAcquireMethod = 'self_made' | 'outsourced' | 'purchased';
+export type ProductBomStatus = 'draft' | 'pending_approval' | 'approved';
 
 export interface ProductListQuery extends PageQuery {
   keyword?: string;
@@ -73,6 +74,9 @@ export interface ProductListItem {
   materialCount: number;
   bomLockedAt: string | null;
   bomLockedById: string | null;
+  bomStatus: ProductBomStatus;
+  bomApprovalInstanceId: string | null;
+  version: number;
   remark: string | null;
   updatedAt: string | null;
 }
@@ -116,8 +120,6 @@ export interface ProductMaterialItem {
   itemKind: ProductItemKind;
   quantityPerUnit: string;
   unit: string;
-  isKeyMaterial: boolean;
-  needBatchRecord: boolean;
   status: number;
   remark: string | null;
 }
@@ -126,10 +128,14 @@ export interface ProductMaterialPayload {
   materialId: string;
   quantityPerUnit: number;
   unit: string;
-  isKeyMaterial: boolean;
-  needBatchRecord: boolean;
   status?: number;
   remark?: string | null;
+}
+
+/** 整份 BOM 替换命令；version 是读取成品时的聚合乐观锁版本。 */
+export interface ReplaceProductMaterialsCommand {
+  version: number;
+  items: ProductMaterialPayload[];
 }
 
 /**

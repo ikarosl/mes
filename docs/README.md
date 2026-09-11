@@ -11,6 +11,7 @@
 - [数据库公共约定](database-conventions.md)
 - [产品范围](product-scope.md)
 - [路线图](roadmap.md)
+- [审批接入边界与后续通知设计](approval-design.md)
 
 ## 应用与模块
 
@@ -18,6 +19,7 @@
 - [Identity](../apps/api/src/modules/identity/README.md)：[数据库设计](../apps/api/src/modules/identity/docs/database.md)
 - [Product](../apps/api/src/modules/product/README.md)：[数据库设计](../apps/api/src/modules/product/docs/database.md)
 - [Production](../apps/api/src/modules/production/README.md)：[数据库设计](../apps/api/src/modules/production/docs/database/README.md)
+- [Approval](../apps/api/src/modules/approval/README.md)：[数据库设计](../apps/api/src/modules/approval/docs/database.md)
 - [管理端](../apps/admin-web/README.md)：[架构](../apps/admin-web/docs/architecture.md)、[视觉设计](../apps/admin-web/docs/visual-design.md)、[路由/弹窗/标签页](../apps/admin-web/docs/route-dialogs-and-tabs.md)、[HTTP 错误处理](../apps/admin-web/docs/http-error-handling.md)
 - [数据库基础设施包](../packages/database/README.md)
 - [技术文件与对象存储](../apps/api/src/modules/product/docs/technical-files.md)
@@ -42,3 +44,4 @@
 ## ADR
 
 - [ADR 目录](adr/)
+- [工单、BOM 与顺序多级审批的业务边界](adr/0006-approval-workflow-boundaries.md)

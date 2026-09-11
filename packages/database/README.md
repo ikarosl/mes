@@ -1,6 +1,6 @@
 # packages/database
 
-数据库基础设施包，负责 MySQL 连接池、事务上下文、migration/seed 运行器和数据库初始化命令。它集中承载 migration 文件，但不拥有 Identity、Product 或 Production 的业务表设计。
+数据库基础设施包，负责 MySQL 连接池、事务上下文、migration/seed 运行器和数据库初始化命令。它集中承载 migration 文件，但不拥有 Identity、Product、Production 或 Approval 的业务表设计。
 
 ## 导出能力
 
@@ -51,6 +51,7 @@ docs/         # 迁移运行与安全说明
 migration 的物理位置不表示业务所有权。业务表设计跟随代码所有者维护：
 
 - [Identity 数据库设计](../../apps/api/src/modules/identity/docs/database.md)
+- [Approval 数据库设计](../../apps/api/src/modules/approval/docs/database.md)
 - [Product 数据库设计](../../apps/api/src/modules/product/docs/database.md)
 - [Production 数据库设计](../../apps/api/src/modules/production/docs/database/README.md)
 - [平台操作审计](../../apps/api/docs/audit.md)

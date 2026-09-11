@@ -15,7 +15,7 @@ export class ProductProductionDefinitionService extends ProductProductionDefinit
     super();
   }
 
-  async lockBomForProductionTask(
+  async requireApprovedBomForProductionTask(
     productId: string,
     requestedRouteId: string | null,
     audit: CommandContext,
@@ -23,7 +23,11 @@ export class ProductProductionDefinitionService extends ProductProductionDefinit
     try {
       return {
         status: 'success',
-        value: await this.definitions.lockBomForProductionTask(productId, requestedRouteId, audit),
+        value: await this.definitions.requireApprovedBomForProductionTask(
+          productId,
+          requestedRouteId,
+          audit,
+        ),
       };
     } catch (error) {
       if (error instanceof ProductDomainError) return toFailure(error);

@@ -552,11 +552,11 @@ describeMysql('Production material MySQL transactions', () => {
         pool,
         `INSERT INTO production_item_demand
          (production_batch_id,requirement_basis_id,product_material_id,item_id,material_variant_id,
-          item_code_snapshot,material_variant_code_snapshot,quantity_per_unit_snapshot,unit_snapshot,is_key_material_snapshot,
-          need_batch_record_snapshot,planned_output_quantity_snapshot,need_number,
+          item_code_snapshot,material_variant_code_snapshot,quantity_per_unit_snapshot,unit_snapshot,
+          planned_output_quantity_snapshot,need_number,
           remaining_number,demand_type,generation_group_key,manual_addition_id,idempotency_key,
           business_status,created_by,updated_by)
-         VALUES (?,?,?,?,?,?,?,'1.0000','kg',1,1,'10.0000','10.0000',10,
+         VALUES (?,?,?,?,?,?,?,'1.0000','kg','10.0000','10.0000',10,
           'manual_additional',?,?,?,'active',?,?)`,
         [
           f.batchId,
@@ -1876,7 +1876,7 @@ const fixture = async (
     ));
   const pm = await ins(
     pool,
-    "INSERT INTO product_materials (product_id,material_id,quantity_per_unit,unit,is_key_material,need_batch_record) VALUES (?,?,'1.0000','kg',1,1)",
+    "INSERT INTO product_materials (product_id,material_id,quantity_per_unit,unit) VALUES (?,?,'1.0000','kg')",
     [product, material],
   );
   const wo = await ins(
@@ -1893,14 +1893,13 @@ const fixture = async (
     pool,
     `INSERT INTO production_material_requirement_basis
       (production_batch_id,product_material_id,material_id,material_code_snapshot,
-       unit_snapshot,quantity_per_unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,
-       planned_output_quantity_snapshot,required_number,created_by)
-     VALUES (?,?,?,?,'kg','1.0000',1,1,'10.0000','10.0000',?)`,
+       unit_snapshot,quantity_per_unit_snapshot,planned_output_quantity_snapshot,required_number,created_by)
+     VALUES (?,?,?,?,'kg','1.0000','10.0000','10.0000',?)`,
     [batch, pm, material, `${token}-m`, actorId],
   );
   const demand = await ins(
     pool,
-    "INSERT INTO production_item_demand (production_batch_id,requirement_basis_id,product_material_id,item_id,material_variant_id,item_code_snapshot,material_variant_code_snapshot,quantity_per_unit_snapshot,unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,planned_output_quantity_snapshot,need_number,remaining_number,demand_type,generation_group_key,idempotency_key,business_status,created_by,updated_by) VALUES (?,?,?,?,?,?,?,'1.0000','kg',1,1,'10.0000','10.0000',10,'normal',?,?,'active',?,?)",
+    "INSERT INTO production_item_demand (production_batch_id,requirement_basis_id,product_material_id,item_id,material_variant_id,item_code_snapshot,material_variant_code_snapshot,quantity_per_unit_snapshot,unit_snapshot,planned_output_quantity_snapshot,need_number,remaining_number,demand_type,generation_group_key,idempotency_key,business_status,created_by,updated_by) VALUES (?,?,?,?,?,?,?,'1.0000','kg','10.0000','10.0000',10,'normal',?,?,'active',?,?)",
     [
       batch,
       basis,

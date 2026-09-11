@@ -321,7 +321,7 @@ export class ProductController {
     @Body() body: ReplaceProductMaterialsDto,
     @CurrentCommandContext() audit: CommandContext,
   ) {
-    return this.service.replaceMaterials(id, body.items, audit);
+    return this.service.replaceMaterials(id, body, audit);
   }
   @Patch('products/:id/default-route')
   @RequirePermission(PERMISSIONS.product.products.setDefaultRoute)

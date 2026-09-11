@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { loadTechnicalFileStorageConfig } from '../../config/env.js';
 import { DatabaseModule } from '../../infrastructure/database/database.module.js';
 import { IdentityModule } from '../identity/public.js';
+import { ApprovalModule } from '../approval/public.js';
 import { ProductService } from './application/product.service.js';
 import { ProductSnapshotQuery } from './application/product-snapshot.query.js';
 import { ProductSnapshotService } from './application/product-snapshot.service.js';
@@ -33,12 +34,14 @@ import { MysqlTechnicalFileRepository } from './infrastructure/mysql-technical-f
 import { MysqlProductSnapshotRepository } from './infrastructure/mysql-product-snapshot.repository.js';
 import { S3TechnicalFileStorage } from './infrastructure/s3-technical-file.storage.js';
 import { ProductController } from './presentation/http/product.controller.js';
+import { ProductBomApprovalHandler } from './application/product-bom-approval.handler.js';
 
 @Module({
-  imports: [DatabaseModule, IdentityModule],
+  imports: [DatabaseModule, IdentityModule, ApprovalModule],
   controllers: [ProductController],
   providers: [
     ProductService,
+    ProductBomApprovalHandler,
     ProductSnapshotService,
     ProductProductionDefinitionService,
     TechnicalFileContentQuery,

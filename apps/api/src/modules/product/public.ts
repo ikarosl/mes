@@ -1,4 +1,5 @@
 export { ProductModule } from './product.module.js';
+export { ProductBomApprovalHandler } from './application/product-bom-approval.handler.js';
 export { ProductProductionDefinitionCommand } from './application/product-production-definition.command.js';
 export {
   TechnicalFileContentQuery,
@@ -23,3 +24,5 @@ export {
   type MaterialVariantRecord,
   type MaterialVariantDisplayReference,
 } from './application/ports/material-variant.repository.js';
+
+export { PRODUCT_BOM_APPROVAL_SCENE } from './approval-scenes.js';

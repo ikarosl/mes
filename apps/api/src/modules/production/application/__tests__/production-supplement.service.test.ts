@@ -31,8 +31,6 @@ const makeCandidate = (overrides: Record<string, unknown> = {}) => ({
   itemName: '微带',
   quantityPerUnit: '1.0000',
   unit: 'pcs',
-  isKeyMaterial: true,
-  needBatchRecord: true,
   plannedOutputQuantity: '1.0000',
   normalDemandQuantity: '1.0000',
   ...overrides,

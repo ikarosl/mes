@@ -12,6 +12,10 @@ import PermissionsPage from '../views/system/PermissionsPage.vue';
 import LogsPage from '../views/system/LogsPage.vue';
 import NoPermissionPage from '../views/NoPermissionPage.vue';
 
+// 审批中心
+import ApprovalInboxPage from '../views/approval/ApprovalInboxPage.vue';
+import ApprovalFlowsPage from '../views/approval/ApprovalFlowsPage.vue';
+
 // 产品资料
 import ProductsPage from '../views/product/ProductsPage.vue';
 import ProductCategoriesPage from '../views/product/ProductCategoriesPage.vue';
@@ -37,7 +41,7 @@ declare module 'vue-router' {
   interface RouteMeta {
     public?: boolean;
     title?: string;
-    permission?: string;
+    permission?: string | readonly string[];
     tab?: boolean;
     keepAliveName?: string;
   }
@@ -48,7 +52,7 @@ const page = (
   name: string,
   title: string,
   component: Component,
-  permission: string | undefined,
+  permission: string | readonly string[] | undefined,
   keepAliveName: string,
 ): RouteRecordRaw => ({
   path,
@@ -109,6 +113,29 @@ export const router = createRouter({
           LogsPage,
           PERMISSIONS.system.logs.view,
           'LogsPage',
+        ),
+
+        // 审批中心
+        page(
+          'approval/inbox',
+          'approval-inbox',
+          '审批待办',
+          ApprovalInboxPage,
+          [
+            PERMISSIONS.approval.view,
+            PERMISSIONS.approval.decide,
+            PERMISSIONS.approval.reassign,
+            PERMISSIONS.product.products.manageBom,
+          ],
+          'ApprovalInboxPage',
+        ),
+        page(
+          'approval/flows',
+          'approval-flows',
+          '审批流程配置',
+          ApprovalFlowsPage,
+          PERMISSIONS.approval.configure,
+          'ApprovalFlowsPage',
         ),
 
         // 产品资料

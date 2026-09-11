@@ -301,8 +301,8 @@ describeMysql('Production MySQL persistence', () => {
     );
     const secondProductMaterialId = await insert(
       pool,
-      'INSERT INTO product_materials (product_id,material_id,quantity_per_unit,unit,is_key_material,need_batch_record) VALUES (?,?,?,?,?,?)',
-      [secondProductId, secondMaterialId, '1.0000', 'kg', 1, 0],
+      'INSERT INTO product_materials (product_id,material_id,quantity_per_unit,unit) VALUES (?,?,?,?)',
+      [secondProductId, secondMaterialId, '1.0000', 'kg'],
     );
     const workOrderIds: number[] = [];
     const batchIds: number[] = [];
@@ -1154,8 +1154,8 @@ const createFixture = async (pool: Pool): Promise<Fixture> => {
   );
   const productMaterialId = await insert(
     pool,
-    'INSERT INTO product_materials (product_id,material_id,quantity_per_unit,unit,is_key_material,need_batch_record) VALUES (?,?,?,?,?,?)',
-    [productId, materialId, '1.0000', 'kg', 1, 0],
+    'INSERT INTO product_materials (product_id,material_id,quantity_per_unit,unit) VALUES (?,?,?,?)',
+    [productId, materialId, '1.0000', 'kg'],
   );
   const processStepId = await insert(
     pool,

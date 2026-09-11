@@ -160,7 +160,7 @@ export class ProductionService {
           workOrderId,
           async (workOrderProductId) => {
             const route = this.requireProduct(
-              await productDefinitions.lockBomForProductionTask(
+              await productDefinitions.requireApprovedBomForProductionTask(
                 workOrderProductId,
                 normalizedPayload.routeId ?? null,
                 commandContext,

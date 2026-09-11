@@ -29,8 +29,6 @@ export interface ProductBomLineSnapshot {
   productName: string;
   unit: string;
   quantityPerUnit: string;
-  isKeyMaterial: boolean;
-  needBatchRecord: boolean;
 }
 
 export interface ProductBomSnapshot {

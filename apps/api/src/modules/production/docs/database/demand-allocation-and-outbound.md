@@ -51,7 +51,6 @@
 | `quantity_per_unit_snapshot`       | `DECIMAL(12,4)`   | 单件 BOM 用量快照                         |
 | `planned_output_quantity_snapshot` | `DECIMAL(12,4)`   | 批次计划产量快照                          |
 | `required_number`                  | `DECIMAL(12,4)`   | 该 BOM 行在本批次的初始应需量，各版本初始正常需求合计必须等于此值 |
-| `is_key_material_snapshot` / `need_batch_record_snapshot` | `TINYINT` | BOM 追溯标志快照 |
 | `created_by` | `BIGINT UNSIGNED NOT NULL` | 确认需求配置并创建基础记录的操作者，引用 `users.id` |
 | `created_at` | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP` | 基础记录创建时间 |
 
@@ -85,7 +84,6 @@
 | ---------- | -------- |
 | `chk_material_requirement_basis_quantity` | `quantity_per_unit_snapshot > 0 AND planned_output_quantity_snapshot > 0 AND required_number > 0` |
 | `chk_material_requirement_basis_integer` | 上述三个数量字段各自满足 `字段 = TRUNCATE(字段, 0)`，禁止小数 |
-| `chk_material_requirement_basis_flags` | `is_key_material_snapshot IN (0, 1) AND need_batch_record_snapshot IN (0, 1)` |
 
 数量公式和跨需求行合计由应用写事务保证，不应把它们描述成上述 CHECK 已覆盖的约束：
 
@@ -132,8 +130,6 @@
 | `material_variant_code_snapshot`    | `VARCHAR(180)`    | 需求选中的版本编码快照                    |
 | `quantity_per_unit_snapshot`       | `DECIMAL(12,4)`   | 生成需求时的 BOM 单件用量快照             |
 | `unit_snapshot`                    | `VARCHAR(20)`     | 生成需求时的用量单位快照                  |
-| `is_key_material_snapshot`         | `TINYINT`         | 关键物料标志快照                          |
-| `need_batch_record_snapshot`       | `TINYINT`         | 批次追溯要求快照                          |
 | `planned_output_quantity_snapshot` | `DECIMAL(12,4)`   | 生成需求时的批次计划产量快照              |
 | `need_number`                      | `DECIMAL(12,4)`   | 需求数量                                  |
 | `remaining_number`                 | `BIGINT`          | 尚未确认领用的整数数量，可从出库事实重建  |
