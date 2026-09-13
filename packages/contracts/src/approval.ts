@@ -1,13 +1,21 @@
 import type { PageQuery, VersionedCommand } from './common.js';
+import type { UserOption } from './system.js';
 import type { ProductSpecValue } from './product/product.js';
 
 export type ApprovalFlowVersionStatus = 'draft' | 'published' | 'discarded';
 export type ApprovalInstanceStatus = 'pending' | 'approved' | 'rejected' | 'withdrawn';
 export type ApprovalStepStatus =
   'waiting' | 'pending' | 'blocked' | 'approved' | 'rejected' | 'cancelled';
-export type ApprovalTaskStatus = 'pending' | 'approved' | 'rejected' | 'closed';
-export type ApprovalTaskCloseReason =
-  'peer_decided' | 'instance_rejected' | 'instance_withdrawn' | 'reassigned';
+export type ApprovalAssigneeType = 'role' | 'user';
+export interface ApprovalAssignee {
+  assigneeType: ApprovalAssigneeType;
+  roleId: string | null;
+  assigneeUserId: string | null;
+}
+export interface ApprovalActorEligibility {
+  roleIds: string[];
+  canDecide: boolean;
+}
 export type ApprovalActionType =
   'submitted' | 'approved' | 'rejected' | 'withdrawn' | 'assignment_blocked' | 'reassigned';
 export type ApprovalListScope = 'todo' | 'mine' | 'all';
@@ -28,13 +36,13 @@ export interface ApprovalRoleOption {
   code: string;
   eligibleUserCount: number;
 }
-export interface ApprovalFlowStep {
+export interface ApprovalFlowStep extends ApprovalAssignee {
   id: string;
   nodeCode: string;
   stepNo: number;
   name: string;
-  roleId: string;
-  roleName: string;
+  roleName: string | null;
+  assigneeUserName: string | null;
 }
 export interface ApprovalFlowVersion {
   id: string;
@@ -56,7 +64,7 @@ export interface SaveApprovalFlowDraft {
   draftId: string | null;
   /** null 仅用于尚无草稿；已有草稿须提交其乐观版本。 */
   version: number | null;
-  steps: { nodeCode?: string; name: string; roleId: string }[];
+  steps: (ApprovalAssignee & { nodeCode?: string; name: string })[];
 }
 export interface PublishApprovalFlowCommand extends VersionedCommand {
   draftId: string;
@@ -100,27 +108,17 @@ export interface BomApprovalSnapshot {
 /** 已接入场景的受审快照联合；新增场景时扩展此类型及对应前端详情展示。 */
 export type ApprovalSubjectSnapshot = BomApprovalSnapshot;
 
-export interface ApprovalTaskItem {
-  id: string;
-  assigneeId: string;
-  assigneeName: string;
-  assignmentRound: number;
-  status: ApprovalTaskStatus;
-  closeReason: ApprovalTaskCloseReason | null;
-  endedAt: string | null;
-}
-export interface ApprovalInstanceStep {
+export interface ApprovalInstanceStep extends ApprovalAssignee {
   id: string;
   stepNo: number;
   name: string;
-  roleId: string;
-  roleName: string;
+  roleName: string | null;
+  assigneeUserName: string | null;
   status: ApprovalStepStatus;
-  assignmentRound: number;
   blockedReason: ApprovalBlockedReason | null;
   activatedAt: string | null;
   endedAt: string | null;
-  tasks: ApprovalTaskItem[];
+  eligibleUsers: UserOption[];
 }
 export interface ApprovalActionItem {
   id: string;
@@ -140,13 +138,12 @@ export interface ApprovalInstanceDetail extends ApprovalInstanceListItem {
   materialNames: Record<string, string>;
   steps: ApprovalInstanceStep[];
   actions: ApprovalActionItem[];
-  myTaskId: string | null;
+  currentStepId: string | null;
   canApprove: boolean;
   canWithdraw: boolean;
-  canReassign: boolean;
 }
 export interface ApprovalDecisionCommand extends VersionedCommand {
-  taskId: string;
+  stepId: string;
   comment?: string;
 }
 export interface ApprovalCommentCommand extends VersionedCommand {
@@ -155,6 +152,7 @@ export interface ApprovalCommentCommand extends VersionedCommand {
 export const APPROVAL_API = {
   scenes: '/approval/scenes',
   roleOptions: '/approval/role-options',
+  userOptions: '/approval/user-options',
   instances: '/approval/instances',
   bom: '/approval/bom',
 } as const;

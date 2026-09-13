@@ -1,17 +1,17 @@
 # 审批接入边界与后续通知设计
 
-业务决策以 [ADR-0006](adr/0006-approval-workflow-boundaries.md) 为准。本次试探只接入成品 BOM，包含流程配置和审批待办；工单审批、采购和 Notification 不在本次实现范围。
+审批业务决策见 [ADR-0006](adr/0006-approval-workflow-boundaries.md)，节点共享待办与角色或指定用户的规则以 [ADR-0008](adr/0008-approval-node-assignees.md) 为准。通用通知边界以 [ADR-0007](adr/0007-general-notification-boundaries.md) 和[通知设计](notification-design.md)为准。当前只接入成品 BOM，包含流程配置和审批待办；工单审批、采购和 Notification 尚未实施。
 
 ## 1. 本次 BOM 试探
 
-审批的实际接口、七张表、权限与事务职责统一由 [Approval 模块](../apps/api/src/modules/approval/README.md)及其[数据库设计](../apps/api/src/modules/approval/docs/database.md)维护。本文不再重复已接入表的字段定义；Product 字段和 BOM 冻结规则以 [Product 数据库设计](../apps/api/src/modules/product/docs/database.md)为准。
+审批的实际接口、六张表、权限与事务职责统一由 [Approval 模块](../apps/api/src/modules/approval/README.md)及其[数据库设计](../apps/api/src/modules/approval/docs/database.md)维护。本文不再重复已接入表的字段定义；Product 字段和 BOM 冻结规则以 [Product 数据库设计](../apps/api/src/modules/product/docs/database.md)为准。
 
 - 场景由 Product 代码声明，经公开能力装配到 Registry。首个且唯一场景为 `product.bom.approve`；数据库只保存流程配置，不建场景目录表，管理员不能创造任意业务回调。
-- 管理员配置每一级名称、顺序和角色，保存草稿后发布。发布版本不可改写，在途申请固定原版本。每级任意一名合格人员显式决定；允许自审与同人跨级，每级分别记录。
+- 管理员配置每一级名称、顺序和角色或指定用户，保存草稿后发布。发布版本不可改写，在途申请固定原版本。每级任意一名合格人员显式决定；允许自审与同人跨级，每级分别记录。
 - BOM 提交时保存不可变受审证据并冻结编辑；最后一级通过时与永久锁定同事务。驳回或申请人撤回结束本次申请，修改后重新提交；已批准 BOM 不解锁，用料变更需新成品编码。
-- 角色决定候选范围，账号、成员关系和审批权限决定当前资格。发布及提交前检查全部级别有合格人；运行中无合格人保留申请，补齐人员后显式重新分派当前级，保留已完成决定。
+- 角色或指定用户决定候选范围，账号、成员关系和审批权限决定当前资格。发布及提交前检查全部级别有合格人；运行中无合格人保留当前节点并派生提示，资格恢复后自动进入合格人员的待办，保留已完成决定。
 - 生产任务创建要求 BOM 已批准并锁定；工单创建、下达继续既有流程，本次没有工单审批场景或新的工单审批字段。
-- 本次只生成 Approval 待办，没有站内消息、未读数、通知表、外部投递或 outbox。以下通知结构是后续候选方案。
+- 本次只生成 Approval 待办，没有站内消息、未读数、通知表、提交后通知钩子、外部投递或 outbox。以下审批通知规则属于后续接入设计。
 
 ## 2. 公共字段和约束
 
@@ -29,48 +29,19 @@
 
 生成列的候选方案使用 `CASE WHEN ... THEN 1 ELSE NULL END` 构造活动槽，再用组合唯一键约束“最多一条活动记录”；多条历史记录允许槽为空。迁移阶段必须验证目标 MySQL 的生成列、索引及 CHECK 实际行为。该槽是约束辅助值，不是第二份可写状态。
 
-## 3. 站内通知候选表（尚未实施）
+## 3. 审批通知接入（尚未实施）
 
-### 3.1 `notifications`
+Notification 是通用模块，Approval 仅作为首个调用方。`notifications`、`notification_recipients` 候选表、公开发布契约、去重及阅读权限统一见[通知设计](notification-design.md)，本文只定义 Approval 所有的触发与收件规则。
 
-一次事件产生的一条站内消息，可有多个接收人，所有者 Notification。
+审批事件类型为 `approval_task_assigned/approval_approved/approval_rejected/approval_withdrawn`，来源使用 `approval_action`，目标使用 `approval_instance`。`approval_task_assigned` 表示当前节点激活时的提醒，不要求存在个人任务表。事件键由审批命名空间、稳定动作 ID、事件类型及目标节点按需要组合；这些是审批场景的取值，不限制通用模块的其他业务来源和目标。
 
-| 字段 | 类型及空值 | 含义 |
-| --- | --- | --- |
-| `id` | `BIGINT UNSIGNED NOT NULL` | 主键 |
-| `event_key` | `VARCHAR(150) NOT NULL` | 服务端稳定事件去重键，不使用 HTTP 幂等原始键 |
-| `event_type` | `VARCHAR(50) NOT NULL` | 首期 `approval_task_assigned/approval_approved/approval_rejected/approval_withdrawn` |
-| `source_type` | `VARCHAR(50) NOT NULL` | 首期 `approval_action` |
-| `source_id` | `BIGINT UNSIGNED NOT NULL` | 触发消息的动作 ID |
-| `target_type` | `VARCHAR(50) NOT NULL` | 首期 `approval_instance` |
-| `target_id` | `BIGINT UNSIGNED NOT NULL` | 跳转申请 ID |
-| `title` | `VARCHAR(255) NOT NULL` | 服务端生成的纯文本标题 |
-| `body` | `TEXT NOT NULL` | 最小通知摘要，不复制完整 BOM |
-| 事实审计 F | 见 §2 | 原始消息不可改写 |
-
-约束：`UNIQUE(event_key)`；事件键由触发动作 ID、事件类型、目标节点及分派轮次按需要组合，同一事件重复调用不得重复建消息，也不得用同键覆盖不同内容。来源/目标为跨模块逻辑引用，由发布用例验证，不建立通用多态 FK。
-
-### 3.2 `notification_recipients`
-
-各用户自己的通知收件和阅读状态，所有者 Notification。
-
-| 字段 | 类型及空值 | 含义 |
-| --- | --- | --- |
-| `id` | `BIGINT UNSIGNED NOT NULL` | 主键 |
-| `notification_id` | `BIGINT UNSIGNED NOT NULL` | 消息 FK |
-| `user_id` | `BIGINT UNSIGNED NOT NULL` | 接收人 FK users |
-| `read_at` | `DATETIME NULL` | 为空未读，首次标记后不回写为空 |
-| 单据审计 D | 见 §2 | 收件与阅读并发 |
-
-约束：`UNIQUE(notification_id,user_id)`；索引 `(user_id,read_at,created_at,id)` 和 `(user_id,created_at,id)`，分别支持未读及全部收件分页。只允许本人标记自己的收件记录已读，重复已读操作保持首次时间，不改变审批状态。首期不提供消息删除或收件人手工增删。
-
-### 3.3 触发和一致性
-
-- 提交或激活下一级：给实际生成待办的用户发通知；未来节点不提前发送。重新分派按新轮任务发消息。
+- 提交或激活下一级：Approval 按节点固定的角色或指定用户配置解析当时合格人员，有收件人时发布一条消息及各用户收件记录；未来节点不提前发送。不依赖个人任务或重新分派事件，角色新增成员不补写旧收件人，未收到旧通知不影响其当前待办资格。
+- 发布流程和送审时，各级无合格审批人由 Approval 拒绝，Notification 不重复做角色或审批权限校验。在途人员资格变化导致节点无人可审时，继续按 ADR-0008 保留节点并显示阻塞提示；空收件跳过通知创建，不因收件集合为空而回滚前级有效决定，也不自动补发旧消息。节点激活提醒与审批待办具有各自事实来源。
 - 最终通过或驳回：通知申请人。撤回：通知撤回前当前节点待办接收人；本人是否同时为接收人不改变去重规则。
 - 同级其他人处理后，不删除或改写旧通知；打开统一申请详情时读取当前结果，不能依据通知文案执行审批。首期不另外发送每次同级待办关闭消息或周期催办。
-- 站内通知及接收人通过 Notification 公开能力加入审批同一 MySQL 事务，任一核心落库失败整体回滚。没有外部网络发送，不需要 outbox、外部投递状态或消息队列。
+- Approval 解析具体接收用户并通过 Notification 公开能力加入审批同一 MySQL 事务，任一核心落库失败整体回滚。实际新建的通知由最外层事务提交成功后异步调度通用钩子，首期钩子为空实现；外部发送、outbox、外部投递状态和消息队列不在首期范围。
 - 未读数来自收件记录，待办数来自 Approval 当前有效任务，两者独立。申请详情授权由参与关系和明确查询权限控制，通知链接本身不授予业务权限。
+- 角色移除或审批权限收回后，本人历史通知文本仍可展示；只有跳转后的申请全文与操作按 Approval 当前规则鉴权。点击消息写入已读，不表示审批完成，也不以目标详情能否访问决定是否已读。
 
 ## 4. 后续工单与采购接入
 
@@ -82,8 +53,29 @@
 
 ## 5. 后续通知事务接入
 
-未来 Notification 通过其公开能力加入现有同库事务：提交、激活下一级与重新分派生成任务消息；终态产生结果消息。Approval 仍独立拥有任务和决定，Product 拥有 BOM，成功审计仍统一经公共 writer。
+未来 Approval 按 §3 通过 Notification 公开能力发布消息：提交、激活下一级生成节点消息；终态产生结果消息。Approval 仍独立拥有节点待办和决定，Product 拥有 BOM，成功审计仍统一经公共 writer。事务、去重、最外层提交后的非阻塞钩子及可靠性边界统一遵守[通用通知设计](notification-design.md#4-同事务落库与提交后钩子)，不在审批服务内另建专用外部发送回调。
 
 接入通知时应验证消息及接收人与业务动作整体提交、去重、不因旧消息重复批准，以及通知详情的权限校验。HTTP 幂等重放也需独立登记 scope 与响应契约后验收；本次不声明审批端点支持 `Idempotency-Key` 或自动写重试。
 
 数据库变化采用追加 migration。项目处于开发阶段，可重置并用统一 migration、seed 恢复；不得将旧任务锁定伪造成历史人工批准，不建设兼容双写。待办及测试阶段安排见 [roadmap](roadmap.md)。
+
+## 6. 节点共享待办与角色或指定用户
+
+以下为 [ADR-0008](adr/0008-approval-node-assignees.md) 确定的当前规则，具体字段与接口以 Approval 模块所有者文档为准。测试范围与执行入口见[测试策略](testing-strategy.md)。
+
+### 6.1 配置与数据结构
+
+- 每个节点选择 `assignee_type=role/user`。角色节点填写一个 `role_id`，用户节点填写一个 `assignee_user_id`；另一个字段必须为 NULL，并通过独立外键与 CHECK 保证二选一。不得使用一个含义随类型变化的多态 `assignee_id` 替代明确外键。
+- 配置随不可变已发布版本固定，在途申请继续引用原版本。快照固定的是角色身份或指定用户身份，角色成员名单不固化为审批资格。
+- `approval_instance_steps` 表达每个节点的唯一待办及执行结果，不再按人员复制 `approval_tasks`。移除个人任务关联、分派轮次和“同级其他任务关闭”逻辑；真实决定记录关联申请与节点，保存实际操作者。
+- 未轮到的节点为 waiting，当前未完成节点保持 pending；“暂无合格审批人”按实时资格派生，不依赖人工命令修改 blocked 状态。运行时不得跳过无人可审节点。
+- 发布和送审继续检查各级配置及当前合格人员；角色节点检查角色与合格成员，指定用户节点检查该账号和审批权限。未来节点激活、查询及决定时使用相同资格规则，避免多个入口口径不同。
+
+### 6.2 查询、决定与前端
+
+- 待办以申请未结束、节点当前活动及本人实时资格为条件，在后端分页前完成过滤。成员与账号信息通过 Identity 公开能力取得；需要组合只读 SQL 时必须按架构规范另行登记，不能直接越界读取 Identity 表。
+- 前端只传 scope、状态、分页及业务筛选；角色 ID、用户 ID 和“可处理”标志不作为客户端提供的授权条件。前端缓存不能替代每次查询和命令时的服务端资格校验。
+- 决定命令由个人 taskId 调整为明确节点 ID 与申请 version；锁内校验申请、当前节点和实时资格，事务只接受一个有效决定。旧页面的迟到提交不得误批下一节点。
+- 配置弹窗提供“角色/指定用户”二选一及对应选择器，切换类型时清空另一类型的草稿字段。用户候选及角色候选由配置接口授权，遵守管理端局部候选刷新和失效选项提示规则。
+- 详情展示节点分配规则、当前合格人员与历史实际处理人，分别标识当前资格和历史决定，不再展示每个候选人的独立任务状态。通知收件历史不作为审批参与历史。
+- 申请人和实际作出通过或驳回决定的人员保留历史访问资格；当前合格人员可查看待处理申请，`approval:configure` 可查看全部申请。仅曾是候选人或通知收件人不授予历史全文访问权，后来加入角色也不能据此读取已结束申请。

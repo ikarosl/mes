@@ -13,6 +13,7 @@ import { MysqlRbacRepository } from '../../../apps/api/src/modules/identity/infr
 loadWorkspaceEnv();
 
 const describeMysql = process.env.RUN_MYSQL_INTEGRATION === '1' ? describe : describe.skip;
+let auditActorId = '';
 
 describeMysql('Identity RBAC MySQL persistence', () => {
   let pool: Pool;
@@ -32,6 +33,7 @@ describeMysql('Identity RBAC MySQL persistence', () => {
     });
     repository = new MysqlRbacRepository(pool);
     fixture = await createFixture(pool);
+    auditActorId = String(fixture.secondUserId);
   });
 
   afterAll(async () => {
@@ -80,21 +82,25 @@ describeMysql('Identity RBAC MySQL persistence', () => {
 
   it('updates an existing user status and writes the success audit in the same transaction', async () => {
     const requestId = `${fixture.requestId}-status-ok`;
-    const result = await repository.setUserStatus(
-      String(fixture.userId),
-      0,
-      auditEntry('更新用户状态', requestId),
-    );
+    try {
+      const result = await repository.setUserStatus(
+        String(fixture.userId),
+        0,
+        auditEntry('更新用户状态', requestId),
+      );
 
-    expect(result).toEqual({ status: 'success', value: undefined });
-    const [[row]] = await pool.query<(RowDataPacket & { status: number })[]>(
-      'SELECT status FROM users WHERE id=?',
-      [fixture.userId],
-    );
-    expect(row.status).toBe(0);
-    const logs = await readAudit(pool, requestId);
-    expect(logs).toHaveLength(1);
-    expect(logs[0].result).toBe('success');
+      expect(result).toEqual({ status: 'success', value: undefined });
+      const [[row]] = await pool.query<(RowDataPacket & { status: number })[]>(
+        'SELECT status FROM users WHERE id=?',
+        [fixture.userId],
+      );
+      expect(row.status).toBe(0);
+      const logs = await readAudit(pool, requestId);
+      expect(logs).toHaveLength(1);
+      expect(logs[0].result).toBe('success');
+    } finally {
+      await pool.execute('UPDATE users SET status=1 WHERE id=?', [fixture.userId]);
+    }
   });
 
   it('validates the target user even for an empty role assignment', async () => {
@@ -244,7 +250,7 @@ const auditEntry = (action: string, requestId: string): AuditLogEntry => ({
   logType: 'operation',
   module: 'system',
   action,
-  userId: '1',
+  userId: auditActorId,
   result: 'success',
   ip: '127.0.0.1',
   requestId,

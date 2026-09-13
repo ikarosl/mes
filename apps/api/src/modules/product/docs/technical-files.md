@@ -33,7 +33,7 @@ S3_FORCE_PATH_STYLE=true     # 有自定义 endpoint 时默认为 true
 
 ## 安全与运维
 
-- 上传限制、允许 MIME 和最大文件大小由 Product DTO/application 校验；当前 SOP 最大 20 MiB。
+- 上传限制、允许 MIME 和最大文件大小由 Product DTO/application 校验；当前 SOP 最大 20 MiB，包含恰好 20 MiB。multipart 解析器达到阈值即拒绝，因此其截断阈值设为业务上限加 1 字节；超过业务上限的上传仍返回 413。
 - 生产 Nginx 将 API 请求体上限设为 21 MiB，仅用于容纳 20 MiB 文件与 multipart 封装开销；精确的文件上限仍由 Product 的共享常量与 Multer 校验。
 - 日志不得输出访问密钥、session token、签名 URL 或文件内容。
 - Bucket 备份、版本控制、保留策略和凭证轮换由部署环境负责；恢复时必须保持数据库 locator 与对象键一致。

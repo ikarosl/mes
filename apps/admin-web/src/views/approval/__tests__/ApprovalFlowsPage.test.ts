@@ -2,28 +2,28 @@ import { flushPromises, mount } from '@vue/test-utils';
 import ElementPlus from 'element-plus';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ApprovalFlowsPage from '../ApprovalFlowsPage.vue';
-import { bomScene, flowDetail, roles, unconfiguredBomScene } from './fixtures';
+import { bomScene, flowDetail, roles, unconfiguredBomScene, users } from './fixtures';
 
-const { scenes, roleOptions, flow, saveFlowDraft, publishFlow, success, error } = vi.hoisted(
-  () => ({
+const { scenes, roleOptions, userOptions, flow, saveFlowDraft, publishFlow, success, error } =
+  vi.hoisted(() => ({
     scenes: vi.fn(),
     roleOptions: vi.fn(),
+    userOptions: vi.fn(),
     flow: vi.fn(),
     saveFlowDraft: vi.fn(),
     publishFlow: vi.fn(),
     success: vi.fn(),
     error: vi.fn(),
-  }),
-);
+  }));
 vi.mock('../../../api/approval', () => ({
-  approvalApi: { scenes, roleOptions, flow, saveFlowDraft, publishFlow },
+  approvalApi: { scenes, roleOptions, userOptions, flow, saveFlowDraft, publishFlow },
 }));
 vi.mock('../../../utils/message', () => ({ EMessage: { success, error, warning: vi.fn() } }));
 
 const editorStub = {
   name: 'ApprovalFlowEditorDialog',
-  props: ['visible', 'detail', 'roleOptions', 'saving', 'publishing'],
-  emits: ['publish', 'save', 'update:visible', 'refresh-roles'],
+  props: ['visible', 'detail', 'roleOptions', 'userOptions', 'saving', 'publishing'],
+  emits: ['publish', 'save', 'update:visible', 'refresh-roles', 'refresh-users'],
   template: `
     <div v-if="visible" class="flow-editor-stub">
       <span class="editor-state">{{ detail?.draft ? 'draft' : detail?.published ? 'published' : 'empty' }}</span>
@@ -31,7 +31,10 @@ const editorStub = {
         name: 'BOM 审批最新草稿',
         draftId: detail?.draft?.id ?? null,
         version: detail?.draft?.version ?? null,
-        steps: [{ nodeCode: 'technical', name: '新技术审核', roleId: 'role-tech' }, { name: '新负责人审核', roleId: 'role-owner' }]
+        steps: [
+          { nodeCode: 'technical', name: '新技术审核', assigneeType: 'role', roleId: 'role-tech', assigneeUserId: null },
+          { name: '新负责人审核', assigneeType: 'role', roleId: 'role-owner', assigneeUserId: null }
+        ]
       })">发布最新草稿</button>
     </div>
   `,
@@ -41,6 +44,7 @@ describe('ApprovalFlowsPage', () => {
   beforeEach(() => {
     scenes.mockReset();
     roleOptions.mockReset();
+    userOptions.mockReset();
     flow.mockReset();
     saveFlowDraft.mockReset();
     publishFlow.mockReset();
@@ -48,6 +52,7 @@ describe('ApprovalFlowsPage', () => {
     error.mockReset();
     scenes.mockResolvedValue([bomScene()]);
     roleOptions.mockResolvedValue(roles());
+    userOptions.mockResolvedValue(users());
     flow.mockResolvedValue(flowDetail({ draft: true }));
     saveFlowDraft.mockResolvedValue({
       ...flowDetail({ draft: true }),
@@ -89,8 +94,19 @@ describe('ApprovalFlowsPage', () => {
       draftId: 'draft-3',
       version: 4,
       steps: [
-        { nodeCode: 'technical', name: '新技术审核', roleId: 'role-tech' },
-        { name: '新负责人审核', roleId: 'role-owner' },
+        {
+          nodeCode: 'technical',
+          name: '新技术审核',
+          assigneeType: 'role',
+          roleId: 'role-tech',
+          assigneeUserId: null,
+        },
+        {
+          name: '新负责人审核',
+          assigneeType: 'role',
+          roleId: 'role-owner',
+          assigneeUserId: null,
+        },
       ],
     });
     expect(publishFlow).toHaveBeenCalledWith('product.bom.approve', {

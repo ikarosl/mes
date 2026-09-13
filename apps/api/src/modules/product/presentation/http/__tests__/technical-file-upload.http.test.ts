@@ -32,13 +32,16 @@ describe('technical file multipart HTTP compatibility', () => {
     await app?.close();
   });
 
-  it('accepts a PDF at the configured size limit', async () => {
-    const response = await request(app.getHttpServer())
-      .post('/upload')
-      .attach('file', Buffer.alloc(TECHNICAL_FILE_MAX_SIZE_BYTES), 'sop.pdf');
-    expect(response.status).toBe(201);
-    expect(response.body).toEqual({ size: TECHNICAL_FILE_MAX_SIZE_BYTES });
-  });
+  it.each([TECHNICAL_FILE_MAX_SIZE_BYTES - 1, TECHNICAL_FILE_MAX_SIZE_BYTES])(
+    'accepts a PDF of %i bytes within the inclusive size limit',
+    async (size) => {
+      const response = await request(app.getHttpServer())
+        .post('/upload')
+        .attach('file', Buffer.alloc(size), 'sop.pdf');
+      expect(response.status).toBe(201);
+      expect(response.body).toEqual({ size });
+    },
+  );
 
   it('rejects a file above the configured size limit', async () => {
     const response = await request(app.getHttpServer())

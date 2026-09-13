@@ -19,7 +19,6 @@ export abstract class ApprovalRepository {
     id: string,
     actorId: string,
     canViewAll: boolean,
-    canReassign?: boolean,
   ): Promise<ApprovalInstanceDetail>;
   abstract submit(
     command: ApprovalSubmission,
@@ -36,11 +35,6 @@ export abstract class ApprovalRepository {
     audit: CommandContext,
   ): Promise<ApprovalInstanceDetail>;
   abstract withdraw(
-    id: string,
-    command: ApprovalCommentCommand,
-    audit: CommandContext,
-  ): Promise<ApprovalInstanceDetail>;
-  abstract reassign(
     id: string,
     command: ApprovalCommentCommand,
     audit: CommandContext,

@@ -11,6 +11,7 @@ import type {
   UpdateSystemUserPayload,
   UserOption,
   ApprovalRoleOption,
+  ApprovalActorEligibility,
 } from '@company/contracts';
 import { PERMISSIONS, SYSTEM_STATUS, permissionMatches } from '@company/constants';
 import { withActiveConnection, withTransaction } from '@company/database';
@@ -165,8 +166,17 @@ export class MysqlRbacRepository implements RbacRepository {
     });
   }
 
-  async listApprovalEligibleUserIds(roleId: string): Promise<string[]> {
-    return (await this.approvalCandidates(roleId)).get(roleId) ?? [];
+  async listApprovalEligibleUserIds(roleId?: string): Promise<string[]> {
+    const candidates = await this.approvalCandidates(roleId);
+    return [...new Set([...candidates.values()].flat())];
+  }
+
+  async getApprovalActorEligibility(userId: string): Promise<ApprovalActorEligibility> {
+    const candidates = await this.approvalCandidates();
+    const roleIds = [...candidates]
+      .filter(([, members]) => members.includes(userId))
+      .map(([id]) => id);
+    return { roleIds, canDecide: roleIds.length > 0 };
   }
 
   /**

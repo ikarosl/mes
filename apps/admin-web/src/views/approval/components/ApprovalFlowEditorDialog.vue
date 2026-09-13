@@ -12,7 +12,7 @@
         :closable="false"
         show-icon
         class="flow-tip"
-        title="每一级选择一个角色；该角色下任意一名合格人员处理即可。已发布版本用于在途申请，保存新草稿不会改变已发布流程。"
+        title="每级选择一个角色或一个指定用户。角色成员随当前资格变化，指定用户由本人处理；新发布流程只用于新申请。"
       />
       <el-form
         label-width="90px"
@@ -55,7 +55,7 @@
         </el-table-column>
         <el-table-column
           label="节点名称"
-          min-width="220"
+          min-width="180"
         >
           <template #default="{ row }">
             <el-input
@@ -66,36 +66,60 @@
           </template>
         </el-table-column>
         <el-table-column
-          label="审批角色"
-          min-width="300"
+          label="审批对象"
+          min-width="360"
         >
           <template #default="{ row }">
-            <el-select
-              v-model="row.roleId"
-              filterable
-              placeholder="请选择角色"
-              class="role-select"
-              @visible-change="(open: boolean) => open && $emit('refresh-roles')"
-            >
-              <el-option
-                v-for="choice in roleChoices(row.roleId)"
-                :key="choice.value"
-                :value="choice.value"
-                :disabled="choice.isUnavailable"
-                :label="
-                  choice.option
-                    ? `${choice.option.name}（${choice.option.eligibleUserCount}人可审批）`
-                    : `${choice.value}（已失效）`
-                "
-              />
-            </el-select>
+            <div class="assignee-fields">
+              <el-select
+                v-model="row.assigneeType"
+                @change="changeAssigneeType(row)"
+              >
+                <el-option
+                  v-for="value in APPROVAL_ASSIGNEE_TYPES"
+                  :key="value"
+                  :value="value"
+                  :label="APPROVAL_ASSIGNEE_TYPE_LABELS[value]"
+                />
+              </el-select>
+              <el-select
+                v-if="row.assigneeType === APPROVAL_ASSIGNEE_TYPE.role"
+                v-model="row.roleId"
+                filterable
+                placeholder="请选择角色"
+                class="role-select"
+                @visible-change="(open: boolean) => open && $emit('refresh-roles')"
+              >
+                <el-option
+                  v-for="choice in roleChoices(row.roleId)"
+                  :key="choice.value"
+                  :value="choice.value"
+                  :disabled="choice.isUnavailable"
+                  :label="
+                    choice.option
+                      ? `${choice.option.name}（${choice.option.eligibleUserCount}人可审批）`
+                      : `${choice.value}（已失效）`
+                  "
+                />
+              </el-select>
+              <el-select
+                v-else
+                v-model="row.assigneeUserId"
+                filterable
+                placeholder="请选择用户"
+                class="role-select"
+                @visible-change="(open: boolean) => open && $emit('refresh-users')"
+              >
+                <el-option
+                  v-for="choice in userChoices(row.assigneeUserId)"
+                  :key="choice.value"
+                  :value="choice.value"
+                  :disabled="choice.isUnavailable"
+                  :label="choice.option ? choice.option.displayName : '已失效，请重新选择'"
+                />
+              </el-select>
+            </div>
           </template>
-        </el-table-column>
-        <el-table-column
-          label="处理方式"
-          width="150"
-        >
-          <template #default>任意一人通过</template>
         </el-table-column>
         <el-table-column
           label="操作"
@@ -159,10 +183,17 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
+import {
+  APPROVAL_ASSIGNEE_TYPE,
+  APPROVAL_ASSIGNEE_TYPES,
+  APPROVAL_ASSIGNEE_TYPE_LABELS,
+} from '@company/constants';
 import type {
   ApprovalFlowDetail,
   ApprovalRoleOption,
   SaveApprovalFlowDraft,
+  ApprovalAssigneeType,
+  UserOption,
 } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
 import { buildLiveOptions, hasUnavailableSelection } from '../../../utils/live-options';
@@ -174,13 +205,16 @@ type EditorStep = {
   rowKey: string;
   nodeCode?: string;
   name: string;
+  assigneeType: ApprovalAssigneeType;
   roleId: string;
+  assigneeUserId: string;
 };
 
 const props = defineProps<{
   visible: boolean;
   detail: ApprovalFlowDetail | null;
   roleOptions: ApprovalRoleOption[];
+  userOptions: UserOption[];
   saving: boolean;
   publishing: boolean;
 }>();
@@ -190,6 +224,7 @@ const emit = defineEmits<{
   (event: 'save', value: SaveApprovalFlowDraft): void;
   (event: 'publish', value: SaveApprovalFlowDraft): void;
   (event: 'refresh-roles'): void;
+  (event: 'refresh-users'): void;
 }>();
 
 const formName = ref('');
@@ -205,7 +240,9 @@ const resetFromDetail = (detail: ApprovalFlowDetail | null): void => {
     rowKey: `${step.nodeCode || 'new'}-${rowSequence++}`,
     nodeCode: step.nodeCode || undefined,
     name: step.name,
-    roleId: step.roleId,
+    assigneeType: step.assigneeType,
+    roleId: step.roleId ?? '',
+    assigneeUserId: step.assigneeUserId ?? '',
   }));
 };
 
@@ -233,12 +270,28 @@ const canPublish = computed(() =>
     !props.publishing &&
     formName.value.trim() &&
     steps.value.length &&
-    steps.value.every((step) => step.name.trim() && step.roleId),
+    steps.value.every((step) => step.name.trim() && selectedAssigneeId(step)),
   ),
 );
 
 const addStep = (): void => {
-  steps.value.push({ rowKey: `new-${rowSequence++}`, name: '', roleId: '' });
+  steps.value.push({
+    rowKey: `new-${rowSequence++}`,
+    name: '',
+    assigneeType: APPROVAL_ASSIGNEE_TYPE.role,
+    roleId: '',
+    assigneeUserId: '',
+  });
+};
+
+const selectedAssigneeId = (step: EditorStep): string =>
+  step.assigneeType === APPROVAL_ASSIGNEE_TYPE.role ? step.roleId : step.assigneeUserId;
+
+const changeAssigneeType = (step: EditorStep): void => {
+  step.roleId = '';
+  step.assigneeUserId = '';
+  if (step.assigneeType === APPROVAL_ASSIGNEE_TYPE.role) emit('refresh-roles');
+  else emit('refresh-users');
 };
 
 const removeStep = (index: number): void => {
@@ -254,6 +307,8 @@ const moveStep = (index: number, offset: -1 | 1): void => {
 
 const roleChoices = (selectedId: string) =>
   buildLiveOptions(props.roleOptions, selectedId ? [selectedId] : [], (role) => role.id);
+const userChoices = (selectedId: string) =>
+  buildLiveOptions(props.userOptions, selectedId ? [selectedId] : [], (user) => user.id);
 
 const buildPayload = (): SaveApprovalFlowDraft | null => {
   if (!props.detail || !formName.value.trim()) {
@@ -264,16 +319,18 @@ const buildPayload = (): SaveApprovalFlowDraft | null => {
     EMessage.warning('请至少添加一个审批节点');
     return null;
   }
-  if (steps.value.some((step) => !step.name.trim() || !step.roleId)) {
-    EMessage.warning('请补全每个节点名称和审批角色');
+  if (steps.value.some((step) => !step.name.trim() || !selectedAssigneeId(step))) {
+    EMessage.warning('请补全每个节点名称和审批对象');
     return null;
   }
   if (
     steps.value.some((step) =>
-      hasUnavailableSelection(props.roleOptions, [step.roleId], (role) => role.id),
+      step.assigneeType === APPROVAL_ASSIGNEE_TYPE.role
+        ? hasUnavailableSelection(props.roleOptions, [step.roleId], (role) => role.id)
+        : hasUnavailableSelection(props.userOptions, [step.assigneeUserId], (user) => user.id),
     )
   ) {
-    EMessage.warning('审批角色已失效，请重新选择');
+    EMessage.warning('审批对象已失效，请重新选择');
     return null;
   }
   return {
@@ -283,7 +340,10 @@ const buildPayload = (): SaveApprovalFlowDraft | null => {
     steps: steps.value.map((step) => ({
       ...(step.nodeCode ? { nodeCode: step.nodeCode } : {}),
       name: step.name.trim(),
-      roleId: step.roleId,
+      assigneeType: step.assigneeType,
+      roleId: step.assigneeType === APPROVAL_ASSIGNEE_TYPE.role ? step.roleId : null,
+      assigneeUserId:
+        step.assigneeType === APPROVAL_ASSIGNEE_TYPE.user ? step.assigneeUserId : null,
     })),
   };
 };
@@ -332,6 +392,11 @@ const publish = (): void => {
 }
 .role-select {
   width: 100%;
+}
+.assignee-fields {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 8px;
 }
 .version-tip {
   margin-top: 12px;

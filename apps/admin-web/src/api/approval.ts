@@ -10,6 +10,7 @@ import type {
   PublishApprovalFlowCommand,
   PageResult,
   SaveApprovalFlowDraft,
+  UserOption,
 } from '@company/contracts';
 import { toRequestError, type RetryRequestConfig } from '@company/request';
 import { httpClient } from './http';
@@ -35,6 +36,8 @@ export const approvalApi = {
       url: `${base}/role-options`,
       skipErrorHandling: true,
     }),
+  userOptions: () =>
+    request<UserOption[]>({ url: `${base}/user-options`, skipErrorHandling: true }),
   flow: (sceneCode: string) =>
     request<ApprovalFlowDetail>({ url: `${base}/scenes/${encodeURIComponent(sceneCode)}/flow` }),
   saveFlowDraft: (sceneCode: string, data: SaveApprovalFlowDraft) =>
@@ -67,12 +70,6 @@ export const approvalApi = {
   withdraw: (id: string, data: ApprovalCommentCommand) =>
     request<ApprovalInstanceDetail>({
       url: `${base}/instances/${id}/withdraw`,
-      method: 'POST',
-      data,
-    }),
-  reassign: (id: string, data: ApprovalCommentCommand) =>
-    request<ApprovalInstanceDetail>({
-      url: `${base}/instances/${id}/reassign`,
       method: 'POST',
       data,
     }),

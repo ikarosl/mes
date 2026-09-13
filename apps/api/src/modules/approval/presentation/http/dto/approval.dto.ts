@@ -14,7 +14,11 @@ import {
   ValidateIf,
   ValidateNested,
 } from 'class-validator';
-import { APPROVAL_INSTANCE_STATUSES, APPROVAL_LIST_SCOPES } from '@company/constants';
+import {
+  APPROVAL_ASSIGNEE_TYPES,
+  APPROVAL_INSTANCE_STATUSES,
+  APPROVAL_LIST_SCOPES,
+} from '@company/constants';
 import type {
   ApprovalCommentCommand,
   ApprovalDecisionCommand,
@@ -23,6 +27,7 @@ import type {
   ApprovalInstanceStatus,
   PublishApprovalFlowCommand,
   SaveApprovalFlowDraft,
+  ApprovalAssigneeType,
 } from '@company/contracts';
 import { PageQueryDto } from '../../../../../presentation/http/dto/page-query.dto.js';
 
@@ -51,8 +56,16 @@ export class ApprovalFlowStepDto {
   @MaxLength(100)
   name!: string;
 
+  @IsIn(APPROVAL_ASSIGNEE_TYPES)
+  assigneeType!: ApprovalAssigneeType;
+
+  @ValidateIf((_object, value) => value !== null)
   @IsNumberString({ no_symbols: true })
-  roleId!: string;
+  roleId!: string | null;
+
+  @ValidateIf((_object, value) => value !== null)
+  @IsNumberString({ no_symbols: true })
+  assigneeUserId!: string | null;
 }
 
 export class SaveApprovalFlowDraftDto {
@@ -111,7 +124,7 @@ export class ApprovalDecisionDto {
   version!: number;
 
   @IsNumberString({ no_symbols: true })
-  taskId!: string;
+  stepId!: string;
 
   @IsOptional()
   @IsString()
@@ -145,7 +158,9 @@ export const toFlowDraft = (body: SaveApprovalFlowDraftDto): SaveApprovalFlowDra
   steps: body.steps.map((step) => ({
     nodeCode: step.nodeCode?.trim() || undefined,
     name: step.name.trim(),
+    assigneeType: step.assigneeType,
     roleId: step.roleId,
+    assigneeUserId: step.assigneeUserId,
   })),
 });
 
@@ -156,7 +171,7 @@ export const toPublishCommand = (body: PublishApprovalFlowDto): PublishApprovalF
 
 export const toDecision = (body: ApprovalDecisionDto): ApprovalDecisionCommand => ({
   version: body.version,
-  taskId: body.taskId,
+  stepId: body.stepId,
   comment: body.comment?.trim() || undefined,
 });
 

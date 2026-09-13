@@ -4,7 +4,6 @@ export const PERMISSIONS = {
     view: 'approval:view',
     configure: 'approval:configure',
     decide: 'approval:decide',
-    reassign: 'approval:reassign',
   },
   system: {
     view: 'system:view',

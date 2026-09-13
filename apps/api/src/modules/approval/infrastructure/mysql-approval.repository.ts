@@ -12,7 +12,6 @@ import type {
   ApprovalInstanceQuery,
   ApprovalStepStatus,
   ApprovalSubjectType,
-  ApprovalTaskItem,
   PageResult,
 } from '@company/contracts';
 import { IdentityDirectoryService } from '../../identity/public.js';
@@ -25,6 +24,7 @@ import { DATABASE_POOL } from '../../../infrastructure/database/database.module.
 import { ApprovalDomainError } from '../domain/approval.errors.js';
 import { ApprovalSubjectHandlerRegistry } from '../application/approval-subject-handler.registry.js';
 import { ApprovalRepository } from '../application/ports/approval.repository.js';
+import { resolveAssigneeIds, type AssigneeRuleRow } from './approval-assignees.js';
 
 type Db = Pool | PoolConnection;
 type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'withdrawn';
@@ -49,29 +49,14 @@ interface InstanceRow extends RowDataPacket {
   version: number;
 }
 
-interface InstanceStepRow extends RowDataPacket {
+interface InstanceStepRow extends RowDataPacket, AssigneeRuleRow {
   id: number;
   instance_id: number;
   flow_step_id: number;
   step_no: number;
   name: string;
-  role_id: number;
   status: ApprovalStepStatus;
-  assignment_round: number;
-  blocked_reason: 'no_eligible_assignee' | null;
   activated_at: Date | null;
-  ended_at: Date | null;
-  version: number;
-}
-
-interface TaskRow extends RowDataPacket {
-  id: number;
-  instance_step_id: number;
-  assignee_id: number;
-  assignee_name: string;
-  assignment_round: number;
-  status: ApprovalTaskItem['status'];
-  close_reason: ApprovalTaskItem['closeReason'];
   ended_at: Date | null;
   version: number;
 }
@@ -117,28 +102,18 @@ export class MysqlApprovalRepository extends ApprovalRepository {
       parameters.push(query.subjectId);
     }
     if (scope === 'todo') {
-      const roleIds: string[] = [];
-      for (const role of await this.identity.listApprovalRoleOptions()) {
-        if ((await this.identity.listApprovalEligibleUserIds(role.id)).includes(actorId))
-          roleIds.push(role.id);
-      }
-      conditions.push(
-        roleIds.length
-          ? `i.status='pending' AND EXISTS (
-        SELECT 1 FROM approval_tasks t JOIN approval_instance_steps s ON s.id=t.instance_step_id
-        JOIN approval_flow_steps fs ON fs.id=s.flow_step_id
-        WHERE s.instance_id=i.id AND s.status='pending' AND t.status='pending'
-          AND t.assignment_round=s.assignment_round AND t.assignee_id=? AND fs.role_id IN (?))`
-          : '0=1',
-      );
-      if (roleIds.length) parameters.push(actorId, roleIds);
+      const current = await this.currentEligibilityCondition(actorId);
+      conditions.push(current.sql);
+      parameters.push(...current.parameters);
     } else if (scope === 'mine') {
       conditions.push('i.created_by=?');
       parameters.push(actorId);
     } else if (!canViewAll) {
-      conditions.push(`(i.created_by=? OR EXISTS (SELECT 1 FROM approval_tasks t
-        JOIN approval_instance_steps s ON s.id=t.instance_step_id WHERE s.instance_id=i.id AND t.assignee_id=?))`);
-      parameters.push(actorId, actorId);
+      const current = await this.currentEligibilityCondition(actorId);
+      conditions.push(`(i.created_by=? OR EXISTS (SELECT 1 FROM approval_actions a
+        WHERE a.instance_id=i.id AND a.created_by=? AND a.action_type IN ('approved','rejected'))
+        OR (${current.sql}))`);
+      parameters.push(actorId, actorId, ...current.parameters);
     }
     const where = conditions.length ? conditions.join(' AND ') : '1=1';
     const [[count]] = await this.pool.query<(RowDataPacket & { total: number })[]>(
@@ -160,8 +135,10 @@ export class MysqlApprovalRepository extends ApprovalRepository {
     const items: ApprovalInstanceListItem[] = [];
     for (const row of rows) {
       const steps = await this.instanceSteps(this.pool, String(row.id));
-      const current = steps.find((s) => s.status === 'pending' || s.status === 'blocked');
-      const blocked = current ? await this.stepHasNoAssignee(this.pool, current) : false;
+      const current = steps.find((s) => s.status === 'pending');
+      const blocked = current
+        ? (await resolveAssigneeIds(this.identity, current)).length === 0
+        : false;
       items.push(
         this.instanceListItem(
           row,
@@ -178,7 +155,6 @@ export class MysqlApprovalRepository extends ApprovalRepository {
     id: string,
     actorId: string,
     canViewAll: boolean,
-    canReassign = false,
   ): Promise<ApprovalInstanceDetail> {
     return withTransaction(this.pool, async (connection) => {
       const [[instance]] = await connection.query<InstanceRow[]>(
@@ -190,14 +166,17 @@ export class MysqlApprovalRepository extends ApprovalRepository {
       );
       if (!instance) throw new ApprovalDomainError('NOT_FOUND', '审批申请不存在');
       if (!canViewAll && String(instance.created_by) !== actorId) {
+        const current = await this.currentEligibilityCondition(actorId);
         const [[participation]] = await connection.query<(RowDataPacket & { id: string })[]>(
-          `SELECT t.id FROM approval_tasks t JOIN approval_instance_steps s ON s.id=t.instance_step_id
-           WHERE s.instance_id=? AND t.assignee_id=? LIMIT 1`,
-          [id, actorId],
+          `SELECT i.id FROM approval_instances i WHERE i.id=? AND (
+            EXISTS (SELECT 1 FROM approval_actions a WHERE a.instance_id=i.id
+              AND a.created_by=? AND a.action_type IN ('approved','rejected'))
+            OR (${current.sql}))`,
+          [id, actorId, ...current.parameters],
         );
         if (!participation) throw new ApprovalDomainError('FORBIDDEN', '没有查看该审批申请的权限');
       }
-      return this.mapInstanceDetail(connection, instance, actorId, canReassign);
+      return this.mapInstanceDetail(connection, instance, actorId);
     });
   }
 
@@ -218,8 +197,8 @@ export class MysqlApprovalRepository extends ApprovalRepository {
       // 先锁业务根并取得送审快照；后续审批操作也按业务根 → 申请的顺序加锁。
       const preparation = await handler.prepareForApproval(subjectId, expectedVersion, audit);
       const { flow, steps } = await this.flows.lockPublishedFlow(connection, scene.code);
-      // 提交时检查每一级均有人可审，但只为首级生成待办；后续级激活时重新解析人员。
-      const candidates = await this.resolveCandidates(steps);
+      // 提交时检查各级资格；只激活首级，不持久化候选人员名单。
+      await this.resolveCandidates(steps);
       const instanceNo = this.newInstanceNo();
       const [insert] = await connection.execute<ResultSetHeader>(
         `INSERT INTO approval_instances
@@ -247,29 +226,19 @@ export class MysqlApprovalRepository extends ApprovalRepository {
       const instanceId = String(insert.insertId);
       for (const step of steps) {
         const isFirst = step.step_no === 1;
-        const [stepInsert] = await connection.execute<ResultSetHeader>(
+        await connection.execute(
           `INSERT INTO approval_instance_steps
-             (instance_id,flow_step_id,step_no,status,assignment_round,activated_at,created_by)
-           VALUES (?,?,?,?,?,?,?)`,
+             (instance_id,flow_step_id,step_no,status,activated_at,created_by)
+           VALUES (?,?,?,?,?,?)`,
           [
             insert.insertId,
             step.id,
             step.step_no,
             isFirst ? 'pending' : 'waiting',
-            isFirst ? 1 : 0,
             isFirst ? new Date() : null,
             audit.actorId,
           ],
         );
-        if (isFirst) {
-          await this.createTasks(
-            connection,
-            stepInsert.insertId,
-            1,
-            candidates.get(step.step_no) ?? [],
-            audit,
-          );
-        }
       }
       // 绑定后的业务版本由所有者返回，审批引擎不假设业务版本一定加一。
       const boundVersion = await handler.bindApproval(
@@ -289,7 +258,6 @@ export class MysqlApprovalRepository extends ApprovalRepository {
         instanceId,
         actionNo: 1,
         stepId: null,
-        taskId: null,
         type: 'submitted',
         comment: null,
         details: { flowVersionNo: flow.version_no, subjectVersion: boundVersion },
@@ -301,7 +269,7 @@ export class MysqlApprovalRepository extends ApprovalRepository {
       });
       return instanceId;
     });
-    return this.getInstance(instanceId, audit.actorId!, true, false);
+    return this.getInstance(instanceId, audit.actorId!, false);
   }
 
   async approve(
@@ -337,16 +305,9 @@ export class MysqlApprovalRepository extends ApprovalRepository {
         throw new ApprovalDomainError('FORBIDDEN', '只有申请人可以撤回审批');
       this.assertInstanceVersion(instance, command.version);
       await connection.execute(
-        `UPDATE approval_tasks t JOIN approval_instance_steps s ON s.id=t.instance_step_id
-            SET t.status='closed',t.close_reason='instance_withdrawn',t.ended_at=NOW(),
-                t.updated_by=?,t.version=t.version+1
-          WHERE s.instance_id=? AND t.status='pending'`,
-        [audit.actorId, instance.id],
-      );
-      await connection.execute(
         `UPDATE approval_instance_steps
-            SET status='cancelled',blocked_reason=NULL,ended_at=NOW(),updated_by=?,version=version+1
-          WHERE instance_id=? AND status IN ('waiting','pending','blocked')`,
+            SET status='cancelled',ended_at=NOW(),updated_by=?,version=version+1
+          WHERE instance_id=? AND status IN ('waiting','pending')`,
         [audit.actorId, instance.id],
       );
       await this.handlers
@@ -366,7 +327,6 @@ export class MysqlApprovalRepository extends ApprovalRepository {
         instanceId: String(instance.id),
         actionNo: await this.nextActionNo(connection, instance.id),
         stepId: null,
-        taskId: null,
         type: 'withdrawn',
         comment: command.comment?.trim() || null,
         details: null,
@@ -376,79 +336,10 @@ export class MysqlApprovalRepository extends ApprovalRepository {
         status: 'withdrawn',
       });
     });
-    return this.getInstance(id, audit.actorId!, true, false);
+    return this.getInstance(id, audit.actorId!, false);
   }
 
-  /** 按当前节点的原角色重新生成候选任务；旧轮关闭留痕，无人时阻塞，不跳级。 */
-  async reassign(
-    id: string,
-    command: ApprovalCommentCommand,
-    audit: CommandContext,
-  ): Promise<ApprovalInstanceDetail> {
-    this.requireActor(audit);
-    const reason = command.comment?.trim();
-    if (!reason) throw new ApprovalDomainError('INVALID_INPUT', '重新分派必须填写原因');
-    await withTransaction(this.pool, async (connection) => {
-      const instance = await this.lockInstance(connection, id);
-      if (instance.status !== 'pending')
-        throw new ApprovalDomainError('INVALID_STATE', '已结束的审批不能重新分派');
-      this.assertInstanceVersion(instance, command.version);
-      const [[step]] = await connection.query<InstanceStepRow[]>(
-        `SELECT s.id,s.instance_id,s.flow_step_id,s.step_no,fs.name,fs.role_id,s.status,
-                s.assignment_round,s.blocked_reason,s.activated_at,s.ended_at,s.version
-           FROM approval_instance_steps s
-           JOIN approval_flow_steps fs ON fs.id=s.flow_step_id
-          WHERE s.instance_id=? AND s.status IN ('pending','blocked') FOR UPDATE`,
-        [instance.id],
-      );
-      if (!step) throw new ApprovalDomainError('INVALID_STATE', '当前没有可重新分派的审批节点');
-      const candidates = await this.identity.listApprovalEligibleUserIds(String(step.role_id));
-      await connection.execute(
-        `UPDATE approval_tasks SET status='closed',close_reason='reassigned',ended_at=NOW(),
-                updated_by=?,version=version+1
-          WHERE instance_step_id=? AND status='pending'`,
-        [audit.actorId, step.id],
-      );
-      const round = Number(step.assignment_round) + 1;
-      await connection.execute(
-        `UPDATE approval_instance_steps
-            SET status=?,assignment_round=?,blocked_reason=?,activated_at=COALESCE(activated_at,NOW()),
-                updated_by=?,version=version+1
-          WHERE id=? AND version=?`,
-        [
-          candidates.length > 0 ? 'pending' : 'blocked',
-          round,
-          candidates.length > 0 ? null : 'no_eligible_assignee',
-          audit.actorId,
-          step.id,
-          step.version,
-        ],
-      );
-      await this.createTasks(connection, step.id, round, candidates, audit);
-      await connection.execute(
-        'UPDATE approval_instances SET version=version+1,updated_by=? WHERE id=? AND version=?',
-        [audit.actorId, instance.id, command.version],
-      );
-      await this.insertAction(connection, {
-        instanceId: String(instance.id),
-        actionNo: await this.nextActionNo(connection, instance.id),
-        stepId: String(step.id),
-        taskId: null,
-        type: 'reassigned',
-        comment: reason,
-        details: { assignmentRound: round, assigneeIds: candidates },
-        actorId: audit.actorId!,
-      });
-      await writeApprovalAudit(connection, audit, 'approval.reassign', String(instance.id), {
-        stepNo: step.step_no,
-        assignmentRound: round,
-        assigneeIds: candidates,
-      });
-    });
-    return this.getInstance(id, audit.actorId!, true, true);
-  }
-
-  /** 通过与驳回共用的决定事务：校验本人待办和实时资格，再推进节点或结束申请。 */
+  /** 锁定申请和当前节点后核对实时资格，任一人决定只推进一次。 */
   private async decide(
     id: string,
     command: ApprovalDecisionCommand,
@@ -463,55 +354,34 @@ export class MysqlApprovalRepository extends ApprovalRepository {
         throw new ApprovalDomainError('INVALID_STATE', '该申请已经结束');
       const steps = await this.instanceSteps(connection, id, true);
       const step = steps.find((row) => row.status === 'pending');
-      if (!step)
-        throw new ApprovalDomainError('INVALID_STATE', '当前没有可处理节点，请检查人员分派');
-      const [[task]] = await connection.query<TaskRow[]>(
-        `SELECT id,instance_step_id,assignee_id,assignment_round,status,close_reason,ended_at,version
-         FROM approval_tasks WHERE id=? FOR UPDATE`,
-        [command.taskId],
-      );
-      if (
-        !task ||
-        String(task.instance_step_id) !== String(step.id) ||
-        String(task.assignee_id) !== audit.actorId ||
-        task.status !== 'pending' ||
-        Number(task.assignment_round) !== Number(step.assignment_round)
-      ) {
-        throw new ApprovalDomainError('FORBIDDEN', '该待办不属于当前账号或已经失效');
-      }
-      // 被分派过不代表现在仍有资格；角色、账号及审批权限变化必须在决定时重新核对。
-      const eligible = await this.identity.listApprovalEligibleUserIds(String(step.role_id));
+      if (!step || String(step.id) !== command.stepId)
+        throw new ApprovalDomainError('CONFLICT', '当前审批节点已变化，请刷新后重试');
+      const eligible = await resolveAssigneeIds(this.identity, step);
       if (!eligible.includes(audit.actorId!))
         throw new ApprovalDomainError('FORBIDDEN', '当前账号已不具备该节点的审批资格');
       await connection.execute(
-        `UPDATE approval_tasks SET status=?,ended_at=NOW(),updated_by=?,version=version+1 WHERE id=? AND status='pending'`,
-        [decision, audit.actorId, task.id],
-      );
-      // 每级为 ANY：一人决定后关闭同级其他待办，防止同一节点被多人重复处理。
-      await connection.execute(
-        `UPDATE approval_tasks SET status='closed',close_reason=?,ended_at=NOW(),updated_by=?,version=version+1
-         WHERE instance_step_id=? AND status='pending'`,
-        [decision === 'approved' ? 'peer_decided' : 'instance_rejected', audit.actorId, step.id],
-      );
-      await connection.execute(
-        `UPDATE approval_instance_steps SET status=?,blocked_reason=NULL,ended_at=NOW(),updated_by=?,version=version+1 WHERE id=?`,
+        `UPDATE approval_instance_steps SET status=?,ended_at=NOW(),updated_by=?,version=version+1 WHERE id=?`,
         [decision, audit.actorId, step.id],
       );
       await this.insertAction(connection, {
         instanceId: id,
         actionNo: await this.nextActionNo(connection, instance.id),
         stepId: String(step.id),
-        taskId: String(task.id),
         type: decision,
         comment: command.comment?.trim() || null,
-        details: { stepNo: step.step_no, assignmentRound: step.assignment_round },
+        details: {
+          stepNo: step.step_no,
+          assigneeType: step.assignee_type,
+          roleId: step.role_id === null ? null : String(step.role_id),
+          assigneeUserId: step.assignee_user_id === null ? null : String(step.assignee_user_id),
+        },
         actorId: audit.actorId!,
       });
       const handler = this.handlers.getHandler(instance.scene_code, instance.subject_type);
       // 驳回终止整次申请；恢复业务草稿与结束申请同事务，修改后需创建新申请。
       if (decision === 'rejected') {
         await connection.execute(
-          `UPDATE approval_instance_steps SET status='cancelled',blocked_reason=NULL,ended_at=NOW(),updated_by=?,version=version+1
+          `UPDATE approval_instance_steps SET status='cancelled',ended_at=NOW(),updated_by=?,version=version+1
            WHERE instance_id=? AND status='waiting'`,
           [audit.actorId, id],
         );
@@ -534,30 +404,11 @@ export class MysqlApprovalRepository extends ApprovalRepository {
           );
           await this.endInstance(connection, instance, 'approved', audit);
         } else {
-          // 非末级只推进审批，不修改 Product；下一角色无人时保留申请并标记节点阻塞。
-          const candidates = await this.identity.listApprovalEligibleUserIds(String(next.role_id));
+          // 当前节点始终保持待处理；无人可审仅派生显示阻塞，恢复资格后自然可继续。
           await connection.execute(
-            `UPDATE approval_instance_steps SET status=?,assignment_round=1,activated_at=NOW(),blocked_reason=?,updated_by=?,version=version+1 WHERE id=? AND status='waiting'`,
-            [
-              candidates.length ? 'pending' : 'blocked',
-              candidates.length ? null : 'no_eligible_assignee',
-              audit.actorId,
-              next.id,
-            ],
+            `UPDATE approval_instance_steps SET status='pending',activated_at=NOW(),updated_by=?,version=version+1 WHERE id=? AND status='waiting'`,
+            [audit.actorId, next.id],
           );
-          await this.createTasks(connection, next.id, 1, candidates, audit);
-          if (!candidates.length) {
-            await this.insertAction(connection, {
-              instanceId: id,
-              actionNo: await this.nextActionNo(connection, instance.id),
-              stepId: String(next.id),
-              taskId: null,
-              type: 'assignment_blocked',
-              comment: null,
-              details: { roleId: String(next.role_id), assignmentRound: 1 },
-              actorId: audit.actorId!,
-            });
-          }
           await connection.execute(
             'UPDATE approval_instances SET version=version+1,updated_by=? WHERE id=? AND version=?',
             [audit.actorId, id, command.version],
@@ -566,7 +417,7 @@ export class MysqlApprovalRepository extends ApprovalRepository {
       }
       await writeApprovalAudit(connection, audit, `approval.${decision}`, id, {
         stepNo: step.step_no,
-        taskId: command.taskId,
+        stepId: command.stepId,
         comment: command.comment ?? null,
       });
     });
@@ -613,8 +464,8 @@ export class MysqlApprovalRepository extends ApprovalRepository {
 
   private async instanceSteps(db: Db, id: string, lock = false): Promise<InstanceStepRow[]> {
     const [steps] = await db.query<InstanceStepRow[]>(
-      `SELECT s.id,s.instance_id,s.flow_step_id,s.step_no,fs.name,fs.role_id,s.status,
-       s.assignment_round,s.blocked_reason,s.activated_at,s.ended_at,s.version
+      `SELECT s.id,s.instance_id,s.flow_step_id,s.step_no,fs.name,fs.assignee_type,fs.role_id,fs.assignee_user_id,s.status,
+       s.activated_at,s.ended_at,s.version
        FROM approval_instance_steps s JOIN approval_flow_steps fs ON fs.id=s.flow_step_id
        WHERE s.instance_id=? ORDER BY s.step_no${lock ? ' FOR UPDATE' : ''}`,
       [id],
@@ -622,16 +473,24 @@ export class MysqlApprovalRepository extends ApprovalRepository {
     return steps;
   }
 
-  private async stepHasNoAssignee(db: Db, step: InstanceStepRow): Promise<boolean> {
-    if (step.status === 'blocked') return true;
-    const candidates = new Set(
-      await this.identity.listApprovalEligibleUserIds(String(step.role_id)),
-    );
-    const [tasks] = await db.query<(RowDataPacket & { assignee_id: string })[]>(
-      `SELECT assignee_id FROM approval_tasks WHERE instance_step_id=? AND assignment_round=? AND status='pending'`,
-      [step.id, step.assignment_round],
-    );
-    return !tasks.some((task) => candidates.has(String(task.assignee_id)));
+  /** 身份条件在分页前过滤，读取与命令均由服务端获得实时资格。 */
+  private async currentEligibilityCondition(
+    actorId: string,
+  ): Promise<{ sql: string; parameters: unknown[] }> {
+    const eligibility = await this.identity.getApprovalActorEligibility(actorId);
+    if (!eligibility.canDecide) return { sql: '0=1', parameters: [] };
+    const alternatives = ["(fs.assignee_type='user' AND fs.assignee_user_id=?)"];
+    const parameters: unknown[] = [actorId];
+    if (eligibility.roleIds.length) {
+      alternatives.push("(fs.assignee_type='role' AND fs.role_id IN (?))");
+      parameters.push(eligibility.roleIds);
+    }
+    return {
+      sql: `i.status='pending' AND EXISTS (SELECT 1 FROM approval_instance_steps s
+        JOIN approval_flow_steps fs ON fs.id=s.flow_step_id
+        WHERE s.instance_id=i.id AND s.status='pending' AND (${alternatives.join(' OR ')}))`,
+      parameters,
+    };
   }
 
   private instanceListItem(
@@ -661,24 +520,23 @@ export class MysqlApprovalRepository extends ApprovalRepository {
     db: Db,
     instance: InstanceRow,
     actorId: string,
-    canReassign: boolean,
   ): Promise<ApprovalInstanceDetail> {
     const steps = await this.instanceSteps(db, String(instance.id));
-    const [tasks] = await db.query<TaskRow[]>(
-      `SELECT t.id,t.instance_step_id,t.assignee_id,t.assignment_round,t.status,t.close_reason,t.ended_at,t.version
-       FROM approval_tasks t JOIN approval_instance_steps s ON s.id=t.instance_step_id
-       WHERE s.instance_id=? ORDER BY s.step_no,t.assignment_round,t.id`,
-      [instance.id],
-    );
     const [actions] = await db.query<ActionRow[]>(
       `SELECT id,action_no,action_type,instance_step_id,created_by actor_id,comment,created_at
        FROM approval_actions WHERE instance_id=? ORDER BY action_no`,
       [instance.id],
     );
+    const current = steps.find((s) => s.status === 'pending');
+    const eligibleIds = current ? await resolveAssigneeIds(this.identity, current) : [];
+    const blocked = Boolean(current && eligibleIds.length === 0);
+    const canApprove =
+      instance.status === 'pending' && Boolean(current) && eligibleIds.includes(actorId);
     const userIds = [
       ...new Set([
         String(instance.created_by),
-        ...tasks.map((t) => String(t.assignee_id)),
+        ...steps.flatMap((s) => (s.assignee_user_id === null ? [] : [String(s.assignee_user_id)])),
+        ...eligibleIds,
         ...actions.map((a) => String(a.actor_id)),
       ]),
     ];
@@ -686,31 +544,12 @@ export class MysqlApprovalRepository extends ApprovalRepository {
       (await this.identity.listUserReferencesByIds(userIds)).map((u) => [u.id, u.displayName]),
     );
     const roles = new Map(
-      (await this.identity.listRoleReferencesByIds(steps.map((s) => String(s.role_id)))).map(
-        (r) => [r.id, r.name],
-      ),
-    );
-    const current = steps.find((s) => s.status === 'pending' || s.status === 'blocked');
-    const eligible = current
-      ? new Set(await this.identity.listApprovalEligibleUserIds(String(current.role_id)))
-      : new Set<string>();
-    const currentTasks = current
-      ? tasks.filter(
-          (t) =>
-            String(t.instance_step_id) === String(current.id) &&
-            t.status === 'pending' &&
-            Number(t.assignment_round) === Number(current.assignment_round),
+      (
+        await this.identity.listRoleReferencesByIds(
+          steps.flatMap((s) => (s.role_id === null ? [] : [String(s.role_id)])),
         )
-      : [];
-    const blocked = Boolean(
-      current &&
-      (current.status === 'blocked' ||
-        !currentTasks.some((t) => eligible.has(String(t.assignee_id)))),
+      ).map((r) => [r.id, r.name]),
     );
-    const myTask =
-      current?.status === 'pending' && eligible.has(actorId)
-        ? currentTasks.find((t) => String(t.assignee_id) === actorId)
-        : undefined;
     // 证据结构及当前展示引用由场景所有者解释，通用仓储不读取 BOM 的 materials 等字段。
     const subjectDisplay = await this.handlers
       .getHandler(instance.scene_code, instance.subject_type)
@@ -733,24 +572,23 @@ export class MysqlApprovalRepository extends ApprovalRepository {
         id: String(step.id),
         stepNo: Number(step.step_no),
         name: step.name,
-        roleId: String(step.role_id),
-        roleName: roles.get(String(step.role_id)) ?? String(step.role_id),
-        status: step.status,
-        assignmentRound: Number(step.assignment_round),
-        blockedReason: step.blocked_reason,
+        assigneeType: step.assignee_type,
+        roleId: step.role_id === null ? null : String(step.role_id),
+        roleName:
+          step.role_id === null ? null : (roles.get(String(step.role_id)) ?? String(step.role_id)),
+        assigneeUserId: step.assignee_user_id === null ? null : String(step.assignee_user_id),
+        assigneeUserName:
+          step.assignee_user_id === null
+            ? null
+            : (users.get(String(step.assignee_user_id)) ?? String(step.assignee_user_id)),
+        status: step.id === current?.id && blocked ? 'blocked' : step.status,
+        blockedReason: step.id === current?.id && blocked ? 'no_eligible_assignee' : null,
         activatedAt: this.date(step.activated_at),
         endedAt: this.date(step.ended_at),
-        tasks: tasks
-          .filter((t) => String(t.instance_step_id) === String(step.id))
-          .map((t) => ({
-            id: String(t.id),
-            assigneeId: String(t.assignee_id),
-            assigneeName: users.get(String(t.assignee_id)) ?? String(t.assignee_id),
-            assignmentRound: Number(t.assignment_round),
-            status: t.status,
-            closeReason: t.close_reason,
-            endedAt: this.date(t.ended_at),
-          })),
+        eligibleUsers:
+          step.id === current?.id
+            ? eligibleIds.map((id) => ({ id, displayName: users.get(id) ?? id }))
+            : [],
       })),
       actions: actions.map((action) => ({
         id: String(action.id),
@@ -762,10 +600,9 @@ export class MysqlApprovalRepository extends ApprovalRepository {
         comment: action.comment,
         createdAt: this.date(action.created_at),
       })),
-      myTaskId: myTask ? String(myTask.id) : null,
-      canApprove: instance.status === 'pending' && Boolean(myTask),
+      currentStepId: current ? String(current.id) : null,
+      canApprove,
       canWithdraw: instance.status === 'pending' && String(instance.created_by) === actorId,
-      canReassign: instance.status === 'pending' && canReassign,
     };
   }
 
@@ -780,28 +617,11 @@ export class MysqlApprovalRepository extends ApprovalRepository {
     }
   }
 
-  /** 首级、下一级与重新分派共用任务写入；候选解析及节点状态由各自用例决定。 */
-  private async createTasks(
-    connection: PoolConnection,
-    stepId: number,
-    round: number,
-    candidateIds: string[],
-    audit: CommandContext,
-  ): Promise<void> {
-    for (const candidateId of candidateIds) {
-      await connection.execute(
-        `INSERT INTO approval_tasks (instance_step_id,assignment_round,assignee_id,created_by)
-         VALUES (?,?,?,?)`,
-        [stepId, round, candidateId, audit.actorId],
-      );
-    }
-  }
-
   /** 提交前逐级检查当前合格人员；这里只解析用户 ID，不创建或分派任务。 */
   private async resolveCandidates(steps: FlowStepRow[]): Promise<Map<number, string[]>> {
     const result = new Map<number, string[]>();
     for (const step of steps) {
-      const candidates = await this.identity.listApprovalEligibleUserIds(String(step.role_id));
+      const candidates = await resolveAssigneeIds(this.identity, step);
       if (!candidates.length)
         throw new ApprovalDomainError(
           'NO_ELIGIBLE_ASSIGNEE',
@@ -835,7 +655,6 @@ export class MysqlApprovalRepository extends ApprovalRepository {
       instanceId: string;
       actionNo: number;
       stepId: string | null;
-      taskId: string | null;
       type: ApprovalActionType;
       comment: string | null;
       details: Record<string, unknown> | null;
@@ -843,12 +662,11 @@ export class MysqlApprovalRepository extends ApprovalRepository {
     },
   ): Promise<void> {
     await db.execute(
-      `INSERT INTO approval_actions (instance_id,action_no,instance_step_id,task_id,action_type,comment,details,created_by) VALUES (?,?,?,?,?,?,?,?)`,
+      `INSERT INTO approval_actions (instance_id,action_no,instance_step_id,action_type,comment,details,created_by) VALUES (?,?,?,?,?,?,?)`,
       [
         action.instanceId,
         action.actionNo,
         action.stepId,
-        action.taskId,
         action.type,
         action.comment,
         action.details ? JSON.stringify(action.details) : null,

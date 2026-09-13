@@ -30,15 +30,11 @@ import {
 const INSTANCE_ACCESS = [
   PERMISSIONS.approval.view,
   PERMISSIONS.approval.decide,
-  PERMISSIONS.approval.reassign,
   PERMISSIONS.approval.configure,
   PERMISSIONS.product.products.manageBom,
 ] as const;
 const canManage = (user: UserProfile) =>
-  permissionMatches(user.permissions, [
-    PERMISSIONS.approval.configure,
-    PERMISSIONS.approval.reassign,
-  ]);
+  permissionMatches(user.permissions, PERMISSIONS.approval.configure);
 
 @Controller('approval')
 @UseFilters(ApprovalDomainExceptionFilter)
@@ -56,6 +52,12 @@ export class ApprovalController {
   @RequirePermission(PERMISSIONS.approval.configure)
   roleOptions() {
     return this.service.listRoleOptions();
+  }
+
+  @Get('user-options')
+  @RequirePermission(PERMISSIONS.approval.configure)
+  userOptions() {
+    return this.service.listUserOptions();
   }
 
   @Get('scenes/:sceneCode/flow')
@@ -95,12 +97,7 @@ export class ApprovalController {
   @Get('instances/:id')
   @RequirePermission(INSTANCE_ACCESS)
   instance(@Param() { id }: ApprovalIdParamDto, @CurrentUser() user: UserProfile) {
-    return this.service.getInstance(
-      id,
-      user.id,
-      canManage(user),
-      permissionMatches(user.permissions, PERMISSIONS.approval.reassign),
-    );
+    return this.service.getInstance(id, user.id, canManage(user));
   }
 
   @Post('instances/:id/approve')
@@ -134,17 +131,6 @@ export class ApprovalController {
     @CurrentCommandContext() audit: CommandContext,
   ) {
     return this.service.withdraw(id, toComment(body), audit);
-  }
-
-  @Post('instances/:id/reassign')
-  @RequirePermission(PERMISSIONS.approval.reassign)
-  @AuditInApplication()
-  reassign(
-    @Param() { id }: ApprovalIdParamDto,
-    @Body() body: ApprovalCommentDto,
-    @CurrentCommandContext() audit: CommandContext,
-  ) {
-    return this.service.reassign(id, toComment(body), audit);
   }
 
   @Post('bom/:productId/submit')

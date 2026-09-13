@@ -53,7 +53,7 @@ Writer，无需通过 Identity `public.ts`。`operation_logs` 的字段和唯一
 
 ## 审批资格公开能力
 
-`IdentityDirectoryService` 提供审批角色选项及该角色当前合格成员。角色仅表示职责分组，不表示职级；候选必须是所配置有效角色的成员，账号启用且未删除，用户全部有效角色的权限并集须匹配 `approval:decide`，包括既有通配权限。配置角色本身不必独占审批权限，管理员也仍须属于该节点所选角色。
+`IdentityDirectoryService` 提供审批角色选项、指定用户候选及实时资格。`listApprovalEligibleUserIds(roleId?)` 返回指定角色或全体当前合格用户，`listApprovalUserOptions()` 提供指定用户选择器，`getApprovalActorEligibility(userId)` 返回当前有效角色 ID 和 `canDecide`，均不暴露数据库类型。角色仅表示职责分组，不表示职级；角色节点的候选必须是所配置有效角色的成员，账号启用且未删除，用户全部有效角色的权限并集须匹配 `approval:decide`，包括既有通配权限。配置角色本身不必独占审批权限，管理员也仍须属于角色节点所选角色；指定用户节点按固定账号及其当前审批权限判断，不要求属于某个指定角色。
 
 审批资格查询复用调用者事务，以当前锁定读复核账号、角色、成员关系和权限；历史姓名查询保持包括停用用户的展示语义，不用于授权。角色选项人数与实际待办候选使用同一规则。Identity 不写审批任务或业务状态，本次无需调整 Identity 表结构。
 

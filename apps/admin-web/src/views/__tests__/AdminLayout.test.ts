@@ -62,6 +62,18 @@ describe('AdminLayout approval permissions', () => {
     expect(wrapper.text()).not.toContain('审批流程配置');
   });
 
+  it('shows the inbox for the product BOM permission without a reassignment permission', () => {
+    can.mockImplementation(
+      (required: string | readonly string[]) =>
+        Array.isArray(required) && required.includes(PERMISSIONS.product.products.manageBom),
+    );
+    const wrapper = mountLayout();
+
+    expect(wrapper.text()).toContain('审批待办');
+    expect(wrapper.text()).not.toContain('审批流程配置');
+    expect(can).not.toHaveBeenCalledWith('approval:reassign');
+  });
+
   it('shows flow configuration only when approval:configure is granted', () => {
     can.mockImplementation(
       (required: string | readonly string[]) => required === PERMISSIONS.approval.configure,

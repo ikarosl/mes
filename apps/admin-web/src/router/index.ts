@@ -124,7 +124,6 @@ export const router = createRouter({
           [
             PERMISSIONS.approval.view,
             PERMISSIONS.approval.decide,
-            PERMISSIONS.approval.reassign,
             PERMISSIONS.product.products.manageBom,
           ],
           'ApprovalInboxPage',

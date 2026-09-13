@@ -135,7 +135,6 @@ const approvalMenus = [
     permission: [
       PERMISSIONS.approval.view,
       PERMISSIONS.approval.decide,
-      PERMISSIONS.approval.reassign,
       PERMISSIONS.product.products.manageBom,
     ] as const,
   },

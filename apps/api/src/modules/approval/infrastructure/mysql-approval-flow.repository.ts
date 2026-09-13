@@ -9,6 +9,7 @@ import type {
   ApprovalSceneItem,
   PublishApprovalFlowCommand,
   SaveApprovalFlowDraft,
+  UserOption,
 } from '@company/contracts';
 import { IdentityDirectoryService } from '../../identity/public.js';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
@@ -18,6 +19,11 @@ import { ApprovalDomainError } from '../domain/approval.errors.js';
 import { ApprovalSubjectHandlerRegistry } from '../application/approval-subject-handler.registry.js';
 import { ApprovalFlowRepository } from '../application/ports/approval-flow.repository.js';
 import { writeApprovalAudit } from './approval-audit.js';
+import {
+  assertAssigneeRule,
+  resolveAssigneeIds,
+  type AssigneeRuleRow,
+} from './approval-assignees.js';
 
 type Db = Pool | PoolConnection;
 type FlowVersionStatus = 'draft' | 'published' | 'discarded';
@@ -39,13 +45,12 @@ interface FlowVersionRow extends RowDataPacket {
   version: number;
 }
 
-export interface FlowStepRow extends RowDataPacket {
+export interface FlowStepRow extends RowDataPacket, AssigneeRuleRow {
   id: number;
   flow_version_id: number;
   node_code: string;
   step_no: number;
   name: string;
-  role_id: number;
 }
 
 /** 配置聚合：维护场景列表、流程草稿、发布版本，以及提交时的固定选版。 */
@@ -85,6 +90,10 @@ export class MysqlApprovalFlowRepository extends ApprovalFlowRepository {
     return this.identity.listApprovalRoleOptions();
   }
 
+  listUserOptions(): Promise<UserOption[]> {
+    return this.identity.listApprovalUserOptions();
+  }
+
   getFlow(sceneCode: string): Promise<ApprovalFlowDetail> {
     return this.loadFlow(this.pool, sceneCode);
   }
@@ -113,8 +122,22 @@ export class MysqlApprovalFlowRepository extends ApprovalFlowRepository {
     }
     const roleOptions = await this.identity.listApprovalRoleOptions();
     const roles = new Map(roleOptions.map((role) => [role.id, role]));
-    if (payload.steps.some((step) => !roles.has(step.roleId)))
-      throw new ApprovalDomainError('INVALID_INPUT', '审批流程包含不存在或已停用的角色');
+    const userIds = new Set((await this.identity.listApprovalUserOptions()).map((user) => user.id));
+    for (const step of payload.steps) {
+      assertAssigneeRule({
+        assignee_type: step.assigneeType,
+        role_id: step.roleId,
+        assignee_user_id: step.assigneeUserId,
+      });
+      if (
+        step.assigneeType === 'role' ? !roles.has(step.roleId!) : !userIds.has(step.assigneeUserId!)
+      ) {
+        throw new ApprovalDomainError(
+          'INVALID_INPUT',
+          '审批节点包含已失效的角色或不具备审批资格的指定用户',
+        );
+      }
+    }
 
     let detail: ApprovalFlowDetail;
     await withTransaction(this.pool, async (connection) => {
@@ -179,7 +202,7 @@ export class MysqlApprovalFlowRepository extends ApprovalFlowRepository {
       }
 
       const [existingSteps] = await connection.query<FlowStepRow[]>(
-        'SELECT id,flow_version_id,node_code,step_no,name,role_id FROM approval_flow_steps WHERE flow_version_id=? FOR UPDATE',
+        'SELECT id,flow_version_id,node_code,step_no,name,assignee_type,role_id,assignee_user_id FROM approval_flow_steps WHERE flow_version_id=? FOR UPDATE',
         [draftId],
       );
       const existing = new Map(existingSteps.map((step) => [step.node_code, step]));
@@ -207,22 +230,33 @@ export class MysqlApprovalFlowRepository extends ApprovalFlowRepository {
         if (old) {
           await connection.execute(
             `UPDATE approval_flow_steps
-                SET step_no=?,name=?,role_id=?,is_deleted=0,deleted_by=NULL,deleted_at=NULL,
+                SET step_no=?,name=?,assignee_type=?,role_id=?,assignee_user_id=?,is_deleted=0,deleted_by=NULL,deleted_at=NULL,
                     updated_by=?,version=version+1
               WHERE id=? AND flow_version_id=?`,
-            [index + 1, item.name.trim(), item.roleId, audit.actorId, old.id, draftId],
+            [
+              index + 1,
+              item.name.trim(),
+              item.assigneeType,
+              item.roleId,
+              item.assigneeUserId,
+              audit.actorId,
+              old.id,
+              draftId,
+            ],
           );
         } else {
           await connection.execute(
             `INSERT INTO approval_flow_steps
-              (flow_version_id,node_code,step_no,name,role_id,created_by,updated_by)
-             VALUES (?,?,?,?,?,?,?)`,
+              (flow_version_id,node_code,step_no,name,assignee_type,role_id,assignee_user_id,created_by,updated_by)
+             VALUES (?,?,?,?,?,?,?,?,?)`,
             [
               draftId,
               nodeCode,
               index + 1,
               item.name.trim(),
+              item.assigneeType,
               item.roleId,
+              item.assigneeUserId,
               audit.actorId,
               audit.actorId,
             ],
@@ -252,7 +286,7 @@ export class MysqlApprovalFlowRepository extends ApprovalFlowRepository {
     return detail!;
   }
 
-  /** 校验各级角色与当前候选人后发布；切换新申请使用的版本，在途申请仍沿用旧版。 */
+  /** 校验各级分配规则与当前候选人后发布；新申请使用新版，在途申请仍沿用旧版。 */
   async publishFlow(
     sceneCode: string,
     command: PublishApprovalFlowCommand,
@@ -274,21 +308,16 @@ export class MysqlApprovalFlowRepository extends ApprovalFlowRepository {
       if (!draft || Number(draft.version) !== command.version)
         throw new ApprovalDomainError('CONCURRENT_MODIFICATION', '审批草稿已变化，请刷新后重试');
       const [steps] = await connection.query<FlowStepRow[]>(
-        `SELECT id,flow_version_id,node_code,step_no,name,role_id
+        `SELECT id,flow_version_id,node_code,step_no,name,assignee_type,role_id,assignee_user_id
            FROM approval_flow_steps WHERE flow_version_id=? AND is_deleted=0 ORDER BY step_no FOR UPDATE`,
         [draft.id],
       );
       this.assertSequentialSteps(steps);
-      const roleOptions = await this.identity.listApprovalRoleOptions();
-      const roles = new Map(roleOptions.map((role) => [role.id, role]));
       for (const step of steps) {
-        const role = roles.get(String(step.role_id));
-        if (!role)
-          throw new ApprovalDomainError('INVALID_INPUT', `审批节点“${step.name}”的角色已停用`);
-        if (role.eligibleUserCount < 1)
+        if ((await resolveAssigneeIds(this.identity, step)).length === 0)
           throw new ApprovalDomainError(
             'NO_ELIGIBLE_ASSIGNEE',
-            `角色“${role.name}”当前没有合格审批人`,
+            `节点“${step.name}”当前没有合格审批人`,
           );
       }
       await connection.execute(
@@ -329,7 +358,7 @@ export class MysqlApprovalFlowRepository extends ApprovalFlowRepository {
     );
     if (!flow) throw new ApprovalDomainError('FLOW_NOT_CONFIGURED', '审批流程版本不可用');
     const [steps] = await connection.query<FlowStepRow[]>(
-      `SELECT id,flow_version_id,node_code,step_no,name,role_id
+      `SELECT id,flow_version_id,node_code,step_no,name,assignee_type,role_id,assignee_user_id
            FROM approval_flow_steps WHERE flow_version_id=? AND is_deleted=0 ORDER BY step_no FOR UPDATE`,
       [flow.id],
     );
@@ -363,13 +392,22 @@ export class MysqlApprovalFlowRepository extends ApprovalFlowRepository {
 
   private async mapFlowVersion(db: Db, row: FlowVersionRow): Promise<ApprovalFlowVersion> {
     const [steps] = await db.query<FlowStepRow[]>(
-      'SELECT id,flow_version_id,node_code,step_no,name,role_id FROM approval_flow_steps WHERE flow_version_id=? AND is_deleted=0 ORDER BY step_no',
+      'SELECT id,flow_version_id,node_code,step_no,name,assignee_type,role_id,assignee_user_id FROM approval_flow_steps WHERE flow_version_id=? AND is_deleted=0 ORDER BY step_no',
       [row.id],
     );
     const roles = new Map(
-      (await this.identity.listRoleReferencesByIds(steps.map((s) => String(s.role_id)))).map(
-        (r) => [r.id, r.name],
-      ),
+      (
+        await this.identity.listRoleReferencesByIds(
+          steps.flatMap((s) => (s.role_id === null ? [] : [String(s.role_id)])),
+        )
+      ).map((r) => [r.id, r.name]),
+    );
+    const users = new Map(
+      (
+        await this.identity.listUserReferencesByIds(
+          steps.flatMap((s) => (s.assignee_user_id === null ? [] : [String(s.assignee_user_id)])),
+        )
+      ).map((u) => [u.id, u.displayName]),
     );
     return {
       id: String(row.id),
@@ -382,8 +420,14 @@ export class MysqlApprovalFlowRepository extends ApprovalFlowRepository {
         nodeCode: s.node_code,
         stepNo: Number(s.step_no),
         name: s.name,
-        roleId: String(s.role_id),
-        roleName: roles.get(String(s.role_id)) ?? String(s.role_id),
+        assigneeType: s.assignee_type,
+        roleId: s.role_id === null ? null : String(s.role_id),
+        roleName: s.role_id === null ? null : (roles.get(String(s.role_id)) ?? String(s.role_id)),
+        assigneeUserId: s.assignee_user_id === null ? null : String(s.assignee_user_id),
+        assigneeUserName:
+          s.assignee_user_id === null
+            ? null
+            : (users.get(String(s.assignee_user_id)) ?? String(s.assignee_user_id)),
       })),
     };
   }

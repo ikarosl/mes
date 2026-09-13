@@ -64,35 +64,53 @@ type DetailVm = { comment: string };
 describe('ApprovalInstanceDetailDialog', () => {
   beforeEach(() => warning.mockReset());
 
-  it('renders the frozen BOM evidence, current task and processing history without legacy flags', async () => {
-    const wrapper = mountDetail();
+  it('renders the frozen BOM evidence, shared candidates and actual processing history', async () => {
+    const wrapper = mountDetail({
+      detail: instanceDetail({
+        actions: [
+          ...instanceDetail().actions,
+          {
+            id: 'action-2',
+            actionNo: 2,
+            actionType: 'approved',
+            stepId: 'step-1',
+            actorId: 'user-2',
+            actorName: '实际审批人',
+            comment: '已核对 BOM',
+            createdAt: '2026-09-10T10:05:00+08:00',
+          },
+        ],
+      }),
+    });
     await flushPromises();
 
     expect(wrapper.text()).toContain('P-001');
     expect(wrapper.text()).toContain('物料一');
     expect(wrapper.text()).toContain('审批人');
+    expect(wrapper.text()).toContain('实际审批人');
     expect(wrapper.text()).toContain('提交申请');
+    expect(wrapper.text()).toContain('当前可处理');
     expect(wrapper.text()).not.toContain('关键物料');
     expect(wrapper.text()).not.toContain('记录批次');
     expect(wrapper.text()).not.toContain('需记录批次');
+    expect(wrapper.text()).not.toContain('重新分派');
+    expect(wrapper.text()).not.toContain('个人任务');
   });
 
   it('shows only operations granted by the server response', async () => {
     const wrapper = mountDetail({
-      detail: instanceDetail({ canApprove: false, canWithdraw: true, canReassign: true }),
+      detail: instanceDetail({ canApprove: false, canWithdraw: true }),
     });
 
     expect(wrapper.text()).not.toContain('通过当前节点');
     expect(wrapper.text()).not.toContain('驳回申请');
-    expect(wrapper.text()).toContain('重新分派');
     expect(wrapper.text()).toContain('撤回申请');
 
     await wrapper.setProps({ detail: instanceDetail({ status: 'approved', canWithdraw: true }) });
     expect(wrapper.text()).not.toContain('撤回申请');
-    expect(wrapper.text()).not.toContain('重新分派');
   });
 
-  it('requires a reason for rejection and reassign, while approve and withdraw return trimmed comments', async () => {
+  it('requires a reason for rejection while approve and withdraw return trimmed comments', async () => {
     const wrapper = mountDetail();
     const vm = wrapper.vm as unknown as DetailVm;
 
@@ -110,19 +128,9 @@ describe('ApprovalInstanceDetailDialog', () => {
       .trigger('click');
     expect(wrapper.emitted('reject')).toEqual([['设计参数不完整']]);
 
-    vm.comment = '  同步角色成员  ';
-    await wrapper.setProps({
-      detail: instanceDetail({ canApprove: false, canWithdraw: false, canReassign: true }),
-    });
-    await wrapper
-      .findAll('button')
-      .find((button) => button.text() === '重新分派')!
-      .trigger('click');
-    expect(wrapper.emitted('reassign')).toEqual([['同步角色成员']]);
-
     vm.comment = '  说明  ';
     await wrapper.setProps({
-      detail: instanceDetail({ canApprove: true, canWithdraw: true, canReassign: false }),
+      detail: instanceDetail({ canApprove: true, canWithdraw: true }),
     });
     await wrapper
       .findAll('button')
@@ -136,26 +144,26 @@ describe('ApprovalInstanceDetailDialog', () => {
     expect(wrapper.emitted('withdraw')).toEqual([['说明']]);
   });
 
-  it('keeps a blocked pending instance actionable only for an authorized reassign', async () => {
+  it('keeps a blocked pending instance visible without personal reassignment actions', async () => {
     const wrapper = mountDetail({
       detail: instanceDetail({
         blocked: true,
         canApprove: false,
         canWithdraw: false,
-        canReassign: true,
         steps: [
           {
             ...instanceDetail().steps[0]!,
             status: 'blocked',
             blockedReason: 'no_eligible_assignee',
-            tasks: [],
+            eligibleUsers: [],
           },
         ],
       }),
     });
 
     expect(wrapper.text()).toContain('暂无合格审批人');
-    expect(wrapper.text()).toContain('重新分派');
     expect(wrapper.text()).not.toContain('通过当前节点');
+    expect(wrapper.text()).not.toContain('驳回申请');
+    expect(wrapper.text()).not.toContain('撤回申请');
   });
 });

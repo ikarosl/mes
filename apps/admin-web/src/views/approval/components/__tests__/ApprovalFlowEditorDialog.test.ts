@@ -2,7 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils';
 import { h, type VNode } from 'vue';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ApprovalFlowEditorDialog from '../ApprovalFlowEditorDialog.vue';
-import { flowDetail, roles } from '../../__tests__/fixtures';
+import { flowDetail, roles, users } from '../../__tests__/fixtures';
 
 const { warning } = vi.hoisted(() => ({ warning: vi.fn() }));
 vi.mock('../../../../utils/message', () => ({ EMessage: { warning } }));
@@ -17,7 +17,7 @@ const buttonStub = {
 const tableStub = {
   props: ['data'],
   template:
-    '<div class="step-table"><div v-for="step in data" :key="step.rowKey" class="step-row">{{ step.name }} / {{ step.roleId }}</div><slot /></div>',
+    '<div class="step-table"><div v-for="step in data" :key="step.rowKey" class="step-row">{{ step.name }} / {{ step.assigneeType === \'role\' ? step.roleId : step.assigneeUserId }}</div><slot /></div>',
 };
 const tableColumnStub = {
   props: ['label'],
@@ -25,7 +25,7 @@ const tableColumnStub = {
     _props: { label?: string },
     context: { slots: { default?: (scope: Record<string, unknown>) => VNode[] } },
   ) {
-    const row = { name: '', roleId: 'role-tech' };
+    const row = { name: '', assigneeType: 'role', roleId: 'role-tech', assigneeUserId: '' };
     return () => h('div', { class: 'table-column-stub' }, context.slots.default?.({ row }));
   },
 };
@@ -42,6 +42,7 @@ const mountEditor = (detail = flowDetail({ draft: true })) =>
       visible: true,
       detail,
       roleOptions: roles(),
+      userOptions: users(),
       saving: false,
       publishing: false,
     },
@@ -64,7 +65,14 @@ const mountEditor = (detail = flowDetail({ draft: true })) =>
 
 type EditorVm = {
   formName: string;
-  steps: Array<{ name: string; roleId: string; nodeCode?: string }>;
+  steps: Array<{
+    name: string;
+    nodeCode?: string;
+    assigneeType: 'role' | 'user';
+    roleId: string;
+    assigneeUserId: string;
+  }>;
+  changeAssigneeType: (step: EditorVm['steps'][number]) => void;
 };
 
 describe('ApprovalFlowEditorDialog', () => {
@@ -96,8 +104,20 @@ describe('ApprovalFlowEditorDialog', () => {
           draftId: 'draft-3',
           version: 4,
           steps: [
-            { nodeCode: 'technical', name: '技术复核', roleId: 'role-tech' },
-            { nodeCode: 'owner', name: '负责人审核', roleId: 'role-owner' },
+            {
+              nodeCode: 'technical',
+              name: '技术复核',
+              assigneeType: 'role',
+              roleId: 'role-tech',
+              assigneeUserId: null,
+            },
+            {
+              nodeCode: 'owner',
+              name: '负责人审核',
+              assigneeType: 'role',
+              roleId: 'role-owner',
+              assigneeUserId: null,
+            },
           ],
         },
       ],
@@ -107,9 +127,96 @@ describe('ApprovalFlowEditorDialog', () => {
   it('refreshes only roles when the role chooser opens', async () => {
     const wrapper = mountEditor();
 
-    await wrapper.find('.role-select-stub').trigger('click');
+    await wrapper.find('.role-select').trigger('click');
 
     expect(wrapper.emitted('refresh-roles')).toHaveLength(1);
+  });
+
+  it('clears the previous assignee when switching between role and specified user', async () => {
+    const wrapper = mountEditor();
+    const vm = wrapper.vm as unknown as EditorVm;
+    const step = vm.steps[0]!;
+
+    step.assigneeUserId = 'user-2';
+    step.assigneeType = 'user';
+    vm.changeAssigneeType(step);
+    await flushPromises();
+
+    expect(step.roleId).toBe('');
+    expect(step.assigneeUserId).toBe('');
+    expect(wrapper.emitted('refresh-users')).toHaveLength(1);
+
+    step.assigneeUserId = 'user-3';
+    step.assigneeType = 'role';
+    vm.changeAssigneeType(step);
+    await flushPromises();
+
+    expect(step.roleId).toBe('');
+    expect(step.assigneeUserId).toBe('');
+    expect(wrapper.emitted('refresh-roles')).toHaveLength(1);
+  });
+
+  it('emits an explicit specified-user payload with the role reference cleared', async () => {
+    const wrapper = mountEditor();
+    const vm = wrapper.vm as unknown as EditorVm;
+    const step = vm.steps[0]!;
+
+    step.assigneeType = 'user';
+    vm.changeAssigneeType(step);
+    step.assigneeUserId = 'user-2';
+    await flushPromises();
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '保存草稿')!
+      .trigger('click');
+
+    expect(wrapper.emitted('save')).toEqual([
+      [
+        {
+          name: 'BOM 审批',
+          draftId: 'draft-3',
+          version: 4,
+          steps: [
+            {
+              nodeCode: 'technical',
+              name: '技术审核',
+              assigneeType: 'user',
+              roleId: null,
+              assigneeUserId: 'user-2',
+            },
+            {
+              nodeCode: 'owner',
+              name: '负责人审核',
+              assigneeType: 'role',
+              roleId: 'role-owner',
+              assigneeUserId: null,
+            },
+          ],
+        },
+      ],
+    ]);
+  });
+
+  it('refreshes specified-user candidates and blocks a disappeared selection', async () => {
+    const wrapper = mountEditor();
+    const vm = wrapper.vm as unknown as EditorVm;
+    const step = vm.steps[0]!;
+
+    step.assigneeType = 'user';
+    step.roleId = '';
+    vm.changeAssigneeType(step);
+    step.assigneeUserId = 'user-missing';
+    await flushPromises();
+
+    expect(wrapper.emitted('refresh-users')).toHaveLength(1);
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '保存草稿')!
+      .trigger('click');
+
+    expect(warning).toHaveBeenCalledWith('审批对象已失效，请重新选择');
+    expect(wrapper.emitted('save')).toBeUndefined();
   });
 
   it('supports an unconfigured scene with no published or draft flow', async () => {
@@ -124,7 +231,9 @@ describe('ApprovalFlowEditorDialog', () => {
       .trigger('click');
     vm.formName = '新的 BOM 流程';
     vm.steps[0]!.name = '首级审核';
+    vm.steps[0]!.assigneeType = 'role';
     vm.steps[0]!.roleId = 'role-tech';
+    vm.steps[0]!.assigneeUserId = '';
     await wrapper
       .findAll('button')
       .find((button) => button.text() === '保存草稿')!
@@ -136,7 +245,14 @@ describe('ApprovalFlowEditorDialog', () => {
           name: '新的 BOM 流程',
           draftId: null,
           version: null,
-          steps: [{ name: '首级审核', roleId: 'role-tech' }],
+          steps: [
+            {
+              name: '首级审核',
+              assigneeType: 'role',
+              roleId: 'role-tech',
+              assigneeUserId: null,
+            },
+          ],
         },
       ],
     ]);
@@ -156,6 +272,6 @@ describe('ApprovalFlowEditorDialog', () => {
       .trigger('click');
 
     expect(wrapper.emitted('save')).toBeUndefined();
-    expect(warning).toHaveBeenCalledWith('请补全每个节点名称和审批角色');
+    expect(warning).toHaveBeenCalledWith('请补全每个节点名称和审批对象');
   });
 });

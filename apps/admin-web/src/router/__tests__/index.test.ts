@@ -29,7 +29,6 @@ describe('admin routes after product/production consolidation', () => {
     expect(inbox?.meta.permission).toEqual([
       PERMISSIONS.approval.view,
       PERMISSIONS.approval.decide,
-      PERMISSIONS.approval.reassign,
       PERMISSIONS.product.products.manageBom,
     ]);
     expect(flows?.path).toBe('/approval/flows');

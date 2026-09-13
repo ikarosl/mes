@@ -37,7 +37,8 @@ export const assertTechnicalFileType = (fileName: string, mimeType: string) => {
  * 以保证直接调用与未来改动不会绕过服务端安全边界。
  */
 export const technicalFileUploadOptions = {
-  limits: { fileSize: TECHNICAL_FILE_MAX_SIZE_BYTES, files: 1 },
+  // Busboy 在达到 fileSize 时即触发 limit；允许上限本身，读取多一个字节才拒绝。
+  limits: { fileSize: TECHNICAL_FILE_MAX_SIZE_BYTES + 1, files: 1 },
   fileFilter: (
     _request: unknown,
     file: { originalname: string; mimetype: string },

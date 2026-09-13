@@ -13,13 +13,7 @@ import { MysqlRbacRepository } from '../../../apps/api/src/modules/identity/infr
 import { ProductBomApprovalHandler } from '../../../apps/api/src/modules/product/public.js';
 import { MysqlProductCatalogRepository } from '../../../apps/api/src/modules/product/infrastructure/mysql-product-catalog.repository.js';
 
-/**
- * 为生产幂等集成测试准备一个真实已批准的 BOM。
- *
- * 生产任务现在只读取 Product 的审批锁定事实，不能在夹具里直接 UPDATE 成品状态来绕过
- * 业务门禁。因此这里通过公开 ApprovalService、真实 Product handler 和 MySQL repositories
- * 完整走流程配置、BOM 送审及末级通过；调用方可以据此验证生产任务创建不会再次锁 BOM。
- */
+/** Creates an approved BOM through the public approval service for production fixtures. */
 export interface ApprovedBomFixtureInput {
   pool: Pool;
   token: string;
@@ -64,10 +58,17 @@ export const approveBomForProduction = async (
   const draft = await flows.saveFlowDraft(
     SCENE_CODE,
     {
-      name: `${token} 生产任务前置审批`,
+      name: `${token} production approval`,
       draftId: null,
       version: null,
-      steps: [{ name: '生产任务前置确认', roleId: String(roleId) }],
+      steps: [
+        {
+          name: 'production approval',
+          assigneeType: 'role',
+          roleId: String(roleId),
+          assigneeUserId: null,
+        },
+      ],
     },
     commandContext(actorId, `${token}-flow-draft`),
   );
@@ -87,13 +88,12 @@ export const approveBomForProduction = async (
     },
     commandContext(actorId, `${token}-approval-submit`),
   );
-  const task = submitted.steps[0]?.tasks.find(
-    (candidate) => candidate.assigneeId === String(actorId),
-  );
-  if (!task) throw new Error('approved BOM fixture did not receive an actor task');
+  const step = submitted.steps[0];
+  if (!step || !step.eligibleUsers.some((candidate) => candidate.id === String(actorId)))
+    throw new Error('approved BOM fixture did not receive actor eligibility');
   const approved = await approvals.approve(
     submitted.id,
-    { version: submitted.version, taskId: task.id },
+    { version: submitted.version, stepId: step.id },
     commandContext(actorId, `${token}-approval-final`),
   );
   if (approved.status !== 'approved')
@@ -108,7 +108,7 @@ export const approveBomForProduction = async (
   };
 };
 
-/** 删除该夹具创建的审批图，再让 Product 回到合法草稿状态供 teardown 删除。 */
+/** Restores the product draft and removes only rows created by this fixture. */
 export const cleanupApprovedBom = async (
   pool: Pool,
   fixture: Partial<ApprovedBomFixture> & Pick<ApprovedBomFixtureInput, 'token' | 'productId'>,
@@ -121,10 +121,6 @@ export const cleanupApprovedBom = async (
     await pool.execute('DELETE FROM approval_actions WHERE instance_id=?', [
       fixture.approvalInstanceId,
     ]);
-    await pool.execute(
-      'DELETE FROM approval_tasks WHERE instance_step_id IN (SELECT id FROM approval_instance_steps WHERE instance_id=?)',
-      [fixture.approvalInstanceId],
-    );
     await pool.execute('DELETE FROM approval_instance_steps WHERE instance_id=?', [
       fixture.approvalInstanceId,
     ]);

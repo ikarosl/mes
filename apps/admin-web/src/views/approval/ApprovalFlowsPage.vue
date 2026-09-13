@@ -2,7 +2,7 @@
   <main class="approval-flows-page">
     <section class="page-intro">
       <div>
-        <p>为每项审批配置审核顺序和审批角色，发布后用于新申请。</p>
+        <p>为每个节点选择审批角色或指定用户，发布后用于新申请。</p>
       </div>
       <el-button
         :icon="Refresh"
@@ -75,12 +75,14 @@
       :visible="editorVisible"
       :detail="flowDetail"
       :role-options="roleOptions"
+      :user-options="userOptions"
       :saving="saving"
       :publishing="publishing"
       @update:visible="editorVisible = $event"
       @save="saveDraft"
       @publish="publish"
       @refresh-roles="loadRoleOptions"
+      @refresh-users="loadUserOptions"
     />
   </main>
 </template>
@@ -93,6 +95,7 @@ import type {
   ApprovalRoleOption,
   ApprovalSceneItem,
   SaveApprovalFlowDraft,
+  UserOption,
 } from '@company/contracts';
 import { approvalApi } from '../../api/approval';
 import ApprovalFlowEditorDialog from './components/ApprovalFlowEditorDialog.vue';
@@ -102,6 +105,7 @@ defineOptions({ name: 'ApprovalFlowsPage' });
 
 const scenes = ref<ApprovalSceneItem[]>([]);
 const roleOptions = ref<ApprovalRoleOption[]>([]);
+const userOptions = ref<UserOption[]>([]);
 const loading = ref(false);
 const flowLoading = ref(false);
 const saving = ref(false);
@@ -111,6 +115,7 @@ const selectedSceneCode = ref<string | null>(null);
 const flowDetail = ref<ApprovalFlowDetail | null>(null);
 let scenesRequestToken = 0;
 let roleRequestToken = 0;
+let userRequestToken = 0;
 let flowRequestToken = 0;
 
 const loadScenes = async (): Promise<void> => {
@@ -143,7 +148,11 @@ const openEditor = async (sceneCode: string): Promise<void> => {
   editorVisible.value = true;
   flowLoading.value = true;
   try {
-    const [detail] = await Promise.all([approvalApi.flow(sceneCode), loadRoleOptions()]);
+    const [detail] = await Promise.all([
+      approvalApi.flow(sceneCode),
+      loadRoleOptions(),
+      loadUserOptions(),
+    ]);
     if (token !== flowRequestToken) return;
     flowDetail.value = detail;
   } catch (error) {
@@ -152,6 +161,16 @@ const openEditor = async (sceneCode: string): Promise<void> => {
     EMessage.error(error, '审批流程加载失败');
   } finally {
     if (token === flowRequestToken) flowLoading.value = false;
+  }
+};
+
+const loadUserOptions = async (): Promise<void> => {
+  const token = ++userRequestToken;
+  try {
+    const result = await approvalApi.userOptions();
+    if (token === userRequestToken) userOptions.value = result;
+  } catch (error) {
+    if (token === userRequestToken) EMessage.error(error, '审批用户加载失败');
   }
 };
 
@@ -201,10 +220,11 @@ const publish = async (payload: SaveApprovalFlowDraft): Promise<void> => {
 };
 
 onMounted(() => {
-  void Promise.all([loadScenes(), loadRoleOptions()]);
+  void loadScenes();
 });
 onActivated(() => {
   void loadScenes();
+  if (editorVisible.value) void Promise.all([loadRoleOptions(), loadUserOptions()]);
 });
 </script>
 

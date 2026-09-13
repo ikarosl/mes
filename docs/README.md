@@ -12,6 +12,7 @@
 - [产品范围](product-scope.md)
 - [路线图](roadmap.md)
 - [审批接入边界与后续通知设计](approval-design.md)
+- [通用通知设计与提交后扩展钩子（尚未实施）](notification-design.md)
 
 ## 应用与模块
 
@@ -45,3 +46,5 @@
 
 - [ADR 目录](adr/)
 - [工单、BOM 与顺序多级审批的业务边界](adr/0006-approval-workflow-boundaries.md)
+- [通用通知与事务提交后扩展边界](adr/0007-general-notification-boundaries.md)
+- [单节点待办与角色或指定用户审批](adr/0008-approval-node-assignees.md)

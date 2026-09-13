@@ -12,6 +12,7 @@ import type {
   ApprovalSceneItem,
   PageResult,
   SaveApprovalFlowDraft,
+  UserOption,
 } from '@company/contracts';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { ApprovalDomainError } from '../domain/approval.errors.js';
@@ -32,6 +33,10 @@ export class ApprovalService {
 
   listRoleOptions(): Promise<ApprovalRoleOption[]> {
     return this.flows.listRoleOptions();
+  }
+
+  listUserOptions(): Promise<UserOption[]> {
+    return this.flows.listUserOptions();
   }
 
   getFlow(sceneCode: string): Promise<ApprovalFlowDetail> {
@@ -63,14 +68,9 @@ export class ApprovalService {
     return this.repository.listInstances(query, actorId, canViewAll);
   }
 
-  getInstance(
-    id: string,
-    actorId: string,
-    canViewAll: boolean,
-    canReassign = false,
-  ): Promise<ApprovalInstanceDetail> {
+  getInstance(id: string, actorId: string, canViewAll: boolean): Promise<ApprovalInstanceDetail> {
     if (!actorId) throw new ApprovalDomainError('FORBIDDEN', '缺少当前用户上下文');
-    return this.repository.getInstance(id, actorId, canViewAll, canReassign);
+    return this.repository.getInstance(id, actorId, canViewAll);
   }
 
   /** 仅供已鉴权业务入口调用；不同场景共用提交引擎，业务资格由注册的 handler 校验。 */
@@ -96,9 +96,5 @@ export class ApprovalService {
 
   withdraw(id: string, command: ApprovalCommentCommand, audit: CommandContext) {
     return this.repository.withdraw(id, command, audit);
-  }
-
-  reassign(id: string, command: ApprovalCommentCommand, audit: CommandContext) {
-    return this.repository.reassign(id, command, audit);
   }
 }

@@ -1,5 +1,7 @@
 import { createConnection, type Connection } from 'mysql2/promise';
 import { loadWorkspaceEnv } from '@company/config';
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 /**
  * 开发/测试环境入口：确保 `DB_NAME` 指定的数据库存在。
@@ -46,7 +48,8 @@ const main = async (): Promise<void> => {
   }
 };
 
-if (process.argv[1] === new URL(import.meta.url).pathname) {
+// file URL pathname includes a leading slash before Windows drive letters.
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   main().catch((error) => {
     console.error(error);
     process.exitCode = 1;

@@ -9,13 +9,6 @@ export const APPROVAL_STEP_STATUSES = [
   'rejected',
   'cancelled',
 ] as const;
-export const APPROVAL_TASK_STATUSES = ['pending', 'approved', 'rejected', 'closed'] as const;
-export const APPROVAL_TASK_CLOSE_REASONS = [
-  'peer_decided',
-  'instance_rejected',
-  'instance_withdrawn',
-  'reassigned',
-] as const;
 export const APPROVAL_ACTION_TYPES = [
   'submitted',
   'approved',
@@ -41,12 +34,9 @@ export const APPROVAL_STEP_STATUS_LABELS = {
   rejected: '已驳回',
   cancelled: '已结束',
 } as const;
-export const APPROVAL_TASK_STATUS_LABELS = {
-  pending: '待处理',
-  approved: '已通过',
-  rejected: '已驳回',
-  closed: '已关闭',
-} as const;
+export const APPROVAL_ASSIGNEE_TYPES = ['role', 'user'] as const;
+export const APPROVAL_ASSIGNEE_TYPE = { role: 'role', user: 'user' } as const;
+export const APPROVAL_ASSIGNEE_TYPE_LABELS = { role: '角色', user: '指定用户' } as const;
 export const APPROVAL_ACTION_TYPE_LABELS = {
   submitted: '提交申请',
   approved: '节点通过',

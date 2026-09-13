@@ -1,5 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import type { ApprovalRoleOption, SystemRoleOption, UserOption } from '@company/contracts';
+import type {
+  ApprovalActorEligibility,
+  ApprovalRoleOption,
+  SystemRoleOption,
+  UserOption,
+} from '@company/contracts';
 import { RbacRepository } from './ports/rbac.repository.js';
 
 @Injectable()
@@ -28,7 +33,16 @@ export class IdentityDirectoryService {
     return ids.length === 0 ? Promise.resolve([]) : this.repository.listRoleReferencesByIds(ids);
   }
 
-  listApprovalEligibleUserIds(roleId: string): Promise<string[]> {
+  listApprovalEligibleUserIds(roleId?: string): Promise<string[]> {
     return this.repository.listApprovalEligibleUserIds(roleId);
+  }
+
+  getApprovalActorEligibility(userId: string): Promise<ApprovalActorEligibility> {
+    return this.repository.getApprovalActorEligibility(userId);
+  }
+
+  async listApprovalUserOptions(): Promise<UserOption[]> {
+    const ids = await this.repository.listApprovalEligibleUserIds();
+    return this.listUserReferencesByIds(ids);
   }
 }

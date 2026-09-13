@@ -31,7 +31,7 @@ API 的运行时构建和开发启动不编译相邻测试文件；测试通过 
 
 ## 业务 MySQL Integration
 
-现有 `test:production:mysql` 命令覆盖根 `tests/integration` 下全部真实 MySQL 套件，包括 Production、Identity、审批 BOM 闭环和 BOM 字段移除迁移；命令名称不限制测试目录。
+现有 `test:production:mysql` 命令覆盖根 `tests/integration` 下全部真实 MySQL 套件，包括 Production、Identity、审批 BOM 闭环和审批/产品迁移；命令名称不限制测试目录。
 
 真实 MySQL 套件通过根命令运行：
 
@@ -47,6 +47,10 @@ corepack pnpm test:production:mysql
 3. 数据库名必须以 `_test` 结尾；命令会在任何 migration 或清理前失败关闭。
 4. 套件先构建运行时依赖的 workspace，再复用 `db:init` 初始化专用库并运行 `tests/integration`。
 5. 本地 WSL Compose 默认使用宿主 `3307` 到容器 `3306`；CI 服务容器使用 `3306`。完整环境变量示例见根 [README](../README.md#数据库命令)。
+
+Docker 不是执行前提。已有本机 MySQL 服务时直接使用其实际主机和端口，临时将 `DB_*` 与 `TEST_DB_*` 同时指向独立测试库后运行上述命令；不要仅为测试改写常规 `.env` 或把开发库当作清理目标。`test:production:mysql` 自行初始化测试库，无需执行启动容器的 `infra:init`。
+
+审批回归以 [ADR-0008](adr/0008-approval-node-assignees.md) 的节点共享待办为准：相邻测试覆盖角色/指定用户契约、接口入口权限、客户端授权字段拒绝、候选解析与配置/待办交互；真实 MySQL 覆盖成员变化、指定用户资格、分页前过滤、实际决定者历史访问、并发决定、事务回滚、BOM 冻结和迁移约束。角色节点不以历史通知或个人任务作为处理资格。通知模块及提交后钩子仍未实施，不把审批测试作为通知投递保证。
 
 库存事务测试删除 fixture 流水时，只允许使用以 `_test` 或 `_ci` 结尾的专用库，并在独占连接上短暂设置 `@company_inventory_test_cleanup = 1`。删除必须限定当前 fixture，随后立即清空会话变量；该机制不得用于开发、演示或生产数据库。
 

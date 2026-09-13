@@ -4,6 +4,8 @@ import type {
   ApprovalInstanceListItem,
   ApprovalRoleOption,
   ApprovalSceneItem,
+  ApprovalFlowStep,
+  UserOption,
 } from '@company/contracts';
 
 export const bomScene = (): ApprovalSceneItem => ({
@@ -27,10 +29,15 @@ export const roles = (): ApprovalRoleOption[] => [
   { id: 'role-old', name: '已停用角色', code: 'OLD', eligibleUserCount: 0 },
 ];
 
+export const users = (): UserOption[] => [
+  { id: 'user-2', displayName: '审批人' },
+  { id: 'user-3', displayName: '指定审批人' },
+];
+
 export const flowDetail = (
   options: { draft?: boolean; empty?: boolean } = {},
 ): ApprovalFlowDetail => {
-  const steps = options.empty
+  const steps: ApprovalFlowStep[] = options.empty
     ? []
     : [
         {
@@ -38,16 +45,22 @@ export const flowDetail = (
           nodeCode: 'technical',
           stepNo: 1,
           name: '技术审核',
+          assigneeType: 'role',
           roleId: 'role-tech',
           roleName: '技术审核',
+          assigneeUserId: null,
+          assigneeUserName: null,
         },
         {
           id: 'step-2',
           nodeCode: 'owner',
           stepNo: 2,
           name: '负责人审核',
+          assigneeType: 'role',
           roleId: 'role-owner',
           roleName: '负责人审核',
+          assigneeUserId: null,
+          assigneeUserName: null,
         },
       ];
   const published = {
@@ -124,37 +137,31 @@ export const instanceDetail = (
       id: 'step-1',
       stepNo: 1,
       name: '技术审核',
+      assigneeType: 'role',
       roleId: 'role-tech',
       roleName: '技术审核',
+      assigneeUserId: null,
+      assigneeUserName: null,
       status: 'pending',
-      assignmentRound: 1,
       blockedReason: null,
       activatedAt: '2026-09-10T10:00:00+08:00',
       endedAt: null,
-      tasks: [
-        {
-          id: 'task-1',
-          assigneeId: 'user-2',
-          assigneeName: '审批人',
-          assignmentRound: 1,
-          status: 'pending',
-          closeReason: null,
-          endedAt: null,
-        },
-      ],
+      eligibleUsers: [{ id: 'user-2', displayName: '审批人' }],
     },
     {
       id: 'step-2',
       stepNo: 2,
       name: '负责人审核',
+      assigneeType: 'role',
       roleId: 'role-owner',
       roleName: '负责人审核',
+      assigneeUserId: null,
+      assigneeUserName: null,
       status: 'waiting',
-      assignmentRound: 0,
       blockedReason: null,
       activatedAt: null,
       endedAt: null,
-      tasks: [],
+      eligibleUsers: [],
     },
   ],
   actions: [
@@ -169,9 +176,8 @@ export const instanceDetail = (
       createdAt: '2026-09-10T10:00:00+08:00',
     },
   ],
-  myTaskId: 'task-1',
+  currentStepId: 'step-1',
   canApprove: true,
   canWithdraw: false,
-  canReassign: false,
   ...overrides,
 });

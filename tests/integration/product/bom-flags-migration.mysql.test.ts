@@ -6,6 +6,7 @@ import {
   type RowDataPacket,
 } from '../../../apps/api/node_modules/mysql2/promise.js';
 import { randomBytes } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import { readFile, readdir } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -457,7 +458,7 @@ const snapshotBomFixture = async (
 
 const runDemoSeed = async (database: string): Promise<void> => {
   const result = spawnSync(process.execPath, ['packages/database/dist/seed-demo.js'], {
-    cwd: REPO_ROOT.pathname,
+    cwd: fileURLToPath(REPO_ROOT),
     encoding: 'utf8',
     env: {
       ...process.env,

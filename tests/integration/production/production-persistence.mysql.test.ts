@@ -98,6 +98,13 @@ describeMysql('Production MySQL persistence', () => {
         fixture.productCategoryId,
         fixture.materialCategoryId,
       ]);
+      await pool.execute('DELETE FROM http_idempotency_records WHERE idempotency_key LIKE ?', [
+        `${fixture.token}%`,
+      ]);
+      await pool.execute('DELETE FROM operation_logs WHERE request_id LIKE ?', [
+        `${fixture.token}%`,
+      ]);
+      await pool.execute('DELETE FROM users WHERE id=?', [fixture.actorId]);
     }
     await pool?.end();
   });
@@ -1122,6 +1129,11 @@ type DispositionRow = RowDataPacket & {
 
 const createFixture = async (pool: Pool): Promise<Fixture> => {
   const token = `production-test-${Date.now()}-${process.pid}`;
+  const actorId = await insert(
+    pool,
+    'INSERT INTO users (username,password_hash,display_name,status) VALUES (?,?,?,1)',
+    [`${token}-actor`, 'hash', `${token} actor`],
+  );
   const productCategoryId = await insert(
     pool,
     'INSERT INTO product_categories (category_code,category_name,item_kind) VALUES (?,?,?)',
@@ -1145,12 +1157,12 @@ const createFixture = async (pool: Pool): Promise<Fixture> => {
   const materialVariant1Id = await insert(
     pool,
     "INSERT INTO material_variants(material_id,major_version,minor_version,variant_code,created_by,updated_by) VALUES (?, 'v1','A',?,?,?)",
-    [materialId, `${token}-material-v1-A`, 1, 1],
+    [materialId, `${token}-material-v1-A`, actorId, actorId],
   );
   const materialVariant2Id = await insert(
     pool,
     "INSERT INTO material_variants(material_id,major_version,minor_version,variant_code,created_by,updated_by) VALUES (?, 'v2','A',?,?,?)",
-    [materialId, `${token}-material-v2-A`, 1, 1],
+    [materialId, `${token}-material-v2-A`, actorId, actorId],
   );
   const productMaterialId = await insert(
     pool,
@@ -1200,10 +1212,6 @@ const createFixture = async (pool: Pool): Promise<Fixture> => {
      VALUES (?,?,?,?,?,?,?)`,
     [batchId, routeStepId, 1, `${token}-step`, 'Production test step', 0, 'pcs'],
   );
-  const [[actor]] = await pool.query<(RowDataPacket & { id: number })[]>(
-    'SELECT id FROM users ORDER BY id LIMIT 1',
-  );
-  if (!actor) throw new Error('Production MySQL test requires seeded users');
   return {
     token,
     requestId: `${token}-request`,
@@ -1219,7 +1227,7 @@ const createFixture = async (pool: Pool): Promise<Fixture> => {
     workOrderId,
     batchId,
     batchStepRecordId,
-    actorId: actor.id,
+    actorId,
     concurrentBatchNo: `${token}-concurrent`,
   };
 };

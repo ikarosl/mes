@@ -1,6 +1,6 @@
 # Approval 数据库设计
 
-> [返回模块](../README.md)。本章对应 `202609100001-approval-bom-pilot`，只定义七张审批表，不包含通知与工单字段。
+> [返回模块](../README.md)。本章对应 `202609100001-approval-bom-pilot` 及 `202609120001-approval-node-assignees`，定义六张审批表，不包含通知与工单字段。`approval_instance_steps` 是唯一节点待办事实，个人任务表已移除。
 
 ## 2. 公共字段和约束
 
@@ -59,7 +59,7 @@
 
 约束：`UNIQUE(definition_id,version_no)`、`UNIQUE(id,definition_id)`、`UNIQUE(definition_id,draft_slot)`；`version_no > 0`；`published` 必须同时有发布人和时间，其他状态必须都为空。旧版即使不再被当前指针选中仍保持 `published`，不改其内容。
 
-编辑节点须先锁定义、再锁此版本并核对草稿 ID 和乐观锁，保存完整顺序后递增 `version`；发布按定义、版本的固定顺序锁定，检查至少一级、连续顺序、角色有效和各级当前均有合格人员，再原子写发布状态与定义指针。新版本号在定义锁内分配。`discarded` 为保留状态，本次未开放废弃草稿接口，不物理删除或覆盖已发布版本。
+编辑节点须先锁定义、再锁此版本并核对草稿 ID 和乐观锁，保存完整顺序后递增 `version`；发布按定义、版本的固定顺序锁定，检查至少一级、连续顺序、角色或指定用户有效和各级当前均有合格人员，再原子写发布状态与定义指针。新版本号在定义锁内分配。`discarded` 为保留状态，本次未开放废弃草稿接口，不物理删除或覆盖已发布版本。
 
 ### 3.4 `approval_flow_steps`
 
@@ -72,13 +72,17 @@
 | `node_code` | `VARCHAR(64) NOT NULL` | 服务端生成的稳定节点编码，不随排序改变 |
 | `step_no` | `INT NOT NULL` | 正整数顺序 |
 | `name` | `VARCHAR(100) NOT NULL` | 节点名称 |
-| `role_id` | `BIGINT UNSIGNED NOT NULL` | 审批角色 FK roles |
+| `assignee_type` | `VARCHAR(20) NOT NULL` | `role/user`，每级二选一 |
+| `role_id` | `BIGINT UNSIGNED NULL` | 角色节点的审批角色 FK roles |
+| `assignee_user_id` | `BIGINT UNSIGNED NULL` | 用户节点的指定用户 FK users |
 | `active_step_no` | 生成列，可空 | 未软删除时等于 `step_no`，否则为空，仅约束当前排序位置 |
 | 配置审计 C | 见 §2 | 写入仍以版本头为聚合并发边界 |
 
 约束：`UNIQUE(flow_version_id,node_code)` 永久不复用、不含软删除标志；`UNIQUE(flow_version_id,active_step_no)` 约束有效排序位置，位置不是稳定节点身份；`UNIQUE(id,flow_version_id)`、`CHECK(step_no > 0)`。节点配置仅能在所属版本为草稿时修改；发布后的节点禁止任何编辑或删除。草稿移除节点使用软删除，恢复同一节点复用原 ID 和编码；发布和实例化只采用有效节点。排序由完整草稿更新统一实现，避免逐行换位撞唯一键。
 
-首期每级固定任意一人通过，不增加可编辑 `approval_mode`，也不建多态 `assignee_type/assignee_id` 或审批组表。
+CHECK 保证角色节点只填写 `role_id`，用户节点只填写 `assignee_user_id`，两个引用不能同时存在或同时为空。`(assignee_user_id,flow_version_id)` 支持用户引用；角色沿用其外键支撑索引。不使用多态身份字段。每级任意一名合格人员明确决定；用户节点只有该指定人，没有多角色、多名指定用户、会签、认领或转交。
+
+已发布版本固定分配类型及角色/用户 ID。角色成员、账号和权限使用 Identity 公开能力实时解析；指定用户仍需账号有效并拥有审批权限，配置不会自动赋权。运行中人员恢复资格后可直接处理当前节点，不能修改在途申请的规则或将指定用户自动换成他人。
 
 ## 4. 审批申请、节点、人员和证据
 
@@ -120,36 +124,23 @@
 | `instance_id` | `BIGINT UNSIGNED NOT NULL` | 申请 FK |
 | `flow_step_id` | `BIGINT UNSIGNED NOT NULL` | 不可变已发布配置节点 FK |
 | `step_no` | `INT NOT NULL` | 本次节点顺序，须与配置一致 |
-| `status` | `VARCHAR(20) NOT NULL` | `waiting/pending/blocked/approved/rejected/cancelled` |
-| `assignment_round` | `INT NOT NULL DEFAULT 0` | 待办分派轮次，激活及重新分派时递增 |
+| `status` | `VARCHAR(20) NOT NULL` | `waiting/pending/approved/rejected/cancelled` |
 | `activated_at` | `DATETIME NULL` | 首次轮到本级的时间 |
 | `ended_at` | `DATETIME NULL` | 本级结束时间 |
-| `blocked_reason` | `VARCHAR(50) NULL` | 首期 `no_eligible_assignee` |
-| `active_slot` | 生成列，可空 | `pending/blocked` 时为 1 |
+| `active_slot` | 生成列，可空 | `pending` 时为 1 |
 | 单据审计 D | 见 §2 | 节点状态并发 |
 
-约束：`UNIQUE(instance_id,step_no)`、`UNIQUE(instance_id,flow_step_id)`、`UNIQUE(id,instance_id)`、`UNIQUE(instance_id,active_slot)`；`step_no > 0`，`assignment_round >= 0`。通过 FK 确保申请、配置节点存在，通过提交事务确保配置节点属于申请的流程版本且节点集合完整。角色和节点名称从不可变配置读取，不再复制一份可改的规则。
+约束：`UNIQUE(instance_id,step_no)`、`UNIQUE(instance_id,flow_step_id)`、`UNIQUE(id,instance_id)`、`UNIQUE(instance_id,active_slot)`；`step_no > 0`。通过 FK 确保申请、配置节点存在，通过提交事务确保配置节点属于申请的流程版本且节点集合完整。分配类型、角色/用户和节点名称从不可变配置读取，不复制一份可改的规则。
 
-每个活动申请事务提交时恰好有一个 `pending/blocked` 节点；数据库唯一键保证最多一个，“至少一个”和完整顺序由应用事务保证。其余节点为前面已通过、后面等待。终态申请没有活动节点。节点 `blocked` 时必须有原因，其他状态必须为空；终态节点有结束时间，非终态为空；未激活即取消的后续节点允许激活时间为空。
+每个活动申请事务提交时恰好有一个 `pending` 节点；数据库唯一键保证最多一个，“至少一个”和完整顺序由应用事务保证。其余节点为前面已通过、后面等待。终态申请没有活动节点。终态节点有结束时间，非终态为空；未激活即取消的后续节点允许激活时间为空。
 
-### 4.3 `approval_tasks`
+### 4.3 动态待办与访问资格
 
-每轮分派给具体用户的待办，所有者 Approval。
+每个节点只有上述一条执行记录，`approval_tasks` 及分派轮次不再存在。查询先通过 Identity 公开能力取得当前用户合格角色及是否具备审批权限，再在 Approval SQL 的分页前过滤当前 pending 节点：角色匹配或指定用户匹配。前端不能指定授权角色或用户。
 
-| 字段 | 类型及空值 | 含义 |
-| --- | --- | --- |
-| `id` | `BIGINT UNSIGNED NOT NULL` | 主键 |
-| `instance_step_id` | `BIGINT UNSIGNED NOT NULL` | 执行节点 FK |
-| `assignment_round` | `INT NOT NULL` | 所属分派轮次 |
-| `assignee_id` | `BIGINT UNSIGNED NOT NULL` | 具体用户 FK |
-| `status` | `VARCHAR(20) NOT NULL` | `pending/approved/rejected/closed` |
-| `close_reason` | `VARCHAR(50) NULL` | `peer_decided/instance_rejected/instance_withdrawn/reassigned` |
-| `ended_at` | `DATETIME NULL` | 处理或关闭时间 |
-| 单据审计 D | 见 §2 | 任务并发 |
+当前节点无合格人员时仍保存 pending；响应将该节点投影为 `blocked`，`blockedReason=no_eligible_assignee`。成员新增、移除、账号或权限变化在下一次查询及决定时生效；恢复资格无需写节点或执行重新分派。GET 不改变业务状态。
 
-约束：`UNIQUE(instance_step_id,assignment_round,assignee_id)`；索引 `(assignee_id,status,created_at,id)`；轮次正整数。`pending` 无结束时间，其余非空；仅 `closed` 有关闭原因。决定操作者必须等于 `assignee_id`，且当前仍满足本级角色及审批权限；任务轮次必须等于节点当前轮次。
-
-角色预览不产生任务；节点激活时才生成该级具体用户任务。其他候选被关闭不表示他们批准。跨级同人分别拥有不同节点任务，每次都需显式操作。重新分派关闭旧轮未结束任务、新增下一轮任务，不重新开放或改写旧任务。离职或权限撤销后的旧任务不能继续授权，但保留历史；名单恢复通过显式重新分派生效，不靠重新读角色列表悄悄改变任务归属。
+决定提交 `stepId + version`，按业务根、申请、节点顺序加锁，再检查当前节点及实时资格；同级并发只接受一次决定。申请人、实际作出批准/驳回的人员保留历史查询资格，当前活动节点的合格人员可访问当前申请。仅曾是候选人或收到通知不授予历史全文访问；流程配置权限可查看全部申请，`approval:view` 本身不授予全局访问。
 
 ### 4.4 `approval_actions`
 
@@ -161,24 +152,28 @@
 | `instance_id` | `BIGINT UNSIGNED NOT NULL` | 申请 FK |
 | `action_no` | `INT NOT NULL` | 申请内递增顺序，在申请锁内分配 |
 | `instance_step_id` | `BIGINT UNSIGNED NULL` | 相关执行节点 |
-| `task_id` | `BIGINT UNSIGNED NULL` | 人工批准/驳回所处理任务 |
+| `decision_step_id` | `BIGINT UNSIGNED` 生成列，可空 | 仅批准/驳回时取 `instance_step_id`，约束每节点最多一个有效决定 |
 | `action_type` | `VARCHAR(30) NOT NULL` | `submitted/approved/rejected/withdrawn/assignment_blocked/reassigned` |
 | `comment` | `TEXT NULL` | 意见或操作原因 |
-| `details` | `JSON NULL` | 受控事件详情，如分派轮次、当前候选用户集合与节点信息 |
+| `details` | `JSON NULL` | 受控事件详情，如节点序号、分配类型及角色/用户身份；不保存动态候选人作为授权事实 |
 | 事实审计 F | 见 §2 | 实际操作者及时间 |
 
-约束：`UNIQUE(instance_id,action_no)`、`UNIQUE(task_id)`，允许空 task 多条；组合 FK `(instance_step_id,instance_id) -> approval_instance_steps(id,instance_id)`；普通 FK `task_id -> approval_tasks.id`，并由事务校验任务属于该节点。批准/驳回必须有任务和节点；撤回、提交无任务。`action_no > 0`。驳回、重新分派须有原因，批准意见可空，仍保存操作者与时间；撤回是否填写说明作为可选输入，不因缺少说明阻止申请人撤回。
+约束：`UNIQUE(instance_id,action_no)`、`UNIQUE(decision_step_id)`；组合 FK `(instance_step_id,instance_id) -> approval_instance_steps(id,instance_id)`。批准/驳回必须有节点；撤回、提交不关联节点。`action_no > 0`。驳回须有原因，批准意见可空，仍保存操作者与时间；撤回说明为可选。历史 `assignment_blocked/reassigned` 事件只保留读取，当前命令不再生成；已有实际决定及证据不改写。
 
 申请内的 `approved` 事件表示一次节点决定，是否最终通过由申请状态及完整节点历史判断。该表不替代 `operation_logs`；业务事件、状态写入及成功审计同事务。证据出错通过撤回或驳回后新申请修正，不更新旧意见。
 
 
 ## 当前实现补充
 
-- 配置审计 C 的操作者列可空，应用写入时总是填写；运行申请、节点、任务和不可变动作的 created_by 非空。任务和节点的 updated_by 可空，后续命令更新时填写。
+- 配置审计 C 的操作者列可空，应用写入时总是填写；运行申请、节点和不可变动作的 created_by 非空。节点的 updated_by 可空，后续命令更新时填写。
 - scene_code、subject_type 的语义由代码 Registry 校验；SQL 的 `subject_type` 为扩展标识，不建多态 FK。
-- 暂限每流程 1–20 个顺序节点，非固定两级。每级单角色 ANY，无会签或条件路由。新草稿节点可从已发布内容复制，稳定 node_code 仅在所属版本内唯一；客户端未知节点编码需属于当前已发布版本，否则拒绝。
+- 暂限每流程 1–20 个顺序节点，非固定两级。每级选择一个角色或一个指定用户，无会签或条件路由。新草稿节点可从已发布内容复制，稳定 node_code 仅在所属版本内唯一；客户端未知节点编码需属于当前已发布版本，否则拒绝。
 - `policy_snapshot` 固定记录 any、允许自审及同人跨级，本次没有编辑策略入口；未来新增策略必须同时实现运行时解释，不只写配置。
-- 重新分派旧轮任务关闭，新轮按当前同角色合格成员生成；无成员时节点 blocked 并保留记录。读取在运行中成员失权时派生 blocked 提示，不在 GET 更新表。
+- 角色成员动态变化，用户节点固定指定人；无人可审时派生 blocked 提示，不在 GET 更新表，不保留重新分派端点或权限。
 - 草稿排序先软删除全部当前行，再按提交顺序恢复或新增，同事务避免唯一顺序冲突；已发布配置不更新。
-- 审批动作编号在申请锁内递增。approved/rejected 的动作必须带节点和任务 FK；非决定动作没有 task_id。
+- 审批动作编号在申请锁内递增。approved/rejected 的动作必须关联节点；生成列唯一键限制同一节点的决定数量。
 - 本次不建通知表、BOM 版本表、场景目录表或用户可编辑回调表。
+
+`202609120001` 追加迁移扩展角色/用户配置、移除个人任务和关联字段，将旧 blocked 节点转为 pending，并保留实际动作和受审证据。升级须暂停 Approval/Product 写入；down 要求没有申请且没有指定用户节点配置，不能重建已删除的个人分派历史。开发库可完全重置并按统一 migration/seed 恢复，不建设双写或影子表。
+
+回滚必须先执行 `202609130001` 的准备 down，再连续执行 `202609120001` down；准备过程带相同的数据守卫，通过分开变更角色外键与列可空性规避 MySQL 的表重建限制。当前应用仍要求 `role_id` 可空，准备状态不用于启动应用；取消回滚时先重新执行准备迁移的 up。具体顺序与失败恢复见[迁移安全](../../../../../../packages/database/docs/migration-safety.md)。

@@ -13,7 +13,7 @@
 
 - Identity/System：认证、RBAC、操作日志和管理端权限基础设施。
 - Product：产品分类、产品主数据、产品物料、技术文件、工序和工艺路线。
-- Approval：BOM 场景的角色顺序多级配置、申请、待办与决定；工单审批及 Notification 尚未接入。
+- Approval：BOM 场景的顺序多级配置（角色或指定用户）、申请、节点共享待办与决定；角色成员实时解析，工单审批及 Notification 尚未接入。
 - Production：生产工单、生产批次、工序报工追溯，以及其依赖的生产物料需求、分配、领料出库、生产退料和库存盘点链路；按状态机分阶段迁移。
 
 通用 Inventory（其他出入库、报废）、Quality（检验）和 Traceability（全流程追溯）只能在后续迁移阶段明确更新后追加，不得仅凭已有 UI 原型提前实现。当前盘点仅覆盖现有 `item_batch × stock_status` 账本，退料仅覆盖已确认生产领料并固定释放到公共可用库存。
@@ -103,7 +103,7 @@ Identity 的密码算法和令牌签发/验证通过 `PasswordHasher`、`TokenSe
 | Identity/System  | departments、users、roles、permissions、关联表、refresh_tokens                                                                           |
 | Product          | product_categories、products、materials、material_variants、product_materials、technical_files、process_steps、process_routes 及关联表                                 |
 | Production       | work_orders、work_order_material_versions、production_batches、batch_step_records、batch_step_reports、batch_step_abnormal_dispositions、rework_records、batch_step_scrap_records、batch_step_scrap_reproduction_authorization、production_scrap_supplement_plan、production_scrap_supplement_plan_line、production_material_supplement、production_material_requirement_basis、production_manual_demand_addition、production_item_demand、production_item_allocation、production_short_batch_authorization、production_short_batch_authorization_detail、item_scrap、inbound_order、inbound_detail、outbound_order、outbound_detail、return_order、return_detail、stock_check_order、stock_check_detail，以及当前生产库存切片的 item_batch、inventory_transaction 和可重建查询投影 inventory_batch_balance、inventory_material_variant_balance |
-| Approval | approval_flow_definitions、approval_flow_versions、approval_flow_steps、approval_instances、approval_instance_steps、approval_tasks、approval_actions |
+| Approval | approval_flow_definitions、approval_flow_versions、approval_flow_steps、approval_instances、approval_instance_steps、approval_actions |
 | 平台审计基础设施 | operation_logs                                                                                                                           |
 | 平台幂等基础设施 | http_idempotency_records（已落地）                                                                                                       |
 | common           | 不拥有业务表                                                                                                                             |
@@ -148,6 +148,8 @@ Controller、Service 和 SQL 不得混写在同一文件。
 - 通用 HTTP、登录、401/403 和失败日志采用 best-effort；写日志失败不能覆盖原响应或原异常。
 - 禁止 fire-and-forget 核心写操作。
 - 跨多个业务模块的写入在出现真实用例前不预建分布式事务；优先由一个明确用例通过公开 Facade 编排。
+
+后续通用 Notification 的消息、收件人仍与触发业务和成功审计同事务落库；仅外部通知扩展钩子在最外层事务确认提交成功、释放连接后异步调度，业务响应不等待其完成。回滚不触发，钩子异常独立捕获，不能把核心写入移入钩子。Notification 拥有通用发布与提交后通知端口，事务基础设施只管理通用生命周期；Approval 只是首个调用方。该模块和钩子尚未实施，默认空实现及 best-effort 边界见 [ADR-0007](adr/0007-general-notification-boundaries.md) 和[通知设计](notification-design.md)。
 
 ## 7. 基础设施
 

@@ -161,7 +161,6 @@
       @approve="approve"
       @reject="reject"
       @withdraw="withdraw"
-      @reassign="reassign"
     />
   </main>
 </template>
@@ -202,16 +201,14 @@ const {
 
 const route = useRoute();
 const auth = useAuthStore();
-const canViewAll = computed(() =>
-  auth.can([PERMISSIONS.approval.configure, PERMISSIONS.approval.reassign]),
-);
+const canViewAll = computed(() => auth.can(PERMISSIONS.approval.configure));
 const allScopeLabel = computed(() => (canViewAll.value ? '全部申请' : '与我相关'));
 const scopeDescription = computed(() => {
   if (query.scope === 'todo') return '仅显示当前可处理的待办，已结束的申请请切换查看范围';
   if (query.scope === 'mine') return '查看我发起的申请及完整处理记录，包含已结束的申请';
   return canViewAll.value
     ? '查看全部状态的申请和处理记录'
-    : '查看我发起或曾分派给我的申请，包含已结束的申请和处理记录';
+    : '查看我发起、实际审批过或当前可处理的申请';
 });
 const changeScope = (): void => {
   if (query.scope === 'todo') query.status = '';
@@ -254,23 +251,21 @@ const openDetail = async (id: string): Promise<void> => {
   }
 };
 
-const execute = async (
-  kind: 'approve' | 'reject' | 'withdraw' | 'reassign',
-  comment: string,
-): Promise<void> => {
+const execute = async (kind: 'approve' | 'reject' | 'withdraw', comment: string): Promise<void> => {
   const current = detail.value;
   if (!current || submitting.value) return;
+  const token = detailRequestToken;
   submitting.value = true;
   try {
     let result: ApprovalInstanceDetail;
     if (kind === 'approve' || kind === 'reject') {
-      if (!current.myTaskId) {
+      if (!current.currentStepId || !current.canApprove) {
         EMessage.warning('当前账号没有可处理的审批待办');
         return;
       }
       result = await approvalApi[kind](current.id, {
         version: current.version,
-        taskId: current.myTaskId,
+        stepId: current.currentStepId,
         ...(comment ? { comment } : {}),
       });
     } else {
@@ -279,27 +274,27 @@ const execute = async (
         ...(comment ? { comment } : {}),
       });
     }
-    if (detail.value?.id === current.id && detailVisible.value) detail.value = result;
+    if (token === detailRequestToken && detailVisible.value) detail.value = result;
     await load();
     EMessage.success(
-      kind === 'approve'
-        ? '当前节点已通过'
-        : kind === 'reject'
-          ? '申请已驳回'
-          : kind === 'withdraw'
-            ? '申请已撤回'
-            : '当前节点已重新分派',
+      kind === 'approve' ? '当前节点已通过' : kind === 'reject' ? '申请已驳回' : '申请已撤回',
     );
   } catch (error) {
     EMessage.error(error, '审批操作失败');
     // 版本冲突、资格变化等错误后重读详情，避免继续以旧状态操作。
-    if (detail.value?.id === current.id) {
+    if (token === detailRequestToken && detailVisible.value) {
       try {
-        detail.value = await approvalApi.instance(current.id);
+        const refreshed = await approvalApi.instance(current.id);
+        if (token === detailRequestToken && detailVisible.value) detail.value = refreshed;
       } catch (reloadError) {
-        EMessage.error(reloadError, '审批详情刷新失败');
+        if (token === detailRequestToken) {
+          detail.value = null;
+          detailVisible.value = false;
+          EMessage.error(reloadError, '审批详情刷新失败');
+        }
       }
     }
+    await load();
   } finally {
     submitting.value = false;
   }
@@ -308,7 +303,6 @@ const execute = async (
 const approve = (comment: string): Promise<void> => execute('approve', comment);
 const reject = (comment: string): Promise<void> => execute('reject', comment);
 const withdraw = (comment: string): Promise<void> => execute('withdraw', comment);
-const reassign = (comment: string): Promise<void> => execute('reassign', comment);
 
 watch(
   () => [route.query.instanceId, route.query.subjectId],

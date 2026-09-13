@@ -32,6 +32,8 @@ docs/         # 迁移运行与安全说明
 
 数据库变更只能追加成对 migration，已经执行的文件不可修改。详细规则见[迁移顺序](docs/90-migration-order.md)、[迁移门禁](docs/migration-readiness.md)和[迁移安全](docs/migration-safety.md)。
 
+`db:ensure` 的直接执行判断使用本机文件路径，Windows 与 Linux 均会实际创建目标库；通过导入复用 `ensureDatabaseExists` 时不自动连接数据库。
+
 ## 迁移登记表 `_schema_migrations`
 
 本表由本包的[迁移运行器](src/migrate.ts)在执行版本化 migration 前通过 `CREATE TABLE IF NOT EXISTS` 创建，属于数据库基础设施，不归任何业务模块所有。使用 InnoDB、`utf8mb4`；建表语句未显式指定排序规则。

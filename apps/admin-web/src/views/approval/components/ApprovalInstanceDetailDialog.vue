@@ -28,7 +28,7 @@
         :closable="false"
         show-icon
         class="blocked-alert"
-        title="当前节点暂无合格审批人，申请已保留。补齐角色成员后，由有权限的管理人员执行重新分派。"
+        title="当前节点暂无合格审批人，申请已保留。角色成员或指定用户恢复审批资格后即可继续处理。"
       />
 
       <el-descriptions
@@ -78,7 +78,11 @@
               <div>
                 <span class="step-number">{{ step.stepNo }}</span>
                 <strong>{{ step.name }}</strong>
-                <span class="step-role">{{ step.roleName }}</span>
+                <span class="step-role"
+                  >{{ APPROVAL_ASSIGNEE_TYPE_LABELS[step.assigneeType] }}：{{
+                    step.roleName ?? step.assigneeUserName
+                  }}</span
+                >
               </div>
               <el-tag
                 :type="stepStatusMeta(step.status).type"
@@ -91,19 +95,18 @@
               v-if="step.blockedReason"
               class="step-blocked"
             >
-              暂无合格审批人，等待重新分派
+              暂无合格审批人，等待审批资格恢复
             </div>
             <div
-              v-if="step.tasks.length"
+              v-if="step.eligibleUsers.length"
               class="task-list"
             >
               <span
-                v-for="task in step.tasks"
-                :key="task.id"
+                v-for="user in step.eligibleUsers"
+                :key="user.id"
                 class="task-chip"
-                :class="{ 'task-current': task.id === detail.myTaskId }"
               >
-                {{ task.assigneeName }} · {{ taskStatusLabel(task.status) }}
+                {{ user.displayName }} · 当前可处理
               </span>
             </div>
           </div>
@@ -195,13 +198,7 @@
           :rows="3"
           maxlength="500"
           show-word-limit
-          :placeholder="
-            detail.canApprove
-              ? '审批意见（驳回时必填）'
-              : detail.canReassign
-                ? '重新分派原因（必填）'
-                : '撤回说明（可选）'
-          "
+          :placeholder="detail.canApprove ? '审批意见（驳回时必填）' : '撤回说明（可选）'"
         />
         <div class="operation-actions">
           <el-button
@@ -217,13 +214,6 @@
             :loading="submitting"
             @click="reject"
             >驳回申请</el-button
-          >
-          <el-button
-            v-if="detail.canReassign"
-            type="warning"
-            :loading="submitting"
-            @click="reassign"
-            >重新分派</el-button
           >
           <el-button
             v-if="detail.canWithdraw"
@@ -257,7 +247,7 @@ import {
   APPROVAL_ACTION_TYPE_LABELS,
   APPROVAL_INSTANCE_STATUS_LABELS,
   APPROVAL_STEP_STATUS_LABELS,
-  APPROVAL_TASK_STATUS_LABELS,
+  APPROVAL_ASSIGNEE_TYPE_LABELS,
   APPROVAL_SCENE_CODES,
 } from '@company/constants';
 import type {
@@ -265,7 +255,6 @@ import type {
   ApprovalInstanceDetail,
   ApprovalInstanceStatus,
   ApprovalStepStatus,
-  ApprovalTaskStatus,
 } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
 import { EMessage } from '../../../utils/message';
@@ -283,7 +272,6 @@ const emit = defineEmits<{
   (event: 'approve', comment: string): void;
   (event: 'reject', comment: string): void;
   (event: 'withdraw', comment: string): void;
-  (event: 'reassign', comment: string): void;
 }>();
 
 const comment = ref('');
@@ -291,7 +279,7 @@ const canOperate = computed(() =>
   Boolean(
     props.detail &&
     props.detail.status === 'pending' &&
-    (props.detail.canApprove || props.detail.canWithdraw || props.detail.canReassign),
+    (props.detail.canApprove || props.detail.canWithdraw),
   ),
 );
 const currentStepId = computed(
@@ -333,7 +321,6 @@ const stepStatusMeta = (status: ApprovalStepStatus) =>
               ? 'primary'
               : 'info',
   }) as const;
-const taskStatusLabel = (status: ApprovalTaskStatus) => APPROVAL_TASK_STATUS_LABELS[status];
 const actionLabel = (type: ApprovalActionType) => APPROVAL_ACTION_TYPE_LABELS[type];
 const sceneLabel = (sceneCode: string) =>
   sceneCode === APPROVAL_SCENE_CODES.bom ? 'BOM 审批' : sceneCode;
@@ -356,10 +343,6 @@ const reject = (): void => {
   if (value) emit('reject', value);
 };
 const withdraw = (): void => emit('withdraw', comment.value.trim());
-const reassign = (): void => {
-  const value = requireComment('重新分派必须填写原因');
-  if (value) emit('reassign', value);
-};
 </script>
 
 <style scoped>
@@ -470,11 +453,6 @@ const reassign = (): void => {
   background: #f3f4f6;
   color: #6b7280;
   font-size: 12px;
-}
-.task-chip.task-current {
-  background: #dbeafe;
-  color: #1d4ed8;
-  font-weight: 600;
 }
 .bom-table :deep(.el-table__header th) {
   background: #f9fafb;
