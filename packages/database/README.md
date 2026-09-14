@@ -1,11 +1,12 @@
 # packages/database
 
-数据库基础设施包，负责 MySQL 连接池、事务上下文、migration/seed 运行器和数据库初始化命令。它集中承载 migration 文件，但不拥有 Identity、Product、Production 或 Approval 的业务表设计。
+数据库基础设施包，负责 MySQL 连接池、事务上下文、migration/seed 运行器和数据库初始化命令。它集中承载 migration 文件，但不拥有 Identity、Product、Production、Approval 或 Notification 的业务表设计。
 
 ## 导出能力
 
 - `createDatabasePool`：按统一配置创建 MySQL 连接池，并把会话时区设置为 `+08:00`。
 - `withTransaction`：提供可嵌套复用的单数据库事务边界。
+- `registerAfterCommit`：仅在活动事务登记通用任务；最外层成功提交及释放连接后异步调度，回滚丢弃，清除事务上下文并隔离任务错误。
 - `withActiveConnection`：在已有事务中复用活动连接，否则使用连接池。
 - `DatabaseError`：标记数据库边界和事务内已标记连接的查询错误，保留原始 `cause` 供上层分类。
 
@@ -54,6 +55,7 @@ migration 的物理位置不表示业务所有权。业务表设计跟随代码�
 
 - [Identity 数据库设计](../../apps/api/src/modules/identity/docs/database.md)
 - [Approval 数据库设计](../../apps/api/src/modules/approval/docs/database.md)
+- [Notification 数据库设计](../../apps/api/src/modules/notification/docs/database.md)
 - [Product 数据库设计](../../apps/api/src/modules/product/docs/database.md)
 - [Production 数据库设计](../../apps/api/src/modules/production/docs/database/README.md)
 - [平台操作审计](../../apps/api/docs/audit.md)

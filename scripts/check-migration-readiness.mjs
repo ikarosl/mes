@@ -5,6 +5,8 @@ import path from 'node:path';
 const root = process.cwd();
 const migrationsDir = path.join(root, 'packages/database/migrations');
 const allowedTables = new Set([
+  'notifications',
+  'notification_recipients',
   'approval_flow_definitions',
   'approval_flow_versions',
   'approval_flow_steps',

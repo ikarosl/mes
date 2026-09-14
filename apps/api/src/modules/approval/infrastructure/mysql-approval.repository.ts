@@ -25,6 +25,7 @@ import { ApprovalDomainError } from '../domain/approval.errors.js';
 import { ApprovalSubjectHandlerRegistry } from '../application/approval-subject-handler.registry.js';
 import { ApprovalRepository } from '../application/ports/approval.repository.js';
 import { resolveAssigneeIds, type AssigneeRuleRow } from './approval-assignees.js';
+import { ApprovalNotifications } from './approval-notifications.js';
 
 type Db = Pool | PoolConnection;
 type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'withdrawn';
@@ -79,6 +80,7 @@ export class MysqlApprovalRepository extends ApprovalRepository {
     private readonly identity: IdentityDirectoryService,
     private readonly handlers: ApprovalSubjectHandlerRegistry,
     private readonly flows: MysqlApprovalFlowRepository,
+    private readonly notifications: ApprovalNotifications,
   ) {
     super();
   }
@@ -198,7 +200,7 @@ export class MysqlApprovalRepository extends ApprovalRepository {
       const preparation = await handler.prepareForApproval(subjectId, expectedVersion, audit);
       const { flow, steps } = await this.flows.lockPublishedFlow(connection, scene.code);
       // 提交时检查各级资格；只激活首级，不持久化候选人员名单。
-      await this.resolveCandidates(steps);
+      const candidates = await this.resolveCandidates(steps);
       const instanceNo = this.newInstanceNo();
       const [insert] = await connection.execute<ResultSetHeader>(
         `INSERT INTO approval_instances
@@ -254,7 +256,7 @@ export class MysqlApprovalRepository extends ApprovalRepository {
         boundVersion,
         instanceId,
       ]);
-      await this.insertAction(connection, {
+      const actionId = await this.insertAction(connection, {
         instanceId,
         actionNo: 1,
         stepId: null,
@@ -263,6 +265,21 @@ export class MysqlApprovalRepository extends ApprovalRepository {
         details: { flowVersionNo: flow.version_no, subjectVersion: boundVersion },
         actorId: audit.actorId!,
       });
+      const firstStep = (await this.instanceSteps(connection, instanceId)).find(
+        (step) => step.step_no === 1,
+      )!;
+      await this.notifications.publish(
+        {
+          actionId,
+          instanceId,
+          instanceTitle: preparation.title,
+          eventType: 'approval_task_assigned',
+          recipientIds: candidates.get(1)!,
+          stepId: String(firstStep.id),
+          stepName: firstStep.name,
+        },
+        audit,
+      );
       await writeApprovalAudit(connection, audit, 'approval.submit', String(insert.insertId), {
         sceneCode: scene.code,
         subjectId,
@@ -304,6 +321,10 @@ export class MysqlApprovalRepository extends ApprovalRepository {
       if (String(instance.created_by) !== audit.actorId)
         throw new ApprovalDomainError('FORBIDDEN', '只有申请人可以撤回审批');
       this.assertInstanceVersion(instance, command.version);
+      const currentStep = (await this.instanceSteps(connection, id, true)).find(
+        (step) => step.status === 'pending',
+      );
+      const recipientIds = currentStep ? await resolveAssigneeIds(this.identity, currentStep) : [];
       await connection.execute(
         `UPDATE approval_instance_steps
             SET status='cancelled',ended_at=NOW(),updated_by=?,version=version+1
@@ -323,7 +344,7 @@ export class MysqlApprovalRepository extends ApprovalRepository {
           WHERE id=? AND status='pending' AND version=?`,
         [audit.actorId, instance.id, command.version],
       );
-      await this.insertAction(connection, {
+      const actionId = await this.insertAction(connection, {
         instanceId: String(instance.id),
         actionNo: await this.nextActionNo(connection, instance.id),
         stepId: null,
@@ -332,6 +353,16 @@ export class MysqlApprovalRepository extends ApprovalRepository {
         details: null,
         actorId: audit.actorId!,
       });
+      await this.notifications.publish(
+        {
+          actionId,
+          instanceId: id,
+          instanceTitle: instance.title,
+          eventType: 'approval_withdrawn',
+          recipientIds,
+        },
+        audit,
+      );
       await writeApprovalAudit(connection, audit, 'approval.withdraw', String(instance.id), {
         status: 'withdrawn',
       });
@@ -363,7 +394,7 @@ export class MysqlApprovalRepository extends ApprovalRepository {
         `UPDATE approval_instance_steps SET status=?,ended_at=NOW(),updated_by=?,version=version+1 WHERE id=?`,
         [decision, audit.actorId, step.id],
       );
-      await this.insertAction(connection, {
+      const actionId = await this.insertAction(connection, {
         instanceId: id,
         actionNo: await this.nextActionNo(connection, instance.id),
         stepId: String(step.id),
@@ -392,6 +423,16 @@ export class MysqlApprovalRepository extends ApprovalRepository {
           audit,
         );
         await this.endInstance(connection, instance, 'rejected', audit);
+        await this.notifications.publish(
+          {
+            actionId,
+            instanceId: id,
+            instanceTitle: instance.title,
+            eventType: 'approval_rejected',
+            recipientIds: [String(instance.created_by)],
+          },
+          audit,
+        );
       } else {
         const next = steps.find((row) => row.step_no === step.step_no + 1);
         if (!next) {
@@ -403,6 +444,16 @@ export class MysqlApprovalRepository extends ApprovalRepository {
             audit,
           );
           await this.endInstance(connection, instance, 'approved', audit);
+          await this.notifications.publish(
+            {
+              actionId,
+              instanceId: id,
+              instanceTitle: instance.title,
+              eventType: 'approval_approved',
+              recipientIds: [String(instance.created_by)],
+            },
+            audit,
+          );
         } else {
           // 当前节点始终保持待处理；无人可审仅派生显示阻塞，恢复资格后自然可继续。
           await connection.execute(
@@ -412,6 +463,18 @@ export class MysqlApprovalRepository extends ApprovalRepository {
           await connection.execute(
             'UPDATE approval_instances SET version=version+1,updated_by=? WHERE id=? AND version=?',
             [audit.actorId, id, command.version],
+          );
+          await this.notifications.publish(
+            {
+              actionId,
+              instanceId: id,
+              instanceTitle: instance.title,
+              eventType: 'approval_task_assigned',
+              recipientIds: await resolveAssigneeIds(this.identity, next),
+              stepId: String(next.id),
+              stepName: next.name,
+            },
+            audit,
           );
         }
       }
@@ -660,7 +723,7 @@ export class MysqlApprovalRepository extends ApprovalRepository {
       details: Record<string, unknown> | null;
       actorId: string;
     },
-  ): Promise<void> {
+  ): Promise<string> {
     await db.execute(
       `INSERT INTO approval_actions (instance_id,action_no,instance_step_id,action_type,comment,details,created_by) VALUES (?,?,?,?,?,?,?)`,
       [
@@ -673,6 +736,10 @@ export class MysqlApprovalRepository extends ApprovalRepository {
         action.actorId,
       ],
     );
+    const [[row]] = await db.query<(RowDataPacket & { id: string })[]>(
+      'SELECT CAST(LAST_INSERT_ID() AS CHAR) id',
+    );
+    return row!.id;
   }
   private date(value: Date): string;
   private date(value: Date | null): string | null;

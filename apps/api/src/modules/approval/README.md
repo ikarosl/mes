@@ -1,6 +1,6 @@
 # Approval
 
-本次只接入 Product 的 BOM 场景 `product.bom.approve`。流程配置、申请、节点、待办和处理记录属于 Approval；Product 保有 BOM、送审冻结与永久锁定事实。工单审批和 Notification 尚未接入。
+本次只接入 Product 的 BOM 场景 `product.bom.approve`。流程配置、申请、节点、待办和处理记录属于 Approval；Product 保有 BOM、送审冻结与永久锁定事实。工单审批尚未接入；站内消息通过独立 Notification 公开能力发布。
 
 ## 配置与操作
 
@@ -32,7 +32,7 @@
 
 ## 模块与事务边界
 
-Product 静态声明场景并注册类型化 handler，Approval Registry 仅负责装配能力，不存 SQL、任意回调地址或前端组件路径。ApprovalModule 依赖 Identity；ProductModule 依赖 Approval 的公开注册端口，Approval 不反向导入 Product。
+Product 静态声明场景并注册类型化 handler，Approval Registry 仅负责装配能力，不存 SQL、任意回调地址或前端组件路径。ApprovalModule 依赖 Identity 和 Notification；ProductModule 依赖 Approval 的公开注册端口，Approval 不反向导入 Product。
 
 阅读场景与业务调用时，区分以下入口：
 
@@ -73,3 +73,14 @@ APP_PORT=3100 corepack pnpm --filter @company/admin-web exec vite --host 0.0.0.0
 相邻测试验证角色/指定用户二选一、字符串 ID、节点与版本命令、拒绝客户端授权字段、接口权限和实时资格解析。真实 MySQL 套件验证节点共享待办、动态成员及指定用户资格、分页/历史范围、单节点并发决定、事务回滚和迁移约束。前端完整类型检查包含组件测试，不得把单独 Vite 打包当作完整类型检查通过；验证边界见根[测试策略](../../../../../docs/testing-strategy.md)。
 
 相邻后端测试通过 `corepack pnpm --filter @company/api test` 执行，测试类型使用 `corepack pnpm --filter @company/api typecheck:test` 检查。跨模块审批用例位于根 `tests/integration/approval`，BOM 字段移除迁移用例位于 `tests/integration/product`，均由现有 `corepack pnpm test:production:mysql` 入口执行；必须配置专用测试库，环境门禁见根[测试策略](../../../../../docs/testing-strategy.md)。
+
+## 通知事件
+
+`ApprovalNotifications` 通过 NotificationService 在当前审批事务中发布，消息及收件不直接写入 Approval 表。事件键为 `approval:{actionId}:{eventType}[:{stepId}]`；来源为本事务真实 `approval_action`，目标为申请 `approval_instance`。文本标题使用共享通知事件标签，正文只包含申请标题及激活节点名，不复制 BOM 证据或审批意见。
+
+- submitted 动作后：只通知首级当时合格人员，键包含首级节点 ID。
+- 非末级 approved 动作后：只通知下一级激活时的合格人员，键包含下级节点 ID。无人时 Notification 返回 no_recipients，当前节点继续 pending 并派生无人提示，不撤销前级决定。
+- 最终 approved 或 rejected 动作后：通知申请人，键不带节点。
+- withdrawn 动作后：通知撤回命令在锁内、取消节点前实时解析的当前合格人员，不使用旧消息收件集合推断当前待办。
+
+不排除本人，不向未来节点提前发送，不因角色新增成员补写历史收件。既有通知不随业务完成删除；历史收件不授予全文或处理权限。通知发布、业务动作、Product 写入及成功审计整体提交，只有新消息在最外层提交后异步调度默认空钩子。发布规则及失败隔离由 [Notification](../notification/README.md) 所有。

@@ -38,7 +38,7 @@ const detailDialogStub = {
 
 const router = createRouter({
   history: createMemoryHistory(),
-  routes: [{ path: '/approval/inbox', name: 'approval-inbox-test', component: ApprovalInboxPage }],
+  routes: [{ path: '/approval/inbox', name: 'approval-inbox', component: ApprovalInboxPage }],
 });
 
 describe('ApprovalInboxPage', () => {
@@ -92,6 +92,36 @@ describe('ApprovalInboxPage', () => {
 
     expect(instance).toHaveBeenCalledWith('instance-1');
     expect(wrapper.find('.detail-dialog-stub').exists()).toBe(true);
+  });
+
+  it('accepts notification deep-link query parameters and keeps the subject filter', async () => {
+    await router.push({
+      name: 'approval-inbox',
+      query: { instanceId: 'instance-1', subjectId: 'product-1' },
+    });
+    const wrapper = mountPage();
+    await flushPromises();
+
+    expect(instance).toHaveBeenCalledWith('instance-1');
+    expect(instances).toHaveBeenLastCalledWith({
+      page: 1,
+      pageSize: 10,
+      scope: 'all',
+      status: undefined,
+      subjectId: 'product-1',
+    });
+    expect(wrapper.find('.detail-dialog-stub').exists()).toBe(true);
+    expect((wrapper.vm as unknown as { query: { subjectId: string } }).query.subjectId).toBe(
+      'product-1',
+    );
+
+    await wrapper
+      .findComponent({ name: 'ApprovalInstanceDetailDialog' })
+      .vm.$emit('update:visible', false);
+    await flushPromises();
+
+    expect(router.currentRoute.value.query).toEqual({ subjectId: 'product-1' });
+    expect(wrapper.find('.detail-dialog-stub').exists()).toBe(false);
   });
 
   it('switches todo scope to a status-free query and keeps status filtering for historical scopes', async () => {

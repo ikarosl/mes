@@ -1,6 +1,6 @@
 # 审批接入边界与后续通知设计
 
-审批业务决策见 [ADR-0006](adr/0006-approval-workflow-boundaries.md)，节点共享待办与角色或指定用户的规则以 [ADR-0008](adr/0008-approval-node-assignees.md) 为准。通用通知边界以 [ADR-0007](adr/0007-general-notification-boundaries.md) 和[通知设计](notification-design.md)为准。当前只接入成品 BOM，包含流程配置和审批待办；工单审批、采购和 Notification 尚未实施。
+审批业务决策见 [ADR-0006](adr/0006-approval-workflow-boundaries.md)，节点共享待办与角色或指定用户的规则以 [ADR-0008](adr/0008-approval-node-assignees.md) 为准。通用通知边界以 [ADR-0007](adr/0007-general-notification-boundaries.md) 和[通知设计](notification-design.md)为准。当前只接入成品 BOM，包含流程配置和审批待办；工单审批和采购尚未实施；站内通知由独立 Notification 模块提供。
 
 ## 1. 本次 BOM 试探
 
@@ -11,7 +11,7 @@
 - BOM 提交时保存不可变受审证据并冻结编辑；最后一级通过时与永久锁定同事务。驳回或申请人撤回结束本次申请，修改后重新提交；已批准 BOM 不解锁，用料变更需新成品编码。
 - 角色或指定用户决定候选范围，账号、成员关系和审批权限决定当前资格。发布及提交前检查全部级别有合格人；运行中无合格人保留当前节点并派生提示，资格恢复后自动进入合格人员的待办，保留已完成决定。
 - 生产任务创建要求 BOM 已批准并锁定；工单创建、下达继续既有流程，本次没有工单审批场景或新的工单审批字段。
-- 本次只生成 Approval 待办，没有站内消息、未读数、通知表、提交后通知钩子、外部投递或 outbox。以下审批通知规则属于后续接入设计。
+- Approval 拥有节点待办，站内消息及未读数由 Notification 提供；不接外部投递或 outbox。
 
 ## 2. 公共字段和约束
 
@@ -29,9 +29,9 @@
 
 生成列的候选方案使用 `CASE WHEN ... THEN 1 ELSE NULL END` 构造活动槽，再用组合唯一键约束“最多一条活动记录”；多条历史记录允许槽为空。迁移阶段必须验证目标 MySQL 的生成列、索引及 CHECK 实际行为。该槽是约束辅助值，不是第二份可写状态。
 
-## 3. 审批通知接入（尚未实施）
+## 3. 审批通知接入
 
-Notification 是通用模块，Approval 仅作为首个调用方。`notifications`、`notification_recipients` 候选表、公开发布契约、去重及阅读权限统一见[通知设计](notification-design.md)，本文只定义 Approval 所有的触发与收件规则。
+Notification 是通用模块，Approval 仅作为首个调用方。`notifications`、`notification_recipients` 表、公开发布契约、去重及阅读权限统一见[通知设计](notification-design.md)，本文只定义 Approval 所有的触发与收件规则。
 
 审批事件类型为 `approval_task_assigned/approval_approved/approval_rejected/approval_withdrawn`，来源使用 `approval_action`，目标使用 `approval_instance`。`approval_task_assigned` 表示当前节点激活时的提醒，不要求存在个人任务表。事件键由审批命名空间、稳定动作 ID、事件类型及目标节点按需要组合；这些是审批场景的取值，不限制通用模块的其他业务来源和目标。
 
@@ -51,9 +51,9 @@ Notification 是通用模块，Approval 仅作为首个调用方。`notification
 
 采购何时选择精确物料版本、采购数量依据及与现有需求的关系仍须后续设计，不提前增加采购单或第二份生产需求事实。受审快照只提供审批证据，不作为生产定义或可写业务影子表。
 
-## 5. 后续通知事务接入
+## 5. 通知事务接入
 
-未来 Approval 按 §3 通过 Notification 公开能力发布消息：提交、激活下一级生成节点消息；终态产生结果消息。Approval 仍独立拥有节点待办和决定，Product 拥有 BOM，成功审计仍统一经公共 writer。事务、去重、最外层提交后的非阻塞钩子及可靠性边界统一遵守[通用通知设计](notification-design.md#4-同事务落库与提交后钩子)，不在审批服务内另建专用外部发送回调。
+Approval 按 §3 通过 Notification 公开能力发布消息：提交、激活下一级生成节点消息；终态产生结果消息。Approval 仍独立拥有节点待办和决定，Product 拥有 BOM，成功审计仍统一经公共 writer。事务、去重、最外层提交后的非阻塞钩子及可靠性边界统一遵守[通用通知设计](notification-design.md#4-同事务落库与提交后钩子)，不在审批服务内另建专用外部发送回调。
 
 接入通知时应验证消息及接收人与业务动作整体提交、去重、不因旧消息重复批准，以及通知详情的权限校验。HTTP 幂等重放也需独立登记 scope 与响应契约后验收；本次不声明审批端点支持 `Idempotency-Key` 或自动写重试。
 

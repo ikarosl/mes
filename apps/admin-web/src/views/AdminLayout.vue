@@ -68,6 +68,7 @@
       <header class="topbar">
         <span>{{ String($route.meta.title ?? '') }}</span>
         <div>
+          <NotificationBell />
           <span class="user">{{ auth.session?.user.displayName }}</span
           ><el-button
             link
@@ -112,6 +113,7 @@ import { useRouter } from 'vue-router';
 import { PERMISSIONS } from '@company/constants';
 import { useAuthStore } from '../stores/auth';
 import { useTabsStore } from '../stores/tabs';
+import NotificationBell from '../components/notification/NotificationBell.vue';
 defineOptions({ name: 'AdminLayout' });
 const auth = useAuthStore();
 const tabs = useTabsStore();
@@ -135,6 +137,7 @@ const approvalMenus = [
     permission: [
       PERMISSIONS.approval.view,
       PERMISSIONS.approval.decide,
+      PERMISSIONS.approval.configure,
       PERMISSIONS.product.products.manageBom,
     ] as const,
   },

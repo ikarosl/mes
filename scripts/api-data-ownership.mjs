@@ -3,6 +3,7 @@
  * 这里不创建 schema；业务语义由各模块数据库文档所有，结构只通过追加 migration 改变。
  */
 export const API_DATA_OWNERSHIP = Object.freeze({
+  notification: Object.freeze(['notifications', 'notification_recipients']),
   approval: Object.freeze([
     'approval_flow_definitions',
     'approval_flow_versions',
