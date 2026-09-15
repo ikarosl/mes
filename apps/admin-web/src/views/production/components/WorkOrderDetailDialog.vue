@@ -136,7 +136,7 @@
 </template>
 
 <script setup lang="ts">
-import { WORK_ORDER_TYPE_LABELS } from '@company/constants';
+import { WORK_ORDER_TYPE_LABELS, WORK_ORDER_CLOSE_TYPE_LABELS } from '@company/constants';
 import type { UserOption, WorkOrderCloseType, WorkOrderDetail } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
 import { formatDateForDisplay, formatDateTimeForDisplay } from '../../../utils/date';
@@ -159,9 +159,7 @@ defineEmits<{
 
 const closeTypeLabels: Record<WorkOrderCloseType | '', string> = {
   '': '',
-  unproduced: '未生产结案',
-  underproduced: '不足量结案',
-  completed_archive: '完工归档',
+  ...WORK_ORDER_CLOSE_TYPE_LABELS,
 };
 </script>
 

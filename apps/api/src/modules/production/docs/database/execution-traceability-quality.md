@@ -210,8 +210,10 @@ current_submit.normal_quantity
 ```sql
 SELECT
   batch.planned_quantity AS base_quantity,
-  COALESCE(SUM(authorization.authorized_quantity), 0) AS executable_reproduction_quantity,
-  batch.planned_quantity + COALESCE(SUM(authorization.authorized_quantity), 0) AS first_step_released_input
+  COALESCE(SUM(CASE WHEN supplement.id IS NOT NULL
+    THEN authorization.authorized_quantity ELSE 0 END), 0) AS executable_reproduction_quantity,
+  batch.planned_quantity + COALESCE(SUM(CASE WHEN supplement.id IS NOT NULL
+    THEN authorization.authorized_quantity ELSE 0 END), 0) AS first_step_released_input
 FROM production_batches batch
 LEFT JOIN batch_step_scrap_reproduction_authorization authorization
   ON authorization.production_batch_id = batch.id
@@ -221,6 +223,8 @@ LEFT JOIN production_material_supplement supplement
 WHERE batch.id = :production_batch_id
 GROUP BY batch.id, batch.planned_quantity;
 ```
+
+这里只累加成功关联到 `fulfilled` 补料单的授权；`LEFT JOIN` 本身不会移除未齐套授权行，不能无条件累加 `authorization.authorized_quantity`。不同补料单独立满足各自授权的物料条件，不要求整个批次的补料单全部齐套，也不新增可手动维护的授权生效状态。
 
 因此示例中的 `6` 由 `production_batches.planned_quantity = 5.0000` 与 `batch_step_scrap_reproduction_authorization.authorized_quantity = 1.0000` 相加得到。授权行在管理员批准时生成，`production_material_supplement.status = 'fulfilled'` 只是它进入可执行公式的物流开关；`fulfilled_at/fulfilled_by` 记录补料何时、由谁确认齐套。`production_item_demand.need_number` 只证明需要补什么料、补多少料，不参与产品数量 `5 + 1` 的加法。
 
@@ -289,7 +293,7 @@ current_step_released_quantity = effective_normal
 | `production_batch_id`   | `BIGINT UNSIGNED` | 生产批次 ID                                                 |
 | `batch_step_record_id`  | `BIGINT UNSIGNED` | 工序执行节点 ID                                             |
 | `batch_step_report_id`  | `BIGINT UNSIGNED` | 来源普通报工 ID；当前阶段一条报工最多一张异常处置单          |
-| `review_status`         | `VARCHAR(30)`     | `pending_review`、`approved`、`rejected`、`cancelled`       |
+| `review_status`         | `VARCHAR(30)`     | `pending_review`、`approved`、`rejected`、`cancelled`、`terminated`       |
 | `disposition_type`      | `VARCHAR(20)`     | 批准后的处置：`rework`、`scrap`；审批前为空                 |
 | `reviewed_by`           | `BIGINT UNSIGNED` | 审批人；待审批时为空                                        |
 | `reviewed_at`           | `DATETIME`        | 审批时间；待审批时为空                                      |
@@ -303,7 +307,7 @@ current_step_released_quantity = effective_normal
 - `UNIQUE (batch_step_report_id)`，落实当前阶段“一次异常报工整体处置一次”的规则
 - `(batch_step_report_id, batch_step_record_id, production_batch_id) -> batch_step_reports(id, batch_step_record_id, production_batch_id)`，禁止跨工序或跨批次挂错来源
 - `reviewed_by -> users.id`
-- `CHECK (review_status IN ('pending_review', 'approved', 'rejected', 'cancelled'))`
+- `CHECK (review_status IN ('pending_review', 'approved', 'rejected', 'cancelled', 'terminated'))`
 - `CHECK (disposition_type IS NULL OR disposition_type IN ('rework', 'scrap'))`
 - `CHECK (version >= 0)`
 - `pending_review` 必须满足 `disposition_type/reviewed_by/reviewed_at` 均为空
@@ -443,3 +447,5 @@ products
 `batch_step_abnormal_dispositions` 已作为追溯节点定稿并追加数据库 migration；报工创建、更正、异常审批、最小返工和报废补料业务均已落地。过程质检、最终质量和成品流转只能在各自业务语义闭环后追加到主链。追溯查询可以使用受约束的冗余字段和快照，但任何库存数量只能从 `inventory_transaction` 汇总，任何生产需求只能从 `production_item_demand` 读取。
 
 当前 Production 只读追溯已经落地查询投影：支持按工单号、生产批次号、物料编码和库存批次号定位生产批次，并读取工单/批次概览、`production_item_demand`、`production_item_allocation`、`outbound_order/outbound_detail`、对应的 `production_material_outbound` 库存流水、`batch_step_records`、`batch_step_reports` 普通/冲销/替代链及有效聚合、`batch_step_abnormal_dispositions` 待处置记录。该投影不创建第二事实表，不返回质量、返工、报废、退料或成品流向占位数据。
+
+批次结束时未完成工序保留原状态，父批次 `terminated` 阻止后续执行；待处理异常使用 `terminated` 记录结束人和时间且无处置类型，未完成返工取消，未履约补料使用 `cancelled` 且履约人/时间为空。已报工和已授权事实保留；不补料的终止产出报废独立见[批次结束设计](production-termination.md)。

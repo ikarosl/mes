@@ -20,11 +20,12 @@ const batchTransitions: Readonly<Record<ProductionBatchStatus, readonly Producti
       'cancelled',
     ],
     material_assigned: ['material_pending', 'material_outbound', 'cancelled'],
-    material_partially_outbound: ['material_outbound', 'doing'],
-    material_outbound: ['doing'],
-    doing: ['completed'],
+    material_partially_outbound: ['material_outbound', 'doing', 'terminated'],
+    material_outbound: ['doing', 'terminated'],
+    doing: ['completed', 'terminated'],
     completed: [],
     cancelled: [],
+    terminated: [],
   };
 
 export const requireWorkOrderTransition = (

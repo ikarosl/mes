@@ -128,7 +128,10 @@ defineEmits<{ 'update:visible': [boolean]; 'add-manual': [] }>();
 const groups = computed(() => groupMaterialDemandRows(props.demands));
 const expandedGroups = ref<string[]>([]);
 const canAdd = computed(() =>
-  Boolean(props.batch && !['pending', 'completed', 'cancelled'].includes(props.batch.status)),
+  Boolean(
+    props.batch &&
+    !['pending', 'completed', 'cancelled', 'terminated'].includes(props.batch.status),
+  ),
 );
 const progressLabel = (row: ProductionMaterialDemandItem): string =>
   MATERIAL_DEMAND_PROGRESS_LABELS[row.demandProgressStatus];

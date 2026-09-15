@@ -9,7 +9,8 @@
 3. [生产需求、分配与领料出库](demand-allocation-and-outbound.md)
 4. [退料、生产领料损耗与盘点](return-scrap-and-stocktake.md)
 5. [生产执行、报工、追溯与质量边界](execution-traceability-quality.md)
-6. [跨模块规则、关系与锁序](cross-module-rules.md)
+6. [批次结束与本轮产出处置](production-termination.md)
+7. [跨模块规则、关系与锁序](cross-module-rules.md)
 
 ## 使用规则
 

@@ -60,7 +60,7 @@
 | `cancel_reason`         | `TEXT`            | 草稿工单取消原因；历史未记录数据可为空                           |
 | `cancelled_by`          | `BIGINT UNSIGNED` | 草稿工单取消人；历史未记录数据可为空                             |
 | `cancelled_at`          | `DATETIME`        | 草稿工单取消时间；历史未记录数据可为空                           |
-| `close_type`            | `VARCHAR(30)`     | `unproduced`、`underproduced`、`completed_archive`               |
+| `close_type`            | `VARCHAR(30)`     | `unproduced`、`underproduced`、`completed_archive`、`production_terminated`               |
 | `close_reason`          | `TEXT`            | 提前关闭原因；正常完工归档及历史未记录数据可为空                 |
 | `closed_by`             | `BIGINT UNSIGNED` | 关闭人；历史未记录数据可为空                                     |
 | `closed_at`             | `DATETIME`        | 关闭时间；历史未记录数据可为空                                   |
@@ -129,7 +129,7 @@
 | `draft` | 下达工单 | 冻结下达快照并进入 `released` |
 | `released` | 首个生产批次实际开工 | 与批次开工同事务进入 `doing`；创建或分配批次本身不代表开工 |
 | `released` / `doing` | 确认工单完工 | 所有非取消批次均为 `completed`，且其 `completed_quantity` 合计等于工单 `planned_quantity` 时，管理员二次确认后进入 `completed` |
-| `released` / `doing` | 提前关闭工单 | 不存在未终态批次时允许进入 `closed`；必须填写关闭原因。没有批次或只有已取消批次属于未生产结案，已完成量小于计划量属于不足量结案 |
+| `released` / `doing` | 提前关闭工单 | 不存在未终态批次时允许进入 `closed`；必须填写关闭原因。没有批次或只有已取消批次属于未生产结案，已完成量小于计划量属于不足量结案；含 `terminated` 批次时归为 `production_terminated`，不以原批次完成量替代可用产出 |
 | `released` / `doing` | 提前关闭工单但存在未终态批次 | 拒绝并返回未处理批次摘要；管理员须先逐批完成或取消。生产批次没有 `closed` 状态，提示语固定为“请先完成或取消所有未结束生产批次” |
 | `completed` | 关闭工单 | 作为成功完工后的行政归档进入 `closed` |
 
@@ -189,7 +189,7 @@
 - 检查约束：`CHECK (status <> 'completed' OR (completed_at IS NOT NULL AND completed_by IS NOT NULL))`
 - 唯一约束：`UNIQUE (batch_no)`；批次号在全系统范围内唯一，自动编号与手动输入均由后端校验
 - 组合引用索引：`UNIQUE (id, work_order_id)`、`UNIQUE (id, product_id)`
-- 检查约束：`CHECK (status IN ('pending', 'material_pending', 'material_assigned', 'material_partially_outbound', 'material_outbound', 'doing', 'completed', 'cancelled'))`
+- 检查约束：`CHECK (status IN ('pending', 'material_pending', 'material_assigned', 'material_partially_outbound', 'material_outbound', 'doing', 'completed', 'cancelled', 'terminated'))`
 - 检查约束：`CHECK (material_plan_version > 0)`
 - 组合索引：`INDEX (work_order_id, status)`，用于按工单查询有效生产批次
 - 索引：`INDEX (plan_start_date)`，用于生产排程与按计划开工日筛选
@@ -206,6 +206,7 @@
 | `doing`             | 生产中                 |
 | `completed`         | 生产完成               |
 | `cancelled`         | 已取消                 |
+| `terminated` | 已结束本轮，产出处置单独登记，不代表足量完工 |
 
 批次状态转换以 `production-status.policy.ts` 为代码入口，与[数据库公共状态矩阵](../../../../../../../docs/database-conventions.md#核心状态转换矩阵)一致：
 
@@ -214,10 +215,10 @@
 | `pending` | `material_pending`、`cancelled` |
 | `material_pending` | `material_assigned`、`material_partially_outbound`、`material_outbound`、`cancelled` |
 | `material_assigned` | `material_pending`、`material_outbound`、`cancelled` |
-| `material_partially_outbound` | `material_outbound`、`doing` |
-| `material_outbound` | `doing` |
-| `doing` | `completed` |
-| `completed`、`cancelled` | 无，终态 |
+| `material_partially_outbound` | `material_outbound`、`doing`、`terminated` |
+| `material_outbound` | `doing`、`terminated` |
+| `doing` | `completed`、`terminated` |
+| `completed`、`cancelled`、`terminated` | 无，终态 |
 
 状态边仅是必要条件；实际命令还必须满足下面的取消、齐套、短批授权和执行门禁。
 
@@ -226,7 +227,7 @@
 - 创建生产批次只接受 `released`、`doing` 工单，并在事务内重新汇总非取消批次计划量；本次新增后不得超过工单计划量。创建批次本身不推动工单进入 `doing`。
 - `pending` 只允许在创建批次时由数据库默认值产生，已有批次不得迁回 `pending`。释放尚未出库的有效分配后，如果批次不再齐套，允许 `material_assigned → material_pending`；这不是重新开放正常需求生成。
 - 所有 `production_batches.status` 和 `work_orders.status` 写入都必须先通过 `production-status.policy.ts` 的统一转换校验；SQL 中的旧状态条件和乐观锁只用于防并发覆盖，不能替代领域校验。
-- 第一版生产批次没有 `closed` 状态，管理动作统一称为“取消任务”。只允许 `pending`、`material_pending`、`material_assigned` 取消，即任务尚未开工且物料尚未实际出库；`material_partially_outbound` 已形成库存事实，不能取消。
+- 生产批次的“取消任务”与“结束本轮”分开：已领料或执行中批次使用 `terminated`，规则见[批次结束与产出处置](production-termination.md)。只允许 `pending`、`material_pending`、`material_assigned` 取消，即任务尚未开工且物料尚未实际出库；`material_partially_outbound` 已形成库存事实，不能取消。
 - 取消前管理端必须读取服务端实时影响摘要，展示将取消的待确认出库单、有效预留和活动需求数量，并要求填写取消原因；提交事务仍须重新锁定批次及相关单据校验，不能信任前端摘要。
 - 取消事务把 `pending_picking` 待出库单转为 `cancelled`、把活动分配转为 `cancelled` 以释放库存预留、把活动需求转为 `cancelled`，最后把生产批次状态、取消原因、取消人和取消时间同一条更新写入；这些写入和成功审计同事务提交，不生成 `inventory_transaction`。
 - `material_partially_outbound`、`material_outbound`、`doing`、`completed` 明令禁止取消。只要存在已确认出库事实，即使批次状态异常滞后也必须拒绝；第一版不提供强制取消或绕过入口。未来若要终止已开工批次，必须先定稿短批结案、生产损失、在制品及已领物料处置，不能复用本取消命令。

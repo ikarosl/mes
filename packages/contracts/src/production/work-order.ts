@@ -2,7 +2,8 @@ import type { PageQuery, VersionedCommand } from '../common.js';
 import type { WorkOrderStatus } from './statuses.js';
 import type { ProductionBatchItem } from './batch.js';
 
-export type WorkOrderCloseType = 'unproduced' | 'underproduced' | 'completed_archive';
+export type WorkOrderCloseType =
+  'unproduced' | 'underproduced' | 'completed_archive' | 'production_terminated';
 export type WorkOrderType = 'mass_production' | 'research';
 
 export interface WorkOrderQuery extends PageQuery {

@@ -1,3 +1,7 @@
+import { ProductionTerminationService } from './application/production-termination.service.js';
+import { ProductionTerminationRepository } from './application/ports/production-termination.repository.js';
+import { MysqlProductionTerminationRepository } from './infrastructure/mysql-production-termination.repository.js';
+import { ProductionTerminationController } from './presentation/http/production-termination.controller.js';
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../infrastructure/database/database.module.js';
 import { IdempotencyModule } from '../../infrastructure/idempotency/idempotency.module.js';
@@ -56,6 +60,7 @@ import { WarehouseController } from './presentation/http/warehouse.controller.js
 @Module({
   imports: [DatabaseModule, IdentityModule, ProductModule, IdempotencyModule],
   controllers: [
+    ProductionTerminationController,
     ProductionController,
     ProductionMaterialController,
     ProductionMaterialDemandController,
@@ -68,6 +73,9 @@ import { WarehouseController } from './presentation/http/warehouse.controller.js
     WarehouseController,
   ],
   providers: [
+    ProductionTerminationService,
+    MysqlProductionTerminationRepository,
+    { provide: ProductionTerminationRepository, useExisting: MysqlProductionTerminationRepository },
     ProductionService,
     ProductionMaterialService,
     ProductionMaterialDemandService,

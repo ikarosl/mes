@@ -24,7 +24,13 @@ export const executionBatchOverdueDays = (
   batch: ProductionExecutionBatchSummary,
   now = new Date(),
 ): number => {
-  if (!batch.planEndDate || batch.status === 'completed' || batch.status === 'cancelled') return 0;
+  if (
+    !batch.planEndDate ||
+    batch.status === 'completed' ||
+    batch.status === 'cancelled' ||
+    batch.status === 'terminated'
+  )
+    return 0;
   const [year, month, day] = batch.planEndDate.split('-').map(Number);
   if (!year || !month || !day) return 0;
   return Math.max(

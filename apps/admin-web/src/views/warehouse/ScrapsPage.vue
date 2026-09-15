@@ -112,7 +112,11 @@
               v-if="row.supplement"
               effect="plain"
               :type="row.supplement.status === 'fulfilled' ? 'success' : 'warning'"
-              >{{ row.supplement.status === 'fulfilled' ? '已补料领用' : '待补料领用' }}</el-tag
+              >{{
+                PRODUCTION_SUPPLEMENT_STATUS_LABELS[
+                  row.supplement.status as keyof typeof PRODUCTION_SUPPLEMENT_STATUS_LABELS
+                ]
+              }}</el-tag
             ><span
               v-else
               class="secondary-cell"
@@ -289,6 +293,7 @@
 </template>
 
 <script setup lang="ts">
+import { PRODUCTION_SUPPLEMENT_STATUS_LABELS } from '@company/constants';
 import { computed, onActivated, onMounted, reactive, ref } from 'vue';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import type {

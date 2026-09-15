@@ -8,7 +8,8 @@ export type ProductionBatchStatus =
   | 'material_outbound'
   | 'doing'
   | 'completed'
-  | 'cancelled';
+  | 'cancelled'
+  | 'terminated';
 
 export type BatchStepStatus = 'pending' | 'assigned' | 'doing' | 'completed';
 
@@ -88,7 +89,7 @@ export type MaterialOutboundBlockedCode =
 export type BatchStepReportType = 'normal' | 'reversal';
 
 export type BatchStepAbnormalReviewStatus =
-  'pending_review' | 'approved' | 'rejected' | 'cancelled';
+  'pending_review' | 'approved' | 'rejected' | 'cancelled' | 'terminated';
 
 export type ReturnOrderStatus = 'pending' | 'returned' | 'scrapped' | 'cancelled';
 

@@ -23,6 +23,7 @@ export const PRODUCTION_BATCH_STATUSES = [
   'doing',
   'completed',
   'cancelled',
+  'terminated',
 ] as const;
 
 export const BATCH_STEP_STATUSES = ['pending', 'assigned', 'doing', 'completed'] as const;
@@ -46,6 +47,7 @@ export const BATCH_STEP_ABNORMAL_REVIEW_STATUSES = [
   'approved',
   'rejected',
   'cancelled',
+  'terminated',
 ] as const;
 
 export const BATCH_STEP_ABNORMAL_DISPOSITION_TYPES = ['rework', 'scrap'] as const;
@@ -55,6 +57,7 @@ export const BATCH_STEP_ABNORMAL_REVIEW_STATUS_LABELS = {
   approved: '已批准',
   rejected: '已驳回',
   cancelled: '已取消',
+  terminated: '随批次结束',
 } as const;
 
 export const REWORK_STATUSES = ['pending', 'doing', 'completed', 'cancelled'] as const;
@@ -214,4 +217,32 @@ export const MATERIAL_OUTBOUND_BLOCKED_LABELS = {
   short_batch_authorization_required: '物料尚未齐套，请先完成分配或办理短批授权',
   short_batch_authorization_stale: '需求计划已变化，请到生产任务重新复核短批授权',
   no_orderable_allocation: '暂无可制单分配，可能已被其他待出库单占用',
+} as const;
+
+export const PRODUCTION_TERMINATED_LABEL = '已结束';
+export const WORK_ORDER_CLOSE_TYPE_LABELS = {
+  unproduced: '未生产结案',
+  underproduced: '不足量结案',
+  completed_archive: '完工归档',
+  production_terminated: '结束生产结案',
+} as const;
+export const PRODUCTION_SUPPLEMENT_STATUS_LABELS = {
+  approved: '待补料领用',
+  fulfilled: '已补料领用',
+  cancelled: '已取消补料',
+} as const;
+export const BATCH_TERMINATION_IMPACT_LABELS = {
+  step: '停止工序',
+  abnormal: '结束待处理异常',
+  rework: '取消未完成返工',
+  supplement: '取消未履约补料',
+  outbound: '取消待领料出库单',
+  demand: '取消剩余需求',
+  allocation: '释放剩余预留',
+} as const;
+
+export const PRODUCTION_OUTBOUND_CANCEL_SOURCE_LABELS = {
+  manual: '人工取消',
+  production_batch: '生产任务取消',
+  production_termination: '本轮生产结束',
 } as const;

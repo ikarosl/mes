@@ -49,3 +49,5 @@
 - [工单、BOM 与顺序多级审批的业务边界](adr/0006-approval-workflow-boundaries.md)
 - [通用通知与事务提交后扩展边界](adr/0007-general-notification-boundaries.md)
 - [单节点待办与角色或指定用户审批](adr/0008-approval-node-assignees.md)
+- [研发轮次结案、产出处置与物料余量](adr/0009-research-round-close-and-output-disposition.md)
+- [通过关闭与替代纠正正式需求](adr/0010-demand-correction-by-replacement.md)

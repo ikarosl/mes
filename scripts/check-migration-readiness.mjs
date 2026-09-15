@@ -42,6 +42,7 @@ const allowedTables = new Set([
   'batch_step_abnormal_dispositions',
   'rework_records',
   'batch_step_scrap_records',
+  'production_batch_termination',
   'batch_step_scrap_reproduction_authorization',
   'production_scrap_supplement_plan',
   'production_scrap_supplement_plan_line',

@@ -65,7 +65,7 @@ FROM batch_step_records current
 JOIN production_batches b ON b.id=current.production_batch_id
 JOIN work_orders wo ON wo.id=b.work_order_id
 LEFT JOIN report_summary current_reports ON current_reports.batch_step_record_id=current.id
-WHERE current.responsible_user_id=? AND current.status IN ('assigned','doing','completed')
+WHERE b.status<>'terminated' AND current.responsible_user_id=? AND current.status IN ('assigned','doing','completed')
 ORDER BY CASE current.status WHEN 'doing' THEN 0 WHEN 'assigned' THEN 1 ELSE 2 END,b.id,current.step_order_snapshot`;
 
 type QuantityStepRow = RowDataPacket & {

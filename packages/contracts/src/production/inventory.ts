@@ -174,7 +174,7 @@ export interface MaterialLossItem {
   supplement: null | {
     supplementId: string;
     supplementNo: string;
-    status: 'approved' | 'fulfilled';
+    status: 'approved' | 'fulfilled' | 'cancelled';
     demandId: string;
     demandQuantity: string;
   };

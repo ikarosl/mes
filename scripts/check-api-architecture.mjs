@@ -51,6 +51,7 @@ const idempotencyRecordsWritePattern =
  */
 const knownIdempotencyScopes = [
   'production.batch.create.v5',
+  'production.batch.terminate.v1',
   'production.material-allocation.create.v1',
   'production.material-outbound.create.v3',
   'production.material-outbound.confirm.v2',
@@ -163,6 +164,7 @@ const checks = [
       '只有已登记的 Production 幂等命令可使用 IdempotentCommandContext；新增命令必须先完成契约登记与验收',
     exclude: [
       'apps/api/src/modules/production/application/production.service.ts',
+      'apps/api/src/modules/production/application/production-termination.service.ts',
       'apps/api/src/modules/production/application/production-material.service.ts',
       'apps/api/src/modules/production/application/production-inbound.service.ts',
       'apps/api/src/modules/production/application/production-reporting.service.ts',
@@ -171,6 +173,7 @@ const checks = [
       'apps/api/src/modules/production/application/production-inventory.service.ts',
       'apps/api/src/modules/production/application/production-material-demand.service.ts',
       'apps/api/src/modules/production/presentation/http/production.controller.ts',
+      'apps/api/src/modules/production/presentation/http/production-termination.controller.ts',
       'apps/api/src/modules/production/presentation/http/production-material.controller.ts',
       'apps/api/src/modules/production/presentation/http/production-inbound.controller.ts',
       'apps/api/src/modules/production/presentation/http/production-reporting.controller.ts',
@@ -187,6 +190,7 @@ const checks = [
       '只有已登记的 Production application 用例可依赖 IdempotencyExecutor；新增用例必须先完成契约登记与验收',
     exclude: [
       'apps/api/src/modules/production/application/production.service.ts',
+      'apps/api/src/modules/production/application/production-termination.service.ts',
       'apps/api/src/modules/production/application/production-material.service.ts',
       'apps/api/src/modules/production/application/production-inbound.service.ts',
       'apps/api/src/modules/production/application/production-reporting.service.ts',

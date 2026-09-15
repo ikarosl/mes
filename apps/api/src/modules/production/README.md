@@ -35,6 +35,10 @@
 
 详细流程见 [business-workflow.md](docs/business-workflow.md)，数据库设计见[数据库索引](docs/database/README.md)，范围边界见[全局产品范围](../../../../../docs/product-scope.md)。
 
+## 本轮结束
+
+生产任务提供独立的批次结束与产出处置能力，原工序事实保留，不触发补料、补产或库存变化；所有批次终态后可关闭旧工单。状态、API、权限和物料处理规则见[批次结束设计](docs/database/production-termination.md)。实际成品入库仍待后续接入。
+
 ## 验证
 
 `corepack pnpm --filter @company/api typecheck` 及 `apps/api` 相邻单元/契约测试。

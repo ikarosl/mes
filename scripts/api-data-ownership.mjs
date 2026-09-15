@@ -38,6 +38,7 @@ export const API_DATA_OWNERSHIP = Object.freeze({
     'work_orders',
     'work_order_material_versions',
     'production_batches',
+    'production_batch_termination',
     'batch_step_records',
     'batch_step_reports',
     'batch_step_abnormal_dispositions',

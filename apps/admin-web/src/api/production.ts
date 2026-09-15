@@ -1,4 +1,7 @@
 import type {
+  BatchTerminationCheck,
+  TerminateProductionBatchPayload,
+  TerminateProductionBatchResult,
   CreateProductionBatchPayload,
   CreateMaterialAllocationsPayload,
   CreateMaterialOutboundPayload,
@@ -220,6 +223,23 @@ export const productionApi = {
 
   /** 获取生产批次详情（含工序记录） */
   getBatch: (id: string) => request<ProductionBatchDetail>({ url: `/production/batches/${id}` }),
+
+  getBatchTerminationCheck: (id: string) =>
+    request<BatchTerminationCheck>({
+      url: `/production/batches/${id}/termination-check`,
+      skipErrorHandling: true,
+    }),
+
+  terminateBatch: (id: string, data: TerminateProductionBatchPayload, idempotencyKey: string) =>
+    request<TerminateProductionBatchResult>({
+      url: `/production/batches/${id}/actions/terminate`,
+      method: 'POST',
+      data,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      skipErrorHandling: true,
+      retryIdempotentWrite: true,
+      retryTimes: 2,
+    }),
 
   /** 取消任务前读取服务端实时影响摘要；提交时后端仍会再次校验。 */
   getBatchCancellationCheck: (id: string) =>

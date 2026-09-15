@@ -15,6 +15,9 @@
  * （见 apps/api/docs/idempotency.md §13），不允许用新 schema 去猜旧记录。
  */
 
+/** 明确结束生产批次并登记产出处置。 */
+export const TERMINATE_BATCH_IDEMPOTENCY_SCOPE = 'production.batch.terminate.v1' as const;
+
 /** createBatch 创建生产批次；scope 与当前请求及结果 codec 绑定。 */
 export const CREATE_BATCH_IDEMPOTENCY_SCOPE = 'production.batch.create.v5' as const;
 /** 创建物料分配。 */

@@ -89,14 +89,21 @@ export class MysqlProductionDemandPlanWriter {
       actorId: string | null;
       reason: string;
       expectedBatchVersion: number;
+      cancelSource?: 'short_batch_remaining_close' | 'production_termination';
     },
   ): Promise<number> {
     const [cancelled] = await db.execute<ResultSetHeader>(
       `UPDATE production_item_demand
-       SET business_status='cancelled',cancel_source='short_batch_remaining_close',cancel_reason=?,
+       SET business_status='cancelled',cancel_source=?,cancel_reason=?,
            cancelled_by=?,cancelled_at=NOW(),version=version+1,updated_by=?
        WHERE production_batch_id=? AND business_status='active'`,
-      [params.reason, params.actorId, params.actorId, params.batchId],
+      [
+        params.cancelSource ?? 'short_batch_remaining_close',
+        params.reason,
+        params.actorId,
+        params.actorId,
+        params.batchId,
+      ],
     );
     await this.supersedeActiveAuthorization(db, params.batchId);
     await this.advanceBatchPlan(db, params);

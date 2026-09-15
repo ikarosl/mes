@@ -238,11 +238,32 @@
               @click="openMaterialOutbound(row)"
               >领料出库</el-button
             >
+            <el-button
+              v-if="
+                [
+                  'material_partially_outbound',
+                  'material_outbound',
+                  'doing',
+                  'terminated',
+                ].includes(row.status)
+              "
+              link
+              :type="row.status === 'terminated' ? 'primary' : 'warning'"
+              @click="
+                terminationBatchId = row.id;
+                terminationVisible = true;
+              "
+              >{{ row.status === 'terminated' ? '产出处置' : '结束本轮' }}</el-button
+            >
             <el-dropdown trigger="click">
               <el-button
                 link
                 type="primary"
-                :disabled="row.status === 'completed' || row.status === 'cancelled'"
+                :disabled="
+                  row.status === 'completed' ||
+                  row.status === 'cancelled' ||
+                  row.status === 'terminated'
+                "
                 >更多</el-button
               >
               <template #dropdown>
@@ -383,6 +404,11 @@
       @submit="submitShortBatchAuthorization"
     />
 
+    <ProductionBatchTerminationDialog
+      v-model:visible="terminationVisible"
+      :batch-id="terminationBatchId"
+      @terminated="loadTasks"
+    />
     <ProductionBatchCancelDialog
       :visible="batchCancelDialogVisible"
       :batch="cancellingBatch"
@@ -436,6 +462,7 @@ import { useProductionMaterials } from './composables/useProductionMaterials';
 import StepAssignmentDialog from './components/StepAssignmentDialog.vue';
 import { useStepAssignments } from './composables/useStepAssignments';
 import { deadlinePresentation, taskNextActionPresentation } from './production-task-presentation';
+import ProductionBatchTerminationDialog from './components/ProductionBatchTerminationDialog.vue';
 import ProductionBatchCancelDialog from './components/ProductionBatchCancelDialog.vue';
 import MaterialDemandConfigurationDialog from './components/MaterialDemandConfigurationDialog.vue';
 import MaterialDemandOverviewDialog from './components/MaterialDemandOverviewDialog.vue';
@@ -475,7 +502,10 @@ const userChoices = computed(() =>
 );
 
 const batchDeadline = (row: ProductionBatchItem) =>
-  deadlinePresentation(row.planEndDate, row.status === 'completed' || row.status === 'cancelled');
+  deadlinePresentation(
+    row.planEndDate,
+    row.status === 'completed' || row.status === 'cancelled' || row.status === 'terminated',
+  );
 const batchRowClass = ({ row }: { row: ProductionBatchItem }): string =>
   batchDeadline(row).overdueDays > 0 ? 'deadline-overdue-row' : '';
 const taskNextAction = (row: ProductionBatchItem) => taskNextActionPresentation(row);
@@ -487,6 +517,8 @@ const { isRowPending, beginRow, endRow } = useRowPending();
 const createBatchIntent = useIdempotentIntent();
 
 /* ====== 弹窗状态 ====== */
+const terminationVisible = ref(false);
+const terminationBatchId = ref<string | null>(null);
 const taskDialogVisible = ref(false);
 const detailDialogVisible = ref(false);
 const stepExecutionDialogVisible = ref(false);

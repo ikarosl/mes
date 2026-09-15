@@ -40,7 +40,9 @@ type WorkOrderBatchSummaryRow = RowDataPacket & {
     | 'material_outbound'
     | 'doing'
     | 'completed'
-    | 'cancelled';
+    | 'cancelled'
+    | 'material_partially_outbound'
+    | 'terminated';
   planned_quantity: string;
   completed_quantity: string;
 };
@@ -386,13 +388,15 @@ export class MysqlWorkOrderRepository {
         );
       const batches = await this.lockBatchSummaries(connection, id);
       const activeBatches = batches.filter((batch) => batch.status !== 'cancelled');
-      const unfinishedBatches = activeBatches.filter((batch) => batch.status !== 'completed');
+      const unfinishedBatches = activeBatches.filter(
+        (batch) => batch.status !== 'completed' && batch.status !== 'terminated',
+      );
       const completedQuantity = sumCompletedQuantity(activeBatches);
       const isEarlyClose = before.status === 'released' || before.status === 'doing';
       if (isEarlyClose && unfinishedBatches.length > 0)
         throw new ProductionDomainError(
           'WORK_ORDER_CLOSE_NOT_ALLOWED',
-          '请先完成或取消所有未结束生产批次',
+          '请先完成、结束或取消所有未结束生产批次',
           workOrderBatchDetails(before.planned_quantity, completedQuantity, unfinishedBatches),
         );
       if (isEarlyClose && !reason)
@@ -400,6 +404,7 @@ export class MysqlWorkOrderRepository {
       if (
         isEarlyClose &&
         activeBatches.length > 0 &&
+        !activeBatches.some((batch) => batch.status === 'terminated') &&
         integerQuantity(completedQuantity) === integerQuantity(before.planned_quantity)
       )
         throw new ProductionDomainError(
@@ -409,9 +414,11 @@ export class MysqlWorkOrderRepository {
       const closeType =
         before.status === 'completed'
           ? 'completed_archive'
-          : activeBatches.length === 0
-            ? 'unproduced'
-            : 'underproduced';
+          : activeBatches.some((batch) => batch.status === 'terminated')
+            ? 'production_terminated'
+            : activeBatches.length === 0
+              ? 'unproduced'
+              : 'underproduced';
       const [result] = await connection.execute<ResultSetHeader>(
         `UPDATE work_orders SET status='closed',close_type=?,close_reason=?,closed_by=?,closed_at=NOW(),version=version+1,updated_by=? WHERE id=? AND status=? AND version=?`,
         [closeType, reason, audit.actorId, audit.actorId, id, before.status, version],

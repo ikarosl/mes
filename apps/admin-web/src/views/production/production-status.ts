@@ -1,5 +1,5 @@
 import type { BatchStepStatus, ProductionBatchStatus, WorkOrderStatus } from '@company/contracts';
-import { BATCH_STEP_STATUS_LABELS } from '@company/constants';
+import { BATCH_STEP_STATUS_LABELS, PRODUCTION_TERMINATED_LABEL } from '@company/constants';
 
 export type StatusTagType = 'info' | 'primary' | 'success' | 'warning' | 'danger';
 
@@ -29,6 +29,7 @@ export const BATCH_STATUS_META: StatusMeta<ProductionBatchStatus>[] = [
   { value: 'doing', label: '执行中', type: 'primary' },
   { value: 'completed', label: '已完成', type: 'success' },
   { value: 'cancelled', label: '已取消', type: 'danger' },
+  { value: 'terminated', label: PRODUCTION_TERMINATED_LABEL, type: 'info' },
 ];
 
 /** 工序执行状态元数据 */

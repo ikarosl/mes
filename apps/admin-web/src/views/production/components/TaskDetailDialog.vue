@@ -115,14 +115,14 @@
             >
               <template #default="{ row }">
                 <el-button
-                  v-if="row.status === 'pending'"
+                  v-if="row.status === 'pending' && batch.status !== 'terminated'"
                   link
                   type="primary"
                   :loading="assignmentPendingIds.has(row.id)"
                   @click="$emit('assign-step', row)"
                   >派工</el-button
                 >
-                <template v-else-if="row.status === 'assigned'">
+                <template v-else-if="row.status === 'assigned' && batch.status !== 'terminated'">
                   <el-button
                     link
                     type="primary"
@@ -141,7 +141,10 @@
                 <el-button
                   link
                   type="primary"
-                  :disabled="row.status !== 'pending' && row.status !== 'assigned'"
+                  :disabled="
+                    batch.status === 'terminated' ||
+                    (row.status !== 'pending' && row.status !== 'assigned')
+                  "
                   @click="$emit('edit-step-execution', row)"
                   >调整</el-button
                 >

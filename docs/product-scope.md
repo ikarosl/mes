@@ -7,3 +7,9 @@ Approval 当前仅接入成品 BOM：管理端配置并发布顺序多级流程�
 外购物料入库仅支持 `purchased` 来源；生产退料仅覆盖已确认领料退回公共可用库存；盘点仅覆盖现有 `item_batch × stock_status`。工序异常报废的人工补料属于 Production 最小闭环，不代表通用库存报废已迁移。
 
 通用 Inventory 的其他出入库与库存报废、Quality 和全链路 Traceability 后端尚未进入当前范围，不得提前实现。详细业务不变量由 [Product](../apps/api/src/modules/product/README.md) 和 [Production](../apps/api/src/modules/production/README.md) 就近维护；跨模块数据库规则见[数据库公共约定](database-conventions.md)。
+
+## 研发结束及后续成品流转
+
+研发轮次结束后，登记可用产出、报废和差额，关闭旧工单，可用部分再手动入库；随后以新成品编码、新研发工单继续下一轮。全部产出报废时只登记报废并结案，不办理入库。本轮结束后的产出报废不触发补料或补产，余料由管理员按实际情况核对并通过现有退料规则回仓，不按成品差额自动折算。
+
+批次结束、独立产出处置记录、物料人工核对与工单关闭已接入，规则见[批次结束设计](../apps/api/src/modules/production/docs/database/production-termination.md)。成品手动入库及额外产出入库仍为下一阶段任务。范围限定为本轮尚未入库产出的处置，不建设报废库、废品库存、销毁管理或完整 Quality，也不开放已入库库存的通用报废。长期决策见 [ADR-0009](adr/0009-research-round-close-and-output-disposition.md)，实施顺序见[路线图](roadmap.md)。

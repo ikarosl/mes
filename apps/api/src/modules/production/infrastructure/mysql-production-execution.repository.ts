@@ -187,6 +187,8 @@ export class MysqlProductionExecutionRepository extends ProductionExecutionRepos
   ): Promise<ProductionStepCommandResult> {
     return withTransaction(this.pool, async (connection) => {
       const batch = await findBatch(connection, batchId, true);
+      if (batch.status === 'terminated')
+        throw new ProductionDomainError('STEP_START_NOT_ALLOWED', '本轮已结束，不能继续开工');
       const steps = await lockExecutionSteps(connection, batchId);
       const index = steps.findIndex((step) => String(step.id) === stepRecordId);
       if (index < 0) throw new ProductionDomainError('NOT_FOUND', '批次工序记录不存在');
@@ -278,7 +280,11 @@ export class MysqlProductionExecutionRepository extends ProductionExecutionRepos
   ): Promise<ProductionStepCommandResult> {
     return withTransaction(this.pool, async (connection) => {
       const batch = await findBatch(connection, batchId, true);
-      if (batch.status === 'cancelled' || batch.status === 'completed')
+      if (
+        batch.status === 'cancelled' ||
+        batch.status === 'completed' ||
+        batch.status === 'terminated'
+      )
         throw new ProductionDomainError(
           'STEP_ASSIGNMENT_CONFLICT',
           '已取消或已完成批次不能调整派工',

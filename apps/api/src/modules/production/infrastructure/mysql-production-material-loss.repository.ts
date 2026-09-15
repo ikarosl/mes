@@ -88,7 +88,7 @@ type MaterialLossRow = RowDataPacket & {
   cancelled_at: Date | null;
   supplement_id: number | null;
   supplement_no: string | null;
-  supplement_status: 'approved' | 'fulfilled' | null;
+  supplement_status: 'approved' | 'fulfilled' | 'cancelled' | null;
   supplement_demand_id: number | null;
   supplement_demand_quantity: string | null;
 };

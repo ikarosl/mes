@@ -32,7 +32,7 @@
 
 ### 9. `production_material_requirement_basis`
 
-职责：保存某个生产批次完整确认需求配置时，从 Product 公共 BOM 快照得到的各行基础物料公式。它是“该 BOM 行本批次
+职责：保存某个生产批次完整确认需求配置时，从 Product 公共  快照得到的各行基础物料公式。它是“该 BOM 行本批次BOM。（最终目的服务于，bom 修改流程不会影响，当时在产工单）
 应配置多少”的冻结分母，不是可分配需求，也不替代 `production_item_demand` 事实。
 
 管理员从生产任务行进入配置弹窗，一次完整确认全部 BOM 行的精确 `material_variant_id` 与数量。
@@ -142,7 +142,7 @@
 | `business_status`                  | `VARCHAR(30)`     | 业务状态，默认 `active`                   |
 | `fulfilled_by`                     | `BIGINT UNSIGNED` | 最后一笔确认领用操作人；未满足时为空      |
 | `fulfilled_at`                     | `DATETIME`        | 需求全部确认领用时间；未满足时为空        |
-| `cancel_source`                    | `VARCHAR(40)`     | `production_batch` 或 `short_batch_remaining_close` |
+| `cancel_source`                    | `VARCHAR(40)`     | `production_batch`、`short_batch_remaining_close` 或 `production_termination` |
 | `cancel_reason`                    | `TEXT`            | 取消任务或显式关闭剩余需求的原因          |
 | `cancelled_by`                     | `BIGINT UNSIGNED` | 取消操作人                                |
 | `cancelled_at`                     | `DATETIME`        | 取消时间                                  |
@@ -164,12 +164,12 @@
 | `need_number`                                  | 需求事实，不应因为出库、退料、报废而直接修改     |
 | `demand_type`                                  | `normal` 正常需求、`manual_additional` 人工追加、`scrap_supplement` 工序报废补料、`material_loss_supplement` 生产领料损耗补料 |
 | `generation_group_key`                         | 同一次生成的全部需求共享；只表达生成动作分组，不替代补料来源外键 |
-| `parent_demand_id`                             | 补料需求关联的原始需求                           |
+| `parent_demand_id`                             | 补料需求关联的原始需求，不表示纠错时直接被替代的需求 |
 | `supplement_id`                                | 补料需求的物流来源单据；具体业务来源由补料单的 `source_type` 和受约束来源外键确定 |
 | `idempotency_key`                              | 幂等键，同一键重复提交返回既有结果               |
 | `business_status`                              | `active` 未满足、`fulfilled` 已满足、`cancelled` 已取消 |
 | `remaining_number`                             | 确认出库时原子扣减；为 `0` 时进入 `fulfilled`    |
-| `cancel_source`                                | 区分任务取消级联与短批剩余需求显式关闭           |
+| `cancel_source`                                | 区分任务取消、短批剩余需求关闭与本轮结束           |
 
 约束：
 
@@ -215,7 +215,7 @@
 说明：
 
 - 物料版本是需求的精确库存身份；基础物料 `item_id` 只用于 BOM 归属、汇总和兼容校验。
-- 补料不建议直接修改原需求的 `need_number`，应新增一条需求记录。
+- 正式需求的 `need_number` 和已确认来源快照保持不变；补料新增需求，纠错采用审批后的关闭与替代，不原位改量。替代能力尚未实施，见下方目标设计。
 - 正常需求的 `need_number = quantity_per_unit_snapshot * planned_output_quantity_snapshot`；结果生成后作为事实保存，不随 BOM 或批次计划变化自动回写。
 - 正常需求命令必须一次覆盖全部 `production_material_requirement_basis`；同一基础行可拆为多个启用版本，所有拆分数量之和必须等于 `required_number`，任一行不完整时整单回滚。
 - 同一配置命令由 `IdempotencyExecutor` 保护；重复提交只返回既有结果，不重新读取已确认事实或恢复旧的一键生成入口。补料和人工追加也必须走对应幂等命令。
@@ -235,6 +235,99 @@
 - 供需预警每行对应一个精确版本，只汇总该版本的活动需求。关键词命中该版本任一活动需求的物料编码、名称或版本编码后，应保留同版本全部活动需求；编码和单位取同版本 ID 最大的活动需求快照，名称使用当前物料名称。
 - 供需缺口按精确版本计算，不同版本库存不能抵扣；分页按版本计数，具体公式和接口参数见[库存查询与可分配量](inventory-ledger-and-inbound.md#75-库存查询与可分配量)。
 - 预警下钻同时限定基础物料和精确版本，返回活动需求的版本 ID、编码、需求类型、需求 ID、所属工单、生产任务、原始需求及补料/异常处置/领料损耗单据编号；来源查询只读取 Production 事实，不反查 Product 当前主数据。
+
+#### 正式需求更正与替代（已确认，待实施）
+
+长期决策见 [ADR-0010](../../../../../../../docs/adr/0010-demand-correction-by-replacement.md)。本节描述目标规则，现有 schema、接口和审批场景尚未提供需求纠错能力；下文原有查询及约束仍是当前实现，不能仅凭新增申请或一个父需求字段直接执行替代。
+
+**提交更正申请 → 审批通过 → 关闭原需求未履约部分 → 创建有关联的替代需求。** 未确认的补料方案主单与明细仍可编辑；正式确认后的原方案、原需求数量及 BOM/单位/版本快照不回改。关闭只改变原需求的受控业务状态和关闭事实，不把原 `remaining_number` 清零伪装成已满足。
+
+**关闭终态与审批中间态（目标设计，待实施）**
+
+需求新增 `closed` 终态，表示主动结束剩余履约要求；`cancelled` 保留给未执行任务取消。关闭原因必须区分“更正并替代”“更正后无剩余”“单条关闭”和“随批次终止关闭”，页面不能全部只显示“人为关闭”。即使旧需求尚未领料，因录入错误被替代仍按更正原因关闭；不能只按已领量是否为零区分取消和关闭。
+
+`replaces_demand_id` 位于新需求上，指向因同一生效更正而关闭的旧需求。因“更正并替代”关闭的需求须有且仅有一个有效后继；单条关闭、批次终止及更正后无剩余可以没有后继。连续更正时，中间需求保留自己原有的替代指针，同时可再次关闭并被后继替代；因此 `closed` 不等价于该行 `replaces_demand_id IS NOT NULL`。
+
+仅冻结被更正的旧需求，不暂停整个生产任务。页面显示“更正审批中”，持久化履约状态仍为 `active`；需求表新增 `pending_correction_id BIGINT UNSIGNED NULL`，指向 Production 所有的当前在审更正申请，由该申请关联通用审批实例。只保留一份当前在审关联，不另加可任意修改的冻结布尔值，也不把通用审批节点状态复制到需求表。该字段及更正申请结构尚待 migration 实施。
+
+`pending_correction_id` 默认空，暂存更正草稿不设置；正式送审时与创建/绑定审批实例同事务设置，要求旧需求仍为 `active` 且原指针为空。最终批准在关闭旧需求、生成可选替代需求的同一事务清空；驳回/撤回只在该字段仍指向本次申请时清空，不改变原剩余需求。非空指针必须关联同一旧需求的有效在审申请，关闭/履约等终态不得残留该指针。清空当前指针不删除历史：更正申请中的旧需求、可选新需求、审批实例和生效记录永久保留；`replaces_demand_id` 也不随审批结束清除。
+
+| 场景 | 对审批中旧需求的处理 |
+| --- | --- |
+| 分配、释放、制单、确认出库、再次更正、普通关闭 | 禁止；候选查询及后端写入共同检查 `active` 且无在审更正，再叠加各入口原有资格条件 |
+| 补料齐套、需求是否解决、正常完工 | 仍按未解决需求阻断，不能因为它退出可操作候选就视为已满足 |
+| 需求总览、缺料与历史追溯 | 继续展示原数量、已领和剩余，明确标注审批中及不可操作原因 |
+| 其他需求及原有生产额度 | 按原规则继续；同一补料单的其他需求可领料，但在审要求未解决前该单不能齐套放行 |
+
+送审前处理涉及旧需求的待出库单，并明确混合单据的影响范围。审批绑定和解除在审关联须推进需求版本；单纯冻结不改变需求集合或数量，不因此推进物料计划版本。最终批准原子关闭旧需求、建立替代关系并解除本申请冻结；驳回/撤回只解除本申请冻结，恢复原需求按原剩余继续办理，不覆盖其他约束。已领部分的退料/损耗仍从原事实追溯并遵守其独立规则，不因冻结删除或移转来源；如改变审批依据，最终批准须要求重新复核。批次终止与在途更正互斥，先按更正流程撤回/驳回在途申请，再关闭旧需求；迟到批准不得在已结束任务中生成替代需求。
+
+来源与更正关系必须区分：
+
+| 关系 | 含义及约束 |
+| --- | --- |
+| 现有 `parent_demand_id` | 补料追溯其原始需求；人工追加仍为空。现有损耗补料会沿此字段取得来源根，不能将其复用为纠错链 |
+| 现有 `supplement_id` | 替代的补料需求继续归属同一补料物流单，保留原需求类型、原始需求及报废/损耗来源 |
+| 目标直接替代关系 | 新需求明确关联直接被替代的旧需求，建议以独立 `replaces_demand_id` 表达；此字段当前不存在，不覆盖 `parent_demand_id` |
+| 目标更正申请与审批关联 | 关联旧需求、可选的新需求、审批实例和生效版本；纯关闭允许没有新需求，审批不能只写在备注或仅保存最后一次审批编号 |
+
+`supplement_id` 是补料单与需求的一对多归属键，已足够用于按单查需求和判断齐套；`parent_demand_id` 则保留逐条补料需求的原始需求来源，不参与齐套分组，也不只用于损耗补料。工序报废补料从方案明细的 `original_demand_id` 取得父需求；同一补料单可以包含指向不同原需求的多种物料，补料单主表的报废来源不能代替这些逐行关系。损耗补料可通过补料单的 `material_loss_scrap_id` 追溯损耗事实及其直接来源 `demand_id/allocation_id`，同时按现有 `sourceDemand.parent_demand_id ?? sourceDemand.id` 保留补料来源根；来源根既可能是正常需求，也可能是人工追加需求，父需求本身不表示已领物料的具体库存批次。
+
+例如补料需求 D1 的 `supplement_id = M1`、`parent_demand_id = N1`，更正后 D2 仍保存 `supplement_id = M1`、`parent_demand_id = N1`，新增的直接替代关系才指向 D1。M1 表示同一次补料物流，N1 表示原始需求来源，D1 表示本次被纠正的需求；三者不能互相代用。人工追加需求及其替代需求继续保持 `parent_demand_id` 和 `supplement_id` 为空，纠错链单独关联。
+
+首期只处理同批次、同物料、同精确版本、同单位的活动人工追加需求，及尚未齐套的工序报废补料单下活动需求。BOM 正常需求只在批次收尾时按规则结束剩余部分，不开放日常任意改量；损耗补料与已确认损耗量相等的规则继续保留，来源错误须另行更正来源业务。已履约/已关闭的需求、已齐套补料不在此入口重新打开；改变物料、版本、单位须另行设计，不把不同身份的历史领料相加为已满足新物料需求。
+
+数量示例（首次更正）：
+
+| 对象 | 批准后的记录 |
+| --- | --- |
+| 原方案与旧需求 A | 原需求量 10、已确认领料 4 保留；原剩余 6 经更正申请关闭 |
+| 更正申请 | 记录原目标 10、新目标总量 7、已领 4、关闭余量 6、新需求量 3，以及原因和版本 |
+| 替代需求 B | 新建需求量 3、剩余量 3，关联 A、更正审批及 A 的补料来源（如有） |
+| 当前执行口径 | 历史已领 4 加尚需领用 3；不将旧需求 10 与新需求 3 累加成 13 |
+
+连续更正只对当前活动需求进行，按同一替代链全部已确认领料计算新剩余需求，不能只扣最后一条需求的已领量。新目标总量不得少于链上已确认领料；退料另走原来源退料命令，不冲回需求履约。新剩余为 0 时只关闭，不生成零数量需求，也不伪造出库。
+
+审批前展示原始来源、历史更正链、本次旧需求版本、数量差异、关联待出库单与预留，以及补料齐套可能带来的授权激活/工序重开。涉及旧需求的待出库单须送审前处理，未出库预留的释放范围纳入批准证据；混合多条需求的出库单不能因其中一条纠错而无提示地取消其他需求的领料安排。送审后冻结证据并限制影响证据的操作；同一旧需求不能并行生效两次更正。
+
+最终批准事务通过统一需求计划 Writer 完成旧需求关闭与替代需求生成，原计划版本只因该次业务变更统一推进，并与审批生效、关联单据状态及成功审计同事务提交。当前短批授权按计划版本失效规则处理；审批失败回滚，驳回/撤回保留正式需求事实。
+
+**补料齐套与补产执行资格**
+
+现有 `fulfillReadySupplements` 要求补料单下全部直接需求为 `fulfilled`；只关闭旧需求、插入新需求会被非 `fulfilled` 的历史行持续阻断，包括当前使用的 `cancelled` 及目标新增的 `closed`。目标改为按该补料单全部需求来源及其已生效更正链判断当前履约要求，不能简单改成“没有活动需求”，也不能一律跳过 `cancelled/closed`。
+
+| 需求情况 | 对该补料单齐套的影响 |
+| --- | --- |
+| 未更正的需求仍为 `active` | 继续阻断，已分配或部分出库都不等于领齐 |
+| 旧需求因已批准且已生效的替代而 `closed` | 保留原数量和已领事实，后续要求沿更正链交由替代需求判断；旧需求本身不伪装成 `fulfilled` |
+| 替代需求为 `active` | 继续阻断，必须完成替代需求的实际领料 |
+| 当前需求为 `fulfilled`，且关联更正链完整有效 | 该项履约要求已满足；其他来源项仍须逐项满足 |
+| 需求被普通关闭/取消，没有生效的替代或批准解除剩余要求的依据 | 不得视为已经领齐，继续阻断 |
+| 补料单因批次收尾等原因已 `cancelled` | 不进入齐套激活，既有补产授权不得因此获得执行资格 |
+
+例如旧需求 A 为 10、已领 4，更正为总量 7：批准事务将 A 的剩余 6 关闭并生成 B（需求 3），A 为 `closed`、B 为 `active`，补料单仍为 `approved`（待补料）。B 只领 1 时仍阻断；B 全部领齐且该单其他有效要求均满足后，补料单才进入 `fulfilled`，既有补产授权的相应额度才具备物料条件。连续更正同样沿链判断当前要求，不要求历史关闭行变为已履约。
+
+新剩余为 0 的更正不得靠空集合自动齐套：补料项须在审批中明确解除哪些剩余要求，并核对新目标等于链上累计已确认领料，保存结论及依据；没有这项生效证据仍阻断。首期不开放整张补料单零领料、全部要求被免除后自动放行补产；若不再补产，应走对应收尾/取消处理，无需补料仍继续补产的例外须另行设计。
+
+Production 统一拥有一套补料履约判定与状态推进能力，由需求更正最终批准、出库确认共同调用；详情查询沿用同一有效履约口径。工序及补产额度计算读取补料单的受控履约结果，不各自遍历更正链，也不另存一套可手改的“齐套”标记。依赖顺序为：**当前需求履约 → 补料单齐套 → 既有补产额度具备物料条件 → 结合工序及批次状态决定执行资格**。齐套本身不代替工序前置条件、权限或批次可执行状态；普通短批授权也不能绕过对应补产额度的补料条件。
+
+上述依赖按一张补料单及其对应授权判断，不要求整个批次的所有补料单同时 `fulfilled`。某张补料单未齐套只使其对应的新增授权量暂不进入路线公式，不冻结原有可执行量及其他已齐套授权量。领料损耗补料不关联产品补产授权，即使齐套也不增加产品额度。
+
+复用应按业务职责拆分，不把每一个判断拆成各自查询数据库、各自提交的命令：
+
+| 判断职责 | 输入与结果 | 复用边界 |
+| --- | --- | --- |
+| 补料需求履约判定（更正能力待实施） | 同一补料单的需求、已生效更正关系及履约事实 → 是否满足全部当前要求、阻断需求及原因 | 更正审批预览/最终批准、出库确认及补料详情；不能仅检查不存在 `active` |
+| 补产授权的物料条件 | 每条已有授权关联补料单为 `fulfilled` → 该授权可参与路线公式 | 现有 `selectRouteSupplementSources` 派生 `material_ready`；不是授权表的独立状态，不需要再批准一次，不按物料数量换算产品数量 |
+| 工序数量计算 | 批次计划、逐工序有效报工、可参与公式的授权 → 各工序目标量、放行量及剩余可报量 | 现有 `calculateRouteStepQuantities` 为共享纯函数，供任务展示、普通报工、返工及补产重开使用；公式由[执行章节 §4.2.3](execution-traceability-quality.md#423-数量与并发约束)所有 |
+| 工序动作资格 | 操作人/权限、批次与工序状态、前道放行和本次报工数量 → 对指定动作是否允许及原因 | 开始工序和提交报工分别组合规则，不用一个通用布尔值代替所有动作校验 |
+
+“开始工序”检查已派工、当前负责人及允许的批次状态；首工序检查正常领料完成或有效短批许可，后道检查前道已有正常产出，不要求前道整道完工。“普通报工”检查批次与工序均在执行、当前负责人、本次数量不超过剩余可报量，并按当前正常目标判断是否完成；补产导致已完成工序重开时沿用原负责人和首次开工时间。这些已有执行规则不由需求更正重定义。
+
+查询可以复用纯判断结果展示按钮与阻断原因，但不能作为后续写入的凭证。写命令必须在同一事务内锁定相关事实、读取最新数量并重新组合校验；共享纯函数本身不查询数据库、不写状态，状态推进仍由所属业务命令统一完成。
+
+旧需求关闭、新需求生成、补料齐套重算及其工序重开影响必须包含在同一批准事务内，沿统一锁序重新校验；禁止先提交关闭再异步创建替代需求，避免中间状态误放行或并发领料改变审批依据。更正不重建报废事实或补产授权，只处理满足批准履约条件的既有授权。实施时同步调整 `fulfillReadySupplements` 的查询、调用时机及所有依赖该结果的展示和执行校验。
+
+追溯保留全部原方案、旧/新需求、逐次审批及真实领退料；当前缺口继续按活动需求的精确版本计算。业务汇总识别替代链的当前要求和历史履约，不能把各历史版本的总需求重复计入。现有补料来源唯一键、人工追加来源约束、分组键/幂等键和前后端契约须在实现时统一调整，追加 migration 后再开放入口；不得改原来源指针、删旧需求或创建另一份执行需求表绕过约束。
 
 #### 需求数量与进度查询
 
@@ -357,6 +450,8 @@ BOM 定义基础物料与用量，管理员在需求配置时确定精确版本�
 
 职责：承载管理员在异常正式批准报废前暂存、重开和复核的补料方案。方案不是正式物料需求，不得进入分配、出库或库存计算；只有最终确认事务才把方案明细复制为 `production_item_demand(scrap_supplement)`，并同时生成报废事实、补产授权和补料物流单。
 
+production_scrap_supplement_plan 这是计划 -> production_scrap_supplement_plan_line 这是计划的详细？然后确定时持久化到 需求
+
 `production_scrap_supplement_plan` 字段：
 
 | 字段                          | 类型              | 说明                                                         |
@@ -421,7 +516,7 @@ draft -> confirmed
 | `material_loss_scrap_id`  | `BIGINT UNSIGNED` | 生产领料损耗报废记录 ID；仅生产领料损耗填写                       |
 | `production_batch_id`     | `BIGINT UNSIGNED` | 所属生产批次 ID                                                    |
 | `batch_step_record_id`    | `BIGINT UNSIGNED` | 工序报废来源工序执行节点 ID；生产领料损耗为空                     |
-| `status`                  | `VARCHAR(30)`     | 物流状态：`approved`、`fulfilled`                                  |
+| `status`                  | `VARCHAR(30)`     | 物流状态：`approved`、`fulfilled`、`cancelled`                                  |
 | `fulfilled_by`            | `BIGINT UNSIGNED` | 最后一项需求完成确认领用的操作人；未齐套时为空                     |
 | `fulfilled_at`            | `DATETIME`        | 全部直接补料需求完成确认领用时间；未齐套时为空                     |
 | `remark`                  | `TEXT`            | 来源审批或损耗确认说明                                             |
@@ -438,21 +533,21 @@ draft -> confirmed
 - 外键：`fulfilled_by` 及业务审计操作者字段关联 `users.id`。
 - 检查约束：`CHECK (source_type IN ('step_scrap_reproduction', 'material_loss'))`。
 - 检查约束：`step_scrap_reproduction` 要求 `step_scrap_record_id`、`batch_step_record_id` 非空且 `material_loss_scrap_id` 为空；`material_loss` 要求 `material_loss_scrap_id` 非空且 `step_scrap_record_id`、`batch_step_record_id` 为空。
-- 检查约束：`CHECK (status IN ('approved', 'fulfilled'))`。
-- 检查约束：`approved` 要求 `fulfilled_by/fulfilled_at` 均为空；`fulfilled` 要求二者均非空。
+- 检查约束：`CHECK 状态只允许 'approved'、'fulfilled'、'cancelled'`。
+- 检查约束：`approved/cancelled` 要求 `fulfilled_by/fulfilled_at` 均为空；`fulfilled` 要求二者均非空。
 - 检查约束：`CHECK (version >= 0)`。
 - 索引：`INDEX (production_batch_id, status, created_at)`、`INDEX (source_type, status, created_at)`。
 
 状态机与来源规则：
 
 ```text
-approved -> fulfilled
+approved -> fulfilled / cancelled（仅批次结束）
 ```
 
 - 本表状态只表达补料物流是否齐套，不表达异常审批结果、报废事实是否成立或产品补产授权是否存在。状态转换由最后一项补料确认领用事务触发，必须递增 `version`；终态不得通过通用更新接口恢复为 `approved`。
 - `source_type = 'step_scrap_reproduction'`：管理员批准工序异常为报废时，同一事务创建工序报废事实、产品补产授权、本补料单以及一到多条 `scrap_supplement` 需求。候选来自当前批次冻结的完整 BOM 需求基础，不按发生报废的工序裁剪；管理员选择基础物料下的具体启用版本及补料数量。
 - `source_type = 'material_loss'`：管理员确认 `item_scrap.scrap_scene = 'production_consumed'` 的生产领料损耗时，同一事务创建本补料单和且仅一条 `material_loss_supplement` 需求；物料、BOM、单位和原始需求关系从损耗记录所引用的分配行复制，需求数量固定等于 `item_scrap.scrap_number`。接口不提供“不补料”或修改补料数量的参数。
-- 若损耗来源分配行本身属于补料需求，新需求的 `parent_demand_id` 继续指向该链路的原始正常需求，不形成需求到需求的无限嵌套；损耗事实和补料单共同保留直接来源。
+- 损耗补料的 `parent_demand_id` 取 `sourceDemand.parent_demand_id ?? sourceDemand.id`：来源为正常或人工追加需求时指向该来源需求，来源已为补料需求时沿用其原始需求指针，不随重复损耗继续嵌套；损耗事实的 `demand_id/allocation_id` 与补料单共同保留本次直接来源。
 - 每张补料单必须至少拥有一条 `business_status = 'active'` 且类型与 `source_type` 匹配的直接需求。最后一项直接需求的已确认出库累计达到 `need_number` 时，同一事务把补料单转为 `fulfilled`，写入 `fulfilled_by/fulfilled_at`、递增 `version` 并记录成功审计。
 - 工序报废补料单进入 `fulfilled` 后，对应 `batch_step_scrap_reproduction_authorization.authorized_quantity` 才进入路线数量公式，并按既有规则重开受影响工序。生产领料损耗补料单进入 `fulfilled` 只表示替代物料已经领齐，不创建授权、不增加 `authorized_quantity`、不重开工序，也不改变生产批次计划量或首工可报上限。
 - `202608200002-production-material-loss-supplement` 已将原持久字段 `scrap_record_id` 语义化重命名为 `step_scrap_record_id`，新增 `source_type/material_loss_scrap_id/version/updated_by/updated_at`，并将历史行全部回填为 `step_scrap_reproduction`；更早已执行 migration 未被修改。
@@ -461,7 +556,7 @@ approved -> fulfilled
 
 - `batch_step_scrap_records` 是已批准不可返工的工序损失事实：对 `abnormal_disposition_id` 唯一，保存批次、工序、来源报工、异常数量和单位快照；只追加、不更新、不删除。
 - `batch_step_scrap_reproduction_authorization` 是“工序报废补产授权”的不可变事实。它对报废事实和补料单分别唯一，固定生产批次、首工序入口、补产额度截止工序、授权数量和审批人/时间。物料候选不属于路线授权范围。表名显式包含 `scrap`，避免与返工混淆。
-- `production_material_supplement` 是两类补料共用的物流主单；完整字段与约束见上节。状态只表示 `approved`（等待补料领用）或 `fulfilled`（全部直接需求已确认领用），不承担“是否批准补产”的语义。
+- `production_material_supplement` 是两类补料共用的物流主单；完整字段与约束见上节。状态表示 `approved`（等待补料领用）、`fulfilled`（全部直接需求已确认领用）或 `cancelled`（随本轮结束取消），不承担“是否批准补产”的语义。
 - 补料单直接通过 `production_item_demand.supplement_id` 拥有需求：工序报废来源拥有一到多条 `scrap_supplement`，生产领料损耗来源固定拥有一条 `material_loss_supplement`；不再设置与需求的物料、数量、单位、原需求重复的 `production_material_supplement_detail`。
 - 系统只提供候选物料，不自动计算每种物料的补料数量。管理员选择物料并手工填写数量，系统不得使用工序异常数量乘 BOM 用量推算补料数量。
 - 报工异常仍必须说明 `abnormal_origin`，但批准报废补料不再选择物料截止工序；候选物料来自当前批次完整的 BOM 基础，管理员按基础行明确选择启用版本和数量。
@@ -563,7 +658,7 @@ approved -> fulfilled
 | `operator_id`         | `BIGINT UNSIGNED` | 操作人 ID                                 |
 | `version`             | `INT`             | 乐观锁版本号，默认 `0`                    |
 | `remark`              | `TEXT`            | 备注                                      |
-| `cancel_source`       | `VARCHAR(30)`     | `manual` 人工取消或 `production_batch` 任务级联取消 |
+| `cancel_source`       | `VARCHAR(30)`     | `manual` 人工取消、`production_batch` 任务取消或 `production_termination` 本轮结束 |
 | `cancel_reason`       | `TEXT`            | 取消原因；历史未记录数据可为空            |
 | `cancelled_by`        | `BIGINT UNSIGNED` | 取消人；历史未记录数据可为空              |
 | `cancelled_at`        | `DATETIME`        | 取消时间；历史未记录数据可为空            |
@@ -578,7 +673,7 @@ approved -> fulfilled
 - 外键：`short_batch_authorization_id -> production_short_batch_authorization.id`
 - 外键：`FOREIGN KEY (operator_id) REFERENCES users(id)`
 - 外键：`FOREIGN KEY (cancelled_by) REFERENCES users(id)`
-- 检查约束：`CHECK (cancel_source IS NULL OR cancel_source IN ('manual', 'production_batch'))`
+- 检查约束：`CHECK (cancel_source IS NULL OR cancel_source IN ('manual', 'production_batch', 'production_termination'))`
 - 检查约束：`CHECK (status IN ('pending_picking', 'picked', 'partially_outbound', 'completed', 'cancelled'))`
 - 组合索引：`INDEX (status, created_at)`，用于出库单状态分页
 
@@ -643,3 +738,5 @@ approved -> fulfilled
 待确认单据占用量”，仍可实际出库数量为“分配数量 - 已确认出库量”。
 
 ---
+
+批次结束将未履约出库、分配、需求和补料一并结束，保留原履约事实；具体状态、锁序和取消来源见[批次结束设计](production-termination.md)。

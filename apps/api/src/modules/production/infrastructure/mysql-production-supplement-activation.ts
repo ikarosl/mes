@@ -50,7 +50,7 @@ export const selectRouteSupplementSources = async (
      FROM batch_step_scrap_reproduction_authorization authorization
      JOIN production_material_supplement supplement ON supplement.id=authorization.supplement_id
      JOIN batch_step_records step_record ON step_record.id=authorization.quota_end_step_record_id
-     WHERE authorization.production_batch_id IN (${batchIds.map(() => '?').join(',')})
+     WHERE supplement.status<>'cancelled' AND authorization.production_batch_id IN (${batchIds.map(() => '?').join(',')})
      ORDER BY authorization.production_batch_id,step_record.step_order_snapshot,authorization.id`,
     batchIds,
   );

@@ -100,7 +100,7 @@
             :rows="3"
             maxlength="5000"
             show-word-limit
-            placeholder="说明未生产或不足量结案原因"
+            placeholder="说明本轮结束或提前结案原因"
             @blur="reasonTouched = true"
           />
         </el-form-item>
@@ -148,7 +148,9 @@ const activeBatches = computed(() =>
   (props.order?.batches ?? []).filter((batch) => batch.status !== 'cancelled'),
 );
 const unfinishedBatches = computed(() =>
-  activeBatches.value.filter((batch) => batch.status !== 'completed'),
+  activeBatches.value.filter(
+    (batch) => batch.status !== 'completed' && batch.status !== 'terminated',
+  ),
 );
 const completedQuantity = computed(() =>
   activeBatches.value.reduce((sum, batch) => sum + integerQuantity(batch.completedQuantity), 0),
@@ -157,7 +159,7 @@ const plannedQuantity = computed(() => integerQuantity(props.order?.plannedQuant
 const isFullyProduced = computed(
   () =>
     activeBatches.value.length > 0 &&
-    unfinishedBatches.value.length === 0 &&
+    activeBatches.value.every((batch) => batch.status === 'completed') &&
     completedQuantity.value === plannedQuantity.value,
 );
 const canComplete = computed(() => isFullyProduced.value);
@@ -203,11 +205,13 @@ const alertTitle = computed(() => {
   if (props.mode === 'complete')
     return canComplete.value ? '批次汇总已达到工单计划量' : '批次汇总尚未达到足量完工条件';
   if (isFullyProduced.value) return '生产数量已足量完成，请改用“确认工单完工”';
+  if (activeBatches.value.some((batch) => batch.status === 'terminated'))
+    return '该操作将按结束生产结案';
   return activeBatches.value.length === 0 ? '该操作将按未生产结案' : '该操作将按不足量结案';
 });
 const alertDescription = computed(() => {
   if (unfinishedBatches.value.length > 0)
-    return `请先完成或取消所有未结束生产批次：${unfinishedBatches.value
+    return `请先完成、结束或取消所有未结束生产批次：${unfinishedBatches.value
       .map((batch) => `${batch.batchNo}（${batchStatusMeta(batch.status).label}）`)
       .join('、')}`;
   if (props.mode === 'complete')

@@ -58,14 +58,14 @@
 | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 工艺路线 | `draft -> enabled/archived`；`enabled -> disabled/archived`；`disabled -> enabled/archived`；`archived` 为终态                                                                                                                                       |
 | 生产工单 | `draft -> released/cancelled`；`released -> doing/completed/closed`；`doing -> completed/closed`；`completed -> closed`；`closed/cancelled` 为终态                                                                                                      |
-| 生产批次 | 各状态允许转换见下表；`completed/cancelled` 为终态，已出库或已开工批次禁止取消。 |
+| 生产批次 | 各状态允许转换见下表；`completed/cancelled/terminated` 为终态，已出库或已开工批次禁止取消。 |
 | 工序执行 | `pending -> assigned`；`assigned -> pending/doing`；`doing -> completed`；报工更正导致数量不足或下游报废补产提高目标时 `completed -> doing`。`assigned -> doing` 只由员工显式开工触发；工序数量达标时自动完工；普通物料状态不得驱动工序状态 |
 | 入库单   | `pending -> completed/cancelled`                                                                                                                                                                                                                     |
 | 出库单 | `pending_picking -> completed/cancelled`；当前确认命令整单出库，不开放 `picked/partially_outbound` 转换。 |
 | 退料单 | `pending -> returned/cancelled`；当前只支持退回公共可用库存，不开放退料报废。 |
 | 报废单   | `pending -> confirmed/cancelled`                                                                                                                                                                                                                     |
 | 盘点单 | `pending -> counting/completed/cancelled`；`counting -> completed/cancelled`。完成命令须全部明细已录入且库存快照未变化，正常流程先保存实盘数量进入 `counting`。 |
-| 返工单 | `pending -> doing`；`doing -> completed`；当前未开放返工取消命令。 |
+| 返工单 | `pending -> doing`；`doing -> completed`；仅批次结束命令允许 `pending/doing -> cancelled`，无独立返工取消入口。 |
 
 生产批次转换与 [production-status.policy.ts](../apps/api/src/modules/production/domain/production-status.policy.ts) 保持一致：
 
@@ -74,11 +74,11 @@
 | `pending` | `material_pending`、`cancelled` |
 | `material_pending` | `material_assigned`、`material_partially_outbound`、`material_outbound`、`cancelled` |
 | `material_assigned` | `material_pending`、`material_outbound`、`cancelled` |
-| `material_partially_outbound` | `material_outbound`、`doing` |
-| `material_outbound` | `doing` |
-| `doing` | `completed` |
+| `material_partially_outbound` | `material_outbound`、`doing`、`terminated` |
+| `material_outbound` | `doing`、`terminated` |
+| `doing` | `completed`、`terminated` |
 | `completed` | 无，终态 |
-| `cancelled` | 无，终态 |
+| `cancelled`、`terminated` | 无，终态 |
 
 转换表只定义允许的状态边，不能替代命令中的数量、权限、授权和版本校验。释放未出库分配导致不再齐套时，
 允许 `material_assigned -> material_pending`；有效短批授权下确认部分领料后进入 `material_partially_outbound`，

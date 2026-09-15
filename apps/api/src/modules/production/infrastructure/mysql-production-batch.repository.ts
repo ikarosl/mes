@@ -362,7 +362,11 @@ export class MysqlProductionBatchRepository {
   ): Promise<ProductionBatchDetail> {
     return withTransaction(this.pool, async (connection) => {
       const batch = await findBatch(connection, batchId, true);
-      if (batch.status === 'cancelled' || batch.status === 'completed')
+      if (
+        batch.status === 'cancelled' ||
+        batch.status === 'completed' ||
+        batch.status === 'terminated'
+      )
         throw new ProductionDomainError('INVALID_STATE', '已取消或已完成批次不能调整工序执行参数');
       const before = await findStepRecord(connection, batchId, recordId, true);
       if (before.status !== 'pending' && before.status !== 'assigned')
