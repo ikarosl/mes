@@ -15,8 +15,20 @@ import {
 } from '../approval.dto.js';
 import { createValidationPipe } from '../../../../../../presentation/http/validation.pipe.js';
 
-const roleStep = { name: '研发', assigneeType: 'role', roleId: '7', assigneeUserId: null };
-const userStep = { name: '管理', assigneeType: 'user', roleId: null, assigneeUserId: '8' };
+const roleStep = {
+  name: '研发',
+  assigneeType: 'role',
+  roleId: '7',
+  assigneeUserId: null,
+  assigneeSourceCode: null,
+};
+const userStep = {
+  name: '管理',
+  assigneeType: 'user',
+  roleId: null,
+  assigneeUserId: '8',
+  assigneeSourceCode: null,
+};
 const newDraft = { name: '审批流程', version: null, draftId: null, steps: [roleStep, userStep] };
 
 describe('approval DTOs', () => {

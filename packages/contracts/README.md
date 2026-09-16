@@ -19,8 +19,8 @@ corepack pnpm --filter @company/contracts test
 
 产品 BOM 批量替换使用 `ReplaceProductMaterialsCommand`（必填 `version` 与 `items`），前端请求和后端 DTO 共用这一结构；审批只接收已保存的 BOM。
 
-审批详情通过 `ApprovalSubjectSnapshot` 表达已接入场景的证据类型，目前只有 `BomApprovalSnapshot`。新增业务场景时扩展明确的快照联合及前端展示；证据的运行时结构校验由所属业务模块的审批 handler 实现。
+审批详情通过 `ApprovalSubjectSnapshot` 表达已接入场景的证据类型，包含 BOM、需求更正及批次收尾证据。新增业务场景时扩展明确的快照联合及前端展示；证据的运行时结构校验由所属业务模块的审批 handler 实现。
 
 BOM 明细、审批证据展示和生产需求/补料契约均不提供关键物料或记录批次开关。
 
-Approval 流程节点通过 `ApprovalAssignee` 明确 `assigneeType`、`roleId` 与 `assigneeUserId`，角色/指定用户二选一，另一字段为 null。决定命令使用 `stepId + version`；详情提供 `currentStepId`、实时 `eligibleUsers` 和操作能力，不再提供个人任务、myTaskId、分派轮次或重新分派能力。历史决定记录保存实际操作者，通知接收记录不授予审批资格。
+Approval 流程节点通过 `ApprovalAssignee` 明确 `assigneeType`、`roleId`、`assigneeUserId` 与 `assigneeSourceCode`，角色／指定用户／业务来源三选一，其余字段为 null。场景返回来源选项及必需末级；实例额外返回 `resolvedAssigneeUserId/Name`，不将运行时人员混入模板固定用户字段。决定命令使用 `stepId + version`；详情提供 `currentStepId`、实时 `eligibleUsers` 和操作能力，不再提供个人任务、myTaskId、分派轮次或重新分派能力。历史决定记录保存实际操作者，通知接收记录不授予审批资格。

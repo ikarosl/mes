@@ -41,7 +41,7 @@ export class ProductBomApprovalHandler implements ApprovalSubjectHandler, OnModu
     const preparation = await this.call(() =>
       this.products.prepareBomApproval(subjectId, expectedVersion, audit),
     );
-    return { ...preparation, snapshotSchemaVersion: 2 };
+    return { ...preparation, snapshotSchemaVersion: 2, businessAssigneeResolutions: [] };
   }
 
   /** Approval 创建申请后调用：绑定申请并冻结编辑，返回递增后的产品版本。 */

@@ -163,7 +163,9 @@ describe('ProductionService first-stage commands', () => {
 
   it('re-reads the active product and freezes its snapshot inside the release transaction', async () => {
     const repository = {
-      withWorkOrderReleaseTransaction: vi.fn(async (_id, action) => action('8')),
+      withWorkOrderReleaseTransaction: vi.fn(async (_id, action) =>
+        action({ productId: '8', workOrderOwnerId: '9' }),
+      ),
       releaseWorkOrder: vi.fn().mockResolvedValue({ id: '11', status: 'released', batches: [] }),
     };
     const products = {
@@ -181,7 +183,7 @@ describe('ProductionService first-stage commands', () => {
     const service = new ProductionService(
       repository as never,
       products as never,
-      {} as never,
+      { listActiveUserOptionsByIds: vi.fn().mockResolvedValue([{ id: '9' }]) } as never,
       {} as never,
     );
 
@@ -202,7 +204,9 @@ describe('ProductionService first-stage commands', () => {
 
   it('maps an invalid product found during release to a production domain error', async () => {
     const repository = {
-      withWorkOrderReleaseTransaction: vi.fn(async (_id, action) => action('8')),
+      withWorkOrderReleaseTransaction: vi.fn(async (_id, action) =>
+        action({ productId: '8', workOrderOwnerId: '9' }),
+      ),
     };
     const products = {
       getProductionProduct: vi
@@ -212,7 +216,7 @@ describe('ProductionService first-stage commands', () => {
     const service = new ProductionService(
       repository as never,
       products as never,
-      {} as never,
+      { listActiveUserOptionsByIds: vi.fn().mockResolvedValue([{ id: '9' }]) } as never,
       {} as never,
     );
 

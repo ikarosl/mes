@@ -37,6 +37,7 @@ describe('ProductBomApprovalHandler', () => {
     await expect(handler.prepareForApproval('9', 4, audit)).resolves.toEqual({
       ...preparation,
       snapshotSchemaVersion: 2,
+      businessAssigneeResolutions: [],
     });
     expect(registry.register).toHaveBeenCalledWith(handler);
   });

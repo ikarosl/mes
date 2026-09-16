@@ -1,5 +1,8 @@
 import { z } from 'zod';
+import type { BatchCloseoutApprovalSnapshot } from '@company/contracts';
+import { ProductionDomainError } from '../domain/production.errors.js';
 import {
+  APPROVAL_ASSIGNEE_SOURCES,
   DEMAND_TYPES,
   DEMAND_BUSINESS_STATUSES,
   DEMAND_CLOSE_CAUSES,
@@ -172,10 +175,39 @@ export const terminationCheckSchema = z.object({
     })
     .nullable(),
 });
-export const closeoutSnapshotSchema = z.object({
+export const CLOSEOUT_APPROVAL_SNAPSHOT_SCHEMA_VERSION = 2;
+const closeoutSnapshotBaseSchema = z.object({
   kind: z.literal('batch_closeout'),
   closeoutId: id,
   check: terminationCheckSchema,
   output: closeoutOutputSchema,
   actions: z.array(closeoutActionSchema),
 });
+export const closeoutSnapshotSchema = closeoutSnapshotBaseSchema
+  .extend({
+    workOrderOwnerEvidence: z.object({
+      sourceCode: z.literal(APPROVAL_ASSIGNEE_SOURCES.workOrderOwner),
+      workOrderId: id,
+      workOrderNo: z.string(),
+      workOrderVersion: version,
+      ownerId: id,
+    }),
+  })
+  .refine(
+    (snapshot) =>
+      snapshot.workOrderOwnerEvidence.workOrderId === snapshot.check.workOrderId &&
+      snapshot.workOrderOwnerEvidence.workOrderNo === snapshot.check.workOrderNo,
+    { message: '工单负责人来源与收尾任务所属工单不一致' },
+  );
+
+/** 只接受当前完整受审结构，不根据当前工单补造缺失的来源证据。 */
+export function readCloseoutApprovalSnapshot(
+  snapshot: unknown,
+  schemaVersion: number,
+): BatchCloseoutApprovalSnapshot {
+  if (schemaVersion === CLOSEOUT_APPROVAL_SNAPSHOT_SCHEMA_VERSION) {
+    const parsed = closeoutSnapshotSchema.safeParse(snapshot);
+    if (parsed.success) return parsed.data;
+  }
+  throw new ProductionDomainError('INVALID_STATE', '批次收尾审批证据结构无法读取');
+}

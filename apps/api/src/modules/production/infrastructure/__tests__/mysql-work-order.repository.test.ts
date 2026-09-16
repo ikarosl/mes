@@ -92,7 +92,7 @@ describe('MysqlWorkOrderRepository data ownership', () => {
 
     await expect(repository.withReleaseTransaction('6', action)).resolves.toBe('validated');
 
-    expect(action).toHaveBeenCalledWith('8');
+    expect(action).toHaveBeenCalledWith({ productId: '8', workOrderOwnerId: '9' });
     expect(String(connection.query.mock.calls[0]?.[0])).toContain('FOR UPDATE');
     expect(connection.beginTransaction).toHaveBeenCalledOnce();
     expect(connection.commit).toHaveBeenCalledOnce();

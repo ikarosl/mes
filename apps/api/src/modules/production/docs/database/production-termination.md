@@ -2,7 +2,7 @@
 
 Production 所有本章数据。适用于研发或批量工单中已经领料、决定停止执行的生产批次。长期决策见 [ADR-0009](../../../../../../../docs/adr/0009-research-round-close-and-output-disposition.md)，日常单条需求纠错见[需求设计](demand-allocation-and-outbound.md#正式需求更正与替代)。
 
-本章描述当前已实现的逐项收尾。下一阶段目标见 [ADR-0011](../../../../../../../docs/adr/0011-task-closeout-output-list-and-finished-goods-inbound.md)：所有已执行任务按“产线草稿 → 质检留存记录 → 产线管理员核对清单 → 所属工单负责人结案审批 → 仓管按批准清单入库”流转，并支持批准清单更正及两类成品入库。质检仅保存当次记录，不改写产出处置单；工单负责人分派需扩展 Approval。计划内外产出与计划缺口届时按新口径实施。该目标尚未替换当前字段、数量计算或正常完工状态机，实施任务见[路线图](../../../../../../../docs/roadmap.md)。
+本章描述当前已实现的逐项收尾。下一阶段目标见 [ADR-0011](../../../../../../../docs/adr/0011-task-closeout-output-list-and-finished-goods-inbound.md)：所有已执行任务按“产线草稿 → 质检留存记录 → 产线管理员核对清单 → 所属工单负责人结案审批 → 仓管按批准清单入库”流转，并支持批准清单更正及两类成品入库。质检仅保存当次记录，不改写产出处置单；工单负责人分派已由 Approval 的业务关联人员规则提供。计划内外产出与计划缺口届时按新口径实施。该目标尚未替换当前字段、数量计算或正常完工状态机，实施任务见[路线图](../../../../../../../docs/roadmap.md)。
 
 ## 流程与状态
 
@@ -116,7 +116,11 @@ Production 所有本章数据。适用于研发或批量工单中已经领料、
 
 读取权限 `production:tasks:view`，四个写入口均要求 `production:tasks:terminate` 与 `Idempotency-Key`，分别使用 `production.batch-closeout.begin/handle/output/submit.v1`。旧 `POST /actions/terminate` 不再提供。幂等严格结果为收尾 ID／批次 ID，送审为业务对象 ID／审批 ID；权限逐次校验，沿用 12 小时重放窗口。
 
-场景 `production.batch.closeout`、对象 `production_batch_closeout` 由 Production 注册，管理员先在审批流程页配置并发布顺序节点；未配置不可提交。不自动选择审批人或免审。通用 Approval 拥有节点、决定、历史和通知，Production handler 校验并操作自己的记录；不是每一项各送一次审批。
+场景 `production.batch.closeout`、对象 `production_batch_closeout` 由 Production 注册，管理员先在审批流程页配置并发布顺序节点；最后一个节点必须为 `business + production.work_order_owner`，前面可配置普通角色或固定用户节点。未配置、旧配置最后节点不符合来源规则或负责人无有效审批资格时不能提交，不回退到提交人、任务负责人或管理员。
+
+Production 在已持有工单 → 批次 → 收尾记录锁的事务内解析 `work_orders.work_order_owner_id`，并与受审证据一起返回给 Approval。Approval 固定本次解析用户，通知、待办和决定实时核对其账号及审批资格；后续激活不重新解析，角色候选原有实时成员规则不受影响。通用 Approval 拥有节点、决定、历史和通知，Production handler 校验并操作自己的记录；不是每一项各送一次审批。
+
+收尾审批快照结构版本为 `2`，新增 `workOrderOwnerEvidence`：`sourceCode`、`workOrderId`、`workOrderNo`、`workOrderVersion`、`ownerId`。来源证据与本次解析人员由同一个锁内读取构造；`bind` 在外层审批事务持有原锁期间再次 `prepare`，固化相同事实。源工单版本仅保存送审依据，不要求其他批次执行导致的工单版本变化触发人员重分派。缺少来源证据的旧结构不再读取或继续审批，也不得补填当前负责人。当前开发环境允许清空／重建，使用统一重置和种子流程准备新结构数据，不建设旧审批兼容分支。证据结构非法或版本未知时返回业务冲突并回滚，不能泄漏原始校验异常。
 
 写入先锁工单、批次、收尾记录，再锁关联事实。提交须无未处理事项、无阻断单据、有输出，且每条物料实核快照与当前领退料／损耗匹配。正式送审冻结该记录，审批证据包含逐项的目标、数量、状态变化、说明、操作人、时间和实际产出。末级批准使用当前读复核 SHA-256 核对令牌及全部行动；事实实质变化时拒绝最终生效，须驳回或撤回后重核，不能悄悄替换证据。批准决定、终止事实、批次终态、成功审计及通知共用一个事务；失败整体回滚。
 

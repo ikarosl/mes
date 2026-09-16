@@ -196,6 +196,7 @@ export class MysqlProductionDemandCorrectionRepository extends ProductionDemandC
         title: `${check.workOrderNo} / ${check.batchNo} · ${check.itemCode} 需求更正`,
         subjectVersion: row.version,
         snapshotSchemaVersion: 1,
+        businessAssigneeResolutions: [],
         snapshot: this.snapshot(row),
       };
     });

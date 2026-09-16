@@ -65,9 +65,18 @@ export interface BatchCloseoutDetail {
   canSubmit: boolean;
   blockers: string[];
 }
+/** 送审时从已锁定工单读取，与审批节点解析人员使用同一份事实。 */
+export interface BatchCloseoutWorkOrderOwnerEvidence {
+  sourceCode: 'production.work_order_owner';
+  workOrderId: string;
+  workOrderNo: string;
+  workOrderVersion: number;
+  ownerId: string;
+}
 export interface BatchCloseoutApprovalSnapshot {
   kind: 'batch_closeout';
   closeoutId: string;
+  workOrderOwnerEvidence: BatchCloseoutWorkOrderOwnerEvidence;
   check: BatchTerminationCheck;
   output: BatchCloseoutOutput;
   actions: BatchCloseoutAction[];

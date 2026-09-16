@@ -24,7 +24,12 @@ import { DATABASE_POOL } from '../../../infrastructure/database/database.module.
 import { ApprovalDomainError } from '../domain/approval.errors.js';
 import { ApprovalSubjectHandlerRegistry } from '../application/approval-subject-handler.registry.js';
 import { ApprovalRepository } from '../application/ports/approval.repository.js';
-import { resolveAssigneeIds, type AssigneeRuleRow } from './approval-assignees.js';
+import {
+  assertInstanceAssigneeRule,
+  resolveAssigneeIds,
+  resolveBusinessAssigneeUsers,
+  type InstanceAssigneeRuleRow,
+} from './approval-assignees.js';
 import { ApprovalNotifications } from './approval-notifications.js';
 
 type Db = Pool | PoolConnection;
@@ -50,7 +55,7 @@ interface InstanceRow extends RowDataPacket {
   version: number;
 }
 
-interface InstanceStepRow extends RowDataPacket, AssigneeRuleRow {
+interface InstanceStepRow extends RowDataPacket, InstanceAssigneeRuleRow {
   id: number;
   instance_id: number;
   flow_step_id: number;
@@ -199,8 +204,18 @@ export class MysqlApprovalRepository extends ApprovalRepository {
       // 先锁业务根并取得送审快照；后续审批操作也按业务根 → 申请的顺序加锁。
       const preparation = await handler.prepareForApproval(subjectId, expectedVersion, audit);
       const { flow, steps } = await this.flows.lockPublishedFlow(connection, scene.code);
-      // 提交时检查各级资格；只激活首级，不持久化候选人员名单。
-      const candidates = await this.resolveCandidates(steps);
+      const resolvedUsers = resolveBusinessAssigneeUsers(
+        scene,
+        preparation.businessAssigneeResolutions,
+        steps,
+      );
+      const resolvedSteps = steps.map((step) => ({
+        ...step,
+        resolved_assignee_user_id:
+          step.assignee_type === 'business' ? resolvedUsers.get(step.assignee_source_code!)! : null,
+      }));
+      // 业务节点固定送审时身份；所有节点仍实时检查资格，角色不冻结候选名单。
+      const candidates = await this.resolveCandidates(resolvedSteps);
       const instanceNo = this.newInstanceNo();
       const [insert] = await connection.execute<ResultSetHeader>(
         `INSERT INTO approval_instances
@@ -226,16 +241,17 @@ export class MysqlApprovalRepository extends ApprovalRepository {
         ],
       );
       const instanceId = String(insert.insertId);
-      for (const step of steps) {
+      for (const step of resolvedSteps) {
         const isFirst = step.step_no === 1;
         await connection.execute(
           `INSERT INTO approval_instance_steps
-             (instance_id,flow_step_id,step_no,status,activated_at,created_by)
-           VALUES (?,?,?,?,?,?)`,
+             (instance_id,flow_step_id,step_no,resolved_assignee_user_id,status,activated_at,created_by)
+           VALUES (?,?,?,?,?,?,?)`,
           [
             insert.insertId,
             step.id,
             step.step_no,
+            step.resolved_assignee_user_id,
             isFirst ? 'pending' : 'waiting',
             isFirst ? new Date() : null,
             audit.actorId,
@@ -405,6 +421,9 @@ export class MysqlApprovalRepository extends ApprovalRepository {
           assigneeType: step.assignee_type,
           roleId: step.role_id === null ? null : String(step.role_id),
           assigneeUserId: step.assignee_user_id === null ? null : String(step.assignee_user_id),
+          assigneeSourceCode: step.assignee_source_code,
+          resolvedAssigneeUserId:
+            step.resolved_assignee_user_id === null ? null : String(step.resolved_assignee_user_id),
         },
         actorId: audit.actorId!,
       });
@@ -527,12 +546,13 @@ export class MysqlApprovalRepository extends ApprovalRepository {
 
   private async instanceSteps(db: Db, id: string, lock = false): Promise<InstanceStepRow[]> {
     const [steps] = await db.query<InstanceStepRow[]>(
-      `SELECT s.id,s.instance_id,s.flow_step_id,s.step_no,fs.name,fs.assignee_type,fs.role_id,fs.assignee_user_id,s.status,
+      `SELECT s.id,s.instance_id,s.flow_step_id,s.step_no,fs.name,fs.assignee_type,fs.role_id,fs.assignee_user_id,fs.assignee_source_code,s.resolved_assignee_user_id,s.status,
        s.activated_at,s.ended_at,s.version
        FROM approval_instance_steps s JOIN approval_flow_steps fs ON fs.id=s.flow_step_id
        WHERE s.instance_id=? ORDER BY s.step_no${lock ? ' FOR UPDATE' : ''}`,
       [id],
     );
+    for (const step of steps) assertInstanceAssigneeRule(step);
     return steps;
   }
 
@@ -542,8 +562,11 @@ export class MysqlApprovalRepository extends ApprovalRepository {
   ): Promise<{ sql: string; parameters: unknown[] }> {
     const eligibility = await this.identity.getApprovalActorEligibility(actorId);
     if (!eligibility.canDecide) return { sql: '0=1', parameters: [] };
-    const alternatives = ["(fs.assignee_type='user' AND fs.assignee_user_id=?)"];
-    const parameters: unknown[] = [actorId];
+    const alternatives = [
+      "(fs.assignee_type='user' AND fs.assignee_user_id=?)",
+      "(fs.assignee_type='business' AND s.resolved_assignee_user_id=?)",
+    ];
+    const parameters: unknown[] = [actorId, actorId];
     if (eligibility.roleIds.length) {
       alternatives.push("(fs.assignee_type='role' AND fs.role_id IN (?))");
       parameters.push(eligibility.roleIds);
@@ -599,6 +622,9 @@ export class MysqlApprovalRepository extends ApprovalRepository {
       ...new Set([
         String(instance.created_by),
         ...steps.flatMap((s) => (s.assignee_user_id === null ? [] : [String(s.assignee_user_id)])),
+        ...steps.flatMap((s) =>
+          s.resolved_assignee_user_id === null ? [] : [String(s.resolved_assignee_user_id)],
+        ),
         ...eligibleIds,
         ...actions.map((a) => String(a.actor_id)),
       ]),
@@ -614,6 +640,7 @@ export class MysqlApprovalRepository extends ApprovalRepository {
       ).map((r) => [r.id, r.name]),
     );
     // 证据结构及当前展示引用由场景所有者解释，通用仓储不读取 BOM 的 materials 等字段。
+    const scene = this.handlers.getSceneDefinition(instance.scene_code);
     const subjectDisplay = await this.handlers
       .getHandler(instance.scene_code, instance.subject_type)
       .readSnapshotForDisplay(
@@ -636,6 +663,20 @@ export class MysqlApprovalRepository extends ApprovalRepository {
         stepNo: Number(step.step_no),
         name: step.name,
         assigneeType: step.assignee_type,
+        assigneeSourceCode: step.assignee_source_code,
+        assigneeSourceName:
+          step.assignee_source_code === null
+            ? null
+            : (scene.businessAssigneeSources.find(
+                (source) => source.code === step.assignee_source_code,
+              )?.name ?? step.assignee_source_code),
+        resolvedAssigneeUserId:
+          step.resolved_assignee_user_id === null ? null : String(step.resolved_assignee_user_id),
+        resolvedAssigneeUserName:
+          step.resolved_assignee_user_id === null
+            ? null
+            : (users.get(String(step.resolved_assignee_user_id)) ??
+              String(step.resolved_assignee_user_id)),
         roleId: step.role_id === null ? null : String(step.role_id),
         roleName:
           step.role_id === null ? null : (roles.get(String(step.role_id)) ?? String(step.role_id)),
@@ -681,9 +722,12 @@ export class MysqlApprovalRepository extends ApprovalRepository {
   }
 
   /** 提交前逐级检查当前合格人员；这里只解析用户 ID，不创建或分派任务。 */
-  private async resolveCandidates(steps: FlowStepRow[]): Promise<Map<number, string[]>> {
+  private async resolveCandidates(
+    steps: (FlowStepRow & InstanceAssigneeRuleRow)[],
+  ): Promise<Map<number, string[]>> {
     const result = new Map<number, string[]>();
     for (const step of steps) {
+      assertInstanceAssigneeRule(step);
       const candidates = await resolveAssigneeIds(this.identity, step);
       if (!candidates.length)
         throw new ApprovalDomainError(

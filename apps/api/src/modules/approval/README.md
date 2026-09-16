@@ -2,17 +2,17 @@
 
 接入 Product 的 BOM 场景 `product.bom.approve`，以及 Production 的 `production.demand.correct`、`production.batch.closeout`。流程配置、申请、节点、待办和处理记录属于 Approval；Product 保有 BOM、送审冻结与永久锁定事实；Production 保有需求更正、逐项收尾和产出处置。工单审批尚未接入；站内消息通过独立 Notification 公开能力发布。
 
-后续任务统一结案要求由所属工单负责人审批，所需“业务关联人员”来源、送审解析及实例分派方案见[审批设计 §7](../../../../../docs/approval-design.md#7-业务关联人员分派扩展待实施)。该扩展尚未实施；本章现有角色／指定用户配置不能自动按不同工单选择负责人。
+批次结案的最后节点使用“业务关联人员 → 工单负责人”。流程保存来源规则，送审由 Production 在锁内解析具体负责人并保留工单来源证据，Approval 将其固化到本次节点；同一流程可处理不同负责人的工单。规则见[审批设计 §7](../../../../../docs/approval-design.md#7-业务关联人员分派)。统一结案产出清单与质检记录仍按路线图实施。
 
 ## 配置与操作
 
-1. 管理员进入 `/approval/flows`，为对应业务场景配置顺序节点，每级选择一个启用角色或一个指定用户，保存并发布。
+1. 管理员进入 `/approval/flows`，为对应业务场景配置顺序节点，每级选择启用角色、指定用户或场景支持的业务关联人员，保存并发布；结案的最后节点必须为工单负责人，前面可配置管理节点，不强制两级。
 2. 产品页保存完整 BOM 后提交；生产任务需求总览中提交更正；批次收尾中处理全部事项、保存产出后提交。进入 `/approval/inbox` 查看待办或本人申请。
 3. 当前节点的任一合格用户明确通过后进入下一级；末级通过与所属业务生效同事务。
 4. 任一级驳回结束申请；仅申请人可撤回待审申请。修改后从第一级重新提交，旧证据保留。
 5. 节点无人可审时保留当前节点并显示提示；角色新增合格成员或原人员资格恢复后，自然进入其待办，无需重新分派。指定用户节点不会自动转给其他用户，申请人可撤回后按新流程重新提交。
 
-每个节点只有一条共享执行记录，不按候选人复制任务。角色节点固定角色身份并实时解析成员；指定用户节点固定用户身份。两者均要求当前账号有效，合并授权包含 `approval:decide`（支持既有通配匹配）；角色节点还须属于该有效角色。允许申请人自审、同一人逐级处理，但各级必须单独点击和记录。发布和提交时逐级检查当前合格人员，待办查询及处理时重新校验；新发布流程不改变在途申请。
+每个节点只有一条共享执行记录，不按候选人复制任务。角色节点固定角色身份并实时解析成员；指定用户节点固定用户身份；业务节点固定送审解析的用户身份。三者均要求当前账号有效，合并授权包含 `approval:decide`（支持既有通配匹配）；角色节点还须属于该有效角色。允许申请人自审、同一人逐级处理，但各级必须单独点击和记录。发布时验证角色／用户当前资格及业务来源规则；提交时连同业务解析人逐级检查当前合格人员，待办查询及处理时重新校验；新发布流程不改变在途申请。
 
 ## HTTP 与权限
 
@@ -21,7 +21,7 @@
 | 方法与路径 | 权限与含义 |
 | --- | --- |
 | `GET /scenes`、`GET /role-options`、`GET /user-options`、`GET /scenes/:sceneCode/flow` | `approval:configure`；场景、启用角色及当前具备审批资格的用户候选 |
-| `PUT /scenes/:sceneCode/flow/draft` | `approval:configure`；完整有序节点，核对 `draftId + version`，无草稿时两者为 null；每级提供 `assigneeType`、`roleId`、`assigneeUserId`，角色或用户必须二选一，另一字段显式为 null |
+| `PUT /scenes/:sceneCode/flow/draft` | `approval:configure`；完整有序节点，核对 `draftId + version`，无草稿时两者为 null；每级提供 `assigneeType`、`roleId`、`assigneeUserId`，另含 `assigneeSourceCode`，角色／用户／业务来源三选一，不适用字段显式为 null |
 | `POST /scenes/:sceneCode/flow/publish` | `approval:configure`；核对草稿 ID 和版本，发布后内容不可改 |
 | `GET /instances`、`GET /instances/:id` | 审批查看、处理、配置、BOM 管理、生产需求更正或批次收尾任一权限；普通用户按下方范围过滤 |
 | `POST /bom/:productId/submit` | `product:products:manage-bom`；提交产品聚合版本 |
@@ -30,7 +30,7 @@
 
 列表 scope 为 `todo/mine/all`，API 未传 scope 时默认 todo；管理页默认显式请求 all，包含所有状态。todo 在后端分页和计数前按申请未结束、节点当前活动及登录用户实时资格过滤；mine 包含本人发起的全部历史；普通用户的 all 包含本人发起、本人实际作出通过或驳回决定，以及本人当前可处理的申请。仅曾是候选人或通知收件人不保留历史全文访问权，新加入角色也不会获得已结束申请的历史权限。列表与详情使用同一授权范围，均须满足接口入口权限。`approval:configure` 可读全部申请；`approval:view` 本身不授予全局读取。
 
-前端只传 scope、状态和普通分页筛选，不提供授权角色或用户列表。详情通过 `currentStepId`、`canApprove` 和 `canWithdraw` 表达当前操作；各节点分别展示角色/指定用户规则、当前 `eligibleUsers` 和历史真实决定。所有决定都校验申请版本、当前节点与实时资格，非末级审批同样递增版本，迟到请求不得误批下一节点。重新分派接口与权限已经移除。通用批准／驳回／撤回仍不启用 HTTP Idempotency-Key，不自动重试决定请求；Production 两个业务送审入口使用各自的幂等命令，申请创建、绑定、审计和通知同事务。
+前端只传 scope、状态和普通分页筛选，不提供授权角色或用户列表。详情通过 `currentStepId`、`canApprove` 和 `canWithdraw` 表达当前操作；各节点分别展示角色/指定用户或业务来源规则、`resolvedAssigneeUserId/Name`、当前 `eligibleUsers` 和历史真实决定。所有决定都校验申请版本、当前节点与实时资格，非末级审批同样递增版本，迟到请求不得误批下一节点。重新分派接口与权限已经移除。通用批准／驳回／撤回仍不启用 HTTP Idempotency-Key，不自动重试决定请求；Production 两个业务送审入口使用各自的幂等命令，申请创建、绑定、审计和通知同事务。
 
 ## 模块与事务边界
 
@@ -49,7 +49,7 @@ Product、Production 分别声明场景并注册类型化 handler，Approval Reg
 
 配置聚合由 `ApprovalFlowRepository` / `MysqlApprovalFlowRepository` 负责；申请、节点和操作记录由 `ApprovalRepository` / `MysqlApprovalRepository` 负责。运行仓储在提交事务内调用配置仓储的 `lockPublishedFlow()` 固定选版，该内部协作只发生在 infrastructure，不向 application port 暴露连接类型。配置读取共用 `loadFlow()`；角色/用户配置校验与人员解析共用 `approval-assignees.ts`，资格只通过 Identity 公开能力取得，不越界查询 Identity 表；成功审计共用 `writeApprovalAudit()` 并继续经过平台事务审计 writer。
 
-通用提交先调用 `prepareForApproval()` 获取业务快照及其结构版本，创建申请后调用 `bindApproval()`，以其返回值保存冻结后的 `subject_version`，不假设所有业务版本都加一。申请及绑定版本在同一事务内完成，提交后的证据不改写。详情读取只由 Approval 解码 JSON，再交给 handler 的 `readSnapshotForDisplay()` 校验本场景证据版本和结构、补充当前展示引用；BOM 物料解析归 Product。
+通用提交先调用 `prepareForApproval()` 获取业务快照及其结构版本、`businessAssigneeResolutions`，校验来源与末级规则、解析资格后实例化业务人员，创建申请后调用 `bindApproval()`，以其返回值保存冻结后的 `subject_version`，不假设所有业务版本都加一。申请及绑定版本在同一事务内完成，提交后的证据及解析人员不改写。账号失效时仍保持 pending、派生 blocked；不重新解析当前工单、不回退给他人。详情区分来源、送审确定人员和实际操作者；待办、分页计数、决定与通知共用这一资格。详情读取只由 Approval 解码 JSON，再交给 handler 的 `readSnapshotForDisplay()` 校验本场景证据版本和结构、补充当前展示引用；BOM 物料解析归 Product。
 
 新增场景需由业务模块声明并注册 handler，提供独立鉴权且固定场景的业务提交入口，再复用通用 `submit()`。不得新增一份场景专属提交 SQL，也不开放让客户端自由指定场景的提交路由。`ApprovalSubjectType` 和 `ApprovalSubjectSnapshot` 明确区分 product、production_demand_correction、production_batch_closeout，管理端分别呈现 BOM、更正影响或逐项收尾结果；每个 handler 负责自己的证据结构校验。
 

@@ -32,8 +32,8 @@ const editorStub = {
         draftId: detail?.draft?.id ?? null,
         version: detail?.draft?.version ?? null,
         steps: [
-          { nodeCode: 'technical', name: '新技术审核', assigneeType: 'role', roleId: 'role-tech', assigneeUserId: null },
-          { name: '新负责人审核', assigneeType: 'role', roleId: 'role-owner', assigneeUserId: null }
+          { nodeCode: 'technical', name: '新技术审核', assigneeType: 'role', roleId: 'role-tech', assigneeUserId: null, assigneeSourceCode: null },
+          { name: '新负责人审核', assigneeType: 'role', roleId: 'role-owner', assigneeUserId: null, assigneeSourceCode: null }
         ]
       })">发布最新草稿</button>
     </div>
@@ -100,12 +100,14 @@ describe('ApprovalFlowsPage', () => {
           assigneeType: 'role',
           roleId: 'role-tech',
           assigneeUserId: null,
+          assigneeSourceCode: null,
         },
         {
           name: '新负责人审核',
           assigneeType: 'role',
           roleId: 'role-owner',
           assigneeUserId: null,
+          assigneeSourceCode: null,
         },
       ],
     });

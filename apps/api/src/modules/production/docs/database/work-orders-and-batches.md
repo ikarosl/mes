@@ -52,7 +52,7 @@
 | `planned_quantity`      | `DECIMAL(12,4)`   | 工单计划生产数量                                                 |
 | `customer_name`         | `VARCHAR(255)`    | 客户名称，可为空                                                 |
 | `quality_level`         | `VARCHAR(50)`     | 客户自定义质量等级代码，可为空                                   |
-| `work_order_owner_id`   | `BIGINT UNSIGNED` | 工单负责人，负责整体计划协调，可为空                             |
+| `work_order_owner_id`   | `BIGINT UNSIGNED` | 工单负责人；草稿可为空，下达必须为有效用户                             |
 | `plan_start_date`       | `DATE`            | 计划开始日期，可为空                                             |
 | `plan_end_date`         | `DATE`            | 计划完工日期，可为空                                             |
 | `status`                | `VARCHAR(30)`     | `draft`、`released`、`doing`、`completed`、`cancelled`、`closed` |
@@ -92,6 +92,8 @@
 - 工单处于 `released` 或 `doing` 且仍有未分配计划量时均可继续创建生产批次；首批次开工不冻结工单剩余任务拆分能力。
 - 生产领料、生产入库、半成品入库等动作建议落到 `production_batches` 维度。
 - 产品快照在工单下达时冻结，后续修改产品主数据不得回写历史工单。
+- 工单下达事务先锁工单，确认 `work_order_owner_id` 非空，再通过 Identity 公开能力复核账号启用且未删除；草稿仍允许暂缺负责人。下达只校验账号，不授予审批权限，任务结案送审时由 Approval 独立检查 `approval:decide`。
+- 负责人仅可随草稿编辑，下达后不提供负责人转交接口。结案送审固定当时的负责人及来源工单证据，后续节点不重新解析或自动替换人员。
 - `quality_level` 是客户自定义等级，不建立固定状态字典或 `CHECK`；如后续需要客户级等级主数据，必须另行建模，不能把自由文本解释为质量结论。
 - 工单实际开工时间不单独持久化，由所属批次的最早 `started_at` 推导；工单实际完工时间由已完工批次的 `completed_at` 汇总，避免形成第二执行事实来源。
 
@@ -126,7 +128,7 @@
 | 当前状态 | 管理动作 | 后端规则与目标状态 |
 | --- | --- | --- |
 | `draft` | 取消工单 | 尚未下达且没有执行事实时允许；必须填写原因，直接进入 `cancelled` |
-| `draft` | 下达工单 | 冻结下达快照并进入 `released` |
+| `draft` | 下达工单 | 事务内校验有效负责人，冻结下达快照并进入 `released` |
 | `released` | 首个生产批次实际开工 | 与批次开工同事务进入 `doing`；创建或分配批次本身不代表开工 |
 | `released` / `doing` | 确认工单完工 | 所有非取消批次均为 `completed`，且其 `completed_quantity` 合计等于工单 `planned_quantity` 时，管理员二次确认后进入 `completed` |
 | `released` / `doing` | 提前关闭工单 | 不存在未终态批次时允许进入 `closed`；必须填写关闭原因。没有批次或只有已取消批次属于未生产结案，已完成量小于计划量属于不足量结案；含 `terminated` 批次时归为 `production_terminated`，不以原批次完成量替代可用产出 |

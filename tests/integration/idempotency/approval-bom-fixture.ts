@@ -76,6 +76,7 @@ export const approveBomForProduction = async (
         {
           name: 'production approval',
           assigneeType: 'role',
+          assigneeSourceCode: null,
           roleId: String(roleId),
           assigneeUserId: null,
         },

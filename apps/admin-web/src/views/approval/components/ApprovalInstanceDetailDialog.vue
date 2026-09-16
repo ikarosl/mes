@@ -28,7 +28,7 @@
         :closable="false"
         show-icon
         class="blocked-alert"
-        title="当前节点暂无合格审批人，申请已保留。角色成员或指定用户恢复审批资格后即可继续处理。"
+        title="当前节点暂无合格审批人，申请已保留。角色成员或本节点确定的审批人恢复资格后即可继续处理；不会自动改派。"
       />
 
       <el-descriptions
@@ -87,9 +87,11 @@
                 <span class="step-number">{{ step.stepNo }}</span>
                 <strong>{{ step.name }}</strong>
                 <span class="step-role"
-                  >{{ APPROVAL_ASSIGNEE_TYPE_LABELS[step.assigneeType] }}：{{
-                    step.roleName ?? step.assigneeUserName
-                  }}</span
+                  >{{
+                    step.assigneeType === APPROVAL_ASSIGNEE_TYPE.business
+                      ? '来源'
+                      : APPROVAL_ASSIGNEE_TYPE_LABELS[step.assigneeType]
+                  }}：{{ assigneeName(step) }}</span
                 >
               </div>
               <el-tag
@@ -98,6 +100,20 @@
                 effect="light"
                 >{{ stepStatusMeta(step.status).label }}</el-tag
               >
+            </div>
+            <div class="step-assignment">
+              <span v-if="step.assigneeType === APPROVAL_ASSIGNEE_TYPE.business">
+                送审确定：<strong>{{
+                  step.resolvedAssigneeUserName ??
+                  (step.resolvedAssigneeUserId ? `用户 #${step.resolvedAssigneeUserId}` : '未解析')
+                }}</strong>
+              </span>
+              <span>
+                实际处理：<strong>{{ stepDecision(step.id)?.actorName ?? '尚未处理' }}</strong>
+                <template v-if="stepDecision(step.id)">
+                  · {{ actionLabel(stepDecision(step.id)!.actionType) }}
+                </template>
+              </span>
             </div>
             <div
               v-if="step.blockedReason"
@@ -198,6 +214,22 @@
         v-if="closeoutSnapshot"
         class="section-block"
       >
+        <el-descriptions
+          v-if="ownerEvidence"
+          :column="3"
+          border
+          class="summary"
+        >
+          <el-descriptions-item label="负责人来源工单">{{
+            ownerEvidence.workOrderNo
+          }}</el-descriptions-item>
+          <el-descriptions-item label="送审时工单负责人">{{
+            ownerEvidenceName
+          }}</el-descriptions-item>
+          <el-descriptions-item label="送审时工单版本">{{
+            ownerEvidence.workOrderVersion
+          }}</el-descriptions-item>
+        </el-descriptions>
         <BatchCloseoutEvidence :snapshot="closeoutSnapshot" />
       </section>
       <section class="section-block">
@@ -294,6 +326,7 @@ import {
   APPROVAL_INSTANCE_STATUS_LABELS,
   APPROVAL_STEP_STATUS_LABELS,
   APPROVAL_ASSIGNEE_TYPE_LABELS,
+  APPROVAL_ASSIGNEE_TYPE,
   APPROVAL_SCENE_LABELS,
   DEMAND_CORRECTION_KIND_LABELS,
 } from '@company/constants';
@@ -301,6 +334,7 @@ import type {
   ApprovalActionType,
   ApprovalInstanceDetail,
   ApprovalInstanceStatus,
+  ApprovalInstanceStep,
   ApprovalStepStatus,
 } from '@company/contracts';
 import DemandCorrectionEvidence from '../../production/components/DemandCorrectionEvidence.vue';
@@ -340,6 +374,35 @@ const closeoutSnapshot = computed(() =>
     ? props.detail.subjectSnapshot
     : null,
 );
+const ownerEvidence = computed(() => closeoutSnapshot.value?.workOrderOwnerEvidence ?? null);
+const ownerEvidenceName = computed(() => {
+  if (!ownerEvidence.value) return '—';
+  const step = props.detail?.steps.find(
+    (step) =>
+      step.assigneeSourceCode === ownerEvidence.value?.sourceCode &&
+      step.resolvedAssigneeUserId === ownerEvidence.value?.ownerId,
+  );
+  return step?.resolvedAssigneeUserName ?? `用户 #${ownerEvidence.value.ownerId}`;
+});
+const stepDecisions = computed(
+  () =>
+    new Map(
+      props.detail?.actions
+        .filter(
+          (action) =>
+            action.stepId && (action.actionType === 'approved' || action.actionType === 'rejected'),
+        )
+        .map((action) => [action.stepId!, action]),
+    ),
+);
+const stepDecision = (stepId: string) => stepDecisions.value.get(stepId);
+const assigneeName = (step: ApprovalInstanceStep): string => {
+  if (step.assigneeType === APPROVAL_ASSIGNEE_TYPE.business) {
+    return step.assigneeSourceName ?? step.assigneeSourceCode ?? '—';
+  }
+  if (step.assigneeType === APPROVAL_ASSIGNEE_TYPE.role) return step.roleName ?? '—';
+  return step.assigneeUserName ?? '—';
+};
 const comment = ref('');
 const canOperate = computed(() =>
   Boolean(
@@ -500,6 +563,18 @@ const withdraw = (): void => emit('withdraw', comment.value.trim());
 }
 .step-role {
   margin-left: 12px;
+}
+.step-assignment {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  margin-top: 10px;
+  color: #4b5563;
+  font-size: 13px;
+}
+.step-assignment strong {
+  color: #1f2937;
+  font-weight: 500;
 }
 .step-blocked {
   margin-top: 8px;

@@ -22,6 +22,11 @@ export interface ResolvedBatchStepOverride {
   actualSop: { id: string; fileName: string; objectKey: string; versionNo: string } | null;
 }
 
+export interface WorkOrderReleaseContext {
+  productId: string;
+  workOrderOwnerId: string;
+}
+
 export abstract class ProductionRepository {
   abstract listWorkOrders(query: WorkOrderQuery): Promise<PageResult<WorkOrderItem>>;
   abstract listWorkOrderOptions(): Promise<WorkOrderOption[]>;
@@ -39,7 +44,7 @@ export abstract class ProductionRepository {
   ): Promise<WorkOrderDetail>;
   abstract withWorkOrderReleaseTransaction<T>(
     workOrderId: string,
-    action: (workOrderProductId: string) => Promise<T>,
+    action: (workOrder: WorkOrderReleaseContext) => Promise<T>,
   ): Promise<T>;
   abstract releaseWorkOrder(
     id: string,

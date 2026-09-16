@@ -59,8 +59,15 @@ describe('approvalApi contract mapping', () => {
           assigneeType: 'role',
           roleId: 'role-tech',
           assigneeUserId: null,
+          assigneeSourceCode: null,
         },
-        { name: '负责人审核', assigneeType: 'user', roleId: null, assigneeUserId: 'user-owner' },
+        {
+          name: '负责人审核',
+          assigneeType: 'user',
+          roleId: null,
+          assigneeUserId: 'user-owner',
+          assigneeSourceCode: null,
+        },
       ],
     };
 

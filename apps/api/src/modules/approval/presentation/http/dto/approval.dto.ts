@@ -66,6 +66,12 @@ export class ApprovalFlowStepDto {
   @ValidateIf((_object, value) => value !== null)
   @IsNumberString({ no_symbols: true })
   assigneeUserId!: string | null;
+
+  @ValidateIf((_object, value) => value !== null)
+  @IsString()
+  @MaxLength(100)
+  @Matches(/^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/)
+  assigneeSourceCode!: string | null;
 }
 
 export class SaveApprovalFlowDraftDto {
@@ -161,6 +167,7 @@ export const toFlowDraft = (body: SaveApprovalFlowDraftDto): SaveApprovalFlowDra
     assigneeType: step.assigneeType,
     roleId: step.roleId,
     assigneeUserId: step.assigneeUserId,
+    assigneeSourceCode: step.assigneeSourceCode,
   })),
 });
 

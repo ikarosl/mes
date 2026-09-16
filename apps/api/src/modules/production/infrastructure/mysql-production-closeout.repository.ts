@@ -1,6 +1,7 @@
 import { isDeepStrictEqual } from 'node:util';
 import { Inject, Injectable } from '@nestjs/common';
 import { withTransaction } from '@company/database';
+import { APPROVAL_ASSIGNEE_SOURCES } from '@company/constants';
 import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import type {
   BatchCloseoutDetail,
@@ -24,7 +25,10 @@ import { findBatch } from './mysql-production.shared.js';
 import { MysqlProductionTerminationRepository } from './mysql-production-termination.repository.js';
 import { mysqlProductionDemandPlanWriter } from './mysql-production-demand-plan.writer.js';
 import { writeInventoryAudit } from './mysql-production-inventory.shared.js';
-import { closeoutSnapshotSchema } from '../application/production-approval-snapshot.schema.js';
+import {
+  CLOSEOUT_APPROVAL_SNAPSHOT_SCHEMA_VERSION,
+  readCloseoutApprovalSnapshot,
+} from '../application/production-approval-snapshot.schema.js';
 import { loadCloseoutItems } from './mysql-production-closeout-items.js';
 import { allocationNeedsCloseoutSql } from './mysql-production-material.sql.js';
 
@@ -368,9 +372,31 @@ export class MysqlProductionCloseoutRepository extends ProductionCloseoutReposit
       const detail = await this.loadDetail(db, row, true);
       if (!detail.canSubmit || !detail.output)
         throw new ProductionDomainError('INVALID_STATE', detail.blockers.join('；'));
+      // lockId 已按工单 → 批次 → 收尾记录加锁；当前读使用同一工单锁形成来源证据。
+      const [[workOrder]] = await db.query<
+        (RowDataPacket & {
+          id: number;
+          work_order_no: string;
+          work_order_owner_id: number | null;
+          version: number;
+        })[]
+      >(
+        'SELECT id,work_order_no,work_order_owner_id,version FROM work_orders WHERE id=? FOR UPDATE',
+        [detail.check.workOrderId],
+      );
+      if (!workOrder || workOrder.work_order_owner_id === null)
+        throw new ProductionDomainError('INVALID_STATE', '工单未配置负责人，不能提交结案审批');
+      const workOrderOwnerEvidence: BatchCloseoutApprovalSnapshot['workOrderOwnerEvidence'] = {
+        sourceCode: APPROVAL_ASSIGNEE_SOURCES.workOrderOwner,
+        workOrderId: String(workOrder.id),
+        workOrderNo: workOrder.work_order_no,
+        workOrderVersion: workOrder.version,
+        ownerId: String(workOrder.work_order_owner_id),
+      };
       const snapshot: BatchCloseoutApprovalSnapshot = {
         kind: 'batch_closeout',
         closeoutId,
+        workOrderOwnerEvidence,
         check: detail.check,
         output: detail.output,
         actions: detail.actions,
@@ -378,7 +404,10 @@ export class MysqlProductionCloseoutRepository extends ProductionCloseoutReposit
       return {
         title: `${detail.check.workOrderNo} / ${detail.check.batchNo} · 短产 / 提前结束`,
         subjectVersion: row.version,
-        snapshotSchemaVersion: 1,
+        snapshotSchemaVersion: CLOSEOUT_APPROVAL_SNAPSHOT_SCHEMA_VERSION,
+        businessAssigneeResolutions: [
+          { sourceCode: workOrderOwnerEvidence.sourceCode, userId: workOrderOwnerEvidence.ownerId },
+        ],
         snapshot,
       };
     });
@@ -391,6 +420,7 @@ export class MysqlProductionCloseoutRepository extends ProductionCloseoutReposit
     context: CommandContext,
   ): Promise<number> {
     return withTransaction(this.pool, async (db) => {
+      // Approval 外层事务持有 prepare 获取的工单、批次与收尾锁；重核不会重新解析其他人员。
       const prepared = await this.prepare(closeoutId, version, context);
       await db.execute(
         'UPDATE production_batch_closeout SET approval_instance_id=?,pending_approval_id=?,review_snapshot=?,version=version+1,updated_by=? WHERE id=?',
@@ -435,7 +465,10 @@ export class MysqlProductionCloseoutRepository extends ProductionCloseoutReposit
   ): Promise<void> {
     return withTransaction(this.pool, async (db) => {
       const row = await this.current(db, closeoutId, instance, version);
-      const snapshot = closeoutSnapshotSchema.parse(json(row.review_snapshot));
+      const snapshot = readCloseoutApprovalSnapshot(
+        json(row.review_snapshot),
+        CLOSEOUT_APPROVAL_SNAPSHOT_SCHEMA_VERSION,
+      );
       const detail = await this.loadDetail(db, row, true, true);
       if (!detail.canSubmit || !isDeepStrictEqual(detail.actions, snapshot.actions))
         throw new ProductionDomainError(

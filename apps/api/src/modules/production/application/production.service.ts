@@ -92,7 +92,9 @@ export class ProductionService {
   async releaseWorkOrder(id: string, version: number, audit: CommandContext) {
     const workOrder = await this.production.withWorkOrderReleaseTransaction(
       id,
-      async (productId) => {
+      async ({ productId, workOrderOwnerId }) => {
+        // 读取锁定工单的负责人，不信任之前保存草稿时的账号校验。
+        await this.requireActiveUser(workOrderOwnerId);
         const product = this.requireProduct(await this.products.getProductionProduct(productId));
         return this.production.releaseWorkOrder(id, version, product, audit);
       },

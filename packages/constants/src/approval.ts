@@ -48,9 +48,14 @@ export const APPROVAL_STEP_STATUS_LABELS = {
   rejected: '已驳回',
   cancelled: '已结束',
 } as const;
-export const APPROVAL_ASSIGNEE_TYPES = ['role', 'user'] as const;
-export const APPROVAL_ASSIGNEE_TYPE = { role: 'role', user: 'user' } as const;
-export const APPROVAL_ASSIGNEE_TYPE_LABELS = { role: '角色', user: '指定用户' } as const;
+export const APPROVAL_ASSIGNEE_TYPES = ['role', 'user', 'business'] as const;
+export const APPROVAL_ASSIGNEE_SOURCES = { workOrderOwner: 'production.work_order_owner' } as const;
+export const APPROVAL_ASSIGNEE_TYPE = { role: 'role', user: 'user', business: 'business' } as const;
+export const APPROVAL_ASSIGNEE_TYPE_LABELS = {
+  role: '角色',
+  user: '指定用户',
+  business: '业务关联人员',
+} as const;
 export const APPROVAL_ACTION_TYPE_LABELS = {
   submitted: '提交申请',
   approved: '节点通过',

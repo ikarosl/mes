@@ -1,3 +1,4 @@
+import type { WorkOrderReleaseContext } from '../application/ports/production.repository.js';
 import { Inject, Injectable } from '@nestjs/common';
 import { withTransaction } from '@company/database';
 import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
@@ -248,12 +249,17 @@ export class MysqlWorkOrderRepository {
 
   async withReleaseTransaction<T>(
     workOrderId: string,
-    action: (workOrderProductId: string) => Promise<T>,
+    action: (workOrder: WorkOrderReleaseContext) => Promise<T>,
   ): Promise<T> {
     return withTransaction(this.pool, async (connection) => {
       const order = await findWorkOrder(connection, workOrderId, true);
       requireWorkOrderTransition(order.status, 'released');
-      return action(String(order.product_id));
+      if (order.work_order_owner_id === null)
+        throw new ProductionDomainError('INVALID_INPUT', '下达前请指定工单负责人');
+      return action({
+        productId: String(order.product_id),
+        workOrderOwnerId: String(order.work_order_owner_id),
+      });
     });
   }
 
@@ -266,6 +272,8 @@ export class MysqlWorkOrderRepository {
     return withTransaction(this.pool, async (connection) => {
       const before = await findWorkOrder(connection, id, true);
       requireWorkOrderTransition(before.status, 'released');
+      if (before.work_order_owner_id === null)
+        throw new ProductionDomainError('INVALID_INPUT', '下达前请指定工单负责人');
       requirePlanDates(
         toDateOnlyString(before.plan_start_date),
         toDateOnlyString(before.plan_end_date),

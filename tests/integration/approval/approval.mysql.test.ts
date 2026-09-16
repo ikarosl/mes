@@ -168,6 +168,7 @@ describeMysql('Approval BOM workflow (real MySQL)', () => {
     expect(submitted.steps[0]).toMatchObject({
       status: 'pending',
       assigneeType: 'role',
+      assigneeSourceCode: null,
       roleId: String(fixture.assignmentRoleId),
       assigneeUserId: null,
     });
@@ -196,6 +197,7 @@ describeMysql('Approval BOM workflow (real MySQL)', () => {
     expect(stillBound.flowVersionNo).toBe(submitted.flowVersionNo);
     expect(stillBound.steps[1]).toMatchObject({
       assigneeType: 'role',
+      assigneeSourceCode: null,
       roleId: String(fixture.assignmentRoleId),
       status: 'waiting',
     });
@@ -642,6 +644,7 @@ describeMysql('Approval BOM workflow (real MySQL)', () => {
     );
     expect(disabledSubmitted.steps[0]).toMatchObject({
       assigneeType: 'user',
+      assigneeSourceCode: null,
       roleId: null,
       assigneeUserId: String(fixture.designatedId),
     });
@@ -1342,7 +1345,14 @@ const createFixture = async (pool: Pool): Promise<Fixture> => {
     productManagePermissionId,
     productIds: [],
     extraUserIds: [],
-    publishedFlow: { sceneCode: SCENE_CODE, name: '', published: null, draft: null },
+    publishedFlow: {
+      sceneCode: SCENE_CODE,
+      name: '',
+      businessAssigneeSources: [],
+      requiredFinalAssigneeSourceCode: null,
+      published: null,
+      draft: null,
+    },
   };
 };
 
@@ -1385,6 +1395,7 @@ const flowsForContext = (): MysqlApprovalFlowRepository => {
 const roleAssignee = (name: string, roleId: number): ApprovalAssignee & { name: string } => ({
   name,
   assigneeType: 'role',
+  assigneeSourceCode: null,
   roleId: String(roleId),
   assigneeUserId: null,
 });
@@ -1392,6 +1403,7 @@ const roleAssignee = (name: string, roleId: number): ApprovalAssignee & { name: 
 const userAssignee = (name: string, userId: number): ApprovalAssignee & { name: string } => ({
   name,
   assigneeType: 'user',
+  assigneeSourceCode: null,
   roleId: null,
   assigneeUserId: String(userId),
 });
