@@ -1,6 +1,6 @@
 # Production 内部职责与成品入库扩展边界
 
-本文是成品入库前的代码组织方案，遵守[总体架构](../../../../../../docs/architecture.md)。当前仍是一个 Production 业务模块；下列职责区用于组织用例和持久化能力，不表示已经完成目录迁移或建立了独立 Inventory、Quality 模块。实施项统一维护于[路线图](../../../../../../docs/roadmap.md)。
+本文定义成品入库前的代码组织与扩展边界，遵守[总体架构](../../../../../../docs/architecture.md)。当前仍是一个 Production 业务模块；下列职责区用于组织用例和持久化能力，不建立独立 Inventory、Quality 模块。实施项统一维护于[路线图](../../../../../../docs/roadmap.md)。
 
 ## 1. 按业务职责组织，保留完整事务
 
@@ -15,12 +15,13 @@
 
 这些职责共享 Production 数据所有权。菜单中“仓储”“生产”“报废”的位置不决定后端表归属；`common` 不存业务 SQL、库存规则或状态。跨业务模块依然只经目标模块 `public.ts`，展示查询按既有登记规则只读访问。
 
-当前拆分优先点：
+当前用例边界：
 
-- `mysql-production-material.repository.ts` 的确认出库同时更新出库单、需求余额、库存流水、批次物料状态、短批授权以及补料齐套／补产放行。这是一个完整用例；拆出内部履约与记账能力时，仍在同一个事务中依次调用，不能变成多个 HTTP 请求或提交后通知。
-- `mysql-production-closeout.repository.ts` 编排出库单、预留、需求、工序及异常等事项。保留单一收尾命令入口，把各类处理收敛到所属职责的窄能力；产出草稿、质检数量确认与清单更正独立设计，不继续扩大事项分支。
-- 损耗、退料、盘点已有三个窄 Repository，应沿用并逐步分离 `ProductionInventoryService`／`WarehouseController` 的用例装配，避免把新成品入库再加入这组无关命令的聚合。
-- `production.module.ts` 可按职责分组组织 Controller／Provider 装配，业务代码仍遵循 `presentation → application → domain`，infrastructure 实现 port。新能力按功能组织，既有文件随实际用例变更拆分；不进行全目录搬迁来代替职责整改。
+- `ProductionMaterialService`／`ProductionMaterialRepository` 负责分配；`ProductionMaterialOutboundService`／`ProductionMaterialOutboundRepository` 负责出库。`mysql-production-material-outbound.repository.ts` 的确认出库同时更新出库单、需求余额、库存流水、批次物料状态、短批授权及补料齐套／补产放行，完整保留单个事务及锁序，不能拆成多个 HTTP 请求或提交后通知。
+- `mysql-production-material-persistence.ts` 只共享锁批次、读取计划版本、齐套判断等持久化辅助，不是新业务账本或跨模块端口。追溯和取消前置查询分别调用明确的分配／出库能力。
+- 损耗、退料、盘点分别使用 `ProductionMaterialLossService`、`ProductionReturnService`、`ProductionStockCheckService` 和各自 Controller／窄 Repository；保留既有 `/warehouse` 路径与独立权限。新成品入库应以自己的用例接入，不能恢复无关命令的聚合服务。
+- `production.module.ts` 按计划、执行、物料、收尾、仓库、查询六组组织 Controller／Provider 装配，共享 Production 所有权，未增加六个独立模块。业务代码仍遵循 `presentation → application → domain`，infrastructure 实现 port。
+- Closeout 保有逐项收尾编排；产出草稿、质检记录与清单更正采用独立用例，后续不继续扩大 `handleImpact` 的事项分支。既有收尾涉及出库、预留、需求和工序的命令事务仍完整保留。
 
 若引入层内功能子目录，例如 `application/closeout`、`infrastructure/warehouse`，须同步导入、所有权检查脚本及所有者文档；目录移动不改变表的写入资格。端口不传递 MySQL 连接，事务复用现有同池事务上下文，不新增通用业务事务框架。
 

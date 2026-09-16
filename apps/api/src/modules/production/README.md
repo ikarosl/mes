@@ -11,15 +11,21 @@
 
 工单类型与工单级物料版本锁的目标 schema 见[工单设计](docs/database/work-orders-and-batches.md)，应用入口适配见[roadmap](../../../../../docs/roadmap.md)。
 
-成品入库前的代码组织见[内部职责与扩展边界](docs/module-boundaries.md)：先划清计划、执行、需求履约、结案产出、仓库操作及查询职责，保留单一 Production 所有权与原子事务；该规划不表示已拆出 Inventory／Quality 或完成目录迁移。
+成品入库前的代码组织见[内部职责与扩展边界](docs/module-boundaries.md)：先划清计划、执行、需求履约、结案产出、仓库操作及查询职责，保留单一 Production 所有权与原子事务；模块装配按职责分组，未拆出 Inventory／Quality。
 
 ## 关键不变量
 
 损耗、退料和盘点分别由 `ProductionMaterialLossRepository`、`ProductionReturnRepository`、
-`ProductionStockCheckRepository` 三个窄端口及对应 MySQL Adapter 所有。`ProductionInventoryService`
-按用例调用对应端口；每个命令在所属 Adapter 内保留完整事务。共享持久化辅助只处理锁定、编号、分页与
+`ProductionStockCheckRepository` 三个窄端口及对应 MySQL Adapter 所有，分别由同名
+MaterialLoss、Return、StockCheck Service／Controller 提供独立用例入口；HTTP 路径不变。
+每个命令在所属 Adapter 内保留完整事务。共享持久化辅助只处理锁定、编号、分页与
 审计映射，不持有业务状态，不新增账本写入所有者；损耗补料继续通过统一需求计划 Writer，退料和盘点的
 库存流水与单据、成功审计同事务提交。
+
+物料分配由 `ProductionMaterialService`／`ProductionMaterialRepository` 所有；领料出库由
+`ProductionMaterialOutboundService`／`ProductionMaterialOutboundRepository` 所有。确认出库的
+需求扣减、库存记账、批次状态、短批授权、补料齐套与补产放行仍在出库 Adapter 的同一事务内完成。
+共享物料持久化辅助仅承载锁定与齐套查询；收尾及产出后续通过独立用例扩展，不把它们加入仓库聚合服务。
 
 生产任务创建在事务内通过 Product 校验 BOM 已批准并锁定；库存事实来自 `inventory_transaction`，需求事实来自
 `production_item_demand`；可变单据使用 `version` 乐观锁，不可变执行事实不得更新。生产批次创建时

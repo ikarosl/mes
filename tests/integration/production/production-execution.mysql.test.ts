@@ -11,6 +11,7 @@ import { MysqlProductionExecutionRepository } from '../../../apps/api/src/module
 import { MysqlProductionReportingRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-reporting.repository.js';
 import { MysqlProductionAbnormalRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-abnormal.repository.js';
 import { MysqlProductionSupplementRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-supplement.repository.js';
+import { MysqlProductionMaterialOutboundRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-material-outbound.repository.js';
 import { MysqlProductionMaterialRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-material.repository.js';
 import { MysqlIdempotencyExecutor } from '../../../apps/api/src/infrastructure/idempotency/mysql-idempotency.executor.js';
 import { IdentityDirectoryService } from '../../../apps/api/src/modules/identity/application/identity-directory.service.js';
@@ -29,6 +30,7 @@ describeMysql('Production execution MySQL transactions', () => {
   let abnormal: MysqlProductionAbnormalRepository;
   let supplement: MysqlProductionSupplementRepository;
   let materials: MysqlProductionMaterialRepository;
+  let outbounds: MysqlProductionMaterialOutboundRepository;
   let reportingService: ProductionReportingService;
   let supplementService: ProductionSupplementService;
 
@@ -57,6 +59,7 @@ describeMysql('Production execution MySQL transactions', () => {
       new MysqlMaterialVariantRepository(pool),
     );
     materials = new MysqlProductionMaterialRepository(pool);
+    outbounds = new MysqlProductionMaterialOutboundRepository(pool);
     reportingService = new ProductionReportingService(
       reporting,
       new IdentityDirectoryService(new MysqlRbacRepository(pool)),
@@ -536,7 +539,7 @@ describeMysql('Production execution MySQL transactions', () => {
         demandId: String(fixture.demandId),
         demandType: 'normal',
       });
-      expect(await materials.listOutboundCandidates(String(fixture.batchId))).toEqual([]);
+      expect(await outbounds.listOutboundCandidates(String(fixture.batchId))).toEqual([]);
 
       const edited = await supplement.savePlan(
         dispositionId,
@@ -1234,7 +1237,7 @@ describeMysql('Production execution MySQL transactions', () => {
         },
         context(fixture.actorId, `${fixture.token}-allocate`),
       );
-      const outbound = await materials.createOutbound(
+      const outbound = await outbounds.createOutbound(
         String(fixture.batchId),
         {
           details: [
@@ -1246,7 +1249,7 @@ describeMysql('Production execution MySQL transactions', () => {
         },
         context(fixture.actorId, `${fixture.token}-outbound`),
       );
-      await materials.confirmOutbound(
+      await outbounds.confirmOutbound(
         outbound.outbound.outboundId,
         0,
         context(fixture.actorId, `${fixture.token}-confirm`),

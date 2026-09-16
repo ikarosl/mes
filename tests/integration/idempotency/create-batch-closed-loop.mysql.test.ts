@@ -24,7 +24,7 @@ import { MysqlProductSnapshotRepository } from '../../../apps/api/src/modules/pr
 import { MysqlProductCatalogRepository } from '../../../apps/api/src/modules/product/infrastructure/mysql-product-catalog.repository.js';
 import { ProductionService } from '../../../apps/api/src/modules/production/application/production.service.js';
 import { MysqlProductionBatchRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-batch.repository.js';
-import { MysqlProductionMaterialRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-material.repository.js';
+import { MysqlProductionMaterialOutboundRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-material-outbound.repository.js';
 import { MysqlProductionRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production.repository.js';
 import { MysqlWorkOrderRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-work-order.repository.js';
 import { ProductionController } from '../../../apps/api/src/modules/production/presentation/http/production.controller.js';
@@ -84,8 +84,8 @@ describeMysql(
       });
       const workOrders = new MysqlWorkOrderRepository(pool);
       const batches = new MysqlProductionBatchRepository(pool);
-      const materials = new MysqlProductionMaterialRepository(pool);
-      const production = new MysqlProductionRepository(workOrders, batches, materials);
+      const outbounds = new MysqlProductionMaterialOutboundRepository(pool);
+      const production = new MysqlProductionRepository(workOrders, batches, outbounds);
       const productRepository = new MysqlProductSnapshotRepository(pool);
       const products = new ProductSnapshotService(productRepository);
       const productDefinitions = new ProductProductionDefinitionService(productRepository);

@@ -28,7 +28,10 @@ import { ProductionInboundService } from './application/production-inbound.servi
 import { ProductionSupplyDemandService } from './application/production-supply-demand.service.js';
 import { ProductionAbnormalService } from './application/production-abnormal.service.js';
 import { ProductionSupplementService } from './application/production-supplement.service.js';
-import { ProductionInventoryService } from './application/production-inventory.service.js';
+import { ProductionMaterialLossService } from './application/production-material-loss.service.js';
+import { ProductionReturnService } from './application/production-return.service.js';
+import { ProductionStockCheckService } from './application/production-stock-check.service.js';
+import { ProductionMaterialOutboundService } from './application/production-material-outbound.service.js';
 import { ProductionRepository } from './application/ports/production.repository.js';
 import { ProductionMaterialRepository } from './application/ports/production-material.repository.js';
 import { ProductionMaterialDemandConfigurationRepository } from './application/ports/production-material-demand-configuration.repository.js';
@@ -66,88 +69,128 @@ import { ProductionTraceController } from './presentation/http/production-trace.
 import { ProductionInboundController } from './presentation/http/production-inbound.controller.js';
 import { ProductionAbnormalController } from './presentation/http/production-abnormal.controller.js';
 import { ProductionSupplementController } from './presentation/http/production-supplement.controller.js';
-import { WarehouseController } from './presentation/http/warehouse.controller.js';
+import { ProductionMaterialLossController } from './presentation/http/production-material-loss.controller.js';
+import { ProductionReturnController } from './presentation/http/production-return.controller.js';
+import { ProductionStockCheckController } from './presentation/http/production-stock-check.controller.js';
+
+import { ProductionMaterialOutboundRepository } from './application/ports/production-material-outbound.repository.js';
+import { MysqlProductionMaterialOutboundRepository } from './infrastructure/mysql-production-material-outbound.repository.js';
+
+// 装配按职责分组；各用例继续共享 Production 所有权及同池事务。
+const planningControllers = [ProductionController];
+const planningProviders = [
+  ProductionService,
+  MysqlWorkOrderRepository,
+  MysqlProductionBatchRepository,
+  MysqlProductionRepository,
+  { provide: ProductionRepository, useExisting: MysqlProductionRepository },
+];
+const executionControllers = [
+  ProductionExecutionController,
+  ProductionReportingController,
+  ProductionAbnormalController,
+  ProductionSupplementController,
+];
+const executionProviders = [
+  ProductionExecutionService,
+  ProductionReportingService,
+  ProductionAbnormalService,
+  ProductionSupplementService,
+  MysqlProductionExecutionRepository,
+  MysqlProductionReportingRepository,
+  MysqlProductionAbnormalRepository,
+  MysqlProductionSupplementRepository,
+  { provide: ProductionExecutionRepository, useExisting: MysqlProductionExecutionRepository },
+  { provide: ProductionReportingRepository, useExisting: MysqlProductionReportingRepository },
+  { provide: ProductionAbnormalRepository, useExisting: MysqlProductionAbnormalRepository },
+  { provide: ProductionSupplementRepository, useExisting: MysqlProductionSupplementRepository },
+];
+const materialControllers = [
+  ProductionMaterialController,
+  ProductionMaterialDemandController,
+  ProductionDemandCorrectionController,
+];
+const materialProviders = [
+  ProductionMaterialService,
+  ProductionMaterialOutboundService,
+  ProductionMaterialDemandService,
+  ProductionDemandCorrectionService,
+  ProductionDemandCorrectionApprovalHandler,
+  MysqlProductionMaterialRepository,
+  MysqlProductionMaterialOutboundRepository,
+  MysqlProductionMaterialDemandConfigurationRepository,
+  MysqlProductionDemandCorrectionRepository,
+  { provide: ProductionMaterialRepository, useExisting: MysqlProductionMaterialRepository },
+  {
+    provide: ProductionMaterialOutboundRepository,
+    useExisting: MysqlProductionMaterialOutboundRepository,
+  },
+  {
+    provide: ProductionMaterialDemandConfigurationRepository,
+    useExisting: MysqlProductionMaterialDemandConfigurationRepository,
+  },
+  {
+    provide: ProductionDemandCorrectionRepository,
+    useExisting: MysqlProductionDemandCorrectionRepository,
+  },
+];
+const closeoutControllers = [ProductionCloseoutController, ProductionTerminationController];
+const closeoutProviders = [
+  ProductionCloseoutService,
+  ProductionCloseoutApprovalHandler,
+  ProductionTerminationService,
+  MysqlProductionCloseoutRepository,
+  MysqlProductionTerminationRepository,
+  { provide: ProductionCloseoutRepository, useExisting: MysqlProductionCloseoutRepository },
+  { provide: ProductionTerminationRepository, useExisting: MysqlProductionTerminationRepository },
+];
+const warehouseControllers = [
+  ProductionInboundController,
+  ProductionMaterialLossController,
+  ProductionReturnController,
+  ProductionStockCheckController,
+];
+const warehouseProviders = [
+  ProductionInboundService,
+  ProductionMaterialLossService,
+  ProductionReturnService,
+  ProductionStockCheckService,
+  MysqlProductionInboundRepository,
+  MysqlProductionMaterialLossRepository,
+  MysqlProductionReturnRepository,
+  MysqlProductionStockCheckRepository,
+  { provide: ProductionInboundRepository, useExisting: MysqlProductionInboundRepository },
+  { provide: ProductionMaterialLossRepository, useExisting: MysqlProductionMaterialLossRepository },
+  { provide: ProductionReturnRepository, useExisting: MysqlProductionReturnRepository },
+  { provide: ProductionStockCheckRepository, useExisting: MysqlProductionStockCheckRepository },
+];
+const queryControllers = [ProductionTraceController];
+const queryProviders = [
+  ProductionTraceService,
+  ProductionSupplyDemandService,
+  MysqlProductionTraceRepository,
+  MysqlProductionSupplyDemandRepository,
+  { provide: ProductionTraceRepository, useExisting: MysqlProductionTraceRepository },
+  { provide: ProductionSupplyDemandRepository, useExisting: MysqlProductionSupplyDemandRepository },
+];
 
 @Module({
   imports: [DatabaseModule, IdentityModule, ProductModule, IdempotencyModule, ApprovalModule],
   controllers: [
-    ProductionDemandCorrectionController,
-    ProductionCloseoutController,
-    ProductionTerminationController,
-    ProductionController,
-    ProductionMaterialController,
-    ProductionMaterialDemandController,
-    ProductionExecutionController,
-    ProductionReportingController,
-    ProductionTraceController,
-    ProductionInboundController,
-    ProductionAbnormalController,
-    ProductionSupplementController,
-    WarehouseController,
+    ...planningControllers,
+    ...executionControllers,
+    ...materialControllers,
+    ...closeoutControllers,
+    ...warehouseControllers,
+    ...queryControllers,
   ],
   providers: [
-    ProductionDemandCorrectionService,
-    ProductionDemandCorrectionApprovalHandler,
-    MysqlProductionDemandCorrectionRepository,
-    {
-      provide: ProductionDemandCorrectionRepository,
-      useExisting: MysqlProductionDemandCorrectionRepository,
-    },
-    ProductionCloseoutService,
-    ProductionCloseoutApprovalHandler,
-    MysqlProductionCloseoutRepository,
-    { provide: ProductionCloseoutRepository, useExisting: MysqlProductionCloseoutRepository },
-    ProductionTerminationService,
-    MysqlProductionTerminationRepository,
-    { provide: ProductionTerminationRepository, useExisting: MysqlProductionTerminationRepository },
-    ProductionService,
-    ProductionMaterialService,
-    ProductionMaterialDemandService,
-    ProductionExecutionService,
-    ProductionReportingService,
-    ProductionTraceService,
-    ProductionInboundService,
-    ProductionSupplyDemandService,
-    ProductionAbnormalService,
-    ProductionSupplementService,
-    ProductionInventoryService,
-    MysqlWorkOrderRepository,
-    MysqlProductionBatchRepository,
-    MysqlProductionRepository,
-    MysqlProductionMaterialRepository,
-    MysqlProductionMaterialDemandConfigurationRepository,
-    MysqlProductionExecutionRepository,
-    MysqlProductionReportingRepository,
-    MysqlProductionTraceRepository,
-    MysqlProductionInboundRepository,
-    MysqlProductionSupplyDemandRepository,
-    MysqlProductionAbnormalRepository,
-    MysqlProductionSupplementRepository,
-    MysqlProductionMaterialLossRepository,
-    MysqlProductionReturnRepository,
-    MysqlProductionStockCheckRepository,
-    { provide: ProductionRepository, useExisting: MysqlProductionRepository },
-    { provide: ProductionMaterialRepository, useExisting: MysqlProductionMaterialRepository },
-    {
-      provide: ProductionMaterialDemandConfigurationRepository,
-      useExisting: MysqlProductionMaterialDemandConfigurationRepository,
-    },
-    { provide: ProductionExecutionRepository, useExisting: MysqlProductionExecutionRepository },
-    { provide: ProductionReportingRepository, useExisting: MysqlProductionReportingRepository },
-    { provide: ProductionTraceRepository, useExisting: MysqlProductionTraceRepository },
-    { provide: ProductionInboundRepository, useExisting: MysqlProductionInboundRepository },
-    {
-      provide: ProductionSupplyDemandRepository,
-      useExisting: MysqlProductionSupplyDemandRepository,
-    },
-    { provide: ProductionAbnormalRepository, useExisting: MysqlProductionAbnormalRepository },
-    { provide: ProductionSupplementRepository, useExisting: MysqlProductionSupplementRepository },
-    {
-      provide: ProductionMaterialLossRepository,
-      useExisting: MysqlProductionMaterialLossRepository,
-    },
-    { provide: ProductionReturnRepository, useExisting: MysqlProductionReturnRepository },
-    { provide: ProductionStockCheckRepository, useExisting: MysqlProductionStockCheckRepository },
+    ...planningProviders,
+    ...executionProviders,
+    ...materialProviders,
+    ...closeoutProviders,
+    ...warehouseProviders,
+    ...queryProviders,
   ],
 })
 export class ProductionModule {}

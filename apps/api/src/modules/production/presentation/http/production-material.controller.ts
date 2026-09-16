@@ -18,6 +18,7 @@ import {
 import { CREATE_MATERIAL_ALLOCATION_IDEMPOTENCY_SCOPE } from '../../application/idempotency/production-idempotency-scopes.contract.js';
 import { CREATE_MATERIAL_OUTBOUND_IDEMPOTENCY_SCOPE } from '../../application/idempotency/production-idempotency-scopes.contract.js';
 import { CONFIRM_MATERIAL_OUTBOUND_IDEMPOTENCY_SCOPE } from '../../application/idempotency/production-idempotency-scopes.contract.js';
+import { ProductionMaterialOutboundService } from '../../application/production-material-outbound.service.js';
 import { ProductionMaterialService } from '../../application/production-material.service.js';
 import { ProductionDomainExceptionFilter } from './production-domain-exception.filter.js';
 import {
@@ -34,7 +35,10 @@ import {
 @Controller('production')
 @UseFilters(ProductionDomainExceptionFilter)
 export class ProductionMaterialController {
-  constructor(private readonly service: ProductionMaterialService) {}
+  constructor(
+    private readonly service: ProductionMaterialService,
+    private readonly outboundService: ProductionMaterialOutboundService,
+  ) {}
 
   @Get('batches/:batchId/material-demands')
   @RequirePermission(PERMISSIONS.production.materials.view)
@@ -108,31 +112,31 @@ export class ProductionMaterialController {
     @Body() body: CreateMaterialOutboundDto,
     @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
   ) {
-    return this.service.createOutbound(batchId, body, context);
+    return this.outboundService.createOutbound(batchId, body, context);
   }
 
   @Get('batches/:batchId/material-outbounds')
   @RequirePermission(PERMISSIONS.production.materials.view)
   outbounds(@Param() { batchId }: BatchIdParamDto) {
-    return this.service.listOutbounds(batchId);
+    return this.outboundService.listOutbounds(batchId);
   }
 
   @Get('material-outbounds/batch-options')
   @RequirePermission(PERMISSIONS.production.materials.view)
   outboundBatchOptions() {
-    return this.service.listOutboundBatchOptions();
+    return this.outboundService.listOutboundBatchOptions();
   }
 
   @Get('batches/:batchId/material-outbound-candidates')
   @RequirePermission(PERMISSIONS.production.materials.view)
   outboundCandidates(@Param() { batchId }: BatchIdParamDto) {
-    return this.service.listOutboundCandidates(batchId);
+    return this.outboundService.listOutboundCandidates(batchId);
   }
 
   @Get('material-outbounds')
   @RequirePermission(PERMISSIONS.production.materials.view)
   outboundOrders(@Query() query: MaterialOutboundQueryDto) {
-    return this.service.listOutboundOrders({
+    return this.outboundService.listOutboundOrders({
       page: query.page,
       pageSize: query.pageSize,
       keyword: query.keyword?.trim() || undefined,
@@ -143,7 +147,7 @@ export class ProductionMaterialController {
   @Get('material-outbounds/:outboundId')
   @RequirePermission(PERMISSIONS.production.materials.view)
   outboundDetail(@Param() { outboundId }: OutboundIdParamDto) {
-    return this.service.getOutbound(outboundId);
+    return this.outboundService.getOutbound(outboundId);
   }
 
   @Post('material-outbounds/:outboundId/actions/confirm')
@@ -155,7 +159,7 @@ export class ProductionMaterialController {
     @Body() body: VersionedCommandDto,
     @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
   ) {
-    return this.service.confirmOutbound(outboundId, body.version, context);
+    return this.outboundService.confirmOutbound(outboundId, body.version, context);
   }
 
   @Post('material-outbounds/:outboundId/actions/cancel')
@@ -166,6 +170,6 @@ export class ProductionMaterialController {
     @Body() body: ReasonedVersionedCommandDto,
     @CurrentCommandContext() context: CommandContext,
   ) {
-    return this.service.cancelOutbound(outboundId, body.version, body.reason, context);
+    return this.outboundService.cancelOutbound(outboundId, body.version, body.reason, context);
   }
 }

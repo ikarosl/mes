@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { ProductionMaterialOutboundService } from '../production-material-outbound.service.js';
 import { ProductionMaterialService } from '../production-material.service.js';
 import { ProductionTraceService } from '../production-trace.service.js';
 
@@ -34,8 +35,12 @@ describe('ProductionTraceService', () => {
     };
     const materials = new ProductionMaterialService(
       materialRepository as never,
-      { listUserReferencesByIds: vi.fn().mockResolvedValue([]) } as never,
       products as never,
+      {} as never,
+    );
+    const outbounds = new ProductionMaterialOutboundService(
+      materialRepository as never,
+      { listUserReferencesByIds: vi.fn().mockResolvedValue([]) } as never,
       {} as never,
     );
     const reporting = {
@@ -44,6 +49,7 @@ describe('ProductionTraceService', () => {
     const service = new ProductionTraceService(
       trace as never,
       materials as never,
+      outbounds,
       reporting as never,
     );
 

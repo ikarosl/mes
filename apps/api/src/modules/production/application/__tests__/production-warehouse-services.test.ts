@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ProductionInventoryService } from '../production-inventory.service.js';
+import { ProductionMaterialLossService } from '../production-material-loss.service.js';
+import { ProductionReturnService } from '../production-return.service.js';
+import { ProductionStockCheckService } from '../production-stock-check.service.js';
 
 const context = {
   actorId: '1',
@@ -13,7 +15,7 @@ const idempotency = {
   execute: vi.fn(async ({ handler }) => ({ result: await handler(), replayed: false })),
 };
 
-describe('ProductionInventoryService', () => {
+describe('Production warehouse services', () => {
   it('normalizes a return order and enriches audit user snapshots', async () => {
     const repository = {
       createReturnOrder: vi.fn().mockResolvedValue({
@@ -25,13 +27,7 @@ describe('ProductionInventoryService', () => {
     const identity = {
       listUserReferencesByIds: vi.fn().mockResolvedValue([{ id: '1', displayName: '管理员' }]),
     };
-    const service = new ProductionInventoryService(
-      {} as never,
-      repository as never,
-      {} as never,
-      identity as never,
-      idempotency as never,
-    );
+    const service = new ProductionReturnService(repository as never, identity as never);
 
     const result = await service.createReturnOrder(
       {
@@ -54,13 +50,7 @@ describe('ProductionInventoryService', () => {
   });
 
   it('rejects duplicate return allocations before entering the repository transaction', async () => {
-    const service = new ProductionInventoryService(
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      idempotency as never,
-    );
+    const service = new ProductionReturnService({} as never, {} as never);
     await expect(
       service.createReturnOrder(
         {
@@ -86,10 +76,8 @@ describe('ProductionInventoryService', () => {
     const identity = {
       listUserReferencesByIds: vi.fn().mockResolvedValue([{ id: '1', displayName: '管理员' }]),
     };
-    const service = new ProductionInventoryService(
+    const service = new ProductionMaterialLossService(
       repository as never,
-      {} as never,
-      {} as never,
       identity as never,
       idempotency as never,
     );
@@ -124,13 +112,7 @@ describe('ProductionInventoryService', () => {
   });
 
   it('rejects duplicate batch/status stock-check targets', async () => {
-    const service = new ProductionInventoryService(
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      idempotency as never,
-    );
+    const service = new ProductionStockCheckService({} as never, {} as never);
     await expect(
       service.createStockCheck(
         {
@@ -159,15 +141,20 @@ describe('ProductionInventoryService', () => {
       }),
     };
     const identity = { listUserReferencesByIds: vi.fn().mockResolvedValue([]) };
-    const service = new ProductionInventoryService(
-      method === 'cancelMaterialLoss' ? (repository as never) : ({} as never),
-      method === 'cancelReturnOrder' ? (repository as never) : ({} as never),
-      method === 'cancelStockCheck' ? (repository as never) : ({} as never),
+    const materialLosses = new ProductionMaterialLossService(
+      repository as never,
       identity as never,
       idempotency as never,
     );
+    const returns = new ProductionReturnService(repository as never, identity as never);
+    const stockChecks = new ProductionStockCheckService(repository as never, identity as never);
+    const cancel = {
+      cancelMaterialLoss: materialLosses.cancelMaterialLoss.bind(materialLosses),
+      cancelReturnOrder: returns.cancelReturnOrder.bind(returns),
+      cancelStockCheck: stockChecks.cancelStockCheck.bind(stockChecks),
+    }[method];
 
-    await service[method](id, 1, '  计划调整  ', context);
+    await cancel(id, 1, '  计划调整  ', context);
 
     expect(repository[method]).toHaveBeenCalledWith(id, 1, '计划调整', context);
   });

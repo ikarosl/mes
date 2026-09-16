@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { ProductionTraceDetail, ProductionTraceQuery } from '@company/contracts';
+import { ProductionMaterialOutboundService } from './production-material-outbound.service.js';
 import { ProductionMaterialService } from './production-material.service.js';
 import { ProductionReportingRepository } from './ports/production-reporting.repository.js';
 import { ProductionTraceRepository } from './ports/production-trace.repository.js';
@@ -9,6 +10,7 @@ export class ProductionTraceService {
   constructor(
     private readonly trace: ProductionTraceRepository,
     private readonly materials: ProductionMaterialService,
+    private readonly outbounds: ProductionMaterialOutboundService,
     private readonly reporting: ProductionReportingRepository,
   ) {}
 
@@ -27,7 +29,7 @@ export class ProductionTraceService {
     ] = await Promise.all([
       this.trace.getSummary(batchId),
       this.materials.listDemands(batchId),
-      this.materials.listOutbounds(batchId),
+      this.outbounds.listOutbounds(batchId),
       this.trace.listInventoryTransactions(batchId),
       this.trace.listMaterialInboundSources(batchId),
       this.reporting.getBatchExecution(batchId),
