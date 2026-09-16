@@ -179,7 +179,12 @@
                 link
                 type="danger"
                 :loading="releasePendingIds.has(row.allocationId)"
-                :disabled="row.allocationStatus !== 'active' || Number(row.outboundQuantity) > 0"
+                :disabled="
+                  selectedDemand?.businessStatus !== 'active' ||
+                  Boolean(selectedDemand?.correction?.pendingCorrectionId) ||
+                  row.allocationStatus !== 'active' ||
+                  Number(row.outboundQuantity) > 0
+                "
                 @click="confirmRelease(row)"
                 >释放</el-button
               ></template
@@ -280,7 +285,10 @@ const selectedBatchMatchesDemand = computed(
 const selectedDemandCanAllocate = computed(() => {
   const demand = selectedDemand.value;
   return Boolean(
-    demand && demand.businessStatus === 'active' && Number(demand.remainingQuantity) > 0,
+    demand &&
+    demand.businessStatus === 'active' &&
+    !demand.correction?.pendingCorrectionId &&
+    Number(demand.remainingQuantity) > 0,
   );
 });
 const canAllocate = computed(() =>
@@ -311,12 +319,18 @@ watch(
 const selectDefaultDemand = (): void => {
   const oldestActionableGroup = demandGroups.value.find((group) =>
     group.demands.some(
-      (item) => item.businessStatus === 'active' && Number(item.remainingQuantity) > 0,
+      (item) =>
+        item.businessStatus === 'active' &&
+        !item.correction?.pendingCorrectionId &&
+        Number(item.remainingQuantity) > 0,
     ),
   );
   const demand =
     oldestActionableGroup?.demands.find(
-      (item) => item.businessStatus === 'active' && Number(item.remainingQuantity) > 0,
+      (item) =>
+        item.businessStatus === 'active' &&
+        !item.correction?.pendingCorrectionId &&
+        Number(item.remainingQuantity) > 0,
     ) ?? demandGroups.value[0]?.demands[0];
   if (demand) selectDemand(demand);
 };
@@ -325,7 +339,11 @@ const selectDemand = (row: ProductionMaterialDemandItem | null) => {
   selectedDemandId.value = row.demandId;
   form.itemBatchId = '';
   form.assignedQuantity = Math.max(1, Number(row.remainingQuantity));
-  if (row.businessStatus === 'active' && Number(row.remainingQuantity) > 0)
+  if (
+    row.businessStatus === 'active' &&
+    !row.correction?.pendingCorrectionId &&
+    Number(row.remainingQuantity) > 0
+  )
     emit('load-available', row.demandId);
 };
 const submitAllocation = () => {

@@ -57,18 +57,3 @@ export interface BatchTerminationCheck {
   materials: BatchTerminationMaterial[];
   termination: BatchTerminationRecord | null;
 }
-
-export interface TerminateProductionBatchPayload {
-  version: number;
-  checkToken: string;
-  availableQuantity: number;
-  additionalScrapQuantity: number;
-  reason: string;
-  materialReviewNote: string;
-  confirmImpacts: boolean;
-}
-
-export interface TerminateProductionBatchResult {
-  terminationId: string;
-  batchId: string;
-}

@@ -2,7 +2,8 @@
   <el-dialog
     :model-value="visible"
     :title="`物料需求${batch ? ` · ${batch.batchNo}` : ''}`"
-    :width="DialogWidth.xl"
+    :width="DialogWidth.workbench"
+    workbench
     @update:model-value="$emit('update:visible', $event)"
   >
     <div class="overview-toolbar">
@@ -100,22 +101,88 @@
                 <el-tag size="small">{{ progressLabel(row) }}</el-tag>
               </template>
             </el-table-column>
+            <el-table-column
+              label="关闭 / 替代关系"
+              min-width="200"
+            >
+              <template #default="{ row }">
+                <span v-if="row.correction?.closeCause">{{
+                  DEMAND_CLOSE_CAUSE_LABELS[row.correction.closeCause as DemandCloseCause]
+                }}</span>
+                <span v-if="row.correction?.replacesDemandId">
+                  · 替代 #{{ row.correction.replacesDemandId }}</span
+                >
+                <span v-if="row.correction?.replacementDemandId">
+                  · 后继 #{{ row.correction.replacementDemandId }}</span
+                >
+                <el-button
+                  v-if="row.correction?.closeoutApprovalId"
+                  link
+                  type="primary"
+                  @click="
+                    router.push({
+                      name: 'approval-inbox',
+                      query: { instanceId: row.correction.closeoutApprovalId },
+                    })
+                  "
+                  >结案审批</el-button
+                >
+                <span v-else-if="row.correction?.closeoutId">
+                  · 收尾 #{{ row.correction.closeoutId }}，待提交结案审批</span
+                >
+              </template>
+            </el-table-column>
+            <el-table-column
+              label="操作"
+              width="150"
+              fixed="right"
+            >
+              <template #default="{ row }"
+                ><el-button
+                  link
+                  type="primary"
+                  @click="
+                    correctionDemandId = row.demandId;
+                    correctionVisible = true;
+                  "
+                  >{{
+                    ['manual_additional', 'scrap_supplement'].includes(row.demandType) &&
+                    row.businessStatus === 'active' &&
+                    !row.correction?.pendingCorrectionId
+                      ? '更正此需求'
+                      : '查看更正与追溯'
+                  }}</el-button
+                ></template
+              >
+            </el-table-column>
           </el-table>
         </el-collapse-item>
       </el-collapse>
     </div>
     <template #footer><el-button @click="$emit('update:visible', false)">关闭</el-button></template>
   </el-dialog>
+  <DemandCorrectionDialog
+    v-model:visible="correctionVisible"
+    :demand-id="correctionDemandId"
+    @changed="$emit('changed')"
+  />
 </template>
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import type { ProductionBatchItem, ProductionMaterialDemandItem } from '@company/contracts';
-import { MATERIAL_DEMAND_PROGRESS_LABELS } from '@company/constants';
+import { useRouter } from 'vue-router';
+import type {
+  ProductionBatchItem,
+  ProductionMaterialDemandItem,
+  DemandCloseCause,
+} from '@company/contracts';
+import { MATERIAL_DEMAND_PROGRESS_LABELS, DEMAND_CLOSE_CAUSE_LABELS } from '@company/constants';
+import DemandCorrectionDialog from './DemandCorrectionDialog.vue';
 import { DialogWidth } from '../../../utils/dialog';
 import { formatDateForDisplay } from '../../../utils/date';
 import { formatQuantity as quantity } from '../production-status';
 import { groupMaterialDemandRows } from '../material-demand-group-presentation';
+const router = useRouter();
 
 const props = defineProps<{
   visible: boolean;
@@ -123,14 +190,16 @@ const props = defineProps<{
   demands: ProductionMaterialDemandItem[];
   loading: boolean;
 }>();
-defineEmits<{ 'update:visible': [boolean]; 'add-manual': [] }>();
+defineEmits<{ 'update:visible': [boolean]; 'add-manual': []; changed: [] }>();
 
+const correctionDemandId = ref<string | null>(null),
+  correctionVisible = ref(false);
 const groups = computed(() => groupMaterialDemandRows(props.demands));
 const expandedGroups = ref<string[]>([]);
 const canAdd = computed(() =>
   Boolean(
     props.batch &&
-    !['pending', 'completed', 'cancelled', 'terminated'].includes(props.batch.status),
+    !['pending', 'completed', 'cancelled', 'terminated', 'closing'].includes(props.batch.status),
   ),
 );
 const progressLabel = (row: ProductionMaterialDemandItem): string =>

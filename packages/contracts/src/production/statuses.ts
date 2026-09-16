@@ -9,9 +9,10 @@ export type ProductionBatchStatus =
   | 'doing'
   | 'completed'
   | 'cancelled'
-  | 'terminated';
+  | 'terminated'
+  | 'closing';
 
-export type BatchStepStatus = 'pending' | 'assigned' | 'doing' | 'completed';
+export type BatchStepStatus = 'pending' | 'assigned' | 'doing' | 'completed' | 'terminated';
 
 export type BatchStepAbnormalDispositionType = 'rework' | 'scrap';
 
@@ -51,7 +52,9 @@ export type DemandType =
 /** 同一次需求生成动作的分组类型。 */
 export type DemandGenerationGroupType = DemandType;
 
-export type DemandBusinessStatus = 'active' | 'fulfilled' | 'cancelled';
+export type DemandBusinessStatus = 'active' | 'fulfilled' | 'cancelled' | 'closed';
+export type DemandCloseCause =
+  'correction_replaced' | 'correction_exhausted' | 'single_close' | 'batch_closeout';
 
 /** 单条生产物料需求的分配/出库展示进度。 */
 export type MaterialDemandProgressStatus =
@@ -61,7 +64,9 @@ export type MaterialDemandProgressStatus =
   | 'shortage'
   | 'partially_outbound'
   | 'outbound'
-  | 'cancelled';
+  | 'cancelled'
+  | 'closed'
+  | 'correction_pending';
 
 export type BatchStepAbnormalOrigin = 'current_step' | 'previous_step';
 

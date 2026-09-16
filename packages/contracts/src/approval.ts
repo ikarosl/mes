@@ -1,6 +1,8 @@
 import type { PageQuery, VersionedCommand } from './common.js';
 import type { UserOption } from './system.js';
 import type { ProductSpecValue } from './product/product.js';
+import type { DemandCorrectionApprovalSnapshot } from './production/demand-correction.js';
+import type { BatchCloseoutApprovalSnapshot } from './production/closeout.js';
 
 export type ApprovalFlowVersionStatus = 'draft' | 'published' | 'discarded';
 export type ApprovalInstanceStatus = 'pending' | 'approved' | 'rejected' | 'withdrawn';
@@ -20,7 +22,8 @@ export type ApprovalActionType =
   'submitted' | 'approved' | 'rejected' | 'withdrawn' | 'assignment_blocked' | 'reassigned';
 export type ApprovalListScope = 'todo' | 'mine' | 'all';
 export type ApprovalBlockedReason = 'no_eligible_assignee';
-export type ApprovalSubjectType = 'product';
+export type ApprovalSubjectType =
+  'product' | 'production_demand_correction' | 'production_batch_closeout';
 
 export interface ApprovalSceneItem {
   code: string;
@@ -106,7 +109,8 @@ export interface BomApprovalSnapshot {
   }[];
 }
 /** 已接入场景的受审快照联合；新增场景时扩展此类型及对应前端详情展示。 */
-export type ApprovalSubjectSnapshot = BomApprovalSnapshot;
+export type ApprovalSubjectSnapshot =
+  BomApprovalSnapshot | DemandCorrectionApprovalSnapshot | BatchCloseoutApprovalSnapshot;
 
 export interface ApprovalInstanceStep extends ApprovalAssignee {
   id: string;

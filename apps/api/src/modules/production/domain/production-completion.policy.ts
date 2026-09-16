@@ -20,6 +20,7 @@ export const evaluateProductionExecutionCompletion = (input: {
   version: number;
   plannedQuantity: string;
   activeMaterialDemandCount?: number;
+  unfulfilledSupplementCount?: number;
   requiredSteps: RequiredCompletionStep[];
 }): ProductionExecutionCompletionCheck => {
   const requiredSteps = [...input.requiredSteps].sort(
@@ -37,6 +38,7 @@ export const evaluateProductionExecutionCompletion = (input: {
   )
     blockers.push('final_step_quantity_insufficient');
   if ((input.activeMaterialDemandCount ?? 0) > 0) blockers.push('active_material_demand_remains');
+  if ((input.unfulfilledSupplementCount ?? 0) > 0) blockers.push('unfulfilled_material_supplement');
 
   return {
     productionBatchId: input.productionBatchId,
@@ -49,6 +51,7 @@ export const evaluateProductionExecutionCompletion = (input: {
     finalRequiredStepName: finalStep?.name ?? null,
     finalEffectiveNormalQuantity: finalStep?.effectiveNormalQuantity ?? '0.0000',
     activeMaterialDemandCount: input.activeMaterialDemandCount ?? 0,
+    unfulfilledSupplementCount: input.unfulfilledSupplementCount ?? 0,
     canComplete: blockers.length === 0,
     blockers,
   };

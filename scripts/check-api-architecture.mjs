@@ -52,6 +52,11 @@ const idempotencyRecordsWritePattern =
 const knownIdempotencyScopes = [
   'production.batch.create.v5',
   'production.batch.terminate.v1',
+  'production.demand-correction.submit.v1',
+  'production.batch-closeout.begin.v1',
+  'production.batch-closeout.handle.v1',
+  'production.batch-closeout.output.v1',
+  'production.batch-closeout.submit.v1',
   'production.material-allocation.create.v1',
   'production.material-outbound.create.v3',
   'production.material-outbound.confirm.v2',
@@ -165,6 +170,8 @@ const checks = [
     exclude: [
       'apps/api/src/modules/production/application/production.service.ts',
       'apps/api/src/modules/production/application/production-termination.service.ts',
+      'apps/api/src/modules/production/application/production-demand-correction.service.ts',
+      'apps/api/src/modules/production/application/production-closeout.service.ts',
       'apps/api/src/modules/production/application/production-material.service.ts',
       'apps/api/src/modules/production/application/production-inbound.service.ts',
       'apps/api/src/modules/production/application/production-reporting.service.ts',
@@ -174,6 +181,8 @@ const checks = [
       'apps/api/src/modules/production/application/production-material-demand.service.ts',
       'apps/api/src/modules/production/presentation/http/production.controller.ts',
       'apps/api/src/modules/production/presentation/http/production-termination.controller.ts',
+      'apps/api/src/modules/production/presentation/http/production-demand-correction.controller.ts',
+      'apps/api/src/modules/production/presentation/http/production-closeout.controller.ts',
       'apps/api/src/modules/production/presentation/http/production-material.controller.ts',
       'apps/api/src/modules/production/presentation/http/production-inbound.controller.ts',
       'apps/api/src/modules/production/presentation/http/production-reporting.controller.ts',
@@ -191,6 +200,8 @@ const checks = [
     exclude: [
       'apps/api/src/modules/production/application/production.service.ts',
       'apps/api/src/modules/production/application/production-termination.service.ts',
+      'apps/api/src/modules/production/application/production-demand-correction.service.ts',
+      'apps/api/src/modules/production/application/production-closeout.service.ts',
       'apps/api/src/modules/production/application/production-material.service.ts',
       'apps/api/src/modules/production/application/production-inbound.service.ts',
       'apps/api/src/modules/production/application/production-reporting.service.ts',

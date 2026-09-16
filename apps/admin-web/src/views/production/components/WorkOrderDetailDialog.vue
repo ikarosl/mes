@@ -82,6 +82,26 @@
           :span="3"
           >{{ order.remark || '-' }}</el-descriptions-item
         >
+        <el-descriptions-item label="最终可用产出">{{
+          formatQuantity(order.finalOutput?.availableQuantity)
+        }}</el-descriptions-item>
+        <el-descriptions-item label="最终报废合计">{{
+          formatQuantity(order.finalOutput?.scrapQuantity)
+        }}</el-descriptions-item>
+        <el-descriptions-item label="最终产出合计">{{
+          formatQuantity(order.finalOutput?.totalQuantity)
+        }}</el-descriptions-item>
+        <el-descriptions-item label="计划与当前产出差额"
+          >{{
+            formatQuantity(
+              Number(order.plannedQuantity) - Number(order.finalOutput?.totalQuantity ?? 0),
+            )
+          }}（未终态任务尚未计入）</el-descriptions-item
+        >
+        <el-descriptions-item label="收尾中（未计入）"
+          >{{ order.finalOutput?.closingBatchCount ?? 0 }} 批，暂存可用
+          {{ formatQuantity(order.finalOutput?.pendingAvailableQuantity) }}</el-descriptions-item
+        >
       </el-descriptions>
 
       <div class="dialog-section-title">生产批次</div>

@@ -139,6 +139,8 @@ const approvalMenus = [
       PERMISSIONS.approval.decide,
       PERMISSIONS.approval.configure,
       PERMISSIONS.product.products.manageBom,
+      PERMISSIONS.production.materials.correctDemand,
+      PERMISSIONS.production.tasks.terminate,
     ] as const,
   },
   { title: '审批流程配置', path: '/approval/flows', permission: PERMISSIONS.approval.configure },

@@ -1,5 +1,9 @@
 import type { BatchStepStatus, ProductionBatchStatus, WorkOrderStatus } from '@company/contracts';
-import { BATCH_STEP_STATUS_LABELS, PRODUCTION_TERMINATED_LABEL } from '@company/constants';
+import {
+  BATCH_STEP_STATUS_LABELS,
+  PRODUCTION_TERMINATED_LABEL,
+  PRODUCTION_CLOSING_LABEL,
+} from '@company/constants';
 
 export type StatusTagType = 'info' | 'primary' | 'success' | 'warning' | 'danger';
 
@@ -30,6 +34,7 @@ export const BATCH_STATUS_META: StatusMeta<ProductionBatchStatus>[] = [
   { value: 'completed', label: '已完成', type: 'success' },
   { value: 'cancelled', label: '已取消', type: 'danger' },
   { value: 'terminated', label: PRODUCTION_TERMINATED_LABEL, type: 'info' },
+  { value: 'closing', label: PRODUCTION_CLOSING_LABEL, type: 'warning' },
 ];
 
 /** 工序执行状态元数据 */
@@ -38,6 +43,7 @@ export const STEP_STATUS_META: StatusMeta<BatchStepStatus>[] = [
   { value: 'assigned', label: BATCH_STEP_STATUS_LABELS.assigned, type: 'primary' },
   { value: 'doing', label: BATCH_STEP_STATUS_LABELS.doing, type: 'primary' },
   { value: 'completed', label: BATCH_STEP_STATUS_LABELS.completed, type: 'success' },
+  { value: 'terminated', label: BATCH_STEP_STATUS_LABELS.terminated, type: 'info' },
 ];
 
 export const STEP_STATUS_LABELS: Record<string, string> = Object.fromEntries(

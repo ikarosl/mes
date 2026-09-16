@@ -10,3 +10,4 @@ export type { ApprovalSceneDefinition } from './application/approval-scenes.js';
 export { ApprovalSubjectError } from './application/approval-subject-handler.js';
 
 export type { ApprovalSubmission } from './application/approval-submission.js';
+export { ApprovalDomainExceptionFilter } from './presentation/http/approval-domain-exception.filter.js';

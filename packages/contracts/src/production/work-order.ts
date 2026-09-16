@@ -26,6 +26,14 @@ export interface WorkOrderOption {
 }
 
 export interface WorkOrderItem {
+  finalOutput?: {
+    availableQuantity: string;
+    scrapQuantity: string;
+    totalQuantity: string;
+    finalizedBatchCount: number;
+    closingBatchCount: number;
+    pendingAvailableQuantity: string;
+  };
   id: string;
   workOrderNo: string;
   orderType: WorkOrderType;

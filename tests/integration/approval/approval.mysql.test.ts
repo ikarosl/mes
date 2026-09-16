@@ -857,8 +857,10 @@ describeMysql('Approval BOM workflow (real MySQL)', () => {
       { sceneCode: SCENE_CODE, subjectId: String(product.productId), expectedVersion: 0 },
       context(fixture.actorId, 'freeze-submit'),
     );
-    expect(submitted.subjectSnapshot.materials[0]).not.toHaveProperty('isKeyMaterial');
-    expect(submitted.subjectSnapshot.materials[0]).not.toHaveProperty('needBatchRecord');
+    const snapshot = submitted.subjectSnapshot;
+    if (!('materials' in snapshot)) throw new Error('Expected BOM approval evidence');
+    expect(snapshot.materials[0]).not.toHaveProperty('isKeyMaterial');
+    expect(snapshot.materials[0]).not.toHaveProperty('needBatchRecord');
     await expect(
       products.replaceMaterials(
         String(product.productId),

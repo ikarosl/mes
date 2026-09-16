@@ -191,6 +191,13 @@ export class MysqlProductionMaterialLossRepository extends ProductionMaterialLos
 
   async createMaterialLoss(payload: CreateMaterialLossPayload, context: CommandContext) {
     return withTransaction(this.pool, async (db) => {
+      await lockWorkOrderForBatch(db, payload.productionBatchId);
+      const batch = await findBatch(db, payload.productionBatchId, true);
+      if (!['material_partially_outbound', 'material_outbound', 'doing'].includes(batch.status))
+        throw new ProductionDomainError(
+          'INVALID_STATE',
+          '批次已停止生产，不能再申请会生成补料的损耗',
+        );
       await lockIds(db, 'production_item_allocation', [payload.allocationId]);
       const candidates = await this.findMaterialLossCandidates(db, payload.productionBatchId);
       const candidate = candidates.find(

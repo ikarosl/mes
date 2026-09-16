@@ -2,7 +2,8 @@
   <el-dialog
     :model-value="visible"
     :title="`配置初始物料需求${batch ? ` · ${batch.batchNo}` : ''}`"
-    :width="DialogWidth.xl"
+    :width="DialogWidth.workbench"
+    workbench
     :close-on-click-modal="false"
     @update:model-value="handleVisibleChange"
   >

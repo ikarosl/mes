@@ -1,0 +1,97 @@
+import type { BatchTerminationCheck, BatchTerminationImpact } from './termination.js';
+import type { DemandBusinessStatus, DemandType } from './statuses.js';
+
+/** 收尾操作页的当前投影，不回写原需求或已经固化的审批证据。 */
+export interface BatchCloseoutDemand {
+  id: string;
+  demandType: DemandType;
+  status: DemandBusinessStatus;
+  itemCode: string;
+  materialVariantCode: string;
+  unit: string;
+  demandQuantity: string;
+  remainingQuantity: string;
+  outboundQuantity: string;
+  parentDemandId: string | null;
+  replacesDemandId: string | null;
+  supplementId: string | null;
+}
+export interface BatchCloseoutPendingItem extends BatchTerminationImpact {
+  demandIds: string[];
+  blockedReason: string | null;
+}
+export interface BatchCloseoutMaterialReview {
+  allocationId: string;
+  demandId: string;
+  status: 'pending' | 'reviewed' | 'stale';
+  reason: string | null;
+  actorId: string | null;
+  reviewedAt: string | null;
+}
+
+export type BatchCloseoutItemKind = BatchTerminationImpact['kind'] | 'material';
+export interface BatchCloseoutAction {
+  id: string;
+  kind: BatchCloseoutItemKind;
+  targetId: string;
+  label: string;
+  previousStatus: string;
+  resultingStatus: string;
+  quantity: string | null;
+  unit: string | null;
+  reason: string;
+  actorId: string;
+  createdAt: string;
+}
+export interface BatchCloseoutOutput {
+  availableQuantity: number;
+  additionalScrapQuantity: number;
+  reason: string;
+  materialReviewNote: string;
+}
+export interface BatchCloseoutDetail {
+  id: string;
+  batchId: string;
+  reason: string;
+  version: number;
+  approvalInstanceId: string | null;
+  pendingApprovalId: string | null;
+  output: BatchCloseoutOutput | null;
+  demands: BatchCloseoutDemand[];
+  pendingItems: BatchCloseoutPendingItem[];
+  materialReviews: BatchCloseoutMaterialReview[];
+  actions: BatchCloseoutAction[];
+  check: BatchTerminationCheck;
+  canSubmit: boolean;
+  blockers: string[];
+}
+export interface BatchCloseoutApprovalSnapshot {
+  kind: 'batch_closeout';
+  closeoutId: string;
+  check: BatchTerminationCheck;
+  output: BatchCloseoutOutput;
+  actions: BatchCloseoutAction[];
+}
+export interface BeginBatchCloseoutPayload {
+  version: number;
+  reason: string;
+}
+export interface HandleBatchCloseoutItemPayload {
+  version: number;
+  checkToken: string;
+  kind: BatchCloseoutItemKind;
+  targetId: string;
+  targetVersion: number;
+  reason: string;
+}
+export interface SaveBatchCloseoutOutputPayload extends BatchCloseoutOutput {
+  version: number;
+}
+export interface SubmitBatchCloseoutPayload {
+  version: number;
+  checkToken: string;
+}
+export interface BatchCloseoutCommandResult {
+  closeoutId: string;
+  batchId: string;
+}

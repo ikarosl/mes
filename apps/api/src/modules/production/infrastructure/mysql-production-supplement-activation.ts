@@ -2,10 +2,11 @@ import type { Pool, PoolConnection, RowDataPacket } from 'mysql2/promise';
 import type { BatchStepStatus } from '@company/contracts';
 import {
   calculateRouteStepQuantities,
+  supplementReopenedStepIds,
   type RouteQuantityStep,
   type RouteSupplementSource,
 } from '../domain/production-route-quantity.policy.js';
-import { integerQuantity } from '../domain/integer-quantity.js';
+import { supplementFulfillment } from './mysql-production-supplement-requirements.js';
 
 type Db = Pool | PoolConnection;
 
@@ -36,6 +37,7 @@ export type SupplementActivationResult = {
 export const selectRouteSupplementSources = async (
   db: Db,
   batchIds: string[],
+  lock = false,
 ): Promise<Map<string, RouteSupplementSource[]>> => {
   const byBatch = new Map<string, RouteSupplementSource[]>();
   if (batchIds.length === 0) return byBatch;
@@ -51,7 +53,7 @@ export const selectRouteSupplementSources = async (
      JOIN production_material_supplement supplement ON supplement.id=authorization.supplement_id
      JOIN batch_step_records step_record ON step_record.id=authorization.quota_end_step_record_id
      WHERE supplement.status<>'cancelled' AND authorization.production_batch_id IN (${batchIds.map(() => '?').join(',')})
-     ORDER BY authorization.production_batch_id,step_record.step_order_snapshot,authorization.id`,
+     ORDER BY authorization.production_batch_id,step_record.step_order_snapshot,authorization.id${lock ? ' FOR SHARE' : ''}`,
     batchIds,
   );
   for (const row of rows) {
@@ -86,26 +88,18 @@ export const fulfillReadySupplements = async (
      WHERE production_batch_id=? ORDER BY id FOR UPDATE`,
     [batchId],
   );
-  const [ready] = await connection.query<(RowDataPacket & { id: number })[]>(
+  const [candidates] = await connection.query<(RowDataPacket & { id: number })[]>(
     `SELECT supplement.id
      FROM production_material_supplement supplement
      WHERE supplement.production_batch_id=? AND supplement.status='approved'
-       AND EXISTS (
-         SELECT 1 FROM production_item_demand demand
-         WHERE demand.supplement_id=supplement.id
-           AND demand.demand_type IN ('scrap_supplement','material_loss_supplement')
-       )
-       AND NOT EXISTS (
-         SELECT 1
-         FROM production_item_demand demand
-         WHERE demand.supplement_id=supplement.id
-           AND demand.demand_type IN ('scrap_supplement','material_loss_supplement')
-           AND demand.business_status<>'fulfilled'
-       )
-     ORDER BY supplement.id`,
+     ORDER BY supplement.id FOR UPDATE`,
     [batchId],
   );
-  const fulfilledSupplementIds = ready.map((row) => String(row.id));
+  const fulfilledSupplementIds: string[] = [];
+  for (const row of candidates) {
+    if ((await supplementFulfillment(connection, String(row.id))).fulfilled)
+      fulfilledSupplementIds.push(String(row.id));
+  }
   if (fulfilledSupplementIds.length === 0)
     return { fulfilledSupplementIds: [], reopenedStepIds: [] };
 
@@ -119,17 +113,15 @@ export const fulfillReadySupplements = async (
   const [steps] = await connection.query<ReopenStepRow[]>(
     `SELECT step_record.id,step_record.step_order_snapshot,
       step_record.status,
-      COALESCE(SUM(CASE WHEN report.report_type='normal'
-        THEN report.normal_quantity ELSE -report.normal_quantity END),0) effective_normal
+      COALESCE((SELECT SUM(CASE WHEN report.report_type='normal'
+        THEN report.normal_quantity ELSE -report.normal_quantity END) FROM batch_step_reports report WHERE report.batch_step_record_id=step_record.id FOR SHARE),0) effective_normal
      FROM batch_step_records step_record
-     LEFT JOIN batch_step_reports report ON report.batch_step_record_id=step_record.id
      WHERE step_record.production_batch_id=?
-     GROUP BY step_record.id,step_record.step_order_snapshot,
-       step_record.status
-     ORDER BY step_record.step_order_snapshot,step_record.id`,
+     ORDER BY step_record.step_order_snapshot,step_record.id FOR UPDATE`,
     [batchId],
   );
-  const sources = (await selectRouteSupplementSources(connection, [batchId])).get(batchId) ?? [];
+  const sources =
+    (await selectRouteSupplementSources(connection, [batchId], true)).get(batchId) ?? [];
   const quantities = calculateRouteStepQuantities(
     plannedQuantity,
     steps.map<RouteQuantityStep>((step) => ({
@@ -141,28 +133,25 @@ export const fulfillReadySupplements = async (
     })),
     sources,
   );
-  const newlyFulfilledOrders = sources
-    .filter((source) => fulfilledSupplementIds.includes(source.supplementId))
-    .map((source) => source.sourceStepOrder);
-  const reopenedStepIds: string[] = [];
-  for (const step of steps) {
-    const isOnNewRoute = newlyFulfilledOrders.some(
-      (sourceStepOrder) => step.step_order_snapshot <= sourceStepOrder,
-    );
-    const quantity = quantities.get(String(step.id));
-    const shouldReopen =
-      isOnNewRoute &&
-      step.status === 'completed' &&
-      integerQuantity(step.effective_normal) <
-        integerQuantity(quantity?.requiredNormalQuantity ?? 0);
-    if (!shouldReopen) continue;
+  const reopenedStepIds = supplementReopenedStepIds(
+    steps.map((step) => ({
+      id: step.id,
+      stepOrder: step.step_order_snapshot,
+      status: step.status,
+      effectiveDirectReported: 0,
+      effectiveNormal: step.effective_normal,
+    })),
+    quantities,
+    sources,
+    fulfilledSupplementIds,
+  );
+  for (const stepId of reopenedStepIds) {
     await connection.execute(
       `UPDATE batch_step_records
        SET status='doing',completed_at=NULL,version=version+1,updated_by=?
        WHERE id=? AND status='completed'`,
-      [actorId, step.id],
+      [actorId, stepId],
     );
-    reopenedStepIds.push(String(step.id));
   }
   return { fulfilledSupplementIds, reopenedStepIds };
 };

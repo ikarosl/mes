@@ -54,7 +54,7 @@ export interface ProductionBatchItem {
 }
 
 export type ProductionBatchCancellationBlocker =
-  'batch_already_started' | 'material_already_outbound';
+  'batch_already_started' | 'material_already_outbound' | 'pending_demand_correction';
 
 export interface ProductionBatchCancellationCheck {
   productionBatchId: string;

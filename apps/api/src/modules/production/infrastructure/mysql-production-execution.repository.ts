@@ -61,6 +61,7 @@ export class MysqlProductionExecutionRepository extends ProductionExecutionRepos
       batch,
       steps,
       await countActiveMaterialDemands(this.pool, batchId),
+      await countUnfulfilledSupplements(this.pool, batchId),
     );
   }
   async completeExecution(
@@ -98,6 +99,7 @@ export class MysqlProductionExecutionRepository extends ProductionExecutionRepos
         batch,
         steps,
         await countActiveMaterialDemands(connection, batchId),
+        await countUnfulfilledSupplements(connection, batchId),
       );
       if (!check.canComplete) throwCompletionBlocker(check);
       const [updated] = await connection.execute<ResultSetHeader>(
@@ -187,7 +189,7 @@ export class MysqlProductionExecutionRepository extends ProductionExecutionRepos
   ): Promise<ProductionStepCommandResult> {
     return withTransaction(this.pool, async (connection) => {
       const batch = await findBatch(connection, batchId, true);
-      if (batch.status === 'terminated')
+      if (batch.status === 'terminated' || batch.status === 'closing')
         throw new ProductionDomainError('STEP_START_NOT_ALLOWED', '本轮已结束，不能继续开工');
       const steps = await lockExecutionSteps(connection, batchId);
       const index = steps.findIndex((step) => String(step.id) === stepRecordId);
@@ -283,7 +285,8 @@ export class MysqlProductionExecutionRepository extends ProductionExecutionRepos
       if (
         batch.status === 'cancelled' ||
         batch.status === 'completed' ||
-        batch.status === 'terminated'
+        batch.status === 'terminated' ||
+        batch.status === 'closing'
       )
         throw new ProductionDomainError(
           'STEP_ASSIGNMENT_CONFLICT',
@@ -431,6 +434,7 @@ const mapCompletionCheck = (
   batch: BatchRow,
   steps: CompletionStepRow[],
   activeMaterialDemandCount: number,
+  unfulfilledSupplementCount: number,
 ): ProductionExecutionCompletionCheck =>
   evaluateProductionExecutionCompletion({
     productionBatchId: batchId,
@@ -438,6 +442,7 @@ const mapCompletionCheck = (
     version: batch.version,
     plannedQuantity: batch.planned_quantity,
     activeMaterialDemandCount,
+    unfulfilledSupplementCount,
     requiredSteps: steps.map((step) => ({
       id: String(step.id),
       order: step.step_order_snapshot,
@@ -449,6 +454,11 @@ const mapCompletionCheck = (
 
 const throwCompletionBlocker = (check: ProductionExecutionCompletionCheck): never => {
   const blocker = check.blockers[0];
+  if (blocker === 'unfulfilled_material_supplement')
+    throw new ProductionDomainError(
+      'BATCH_EXECUTION_COMPLETION_NOT_ALLOWED',
+      '仍有未齐套补料单，不能正常完工；不再补产请办理批次收尾',
+    );
   if (blocker === 'no_route_step')
     throw new ProductionDomainError('NO_REQUIRED_REPORTING_STEP', '批次没有工序，不能执行完工');
   if (blocker === 'required_step_incomplete')
@@ -469,6 +479,13 @@ const throwCompletionBlocker = (check: ProductionExecutionCompletionCheck): neve
   );
 };
 
+const countUnfulfilledSupplements = async (db: Db, batchId: string): Promise<number> => {
+  const [rows] = await db.query<RowDataPacket[]>(
+    "SELECT id FROM production_material_supplement WHERE production_batch_id=? AND status='approved' FOR SHARE",
+    [batchId],
+  );
+  return rows.length;
+};
 const countActiveMaterialDemands = async (db: Db, batchId: string): Promise<number> => {
   const [[row]] = await db.query<(RowDataPacket & { count: number })[]>(
     `SELECT COUNT(*) count FROM production_item_demand

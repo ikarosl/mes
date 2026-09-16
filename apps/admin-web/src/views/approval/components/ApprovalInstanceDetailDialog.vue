@@ -43,22 +43,30 @@
         <el-descriptions-item label="提交时间">{{
           formatDateTime(detail.createdAt)
         }}</el-descriptions-item>
-        <el-descriptions-item label="成品编码">{{
-          detail.subjectSnapshot.itemCode
-        }}</el-descriptions-item>
-        <el-descriptions-item label="成品名称">{{
-          detail.subjectSnapshot.productName
-        }}</el-descriptions-item>
-        <el-descriptions-item label="单位">{{ detail.subjectSnapshot.unit }}</el-descriptions-item>
+        <el-descriptions-item
+          v-if="bomSnapshot"
+          label="成品编码"
+          >{{ bomSnapshot?.itemCode ?? '—' }}</el-descriptions-item
+        >
+        <el-descriptions-item
+          v-if="bomSnapshot"
+          label="成品名称"
+          >{{ bomSnapshot?.productName ?? '—' }}</el-descriptions-item
+        >
+        <el-descriptions-item
+          v-if="bomSnapshot"
+          label="单位"
+          >{{ bomSnapshot?.unit ?? '—' }}</el-descriptions-item
+        >
       </el-descriptions>
 
       <div
-        v-if="detail.subjectSnapshot.specValues.length"
+        v-if="bomSnapshot?.specValues.length"
         class="spec-list"
       >
         <span class="spec-label">成品规格：</span>
         <span
-          v-for="spec in detail.subjectSnapshot.specValues"
+          v-for="spec in bomSnapshot?.specValues"
           :key="`${spec.key}-${spec.value}`"
           class="spec-item"
           >{{ spec.key }}：{{ spec.value }}{{ spec.unit ? ` ${spec.unit}` : '' }}</span
@@ -113,10 +121,13 @@
         </div>
       </section>
 
-      <section class="section-block">
+      <section
+        v-if="bomSnapshot"
+        class="section-block"
+      >
         <div class="section-title">BOM 受审内容</div>
         <el-table
-          :data="detail.subjectSnapshot.materials"
+          :data="bomSnapshot.materials"
           class="bom-table"
           size="small"
           empty-text="暂无 BOM 明细"
@@ -154,6 +165,41 @@
         </el-table>
       </section>
 
+      <section
+        v-if="correctionSnapshot"
+        class="section-block"
+      >
+        <div class="section-title">需求更正受审内容</div>
+        <DemandCorrectionEvidence
+          :check="correctionSnapshot.check"
+          :new-remaining-quantity="correctionSnapshot.newRemainingQuantity"
+        />
+        <el-descriptions
+          :column="3"
+          border
+        >
+          <el-descriptions-item label="更正后总量">{{
+            correctionSnapshot.targetTotalQuantity
+          }}</el-descriptions-item>
+          <el-descriptions-item label="本次新建剩余量">{{
+            correctionSnapshot.newRemainingQuantity
+          }}</el-descriptions-item>
+          <el-descriptions-item label="申请类型">{{
+            DEMAND_CORRECTION_KIND_LABELS[correctionSnapshot.correctionKind]
+          }}</el-descriptions-item>
+          <el-descriptions-item
+            label="原因"
+            :span="3"
+            >{{ correctionSnapshot.reason }}</el-descriptions-item
+          >
+        </el-descriptions>
+      </section>
+      <section
+        v-if="closeoutSnapshot"
+        class="section-block"
+      >
+        <BatchCloseoutEvidence :snapshot="closeoutSnapshot" />
+      </section>
       <section class="section-block">
         <div class="section-title">处理记录</div>
         <el-timeline v-if="detail.actions.length">
@@ -248,7 +294,8 @@ import {
   APPROVAL_INSTANCE_STATUS_LABELS,
   APPROVAL_STEP_STATUS_LABELS,
   APPROVAL_ASSIGNEE_TYPE_LABELS,
-  APPROVAL_SCENE_CODES,
+  APPROVAL_SCENE_LABELS,
+  DEMAND_CORRECTION_KIND_LABELS,
 } from '@company/constants';
 import type {
   ApprovalActionType,
@@ -256,6 +303,8 @@ import type {
   ApprovalInstanceStatus,
   ApprovalStepStatus,
 } from '@company/contracts';
+import DemandCorrectionEvidence from '../../production/components/DemandCorrectionEvidence.vue';
+import BatchCloseoutEvidence from '../../production/components/BatchCloseoutEvidence.vue';
 import { DialogWidth } from '../../../utils/dialog';
 import { EMessage } from '../../../utils/message';
 
@@ -274,6 +323,23 @@ const emit = defineEmits<{
   (event: 'withdraw', comment: string): void;
 }>();
 
+const bomSnapshot = computed(() =>
+  props.detail && 'productId' in props.detail.subjectSnapshot ? props.detail.subjectSnapshot : null,
+);
+const correctionSnapshot = computed(() =>
+  props.detail &&
+  'kind' in props.detail.subjectSnapshot &&
+  props.detail.subjectSnapshot.kind === 'demand_correction'
+    ? props.detail.subjectSnapshot
+    : null,
+);
+const closeoutSnapshot = computed(() =>
+  props.detail &&
+  'kind' in props.detail.subjectSnapshot &&
+  props.detail.subjectSnapshot.kind === 'batch_closeout'
+    ? props.detail.subjectSnapshot
+    : null,
+);
 const comment = ref('');
 const canOperate = computed(() =>
   Boolean(
@@ -322,8 +388,7 @@ const stepStatusMeta = (status: ApprovalStepStatus) =>
               : 'info',
   }) as const;
 const actionLabel = (type: ApprovalActionType) => APPROVAL_ACTION_TYPE_LABELS[type];
-const sceneLabel = (sceneCode: string) =>
-  sceneCode === APPROVAL_SCENE_CODES.bom ? 'BOM 审批' : sceneCode;
+const sceneLabel = (sceneCode: string) => APPROVAL_SCENE_LABELS[sceneCode] ?? sceneCode;
 const actionStepNo = (stepId: string): number | null =>
   props.detail?.steps.find((step) => step.id === stepId)?.stepNo ?? null;
 const formatDateTime = (value: string | null): string =>

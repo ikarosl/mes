@@ -42,7 +42,8 @@ type WorkOrderBatchSummaryRow = RowDataPacket & {
     | 'completed'
     | 'cancelled'
     | 'material_partially_outbound'
-    | 'terminated';
+    | 'terminated'
+    | 'closing';
   planned_quantity: string;
   completed_quantity: string;
 };

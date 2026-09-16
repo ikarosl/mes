@@ -245,6 +245,7 @@
                   'material_outbound',
                   'doing',
                   'terminated',
+                  'closing',
                 ].includes(row.status)
               "
               link
@@ -253,7 +254,7 @@
                 terminationBatchId = row.id;
                 terminationVisible = true;
               "
-              >{{ row.status === 'terminated' ? '产出处置' : '结束本轮' }}</el-button
+              >{{ batchCloseoutActionLabel(row.status) }}</el-button
             >
             <el-dropdown trigger="click">
               <el-button
@@ -262,20 +263,13 @@
                 :disabled="
                   row.status === 'completed' ||
                   row.status === 'cancelled' ||
-                  row.status === 'terminated'
+                  row.status === 'terminated' ||
+                  row.status === 'closing'
                 "
                 >更多</el-button
               >
               <template #dropdown>
                 <el-dropdown-menu>
-                  <el-dropdown-item
-                    v-if="
-                      row.status === 'doing' && row.shortBatchAuthorizationStatus === 'consumed'
-                    "
-                    :disabled="isRowPending(row.id)"
-                    @click="closeRemainingMaterialDemands(row)"
-                    >关闭剩余物料需求</el-dropdown-item
-                  >
                   <el-dropdown-item
                     :disabled="isRowPending(row.id)"
                     @click="openBatchCancellation(row)"
@@ -361,6 +355,7 @@
       :loading="materialOverviewLoading"
       @update:visible="materialDemandOverviewVisible = $event"
       @add-manual="openManualMaterialDemand"
+      @changed="handleManualMaterialDemandAdded"
     />
 
     <ManualMaterialDemandDialog
@@ -461,7 +456,11 @@ import ShortBatchAuthorizationDialog from './components/ShortBatchAuthorizationD
 import { useProductionMaterials } from './composables/useProductionMaterials';
 import StepAssignmentDialog from './components/StepAssignmentDialog.vue';
 import { useStepAssignments } from './composables/useStepAssignments';
-import { deadlinePresentation, taskNextActionPresentation } from './production-task-presentation';
+import {
+  batchCloseoutActionLabel,
+  deadlinePresentation,
+  taskNextActionPresentation,
+} from './production-task-presentation';
 import ProductionBatchTerminationDialog from './components/ProductionBatchTerminationDialog.vue';
 import ProductionBatchCancelDialog from './components/ProductionBatchCancelDialog.vue';
 import MaterialDemandConfigurationDialog from './components/MaterialDemandConfigurationDialog.vue';
@@ -841,34 +840,6 @@ const submitShortBatchAuthorization = async (reason: string): Promise<void> => {
     }
   } finally {
     shortBatchAuthorizationSubmitting.value = false;
-  }
-};
-const closeRemainingMaterialDemands = async (row: ProductionBatchItem): Promise<void> => {
-  if (!beginRow(row.id)) return;
-  try {
-    const result = await ElMessageBox.prompt(
-      '关闭后，所有剩余活动需求将取消，未出库分配将释放。该操作不会冲销已确认领料，请填写原因。',
-      '关闭剩余物料需求',
-      {
-        confirmButtonText: '确认关闭',
-        cancelButtonText: '取消',
-        type: 'warning',
-        inputType: 'textarea',
-        inputPlaceholder: '填写不再需要剩余物料的原因',
-        inputValidator: (value) => value.trim().length > 0 || '关闭原因不能为空',
-      },
-    );
-    await productionApi.closeRemainingMaterialDemands(row.id, {
-      version: row.version,
-      reason: result.value.trim(),
-    });
-    EMessage.success('剩余物料需求已关闭，未出库分配已释放');
-    await loadTasks();
-  } catch (error) {
-    if (error === 'cancel' || error === 'close') return;
-    EMessage.error(error, '关闭剩余物料需求失败');
-  } finally {
-    endRow(row.id);
   }
 };
 const handleMaterialOutbound = async (payload: CreateMaterialOutboundPayload): Promise<void> => {

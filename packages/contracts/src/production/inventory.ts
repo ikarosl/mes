@@ -37,6 +37,8 @@ export interface ReturnOrderCandidateItem {
   batchCode: string;
   confirmedOutboundQuantity: string;
   occupiedReturnQuantity: string;
+  /** 同一分配来源待确认及已确认的领料损耗占用。 */
+  occupiedLossQuantity: string;
   returnableQuantity: string;
   unit: string;
 }
@@ -296,6 +298,8 @@ export interface InventoryMaterialDemandTraceQuery extends PageQuery {
 
 export interface InventoryMaterialDemandTraceItem {
   demandId: string;
+  pendingCorrectionId?: string | null;
+  replacesDemandId?: string | null;
   itemId: string;
   materialVariantId: string;
   materialVariantCode: string;

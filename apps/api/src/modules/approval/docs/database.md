@@ -95,7 +95,7 @@ CHECK 保证角色节点只填写 `role_id`，用户节点只填写 `assignee_us
 | `id` | `BIGINT UNSIGNED NOT NULL` | 主键 |
 | `instance_no` | `VARCHAR(100) NOT NULL` | 唯一申请编号 |
 | `scene_code` | `VARCHAR(100) NOT NULL` | 稳定场景编码 |
-| `subject_type` | `VARCHAR(50) NOT NULL` | 场景确定的对象类型，首期 `product` |
+| `subject_type` | `VARCHAR(50) NOT NULL` | 场景确定的对象类型：`product / production_demand_correction / production_batch_closeout` |
 | `subject_id` | `BIGINT UNSIGNED NOT NULL` | 业务对象 ID |
 | `flow_version_id` | `BIGINT UNSIGNED NOT NULL` | 本次采用的已发布版本 FK |
 | `title` | `VARCHAR(255) NOT NULL` | 服务端生成的申请标题 |
@@ -113,6 +113,8 @@ CHECK 保证角色节点只填写 `role_id`，用户节点只填写 `assignee_us
 通用提交引擎在创建申请的同一事务内调用业务 handler 绑定申请，再以绑定返回的版本确定 `subject_version`；不推算其他模块的版本递增方式。`snapshot_schema_version` 由业务 handler 随快照返回，历史详情的证据结构校验也由对应 handler 承担。提交完成后不改写快照或冻结版本；新 BOM 证据采用结构版本 2，不含关键物料和记录批次标志。结构版本 1 的既有证据保持原文，Product 读取时投影当前公开字段，不将已移除属性返回前端；未知结构版本拒绝读取。
 
 多态 `subject_id` 不建立指向多张业务表的伪外键。提交和每次最终业务操作经所属模块验证对象存在性、场景与对象类型、当前申请关联；`scene_code` 与所选版本所属定义相符由事务校验。申请的场景、对象、流程版本、证据、人员规则及申请人一经提交不可更换。未来收紧自审规则默认只影响新申请，不能静默改写旧申请的规则或历史决定；账号、角色及当前权限仍实时校验。
+
+Production 更正和收尾证据结构版本均为 1，分别由其 handler 校验；其申请来源、冻结和生效字段详见 [Production 需求设计](../../production/docs/database/demand-allocation-and-outbound.md#正式需求更正与替代) 与[批次收尾设计](../../production/docs/database/production-termination.md)。Approval 表不复制业务执行数量或工序状态。
 
 ### 4.2 `approval_instance_steps`
 

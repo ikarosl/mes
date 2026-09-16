@@ -13,9 +13,9 @@
 
 - Identity/System：认证、RBAC、操作日志和管理端权限基础设施。
 - Product：产品分类、产品主数据、产品物料、技术文件、工序和工艺路线。
-- Approval：BOM 场景的顺序多级配置（角色或指定用户）、申请、节点共享待办与决定；角色成员实时解析，工单审批尚未接入。
+- Approval：BOM、生产需求更正和批次收尾场景的顺序多级配置（角色或指定用户）、申请、节点共享待办与决定；业务生效由各所有者 handler 执行，角色成员实时解析，工单下达审批尚未接入。
 - Notification：通用站内消息、固定收件集合、本人已读及提交后空钩子，Approval 为首个调用方。
-- Production：生产工单、生产批次、工序报工追溯，以及其依赖的生产物料需求、分配、领料出库、生产退料和库存盘点链路；按状态机分阶段迁移。
+- Production：生产工单、批次、工序报工追溯、需求纠错和逐项收尾，以及依赖的物料需求、分配、领料、退料和盘点。更正申请、收尾记录及行动事实由 Production 所有，Approval 只通过公开处理器协作，不直接修改 Production 表。
 
 通用 Inventory（其他出入库、报废）、Quality（检验）和 Traceability（全流程追溯）只能在后续迁移阶段明确更新后追加，不得仅凭已有 UI 原型提前实现。当前盘点仅覆盖现有 `item_batch × stock_status` 账本，退料仅覆盖已确认生产领料并固定释放到公共可用库存。
 
@@ -28,6 +28,8 @@
 Port 和 Adapter。当前 Product 保持一个 NestJS 模块，内部划分 technical-file、catalog、
 process-step 和 process-route；只有工艺能力出现独立生命周期、团队所有权或大量外部调用时才
 提取 ProcessModule。
+
+Production 的成品入库扩展先按工单任务、生产执行、需求履约、结案产出、仓库操作及查询追溯划清内部用例职责，见[Production 内部职责](../apps/api/src/modules/production/docs/module-boundaries.md)。当前保留单一表所有权和出库／履约联动事务，不因菜单或文件长度直接提取 Inventory，也不把不同来源的报废合并为通用写入口。
 
 `common` 仅存放真正跨模块且不含业务知识的能力，例如审计上下文、HTTP 安全装饰器和时间格式。
 `common` 不拥有业务表，也不得成为绕过模块边界的万能目录。`operation_logs` 是项目级平台审计

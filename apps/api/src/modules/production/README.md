@@ -11,6 +11,8 @@
 
 工单类型与工单级物料版本锁的目标 schema 见[工单设计](docs/database/work-orders-and-batches.md)，应用入口适配见[roadmap](../../../../../docs/roadmap.md)。
 
+成品入库前的代码组织见[内部职责与扩展边界](docs/module-boundaries.md)：先划清计划、执行、需求履约、结案产出、仓库操作及查询职责，保留单一 Production 所有权与原子事务；该规划不表示已拆出 Inventory／Quality 或完成目录迁移。
+
 ## 关键不变量
 
 损耗、退料和盘点分别由 `ProductionMaterialLossRepository`、`ProductionReturnRepository`、
@@ -24,7 +26,7 @@
 只冻结 Product BOM 快照，不自动生成可执行需求；管理员必须一次完整配置全部 BOM 行，明确选择启用的
 精确 `material_variant_id` 和数量，整单确认后批次才进入 `material_pending`。人工追加以任务为单位，
 一次可包含冻结 BOM 中的多种基础物料和多个版本，不依赖既有父需求；需求查询保留 normal、manual、
-补料等全部已生成需求及取消历史，停用版本仍从需求/物流快照展示。
+补料等全部已生成需求及取消、关闭与替代历史，停用版本仍从需求/物流快照展示。
 人工追加、报废补料和损耗补料共用后续领料资格：已领料和执行中批次仍可分配、释放未出库分配、
 制单及确认出库；人工追加仅保留追加记录和需求，不生成损耗单、补料单或产品补产授权。
 未满足的活动追加需求继续阻断完工，执行中的物流履约不回退批次状态。
@@ -35,9 +37,15 @@
 
 详细流程见 [business-workflow.md](docs/business-workflow.md)，数据库设计见[数据库索引](docs/database/README.md)，范围边界见[全局产品范围](../../../../../docs/product-scope.md)。
 
-## 本轮结束
+## 提前结束与结案核对
 
-生产任务提供独立的批次结束与产出处置能力，原工序事实保留，不触发补料、补产或库存变化；所有批次终态后可关闭旧工单。状态、API、权限和物料处理规则见[批次结束设计](docs/database/production-termination.md)。实际成品入库仍待后续接入。
+生产任务通过“开始收尾 → 逐项处理 → 保存实际产出 → 提交短产／提前结束审批 → 末级批准”结束批次。`closing` 停止生产执行，未完成工序显式进入 `terminated`，报工事实保留；审批不触发补料、补产或库存变化。所有批次终态后可关闭旧工单，工单聚合最终产出和未审定收尾量。状态、API、权限和物料处理规则见[批次结束设计](docs/database/production-termination.md)。实际成品入库仍待后续接入。
+
+任务页入口分别为“提前结束”“继续收尾”“查看结案信息”：首次进入需填写原因并确认开始收尾，最后一项只读核对结果。它们是阶段操作名称，不新增或修改数据库状态。
+
+## 需求纠错与审批
+
+人工追加及未齐套工序报废补料可提交数量更正，采用“关闭旧剩余、创建替代需求”。`pending_correction_id` 仅冻结旧需求操作，保留活动履约与缺口；`replaces_demand_id` 保存永久替代链，原来源和数量不回改。更正审批与出库确认共用有效需求齐套判断，原补料单和补产授权继续沿用。Production 注册 `production.demand.correct`、`production.batch.closeout` 两个场景，复用 Approval 公开 handler 与通用引擎，未配置已发布流程时拒绝提交。数据与接口见[需求设计](docs/database/demand-allocation-and-outbound.md#正式需求更正与替代)。
 
 ## 验证
 

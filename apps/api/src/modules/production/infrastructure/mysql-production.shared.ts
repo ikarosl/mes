@@ -27,6 +27,11 @@ export const ensureNoDuplicate = (error: unknown, message: string): never => {
 export type Db = Pool | PoolConnection;
 
 export type WorkOrderRow = RowDataPacket & {
+  final_available_quantity: string;
+  final_scrap_quantity: string;
+  finalized_batch_count: number;
+  closing_batch_count: number;
+  pending_available_quantity: string;
   id: number;
   work_order_no: string;
   order_type: WorkOrderType;
@@ -107,7 +112,7 @@ export type StepRow = RowDataPacket & {
   actual_sop_version_no_snapshot: string | null;
   responsible_user_id: number | null;
   need_inspection_snapshot: number;
-  status: 'pending' | 'assigned' | 'doing' | 'completed';
+  status: 'pending' | 'assigned' | 'doing' | 'completed' | 'terminated';
   started_at: Date | null;
   completed_at: Date | null;
   output_quantity: string;
@@ -119,7 +124,20 @@ export type StepRow = RowDataPacket & {
   version: number;
 };
 
-export const WORK_ORDER_SELECT = `SELECT wo.id,wo.work_order_no,wo.order_type,wo.product_id,wo.product_code_snapshot,wo.product_name_snapshot,wo.unit_snapshot,wo.planned_quantity,wo.customer_name,wo.quality_level,wo.work_order_owner_id,wo.plan_start_date,wo.plan_end_date,COALESCE((SELECT SUM(b.planned_quantity) FROM production_batches b WHERE b.work_order_id=wo.id AND b.status<>'cancelled'),0) assigned_quantity,wo.status,wo.released_at,wo.cancel_reason,wo.cancelled_by,wo.cancelled_at,wo.close_type,wo.close_reason,wo.closed_by,wo.closed_at,wo.external_order_no,wo.remark,wo.version,wo.created_at,wo.updated_at FROM work_orders wo`;
+export const WORK_ORDER_SELECT = `SELECT wo.id,wo.work_order_no,wo.order_type,wo.product_id,wo.product_code_snapshot,wo.product_name_snapshot,wo.unit_snapshot,wo.planned_quantity,wo.customer_name,wo.quality_level,wo.work_order_owner_id,wo.plan_start_date,wo.plan_end_date,COALESCE((SELECT SUM(b.planned_quantity) FROM production_batches b WHERE b.work_order_id=wo.id AND b.status<>'cancelled'),0) assigned_quantity,wo.status,wo.released_at,wo.cancel_reason,wo.cancelled_by,wo.cancelled_at,wo.close_type,wo.close_reason,wo.closed_by,wo.closed_at,wo.external_order_no,wo.remark,wo.version,wo.created_at,wo.updated_at,
+  COALESCE((SELECT SUM(CASE WHEN b.status='completed' THEN b.completed_quantity ELSE t.available_quantity END)
+    FROM production_batches b LEFT JOIN production_batch_termination t ON t.production_batch_id=b.id
+    WHERE b.work_order_id=wo.id AND b.status IN ('completed','terminated')),0) final_available_quantity,
+  COALESCE((SELECT SUM(CASE WHEN b.status='completed' THEN COALESCE((SELECT SUM(s.scrap_quantity)
+    FROM batch_step_scrap_records s WHERE s.production_batch_id=b.id),0)
+    ELSE t.additional_scrap_quantity+t.existing_scrap_quantity END)
+    FROM production_batches b LEFT JOIN production_batch_termination t ON t.production_batch_id=b.id
+    WHERE b.work_order_id=wo.id AND b.status IN ('completed','terminated')),0) final_scrap_quantity,
+  (SELECT COUNT(*) FROM production_batches b WHERE b.work_order_id=wo.id AND b.status IN ('completed','terminated')) finalized_batch_count,
+  (SELECT COUNT(*) FROM production_batches b WHERE b.work_order_id=wo.id AND b.status='closing') closing_batch_count,
+  COALESCE((SELECT SUM(c.available_quantity) FROM production_batch_closeout c JOIN production_batches b ON b.id=c.production_batch_id
+    WHERE b.work_order_id=wo.id AND b.status='closing'),0) pending_available_quantity
+  FROM work_orders wo`;
 export const BATCH_SELECT = `SELECT b.id,b.work_order_id,wo.work_order_no,b.product_id,wo.product_code_snapshot,wo.product_name_snapshot,b.batch_no,b.route_id,b.route_code_snapshot,b.route_version_snapshot,b.planned_quantity,b.completed_quantity,b.qualified_quantity,b.plan_start_date,b.plan_end_date,b.started_at,b.status,b.material_plan_version,
   CASE
     WHEN EXISTS (SELECT 1 FROM production_short_batch_authorization authorization WHERE authorization.production_batch_id=b.id AND authorization.status='active' AND authorization.material_plan_version=b.material_plan_version) THEN 'valid'
@@ -177,6 +195,16 @@ export async function findStepRecord(
 }
 
 export const mapWorkOrder = (row: WorkOrderRow): WorkOrderItem => ({
+  finalOutput: {
+    availableQuantity: row.final_available_quantity ?? '0',
+    scrapQuantity: row.final_scrap_quantity ?? '0',
+    totalQuantity: String(
+      Number(row.final_available_quantity ?? 0) + Number(row.final_scrap_quantity ?? 0),
+    ),
+    finalizedBatchCount: Number(row.finalized_batch_count ?? 0),
+    closingBatchCount: Number(row.closing_batch_count ?? 0),
+    pendingAvailableQuantity: row.pending_available_quantity ?? '0',
+  },
   id: String(row.id),
   workOrderNo: row.work_order_no,
   orderType: row.order_type,

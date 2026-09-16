@@ -3,7 +3,7 @@ import type { DemandGenerationGroupType } from '@company/contracts';
 
 type BusinessId = string | number | bigint;
 
-export type DemandGenerationGroupSource =
+export type DemandGenerationGroupSource = (
   | {
       type: typeof DEMAND_GENERATION_GROUP_TYPE.normal;
       productionBatchId: BusinessId;
@@ -20,7 +20,8 @@ export type DemandGenerationGroupSource =
       type: typeof DEMAND_GENERATION_GROUP_TYPE.manualAdditional;
       productionBatchId: BusinessId;
       businessActionNo: string;
-    };
+    }
+) & { correctionId?: BusinessId };
 
 const GROUP_KEY_PREFIX: Record<DemandGenerationGroupType, string> = {
   normal: 'NORMAL',
@@ -46,7 +47,11 @@ export const buildDemandGenerationKeys = (
   source: DemandGenerationGroupSource,
   demandIdentityId: BusinessId,
 ): { generationGroupKey: string; idempotencyKey: string } => {
-  const generationGroupKey = buildDemandGenerationGroupKey(source);
+  const originalGroupKey = buildDemandGenerationGroupKey(source);
+  const generationGroupKey =
+    source.correctionId === undefined
+      ? originalGroupKey
+      : `${originalGroupKey}:CORRECTION:${source.correctionId}`;
   return {
     generationGroupKey,
     idempotencyKey: `${generationGroupKey}:${demandIdentityId}`,

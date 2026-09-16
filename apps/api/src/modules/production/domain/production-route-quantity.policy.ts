@@ -35,6 +35,27 @@ export type RouteStepQuantity = {
   supplementSources: RouteSupplementSource[];
 };
 
+/** 齐套后需要重新执行的原已完成工序，预览与实际推进共用。 */
+export function supplementReopenedStepIds(
+  steps: RouteQuantityStep[],
+  quantities: Map<string, RouteStepQuantity>,
+  sources: RouteSupplementSource[],
+  newlyFulfilledSupplementIds: readonly string[],
+): string[] {
+  const newOrders = sources
+    .filter((source) => newlyFulfilledSupplementIds.includes(source.supplementId))
+    .map((source) => source.sourceStepOrder);
+  return steps
+    .filter(
+      (step) =>
+        newOrders.some((order) => step.stepOrder <= order) &&
+        step.status === 'completed' &&
+        integerQuantity(step.effectiveNormal) <
+          integerQuantity(quantities.get(String(step.id))?.requiredNormalQuantity ?? 0),
+    )
+    .map((step) => String(step.id));
+}
+
 /**
  * 根据不可变报工事实和已完成补料的获批报废补产，计算工艺路线的数量闸门。
  * 返回值是汇总投影，调用方不得将其作为第二份数量事实持久化。

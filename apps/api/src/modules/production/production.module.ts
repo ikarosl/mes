@@ -3,6 +3,17 @@ import { ProductionTerminationRepository } from './application/ports/production-
 import { MysqlProductionTerminationRepository } from './infrastructure/mysql-production-termination.repository.js';
 import { ProductionTerminationController } from './presentation/http/production-termination.controller.js';
 import { Module } from '@nestjs/common';
+import { ApprovalModule } from '../approval/public.js';
+import { ProductionDemandCorrectionRepository } from './application/ports/production-demand-correction.repository.js';
+import { MysqlProductionDemandCorrectionRepository } from './infrastructure/mysql-production-demand-correction.repository.js';
+import { ProductionDemandCorrectionService } from './application/production-demand-correction.service.js';
+import { ProductionDemandCorrectionApprovalHandler } from './application/production-demand-correction-approval.handler.js';
+import { ProductionDemandCorrectionController } from './presentation/http/production-demand-correction.controller.js';
+import { ProductionCloseoutRepository } from './application/ports/production-closeout.repository.js';
+import { MysqlProductionCloseoutRepository } from './infrastructure/mysql-production-closeout.repository.js';
+import { ProductionCloseoutService } from './application/production-closeout.service.js';
+import { ProductionCloseoutApprovalHandler } from './application/production-closeout-approval.handler.js';
+import { ProductionCloseoutController } from './presentation/http/production-closeout.controller.js';
 import { DatabaseModule } from '../../infrastructure/database/database.module.js';
 import { IdempotencyModule } from '../../infrastructure/idempotency/idempotency.module.js';
 import { IdentityModule } from '../identity/public.js';
@@ -58,8 +69,10 @@ import { ProductionSupplementController } from './presentation/http/production-s
 import { WarehouseController } from './presentation/http/warehouse.controller.js';
 
 @Module({
-  imports: [DatabaseModule, IdentityModule, ProductModule, IdempotencyModule],
+  imports: [DatabaseModule, IdentityModule, ProductModule, IdempotencyModule, ApprovalModule],
   controllers: [
+    ProductionDemandCorrectionController,
+    ProductionCloseoutController,
     ProductionTerminationController,
     ProductionController,
     ProductionMaterialController,
@@ -73,6 +86,17 @@ import { WarehouseController } from './presentation/http/warehouse.controller.js
     WarehouseController,
   ],
   providers: [
+    ProductionDemandCorrectionService,
+    ProductionDemandCorrectionApprovalHandler,
+    MysqlProductionDemandCorrectionRepository,
+    {
+      provide: ProductionDemandCorrectionRepository,
+      useExisting: MysqlProductionDemandCorrectionRepository,
+    },
+    ProductionCloseoutService,
+    ProductionCloseoutApprovalHandler,
+    MysqlProductionCloseoutRepository,
+    { provide: ProductionCloseoutRepository, useExisting: MysqlProductionCloseoutRepository },
     ProductionTerminationService,
     MysqlProductionTerminationRepository,
     { provide: ProductionTerminationRepository, useExisting: MysqlProductionTerminationRepository },

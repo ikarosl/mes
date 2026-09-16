@@ -365,7 +365,8 @@ export class MysqlProductionBatchRepository {
       if (
         batch.status === 'cancelled' ||
         batch.status === 'completed' ||
-        batch.status === 'terminated'
+        batch.status === 'terminated' ||
+        batch.status === 'closing'
       )
         throw new ProductionDomainError('INVALID_STATE', '已取消或已完成批次不能调整工序执行参数');
       const before = await findStepRecord(connection, batchId, recordId, true);

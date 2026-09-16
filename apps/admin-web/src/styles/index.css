@@ -135,3 +135,23 @@ body {
   padding: 9px 0;
   border-bottom: 1px solid #f0f2f5;
 }
+
+/* 工作台相对路由内容区布局，页头、页脚始终可见，只有内容滚动。 */
+.route-dialog-overlay .el-dialog.route-dialog-workbench {
+  display: flex;
+  flex-direction: column;
+  margin: 16px auto;
+  max-height: calc(100% - 32px);
+}
+.route-dialog-workbench > .el-dialog__header,
+.route-dialog-workbench > .el-dialog__footer {
+  flex-shrink: 0;
+}
+.route-dialog-workbench > .el-dialog__body {
+  min-height: 0;
+  overflow: auto;
+}
+.route-dialog-workbench > .el-dialog__footer {
+  border-top: 1px solid var(--el-border-color-lighter);
+  padding-top: 12px;
+}

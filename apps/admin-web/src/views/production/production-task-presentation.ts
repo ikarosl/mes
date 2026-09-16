@@ -1,3 +1,5 @@
+import type { ProductionBatchStatus } from '@company/contracts';
+
 export interface DeadlinePresentation {
   label: string;
   overdueDays: number;
@@ -8,6 +10,12 @@ export interface TaskNextActionPresentation {
   label: string;
   tone: 'muted' | 'warning' | 'primary' | 'success';
 }
+
+export const batchCloseoutActionLabel = (status: ProductionBatchStatus): string => {
+  if (status === 'terminated') return '查看结案信息';
+  if (status === 'closing') return '继续收尾';
+  return '提前结束';
+};
 
 const beijingTodayUtc = (now = new Date()): number => {
   const parts = new Intl.DateTimeFormat('en-US', {
@@ -58,10 +66,13 @@ export const taskNextActionPresentation = (batch: {
     | 'doing'
     | 'completed'
     | 'cancelled'
-    | 'terminated';
+    | 'terminated'
+    | 'closing';
   hasActiveMaterialOutbound?: boolean;
 }): TaskNextActionPresentation => {
-  if (batch.status === 'terminated') return { label: '查看产出处置', tone: 'muted' };
+  if (batch.status === 'terminated')
+    return { label: batchCloseoutActionLabel(batch.status), tone: 'muted' };
+  if (batch.status === 'closing') return { label: '继续逐项收尾 / 审批', tone: 'warning' };
   if (batch.status === 'cancelled') return { label: '任务已取消', tone: 'muted' };
   if (batch.status === 'material_partially_outbound')
     return { label: '短批已部分领料', tone: 'warning' };

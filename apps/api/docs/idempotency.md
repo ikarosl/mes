@@ -170,6 +170,7 @@ scope/key 仍按既有记录仲裁。清理后该 scope/key 才可能成为新�
 输入是 DTO 转换、trim 后的业务有效载荷；排除 `Idempotency-Key`、request ID、IP、User-Agent、Cookie、Token
 等传输或审计元数据。对象键递归排序、数组顺序保留、`undefined` 对象属性忽略，随后对 canonical JSON 计算摘要。
 只接受 JSON-safe 值，不放宽到 `Date`、getter、自定义原型或循环引用。
+Application Service 必须把 class DTO 显式映射成普通对象后再传入 `request.body`，嵌套 DTO 同样逐层转换；不能将 DTO 实例直接用于指纹。收尾送审使用独立的 `{ version, checkToken }` 对象，指纹与 Repository 校验共用该有效载荷。
 
 固定兼容向量：
 
@@ -283,3 +284,11 @@ scope 是服务端独占的命令契约版本，客户端不得传输、选择�
 不得用新 codec 猜测旧结果，也不得覆盖旧 scope 记录。兼容示例和算法测试中的旧版本字符串不是当前端点版本；当前版本以 scope 常量为准。
 
 创建批次当前结果不包含报工开关快照；所有工序统一报工。开发阶段不保留旧 scope 的兼容解码，发布前结束旧客户端操作并刷新页面，不将旧意图自动迁入新 scope。
+
+## Production 需求纠错与逐项收尾
+
+需求更正送审使用 `production.demand-correction.submit.v1`。批次收尾开始、逐项处理、保存产出、送审分别使用 `production.batch-closeout.begin.v1 / handle.v1 / output.v1 / submit.v1`（四个完整 scope 共享 production.batch-closeout 前缀）。scope 常量仍由 Production application contract 所有；HTTP 只接收 Idempotency-Key。
+
+送审结果严格保存业务对象 ID 与 Approval 实例 ID，其余收尾命令保存收尾 ID 与批次 ID。送审中的业务记录创建／绑定、Approval 实例和节点、审计与通知都在外层 executor 事务内完成；未发布流程或任何依赖失败则回滚，不能先提交业务申请后异步补审批。
+
+客户端保留原版本、核对令牌、body 和键重试未知结果；新内容是另一意图，不能在模糊失败时换键。通用审批批准／驳回／撤回仍使用既有版本和当前节点校验，不据此宣称支持 HTTP 幂等决定重放。旧直接 terminate 路由已撤下，不再执行批量终止副作用。端点与业务规则见[Production 需求](../src/modules/production/docs/database/demand-allocation-and-outbound.md#正式需求更正与替代)与[收尾](../src/modules/production/docs/database/production-termination.md)。

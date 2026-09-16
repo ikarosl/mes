@@ -1,6 +1,6 @@
 # ADR-0010：通过关闭与替代纠正正式需求
 
-状态：Accepted（决策已确认，代码待实施）
+状态：Accepted
 
 ## 背景
 
@@ -29,6 +29,6 @@ Production 所有更正申请、替代关系及需求写入；Approval 所有审
 
 需求更正最终批准与出库确认复用同一补料履约判定及状态推进能力。该能力识别生效更正链与当前要求：被批准替代的旧需求不再阻断，替代需求未领齐仍阻断，普通取消不代表满足。工序只消费补料单的履约结果，并保留自身状态和前置条件校验；普通短批授权不绕过补产额度的物料条件。旧需求关闭、新需求生成与齐套重算同事务提交，不暴露“旧需求已关闭、新需求尚未建立”的可执行窗口。
 
-现有 `UNIQUE (supplement_id,parent_demand_id)` 及按来源生成的幂等键尚不能容纳同来源的历史需求与替代需求。实现时须追加 migration 调整约束及生成策略，保证一个旧需求至多有一次生效替代、同一替代链无环且不并行分叉；不得通过改写 `parent_demand_id`、删除历史行或复用旧幂等键绕过限制。
+原始补料需求通过 `original_supplement_parent` 生成列保持来源唯一性，替代需求则使用唯一的直接前驱和独立更正生成分组。数据库约束与事务共同保证同一旧需求只有一个生效后继、同链不成环或分叉；不得通过改写 `parent_demand_id`、删除历史或复用旧幂等键绕过限制。
 
-详细数量口径见 [Production 需求设计](../../apps/api/src/modules/production/docs/database/demand-allocation-and-outbound.md#正式需求更正与替代已确认待实施)，未完成事项见[路线图](../roadmap.md)。
+详细数量口径见 [Production 需求设计](../../apps/api/src/modules/production/docs/database/demand-allocation-and-outbound.md#正式需求更正与替代)，未完成事项见[路线图](../roadmap.md)。

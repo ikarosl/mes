@@ -6,21 +6,18 @@ import type {
   BatchTerminationCheck,
   BatchTerminationImpact,
   BatchTerminationMaterial,
-  TerminateProductionBatchPayload,
-  TerminateProductionBatchResult,
+  BatchCloseoutApprovalSnapshot,
 } from '@company/contracts';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { toBeijingISOString } from '../../../common/time/date-time.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
 import { ProductionTerminationRepository } from '../application/ports/production-termination.repository.js';
-import { requireBatchTermination } from '../domain/production-termination.policy.js';
 import { requireBatchTransition } from '../domain/production-status.policy.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
 import { fixedIntegerQuantity } from '../domain/integer-quantity.js';
-import { lockWorkOrderForBatch } from './mysql-work-order-material-version.js';
 import { findBatch } from './mysql-production.shared.js';
-import { mysqlProductionDemandPlanWriter } from './mysql-production-demand-plan.writer.js';
 import { writeInventoryAudit } from './mysql-production-inventory.shared.js';
+import { allocationNeedsCloseoutSql } from './mysql-production-material.sql.js';
 
 type Header = RowDataPacket &
   Omit<
@@ -49,92 +46,60 @@ export class MysqlProductionTerminationRepository extends ProductionTerminationR
     return withTransaction(this.pool, (db) => this.loadCheck(db, batchId, false));
   }
 
-  terminate(
-    batchId: string,
-    payload: TerminateProductionBatchPayload,
+  /** 仅由末级收尾审批在已有事务内调用，不再自动处理未完成事项。 */
+  async recordApprovedCloseout(
+    db: PoolConnection,
+    snapshot: BatchCloseoutApprovalSnapshot,
     context: CommandContext,
-  ): Promise<TerminateProductionBatchResult> {
-    return withTransaction(this.pool, async (db) => {
-      if (!context.actorId) throw new ProductionDomainError('INVALID_INPUT', '缺少当前操作人');
-      await lockWorkOrderForBatch(db, batchId);
-      const batch = await findBatch(db, batchId, true);
-      const check = await this.loadCheck(db, batchId, true);
-      requireBatchTermination(check, payload);
-      requireBatchTransition(batch.status, 'terminated');
-      const [created] = await db.execute<ResultSetHeader>(
-        `INSERT INTO production_batch_termination
-         (production_batch_id,work_order_id,planned_quantity,available_quantity,additional_scrap_quantity,
-          existing_scrap_quantity,reason,material_review_note,review_snapshot,created_by)
-         VALUES (?,?,?,?,?,?,?,?,?,?)`,
-        [
-          batchId,
-          check.workOrderId,
-          check.plannedQuantity,
-          payload.availableQuantity,
-          payload.additionalScrapQuantity,
-          check.existingScrapQuantity,
-          payload.reason,
-          payload.materialReviewNote,
-          JSON.stringify(check),
-          context.actorId,
-        ],
+  ): Promise<string> {
+    const { check, output } = snapshot;
+    const batch = await findBatch(db, check.batchId, true);
+    requireBatchTransition(batch.status, 'terminated');
+    const current = await this.loadCheck(db, check.batchId, true);
+    if (
+      current.impacts.length ||
+      current.blockers.length ||
+      current.checkToken !== check.checkToken
+    )
+      throw new ProductionDomainError(
+        'CONCURRENT_MODIFICATION',
+        '收尾事项或物料事实已变化，请重新核对送审',
       );
-      // 明确确认的未履约部分终止；已报工、已领料、已报废及已齐套授权事实保持原样。
-      await db.execute(
-        `UPDATE outbound_order SET status='cancelled',cancel_source='production_termination',cancel_reason=?,
-         cancelled_by=?,cancelled_at=NOW(),version=version+1,updated_by=?
-         WHERE production_batch_id=? AND status='pending_picking'`,
-        [payload.reason, context.actorId, context.actorId, batchId],
-      );
-      await db.execute(
-        `UPDATE production_item_allocation SET allocation_status='released',version=version+1,updated_by=?
-         WHERE production_batch_id=? AND allocation_status='active'`,
-        [context.actorId, batchId],
-      );
-      await mysqlProductionDemandPlanWriter.cancelRemainingDemands(db, {
-        batchId,
-        actorId: context.actorId,
-        reason: payload.reason,
-        expectedBatchVersion: batch.version,
-        cancelSource: 'production_termination',
-      });
-      await db.execute(
-        `UPDATE batch_step_abnormal_dispositions SET review_status='terminated',reviewed_by=?,reviewed_at=NOW(),
-         version=version+1,updated_by=? WHERE production_batch_id=? AND review_status='pending_review'`,
-        [context.actorId, context.actorId, batchId],
-      );
-      await db.execute(
-        `UPDATE rework_records SET status='cancelled',version=version+1,updated_by=?
-         WHERE production_batch_id=? AND status IN ('pending','doing')`,
-        [context.actorId, batchId],
-      );
-      await db.execute(
-        `UPDATE production_material_supplement SET status='cancelled',version=version+1,updated_by=?
-         WHERE production_batch_id=? AND status='approved'`,
-        [context.actorId, batchId],
-      );
-      const [updated] = await db.execute<ResultSetHeader>(
-        `UPDATE production_batches SET status='terminated',version=version+1,updated_by=?
-         WHERE id=? AND version=? AND status=?`,
-        [context.actorId, batchId, batch.version + 1, batch.status],
-      );
-      if (updated.affectedRows !== 1)
-        throw new ProductionDomainError('CONCURRENT_MODIFICATION', '生产批次已变化');
-      const result = { terminationId: String(created.insertId), batchId };
-      await writeInventoryAudit(
-        db,
-        context,
-        'production-batch.terminate',
-        'production_batch',
-        batchId,
-        { status: batch.status, version: batch.version },
-        { ...result, ...payload, impacts: check.impacts, status: 'terminated' },
-      );
-      return result;
-    });
+    const [created] = await db.execute<ResultSetHeader>(
+      `INSERT INTO production_batch_termination
+       (production_batch_id,work_order_id,planned_quantity,available_quantity,additional_scrap_quantity,
+        existing_scrap_quantity,reason,material_review_note,review_snapshot,created_by)
+       VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      [
+        check.batchId,
+        check.workOrderId,
+        check.plannedQuantity,
+        output.availableQuantity,
+        output.additionalScrapQuantity,
+        check.existingScrapQuantity,
+        output.reason,
+        output.materialReviewNote,
+        JSON.stringify(check),
+        context.actorId,
+      ],
+    );
+    await db.execute(
+      "UPDATE production_batches SET status='terminated',version=version+1,updated_by=? WHERE id=?",
+      [context.actorId, check.batchId],
+    );
+    await writeInventoryAudit(
+      db,
+      context,
+      'production-batch.closeout.approved',
+      'production_batch',
+      check.batchId,
+      { status: 'closing' },
+      { closeoutId: snapshot.closeoutId, terminationId: String(created.insertId), ...output },
+    );
+    return String(created.insertId);
   }
 
-  private async loadCheck(
+  async loadCheck(
     db: PoolConnection,
     batchId: string,
     lock: boolean,
@@ -181,7 +146,13 @@ export class MysqlProductionTerminationRepository extends ProductionTerminationR
     }
     const impacts: BatchTerminationImpact[] = [];
     const definitions = [
-      ['step', 'batch_step_records', 'step_name_snapshot', 'status', "status<>'completed'"],
+      [
+        'step',
+        'batch_step_records',
+        'step_name_snapshot',
+        'status',
+        "status NOT IN ('completed','terminated')",
+      ],
       [
         'abnormal',
         'batch_step_abnormal_dispositions',
@@ -209,7 +180,7 @@ export class MysqlProductionTerminationRepository extends ProductionTerminationR
         'production_item_allocation',
         'CAST(id AS CHAR)',
         'allocation_status',
-        "allocation_status NOT IN ('released','cancelled')",
+        allocationNeedsCloseoutSql('production_item_allocation', lock),
       ],
       [
         'demand',
@@ -230,7 +201,7 @@ export class MysqlProductionTerminationRepository extends ProductionTerminationR
           label: string;
           status: string;
           version: number;
-          quantity: string | null;
+          quantity: string | number | null;
           unit: string | null;
         })[]
       >(
@@ -245,7 +216,7 @@ export class MysqlProductionTerminationRepository extends ProductionTerminationR
           label: row.label,
           status: row.status,
           version: row.version,
-          quantity: row.quantity,
+          quantity: row.quantity === null ? null : String(row.quantity),
           unit: row.unit,
         })),
       );
@@ -255,8 +226,26 @@ export class MysqlProductionTerminationRepository extends ProductionTerminationR
       `SELECT id FROM item_scrap WHERE production_batch_id=? AND status='pending' ORDER BY id${lock ? ' FOR UPDATE' : ''}`,
       [batchId],
     );
+    const [pendingCorrections] = await db.query<(RowDataPacket & { id: number })[]>(
+      `SELECT id FROM production_item_demand WHERE production_batch_id=? AND pending_correction_id IS NOT NULL${share}`,
+      [batchId],
+    );
+    const [pendingReturns] = await db.query<(RowDataPacket & { return_no: string })[]>(
+      `SELECT return_no FROM return_order WHERE production_batch_id=? AND status='pending'${share}`,
+      [batchId],
+    );
     const blockers: string[] = [];
-    if (!['material_partially_outbound', 'material_outbound', 'doing'].includes(header.batchStatus))
+    if (pendingReturns.length)
+      blockers.push(
+        '请在退料管理完成或取消待确认退料单：' +
+          pendingReturns.map((row) => row.return_no).join('、'),
+      );
+    if (pendingCorrections.length) blockers.push('请先撤回或驳回在途需求更正，再开始批次收尾');
+    if (
+      !['material_partially_outbound', 'material_outbound', 'doing', 'closing'].includes(
+        header.batchStatus,
+      )
+    )
       blockers.push('仅已实际领料或执行中的批次可结束；未领料批次请使用取消任务');
     if (!['released', 'doing'].includes(header.workOrderStatus))
       blockers.push('工单已不允许继续结束生产批次');

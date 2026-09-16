@@ -93,6 +93,7 @@ export const PERMISSIONS = {
       cancelOutbound: 'production:materials:outbound-cancel',
       authorizeShortBatch: 'production:materials:authorize-short-batch',
       closeRemainingDemands: 'production:materials:close-remaining-demands',
+      correctDemand: 'production:materials:correct-demand',
     },
     materialDemands: {
       view: 'production:material-demands:view',

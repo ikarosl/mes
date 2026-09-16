@@ -123,7 +123,16 @@
           >
             <template #default="{ row }">
               <strong>{{ demandTypeLabel(row.demandType) }}</strong>
-              <div class="secondary">需求 #{{ row.demandId }}</div>
+              <div class="secondary">
+                需求 #{{ row.demandId
+                }}<span v-if="row.replacesDemandId"> · 替代 #{{ row.replacesDemandId }}</span>
+              </div>
+              <el-tag
+                v-if="row.pendingCorrectionId"
+                type="warning"
+                size="small"
+                >{{ MATERIAL_DEMAND_PROGRESS_LABELS.correction_pending }}</el-tag
+              >
             </template>
           </el-table-column>
           <el-table-column
@@ -458,7 +467,10 @@
 <script setup lang="ts">
 import { onActivated, onMounted, reactive, ref, watch } from 'vue';
 import { Refresh } from '@element-plus/icons-vue';
-import { DEMAND_GENERATION_GROUP_TYPE_LABELS } from '@company/constants';
+import {
+  DEMAND_GENERATION_GROUP_TYPE_LABELS,
+  MATERIAL_DEMAND_PROGRESS_LABELS,
+} from '@company/constants';
 import type {
   DemandType,
   InventoryBatchDetailItem,

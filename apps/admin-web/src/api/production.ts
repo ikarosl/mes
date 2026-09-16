@@ -1,7 +1,15 @@
 import type {
   BatchTerminationCheck,
-  TerminateProductionBatchPayload,
-  TerminateProductionBatchResult,
+  DemandCorrectionCheck,
+  DemandCorrectionHistoryItem,
+  SubmitDemandCorrectionPayload,
+  ProductionApprovalResult,
+  BatchCloseoutDetail,
+  BatchCloseoutCommandResult,
+  BeginBatchCloseoutPayload,
+  HandleBatchCloseoutItemPayload,
+  SaveBatchCloseoutOutputPayload,
+  SubmitBatchCloseoutPayload,
   CreateProductionBatchPayload,
   CreateMaterialAllocationsPayload,
   CreateMaterialOutboundPayload,
@@ -230,9 +238,28 @@ export const productionApi = {
       skipErrorHandling: true,
     }),
 
-  terminateBatch: (id: string, data: TerminateProductionBatchPayload, idempotencyKey: string) =>
-    request<TerminateProductionBatchResult>({
-      url: `/production/batches/${id}/actions/terminate`,
+  getDemandCorrectionCheck: (id: string) =>
+    request<DemandCorrectionCheck>({
+      url: `/production/material-demands/${id}/correction-check`,
+      skipErrorHandling: true,
+    }),
+  getDemandCorrectionHistory: (id: string) =>
+    request<DemandCorrectionHistoryItem[]>({
+      url: `/production/material-demands/${id}/corrections`,
+      skipErrorHandling: true,
+    }),
+  getBatchCloseout: (id: string) =>
+    request<BatchCloseoutDetail | null>({
+      url: `/production/batches/${id}/closeout`,
+      skipErrorHandling: true,
+    }),
+  submitDemandCorrection: (
+    id: string,
+    data: SubmitDemandCorrectionPayload,
+    idempotencyKey: string,
+  ) =>
+    request<ProductionApprovalResult>({
+      url: `/production/material-demands/${id}/corrections`,
       method: 'POST',
       data,
       headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
@@ -240,7 +267,54 @@ export const productionApi = {
       retryIdempotentWrite: true,
       retryTimes: 2,
     }),
-
+  beginBatchCloseout: (id: string, data: BeginBatchCloseoutPayload, idempotencyKey: string) =>
+    request<BatchCloseoutCommandResult>({
+      url: `/production/batches/${id}/closeout/begin`,
+      method: 'POST',
+      data,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      skipErrorHandling: true,
+      retryIdempotentWrite: true,
+      retryTimes: 2,
+    }),
+  handleBatchCloseoutItem: (
+    id: string,
+    data: HandleBatchCloseoutItemPayload,
+    idempotencyKey: string,
+  ) =>
+    request<BatchCloseoutCommandResult>({
+      url: `/production/batches/${id}/closeout/items`,
+      method: 'POST',
+      data,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      skipErrorHandling: true,
+      retryIdempotentWrite: true,
+      retryTimes: 2,
+    }),
+  saveBatchCloseoutOutput: (
+    id: string,
+    data: SaveBatchCloseoutOutputPayload,
+    idempotencyKey: string,
+  ) =>
+    request<BatchCloseoutCommandResult>({
+      url: `/production/batches/${id}/closeout/output`,
+      method: 'POST',
+      data,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      skipErrorHandling: true,
+      retryIdempotentWrite: true,
+      retryTimes: 2,
+    }),
+  submitBatchCloseout: (id: string, data: SubmitBatchCloseoutPayload, idempotencyKey: string) =>
+    request<ProductionApprovalResult>({
+      url: `/production/batches/${id}/closeout/submit`,
+      method: 'POST',
+      data,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      skipErrorHandling: true,
+      retryIdempotentWrite: true,
+      retryTimes: 2,
+    }),
   /** 取消任务前读取服务端实时影响摘要；提交时后端仍会再次校验。 */
   getBatchCancellationCheck: (id: string) =>
     request<ProductionBatchCancellationCheck>({

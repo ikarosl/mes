@@ -62,7 +62,10 @@
           label="当前预计出库"
           width="130"
         >
-          <template #default="{ row }">{{ formatQuantity(row.expectedOutboundQuantity) }}</template>
+          <template #default="{ row }"
+            >{{ formatQuantity(row.expectedOutboundQuantity)
+            }}<span v-if="row.pendingCorrectionId">（更正审批中）</span></template
+          >
         </el-table-column>
         <el-table-column
           label="授权后允许缺口"

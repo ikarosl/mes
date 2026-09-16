@@ -52,7 +52,6 @@ import {
 } from './mysql-production-material.mapper.js';
 import { activeDemandAllocationGapExistsSql } from './mysql-production-material.sql.js';
 import { findBatch } from './mysql-production.shared.js';
-import { mysqlProductionDemandPlanWriter } from './mysql-production-demand-plan.writer.js';
 import { fulfillReadySupplements } from './mysql-production-supplement-activation.js';
 import {
   getConfirmedMaterialOutboundQuantity,
@@ -109,7 +108,7 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
     const [[demand]] = await this.pool.query<
       (RowDataPacket & { item_id: number; material_variant_id: number })[]
     >(
-      "SELECT item_id,material_variant_id FROM production_item_demand WHERE id=? AND business_status='active'",
+      "SELECT item_id,material_variant_id FROM production_item_demand WHERE id=? AND business_status='active' AND pending_correction_id IS NULL",
       [demandId],
     );
     if (!demand) throw new ProductionDomainError('NOT_FOUND', '有效物料需求不存在');
@@ -259,101 +258,15 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
   }
 
   async closeRemainingDemands(
-    batchId: string,
-    version: number,
-    reason: string,
-    context: CommandContext,
+    _batchId: string,
+    _version: number,
+    _reason: string,
+    _context: CommandContext,
   ): Promise<CloseRemainingMaterialDemandsResult> {
-    return withTransaction(this.pool, async (connection) => {
-      if (!context.actorId) throw new ProductionDomainError('INVALID_INPUT', '缺少当前操作人身份');
-      const batch = await findBatch(connection, batchId, true);
-      if (batch.status !== 'doing')
-        throw new ProductionDomainError(
-          'INVALID_STATE',
-          '只有已经开工的短批任务可以关闭剩余物料需求',
-        );
-      const [[consumedAuthorization]] = await connection.query<(RowDataPacket & { id: number })[]>(
-        `SELECT id FROM production_short_batch_authorization
-         WHERE production_batch_id=? AND status='consumed'
-         ORDER BY id DESC LIMIT 1 FOR UPDATE`,
-        [batchId],
-      );
-      if (!consumedAuthorization)
-        throw new ProductionDomainError(
-          'INVALID_STATE',
-          '只有使用短批授权开工的任务可以关闭剩余物料需求',
-        );
-      if (batch.version !== version)
-        throw new ProductionDomainError('CONCURRENT_MODIFICATION', '生产任务已变化，请刷新后重试');
-      const [demands] = await connection.query<(RowDataPacket & { id: number })[]>(
-        `SELECT id FROM production_item_demand
-         WHERE production_batch_id=? AND business_status='active'
-         ORDER BY id FOR UPDATE`,
-        [batchId],
-      );
-      if (demands.length === 0)
-        return {
-          productionBatchId: batchId,
-          batchStatus: batch.status,
-          batchVersion: batch.version,
-          materialPlanVersion: batch.material_plan_version,
-          cancelledDemandCount: 0,
-          releasedAllocationCount: 0,
-        };
-      const demandIds = demands.map((row) => String(row.id));
-      const [[pending]] = await connection.query<(RowDataPacket & { count: number })[]>(
-        `SELECT COUNT(*) count FROM outbound_detail detail
-         JOIN outbound_order outbound ON outbound.id=detail.outbound_id
-         WHERE detail.demand_id IN (${placeholders(demandIds)})
-           AND outbound.status='pending_picking'`,
-        demandIds,
-      );
-      if (Number(pending?.count ?? 0) > 0)
-        throw new ProductionDomainError(
-          'INVALID_STATE',
-          '剩余需求存在待确认出库单，请先取消相关单据',
-        );
-      const [released] = await connection.execute<ResultSetHeader>(
-        `UPDATE production_item_allocation
-         SET allocation_status='cancelled',version=version+1,updated_by=?
-         WHERE demand_id IN (${placeholders(demandIds)}) AND allocation_status='active'
-           AND assigned_number>COALESCE((
-             SELECT SUM(detail.outbound_number)
-             FROM outbound_detail detail
-             JOIN outbound_order outbound ON outbound.id=detail.outbound_id
-             WHERE detail.allocation_id=production_item_allocation.id
-               AND outbound.status='completed'
-           ),0)`,
-        [context.actorId, ...demandIds],
-      );
-      const cancelledDemandCount = await mysqlProductionDemandPlanWriter.cancelRemainingDemands(
-        connection,
-        { batchId, actorId: context.actorId, reason, expectedBatchVersion: version },
-      );
-      await this.audit(
-        connection,
-        context,
-        'production-material.remaining-demands.close',
-        batchId,
-        { activeDemandCount: demands.length },
-        {
-          reason,
-          cancelledDemandCount,
-          releasedAllocationCount: released.affectedRows,
-          materialPlanVersion: batch.material_plan_version + 1,
-          shortBatchAuthorizationId: String(consumedAuthorization.id),
-        },
-        'production_batches',
-      );
-      return {
-        productionBatchId: batchId,
-        batchStatus: batch.status,
-        batchVersion: version + 1,
-        materialPlanVersion: batch.material_plan_version + 1,
-        cancelledDemandCount,
-        releasedAllocationCount: released.affectedRows,
-      };
-    });
+    throw new ProductionDomainError(
+      'INVALID_STATE',
+      '短批不再直接关闭全部需求；录入错误请申请单条更正，停止生产请开始批次收尾',
+    );
   }
 
   async createAllocations(
@@ -404,9 +317,10 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
             unit_snapshot: string;
             need_number: string;
             business_status: string;
+            pending_correction_id: number | null;
           })[]
         >(
-          'SELECT production_batch_id,item_id,material_variant_id,unit_snapshot,need_number,business_status FROM production_item_demand WHERE id=?',
+          'SELECT production_batch_id,item_id,material_variant_id,unit_snapshot,need_number,business_status,pending_correction_id FROM production_item_demand WHERE id=? FOR UPDATE',
           [line.demandId],
         );
         const [[stockBatch]] = await connection.query<
@@ -420,7 +334,7 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
         ]);
         if (!demand || String(demand.production_batch_id) !== batchId)
           throw new ProductionDomainError('NOT_FOUND', '物料需求不属于当前生产批次');
-        if (demand.business_status !== 'active')
+        if (demand.business_status !== 'active' || demand.pending_correction_id !== null)
           throw new ProductionDomainError('INVALID_STATE', '只有有效物料需求可以分配');
         if (
           !stockBatch ||
@@ -514,6 +428,8 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
         [allocationId, batchId],
       );
       if (!row) throw new ProductionDomainError('NOT_FOUND', '物料分配不存在');
+      if (row.demand_business_status !== 'active' || row.pending_correction_id !== null)
+        throw new ProductionDomainError('INVALID_STATE', '该需求已结束或更正审批中，不能释放分配');
       const additionalDemand = isAdditionalMaterialDemand(row.demand_type);
       requireMaterialAllocationBatchStatus(
         batch.status,
@@ -578,7 +494,7 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
         throw new ProductionDomainError('INVALID_INPUT', '同一分配只能提交一条出库明细');
       await lockIds(connection, 'production_item_allocation', allocationIds);
       const [allocations] = await connection.query<AllocationRow[]>(
-        `${ALLOCATION_SELECT} WHERE a.id IN (${placeholders(allocationIds)}) AND a.production_batch_id=? AND d.business_status='active' ORDER BY a.id`,
+        `${ALLOCATION_SELECT} WHERE a.id IN (${placeholders(allocationIds)}) AND a.production_batch_id=? AND d.business_status='active' AND d.pending_correction_id IS NULL ORDER BY a.id FOR UPDATE`,
         [...allocationIds, batchId],
       );
       if (allocations.length !== allocationIds.length)
@@ -753,14 +669,14 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
         NOT ${activeDemandAllocationGapExistsSql('b.id')} all_active_demands_allocated,
         EXISTS (
           SELECT 1 FROM production_item_allocation allocation
-          JOIN production_item_demand demand ON demand.id=allocation.demand_id AND demand.business_status='active'
+          JOIN production_item_demand demand ON demand.id=allocation.demand_id AND demand.business_status='active' AND demand.pending_correction_id IS NULL
           WHERE allocation.production_batch_id=b.id AND allocation.allocation_status='active'
             AND allocation.assigned_number
               - COALESCE((SELECT SUM(detail.outbound_number) FROM outbound_detail detail JOIN outbound_order outbound ON outbound.id=detail.outbound_id WHERE detail.allocation_id=allocation.id AND outbound.status='completed'),0) > 0
         ) has_active_allocation,
         EXISTS (
           SELECT 1 FROM production_item_allocation allocation
-          JOIN production_item_demand demand ON demand.id=allocation.demand_id AND demand.business_status='active'
+          JOIN production_item_demand demand ON demand.id=allocation.demand_id AND demand.business_status='active' AND demand.pending_correction_id IS NULL
           WHERE allocation.production_batch_id=b.id AND allocation.allocation_status='active'
             AND allocation.assigned_number
               - COALESCE((SELECT SUM(detail.outbound_number) FROM outbound_detail detail JOIN outbound_order outbound ON outbound.id=detail.outbound_id WHERE detail.allocation_id=allocation.id AND outbound.status='completed'),0)
@@ -770,7 +686,7 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
           SELECT 1 FROM production_item_allocation allocation
           JOIN production_item_demand demand ON demand.id=allocation.demand_id
           WHERE allocation.production_batch_id=b.id AND allocation.allocation_status='active'
-            AND demand.business_status='active'
+            AND demand.business_status='active' AND demand.pending_correction_id IS NULL
             AND demand.demand_type IN (${placeholders([...ADDITIONAL_MATERIAL_DEMAND_TYPES])})
             AND allocation.assigned_number
               - COALESCE((SELECT SUM(detail.outbound_number) FROM outbound_detail detail JOIN outbound_order outbound ON outbound.id=detail.outbound_id WHERE detail.allocation_id=allocation.id AND outbound.status='completed'),0)
@@ -828,7 +744,7 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
       `${ALLOCATION_SELECT.replace(
         'SELECT a.id',
         `SELECT ib.item_code_snapshot,${currentMaterialNameSql('ib.item_id')} item_name,a.id`,
-      )} WHERE a.production_batch_id=? AND a.allocation_status='active' AND d.business_status='active' ORDER BY d.id,a.id`,
+      )} WHERE a.production_batch_id=? AND a.allocation_status='active' AND d.business_status='active' AND d.pending_correction_id IS NULL ORDER BY d.id,a.id`,
       [batchId],
     );
     return rows
@@ -950,7 +866,7 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
       );
       await lockIds(connection, 'production_item_allocation', allocationIds);
       const [allocations] = await connection.query<AllocationRow[]>(
-        `${ALLOCATION_SELECT} WHERE a.id IN (${placeholders(allocationIds)}) ORDER BY a.id`,
+        `${ALLOCATION_SELECT} WHERE a.id IN (${placeholders(allocationIds)}) ORDER BY a.id FOR UPDATE`,
         allocationIds,
       );
       if (allocations.length !== allocationIds.length)
@@ -1035,7 +951,7 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
                fulfilled_at=IF(remaining_number=?, NOW(), NULL),
                business_status=IF(remaining_number=?,'fulfilled','active'),
                remaining_number=remaining_number-?,version=version+1,updated_by=?
-           WHERE id=? AND business_status='active' AND remaining_number>=?`,
+           WHERE id=? AND business_status='active' AND pending_correction_id IS NULL AND remaining_number>=?`,
           [
             quantity,
             context.actorId,
@@ -1345,6 +1261,7 @@ const summarizeQuantities = (details: OutboundDetailRow[]) => {
 
 type ShortBatchPreviewRow = RowDataPacket & {
   demand_id: number;
+  pending_correction_id: number | null;
   item_id: number;
   material_variant_id: number;
   material_variant_code_snapshot: string;
@@ -1372,7 +1289,7 @@ const buildShortBatchAuthorizationPreview = async (
   batch: Awaited<ReturnType<typeof findBatch>>,
 ): Promise<ShortBatchAuthorizationPreview> => {
   const [rows] = await db.query<ShortBatchPreviewRow[]>(
-    `SELECT demand.id demand_id,demand.item_id,demand.material_variant_id,demand.material_variant_code_snapshot,
+    `SELECT demand.id demand_id,demand.pending_correction_id,demand.item_id,demand.material_variant_id,demand.material_variant_code_snapshot,
       demand.item_code_snapshot item_code,
       ${currentMaterialNameSql('demand.item_id')} item_name,demand.generation_group_key,
       demand.demand_type generation_group_type,supplement.supplement_no,
@@ -1406,9 +1323,14 @@ const buildShortBatchAuthorizationPreview = async (
   );
   const lines: ShortBatchAuthorizationPreviewLine[] = rows.map((row) => {
     const remaining = integerQuantity(row.remaining_number);
-    const expectedOutbound = Math.min(remaining, integerQuantity(row.available_allocated));
+    const expectedOutbound =
+      row.pending_correction_id != null
+        ? 0
+        : Math.min(remaining, integerQuantity(row.available_allocated));
     return {
       demandId: String(row.demand_id),
+      pendingCorrectionId:
+        row.pending_correction_id == null ? null : String(row.pending_correction_id),
       itemId: String(row.item_id),
       materialVariantId: String(row.material_variant_id),
       materialVariantCode: row.material_variant_code_snapshot,
