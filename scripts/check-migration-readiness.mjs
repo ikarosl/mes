@@ -24,7 +24,8 @@ const allowedTables = new Set([
   'operation_logs',
   'http_idempotency_records',
   'technical_files',
-  'product_categories',
+  'product_categories', // Retired name; historical migrations retain ownership.
+  'item_categories',
   'products',
   'materials',
   'process_steps',

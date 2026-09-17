@@ -4,7 +4,7 @@
 
 本章定义所有数据库领域共同遵守的基础规则，并完成以下统一：
 
-- `item_type` 统一为 `product_categories`。
+- 物料和成品共用 `item_categories` 分类，以 `item_kind` 区分；不另建第二套分类表。
 - 成品主数据使用 `products`，基础物料使用 `materials`，精确物料版本使用 `material_variants`；不恢复 `item_info`。
 - `product_bom` 统一为 `product_materials`，不保留第二套 BOM 表。
 - RBAC 与认证字段以新项目已落地迁移为准。

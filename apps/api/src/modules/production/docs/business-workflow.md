@@ -12,7 +12,7 @@
 
 进入产品分类管理，配置物料和成品分类；半成品不再是独立产品类型。
 
-分类信息保存至 `product_categories`，通过 `item_kind` 区分：
+分类信息保存至 `item_categories`，通过 `item_kind` 区分：
 
 - `material`：物料；
 - `finished_product`：成品。

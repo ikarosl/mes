@@ -273,7 +273,7 @@ Production 所有 `production_demand_correction`、`production_batch_closeout`�
 ## 3.13 最终表关系简图
 
 ```text
-product_categories
+item_categories
   ↓
 products（成品）
   ↓

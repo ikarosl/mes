@@ -146,7 +146,7 @@ describeMysql('createBatch HTTP pipeline (real Nest app + real MySQL)', () => {
       await pool.execute('DELETE FROM product_materials WHERE id=?', [fixture.productMaterialId]);
       await pool.execute('DELETE FROM products WHERE id=?', [fixture.productId]);
       await pool.execute('DELETE FROM materials WHERE id=?', [fixture.materialId]);
-      await pool.execute('DELETE FROM product_categories WHERE id IN (?,?)', [
+      await pool.execute('DELETE FROM item_categories WHERE id IN (?,?)', [
         fixture.categoryId,
         fixture.materialCategoryId,
       ]);
@@ -445,7 +445,7 @@ const createFixture = async (pool: Pool): Promise<Fixture> => {
   ]);
   const categoryId = await insert(
     pool,
-    'INSERT INTO product_categories (category_code,category_name,item_kind) VALUES (?,?,?)',
+    'INSERT INTO item_categories (category_code,category_name,item_kind) VALUES (?,?,?)',
     [`${token}-cat`, 'HTTP 管线测试分类', 'finished_product'],
   );
   const productId = await insert(
@@ -455,7 +455,7 @@ const createFixture = async (pool: Pool): Promise<Fixture> => {
   );
   const materialCategoryId = await insert(
     pool,
-    'INSERT INTO product_categories (category_code,category_name,item_kind) VALUES (?,?,?)',
+    'INSERT INTO item_categories (category_code,category_name,item_kind) VALUES (?,?,?)',
     [`${token}-material-cat`, 'HTTP 管线测试物料分类', 'material'],
   );
   const materialId = await insert(

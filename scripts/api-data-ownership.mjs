@@ -23,7 +23,8 @@ export const API_DATA_OWNERSHIP = Object.freeze({
     'refresh_tokens',
   ]),
   product: Object.freeze([
-    'product_categories',
+    'product_categories', // Retired name; historical migrations retain ownership.
+    'item_categories',
     'products',
     'materials',
     'material_variants',

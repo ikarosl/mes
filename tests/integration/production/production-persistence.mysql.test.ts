@@ -94,7 +94,7 @@ describeMysql('Production MySQL persistence', () => {
       await pool.execute('DELETE FROM material_variants WHERE material_id=?', [fixture.materialId]);
       await pool.execute('DELETE FROM products WHERE id=?', [fixture.productId]);
       await pool.execute('DELETE FROM materials WHERE id=?', [fixture.materialId]);
-      await pool.execute('DELETE FROM product_categories WHERE id IN (?,?)', [
+      await pool.execute('DELETE FROM item_categories WHERE id IN (?,?)', [
         fixture.productCategoryId,
         fixture.materialCategoryId,
       ]);
@@ -1136,12 +1136,12 @@ const createFixture = async (pool: Pool): Promise<Fixture> => {
   );
   const productCategoryId = await insert(
     pool,
-    'INSERT INTO product_categories (category_code,category_name,item_kind) VALUES (?,?,?)',
+    'INSERT INTO item_categories (category_code,category_name,item_kind) VALUES (?,?,?)',
     [`${token}-finished`, 'Production test finished', 'finished_product'],
   );
   const materialCategoryId = await insert(
     pool,
-    'INSERT INTO product_categories (category_code,category_name,item_kind) VALUES (?,?,?)',
+    'INSERT INTO item_categories (category_code,category_name,item_kind) VALUES (?,?,?)',
     [`${token}-material`, 'Production test material', 'material'],
   );
   const productId = await insert(

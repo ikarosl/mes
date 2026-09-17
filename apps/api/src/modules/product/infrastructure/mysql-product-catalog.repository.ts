@@ -53,7 +53,7 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
     }
     const where = conditions.join(' AND ');
     const [[countRow]] = await this.pool.query<(RowDataPacket & { total: number })[]>(
-      `SELECT COUNT(*) total FROM products p JOIN product_categories c ON c.id=p.category_id WHERE ${where}`,
+      `SELECT COUNT(*) total FROM products p JOIN item_categories c ON c.id=p.category_id WHERE ${where}`,
       parameters,
     );
     const [rows] = await this.pool.query<
@@ -85,7 +85,7 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
                     p.default_route_id,r.route_name default_route_name,p.unit,p.acquire_method,p.spec_values,p.status,
                     COUNT(pm.id) material_count,p.bom_locked_at,p.bom_locked_by,p.bom_status,
                     p.bom_approval_instance_id,p.version,p.remark,p.updated_at
-             FROM products p JOIN product_categories c ON c.id=p.category_id
+             FROM products p JOIN item_categories c ON c.id=p.category_id
              LEFT JOIN process_routes r ON r.id=p.default_route_id AND r.is_deleted=0
              LEFT JOIN product_materials pm ON pm.product_id=p.id AND pm.is_deleted=0 AND pm.status=1
              WHERE ${where} GROUP BY p.id,c.category_code,c.category_name,c.item_kind,r.route_name
@@ -141,7 +141,7 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
     const [[count]] = await this.pool.query<(RowDataPacket & { total: number })[]>(
       `SELECT COUNT(*) total FROM (
          SELECT p.product_name,p.category_id
-           FROM products p JOIN product_categories c ON c.id=p.category_id
+           FROM products p JOIN item_categories c ON c.id=p.category_id
           WHERE ${where} GROUP BY p.product_name,p.category_id
        ) grouped_products`,
       parameters,
@@ -155,7 +155,7 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
       })[]
     >(
       `SELECT p.product_name,p.category_id,c.category_code,c.category_name
-         FROM products p JOIN product_categories c ON c.id=p.category_id
+         FROM products p JOIN item_categories c ON c.id=p.category_id
         WHERE ${where}
         GROUP BY p.product_name,p.category_id,c.category_code,c.category_name
         ORDER BY p.product_name,p.category_id LIMIT ? OFFSET ?`,
@@ -200,7 +200,7 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
               p.default_route_id,r.route_name default_route_name,p.unit,p.acquire_method,p.spec_values,p.status,
               COUNT(pm.id) material_count,p.bom_locked_at,p.bom_locked_by,p.bom_status,
               p.bom_approval_instance_id,p.version,p.remark,p.updated_at
-         FROM products p JOIN product_categories c ON c.id=p.category_id
+         FROM products p JOIN item_categories c ON c.id=p.category_id
          JOIN (${selectedGroups}) selected ON p.product_name=selected.product_name AND p.category_id=selected.category_id
          LEFT JOIN process_routes r ON r.id=p.default_route_id AND r.is_deleted=0
          LEFT JOIN product_materials pm ON pm.product_id=p.id AND pm.is_deleted=0 AND pm.status=1
@@ -246,7 +246,7 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
         default_route_id: number | null;
       })[]
     >(`SELECT p.id,p.item_code,p.product_name,p.acquire_method,p.unit,p.default_route_id
-             FROM products p JOIN product_categories c ON c.id=p.category_id
+             FROM products p JOIN item_categories c ON c.id=p.category_id
              WHERE p.is_deleted=0 AND p.status=1 AND c.is_deleted=0 AND c.status=1
                AND c.item_kind='finished_product' ORDER BY p.item_code`);
     return rows.map((row) => ({
@@ -385,7 +385,7 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
       `SELECT pm.id,pm.material_id,p.material_code item_code,p.material_name product_name,c.item_kind,pm.quantity_per_unit,
                     pm.unit,pm.status,pm.remark
              FROM product_materials pm JOIN materials p ON p.id=pm.material_id
-             JOIN product_categories c ON c.id=p.category_id
+             JOIN item_categories c ON c.id=p.category_id
              WHERE pm.product_id=? AND pm.is_deleted=0 ORDER BY pm.id`,
       [productId],
     );
@@ -576,7 +576,7 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
                 c.status category_status,c.is_deleted category_is_deleted
            FROM product_materials pm
            JOIN materials m ON m.id=pm.material_id
-           JOIN product_categories c ON c.id=m.category_id
+           JOIN item_categories c ON c.id=m.category_id
           WHERE pm.product_id=? AND pm.status=1 AND pm.is_deleted=0
           ORDER BY pm.id FOR UPDATE`,
         [productId],
@@ -669,7 +669,7 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
         })[]
       >(
         `SELECT m.status,m.is_deleted,m.unit,pm.unit bom_unit,c.status category_status,c.is_deleted category_deleted,c.item_kind
-         FROM product_materials pm JOIN materials m ON m.id=pm.material_id JOIN product_categories c ON c.id=m.category_id
+         FROM product_materials pm JOIN materials m ON m.id=pm.material_id JOIN item_categories c ON c.id=m.category_id
          WHERE pm.product_id=? AND pm.status=1 AND pm.is_deleted=0 ORDER BY pm.material_id FOR UPDATE`,
         [productId],
       );
@@ -754,7 +754,7 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
         category_name: string;
       })[]
     >(
-      'SELECT id,item_kind,status,category_code,category_name FROM product_categories WHERE id=? AND is_deleted=0',
+      'SELECT id,item_kind,status,category_code,category_name FROM item_categories WHERE id=? AND is_deleted=0',
       [id],
     );
     if (!row) throw new ProductDomainError('NOT_FOUND', '产品分类不存在');
@@ -792,7 +792,7 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
       })[]
     >(
       `SELECT p.id,p.item_code,p.product_name,p.category_id,c.item_kind,p.acquire_method,p.status,p.default_route_id,p.unit,p.bom_locked_at,p.bom_status,p.bom_approval_instance_id,p.version,p.spec_values
-           FROM products p JOIN product_categories c ON c.id=p.category_id WHERE p.id=? AND p.is_deleted=0${lock ? ' FOR UPDATE' : ''}`,
+           FROM products p JOIN item_categories c ON c.id=p.category_id WHERE p.id=? AND p.is_deleted=0${lock ? ' FOR UPDATE' : ''}`,
       [id],
     );
     if (!row) throw new ProductDomainError('NOT_FOUND', '产品或物料不存在');
@@ -802,7 +802,7 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
     const [[material]] = await db.query<
       (RowDataPacket & { status: number; unit: string; item_kind: ProductItemKind })[]
     >(
-      `SELECT m.status,m.unit,c.item_kind FROM materials m JOIN product_categories c ON c.id=m.category_id
+      `SELECT m.status,m.unit,c.item_kind FROM materials m JOIN item_categories c ON c.id=m.category_id
        WHERE m.id=? AND m.is_deleted=0 AND c.is_deleted=0`,
       [materialId],
     );

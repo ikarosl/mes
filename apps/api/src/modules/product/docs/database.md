@@ -6,9 +6,11 @@
 
 ---
 
-### 1. `product_categories`
+### 1. `item_categories`
 
 职责：统一维护物料和成品分类，不再创建第二套库存分类表。
+
+分类仍由 Product 模块所有。`products.category_id`、`materials.category_id` 及分类自身的 `parent_id` 均引用这张表；API 路径 `/product/categories`、权限和公开 `ProductCategory` 契约不随物理表名改变。
 
 | 字段            | 类型              | 说明                                            |
 | --------------- | ----------------- | ----------------------------------------------- |
@@ -24,9 +26,11 @@
 约束：
 
 - 主键：`id`
-- 自关联：`parent_id -> product_categories.id`
+- 自关联：`parent_id -> item_categories.id`
 - 检查约束：`CHECK (item_kind IN ('material', 'finished_product'))`
 - 唯一约束：`UNIQUE (category_code)`
+
+分类自身的唯一键、父级索引、审计引用索引和 FK/CHECK 统一使用 `item_categories` 前缀。迁移 `202609170004-rename-item-categories` 直接重命名原表及这些约束，不复制分类或更改 ID；引用该表的产品、物料外键随表重命名自动改指新名。应用与迁移须同时切换，旧表名不提供兼容视图；回退先恢复原表及约束名称，再回退更早的 Product 迁移。
 
 说明：
 
@@ -60,7 +64,7 @@
 
 - 主键：`id`
 - 唯一约束：`UNIQUE (item_code)`
-- 外键：`FOREIGN KEY (category_id) REFERENCES product_categories(id)`
+- 外键：`FOREIGN KEY (category_id) REFERENCES item_categories(id)`
 - 外键：`default_route_id -> process_routes.id ON DELETE SET NULL`，在工艺表创建后追加
 - 外键：`bom_locked_by -> users.id`
 - 检查约束：`CHECK (bom_locked_at IS NOT NULL OR bom_locked_by IS NULL)`
@@ -84,7 +88,7 @@
 | `id` | `BIGINT UNSIGNED` | 自增主键，独立于成品 ID |
 | `material_code` | `VARCHAR(100)` | 永久唯一、不可修改的基础物料编码 |
 | `material_name` | `VARCHAR(200)` | 可重复的名称 |
-| `category_id` | `BIGINT UNSIGNED` | `product_categories.id`，必须是 `material` 分类 |
+| `category_id` | `BIGINT UNSIGNED` | `item_categories.id`，必须是 `material` 分类 |
 | `unit` | `VARCHAR(20)` | 固定基础单位，不允许修改或换算 |
 | `acquire_method` | `VARCHAR(32)` | `self_made`、`outsourced`、`purchased` |
 | `spec_values` | `JSON` | 基础物料共有的轻量规格记录 |

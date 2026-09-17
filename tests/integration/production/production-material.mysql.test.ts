@@ -1845,14 +1845,14 @@ const fixture = async (
   const token = `pm-${suffix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const pc = await ins(
     pool,
-    "INSERT INTO product_categories (category_code,category_name,item_kind) VALUES (?,?,'finished_product')",
+    "INSERT INTO item_categories (category_code,category_name,item_kind) VALUES (?,?,'finished_product')",
     [`${token}-pc`, '成品'],
   );
   const mc =
     shared?.sharedCategoryId ??
     (await ins(
       pool,
-      "INSERT INTO product_categories (category_code,category_name,item_kind) VALUES (?,?,'material')",
+      "INSERT INTO item_categories (category_code,category_name,item_kind) VALUES (?,?,'material')",
       [`${token}-mc`, '物料'],
     ));
   const product = await ins(
@@ -2051,11 +2051,11 @@ const cleanup = async (pool: Pool, f: Fixture) => {
     await pool.execute('DELETE FROM item_batch WHERE id IN (?,?)', [f.itemBatch1, f.itemBatch2]);
   }
   await pool.execute('DELETE FROM products WHERE id=?', [f.productId]);
-  await pool.execute('DELETE FROM product_categories WHERE id=?', [f.productCategoryId]);
+  await pool.execute('DELETE FROM item_categories WHERE id=?', [f.productCategoryId]);
   if (f.ownsMaterial) {
     await pool.execute('DELETE FROM material_variants WHERE material_id=?', [f.materialId]);
     await pool.execute('DELETE FROM materials WHERE id=?', [f.materialId]);
-    await pool.execute('DELETE FROM product_categories WHERE id=?', [f.materialCategoryId]);
+    await pool.execute('DELETE FROM item_categories WHERE id=?', [f.materialCategoryId]);
   }
 };
 const deleteInventoryTransactions = async (pool: Pool, sql: string, values: unknown[]) => {

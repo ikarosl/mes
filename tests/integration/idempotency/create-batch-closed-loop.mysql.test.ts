@@ -122,10 +122,8 @@ describeMysql(
         await pool.execute('DELETE FROM product_materials WHERE product_id=?', [fixture.productId]);
         await pool.execute('DELETE FROM products WHERE id=?', [fixture.productId]);
         await pool.execute('DELETE FROM materials WHERE id=?', [fixture.materialId]);
-        await pool.execute('DELETE FROM product_categories WHERE id=?', [fixture.categoryId]);
-        await pool.execute('DELETE FROM product_categories WHERE id=?', [
-          fixture.materialCategoryId,
-        ]);
+        await pool.execute('DELETE FROM item_categories WHERE id=?', [fixture.categoryId]);
+        await pool.execute('DELETE FROM item_categories WHERE id=?', [fixture.materialCategoryId]);
         await pool.execute('DELETE FROM role_permissions WHERE role_id=?', [fixture.roleId]);
         await pool.execute('DELETE FROM user_roles WHERE user_id IN (?,?)', [
           fixture.actorId,
@@ -397,7 +395,7 @@ const createFixture = async (pool: Pool): Promise<Fixture> => {
   );
   const categoryId = await insert(
     pool,
-    'INSERT INTO product_categories (category_code,category_name,item_kind) VALUES (?,?,?)',
+    'INSERT INTO item_categories (category_code,category_name,item_kind) VALUES (?,?,?)',
     [`${token}-cat`, '闭环测试分类', 'finished_product'],
   );
   const productId = await insert(
@@ -407,7 +405,7 @@ const createFixture = async (pool: Pool): Promise<Fixture> => {
   );
   const materialCategoryId = await insert(
     pool,
-    'INSERT INTO product_categories (category_code,category_name,item_kind) VALUES (?,?,?)',
+    'INSERT INTO item_categories (category_code,category_name,item_kind) VALUES (?,?,?)',
     [`${token}-material-cat`, '闭环测试物料分类', 'material'],
   );
   const materialId = await insert(

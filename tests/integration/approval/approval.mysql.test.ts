@@ -1321,12 +1321,12 @@ const createFixture = async (pool: Pool): Promise<Fixture> => {
   );
   const categoryId = await insert(
     pool,
-    'INSERT INTO product_categories (category_code,category_name,item_kind,created_by,updated_by) VALUES (?,?,?,?,?)',
+    'INSERT INTO item_categories (category_code,category_name,item_kind,created_by,updated_by) VALUES (?,?,?,?,?)',
     [`${token}-finished-category`, '审批集成成品分类', 'finished_product', actorId, actorId],
   );
   const materialCategoryId = await insert(
     pool,
-    'INSERT INTO product_categories (category_code,category_name,item_kind,created_by,updated_by) VALUES (?,?,?,?,?)',
+    'INSERT INTO item_categories (category_code,category_name,item_kind,created_by,updated_by) VALUES (?,?,?,?,?)',
     [`${token}-material-category`, '审批集成物料分类', 'material', actorId, actorId],
   );
   return {
@@ -1595,7 +1595,7 @@ const cleanupFixture = async (pool: Pool, current: Fixture): Promise<void> => {
     await pool.execute('DELETE FROM approval_flow_definitions WHERE id=?', [definition.id]);
   }
   await pool.execute('DELETE FROM operation_logs WHERE request_id LIKE ?', [`${current.token}%`]);
-  await pool.execute('DELETE FROM product_categories WHERE id IN (?,?)', [
+  await pool.execute('DELETE FROM item_categories WHERE id IN (?,?)', [
     current.categoryId,
     current.materialCategoryId,
   ]);

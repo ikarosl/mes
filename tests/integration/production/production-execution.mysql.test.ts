@@ -1697,7 +1697,7 @@ const createFixture = async (pool: Pool, suffix: string): Promise<Fixture> => {
   );
   const categoryId = await insert(
     pool,
-    "INSERT INTO product_categories (category_code,category_name,item_kind) VALUES (?,?,'finished_product')",
+    "INSERT INTO item_categories (category_code,category_name,item_kind) VALUES (?,?,'finished_product')",
     [`${token}-category`, 'Execution category'],
   );
   const productId = await insert(
@@ -1707,7 +1707,7 @@ const createFixture = async (pool: Pool, suffix: string): Promise<Fixture> => {
   );
   const materialCategoryId = await insert(
     pool,
-    "INSERT INTO product_categories (category_code,category_name,item_kind) VALUES (?,?,'material')",
+    "INSERT INTO item_categories (category_code,category_name,item_kind) VALUES (?,?,'material')",
     [`${token}-mc`, 'Execution material category'],
   );
   const materialId = await insert(
@@ -1950,8 +1950,8 @@ const cleanup = async (pool: Pool, fixture: Fixture): Promise<void> => {
   await pool.execute('DELETE FROM products WHERE id=?', [fixture.productId]);
   await pool.execute('DELETE FROM material_variants WHERE material_id=?', [fixture.materialId]);
   await pool.execute('DELETE FROM materials WHERE id=?', [fixture.materialId]);
-  await pool.execute('DELETE FROM product_categories WHERE id=?', [fixture.categoryId]);
-  await pool.execute('DELETE FROM product_categories WHERE id=?', [fixture.materialCategoryId]);
+  await pool.execute('DELETE FROM item_categories WHERE id=?', [fixture.categoryId]);
+  await pool.execute('DELETE FROM item_categories WHERE id=?', [fixture.materialCategoryId]);
   await pool.execute('DELETE FROM users WHERE id IN (?,?)', [
     fixture.workerId,
     fixture.otherWorkerId,

@@ -800,12 +800,12 @@ async function createFixture(pool: Pool, actorId: number): Promise<Fixture> {
   const token = `return-stock-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const productCategoryId = await insert(
     pool,
-    "INSERT INTO product_categories(category_code,category_name,item_kind) VALUES (?,?,'finished_product')",
+    "INSERT INTO item_categories(category_code,category_name,item_kind) VALUES (?,?,'finished_product')",
     [`${token}-pc`, '成品'],
   );
   const materialCategoryId = await insert(
     pool,
-    "INSERT INTO product_categories(category_code,category_name,item_kind) VALUES (?,?,'material')",
+    "INSERT INTO item_categories(category_code,category_name,item_kind) VALUES (?,?,'material')",
     [`${token}-mc`, '原料'],
   );
   const productId = await insert(
@@ -994,7 +994,7 @@ async function cleanup(pool: Pool, fixture: Fixture) {
   await pool.execute('DELETE FROM material_variants WHERE material_id=?', [fixture.materialId]);
   await pool.execute('DELETE FROM products WHERE id=?', [fixture.productId]);
   await pool.execute('DELETE FROM materials WHERE id=?', [fixture.materialId]);
-  await pool.execute('DELETE FROM product_categories WHERE id IN (?,?)', [
+  await pool.execute('DELETE FROM item_categories WHERE id IN (?,?)', [
     fixture.productCategoryId,
     fixture.materialCategoryId,
   ]);

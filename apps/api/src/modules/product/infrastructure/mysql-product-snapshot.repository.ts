@@ -65,7 +65,7 @@ export class MysqlProductSnapshotRepository
       `SELECT m.id,m.material_code item_code,m.material_name product_name,m.unit,
               'material' item_kind,NULL default_route_id
          FROM materials m
-         JOIN product_categories c ON c.id=m.category_id AND c.status=1 AND c.is_deleted=0
+         JOIN item_categories c ON c.id=m.category_id AND c.status=1 AND c.is_deleted=0
         WHERE m.status=1 AND m.deleted_at IS NULL AND c.item_kind='material'
           AND m.id IN (${itemIds.map(() => '?').join(',')})`,
       itemIds,
@@ -155,7 +155,7 @@ export class MysqlProductSnapshotRepository
                 c.item_kind material_kind,c.status category_status,c.is_deleted category_is_deleted
            FROM product_materials pm
            JOIN materials p ON p.id=pm.material_id
-           JOIN product_categories c ON c.id=p.category_id
+           JOIN item_categories c ON c.id=p.category_id
           WHERE pm.product_id=? AND pm.status=1 AND pm.is_deleted=0
           ORDER BY pm.material_id
           FOR UPDATE`,
@@ -196,7 +196,7 @@ export class MysqlProductSnapshotRepository
                 pm.quantity_per_unit,p.status material_status,
                 p.is_deleted material_is_deleted,c.status category_status,c.is_deleted category_is_deleted
            FROM product_materials pm JOIN materials p ON p.id=pm.material_id
-           JOIN product_categories c ON c.id=p.category_id
+           JOIN item_categories c ON c.id=p.category_id
           WHERE pm.product_id=? AND pm.status=1 AND pm.is_deleted=0
           ORDER BY pm.id`,
         [productId],
@@ -331,7 +331,7 @@ export class MysqlProductSnapshotRepository
   ): Promise<ProductionProductSnapshot> {
     const [[row]] = await db.query<ProductRow[]>(
       `SELECT p.id,p.item_code,p.product_name,p.unit,p.default_route_id
-         FROM products p JOIN product_categories c ON c.id=p.category_id
+         FROM products p JOIN item_categories c ON c.id=p.category_id
         WHERE p.id=? AND p.status=1 AND p.acquire_method='self_made' AND p.is_deleted=0
           AND c.item_kind='finished_product' AND c.status=1 AND c.is_deleted=0${lock ? ' FOR UPDATE' : ''}`,
       [productId],
