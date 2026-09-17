@@ -33,6 +33,9 @@
         <el-descriptions-item label="已分配">{{
           formatQuantity(order.assignedQuantity)
         }}</el-descriptions-item>
+        <el-descriptions-item label="已终止计划（不占额度）">{{
+          formatQuantity(order.terminatedPlannedQuantity)
+        }}</el-descriptions-item>
         <el-descriptions-item label="外部订单号">{{
           order.externalOrderNo || '-'
         }}</el-descriptions-item>

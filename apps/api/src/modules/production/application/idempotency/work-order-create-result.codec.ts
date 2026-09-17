@@ -36,6 +36,7 @@ const createdWorkOrderSchema: z.ZodType<WorkOrderDetail> = z
     planStartDate: z.string(),
     planEndDate: z.string(),
     assignedQuantity: z.string(),
+    terminatedPlannedQuantity: z.string(),
     status: z.literal('draft'),
     releasedAt: z.null(),
     cancelReason: z.null(),

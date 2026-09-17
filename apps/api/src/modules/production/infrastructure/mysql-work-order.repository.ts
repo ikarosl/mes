@@ -1,3 +1,4 @@
+import { workOrderAssignedQuantitySql } from './mysql-work-order-allocation.sql.js';
 import type { WorkOrderReleaseContext } from '../application/ports/production.repository.js';
 import { Inject, Injectable } from '@nestjs/common';
 import { withTransaction } from '@company/database';
@@ -102,7 +103,7 @@ export class MysqlWorkOrderRepository {
   }
 
   async listWorkOrderOptions(): Promise<WorkOrderOption[]> {
-    const remaining = `(wo.planned_quantity - COALESCE((SELECT SUM(b.planned_quantity) FROM production_batches b WHERE b.work_order_id=wo.id AND b.status<>'cancelled'),0))`;
+    const remaining = `(wo.planned_quantity - ${workOrderAssignedQuantitySql('wo.id')})`;
     const conditions = [`wo.status IN ('released','doing')`, `${remaining} > 0`];
     const [rows] = await this.pool.query<
       (RowDataPacket & {

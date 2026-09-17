@@ -305,7 +305,7 @@ scope 常量由 Production application contract 所有；HTTP 只接收 Idempote
 
 ## 自动编号工单创建
 
-`POST /production/work-orders` 使用 `production.work-order.create.v2`，创建请求不再接受手填编号。服务端在 executor 的同一事务内分配北京时间当日序号、创建工单并保存审计与完整响应。成功重放返回首次草稿快照，不重新读取已下达或已编辑的工单，也不再次取号。严格结果 codec 只接受新编号格式，不兼容旧手填编号响应；开发环境直接重置。
+`POST /production/work-orders` 使用 `production.work-order.create.v3`，创建请求不再接受手填编号。服务端在 executor 的同一事务内分配北京时间当日序号、创建工单并保存审计与完整响应。成功重放返回首次草稿快照，不重新读取已下达或已编辑的工单，也不再次取号。严格结果 codec 只接受新编号格式，不兼容旧手填编号响应；开发环境直接重置。
 
 同键不同内容拒绝，网络结果未知或平台返回可重试冲突时复用原键。计数与业务写入失败一起回滚；已提交编号在工单取消、关闭后不回收。协议与日计数结构见[工单所有者文档](../src/modules/production/docs/database/work-orders-and-batches.md#工单自动编号)。
 
@@ -314,3 +314,9 @@ scope 常量由 Production application contract 所有；HTTP 只接收 Idempote
 `POST /production/batches/:batchId/closeout/material-losses` 使用 `production.closeout.material-loss.record.v1`，按收尾版本、核对令牌及原分配行登记真实损坏。输入显式规范化，幂等结果只返回损耗、收尾与批次 ID。来源锁内复核、已确认损耗事实、收尾版本及审计与幂等结果同事务提交，不产生补料、补产或第二次库存扣减。
 
 普通损耗创建／确认的完整响应加入用途与收尾关联，scope 使用 v2；不接受旧响应结构或根据“暂无补料单”推断用途。结案送审保存逐条损耗依据，正式证据 schema 升级后按开发重置约定切换，不读取旧版兼容分支。
+
+## 工单物料配置与任务需求
+
+`PUT /production/work-orders/:workOrderId/material-configuration` 使用 `production.work-order.material-configuration.save.v1`，指纹包含工单 ID、工单版本、完整 selections 及去空白后的原因。严格结果只保存 `{ workOrderId, version }`；保存成功后的重复请求直接重放，即使后来任务已生成需求也不重新执行配置。
+
+正常需求 scope 为 `production.material-demands.configure.v2`，批量任务请求的完整版本／数量必须与工单已保存配置及 BOM 公式一致，缺少配置拒绝；研发规则不变。工单创建响应增加已终止计划展示量，scope 为 `production.work-order.create.v3`，开发重置后切换，不读旧响应兼容分支。

@@ -14,7 +14,7 @@
 
 应用从数据库 UTC 时钟换算北京时间，原子 upsert 日计数并在同一事务内读取序号。日主键行锁串行化同日并发创建，不使用 `MAX(work_order_no)+1`，不依赖客户端日期。计数、工单、成功审计、HTTP 幂等结果同事务提交；创建失败整体回滚。已提交编号不因业务状态变化回退，计数不提供业务更新或删除入口；不额外复制操作者，创建人由工单与成功审计记录。
 
-`POST /production/work-orders` 必须携带 `Idempotency-Key`，scope 为 `production.work-order.create.v2`。同操作者、同键、同规范化内容在重放窗口内返回首次创建响应，不再次取号；同键不同内容拒绝。产品和负责人资格仅在首次执行时核验，成功重放不受后来主数据变化影响。前端在结果未知时保留原键和输入，修改内容不得自动换键再创建，关闭必须明确放弃该未决意图。
+`POST /production/work-orders` 必须携带 `Idempotency-Key`，scope 为 `production.work-order.create.v3`。同操作者、同键、同规范化内容在重放窗口内返回首次创建响应，不再次取号；同键不同内容拒绝。产品和负责人资格仅在首次执行时核验，成功重放不受后来主数据变化影响。前端在结果未知时保留原键和输入，修改内容不得自动换键再创建，关闭必须明确放弃该未决意图。
 
 迁移 `202609170003-work-order-auto-number` 在升级前要求 `work_orders` 为空；开发环境按约定统一重置，不转换旧手填号、不推算历史日计数。回滚也先要求工单为空，避免删除计数后重用已存在编号；升级与回滚期间暂停 Production 写入。
 
@@ -41,7 +41,7 @@
 | 规则 | 批量生产 | 研发任务 |
 | --- | --- | --- |
 | 基础物料候选 | 产品 BOM | 产品 BOM，不开放 BOM 外物料 |
-| 同一基础物料版本 | 整个工单仅一个版本，覆盖全部批次 | 可选择多个启用版本 |
+| 同一基础物料版本 | 有效任务和正常完工历史使用同一版本；已取消／已终止任务保留旧版本 | 可选择多个启用版本 |
 | 首次正常需求数量 | BOM 单耗 × 批次计划量，选一个版本 | 可按多个版本拆分，合计仍等于 BOM 应需量 |
 | 人工追加、报废补料、损耗补料 | 必须使用工单已锁定版本 | 管理员可另选同一基础物料启用版本并输入数量 |
 | 父需求 | 同批次、同 BOM 基础；版本遵守工单锁定 | 同批次、同 BOM 基础；允许与父需求版本不同 |
@@ -50,21 +50,35 @@
 
 ### `work_order_material_versions`
 
-职责：记录批量工单第一次确认某基础物料时作出的版本选择，属于 Production 的不可变配置决策。不是需求或库存副本，不保存数量，也不代替 `production_item_demand`。
+职责：保存管理员在工单管理中完整确认的精确物料版本配置，属于 Production 的可变工单配置。它不保存数量，不替代 `production_item_demand`，不建立影子表。Product BOM 固定基础物料与单耗；精确版本包含 `material_variants.major_version/minor_version`，BOM 本身不固定这两个字段。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `work_order_id` | `BIGINT UNSIGNED` | `work_orders.id` |
-| `material_id` | `BIGINT UNSIGNED` | 工单 BOM 中的基础物料 |
-| `material_variant_id` | `BIGINT UNSIGNED` | 工单锁定的具体版本 |
-| `created_by` | `BIGINT UNSIGNED` | 首次确认版本的管理员，必填 |
-| `created_at` | `DATETIME` | 确认时间 |
+| `work_order_id` | `BIGINT UNSIGNED` | 所属工单 |
+| `material_id` | `BIGINT UNSIGNED` | 已批准 BOM 中的基础物料 |
+| `material_variant_id` | `BIGINT UNSIGNED` | 管理员选择的精确版本 |
+| `created_by / created_at` | `BIGINT UNSIGNED / DATETIME` | 首次配置人员、时间，永久保留 |
+| `updated_by / updated_at` | `BIGINT UNSIGNED / DATETIME` | 最近修改人员、时间 |
+| `version` | `INT` | 行版本，默认 0，修改递增；整份配置提交同时校验并推进 `work_orders.version` |
 
-约束：`PRIMARY KEY (work_order_id, material_id)`；`FOREIGN KEY (material_variant_id, material_id) REFERENCES material_variants(id, material_id)`；工单及操作者外键。更新和删除触发器拒绝改写已确认的选择。研发工单不写该表。
+`PRIMARY KEY (work_order_id,material_id)`，版本与基础物料仍由 `(material_variant_id,material_id) -> material_variants(id,material_id)` 组合 FK 校验。工单及创建／修改人保留外键；行版本非负。禁止删除行、改变所属工单、基础物料或创建审计。更新不回写旧需求、已领料事实及库存流水。
 
-所有正常需求、人工追加、报废方案确认和损耗补料写事务必须先锁工单，再锁批次，以同一顺序串行检查版本选择。批量单首次写入选择与需求、成功审计同事务；后续只能复用相同版本，不以 upsert 覆盖选择。失败整体回滚。取消需求、取消批次、出库完成和库存归零均不能解锁；换版本必须新建工单。版本停用不篡改历史，若需新增需求则必须先由有权限管理员恢复版本启用。
+只有 `mass_production` 且工单为 `released/doing` 时可配置；通过 Product 的 `getApprovedBomSnapshot` 独立核验 BOM 已批准，不要求路线有效、不新增工单审批。首次配置和修改都必须一次覆盖全部 BOM 基础物料，每种选择一个启用的精确版本，并填写原因。研发工单仍在任务内选择与拆分版本，不写本表。
 
-数据库主键与组合外键负责唯一性和版本归属；“仅批量单可写选择表”、BOM 成员、候选启用、各需求入口的一致校验由应用事务实现，尚未适配的入口不得视为已支持新规则。应用待办见[roadmap](../../../../../../../docs/roadmap.md)。
+修改门禁以整个工单为范围：只要任一非 `cancelled/terminated` 任务已经生成过任何类型、任何业务状态的需求，便禁止修改。正常完工 `completed` 的历史同样阻断；`closing` 即使已关闭全部需求，也要等首份收尾清单批准成为 `terminated`。尚未生成需求的待配置任务不阻断，生成时读取当前工单配置。不能仅检查活动需求、未领数量或库存余额。
+
+未出库任务通过取消命令将活动需求置 `cancelled`、释放预留并取消待出库安排；已出库任务先进入 `closing`，逐项关闭剩余需求并完成收尾批准，最终保持 `terminated`，不改成 `cancelled`。已领齐需求保留 `fulfilled`，旧任务、原需求量、版本快照和出入库事实不删除。不存在其他阻断任务后，管理员可以重新配置并创建新任务；正常完工历史不能借此改版。
+
+配置保存、正常需求、人工追加、报废方案确认和损耗补料统一先锁工单，再锁批次。保存事务重新查询阻断任务及需求（当前读）、完整 BOM 和启用候选；更新配置、工单版本、成功审计和 HTTP 幂等结果同事务。数据库插入／更新触发器也锁工单并拒绝被有效任务引用的配置写入。所有需求入口只校验并复用本表，缺项拒绝生成，不能隐式插入选版。事务失败整体回滚。
+
+| API | 契约与权限 |
+| --- | --- |
+| `GET /production/work-orders/:workOrderId/material-configuration` | `production:orders:view`；返回工单版本、完整 BOM 行、启用候选、已选版本（停用版本保留编码）、可配置性及首个阻断任务 |
+| `PUT /production/work-orders/:workOrderId/material-configuration` | `production:orders:update`；body 为 `{ version, reason, selections: [{ materialId, materialVariantId }] }`，最多 200 行；必填 `Idempotency-Key`，scope `production.work-order.material-configuration.save.v1`；返回 `{ workOrderId, version }` |
+
+管理端工单列表用“物料版本配置”替换原“生产批次”按钮，仅在已下达或生产中的批量单显示；任务仍通过生产任务页管理。弹窗展示阻断原因并保留未提交草稿，远端版本变化后要求显式重新加载；未知保存结果保留原内容与幂等键。批量任务的初始需求窗口只读继承工单选版、按 BOM 单耗乘任务计划量显示数量，配置缺项或版本失效时禁止确认；研发拆分继续沿原规则。
+
+迁移 `202609170007-work-order-material-configuration` 追加修改审计与行版本，用带生命周期门禁的触发器替换永久更新禁令。既有配置此前不可变，其修改人／时间取原创建人／时间，不推测历史变更。升级期间暂停 Production 写入；down 要求配置表为空，避免丢弃已经使用的可变配置审计。开发环境允许统一重置，所有 migration 可从空库恢复最新结构，不修改已执行文件。
 
 ## 3.2 生产执行表
 
@@ -264,7 +278,7 @@
 
 任务生成与取消规则：
 
-- 创建生产批次只接受 `released`、`doing` 工单，并在事务内重新汇总非取消批次计划量；本次新增后不得超过工单计划量。创建批次本身不推动工单进入 `doing`。
+- 创建生产批次只接受 `released`、`doing` 工单，并在工单锁内重新汇总排除 `cancelled/terminated` 后的任务计划量；有效分配量加本次新增量不得超过工单计划量。创建批次本身不推动工单进入 `doing`。
 - `pending` 只允许在创建批次时由数据库默认值产生，已有批次不得迁回 `pending`。释放尚未出库的有效分配后，如果批次不再齐套，允许 `material_assigned → material_pending`；这不是重新开放正常需求生成。
 - 所有 `production_batches.status` 和 `work_orders.status` 写入都必须先通过 `production-status.policy.ts` 的统一转换校验；SQL 中的旧状态条件和乐观锁只用于防并发覆盖，不能替代领域校验。
 - 生产批次的“取消任务”与“结束本轮”分开：已领料或执行中批次使用 `terminated`，规则见[批次结束与产出处置](production-termination.md)。只允许 `pending`、`material_pending`、`material_assigned` 取消，即任务尚未开工且物料尚未实际出库；`material_partially_outbound` 已形成库存事实，不能取消。
@@ -301,6 +315,12 @@
 - 成品入库使用 item_batch.product_id 分支，来源任务与工单必填；仓管按最新批准清单收齐本类别后一次确认，任务结案与工单关闭不代办入库。物料精确版本分支及其外键保留。
 
 ---
+
+## 工单计划分配口径
+
+`assignedQuantity` 是所有非 `cancelled/terminated` 任务的计划量合计；`closing` 与正常完工 `completed` 仍占用。`terminatedPlannedQuantity` 是已终止任务原计划量合计，仅作历史展示。`remainingQuantity` 为工单计划减有效分配；列表、详情、工单候选与创建事务共用同一 SQL 口径。页面主数显示有效分配，附注“已终止计划 N，不占额度”；不把历史累计安排量作为分配上限。
+
+首份提前结束清单批准成为 `terminated` 才释放原计划额度，原任务计划量不改零。此规则只控制任务分配，不扣除终止任务已经批准的产出，也不保证累计产出小于工单计划；已终止产出继续按当前批准清单汇总。产出更正不会回写分配额度，取消和提前结束不抹除已发生事实。
 
 ## 工单产出查询口径
 

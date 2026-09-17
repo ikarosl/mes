@@ -124,10 +124,23 @@
         </el-table-column>
         <el-table-column
           label="已分配"
-          width="110"
+          min-width="185"
           align="right"
         >
-          <template #default="{ row }">{{ formatQuantity(row.assignedQuantity) }}</template>
+          <template #header>
+            <el-tooltip content="已取消、已终止任务的计划数量不占用分配额度；收尾中的任务仍占用。"
+              ><span>已分配</span></el-tooltip
+            >
+          </template>
+          <template #default="{ row }">
+            {{ formatQuantity(row.assignedQuantity) }}
+            <div
+              v-if="Number(row.terminatedPlannedQuantity) > 0"
+              class="sub-text"
+            >
+              已终止计划 {{ formatQuantity(row.terminatedPlannedQuantity) }}，不占额度
+            </div>
+          </template>
         </el-table-column>
         <el-table-column
           label="审定产出（计划内 / 外 / 报废）"
@@ -215,11 +228,15 @@
               >编辑</el-button
             >
             <el-button
+              v-if="
+                row.orderType === 'mass_production' &&
+                (row.status === 'released' || row.status === 'doing')
+              "
               link
               type="primary"
-              :disabled="row.status === 'draft'"
-              @click="openTasks(row)"
-              >生产批次</el-button
+              :disabled="isRowPending(row.id)"
+              @click="openMaterialConfiguration(row)"
+              >物料版本配置</el-button
             >
             <el-button
               link
@@ -311,31 +328,10 @@
       @next-research-round="openNextResearchRound"
     />
 
-    <!-- 生产批次列表弹窗 -->
-    <BatchListDialog
-      :visible="taskDialogVisible"
-      :order="taskOrder"
-      :batches="taskBatches"
-      :can-create-batch="canCreateBatch"
-      @update:visible="taskDialogVisible = $event"
-      @create-batch="openCreateBatch"
-      @edit-batch="openEditBatch"
-    />
-
-    <!-- 新增/编辑生产批次弹窗 -->
-    <BatchFormDialog
-      ref="batchFormDialogRef"
-      :visible="batchFormDialogVisible"
-      :editing-batch-id="editingBatchId"
-      :product-id="taskOrder?.productId"
-      :user-options="userSource.options.value"
-      :max-quantity="batchQuantityMax"
-      :default-start-date="toDateInputValue(taskOrder?.planStartDate)"
-      :default-end-date="toDateInputValue(taskOrder?.planEndDate)"
-      :submitting="submitting"
-      @update:visible="handleBatchFormDialogClose"
-      @refresh-users="userSource.refresh"
-      @save="submitBatch"
+    <WorkOrderMaterialConfigurationDialog
+      v-model:visible="materialConfigurationVisible"
+      :work-order-id="materialConfigurationOrderId"
+      @saved="loadOrders"
     />
 
     <WorkOrderTransitionDialog
@@ -350,20 +346,17 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onActivated, onMounted, ref, watch } from 'vue';
+import { computed, onActivated, onMounted, ref } from 'vue';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import { WORK_ORDER_TYPE_LABELS } from '@company/constants';
 import TableToolbar from '../../components/TableToolbar.vue';
 import PaginationFooter from '../../components/PaginationFooter.vue';
 import type {
-  CreateProductionBatchPayload,
   CreateWorkOrderPayload,
   ProductOption,
-  ProductionBatchItem,
   WorkOrderDetail,
   WorkOrderItem,
 } from '@company/contracts';
-import { normalizeCreateBatchPayload } from '@company/utils';
 import { productionApi } from '../../api/production';
 import { EMessage } from '../../utils/message';
 import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
@@ -381,10 +374,8 @@ import { useWorkOrderDialogs, type WorkOrderFormHandle } from './composables/use
 import WorkOrderFormDialog from './components/WorkOrderFormDialog.vue';
 import type { WorkOrderFormValue } from './components/WorkOrderFormDialog.vue';
 import WorkOrderDetailDialog from './components/WorkOrderDetailDialog.vue';
-import BatchListDialog from './components/BatchListDialog.vue';
-import BatchFormDialog from './components/BatchFormDialog.vue';
-import type { BatchFormValue } from './components/BatchFormDialog.vue';
 import WorkOrderTransitionDialog from './components/WorkOrderTransitionDialog.vue';
+import WorkOrderMaterialConfigurationDialog from './components/WorkOrderMaterialConfigurationDialog.vue';
 
 defineOptions({ name: 'ProductionOrdersPage' });
 
@@ -434,29 +425,18 @@ const orderRowClass = ({ row }: { row: WorkOrderItem }): string =>
 /** 行内工单状态写操作守卫（下达/关闭/取消），同一行只允许一个在途（todo 3.5） */
 const { isRowPending, beginRow, endRow } = useRowPending();
 
-/** 创建生产批次的幂等意图（试点端点）：页面局部持有，弹窗打开/关闭时清除旧意图 */
-const createBatchIntent = useIdempotentIntent();
 const createOrderIntent = useIdempotentIntent('工单');
 
 /* ====== 弹窗状态 ====== */
 const orderDialogVisible = ref(false);
-const taskDialogVisible = ref(false);
-const batchFormDialogVisible = ref(false);
 const transitionDialogVisible = ref(false);
 const editingOrderId = ref<string | null>(null);
 const editingOrderVersion = ref(0);
-const editingBatchId = ref<string | null>(null);
 const submitting = ref(false);
 const transitionSubmitting = ref(false);
-const taskOrder = ref<WorkOrderItem | null>(null);
-const taskBatches = ref<ProductionBatchItem[]>([]);
 const transitionOrder = ref<WorkOrderDetail | null>(null);
 const transitionMode = ref<'complete' | 'early-close' | 'archive'>('complete');
 const workOrderFormDialogRef = ref<WorkOrderFormHandle>();
-const batchFormDialogRef = ref<{
-  setForm: (row: ProductionBatchItem) => void;
-  resetForm: () => void;
-}>();
 
 const {
   activeOrder,
@@ -476,24 +456,6 @@ const {
   beginRow,
   endRow,
 });
-
-const editingBatch = computed(
-  () => taskBatches.value.find((item) => item.id === editingBatchId.value) ?? null,
-);
-/** 本批次计划数量上限：工单计划 - 已分配 + 当前编辑批次数量 */
-const batchQuantityMax = computed(() => {
-  if (!taskOrder.value) return null;
-  const planned = Number(taskOrder.value.plannedQuantity);
-  const assigned = Number(taskOrder.value.assignedQuantity);
-  const currentBatch = editingBatch.value ? Number(editingBatch.value.plannedQuantity) : 0;
-  const maxQty = planned - assigned + currentBatch;
-  return Number.isFinite(maxQty) ? Math.max(maxQty, 0) : null;
-});
-const canCreateBatch = computed(
-  () =>
-    (taskOrder.value?.status === 'released' || taskOrder.value?.status === 'doing') &&
-    Number(taskOrder.value.plannedQuantity) > Number(taskOrder.value.assignedQuantity),
-);
 
 /* ====== 工单 CRUD ====== */
 const openCreate = (): void => {
@@ -678,122 +640,19 @@ const hasMoreActions = (row: WorkOrderItem): boolean =>
   canCancelOrder(row) ||
   canStartNextResearchRound(row);
 
-/* ====== 批次管理 ====== */
-const openTasks = async (row: WorkOrderItem): Promise<void> => {
-  taskOrder.value = row;
-  try {
-    taskBatches.value = await productionApi.listOrderBatches(row.id);
-    taskDialogVisible.value = true;
-  } catch (error) {
-    EMessage.error(error, '生产批次查询失败');
-  }
+const materialConfigurationVisible = ref(false);
+const materialConfigurationOrderId = ref<string | null>(null);
+const openMaterialConfiguration = (row: WorkOrderItem): void => {
+  materialConfigurationOrderId.value = row.id;
+  materialConfigurationVisible.value = true;
 };
 
-/** 列表刷新后同步批次弹窗中的工单数据 */
-watch(orders, (items) => {
-  if (!taskOrder.value) return;
-  const latest = items.find((item) => item.id === taskOrder.value?.id);
-  if (latest) taskOrder.value = latest;
-});
-
-const openCreateBatch = (): void => {
-  editingBatchId.value = null;
-  batchFormDialogRef.value?.resetForm();
-  createBatchIntent.reset();
-  batchFormDialogVisible.value = true;
-};
-
-/**
- * 批次弹窗关闭守卫：意图结果未知（网络模糊失败/提交在途/结果损坏/超时）时不得静默丢弃 K1，
- * 否则重新提交可能生成第二个自动编号批次。必须提示后由用户显式确认才 reset（放弃）。
- * idle 状态直接关闭；程序化关闭（提交成功后置 visible=false）不会触发 update:visible，走不到这里。
- */
-const handleBatchFormDialogClose = async (visible: boolean): Promise<void> => {
-  if (visible) {
-    batchFormDialogVisible.value = true;
-    return;
-  }
-  const state = createBatchIntent.getStatus();
-  if (state === 'idle') {
-    batchFormDialogVisible.value = false;
-    createBatchIntent.reset();
-    return;
-  }
-  const message =
-    state === 'blocked'
-      ? '该提交的幂等结果已损坏，无法确认本次是否已创建批次。关闭后重新发起可能生成重复批次，建议先在批次列表中核对是否已生成。是否仍要关闭？'
-      : state === 'expired'
-        ? '该提交已超出幂等重试窗口（12 小时），旧键已无法安全重试。关闭后重新发起可能生成重复批次，建议先在批次列表中核对是否已生成。是否仍要关闭？'
-        : '上次提交结果未知（网络异常或服务端未确认）。关闭后将无法安全重试；若本次实际已成功，重新提交可能生成重复批次。是否仍要关闭？';
-  try {
-    await ElMessageBox.confirm(message, '关闭确认', {
-      confirmButtonText: '仍要关闭',
-      cancelButtonText: '继续保留',
-      type: 'warning',
-    });
-    batchFormDialogVisible.value = false;
-    createBatchIntent.reset();
-  } catch {
-    // 用户选择保留：不关闭弹窗、不丢弃意图，K1 继续保留以便安全重试
-  }
-};
-
-const openEditBatch = (row: ProductionBatchItem): void => {
-  editingBatchId.value = row.id;
-  batchFormDialogRef.value?.setForm(row);
-  batchFormDialogVisible.value = true;
-};
-
-const submitBatch = async (data: BatchFormValue): Promise<void> => {
-  if (!taskOrder.value) return;
-  submitting.value = true;
-  try {
-    if (editingBatchId.value) {
-      const batch = taskBatches.value.find((item) => item.id === editingBatchId.value);
-      await productionApi.updateBatch(editingBatchId.value, {
-        ownerId: data.ownerId || null,
-        planStartDate: toDateInputValue(data.planStartDate) || null,
-        planEndDate: toDateInputValue(data.planEndDate) || null,
-        remark: data.remark || null,
-        version: batch?.version ?? 0,
-      });
-      EMessage.success('生产批次已更新');
-    } else {
-      const payload: CreateProductionBatchPayload = {
-        batchNo: data.batchNo || '',
-        routeId: data.routeId || null,
-        plannedQuantity: data.plannedQuantity,
-        ownerId: data.ownerId || null,
-        planStartDate: toDateInputValue(data.planStartDate) || null,
-        planEndDate: toDateInputValue(data.planEndDate) || null,
-        remark: data.remark || null,
-      };
-      const workOrderId = taskOrder.value.id;
-      const normalizedPayload = normalizeCreateBatchPayload(payload);
-      await createBatchIntent.execute(
-        {
-          intentType: 'production.batch.create',
-          params: { workOrderId },
-          query: {},
-          body: normalizedPayload,
-        },
-        (key) => productionApi.createOrderBatch(workOrderId, normalizedPayload, key),
-      );
-      EMessage.success('生产批次已新增');
-    }
-    batchFormDialogVisible.value = false;
-    taskBatches.value = await productionApi.listOrderBatches(taskOrder.value.id);
-    await loadOrders();
-  } catch (error) {
-    EMessage.error(error, '生产批次保存失败');
-  } finally {
-    submitting.value = false;
-  }
-};
-
+let hasActivated = false;
 onMounted(loadPageData);
 /** 页面重新激活：刷新页面可见候选（产品筛选 + 弹窗消费者）；正式列表由 onMounted 首访加载 */
 onActivated(() => {
+  if (hasActivated) void loadOrders();
+  hasActivated = true;
   void productSource.refresh();
   void userSource.refresh();
 });

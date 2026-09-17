@@ -1,4 +1,7 @@
 import type {
+  WorkOrderMaterialConfiguration,
+  SaveWorkOrderMaterialConfigurationPayload,
+  SaveWorkOrderMaterialConfigurationResult,
   FinishedGoodsInboundQuery,
   FinishedGoodsInboundCandidateQuery,
   FinishedGoodsInboundCandidate,
@@ -114,6 +117,25 @@ const request = async <T>(config: RetryRequestConfig) => {
 };
 
 export const productionApi = {
+  getWorkOrderMaterialConfiguration: (workOrderId: string) =>
+    request<WorkOrderMaterialConfiguration>({
+      url: `/production/work-orders/${workOrderId}/material-configuration`,
+      skipErrorHandling: true,
+    }),
+  saveWorkOrderMaterialConfiguration: (
+    workOrderId: string,
+    data: SaveWorkOrderMaterialConfigurationPayload,
+    idempotencyKey: string,
+  ) =>
+    request<SaveWorkOrderMaterialConfigurationResult>({
+      url: `/production/work-orders/${workOrderId}/material-configuration`,
+      method: 'PUT',
+      data,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      skipErrorHandling: true,
+      retryIdempotentWrite: true,
+      retryTimes: 2,
+    }),
   listFinishedGoodsInbounds: (params: FinishedGoodsInboundQuery) =>
     request<PageResult<FinishedGoodsInboundOrderItem>>({
       url: '/production/finished-goods-inbounds',

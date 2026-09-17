@@ -121,24 +121,7 @@ export class MysqlProductSnapshotRepository
   ): Promise<ProcessRouteSnapshot | null> {
     return withTransaction(this.pool, async (connection) => {
       const product = await this.productionProduct(connection, productId, true);
-      const [[lockFact]] = await connection.query<
-        (RowDataPacket & {
-          bom_status: string;
-          bom_locked_at: Date | null;
-          bom_approval_instance_id: string | null;
-        })[]
-      >(
-        'SELECT bom_status,bom_locked_at,bom_approval_instance_id FROM products WHERE id=? AND is_deleted=0 FOR UPDATE',
-        [productId],
-      );
-      if (!lockFact) throw new ProductDomainError('NOT_FOUND', '已启用的生产产品不存在');
-      if (
-        lockFact.bom_status !== 'approved' ||
-        !lockFact.bom_locked_at ||
-        !lockFact.bom_approval_instance_id
-      ) {
-        throw new ProductDomainError('INVALID_MATERIAL', 'BOM 尚未审批通过，不能创建生产任务');
-      }
+      await this.requireApprovedBom(connection, productId);
 
       const [bomLines] = await connection.query<
         (RowDataPacket & {
@@ -185,6 +168,41 @@ export class MysqlProductSnapshotRepository
       const route = routeId ? await this.routeSnapshot(connection, routeId, true) : null;
       return route;
     });
+  }
+
+  async getApprovedBomSnapshot(productId: string): Promise<ProductBomSnapshot> {
+    return withTransaction(this.pool, async (connection) => {
+      await this.productionProduct(connection, productId, true);
+      await this.requireApprovedBom(connection, productId);
+      const snapshot = await this.getBomSnapshot(productId);
+      if (snapshot.lines.length === 0)
+        throw new ProductDomainError('INVALID_MATERIAL', '产品未配置启用的 BOM');
+      return snapshot;
+    });
+  }
+
+  private async requireApprovedBom(connection: PoolConnection, productId: string): Promise<void> {
+    const [[lockFact]] = await connection.query<
+      (RowDataPacket & {
+        bom_status: string;
+        bom_locked_at: Date | null;
+        bom_approval_instance_id: string | null;
+      })[]
+    >(
+      'SELECT bom_status,bom_locked_at,bom_approval_instance_id FROM products WHERE id=? AND is_deleted=0 FOR UPDATE',
+      [productId],
+    );
+    if (!lockFact) throw new ProductDomainError('NOT_FOUND', '已启用的生产产品不存在');
+    if (
+      lockFact.bom_status !== 'approved' ||
+      !lockFact.bom_locked_at ||
+      !lockFact.bom_approval_instance_id
+    ) {
+      throw new ProductDomainError(
+        'INVALID_MATERIAL',
+        'BOM 尚未审批通过，不能配置用料或创建生产任务',
+      );
+    }
   }
 
   async getBomSnapshot(productId: string): Promise<ProductBomSnapshot> {

@@ -53,7 +53,10 @@ export interface WorkOrderItem {
   workOrderOwnerId: string | null;
   planStartDate: string | null;
   planEndDate: string | null;
+  /** 有效任务计划合计，排除 cancelled/terminated。 */
   assignedQuantity: string;
+  /** 已终止任务的原计划合计，仅展示，不占分配额度。 */
+  terminatedPlannedQuantity: string;
   status: WorkOrderStatus;
   releasedAt: string | null;
   cancelReason: string | null;

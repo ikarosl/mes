@@ -38,7 +38,7 @@ export const CONFIRM_MATERIAL_OUTBOUND_IDEMPOTENCY_SCOPE =
   'production.material-outbound.confirm.v2' as const;
 /** 管理员确认基础 BOM 明细的精确版本需求。 */
 export const CONFIGURE_MATERIAL_DEMANDS_IDEMPOTENCY_SCOPE =
-  'production.material-demands.configure.v1' as const;
+  'production.material-demands.configure.v2' as const;
 /** 创建人工追加物料需求。 */
 export const ADD_MANUAL_MATERIAL_DEMAND_IDEMPOTENCY_SCOPE =
   'production.material-demands.add-manual.v2' as const;
@@ -72,4 +72,8 @@ export const RECORD_CLOSEOUT_MATERIAL_LOSS_SCOPE =
   'production.closeout.material-loss.record.v1' as const;
 
 /** 服务端按北京时间日期分配不可修改的工单号。 */
-export const CREATE_WORK_ORDER_IDEMPOTENCY_SCOPE = 'production.work-order.create.v2' as const;
+export const CREATE_WORK_ORDER_IDEMPOTENCY_SCOPE = 'production.work-order.create.v3' as const;
+
+/** 批量工单整份精确物料版本配置。 */
+export const SAVE_WORK_ORDER_MATERIAL_CONFIGURATION_SCOPE =
+  'production.work-order.material-configuration.save.v1' as const;

@@ -87,6 +87,10 @@ export abstract class ProductSnapshotQuery {
     requestedRouteId: string | null,
   ): Promise<ProductQueryResult<ProcessRouteSnapshot | null>>;
   abstract getBomSnapshot(productId: string): Promise<ProductQueryResult<ProductBomSnapshot>>;
+  /** 工单选版资格：已批准 BOM 的当前读；不依赖工艺路线。 */
+  abstract getApprovedBomSnapshot(
+    productId: string,
+  ): Promise<ProductQueryResult<ProductBomSnapshot>>;
   abstract getRouteSnapshot(routeId: string): Promise<ProductQueryResult<ProcessRouteSnapshot>>;
   abstract getEnabledSopFileSnapshot(
     fileId: string,

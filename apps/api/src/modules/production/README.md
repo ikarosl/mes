@@ -9,7 +9,7 @@
 - 数据所有权：生产工单、批次、执行事实、生产需求和生产侧单据。
 - 公开入口：[`public.ts`](public.ts)；Product 业务校验通过其 `public.ts`；当前物料名称展示允许按架构登记规则从专用查询目录只读获取。
 
-工单类型与工单级物料版本锁的目标 schema 见[工单设计](docs/database/work-orders-and-batches.md)，应用入口适配见[roadmap](../../../../../docs/roadmap.md)。
+批量工单在工单管理完整配置精确物料版本，任务初始需求和补料只继承配置；修改资格、历史引用及终止任务释放计划额度见[工单设计](docs/database/work-orders-and-batches.md)。研发工单继续按任务选版，不增加工单下达审批。
 
 成品入库前的代码组织见[内部职责与扩展边界](docs/module-boundaries.md)：先划清计划、执行、需求履约、结案产出、仓库操作及查询职责，保留单一 Production 所有权与原子事务；模块装配按职责分组，未拆出 Inventory／Quality。
 
@@ -29,8 +29,7 @@ MaterialLoss、Return、StockCheck Service／Controller 提供独立用例入口
 
 生产任务创建在事务内通过 Product 校验 BOM 已批准并锁定；库存事实来自 `inventory_transaction`，需求事实来自
 `production_item_demand`；可变单据使用 `version` 乐观锁，不可变执行事实不得更新。生产批次创建时
-只冻结 Product BOM 快照，不自动生成可执行需求；管理员必须一次完整配置全部 BOM 行，明确选择启用的
-精确 `material_variant_id` 和数量，整单确认后批次才进入 `material_pending`。人工追加以任务为单位，
+只冻结 Product BOM 快照，不自动生成可执行需求；管理员必须一次确认完整 BOM 需求：批量单继承已保存的工单精确版本，研发单选择启用版本并拆分数量；整单确认后批次才进入 `material_pending`。人工追加以任务为单位，
 一次可包含冻结 BOM 中的多种基础物料和多个版本，不依赖既有父需求；需求查询保留 normal、manual、
 补料等全部已生成需求及取消、关闭与替代历史，停用版本仍从需求/物流快照展示。
 人工追加、报废补料和损耗补料共用后续领料资格：已领料和执行中批次仍可分配、释放未出库分配、

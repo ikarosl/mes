@@ -28,7 +28,7 @@
 
 人工追加保留 `production_manual_demand_addition` 和 `production_item_demand` 来源，不创建 `item_scrap`、`production_material_supplement` 或产品补产授权，也不增加计划产量或工序目标。后续出库复用库存流水、需求剩余量扣减及履约事务，执行中批次保持 `doing`；尚有活动追加需求时仍禁止完工。未开工的短批仍遵守当前物料计划版本和齐套门禁，人工追加不能绕过重新授权。
 
-工单类型、工单级版本锁与并发锁定顺序统一遵守[工单物料版本规则](work-orders-and-batches.md)。批量单每个 BOM 行只能确认一个版本；研发单可以拆分多个版本，各版本数量之和仍须等于该 BOM 行应需量。所有补需求入口同样遵守工单类型，不能借补料绕过批量单版本锁。
+工单类型、工单级版本锁与并发锁定顺序统一遵守[工单物料版本规则](work-orders-and-batches.md)。批量单每个 BOM 行只读继承工单已经保存的一个版本，配置缺项不得生成需求，也不得由首次需求隐式写工单选版；研发单可以拆分多个版本，各版本数量之和仍须等于该 BOM 行应需量。所有补需求入口同样遵守工单类型，不能借补料绕过批量单版本锁。
 
 ### 9. `production_material_requirement_basis`
 

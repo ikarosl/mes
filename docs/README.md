@@ -52,3 +52,4 @@
 - [研发轮次结案、产出处置与物料余量](adr/0009-research-round-close-and-output-disposition.md)
 - [通过关闭与替代纠正正式需求](adr/0010-demand-correction-by-replacement.md)
 - [任务统一结案、产出清单与成品入库](adr/0011-task-closeout-output-list-and-finished-goods-inbound.md)
+- [工单选版与任务引用边界](adr/0012-work-order-material-configuration.md)
