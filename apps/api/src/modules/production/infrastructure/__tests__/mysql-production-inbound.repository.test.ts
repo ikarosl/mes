@@ -14,6 +14,11 @@ describe('MysqlProductionInboundRepository inventory list', () => {
       unit_snapshot: 'kg',
       batch_code: 'B001',
       source_type: 'purchased',
+      product_id: null,
+      source_work_order_id: null,
+      source_work_order_no: null,
+      source_production_batch_id: null,
+      source_production_batch_no: null,
       provider: null,
       batch_status: 'available',
       on_hand: '10.0000',
@@ -53,6 +58,11 @@ describe('MysqlProductionInboundRepository inventory list', () => {
       unit_snapshot: '件',
       batch_code: 'B001',
       source_type: 'purchased',
+      product_id: null,
+      source_work_order_id: null,
+      source_work_order_no: null,
+      source_production_batch_id: null,
+      source_production_batch_no: null,
       provider: '供应商 A',
       batch_status: 'available',
       on_hand: '6',
@@ -136,6 +146,11 @@ describe('MysqlProductionInboundRepository inventory list', () => {
             unit_snapshot: '件',
             batch_code: 'B001',
             source_type: 'purchased',
+            product_id: null,
+            source_work_order_id: null,
+            source_work_order_no: null,
+            source_production_batch_id: null,
+            source_production_batch_no: null,
             provider: null,
             batch_status: 'available',
             on_hand: '6',
@@ -155,8 +170,8 @@ describe('MysqlProductionInboundRepository inventory list', () => {
 
     expect(String(query.mock.calls[0]?.[0])).toContain('display_material.material_name');
     expect(String(query.mock.calls[1]?.[0])).toContain('display_material.material_name');
-    expect(query.mock.calls[0]?.[1]).toEqual(['%当前名称%', '%当前名称%']);
-    expect(query.mock.calls[1]?.[1]).toEqual(['%当前名称%', '%当前名称%', 20, 0]);
+    expect(query.mock.calls[0]?.[1]).toEqual(Array(5).fill('%当前名称%'));
+    expect(query.mock.calls[1]?.[1]).toEqual([...Array(5).fill('%当前名称%'), 20, 0]);
   });
 
   it('matches demand snapshots but aggregates every active demand for the matched item', async () => {

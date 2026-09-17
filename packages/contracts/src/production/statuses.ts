@@ -17,7 +17,13 @@ export type BatchStepStatus = 'pending' | 'assigned' | 'doing' | 'completed' | '
 export type BatchStepAbnormalDispositionType = 'rework' | 'scrap';
 
 export type InventorySourceType =
-  'self_made' | 'purchased' | 'outsourced' | 'return_inbound' | 'stock_check_generated' | 'other';
+  | 'self_made'
+  | 'production_extra'
+  | 'purchased'
+  | 'outsourced'
+  | 'return_inbound'
+  | 'stock_check_generated'
+  | 'other';
 
 export type InventoryBatchStatus = 'available' | 'frozen' | 'disabled';
 

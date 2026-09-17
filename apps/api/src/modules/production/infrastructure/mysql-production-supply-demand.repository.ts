@@ -53,7 +53,7 @@ export class MysqlProductionSupplyDemandRepository extends ProductionSupplyDeman
       LEFT JOIN balance_totals balance ON balance.item_id=identity.item_id
         AND balance.material_variant_id=identity.material_variant_id
       LEFT JOIN item_batch batch ON batch.id=(
-        SELECT MAX(ib.id) FROM item_batch ib WHERE ib.item_id=identity.item_id
+        SELECT MAX(ib.id) FROM item_batch ib WHERE ib.product_id IS NULL AND ib.item_id=identity.item_id
           AND ib.material_variant_id=identity.material_variant_id
       )
     )`;

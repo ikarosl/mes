@@ -268,6 +268,8 @@ export interface StockCheckOrderItem {
 }
 
 export interface InventoryBatchQuery extends PageQuery {
+  itemKind?: 'material' | 'finished_product';
+  sourceType?: InventorySourceType;
   keyword?: string;
   batchCode?: string;
   batchStatus?: InventoryBatchStatus;
@@ -321,9 +323,11 @@ export interface InventoryMaterialDemandTraceItem {
 
 export interface InventoryBatchItem {
   itemBatchId: string;
-  itemId: string;
-  materialVariantId: string;
-  materialVariantCode: string;
+  itemKind: 'material' | 'finished_product';
+  itemId: string | null;
+  productId: string | null;
+  materialVariantId: string | null;
+  materialVariantCode: string | null;
   itemCode: string;
   itemName: string;
   unit: string;
@@ -334,6 +338,10 @@ export interface InventoryBatchItem {
   onHandAvailableQuantity: string;
   reservedQuantity: string;
   availableToAllocateQuantity: string;
+  sourceWorkOrderId: string | null;
+  sourceWorkOrderNo: string | null;
+  sourceProductionBatchId: string | null;
+  sourceProductionBatchNo: string | null;
   inboundSources: Array<{
     inboundId: string;
     inboundNo: string;
@@ -341,6 +349,9 @@ export interface InventoryBatchItem {
     inboundAt: string;
     inboundQuantity: string;
     inventoryTransactionId: string;
+    sourceType: InventorySourceType;
+    outputRevisionId: string | null;
+    outputRevisionNo: number | null;
   }>;
 }
 

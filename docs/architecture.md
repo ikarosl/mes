@@ -117,7 +117,7 @@ Identity 的密码算法和令牌签发/验证通过 `PasswordHasher`、`TokenSe
 
 Product 获取用户选项必须调用 Identity 的公开目录服务，不能直接查询 `users`。
 
-当前 Production 继续作为库存账本的唯一写入所有者，覆盖外购物料入库、生产物料分配、领料出库、生产退料和库存盘点；这些流程共享同一事务设施，库存数量只写 `inventory_transaction`。`/warehouse/return-orders` 与 `/warehouse/stock-checks` 只是 Production 模块的管理端 HTTP 入口，不建立第二 Warehouse Repository 或账本写入口。未来通用库存继续扩展并形成独立生命周期时，再整体评审提取 Inventory 模块；提取前不得复制表访问或形成双写。
+当前 Production 继续作为库存账本的唯一写入所有者，覆盖外购物料入库、按批准清单确认的生产流转与额外产出成品入库、生产物料分配、领料出库、生产退料和物料库存盘点；这些流程共享同一事务设施，库存数量只写 `inventory_transaction`。成品使用明确的 `product_id` 分支，物料继续使用 `item_id/material_variant_id`，不混用身份或另建账本。`/warehouse/return-orders` 与 `/warehouse/stock-checks` 只是 Production 模块的管理端 HTTP 入口，不建立第二 Warehouse Repository 或账本写入口。未来通用库存继续扩展并形成独立生命周期时，再整体评审提取 Inventory 模块；提取前不得复制表访问或形成双写。
 
 Production 内部退料只负责现场余料回仓，禁止通过需求计划 Writer 创建或恢复需求，也不得修改分配履约、物料计划版本或短批授权。损耗确认与人工追加分别负责产生其明确来源的新需求；执行模块独立校验开工/完工，短批授权与开工不读取退料或按净领用量设置门槛。仓库 UI 属于这些能力的展示入口，不能另行定义退料补领语义。修改任一相关能力须遵守 [Production 写入职责表](../apps/api/src/modules/production/docs/database/return-scrap-and-stocktake.md#业务语义与写入职责)。
 

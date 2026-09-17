@@ -14,6 +14,7 @@ import type {
 } from '@company/contracts';
 import {
   INVENTORY_REFERENCE_TYPE_LABELS,
+  INVENTORY_SOURCE_TYPE_LABELS,
   INVENTORY_TRANSACTION_TYPE_LABELS,
   OUTBOUND_ORDER_STATUS_LABELS,
   RETURN_ORDER_STATUS_LABELS,
@@ -31,14 +32,10 @@ export const inventoryReferenceTypeLabels = INVENTORY_REFERENCE_TYPE_LABELS sati
   string
 >;
 
-export const inventorySourceTypeLabels = {
-  self_made: '自产',
-  purchased: '外购',
-  outsourced: '委外',
-  return_inbound: '退货入库',
-  stock_check_generated: '盘点生成',
-  other: '其他',
-} satisfies Record<InventorySourceType, string>;
+export const inventorySourceTypeLabels = INVENTORY_SOURCE_TYPE_LABELS satisfies Record<
+  InventorySourceType,
+  string
+>;
 
 export const inventoryBatchStatusLabels = {
   available: '可用',

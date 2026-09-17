@@ -296,3 +296,9 @@ scope 常量由 Production application contract 所有；HTTP 只接收 Idempote
 送审结果严格保存业务对象 ID 与 Approval 实例 ID，其余收尾命令保存收尾 ID 与批次 ID。送审中的业务记录创建／绑定、Approval 实例和节点、审计与通知都在外层 executor 事务内完成；未发布流程或任何依赖失败则回滚，不能先提交业务申请后异步补审批。
 
 客户端保留原版本、核对令牌、body 和键重试未知结果；新内容是另一意图，不能在模糊失败时换键。通用审批批准／驳回／撤回仍使用既有版本和当前节点校验，不据此宣称支持 HTTP 幂等决定重放。旧直接 terminate 路由已撤下，不再执行批量终止副作用。端点与业务规则见[Production 需求](../src/modules/production/docs/database/demand-allocation-and-outbound.md#正式需求更正与替代)与[收尾](../src/modules/production/docs/database/production-termination.md)。
+
+## 成品入库
+
+独立成品入库命令使用 `production.finished-inbound.create.v1 / update.v1 / confirm.v1 / cancel.v1`，四者共享 `production.finished-inbound` 前缀。每类都使用独立意图，严格结果仅保存 `inboundId`；重放不会重复建批次或追加库存。请求中的来源类别、批准版本、批号、备注／取消原因与版本显式转成普通对象后生成指纹，不接收客户端 scope。
+
+确认的业务事务包含源工单、任务、结案根与入库单锁内复核、创建库存批次、回填明细、写唯一正流水、推进入库单和成功审计；幂等成功记录同事务提交。失败整体回滚。已批准类别必须全量一次接收，最新版本与受影响类别在审锁定均须在重试时由原意图处理，不用改键绕过失败。具体边界见[成品入库](../src/modules/production/docs/database/finished-goods-inbound.md)。

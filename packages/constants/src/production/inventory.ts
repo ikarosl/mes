@@ -1,11 +1,32 @@
 export const INVENTORY_SOURCE_TYPES = [
   'self_made',
+  'production_extra',
   'purchased',
   'outsourced',
   'return_inbound',
   'stock_check_generated',
   'other',
 ] as const;
+
+export const FINISHED_GOODS_INBOUND_SOURCES = ['self_made', 'production_extra'] as const;
+export const FINISHED_GOODS_INBOUND_SOURCE_LABELS = {
+  self_made: '生产流转入库',
+  production_extra: '额外产出入库',
+} as const;
+export const INVENTORY_ITEM_KINDS = ['material', 'finished_product'] as const;
+export const INVENTORY_ITEM_KIND_LABELS = {
+  material: '物料',
+  finished_product: '成品',
+} as const;
+export const INVENTORY_SOURCE_TYPE_LABELS = {
+  self_made: '生产流转入库',
+  production_extra: '额外产出入库',
+  purchased: '外购物料入库',
+  outsourced: '委外入库',
+  return_inbound: '退回入库',
+  stock_check_generated: '盘点生成',
+  other: '其他',
+} as const satisfies Record<(typeof INVENTORY_SOURCE_TYPES)[number], string>;
 
 export const INVENTORY_BATCH_STATUSES = ['available', 'frozen', 'disabled'] as const;
 

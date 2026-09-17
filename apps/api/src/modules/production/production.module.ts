@@ -18,6 +18,10 @@ import { ProductionOutputRepository } from './application/ports/production-outpu
 import { ProductionOutputService } from './application/production-output.service.js';
 import { MysqlProductionOutputRepository } from './infrastructure/mysql-production-output.repository.js';
 import { ProductionOutputController } from './presentation/http/production-output.controller.js';
+import { ProductionFinishedInboundRepository } from './application/ports/production-finished-inbound.repository.js';
+import { ProductionFinishedInboundService } from './application/production-finished-inbound.service.js';
+import { MysqlProductionFinishedInboundRepository } from './infrastructure/mysql-production-finished-inbound.repository.js';
+import { ProductionFinishedInboundController } from './presentation/http/production-finished-inbound.controller.js';
 import { DatabaseModule } from '../../infrastructure/database/database.module.js';
 import { IdempotencyModule } from '../../infrastructure/idempotency/idempotency.module.js';
 import { IdentityModule } from '../identity/public.js';
@@ -156,12 +160,19 @@ const closeoutProviders = [
   { provide: ProductionTerminationRepository, useExisting: MysqlProductionTerminationRepository },
 ];
 const warehouseControllers = [
+  ProductionFinishedInboundController,
   ProductionInboundController,
   ProductionMaterialLossController,
   ProductionReturnController,
   ProductionStockCheckController,
 ];
 const warehouseProviders = [
+  ProductionFinishedInboundService,
+  MysqlProductionFinishedInboundRepository,
+  {
+    provide: ProductionFinishedInboundRepository,
+    useExisting: MysqlProductionFinishedInboundRepository,
+  },
   ProductionInboundService,
   ProductionMaterialLossService,
   ProductionReturnService,

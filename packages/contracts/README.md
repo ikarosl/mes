@@ -24,3 +24,5 @@ corepack pnpm --filter @company/contracts test
 BOM 明细、审批证据展示和生产需求/补料契约均不提供关键物料或记录批次开关。
 
 Approval 流程节点通过 `ApprovalAssignee` 明确 `assigneeType`、`roleId`、`assigneeUserId` 与 `assigneeSourceCode`，角色／指定用户／业务来源三选一，其余字段为 null。场景返回来源选项及必需末级；实例额外返回 `resolvedAssigneeUserId/Name`，不将运行时人员混入模板固定用户字段。决定命令使用 `stepId + version`；详情提供 `currentStepId`、实时 `eligibleUsers` 和操作能力，不再提供个人任务、myTaskId、分派轮次或重新分派能力。历史决定记录保存实际操作者，通知接收记录不授予审批资格。
+
+成品入库见 `production/finished-inbound.ts`，区分任务候选、待确认单与实际采用／当前批准版本。库存批次契约显式返回 `itemKind`；成品有 productId、物料字段为空，物料有 itemId 与精确版本。空身份不能序列化成字符串 null，业务查询必须按身份读取。

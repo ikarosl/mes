@@ -4,7 +4,7 @@
 
 本章所有入库数量与库存流水数量均为整数；库存流水可正可负但不能为 `0`，入库数量最小为 `1`。所有持久化数量除原有值域约束外还必须满足整数 `CHECK`，不得舍入或截断小数后保存。
 
-当前可执行库存对象仅为 `materials` 下的精确版本；下文保留的其他来源/交易代码属于未来边界，不能推导为当前已开放命令。
+当前执行范围为物料精确版本的外购入库与已批准产出清单的成品入库。成品通过显式 `product_id` 分支进入同一库存批次、明细、流水及批次余额，不将成品 ID 写入 `item_id`。成品字段、约束与事务详见[成品入库](finished-goods-inbound.md)；其他未开放来源和交易代码仍只是边界。
 
 物料的基础 `item_id` 与精确 `material_variant_id` 必须成对传播：`item_batch` 保存版本 ID 和版本
 编码快照；入库、出库、退料、报废、盘点明细及 `inventory_transaction` 均保存同一版本 ID，并以组合
@@ -23,7 +23,7 @@
 
 ### 6. `item_batch`
 
-职责：维护物料精确版本的库存批次。当前仅支持外购物料入库；分类为半成品的外购物料仍属于 `materials`，成品库存不在当前表的可执行范围。
+职责：维护物料精确版本或明确成品身份的库存批次。物料分支保持本章组合外键，成品分支使用 `product_id` 并强制来源工单及任务；分类为半成品的外购物料仍属于 `materials`。
 
 | 字段                         | 类型              | 说明                                    |
 | ---------------------------- | ----------------- | --------------------------------------- |
@@ -63,14 +63,14 @@
 - 唯一约束：`UNIQUE (material_variant_id, batch_code)`
 - 唯一约束：`UNIQUE (id, item_id, material_variant_id)`
 - 外键：`FOREIGN KEY (material_variant_id, item_id) REFERENCES material_variants(id, material_id)`
-- 检查约束：`CHECK (source_type IN ('self_made', 'purchased', 'outsourced', 'return_inbound', 'stock_check_generated', 'other'))`
+- 检查约束：`CHECK (source_type IN ('self_made', 'production_extra', 'purchased', 'outsourced', 'return_inbound', 'stock_check_generated', 'other'))`
 - 检查约束：`CHECK (batch_status IN ('available', 'frozen', 'disabled'))`
 - 组合索引：`INDEX (item_id, batch_status)`，用于按库存对象查询可用批次
 
 说明：
 
 - `item_batch` 是统一库存批次表。
-- `item_id` 只指向 `materials.id`，不得写入成品 ID。扩展成品库存前必须另行评审身份模型，不得把 `material_variant_id` 置空绕过现有模型。
+- `item_id` 只指向 `materials.id`，不得写入成品 ID。成品使用独立 `product_id` 分支，并以 CHECK 与组合 FK 保证归属；物料分支不允许将 `material_variant_id` 置空。
 - `batch_status` 只表示批次是否允许参与库存业务，不表示批次是否已经入库或库存是否用完：
   - `available`：允许参与库存分配和出库，但仍须存在正数可用库存。
   - `frozen`：临时冻结，不允许新增库存分配和出库；历史库存及流水继续保留。
@@ -80,7 +80,7 @@
 - 创建待确认入库单时可以先创建或复用 `item_batch`，确认入库后才写入库存流水；取消待确认入库单不写库存流水，也不联动修改批次状态。
 - 场景示例：入库单 A 使用物料批号 `B001`，在待确认阶段创建批次记录，随后 A 被取消，因此该批次没有库存流水。之后入库单 B 仍可能收到同一物料批号 `B001`，并复用该批次记录完成真实入库。如果取消 A 时把批次改成 `disabled`，就会导致 B 后续形成的真实库存也无法使用。因此单据取消与批次停用必须分别处理。
 - `frozen`、`disabled` 应由独立的批次管理操作触发，不由入库单取消、库存归零等事件自动触发。
-- `source_production_batch_id` 是自产来源预留字段；当前采购入库为空，不能据此开放自产或成品入库。
+- `source_production_batch_id` 对外购为空，对成品生产流转／额外入库必填，并与工单及成品组合外键校验。
 - 两个来源 ID 均可为 `NULL`。组合外键仅在两列均非空时校验生产批次存在且属于该工单；任一列为 `NULL` 时不执行该组合引用校验。`source_work_order_id` 非空时仍受其单列工单外键约束，但仅填写 `source_production_batch_id`、工单为空时，不能依靠现有外键保证该生产批次存在。
 - 编码和单位快照用于历史批次身份；基础物料名称按 `item_id` 读取当前 `materials.material_name`，改名后历史批次展示和名称搜索同步变化。
 - 不建议将 `production_batches.id` 直接作为库存流水的 `batch_id`。
@@ -96,7 +96,7 @@
 
 ### 7. `inventory_transaction`
 
-职责：维护统一库存流水，记录当前物料版本库存数量或状态的变动明细；成品库存扩展仍在 roadmap，不能写入当前物料外键。
+职责：维护唯一库存流水。物料使用 item_id + material_variant_id；成品使用 product_id，绑定同身份库存批次和成品入库明细。当前成品只允许正数 available 的 production_inbound；销售出库、已入成品报废或冲销尚未开放。
 
 库存现存量、可分配库存、批次是否用完等结果应从该表按库存对象、批次和库存状态汇总得出，而不是写回批次表。
 
@@ -250,9 +250,9 @@
 
 两张表的 `current_quantity` 使用 `BIGINT`，不接受小数。单笔业务数量仍受 `1..99999999` 限制，但累计余额允许超过单笔上限。维护规则如下：
 
-1. 插入一条 `inventory_transaction` 时，同一数据库事务同步更新对应的 `inventory_batch_balance` 和 `inventory_material_variant_balance`。
+1. 插入库存流水时，同事务更新 `inventory_batch_balance`；物料分支另更新 `inventory_material_variant_balance`，成品分支不生成虚构物料版本桶。
    精确版本余额投影先以数量 `0` 确保目标桶存在，再用流水正负数量更新余额；这样负数出库流水只在最终余额不足时被防负数约束拒绝。
-2. `item_batch.batch_status` 变化时，批次余额不变；精确版本余额从旧批次状态桶扣除，并加入新批次状态桶。
+2. `item_batch.batch_status` 变化时，批次余额不变；仅物料分支搬移精确版本余额，成品按批次余额及批次状态直接查询。
 3. 余额变为 `0` 的空投影行可以删除；查询端必须把不存在的组合解释为数量 `0`。
 4. `AFTER DELETE` 触发器只服务于 `_test/_ci` 测试库受控清理；生产库存流水禁止删除。
 5. 迁移首次建立投影前先检查历史流水聚合不得为负，再从全部流水分别按以下维度回填：
@@ -328,7 +328,7 @@
 - 组合外键 `fk_inbound_order_batch_work_order`：`FOREIGN KEY (production_batch_id, work_order_id) REFERENCES production_batches(id, work_order_id)`；不存在独立的 `production_batch_id -> production_batches(id)` 单列外键。
 - 外键：`FOREIGN KEY (operator_id) REFERENCES users(id)`
 - 外键：`FOREIGN KEY (cancelled_by) REFERENCES users(id)`
-- 检查约束：`CHECK (source_type IN ('self_made', 'purchased', 'outsourced', 'return_inbound', 'stock_check_generated', 'other'))`
+- 检查约束：`CHECK (source_type IN ('self_made', 'production_extra', 'purchased', 'outsourced', 'return_inbound', 'stock_check_generated', 'other'))`
 - 检查约束：`CHECK (status IN ('pending', 'completed', 'cancelled'))`
 - 组合索引：`INDEX (status, created_at)`，用于入库单状态分页
 
@@ -336,8 +336,8 @@
 
 - 入库主单表达“这一次入库动作”。
 - 具体入库了哪些对象、哪些批次、多少数量，由 `inbound_detail` 记录。
-- 当前仅接受 `purchased` 来源的基础物料精确版本；不接受成品或自产半成品入库。
-- 自产来源字段是边界预留，不表示当前入库接口支持自产。
+- 外购命令仅接受 `purchased` 物料精确版本。成品独立命令接受 `self_made/production_extra` 并要求批准清单，复用本表；不接其他自产半成品场景。
+- 成品主单必须填写 product_id、output_revision_id、production_batch_id、work_order_id，保证与批准版本同源。
 - `production_batch_id` 与 `work_order_id` 均可为 `NULL`。组合外键仅在两列均非空时校验生产批次及其所属工单；任一列为 `NULL` 时不执行该组合引用校验。`work_order_id` 非空时仍须满足其单列工单外键，但仅填写 `production_batch_id`、工单为空时，不能依靠现有外键保证该生产批次存在。
 - 外购入库时，`provider` 建议填写，`production_batch_id` 为空。
 - 待确认入库单取消必须填写原因；取消事实与状态、成功操作日志在同一事务中提交，不覆盖制单备注。
@@ -378,10 +378,16 @@
 
 说明：
 
-- `inbound_detail` 是入库事实表。
+- `inbound_detail` 保存单据明细；库存只在确认时由流水形成。成品 pending 明细的 batch_id 可空，requested_batch_code 保存草稿批号，确认事务才创建批次；已确认成品明细不可改。
 - 编码在创建入库单时从 Product 公共能力写入本明细，历史详情保留本次编码快照。名称不持久化，按明细 `item_id` 读取当前物料名称，展示、搜索使用同一口径。即使复用已有库存批次，本次明细仍保留本次编码；批次保留建批时编码和精确版本。
 - 每条入库明细应生成一条或多条 `inventory_transaction`。
 - 生产入库、采购入库、委外入库都可以走该表。
 - 入库数量不建议写回 `item_batch`，应通过库存流水汇总。
 
 ---
+
+### 成品分支与物料业务隔离
+
+`item_batch`、`inbound_detail`、`inventory_transaction` 的 `item_id/material_variant_id` 在结构上可空，但物料分支 CHECK 强制两者非空且 `product_id` 为空；成品分支则相反。物料的原单列／组合 FK 均保留。`inventory_batch_balance` 不复制版本 ID，只在 item_id/product_id 中选一个身份，均通过批次组合 FK 校验。产品不会进入物料分配、精确版本供需、物料退料或现有盘点候选。
+
+库存批次查询使用 `itemKind`、`sourceType` 筛选，成品显示来源任务／工单及实际采用的批准清单版本；成品名称取所属工单快照，物料名称仍按稳定物料 ID 读当前名称。预留和可分配只对物料有业务含义，成品不可通过此页面分配。明细与余额不会以 `String(null)` 伪造物料或版本身份。

@@ -1,4 +1,14 @@
 import type {
+  FinishedGoodsInboundQuery,
+  FinishedGoodsInboundCandidateQuery,
+  FinishedGoodsInboundCandidate,
+  FinishedGoodsInboundOrderItem,
+  FinishedGoodsInboundOrderDetail,
+  CreateFinishedGoodsInboundPayload,
+  UpdateFinishedGoodsInboundPayload,
+  ConfirmFinishedGoodsInboundPayload,
+  CancelFinishedGoodsInboundPayload,
+  FinishedGoodsInboundCommandResult,
   BatchTerminationCheck,
   DemandCorrectionCheck,
   DemandCorrectionHistoryItem,
@@ -102,6 +112,75 @@ const request = async <T>(config: RetryRequestConfig) => {
 };
 
 export const productionApi = {
+  listFinishedGoodsInbounds: (params: FinishedGoodsInboundQuery) =>
+    request<PageResult<FinishedGoodsInboundOrderItem>>({
+      url: '/production/finished-goods-inbounds',
+      params,
+      skipErrorHandling: true,
+    }),
+  finishedGoodsInboundCandidates: (params: FinishedGoodsInboundCandidateQuery) =>
+    request<PageResult<FinishedGoodsInboundCandidate>>({
+      url: '/production/finished-goods-inbounds/candidates',
+      params,
+      skipErrorHandling: true,
+    }),
+  getFinishedGoodsInbound: (id: string) =>
+    request<FinishedGoodsInboundOrderDetail>({
+      url: `/production/finished-goods-inbounds/${id}`,
+      skipErrorHandling: true,
+    }),
+  createFinishedGoodsInbound: (data: CreateFinishedGoodsInboundPayload, idempotencyKey: string) =>
+    request<FinishedGoodsInboundCommandResult>({
+      url: '/production/finished-goods-inbounds',
+      method: 'POST',
+      data,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      skipErrorHandling: true,
+      retryIdempotentWrite: true,
+      retryTimes: 2,
+    }),
+  updateFinishedGoodsInbound: (
+    id: string,
+    data: UpdateFinishedGoodsInboundPayload,
+    idempotencyKey: string,
+  ) =>
+    request<FinishedGoodsInboundCommandResult>({
+      url: `/production/finished-goods-inbounds/${id}`,
+      method: 'PUT',
+      data,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      skipErrorHandling: true,
+      retryIdempotentWrite: true,
+      retryTimes: 2,
+    }),
+  confirmFinishedGoodsInbound: (
+    id: string,
+    data: ConfirmFinishedGoodsInboundPayload,
+    idempotencyKey: string,
+  ) =>
+    request<FinishedGoodsInboundCommandResult>({
+      url: `/production/finished-goods-inbounds/${id}/actions/confirm`,
+      method: 'POST',
+      data,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      skipErrorHandling: true,
+      retryIdempotentWrite: true,
+      retryTimes: 2,
+    }),
+  cancelFinishedGoodsInbound: (
+    id: string,
+    data: CancelFinishedGoodsInboundPayload,
+    idempotencyKey: string,
+  ) =>
+    request<FinishedGoodsInboundCommandResult>({
+      url: `/production/finished-goods-inbounds/${id}/actions/cancel`,
+      method: 'POST',
+      data,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      skipErrorHandling: true,
+      retryIdempotentWrite: true,
+      retryTimes: 2,
+    }),
   listPurchaseInbounds: (params: PurchaseInboundOrderQuery) =>
     request<PageResult<PurchaseInboundOrderItem>>({ url: '/production/purchase-inbounds', params }),
   getPurchaseInbound: (id: string) =>

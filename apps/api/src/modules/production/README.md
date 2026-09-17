@@ -45,7 +45,7 @@ MaterialLoss、Return、StockCheck Service／Controller 提供独立用例入口
 
 ## 提前结束与结案核对
 
-正常执行完成和提前停止均进入结案阶段：产线草稿 → 质检留存记录 → 管理员核对清单 → 工单负责人审批。正常完成保留报工量与执行完成时间，批准后才 completed；提前停止逐项收尾后批准为 terminated。批准清单可更正并留存全部版本，不重开生产或写库存；计划内外产出与报废分别登记，工单只累计当前批准版。职责、状态、权限与物料安排见[结案设计](docs/database/production-termination.md)。实际成品入库仍待后续接入。
+正常执行完成和提前停止均进入结案阶段：产线草稿 → 质检留存记录 → 管理员核对清单 → 工单负责人审批。正常完成保留报工量与执行完成时间，批准后才 completed；提前停止逐项收尾后批准为 terminated。批准清单可更正并留存全部版本，不重开生产或写库存；计划内外产出与报废分别登记，工单只累计当前批准版。职责、状态、权限与物料安排见[结案设计](docs/database/production-termination.md)。成品由 ProductionFinishedInboundService 独立办理两类全量一次入库，详见[成品入库](docs/database/finished-goods-inbound.md)。
 
 结案流程最后节点固定为业务来源“工单负责人”；送审时在工单锁内读取人员并保存来源证据，Approval 检查实际审批资格。负责人为空或失效时拒绝送审，不回退到其他人员。工单草稿可暂不填负责人，下达事务必须复核有效负责人。
 
