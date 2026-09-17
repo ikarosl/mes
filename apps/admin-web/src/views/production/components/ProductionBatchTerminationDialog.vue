@@ -5,8 +5,8 @@
     :width="DialogWidth.workbench"
     workbench
     :close-on-click-modal="false"
-    :before-close="editor.close"
-    @update:model-value="(value: boolean) => !value && editor.close()"
+    :before-close="closeWorkbench"
+    @update:model-value="(value: boolean) => !value && closeWorkbench()"
   >
     <div v-loading="loading">
       <el-alert
@@ -59,7 +59,7 @@
           :description="
             check.termination
               ? '以下展示收尾与物料核对记录，最终产出请打开批准清单查看。需要办理退料时，请在退料管理重新核对当前可退数量。'
-              : '进入收尾即停止生产。每项处理保留独立记录；驳回结案审批不会恢复已关闭事项。实际退料与待确认损耗请在对应管理页办理。'
+              : '进入收尾即停止生产。每项处理保留独立记录；驳回结案审批不会恢复已关闭事项。余料在退料管理办理，现场损坏在物料实核中登记；原待确认损耗请先处理或取消。'
           "
           type="info"
           :closable="false"
@@ -214,114 +214,29 @@
             "
             name="materials"
           >
-            <p class="muted">
-              {{
-                check.termination
-                  ? '以下为结束时保存的物料快照，可退上限不代表当前可退数量或现场实物余量。'
-                  : '按原分配逐项核对，同行展示来源需求和库存批次。可退上限不代表实物余量；核对说明不会自动办理退料。'
-              }}
-            </p>
-            <el-table
-              :data="materialRows"
-              row-key="allocationId"
-              empty-text="没有需要核对的分配来源"
+            <BatchCloseoutMaterialPanel
+              :check="check"
+              :detail="detail"
+              :readonly="readonly"
+              :locked="locked"
+              @review="selectMaterial"
             >
-              <el-table-column
-                label="来源需求 / 原分配"
-                min-width="210"
-              >
-                <template #default="{ row }">
-                  <strong
-                    >需求 #{{ row.review?.demandId ?? '—' }} · 分配 #{{ row.allocationId }}</strong
-                  >
-                  <div
-                    v-if="row.demand"
-                    class="muted"
-                  >
-                    {{ DEMAND_GENERATION_GROUP_TYPE_LABELS[row.demand.demandType as DemandType] }} ·
-                    原需求 {{ quantity(row.demand.demandQuantity) }} {{ row.unit }}
-                  </div>
-                  <div class="muted">
-                    本次分配 {{ quantity(row.assignedQuantity) }} {{ row.unit }}
-                  </div>
-                </template>
-              </el-table-column>
-              <el-table-column
-                label="物料 / 版本 / 库存批次"
-                min-width="190"
-              >
-                <template #default="{ row }"
-                  >{{ row.itemCode }}
-                  <div>{{ row.materialVariantCode }}</div>
-                  <div class="muted">库存批次 {{ row.inventoryBatchCode }}</div></template
+              <template #actions="{ row }">
+                <el-button
+                  link
+                  type="warning"
+                  :disabled="!canRecordLoss(row)"
+                  @click="openMaterialLoss(row)"
+                  >登记损坏（不补料）</el-button
                 >
-              </el-table-column>
-              <el-table-column
-                label="已领 / 退料 / 损耗"
-                width="160"
-                ><template #default="{ row }"
-                  >{{ quantity(row.outboundQuantity) }} / {{ quantity(row.returnQuantity) }} /
-                  {{ quantity(row.lossQuantity) }} {{ row.unit }}</template
-                ></el-table-column
-              >
-              <el-table-column
-                label="可退上限"
-                width="100"
-                ><template #default="{ row }"
-                  >{{ quantity(row.returnableQuantity) }} {{ row.unit }}</template
-                ></el-table-column
-              >
-              <el-table-column
-                label="核对结果与安排"
-                min-width="240"
-              >
-                <template #default="{ row }">
-                  <el-tag
-                    v-if="row.review || !check.termination"
-                    :type="row.review?.status === 'reviewed' ? 'success' : 'warning'"
-                    size="small"
-                    >{{
-                      BATCH_CLOSEOUT_MATERIAL_REVIEW_LABELS[
-                        (row.review?.status ?? 'pending') as BatchCloseoutMaterialReview['status']
-                      ]
-                    }}</el-tag
-                  >
-                  <span
-                    v-else
-                    class="muted"
-                    >未记录逐项实核结果</span
-                  >
-                  <div
-                    v-if="row.review?.reason"
-                    class="review-note"
-                  >
-                    {{ row.review.reason }}
-                  </div>
-                  <div
-                    v-if="row.review?.reviewedAt"
-                    class="muted"
-                  >
-                    {{ row.review.reviewedAt }} · 操作人 #{{ row.review.actorId }}
-                  </div>
-                </template>
-              </el-table-column>
-              <el-table-column
-                v-if="detail && !readonly"
-                label="操作"
-                width="110"
-                fixed="right"
-              >
-                <template #default="{ row }"
-                  ><el-button
-                    link
-                    type="primary"
-                    :disabled="locked"
-                    @click="selectMaterial(row)"
-                    >{{ row.review?.status === 'reviewed' ? '更新安排' : '核对安排' }}</el-button
-                  ></template
+                <span
+                  v-if="Number(row.returnableQuantity) <= 0"
+                  class="muted"
+                  >无可登记额度</span
                 >
-              </el-table-column>
-            </el-table>
+              </template>
+              <ProductionMaterialLossRecords :records="check.lossRecords" />
+            </BatchCloseoutMaterialPanel>
           </el-tab-pane>
           <el-tab-pane
             :label="`处理记录（${detail?.actions.length ?? 0}）`"
@@ -400,7 +315,7 @@
         <div>
           <el-button
             :disabled="submitting || batchHandling"
-            @click="editor.close"
+            @click="closeWorkbench"
             >关闭</el-button
           >
           <el-button
@@ -501,13 +416,21 @@
       >
     </template>
   </el-dialog>
+  <ProductionCloseoutMaterialLossDialog
+    ref="materialLossDialog"
+    v-model:visible="materialLossVisible"
+    :batch-id="batchId"
+    :material="lossMaterial"
+    :detail="detail"
+    :disabled="locked"
+    @recorded="materialLossRecorded"
+  />
 </template>
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import type {
   BatchTerminationMaterial,
-  BatchCloseoutMaterialReview,
   BatchCloseoutItemKind,
   DemandType,
   DemandBusinessStatus,
@@ -515,7 +438,6 @@ import type {
 import {
   BATCH_TERMINATION_IMPACT_LABELS,
   BATCH_CLOSEOUT_STATUS_LABELS,
-  BATCH_CLOSEOUT_MATERIAL_REVIEW_LABELS,
   DEMAND_GENERATION_GROUP_TYPE_LABELS,
   DEMAND_BUSINESS_STATUS_LABELS,
 } from '@company/constants';
@@ -523,6 +445,9 @@ import { DialogWidth } from '../../../utils/dialog';
 import { batchStatusMeta, formatQuantity as quantity } from '../production-status';
 import { useBatchCloseout } from '../composables/useBatchCloseout';
 import BatchCloseoutWorklist from './BatchCloseoutWorklist.vue';
+import BatchCloseoutMaterialPanel from './BatchCloseoutMaterialPanel.vue';
+import ProductionMaterialLossRecords from './ProductionMaterialLossRecords.vue';
+import ProductionCloseoutMaterialLossDialog from './ProductionCloseoutMaterialLossDialog.vue';
 const props = defineProps<{ visible: boolean; batchId: string | null }>();
 const emit = defineEmits<{
   'update:visible': [boolean];
@@ -552,6 +477,12 @@ const {
 } = editor;
 const activeTab = ref('items');
 const demandPanels = ref(['demands']);
+const materialLossVisible = ref(false),
+  lossAllocationId = ref<string | null>(null),
+  materialLossDialog = ref<InstanceType<typeof ProductionCloseoutMaterialLossDialog> | null>(null);
+const lossMaterial = computed(
+  () => check.value?.materials.find((row) => row.allocationId === lossAllocationId.value) ?? null,
+);
 watch(
   () => props.batchId,
   () => {
@@ -561,18 +492,6 @@ watch(
 const busy = computed(() => loading.value || submitting.value || batchHandling.value);
 const locked = computed(
   () => readonly.value || busy.value || unresolved.value || Boolean(error.value),
-);
-const materialRows = computed(() =>
-  (check.value?.materials ?? []).map((material) => {
-    const review = detail.value?.materialReviews.find(
-      (row) => row.allocationId === material.allocationId,
-    );
-    return {
-      ...material,
-      review,
-      demand: detail.value?.demands.find((row) => row.id === review?.demandId),
-    };
-  }),
 );
 const reviewedCount = computed(
   () => detail.value?.materialReviews.filter((row) => row.status === 'reviewed').length ?? 0,
@@ -604,10 +523,33 @@ function selectMaterial(row: BatchTerminationMaterial) {
 function closeMaterial() {
   if (!busy.value && !unresolved.value) selected.value = null;
 }
+function canRecordLoss(row: BatchTerminationMaterial) {
+  return (
+    !locked.value &&
+    check.value?.batchStatus === 'closing' &&
+    !!detail.value?.canHandle &&
+    !detail.value.pendingApprovalId &&
+    !detail.value.currentRevisionId &&
+    Number(row.returnableQuantity) > 0
+  );
+}
+function openMaterialLoss(row: BatchTerminationMaterial) {
+  if (!canRecordLoss(row)) return;
+  lossAllocationId.value = row.allocationId;
+  materialLossVisible.value = true;
+}
+async function materialLossRecorded() {
+  emit('terminated');
+  await editor.load();
+}
+async function closeWorkbench() {
+  if (materialLossVisible.value && !(await materialLossDialog.value?.close())) return;
+  await editor.close();
+}
 async function openOutput() {
   const batchId = props.batchId;
   if (!batchId) return;
-  await editor.close();
+  await closeWorkbench();
   await nextTick();
   if (!props.visible) emit('open-output', batchId);
 }

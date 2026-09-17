@@ -14,6 +14,7 @@ import { ProductionTerminationRepository } from '../application/ports/production
 import { ProductionDomainError } from '../domain/production.errors.js';
 import { fixedIntegerQuantity } from '../domain/integer-quantity.js';
 import { allocationNeedsCloseoutSql } from './mysql-production-material.sql.js';
+import { readCloseoutLossRecords } from './mysql-production-closeout-loss.read.js';
 import {
   CLOSEOUT_APPROVAL_SNAPSHOT_SCHEMA_VERSION,
   readCloseoutApprovalSnapshot,
@@ -22,7 +23,13 @@ import {
 type Header = RowDataPacket &
   Omit<
     BatchTerminationCheck,
-    'impacts' | 'materials' | 'termination' | 'canTerminate' | 'blockers' | 'checkToken'
+    | 'impacts'
+    | 'materials'
+    | 'lossRecords'
+    | 'termination'
+    | 'canTerminate'
+    | 'blockers'
+    | 'checkToken'
   >;
 type Fact = RowDataPacket & {
   id: number;
@@ -210,7 +217,8 @@ export class MysqlProductionTerminationRepository extends ProductionTerminationR
     if (losses.length) blockers.push('请先处理或取消待确认的物料损耗单，避免结束时新增补料');
     if (impacts.some((row) => row.kind === 'outbound' && row.status !== 'pending_picking'))
       blockers.push('存在不能自动取消的出库单，请先核对出库状态');
-    const evidence = { ...header, impacts, materials, blockers };
+    const lossRecords = await readCloseoutLossRecords(db, batchId, lock);
+    const evidence = { ...header, impacts, materials, lossRecords, blockers };
     return {
       ...evidence,
       checkToken: createHash('sha256').update(JSON.stringify(evidence)).digest('hex'),

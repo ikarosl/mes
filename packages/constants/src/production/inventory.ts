@@ -97,6 +97,11 @@ export const SCRAP_SCENES = [
 ] as const;
 
 export const SCRAP_STATUSES = ['pending', 'confirmed', 'cancelled'] as const;
+export const MATERIAL_LOSS_PURPOSES = ['replenishment', 'closeout_record'] as const;
+export const MATERIAL_LOSS_PURPOSE_LABELS = {
+  replenishment: '在产损耗补料',
+  closeout_record: '结案损坏登记（不补料）',
+} as const;
 
 export const STOCK_CHECK_STATUSES = ['pending', 'counting', 'completed', 'cancelled'] as const;
 

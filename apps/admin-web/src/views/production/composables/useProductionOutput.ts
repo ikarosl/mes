@@ -50,7 +50,8 @@ function validateDetail(value: ProductionOutputDetail, batchId: string) {
     !value.receipts ||
     typeof value.submissionToken !== 'string' ||
     typeof value.canEdit !== 'boolean' ||
-    !Array.isArray(value.check.materials)
+    !Array.isArray(value.check.materials) ||
+    !Array.isArray(value.check.lossRecords)
   )
     fail();
   const plan = Number(value.check.plannedQuantity);
@@ -77,6 +78,7 @@ function validateDetail(value: ProductionOutputDetail, batchId: string) {
         ) &&
         validInspection(revision.snapshot.inspection) &&
         Array.isArray(revision.snapshot.check?.materials) &&
+        Array.isArray(revision.snapshot.check.lossRecords) &&
         Array.isArray(revision.snapshot.actions),
     )
   )

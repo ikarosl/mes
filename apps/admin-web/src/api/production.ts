@@ -18,6 +18,8 @@ import type {
   BatchCloseoutCommandResult,
   BeginBatchCloseoutPayload,
   HandleBatchCloseoutItemPayload,
+  RecordCloseoutMaterialLossPayload,
+  RecordCloseoutMaterialLossResult,
   ProductionOutputDetail,
   SaveProductionOutputPayload,
   RecordProductionOutputInspectionPayload,
@@ -385,6 +387,20 @@ export const productionApi = {
     request<ProductionOutputDetail>({
       url: `/production/batches/${id}/output`,
       skipErrorHandling: true,
+    }),
+  recordCloseoutMaterialLoss: (
+    id: string,
+    data: RecordCloseoutMaterialLossPayload,
+    idempotencyKey: string,
+  ) =>
+    request<RecordCloseoutMaterialLossResult>({
+      url: `/production/batches/${id}/closeout/material-losses`,
+      method: 'POST',
+      data,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      skipErrorHandling: true,
+      retryIdempotentWrite: true,
+      retryTimes: 2,
     }),
   reviewProductionOutputMaterial: (
     id: string,

@@ -1,5 +1,27 @@
 import type { ProductionBatchStatus, WorkOrderStatus } from './statuses.js';
 import type { WorkOrderType } from './work-order.js';
+import type { MaterialLossPurpose, ScrapStatus } from './statuses.js';
+
+/** 领料损耗逐笔证据；收尾登记不产生补料，不计入成品报废。 */
+export interface BatchTerminationLossRecord {
+  id: string;
+  scrapNo: string;
+  purpose: MaterialLossPurpose;
+  closeoutId: string | null;
+  allocationId: string;
+  demandId: string;
+  itemCode: string;
+  materialVariantCode: string;
+  inventoryBatchCode: string;
+  scrapQuantity: string;
+  unit: string;
+  reason: string;
+  status: ScrapStatus;
+  createdBy: string;
+  createdAt: string;
+  confirmedBy: string | null;
+  confirmedAt: string | null;
+}
 
 export interface BatchTerminationImpact {
   kind: 'step' | 'abnormal' | 'rework' | 'supplement' | 'outbound' | 'demand' | 'allocation';
@@ -58,5 +80,6 @@ export interface BatchTerminationCheck {
   blockers: string[];
   impacts: BatchTerminationImpact[];
   materials: BatchTerminationMaterial[];
+  lossRecords: BatchTerminationLossRecord[];
   termination: BatchTerminationRecord | null;
 }

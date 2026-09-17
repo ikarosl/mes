@@ -108,6 +108,7 @@ export type ScrapScene =
   'warehouse_allocated' | 'return_after_outbound' | 'production_consumed' | 'in_stock';
 
 export type ScrapStatus = 'pending' | 'confirmed' | 'cancelled';
+export type MaterialLossPurpose = 'replenishment' | 'closeout_record';
 
 export type StockCheckStatus = 'pending' | 'counting' | 'completed' | 'cancelled';
 

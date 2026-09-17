@@ -38,7 +38,7 @@
 
     <el-alert
       class="scope-alert"
-      title="当前只开放生产领料损耗：确认后固定按同物料、同单位、同数量生成损耗补料需求，不回收或增加产品生产授权。"
+      title="在产领料损耗确认后等量补料；结案损坏在任务物料实核中登记，仅扣减可退上限、不补料。本页统一查看两类记录，不计入成品报废。"
       type="info"
       :closable="false"
       show-icon
@@ -74,6 +74,19 @@
           min-width="190"
         />
         <el-table-column
+          label="登记用途"
+          min-width="205"
+          ><template #default="{ row }"
+            ><div>{{ MATERIAL_LOSS_PURPOSE_LABELS[row.purpose as MaterialLossPurpose] }}</div>
+            <div
+              v-if="row.closeoutId"
+              class="secondary-cell"
+            >
+              收尾记录 #{{ row.closeoutId }}
+            </div></template
+          ></el-table-column
+        >
+        <el-table-column
           label="生产来源"
           min-width="220"
           ><template #default="{ row }"
@@ -100,16 +113,25 @@
           ></el-table-column
         >
         <el-table-column
-          prop="reasonType"
           label="损耗原因"
-          min-width="145"
-        />
+          min-width="220"
+          ><template #default="{ row }"
+            ><div>{{ row.purpose === 'closeout_record' ? row.remark : row.reasonType }}</div>
+            <div
+              v-if="row.purpose !== 'closeout_record' && row.remark"
+              class="secondary-cell"
+            >
+              {{ row.remark }}
+            </div></template
+          ></el-table-column
+        >
         <el-table-column
           label="补料状态"
           width="125"
           ><template #default="{ row }"
+            ><span v-if="row.purpose === 'closeout_record'">不补料</span
             ><el-tag
-              v-if="row.supplement"
+              v-else-if="row.supplement"
               effect="plain"
               :type="row.supplement.status === 'fulfilled' ? 'success' : 'warning'"
               >{{
@@ -120,7 +142,7 @@
             ><span
               v-else
               class="secondary-cell"
-              >待确认损耗</span
+              >{{ row.status === 'cancelled' ? '申报已取消' : '待确认损耗' }}</span
             ></template
           ></el-table-column
         >
@@ -153,7 +175,7 @@
           fixed="right"
           ><template #default="{ row }">
             <el-button
-              v-if="row.status === 'pending'"
+              v-if="row.purpose === 'replenishment' && row.status === 'pending'"
               link
               type="success"
               :loading="pendingAction === `confirm:${row.id}`"
@@ -161,7 +183,7 @@
               >确认并补料</el-button
             >
             <el-button
-              v-if="row.status === 'pending'"
+              v-if="row.purpose === 'replenishment' && row.status === 'pending'"
               link
               :loading="pendingAction === `cancel:${row.id}`"
               @click="cancelLoss(row)"
@@ -293,13 +315,17 @@
 </template>
 
 <script setup lang="ts">
-import { PRODUCTION_SUPPLEMENT_STATUS_LABELS } from '@company/constants';
+import {
+  PRODUCTION_SUPPLEMENT_STATUS_LABELS,
+  MATERIAL_LOSS_PURPOSE_LABELS,
+} from '@company/constants';
 import { computed, onActivated, onMounted, reactive, ref } from 'vue';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import type {
   MaterialLossBatchOption,
   MaterialLossCandidateItem,
   MaterialLossItem,
+  MaterialLossPurpose,
   ScrapStatus,
 } from '@company/contracts';
 import PaginationFooter from '../../components/PaginationFooter.vue';

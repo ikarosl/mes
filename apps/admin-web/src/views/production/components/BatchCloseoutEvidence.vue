@@ -165,6 +165,7 @@
         label="可退上限"
       />
     </el-table>
+    <ProductionMaterialLossRecords :records="snapshot.check.lossRecords" />
   </section>
 </template>
 <script setup lang="ts">
@@ -175,6 +176,7 @@ import {
   PRODUCTION_CLOSEOUT_MODE_LABELS,
 } from '@company/constants';
 import { formatQuantity as quantity } from '../production-status';
+import ProductionMaterialLossRecords from './ProductionMaterialLossRecords.vue';
 defineProps<{ snapshot: BatchCloseoutApprovalSnapshot }>();
 const statusLabel = (kind: string, status: string) =>
   BATCH_CLOSEOUT_STATUS_LABELS[kind]?.[status] ?? '未知状态';

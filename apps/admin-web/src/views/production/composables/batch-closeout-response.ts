@@ -14,6 +14,7 @@ export function validateCloseoutResponse(
     Number.isInteger(value.version) &&
     Array.isArray(value.impacts) &&
     Array.isArray(value.materials) &&
+    Array.isArray(value.lossRecords) &&
     Array.isArray(value.blockers);
   if (!validCheck(preview)) throw new Error('收尾核对响应格式异常，请刷新重试');
   // JSON null 表示没有逐项收尾记录；是否已结束由核对中的 termination 判断。

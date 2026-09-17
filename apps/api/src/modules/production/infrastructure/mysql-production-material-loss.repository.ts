@@ -76,6 +76,8 @@ type MaterialLossRow = RowDataPacket & {
   scrap_number: string;
   unit_snapshot: string;
   reason_type: string;
+  loss_purpose: MaterialLossItem['purpose'];
+  closeout_id: number | null;
   status: MaterialLossItem['status'];
   confirmed_by: number | null;
   confirmed_at: Date | null;
@@ -98,7 +100,7 @@ const MATERIAL_LOSS_SELECT = `SELECT scrap.id,scrap.scrap_no,scrap.production_ba
   wo.product_name_snapshot product_name,scrap.allocation_id,scrap.demand_id,scrap.item_id,
   scrap.material_variant_id,scrap.batch_id,ib.item_code_snapshot,${currentMaterialNameSql('ib.item_id')} item_name,
   ib.material_variant_code_snapshot,ib.batch_code,
-  scrap.scrap_number,scrap.unit_snapshot,scrap.reason_type,scrap.status,scrap.confirmed_by,
+  scrap.scrap_number,scrap.unit_snapshot,scrap.reason_type,scrap.loss_purpose,scrap.closeout_id,scrap.status,scrap.confirmed_by,
   scrap.confirmed_at,scrap.created_by,scrap.created_at,scrap.version,scrap.remark,
   scrap.cancel_reason,scrap.cancelled_by,scrap.cancelled_at,
   supplement.id supplement_id,supplement.supplement_no,supplement.status supplement_status,
@@ -212,8 +214,8 @@ export class MysqlProductionMaterialLossRepository extends ProductionMaterialLos
       const [created] = await db.execute<ResultSetHeader>(
         `INSERT INTO item_scrap
          (scrap_no,production_batch_id,demand_id,allocation_id,item_id,material_variant_id,batch_id,scrap_scene,
-          scrap_number,unit_snapshot,reason_type,status,remark,created_by,updated_by)
-         VALUES (?,?,?,?,?,?,?,'production_consumed',?,?,?,'pending',?,?,?)`,
+          loss_purpose,scrap_number,unit_snapshot,reason_type,status,remark,created_by,updated_by)
+         VALUES (?,?,?,?,?,?,?,'production_consumed','replenishment',?,?,?,'pending',?,?,?)`,
         [
           scrapNo,
           payload.productionBatchId,
@@ -260,6 +262,11 @@ export class MysqlProductionMaterialLossRepository extends ProductionMaterialLos
       const orderPolicy = await lockWorkOrderForBatch(db, String(identity.production_batch_id));
       await findBatch(db, String(identity.production_batch_id), true);
       const scrap = await this.findMaterialLoss(db, scrapId, true);
+      if (scrap.loss_purpose !== 'replenishment')
+        throw new ProductionDomainError(
+          'SCRAP_CONFIRM_NOT_ALLOWED',
+          '结案损坏登记已确认且不补料，不能使用在产损耗确认',
+        );
       if (scrap.status === 'confirmed') return mapMaterialLoss(scrap);
       if (scrap.status !== 'pending')
         throw new ProductionDomainError('SCRAP_CONFIRM_NOT_ALLOWED', '仅待确认损耗可以确认');
@@ -387,6 +394,8 @@ export class MysqlProductionMaterialLossRepository extends ProductionMaterialLos
   ) {
     return withTransaction(this.pool, async (db) => {
       const scrap = await this.findMaterialLoss(db, scrapId, true);
+      if (scrap.loss_purpose !== 'replenishment')
+        throw new ProductionDomainError('SCRAP_CANCEL_NOT_ALLOWED', '已确认的结案损坏登记不能取消');
       if (scrap.status === 'cancelled') return mapMaterialLoss(scrap);
       if (scrap.status !== 'pending')
         throw new ProductionDomainError('SCRAP_CANCEL_NOT_ALLOWED', '仅待确认损耗可以取消');
@@ -496,6 +505,8 @@ const mapMaterialLoss = (row: MaterialLossRow): MaterialLossItem => ({
   itemBatchId: String(row.batch_id),
   batchCode: row.batch_code,
   scrapScene: 'production_consumed',
+  purpose: row.loss_purpose,
+  closeoutId: row.closeout_id === null ? null : String(row.closeout_id),
   scrapQuantity: row.scrap_number,
   unit: row.unit_snapshot,
   reasonType: row.reason_type,

@@ -21,8 +21,8 @@
 | 更正工序报工 | `POST /api/production/batches/:batchId/step-records/:recordId/reports/:reportId/actions/correct` | `production.step-report.correct.v3` |
 | 完成返工 | `POST /api/production/reworks/:reworkId/actions/complete` | `production.rework.complete.v1` |
 | 确认报废补料方案 | `POST /api/production/abnormal-dispositions/:dispositionId/scrap-supplement-plan/actions/confirm` | `production.abnormal.scrap-supplement-plan.confirm.v1` |
-| 创建生产领料损耗 | `POST /api/warehouse/scraps` | `production.material-loss.create.v1` |
-| 确认生产领料损耗 | `POST /api/warehouse/scraps/:scrapId/actions/confirm` | `production.material-loss.confirm.v1` |
+| 创建生产领料损耗 | `POST /api/warehouse/scraps` | `production.material-loss.create.v2` |
+| 确认生产领料损耗 | `POST /api/warehouse/scraps/:scrapId/actions/confirm` | `production.material-loss.confirm.v2` |
 
 此表是文档摘要；代码事实来源始终是 scope 常量与 Controller 上的 `@IdempotentEndpoint({ scope })`。
 未启用端点携带任意幂等键（包括空值、超长值以及公开端点）必须返回
@@ -308,3 +308,9 @@ scope 常量由 Production application contract 所有；HTTP 只接收 Idempote
 `POST /production/work-orders` 使用 `production.work-order.create.v2`，创建请求不再接受手填编号。服务端在 executor 的同一事务内分配北京时间当日序号、创建工单并保存审计与完整响应。成功重放返回首次草稿快照，不重新读取已下达或已编辑的工单，也不再次取号。严格结果 codec 只接受新编号格式，不兼容旧手填编号响应；开发环境直接重置。
 
 同键不同内容拒绝，网络结果未知或平台返回可重试冲突时复用原键。计数与业务写入失败一起回滚；已提交编号在工单取消、关闭后不回收。协议与日计数结构见[工单所有者文档](../src/modules/production/docs/database/work-orders-and-batches.md#工单自动编号)。
+
+## 结案物料损坏登记
+
+`POST /production/batches/:batchId/closeout/material-losses` 使用 `production.closeout.material-loss.record.v1`，按收尾版本、核对令牌及原分配行登记真实损坏。输入显式规范化，幂等结果只返回损耗、收尾与批次 ID。来源锁内复核、已确认损耗事实、收尾版本及审计与幂等结果同事务提交，不产生补料、补产或第二次库存扣减。
+
+普通损耗创建／确认的完整响应加入用途与收尾关联，scope 使用 v2；不接受旧响应结构或根据“暂无补料单”推断用途。结案送审保存逐条损耗依据，正式证据 schema 升级后按开发重置约定切换，不读取旧版兼容分支。

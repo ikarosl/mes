@@ -18,6 +18,10 @@ import { ProductionOutputRepository } from './application/ports/production-outpu
 import { ProductionOutputService } from './application/production-output.service.js';
 import { MysqlProductionOutputRepository } from './infrastructure/mysql-production-output.repository.js';
 import { ProductionOutputController } from './presentation/http/production-output.controller.js';
+import { ProductionCloseoutMaterialLossRepository } from './application/ports/production-closeout-material-loss.repository.js';
+import { ProductionCloseoutMaterialLossService } from './application/production-closeout-material-loss.service.js';
+import { MysqlProductionCloseoutMaterialLossRepository } from './infrastructure/mysql-production-closeout-material-loss.repository.js';
+import { ProductionCloseoutMaterialLossController } from './presentation/http/production-closeout-material-loss.controller.js';
 import { ProductionFinishedInboundRepository } from './application/ports/production-finished-inbound.repository.js';
 import { ProductionFinishedInboundService } from './application/production-finished-inbound.service.js';
 import { MysqlProductionFinishedInboundRepository } from './infrastructure/mysql-production-finished-inbound.repository.js';
@@ -143,11 +147,18 @@ const materialProviders = [
   },
 ];
 const closeoutControllers = [
+  ProductionCloseoutMaterialLossController,
   ProductionCloseoutController,
   ProductionTerminationController,
   ProductionOutputController,
 ];
 const closeoutProviders = [
+  ProductionCloseoutMaterialLossService,
+  MysqlProductionCloseoutMaterialLossRepository,
+  {
+    provide: ProductionCloseoutMaterialLossRepository,
+    useExisting: MysqlProductionCloseoutMaterialLossRepository,
+  },
   ProductionOutputService,
   MysqlProductionOutputRepository,
   { provide: ProductionOutputRepository, useExisting: MysqlProductionOutputRepository },

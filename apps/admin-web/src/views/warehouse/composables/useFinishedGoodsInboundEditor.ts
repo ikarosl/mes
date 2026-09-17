@@ -179,8 +179,10 @@ export function useFinishedGoodsInboundEditor(
         !result.currentApprovedOutput?.snapshot?.inspection ||
         !Array.isArray(result.approvedOutput.snapshot.actions) ||
         !Array.isArray(result.approvedOutput.snapshot.check?.materials) ||
+        !Array.isArray(result.approvedOutput.snapshot.check.lossRecords) ||
         !Array.isArray(result.currentApprovedOutput.snapshot.actions) ||
         !Array.isArray(result.currentApprovedOutput.snapshot.check?.materials) ||
+        !Array.isArray(result.currentApprovedOutput.snapshot.check.lossRecords) ||
         !Array.isArray(result.blockers)
       )
         throw new Error('入库单详情响应异常，请刷新重试');

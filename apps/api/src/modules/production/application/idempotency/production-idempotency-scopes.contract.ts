@@ -62,10 +62,14 @@ export const COMPLETE_REWORK_IDEMPOTENCY_SCOPE = 'production.rework.complete.v1'
 export const CONFIRM_SCRAP_SUPPLEMENT_PLAN_IDEMPOTENCY_SCOPE =
   'production.abnormal.scrap-supplement-plan.confirm.v1' as const;
 /** 创建生产领料损耗补料。 */
-export const CREATE_MATERIAL_LOSS_IDEMPOTENCY_SCOPE = 'production.material-loss.create.v1' as const;
+export const CREATE_MATERIAL_LOSS_IDEMPOTENCY_SCOPE = 'production.material-loss.create.v2' as const;
 /** 确认生产领料损耗补料。 */
 export const CONFIRM_MATERIAL_LOSS_IDEMPOTENCY_SCOPE =
-  'production.material-loss.confirm.v1' as const;
+  'production.material-loss.confirm.v2' as const;
+
+/** 初次结案时登记原材料损坏，只占可退额度，不生成补料。 */
+export const RECORD_CLOSEOUT_MATERIAL_LOSS_SCOPE =
+  'production.closeout.material-loss.record.v1' as const;
 
 /** 服务端按北京时间日期分配不可修改的工单号。 */
 export const CREATE_WORK_ORDER_IDEMPOTENCY_SCOPE = 'production.work-order.create.v2' as const;

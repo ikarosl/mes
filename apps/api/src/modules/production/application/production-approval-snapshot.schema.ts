@@ -12,6 +12,8 @@ import {
   WORK_ORDER_TYPES,
   BATCH_CLOSEOUT_ITEM_KINDS,
   PRODUCTION_CLOSEOUT_MODES,
+  MATERIAL_LOSS_PURPOSES,
+  SCRAP_STATUSES,
 } from '@company/constants';
 
 const id = z.string().regex(/^[1-9]\d*$/);
@@ -165,6 +167,27 @@ export const terminationCheckSchema = z.object({
       returnableQuantity: quantity,
     }),
   ),
+  lossRecords: z.array(
+    z.object({
+      id,
+      scrapNo: z.string(),
+      purpose: z.enum(MATERIAL_LOSS_PURPOSES),
+      closeoutId: id.nullable(),
+      allocationId: id,
+      demandId: id,
+      itemCode: z.string(),
+      materialVariantCode: z.string(),
+      inventoryBatchCode: z.string(),
+      scrapQuantity: quantity,
+      unit: z.string(),
+      reason: z.string(),
+      status: z.enum(SCRAP_STATUSES),
+      createdBy: id,
+      createdAt: z.string(),
+      confirmedBy: id.nullable(),
+      confirmedAt: z.string().nullable(),
+    }),
+  ),
   termination: z
     .object({
       id,
@@ -181,7 +204,7 @@ export const terminationCheckSchema = z.object({
     })
     .nullable(),
 });
-export const CLOSEOUT_APPROVAL_SNAPSHOT_SCHEMA_VERSION = 3;
+export const CLOSEOUT_APPROVAL_SNAPSHOT_SCHEMA_VERSION = 4;
 const outputQuantitiesSchema = z.object({
   availableQuantity: amount,
   extraQuantity: amount,

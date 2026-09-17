@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { MATERIAL_LOSS_PURPOSES } from '@company/constants';
 import type { MaterialLossItem } from '@company/contracts';
 import type {
   IdempotencyResultCodec,
@@ -27,6 +28,8 @@ const schema: z.ZodType<MaterialLossItem> = z
     itemBatchId: z.string(),
     batchCode: z.string(),
     scrapScene: z.literal('production_consumed'),
+    purpose: z.enum(MATERIAL_LOSS_PURPOSES),
+    closeoutId: z.string().nullable(),
     scrapQuantity: z.string(),
     unit: z.string(),
     reasonType: z.string(),

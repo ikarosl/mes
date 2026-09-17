@@ -102,3 +102,14 @@ export interface BatchCloseoutCommandResult {
   closeoutId: string;
   batchId: string;
 }
+
+export interface RecordCloseoutMaterialLossPayload {
+  version: number;
+  checkToken: string;
+  allocationId: string;
+  scrapQuantity: number;
+  reason: string;
+}
+export interface RecordCloseoutMaterialLossResult extends BatchCloseoutCommandResult {
+  scrapId: string;
+}
