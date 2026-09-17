@@ -263,10 +263,6 @@ const statusLabel = (status: MaterialOutboundItem['status']) =>
 </script>
 
 <style scoped>
-.dialog-body {
-  max-height: 70vh;
-  overflow-y: auto;
-}
 .outbound-groups {
   margin-top: 16px;
 }

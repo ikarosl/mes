@@ -5,6 +5,7 @@
 ## 1. 设计目标
 
 - Dialog 和危险操作确认框只遮罩当前路由内容区，不阻断左侧菜单、顶部栏和标签栏。
+- Dialog（含工作台）和确认框整体最高为挂载区高度的 90%，垂直居中；标题、底部按钮保持可见，仅正文溢出滚动。
 - 编辑 Dialog 随 KeepAlive 保留普通输入、已选值、校验状态和表格草稿。
 - 缓存页面失活后，其 Dialog 必须同步隐藏；返回原标签时恢复编辑现场。
 - 外部主数据候选项不以 KeepAlive 页面快照作为唯一来源，应按资源在关键生命周期刷新；同一候选源实例由最近共同所有者（页面或弹窗）持有，跨页面各自实例，不共享缓存。
@@ -21,8 +22,8 @@
 配套入口和样式：
 
 - `apps/admin-web/src/main.ts` 全局注册 `RouteDialog`，并在路由切换前关闭 `RouteMessageBox`。
-- `apps/admin-web/src/styles/index.css` 将 Dialog 和 MessageBox 的两层固定遮罩改为相对 `.content` 定位。
-- `AdminLayout.vue` 中的 `.content` 是路由内容边界，内部 `router-view + keep-alive` 负责页面实例缓存。
+- `AdminLayout.vue` 中的 `.content` 是路由内容边界，内部 `router-view + keep-alive` 负责页面实例缓存。布局挂载时、挂载区尺寸变化和窗口缩放时，统一读取挂载区的视口坐标与尺寸，通过 `--route-overlay-*` CSS 变量提供给子树；布局卸载时释放 ResizeObserver 和窗口监听。
+- `apps/admin-web/src/styles/index.css` 让 Dialog 和 MessageBox 的外层遮罩按上述边界固定定位，内层填满遮罩，并统一设置垂直居中、整体 90% 高度上限和正文滚动。外层固定定位避免路由滚动或页签、加载面板的局部定位容器改变挂载边界；DOM 仍留在原路由子树内，不改变 KeepAlive 生命周期。
 
 ## 3. 联动流程
 
@@ -72,6 +73,9 @@ AdminLayout .content
 
 - 不得在业务页面设置 `append-to-body=true`。
 - 不得绕过全局注册直接渲染从 Element Plus 导入的原生 `ElDialog`。
+- 普通 Dialog 与 `workbench` 共用整体高度和滚动规则，无需逐页设置高度；不为整块正文增加 `vh` 高度上限或第二层滚动，独立表格、列表可按需滚动。
+- 子业务弹窗与父弹窗并列挂载，不放入父弹窗正文滚动区，避免遮罩被裁剪或以父弹窗高度计算上限。
+- 路由内容到弹窗之间不得设置会重建固定定位包含块的 `transform`、`filter` 或 `contain`；需要此类效果时限制到不包含弹窗的展示节点。
 - 编辑 Dialog 不应在 `onDeactivated` 中主动清空普通输入或关闭自身。
 - 用户主动关闭且确认放弃编辑后，页面可以按业务需要重置表单。
 - 收尾弹窗加载核对与详情后，须先检查响应结构及批次归属，再整体更新展示状态；只有 JSON `null` 表示没有逐项收尾记录。空响应或缺失字段显示加载错误并禁用写入，刷新失败保留上次核对结果及草稿。只读加载期间允许关闭，关闭后忽略迟到响应；写操作执行期间仍禁止关闭。
@@ -105,6 +109,7 @@ import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
 - 适用于删除、停用、取消、关闭、作废、完成等短时危险操作确认。
 - 不用于承载表单、详情或需要随标签页恢复的编辑内容。
 - 确认框切换路由时自动关闭，返回后必须由用户重新发起操作。
+- 确认框与 Dialog 一样以 `.content` 高度的 90% 为整体上限；长提示和输入区域滚动，标题和确认、取消按钮保持可见。
 - 禁止业务页面重新从 `element-plus` 直接导入 `ElMessageBox`。
 
 当前使用情况：管理端现有 21 处危险操作确认均已接入 `RouteMessageBox`。

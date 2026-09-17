@@ -475,8 +475,6 @@ const withdraw = (): void => emit('withdraw', comment.value.trim());
 
 <style scoped>
 .detail-body {
-  max-height: 68vh;
-  overflow-y: auto;
   padding-right: 4px;
 }
 .detail-header,

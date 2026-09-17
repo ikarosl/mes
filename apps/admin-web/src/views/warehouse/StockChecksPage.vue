@@ -840,10 +840,6 @@ onActivated(loadRows);
   color: #ef4444;
   font-weight: 600;
 }
-.dialog-body {
-  max-height: 70vh;
-  overflow-y: auto;
-}
 .create-form {
   margin-top: 18px;
 }

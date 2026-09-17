@@ -736,10 +736,6 @@ onActivated(() => {
   color: var(--el-color-primary);
   font-size: 12px;
 }
-.dialog-body {
-  max-height: 70vh;
-  overflow-y: auto;
-}
 .create-form {
   margin-top: 18px;
 }

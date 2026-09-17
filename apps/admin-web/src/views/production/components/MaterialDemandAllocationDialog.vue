@@ -386,10 +386,6 @@ const demandRowClassName = ({ row }: { row: ProductionMaterialDemandItem }): str
 </script>
 
 <style scoped>
-.dialog-body {
-  max-height: 70vh;
-  overflow-y: auto;
-}
 .demand-group + .demand-group {
   margin-top: 18px;
 }

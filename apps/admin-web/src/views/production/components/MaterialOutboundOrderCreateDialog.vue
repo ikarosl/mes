@@ -341,9 +341,7 @@ const clearSelections = (): void => {
 
 <style scoped>
 .dialog-body {
-  max-height: 70vh;
   padding-right: 4px;
-  overflow-y: auto;
 }
 .create-form {
   margin-top: 18px;

@@ -168,8 +168,6 @@ const notice = computed(() => {
 <style scoped>
 .detail-body {
   min-height: 180px;
-  max-height: 70vh;
-  overflow-y: auto;
 }
 .detail-summary {
   margin: 16px 0;

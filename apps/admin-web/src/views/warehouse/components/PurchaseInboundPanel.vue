@@ -697,10 +697,6 @@ watch(
 .page-size-select {
   width: 78px;
 }
-.dialog-body {
-  max-height: 70vh;
-  overflow-y: auto;
-}
 .create-form {
   margin-top: 18px;
 }

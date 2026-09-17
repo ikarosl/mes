@@ -815,8 +815,6 @@ watch(viewMode, (mode) => {
 }
 .detail-body {
   min-height: 160px;
-  max-height: 70vh;
-  overflow: auto;
 }
 .detail-body h3 {
   margin: 18px 0 10px;
