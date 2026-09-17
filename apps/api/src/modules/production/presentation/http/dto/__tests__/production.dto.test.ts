@@ -321,7 +321,6 @@ describe('Production date-only DTO fields', () => {
       'create work order',
       CreateWorkOrderDto,
       {
-        workOrderNo: 'WO-001',
         orderType: 'mass_production',
         productId: '8',
         plannedQuantity: 1,
@@ -348,7 +347,6 @@ describe('Production date-only DTO fields', () => {
 
   it('requires both work-order plan dates on creation', async () => {
     const dto = plainToInstance(CreateWorkOrderDto, {
-      workOrderNo: 'WO-001',
       productId: '8',
       plannedQuantity: 1,
     });

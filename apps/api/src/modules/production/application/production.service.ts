@@ -29,8 +29,12 @@ import {
 import { ProductionDomainError } from '../domain/production.errors.js';
 import { ProductionRepository } from './ports/production.repository.js';
 import type { ResolvedBatchStepOverride } from './ports/production.repository.js';
-import { CREATE_BATCH_IDEMPOTENCY_SCOPE } from './idempotency/production-idempotency-scopes.contract.js';
+import {
+  CREATE_BATCH_IDEMPOTENCY_SCOPE,
+  CREATE_WORK_ORDER_IDEMPOTENCY_SCOPE,
+} from './idempotency/production-idempotency-scopes.contract.js';
 import { productionBatchResultCodec } from './idempotency/production-batch-result.codec.js';
+import { workOrderCreateResultCodec } from './idempotency/work-order-create-result.codec.js';
 
 @Injectable()
 export class ProductionService {
@@ -65,17 +69,35 @@ export class ProductionService {
     return this.enrichBatches(await this.production.listWorkOrderBatches(id));
   }
 
-  async createWorkOrder(payload: CreateWorkOrderPayload, audit: CommandContext) {
-    if (payload.workOrderOwnerId) await this.requireActiveUser(payload.workOrderOwnerId);
-    if (!payload.planStartDate || !payload.planEndDate)
+  async createWorkOrder(payload: CreateWorkOrderPayload, audit: IdempotentCommandContext) {
+    const body = this.cleanWorkOrder(payload);
+    if (!body.planStartDate || !body.planEndDate)
       throw new ProductionDomainError('INVALID_INPUT', '工单计划开始日期和计划完成日期均为必填项');
-    this.assertPlanDates(payload.planStartDate, payload.planEndDate);
-    const product = this.requireProduct(
-      await this.products.getProductionProduct(payload.productId),
-    );
-    return this.enrichWorkOrder(
-      await this.production.createWorkOrder(this.cleanWorkOrder(payload), product, audit),
-    );
+    this.assertPlanDates(body.planStartDate, body.planEndDate);
+    const commandContext: CommandContext = {
+      actorId: audit.actorId,
+      requestId: audit.requestId,
+      ip: audit.ip,
+      userAgent: audit.userAgent,
+    };
+    const execution = await this.idempotency.execute<WorkOrderDetail>({
+      scope: CREATE_WORK_ORDER_IDEMPOTENCY_SCOPE,
+      key: audit.idempotencyKey,
+      actorId: audit.actorId,
+      requestId: audit.requestId,
+      request: { body },
+      resultCodec: workOrderCreateResultCodec,
+      handler: async () => {
+        if (body.workOrderOwnerId) await this.requireActiveUser(body.workOrderOwnerId);
+        const product = this.requireProduct(
+          await this.products.getProductionProduct(body.productId),
+        );
+        return this.enrichWorkOrder(
+          await this.production.createWorkOrder(body, product, commandContext),
+        );
+      },
+    });
+    return execution.result;
   }
   async updateWorkOrder(id: string, payload: UpdateWorkOrderPayload, audit: CommandContext) {
     if (payload.workOrderOwnerId !== undefined)
@@ -300,8 +322,14 @@ export class ProductionService {
   }
   private cleanWorkOrder(payload: CreateWorkOrderPayload): CreateWorkOrderPayload {
     return {
-      ...payload,
-      workOrderNo: payload.workOrderNo.trim(),
+      orderType: payload.orderType,
+      productId: payload.productId,
+      plannedQuantity: payload.plannedQuantity,
+      customerName: payload.customerName?.trim() || null,
+      qualityLevel: payload.qualityLevel?.trim() || null,
+      workOrderOwnerId: payload.workOrderOwnerId ?? null,
+      planStartDate: payload.planStartDate,
+      planEndDate: payload.planEndDate,
       externalOrderNo: payload.externalOrderNo?.trim() || null,
       remark: payload.remark?.trim() || null,
     };

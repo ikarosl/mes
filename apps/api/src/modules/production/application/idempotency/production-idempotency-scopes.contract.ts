@@ -66,3 +66,6 @@ export const CREATE_MATERIAL_LOSS_IDEMPOTENCY_SCOPE = 'production.material-loss.
 /** 确认生产领料损耗补料。 */
 export const CONFIRM_MATERIAL_LOSS_IDEMPOTENCY_SCOPE =
   'production.material-loss.confirm.v1' as const;
+
+/** 服务端按北京时间日期分配不可修改的工单号。 */
+export const CREATE_WORK_ORDER_IDEMPOTENCY_SCOPE = 'production.work-order.create.v1' as const;

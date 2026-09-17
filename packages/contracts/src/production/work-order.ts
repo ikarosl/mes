@@ -75,7 +75,6 @@ export interface WorkOrderDetail extends WorkOrderItem {
 }
 
 export interface CreateWorkOrderPayload {
-  workOrderNo: string;
   orderType: WorkOrderType;
   productId: string;
   plannedQuantity: number;

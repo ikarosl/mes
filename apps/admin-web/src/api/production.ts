@@ -251,8 +251,14 @@ export const productionApi = {
   getOrder: (id: string) => request<WorkOrderDetail>({ url: `/production/work-orders/${id}` }),
 
   /** 创建工单 */
-  createOrder: (data: CreateWorkOrderPayload) =>
-    request<WorkOrderDetail>({ url: '/production/work-orders', method: 'POST', data }),
+  createOrder: (data: CreateWorkOrderPayload, idempotencyKey: string) =>
+    request<WorkOrderDetail>({
+      url: '/production/work-orders',
+      method: 'POST',
+      data,
+      headers: { 'Idempotency-Key': idempotencyKey },
+      skipErrorHandling: true,
+    }),
 
   /** 更新工单 */
   updateOrder: (id: string, data: UpdateWorkOrderPayload) =>

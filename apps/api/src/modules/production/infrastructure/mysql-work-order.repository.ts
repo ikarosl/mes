@@ -19,6 +19,7 @@ import type { ProductionProductSnapshot } from '../../product/public.js';
 import { requireWorkOrderTransition } from '../domain/production-status.policy.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
 import { fixedIntegerQuantity, integerQuantity } from '../domain/integer-quantity.js';
+import { allocateWorkOrderNumber } from './mysql-work-order-number.js';
 import {
   BATCH_SELECT,
   type Db,
@@ -150,16 +151,12 @@ export class MysqlWorkOrderRepository {
   ): Promise<WorkOrderDetail> {
     return withTransaction(this.pool, async (connection) => {
       requirePlanDates(payload.planStartDate, payload.planEndDate);
-      const [[existing]] = await connection.query<RowDataPacket[]>(
-        'SELECT id FROM work_orders WHERE work_order_no=? FOR UPDATE',
-        [payload.workOrderNo],
-      );
-      if (existing) throw new ProductionDomainError('CONFLICT', '工单号已存在');
+      const workOrderNo = await allocateWorkOrderNumber(connection);
       const [result] = await connection.execute<ResultSetHeader>(
         `INSERT INTO work_orders (work_order_no,order_type,product_id,product_code_snapshot,product_name_snapshot,unit_snapshot,planned_quantity,customer_name,quality_level,work_order_owner_id,plan_start_date,plan_end_date,external_order_no,remark,created_by,updated_by)
          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         [
-          payload.workOrderNo,
+          workOrderNo,
           payload.orderType,
           product.id,
           product.itemCode,
@@ -177,14 +174,10 @@ export class MysqlWorkOrderRepository {
           audit.actorId,
         ],
       );
-      await this.audit(
-        connection,
-        audit,
-        'work-order.create',
-        String(result.insertId),
-        null,
-        payload,
-      );
+      await this.audit(connection, audit, 'work-order.create', String(result.insertId), null, {
+        ...payload,
+        workOrderNo,
+      });
       return this.getDetail(connection, String(result.insertId));
     }).catch((error) => ensureNoDuplicate(error, '单据编号或幂等键已存在'));
   }

@@ -125,7 +125,7 @@ const createUuid = (): string => {
  *  - API wrapper 只接收并转发键，不生成、不保存。
  * 不能替代弹窗 submitting / 行级 pending 守卫。
  */
-export const useIdempotentIntent = () => {
+export const useIdempotentIntent = (entityLabel = '批次') => {
   let intent: PendingIntent | null = null;
 
   const execute = async <TResult>(
@@ -143,21 +143,21 @@ export const useIdempotentIntent = () => {
     const current = intent;
     if (current.blocked) {
       throw new Error(
-        '该提交的幂等结果已损坏，已阻止继续提交；无法确认本次是否已创建批次，重新发起可能生成重复批次，请先在批次列表中核对结果',
+        `该提交的幂等结果已损坏，已阻止继续提交；无法确认本次是否已创建${entityLabel}，重新发起可能生成重复${entityLabel}，请先在${entityLabel}列表中核对结果`,
       );
     }
     if (isIntentExpired(current)) {
       // 超过服务端重放保证窗口：旧键可能已被清理（同键重试不再保证重放），自动换新键又可能造成
       // 重复批次（首次结果是否成功不可知）。必须提示人工核对，不能静默继续。
       throw new Error(
-        '该提交已超出幂等重试窗口（12 小时），继续提交无法保证安全重试；请先在批次列表中核对是否已创建批次，确认后重新发起',
+        `该提交已超出幂等重试窗口（12 小时），继续提交无法保证安全重试；请先在${entityLabel}列表中核对是否已创建${entityLabel}，确认后重新发起`,
       );
     }
     if (current.signature !== signature) {
       // 模糊失败（pending）后修改表单：不换键、不盲发，提示核对结果后由用户显式放弃。
       //todo:这里幂等键的判断需要看一下上下文，我发现问题的场景是，当上一次某窗口提交失败后，在窗口内的操作中切换表单再次提交，百分百触发该提示，但实际是该接口前后端联调有问题，状态码是500
       throw new Error(
-        '上次提交结果未知（网络异常或服务端未确认）。修改内容后重新提交可能生成重复批次，请先在批次列表中核对是否已创建批次，确认后关闭并重新发起',
+        `上次提交结果未知（网络异常或服务端未确认）。修改内容后重新提交可能生成重复${entityLabel}，请先在${entityLabel}列表中核对是否已创建${entityLabel}，确认后关闭并重新发起`,
       );
     }
     const key = current.key;

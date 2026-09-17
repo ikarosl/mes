@@ -36,6 +36,7 @@ export const API_DATA_OWNERSHIP = Object.freeze({
   ]),
   production: Object.freeze([
     'work_orders',
+    'work_order_daily_sequence',
     'work_order_material_versions',
     'production_batches',
     'production_batch_termination', // Retired; historical migrations retain ownership.

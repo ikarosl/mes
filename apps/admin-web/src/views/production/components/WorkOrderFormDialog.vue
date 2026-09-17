@@ -13,15 +13,8 @@
       :disabled="submitting"
     >
       <div class="form-grid">
-        <el-form-item
-          label="工单号"
-          required
-        >
-          <el-input
-            v-model="form.workOrderNo"
-            :disabled="Boolean(editingOrderId)"
-            placeholder="请输入工单号"
-          />
+        <el-form-item label="工单号">
+          <span>{{ displayedWorkOrderNo || '保存时自动生成：北京时间日期 + 当日序号' }}</span>
         </el-form-item>
         <el-form-item
           label="工单类型"
@@ -149,7 +142,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive } from 'vue';
+import { computed, reactive, ref } from 'vue';
 import type { ProductOption, UserOption, WorkOrderItem, WorkOrderType } from '@company/contracts';
 import { WORK_ORDER_TYPE_LABELS } from '@company/constants';
 import { DialogWidth } from '../../../utils/dialog';
@@ -159,7 +152,6 @@ import { buildLiveOptions, hasUnavailableSelection } from '../../../utils/live-o
 import type { RefreshableStatus } from '../../../composables/options/useRefreshableOptions';
 
 export type WorkOrderFormValue = {
-  workOrderNo: string;
   orderType: WorkOrderType;
   productId: string;
   plannedQuantity: number;
@@ -196,7 +188,6 @@ const onOpen = (): void => {
 };
 
 const initialForm = (): WorkOrderFormValue => ({
-  workOrderNo: '',
   orderType: 'mass_production',
   productId: '',
   plannedQuantity: 1,
@@ -210,6 +201,7 @@ const initialForm = (): WorkOrderFormValue => ({
 });
 
 const form = reactive<WorkOrderFormValue>(initialForm());
+const displayedWorkOrderNo = ref('');
 
 /** 实时选项：产品和负责人（产品业务投影：仅成品） */
 const finishedProducts = computed(() => props.productOptions);
@@ -233,11 +225,12 @@ const formatProduct = (product: ProductOption): string =>
 
 const resetForm = (): void => {
   Object.assign(form, initialForm());
+  displayedWorkOrderNo.value = '';
 };
 
 const setForm = (row: WorkOrderItem): void => {
+  displayedWorkOrderNo.value = row.workOrderNo;
   Object.assign(form, {
-    workOrderNo: row.workOrderNo,
     orderType: row.orderType,
     productId: row.productId,
     plannedQuantity: Number(row.plannedQuantity),
@@ -252,13 +245,8 @@ const setForm = (row: WorkOrderItem): void => {
 };
 
 const handleSubmit = (): void => {
-  if (
-    !form.workOrderNo.trim() ||
-    !form.productId ||
-    !Number.isInteger(form.plannedQuantity) ||
-    form.plannedQuantity <= 0
-  ) {
-    EMessage.warning('请填写工单号、产品和计划数量');
+  if (!form.productId || !Number.isInteger(form.plannedQuantity) || form.plannedQuantity <= 0) {
+    EMessage.warning('请选择产品并填写计划数量');
     return;
   }
   if (!form.planStartDate || !form.planEndDate) {

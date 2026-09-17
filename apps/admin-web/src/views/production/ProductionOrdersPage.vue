@@ -288,7 +288,7 @@
       :user-options="userSource.options.value"
       :user-options-status="userSource.status.value"
       :submitting="submitting"
-      @update:visible="orderDialogVisible = $event"
+      @update:visible="handleOrderFormDialogClose"
       @refresh-products="productSource.refresh"
       @refresh-users="userSource.refresh"
       @save="submitOrder"
@@ -348,6 +348,7 @@ import TableToolbar from '../../components/TableToolbar.vue';
 import PaginationFooter from '../../components/PaginationFooter.vue';
 import type {
   CreateProductionBatchPayload,
+  CreateWorkOrderPayload,
   ProductOption,
   ProductionBatchItem,
   WorkOrderDetail,
@@ -424,6 +425,7 @@ const { isRowPending, beginRow, endRow } = useRowPending();
 
 /** 创建生产批次的幂等意图（试点端点）：页面局部持有，弹窗打开/关闭时清除旧意图 */
 const createBatchIntent = useIdempotentIntent();
+const createOrderIntent = useIdempotentIntent('工单');
 
 /* ====== 弹窗状态 ====== */
 const orderDialogVisible = ref(false);
@@ -471,6 +473,7 @@ const canCreateBatch = computed(
 const openCreate = (): void => {
   editingOrderId.value = null;
   workOrderFormDialogRef.value?.resetForm();
+  createOrderIntent.reset();
   orderDialogVisible.value = true;
 };
 
@@ -481,6 +484,7 @@ const openEdit = (row: WorkOrderItem): void => {
 };
 
 const submitOrder = async (data: WorkOrderFormValue): Promise<void> => {
+  if (submitting.value) return;
   submitting.value = true;
   try {
     const editId = editingOrderId.value;
@@ -501,8 +505,7 @@ const submitOrder = async (data: WorkOrderFormValue): Promise<void> => {
       });
       EMessage.success('工单已更新');
     } else {
-      await productionApi.createOrder({
-        workOrderNo: data.workOrderNo.trim(),
+      const payload: CreateWorkOrderPayload = {
         orderType: data.orderType,
         productId: data.productId,
         plannedQuantity: data.plannedQuantity,
@@ -513,8 +516,12 @@ const submitOrder = async (data: WorkOrderFormValue): Promise<void> => {
         planEndDate: toDateInputValue(data.planEndDate),
         externalOrderNo: data.externalOrderNo || null,
         remark: data.remark || null,
-      });
-      EMessage.success('工单已新增');
+      };
+      const created = await createOrderIntent.execute(
+        { intentType: 'production.work-order.create', params: {}, query: {}, body: payload },
+        (key) => productionApi.createOrder(payload, key),
+      );
+      EMessage.success(`工单 ${created.workOrderNo} 已新增`);
     }
     orderDialogVisible.value = false;
     await loadOrders();
@@ -523,6 +530,23 @@ const submitOrder = async (data: WorkOrderFormValue): Promise<void> => {
   } finally {
     submitting.value = false;
   }
+};
+
+const handleOrderFormDialogClose = async (visible: boolean): Promise<void> => {
+  if (submitting.value) return;
+  if (!visible && createOrderIntent.getStatus() !== 'idle') {
+    try {
+      await ElMessageBox.confirm(
+        '上次创建结果尚未确认。请先在工单列表核对，关闭后重新创建可能产生重复工单。是否仍要关闭？',
+        '关闭确认',
+        { confirmButtonText: '仍要关闭', cancelButtonText: '继续保留', type: 'warning' },
+      );
+    } catch {
+      return;
+    }
+  }
+  orderDialogVisible.value = visible;
+  if (!visible) createOrderIntent.reset();
 };
 
 const openDetail = async (row: WorkOrderItem): Promise<void> => {

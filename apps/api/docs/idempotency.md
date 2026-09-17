@@ -302,3 +302,9 @@ scope 常量由 Production application contract 所有；HTTP 只接收 Idempote
 独立成品入库命令使用 `production.finished-inbound.create.v1 / update.v1 / confirm.v1 / cancel.v1`，四者共享 `production.finished-inbound` 前缀。每类都使用独立意图，严格结果仅保存 `inboundId`；重放不会重复建批次或追加库存。请求中的来源类别、批准版本、批号、备注／取消原因与版本显式转成普通对象后生成指纹，不接收客户端 scope。
 
 确认的业务事务包含源工单、任务、结案根与入库单锁内复核、创建库存批次、回填明细、写唯一正流水、推进入库单和成功审计；幂等成功记录同事务提交。失败整体回滚。已批准类别必须全量一次接收，最新版本与受影响类别在审锁定均须在重试时由原意图处理，不用改键绕过失败。具体边界见[成品入库](../src/modules/production/docs/database/finished-goods-inbound.md)。
+
+## 自动编号工单创建
+
+`POST /production/work-orders` 使用 `production.work-order.create.v1`，创建请求不再接受手填编号。服务端在 executor 的同一事务内分配北京时间当日序号、创建工单并保存审计与完整响应。成功重放返回首次草稿快照，不重新读取已下达或已编辑的工单，也不再次取号。严格结果 codec 只接受新编号格式，不兼容旧手填编号响应；开发环境直接重置。
+
+同键不同内容拒绝，网络结果未知或平台返回可重试冲突时复用原键。计数与业务写入失败一起回滚；已提交编号在工单取消、关闭后不回收。协议与日计数结构见[工单所有者文档](../src/modules/production/docs/database/work-orders-and-batches.md#工单自动编号)。

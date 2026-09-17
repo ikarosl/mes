@@ -74,19 +74,23 @@ describe('ProductionService first-stage commands', () => {
         .fn()
         .mockResolvedValue({ status: 'not-found', message: '产品不存在' }),
     };
-    const service = new ProductionService({} as never, products as never, {} as never, {} as never);
+    const service = new ProductionService(
+      {} as never,
+      products as never,
+      {} as never,
+      executingIdempotencyExecutor as never,
+    );
 
     await expect(
       service.createWorkOrder(
         {
           productId: '8',
-          workOrderNo: 'WO-001',
           orderType: 'mass_production',
           plannedQuantity: 1,
           planStartDate: '2026-08-01',
           planEndDate: '2026-08-31',
         },
-        audit,
+        idempotentAudit,
       ),
     ).rejects.toMatchObject({
       code: 'NOT_FOUND',
