@@ -14,6 +14,10 @@ import { MysqlProductionCloseoutRepository } from './infrastructure/mysql-produc
 import { ProductionCloseoutService } from './application/production-closeout.service.js';
 import { ProductionCloseoutApprovalHandler } from './application/production-closeout-approval.handler.js';
 import { ProductionCloseoutController } from './presentation/http/production-closeout.controller.js';
+import { ProductionOutputRepository } from './application/ports/production-output.repository.js';
+import { ProductionOutputService } from './application/production-output.service.js';
+import { MysqlProductionOutputRepository } from './infrastructure/mysql-production-output.repository.js';
+import { ProductionOutputController } from './presentation/http/production-output.controller.js';
 import { DatabaseModule } from '../../infrastructure/database/database.module.js';
 import { IdempotencyModule } from '../../infrastructure/idempotency/idempotency.module.js';
 import { IdentityModule } from '../identity/public.js';
@@ -134,8 +138,15 @@ const materialProviders = [
     useExisting: MysqlProductionDemandCorrectionRepository,
   },
 ];
-const closeoutControllers = [ProductionCloseoutController, ProductionTerminationController];
+const closeoutControllers = [
+  ProductionCloseoutController,
+  ProductionTerminationController,
+  ProductionOutputController,
+];
 const closeoutProviders = [
+  ProductionOutputService,
+  MysqlProductionOutputRepository,
+  { provide: ProductionOutputRepository, useExisting: MysqlProductionOutputRepository },
   ProductionCloseoutService,
   ProductionCloseoutApprovalHandler,
   ProductionTerminationService,

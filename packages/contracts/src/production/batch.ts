@@ -1,4 +1,5 @@
 import type { PageQuery, VersionedCommand } from '../common.js';
+import type { ProductionCloseoutMode } from './output.js';
 import type {
   ProductionBatchStatus,
   BatchStepStatus,
@@ -30,6 +31,11 @@ export interface ProductionBatchItem {
   planEndDate: string | null;
   startedAt: string | null;
   status: ProductionBatchStatus;
+  closeoutMode: ProductionCloseoutMode | null;
+  currentOutputRevisionId: string | null;
+  /** 工序执行确认时间，与最终结案审批时间分别展示。 */
+  executionCompletedAt: string | null;
+  executionCompletedBy: string | null;
   /** 整组物料需求计划版本，用于使短批授权在需求集变化后失效。 */
   materialPlanVersion: number;
   /** 列表页的短批授权派生状态；写接口仍由后端事务重新校验。 */

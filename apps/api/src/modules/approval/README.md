@@ -86,3 +86,5 @@ APP_PORT=3100 corepack pnpm --filter @company/admin-web exec vite --host 0.0.0.0
 - withdrawn 动作后：通知撤回命令在锁内、取消节点前实时解析的当前合格人员，不使用旧消息收件集合推断当前待办。
 
 不排除本人，不向未来节点提前发送，不因角色新增成员补写历史收件。既有通知不随业务完成删除；历史收件不授予全文或处理权限。通知发布、业务动作、所属模块写入及成功审计整体提交，只有新消息在最外层提交后异步调度默认空钩子。发布规则及失败隔离由 [Notification](../notification/README.md) 所有。
+
+产出清单提交人通过 `production:tasks:manage-output` 访问本人相关审批详情及撤回入口；接口仍检查实例可见范围和申请人资格，该权限不授予审批决定能力。

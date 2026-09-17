@@ -8,8 +8,13 @@ import type {
   BatchCloseoutCommandResult,
   BeginBatchCloseoutPayload,
   HandleBatchCloseoutItemPayload,
-  SaveBatchCloseoutOutputPayload,
-  SubmitBatchCloseoutPayload,
+  ProductionOutputDetail,
+  SaveProductionOutputPayload,
+  RecordProductionOutputInspectionPayload,
+  ReviewProductionOutputMaterialPayload,
+  SubmitProductionOutputPayload,
+  BeginProductionOutputCorrectionPayload,
+  ProductionOutputCommandResult,
   CreateProductionBatchPayload,
   CreateMaterialAllocationsPayload,
   CreateMaterialOutboundPayload,
@@ -291,13 +296,18 @@ export const productionApi = {
       retryIdempotentWrite: true,
       retryTimes: 2,
     }),
-  saveBatchCloseoutOutput: (
+  getProductionOutput: (id: string) =>
+    request<ProductionOutputDetail>({
+      url: `/production/batches/${id}/output`,
+      skipErrorHandling: true,
+    }),
+  reviewProductionOutputMaterial: (
     id: string,
-    data: SaveBatchCloseoutOutputPayload,
+    data: ReviewProductionOutputMaterialPayload,
     idempotencyKey: string,
   ) =>
-    request<BatchCloseoutCommandResult>({
-      url: `/production/batches/${id}/closeout/output`,
+    request<ProductionOutputCommandResult>({
+      url: `/production/batches/${id}/output/material-review`,
       method: 'POST',
       data,
       headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
@@ -305,11 +315,63 @@ export const productionApi = {
       retryIdempotentWrite: true,
       retryTimes: 2,
     }),
-  submitBatchCloseout: (id: string, data: SubmitBatchCloseoutPayload, idempotencyKey: string) =>
-    request<ProductionApprovalResult>({
-      url: `/production/batches/${id}/closeout/submit`,
+  saveProductionOutput: (id: string, data: SaveProductionOutputPayload, idempotencyKey: string) =>
+    request<ProductionOutputCommandResult>({
+      url: `/production/batches/${id}/output/draft`,
       method: 'POST',
       data,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      skipErrorHandling: true,
+      retryIdempotentWrite: true,
+      retryTimes: 2,
+    }),
+  recordProductionOutputInspection: (
+    id: string,
+    data: RecordProductionOutputInspectionPayload,
+    idempotencyKey: string,
+  ) =>
+    request<ProductionOutputCommandResult>({
+      url: `/production/batches/${id}/output/inspections`,
+      method: 'POST',
+      data,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      skipErrorHandling: true,
+      retryIdempotentWrite: true,
+      retryTimes: 2,
+    }),
+  submitProductionOutput: (
+    id: string,
+    data: SubmitProductionOutputPayload,
+    idempotencyKey: string,
+  ) =>
+    request<ProductionApprovalResult>({
+      url: `/production/batches/${id}/output/submit`,
+      method: 'POST',
+      data,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      skipErrorHandling: true,
+      retryIdempotentWrite: true,
+      retryTimes: 2,
+    }),
+  beginProductionOutputCorrection: (
+    id: string,
+    data: BeginProductionOutputCorrectionPayload,
+    idempotencyKey: string,
+  ) =>
+    request<ProductionOutputCommandResult>({
+      url: `/production/batches/${id}/output/corrections`,
+      method: 'POST',
+      data,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      skipErrorHandling: true,
+      retryIdempotentWrite: true,
+      retryTimes: 2,
+    }),
+  cancelProductionOutputCorrection: (id: string, version: number, idempotencyKey: string) =>
+    request<ProductionOutputCommandResult>({
+      url: `/production/batches/${id}/output/corrections/cancel`,
+      method: 'POST',
+      data: { version },
       headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
       skipErrorHandling: true,
       retryIdempotentWrite: true,

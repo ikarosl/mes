@@ -6,6 +6,7 @@ import type {
   ProductionExecutionCompletionCheck,
   ProductionExecutionCompletionResult,
   ProductionStepCommandResult,
+  ProductionCloseoutMode,
   WorkOrderStatus,
 } from '@company/contracts';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
@@ -30,6 +31,7 @@ import type { BatchRow, Db } from './mysql-production.shared.js';
 import { selectWorkerTasks } from './mysql-production-worker-task.projection.js';
 import { selectProductionStepSopSnapshot } from './mysql-production-step-sop.projection.js';
 import { evaluateShortBatchStart } from './mysql-production-short-batch.js';
+import { lockWorkOrderForBatch } from './mysql-work-order-material-version.js';
 
 type ExecutionStepRow = RowDataPacket & {
   id: number;
@@ -72,14 +74,26 @@ export class MysqlProductionExecutionRepository extends ProductionExecutionRepos
     return withTransaction(this.pool, async (connection) => {
       const actorId = context.actorId;
       if (!actorId) throw new ProductionDomainError('INVALID_INPUT', '缺少当前操作人身份');
+      await lockWorkOrderForBatch(connection, batchId);
       const batch = await findBatch(connection, batchId, true);
-      if (batch.status === 'completed') return completionResult(batchId, batch);
+      const [[closeout]] = await connection.query<
+        (RowDataPacket & { id: number; closeout_mode: ProductionCloseoutMode })[]
+      >(
+        'SELECT id,closeout_mode FROM production_batch_closeout WHERE production_batch_id=? FOR UPDATE',
+        [batchId],
+      );
+      if (
+        closeout?.closeout_mode === 'normal' &&
+        (batch.status === 'closing' || batch.status === 'completed')
+      )
+        return completionResult(batchId, batch, String(closeout.id));
       if (batch.status !== 'doing')
         throw new ProductionDomainError(
           'BATCH_EXECUTION_COMPLETION_NOT_ALLOWED',
-          '只有生产执行中的批次可以确认完工',
+          '只有生产执行中的批次可以确认工序执行完成',
         );
-      requireBatchTransition(batch.status, 'completed');
+      requireBatchTransition(batch.status, 'closing');
+      if (closeout) throw new ProductionDomainError('CONFLICT', '生产任务已有结案记录，请刷新核对');
       if (batch.version !== version)
         throw new ProductionDomainError(
           'CONCURRENT_MODIFICATION',
@@ -93,18 +107,23 @@ export class MysqlProductionExecutionRepository extends ProductionExecutionRepos
         'SELECT id FROM production_item_demand WHERE production_batch_id=? ORDER BY id FOR UPDATE',
         [batchId],
       );
-      const steps = await selectRequiredCompletionSteps(connection, batchId);
+      const steps = await selectRequiredCompletionSteps(connection, batchId, true);
       const check = mapCompletionCheck(
         batchId,
         batch,
         steps,
-        await countActiveMaterialDemands(connection, batchId),
+        await countActiveMaterialDemands(connection, batchId, true),
         await countUnfulfilledSupplements(connection, batchId),
       );
       if (!check.canComplete) throwCompletionBlocker(check);
+      const [created] = await connection.execute<ResultSetHeader>(
+        `INSERT INTO production_batch_closeout
+         (production_batch_id,closeout_mode,reason,created_by,updated_by) VALUES (?,'normal',?,?,?)`,
+        [batchId, '工序执行完成，核对产出后结案', actorId, actorId],
+      );
       const [updated] = await connection.execute<ResultSetHeader>(
         `UPDATE production_batches
-         SET completed_quantity=?,status='completed',completed_at=NOW(),completed_by=?,updated_by=?,version=version+1
+         SET completed_quantity=?,status='closing',execution_completed_at=NOW(),execution_completed_by=?,updated_by=?,version=version+1
          WHERE id=? AND status='doing' AND version=?`,
         [check.finalEffectiveNormalQuantity, actorId, actorId, batchId, version],
       );
@@ -119,7 +138,9 @@ export class MysqlProductionExecutionRepository extends ProductionExecutionRepos
         result: 'success',
         beforeData: { status: batch.status, version: batch.version },
         afterData: {
-          status: 'completed',
+          status: 'closing',
+          closeoutId: String(created.insertId),
+          closeoutMode: 'normal',
           completedQuantity: check.finalEffectiveNormalQuantity,
           version: version + 1,
         },
@@ -127,7 +148,11 @@ export class MysqlProductionExecutionRepository extends ProductionExecutionRepos
         ip: context.ip,
         userAgent: context.userAgent,
       });
-      return completionResult(batchId, await findBatch(connection, batchId));
+      return completionResult(
+        batchId,
+        await findBatch(connection, batchId, true),
+        String(created.insertId),
+      );
     });
   }
   async listWorkerTasks(actorId: string) {
@@ -415,15 +440,16 @@ const auditStep = (
 const selectRequiredCompletionSteps = async (
   db: Db,
   batchId: string,
+  lock = false,
 ): Promise<CompletionStepRow[]> => {
+  const share = lock ? ' FOR SHARE' : '';
   const [rows] = await db.query<CompletionStepRow[]>(
     `SELECT sr.id,sr.step_order_snapshot,sr.step_name_snapshot,sr.status,
-      COALESCE(SUM(CASE WHEN r.report_type='normal' THEN r.normal_quantity ELSE -r.normal_quantity END),0) effective_normal
+      COALESCE((SELECT SUM(CASE WHEN r.report_type='normal' THEN r.normal_quantity ELSE -r.normal_quantity END)
+        FROM batch_step_reports r WHERE r.batch_step_record_id=sr.id${share}),0) effective_normal
      FROM batch_step_records sr
-     LEFT JOIN batch_step_reports r ON r.batch_step_record_id=sr.id
      WHERE sr.production_batch_id=?
-     GROUP BY sr.id,sr.step_order_snapshot,sr.step_name_snapshot,sr.status
-     ORDER BY sr.step_order_snapshot,sr.id`,
+     ORDER BY sr.step_order_snapshot,sr.id${share}`,
     [batchId],
   );
   return rows;
@@ -486,27 +512,37 @@ const countUnfulfilledSupplements = async (db: Db, batchId: string): Promise<num
   );
   return rows.length;
 };
-const countActiveMaterialDemands = async (db: Db, batchId: string): Promise<number> => {
-  const [[row]] = await db.query<(RowDataPacket & { count: number })[]>(
-    `SELECT COUNT(*) count FROM production_item_demand
-     WHERE production_batch_id=? AND business_status='active'`,
+const countActiveMaterialDemands = async (
+  db: Db,
+  batchId: string,
+  lock = false,
+): Promise<number> => {
+  const [rows] = await db.query<(RowDataPacket & { id: number })[]>(
+    `SELECT id FROM production_item_demand
+     WHERE production_batch_id=? AND business_status='active'${lock ? ' FOR SHARE' : ''}`,
     [batchId],
   );
-  return Number(row?.count ?? 0);
+  return rows.length;
 };
 
 const completionResult = (
   batchId: string,
   batch: BatchRow,
+  closeoutId: string,
 ): ProductionExecutionCompletionResult => {
-  if (batch.status !== 'completed' || !batch.completed_at || batch.completed_by === null)
-    throw new ProductionDomainError('CONFLICT', '生产批次完工结果不完整');
+  if (
+    (batch.status !== 'closing' && batch.status !== 'completed') ||
+    !batch.execution_completed_at ||
+    batch.execution_completed_by === null
+  )
+    throw new ProductionDomainError('CONFLICT', '生产任务执行完成结果不完整');
   return {
     productionBatchId: batchId,
-    batchStatus: 'completed',
+    batchStatus: batch.status,
+    closeoutId,
     completedQuantity: batch.completed_quantity,
-    completedAt: toBeijingISOString(batch.completed_at),
-    completedById: String(batch.completed_by),
+    executionCompletedAt: toBeijingISOString(batch.execution_completed_at),
+    executionCompletedById: String(batch.execution_completed_by),
     version: batch.version,
   };
 };

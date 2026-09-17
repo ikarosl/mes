@@ -25,7 +25,7 @@ MaterialLoss、Return、StockCheck Service／Controller 提供独立用例入口
 物料分配由 `ProductionMaterialService`／`ProductionMaterialRepository` 所有；领料出库由
 `ProductionMaterialOutboundService`／`ProductionMaterialOutboundRepository` 所有。确认出库的
 需求扣减、库存记账、批次状态、短批授权、补料齐套与补产放行仍在出库 Adapter 的同一事务内完成。
-共享物料持久化辅助仅承载锁定与齐套查询；收尾及产出后续通过独立用例扩展，不把它们加入仓库聚合服务。
+共享物料持久化辅助仅承载锁定与齐套查询；收尾逐项处理由 ProductionCloseoutService 负责，草稿、质检记录、批准清单和更正由 ProductionOutputService 负责；各用例共用原事务和数据所有权，不加入仓库聚合服务。
 
 生产任务创建在事务内通过 Product 校验 BOM 已批准并锁定；库存事实来自 `inventory_transaction`，需求事实来自
 `production_item_demand`；可变单据使用 `version` 乐观锁，不可变执行事实不得更新。生产批次创建时
@@ -45,7 +45,7 @@ MaterialLoss、Return、StockCheck Service／Controller 提供独立用例入口
 
 ## 提前结束与结案核对
 
-生产任务通过“开始收尾 → 逐项处理 → 保存实际产出 → 提交短产／提前结束审批 → 末级批准”结束批次。`closing` 停止生产执行，未完成工序显式进入 `terminated`，报工事实保留；审批不触发补料、补产或库存变化。所有批次终态后可关闭旧工单，工单聚合最终产出和未审定收尾量。状态、API、权限和物料处理规则见[批次结束设计](docs/database/production-termination.md)。实际成品入库仍待后续接入。
+正常执行完成和提前停止均进入结案阶段：产线草稿 → 质检留存记录 → 管理员核对清单 → 工单负责人审批。正常完成保留报工量与执行完成时间，批准后才 completed；提前停止逐项收尾后批准为 terminated。批准清单可更正并留存全部版本，不重开生产或写库存；计划内外产出与报废分别登记，工单只累计当前批准版。职责、状态、权限与物料安排见[结案设计](docs/database/production-termination.md)。实际成品入库仍待后续接入。
 
 结案流程最后节点固定为业务来源“工单负责人”；送审时在工单锁内读取人员并保存来源证据，Approval 检查实际审批资格。负责人为空或失效时拒绝送审，不回退到其他人员。工单草稿可暂不填负责人，下达事务必须复核有效负责人。
 

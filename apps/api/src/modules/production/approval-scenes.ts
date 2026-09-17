@@ -13,8 +13,8 @@ export const DEMAND_CORRECTION_APPROVAL_SCENE = {
 export const BATCH_CLOSEOUT_APPROVAL_SCENE = {
   code: APPROVAL_SCENE_CODES.batchCloseout,
   module: 'production',
-  name: '短产 / 提前结束批次',
-  description: '审核逐项收尾结果、物料安排及实际产出；末级通过后结束批次',
+  name: '生产任务结案',
+  description: '工单负责人审核收尾、检验依据及产出清单；批准结案或产出清单更正',
   subjectType: 'production_batch_closeout',
   businessAssigneeSources: [
     {

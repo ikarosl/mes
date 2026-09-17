@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     :model-value="visible"
-    :title="check?.termination ? '结案信息核对' : detail ? '批次收尾与结案核对' : '提前结束生产'"
+    :title="check?.termination ? '结案信息核对' : detail ? '批次逐项收尾' : '提前结束生产'"
     :width="DialogWidth.workbench"
     workbench
     :close-on-click-modal="false"
@@ -54,11 +54,11 @@
           :title="
             check.termination
               ? '本批次已结束，以下内容仅供查阅'
-              : '先处理收尾事项，再核对物料、保存产出并送审'
+              : '先处理收尾事项，再核对物料并填写产出清单'
           "
           :description="
             check.termination
-              ? '实际产出和物料信息按结束记录展示，结束前的影响快照不属于当前待办。需要办理退料时，请在退料管理重新核对当前可退数量。'
+              ? '以下展示收尾与物料核对记录，最终产出请打开批准清单查看。需要办理退料时，请在退料管理重新核对当前可退数量。'
               : '进入收尾即停止生产。每项处理保留独立记录；驳回结案审批不会恢复已关闭事项。实际退料与待确认损耗请在对应管理页办理。'
           "
           type="info"
@@ -75,7 +75,7 @@
             required
           >
             <el-input
-              v-model="output.reason"
+              v-model="reason"
               type="textarea"
               :rows="3"
               maxlength="5000"
@@ -202,7 +202,7 @@
                 v-if="!detail"
                 class="muted"
               >
-                本批次未记录逐项收尾明细，可在“实际产出”和“结束时物料快照”中查看结束记录。
+                本批次未记录逐项收尾明细，可打开产出清单查看结案信息。
               </p>
             </el-empty>
           </el-tab-pane>
@@ -324,62 +324,6 @@
             </el-table>
           </el-tab-pane>
           <el-tab-pane
-            label="实际产出"
-            name="output"
-          >
-            <el-form
-              label-position="top"
-              :disabled="locked"
-            >
-              <el-form-item
-                label="结束原因"
-                required
-                ><el-input
-                  v-model="output.reason"
-                  type="textarea"
-                  :rows="2"
-                  maxlength="5000"
-                  show-word-limit
-              /></el-form-item>
-              <div class="quantities">
-                <el-form-item
-                  label="可用产出（待入库）"
-                  required
-                  ><el-input-number
-                    v-model="output.availableQuantity"
-                    :min="0"
-                    :max="99999999"
-                    :precision="0"
-                /></el-form-item>
-                <el-form-item
-                  label="本次新增报废"
-                  required
-                  ><el-input-number
-                    v-model="output.additionalScrapQuantity"
-                    :min="0"
-                    :max="99999999"
-                    :precision="0"
-                /></el-form-item>
-                <div class="output-summary">
-                  本轮合计 <strong>{{ quantity(totalOutput) }}</strong> {{ check.unit
-                  }}<br />计划差额 {{ quantity(Number(check.plannedQuantity) - totalOutput) }}
-                  {{ check.unit }}
-                </div>
-              </div>
-              <p class="muted">本轮合计包含历史报废。未产出差额不计报废，报废不触发补料或补产。</p>
-              <el-form-item
-                label="物料核对总结及后续安排"
-                required
-                ><el-input
-                  v-model="output.materialReviewNote"
-                  type="textarea"
-                  :rows="3"
-                  maxlength="5000"
-                  show-word-limit
-              /></el-form-item>
-            </el-form>
-          </el-tab-pane>
-          <el-tab-pane
             :label="`处理记录（${detail?.actions.length ?? 0}）`"
             name="history"
           >
@@ -473,11 +417,6 @@
           >
         </div>
         <div class="footer-actions">
-          <span
-            v-if="detail && !readonly"
-            class="muted"
-            >{{ outputDirty ? '产出登记未保存' : '产出已保存' }}</span
-          >
           <el-button
             v-if="unresolved"
             type="primary"
@@ -488,38 +427,22 @@
           <el-button
             v-else-if="check && !detail && !check.termination"
             type="warning"
-            :disabled="locked || !output.reason.trim()"
+            :disabled="locked || !reason.trim()"
             @click="editor.begin"
             >开始收尾</el-button
           >
-          <template v-else-if="detail && !readonly">
+          <template v-else-if="detail">
             <el-button
-              :disabled="locked || !outputValid || !outputDirty"
-              @click="editor.saveOutput"
-              >保存产出登记</el-button
-            >
-            <el-button
-              v-if="activeTab === 'items'"
-              type="primary"
-              plain
+              v-if="activeTab === 'items' && !readonly"
               :disabled="busy"
               @click="activeTab = 'materials'"
               >核对物料 →</el-button
             >
             <el-button
-              v-else-if="activeTab === 'materials'"
               type="primary"
-              plain
-              :disabled="busy"
-              @click="activeTab = 'output'"
-              >登记产出 →</el-button
-            >
-            <el-button
-              type="primary"
-              :disabled="!canSubmit"
-              :loading="submitting"
-              @click="editor.submit"
-              >提交结案审批</el-button
+              :disabled="busy || unresolved"
+              @click="openOutput"
+              >{{ readonly ? '查看产出清单' : '核对产出清单 →' }}</el-button
             >
           </template>
         </div>
@@ -580,7 +503,7 @@
   </el-dialog>
 </template>
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import type {
   BatchTerminationMaterial,
@@ -601,7 +524,11 @@ import { batchStatusMeta, formatQuantity as quantity } from '../production-statu
 import { useBatchCloseout } from '../composables/useBatchCloseout';
 import BatchCloseoutWorklist from './BatchCloseoutWorklist.vue';
 const props = defineProps<{ visible: boolean; batchId: string | null }>();
-const emit = defineEmits<{ 'update:visible': [boolean]; terminated: [] }>();
+const emit = defineEmits<{
+  'update:visible': [boolean];
+  terminated: [];
+  'open-output': [string];
+}>();
 const router = useRouter();
 const editor = useBatchCloseout(
   props,
@@ -618,12 +545,10 @@ const {
   itemDraftDirty,
   unresolved,
   error,
-  output,
+  reason,
   selected,
   itemReason,
   readonly,
-  outputDirty,
-  canSubmit,
 } = editor;
 const activeTab = ref('items');
 const demandPanels = ref(['demands']);
@@ -636,22 +561,6 @@ watch(
 const busy = computed(() => loading.value || submitting.value || batchHandling.value);
 const locked = computed(
   () => readonly.value || busy.value || unresolved.value || Boolean(error.value),
-);
-const totalOutput = computed(
-  () =>
-    (output.availableQuantity ?? 0) +
-    (output.additionalScrapQuantity ?? 0) +
-    Number(check.value?.existingScrapQuantity ?? 0),
-);
-const outputValid = computed(
-  () =>
-    Number.isSafeInteger(output.availableQuantity) &&
-    output.availableQuantity >= 0 &&
-    Number.isSafeInteger(output.additionalScrapQuantity) &&
-    output.additionalScrapQuantity >= 0 &&
-    totalOutput.value <= 99_999_999 &&
-    output.reason.trim() &&
-    output.materialReviewNote.trim(),
 );
 const materialRows = computed(() =>
   (check.value?.materials ?? []).map((material) => {
@@ -694,6 +603,13 @@ function selectMaterial(row: BatchTerminationMaterial) {
 }
 function closeMaterial() {
   if (!busy.value && !unresolved.value) selected.value = null;
+}
+async function openOutput() {
+  const batchId = props.batchId;
+  if (!batchId) return;
+  await editor.close();
+  await nextTick();
+  if (!props.visible) emit('open-output', batchId);
 }
 const openApproval = (instanceId: string) =>
   router.push({ name: 'approval-inbox', query: { instanceId } });

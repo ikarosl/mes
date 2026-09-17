@@ -16,6 +16,8 @@
 
 `ProductBomApprovalHandler` 负责声明 BOM 受审快照的结构版本，并通过 `readSnapshotForDisplay()` 校验历史证据、按物料 ID 补充当前名称。Approval 通用提交调用其准备、绑定及终态方法；冻结版本取绑定返回值。BOM 资格和永久锁定规则仍由 Product 实现，不进入审批通用配置仓储。
 
+BOM 审批证据仅接受当前结构版本 2；开发环境通过数据重置切换，不保留版本 1 兼容读取或补造缺失字段。
+
 BOM 明细仅配置基础物料、单位用量、单位、状态和备注，不再配置关键物料或是否记录批次开关；生产侧仍按精确物料版本和库存批次追溯。
 
 详细技术文件规则见 [technical-files.md](docs/technical-files.md)；业务表规则见[数据库设计](docs/database.md)。

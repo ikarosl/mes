@@ -82,8 +82,11 @@
           :span="3"
           >{{ order.remark || '-' }}</el-descriptions-item
         >
-        <el-descriptions-item label="最终可用产出">{{
+        <el-descriptions-item label="审定计划内产出">{{
           formatQuantity(order.finalOutput?.availableQuantity)
+        }}</el-descriptions-item>
+        <el-descriptions-item label="审定计划外产出">{{
+          formatQuantity(order.finalOutput?.extraQuantity)
         }}</el-descriptions-item>
         <el-descriptions-item label="最终报废合计">{{
           formatQuantity(order.finalOutput?.scrapQuantity)
@@ -91,15 +94,13 @@
         <el-descriptions-item label="最终产出合计">{{
           formatQuantity(order.finalOutput?.totalQuantity)
         }}</el-descriptions-item>
-        <el-descriptions-item label="计划与当前产出差额"
+        <el-descriptions-item label="计划内产出缺口"
           >{{
-            formatQuantity(
-              Number(order.plannedQuantity) - Number(order.finalOutput?.totalQuantity ?? 0),
-            )
-          }}（未终态任务尚未计入）</el-descriptions-item
+            formatQuantity(order.finalOutput?.plannedShortfallQuantity ?? order.plannedQuantity)
+          }}（未批准任务尚未计入）</el-descriptions-item
         >
-        <el-descriptions-item label="收尾中（未计入）"
-          >{{ order.finalOutput?.closingBatchCount ?? 0 }} 批，暂存可用
+        <el-descriptions-item label="待结案（未计入）"
+          >{{ order.finalOutput?.closingBatchCount ?? 0 }} 批，草稿计划内
           {{ formatQuantity(order.finalOutput?.pendingAvailableQuantity) }}</el-descriptions-item
         >
       </el-descriptions>

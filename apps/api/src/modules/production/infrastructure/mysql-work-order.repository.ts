@@ -47,6 +47,8 @@ type WorkOrderBatchSummaryRow = RowDataPacket & {
     | 'closing';
   planned_quantity: string;
   completed_quantity: string;
+  current_revision_id: number | null;
+  approved_available_quantity: string | null;
 };
 
 const requirePlanDates = (
@@ -345,8 +347,10 @@ export class MysqlWorkOrderRepository {
         );
       const batches = await this.lockBatchSummaries(connection, id);
       const activeBatches = batches.filter((batch) => batch.status !== 'cancelled');
-      const unfinishedBatches = activeBatches.filter((batch) => batch.status !== 'completed');
-      const completedQuantity = sumCompletedQuantity(activeBatches);
+      const unfinishedBatches = activeBatches.filter(
+        (batch) => batch.status !== 'completed' || batch.current_revision_id === null,
+      );
+      const completedQuantity = sumApprovedPlannedQuantity(activeBatches);
       if (
         activeBatches.length === 0 ||
         unfinishedBatches.length > 0 ||
@@ -354,7 +358,7 @@ export class MysqlWorkOrderRepository {
       ) {
         throw new ProductionDomainError(
           'WORK_ORDER_COMPLETION_NOT_ALLOWED',
-          '工单尚未达到足量完工条件，请核对所属生产批次',
+          '工单尚未达到审定计划内产出足量条件，请核对任务结案清单',
           workOrderBatchDetails(before.planned_quantity, completedQuantity, unfinishedBatches),
         );
       }
@@ -398,9 +402,11 @@ export class MysqlWorkOrderRepository {
       const batches = await this.lockBatchSummaries(connection, id);
       const activeBatches = batches.filter((batch) => batch.status !== 'cancelled');
       const unfinishedBatches = activeBatches.filter(
-        (batch) => batch.status !== 'completed' && batch.status !== 'terminated',
+        (batch) =>
+          (batch.status !== 'completed' && batch.status !== 'terminated') ||
+          batch.current_revision_id === null,
       );
-      const completedQuantity = sumCompletedQuantity(activeBatches);
+      const completedQuantity = sumApprovedPlannedQuantity(activeBatches);
       const isEarlyClose = before.status === 'released' || before.status === 'doing';
       if (isEarlyClose && unfinishedBatches.length > 0)
         throw new ProductionDomainError(
@@ -457,10 +463,13 @@ export class MysqlWorkOrderRepository {
     workOrderId: string,
   ): Promise<WorkOrderBatchSummaryRow[]> {
     const [rows] = await connection.query<WorkOrderBatchSummaryRow[]>(
-      `SELECT id,batch_no,status,planned_quantity,completed_quantity
-       FROM production_batches
-       WHERE work_order_id=?
-       ORDER BY id
+      `SELECT b.id,b.batch_no,b.status,b.planned_quantity,b.completed_quantity,
+        c.current_revision_id,r.available_quantity approved_available_quantity
+       FROM production_batches b
+       LEFT JOIN production_batch_closeout c ON c.production_batch_id=b.id
+       LEFT JOIN production_output_revision r ON r.id=c.current_revision_id AND r.closeout_id=c.id
+       WHERE b.work_order_id=?
+       ORDER BY b.id
        FOR UPDATE`,
       [workOrderId],
     );
@@ -506,9 +515,12 @@ export class MysqlWorkOrderRepository {
   }
 }
 
-const sumCompletedQuantity = (batches: WorkOrderBatchSummaryRow[]): string =>
+const sumApprovedPlannedQuantity = (batches: WorkOrderBatchSummaryRow[]): string =>
   fixedIntegerQuantity(
-    batches.reduce((sum, batch) => sum + integerQuantity(batch.completed_quantity), 0),
+    batches.reduce(
+      (sum, batch) => sum + integerQuantity(batch.approved_available_quantity ?? '0'),
+      0,
+    ),
   );
 
 const workOrderBatchDetails = (
@@ -523,6 +535,9 @@ const workOrderBatchDetails = (
     batchNo: batch.batch_no,
     status: batch.status,
     plannedQuantity: batch.planned_quantity,
-    completedQuantity: batch.completed_quantity,
+    reportedQuantity: batch.completed_quantity,
+    approvedAvailableQuantity: batch.approved_available_quantity,
+    currentOutputRevisionId:
+      batch.current_revision_id === null ? null : String(batch.current_revision_id),
   })),
 });

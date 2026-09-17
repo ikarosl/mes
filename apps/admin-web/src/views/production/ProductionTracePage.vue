@@ -54,7 +54,7 @@
         type="info"
         :closable="false"
         show-icon
-        title="本页只展示当前已落库的 Production 事实，不代表质量放行，也不包含返工、报废、退料或成品流向。"
+        title="本页只展示当前已落库的 Production 事实，不代表质量放行，成品产出仅展示批准清单，库存流向以入库确认记录为准。"
       />
 
       <div class="trace-workspace">
@@ -143,6 +143,36 @@
                 ><strong>{{ formatDateTimeForDisplay(detail.summary.completedAt) }}</strong>
               </div>
             </div>
+
+            <el-descriptions
+              v-if="detail.summary.finalOutput"
+              :column="4"
+              border
+            >
+              <el-descriptions-item label="批准清单版本"
+                >第 {{ detail.summary.finalOutput.revisionNo }} 版</el-descriptions-item
+              >
+              <el-descriptions-item label="计划内产出">{{
+                formatQuantity(detail.summary.finalOutput.availableQuantity)
+              }}</el-descriptions-item>
+              <el-descriptions-item label="计划外产出">{{
+                formatQuantity(detail.summary.finalOutput.extraQuantity)
+              }}</el-descriptions-item>
+              <el-descriptions-item label="累计成品报废">{{
+                formatQuantity(detail.summary.finalOutput.scrapQuantity)
+              }}</el-descriptions-item>
+              <el-descriptions-item label="计划内缺口">{{
+                formatQuantity(detail.summary.finalOutput.plannedShortfallQuantity)
+              }}</el-descriptions-item>
+            </el-descriptions>
+            <el-button
+              v-if="detail.summary.closeoutMode"
+              type="primary"
+              plain
+              class="scope-tip"
+              @click="openOutput(detail.summary.productionBatchId)"
+              >查看产出清单与结案记录</el-button
+            >
 
             <el-tabs
               v-model="activeTab"
@@ -447,10 +477,24 @@
       </div>
     </section>
   </div>
+  <ProductionOutputDialog
+    v-model:visible="outputVisible"
+    :batch-id="outputBatchId"
+    @changed="refresh"
+    @open-closeout="openCloseoutItems"
+  />
+  <ProductionBatchTerminationDialog
+    v-model:visible="closeoutVisible"
+    :batch-id="outputBatchId"
+    @terminated="refresh"
+    @open-output="openOutput"
+  />
 </template>
 
 <script setup lang="ts">
 import { onActivated, onMounted, ref } from 'vue';
+import ProductionOutputDialog from './components/ProductionOutputDialog.vue';
+import ProductionBatchTerminationDialog from './components/ProductionBatchTerminationDialog.vue';
 import type { InventoryTransactionType } from '@company/contracts';
 
 import { Refresh } from '@element-plus/icons-vue';
@@ -465,6 +509,17 @@ defineOptions({ name: 'ProductionTracePage' });
 const sourceLabel = (value: InventoryTransactionType) =>
   INVENTORY_TRANSACTION_TYPE_LABELS[value] ?? value;
 
+const outputVisible = ref(false),
+  closeoutVisible = ref(false),
+  outputBatchId = ref<string | null>(null);
+const openOutput = (batchId: string) => {
+  outputBatchId.value = batchId;
+  outputVisible.value = true;
+};
+const openCloseoutItems = (batchId: string) => {
+  outputBatchId.value = batchId;
+  closeoutVisible.value = true;
+};
 const keyword = ref('');
 const currentPage = ref(1);
 const activeTab = ref('materials');

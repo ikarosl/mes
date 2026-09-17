@@ -1,4 +1,5 @@
 import type { PageQuery } from '../common.js';
+import type { ProductionCloseoutMode } from './output.js';
 import type { InventoryTransactionType, ProductionBatchStatus } from './statuses.js';
 import type { ProductionMaterialDemandItem } from './material.js';
 import type { MaterialOutboundItem } from './outbound.js';
@@ -18,7 +19,18 @@ export interface ProductionTraceBatchSummary {
   productCode: string;
   productName: string;
   plannedQuantity: string;
+  /** 末工序报工数量；不代表最终质检后批准产出。 */
   completedQuantity: string;
+  closeoutMode: ProductionCloseoutMode | null;
+  currentOutputRevisionId: string | null;
+  executionCompletedAt: string | null;
+  finalOutput: {
+    revisionNo: number;
+    availableQuantity: string;
+    extraQuantity: string;
+    scrapQuantity: string;
+    plannedShortfallQuantity: string;
+  } | null;
   startedAt: string | null;
   completedAt: string | null;
 }

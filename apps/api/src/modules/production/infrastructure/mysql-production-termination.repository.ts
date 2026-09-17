@@ -1,23 +1,23 @@
 import { createHash } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import { withTransaction } from '@company/database';
-import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
+import type { Pool, PoolConnection, RowDataPacket } from 'mysql2/promise';
 import type {
   BatchTerminationCheck,
   BatchTerminationImpact,
   BatchTerminationMaterial,
   BatchCloseoutApprovalSnapshot,
 } from '@company/contracts';
-import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { toBeijingISOString } from '../../../common/time/date-time.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
 import { ProductionTerminationRepository } from '../application/ports/production-termination.repository.js';
-import { requireBatchTransition } from '../domain/production-status.policy.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
 import { fixedIntegerQuantity } from '../domain/integer-quantity.js';
-import { findBatch } from './mysql-production.shared.js';
-import { writeInventoryAudit } from './mysql-production-inventory.shared.js';
 import { allocationNeedsCloseoutSql } from './mysql-production-material.sql.js';
+import {
+  CLOSEOUT_APPROVAL_SNAPSHOT_SCHEMA_VERSION,
+  readCloseoutApprovalSnapshot,
+} from '../application/production-approval-snapshot.schema.js';
 
 type Header = RowDataPacket &
   Omit<
@@ -26,12 +26,13 @@ type Header = RowDataPacket &
   >;
 type Fact = RowDataPacket & {
   id: number;
+  revision_no: number;
+  approval_instance_id: number;
   available_quantity: string;
+  extra_quantity: string;
   additional_scrap_quantity: string;
   existing_scrap_quantity: string;
-  reason: string;
-  material_review_note: string;
-  review_snapshot: BatchTerminationCheck | string;
+  review_snapshot: BatchCloseoutApprovalSnapshot | string;
   created_by: number;
   created_at: Date;
 };
@@ -44,59 +45,6 @@ export class MysqlProductionTerminationRepository extends ProductionTerminationR
 
   getCheck(batchId: string): Promise<BatchTerminationCheck> {
     return withTransaction(this.pool, (db) => this.loadCheck(db, batchId, false));
-  }
-
-  /** 仅由末级收尾审批在已有事务内调用，不再自动处理未完成事项。 */
-  async recordApprovedCloseout(
-    db: PoolConnection,
-    snapshot: BatchCloseoutApprovalSnapshot,
-    context: CommandContext,
-  ): Promise<string> {
-    const { check, output } = snapshot;
-    const batch = await findBatch(db, check.batchId, true);
-    requireBatchTransition(batch.status, 'terminated');
-    const current = await this.loadCheck(db, check.batchId, true);
-    if (
-      current.impacts.length ||
-      current.blockers.length ||
-      current.checkToken !== check.checkToken
-    )
-      throw new ProductionDomainError(
-        'CONCURRENT_MODIFICATION',
-        '收尾事项或物料事实已变化，请重新核对送审',
-      );
-    const [created] = await db.execute<ResultSetHeader>(
-      `INSERT INTO production_batch_termination
-       (production_batch_id,work_order_id,planned_quantity,available_quantity,additional_scrap_quantity,
-        existing_scrap_quantity,reason,material_review_note,review_snapshot,created_by)
-       VALUES (?,?,?,?,?,?,?,?,?,?)`,
-      [
-        check.batchId,
-        check.workOrderId,
-        check.plannedQuantity,
-        output.availableQuantity,
-        output.additionalScrapQuantity,
-        check.existingScrapQuantity,
-        output.reason,
-        output.materialReviewNote,
-        JSON.stringify(check),
-        context.actorId,
-      ],
-    );
-    await db.execute(
-      "UPDATE production_batches SET status='terminated',version=version+1,updated_by=? WHERE id=?",
-      [context.actorId, check.batchId],
-    );
-    await writeInventoryAudit(
-      db,
-      context,
-      'production-batch.closeout.approved',
-      'production_batch',
-      check.batchId,
-      { status: 'closing' },
-      { closeoutId: snapshot.closeoutId, terminationId: String(created.insertId), ...output },
-    );
-    return String(created.insertId);
   }
 
   async loadCheck(
@@ -118,27 +66,35 @@ export class MysqlProductionTerminationRepository extends ProductionTerminationR
     );
     if (!header) throw new ProductionDomainError('NOT_FOUND', '生产批次不存在');
     const [[fact]] = await db.query<Fact[]>(
-      `SELECT id,available_quantity,additional_scrap_quantity,existing_scrap_quantity,reason,material_review_note,
-       review_snapshot,created_by,created_at FROM production_batch_termination WHERE production_batch_id=?${share}`,
+      `SELECT r.id,r.revision_no,r.approval_instance_id,r.available_quantity,r.extra_quantity,
+       r.additional_scrap_quantity,r.existing_scrap_quantity,r.review_snapshot,r.created_by,r.created_at
+       FROM production_batch_closeout c JOIN production_output_revision r
+         ON r.id=c.current_revision_id AND r.closeout_id=c.id
+       WHERE c.production_batch_id=?${share}`,
       [batchId],
     );
     if (fact) {
-      const snapshot: BatchTerminationCheck =
+      const snapshot = readCloseoutApprovalSnapshot(
         typeof fact.review_snapshot === 'string'
           ? JSON.parse(fact.review_snapshot)
-          : fact.review_snapshot;
+          : fact.review_snapshot,
+        CLOSEOUT_APPROVAL_SNAPSHOT_SCHEMA_VERSION,
+      );
       return {
-        ...snapshot,
+        ...snapshot.check,
         ...header,
         canTerminate: false,
         blockers: ['本批次已结束'],
         termination: {
           id: String(fact.id),
-          availableQuantity: fact.available_quantity,
-          additionalScrapQuantity: fact.additional_scrap_quantity,
-          existingScrapQuantity: fact.existing_scrap_quantity,
-          reason: fact.reason,
-          materialReviewNote: fact.material_review_note,
+          revisionNo: Number(fact.revision_no),
+          approvalInstanceId: String(fact.approval_instance_id),
+          availableQuantity: String(fact.available_quantity),
+          extraQuantity: String(fact.extra_quantity),
+          additionalScrapQuantity: String(fact.additional_scrap_quantity),
+          existingScrapQuantity: String(fact.existing_scrap_quantity),
+          reason: snapshot.output.reason,
+          materialReviewNote: snapshot.output.materialReviewNote,
           createdBy: String(fact.created_by),
           createdAt: toBeijingISOString(fact.created_at),
         },

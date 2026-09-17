@@ -42,7 +42,9 @@ const allowedTables = new Set([
   'batch_step_abnormal_dispositions',
   'rework_records',
   'batch_step_scrap_records',
-  'production_batch_termination',
+  'production_batch_termination', // Retired; historical migrations retain ownership.
+  'production_output_inspection',
+  'production_output_revision',
   'production_demand_correction',
   'production_batch_closeout',
   'production_batch_closeout_action',

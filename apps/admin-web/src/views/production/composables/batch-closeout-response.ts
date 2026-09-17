@@ -25,19 +25,13 @@ export function validateCloseoutResponse(
     typeof closeout.id !== 'string' ||
     typeof closeout.reason !== 'string' ||
     !Number.isInteger(closeout.version) ||
-    typeof closeout.canSubmit !== 'boolean' ||
+    typeof closeout.canHandle !== 'boolean' ||
     !validCheck(closeout.check) ||
     !Array.isArray(closeout.demands) ||
     !Array.isArray(closeout.pendingItems) ||
     !Array.isArray(closeout.materialReviews) ||
     !Array.isArray(closeout.actions) ||
-    !Array.isArray(closeout.blockers) ||
-    (closeout.output !== null &&
-      (!closeout.output ||
-        typeof closeout.output.reason !== 'string' ||
-        typeof closeout.output.materialReviewNote !== 'string' ||
-        !Number.isSafeInteger(closeout.output.availableQuantity) ||
-        !Number.isSafeInteger(closeout.output.additionalScrapQuantity)))
+    !Array.isArray(closeout.blockers)
   )
     throw new Error('收尾详情响应格式异常，请刷新重试');
 }

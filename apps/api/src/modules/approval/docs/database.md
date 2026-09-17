@@ -111,11 +111,11 @@ CHECK 保证角色节点只填写 `role_id`，用户节点只填写 `assignee_us
 
 约束：`UNIQUE(instance_no)`；`UNIQUE(scene_code,subject_type,subject_id,active_slot)` 防止并发重复送审；索引 `(created_by,status,created_at,id)` 和 `(scene_code,subject_type,subject_id,created_at,id)`。`subject_version >= 0`，`snapshot_schema_version > 0`；`pending` 时结束时间为空，终态非空。
 
-通用提交引擎在创建申请的同一事务内调用业务 handler 绑定申请，再以绑定返回的版本确定 `subject_version`；不推算其他模块的版本递增方式。`snapshot_schema_version` 由业务 handler 随快照返回，历史详情的证据结构校验也由对应 handler 承担。提交完成后不改写快照或冻结版本；新 BOM 证据采用结构版本 2，不含关键物料和记录批次标志。结构版本 1 的既有证据保持原文，Product 读取时投影当前公开字段，不将已移除属性返回前端；未知结构版本拒绝读取。
+通用提交引擎在创建申请的同一事务内调用业务 handler 绑定申请，再以绑定返回的版本确定 `subject_version`；不推算其他模块的版本递增方式。`snapshot_schema_version` 由业务 handler 随快照返回，历史详情的证据结构校验也由对应 handler 承担。提交完成后不改写快照或冻结版本；新 BOM 证据采用结构版本 2，不含关键物料和记录批次标志。Product 只接受当前结构版本 2，版本 1 与未知结构均拒绝读取；开发环境通过重置切换，不保留旧证据兼容分支。
 
 多态 `subject_id` 不建立指向多张业务表的伪外键。提交和每次最终业务操作经所属模块验证对象存在性、场景与对象类型、当前申请关联；`scene_code` 与所选版本所属定义相符由事务校验。申请的场景、对象、流程版本、证据、人员规则及申请人一经提交不可更换。未来收紧自审规则默认只影响新申请，不能静默改写旧申请的规则或历史决定；账号、角色及当前权限仍实时校验。
 
-Production 需求更正证据结构版本为 1；收尾新证据为版本 2，包含工单 ID／单号／版本／负责人及来源代码，分别由其 handler 校验。本阶段不维护旧版收尾证据读取，开发数据可按统一流程重置；其申请来源、冻结和生效字段详见 [Production 需求设计](../../production/docs/database/demand-allocation-and-outbound.md#正式需求更正与替代) 与[批次收尾设计](../../production/docs/database/production-termination.md)。Approval 表不复制业务执行数量或工序状态。
+Production 需求更正证据结构版本为 1；结案产出证据为版本 3，包含模式、检验记录、计划内外产出与报废、更正前版及原因、工单 ID／单号／版本／负责人及来源代码，分别由其 handler 校验。本阶段不维护旧版收尾证据读取，开发数据可按统一流程重置；其申请来源、冻结和生效字段详见 [Production 需求设计](../../production/docs/database/demand-allocation-and-outbound.md#正式需求更正与替代) 与[批次收尾设计](../../production/docs/database/production-termination.md)。Approval 表不复制业务执行数量或工序状态。
 
 ### 4.2 `approval_instance_steps`
 

@@ -276,7 +276,7 @@ current_step_released_quantity = effective_normal
 - 当前暂不考量生产过程中的质量检测流程。将来引入过程质量模块时，下工序可用量必须改为读取独立的质量放行事实，并通过版本化契约迁移，不能静默改变 `normal_quantity` 的既有含义。
 - 生产完成后的最终质检任务、结论、批次状态衔接和 `qualified_quantity` 写入仍未闭环；在这些规则定稿前不得创建推测性的最终质检表或开放最终质量确认接口。
 
-当前允许把“生产执行完工”与未来“最终质量确认”分开实施。批次生产执行完工时，服务端取最后一道工序（`step_order_snapshot` 最大）的 `effective_normal` 写入 `production_batches.completed_quantity`；必须在事务内重新聚合，不接受客户端填写。没有工序、工序尚未全部完成或最后一道工序数量不足时均拒绝完工。当前不支持短批完工；不足数量只能等待未来独立的生产损失/短批完工命令。该动作不得写入 `qualified_quantity`，也不得伪造最终质量结论。
+生产执行确认与最终产出处置分开。正常执行确认仍在事务内校验全部工序已完成、需求及补料履约、末工序有效正常量达标；服务端写入 `completed_quantity` 与 `execution_completed_at/by`，创建 normal 结案草稿并进入 closing，不立即 completed。最终质检记录和产线清单由工单负责人批准后才正常结案。提前停止走 early 逐项收尾，同用这一结案审批；管理员最终可用量允许短于计划，不反写报工或补产规则。质检只保存线下记录，不建立完整 Quality，也不写 `qualified_quantity`。
 
 现有草案曾使用 `inspection_records`，但检验批如何占用报工数量、多次/抽样检验、条件放行、复检和冲销仍未闭环，因此当前不得创建该表。
 
@@ -450,6 +450,6 @@ products
 
 当前 Production 只读追溯已经落地查询投影：支持按工单号、生产批次号、物料编码和库存批次号定位生产批次，并读取工单/批次概览、`production_item_demand`、`production_item_allocation`、`outbound_order/outbound_detail`、对应的 `production_material_outbound` 库存流水、`batch_step_records`、`batch_step_reports` 普通/冲销/替代链及有效聚合、`batch_step_abnormal_dispositions` 待处置记录。该投影不创建第二事实表，不返回质量、返工、报废、退料或成品流向占位数据。
 
-批次结束时未完成工序保留原状态，父批次 `terminated` 阻止后续执行；待处理异常使用 `terminated` 记录结束人和时间且无处置类型，未完成返工取消，未履约补料使用 `cancelled` 且履约人/时间为空。已报工和已授权事实保留；不补料的终止产出报废独立见[批次结束设计](production-termination.md)。
+批次收尾时未完成工序由管理员逐项置为 `terminated`，行动保留原状态；父批次 `closing/terminated` 阻止后续执行；待处理异常使用 `terminated` 记录结束人和时间且无处置类型，未完成返工取消，未履约补料使用 `cancelled` 且履约人/时间为空。已报工和已授权事实保留；不补料的终止产出报废独立见[批次结束设计](production-termination.md)。
 
 正常批次完工除工序、末工序产量外，还阻断全部 active 需求及 approved 未齐套补料单；在审纠错仍为 active，关闭不能伪装物料齐套。不足量结案使用逐项收尾及短产审批，不通过本执行完工入口改写正常产量。

@@ -9,7 +9,7 @@
 
 | 命令 | HTTP 入口 | scope |
 | --- | --- | --- |
-| 创建生产批次 | `POST /api/production/work-orders/:workOrderId/batches` | `production.batch.create.v5` |
+| 创建生产批次 | `POST /api/production/work-orders/:workOrderId/batches` | `production.batch.create.v6` |
 | 创建物料分配 | `POST /api/production/batches/:batchId/material-allocations` | `production.material-allocation.create.v1` |
 | 创建生产领料出库单 | `POST /api/production/batches/:batchId/material-outbounds` | `production.material-outbound.create.v3` |
 | 确认生产领料出库单 | `POST /api/production/material-outbounds/:outboundId/actions/confirm` | `production.material-outbound.confirm.v2` |
@@ -170,7 +170,7 @@ scope/key 仍按既有记录仲裁。清理后该 scope/key 才可能成为新�
 输入是 DTO 转换、trim 后的业务有效载荷；排除 `Idempotency-Key`、request ID、IP、User-Agent、Cookie、Token
 等传输或审计元数据。对象键递归排序、数组顺序保留、`undefined` 对象属性忽略，随后对 canonical JSON 计算摘要。
 只接受 JSON-safe 值，不放宽到 `Date`、getter、自定义原型或循环引用。
-Application Service 必须把 class DTO 显式映射成普通对象后再传入 `request.body`，嵌套 DTO 同样逐层转换；不能将 DTO 实例直接用于指纹。收尾送审使用独立的 `{ version, checkToken }` 对象，指纹与 Repository 校验共用该有效载荷。
+Application Service 必须把 class DTO 显式映射成普通对象后再传入 `request.body`，嵌套 DTO 同样逐层转换；不能将 DTO 实例直接用于指纹。产出清单送审使用独立的 `{ version, submissionToken }` 对象，指纹与 Repository 校验共用该有效载荷。
 
 固定兼容向量：
 
@@ -272,22 +272,26 @@ const input = {
 5. 第 11 节相关测试通过；
 6. 不包含尚未纳入事务恢复模型的外部副作用。
 
-## 13. scope 版本兼容
+## 13. scope 版本与开发重置
 
-scope 是服务端独占的命令契约版本，客户端不得传输、选择或协商。结果结构、指纹语义或命令语义发生不兼容变化时：
+scope 是服务端独占的命令契约版本，客户端不得传输、选择或协商。结果结构、指纹或命令语义发生不兼容变化时升级 scope 和 codec。项目当前处于开发阶段，清理旧幂等和业务数据后切换新代码，不保留旧 scope 解码分支、双写或兼容窗口，也不得用新 codec 猜旧结果。发布前结束旧客户端操作并刷新页面，不将旧意图自动迁入新 scope。
 
-1. 新增 scope 版本和对应 codec；
-2. 新请求只写新 scope；
-3. 如需兼容旧记录，在至少覆盖旧记录最长保留期的窗口内保留旧 scope 的 decode 能力；
-4. 窗口结束且旧记录已自然过期/清理后，再删除旧兼容分支。
-
-不得用新 codec 猜测旧结果，也不得覆盖旧 scope 记录。兼容示例和算法测试中的旧版本字符串不是当前端点版本；当前版本以 scope 常量为准。
-
-创建批次当前结果不包含报工开关快照；所有工序统一报工。开发阶段不保留旧 scope 的兼容解码，发布前结束旧客户端操作并刷新页面，不将旧意图自动迁入新 scope。
+创建批次当前使用 `production.batch.create.v6`，包含执行完成时间、结案模式与当前批准版本等结果字段；报工数量与批准产出分开。scope 常量为当前契约唯一来源。
 
 ## Production 需求纠错与逐项收尾
 
-需求更正送审使用 `production.demand-correction.submit.v1`。批次收尾开始、逐项处理、保存产出、送审分别使用 `production.batch-closeout.begin.v1 / handle.v1 / output.v1 / submit.v1`（四个完整 scope 共享 production.batch-closeout 前缀）。scope 常量仍由 Production application contract 所有；HTTP 只接收 Idempotency-Key。
+需求更正送审使用 `production.demand-correction.submit.v1`。收尾开始、逐项处理分别使用 `production.batch-closeout.begin.v1`、`production.batch-closeout.handle.v1`。产出清单独立命令如下：
+
+| 命令 | scope |
+| --- | --- |
+| 保存草稿 | `production.output.draft.v1` |
+| 核对物料 | `production.output.material-review.v1` |
+| 留存质检记录 | `production.output.inspection.v1` |
+| 结案／更正送审 | `production.output.submit.v1` |
+| 开启更正 | `production.output.correction.begin.v1` |
+| 取消未送审更正 | `production.output.correction.cancel.v1` |
+
+scope 常量由 Production application contract 所有；HTTP 只接收 Idempotency-Key。DTO 显式映射成普通命令对象及纯数据指纹，不把 class 实例传给规范化器。质检结果除根／批次 ID 还保存实际生成的 inspectionRecordId。
 
 送审结果严格保存业务对象 ID 与 Approval 实例 ID，其余收尾命令保存收尾 ID 与批次 ID。送审中的业务记录创建／绑定、Approval 实例和节点、审计与通知都在外层 executor 事务内完成；未发布流程或任何依赖失败则回滚，不能先提交业务申请后异步补审批。
 

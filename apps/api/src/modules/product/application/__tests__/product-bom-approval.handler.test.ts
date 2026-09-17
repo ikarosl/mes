@@ -42,7 +42,7 @@ describe('ProductBomApprovalHandler', () => {
     expect(registry.register).toHaveBeenCalledWith(handler);
   });
 
-  it('projects historical schema 1 evidence without leaking removed BOM flags', async () => {
+  it('projects current evidence without exposing fields outside the contract', async () => {
     const products = {
       listMaterialNames: vi.fn().mockResolvedValue({ '21': '当前物料名' }),
     };
@@ -58,7 +58,7 @@ describe('ProductBomApprovalHandler', () => {
       ],
     };
 
-    await expect(handler.readSnapshotForDisplay(historical, 1)).resolves.toEqual({
+    await expect(handler.readSnapshotForDisplay(historical, 2)).resolves.toEqual({
       subjectSnapshot: preparation.snapshot,
       materialNames: { '21': '当前物料名' },
     });

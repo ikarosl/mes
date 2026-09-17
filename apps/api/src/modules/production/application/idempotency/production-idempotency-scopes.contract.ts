@@ -11,18 +11,22 @@
  * 不放入前后端共享的 `packages/constants`：前端只使用本地意图名（`intentType`，见
  * `useIdempotentIntent.ts`），该值若进入共享包会被误认为需要传输的协议字段。
  *
- * 未来发生不兼容变更时必须继续 bump scope 并引入新 codec，通过临时服务端兼容窗口过渡
- * （见 apps/api/docs/idempotency.md §13），不允许用新 schema 去猜旧记录。
+ * 开发阶段发生不兼容变更时 bump scope，并重置旧幂等与业务数据。
+ * 不读取旧 schema，不引入临时兼容窗口。
  */
 
 export const SUBMIT_DEMAND_CORRECTION_SCOPE = 'production.demand-correction.submit.v1' as const;
 export const BEGIN_BATCH_CLOSEOUT_SCOPE = 'production.batch-closeout.begin.v1' as const;
 export const HANDLE_BATCH_CLOSEOUT_SCOPE = 'production.batch-closeout.handle.v1' as const;
-export const SAVE_BATCH_CLOSEOUT_OUTPUT_SCOPE = 'production.batch-closeout.output.v1' as const;
-export const SUBMIT_BATCH_CLOSEOUT_SCOPE = 'production.batch-closeout.submit.v1' as const;
+export const REVIEW_OUTPUT_MATERIAL_SCOPE = 'production.output.material-review.v1' as const;
+export const SAVE_PRODUCTION_OUTPUT_SCOPE = 'production.output.draft.v1' as const;
+export const RECORD_OUTPUT_INSPECTION_SCOPE = 'production.output.inspection.v1' as const;
+export const SUBMIT_PRODUCTION_OUTPUT_SCOPE = 'production.output.submit.v1' as const;
+export const BEGIN_OUTPUT_CORRECTION_SCOPE = 'production.output.correction.begin.v1' as const;
+export const CANCEL_OUTPUT_CORRECTION_SCOPE = 'production.output.correction.cancel.v1' as const;
 
 /** createBatch 创建生产批次；scope 与当前请求及结果 codec 绑定。 */
-export const CREATE_BATCH_IDEMPOTENCY_SCOPE = 'production.batch.create.v5' as const;
+export const CREATE_BATCH_IDEMPOTENCY_SCOPE = 'production.batch.create.v6' as const;
 /** 创建物料分配。 */
 export const CREATE_MATERIAL_ALLOCATION_IDEMPOTENCY_SCOPE =
   'production.material-allocation.create.v1' as const;

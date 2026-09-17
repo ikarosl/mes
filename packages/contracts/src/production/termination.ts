@@ -26,7 +26,10 @@ export interface BatchTerminationMaterial {
 
 export interface BatchTerminationRecord {
   id: string;
+  revisionNo: number;
+  approvalInstanceId: string;
   availableQuantity: string;
+  extraQuantity: string;
   additionalScrapQuantity: string;
   existingScrapQuantity: string;
   reason: string;

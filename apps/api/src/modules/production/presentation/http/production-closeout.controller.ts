@@ -14,14 +14,10 @@ import { ProductionCloseoutService } from '../../application/production-closeout
 import {
   BEGIN_BATCH_CLOSEOUT_SCOPE,
   HANDLE_BATCH_CLOSEOUT_SCOPE,
-  SAVE_BATCH_CLOSEOUT_OUTPUT_SCOPE,
-  SUBMIT_BATCH_CLOSEOUT_SCOPE,
 } from '../../application/idempotency/production-idempotency-scopes.contract.js';
 import {
   BeginBatchCloseoutDto,
   HandleBatchCloseoutItemDto,
-  SaveBatchCloseoutOutputDto,
-  SubmitBatchCloseoutDto,
 } from './dto/production-closeout.dto.js';
 import { TerminationBatchParamDto } from './dto/production-termination.dto.js';
 @Controller('production/batches/:batchId/closeout')
@@ -58,27 +54,5 @@ export class ProductionCloseoutController {
     @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
   ) {
     return this.service.handle(batchId, body, context);
-  }
-  @Post('output')
-  @RequirePermission(PERMISSIONS.production.tasks.terminate)
-  @AuditInApplication()
-  @IdempotentEndpoint({ scope: SAVE_BATCH_CLOSEOUT_OUTPUT_SCOPE })
-  output(
-    @Param() { batchId }: TerminationBatchParamDto,
-    @Body() body: SaveBatchCloseoutOutputDto,
-    @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
-  ) {
-    return this.service.saveOutput(batchId, body, context);
-  }
-  @Post('submit')
-  @RequirePermission(PERMISSIONS.production.tasks.terminate)
-  @AuditInApplication()
-  @IdempotentEndpoint({ scope: SUBMIT_BATCH_CLOSEOUT_SCOPE })
-  submit(
-    @Param() { batchId }: TerminationBatchParamDto,
-    @Body() body: SubmitBatchCloseoutDto,
-    @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
-  ) {
-    return this.service.submit(batchId, body, context);
   }
 }

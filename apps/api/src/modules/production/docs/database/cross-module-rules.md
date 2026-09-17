@@ -260,13 +260,13 @@ SELECT id FROM item_batch WHERE id = :batch_id FOR UPDATE;
 
 ### 3.12.14 需求纠错及收尾审批边界
 
-Production 所有 `production_demand_correction`、`production_batch_closeout`、`production_batch_closeout_action`，Approval 所有流程、实例、节点和决定；通过公开 handler 协作，不跨模块改表。需求、库存仍只有原事实表，没有影子表。
+Production 所有 `production_demand_correction`、`production_batch_closeout`、`production_batch_closeout_action`、`production_output_inspection`、`production_output_revision`，Approval 所有流程、实例、节点和决定；通过公开 handler 协作，不跨模块改表。需求、库存仍只有原事实表，没有影子表。
 
 更正最终批准与出库确认调用同一个有效补料需求判定：真实 fulfilled、生效替代链或已批准且已领满足的剩余免除才可齐套，普通关闭和整单零领料不能放行。原补料单与授权保留，路线公式只读取单据履约结果。正常完成还检查活动需求（包括审批中）和未齐套补料单。
 
 新更正／收尾命令及末级 handler 先锁工单、批次，再锁申请、需求、物流和工序等受影响事实；只读定位不作为写入资格。审批先调用业务 handler 锁根和校验绑定，再锁实例与当前节点；所有当前数量和证据使用当前读，失败整事务回滚。新需求和旧关闭在同一事务内可见，只推进一次批次／计划版本。
 
-在途更正冻结仅该旧需求的分配、释放、出库和再次更正；需求仍参与短缺与完工检查。批次取消／收尾不能越过在审指针。进入 closing 后禁止普通执行及新增需求，管理员逐项处理后送审；驳回保留真实处理结果，末级批准再写不可变终止产出处置。领退料、损耗或路线影响改变审批依据时须撤回／驳回并重核，不能替换历史证据。
+在途更正冻结仅该旧需求的分配、释放、出库和再次更正；需求仍参与短缺与完工检查。批次取消／收尾不能越过在审指针。进入 closing 后禁止普通执行及新增需求，管理员逐项处理后送审；驳回保留真实处理结果，末级批准追加不可变产出清单并推进当前版本，normal/early 分别正常结案或提前结束；不再写旧终止事实表。质检只保存独立不可变记录，管理员核定三项数量后送审，质检不改草稿。初次结案的领退料、损耗或路线影响改变审批依据时须撤回／驳回并重核；批准后的清单更正继承原收尾证据，只复核当前批准版、检验、申报和收货事实，不能替换历史证据或重开执行。
 
 字段、冻结规则和端点见[需求](demand-allocation-and-outbound.md#正式需求更正与替代)与[收尾](production-termination.md)。
 

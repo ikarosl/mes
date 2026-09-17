@@ -130,27 +130,25 @@
           <template #default="{ row }">{{ formatQuantity(row.assignedQuantity) }}</template>
         </el-table-column>
         <el-table-column
-          label="最终产出（可用 / 报废 / 合计）"
+          label="审定产出（计划内 / 外 / 报废）"
           min-width="230"
         >
           <template #default="{ row }">
             {{ formatQuantity(row.finalOutput?.availableQuantity) }} /
-            {{ formatQuantity(row.finalOutput?.scrapQuantity) }} /
-            {{ formatQuantity(row.finalOutput?.totalQuantity) }}
+            {{ formatQuantity(row.finalOutput?.extraQuantity) }} /
+            {{ formatQuantity(row.finalOutput?.scrapQuantity) }}
             <div
               v-if="row.finalOutput?.closingBatchCount"
               class="sub-text"
             >
-              收尾中 {{ row.finalOutput.closingBatchCount }} 批，暂存可用
+              待结案 {{ row.finalOutput.closingBatchCount }} 批，草稿计划内
               {{ formatQuantity(row.finalOutput.pendingAvailableQuantity) }}（未计入）
             </div>
             <div class="sub-text">
-              与计划差额
+              计划内产出缺口
               {{
-                formatQuantity(
-                  Number(row.plannedQuantity) - Number(row.finalOutput?.totalQuantity ?? 0),
-                )
-              }}，已结算 {{ row.finalOutput?.finalizedBatchCount ?? 0 }} 批
+                formatQuantity(row.finalOutput?.plannedShortfallQuantity ?? row.plannedQuantity)
+              }}，已批准 {{ row.finalOutput?.finalizedBatchCount ?? 0 }} 批
             </div>
           </template>
         </el-table-column>

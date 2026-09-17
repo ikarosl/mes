@@ -35,6 +35,16 @@
         </template>
         <template #tools>
           <el-button
+            v-if="
+              completionCheck &&
+              ['closing', 'completed', 'terminated'].includes(completionCheck.batchStatus)
+            "
+            type="primary"
+            plain
+            @click="openOutput(completionCheck.productionBatchId)"
+            >产出清单与结案</el-button
+          >
+          <el-button
             v-if="completionCheck?.batchStatus === 'doing'"
             type="primary"
             :disabled="detailLoading || !completionCheck.canComplete"
@@ -505,7 +515,7 @@
         type="warning"
         :closable="false"
         show-icon
-        title="确认后，服务端将以末道工序的有效正常数量作为批次完成数量，并记录完工人和完工时间。"
+        title="确认后结束工序执行并进入产出核对。末工序报工数量保留，管理员须登记产出、引用质检记录并提交结案审批；本操作不增加库存。"
       />
       <el-descriptions
         v-if="record && completionCheck"
@@ -535,6 +545,18 @@
       </template>
     </el-dialog>
   </div>
+  <ProductionOutputDialog
+    v-model:visible="outputVisible"
+    :batch-id="outputBatchId"
+    @changed="refreshCurrent"
+    @open-closeout="openCloseoutItems"
+  />
+  <ProductionBatchTerminationDialog
+    v-model:visible="closeoutVisible"
+    :batch-id="outputBatchId"
+    @terminated="refreshCurrent"
+    @open-output="openOutput"
+  />
 </template>
 
 <script setup lang="ts">
@@ -558,6 +580,8 @@ import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
 import TableToolbar from '../../components/TableToolbar.vue';
 import { batchStatusMeta, formatQuantity, stepStatusMeta } from './production-status';
 import ProductionExecutionBatchList from './components/ProductionExecutionBatchList.vue';
+import ProductionOutputDialog from './components/ProductionOutputDialog.vue';
+import ProductionBatchTerminationDialog from './components/ProductionBatchTerminationDialog.vue';
 import AbnormalReworkPanel from './components/AbnormalReworkPanel.vue';
 import { useProductionExecutionRecords } from './composables/useProductionExecutionRecords';
 import { useProductionAbnormalActions } from './composables/useProductionAbnormalActions';
@@ -568,6 +592,17 @@ import {
 } from './production-execution-risk';
 
 defineOptions({ name: 'ProductionExecutionRecordsPage' });
+const outputVisible = ref(false),
+  closeoutVisible = ref(false),
+  outputBatchId = ref<string | null>(null);
+const openOutput = (batchId: string) => {
+  outputBatchId.value = batchId;
+  outputVisible.value = true;
+};
+const openCloseoutItems = (batchId: string) => {
+  outputBatchId.value = batchId;
+  closeoutVisible.value = true;
+};
 const keyword = ref('');
 const currentPage = ref(1);
 const changeVisible = ref(false);
@@ -887,7 +922,8 @@ const submitCompletion = async () => {
   try {
     await completeExecution();
     completionVisible.value = false;
-    EMessage.success('生产执行已完工');
+    EMessage.success('生产执行已结束，请核对产出清单并提交结案审批');
+    if (selectedBatchId.value) openOutput(selectedBatchId.value);
   } catch (error) {
     EMessage.error(error, '生产执行完工失败，请刷新后核对完工条件');
   }

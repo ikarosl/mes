@@ -1,20 +1,15 @@
 import { isDeepStrictEqual } from 'node:util';
 import { Inject, Injectable } from '@nestjs/common';
 import { withTransaction } from '@company/database';
-import { APPROVAL_ASSIGNEE_SOURCES } from '@company/constants';
 import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import type {
   BatchCloseoutDetail,
   BatchCloseoutAction,
-  BatchCloseoutApprovalSnapshot,
   BeginBatchCloseoutPayload,
   HandleBatchCloseoutItemPayload,
-  SaveBatchCloseoutOutputPayload,
-  SubmitBatchCloseoutPayload,
   BatchCloseoutCommandResult,
 } from '@company/contracts';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
-import type { ApprovalSubjectPreparation } from '../../approval/public.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
 import { toBeijingISOString } from '../../../common/time/date-time.js';
 import { ProductionCloseoutRepository } from '../application/ports/production-closeout.repository.js';
@@ -25,26 +20,10 @@ import { findBatch } from './mysql-production.shared.js';
 import { MysqlProductionTerminationRepository } from './mysql-production-termination.repository.js';
 import { mysqlProductionDemandPlanWriter } from './mysql-production-demand-plan.writer.js';
 import { writeInventoryAudit } from './mysql-production-inventory.shared.js';
-import {
-  CLOSEOUT_APPROVAL_SNAPSHOT_SCHEMA_VERSION,
-  readCloseoutApprovalSnapshot,
-} from '../application/production-approval-snapshot.schema.js';
 import { loadCloseoutItems } from './mysql-production-closeout-items.js';
 import { allocationNeedsCloseoutSql } from './mysql-production-material.sql.js';
 
-type Closeout = RowDataPacket & {
-  id: number;
-  production_batch_id: number;
-  reason: string;
-  available_quantity: string | null;
-  additional_scrap_quantity: string | null;
-  material_review_note: string | null;
-  approval_instance_id: number | null;
-  pending_approval_id: number | null;
-  termination_id: number | null;
-  review_snapshot: object | string | null;
-  version: number;
-};
+import { type CloseoutRow as Closeout } from './mysql-production-output.persistence.js';
 type Action = RowDataPacket & {
   id: number;
   item_kind: BatchCloseoutAction['kind'];
@@ -105,7 +84,7 @@ export class MysqlProductionCloseoutRepository extends ProductionCloseoutReposit
       if (!payload.reason.trim())
         throw new ProductionDomainError('INVALID_INPUT', '请填写收尾原因');
       const [created] = await db.execute<ResultSetHeader>(
-        'INSERT INTO production_batch_closeout (production_batch_id,reason,created_by,updated_by) VALUES (?,?,?,?)',
+        "INSERT INTO production_batch_closeout (production_batch_id,closeout_mode,reason,created_by,updated_by) VALUES (?,'early',?,?,?)",
         [batchId, payload.reason, context.actorId, context.actorId],
       );
       await db.execute(
@@ -301,188 +280,6 @@ export class MysqlProductionCloseoutRepository extends ProductionCloseoutReposit
     }
   }
 
-  saveOutput(
-    batchId: string,
-    payload: SaveBatchCloseoutOutputPayload,
-    context: CommandContext,
-  ): Promise<BatchCloseoutCommandResult> {
-    return withTransaction(this.pool, async (db) => {
-      this.actor(context);
-      const row = await this.lockBatch(db, batchId);
-      this.editable(row, payload.version);
-      const check = await this.termination.loadCheck(db, batchId, true);
-      if (
-        !payload.reason.trim() ||
-        !payload.materialReviewNote.trim() ||
-        !Number.isSafeInteger(payload.availableQuantity) ||
-        payload.availableQuantity < 0 ||
-        !Number.isSafeInteger(payload.additionalScrapQuantity) ||
-        payload.additionalScrapQuantity < 0 ||
-        payload.availableQuantity +
-          payload.additionalScrapQuantity +
-          Number(check.existingScrapQuantity) >
-          99_999_999
-      )
-        throw new ProductionDomainError('INVALID_INPUT', '请核对产出数量、原因及物料说明');
-      await db.execute(
-        `UPDATE production_batch_closeout SET available_quantity=?,additional_scrap_quantity=?,reason=?,material_review_note=?,version=version+1,updated_by=? WHERE id=?`,
-        [
-          payload.availableQuantity,
-          payload.additionalScrapQuantity,
-          payload.reason,
-          payload.materialReviewNote,
-          context.actorId,
-          row.id,
-        ],
-      );
-      await writeInventoryAudit(
-        db,
-        context,
-        'production-batch.closeout.output',
-        'production_batch',
-        batchId,
-        null,
-        { closeoutId: String(row.id), ...payload },
-      );
-      return { closeoutId: String(row.id), batchId };
-    });
-  }
-
-  validateSubmission(batchId: string, payload: SubmitBatchCloseoutPayload): Promise<string> {
-    return withTransaction(this.pool, async (db) => {
-      const row = await this.lockBatch(db, batchId);
-      this.editable(row, payload.version);
-      const detail = await this.loadDetail(db, row, true);
-      if (!detail.canSubmit)
-        throw new ProductionDomainError('INVALID_STATE', detail.blockers.join('；'));
-      if (detail.check.checkToken !== payload.checkToken)
-        throw new ProductionDomainError('CONCURRENT_MODIFICATION', '收尾核对内容已变化');
-      return String(row.id);
-    });
-  }
-
-  prepare(
-    closeoutId: string,
-    version: number,
-    _context: CommandContext,
-  ): Promise<ApprovalSubjectPreparation> {
-    return withTransaction(this.pool, async (db) => {
-      const row = await this.lockId(db, closeoutId);
-      this.editable(row, version);
-      const detail = await this.loadDetail(db, row, true);
-      if (!detail.canSubmit || !detail.output)
-        throw new ProductionDomainError('INVALID_STATE', detail.blockers.join('；'));
-      // lockId 已按工单 → 批次 → 收尾记录加锁；当前读使用同一工单锁形成来源证据。
-      const [[workOrder]] = await db.query<
-        (RowDataPacket & {
-          id: number;
-          work_order_no: string;
-          work_order_owner_id: number | null;
-          version: number;
-        })[]
-      >(
-        'SELECT id,work_order_no,work_order_owner_id,version FROM work_orders WHERE id=? FOR UPDATE',
-        [detail.check.workOrderId],
-      );
-      if (!workOrder || workOrder.work_order_owner_id === null)
-        throw new ProductionDomainError('INVALID_STATE', '工单未配置负责人，不能提交结案审批');
-      const workOrderOwnerEvidence: BatchCloseoutApprovalSnapshot['workOrderOwnerEvidence'] = {
-        sourceCode: APPROVAL_ASSIGNEE_SOURCES.workOrderOwner,
-        workOrderId: String(workOrder.id),
-        workOrderNo: workOrder.work_order_no,
-        workOrderVersion: workOrder.version,
-        ownerId: String(workOrder.work_order_owner_id),
-      };
-      const snapshot: BatchCloseoutApprovalSnapshot = {
-        kind: 'batch_closeout',
-        closeoutId,
-        workOrderOwnerEvidence,
-        check: detail.check,
-        output: detail.output,
-        actions: detail.actions,
-      };
-      return {
-        title: `${detail.check.workOrderNo} / ${detail.check.batchNo} · 短产 / 提前结束`,
-        subjectVersion: row.version,
-        snapshotSchemaVersion: CLOSEOUT_APPROVAL_SNAPSHOT_SCHEMA_VERSION,
-        businessAssigneeResolutions: [
-          { sourceCode: workOrderOwnerEvidence.sourceCode, userId: workOrderOwnerEvidence.ownerId },
-        ],
-        snapshot,
-      };
-    });
-  }
-
-  bind(
-    closeoutId: string,
-    instance: string,
-    version: number,
-    context: CommandContext,
-  ): Promise<number> {
-    return withTransaction(this.pool, async (db) => {
-      // Approval 外层事务持有 prepare 获取的工单、批次与收尾锁；重核不会重新解析其他人员。
-      const prepared = await this.prepare(closeoutId, version, context);
-      await db.execute(
-        'UPDATE production_batch_closeout SET approval_instance_id=?,pending_approval_id=?,review_snapshot=?,version=version+1,updated_by=? WHERE id=?',
-        [instance, instance, JSON.stringify(prepared.snapshot), context.actorId, closeoutId],
-      );
-      return version + 1;
-    });
-  }
-  lock(closeoutId: string, instance: string, version: number): Promise<void> {
-    return withTransaction(this.pool, async (db) => {
-      await this.current(db, closeoutId, instance, version);
-    });
-  }
-  restore(
-    closeoutId: string,
-    instance: string,
-    version: number,
-    context: CommandContext,
-  ): Promise<void> {
-    return withTransaction(this.pool, async (db) => {
-      const row = await this.current(db, closeoutId, instance, version);
-      await db.execute(
-        'UPDATE production_batch_closeout SET pending_approval_id=NULL,version=version+1,updated_by=? WHERE id=?',
-        [context.actorId, row.id],
-      );
-      await writeInventoryAudit(
-        db,
-        context,
-        'production-batch.closeout.review-end',
-        'production_batch',
-        String(row.production_batch_id),
-        { instance },
-        { status: 'closing', handledItemsRetained: true },
-      );
-    });
-  }
-  finalize(
-    closeoutId: string,
-    instance: string,
-    version: number,
-    context: CommandContext,
-  ): Promise<void> {
-    return withTransaction(this.pool, async (db) => {
-      const row = await this.current(db, closeoutId, instance, version);
-      const snapshot = readCloseoutApprovalSnapshot(
-        json(row.review_snapshot),
-        CLOSEOUT_APPROVAL_SNAPSHOT_SCHEMA_VERSION,
-      );
-      const detail = await this.loadDetail(db, row, true, true);
-      if (!detail.canSubmit || !isDeepStrictEqual(detail.actions, snapshot.actions))
-        throw new ProductionDomainError(
-          'CONCURRENT_MODIFICATION',
-          '逐项收尾依据已变化，请驳回或撤回后重新核对',
-        );
-      const terminationId = await this.termination.recordApprovedCloseout(db, snapshot, context);
-      await db.execute(
-        'UPDATE production_batch_closeout SET termination_id=?,pending_approval_id=NULL,version=version+1,updated_by=? WHERE id=?',
-        [terminationId, context.actorId, row.id],
-      );
-    });
-  }
-
   private async lockBatch(db: PoolConnection, batchId: string): Promise<Closeout> {
     await lockWorkOrderForBatch(db, batchId);
     const batch = await findBatch(db, batchId, true);
@@ -495,59 +292,22 @@ export class MysqlProductionCloseoutRepository extends ProductionCloseoutReposit
     if (!row) throw new ProductionDomainError('NOT_FOUND', '收尾记录不存在');
     return row;
   }
-  private async lockId(db: PoolConnection, closeoutId: string): Promise<Closeout> {
-    const [[locator]] = await db.query<Closeout[]>(
-      'SELECT production_batch_id FROM production_batch_closeout WHERE id=?',
-      [closeoutId],
-    );
-    if (!locator) throw new ProductionDomainError('NOT_FOUND', '收尾记录不存在');
-    return this.lockBatch(db, String(locator.production_batch_id));
-  }
-  private async current(
-    db: PoolConnection,
-    id: string,
-    instance: string,
-    version: number,
-  ): Promise<Closeout> {
-    const row = await this.lockId(db, id);
-    if (
-      row.version !== version ||
-      nullableId(row.pending_approval_id) !== instance ||
-      row.termination_id !== null
-    )
-      throw new ProductionDomainError('CONCURRENT_MODIFICATION', '收尾申请已变化或结束');
-    return row;
-  }
   private editable(row: Closeout, version: number): void {
     if (row.version !== version)
       throw new ProductionDomainError('CONCURRENT_MODIFICATION', '收尾记录已变化，请刷新');
-    if (row.pending_approval_id !== null || row.termination_id !== null)
+    if (row.pending_approval_id !== null || row.current_revision_id !== null)
       throw new ProductionDomainError('INVALID_STATE', '收尾已送审或结束，不能继续编辑');
   }
   private actor(context: CommandContext): void {
     if (!context.actorId) throw new ProductionDomainError('INVALID_INPUT', '缺少当前操作人');
   }
 
-  private async loadDetail(
-    db: PoolConnection,
-    row: Closeout,
-    lock: boolean,
-    forFinalApproval = false,
-  ): Promise<BatchCloseoutDetail> {
+  async loadDetail(db: PoolConnection, row: Closeout, lock: boolean): Promise<BatchCloseoutDetail> {
     const check = await this.termination.loadCheck(db, String(row.production_batch_id), lock);
     const [actions] = await db.query<Action[]>(
       `SELECT * FROM production_batch_closeout_action WHERE closeout_id=? ORDER BY id${lock ? ' FOR SHARE' : ''}`,
       [row.id],
     );
-    const output =
-      row.available_quantity === null
-        ? null
-        : {
-            availableQuantity: Number(row.available_quantity),
-            additionalScrapQuantity: Number(row.additional_scrap_quantity),
-            reason: row.reason,
-            materialReviewNote: row.material_review_note!,
-          };
     const { demands, pendingItems, allocationDemands } = await loadCloseoutItems(db, check, lock);
     const materialReviews = check.materials.map((material) => {
       const reviewed = actions
@@ -571,8 +331,7 @@ export class MysqlProductionCloseoutRepository extends ProductionCloseoutReposit
     });
     const blockers = [...check.blockers];
     if (check.impacts.length) blockers.push('逐项完成所有需求、工序及关联单据的收尾处理');
-    if (!output) blockers.push('请登记并保存实际产出和物料安排');
-    if (row.pending_approval_id !== null && !forFinalApproval) blockers.push('收尾审批正在进行');
+    if (row.pending_approval_id !== null) blockers.push('收尾审批正在进行');
     if (materialReviews.some((review) => review.status !== 'reviewed'))
       blockers.push('逐项核对物料安排；领退料或损耗变化后须重新核对');
     return {
@@ -582,7 +341,8 @@ export class MysqlProductionCloseoutRepository extends ProductionCloseoutReposit
       version: row.version,
       approvalInstanceId: nullableId(row.approval_instance_id),
       pendingApprovalId: nullableId(row.pending_approval_id),
-      output,
+      mode: row.closeout_mode,
+      currentRevisionId: nullableId(row.current_revision_id),
       demands,
       pendingItems,
       materialReviews,
@@ -607,7 +367,10 @@ export class MysqlProductionCloseoutRepository extends ProductionCloseoutReposit
         };
       }),
       check,
-      canSubmit: blockers.length === 0,
+      canHandle:
+        check.batchStatus === 'closing' &&
+        row.pending_approval_id === null &&
+        row.current_revision_id === null,
       blockers,
     };
   }

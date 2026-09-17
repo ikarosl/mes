@@ -1,3 +1,8 @@
+import type {
+  ProductionCloseoutMode,
+  ProductionOutputDraft,
+  ProductionOutputInspection,
+} from './output.js';
 import type { BatchTerminationCheck, BatchTerminationImpact } from './termination.js';
 import type { DemandBusinessStatus, DemandType } from './statuses.js';
 
@@ -43,12 +48,7 @@ export interface BatchCloseoutAction {
   actorId: string;
   createdAt: string;
 }
-export interface BatchCloseoutOutput {
-  availableQuantity: number;
-  additionalScrapQuantity: number;
-  reason: string;
-  materialReviewNote: string;
-}
+export type BatchCloseoutOutput = ProductionOutputDraft;
 export interface BatchCloseoutDetail {
   id: string;
   batchId: string;
@@ -56,13 +56,14 @@ export interface BatchCloseoutDetail {
   version: number;
   approvalInstanceId: string | null;
   pendingApprovalId: string | null;
-  output: BatchCloseoutOutput | null;
+  mode: ProductionCloseoutMode;
+  currentRevisionId: string | null;
   demands: BatchCloseoutDemand[];
   pendingItems: BatchCloseoutPendingItem[];
   materialReviews: BatchCloseoutMaterialReview[];
   actions: BatchCloseoutAction[];
   check: BatchTerminationCheck;
-  canSubmit: boolean;
+  canHandle: boolean;
   blockers: string[];
 }
 /** 送审时从已锁定工单读取，与审批节点解析人员使用同一份事实。 */
@@ -75,6 +76,10 @@ export interface BatchCloseoutWorkOrderOwnerEvidence {
 }
 export interface BatchCloseoutApprovalSnapshot {
   kind: 'batch_closeout';
+  mode: ProductionCloseoutMode;
+  previousRevisionId: string | null;
+  correctionReason: string | null;
+  inspection: ProductionOutputInspection;
   closeoutId: string;
   workOrderOwnerEvidence: BatchCloseoutWorkOrderOwnerEvidence;
   check: BatchTerminationCheck;
@@ -92,13 +97,6 @@ export interface HandleBatchCloseoutItemPayload {
   targetId: string;
   targetVersion: number;
   reason: string;
-}
-export interface SaveBatchCloseoutOutputPayload extends BatchCloseoutOutput {
-  version: number;
-}
-export interface SubmitBatchCloseoutPayload {
-  version: number;
-  checkToken: string;
 }
 export interface BatchCloseoutCommandResult {
   closeoutId: string;

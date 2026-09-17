@@ -82,7 +82,12 @@ export const PERMISSIONS = {
       update: 'production:orders:update',
       transition: 'production:orders:transition',
     },
-    tasks: { view: 'production:tasks:view', terminate: 'production:tasks:terminate' },
+    tasks: {
+      view: 'production:tasks:view',
+      terminate: 'production:tasks:terminate',
+      manageOutput: 'production:tasks:manage-output',
+      recordInspection: 'production:tasks:record-inspection',
+    },
     workerTasks: { view: 'production:worker-tasks:view' },
     trace: { view: 'production:trace:view' },
     materials: {

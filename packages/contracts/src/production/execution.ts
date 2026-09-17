@@ -215,9 +215,10 @@ export type CompleteProductionExecutionPayload = VersionedCommand;
 
 export interface ProductionExecutionCompletionResult {
   productionBatchId: string;
-  batchStatus: 'completed';
+  batchStatus: 'closing' | 'completed';
+  closeoutId: string;
   completedQuantity: string;
-  completedAt: string;
-  completedById: string;
+  executionCompletedAt: string;
+  executionCompletedById: string;
   version: number;
 }

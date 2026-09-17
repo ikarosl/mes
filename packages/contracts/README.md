@@ -13,7 +13,7 @@ corepack pnpm --filter @company/contracts test
 
 路线步骤、生产快照和员工任务均不包含是否报工字段；所有工序统一报工，员工任务不提供手工完成工序能力字段。
 
-生产需求纠错见 `production/demand-correction.ts`，逐项收尾及证据见 `production/closeout.ts`。需求 `closed` 与审批中冻结分别表达，批次 `closing`、工序 `terminated` 纳入共享状态；Approval 证据为明确的 BOM／更正／收尾联合类型。现有库存契约不因产出处置生成库存。
+生产需求纠错见 `production/demand-correction.ts`，逐项收尾及证据见 `production/closeout.ts`，产出草稿、质检记录、批准清单及更正见 `production/output.ts`。正常与提前结束任务共用结案审批；批次执行完成量与最终批准产出分开，工单按当前批准版本汇总。需求 `closed` 与审批中冻结分别表达，批次 `closing`、工序 `terminated` 纳入共享状态；Approval 证据为明确的 BOM／更正／收尾联合类型。现有库存契约不因产出处置生成库存。
 
 收尾详情的 `demands/pendingItems/materialReviews` 分别提供原需求履约、模块依赖及物料实核反馈，只属于当前操作页投影，审批仍使用原有冻结证据结构。
 

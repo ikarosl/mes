@@ -245,16 +245,18 @@
                   'material_outbound',
                   'doing',
                   'terminated',
+                  'completed',
                   'closing',
                 ].includes(row.status)
               "
               link
-              :type="row.status === 'terminated' ? 'primary' : 'warning'"
-              @click="
-                terminationBatchId = row.id;
-                terminationVisible = true;
+              :type="
+                ['completed', 'terminated'].includes(row.status) || row.closeoutMode === 'normal'
+                  ? 'primary'
+                  : 'warning'
               "
-              >{{ batchCloseoutActionLabel(row.status) }}</el-button
+              @click="openCloseout(row)"
+              >{{ batchCloseoutActionLabel(row.status, row.closeoutMode) }}</el-button
             >
             <el-dropdown trigger="click">
               <el-button
@@ -403,6 +405,13 @@
       v-model:visible="terminationVisible"
       :batch-id="terminationBatchId"
       @terminated="loadTasks"
+      @open-output="openOutput"
+    />
+    <ProductionOutputDialog
+      v-model:visible="outputVisible"
+      :batch-id="outputBatchId"
+      @changed="loadTasks"
+      @open-closeout="openCloseoutItems"
     />
     <ProductionBatchCancelDialog
       :visible="batchCancelDialogVisible"
@@ -462,6 +471,7 @@ import {
   taskNextActionPresentation,
 } from './production-task-presentation';
 import ProductionBatchTerminationDialog from './components/ProductionBatchTerminationDialog.vue';
+import ProductionOutputDialog from './components/ProductionOutputDialog.vue';
 import ProductionBatchCancelDialog from './components/ProductionBatchCancelDialog.vue';
 import MaterialDemandConfigurationDialog from './components/MaterialDemandConfigurationDialog.vue';
 import MaterialDemandOverviewDialog from './components/MaterialDemandOverviewDialog.vue';
@@ -516,6 +526,28 @@ const { isRowPending, beginRow, endRow } = useRowPending();
 const createBatchIntent = useIdempotentIntent();
 
 /* ====== 弹窗状态 ====== */
+const outputVisible = ref(false),
+  outputBatchId = ref<string | null>(null);
+const openOutput = (batchId: string) => {
+  outputBatchId.value = batchId;
+  outputVisible.value = true;
+};
+const openCloseoutItems = (batchId: string) => {
+  terminationBatchId.value = batchId;
+  terminationVisible.value = true;
+};
+function openCloseout(batch: ProductionBatchItem) {
+  if (
+    batch.status === 'completed' ||
+    batch.status === 'terminated' ||
+    (batch.status === 'closing' && batch.closeoutMode === 'normal')
+  )
+    openOutput(batch.id);
+  else {
+    terminationBatchId.value = batch.id;
+    terminationVisible.value = true;
+  }
+}
 const terminationVisible = ref(false);
 const terminationBatchId = ref<string | null>(null);
 const taskDialogVisible = ref(false);

@@ -1,17 +1,13 @@
-import { computed, onActivated, reactive, ref, watch } from 'vue';
+import { computed, onActivated, ref, watch } from 'vue';
 import type {
   BatchCloseoutDetail,
   BatchCloseoutItemKind,
-  BatchCloseoutOutput,
   BatchCloseoutPendingItem,
   BatchTerminationCheck,
 } from '@company/contracts';
 import { productionApi } from '../../../api/production';
 import { useLatestRequest } from '../../../composables/requests/useLatestRequest';
-import {
-  stableClientSignature,
-  useIdempotentIntent,
-} from '../../../composables/idempotency/useIdempotentIntent';
+import { useIdempotentIntent } from '../../../composables/idempotency/useIdempotentIntent';
 import { EMessage } from '../../../utils/message';
 import { RouteMessageBox } from '../../../utils/route-message-box';
 import { validateCloseoutResponse } from './batch-closeout-response';
@@ -36,12 +32,7 @@ export function useBatchCloseout(
     lastSuccess = ref(''),
     itemDraftDirty = ref(false),
     batchHandling = ref(false);
-  const output = reactive<BatchCloseoutOutput>({
-    availableQuantity: 0,
-    additionalScrapQuantity: 0,
-    reason: '',
-    materialReviewNote: '',
-  });
+  const reason = ref('');
   const selected = ref<{
       kind: BatchCloseoutItemKind;
       id: string;
@@ -60,23 +51,7 @@ export function useBatchCloseout(
     send: (key: string) => Promise<unknown>;
     successMessage: string;
   } | null = null;
-  const readonly = computed(() =>
-    Boolean(check.value?.termination || detail.value?.pendingApprovalId),
-  );
-  const signature = (value: unknown) =>
-    stableClientSignature({ intentType: 'output', params: {}, query: {}, body: value });
-  const outputDirty = computed(() => signature(output) !== signature(detail.value?.output));
-  const canSubmit = computed(
-    () =>
-      detail.value?.canSubmit &&
-      !outputDirty.value &&
-      !readonly.value &&
-      !loading.value &&
-      !submitting.value &&
-      !batchHandling.value &&
-      !unresolved.value &&
-      !error.value,
-  );
+  const readonly = computed(() => Boolean(detail.value && !detail.value.canHandle));
   async function load(initialize = false) {
     const batchId = props.batchId;
     if (!batchId || !props.visible) return;
@@ -92,20 +67,7 @@ export function useBatchCloseout(
       validateCloseoutResponse(preview, closeout, batchId);
       check.value = closeout?.check ?? preview;
       detail.value = closeout;
-      if (initialize) {
-        const saved =
-          closeout?.output ??
-          (preview.termination
-            ? {
-                availableQuantity: Number(preview.termination.availableQuantity),
-                additionalScrapQuantity: Number(preview.termination.additionalScrapQuantity),
-                reason: preview.termination.reason,
-                materialReviewNote: preview.termination.materialReviewNote,
-              }
-            : null);
-        if (saved) Object.assign(output, saved);
-        else if (closeout) output.reason = closeout.reason;
-      }
+      if (initialize) reason.value = closeout?.reason ?? '';
     } catch (failure) {
       if (current()) {
         error.value = failure instanceof Error ? failure.message : '加载失败';
@@ -161,7 +123,7 @@ export function useBatchCloseout(
     if (
       !props.batchId ||
       !check.value ||
-      !output.reason.trim() ||
+      !reason.value.trim() ||
       unresolved.value ||
       submitting.value ||
       batchHandling.value ||
@@ -170,7 +132,7 @@ export function useBatchCloseout(
     )
       return;
     const batchId = props.batchId;
-    const body = { version: check.value.version, reason: output.reason.trim() };
+    const body = { version: check.value.version, reason: reason.value.trim() };
     batchHandling.value = true;
     try {
       try {
@@ -207,15 +169,13 @@ export function useBatchCloseout(
       body = {
         version: selected.value.closeoutVersion,
         checkToken: selected.value.checkToken,
-        kind: selected.value.kind,
         targetId: selected.value.id,
-        targetVersion: selected.value.version,
         reason: itemReason.value.trim(),
       };
     await run(
-      'production.closeout.handle',
+      'production.output.material-review',
       body,
-      (key) => productionApi.handleBatchCloseoutItem(batchId, body, key),
+      (key) => productionApi.reviewProductionOutputMaterial(batchId, body, key),
       '物料核对已保存，可在本行查看安排和核对时间',
     );
   }
@@ -310,28 +270,6 @@ export function useBatchCloseout(
       batchHandling.value = false;
     }
   }
-  async function saveOutput() {
-    if (!props.batchId || !detail.value || unresolved.value) return;
-    const batchId = props.batchId,
-      body = { ...output, version: detail.value.version };
-    await run(
-      'production.closeout.output',
-      body,
-      (key) => productionApi.saveBatchCloseoutOutput(batchId, body, key),
-      '实际产出与物料安排已保存',
-    );
-  }
-  async function submit() {
-    if (!props.batchId || !detail.value || !canSubmit.value || unresolved.value) return;
-    const batchId = props.batchId,
-      body = { version: detail.value.version, checkToken: detail.value.check.checkToken };
-    await run(
-      'production.closeout.submit',
-      body,
-      (key) => productionApi.submitBatchCloseout(batchId, body, key),
-      '已提交短产 / 提前结束审批',
-    );
-  }
   async function retry() {
     if (pending) await run(pending.name, pending.body, pending.send, pending.successMessage);
   }
@@ -350,17 +288,14 @@ export function useBatchCloseout(
     }
     if (
       !unresolved.value &&
-      ((detail.value && outputDirty.value && !readonly.value) ||
-        selected.value ||
+      (selected.value ||
         itemDraftDirty.value ||
-        (!detail.value && !readonly.value && output.reason.trim()))
+        (!detail.value && !readonly.value && reason.value.trim()))
     ) {
       try {
-        await RouteMessageBox.confirm(
-          '尚有未保存的产出或本项说明，确认放弃这些输入？',
-          '关闭收尾窗口',
-          { type: 'warning' },
-        );
+        await RouteMessageBox.confirm('尚有未保存的本项说明，确认放弃这些输入？', '关闭收尾窗口', {
+          type: 'warning',
+        });
       } catch {
         return;
       }
@@ -386,12 +321,7 @@ export function useBatchCloseout(
       lastSuccess.value = '';
       itemDraftDirty.value = false;
       itemReason.value = '';
-      Object.assign(output, {
-        availableQuantity: 0,
-        additionalScrapQuantity: 0,
-        reason: '',
-        materialReviewNote: '',
-      });
+      reason.value = '';
       void load(true);
     },
     { immediate: true },
@@ -411,18 +341,14 @@ export function useBatchCloseout(
     itemDraftDirty,
     unresolved,
     error,
-    output,
+    reason,
     selected,
     itemReason,
     readonly,
-    outputDirty,
-    canSubmit,
     load,
     begin,
     handle,
     handleItems,
-    saveOutput,
-    submit,
     retry,
     close,
   };

@@ -11,6 +11,7 @@ import {
   WORK_ORDER_STATUSES,
   WORK_ORDER_TYPES,
   BATCH_CLOSEOUT_ITEM_KINDS,
+  PRODUCTION_CLOSEOUT_MODES,
 } from '@company/constants';
 
 const id = z.string().regex(/^[1-9]\d*$/);
@@ -107,6 +108,8 @@ export const closeoutActionSchema = z.object({
 });
 export const closeoutOutputSchema = z.object({
   availableQuantity: amount,
+  extraQuantity: amount,
+  inspectionRecordId: id.nullable(),
   additionalScrapQuantity: amount,
   reason: z.string(),
   materialReviewNote: z.string(),
@@ -165,6 +168,9 @@ export const terminationCheckSchema = z.object({
   termination: z
     .object({
       id,
+      revisionNo: z.number().int().positive(),
+      approvalInstanceId: id,
+      extraQuantity: quantity,
       availableQuantity: quantity,
       additionalScrapQuantity: quantity,
       existingScrapQuantity: quantity,
@@ -175,9 +181,33 @@ export const terminationCheckSchema = z.object({
     })
     .nullable(),
 });
-export const CLOSEOUT_APPROVAL_SNAPSHOT_SCHEMA_VERSION = 2;
+export const CLOSEOUT_APPROVAL_SNAPSHOT_SCHEMA_VERSION = 3;
+const outputQuantitiesSchema = z.object({
+  availableQuantity: amount,
+  extraQuantity: amount,
+  additionalScrapQuantity: amount,
+});
+const outputInspectionSchema = z.object({
+  id,
+  closeoutId: id,
+  batchId: id,
+  declaredVersion: version,
+  declared: outputQuantitiesSchema,
+  inspected: outputQuantitiesSchema,
+  inspectedAt: z.string(),
+  resultNote: z.string(),
+  evidenceReference: z.string(),
+  previousInspectionId: id.nullable(),
+  createdBy: id,
+  createdByName: z.string(),
+  createdAt: z.string(),
+});
 const closeoutSnapshotBaseSchema = z.object({
   kind: z.literal('batch_closeout'),
+  mode: z.enum(PRODUCTION_CLOSEOUT_MODES),
+  previousRevisionId: id.nullable(),
+  correctionReason: z.string().nullable(),
+  inspection: outputInspectionSchema,
   closeoutId: id,
   check: terminationCheckSchema,
   output: closeoutOutputSchema,
@@ -198,6 +228,25 @@ export const closeoutSnapshotSchema = closeoutSnapshotBaseSchema
       snapshot.workOrderOwnerEvidence.workOrderId === snapshot.check.workOrderId &&
       snapshot.workOrderOwnerEvidence.workOrderNo === snapshot.check.workOrderNo,
     { message: '工单负责人来源与收尾任务所属工单不一致' },
+  )
+  .refine(
+    (snapshot) =>
+      snapshot.inspection.closeoutId === snapshot.closeoutId &&
+      snapshot.inspection.batchId === snapshot.check.batchId &&
+      snapshot.inspection.id === snapshot.output.inspectionRecordId,
+    { message: '检验记录与任务清单不一致' },
+  )
+  .refine(
+    (snapshot) =>
+      snapshot.output.availableQuantity === snapshot.inspection.inspected.availableQuantity &&
+      snapshot.output.extraQuantity === snapshot.inspection.inspected.extraQuantity &&
+      snapshot.output.additionalScrapQuantity ===
+        snapshot.inspection.inspected.additionalScrapQuantity,
+    { message: '申报与实检数量不一致' },
+  )
+  .refine(
+    (snapshot) => snapshot.output.availableQuantity <= Number(snapshot.check.plannedQuantity),
+    { message: '计划内产出超过计划量' },
   );
 
 /** 只接受当前完整受审结构，不根据当前工单补造缺失的来源证据。 */

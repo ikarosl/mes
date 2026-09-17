@@ -3,9 +3,10 @@ import {
   ApprovalSubjectHandlerRegistry,
   type ApprovalSubjectHandler,
 } from '../../approval/public.js';
+import { IdentityDirectoryService } from '../../identity/public.js';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { BATCH_CLOSEOUT_APPROVAL_SCENE } from '../approval-scenes.js';
-import { ProductionCloseoutRepository } from './ports/production-closeout.repository.js';
+import { ProductionOutputRepository } from './ports/production-output.repository.js';
 import { productionApprovalCall } from './production-demand-correction-approval.handler.js';
 import { readCloseoutApprovalSnapshot } from './production-approval-snapshot.schema.js';
 @Injectable()
@@ -14,8 +15,9 @@ export class ProductionCloseoutApprovalHandler implements ApprovalSubjectHandler
   readonly sceneCode = this.scene.code;
   readonly subjectType = this.scene.subjectType;
   constructor(
-    private readonly repository: ProductionCloseoutRepository,
+    private readonly repository: ProductionOutputRepository,
     private readonly registry: ApprovalSubjectHandlerRegistry,
+    private readonly identity: IdentityDirectoryService,
   ) {}
   onModuleInit() {
     this.registry.register(this);
@@ -36,9 +38,22 @@ export class ProductionCloseoutApprovalHandler implements ApprovalSubjectHandler
     return productionApprovalCall(() => this.repository.restore(id, instance, version, audit));
   }
   async readSnapshotForDisplay(snapshot: unknown, schemaVersion: number) {
-    return productionApprovalCall(async () => ({
-      subjectSnapshot: readCloseoutApprovalSnapshot(snapshot, schemaVersion),
-      materialNames: {},
-    }));
+    return productionApprovalCall(async () => {
+      const subjectSnapshot = readCloseoutApprovalSnapshot(snapshot, schemaVersion);
+      const users = await this.identity.listUserReferencesByIds([
+        subjectSnapshot.inspection.createdBy,
+      ]);
+      const inspector = users.find((user) => user.id === subjectSnapshot.inspection.createdBy);
+      return {
+        subjectSnapshot: {
+          ...subjectSnapshot,
+          inspection: {
+            ...subjectSnapshot.inspection,
+            createdByName: inspector?.displayName ?? subjectSnapshot.inspection.createdBy,
+          },
+        },
+        materialNames: {},
+      };
+    });
   }
 }

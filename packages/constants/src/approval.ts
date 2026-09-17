@@ -7,7 +7,7 @@ export const APPROVAL_SCENE_CODES = {
 export const APPROVAL_SCENE_LABELS: Readonly<Record<string, string>> = {
   [APPROVAL_SCENE_CODES.bom]: 'BOM 审批',
   [APPROVAL_SCENE_CODES.demandCorrection]: '需求更正与关闭',
-  [APPROVAL_SCENE_CODES.batchCloseout]: '短产 / 提前结束批次',
+  [APPROVAL_SCENE_CODES.batchCloseout]: '生产任务结案',
 };
 export const APPROVAL_FLOW_VERSION_STATUSES = ['draft', 'published', 'discarded'] as const;
 export const APPROVAL_INSTANCE_STATUSES = ['pending', 'approved', 'rejected', 'withdrawn'] as const;

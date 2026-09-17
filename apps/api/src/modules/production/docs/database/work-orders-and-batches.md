@@ -130,7 +130,7 @@
 | `draft` | 取消工单 | 尚未下达且没有执行事实时允许；必须填写原因，直接进入 `cancelled` |
 | `draft` | 下达工单 | 事务内校验有效负责人，冻结下达快照并进入 `released` |
 | `released` | 首个生产批次实际开工 | 与批次开工同事务进入 `doing`；创建或分配批次本身不代表开工 |
-| `released` / `doing` | 确认工单完工 | 所有非取消批次均为 `completed`，且其 `completed_quantity` 合计等于工单 `planned_quantity` 时，管理员二次确认后进入 `completed` |
+| `released` / `doing` | 确认工单完工 | 所有非取消批次均为 `completed`，且其当前批准清单的计划内产出合计等于工单 `planned_quantity` 时，管理员二次确认后进入 `completed` |
 | `released` / `doing` | 提前关闭工单 | 不存在未终态批次时允许进入 `closed`；必须填写关闭原因。没有批次或只有已取消批次属于未生产结案，已完成量小于计划量属于不足量结案；含 `terminated` 批次时归为 `production_terminated`，不以原批次完成量替代可用产出 |
 | `released` / `doing` | 提前关闭工单但存在未终态批次 | 拒绝并返回未处理批次摘要；管理员须先逐批完成或取消。生产批次没有 `closed` 状态，提示语固定为“请先完成、取消或通过收尾审批结束所有未结束生产批次” |
 | `completed` | 关闭工单 | 作为成功完工后的行政归档进入 `closed` |
@@ -158,12 +158,13 @@
 | `route_code_snapshot`    | `VARCHAR(64)`     | 路线编码快照                    |
 | `route_version_snapshot` | `VARCHAR(64)`     | 路线版本快照                    |
 | `planned_quantity`       | `DECIMAL(12,4)`   | 本批次计划生产数量              |
-| `completed_quantity`     | `DECIMAL(12,4)`   | 生产执行完成数量，默认 `0`；批次完工时由服务端从报工事实推导 |
+| `completed_quantity`     | `DECIMAL(12,4)`   | 生产执行完成报工数量，默认 `0`；执行确认时从末工序报工推导，不是最终批准产出 |
 | `qualified_quantity`     | `DECIMAL(12,4)`   | 最终合格数量，默认 `0`          |
 | `plan_start_date`        | `DATE`            | 本批次计划开始日期，可为空        |
 | `plan_end_date`          | `DATE`            | 本批次计划完工日期，可为空        |
 | `started_at`              | `DATETIME`        | 批次实际开工时间，可为空        |
-| `completed_at`           | `DATETIME`        | 完工确认时间，可为空            |
+| `completed_at`           | `DATETIME`        | 正常结案末级批准时间，可为空            |
+| `execution_completed_at / execution_completed_by` | `DATETIME / BIGINT UNSIGNED` | 正常执行确认时间／人员，成对填写，人员 FK 用户 |
 | `completed_by`           | `BIGINT UNSIGNED` | 完工确认人，可为空              |
 | `cancel_reason`          | `TEXT`            | 取消原因；历史未记录数据可为空  |
 | `cancelled_by`           | `BIGINT UNSIGNED` | 取消人；历史未记录数据可为空    |
@@ -208,7 +209,7 @@
 | `doing`             | 生产中                 |
 | `completed`         | 生产完成               |
 | `cancelled`         | 已取消                 |
-| `closing` | 收尾中，停止执行，逐项处理后提交结案审批 |
+| `closing` | 结案处理中，停止执行；逐项核对、质检记录及产出清单送审 |
 | `terminated` | 收尾审批通过，产出处置单独登记，不代表足量完工 |
 
 批次状态转换以 `production-status.policy.ts` 为代码入口，与[数据库公共状态矩阵](../../../../../../../docs/database-conventions.md#核心状态转换矩阵)一致：
@@ -220,8 +221,8 @@
 | `material_assigned` | `material_pending`、`material_outbound`、`cancelled` |
 | `material_partially_outbound` | `material_outbound`、`doing`、`closing` |
 | `material_outbound` | `doing`、`closing` |
-| `doing` | `completed`、`closing` |
-| `closing` | 末级收尾审批通过后 `terminated` |
+| `doing` | `closing` |
+| `closing` | 首份清单末级批准后 normal → `completed`，early → `terminated` |
 | `completed`、`cancelled`、`terminated` | 无，终态 |
 
 状态边仅是必要条件；实际命令还必须满足下面的取消、齐套、短批授权和执行门禁。
@@ -234,7 +235,7 @@
 - 生产批次的“取消任务”与“结束本轮”分开：已领料或执行中批次使用 `terminated`，规则见[批次结束与产出处置](production-termination.md)。只允许 `pending`、`material_pending`、`material_assigned` 取消，即任务尚未开工且物料尚未实际出库；`material_partially_outbound` 已形成库存事实，不能取消。
 - 取消前管理端必须读取服务端实时影响摘要，展示将取消的待确认出库单、有效预留和活动需求数量，并要求填写取消原因；提交事务仍须重新锁定批次及相关单据校验，不能信任前端摘要。
 - 取消事务把 `pending_picking` 待出库单转为 `cancelled`、把活动分配转为 `cancelled` 以释放库存预留、把活动需求转为 `cancelled`，最后把生产批次状态、取消原因、取消人和取消时间同一条更新写入；这些写入和成功审计同事务提交，不生成 `inventory_transaction`。
-- `material_partially_outbound`、`material_outbound`、`doing`、`completed` 明令禁止取消。只要存在已确认出库事实，即使批次状态异常滞后也必须拒绝；第一版不提供强制取消或绕过入口。未来若要终止已开工批次，必须先定稿短批结案、生产损失、在制品及已领物料处置，不能复用本取消命令。
+- `material_partially_outbound`、`material_outbound`、`doing`、`completed` 明令禁止取消。只要存在已确认出库事实，即使批次状态异常滞后也必须拒绝；第一版不提供强制取消或绕过入口。已开工批次通过独立逐项收尾及结案流程结束，不能复用本取消命令。
 
 短批状态与版本规则：
 
@@ -252,7 +253,7 @@
 - 以本批次中 `step_order_snapshot` 最大的工序作为数量来源工序；`completed_quantity` 等于该工序从 `batch_step_reports` 聚合得到的 `effective_normal`。
 - 完工命令必须在事务内重新锁定并校验所有工序均为 `completed`，重新聚合数量后写入；客户端不得提交或覆盖 `completed_quantity`。
 - 当前至少需要存在一道工序；没有数量来源工序的批次不得执行完工确认。
-- 当前不支持正常数量低于要求数量时的短批完工。确需按不足数量结束时，使用独立的收尾／短产审批记录实际产出、差额、原因、确认人与审计，不得通过人工填写 `completed_quantity` 绕过报工事实。
+- 正常执行确认仍要求报工达标，并进入 normal closing，尚未最终结案；提前停止使用 early closing 逐项收尾。两种模式均登记最终产出和质检事实，交工单负责人同一结案流程批准，不能人工覆盖 `completed_quantity`。正常工序已完但最终可用不足计划可以按实际批准，不强制补产。
 - `qualified_quantity` 不由生产执行完工命令写入；它只允许来自未来独立的最终质量结论。
 
 说明：
@@ -261,13 +262,13 @@
 - 生产批次负责表达“这一批怎么生产”。
 - `product_id` 是受组合外键保护的查询冗余，不允许与工单产品不一致。
 - 路线快照在批次创建时冻结；批次执行期间不能跟随路线主数据变化。
-- `plan_start_date`、`plan_end_date` 是批次排程，不是实际执行事实；实际开工、完工分别只以 `started_at`、`completed_at` 为准。
+- `plan_start_date`、`plan_end_date` 是批次排程，不是实际执行事实；实际开工、执行完成分别以 `started_at`、`execution_completed_at` 为准；`completed_at` 表示正常结案批准。
 - 自产/成品入库尚未开放；当前 `item_batch` 的对象只引用基础物料及精确版本。未来产出库存与生产批次的关联方案须在范围扩展时重新评审。
 
 ---
 
 ## 工单产出查询口径
 
-列表及详情返回 `finalOutput`：正常完成批次用 `completed_quantity` 作为可用产出，终止批次用已审定 `production_batch_termination.available_quantity`；报废为各正常完成批次历史工序报废，以及终止批次的历史报废快照＋新增报废。合计不叠加各工序报工。
+列表及详情 `finalOutput` 只累计每个已結案任务根 `current_revision_id` 所指向的批准清单，计划内 `availableQuantity`、额外 `extraQuantity`、历史及新增报废分别展示；不累计旧版本，不将报工数当作最终可用量。计划缺口仅减计划内批准量，额外及报废不抵扣。
 
-`finalizedBatchCount` 统计已完成或已终止批次，`closingBatchCount/pendingAvailableQuantity` 单列收尾中批次数及已暂存、未审定可用量，不计入最终产出。计划差额仅为计划量减当前最终产出合计，不能推算物料消耗；尚有未终态批次时该差额也不是最终损失。入库量及研发轮次关联仍在路线图中另行排期。
+`finalizedBatchCount` 统计 completed/terminated，`closingBatchCount/pendingAvailableQuantity` 单列处理中任务和未审定草稿量；未审定量不计最终产出。正常结案可以少于计划，工单不足量关闭据批准量判断；含提前结束任务仍使用 `production_terminated`，不因数量达标变成正常完工。任务终态与待入库进度相互独立。

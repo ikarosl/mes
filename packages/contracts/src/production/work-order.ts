@@ -27,12 +27,16 @@ export interface WorkOrderOption {
 
 export interface WorkOrderItem {
   finalOutput?: {
+    /** 当前批准清单中的计划内产出；额外产出不抵扣计划缺口。 */
     availableQuantity: string;
+    extraQuantity: string;
     scrapQuantity: string;
     totalQuantity: string;
+    plannedShortfallQuantity: string;
     finalizedBatchCount: number;
     closingBatchCount: number;
     pendingAvailableQuantity: string;
+    pendingExtraQuantity: string;
   };
   id: string;
   workOrderNo: string;

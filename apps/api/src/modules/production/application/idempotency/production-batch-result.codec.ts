@@ -1,5 +1,9 @@
 import { z } from 'zod';
-import { BATCH_STEP_STATUSES, PRODUCTION_BATCH_STATUSES } from '@company/constants';
+import {
+  BATCH_STEP_STATUSES,
+  PRODUCTION_BATCH_STATUSES,
+  PRODUCTION_CLOSEOUT_MODES,
+} from '@company/constants';
 import type { BatchStepRecordItem, ProductionBatchDetail } from '@company/contracts';
 import type {
   IdempotencyResultCodec,
@@ -8,7 +12,7 @@ import type {
 import { CREATE_BATCH_IDEMPOTENCY_SCOPE } from './production-idempotency-scopes.contract.js';
 
 /**
- * createBatch 幂等结果 codec（scope `production.batch.create.v5`）。
+ * createBatch 幂等结果 codec（scope `production.batch.create.v6`）。
  *
  * v1 契约冻结：请求指纹规则、成功结果结构、本 Zod schema 三者在 scope v1 上线后不再演进；结果形状一旦
  * 后续不兼容变更必须 bump scope 并引入新 codec；旧 scope 记录不得由新 schema 猜测解析，
@@ -82,6 +86,10 @@ export const productionBatchDetailSchema: z.ZodType<ProductionBatchDetail> = z
     startedAt: nullableString,
 
     status: z.enum(PRODUCTION_BATCH_STATUSES),
+    closeoutMode: z.enum(PRODUCTION_CLOSEOUT_MODES).nullable(),
+    currentOutputRevisionId: nullableString,
+    executionCompletedAt: nullableString,
+    executionCompletedBy: nullableString,
     materialPlanVersion: z.number().int().positive(),
     shortBatchAuthorizationStatus: z.enum(['none', 'valid', 'stale', 'consumed']),
     shortBatchAuthorizationAction: z.enum([
