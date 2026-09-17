@@ -1,11 +1,32 @@
 <template>
   <el-dialog
     :model-value="visible"
-    :title="editingOrderId ? '编辑工单' : '新增工单'"
+    :title="
+      editingOrderId ? '编辑工单' : form.previousResearchOrderId ? '开启下一轮研发' : '新增工单'
+    "
     :width="DialogWidth.lg"
     @update:model-value="$emit('update:visible', $event)"
     @open="onOpen"
   >
+    <el-alert
+      v-if="previousResearchOrder"
+      type="info"
+      :closable="false"
+      show-icon
+      class="research-source"
+    >
+      <template #title>前序研发工单 {{ previousResearchOrder.workOrderNo }}</template>
+      <p>
+        前序成品：{{ previousResearchOrder.productCode }} · {{ previousResearchOrder.productName }}
+      </p>
+      <p>
+        {{
+          editingOrderId
+            ? '前序关联不可改，本轮不得改回前序成品。'
+            : '仅带出计划资料。新成品和计划日期须重新选择；'
+        }}新成品 BOM 仍需独立审批，旧需求、生产记录和库存不带入。
+      </p>
+    </el-alert>
     <el-form
       class="dialog-form"
       label-width="108px"
@@ -22,6 +43,7 @@
         >
           <el-select
             v-model="form.orderType"
+            :disabled="Boolean(form.previousResearchOrderId)"
             placeholder="请选择工单类型"
           >
             <el-option
@@ -143,7 +165,13 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue';
-import type { ProductOption, UserOption, WorkOrderItem, WorkOrderType } from '@company/contracts';
+import type {
+  ProductOption,
+  UserOption,
+  WorkOrderDetail,
+  WorkOrderType,
+  ResearchWorkOrderReference,
+} from '@company/contracts';
 import { WORK_ORDER_TYPE_LABELS } from '@company/constants';
 import { DialogWidth } from '../../../utils/dialog';
 import { toDateInputValue } from '../../../utils/date';
@@ -153,6 +181,7 @@ import type { RefreshableStatus } from '../../../composables/options/useRefresha
 
 export type WorkOrderFormValue = {
   orderType: WorkOrderType;
+  previousResearchOrderId: string | null;
   productId: string;
   plannedQuantity: number;
   workOrderOwnerId: string;
@@ -189,6 +218,7 @@ const onOpen = (): void => {
 
 const initialForm = (): WorkOrderFormValue => ({
   orderType: 'mass_production',
+  previousResearchOrderId: null,
   productId: '',
   plannedQuantity: 1,
   workOrderOwnerId: '',
@@ -202,9 +232,12 @@ const initialForm = (): WorkOrderFormValue => ({
 
 const form = reactive<WorkOrderFormValue>(initialForm());
 const displayedWorkOrderNo = ref('');
+const previousResearchOrder = ref<ResearchWorkOrderReference | null>(null);
 
 /** 实时选项：产品和负责人（产品业务投影：仅成品） */
-const finishedProducts = computed(() => props.productOptions);
+const finishedProducts = computed(() =>
+  props.productOptions.filter((product) => product.id !== previousResearchOrder.value?.productId),
+);
 const productChoices = computed(() =>
   buildLiveOptions(
     finishedProducts.value,
@@ -226,12 +259,15 @@ const formatProduct = (product: ProductOption): string =>
 const resetForm = (): void => {
   Object.assign(form, initialForm());
   displayedWorkOrderNo.value = '';
+  previousResearchOrder.value = null;
 };
 
-const setForm = (row: WorkOrderItem): void => {
+const setForm = (row: WorkOrderDetail): void => {
   displayedWorkOrderNo.value = row.workOrderNo;
+  previousResearchOrder.value = row.previousResearchOrder;
   Object.assign(form, {
     orderType: row.orderType,
+    previousResearchOrderId: row.previousResearchOrderId,
     productId: row.productId,
     plannedQuantity: Number(row.plannedQuantity),
     workOrderOwnerId: row.workOrderOwnerId ?? '',
@@ -239,6 +275,28 @@ const setForm = (row: WorkOrderItem): void => {
     qualityLevel: row.qualityLevel ?? '',
     planStartDate: toDateInputValue(row.planStartDate),
     planEndDate: toDateInputValue(row.planEndDate),
+    externalOrderNo: row.externalOrderNo ?? '',
+    remark: row.remark ?? '',
+  });
+};
+
+const startNextRound = (row: WorkOrderDetail): void => {
+  resetForm();
+  previousResearchOrder.value = {
+    id: row.id,
+    workOrderNo: row.workOrderNo,
+    productId: row.productId,
+    productCode: row.productCode,
+    productName: row.productName,
+    status: row.status,
+  };
+  Object.assign(form, {
+    orderType: 'research',
+    previousResearchOrderId: row.id,
+    plannedQuantity: Number(row.plannedQuantity),
+    workOrderOwnerId: row.workOrderOwnerId ?? '',
+    customerName: row.customerName ?? '',
+    qualityLevel: row.qualityLevel ?? '',
     externalOrderNo: row.externalOrderNo ?? '',
     remark: row.remark ?? '',
   });
@@ -280,10 +338,16 @@ const handleSubmit = (): void => {
   emit('save', { ...form });
 };
 
-defineExpose({ setForm, resetForm });
+defineExpose({ setForm, resetForm, startNextRound });
 </script>
 
 <style scoped>
+.research-source {
+  margin-bottom: 16px;
+}
+.research-source p {
+  margin: 4px 0;
+}
 .dialog-form {
   display: flex;
   flex-direction: column;

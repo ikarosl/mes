@@ -238,6 +238,12 @@
               <template #dropdown>
                 <el-dropdown-menu>
                   <el-dropdown-item
+                    v-if="canStartNextResearchRound(row)"
+                    :disabled="isRowPending(row.id)"
+                    @click="openNextResearchRound(row)"
+                    >开启下一轮研发</el-dropdown-item
+                  >
+                  <el-dropdown-item
                     v-if="canCompleteOrder(row)"
                     :disabled="isRowPending(row.id)"
                     @click="openWorkOrderTransition(row, 'complete')"
@@ -298,8 +304,11 @@
     <WorkOrderDetailDialog
       :visible="detailDialogVisible"
       :order="activeOrder"
+      :loading="detailLoading"
       :user-options="userSource.options.value"
-      @update:visible="detailDialogVisible = $event"
+      @update:visible="handleDetailDialogClose"
+      @view-research-order="(id) => openDetail({ id })"
+      @next-research-round="openNextResearchRound"
     />
 
     <!-- 生产批次列表弹窗 -->
@@ -367,6 +376,8 @@ import { useProductOptions } from '../../composables/options/useProductOptions';
 import { useUserOptions } from '../../composables/options/useUserOptions';
 import { ORDER_STATUS_META, formatQuantity, orderStatusMeta } from './production-status';
 import { useWorkOrdersList } from './composables/useWorkOrdersList';
+import { canStartNextResearchRound } from './research-work-order';
+import { useWorkOrderDialogs, type WorkOrderFormHandle } from './composables/useWorkOrderDialogs';
 import WorkOrderFormDialog from './components/WorkOrderFormDialog.vue';
 import type { WorkOrderFormValue } from './components/WorkOrderFormDialog.vue';
 import WorkOrderDetailDialog from './components/WorkOrderDetailDialog.vue';
@@ -429,27 +440,42 @@ const createOrderIntent = useIdempotentIntent('工单');
 
 /* ====== 弹窗状态 ====== */
 const orderDialogVisible = ref(false);
-const detailDialogVisible = ref(false);
 const taskDialogVisible = ref(false);
 const batchFormDialogVisible = ref(false);
 const transitionDialogVisible = ref(false);
 const editingOrderId = ref<string | null>(null);
+const editingOrderVersion = ref(0);
 const editingBatchId = ref<string | null>(null);
 const submitting = ref(false);
 const transitionSubmitting = ref(false);
-const activeOrder = ref<WorkOrderDetail | null>(null);
 const taskOrder = ref<WorkOrderItem | null>(null);
 const taskBatches = ref<ProductionBatchItem[]>([]);
 const transitionOrder = ref<WorkOrderDetail | null>(null);
 const transitionMode = ref<'complete' | 'early-close' | 'archive'>('complete');
-const workOrderFormDialogRef = ref<{
-  setForm: (row: WorkOrderItem) => void;
-  resetForm: () => void;
-}>();
+const workOrderFormDialogRef = ref<WorkOrderFormHandle>();
 const batchFormDialogRef = ref<{
   setForm: (row: ProductionBatchItem) => void;
   resetForm: () => void;
 }>();
+
+const {
+  activeOrder,
+  detailDialogVisible,
+  detailLoading,
+  openDetail,
+  openEdit,
+  openNextResearchRound,
+  closeDetail: handleDetailDialogClose,
+  invalidate: invalidateWorkOrderDialogRequest,
+} = useWorkOrderDialogs({
+  form: workOrderFormDialogRef,
+  editingOrderId,
+  editingOrderVersion,
+  orderDialogVisible,
+  resetCreationIntent: createOrderIntent.reset,
+  beginRow,
+  endRow,
+});
 
 const editingBatch = computed(
   () => taskBatches.value.find((item) => item.id === editingBatchId.value) ?? null,
@@ -471,15 +497,10 @@ const canCreateBatch = computed(
 
 /* ====== 工单 CRUD ====== */
 const openCreate = (): void => {
+  invalidateWorkOrderDialogRequest();
   editingOrderId.value = null;
   workOrderFormDialogRef.value?.resetForm();
   createOrderIntent.reset();
-  orderDialogVisible.value = true;
-};
-
-const openEdit = (row: WorkOrderItem): void => {
-  editingOrderId.value = row.id;
-  workOrderFormDialogRef.value?.setForm(row);
   orderDialogVisible.value = true;
 };
 
@@ -489,7 +510,6 @@ const submitOrder = async (data: WorkOrderFormValue): Promise<void> => {
   try {
     const editId = editingOrderId.value;
     if (editId) {
-      const order = orders.value.find((item) => item.id === editId);
       await productionApi.updateOrder(editId, {
         orderType: data.orderType,
         productId: data.productId,
@@ -501,12 +521,13 @@ const submitOrder = async (data: WorkOrderFormValue): Promise<void> => {
         planEndDate: toDateInputValue(data.planEndDate),
         externalOrderNo: data.externalOrderNo || null,
         remark: data.remark || null,
-        version: order?.version ?? 0,
+        version: editingOrderVersion.value,
       });
       EMessage.success('工单已更新');
     } else {
       const payload: CreateWorkOrderPayload = {
         orderType: data.orderType,
+        previousResearchOrderId: data.previousResearchOrderId,
         productId: data.productId,
         plannedQuantity: data.plannedQuantity,
         workOrderOwnerId: data.workOrderOwnerId || null,
@@ -533,6 +554,7 @@ const submitOrder = async (data: WorkOrderFormValue): Promise<void> => {
 };
 
 const handleOrderFormDialogClose = async (visible: boolean): Promise<void> => {
+  if (!visible) invalidateWorkOrderDialogRequest();
   if (submitting.value) return;
   if (!visible && createOrderIntent.getStatus() !== 'idle') {
     try {
@@ -547,15 +569,6 @@ const handleOrderFormDialogClose = async (visible: boolean): Promise<void> => {
   }
   orderDialogVisible.value = visible;
   if (!visible) createOrderIntent.reset();
-};
-
-const openDetail = async (row: WorkOrderItem): Promise<void> => {
-  try {
-    activeOrder.value = await productionApi.getOrder(row.id);
-    detailDialogVisible.value = true;
-  } catch (error) {
-    EMessage.error(error, '工单详情查询失败');
-  }
 };
 
 /* ====== 工单状态变更 ====== */
@@ -660,7 +673,10 @@ const canCloseOrder = (row: WorkOrderItem): boolean =>
   row.status === 'released' || row.status === 'doing' || row.status === 'completed';
 const canCancelOrder = (row: WorkOrderItem): boolean => row.status === 'draft';
 const hasMoreActions = (row: WorkOrderItem): boolean =>
-  canCompleteOrder(row) || canCloseOrder(row) || canCancelOrder(row);
+  canCompleteOrder(row) ||
+  canCloseOrder(row) ||
+  canCancelOrder(row) ||
+  canStartNextResearchRound(row);
 
 /* ====== 批次管理 ====== */
 const openTasks = async (row: WorkOrderItem): Promise<void> => {

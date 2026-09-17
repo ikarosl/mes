@@ -323,6 +323,7 @@ export class ProductionService {
   private cleanWorkOrder(payload: CreateWorkOrderPayload): CreateWorkOrderPayload {
     return {
       orderType: payload.orderType,
+      previousResearchOrderId: payload.previousResearchOrderId ?? null,
       productId: payload.productId,
       plannedQuantity: payload.plannedQuantity,
       customerName: payload.customerName?.trim() || null,

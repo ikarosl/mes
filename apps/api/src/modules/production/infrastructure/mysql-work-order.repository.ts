@@ -21,6 +21,10 @@ import { ProductionDomainError } from '../domain/production.errors.js';
 import { fixedIntegerQuantity, integerQuantity } from '../domain/integer-quantity.js';
 import { allocateWorkOrderNumber } from './mysql-work-order-number.js';
 import {
+  readResearchOrderRelations,
+  requireResearchPredecessor,
+} from './mysql-work-order-research.js';
+import {
   BATCH_SELECT,
   type Db,
   ensureNoDuplicate,
@@ -151,13 +155,20 @@ export class MysqlWorkOrderRepository {
   ): Promise<WorkOrderDetail> {
     return withTransaction(this.pool, async (connection) => {
       requirePlanDates(payload.planStartDate, payload.planEndDate);
+      await requireResearchPredecessor(
+        connection,
+        payload.previousResearchOrderId ?? null,
+        payload.orderType,
+        product.id,
+      );
       const workOrderNo = await allocateWorkOrderNumber(connection);
       const [result] = await connection.execute<ResultSetHeader>(
-        `INSERT INTO work_orders (work_order_no,order_type,product_id,product_code_snapshot,product_name_snapshot,unit_snapshot,planned_quantity,customer_name,quality_level,work_order_owner_id,plan_start_date,plan_end_date,external_order_no,remark,created_by,updated_by)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        `INSERT INTO work_orders (work_order_no,order_type,previous_research_order_id,product_id,product_code_snapshot,product_name_snapshot,unit_snapshot,planned_quantity,customer_name,quality_level,work_order_owner_id,plan_start_date,plan_end_date,external_order_no,remark,created_by,updated_by)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         [
           workOrderNo,
           payload.orderType,
+          payload.previousResearchOrderId ?? null,
           product.id,
           product.itemCode,
           product.productName,
@@ -192,6 +203,14 @@ export class MysqlWorkOrderRepository {
       const before = await findWorkOrder(connection, id, true);
       if (before.status !== 'draft')
         throw new ProductionDomainError('INVALID_STATE', '只有草稿工单可以编辑');
+      await requireResearchPredecessor(
+        connection,
+        before.previous_research_order_id === null
+          ? null
+          : String(before.previous_research_order_id),
+        payload.orderType ?? before.order_type,
+        product?.id ?? String(before.product_id),
+      );
       const planStartDate =
         payload.planStartDate === undefined
           ? toDateOnlyString(before.plan_start_date)
@@ -475,7 +494,11 @@ export class MysqlWorkOrderRepository {
       `${BATCH_SELECT} WHERE b.work_order_id=? ORDER BY b.created_at DESC,b.id DESC`,
       [id],
     );
-    return { ...mapWorkOrder(order), batches: (batches as never[]).map(mapBatch) };
+    return {
+      ...mapWorkOrder(order),
+      batches: (batches as never[]).map(mapBatch),
+      ...(await readResearchOrderRelations(db, order)),
+    };
   }
 
   private assertVersion(result: ResultSetHeader, message: string): void {

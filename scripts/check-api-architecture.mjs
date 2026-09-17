@@ -62,7 +62,7 @@ const knownIdempotencyScopes = [
   'production.output.correction.begin.v1',
   'production.output.correction.cancel.v1',
   'production.material-allocation.create.v1',
-  'production.work-order.create.v1',
+  'production.work-order.create.v2',
   'production.material-outbound.create.v3',
   'production.material-outbound.confirm.v2',
   'production.purchase-inbound.create.v1',

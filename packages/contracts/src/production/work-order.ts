@@ -41,6 +41,8 @@ export interface WorkOrderItem {
   id: string;
   workOrderNo: string;
   orderType: WorkOrderType;
+  /** 仅研发续轮在创建时关联前序，之后不可更改。 */
+  previousResearchOrderId: string | null;
   productId: string;
   productCode: string;
   productName: string;
@@ -72,10 +74,22 @@ export interface WorkOrderItem {
 
 export interface WorkOrderDetail extends WorkOrderItem {
   batches: ProductionBatchItem[];
+  previousResearchOrder: ResearchWorkOrderReference | null;
+  nextResearchOrders: ResearchWorkOrderReference[];
+}
+
+export interface ResearchWorkOrderReference {
+  id: string;
+  workOrderNo: string;
+  productId: string;
+  productCode: string;
+  productName: string;
+  status: WorkOrderStatus;
 }
 
 export interface CreateWorkOrderPayload {
   orderType: WorkOrderType;
+  previousResearchOrderId?: string | null;
   productId: string;
   plannedQuantity: number;
   customerName?: string | null;

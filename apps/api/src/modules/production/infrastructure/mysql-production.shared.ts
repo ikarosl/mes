@@ -37,6 +37,7 @@ export type WorkOrderRow = RowDataPacket & {
   id: number;
   work_order_no: string;
   order_type: WorkOrderType;
+  previous_research_order_id: number | null;
   product_id: number;
   product_code_snapshot: string;
   product_name_snapshot: string;
@@ -130,7 +131,7 @@ export type StepRow = RowDataPacket & {
   version: number;
 };
 
-export const WORK_ORDER_SELECT = `SELECT wo.id,wo.work_order_no,wo.order_type,wo.product_id,wo.product_code_snapshot,wo.product_name_snapshot,wo.unit_snapshot,wo.planned_quantity,wo.customer_name,wo.quality_level,wo.work_order_owner_id,wo.plan_start_date,wo.plan_end_date,COALESCE((SELECT SUM(b.planned_quantity) FROM production_batches b WHERE b.work_order_id=wo.id AND b.status<>'cancelled'),0) assigned_quantity,wo.status,wo.released_at,wo.cancel_reason,wo.cancelled_by,wo.cancelled_at,wo.close_type,wo.close_reason,wo.closed_by,wo.closed_at,wo.external_order_no,wo.remark,wo.version,wo.created_at,wo.updated_at,
+export const WORK_ORDER_SELECT = `SELECT wo.id,wo.work_order_no,wo.order_type,wo.previous_research_order_id,wo.product_id,wo.product_code_snapshot,wo.product_name_snapshot,wo.unit_snapshot,wo.planned_quantity,wo.customer_name,wo.quality_level,wo.work_order_owner_id,wo.plan_start_date,wo.plan_end_date,COALESCE((SELECT SUM(b.planned_quantity) FROM production_batches b WHERE b.work_order_id=wo.id AND b.status<>'cancelled'),0) assigned_quantity,wo.status,wo.released_at,wo.cancel_reason,wo.cancelled_by,wo.cancelled_at,wo.close_type,wo.close_reason,wo.closed_by,wo.closed_at,wo.external_order_no,wo.remark,wo.version,wo.created_at,wo.updated_at,
   COALESCE((SELECT SUM(r.available_quantity) FROM production_batch_closeout c
     JOIN production_output_revision r ON r.id=c.current_revision_id AND r.closeout_id=c.id
     WHERE r.work_order_id=wo.id),0) final_available_quantity,
@@ -228,6 +229,8 @@ export const mapWorkOrder = (row: WorkOrderRow): WorkOrderItem => ({
   id: String(row.id),
   workOrderNo: row.work_order_no,
   orderType: row.order_type,
+  previousResearchOrderId:
+    row.previous_research_order_id === null ? null : String(row.previous_research_order_id),
   productId: String(row.product_id),
   productCode: row.product_code_snapshot,
   productName: row.product_name_snapshot,

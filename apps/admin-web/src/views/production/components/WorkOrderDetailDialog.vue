@@ -5,7 +5,18 @@
     :width="DialogWidth.xl"
     @update:model-value="$emit('update:visible', $event)"
   >
-    <template v-if="order">
+    <el-skeleton
+      v-if="loading"
+      :rows="8"
+      animated
+    />
+    <el-alert
+      v-else-if="!order"
+      type="error"
+      title="工单详情未能加载，请关闭后重试"
+      :closable="false"
+    />
+    <template v-else>
       <el-descriptions
         :column="3"
         border
@@ -105,6 +116,80 @@
         >
       </el-descriptions>
 
+      <section
+        v-if="order.orderType === 'research'"
+        class="research-rounds"
+      >
+        <div class="dialog-section-title">研发轮次关联</div>
+        <p v-if="order.previousResearchOrder">
+          前序工单：
+          <el-button
+            link
+            type="primary"
+            @click="$emit('view-research-order', order.previousResearchOrder.id)"
+          >
+            {{ order.previousResearchOrder.workOrderNo }}
+          </el-button>
+          · {{ order.previousResearchOrder.productCode }} ·
+          {{ orderStatusMeta(order.previousResearchOrder.status).label }}
+        </p>
+        <p
+          v-else
+          class="empty-hint"
+        >
+          本工单未关联前序研发轮次。
+        </p>
+        <el-table
+          v-if="order.nextResearchOrders.length"
+          :data="order.nextResearchOrders"
+          class="detail-table"
+        >
+          <el-table-column
+            label="后续研发工单"
+            min-width="190"
+          >
+            <template #default="{ row }">
+              <el-button
+                link
+                type="primary"
+                @click="$emit('view-research-order', row.id)"
+                >{{ row.workOrderNo }}</el-button
+              >
+            </template>
+          </el-table-column>
+          <el-table-column
+            prop="productCode"
+            label="成品编码"
+            min-width="180"
+          />
+          <el-table-column
+            prop="productName"
+            label="成品名称"
+            min-width="180"
+          />
+          <el-table-column
+            label="状态"
+            width="120"
+            ><template #default="{ row }">{{
+              orderStatusMeta(row.status).label
+            }}</template></el-table-column
+          >
+        </el-table>
+        <p
+          v-else
+          class="empty-hint"
+        >
+          暂无后续研发工单。
+        </p>
+        <el-button
+          v-if="canStartNextResearchRound(order)"
+          type="primary"
+          plain
+          @click="$emit('next-research-round', order)"
+          >开启下一轮研发</el-button
+        >
+      </section>
+
       <div class="dialog-section-title">生产批次</div>
       <el-table
         v-if="order.batches?.length"
@@ -160,6 +245,7 @@
 import { WORK_ORDER_TYPE_LABELS, WORK_ORDER_CLOSE_TYPE_LABELS } from '@company/constants';
 import type { UserOption, WorkOrderCloseType, WorkOrderDetail } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
+import { canStartNextResearchRound } from '../research-work-order';
 import { formatDateForDisplay, formatDateTimeForDisplay } from '../../../utils/date';
 import {
   batchStatusMeta,
@@ -170,12 +256,15 @@ import {
 
 defineProps<{
   visible: boolean;
+  loading?: boolean;
   order: WorkOrderDetail | null;
   userOptions: UserOption[];
 }>();
 
 defineEmits<{
   (e: 'update:visible', val: boolean): void;
+  (e: 'view-research-order', id: string): void;
+  (e: 'next-research-round', order: WorkOrderDetail): void;
 }>();
 
 const closeTypeLabels: Record<WorkOrderCloseType | '', string> = {
