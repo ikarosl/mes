@@ -19,8 +19,8 @@ export interface ProductionTraceBatchSummary {
   productCode: string;
   productName: string;
   plannedQuantity: string;
-  /** 末工序报工数量；不代表最终质检后批准产出。 */
-  completedQuantity: string;
+  /** 末道工序有效正常报工量；不代表最终质检后批准产出。 */
+  lastStepReportedQuantity: string;
   closeoutMode: ProductionCloseoutMode | null;
   currentOutputRevisionId: string | null;
   executionCompletedAt: string | null;

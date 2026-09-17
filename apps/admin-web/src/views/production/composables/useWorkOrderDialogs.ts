@@ -1,4 +1,4 @@
-import { onBeforeUnmount, onDeactivated, ref, type Ref } from 'vue';
+import { onActivated, onBeforeUnmount, onDeactivated, ref, type Ref } from 'vue';
 import type { WorkOrderDetail, WorkOrderItem } from '@company/contracts';
 import { productionApi } from '../../../api/production';
 import { EMessage } from '../../../utils/message';
@@ -53,6 +53,12 @@ export const useWorkOrderDialogs = (options: {
       if (request === generation) detailLoading.value = false;
     }
   };
+
+  onActivated(() => {
+    if (detailDialogVisible.value && activeOrder.value) {
+      void openDetail({ id: activeOrder.value.id });
+    }
+  });
 
   const openForm = async (row: WorkOrderItem, nextRound: boolean) => {
     if (!options.beginRow(row.id)) return;

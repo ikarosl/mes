@@ -29,6 +29,15 @@
       :closable="false"
       class="notice"
     />
+    <el-alert
+      v-if="inspectionQuantitiesAreZero"
+      title="零数量也需质检确认"
+      description="本次三项数量均为 0，仍须核实是否确无产出，填写真实结论和凭据。若有新增成品报废，请据实登记；历史工序报废不重复填写。两类合格产出均为零时不办理成品入库。"
+      type="info"
+      :closable="false"
+      show-icon
+      class="notice"
+    />
     <el-form
       v-if="inspectionOpen"
       label-position="top"
@@ -101,13 +110,17 @@
           show-word-limit
           @update:model-value="(value: string) => $emit('change', { resultNote: value ?? '' })"
       /></el-form-item>
-      <el-form-item label="凭据编号 / 存放位置"
+      <el-form-item
+        label="凭据编号 / 存放位置"
+        required
         ><el-input
           :model-value="inspection.evidenceReference"
           type="textarea"
           :rows="2"
-          maxlength="2000"
-          placeholder="填写线下质检单编号或凭据位置"
+          maxlength="5000"
+          show-word-limit
+          required
+          placeholder="必填：线下质检单编号或凭据存放位置，零产出确认也需填写"
           @update:model-value="
             (value: string) => $emit('change', { evidenceReference: value ?? '' })
           "
@@ -174,10 +187,10 @@
   </section>
 </template>
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import type { ProductionOutputDetail, ProductionOutputQuantities } from '@company/contracts';
 import { PRODUCTION_OUTPUT_QUANTITY_MAX } from '@company/constants';
-defineProps<{
+const props = defineProps<{
   detail: ProductionOutputDetail;
   declared: ProductionOutputQuantities;
   declaredVersion: number | null;
@@ -195,6 +208,15 @@ defineProps<{
   dirty: boolean;
   submitting: boolean;
 }>();
+const inspectionQuantitiesAreZero = computed(() => {
+  const quantities = props.inspectionOpen ? props.inspection : props.detail.draft;
+  return (
+    quantities !== null &&
+    quantities.availableQuantity === 0 &&
+    quantities.extraQuantity === 0 &&
+    quantities.additionalScrapQuantity === 0
+  );
+});
 defineEmits<{
   start: [];
   record: [];

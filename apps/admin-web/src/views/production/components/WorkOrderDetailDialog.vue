@@ -102,15 +102,17 @@
         <el-descriptions-item label="审定计划外产出">{{
           formatQuantity(order.finalOutput?.extraQuantity)
         }}</el-descriptions-item>
-        <el-descriptions-item label="最终报废合计">{{
+        <el-descriptions-item label="审定报废合计">{{
           formatQuantity(order.finalOutput?.scrapQuantity)
         }}</el-descriptions-item>
-        <el-descriptions-item label="最终产出合计">{{
-          formatQuantity(order.finalOutput?.totalQuantity)
+        <el-descriptions-item label="审定可用产出合计">{{
+          formatQuantity(approvedUsableQuantity(order.finalOutput))
         }}</el-descriptions-item>
-        <el-descriptions-item label="计划内产出缺口"
+        <el-descriptions-item label="计划内产出与计划比较"
           >{{
-            formatQuantity(order.finalOutput?.plannedShortfallQuantity ?? order.plannedQuantity)
+            plannedOutputGapText(
+              order.finalOutput?.plannedShortfallQuantity ?? order.plannedQuantity,
+            )
           }}（未批准任务尚未计入）</el-descriptions-item
         >
         <el-descriptions-item label="待结案（未计入）"
@@ -118,6 +120,9 @@
           {{ formatQuantity(order.finalOutput?.pendingAvailableQuantity) }}</el-descriptions-item
         >
       </el-descriptions>
+      <p class="output-note">
+        审定产出仅汇总每个任务的当前批准清单，可用合计不含报废，也不代表已入库。已终止任务的审定产出仍计入，累计量可能超过工单计划。
+      </p>
 
       <section
         v-if="order.orderType === 'research'"
@@ -212,14 +217,17 @@
           <template #default="{ row }">{{ formatQuantity(row.plannedQuantity) }}</template>
         </el-table-column>
         <el-table-column
-          label="完成/合格"
-          width="160"
+          label="末工序正常报工量"
+          width="120"
           align="right"
         >
-          <template #default="{ row }"
-            >{{ formatQuantity(row.completedQuantity) }} /
-            {{ formatQuantity(row.qualifiedQuantity) }}</template
-          >
+          <template #default="{ row }">{{ formatQuantity(row.lastStepReportedQuantity) }}</template>
+        </el-table-column>
+        <el-table-column
+          label="当前批准产出"
+          min-width="230"
+        >
+          <template #default="{ row }"><BatchApprovedOutput :output="row.finalOutput" /></template>
         </el-table-column>
         <el-table-column
           label="任务状态"
@@ -248,6 +256,8 @@
 import { WORK_ORDER_TYPE_LABELS, WORK_ORDER_CLOSE_TYPE_LABELS } from '@company/constants';
 import type { UserOption, WorkOrderCloseType, WorkOrderDetail } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
+import BatchApprovedOutput from './BatchApprovedOutput.vue';
+import { approvedUsableQuantity, plannedOutputGapText } from '../production-output-quantity';
 import { canStartNextResearchRound } from '../research-work-order';
 import { formatDateForDisplay, formatDateTimeForDisplay } from '../../../utils/date';
 import {
@@ -277,6 +287,10 @@ const closeTypeLabels: Record<WorkOrderCloseType | '', string> = {
 </script>
 
 <style scoped>
+.output-note {
+  line-height: 1.7;
+  color: var(--el-text-color-regular);
+}
 .dialog-section-title {
   margin: 20px 0 12px;
   color: #1f2937;

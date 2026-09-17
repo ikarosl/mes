@@ -21,6 +21,7 @@ import { requireWorkOrderTransition } from '../domain/production-status.policy.j
 import { ProductionDomainError } from '../domain/production.errors.js';
 import { fixedIntegerQuantity, integerQuantity } from '../domain/integer-quantity.js';
 import { allocateWorkOrderNumber } from './mysql-work-order-number.js';
+import { lastStepReportedQuantitySql } from './mysql-production-reporting.sql.js';
 import {
   readResearchOrderRelations,
   requireResearchPredecessor,
@@ -32,6 +33,7 @@ import {
   findWorkOrder,
   mapBatch,
   mapWorkOrder,
+  mapWorkOrderFinalOutput,
   type WorkOrderRow,
   WORK_ORDER_SELECT,
   workOrderAudit,
@@ -52,7 +54,7 @@ type WorkOrderBatchSummaryRow = RowDataPacket & {
     | 'terminated'
     | 'closing';
   planned_quantity: string;
-  completed_quantity: string;
+  last_step_reported_quantity: string;
   current_revision_id: number | null;
   approved_available_quantity: string | null;
 };
@@ -105,22 +107,8 @@ export class MysqlWorkOrderRepository {
   async listWorkOrderOptions(): Promise<WorkOrderOption[]> {
     const remaining = `(wo.planned_quantity - ${workOrderAssignedQuantitySql('wo.id')})`;
     const conditions = [`wo.status IN ('released','doing')`, `${remaining} > 0`];
-    const [rows] = await this.pool.query<
-      (RowDataPacket & {
-        id: number;
-        work_order_no: string;
-        order_type: WorkOrderOption['orderType'];
-        product_id: number;
-        product_code_snapshot: string;
-        product_name_snapshot: string;
-        remaining_quantity: string;
-        plan_start_date: Date | string | null;
-        plan_end_date: Date | string | null;
-      })[]
-    >(
-      `SELECT wo.id,wo.work_order_no,wo.order_type,wo.product_id,wo.product_code_snapshot,wo.product_name_snapshot,${remaining} AS remaining_quantity,wo.plan_start_date,wo.plan_end_date
-         FROM work_orders wo
-         WHERE ${conditions.join(' AND ')}
+    const [rows] = await this.pool.query<WorkOrderRow[]>(
+      `${WORK_ORDER_SELECT} WHERE ${conditions.join(' AND ')}
          ORDER BY wo.work_order_no ASC,wo.id ASC`,
     );
     return rows.map((row) => ({
@@ -130,7 +118,11 @@ export class MysqlWorkOrderRepository {
       productId: String(row.product_id),
       productCode: row.product_code_snapshot,
       productName: row.product_name_snapshot,
-      remainingQuantity: row.remaining_quantity,
+      plannedQuantity: row.planned_quantity,
+      assignedQuantity: row.assigned_quantity,
+      terminatedPlannedQuantity: row.terminated_planned_quantity,
+      finalOutput: mapWorkOrderFinalOutput(row),
+      remainingQuantity: String(Number(row.planned_quantity) - Number(row.assigned_quantity)),
       planStartDate: toDateOnlyString(row.plan_start_date),
       planEndDate: toDateOnlyString(row.plan_end_date),
     }));
@@ -363,16 +355,20 @@ export class MysqlWorkOrderRepository {
       const unfinishedBatches = activeBatches.filter(
         (batch) => batch.status !== 'completed' || batch.current_revision_id === null,
       );
-      const completedQuantity = sumApprovedPlannedQuantity(activeBatches);
+      const approvedPlannedQuantity = sumApprovedPlannedQuantity(activeBatches);
       if (
         activeBatches.length === 0 ||
         unfinishedBatches.length > 0 ||
-        integerQuantity(completedQuantity) !== integerQuantity(before.planned_quantity)
+        integerQuantity(approvedPlannedQuantity) !== integerQuantity(before.planned_quantity)
       ) {
         throw new ProductionDomainError(
           'WORK_ORDER_COMPLETION_NOT_ALLOWED',
           '工单尚未达到审定计划内产出足量条件，请核对任务结案清单',
-          workOrderBatchDetails(before.planned_quantity, completedQuantity, unfinishedBatches),
+          workOrderBatchDetails(
+            before.planned_quantity,
+            approvedPlannedQuantity,
+            unfinishedBatches,
+          ),
         );
       }
       const [result] = await connection.execute<ResultSetHeader>(
@@ -389,7 +385,7 @@ export class MysqlWorkOrderRepository {
         {
           status: 'completed',
           plannedQuantity: before.planned_quantity,
-          completedQuantity,
+          approvedPlannedQuantity,
           completedBatchCount: activeBatches.length,
           version: version + 1,
         },
@@ -419,13 +415,17 @@ export class MysqlWorkOrderRepository {
           (batch.status !== 'completed' && batch.status !== 'terminated') ||
           batch.current_revision_id === null,
       );
-      const completedQuantity = sumApprovedPlannedQuantity(activeBatches);
+      const approvedPlannedQuantity = sumApprovedPlannedQuantity(activeBatches);
       const isEarlyClose = before.status === 'released' || before.status === 'doing';
       if (isEarlyClose && unfinishedBatches.length > 0)
         throw new ProductionDomainError(
           'WORK_ORDER_CLOSE_NOT_ALLOWED',
           '请先完成、结束或取消所有未结束生产批次',
-          workOrderBatchDetails(before.planned_quantity, completedQuantity, unfinishedBatches),
+          workOrderBatchDetails(
+            before.planned_quantity,
+            approvedPlannedQuantity,
+            unfinishedBatches,
+          ),
         );
       if (isEarlyClose && !reason)
         throw new ProductionDomainError('INVALID_INPUT', '提前关闭工单必须填写关闭原因');
@@ -433,7 +433,7 @@ export class MysqlWorkOrderRepository {
         isEarlyClose &&
         activeBatches.length > 0 &&
         !activeBatches.some((batch) => batch.status === 'terminated') &&
-        integerQuantity(completedQuantity) === integerQuantity(before.planned_quantity)
+        integerQuantity(approvedPlannedQuantity) === integerQuantity(before.planned_quantity)
       )
         throw new ProductionDomainError(
           'WORK_ORDER_CLOSE_NOT_ALLOWED',
@@ -463,7 +463,7 @@ export class MysqlWorkOrderRepository {
           closeType,
           reason,
           plannedQuantity: before.planned_quantity,
-          completedQuantity,
+          approvedPlannedQuantity,
           version: version + 1,
         },
       );
@@ -476,7 +476,7 @@ export class MysqlWorkOrderRepository {
     workOrderId: string,
   ): Promise<WorkOrderBatchSummaryRow[]> {
     const [rows] = await connection.query<WorkOrderBatchSummaryRow[]>(
-      `SELECT b.id,b.batch_no,b.status,b.planned_quantity,b.completed_quantity,
+      `SELECT b.id,b.batch_no,b.status,b.planned_quantity,${lastStepReportedQuantitySql('b.id', true)} last_step_reported_quantity,
         c.current_revision_id,r.available_quantity approved_available_quantity
        FROM production_batches b
        LEFT JOIN production_batch_closeout c ON c.production_batch_id=b.id
@@ -542,17 +542,17 @@ const sumApprovedPlannedQuantity = (batches: WorkOrderBatchSummaryRow[]): string
 
 const workOrderBatchDetails = (
   plannedQuantity: string,
-  completedQuantity: string,
+  approvedPlannedQuantity: string,
   unfinishedBatches: WorkOrderBatchSummaryRow[],
 ): Record<string, unknown> => ({
   plannedQuantity,
-  completedQuantity,
+  approvedPlannedQuantity,
   unfinishedBatches: unfinishedBatches.map((batch) => ({
     id: String(batch.id),
     batchNo: batch.batch_no,
     status: batch.status,
     plannedQuantity: batch.planned_quantity,
-    reportedQuantity: batch.completed_quantity,
+    lastStepReportedQuantity: batch.last_step_reported_quantity,
     approvedAvailableQuantity: batch.approved_available_quantity,
     currentOutputRevisionId:
       batch.current_revision_id === null ? null : String(batch.current_revision_id),

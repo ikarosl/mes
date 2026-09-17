@@ -26,7 +26,7 @@ export const BEGIN_OUTPUT_CORRECTION_SCOPE = 'production.output.correction.begin
 export const CANCEL_OUTPUT_CORRECTION_SCOPE = 'production.output.correction.cancel.v1' as const;
 
 /** createBatch 创建生产批次；scope 与当前请求及结果 codec 绑定。 */
-export const CREATE_BATCH_IDEMPOTENCY_SCOPE = 'production.batch.create.v6' as const;
+export const CREATE_BATCH_IDEMPOTENCY_SCOPE = 'production.batch.create.v7' as const;
 /** 创建物料分配。 */
 export const CREATE_MATERIAL_ALLOCATION_IDEMPOTENCY_SCOPE =
   'production.material-allocation.create.v1' as const;

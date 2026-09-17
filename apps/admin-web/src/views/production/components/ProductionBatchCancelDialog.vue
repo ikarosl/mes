@@ -34,8 +34,8 @@
         <el-descriptions-item label="计划数量">
           {{ formatQuantity(batch.plannedQuantity) }}
         </el-descriptions-item>
-        <el-descriptions-item label="完成数量">
-          {{ formatQuantity(batch.completedQuantity) }}
+        <el-descriptions-item label="末工序正常报工量">
+          {{ formatQuantity(batch.lastStepReportedQuantity) }}
         </el-descriptions-item>
       </el-descriptions>
 

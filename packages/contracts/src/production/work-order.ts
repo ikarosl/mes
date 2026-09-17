@@ -12,6 +12,19 @@ export interface WorkOrderQuery extends PageQuery {
   status?: WorkOrderStatus;
 }
 
+export interface WorkOrderFinalOutput {
+  /** 当前批准清单中的计划内产出；额外产出不抵扣计划缺口。 */
+  availableQuantity: string;
+  extraQuantity: string;
+  scrapQuantity: string;
+  totalQuantity: string;
+  plannedShortfallQuantity: string;
+  finalizedBatchCount: number;
+  closingBatchCount: number;
+  pendingAvailableQuantity: string;
+  pendingExtraQuantity: string;
+}
+
 export interface WorkOrderOption {
   id: string;
   workOrderNo: string;
@@ -19,25 +32,20 @@ export interface WorkOrderOption {
   productId: string;
   productCode: string;
   productName: string;
-  /** 剩余可分配数量 = 计划数量 - 已分配数量 */
+  plannedQuantity: string;
+  /** 有效任务计划合计，排除 cancelled/terminated。 */
+  assignedQuantity: string;
+  /** 已终止任务原计划，仅供展示，不占额度。 */
+  terminatedPlannedQuantity: string;
+  finalOutput: WorkOrderFinalOutput;
+  /** 剩余可分配数量 = 计划数量 - 有效任务已分配数量。 */
   remainingQuantity: string;
   planStartDate: string | null;
   planEndDate: string | null;
 }
 
 export interface WorkOrderItem {
-  finalOutput?: {
-    /** 当前批准清单中的计划内产出；额外产出不抵扣计划缺口。 */
-    availableQuantity: string;
-    extraQuantity: string;
-    scrapQuantity: string;
-    totalQuantity: string;
-    plannedShortfallQuantity: string;
-    finalizedBatchCount: number;
-    closingBatchCount: number;
-    pendingAvailableQuantity: string;
-    pendingExtraQuantity: string;
-  };
+  finalOutput?: WorkOrderFinalOutput;
   id: string;
   workOrderNo: string;
   orderType: WorkOrderType;

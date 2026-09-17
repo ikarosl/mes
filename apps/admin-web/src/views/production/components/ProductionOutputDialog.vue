@@ -85,14 +85,24 @@
                 <el-form-item
                   label="计划内产出"
                   required
-                  ><el-input-number
+                >
+                  <el-input-number
                     v-model="draft.availableQuantity"
                     :min="0"
                     :max="Number(detail.check.plannedQuantity)"
                     :precision="0"
                     :disabled="Boolean(detail.receipts.productionInboundId)"
-                  /><span class="unit">{{ detail.check.unit }}</span></el-form-item
-                >
+                  />
+                  <span class="unit">{{ detail.check.unit }}</span>
+                  <p
+                    v-if="detail.receipts.productionInboundId"
+                    class="receipt-lock-note"
+                    style="max-width: 100px; margin: 0 6px"
+                  >
+                    已有生产流转入库 {{ quantity(detail.receipts.productionReceivedQuantity) }}
+                    {{ detail.check.unit }}，此类别数量已锁定。
+                  </p>
+                </el-form-item>
                 <el-form-item
                   label="计划外产出"
                   required
@@ -102,7 +112,14 @@
                     :max="PRODUCTION_OUTPUT_QUANTITY_MAX"
                     :precision="0"
                     :disabled="Boolean(detail.receipts.extraInboundId)"
-                  /><span class="unit">{{ detail.check.unit }}</span></el-form-item
+                  /><span class="unit">{{ detail.check.unit }}</span>
+                  <p
+                    v-if="detail.receipts.extraInboundId"
+                    class="receipt-lock-note"
+                  >
+                    已确认额外产出入库 {{ quantity(detail.receipts.extraReceivedQuantity) }}
+                    {{ detail.check.unit }}，此类别数量已锁定。
+                  </p></el-form-item
                 >
                 <el-form-item
                   label="本次新增成品报废"
@@ -451,7 +468,16 @@ onBeforeUnmount(() => {
 }
 .quantity-fields {
   justify-content: flex-start;
+  align-items: flex-start;
   gap: 32px;
+}
+.receipt-lock-note {
+  flex-basis: 100%;
+  max-width: 100px;
+  margin: 0 6px;
+  color: var(--el-text-color-regular);
+  font-size: 13px;
+  line-height: 1.7;
 }
 .unit {
   margin-left: 8px;

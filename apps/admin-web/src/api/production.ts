@@ -108,6 +108,11 @@ import type {
 import { IDEMPOTENCY_KEY_HEADER, toRequestError, type RetryRequestConfig } from '@company/request';
 import { httpClient } from './http';
 
+interface ReadRequestOptions {
+  skipErrorHandling?: boolean;
+  signal?: AbortSignal;
+}
+
 const request = async <T>(config: RetryRequestConfig) => {
   try {
     return (await httpClient.request<T>(config)).data;
@@ -247,17 +252,14 @@ export const productionApi = {
     }),
   getInventoryBatch: (id: string) =>
     request<InventoryBatchDetailItem>({ url: `/production/inventory-batches/${id}` }),
-  searchProductionTrace: (
-    params: ProductionTraceQuery,
-    options: { skipErrorHandling?: boolean } = {},
-  ) =>
+  searchProductionTrace: (params: ProductionTraceQuery, options: ReadRequestOptions = {}) =>
     request<PageResult<ProductionTraceWorkOrderGroup>>({
       ...options,
       url: '/production/trace',
       params,
     }),
 
-  getProductionTrace: (batchId: string, options: { skipErrorHandling?: boolean } = {}) =>
+  getProductionTrace: (batchId: string, options: ReadRequestOptions = {}) =>
     request<ProductionTraceDetail>({ ...options, url: `/production/trace/batches/${batchId}` }),
 
   /** 分页查询生产工单 */
@@ -712,23 +714,20 @@ export const productionApi = {
       data: { version },
     }),
 
-  getBatchExecutionRecords: (batchId: string, options: { skipErrorHandling?: boolean } = {}) =>
+  getBatchExecutionRecords: (batchId: string, options: ReadRequestOptions = {}) =>
     request<ProductionExecutionRecordGroup>({
       ...options,
       url: `/production/batches/${batchId}/execution-records`,
     }),
 
-  listExecutionBatchSummaries: (
-    params: ProductionBatchQuery,
-    options: { skipErrorHandling?: boolean } = {},
-  ) =>
+  listExecutionBatchSummaries: (params: ProductionBatchQuery, options: ReadRequestOptions = {}) =>
     request<PageResult<ProductionExecutionBatchSummary>>({
       ...options,
       url: '/production/execution-batches',
       params,
     }),
 
-  getExecutionCompletionCheck: (batchId: string, options: { skipErrorHandling?: boolean } = {}) =>
+  getExecutionCompletionCheck: (batchId: string, options: ReadRequestOptions = {}) =>
     request<ProductionExecutionCompletionCheck>({
       ...options,
       url: `/production/batches/${batchId}/execution-completion-check`,
@@ -784,7 +783,7 @@ export const productionApi = {
       retryTimes: 2,
     }),
 
-  listBatchReworks: (batchId: string, options: { skipErrorHandling?: boolean } = {}) =>
+  listBatchReworks: (batchId: string, options: ReadRequestOptions = {}) =>
     request<ReworkRecordItem[]>({ ...options, url: `/production/batches/${batchId}/reworks` }),
 
   approveDispositionRework: (dispositionId: string, data: ApproveBatchStepReworkPayload) =>

@@ -28,3 +28,5 @@ Approval 流程节点通过 `ApprovalAssignee` 明确 `assigneeType`、`roleId`�
 成品入库见 `production/finished-inbound.ts`，区分任务候选、待确认单与实际采用／当前批准版本。库存批次契约显式返回 `itemKind`；成品有 productId、物料字段为空，物料有 itemId 与精确版本。空身份不能序列化成字符串 null，业务查询必须按身份读取。
 
 工单物料配置契约见 `production/work-order-material-configuration.ts`，保存提交完整选版、原因和工单版本，返回最小幂等结果。`WorkOrderItem.assignedQuantity` 为有效任务计划量，`terminatedPlannedQuantity` 为不占额度的终止历史计划量；需求中的精确版本快照不随工单配置更新。
+
+`ProductionBatchItem.finalOutput` 仅返回当前有效批准版及其计划内／计划外／报废量，未批准为 `null`，不把报工量或更正草稿当作批准数量。任务、追溯及执行确认结果以 `lastStepReportedQuantity` 表达从末工序有效正常报工派生的数量，不再提供批次 `completedQuantity/qualifiedQuantity`。工序记录用 `normalQuantity` 表达 `effective_normal`，代表自检正常而非最终质检合格，不再返回原 `qualifiedQuantity` 别名。`WorkOrderOption` 同时返回计划、有效已分配、已终止计划、剩余额度及 `WorkOrderFinalOutput`，供新增任务核对。可用产出合计只含计划内、计划外；工单既有 `totalQuantity` 含报废，不能解释为合格量或已入库量。

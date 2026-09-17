@@ -15,6 +15,7 @@ import { ProductionDomainError } from '../domain/production.errors.js';
 import { fixedIntegerQuantity } from '../domain/integer-quantity.js';
 import { allocationNeedsCloseoutSql } from './mysql-production-material.sql.js';
 import { readCloseoutLossRecords } from './mysql-production-closeout-loss.read.js';
+import { lastStepReportedQuantitySql } from './mysql-production-reporting.sql.js';
 import {
   CLOSEOUT_APPROVAL_SNAPSHOT_SCHEMA_VERSION,
   readCloseoutApprovalSnapshot,
@@ -65,8 +66,7 @@ export class MysqlProductionTerminationRepository extends ProductionTerminationR
        CAST(wo.id AS CHAR) workOrderId,wo.work_order_no workOrderNo,wo.order_type orderType,wo.status workOrderStatus,
        wo.product_code_snapshot productCode,wo.product_name_snapshot productName,wo.unit_snapshot unit,
        b.planned_quantity plannedQuantity,b.version,
-       COALESCE((SELECT SUM(CASE WHEN r.report_type='normal' THEN r.normal_quantity ELSE -r.normal_quantity END) FROM batch_step_reports r WHERE r.batch_step_record_id=
-         (SELECT s.id FROM batch_step_records s WHERE s.production_batch_id=b.id ORDER BY s.step_order_snapshot DESC,s.id DESC LIMIT 1${share})${share}),0) reportedNormalQuantity,
+       ${lastStepReportedQuantitySql('b.id', lock)} reportedNormalQuantity,
        COALESCE((SELECT SUM(s.scrap_quantity) FROM batch_step_scrap_records s WHERE s.production_batch_id=b.id${share}),0) existingScrapQuantity
        FROM production_batches b JOIN work_orders wo ON wo.id=b.work_order_id WHERE b.id=?${lock ? ' FOR UPDATE' : ''}`,
       [batchId],

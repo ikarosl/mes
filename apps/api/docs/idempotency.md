@@ -9,7 +9,7 @@
 
 | 命令 | HTTP 入口 | scope |
 | --- | --- | --- |
-| 创建生产批次 | `POST /api/production/work-orders/:workOrderId/batches` | `production.batch.create.v6` |
+| 创建生产批次 | `POST /api/production/work-orders/:workOrderId/batches` | `production.batch.create.v7` |
 | 创建物料分配 | `POST /api/production/batches/:batchId/material-allocations` | `production.material-allocation.create.v1` |
 | 创建生产领料出库单 | `POST /api/production/batches/:batchId/material-outbounds` | `production.material-outbound.create.v3` |
 | 确认生产领料出库单 | `POST /api/production/material-outbounds/:outboundId/actions/confirm` | `production.material-outbound.confirm.v2` |
@@ -276,7 +276,7 @@ const input = {
 
 scope 是服务端独占的命令契约版本，客户端不得传输、选择或协商。结果结构、指纹或命令语义发生不兼容变化时升级 scope 和 codec。项目当前处于开发阶段，清理旧幂等和业务数据后切换新代码，不保留旧 scope 解码分支、双写或兼容窗口，也不得用新 codec 猜旧结果。发布前结束旧客户端操作并刷新页面，不将旧意图自动迁入新 scope。
 
-创建批次当前使用 `production.batch.create.v6`，包含执行完成时间、结案模式与当前批准版本等结果字段；报工数量与批准产出分开。scope 常量为当前契约唯一来源。
+创建批次当前使用 `production.batch.create.v7`，包含执行完成时间、结案模式、当前批准版本与 `finalOutput` 投影；新建任务尚未批准时 `finalOutput` 为 null。批次不再存储或返回 `completedQuantity/qualifiedQuantity`，`lastStepReportedQuantity` 只读末工序正向和冲销报工的有效正常量；`finalOutput` 只读当前批准版本，不累计历史清单。scope 常量为当前契约唯一来源，不解码旧版响应。
 
 ## Production 需求纠错与逐项收尾
 

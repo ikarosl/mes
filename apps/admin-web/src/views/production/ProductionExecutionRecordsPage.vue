@@ -29,8 +29,8 @@
       <TableToolbar :total="total">
         <template #actions>
           <div class="records-caption">
-            <strong>报工事实</strong>
-            <span>选择生产批次后查看各工序的原始事实和有效汇总</span>
+            <strong>报工记录</strong>
+            <span>选择任务查看工序数量、报工明细及调整记录</span>
           </div>
         </template>
         <template #tools>
@@ -85,75 +85,81 @@
           <template v-if="record">
             <section
               :class="['batch-health', selectedBatchRiskClass]"
-              aria-label="批次执行摘要"
+              aria-label="任务报工摘要"
             >
-              <div class="batch-health-main">
+              <div class="batch-health-header">
                 <div class="batch-health-title">
                   <strong>{{ record.batchNo }}</strong>
-                  <el-tag :type="batchStatusMeta(record.batchStatus).type">
+                  <el-tag
+                    size="small"
+                    :type="batchStatusMeta(record.batchStatus).type"
+                  >
                     {{ batchStatusMeta(record.batchStatus).label }}
                   </el-tag>
                   <el-tag
                     v-if="selectedOverdueDays > 0"
+                    size="small"
                     type="warning"
                     >已逾期 {{ selectedOverdueDays }} 天</el-tag
                   >
                   <el-tag
                     v-if="selectedBatch && executionBatchHasAbnormal(selectedBatch)"
+                    size="small"
                     type="danger"
-                    >有效异常 {{ formatQuantity(selectedBatch.effectiveAbnormalQuantity) }} · 待处置
-                    {{ selectedBatch.pendingAbnormalCount }}</el-tag
+                    >存在工序异常</el-tag
+                  >
+                  <span
+                    v-if="currentStepLabel"
+                    class="current-step"
+                    >当前工序 {{ currentStepLabel }}</span
                   >
                 </div>
-                <p>
-                  工单 {{ record.workOrderNo }} · {{ record.productCode }} /
-                  {{ record.productName }}
-                  <template v-if="selectedBatch?.planEndDate">
-                    · 计划完成 {{ selectedBatch.planEndDate }}
-                  </template>
-                  <template v-if="currentStepLabel"> · 当前工序 {{ currentStepLabel }} </template>
-                </p>
-              </div>
-              <div class="batch-progress">
-                <div>
-                  <span>工序进度</span>
-                  <strong>{{ completedStepCount }} / {{ record.steps.length }}</strong>
+                <div class="batch-progress">
+                  <span>工序 {{ completedStepCount }} / {{ record.steps.length }}</span>
+                  <el-progress
+                    :percentage="stepProgressPercentage"
+                    :stroke-width="6"
+                    :show-text="false"
+                    :status="pendingAbnormalCount > 0 ? 'exception' : undefined"
+                  />
                 </div>
-                <el-progress
-                  :percentage="stepProgressPercentage"
-                  :stroke-width="10"
-                  :show-text="false"
-                  :status="pendingAbnormalCount > 0 ? 'exception' : undefined"
-                />
               </div>
+              <el-descriptions
+                :column="4"
+                border
+              >
+                <el-descriptions-item label="生产工单">{{
+                  record.workOrderNo
+                }}</el-descriptions-item>
+                <el-descriptions-item
+                  label="产品"
+                  :span="2"
+                  >{{ record.productCode }} / {{ record.productName }}</el-descriptions-item
+                >
+                <el-descriptions-item label="计划完成">{{
+                  selectedBatch?.planEndDate || '—'
+                }}</el-descriptions-item>
+                <el-descriptions-item label="计划数量">{{
+                  formatQuantity(record.plannedQuantity)
+                }}</el-descriptions-item>
+                <el-descriptions-item label="有效报工"
+                  >{{ effectiveReportCount }} 条</el-descriptions-item
+                >
+                <el-descriptions-item label="工序异常合计">
+                  <span :class="{ 'danger-text': effectiveAbnormalQuantity > 0 }">{{
+                    formatQuantity(effectiveAbnormalQuantity)
+                  }}</span>
+                </el-descriptions-item>
+                <el-descriptions-item label="待处置异常">
+                  <span :class="{ 'danger-text': pendingAbnormalCount > 0 }"
+                    >{{ pendingAbnormalCount }} 项</span
+                  >
+                </el-descriptions-item>
+              </el-descriptions>
             </section>
-            <el-alert
-              class="fact-tip"
-              type="info"
-              :closable="false"
-              show-icon
-              title="页面展示不可变报工事实：有效数量由普通报工减去冲销事实聚合；更正会同时追加冲销和替代事实，不修改原记录。"
-            />
-            <div class="record-overview">
-              <div>
-                <span>计划数量</span><strong>{{ formatQuantity(record.plannedQuantity) }}</strong>
-              </div>
-              <div>
-                <span>有效报工事实</span><strong>{{ effectiveReportCount }}</strong>
-              </div>
-              <div>
-                <span>有效异常数量</span
-                ><strong :class="{ 'danger-text': effectiveAbnormalQuantity > 0 }">{{
-                  formatQuantity(effectiveAbnormalQuantity)
-                }}</strong>
-              </div>
-              <div>
-                <span>待处置异常</span
-                ><strong :class="{ 'danger-text': pendingAbnormalCount > 0 }">{{
-                  pendingAbnormalCount
-                }}</strong>
-              </div>
-            </div>
+            <p class="record-note">
+              本页数量用于工序执行核对，最终产出请查看批准清单。更正和冲销后，原报工记录仍可追溯。
+            </p>
 
             <section
               v-if="completionCheck && completionCheck.batchStatus === 'doing'"
@@ -188,9 +194,12 @@
               :class="['step-card', { 'has-abnormal': stepHasAbnormal(step) }]"
             >
               <header>
-                <div>
+                <div class="step-title">
                   <h2>{{ step.stepOrder }}. {{ step.stepName }}</h2>
-                  <p>{{ step.stepCode }} · {{ step.responsibleUserName || '未派工' }}</p>
+                  <span
+                    >{{ step.stepCode }} · {{ step.responsibleUserName || '未派工' }} · 单位
+                    {{ step.unit }}</span
+                  >
                 </div>
                 <div class="step-tags">
                   <el-tag
@@ -233,40 +242,56 @@
                 show-icon
                 :title="step.supplementBlockedReason"
               />
-              <div class="step-metrics">
-                <span
-                  >正常目标 <b>{{ formatQuantity(step.requiredNormalQuantity) }}</b>
-                  <small v-if="Number(step.activatedSupplementTargetQuantity) > 0">
+              <el-descriptions
+                class="step-metrics"
+                :column="5"
+                border
+              >
+                <el-descriptions-item label="正常目标">
+                  {{ formatQuantity(step.requiredNormalQuantity) }}
+                  <small
+                    v-if="Number(step.activatedSupplementTargetQuantity) > 0"
+                    class="quantity-note"
+                  >
                     计划 {{ formatQuantity(step.baseNormalQuantity) }} + 下游补产
                     {{ formatQuantity(step.activatedSupplementTargetQuantity) }}
-                  </small></span
+                  </small>
+                </el-descriptions-item>
+                <el-descriptions-item label="已报正常">{{
+                  formatQuantity(step.effectiveNormalQuantity)
+                }}</el-descriptions-item>
+                <el-descriptions-item label="已报异常">
+                  <span :class="{ 'danger-text': Number(step.effectiveAbnormalQuantity) > 0 }">{{
+                    formatQuantity(step.effectiveAbnormalQuantity)
+                  }}</span>
+                </el-descriptions-item>
+                <el-descriptions-item label="剩余需报">{{
+                  formatQuantity(step.remainingNormalQuantity)
+                }}</el-descriptions-item>
+                <el-descriptions-item label="当前可报">{{
+                  formatQuantity(step.availableNormalQuantity)
+                }}</el-descriptions-item>
+              </el-descriptions>
+              <details class="quantity-details">
+                <summary>数量依据</summary>
+                <el-descriptions
+                  :column="3"
+                  border
                 >
-                <span
-                  >投入放行 <b>{{ formatQuantity(step.releasedNormalQuantity) }}</b>
-                  <small v-if="Number(step.activatedSupplementInputQuantity) > 0">
-                    含已激活补产 {{ formatQuantity(step.activatedSupplementInputQuantity) }}
-                  </small></span
-                >
-                <span
-                  >当前可报量 <b>{{ formatQuantity(step.availableNormalQuantity) }}</b></span
-                >
-                <span
-                  >普通报工累计
-                  <b>{{ formatQuantity(step.effectiveDirectReportedQuantity) }}</b></span
-                >
-                <span
-                  >有效正常累计 <b>{{ formatQuantity(step.effectiveNormalQuantity) }}</b></span
-                >
-                <span :class="{ 'danger-text': Number(step.effectiveAbnormalQuantity) > 0 }"
-                  >有效异常累计 <b>{{ formatQuantity(step.effectiveAbnormalQuantity) }}</b></span
-                >
-                <span
-                  >剩余需报 <b>{{ formatQuantity(step.remainingNormalQuantity) }}</b></span
-                >
-              </div>
+                  <el-descriptions-item label="投入放行">{{
+                    formatQuantity(step.releasedNormalQuantity)
+                  }}</el-descriptions-item>
+                  <el-descriptions-item label="普通报工累计">{{
+                    formatQuantity(step.effectiveDirectReportedQuantity)
+                  }}</el-descriptions-item>
+                  <el-descriptions-item label="已激活补产投入">{{
+                    formatQuantity(step.activatedSupplementInputQuantity)
+                  }}</el-descriptions-item>
+                </el-descriptions>
+              </details>
               <el-table
                 :data="step.reports"
-                empty-text="暂无报工事实"
+                empty-text="暂无报工记录"
               >
                 <el-table-column
                   prop="reportNo"
@@ -274,7 +299,7 @@
                   min-width="190"
                 />
                 <el-table-column
-                  label="事实类型"
+                  label="记录类型"
                   width="100"
                 >
                   <template #default="{ row }">{{ reportTypeLabel(row) }}</template>
@@ -299,19 +324,19 @@
                   </template>
                 </el-table-column>
                 <el-table-column
-                  label="事实关系"
+                  label="关联报工"
                   min-width="180"
                 >
                   <template #default="{ row }">
                     <span v-if="row.reversalOfReportId">冲销 #{{ row.reversalOfReportId }}</span>
                     <span v-else-if="row.correctionOfReportId"
-                      >替代 #{{ row.correctionOfReportId }}</span
+                      >更正 #{{ row.correctionOfReportId }}</span
                     >
                     <span v-else>原始报工</span>
                   </template>
                 </el-table-column>
                 <el-table-column
-                  label="有效性"
+                  label="记录状态"
                   width="90"
                 >
                   <template #default="{ row }">
@@ -403,8 +428,8 @@
         show-icon
         :title="
           changeMode === 'correct'
-            ? '更正不会覆盖原记录，系统将追加一条全量冲销和一条替代事实。'
-            : '冲销会追加一条与原报工等量的反向事实，原记录仍保留用于追溯。'
+            ? '填写更正后的完整数量。原报工记录保留，更正后重新核对本工序及后续工序的数量。'
+            : '冲销后，原报工数量不再计入工序汇总；记录和冲销原因仍保留用于追溯。'
         "
       />
       <el-descriptions
@@ -437,7 +462,7 @@
       <el-form label-position="top">
         <template v-if="changeMode === 'correct'">
           <el-form-item
-            label="替代正常数量"
+            label="更正后正常数量"
             required
           >
             <el-input-number
@@ -449,7 +474,7 @@
             />
           </el-form-item>
           <el-form-item
-            label="替代异常数量"
+            label="更正后异常数量"
             required
           >
             <el-input-number
@@ -461,7 +486,7 @@
           </el-form-item>
           <el-form-item
             v-if="changeForm.abnormalQuantity > 0"
-            label="替代异常来源"
+            label="更正后异常来源"
             required
           >
             <el-radio-group v-model="changeForm.abnormalOrigin">
@@ -527,7 +552,7 @@
         <el-descriptions-item label="计划数量">{{
           formatQuantity(completionCheck.plannedQuantity)
         }}</el-descriptions-item>
-        <el-descriptions-item label="完成数量来源">
+        <el-descriptions-item label="末工序正常报工">
           {{ completionCheck.finalRequiredStepName }} ·
           {{ formatQuantity(completionCheck.finalEffectiveNormalQuantity) }}
         </el-descriptions-item>
@@ -560,7 +585,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onActivated, onMounted, reactive, ref, watch } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
+import { usePageActivationRefresh } from '../../composables/requests/usePageActivationRefresh';
 import { Refresh } from '@element-plus/icons-vue';
 import {
   BATCH_STEP_REPORT_TYPE_LABELS,
@@ -683,7 +709,10 @@ const stepProgressPercentage = computed(() => {
 const effectiveReportCount = computed(
   () =>
     record.value?.steps.reduce(
-      (total, step) => total + step.reports.filter((report) => report.isEffective).length,
+      (total, step) =>
+        total +
+        step.reports.filter((report) => report.reportType === 'normal' && report.isEffective)
+          .length,
       0,
     ) ?? 0,
 );
@@ -777,7 +806,7 @@ const changeImpactText = computed(() => {
   if (changeExceedsReleased.value) return `调整后有效总报工量超过上游当前放行量，不能提交。`;
   const willComplete =
     changedEffectiveNormal.value === Number(changeStep.value.requiredNormalQuantity);
-  return `调整后有效正常量为 ${quantity}；工序将${willComplete ? '保持或进入已完成' : '保持或退回进行中'}。状态和完成时间由服务端重新计算。`;
+  return `调整后有效正常量为 ${quantity}；工序将${willComplete ? '保持或进入已完成' : '保持或退回进行中'}。工序状态和完成时间将相应更新。`;
 });
 const canSubmitChange = computed(
   () =>
@@ -798,9 +827,9 @@ const adjustmentBlockReason = (
 ): string | null => {
   if (report.reportType !== 'normal' || !report.isEffective) return null;
   if (step.abnormalDispositions.some((item) => item.sourceReportId === report.reportId))
-    return '该报工已形成异常处置依赖；当前只读阶段尚无合法的处置取消/冲销动作，因此不能直接调整报工';
+    return '该报工已有异常处置记录，不能直接更正或冲销';
   if (step.reports.some((item) => item.correctionOfReportId === report.reportId))
-    return '该报工已有替代事实，不能再次冲销或更正';
+    return '该报工已有更正记录，不能再次冲销或更正';
   return null;
 };
 const canChange = (step: BatchStepExecutionRecordItem, report: BatchStepReportItem) =>
@@ -860,8 +889,8 @@ const canDiscardChange = async (): Promise<boolean> => {
   if (changeIntentStatus.value === 'idle') return true;
   try {
     await ElMessageBox.confirm(
-      '上次更正结果尚未确认。请先刷新报工记录核对；放弃安全重试后再次更正可能追加重复事实。',
-      '放弃幂等意图确认',
+      '上次更正结果尚未确认。请先刷新报工记录核对；放弃重试后再次更正可能产生重复记录。',
+      '确认放弃本次更正重试',
       { type: 'warning', confirmButtonText: '核对后仍要放弃', cancelButtonText: '继续保留' },
     );
     if (changeReport.value) resetCorrectionIntent(changeReport.value.reportId);
@@ -890,7 +919,7 @@ const submitChange = async () => {
       );
     else await reverse(changeStep.value, changeReport.value, changeForm.reason);
     changeVisible.value = false;
-    EMessage.success(changeMode.value === 'correct' ? '报工已按追加事实更正' : '报工已冲销');
+    EMessage.success(changeMode.value === 'correct' ? '报工已更正，原记录已保留' : '报工已冲销');
   } catch (error) {
     const code =
       typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : '';
@@ -908,7 +937,7 @@ const submitChange = async () => {
           ? `调整后正常放行量低于第 ${dependency.conflictingStepOrder} 道工序“${dependency.conflictingStepName}”已报正常与异常总量 ${formatQuantity(dependency.downstreamEffectiveReportedQuantity ?? 0)}，请先从最下游开始冲销`
           : '调整后正常放行量低于下游已报正常与异常总量，请先从最下游开始冲销'
         : code === 'STEP_REPORT_DEPENDENCY_CONFLICT'
-          ? '该报工已有异常处置或替代事实依赖，当前不能直接调整'
+          ? '该报工已有异常处置或更正记录，当前不能直接调整'
           : code === 'STEP_REPORT_QUANTITY_EXCEEDED'
             ? '调整后数量超过上游当前放行量，请刷新后核对'
             : code === 'CONCURRENT_MODIFICATION'
@@ -928,8 +957,7 @@ const submitCompletion = async () => {
     EMessage.error(error, '生产执行完工失败，请刷新后核对完工条件');
   }
 };
-onMounted(search);
-onActivated(refreshCurrent);
+usePageActivationRefresh(refreshCurrent);
 </script>
 
 <style scoped>
@@ -995,7 +1023,7 @@ onActivated(refreshCurrent);
   font-size: 16px;
 }
 .records-caption span,
-.step-card header p {
+.step-title > span {
   color: #6b7280;
   font-size: 12px;
 }
@@ -1015,77 +1043,66 @@ onActivated(refreshCurrent);
   overflow-y: auto;
   padding: 16px 20px 20px;
 }
-.fact-tip {
-  margin-bottom: 16px;
-}
 .batch-health {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(260px, 38%);
-  align-items: center;
-  gap: 20px;
-  margin-bottom: 16px;
-  padding: 16px;
-  border: 1px solid var(--el-border-color-light);
-  border-radius: 8px;
-  background: var(--el-fill-color-lighter);
+  padding-left: 10px;
+  border-left: 3px solid var(--el-border-color-light);
 }
 .batch-health.risk-warning {
-  border-color: var(--el-color-warning);
+  border-left-color: var(--el-color-warning);
 }
 .batch-health.risk-error {
-  border-color: var(--el-color-danger);
+  border-left-color: var(--el-color-danger);
 }
-.batch-health-title,
-.batch-progress > div {
+.batch-health :deep(.el-descriptions__cell),
+.step-metrics :deep(.el-descriptions__cell),
+.quantity-details :deep(.el-descriptions__cell) {
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.batch-health-header,
+.batch-health-title {
   display: flex;
   align-items: center;
   gap: 8px;
 }
+.batch-health-header {
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.batch-health-title {
+  flex-wrap: wrap;
+}
 .batch-health-title > strong {
   color: var(--el-text-color-primary);
-  font-size: 18px;
+  font-size: 16px;
 }
-.batch-health-main p {
-  margin: 7px 0 0;
-  color: var(--el-text-color-secondary);
-  font-size: 13px;
+.current-step,
+.batch-progress,
+.record-note {
+  color: var(--el-text-color-regular);
+  font-size: 12px;
 }
 .batch-progress {
-  display: grid;
-  gap: 10px;
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
 }
-.batch-progress > div {
-  justify-content: space-between;
-  color: var(--el-text-color-secondary);
-  font-size: 13px;
+.batch-progress :deep(.el-progress) {
+  width: 100px;
 }
-.batch-progress strong {
-  color: var(--el-text-color-primary);
-}
-.record-overview,
-.step-metrics {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-}
-.record-overview div {
-  display: grid;
-  gap: 4px;
-  padding: 12px;
-  background: var(--el-fill-color-light);
-  border-radius: 8px;
-}
-.record-overview span,
-.step-metrics span {
-  color: var(--el-text-color-secondary);
-  font-size: 13px;
+.record-note {
+  margin: 10px 0 12px;
+  line-height: 1.6;
 }
 .completion-check {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px 16px;
-  margin-top: 16px;
-  padding: 14px 16px;
+  margin-top: 12px;
+  padding: 10px 12px;
   border: 1px solid var(--el-border-color-light);
   border-radius: 8px;
   background: var(--el-fill-color-lighter);
@@ -1110,8 +1127,8 @@ onActivated(refreshCurrent);
   background: var(--el-fill-color-light);
 }
 .step-card {
-  margin-top: 16px;
-  padding: 16px;
+  margin-top: 12px;
+  padding: 12px 16px;
 }
 .step-card.has-abnormal {
   border-color: var(--el-color-danger);
@@ -1120,10 +1137,18 @@ onActivated(refreshCurrent);
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+.step-title {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 12px;
 }
 .step-card h2 {
   margin: 0;
-  font-size: 17px;
+  font-size: 15px;
 }
 .step-tags {
   display: flex;
@@ -1152,17 +1177,25 @@ onActivated(refreshCurrent);
   margin-top: 12px;
 }
 .step-metrics {
-  margin: 14px 0;
+  margin: 10px 0 0;
 }
-.step-metrics span {
-  display: grid;
-  gap: 4px;
-  padding: 10px;
-  background: var(--el-fill-color-lighter);
-  border-radius: 6px;
-}
-.step-metrics small {
+.quantity-note {
+  display: block;
   color: var(--el-color-warning-dark-2);
+  font-size: 12px;
+}
+.quantity-details {
+  margin: 6px 0;
+}
+.quantity-details summary {
+  width: fit-content;
+  padding: 4px 0;
+  color: var(--el-text-color-regular);
+  font-size: 12px;
+  cursor: pointer;
+}
+.quantity-details[open] summary {
+  margin-bottom: 6px;
 }
 .abnormal-list {
   display: flex;
@@ -1200,12 +1233,8 @@ onActivated(refreshCurrent);
     grid-template-columns: 1fr;
     grid-template-rows: minmax(0, 2fr) minmax(0, 3fr);
   }
-  .record-overview,
-  .step-metrics {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .batch-health {
-    grid-template-columns: 1fr;
+  .batch-health-header {
+    flex-wrap: wrap;
   }
   .query-form {
     display: grid;

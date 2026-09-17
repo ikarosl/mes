@@ -13,6 +13,7 @@ import { toBeijingISOString } from '../../../common/time/date-time.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
 import { ProductionTraceRepository } from '../application/ports/production-trace.repository.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
+import { lastStepReportedQuantitySql } from './mysql-production-reporting.sql.js';
 
 type TraceSummaryRow = RowDataPacket & {
   production_batch_id: number;
@@ -24,7 +25,7 @@ type TraceSummaryRow = RowDataPacket & {
   product_code: string;
   product_name: string;
   planned_quantity: string;
-  completed_quantity: string;
+  last_step_reported_quantity: string;
   closeout_mode: ProductionTraceBatchSummary['closeoutMode'];
   current_revision_id: number | null;
   execution_completed_at: Date | null;
@@ -53,7 +54,7 @@ type TraceInventoryRow = RowDataPacket & {
 
 const SUMMARY_SELECT = `SELECT b.id production_batch_id,b.batch_no,b.status batch_status,
   wo.id work_order_id,wo.work_order_no,b.product_id,wo.product_code_snapshot product_code,
-  wo.product_name_snapshot product_name,b.planned_quantity,b.completed_quantity,b.started_at,b.completed_at,
+  wo.product_name_snapshot product_name,b.planned_quantity,${lastStepReportedQuantitySql('b.id')} last_step_reported_quantity,b.started_at,b.completed_at,
   b.execution_completed_at,c.closeout_mode,c.current_revision_id,r.revision_no,r.available_quantity,r.extra_quantity,
   (r.additional_scrap_quantity+r.existing_scrap_quantity) scrap_quantity
   FROM production_batches b JOIN work_orders wo ON wo.id=b.work_order_id
@@ -220,7 +221,7 @@ const mapSummary = (row: TraceSummaryRow): ProductionTraceBatchSummary => ({
   productCode: row.product_code,
   productName: row.product_name,
   plannedQuantity: row.planned_quantity,
-  completedQuantity: row.completed_quantity,
+  lastStepReportedQuantity: row.last_step_reported_quantity,
   closeoutMode: row.closeout_mode,
   currentOutputRevisionId:
     row.current_revision_id === null ? null : String(row.current_revision_id),

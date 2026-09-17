@@ -152,7 +152,10 @@ export function useProductionOutput(
       !!detail.value &&
       quantitiesValid(inspection, Number(detail.value.check.plannedQuantity)) &&
       !!inspection.inspectedAt &&
-      !!inspection.resultNote.trim(),
+      !!inspection.resultNote.trim() &&
+      inspection.resultNote.length <= 5000 &&
+      !!inspection.evidenceReference.trim() &&
+      inspection.evidenceReference.length <= 5000,
   );
   const selectedInspection = computed(
     () => detail.value?.inspections.find((row) => row.id === draft.inspectionRecordId) ?? null,

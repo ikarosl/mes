@@ -85,8 +85,15 @@ export class MysqlProductionExecutionRepository extends ProductionExecutionRepos
       if (
         closeout?.closeout_mode === 'normal' &&
         (batch.status === 'closing' || batch.status === 'completed')
-      )
-        return completionResult(batchId, batch, String(closeout.id));
+      ) {
+        const steps = await selectRequiredCompletionSteps(connection, batchId, true);
+        return completionResult(
+          batchId,
+          batch,
+          String(closeout.id),
+          steps.at(-1)?.effective_normal ?? '0.0000',
+        );
+      }
       if (batch.status !== 'doing')
         throw new ProductionDomainError(
           'BATCH_EXECUTION_COMPLETION_NOT_ALLOWED',
@@ -123,9 +130,9 @@ export class MysqlProductionExecutionRepository extends ProductionExecutionRepos
       );
       const [updated] = await connection.execute<ResultSetHeader>(
         `UPDATE production_batches
-         SET completed_quantity=?,status='closing',execution_completed_at=NOW(),execution_completed_by=?,updated_by=?,version=version+1
+         SET status='closing',execution_completed_at=NOW(),execution_completed_by=?,updated_by=?,version=version+1
          WHERE id=? AND status='doing' AND version=?`,
-        [check.finalEffectiveNormalQuantity, actorId, actorId, batchId, version],
+        [actorId, actorId, batchId, version],
       );
       assertVersion(updated, '生产批次状态已变化，请刷新后重试');
       await writeTransactionalAudit(connection, {
@@ -141,7 +148,7 @@ export class MysqlProductionExecutionRepository extends ProductionExecutionRepos
           status: 'closing',
           closeoutId: String(created.insertId),
           closeoutMode: 'normal',
-          completedQuantity: check.finalEffectiveNormalQuantity,
+          lastStepReportedQuantity: check.finalEffectiveNormalQuantity,
           version: version + 1,
         },
         requestId: context.requestId,
@@ -152,6 +159,7 @@ export class MysqlProductionExecutionRepository extends ProductionExecutionRepos
         batchId,
         await findBatch(connection, batchId, true),
         String(created.insertId),
+        check.finalEffectiveNormalQuantity,
       );
     });
   }
@@ -529,6 +537,7 @@ const completionResult = (
   batchId: string,
   batch: BatchRow,
   closeoutId: string,
+  lastStepReportedQuantity: string,
 ): ProductionExecutionCompletionResult => {
   if (
     (batch.status !== 'closing' && batch.status !== 'completed') ||
@@ -540,7 +549,7 @@ const completionResult = (
     productionBatchId: batchId,
     batchStatus: batch.status,
     closeoutId,
-    completedQuantity: batch.completed_quantity,
+    lastStepReportedQuantity,
     executionCompletedAt: toBeijingISOString(batch.execution_completed_at),
     executionCompletedById: String(batch.execution_completed_by),
     version: batch.version,

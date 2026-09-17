@@ -13,6 +13,14 @@ export interface ProductionBatchQuery extends PageQuery {
   ownerId?: string;
 }
 
+export interface ProductionBatchFinalOutput {
+  revisionNo: number;
+  availableQuantity: string;
+  extraQuantity: string;
+  /** 当前批准版的历史工序报废与本次新增报废合计。 */
+  scrapQuantity: string;
+}
+
 export interface ProductionBatchItem {
   id: string;
   workOrderId: string;
@@ -25,14 +33,16 @@ export interface ProductionBatchItem {
   routeCode: string | null;
   routeVersion: string | null;
   plannedQuantity: string;
-  completedQuantity: string;
-  qualifiedQuantity: string;
+  /** 末道工序有效正常报工量，从正向及冲销事实派生，不是最终批准产出。 */
+  lastStepReportedQuantity: string;
   planStartDate: string | null;
   planEndDate: string | null;
   startedAt: string | null;
   status: ProductionBatchStatus;
   closeoutMode: ProductionCloseoutMode | null;
   currentOutputRevisionId: string | null;
+  /** 当前有效批准版；尚未批准时为 null，不从报工量或草稿推算。 */
+  finalOutput: ProductionBatchFinalOutput | null;
   /** 工序执行确认时间，与最终结案审批时间分别展示。 */
   executionCompletedAt: string | null;
   executionCompletedBy: string | null;
@@ -46,7 +56,7 @@ export interface ProductionBatchItem {
   ownerName: string | null;
   completedAt: string | null;
   completedBy: string | null;
-  /** 取消批次返回该字段；为兼容 v2 幂等契约，非终态创建响应省略该字段。 */
+  /** 取消信息由取消及详情响应提供；新建任务时省略。 */
   cancelReason?: string | null;
   cancelledBy?: string | null;
   cancelledByName?: string | null;
@@ -103,7 +113,8 @@ export interface BatchStepRecordItem {
   startedAt: string | null;
   completedAt: string | null;
   outputQuantity: string;
-  qualifiedQuantity: string;
+  /** 工序自检正常报工量，不代表最终质检合格数量。 */
+  normalQuantity: string;
   abnormalQuantity: string;
   reworkQuantity: string;
   unit: string;

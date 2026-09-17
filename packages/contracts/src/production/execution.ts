@@ -217,7 +217,8 @@ export interface ProductionExecutionCompletionResult {
   productionBatchId: string;
   batchStatus: 'closing' | 'completed';
   closeoutId: string;
-  completedQuantity: string;
+  /** 完成校验时的末道工序有效正常报工量，不写入批次数量字段。 */
+  lastStepReportedQuantity: string;
   executionCompletedAt: string;
   executionCompletedById: string;
   version: number;

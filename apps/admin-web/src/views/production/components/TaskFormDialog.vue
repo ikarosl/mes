@@ -35,6 +35,88 @@
             />
           </el-select>
         </el-form-item>
+        <section
+          v-if="selectedWorkOrder"
+          class="work-order-summary"
+        >
+          <div class="summary-heading">
+            <strong>工单额度与审定产出</strong>
+            <el-button
+              link
+              type="primary"
+              :loading="workOrderSource.loading.value"
+              @click="workOrderSource.refresh()"
+              >刷新核对</el-button
+            >
+          </div>
+          <el-descriptions
+            :column="2"
+            border
+          >
+            <el-descriptions-item label="工单计划">{{
+              formatQuantity(selectedWorkOrder.plannedQuantity)
+            }}</el-descriptions-item>
+            <el-descriptions-item label="有效已分配">{{
+              formatQuantity(selectedWorkOrder.assignedQuantity)
+            }}</el-descriptions-item>
+            <el-descriptions-item label="剩余可分配"
+              ><strong>{{
+                formatQuantity(selectedWorkOrder.remainingQuantity)
+              }}</strong></el-descriptions-item
+            >
+            <el-descriptions-item label="已终止计划（不占额度）">{{
+              formatQuantity(selectedWorkOrder.terminatedPlannedQuantity)
+            }}</el-descriptions-item>
+            <el-descriptions-item label="审定计划内产出">{{
+              formatQuantity(selectedWorkOrder.finalOutput.availableQuantity)
+            }}</el-descriptions-item>
+            <el-descriptions-item label="审定计划外产出">{{
+              formatQuantity(selectedWorkOrder.finalOutput.extraQuantity)
+            }}</el-descriptions-item>
+            <el-descriptions-item label="审定可用合计">{{
+              formatQuantity(approvedUsableQuantity(selectedWorkOrder.finalOutput))
+            }}</el-descriptions-item>
+            <el-descriptions-item label="审定报废">{{
+              formatQuantity(selectedWorkOrder.finalOutput.scrapQuantity)
+            }}</el-descriptions-item>
+            <el-descriptions-item
+              label="计划内产出与计划比较"
+              :span="2"
+              >{{
+                plannedOutputGapText(selectedWorkOrder.finalOutput.plannedShortfallQuantity)
+              }}；已批准 {{ selectedWorkOrder.finalOutput.finalizedBatchCount }} 个任务，收尾中
+              {{ selectedWorkOrder.finalOutput.closingBatchCount }}
+              个任务（未计入）</el-descriptions-item
+            >
+          </el-descriptions>
+          <p class="summary-note">
+            剩余可分配 = 工单计划 −
+            有效已分配。已取消、已终止任务不占额度；收尾中、正常完成仍占用。已终止任务的审定产出继续累计，不抵扣可分配额度，也不代表已入库。
+          </p>
+          <p
+            v-if="Number.isInteger(form.plannedQuantity) && form.plannedQuantity > 0"
+            class="summary-note"
+          >
+            本次分配 {{ formatQuantity(form.plannedQuantity) }}；
+            {{
+              form.plannedQuantity > Number(selectedWorkOrder.remainingQuantity)
+                ? '超出额度'
+                : '分配后剩余'
+            }}
+            {{
+              formatQuantity(
+                Math.abs(Number(selectedWorkOrder.remainingQuantity) - form.plannedQuantity),
+              )
+            }}
+          </p>
+        </section>
+        <el-alert
+          v-if="workOrderSource.status.value === 'error'"
+          type="warning"
+          :closable="false"
+          title="工单额度刷新失败，请刷新核对后再保存任务。"
+          class="work-order-summary"
+        />
         <el-form-item label="批次号">
           <el-input
             v-model="form.batchNo"
@@ -93,7 +175,6 @@
         <el-input-number
           v-model="form.plannedQuantity"
           :min="1"
-          :max="taskQuantityMax ?? undefined"
           :precision="0"
           :step="1"
         />
@@ -196,6 +277,7 @@
       <el-button
         type="primary"
         :loading="submitting"
+        :disabled="!editingTaskId && workOrderSource.status.value !== 'ready'"
         @click="handleSubmit"
         >保存任务</el-button
       >
@@ -220,6 +302,8 @@ import { useProductOptions } from '../../../composables/options/useProductOption
 import { useProcessRouteOptions } from '../../../composables/options/useProcessRouteOptions';
 import { useTaskRouteSteps } from '../composables/useTaskRouteSteps';
 import { useWorkOrderOptions } from '../composables/useWorkOrderOptions';
+import { formatQuantity } from '../production-status';
+import { approvedUsableQuantity, plannedOutputGapText } from '../production-output-quantity';
 
 export type TaskFormValue = {
   workOrderId: string;
@@ -452,6 +536,10 @@ const setForm = (row: {
 };
 
 const handleSubmit = (): void => {
+  if (!props.editingTaskId && workOrderSource.status.value !== 'ready') {
+    EMessage.warning('请先刷新工单额度后再保存任务');
+    return;
+  }
   if (
     (!props.editingTaskId && !form.workOrderId) ||
     !Number.isInteger(form.plannedQuantity) ||
@@ -524,6 +612,20 @@ defineExpose({ setForm, resetForm });
 </script>
 
 <style scoped>
+.work-order-summary {
+  margin-bottom: 20px;
+}
+.summary-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.summary-note {
+  margin: 10px 0 0;
+  line-height: 1.7;
+  color: var(--el-text-color-regular);
+}
 .dialog-form :deep(.el-input),
 .dialog-form :deep(.el-select),
 .dialog-form :deep(.el-input-number),

@@ -147,6 +147,7 @@
           min-width="230"
         >
           <template #default="{ row }">
+            <div>可用合计 {{ formatQuantity(approvedUsableQuantity(row.finalOutput)) }}</div>
             {{ formatQuantity(row.finalOutput?.availableQuantity) }} /
             {{ formatQuantity(row.finalOutput?.extraQuantity) }} /
             {{ formatQuantity(row.finalOutput?.scrapQuantity) }}
@@ -158,9 +159,11 @@
               {{ formatQuantity(row.finalOutput.pendingAvailableQuantity) }}（未计入）
             </div>
             <div class="sub-text">
-              计划内产出缺口
+              计划内
               {{
-                formatQuantity(row.finalOutput?.plannedShortfallQuantity ?? row.plannedQuantity)
+                plannedOutputGapText(
+                  row.finalOutput?.plannedShortfallQuantity ?? row.plannedQuantity,
+                )
               }}，已批准 {{ row.finalOutput?.finalizedBatchCount ?? 0 }} 批
             </div>
           </template>
@@ -347,6 +350,7 @@
 
 <script setup lang="ts">
 import { computed, onActivated, onMounted, ref } from 'vue';
+import { approvedUsableQuantity, plannedOutputGapText } from './production-output-quantity';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import { WORK_ORDER_TYPE_LABELS } from '@company/constants';
 import TableToolbar from '../../components/TableToolbar.vue';

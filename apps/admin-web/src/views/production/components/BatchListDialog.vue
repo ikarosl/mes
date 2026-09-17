@@ -71,14 +71,17 @@
           <template #default="{ row }">{{ row.ownerName || '-' }}</template>
         </el-table-column>
         <el-table-column
-          label="完成/合格"
+          label="末工序正常报工量"
           width="150"
           align="right"
         >
-          <template #default="{ row }"
-            >{{ formatQuantity(row.completedQuantity) }} /
-            {{ formatQuantity(row.qualifiedQuantity) }}</template
-          >
+          <template #default="{ row }">{{ formatQuantity(row.lastStepReportedQuantity) }}</template>
+        </el-table-column>
+        <el-table-column
+          label="当前批准产出"
+          min-width="230"
+        >
+          <template #default="{ row }"><BatchApprovedOutput :output="row.finalOutput" /></template>
         </el-table-column>
         <el-table-column
           label="操作"
@@ -105,6 +108,7 @@ import type { ProductionBatchItem, WorkOrderItem } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
 import { formatDateForDisplay } from '../../../utils/date';
 import { batchStatusMeta, formatQuantity } from '../production-status';
+import BatchApprovedOutput from './BatchApprovedOutput.vue';
 
 defineProps<{
   visible: boolean;

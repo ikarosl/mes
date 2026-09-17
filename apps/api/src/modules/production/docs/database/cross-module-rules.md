@@ -225,16 +225,16 @@ SELECT id FROM item_batch WHERE id = :batch_id FOR UPDATE;
 
 ### 3.12.11 批次完工确认与乐观锁
 
-`production_batches` 的完工确认使用 `version` 乐观锁。当前生产过程采用临时自检放行口径；批次完工只表达生产执行完成，不代表最终质量结论：
+`production_batches` 的执行完工确认使用 `version` 乐观锁。当前生产过程采用临时自检放行口径；执行完成后先进入结案，不代表已批准产出：
 
 - 批次完工前校验所有工序已完成。
 - `need_inspection_snapshot` 当前只保留路线快照，不创建过程检验任务，也不作为批次生产完工或下工序流转的阻塞条件；这是过程质量流程缺失期间的临时方案。
 - 最小 `rework_records` 已落地；返工完成报工计入工序有效正常/异常数量，未完成返工和待处理异常继续由各自业务记录独立表达和展示，不复用批次执行状态。批次生产执行完工按权威报工章节校验工序与末道有效正常量，不伪造尚未定稿的最终质量结论。
-- `completed_quantity` 固定取最后一道工序（`step_order_snapshot` 最大）的 `effective_normal`。完工命令必须在事务内锁定并校验全部工序、重新聚合该数量，客户端不得提交完成数量；没有工序或任一工序未完成时拒绝。
-- 当前不支持正常数量不足时的短批完工；未来必须以独立的生产损失/短批完工事实确认差额，不得人工覆盖 `completed_quantity`。正常批次完工必须在同一事务写入完成数量、完工时间、完工人、`completed` 状态和成功操作日志。
+- `lastStepReportedQuantity` 固定从最后一道工序（`step_order_snapshot` 最大）的报工事实派生 `effective_normal`，含进行中任务已有报工，不在批次表另存数量。执行完工命令在事务内锁定并校验全部工序、物料履约和末道有效正常量，客户端不得提交或覆盖报工汇总；没有工序或任一工序未完成时拒绝。
+- 正常执行完工仍须报工达标，同事务记录 `execution_completed_at/by`、进入 `closing`、创建 normal 结案草稿并写成功操作日志。提前停止使用 early closing；两种模式均通过质检留存、管理员核对和负责人审批确认实际产出，批准后分别进入 `completed/terminated`。实际可用量不足计划可据实批准，不反向放宽工序报工规则。
 - 批次完工不自动创建入库单、库存批次或库存流水。
-- `batch_step_reports.normal_quantity` 是工序自检正常量，不是最终质检合格量；不得直接写入 `production_batches.qualified_quantity`。
-- 生产完成后的最终质检、`qualified_quantity` 写入和工单合格完成数量汇总仍待质量模型定稿；在此之前不得把批次生产完工描述为最终质量完成。
+- `batch_step_reports.normal_quantity` 是工序自检正常量，不是最终质检合格量。工序查询使用 `normalQuantity`，页面不能标为质检通过。
+- 质检留存于独立不可变记录；任务审定产出与工单汇总仅取当前有效批准清单，批次表不另存合格量。完整在线 Quality 仍未接入，不把生产执行完成描述为质量放行或已入库。
 
 ### 3.12.12 库存状态转换双流水
 

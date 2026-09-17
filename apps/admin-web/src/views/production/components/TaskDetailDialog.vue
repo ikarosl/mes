@@ -17,15 +17,20 @@
         <el-descriptions-item label="计划数量">{{
           formatQuantity(batch.plannedQuantity)
         }}</el-descriptions-item>
-        <el-descriptions-item label="完成/合格"
-          >{{ formatQuantity(batch.completedQuantity) }} /
-          {{ formatQuantity(batch.qualifiedQuantity) }}</el-descriptions-item
-        >
+        <el-descriptions-item label="末工序正常报工量">{{
+          formatQuantity(batch.lastStepReportedQuantity)
+        }}</el-descriptions-item>
         <el-descriptions-item label="任务状态">{{
           batchStatusMeta(batch.status).label
         }}</el-descriptions-item>
         <el-descriptions-item label="负责人">{{ batch.ownerName || '-' }}</el-descriptions-item>
         <el-descriptions-item label="版本号">{{ batch.version }}</el-descriptions-item>
+        <el-descriptions-item
+          label="当前批准产出"
+          :span="3"
+        >
+          <BatchApprovedOutput :output="batch.finalOutput" />
+        </el-descriptions-item>
         <template v-if="batch.status === 'cancelled'">
           <el-descriptions-item label="取消人">{{
             batch.cancelledByName || batch.cancelledBy || '-'
@@ -99,12 +104,12 @@
               }}</template>
             </el-table-column>
             <el-table-column
-              label="产出/合格/异常"
+              label="报工/正常/异常"
               width="170"
             >
               <template #default="{ row }">
                 {{ formatQuantity(row.outputQuantity) }} /
-                {{ formatQuantity(row.qualifiedQuantity) }} /
+                {{ formatQuantity(row.normalQuantity) }} /
                 {{ formatQuantity(row.abnormalQuantity) }}
               </template>
             </el-table-column>
@@ -172,6 +177,7 @@
 <script setup lang="ts">
 import type { BatchStepRecordItem, ProductionBatchDetail } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
+import BatchApprovedOutput from './BatchApprovedOutput.vue';
 import { formatDateTimeForDisplay } from '../../../utils/date';
 import { STEP_STATUS_LABELS, batchStatusMeta, formatQuantity } from '../production-status';
 

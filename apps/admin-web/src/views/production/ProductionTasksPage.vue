@@ -123,6 +123,19 @@
           <template #default="{ row }">{{ formatQuantity(row.plannedQuantity) }}</template>
         </el-table-column>
         <el-table-column
+          label="当前批准产出"
+          min-width="230"
+        >
+          <template #header>
+            <el-tooltip
+              content="每个任务只取当前有效批准清单；可用量为计划内加计划外，不含报废，不代表实际入库量。"
+            >
+              <span>当前批准产出</span>
+            </el-tooltip>
+          </template>
+          <template #default="{ row }"><BatchApprovedOutput :output="row.finalOutput" /></template>
+        </el-table-column>
+        <el-table-column
           label="工艺路线"
           min-width="140"
         >
@@ -457,6 +470,7 @@ import { buildLiveOptions } from '../../utils/live-options';
 import TaskFormDialog from './components/TaskFormDialog.vue';
 import type { TaskFormValue } from './components/TaskFormDialog.vue';
 import TaskDetailDialog from './components/TaskDetailDialog.vue';
+import BatchApprovedOutput from './components/BatchApprovedOutput.vue';
 import StepExecutionDialog from './components/StepExecutionDialog.vue';
 import type { StepExecutionValue } from './components/StepExecutionDialog.vue';
 import MaterialDemandAllocationDialog from './components/MaterialDemandAllocationDialog.vue';
