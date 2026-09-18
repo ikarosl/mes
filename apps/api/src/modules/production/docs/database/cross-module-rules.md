@@ -76,7 +76,7 @@
 
 说明：
 
-- 当前正式范围仅支持 `source_type = purchased` 的外购物料采购入库，统一走 `inbound_order` + `inbound_detail`；自产/半成品/成品入库不在本期能力内。
+- 当前正式范围支持 `source_type = purchased` 的外购物料入库，以及按当前有效批准清单办理的 `self_made` 生产流转成品入库与 `production_extra` 额外产出成品入库，共用 `inbound_order` + `inbound_detail` 和同一库存流水账本。成品按任务、类别收齐后一次确认，使用独立 `product_id` 身份；具体规则见[成品入库](finished-goods-inbound.md)。其他自产半成品、委外及通用其他入库仍未开放。
 - `inventory_transaction.reference_detail_id` 应指向 `inbound_detail.id`。
 - 采购入库创建命令只能从 Product 公共能力取得启用版本；入库明细、库存批次和流水必须保存同一 `material_variant_id`。
 
@@ -354,7 +354,7 @@ inventory_transaction
 - 基础物料与精确版本分层，需求和物流事实沿组合外键保持版本一致。
 - 物料、成品统一库存模型；半成品不再是独立产品类型。
 - 生产批次和库存批次语义清晰，不互相混用。
-- 当前正式范围支持 `purchased` 外购物料采购入库；半成品不是独立产品类型，成品/委外等其他入库场景留待后续范围评审。
+- 当前正式范围支持 `purchased` 外购物料入库，以及按批准清单办理的 `self_made`／`production_extra` 两类成品入库；半成品不是独立产品类型，其他自产半成品、委外及通用其他入库仍留待后续范围评审。
 - 可支持生产领料、退料、报废补料、盘点调整。
 - 主表不保存可随意覆盖的累计缓存字段，减少数据不一致风险。
 - 库存大流水查询已使用与流水同事务维护、可重建对账的批次级和物料级余额投影；需求使用同事务维护的剩余数量投影。投影不得替代事实表或获得独立业务写入口。

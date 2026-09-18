@@ -11,6 +11,7 @@
 - [数据库公共约定](database-conventions.md)
 - [产品范围](product-scope.md)
 - [路线图](roadmap.md)
+- [采购与外购物料入库质检评审稿](procurement-inbound-design.md)（一期业务边界已确定，技术设计中）
 - [审批接入边界与后续通知设计](approval-design.md)
 - [通用通知设计与提交后扩展钩子](notification-design.md)
 
@@ -53,3 +54,4 @@
 - [通过关闭与替代纠正正式需求](adr/0010-demand-correction-by-replacement.md)
 - [任务统一结案、产出清单与成品入库](adr/0011-task-closeout-output-list-and-finished-goods-inbound.md)
 - [工单选版与任务引用边界](adr/0012-work-order-material-configuration.md)
+- [采购来源、检验后入库与事实边界](adr/0013-procurement-source-and-stock-boundaries.md)

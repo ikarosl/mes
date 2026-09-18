@@ -31,6 +31,8 @@ process-step 和 process-route；只有工艺能力出现独立生命周期、�
 
 Production 的成品入库扩展先按工单任务、生产执行、需求履约、结案产出、仓库操作及查询追溯划清内部用例职责，见[Production 内部职责](../apps/api/src/modules/production/docs/module-boundaries.md)。当前保留单一表所有权和出库／履约联动事务，不因菜单或文件长度直接提取 Inventory，也不把不同来源的报废合并为通用写入口。
 
+后续采购接入按[路线图](roadmap.md)先确定业务流，再确定 Production／Procurement／Inventory／Quality 的逐表所有权与事务，随后提取库存。[采购评审稿](procurement-inbound-design.md)包含候选边界；[ADR-0013](adr/0013-procurement-source-and-stock-boundaries.md)已确定两类采购来源、强制检验与检验后入库。此设计尚未改变下文当前所有权，不能据此增加第二库存写入口或预建空模块。
+
 `common` 仅存放真正跨模块且不含业务知识的能力，例如审计上下文、HTTP 安全装饰器和时间格式。
 `common` 不拥有业务表，也不得成为绕过模块边界的万能目录。`operation_logs` 是项目级平台审计
 基础设施，不归属 `common` 或任何业务模块（见 §4）。common 对模块边界规则的唯一豁免是审计写入：

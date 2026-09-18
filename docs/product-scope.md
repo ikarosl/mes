@@ -8,6 +8,8 @@ Approval 接入成品 BOM、生产需求更正与批次收尾：管理端配置�
 
 通用 Inventory 的其他出入库与库存报废、Quality 和全链路 Traceability 后端尚未进入当前范围，不得提前实现。详细业务不变量由 [Product](../apps/api/src/modules/product/README.md) 和 [Production](../apps/api/src/modules/production/README.md) 就近维护；跨模块数据库规则见[数据库公共约定](database-conventions.md)。
 
+后续采购正在业务设计阶段，见[采购与入库质检评审稿](procurement-inbound-design.md)及 [ADR-0013](adr/0013-procurement-source-and-stock-boundaries.md)。已确定按具体精确版本需求采购与独立备料采购、所有外购强制检验、检验合格后由仓管确认入库；到货本身不计库存，不减少生产需求。采购单、到货、独立入库检验和库存模块提取尚未实现，未决数量及异常规则按路线图继续收敛，不改变上述当前可运行范围。
+
 ## 研发结束及后续成品流转
 
 研发轮次结束后，登记可用产出、报废和差额，关闭旧工单，可用部分再手动入库；随后以新成品编码、新研发工单继续下一轮。全部产出报废时只登记报废并结案，不办理入库。本轮结束后的产出报废不触发补料或补产，余料由管理员按实际情况核对并通过现有退料规则回仓，不按成品差额自动折算。

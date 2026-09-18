@@ -291,9 +291,11 @@ Production 一次完整配置全部 BOM 行的精确 `material_variant_id`。任
 | `status`              | `TINYINT`         | `1` 启用、`0` 停用                 |
 | `is_deleted`          | `TINYINT`         | 软删除标记                         |
 
-同一基础物料的启用、未删除版本构成候选集合；停用只阻止新选择，不改变需求、批次、分配、出入库、退料、
+当前实现中，同一基础物料的启用、未删除版本构成候选集合；停用只阻止新选择，不改变需求、批次、分配、出入库、退料、
 报废、盘点及库存流水中已冻结的版本快照。跨模块只能通过 Product 的 `MaterialVariantQuery` 读取候选，
 不得直接查询本表。
+
+后续采购目标以 [ADR-0013](../../../../../../docs/adr/0013-procurement-source-and-stock-boundaries.md) 为准，尚未实施：物料精确版本停用不阻止新采购、补购、到货、检验和入库，但应阻止该版本确认生产领料出库。当前采购入库新选版仍要求启用，确认出库尚未复核版本停用状态；后续须通过按用途区分的 Product 公开资格能力统一适配，不能用历史展示查询代替写入校验。本轮不修改生产选版、基础物料或分类停用及软删除规则，也不放宽库存批次 `frozen/disabled` 的独立限制。
 
 物料版本约束：`UNIQUE (material_id, major_version, minor_version)`、`UNIQUE (variant_code)`、`UNIQUE (id, material_id)`；版本编码由基础物料编码与大小版本生成。版本表同样保存完整主数据审计字段与备注，身份字段创建后不可修改。不同基础物料可以具有相同大小版本号。
 
