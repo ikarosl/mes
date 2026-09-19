@@ -49,7 +49,7 @@ export const evaluateProductionExecutionCompletion = (input: {
     completedRequiredStepCount: requiredSteps.filter((step) => step.status === 'completed').length,
     finalRequiredStepId: finalStep?.id ?? null,
     finalRequiredStepName: finalStep?.name ?? null,
-    finalEffectiveNormalQuantity: finalStep?.effectiveNormalQuantity ?? '0.0000',
+    finalEffectiveNormalQuantity: finalStep?.effectiveNormalQuantity ?? '0',
     activeMaterialDemandCount: input.activeMaterialDemandCount ?? 0,
     unfulfilledSupplementCount: input.unfulfilledSupplementCount ?? 0,
     canComplete: blockers.length === 0,

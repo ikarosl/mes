@@ -562,7 +562,7 @@ export class MysqlProductionSupplementRepository extends ProductionSupplementRep
         scrapRecord: {
           scrapRecordId: String(scrap.insertId),
           sourceReportId: String(source.batch_step_report_id),
-          scrapQuantity: source.abnormal_quantity,
+          scrapQuantity: String(source.abnormal_quantity),
           unit: source.unit_snapshot,
         },
         reproductionAuthorization: {
@@ -571,7 +571,7 @@ export class MysqlProductionSupplementRepository extends ProductionSupplementRep
           supplementId: String(supplement.insertId),
           entryStepRecordId: String(entryStep.id),
           quotaEndStepRecordId: String(source.batch_step_record_id),
-          authorizedQuantity: source.abnormal_quantity,
+          authorizedQuantity: String(source.abnormal_quantity),
           authorizedBy: actorId,
           authorizedAt: toBeijingISOString(authorized!.authorized_at),
         },
@@ -675,7 +675,7 @@ const selectPlan = async (
       materialVariantCode: line.material_variant_code_snapshot,
       itemCode: line.item_code_snapshot,
       itemName: line.item_name,
-      plannedQuantity: line.planned_quantity,
+      plannedQuantity: String(line.planned_quantity),
       unit: line.unit_snapshot,
     })),
   };
@@ -695,10 +695,10 @@ const mapCandidate = (
   variants,
   itemCode: row.item_code_snapshot,
   itemName: row.item_name,
-  quantityPerUnit: row.quantity_per_unit_snapshot,
+  quantityPerUnit: String(row.quantity_per_unit_snapshot),
   unit: row.unit_snapshot,
-  plannedOutputQuantity: row.planned_output_quantity_snapshot,
-  normalDemandQuantity: row.need_number,
+  plannedOutputQuantity: String(row.planned_output_quantity_snapshot),
+  normalDemandQuantity: String(row.need_number),
 });
 
 const mapDisposition = (row: SourceRow): BatchStepAbnormalDispositionItem => ({

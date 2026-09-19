@@ -12,6 +12,8 @@
 
 生产退料是现场多余物料（包括生产结束或订单中途关闭产生的余料）退回仓库的通道。仅处理已确认领料且仍可退的公共可用物料，固定回原库存批次。订单关闭和剩余需求关闭须由独立生命周期命令办理，退料不触发这些动作。
 
+损耗列表、详情和候选的库存批号／物料编码展示由 `infrastructure/queries/material-loss-display.query.ts` 承担，只读访问登记的 Inventory 批次字段；当前物料名称仍读取 Product 当前名称，不过滤历史停用或删除记录。损耗创建、确认及取消的资格查询只读取 Production 自有损耗、分配、领料、退料和需求事实，不使用库存展示查询作为业务校验。结案核对需要共享锁时仅锁 `item_scrap` 事实，再批量读取不可变批次展示字段，不因展示联查锁定其他模块库存数据。查询拆分不改变原可退／损耗额度、分页、排序或 HTTP 响应。
+
 | 所有者 | 可写职责 | 禁止混用 |
 | --- | --- | --- |
 | `ProductionReturnRepository` | 退料主单/明细、正库存流水、退料审计 | 不创建/恢复/取消需求，不修改分配履约、批次状态、物料计划版本、短批授权，不调用需求计划 Writer |
@@ -82,7 +84,7 @@
 | `item_id`              | `BIGINT UNSIGNED` | 退料对象 ID                              |
 | `material_variant_id`  | `BIGINT UNSIGNED` | 退料精确物料版本 ID                      |
 | `batch_id`             | `BIGINT UNSIGNED` | 退料库存批次 ID                          |
-| `return_number`        | `DECIMAL(12,4)`   | 本次退料数量                             |
+| `return_number`        | `INT`   | 本次退料数量                             |
 | `unit_snapshot`        | `VARCHAR(20)`     | 退料时单位快照                           |
 | `return_stock_status`  | `VARCHAR(20)`     | 退回后的库存状态，固定 `available`       |
 | `release_after_return` | `TINYINT`         | 固定为 `1`，退回后释放给公共库存 |
@@ -142,7 +144,7 @@
 | `scrap_scene`         | `VARCHAR(40)`     | 当前固定为 `production_consumed`          |
 | `loss_purpose`       | `VARCHAR(30)`     | `replenishment/closeout_record`，创建后不可改 |
 | `closeout_id`        | `BIGINT UNSIGNED` | 结案登记必填；在产补料损耗为空，与生产批次组成来源外键 |
-| `scrap_number`        | `DECIMAL(12,4)`   | 报废数量                                  |
+| `scrap_number`        | `INT`   | 报废数量                                  |
 | `unit_snapshot`       | `VARCHAR(20)`     | 报废时单位快照                            |
 | `reason_type`         | `VARCHAR(50)`     | 报废原因                                  |
 | `status`              | `VARCHAR(30)`     | 状态，默认 `pending`                      |
@@ -205,86 +207,4 @@
 
 ## 3.9 盘点表
 
----
-
-### 17. `stock_check_order`
-
-职责：维护库存盘点主单，记录一次盘点任务的基本信息。
-
-| 字段             | 类型              | 说明                                |
-| ---------------- | ----------------- | ----------------------------------- |
-| `id`             | `BIGINT UNSIGNED` | 主键                                |
-| `check_no`       | `VARCHAR(100)`    | 盘点单号                            |
-| `status`         | `VARCHAR(30)`     | 盘点状态，默认 `pending`            |
-| `check_at`       | `DATETIME`        | 实际盘点时间                        |
-| `operator_id`    | `BIGINT UNSIGNED` | 操作人 ID                           |
-| `remark`         | `TEXT`            | 备注                                |
-| `cancel_reason`  | `TEXT`            | 取消原因；历史未记录数据可为空      |
-| `cancelled_by`   | `BIGINT UNSIGNED` | 取消人；历史未记录数据可为空        |
-| `cancelled_at`   | `DATETIME`        | 取消时间；历史未记录数据可为空      |
-| `version`        | `INT`             | 乐观锁版本号，默认 `0`              |
-| 业务审计字段     | 见统一规则        | 可变业务单据审计字段                |
-
-约束：
-
-- 主键：`id`
-- 唯一约束：`UNIQUE (check_no)`
-- 外键：`FOREIGN KEY (operator_id) REFERENCES users(id)`
-- 外键：`FOREIGN KEY (cancelled_by) REFERENCES users(id)`
-- 检查约束：`CHECK (status IN ('pending', 'counting', 'completed', 'cancelled'))`
-- 组合索引：`INDEX (status, created_at)`，用于盘点单状态分页
-
-说明：
-
-- 盘点主单表达一次盘点动作。
-- 具体盘点了哪些库存对象、哪些批次、账面数量和实盘数量，由 `stock_check_detail` 记录。
-
----
-
-### 18. `stock_check_detail`
-
-职责：维护库存盘点明细，记录某个库存对象某个批次的账面数量、实盘数量和差异数量。
-
-| 字段                  | 类型              | 说明                                                   |
-| --------------------- | ----------------- | ------------------------------------------------------ |
-| `id`                  | `BIGINT UNSIGNED` | 主键                                                   |
-| `stock_check_id`      | `BIGINT UNSIGNED` | 盘点主单 ID，关联 `stock_check_order.id`               |
-| `item_id`             | `BIGINT UNSIGNED` | 库存对象 ID                                            |
-| `material_variant_id` | `BIGINT UNSIGNED` | 盘点的精确物料版本 ID                                  |
-| `batch_id`            | `BIGINT UNSIGNED` | 库存批次 ID                                            |
-| `stock_status`        | `VARCHAR(20)`     | 盘点的库存状态，例如 `available`、`pending_inspection` |
-| `unit_snapshot`       | `VARCHAR(20)`     | 盘点时单位快照                                         |
-| `system_quantity`     | `DECIMAL(12,4)`   | 盘点时系统账面数量                                     |
-| `actual_quantity`     | `DECIMAL(12,4)`   | 实盘数量；尚未录入时为空                               |
-| `difference_quantity` | `DECIMAL(12,4)`   | 可空生成列：实盘数量 - 系统数量                        |
-| `result`              | `VARCHAR(20)`     | 可空生成列：`surplus`、`shortage`、`matched`           |
-| `adjusted`            | `TINYINT`         | 是否已生成盘点调整流水：`0` 否，`1` 是                 |
-| `remark`              | `TEXT`            | 备注                                                   |
-| `created_by`          | `BIGINT UNSIGNED` | 创建人                                                 |
-| `created_at`          | `DATETIME`        | 创建时间，默认 `CURRENT_TIMESTAMP`                     |
-
-约束：
-
-- 主键：`id`
-- 外键：`FOREIGN KEY (stock_check_id) REFERENCES stock_check_order(id)`
-- 外键：`FOREIGN KEY (item_id) REFERENCES materials(id)`
-- 外键：`FOREIGN KEY (material_variant_id, item_id) REFERENCES material_variants(id, material_id)`
-- 外键：`FOREIGN KEY (batch_id, item_id, material_variant_id) REFERENCES item_batch(id, item_id, material_variant_id)`
-- 检查约束：`CHECK (system_quantity >= 0)`
-- 检查约束：`CHECK (actual_quantity IS NULL OR actual_quantity >= 0)`
-- 检查约束：`CHECK (stock_status IN ('available', 'pending_inspection', 'frozen', 'defective'))`
-- 检查约束：`CHECK (result IS NULL OR result IN ('surplus', 'shortage', 'matched'))`
-- 检查约束：`CHECK (adjusted IN (0, 1))`
-- 唯一约束：`UNIQUE (stock_check_id, item_id, material_variant_id, batch_id, stock_status)`
-
-说明：
-
-- `difference_quantity` 和 `result` 必须使用数据库生成列或只在查询视图中计算，禁止由接口独立写入。
-- 盘点调整应生成 `inventory_transaction`，类型为 `stock_check_adjustment`。
-- 盘点明细应记录盘点时的系统数量快照，避免后续库存变动影响盘点结果。
-- 创建盘点单时由管理员从当前正库存 `item_batch × stock_status` 候选中选择明细，系统在创建事务内冻结账面数量；空明细、重复批次状态组合和非正库存均拒绝。
-- 首次保存任意实盘数量时主单从 `pending` 进入 `counting`；允许分次保存，未录入明细保持 `actual_quantity = NULL`。
-- 完成盘点要求所有明细已录入。事务按批次 ID 升序锁定库存批次并重新汇总当前账面数量；任一当前数量与快照不同则整单拒绝，要求取消后重新建单，禁止用旧快照调整变化后的库存。
-- 校验通过后，差异非零的明细各生成一条 `stock_check_adjustment` 流水，匹配明细不生成零流水；全部明细统一标记 `adjusted = 1`，主单更新为 `completed`，流水、状态和成功审计同事务提交。当前不提供完成后再单独“生成调整”的第二入口。
-
----
+`stock_check_order/detail` 已提取到 Inventory，字段、状态、差异流水与当前库存快照规则见 [Inventory 盘点设计](../../../inventory/docs/database/stock-check.md)。Production 不再直接写盘点或库存表；现有仓库 HTTP 路径和权限保持。

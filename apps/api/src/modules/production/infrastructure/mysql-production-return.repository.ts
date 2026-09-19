@@ -1,4 +1,4 @@
-import { currentMaterialNameSql } from './queries/material-name.sql.js';
+import { InventoryStockCommand } from '../../inventory/public.js';
 import { Inject, Injectable } from '@nestjs/common';
 import { withTransaction } from '@company/database';
 import type {
@@ -70,7 +70,7 @@ type ReturnDetailRow = RowDataPacket & {
   unit_snapshot: string;
   return_stock_status: 'available';
   release_after_return: number;
-  inventory_transaction_id: number | null;
+  inventory_transaction_id: number | string | null;
   remark: string | null;
 };
 
@@ -102,7 +102,10 @@ const RETURN_ORDER_SELECT = `SELECT ro.id,ro.return_no,ro.production_batch_id,pb
 /** 余料回仓仅写退料单、库存流水和审计；不得修改需求、分配、生产状态或授权。 */
 @Injectable()
 export class MysqlProductionReturnRepository extends ProductionReturnRepository {
-  constructor(@Inject(DATABASE_POOL) private readonly pool: Pool) {
+  constructor(
+    @Inject(DATABASE_POOL) private readonly pool: Pool,
+    private readonly inventory: InventoryStockCommand,
+  ) {
     super();
   }
 
@@ -271,9 +274,7 @@ export class MysqlProductionReturnRepository extends ProductionReturnRepository 
         'production_item_allocation',
         details.map((line) => String(line.allocation_id)).sort(numericSort),
       );
-      await lockIds(
-        db,
-        'item_batch',
+      await this.inventory.lockMaterialBatches(
         [...new Set(details.map((line) => String(line.batch_id)))].sort(numericSort),
       );
       for (const line of details) {
@@ -302,26 +303,19 @@ export class MysqlProductionReturnRepository extends ProductionReturnRepository 
           );
         }
       }
-      for (const line of details) {
-        await db.execute(
-          `INSERT INTO inventory_transaction
-           (item_id,material_variant_id,batch_id,transaction_type,quantity,unit_snapshot,stock_status,
-            reference_type,reference_detail_id,idempotency_key,transaction_group_key,remark,created_by)
-           VALUES (?,?,?,'material_return_inbound',?,?,'available','return_detail',?,?,?,?,?)`,
-          [
-            line.item_id,
-            line.material_variant_id,
-            line.batch_id,
-            line.return_number,
-            line.unit_snapshot,
-            line.id,
-            `RETURN:${line.id}`,
-            `RETURN:${returnId}`,
-            line.remark,
-            context.actorId,
-          ],
-        );
-      }
+      await this.inventory.recordProductionReturn(
+        returnId,
+        details.map((line) => ({
+          itemId: String(line.item_id),
+          materialVariantId: String(line.material_variant_id),
+          batchId: String(line.batch_id),
+          quantity: String(line.return_number),
+          unit: line.unit_snapshot,
+          detailId: String(line.id),
+          remark: line.remark,
+        })),
+        context,
+      );
       const [updated] = await db.execute<ResultSetHeader>(
         `UPDATE return_order SET status='returned',return_at=CURRENT_TIMESTAMP,
          operator_id=?,updated_by=?,version=version+1
@@ -381,7 +375,7 @@ export class MysqlProductionReturnRepository extends ProductionReturnRepository 
     const currentRead = lock ? ' FOR SHARE' : '';
     const [rows] = await db.query<ReturnCandidateRow[]>(
       `SELECT a.id allocation_id,a.demand_id,a.production_batch_id,a.item_id,a.material_variant_id,a.batch_id,
-        ib.item_code_snapshot,${currentMaterialNameSql('ib.item_id')} item_name,ib.material_variant_code_snapshot,ib.batch_code,a.unit_snapshot,
+        NULL item_code_snapshot,NULL item_name,NULL material_variant_code_snapshot,NULL batch_code,a.unit_snapshot,
         COALESCE((SELECT SUM(od.outbound_number) FROM outbound_detail od
           JOIN outbound_order oo ON oo.id=od.outbound_id
           WHERE od.allocation_id=a.id AND oo.status='completed'${currentRead}),0) confirmed_quantity,
@@ -390,11 +384,12 @@ export class MysqlProductionReturnRepository extends ProductionReturnRepository 
           WHERE rd.allocation_id=a.id AND ro.status IN ('pending','returned')${currentRead}),0) occupied_quantity,
         COALESCE((SELECT SUM(loss.scrap_number) FROM item_scrap loss
           WHERE loss.allocation_id=a.id AND loss.status IN ('pending','confirmed')${currentRead}),0) occupied_loss_quantity
-       FROM production_item_allocation a JOIN item_batch ib ON ib.id=a.batch_id
+       FROM production_item_allocation a
        WHERE a.production_batch_id=?
        ORDER BY a.id`,
       [batchId],
     );
+    await this.decorateBatches(rows);
     return rows;
   }
 
@@ -411,18 +406,39 @@ export class MysqlProductionReturnRepository extends ProductionReturnRepository 
     if (!orderIds.length) return [];
     const [rows] = await db.query<ReturnDetailRow[]>(
       `SELECT rd.id,rd.return_id,rd.allocation_id,rd.demand_id,rd.item_id,rd.material_variant_id,rd.batch_id,
-       ib.item_code_snapshot,${currentMaterialNameSql('ib.item_id')} item_name,ib.material_variant_code_snapshot,ib.batch_code,rd.return_number,
-       rd.unit_snapshot,rd.return_stock_status,rd.release_after_return,it.id inventory_transaction_id,
+       NULL item_code_snapshot,NULL item_name,NULL material_variant_code_snapshot,NULL batch_code,rd.return_number,
+       rd.unit_snapshot,rd.return_stock_status,rd.release_after_return,NULL inventory_transaction_id,
        rd.remark
-       FROM return_detail rd JOIN item_batch ib ON ib.id=rd.batch_id
-       LEFT JOIN inventory_transaction it ON it.reference_type='return_detail'
-         AND it.reference_detail_id=rd.id AND it.transaction_type='material_return_inbound'
+       FROM return_detail rd
        WHERE rd.return_id IN (${placeholders(orderIds)}) ORDER BY rd.return_id,rd.id${lock ? ' FOR UPDATE' : ''}`,
       orderIds,
     );
+    await this.decorateBatches(rows);
+    const transactions = new Map(
+      (
+        await this.inventory.materialTransactionReferences(
+          'return_detail',
+          rows.map((row) => String(row.id)),
+        )
+      ).map((row) => [row.detailId, row.transactionId]),
+    );
+    for (const row of rows) row.inventory_transaction_id = transactions.get(String(row.id)) ?? null;
     return rows;
   }
 
+  private async decorateBatches(rows: Array<ReturnCandidateRow | ReturnDetailRow>): Promise<void> {
+    const batchIds = [...new Set(rows.map((row) => String(row.batch_id)))];
+    const references = await this.inventory.materialBatchReferences(batchIds);
+    const batches = new Map(references.map((row) => [row.id, row]));
+    for (const row of rows) {
+      const batch = batches.get(String(row.batch_id));
+      if (!batch) throw new ProductionDomainError('NOT_FOUND', '库存批次不存在');
+      row.item_code_snapshot = batch.itemCode;
+      row.item_name = batch.itemName;
+      row.material_variant_code_snapshot = batch.materialVariantCode;
+      row.batch_code = batch.batchCode;
+    }
+  }
   private async mapReturnOrders(db: Executor, rows: ReturnOrderRow[]) {
     if (!rows.length) return [];
     const details = await this.findReturnDetails(
@@ -495,7 +511,7 @@ const mapReturnOrder = (row: ReturnOrderRow, details: ReturnDetailRow[]): Return
     itemName: line.item_name,
     itemBatchId: String(line.batch_id),
     batchCode: line.batch_code,
-    returnQuantity: line.return_number,
+    returnQuantity: String(line.return_number),
     unit: line.unit_snapshot,
     returnStockStatus: 'available',
     releaseAfterReturn: true,

@@ -433,12 +433,11 @@
             ><el-table-column label="入库单号"
               ><template #default="{ row }"
                 ><el-button
-                  v-if="row.sourceType === 'self_made' || row.sourceType === 'production_extra'"
                   link
                   type="primary"
-                  @click="openFinishedInbound(row.inboundId)"
+                  @click="openInbound(row.inboundId, row.sourceType)"
                   >{{ row.inboundNo }}</el-button
-                ><span v-else>{{ row.inboundNo }}</span></template
+                ></template
               ></el-table-column
             ><el-table-column
               prop="provider"
@@ -580,8 +579,8 @@ const inventoryAvailable = (row: InventoryBatchItem) =>
       ? row.onHandAvailableQuantity
       : row.availableToAllocateQuantity,
   );
-const openFinishedInbound = (inboundId: string) =>
-  router.push({ name: 'warehouse-inbound', query: { inboundId, tab: 'finished' } });
+const openInbound = (inboundId: string, sourceType: string) =>
+  router.push({ name: 'warehouse-inbound', query: { inboundId, sourceType } });
 const viewMode = ref<'supply-demand' | 'inventory-batches'>('supply-demand');
 const {
   items: supplyDemandItems,

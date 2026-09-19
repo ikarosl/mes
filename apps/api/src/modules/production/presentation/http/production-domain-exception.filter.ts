@@ -6,6 +6,7 @@ import {
 } from '../../../../common/http/request-context.middleware.js';
 import { toBeijingISOString } from '../../../../common/time/date-time.js';
 import { ProductionDomainError } from '../../domain/production.errors.js';
+import { InventoryCommandError } from '../../../inventory/public.js';
 
 interface RequestWithContext {
   originalUrl?: string;
@@ -19,9 +20,9 @@ interface ResponseWriter {
   status(status: number): { json(body: ApiErrorResponse): void };
 }
 
-@Catch(ProductionDomainError)
+@Catch(ProductionDomainError, InventoryCommandError)
 export class ProductionDomainExceptionFilter implements ExceptionFilter {
-  catch(exception: ProductionDomainError, host: ArgumentsHost): void {
+  catch(exception: ProductionDomainError | InventoryCommandError, host: ArgumentsHost): void {
     const http = host.switchToHttp();
     const request = http.getRequest<RequestWithContext>();
     const response = http.getResponse<ResponseWriter>();

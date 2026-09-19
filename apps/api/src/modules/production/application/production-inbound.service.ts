@@ -1,36 +1,17 @@
 import { Injectable } from '@nestjs/common';
 import type {
-  CreatePurchaseInboundPayload,
   InventoryBatchQuery,
   PurchaseInboundOrderItem,
   PurchaseInboundOrderQuery,
 } from '@company/contracts';
-import { normalizePurchaseInboundPayload } from '@company/utils';
-import type {
-  CommandContext,
-  IdempotentCommandContext,
-} from '../../../common/audit/audit.types.js';
-import { IdempotencyExecutor } from '../../../common/idempotency/idempotency-executor.js';
 import { IdentityDirectoryService } from '../../identity/public.js';
-import { MaterialVariantQuery, ProductSnapshotQuery } from '../../product/public.js';
-import { CREATE_PURCHASE_INBOUND_IDEMPOTENCY_SCOPE } from './idempotency/production-idempotency-scopes.contract.js';
-import { CONFIRM_PURCHASE_INBOUND_IDEMPOTENCY_SCOPE } from './idempotency/production-idempotency-scopes.contract.js';
-import {
-  confirmPurchaseInboundResultCodec,
-  createPurchaseInboundResultCodec,
-} from './idempotency/production-inbound-result.codec.js';
 import { ProductionInboundRepository } from './ports/production-inbound.repository.js';
-import { ProductionDomainError } from '../domain/production.errors.js';
-import { assertValidPurchaseInboundDraft } from '../domain/production-inbound.policy.js';
 
 @Injectable()
 export class ProductionInboundService {
   constructor(
     private readonly repository: ProductionInboundRepository,
-    private readonly products: ProductSnapshotQuery,
-    private readonly materialVariants: MaterialVariantQuery,
     private readonly identity: IdentityDirectoryService,
-    private readonly idempotency: IdempotencyExecutor,
   ) {}
   async list(query: PurchaseInboundOrderQuery) {
     const result = await this.repository.list(query);
@@ -38,62 +19,6 @@ export class ProductionInboundService {
   }
   async get(id: string) {
     return this.enrich(await this.repository.get(id));
-  }
-  async create(payload: CreatePurchaseInboundPayload, context: IdempotentCommandContext) {
-    const normalized = normalizePurchaseInboundPayload(payload);
-    assertValidPurchaseInboundDraft(normalized);
-    const command = narrow(context);
-    const execution = await this.idempotency.execute({
-      scope: CREATE_PURCHASE_INBOUND_IDEMPOTENCY_SCOPE,
-      key: context.idempotencyKey,
-      actorId: context.actorId,
-      requestId: context.requestId,
-      request: { body: normalized },
-      resultCodec: createPurchaseInboundResultCodec,
-      handler: async () => {
-        const ids = [...new Set(normalized.details.map((x) => x.itemId))];
-        const snapshots = await this.products.listInventoryItemReferencesByIds(ids);
-        if (
-          snapshots.length !== ids.length ||
-          snapshots.some((item) => item.itemKind !== 'material')
-        )
-          throw new ProductionDomainError('NOT_FOUND', '存在无效或已失效物料');
-        const variants = await this.materialVariants.listEnabledByMaterials(ids, { lock: true });
-        const variantById = new Map(variants.map((variant) => [variant.id, variant]));
-        const snapshotById = new Map(snapshots.map((snapshot) => [snapshot.id, snapshot]));
-        const inboundSnapshots = normalized.details.map((line) => {
-          const base = snapshotById.get(line.itemId);
-          const variant = variantById.get(line.materialVariantId);
-          if (!base || !variant || variant.materialId !== line.itemId)
-            throw new ProductionDomainError('NOT_FOUND', '存在无效或已失效物料版本');
-          return {
-            ...base,
-            materialVariantId: variant.id,
-            materialVariantCode: variant.variantCode,
-          };
-        });
-        return this.enrich(await this.repository.create(normalized, inboundSnapshots, command));
-      },
-    });
-    return execution.result;
-  }
-  async confirm(id: string, version: number, context: IdempotentCommandContext) {
-    const command = narrow(context);
-    const execution = await this.idempotency.execute({
-      scope: CONFIRM_PURCHASE_INBOUND_IDEMPOTENCY_SCOPE,
-      key: context.idempotencyKey,
-      actorId: context.actorId,
-      requestId: context.requestId,
-      request: { params: { inboundId: id }, body: { version } },
-      resultCodec: confirmPurchaseInboundResultCodec,
-      handler: async () => this.enrich(await this.repository.confirm(id, version, command)),
-    });
-    return execution.result;
-  }
-  async cancel(id: string, version: number, reason: string, context: CommandContext) {
-    const normalizedReason = reason.trim();
-    if (!normalizedReason) throw new ProductionDomainError('INVALID_INPUT', '取消原因不能为空');
-    return this.enrich(await this.repository.cancel(id, version, normalizedReason, context));
   }
   listInventory(query: InventoryBatchQuery) {
     return this.repository.listInventory(query);
@@ -119,9 +44,3 @@ export class ProductionInboundService {
     }));
   }
 }
-const narrow = (x: IdempotentCommandContext): CommandContext => ({
-  actorId: x.actorId,
-  requestId: x.requestId,
-  ip: x.ip,
-  userAgent: x.userAgent,
-});

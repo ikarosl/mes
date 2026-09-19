@@ -1,6 +1,7 @@
 // A semi-finished item is a material category, not a separate business identity.
 // Keep the kind set aligned with item_categories.chk_item_categories_kind.
 export const PRODUCT_ITEM_KINDS = ['material', 'finished_product'] as const;
+export const MATERIAL_OPTIONS_WINDOW_SIZE = 50;
 
 export const PRODUCT_ACQUIRE_METHODS = ['self_made', 'outsourced', 'purchased'] as const;
 

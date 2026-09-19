@@ -140,11 +140,11 @@ export const DEMAND_SELECT = `SELECT d.id,d.production_batch_id,d.requirement_ba
   LEFT JOIN production_material_supplement s ON s.id=d.supplement_id
   LEFT JOIN production_manual_demand_addition mda ON mda.id=d.manual_addition_id`;
 
-export const ALLOCATION_SELECT = `SELECT a.id,a.demand_id,a.production_batch_id,a.item_id,a.material_variant_id,a.batch_id,a.assigned_number,ib.batch_code,ib.material_variant_code_snapshot,d.demand_type,d.business_status demand_business_status,d.pending_correction_id,d.generation_group_key,COALESCE(s.supplement_no,mda.addition_no) supplement_no,
+export const ALLOCATION_SELECT = `SELECT a.id,a.demand_id,a.production_batch_id,a.item_id,a.material_variant_id,a.batch_id,a.assigned_number,NULL batch_code,NULL material_variant_code_snapshot,d.demand_type,d.business_status demand_business_status,d.pending_correction_id,d.generation_group_key,COALESCE(s.supplement_no,mda.addition_no) supplement_no,
   COALESCE((SELECT SUM(od.outbound_number) FROM outbound_detail od JOIN outbound_order oo ON oo.id=od.outbound_id WHERE od.allocation_id=a.id AND oo.status='completed'),0) outbound_quantity,
   COALESCE((SELECT SUM(od.outbound_number) FROM outbound_detail od JOIN outbound_order oo ON oo.id=od.outbound_id WHERE od.allocation_id=a.id AND oo.status IN ('pending_picking','picked','partially_outbound')),0) pending_outbound_quantity,
   a.unit_snapshot,a.allocation_status,a.version,a.remark,a.created_at
-  FROM production_item_allocation a JOIN item_batch ib ON ib.id=a.batch_id JOIN production_item_demand d ON d.id=a.demand_id LEFT JOIN production_material_supplement s ON s.id=d.supplement_id LEFT JOIN production_manual_demand_addition mda ON mda.id=d.manual_addition_id`;
+  FROM production_item_allocation a JOIN production_item_demand d ON d.id=a.demand_id LEFT JOIN production_material_supplement s ON s.id=d.supplement_id LEFT JOIN production_manual_demand_addition mda ON mda.id=d.manual_addition_id`;
 
 export const mapAllocation = (row: AllocationRow): ProductionMaterialAllocationItem => ({
   allocationId: String(row.id),
@@ -155,9 +155,9 @@ export const mapAllocation = (row: AllocationRow): ProductionMaterialAllocationI
   materialVariantCode: row.material_variant_code_snapshot,
   itemBatchId: String(row.batch_id),
   batchCode: row.batch_code,
-  assignedQuantity: row.assigned_number,
-  outboundQuantity: row.outbound_quantity,
-  pendingOutboundQuantity: row.pending_outbound_quantity,
+  assignedQuantity: String(row.assigned_number),
+  outboundQuantity: String(row.outbound_quantity),
+  pendingOutboundQuantity: String(row.pending_outbound_quantity),
   availableToOrderQuantity: decimal(
     Math.max(
       0,
@@ -208,13 +208,13 @@ export const mapDemand = (
     itemCode: row.item_code_snapshot,
     itemName: row.item_name,
     unit: row.unit_snapshot,
-    demandQuantity: row.need_number,
-    remainingDemandQuantity: row.remaining_number,
-    allocatedQuantity: row.allocated_quantity,
-    outboundQuantity: row.outbound_quantity,
+    demandQuantity: String(row.need_number),
+    remainingDemandQuantity: String(row.remaining_number),
+    allocatedQuantity: String(row.allocated_quantity),
+    outboundQuantity: String(row.outbound_quantity),
     remainingQuantity:
       row.business_status !== 'active'
-        ? '0.0000'
+        ? '0'
         : decimal(
             Math.max(0, integerQuantity(row.need_number) - integerQuantity(row.allocated_quantity)),
           ),

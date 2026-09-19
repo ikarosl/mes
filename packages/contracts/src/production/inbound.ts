@@ -14,6 +14,10 @@ export interface PurchaseInboundDetailItem {
   unit: string;
   stockStatus: 'available';
   inventoryTransactionId: string | null;
+  procurementReceiptLineId: string | null;
+  procurementReceiptRevisionId: string | null;
+  procurementScopeId: string | null;
+  procurementInspectionId: string | null;
 }
 
 export interface PurchaseInboundOrderItem {

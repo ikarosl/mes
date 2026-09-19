@@ -5,6 +5,7 @@ import { AuditInterceptor, AuthGuard, IdentityModule } from './modules/identity/
 import { IdempotencyKeyGuard } from './infrastructure/idempotency/idempotency.module.js';
 import { HealthModule } from './infrastructure/health/health.module.js';
 import { ProductModule } from './modules/product/public.js';
+import { ProcurementModule } from './modules/procurement/public.js';
 import { ProductionModule } from './modules/production/public.js';
 import { ApprovalModule } from './modules/approval/public.js';
 import { NotificationModule } from './modules/notification/public.js';
@@ -16,6 +17,7 @@ import { HttpExceptionFilter } from './presentation/http/http-exception.filter.j
     NotificationModule,
     ApprovalModule,
     ProductModule,
+    ProcurementModule,
     ProductionModule,
   ],
   controllers: [AppController],

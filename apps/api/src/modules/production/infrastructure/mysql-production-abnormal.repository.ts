@@ -134,7 +134,7 @@ export class MysqlProductionAbnormalRepository extends ProductionAbnormalReposit
       await audit(connection, context, 'production-abnormal.approve-rework', dispositionId, {
         reworkId: String(created.insertId),
         sourceReportId: String(source.batch_step_report_id),
-        reworkQuantity: source.abnormal_quantity,
+        reworkQuantity: String(source.abnormal_quantity),
       });
       return selectRework(connection, String(created.insertId));
     });
@@ -411,7 +411,7 @@ const mapRework = (row: ReworkRow): ReworkRecordItem => ({
   sourceReportId: String(row.source_report_id),
   responsibleUserId: String(row.responsible_user_id),
   responsibleUserName: null,
-  reworkQuantity: row.rework_quantity,
+  reworkQuantity: String(row.rework_quantity),
   unit: row.unit_snapshot,
   status: row.status,
   completedReportId: row.completed_report_id === null ? null : String(row.completed_report_id),

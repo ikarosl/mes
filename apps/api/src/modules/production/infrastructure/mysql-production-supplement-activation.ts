@@ -65,7 +65,7 @@ export const selectRouteSupplementSources = async (
       sourceStepOrder: row.source_step_order,
       sourceStepCode: row.source_step_code,
       sourceStepName: row.source_step_name,
-      quantity: row.scrap_quantity,
+      quantity: String(row.scrap_quantity),
       status: row.supplement_status === 'fulfilled' ? 'material_ready' : 'pending_material',
     };
     byBatch.set(batchId, [...(byBatch.get(batchId) ?? []), source]);

@@ -2,6 +2,8 @@
 
 本文是 Product 所有业务表的权威设计。migration 统一存放于 `packages/database/migrations`，不改变表的业务所有权。
 
+BOM 单位用量使用 `INT`；`chk_integer_storage_product_materials` 限制其不超过 `99999999`，原有正数和整数 CHECK 保留。API 快照与列表显式输出整数字符串。采购候选允许精确版本停用，物料与分类仍须启用且未删除；命令资格与锁定由 `ProductInventoryEligibility` 提供。
+
 ## 3.1 基础资料表
 
 ---
@@ -116,7 +118,7 @@ products.default_route_id → process_routes → process_route_steps
 | `id`                  | `BIGINT UNSIGNED` | 主键，自增                     |
 | `product_id`          | `BIGINT UNSIGNED` | 被生产对象 ID                  |
 | `material_id` | `BIGINT UNSIGNED` | 消耗对象 ID                    |
-| `quantity_per_unit`   | `DECIMAL(12,4)`   | 每生产一个目标对象的需求数量   |
+| `quantity_per_unit`   | `INT`   | 每生产一个目标对象的需求数量   |
 | `unit`                | `VARCHAR(20)`     | 用量单位，必须等于物料基础单位 |
 | `status`              | `TINYINT`         | `1` 启用、`0` 停用             |
 | `remark`              | `TEXT`            | 备注                           |
@@ -295,7 +297,9 @@ Production 一次完整配置全部 BOM 行的精确 `material_variant_id`。任
 报废、盘点及库存流水中已冻结的版本快照。跨模块只能通过 Product 的 `MaterialVariantQuery` 读取候选，
 不得直接查询本表。
 
-后续采购目标以 [ADR-0013](../../../../../../docs/adr/0013-procurement-source-and-stock-boundaries.md) 为准，尚未实施：物料精确版本停用不阻止新采购、补购、到货、检验和入库，但应阻止该版本确认生产领料出库。当前采购入库新选版仍要求启用，确认出库尚未复核版本停用状态；后续须通过按用途区分的 Product 公开资格能力统一适配，不能用历史展示查询代替写入校验。本轮不修改生产选版、基础物料或分类停用及软删除规则，也不放宽库存批次 `frozen/disabled` 的独立限制。
+采购一期以 [ADR-0013](../../../../../../docs/adr/0013-procurement-source-and-stock-boundaries.md) 为准：物料精确版本停用不阻止新采购、补购、到货、检验和入库，但阻止该版本确认生产领料出库。Product 的 `ProductInventoryEligibility` 已提供用途明确的事务内公开资格：采购用途允许停用版本，生产出库用途要求启用版本；两者都检查基础物料／分类启用且未删除、版本未删除及身份匹配。调用方接入状态以其所有者文档为准，不能把公开方法存在当作全部流程已完成。`listEnabledByMaterials` 保留生产新选版语义，历史展示查询不能代替写入校验；库存批次 `frozen/disabled` 由 Inventory 自行校验。
+
+上述资格查询在同池活跃事务中按数值 ID 顺序取得 `materials → item_categories → material_variants` 共享锁，先于库存批次锁；事务外调用拒绝。历史父身份锁不要求当前启用，也不排除软删除，仅校验物料与版本归属，成品按 `products.id` 锁定。这样退料／盘点写库存流水与余额触发器取得外键父锁时，不与采购／出库的资格锁形成反向顺序。物料版本启停只锁本版本行，不借展示 JOIN 再锁基础物料。
 
 物料版本约束：`UNIQUE (material_id, major_version, minor_version)`、`UNIQUE (variant_code)`、`UNIQUE (id, material_id)`；版本编码由基础物料编码与大小版本生成。版本表同样保存完整主数据审计字段与备注，身份字段创建后不可修改。不同基础物料可以具有相同大小版本号。
 
@@ -311,7 +315,7 @@ BOM 只选择基础物料，不能固定大小版本。版本候选不等于管�
 
 ### 物料名称的跨模块展示读取
 
-Product 向 Production 的 `infrastructure/queries/` 开放只读 `materials.id` 与 `materials.material_name`，登记于根 `scripts/api-data-ownership.mjs`。改动这些字段时须检查登记调用方。名称表示当前称呼，历史引用也按稳定 ID 解析，不过滤停用或软删除；禁止物理删除被引用物料。权限、状态、版本可用性及写入资格仍通过 Product 公共能力校验。改名审批尚未实现，见根 roadmap。
+Product 向 Production 与 Inventory 的 `infrastructure/queries/` 开放只读 `materials.id` 与 `materials.material_name`，登记于根 `scripts/api-data-ownership.mjs`。改动这些字段时须检查登记调用方。名称表示当前称呼，历史引用也按稳定 ID 解析，不过滤停用或软删除；禁止物理删除被引用物料。权限、状态、版本可用性及写入资格仍通过 Product 公共能力校验。改名审批尚未实现，见根 roadmap。
 
 所有路线步骤均须报工，不设置是否报工字段；工序检验规则仍独立保存。
 

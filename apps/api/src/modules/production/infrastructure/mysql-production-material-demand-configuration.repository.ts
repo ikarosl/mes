@@ -186,14 +186,15 @@ export class MysqlProductionMaterialDemandConfigurationRepository extends Produc
           itemCode: basis.material_code_snapshot,
           productName: basis.material_name,
           unit: basis.unit_snapshot,
-          quantityPerUnit: basis.quantity_per_unit_snapshot,
+          quantityPerUnit: String(basis.quantity_per_unit_snapshot),
         }));
       for (const line of [...currentLines, ...frozenOnlyLines]) {
         const basis = basisByProductMaterial.get(line.productMaterialId);
         const basisId = basis?.id ? String(basis.id) : `${batch.id}:${line.productMaterialId}`;
-        const requiredQuantity =
+        const requiredQuantity = String(
           basis?.required_number ??
-          multiplyIntegerQuantities(line.quantityPerUnit, batch.planned_quantity);
+            multiplyIntegerQuantities(line.quantityPerUnit, batch.planned_quantity),
+        );
         const materialId = basis ? String(basis.material_id) : line.materialId;
         const normalDemands = (demandByBasis.get(String(basis?.id ?? '')) ?? []).filter(
           (demand) => demand.demand_type === 'normal',
@@ -204,24 +205,27 @@ export class MysqlProductionMaterialDemandConfigurationRepository extends Produc
         );
         const variants: MaterialDemandManagementVariant[] = (
           variantByMaterial.get(materialId) ?? []
-        ).map((variant) => ({
-          materialVariantId: variant.id,
-          materialVariantCode: variant.variantCode,
-          majorVersion: variant.majorVersion,
-          minorVersion: variant.minorVersion,
-          selectedQuantity:
-            normalDemands.find((demand) => String(demand.material_variant_id) === variant.id)
-              ?.need_number ?? null,
-          status: variant.status,
-        }));
+        ).map((variant) => {
+          const selected = normalDemands.find(
+            (demand) => String(demand.material_variant_id) === variant.id,
+          );
+          return {
+            materialVariantId: variant.id,
+            materialVariantCode: variant.variantCode,
+            majorVersion: variant.majorVersion,
+            minorVersion: variant.minorVersion,
+            selectedQuantity: selected ? String(selected.need_number) : null,
+            status: variant.status,
+          };
+        });
         const demands: MaterialDemandManagementDemand[] = (
           demandByBasis.get(String(basis?.id ?? '')) ?? []
         ).map((demand) => ({
           demandId: String(demand.id),
           materialVariantId: String(demand.material_variant_id),
           materialVariantCode: demand.material_variant_code_snapshot,
-          demandQuantity: demand.need_number,
-          remainingQuantity: demand.remaining_number,
+          demandQuantity: String(demand.need_number),
+          remainingQuantity: String(demand.remaining_number),
           demandType: demand.demand_type,
           parentDemandId: demand.parent_demand_id === null ? null : String(demand.parent_demand_id),
           businessStatus: demand.business_status,
@@ -239,7 +243,7 @@ export class MysqlProductionMaterialDemandConfigurationRepository extends Produc
           materialName: basis?.material_name ?? line.productName,
           unit: basis?.unit_snapshot ?? line.unit,
           requiredQuantity,
-          configuredQuantity: `${configuredQuantity}.0000`,
+          configuredQuantity: String(configuredQuantity),
           lockedMaterialVariantId:
             lockedVariantByBatchMaterial.get(`${batch.id}:${materialId}`) ?? null,
           status: normalDemands.length > 0 ? 'configured' : 'pending',
@@ -387,8 +391,8 @@ export class MysqlProductionMaterialDemandConfigurationRepository extends Produc
             itemCode: line.itemCode,
             quantityPerUnit: line.quantityPerUnit,
             unit: line.unit,
-            plannedOutputQuantity: batch.planned_quantity,
-            needNumber: `${split.quantity}.0000`,
+            plannedOutputQuantity: String(batch.planned_quantity),
+            needNumber: String(split.quantity),
             demandType: 'normal',
           });
         }
@@ -505,10 +509,10 @@ export class MysqlProductionMaterialDemandConfigurationRepository extends Produc
             materialVariantId: variant.id,
             materialVariantCode: variant.variantCode,
             itemCode: basis.material_code_snapshot,
-            quantityPerUnit: basis.quantity_per_unit_snapshot,
+            quantityPerUnit: String(basis.quantity_per_unit_snapshot),
             unit: basis.unit_snapshot,
-            plannedOutputQuantity: basis.planned_output_quantity_snapshot,
-            needNumber: `${split.quantity}.0000`,
+            plannedOutputQuantity: String(basis.planned_output_quantity_snapshot),
+            needNumber: String(split.quantity),
             demandType: 'manual_additional',
           });
         }

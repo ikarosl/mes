@@ -15,6 +15,7 @@ import type {
 import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { writeTransactionalAudit } from '../../../common/audit/transactional-audit-writer.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
+import { MaterialVariantQuery } from '../../product/public.js';
 import { ProductionReportingRepository } from '../application/ports/production-reporting.repository.js';
 import {
   isRequiredNormalCompleted,
@@ -59,12 +60,15 @@ type LockedStepRow = RowDataPacket & {
 };
 @Injectable()
 export class MysqlProductionReportingRepository extends ProductionReportingRepository {
-  constructor(@Inject(DATABASE_POOL) private readonly pool: Pool) {
+  constructor(
+    @Inject(DATABASE_POOL) private readonly pool: Pool,
+    private readonly variants: MaterialVariantQuery,
+  ) {
     super();
   }
 
   listExecutionBatches(query: ProductionBatchQuery) {
-    return selectExecutionBatchSummaries(this.pool, query);
+    return selectExecutionBatchSummaries(this.pool, query, this.variants);
   }
 
   async getBatchExecution(batchId: string): Promise<ProductionExecutionRecordGroup> {
@@ -91,7 +95,7 @@ export class MysqlProductionReportingRepository extends ProductionReportingRepos
       productCode: batch.product_code_snapshot,
       productName: batch.product_name_snapshot,
       batchStatus: batch.status,
-      plannedQuantity: batch.planned_quantity,
+      plannedQuantity: String(batch.planned_quantity),
       steps: steps.map((step) =>
         mapExecutionStep(
           step,
@@ -497,9 +501,9 @@ const summaryResult = async (
     availableNormalQuantity: fixed(
       Math.max(0, Number(released) - Number(row.effective_direct_reported)),
     ),
-    effectiveReportedQuantity: row.effective_reported,
-    effectiveNormalQuantity: row.effective_normal,
-    effectiveAbnormalQuantity: row.effective_abnormal,
+    effectiveReportedQuantity: String(row.effective_reported),
+    effectiveNormalQuantity: String(row.effective_normal),
+    effectiveAbnormalQuantity: String(row.effective_abnormal),
     remainingNormalQuantity: fixed(Math.max(0, Number(required) - Number(row.effective_normal))),
   };
 };

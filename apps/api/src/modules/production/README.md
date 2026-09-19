@@ -1,6 +1,6 @@
 # Production
 
-负责生产工单、批次、工序执行、报工追溯、异常返工、报废补料，以及与生产直接相关的需求、分配、领料出库、窄入库、退料和现有库存盘点链路。
+负责生产工单、批次、工序执行、报工追溯、异常返工、报废补料，以及与生产直接相关的需求、分配、领料出库、退料和批准产出入库编排；库存事实、入库单据与现有盘点由 [Inventory](../inventory/README.md) 所有。
 
 ## 范围与边界
 
@@ -11,13 +11,12 @@
 
 批量工单在工单管理完整配置精确物料版本，任务初始需求和补料只继承配置；修改资格、历史引用及终止任务释放计划额度见[工单设计](docs/database/work-orders-and-batches.md)。研发工单继续按任务选版，不增加工单下达审批。
 
-成品入库前的代码组织见[内部职责与扩展边界](docs/module-boundaries.md)：先划清计划、执行、需求履约、结案产出、仓库操作及查询职责，保留单一 Production 所有权与原子事务；模块装配按职责分组，未拆出 Inventory／Quality。
+成品入库前的代码组织见[内部职责与扩展边界](docs/module-boundaries.md)：先划清计划、执行、需求履约、结案产出、仓库操作及查询职责，Production 保留来源业务所有权，Inventory 提供唯一库存写入；模块间保留同池原子事务，采购 Quality 尚未接入。
 
 ## 关键不变量
 
 损耗、退料和盘点分别由 `ProductionMaterialLossRepository`、`ProductionReturnRepository`、
-`ProductionStockCheckRepository` 三个窄端口及对应 MySQL Adapter 所有，分别由同名
-MaterialLoss、Return、StockCheck Service／Controller 提供独立用例入口；HTTP 路径不变。
+Inventory 的 `InventoryStockCheckRepository` 窄端口及对应 MySQL Adapter 所有；损耗、退料仍归 Production，盘点由 Inventory 自有 Service／Controller 提供入口，HTTP 路径不变。
 每个命令在所属 Adapter 内保留完整事务。共享持久化辅助只处理锁定、编号、分页与
 审计映射，不持有业务状态，不新增账本写入所有者；损耗补料继续通过统一需求计划 Writer，退料和盘点的
 库存流水与单据、成功审计同事务提交。
@@ -57,6 +56,8 @@ MaterialLoss、Return、StockCheck Service／Controller 提供独立用例入口
 人工追加及未齐套工序报废补料可提交数量更正，采用“关闭旧剩余、创建替代需求”。`pending_correction_id` 仅冻结旧需求操作，保留活动履约与缺口；`replaces_demand_id` 保存永久替代链，原来源和数量不回改。更正审批与出库确认共用有效需求齐套判断，原补料单和补产授权继续沿用。Production 注册 `production.demand.correct`、`production.batch.closeout` 两个场景，复用 Approval 公开 handler 与通用引擎，未配置已发布流程时拒绝提交。数据与接口见[需求设计](docs/database/demand-allocation-and-outbound.md#正式需求更正与替代)。
 
 ## 验证
+
+采购读取生产需求统一通过 `ProductionProcurementQuery`：`listCandidates` 分页返回当前可采购叶子，`resolveDemands` 批量解析已选／历史需求及阻断原因，`requirePurchasableDemands` 在调用方事务中按工单、任务、需求顺序锁定并重新校验。接口不修改需求、不分摊采购量，也不因库存、预留或已有采购排除需求。详细规则见[需求采购边界](docs/database/demand-allocation-and-outbound.md#采购来源公开能力)。
 
 `corepack pnpm --filter @company/api typecheck` 及 `apps/api` 相邻单元/契约测试。
 

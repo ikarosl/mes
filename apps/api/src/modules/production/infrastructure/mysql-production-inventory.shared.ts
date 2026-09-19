@@ -33,7 +33,7 @@ export const requireAffected = (result: ResultSetHeader, target: string): void =
 };
 export const lockIds = async (
   db: PoolConnection,
-  table: 'item_batch' | 'production_item_allocation',
+  table: 'production_item_allocation',
   ids: string[],
 ): Promise<void> => {
   if (!ids.length) return;

@@ -11,6 +11,9 @@ src/
     identity/
     product/
     production/
+    procurement/
+    quality/
+    inventory/
     approval/
     notification/
   presentation/
@@ -32,6 +35,9 @@ src/
 - [Notification](src/modules/notification/README.md)
 - [Product](src/modules/product/README.md)
 - [Production](src/modules/production/README.md)
+- [Procurement](src/modules/procurement/README.md)
+- [Quality](src/modules/quality/README.md)
+- [Inventory](src/modules/inventory/README.md)
 - [命令上下文](docs/command-context.md)
 - [事务审计](docs/audit.md)
 - [幂等性](docs/idempotency.md)

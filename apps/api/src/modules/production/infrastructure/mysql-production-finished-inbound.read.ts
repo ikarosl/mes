@@ -7,8 +7,6 @@ import type {
   InboundOrderStatus,
 } from '@company/contracts';
 import { toBeijingISOString } from '../../../common/time/date-time.js';
-import type { Db } from './mysql-production.shared.js';
-import { ProductionDomainError } from '../domain/production.errors.js';
 
 export type FinishedInboundSourceRow = RowDataPacket & {
   production_batch_id: number;
@@ -33,25 +31,25 @@ export type FinishedInboundSourceRow = RowDataPacket & {
   completed_inbound_id: number | null;
 };
 export type FinishedInboundOrderRow = FinishedInboundSourceRow & {
-  inbound_id: number;
+  inbound_id: number | string;
   inbound_no: string;
   source_type: FinishedGoodsInboundSource;
   status: InboundOrderStatus;
   version: number;
-  output_revision_id: number;
+  output_revision_id: number | string;
   revision_no: number;
-  detail_id: number;
+  detail_id: number | string;
   inbound_number: string;
   requested_batch_code: string;
-  batch_id: number | null;
-  inventory_transaction_id: number | null;
-  created_by: number;
+  batch_id: number | string | null;
+  inventory_transaction_id: number | string | null;
+  created_by: number | string;
   created_at: Date;
-  operator_id: number | null;
+  operator_id: number | string | null;
   inbound_at: Date | null;
   remark: string | null;
   cancel_reason: string | null;
-  cancelled_by: number | null;
+  cancelled_by: number | string | null;
   cancelled_at: Date | null;
 };
 export const FINISHED_SOURCE_COLUMNS = `b.id production_batch_id,b.batch_no,b.status batch_status,
@@ -59,20 +57,11 @@ export const FINISHED_SOURCE_COLUMNS = `b.id production_batch_id,b.batch_no,b.st
   wo.product_name_snapshot product_name,wo.unit_snapshot unit,c.id closeout_id,c.current_revision_id,
   r.revision_no current_revision_no,r.available_quantity approved_available_quantity,r.extra_quantity approved_extra_quantity,
   c.available_quantity draft_available_quantity,c.extra_quantity draft_extra_quantity,c.pending_approval_id,c.correction_reason`;
-const SOURCE_JOINS = `JOIN work_orders wo ON wo.id=b.work_order_id
+export const FINISHED_SOURCE_JOINS = `JOIN work_orders wo ON wo.id=b.work_order_id
   JOIN production_batch_closeout c ON c.production_batch_id=b.id
   JOIN production_output_revision r ON r.id=c.current_revision_id AND r.closeout_id=c.id`;
-export const FINISHED_SOURCE_FROM = `FROM production_batches b ${SOURCE_JOINS}`;
+export const FINISHED_SOURCE_FROM = `FROM production_batches b ${FINISHED_SOURCE_JOINS}`;
 export const FINISHED_SOURCE_SELECT = `SELECT ${FINISHED_SOURCE_COLUMNS} ${FINISHED_SOURCE_FROM}`;
-export const FINISHED_ORDER_FROM = `FROM inbound_order o JOIN inbound_detail d ON d.inbound_id=o.id AND d.product_id=o.product_id
-  JOIN production_batches b ON b.id=o.production_batch_id ${SOURCE_JOINS}
-  JOIN production_output_revision adopted ON adopted.id=o.output_revision_id`;
-export const FINISHED_ORDER_SELECT = `SELECT ${FINISHED_SOURCE_COLUMNS},o.id inbound_id,o.inbound_no,o.source_type,o.status,o.version,
-  o.output_revision_id,adopted.revision_no,d.id detail_id,d.inbound_number,d.requested_batch_code,d.batch_id,
-  o.created_by,o.created_at,o.operator_id,o.inbound_at,o.remark,o.cancel_reason,o.cancelled_by,o.cancelled_at,
-  (SELECT tx.id FROM inventory_transaction tx WHERE tx.product_id=o.product_id AND tx.reference_type='inbound_detail'
-    AND tx.reference_detail_id=d.id AND tx.transaction_type='production_inbound') inventory_transaction_id
-  ${FINISHED_ORDER_FROM}`;
 
 export function approvedFinishedQuantity(
   row: FinishedInboundSourceRow,
@@ -174,18 +163,5 @@ export function mapFinishedOrder(row: FinishedInboundOrderRow): FinishedGoodsInb
     blockers,
   };
 }
-export async function findFinishedOrder(
-  db: Db,
-  id: string,
-  lock = false,
-): Promise<FinishedInboundOrderRow> {
-  const [[row]] = await db.query<FinishedInboundOrderRow[]>(
-    `${FINISHED_ORDER_SELECT}
-    WHERE o.id=? AND o.source_type IN ('self_made','production_extra')${lock ? ' FOR UPDATE' : ''}`,
-    [id],
-  );
-  if (!row) throw new ProductionDomainError('NOT_FOUND', '成品入库单不存在');
-  return row;
-}
-const nullableId = (id: number | null) => (id === null ? null : String(id));
+const nullableId = (id: number | string | null) => (id === null ? null : String(id));
 const date = (value: Date | null) => (value ? toBeijingISOString(value) : null);

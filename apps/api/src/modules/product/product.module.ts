@@ -4,6 +4,8 @@ import { DatabaseModule } from '../../infrastructure/database/database.module.js
 import { IdentityModule } from '../identity/public.js';
 import { ApprovalModule } from '../approval/public.js';
 import { ProductService } from './application/product.service.js';
+import { ProductInventoryEligibility } from './application/product-inventory-eligibility.query.js';
+import { MysqlProductInventoryEligibility } from './infrastructure/mysql-product-inventory-eligibility.query.js';
 import { ProductSnapshotQuery } from './application/product-snapshot.query.js';
 import { ProductSnapshotService } from './application/product-snapshot.service.js';
 import { ProductProductionDefinitionCommand } from './application/product-production-definition.command.js';
@@ -41,6 +43,8 @@ import { ProductBomApprovalHandler } from './application/product-bom-approval.ha
   controllers: [ProductController],
   providers: [
     ProductService,
+    MysqlProductInventoryEligibility,
+    { provide: ProductInventoryEligibility, useExisting: MysqlProductInventoryEligibility },
     ProductBomApprovalHandler,
     ProductSnapshotService,
     ProductProductionDefinitionService,
@@ -79,6 +83,7 @@ import { ProductBomApprovalHandler } from './application/product-bom-approval.ha
     },
   ],
   exports: [
+    ProductInventoryEligibility,
     ProductSnapshotQuery,
     ProductProductionDefinitionCommand,
     TechnicalFileContentQuery,

@@ -22,6 +22,12 @@ import ProductCategoriesPage from '../views/product/ProductCategoriesPage.vue';
 import ProcessesPage from '../views/product/ProcessesPage.vue';
 import ProcessRoutesPage from '../views/product/ProcessRoutesPage.vue';
 
+// 采购管理
+import SuppliersPage from '../views/procurement/SuppliersPage.vue';
+import PurchaseOrdersPage from '../views/procurement/PurchaseOrdersPage.vue';
+import PurchaseReceiptsPage from '../views/procurement/PurchaseReceiptsPage.vue';
+import InboundInspectionsPage from '../views/quality/InboundInspectionsPage.vue';
+
 // 生产管理
 import ProductionOrdersPage from '../views/production/ProductionOrdersPage.vue';
 import ProductionTasksPage from '../views/production/ProductionTasksPage.vue';
@@ -177,6 +183,40 @@ export const router = createRouter({
           path: 'product/material-variants',
           redirect: { name: 'product-products', query: { tab: 'materials' } },
         },
+
+        // 采购管理
+        page(
+          'procurement/suppliers',
+          'procurement-suppliers',
+          '供应商配置',
+          SuppliersPage,
+          PERMISSIONS.procurement.suppliers.view,
+          'SuppliersPage',
+        ),
+        page(
+          'procurement/purchase-orders',
+          'procurement-orders',
+          '采购单',
+          PurchaseOrdersPage,
+          PERMISSIONS.procurement.orders.view,
+          'PurchaseOrdersPage',
+        ),
+        page(
+          'procurement/receipts',
+          'procurement-receipts',
+          '采购到货',
+          PurchaseReceiptsPage,
+          PERMISSIONS.procurement.receipts.view,
+          'PurchaseReceiptsPage',
+        ),
+        page(
+          'quality/inbound-inspections',
+          'quality-inbound-inspections',
+          '来料检验',
+          InboundInspectionsPage,
+          PERMISSIONS.quality.inboundInspections.view,
+          'InboundInspectionsPage',
+        ),
 
         // 生产管理
         page(

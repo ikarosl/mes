@@ -12,6 +12,7 @@ import type {
 } from '@company/contracts';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
 import type { ApprovalSubjectPreparation } from '../../approval/public.js';
+import { InventoryStockCommand } from '../../inventory/public.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
 import { toBeijingISOString } from '../../../common/time/date-time.js';
 import { ProductionDemandCorrectionRepository } from '../application/ports/production-demand-correction.repository.js';
@@ -86,7 +87,10 @@ const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(valu
 
 @Injectable()
 export class MysqlProductionDemandCorrectionRepository extends ProductionDemandCorrectionRepository {
-  constructor(@Inject(DATABASE_POOL) private readonly pool: Pool) {
+  constructor(
+    @Inject(DATABASE_POOL) private readonly pool: Pool,
+    private readonly inventory: InventoryStockCommand,
+  ) {
     super();
   }
 
@@ -315,9 +319,9 @@ export class MysqlProductionDemandCorrectionRepository extends ProductionDemandC
         materialVariantId: demand.material_variant_id,
         materialVariantCode: demand.material_variant_code_snapshot,
         itemCode: demand.item_code_snapshot,
-        quantityPerUnit: demand.quantity_per_unit_snapshot,
+        quantityPerUnit: String(demand.quantity_per_unit_snapshot),
         unit: demand.unit_snapshot,
-        plannedOutputQuantity: demand.planned_output_quantity_snapshot,
+        plannedOutputQuantity: String(demand.planned_output_quantity_snapshot),
         needNumber: newQuantity,
         demandType: demand.demand_type,
         parentDemandId: demand.parent_demand_id,
@@ -380,7 +384,7 @@ export class MysqlProductionDemandCorrectionRepository extends ProductionDemandC
         'production-demand.correction.apply',
         'production_item_demand',
         String(demand.id),
-        { needNumber: demand.need_number, remainingNumber: demand.remaining_number },
+        { needNumber: String(demand.need_number), remainingNumber: demand.remaining_number },
         {
           correctionId,
           instanceId,
@@ -509,7 +513,7 @@ export class MysqlProductionDemandCorrectionRepository extends ProductionDemandC
     const chain = chainRows.map((row): DemandCorrectionChainItem => ({
       demandId: String(row.id),
       replacesDemandId: id(row.replaces_demand_id),
-      demandQuantity: row.need_number,
+      demandQuantity: String(row.need_number),
       remainingQuantity: String(row.remaining_number),
       businessStatus: row.business_status,
       closeCause: row.close_cause,
@@ -523,18 +527,26 @@ export class MysqlProductionDemandCorrectionRepository extends ProductionDemandC
     const [allocations] = await db.query<
       (RowDataPacket & {
         id: number;
-        batch_code: string;
+        batch_id: number;
         assigned_number: string;
         allocation_status: string;
         version: number;
         issued: string;
       })[]
     >(
-      `SELECT a.id,ib.batch_code,a.assigned_number,a.allocation_status,a.version,
+      `SELECT a.id,a.batch_id,a.assigned_number,a.allocation_status,a.version,
         COALESCE((SELECT SUM(od.outbound_number) FROM outbound_detail od JOIN outbound_order oo ON oo.id=od.outbound_id
           WHERE od.allocation_id=a.id AND oo.status='completed'${suffix}),0) issued
-       FROM production_item_allocation a JOIN item_batch ib ON ib.id=a.batch_id WHERE a.demand_id=? ORDER BY a.id${suffix}`,
+       FROM production_item_allocation a WHERE a.demand_id=? ORDER BY a.id${suffix}`,
       [demandId],
+    );
+    // Batch labels are immutable presentation references, not correction eligibility or stock locks.
+    const inventoryBatches = new Map(
+      (
+        await this.inventory.materialBatchReferences([
+          ...new Set(allocations.map((allocation) => String(allocation.batch_id))),
+        ])
+      ).map((batch) => [batch.id, batch]),
     );
     const [returns] = await db.query<RowDataPacket[]>(
       `SELECT rd.id,rd.return_number,ro.status FROM return_detail rd JOIN return_order ro ON ro.id=rd.return_id
@@ -752,12 +764,17 @@ export class MysqlProductionDemandCorrectionRepository extends ProductionDemandC
         .filter(
           (a) => a.allocation_status === 'active' && Number(a.assigned_number) > Number(a.issued),
         )
-        .map((a) => ({
-          allocationId: String(a.id),
-          inventoryBatchCode: a.batch_code,
-          quantity: fixedIntegerQuantity(Number(a.assigned_number) - Number(a.issued)),
-          version: a.version,
-        })),
+        .map((a) => {
+          const inventoryBatch = inventoryBatches.get(String(a.batch_id));
+          if (!inventoryBatch)
+            throw new ProductionDomainError('NOT_FOUND', '需求分配的库存批次不存在');
+          return {
+            allocationId: String(a.id),
+            inventoryBatchCode: inventoryBatch.batchCode,
+            quantity: fixedIntegerQuantity(Number(a.assigned_number) - Number(a.issued)),
+            version: a.version,
+          };
+        }),
       pendingOutboundNos,
       authorizations,
       supplementRequirements,

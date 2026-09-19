@@ -1,6 +1,8 @@
 # Production 数据库设计
 
-本目录是 Production 业务表、状态和跨表事务不变量的权威设计。migration 统一登记在 `packages/database/migrations`，不改变 Production 对这些业务数据的所有权。
+本目录是 Production 业务表、状态和跨表事务不变量的权威设计。库存、入库与盘点表由 [Inventory](../../../inventory/docs/database.md) 所有，原库存章节只保留导航；生产来源编排与约束仍在本目录维护。migration 统一登记在 `packages/database/migrations`。
+
+业务数量统一为整数存储。原 DECIMAL 数量列由 `202609190003` 改为 `INT`，各受影响表增加 `chk_integer_storage_<表名>`，将单条数量限制在 `0..99999999`；原有正数约束和整数 CHECK 保留。API 数量字符串不补小数位，乘法与汇总仍须检查业务上限。
 
 ## 章节
 
@@ -19,6 +21,6 @@
 - `production_item_demand` 是生产需求唯一事实来源。
 - 当前汇总由 Repository SQL 和两张库存余额投影表实现，不依赖数据库 VIEW；库存可分配量、需求进度和分配可制单量的计算规则在各自所属章节维护。
 - 表字段定义只在所属章节维护；跨表事务、锁序和跨模块引用集中在规则章节。
-- Identity 与 Product 数据只能通过其公开能力使用；本目录不得复制其表定义。
+- Identity、Product 与 Inventory 命令及锁定读取只能通过各自公开能力使用；展示只读按登记字段访问，本目录不得复制其他模块表定义。
 - 标记为边界预留的完整 Quality、通用其他 Inventory 不得提前实现；已批准的成品入库按本目录窄场景执行。
 - 所有章节同时遵守[跨模块数据库约定](../../../../../../../docs/database-conventions.md)。

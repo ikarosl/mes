@@ -27,6 +27,12 @@ BOM 明细仅配置基础物料、单位用量、单位、状态和备注，不�
 既有版本 ID 返回 `MaterialVariantDisplayReference`（ID 与编码），允许停用或软删除，仅供历史单据展示。
 历史引用不能用于新版本选择或写操作校验，基础物料及分类停用、软删除不影响既有版本编码解析。
 
+`ProductInventoryEligibility` 为库存命令提供事务内用途校验：
+`requirePurchasableReferences` 允许停用的精确版本，仍要求基础物料和分类启用且未删除、版本未删除；
+`requireProductionIssuableReferences` 另外要求版本启用。`lockHistoricalReferences` 只锁定历史身份，
+不因停用或软删除阻断退料、盘点和既有成品事实。所有方法返回稳定 `ProductQueryResult`，
+须在同池事务中调用，并在库存批次锁之前按 ID 顺序取得 Product 父身份共享锁。
+
 ## 验证
 
 `corepack pnpm --filter @company/api typecheck` 及 `src/modules/product/__tests__` 相邻测试。
@@ -130,7 +136,7 @@ BOM 明细仅配置基础物料、单位用量、单位、状态和备注，不�
 2. 成品写入 `products`（`item_code`），基础物料写入 `materials`（`material_code`），编码在各自表内永久唯一；编码和基础单位创建后不可修改，原则变化必须新建产品和编码。
 3. 只有已启用的自制成品可以配置 `product_materials` 和默认路线；采购物料不能配置生产工艺。
 4. BOM 投入对象只能是已启用的基础物料；BOM 是 Production 生成需求基础的唯一来源。本模块只维护 BOM，不生成需求，也不回写任何历史需求。
-5. `material_variants` 是物料库存的精确身份。版本编码由服务端按基础物料编码和版本号生成，创建后不可改；启用版本由 Production 在写入需求、入库或补料时要求管理员明确选择。
+5. `material_variants` 是物料库存的精确身份。版本编码由服务端按基础物料编码和版本号生成，创建后不可改；Production 的新需求、补料和生产出库使用启用版本，采购及对应入库允许停用但未删除的版本，基础物料和分类仍须有效。
 6. 工艺路线只表达工序顺序、负责人、SOP 与规则快照，不绑定产品或 BOM 行；物料需求统一按批次冻结的完整 BOM 基础配置。
 7. 路线创建时固定为 `draft`。只有草稿可以编辑路线内容与步骤；首次启用后，即使后来停用也不可原地修改，调整必须新建版本。
 8. 启用路线前必须至少包含一个启用步骤。保存步骤时后端从 `process_steps` 和 `technical_files` 复制工序与 SOP 快照。
@@ -140,6 +146,8 @@ BOM 明细仅配置基础物料、单位用量、单位、状态和备注，不�
 ## 5. 数据库与文件存储
 
 Product 所有业务表、字段与约束由[数据库设计](docs/database.md)维护；migration 统一登记在 `packages/database/migrations`，不改变业务所有权。SOP 元数据写入 `technical_files`，对象内容通过 Product 的存储端口访问，完整配置和补偿边界见[技术文件专题](docs/technical-files.md)。
+
+采购候选通过 `MaterialVariantQuery.listPurchasableMaterials` 与 `listPurchasableByMaterials` 公开读取：物料和分类必须启用且未删除，精确版本不得删除，但允许版本停用。物料选项按关键字返回 50 项，并支持最多 100 个 `includeIds` 回显。候选读取不锁定主数据，采购写命令仍须调用 `ProductInventoryEligibility` 在活动事务内重新校验并锁定资格。
 
 ## 6. 管理端视觉符合性
 

@@ -1,8 +1,19 @@
-import { randomUUID } from 'node:crypto';
+import {
+  InventoryInboundCommand,
+  type FinishedInboundWrite,
+  type FinishedInboundStorage,
+} from '../../inventory/public.js';
+import { ProductInventoryEligibility } from '../../product/public.js';
+import {
+  finishedOrderSelect,
+  finishedOrderCount,
+  finishedCandidateSelect,
+  findFinishedOrder,
+} from './queries/finished-inbound-display.sql.js';
 import { Inject, Injectable } from '@nestjs/common';
 import { DatabaseError, withTransaction } from '@company/database';
 import { FINISHED_GOODS_INBOUND_SOURCES } from '@company/constants';
-import type { Pool, PoolConnection, RowDataPacket, ResultSetHeader } from 'mysql2/promise';
+import type { Pool, PoolConnection, RowDataPacket } from 'mysql2/promise';
 import type {
   FinishedGoodsInboundQuery,
   FinishedGoodsInboundCandidateQuery,
@@ -21,23 +32,23 @@ import { lockOutputBatch } from './mysql-production-output.persistence.js';
 import { readOutputRevisions } from './mysql-production-output.read.js';
 import { writeInventoryAudit } from './mysql-production-inventory.shared.js';
 import {
-  FINISHED_ORDER_FROM,
-  FINISHED_ORDER_SELECT,
-  FINISHED_SOURCE_COLUMNS,
   FINISHED_SOURCE_FROM,
   FINISHED_SOURCE_SELECT,
   type FinishedInboundSourceRow,
   type FinishedInboundOrderRow,
   approvedFinishedQuantity,
   finishedInboundBlockers,
-  findFinishedOrder,
   mapFinishedOrder,
   mapFinishedCandidate,
 } from './mysql-production-finished-inbound.read.js';
 
 @Injectable()
 export class MysqlProductionFinishedInboundRepository extends ProductionFinishedInboundRepository {
-  constructor(@Inject(DATABASE_POOL) private readonly pool: Pool) {
+  constructor(
+    @Inject(DATABASE_POOL) private readonly pool: Pool,
+    private readonly inventory: InventoryInboundCommand,
+    private readonly products: ProductInventoryEligibility,
+  ) {
     super();
   }
   async list(query: FinishedGoodsInboundQuery) {
@@ -61,11 +72,11 @@ export class MysqlProductionFinishedInboundRepository extends ProductionFinished
       page = query.page ?? 1,
       pageSize = query.pageSize ?? 20;
     const [[count]] = await this.pool.query<(RowDataPacket & { total: number })[]>(
-      `SELECT COUNT(*) total ${FINISHED_ORDER_FROM} WHERE ${where}`,
+      `${finishedOrderCount()} WHERE ${where}`,
       values,
     );
     const [rows] = await this.pool.query<FinishedInboundOrderRow[]>(
-      `${FINISHED_ORDER_SELECT} WHERE ${where} ORDER BY o.id DESC LIMIT ? OFFSET ?`,
+      `${finishedOrderSelect()} WHERE ${where} ORDER BY o.id DESC LIMIT ? OFFSET ?`,
       [...values, pageSize, (page - 1) * pageSize],
     );
     return { items: rows.map(mapFinishedOrder), total: Number(count?.total ?? 0), page, pageSize };
@@ -88,10 +99,7 @@ export class MysqlProductionFinishedInboundRepository extends ProductionFinished
       values,
     );
     const [rows] = await this.pool.query<FinishedInboundSourceRow[]>(
-      `SELECT ${FINISHED_SOURCE_COLUMNS},
-      (SELECT o.id FROM inbound_order o WHERE o.production_batch_id=b.id AND o.source_type=? AND o.status='pending') pending_inbound_id,
-      (SELECT o.id FROM inbound_order o WHERE o.production_batch_id=b.id AND o.source_type=? AND o.status='completed') completed_inbound_id
-      ${FINISHED_SOURCE_FROM} WHERE ${where} ORDER BY b.id DESC LIMIT ? OFFSET ?`,
+      `${finishedCandidateSelect()} WHERE ${where} ORDER BY b.id DESC LIMIT ? OFFSET ?`,
       [query.sourceType, query.sourceType, ...values, pageSize, (page - 1) * pageSize],
     );
     return {
@@ -124,37 +132,15 @@ export class MysqlProductionFinishedInboundRepository extends ProductionFinished
       return await withTransaction(this.pool, async (db) => {
         const source = await this.lockSource(db, payload.productionBatchId);
         await this.requireEligible(db, source, payload.sourceType, payload.outputRevisionId);
-        const inboundNo = `FI-${Date.now()}-${randomUUID().slice(0, 8).toUpperCase()}`;
-        const [order] = await db.execute<ResultSetHeader>(
-          `INSERT INTO inbound_order
-          (inbound_no,source_type,work_order_id,production_batch_id,product_id,output_revision_id,status,remark,created_by,updated_by)
-          VALUES (?,?,?,?,?,?,'pending',?,?,?)`,
-          [
-            inboundNo,
+        const { inboundId: id } = await this.inventory.createFinishedDraft(
+          writeInput(
+            source,
             payload.sourceType,
-            source.work_order_id,
-            source.production_batch_id,
-            source.product_id,
             payload.outputRevisionId,
-            payload.remark ?? null,
-            context.actorId,
-            context.actorId,
-          ],
-        );
-        const id = String(order.insertId);
-        await db.execute(
-          `INSERT INTO inbound_detail
-          (inbound_id,product_id,requested_batch_code,item_code_snapshot,inbound_number,unit_snapshot,stock_status,created_by)
-          VALUES (?,?,?,?,?,?,'available',?)`,
-          [
-            id,
-            source.product_id,
             payload.batchCode,
-            source.product_code,
-            approvedFinishedQuantity(source, payload.sourceType),
-            source.unit,
-            context.actorId,
-          ],
+            payload.remark ?? null,
+          ),
+          context,
         );
         await this.audit(db, context, 'create', id, null, {
           ...payload,
@@ -173,13 +159,17 @@ export class MysqlProductionFinishedInboundRepository extends ProductionFinished
       const { source, order } = await this.lockOrder(db, id);
       requirePending(order, payload.version);
       await this.requireEligible(db, source, order.source_type, payload.outputRevisionId, id);
-      await db.execute(
-        'UPDATE inbound_detail SET requested_batch_code=?,inbound_number=? WHERE id=? AND batch_id IS NULL',
-        [payload.batchCode, approvedFinishedQuantity(source, order.source_type), order.detail_id],
-      );
-      await db.execute(
-        'UPDATE inbound_order SET output_revision_id=?,remark=?,version=version+1,updated_by=? WHERE id=?',
-        [payload.outputRevisionId, payload.remark ?? null, context.actorId, id],
+      await this.inventory.updateFinishedDraft(
+        id,
+        payload.version,
+        writeInput(
+          source,
+          order.source_type,
+          payload.outputRevisionId,
+          payload.batchCode,
+          payload.remark ?? null,
+        ),
+        context,
       );
       await this.audit(
         db,
@@ -212,45 +202,17 @@ export class MysqlProductionFinishedInboundRepository extends ProductionFinished
             'CONCURRENT_MODIFICATION',
             '入库草稿未采用最新批准清单，请先核对数量并保存',
           );
-        const [batch] = await db.execute<ResultSetHeader>(
-          `INSERT INTO item_batch
-          (product_id,item_code_snapshot,unit_snapshot,batch_code,source_type,source_work_order_id,source_production_batch_id,batch_status,remark,created_by,updated_by)
-          VALUES (?,?,?,?,?,?,?,'available',?,?,?)`,
-          [
-            source.product_id,
-            source.product_code,
-            source.unit,
-            order.requested_batch_code,
+        const confirmed = await this.inventory.confirmFinishedReceipt(
+          id,
+          payload.version,
+          writeInput(
+            source,
             order.source_type,
-            source.work_order_id,
-            source.production_batch_id,
+            payload.outputRevisionId,
+            order.requested_batch_code,
             order.remark,
-            context.actorId,
-            context.actorId,
-          ],
-        );
-        await db.execute('UPDATE inbound_detail SET batch_id=? WHERE id=? AND batch_id IS NULL', [
-          batch.insertId,
-          order.detail_id,
-        ]);
-        const [transaction] = await db.execute<ResultSetHeader>(
-          `INSERT INTO inventory_transaction
-          (product_id,batch_id,transaction_type,quantity,unit_snapshot,stock_status,reference_type,reference_detail_id,idempotency_key,remark,created_by)
-          VALUES (?,?,'production_inbound',?,?,'available','inbound_detail',?,?,?,?)`,
-          [
-            source.product_id,
-            batch.insertId,
-            quantity,
-            source.unit,
-            order.detail_id,
-            `FGI:${id}:${order.detail_id}`,
-            order.remark,
-            context.actorId,
-          ],
-        );
-        await db.execute(
-          "UPDATE inbound_order SET status='completed',inbound_at=NOW(),operator_id=?,updated_by=?,version=version+1 WHERE id=?",
-          [context.actorId, context.actorId, id],
+          ),
+          context,
         );
         await this.audit(
           db,
@@ -262,8 +224,8 @@ export class MysqlProductionFinishedInboundRepository extends ProductionFinished
             status: 'completed',
             outputRevisionId: payload.outputRevisionId,
             quantity,
-            itemBatchId: String(batch.insertId),
-            inventoryTransactionId: String(transaction.insertId),
+            itemBatchId: confirmed.itemBatchId,
+            inventoryTransactionId: confirmed.inventoryTransactionId,
           },
         );
         return { inboundId: id };
@@ -278,10 +240,7 @@ export class MysqlProductionFinishedInboundRepository extends ProductionFinished
     return withTransaction(this.pool, async (db) => {
       const { order } = await this.lockOrder(db, id);
       requirePending(order, payload.version);
-      await db.execute(
-        "UPDATE inbound_order SET status='cancelled',cancel_reason=?,cancelled_by=?,cancelled_at=NOW(),version=version+1,updated_by=? WHERE id=?",
-        [payload.reason, context.actorId, context.actorId, id],
-      );
+      await this.inventory.cancelFinishedDraft(id, payload.version, payload.reason, context);
       await this.audit(
         db,
         context,
@@ -300,16 +259,24 @@ export class MysqlProductionFinishedInboundRepository extends ProductionFinished
       [batchId],
     );
     if (!row) throw new ProductionDomainError('INVALID_STATE', '任务尚无批准产出清单');
+    const identity = await this.products.lockHistoricalReferences({
+      references: [],
+      productIds: [String(row.product_id)],
+    });
+    if (identity.status !== 'success')
+      throw new ProductionDomainError(
+        identity.status === 'not-found' ? 'NOT_FOUND' : 'INVALID_INPUT',
+        identity.message,
+      );
     return row;
   }
   private async lockOrder(db: PoolConnection, id: string) {
-    const [[locator]] = await db.query<(RowDataPacket & { production_batch_id: number })[]>(
-      "SELECT production_batch_id FROM inbound_order WHERE id=? AND source_type IN ('self_made','production_extra')",
-      [id],
-    );
-    if (!locator) throw new ProductionDomainError('NOT_FOUND', '成品入库单不存在');
-    const source = await this.lockSource(db, String(locator.production_batch_id));
-    const order = await findFinishedOrder(db, id, true);
+    const locator = await this.inventory.getFinishedLocator(id);
+    const source = await this.lockSource(db, locator.productionBatchId);
+    const stored = await this.inventory.getFinishedOrder(id, true);
+    if (stored.productionBatchId !== locator.productionBatchId)
+      throw new ProductionDomainError('CONCURRENT_MODIFICATION', '入库单来源已变化');
+    const order = storageRow(source, stored);
     return { source, order };
   }
   private async requireEligible(
@@ -322,10 +289,7 @@ export class MysqlProductionFinishedInboundRepository extends ProductionFinished
     const blockers = finishedInboundBlockers(row, source);
     if (String(row.current_revision_id) !== revisionId)
       blockers.push('批准清单已变化，请核对最新清单');
-    const [orders] = await db.query<(RowDataPacket & { id: number; status: string })[]>(
-      "SELECT id,status FROM inbound_order WHERE production_batch_id=? AND source_type=? AND status IN ('pending','completed') ORDER BY id FOR UPDATE",
-      [row.production_batch_id, source],
-    );
+    const orders = await this.inventory.listFinishedSlots(String(row.production_batch_id), source);
     if (orders.some((order) => String(order.id) !== ownId))
       blockers.push('该类已有有效入库单；同一任务每类产出只允许收齐后确认一次');
     if (blockers.length) throw new ProductionDomainError('INVALID_STATE', blockers.join('；'));
@@ -374,4 +338,53 @@ function duplicateError(error: unknown): never {
       '该类别已有有效入库单，或该成品库存批号已使用，请刷新核对',
     );
   throw error;
+}
+
+function writeInput(
+  row: FinishedInboundSourceRow,
+  sourceType: FinishedGoodsInboundSource,
+  outputRevisionId: string,
+  batchCode: string,
+  remark: string | null,
+): FinishedInboundWrite {
+  return {
+    productionBatchId: String(row.production_batch_id),
+    workOrderId: String(row.work_order_id),
+    productId: String(row.product_id),
+    outputRevisionId,
+    sourceType,
+    itemCode: row.product_code,
+    unit: row.unit,
+    quantity: approvedFinishedQuantity(row, sourceType),
+    batchCode,
+    remark,
+  };
+}
+function storageRow(
+  source: FinishedInboundSourceRow,
+  row: FinishedInboundStorage,
+): FinishedInboundOrderRow {
+  return {
+    ...source,
+    inbound_id: row.inboundId,
+    inbound_no: row.inboundNo,
+    source_type: row.sourceType,
+    status: row.status,
+    version: row.version,
+    output_revision_id: row.outputRevisionId,
+    revision_no: source.current_revision_no,
+    detail_id: row.detailId,
+    inbound_number: row.quantity,
+    requested_batch_code: row.batchCode,
+    batch_id: row.batchId,
+    inventory_transaction_id: row.transactionId,
+    created_by: row.createdBy,
+    created_at: row.createdAt,
+    operator_id: row.operatorId,
+    inbound_at: row.inboundAt,
+    remark: row.remark,
+    cancel_reason: row.cancelReason,
+    cancelled_by: row.cancelledBy,
+    cancelled_at: row.cancelledAt,
+  };
 }

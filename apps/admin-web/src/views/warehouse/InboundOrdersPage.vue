@@ -11,7 +11,11 @@
       />
     </el-tabs>
     <div v-show="activeTab === 'purchase'">
-      <PurchaseInboundPanel :active="activeTab === 'purchase'" />
+      <PurchaseInboundPanel
+        :active="activeTab === 'purchase'"
+        :requested-inbound-id="requestedPurchaseInboundId"
+        :requested-receipt-line-id="requestedReceiptLineId"
+      />
     </div>
     <div v-show="activeTab === 'finished'">
       <FinishedGoodsInboundPanel
@@ -30,15 +34,34 @@ import FinishedGoodsInboundPanel from './components/FinishedGoodsInboundPanel.vu
 defineOptions({ name: 'InboundOrdersPage' });
 const activeTab = ref('purchase'),
   finishedVisited = ref(false),
-  requestedInboundId = ref<string | null>(null);
+  requestedInboundId = ref<string | null>(null),
+  requestedPurchaseInboundId = ref<string | null>(null),
+  requestedReceiptLineId = ref<string | null>(null);
 const route = useRoute();
 watch(
-  () => [route.name, route.query.inboundId] as const,
-  ([routeName, id]) => {
+  () =>
+    [route.name, route.query.inboundId, route.query.sourceType, route.query.receiptLineId] as const,
+  ([routeName, id, sourceType, receiptLineId]) => {
+    requestedPurchaseInboundId.value = null;
+    requestedReceiptLineId.value = null;
     if (routeName === 'warehouse-inbound' && typeof id === 'string' && id) {
-      requestedInboundId.value = id;
-      finishedVisited.value = true;
-      activeTab.value = 'finished';
+      if (sourceType === 'purchased') {
+        requestedInboundId.value = null;
+        requestedPurchaseInboundId.value = id;
+        activeTab.value = 'purchase';
+      } else {
+        requestedInboundId.value = id;
+        finishedVisited.value = true;
+        activeTab.value = 'finished';
+      }
+    } else if (
+      routeName === 'warehouse-inbound' &&
+      typeof receiptLineId === 'string' &&
+      receiptLineId
+    ) {
+      requestedInboundId.value = null;
+      requestedReceiptLineId.value = receiptLineId;
+      activeTab.value = 'purchase';
     } else {
       // 清除导航请求，不关闭或重置缓存中的业务草稿；再次进入同一单据可重新触发定位。
       requestedInboundId.value = null;

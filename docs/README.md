@@ -11,7 +11,10 @@
 - [数据库公共约定](database-conventions.md)
 - [产品范围](product-scope.md)
 - [路线图](roadmap.md)
-- [采购与外购物料入库质检评审稿](procurement-inbound-design.md)（一期业务边界已确定，技术设计中）
+- [采购与外购物料入库质检业务设计](procurement-inbound-design.md)（一期业务边界已确定）
+- [采购到入库技术设计](procurement-inbound-technical-design.md)：表结构、状态、公开契约、权限及事务
+- [Inventory 提取设计](inventory-extraction-design.md)：真实 migration 核对、逐表所有权与现有生产用例改造
+- [采购管理端设计](../apps/admin-web/docs/procurement-inbound.md)：页面、分页选择、明细与仓库待办
 - [审批接入边界与后续通知设计](approval-design.md)
 - [通用通知设计与提交后扩展钩子](notification-design.md)
 
@@ -21,6 +24,9 @@
 - [Identity](../apps/api/src/modules/identity/README.md)：[数据库设计](../apps/api/src/modules/identity/docs/database.md)
 - [Product](../apps/api/src/modules/product/README.md)：[数据库设计](../apps/api/src/modules/product/docs/database.md)
 - [Production](../apps/api/src/modules/production/README.md)：[数据库设计](../apps/api/src/modules/production/docs/database/README.md)、[内部职责与成品入库扩展](../apps/api/src/modules/production/docs/module-boundaries.md)
+- [Procurement](../apps/api/src/modules/procurement/README.md)：供应商、采购、到货、实收修订和仓库处置编排
+- [Quality](../apps/api/src/modules/quality/README.md)：来料初检、复核办理及不可变结论
+- [Inventory](../apps/api/src/modules/inventory/README.md)：唯一库存账本、批次、入库和盘点
 - [Approval](../apps/api/src/modules/approval/README.md)：[数据库设计](../apps/api/src/modules/approval/docs/database.md)
 - [Notification](../apps/api/src/modules/notification/README.md)：[数据库设计](../apps/api/src/modules/notification/docs/database.md)
 - [管理端](../apps/admin-web/README.md)：[架构](../apps/admin-web/docs/architecture.md)、[视觉设计](../apps/admin-web/docs/visual-design.md)、[路由/弹窗/标签页](../apps/admin-web/docs/route-dialogs-and-tabs.md)、[HTTP 错误处理](../apps/admin-web/docs/http-error-handling.md)

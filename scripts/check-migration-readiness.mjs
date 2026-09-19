@@ -5,6 +5,18 @@ import path from 'node:path';
 const root = process.cwd();
 const migrationsDir = path.join(root, 'packages/database/migrations');
 const allowedTables = new Set([
+  'procurement_supplier',
+  'purchase_order',
+  'purchase_order_line',
+  'purchase_order_line_source',
+  'purchase_order_line_closure',
+  'procurement_receipt',
+  'procurement_receipt_line',
+  'procurement_receipt_revision',
+  'procurement_receipt_scope',
+  'procurement_supplier_return',
+  'quality_inbound_case',
+  'quality_inbound_inspection',
   'notifications',
   'notification_recipients',
   'approval_flow_definitions',

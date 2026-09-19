@@ -41,6 +41,17 @@
           ></el-sub-menu
         >
         <el-sub-menu
+          v-if="procurementItems.length"
+          index="procurement"
+          ><template #title>采购管理</template
+          ><el-menu-item
+            v-for="item in procurementItems"
+            :key="item.path"
+            :index="item.path"
+            >{{ item.title }}</el-menu-item
+          ></el-sub-menu
+        >
+        <el-sub-menu
           v-if="productionItems.length"
           index="production"
           ><template #title>生产管理</template
@@ -51,6 +62,18 @@
             >{{ item.title }}</el-menu-item
           ></el-sub-menu
         >
+        <el-sub-menu
+          v-if="qualityItems.length"
+          index="quality"
+        >
+          <template #title>质量管理</template>
+          <el-menu-item
+            v-for="item in qualityItems"
+            :key="item.path"
+            :index="item.path"
+            >{{ item.title }}</el-menu-item
+          >
+        </el-sub-menu>
         <el-sub-menu
           v-if="warehouseItems.length"
           index="warehouse"
@@ -194,6 +217,22 @@ const productMenus = [
 ];
 const productItems = computed(() => productMenus.filter((item) => auth.can(item.permission)));
 
+const procurementMenus = [
+  {
+    title: '采购单',
+    path: '/procurement/purchase-orders',
+    permission: PERMISSIONS.procurement.orders.view,
+  },
+  {
+    title: '供应商配置',
+    path: '/procurement/suppliers',
+    permission: PERMISSIONS.procurement.suppliers.view,
+  },
+];
+const procurementItems = computed(() =>
+  procurementMenus.filter((item) => auth.can(item.permission)),
+);
+
 const productionMenus = [
   { title: '工单管理', path: '/production/orders', permission: PERMISSIONS.production.orders.view },
   { title: '生产任务', path: '/production/tasks', permission: PERMISSIONS.production.tasks.view },
@@ -215,7 +254,21 @@ const productionMenus = [
 ];
 const productionItems = computed(() => productionMenus.filter((item) => auth.can(item.permission)));
 
+const qualityMenus = [
+  {
+    title: '来料检验',
+    path: '/quality/inbound-inspections',
+    permission: PERMISSIONS.quality.inboundInspections.view,
+  },
+];
+const qualityItems = computed(() => qualityMenus.filter((item) => auth.can(item.permission)));
+
 const warehouseMenus = [
+  {
+    title: '采购到货',
+    path: '/procurement/receipts',
+    permission: PERMISSIONS.procurement.receipts.view,
+  },
   {
     title: '库存查询',
     path: '/warehouse/inventory',

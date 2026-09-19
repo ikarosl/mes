@@ -111,9 +111,9 @@ pending / assigned / doing -> terminated（收尾逐项处理）
 | `report_type`            | `VARCHAR(20)`     | `normal` 正向报工事实、`reversal` 冲销事实；不表示正常品/异常品分类  |
 | `reversal_of_report_id`  | `BIGINT UNSIGNED` | 冲销的原报工 ID；普通报工为空                                       |
 | `replaces_report_id`     | `BIGINT UNSIGNED` | 更正后的普通报工所替代的原报工 ID；非更正报工为空                    |
-| `reported_quantity`      | `DECIMAL(12,4)`   | 本事实的报工总数，必须大于 `0`                                      |
-| `normal_quantity`        | `DECIMAL(12,4)`   | 本事实中工序层面的正常数量，不等同于质检合格数量                     |
-| `abnormal_quantity`      | `DECIMAL(12,4)`   | 本事实中工序层面的异常数量；异常不自动等同于报废                     |
+| `reported_quantity`      | `INT`   | 本事实的报工总数，必须大于 `0`                                      |
+| `normal_quantity`        | `INT`   | 本事实中工序层面的正常数量，不等同于质检合格数量                     |
+| `abnormal_quantity`      | `INT`   | 本事实中工序层面的异常数量；异常不自动等同于报废                     |
 | `abnormal_origin`        | `VARCHAR(30)`     | 有异常时必填：`current_step` 当前工序异常、`previous_step` 前置异常  |
 | `unit_snapshot`          | `VARCHAR(20)`     | 本次报工单位快照                                                     |
 | `remark`                 | `TEXT`            | 本次报工、冲销或更正原因                                             |
@@ -230,7 +230,7 @@ GROUP BY batch.id, batch.planned_quantity;
 
 这里只累加成功关联到 `fulfilled` 补料单的授权；`LEFT JOIN` 本身不会移除未齐套授权行，不能无条件累加 `authorization.authorized_quantity`。不同补料单独立满足各自授权的物料条件，不要求整个批次的补料单全部齐套，也不新增可手动维护的授权生效状态。
 
-因此示例中的 `6` 由 `production_batches.planned_quantity = 5.0000` 与 `batch_step_scrap_reproduction_authorization.authorized_quantity = 1.0000` 相加得到。授权行在管理员批准时生成，`production_material_supplement.status = 'fulfilled'` 只是它进入可执行公式的物流开关；`fulfilled_at/fulfilled_by` 记录补料何时、由谁确认齐套。`production_item_demand.need_number` 只证明需要补什么料、补多少料，不参与产品数量 `5 + 1` 的加法。
+因此示例中的 `6` 由 `production_batches.planned_quantity = 5` 与 `batch_step_scrap_reproduction_authorization.authorized_quantity = 1` 相加得到。授权行在管理员批准时生成，`production_material_supplement.status = 'fulfilled'` 只是它进入可执行公式的物流开关；`fulfilled_at/fulfilled_by` 记录补料何时、由谁确认齐套。`production_item_demand.need_number` 只证明需要补什么料、补多少料，不参与产品数量 `5 + 1` 的加法。
 
 - 例一：批次 `Q = 5`，路线 `A -> B`，A 先正常报工 `4`，再单独异常报工 `1`。A 报废补料确认领用后 `S[A] = 1`，所以 `required_normal[A] = 5`、`released_input[A] = 6`、A 剩余可报 `6 - (4 + 1) = 1`；A 再正常报工 `1` 后达到正常目标 `5`，B 获得正常放行 `5`。
 - 例二：A 已正常报工 `5`，B 先正常报工 `4`，再单独异常报工 `1`。B 报废补料确认领用后 `S[B] = 1`，A 的 `required_normal[A]` 和 `released_input[A]` 都从 `5` 增为 `6`，A 重新打开并补报正常 `1`；在 A 形成第 `6` 件正常产出前，B 的 `released_input[B]` 仍为 `5`、剩余可报为 `0`。A 补产完成后 B 的投入放行才变为 `6`，此时 B 可再报正常 `1`，最终 B 正常量达到批次目标 `5`。
@@ -348,7 +348,7 @@ current_step_released_quantity = effective_normal
 | `production_batch_id`     | `BIGINT UNSIGNED` | 生产批次 ID                                        |
 | `batch_step_record_id`    | `BIGINT UNSIGNED` | 异常上报所在工序执行节点 ID                        |
 | `source_report_id`        | `BIGINT UNSIGNED` | 来源异常报工事实 ID                                |
-| `scrap_quantity`          | `DECIMAL(12,4)`   | 报废产品数量，等于来源报工的全部异常数量且大于 `0` |
+| `scrap_quantity`          | `INT`   | 报废产品数量，等于来源报工的全部异常数量且大于 `0` |
 | `unit_snapshot`           | `VARCHAR(20)`     | 来源报工单位快照                                   |
 | `created_by`              | `BIGINT UNSIGNED` | 批准并创建报废事实的管理员                         |
 | `created_at`              | `DATETIME`        | 报废事实创建时间                                   |
@@ -376,7 +376,7 @@ current_step_released_quantity = effective_normal
 | `supplement_id`             | `BIGINT UNSIGNED` | 唯一关联补料物流单 ID                                        |
 | `entry_step_record_id`      | `BIGINT UNSIGNED` | 补产重新投入工序；当前固定为生产批次路线首工序               |
 | `quota_end_step_record_id`  | `BIGINT UNSIGNED` | 补产额度传播截止工序；固定为异常上报工序                     |
-| `authorized_quantity`       | `DECIMAL(12,4)`   | 产品补产授权数量；批准时等于报废数量且必须大于 `0`           |
+| `authorized_quantity`       | `INT`   | 产品补产授权数量；批准时等于报废数量且必须大于 `0`           |
 | `authorized_by`             | `BIGINT UNSIGNED` | 批准补产的管理员 ID                                          |
 | `authorized_at`             | `DATETIME`        | 管理员批准补产的时间                                         |
 | `created_at`                | `DATETIME`        | 授权事实创建时间                                             |
@@ -412,7 +412,7 @@ current_step_released_quantity = effective_normal
 | `batch_step_record_id` | `BIGINT UNSIGNED` | 返回执行的来源工序 |
 | `source_report_id` | `BIGINT UNSIGNED` | 来源异常报工 |
 | `responsible_user_id` | `BIGINT UNSIGNED` | 批准时冻结的返工负责人 |
-| `rework_quantity` | `DECIMAL(12,4)` | 来源异常数量快照，必须大于 `0` |
+| `rework_quantity` | `INT` | 来源异常数量快照，必须大于 `0` |
 | `unit_snapshot` | `VARCHAR(20)` | 来源报工单位快照 |
 | `status` | `VARCHAR(30)` | `pending`、`doing`、`completed`、`cancelled` |
 | `completed_report_id` | `BIGINT UNSIGNED` | 返工完成时生成的报工事实，唯一；完成前为空 |
@@ -451,6 +451,8 @@ products
 `batch_step_abnormal_dispositions` 已作为追溯节点定稿并追加数据库 migration；报工创建、更正、异常审批、最小返工和报废补料业务均已落地。过程质检、最终质量和成品流转只能在各自业务语义闭环后追加到主链。追溯查询可以使用受约束的冗余字段和快照，但任何库存数量只能从 `inventory_transaction` 汇总，任何生产需求只能从 `production_item_demand` 读取。
 
 当前 Production 只读追溯已经落地查询投影：支持按工单号、生产批次号、物料编码和库存批次号定位生产批次，并读取工单/批次概览、`production_item_demand`、`production_item_allocation`、`outbound_order/outbound_detail`、对应的 `production_material_outbound` 库存流水、`batch_step_records`、`batch_step_reports` 普通/冲销/替代链及有效聚合、`batch_step_abnormal_dispositions` 待处置记录。该投影不创建第二事实表，不返回质量、返工、报废、退料或成品流向占位数据。
+
+库存提取后，追溯和供需展示 SQL 分别集中在 `infrastructure/queries/production-trace.query.ts` 与 `production-supply-demand.query.ts`，由原 Repository 端口委托调用；跨模块读取的库存批次、流水、入库来源及余额投影字段登记在 `scripts/api-data-ownership.mjs`。这些查询只服务展示、搜索和分页，不锁定 Inventory 数据，也不供领料、采购或补料命令判定写入资格。原按工单分组分页、按稳定来源查询正负流水及供需数量口径保持不变，不将余额或历史展示当作新采购资格。
 
 批次收尾时未完成工序由管理员逐项置为 `terminated`，行动保留原状态；父批次 `closing/terminated` 阻止后续执行；待处理异常使用 `terminated` 记录结束人和时间且无处置类型，未完成返工取消，未履约补料使用 `cancelled` 且履约人/时间为空。已报工和已授权事实保留；不补料的终止产出报废独立见[批次结束设计](production-termination.md)。
 

@@ -45,6 +45,10 @@ const schema: z.ZodType<PurchaseInboundOrderItem> = z
           unit: z.string(),
           stockStatus: z.literal('available'),
           inventoryTransactionId: z.string().nullable(),
+          procurementReceiptLineId: z.string().nullable(),
+          procurementReceiptRevisionId: z.string().nullable(),
+          procurementScopeId: z.string().nullable(),
+          procurementInspectionId: z.string().nullable(),
         })
         .strict(),
     ),

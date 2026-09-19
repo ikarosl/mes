@@ -98,7 +98,7 @@
 | `product_code_snapshot` | `VARCHAR(100)`    | 下达时产品编码快照                                               |
 | `product_name_snapshot` | `VARCHAR(200)`    | 下达时产品名称快照                                               |
 | `unit_snapshot`         | `VARCHAR(20)`     | 下达时单位快照                                                   |
-| `planned_quantity`      | `DECIMAL(12,4)`   | 工单计划生产数量                                                 |
+| `planned_quantity`      | `INT`   | 工单计划生产数量                                                 |
 | `customer_name`         | `VARCHAR(255)`    | 客户名称，可为空                                                 |
 | `quality_level`         | `VARCHAR(50)`     | 客户自定义质量等级代码，可为空                                   |
 | `work_order_owner_id`   | `BIGINT UNSIGNED` | 工单负责人；草稿可为空，下达必须为有效用户                             |
@@ -206,7 +206,7 @@
 | `route_id`               | `BIGINT UNSIGNED` | 工艺路线 ID，可为空             |
 | `route_code_snapshot`    | `VARCHAR(64)`     | 路线编码快照                    |
 | `route_version_snapshot` | `VARCHAR(64)`     | 路线版本快照                    |
-| `planned_quantity`       | `DECIMAL(12,4)`   | 本批次计划生产数量              |
+| `planned_quantity`       | `INT`   | 本批次计划生产数量              |
 | `plan_start_date`        | `DATE`            | 本批次计划开始日期，可为空        |
 | `plan_end_date`          | `DATE`            | 本批次计划完工日期，可为空        |
 | `started_at`              | `DATETIME`        | 批次实际开工时间，可为空        |

@@ -8,10 +8,9 @@
 
 跨模块写操作必须由应用服务通过所属模块公开能力在同一事务内维护组合外键、快照和操作日志；不得直接修改其他模块表，Controller 不写 SQL。
 
-展示查询采用根架构的正式读取登记：Production 的 `infrastructure/queries/` 仅获准读取 `materials.id/material_name`。当前实现提供固定引用的相关子查询片段，各 Repository 在 SQL 内组合用于名称展示、搜索和排序，不产生应用层逐行查询。历史引用不过滤停用或软删除状态；该能力不能用于选版、启用状态判断或写入资格校验，也未开放 `products`、`material_variants` 等其他表。
+展示查询采用根架构的正式读取登记：Production 的 `infrastructure/queries/` 获准读取 `materials.id/material_name` 及登记的 Inventory 批次、余额、流水和入库展示字段，具体字段以 `scripts/api-data-ownership.mjs` 为准。查询用于名称展示、搜索、排序、候选及追溯，不得写表、加锁或代替公开资格校验。历史名称不过滤停用或软删除状态；未开放直接读取 `products`、`material_variants` 等其他表。
 
-物料版本候选和历史展示使用不同公开能力：写操作用 `MaterialVariantQuery.listEnabledByMaterials` 校验
-启用版本；补料方案历史编码用 `listDisplayReferencesByIds` 按既有版本 ID 解析，包括停用或软删除版本。
+物料版本候选和历史展示使用不同公开能力：候选用 `MaterialVariantQuery.listEnabledByMaterials`；生产分配、领料制单与确认在事务内通过 `ProductInventoryEligibility.requireProductionIssuableReferences` 锁定并校验用途资格。补料方案历史编码用 `listDisplayReferencesByIds` 按既有版本 ID 解析，包括停用或软删除版本。
 历史展示引用只有 ID 与编码，不能重新作为可选版本或写入资格依据。
 
 ---
@@ -78,7 +77,7 @@
 
 - 当前正式范围支持 `source_type = purchased` 的外购物料入库，以及按当前有效批准清单办理的 `self_made` 生产流转成品入库与 `production_extra` 额外产出成品入库，共用 `inbound_order` + `inbound_detail` 和同一库存流水账本。成品按任务、类别收齐后一次确认，使用独立 `product_id` 身份；具体规则见[成品入库](finished-goods-inbound.md)。其他自产半成品、委外及通用其他入库仍未开放。
 - `inventory_transaction.reference_detail_id` 应指向 `inbound_detail.id`。
-- 采购入库创建命令只能从 Product 公共能力取得启用版本；入库明细、库存批次和流水必须保存同一 `material_variant_id`。
+- 外购写入统一由 Procurement 核验到货及 Quality 放行后调用 Inventory，允许停用精确版本按 ADR-0013 办理；旧手工创建、确认和取消写路由已移除。入库明细、库存批次和流水必须保存同一 `material_variant_id`。
 
 ---
 
@@ -152,7 +151,7 @@
 
 退料仅用于现场多余物料或订单中途关闭后的余料退回原库存批次，固定 `release_after_return = 1`、`return_stock_status = available`，成为公共可用库存。没有保留给原任务或临时退库的分支。
 
-退料 Repository 只写退料单、库存流水和成功审计，不得调用需求计划 Writer，不改变需求余额、分配履约、批次状态、物料计划版本或短批授权。查询层也不得通过扣除退料量伪造新的待分配/待领料缺口。损耗确认才生成等量损耗补料需求；人工追加需求由独立配置入口明确产生。执行模块负责独立开工和完工门禁，订单关闭及剩余需求关闭不由退料代办。
+退料 Repository 只写生产退料单和成功审计，并在同事务通过 Inventory 公开能力追加回仓流水；不得调用需求计划 Writer，不改变需求余额、分配履约、批次状态、物料计划版本或短批授权。查询层也不得通过扣除退料量伪造新的待分配/待领料缺口。损耗确认才生成等量损耗补料需求；人工追加需求由独立配置入口明确产生。执行模块负责独立开工和完工门禁，订单关闭及剩余需求关闭不由退料代办。
 
 各窄端口的允许写入与禁止事项见[退料、损耗与盘点的职责表](return-scrap-and-stocktake.md#业务语义与写入职责)。修改退料、损耗、需求、分配、库存查询或生产执行时必须一起核对该边界，不得在各自模块恢复另一套语义。
 
@@ -206,16 +205,16 @@
 
 分配事务必须按以下顺序执行：
 
-1. 锁定目标 `item_batch` 行；多批次操作按稳定的批次 ID 升序加锁，避免死锁。
-2. 在锁内从 `inventory_transaction` 重新汇总账面可用库存。
-3. 在锁内汇总有效、未释放、未取消的生产分配占用。
+1. 锁定生产根后，通过 Product 公开用途能力按稳定身份顺序校验，再调用 `InventoryStockCommand.lockMaterialBatches`；Inventory 先取得 Product 历史身份共享锁，再按批次 ID 升序锁定 `item_batch`，批次状态取该锁内当前值。
+2. Inventory 在批次锁内对流水维护的 `inventory_batch_balance` 做当前读，缺行按零计算，不使用事务早期快照；流水仍是唯一库存事实。
+3. Production 对有效分配与已完成出库明细做当前读后汇总预留，不能用普通聚合子查询读取事务早期快照。跨任务并发命令发生死锁时按现有事务幂等重试处理。
 4. 校验 demand、allocation、item_batch 的 `material_variant_id` 完全一致；分配只履约既有需求选择，不在此处重新选择或回落默认版本。
 5. 计算最新可分配数量并校验本次分配。
 6. 写入 `production_item_allocation`。
 7. 更新必要的业务状态并写操作日志。
 8. 提交事务后再向调用方返回成功。
 
-单库存批次的行锁查询：
+以下批次锁查询由 Inventory 执行，Production 不直接访问其锁入口：
 
 ```sql
 SELECT id FROM item_batch WHERE id = :batch_id FOR UPDATE;

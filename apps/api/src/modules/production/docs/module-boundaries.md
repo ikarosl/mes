@@ -1,6 +1,6 @@
 # Production 内部职责与成品入库扩展边界
 
-本文定义成品入库前的代码组织与扩展边界，遵守[总体架构](../../../../../../docs/architecture.md)。当前仍是一个 Production 业务模块；下列职责区用于组织用例和持久化能力，不建立独立 Inventory、Quality 模块。实施项统一维护于[路线图](../../../../../../docs/roadmap.md)。
+本文定义 Production 内部代码组织及与 Inventory 的协作边界，遵守[总体架构](../../../../../../docs/architecture.md)。Production 保留生产来源和履约编排，Inventory 唯一拥有库存事实、入库与盘点；仍在模块化单体内共享事务。采购到货检验的 Quality 窄能力按批准设计另行接入。实施项统一维护于[路线图](../../../../../../docs/roadmap.md)。
 
 ## 1. 按业务职责组织，保留完整事务
 
@@ -10,16 +10,16 @@
 | 生产执行 | 派工、报工、异常、返工、工序产品报废及补产授权 | Execution、Reporting、Abnormal、Supplement 用例；保留现有报工限额 |
 | 物料需求与履约 | BOM 需求、人工追加、补料需求、关闭／替代、分配及领料履约 | MaterialDemand、Material、DemandCorrection；统一 DemandPlanWriter |
 | 任务结案与产出 | 收尾编排、物料核对、产出草稿、线下质检数量确认、结案清单与更正 | Closeout 负责逐项处理，Output 负责草稿／质检／批准清单，CloseoutMaterialLoss 负责不补料损坏，Termination 只读核对 |
-| 仓库操作与库存 | 入库、领料的库存记账、退料、盘点、批次与库存流水 | Inbound 处理外购、FinishedInbound 处理两类批准产出入库，Return／StockCheck 处理物料回仓与盘点 |
+| 生产物流编排 | 领料、退料、批准产出的来源资格与原子确认 | FinishedInbound、Outbound、Return 保留来源规则；通过 Inventory 公开能力写入库存；盘点由 Inventory 独立办理 |
 | 查询与追溯 | 按工单、任务及单据组合已有事实 | Trace、SupplyDemand 及展示查询；只读，不另建业务状态或账本 |
 
-这些职责共享 Production 数据所有权。菜单中“仓储”“生产”“报废”的位置不决定后端表归属；`common` 不存业务 SQL、库存规则或状态。跨业务模块依然只经目标模块 `public.ts`，展示查询按既有登记规则只读访问。
+生产职责共享 Production 数据所有权；库存表所有者见 [Inventory](../../inventory/README.md)。菜单中“仓储”“生产”“报废”的位置不决定后端表归属；`common` 不存业务 SQL、库存规则或状态。跨业务模块依然只经目标模块 `public.ts`，展示查询按既有登记规则只读访问。
 
 当前用例边界：
 
-- `ProductionMaterialService`／`ProductionMaterialRepository` 负责分配；`ProductionMaterialOutboundService`／`ProductionMaterialOutboundRepository` 负责出库。`mysql-production-material-outbound.repository.ts` 的确认出库同时更新出库单、需求余额、库存流水、批次物料状态、短批授权及补料齐套／补产放行，完整保留单个事务及锁序，不能拆成多个 HTTP 请求或提交后通知。
+- `ProductionMaterialService`／`ProductionMaterialRepository` 负责分配；`ProductionMaterialOutboundService`／`ProductionMaterialOutboundRepository` 负责出库。确认出库同时更新出库单、需求余额、批次物料状态、短批授权及补料齐套／补产放行，经 `InventoryStockCommand` 追加库存流水，完整保留单个事务及锁序，不能拆成多个 HTTP 请求或提交后通知。
 - `mysql-production-material-persistence.ts` 只共享锁批次、读取计划版本、齐套判断等持久化辅助，不是新业务账本或跨模块端口。追溯和取消前置查询分别调用明确的分配／出库能力。
-- 损耗、退料、盘点分别使用 `ProductionMaterialLossService`、`ProductionReturnService`、`ProductionStockCheckService` 和各自 Controller／窄 Repository；保留既有 `/warehouse` 路径与独立权限。新成品入库应以自己的用例接入，不能恢复无关命令的聚合服务。
+- 损耗、退料分别使用 `ProductionMaterialLossService`、`ProductionReturnService` 和各自 Controller／窄 Repository；盘点使用 Inventory 的 `InventoryStockCheckService`。保留既有 `/warehouse` 路径与独立权限。成品入库通过独立生产用例校验来源，再调用 `InventoryInboundCommand`，不能恢复无关命令的聚合服务。
 - `production.module.ts` 按计划、执行、物料、收尾、仓库、查询六组组织 Controller／Provider 装配，共享 Production 所有权，未增加六个独立模块。业务代码仍遵循 `presentation → application → domain`，infrastructure 实现 port。
 - Closeout 保有逐项收尾编排；产出草稿、质检记录与清单更正采用独立用例，后续不继续扩大 `handleImpact` 的事项分支。既有收尾涉及出库、预留、需求和工序的命令事务仍完整保留。
 
@@ -66,12 +66,14 @@ flowchart LR
 
 成品通过显式 product_id 分支、互斥 CHECK 和组合外键接入，物料分支继续强制 item_id/精确版本非空。生产流转 self_made 与 production_extra 分别形成批次，模型见[库存所有者文档](database/inventory-ledger-and-inbound.md)与[成品入库](database/finished-goods-inbound.md)。物料领料、退料、盘点的现有精确版本约束不能因成品接入而被削弱。不为成品建立另一套数量账本、兼容影子表或双写。
 
-## 5. 何时提取独立库存模块
+## 5. 库存模块与采购接入边界
 
-后续提取服务于已明确的采购接入方向，按[路线图](../../../../../../docs/roadmap.md)先确定采购业务流，再评审 Inventory 整体所有权与事务边界，之后提取现有能力；不等待销售、委外等更大范围。业务评审稿见[采购与外购物料入库质检设计](../../../../../../docs/procurement-inbound-design.md)，已确定两类来源、强制检验和检验后入库见 [ADR-0013](../../../../../../docs/adr/0013-procurement-source-and-stock-boundaries.md)。当前仍由 Production 所有下述库存能力，保持模块化单体：
+Inventory 已拥有现有库存表及 SQL 写入入口。逐表所有权、公开方法与锁序见[库存提取设计](../../../../../../docs/inventory-extraction-design.md)；采购／检验范围模型见[采购技术设计](../../../../../../docs/procurement-inbound-technical-design.md)。成品按类别一次确认和生产退料语义保留；旧手工外购创建、确认和取消 POST 路由已移除，原 GET 仅查询实际入库历史，新外购必须来自采购和检验放行。
 
-- 明确单一库存表所有者及公开命令／查询能力，移走旧写入口，更新所有权登记，不让两模块同时直接写账本。
+采购接入按[路线图](../../../../../../docs/roadmap.md)推进；两类来源、强制检验和检验后入库见 [ADR-0013](../../../../../../docs/adr/0013-procurement-source-and-stock-boundaries.md) 与[业务设计](../../../../../../docs/procurement-inbound-design.md)。模块边界保持如下约束：
+
+- Inventory 单独维护库存表、入库单与盘点；Production 领料、退料及成品编排只调用其公开能力，登记的展示查询不得借只读例外写表或加锁。
 - 跨模块协调仍保留现有原子事务与锁序，库存能力不反向决定生产需求、补产和结案，生产用例负责编排。
-- 仅按已批准范围提取既有能力；不附带销售、仓库报废、质量、采购或新的库存账本。
+- 新采购和 Quality 仅接入已批准采购入库范围，不扩展销售、仓库报废、完整质量体系或新的库存账本。
 
-提取时保留已独立的 Service／Repository 用例，逐表确定共享入库单、生产领料、退料和盘点的所有者，不按菜单或单据名称整体搬迁。采购到货及检验前实物不属于库存，不接管 Production 的结案质检或批准产出。用户未要求进入正式测试阶段前不新增测试集；编码阶段继续类型检查、构建和手工验收，不能把暂缓测试表述为已经全量验证。
+采购到货及检验前实物不属于库存，采购 Quality 不接管 Production 的结案质检或批准产出。用户未要求进入正式测试阶段前不新增测试集；编码阶段继续类型检查、构建和手工验收，不能把暂缓测试表述为已经全量验证。

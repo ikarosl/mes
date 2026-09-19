@@ -2,7 +2,7 @@
 
 > [返回 Production 数据库设计](README.md)。
 
-本章所有单位用量快照、计划产量快照、需求、补料、分配和出库数量均为正整数并由数据库整数 `CHECK` 兜底。正常需求使用整数乘法 `need_number = quantity_per_unit_snapshot × planned_output_quantity_snapshot`；结果超过 `DECIMAL(12,4)` 可表示的最大整数 `99999999` 时必须拒绝，禁止浮点计算、舍入或截断。
+本章所有单位用量快照、计划产量快照、需求、补料、分配和出库数量均使用 `INT` 保存正整数，数据库 `CHECK` 保证正负边界和上限。正常需求使用整数乘法 `need_number = quantity_per_unit_snapshot × planned_output_quantity_snapshot`；结果超过 业务允许的最大整数 `99999999` 时必须拒绝，禁止浮点计算、舍入或截断。
 
 ## 3.5 生产物料需求与分配表
 
@@ -48,9 +48,9 @@
 | `material_id`              | `BIGINT UNSIGNED` | 基础物料 ID                               |
 | `material_code_snapshot`           | `VARCHAR(100)`    | 基础物料编码快照                          |
 | `unit_snapshot`                    | `VARCHAR(20)`     | BOM 用量单位快照                          |
-| `quantity_per_unit_snapshot`       | `DECIMAL(12,4)`   | 单件 BOM 用量快照                         |
-| `planned_output_quantity_snapshot` | `DECIMAL(12,4)`   | 批次计划产量快照                          |
-| `required_number`                  | `DECIMAL(12,4)`   | 该 BOM 行在本批次的初始应需量，各版本初始正常需求合计必须等于此值 |
+| `quantity_per_unit_snapshot`       | `INT`   | 单件 BOM 用量快照                         |
+| `planned_output_quantity_snapshot` | `INT`   | 批次计划产量快照                          |
+| `required_number`                  | `INT`   | 该 BOM 行在本批次的初始应需量，各版本初始正常需求合计必须等于此值 |
 | `created_by` | `BIGINT UNSIGNED NOT NULL` | 确认需求配置并创建基础记录的操作者，引用 `users.id` |
 | `created_at` | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP` | 基础记录创建时间 |
 
@@ -128,10 +128,10 @@
 | `material_variant_id`               | `BIGINT UNSIGNED` | 需求选中的精确物料版本 ID                 |
 | `item_code_snapshot`               | `VARCHAR(100)`    | 生成需求时的物料编码快照                  |
 | `material_variant_code_snapshot`    | `VARCHAR(180)`    | 需求选中的版本编码快照                    |
-| `quantity_per_unit_snapshot`       | `DECIMAL(12,4)`   | 生成需求时的 BOM 单件用量快照             |
+| `quantity_per_unit_snapshot`       | `INT`   | 生成需求时的 BOM 单件用量快照             |
 | `unit_snapshot`                    | `VARCHAR(20)`     | 生成需求时的用量单位快照                  |
-| `planned_output_quantity_snapshot` | `DECIMAL(12,4)`   | 生成需求时的批次计划产量快照              |
-| `need_number`                      | `DECIMAL(12,4)`   | 需求数量                                  |
+| `planned_output_quantity_snapshot` | `INT`   | 生成需求时的批次计划产量快照              |
+| `need_number`                      | `INT`   | 需求数量                                  |
 | `remaining_number`                 | `BIGINT`          | 尚未确认领用的整数数量，可从出库事实重建  |
 | `demand_type`                      | `VARCHAR(30)`     | 需求类型，默认 `normal`                   |
 | `generation_group_key`             | `VARCHAR(150)`    | 同一次需求生成动作的稳定分组键            |
@@ -363,6 +363,8 @@ Production 统一拥有一套补料履约判定与状态推进能力，由需求
 
 审批绑定／解除只推进需求及更正记录版本；末级批准一次推进物料计划和批次版本，未消费短批授权失效。先锁工单、批次、申请和旧需求，再读取全部来源／物流／工序事实；最终核对扣除本申请绑定造成的单次需求版本变化，其他领退料、损耗、预留或路线影响变化均拒绝生效并要求重新送审。批准决定、关闭／替代、齐套推进、工序重开、审计及站内通知同事务，原库存流水不变化。
 
+更正依据中的预留批号通过 Inventory 公开 `materialBatchReferences` 批量读取，仅用于展示及冻结原有证据；分配、已领数量、退料和损耗资格仍读取并锁定 Production 自有事实。更正查询不再通过跨库存 JOIN 的 `FOR SHARE` 锁住 `item_batch`，也不使用该公开展示返回的余额或批次状态替代更正业务校验。
+
 #### 需求数量与进度查询
 
 实现位于 [mysql-production-material.mapper.ts](../../infrastructure/mysql-production-material.mapper.ts) 的 `DEMAND_SELECT`、`mapDemand` 与 `progress`，由 [MysqlProductionMaterialRepository.listDemands](../../infrastructure/mysql-production-material.repository.ts) 按需求返回。计算保留 `demand_id` 及精确物料版本，不将同一任务的不同需求折叠成一个进度状态。
@@ -478,6 +480,8 @@ BOM 定义基础物料与用量，管理员在需求配置时确定精确版本�
 授权后允许缺口 = MAX(0, 当前 remaining_number - 预计可继续出库量)
 ```
 
+上述预计量只计入 Product 公开启用版本查询认可的需求；物料版本停用或需求正在更正审批时，预计可继续出库量为零，已确认领料履约仍保留。生产批次列表、详情、工单内批次及报工任务列表统一批量派生授权动作：读取 Production 的需求、分配、确认出库和授权快照，并通过 `MaterialVariantQuery.listEnabledByMaterials` 获取当前启用版本；不得通过展示 SQL 读取 Product 状态，也不得将停用版本的未出库分配显示为齐套。该展示投影不承担写入资格，写事务继续重新校验。
+
 首工序开工时必须逐需求复查：当前活动需求都能在本授权中找到明细，并且当前 `remaining_number <= authorized_remaining_quantity`。实际领料少于授权时预期或需求新增导致缺口超出批准值时必须阻止开工。余料退回不改变需求缺口或授权，全部退回也不影响开工资格；授权预览、员工任务投影和开工写事务均不得读取退料事实。
 
 `202608290001-production-short-batch-authorization` 同时建立上述授权主从表，向 `production_batches` 增加物料计划版本和部分出库状态，并补齐出库授权来源及需求取消事实。该迁移直接建立最终短批模型，不维护旧模型双写。
@@ -518,7 +522,7 @@ production_scrap_supplement_plan 这是计划 -> production_scrap_supplement_pla
 | `product_material_id` | `BIGINT UNSIGNED` | BOM 明细 ID                                             |
 | `item_id`             | `BIGINT UNSIGNED` | 物料 ID                                                 |
 | `material_variant_id` | `BIGINT UNSIGNED` | 管理员选择的精确物料版本 ID                             |
-| `planned_quantity`    | `DECIMAL(12,4)`   | 管理员填写并暂存的补料数量，必须大于 `0`                |
+| `planned_quantity`    | `INT`   | 管理员填写并暂存的补料数量，必须大于 `0`                |
 | `unit_snapshot`       | `VARCHAR(20)`     | 原始正常需求的单位快照                                   |
 | 业务审计字段          | 见统一规则        | `created_by/created_at/updated_by/updated_at`             |
 
@@ -625,7 +629,7 @@ approved -> fulfilled / cancelled（仅批次结束）
 | `item_id`             | `BIGINT UNSIGNED` | 库存对象 ID，冗余保存，用于约束需求对象与批次对象一致（materials 表） |
 | `material_variant_id` | `BIGINT UNSIGNED` | 精确物料版本 ID，必须与需求和库存批次一致             |
 | `batch_id`            | `BIGINT UNSIGNED` | 分配的库存批次 ID，关联 `item_batch.id`               |
-| `assigned_number`     | `DECIMAL(12,4)`   | 分配数量                                              |
+| `assigned_number`     | `INT`   | 分配数量                                              |
 | `unit_snapshot`       | `VARCHAR(20)`     | 分配时单位快照                                        |
 | `allocation_status`   | `VARCHAR(30)`     | 分配业务状态，默认 `active`                           |
 | `version`             | `INT`             | 乐观锁版本号，默认 `0`                                |
@@ -743,7 +747,7 @@ approved -> fulfilled / cancelled（仅批次结束）
 | `item_id`             | `BIGINT UNSIGNED` | 出库对象 ID，冗余保存                             |
 | `material_variant_id` | `BIGINT UNSIGNED` | 出库的精确物料版本 ID                             |
 | `batch_id`            | `BIGINT UNSIGNED` | 出库库存批次 ID，冗余保存                         |
-| `outbound_number`     | `DECIMAL(12,4)`   | 本次出库数量                                      |
+| `outbound_number`     | `INT`   | 本次出库数量                                      |
 | `unit_snapshot`       | `VARCHAR(20)`     | 出库时单位快照                                    |
 | `created_by`          | `BIGINT UNSIGNED` | 创建人                                            |
 | `created_at`          | `DATETIME`        | 创建时间，默认 `CURRENT_TIMESTAMP`                |
@@ -780,3 +784,15 @@ approved -> fulfilled / cancelled（仅批次结束）
 ---
 
 批次结束将未履约出库、分配、需求和补料一并结束，保留原履约事实；具体状态、锁序和取消来源见[批次结束设计](production-termination.md)。
+
+## 采购来源公开能力
+
+`ProductionProcurementQuery` 是 Procurement 读取需求来源的唯一业务入口；需求事实和精确版本仍归 Production，采购不回写数量、关闭状态或履约。按需求采购接受全部需求类型，现有库存、有效分配、短批授权和已关联采购均不作为候选门禁。同供应商跨工单合单时，每条需求来源保持独立映射，采购行数量不分摊给需求。
+
+- `listCandidates` 接收分页、关键词、工单 ID、任务 ID、物料 ID 与需求类型；按工单、任务、需求 ID 倒序返回平铺叶子。候选限定工单 `released/doing`，任务 `material_pending/material_assigned/material_partially_outbound/material_outbound/doing`，需求 `active`、剩余量大于零、无在审更正。通过 Product `listPurchasableByMaterials` 在计数和分页之前过滤基础物料／分类停用、软删除及已删除版本，精确版本停用仍可采购。
+- `resolveDemands` 最多解析 100 个已选需求，按传入顺序返回 `{demandId,demand,eligible,blockedReason}`。历史工单、任务或需求已结束时仍返回原身份、需求快照及当前状态，只有不存在的 ID 才返回 `demand=null`；不能因翻页、筛选或新下单资格失效而丢掉已有选择。
+- `requirePurchasableDemands` 要求调用方已有活跃同池事务。先普通读取来源定位，再按数字 ID 升序依次对工单、任务、需求做共享锁当前读，锁后复核父子归属及生产资格；归属变化返回 `concurrent-modification`，资格失效返回 `not-purchasable`。该步骤不提前取得 Product 资格锁；采购在锁定自身根和行后再独立调用 Product 采购资格能力，所有来源复核和下单仍在同一事务。
+
+公开结果包含工单／任务编号和状态、需求 ID／类型／业务状态／在审指针、物料与精确版本 ID、编码和单位快照、需求量与尚未领用量。数量保持整数字符串；物料名称只按稳定物料 ID 读取当前名称，不新增名称快照。展示查询只读 `infrastructure/queries/procurement-demand.query.ts` 内已登记的 `materials.id/material_name`，锁定资格查询只读 Production 自有表。
+
+跨模块失败采用 `ProductionProcurementResult` 稳定结果联合，成功为 `success/value`，失败为 `invalid-input/not-found/not-purchasable/concurrent-modification` 加消息及可选需求 ID；不导出内部领域错误。相关采购行、数量和采购单数由 Procurement 公开投影另行提供，本能力不直接查询采购表。

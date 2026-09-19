@@ -59,8 +59,12 @@ src/api
 | ----------------------------- | ------------------------------ | ---------------------- | -------------------------------- |
 | `approval-inbox`              | `/approval/inbox`              | `ApprovalInboxPage`    | 审批待办、申请列表和通用审批详情 |
 | `approval-flows`              | `/approval/flows`              | `ApprovalFlowsPage`    | 已声明审批场景的角色、指定用户及业务关联人员配置 |
+| `procurement-suppliers`       | `/procurement/suppliers`       | `SuppliersPage`        | 供应商名称查询、新增与版本化修改 |
+| `procurement-orders` | `/procurement/purchase-orders` | `PurchaseOrdersPage` | 采购草稿、正式下单、逐行结束和补单 |
+| `procurement-receipts` | `/procurement/receipts` | `PurchaseReceiptsPage` | 实际到货、实收修订、待退与实际交接 |
+| `quality-inbound-inspections` | `/quality/inbound-inspections` | `InboundInspectionsPage` | 来料初检、主动复检及检验结论 |
 | `product-material-variants`   | `/product/material-variants`   | `MaterialVariantsPage` | 基础物料版本的查询、创建和启停   |
-| `production-material-demands` | `/production/material-demands` | `MaterialDemandsPage`  | BOM 基础需求的版本确认和需求追溯 |
+| `production-tasks`            | `/production/tasks`            | `ProductionTasksPage` | 生产任务及任务内的物料需求配置、总览和追溯弹窗 |
 
 审批中心的流程配置页只读取后端代码登记的场景目录；配置内容是顺序节点、节点名称，以及一个角色、指定用户或业务关联人员来源，保存草稿后再显式发布。切换类型清空其他类型的选择，角色和用户候选由 Page 独立持有、按弹窗开启/激活/显式刷新获取，失效选项阻止提交。业务来源白名单及最终节点约束随场景／流程详情返回，前端不硬编码场景与工单字段关系，不额外查询业务对象来确定人员；配置显示“送审时确定”。排序或删除后实时核对最终节点要求，保存与发布前再次校验，后端仍是安全边界。已发布版本的在途申请由服务端固定，页面不尝试把规则写入产品业务表。审批待办页以 Approval 申请/节点为事实来源：只提交普通筛选，授权条件由后端按登录用户实时构建；详情分别展示规则来源、送审时确定的用户、当前可处理人员及实际决定，实际处理人只取决定记录，不以来源用户冒充，不展示个人任务或重新分派入口。操作使用 `currentStepId + version`，后端返回 `canApprove/canWithdraw`，每次命令独立复核。BOM 受审详情使用不可变快照，物料名称按物料 ID 的当前查询结果展示；站内通知由独立 Notification 模块提供。
 
@@ -72,7 +76,7 @@ src/api
 
 审批决定失败后重读详情并刷新列表；若因资格撤销等原因无法读取详情，清空旧详情并关闭弹窗，避免继续展示旧可操作状态。异步决定及补读结果须核对详情请求标记，不能覆盖后来打开的其他申请。
 
-`production-material-demands` 支持 `productionBatchId` 查询参数。生产任务页通过该参数进入指定批次的物料需求配置；用户可以在需求页清除该筛选返回全部批次。
+当前物料需求入口在 `production-tasks`：`MaterialDemandConfigurationDialog` 负责配置，`MaterialDemandOverviewDialog` 负责逐条需求、更正追溯与相关采购，`ManualMaterialDemandDialog` 负责人工追加。当前没有独立的 `production-material-demands` 路由，也不通过该不存在路由的 `productionBatchId` 参数定位。任务需求总览批量读取相关采购单数；具备采购页查看权限时可进入采购详情或带入需求新建采购。交互见[采购与入库管理端设计](procurement-inbound.md)，不另建第二份需求管理页面。
 
 初始物料需求配置与人工追加弹窗按任务读取完整 BOM：通过 `views/production/composables/loadBatchMaterialDemands.ts` 取齐全部分页，全部成功后一次填充草稿；加载中或任一页失败时不得提交部分数据，关闭或切换任务后丢弃旧响应。
 

@@ -1,3 +1,4 @@
+import { InventoryInboundCommand } from '../../inventory/public.js';
 import { isDeepStrictEqual } from 'node:util';
 import { Inject, Injectable } from '@nestjs/common';
 import { withTransaction } from '@company/database';
@@ -44,6 +45,7 @@ export class MysqlProductionOutputRepository extends ProductionOutputRepository 
   constructor(
     @Inject(DATABASE_POOL) private readonly pool: Pool,
     private readonly closeout: MysqlProductionCloseoutRepository,
+    private readonly inventory: InventoryInboundCommand,
   ) {
     super();
   }
@@ -401,7 +403,7 @@ export class MysqlProductionOutputRepository extends ProductionOutputRepository 
     lock: boolean,
     forFinalApproval = false,
   ): Promise<OutputState> {
-    return loadOutputState(db, row, this.closeout, lock, forFinalApproval);
+    return loadOutputState(db, row, this.closeout, lock, forFinalApproval, this.inventory);
   }
 }
 function actor(context: CommandContext): void {

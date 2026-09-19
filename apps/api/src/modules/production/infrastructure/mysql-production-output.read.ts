@@ -1,3 +1,4 @@
+import type { InventoryInboundCommand } from '../../inventory/public.js';
 import { createHash } from 'node:crypto';
 import { APPROVAL_ASSIGNEE_SOURCES } from '@company/constants';
 import { ProductionDomainError } from '../domain/production.errors.js';
@@ -9,11 +10,7 @@ import type {
 } from '@company/contracts';
 import type { MysqlProductionCloseoutRepository } from './mysql-production-closeout.repository.js';
 import type { PoolConnection, RowDataPacket } from 'mysql2/promise';
-import type {
-  ProductionOutputInspection,
-  ProductionOutputRevision,
-  ProductionOutputReceipts,
-} from '@company/contracts';
+import type { ProductionOutputInspection, ProductionOutputRevision } from '@company/contracts';
 import { toBeijingISOString } from '../../../common/time/date-time.js';
 import {
   readCloseoutApprovalSnapshot,
@@ -127,29 +124,6 @@ export async function readOutputRevisions(
     ),
   }));
 }
-/** 入库与更正共用结案根锁；确认事实只按单据统计，不随库存消费恢复。 */
-export async function readOutputReceipts(
-  db: PoolConnection,
-  batchId: string,
-  lock: boolean,
-): Promise<ProductionOutputReceipts> {
-  const [rows] = await db.query<
-    (RowDataPacket & { id: number; source_type: string; quantity: string })[]
-  >(
-    `SELECT o.id,o.source_type,COALESCE((SELECT SUM(d.inbound_number) FROM inbound_detail d WHERE d.inbound_id=o.id),0) quantity
-     FROM inbound_order o WHERE o.production_batch_id=? AND o.status='completed' AND o.source_type IN ('self_made','production_extra') ORDER BY o.id${lock ? ' FOR SHARE' : ''}`,
-    [batchId],
-  );
-  const production = rows.find((row) => row.source_type === 'self_made');
-  const extra = rows.find((row) => row.source_type === 'production_extra');
-  return {
-    productionInboundId: production ? String(production.id) : null,
-    productionReceivedQuantity: production ? String(production.quantity) : '0',
-    extraInboundId: extra ? String(extra.id) : null,
-    extraReceivedQuantity: extra ? String(extra.quantity) : '0',
-  };
-}
-
 export type OutputState = {
   detail: ProductionOutputDetail;
   base: ProductionOutputRevision | null;
@@ -164,11 +138,12 @@ export async function loadOutputState(
   closeoutRepository: MysqlProductionCloseoutRepository,
   lock: boolean,
   forFinalApproval = false,
+  inventory: InventoryInboundCommand,
 ): Promise<OutputState> {
   const closeout = await closeoutRepository.loadDetail(db, row, lock);
   const inspections = await readOutputInspections(db, row.id, lock);
   const revisions = await readOutputRevisions(db, row.id, lock);
-  const receipts = await readOutputReceipts(db, String(row.production_batch_id), lock);
+  const receipts = await inventory.readFinishedReceipts(String(row.production_batch_id), lock);
   const currentRevisionId = nullableOutputId(row.current_revision_id);
   const base = revisions.find((revision) => revision.id === currentRevisionId) ?? null;
   if (currentRevisionId && !base)

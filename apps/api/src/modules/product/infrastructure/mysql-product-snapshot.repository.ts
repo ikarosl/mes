@@ -241,7 +241,7 @@ export class MysqlProductSnapshotRepository
           itemCode: row.item_code,
           productName: row.product_name,
           unit: row.unit,
-          quantityPerUnit: row.quantity_per_unit,
+          quantityPerUnit: String(row.quantity_per_unit),
         })),
       };
     });

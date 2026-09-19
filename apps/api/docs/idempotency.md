@@ -6,17 +6,29 @@
 
 幂等能力按端点显式启用。客户端只发送 `Idempotency-Key`，scope 由服务端
 `production-idempotency-scopes.contract.ts` 唯一定义。
+采购订单使用同模块 `procurement-idempotency-scopes.contract.ts`；写命令不把幂等键传入 Repository。
 
 | 命令 | HTTP 入口 | scope |
 | --- | --- | --- |
+| 创建采购草稿 | `POST /api/procurement/purchase-orders` | `procurement.purchase-order.create.v1` |
+| 替换采购草稿 | `PATCH /api/procurement/purchase-orders/:id` | `procurement.purchase-order.update.v1` |
+| 正式下单 | `POST /api/procurement/purchase-orders/:id/actions/place` | `procurement.purchase-order.place.v1` |
+| 取消采购单 | `POST /api/procurement/purchase-orders/:id/actions/cancel` | `procurement.purchase-order.cancel.v1` |
+| 逐行关闭采购 | `POST /api/procurement/purchase-order-lines/:id/actions/close` | `procurement.purchase-order-line.close.v1` |
+| 创建独立采购补单 | `POST /api/procurement/purchase-order-lines/:id/supplements` | `procurement.purchase-order.supplement.v1` |
+| 确认到货 | `POST /api/procurement/receipts/actions/confirm` | `procurement.receipt.confirm.v1` |
+| 实收更正 | `POST /api/procurement/receipt-lines/:id/actions/correct-receipt` | `procurement.receipt.correct.v1` |
+| 发起初检或复核 | `POST /api/procurement/receipt-lines/:id/actions/start-review` | `procurement.receipt.review.v1` |
+| 完成来料检验 | `POST /api/procurement/receipt-lines/:id/actions/inspect` | `procurement.receipt.inspect.v1` |
+| 指定采购终止退回 | `POST /api/procurement/receipt-lines/:id/actions/terminate-return` | `procurement.receipt.terminate-return.v1` |
+| 确认退供应商 | `POST /api/procurement/receipt-lines/:id/actions/return` | `procurement.receipt.return.v1` |
+| 确认放行范围入库 | `POST /api/procurement/purchase-inbounds/actions/confirm` | `procurement.inbound.confirm.v1` |
 | 创建生产批次 | `POST /api/production/work-orders/:workOrderId/batches` | `production.batch.create.v7` |
 | 创建物料分配 | `POST /api/production/batches/:batchId/material-allocations` | `production.material-allocation.create.v1` |
 | 创建生产领料出库单 | `POST /api/production/batches/:batchId/material-outbounds` | `production.material-outbound.create.v3` |
 | 确认生产领料出库单 | `POST /api/production/material-outbounds/:outboundId/actions/confirm` | `production.material-outbound.confirm.v2` |
 | 管理员一次确认全部 BOM 行的精确版本需求 | `POST /api/production/batches/:batchId/material-demands/configurations` | `production.material-demands.configure.v1` |
 | 创建任务级人工追加物料需求 | `POST /api/production/batches/:batchId/material-demands/additions` | `production.material-demands.add-manual.v2` |
-| 创建外购物料入库单 | `POST /api/production/purchase-inbounds` | `production.purchase-inbound.create.v1` |
-| 确认外购物料入库单 | `POST /api/production/purchase-inbounds/:inboundId/actions/confirm` | `production.purchase-inbound.confirm.v1` |
 | 创建工序报工 | `POST /api/production/batches/:batchId/step-records/:recordId/reports` | `production.step-report.create.v3` |
 | 更正工序报工 | `POST /api/production/batches/:batchId/step-records/:recordId/reports/:reportId/actions/correct` | `production.step-report.correct.v3` |
 | 完成返工 | `POST /api/production/reworks/:reworkId/actions/complete` | `production.rework.complete.v1` |

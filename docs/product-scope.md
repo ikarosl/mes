@@ -1,14 +1,16 @@
 # 当前产品范围
 
-当前正式范围包括认证、RBAC、操作日志、管理端权限基础设施、产品主数据、技术文件、工序和工艺路线，以及 Production 的生产工单、生产批次、工序派工/开工/报工追溯、异常返工、报废补料、生产物料需求、分配、领料出库、外购物料窄入库、生产退料和现有库存批次盘点。
+当前正式范围包括认证、RBAC、操作日志、管理端权限基础设施、产品主数据、技术文件、工序和工艺路线，Production 的生产工单、生产批次、工序派工/开工/报工追溯、异常返工、报废补料、生产物料需求、分配、领料出库及生产退料，Procurement 的简单供应商、两种采购入口与到货处置，Quality 的外购来料检验及复核，以及 Inventory 的库存账本、检验后外购物料入库、批准成品入库和现有库存批次盘点。
 
 Approval 接入成品 BOM、生产需求更正与批次收尾：管理端配置并发布顺序多级流程，每级选择角色、指定用户或场景允许的业务关联人员；生产结案末节点按工单负责人动态分派；BOM 送审、节点共享待办、决定、驳回与申请人撤回。角色成员变化实时影响尚未完成的当前节点，无需重新分派。BOM 最终批准同事务永久锁定，生产任务创建要求已批准；生产需求更正末级批准后关闭旧剩余并创建替代，正常或提前停止任务在草稿、不可变质检记录与管理员核定后送审、批准后正式结案；提前停止先完成逐项收尾。工单仍沿用现有下达方式，工单审批尚未接入。通用站内通知由 [Notification](../apps/api/src/modules/notification/README.md) 所有，首期只接审批节点激活、最终通过、驳回和撤回，提供本人通知及点击已读、30 秒未读角标拉取，不接外部渠道。
 
 外购物料入库仅支持 `purchased` 来源；生产退料仅覆盖已确认领料退回公共可用库存；盘点仅覆盖现有 `item_batch × stock_status`。工序异常报废的人工补料属于 Production 最小闭环，不代表通用库存报废已迁移。
 
-通用 Inventory 的其他出入库与库存报废、Quality 和全链路 Traceability 后端尚未进入当前范围，不得提前实现。详细业务不变量由 [Product](../apps/api/src/modules/product/README.md) 和 [Production](../apps/api/src/modules/production/README.md) 就近维护；跨模块数据库规则见[数据库公共约定](database-conventions.md)。
+通用 Inventory 的其他出入库与库存报废、完整 Quality 和全链路 Traceability 后端尚未进入当前范围，不得提前实现。详细业务不变量由 [Product](../apps/api/src/modules/product/README.md) 和 [Production](../apps/api/src/modules/production/README.md) 就近维护；跨模块数据库规则见[数据库公共约定](database-conventions.md)。
 
-后续采购正在业务设计阶段，见[采购与入库质检评审稿](procurement-inbound-design.md)及 [ADR-0013](adr/0013-procurement-source-and-stock-boundaries.md)。已确定按具体精确版本需求采购与独立备料采购、所有外购强制检验、检验合格后由仓管确认入库；到货本身不计库存，不减少生产需求。采购单、到货、独立入库检验和库存模块提取尚未实现，未决数量及异常规则按路线图继续收敛，不改变上述当前可运行范围。
+采购一期业务决策已收口，依据[采购与入库质检设计](procurement-inbound-design.md)及 [ADR-0013](adr/0013-procurement-source-and-stock-boundaries.md)实施。批准范围为提取唯一 Inventory 所有者、供应商名称配置、按具体需求采购与独立备料采购、到货实收修订、强制全检／抽检及主动复检、未入库退供应商、独立补单、采购逐行关闭和仓管分次确认入库。到货与质检不写库存，下单及入库不减少生产需求；沿用现有批次和唯一库存流水。完整 ERP、财务、销售、委外、通用库存报废与生产在线质量不纳入。
+
+上述一期能力已经接入；当前数据所有权、公开契约与操作规则分别由 [Procurement](../apps/api/src/modules/procurement/README.md)、[Quality](../apps/api/src/modules/quality/README.md) 和 [Inventory](../apps/api/src/modules/inventory/README.md) 维护。用户黑盒及 UI 验收尚未完成，剩余事项见[路线图](roadmap.md)；正式测试集在用户确认设计并明确通知后编写，由 Luna MAX 子代理全量验证。工单提前采购、混合来源单、跨到货合并检验、供应商打印、门口拒收登记及抽样分档配置继续后置。
 
 ## 研发结束及后续成品流转
 

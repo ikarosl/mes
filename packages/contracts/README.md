@@ -4,6 +4,12 @@
 
 本包当前只提供编译期 interface、type 与常量，不包含 Zod 等运行时 schema，也没有 OpenAPI 生成或兼容性检查能力。HTTP 入参的运行时校验由 API 的 class DTO 与 ValidationPipe 所有；如果未来引入生成式契约，必须先明确唯一事实来源并迁移现有 DTO，不能把计划描述成当前能力。
 
+供应商配置契约见 `procurement/suppliers.ts`：只提供名称、稳定 ID、版本和审计时间；正式列表分页，选项为关键词前 50 项加最多 100 个 `includeIds` 显式解析的远程窗口。创建和修改均返回 `SupplierItem`，修改携 `version`，没有启停或删除入口。
+
+采购需求来源见 `procurement/demand-candidates.ts`：候选为带工单／任务资料的分页需求叶子；显式 ID 解析返回历史需求、当前资格及阻断原因，数量使用整数字符串。采购关联由需求 ID 逐条表达，不在该契约引入采购分摊量或库存齐套门禁。
+
+外购入库的 `procurement/inbounds.ts` 表达当前有效放行范围与原子批量确认；`scopeIds` 显式解析已选范围，`receiptLineId` 定位到货。历史 `production/inbound.ts` 只读详情公开明细保存的采购到货、修订、范围及检验 ID，内部批号仍关联已有库存批次；来源追溯不以当前余额替代累计入库事实。
+
 ## 验证
 
 ```text

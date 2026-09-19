@@ -15,10 +15,6 @@ import type {
 import { ProductionDomainError } from '../domain/production.errors.js';
 import { lastStepReportedQuantitySql } from './mysql-production-reporting.sql.js';
 import { multiplyIntegerQuantities } from '../domain/integer-quantity.js';
-import {
-  activeDemandAllocationGapExistsSql,
-  shortBatchAuthorizationCoverageInsufficientExistsSql,
-} from './mysql-production-material.sql.js';
 
 /**
  * 把数据库驱动错误映射为稳定的模块错误。application 层不得识别 `ER_DUP_ENTRY` 等驱动错误码，
@@ -98,7 +94,6 @@ export type BatchRow = RowDataPacket & {
   execution_completed_by: number | null;
   material_plan_version: number;
   short_batch_authorization_status: 'none' | 'valid' | 'stale' | 'consumed';
-  short_batch_authorization_action: ProductionBatchItem['shortBatchAuthorizationAction'];
   owner_id: number | null;
   completed_at: Date | null;
   started_at: Date | null;
@@ -170,23 +165,14 @@ export const BATCH_SELECT = `SELECT b.id,b.work_order_id,wo.work_order_no,b.prod
     WHEN EXISTS (SELECT 1 FROM production_short_batch_authorization authorization WHERE authorization.production_batch_id=b.id AND authorization.status='consumed') THEN 'consumed'
     ELSE 'none'
   END short_batch_authorization_status,
-  CASE
-    WHEN EXISTS (SELECT 1 FROM production_short_batch_authorization authorization WHERE authorization.production_batch_id=b.id AND authorization.status='active' AND authorization.material_plan_version=b.material_plan_version)
-      AND ${shortBatchAuthorizationCoverageInsufficientExistsSql('b.id')} THEN 'adjust'
-    WHEN EXISTS (SELECT 1 FROM production_short_batch_authorization authorization WHERE authorization.production_batch_id=b.id AND authorization.status='active' AND authorization.material_plan_version=b.material_plan_version) THEN 'view'
-    WHEN NOT ${activeDemandAllocationGapExistsSql('b.id')} THEN 'not_required'
-    WHEN EXISTS (SELECT 1 FROM production_short_batch_authorization authorization WHERE authorization.production_batch_id=b.id AND authorization.status='active') THEN 'reauthorize'
-    WHEN EXISTS (SELECT 1 FROM production_short_batch_authorization authorization WHERE authorization.production_batch_id=b.id AND authorization.status='consumed') THEN 'view'
-    ELSE 'authorize'
-  END short_batch_authorization_action,
   b.batch_owner_id owner_id,b.completed_at,b.completed_by,b.cancel_reason,b.cancelled_by,b.cancelled_at,b.remark,b.version,b.created_at,b.updated_at FROM production_batches b JOIN work_orders wo ON wo.id=b.work_order_id LEFT JOIN production_batch_closeout c ON c.production_batch_id=b.id
   LEFT JOIN production_output_revision r ON r.id=c.current_revision_id AND r.closeout_id=c.id AND r.production_batch_id=b.id`;
-const BATCH_LOCK_SELECT = `SELECT b.id,b.work_order_id,wo.work_order_no,b.product_id,wo.product_code_snapshot,wo.product_name_snapshot,b.batch_no,b.route_id,b.route_code_snapshot,b.route_version_snapshot,b.planned_quantity,CAST(0 AS DECIMAL(12,4)) last_step_reported_quantity,b.plan_start_date,b.plan_end_date,b.started_at,b.status,b.material_plan_version,
+const BATCH_LOCK_SELECT = `SELECT b.id,b.work_order_id,wo.work_order_no,b.product_id,wo.product_code_snapshot,wo.product_name_snapshot,b.batch_no,b.route_id,b.route_code_snapshot,b.route_version_snapshot,b.planned_quantity,0 last_step_reported_quantity,b.plan_start_date,b.plan_end_date,b.started_at,b.status,b.material_plan_version,
   NULL closeout_mode,NULL current_revision_id,b.execution_completed_at,b.execution_completed_by,
   NULL approved_output_revision_no,NULL approved_available_quantity,NULL approved_extra_quantity,NULL approved_scrap_quantity,
-  'none' short_batch_authorization_status,'not_required' short_batch_authorization_action,
+  'none' short_batch_authorization_status,
   b.batch_owner_id owner_id,b.completed_at,b.completed_by,b.cancel_reason,b.cancelled_by,b.cancelled_at,b.remark,b.version,b.created_at,b.updated_at FROM production_batches b JOIN work_orders wo ON wo.id=b.work_order_id`;
-export const STEP_RECORD_SELECT = `SELECT sr.id,sr.production_batch_id,sr.route_step_id,sr.step_order_snapshot,sr.step_code_snapshot,sr.step_name_snapshot,sr.sop_file_id_snapshot,sr.sop_file_name_snapshot,sr.sop_version_no_snapshot,sr.default_responsible_user_id_snapshot,sr.actual_sop_file_id,sr.actual_sop_file_name_snapshot,sr.actual_sop_object_key_snapshot,sr.actual_sop_version_no_snapshot,sr.responsible_user_id,sr.need_inspection_snapshot,sr.status,sr.started_at,sr.completed_at,COALESCE(report_summary.reported_quantity,0) output_quantity,COALESCE(report_summary.normal_quantity,0) normal_quantity,COALESCE(report_summary.abnormal_quantity,0) abnormal_quantity,CAST(0 AS DECIMAL(12,4)) rework_quantity,sr.unit_snapshot,sr.remark,sr.version FROM batch_step_records sr LEFT JOIN (SELECT batch_step_record_id,SUM(CASE WHEN report_type='normal' THEN reported_quantity ELSE -reported_quantity END) reported_quantity,SUM(CASE WHEN report_type='normal' THEN normal_quantity ELSE -normal_quantity END) normal_quantity,SUM(CASE WHEN report_type='normal' THEN abnormal_quantity ELSE -abnormal_quantity END) abnormal_quantity FROM batch_step_reports GROUP BY batch_step_record_id) report_summary ON report_summary.batch_step_record_id=sr.id`;
+export const STEP_RECORD_SELECT = `SELECT sr.id,sr.production_batch_id,sr.route_step_id,sr.step_order_snapshot,sr.step_code_snapshot,sr.step_name_snapshot,sr.sop_file_id_snapshot,sr.sop_file_name_snapshot,sr.sop_version_no_snapshot,sr.default_responsible_user_id_snapshot,sr.actual_sop_file_id,sr.actual_sop_file_name_snapshot,sr.actual_sop_object_key_snapshot,sr.actual_sop_version_no_snapshot,sr.responsible_user_id,sr.need_inspection_snapshot,sr.status,sr.started_at,sr.completed_at,COALESCE(report_summary.reported_quantity,0) output_quantity,COALESCE(report_summary.normal_quantity,0) normal_quantity,COALESCE(report_summary.abnormal_quantity,0) abnormal_quantity,0 rework_quantity,sr.unit_snapshot,sr.remark,sr.version FROM batch_step_records sr LEFT JOIN (SELECT batch_step_record_id,SUM(CASE WHEN report_type='normal' THEN reported_quantity ELSE -reported_quantity END) reported_quantity,SUM(CASE WHEN report_type='normal' THEN normal_quantity ELSE -normal_quantity END) normal_quantity,SUM(CASE WHEN report_type='normal' THEN abnormal_quantity ELSE -abnormal_quantity END) abnormal_quantity FROM batch_step_reports GROUP BY batch_step_record_id) report_summary ON report_summary.batch_step_record_id=sr.id`;
 
 export async function findWorkOrder(db: Db, id: string, lock = false): Promise<WorkOrderRow> {
   const [rows] = await db.query<WorkOrderRow[]>(
@@ -224,9 +210,9 @@ export async function findStepRecord(
 }
 
 export const mapWorkOrderFinalOutput = (row: WorkOrderRow): WorkOrderFinalOutput => ({
-  availableQuantity: row.final_available_quantity ?? '0',
-  extraQuantity: row.final_extra_quantity ?? '0',
-  scrapQuantity: row.final_scrap_quantity ?? '0',
+  availableQuantity: String(row.final_available_quantity ?? '0'),
+  extraQuantity: String(row.final_extra_quantity ?? '0'),
+  scrapQuantity: String(row.final_scrap_quantity ?? '0'),
   totalQuantity: String(
     Number(row.final_available_quantity ?? 0) +
       Number(row.final_extra_quantity ?? 0) +
@@ -237,8 +223,8 @@ export const mapWorkOrderFinalOutput = (row: WorkOrderRow): WorkOrderFinalOutput
   ),
   finalizedBatchCount: Number(row.finalized_batch_count ?? 0),
   closingBatchCount: Number(row.closing_batch_count ?? 0),
-  pendingAvailableQuantity: row.pending_available_quantity ?? '0',
-  pendingExtraQuantity: row.pending_extra_quantity ?? '0',
+  pendingAvailableQuantity: String(row.pending_available_quantity ?? '0'),
+  pendingExtraQuantity: String(row.pending_extra_quantity ?? '0'),
 });
 
 export const mapWorkOrder = (row: WorkOrderRow): WorkOrderItem => ({
@@ -252,14 +238,14 @@ export const mapWorkOrder = (row: WorkOrderRow): WorkOrderItem => ({
   productCode: row.product_code_snapshot,
   productName: row.product_name_snapshot,
   unit: row.unit_snapshot,
-  plannedQuantity: row.planned_quantity,
+  plannedQuantity: String(row.planned_quantity),
   customerName: row.customer_name,
   qualityLevel: row.quality_level,
   workOrderOwnerId: row.work_order_owner_id === null ? null : String(row.work_order_owner_id),
   planStartDate: toDateOnlyString(row.plan_start_date),
   planEndDate: toDateOnlyString(row.plan_end_date),
-  assignedQuantity: row.assigned_quantity,
-  terminatedPlannedQuantity: row.terminated_planned_quantity,
+  assignedQuantity: String(row.assigned_quantity),
+  terminatedPlannedQuantity: String(row.terminated_planned_quantity),
   status: row.status,
   releasedAt: date(row.released_at),
   cancelReason: row.cancel_reason,
@@ -278,7 +264,10 @@ export const mapWorkOrder = (row: WorkOrderRow): WorkOrderItem => ({
   updatedAt: toBeijingISOString(row.updated_at),
 });
 
-export const mapBatch = (row: BatchRow): ProductionBatchItem => ({
+export const mapBatch = (
+  row: BatchRow,
+  authorizationAction: ProductionBatchItem['shortBatchAuthorizationAction'],
+): ProductionBatchItem => ({
   id: String(row.id),
   workOrderId: String(row.work_order_id),
   workOrderNo: row.work_order_no,
@@ -289,8 +278,8 @@ export const mapBatch = (row: BatchRow): ProductionBatchItem => ({
   routeId: row.route_id === null ? null : String(row.route_id),
   routeCode: row.route_code_snapshot,
   routeVersion: row.route_version_snapshot,
-  plannedQuantity: row.planned_quantity,
-  lastStepReportedQuantity: row.last_step_reported_quantity,
+  plannedQuantity: String(row.planned_quantity),
+  lastStepReportedQuantity: String(row.last_step_reported_quantity),
   planStartDate: toDateOnlyString(row.plan_start_date),
   planEndDate: toDateOnlyString(row.plan_end_date),
   startedAt: date(row.started_at),
@@ -312,7 +301,7 @@ export const mapBatch = (row: BatchRow): ProductionBatchItem => ({
     row.execution_completed_by === null ? null : String(row.execution_completed_by),
   materialPlanVersion: row.material_plan_version,
   shortBatchAuthorizationStatus: row.short_batch_authorization_status,
-  shortBatchAuthorizationAction: row.short_batch_authorization_action,
+  shortBatchAuthorizationAction: authorizationAction,
   ownerId: row.owner_id === null ? null : String(row.owner_id),
   ownerName: null,
   completedAt: date(row.completed_at),
@@ -355,10 +344,10 @@ export const mapStep = (row: StepRow) => ({
   status: row.status,
   startedAt: date(row.started_at),
   completedAt: date(row.completed_at),
-  outputQuantity: row.output_quantity,
-  normalQuantity: row.normal_quantity,
-  abnormalQuantity: row.abnormal_quantity,
-  reworkQuantity: row.rework_quantity,
+  outputQuantity: String(row.output_quantity),
+  normalQuantity: String(row.normal_quantity),
+  abnormalQuantity: String(row.abnormal_quantity),
+  reworkQuantity: String(row.rework_quantity),
   unit: row.unit_snapshot,
   remark: row.remark,
   version: row.version,
@@ -369,7 +358,7 @@ export const workOrderAudit = (row: WorkOrderRow) => ({
   productCode: row.product_code_snapshot,
   productName: row.product_name_snapshot,
   unit: row.unit_snapshot,
-  plannedQuantity: row.planned_quantity,
+  plannedQuantity: String(row.planned_quantity),
   customerName: row.customer_name,
   qualityLevel: row.quality_level,
   workOrderOwnerId: row.work_order_owner_id === null ? null : String(row.work_order_owner_id),

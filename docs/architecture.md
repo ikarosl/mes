@@ -15,9 +15,12 @@
 - Product：产品分类、产品主数据、产品物料、技术文件、工序和工艺路线。
 - Approval：BOM、生产需求更正和批次收尾场景的顺序节点配置（角色、指定用户或业务关联人员）、申请、节点共享待办与决定；业务生效由各所有者 handler 执行，角色成员实时解析，业务人员在送审时冻结且资格实时核验，工单下达审批尚未接入。
 - Notification：通用站内消息、固定收件集合、本人已读及提交后空钩子，Approval 为首个调用方。
-- Production：生产工单、批次、工序报工追溯、需求纠错和逐项收尾，以及依赖的物料需求、分配、领料、退料和盘点。更正申请、收尾草稿、行动、线下质检记录及批准产出版本由 Production 所有，Approval 只通过公开处理器协作，不直接修改 Production 表。
+- Production：生产工单、批次、工序报工追溯、需求纠错和逐项收尾，以及依赖的物料需求、分配、领料和生产退料。更正申请、收尾草稿、行动、线下质检记录及批准产出版本由 Production 所有，Approval 只通过公开处理器协作，不直接修改 Production 表。
+- Inventory：现有库存批次、唯一库存流水与余额投影、外购及成品入库整表、现有物料库存盘点；Production 通过公开能力完成库存操作。
+- Procurement：供应商名称目录、按需求／独立备料采购、来源映射、采购关闭事实、到货与实收修订、未入库实物范围及实际退供应商；编排检验及入库，不写生产需求或库存表。
+- Quality：本期外购来料初检、复核办理及不可变检验结论，通过公开能力核验真实放行依据，不接管 Production 结案质检。
 
-通用 Inventory（其他出入库、报废）、Quality（检验）和 Traceability（全流程追溯）只能在后续迁移阶段明确更新后追加，不得仅凭已有 UI 原型提前实现。当前盘点仅覆盖现有 `item_batch × stock_status` 账本，退料仅覆盖已确认生产领料并固定释放到公共可用库存。
+通用 Inventory（其他出入库、报废）、完整在线 Quality 和 Traceability（全流程追溯）仍须后续明确范围后追加，不得仅凭已有 UI 原型提前实现。当前盘点仅覆盖现有 `item_batch × stock_status` 账本，退料仅覆盖已确认生产领料并固定释放到公共可用库存。
 
 ## 2. 模块与功能的划分
 
@@ -29,9 +32,9 @@ Port 和 Adapter。当前 Product 保持一个 NestJS 模块，内部划分 tech
 process-step 和 process-route；只有工艺能力出现独立生命周期、团队所有权或大量外部调用时才
 提取 ProcessModule。
 
-Production 的成品入库扩展先按工单任务、生产执行、需求履约、结案产出、仓库操作及查询追溯划清内部用例职责，见[Production 内部职责](../apps/api/src/modules/production/docs/module-boundaries.md)。当前保留单一表所有权和出库／履约联动事务，不因菜单或文件长度直接提取 Inventory，也不把不同来源的报废合并为通用写入口。
+Production 保有工单任务、生产执行、需求履约和结案产出资格；Inventory 拥有批次、账本、入库及盘点，见[Production 内部职责](../apps/api/src/modules/production/docs/module-boundaries.md)和[Inventory](../apps/api/src/modules/inventory/README.md)。生产单据与库存操作复用同池事务，出库／履约仍原子提交，不把不同来源的报废合并为通用写入口。
 
-后续采购接入按[路线图](roadmap.md)先确定业务流，再确定 Production／Procurement／Inventory／Quality 的逐表所有权与事务，随后提取库存。[采购评审稿](procurement-inbound-design.md)包含候选边界；[ADR-0013](adr/0013-procurement-source-and-stock-boundaries.md)已确定两类采购来源、强制检验与检验后入库。此设计尚未改变下文当前所有权，不能据此增加第二库存写入口或预建空模块。
+采购一期遵守[采购业务设计](procurement-inbound-design.md)与 [ADR-0013](adr/0013-procurement-source-and-stock-boundaries.md)，逐表所有权、公开契约与事务见[技术设计](procurement-inbound-technical-design.md)。当前 Procurement 通过 Production／Product 公开能力核验采购资格，并在同池事务内编排 Quality 与 Inventory；到货、复核和范围属于采购入库前实物处理，库存只由仓管实际确认生成。用户验收与后置事项见[路线图](roadmap.md)，不增加第二库存账本或双写。
 
 `common` 仅存放真正跨模块且不含业务知识的能力，例如审计上下文、HTTP 安全装饰器和时间格式。
 `common` 不拥有业务表，也不得成为绕过模块边界的万能目录。`operation_logs` 是项目级平台审计
@@ -48,7 +51,7 @@ HTTP 幂等也是跨业务模块的平台能力：`common/idempotency` 只定义
 业务代码不注册直通实现，未启用端点收到幂等键一律返回 `400 IDEMPOTENCY_NOT_SUPPORTED`，不静默放行。
 命令上下文与幂等能力分离：`CommandContext` 仅承载 actor/requestId/IP/User-Agent；只有已声明并验收的
 application 用例接收 `IdempotentCommandContext`。幂等键不得进入 application port 或 Repository，Service
-调用业务 Repository 前必须收窄回 `CommandContext`。启用范围由 Production scope 常量和 Controller 装饰器定义，并汇总在幂等专题；新增命令仍须逐一登记 scope、完整结果 codec 和闭环测试。
+调用业务 Repository 前必须收窄回 `CommandContext`。启用范围由各模块 scope 常量和 Controller 装饰器定义，并汇总在幂等专题；新增命令仍须逐一登记 scope、完整结果 codec 和闭环验证。采购正式测试集按用户黑盒及 UI 验收后的明确通知安排。
 具体实施边界见 [`idempotency.md`](../apps/api/docs/idempotency.md)。
 
 ## 3. 模块内部依赖
@@ -93,7 +96,7 @@ Identity 的密码算法和令牌签发/验证通过 `PasswordHasher`、`TokenSe
   指标（`idempotency.metrics`）与带脱敏键摘要的日志观测，不伪造第二条业务成功审计。
 - 跨模块业务校验读通过目标模块公开 Query/Directory Facade；跨模块写通过目标模块公开应用服务。页面展示读允许登记的数据库联查，不要求为纯展示字段增加 Facade 调用链。
 - 公开 Query 必须按用途区分过滤语义，不能用同一个默认带状态过滤的方法同时承担写操作校验与历史展示：
-  写操作校验只返回当前启用、未删除且满足业务条件的数据；历史、审计和既有单据展示允许解析已停用或软删除
+  写操作校验按明确用途检查状态、删除及业务条件；采购允许停用精确版本，生产出库要求版本启用，两者仍要求基础物料及分类有效。历史、审计和既有单据展示允许解析已停用或软删除
   的引用，但不得把该结果用于新增、编辑、分配、入库等写操作。方法名和返回类型必须体现 `enabled/current`
   与 `display/history` 等语义差异，Adapter 测试分别覆盖“停用数据被校验查询排除”和“停用数据仍可用于历史展示”。
   （该问题在多表联查出现，历史追溯查询使用了正常的产品列表查询，这里正常的产品列表过滤了停用产品，但是历史追溯不应该过滤此状态）
@@ -107,7 +110,10 @@ Identity 的密码算法和令牌签发/验证通过 `PasswordHasher`、`TokenSe
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | Identity/System  | departments、users、roles、permissions、关联表、refresh_tokens                                                                           |
 | Product          | item_categories、products、materials、material_variants、product_materials、technical_files、process_steps、process_routes 及关联表                                 |
-| Production       | work_orders、work_order_daily_sequence、work_order_material_versions、production_batches、batch_step_records、batch_step_reports、batch_step_abnormal_dispositions、rework_records、batch_step_scrap_records、batch_step_scrap_reproduction_authorization、production_scrap_supplement_plan、production_scrap_supplement_plan_line、production_material_supplement、production_material_requirement_basis、production_manual_demand_addition、production_item_demand、production_item_allocation、production_short_batch_authorization、production_short_batch_authorization_detail、item_scrap、inbound_order、inbound_detail、outbound_order、outbound_detail、return_order、return_detail、stock_check_order、stock_check_detail，以及当前生产库存切片的 item_batch、inventory_transaction 和可重建查询投影 inventory_batch_balance、inventory_material_variant_balance |
+| Production       | 工单任务、工序执行、需求及更正、分配、补料、领料出库、生产退料、领后损耗、结案草稿、质检记录及批准产出；精确表清单见 `scripts/api-data-ownership.mjs` |
+| Inventory | item_batch、inventory_transaction、inventory_batch_balance、inventory_material_variant_balance、inbound_order、inbound_detail、stock_check_order、stock_check_detail；历史 inventory_item_balance 保留所有权登记 |
+| Procurement | procurement_supplier、purchase_order、purchase_order_line、purchase_order_line_source、purchase_order_line_closure、procurement_receipt、procurement_receipt_line、procurement_receipt_revision、procurement_receipt_scope、procurement_supplier_return |
+| Quality | quality_inbound_case、quality_inbound_inspection |
 | Approval | approval_flow_definitions、approval_flow_versions、approval_flow_steps、approval_instances、approval_instance_steps、approval_actions |
 | Notification | notifications、notification_recipients |
 | 平台审计基础设施 | operation_logs                                                                                                                           |
@@ -117,9 +123,11 @@ Identity 的密码算法和令牌签发/验证通过 `PasswordHasher`、`TokenSe
 `operation_logs` 的唯一写入能力由 `common/audit/transactional-audit-writer` 承担（见 §4 审计豁免与
 §6）；目录位置表示共享基础设施入口，不表示 `common` 拥有该表。
 
+公开方法和锁序见[库存提取设计](inventory-extraction-design.md)及[采购技术设计](procurement-inbound-technical-design.md)。Inventory 整体拥有八张库存／入库／盘点表，Production 保有分配、出库、生产退料和需求履约；Procurement 拥有采购及未入库实物，Quality 只拥有本期来料检验。新增所有权须随对应代码与 migration 登记。
+
 Product 获取用户选项必须调用 Identity 的公开目录服务，不能直接查询 `users`。
 
-当前 Production 继续作为库存账本的唯一写入所有者，覆盖外购物料入库、按批准清单确认的生产流转与额外产出成品入库、生产物料分配、领料出库、生产退料和物料库存盘点；这些流程共享同一事务设施，库存数量只写 `inventory_transaction`。成品使用明确的 `product_id` 分支，物料继续使用 `item_id/material_variant_id`，不混用身份或另建账本。`/warehouse/return-orders` 与 `/warehouse/stock-checks` 只是 Production 模块的管理端 HTTP 入口，不建立第二 Warehouse Repository 或账本写入口。未来通用库存继续扩展并形成独立生命周期时，再整体评审提取 Inventory 模块；提取前不得复制表访问或形成双写。
+Inventory 是库存账本的唯一写入所有者，承接外购、成品、生产领料、生产退料和现有盘点的库存操作；这些流程共享同一事务设施，库存数量只写 `inventory_transaction`。成品使用明确的 `product_id` 分支，物料使用 `item_id/material_variant_id`。`/warehouse/return-orders` 由 Production 编排，`/warehouse/stock-checks` 由 Inventory 办理；保留 HTTP 路径不表示数据同属一个模块，也不建立 Warehouse 账本。
 
 Production 内部退料只负责现场余料回仓，禁止通过需求计划 Writer 创建或恢复需求，也不得修改分配履约、物料计划版本或短批授权。损耗确认与人工追加分别负责产生其明确来源的新需求；执行模块独立校验开工/完工，短批授权与开工不读取退料或按净领用量设置门槛。仓库 UI 属于这些能力的展示入口，不能另行定义退料补领语义。修改任一相关能力须遵守 [Production 写入职责表](../apps/api/src/modules/production/docs/database/return-scrap-and-stocktake.md#业务语义与写入职责)。
 
@@ -127,7 +135,8 @@ Production 内部退料只负责现场余料回仓，禁止通过需求计划 Wr
 
 决策依据见 [ADR-0005](adr/0005-controlled-display-reads.md)。
 
-- 专用目录为各模块 `infrastructure/queries/`，通过 `scripts/api-data-ownership.mjs` 的 `API_DISPLAY_READ_ACCESS` 登记目录、目标表和批准字段。当前 Production 仅批准读取 Product `materials.id/material_name`；联查或相关子查询 SQL 可以在本模块 infrastructure 查询中组合复用，不暴露到 application port、Controller 或前端。
+- 专用目录为各模块 `infrastructure/queries/`，通过 `scripts/api-data-ownership.mjs` 的 `API_DISPLAY_READ_ACCESS` 登记目录、目标表和批准字段。Production 与 Inventory 可读取 Product 当前物料名称，并按登记字段组合彼此的库存／生产来源展示；联查或相关子查询 SQL 可在本模块 infrastructure 查询中组合复用，不暴露到 application port、Controller 或前端。
+- Procurement 的登记展示读取覆盖 Product 当前名称、Production 来源、Quality 办理／结论及 Inventory 实际入库关联字段；完整 Quality 记录由公开批量查询补齐。关闭和入库命令仍通过锁内的 Quality／Inventory 公开能力核验事实，不将页面统计当作写入资格。
 - 展示查询只提供名称、搜索、排序和页面组合结果；禁止跨模块写入、DDL、锁定或存储过程调用。命令中的权限、启用状态、选版、库存资格和事务规则继续经过所属模块业务能力；SELECT 是否参与业务决策比方法名是否叫 Query 更重要。
 - 名称按稳定物料 ID 读取当前值，不过滤停用或软删除。历史记录不会因主数据状态变化被排除；编码、版本、数量、单位继续读取相应业务事实。搜索必须使用同一当前名称来源，筛选先于分页，不在应用层逐行查名称。
 - 表结构修改须检查已登记目录及 SQL 组合调用方。保持公开查询契约、筛选语义、行数和分页稳定；不因为内部 SQL 改动而向上层泄漏表或 SDK 类型。此规则不开放跨模块深层 import，不引入新服务或第二套读库。

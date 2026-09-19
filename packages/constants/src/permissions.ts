@@ -1,4 +1,33 @@
 export const PERMISSIONS = {
+  procurement: {
+    view: 'procurement:view',
+    suppliers: {
+      view: 'procurement:suppliers:view',
+      create: 'procurement:suppliers:create',
+      update: 'procurement:suppliers:update',
+    },
+    orders: {
+      view: 'procurement:orders:view',
+      create: 'procurement:orders:create',
+      update: 'procurement:orders:update',
+      place: 'procurement:orders:place',
+      cancel: 'procurement:orders:cancel',
+      close: 'procurement:orders:close',
+    },
+    receipts: {
+      view: 'procurement:receipts:view',
+      confirm: 'procurement:receipts:confirm',
+      correct: 'procurement:receipts:correct',
+      return: 'procurement:receipts:return',
+    },
+  },
+  quality: {
+    inboundInspections: {
+      view: 'quality:inbound-inspections:view',
+      review: 'quality:inbound-inspections:review',
+      inspect: 'quality:inbound-inspections:inspect',
+    },
+  },
   dashboard: { view: 'dashboard:view' },
   approval: {
     view: 'approval:view',

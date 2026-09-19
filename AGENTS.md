@@ -37,6 +37,12 @@
 
 ## 文档读取与维护
 
+### 采购一期实施范围
+
+采购一期业务决策以 `docs/adr/0013-procurement-source-and-stock-boundaries.md` 和 `docs/procurement-inbound-design.md` 为准。已授权按 `docs/roadmap.md` 顺序完成阶段 2 技术设计、提取现有 Inventory、供应商名称配置、两类采购及到货质检入库闭环；上述“Quality 不得提前迁入”不禁止本期外购物料入库检验，仍禁止扩大到完整生产在线质量或通用 ERP。当前实现与目标必须分别标注，表所有权随实际提取切换，禁止双写。
+
+本轮执行类型检查、构建和启动验证供用户黑盒及 UI 验收；正式测试集仅在用户明确通知后编写，再由 Luna MAX 子代理全量验证。
+
 - 修改任意目录前，必须读取从仓库根到目标目录沿途存在的 README.md。
 - 目标目录或其最近所有者目录存在 docs/ 时，必须读取与本次变更直接相关的专题文档。
 - 越接近目标代码的文档描述越具体，但不得违反根级架构、API、编码和测试规范。
@@ -47,5 +53,5 @@
 ### 物料名称展示规则
 
 - 基础物料名称仅用于当前展示、搜索和排序，按稳定物料 ID 读取 `materials.material_name`，不在需求基础、需求、库存批次或入库明细持久化名称快照；历史物料展示也使用当前名称，不因物料停用或软删除而丢失。
-- 当前批准 Production 的 `infrastructure/queries/` 只读使用 `materials.id/material_name`，其 SQL 可在本模块查询中组合复用；不得将展示名称当作物料身份、版本替代条件或写入资格。
+- 当前批准 Production 与 Inventory 的 `infrastructure/queries/` 只读使用 `materials.id/material_name`；库存与生产来源展示字段以 `scripts/api-data-ownership.mjs` 的逐字段登记为准。SQL 可在本模块查询中组合复用，不得将展示名称当作物料身份、版本替代条件或写入资格。
 - 物料编码、单位、精确版本和业务数量仍按原规则固化；工单成品名称、工序/SOP 快照不属于本次物料名称规则。改名审批属于后续待办，当前不得宣称已实现。

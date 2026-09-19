@@ -10,6 +10,7 @@ import type {
 } from '@company/contracts';
 import { toBeijingISOString } from '../../../common/time/date-time.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
+import { InventoryStockCommand } from '../../inventory/public.js';
 import { ProductionTerminationRepository } from '../application/ports/production-termination.repository.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
 import { fixedIntegerQuantity } from '../domain/integer-quantity.js';
@@ -47,7 +48,10 @@ type Fact = RowDataPacket & {
 
 @Injectable()
 export class MysqlProductionTerminationRepository extends ProductionTerminationRepository {
-  constructor(@Inject(DATABASE_POOL) private readonly pool: Pool) {
+  constructor(
+    @Inject(DATABASE_POOL) private readonly pool: Pool,
+    private readonly inventory: InventoryStockCommand,
+  ) {
     super();
   }
 
@@ -72,6 +76,9 @@ export class MysqlProductionTerminationRepository extends ProductionTerminationR
       [batchId],
     );
     if (!header) throw new ProductionDomainError('NOT_FOUND', '生产批次不存在');
+    header.plannedQuantity = String(header.plannedQuantity);
+    header.reportedNormalQuantity = String(header.reportedNormalQuantity);
+    header.existingScrapQuantity = String(header.existingScrapQuantity);
     const [[fact]] = await db.query<Fact[]>(
       `SELECT r.id,r.revision_no,r.approval_instance_id,r.available_quantity,r.extra_quantity,
        r.additional_scrap_quantity,r.existing_scrap_quantity,r.review_snapshot,r.created_by,r.created_at
@@ -234,26 +241,45 @@ export class MysqlProductionTerminationRepository extends ProductionTerminationR
   ): Promise<BatchTerminationMaterial[]> {
     const share = lock ? ' FOR SHARE' : '';
     const [rows] = await db.query<
-      (RowDataPacket & Omit<BatchTerminationMaterial, 'returnableQuantity'>)[]
+      (RowDataPacket &
+        Omit<
+          BatchTerminationMaterial,
+          'returnableQuantity' | 'inventoryBatchCode' | 'itemCode' | 'materialVariantCode'
+        > & { itemBatchId: string })[]
     >(
-      `SELECT CAST(a.id AS CHAR) allocationId,ib.batch_code inventoryBatchCode,ib.item_code_snapshot itemCode,ib.material_variant_code_snapshot materialVariantCode,
+      `SELECT CAST(a.id AS CHAR) allocationId,CAST(a.batch_id AS CHAR) itemBatchId,
        a.unit_snapshot unit,a.assigned_number assignedQuantity,
        COALESCE((SELECT SUM(d.outbound_number) FROM outbound_detail d JOIN outbound_order o ON o.id=d.outbound_id
          WHERE d.allocation_id=a.id AND o.status='completed'${share}),0) outboundQuantity,
        COALESCE((SELECT SUM(d.return_number) FROM return_detail d JOIN return_order o ON o.id=d.return_id
          WHERE d.allocation_id=a.id AND o.status IN ('pending','returned')${share}),0) returnQuantity,
        COALESCE((SELECT SUM(s.scrap_number) FROM item_scrap s WHERE s.allocation_id=a.id AND s.status IN ('pending','confirmed')${share}),0) lossQuantity
-       FROM production_item_allocation a JOIN item_batch ib ON ib.id=a.batch_id WHERE a.production_batch_id=? ORDER BY a.id${lock ? ' FOR UPDATE' : ''}`,
+       FROM production_item_allocation a WHERE a.production_batch_id=? ORDER BY a.id${lock ? ' FOR UPDATE' : ''}`,
       [batchId],
     );
-    return rows.map((row) => ({
-      ...row,
-      returnableQuantity: fixedIntegerQuantity(
-        Math.max(
-          0,
-          Number(row.outboundQuantity) - Number(row.returnQuantity) - Number(row.lossQuantity),
+    const references = await this.inventory.materialBatchReferences([
+      ...new Set(rows.map((row) => row.itemBatchId)),
+    ]);
+    const byId = new Map(references.map((reference) => [reference.id, reference]));
+    return rows.map(({ itemBatchId, ...row }) => {
+      const reference = byId.get(itemBatchId);
+      if (!reference) throw new ProductionDomainError('NOT_FOUND', '来源库存批次不存在');
+      return {
+        ...row,
+        assignedQuantity: String(row.assignedQuantity),
+        outboundQuantity: String(row.outboundQuantity),
+        returnQuantity: String(row.returnQuantity),
+        lossQuantity: String(row.lossQuantity),
+        inventoryBatchCode: reference.batchCode,
+        itemCode: reference.itemCode,
+        materialVariantCode: reference.materialVariantCode,
+        returnableQuantity: fixedIntegerQuantity(
+          Math.max(
+            0,
+            Number(row.outboundQuantity) - Number(row.returnQuantity) - Number(row.lossQuantity),
+          ),
         ),
-      ),
-    }));
+      };
+    });
   }
 }

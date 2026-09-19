@@ -76,8 +76,6 @@ import type {
   MaterialOutboundQuery,
   MaterialOutboundBatchOption,
   MaterialOutboundCandidateItem,
-  CreatePurchaseInboundPayload,
-  CancelPurchaseInboundPayload,
   CancelMaterialOutboundPayload,
   InventoryBatchDetailItem,
   InventoryBatchItem,
@@ -210,33 +208,18 @@ export const productionApi = {
       retryIdempotentWrite: true,
       retryTimes: 2,
     }),
-  listPurchaseInbounds: (params: PurchaseInboundOrderQuery) =>
-    request<PageResult<PurchaseInboundOrderItem>>({ url: '/production/purchase-inbounds', params }),
-  getPurchaseInbound: (id: string) =>
-    request<PurchaseInboundOrderItem>({ url: `/production/purchase-inbounds/${id}` }),
-  createPurchaseInbound: (data: CreatePurchaseInboundPayload, idempotencyKey: string) =>
-    request<PurchaseInboundOrderItem>({
+  listPurchaseInbounds: (params: PurchaseInboundOrderQuery, signal?: AbortSignal) =>
+    request<PageResult<PurchaseInboundOrderItem>>({
       url: '/production/purchase-inbounds',
-      method: 'POST',
-      data,
-      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
-      retryIdempotentWrite: true,
-      retryTimes: 2,
+      params,
+      signal,
+      skipErrorHandling: true,
     }),
-  confirmPurchaseInbound: (id: string, version: number, idempotencyKey: string) =>
+  getPurchaseInbound: (id: string, signal?: AbortSignal) =>
     request<PurchaseInboundOrderItem>({
-      url: `/production/purchase-inbounds/${id}/actions/confirm`,
-      method: 'POST',
-      data: { version },
-      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
-      retryIdempotentWrite: true,
-      retryTimes: 2,
-    }),
-  cancelPurchaseInbound: (id: string, data: CancelPurchaseInboundPayload) =>
-    request<PurchaseInboundOrderItem>({
-      url: `/production/purchase-inbounds/${id}/actions/cancel`,
-      method: 'POST',
-      data,
+      url: `/production/purchase-inbounds/${id}`,
+      signal,
+      skipErrorHandling: true,
     }),
   listInventoryBatches: (params: InventoryBatchQuery) =>
     request<PageResult<InventoryBatchItem>>({ url: '/production/inventory-batches', params }),

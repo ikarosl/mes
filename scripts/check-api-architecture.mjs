@@ -50,6 +50,20 @@ const idempotencyRecordsWritePattern =
  * ——scope 只能经由契约常量标识符引用。
  */
 const knownIdempotencyScopes = [
+  'procurement.receipt.confirm.v1',
+  'procurement.receipt.correct.v1',
+  'procurement.receipt.review.v1',
+  'procurement.receipt.inspect.v1',
+  'procurement.receipt.terminate-return.v1',
+  'procurement.receipt.return.v1',
+  'procurement.inbound.confirm.v1',
+
+  'procurement.purchase-order.create.v1',
+  'procurement.purchase-order.update.v1',
+  'procurement.purchase-order.place.v1',
+  'procurement.purchase-order.cancel.v1',
+  'procurement.purchase-order-line.close.v1',
+  'procurement.purchase-order.supplement.v1',
   'production.batch.create.v7',
   'production.batch.terminate.v1',
   'production.demand-correction.submit.v1',
@@ -179,6 +193,10 @@ const checks = [
     message:
       '只有已登记的 Production 幂等命令可使用 IdempotentCommandContext；新增命令必须先完成契约登记与验收',
     exclude: [
+      'apps/api/src/modules/procurement/application/purchase-order.service.ts',
+      'apps/api/src/modules/procurement/application/receipt.service.ts',
+      'apps/api/src/modules/procurement/presentation/http/purchase-order.controller.ts',
+      'apps/api/src/modules/procurement/presentation/http/receipt.controller.ts',
       'apps/api/src/modules/production/application/production.service.ts',
       'apps/api/src/modules/production/application/production-termination.service.ts',
       'apps/api/src/modules/production/application/production-demand-correction.service.ts',
@@ -218,6 +236,8 @@ const checks = [
     message:
       '只有已登记的 Production application 用例可依赖 IdempotencyExecutor；新增用例必须先完成契约登记与验收',
     exclude: [
+      'apps/api/src/modules/procurement/application/purchase-order.service.ts',
+      'apps/api/src/modules/procurement/application/receipt.service.ts',
       'apps/api/src/modules/production/application/production.service.ts',
       'apps/api/src/modules/production/application/production-termination.service.ts',
       'apps/api/src/modules/production/application/production-demand-correction.service.ts',
@@ -251,7 +271,12 @@ const checks = [
       /(?:['"]Idempotency-Key['"]\s*:|\[\s*IDEMPOTENCY_KEY_HEADER\s*\]\s*:|\bretryIdempotentWrite\s*:)/,
     message:
       '只有已登记的 production API wrapper 可设置 Idempotency-Key/retryIdempotentWrite；新增调用必须先登记后端幂等契约',
-    exclude: ['apps/admin-web/src/api/production.ts', 'apps/admin-web/src/api/warehouse.ts'],
+    exclude: [
+      'apps/admin-web/src/api/production.ts',
+      'apps/admin-web/src/api/warehouse.ts',
+      'apps/admin-web/src/api/procurement.ts',
+      'apps/admin-web/src/api/procurement-inbounds.ts',
+    ],
   },
   // 通用 persistence helper 不得依赖 Nest HTTP/框架异常
   {
@@ -260,23 +285,25 @@ const checks = [
     message: '通用 persistence helper 不得直接依赖 Nest HTTP/框架异常',
   },
   // application / domain 层不得从 @nestjs/common 导入 Nest HTTP 异常；application 不得依赖 SDK
-  ...['identity', 'product', 'production', 'approval'].flatMap((module) => [
-    {
-      directory: `apps/api/src/modules/${module}/application`,
-      pattern: nestHttpExceptionImportPattern,
-      message: `${module}/application 不得从 @nestjs/common 导入 Nest HTTP 异常；业务失败应抛出协议无关的模块错误`,
-    },
-    {
-      directory: `apps/api/src/modules/${module}/domain`,
-      pattern: nestHttpExceptionImportPattern,
-      message: `${module}/domain 不得从 @nestjs/common 导入 Nest HTTP 异常`,
-    },
-    {
-      directory: `apps/api/src/modules/${module}/application`,
-      pattern: applicationSdkPattern,
-      message: `${module}/application 不得直接依赖数据库、存储等 SDK 包`,
-    },
-  ]),
+  ...['identity', 'product', 'production', 'approval', 'procurement', 'quality'].flatMap(
+    (module) => [
+      {
+        directory: `apps/api/src/modules/${module}/application`,
+        pattern: nestHttpExceptionImportPattern,
+        message: `${module}/application 不得从 @nestjs/common 导入 Nest HTTP 异常；业务失败应抛出协议无关的模块错误`,
+      },
+      {
+        directory: `apps/api/src/modules/${module}/domain`,
+        pattern: nestHttpExceptionImportPattern,
+        message: `${module}/domain 不得从 @nestjs/common 导入 Nest HTTP 异常`,
+      },
+      {
+        directory: `apps/api/src/modules/${module}/application`,
+        pattern: applicationSdkPattern,
+        message: `${module}/application 不得直接依赖数据库、存储等 SDK 包`,
+      },
+    ],
+  ),
   // application 层不得识别数据库驱动错误码（实现错误由 infrastructure 映射）
   ...['product', 'production', 'approval'].flatMap((module) => [
     {

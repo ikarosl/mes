@@ -16,22 +16,23 @@ import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { writeTransactionalAudit } from '../../../common/audit/transactional-audit-writer.js';
 import { toDateOnlyString } from '../../../common/time/date-time.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
-import type { ProductionProductSnapshot } from '../../product/public.js';
+import { MaterialVariantQuery, type ProductionProductSnapshot } from '../../product/public.js';
 import { requireWorkOrderTransition } from '../domain/production-status.policy.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
 import { fixedIntegerQuantity, integerQuantity } from '../domain/integer-quantity.js';
 import { allocateWorkOrderNumber } from './mysql-work-order-number.js';
 import { lastStepReportedQuantitySql } from './mysql-production-reporting.sql.js';
+import { mapBatches } from './mysql-production-batch-display.mapper.js';
 import {
   readResearchOrderRelations,
   requireResearchPredecessor,
 } from './mysql-work-order-research.js';
 import {
   BATCH_SELECT,
+  type BatchRow,
   type Db,
   ensureNoDuplicate,
   findWorkOrder,
-  mapBatch,
   mapWorkOrder,
   mapWorkOrderFinalOutput,
   type WorkOrderRow,
@@ -71,7 +72,10 @@ const requirePlanDates = (
 
 @Injectable()
 export class MysqlWorkOrderRepository {
-  constructor(@Inject(DATABASE_POOL) private readonly pool: Pool) {}
+  constructor(
+    @Inject(DATABASE_POOL) private readonly pool: Pool,
+    private readonly variants: MaterialVariantQuery,
+  ) {}
 
   async list(query: WorkOrderQuery): Promise<PageResult<WorkOrderItem>> {
     const page = query.page ?? 1;
@@ -118,9 +122,9 @@ export class MysqlWorkOrderRepository {
       productId: String(row.product_id),
       productCode: row.product_code_snapshot,
       productName: row.product_name_snapshot,
-      plannedQuantity: row.planned_quantity,
-      assignedQuantity: row.assigned_quantity,
-      terminatedPlannedQuantity: row.terminated_planned_quantity,
+      plannedQuantity: String(row.planned_quantity),
+      assignedQuantity: String(row.assigned_quantity),
+      terminatedPlannedQuantity: String(row.terminated_planned_quantity),
       finalOutput: mapWorkOrderFinalOutput(row),
       remainingQuantity: String(Number(row.planned_quantity) - Number(row.assigned_quantity)),
       planStartDate: toDateOnlyString(row.plan_start_date),
@@ -384,7 +388,7 @@ export class MysqlWorkOrderRepository {
         { status: before.status, version: before.version },
         {
           status: 'completed',
-          plannedQuantity: before.planned_quantity,
+          plannedQuantity: String(before.planned_quantity),
           approvedPlannedQuantity,
           completedBatchCount: activeBatches.length,
           version: version + 1,
@@ -462,7 +466,7 @@ export class MysqlWorkOrderRepository {
           status: 'closed',
           closeType,
           reason,
-          plannedQuantity: before.planned_quantity,
+          plannedQuantity: String(before.planned_quantity),
           approvedPlannedQuantity,
           version: version + 1,
         },
@@ -491,13 +495,13 @@ export class MysqlWorkOrderRepository {
 
   private async getDetail(db: Db, id: string): Promise<WorkOrderDetail> {
     const order = await findWorkOrder(db, id);
-    const [batches] = await db.query(
+    const [batches] = await db.query<BatchRow[]>(
       `${BATCH_SELECT} WHERE b.work_order_id=? ORDER BY b.created_at DESC,b.id DESC`,
       [id],
     );
     return {
       ...mapWorkOrder(order),
-      batches: (batches as never[]).map(mapBatch),
+      batches: await mapBatches(db, batches, this.variants),
       ...(await readResearchOrderRelations(db, order)),
     };
   }
@@ -545,15 +549,16 @@ const workOrderBatchDetails = (
   approvedPlannedQuantity: string,
   unfinishedBatches: WorkOrderBatchSummaryRow[],
 ): Record<string, unknown> => ({
-  plannedQuantity,
-  approvedPlannedQuantity,
+  plannedQuantity: String(plannedQuantity),
+  approvedPlannedQuantity: String(approvedPlannedQuantity),
   unfinishedBatches: unfinishedBatches.map((batch) => ({
     id: String(batch.id),
     batchNo: batch.batch_no,
     status: batch.status,
-    plannedQuantity: batch.planned_quantity,
-    lastStepReportedQuantity: batch.last_step_reported_quantity,
-    approvedAvailableQuantity: batch.approved_available_quantity,
+    plannedQuantity: String(batch.planned_quantity),
+    lastStepReportedQuantity: String(batch.last_step_reported_quantity),
+    approvedAvailableQuantity:
+      batch.approved_available_quantity === null ? null : String(batch.approved_available_quantity),
     currentOutputRevisionId:
       batch.current_revision_id === null ? null : String(batch.current_revision_id),
   })),

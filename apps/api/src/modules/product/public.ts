@@ -1,4 +1,9 @@
 export { ProductModule } from './product.module.js';
+export {
+  ProductInventoryEligibility,
+  type MaterialIdentityReference,
+  type InventoryMaterialEligibility,
+} from './application/product-inventory-eligibility.query.js';
 export { ProductBomApprovalHandler } from './application/product-bom-approval.handler.js';
 export { ProductProductionDefinitionCommand } from './application/product-production-definition.command.js';
 export {

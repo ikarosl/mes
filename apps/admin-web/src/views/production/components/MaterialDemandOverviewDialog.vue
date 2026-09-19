@@ -133,6 +133,30 @@
               </template>
             </el-table-column>
             <el-table-column
+              label="相关采购"
+              width="165"
+            >
+              <template #default="{ row }">
+                <el-button
+                  link
+                  type="primary"
+                  @click="showPurchases(row.demandId)"
+                  >{{
+                    purchaseCounts.get(row.demandId) === undefined
+                      ? '查看相关采购'
+                      : `相关采购 ${purchaseCounts.get(row.demandId)} 单`
+                  }}</el-button
+                >
+                <el-button
+                  v-if="auth.can(PERMISSIONS.procurement.orders.view)"
+                  link
+                  type="primary"
+                  @click="purchaseFromDemand(row.demandId)"
+                  >发起采购</el-button
+                >
+              </template>
+            </el-table-column>
+            <el-table-column
               label="操作"
               width="150"
               fixed="right"
@@ -166,6 +190,10 @@
     :demand-id="correctionDemandId"
     @changed="$emit('changed')"
   />
+  <RelatedPurchasesDialog
+    v-model:visible="relatedVisible"
+    :demand-id="relatedDemandId"
+  />
 </template>
 
 <script setup lang="ts">
@@ -176,13 +204,21 @@ import type {
   ProductionMaterialDemandItem,
   DemandCloseCause,
 } from '@company/contracts';
-import { MATERIAL_DEMAND_PROGRESS_LABELS, DEMAND_CLOSE_CAUSE_LABELS } from '@company/constants';
+import {
+  MATERIAL_DEMAND_PROGRESS_LABELS,
+  DEMAND_CLOSE_CAUSE_LABELS,
+  PERMISSIONS,
+} from '@company/constants';
 import DemandCorrectionDialog from './DemandCorrectionDialog.vue';
+import RelatedPurchasesDialog from '../../procurement/components/RelatedPurchasesDialog.vue';
+import { useRelatedPurchaseCounts } from '../../procurement/composables/useRelatedPurchaseCounts';
+import { useAuthStore } from '../../../stores/auth';
 import { DialogWidth } from '../../../utils/dialog';
 import { formatDateForDisplay } from '../../../utils/date';
 import { formatQuantity as quantity } from '../production-status';
 import { groupMaterialDemandRows } from '../material-demand-group-presentation';
 const router = useRouter();
+const auth = useAuthStore();
 
 const props = defineProps<{
   visible: boolean;
@@ -194,6 +230,19 @@ defineEmits<{ 'update:visible': [boolean]; 'add-manual': []; changed: [] }>();
 
 const correctionDemandId = ref<string | null>(null),
   correctionVisible = ref(false);
+const relatedDemandId = ref<string | null>(null),
+  relatedVisible = ref(false);
+const { counts: purchaseCounts } = useRelatedPurchaseCounts(
+  () => props.visible,
+  () => props.demands.map((row) => row.demandId),
+);
+const showPurchases = (id: string): void => {
+  relatedDemandId.value = id;
+  relatedVisible.value = true;
+};
+const purchaseFromDemand = async (id: string): Promise<void> => {
+  await router.push({ name: 'procurement-orders', query: { demandId: id } });
+};
 const groups = computed(() => groupMaterialDemandRows(props.demands));
 const expandedGroups = ref<string[]>([]);
 const canAdd = computed(() =>

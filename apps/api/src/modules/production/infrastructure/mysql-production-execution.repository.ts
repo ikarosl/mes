@@ -91,7 +91,7 @@ export class MysqlProductionExecutionRepository extends ProductionExecutionRepos
           batchId,
           batch,
           String(closeout.id),
-          steps.at(-1)?.effective_normal ?? '0.0000',
+          String(steps.at(-1)?.effective_normal ?? 0),
         );
       }
       if (batch.status !== 'doing')
@@ -474,7 +474,7 @@ const mapCompletionCheck = (
     productionBatchId: batchId,
     batchStatus: batch.status,
     version: batch.version,
-    plannedQuantity: batch.planned_quantity,
+    plannedQuantity: String(batch.planned_quantity),
     activeMaterialDemandCount,
     unfulfilledSupplementCount,
     requiredSteps: steps.map((step) => ({
@@ -482,7 +482,7 @@ const mapCompletionCheck = (
       order: step.step_order_snapshot,
       name: step.step_name_snapshot,
       status: step.status,
-      effectiveNormalQuantity: step.effective_normal,
+      effectiveNormalQuantity: String(step.effective_normal),
     })),
   });
 
@@ -549,7 +549,7 @@ const completionResult = (
     productionBatchId: batchId,
     batchStatus: batch.status,
     closeoutId,
-    lastStepReportedQuantity,
+    lastStepReportedQuantity: String(lastStepReportedQuantity),
     executionCompletedAt: toBeijingISOString(batch.execution_completed_at),
     executionCompletedById: String(batch.execution_completed_by),
     version: batch.version,

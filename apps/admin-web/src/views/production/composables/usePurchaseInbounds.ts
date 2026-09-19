@@ -1,95 +1,60 @@
 import { ref } from 'vue';
-import type {
-  CreatePurchaseInboundPayload,
-  PurchaseInboundOrderItem,
-  PurchaseInboundOrderQuery,
-} from '@company/contracts';
-import { normalizePurchaseInboundPayload } from '@company/utils';
+import type { PurchaseInboundOrderItem, PurchaseInboundOrderQuery } from '@company/contracts';
 import { productionApi } from '../../../api/production';
-import { useIdempotentIntent } from '../../../composables/idempotency/useIdempotentIntent';
+import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
+import { EMessage } from '../../../utils/message';
 
+/** 外购入库历史只读；实际入库仅由采购放行确认入口办理。 */
 export const usePurchaseInbounds = () => {
   const rows = ref<PurchaseInboundOrderItem[]>([]),
     total = ref(0),
     loading = ref(false),
     detail = ref<PurchaseInboundOrderItem | null>(null),
     detailLoading = ref(false),
-    pendingKeys = ref(new Set<string>());
-  const createIntent = useIdempotentIntent();
-  const confirmIntents = new Map<string, ReturnType<typeof useIdempotentIntent>>();
-  let listToken = 0,
-    detailToken = 0;
-  const load = async (query: PurchaseInboundOrderQuery) => {
-    const token = ++listToken;
+    detailError = ref('');
+  const listRequest = useLatestReadRequest(() => {
+    loading.value = false;
+  });
+  const detailRequest = useLatestReadRequest(() => {
+    detailLoading.value = false;
+  });
+  const load = async (query: PurchaseInboundOrderQuery): Promise<void> => {
+    if (!listRequest.isActive()) return;
+    const current = listRequest.begin();
     loading.value = true;
     try {
-      const r = await productionApi.listPurchaseInbounds(query);
-      if (token === listToken) {
-        rows.value = r.items;
-        total.value = r.total;
-      }
+      const result = await productionApi.listPurchaseInbounds(query, current.signal);
+      if (!current.isCurrent()) return;
+      rows.value = result.items;
+      total.value = result.total;
+    } catch (error) {
+      if (current.isCurrent()) EMessage.error(error, '入库历史加载失败');
     } finally {
-      if (token === listToken) loading.value = false;
+      if (current.isCurrent()) loading.value = false;
     }
   };
-  const loadDetail = async (id: string) => {
-    const token = ++detailToken;
+  const loadDetail = async (id: string): Promise<void> => {
+    if (!detailRequest.isActive()) return;
+    const current = detailRequest.begin();
+    detail.value = null;
+    detailError.value = '';
     detailLoading.value = true;
     try {
-      const r = await productionApi.getPurchaseInbound(id);
-      if (token === detailToken) detail.value = r;
-      return r;
+      const result = await productionApi.getPurchaseInbound(id, current.signal);
+      if (!current.isCurrent()) return;
+      if (result.sourceType !== 'purchased') throw new Error('该记录不属于外购物料入库');
+      detail.value = result;
+    } catch (error) {
+      if (current.isCurrent())
+        detailError.value = error instanceof Error ? error.message : '入库详情加载失败';
     } finally {
-      if (token === detailToken) detailLoading.value = false;
+      if (current.isCurrent()) detailLoading.value = false;
     }
   };
-  const create = async (payload: CreatePurchaseInboundPayload) => {
-    const body = normalizePurchaseInboundPayload(payload);
-    return createIntent.execute(
-      { intentType: 'production.purchase-inbound.create', params: {}, query: {}, body },
-      (key) => productionApi.createPurchaseInbound(body, key),
-    );
-  };
-  const confirm = async (row: PurchaseInboundOrderItem) => {
-    const key = `confirm:${row.inboundId}`;
-    if (pendingKeys.value.has(key)) return row;
-    pendingKeys.value = new Set(pendingKeys.value).add(key);
-    const intent = confirmIntents.get(row.inboundId) ?? useIdempotentIntent();
-    confirmIntents.set(row.inboundId, intent);
-    try {
-      const result = await intent.execute(
-        {
-          intentType: 'production.purchase-inbound.confirm',
-          params: { inboundId: row.inboundId },
-          query: {},
-          body: { version: row.version },
-        },
-        (idempotencyKey) =>
-          productionApi.confirmPurchaseInbound(row.inboundId, row.version, idempotencyKey),
-      );
-      confirmIntents.delete(row.inboundId);
-      return result;
-    } finally {
-      remove(key);
-    }
-  };
-  const cancel = async (row: PurchaseInboundOrderItem, reason: string) => {
-    const key = `cancel:${row.inboundId}`;
-    if (pendingKeys.value.has(key)) return row;
-    pendingKeys.value = new Set(pendingKeys.value).add(key);
-    try {
-      return await productionApi.cancelPurchaseInbound(row.inboundId, {
-        version: row.version,
-        reason: reason.trim(),
-      });
-    } finally {
-      remove(key);
-    }
-  };
-  const remove = (key: string) => {
-    const next = new Set(pendingKeys.value);
-    next.delete(key);
-    pendingKeys.value = next;
+  const closeDetail = (): void => {
+    detailRequest.invalidate();
+    detail.value = null;
+    detailError.value = '';
   };
   return {
     rows,
@@ -97,13 +62,9 @@ export const usePurchaseInbounds = () => {
     loading,
     detail,
     detailLoading,
-    pendingKeys,
+    detailError,
     load,
     loadDetail,
-    create,
-    confirm,
-    cancel,
-    getCreateIntentStatus: createIntent.getStatus,
-    resetCreateIntent: createIntent.reset,
+    closeDetail,
   };
 };
