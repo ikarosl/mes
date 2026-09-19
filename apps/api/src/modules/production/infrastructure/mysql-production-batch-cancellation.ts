@@ -10,6 +10,7 @@ export type BatchCancellationState = {
   })[];
   allocationIds: string[];
   demandIds: string[];
+  pendingCorrectionDemandIds: string[];
 };
 
 export const loadBatchCancellationState = async (
@@ -30,8 +31,10 @@ export const loadBatchCancellationState = async (
      ORDER BY id${suffix}`,
     [batchId],
   );
-  const [demands] = await db.query<(RowDataPacket & { id: number })[]>(
-    `SELECT id FROM production_item_demand
+  const [demands] = await db.query<
+    (RowDataPacket & { id: number; pending_correction_id: number | null })[]
+  >(
+    `SELECT id,pending_correction_id FROM production_item_demand
      WHERE production_batch_id=? AND business_status='active'
      ORDER BY id${suffix}`,
     [batchId],
@@ -40,6 +43,9 @@ export const loadBatchCancellationState = async (
     outbounds,
     allocationIds: allocations.map((row) => String(row.id)),
     demandIds: demands.map((row) => String(row.id)),
+    pendingCorrectionDemandIds: demands
+      .filter((row) => row.pending_correction_id != null)
+      .map((row) => String(row.id)),
   };
 };
 
@@ -49,6 +55,7 @@ export const buildBatchCancellationCheck = (
   state: BatchCancellationState,
 ): ProductionBatchCancellationCheck => {
   const blockers: ProductionBatchCancellationCheck['blockers'] = [];
+  if (state.pendingCorrectionDemandIds.length) blockers.push('pending_demand_correction');
   if (!['pending', 'material_pending', 'material_assigned'].includes(batch.status))
     blockers.push('batch_already_started');
   if (state.outbounds.some((outbound) => outbound.status !== 'pending_picking'))

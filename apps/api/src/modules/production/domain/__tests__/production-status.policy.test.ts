@@ -52,11 +52,13 @@ describe('production status policy', () => {
         'cancelled',
       ],
       material_assigned: ['material_pending', 'material_outbound', 'cancelled'],
-      material_partially_outbound: ['material_outbound', 'doing'],
-      material_outbound: ['doing'],
-      doing: ['completed'],
+      material_partially_outbound: ['material_outbound', 'doing', 'closing'],
+      material_outbound: ['doing', 'closing'],
+      doing: ['completed', 'closing'],
+      closing: ['terminated'],
       completed: [],
       cancelled: [],
+      terminated: [],
     };
     for (const current of PRODUCTION_BATCH_STATUSES) {
       for (const next of PRODUCTION_BATCH_STATUSES) {

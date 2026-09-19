@@ -6,6 +6,11 @@ import type {
 } from '@company/contracts';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
 
+export interface ApprovalBusinessAssigneeResolution {
+  readonly sourceCode: string;
+  readonly userId: string;
+}
+
 /**
  * 业务处理器返回的送审准备结果：记录绑定申请前的业务版本及受审快照。
  * 流程版本、审批角色及节点由 Approval 单独选取，不由业务处理器决定。
@@ -15,6 +20,7 @@ export interface ApprovalSubjectPreparation {
   subjectVersion: number;
   snapshotSchemaVersion: number;
   snapshot: ApprovalSubjectSnapshot;
+  businessAssigneeResolutions: readonly ApprovalBusinessAssigneeResolution[];
 }
 
 /**

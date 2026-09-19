@@ -7,4 +7,5 @@ export const DialogWidth = {
   md: 'min(640px, 75vw)',
   lg: 'min(860px, 75vw)',
   xl: 'min(1000px, 75vw)',
+  workbench: 'min(1400px, calc(100% - 32px))',
 } as const;

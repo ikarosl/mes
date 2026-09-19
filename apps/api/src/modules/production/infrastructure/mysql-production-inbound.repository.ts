@@ -5,9 +5,7 @@ import { withTransaction } from '@company/database';
 import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import type {
   CreatePurchaseInboundPayload,
-  InventoryBatchDetailItem,
   InventoryBatchItem,
-  InventoryBatchTransactionItem,
   InventoryBatchQuery,
   PageResult,
   PurchaseInboundOrderItem,
@@ -22,6 +20,7 @@ import {
   type PurchaseInboundItemSnapshot,
 } from '../application/ports/production-inbound.repository.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
+import { getInventoryBatch, listInventoryBatches } from './mysql-inventory-batch.query.js';
 import { fixedIntegerQuantity, integerQuantity } from '../domain/integer-quantity.js';
 
 type OrderRow = RowDataPacket & {
@@ -55,44 +54,6 @@ type DetailRow = RowDataPacket & {
   stock_status: 'available';
   inventory_transaction_id: number | null;
 };
-type InventoryRow = RowDataPacket & {
-  id: number;
-  item_id: number;
-  material_variant_id: number;
-  item_code_snapshot: string;
-  item_name: string;
-  material_variant_code_snapshot: string;
-  unit_snapshot: string;
-  batch_code: string;
-  source_type: InventoryBatchItem['sourceType'];
-  provider: string | null;
-  batch_status: InventoryBatchItem['batchStatus'];
-  on_hand: string;
-  reserved: string;
-};
-type InventorySourceRow = RowDataPacket & {
-  batch_id: number;
-  inbound_id: number;
-  inbound_no: string;
-  provider: string | null;
-  inbound_at: Date;
-  inbound_number: string;
-  transaction_id: number;
-};
-type InventoryTransactionRow = RowDataPacket & {
-  id: number;
-  transaction_type: InventoryBatchTransactionItem['transactionType'];
-  quantity: string;
-  unit_snapshot: string;
-  stock_status: InventoryBatchTransactionItem['stockStatus'];
-  reference_type: InventoryBatchTransactionItem['referenceType'];
-  reference_detail_id: number;
-  transaction_group_key: string | null;
-  reversal_of_transaction_id: number | null;
-  remark: string | null;
-  created_at: Date;
-};
-
 @Injectable()
 export class MysqlProductionInboundRepository extends ProductionInboundRepository {
   constructor(@Inject(DATABASE_POOL) private readonly pool: Pool) {
@@ -288,51 +249,11 @@ export class MysqlProductionInboundRepository extends ProductionInboundRepositor
       return this.loadOrder(db, await this.findOrder(db, id));
     });
   }
-  async listInventory(query: InventoryBatchQuery): Promise<PageResult<InventoryBatchItem>> {
-    const where = [
-      '1=1',
-      // 库存列表只显示已产生真实库存流水的批次；待确认入库单会先创建 item_batch，
-      // 但 inventory_transaction 仍为空，不能作为库存列表返回。
-      'EXISTS (SELECT 1 FROM inventory_transaction it WHERE it.batch_id = ib.id)',
-    ];
-    const params: Array<string | number | null> = [];
-    if (query.keyword) {
-      where.push(
-        `(ib.item_code_snapshot LIKE ? OR ${currentMaterialNameSql('ib.item_id')} LIKE ?)`,
-      );
-      params.push(`%${query.keyword}%`, `%${query.keyword}%`);
-    }
-    if (query.batchCode) {
-      where.push('ib.batch_code LIKE ?');
-      params.push(`%${query.batchCode}%`);
-    }
-    if (query.batchStatus) {
-      where.push('ib.batch_status=?');
-      params.push(query.batchStatus);
-    }
-    const [[count]] = await this.pool.query<(RowDataPacket & { total: number })[]>(
-      `SELECT COUNT(*) total FROM item_batch ib WHERE ${where.join(' AND ')}`,
-      params,
-    );
-    const page = query.page ?? 1;
-    const pageSize = query.pageSize ?? 20;
-    const [rows] = await this.pool.query<(RowDataPacket & { id: number })[]>(
-      `SELECT ib.id FROM item_batch ib WHERE ${where.join(' AND ')} ORDER BY ib.id DESC LIMIT ? OFFSET ?`,
-      [...params, pageSize, (page - 1) * pageSize],
-    );
-    const items = await this.loadInventories(
-      this.pool,
-      rows.map((row) => String(row.id)),
-    );
-    return {
-      items,
-      total: Number(count?.total ?? 0),
-      page,
-      pageSize,
-    };
+  listInventory(query: InventoryBatchQuery): Promise<PageResult<InventoryBatchItem>> {
+    return listInventoryBatches(this.pool, query);
   }
   getInventory(id: string) {
-    return this.loadInventory(this.pool, id);
+    return getInventoryBatch(this.pool, id);
   }
   private async findOrder(db: Pool | PoolConnection, id: string, lock = false) {
     const [rows] = await db.query<OrderRow[]>(
@@ -350,7 +271,7 @@ export class MysqlProductionInboundRepository extends ProductionInboundRepositor
        JOIN item_batch ib ON ib.id=d.batch_id
        LEFT JOIN inventory_transaction it ON it.reference_type='inbound_detail'
          AND it.reference_detail_id=d.id AND it.transaction_type='purchase_inbound'
-       WHERE d.inbound_id=? ORDER BY d.id${lock ? ' FOR UPDATE' : ''}`,
+       WHERE d.inbound_id=? AND d.product_id IS NULL ORDER BY d.id${lock ? ' FOR UPDATE' : ''}`,
       [id],
     );
     return rows;
@@ -365,7 +286,7 @@ export class MysqlProductionInboundRepository extends ProductionInboundRepositor
        JOIN item_batch ib ON ib.id=d.batch_id
        LEFT JOIN inventory_transaction it ON it.reference_type='inbound_detail'
          AND it.reference_detail_id=d.id AND it.transaction_type='purchase_inbound'
-       WHERE d.inbound_id IN (${ids.map(() => '?').join(',')})
+       WHERE d.product_id IS NULL AND d.inbound_id IN (${ids.map(() => '?').join(',')})
        ORDER BY d.inbound_id,d.id`,
       ids,
     );
@@ -431,97 +352,6 @@ export class MysqlProductionInboundRepository extends ProductionInboundRepositor
         stockStatus: 'available',
         inventoryTransactionId:
           x.inventory_transaction_id === null ? null : String(x.inventory_transaction_id),
-      })),
-    };
-  }
-  private async loadInventory(
-    db: Pool | PoolConnection,
-    id: string,
-  ): Promise<InventoryBatchDetailItem> {
-    const rows = await this.loadInventories(db, [id]);
-    if (!rows[0]) throw new ProductionDomainError('NOT_FOUND', '库存批次不存在');
-    const [transactions] = await db.query<InventoryTransactionRow[]>(
-      `SELECT id,transaction_type,quantity,unit_snapshot,stock_status,reference_type,
-       reference_detail_id,transaction_group_key,reversal_of_transaction_id,remark,created_at
-       FROM inventory_transaction WHERE batch_id=? ORDER BY created_at DESC,id DESC`,
-      [id],
-    );
-    return {
-      ...rows[0],
-      inventoryTransactions: transactions.map((transaction) => ({
-        inventoryTransactionId: String(transaction.id),
-        transactionType: transaction.transaction_type,
-        quantity: transaction.quantity,
-        unit: transaction.unit_snapshot,
-        stockStatus: transaction.stock_status,
-        referenceType: transaction.reference_type,
-        referenceDetailId: String(transaction.reference_detail_id),
-        transactionGroupKey: transaction.transaction_group_key,
-        reversalOfInventoryTransactionId:
-          transaction.reversal_of_transaction_id === null
-            ? null
-            : String(transaction.reversal_of_transaction_id),
-        remark: transaction.remark,
-        transactionAt: toBeijingISOString(transaction.created_at),
-      })),
-    };
-  }
-  private async loadInventories(
-    db: Pool | PoolConnection,
-    ids: string[],
-  ): Promise<InventoryBatchItem[]> {
-    if (ids.length === 0) return [];
-    const placeholders = ids.map(() => '?').join(',');
-    const [rows] = await db.query<InventoryRow[]>(
-      `SELECT ib.*,${currentMaterialNameSql('ib.item_id')} item_name,COALESCE(MAX(balance.current_quantity),0) on_hand,
-       COALESCE((SELECT SUM(GREATEST(a.assigned_number-COALESCE((SELECT SUM(od.outbound_number) FROM outbound_detail od JOIN outbound_order oo ON oo.id=od.outbound_id WHERE od.allocation_id=a.id AND oo.status='completed'),0),0)) FROM production_item_allocation a WHERE a.batch_id=ib.id AND a.item_id=ib.item_id AND a.material_variant_id=ib.material_variant_id AND a.allocation_status NOT IN ('released','cancelled')),0) reserved
-       FROM item_batch ib LEFT JOIN inventory_batch_balance balance
-         ON balance.batch_id=ib.id AND balance.stock_status='available'
-       WHERE ib.id IN (${placeholders}) GROUP BY ib.id ORDER BY ib.id DESC`,
-      ids,
-    );
-    const [sources] = await db.query<InventorySourceRow[]>(
-      `SELECT d.batch_id,o.id inbound_id,o.inbound_no,o.provider,o.inbound_at,d.inbound_number,it.id transaction_id
-       FROM inbound_detail d
-       JOIN inbound_order o ON o.id=d.inbound_id AND o.status='completed'
-       JOIN inventory_transaction it ON it.reference_type='inbound_detail' AND it.reference_detail_id=d.id
-       WHERE d.batch_id IN (${placeholders}) ORDER BY d.batch_id,d.id`,
-      ids,
-    );
-    const sourcesByBatch = new Map<string, InventorySourceRow[]>();
-    for (const source of sources) {
-      const key = String(source.batch_id);
-      const values = sourcesByBatch.get(key) ?? [];
-      values.push(source);
-      sourcesByBatch.set(key, values);
-    }
-    return rows.map((row) => this.mapInventory(row, sourcesByBatch.get(String(row.id)) ?? []));
-  }
-  private mapInventory(row: InventoryRow, sources: InventorySourceRow[]): InventoryBatchItem {
-    return {
-      itemBatchId: String(row.id),
-      itemId: String(row.item_id),
-      materialVariantId: String(row.material_variant_id),
-      materialVariantCode: row.material_variant_code_snapshot,
-      itemCode: row.item_code_snapshot,
-      itemName: row.item_name,
-      unit: row.unit_snapshot,
-      batchCode: row.batch_code,
-      sourceType: row.source_type,
-      provider: row.provider,
-      batchStatus: row.batch_status,
-      onHandAvailableQuantity: row.on_hand,
-      reservedQuantity: row.reserved,
-      availableToAllocateQuantity: decimal(
-        Math.max(0, integerQuantity(row.on_hand) - integerQuantity(row.reserved)),
-      ),
-      inboundSources: sources.map((x) => ({
-        inboundId: String(x.inbound_id),
-        inboundNo: x.inbound_no,
-        provider: x.provider,
-        inboundAt: toBeijingISOString(x.inbound_at),
-        inboundQuantity: x.inbound_number,
-        inventoryTransactionId: String(x.transaction_id),
       })),
     };
   }

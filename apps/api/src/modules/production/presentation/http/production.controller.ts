@@ -11,7 +11,10 @@ import {
   IdempotentEndpoint,
   RequirePermission,
 } from '../../../../common/security/auth.decorators.js';
-import { CREATE_BATCH_IDEMPOTENCY_SCOPE } from '../../application/idempotency/production-idempotency-scopes.contract.js';
+import {
+  CREATE_BATCH_IDEMPOTENCY_SCOPE,
+  CREATE_WORK_ORDER_IDEMPOTENCY_SCOPE,
+} from '../../application/idempotency/production-idempotency-scopes.contract.js';
 import { ProductionService } from '../../application/production.service.js';
 import {
   BatchStepRecordParamDto,
@@ -54,10 +57,11 @@ export class ProductionController {
   }
   @Post('work-orders')
   @RequirePermission(PERMISSIONS.production.orders.create)
+  @IdempotentEndpoint({ scope: CREATE_WORK_ORDER_IDEMPOTENCY_SCOPE })
   @AuditInApplication()
   createWorkOrder(
     @Body() body: CreateWorkOrderDto,
-    @CurrentCommandContext() audit: CommandContext,
+    @CurrentIdempotentCommandContext() audit: IdempotentCommandContext,
   ) {
     return this.service.createWorkOrder(body, audit);
   }

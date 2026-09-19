@@ -1,4 +1,35 @@
 import type {
+  WorkOrderMaterialConfiguration,
+  SaveWorkOrderMaterialConfigurationPayload,
+  SaveWorkOrderMaterialConfigurationResult,
+  FinishedGoodsInboundQuery,
+  FinishedGoodsInboundCandidateQuery,
+  FinishedGoodsInboundCandidate,
+  FinishedGoodsInboundOrderItem,
+  FinishedGoodsInboundOrderDetail,
+  CreateFinishedGoodsInboundPayload,
+  UpdateFinishedGoodsInboundPayload,
+  ConfirmFinishedGoodsInboundPayload,
+  CancelFinishedGoodsInboundPayload,
+  FinishedGoodsInboundCommandResult,
+  BatchTerminationCheck,
+  DemandCorrectionCheck,
+  DemandCorrectionHistoryItem,
+  SubmitDemandCorrectionPayload,
+  ProductionApprovalResult,
+  BatchCloseoutDetail,
+  BatchCloseoutCommandResult,
+  BeginBatchCloseoutPayload,
+  HandleBatchCloseoutItemPayload,
+  RecordCloseoutMaterialLossPayload,
+  RecordCloseoutMaterialLossResult,
+  ProductionOutputDetail,
+  SaveProductionOutputPayload,
+  RecordProductionOutputInspectionPayload,
+  ReviewProductionOutputMaterialPayload,
+  SubmitProductionOutputPayload,
+  BeginProductionOutputCorrectionPayload,
+  ProductionOutputCommandResult,
   CreateProductionBatchPayload,
   CreateMaterialAllocationsPayload,
   CreateMaterialOutboundPayload,
@@ -77,6 +108,11 @@ import type {
 import { IDEMPOTENCY_KEY_HEADER, toRequestError, type RetryRequestConfig } from '@company/request';
 import { httpClient } from './http';
 
+interface ReadRequestOptions {
+  skipErrorHandling?: boolean;
+  signal?: AbortSignal;
+}
+
 const request = async <T>(config: RetryRequestConfig) => {
   try {
     return (await httpClient.request<T>(config)).data;
@@ -86,6 +122,94 @@ const request = async <T>(config: RetryRequestConfig) => {
 };
 
 export const productionApi = {
+  getWorkOrderMaterialConfiguration: (workOrderId: string) =>
+    request<WorkOrderMaterialConfiguration>({
+      url: `/production/work-orders/${workOrderId}/material-configuration`,
+      skipErrorHandling: true,
+    }),
+  saveWorkOrderMaterialConfiguration: (
+    workOrderId: string,
+    data: SaveWorkOrderMaterialConfigurationPayload,
+    idempotencyKey: string,
+  ) =>
+    request<SaveWorkOrderMaterialConfigurationResult>({
+      url: `/production/work-orders/${workOrderId}/material-configuration`,
+      method: 'PUT',
+      data,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      skipErrorHandling: true,
+      retryIdempotentWrite: true,
+      retryTimes: 2,
+    }),
+  listFinishedGoodsInbounds: (params: FinishedGoodsInboundQuery) =>
+    request<PageResult<FinishedGoodsInboundOrderItem>>({
+      url: '/production/finished-goods-inbounds',
+      params,
+      skipErrorHandling: true,
+    }),
+  finishedGoodsInboundCandidates: (params: FinishedGoodsInboundCandidateQuery) =>
+    request<PageResult<FinishedGoodsInboundCandidate>>({
+      url: '/production/finished-goods-inbounds/candidates',
+      params,
+      skipErrorHandling: true,
+    }),
+  getFinishedGoodsInbound: (id: string) =>
+    request<FinishedGoodsInboundOrderDetail>({
+      url: `/production/finished-goods-inbounds/${id}`,
+      skipErrorHandling: true,
+    }),
+  createFinishedGoodsInbound: (data: CreateFinishedGoodsInboundPayload, idempotencyKey: string) =>
+    request<FinishedGoodsInboundCommandResult>({
+      url: '/production/finished-goods-inbounds',
+      method: 'POST',
+      data,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      skipErrorHandling: true,
+      retryIdempotentWrite: true,
+      retryTimes: 2,
+    }),
+  updateFinishedGoodsInbound: (
+    id: string,
+    data: UpdateFinishedGoodsInboundPayload,
+    idempotencyKey: string,
+  ) =>
+    request<FinishedGoodsInboundCommandResult>({
+      url: `/production/finished-goods-inbounds/${id}`,
+      method: 'PUT',
+      data,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      skipErrorHandling: true,
+      retryIdempotentWrite: true,
+      retryTimes: 2,
+    }),
+  confirmFinishedGoodsInbound: (
+    id: string,
+    data: ConfirmFinishedGoodsInboundPayload,
+    idempotencyKey: string,
+  ) =>
+    request<FinishedGoodsInboundCommandResult>({
+      url: `/production/finished-goods-inbounds/${id}/actions/confirm`,
+      method: 'POST',
+      data,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      skipErrorHandling: true,
+      retryIdempotentWrite: true,
+      retryTimes: 2,
+    }),
+  cancelFinishedGoodsInbound: (
+    id: string,
+    data: CancelFinishedGoodsInboundPayload,
+    idempotencyKey: string,
+  ) =>
+    request<FinishedGoodsInboundCommandResult>({
+      url: `/production/finished-goods-inbounds/${id}/actions/cancel`,
+      method: 'POST',
+      data,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      skipErrorHandling: true,
+      retryIdempotentWrite: true,
+      retryTimes: 2,
+    }),
   listPurchaseInbounds: (params: PurchaseInboundOrderQuery) =>
     request<PageResult<PurchaseInboundOrderItem>>({ url: '/production/purchase-inbounds', params }),
   getPurchaseInbound: (id: string) =>
@@ -128,17 +252,14 @@ export const productionApi = {
     }),
   getInventoryBatch: (id: string) =>
     request<InventoryBatchDetailItem>({ url: `/production/inventory-batches/${id}` }),
-  searchProductionTrace: (
-    params: ProductionTraceQuery,
-    options: { skipErrorHandling?: boolean } = {},
-  ) =>
+  searchProductionTrace: (params: ProductionTraceQuery, options: ReadRequestOptions = {}) =>
     request<PageResult<ProductionTraceWorkOrderGroup>>({
       ...options,
       url: '/production/trace',
       params,
     }),
 
-  getProductionTrace: (batchId: string, options: { skipErrorHandling?: boolean } = {}) =>
+  getProductionTrace: (batchId: string, options: ReadRequestOptions = {}) =>
     request<ProductionTraceDetail>({ ...options, url: `/production/trace/batches/${batchId}` }),
 
   /** 分页查询生产工单 */
@@ -156,8 +277,14 @@ export const productionApi = {
   getOrder: (id: string) => request<WorkOrderDetail>({ url: `/production/work-orders/${id}` }),
 
   /** 创建工单 */
-  createOrder: (data: CreateWorkOrderPayload) =>
-    request<WorkOrderDetail>({ url: '/production/work-orders', method: 'POST', data }),
+  createOrder: (data: CreateWorkOrderPayload, idempotencyKey: string) =>
+    request<WorkOrderDetail>({
+      url: '/production/work-orders',
+      method: 'POST',
+      data,
+      headers: { 'Idempotency-Key': idempotencyKey },
+      skipErrorHandling: true,
+    }),
 
   /** 更新工单 */
   updateOrder: (id: string, data: UpdateWorkOrderPayload) =>
@@ -221,6 +348,160 @@ export const productionApi = {
   /** 获取生产批次详情（含工序记录） */
   getBatch: (id: string) => request<ProductionBatchDetail>({ url: `/production/batches/${id}` }),
 
+  getBatchTerminationCheck: (id: string) =>
+    request<BatchTerminationCheck>({
+      url: `/production/batches/${id}/termination-check`,
+      skipErrorHandling: true,
+    }),
+
+  getDemandCorrectionCheck: (id: string) =>
+    request<DemandCorrectionCheck>({
+      url: `/production/material-demands/${id}/correction-check`,
+      skipErrorHandling: true,
+    }),
+  getDemandCorrectionHistory: (id: string) =>
+    request<DemandCorrectionHistoryItem[]>({
+      url: `/production/material-demands/${id}/corrections`,
+      skipErrorHandling: true,
+    }),
+  getBatchCloseout: (id: string) =>
+    request<BatchCloseoutDetail | null>({
+      url: `/production/batches/${id}/closeout`,
+      skipErrorHandling: true,
+    }),
+  submitDemandCorrection: (
+    id: string,
+    data: SubmitDemandCorrectionPayload,
+    idempotencyKey: string,
+  ) =>
+    request<ProductionApprovalResult>({
+      url: `/production/material-demands/${id}/corrections`,
+      method: 'POST',
+      data,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      skipErrorHandling: true,
+      retryIdempotentWrite: true,
+      retryTimes: 2,
+    }),
+  beginBatchCloseout: (id: string, data: BeginBatchCloseoutPayload, idempotencyKey: string) =>
+    request<BatchCloseoutCommandResult>({
+      url: `/production/batches/${id}/closeout/begin`,
+      method: 'POST',
+      data,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      skipErrorHandling: true,
+      retryIdempotentWrite: true,
+      retryTimes: 2,
+    }),
+  handleBatchCloseoutItem: (
+    id: string,
+    data: HandleBatchCloseoutItemPayload,
+    idempotencyKey: string,
+  ) =>
+    request<BatchCloseoutCommandResult>({
+      url: `/production/batches/${id}/closeout/items`,
+      method: 'POST',
+      data,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      skipErrorHandling: true,
+      retryIdempotentWrite: true,
+      retryTimes: 2,
+    }),
+  getProductionOutput: (id: string) =>
+    request<ProductionOutputDetail>({
+      url: `/production/batches/${id}/output`,
+      skipErrorHandling: true,
+    }),
+  recordCloseoutMaterialLoss: (
+    id: string,
+    data: RecordCloseoutMaterialLossPayload,
+    idempotencyKey: string,
+  ) =>
+    request<RecordCloseoutMaterialLossResult>({
+      url: `/production/batches/${id}/closeout/material-losses`,
+      method: 'POST',
+      data,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      skipErrorHandling: true,
+      retryIdempotentWrite: true,
+      retryTimes: 2,
+    }),
+  reviewProductionOutputMaterial: (
+    id: string,
+    data: ReviewProductionOutputMaterialPayload,
+    idempotencyKey: string,
+  ) =>
+    request<ProductionOutputCommandResult>({
+      url: `/production/batches/${id}/output/material-review`,
+      method: 'POST',
+      data,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      skipErrorHandling: true,
+      retryIdempotentWrite: true,
+      retryTimes: 2,
+    }),
+  saveProductionOutput: (id: string, data: SaveProductionOutputPayload, idempotencyKey: string) =>
+    request<ProductionOutputCommandResult>({
+      url: `/production/batches/${id}/output/draft`,
+      method: 'POST',
+      data,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      skipErrorHandling: true,
+      retryIdempotentWrite: true,
+      retryTimes: 2,
+    }),
+  recordProductionOutputInspection: (
+    id: string,
+    data: RecordProductionOutputInspectionPayload,
+    idempotencyKey: string,
+  ) =>
+    request<ProductionOutputCommandResult>({
+      url: `/production/batches/${id}/output/inspections`,
+      method: 'POST',
+      data,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      skipErrorHandling: true,
+      retryIdempotentWrite: true,
+      retryTimes: 2,
+    }),
+  submitProductionOutput: (
+    id: string,
+    data: SubmitProductionOutputPayload,
+    idempotencyKey: string,
+  ) =>
+    request<ProductionApprovalResult>({
+      url: `/production/batches/${id}/output/submit`,
+      method: 'POST',
+      data,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      skipErrorHandling: true,
+      retryIdempotentWrite: true,
+      retryTimes: 2,
+    }),
+  beginProductionOutputCorrection: (
+    id: string,
+    data: BeginProductionOutputCorrectionPayload,
+    idempotencyKey: string,
+  ) =>
+    request<ProductionOutputCommandResult>({
+      url: `/production/batches/${id}/output/corrections`,
+      method: 'POST',
+      data,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      skipErrorHandling: true,
+      retryIdempotentWrite: true,
+      retryTimes: 2,
+    }),
+  cancelProductionOutputCorrection: (id: string, version: number, idempotencyKey: string) =>
+    request<ProductionOutputCommandResult>({
+      url: `/production/batches/${id}/output/corrections/cancel`,
+      method: 'POST',
+      data: { version },
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      skipErrorHandling: true,
+      retryIdempotentWrite: true,
+      retryTimes: 2,
+    }),
   /** 取消任务前读取服务端实时影响摘要；提交时后端仍会再次校验。 */
   getBatchCancellationCheck: (id: string) =>
     request<ProductionBatchCancellationCheck>({
@@ -433,23 +714,20 @@ export const productionApi = {
       data: { version },
     }),
 
-  getBatchExecutionRecords: (batchId: string, options: { skipErrorHandling?: boolean } = {}) =>
+  getBatchExecutionRecords: (batchId: string, options: ReadRequestOptions = {}) =>
     request<ProductionExecutionRecordGroup>({
       ...options,
       url: `/production/batches/${batchId}/execution-records`,
     }),
 
-  listExecutionBatchSummaries: (
-    params: ProductionBatchQuery,
-    options: { skipErrorHandling?: boolean } = {},
-  ) =>
+  listExecutionBatchSummaries: (params: ProductionBatchQuery, options: ReadRequestOptions = {}) =>
     request<PageResult<ProductionExecutionBatchSummary>>({
       ...options,
       url: '/production/execution-batches',
       params,
     }),
 
-  getExecutionCompletionCheck: (batchId: string, options: { skipErrorHandling?: boolean } = {}) =>
+  getExecutionCompletionCheck: (batchId: string, options: ReadRequestOptions = {}) =>
     request<ProductionExecutionCompletionCheck>({
       ...options,
       url: `/production/batches/${batchId}/execution-completion-check`,
@@ -505,7 +783,7 @@ export const productionApi = {
       retryTimes: 2,
     }),
 
-  listBatchReworks: (batchId: string, options: { skipErrorHandling?: boolean } = {}) =>
+  listBatchReworks: (batchId: string, options: ReadRequestOptions = {}) =>
     request<ReworkRecordItem[]>({ ...options, url: `/production/batches/${batchId}/reworks` }),
 
   approveDispositionRework: (dispositionId: string, data: ApproveBatchStepReworkPayload) =>

@@ -1,5 +1,9 @@
 import { z } from 'zod';
-import { BATCH_STEP_STATUSES, PRODUCTION_BATCH_STATUSES } from '@company/constants';
+import {
+  BATCH_STEP_STATUSES,
+  PRODUCTION_BATCH_STATUSES,
+  PRODUCTION_CLOSEOUT_MODES,
+} from '@company/constants';
 import type { BatchStepRecordItem, ProductionBatchDetail } from '@company/contracts';
 import type {
   IdempotencyResultCodec,
@@ -8,10 +12,10 @@ import type {
 import { CREATE_BATCH_IDEMPOTENCY_SCOPE } from './production-idempotency-scopes.contract.js';
 
 /**
- * createBatch 幂等结果 codec（scope `production.batch.create.v5`）。
+ * createBatch 幂等结果 codec（scope `production.batch.create.v7`）。
  *
- * v1 契约冻结：请求指纹规则、成功结果结构、本 Zod schema 三者在 scope v1 上线后不再演进；结果形状一旦
- * 后续不兼容变更必须 bump scope 并引入新 codec；旧 scope 记录不得由新 schema 猜测解析，
+ * 每个已发布 scope 的请求指纹规则、成功结果结构和本 Zod schema 保持固定；
+ * 后续不兼容变更必须升级 scope 和对应 codec；旧 scope 记录不得由新 schema 猜测解析，
  * 形状不符即走 corrupt，不允许用新 schema 去猜旧记录。
  *
  * encode 与 decode 都做完整嵌套运行时校验，不使用 `coerce`/`preprocess`、不做隐式类型转换，结构错误一律
@@ -49,7 +53,7 @@ const batchStepRecordSchema: z.ZodType<BatchStepRecordItem> = z
     completedAt: nullableString,
 
     outputQuantity: z.string(),
-    qualifiedQuantity: z.string(),
+    normalQuantity: z.string(),
     abnormalQuantity: z.string(),
     reworkQuantity: z.string(),
 
@@ -74,14 +78,26 @@ export const productionBatchDetailSchema: z.ZodType<ProductionBatchDetail> = z
     routeVersion: nullableString,
 
     plannedQuantity: z.string(),
-    completedQuantity: z.string(),
-    qualifiedQuantity: z.string(),
+    lastStepReportedQuantity: z.string(),
 
     planStartDate: nullableString,
     planEndDate: nullableString,
     startedAt: nullableString,
 
     status: z.enum(PRODUCTION_BATCH_STATUSES),
+    closeoutMode: z.enum(PRODUCTION_CLOSEOUT_MODES).nullable(),
+    currentOutputRevisionId: nullableString,
+    finalOutput: z
+      .object({
+        revisionNo: z.number().int().positive(),
+        availableQuantity: z.string(),
+        extraQuantity: z.string(),
+        scrapQuantity: z.string(),
+      })
+      .strict()
+      .nullable(),
+    executionCompletedAt: nullableString,
+    executionCompletedBy: nullableString,
     materialPlanVersion: z.number().int().positive(),
     shortBatchAuthorizationStatus: z.enum(['none', 'valid', 'stale', 'consumed']),
     shortBatchAuthorizationAction: z.enum([

@@ -9,22 +9,29 @@
 - 数据所有权：生产工单、批次、执行事实、生产需求和生产侧单据。
 - 公开入口：[`public.ts`](public.ts)；Product 业务校验通过其 `public.ts`；当前物料名称展示允许按架构登记规则从专用查询目录只读获取。
 
-工单类型与工单级物料版本锁的目标 schema 见[工单设计](docs/database/work-orders-and-batches.md)，应用入口适配见[roadmap](../../../../../docs/roadmap.md)。
+批量工单在工单管理完整配置精确物料版本，任务初始需求和补料只继承配置；修改资格、历史引用及终止任务释放计划额度见[工单设计](docs/database/work-orders-and-batches.md)。研发工单继续按任务选版，不增加工单下达审批。
+
+成品入库前的代码组织见[内部职责与扩展边界](docs/module-boundaries.md)：先划清计划、执行、需求履约、结案产出、仓库操作及查询职责，保留单一 Production 所有权与原子事务；模块装配按职责分组，未拆出 Inventory／Quality。
 
 ## 关键不变量
 
 损耗、退料和盘点分别由 `ProductionMaterialLossRepository`、`ProductionReturnRepository`、
-`ProductionStockCheckRepository` 三个窄端口及对应 MySQL Adapter 所有。`ProductionInventoryService`
-按用例调用对应端口；每个命令在所属 Adapter 内保留完整事务。共享持久化辅助只处理锁定、编号、分页与
+`ProductionStockCheckRepository` 三个窄端口及对应 MySQL Adapter 所有，分别由同名
+MaterialLoss、Return、StockCheck Service／Controller 提供独立用例入口；HTTP 路径不变。
+每个命令在所属 Adapter 内保留完整事务。共享持久化辅助只处理锁定、编号、分页与
 审计映射，不持有业务状态，不新增账本写入所有者；损耗补料继续通过统一需求计划 Writer，退料和盘点的
 库存流水与单据、成功审计同事务提交。
 
+物料分配由 `ProductionMaterialService`／`ProductionMaterialRepository` 所有；领料出库由
+`ProductionMaterialOutboundService`／`ProductionMaterialOutboundRepository` 所有。确认出库的
+需求扣减、库存记账、批次状态、短批授权、补料齐套与补产放行仍在出库 Adapter 的同一事务内完成。
+共享物料持久化辅助仅承载锁定与齐套查询；收尾逐项处理由 ProductionCloseoutService 负责，草稿、质检记录、批准清单和更正由 ProductionOutputService 负责；各用例共用原事务和数据所有权，不加入仓库聚合服务。
+
 生产任务创建在事务内通过 Product 校验 BOM 已批准并锁定；库存事实来自 `inventory_transaction`，需求事实来自
 `production_item_demand`；可变单据使用 `version` 乐观锁，不可变执行事实不得更新。生产批次创建时
-只冻结 Product BOM 快照，不自动生成可执行需求；管理员必须一次完整配置全部 BOM 行，明确选择启用的
-精确 `material_variant_id` 和数量，整单确认后批次才进入 `material_pending`。人工追加以任务为单位，
+只冻结 Product BOM 快照，不自动生成可执行需求；管理员必须一次确认完整 BOM 需求：批量单继承已保存的工单精确版本，研发单选择启用版本并拆分数量；整单确认后批次才进入 `material_pending`。人工追加以任务为单位，
 一次可包含冻结 BOM 中的多种基础物料和多个版本，不依赖既有父需求；需求查询保留 normal、manual、
-补料等全部已生成需求及取消历史，停用版本仍从需求/物流快照展示。
+补料等全部已生成需求及取消、关闭与替代历史，停用版本仍从需求/物流快照展示。
 人工追加、报废补料和损耗补料共用后续领料资格：已领料和执行中批次仍可分配、释放未出库分配、
 制单及确认出库；人工追加仅保留追加记录和需求，不生成损耗单、补料单或产品补产授权。
 未满足的活动追加需求继续阻断完工，执行中的物流履约不回退批次状态。
@@ -34,6 +41,20 @@
 自动生成物料需求。
 
 详细流程见 [business-workflow.md](docs/business-workflow.md)，数据库设计见[数据库索引](docs/database/README.md)，范围边界见[全局产品范围](../../../../../docs/product-scope.md)。
+
+## 提前结束与结案核对
+
+生产报工以 `batch_step_reports` 为事实来源，任务 `lastStepReportedQuantity` 和工序 `normalQuantity` 均只读派生；批次不保存重复的完成／合格计数。最终审定数量独立读取当前批准清单，不由报工或库存数量替代。
+
+正常执行完成和提前停止均进入结案阶段：产线草稿 → 质检留存记录 → 管理员核对清单 → 工单负责人审批。正常完成保留报工量与执行完成时间，批准后才 completed；提前停止逐项收尾后批准为 terminated。批准清单可更正并留存全部版本，不重开生产或写库存；计划内外产出与报废分别登记，工单只累计当前批准版。职责、状态、权限与物料安排见[结案设计](docs/database/production-termination.md)。成品由 ProductionFinishedInboundService 独立办理两类全量一次入库，详见[成品入库](docs/database/finished-goods-inbound.md)。
+
+结案流程最后节点固定为业务来源“工单负责人”；送审时在工单锁内读取人员并保存来源证据，Approval 检查实际审批资格。负责人为空或失效时拒绝送审，不回退到其他人员。工单草稿可暂不填负责人，下达事务必须复核有效负责人。
+
+任务页入口分别为“提前结束”“继续收尾”“查看结案信息”：首次进入需填写原因并确认开始收尾，最后一项只读核对结果。它们是阶段操作名称，不新增或修改数据库状态。
+
+## 需求纠错与审批
+
+人工追加及未齐套工序报废补料可提交数量更正，采用“关闭旧剩余、创建替代需求”。`pending_correction_id` 仅冻结旧需求操作，保留活动履约与缺口；`replaces_demand_id` 保存永久替代链，原来源和数量不回改。更正审批与出库确认共用有效需求齐套判断，原补料单和补产授权继续沿用。Production 注册 `production.demand.correct`、`production.batch.closeout` 两个场景，复用 Approval 公开 handler 与通用引擎，未配置已发布流程时拒绝提交。数据与接口见[需求设计](docs/database/demand-allocation-and-outbound.md#正式需求更正与替代)。
 
 ## 验证
 
@@ -48,7 +69,7 @@
 ### 退料、损耗与需求的职责边界
 
 - 退料 Adapter 只校验已确认领料的可退额度，维护退料单、公共库存正流水和审计。无论是否开工，都不创建或恢复需求，不撤销原分配/出库履约，不改变需求计划版本、短批授权或生产状态。
-- 损耗 Adapter 处理现场损坏、丢失等物料损失，确认后通过需求计划 Writer 创建等量损耗补料需求；人工追加由需求配置入口按管理员填写的物料和数量创建。退料不得调用需求计划 Writer。
+- 在产损耗 Adapter 处理现场损坏、丢失等物料损失，确认后通过需求计划 Writer 创建等量损耗补料需求。初次结案阶段由独立的 `ProductionCloseoutMaterialLossService` / Repository 登记不补料损坏，保留同一 `item_scrap` 事实及原领料来源，永久占用可退额度，不创建补料、补产或库存流水；审批、批准清单及打印保存逐笔来源。人工追加由需求配置入口按管理员填写的物料和数量创建。退料不得调用需求计划 Writer。
 - 需求与分配 Adapter 按原分配、已确认出库和需求剩余量计算待办，不从中扣除余料退回量。库存及追溯查询可展示净领用，但不得将净领用量反算为新需求。
 - 执行模块独立校验开工和完工。短批要求已发生确认领料、当前有效授权和允许缺口覆盖；退料不参与授权或开工判定，即使全部退回也不因此阻止开工。已有剩余需求只能通过独立管理命令关闭，退料不代办订单关闭。
 

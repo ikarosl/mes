@@ -9,7 +9,7 @@
 
 | 命令 | HTTP 入口 | scope |
 | --- | --- | --- |
-| 创建生产批次 | `POST /api/production/work-orders/:workOrderId/batches` | `production.batch.create.v5` |
+| 创建生产批次 | `POST /api/production/work-orders/:workOrderId/batches` | `production.batch.create.v7` |
 | 创建物料分配 | `POST /api/production/batches/:batchId/material-allocations` | `production.material-allocation.create.v1` |
 | 创建生产领料出库单 | `POST /api/production/batches/:batchId/material-outbounds` | `production.material-outbound.create.v3` |
 | 确认生产领料出库单 | `POST /api/production/material-outbounds/:outboundId/actions/confirm` | `production.material-outbound.confirm.v2` |
@@ -21,8 +21,8 @@
 | 更正工序报工 | `POST /api/production/batches/:batchId/step-records/:recordId/reports/:reportId/actions/correct` | `production.step-report.correct.v3` |
 | 完成返工 | `POST /api/production/reworks/:reworkId/actions/complete` | `production.rework.complete.v1` |
 | 确认报废补料方案 | `POST /api/production/abnormal-dispositions/:dispositionId/scrap-supplement-plan/actions/confirm` | `production.abnormal.scrap-supplement-plan.confirm.v1` |
-| 创建生产领料损耗 | `POST /api/warehouse/scraps` | `production.material-loss.create.v1` |
-| 确认生产领料损耗 | `POST /api/warehouse/scraps/:scrapId/actions/confirm` | `production.material-loss.confirm.v1` |
+| 创建生产领料损耗 | `POST /api/warehouse/scraps` | `production.material-loss.create.v2` |
+| 确认生产领料损耗 | `POST /api/warehouse/scraps/:scrapId/actions/confirm` | `production.material-loss.confirm.v2` |
 
 此表是文档摘要；代码事实来源始终是 scope 常量与 Controller 上的 `@IdempotentEndpoint({ scope })`。
 未启用端点携带任意幂等键（包括空值、超长值以及公开端点）必须返回
@@ -170,6 +170,7 @@ scope/key 仍按既有记录仲裁。清理后该 scope/key 才可能成为新�
 输入是 DTO 转换、trim 后的业务有效载荷；排除 `Idempotency-Key`、request ID、IP、User-Agent、Cookie、Token
 等传输或审计元数据。对象键递归排序、数组顺序保留、`undefined` 对象属性忽略，随后对 canonical JSON 计算摘要。
 只接受 JSON-safe 值，不放宽到 `Date`、getter、自定义原型或循环引用。
+Application Service 必须把 class DTO 显式映射成普通对象后再传入 `request.body`，嵌套 DTO 同样逐层转换；不能将 DTO 实例直接用于指纹。产出清单送审使用独立的 `{ version, submissionToken }` 对象，指纹与 Repository 校验共用该有效载荷。
 
 固定兼容向量：
 
@@ -271,15 +272,51 @@ const input = {
 5. 第 11 节相关测试通过；
 6. 不包含尚未纳入事务恢复模型的外部副作用。
 
-## 13. scope 版本兼容
+## 13. scope 版本与开发重置
 
-scope 是服务端独占的命令契约版本，客户端不得传输、选择或协商。结果结构、指纹语义或命令语义发生不兼容变化时：
+scope 是服务端独占的命令契约版本，客户端不得传输、选择或协商。结果结构、指纹或命令语义发生不兼容变化时升级 scope 和 codec。项目当前处于开发阶段，清理旧幂等和业务数据后切换新代码，不保留旧 scope 解码分支、双写或兼容窗口，也不得用新 codec 猜旧结果。发布前结束旧客户端操作并刷新页面，不将旧意图自动迁入新 scope。
 
-1. 新增 scope 版本和对应 codec；
-2. 新请求只写新 scope；
-3. 如需兼容旧记录，在至少覆盖旧记录最长保留期的窗口内保留旧 scope 的 decode 能力；
-4. 窗口结束且旧记录已自然过期/清理后，再删除旧兼容分支。
+创建批次当前使用 `production.batch.create.v7`，包含执行完成时间、结案模式、当前批准版本与 `finalOutput` 投影；新建任务尚未批准时 `finalOutput` 为 null。批次不再存储或返回 `completedQuantity/qualifiedQuantity`，`lastStepReportedQuantity` 只读末工序正向和冲销报工的有效正常量；`finalOutput` 只读当前批准版本，不累计历史清单。scope 常量为当前契约唯一来源，不解码旧版响应。
 
-不得用新 codec 猜测旧结果，也不得覆盖旧 scope 记录。兼容示例和算法测试中的旧版本字符串不是当前端点版本；当前版本以 scope 常量为准。
+## Production 需求纠错与逐项收尾
 
-创建批次当前结果不包含报工开关快照；所有工序统一报工。开发阶段不保留旧 scope 的兼容解码，发布前结束旧客户端操作并刷新页面，不将旧意图自动迁入新 scope。
+需求更正送审使用 `production.demand-correction.submit.v1`。收尾开始、逐项处理分别使用 `production.batch-closeout.begin.v1`、`production.batch-closeout.handle.v1`。产出清单独立命令如下：
+
+| 命令 | scope |
+| --- | --- |
+| 保存草稿 | `production.output.draft.v1` |
+| 核对物料 | `production.output.material-review.v1` |
+| 留存质检记录 | `production.output.inspection.v1` |
+| 结案／更正送审 | `production.output.submit.v1` |
+| 开启更正 | `production.output.correction.begin.v1` |
+| 取消未送审更正 | `production.output.correction.cancel.v1` |
+
+scope 常量由 Production application contract 所有；HTTP 只接收 Idempotency-Key。DTO 显式映射成普通命令对象及纯数据指纹，不把 class 实例传给规范化器。质检结果除根／批次 ID 还保存实际生成的 inspectionRecordId。
+
+送审结果严格保存业务对象 ID 与 Approval 实例 ID，其余收尾命令保存收尾 ID 与批次 ID。送审中的业务记录创建／绑定、Approval 实例和节点、审计与通知都在外层 executor 事务内完成；未发布流程或任何依赖失败则回滚，不能先提交业务申请后异步补审批。
+
+客户端保留原版本、核对令牌、body 和键重试未知结果；新内容是另一意图，不能在模糊失败时换键。通用审批批准／驳回／撤回仍使用既有版本和当前节点校验，不据此宣称支持 HTTP 幂等决定重放。旧直接 terminate 路由已撤下，不再执行批量终止副作用。端点与业务规则见[Production 需求](../src/modules/production/docs/database/demand-allocation-and-outbound.md#正式需求更正与替代)与[收尾](../src/modules/production/docs/database/production-termination.md)。
+
+## 成品入库
+
+独立成品入库命令使用 `production.finished-inbound.create.v1 / update.v1 / confirm.v1 / cancel.v1`，四者共享 `production.finished-inbound` 前缀。每类都使用独立意图，严格结果仅保存 `inboundId`；重放不会重复建批次或追加库存。请求中的来源类别、批准版本、批号、备注／取消原因与版本显式转成普通对象后生成指纹，不接收客户端 scope。
+
+确认的业务事务包含源工单、任务、结案根与入库单锁内复核、创建库存批次、回填明细、写唯一正流水、推进入库单和成功审计；幂等成功记录同事务提交。失败整体回滚。已批准类别必须全量一次接收，最新版本与受影响类别在审锁定均须在重试时由原意图处理，不用改键绕过失败。具体边界见[成品入库](../src/modules/production/docs/database/finished-goods-inbound.md)。
+
+## 自动编号工单创建
+
+`POST /production/work-orders` 使用 `production.work-order.create.v3`，创建请求不再接受手填编号。服务端在 executor 的同一事务内分配北京时间当日序号、创建工单并保存审计与完整响应。成功重放返回首次草稿快照，不重新读取已下达或已编辑的工单，也不再次取号。严格结果 codec 只接受新编号格式，不兼容旧手填编号响应；开发环境直接重置。
+
+同键不同内容拒绝，网络结果未知或平台返回可重试冲突时复用原键。计数与业务写入失败一起回滚；已提交编号在工单取消、关闭后不回收。协议与日计数结构见[工单所有者文档](../src/modules/production/docs/database/work-orders-and-batches.md#工单自动编号)。
+
+## 结案物料损坏登记
+
+`POST /production/batches/:batchId/closeout/material-losses` 使用 `production.closeout.material-loss.record.v1`，按收尾版本、核对令牌及原分配行登记真实损坏。输入显式规范化，幂等结果只返回损耗、收尾与批次 ID。来源锁内复核、已确认损耗事实、收尾版本及审计与幂等结果同事务提交，不产生补料、补产或第二次库存扣减。
+
+普通损耗创建／确认的完整响应加入用途与收尾关联，scope 使用 v2；不接受旧响应结构或根据“暂无补料单”推断用途。结案送审保存逐条损耗依据，正式证据 schema 升级后按开发重置约定切换，不读取旧版兼容分支。
+
+## 工单物料配置与任务需求
+
+`PUT /production/work-orders/:workOrderId/material-configuration` 使用 `production.work-order.material-configuration.save.v1`，指纹包含工单 ID、工单版本、完整 selections 及去空白后的原因。严格结果只保存 `{ workOrderId, version }`；保存成功后的重复请求直接重放，即使后来任务已生成需求也不重新执行配置。
+
+正常需求 scope 为 `production.material-demands.configure.v2`，批量任务请求的完整版本／数量必须与工单已保存配置及 BOM 公式一致，缺少配置拒绝；研发规则不变。工单创建响应增加已终止计划展示量，scope 为 `production.work-order.create.v3`，开发重置后切换，不读旧响应兼容分支。

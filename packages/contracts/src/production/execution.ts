@@ -192,7 +192,8 @@ export type ProductionExecutionCompletionBlocker =
   | 'no_route_step'
   | 'required_step_incomplete'
   | 'final_step_quantity_insufficient'
-  | 'active_material_demand_remains';
+  | 'active_material_demand_remains'
+  | 'unfulfilled_material_supplement';
 
 export interface ProductionExecutionCompletionCheck {
   productionBatchId: string;
@@ -205,6 +206,7 @@ export interface ProductionExecutionCompletionCheck {
   finalRequiredStepName: string | null;
   finalEffectiveNormalQuantity: string;
   activeMaterialDemandCount: number;
+  unfulfilledSupplementCount?: number;
   canComplete: boolean;
   blockers: ProductionExecutionCompletionBlocker[];
 }
@@ -213,9 +215,11 @@ export type CompleteProductionExecutionPayload = VersionedCommand;
 
 export interface ProductionExecutionCompletionResult {
   productionBatchId: string;
-  batchStatus: 'completed';
-  completedQuantity: string;
-  completedAt: string;
-  completedById: string;
+  batchStatus: 'closing' | 'completed';
+  closeoutId: string;
+  /** 完成校验时的末道工序有效正常报工量，不写入批次数量字段。 */
+  lastStepReportedQuantity: string;
+  executionCompletedAt: string;
+  executionCompletedById: string;
   version: number;
 }

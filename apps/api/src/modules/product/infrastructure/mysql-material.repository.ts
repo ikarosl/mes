@@ -77,13 +77,13 @@ export class MysqlMaterialRepository extends MaterialRepository {
     }
     const where = conditions.join(' AND ');
     const [[count]] = await this.pool.query<(RowDataPacket & { total: number })[]>(
-      `SELECT COUNT(*) total FROM materials m JOIN product_categories c ON c.id=m.category_id WHERE ${where}`,
+      `SELECT COUNT(*) total FROM materials m JOIN item_categories c ON c.id=m.category_id WHERE ${where}`,
       parameters,
     );
     const [materials] = await this.pool.query<MaterialRow[]>(
       `SELECT m.id,m.material_code,m.material_name,m.category_id,c.category_code,c.category_name,
               m.unit,m.acquire_method,m.spec_values,m.status,m.remark,m.updated_at
-         FROM materials m JOIN product_categories c ON c.id=m.category_id
+         FROM materials m JOIN item_categories c ON c.id=m.category_id
         WHERE ${where}
         ORDER BY m.material_code,m.id LIMIT ? OFFSET ?`,
       [...parameters, pageSize, (page - 1) * pageSize],
@@ -132,7 +132,7 @@ export class MysqlMaterialRepository extends MaterialRepository {
         unit: string;
       })[]
     >(`SELECT m.id,m.material_code,m.material_name,m.acquire_method,m.unit
-         FROM materials m JOIN product_categories c ON c.id=m.category_id
+         FROM materials m JOIN item_categories c ON c.id=m.category_id
         WHERE m.status=1 AND m.is_deleted=0 AND c.status=1 AND c.is_deleted=0 AND c.item_kind='material'
         ORDER BY m.material_code,m.id`);
     return rows.map((row) => ({
@@ -258,7 +258,7 @@ export class MysqlMaterialRepository extends MaterialRepository {
 
   private async requireMaterialCategory(db: Db, id: string) {
     const [[row]] = await db.query<(RowDataPacket & { item_kind: string; status: number })[]>(
-      'SELECT item_kind,status FROM product_categories WHERE id=? AND is_deleted=0',
+      'SELECT item_kind,status FROM item_categories WHERE id=? AND is_deleted=0',
       [id],
     );
     if (!row || row.status !== 1 || row.item_kind !== 'material')

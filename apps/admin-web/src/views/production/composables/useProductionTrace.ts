@@ -1,6 +1,6 @@
 import { EMessage } from '../../../utils/message';
 import { ref, watch } from 'vue';
-import { useLatestRequest } from '../../../composables/requests/useLatestRequest';
+import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
 import type { ProductionTraceDetail, ProductionTraceWorkOrderGroup } from '@company/contracts';
 import { productionApi } from '../../../api/production';
 
@@ -12,8 +12,8 @@ export const useProductionTrace = () => {
   const selectedBatchId = ref<string | null>(null);
   const detail = ref<ProductionTraceDetail | null>(null);
 
-  const listRequests = useLatestRequest();
-  const detailRequests = useLatestRequest();
+  const listRequests = useLatestReadRequest(() => (loading.value = false));
+  const detailRequests = useLatestReadRequest(() => (detailLoading.value = false));
   watch(
     selectedBatchId,
     () => {
@@ -25,7 +25,8 @@ export const useProductionTrace = () => {
   );
 
   const search = async (keyword = '', page = 1): Promise<void> => {
-    const isCurrent = listRequests.begin();
+    if (!listRequests.isActive()) return;
+    const { isCurrent, signal } = listRequests.begin();
     loading.value = true;
     try {
       const result = await productionApi.searchProductionTrace(
@@ -34,7 +35,7 @@ export const useProductionTrace = () => {
           page,
           pageSize: 20,
         },
-        { skipErrorHandling: true },
+        { skipErrorHandling: true, signal },
       );
       if (!isCurrent()) return;
       items.value = result.items;
@@ -57,12 +58,16 @@ export const useProductionTrace = () => {
   };
 
   const selectBatch = async (batchId: string): Promise<void> => {
+    if (!detailRequests.isActive()) return;
     selectedBatchId.value = batchId;
-    const isCurrent = detailRequests.begin(() => selectedBatchId.value === batchId);
-    detail.value = null;
+    const { isCurrent, signal } = detailRequests.begin(() => selectedBatchId.value === batchId);
+    // 切换目标由上方 watch 清空；同一批次刷新保留表格实例，避免整片重建。
     detailLoading.value = true;
     try {
-      const result = await productionApi.getProductionTrace(batchId, { skipErrorHandling: true });
+      const result = await productionApi.getProductionTrace(batchId, {
+        skipErrorHandling: true,
+        signal,
+      });
       if (!isCurrent()) return;
       if (result.summary.productionBatchId !== batchId)
         throw new Error('追溯详情与当前选择不一致，请刷新');

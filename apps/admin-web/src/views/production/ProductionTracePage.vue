@@ -29,8 +29,8 @@
       <TableToolbar :total="total">
         <template #actions>
           <div class="trace-caption">
-            <strong>Production 事实追溯</strong>
-            <span>按批次核对需求、分配、领料出库、库存流水、工序和报工事实</span>
+            <strong>生产追溯</strong>
+            <span>按任务核对物料、领料、库存流向和工序报工</span>
           </div>
         </template>
         <template #tools>
@@ -54,7 +54,7 @@
         type="info"
         :closable="false"
         show-icon
-        title="本页只展示当前已落库的 Production 事实，不代表质量放行，也不包含返工、报废、退料或成品流向。"
+        title="成品产出以当前批准清单为准，实际入库请核对入库确认记录。"
       />
 
       <div class="trace-workspace">
@@ -109,40 +109,92 @@
           class="trace-detail"
         >
           <template v-if="detail">
-            <div class="trace-overview">
-              <div>
-                <span>生产工单</span><strong>{{ detail.summary.workOrderNo }}</strong>
-              </div>
-              <div>
-                <span>生产批次</span><strong>{{ detail.summary.batchNo }}</strong>
-              </div>
-              <div>
-                <span>产品</span
-                ><strong
-                  >{{ detail.summary.productCode }} / {{ detail.summary.productName }}</strong
+            <el-descriptions
+              class="trace-summary"
+              :column="3"
+              size="default"
+              border
+            >
+              <el-descriptions-item label="工单号">{{
+                detail.summary.workOrderNo
+              }}</el-descriptions-item>
+              <el-descriptions-item label="任务号">{{
+                detail.summary.batchNo
+              }}</el-descriptions-item>
+              <el-descriptions-item label="计划数量">{{
+                formatQuantity(detail.summary.plannedQuantity)
+              }}</el-descriptions-item>
+              <el-descriptions-item
+                label="产品"
+                :span="2"
+              >
+                {{ detail.summary.productCode }} / {{ detail.summary.productName }}
+              </el-descriptions-item>
+              <el-descriptions-item label="任务状态">
+                <el-tag
+                  size="small"
+                  :type="batchStatusMeta(detail.summary.batchStatus).type"
                 >
-              </div>
-              <div>
-                <span>执行状态</span
-                ><strong>{{ batchStatusMeta(detail.summary.batchStatus).label }}</strong>
-              </div>
-              <div>
-                <span>计划数量</span
-                ><strong>{{ formatQuantity(detail.summary.plannedQuantity) }}</strong>
-              </div>
-              <div>
-                <span>完成数量</span
-                ><strong>{{ formatQuantity(detail.summary.completedQuantity) }}</strong>
-              </div>
-              <div>
-                <span>开工时间</span
-                ><strong>{{ formatDateTimeForDisplay(detail.summary.startedAt) }}</strong>
-              </div>
-              <div>
-                <span>完工时间</span
-                ><strong>{{ formatDateTimeForDisplay(detail.summary.completedAt) }}</strong>
-              </div>
-            </div>
+                  {{ batchStatusMeta(detail.summary.batchStatus).label }}
+                </el-tag>
+              </el-descriptions-item>
+              <el-descriptions-item label="开工时间">{{
+                formatDateTimeForDisplay(detail.summary.startedAt)
+              }}</el-descriptions-item>
+              <el-descriptions-item label="执行完工时间">{{
+                formatDateTimeForDisplay(detail.summary.executionCompletedAt)
+              }}</el-descriptions-item>
+              <el-descriptions-item label="正常结案时间">{{
+                formatDateTimeForDisplay(detail.summary.completedAt)
+              }}</el-descriptions-item>
+            </el-descriptions>
+
+            <section class="approved-output">
+              <header class="summary-heading">
+                <strong>审定产出</strong>
+                <el-button
+                  v-if="detail.summary.closeoutMode"
+                  type="primary"
+                  link
+                  @click="openOutput(detail.summary.productionBatchId)"
+                  >查看批准清单与结案记录</el-button
+                >
+              </header>
+              <el-descriptions
+                v-if="detail.summary.finalOutput"
+                class="trace-summary"
+                :column="3"
+                size="default"
+                border
+              >
+                <el-descriptions-item label="可用产出合计"
+                  ><strong>{{
+                    formatQuantity(approvedUsableQuantity(detail.summary.finalOutput))
+                  }}</strong></el-descriptions-item
+                >
+                <el-descriptions-item label="计划内产出">{{
+                  formatQuantity(detail.summary.finalOutput.availableQuantity)
+                }}</el-descriptions-item>
+                <el-descriptions-item label="计划外产出">{{
+                  formatQuantity(detail.summary.finalOutput.extraQuantity)
+                }}</el-descriptions-item>
+                <el-descriptions-item label="累计成品报废">{{
+                  formatQuantity(detail.summary.finalOutput.scrapQuantity)
+                }}</el-descriptions-item>
+                <el-descriptions-item label="计划内差额">{{
+                  plannedOutputGapText(detail.summary.finalOutput.plannedShortfallQuantity)
+                }}</el-descriptions-item>
+                <el-descriptions-item label="批准清单版本"
+                  >第 {{ detail.summary.finalOutput.revisionNo }} 版</el-descriptions-item
+                >
+              </el-descriptions>
+              <p
+                v-else
+                class="output-pending"
+              >
+                尚无批准清单，暂不计入审定产出。
+              </p>
+            </section>
 
             <el-tabs
               v-model="activeTab"
@@ -151,6 +203,7 @@
               <el-tab-pane
                 label="物料需求与分配"
                 name="materials"
+                lazy
               >
                 <el-table
                   :data="detail.materialDemands"
@@ -210,6 +263,7 @@
               <el-tab-pane
                 label="物料入库来源"
                 name="inbound"
+                lazy
               >
                 <el-alert
                   title="这里展示本生产批次所分配库存批次的可用库存增加记录，包括外购入库、生产退料和盘点调整；不代表每笔入库数量均由本任务领用。"
@@ -270,6 +324,7 @@
               <el-tab-pane
                 label="领料出库与库存流水"
                 name="outbound"
+                lazy
               >
                 <article
                   v-for="outbound in detail.materialOutbounds"
@@ -368,6 +423,7 @@
               <el-tab-pane
                 label="工序与报工"
                 name="steps"
+                lazy
               >
                 <article
                   v-for="step in detail.steps"
@@ -447,10 +503,25 @@
       </div>
     </section>
   </div>
+  <ProductionOutputDialog
+    v-model:visible="outputVisible"
+    :batch-id="outputBatchId"
+    @changed="refresh"
+    @open-closeout="openCloseoutItems"
+  />
+  <ProductionBatchTerminationDialog
+    v-model:visible="closeoutVisible"
+    :batch-id="outputBatchId"
+    @terminated="refresh"
+    @open-output="openOutput"
+  />
 </template>
 
 <script setup lang="ts">
-import { onActivated, onMounted, ref } from 'vue';
+import { ref } from 'vue';
+import { usePageActivationRefresh } from '../../composables/requests/usePageActivationRefresh';
+import ProductionOutputDialog from './components/ProductionOutputDialog.vue';
+import ProductionBatchTerminationDialog from './components/ProductionBatchTerminationDialog.vue';
 import type { InventoryTransactionType } from '@company/contracts';
 
 import { Refresh } from '@element-plus/icons-vue';
@@ -459,12 +530,24 @@ import TableToolbar from '../../components/TableToolbar.vue';
 import { formatDateTimeForDisplay } from '../../utils/date';
 import { EMessage } from '../../utils/message';
 import { batchStatusMeta, formatQuantity, stepStatusMeta } from './production-status';
+import { approvedUsableQuantity, plannedOutputGapText } from './production-output-quantity';
 import { useProductionTrace } from './composables/useProductionTrace';
 
 defineOptions({ name: 'ProductionTracePage' });
 const sourceLabel = (value: InventoryTransactionType) =>
   INVENTORY_TRANSACTION_TYPE_LABELS[value] ?? value;
 
+const outputVisible = ref(false),
+  closeoutVisible = ref(false),
+  outputBatchId = ref<string | null>(null);
+const openOutput = (batchId: string) => {
+  outputBatchId.value = batchId;
+  outputVisible.value = true;
+};
+const openCloseoutItems = (batchId: string) => {
+  outputBatchId.value = batchId;
+  closeoutVisible.value = true;
+};
 const keyword = ref('');
 const currentPage = ref(1);
 const activeTab = ref('materials');
@@ -496,8 +579,7 @@ const refresh = async () => {
   else await runSearch();
 };
 
-onMounted(runSearch);
-onActivated(refresh);
+usePageActivationRefresh(refresh);
 </script>
 
 <style scoped>
@@ -618,20 +700,28 @@ onActivated(refresh);
   overflow: auto;
   padding: 16px 20px 20px;
 }
-.trace-overview {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
+.trace-summary :deep(.el-descriptions__table) {
+  table-layout: fixed;
 }
-.trace-overview div {
-  display: grid;
-  gap: 4px;
-  padding: 12px;
-  border-radius: 8px;
-  background: var(--el-fill-color-light);
+.trace-summary :deep(.el-descriptions__cell) {
+  overflow-wrap: anywhere;
+  font-size: 14px;
 }
-.trace-overview span {
-  color: var(--el-text-color-secondary);
+.approved-output {
+  margin-top: 12px;
+}
+.summary-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+.output-pending {
+  margin: 0;
+  color: var(--el-text-color-regular);
   font-size: 13px;
 }
 .trace-tabs {
@@ -672,9 +762,6 @@ onActivated(refresh);
   .trace-results {
     border-right: 0;
     border-bottom: 1px solid var(--el-border-color-lighter);
-  }
-  .trace-overview {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .query-form {
     display: grid;

@@ -224,8 +224,15 @@
         </el-form>
         <div class="detail-heading">
           <strong>选择退料明细</strong>
-          <span class="secondary-cell">待确认退料单会占用可退数量</span>
+          <span
+            class="secondary-cell"
+            style="color: coral; font-size: 14px"
+            >可退数量 = 已确认领料 − 已占用退料 − 损耗占用</span
+          >
         </div>
+        <p class="return-limit-note">
+          损耗占用包含待确认和已确认的领料损耗。待确认损耗取消后释放占用；已确认损耗永久扣减本来源的可退上限，关闭补料需求不会恢复额度。待确认退料单同样占用可退数量。
+        </p>
         <el-table
           v-loading="candidatesLoading"
           :data="candidates"
@@ -265,6 +272,15 @@
           >
             <template #default="{ row }"
               >{{ quantity(row.occupiedReturnQuantity) }} {{ row.unit }}</template
+            >
+          </el-table-column>
+          <el-table-column
+            label="损耗占用"
+            width="120"
+            align="right"
+          >
+            <template #default="{ row }"
+              >{{ quantity(row.occupiedLossQuantity) }} {{ row.unit }}</template
             >
           </el-table-column>
           <el-table-column
@@ -720,18 +736,22 @@ onActivated(() => {
   color: var(--el-color-primary);
   font-size: 12px;
 }
-.dialog-body {
-  max-height: 70vh;
-  overflow-y: auto;
-}
 .create-form {
   margin-top: 18px;
 }
 .detail-heading {
   display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   justify-content: space-between;
   align-items: center;
   margin: 18px 0 10px;
+}
+.return-limit-note {
+  margin: 0;
+  color: var(--el-text-color-regular);
+  font-size: 13px;
+  line-height: 1.7;
 }
 .detail-table {
   margin-top: 12px;

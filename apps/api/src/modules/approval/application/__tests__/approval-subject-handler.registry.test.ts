@@ -8,6 +8,8 @@ const scene = {
   name: 'BOM 审批',
   description: 'BOM 审批测试场景',
   subjectType: 'product' as const,
+  businessAssigneeSources: [],
+  requiredFinalAssigneeSourceCode: null,
 };
 
 const handler = (overrides: Partial<ApprovalSubjectHandler> = {}) =>

@@ -82,7 +82,12 @@ export const PERMISSIONS = {
       update: 'production:orders:update',
       transition: 'production:orders:transition',
     },
-    tasks: { view: 'production:tasks:view' },
+    tasks: {
+      view: 'production:tasks:view',
+      terminate: 'production:tasks:terminate',
+      manageOutput: 'production:tasks:manage-output',
+      recordInspection: 'production:tasks:record-inspection',
+    },
     workerTasks: { view: 'production:worker-tasks:view' },
     trace: { view: 'production:trace:view' },
     materials: {
@@ -93,6 +98,7 @@ export const PERMISSIONS = {
       cancelOutbound: 'production:materials:outbound-cancel',
       authorizeShortBatch: 'production:materials:authorize-short-batch',
       closeRemainingDemands: 'production:materials:close-remaining-demands',
+      correctDemand: 'production:materials:correct-demand',
     },
     materialDemands: {
       view: 'production:material-demands:view',
@@ -105,6 +111,9 @@ export const PERMISSIONS = {
       create: 'production:inbounds:create',
       confirm: 'production:inbounds:confirm',
       cancel: 'production:inbounds:cancel',
+      createFinished: 'production:inbounds:create-finished',
+      confirmFinished: 'production:inbounds:confirm-finished',
+      cancelFinished: 'production:inbounds:cancel-finished',
     },
     batches: {
       create: 'production:batches:create',

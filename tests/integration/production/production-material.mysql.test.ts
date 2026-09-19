@@ -12,8 +12,10 @@ import { IdentityDirectoryService } from '../../../apps/api/src/modules/identity
 import { MysqlRbacRepository } from '../../../apps/api/src/modules/identity/infrastructure/mysql-rbac.repository.js';
 import { ProductSnapshotService } from '../../../apps/api/src/modules/product/application/product-snapshot.service.js';
 import { MysqlProductSnapshotRepository } from '../../../apps/api/src/modules/product/infrastructure/mysql-product-snapshot.repository.js';
+import { ProductionMaterialOutboundService } from '../../../apps/api/src/modules/production/application/production-material-outbound.service.js';
 import { ProductionMaterialService } from '../../../apps/api/src/modules/production/application/production-material.service.js';
 import { MysqlProductionMaterialLossRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-material-loss.repository.js';
+import { MysqlProductionMaterialOutboundRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-material-outbound.repository.js';
 import { MysqlProductionMaterialRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-material.repository.js';
 import {
   evaluateShortBatchStart,
@@ -32,6 +34,8 @@ describeMysql('Production material MySQL transactions', () => {
   let pool: Pool;
   let repository: MysqlProductionMaterialRepository;
   let service: ProductionMaterialService;
+  let outbounds: MysqlProductionMaterialOutboundRepository;
+  let outboundService: ProductionMaterialOutboundService;
   let materialVariants: MysqlMaterialVariantRepository;
   let actorId: number;
   beforeAll(async () => {
@@ -52,10 +56,15 @@ describeMysql('Production material MySQL transactions', () => {
       connectionLimit: 6,
     });
     repository = new MysqlProductionMaterialRepository(pool);
+    outbounds = new MysqlProductionMaterialOutboundRepository(pool);
+    outboundService = new ProductionMaterialOutboundService(
+      outbounds,
+      new IdentityDirectoryService(new MysqlRbacRepository(pool)),
+      new MysqlIdempotencyExecutor(pool),
+    );
     materialVariants = new MysqlMaterialVariantRepository(pool);
     service = new ProductionMaterialService(
       repository,
-      new IdentityDirectoryService(new MysqlRbacRepository(pool)),
       new ProductSnapshotService(new MysqlProductSnapshotRepository(pool)),
       new MysqlIdempotencyExecutor(pool),
     );
@@ -158,7 +167,7 @@ describeMysql('Production material MySQL transactions', () => {
         ctx(actorId, f.token),
       );
       await expect(
-        repository.createOutbound(
+        outbounds.createOutbound(
           String(f.batchId),
           {
             details: [
@@ -203,7 +212,7 @@ describeMysql('Production material MySQL transactions', () => {
         ),
       ).rejects.toMatchObject({ code: 'SHORT_BATCH_AUTHORIZATION_NOT_ALLOWED' });
 
-      const outbound = await repository.createOutbound(
+      const outbound = await outbounds.createOutbound(
         String(f.batchId),
         {
           details: [{ allocationId: allocated.allocations[0]!.allocationId, outboundQuantity: 6 }],
@@ -211,14 +220,14 @@ describeMysql('Production material MySQL transactions', () => {
         ctx(actorId, `${f.token}-outbound`),
       );
       expect(outbound.outbound.shortBatchAuthorizationId).toBe(authorization.authorizationId);
-      const confirmed = await repository.confirmOutbound(
+      const confirmed = await outbounds.confirmOutbound(
         outbound.outbound.outboundId,
         outbound.outbound.version,
         ctx(actorId, `${f.token}-confirm`),
       );
       expect(confirmed.batchStatus).toBe('material_partially_outbound');
       expect(
-        (await repository.listOutboundBatchOptions()).find(
+        (await outbounds.listOutboundBatchOptions()).find(
           (row) => row.productionBatchId === String(f.batchId),
         )?.outboundEligibility,
       ).toMatchObject({
@@ -293,13 +302,13 @@ describeMysql('Production material MySQL transactions', () => {
         },
         ctx(actorId, `${f.token}-continued-allocation`),
       );
-      const candidates = await repository.listOutboundCandidates(String(f.batchId));
+      const candidates = await outbounds.listOutboundCandidates(String(f.batchId));
       expect(candidates.map((row) => row.allocationId)).toContain(
         continuedAllocation.allocations[0]!.allocationId,
       );
-      const options = await repository.listOutboundBatchOptions();
+      const options = await outbounds.listOutboundBatchOptions();
       expect(options.map((row) => row.productionBatchId)).toContain(String(f.batchId));
-      const continuedOutbound = await repository.createOutbound(
+      const continuedOutbound = await outbounds.createOutbound(
         String(f.batchId),
         {
           details: [
@@ -311,7 +320,7 @@ describeMysql('Production material MySQL transactions', () => {
         },
         ctx(actorId, `${f.token}-continued-outbound`),
       );
-      await repository.cancelOutbound(
+      await outbounds.cancelOutbound(
         continuedOutbound.outbound.outboundId,
         continuedOutbound.outbound.version,
         '关闭剩余需求前取消待出库单',
@@ -340,7 +349,7 @@ describeMysql('Production material MySQL transactions', () => {
         cancel_reason: '按短批实际产量关闭余量',
       });
       expect(
-        (await repository.listOutboundBatchOptions()).map((row) => row.productionBatchId),
+        (await outbounds.listOutboundBatchOptions()).map((row) => row.productionBatchId),
       ).not.toContain(String(f.batchId));
     } finally {
       await cleanup(pool, f);
@@ -371,7 +380,7 @@ describeMysql('Production material MySQL transactions', () => {
         '允许部分物料先行领用',
         ctx(actorId, `${f.token}-authorize`),
       );
-      const firstOutbound = await repository.createOutbound(
+      const firstOutbound = await outbounds.createOutbound(
         String(f.batchId),
         {
           details: [
@@ -383,7 +392,7 @@ describeMysql('Production material MySQL transactions', () => {
         },
         ctx(actorId, `${f.token}-first-outbound`),
       );
-      await repository.confirmOutbound(
+      await outbounds.confirmOutbound(
         firstOutbound.outbound.outboundId,
         firstOutbound.outbound.version,
         ctx(actorId, `${f.token}-first-outbound-confirm`),
@@ -432,7 +441,7 @@ describeMysql('Production material MySQL transactions', () => {
         ctx(actorId, `${f.token}-remaining-normal-allocation`),
       );
       await expect(
-        repository.createOutbound(
+        outbounds.createOutbound(
           String(f.batchId),
           {
             details: [
@@ -446,7 +455,7 @@ describeMysql('Production material MySQL transactions', () => {
         ),
       ).rejects.toMatchObject({ code: 'SHORT_BATCH_AUTHORIZATION_STALE' });
       expect(
-        (await repository.listOutboundBatchOptions()).find(
+        (await outbounds.listOutboundBatchOptions()).find(
           (row) => row.productionBatchId === String(f.batchId),
         )?.outboundEligibility,
       ).toMatchObject({
@@ -479,10 +488,10 @@ describeMysql('Production material MySQL transactions', () => {
         authorization.materialPlanVersion,
       );
       expect(
-        (await repository.listOutboundBatchOptions()).map((row) => row.productionBatchId),
+        (await outbounds.listOutboundBatchOptions()).map((row) => row.productionBatchId),
       ).toContain(String(f.batchId));
 
-      const continuedOutbound = await repository.createOutbound(
+      const continuedOutbound = await outbounds.createOutbound(
         String(f.batchId),
         {
           details: [
@@ -499,7 +508,7 @@ describeMysql('Production material MySQL transactions', () => {
         ctx(actorId, `${f.token}-fully-allocated-outbound`),
       );
       expect(continuedOutbound.outbound.shortBatchAuthorizationId).toBeNull();
-      const completed = await repository.confirmOutbound(
+      const completed = await outbounds.confirmOutbound(
         continuedOutbound.outbound.outboundId,
         continuedOutbound.outbound.version,
         ctx(actorId, `${f.token}-fully-allocated-outbound-confirm`),
@@ -509,7 +518,7 @@ describeMysql('Production material MySQL transactions', () => {
         (await repository.listDemands(String(f.batchId))).map((row) => row.businessStatus),
       ).toEqual(['fulfilled', 'fulfilled']);
       expect(
-        (await repository.listOutboundBatchOptions()).map((row) => row.productionBatchId),
+        (await outbounds.listOutboundBatchOptions()).map((row) => row.productionBatchId),
       ).not.toContain(String(f.batchId));
 
       const postOutboundLoss = await inventory.createMaterialLoss(
@@ -528,11 +537,11 @@ describeMysql('Production material MySQL transactions', () => {
         ctx(actorId, `${f.token}-post-outbound-loss-confirm`),
       );
       expect(
-        (await repository.listOutboundBatchOptions()).find(
+        (await outbounds.listOutboundBatchOptions()).find(
           (row) => row.productionBatchId === String(f.batchId),
         )?.outboundEligibility,
       ).toMatchObject({ eligible: false, blockedCode: 'allocation_incomplete' });
-      expect(await repository.listOutboundCandidates(String(f.batchId))).toEqual([]);
+      expect(await outbounds.listOutboundCandidates(String(f.batchId))).toEqual([]);
     } finally {
       await cleanup(pool, f);
     }
@@ -600,7 +609,7 @@ describeMysql('Production material MySQL transactions', () => {
         '物料 A 先行领用，物料 B 允许缺口',
         ctx(actorId, `${f.token}-authorize`),
       );
-      const outbound = await repository.createOutbound(
+      const outbound = await outbounds.createOutbound(
         String(f.batchId),
         {
           details: [
@@ -612,7 +621,7 @@ describeMysql('Production material MySQL transactions', () => {
         },
         ctx(actorId, `${f.token}-outbound-a`),
       );
-      await repository.confirmOutbound(
+      await outbounds.confirmOutbound(
         outbound.outbound.outboundId,
         outbound.outbound.version,
         ctx(actorId, `${f.token}-outbound-a-confirm`),
@@ -702,7 +711,7 @@ describeMysql('Production material MySQL transactions', () => {
         },
         ctx(actorId, f.token),
       );
-      const candidates = await repository.listOutboundCandidates(String(f.batchId));
+      const candidates = await outbounds.listOutboundCandidates(String(f.batchId));
       expect(candidates).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
@@ -712,7 +721,7 @@ describeMysql('Production material MySQL transactions', () => {
           }),
         ]),
       );
-      const result = await repository.createOutbound(
+      const result = await outbounds.createOutbound(
         String(f.batchId),
         {
           details: allocated.allocations.map((row) => ({
@@ -734,7 +743,7 @@ describeMysql('Production material MySQL transactions', () => {
           }),
         ]),
       );
-      expect(await repository.listOutboundCandidates(String(f.batchId))).toEqual([]);
+      expect(await outbounds.listOutboundCandidates(String(f.batchId))).toEqual([]);
       const [[ledger]] = await pool.query<(RowDataPacket & { quantity: string; count: number })[]>(
         "SELECT SUM(quantity) quantity,COUNT(*) count FROM inventory_transaction WHERE reference_type='outbound_detail' AND reference_detail_id IN (SELECT id FROM outbound_detail WHERE outbound_id=?)",
         [result.outbound.outboundId],
@@ -771,7 +780,7 @@ describeMysql('Production material MySQL transactions', () => {
           supplementId: null,
         }),
       );
-      const confirmed = await repository.confirmOutbound(
+      const confirmed = await outbounds.confirmOutbound(
         result.outbound.outboundId,
         0,
         ctx(actorId, `${f.token}-confirm`),
@@ -1107,7 +1116,7 @@ describeMysql('Production material MySQL transactions', () => {
         },
         ctx(actorId, `${f.token}-allocate`),
       );
-      const outbound = await repository.createOutbound(
+      const outbound = await outbounds.createOutbound(
         String(f.batchId),
         {
           details: [
@@ -1162,8 +1171,8 @@ describeMysql('Production material MySQL transactions', () => {
       if (!beforeSupplyRow) throw new Error('current-name fixture supply row missing');
       const beforeDemands = await repository.listDemands(String(f.batchId));
       const beforeBatches = await repository.listAvailableItemBatches(String(f.demandId));
-      const beforeCandidates = await repository.listOutboundCandidates(String(f.batchId));
-      const beforeOutbounds = await repository.listOutbounds(String(f.batchId));
+      const beforeCandidates = await outbounds.listOutboundCandidates(String(f.batchId));
+      const beforeOutbounds = await outbounds.listOutbounds(String(f.batchId));
       const beforeInbound = await inboundService.get(inbound.inboundId);
       const beforeInventory = await inboundService.getInventory(inboundBatchId);
       const renamedName = `当前物料名称-${f.token}`;
@@ -1238,7 +1247,7 @@ describeMysql('Production material MySQL transactions', () => {
           .sort((left, right) => Number(left.itemBatchId) - Number(right.itemBatchId)),
       );
 
-      const afterCandidates = await repository.listOutboundCandidates(String(f.batchId));
+      const afterCandidates = await outbounds.listOutboundCandidates(String(f.batchId));
       expect(afterCandidates).toHaveLength(beforeCandidates.length);
       expect(afterCandidates[0]).toMatchObject({
         allocationId: beforeCandidates[0]!.allocationId,
@@ -1247,7 +1256,7 @@ describeMysql('Production material MySQL transactions', () => {
         itemName: renamedName,
         assignedQuantity: beforeCandidates[0]!.assignedQuantity,
       });
-      const afterOutbounds = await repository.listOutbounds(String(f.batchId));
+      const afterOutbounds = await outbounds.listOutbounds(String(f.batchId));
       expect(afterOutbounds[0]).toMatchObject({ outboundId: outbound.outbound.outboundId });
       expect(afterOutbounds[0]!.details[0]).toMatchObject({
         itemId: String(f.materialId),
@@ -1255,13 +1264,11 @@ describeMysql('Production material MySQL transactions', () => {
         itemName: renamedName,
         outboundQuantity: beforeOutbounds[0]!.details[0]!.outboundQuantity,
       });
-      expect((await repository.getOutbound(outbound.outbound.outboundId)).details[0]).toMatchObject(
-        {
-          itemName: renamedName,
-          itemId: String(f.materialId),
-          materialVariantId: String(f.materialVariant1Id),
-        },
-      );
+      expect((await outbounds.getOutbound(outbound.outbound.outboundId)).details[0]).toMatchObject({
+        itemName: renamedName,
+        itemId: String(f.materialId),
+        materialVariantId: String(f.materialVariant1Id),
+      });
 
       const afterInbound = await inboundService.get(inbound.inboundId);
       expect(afterInbound.details[0]).toMatchObject({
@@ -1386,16 +1393,16 @@ describeMysql('Production material MySQL transactions', () => {
         details: [{ allocationId: allocation.allocations[0]!.allocationId, outboundQuantity: 10 }],
       };
       const results = await Promise.allSettled([
-        repository.createOutbound(String(f.batchId), payload, ctx(actorId, `${f.token}-a`)),
-        repository.createOutbound(String(f.batchId), payload, ctx(actorId, `${f.token}-b`)),
+        outbounds.createOutbound(String(f.batchId), payload, ctx(actorId, `${f.token}-a`)),
+        outbounds.createOutbound(String(f.batchId), payload, ctx(actorId, `${f.token}-b`)),
       ]);
       expect(results.filter((row) => row.status === 'fulfilled')).toHaveLength(1);
       expect(results.filter((row) => row.status === 'rejected')).toHaveLength(1);
       const created = results.find((row) => row.status === 'fulfilled');
       if (!created || created.status !== 'fulfilled') throw new Error('pending order required');
-      const beforeCancel = await repository.listOutboundCandidates(String(f.batchId));
+      const beforeCancel = await outbounds.listOutboundCandidates(String(f.batchId));
       expect(beforeCancel).toHaveLength(0);
-      const cancelledOutbound = await repository.cancelOutbound(
+      const cancelledOutbound = await outbounds.cancelOutbound(
         created.value.outbound.outboundId,
         created.value.outbound.version,
         '测试取消',
@@ -1407,7 +1414,7 @@ describeMysql('Production material MySQL transactions', () => {
         cancelReason: '测试取消',
         cancelledById: String(actorId),
       });
-      const afterCancel = await repository.listOutboundCandidates(String(f.batchId));
+      const afterCancel = await outbounds.listOutboundCandidates(String(f.batchId));
       expect(Number(afterCancel[0]?.availableToOrderQuantity)).toBe(10);
       const [[ledger]] = await pool.query<(RowDataPacket & { count: number })[]>(
         "SELECT COUNT(*) count FROM inventory_transaction WHERE reference_type='outbound_detail' AND reference_detail_id IN (SELECT id FROM outbound_detail WHERE outbound_id=?)",
@@ -1453,7 +1460,7 @@ describeMysql('Production material MySQL transactions', () => {
         [f.materialId, f.materialVariant1Id, f.itemBatch1, `${f.token}-external-outbound`, actorId],
       );
 
-      const pending = await repository.createOutbound(
+      const pending = await outbounds.createOutbound(
         String(f.batchId),
         {
           details: [
@@ -1464,7 +1471,7 @@ describeMysql('Production material MySQL transactions', () => {
         ctx(actorId, f.token),
       );
       await expect(
-        repository.confirmOutbound(pending.outbound.outboundId, 0, ctx(actorId, f.token)),
+        outbounds.confirmOutbound(pending.outbound.outboundId, 0, ctx(actorId, f.token)),
       ).rejects.toMatchObject({ code: 'INSUFFICIENT_AVAILABLE_STOCK' });
       const [[outboundCount]] = await pool.query<(RowDataPacket & { count: number })[]>(
         "SELECT COUNT(*) count FROM outbound_order WHERE production_batch_id=? AND status='pending_picking'",
@@ -1565,12 +1572,12 @@ describeMysql('Production material MySQL transactions', () => {
       const payload = {
         details: [{ allocationId: allocation.allocations[0]!.allocationId, outboundQuantity: 10 }],
       };
-      const first = await service.createOutbound(
+      const first = await outboundService.createOutbound(
         String(f.batchId),
         payload,
         idemCtx(actorId, `${f.token}-first`, key),
       );
-      const replay = await service.createOutbound(
+      const replay = await outboundService.createOutbound(
         String(f.batchId),
         payload,
         idemCtx(actorId, `${f.token}-replay`, key),
@@ -1583,7 +1590,7 @@ describeMysql('Production material MySQL transactions', () => {
       expect(Number(pendingLedger?.count)).toBe(0);
 
       await expect(
-        service.createOutbound(
+        outboundService.createOutbound(
           String(f.batchId),
           { details: [{ ...payload.details[0]!, outboundQuantity: 9 }] },
           idemCtx(actorId, `${f.token}-conflict`, key),
@@ -1595,7 +1602,7 @@ describeMysql('Production material MySQL transactions', () => {
         [key],
       );
       await expect(
-        service.createOutbound(
+        outboundService.createOutbound(
           String(f.batchId),
           payload,
           idemCtx(actorId, `${f.token}-corrupt`, key),
@@ -1603,12 +1610,12 @@ describeMysql('Production material MySQL transactions', () => {
       ).rejects.toMatchObject({ kind: 'corrupt' });
 
       const confirmKey = `${f.token}-confirm-key`;
-      const confirmed = await service.confirmOutbound(
+      const confirmed = await outboundService.confirmOutbound(
         first.outbound.outboundId,
         first.outbound.version,
         idemCtx(actorId, `${f.token}-confirm-first`, confirmKey),
       );
-      const confirmReplay = await service.confirmOutbound(
+      const confirmReplay = await outboundService.confirmOutbound(
         first.outbound.outboundId,
         first.outbound.version,
         idemCtx(actorId, `${f.token}-confirm-replay`, confirmKey),
@@ -1838,14 +1845,14 @@ const fixture = async (
   const token = `pm-${suffix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const pc = await ins(
     pool,
-    "INSERT INTO product_categories (category_code,category_name,item_kind) VALUES (?,?,'finished_product')",
+    "INSERT INTO item_categories (category_code,category_name,item_kind) VALUES (?,?,'finished_product')",
     [`${token}-pc`, '成品'],
   );
   const mc =
     shared?.sharedCategoryId ??
     (await ins(
       pool,
-      "INSERT INTO product_categories (category_code,category_name,item_kind) VALUES (?,?,'material')",
+      "INSERT INTO item_categories (category_code,category_name,item_kind) VALUES (?,?,'material')",
       [`${token}-mc`, '物料'],
     ));
   const product = await ins(
@@ -2044,11 +2051,11 @@ const cleanup = async (pool: Pool, f: Fixture) => {
     await pool.execute('DELETE FROM item_batch WHERE id IN (?,?)', [f.itemBatch1, f.itemBatch2]);
   }
   await pool.execute('DELETE FROM products WHERE id=?', [f.productId]);
-  await pool.execute('DELETE FROM product_categories WHERE id=?', [f.productCategoryId]);
+  await pool.execute('DELETE FROM item_categories WHERE id=?', [f.productCategoryId]);
   if (f.ownsMaterial) {
     await pool.execute('DELETE FROM material_variants WHERE material_id=?', [f.materialId]);
     await pool.execute('DELETE FROM materials WHERE id=?', [f.materialId]);
-    await pool.execute('DELETE FROM product_categories WHERE id=?', [f.materialCategoryId]);
+    await pool.execute('DELETE FROM item_categories WHERE id=?', [f.materialCategoryId]);
   }
 };
 const deleteInventoryTransactions = async (pool: Pool, sql: string, values: unknown[]) => {

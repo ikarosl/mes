@@ -76,7 +76,7 @@
 
 说明：
 
-- 当前正式范围仅支持 `source_type = purchased` 的外购物料采购入库，统一走 `inbound_order` + `inbound_detail`；自产/半成品/成品入库不在本期能力内。
+- 当前正式范围支持 `source_type = purchased` 的外购物料入库，以及按当前有效批准清单办理的 `self_made` 生产流转成品入库与 `production_extra` 额外产出成品入库，共用 `inbound_order` + `inbound_detail` 和同一库存流水账本。成品按任务、类别收齐后一次确认，使用独立 `product_id` 身份；具体规则见[成品入库](finished-goods-inbound.md)。其他自产半成品、委外及通用其他入库仍未开放。
 - `inventory_transaction.reference_detail_id` 应指向 `inbound_detail.id`。
 - 采购入库创建命令只能从 Product 公共能力取得启用版本；入库明细、库存批次和流水必须保存同一 `material_variant_id`。
 
@@ -103,7 +103,7 @@
 
 - 不得直接修改原始需求的 `need_number`。
 - 目标链路为：异常报工 → 报废事实与补产授权 → 补料单 → 补料需求 → 分配 → 出库齐套 → 授权可执行。
-- 补料物料数量不直接形成产品报工额度。批准时已把报废数量固化到 `batch_step_scrap_reproduction_authorization.authorized_quantity`；对应补料单的全部需求完成确认领料后改为 `fulfilled`，该授权才进入路线计算。分配、待出库或部分出库均不可执行。
+- 补料物料数量不直接形成产品报工额度。批准时已把报废数量固化到 `batch_step_scrap_reproduction_authorization.authorized_quantity`；对应补料单的全部当前有效要求经领料或已生效更正满足后改为 `fulfilled`，该授权才进入路线计算。分配、待出库或部分出库均不可执行。
 - 来源工序不能直接增加可报量。首工序先获得新增投入量；各上游工序形成新增正常产出后，额度才通过 `effective_normal` 逐道向下放行。报工校验只读跨表派生结果，不修改库存或需求事实。当前不追踪某次补报逐笔消费哪张补料单；未来如需部分激活、指定来源消费、半成品重入或撤销已激活额度，再评审独立消费/重入事实和并发规则。
 - `production_scrap_supplement_plan/_line` 只归 Production 模块所有，草稿不能被仓库分配或出库；`production_material_supplement`、工序报废、补产授权和正式需求之间使用批次、BOM 基础、BOM 明细、基础物料、精确物料版本和原始需求组合外键保持一致；只允许 Production 模块在最终批准工序报废补料事务中写入正式来源链路。
 
@@ -142,9 +142,9 @@
 - 短批授权只允许提前开工，不豁免剩余需求。批次进入 `doing` 后，正常 `active` 需求必须持续进入仓库待分配/待出库查询；只要仍有活动需求，生产执行不得确认完工；
 - 如果业务未来要求“无足够已领物料就绝对不能报工”，必须另立现场物料核算项目，补充定量工序 BOM、现场事务/余额、自动耗料、冲销恢复和并发规则；不得直接用需求、分配或出库汇总近似替代现场事实。
 
-短批授权必须绑定当时的物料计划版本。版本字段只保存在 `production_batches.material_plan_version`，`production_item_demand` 不增加需求版本字段，也不按“最新版本”筛选需求；每条需求仍由 `business_status = active/fulfilled/cancelled` 和 `remaining_number` 决定是否执行。创建或取消需求时在同一事务递增批次物料计划版本；退料不改变需求计划和授权，也不参与授权预览、开工投影或开工事务；`production_short_batch_authorization.material_plan_version` 保存授权所见版本，`production_short_batch_authorization_detail` 逐需求保存需求量、已确认出库、预计出库和允许缺口快照。开工事务要求授权版本等于批次版本、已发生确认领料（不扣退料），且当前每条活动需求缺口不超过批准值。确认出库只会改善缺口，因此不递增该版本。该机制不拆分需求，也不允许修改既有 `need_number`；需求更正仍使用“取消旧需求并创建新需求”。
+短批授权必须绑定当时的物料计划版本。版本字段只保存在 `production_batches.material_plan_version`，`production_item_demand` 不增加需求版本字段，也不按“最新版本”筛选需求；每条需求由业务状态、`remaining_number` 和 `pending_correction_id` 决定可操作性；审批中仍为 active 并保留缺口。创建或取消需求时在同一事务递增批次物料计划版本；退料不改变需求计划和授权，也不参与授权预览、开工投影或开工事务；`production_short_batch_authorization.material_plan_version` 保存授权所见版本，`production_short_batch_authorization_detail` 逐需求保存需求量、已确认出库、预计出库和允许缺口快照。开工事务要求授权版本等于批次版本、已发生确认领料（不扣退料），且当前每条活动需求缺口不超过批准值。确认出库只会改善缺口，因此不递增该版本。该机制不拆分需求，也不允许修改既有 `need_number`；需求更正使用“审批后关闭旧剩余并创建替代需求”。
 
-生产执行完工检查必须把活动需求作为阻断项。现场确认剩余需求确实不再需要时，只能由独立权限动作显式关闭：先释放未确认分配/出库占用，再保存需求取消来源、原因、操作人和时间并递增 `material_plan_version`。不得因为批次开始报工或达到计划产量而自动取消需求。
+生产执行完工检查必须把活动需求作为阻断项。个别需求错误通过需求更正审批关闭／替代；整批停止生产通过逐项收尾与结案审批。关闭保存独立原因、操作人、时间和更正／收尾依据，由 Writer 推进 `material_plan_version`，不以 cancelled 伪装。不得因为批次开始报工或达到计划产量而自动取消需求。
 
 ---
 
@@ -197,7 +197,7 @@
 - 人工追加候选内部键为 `ADDITIONAL:{production_batch_id}:{business_action_no}:{product_material_id}`。
 - 相同幂等键重复提交返回既有需求，不新增记录、不修改原需求数量。
 - 正常需求配置、人工追加、补料、采购入库等新增写入均必须通过 `IdempotencyExecutor`；写事务内重新读取并锁定批次、BOM 基础和 Product 公共启用版本，不能依赖事务外预检。
-- 需求管理查询必须返回全部需求类型和取消历史；具体需求行提供人工追加入口，历史停用版本使用需求快照展示。
+- 需求管理查询必须返回全部需求类型及取消、关闭和替代历史；具体需求行提供人工追加入口，历史停用版本使用需求快照展示。
 - 一条已确认报废可以为不同 BOM 行生成多条补料需求，但报废、原需求和补料需求必须属于同一生产批次。
 
 ### 3.12.10 库存分配并发行锁
@@ -225,16 +225,16 @@ SELECT id FROM item_batch WHERE id = :batch_id FOR UPDATE;
 
 ### 3.12.11 批次完工确认与乐观锁
 
-`production_batches` 的完工确认使用 `version` 乐观锁。当前生产过程采用临时自检放行口径；批次完工只表达生产执行完成，不代表最终质量结论：
+`production_batches` 的执行完工确认使用 `version` 乐观锁。当前生产过程采用临时自检放行口径；执行完成后先进入结案，不代表已批准产出：
 
 - 批次完工前校验所有工序已完成。
 - `need_inspection_snapshot` 当前只保留路线快照，不创建过程检验任务，也不作为批次生产完工或下工序流转的阻塞条件；这是过程质量流程缺失期间的临时方案。
 - 最小 `rework_records` 已落地；返工完成报工计入工序有效正常/异常数量，未完成返工和待处理异常继续由各自业务记录独立表达和展示，不复用批次执行状态。批次生产执行完工按权威报工章节校验工序与末道有效正常量，不伪造尚未定稿的最终质量结论。
-- `completed_quantity` 固定取最后一道工序（`step_order_snapshot` 最大）的 `effective_normal`。完工命令必须在事务内锁定并校验全部工序、重新聚合该数量，客户端不得提交完成数量；没有工序或任一工序未完成时拒绝。
-- 当前不支持正常数量不足时的短批完工；未来必须以独立的生产损失/短批完工事实确认差额，不得人工覆盖 `completed_quantity`。正常批次完工必须在同一事务写入完成数量、完工时间、完工人、`completed` 状态和成功操作日志。
+- `lastStepReportedQuantity` 固定从最后一道工序（`step_order_snapshot` 最大）的报工事实派生 `effective_normal`，含进行中任务已有报工，不在批次表另存数量。执行完工命令在事务内锁定并校验全部工序、物料履约和末道有效正常量，客户端不得提交或覆盖报工汇总；没有工序或任一工序未完成时拒绝。
+- 正常执行完工仍须报工达标，同事务记录 `execution_completed_at/by`、进入 `closing`、创建 normal 结案草稿并写成功操作日志。提前停止使用 early closing；两种模式均通过质检留存、管理员核对和负责人审批确认实际产出，批准后分别进入 `completed/terminated`。实际可用量不足计划可据实批准，不反向放宽工序报工规则。
 - 批次完工不自动创建入库单、库存批次或库存流水。
-- `batch_step_reports.normal_quantity` 是工序自检正常量，不是最终质检合格量；不得直接写入 `production_batches.qualified_quantity`。
-- 生产完成后的最终质检、`qualified_quantity` 写入和工单合格完成数量汇总仍待质量模型定稿；在此之前不得把批次生产完工描述为最终质量完成。
+- `batch_step_reports.normal_quantity` 是工序自检正常量，不是最终质检合格量。工序查询使用 `normalQuantity`，页面不能标为质检通过。
+- 质检留存于独立不可变记录；任务审定产出与工单汇总仅取当前有效批准清单，批次表不另存合格量。完整在线 Quality 仍未接入，不把生产执行完成描述为质量放行或已入库。
 
 ### 3.12.12 库存状态转换双流水
 
@@ -258,10 +258,22 @@ SELECT id FROM item_batch WHERE id = :batch_id FOR UPDATE;
 - 已确认库存流水不可更新或删除，错误只能通过数量相反、库存状态相同的冲销流水修正。
 - 冲销流水必须填写 `reversal_of_transaction_id` 并保留原业务引用；一期只支持一次整笔全额冲销，不关联任何财务报销 ID。
 
+### 3.12.14 需求纠错及收尾审批边界
+
+Production 所有 `production_demand_correction`、`production_batch_closeout`、`production_batch_closeout_action`、`production_output_inspection`、`production_output_revision`，Approval 所有流程、实例、节点和决定；通过公开 handler 协作，不跨模块改表。需求、库存仍只有原事实表，没有影子表。
+
+更正最终批准与出库确认调用同一个有效补料需求判定：真实 fulfilled、生效替代链或已批准且已领满足的剩余免除才可齐套，普通关闭和整单零领料不能放行。原补料单与授权保留，路线公式只读取单据履约结果。正常完成还检查活动需求（包括审批中）和未齐套补料单。
+
+新更正／收尾命令及末级 handler 先锁工单、批次，再锁申请、需求、物流和工序等受影响事实；只读定位不作为写入资格。审批先调用业务 handler 锁根和校验绑定，再锁实例与当前节点；所有当前数量和证据使用当前读，失败整事务回滚。新需求和旧关闭在同一事务内可见，只推进一次批次／计划版本。
+
+在途更正冻结仅该旧需求的分配、释放、出库和再次更正；需求仍参与短缺与完工检查。批次取消／收尾不能越过在审指针。进入 closing 后禁止普通执行及新增需求，管理员逐项处理后送审；驳回保留真实处理结果，末级批准追加不可变产出清单并推进当前版本，normal/early 分别正常结案或提前结束；不再写旧终止事实表。质检只保存独立不可变记录，管理员核定三项数量后送审，质检不改草稿。初次结案的领退料、损耗或路线影响改变审批依据时须撤回／驳回并重核；批准后的清单更正继承原收尾证据，只复核当前批准版、检验、申报和收货事实，不能替换历史证据或重开执行。
+
+字段、冻结规则和端点见[需求](demand-allocation-and-outbound.md#正式需求更正与替代)与[收尾](production-termination.md)。
+
 ## 3.13 最终表关系简图
 
 ```text
-product_categories
+item_categories
   ↓
 products（成品）
   ↓
@@ -342,7 +354,7 @@ inventory_transaction
 - 基础物料与精确版本分层，需求和物流事实沿组合外键保持版本一致。
 - 物料、成品统一库存模型；半成品不再是独立产品类型。
 - 生产批次和库存批次语义清晰，不互相混用。
-- 当前正式范围支持 `purchased` 外购物料采购入库；半成品不是独立产品类型，成品/委外等其他入库场景留待后续范围评审。
+- 当前正式范围支持 `purchased` 外购物料入库，以及按批准清单办理的 `self_made`／`production_extra` 两类成品入库；半成品不是独立产品类型，其他自产半成品、委外及通用其他入库仍留待后续范围评审。
 - 可支持生产领料、退料、报废补料、盘点调整。
 - 主表不保存可随意覆盖的累计缓存字段，减少数据不一致风险。
 - 库存大流水查询已使用与流水同事务维护、可重建对账的批次级和物料级余额投影；需求使用同事务维护的剩余数量投影。投影不得替代事实表或获得独立业务写入口。

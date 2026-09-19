@@ -63,20 +63,23 @@ describe('productionApi', () => {
   it('creates a work order with required fields', async () => {
     const { productionApi } = await import('../production');
 
-    await productionApi.createOrder({
-      workOrderNo: 'WO-2026-0001',
-      orderType: 'mass_production',
-      productId: '1',
-      plannedQuantity: 100,
-      planStartDate: '2026-08-01',
-      planEndDate: '2026-08-31',
-    });
+    await productionApi.createOrder(
+      {
+        orderType: 'mass_production',
+        productId: '1',
+        plannedQuantity: 100,
+        planStartDate: '2026-08-01',
+        planEndDate: '2026-08-31',
+      },
+      'work-order-create-key',
+    );
 
     expect(request).toHaveBeenCalledWith({
       url: '/production/work-orders',
       method: 'POST',
+      headers: { 'Idempotency-Key': 'work-order-create-key' },
+      skipErrorHandling: true,
       data: {
-        workOrderNo: 'WO-2026-0001',
         orderType: 'mass_production',
         productId: '1',
         plannedQuantity: 100,
@@ -89,25 +92,28 @@ describe('productionApi', () => {
   it('creates a work order with all optional fields', async () => {
     const { productionApi } = await import('../production');
 
-    await productionApi.createOrder({
-      workOrderNo: 'WO-2026-0002',
-      orderType: 'research',
-      productId: '2',
-      plannedQuantity: 50,
-      workOrderOwnerId: 'u1',
-      customerName: '客户A',
-      qualityLevel: 'A级',
-      planStartDate: '2026-08-01',
-      planEndDate: '2026-08-15',
-      externalOrderNo: 'PO-001',
-      remark: '加急订单',
-    });
+    await productionApi.createOrder(
+      {
+        orderType: 'research',
+        productId: '2',
+        plannedQuantity: 50,
+        workOrderOwnerId: 'u1',
+        customerName: '客户A',
+        qualityLevel: 'A级',
+        planStartDate: '2026-08-01',
+        planEndDate: '2026-08-15',
+        externalOrderNo: 'PO-001',
+        remark: '加急订单',
+      },
+      'work-order-create-key',
+    );
 
     expect(request).toHaveBeenCalledWith({
       url: '/production/work-orders',
       method: 'POST',
+      headers: { 'Idempotency-Key': 'work-order-create-key' },
+      skipErrorHandling: true,
       data: {
-        workOrderNo: 'WO-2026-0002',
         orderType: 'research',
         productId: '2',
         plannedQuantity: 50,

@@ -167,7 +167,7 @@
 
 <script setup lang="ts">
 import { computed, onActivated, ref, watch } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { Refresh } from '@element-plus/icons-vue';
 import {
   APPROVAL_INSTANCE_STATUS_LABELS,
@@ -200,6 +200,7 @@ const {
 } = useApprovalInstances();
 
 const route = useRoute();
+const router = useRouter();
 const auth = useAuthStore();
 const canViewAll = computed(() => auth.can(PERMISSIONS.approval.configure));
 const allScopeLabel = computed(() => (canViewAll.value ? '全部申请' : '与我相关'));
@@ -304,9 +305,21 @@ const approve = (comment: string): Promise<void> => execute('approve', comment);
 const reject = (comment: string): Promise<void> => execute('reject', comment);
 const withdraw = (comment: string): Promise<void> => execute('withdraw', comment);
 
+watch(detailVisible, (visible) => {
+  if (visible) return;
+  ++detailRequestToken;
+  detail.value = null;
+  if (route.name === 'approval-inbox' && route.query.instanceId) {
+    const query = { ...route.query };
+    delete query.instanceId;
+    void router.replace({ query }).catch((error) => EMessage.error(error, '详情定位更新失败'));
+  }
+});
+
 watch(
   () => [route.query.instanceId, route.query.subjectId],
   ([instanceId, subjectId]) => {
+    if (route.name !== 'approval-inbox') return;
     query.subjectId = typeof subjectId === 'string' ? subjectId : '';
     if (query.subjectId) {
       query.scope = 'all';

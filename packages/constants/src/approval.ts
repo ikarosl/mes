@@ -1,4 +1,14 @@
-export const APPROVAL_SCENE_CODES = { bom: 'product.bom.approve' } as const;
+export const APPROVAL_SCENE_CODES = {
+  bom: 'product.bom.approve',
+  demandCorrection: 'production.demand.correct',
+  batchCloseout: 'production.batch.closeout',
+} as const;
+
+export const APPROVAL_SCENE_LABELS: Readonly<Record<string, string>> = {
+  [APPROVAL_SCENE_CODES.bom]: 'BOM 审批',
+  [APPROVAL_SCENE_CODES.demandCorrection]: '需求更正与关闭',
+  [APPROVAL_SCENE_CODES.batchCloseout]: '生产任务结案',
+};
 export const APPROVAL_FLOW_VERSION_STATUSES = ['draft', 'published', 'discarded'] as const;
 export const APPROVAL_INSTANCE_STATUSES = ['pending', 'approved', 'rejected', 'withdrawn'] as const;
 export const APPROVAL_STEP_STATUSES = [
@@ -19,7 +29,11 @@ export const APPROVAL_ACTION_TYPES = [
 ] as const;
 export const APPROVAL_LIST_SCOPES = ['todo', 'mine', 'all'] as const;
 export const APPROVAL_BLOCKED_REASONS = ['no_eligible_assignee'] as const;
-export const APPROVAL_SUBJECT_TYPES = ['product'] as const;
+export const APPROVAL_SUBJECT_TYPES = [
+  'product',
+  'production_demand_correction',
+  'production_batch_closeout',
+] as const;
 export const APPROVAL_INSTANCE_STATUS_LABELS = {
   pending: '审批中',
   approved: '已通过',
@@ -34,9 +48,14 @@ export const APPROVAL_STEP_STATUS_LABELS = {
   rejected: '已驳回',
   cancelled: '已结束',
 } as const;
-export const APPROVAL_ASSIGNEE_TYPES = ['role', 'user'] as const;
-export const APPROVAL_ASSIGNEE_TYPE = { role: 'role', user: 'user' } as const;
-export const APPROVAL_ASSIGNEE_TYPE_LABELS = { role: '角色', user: '指定用户' } as const;
+export const APPROVAL_ASSIGNEE_TYPES = ['role', 'user', 'business'] as const;
+export const APPROVAL_ASSIGNEE_SOURCES = { workOrderOwner: 'production.work_order_owner' } as const;
+export const APPROVAL_ASSIGNEE_TYPE = { role: 'role', user: 'user', business: 'business' } as const;
+export const APPROVAL_ASSIGNEE_TYPE_LABELS = {
+  role: '角色',
+  user: '指定用户',
+  business: '业务关联人员',
+} as const;
 export const APPROVAL_ACTION_TYPE_LABELS = {
   submitted: '提交申请',
   approved: '节点通过',

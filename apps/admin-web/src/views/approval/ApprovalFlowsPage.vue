@@ -2,7 +2,7 @@
   <main class="approval-flows-page">
     <section class="page-intro">
       <div>
-        <p>为每个节点选择审批角色或指定用户，发布后用于新申请。</p>
+        <p>按场景配置角色、指定用户或业务关联人员，发布后用于新申请。</p>
       </div>
       <el-button
         :icon="Refresh"
@@ -39,6 +39,12 @@
           show-overflow-tooltip
         >
           <template #default="{ row }">{{ row.description || '—' }}</template>
+        </el-table-column>
+        <el-table-column
+          label="最终放行要求"
+          min-width="180"
+        >
+          <template #default="{ row }">{{ finalAssigneeLabel(row) }}</template>
         </el-table-column>
         <el-table-column
           label="配置状态"
@@ -117,6 +123,13 @@ let scenesRequestToken = 0;
 let roleRequestToken = 0;
 let userRequestToken = 0;
 let flowRequestToken = 0;
+
+const finalAssigneeLabel = (scene: ApprovalSceneItem): string =>
+  scene.requiredFinalAssigneeSourceCode
+    ? (scene.businessAssigneeSources.find(
+        (source) => source.code === scene.requiredFinalAssigneeSourceCode,
+      )?.name ?? scene.requiredFinalAssigneeSourceCode)
+    : '按配置节点审批';
 
 const loadScenes = async (): Promise<void> => {
   const token = ++scenesRequestToken;

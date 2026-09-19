@@ -15,6 +15,8 @@ export const bomScene = (): ApprovalSceneItem => ({
   description: '成品 BOM 变更审批',
   configured: true,
   activeFlowVersion: 2,
+  businessAssigneeSources: [],
+  requiredFinalAssigneeSourceCode: null,
 });
 
 export const unconfiguredBomScene = (): ApprovalSceneItem => ({
@@ -50,6 +52,8 @@ export const flowDetail = (
           roleName: '技术审核',
           assigneeUserId: null,
           assigneeUserName: null,
+          assigneeSourceCode: null,
+          assigneeSourceName: null,
         },
         {
           id: 'step-2',
@@ -61,6 +65,8 @@ export const flowDetail = (
           roleName: '负责人审核',
           assigneeUserId: null,
           assigneeUserName: null,
+          assigneeSourceCode: null,
+          assigneeSourceName: null,
         },
       ];
   const published = {
@@ -74,6 +80,8 @@ export const flowDetail = (
   return {
     sceneCode: 'product.bom.approve',
     name: 'BOM 审批',
+    businessAssigneeSources: [],
+    requiredFinalAssigneeSourceCode: null,
     published: options.empty ? null : published,
     draft: options.draft
       ? {
@@ -142,6 +150,10 @@ export const instanceDetail = (
       roleName: '技术审核',
       assigneeUserId: null,
       assigneeUserName: null,
+      assigneeSourceCode: null,
+      assigneeSourceName: null,
+      resolvedAssigneeUserId: null,
+      resolvedAssigneeUserName: null,
       status: 'pending',
       blockedReason: null,
       activatedAt: '2026-09-10T10:00:00+08:00',
@@ -157,6 +169,10 @@ export const instanceDetail = (
       roleName: '负责人审核',
       assigneeUserId: null,
       assigneeUserName: null,
+      assigneeSourceCode: null,
+      assigneeSourceName: null,
+      resolvedAssigneeUserId: null,
+      resolvedAssigneeUserName: null,
       status: 'waiting',
       blockedReason: null,
       activatedAt: null,

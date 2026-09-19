@@ -431,7 +431,7 @@ export class MysqlProductionMaterialDemandConfigurationRepository extends Produc
       if (!reason) throw new ProductionDomainError('INVALID_INPUT', '人工追加原因不能为空');
       const orderPolicy = await lockWorkOrderForBatch(db, command.productionBatchId);
       const batch = await findBatch(db, command.productionBatchId, true);
-      if (['pending', 'cancelled', 'completed'].includes(batch.status))
+      if (['pending', 'cancelled', 'completed', 'terminated', 'closing'].includes(batch.status))
         throw new ProductionDomainError(
           'INVALID_STATE',
           '只有已生成初始需求的进行中任务可以人工追加',

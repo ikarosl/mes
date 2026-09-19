@@ -41,6 +41,9 @@ describe('ApprovalController', () => {
       PERMISSIONS.approval.decide,
       PERMISSIONS.approval.configure,
       PERMISSIONS.product.products.manageBom,
+      PERMISSIONS.production.materials.correctDemand,
+      PERMISSIONS.production.tasks.terminate,
+      PERMISSIONS.production.tasks.manageOutput,
     ]);
     expect(Reflect.getMetadata(AUDIT_IN_APPLICATION, ApprovalController.prototype.approve)).toBe(
       true,

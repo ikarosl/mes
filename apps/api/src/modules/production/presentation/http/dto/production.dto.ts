@@ -73,8 +73,8 @@ export class ProductionBatchQueryDto extends PageQueryDto implements ProductionB
   @IsOptional() @IsString() @MaxLength(20) ownerId?: string;
 }
 export class CreateWorkOrderDto implements CreateWorkOrderPayload {
-  @IsString() @MaxLength(100) workOrderNo!: string;
   @IsIn(WORK_ORDER_TYPES) orderType!: CreateWorkOrderPayload['orderType'];
+  @IsOptional() @IsString() @Matches(/^[1-9]\d{0,19}$/) previousResearchOrderId?: string | null;
   @IsString() @MaxLength(20) productId!: string;
   @Type(() => Number) @IsInt() @Min(1) @Max(MAX_QUANTITY) plannedQuantity!: number;
   @IsOptional() @IsString() @MaxLength(255) customerName?: string | null;

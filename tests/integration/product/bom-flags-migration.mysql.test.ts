@@ -306,12 +306,12 @@ const insertBomFixture = async (
   );
   const finishedCategoryId = await insert(
     connection,
-    "INSERT INTO product_categories (category_code,category_name,item_kind) VALUES (?,?,'finished_product')",
+    "INSERT INTO item_categories (category_code,category_name,item_kind) VALUES (?,?,'finished_product')",
     [`${token}-finished-category`, 'BOM migration finished category'],
   );
   const materialCategoryId = await insert(
     connection,
-    "INSERT INTO product_categories (category_code,category_name,item_kind) VALUES (?,?,'material')",
+    "INSERT INTO item_categories (category_code,category_name,item_kind) VALUES (?,?,'material')",
     [`${token}-material-category`, 'BOM migration material category'],
   );
   const productId = await insert(

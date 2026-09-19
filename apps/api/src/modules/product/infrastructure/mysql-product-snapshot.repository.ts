@@ -65,7 +65,7 @@ export class MysqlProductSnapshotRepository
       `SELECT m.id,m.material_code item_code,m.material_name product_name,m.unit,
               'material' item_kind,NULL default_route_id
          FROM materials m
-         JOIN product_categories c ON c.id=m.category_id AND c.status=1 AND c.is_deleted=0
+         JOIN item_categories c ON c.id=m.category_id AND c.status=1 AND c.is_deleted=0
         WHERE m.status=1 AND m.deleted_at IS NULL AND c.item_kind='material'
           AND m.id IN (${itemIds.map(() => '?').join(',')})`,
       itemIds,
@@ -121,24 +121,7 @@ export class MysqlProductSnapshotRepository
   ): Promise<ProcessRouteSnapshot | null> {
     return withTransaction(this.pool, async (connection) => {
       const product = await this.productionProduct(connection, productId, true);
-      const [[lockFact]] = await connection.query<
-        (RowDataPacket & {
-          bom_status: string;
-          bom_locked_at: Date | null;
-          bom_approval_instance_id: string | null;
-        })[]
-      >(
-        'SELECT bom_status,bom_locked_at,bom_approval_instance_id FROM products WHERE id=? AND is_deleted=0 FOR UPDATE',
-        [productId],
-      );
-      if (!lockFact) throw new ProductDomainError('NOT_FOUND', '已启用的生产产品不存在');
-      if (
-        lockFact.bom_status !== 'approved' ||
-        !lockFact.bom_locked_at ||
-        !lockFact.bom_approval_instance_id
-      ) {
-        throw new ProductDomainError('INVALID_MATERIAL', 'BOM 尚未审批通过，不能创建生产任务');
-      }
+      await this.requireApprovedBom(connection, productId);
 
       const [bomLines] = await connection.query<
         (RowDataPacket & {
@@ -155,7 +138,7 @@ export class MysqlProductSnapshotRepository
                 c.item_kind material_kind,c.status category_status,c.is_deleted category_is_deleted
            FROM product_materials pm
            JOIN materials p ON p.id=pm.material_id
-           JOIN product_categories c ON c.id=p.category_id
+           JOIN item_categories c ON c.id=p.category_id
           WHERE pm.product_id=? AND pm.status=1 AND pm.is_deleted=0
           ORDER BY pm.material_id
           FOR UPDATE`,
@@ -187,6 +170,41 @@ export class MysqlProductSnapshotRepository
     });
   }
 
+  async getApprovedBomSnapshot(productId: string): Promise<ProductBomSnapshot> {
+    return withTransaction(this.pool, async (connection) => {
+      await this.productionProduct(connection, productId, true);
+      await this.requireApprovedBom(connection, productId);
+      const snapshot = await this.getBomSnapshot(productId);
+      if (snapshot.lines.length === 0)
+        throw new ProductDomainError('INVALID_MATERIAL', '产品未配置启用的 BOM');
+      return snapshot;
+    });
+  }
+
+  private async requireApprovedBom(connection: PoolConnection, productId: string): Promise<void> {
+    const [[lockFact]] = await connection.query<
+      (RowDataPacket & {
+        bom_status: string;
+        bom_locked_at: Date | null;
+        bom_approval_instance_id: string | null;
+      })[]
+    >(
+      'SELECT bom_status,bom_locked_at,bom_approval_instance_id FROM products WHERE id=? AND is_deleted=0 FOR UPDATE',
+      [productId],
+    );
+    if (!lockFact) throw new ProductDomainError('NOT_FOUND', '已启用的生产产品不存在');
+    if (
+      lockFact.bom_status !== 'approved' ||
+      !lockFact.bom_locked_at ||
+      !lockFact.bom_approval_instance_id
+    ) {
+      throw new ProductDomainError(
+        'INVALID_MATERIAL',
+        'BOM 尚未审批通过，不能配置用料或创建生产任务',
+      );
+    }
+  }
+
   async getBomSnapshot(productId: string): Promise<ProductBomSnapshot> {
     return withTransaction(this.pool, async (connection) => {
       const product = await this.productionProduct(connection, productId);
@@ -196,7 +214,7 @@ export class MysqlProductSnapshotRepository
                 pm.quantity_per_unit,p.status material_status,
                 p.is_deleted material_is_deleted,c.status category_status,c.is_deleted category_is_deleted
            FROM product_materials pm JOIN materials p ON p.id=pm.material_id
-           JOIN product_categories c ON c.id=p.category_id
+           JOIN item_categories c ON c.id=p.category_id
           WHERE pm.product_id=? AND pm.status=1 AND pm.is_deleted=0
           ORDER BY pm.id`,
         [productId],
@@ -331,7 +349,7 @@ export class MysqlProductSnapshotRepository
   ): Promise<ProductionProductSnapshot> {
     const [[row]] = await db.query<ProductRow[]>(
       `SELECT p.id,p.item_code,p.product_name,p.unit,p.default_route_id
-         FROM products p JOIN product_categories c ON c.id=p.category_id
+         FROM products p JOIN item_categories c ON c.id=p.category_id
         WHERE p.id=? AND p.status=1 AND p.acquire_method='self_made' AND p.is_deleted=0
           AND c.item_kind='finished_product' AND c.status=1 AND c.is_deleted=0${lock ? ' FOR UPDATE' : ''}`,
       [productId],

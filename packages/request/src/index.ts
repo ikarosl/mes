@@ -109,6 +109,8 @@ export const createRequestClient = (
       const attempts = config?.retryTimes ?? 1;
       if (
         config &&
+        !axios.isCancel(error) &&
+        !config.signal?.aborted &&
         !config.skipRetry &&
         canRetryRequest(
           config.method,

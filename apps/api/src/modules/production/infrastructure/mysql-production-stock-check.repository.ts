@@ -128,7 +128,7 @@ export class MysqlProductionStockCheckRepository extends ProductionStockCheckRep
   async listStockCheckCandidates(
     query: StockCheckCandidateQuery,
   ): Promise<PageResult<StockCheckCandidateItem>> {
-    const where: string[] = [];
+    const where: string[] = ['ib.product_id IS NULL'];
     const params: Array<string | number> = [];
     if (query.keyword) {
       where.push(
@@ -195,7 +195,7 @@ export class MysqlProductionStockCheckRepository extends ProductionStockCheckRep
           `SELECT ib.item_id,ib.material_variant_id,ib.unit_snapshot,COALESCE(SUM(it.quantity),0) system_quantity
            FROM item_batch ib LEFT JOIN inventory_transaction it
              ON it.batch_id=ib.id AND it.item_id=ib.item_id AND it.material_variant_id=ib.material_variant_id AND it.stock_status=?
-           WHERE ib.id=? GROUP BY ib.id`,
+           WHERE ib.id=? AND ib.product_id IS NULL GROUP BY ib.id`,
           [line.stockStatus, line.itemBatchId],
         );
         if (!target) throw new ProductionDomainError('NOT_FOUND', '库存批次不存在');

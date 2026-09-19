@@ -1,13 +1,19 @@
+import {
+  workOrderAssignedQuantitySql,
+  workOrderTerminatedPlanSql,
+} from './mysql-work-order-allocation.sql.js';
 import { toBeijingISOString, toDateOnlyString } from '../../../common/time/date-time.js';
 import type { Pool, PoolConnection, RowDataPacket } from 'mysql2/promise';
 import type {
   ProductionBatchItem,
   WorkOrderCloseType,
+  WorkOrderFinalOutput,
   WorkOrderItem,
   WorkOrderStatus,
   WorkOrderType,
 } from '@company/contracts';
 import { ProductionDomainError } from '../domain/production.errors.js';
+import { lastStepReportedQuantitySql } from './mysql-production-reporting.sql.js';
 import { multiplyIntegerQuantities } from '../domain/integer-quantity.js';
 import {
   activeDemandAllocationGapExistsSql,
@@ -27,15 +33,24 @@ export const ensureNoDuplicate = (error: unknown, message: string): never => {
 export type Db = Pool | PoolConnection;
 
 export type WorkOrderRow = RowDataPacket & {
+  final_available_quantity: string;
+  final_extra_quantity: string;
+  final_scrap_quantity: string;
+  finalized_batch_count: number;
+  closing_batch_count: number;
+  pending_available_quantity: string;
+  pending_extra_quantity: string;
   id: number;
   work_order_no: string;
   order_type: WorkOrderType;
+  previous_research_order_id: number | null;
   product_id: number;
   product_code_snapshot: string;
   product_name_snapshot: string;
   unit_snapshot: string;
   planned_quantity: string;
   assigned_quantity: string;
+  terminated_planned_quantity: string;
   status: WorkOrderStatus;
   released_at: Date | null;
   cancel_reason: string | null;
@@ -69,11 +84,18 @@ export type BatchRow = RowDataPacket & {
   route_code_snapshot: string | null;
   route_version_snapshot: string | null;
   planned_quantity: string;
-  completed_quantity: string;
-  qualified_quantity: string;
+  last_step_reported_quantity: string;
   plan_start_date: Date | string | null;
   plan_end_date: Date | string | null;
   status: ProductionBatchItem['status'];
+  closeout_mode: ProductionBatchItem['closeoutMode'];
+  current_revision_id: number | null;
+  approved_output_revision_no: number | null;
+  approved_available_quantity: string | null;
+  approved_extra_quantity: string | null;
+  approved_scrap_quantity: string | null;
+  execution_completed_at: Date | null;
+  execution_completed_by: number | null;
   material_plan_version: number;
   short_batch_authorization_status: 'none' | 'valid' | 'stale' | 'consumed';
   short_batch_authorization_action: ProductionBatchItem['shortBatchAuthorizationAction'];
@@ -107,11 +129,11 @@ export type StepRow = RowDataPacket & {
   actual_sop_version_no_snapshot: string | null;
   responsible_user_id: number | null;
   need_inspection_snapshot: number;
-  status: 'pending' | 'assigned' | 'doing' | 'completed';
+  status: 'pending' | 'assigned' | 'doing' | 'completed' | 'terminated';
   started_at: Date | null;
   completed_at: Date | null;
   output_quantity: string;
-  qualified_quantity: string;
+  normal_quantity: string;
   abnormal_quantity: string;
   rework_quantity: string;
   unit_snapshot: string;
@@ -119,8 +141,29 @@ export type StepRow = RowDataPacket & {
   version: number;
 };
 
-export const WORK_ORDER_SELECT = `SELECT wo.id,wo.work_order_no,wo.order_type,wo.product_id,wo.product_code_snapshot,wo.product_name_snapshot,wo.unit_snapshot,wo.planned_quantity,wo.customer_name,wo.quality_level,wo.work_order_owner_id,wo.plan_start_date,wo.plan_end_date,COALESCE((SELECT SUM(b.planned_quantity) FROM production_batches b WHERE b.work_order_id=wo.id AND b.status<>'cancelled'),0) assigned_quantity,wo.status,wo.released_at,wo.cancel_reason,wo.cancelled_by,wo.cancelled_at,wo.close_type,wo.close_reason,wo.closed_by,wo.closed_at,wo.external_order_no,wo.remark,wo.version,wo.created_at,wo.updated_at FROM work_orders wo`;
-export const BATCH_SELECT = `SELECT b.id,b.work_order_id,wo.work_order_no,b.product_id,wo.product_code_snapshot,wo.product_name_snapshot,b.batch_no,b.route_id,b.route_code_snapshot,b.route_version_snapshot,b.planned_quantity,b.completed_quantity,b.qualified_quantity,b.plan_start_date,b.plan_end_date,b.started_at,b.status,b.material_plan_version,
+export const WORK_ORDER_SELECT = `SELECT wo.id,wo.work_order_no,wo.order_type,wo.previous_research_order_id,wo.product_id,wo.product_code_snapshot,wo.product_name_snapshot,wo.unit_snapshot,wo.planned_quantity,wo.customer_name,wo.quality_level,wo.work_order_owner_id,wo.plan_start_date,wo.plan_end_date,${workOrderAssignedQuantitySql('wo.id')} assigned_quantity,${workOrderTerminatedPlanSql('wo.id')} terminated_planned_quantity,wo.status,wo.released_at,wo.cancel_reason,wo.cancelled_by,wo.cancelled_at,wo.close_type,wo.close_reason,wo.closed_by,wo.closed_at,wo.external_order_no,wo.remark,wo.version,wo.created_at,wo.updated_at,
+  COALESCE((SELECT SUM(r.available_quantity) FROM production_batch_closeout c
+    JOIN production_output_revision r ON r.id=c.current_revision_id AND r.closeout_id=c.id
+    WHERE r.work_order_id=wo.id),0) final_available_quantity,
+  COALESCE((SELECT SUM(r.extra_quantity) FROM production_batch_closeout c
+    JOIN production_output_revision r ON r.id=c.current_revision_id AND r.closeout_id=c.id
+    WHERE r.work_order_id=wo.id),0) final_extra_quantity,
+  COALESCE((SELECT SUM(r.additional_scrap_quantity+r.existing_scrap_quantity) FROM production_batch_closeout c
+    JOIN production_output_revision r ON r.id=c.current_revision_id AND r.closeout_id=c.id
+    WHERE r.work_order_id=wo.id),0) final_scrap_quantity,
+  (SELECT COUNT(*) FROM production_batch_closeout c
+    JOIN production_output_revision r ON r.id=c.current_revision_id AND r.closeout_id=c.id
+    WHERE r.work_order_id=wo.id) finalized_batch_count,
+  (SELECT COUNT(*) FROM production_batches b WHERE b.work_order_id=wo.id AND b.status='closing') closing_batch_count,
+  COALESCE((SELECT SUM(c.available_quantity) FROM production_batch_closeout c JOIN production_batches b ON b.id=c.production_batch_id
+    WHERE b.work_order_id=wo.id AND b.status='closing'),0) pending_available_quantity,
+  COALESCE((SELECT SUM(c.extra_quantity) FROM production_batch_closeout c JOIN production_batches b ON b.id=c.production_batch_id
+    WHERE b.work_order_id=wo.id AND b.status='closing'),0) pending_extra_quantity
+  FROM work_orders wo`;
+export const BATCH_SELECT = `SELECT b.id,b.work_order_id,wo.work_order_no,b.product_id,wo.product_code_snapshot,wo.product_name_snapshot,b.batch_no,b.route_id,b.route_code_snapshot,b.route_version_snapshot,b.planned_quantity,${lastStepReportedQuantitySql('b.id')} last_step_reported_quantity,b.plan_start_date,b.plan_end_date,b.started_at,b.status,b.material_plan_version,
+  c.closeout_mode,c.current_revision_id,b.execution_completed_at,b.execution_completed_by,
+  r.revision_no approved_output_revision_no,r.available_quantity approved_available_quantity,
+  r.extra_quantity approved_extra_quantity,(r.existing_scrap_quantity+r.additional_scrap_quantity) approved_scrap_quantity,
   CASE
     WHEN EXISTS (SELECT 1 FROM production_short_batch_authorization authorization WHERE authorization.production_batch_id=b.id AND authorization.status='active' AND authorization.material_plan_version=b.material_plan_version) THEN 'valid'
     WHEN EXISTS (SELECT 1 FROM production_short_batch_authorization authorization WHERE authorization.production_batch_id=b.id AND authorization.status='active') THEN 'stale'
@@ -136,11 +179,14 @@ export const BATCH_SELECT = `SELECT b.id,b.work_order_id,wo.work_order_no,b.prod
     WHEN EXISTS (SELECT 1 FROM production_short_batch_authorization authorization WHERE authorization.production_batch_id=b.id AND authorization.status='consumed') THEN 'view'
     ELSE 'authorize'
   END short_batch_authorization_action,
-  b.batch_owner_id owner_id,b.completed_at,b.completed_by,b.cancel_reason,b.cancelled_by,b.cancelled_at,b.remark,b.version,b.created_at,b.updated_at FROM production_batches b JOIN work_orders wo ON wo.id=b.work_order_id`;
-const BATCH_LOCK_SELECT = `SELECT b.id,b.work_order_id,wo.work_order_no,b.product_id,wo.product_code_snapshot,wo.product_name_snapshot,b.batch_no,b.route_id,b.route_code_snapshot,b.route_version_snapshot,b.planned_quantity,b.completed_quantity,b.qualified_quantity,b.plan_start_date,b.plan_end_date,b.started_at,b.status,b.material_plan_version,
+  b.batch_owner_id owner_id,b.completed_at,b.completed_by,b.cancel_reason,b.cancelled_by,b.cancelled_at,b.remark,b.version,b.created_at,b.updated_at FROM production_batches b JOIN work_orders wo ON wo.id=b.work_order_id LEFT JOIN production_batch_closeout c ON c.production_batch_id=b.id
+  LEFT JOIN production_output_revision r ON r.id=c.current_revision_id AND r.closeout_id=c.id AND r.production_batch_id=b.id`;
+const BATCH_LOCK_SELECT = `SELECT b.id,b.work_order_id,wo.work_order_no,b.product_id,wo.product_code_snapshot,wo.product_name_snapshot,b.batch_no,b.route_id,b.route_code_snapshot,b.route_version_snapshot,b.planned_quantity,CAST(0 AS DECIMAL(12,4)) last_step_reported_quantity,b.plan_start_date,b.plan_end_date,b.started_at,b.status,b.material_plan_version,
+  NULL closeout_mode,NULL current_revision_id,b.execution_completed_at,b.execution_completed_by,
+  NULL approved_output_revision_no,NULL approved_available_quantity,NULL approved_extra_quantity,NULL approved_scrap_quantity,
   'none' short_batch_authorization_status,'not_required' short_batch_authorization_action,
   b.batch_owner_id owner_id,b.completed_at,b.completed_by,b.cancel_reason,b.cancelled_by,b.cancelled_at,b.remark,b.version,b.created_at,b.updated_at FROM production_batches b JOIN work_orders wo ON wo.id=b.work_order_id`;
-export const STEP_RECORD_SELECT = `SELECT sr.id,sr.production_batch_id,sr.route_step_id,sr.step_order_snapshot,sr.step_code_snapshot,sr.step_name_snapshot,sr.sop_file_id_snapshot,sr.sop_file_name_snapshot,sr.sop_version_no_snapshot,sr.default_responsible_user_id_snapshot,sr.actual_sop_file_id,sr.actual_sop_file_name_snapshot,sr.actual_sop_object_key_snapshot,sr.actual_sop_version_no_snapshot,sr.responsible_user_id,sr.need_inspection_snapshot,sr.status,sr.started_at,sr.completed_at,COALESCE(report_summary.reported_quantity,0) output_quantity,COALESCE(report_summary.normal_quantity,0) qualified_quantity,COALESCE(report_summary.abnormal_quantity,0) abnormal_quantity,CAST(0 AS DECIMAL(12,4)) rework_quantity,sr.unit_snapshot,sr.remark,sr.version FROM batch_step_records sr LEFT JOIN (SELECT batch_step_record_id,SUM(CASE WHEN report_type='normal' THEN reported_quantity ELSE -reported_quantity END) reported_quantity,SUM(CASE WHEN report_type='normal' THEN normal_quantity ELSE -normal_quantity END) normal_quantity,SUM(CASE WHEN report_type='normal' THEN abnormal_quantity ELSE -abnormal_quantity END) abnormal_quantity FROM batch_step_reports GROUP BY batch_step_record_id) report_summary ON report_summary.batch_step_record_id=sr.id`;
+export const STEP_RECORD_SELECT = `SELECT sr.id,sr.production_batch_id,sr.route_step_id,sr.step_order_snapshot,sr.step_code_snapshot,sr.step_name_snapshot,sr.sop_file_id_snapshot,sr.sop_file_name_snapshot,sr.sop_version_no_snapshot,sr.default_responsible_user_id_snapshot,sr.actual_sop_file_id,sr.actual_sop_file_name_snapshot,sr.actual_sop_object_key_snapshot,sr.actual_sop_version_no_snapshot,sr.responsible_user_id,sr.need_inspection_snapshot,sr.status,sr.started_at,sr.completed_at,COALESCE(report_summary.reported_quantity,0) output_quantity,COALESCE(report_summary.normal_quantity,0) normal_quantity,COALESCE(report_summary.abnormal_quantity,0) abnormal_quantity,CAST(0 AS DECIMAL(12,4)) rework_quantity,sr.unit_snapshot,sr.remark,sr.version FROM batch_step_records sr LEFT JOIN (SELECT batch_step_record_id,SUM(CASE WHEN report_type='normal' THEN reported_quantity ELSE -reported_quantity END) reported_quantity,SUM(CASE WHEN report_type='normal' THEN normal_quantity ELSE -normal_quantity END) normal_quantity,SUM(CASE WHEN report_type='normal' THEN abnormal_quantity ELSE -abnormal_quantity END) abnormal_quantity FROM batch_step_reports GROUP BY batch_step_record_id) report_summary ON report_summary.batch_step_record_id=sr.id`;
 
 export async function findWorkOrder(db: Db, id: string, lock = false): Promise<WorkOrderRow> {
   const [rows] = await db.query<WorkOrderRow[]>(
@@ -159,6 +205,7 @@ export async function findBatch(db: Db, id: string, lock = false): Promise<Batch
   if (!rows[0]) throw new ProductionDomainError('NOT_FOUND', '生产批次不存在');
   // 事务锁定读取只返回批次持久字段，避免派生授权子查询提前建立一致性快照。
   // 需要作短批判定的写事务必须调用专用授权校验并锁定授权事实，不能依赖该展示字段。
+  // last_step_reported_quantity 的锁定读取占位值不参与业务判断；写事务另行锁读报工事实。
   return rows[0];
 }
 
@@ -176,10 +223,31 @@ export async function findStepRecord(
   return rows[0];
 }
 
+export const mapWorkOrderFinalOutput = (row: WorkOrderRow): WorkOrderFinalOutput => ({
+  availableQuantity: row.final_available_quantity ?? '0',
+  extraQuantity: row.final_extra_quantity ?? '0',
+  scrapQuantity: row.final_scrap_quantity ?? '0',
+  totalQuantity: String(
+    Number(row.final_available_quantity ?? 0) +
+      Number(row.final_extra_quantity ?? 0) +
+      Number(row.final_scrap_quantity ?? 0),
+  ),
+  plannedShortfallQuantity: String(
+    Number(row.planned_quantity) - Number(row.final_available_quantity ?? 0),
+  ),
+  finalizedBatchCount: Number(row.finalized_batch_count ?? 0),
+  closingBatchCount: Number(row.closing_batch_count ?? 0),
+  pendingAvailableQuantity: row.pending_available_quantity ?? '0',
+  pendingExtraQuantity: row.pending_extra_quantity ?? '0',
+});
+
 export const mapWorkOrder = (row: WorkOrderRow): WorkOrderItem => ({
+  finalOutput: mapWorkOrderFinalOutput(row),
   id: String(row.id),
   workOrderNo: row.work_order_no,
   orderType: row.order_type,
+  previousResearchOrderId:
+    row.previous_research_order_id === null ? null : String(row.previous_research_order_id),
   productId: String(row.product_id),
   productCode: row.product_code_snapshot,
   productName: row.product_name_snapshot,
@@ -191,6 +259,7 @@ export const mapWorkOrder = (row: WorkOrderRow): WorkOrderItem => ({
   planStartDate: toDateOnlyString(row.plan_start_date),
   planEndDate: toDateOnlyString(row.plan_end_date),
   assignedQuantity: row.assigned_quantity,
+  terminatedPlannedQuantity: row.terminated_planned_quantity,
   status: row.status,
   releasedAt: date(row.released_at),
   cancelReason: row.cancel_reason,
@@ -221,12 +290,26 @@ export const mapBatch = (row: BatchRow): ProductionBatchItem => ({
   routeCode: row.route_code_snapshot,
   routeVersion: row.route_version_snapshot,
   plannedQuantity: row.planned_quantity,
-  completedQuantity: row.completed_quantity,
-  qualifiedQuantity: row.qualified_quantity,
+  lastStepReportedQuantity: row.last_step_reported_quantity,
   planStartDate: toDateOnlyString(row.plan_start_date),
   planEndDate: toDateOnlyString(row.plan_end_date),
   startedAt: date(row.started_at),
   status: row.status,
+  closeoutMode: row.closeout_mode,
+  currentOutputRevisionId:
+    row.current_revision_id === null ? null : String(row.current_revision_id),
+  finalOutput:
+    row.approved_output_revision_no === null
+      ? null
+      : {
+          revisionNo: Number(row.approved_output_revision_no),
+          availableQuantity: String(row.approved_available_quantity),
+          extraQuantity: String(row.approved_extra_quantity),
+          scrapQuantity: String(row.approved_scrap_quantity),
+        },
+  executionCompletedAt: date(row.execution_completed_at),
+  executionCompletedBy:
+    row.execution_completed_by === null ? null : String(row.execution_completed_by),
   materialPlanVersion: row.material_plan_version,
   shortBatchAuthorizationStatus: row.short_batch_authorization_status,
   shortBatchAuthorizationAction: row.short_batch_authorization_action,
@@ -273,7 +356,7 @@ export const mapStep = (row: StepRow) => ({
   startedAt: date(row.started_at),
   completedAt: date(row.completed_at),
   outputQuantity: row.output_quantity,
-  qualifiedQuantity: row.qualified_quantity,
+  normalQuantity: row.normal_quantity,
   abnormalQuantity: row.abnormal_quantity,
   reworkQuantity: row.rework_quantity,
   unit: row.unit_snapshot,

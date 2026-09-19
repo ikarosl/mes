@@ -68,6 +68,7 @@
       <header class="topbar">
         <span>{{ String($route.meta.title ?? '') }}</span>
         <div>
+          <NotificationBell />
           <span class="user">{{ auth.session?.user.displayName }}</span
           ><el-button
             link
@@ -94,7 +95,10 @@
           </button>
         </div>
       </nav>
-      <main class="content">
+      <main
+        ref="contentRef"
+        class="content"
+      >
         <router-view v-slot="{ Component }"
           ><keep-alive :include="tabs.keepAliveNames">
             <component
@@ -107,15 +111,44 @@
   </div>
 </template>
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { PERMISSIONS } from '@company/constants';
 import { useAuthStore } from '../stores/auth';
 import { useTabsStore } from '../stores/tabs';
+import NotificationBell from '../components/notification/NotificationBell.vue';
 defineOptions({ name: 'AdminLayout' });
 const auth = useAuthStore();
 const tabs = useTabsStore();
 const router = useRouter();
+const contentRef = ref<HTMLElement>();
+let contentObserver: ResizeObserver | undefined;
+
+// 集中提供路由区的视口坐标，让子树内的弹窗不受页面滚动或局部定位容器影响。
+const updateOverlayBounds = (): void => {
+  const content = contentRef.value;
+  if (!content) return;
+  const { top, left, width, height } = content.getBoundingClientRect();
+  content.style.setProperty('--route-overlay-top', `${top}px`);
+  content.style.setProperty('--route-overlay-left', `${left}px`);
+  content.style.setProperty('--route-overlay-width', `${width}px`);
+  content.style.setProperty('--route-overlay-height', `${height}px`);
+};
+
+onMounted(() => {
+  const content = contentRef.value;
+  if (!content) return;
+  updateOverlayBounds();
+  contentObserver = new ResizeObserver(updateOverlayBounds);
+  contentObserver.observe(content);
+  window.addEventListener('resize', updateOverlayBounds);
+});
+
+onBeforeUnmount(() => {
+  contentObserver?.disconnect();
+  window.removeEventListener('resize', updateOverlayBounds);
+});
+
 const all = [
   { title: '用户管理', path: '/system/users', permission: PERMISSIONS.system.users.view },
   { title: '角色管理', path: '/system/roles', permission: PERMISSIONS.system.roles.view },
@@ -135,7 +168,10 @@ const approvalMenus = [
     permission: [
       PERMISSIONS.approval.view,
       PERMISSIONS.approval.decide,
+      PERMISSIONS.approval.configure,
       PERMISSIONS.product.products.manageBom,
+      PERMISSIONS.production.materials.correctDemand,
+      PERMISSIONS.production.tasks.terminate,
     ] as const,
   },
   { title: '审批流程配置', path: '/approval/flows', permission: PERMISSIONS.approval.configure },

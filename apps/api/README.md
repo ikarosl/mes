@@ -12,6 +12,7 @@ src/
     product/
     production/
     approval/
+    notification/
   presentation/
   scripts/
   app.module.ts
@@ -28,6 +29,7 @@ src/
 
 - [Identity](src/modules/identity/README.md)
 - [Approval](src/modules/approval/README.md)
+- [Notification](src/modules/notification/README.md)
 - [Product](src/modules/product/README.md)
 - [Production](src/modules/production/README.md)
 - [命令上下文](docs/command-context.md)

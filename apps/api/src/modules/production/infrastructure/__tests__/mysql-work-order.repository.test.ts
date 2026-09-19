@@ -92,7 +92,7 @@ describe('MysqlWorkOrderRepository data ownership', () => {
 
     await expect(repository.withReleaseTransaction('6', action)).resolves.toBe('validated');
 
-    expect(action).toHaveBeenCalledWith('8');
+    expect(action).toHaveBeenCalledWith({ productId: '8', workOrderOwnerId: '9' });
     expect(String(connection.query.mock.calls[0]?.[0])).toContain('FOR UPDATE');
     expect(connection.beginTransaction).toHaveBeenCalledOnce();
     expect(connection.commit).toHaveBeenCalledOnce();
@@ -143,10 +143,12 @@ describe('MysqlWorkOrderRepository data ownership', () => {
   it('writes a successful work-order audit through the same transaction connection', async () => {
     const connection = transactionConnection();
     connection.query
-      .mockResolvedValueOnce([[], []])
+      .mockResolvedValueOnce([[{ number_date: '2026-09-17' }], []])
+      .mockResolvedValueOnce([[{ sequence: '1' }], []])
       .mockResolvedValueOnce([[workOrderRow], []])
       .mockResolvedValueOnce([[], []]);
     connection.execute
+      .mockResolvedValueOnce([{ affectedRows: 1 }, []])
       .mockResolvedValueOnce([{ insertId: 6, affectedRows: 1 }, []])
       .mockResolvedValueOnce([{ affectedRows: 1 }, []]);
     const repository = new MysqlWorkOrderRepository({
@@ -155,7 +157,6 @@ describe('MysqlWorkOrderRepository data ownership', () => {
 
     await repository.create(
       {
-        workOrderNo: 'WO-001',
         orderType: 'mass_production',
         productId: '8',
         plannedQuantity: 100,
@@ -166,8 +167,8 @@ describe('MysqlWorkOrderRepository data ownership', () => {
       { actorId: '1', ip: null, requestId: 'test-request', userAgent: null },
     );
 
-    expect(String(connection.execute.mock.calls[0]?.[0])).toContain('INSERT INTO work_orders');
-    expect(String(connection.execute.mock.calls[1]?.[0])).toContain('INSERT INTO operation_logs');
+    expect(String(connection.execute.mock.calls[1]?.[0])).toContain('INSERT INTO work_orders');
+    expect(String(connection.execute.mock.calls[2]?.[0])).toContain('INSERT INTO operation_logs');
     expect(connection.beginTransaction).toHaveBeenCalledOnce();
     expect(connection.commit).toHaveBeenCalledOnce();
     expect(connection.rollback).not.toHaveBeenCalled();
@@ -175,8 +176,11 @@ describe('MysqlWorkOrderRepository data ownership', () => {
 
   it('rolls back the work-order insert when the transactional audit cannot be written', async () => {
     const connection = transactionConnection();
-    connection.query.mockResolvedValueOnce([[], []]);
+    connection.query
+      .mockResolvedValueOnce([[{ number_date: '2026-09-17' }], []])
+      .mockResolvedValueOnce([[{ sequence: '1' }], []]);
     connection.execute
+      .mockResolvedValueOnce([{ affectedRows: 1 }, []])
       .mockResolvedValueOnce([{ insertId: 6, affectedRows: 1 }, []])
       .mockRejectedValueOnce(new Error('audit unavailable'));
     const repository = new MysqlWorkOrderRepository({
@@ -186,7 +190,6 @@ describe('MysqlWorkOrderRepository data ownership', () => {
     await expect(
       repository.create(
         {
-          workOrderNo: 'WO-001',
           orderType: 'mass_production',
           productId: '8',
           plannedQuantity: 100,
@@ -204,7 +207,7 @@ describe('MysqlWorkOrderRepository data ownership', () => {
       ),
     ).rejects.toThrow('audit unavailable');
 
-    expect(String(connection.execute.mock.calls[1]?.[0])).toContain('INSERT INTO operation_logs');
+    expect(String(connection.execute.mock.calls[2]?.[0])).toContain('INSERT INTO operation_logs');
     expect(connection.commit).not.toHaveBeenCalled();
     expect(connection.rollback).toHaveBeenCalledOnce();
   });
@@ -560,6 +563,7 @@ const workOrderRow = {
   id: 6,
   work_order_no: 'WO-001',
   order_type: 'mass_production',
+  previous_research_order_id: null,
   product_id: 8,
   product_code_snapshot: 'P-001',
   product_name_snapshot: 'Product A',
@@ -591,6 +595,7 @@ const optionRow = {
   id: 6,
   work_order_no: 'WO-001',
   order_type: 'mass_production',
+  previous_research_order_id: null,
   product_id: 8,
   product_code_snapshot: 'P-001',
   product_name_snapshot: 'Product A',

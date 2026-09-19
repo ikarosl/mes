@@ -72,7 +72,7 @@ export interface MaterialOutboundItem {
   createdAt: string;
   version: number;
   remark: string | null;
-  cancelSource?: 'manual' | 'production_batch' | null;
+  cancelSource?: 'manual' | 'production_batch' | 'production_termination' | null;
   cancelReason?: string | null;
   cancelledById?: string | null;
   cancelledByName?: string | null;

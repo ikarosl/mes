@@ -28,7 +28,7 @@
         :closable="false"
         show-icon
         class="blocked-alert"
-        title="当前节点暂无合格审批人，申请已保留。角色成员或指定用户恢复审批资格后即可继续处理。"
+        title="当前节点暂无合格审批人，申请已保留。角色成员或本节点确定的审批人恢复资格后即可继续处理；不会自动改派。"
       />
 
       <el-descriptions
@@ -43,22 +43,30 @@
         <el-descriptions-item label="提交时间">{{
           formatDateTime(detail.createdAt)
         }}</el-descriptions-item>
-        <el-descriptions-item label="成品编码">{{
-          detail.subjectSnapshot.itemCode
-        }}</el-descriptions-item>
-        <el-descriptions-item label="成品名称">{{
-          detail.subjectSnapshot.productName
-        }}</el-descriptions-item>
-        <el-descriptions-item label="单位">{{ detail.subjectSnapshot.unit }}</el-descriptions-item>
+        <el-descriptions-item
+          v-if="bomSnapshot"
+          label="成品编码"
+          >{{ bomSnapshot?.itemCode ?? '—' }}</el-descriptions-item
+        >
+        <el-descriptions-item
+          v-if="bomSnapshot"
+          label="成品名称"
+          >{{ bomSnapshot?.productName ?? '—' }}</el-descriptions-item
+        >
+        <el-descriptions-item
+          v-if="bomSnapshot"
+          label="单位"
+          >{{ bomSnapshot?.unit ?? '—' }}</el-descriptions-item
+        >
       </el-descriptions>
 
       <div
-        v-if="detail.subjectSnapshot.specValues.length"
+        v-if="bomSnapshot?.specValues.length"
         class="spec-list"
       >
         <span class="spec-label">成品规格：</span>
         <span
-          v-for="spec in detail.subjectSnapshot.specValues"
+          v-for="spec in bomSnapshot?.specValues"
           :key="`${spec.key}-${spec.value}`"
           class="spec-item"
           >{{ spec.key }}：{{ spec.value }}{{ spec.unit ? ` ${spec.unit}` : '' }}</span
@@ -79,9 +87,11 @@
                 <span class="step-number">{{ step.stepNo }}</span>
                 <strong>{{ step.name }}</strong>
                 <span class="step-role"
-                  >{{ APPROVAL_ASSIGNEE_TYPE_LABELS[step.assigneeType] }}：{{
-                    step.roleName ?? step.assigneeUserName
-                  }}</span
+                  >{{
+                    step.assigneeType === APPROVAL_ASSIGNEE_TYPE.business
+                      ? '来源'
+                      : APPROVAL_ASSIGNEE_TYPE_LABELS[step.assigneeType]
+                  }}：{{ assigneeName(step) }}</span
                 >
               </div>
               <el-tag
@@ -90,6 +100,20 @@
                 effect="light"
                 >{{ stepStatusMeta(step.status).label }}</el-tag
               >
+            </div>
+            <div class="step-assignment">
+              <span v-if="step.assigneeType === APPROVAL_ASSIGNEE_TYPE.business">
+                送审确定：<strong>{{
+                  step.resolvedAssigneeUserName ??
+                  (step.resolvedAssigneeUserId ? `用户 #${step.resolvedAssigneeUserId}` : '未解析')
+                }}</strong>
+              </span>
+              <span>
+                实际处理：<strong>{{ stepDecision(step.id)?.actorName ?? '尚未处理' }}</strong>
+                <template v-if="stepDecision(step.id)">
+                  · {{ actionLabel(stepDecision(step.id)!.actionType) }}
+                </template>
+              </span>
             </div>
             <div
               v-if="step.blockedReason"
@@ -113,10 +137,13 @@
         </div>
       </section>
 
-      <section class="section-block">
+      <section
+        v-if="bomSnapshot"
+        class="section-block"
+      >
         <div class="section-title">BOM 受审内容</div>
         <el-table
-          :data="detail.subjectSnapshot.materials"
+          :data="bomSnapshot.materials"
           class="bom-table"
           size="small"
           empty-text="暂无 BOM 明细"
@@ -154,6 +181,57 @@
         </el-table>
       </section>
 
+      <section
+        v-if="correctionSnapshot"
+        class="section-block"
+      >
+        <div class="section-title">需求更正受审内容</div>
+        <DemandCorrectionEvidence
+          :check="correctionSnapshot.check"
+          :new-remaining-quantity="correctionSnapshot.newRemainingQuantity"
+        />
+        <el-descriptions
+          :column="3"
+          border
+        >
+          <el-descriptions-item label="更正后总量">{{
+            correctionSnapshot.targetTotalQuantity
+          }}</el-descriptions-item>
+          <el-descriptions-item label="本次新建剩余量">{{
+            correctionSnapshot.newRemainingQuantity
+          }}</el-descriptions-item>
+          <el-descriptions-item label="申请类型">{{
+            DEMAND_CORRECTION_KIND_LABELS[correctionSnapshot.correctionKind]
+          }}</el-descriptions-item>
+          <el-descriptions-item
+            label="原因"
+            :span="3"
+            >{{ correctionSnapshot.reason }}</el-descriptions-item
+          >
+        </el-descriptions>
+      </section>
+      <section
+        v-if="closeoutSnapshot"
+        class="section-block"
+      >
+        <el-descriptions
+          v-if="ownerEvidence"
+          :column="3"
+          border
+          class="summary"
+        >
+          <el-descriptions-item label="负责人来源工单">{{
+            ownerEvidence.workOrderNo
+          }}</el-descriptions-item>
+          <el-descriptions-item label="送审时工单负责人">{{
+            ownerEvidenceName
+          }}</el-descriptions-item>
+          <el-descriptions-item label="送审时工单版本">{{
+            ownerEvidence.workOrderVersion
+          }}</el-descriptions-item>
+        </el-descriptions>
+        <BatchCloseoutEvidence :snapshot="closeoutSnapshot" />
+      </section>
       <section class="section-block">
         <div class="section-title">处理记录</div>
         <el-timeline v-if="detail.actions.length">
@@ -248,14 +326,19 @@ import {
   APPROVAL_INSTANCE_STATUS_LABELS,
   APPROVAL_STEP_STATUS_LABELS,
   APPROVAL_ASSIGNEE_TYPE_LABELS,
-  APPROVAL_SCENE_CODES,
+  APPROVAL_ASSIGNEE_TYPE,
+  APPROVAL_SCENE_LABELS,
+  DEMAND_CORRECTION_KIND_LABELS,
 } from '@company/constants';
 import type {
   ApprovalActionType,
   ApprovalInstanceDetail,
   ApprovalInstanceStatus,
+  ApprovalInstanceStep,
   ApprovalStepStatus,
 } from '@company/contracts';
+import DemandCorrectionEvidence from '../../production/components/DemandCorrectionEvidence.vue';
+import BatchCloseoutEvidence from '../../production/components/BatchCloseoutEvidence.vue';
 import { DialogWidth } from '../../../utils/dialog';
 import { EMessage } from '../../../utils/message';
 
@@ -274,6 +357,52 @@ const emit = defineEmits<{
   (event: 'withdraw', comment: string): void;
 }>();
 
+const bomSnapshot = computed(() =>
+  props.detail && 'productId' in props.detail.subjectSnapshot ? props.detail.subjectSnapshot : null,
+);
+const correctionSnapshot = computed(() =>
+  props.detail &&
+  'kind' in props.detail.subjectSnapshot &&
+  props.detail.subjectSnapshot.kind === 'demand_correction'
+    ? props.detail.subjectSnapshot
+    : null,
+);
+const closeoutSnapshot = computed(() =>
+  props.detail &&
+  'kind' in props.detail.subjectSnapshot &&
+  props.detail.subjectSnapshot.kind === 'batch_closeout'
+    ? props.detail.subjectSnapshot
+    : null,
+);
+const ownerEvidence = computed(() => closeoutSnapshot.value?.workOrderOwnerEvidence ?? null);
+const ownerEvidenceName = computed(() => {
+  if (!ownerEvidence.value) return '—';
+  const step = props.detail?.steps.find(
+    (step) =>
+      step.assigneeSourceCode === ownerEvidence.value?.sourceCode &&
+      step.resolvedAssigneeUserId === ownerEvidence.value?.ownerId,
+  );
+  return step?.resolvedAssigneeUserName ?? `用户 #${ownerEvidence.value.ownerId}`;
+});
+const stepDecisions = computed(
+  () =>
+    new Map(
+      props.detail?.actions
+        .filter(
+          (action) =>
+            action.stepId && (action.actionType === 'approved' || action.actionType === 'rejected'),
+        )
+        .map((action) => [action.stepId!, action]),
+    ),
+);
+const stepDecision = (stepId: string) => stepDecisions.value.get(stepId);
+const assigneeName = (step: ApprovalInstanceStep): string => {
+  if (step.assigneeType === APPROVAL_ASSIGNEE_TYPE.business) {
+    return step.assigneeSourceName ?? step.assigneeSourceCode ?? '—';
+  }
+  if (step.assigneeType === APPROVAL_ASSIGNEE_TYPE.role) return step.roleName ?? '—';
+  return step.assigneeUserName ?? '—';
+};
 const comment = ref('');
 const canOperate = computed(() =>
   Boolean(
@@ -322,8 +451,7 @@ const stepStatusMeta = (status: ApprovalStepStatus) =>
               : 'info',
   }) as const;
 const actionLabel = (type: ApprovalActionType) => APPROVAL_ACTION_TYPE_LABELS[type];
-const sceneLabel = (sceneCode: string) =>
-  sceneCode === APPROVAL_SCENE_CODES.bom ? 'BOM 审批' : sceneCode;
+const sceneLabel = (sceneCode: string) => APPROVAL_SCENE_LABELS[sceneCode] ?? sceneCode;
 const actionStepNo = (stepId: string): number | null =>
   props.detail?.steps.find((step) => step.id === stepId)?.stepNo ?? null;
 const formatDateTime = (value: string | null): string =>
@@ -347,8 +475,6 @@ const withdraw = (): void => emit('withdraw', comment.value.trim());
 
 <style scoped>
 .detail-body {
-  max-height: 68vh;
-  overflow-y: auto;
   padding-right: 4px;
 }
 .detail-header,
@@ -435,6 +561,18 @@ const withdraw = (): void => emit('withdraw', comment.value.trim());
 }
 .step-role {
   margin-left: 12px;
+}
+.step-assignment {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  margin-top: 10px;
+  color: #4b5563;
+  font-size: 13px;
+}
+.step-assignment strong {
+  color: #1f2937;
+  font-weight: 500;
 }
 .step-blocked {
   margin-top: 8px;

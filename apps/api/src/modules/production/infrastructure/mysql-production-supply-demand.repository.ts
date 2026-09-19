@@ -53,7 +53,7 @@ export class MysqlProductionSupplyDemandRepository extends ProductionSupplyDeman
       LEFT JOIN balance_totals balance ON balance.item_id=identity.item_id
         AND balance.material_variant_id=identity.material_variant_id
       LEFT JOIN item_batch batch ON batch.id=(
-        SELECT MAX(ib.id) FROM item_batch ib WHERE ib.item_id=identity.item_id
+        SELECT MAX(ib.id) FROM item_batch ib WHERE ib.product_id IS NULL AND ib.item_id=identity.item_id
           AND ib.material_variant_id=identity.material_variant_id
       )
     )`;
@@ -106,7 +106,7 @@ export class MysqlProductionSupplyDemandRepository extends ProductionSupplyDeman
     const [rows] = await this.pool.query<DemandTraceRow[]>(
       `SELECT demand.id,demand.item_id,demand.material_variant_id,demand.material_variant_code_snapshot material_variant_code,demand.production_batch_id,batch.batch_no,
          work_order.id work_order_id,work_order.work_order_no,demand.demand_type,
-         demand.need_number,demand.remaining_number,demand.unit_snapshot,
+         demand.need_number,demand.remaining_number,demand.unit_snapshot,demand.pending_correction_id,demand.replaces_demand_id,
          demand.parent_demand_id,demand.supplement_id,supplement.supplement_no,
          disposition.disposition_no abnormal_disposition_no,
          material_loss.scrap_no material_loss_scrap_no,demand.created_at
@@ -168,6 +168,8 @@ const mapSupplyDemand = (row: SupplyDemandRow): InventoryMaterialSupplyDemandIte
 
 type DemandTraceRow = RowDataPacket & {
   id: number;
+  pending_correction_id: number | null;
+  replaces_demand_id: number | null;
   item_id: number;
   material_variant_id: number;
   material_variant_code: string;
@@ -189,6 +191,8 @@ type DemandTraceRow = RowDataPacket & {
 
 const mapDemandTrace = (row: DemandTraceRow): InventoryMaterialDemandTraceItem => ({
   demandId: String(row.id),
+  pendingCorrectionId: row.pending_correction_id == null ? null : String(row.pending_correction_id),
+  replacesDemandId: row.replaces_demand_id == null ? null : String(row.replaces_demand_id),
   itemId: String(row.item_id),
   materialVariantId: String(row.material_variant_id),
   materialVariantCode: row.material_variant_code,

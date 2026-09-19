@@ -1,8 +1,9 @@
 <template>
   <el-dialog
     :model-value="visible"
-    :title="`配置初始物料需求${batch ? ` · ${batch.batchNo}` : ''}`"
-    :width="DialogWidth.xl"
+    :title="`确认初始物料需求${batch ? ` · ${batch.batchNo}` : ''}`"
+    :width="DialogWidth.workbench"
+    workbench
     :close-on-click-modal="false"
     @update:model-value="handleVisibleChange"
   >
@@ -11,6 +12,20 @@
         v-if="rows.length"
         :title="policyDescription"
         type="info"
+        :closable="false"
+        show-icon
+      />
+      <el-alert
+        v-if="missingOrderConfiguration"
+        title="工单物料版本尚未配置完整，请先到工单管理的“物料版本配置”中保存，再重新打开本窗口。"
+        type="warning"
+        :closable="false"
+        show-icon
+      />
+      <el-alert
+        v-else-if="unavailableOrderVariant"
+        title="工单配置中有已停用或失效版本，当前不能生成新需求；请先处理版本可用性或工单配置。"
+        type="warning"
         :closable="false"
         show-icon
       />
@@ -48,7 +63,7 @@
                 v-model="split.materialVariantId"
                 filterable
                 placeholder="选择具体版本"
-                :disabled="Boolean(row.lockedMaterialVariantId)"
+                :disabled="row.orderType === 'mass_production' || submitting"
               >
                 <el-option
                   v-for="variant in availableVariants(row, index)"
@@ -139,14 +154,27 @@ const intent = useIdempotentIntent();
 
 const policyDescription = computed(() =>
   rows.value[0]?.orderType === 'mass_production'
-    ? '批量生产单每种基础物料只使用一个版本；工单已锁定的版本不可更改。全部 BOM 行配置完成后统一生成需求。'
+    ? '批量生产任务继承工单的物料版本配置，数量按 BOM 单耗与任务计划量计算。需要换版时，请先处理原任务，再到工单管理配置。'
     : '研发任务允许同一种基础物料拆分到多个版本；各版本数量合计必须等于该物料的系统需求量。',
 );
 const configuredTotal = (row: RowDraft): number =>
   row.splits.reduce((total, split) => total + (Number(split.quantity) || 0), 0);
+const missingOrderConfiguration = computed(() =>
+  rows.value.some((row) => row.orderType === 'mass_production' && !row.lockedMaterialVariantId),
+);
+const unavailableOrderVariant = computed(() =>
+  rows.value.some(
+    (row) =>
+      row.orderType === 'mass_production' &&
+      row.lockedMaterialVariantId &&
+      !row.variants.some((variant) => variant.materialVariantId === row.lockedMaterialVariantId),
+  ),
+);
 const canSubmit = computed(
   () =>
     !loading.value &&
+    !missingOrderConfiguration.value &&
+    !unavailableOrderVariant.value &&
     rows.value.length > 0 &&
     rows.value.every(
       (row) =>

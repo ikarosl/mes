@@ -123,7 +123,16 @@
           >
             <template #default="{ row }">
               <strong>{{ demandTypeLabel(row.demandType) }}</strong>
-              <div class="secondary">需求 #{{ row.demandId }}</div>
+              <div class="secondary">
+                需求 #{{ row.demandId
+                }}<span v-if="row.replacesDemandId"> · 替代 #{{ row.replacesDemandId }}</span>
+              </div>
+              <el-tag
+                v-if="row.pendingCorrectionId"
+                type="warning"
+                size="small"
+                >{{ MATERIAL_DEMAND_PROGRESS_LABELS.correction_pending }}</el-tag
+              >
             </template>
           </el-table-column>
           <el-table-column
@@ -190,12 +199,34 @@
         class="query-form"
         :inline="true"
         :model="query"
-        ><el-form-item label="物料"
+        ><el-form-item label="物料 / 成品"
           ><el-input
             v-model="query.keyword"
             clearable
             placeholder="编码或名称" /></el-form-item
-        ><el-form-item label="库存批次"
+        ><el-form-item label="库存身份"
+          ><el-select
+            v-model="query.itemKind"
+            clearable
+            placeholder="全部"
+            ><el-option
+              v-for="(label, value) in INVENTORY_ITEM_KIND_LABELS"
+              :key="value"
+              :value="value"
+              :label="label" /></el-select
+        ></el-form-item>
+        <el-form-item label="业务来源"
+          ><el-select
+            v-model="query.sourceType"
+            clearable
+            placeholder="全部"
+            ><el-option
+              v-for="(label, value) in INVENTORY_SOURCE_TYPE_LABELS"
+              :key="value"
+              :value="value"
+              :label="label" /></el-select
+        ></el-form-item>
+        <el-form-item label="库存批次"
           ><el-input
             v-model="query.batchCode"
             clearable
@@ -238,12 +269,23 @@
         class="data-table"
         empty-text="暂无库存批次"
         ><el-table-column
-          label="物料"
+          label="物料 / 成品"
           min-width="210"
           ><template #default="{ row }"
             ><strong>{{ row.itemName }}</strong>
             <div class="secondary">{{ row.itemCode }}</div>
-            <div class="variant-text">版本 {{ variantCode(row) }}</div></template
+            <div
+              v-if="row.itemKind === 'material'"
+              class="variant-text"
+            >
+              版本 {{ variantCode(row) }}
+            </div>
+            <div
+              v-else
+              class="variant-text"
+            >
+              {{ INVENTORY_ITEM_KIND_LABELS.finished_product }} · {{ row.sourceProductionBatchNo }}
+            </div></template
           ></el-table-column
         ><el-table-column
           prop="batchCode"
@@ -257,9 +299,14 @@
           }}</template></el-table-column
         ><el-table-column
           prop="provider"
-          label="供应方"
-          min-width="140"
-          ><template #default="{ row }">{{ row.provider || '-' }}</template></el-table-column
+          label="供应方 / 来源工单"
+          min-width="180"
+          ><template #default="{ row }"
+            ><template v-if="row.itemKind === 'finished_product'"
+              >{{ row.sourceWorkOrderNo }}
+              <div class="secondary">{{ row.sourceProductionBatchNo }}</div></template
+            ><span v-else>{{ row.provider || '-' }}</span></template
+          ></el-table-column
         ><el-table-column
           label="账面可用量"
           width="130"
@@ -272,17 +319,21 @@
           width="130"
           align="right"
           ><template #default="{ row }"
-            >{{ formatQuantity(row.reservedQuantity) }} {{ row.unit }}</template
+            ><span v-if="row.itemKind === 'material'"
+              >{{ formatQuantity(row.reservedQuantity) }} {{ row.unit }}</span
+            ><span v-else>—</span></template
           ></el-table-column
         ><el-table-column
           label="可分配量"
           width="130"
           align="right"
           ><template #default="{ row }"
-            ><strong :class="{ zero: Number(row.availableToAllocateQuantity) <= 0 }">{{
-              formatQuantity(row.availableToAllocateQuantity)
-            }}</strong>
-            {{ row.unit }}</template
+            ><template v-if="row.itemKind === 'material'"
+              ><strong :class="{ zero: inventoryAvailable(row) <= 0 }">{{
+                formatQuantity(row.availableToAllocateQuantity)
+              }}</strong>
+              {{ row.unit }}</template
+            ><span v-else>不参与物料分配</span></template
           ></el-table-column
         ><el-table-column
           label="批次状态"
@@ -290,14 +341,14 @@
           ><template #default="{ row }"
             ><el-tag
               :type="
-                row.batchStatus === 'available' && Number(row.availableToAllocateQuantity) > 0
+                row.batchStatus === 'available' && inventoryAvailable(row) > 0
                   ? 'success'
                   : row.batchStatus === 'frozen'
                     ? 'warning'
                     : 'info'
               "
               >{{
-                row.batchStatus === 'available' && Number(row.availableToAllocateQuantity) <= 0
+                row.batchStatus === 'available' && inventoryAvailable(row) <= 0
                   ? '无可用库存'
                   : inventoryBatchStatusLabel(row.batchStatus)
               }}</el-tag
@@ -327,7 +378,7 @@
     </section>
     <el-dialog
       v-model="detailVisible"
-      title="物料库存批次详情"
+      title="库存批次详情"
       :width="DialogWidth.xl"
       ><div
         v-loading="detailLoading"
@@ -337,40 +388,70 @@
           ><el-descriptions
             :column="2"
             border
-            ><el-descriptions-item label="物料"
+            ><el-descriptions-item label="物料 / 成品"
               >{{ detail.itemCode }} · {{ detail.itemName }}</el-descriptions-item
-            ><el-descriptions-item label="物料版本">{{ variantCode(detail) }}</el-descriptions-item
+            ><el-descriptions-item
+              v-if="detail.itemKind === 'material'"
+              label="物料版本"
+              >{{ variantCode(detail) }}</el-descriptions-item
             ><el-descriptions-item label="库存批次">{{ detail.batchCode }}</el-descriptions-item
             ><el-descriptions-item label="来源">{{
               inventorySourceTypeLabel(detail.sourceType)
             }}</el-descriptions-item
-            ><el-descriptions-item label="供应方">{{ detail.provider || '-' }}</el-descriptions-item
+            ><el-descriptions-item
+              v-if="detail.itemKind === 'material'"
+              label="供应方"
+              >{{ detail.provider || '-' }}</el-descriptions-item
+            ><el-descriptions-item
+              v-else
+              label="来源工单 / 任务"
+              >{{ detail.sourceWorkOrderNo }} /
+              {{ detail.sourceProductionBatchNo }}</el-descriptions-item
             ><el-descriptions-item label="批次状态">{{
               inventoryBatchStatusLabel(detail.batchStatus)
             }}</el-descriptions-item
             ><el-descriptions-item label="账面可用量"
               >{{ formatQuantity(detail.onHandAvailableQuantity) }}
               {{ detail.unit }}</el-descriptions-item
-            ><el-descriptions-item label="有效预留量"
+            ><el-descriptions-item
+              v-if="detail.itemKind === 'material'"
+              label="有效预留量"
               >{{ formatQuantity(detail.reservedQuantity) }} {{ detail.unit }}</el-descriptions-item
-            ><el-descriptions-item label="可分配量"
+            ><el-descriptions-item
+              v-if="detail.itemKind === 'material'"
+              label="可分配量"
               >{{ formatQuantity(detail.availableToAllocateQuantity) }}
               {{ detail.unit }}</el-descriptions-item
             ><el-descriptions-item label="说明"
-              >数量仅由库存流水聚合，页面不可编辑</el-descriptions-item
+              >数量仅由库存流水聚合，页面不可编辑。成品不参与物料分配和物料盘点。</el-descriptions-item
             ></el-descriptions
           >
           <h3>已确认入库来源</h3>
           <el-table
             :data="detail.inboundSources"
-            empty-text="期初来源：该批次没有 inbound_detail 对应的已确认入库单"
+            empty-text="该批次没有已确认入库单来源"
+            ><el-table-column label="入库单号"
+              ><template #default="{ row }"
+                ><el-button
+                  v-if="row.sourceType === 'self_made' || row.sourceType === 'production_extra'"
+                  link
+                  type="primary"
+                  @click="openFinishedInbound(row.inboundId)"
+                  >{{ row.inboundNo }}</el-button
+                ><span v-else>{{ row.inboundNo }}</span></template
+              ></el-table-column
             ><el-table-column
-              prop="inboundNo"
-              label="入库单号"
-            /><el-table-column
               prop="provider"
               label="供应方"
               ><template #default="{ row }">{{ row.provider || '-' }}</template></el-table-column
+            ><el-table-column
+              label="批准清单"
+              min-width="140"
+              ><template #default="{ row }">{{
+                row.outputRevisionNo
+                  ? `第 ${row.outputRevisionNo} 版（#${row.outputRevisionId}）`
+                  : '—'
+              }}</template></el-table-column
             ><el-table-column
               label="确认时间"
               width="180"
@@ -457,8 +538,14 @@
 </template>
 <script setup lang="ts">
 import { onActivated, onMounted, reactive, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { Refresh } from '@element-plus/icons-vue';
-import { DEMAND_GENERATION_GROUP_TYPE_LABELS } from '@company/constants';
+import {
+  DEMAND_GENERATION_GROUP_TYPE_LABELS,
+  INVENTORY_ITEM_KIND_LABELS,
+  INVENTORY_SOURCE_TYPE_LABELS,
+  MATERIAL_DEMAND_PROGRESS_LABELS,
+} from '@company/constants';
 import type {
   DemandType,
   InventoryBatchDetailItem,
@@ -485,6 +572,16 @@ import { useInventoryMaterialSupplyDemandList } from './composables/useInventory
 import { useInventoryMaterialDemandTrace } from './composables/useInventoryMaterialDemandTrace';
 import { inventoryTransactionAssociationText } from './warehouse-inventory-presentation';
 defineOptions({ name: 'WarehouseInventoryPage' });
+const route = useRoute(),
+  router = useRouter();
+const inventoryAvailable = (row: InventoryBatchItem) =>
+  Number(
+    row.itemKind === 'finished_product'
+      ? row.onHandAvailableQuantity
+      : row.availableToAllocateQuantity,
+  );
+const openFinishedInbound = (inboundId: string) =>
+  router.push({ name: 'warehouse-inbound', query: { inboundId, tab: 'finished' } });
 const viewMode = ref<'supply-demand' | 'inventory-batches'>('supply-demand');
 const {
   items: supplyDemandItems,
@@ -544,6 +641,8 @@ const search = () => {
   return load();
 };
 const reset = () => {
+  query.itemKind = undefined;
+  query.sourceType = undefined;
   query.keyword = undefined;
   query.batchCode = undefined;
   query.batchStatus = undefined;
@@ -566,13 +665,32 @@ const openDetail = async (id: string) => {
   detailLoading.value = true;
   try {
     const result = await productionApi.getInventoryBatch(id);
-    if (current === detailToken) detail.value = result;
+    if (current === detailToken && detailVisible.value) detail.value = result;
   } catch (e) {
     if (current === detailToken) EMessage.error(e, '库存批次详情加载失败');
   } finally {
     if (current === detailToken) detailLoading.value = false;
   }
 };
+watch(
+  () => detailVisible.value,
+  (visible) => {
+    if (!visible) {
+      detailToken += 1;
+      detailLoading.value = false;
+    }
+  },
+);
+watch(
+  () => route.query.itemBatchId,
+  (id) => {
+    if (route.name === 'warehouse-inventory' && typeof id === 'string' && id) {
+      viewMode.value = 'inventory-batches';
+      void openDetail(id);
+    }
+  },
+  { immediate: true },
+);
 const demandTypeLabel = (type: DemandType): string => DEMAND_GENERATION_GROUP_TYPE_LABELS[type];
 const variantCode = (row: { materialVariantCode?: string | null }): string =>
   row.materialVariantCode || '未记录版本';
@@ -644,6 +762,7 @@ watch(viewMode, (mode) => {
 }
 .query-form {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   gap: 10px 22px;
 }
@@ -696,8 +815,6 @@ watch(viewMode, (mode) => {
 }
 .detail-body {
   min-height: 160px;
-  max-height: 70vh;
-  overflow: auto;
 }
 .detail-body h3 {
   margin: 18px 0 10px;

@@ -10,11 +10,13 @@ const role: AssigneeRuleRow = {
   assignee_type: 'role',
   role_id: '9007199254740993',
   assignee_user_id: null,
+  assignee_source_code: null,
 };
 const user: AssigneeRuleRow = {
   assignee_type: 'user',
   role_id: null,
   assignee_user_id: '9007199254740995',
+  assignee_source_code: null,
 };
 const directory = () => ({
   listApprovalEligibleUserIds: vi.fn<(roleId: string) => Promise<string[]>>(),
@@ -27,12 +29,12 @@ describe('approval node assignees', () => {
   });
 
   it.each<AssigneeRuleRow>([
-    { assignee_type: 'role', role_id: null, assignee_user_id: null },
-    { assignee_type: 'user', role_id: null, assignee_user_id: null },
-    { assignee_type: 'role', role_id: '7', assignee_user_id: '8' },
-    { assignee_type: 'user', role_id: '7', assignee_user_id: '8' },
-    { assignee_type: 'role', role_id: null, assignee_user_id: '8' },
-    { assignee_type: 'user', role_id: '7', assignee_user_id: null },
+    { assignee_type: 'role', role_id: null, assignee_user_id: null, assignee_source_code: null },
+    { assignee_type: 'user', role_id: null, assignee_user_id: null, assignee_source_code: null },
+    { assignee_type: 'role', role_id: '7', assignee_user_id: '8', assignee_source_code: null },
+    { assignee_type: 'user', role_id: '7', assignee_user_id: '8', assignee_source_code: null },
+    { assignee_type: 'role', role_id: null, assignee_user_id: '8', assignee_source_code: null },
+    { assignee_type: 'user', role_id: '7', assignee_user_id: null, assignee_source_code: null },
   ])(
     'rejects an ambiguous or mismatched node rule %j before resolving identities',
     async (rule) => {
@@ -41,7 +43,7 @@ describe('approval node assignees', () => {
         resolveAssigneeIds(identity as unknown as IdentityDirectoryService, rule),
       ).rejects.toMatchObject({
         code: 'INVALID_INPUT',
-        message: '每个节点必须选择一个角色或一个指定用户',
+        message: '每个节点必须且只能选择角色、指定用户或业务关联人员之一',
       });
       expect(identity.listApprovalEligibleUserIds).not.toHaveBeenCalled();
       expect(identity.getApprovalActorEligibility).not.toHaveBeenCalled();

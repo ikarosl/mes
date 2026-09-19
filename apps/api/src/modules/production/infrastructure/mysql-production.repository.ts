@@ -1,3 +1,4 @@
+import type { WorkOrderReleaseContext } from '../application/ports/production.repository.js';
 import { Injectable } from '@nestjs/common';
 import type {
   CreateProductionBatchPayload,
@@ -22,7 +23,7 @@ import {
   type ResolvedBatchStepOverride,
 } from '../application/ports/production.repository.js';
 import { MysqlProductionBatchRepository } from './mysql-production-batch.repository.js';
-import { MysqlProductionMaterialRepository } from './mysql-production-material.repository.js';
+import { MysqlProductionMaterialOutboundRepository } from './mysql-production-material-outbound.repository.js';
 import { MysqlWorkOrderRepository } from './mysql-work-order.repository.js';
 
 /**
@@ -34,7 +35,7 @@ export class MysqlProductionRepository extends ProductionRepository {
   constructor(
     private readonly workOrders: MysqlWorkOrderRepository,
     private readonly batches: MysqlProductionBatchRepository,
-    private readonly materials: MysqlProductionMaterialRepository,
+    private readonly outbounds: MysqlProductionMaterialOutboundRepository,
   ) {
     super();
   }
@@ -65,7 +66,7 @@ export class MysqlProductionRepository extends ProductionRepository {
   }
   withWorkOrderReleaseTransaction<T>(
     workOrderId: string,
-    action: (workOrderProductId: string) => Promise<T>,
+    action: (workOrder: WorkOrderReleaseContext) => Promise<T>,
   ): Promise<T> {
     return this.workOrders.withReleaseTransaction(workOrderId, action);
   }
@@ -98,7 +99,7 @@ export class MysqlProductionRepository extends ProductionRepository {
   }
   async listBatches(query: ProductionBatchQuery): Promise<PageResult<ProductionBatchItem>> {
     const page = await this.batches.list(query);
-    const activeOutboundBatchIds = await this.materials.findBatchIdsWithActiveOutbounds(
+    const activeOutboundBatchIds = await this.outbounds.findBatchIdsWithActiveOutbounds(
       page.items.map((batch) => batch.id),
     );
     return {

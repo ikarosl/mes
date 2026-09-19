@@ -68,9 +68,10 @@ type EditorVm = {
   steps: Array<{
     name: string;
     nodeCode?: string;
-    assigneeType: 'role' | 'user';
+    assigneeType: 'role' | 'user' | 'business';
     roleId: string;
     assigneeUserId: string;
+    assigneeSourceCode: string;
   }>;
   changeAssigneeType: (step: EditorVm['steps'][number]) => void;
 };
@@ -110,6 +111,7 @@ describe('ApprovalFlowEditorDialog', () => {
               assigneeType: 'role',
               roleId: 'role-tech',
               assigneeUserId: null,
+              assigneeSourceCode: null,
             },
             {
               nodeCode: 'owner',
@@ -117,6 +119,7 @@ describe('ApprovalFlowEditorDialog', () => {
               assigneeType: 'role',
               roleId: 'role-owner',
               assigneeUserId: null,
+              assigneeSourceCode: null,
             },
           ],
         },
@@ -184,6 +187,7 @@ describe('ApprovalFlowEditorDialog', () => {
               assigneeType: 'user',
               roleId: null,
               assigneeUserId: 'user-2',
+              assigneeSourceCode: null,
             },
             {
               nodeCode: 'owner',
@@ -191,6 +195,7 @@ describe('ApprovalFlowEditorDialog', () => {
               assigneeType: 'role',
               roleId: 'role-owner',
               assigneeUserId: null,
+              assigneeSourceCode: null,
             },
           ],
         },
@@ -251,6 +256,7 @@ describe('ApprovalFlowEditorDialog', () => {
               assigneeType: 'role',
               roleId: 'role-tech',
               assigneeUserId: null,
+              assigneeSourceCode: null,
             },
           ],
         },

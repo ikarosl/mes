@@ -96,7 +96,7 @@ export interface ProductionMaterialSupplementItem {
   scrapRecordId: string;
   productionBatchId: string;
   stepRecordId: string;
-  status: 'approved' | 'fulfilled';
+  status: 'approved' | 'fulfilled' | 'cancelled';
   remark: string | null;
   createdAt: string;
   demands: ProductionMaterialSupplementDemandItem[];

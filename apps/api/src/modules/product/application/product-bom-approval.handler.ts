@@ -41,7 +41,7 @@ export class ProductBomApprovalHandler implements ApprovalSubjectHandler, OnModu
     const preparation = await this.call(() =>
       this.products.prepareBomApproval(subjectId, expectedVersion, audit),
     );
-    return { ...preparation, snapshotSchemaVersion: 2 };
+    return { ...preparation, snapshotSchemaVersion: 2, businessAssigneeResolutions: [] };
   }
 
   /** Approval 创建申请后调用：绑定申请并冻结编辑，返回递增后的产品版本。 */
@@ -115,11 +115,11 @@ export class ProductBomApprovalHandler implements ApprovalSubjectHandler, OnModu
     snapshot: unknown,
     schemaVersion: number,
   ): Promise<Pick<ApprovalInstanceDetail, 'subjectSnapshot' | 'materialNames'>> {
-    if ((schemaVersion !== 1 && schemaVersion !== 2) || !this.isBomSnapshot(snapshot)) {
+    if (schemaVersion !== 2 || !this.isBomSnapshot(snapshot)) {
       throw new ApprovalSubjectError('CONFLICT', 'BOM 审批证据结构无法读取');
     }
     return {
-      // 历史证据不回写；只投影当前公开字段，旧证据的额外属性不泄漏到接口。
+      // 只投影当前契约字段，不回写不可变审批证据。
       subjectSnapshot: {
         productId: snapshot.productId,
         itemCode: snapshot.itemCode,

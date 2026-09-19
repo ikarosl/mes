@@ -104,11 +104,51 @@ body {
   padding: 20px;
 }
 .route-dialog-overlay.el-overlay,
-.route-dialog-overlay .el-overlay-dialog,
-.content > .el-overlay.is-message-box,
-.content > .el-overlay.is-message-box .el-overlay-message-box {
+.content > .el-overlay.is-message-box {
+  position: fixed;
+  inset: var(--route-overlay-top, 0px) auto auto var(--route-overlay-left, 0px);
+  width: var(--route-overlay-width, 100%);
+  height: var(--route-overlay-height, 100%);
+}
+.route-dialog-overlay > .el-overlay-dialog,
+.content > .el-overlay.is-message-box > .el-overlay-message-box {
   position: absolute;
   inset: 0;
+}
+/* 百分比高度以路由挂载区为基准，标题、正文和操作区共同计入 90% 上限。 */
+.route-dialog-overlay > .el-overlay-dialog,
+.content > .el-overlay.is-message-box > .el-overlay-message-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.content > .el-overlay.is-message-box > .el-overlay-message-box {
+  padding: 0 16px;
+}
+.content > .el-overlay.is-message-box > .el-overlay-message-box::after {
+  content: none;
+}
+.route-dialog-overlay > .el-overlay-dialog > .el-dialog,
+.content > .el-overlay.is-message-box > .el-overlay-message-box > .el-message-box {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: 90%;
+  margin: 0;
+  overflow: hidden;
+}
+.route-dialog-overlay .el-dialog > .el-dialog__header,
+.route-dialog-overlay .el-dialog > .el-dialog__footer,
+.content > .el-overlay.is-message-box .el-message-box > .el-message-box__header,
+.content > .el-overlay.is-message-box .el-message-box > .el-message-box__btns {
+  flex-shrink: 0;
+}
+.route-dialog-overlay .el-dialog > .el-dialog__body,
+.content > .el-overlay.is-message-box .el-message-box > .el-message-box__content {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 .login-page {
   min-height: 100vh;
@@ -134,4 +174,9 @@ body {
 .permission-row {
   padding: 9px 0;
   border-bottom: 1px solid #f0f2f5;
+}
+
+.route-dialog-workbench > .el-dialog__footer {
+  border-top: 1px solid var(--el-border-color-lighter);
+  padding-top: 12px;
 }

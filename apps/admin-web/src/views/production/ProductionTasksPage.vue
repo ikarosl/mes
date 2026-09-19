@@ -123,6 +123,19 @@
           <template #default="{ row }">{{ formatQuantity(row.plannedQuantity) }}</template>
         </el-table-column>
         <el-table-column
+          label="当前批准产出"
+          min-width="230"
+        >
+          <template #header>
+            <el-tooltip
+              content="每个任务只取当前有效批准清单；可用量为计划内加计划外，不含报废，不代表实际入库量。"
+            >
+              <span>当前批准产出</span>
+            </el-tooltip>
+          </template>
+          <template #default="{ row }"><BatchApprovedOutput :output="row.finalOutput" /></template>
+        </el-table-column>
+        <el-table-column
           label="工艺路线"
           min-width="140"
         >
@@ -238,23 +251,40 @@
               @click="openMaterialOutbound(row)"
               >领料出库</el-button
             >
+            <el-button
+              v-if="
+                [
+                  'material_partially_outbound',
+                  'material_outbound',
+                  'doing',
+                  'terminated',
+                  'completed',
+                  'closing',
+                ].includes(row.status)
+              "
+              link
+              :type="
+                ['completed', 'terminated'].includes(row.status) || row.closeoutMode === 'normal'
+                  ? 'primary'
+                  : 'warning'
+              "
+              @click="openCloseout(row)"
+              >{{ batchCloseoutActionLabel(row.status, row.closeoutMode) }}</el-button
+            >
             <el-dropdown trigger="click">
               <el-button
                 link
                 type="primary"
-                :disabled="row.status === 'completed' || row.status === 'cancelled'"
+                :disabled="
+                  row.status === 'completed' ||
+                  row.status === 'cancelled' ||
+                  row.status === 'terminated' ||
+                  row.status === 'closing'
+                "
                 >更多</el-button
               >
               <template #dropdown>
                 <el-dropdown-menu>
-                  <el-dropdown-item
-                    v-if="
-                      row.status === 'doing' && row.shortBatchAuthorizationStatus === 'consumed'
-                    "
-                    :disabled="isRowPending(row.id)"
-                    @click="closeRemainingMaterialDemands(row)"
-                    >关闭剩余物料需求</el-dropdown-item
-                  >
                   <el-dropdown-item
                     :disabled="isRowPending(row.id)"
                     @click="openBatchCancellation(row)"
@@ -340,6 +370,7 @@
       :loading="materialOverviewLoading"
       @update:visible="materialDemandOverviewVisible = $event"
       @add-manual="openManualMaterialDemand"
+      @changed="handleManualMaterialDemandAdded"
     />
 
     <ManualMaterialDemandDialog
@@ -383,6 +414,18 @@
       @submit="submitShortBatchAuthorization"
     />
 
+    <ProductionBatchTerminationDialog
+      v-model:visible="terminationVisible"
+      :batch-id="terminationBatchId"
+      @terminated="loadTasks"
+      @open-output="openOutput"
+    />
+    <ProductionOutputDialog
+      v-model:visible="outputVisible"
+      :batch-id="outputBatchId"
+      @changed="loadTasks"
+      @open-closeout="openCloseoutItems"
+    />
     <ProductionBatchCancelDialog
       :visible="batchCancelDialogVisible"
       :batch="cancellingBatch"
@@ -427,6 +470,7 @@ import { buildLiveOptions } from '../../utils/live-options';
 import TaskFormDialog from './components/TaskFormDialog.vue';
 import type { TaskFormValue } from './components/TaskFormDialog.vue';
 import TaskDetailDialog from './components/TaskDetailDialog.vue';
+import BatchApprovedOutput from './components/BatchApprovedOutput.vue';
 import StepExecutionDialog from './components/StepExecutionDialog.vue';
 import type { StepExecutionValue } from './components/StepExecutionDialog.vue';
 import MaterialDemandAllocationDialog from './components/MaterialDemandAllocationDialog.vue';
@@ -435,7 +479,13 @@ import ShortBatchAuthorizationDialog from './components/ShortBatchAuthorizationD
 import { useProductionMaterials } from './composables/useProductionMaterials';
 import StepAssignmentDialog from './components/StepAssignmentDialog.vue';
 import { useStepAssignments } from './composables/useStepAssignments';
-import { deadlinePresentation, taskNextActionPresentation } from './production-task-presentation';
+import {
+  batchCloseoutActionLabel,
+  deadlinePresentation,
+  taskNextActionPresentation,
+} from './production-task-presentation';
+import ProductionBatchTerminationDialog from './components/ProductionBatchTerminationDialog.vue';
+import ProductionOutputDialog from './components/ProductionOutputDialog.vue';
 import ProductionBatchCancelDialog from './components/ProductionBatchCancelDialog.vue';
 import MaterialDemandConfigurationDialog from './components/MaterialDemandConfigurationDialog.vue';
 import MaterialDemandOverviewDialog from './components/MaterialDemandOverviewDialog.vue';
@@ -475,7 +525,10 @@ const userChoices = computed(() =>
 );
 
 const batchDeadline = (row: ProductionBatchItem) =>
-  deadlinePresentation(row.planEndDate, row.status === 'completed' || row.status === 'cancelled');
+  deadlinePresentation(
+    row.planEndDate,
+    row.status === 'completed' || row.status === 'cancelled' || row.status === 'terminated',
+  );
 const batchRowClass = ({ row }: { row: ProductionBatchItem }): string =>
   batchDeadline(row).overdueDays > 0 ? 'deadline-overdue-row' : '';
 const taskNextAction = (row: ProductionBatchItem) => taskNextActionPresentation(row);
@@ -487,6 +540,30 @@ const { isRowPending, beginRow, endRow } = useRowPending();
 const createBatchIntent = useIdempotentIntent();
 
 /* ====== 弹窗状态 ====== */
+const outputVisible = ref(false),
+  outputBatchId = ref<string | null>(null);
+const openOutput = (batchId: string) => {
+  outputBatchId.value = batchId;
+  outputVisible.value = true;
+};
+const openCloseoutItems = (batchId: string) => {
+  terminationBatchId.value = batchId;
+  terminationVisible.value = true;
+};
+function openCloseout(batch: ProductionBatchItem) {
+  if (
+    batch.status === 'completed' ||
+    batch.status === 'terminated' ||
+    (batch.status === 'closing' && batch.closeoutMode === 'normal')
+  )
+    openOutput(batch.id);
+  else {
+    terminationBatchId.value = batch.id;
+    terminationVisible.value = true;
+  }
+}
+const terminationVisible = ref(false);
+const terminationBatchId = ref<string | null>(null);
 const taskDialogVisible = ref(false);
 const detailDialogVisible = ref(false);
 const stepExecutionDialogVisible = ref(false);
@@ -809,34 +886,6 @@ const submitShortBatchAuthorization = async (reason: string): Promise<void> => {
     }
   } finally {
     shortBatchAuthorizationSubmitting.value = false;
-  }
-};
-const closeRemainingMaterialDemands = async (row: ProductionBatchItem): Promise<void> => {
-  if (!beginRow(row.id)) return;
-  try {
-    const result = await ElMessageBox.prompt(
-      '关闭后，所有剩余活动需求将取消，未出库分配将释放。该操作不会冲销已确认领料，请填写原因。',
-      '关闭剩余物料需求',
-      {
-        confirmButtonText: '确认关闭',
-        cancelButtonText: '取消',
-        type: 'warning',
-        inputType: 'textarea',
-        inputPlaceholder: '填写不再需要剩余物料的原因',
-        inputValidator: (value) => value.trim().length > 0 || '关闭原因不能为空',
-      },
-    );
-    await productionApi.closeRemainingMaterialDemands(row.id, {
-      version: row.version,
-      reason: result.value.trim(),
-    });
-    EMessage.success('剩余物料需求已关闭，未出库分配已释放');
-    await loadTasks();
-  } catch (error) {
-    if (error === 'cancel' || error === 'close') return;
-    EMessage.error(error, '关闭剩余物料需求失败');
-  } finally {
-    endRow(row.id);
   }
 };
 const handleMaterialOutbound = async (payload: CreateMaterialOutboundPayload): Promise<void> => {

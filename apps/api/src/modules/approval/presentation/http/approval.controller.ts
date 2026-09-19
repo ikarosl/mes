@@ -32,6 +32,9 @@ const INSTANCE_ACCESS = [
   PERMISSIONS.approval.decide,
   PERMISSIONS.approval.configure,
   PERMISSIONS.product.products.manageBom,
+  PERMISSIONS.production.materials.correctDemand,
+  PERMISSIONS.production.tasks.terminate,
+  PERMISSIONS.production.tasks.manageOutput,
 ] as const;
 const canManage = (user: UserProfile) =>
   permissionMatches(user.permissions, PERMISSIONS.approval.configure);

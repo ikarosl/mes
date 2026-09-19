@@ -1,4 +1,5 @@
 import type { VersionedCommand } from '../common.js';
+import type { DemandCorrectionTrace } from './demand-correction.js';
 import type {
   ProductionBatchStatus,
   DemandType,
@@ -62,6 +63,7 @@ export interface ProductionMaterialAllocationItem {
 }
 
 export interface ProductionMaterialDemandItem extends DemandGenerationSource {
+  correction?: DemandCorrectionTrace;
   demandId: string;
   productionBatchId: string;
   productMaterialId: string;
@@ -92,6 +94,7 @@ export interface ProductionMaterialDemandItem extends DemandGenerationSource {
 export type ShortBatchAuthorizationStatus = 'none' | 'valid' | 'stale' | 'consumed';
 
 export interface ShortBatchAuthorizationPreviewLine extends DemandGenerationSource {
+  pendingCorrectionId?: string | null;
   demandId: string;
   itemId: string;
   materialVariantId: string;

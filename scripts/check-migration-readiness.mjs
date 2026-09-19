@@ -5,6 +5,8 @@ import path from 'node:path';
 const root = process.cwd();
 const migrationsDir = path.join(root, 'packages/database/migrations');
 const allowedTables = new Set([
+  'notifications',
+  'notification_recipients',
   'approval_flow_definitions',
   'approval_flow_versions',
   'approval_flow_steps',
@@ -22,7 +24,8 @@ const allowedTables = new Set([
   'operation_logs',
   'http_idempotency_records',
   'technical_files',
-  'product_categories',
+  'product_categories', // Retired name; historical migrations retain ownership.
+  'item_categories',
   'products',
   'materials',
   'process_steps',
@@ -33,6 +36,7 @@ const allowedTables = new Set([
   'process_route_steps',
   'route_step_materials',
   'work_orders',
+  'work_order_daily_sequence',
   'work_order_material_versions',
   'production_batches',
   'batch_step_records',
@@ -40,6 +44,12 @@ const allowedTables = new Set([
   'batch_step_abnormal_dispositions',
   'rework_records',
   'batch_step_scrap_records',
+  'production_batch_termination', // Retired; historical migrations retain ownership.
+  'production_output_inspection',
+  'production_output_revision',
+  'production_demand_correction',
+  'production_batch_closeout',
+  'production_batch_closeout_action',
   'batch_step_scrap_reproduction_authorization',
   'production_scrap_supplement_plan',
   'production_scrap_supplement_plan_line',

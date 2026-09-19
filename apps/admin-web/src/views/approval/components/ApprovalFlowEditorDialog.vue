@@ -12,7 +12,20 @@
         :closable="false"
         show-icon
         class="flow-tip"
-        title="每级选择一个角色或一个指定用户。角色成员随当前资格变化，指定用户由本人处理；新发布流程只用于新申请。"
+        title="每级选择角色、指定用户或场景支持的业务关联人员。业务关联人员在送审时确定；新发布流程只用于新申请。"
+      />
+      <el-alert
+        v-if="requiredFinalSourceCode"
+        :type="finalAssigneeValid ? 'info' : 'warning'"
+        :closable="false"
+        show-icon
+        class="flow-tip"
+        :title="`最终放行节点须选择「业务关联人员 → ${requiredFinalSourceName}」`"
+        :description="
+          finalAssigneeValid
+            ? '其他审批节点可放在前面；排序或删除节点后仍须保留这一最终放行规则。'
+            : '当前最后一个节点不符合要求，请调整后保存或发布。'
+        "
       />
       <el-form
         label-width="90px"
@@ -51,7 +64,15 @@
           width="76"
           align="center"
         >
-          <template #default="{ $index }">{{ $index + 1 }}</template>
+          <template #default="{ $index }">
+            {{ $index + 1 }}
+            <div
+              v-if="requiredFinalSourceCode && $index === steps.length - 1"
+              class="final-step-label"
+            >
+              最终放行
+            </div>
+          </template>
         </el-table-column>
         <el-table-column
           label="节点名称"
@@ -80,6 +101,7 @@
                   :key="value"
                   :value="value"
                   :label="APPROVAL_ASSIGNEE_TYPE_LABELS[value]"
+                  :disabled="value === APPROVAL_ASSIGNEE_TYPE.business && !businessSources.length"
                 />
               </el-select>
               <el-select
@@ -103,7 +125,7 @@
                 />
               </el-select>
               <el-select
-                v-else
+                v-else-if="row.assigneeType === APPROVAL_ASSIGNEE_TYPE.user"
                 v-model="row.assigneeUserId"
                 filterable
                 placeholder="请选择用户"
@@ -118,6 +140,27 @@
                   :label="choice.option ? choice.option.displayName : '已失效，请重新选择'"
                 />
               </el-select>
+              <el-select
+                v-else
+                v-model="row.assigneeSourceCode"
+                placeholder="请选择人员来源"
+                class="role-select"
+              >
+                <el-option
+                  v-for="choice in sourceChoices(row.assigneeSourceCode)"
+                  :key="choice.value"
+                  :value="choice.value"
+                  :disabled="choice.isUnavailable"
+                  :label="choice.option?.name ?? `${choice.value}（已失效）`"
+                />
+              </el-select>
+            </div>
+            <div
+              v-if="row.assigneeType === APPROVAL_ASSIGNEE_TYPE.business"
+              class="assignee-hint"
+            >
+              <strong>送审时确定</strong>
+              <span>{{ sourceDescription(row.assigneeSourceCode) }}</span>
             </div>
           </template>
         </el-table-column>
@@ -208,6 +251,7 @@ type EditorStep = {
   assigneeType: ApprovalAssigneeType;
   roleId: string;
   assigneeUserId: string;
+  assigneeSourceCode: string;
 };
 
 const props = defineProps<{
@@ -230,6 +274,23 @@ const emit = defineEmits<{
 const formName = ref('');
 const steps = ref<EditorStep[]>([]);
 let rowSequence = 0;
+const businessSources = computed(() => props.detail?.businessAssigneeSources ?? []);
+const requiredFinalSourceCode = computed(
+  () => props.detail?.requiredFinalAssigneeSourceCode ?? null,
+);
+const requiredFinalSourceName = computed(
+  () =>
+    businessSources.value.find((source) => source.code === requiredFinalSourceCode.value)?.name ??
+    requiredFinalSourceCode.value,
+);
+const finalAssigneeValid = computed(() => {
+  if (!requiredFinalSourceCode.value) return true;
+  const lastStep = steps.value.at(-1);
+  return (
+    lastStep?.assigneeType === APPROVAL_ASSIGNEE_TYPE.business &&
+    lastStep.assigneeSourceCode === requiredFinalSourceCode.value
+  );
+});
 
 const resetFromDetail = (detail: ApprovalFlowDetail | null): void => {
   formName.value = detail?.name ?? '';
@@ -243,6 +304,7 @@ const resetFromDetail = (detail: ApprovalFlowDetail | null): void => {
     assigneeType: step.assigneeType,
     roleId: step.roleId ?? '',
     assigneeUserId: step.assigneeUserId ?? '',
+    assigneeSourceCode: step.assigneeSourceCode ?? '',
   }));
 };
 
@@ -260,7 +322,8 @@ const canSave = computed(() =>
     !props.saving &&
     !props.publishing &&
     formName.value.trim() &&
-    steps.value.length,
+    steps.value.length &&
+    finalAssigneeValid.value,
   ),
 );
 const canPublish = computed(() =>
@@ -270,28 +333,40 @@ const canPublish = computed(() =>
     !props.publishing &&
     formName.value.trim() &&
     steps.value.length &&
+    finalAssigneeValid.value &&
     steps.value.every((step) => step.name.trim() && selectedAssigneeId(step)),
   ),
 );
 
 const addStep = (): void => {
-  steps.value.push({
+  const firstRequiredStep = !steps.value.length && requiredFinalSourceCode.value;
+  const step: EditorStep = {
     rowKey: `new-${rowSequence++}`,
-    name: '',
-    assigneeType: APPROVAL_ASSIGNEE_TYPE.role,
+    name: firstRequiredStep ? `${requiredFinalSourceName.value}审批` : '',
+    assigneeType: firstRequiredStep ? APPROVAL_ASSIGNEE_TYPE.business : APPROVAL_ASSIGNEE_TYPE.role,
     roleId: '',
     assigneeUserId: '',
-  });
+    assigneeSourceCode: firstRequiredStep || '',
+  };
+  if (requiredFinalSourceCode.value && finalAssigneeValid.value && steps.value.length) {
+    steps.value.splice(steps.value.length - 1, 0, step);
+  } else {
+    steps.value.push(step);
+  }
 };
 
-const selectedAssigneeId = (step: EditorStep): string =>
-  step.assigneeType === APPROVAL_ASSIGNEE_TYPE.role ? step.roleId : step.assigneeUserId;
+const selectedAssigneeId = (step: EditorStep): string => {
+  if (step.assigneeType === APPROVAL_ASSIGNEE_TYPE.role) return step.roleId;
+  if (step.assigneeType === APPROVAL_ASSIGNEE_TYPE.user) return step.assigneeUserId;
+  return step.assigneeSourceCode;
+};
 
 const changeAssigneeType = (step: EditorStep): void => {
   step.roleId = '';
   step.assigneeUserId = '';
+  step.assigneeSourceCode = '';
   if (step.assigneeType === APPROVAL_ASSIGNEE_TYPE.role) emit('refresh-roles');
-  else emit('refresh-users');
+  else if (step.assigneeType === APPROVAL_ASSIGNEE_TYPE.user) emit('refresh-users');
 };
 
 const removeStep = (index: number): void => {
@@ -309,6 +384,29 @@ const roleChoices = (selectedId: string) =>
   buildLiveOptions(props.roleOptions, selectedId ? [selectedId] : [], (role) => role.id);
 const userChoices = (selectedId: string) =>
   buildLiveOptions(props.userOptions, selectedId ? [selectedId] : [], (user) => user.id);
+const sourceChoices = (selectedCode: string) =>
+  buildLiveOptions(
+    businessSources.value,
+    selectedCode ? [selectedCode] : [],
+    (source) => source.code,
+  );
+const sourceDescription = (sourceCode: string): string =>
+  businessSources.value.find((source) => source.code === sourceCode)?.description ??
+  '从本次申请的业务信息中确定审批人，确定后保留在该申请中。';
+
+const hasUnavailableAssignee = (step: EditorStep): boolean => {
+  if (step.assigneeType === APPROVAL_ASSIGNEE_TYPE.role) {
+    return hasUnavailableSelection(props.roleOptions, [step.roleId], (role) => role.id);
+  }
+  if (step.assigneeType === APPROVAL_ASSIGNEE_TYPE.user) {
+    return hasUnavailableSelection(props.userOptions, [step.assigneeUserId], (user) => user.id);
+  }
+  return hasUnavailableSelection(
+    businessSources.value,
+    [step.assigneeSourceCode],
+    (source) => source.code,
+  );
+};
 
 const buildPayload = (): SaveApprovalFlowDraft | null => {
   if (!props.detail || !formName.value.trim()) {
@@ -323,14 +421,12 @@ const buildPayload = (): SaveApprovalFlowDraft | null => {
     EMessage.warning('请补全每个节点名称和审批对象');
     return null;
   }
-  if (
-    steps.value.some((step) =>
-      step.assigneeType === APPROVAL_ASSIGNEE_TYPE.role
-        ? hasUnavailableSelection(props.roleOptions, [step.roleId], (role) => role.id)
-        : hasUnavailableSelection(props.userOptions, [step.assigneeUserId], (user) => user.id),
-    )
-  ) {
+  if (steps.value.some(hasUnavailableAssignee)) {
     EMessage.warning('审批对象已失效，请重新选择');
+    return null;
+  }
+  if (!finalAssigneeValid.value) {
+    EMessage.warning(`最终放行节点必须选择业务关联人员「${requiredFinalSourceName.value}」`);
     return null;
   }
   return {
@@ -344,6 +440,8 @@ const buildPayload = (): SaveApprovalFlowDraft | null => {
       roleId: step.assigneeType === APPROVAL_ASSIGNEE_TYPE.role ? step.roleId : null,
       assigneeUserId:
         step.assigneeType === APPROVAL_ASSIGNEE_TYPE.user ? step.assigneeUserId : null,
+      assigneeSourceCode:
+        step.assigneeType === APPROVAL_ASSIGNEE_TYPE.business ? step.assigneeSourceCode : null,
     })),
   };
 };
@@ -395,8 +493,24 @@ const publish = (): void => {
 }
 .assignee-fields {
   display: grid;
-  grid-template-columns: 120px minmax(0, 1fr);
+  grid-template-columns: 150px minmax(0, 1fr);
   gap: 8px;
+}
+.assignee-hint {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin-top: 6px;
+  color: #4b5563;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.assignee-hint strong {
+  color: #306188;
+}
+.final-step-label {
+  color: #306188;
+  font-size: 12px;
 }
 .version-tip {
   margin-top: 12px;

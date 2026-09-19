@@ -42,7 +42,7 @@ export class MysqlProductCategoryRepository implements ProductCategoryRepository
     }
     const where = conditions.join(' AND ');
     const [[countRow]] = await this.pool.query<(RowDataPacket & { total: number })[]>(
-      `SELECT COUNT(*) total FROM product_categories WHERE ${where}`,
+      `SELECT COUNT(*) total FROM item_categories WHERE ${where}`,
       parameters,
     );
     const [rows] = await this.pool.query<
@@ -58,7 +58,7 @@ export class MysqlProductCategoryRepository implements ProductCategoryRepository
       })[]
     >(
       `SELECT id,parent_id,category_code,category_name,item_kind,status,remark,updated_at
-         FROM product_categories WHERE ${where}
+         FROM item_categories WHERE ${where}
          ORDER BY item_kind,category_code,id LIMIT ? OFFSET ?`,
       [...parameters, pageSize, (page - 1) * pageSize],
     );
@@ -84,7 +84,7 @@ export class MysqlProductCategoryRepository implements ProductCategoryRepository
         item_kind: ProductItemKind;
       })[]
     >(`SELECT id,category_code,category_name,item_kind
-         FROM product_categories WHERE is_deleted=0 AND status=1
+         FROM item_categories WHERE is_deleted=0 AND status=1
          ORDER BY item_kind,category_code,id`);
     return rows.map((row) => ({
       id: String(row.id),
@@ -98,7 +98,7 @@ export class MysqlProductCategoryRepository implements ProductCategoryRepository
     return withTransaction(this.pool, async (connection) => {
       await this.validateCategoryParent(connection, payload.parentId ?? null, payload.itemKind);
       const [result] = await connection.execute<ResultSetHeader>(
-        `INSERT INTO product_categories (parent_id,category_code,category_name,item_kind,status,remark,created_by,updated_by)
+        `INSERT INTO item_categories (parent_id,category_code,category_name,item_kind,status,remark,created_by,updated_by)
          VALUES (?,?,?,?,?,?,?,?)`,
         [
           payload.parentId ?? null,
@@ -136,9 +136,9 @@ export class MysqlProductCategoryRepository implements ProductCategoryRepository
       if (payload.parentId) {
         const [cycle] = await connection.query<RowDataPacket[]>(
           `WITH RECURSIVE ancestors AS (
-             SELECT id,parent_id FROM product_categories WHERE id=? AND is_deleted=0
+             SELECT id,parent_id FROM item_categories WHERE id=? AND is_deleted=0
              UNION ALL
-             SELECT pc.id,pc.parent_id FROM product_categories pc JOIN ancestors a ON pc.id=a.parent_id WHERE pc.is_deleted=0
+             SELECT pc.id,pc.parent_id FROM item_categories pc JOIN ancestors a ON pc.id=a.parent_id WHERE pc.is_deleted=0
            ) SELECT id FROM ancestors WHERE id=? LIMIT 1`,
           [payload.parentId, id],
         );
@@ -149,7 +149,7 @@ export class MysqlProductCategoryRepository implements ProductCategoryRepository
           );
       }
       await connection.execute(
-        `UPDATE product_categories SET parent_id=?,category_code=?,category_name=?,status=?,remark=?,updated_by=? WHERE id=? AND is_deleted=0`,
+        `UPDATE item_categories SET parent_id=?,category_code=?,category_name=?,status=?,remark=?,updated_by=? WHERE id=? AND is_deleted=0`,
         [
           payload.parentId ?? null,
           payload.categoryCode,
@@ -170,7 +170,7 @@ export class MysqlProductCategoryRepository implements ProductCategoryRepository
     await withTransaction(this.pool, async (connection) => {
       const before = await this.categoryRecord(connection, id);
       await connection.execute(
-        'UPDATE product_categories SET status=?,updated_by=? WHERE id=? AND is_deleted=0',
+        'UPDATE item_categories SET status=?,updated_by=? WHERE id=? AND is_deleted=0',
         [status, audit.actorId, id],
       );
       await this.audit(
@@ -194,7 +194,7 @@ export class MysqlProductCategoryRepository implements ProductCategoryRepository
         category_name: string;
       })[]
     >(
-      'SELECT id,item_kind,status,category_code,category_name FROM product_categories WHERE id=? AND is_deleted=0',
+      'SELECT id,item_kind,status,category_code,category_name FROM item_categories WHERE id=? AND is_deleted=0',
       [id],
     );
     if (!row) throw new ProductDomainError('NOT_FOUND', '产品分类不存在');

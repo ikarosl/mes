@@ -1,18 +1,18 @@
 SET @demo_actor_id = (SELECT id FROM users WHERE username = 'admin' AND deleted_at IS NULL LIMIT 1);
 
-INSERT INTO product_categories (parent_id, category_code, category_name, item_kind, status, created_by, updated_by)
+INSERT INTO item_categories (parent_id, category_code, category_name, item_kind, status, created_by, updated_by)
 SELECT NULL, 'mat-semi-001', '半成品', 'material', 1, @demo_actor_id, @demo_actor_id
-WHERE NOT EXISTS (SELECT 1 FROM product_categories WHERE category_code = 'mat-semi-001');
-SET @semi_category_id = (SELECT id FROM product_categories WHERE category_code = 'mat-semi-001');
+WHERE NOT EXISTS (SELECT 1 FROM item_categories WHERE category_code = 'mat-semi-001');
+SET @semi_category_id = (SELECT id FROM item_categories WHERE category_code = 'mat-semi-001');
 
-INSERT INTO product_categories (parent_id, category_code, category_name, item_kind, status, created_by, updated_by)
+INSERT INTO item_categories (parent_id, category_code, category_name, item_kind, status, created_by, updated_by)
 SELECT @semi_category_id, 'mat-microstrip-001', '微带电路', 'material', 1, @demo_actor_id, @demo_actor_id
-WHERE NOT EXISTS (SELECT 1 FROM product_categories WHERE category_code = 'mat-microstrip-001');
-INSERT INTO product_categories (parent_id, category_code, category_name, item_kind, status, created_by, updated_by)
+WHERE NOT EXISTS (SELECT 1 FROM item_categories WHERE category_code = 'mat-microstrip-001');
+INSERT INTO item_categories (parent_id, category_code, category_name, item_kind, status, created_by, updated_by)
 SELECT NULL, 'product-microstrip-001', '微带', 'finished_product', 1, @demo_actor_id, @demo_actor_id
-WHERE NOT EXISTS (SELECT 1 FROM product_categories WHERE category_code = 'product-microstrip-001');
-SET @material_category_id = (SELECT id FROM product_categories WHERE category_code = 'mat-microstrip-001');
-SET @product_category_id = (SELECT id FROM product_categories WHERE category_code = 'product-microstrip-001');
+WHERE NOT EXISTS (SELECT 1 FROM item_categories WHERE category_code = 'product-microstrip-001');
+SET @material_category_id = (SELECT id FROM item_categories WHERE category_code = 'mat-microstrip-001');
+SET @product_category_id = (SELECT id FROM item_categories WHERE category_code = 'product-microstrip-001');
 
 -- Names are search/display values and intentionally repeat across different codes.
 INSERT INTO products (item_code, product_name, category_id, unit, acquire_method, spec_values, status, created_by, updated_by)

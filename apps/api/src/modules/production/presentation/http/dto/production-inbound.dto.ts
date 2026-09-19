@@ -13,7 +13,12 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
-import { INBOUND_ORDER_STATUSES, INVENTORY_BATCH_STATUSES } from '@company/constants';
+import {
+  INBOUND_ORDER_STATUSES,
+  INVENTORY_BATCH_STATUSES,
+  INVENTORY_SOURCE_TYPES,
+  INVENTORY_ITEM_KINDS,
+} from '@company/constants';
 import type {
   CreatePurchaseInboundPayload,
   InventoryBatchQuery,
@@ -37,6 +42,8 @@ export class PurchaseInboundQueryDto extends PageQueryDto implements PurchaseInb
   @IsOptional() @IsIn(INBOUND_ORDER_STATUSES) status?: PurchaseInboundOrderQuery['status'];
 }
 export class InventoryBatchQueryDto extends PageQueryDto implements InventoryBatchQuery {
+  @IsOptional() @IsIn(INVENTORY_ITEM_KINDS) itemKind?: InventoryBatchQuery['itemKind'];
+  @IsOptional() @IsIn(INVENTORY_SOURCE_TYPES) sourceType?: InventoryBatchQuery['sourceType'];
   @IsOptional() @IsString() @MaxLength(100) keyword?: string;
   @IsOptional() @IsString() @MaxLength(100) batchCode?: string;
   @IsOptional() @IsIn(INVENTORY_BATCH_STATUSES) batchStatus?: InventoryBatchQuery['batchStatus'];

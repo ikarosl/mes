@@ -4,7 +4,7 @@
 
 本章定义所有数据库领域共同遵守的基础规则，并完成以下统一：
 
-- `item_type` 统一为 `product_categories`。
+- 物料和成品共用 `item_categories` 分类，以 `item_kind` 区分；不另建第二套分类表。
 - 成品主数据使用 `products`，基础物料使用 `materials`，精确物料版本使用 `material_variants`；不恢复 `item_info`。
 - `product_bom` 统一为 `product_materials`，不保留第二套 BOM 表。
 - RBAC 与认证字段以新项目已落地迁移为准。
@@ -45,12 +45,12 @@
 
 | 字段                            | 稳定代码                                                                                                                                                                                                                             |
 | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 库存来源 `source_type`          | `self_made`、`purchased`、`outsourced`、`return_inbound`、`stock_check_generated`、`other`                                                                                                                                           |
+| 库存来源 `source_type`          | `self_made`、`production_extra`、`purchased`、`outsourced`、`return_inbound`、`stock_check_generated`、`other`                                                                                                                                           |
 | 库存状态 `stock_status`         | `available`、`pending_inspection`、`frozen`、`defective`                                                                                                                                                                             |
 | 库存批次状态 `batch_status`     | `available`、`frozen`、`disabled`                                                                                                                                                                                                    |
 | 库存流水类型 `transaction_type` | `purchase_inbound`、`production_inbound`、`outsourced_inbound`、`production_material_outbound`、`sales_outbound`、`material_return_inbound`、`scrap_outbound`、`stock_check_adjustment`、`status_transfer_in`、`status_transfer_out` |
 
-前端分别映射为“自产/外购/委外/退货入库/盘点生成/其他”、“可用/待检/冻结/不良”等中文标签。接口请求、响应、数据库记录、幂等键和日志结构化字段始终使用英文稳定代码。
+前端分别映射为“自产/额外产出/外购/委外/退货入库/盘点生成/其他”、“可用/待检/冻结/不良”等中文标签。接口请求、响应、数据库记录、幂等键和日志结构化字段始终使用英文稳定代码。
 
 ### 核心状态转换矩阵
 
@@ -58,14 +58,14 @@
 | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 工艺路线 | `draft -> enabled/archived`；`enabled -> disabled/archived`；`disabled -> enabled/archived`；`archived` 为终态                                                                                                                                       |
 | 生产工单 | `draft -> released/cancelled`；`released -> doing/completed/closed`；`doing -> completed/closed`；`completed -> closed`；`closed/cancelled` 为终态                                                                                                      |
-| 生产批次 | 各状态允许转换见下表；`completed/cancelled` 为终态，已出库或已开工批次禁止取消。 |
+| 生产批次 | 各状态允许转换见下表；`completed/cancelled/terminated` 为终态，已出库或已开工批次禁止取消。 |
 | 工序执行 | `pending -> assigned`；`assigned -> pending/doing`；`doing -> completed`；报工更正导致数量不足或下游报废补产提高目标时 `completed -> doing`。`assigned -> doing` 只由员工显式开工触发；工序数量达标时自动完工；普通物料状态不得驱动工序状态 |
 | 入库单   | `pending -> completed/cancelled`                                                                                                                                                                                                                     |
 | 出库单 | `pending_picking -> completed/cancelled`；当前确认命令整单出库，不开放 `picked/partially_outbound` 转换。 |
 | 退料单 | `pending -> returned/cancelled`；当前只支持退回公共可用库存，不开放退料报废。 |
 | 报废单   | `pending -> confirmed/cancelled`                                                                                                                                                                                                                     |
 | 盘点单 | `pending -> counting/completed/cancelled`；`counting -> completed/cancelled`。完成命令须全部明细已录入且库存快照未变化，正常流程先保存实盘数量进入 `counting`。 |
-| 返工单 | `pending -> doing`；`doing -> completed`；当前未开放返工取消命令。 |
+| 返工单 | `pending -> doing`；`doing -> completed`；仅批次结束命令允许 `pending/doing -> cancelled`，无独立返工取消入口。 |
 
 生产批次转换与 [production-status.policy.ts](../apps/api/src/modules/production/domain/production-status.policy.ts) 保持一致：
 
@@ -74,18 +74,21 @@
 | `pending` | `material_pending`、`cancelled` |
 | `material_pending` | `material_assigned`、`material_partially_outbound`、`material_outbound`、`cancelled` |
 | `material_assigned` | `material_pending`、`material_outbound`、`cancelled` |
-| `material_partially_outbound` | `material_outbound`、`doing` |
-| `material_outbound` | `doing` |
-| `doing` | `completed` |
+| `material_partially_outbound` | `material_outbound`、`doing`、`closing` |
+| `material_outbound` | `doing`、`closing` |
+| `doing` | `closing` |
+| `closing` | `completed`、`terminated` |
 | `completed` | 无，终态 |
-| `cancelled` | 无，终态 |
+| `cancelled`、`terminated` | 无，终态 |
 
 转换表只定义允许的状态边，不能替代命令中的数量、权限、授权和版本校验。释放未出库分配导致不再齐套时，
 允许 `material_assigned -> material_pending`；有效短批授权下确认部分领料后进入 `material_partially_outbound`，
-首工序开工仍须校验当前授权、净领料量和缺口。全部活动需求已确认领用时可进入 `material_outbound`；已进入
+首工序开工仍须校验当前授权、累计已确认领料量和缺口，不因退料回写履约。全部活动需求已确认领用时可进入 `material_outbound`；已进入
 `doing` 的批次后续补齐物料不回退状态。详细门禁见 [Production 批次规则](../apps/api/src/modules/production/docs/database/work-orders-and-batches.md)。
 
 上表描述当前代码已开放的命令转换；数据库保留的状态值不代表对应命令已实现。同状态重试按各命令幂等或
 状态短路规则处理，不构成新的状态转换。
+
+正常执行完成与提前结束都先进入 `closing`，保存收尾和质检产出依据后送审；工单负责人批准才分别进入 `completed` 或 `terminated`。批准清单不写库存，仓管另行确认成品入库。
 
 矩阵之外的转换必须拒绝。终态不得恢复；若未来确需恢复，必须增加独立业务动作、权限、审计和追加迁移评审，不得通过通用更新接口绕过。

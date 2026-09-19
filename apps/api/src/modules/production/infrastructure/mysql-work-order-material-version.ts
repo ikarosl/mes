@@ -25,13 +25,13 @@ export async function lockWorkOrderForBatch(
   return { workOrderId: String(order.id), orderType: order.order_type };
 }
 
-/** 批量单按整个工单固定同一基础物料的精确版本；研发单不写选择表。 */
+/** 批量单只校验已保存的工单选版，禁止需求或补料隐式创建配置。 */
 export async function requireWorkOrderMaterialVariant(
   db: PoolConnection,
   policy: LockedWorkOrderMaterialPolicy,
   materialId: string | number,
   materialVariantId: string | number,
-  actorId: string,
+  _actorId: string,
 ): Promise<void> {
   if (policy.orderType === 'research') return;
   const [[choice]] = await db.query<(RowDataPacket & { material_variant_id: number })[]>(
@@ -43,13 +43,12 @@ export async function requireWorkOrderMaterialVariant(
     if (String(choice.material_variant_id) !== String(materialVariantId))
       throw new ProductionDomainError(
         'INVALID_INPUT',
-        '批量生产工单已锁定该物料版本，所有批次及后续补料必须继续使用该版本',
+        '所选版本与工单物料配置不一致，请重新加载；任务及补料必须使用工单配置版本',
       );
     return;
   }
-  await db.execute(
-    `INSERT INTO work_order_material_versions
-      (work_order_id,material_id,material_variant_id,created_by) VALUES (?,?,?,?)`,
-    [policy.workOrderId, materialId, materialVariantId, actorId],
+  throw new ProductionDomainError(
+    'INVALID_STATE',
+    '请先在工单管理中完整配置物料版本，再生成任务需求',
   );
 }

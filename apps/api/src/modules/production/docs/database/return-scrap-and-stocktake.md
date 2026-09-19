@@ -16,6 +16,7 @@
 | --- | --- | --- |
 | `ProductionReturnRepository` | 退料主单/明细、正库存流水、退料审计 | 不创建/恢复/取消需求，不修改分配履约、批次状态、物料计划版本、短批授权，不调用需求计划 Writer |
 | `ProductionMaterialLossRepository` | 现场损坏/丢失的损耗确认，经 Writer 创建等量损耗补料需求 | 不把余料退回当损耗，不重复扣减仓库库存，不增加产品补产额度 |
+| `ProductionCloseoutMaterialLossRepository` | 初次结案中的已领物料损坏立即确认，不补料，永久占用可退上限 | 不扩展在产损耗确认、不写库存、不改需求或补产 |
 | 需求配置与需求计划 Writer | 明确的初始配置、人工追加、补料生成、剩余需求关闭及计划版本推进 | 不提供退料重开需求的接口，不通过净领用量反推需求 |
 | 物料分配与出库 Repository | 分配预留、确认出库扣库存和需求余额 | 退料不减少既有履约量，也不恢复原分配可制单量 |
 | 生产执行 Repository | 独立开工/完工校验 | 不因退料创建需求、产品补产额度或回退工序状态；短批授权及开工不读取退料 |
@@ -109,6 +110,7 @@
 - 退料入库应生成 `inventory_transaction`，类型为 `material_return_inbound`。
 - 创建待退料单时即占用可退数量；可退数量为同一 allocation 已确认领料累计减去其他 `pending/returned` 退料明细累计，再减去 `pending/confirmed` 的 `production_consumed` 损耗累计。取消待退料单释放占用。
 - 退料候选、创建和确认使用相同额度口径；创建及确认先锁定来源 allocation，再以当前读校验领料、退料与损耗占用，避免旧事务快照遗漏并发占用。
+- 退料候选返回 `occupiedLossQuantity`，为同一分配来源的待确认及已确认损耗合计；管理端并列展示已确认领料、退料占用、损耗占用及可退数量。待确认损耗取消后释放占用，已确认损耗持续扣减本来源的可退上限，关闭补料需求或取消补料单均不撤销损耗；当前不支持已确认损耗冲销。
 - 确认退料按 `item_batch.id` 升序锁定涉及批次，重新校验可退数量，并将主单更新、正库存流水和成功审计放在同一事务。
 
 ---
@@ -123,6 +125,8 @@
 
 职责：当前只维护 `production_consumed` 生产领料损耗。仓库侧报废、退料后报废和库存内报废仍是未来场景，不在本表当前物理结构与应用能力中预建。
 
+同一实物损耗场景以 `loss_purpose` 区分用途：`replenishment` 为在产损耗补料，`closeout_record` 为初次结案时的不补料损坏登记。不能通过是否存在补料单推断用途，不能覆盖旧损耗数量或把旧待确认单转换用途。对应结案命令及审批证据见[结案设计](production-termination.md#收尾物料损坏登记)。
+
 设计决策：系统将“生产授权上限”与“现场物料可用量”解耦。授权只控制批次允许生产的数量，不因领料后的现场损耗动态回收额度；实际物料损耗通过“损耗报废 → 损耗补料 → 物料需求 → 分配与出库”闭环处理，以适度降低系统复杂度，避免为追求实时物料联动而引入过高的状态维护成本。
 
 | 字段                  | 类型              | 说明                                      |
@@ -136,6 +140,8 @@
 | `material_variant_id` | `BIGINT UNSIGNED` | 报废精确物料版本 ID                       |
 | `batch_id`            | `BIGINT UNSIGNED` | 已确认领料的库存批次 ID，非空             |
 | `scrap_scene`         | `VARCHAR(40)`     | 当前固定为 `production_consumed`          |
+| `loss_purpose`       | `VARCHAR(30)`     | `replenishment/closeout_record`，创建后不可改 |
+| `closeout_id`        | `BIGINT UNSIGNED` | 结案登记必填；在产补料损耗为空，与生产批次组成来源外键 |
 | `scrap_number`        | `DECIMAL(12,4)`   | 报废数量                                  |
 | `unit_snapshot`       | `VARCHAR(20)`     | 报废时单位快照                            |
 | `reason_type`         | `VARCHAR(50)`     | 报废原因                                  |
@@ -170,6 +176,9 @@
 - 外键：`confirmed_by`、`cancelled_by` 及业务审计操作者字段关联 `users.id`
 - 检查约束：`CHECK (scrap_number > 0)`
 - 检查约束：`CHECK (scrap_scene = 'production_consumed')`
+- 用途约束：在产补料要求 `closeout_id IS NULL`；结案登记要求非空 `closeout_id`、`status=confirmed`、固定 `reason_type=closeout_damage` 和非空 `remark` 损坏原因。
+- 组合外键：`(closeout_id,production_batch_id) -> production_batch_closeout(id,production_batch_id)`；索引 `idx_item_scrap_closeout_batch` 支持根查询。
+- 数据库触发器拒绝用途／结案来源改写和已确认结案登记的更新、删除；补料单不得引用结案登记。结案登记只允许初次未送审的 `closing` 根，不能直接写入已结束任务。
 - 检查约束：`CHECK (status IN ('pending', 'confirmed', 'cancelled'))`
 - 检查约束：`pending` 要求 `confirmed_by/confirmed_at` 为空；`confirmed` 要求二者均非空；`cancelled` 要求二者为空
 - 非空来源列和组合外键共同保证 `production_consumed` 必须来自同一生产批次、需求、分配行、物料和库存批次
@@ -180,7 +189,7 @@
 - 生产消耗报废不应直接扣减原 allocation 的可再次出库量。
 - `production_consumed` 创建与确认时只允许选择状态为 `material_partially_outbound/material_outbound/doing` 的生产批次及其已确认领料分配行；部分出库后尚未开工时，现场暂存或搬运中的已领物料也可能发生损耗。物料、库存批次、需求、单位和生产批次都从服务端候选复制，不接受客户端自由拼接 ID 或单位。
 - 同一分配行当前可申报损耗量为“累计确认出库量 - `pending/returned` 退料占用量 - `pending/confirmed` 的 `production_consumed` 损耗占用量”；创建和确认事务都必须重新锁定来源分配行并校验，损耗数量必须大于 `0` 且不得超过该上限。取消待确认损耗必须填写原因并释放占用。
-- 现场创建损耗记录后状态为 `pending`。管理员确认时不提供“不补料”或修改补料数量的分支；同一事务把本单改为 `confirmed`、创建一张 `source_type = 'material_loss'` 的 `production_material_supplement`，并创建且仅创建一条 `material_loss_supplement` 需求。需求物料与单位固定取来源分配行，`need_number = scrap_number`。
+- 在产 `replenishment` 创建后状态为 `pending`。原确认入口只处理该用途，不提供“不补料”或修改补料数量的分支；同一事务把本单改为 `confirmed`、创建一张 `source_type = 'material_loss'` 的 `production_material_supplement`，并创建且仅创建一条 `material_loss_supplement` 需求。需求物料与单位固定取来源分配行，`need_number = scrap_number`。结案损坏由独立命令直接形成确认事实，不经过本确认入口。
 - 生产领料损耗补料只恢复损失的实物，不创建 `batch_step_scrap_records` 或 `batch_step_scrap_reproduction_authorization`，不增加产品补产额度，不修改批次计划量和工序可报上限。它与工序异常审批中的“产品报废并补产”是两条不同链路。
 - 损耗确认、补料单、补料需求、批次 `material_plan_version/version`、成功审计和 HTTP 幂等结果必须同事务提交；任一写入失败全部回滚。新增补料需求必须通过 Production 事务内需求计划写入器同步推进批次版本；若批次处于 `material_partially_outbound`，版本推进会使既有短批授权失效。已确认损耗不得改量或取消，错误修正必须等待独立冲销设计。
 - 通用库存报废仍未进入当前正式范围。`warehouse_allocated/return_after_outbound/in_stock` 的命令、接口和页面操作继续禁用，不得因实现生产领料损耗而一并开放。

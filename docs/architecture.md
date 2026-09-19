@@ -13,8 +13,9 @@
 
 - Identity/System：认证、RBAC、操作日志和管理端权限基础设施。
 - Product：产品分类、产品主数据、产品物料、技术文件、工序和工艺路线。
-- Approval：BOM 场景的顺序多级配置（角色或指定用户）、申请、节点共享待办与决定；角色成员实时解析，工单审批及 Notification 尚未接入。
-- Production：生产工单、生产批次、工序报工追溯，以及其依赖的生产物料需求、分配、领料出库、生产退料和库存盘点链路；按状态机分阶段迁移。
+- Approval：BOM、生产需求更正和批次收尾场景的顺序节点配置（角色、指定用户或业务关联人员）、申请、节点共享待办与决定；业务生效由各所有者 handler 执行，角色成员实时解析，业务人员在送审时冻结且资格实时核验，工单下达审批尚未接入。
+- Notification：通用站内消息、固定收件集合、本人已读及提交后空钩子，Approval 为首个调用方。
+- Production：生产工单、批次、工序报工追溯、需求纠错和逐项收尾，以及依赖的物料需求、分配、领料、退料和盘点。更正申请、收尾草稿、行动、线下质检记录及批准产出版本由 Production 所有，Approval 只通过公开处理器协作，不直接修改 Production 表。
 
 通用 Inventory（其他出入库、报废）、Quality（检验）和 Traceability（全流程追溯）只能在后续迁移阶段明确更新后追加，不得仅凭已有 UI 原型提前实现。当前盘点仅覆盖现有 `item_batch × stock_status` 账本，退料仅覆盖已确认生产领料并固定释放到公共可用库存。
 
@@ -27,6 +28,10 @@
 Port 和 Adapter。当前 Product 保持一个 NestJS 模块，内部划分 technical-file、catalog、
 process-step 和 process-route；只有工艺能力出现独立生命周期、团队所有权或大量外部调用时才
 提取 ProcessModule。
+
+Production 的成品入库扩展先按工单任务、生产执行、需求履约、结案产出、仓库操作及查询追溯划清内部用例职责，见[Production 内部职责](../apps/api/src/modules/production/docs/module-boundaries.md)。当前保留单一表所有权和出库／履约联动事务，不因菜单或文件长度直接提取 Inventory，也不把不同来源的报废合并为通用写入口。
+
+后续采购接入按[路线图](roadmap.md)先确定业务流，再确定 Production／Procurement／Inventory／Quality 的逐表所有权与事务，随后提取库存。[采购评审稿](procurement-inbound-design.md)包含候选边界；[ADR-0013](adr/0013-procurement-source-and-stock-boundaries.md)已确定两类采购来源、强制检验与检验后入库。此设计尚未改变下文当前所有权，不能据此增加第二库存写入口或预建空模块。
 
 `common` 仅存放真正跨模块且不含业务知识的能力，例如审计上下文、HTTP 安全装饰器和时间格式。
 `common` 不拥有业务表，也不得成为绕过模块边界的万能目录。`operation_logs` 是项目级平台审计
@@ -101,9 +106,10 @@ Identity 的密码算法和令牌签发/验证通过 `PasswordHasher`、`TokenSe
 | 所有者/类别      | 拥有或管理的数据                                                                                                                         |
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | Identity/System  | departments、users、roles、permissions、关联表、refresh_tokens                                                                           |
-| Product          | product_categories、products、materials、material_variants、product_materials、technical_files、process_steps、process_routes 及关联表                                 |
-| Production       | work_orders、work_order_material_versions、production_batches、batch_step_records、batch_step_reports、batch_step_abnormal_dispositions、rework_records、batch_step_scrap_records、batch_step_scrap_reproduction_authorization、production_scrap_supplement_plan、production_scrap_supplement_plan_line、production_material_supplement、production_material_requirement_basis、production_manual_demand_addition、production_item_demand、production_item_allocation、production_short_batch_authorization、production_short_batch_authorization_detail、item_scrap、inbound_order、inbound_detail、outbound_order、outbound_detail、return_order、return_detail、stock_check_order、stock_check_detail，以及当前生产库存切片的 item_batch、inventory_transaction 和可重建查询投影 inventory_batch_balance、inventory_material_variant_balance |
+| Product          | item_categories、products、materials、material_variants、product_materials、technical_files、process_steps、process_routes 及关联表                                 |
+| Production       | work_orders、work_order_daily_sequence、work_order_material_versions、production_batches、batch_step_records、batch_step_reports、batch_step_abnormal_dispositions、rework_records、batch_step_scrap_records、batch_step_scrap_reproduction_authorization、production_scrap_supplement_plan、production_scrap_supplement_plan_line、production_material_supplement、production_material_requirement_basis、production_manual_demand_addition、production_item_demand、production_item_allocation、production_short_batch_authorization、production_short_batch_authorization_detail、item_scrap、inbound_order、inbound_detail、outbound_order、outbound_detail、return_order、return_detail、stock_check_order、stock_check_detail，以及当前生产库存切片的 item_batch、inventory_transaction 和可重建查询投影 inventory_batch_balance、inventory_material_variant_balance |
 | Approval | approval_flow_definitions、approval_flow_versions、approval_flow_steps、approval_instances、approval_instance_steps、approval_actions |
+| Notification | notifications、notification_recipients |
 | 平台审计基础设施 | operation_logs                                                                                                                           |
 | 平台幂等基础设施 | http_idempotency_records（已落地）                                                                                                       |
 | common           | 不拥有业务表                                                                                                                             |
@@ -113,7 +119,7 @@ Identity 的密码算法和令牌签发/验证通过 `PasswordHasher`、`TokenSe
 
 Product 获取用户选项必须调用 Identity 的公开目录服务，不能直接查询 `users`。
 
-当前 Production 继续作为库存账本的唯一写入所有者，覆盖外购物料入库、生产物料分配、领料出库、生产退料和库存盘点；这些流程共享同一事务设施，库存数量只写 `inventory_transaction`。`/warehouse/return-orders` 与 `/warehouse/stock-checks` 只是 Production 模块的管理端 HTTP 入口，不建立第二 Warehouse Repository 或账本写入口。未来通用库存继续扩展并形成独立生命周期时，再整体评审提取 Inventory 模块；提取前不得复制表访问或形成双写。
+当前 Production 继续作为库存账本的唯一写入所有者，覆盖外购物料入库、按批准清单确认的生产流转与额外产出成品入库、生产物料分配、领料出库、生产退料和物料库存盘点；这些流程共享同一事务设施，库存数量只写 `inventory_transaction`。成品使用明确的 `product_id` 分支，物料继续使用 `item_id/material_variant_id`，不混用身份或另建账本。`/warehouse/return-orders` 与 `/warehouse/stock-checks` 只是 Production 模块的管理端 HTTP 入口，不建立第二 Warehouse Repository 或账本写入口。未来通用库存继续扩展并形成独立生命周期时，再整体评审提取 Inventory 模块；提取前不得复制表访问或形成双写。
 
 Production 内部退料只负责现场余料回仓，禁止通过需求计划 Writer 创建或恢复需求，也不得修改分配履约、物料计划版本或短批授权。损耗确认与人工追加分别负责产生其明确来源的新需求；执行模块独立校验开工/完工，短批授权与开工不读取退料或按净领用量设置门槛。仓库 UI 属于这些能力的展示入口，不能另行定义退料补领语义。修改任一相关能力须遵守 [Production 写入职责表](../apps/api/src/modules/production/docs/database/return-scrap-and-stocktake.md#业务语义与写入职责)。
 
@@ -149,7 +155,7 @@ Controller、Service 和 SQL 不得混写在同一文件。
 - 禁止 fire-and-forget 核心写操作。
 - 跨多个业务模块的写入在出现真实用例前不预建分布式事务；优先由一个明确用例通过公开 Facade 编排。
 
-后续通用 Notification 的消息、收件人仍与触发业务和成功审计同事务落库；仅外部通知扩展钩子在最外层事务确认提交成功、释放连接后异步调度，业务响应不等待其完成。回滚不触发，钩子异常独立捕获，不能把核心写入移入钩子。Notification 拥有通用发布与提交后通知端口，事务基础设施只管理通用生命周期；Approval 只是首个调用方。该模块和钩子尚未实施，默认空实现及 best-effort 边界见 [ADR-0007](adr/0007-general-notification-boundaries.md) 和[通知设计](notification-design.md)。
+通用 Notification 的消息、收件人仍与触发业务和成功审计同事务落库；仅外部通知扩展钩子在最外层事务确认提交成功、释放连接后异步调度，业务响应不等待其完成。回滚不触发，钩子异常独立捕获，不能把核心写入移入钩子。Notification 拥有通用发布与提交后通知端口，事务基础设施只管理通用生命周期；Approval 只是首个调用方。默认空实现及 best-effort 边界见 [ADR-0007](adr/0007-general-notification-boundaries.md) 和[通知设计](notification-design.md)。
 
 ## 7. 基础设施
 

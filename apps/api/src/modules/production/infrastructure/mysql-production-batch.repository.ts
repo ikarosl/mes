@@ -1,3 +1,5 @@
+import { workOrderAssignedQuantitySql } from './mysql-work-order-allocation.sql.js';
+import { lockWorkOrderForBatch } from './mysql-work-order-material-version.js';
 import { Inject, Injectable } from '@nestjs/common';
 import { generateBatchNo } from '@company/code-rules';
 import { withTransaction } from '@company/database';
@@ -147,7 +149,7 @@ export class MysqlProductionBatchRepository {
       );
       if (duplicate) throw new ProductionDomainError('CONFLICT', '同一工单下的生产批次号已存在');
       const [[assigned]] = await connection.query<(RowDataPacket & { quantity: string })[]>(
-        "SELECT COALESCE(SUM(planned_quantity),0) quantity FROM production_batches WHERE work_order_id=? AND status<>'cancelled' FOR UPDATE",
+        `SELECT ${workOrderAssignedQuantitySql('?', true)} quantity`,
         [workOrderId],
       );
       if (
@@ -294,6 +296,7 @@ export class MysqlProductionBatchRepository {
     audit: CommandContext,
   ): Promise<ProductionBatchDetail> {
     return withTransaction(this.pool, async (connection) => {
+      await lockWorkOrderForBatch(connection, id);
       const before = await findBatch(connection, id, true);
       if (before.status === 'cancelled') return this.getDetail(connection, id);
       requireBatchTransition(before.status, 'cancelled');
@@ -362,7 +365,12 @@ export class MysqlProductionBatchRepository {
   ): Promise<ProductionBatchDetail> {
     return withTransaction(this.pool, async (connection) => {
       const batch = await findBatch(connection, batchId, true);
-      if (batch.status === 'cancelled' || batch.status === 'completed')
+      if (
+        batch.status === 'cancelled' ||
+        batch.status === 'completed' ||
+        batch.status === 'terminated' ||
+        batch.status === 'closing'
+      )
         throw new ProductionDomainError('INVALID_STATE', '已取消或已完成批次不能调整工序执行参数');
       const before = await findStepRecord(connection, batchId, recordId, true);
       if (before.status !== 'pending' && before.status !== 'assigned')

@@ -84,13 +84,15 @@ Axios 响应拦截器按照注册顺序进入后续 Promise 链。当前错误�
 基础响应错误拦截器会在以下条件全部满足时重试：
 
 1. 请求存在有效 `config`；
-2. 没有设置 `skipRetry`；
+2. 没有设置 `skipRetry`，错误不是 Axios 主动取消（`axios.isCancel(error)`），且请求 `signal` 未标记 `aborted`；
 3. 请求方法为 `GET`、`HEAD`、`OPTIONS`，或者显式设置 `retryIdempotentWrite: true` 且携带 `Idempotency-Key`；
 4. 当前重试次数小于 `retryTimes`，`retryTimes` 默认值为 1；
 5. 没有收到响应；或者只读安全请求收到不小于 500 的响应；或者显式启用 `retryIdempotentWrite` 的写请求收到
    `502`、`503`、`504`。
 
 重试等待时间为 `300ms × 当前重试次数`。如果不满足重试条件或重试后仍失败，基础拦截器继续返回 rejected Promise，将错误交给后续拦截器。
+
+主动取消不按“没有响应的网络失败”重试，此规则由 `@company/request` 统一执行，影响所有使用该共享客户端的调用方；普通网络失败及上述 5xx 重试规则不变。取消仍向调用方返回 rejected Promise，不自动转换为成功。可取消读取的所有者须通过请求代际和目标身份丢弃旧结果，恢复局部 loading，并抑制已经失效的取消提示。当前报工记录／追溯读取以 `skipErrorHandling` 接管提示；这不代表全局隐藏所有调用方的取消错误。页面失活不得自动取消业务写命令。
 
 `retryTimes` 表示首次请求之后允许的重试次数，例如幂等写接口设置 `retryTimes: 2` 时最多总计发送三次。
 写请求收到明确 `500` 时不自动重试：它通常代表确定性的代码或数据错误，机械重放只会重复失败。无响应、

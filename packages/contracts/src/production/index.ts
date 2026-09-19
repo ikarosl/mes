@@ -1,5 +1,6 @@
 export * from './statuses.js';
 export * from './work-order.js';
+export * from './work-order-material-configuration.js';
 export * from './batch.js';
 export * from './material.js';
 export * from './material-demand-management.js';
@@ -10,3 +11,8 @@ export * from './execution.js';
 export * from './abnormal.js';
 export * from './supplement.js';
 export * from './trace.js';
+export * from './termination.js';
+export * from './demand-correction.js';
+export * from './closeout.js';
+export * from './output.js';
+export * from './finished-inbound.js';

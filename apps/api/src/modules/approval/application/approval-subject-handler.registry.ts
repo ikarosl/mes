@@ -16,6 +16,24 @@ export class ApprovalSubjectHandlerRegistry {
       handler.scene.subjectType !== handler.subjectType
     )
       throw new Error('审批场景与处理能力不一致');
+    const sources = handler.scene.businessAssigneeSources;
+    if (!Array.isArray(sources) || typeof handler.prepareForApproval !== 'function')
+      throw new Error('审批场景未声明业务人员来源及送审准备能力');
+    const sourceCodes = new Set<string>();
+    for (const source of sources) {
+      if (
+        !/^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/.test(source.code) ||
+        source.code.length > 100 ||
+        !source.name.trim() ||
+        !source.description.trim() ||
+        sourceCodes.has(source.code)
+      )
+        throw new Error('审批场景业务人员来源无效或重复');
+      sourceCodes.add(source.code);
+    }
+    const requiredSource = handler.scene.requiredFinalAssigneeSourceCode;
+    if (requiredSource !== null && !sourceCodes.has(requiredSource))
+      throw new Error('审批场景最终节点来源未在本场景声明');
     const existing = this.listSceneDefinitions().find((scene) => scene.code === handler.sceneCode);
     if (existing && this.handlers.get(this.key(existing.code, existing.subjectType)) !== handler)
       throw new Error('审批场景编码重复');

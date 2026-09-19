@@ -29,11 +29,11 @@
         <el-descriptions-item label="计划数量">
           {{ formatQuantity(order.plannedQuantity) }} {{ order.unit }}
         </el-descriptions-item>
-        <el-descriptions-item label="批次完成量">
-          {{ formatQuantity(completedQuantity) }} {{ order.unit }}
+        <el-descriptions-item label="审定计划内产出">
+          {{ formatQuantity(approvedPlannedQuantity) }} {{ order.unit }}
         </el-descriptions-item>
         <el-descriptions-item label="批次汇总">
-          非取消 {{ activeBatches.length }} 个，未结束 {{ unfinishedBatches.length }} 个
+          非取消 {{ activeBatches.length }} 个，未完成结案 {{ unfinishedBatches.length }} 个
         </el-descriptions-item>
       </el-descriptions>
 
@@ -57,11 +57,17 @@
           <template #default="{ row }">{{ formatQuantity(row.plannedQuantity) }}</template>
         </el-table-column>
         <el-table-column
-          label="完成数量"
-          width="120"
+          label="末工序正常报工量"
+          width="150"
           align="right"
         >
-          <template #default="{ row }">{{ formatQuantity(row.completedQuantity) }}</template>
+          <template #default="{ row }">{{ formatQuantity(row.lastStepReportedQuantity) }}</template>
+        </el-table-column>
+        <el-table-column
+          label="当前批准产出"
+          min-width="230"
+        >
+          <template #default="{ row }"><BatchApprovedOutput :output="row.finalOutput" /></template>
         </el-table-column>
         <el-table-column
           label="状态"
@@ -100,7 +106,7 @@
             :rows="3"
             maxlength="5000"
             show-word-limit
-            placeholder="说明未生产或不足量结案原因"
+            placeholder="说明本轮结束或提前结案原因"
             @blur="reasonTouched = true"
           />
         </el-form-item>
@@ -126,6 +132,7 @@ import { computed, ref, watch } from 'vue';
 import type { WorkOrderDetail } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
 import { batchStatusMeta, formatQuantity, orderStatusMeta } from '../production-status';
+import BatchApprovedOutput from './BatchApprovedOutput.vue';
 
 type TransitionMode = 'complete' | 'early-close' | 'archive';
 
@@ -148,17 +155,27 @@ const activeBatches = computed(() =>
   (props.order?.batches ?? []).filter((batch) => batch.status !== 'cancelled'),
 );
 const unfinishedBatches = computed(() =>
-  activeBatches.value.filter((batch) => batch.status !== 'completed'),
+  activeBatches.value.filter(
+    (batch) =>
+      (batch.status !== 'completed' && batch.status !== 'terminated') ||
+      !batch.currentOutputRevisionId ||
+      !batch.finalOutput,
+  ),
 );
-const completedQuantity = computed(() =>
-  activeBatches.value.reduce((sum, batch) => sum + integerQuantity(batch.completedQuantity), 0),
+const approvedPlannedQuantity = computed(() =>
+  activeBatches.value.reduce(
+    (sum, batch) => sum + integerQuantity(batch.finalOutput?.availableQuantity ?? 0),
+    0,
+  ),
 );
 const plannedQuantity = computed(() => integerQuantity(props.order?.plannedQuantity ?? 0));
 const isFullyProduced = computed(
   () =>
     activeBatches.value.length > 0 &&
-    unfinishedBatches.value.length === 0 &&
-    completedQuantity.value === plannedQuantity.value,
+    activeBatches.value.every(
+      (batch) => batch.status === 'completed' && batch.currentOutputRevisionId && batch.finalOutput,
+    ) &&
+    approvedPlannedQuantity.value === plannedQuantity.value,
 );
 const canComplete = computed(() => isFullyProduced.value);
 const trimmedReason = computed(() => reason.value.trim());
@@ -199,25 +216,27 @@ const alertType = computed<'success' | 'warning' | 'error' | 'info'>(() => {
 });
 const alertTitle = computed(() => {
   if (props.mode === 'archive') return '归档后工单进入终态，不能继续生产操作';
-  if (unfinishedBatches.value.length > 0) return '存在未结束生产批次，当前不能提交';
+  if (unfinishedBatches.value.length > 0) return '存在未完成结案的生产批次，当前不能提交';
   if (props.mode === 'complete')
-    return canComplete.value ? '批次汇总已达到工单计划量' : '批次汇总尚未达到足量完工条件';
-  if (isFullyProduced.value) return '生产数量已足量完成，请改用“确认工单完工”';
+    return canComplete.value ? '审定计划内产出已达到工单计划量' : '当前尚未达到工单完工条件';
+  if (isFullyProduced.value) return '审定计划内产出已足量，请改用“确认工单完工”';
+  if (activeBatches.value.some((batch) => batch.status === 'terminated'))
+    return '该操作将按结束生产结案';
   return activeBatches.value.length === 0 ? '该操作将按未生产结案' : '该操作将按不足量结案';
 });
 const alertDescription = computed(() => {
   if (unfinishedBatches.value.length > 0)
-    return `请先完成或取消所有未结束生产批次：${unfinishedBatches.value
+    return `请先完成各批次结案审批，或取消尚未执行的批次：${unfinishedBatches.value
       .map((batch) => `${batch.batchNo}（${batchStatusMeta(batch.status).label}）`)
       .join('、')}`;
   if (props.mode === 'complete')
     return canComplete.value
-      ? '请管理员复核工单、批次和完成数量；确认后工单状态变为“已完工”。'
-      : '所有非取消批次必须完成，且批次完成量合计必须等于工单计划量。';
+      ? '请管理员复核工单及各批次当前批准清单；确认后工单状态变为“已完工”。'
+      : '所有非取消批次必须正常完成并有批准清单，审定计划内产出合计必须等于工单计划量；含提前结束批次时办理提前关闭。';
   if (props.mode === 'early-close')
     return isFullyProduced.value
       ? '足量生产不能按提前结案处理，应先确认完工，再执行行政归档。'
-      : '提前关闭不会自动取消批次，关闭原因会随本次命令写入操作审计。';
+      : '产出仅汇总各批次当前批准清单，不使用报工量或入库量。提前关闭不会自动取消批次，关闭原因随命令留存。';
   return '该操作只做成功完工后的行政归档，不改变批次生产事实。';
 });
 

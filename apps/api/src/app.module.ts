@@ -7,9 +7,17 @@ import { HealthModule } from './infrastructure/health/health.module.js';
 import { ProductModule } from './modules/product/public.js';
 import { ProductionModule } from './modules/production/public.js';
 import { ApprovalModule } from './modules/approval/public.js';
+import { NotificationModule } from './modules/notification/public.js';
 import { HttpExceptionFilter } from './presentation/http/http-exception.filter.js';
 @Module({
-  imports: [HealthModule, IdentityModule, ApprovalModule, ProductModule, ProductionModule],
+  imports: [
+    HealthModule,
+    IdentityModule,
+    NotificationModule,
+    ApprovalModule,
+    ProductModule,
+    ProductionModule,
+  ],
   controllers: [AppController],
   providers: [
     { provide: APP_FILTER, useClass: HttpExceptionFilter },

@@ -8,6 +8,9 @@ import {
 } from '../../../apps/api/src/modules/approval/public.js';
 import { MysqlApprovalFlowRepository } from '../../../apps/api/src/modules/approval/infrastructure/mysql-approval-flow.repository.js';
 import { MysqlApprovalRepository } from '../../../apps/api/src/modules/approval/infrastructure/mysql-approval.repository.js';
+import { ApprovalNotifications } from '../../../apps/api/src/modules/approval/infrastructure/approval-notifications.js';
+import { NotificationService } from '../../../apps/api/src/modules/notification/public.js';
+import { MysqlNotificationRepository } from '../../../apps/api/src/modules/notification/infrastructure/mysql-notification.repository.js';
 import { IdentityDirectoryService } from '../../../apps/api/src/modules/identity/application/identity-directory.service.js';
 import { MysqlRbacRepository } from '../../../apps/api/src/modules/identity/infrastructure/mysql-rbac.repository.js';
 import { ProductBomApprovalHandler } from '../../../apps/api/src/modules/product/public.js';
@@ -52,7 +55,15 @@ export const approveBomForProduction = async (
   bomHandler.onModuleInit();
   const identity = new IdentityDirectoryService(new MysqlRbacRepository(pool));
   const flows = new MysqlApprovalFlowRepository(pool, identity, handlers);
-  const repository = new MysqlApprovalRepository(pool, identity, handlers, flows);
+  const repository = new MysqlApprovalRepository(
+    pool,
+    identity,
+    handlers,
+    flows,
+    new ApprovalNotifications(
+      new NotificationService(new MysqlNotificationRepository(pool, { handle: () => undefined })),
+    ),
+  );
   const approvals = new ApprovalService(repository, flows);
 
   const draft = await flows.saveFlowDraft(
@@ -65,6 +76,7 @@ export const approveBomForProduction = async (
         {
           name: 'production approval',
           assigneeType: 'role',
+          assigneeSourceCode: null,
           roleId: String(roleId),
           assigneeUserId: null,
         },
@@ -115,6 +127,14 @@ export const cleanupApprovedBom = async (
 ): Promise<void> => {
   await pool.execute(
     "UPDATE products SET bom_status='draft',bom_approval_instance_id=NULL,bom_locked_at=NULL,bom_locked_by=NULL WHERE id=?",
+    [fixture.productId],
+  );
+  await pool.execute(
+    "DELETE r FROM notification_recipients r JOIN notifications n ON n.id=r.notification_id JOIN approval_instances a ON a.id=n.target_id WHERE n.target_type='approval_instance' AND a.subject_type='product' AND a.subject_id=?",
+    [fixture.productId],
+  );
+  await pool.execute(
+    "DELETE n FROM notifications n JOIN approval_instances a ON a.id=n.target_id WHERE n.target_type='approval_instance' AND a.subject_type='product' AND a.subject_id=?",
     [fixture.productId],
   );
   if (fixture.approvalInstanceId) {

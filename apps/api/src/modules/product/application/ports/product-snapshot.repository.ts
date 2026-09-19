@@ -18,6 +18,7 @@ export abstract class ProductSnapshotRepository {
     requestedRouteId: string | null,
   ): Promise<ProcessRouteSnapshot | null>;
   abstract getBomSnapshot(productId: string): Promise<ProductBomSnapshot>;
+  abstract getApprovedBomSnapshot(productId: string): Promise<ProductBomSnapshot>;
   abstract getRouteSnapshot(routeId: string): Promise<ProcessRouteSnapshot>;
   abstract getEnabledSopFileSnapshot(fileId: string): Promise<EnabledSopFileSnapshot>;
 }

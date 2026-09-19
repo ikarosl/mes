@@ -1,6 +1,6 @@
 import { EMessage } from '../../../utils/message';
 import { ref, watch } from 'vue';
-import { useLatestRequest } from '../../../composables/requests/useLatestRequest';
+import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
 import type {
   BatchStepExecutionRecordItem,
   BatchStepReportItem,
@@ -33,8 +33,8 @@ export const useProductionExecutionRecords = () => {
   const reworkCompletionIntents = new Map<string, ReturnType<typeof useIdempotentIntent>>();
   const supplementIntents = new Map<string, ReturnType<typeof useIdempotentIntent>>();
 
-  const listRequests = useLatestRequest();
-  const detailRequests = useLatestRequest();
+  const listRequests = useLatestReadRequest(() => (loading.value = false));
+  const detailRequests = useLatestReadRequest(() => (detailLoading.value = false));
   watch(
     selectedBatchId,
     () => {
@@ -48,7 +48,8 @@ export const useProductionExecutionRecords = () => {
   );
 
   const loadBatches = async (keyword = '', page = 1): Promise<void> => {
-    const isCurrent = listRequests.begin();
+    if (!listRequests.isActive()) return;
+    const { isCurrent, signal } = listRequests.begin();
     loading.value = true;
     try {
       const result = await productionApi.listExecutionBatchSummaries(
@@ -57,7 +58,7 @@ export const useProductionExecutionRecords = () => {
           page,
           pageSize: 20,
         },
-        { skipErrorHandling: true },
+        { skipErrorHandling: true, signal },
       );
       if (!isCurrent()) return;
       batches.value = result.items;
@@ -76,17 +77,16 @@ export const useProductionExecutionRecords = () => {
     }
   };
   const selectBatch = async (batchId: string): Promise<void> => {
+    if (!detailRequests.isActive()) return;
     selectedBatchId.value = batchId;
-    const isCurrent = detailRequests.begin(() => selectedBatchId.value === batchId);
-    record.value = null;
-    completionCheck.value = null;
-    reworks.value = [];
+    const { isCurrent, signal } = detailRequests.begin(() => selectedBatchId.value === batchId);
+    // 仅目标变化时清空；同一批次刷新复用表格，加载期间 requireCurrentBatch 阻止写入。
     detailLoading.value = true;
     try {
       const [nextRecord, nextCompletionCheck, nextReworks] = await Promise.all([
-        productionApi.getBatchExecutionRecords(batchId, { skipErrorHandling: true }),
-        productionApi.getExecutionCompletionCheck(batchId, { skipErrorHandling: true }),
-        productionApi.listBatchReworks(batchId, { skipErrorHandling: true }),
+        productionApi.getBatchExecutionRecords(batchId, { skipErrorHandling: true, signal }),
+        productionApi.getExecutionCompletionCheck(batchId, { skipErrorHandling: true, signal }),
+        productionApi.listBatchReworks(batchId, { skipErrorHandling: true, signal }),
       ]);
       if (!isCurrent()) return;
       if (
@@ -119,13 +119,20 @@ export const useProductionExecutionRecords = () => {
           : batch,
       );
     } catch (error) {
-      if (isCurrent()) EMessage.error(error, '加载失败，请重试');
+      if (isCurrent()) {
+        // 刷新失败不能继续用旧完工检查和旧版本操作。
+        record.value = null;
+        completionCheck.value = null;
+        reworks.value = [];
+        EMessage.error(error, '加载失败，请重试');
+      }
     } finally {
       if (isCurrent()) detailLoading.value = false;
     }
   };
   const requireCurrentBatch = (batchId: string): void => {
     if (
+      !detailRequests.isActive() ||
       detailLoading.value ||
       selectedBatchId.value !== batchId ||
       record.value?.productionBatchId !== batchId

@@ -53,7 +53,7 @@ export class MysqlMaterialVariantRepository extends MaterialVariantRepository {
       `SELECT COUNT(*) total
          FROM material_variants v
          JOIN materials p ON p.id=v.material_id
-         JOIN product_categories c ON c.id=p.category_id
+         JOIN item_categories c ON c.id=p.category_id
         WHERE ${where}`,
       parameters,
     );
@@ -62,7 +62,7 @@ export class MysqlMaterialVariantRepository extends MaterialVariantRepository {
               v.major_version,v.minor_version,v.variant_code,v.status,v.is_deleted,v.remark,v.updated_at
          FROM material_variants v
          JOIN materials p ON p.id=v.material_id
-         JOIN product_categories c ON c.id=p.category_id
+         JOIN item_categories c ON c.id=p.category_id
         WHERE ${where}
         ORDER BY p.material_code,v.major_version,v.minor_version,v.id
         LIMIT ? OFFSET ?`,
@@ -103,7 +103,7 @@ export class MysqlMaterialVariantRepository extends MaterialVariantRepository {
                 v.major_version,v.minor_version,v.variant_code,v.status,v.is_deleted,v.remark,v.updated_at
            FROM material_variants v
            JOIN materials p ON p.id=v.material_id
-           JOIN product_categories c ON c.id=p.category_id
+           JOIN item_categories c ON c.id=p.category_id
           WHERE v.material_id IN (${materialIds.map(() => '?').join(',')})
             AND v.status=1 AND v.is_deleted=0 AND p.status=1 AND p.is_deleted=0
             AND c.status=1 AND c.is_deleted=0 AND c.item_kind='material'
@@ -153,7 +153,7 @@ export class MysqlMaterialVariantRepository extends MaterialVariantRepository {
         })[]
       >(
         `SELECT p.id,p.material_code,p.status,p.is_deleted
-           FROM materials p JOIN product_categories c ON c.id=p.category_id
+           FROM materials p JOIN item_categories c ON c.id=p.category_id
           WHERE p.id=? AND p.is_deleted=0 FOR UPDATE`,
         [command.materialId],
       );

@@ -74,11 +74,13 @@ const router = createRouter({
 const orderRow = {
   id: 'o1',
   workOrderNo: 'WO-001',
+  previousResearchOrderId: null,
+  orderType: 'mass_production',
   productId: 'p1',
   productCode: 'P001',
   productName: '环形器',
-  plannedQuantity: 100,
-  assignedQuantity: 0,
+  plannedQuantity: '100.0000',
+  assignedQuantity: '0.0000',
   workOrderOwnerId: null,
   customerName: null,
   planStartDate: null,
@@ -109,7 +111,13 @@ describe('ProductionOrdersPage', () => {
     listOrderBatches.mockReset();
     listOrderBatches.mockResolvedValue([]);
     getOrder.mockReset();
-    getOrder.mockResolvedValue({ ...orderRow, unit: '个', batches: [] });
+    getOrder.mockResolvedValue({
+      ...orderRow,
+      unit: '个',
+      batches: [],
+      previousResearchOrder: null,
+      nextResearchOrders: [],
+    });
     releaseOrder.mockReset();
     releaseOrder.mockResolvedValue(undefined);
     cancelOrder.mockReset();

@@ -381,7 +381,7 @@ const insertItemBalanceProjectionFixture = async (
   );
   const categoryId = await insert(
     connection,
-    "INSERT INTO product_categories (category_code,category_name,item_kind) VALUES (?,?,'material')",
+    "INSERT INTO item_categories (category_code,category_name,item_kind) VALUES (?,?,'material')",
     [`${token}-category`, 'Inventory migration material'],
   );
   const materialId = await insert(
@@ -440,7 +440,7 @@ const deleteItemBalanceProjectionFixture = async (
   await connection.execute('DELETE FROM item_batch WHERE id=?', [fixture.itemBatchId]);
   await connection.execute('DELETE FROM material_variants WHERE id=?', [fixture.materialVariantId]);
   await connection.execute('DELETE FROM materials WHERE id=?', [fixture.materialId]);
-  await connection.execute('DELETE FROM product_categories WHERE id=?', [fixture.categoryId]);
+  await connection.execute('DELETE FROM item_categories WHERE id=?', [fixture.categoryId]);
   await connection.execute('DELETE FROM users WHERE id=?', [fixture.actorId]);
 };
 

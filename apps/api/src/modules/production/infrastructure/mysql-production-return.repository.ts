@@ -457,6 +457,7 @@ const mapReturnCandidate = (row: ReturnCandidateRow): ReturnOrderCandidateItem =
   batchCode: row.batch_code,
   confirmedOutboundQuantity: decimal(integerQuantity(row.confirmed_quantity)),
   occupiedReturnQuantity: decimal(integerQuantity(row.occupied_quantity)),
+  occupiedLossQuantity: decimal(integerQuantity(row.occupied_loss_quantity)),
   returnableQuantity: decimal(returnableQuantity(row)),
   unit: row.unit_snapshot,
 });

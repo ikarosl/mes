@@ -17,10 +17,11 @@ import { toBeijingISOString } from '../../../common/time/date-time.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
 import { ApprovalDomainError } from '../domain/approval.errors.js';
 import { ApprovalSubjectHandlerRegistry } from '../application/approval-subject-handler.registry.js';
+import type { ApprovalSceneDefinition } from '../application/approval-scenes.js';
 import { ApprovalFlowRepository } from '../application/ports/approval-flow.repository.js';
 import { writeApprovalAudit } from './approval-audit.js';
 import {
-  assertAssigneeRule,
+  assertSceneAssigneeRules,
   resolveAssigneeIds,
   type AssigneeRuleRow,
 } from './approval-assignees.js';
@@ -81,6 +82,8 @@ export class MysqlApprovalFlowRepository extends ApprovalFlowRepository {
       module: scene.module,
       name: scene.name,
       description: scene.description,
+      businessAssigneeSources: scene.businessAssigneeSources.map((source) => ({ ...source })),
+      requiredFinalAssigneeSourceCode: scene.requiredFinalAssigneeSourceCode,
       configured: configured.has(scene.code) && configured.get(scene.code) !== null,
       activeFlowVersion: configured.get(scene.code) ?? null,
     }));
@@ -104,7 +107,7 @@ export class MysqlApprovalFlowRepository extends ApprovalFlowRepository {
     payload: SaveApprovalFlowDraft,
     audit: CommandContext,
   ): Promise<ApprovalFlowDetail> {
-    this.handlers.getSceneDefinition(sceneCode);
+    const scene = this.handlers.getSceneDefinition(sceneCode);
     this.requireActor(audit);
     const name = payload.name.trim();
     if (!name) throw new ApprovalDomainError('INVALID_INPUT', '审批流程名称不能为空');
@@ -120,17 +123,22 @@ export class MysqlApprovalFlowRepository extends ApprovalFlowRepository {
         nodeCodes.add(step.nodeCode);
       }
     }
+    assertSceneAssigneeRules(
+      scene,
+      payload.steps.map((step) => ({
+        assignee_type: step.assigneeType,
+        role_id: step.roleId,
+        assignee_user_id: step.assigneeUserId,
+        assignee_source_code: step.assigneeSourceCode,
+      })),
+    );
     const roleOptions = await this.identity.listApprovalRoleOptions();
     const roles = new Map(roleOptions.map((role) => [role.id, role]));
     const userIds = new Set((await this.identity.listApprovalUserOptions()).map((user) => user.id));
     for (const step of payload.steps) {
-      assertAssigneeRule({
-        assignee_type: step.assigneeType,
-        role_id: step.roleId,
-        assignee_user_id: step.assigneeUserId,
-      });
       if (
-        step.assigneeType === 'role' ? !roles.has(step.roleId!) : !userIds.has(step.assigneeUserId!)
+        (step.assigneeType === 'role' && !roles.has(step.roleId!)) ||
+        (step.assigneeType === 'user' && !userIds.has(step.assigneeUserId!))
       ) {
         throw new ApprovalDomainError(
           'INVALID_INPUT',
@@ -202,7 +210,7 @@ export class MysqlApprovalFlowRepository extends ApprovalFlowRepository {
       }
 
       const [existingSteps] = await connection.query<FlowStepRow[]>(
-        'SELECT id,flow_version_id,node_code,step_no,name,assignee_type,role_id,assignee_user_id FROM approval_flow_steps WHERE flow_version_id=? FOR UPDATE',
+        'SELECT id,flow_version_id,node_code,step_no,name,assignee_type,role_id,assignee_user_id,assignee_source_code FROM approval_flow_steps WHERE flow_version_id=? FOR UPDATE',
         [draftId],
       );
       const existing = new Map(existingSteps.map((step) => [step.node_code, step]));
@@ -230,7 +238,7 @@ export class MysqlApprovalFlowRepository extends ApprovalFlowRepository {
         if (old) {
           await connection.execute(
             `UPDATE approval_flow_steps
-                SET step_no=?,name=?,assignee_type=?,role_id=?,assignee_user_id=?,is_deleted=0,deleted_by=NULL,deleted_at=NULL,
+                SET step_no=?,name=?,assignee_type=?,role_id=?,assignee_user_id=?,assignee_source_code=?,is_deleted=0,deleted_by=NULL,deleted_at=NULL,
                     updated_by=?,version=version+1
               WHERE id=? AND flow_version_id=?`,
             [
@@ -239,6 +247,7 @@ export class MysqlApprovalFlowRepository extends ApprovalFlowRepository {
               item.assigneeType,
               item.roleId,
               item.assigneeUserId,
+              item.assigneeSourceCode,
               audit.actorId,
               old.id,
               draftId,
@@ -247,8 +256,8 @@ export class MysqlApprovalFlowRepository extends ApprovalFlowRepository {
         } else {
           await connection.execute(
             `INSERT INTO approval_flow_steps
-              (flow_version_id,node_code,step_no,name,assignee_type,role_id,assignee_user_id,created_by,updated_by)
-             VALUES (?,?,?,?,?,?,?,?,?)`,
+              (flow_version_id,node_code,step_no,name,assignee_type,role_id,assignee_user_id,assignee_source_code,created_by,updated_by)
+             VALUES (?,?,?,?,?,?,?,?,?,?)`,
             [
               draftId,
               nodeCode,
@@ -257,6 +266,7 @@ export class MysqlApprovalFlowRepository extends ApprovalFlowRepository {
               item.assigneeType,
               item.roleId,
               item.assigneeUserId,
+              item.assigneeSourceCode,
               audit.actorId,
               audit.actorId,
             ],
@@ -292,7 +302,7 @@ export class MysqlApprovalFlowRepository extends ApprovalFlowRepository {
     command: PublishApprovalFlowCommand,
     audit: CommandContext,
   ): Promise<ApprovalFlowDetail> {
-    this.handlers.getSceneDefinition(sceneCode);
+    const scene = this.handlers.getSceneDefinition(sceneCode);
     this.requireActor(audit);
     await withTransaction(this.pool, async (connection) => {
       const [[definition]] = await connection.query<DefinitionRow[]>(
@@ -308,12 +318,14 @@ export class MysqlApprovalFlowRepository extends ApprovalFlowRepository {
       if (!draft || Number(draft.version) !== command.version)
         throw new ApprovalDomainError('CONCURRENT_MODIFICATION', '审批草稿已变化，请刷新后重试');
       const [steps] = await connection.query<FlowStepRow[]>(
-        `SELECT id,flow_version_id,node_code,step_no,name,assignee_type,role_id,assignee_user_id
+        `SELECT id,flow_version_id,node_code,step_no,name,assignee_type,role_id,assignee_user_id,assignee_source_code
            FROM approval_flow_steps WHERE flow_version_id=? AND is_deleted=0 ORDER BY step_no FOR UPDATE`,
         [draft.id],
       );
       this.assertSequentialSteps(steps);
+      assertSceneAssigneeRules(scene, steps);
       for (const step of steps) {
+        if (step.assignee_type === 'business') continue;
         if ((await resolveAssigneeIds(this.identity, step)).length === 0)
           throw new ApprovalDomainError(
             'NO_ELIGIBLE_ASSIGNEE',
@@ -342,6 +354,7 @@ export class MysqlApprovalFlowRepository extends ApprovalFlowRepository {
     connection: PoolConnection,
     sceneCode: string,
   ): Promise<{ flow: FlowVersionRow; steps: FlowStepRow[] }> {
+    const scene = this.handlers.getSceneDefinition(sceneCode);
     const [[definition]] = await connection.query<DefinitionRow[]>(
       `SELECT id,scene_code,name,published_version_id,version
            FROM approval_flow_definitions
@@ -358,11 +371,12 @@ export class MysqlApprovalFlowRepository extends ApprovalFlowRepository {
     );
     if (!flow) throw new ApprovalDomainError('FLOW_NOT_CONFIGURED', '审批流程版本不可用');
     const [steps] = await connection.query<FlowStepRow[]>(
-      `SELECT id,flow_version_id,node_code,step_no,name,assignee_type,role_id,assignee_user_id
+      `SELECT id,flow_version_id,node_code,step_no,name,assignee_type,role_id,assignee_user_id,assignee_source_code
            FROM approval_flow_steps WHERE flow_version_id=? AND is_deleted=0 ORDER BY step_no FOR UPDATE`,
       [flow.id],
     );
     this.assertSequentialSteps(steps);
+    assertSceneAssigneeRules(scene, steps);
     return { flow, steps };
   }
 
@@ -372,7 +386,12 @@ export class MysqlApprovalFlowRepository extends ApprovalFlowRepository {
       'SELECT id,scene_code,name,published_version_id,version FROM approval_flow_definitions WHERE scene_code=? AND is_deleted=0',
       [sceneCode],
     );
-    if (!definition) return { sceneCode, name: scene.name, published: null, draft: null };
+    const assignmentPolicy = {
+      businessAssigneeSources: scene.businessAssigneeSources.map((source) => ({ ...source })),
+      requiredFinalAssigneeSourceCode: scene.requiredFinalAssigneeSourceCode,
+    };
+    if (!definition)
+      return { sceneCode, name: scene.name, ...assignmentPolicy, published: null, draft: null };
     const [versions] = await db.query<FlowVersionRow[]>(
       `SELECT id,definition_id,version_no,status,published_at,version FROM approval_flow_versions
        WHERE definition_id=? AND status IN ('published','draft') AND is_deleted=0 ORDER BY version_no DESC`,
@@ -385,14 +404,19 @@ export class MysqlApprovalFlowRepository extends ApprovalFlowRepository {
     return {
       sceneCode,
       name: definition.name,
-      published: published ? await this.mapFlowVersion(db, published) : null,
-      draft: draft ? await this.mapFlowVersion(db, draft) : null,
+      ...assignmentPolicy,
+      published: published ? await this.mapFlowVersion(db, published, scene) : null,
+      draft: draft ? await this.mapFlowVersion(db, draft, scene) : null,
     };
   }
 
-  private async mapFlowVersion(db: Db, row: FlowVersionRow): Promise<ApprovalFlowVersion> {
+  private async mapFlowVersion(
+    db: Db,
+    row: FlowVersionRow,
+    scene: ApprovalSceneDefinition,
+  ): Promise<ApprovalFlowVersion> {
     const [steps] = await db.query<FlowStepRow[]>(
-      'SELECT id,flow_version_id,node_code,step_no,name,assignee_type,role_id,assignee_user_id FROM approval_flow_steps WHERE flow_version_id=? AND is_deleted=0 ORDER BY step_no',
+      'SELECT id,flow_version_id,node_code,step_no,name,assignee_type,role_id,assignee_user_id,assignee_source_code FROM approval_flow_steps WHERE flow_version_id=? AND is_deleted=0 ORDER BY step_no',
       [row.id],
     );
     const roles = new Map(
@@ -421,6 +445,13 @@ export class MysqlApprovalFlowRepository extends ApprovalFlowRepository {
         stepNo: Number(s.step_no),
         name: s.name,
         assigneeType: s.assignee_type,
+        assigneeSourceCode: s.assignee_source_code,
+        assigneeSourceName:
+          s.assignee_source_code === null
+            ? null
+            : (scene.businessAssigneeSources.find(
+                (source) => source.code === s.assignee_source_code,
+              )?.name ?? s.assignee_source_code),
         roleId: s.role_id === null ? null : String(s.role_id),
         roleName: s.role_id === null ? null : (roles.get(String(s.role_id)) ?? String(s.role_id)),
         assigneeUserId: s.assignee_user_id === null ? null : String(s.assignee_user_id),
@@ -433,7 +464,11 @@ export class MysqlApprovalFlowRepository extends ApprovalFlowRepository {
   }
 
   private assertSequentialSteps(steps: FlowStepRow[]): void {
-    if (!steps.length || steps.some((step, index) => step.step_no !== index + 1))
+    if (
+      !steps.length ||
+      steps.length > 20 ||
+      steps.some((step, index) => step.step_no !== index + 1)
+    )
       throw new ApprovalDomainError('INVALID_INPUT', '审批流程必须至少一级且顺序连续');
   }
   private newNodeCode(existing: Map<string, FlowStepRow>): string {
