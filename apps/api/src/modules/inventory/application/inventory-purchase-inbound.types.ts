@@ -1,8 +1,8 @@
 export interface PurchaseReceiptInboundLine {
+  allocationId: string;
   receiptLineId: string;
   receiptRevisionId: string;
   inspectionId: string;
-  scopeId: string;
   itemId: string;
   materialVariantId: string;
   itemCode: string;
@@ -24,7 +24,7 @@ export interface ConfirmPurchaseReceiptResult {
   inboundNo: string;
   details: Array<{
     receiptLineId: string;
-    scopeId: string;
+    allocationId: string;
     batchId: string;
     inboundDetailId: string;
     transactionId: string;
@@ -32,11 +32,11 @@ export interface ConfirmPurchaseReceiptResult {
 }
 
 export interface ReceiptInboundFact {
+  allocationId: string;
   inboundId: string;
   inboundNo: string;
   inboundDetailId: string;
   transactionId: string;
-  scopeId: string;
   inspectionId: string;
   receiptRevisionId: string;
   quantity: string;

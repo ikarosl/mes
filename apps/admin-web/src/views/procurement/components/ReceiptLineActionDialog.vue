@@ -24,18 +24,6 @@
         class="notice"
       />
       <ReceiptLineSummary :line="line" />
-      <el-alert
-        v-if="
-          action === 'inspect' &&
-          line.scopes.some(
-            (range) => range.id === caseRecord?.targetScopeId && range.terminationRootScopeId,
-          )
-        "
-        title="本次复核保留原采购终止约束，检验结论不会恢复入库资格，实物仍按终止待退办理。"
-        type="warning"
-        :closable="false"
-        class="notice"
-      />
       <div
         v-loading="loading"
         class="form-body"
@@ -46,63 +34,44 @@
           :case-id="caseRecord.id"
           :covered-quantity="Number(caseRecord.coveredQuantity)"
           :unit="line.unit"
-          :disabled="command.locked.value || loading"
+          :disabled="command.locked.value || loading || stale"
           @valid="inspectionValid = $event"
         />
         <el-form
           v-else
-          :disabled="command.locked.value || loading"
+          :disabled="command.locked.value || loading || stale"
           label-width="140px"
           @submit.prevent="confirm"
         >
           <template v-if="action === 'correct'">
             <el-alert
-              title="只修订原到货同批实物的未处置范围，不能覆盖已入／已退事实，也不能代替新到货或损耗。被调整范围将进入质检复核。"
+              :title="
+                rejected
+                  ? '更正本次到货核实总量后，旧拒收决定退出当前效力，剩余实物回到待检。若仍需拒收，请重新办理人工拒收；已入／已退事实保留。'
+                  : '填写本次到货核实总量。全部未处置分配将被替代，剩余实物重新待检；归零不产生零量检验。已入／已退事实保留，不能代替新到货或真实损耗。'
+              "
               type="info"
               :closable="false"
               class="notice"
             />
-            <el-table
-              :data="adjustments"
-              row-key="scope.id"
-              ><el-table-column
-                prop="scope.id"
-                label="未处置范围"
-                min-width="180" /><el-table-column
-                label="当前状态"
-                min-width="160"
-                ><template #default="{ row }">{{
-                  RECEIPT_SCOPE_DISPOSITION_LABELS[row.scope.disposition as ReceiptScopeDisposition]
-                }}</template></el-table-column
-              ><el-table-column
-                label="原数量"
-                width="120"
-                ><template #default="{ row }">{{
-                  Number(row.scope.quantity)
-                }}</template></el-table-column
-              ><el-table-column
-                label="核实后数量"
-                width="200"
-                ><template #default="{ row }"
-                  ><el-input-number
-                    v-model="row.revisedQuantity"
-                    :precision="0"
-                    :min="0"
-                    :max="PURCHASE_ORDER_MAX_QUANTITY"
-                    controls-position="right" /></template></el-table-column
-            ></el-table>
-            <el-form-item label="同批漏录剩余量"
-              ><el-input-number
-                v-model="newRemainderQuantity"
+            <el-form-item
+              label="更正后本次到货总量"
+              required
+            >
+              <el-input-number
+                v-model="correctedQuantity"
                 :precision="0"
-                :min="0"
+                :min="disposedQuantity"
                 :max="PURCHASE_ORDER_MAX_QUANTITY"
                 controls-position="right"
-              /><span class="hint">仅补核原到货漏录实物，不登记新来货</span></el-form-item
+              />
+            </el-form-item>
+            <el-form-item label="已入 / 已退锁定量"
+              >{{ disposedQuantity }} {{ line.unit }}</el-form-item
             >
-            <el-form-item label="已处置锁定量">{{ disposedQuantity }} {{ line.unit }}</el-form-item>
-            <el-form-item label="修订后总实收"
-              >{{ correctedQuantity }} {{ line.unit }}</el-form-item
+            <el-form-item label="更正后未处置量"
+              >{{ Number.isFinite(correctedRemaining) ? correctedRemaining : '待填写' }}
+              {{ line.unit }}</el-form-item
             >
             <el-form-item
               label="实物身份核对"
@@ -130,7 +99,7 @@
               class="notice"
             />
             <el-form-item label="本次全部退回量"
-              >{{ Number(scope?.quantity ?? 0) }} {{ line.unit }}</el-form-item
+              >{{ Number(allocation?.remainingQuantity ?? 0) }} {{ line.unit }}</el-form-item
             >
             <el-form-item
               label="实际交接时间"
@@ -160,45 +129,32 @@
             <el-alert
               :title="
                 action === 'review'
-                  ? '确认发起后，所选数量立即进入显式复核中，暂停入库和实际退回；其他未受影响范围继续办理。'
-                  : '指定采购终止待退保留原检验结论，仅改变未处置范围的后续办理资格，不表示已实际退回。'
+                  ? '确认发起后，本批全部剩余实物进入检验中，原可入及待退分配一并暂停。抽检也判断整批资格，样本不是独立处置范围。'
+                  : action === 'revoke'
+                    ? '撤销本轮拒收决定，剩余实物重新待检。旧拒收记录保留，不直接恢复旧可入分配；请重新质检和定稿。'
+                    : '人工拒收本批全部剩余实物，原入库资格及尚未完成检验立即失效。拒收不等于质检不合格或已经退回；交接后另行确认实际退回。'
               "
               type="warning"
               :closable="false"
               class="notice"
             />
-            <el-form-item label="来源范围"
-              >{{ scope?.id }} ·
-              {{ scope ? RECEIPT_SCOPE_DISPOSITION_LABELS[scope.disposition] : '' }}</el-form-item
+            <el-form-item label="本批剩余实物"
+              >{{ remainingQuantity }} {{ line.unit }}</el-form-item
             >
             <el-form-item
-              label="本次范围数量"
+              v-if="action === 'review' && caseType !== 'initial'"
+              label="办理原因"
               required
-              ><el-input-number
-                v-model="quantity"
-                :precision="0"
-                :min="1"
-                :max="Number(scope?.quantity ?? 0)"
-                controls-position="right"
-              /><span class="hint">可以只选择原范围的一部分</span></el-form-item
             >
-            <el-form-item
-              v-if="action === 'review'"
-              label="办理类型"
-              required
-              ><el-radio-group v-model="caseType"
-                ><el-radio
-                  v-if="!scope?.inspectionId"
-                  value="initial"
-                  >{{ QUALITY_INBOUND_CASE_TYPE_LABELS.initial }}</el-radio
-                ><el-radio value="reinspection">{{
+              <el-radio-group v-model="caseType">
+                <el-radio value="reinspection">{{
                   QUALITY_INBOUND_CASE_TYPE_LABELS.reinspection
-                }}</el-radio
-                ><el-radio value="inspection_correction">{{
+                }}</el-radio>
+                <el-radio value="inspection_correction">{{
                   QUALITY_INBOUND_CASE_TYPE_LABELS.inspection_correction
-                }}</el-radio></el-radio-group
-              ></el-form-item
-            >
+                }}</el-radio>
+              </el-radio-group>
+            </el-form-item>
             <el-form-item
               label="原因"
               required
@@ -210,6 +166,50 @@
                 show-word-limit
             /></el-form-item>
           </template>
+          <template v-if="ownershipRequired">
+            <el-alert
+              type="warning"
+              :closable="false"
+              class="notice"
+              title="本批剩余总量与原采购分配不同，请逐项核对原单和已绑定补单的数量，在原因中说明差异。不能改为新的采购归属。"
+            />
+            <el-table :data="ownership">
+              <el-table-column
+                prop="purchaseNo"
+                label="原采购归属"
+                min-width="200"
+              />
+              <el-table-column
+                prop="previousQuantity"
+                label="原剩余数量"
+                width="140"
+              />
+              <el-table-column
+                label="本次核实数量"
+                min-width="200"
+              >
+                <template #default="{ row }">
+                  <el-input-number
+                    v-model="row.quantity"
+                    :min="0"
+                    :max="PURCHASE_ORDER_MAX_QUANTITY"
+                    :precision="0"
+                    controls-position="right"
+                  />
+                </template>
+              </el-table-column>
+            </el-table>
+            <p class="hint">
+              归属合计 {{ Number.isFinite(ownershipTotal) ? ownershipTotal : '待填写' }} /
+              本批未处置总量 {{ ownershipTarget }} {{ line.unit }}。各项可填 0，合计必须一致。
+            </p>
+          </template>
+          <el-alert
+            v-else-if="action === 'correct' && ownershipChanged"
+            type="info"
+            :closable="false"
+            title="本批已有补单归属。普通实收更正后先重新检验，原归属保留追溯；库管后续定稿时根据核实总量重新确认原单和补单份额。"
+          />
         </el-form>
       </div>
     </template>
@@ -234,12 +234,14 @@
           action === 'review'
             ? '确认发起检验 / 复检'
             : action === 'inspect'
-              ? '确认并追加检验结论'
+              ? '保存检验记录'
               : action === 'return'
                 ? '确认全部已退回供应商'
                 : action === 'correct'
-                  ? '提交实收修订并复核'
-                  : '确认指定待退'
+                  ? '确认整批实收更正'
+                  : action === 'revoke'
+                    ? '撤销拒收并重新办理'
+                    : '确认人工拒收'
         }}</el-button
       ></template
     >
@@ -247,12 +249,8 @@
 </template>
 <script setup lang="ts">
 import { computed } from 'vue';
-import type { ProcurementReceiptCommandResult, ReceiptScopeDisposition } from '@company/contracts';
-import {
-  PURCHASE_ORDER_MAX_QUANTITY,
-  RECEIPT_SCOPE_DISPOSITION_LABELS,
-  QUALITY_INBOUND_CASE_TYPE_LABELS,
-} from '@company/constants';
+import type { ProcurementReceiptCommandResult } from '@company/contracts';
+import { PURCHASE_ORDER_MAX_QUANTITY, QUALITY_INBOUND_CASE_TYPE_LABELS } from '@company/constants';
 import { DialogWidth } from '../../../utils/dialog';
 import { useReceiptLineAction } from '../composables/useReceiptLineAction';
 import ReceiptLineSummary from './ReceiptLineSummary.vue';
@@ -264,21 +262,26 @@ const {
   stale,
   action,
   line,
-  scope,
+  allocation,
   caseRecord,
   reason,
-  quantity,
   handoverEvidence,
   returnedAt,
   returnRemark,
   caseType,
-  adjustments,
-  newRemainderQuantity,
   physicalIdentityConfirmed,
   inspection,
   inspectionValid,
   disposedQuantity,
   correctedQuantity,
+  remainingQuantity,
+  correctedRemaining,
+  rejected,
+  ownership,
+  ownershipRequired,
+  ownershipChanged,
+  ownershipTarget,
+  ownershipTotal,
   canConfirm,
   command,
   open,
@@ -287,14 +290,16 @@ const {
 } = useReceiptLineAction((result) => emit('saved', result));
 const title = computed(() =>
   action.value === 'correct'
-    ? '更正实收并提交质检复核'
+    ? '更正本次到货核实总量'
     : action.value === 'return'
       ? '确认实际退回供应商'
-      : action.value === 'terminate'
-        ? '指定采购终止待退'
-        : action.value === 'review'
-          ? '主动发起检验 / 复检'
-          : '填写检验结论',
+      : action.value === 'revoke'
+        ? '撤销人工拒收并重新办理'
+        : action.value === 'reject'
+          ? '人工拒收整批剩余实物'
+          : action.value === 'review'
+            ? '主动发起检验 / 复检'
+            : '填写检验结论',
 );
 const beforeClose = (): void => {
   void close();

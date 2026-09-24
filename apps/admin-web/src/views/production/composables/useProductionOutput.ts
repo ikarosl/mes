@@ -14,6 +14,7 @@ import {
 } from '../../../composables/idempotency/useIdempotentIntent';
 import { EMessage } from '../../../utils/message';
 import { RouteMessageBox } from '../../../utils/route-message-box';
+import { inspectionQuantities } from '../../quality/finished-inspection';
 
 const emptyDraft = (): ProductionOutputDraft => ({
   availableQuantity: 0,
@@ -55,12 +56,18 @@ function validateDetail(value: ProductionOutputDetail, batchId: string) {
   )
     fail();
   const plan = Number(value.check.plannedQuantity);
-  const validInspection = (record: ProductionOutputInspection) =>
-    record &&
-    typeof record.id === 'string' &&
-    quantitiesValid(record.declared, plan) &&
-    quantitiesValid(record.inspected, plan) &&
-    typeof record.resultNote === 'string';
+  const validInspection = (record: ProductionOutputInspection) => {
+    const quantities = record && inspectionQuantities(record);
+    return (
+      record &&
+      quantities &&
+      typeof record.id === 'string' &&
+      quantitiesValid(record.declared, plan) &&
+      quantities.qualifiedQuantity === record.qualifiedQuantity &&
+      quantities.releasedQuantity === record.releasedQuantity &&
+      typeof record.resultNote === 'string'
+    );
+  };
   if (
     (value.draft !== null &&
       (!value.draft ||
@@ -92,21 +99,6 @@ export function useProductionOutput(
 ) {
   const detail = ref<ProductionOutputDetail | null>(null);
   const draft = reactive(emptyDraft());
-  const inspection = reactive({
-    availableQuantity: 0,
-    extraQuantity: 0,
-    additionalScrapQuantity: 0,
-    inspectedAt: '',
-    resultNote: '',
-    evidenceReference: '',
-  });
-  const inspectionDeclared = reactive<ProductionOutputQuantities>({
-    availableQuantity: 0,
-    extraQuantity: 0,
-    additionalScrapQuantity: 0,
-  });
-  const inspectionOpen = ref(false),
-    inspectionVersion = ref<number | null>(null);
   const loading = ref(false),
     submitting = ref(false),
     error = ref(''),
@@ -131,7 +123,6 @@ export function useProductionOutput(
       unresolved.value ||
       Boolean(error.value) ||
       !detail.value?.canEdit ||
-      inspectionOpen.value ||
       stale.value,
   );
   const valid = computed(
@@ -141,22 +132,7 @@ export function useProductionOutput(
       !!draft.reason.trim() &&
       !!draft.materialReviewNote.trim(),
   );
-  const canSubmit = computed(
-    () => detail.value?.canSubmit && !locked.value && !dirty.value && !inspectionOpen.value,
-  );
-  const inspectionStale = computed(
-    () => inspectionOpen.value && inspectionVersion.value !== detail.value?.version,
-  );
-  const inspectionValid = computed(
-    () =>
-      !!detail.value &&
-      quantitiesValid(inspection, Number(detail.value.check.plannedQuantity)) &&
-      !!inspection.inspectedAt &&
-      !!inspection.resultNote.trim() &&
-      inspection.resultNote.length <= 5000 &&
-      !!inspection.evidenceReference.trim() &&
-      inspection.evidenceReference.length <= 5000,
-  );
+  const canSubmit = computed(() => detail.value?.canSubmit && !locked.value && !dirty.value);
   const selectedInspection = computed(
     () => detail.value?.inspections.find((row) => row.id === draft.inspectionRecordId) ?? null,
   );
@@ -164,15 +140,21 @@ export function useProductionOutput(
     () =>
       detail.value?.inspections.find((row) => row.id === detail.value?.latestInspectionId) ?? null,
   );
-  const inspectionMatches = computed(
-    () =>
-      !!selectedInspection.value &&
-      ['availableQuantity', 'extraQuantity', 'additionalScrapQuantity'].every(
-        (key) =>
-          draft[key as keyof ProductionOutputQuantities] ===
-          selectedInspection.value?.inspected[key as keyof ProductionOutputQuantities],
-      ),
+  const inspectionReleased = computed(
+    () => selectedInspection.value?.releaseDecision === 'released',
   );
+  const quantityAdvice = computed(() => {
+    const inspection = selectedInspection.value;
+    if (!inspection || !inspectionReleased.value) return '';
+    const total = draft.availableQuantity + draft.extraQuantity;
+    const received =
+      Number(detail.value?.receipts.productionReceivedQuantity ?? 0) +
+      Number(detail.value?.receipts.extraReceivedQuantity ?? 0);
+    if (received > 0)
+      return `本次检验建议量 ${inspection.releasedQuantity} 件；清单累计可入库量 ${total} 件，历史已入库 ${received} 件。请按本次送检范围核对剩余产出，勿将本次建议直接当作累计数量。数量差异不阻断送审。`;
+    if (total === inspection.releasedQuantity) return '';
+    return `清单可入库量 ${total} 件，本次检验建议量 ${inspection.releasedQuantity} 件，相差 ${total - inspection.releasedQuantity} 件。请核对实际产出与报废；数量差异不阻断送审，由负责人审批确认。`;
+  });
 
   async function load(resetDraft = false) {
     if (!props.visible || !props.batchId) return;
@@ -233,7 +215,6 @@ export function useProductionOutput(
       pending = null;
       unresolved.value = false;
       if (props.batchId === command.batchId && props.visible) {
-        inspectionOpen.value = false;
         lastSuccess.value = command.message;
         EMessage.success(command.message);
         changed();
@@ -261,74 +242,6 @@ export function useProductionOutput(
       body,
       (key) => productionApi.saveProductionOutput(batchId, body, key),
       '产出草稿已保存；质检记录与库存均未改写',
-    );
-  }
-  function startInspection() {
-    if (
-      !detail.value?.canRecordInspection ||
-      busy.value ||
-      unresolved.value ||
-      error.value ||
-      dirty.value ||
-      !detail.value.draft
-    )
-      return;
-    Object.assign(inspection, {
-      availableQuantity: draft.availableQuantity,
-      extraQuantity: draft.extraQuantity,
-      additionalScrapQuantity: draft.additionalScrapQuantity,
-      inspectedAt: new Date().toISOString(),
-      resultNote: '',
-      evidenceReference: '',
-    });
-    Object.assign(inspectionDeclared, {
-      availableQuantity: draft.availableQuantity,
-      extraQuantity: draft.extraQuantity,
-      additionalScrapQuantity: draft.additionalScrapQuantity,
-    });
-    inspectionVersion.value = detail.value.version;
-    inspectionOpen.value = true;
-  }
-  async function recordInspection() {
-    if (
-      !detail.value?.canRecordInspection ||
-      !props.batchId ||
-      busy.value ||
-      unresolved.value ||
-      error.value ||
-      dirty.value ||
-      !inspectionValid.value ||
-      inspectionStale.value
-    )
-      return;
-    const batchId = props.batchId,
-      body = {
-        version: detail.value.version,
-        inspected: {
-          availableQuantity: inspection.availableQuantity,
-          extraQuantity: inspection.extraQuantity,
-          additionalScrapQuantity: inspection.additionalScrapQuantity,
-        },
-        inspectedAt: new Date(inspection.inspectedAt).toISOString(),
-        resultNote: inspection.resultNote.trim(),
-        evidenceReference: inspection.evidenceReference.trim(),
-      };
-    try {
-      await RouteMessageBox.confirm(
-        '本次质检将保存为不可覆盖的独立记录。记录不会修改产线草稿；复检请另存新记录。',
-        '保存质检记录',
-        { confirmButtonText: '确认保存' },
-      );
-    } catch {
-      return;
-    }
-    if (props.batchId !== batchId || !props.visible || detail.value.version !== body.version)
-      return;
-    await run(
-      'production.output.inspect',
-      body,
-      (key) => productionApi.recordProductionOutputInspection(batchId, body, key),
-      '质检记录已留存，请由产线管理员核对产出草稿并引用本次记录',
     );
   }
   async function submit() {
@@ -369,7 +282,7 @@ export function useProductionOutput(
     let reason: string;
     try {
       const answer = await RouteMessageBox.prompt(
-        '原批准清单保留；更正期间暂停清单入库。请说明更正原因。',
+        '原批准清单保留；更正送审后，数量变化的类别暂停入库。请说明更正原因。',
         '发起清单更正',
         {
           inputType: 'textarea',
@@ -421,7 +334,7 @@ export function useProductionOutput(
   }
   async function close() {
     if (submitting.value) return;
-    if (unresolved.value || dirty.value || inspectionOpen.value) {
+    if (unresolved.value || dirty.value) {
       try {
         await RouteMessageBox.confirm(
           unresolved.value
@@ -454,7 +367,6 @@ export function useProductionOutput(
       loadedVersion.value = null;
       error.value = '';
       lastSuccess.value = '';
-      inspectionOpen.value = false;
       Object.assign(draft, emptyDraft());
       void load(true);
     },
@@ -468,10 +380,6 @@ export function useProductionOutput(
   return {
     detail,
     draft,
-    inspection,
-    inspectionDeclared,
-    inspectionVersion,
-    inspectionOpen,
     loading,
     submitting,
     error,
@@ -483,16 +391,13 @@ export function useProductionOutput(
     locked,
     valid,
     canSubmit,
-    inspectionValid,
-    inspectionStale,
     selectedInspection,
     latestInspection,
-    inspectionMatches,
+    inspectionReleased,
+    quantityAdvice,
     load,
     reloadDraft,
     save,
-    startInspection,
-    recordInspection,
     submit,
     beginCorrection,
     cancelCorrection,

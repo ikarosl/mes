@@ -7,11 +7,13 @@ import type { IdempotencyResultCodec } from '../../../../common/idempotency/idem
 const id = z.string().regex(/^[1-9]\d*$/);
 const receiptSchema = z
   .object({
+    roundId: id.nullable().optional(),
     receiptId: id,
     receiptLineId: id.nullable(),
     caseIds: z.array(id),
     inspectionId: id.nullable(),
     supplierReturnId: id.nullable(),
+    acceptanceId: id.optional(),
   })
   .strict();
 const inboundSchema = z
@@ -23,7 +25,7 @@ const inboundSchema = z
         z
           .object({
             receiptLineId: id,
-            scopeId: id,
+            allocationId: id,
             batchId: id,
             inboundDetailId: id,
             transactionId: id,

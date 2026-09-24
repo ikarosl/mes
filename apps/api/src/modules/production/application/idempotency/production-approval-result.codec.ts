@@ -22,7 +22,6 @@ const outputResult = z
   .object({
     closeoutId: identifier,
     batchId: identifier,
-    inspectionRecordId: identifier.optional(),
   })
   .strict();
 export const productionOutputResultCodec = {

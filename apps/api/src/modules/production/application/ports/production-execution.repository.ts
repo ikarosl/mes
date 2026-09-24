@@ -3,6 +3,7 @@ import type {
   ProductionExecutionCompletionResult,
   ProductionStepCommandResult,
   ProductionWorkerTaskItem,
+  ResearchExecutionStartResult,
 } from '@company/contracts';
 import type { CommandContext } from '../../../../common/audit/audit.types.js';
 
@@ -14,6 +15,16 @@ export interface ProductionStepSopSnapshot {
 }
 
 export abstract class ProductionExecutionRepository {
+  abstract startResearchExecution(
+    batchId: string,
+    version: number,
+    context: CommandContext,
+  ): Promise<ResearchExecutionStartResult>;
+  abstract completeResearchExecution(
+    batchId: string,
+    version: number,
+    context: CommandContext,
+  ): Promise<ProductionExecutionCompletionResult>;
   abstract getCompletionCheck(batchId: string): Promise<ProductionExecutionCompletionCheck>;
   abstract completeExecution(
     batchId: string,

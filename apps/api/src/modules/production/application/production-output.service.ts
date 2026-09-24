@@ -2,7 +2,6 @@ import { Injectable } from '@nestjs/common';
 import type {
   SaveProductionOutputPayload,
   ReviewProductionOutputMaterialPayload,
-  RecordProductionOutputInspectionPayload,
   SubmitProductionOutputPayload,
   BeginProductionOutputCorrectionPayload,
 } from '@company/contracts';
@@ -19,7 +18,6 @@ import { ProductionOutputRepository } from './ports/production-output.repository
 import {
   SAVE_PRODUCTION_OUTPUT_SCOPE,
   REVIEW_OUTPUT_MATERIAL_SCOPE,
-  RECORD_OUTPUT_INSPECTION_SCOPE,
   SUBMIT_PRODUCTION_OUTPUT_SCOPE,
   BEGIN_OUTPUT_CORRECTION_SCOPE,
   CANCEL_OUTPUT_CORRECTION_SCOPE,
@@ -114,33 +112,6 @@ export class ProductionOutputService {
       request: { params: { batchId }, body },
       resultCodec: productionOutputResultCodec,
       handler: () => this.repository.saveDraft(batchId, body, narrow(context)),
-    });
-    return execution.result;
-  }
-  async recordInspection(
-    batchId: string,
-    payload: RecordProductionOutputInspectionPayload,
-    context: IdempotentCommandContext,
-  ) {
-    const body = {
-      version: payload.version,
-      inspected: {
-        availableQuantity: payload.inspected.availableQuantity,
-        extraQuantity: payload.inspected.extraQuantity,
-        additionalScrapQuantity: payload.inspected.additionalScrapQuantity,
-      },
-      inspectedAt: payload.inspectedAt,
-      resultNote: payload.resultNote.trim(),
-      evidenceReference: payload.evidenceReference.trim(),
-    };
-    const execution = await this.idempotency.execute({
-      scope: RECORD_OUTPUT_INSPECTION_SCOPE,
-      key: context.idempotencyKey,
-      actorId: context.actorId,
-      requestId: context.requestId,
-      request: { params: { batchId }, body },
-      resultCodec: productionOutputResultCodec,
-      handler: () => this.repository.recordInspection(batchId, body, narrow(context)),
     });
     return execution.result;
   }

@@ -1,4 +1,4 @@
-import type { ProductionBatchStatus } from '@company/contracts';
+import type { ProductionBatchStatus, WorkOrderType } from '@company/contracts';
 
 export interface DeadlinePresentation {
   label: string;
@@ -72,6 +72,7 @@ export const taskNextActionPresentation = (batch: {
     | 'terminated'
     | 'closing';
   hasActiveMaterialOutbound?: boolean;
+  orderType?: WorkOrderType;
   closeoutMode?: 'normal' | 'early' | null;
 }): TaskNextActionPresentation => {
   if (batch.status === 'terminated' || batch.status === 'completed')
@@ -82,6 +83,10 @@ export const taskNextActionPresentation = (batch: {
       tone: 'warning',
     };
   if (batch.status === 'cancelled') return { label: '任务已取消', tone: 'muted' };
+  if (batch.orderType === 'research' && batch.status === 'doing')
+    return { label: '研发中 / 本轮结束后核对产出', tone: 'primary' };
+  if (batch.orderType === 'research' && batch.status === 'material_outbound')
+    return { label: '可开始研发', tone: 'primary' };
   if (batch.status === 'material_partially_outbound')
     return { label: '短批已部分领料', tone: 'warning' };
   if (

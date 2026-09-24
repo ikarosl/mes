@@ -4,6 +4,7 @@ import type {
   MaterialOption,
   MaterialVariantItem,
   ProcurementDemandCandidate,
+  ProcurementDemandWorkOrder,
   PurchaseOrderDetail,
   PurchaseOrderLineSource,
   PurchaseOrderSourceType,
@@ -12,17 +13,21 @@ import type {
 import {
   CONCURRENCY_ERROR_CODES,
   PURCHASE_ORDER_MAX_LINES,
+  PURCHASE_ORDER_MAX_DEMANDS,
   PURCHASE_ORDER_MAX_QUANTITY,
 } from '@company/constants';
 import { RequestError } from '@company/request';
 import { procurementApi } from '../../../api/procurement';
-import { useSupplierOptions } from '../../../composables/options/useSupplierOptions';
+import { RouteMessageBox } from '../../../utils/route-message-box';
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
 import { EMessage } from '../../../utils/message';
 import { useProcurementCommand } from './useProcurementCommand';
 
 export interface PurchaseDraftRow {
   key: string;
+  supplierId: string;
+  supplierName: string;
+  supplierReady: boolean;
   itemId: string;
   itemCode: string;
   itemName: string;
@@ -43,11 +48,14 @@ export function usePurchaseOrderEditor(onSaved: (id: string) => void | Promise<v
     freshnessError = ref(false),
     pickerVisible = ref(false);
   const sourceType = ref<PurchaseOrderSourceType>('demand'),
-    supplierId = ref(''),
+    workOrderId = ref(''),
+    workOrderNo = ref(''),
+    workOrderPickerVisible = ref(false),
+    sourceRowKey = ref<string | null>(null),
+    supplierRefreshToken = ref(0),
     remark = ref('');
   const original = ref<PurchaseOrderDetail | null>(null),
     rows = ref<PurchaseDraftRow[]>([]);
-  const suppliers = useSupplierOptions(() => (supplierId.value ? [supplierId.value] : []));
   const read = useLatestReadRequest(() => {
     loading.value = false;
   });
@@ -56,15 +64,16 @@ export function usePurchaseOrderEditor(onSaved: (id: string) => void | Promise<v
     await onSaved(result.purchaseOrderId);
   });
   const supplement = computed(() => Boolean(original.value?.supplementReason));
-  const selectedIds = computed(() =>
-    rows.value.flatMap((row) => row.sources.map((source) => source.demandId)),
-  );
+  const selectedIds = computed(() => [
+    ...new Set(rows.value.flatMap((row) => row.sources.map((source) => source.demandId))),
+  ]);
   const snapshot = (): string =>
     JSON.stringify({
       sourceType: sourceType.value,
-      supplierId: supplierId.value,
+      workOrderId: workOrderId.value,
       remark: remark.value.trim(),
       rows: rows.value.map((row) => ({
+        supplierId: row.supplierId,
         itemId: row.itemId,
         materialVariantId: row.materialVariantId,
         plannedQuantity: row.plannedQuantity,
@@ -80,12 +89,16 @@ export function usePurchaseOrderEditor(onSaved: (id: string) => void | Promise<v
       !command.locked.value &&
       !stale.value &&
       !freshnessError.value &&
-      suppliers.status.value === 'ready' &&
-      suppliers.options.value.some((supplier) => supplier.id === supplierId.value) &&
+      (sourceType.value === 'stock' || Boolean(workOrderId.value)) &&
+      rows.value.reduce((count, row) => count + row.sources.length, 0) <=
+        PURCHASE_ORDER_MAX_DEMANDS &&
       rows.value.length > 0 &&
       rows.value.every(
         (row) =>
           row.ready &&
+          row.supplierReady &&
+          row.supplierId &&
+          (sourceType.value === 'stock' || row.sources.length > 0) &&
           row.itemId &&
           row.materialVariantId &&
           Number.isInteger(row.plannedQuantity) &&
@@ -94,38 +107,117 @@ export function usePurchaseOrderEditor(onSaved: (id: string) => void | Promise<v
       ),
   );
 
+  const sourceCount = computed(() =>
+    rows.value.reduce((count, row) => count + row.sources.length, 0),
+  );
+  const sourceRow = computed(() => rows.value.find((row) => row.key === sourceRowKey.value));
+  const pickerSelectedIds = computed(
+    () => sourceRow.value?.sources.map((source) => source.demandId) ?? [],
+  );
+  const demandSource = (demand: ProcurementDemandCandidate): PurchaseOrderLineSource => ({
+    demandId: demand.demandId,
+    workOrderId: demand.workOrderId,
+    workOrderNo: demand.workOrderNo,
+    productionBatchId: demand.productionBatchId,
+    batchNo: demand.batchNo,
+    demandQuantity: demand.demandQuantity,
+    remainingDemandQuantity: demand.remainingDemandQuantity,
+    supplierHint: demand.supplierHint,
+  });
   const adoptDemands = (demands: ProcurementDemandCandidate[]): void => {
-    const previous = new Map(rows.value.map((row) => [identity(row), row]));
-    const grouped = new Map<string, PurchaseDraftRow>();
-    for (const demand of demands) {
-      const key = identity(demand);
-      let row = grouped.get(key);
-      if (!row) {
-        row = {
-          key,
-          itemId: demand.itemId,
-          itemCode: demand.itemCode,
-          itemName: demand.itemName,
-          materialVariantId: demand.materialVariantId,
-          materialVariantCode: demand.materialVariantCode,
-          unit: demand.unit,
-          plannedQuantity: previous.get(key)?.plannedQuantity,
-          sources: [],
-          ready: true,
-        };
-        grouped.set(key, row);
-      }
-      row.sources.push({
-        demandId: demand.demandId,
-        workOrderId: demand.workOrderId,
-        workOrderNo: demand.workOrderNo,
-        productionBatchId: demand.productionBatchId,
-        batchNo: demand.batchNo,
-        demandQuantity: demand.demandQuantity,
-        remainingDemandQuantity: demand.remainingDemandQuantity,
-      });
+    if (demands.some((demand) => demand.workOrderId !== workOrderId.value)) {
+      EMessage.warning('需求必须属于所选工单');
+      return;
     }
-    rows.value = [...grouped.values()];
+    const editing = sourceRow.value;
+    if (
+      sourceCount.value - (editing?.sources.length ?? 0) + demands.length >
+      PURCHASE_ORDER_MAX_DEMANDS
+    ) {
+      EMessage.warning('单张采购单最多 100 条来源映射，同一需求关联不同行分别计数');
+      return;
+    }
+    if (editing) {
+      if (demands.some((demand) => identity(demand) !== identity(editing))) {
+        EMessage.warning('本行来源须与采购物料及精确版本一致');
+        return;
+      }
+      editing.sources = demands.map(demandSource);
+      editing.ready = true;
+    } else {
+      const grouped = new Map<string, PurchaseDraftRow>();
+      for (const demand of demands) {
+        const key = identity(demand);
+        let row = grouped.get(key);
+        if (!row) {
+          row = {
+            key: `new-${++rowSequence}`,
+            supplierId: '',
+            supplierName: '',
+            supplierReady: false,
+            itemId: demand.itemId,
+            itemCode: demand.itemCode,
+            itemName: demand.itemName,
+            materialVariantId: demand.materialVariantId,
+            materialVariantCode: demand.materialVariantCode,
+            unit: demand.unit,
+            plannedQuantity: undefined,
+            sources: [],
+            ready: true,
+          };
+          grouped.set(key, row);
+        }
+        row.sources.push(demandSource(demand));
+      }
+      if (rows.value.length + grouped.size > PURCHASE_ORDER_MAX_LINES) {
+        EMessage.warning('一张采购单最多 100 条物料行');
+        return;
+      }
+      rows.value.push(...grouped.values());
+    }
+    if (demands[0]) workOrderNo.value = demands[0].workOrderNo;
+  };
+  const selectSources = (row?: PurchaseDraftRow): void => {
+    sourceRowKey.value = row?.key ?? null;
+    pickerVisible.value = true;
+  };
+  const selectWorkOrder = async (order: ProcurementDemandWorkOrder): Promise<void> => {
+    if (command.locked.value || supplement.value) return;
+    if (order.id !== workOrderId.value && rows.value.length) {
+      try {
+        await RouteMessageBox.confirm(
+          '切换工单将清空原需求和采购明细，请重新配置供应商与采购量。确定继续吗？',
+          '切换需求工单',
+          { type: 'warning' },
+        );
+      } catch {
+        return;
+      }
+    }
+    if (order.id !== workOrderId.value) {
+      rows.value = [];
+      sourceRowKey.value = null;
+      pickerVisible.value = false;
+      read.invalidate();
+    }
+    workOrderId.value = order.id;
+    workOrderNo.value = order.workOrderNo;
+    workOrderPickerVisible.value = false;
+  };
+  const splitRow = (row: PurchaseDraftRow): void => {
+    if (rows.value.length >= PURCHASE_ORDER_MAX_LINES || command.locked.value) return;
+    const copy = {
+      ...row,
+      key: `new-${++rowSequence}`,
+      supplierId: '',
+      supplierName: '',
+      supplierReady: false,
+      plannedQuantity: undefined,
+      sources: [],
+      ready: sourceType.value === 'stock',
+    };
+    rows.value.push(copy);
+    if (sourceType.value === 'demand') selectSources(copy);
   };
   const resolveSources = async (): Promise<boolean> => {
     if (sourceType.value !== 'demand' || supplement.value) return true;
@@ -134,7 +226,7 @@ export function usePurchaseOrderEditor(onSaved: (id: string) => void | Promise<v
     const current = read.begin(() => visible.value);
     loading.value = true;
     try {
-      const resolved = await procurementApi.resolveDemands(ids, current.signal);
+      const resolved = await procurementApi.resolveDemands(workOrderId.value, ids, current.signal);
       if (!current.isCurrent()) return false;
       for (const row of rows.value)
         row.ready = row.sources.every((source) =>
@@ -183,7 +275,7 @@ export function usePurchaseOrderEditor(onSaved: (id: string) => void | Promise<v
     }
   };
   const refresh = async (): Promise<void> => {
-    await suppliers.refresh();
+    supplierRefreshToken.value += 1;
     if (await checkOriginal()) {
       freshnessError.value = false;
       await resolveSources();
@@ -193,17 +285,24 @@ export function usePurchaseOrderEditor(onSaved: (id: string) => void | Promise<v
     type: PurchaseOrderSourceType,
     detail?: PurchaseOrderDetail,
     demandIds?: string[],
+    targetWorkOrderId?: string,
   ): Promise<void> => {
     if (visible.value || command.locked.value) return;
     original.value = detail ?? null;
     sourceType.value = detail?.sourceType ?? type;
-    supplierId.value = detail?.supplierId ?? '';
+    workOrderId.value = detail?.workOrderId ?? targetWorkOrderId ?? '';
+    workOrderNo.value = detail?.workOrderNo ?? targetWorkOrderId ?? '';
+    sourceRowKey.value = null;
+    workOrderPickerVisible.value = false;
     remark.value = detail?.remark ?? '';
     stale.value = false;
     freshnessError.value = false;
     rows.value =
       detail?.items.map((line) => ({
         key: line.id,
+        supplierId: line.supplierId,
+        supplierName: line.supplierName,
+        supplierReady: false,
         itemId: line.itemId,
         itemCode: line.itemCode,
         itemName: line.itemName,
@@ -216,12 +315,16 @@ export function usePurchaseOrderEditor(onSaved: (id: string) => void | Promise<v
       })) ?? [];
     initialSnapshot = snapshot();
     visible.value = true;
-    await suppliers.refresh();
-    if (demandIds?.length) {
+    supplierRefreshToken.value += 1;
+    if (demandIds?.length && workOrderId.value) {
       const current = read.begin(() => visible.value);
       loading.value = true;
       try {
-        const result = await procurementApi.resolveDemands(demandIds, current.signal);
+        const result = await procurementApi.resolveDemands(
+          workOrderId.value,
+          demandIds,
+          current.signal,
+        );
         if (current.isCurrent()) {
           if (
             result.length === demandIds.length &&
@@ -239,6 +342,8 @@ export function usePurchaseOrderEditor(onSaved: (id: string) => void | Promise<v
       } finally {
         if (current.isCurrent()) loading.value = false;
       }
+    } else if (sourceType.value === 'demand' && !workOrderId.value) {
+      workOrderPickerVisible.value = true;
     } else if (sourceType.value === 'demand' && detail) {
       await resolveSources();
     }
@@ -250,6 +355,9 @@ export function usePurchaseOrderEditor(onSaved: (id: string) => void | Promise<v
     }
     rows.value.push({
       key: `new-${++rowSequence}`,
+      supplierId: '',
+      supplierName: '',
+      supplierReady: false,
       itemId: '',
       itemCode: '',
       itemName: '',
@@ -278,20 +386,25 @@ export function usePurchaseOrderEditor(onSaved: (id: string) => void | Promise<v
     if (!(await command.canClose(dirty.value))) return false;
     visible.value = false;
     pickerVisible.value = false;
+    workOrderPickerVisible.value = false;
     read.invalidate();
     return true;
   };
   const save = async (): Promise<void> => {
     if (!canSave.value || !(await checkOriginal()) || !(await resolveSources())) return;
-    if (new Set(rows.value.map(identity)).size !== rows.value.length) {
-      EMessage.warning('相同物料与精确版本请合并为一行');
+    if (
+      new Set(rows.value.map((row) => `${identity(row)}:${row.supplierId}`)).size !==
+      rows.value.length
+    ) {
+      EMessage.warning('相同物料、精确版本和供应商请合并为一行');
       return;
     }
     const body: CreatePurchaseOrderPayload = {
-      supplierId: supplierId.value,
+      workOrderId: sourceType.value === 'demand' ? workOrderId.value : null,
       sourceType: sourceType.value,
       remark: remark.value.trim() || null,
       items: rows.value.map((row) => ({
+        supplierId: row.supplierId,
         itemId: row.itemId,
         materialVariantId: row.materialVariantId,
         plannedQuantity: Number(row.plannedQuantity),
@@ -340,14 +453,22 @@ export function usePurchaseOrderEditor(onSaved: (id: string) => void | Promise<v
     freshnessError,
     pickerVisible,
     sourceType,
-    supplierId,
+    workOrderId,
+    workOrderNo,
+    workOrderPickerVisible,
+    sourceRow,
+    pickerSelectedIds,
+    supplierRefreshToken,
+    selectWorkOrder,
+    selectSources,
+    splitRow,
     remark,
     original,
     rows,
-    suppliers,
     command,
     supplement,
     selectedIds,
+    sourceCount,
     canSave,
     open,
     close,

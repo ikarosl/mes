@@ -1,15 +1,15 @@
 import type { PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import { MAX_PERSISTED_INTEGER_QUANTITY } from '@company/utils';
 import type {
-  ReceiptScopeDisposition,
-  ReceiptScopeTransition,
+  ReceiptAllocationDisposition,
+  ReceiptReturnReason,
   ProcurementReceiptCommandResult,
 } from '@company/contracts';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { writeTransactionalAudit } from '../../../common/audit/transactional-audit-writer.js';
-import { requireOptimisticUpdate } from '../../../common/persistence/optimistic-lock.js';
 import { ProcurementDomainError } from '../domain/procurement.errors.js';
-import { readOrder } from './mysql-purchase-order.shared.js';
+import type { InventoryInboundQuery } from '../../inventory/public.js';
+import { readOrder, sortedIds } from './mysql-purchase-order.shared.js';
 
 export type ReceiptLineRow = RowDataPacket & {
   id: number;
@@ -21,23 +21,28 @@ export type ReceiptLineRow = RowDataPacket & {
   material_variant_id: number;
   supplier_batch_code: string | null;
   current_receipt_revision_id: number;
+  current_round_id: number | null;
   batch_id: number | string | null;
   over_receipt_note: string | null;
   version: number;
 };
-export type ScopeRow = RowDataPacket & {
+export type AllocationRow = RowDataPacket & {
   id: number;
   receipt_line_id: number;
+  round_id: number;
+  round_status: string;
+  acceptance_id: number | null;
+  purchase_order_line_id: number | null;
   receipt_revision_id: number;
-  parent_scope_id: number | null;
-  quantity: number;
-  disposition: ReceiptScopeDisposition;
-  transition_type: ReceiptScopeTransition;
   inspection_id: number | null;
-  review_case_id: number | null;
-  termination_root_scope_id: number | null;
+  quantity: number;
+  disposition: ReceiptAllocationDisposition;
+  return_reason: ReceiptReturnReason | null;
   termination_reason: string | null;
-  version: number;
+  remark: string | null;
+  inbound_quantity: number;
+  returned_quantity: number;
+  remaining_quantity: number;
 };
 export type RevisionRow = RowDataPacket & {
   id: number;
@@ -51,7 +56,29 @@ export const receiptError = (
 ): never => {
   throw new ProcurementDomainError(code, message);
 };
-export const lockReceiptLine = async (connection: PoolConnection, id: string) => {
+export const lockReceiptRoots = async (
+  connection: PoolConnection,
+  ids: string[],
+  extraRoots: string[] = [],
+) => {
+  const roots = [...extraRoots];
+  for (const id of sortedIds(ids)) {
+    const [rows] = await connection.query<(RowDataPacket & { purchase_order_id: number })[]>(
+      `SELECT purchase_order_id FROM procurement_receipt_line WHERE id=?
+       UNION SELECT p.purchase_order_id FROM procurement_receipt_allocation a
+       JOIN procurement_order_line p ON p.id=a.purchase_order_line_id WHERE a.receipt_line_id=?`,
+      [id, id],
+    );
+    roots.push(...rows.map((row) => String(row.purchase_order_id)));
+  }
+  for (const root of sortedIds(roots)) await readOrder(connection, root, true);
+};
+export const lockReceiptLine = async (
+  connection: PoolConnection,
+  id: string,
+  inventory: InventoryInboundQuery,
+) => {
+  await lockReceiptRoots(connection, [id]);
   const [[locator]] = await connection.query<(RowDataPacket & { purchase_order_id: number })[]>(
     'SELECT purchase_order_id FROM procurement_receipt_line WHERE id=?',
     [id],
@@ -63,27 +90,65 @@ export const lockReceiptLine = async (connection: PoolConnection, id: string) =>
     [id],
   );
   if (!line) return receiptError('到货明细不存在', 'RECEIPT_NOT_FOUND');
-  const scopes = await readScopes(connection, id);
-  return { order, line, scopes };
+  const allocations = await readAllocations(connection, id, inventory);
+  return { order, line, allocations };
 };
-export const readScopes = async (connection: PoolConnection, id: string): Promise<ScopeRow[]> => {
-  const [rows] = await connection.query<ScopeRow[]>(
-    'SELECT * FROM procurement_receipt_scope WHERE receipt_line_id=? ORDER BY id FOR UPDATE',
+export const readAllocations = async (
+  connection: PoolConnection,
+  id: string,
+  inventory: InventoryInboundQuery,
+): Promise<AllocationRow[]> => {
+  const [rows] = await connection.query<AllocationRow[]>(
+    `SELECT a.*,r.status round_status,COALESCE(h.after_receipt_revision_id,r.receipt_revision_id) receipt_revision_id,
+      h.inspection_record_id inspection_id FROM procurement_receipt_allocation a
+      JOIN procurement_receipt_round r ON r.id=a.round_id
+      LEFT JOIN procurement_receipt_acceptance h ON h.id=a.acceptance_id
+      WHERE a.receipt_line_id=? ORDER BY a.id FOR SHARE`,
     [id],
   );
+  const [facts] = await inventory.getReceiptInboundFacts({ receiptLineIds: [id] });
+  const [returns] = await connection.query<
+    (RowDataPacket & { allocation_id: number; returned_quantity: number })[]
+  >(
+    'SELECT allocation_id,returned_quantity FROM procurement_supplier_return WHERE receipt_line_id=? FOR SHARE',
+    [id],
+  );
+  const inbound = new Map<string, number>();
+  for (const fact of facts?.receipts ?? [])
+    inbound.set(fact.allocationId, (inbound.get(fact.allocationId) ?? 0) + Number(fact.quantity));
+  const returned = new Map(
+    returns.map((row) => [String(row.allocation_id), Number(row.returned_quantity)]),
+  );
+  const known = new Set(rows.map((row) => String(row.id)));
+  if ([...inbound.keys(), ...returned.keys()].some((key) => !known.has(key)))
+    receiptError('实际入退缺少对应的处置分配', 'RECEIPT_STATE');
+  for (const row of rows) {
+    row.inbound_quantity = inbound.get(String(row.id)) ?? 0;
+    row.returned_quantity = returned.get(String(row.id)) ?? 0;
+    row.remaining_quantity = Number(row.quantity) - row.inbound_quantity - row.returned_quantity;
+    requireQuantity(row.remaining_quantity, '分配未执行量', true);
+    if (
+      (row.inbound_quantity > 0 && row.disposition !== 'inbound') ||
+      (row.returned_quantity > 0 && row.disposition !== 'return')
+    )
+      receiptError('实际执行与分配去向不一致', 'RECEIPT_STATE');
+  }
   return rows;
 };
-export const requireScope = (scopes: ScopeRow[], id: string, version: number): ScopeRow => {
-  const scope = scopes.find((row) => String(row.id) === id);
-  if (!scope) return receiptError('实物范围不存在', 'RECEIPT_NOT_FOUND');
-  requireOptimisticUpdate(scope.version === version ? 1 : 0);
+export const requireAllocation = (
+  allocations: AllocationRow[],
+  id: string,
+  roundId: string,
+): AllocationRow => {
+  const row = allocations.find((row) => String(row.id) === id);
+  if (!row) return receiptError('处置分配不存在', 'RECEIPT_NOT_FOUND');
   if (
-    scope.disposition === 'superseded' ||
-    scope.disposition === 'inbounded' ||
-    scope.disposition === 'returned'
+    String(row.round_id) !== roundId ||
+    row.round_status !== 'finalized' ||
+    row.remaining_quantity <= 0
   )
-    return receiptError('该范围已经处置或被新范围替代，请刷新', 'RECEIPT_STATE');
-  return scope;
+    return receiptError('分配已经执行或所属轮次失效，请刷新', 'RECEIPT_STATE');
+  return row;
 };
 export const requireQuantity = (value: number, label: string, allowZero = false) => {
   if (
@@ -107,64 +172,41 @@ export const touchReceiptLine = (connection: PoolConnection, id: string, context
     'UPDATE procurement_receipt_line SET version=version+1,updated_by=? WHERE id=?',
     [context.actorId, id],
   );
-export const supersedeScope = (
-  connection: PoolConnection,
-  scope: ScopeRow,
-  context: CommandContext,
-) =>
-  connection.execute(
-    "UPDATE procurement_receipt_scope SET disposition='superseded',version=version+1,updated_by=? WHERE id=?",
-    [context.actorId, scope.id],
-  );
-export interface NewScope {
-  receiptLineId: string;
-  receiptRevisionId: string;
-  parentScopeId: string | null;
-  quantity: number;
-  disposition: ReceiptScopeDisposition;
-  transitionType: ReceiptScopeTransition;
-  inspectionId: string | null;
-  reviewCaseId: string | null;
-  terminationRootScopeId: string | null;
-  terminationReason: string | null;
-}
-export const inheritScope = (scope: ScopeRow): NewScope => ({
-  receiptLineId: String(scope.receipt_line_id),
-  receiptRevisionId: String(scope.receipt_revision_id),
-  parentScopeId: String(scope.id),
-  quantity: Number(scope.quantity),
-  disposition: scope.disposition,
-  transitionType: 'split',
-  inspectionId: scope.inspection_id === null ? null : String(scope.inspection_id),
-  reviewCaseId: scope.review_case_id === null ? null : String(scope.review_case_id),
-  terminationRootScopeId:
-    scope.termination_root_scope_id === null ? null : String(scope.termination_root_scope_id),
-  terminationReason: scope.termination_reason,
-});
-export const insertScope = async (
-  connection: PoolConnection,
-  scope: NewScope,
+export const insertAllocation = async (
+  db: PoolConnection,
+  row: {
+    receiptLineId: string;
+    roundId: string;
+    acceptanceId: string | null;
+    lineNo: number;
+    purchaseOrderLineId: string | null;
+    disposition: ReceiptAllocationDisposition;
+    quantity: number;
+    returnReason: ReceiptReturnReason | null;
+    terminationReason?: string | null;
+    remark?: string | null;
+  },
   context: CommandContext,
 ): Promise<string> => {
-  requireQuantity(scope.quantity, '范围数量');
-  const [result] = await connection.execute<ResultSetHeader>(
-    `INSERT INTO procurement_receipt_scope(receipt_line_id,receipt_revision_id,parent_scope_id,quantity,disposition,transition_type,inspection_id,review_case_id,termination_root_scope_id,termination_reason,created_by,updated_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
+  requireQuantity(row.quantity, '分配数量');
+  const [created] = await db.execute<ResultSetHeader>(
+    `INSERT INTO procurement_receipt_allocation(receipt_line_id,round_id,acceptance_id,line_no,purchase_order_line_id,disposition,quantity,return_reason,termination_reason,remark,created_by)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
     [
-      scope.receiptLineId,
-      scope.receiptRevisionId,
-      scope.parentScopeId,
-      scope.quantity,
-      scope.disposition,
-      scope.transitionType,
-      scope.inspectionId,
-      scope.reviewCaseId,
-      scope.terminationRootScopeId,
-      scope.terminationReason,
-      context.actorId,
+      row.receiptLineId,
+      row.roundId,
+      row.acceptanceId,
+      row.lineNo,
+      row.purchaseOrderLineId,
+      row.disposition,
+      row.quantity,
+      row.returnReason,
+      row.terminationReason ?? null,
+      row.remark ?? null,
       context.actorId,
     ],
   );
-  return String(result.insertId);
+  return String(created.insertId);
 };
 export const insertRevision = async (
   connection: PoolConnection,
@@ -191,6 +233,7 @@ export const receiptResult = (
   caseIds: [],
   inspectionId: null,
   supplierReturnId: null,
+  roundId: null,
   ...extra,
 });
 export const auditReceipt = (

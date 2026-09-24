@@ -16,10 +16,14 @@ export const normalizePurchaseDraft = (
   if (!payload.items.length || payload.items.length > PURCHASE_ORDER_MAX_LINES)
     invalid('采购单须包含 1～100 条物料行');
   const identities = new Set<string>();
-  const demands = new Set<string>();
+  let sourceCount = 0;
+  if (payload.sourceType === 'demand' && !payload.workOrderId) invalid('按需求采购须选择一个工单');
+  if (payload.sourceType === 'stock' && payload.workOrderId !== null)
+    invalid('独立备料采购不能关联工单');
   const items = payload.items.map((line) => {
-    const identity = `${line.itemId}:${line.materialVariantId}`;
-    if (identities.has(identity)) invalid('相同物料精确版本必须合并为一条采购行');
+    if (!line.supplierId) invalid('每条采购行须明确选择供应商');
+    const identity = `${line.itemId}:${line.materialVariantId}:${line.supplierId}`;
+    if (identities.has(identity)) invalid('相同物料、精确版本和供应商必须合并为一条采购行');
     identities.add(identity);
     if (
       !Number.isSafeInteger(line.plannedQuantity) ||
@@ -31,15 +35,13 @@ export const normalizePurchaseDraft = (
     if (payload.sourceType === 'demand' && !demandIds.length)
       invalid('按需求采购的每行必须选择真实需求来源');
     if (payload.sourceType === 'stock' && demandIds.length) invalid('独立备料采购不能关联生产需求');
-    for (const id of demandIds) {
-      if (demands.has(id)) invalid('同一需求不能在采购单内重复关联');
-      demands.add(id);
-    }
+    if (demandIds.length !== line.demandIds.length) invalid('同一采购行不能重复关联需求');
+    sourceCount += demandIds.length;
     return { ...line, demandIds };
   });
-  if (demands.size > PURCHASE_ORDER_MAX_DEMANDS) invalid('单张采购单最多关联 100 条需求');
+  if (sourceCount > PURCHASE_ORDER_MAX_DEMANDS) invalid('单张采购单最多包含 100 条需求来源映射');
   return {
-    supplierId: payload.supplierId,
+    workOrderId: payload.workOrderId,
     sourceType: payload.sourceType,
     remark: payload.remark?.trim() || null,
     items,

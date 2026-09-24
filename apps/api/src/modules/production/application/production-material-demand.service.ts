@@ -1,5 +1,11 @@
+import { MaterialVariantQuery } from '../../product/public.js';
 import { Injectable } from '@nestjs/common';
-import type { MaterialDemandManagementQuery } from '@company/contracts';
+import type {
+  MaterialDemandManagementQuery,
+  ConfigureMaterialDemandsPayload,
+  AddManualMaterialDemandsPayload,
+  ProductionMaterialOptionsQuery,
+} from '@company/contracts';
 import type {
   IdempotentCommandContext,
   CommandContext,
@@ -21,7 +27,12 @@ export class ProductionMaterialDemandService {
   constructor(
     private readonly repository: ProductionMaterialDemandConfigurationRepository,
     private readonly idempotency: IdempotencyExecutor,
+    private readonly materialVariants: MaterialVariantQuery,
   ) {}
+
+  listMaterialOptions(query: ProductionMaterialOptionsQuery) {
+    return this.materialVariants.listProductionMaterials(query);
+  }
 
   listManagement(query: MaterialDemandManagementQuery) {
     return this.repository.listManagement(query);
@@ -29,12 +40,7 @@ export class ProductionMaterialDemandService {
 
   async configure(
     batchId: string,
-    payload: {
-      requirements: Array<{
-        productMaterialId: string;
-        splits: Array<{ materialVariantId: string; quantity: number }>;
-      }>;
-    },
+    payload: ConfigureMaterialDemandsPayload,
     context: IdempotentCommandContext,
   ) {
     const normalized = {
@@ -43,6 +49,7 @@ export class ProductionMaterialDemandService {
         splits: requirement.splits.map((split) => ({
           materialVariantId: split.materialVariantId,
           quantity: Number(split.quantity),
+          supplierHint: split.supplierHint?.trim() || null,
         })),
       })),
     };
@@ -64,13 +71,7 @@ export class ProductionMaterialDemandService {
 
   async addManual(
     batchId: string,
-    payload: {
-      requirements: Array<{
-        productMaterialId: string;
-        splits: Array<{ materialVariantId: string; quantity: number }>;
-      }>;
-      reason: string;
-    },
+    payload: AddManualMaterialDemandsPayload,
     context: IdempotentCommandContext,
   ) {
     const reason = payload.reason.trim();
@@ -78,10 +79,11 @@ export class ProductionMaterialDemandService {
     const normalized = {
       productionBatchId: batchId,
       requirements: payload.requirements.map((requirement) => ({
-        productMaterialId: requirement.productMaterialId,
+        materialId: requirement.materialId,
         splits: requirement.splits.map((split) => ({
           materialVariantId: split.materialVariantId,
           quantity: Number(split.quantity),
+          supplierHint: split.supplierHint?.trim() || null,
         })),
       })),
       reason,

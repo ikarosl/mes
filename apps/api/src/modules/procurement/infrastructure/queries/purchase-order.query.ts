@@ -1,7 +1,9 @@
 import type { RowDataPacket } from 'mysql2/promise';
 import type {
   PurchaseOrderQuery,
+  ProcurementSupplierSummary,
   PurchaseOrderItem,
+  PurchaseOrderLine,
   PurchaseOrderDetail,
   PageResult,
   PurchaseOrderLineSource,
@@ -23,23 +25,52 @@ import {
   readSourceIds,
 } from '../mysql-purchase-order.shared.js';
 
-type OrderDisplayRow = OrderRow & { supplier_name: string; line_count: number };
-const ORDER_DISPLAY_SELECT = `SELECT o.id,o.purchase_no,o.supplier_id,o.source_type,o.supplement_reason,o.status,o.remark,o.version,o.ordered_at,o.created_at,o.updated_at,s.supplier_name,(SELECT COUNT(*) FROM purchase_order_line l WHERE l.purchase_order_id=o.id) line_count FROM purchase_order o JOIN procurement_supplier s ON s.id=o.supplier_id`;
+type OrderDisplayRow = OrderRow & { work_order_no: string | null; line_count: number };
+const ORDER_DISPLAY_SELECT = `SELECT o.id,o.purchase_no,o.work_order_id,o.source_type,o.supplement_reason,o.status,o.remark,o.version,o.ordered_at,o.created_at,o.updated_at,w.work_order_no,(SELECT COUNT(*) FROM procurement_order_line l WHERE l.purchase_order_id=o.id) line_count FROM procurement_order o LEFT JOIN work_orders w ON w.id=o.work_order_id`;
+export const readOrderSuppliers = async (
+  db: Db,
+  ids: string[],
+): Promise<Map<string, ProcurementSupplierSummary[]>> => {
+  const result = new Map<string, ProcurementSupplierSummary[]>();
+  if (!ids.length) return result;
+  const [rows] = await db.query<
+    (RowDataPacket & { purchase_order_id: number; supplier_id: number; supplier_name: string })[]
+  >(
+    `SELECT DISTINCT l.purchase_order_id,l.supplier_id,s.supplier_name FROM procurement_order_line l JOIN procurement_supplier s ON s.id=l.supplier_id WHERE l.purchase_order_id IN (${idsSql(ids)}) ORDER BY l.purchase_order_id,l.supplier_id`,
+    ids,
+  );
+  for (const row of rows) {
+    const id = String(row.purchase_order_id);
+    result.set(id, [
+      ...(result.get(id) ?? []),
+      { id: String(row.supplier_id), supplierName: row.supplier_name },
+    ]);
+  }
+  return result;
+};
 const LINE_COLUMNS =
-  'l.id,l.purchase_order_id,l.line_no,l.item_id,l.material_variant_id,l.item_code_snapshot,l.material_variant_code_snapshot,l.unit_snapshot,l.planned_quantity,l.status,l.version,l.origin_order_line_id,l.origin_receipt_line_id,l.origin_supplier_return_id,l.supplement_evidence';
+  'l.id,l.purchase_order_id,l.supplier_id,l.line_no,l.item_id,l.material_variant_id,l.item_code_snapshot,l.material_variant_code_snapshot,l.unit_snapshot,l.planned_quantity,l.status,l.version,l.origin_order_line_id,l.origin_receipt_line_id,l.origin_allocation_id,l.supplement_evidence,l.fulfillment_mode';
 
 export const listPurchaseOrders = async (
   db: Db,
-  query: PurchaseOrderQuery & { page: number; pageSize: number },
+  query: PurchaseOrderQuery & { page: number; pageSize: number; onlyNewArrival?: boolean },
 ): Promise<PageResult<PurchaseOrderItem>> => {
   const where = ['1=1'];
+  if (query.onlyNewArrival)
+    where.push(
+      "EXISTS(SELECT 1 FROM procurement_order_line receivable WHERE receivable.purchase_order_id=o.id AND receivable.status='open' AND receivable.fulfillment_mode='new_arrival')",
+    );
   const params: Array<string | number> = [];
   if (query.keyword) {
-    where.push('(o.purchase_no LIKE ? OR s.supplier_name LIKE ?)');
+    where.push(
+      '(o.purchase_no LIKE ? OR EXISTS(SELECT 1 FROM procurement_order_line search_line JOIN procurement_supplier search_supplier ON search_supplier.id=search_line.supplier_id WHERE search_line.purchase_order_id=o.id AND search_supplier.supplier_name LIKE ?))',
+    );
     params.push(`%${query.keyword}%`, `%${query.keyword}%`);
   }
   if (query.supplierId) {
-    where.push('o.supplier_id=?');
+    where.push(
+      'EXISTS(SELECT 1 FROM procurement_order_line filter_line WHERE filter_line.purchase_order_id=o.id AND filter_line.supplier_id=?)',
+    );
     params.push(query.supplierId);
   }
   if (query.status) {
@@ -52,20 +83,24 @@ export const listPurchaseOrders = async (
   }
   if (query.originOrderLineId) {
     where.push(
-      'EXISTS(SELECT 1 FROM purchase_order_line origin_link WHERE origin_link.purchase_order_id=o.id AND origin_link.origin_order_line_id=?)',
+      'EXISTS(SELECT 1 FROM procurement_order_line origin_link WHERE origin_link.purchase_order_id=o.id AND origin_link.origin_order_line_id=?)',
     );
     params.push(query.originOrderLineId);
   }
   const [[count]] = await db.query<(RowDataPacket & { total: number })[]>(
-    `SELECT COUNT(*) total FROM purchase_order o JOIN procurement_supplier s ON s.id=o.supplier_id WHERE ${where.join(' AND ')}`,
+    `SELECT COUNT(*) total FROM procurement_order o WHERE ${where.join(' AND ')}`,
     params,
   );
   const [rows] = await db.query<OrderDisplayRow[]>(
     `${ORDER_DISPLAY_SELECT} WHERE ${where.join(' AND ')} ORDER BY o.created_at DESC,o.id DESC LIMIT ? OFFSET ?`,
     [...params, query.pageSize, (query.page - 1) * query.pageSize],
   );
+  const suppliers = await readOrderSuppliers(
+    db,
+    rows.map((row) => String(row.id)),
+  );
   return {
-    items: rows.map(mapOrder),
+    items: rows.map((row) => mapOrder(row, suppliers.get(String(row.id)) ?? [])),
     total: Number(count?.total ?? 0),
     page: query.page,
     pageSize: query.pageSize,
@@ -78,14 +113,16 @@ export const getPurchaseOrder = async (db: Db, id: string): Promise<PurchaseOrde
   const [lines] = await db.query<
     (OrderLineRow & {
       material_name: string;
+      supplier_name: string;
       origin_order_id: number | null;
       origin_purchase_no: string | null;
     })[]
   >(
-    `SELECT ${LINE_COLUMNS},m.material_name,origin.purchase_order_id origin_order_id,original.purchase_no origin_purchase_no
-     FROM purchase_order_line l JOIN materials m ON m.id=l.item_id
-     LEFT JOIN purchase_order_line origin ON origin.id=l.origin_order_line_id
-     LEFT JOIN purchase_order original ON original.id=origin.purchase_order_id
+    `SELECT ${LINE_COLUMNS},m.material_name,s.supplier_name,origin.purchase_order_id origin_order_id,original.purchase_no origin_purchase_no
+     FROM procurement_order_line l JOIN materials m ON m.id=l.item_id
+     JOIN procurement_supplier s ON s.id=l.supplier_id
+     LEFT JOIN procurement_order_line origin ON origin.id=l.origin_order_line_id
+     LEFT JOIN procurement_order original ON original.id=origin.purchase_order_id
      WHERE l.purchase_order_id=? ORDER BY l.line_no,l.id`,
     [id],
   );
@@ -95,17 +132,19 @@ export const getPurchaseOrder = async (db: Db, id: string): Promise<PurchaseOrde
     lines.map((row) => String(row.id)),
   );
   const [closures] = await db.query<ClosureRow[]>(
-    `SELECT c.id,c.purchase_order_line_id,c.reason_type,c.reason,c.planned_quantity,c.received_quantity,c.undetermined_quantity,c.approved_quantity,c.inbound_quantity,c.return_due_quantity,c.returned_quantity,c.quality_returned_quantity,c.created_at FROM purchase_order_line_closure c JOIN purchase_order_line l ON l.id=c.purchase_order_line_id WHERE l.purchase_order_id=?`,
+    `SELECT c.id,c.purchase_order_line_id,c.reason_type,c.reason,c.planned_quantity,c.received_quantity,c.undetermined_quantity,c.approved_quantity,c.inbound_quantity,c.return_due_quantity,c.returned_quantity,c.quality_returned_quantity,c.created_at FROM procurement_order_line_closure c JOIN procurement_order_line l ON l.id=c.purchase_order_line_id WHERE l.purchase_order_id=?`,
     [id],
   );
   const closureMap = new Map(
     closures.map((row) => [String(row.purchase_order_line_id), mapClosure(row)]),
   );
   return {
-    ...mapOrder(order),
+    ...mapOrder(order, (await readOrderSuppliers(db, [id])).get(id) ?? []),
     items: lines.map((row) => ({
       id: String(row.id),
       lineNo: row.line_no,
+      supplierId: String(row.supplier_id),
+      supplierName: row.supplier_name,
       itemId: String(row.item_id),
       itemCode: row.item_code_snapshot,
       itemName: row.material_name,
@@ -121,10 +160,11 @@ export const getPurchaseOrder = async (db: Db, id: string): Promise<PurchaseOrde
       originPurchaseOrderId: row.origin_order_id === null ? null : String(row.origin_order_id),
       originPurchaseNo: row.origin_purchase_no,
       supplementEvidence: row.supplement_evidence,
+      fulfillmentMode: row.fulfillment_mode as PurchaseOrderLine['fulfillmentMode'],
       originReceiptLineId:
         row.origin_receipt_line_id === null ? null : String(row.origin_receipt_line_id),
-      originSupplierReturnId:
-        row.origin_supplier_return_id === null ? null : String(row.origin_supplier_return_id),
+      originAllocationId:
+        row.origin_allocation_id === null ? null : String(row.origin_allocation_id),
       quantities: metrics.get(String(row.id))!.quantities,
       allowedCloseReasons:
         row.status === 'open'
@@ -153,11 +193,13 @@ const readSources = async (
       batch_no: string;
       need_number: string | number;
       remaining_number: string | number;
+      supplier_hint: string | null;
     })[]
   >(
-    `SELECT l.id line_id,d.id demand_id,b.work_order_id,w.work_order_no,d.production_batch_id,b.batch_no,d.need_number,d.remaining_number
-     FROM purchase_order_line l JOIN purchase_order_line_source s ON s.purchase_order_line_id=l.id
+    `SELECT l.id line_id,d.id demand_id,b.work_order_id,w.work_order_no,d.production_batch_id,b.batch_no,d.need_number,d.remaining_number,COALESCE(basis.supplier_hint,d.supplier_hint) supplier_hint
+     FROM procurement_order_line l JOIN procurement_order_line_source s ON s.purchase_order_line_id=l.id
      JOIN production_item_demand d ON d.id=s.demand_id
+     LEFT JOIN production_material_requirement_basis basis ON basis.id=d.requirement_basis_id
      JOIN production_batches b ON b.id=d.production_batch_id JOIN work_orders w ON w.id=b.work_order_id
      WHERE l.purchase_order_id=? ORDER BY l.id,d.id`,
     [orderId],
@@ -175,6 +217,7 @@ const readSources = async (
         batchNo: row.batch_no,
         demandQuantity: String(Number(row.need_number)),
         remainingDemandQuantity: String(Number(row.remaining_number)),
+        supplierHint: row.supplier_hint,
       },
     ]);
   }
@@ -187,14 +230,14 @@ export const listRelatedPurchases = async (
 ): Promise<RelatedPurchasesResult> => {
   const ids = [...new Set(query.demandIds)];
   const [counts] = await db.query<(RowDataPacket & { demand_id: number; order_count: number })[]>(
-    `SELECT s.demand_id,COUNT(DISTINCT l.purchase_order_id) order_count FROM purchase_order_line_source s
-     JOIN purchase_order_line l ON l.id=s.purchase_order_line_id WHERE s.demand_id IN (${idsSql(ids)}) GROUP BY s.demand_id`,
+    `SELECT s.demand_id,COUNT(DISTINCT l.purchase_order_id) order_count FROM procurement_order_line_source s
+     JOIN procurement_order_line l ON l.id=s.purchase_order_line_id WHERE s.demand_id IN (${idsSql(ids)}) GROUP BY s.demand_id`,
     ids,
   );
   const countMap = new Map(counts.map((row) => [String(row.demand_id), Number(row.order_count)]));
-  const filter = `EXISTS(SELECT 1 FROM purchase_order_line_source source WHERE source.purchase_order_line_id=l.id AND source.demand_id IN (${idsSql(ids)}))`;
+  const filter = `EXISTS(SELECT 1 FROM procurement_order_line_source source WHERE source.purchase_order_line_id=l.id AND source.demand_id IN (${idsSql(ids)}))`;
   const [[count]] = await db.query<(RowDataPacket & { total: number })[]>(
-    `SELECT COUNT(*) total FROM purchase_order_line l WHERE ${filter}`,
+    `SELECT COUNT(*) total FROM procurement_order_line l WHERE ${filter}`,
     ids,
   );
   const [rows] = await db.query<
@@ -206,8 +249,8 @@ export const listRelatedPurchases = async (
     })[]
   >(
     `SELECT ${LINE_COLUMNS},o.purchase_no,o.status order_status,o.supplement_reason,s.supplier_name
-     FROM purchase_order_line l JOIN purchase_order o ON o.id=l.purchase_order_id
-     JOIN procurement_supplier s ON s.id=o.supplier_id WHERE ${filter}
+     FROM procurement_order_line l JOIN procurement_order o ON o.id=l.purchase_order_id
+     JOIN procurement_supplier s ON s.id=l.supplier_id WHERE ${filter}
      ORDER BY o.created_at DESC,o.id DESC,l.line_no,l.id LIMIT ? OFFSET ?`,
     [...ids, query.pageSize, (query.page - 1) * query.pageSize],
   );
@@ -229,6 +272,7 @@ export const listRelatedPurchases = async (
       purchaseOrderStatus: row.order_status,
       purchaseOrderLineId: String(row.id),
       lineStatus: row.status,
+      supplierId: String(row.supplier_id),
       supplierName: row.supplier_name,
       supplementReason: row.supplement_reason,
       plannedQuantity: String(row.planned_quantity),

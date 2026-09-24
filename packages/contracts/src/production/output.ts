@@ -1,3 +1,4 @@
+import type { ProductionOutputInspection } from '../quality/finished-inspections.js';
 import type { VersionedCommand } from '../common.js';
 import type { BatchTerminationCheck } from './termination.js';
 import type { BatchCloseoutApprovalSnapshot } from './closeout.js';
@@ -16,21 +17,6 @@ export interface ProductionOutputDraft extends ProductionOutputQuantities {
   reason: string;
   materialReviewNote: string;
   inspectionRecordId: string | null;
-}
-export interface ProductionOutputInspection {
-  id: string;
-  closeoutId: string;
-  batchId: string;
-  declaredVersion: number;
-  declared: ProductionOutputQuantities;
-  inspected: ProductionOutputQuantities;
-  inspectedAt: string;
-  resultNote: string;
-  evidenceReference: string;
-  previousInspectionId: string | null;
-  createdBy: string;
-  createdByName: string;
-  createdAt: string;
 }
 export interface ProductionOutputRevision {
   id: string;
@@ -85,12 +71,6 @@ export interface ProductionOutputDetail {
   submissionToken: string;
 }
 export interface SaveProductionOutputPayload extends VersionedCommand, ProductionOutputDraft {}
-export interface RecordProductionOutputInspectionPayload extends VersionedCommand {
-  inspected: ProductionOutputQuantities;
-  inspectedAt: string;
-  resultNote: string;
-  evidenceReference: string;
-}
 export interface SubmitProductionOutputPayload extends VersionedCommand {
   submissionToken: string;
 }
@@ -107,5 +87,4 @@ export interface BeginProductionOutputCorrectionPayload extends VersionedCommand
 export interface ProductionOutputCommandResult {
   closeoutId: string;
   batchId: string;
-  inspectionRecordId?: string;
 }

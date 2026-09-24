@@ -9,7 +9,9 @@ import { useLatestReadRequest } from '../../../composables/requests/useLatestRea
 import { usePageActivationRefresh } from '../../../composables/requests/usePageActivationRefresh';
 import { EMessage } from '../../../utils/message';
 
-export function usePurchaseOrdersList() {
+export function usePurchaseOrdersList(
+  onLoaded?: (rows: PurchaseOrderItem[], refreshExpanded: boolean) => void,
+) {
   const query = reactive({
     keyword: '',
     status: '' as PurchaseOrderStatus | '',
@@ -23,7 +25,7 @@ export function usePurchaseOrdersList() {
   const request = useLatestReadRequest(() => {
     loading.value = false;
   });
-  const load = async (): Promise<void> => {
+  const load = async (options?: { refreshExpanded?: boolean }): Promise<void> => {
     if (!request.isActive()) return;
     const current = request.begin();
     loading.value = true;
@@ -41,6 +43,7 @@ export function usePurchaseOrdersList() {
       if (!current.isCurrent()) return;
       rows.value = result.items;
       total.value = result.total;
+      onLoaded?.(result.items, options?.refreshExpanded !== false);
     } catch (error) {
       if (current.isCurrent()) EMessage.error(error, '采购列表加载失败');
     } finally {

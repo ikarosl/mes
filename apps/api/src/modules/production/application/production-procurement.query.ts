@@ -3,6 +3,8 @@ import type {
   ProcurementDemandCandidate,
   ProcurementDemandCandidateQuery,
   ProcurementDemandResolution,
+  ProcurementDemandWorkOrder,
+  ProcurementDemandWorkOrderQuery,
 } from '@company/contracts';
 
 export type ProductionProcurementResult<T> =
@@ -13,7 +15,14 @@ export type ProductionProcurementResult<T> =
       demandId?: string;
     };
 
+export class ProductionProcurementInputError extends Error {
+  readonly code = 'INVALID_INPUT';
+}
+
 export abstract class ProductionProcurementQuery {
+  abstract listWorkOrders(
+    query: ProcurementDemandWorkOrderQuery,
+  ): Promise<PageResult<ProcurementDemandWorkOrder>>;
   abstract listCandidates(
     query: ProcurementDemandCandidateQuery,
   ): Promise<PageResult<ProcurementDemandCandidate>>;

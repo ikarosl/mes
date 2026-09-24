@@ -40,15 +40,16 @@ import { writeInventoryAudit } from './mysql-production-inventory.shared.js';
 type Demand = RowDataPacket & {
   id: number;
   production_batch_id: number;
-  requirement_basis_id: number;
-  product_material_id: number;
+  requirement_basis_id: number | null;
+  product_material_id: number | null;
   item_id: number;
   material_variant_id: number;
   item_code_snapshot: string;
   material_variant_code_snapshot: string;
+  supplier_hint: string | null;
   unit_snapshot: string;
-  quantity_per_unit_snapshot: string;
-  planned_output_quantity_snapshot: string;
+  quantity_per_unit_snapshot: string | null;
+  planned_output_quantity_snapshot: string | null;
   need_number: string;
   remaining_number: string;
   demand_type: DemandCorrectionCheck['demandType'];
@@ -319,9 +320,16 @@ export class MysqlProductionDemandCorrectionRepository extends ProductionDemandC
         materialVariantId: demand.material_variant_id,
         materialVariantCode: demand.material_variant_code_snapshot,
         itemCode: demand.item_code_snapshot,
-        quantityPerUnit: String(demand.quantity_per_unit_snapshot),
+        quantityPerUnit:
+          demand.quantity_per_unit_snapshot === null
+            ? null
+            : String(demand.quantity_per_unit_snapshot),
         unit: demand.unit_snapshot,
-        plannedOutputQuantity: String(demand.planned_output_quantity_snapshot),
+        plannedOutputQuantity:
+          demand.planned_output_quantity_snapshot === null
+            ? null
+            : String(demand.planned_output_quantity_snapshot),
+        supplierHint: demand.supplier_hint,
         needNumber: newQuantity,
         demandType: demand.demand_type,
         parentDemandId: demand.parent_demand_id,

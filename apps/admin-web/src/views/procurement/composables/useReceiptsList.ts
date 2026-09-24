@@ -5,6 +5,7 @@ import { useLatestReadRequest } from '../../../composables/requests/useLatestRea
 import { usePageActivationRefresh } from '../../../composables/requests/usePageActivationRefresh';
 import { EMessage } from '../../../utils/message';
 export function useReceiptsList() {
+  const awaitingAcceptance = ref(false);
   const keyword = ref(''),
     rows = ref<ProcurementReceiptItem[]>([]),
     page = ref(1),
@@ -20,7 +21,12 @@ export function useReceiptsList() {
     loading.value = true;
     try {
       const result = await procurementApi.listReceipts(
-        { keyword: keyword.value.trim() || undefined, page: page.value, pageSize: pageSize.value },
+        {
+          awaitingAcceptance: awaitingAcceptance.value ? 'yes' : undefined,
+          keyword: keyword.value.trim() || undefined,
+          page: page.value,
+          pageSize: pageSize.value,
+        },
         current.signal,
       );
       if (current.isCurrent()) {
@@ -39,6 +45,7 @@ export function useReceiptsList() {
   };
   const reset = async (): Promise<void> => {
     keyword.value = '';
+    awaitingAcceptance.value = false;
     await search();
   };
   const changePage = async (value: number): Promise<void> => {
@@ -51,6 +58,7 @@ export function useReceiptsList() {
   };
   usePageActivationRefresh(load);
   return {
+    awaitingAcceptance,
     keyword,
     rows,
     page,

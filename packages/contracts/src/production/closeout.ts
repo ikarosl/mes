@@ -1,8 +1,5 @@
-import type {
-  ProductionCloseoutMode,
-  ProductionOutputDraft,
-  ProductionOutputInspection,
-} from './output.js';
+import type { ProductionOutputInspection } from '../quality/finished-inspections.js';
+import type { ProductionCloseoutMode, ProductionOutputDraft } from './output.js';
 import type { BatchTerminationCheck, BatchTerminationImpact } from './termination.js';
 import type { DemandBusinessStatus, DemandType } from './statuses.js';
 

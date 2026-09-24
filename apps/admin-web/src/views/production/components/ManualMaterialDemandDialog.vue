@@ -1,5 +1,13 @@
 <template>
+  <ResearchMaterialDemandDialog
+    v-if="batch?.orderType === 'research'"
+    :visible="visible"
+    :batch="batch"
+    @update:visible="emit('update:visible', $event)"
+    @added="emit('added')"
+  />
   <el-dialog
+    v-else
     :model-value="visible"
     :title="`人工追加需求${batch ? ` · ${batch.batchNo}` : ''}`"
     :width="DialogWidth.xl"
@@ -23,6 +31,7 @@
         >
           <el-input
             v-model="reason"
+            :disabled="submitting || unresolved"
             type="textarea"
             :rows="2"
             maxlength="5000"
@@ -44,6 +53,7 @@
           <template #default="{ row }">
             <el-checkbox
               v-model="row.selected"
+              :disabled="submitting || unresolved"
               :aria-label="`选择 ${row.materialCode}`"
             />
           </template>
@@ -78,7 +88,7 @@
                   v-model="split.materialVariantId"
                   filterable
                   placeholder="选择具体版本"
-                  :disabled="Boolean(row.lockedMaterialVariantId)"
+                  :disabled="submitting || unresolved || Boolean(row.lockedMaterialVariantId)"
                 >
                   <el-option
                     v-for="variant in availableVariants(row, index)"
@@ -89,28 +99,15 @@
                 </el-select>
                 <el-input-number
                   v-model="split.quantity"
+                  :disabled="submitting || unresolved"
+                  :max="99999999"
                   :min="1"
                   :step="1"
                   :precision="0"
                   controls-position="right"
                 />
                 <span class="secondary">{{ row.unit }}</span>
-                <el-button
-                  v-if="row.orderType === 'research' && row.splits.length > 1"
-                  link
-                  type="danger"
-                  @click="removeSplit(row, index)"
-                  >删除</el-button
-                >
               </div>
-              <el-button
-                v-if="row.orderType === 'research'"
-                link
-                type="primary"
-                :disabled="row.splits.length >= row.variants.length"
-                @click="addSplit(row)"
-                >+ 添加版本</el-button
-              >
             </template>
           </template>
         </el-table-column>
@@ -131,12 +128,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import ResearchMaterialDemandDialog from './ResearchMaterialDemandDialog.vue';
+import { computed, onScopeDispose, ref, watch } from 'vue';
 import type {
   MaterialDemandManagementRow,
   MaterialDemandManagementVariant,
   ProductionBatchItem,
 } from '@company/contracts';
+import { useTabsStore } from '../../../stores/tabs';
 import { productionApi } from '../../../api/production';
 import { loadBatchMaterialDemands } from '../composables/loadBatchMaterialDemands';
 import { useIdempotentIntent } from '../../../composables/idempotency/useIdempotentIntent';
@@ -156,11 +155,9 @@ let loadVersion = 0;
 const submitting = ref(false);
 const intent = useIdempotentIntent();
 
-const policyDescription = computed(() =>
-  rows.value[0]?.orderType === 'mass_production'
-    ? '可一次追加多种冻结 BOM 物料；每种物料固定使用整个工单已经锁定的唯一版本。'
-    : '可一次追加多种冻结 BOM 物料，同一种物料也可以添加多个不同版本。追加数量不受初始需求总量限制。',
-);
+const policyDescription =
+  '可一次追加多种冻结 BOM 物料；每种物料固定使用本任务初始需求锁定的唯一版本。';
+const unresolved = ref(false);
 const selectedRows = computed(() => rows.value.filter((row) => row.selected));
 const canSubmit = computed(
   () =>
@@ -189,13 +186,8 @@ const availableVariants = (
   );
   return row.variants.filter((variant) => !selected.has(variant.materialVariantId));
 };
-const addSplit = (row: RowDraft): void => {
-  row.splits.push({ materialVariantId: '', quantity: 1 });
-};
-const removeSplit = (row: RowDraft, index: number): void => void row.splits.splice(index, 1);
-
 const load = async (): Promise<void> => {
-  if (!props.batch) return;
+  if (!props.batch || props.batch.orderType === 'research') return;
   const version = ++loadVersion;
   const batchId = props.batch.id;
   loading.value = true;
@@ -224,7 +216,7 @@ const submit = async (): Promise<void> => {
   const body = {
     reason: reason.value.trim(),
     requirements: selectedRows.value.map((row) => ({
-      productMaterialId: row.productMaterialId,
+      materialId: row.materialId,
       splits: row.splits.map((split) => ({ ...split })),
     })),
   };
@@ -240,17 +232,20 @@ const submit = async (): Promise<void> => {
       (key) => productionApi.addManualMaterialDemands(props.batch!.id, body, key),
     );
     intent.reset();
+    unresolved.value = false;
     EMessage.success(`人工追加需求 ${result.additionNo} 已生成`);
     emit('update:visible', false);
     emit('added');
   } catch (error) {
+    unresolved.value = intent.getStatus() !== 'idle';
     EMessage.error(error, '人工追加需求生成失败');
   } finally {
     submitting.value = false;
   }
 };
-const close = async (): Promise<void> => {
-  if (submitting.value) return;
+const close = async (): Promise<boolean> => {
+  if (!props.visible || props.batch?.orderType === 'research') return true;
+  if (submitting.value) return false;
   const status = intent.getStatus();
   if (status !== 'idle') {
     try {
@@ -260,12 +255,15 @@ const close = async (): Promise<void> => {
         { type: 'warning', confirmButtonText: '核对后放弃', cancelButtonText: '继续保留' },
       );
     } catch {
-      return;
+      return false;
     }
   }
   intent.reset();
+  unresolved.value = false;
   emit('update:visible', false);
+  return true;
 };
+onScopeDispose(useTabsStore().registerCloseGuard('production-tasks', () => close()));
 const handleVisibleChange = (visible: boolean): void => {
   if (visible) emit('update:visible', true);
   else void close();

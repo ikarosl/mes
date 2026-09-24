@@ -1,3 +1,4 @@
+import type { WorkOrderType } from './work-order.js';
 import type { PageQuery, VersionedCommand } from '../common.js';
 import type { ProductionCloseoutMode } from './output.js';
 import type {
@@ -25,6 +26,7 @@ export interface ProductionBatchItem {
   id: string;
   workOrderId: string;
   workOrderNo: string;
+  orderType: WorkOrderType;
   productId: string;
   productCode: string;
   productName: string;

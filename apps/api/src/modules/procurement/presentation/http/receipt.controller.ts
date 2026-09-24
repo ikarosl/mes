@@ -15,7 +15,9 @@ import {
   CORRECT_RECEIPT_SCOPE,
   START_RECEIPT_REVIEW_SCOPE,
   INSPECT_RECEIPT_SCOPE,
-  TERMINATE_RECEIPT_RETURN_SCOPE,
+  ACCEPT_RECEIPT_SCOPE,
+  REJECT_RECEIPT_SCOPE,
+  REVOKE_RECEIPT_REJECTION_SCOPE,
   CONFIRM_SUPPLIER_RETURN_SCOPE,
   CONFIRM_PROCUREMENT_INBOUND_SCOPE,
 } from '../../application/idempotency/procurement-idempotency-scopes.contract.js';
@@ -30,7 +32,9 @@ import {
   CorrectReceiptDto,
   StartReceiptReviewDto,
   InspectReceiptDto,
-  TerminateReceiptReturnDto,
+  ConfirmReceiptAcceptanceDto,
+  RejectReceiptDto,
+  RevokeReceiptRejectionDto,
   ConfirmSupplierReturnDto,
   ConfirmProcurementInboundDto,
 } from './receipt.dto.js';
@@ -66,6 +70,11 @@ export class ProcurementReceiptController {
   @RequirePermission(PERMISSIONS.procurement.receipts.view)
   order(@Param() { id }: PurchaseOrderIdDto) {
     return this.query.getReceiptOrder(id);
+  }
+  @Get('receipt-lines/:id/allocation-candidates')
+  @RequirePermission(PERMISSIONS.procurement.receipts.view)
+  allocationCandidates(@Param() { id }: PurchaseOrderIdDto, @Query() query: PageQueryDto) {
+    return this.query.allocationCandidates(id, query);
   }
   @Get('receipt-lines/:id/:historyKind')
   @RequirePermission([
@@ -123,16 +132,38 @@ export class ProcurementReceiptController {
   ) {
     return this.service.inspect(id, body, context);
   }
-  @Post('receipt-lines/:id/actions/terminate-return')
-  @RequirePermission(PERMISSIONS.procurement.receipts.return)
+  @Post('receipt-lines/:id/actions/accept')
+  @RequirePermission(PERMISSIONS.procurement.receipts.accept)
   @AuditInApplication()
-  @IdempotentEndpoint({ scope: TERMINATE_RECEIPT_RETURN_SCOPE })
-  terminate(
+  @IdempotentEndpoint({ scope: ACCEPT_RECEIPT_SCOPE })
+  accept(
     @Param() { id }: PurchaseOrderIdDto,
-    @Body() body: TerminateReceiptReturnDto,
+    @Body() body: ConfirmReceiptAcceptanceDto,
     @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
   ) {
-    return this.service.terminateReturn(id, body, context);
+    return this.service.accept(id, body, context);
+  }
+  @Post('receipt-lines/:id/actions/reject')
+  @RequirePermission(PERMISSIONS.procurement.receipts.accept)
+  @AuditInApplication()
+  @IdempotentEndpoint({ scope: REJECT_RECEIPT_SCOPE })
+  reject(
+    @Param() { id }: PurchaseOrderIdDto,
+    @Body() body: RejectReceiptDto,
+    @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
+  ) {
+    return this.service.reject(id, body, context);
+  }
+  @Post('receipt-lines/:id/actions/revoke-rejection')
+  @RequirePermission(PERMISSIONS.procurement.receipts.accept)
+  @AuditInApplication()
+  @IdempotentEndpoint({ scope: REVOKE_RECEIPT_REJECTION_SCOPE })
+  revokeRejection(
+    @Param() { id }: PurchaseOrderIdDto,
+    @Body() body: RevokeReceiptRejectionDto,
+    @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
+  ) {
+    return this.service.revokeRejection(id, body, context);
   }
   @Post('receipt-lines/:id/actions/return')
   @RequirePermission(PERMISSIONS.procurement.receipts.return)

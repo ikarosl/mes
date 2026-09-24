@@ -213,6 +213,15 @@ export interface ProductionExecutionCompletionCheck {
 
 export type CompleteProductionExecutionPayload = VersionedCommand;
 
+export type StartResearchExecutionPayload = VersionedCommand;
+
+export interface ResearchExecutionStartResult {
+  productionBatchId: string;
+  batchStatus: 'doing';
+  startedAt: string;
+  version: number;
+}
+
 export interface ProductionExecutionCompletionResult {
   productionBatchId: string;
   batchStatus: 'closing' | 'completed';

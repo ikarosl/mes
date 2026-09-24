@@ -72,6 +72,7 @@ export type BatchRow = RowDataPacket & {
   id: number;
   work_order_id: number;
   work_order_no: string;
+  order_type: ProductionBatchItem['orderType'];
   product_id: number;
   product_code_snapshot: string;
   product_name_snapshot: string;
@@ -155,7 +156,7 @@ export const WORK_ORDER_SELECT = `SELECT wo.id,wo.work_order_no,wo.order_type,wo
   COALESCE((SELECT SUM(c.extra_quantity) FROM production_batch_closeout c JOIN production_batches b ON b.id=c.production_batch_id
     WHERE b.work_order_id=wo.id AND b.status='closing'),0) pending_extra_quantity
   FROM work_orders wo`;
-export const BATCH_SELECT = `SELECT b.id,b.work_order_id,wo.work_order_no,b.product_id,wo.product_code_snapshot,wo.product_name_snapshot,b.batch_no,b.route_id,b.route_code_snapshot,b.route_version_snapshot,b.planned_quantity,${lastStepReportedQuantitySql('b.id')} last_step_reported_quantity,b.plan_start_date,b.plan_end_date,b.started_at,b.status,b.material_plan_version,
+export const BATCH_SELECT = `SELECT b.id,b.work_order_id,wo.work_order_no,wo.order_type,b.product_id,wo.product_code_snapshot,wo.product_name_snapshot,b.batch_no,b.route_id,b.route_code_snapshot,b.route_version_snapshot,b.planned_quantity,${lastStepReportedQuantitySql('b.id')} last_step_reported_quantity,b.plan_start_date,b.plan_end_date,b.started_at,b.status,b.material_plan_version,
   c.closeout_mode,c.current_revision_id,b.execution_completed_at,b.execution_completed_by,
   r.revision_no approved_output_revision_no,r.available_quantity approved_available_quantity,
   r.extra_quantity approved_extra_quantity,(r.existing_scrap_quantity+r.additional_scrap_quantity) approved_scrap_quantity,
@@ -167,7 +168,7 @@ export const BATCH_SELECT = `SELECT b.id,b.work_order_id,wo.work_order_no,b.prod
   END short_batch_authorization_status,
   b.batch_owner_id owner_id,b.completed_at,b.completed_by,b.cancel_reason,b.cancelled_by,b.cancelled_at,b.remark,b.version,b.created_at,b.updated_at FROM production_batches b JOIN work_orders wo ON wo.id=b.work_order_id LEFT JOIN production_batch_closeout c ON c.production_batch_id=b.id
   LEFT JOIN production_output_revision r ON r.id=c.current_revision_id AND r.closeout_id=c.id AND r.production_batch_id=b.id`;
-const BATCH_LOCK_SELECT = `SELECT b.id,b.work_order_id,wo.work_order_no,b.product_id,wo.product_code_snapshot,wo.product_name_snapshot,b.batch_no,b.route_id,b.route_code_snapshot,b.route_version_snapshot,b.planned_quantity,0 last_step_reported_quantity,b.plan_start_date,b.plan_end_date,b.started_at,b.status,b.material_plan_version,
+const BATCH_LOCK_SELECT = `SELECT b.id,b.work_order_id,wo.work_order_no,wo.order_type,b.product_id,wo.product_code_snapshot,wo.product_name_snapshot,b.batch_no,b.route_id,b.route_code_snapshot,b.route_version_snapshot,b.planned_quantity,0 last_step_reported_quantity,b.plan_start_date,b.plan_end_date,b.started_at,b.status,b.material_plan_version,
   NULL closeout_mode,NULL current_revision_id,b.execution_completed_at,b.execution_completed_by,
   NULL approved_output_revision_no,NULL approved_available_quantity,NULL approved_extra_quantity,NULL approved_scrap_quantity,
   'none' short_batch_authorization_status,
@@ -271,6 +272,7 @@ export const mapBatch = (
   id: String(row.id),
   workOrderId: String(row.work_order_id),
   workOrderNo: row.work_order_no,
+  orderType: row.order_type,
   productId: String(row.product_id),
   productCode: row.product_code_snapshot,
   productName: row.product_name_snapshot,

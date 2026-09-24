@@ -20,6 +20,7 @@ import { ProcurementDomainExceptionFilter } from './procurement-domain-exception
 import {
   PurchaseOrderIdDto,
   PurchaseOrderQueryDto,
+  PurchaseExcessReceiptCandidateQueryDto,
   CreatePurchaseOrderDto,
   UpdatePurchaseOrderDto,
   PurchaseOrderVersionDto,
@@ -27,6 +28,7 @@ import {
   ClosePurchaseOrderLineDto,
   CreatePurchaseOrderSupplementDto,
   ProcurementDemandCandidateQueryDto,
+  ProcurementDemandWorkOrderQueryDto,
   ResolveProcurementDemandsDto,
   RelatedPurchasesQueryDto,
   ProcurementMaterialOptionsDto,
@@ -47,6 +49,19 @@ export class PurchaseOrderController {
   get(@Param() { id }: PurchaseOrderIdDto) {
     return this.service.get(id);
   }
+  @Get('purchase-order-lines/:id/excess-receipt-candidates')
+  @RequirePermission(PERMISSIONS.procurement.orders.view)
+  excessReceiptCandidates(
+    @Param() { id }: PurchaseOrderIdDto,
+    @Query() query: PurchaseExcessReceiptCandidateQueryDto,
+  ) {
+    return this.service.excessReceiptCandidates(id, query);
+  }
+  @Get('demand-work-orders')
+  @RequirePermission(PERMISSIONS.procurement.orders.view)
+  workOrders(@Query() query: ProcurementDemandWorkOrderQueryDto) {
+    return this.service.workOrders(query);
+  }
   @Get('demand-candidates')
   @RequirePermission(PERMISSIONS.procurement.orders.view)
   candidates(@Query() query: ProcurementDemandCandidateQueryDto) {
@@ -55,7 +70,7 @@ export class PurchaseOrderController {
   @Post('demand-candidates/resolve')
   @RequirePermission(PERMISSIONS.procurement.orders.view)
   resolve(@Body() body: ResolveProcurementDemandsDto) {
-    return this.service.resolve(body.demandIds);
+    return this.service.resolve(body.workOrderId, body.demandIds);
   }
   @Get('related-purchases')
   @RequirePermission([

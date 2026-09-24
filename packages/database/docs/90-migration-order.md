@@ -25,9 +25,7 @@ corepack pnpm db:migrate:status
 
 ## 所有者与验证
 
-- Identity：[数据库设计](../../../apps/api/src/modules/identity/docs/database.md)
-- Product：[数据库设计](../../../apps/api/src/modules/product/docs/database.md)
-- Production：[数据库设计](../../../apps/api/src/modules/production/docs/database/README.md)
+- 业务表所有者：[数据库设计索引](../README.md#业务数据库设计)，覆盖 Identity、Product、Production、Inventory、Procurement、Quality、Approval 与 Notification。
 - 平台表：[操作审计](../../../apps/api/docs/audit.md)、[HTTP 幂等](../../../apps/api/docs/idempotency.md)
 - 公共字段与约束：[数据库公共约定](../../../docs/database-conventions.md)
 
@@ -39,3 +37,5 @@ corepack pnpm --filter @company/database test
 ```
 
 升级和回滚的部署级约束见[迁移安全](migration-safety.md)，静态注册门禁见[迁移就绪检查](migration-readiness.md)。
+
+具体迁移的依赖顺序、非空守卫及不可单独运行的准备状态见[迁移安全](migration-safety.md)。本文不另存“当前最后一条”清单；以文件注册表和运行器状态为准。

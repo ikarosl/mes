@@ -1,3 +1,5 @@
+import { allocationSelect } from './receipt-allocation.query.js';
+import { readReceiptAcceptances } from './receipt-acceptance.query.js';
 import type {
   PageQuery,
   PageResult,
@@ -12,7 +14,8 @@ import {
   inboundFactSelect,
   mapInbound,
   mapRevision,
-  mapScope,
+  mapRound,
+  mapAllocation,
   mapReturn,
   pageInput,
 } from './receipt-read.shared.js';
@@ -25,6 +28,7 @@ export async function readReceiptHistory(
   query: PageQuery,
 ): Promise<PageResult<ReceiptHistoryItem>> {
   const { page, pageSize } = pageInput(query);
+  if (kind === 'acceptances') return readReceiptAcceptances(db, id, query);
   if (kind === 'cases') return quality.listCases({ receiptLineIds: [id], page, pageSize });
   if (kind === 'inbounds') {
     const select = (columns: string) =>
@@ -37,8 +41,9 @@ export async function readReceiptHistory(
     return { items: rows.map(mapInbound), total: Number(count?.total ?? 0), page, pageSize };
   }
   const choices = {
+    rounds: { table: 'procurement_receipt_round', map: mapRound },
     revisions: { table: 'procurement_receipt_revision', map: mapRevision },
-    scopes: { table: 'procurement_receipt_scope', map: mapScope },
+    allocations: { table: 'procurement_receipt_allocation', map: mapAllocation },
     returns: { table: 'procurement_supplier_return', map: mapReturn },
   };
   const choice = choices[kind];
@@ -47,7 +52,9 @@ export async function readReceiptHistory(
     [id],
   );
   const [rows] = await db.query<ReadRow[]>(
-    `SELECT * FROM ${choice.table} WHERE receipt_line_id=? ORDER BY id DESC LIMIT ? OFFSET ?`,
+    kind === 'allocations'
+      ? `${allocationSelect()} WHERE a.receipt_line_id=? ORDER BY a.id DESC LIMIT ? OFFSET ?`
+      : `SELECT * FROM ${choice.table} WHERE receipt_line_id=? ORDER BY id DESC LIMIT ? OFFSET ?`,
     [id, pageSize, (page - 1) * pageSize],
   );
   return {

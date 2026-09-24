@@ -81,13 +81,6 @@
         {{ snapshot.inspection.declared.additionalScrapQuantity }}</el-descriptions-item
       >
       <el-descriptions-item
-        label="实检数量（计划内 / 外 / 报废）"
-        :span="3"
-        >{{ snapshot.inspection.inspected.availableQuantity }} /
-        {{ snapshot.inspection.inspected.extraQuantity }} /
-        {{ snapshot.inspection.inspected.additionalScrapQuantity }}</el-descriptions-item
-      >
-      <el-descriptions-item
         label="质检说明"
         :span="3"
         >{{ snapshot.inspection.resultNote }}</el-descriptions-item
@@ -98,6 +91,13 @@
         >{{ snapshot.inspection.evidenceReference || '未填写' }}</el-descriptions-item
       >
     </el-descriptions>
+    <ProductionOutputInspectionFacts :inspection="snapshot.inspection" />
+    <el-alert
+      type="info"
+      :closable="false"
+      :title="`清单累计可入库量：${snapshot.output.availableQuantity + snapshot.output.extraQuantity} 件；本次检验建议量见上方。`"
+      description="请结合本次送检范围及历史已入库事实核对。检验建议不作为累计清单上限，数量差异不阻断审批。"
+    />
     <h4>管理员逐项处理结果</h4>
     <el-table
       :data="snapshot.actions"
@@ -177,6 +177,7 @@ import {
 } from '@company/constants';
 import { formatQuantity as quantity } from '../production-status';
 import ProductionMaterialLossRecords from './ProductionMaterialLossRecords.vue';
+import ProductionOutputInspectionFacts from '../../quality/components/FinishedInspectionFacts.vue';
 defineProps<{ snapshot: BatchCloseoutApprovalSnapshot }>();
 const statusLabel = (kind: string, status: string) =>
   BATCH_CLOSEOUT_STATUS_LABELS[kind]?.[status] ?? '未知状态';

@@ -5,9 +5,14 @@ export interface ProcurementInboundReleaseQuery extends PageQuery {
   supplierId?: string;
   purchaseOrderId?: string;
   receiptLineId?: string;
-  scopeIds?: string[];
+  allocationIds?: string[];
 }
 export interface ProcurementInboundReleaseItem {
+  roundId: string;
+  roundVersion: number;
+  acceptanceId: string;
+  allocationId: string;
+  purchaseOrderLineId: string;
   receiptId: string;
   receiptNo: string;
   receiptLineId: string;
@@ -25,8 +30,6 @@ export interface ProcurementInboundReleaseItem {
   supplierBatchCode: string | null;
   batchId: string | null;
   batchCode: string | null;
-  scopeId: string;
-  scopeVersion: number;
   receiptRevisionId: string;
   inspectionId: string;
   approvedRemainingQuantity: string;
@@ -35,10 +38,11 @@ export interface ConfirmProcurementInboundPayload {
   remark?: string | null;
   details: Array<{
     receiptLineId: string;
+    roundId: string;
+    roundVersion: number;
     version: number;
-    scopeId: string;
-    scopeVersion: number;
     receiptRevisionId: string;
+    allocationId: string;
     inspectionId: string;
     quantity: number;
   }>;
@@ -48,7 +52,7 @@ export interface ConfirmProcurementInboundResult {
   inboundNo: string;
   details: Array<{
     receiptLineId: string;
-    scopeId: string;
+    allocationId: string;
     batchId: string;
     inboundDetailId: string;
     transactionId: string;

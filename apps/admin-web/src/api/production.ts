@@ -1,7 +1,4 @@
 import type {
-  WorkOrderMaterialConfiguration,
-  SaveWorkOrderMaterialConfigurationPayload,
-  SaveWorkOrderMaterialConfigurationResult,
   FinishedGoodsInboundQuery,
   FinishedGoodsInboundCandidateQuery,
   FinishedGoodsInboundCandidate,
@@ -25,7 +22,6 @@ import type {
   RecordCloseoutMaterialLossResult,
   ProductionOutputDetail,
   SaveProductionOutputPayload,
-  RecordProductionOutputInspectionPayload,
   ReviewProductionOutputMaterialPayload,
   SubmitProductionOutputPayload,
   BeginProductionOutputCorrectionPayload,
@@ -98,12 +94,19 @@ import type {
   ShortBatchAuthorizationResult,
   CloseRemainingMaterialDemandsResult,
   MaterialDemandManagementPage,
+  MaterialOption,
+  ProductionMaterialOptionsQuery,
   MaterialDemandManagementQuery,
   ConfigureMaterialDemandsPayload,
   AddManualMaterialDemandsPayload,
   AddManualMaterialDemandsResult,
 } from '@company/contracts';
-import { IDEMPOTENCY_KEY_HEADER, toRequestError, type RetryRequestConfig } from '@company/request';
+import {
+  IDEMPOTENCY_KEY_HEADER,
+  RequestError,
+  toRequestError,
+  type RetryRequestConfig,
+} from '@company/request';
 import { httpClient } from './http';
 
 interface ReadRequestOptions {
@@ -120,24 +123,11 @@ const request = async <T>(config: RetryRequestConfig) => {
 };
 
 export const productionApi = {
-  getWorkOrderMaterialConfiguration: (workOrderId: string) =>
-    request<WorkOrderMaterialConfiguration>({
-      url: `/production/work-orders/${workOrderId}/material-configuration`,
+  productionMaterialOptions: (params: ProductionMaterialOptionsQuery) =>
+    request<MaterialOption[]>({
+      url: '/production/material-demands/material-options',
+      params,
       skipErrorHandling: true,
-    }),
-  saveWorkOrderMaterialConfiguration: (
-    workOrderId: string,
-    data: SaveWorkOrderMaterialConfigurationPayload,
-    idempotencyKey: string,
-  ) =>
-    request<SaveWorkOrderMaterialConfigurationResult>({
-      url: `/production/work-orders/${workOrderId}/material-configuration`,
-      method: 'PUT',
-      data,
-      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
-      skipErrorHandling: true,
-      retryIdempotentWrite: true,
-      retryTimes: 2,
     }),
   listFinishedGoodsInbounds: (params: FinishedGoodsInboundQuery) =>
     request<PageResult<FinishedGoodsInboundOrderItem>>({
@@ -433,20 +423,6 @@ export const productionApi = {
       retryIdempotentWrite: true,
       retryTimes: 2,
     }),
-  recordProductionOutputInspection: (
-    id: string,
-    data: RecordProductionOutputInspectionPayload,
-    idempotencyKey: string,
-  ) =>
-    request<ProductionOutputCommandResult>({
-      url: `/production/batches/${id}/output/inspections`,
-      method: 'POST',
-      data,
-      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
-      skipErrorHandling: true,
-      retryIdempotentWrite: true,
-      retryTimes: 2,
-    }),
   submitProductionOutput: (
     id: string,
     data: SubmitProductionOutputPayload,
@@ -525,32 +501,53 @@ export const productionApi = {
    */
   listMaterialDemandManagement: (params: MaterialDemandManagementQuery) =>
     request<MaterialDemandManagementPage>({ url: '/production/material-demands', params }),
-  configureMaterialDemands: (
+  configureMaterialDemands: async (
     batchId: string,
     data: ConfigureMaterialDemandsPayload,
     idempotencyKey: string,
-  ) =>
-    request<{ configured: true }>({
+  ) => {
+    const result = await request<{ configured: true }>({
       url: `/production/batches/${batchId}/material-demands/configurations`,
       method: 'POST',
       data,
       headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
       retryIdempotentWrite: true,
       retryTimes: 2,
-    }),
-  addManualMaterialDemands: (
+    });
+    if (result?.configured !== true)
+      throw new RequestError('服务器未返回完整的需求配置结果，请重试本次操作以核对结果。', 502);
+    return result;
+  },
+  addManualMaterialDemands: async (
     batchId: string,
     data: AddManualMaterialDemandsPayload,
     idempotencyKey: string,
-  ) =>
-    request<AddManualMaterialDemandsResult>({
+  ) => {
+    const result = await request<AddManualMaterialDemandsResult>({
       url: `/production/batches/${batchId}/material-demands/additions`,
       method: 'POST',
       data,
       headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
       retryIdempotentWrite: true,
       retryTimes: 2,
-    }),
+    });
+    const expectedCount = data.requirements.reduce(
+      (count, requirement) => count + requirement.splits.length,
+      0,
+    );
+    if (
+      !result ||
+      !/^[1-9]\d*$/.test(result.additionId) ||
+      typeof result.additionNo !== 'string' ||
+      !result.additionNo.trim() ||
+      !Array.isArray(result.demandIds) ||
+      result.demandIds.length !== expectedCount ||
+      result.demandIds.some((id) => typeof id !== 'string' || !/^[1-9]\d*$/.test(id)) ||
+      new Set(result.demandIds).size !== result.demandIds.length
+    )
+      throw new RequestError('服务器未返回完整的手工需求结果，请重试本次操作以核对结果。', 502);
+    return result;
+  },
 
   listAvailableItemBatches: (demandId: string) =>
     request<AvailableItemBatchItem[]>({

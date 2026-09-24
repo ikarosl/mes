@@ -16,8 +16,8 @@ export interface PurchaseInboundDetailItem {
   inventoryTransactionId: string | null;
   procurementReceiptLineId: string | null;
   procurementReceiptRevisionId: string | null;
-  procurementScopeId: string | null;
   procurementInspectionId: string | null;
+  procurementAllocationId: string | null;
 }
 
 export interface PurchaseInboundOrderItem {

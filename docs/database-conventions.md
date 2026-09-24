@@ -1,18 +1,17 @@
 # 数据库公共规则
 
-> [返回数据库设计总览](../README.md)。本章是总览所引用的权威规范组成部分，不是独立副本。
+本章维护跨模块的审计、类型、时间、数量和历史身份约定。具体表结构、状态和业务资格由[模块所有者](README.md#应用与模块)维护。
 
-本章定义所有数据库领域共同遵守的基础规则，并完成以下统一：
+- 数量事实保存在业务明细或库存流水；批准的高频查询可使用同事务维护、可重建和对账的投影，不允许业务接口覆盖派生累计值。
+- 当前轻量 MES 不提供项目模型或项目级主数据、单据、库存隔离。
 
-- 物料和成品共用 `item_categories` 分类，以 `item_kind` 区分；不另建第二套分类表。
-- 成品主数据使用 `products`，基础物料使用 `materials`，精确物料版本使用 `material_variants`；不恢复 `item_info`。
-- `product_bom` 统一为 `product_materials`，不保留第二套 BOM 表。
-- RBAC 与认证字段以新项目已落地迁移为准。
-- 工序主数据只保留 `process_steps`，不再创建职责重复的 `processes`。
-- 数量事实保存在业务明细或库存流水；允许为已批准的高频查询建立由事实同事务维护、可全量重建和对账的余额投影，但不得创建可由业务接口随意覆盖的累计字段。
-- 当前轻量 MES 不引入项目模型，也不提供项目级主数据、业务单据或库存隔离；界面中的业务入口不得被解释为项目隔离能力。
+## 采购表命名边界
+
+业务表按所有者命名。Procurement 使用 `procurement_` 前缀，Quality／Inventory 表不因参与采购而改归属；HTTP 路径和既有外键列名不随表名机械替换。现行结构见[采购数据库](../apps/api/src/modules/procurement/docs/database.md)，不再维护旧新表名转换清单。
 
 ## 统一审计规则
+
+Identity现行主数据与以下公共列约定的差异尚未裁决，见[CO-02](documentation-conflicts.md#co-02)；不据此默认为其豁免。
 
 - 主数据和配置表使用：`created_by`、`created_at`、`updated_by`、`updated_at`、`is_deleted`、`deleted_by`、`deleted_at`。
 - 可变业务单据使用：`created_by`、`created_at`、`updated_by`、`updated_at`、`version`；取消通过状态表达，不物理删除。
@@ -23,7 +22,13 @@
 
 ## 基础物料名称与历史身份
 
-基础物料名称是当前展示属性：需求基础、需求、库存批次和入库明细不保存名称快照，按稳定 ID 读取 Product 当前 `materials.material_name`，展示、名称搜索和排序保持一致；停用或软删除不丢失历史引用。编码、单位、精确物料版本和数量仍按所属模块约束固化。此规则不改变工单成品名称、工序/SOP 快照、不可变审计前后值及 HTTP 幂等响应重放。跨模块读取按[架构登记规则](architecture.md)执行，写入资格继续通过所属模块业务能力校验。
+本节是物料名称展示、搜索和快照策略的主要维护位置；各模块表设计及查询文档引用本节，跨模块访问授权仍遵守[架构登记规则](architecture.md#展示查询的跨模块读取)。
+
+- 基础物料名称仅是当前展示属性：按稳定物料ID读取 `materials.material_name`，展示、名称搜索和排序使用同一来源；历史展示不因物料停用或软删除而丢失。
+- 任务需求基础 `production_material_requirement_basis`、正式需求 `production_item_demand`、库存批次 `item_batch` 和入库明细 `inbound_detail` 不持久化物料名称快照，也不从旧业务快照恢复历史名称。
+- 当前批准 Production、Procurement 与 Inventory 的 `infrastructure/queries/` 只读使用 `materials.id/material_name`；库存和生产来源展示字段以 `scripts/api-data-ownership.mjs` 的逐字段登记为准。SQL可在本模块查询中组合复用，但不得将展示名称作为物料身份、精确版本替代条件或写入资格，业务校验仍通过所属模块公开能力。
+- 物料编码、单位、精确版本与业务数量继续按各所有者规则固化；工单成品名称、工序／SOP快照不属于本节物料名称策略，审计前后值和HTTP幂等结果重放也保持各自语义；重放保留原结果，更名后需要当前名称时重新读取查询接口，不改写旧审计或重放响应。
+- 物料改名审批尚未实现，待决策事项统一见[路线图](roadmap.md#待决策)；当前名称编辑和历史展示不代表审批已落地。
 
 ## 统一类型与状态规则
 
@@ -41,54 +46,14 @@
 - 不为低选择性的状态列单独滥建索引；只按照查询入口建立组合索引，例如 `(status, created_at)`、`(production_batch_id, status)`。
 - 单据编号和幂等键必须唯一；所有确认类动作必须在同一事务内写业务明细、库存流水和操作日志。
 
+工单编号目前显式采用数据库UTC＋8日期，与上述统一时间职责约束的例外关系尚待确认，见[CO-05](documentation-conflicts.md#co-05)。
+
 ### 统一库存代码字典
 
-| 字段                            | 稳定代码                                                                                                                                                                                                                             |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 库存来源 `source_type`          | `self_made`、`production_extra`、`purchased`、`outsourced`、`return_inbound`、`stock_check_generated`、`other`                                                                                                                                           |
-| 库存状态 `stock_status`         | `available`、`pending_inspection`、`frozen`、`defective`                                                                                                                                                                             |
-| 库存批次状态 `batch_status`     | `available`、`frozen`、`disabled`                                                                                                                                                                                                    |
-| 库存流水类型 `transaction_type` | `purchase_inbound`、`production_inbound`、`outsourced_inbound`、`production_material_outbound`、`sales_outbound`、`material_return_inbound`、`scrap_outbound`、`stock_check_adjustment`、`status_transfer_in`、`status_transfer_out` |
-
-前端分别映射为“自产/额外产出/外购/委外/退货入库/盘点生成/其他”、“可用/待检/冻结/不良”等中文标签。接口请求、响应、数据库记录、幂等键和日志结构化字段始终使用英文稳定代码。
+稳定代码与中文映射由 [constants](../packages/constants/README.md) 提供，含义与已开放场景由 [Inventory](../apps/api/src/modules/inventory/docs/database.md) 维护。数据库保留的值域不代表相关业务命令已实现；接口、存储、幂等和结构化日志使用稳定代码，中文只用于展示。
 
 ### 核心状态转换矩阵
 
-| 聚合     | 允许转换                                                                                                                                                                                                                                             |
-| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 工艺路线 | `draft -> enabled/archived`；`enabled -> disabled/archived`；`disabled -> enabled/archived`；`archived` 为终态                                                                                                                                       |
-| 生产工单 | `draft -> released/cancelled`；`released -> doing/completed/closed`；`doing -> completed/closed`；`completed -> closed`；`closed/cancelled` 为终态                                                                                                      |
-| 生产批次 | 各状态允许转换见下表；`completed/cancelled/terminated` 为终态，已出库或已开工批次禁止取消。 |
-| 工序执行 | `pending -> assigned`；`assigned -> pending/doing`；`doing -> completed`；报工更正导致数量不足或下游报废补产提高目标时 `completed -> doing`。`assigned -> doing` 只由员工显式开工触发；工序数量达标时自动完工；普通物料状态不得驱动工序状态 |
-| 入库单   | `pending -> completed/cancelled`                                                                                                                                                                                                                     |
-| 出库单 | `pending_picking -> completed/cancelled`；当前确认命令整单出库，不开放 `picked/partially_outbound` 转换。 |
-| 退料单 | `pending -> returned/cancelled`；当前只支持退回公共可用库存，不开放退料报废。 |
-| 报废单   | `pending -> confirmed/cancelled`                                                                                                                                                                                                                     |
-| 盘点单 | `pending -> counting/completed/cancelled`；`counting -> completed/cancelled`。完成命令须全部明细已录入且库存快照未变化，正常流程先保存实盘数量进入 `counting`。 |
-| 返工单 | `pending -> doing`；`doing -> completed`；仅批次结束命令允许 `pending/doing -> cancelled`，无独立返工取消入口。 |
+各模块维护自己的状态与转换条件：[Product](../apps/api/src/modules/product/docs/database.md)、[Production 工单／任务](../apps/api/src/modules/production/docs/database/work-orders-and-batches.md)、[工序执行](../apps/api/src/modules/production/docs/database/execution-traceability-quality.md)、[领料](../apps/api/src/modules/production/docs/database/demand-allocation-and-outbound.md)、[退料／损耗](../apps/api/src/modules/production/docs/database/return-scrap-and-stocktake.md)、[Inventory](../apps/api/src/modules/inventory/docs/database.md)。
 
-生产批次转换与 [production-status.policy.ts](../apps/api/src/modules/production/domain/production-status.policy.ts) 保持一致：
-
-| 当前状态 | 允许的下一状态 |
-| --- | --- |
-| `pending` | `material_pending`、`cancelled` |
-| `material_pending` | `material_assigned`、`material_partially_outbound`、`material_outbound`、`cancelled` |
-| `material_assigned` | `material_pending`、`material_outbound`、`cancelled` |
-| `material_partially_outbound` | `material_outbound`、`doing`、`closing` |
-| `material_outbound` | `doing`、`closing` |
-| `doing` | `closing` |
-| `closing` | `completed`、`terminated` |
-| `completed` | 无，终态 |
-| `cancelled`、`terminated` | 无，终态 |
-
-转换表只定义允许的状态边，不能替代命令中的数量、权限、授权和版本校验。释放未出库分配导致不再齐套时，
-允许 `material_assigned -> material_pending`；有效短批授权下确认部分领料后进入 `material_partially_outbound`，
-首工序开工仍须校验当前授权、累计已确认领料量和缺口，不因退料回写履约。全部活动需求已确认领用时可进入 `material_outbound`；已进入
-`doing` 的批次后续补齐物料不回退状态。详细门禁见 [Production 批次规则](../apps/api/src/modules/production/docs/database/work-orders-and-batches.md)。
-
-上表描述当前代码已开放的命令转换；数据库保留的状态值不代表对应命令已实现。同状态重试按各命令幂等或
-状态短路规则处理，不构成新的状态转换。
-
-正常执行完成与提前结束都先进入 `closing`，保存收尾和质检产出依据后送审；工单负责人批准才分别进入 `completed` 或 `terminated`。批准清单不写库存，仓管另行确认成品入库。
-
-矩阵之外的转换必须拒绝。终态不得恢复；若未来确需恢复，必须增加独立业务动作、权限、审计和追加迁移评审，不得通过通用更新接口绕过。
+状态边不能替代命令数量、权限、授权和版本校验；同状态幂等重试不构成新转换。未登记转换必须拒绝，终态不能通过通用更新恢复；新增恢复能力须明确业务动作、权限、审计和迁移评审。

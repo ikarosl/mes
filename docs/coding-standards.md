@@ -34,24 +34,13 @@
 
 ## 4. NestJS 与模块代码
 
-- Controller 负责协议映射；Service 负责用例；domain 负责纯业务规则；infrastructure 负责 SQL 和 SDK。
-- application port 不得出现 Pool、PoolConnection、HTTP Request、S3 Client 等基础设施类型。
-- domain、application、infrastructure 和通用 persistence helper 不直接抛 Nest HTTP 异常；presentation 统一完成协议映射。
-- 跨模块只引用目标模块 `public.ts`。
-- 一个 Adapter 可以实现多个紧密相关的窄 Port，拆分类以变化原因和事务边界为准。
-- 基础设施单文件超过 500 行（ESLint `max-lines` 警告线）是“聚合内聚警示”，不是机械上限：应按聚合根、变化原因和事务边界拆成多个窄 Port 适配器（例如分类聚合与产品/BOM 聚合、路线生命周期与路线步骤 SOP 快照）；禁止为了压行数搬移代码或把一个聚合拆散到多个文件。
-- 核心写入与审计同事务；通用日志失败不能覆盖原业务结果。
+分层、public 入口、Port 类型边界、事务审计及 Adapter 拆分遵守[架构规范](architecture.md)。domain、application、infrastructure 和通用 persistence helper 不直接抛 Nest HTTP 异常，presentation 统一映射。
 
 ## 5. Vue
 
 - 使用 Composition API 和 `<script setup lang="ts">`，Props、Emits、模板引用必须有类型。
-- 页面保存用例状态；可复用状态和副作用提取为 `useXxx` composable；跨页面同一候选接口复用 composable 实现，
-  但实例局部持有，不默认共享状态。
-- 前端数据必须先按 `architecture.md` 归类再实现：正式列表属于页面，候选与 ID 绑定明细属于最近
-  共同所有者（页面或弹窗）；禁止页面级大而全加载、模块级可变单例、进程级隐式缓存和跨页面 Pinia 候选缓存。
-- 候选加载是 best-effort，单个资源失败不得拖累列表、其他候选或关键明细；候选刷新失败保留实例内上次成功值，
-  关键明细失败不得转换成可保存的空数据。谁持有候选实例谁负责页面激活刷新；下拉展开只刷新对应资源，
-  写操作成功后只刷新受影响列表。
+- 状态归属、composable 复用、候选刷新及失败处理遵守[管理端架构](../apps/admin-web/docs/architecture.md)，不在本规范另存副本。
+
 - Vue 单文件超过 1000 行时，优先把列表状态、服务端分页和可复用副作用提取到 `views/<模块>/composables/useXxx.ts`（视图与状态分离），再按需拆分弹窗组件；模板和样式不是拆分对象，禁止机械拆行数。
 - HTTP 只通过 `src/api` 封装，不在组件创建 Axios 实例。
 - `.vue` 不重复声明业务编码与中文映射；复用 shared constants 和格式化函数。
@@ -81,5 +70,5 @@
 
 - 共享依赖版本放在 pnpm catalog，新依赖放入实际使用的 workspace。
 - 测试按 Arrange–Act–Assert 组织，验证外部行为而非私有实现；时间和外部依赖必须可控制。
-- 新业务规则、错误分支和 bug 修复必须有测试；禁止 `--passWithNoTests`。
+- 新业务规则、错误分支和 bug 修复的测试按[测试策略](testing-strategy.md)及已授权阶段执行；禁止 `--passWithNoTests`。
 - 提交使用 `feat/fix/refactor/docs/test/chore(scope): description`，一个提交只包含一个逻辑变更。

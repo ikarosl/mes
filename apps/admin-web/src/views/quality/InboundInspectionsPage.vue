@@ -18,11 +18,24 @@
             style="width: 180px"
             ><el-option
               value="uninspected"
-              :label="RECEIPT_SCOPE_DISPOSITION_LABELS.uninspected" /><el-option
+              :label="RECEIPT_ROUND_STATUS_LABELS.uninspected" /><el-option
               v-for="value in QUALITY_INBOUND_CASE_STATUSES"
               :key="value"
               :value="value"
               :label="QUALITY_INBOUND_CASE_STATUS_LABELS[value]" /></el-select></el-form-item
+        ><el-form-item label="整批阶段"
+          ><el-select
+            v-model="roundStatus"
+            clearable
+            placeholder="全部"
+            style="width: 170px"
+          >
+            <el-option
+              v-for="value in RECEIPT_ROUND_STATUSES"
+              :key="value"
+              :value="value"
+              :label="RECEIPT_ROUND_STATUS_LABELS[value]"
+            /> </el-select></el-form-item
         ><el-form-item
           ><el-button
             type="primary"
@@ -37,7 +50,7 @@
       <TableToolbar
         ><template #actions
           ><span class="help"
-            >到货必须检验，明确放行后由仓管确认入库；采购关闭不清除检验待办。</span
+            >检验判断整批资格；明确放行后仍由库管核对定稿，实际入库另行办理。</span
           ></template
         ><template #tools
           ><el-button
@@ -73,7 +86,7 @@
             <p>{{ row.materialVariantCode }}</p></template
           ></el-table-column
         ><el-table-column
-          label="覆盖量"
+          label="原申报量"
           width="105"
           ><template #default="{ row }"
             >{{ Number(row.coveredQuantity) }} {{ row.unit }}</template
@@ -84,7 +97,7 @@
           ><template #default="{ row }">{{
             row.case
               ? QUALITY_INBOUND_CASE_TYPE_LABELS[row.case.caseType as QualityInboundCaseType]
-              : RECEIPT_SCOPE_DISPOSITION_LABELS.uninspected
+              : RECEIPT_ROUND_STATUS_LABELS.uninspected
           }}</template></el-table-column
         ><el-table-column
           label="状态"
@@ -93,9 +106,15 @@
             ><el-tag :type="row.case?.status === 'reviewing' ? 'warning' : 'info'">{{
               row.case
                 ? QUALITY_INBOUND_CASE_STATUS_LABELS[row.case.status as QualityInboundCaseStatus]
-                : RECEIPT_SCOPE_DISPOSITION_LABELS.uninspected
+                : RECEIPT_ROUND_STATUS_LABELS.uninspected
             }}</el-tag></template
           ></el-table-column
+        ><el-table-column
+          label="本批阶段"
+          width="140"
+          ><template #default="{ row }">{{
+            RECEIPT_ROUND_STATUS_LABELS[row.roundStatus as ReceiptRoundStatus]
+          }}</template></el-table-column
         ><el-table-column
           label="操作"
           width="110"
@@ -125,24 +144,27 @@
   </section>
 </template>
 <script setup lang="ts">
-import { nextTick, onActivated, ref, watch } from 'vue';
+import { nextTick, onActivated, onScopeDispose, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { Refresh } from '@element-plus/icons-vue';
 import type {
   ProcurementInboundInspectionItem,
   QualityInboundCaseType,
   QualityInboundCaseStatus,
+  ReceiptRoundStatus,
 } from '@company/contracts';
 import {
   QUALITY_INBOUND_CASE_STATUSES,
   QUALITY_INBOUND_CASE_STATUS_LABELS,
   QUALITY_INBOUND_CASE_TYPE_LABELS,
-  RECEIPT_SCOPE_DISPOSITION_LABELS,
+  RECEIPT_ROUND_STATUS_LABELS,
+  RECEIPT_ROUND_STATUSES,
 } from '@company/constants';
 import { procurementApi } from '../../api/procurement';
 import TableToolbar from '../../components/TableToolbar.vue';
 import PaginationFooter from '../../components/PaginationFooter.vue';
 import { EMessage } from '../../utils/message';
+import { useTabsStore } from '../../stores/tabs';
 import { useLatestReadRequest } from '../../composables/requests/useLatestReadRequest';
 import { useInboundInspectionsList } from '../procurement/composables/useInboundInspectionsList';
 import InboundInspectionDetailDialog from '../procurement/components/InboundInspectionDetailDialog.vue';
@@ -152,6 +174,7 @@ const route = useRoute(),
 const {
   keyword,
   status,
+  roundStatus,
   rows,
   page,
   pageSize,
@@ -164,6 +187,12 @@ const {
   changePageSize,
 } = useInboundInspectionsList();
 const detail = ref<InstanceType<typeof InboundInspectionDetailDialog>>();
+onScopeDispose(
+  useTabsStore().registerCloseGuard(
+    'quality-inbound-inspections',
+    async () => !detail.value?.visible || (await detail.value.close()),
+  ),
+);
 const locator = useLatestReadRequest(() => {});
 let navigating = false;
 const navigate = async (

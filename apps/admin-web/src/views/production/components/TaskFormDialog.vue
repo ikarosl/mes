@@ -133,7 +133,10 @@
           />
         </el-form-item>
       </template>
-      <el-form-item label="工艺路线">
+      <el-form-item
+        v-if="selectedWorkOrder?.orderType !== 'research'"
+        label="工艺路线"
+      >
         <el-select
           v-model="form.routeId"
           filterable
@@ -212,7 +215,7 @@
       </el-form-item>
     </el-form>
     <el-tabs
-      v-if="!editingTaskId && form.routeId"
+      v-if="!editingTaskId && selectedWorkOrder?.orderType !== 'research' && form.routeId"
       class="detail-tabs"
     >
       <el-tab-pane label="工序执行">
@@ -459,6 +462,11 @@ const handleRouteChange = (): void => {
 };
 
 const applyDefaultRoute = (order: WorkOrderOption): void => {
+  if (order.orderType === 'research') {
+    form.routeId = '';
+    resetStepPreview();
+    return;
+  }
   form.routeId = resolveDefaultRouteId(
     order.productId,
     productSource.options.value,
@@ -599,6 +607,7 @@ const handleSubmit = (): void => {
   }
   emit('save', {
     ...form,
+    routeId: selectedWorkOrder.value?.orderType === 'research' ? '' : form.routeId,
     stepOverrides: createStepPreview.value
       .filter((step) => step.actualSopFileId)
       .map((step) => ({

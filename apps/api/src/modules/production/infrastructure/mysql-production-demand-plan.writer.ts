@@ -10,16 +10,17 @@ import type { Db } from './mysql-production.shared.js';
 export type DemandPlanLine = {
   identityId: string | number | bigint;
   /** Frozen base-BOM formula that this exact demand consumes. */
-  requirementBasisId: string | number;
-  productMaterialId: string | number;
+  requirementBasisId: string | number | null;
+  productMaterialId: string | number | null;
   itemId: string | number;
   materialVariantId: string | number;
   materialVariantCode: string;
   itemCode: string;
-  quantityPerUnit: string;
+  quantityPerUnit: string | null;
   unit: string;
-  plannedOutputQuantity: string;
+  plannedOutputQuantity: string | null;
   needNumber: string | number;
+  supplierHint?: string | null;
   demandType: DemandType;
   parentDemandId?: string | number | null;
   supplementId?: string | number | null;
@@ -58,8 +59,8 @@ export class MysqlProductionDemandPlanWriter {
          (production_batch_id,requirement_basis_id,product_material_id,item_id,material_variant_id,
           item_code_snapshot,material_variant_code_snapshot,
           quantity_per_unit_snapshot,unit_snapshot,planned_output_quantity_snapshot,need_number,remaining_number,demand_type,generation_group_key,
-          idempotency_key,parent_demand_id,manual_addition_id,supplement_id,replaces_demand_id,business_status,created_by,updated_by)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'active',?,?)`,
+          idempotency_key,parent_demand_id,manual_addition_id,supplement_id,replaces_demand_id,supplier_hint,business_status,created_by,updated_by)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'active',?,?)`,
         [
           params.batchId,
           line.requirementBasisId,
@@ -80,6 +81,7 @@ export class MysqlProductionDemandPlanWriter {
           line.manualAdditionId ?? null,
           line.supplementId ?? null,
           line.replacesDemandId ?? null,
+          line.supplierHint ?? null,
           params.actorId,
           params.actorId,
         ],

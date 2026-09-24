@@ -19,10 +19,13 @@
         min-width="180"
       />
       <el-table-column
-        prop="supplierName"
         label="供应商"
-        min-width="170"
-      />
+        min-width="210"
+        show-overflow-tooltip
+        ><template #default="{ row }">{{
+          supplierSummary(row.suppliers)
+        }}</template></el-table-column
+      >
       <el-table-column
         label="补单原因"
         width="125"
@@ -75,6 +78,7 @@
   </el-dialog>
 </template>
 <script setup lang="ts">
+import { supplierSummary } from '../supplier-summary';
 import { onActivated, ref, watch } from 'vue';
 import type {
   PurchaseOrderItem,

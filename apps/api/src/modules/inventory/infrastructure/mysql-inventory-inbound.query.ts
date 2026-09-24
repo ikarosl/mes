@@ -17,8 +17,8 @@ type FactRow = RowDataPacket & {
   batch_code: string;
   receipt_line_id: number | string;
   receipt_revision_id: number | string;
-  scope_id: number | string;
   inspection_id: number | string;
+  allocation_id: number | string;
   transaction_id: number | string;
   quantity: number | string;
 };
@@ -39,7 +39,7 @@ export class MysqlInventoryInboundQuery extends InventoryInboundQuery {
       const [rows] = await db.query<FactRow[]>(
         `SELECT o.id inbound_id,o.inbound_no,o.inbound_at,d.id detail_id,d.batch_id,ib.batch_code,
          d.procurement_receipt_line_id receipt_line_id,d.procurement_receipt_revision_id receipt_revision_id,
-         d.procurement_scope_id scope_id,d.procurement_inspection_id inspection_id,tx.id transaction_id,tx.quantity
+         d.procurement_allocation_id allocation_id,d.procurement_inspection_id inspection_id,tx.id transaction_id,tx.quantity
          FROM inbound_order o JOIN inbound_detail d ON d.inbound_id=o.id
          JOIN item_batch ib ON ib.id=d.batch_id AND ib.item_id=d.item_id AND ib.material_variant_id=d.material_variant_id
          JOIN inventory_transaction tx ON tx.reference_type='inbound_detail' AND tx.reference_detail_id=d.id
@@ -81,7 +81,8 @@ export class MysqlInventoryInboundQuery extends InventoryInboundQuery {
           inboundNo: row.inbound_no,
           inboundDetailId: detailId,
           transactionId: String(row.transaction_id),
-          scopeId: String(row.scope_id),
+
+          allocationId: String(row.allocation_id),
           inspectionId: String(row.inspection_id),
           receiptRevisionId: String(row.receipt_revision_id),
           quantity: String(row.quantity),

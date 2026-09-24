@@ -20,13 +20,12 @@ export const BEGIN_BATCH_CLOSEOUT_SCOPE = 'production.batch-closeout.begin.v1' a
 export const HANDLE_BATCH_CLOSEOUT_SCOPE = 'production.batch-closeout.handle.v1' as const;
 export const REVIEW_OUTPUT_MATERIAL_SCOPE = 'production.output.material-review.v1' as const;
 export const SAVE_PRODUCTION_OUTPUT_SCOPE = 'production.output.draft.v1' as const;
-export const RECORD_OUTPUT_INSPECTION_SCOPE = 'production.output.inspection.v1' as const;
 export const SUBMIT_PRODUCTION_OUTPUT_SCOPE = 'production.output.submit.v1' as const;
 export const BEGIN_OUTPUT_CORRECTION_SCOPE = 'production.output.correction.begin.v1' as const;
 export const CANCEL_OUTPUT_CORRECTION_SCOPE = 'production.output.correction.cancel.v1' as const;
 
 /** createBatch 创建生产批次；scope 与当前请求及结果 codec 绑定。 */
-export const CREATE_BATCH_IDEMPOTENCY_SCOPE = 'production.batch.create.v7' as const;
+export const CREATE_BATCH_IDEMPOTENCY_SCOPE = 'production.batch.create.v8' as const;
 /** 创建物料分配。 */
 export const CREATE_MATERIAL_ALLOCATION_IDEMPOTENCY_SCOPE =
   'production.material-allocation.create.v1' as const;
@@ -41,7 +40,7 @@ export const CONFIGURE_MATERIAL_DEMANDS_IDEMPOTENCY_SCOPE =
   'production.material-demands.configure.v2' as const;
 /** 创建人工追加物料需求。 */
 export const ADD_MANUAL_MATERIAL_DEMAND_IDEMPOTENCY_SCOPE =
-  'production.material-demands.add-manual.v2' as const;
+  'production.material-demands.add-manual.v3' as const;
 /** 创建外购物料入库单。 */
 export const CREATE_PURCHASE_INBOUND_IDEMPOTENCY_SCOPE =
   'production.purchase-inbound.create.v1' as const;
@@ -62,10 +61,13 @@ export const COMPLETE_REWORK_IDEMPOTENCY_SCOPE = 'production.rework.complete.v1'
 export const CONFIRM_SCRAP_SUPPLEMENT_PLAN_IDEMPOTENCY_SCOPE =
   'production.abnormal.scrap-supplement-plan.confirm.v1' as const;
 /** 创建生产领料损耗补料。 */
-export const CREATE_MATERIAL_LOSS_IDEMPOTENCY_SCOPE = 'production.material-loss.create.v2' as const;
+export const CREATE_MATERIAL_LOSS_IDEMPOTENCY_SCOPE = 'production.material-loss.create.v3' as const;
 /** 确认生产领料损耗补料。 */
 export const CONFIRM_MATERIAL_LOSS_IDEMPOTENCY_SCOPE =
-  'production.material-loss.confirm.v2' as const;
+  'production.material-loss.confirm.v3' as const;
+
+export const START_RESEARCH_EXECUTION_SCOPE = 'production.research.start.v1' as const;
+export const COMPLETE_RESEARCH_EXECUTION_SCOPE = 'production.research.complete.v1' as const;
 
 /** 初次结案时登记原材料损坏，只占可退额度，不生成补料。 */
 export const RECORD_CLOSEOUT_MATERIAL_LOSS_SCOPE =
@@ -73,7 +75,3 @@ export const RECORD_CLOSEOUT_MATERIAL_LOSS_SCOPE =
 
 /** 服务端按北京时间日期分配不可修改的工单号。 */
 export const CREATE_WORK_ORDER_IDEMPOTENCY_SCOPE = 'production.work-order.create.v3' as const;
-
-/** 批量工单整份精确物料版本配置。 */
-export const SAVE_WORK_ORDER_MATERIAL_CONFIGURATION_SCOPE =
-  'production.work-order.material-configuration.save.v1' as const;

@@ -1,3 +1,4 @@
+import { allocationRemaining } from './receipt-allocation.query.js';
 import type {
   PageResult,
   ProcurementReceiptQuery,
@@ -17,6 +18,7 @@ import {
   lineSelect,
   LINE_COLUMNS,
   mapReceipt,
+  readReceiptSuppliers,
   pageInput,
   slots,
   text,
@@ -30,7 +32,11 @@ function filters(
   const where = ['1=1'];
   const params: Array<string | number> = [];
   if (query.supplierId) {
-    where.push('po.supplier_id=?');
+    where.push(
+      line
+        ? 'pol.supplier_id=?'
+        : 'EXISTS(SELECT 1 FROM procurement_receipt_line filtered_line JOIN procurement_order_line filtered_order_line ON filtered_order_line.id=filtered_line.purchase_order_line_id WHERE filtered_line.receipt_id=r.id AND filtered_order_line.supplier_id=?)',
+    );
     params.push(query.supplierId);
   }
   if (query.purchaseOrderId) {
@@ -39,7 +45,7 @@ function filters(
   }
   if (query.keyword?.trim()) {
     where.push(
-      `(r.receipt_no LIKE ? OR po.purchase_no LIKE ? OR supplier.supplier_name LIKE ?${line ? ' OR material.material_name LIKE ? OR pol.item_code_snapshot LIKE ? OR pol.material_variant_code_snapshot LIKE ?' : ''})`,
+      `(r.receipt_no LIKE ? OR po.purchase_no LIKE ? OR ${line ? 'supplier.supplier_name LIKE ?' : 'EXISTS(SELECT 1 FROM procurement_receipt_line search_line JOIN procurement_order_line search_order_line ON search_order_line.id=search_line.purchase_order_line_id JOIN procurement_supplier search_supplier ON search_supplier.id=search_order_line.supplier_id WHERE search_line.receipt_id=r.id AND search_supplier.supplier_name LIKE ?)'}${line ? ' OR material.material_name LIKE ? OR pol.item_code_snapshot LIKE ? OR pol.material_variant_code_snapshot LIKE ?' : ''})`,
     );
     params.push(...(Array(line ? 6 : 3).fill(`%${query.keyword.trim()}%`) as string[]));
   }
@@ -50,6 +56,10 @@ export async function listReceipts(
   query: ProcurementReceiptQuery,
 ): Promise<PageResult<ProcurementReceiptItem>> {
   const { where, params } = filters(query);
+  if (query.awaitingAcceptance === 'yes')
+    where.push(
+      "EXISTS(SELECT 1 FROM procurement_receipt_line pending_line JOIN procurement_receipt_round pending_round ON pending_round.id=pending_line.current_round_id WHERE pending_line.receipt_id=r.id AND pending_round.status='awaiting_acceptance')",
+    );
   const { page, pageSize } = pageInput(query);
   const [[count]] = await db.query<ReadRow[]>(
     `${receiptSelect('COUNT(*) total')} WHERE ${where.join(' AND ')}`,
@@ -60,7 +70,16 @@ export async function listReceipts(
     WHERE ${where.join(' AND ')} ORDER BY r.received_at DESC,r.id DESC LIMIT ? OFFSET ?`,
     [...params, pageSize, (page - 1) * pageSize],
   );
-  return { items: rows.map(mapReceipt), total: Number(count?.total ?? 0), page, pageSize };
+  const suppliers = await readReceiptSuppliers(
+    db,
+    rows.map((row) => text(row.id)),
+  );
+  return {
+    items: rows.map((row) => mapReceipt(row, suppliers.get(text(row.id)) ?? [])),
+    total: Number(count?.total ?? 0),
+    page,
+    pageSize,
+  };
 }
 
 export async function listInboundReleases(
@@ -73,19 +92,25 @@ export async function listInboundReleases(
   const [materials] = await db.query<
     ReadRow[]
   >(`SELECT DISTINCT line.item_id FROM procurement_receipt_line line
-    JOIN procurement_receipt_scope scope ON scope.receipt_line_id=line.id WHERE scope.disposition='approved' AND scope.termination_root_scope_id IS NULL`);
+    JOIN procurement_receipt_allocation allocation ON allocation.receipt_line_id=line.id AND allocation.round_id=line.current_round_id JOIN procurement_receipt_round current_round ON current_round.id=line.current_round_id WHERE current_round.status='finalized' AND allocation.disposition='inbound' AND allocation.termination_reason IS NULL`);
   const eligible = await variants.listPurchasableByMaterials({
     materialIds: materials.map((r) => text(r.item_id)),
   });
   if (!eligible.length) return empty;
-  const { where, params } = filters(query, true);
+  const selectedFilters = filters(query, true);
+  const where = selectedFilters.where.map((clause) => clause.replaceAll('po.', 'assigned_order.'));
+  const params = selectedFilters.params;
   where.push(
-    `scope.disposition='approved'`,
-    `scope.termination_root_scope_id IS NULL`,
-    `scope.inbound_approved=1`,
-    `scope.inspection_disposition='release'`,
-    `scope.case_status='completed'`,
+    `allocation.disposition='inbound'`,
+    `allocation.termination_reason IS NULL`,
+    `inspection.release_decision='released'`,
+    `current_round.status='finalized'`,
+    `allocation.round_id=current_round.id`,
+    `current_round.inspection_id=inspection.id`,
+    `acceptance.round_id=current_round.id`,
+    `qc.status='completed'`,
     `(batch.id IS NULL OR batch.batch_status='available')`,
+    `(${allocationRemaining('allocation.id', 'allocation.quantity')})>0`,
     `line.material_variant_id IN (${slots(eligible.map((v) => v.id))})`,
   );
   params.push(...eligible.map((v) => v.id));
@@ -93,25 +118,32 @@ export async function listInboundReleases(
     where.push('line.id=?');
     params.push(query.receiptLineId);
   }
-  if (query.scopeIds) {
-    if (!query.scopeIds.length) return empty;
-    where.push(`scope.id IN (${slots(query.scopeIds)})`);
-    params.push(...query.scopeIds);
+  if (query.allocationIds) {
+    if (!query.allocationIds.length) return empty;
+    where.push(`allocation.id IN (${slots(query.allocationIds)})`);
+    params.push(...query.allocationIds);
   }
-  const releases = `SELECT scope.id,scope.receipt_line_id,scope.version,scope.receipt_revision_id,scope.inspection_id,scope.quantity,scope.disposition,scope.termination_root_scope_id,
-    inspection.inbound_approved,inspection.disposition inspection_disposition,qc.status case_status
-    FROM procurement_receipt_scope scope JOIN quality_inbound_inspection inspection ON inspection.id=scope.inspection_id
-      AND inspection.receipt_line_id=scope.receipt_line_id AND inspection.receipt_revision_id=scope.receipt_revision_id
-    JOIN quality_inbound_case qc ON qc.id=inspection.case_id`;
-  const select = (columns: string) =>
-    `${lineSelect(columns)} JOIN (${releases}) scope ON scope.receipt_line_id=line.id`;
+  const select = (columns: string) => `SELECT ${columns} FROM procurement_receipt_line line
+    JOIN procurement_receipt r ON r.id=line.receipt_id
+    JOIN procurement_order po ON po.id=line.purchase_order_id
+    JOIN procurement_order_line pol ON pol.id=line.purchase_order_line_id
+    JOIN procurement_supplier supplier ON supplier.id=pol.supplier_id
+    JOIN materials material ON material.id=line.item_id
+    LEFT JOIN item_batch batch ON batch.id=line.batch_id
+    JOIN procurement_receipt_round current_round ON current_round.id=line.current_round_id
+    JOIN procurement_receipt_allocation allocation ON allocation.receipt_line_id=line.id AND allocation.round_id=current_round.id
+    JOIN procurement_receipt_acceptance acceptance ON acceptance.id=allocation.acceptance_id
+    JOIN quality_inspection_record inspection ON inspection.id=acceptance.inspection_record_id AND inspection.receipt_line_id=line.id
+    JOIN quality_inspection_case qc ON qc.id=inspection.case_id
+    JOIN procurement_order_line assigned_line ON assigned_line.id=allocation.purchase_order_line_id
+    JOIN procurement_order assigned_order ON assigned_order.id=assigned_line.purchase_order_id`;
   const [[count]] = await db.query<ReadRow[]>(
     `${select('COUNT(*) total')} WHERE ${where.join(' AND ')}`,
     params,
   );
   const [rows] = await db.query<ReadRow[]>(
-    `${select(LINE_COLUMNS + ',scope.id scope_id,scope.version scope_version,scope.receipt_revision_id,scope.inspection_id,scope.quantity')}
-    WHERE ${where.join(' AND ')} ORDER BY r.received_at,line.id,scope.id LIMIT ? OFFSET ?`,
+    `${select(LINE_COLUMNS + ',current_round.id round_id,current_round.version round_version,acceptance.id acceptance_id,allocation.id allocation_id,assigned_line.id assigned_line_id,assigned_order.id assigned_order_id,assigned_order.purchase_no assigned_purchase_no,acceptance.after_receipt_revision_id receipt_revision_id,inspection.id inspection_id,' + allocationRemaining('allocation.id', 'allocation.quantity') + ' quantity')}
+    WHERE ${where.join(' AND ')} ORDER BY r.received_at,line.id,allocation.id LIMIT ? OFFSET ?`,
     [...params, pageSize, (page - 1) * pageSize],
   );
   return {
@@ -120,8 +152,13 @@ export async function listInboundReleases(
       receiptNo: text(row.receipt_no),
       receiptLineId: text(row.id),
       receiptLineVersion: Number(row.version),
-      purchaseOrderId: text(row.purchase_order_id),
-      purchaseNo: text(row.purchase_no),
+      roundId: text(row.round_id),
+      roundVersion: Number(row.round_version),
+      purchaseOrderId: text(row.assigned_order_id),
+      purchaseNo: text(row.assigned_purchase_no),
+      purchaseOrderLineId: text(row.assigned_line_id),
+      acceptanceId: text(row.acceptance_id),
+      allocationId: text(row.allocation_id),
       supplierId: text(row.supplier_id),
       supplierName: text(row.supplier_name),
       itemId: text(row.item_id),
@@ -133,8 +170,6 @@ export async function listInboundReleases(
       supplierBatchCode: nullableText(row.supplier_batch_code),
       batchId: nullableText(row.batch_id),
       batchCode: nullableText(row.batch_code),
-      scopeId: text(row.scope_id),
-      scopeVersion: Number(row.scope_version),
       receiptRevisionId: text(row.receipt_revision_id),
       inspectionId: text(row.inspection_id),
       approvedRemainingQuantity: text(row.quantity),
@@ -145,10 +180,16 @@ export async function listInboundReleases(
   };
 }
 
-const TASKS = `(SELECT 'uninspected' task_kind,scope.id task_id,scope.receipt_line_id,scope.id scope_id,scope.version scope_version,scope.quantity covered_quantity,
-    NULL case_id,'uninspected' task_status,NULL case_type,scope.created_at FROM procurement_receipt_scope scope WHERE scope.disposition='uninspected'
-  UNION ALL SELECT 'case',qc.id,qc.receipt_line_id,qc.target_scope_id,scope.version,qc.covered_quantity,qc.id,qc.status,qc.case_type,qc.created_at
-    FROM quality_inbound_case qc LEFT JOIN procurement_receipt_scope scope ON scope.id=qc.target_scope_id) task`;
+const TASKS = `(SELECT 'uninspected' task_kind,round.id task_id,round.receipt_line_id,
+    round.id round_id,round.version round_version,round.status round_status,round.starting_quantity declared_quantity,
+    NULL case_id,'uninspected' task_status,NULL case_type,round.created_at
+    FROM procurement_receipt_round round JOIN procurement_receipt_line current_line ON current_line.current_round_id=round.id
+    WHERE round.status='uninspected'
+  UNION ALL SELECT 'case',qc.id,qc.receipt_line_id,round.id,round.version,IF(round.id=current_line.current_round_id,round.status,'superseded'),qc.declared_quantity,
+    qc.id,qc.status,qc.case_type,qc.created_at
+    FROM quality_inspection_case qc JOIN procurement_receipt_round round ON round.id=qc.incoming_round_id
+    JOIN procurement_receipt_line current_line ON current_line.id=round.receipt_line_id
+    WHERE qc.source_kind='incoming') task`;
 export async function listInspections(
   db: Db,
   quality: QualityInboundQuery,
@@ -160,6 +201,10 @@ export async function listInspections(
   if (query.status) {
     where.push('task.task_status=?');
     params.push(query.status);
+  }
+  if (query.roundStatus) {
+    where.push('task.round_status=?');
+    params.push(query.roundStatus);
   }
   if (query.caseType) {
     where.push('task.case_type=?');
@@ -181,7 +226,7 @@ export async function listInspections(
     params,
   );
   const [rows] = await db.query<ReadRow[]>(
-    `${select(LINE_COLUMNS + ',task.task_kind,task.task_id,task.scope_id,task.scope_version,task.covered_quantity,task.case_id')}
+    `${select(LINE_COLUMNS + ',task.task_kind,task.task_id,task.round_id,task.round_version,task.round_status,task.declared_quantity,task.case_id')}
     WHERE ${where.join(' AND ')} ORDER BY task.created_at DESC,task.task_kind,task.task_id DESC LIMIT ? OFFSET ?`,
     [...params, pageSize, (page - 1) * pageSize],
   );
@@ -196,13 +241,15 @@ export async function listInspections(
       case: row.case_id === null ? null : (casesById.get(text(row.case_id)) ?? null),
       receiptLineId: text(row.id),
       receiptLineVersion: Number(row.version),
-      scopeId: nullableText(row.scope_id),
-      scopeVersion: row.scope_version === null ? null : Number(row.scope_version),
-      coveredQuantity: text(row.covered_quantity),
+      roundId: text(row.round_id),
+      roundVersion: Number(row.round_version),
+      roundStatus: row.round_status as ProcurementInboundInspectionItem['roundStatus'],
+      coveredQuantity: text(row.declared_quantity),
       receiptId: text(row.receipt_id),
       receiptNo: text(row.receipt_no),
       purchaseOrderId: text(row.purchase_order_id),
       purchaseNo: text(row.purchase_no),
+      supplierId: text(row.supplier_id),
       supplierName: text(row.supplier_name),
       itemCode: text(row.item_code_snapshot),
       itemName: text(row.material_name),

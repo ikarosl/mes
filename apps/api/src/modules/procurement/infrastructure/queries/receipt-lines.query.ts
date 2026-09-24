@@ -1,3 +1,5 @@
+import { mapReceiptAcceptances } from './receipt-acceptance.query.js';
+import { readDraftRoundOwnership, readAllocationRows } from './receipt-allocation.query.js';
 import type {
   ProcurementReceiptLine,
   ReceiptQuantitySummary,
@@ -16,7 +18,8 @@ import {
   text,
   nullableText,
   mapRevision,
-  mapScope,
+  mapRound,
+  mapAllocation,
   mapReturn,
   mapInbound,
 } from './receipt-read.shared.js';
@@ -52,25 +55,71 @@ export async function readReceiptLines(
         ids,
       )
     )[0];
+  const roundRows = await preview('procurement_receipt_round');
+  const rounds = groupRows(roundRows);
+  const [currentRoundRows] = await db.query<ReadRow[]>(
+    `SELECT r.* FROM procurement_receipt_round r JOIN procurement_receipt_line line ON line.current_round_id=r.id WHERE line.id IN (${marks})`,
+    ids,
+  );
+  const currentRounds = new Map(currentRoundRows.map((row) => [text(row.receipt_line_id), row]));
   const revisions = groupRows(await preview('procurement_receipt_revision'));
   const returns = groupRows(await preview('procurement_supplier_return'));
-  const [scopeRows] = await db.query<ReadRow[]>(
-    `SELECT * FROM procurement_receipt_scope WHERE receipt_line_id IN (${marks}) AND disposition IN('uninspected','reviewing','approved','quality_return','termination_return') ORDER BY id`,
-    ids,
-  );
-  const scopes = groupRows(scopeRows);
-  const [scopeCounts] = await db.query<ReadRow[]>(
-    `SELECT receipt_line_id,COUNT(*) history_count FROM procurement_receipt_scope WHERE receipt_line_id IN (${marks}) GROUP BY receipt_line_id`,
-    ids,
-  );
-  const scopeTotals = new Map(
-    scopeCounts.map((r) => [text(r.receipt_line_id), Number(r.history_count)]),
-  );
+  const acceptanceRows = await preview('procurement_receipt_acceptance');
+  const acceptances = await mapReceiptAcceptances(db, acceptanceRows);
+  const allAllocationRows = await readAllocationRows(db, ids);
+  const allocationRows = allAllocationRows.filter((row) => Number(row.is_current) === 1);
+  const allocations = groupRows(allocationRows);
+  const draftOwners = await readDraftRoundOwnership(db, ids, allAllocationRows);
+  const origins = new Map(lines.map((row) => [text(row.id), text(row.purchase_order_line_id)]));
+  const ownershipByLine = new Map<string, Map<string, number>>();
+  const addOwner = (lineId: string, ownerId: string, quantity: number) => {
+    const owners = ownershipByLine.get(lineId) ?? new Map<string, number>();
+    owners.set(ownerId, (owners.get(ownerId) ?? 0) + quantity);
+    ownershipByLine.set(lineId, owners);
+  };
+  for (const scope of allocationRows)
+    addOwner(
+      text(scope.receipt_line_id),
+      nullableText(scope.purchase_order_line_id) ?? origins.get(text(scope.receipt_line_id))!,
+      Number(scope.quantity) - Number(scope.inbound_quantity) - Number(scope.returned_quantity),
+    );
+  for (const owner of draftOwners)
+    if (owner.retainedQuantity > 0)
+      addOwner(owner.receiptLineId, owner.purchaseOrderLineId, owner.retainedQuantity);
+  const ownerIds = [
+    ...new Set([...ownershipByLine.values()].flatMap((owners) => [...owners.keys()])),
+  ];
+  const ownerNames = new Map<string, string>();
+  if (ownerIds.length) {
+    const [owners] = await db.query<ReadRow[]>(
+      `SELECT line.id,orders.purchase_no FROM procurement_order_line line JOIN procurement_order orders ON orders.id=line.purchase_order_id WHERE line.id IN (${slots(ownerIds)})`,
+      ownerIds,
+    );
+    for (const owner of owners) ownerNames.set(text(owner.id), text(owner.purchase_no));
+  }
+  const consumedByLine = new Map<string, string>();
+  const allocationTotals = new Map<string, number>();
+  for (const row of allAllocationRows) {
+    const id = text(row.receipt_line_id);
+    allocationTotals.set(id, (allocationTotals.get(id) ?? 0) + 1);
+    if (
+      row.inspection_id !== null &&
+      text(row.inspection_id) === text(currentRounds.get(id)?.inspection_id)
+    )
+      consumedByLine.set(
+        id,
+        String(
+          Number(consumedByLine.get(id) ?? 0) +
+            Number(row.inbound_quantity) +
+            Number(row.returned_quantity),
+        ),
+      );
+  }
   const [caseReferences] = await db.query<ReadRow[]>(
     `SELECT ranked.id,ranked.receipt_line_id,ranked.history_count FROM (
     SELECT q.id,q.receipt_line_id,q.status,ROW_NUMBER() OVER(PARTITION BY q.receipt_line_id ORDER BY q.id DESC) preview_row,
-      COUNT(*) OVER(PARTITION BY q.receipt_line_id) history_count FROM quality_inbound_case q WHERE q.receipt_line_id IN (${marks})
-    ) ranked WHERE ranked.preview_row<=10 OR ranked.status='reviewing'`,
+      COUNT(*) OVER(PARTITION BY q.receipt_line_id) history_count FROM quality_inspection_case q WHERE q.receipt_line_id IN (${marks})
+    ) ranked WHERE ranked.preview_row<=10 OR ranked.status='reviewing' OR EXISTS(SELECT 1 FROM procurement_receipt_round current_round JOIN procurement_receipt_line current_line ON current_line.current_round_id=current_round.id JOIN quality_inspection_record current_record ON current_record.id=current_round.inspection_id WHERE current_record.case_id=ranked.id)`,
     ids,
   );
   const cases: QualityInboundCaseItem[] = [];
@@ -118,19 +167,32 @@ export async function readReceiptLines(
   );
   return lines.map((row) => {
     const id = text(row.id);
-    const active = scopes.get(id) ?? [];
+    const active = allocations.get(id) ?? [];
+    const currentRound = currentRounds.get(id);
+    if (!currentRound) throw new Error('到货明细缺少当前处理轮次');
     const lineCases = casesByLine.get(id) ?? [];
     const sum = (dispositions: string[]) =>
       active
         .filter((scope) => dispositions.includes(text(scope.disposition)))
-        .reduce((total, scope) => total + Number(scope.quantity), 0);
+        .reduce(
+          (total, scope) =>
+            total +
+            Number(scope.quantity) -
+            Number(scope.inbound_quantity) -
+            Number(scope.returned_quantity),
+          0,
+        );
     const I = inboundTotals.get(id) ?? 0;
     const R = Number(returnTotals.get(id)?.quantity ?? 0);
-    const pendingInbound = sum(['approved']);
-    const pendingReturn = sum(['quality_return', 'termination_return']);
+    const pendingInbound = sum(['inbound']);
+    const pendingReturn = sum(['return']);
+    const unprocessed = Number(received.get(id) ?? 0) - I - R;
     const quantities: ReceiptQuantitySummary = {
+      unprocessedQuantity: String(unprocessed),
       receivedQuantity: String(received.get(id) ?? 0),
-      undeterminedQuantity: String(sum(['uninspected', 'reviewing'])),
+      undeterminedQuantity: String(
+        currentRound.status === 'finalized' ? sum(['pending']) : unprocessed,
+      ),
       approvedQuantity: String(I + pendingInbound),
       inboundQuantity: String(I),
       returnDueQuantity: String(R + pendingReturn),
@@ -138,21 +200,36 @@ export async function readReceiptLines(
       qualityReturnedQuantity: String(returnTotals.get(id)?.quality_quantity ?? 0),
       pendingInboundQuantity: String(pendingInbound),
       pendingReturnQuantity: String(pendingReturn),
-      hasOpenReview: lineCases.some((item) => item.status === 'reviewing'),
+      hasOpenReview: ['reviewing', 'reinspection_required', 'quality_rejected'].includes(
+        text(currentRound.status),
+      ),
     };
     const historyTotals: Record<ReceiptHistoryKind, number> = {
+      rounds: Number(rounds.get(id)?.[0]?.history_count ?? 0),
+      acceptances: Number(
+        acceptanceRows.find((row) => text(row.receipt_line_id) === id)?.history_count ?? 0,
+      ),
       revisions: Number(revisions.get(id)?.[0]?.history_count ?? 0),
-      scopes: scopeTotals.get(id) ?? 0,
+      allocations: allocationTotals.get(id) ?? 0,
       cases: caseTotals.get(id) ?? 0,
       returns: Number(returns.get(id)?.[0]?.history_count ?? 0),
       inbounds: Number(inbounds.get(id)?.[0]?.history_count ?? 0),
     };
+    const ownershipSources = [...(ownershipByLine.get(id) ?? new Map<string, number>())].map(
+      ([purchaseOrderLineId, quantity]) => ({
+        purchaseOrderLineId,
+        purchaseNo: ownerNames.get(purchaseOrderLineId)!,
+        quantity: String(quantity),
+      }),
+    );
     return {
       id,
       receiptId: text(row.receipt_id),
       purchaseOrderId: text(row.purchase_order_id),
       purchaseOrderLineId: text(row.purchase_order_line_id),
       lineNo: Number(row.line_no),
+      supplierId: text(row.supplier_id),
+      supplierName: text(row.supplier_name),
       itemId: text(row.item_id),
       itemCode: text(row.item_code_snapshot),
       itemName: text(row.material_name),
@@ -160,14 +237,22 @@ export async function readReceiptLines(
       materialVariantCode: text(row.material_variant_code_snapshot),
       unit: text(row.unit_snapshot),
       supplierBatchCode: nullableText(row.supplier_batch_code),
+      currentRound: mapRound(currentRound),
+      currentInspectionConsumedQuantity: consumedByLine.get(id) ?? '0',
+      ownershipSources,
+      ownershipSourceQuantity: String(
+        ownershipSources.reduce((sum, owner) => sum + Number(owner.quantity), 0),
+      ),
+      rounds: (rounds.get(id) ?? []).map(mapRound),
       currentReceiptRevisionId: text(row.current_receipt_revision_id),
       batchId: nullableText(row.batch_id),
       batchCode: nullableText(row.batch_code),
       overReceiptNote: nullableText(row.over_receipt_note),
       version: Number(row.version),
       quantities,
+      acceptances: acceptances.filter((row) => row.receiptLineId === id),
       revisions: (revisions.get(id) ?? []).map(mapRevision),
-      scopes: active.map(mapScope),
+      allocations: active.map(mapAllocation),
       cases: lineCases,
       returns: (returns.get(id) ?? []).map(mapReturn),
       inbounds: (inbounds.get(id) ?? []).map(mapInbound),

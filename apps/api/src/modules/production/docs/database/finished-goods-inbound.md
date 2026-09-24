@@ -1,42 +1,14 @@
 # 批准清单与成品流转入库
 
-Production 拥有批准产出来源资格及用例编排；Inventory 拥有本章引用的入库主从表、库存批次、流水及余额，并通过公开能力在同一事务内写入。仍与物料库存共用 `inventory_transaction` 唯一账本。本章细化 [ADR-0011](../../../../../../../docs/adr/0011-task-closeout-output-list-and-finished-goods-inbound.md) 的成品库存模型；schema 由追加迁移 `202609170002-finished-goods-inbound` 提供。接口和用例必须与该结构同时接入，不能仅执行迁移后将现有物料查询当成通用库存查询。
+Production 拥有批准产出来源资格及用例编排；Inventory 拥有本章引用的入库主从表、库存批次、流水及余额，并通过公开能力在同一事务内写入。仍与物料库存共用 `inventory_transaction` 唯一账本。当前字段与约束由 [Inventory 库存设计](../../../inventory/docs/database/inventory-ledger-and-inbound.md)维护；[ADR-0011](../../../../../../../docs/adr/0011-task-closeout-output-list-and-finished-goods-inbound.md)保留结案与入库的决策依据。本章维护生产来源资格、批准清单及调用编排。
 
 ## 身份与范围
 
-`item_id` 继续只表示 `materials.id`；成品采用独立的 `product_id → products.id`。物料精确版本和成品不能共用一个外键身份，也不另建成品流水账本。
-
-| 表 | 物料分支 | 成品分支 |
-| --- | --- | --- |
-| `item_batch` | `item_id/material_variant_id/material_variant_code_snapshot` 非空，`product_id` 为空 | `product_id` 非空，物料三列为空；来源仅 `self_made/production_extra`，来源工单和任务均非空 |
-| `inbound_detail` | 物料与版本、库存批次均非空；`product_id/requested_batch_code` 为空 | `product_id/requested_batch_code` 非空，物料与版本为空；草稿暂未建立库存批次 |
-| `inventory_transaction` | 物料与版本非空，成品为空 | 成品非空，物料与版本为空；本阶段仅正数 `production_inbound`、`available`、`inbound_detail` 引用 |
-| `inventory_batch_balance` | `item_id` 非空，成品为空 | `product_id` 非空，物料为空 |
-
-每张表以明确 `IS NULL/IS NOT NULL` 的 CHECK 实现互斥分支；不能用 MySQL CHECK 的 UNKNOWN 或部分为空的组合外键绕过身份。余额表不复制 `material_variant_id`，同一库存批次的精确版本仍从 `item_batch` 取得。
-
-物料分支原有 `item_batch(id,item_id,material_variant_id)` 等组合外键全部保留。新增成品组合键 `item_batch(id,product_id)`，成品入库明细、流水、批次余额均引用它。流水另以 `(reference_detail_id,product_id,batch_id)` 引用对应成品入库明细；成品分支三列非空，必须实质满足引用关系。物料分支不使用这个成品专用引用。
-
-成品批次唯一键为 `(product_id,batch_code)`，现有物料批次唯一键仍为 `(material_variant_id,batch_code)`。库存批次身份不可修改，成品来源、批号、编码和单位也不能在建批后回改。两类成品入库各自创建新批次，不合并到已有批次。
-
-成品不参与物料分配、领料、退料、物料损耗或当前物料盘点。现有物料库存列表、候选、盘点及汇总入口须明确限制 `product_id IS NULL`，不能仅依赖 nullable 值不匹配联表来过滤。现有物料名称实时展示规则不变；成品名称从所属工单成品快照展示，不写入物料名称字段。
+成品来源使用 Product 成品身份，物料和成品不共用一个外键身份，也不建立第二套库存账本。互斥字段、批次唯一性、快照及查询隔离见 [Inventory 成品身份与范围](../../../inventory/docs/database/inventory-ledger-and-inbound.md#成品身份与范围)。Production 只提供批准来源和资格，不直接写库存表。
 
 ## 入库单与批准版本
 
-复用 `inbound_order/inbound_detail`，不建立影子单据或第二套数量事实。
-
-`inbound_order` 增加：
-
-- `product_id`、`output_revision_id`：成品来源均非空，其他来源均为空；成品同时要求非空工单、任务，`provider` 为空。
-- `(output_revision_id,production_batch_id,work_order_id,product_id)` 组合外键：引用批准清单的同组四列，保证所选批准版确实属于该任务、工单和成品。
-- `active_finished_slot`：仅成品 `pending/completed` 返回 `1`，其余返回 NULL。唯一键 `(production_batch_id,source_type,active_finished_slot)` 保证同一任务、同一类别最多一张有效草稿或已确认单；取消释放占位，已确认永久占位，不因库存被消费释放。
-
-`inbound_detail` 增加：
-
-- `product_id`、`requested_batch_code`；后者为草稿拟使用的库存批号。
-- `(inbound_id,product_id)` 组合外键及唯一键，保证成品主单恰对应同一成品、至多一条明细。触发器同时拒绝物料明细混入成品主单及反向混用。
-- `batch_id` 对成品草稿可为空；物料明细必须非空。确认时建立批次并回填，已确认明细不再修改或删除。
-- 数量只保存于原 `inbound_number`，主单不新增数量列。待确认数量是单据草稿，只有库存流水表示已实际接收；不能将草稿数量加入库存。
+复用 Inventory 的 [入库主从表](../../../inventory/docs/database/inventory-ledger-and-inbound.md#34-入库表)。Production 批准版本是来源事实；库存主单保存实际采用版本，并由同源外键、类别唯一占位和事务核验防止错配或重复入库。草稿不是已实收库存。
 
 两类来源分别为：
 
@@ -67,15 +39,19 @@ Production 拥有批准产出来源资格及用例编排；Inventory 拥有本�
 
 ## 清单更正与收货
 
-更正批准不改已发生的库存流水。已确认类别批准量保持原值；另一尚未确认类别仍可更正。更正在审期间仅冻结数量受影响类别；仅修改报废或说明不自动冻结两个类别。读取冻结依据须比较正在审批的草稿和当前批准版，不能根据页面缓存推断。
+更正批准不改已发生的库存流水。已确认类别批准量保持原值；另一尚未确认类别仍可更正。**当前实现**在更正在审期间仅冻结数量受影响类别；仅修改报废或说明不自动冻结两个类别。读取冻结依据须比较正在审批的草稿和当前批准版，不能根据页面缓存推断。
 
 更正批准后 `current_revision_id` 切换，未确认草稿引用旧版时必须刷新并保存新版后才能确认。历史入库单始终保留当次实际采用的批准版；不回写为新版本。仓管线下拒收不强制创建差异单，差异与核实结果保留于清单更正及前后审批。
 
+**CQ-01已确认目标，待实施**：发起剩余实物复检时，Production固定已入基准I₀及全部剩余送检范围，立即冻结剩余入库资格，不再等到数量变化的清单进入审批才冻结。明确放行、产线核对及新清单批准全部完成后，仓管才能采用新依据办理；待复检／不放行不恢复旧依据，取消更正不能隐含恢复已暂停的旧放行。
+
+固定 I₀、本轮建议与累计比较、原有说明和负责人审批的完整目标由[结案专题](production-termination.md#部分已入后的复检已确认目标待实施)维护。新依据的 I₀ 不随入库增长，历史建议不累加；本篇只维护当前与目标对收货冻结的影响。
+
+正式批准数量仍是实际入库授权，检验建议不替代或自动扩大它。既有类别一次确认、已入类别锁量、计划内任务上限及库存防重规则保留，建议值、批准版本及实际入库可关联追溯。完整数量定义见[Quality已确认目标](../../../quality/docs/finished-inspections.md#部分已入后的复检已确认目标待实施)。此项不增加任意分次成品入库、在库质量、成品出库或已确认入库冲销。固定基准、剩余范围快照与冻结差异仍登记于[CQ-01](../../../../../../../docs/documentation-conflicts.md#cq-01)，整改及验收统一见[路线图](../../../../../../../docs/roadmap.md#cq-01成品剩余复检整改)。
+
 ## 余额投影
 
-`inventory_transaction` 插入时，同事务更新 `inventory_batch_balance(batch_id,stock_status)`；该投影按账本身份填写物料或成品 ID。`inventory_material_variant_balance` 仅在物料分支更新，成品不插入无版本桶，也不另建成品总量账本。
-
-批次状态变更仍只对物料执行版本余额桶搬移。成品库存按批次余额与当前批次状态查询、聚合。现有余额防负、库存流水不可变及专用测试库受控清理边界保持；成品投影也必须能从同一账本重建并对账。
+成品入库通过 Inventory 公开能力写入唯一库存流水，同事务维护批次余额；Production 不直接维护余额。物料/成品投影分支、重建与对账见 [Inventory 余额规则](../../../inventory/docs/database/inventory-ledger-and-inbound.md#74-余额投影维护规则)。
 
 ## API 与权限
 
@@ -95,6 +71,4 @@ Production 拥有批准产出来源资格及用例编排；Inventory 拥有本�
 
 ## 迁移边界
 
-这是开发期结构切换，不转换或兼容旧库存身份。up/down 在任何永久 DDL 前要求库存批次、流水、入库主明细及余额投影为空；可通过统一开发重置重新生成。迁移期间停止所有相关写入，MySQL DDL 不具有整体事务回滚。
-
-up 暂时解除受 nullability 变更影响的原物料外键，完成互斥身份分支后原名恢复；不关闭 `FOREIGN_KEY_CHECKS`。down 先拆新成品引用与触发器，再删除新列及新增索引，恢复旧非空物料结构、原外键和投影触发器，移除三项新写权限。迁移脚本与应用、权限目录须一起发布；DDL 或回退失败时保持写入停止，检查实际结构后恢复。
+成品身份切换的空数据守卫、停写、up/down 顺序及失败恢复见 [202609170002 迁移边界](../../../../../../../packages/database/docs/migration-safety.md#202609170002成品入库身份)。历史 SQL 不表示当前环境已执行迁移；不得用只执行 schema 的方式开放尚未接入的业务能力。

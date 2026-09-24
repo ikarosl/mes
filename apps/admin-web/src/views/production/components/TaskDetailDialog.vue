@@ -17,9 +17,11 @@
         <el-descriptions-item label="计划数量">{{
           formatQuantity(batch.plannedQuantity)
         }}</el-descriptions-item>
-        <el-descriptions-item label="末工序正常报工量">{{
-          formatQuantity(batch.lastStepReportedQuantity)
-        }}</el-descriptions-item>
+        <el-descriptions-item
+          v-if="batch.orderType !== 'research'"
+          label="末工序正常报工量"
+          >{{ formatQuantity(batch.lastStepReportedQuantity) }}</el-descriptions-item
+        >
         <el-descriptions-item label="任务状态">{{
           batchStatusMeta(batch.status).label
         }}</el-descriptions-item>
@@ -47,7 +49,10 @@
       </el-descriptions>
 
       <el-tabs class="detail-tabs">
-        <el-tab-pane label="工序执行">
+        <el-tab-pane
+          v-if="batch.orderType !== 'research'"
+          label="工序执行"
+        >
           <el-table
             v-if="batch.stepRecords?.length"
             :data="batch.stepRecords"

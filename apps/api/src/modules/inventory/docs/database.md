@@ -1,6 +1,6 @@
 # Inventory 数据库边界
 
-本章是库存表的当前所有者索引。Inventory 已接管运行代码与 SQL 所有权登记，库存字段章节整体迁入本目录，Production 原位置保留入口链接；不维护重复字段定义。
+本章是库存表的当前所有者索引。库存运行代码与 SQL 所有权登记归 Inventory，字段定义统一在本目录维护，Production 数据库文档只链接库存定义并说明生产来源编排。
 
 公共规则遵守[数据库约定](../../../../../../docs/database-conventions.md)，跨模块接口和锁序遵守[提取技术设计](../../../../../../docs/inventory-extraction-design.md)。
 
@@ -10,17 +10,17 @@
 
 | 当前表所有者 | 表 | 字段／约束权威来源 |
 | --- | --- | --- |
-| Inventory | `item_batch` | [库存批次](database/inventory-ledger-and-inbound.md#6-item_batch)，成品互斥身份补充见[成品分支](../../production/docs/database/finished-goods-inbound.md#身份与范围) |
+| Inventory | `item_batch` | [库存批次](database/inventory-ledger-and-inbound.md#6-item_batch)，包含物料/成品互斥身份 |
 | Inventory | `inventory_transaction` | [不可变库存流水](database/inventory-ledger-and-inbound.md#7-inventory_transaction)，成品仅允许正数 `production_inbound` |
 | Inventory | `inventory_batch_balance` | [批次余额](database/inventory-ledger-and-inbound.md#71-inventory_batch_balance)，成品 `product_id` 分支与物料 `item_id` 分支互斥 |
 | Inventory | `inventory_material_variant_balance` | [精确版本余额](database/inventory-ledger-and-inbound.md#73-inventory_material_variant_balance)，只覆盖物料 |
-| Inventory | `inbound_order`、`inbound_detail` | [入库主从表](database/inventory-ledger-and-inbound.md#34-入库表)及[成品单据扩展](../../production/docs/database/finished-goods-inbound.md#入库单与批准版本)，整表归属不能按来源拆分 |
+| Inventory | `inbound_order`、`inbound_detail` | [入库主从表](database/inventory-ledger-and-inbound.md#34-入库表)（含成品字段与约束），整表归属不能按来源拆分 |
 | Inventory | `stock_check_order`、`stock_check_detail` | [盘点主从表](database/stock-check.md)，仅现有物料库存批次／库存状态 |
 | Inventory，仅历史登记 | `inventory_item_balance` | 已删除投影；保留登记以检查不可修改的历史迁移，不恢复该表 |
 
-`production_item_allocation`、`outbound_order/detail`、`return_order/detail`、`item_scrap`、生产结案及批准产出表继续归 Production。采购到货不是库存批次，采购实收与 Quality 结论不写库存；目标新增表在[采购技术设计](../../../../../../docs/procurement-inbound-technical-design.md)维护。
+`production_item_allocation`、`outbound_order/detail`、`return_order/detail`、`item_scrap`、生产结案及批准产出表继续归 Production。采购到货不是库存批次，采购实收与 Quality 结论不写库存；采购到货表及来料检验表分别见 [Procurement 数据库](../../procurement/docs/database.md)与 [Quality 数据库](../../quality/docs/database.md)，跨模块结构见[采购技术设计](../../../../../../docs/procurement-inbound-technical-design.md)。
 
-## 2. 已存在的身份与约束
+## 2. 身份与约束
 
 真实身份链是 `inbound_detail.batch_id → item_batch.id`，内部批号读 `item_batch.batch_code`。物料以 `item_id/material_variant_id` 组合身份传播；成品用独立 `product_id`，不能把产品 ID 写进物料列，也不建立第二套批次或账本。名称读取当前 `materials.material_name`，编码、精确版本与单位继续使用原快照。
 
@@ -40,14 +40,14 @@
 
 成品来源、采购范围或生产任务根锁由调用者先持有，Inventory 不反向获取来源业务锁。来源确认、库存写入、成功审计及触发器余额保持现有单连接事务。具体稳定锁序以[提取设计](../../../../../../docs/inventory-extraction-design.md#7-事务与锁序)为准。
 
-## 4. 采购追加结构边界
+## 4. 采购来源引用
 
-采购闭环追加 migration 为 `inbound_detail` 增加真实到货明细、实收修订、检验结论与处置范围引用，以消费范围唯一键替代旧 `(inbound_id,batch_id,item_id)` 唯一约束，使同次入库能够用多条范围明细引用同一到货批次；保留成品专用唯一约束与物料／批次组合外键。准确字段维护于[入库明细](database/inventory-ledger-and-inbound.md#9-inbound_detail)。
+`inbound_detail` 保存真实到货明细、实收修订、检验结论与不可变分配引用。`procurement_allocation_id` 使用非唯一索引，同一分配可以多次实际入库，同到货多个分配沿用一个批次；成品专用唯一约束与物料／批次组合外键保持。准确字段维护于[入库明细](database/inventory-ledger-and-inbound.md#9-inbound_detail)。
 
-每个到货明细首次实际入库生成并绑定唯一原库存批次；同一确认涉及该到货多个范围时只生成一次。采购层在同一事务将到货 `batch_id` 从空绑定，Inventory 写 `item_batch.batch_code` 与原 `inbound_detail.batch_id`，后续实收修订和复检不更换已绑定批次。
+每个到货明细首次实际入库生成并绑定唯一库存批次；同一确认涉及该到货多个分配时只生成一次。采购层在同一事务将到货 `batch_id` 从空绑定，Inventory 写 `item_batch.batch_code` 与原 `inbound_detail.batch_id`，后续实收修订和复检不更换已绑定批次。
 
-供应商批号留在采购到货追溯字段。采购关闭证据、复核状态、未处置范围与退供应商事实归来源所有者，不放进库存批次状态，不覆盖入库明细或流水。所有外购必须按 Quality 有效明确放行额度入库，不能由 Inventory 相信客户端合格标记。
+供应商批号留在采购到货追溯字段。采购关闭证据、复核状态、未处置范围与退供应商事实归来源所有者，不放进库存批次状态，不覆盖入库明细或流水。所有外购都须由Procurement核验Quality有效明确放行结论、当前finalized轮次及正式可入余量。来料数量上限取库管正式授权，含有依据的超建议数量，不再以Quality的G或C−F重复封顶；Inventory不能相信客户端合格标记。
 
 ## 5. 迁移策略
 
-本次提取没有数据库结构 migration；代码写入入口、模块装配和所有权登记已切换到 Inventory。采购阶段才追加相关表和来源约束，不修改已执行 migration。开发库允许完全重置，统一 migration／seed 恢复最新结构，不依赖现存数据、不双写、不建立过渡影子表。
+库存表所有权以 [api-data-ownership.mjs](../../../../../../scripts/api-data-ownership.mjs)登记为准，代码模块调整不改变表身份。结构变更遵守[数据库迁移规则](../../../../../../packages/database/docs/90-migration-order.md)，具体升级/回滚条件见[迁移安全](../../../../../../packages/database/docs/migration-safety.md)。历史表名仅用于迁移登记，不代表当前仍存在相应表。

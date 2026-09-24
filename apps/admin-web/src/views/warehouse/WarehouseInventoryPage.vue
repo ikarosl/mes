@@ -703,15 +703,6 @@ const demandSourceText = (row: InventoryMaterialDemandTraceItem) => {
         .filter(Boolean)
         .join(' · ') || '-'
     );
-  if (row.demandType === 'material_loss_supplement')
-    return (
-      [
-        row.supplementNo ? `补料单 ${row.supplementNo}` : null,
-        row.materialLossScrapNo ? `报废单 ${row.materialLossScrapNo}` : null,
-      ]
-        .filter(Boolean)
-        .join(' · ') || '-'
-    );
   if (row.demandType === 'manual_additional')
     return row.parentDemandId ? `源需求 #${row.parentDemandId}` : '人工追加';
   return row.batchNo;

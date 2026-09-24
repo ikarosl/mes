@@ -9,7 +9,7 @@
     </el-radio-group>
     <template v-if="view === 'releases'">
       <el-alert
-        title="仅显示质检明确放行的剩余范围。可分次入库；首次实际确认生成内部批号，同一到货后续沿用。"
+        title="仅显示质检允许继续且库管已定稿的可入剩余量。数量以正式清单授权为准；整批复检、更正或拒收后旧范围不可再用。可分次入库，同一到货沿用内部批号。"
         type="info"
         :closable="false"
         show-icon
@@ -72,13 +72,13 @@
         <el-table
           v-loading="releases.loading.value"
           :data="releases.rows.value"
-          row-key="scopeId"
+          row-key="allocationId"
           empty-text="暂无可入库放行范围"
         >
           <el-table-column width="48"
             ><template #default="{ row }"
               ><el-checkbox
-                :model-value="releases.isSelected(row.scopeId)"
+                :model-value="releases.isSelected(row.allocationId)"
                 :disabled="
                   releases.locked.value ||
                   (!!releases.supplierId.value && releases.supplierId.value !== row.supplierId)
@@ -123,11 +123,19 @@
             }}</template></el-table-column
           >
           <el-table-column
-            label="批准剩余"
+            label="清单剩余可入"
             min-width="110"
             align="right"
             ><template #default="{ row }"
               >{{ formatQuantity(row.approvedRemainingQuantity) }} {{ row.unit }}</template
+            ></el-table-column
+          >
+          <el-table-column
+            label="正式依据"
+            min-width="130"
+            ><template #default="{ row }"
+              >清单 {{ row.acceptanceId }} / 分配 {{ row.allocationId }}
+              <div class="muted">质检 {{ row.inspectionId }}</div></template
             ></el-table-column
           >
           <el-table-column
@@ -292,7 +300,7 @@
       />
       <el-table
         :data="releases.selected.value"
-        row-key="source.scopeId"
+        row-key="source.allocationId"
         max-height="430"
       >
         <el-table-column
@@ -320,7 +328,7 @@
           ></el-table-column
         >
         <el-table-column
-          label="批准剩余"
+          label="清单剩余可入"
           width="110"
           align="right"
           ><template #default="{ row }"
@@ -353,7 +361,7 @@
               type="danger"
               link
               :disabled="releases.locked.value"
-              @click="releases.remove(row.source.scopeId)"
+              @click="releases.remove(row.source.allocationId)"
               >移除</el-button
             ></template
           ></el-table-column

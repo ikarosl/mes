@@ -51,10 +51,13 @@
           label="采购单号"
           min-width="180"
         /><el-table-column
-          prop="supplierName"
           label="供应商"
-          min-width="200"
-        /><el-table-column
+          min-width="210"
+          show-overflow-tooltip
+          ><template #default="{ row }">{{
+            supplierSummary(row.suppliers)
+          }}</template></el-table-column
+        ><el-table-column
           prop="lineCount"
           label="物料行"
           width="100"
@@ -91,10 +94,17 @@
         border
         ><el-descriptions-item label="采购单">{{ order.purchaseNo }}</el-descriptions-item
         ><el-descriptions-item label="供应商">{{
-          order.supplierName
+          supplierSummary(order.suppliers)
         }}</el-descriptions-item></el-descriptions
       >
-      <div class="toolbar"><el-button @click="reselect">重新选择采购</el-button></div>
+      <div class="toolbar">
+        <el-button
+          :disabled="loading"
+          @click="refreshQuantities"
+          >刷新数量</el-button
+        >
+        <el-button @click="reselect">重新选择采购</el-button>
+      </div>
       <el-form-item
         label="实际到货时间"
         required
@@ -117,16 +127,24 @@
           maxlength="2000"
       /></el-form-item>
       <el-alert
-        title="按现场接受量登记，实收不受采购计划量封顶。免费超量可归原单；已同意额外购买的超量须先建独立补单。到货登记不产生库存。"
+        title="按本次实物总量登记，暂不按原单、补单或待退拆分。质检后再核对数量与分配；承接已到货的补单无需重复登记到货。"
         type="info"
         :closable="false"
         class="notice"
       />
       <p class="help">未填写数量的行本次不收货。不同供应商批号拆成不同到货明细。</p>
+      <p class="help">
+        累计量按本采购行归属统计，不含本次输入；转由补单承接的数量计入补单。累计已到货包含已退回数量，累计已入库不代表当前库存。
+      </p>
       <el-table
         :data="rows"
         row-key="key"
       >
+        <el-table-column
+          prop="line.supplierName"
+          label="实际供应商"
+          min-width="160"
+        />
         <el-table-column
           label="物料 / 版本"
           min-width="260"
@@ -140,6 +158,20 @@
           width="120"
           ><template #default="{ row }"
             >{{ Number(row.line.plannedQuantity) }} {{ row.line.unit }}</template
+          ></el-table-column
+        >
+        <el-table-column
+          label="累计已到货"
+          width="130"
+          ><template #default="{ row }"
+            >{{ Number(row.line.quantities.receivedQuantity) }} {{ row.line.unit }}</template
+          ></el-table-column
+        >
+        <el-table-column
+          label="累计已入库"
+          width="130"
+          ><template #default="{ row }"
+            >{{ Number(row.line.quantities.inboundQuantity) }} {{ row.line.unit }}</template
           ></el-table-column
         >
         <el-table-column
@@ -175,12 +207,13 @@
         <el-table-column
           label="操作"
           width="145"
+          fixed="right"
           ><template #default="{ row, $index }"
             ><el-button
               link
               type="primary"
               @click="split(row)"
-              >拆分批号</el-button
+              >添加另一来料批次</el-button
             ><el-button
               link
               type="danger"
@@ -214,6 +247,7 @@
   </el-dialog>
 </template>
 <script setup lang="ts">
+import { supplierSummary } from '../supplier-summary';
 import { PURCHASE_ORDER_MAX_QUANTITY } from '@company/constants';
 import { DialogWidth } from '../../../utils/dialog';
 import PaginationFooter from '../../../components/PaginationFooter.vue';
@@ -238,6 +272,7 @@ const {
   open,
   close,
   selectOrder,
+  refreshQuantities,
   reselect,
   split,
   confirm,

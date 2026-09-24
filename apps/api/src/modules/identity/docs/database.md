@@ -2,6 +2,8 @@
 
 > [返回 Identity 文档](../README.md)。
 
+当前字段按既有 migration 与代码记录。Identity 主数据审计字段与根公共规范的差异尚未明确为例外，保留双方证据见[冲突 CO-02](../../../../../../docs/documentation-conflicts.md#co-02)；本文不把缺少的操作者字段描述成已实现。
+
 ## 1.1 `departments`
 
 职责：维护组织部门和用户归属。

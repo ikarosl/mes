@@ -6,6 +6,7 @@ import type {
   ReasonedVersionedCommand,
 } from '../common.js';
 
+export type PurchaseFulfillmentMode = 'new_arrival' | 'existing_receipt';
 export type PurchaseOrderSourceType = 'demand' | 'stock';
 export type PurchaseOrderStatus = 'draft' | 'ordered' | 'completed' | 'cancelled';
 export type PurchaseOrderLineStatus = 'draft' | 'open' | 'closed' | 'cancelled';
@@ -19,11 +20,29 @@ export interface PurchaseOrderQuery extends PageQuery {
   status?: PurchaseOrderStatus;
   originOrderLineId?: string;
 }
+export interface PurchaseExcessReceiptCandidateQuery extends PageQuery {
+  receiptLineId?: string;
+}
+export interface PurchaseExcessReceiptCandidate {
+  id: string;
+  receiptId: string;
+  receiptNo: string;
+  lineNo: number;
+  receivedAt: string;
+  supplierBatchCode: string | null;
+  receivedQuantity: string;
+  unprocessedQuantity: string;
+}
+export interface ProcurementSupplierSummary {
+  id: string;
+  supplierName: string;
+}
 export interface PurchaseOrderItem {
   id: string;
   purchaseNo: string;
-  supplierId: string;
-  supplierName: string;
+  suppliers: ProcurementSupplierSummary[];
+  workOrderId: string | null;
+  workOrderNo: string | null;
   sourceType: PurchaseOrderSourceType;
   supplementReason: PurchaseOrderSupplementReason | null;
   status: PurchaseOrderStatus;
@@ -42,6 +61,7 @@ export interface PurchaseOrderLineSource {
   batchNo: string;
   demandQuantity: string;
   remainingDemandQuantity: string;
+  supplierHint: string | null;
 }
 export interface PurchaseOrderLineClosure {
   id: string;
@@ -58,6 +78,9 @@ export interface PurchaseOrderLineClosure {
   createdAt: string;
 }
 export interface PurchaseOrderLine {
+  fulfillmentMode: PurchaseFulfillmentMode;
+  supplierId: string;
+  supplierName: string;
   id: string;
   lineNo: number;
   itemId: string;
@@ -75,7 +98,7 @@ export interface PurchaseOrderLine {
   originPurchaseNo: string | null;
   supplementEvidence: string | null;
   originReceiptLineId: string | null;
-  originSupplierReturnId: string | null;
+  originAllocationId: string | null;
   quantities: ReceiptQuantitySummary;
   allowedCloseReasons: PurchaseOrderClosureReason[];
   closure: PurchaseOrderLineClosure | null;
@@ -84,13 +107,14 @@ export interface PurchaseOrderDetail extends PurchaseOrderItem {
   items: PurchaseOrderLine[];
 }
 export interface PurchaseOrderDraftLine {
+  supplierId: string;
   itemId: string;
   materialVariantId: string;
   plannedQuantity: number;
   demandIds: string[];
 }
 export interface CreatePurchaseOrderPayload {
-  supplierId: string;
+  workOrderId: string | null;
   sourceType: PurchaseOrderSourceType;
   remark?: string | null;
   items: PurchaseOrderDraftLine[];
@@ -101,11 +125,11 @@ export type CancelPurchaseOrderPayload = ReasonedVersionedCommand;
 export interface ClosePurchaseOrderLinePayload extends ReasonedVersionedCommand {
   reasonType: PurchaseOrderClosureReason;
 }
-/** 质量补货必须在真实退回事实接入后另行开放。 */
+/** 质量补发引用已确认的质量退回分配，补发依据记录供应商约定。 */
 export interface CreatePurchaseOrderSupplementPayload {
   supplementReason: PurchaseOrderSupplementReason;
   originReceiptLineId?: string;
-  originSupplierReturnId?: string;
+  originAllocationId?: string;
   plannedQuantity: number;
   supplementEvidence: string;
   remark?: string | null;
@@ -123,6 +147,7 @@ export interface RelatedPurchaseLine {
   purchaseOrderStatus: PurchaseOrderStatus;
   purchaseOrderLineId: string;
   lineStatus: PurchaseOrderLineStatus;
+  supplierId: string;
   supplierName: string;
   supplementReason: PurchaseOrderSupplementReason | null;
   plannedQuantity: string;

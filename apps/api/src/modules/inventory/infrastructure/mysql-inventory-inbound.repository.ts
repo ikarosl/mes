@@ -48,8 +48,8 @@ type DetailRow = RowDataPacket & {
   inventory_transaction_id: number | null;
   procurement_receipt_line_id: number | null;
   procurement_receipt_revision_id: number | null;
-  procurement_scope_id: number | null;
   procurement_inspection_id: number | null;
+  procurement_allocation_id: number | null;
 };
 @Injectable()
 export class MysqlInventoryInboundRepository extends InventoryInboundRepository {
@@ -204,8 +204,8 @@ export class MysqlInventoryInboundRepository extends InventoryInboundRepository 
           x.inventory_transaction_id === null ? null : String(x.inventory_transaction_id),
         procurementReceiptLineId: idOrNull(x.procurement_receipt_line_id),
         procurementReceiptRevisionId: idOrNull(x.procurement_receipt_revision_id),
-        procurementScopeId: idOrNull(x.procurement_scope_id),
         procurementInspectionId: idOrNull(x.procurement_inspection_id),
+        procurementAllocationId: idOrNull(x.procurement_allocation_id),
       })),
     };
   }

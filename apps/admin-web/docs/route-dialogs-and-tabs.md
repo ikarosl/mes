@@ -1,93 +1,36 @@
-# 动态标签切换与路由弹窗基础设施
+# 动态标签切换与路由弹窗
 
-本文说明管理端多标签页、Vue KeepAlive 与路由区域弹窗之间的协作方式，以及 `RouteDialog.vue`、`route-message-box.ts` 和 `live-options.ts` 的接入规范。视觉和通用交互约束以[视觉设计](visual-design.md)为准；候选实例归属哪个消费方（页面或弹窗）、如何刷新、失效合并与竞态处理，以 `architecture.md` 为准。
+本文维护 KeepAlive、路由区域弹窗的接入边界；候选所有权与刷新遵守[管理端架构](architecture.md)，尺寸和视觉遵守[视觉设计](visual-design.md)。
 
-## 1. 设计目标
+## 1. 挂载边界
 
-- Dialog 和危险操作确认框只遮罩当前路由内容区，不阻断左侧菜单、顶部栏和标签栏。
-- Dialog（含工作台）和确认框整体最高为挂载区高度的 90%，垂直居中；标题、底部按钮保持可见，仅正文溢出滚动。
-- 编辑 Dialog 随 KeepAlive 保留普通输入、已选值、校验状态和表格草稿。
-- 缓存页面失活后，其 Dialog 必须同步隐藏；返回原标签时恢复编辑现场。
-- 外部主数据候选项不以 KeepAlive 页面快照作为唯一来源，应按资源在关键生命周期刷新；同一候选源实例由最近共同所有者（页面或弹窗）持有，跨页面各自实例，不共享缓存。
-- 候选项刷新不得覆盖编辑草稿；失效的已选值必须明确显示并阻止保存。
+Dialog 和短时确认框只遮罩 `AdminLayout` 的 `.content`，不阻断菜单、顶部栏和标签栏。Dialog 的 DOM 必须留在所属路由子树，失活隐藏，回来恢复草稿、选择及校验状态；普通编辑不能在 `onDeactivated` 清空。
 
-## 2. 基础设施职责
-
-| 基础设施          | 位置                                            | 职责                                                                       |
-| ----------------- | ----------------------------------------------- | -------------------------------------------------------------------------- |
-| `RouteDialog`     | `apps/admin-web/src/components/RouteDialog.vue` | 包装 Element Plus `ElDialog`，强制弹窗留在路由组件子树并附加路由区域遮罩类 |
-| `RouteMessageBox` | `apps/admin-web/src/utils/route-message-box.ts` | 将危险操作确认框挂载到 `.content`，并提供路由切换时的统一关闭能力          |
-| Live Options      | `apps/admin-web/src/utils/live-options.ts`      | 合并实时候选项和原已选值、标记失效值，并在提交前检查失效选择               |
-
-配套入口和样式：
-
-- `apps/admin-web/src/main.ts` 全局注册 `RouteDialog`，并在路由切换前关闭 `RouteMessageBox`。
-- `AdminLayout.vue` 中的 `.content` 是路由内容边界，内部 `router-view + keep-alive` 负责页面实例缓存。布局挂载时、挂载区尺寸变化和窗口缩放时，统一读取挂载区的视口坐标与尺寸，通过 `--route-overlay-*` CSS 变量提供给子树；布局卸载时释放 ResizeObserver 和窗口监听。
-- `apps/admin-web/src/styles/index.css` 让 Dialog 和 MessageBox 的外层遮罩按上述边界固定定位，内层填满遮罩，并统一设置垂直居中、整体 90% 高度上限和正文滚动。外层固定定位避免路由滚动或页签、加载面板的局部定位容器改变挂载边界；DOM 仍留在原路由子树内，不改变 KeepAlive 生命周期。
+遮罩固定定位使用布局提供的 `--route-overlay-*` 坐标和尺寸，保证内容区滚动或局部定位不会改变边界。路由内容到弹窗之间不得加会重建固定定位包含块的 transform、filter 或 contain；效果应限在不含弹窗的展示节点。子业务弹窗与父弹窗并列挂载，不能置于父正文滚动区。
 
 ## 3. 联动流程
 
-```text
-AdminLayout .content
-├─ router-view + KeepAlive
-│  └─ 页面中的 <el-dialog>
-│     └─ 全局 RouteDialog
-│        └─ 原生 ElDialog + route-dialog-overlay
-├─ 页面调用 RouteMessageBox.confirm()
-│  └─ 确认框挂载到 .content
-└─ 页面激活/弹窗打开/下拉展开
-   └─ 持有候选实例的 composable 定向 refresh
-      └─ live-options 合并原已选值
-         └─ 正常显示可用项，标记并拦截失效项
-```
+切换标签关闭短时 MessageBox，保留编辑 Dialog 及草稿；重新激活由候选持有者定向刷新，不以缓存候选保证当前资格。报工／追溯的短延时刷新与失败差异见[架构 §6](architecture.md#6-生命周期与定向刷新)，不得为减少渲染直接禁用 KeepAlive。
 
-切换标签页时：
+有草稿或未确认写意图的 editor 使用 `useTabsStore().registerCloseGuard(routeName, async () => boolean)`，在 `onScopeDispose` 注销。同页可注册多个 guard，全部允许才移出缓存；检查也覆盖非活动标签。提交中返回 false，脏草稿／未知结果须明确确认放弃。普通路由切换不执行关闭 guard，也不丢弃意图。
 
-1. 路由守卫关闭不应缓存的短时确认框。
-2. KeepAlive 将旧页面及其 `RouteDialog` DOM 移出活动视图，弹窗不再显示或拦截新页面。
-3. 普通输入和编辑草稿仍保存在旧页面实例中。
-4. 返回旧标签后恢复 Dialog，并重新请求动态候选项。
+缓存多页会占内存，性能排查固定同一组标签往返，比较 GC 后堆、DOM、监听器数量及关闭后的回收；同时用无扩展浏览器核验，不能凭一次 heap 峰值判定泄漏。
 
-标签切换保留已打开页面的实例，堆内存不必回到单页初始值；关闭标签会从 KeepAlive 的 include 中移除对应
-组件。性能排查应固定同一组标签往返切换，并比较垃圾回收后的堆、DOM 与事件监听器数量，再核对关闭标签后的
-回收情况。开发环境应同时用无扩展浏览器比较，不能只凭一次 JS heap 峰值判定泄漏。
+## 4. RouteDialog
 
-报工记录与追溯的返回刷新使用短延时调度与可取消读取，首次加载、手动刷新和草稿缓存规则见
-[管理端架构](architecture.md#6-生命周期与定向刷新)。不得为减少渲染直接取消 KeepAlive 或在失活时丢弃编辑草稿。
-
-## 4. `RouteDialog` 使用方式
-
-`RouteDialog` 已在 `main.ts` 中覆盖全局 `ElDialog` 注册。业务页面继续使用标准 `<el-dialog>`，不需要逐页导入组件：
+全局 `<el-dialog>` 已由 [RouteDialog](../src/components/RouteDialog.vue) 接管，业务页不直接导入原生 ElDialog，不设置 `append-to-body=true`：
 
 ```vue
-<el-dialog v-model="dialogVisible" title="编辑产品" :width="DialogWidth.md">
+<el-dialog v-model="visible" title="编辑产品" :width="DialogWidth.md">
   <ProductForm />
-  <template #footer>
-    <el-button @click="dialogVisible = false">取消</el-button>
-    <el-button type="primary" @click="submit">保存产品</el-button>
-  </template>
 </el-dialog>
 ```
 
-使用约束：
+普通 Dialog 与 `workbench` 共用挂载区高度 90% 上限、垂直居中及仅正文滚动；无需逐页设置正文 vh 或第二层整体滚动。用户明确关闭并放弃后才可重置；只读加载可关闭并忽略迟到响应，写入中禁止关闭。业务收尾的空记录／结束快照解释见[架构](architecture.md#生产需求收尾与库存)。
 
-- 不得在业务页面设置 `append-to-body=true`。
-- 不得绕过全局注册直接渲染从 Element Plus 导入的原生 `ElDialog`。
-- 普通 Dialog 与 `workbench` 共用整体高度和滚动规则，无需逐页设置高度；不为整块正文增加 `vh` 高度上限或第二层滚动，独立表格、列表可按需滚动。
-- 子业务弹窗与父弹窗并列挂载，不放入父弹窗正文滚动区，避免遮罩被裁剪或以父弹窗高度计算上限。
-- 路由内容到弹窗之间不得设置会重建固定定位包含块的 `transform`、`filter` 或 `contain`；需要此类效果时限制到不包含弹窗的展示节点。
-- 编辑 Dialog 不应在 `onDeactivated` 中主动清空普通输入或关闭自身。
-- 用户主动关闭且确认放弃编辑后，页面可以按业务需要重置表单。
-- 收尾弹窗加载核对与详情后，须先检查响应结构及批次归属，再整体更新展示状态；只有 JSON `null` 表示没有逐项收尾记录。空响应或缺失字段显示加载错误并禁用写入，刷新失败保留上次核对结果及草稿。只读加载期间允许关闭，关闭后忽略迟到响应；写操作执行期间仍禁止关闭。
-- 任务页按阶段展示“提前结束”“继续收尾”“查看结案信息”。它们是操作入口，不是新增业务状态：“提前结束”打开原因填写及开始收尾表单，真正停止生产仍须确认“开始收尾”；“继续收尾”承接逐项处理和送审；“查看结案信息”打开只读核对窗口，查看产出、物料安排、处理及审批记录，不表示再次处置或已入库。数据库状态与审批门禁不因展示名称改变。
-- 收尾详情为 JSON `null` 表示没有逐项收尾记录，须结合结束记录判断阶段：尚未结束时显示开始收尾表单；已有结束记录时显示只读结案信息及无待办提示。已结束批次不将结束前影响快照计为当前待办，物料页标明“结束时物料快照”，缺少逐项实核／处理记录时明确说明，不能展示为仍待处理。
-- 弹窗宽度、滚动和按钮顺序继续遵守[视觉设计](visual-design.md)第 5 节。
+## 5. RouteMessageBox
 
-当前使用情况：管理端现有 `<el-dialog>` 均通过全局注册自动使用 `RouteDialog`，覆盖 System、Product 以及当前生产/仓储页面。
-
-## 5. `RouteMessageBox` 使用方式
-
-危险操作不得直接调用 `ElMessageBox.confirm`，统一使用路由确认框：
+短时危险确认统一用 [RouteMessageBox](../src/utils/route-message-box.ts)，不直接调用 Element Plus ElMessageBox：
 
 ```ts
 import { RouteMessageBox } from '../../utils/route-message-box';
@@ -98,159 +41,24 @@ await RouteMessageBox.confirm('确认停用该产品吗？', '停用产品', {
 });
 ```
 
-为了减少现有页面改动，也允许使用清晰的局部别名：
+确认框不承载表单、详情或需缓存的编辑内容。切路由自动关闭，回来须重新发起；长提示仅正文滚动，标题和确认按钮可见。
+
+## 6. Live Options
+
+[buildLiveOptions/hasUnavailableSelection](../src/utils/live-options.ts) 适用于可变外部候选，不用于稳定枚举或普通输入。下面的 `categories` 必须是完整有效候选集；分页／搜索窗口需先解析已选 ID，不能将窗口缺项标失效。
 
 ```ts
-import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
-```
-
-使用约束：
-
-- 适用于删除、停用、取消、关闭、作废、完成等短时危险操作确认。
-- 不用于承载表单、详情或需要随标签页恢复的编辑内容。
-- 确认框切换路由时自动关闭，返回后必须由用户重新发起操作。
-- 确认框与 Dialog 一样以 `.content` 高度的 90% 为整体上限；长提示和输入区域滚动，标题和确认、取消按钮保持可见。
-- 禁止业务页面重新从 `element-plus` 直接导入 `ElMessageBox`。
-
-当前使用情况：管理端现有 21 处危险操作确认均已接入 `RouteMessageBox`。
-
-## 6. Live Options 使用方式
-
-### 6.1 请求时机
-
-动态候选必须按资源命名和刷新，并遵守“谁持有实例谁负责它的页面激活刷新”的所有权规则（见
-`architecture.md` §4）。页面候选刷新只挂在 `onActivated`（首次挂载与再激活都会触发，避免首帧双请求）；
-`onMounted` 只加载正式列表和关键明细：
-
-```ts
-import { onActivated } from 'vue';
-
-const productSource = useProductOptions();
-const userSource = useUserOptions();
-
-// 页面持有候选：页面负责激活刷新（首次进入也在此完成）
-onActivated(() => {
-  void productSource.refresh();
-  void userSource.refresh();
-});
-```
-
-页面持有并下发给弹窗的候选，弹窗经 props 接收、经 `refresh-x` 事件触发刷新，不再自行注册 `onActivated`：
-
-```vue
-<WorkOrderFormDialog
-  :product-options="productSource.options.value"
-  :user-options="userSource.options.value"
-  @refresh-products="productSource.refresh"
-  @refresh-users="userSource.refresh"
-/>
-```
-
-弹窗自持的候选，由弹窗在打开（watch visible）、页面激活且仍打开（onActivated + visible 守卫）、下拉展开
-（visible-change）三个时机刷新：
-
-```vue
-<el-select
-  v-model="row.processStepId"
-  @visible-change="(visible: boolean) => visible && processSource.refresh()"
-/>
-<el-select
-  v-model="row.defaultOwnerId"
-  @visible-change="(visible: boolean) => visible && userSource.refresh()"
-/>
-```
-
-页面筛选下拉同样在 `visible-change` 时只刷新该筛选资源。每个候选实例独立刷新、独立 last-request-wins；
-不同实例之间不合并请求（每次刷新都重新请求，以最后一次结果为准）。禁止让任意下拉统一调用
-`loadOptions()`/`refreshAll()` 刷新无关资源。
-
-### 6.2 保留失效的已选值
-
-```ts
-import { computed } from 'vue';
-import { buildLiveOptions, hasUnavailableSelection } from '../../../utils/live-options';
-
-const categoryChoices = computed(() =>
-  buildLiveOptions(
-    props.categoryOptions,
-    form.categoryId ? [form.categoryId] : [],
-    (item) => item.id,
-  ),
+const selected = computed(() => form.categoryId ? [form.categoryId] : []);
+const choices = computed(() =>
+  buildLiveOptions(categories.value, selected.value, item => item.id),
 );
+// 提交前检查；刷新失败的阻断由候选状态另外判断。
+const hasInvalidChoice = () =>
+  hasUnavailableSelection(categories.value, selected.value, item => item.id);
 ```
 
-```vue
-<el-option
-  v-for="choice in categoryChoices"
-  :key="choice.value"
-  :value="choice.value"
-  :label="choice.option?.categoryName ?? `${choice.value}（已失效）`"
-  :disabled="choice.isUnavailable"
-/>
-```
+渲染保留 unavailable 的原 ID，显示“已失效”并禁用该项，保存前阻止失效选择。刷新时机和实例归属只维护在[管理端架构](architecture.md#6-生命周期与定向刷新)，不要复制一份生命周期实现。未接入后端的业务不能伪造实时候选。
 
-保存前必须检查：
+## 8. 验证重点
 
-```ts
-if (
-  hasUnavailableSelection(
-    props.categoryOptions,
-    form.categoryId ? [form.categoryId] : [],
-    (item) => item.id,
-  )
-) {
-  EMessage.warning('产品分类已失效，请重新选择');
-  return;
-}
-```
-
-### 6.3 适用范围
-
-适用：
-
-- 部门、角色、权限等可变系统主数据；
-- 产品分类、关联产品、物料、工序、工艺路线；
-- 用户、负责人等跨页面可能变化的关联对象；
-- API 返回且可能被停用、删除或改变适用条件的候选项。
-
-不适用：
-
-- 获取方式、固定状态等由 `packages/constants` 或 contracts 定义的稳定枚举；
-- 普通文本、数字、日期、开关等不依赖外部候选数据的输入；
-- 仅用于列表展示、不参与编辑提交的数据。
-
-当前正式接入页面包括 System 的用户/角色/权限/日志，Product 的产品/分类/工序/工艺路线，Production 的工单/任务/报工/追溯/物料/入库/出库/退料/报废/盘点等页面；候选类型覆盖部门、角色、分类、产品、物料、工序、路线、负责人和工单等。Production 与当前存在的仓储页面均已接入真实 API；尚未实现的 Quality、全链路 Traceability 等页面不得伪造实时 API。
-
-## 7. 状态缓存边界
-
-| 状态               | 所有者                   | 更新策略                                                             |
-| ------------------ | ------------------------ | -------------------------------------------------------------------- |
-| Dialog 显示状态    | KeepAlive 页面           | 返回标签后恢复                                                       |
-| 普通输入和表格草稿 | 弹窗组件/弹窗 composable | 随页面保留，候选刷新不得覆盖                                         |
-| 用户已选值         | 编辑草稿                 | 随页面保留，候选缺失时标记为“已失效”                                 |
-| 页面级动态候选     | 页面 composable 实例     | 谁持有谁负责激活刷新；打开、激活、展开时刷新；失败保留实例内上次成功 |
-| 弹窗级动态候选     | 弹窗 composable 实例     | 打开、激活（仍打开时）、展开时刷新；失败保留实例内上次成功           |
-| ID 绑定关键明细    | 弹窗 Editor composable   | 切换目标时加载；页面激活不得覆盖编辑草稿                             |
-| 危险操作确认框     | RouteMessageBox 短时状态 | 路由切换时关闭                                                       |
-| 服务端校验结果     | 不缓存                   | 提交时重新校验                                                       |
-
-## 8. 测试要求
-
-新增或修改相关交互时至少验证：
-
-- Dialog 遮罩仍位于路由组件子树内；
-- KeepAlive 失活时 Dialog 不可见，返回后编辑草稿仍在；
-- MessageBox 的 `appendTo` 指向 `.content`；
-- 同一候选实例的每次 `refresh()` 都重新请求；并发刷新采用 last-request-wins，旧响应和旧失败不得覆盖或提示；
-- 展开一个下拉不会请求其他无关候选资源；
-- 候选刷新不会丢失原已选值；
-- 失效选择能够显示且无法提交；
-- 切换编辑目标后，旧目标的迟到响应不会覆盖新目标或草稿；
-- 关键明细加载失败时无法保存空数据覆盖服务端记录。
-
-相关测试位于：
-
-- `apps/admin-web/src/components/__tests__/route-dialog.test.ts`
-- `apps/admin-web/src/utils/__tests__/route-message-box.test.ts`
-- `apps/admin-web/src/utils/__tests__/live-options.test.ts`
-- 各页面相邻的 `components/__tests__` 或 `composables/__tests__`
+按[测试策略](../../../docs/testing-strategy.md)规定阶段核验：非活动页弹窗不遮挡新页；返回恢复草稿；MessageBox 随路由关闭；关闭非活动标签也保护未知意图；正文滚动不裁剪子弹窗；失效候选可见且阻止保存。实现存在不代表 UI 已验收，状态见[路线图](../../../docs/roadmap.md)。

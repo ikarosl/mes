@@ -38,11 +38,6 @@ type MaterialLossRow = RowDataPacket & {
   cancel_reason: string | null;
   cancelled_by: number | null;
   cancelled_at: Date | null;
-  supplement_id: number | null;
-  supplement_no: string | null;
-  supplement_status: 'approved' | 'fulfilled' | 'cancelled' | null;
-  supplement_demand_id: number | null;
-  supplement_demand_quantity: string | null;
 };
 
 const MATERIAL_LOSS_SELECT = `SELECT scrap.id,scrap.scrap_no,scrap.production_batch_id,
@@ -52,19 +47,11 @@ const MATERIAL_LOSS_SELECT = `SELECT scrap.id,scrap.scrap_no,scrap.production_ba
   ib.material_variant_code_snapshot,ib.batch_code,
   scrap.scrap_number,scrap.unit_snapshot,scrap.reason_type,scrap.loss_purpose,scrap.closeout_id,scrap.status,scrap.confirmed_by,
   scrap.confirmed_at,scrap.created_by,scrap.created_at,scrap.version,scrap.remark,
-  scrap.cancel_reason,scrap.cancelled_by,scrap.cancelled_at,
-  supplement.id supplement_id,supplement.supplement_no,supplement.status supplement_status,
-  supplement_demand.id supplement_demand_id,
-  supplement_demand.need_number supplement_demand_quantity
+  scrap.cancel_reason,scrap.cancelled_by,scrap.cancelled_at
  FROM item_scrap scrap
  JOIN production_batches pb ON pb.id=scrap.production_batch_id
  JOIN work_orders wo ON wo.id=pb.work_order_id
- JOIN item_batch ib ON ib.id=scrap.batch_id
- LEFT JOIN production_material_supplement supplement
-   ON supplement.material_loss_scrap_id=scrap.id AND supplement.source_type='material_loss'
- LEFT JOIN production_item_demand supplement_demand
-   ON supplement_demand.supplement_id=supplement.id
-  AND supplement_demand.demand_type='material_loss_supplement'`;
+ JOIN item_batch ib ON ib.id=scrap.batch_id`;
 
 export async function listMaterialLossDisplay(
   db: Pool | PoolConnection,
@@ -106,7 +93,7 @@ export async function readMaterialLossDisplay(
   const [[row]] = await db.query<MaterialLossRow[]>(`${MATERIAL_LOSS_SELECT} WHERE scrap.id=?`, [
     id,
   ]);
-  if (!row) throw new ProductionDomainError('NOT_FOUND', '???????????');
+  if (!row) throw new ProductionDomainError('NOT_FOUND', '生产领料损耗来源不存在');
   return mapMaterialLoss(row);
 }
 
@@ -155,7 +142,7 @@ export function requireMaterialLossBatchDisplay(
   batchId: string,
 ): MaterialLossBatchDisplay {
   const display = displays.get(batchId);
-  if (!display) throw new ProductionDomainError('NOT_FOUND', '???????????');
+  if (!display) throw new ProductionDomainError('NOT_FOUND', '生产领料损耗来源不存在');
   return display;
 }
 
@@ -196,14 +183,4 @@ const mapMaterialLoss = (row: MaterialLossRow): MaterialLossItem => ({
   cancelledById: row.cancelled_by === null ? null : String(row.cancelled_by),
   cancelledByName: null,
   cancelledAt: iso(row.cancelled_at),
-  supplement:
-    row.supplement_id === null || row.supplement_demand_id === null
-      ? null
-      : {
-          supplementId: String(row.supplement_id),
-          supplementNo: row.supplement_no!,
-          status: row.supplement_status!,
-          demandId: String(row.supplement_demand_id),
-          demandQuantity: String(row.supplement_demand_quantity!),
-        },
 });

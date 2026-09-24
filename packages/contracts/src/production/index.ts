@@ -1,6 +1,5 @@
 export * from './statuses.js';
 export * from './work-order.js';
-export * from './work-order-material-configuration.js';
 export * from './batch.js';
 export * from './material.js';
 export * from './material-demand-management.js';

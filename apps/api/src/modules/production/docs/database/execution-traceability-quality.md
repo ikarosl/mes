@@ -63,7 +63,7 @@
 | `pending` | 工序节点已生成，等待管理员确认派工 | 创建生产批次时进入；此时默认负责人只是建议值 |
 | `assigned` | 管理员已经确认该工序的现场实际负责人，等待开工 | 只能由显式派工命令从 `pending` 进入，且 `responsible_user_id` 必须存在 |
 | `doing` | 工序已经实际开始执行 | 已派工员工通过显式开工命令从 `assigned` 进入，并写入 `started_at` |
-| `completed` | 工序已经完成当前要求的正常数量 | 工序在报工后的 `effective_normal == required_normal` 时自动进入；非工序通过显式完工命令进入 |
+| `completed` | 工序已经完成当前要求的正常数量 | 所有工序在报工后的 `effective_normal == required_normal` 时自动进入 |
 | `terminated` | 随任务提前结束而停止执行 | 收尾逐项处理从 `pending/assigned/doing` 进入，保留原报工与终止说明，不伪造正常完工时间 |
 
 普通状态转换固定为：
@@ -85,18 +85,17 @@ pending / assigned / doing -> terminated（收尾逐项处理）
 - `production_batches.material_assigned` 只表示批次物料已分配，不能触发任何工序进入 `assigned`。物料需求、分配和领料出库推动生产批次状态；派工、开工和完工推动单个工序状态，两套状态机独立推进。
 - 工序能否开工由应用层综合校验派工状态、批次物料状态和上游正常放行数量。若页面需要“可开工”提示，应返回派生结果，不新增或复用持久化状态。
 
-上述正常执行状态、独立派工/撤回/改派/员工开工命令、非工序显式完工命令、管理端逐工序操作和员工“我的工序”入口已经落地。派工、开工与完工仍是独立动作；报工不得绕过 `assigned -> doing`，工序不得调用显式完工命令。
+当前提供独立派工／撤回／改派／员工开工命令、管理端逐工序操作和员工“我的工序”入口。所有工序都通过报工达标自动完工；报工不得绕过 `assigned -> doing`，不提供免报工工序或单独完工命令。`202609080003-require-reporting-for-all-steps` 已删除免报工字段与原完工权限，迁移存在不代表当前数据库已应用。
 
 #### 4.1.2 工序完工规则
 
-工序采用数量达标自动完工：
+工序按 §4.1.1 的数量达标规则自动完成，合法更正或补产导致目标变化时重新核验。数量、上下游依赖、状态、时间、成功审计及幂等结果在同一事务提交；研发无工序，按任务级开始／结束办理，不伪造免报工节点。
 
-- 适用于工序。普通报工事务重新计算 `effective_normal`：小于 `required_normal` 时保持 `doing`，等于时自动转为 `completed` 并写入 `completed_at`，大于时拒绝。
-- 优点是员工完成最后一次报工后无需等待管理员，状态和数量不会长时间偏离；适合分批报工频繁或工序数量较多的场景。
-- 自动完工不是跳过校验。报工、数量校验、上下游校验、工序状态与时间、成功审计和幂等结果仍须在同一事务提交。
-- 非工序没有可用于自动判断的数量事实，仍通过显式完工命令处理。
+### 工序命令与 SOP 权限
 
-已完成工序发生合法冲销、更正或下游报废补产目标增加后，按本章统一规则重新计算：数量不足且允许继续生产时重开为 `doing`；更正存在下游冲突时拒绝，并提示管理员先按下游到上游顺序冲销冲突事实。
+派工、撤回、改派与开始均以批次和工序记录双重上下文定位，提交工序 `version`；派工／改派还须明确 `responsibleUserId`。这些命令使用状态短路与乐观锁，禁止发送 `Idempotency-Key`。管理派工权限为 `production:steps:assign`，员工开工为 `production:steps:start`，员工任务查询为 `production:worker-tasks:view`。
+
+SOP 内容从任务工序的默认或现场实际快照解析文件名、对象键及版本，不能读取当前工序配置替代历史快照。管理端采用 `production:tasks:view`；员工端采用 `production:worker-tasks:view`，且查询强制 `responsible_user_id` 为当前用户。其他消费页面须有匹配自身查看权限的端点并复用同一快照服务，不得扩大员工接口数据范围。
 
 ## 4.2 `batch_step_reports`
 
@@ -105,7 +104,7 @@ pending / assigned / doing -> terminated（收尾逐项处理）
 | 字段                     | 类型              | 说明                                                                 |
 | ------------------------ | ----------------- | -------------------------------------------------------------------- |
 | `id`                     | `BIGINT UNSIGNED` | 主键，自增                                                           |
-| `report_no`              | `VARCHAR(100)`    | 报工事实编号，唯一；历史迁移使用 `LEGACY-SR-{stepId}`                |
+| `report_no`              | `VARCHAR(100)`    | 报工事实编号，唯一                |
 | `production_batch_id`    | `BIGINT UNSIGNED` | 生产批次 ID                                                          |
 | `batch_step_record_id`   | `BIGINT UNSIGNED` | 工序执行节点 ID                                                      |
 | `report_type`            | `VARCHAR(20)`     | `normal` 正向报工事实、`reversal` 冲销事实；不表示正常品/异常品分类  |
@@ -160,6 +159,8 @@ effective_abnormal = SUM(normal.abnormal_quantity) - SUM(reversal.abnormal_quant
 - `report_no` 是业务事实编号，不代替 HTTP 幂等键。客户端原始 `Idempotency-Key` 只进入平台幂等记录，绝不能写入本表。
 
 #### 下游依赖与连带冲销升级边界
+
+> 待确认冲突 [CP-01](../../../../../../../docs/documentation-conflicts.md#cp-01)：本小节的下游 `effective_normal` 与 §4.2.3 的 `effective_direct_reported` 口径不同；当前冲销／更正实现使用后者。保留两处原表述，待确认设计后统一，不据代码单方面裁定。
 
 - 一期仅允许管理员为“上报填写错误”冲销或更正报工。命令必须先计算更正后的有效数量：若新的上游 `effective_normal` 小于下游已经报工的 `effective_normal`，必须拒绝并返回可供前端明确展示的冲突工序和报工依赖摘要，提示管理员先从最下游开始冲销冲突报工，再重新提交本次上游更正；前端确认不能替代后端校验。
 - 若目标报工已经产生异常审批、返工、工序报废、补料、需求、分配、出库、库存流水或其他对该报工的直接业务引用，普通冲销/更正同样必须拒绝并返回依赖摘要。管理员只能先通过对应业务的合法冲销或取消动作解除依赖，不得删除或覆盖下游事实。
@@ -237,7 +238,6 @@ GROUP BY batch.id, batch.planned_quantity;
 - 例三：路线 A→B→C，C 接手时发现一个前置异常。报工保存 `abnormal_origin = 'previous_step'`，管理员批准报废并从该批次完整 BOM 基础选择启用的精确物料版本；授权的 `quota_end_step_record_id` 仍是 C。补料齐套后 A、B 依次补产并形成新增正常量，C 才获得第六个投入并补报一个正常量。
 - 只要当前工序 `effective_normal < required_normal[i]` 且 `available_report[i] > 0`，就允许继续新增普通报工。工序只在包含普通报工和返工完成报工在内的总 `effective_normal == required_normal[i]` 时自动完成；达到当前部分放行量不得提前完成。`abnormal_quantity` 不计入正常完成量和下工序放行量，但会消耗本工序投入放行量。
 - 补料齐套使授权可执行时，所有位于路线起点至额度截止工序之前、且因 `required_normal` 增加而数量不足的已完成工序，必须在同一事务重开为 `doing` 并清空 `completed_at`；已在执行中的工序保持 `doing`。这类重开保留原负责人和 `started_at`，页面标记为“下游报废补产”，不得要求重新派工或伪造新的首次开工时间。
-- 位于补产路径中的非工序如果已经完成，也必须重开为 `doing`，由原负责人再次显式确认本轮补产已经通过该工序；完成后下游才能按更新后的 `required_normal` 获得放行。当前聚合工序节点只表达最新执行状态，重复完成历史由报废来源、操作日志及状态时间追溯。
 - 报废审批完成但补料需求尚未全部确认出库时，授权不可执行；页面应显示“补料领用未完成”，不能允许提前从路线起点补报。释放分配、取消待出库单或仅创建补料出库单均不算确认领用。
 - 返工不形成 `S[j]`。返工完成只能通过对应 `rework_records` 完成命令一次性追加来源明确的返工报工事实，不能调用普通报工接口绕过来源唯一约束。
 - 当前临时口径把操作员提交的 `normal_quantity` 视为该工序已经完成自检的正常数量；在过程质量模型缺失期间，`effective_normal` 临时作为下工序正常放行数量。该口径只用于生产过程流转，不得解释为最终质量合格结论。
@@ -395,9 +395,9 @@ current_step_released_quantity = effective_normal
 应用规则：
 
 - `authorized_quantity` 必须等于 `batch_step_scrap_records.scrap_quantity`；数据库只保证两者同源，数值相等由批准事务校验。
-- `supplement_id` 必须指向 `source_type = 'step_scrap_reproduction'` 且与当前报废事实同源的补料单；`material_loss` 补料单不得关联产品补产授权。
+- `supplement_id` 必须指向 `source_type = 'step_scrap_reproduction'` 且与当前报废事实同源的补料单；当前不再存在 `material_loss` 补料单，领料损耗不关联产品补产授权。
 - `entry_step_record_id` 必须是路线首工序；物料版本选择与路线工序范围无关。
-- 本表没有“待生效/已生效”状态。`source_type = 'step_scrap_reproduction'` 的关联补料单进入 `fulfilled` 后，授权进入路线额度公式；此后发生生产领料损耗时走 `item_scrap(production_consumed) -> production_material_supplement(material_loss)` 的一比一实物补料链路，原授权数量和产品可报上限不变。普通退料不是损耗，不得借此生成新的产品授权或损耗补料。
+- 本表没有“待生效/已生效”状态。`source_type = 'step_scrap_reproduction'` 的关联补料单进入 `fulfilled` 后，授权进入路线额度公式；此后发生领料损耗只追加 `item_scrap(production_consumed)` 损坏事实，原授权数量和产品可报上限不变，需要物料时管理员另行手工提需。普通退料不产生损耗或产品授权。
 
 ## 4.5 `rework_records`（当前最小返工）
 
@@ -448,12 +448,18 @@ products
      └─ scrap  -> batch_step_scrap_records -> production_material_supplement
 ```
 
-`batch_step_abnormal_dispositions` 已作为追溯节点定稿并追加数据库 migration；报工创建、更正、异常审批、最小返工和报废补料业务均已落地。过程质检、最终质量和成品流转只能在各自业务语义闭环后追加到主链。追溯查询可以使用受约束的冗余字段和快照，但任何库存数量只能从 `inventory_transaction` 汇总，任何生产需求只能从 `production_item_demand` 读取。
+追溯主链包含报工创建、更正、异常审批、最小返工和报废补料事实。过程质检、最终质量和成品流转只能在各自业务语义闭环后追加到主链。追溯查询可以使用受约束的冗余字段和快照，但任何库存数量只能从 `inventory_transaction` 汇总，任何生产需求只能从 `production_item_demand` 读取。
 
 当前 Production 只读追溯已经落地查询投影：支持按工单号、生产批次号、物料编码和库存批次号定位生产批次，并读取工单/批次概览、`production_item_demand`、`production_item_allocation`、`outbound_order/outbound_detail`、对应的 `production_material_outbound` 库存流水、`batch_step_records`、`batch_step_reports` 普通/冲销/替代链及有效聚合、`batch_step_abnormal_dispositions` 待处置记录。该投影不创建第二事实表，不返回质量、返工、报废、退料或成品流向占位数据。
 
-库存提取后，追溯和供需展示 SQL 分别集中在 `infrastructure/queries/production-trace.query.ts` 与 `production-supply-demand.query.ts`，由原 Repository 端口委托调用；跨模块读取的库存批次、流水、入库来源及余额投影字段登记在 `scripts/api-data-ownership.mjs`。这些查询只服务展示、搜索和分页，不锁定 Inventory 数据，也不供领料、采购或补料命令判定写入资格。原按工单分组分页、按稳定来源查询正负流水及供需数量口径保持不变，不将余额或历史展示当作新采购资格。
+追溯和供需展示 SQL 分别位于 `infrastructure/queries/production-trace.query.ts` 与 `production-supply-demand.query.ts`，由原 Repository 端口委托调用；跨模块读取的库存批次、流水、入库来源及余额投影字段登记在 `scripts/api-data-ownership.mjs`。这些查询只服务展示、搜索和分页，不锁定 Inventory 数据，也不供领料、采购或补料命令判定写入资格。原按工单分组分页、按稳定来源查询正负流水及供需数量口径保持不变，不将余额或历史展示当作新采购资格。
 
 批次收尾时未完成工序由管理员逐项置为 `terminated`，行动保留原状态；父批次 `closing/terminated` 阻止后续执行；待处理异常使用 `terminated` 记录结束人和时间且无处置类型，未完成返工取消，未履约补料使用 `cancelled` 且履约人/时间为空。已报工和已授权事实保留；不补料的终止产出报废独立见[批次结束设计](production-termination.md)。
 
-正常批次完工除工序、末工序产量外，还阻断全部 active 需求及 approved 未齐套补料单；在审纠错仍为 active，关闭不能伪装物料齐套。不足量结案使用逐项收尾及短产审批，不通过本执行完工入口改写正常产量。
+正常批次完工除工序、末工序产量外，还阻断全部 active 需求及 approved 未齐套补料单；在审纠错仍为 active，关闭不能伪装物料齐套。最终可用产出不足按共用结案审批核对，不另建短产审批，也不通过执行完工入口改写正常产量。
+
+### 生产追溯查询
+
+`GET /production/trace/batches/:id` 的物料入库来源按所用库存批次的正数、available 流水展示，`sourceLabel` 取真实 `transaction_type`，无外购单不能一律解释为 initial_stock。这是批次入库历史，不表示其中每笔数量全部被当前任务消费。
+
+`sourceDocumentNo` 当前解析外购入库单及已确认退料单；其他来源未解析时为 null，类型仍取流水。`confirmedAt` 优先使用对应单据确认时间，无关联单据时使用流水时间。供应方仅取外购单，不为退料推断供应商；前端使用共享流水字典。

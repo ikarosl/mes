@@ -271,6 +271,23 @@
               @click="openCloseout(row)"
               >{{ batchCloseoutActionLabel(row.status, row.closeoutMode) }}</el-button
             >
+            <el-button
+              v-if="
+                row.orderType === 'research' &&
+                ['material_outbound', 'material_partially_outbound'].includes(row.status)
+              "
+              link
+              type="success"
+              @click="openResearchExecution(row, 'start')"
+              >开始研发</el-button
+            >
+            <el-button
+              v-if="row.orderType === 'research' && row.status === 'doing'"
+              link
+              type="success"
+              @click="openResearchExecution(row, 'complete')"
+              >结束本轮研发</el-button
+            >
             <el-dropdown trigger="click">
               <el-button
                 link
@@ -378,6 +395,13 @@
       :batch="materialDemandBatch"
       @update:visible="manualMaterialDemandVisible = $event"
       @added="handleManualMaterialDemandAdded"
+    />
+
+    <ResearchExecutionDialog
+      v-model:visible="researchExecutionVisible"
+      :batch="researchExecutionBatch"
+      :action="researchExecutionAction"
+      @changed="researchExecutionChanged"
     />
 
     <MaterialDemandAllocationDialog
@@ -490,8 +514,22 @@ import ProductionBatchCancelDialog from './components/ProductionBatchCancelDialo
 import MaterialDemandConfigurationDialog from './components/MaterialDemandConfigurationDialog.vue';
 import MaterialDemandOverviewDialog from './components/MaterialDemandOverviewDialog.vue';
 import ManualMaterialDemandDialog from './components/ManualMaterialDemandDialog.vue';
+import ResearchExecutionDialog from './components/ResearchExecutionDialog.vue';
 
 defineOptions({ name: 'ProductionTasksPage' });
+
+const researchExecutionVisible = ref(false);
+const researchExecutionBatch = ref<ProductionBatchItem | null>(null);
+const researchExecutionAction = ref<'start' | 'complete'>('start');
+const openResearchExecution = (batch: ProductionBatchItem, action: 'start' | 'complete') => {
+  researchExecutionBatch.value = batch;
+  researchExecutionAction.value = action;
+  researchExecutionVisible.value = true;
+};
+const researchExecutionChanged = async (batchId: string, completed: boolean) => {
+  await loadTasks();
+  if (completed) openOutput(batchId);
+};
 
 const route = useRoute();
 
@@ -1023,7 +1061,8 @@ const confirmBatchCancellation = async (reason: string): Promise<void> => {
 const canEditBatch = (row: ProductionBatchItem): boolean => row.status === 'pending';
 const openMaterialDemandConfiguration = (row: ProductionBatchItem): void => {
   materialDemandBatch.value = row;
-  materialDemandConfigurationVisible.value = true;
+  if (row.orderType === 'research') manualMaterialDemandVisible.value = true;
+  else materialDemandConfigurationVisible.value = true;
 };
 const loadMaterialDemandOverview = async (): Promise<void> => {
   if (!materialDemandBatch.value) return;

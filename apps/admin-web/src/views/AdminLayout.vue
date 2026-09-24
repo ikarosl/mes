@@ -256,6 +256,11 @@ const productionItems = computed(() => productionMenus.filter((item) => auth.can
 
 const qualityMenus = [
   {
+    title: '成品质检',
+    path: '/quality/finished-inspections',
+    permission: PERMISSIONS.quality.finishedInspections.view,
+  },
+  {
     title: '来料检验',
     path: '/quality/inbound-inspections',
     permission: PERMISSIONS.quality.inboundInspections.view,

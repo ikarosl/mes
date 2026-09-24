@@ -121,7 +121,7 @@ export class MysqlProductionRepository extends ProductionRepository {
   }
   withBatchCreationTransaction<T>(
     workOrderId: string,
-    action: (workOrderProductId: string) => Promise<T>,
+    action: (workOrderProductId: string, orderType: ProductionBatchItem['orderType']) => Promise<T>,
   ): Promise<T> {
     return this.batches.withBatchCreationTransaction(workOrderId, action);
   }

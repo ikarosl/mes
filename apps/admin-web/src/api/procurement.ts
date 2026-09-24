@@ -9,6 +9,8 @@ import type {
   MaterialOption,
   MaterialVariantItem,
   PurchaseOrderQuery,
+  PurchaseExcessReceiptCandidateQuery,
+  PurchaseExcessReceiptCandidate,
   PurchaseOrderItem,
   PurchaseOrderDetail,
   CreatePurchaseOrderPayload,
@@ -19,6 +21,8 @@ import type {
   CreatePurchaseOrderSupplementPayload,
   PurchaseOrderCommandResult,
   ProcurementDemandCandidateQuery,
+  ProcurementDemandWorkOrder,
+  ProcurementDemandWorkOrderQuery,
   ProcurementDemandCandidate,
   ProcurementDemandResolution,
   RelatedPurchasesQuery,
@@ -31,14 +35,19 @@ import type {
   CorrectReceiptLinePayload,
   StartReceiptReviewPayload,
   InspectReceiptLinePayload,
-  TerminateReceiptScopePayload,
+  RejectReceiptLinePayload,
+  RevokeReceiptRejectionPayload,
   ConfirmSupplierReturnPayload,
   ProcurementReceiptCommandResult,
+  ConfirmReceiptAcceptancePayload,
+  ReceiptAcceptanceItem,
+  ReceiptAllocationCandidate,
   ProcurementInboundInspectionQuery,
   ProcurementInboundInspectionItem,
   PageQuery,
   ReceiptRevisionItem,
-  ReceiptScopeItem,
+  ReceiptRoundItem,
+  ReceiptAllocationItem,
   SupplierReturnItem,
   ReceiptInboundHistoryItem,
   QualityInboundCaseItem,
@@ -70,6 +79,17 @@ const command = <T = PurchaseOrderCommandResult>(
   });
 
 export const procurementApi = {
+  excessReceiptCandidates: (
+    purchaseOrderLineId: string,
+    params: PurchaseExcessReceiptCandidateQuery,
+    signal?: AbortSignal,
+  ): Promise<PageResult<PurchaseExcessReceiptCandidate>> =>
+    request({
+      url: `/procurement/purchase-order-lines/${purchaseOrderLineId}/excess-receipt-candidates`,
+      params,
+      signal,
+      skipErrorHandling: true,
+    }),
   listReceipts: (
     params: ProcurementReceiptQuery,
     signal?: AbortSignal,
@@ -109,18 +129,63 @@ export const procurementApi = {
     key: string,
   ): Promise<ProcurementReceiptCommandResult> =>
     command(`/procurement/receipt-lines/${id}/actions/inspect`, data, key),
-  terminateReceiptScope: (
+  acceptReceipt: (
     id: string,
-    data: TerminateReceiptScopePayload,
+    data: ConfirmReceiptAcceptancePayload,
     key: string,
   ): Promise<ProcurementReceiptCommandResult> =>
-    command(`/procurement/receipt-lines/${id}/actions/terminate-return`, data, key),
+    command(`/procurement/receipt-lines/${id}/actions/accept`, data, key),
+  receiptAcceptances: (
+    id: string,
+    params: PageQuery,
+    signal?: AbortSignal,
+  ): Promise<PageResult<ReceiptAcceptanceItem>> =>
+    request({
+      url: `/procurement/receipt-lines/${id}/acceptances`,
+      params,
+      signal,
+      skipErrorHandling: true,
+    }),
+  receiptAllocationCandidates: (
+    id: string,
+    params: PageQuery,
+    signal?: AbortSignal,
+  ): Promise<PageResult<ReceiptAllocationCandidate>> =>
+    request({
+      url: `/procurement/receipt-lines/${id}/allocation-candidates`,
+      params,
+      signal,
+      skipErrorHandling: true,
+    }),
+  revokeReceiptRejection: (
+    id: string,
+    body: RevokeReceiptRejectionPayload,
+    key: string,
+  ): Promise<ProcurementReceiptCommandResult> =>
+    command(`/procurement/receipt-lines/${id}/actions/revoke-rejection`, body, key),
+  rejectReceipt: (
+    id: string,
+    data: RejectReceiptLinePayload,
+    key: string,
+  ): Promise<ProcurementReceiptCommandResult> =>
+    command(`/procurement/receipt-lines/${id}/actions/reject`, data, key),
   confirmSupplierReturn: (
     id: string,
     data: ConfirmSupplierReturnPayload,
     key: string,
   ): Promise<ProcurementReceiptCommandResult> =>
     command(`/procurement/receipt-lines/${id}/actions/return`, data, key),
+  receiptRounds: (
+    id: string,
+    params: PageQuery,
+    signal?: AbortSignal,
+  ): Promise<PageResult<ReceiptRoundItem>> =>
+    request({
+      url: `/procurement/receipt-lines/${id}/rounds`,
+      params,
+      signal,
+      skipErrorHandling: true,
+    }),
   receiptRevisions: (
     id: string,
     params: PageQuery,
@@ -132,13 +197,13 @@ export const procurementApi = {
       signal,
       skipErrorHandling: true,
     }),
-  receiptScopes: (
+  receiptAllocations: (
     id: string,
     params: PageQuery,
     signal?: AbortSignal,
-  ): Promise<PageResult<ReceiptScopeItem>> =>
+  ): Promise<PageResult<ReceiptAllocationItem>> =>
     request({
-      url: `/procurement/receipt-lines/${id}/scopes`,
+      url: `/procurement/receipt-lines/${id}/allocations`,
       params,
       signal,
       skipErrorHandling: true,
@@ -271,19 +336,25 @@ export const procurementApi = {
     key: string,
   ): Promise<PurchaseOrderCommandResult> =>
     command(`/procurement/purchase-order-lines/${id}/supplements`, data, key),
+  demandWorkOrders: (
+    params: ProcurementDemandWorkOrderQuery,
+    signal?: AbortSignal,
+  ): Promise<PageResult<ProcurementDemandWorkOrder>> =>
+    request({ url: '/procurement/demand-work-orders', params, signal, skipErrorHandling: true }),
   demandCandidates: (
     params: ProcurementDemandCandidateQuery,
     signal?: AbortSignal,
   ): Promise<PageResult<ProcurementDemandCandidate>> =>
     request({ url: '/procurement/demand-candidates', params, signal, skipErrorHandling: true }),
   resolveDemands: (
+    workOrderId: string,
     demandIds: string[],
     signal?: AbortSignal,
   ): Promise<ProcurementDemandResolution[]> =>
     request({
       url: '/procurement/demand-candidates/resolve',
       method: 'POST',
-      data: { demandIds },
+      data: { workOrderId, demandIds },
       signal,
       skipErrorHandling: true,
     }),

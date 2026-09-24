@@ -15,20 +15,6 @@
         :closable="false"
         show-icon
       />
-      <el-alert
-        v-if="missingOrderConfiguration"
-        title="工单物料版本尚未配置完整，请先到工单管理的“物料版本配置”中保存，再重新打开本窗口。"
-        type="warning"
-        :closable="false"
-        show-icon
-      />
-      <el-alert
-        v-else-if="unavailableOrderVariant"
-        title="工单配置中有已停用或失效版本，当前不能生成新需求；请先处理版本可用性或工单配置。"
-        type="warning"
-        :closable="false"
-        show-icon
-      />
       <el-empty
         v-if="!loading && rows.length === 0"
         description="当前任务没有可配置的 BOM 物料"
@@ -63,7 +49,7 @@
                 v-model="split.materialVariantId"
                 filterable
                 placeholder="选择具体版本"
-                :disabled="row.orderType === 'mass_production' || submitting"
+                :disabled="submitting || unresolved"
               >
                 <el-option
                   v-for="variant in availableVariants(row, index)"
@@ -72,35 +58,16 @@
                   :label="variant.materialVariantCode"
                 />
               </el-select>
-              <el-input-number
-                v-if="row.orderType === 'research'"
-                v-model="split.quantity"
-                :min="1"
-                :step="1"
-                :precision="0"
-                controls-position="right"
-              />
-              <span
-                v-else
-                class="fixed-quantity"
+              <span class="fixed-quantity"
                 >{{ quantity(row.requiredQuantity) }} {{ row.unit }}</span
               >
-              <el-button
-                v-if="row.orderType === 'research' && row.splits.length > 1"
-                link
-                type="danger"
-                @click="removeSplit(row, index)"
-                >删除</el-button
-              >
             </div>
-            <el-button
-              v-if="row.orderType === 'research'"
-              link
-              type="primary"
-              :disabled="row.splits.length >= row.variants.length"
-              @click="addSplit(row)"
-              >+ 添加版本</el-button
-            >
+            <el-input
+              v-model="row.supplierHint"
+              maxlength="500"
+              placeholder="可选：供应商或采购要求提示，确认后随本任务冻结"
+              :disabled="submitting || unresolved"
+            />
             <div
               class="summary"
               :class="{ invalid: configuredTotal(row) !== Number(row.requiredQuantity) }"
@@ -127,12 +94,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, onScopeDispose, ref, watch } from 'vue';
 import type {
   MaterialDemandManagementRow,
   MaterialDemandManagementVariant,
   ProductionBatchItem,
 } from '@company/contracts';
+import { useTabsStore } from '../../../stores/tabs';
 import { productionApi } from '../../../api/production';
 import { loadBatchMaterialDemands } from '../composables/loadBatchMaterialDemands';
 import { useIdempotentIntent } from '../../../composables/idempotency/useIdempotentIntent';
@@ -152,33 +120,20 @@ let loadVersion = 0;
 const submitting = ref(false);
 const intent = useIdempotentIntent();
 
-const policyDescription = computed(() =>
-  rows.value[0]?.orderType === 'mass_production'
-    ? '批量生产任务继承工单的物料版本配置，数量按 BOM 单耗与任务计划量计算。需要换版时，请先处理原任务，再到工单管理配置。'
-    : '研发任务允许同一种基础物料拆分到多个版本；各版本数量合计必须等于该物料的系统需求量。',
-);
+const policyDescription =
+  '每种物料选择本任务使用的一个版本，数量按 BOM 单耗与任务计划量计算；确认后版本和供应商提示固定，其他任务可独立选版。';
+const unresolved = ref(false);
 const configuredTotal = (row: RowDraft): number =>
   row.splits.reduce((total, split) => total + (Number(split.quantity) || 0), 0);
-const missingOrderConfiguration = computed(() =>
-  rows.value.some((row) => row.orderType === 'mass_production' && !row.lockedMaterialVariantId),
-);
-const unavailableOrderVariant = computed(() =>
-  rows.value.some(
-    (row) =>
-      row.orderType === 'mass_production' &&
-      row.lockedMaterialVariantId &&
-      !row.variants.some((variant) => variant.materialVariantId === row.lockedMaterialVariantId),
-  ),
-);
 const canSubmit = computed(
   () =>
     !loading.value &&
-    !missingOrderConfiguration.value &&
-    !unavailableOrderVariant.value &&
     rows.value.length > 0 &&
     rows.value.every(
       (row) =>
-        row.splits.length > 0 &&
+        row.productMaterialId !== null &&
+        row.requiredQuantity !== null &&
+        row.splits.length === 1 &&
         row.splits.every(
           (split) =>
             split.materialVariantId && Number.isSafeInteger(split.quantity) && split.quantity > 0,
@@ -200,13 +155,8 @@ const availableVariants = (
   );
   return row.variants.filter((variant) => !selected.has(variant.materialVariantId));
 };
-const addSplit = (row: RowDraft): void => {
-  row.splits.push({ materialVariantId: '', quantity: 1 });
-};
-const removeSplit = (row: RowDraft, index: number): void => void row.splits.splice(index, 1);
-
 const load = async (): Promise<void> => {
-  if (!props.batch) return;
+  if (!props.batch || props.batch.orderType !== 'mass_production') return;
   const version = ++loadVersion;
   const batchId = props.batch.id;
   loading.value = true;
@@ -220,7 +170,7 @@ const load = async (): Promise<void> => {
         splits: [
           {
             materialVariantId: selected,
-            quantity: row.orderType === 'mass_production' ? Number(row.requiredQuantity) : 1,
+            quantity: Number(row.requiredQuantity),
           },
         ],
       };
@@ -236,8 +186,11 @@ const submit = async (): Promise<void> => {
   if (!props.batch || !canSubmit.value || submitting.value) return;
   const body = {
     requirements: rows.value.map((row) => ({
-      productMaterialId: row.productMaterialId,
-      splits: row.splits.map((split) => ({ ...split })),
+      productMaterialId: row.productMaterialId!,
+      splits: row.splits.map((split) => ({
+        ...split,
+        supplierHint: row.supplierHint?.trim() || null,
+      })),
     })),
   };
   submitting.value = true;
@@ -252,17 +205,20 @@ const submit = async (): Promise<void> => {
       (key) => productionApi.configureMaterialDemands(props.batch!.id, body, key),
     );
     intent.reset();
+    unresolved.value = false;
     EMessage.success('初始物料需求已完整生成');
     emit('update:visible', false);
     emit('configured');
   } catch (error) {
+    unresolved.value = intent.getStatus() !== 'idle';
     EMessage.error(error, '初始物料需求生成失败');
   } finally {
     submitting.value = false;
   }
 };
-const close = async (): Promise<void> => {
-  if (submitting.value) return;
+const close = async (): Promise<boolean> => {
+  if (!props.visible) return true;
+  if (submitting.value) return false;
   const status = intent.getStatus();
   if (status !== 'idle') {
     try {
@@ -272,12 +228,15 @@ const close = async (): Promise<void> => {
         { type: 'warning', confirmButtonText: '核对后放弃', cancelButtonText: '继续保留' },
       );
     } catch {
-      return;
+      return false;
     }
   }
   intent.reset();
+  unresolved.value = false;
   emit('update:visible', false);
+  return true;
 };
+onScopeDispose(useTabsStore().registerCloseGuard('production-tasks', () => close()));
 const handleVisibleChange = (visible: boolean): void => {
   if (visible) emit('update:visible', true);
   else void close();

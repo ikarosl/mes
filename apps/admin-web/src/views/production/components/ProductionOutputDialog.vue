@@ -193,14 +193,11 @@
               :column="3"
               border
             >
-              <el-descriptions-item label="质检计划内合格">{{
-                selectedInspection.inspected.availableQuantity
+              <el-descriptions-item label="本次检验建议量">{{
+                inspectionReleased ? selectedInspection.releasedQuantity : '未放行'
               }}</el-descriptions-item>
-              <el-descriptions-item label="质检计划外合格">{{
-                selectedInspection.inspected.extraQuantity
-              }}</el-descriptions-item>
-              <el-descriptions-item label="质检新增报废">{{
-                selectedInspection.inspected.additionalScrapQuantity
+              <el-descriptions-item label="清单累计可入库量">{{
+                draft.availableQuantity + draft.extraQuantity
               }}</el-descriptions-item>
               <el-descriptions-item
                 label="质检说明"
@@ -211,9 +208,16 @@
             <el-alert
               v-if="
                 selectedInspection &&
-                (!inspectionMatches || selectedInspection.id !== detail.latestInspectionId)
+                (!inspectionReleased || selectedInspection.id !== detail.latestInspectionId)
               "
-              title="送审前须引用最新质检记录，并由产线管理员将三个申报数量核对为该记录的实检数量。"
+              title="送审前须引用最新且明确放行的检验记录；待复检或不放行仍阻断送审。数量建议不限制定稿，报废由管理员另行核对。"
+              type="warning"
+              :closable="false"
+              class="notice"
+            />
+            <el-alert
+              v-if="quantityAdvice"
+              :title="quantityAdvice"
               type="warning"
               :closable="false"
               class="notice"
@@ -238,24 +242,21 @@
             :label="`质检记录（${detail.inspections.length}）`"
             name="inspections"
           >
-            <ProductionOutputInspectionPanel
-              :key="detail.id"
-              :detail="detail"
-              :inspection="inspection"
-              :declared="inspectionDeclared"
-              :declared-version="inspectionVersion"
-              :inspection-open="inspectionOpen"
-              :inspection-stale="inspectionStale"
-              :inspection-valid="inspectionValid"
-              :busy="busy"
-              :unresolved="unresolved"
-              :error="error"
-              :dirty="dirty"
-              :submitting="submitting"
-              @start="editor.startInspection"
-              @record="editor.recordInspection"
-              @discard="inspectionOpen = false"
-              @change="Object.assign(inspection, $event)"
+            <div class="inspection-toolbar">
+              <p class="muted">
+                检验登记、复检及放行在成品质检页办理；此处核对历史记录并引用最新依据。
+              </p>
+              <el-button
+                v-if="canViewFinishedInspections"
+                type="primary"
+                :disabled="busy || unresolved"
+                @click="openFinishedInspection"
+                >前往成品质检</el-button
+              >
+            </div>
+            <FinishedInspectionHistory
+              :records="detail.inspections"
+              :latest-inspection-id="detail.latestInspectionId"
             />
           </el-tab-pane>
           <el-tab-pane
@@ -368,6 +369,7 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import type { ProductionOutputRevision } from '@company/contracts';
 import {
+  PERMISSIONS,
   PRODUCTION_CLOSEOUT_MODE_LABELS,
   PRODUCTION_OUTPUT_STATUS_LABELS,
   PRODUCTION_OUTPUT_QUANTITY_MAX,
@@ -376,7 +378,8 @@ import { DialogWidth } from '../../../utils/dialog';
 import { formatQuantity as quantity } from '../production-status';
 import { useProductionOutput } from '../composables/useProductionOutput';
 import BatchCloseoutEvidence from './BatchCloseoutEvidence.vue';
-import ProductionOutputInspectionPanel from './ProductionOutputInspectionPanel.vue';
+import FinishedInspectionHistory from '../../quality/components/FinishedInspectionHistory.vue';
+import { useAuthStore } from '../../../stores/auth';
 import ProductionOutputRevisionPanel from './ProductionOutputRevisionPanel.vue';
 const props = defineProps<{ visible: boolean; batchId: string | null }>();
 const emit = defineEmits<{ 'update:visible': [boolean]; changed: []; 'open-closeout': [string] }>();
@@ -388,10 +391,6 @@ const editor = useProductionOutput(
 const {
   detail,
   draft,
-  inspection,
-  inspectionDeclared,
-  inspectionVersion,
-  inspectionOpen,
   loading,
   submitting,
   error,
@@ -403,12 +402,23 @@ const {
   locked,
   valid,
   canSubmit,
-  inspectionValid,
-  inspectionStale,
   selectedInspection,
-  inspectionMatches,
+  inspectionReleased,
+  quantityAdvice,
 } = editor;
 const router = useRouter();
+const auth = useAuthStore();
+const canViewFinishedInspections = computed(() =>
+  auth.can(PERMISSIONS.quality.finishedInspections.view),
+);
+async function openFinishedInspection() {
+  const batchId = props.batchId;
+  if (!batchId) return;
+  await editor.close();
+  await nextTick();
+  if (!props.visible)
+    await router.push({ name: 'quality-finished-inspections', query: { batchId } });
+}
 const activeTab = ref('draft'),
   selectedRevisionId = ref<string | null>(null);
 const selectedRevision = computed(
@@ -454,6 +464,13 @@ onBeforeUnmount(() => {
 });
 </script>
 <style scoped>
+.inspection-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
 .summary,
 .notice {
   margin-top: 12px;

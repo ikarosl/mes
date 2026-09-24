@@ -1,21 +1,17 @@
+import type { QualityInspectionMethod, QualityReleaseDecision } from './inspection.js';
 import type { PageQuery } from '../common.js';
 
 export type QualityInboundCaseType =
   'initial' | 'reinspection' | 'inspection_correction' | 'receipt_correction';
 export type QualityInboundCaseStatus = 'reviewing' | 'completed' | 'superseded';
-export type QualityInboundInspectionMethod = 'full' | 'sampling' | 'review_only';
-export type QualityInboundDisposition =
-  'release' | 'await_full_inspection' | 'await_decision' | 'return_all' | 'receipt_zero_confirmed';
+export type QualityInboundInspectionMethod = Exclude<QualityInspectionMethod, 'zero_confirmation'>;
 
 export interface QualityInboundInspectionInput {
   inspectionMethod: QualityInboundInspectionMethod;
-  qualifiedQuantity: number | null;
-  unqualifiedQuantity: number | null;
-  sampleQuantity: number | null;
-  sampleUnqualifiedQuantity: number | null;
-  removedDefectQuantity: number;
-  inboundApproved: boolean;
-  disposition: QualityInboundDisposition;
+  qualifiedQuantity: number;
+  unqualifiedQuantity: number;
+  releaseDecision: QualityReleaseDecision;
+  inspectedAt: string;
   remark: string;
   evidence: string;
 }
@@ -25,18 +21,15 @@ export interface QualityInboundInspectionItem {
   caseId: string;
   receiptLineId: string;
   receiptRevisionId: string;
-  coveredQuantity: string;
+  coveredQuantity: null;
   inspectionMethod: QualityInboundInspectionMethod;
-  qualifiedQuantity: string | null;
-  unqualifiedQuantity: string | null;
-  sampleQuantity: string | null;
-  sampleUnqualifiedQuantity: string | null;
-  removedDefectQuantity: string;
-  inboundApproved: boolean;
-  disposition: QualityInboundDisposition;
-  approvedQuantity: string;
-  qualityReturnQuantity: string;
-  undeterminedQuantity: string;
+  qualifiedQuantity: string;
+  unqualifiedQuantity: string;
+  inspectedQuantity: string;
+  releasedQuantity: null;
+  releaseDecision: QualityReleaseDecision;
+  previousRecordId: string | null;
+  inspectedAt: string;
   remark: string;
   evidence: string;
   createdBy: string;
@@ -47,8 +40,7 @@ export interface QualityInboundCaseItem {
   id: string;
   receiptLineId: string;
   receiptRevisionId: string;
-  sourceScopeId: string | null;
-  targetScopeId: string | null;
+  roundId: string;
   caseType: QualityInboundCaseType;
   status: QualityInboundCaseStatus;
   coveredQuantity: string;
@@ -56,7 +48,8 @@ export interface QualityInboundCaseItem {
   version: number;
   completedBy: string | null;
   completedAt: string | null;
-  supersededByReceiptRevisionId: string | null;
+  supersededByRoundId: string | null;
+  supersededReason: string | null;
   createdBy: string;
   createdAt: string;
   inspection: QualityInboundInspectionItem | null;

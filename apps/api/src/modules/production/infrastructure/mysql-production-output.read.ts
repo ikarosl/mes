@@ -2,15 +2,15 @@ import type { InventoryInboundCommand } from '../../inventory/public.js';
 import { createHash } from 'node:crypto';
 import { APPROVAL_ASSIGNEE_SOURCES } from '@company/constants';
 import { ProductionDomainError } from '../domain/production.errors.js';
+import type { QualityFinishedInspectionQuery } from '../../quality/public.js';
 import type {
   BatchCloseoutApprovalSnapshot,
   BatchCloseoutAction,
   ProductionOutputDetail,
-  ProductionOutputQuantities,
 } from '@company/contracts';
 import type { MysqlProductionCloseoutRepository } from './mysql-production-closeout.repository.js';
 import type { PoolConnection, RowDataPacket } from 'mysql2/promise';
-import type { ProductionOutputInspection, ProductionOutputRevision } from '@company/contracts';
+import type { ProductionOutputRevision } from '@company/contracts';
 import { toBeijingISOString } from '../../../common/time/date-time.js';
 import {
   readCloseoutApprovalSnapshot,
@@ -23,24 +23,6 @@ import {
   type CloseoutRow,
 } from './mysql-production-output.persistence.js';
 
-type InspectionRow = RowDataPacket & {
-  id: number;
-  closeout_id: number;
-  production_batch_id: number;
-  declared_version: number;
-  declared_available_quantity: string;
-  declared_extra_quantity: string;
-  declared_scrap_quantity: string;
-  available_quantity: string;
-  extra_quantity: string;
-  additional_scrap_quantity: string;
-  inspected_at: Date;
-  result_note: string;
-  evidence_reference: string;
-  previous_inspection_id: number | null;
-  created_by: number;
-  created_at: Date;
-};
 type RevisionRow = RowDataPacket & {
   id: number;
   closeout_id: number;
@@ -59,39 +41,6 @@ type RevisionRow = RowDataPacket & {
   created_by: number;
   created_at: Date;
 };
-export async function readOutputInspections(
-  db: PoolConnection,
-  closeoutId: number,
-  lock: boolean,
-): Promise<ProductionOutputInspection[]> {
-  const [rows] = await db.query<InspectionRow[]>(
-    `SELECT * FROM production_output_inspection WHERE closeout_id=? ORDER BY id${lock ? ' FOR SHARE' : ''}`,
-    [closeoutId],
-  );
-  return rows.map((row) => ({
-    id: String(row.id),
-    closeoutId: String(row.closeout_id),
-    batchId: String(row.production_batch_id),
-    declaredVersion: row.declared_version,
-    declared: {
-      availableQuantity: Number(row.declared_available_quantity),
-      extraQuantity: Number(row.declared_extra_quantity),
-      additionalScrapQuantity: Number(row.declared_scrap_quantity),
-    },
-    inspected: {
-      availableQuantity: Number(row.available_quantity),
-      extraQuantity: Number(row.extra_quantity),
-      additionalScrapQuantity: Number(row.additional_scrap_quantity),
-    },
-    inspectedAt: toBeijingISOString(row.inspected_at),
-    resultNote: row.result_note,
-    evidenceReference: row.evidence_reference,
-    previousInspectionId: nullableOutputId(row.previous_inspection_id),
-    createdBy: String(row.created_by),
-    createdByName: String(row.created_by),
-    createdAt: toBeijingISOString(row.created_at),
-  }));
-}
 export async function readOutputRevisions(
   db: PoolConnection,
   closeoutId: number,
@@ -139,9 +88,14 @@ export async function loadOutputState(
   lock: boolean,
   forFinalApproval = false,
   inventory: InventoryInboundCommand,
+  quality: QualityFinishedInspectionQuery,
 ): Promise<OutputState> {
   const closeout = await closeoutRepository.loadDetail(db, row, lock);
-  const inspections = await readOutputInspections(db, row.id, lock);
+  const inspections = await quality.readForCloseout(
+    String(row.id),
+    String(row.production_batch_id),
+    lock,
+  );
   const revisions = await readOutputRevisions(db, row.id, lock);
   const receipts = await inventory.readFinishedReceipts(String(row.production_batch_id), lock);
   const currentRevisionId = nullableOutputId(row.current_revision_id);
@@ -187,8 +141,10 @@ export async function loadOutputState(
   else {
     if (selectedInspection.id !== latestInspectionId)
       blockers.push('已有更新的检验记录，请核对并引用最新记录');
-    if (draft && !sameQuantities(draft, selectedInspection.inspected))
-      blockers.push('申报数量须与所引用检验记录的实际数量一致');
+    if (selectedInspection.releaseDecision === 'pending_reinspection')
+      blockers.push('当前检验待全检或复检，须完成检验后再结案');
+    else if (selectedInspection.releaseDecision !== 'released')
+      blockers.push('当前检验未放行，须取得明确放行结论后再结案');
   }
   if (!ownerEvidence.ownerId) blockers.push('工单未配置负责人');
   if (draft && base) {
@@ -252,17 +208,6 @@ export async function loadOutputState(
     },
   };
 }
-function sameQuantities(
-  left: ProductionOutputQuantities,
-  right: ProductionOutputQuantities,
-): boolean {
-  return (
-    left.availableQuantity === right.availableQuantity &&
-    left.extraQuantity === right.extraQuantity &&
-    left.additionalScrapQuantity === right.additionalScrapQuantity
-  );
-}
-
 export function snapshotOf(row: CloseoutRow, state: OutputState): BatchCloseoutApprovalSnapshot {
   const output = state.detail.draft;
   const inspection = state.detail.inspections.find(

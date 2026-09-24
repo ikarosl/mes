@@ -14,7 +14,6 @@ import { ProductionOutputService } from '../../application/production-output.ser
 import {
   SAVE_PRODUCTION_OUTPUT_SCOPE,
   REVIEW_OUTPUT_MATERIAL_SCOPE,
-  RECORD_OUTPUT_INSPECTION_SCOPE,
   SUBMIT_PRODUCTION_OUTPUT_SCOPE,
   BEGIN_OUTPUT_CORRECTION_SCOPE,
   CANCEL_OUTPUT_CORRECTION_SCOPE,
@@ -22,7 +21,6 @@ import {
 import {
   SaveProductionOutputDto,
   ReviewProductionOutputMaterialDto,
-  RecordProductionOutputInspectionDto,
   SubmitProductionOutputDto,
   BeginProductionOutputCorrectionDto,
 } from './dto/production-output.dto.js';
@@ -61,17 +59,6 @@ export class ProductionOutputController {
     @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
   ) {
     return this.service.saveDraft(batchId, body, context);
-  }
-  @Post('inspections')
-  @RequirePermission(PERMISSIONS.production.tasks.recordInspection)
-  @AuditInApplication()
-  @IdempotentEndpoint({ scope: RECORD_OUTPUT_INSPECTION_SCOPE })
-  recordInspection(
-    @Param() { batchId }: TerminationBatchParamDto,
-    @Body() body: RecordProductionOutputInspectionDto,
-    @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
-  ) {
-    return this.service.recordInspection(batchId, body, context);
   }
   @Post('submit')
   @RequirePermission(PERMISSIONS.production.tasks.manageOutput)

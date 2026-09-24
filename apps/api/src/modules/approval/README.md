@@ -2,14 +2,14 @@
 
 接入 Product 的 BOM 场景 `product.bom.approve`，以及 Production 的 `production.demand.correct`、`production.batch.closeout`。流程配置、申请、节点、待办和处理记录属于 Approval；Product 保有 BOM、送审冻结与永久锁定事实；Production 保有需求更正、逐项收尾和产出处置。工单审批尚未接入；站内消息通过独立 Notification 公开能力发布。
 
-批次结案的最后节点使用“业务关联人员 → 工单负责人”。流程保存来源规则，送审由 Production 在锁内解析具体负责人并保留工单来源证据，Approval 将其固化到本次节点；同一流程可处理不同负责人的工单。规则见[审批设计 §7](../../../../../docs/approval-design.md#7-业务关联人员分派)。统一结案产出清单与质检记录仍按路线图实施。
+批次结案的最后节点使用“业务关联人员 → 工单负责人”。流程保存来源规则，送审由 Production 在锁内解析具体负责人并保留工单来源证据，Approval 将其固化到本次节点；同一流程可处理不同负责人的工单。规则见[业务人员分派](docs/subject-integration.md#业务关联人员)。统一结案与产出清单已接入 Production，成品质检及放行由 Quality 所有；用户验收和正式测试仍见[路线图](../../../../../docs/roadmap.md)。
 
 ## 配置与操作
 
-1. 管理员进入 `/approval/flows`，为对应业务场景配置顺序节点，每级选择启用角色、指定用户或场景支持的业务关联人员，保存并发布；结案的最后节点必须为工单负责人，前面可配置管理节点，不强制两级。
-2. 产品页保存完整 BOM 后提交；生产任务需求总览中提交更正；批次收尾中处理全部事项、保存产出后提交。进入 `/approval/inbox` 查看待办或本人申请。
+1. 管理员为对应业务场景配置顺序节点，每级选择启用角色、指定用户或场景支持的业务关联人员，保存并发布；结案的最后节点必须为工单负责人，前面可配置管理节点，不强制两级。
+2. 产品页保存完整 BOM 后提交；生产任务需求总览中提交更正；批次收尾中处理全部事项、保存产出后提交。待办与本人申请分别按服务端授权范围读取。
 3. 当前节点的任一合格用户明确通过后进入下一级；末级通过与所属业务生效同事务。
-4. 任一级驳回结束申请；仅申请人可撤回待审申请。修改后从第一级重新提交，旧证据保留。
+4. 任一级驳回结束申请；仅申请人可撤回待审申请。在审改内容须先撤回或驳回，修改后从第一级新建申请，旧证据保留；撤回与最终批准在同一业务根锁下互斥。
 5. 节点无人可审时保留当前节点并显示提示；角色新增合格成员或原人员资格恢复后，自然进入其待办，无需重新分派。指定用户节点不会自动转给其他用户，申请人可撤回后按新流程重新提交。
 
 每个节点只有一条共享执行记录，不按候选人复制任务。角色节点固定角色身份并实时解析成员；指定用户节点固定用户身份；业务节点固定送审解析的用户身份。三者均要求当前账号有效，合并授权包含 `approval:decide`（支持既有通配匹配）；角色节点还须属于该有效角色。允许申请人自审、同一人逐级处理，但各级必须单独点击和记录。发布时验证角色／用户当前资格及业务来源规则；提交时连同业务解析人逐级检查当前合格人员，待办查询及处理时重新校验；新发布流程不改变在途申请。
@@ -34,45 +34,13 @@
 
 ## 模块与事务边界
 
-Product、Production 分别声明场景并注册类型化 handler，Approval Registry 仅负责装配能力，不存 SQL、任意回调地址或前端组件路径。ApprovalModule 依赖 Identity 和 Notification；ProductModule、ProductionModule 依赖 Approval 公开注册和提交端口，Approval 不反向导入业务模块。
-
-阅读场景与业务调用时，区分以下入口：
-
-| 入口 | 职责 |
-| --- | --- |
-| `ApprovalSubjectHandlerRegistry.register(handler)` | 启动时把处理器实例及其场景定义放入内存，不写数据库，也不执行审批 |
-| `Registry.listSceneDefinitions()` / `getSceneDefinition(code)` | 读取代码声明的场景定义，不包含流程配置状态 |
-| `Registry.getHandler(sceneCode, subjectType)` | 取得业务处理器实例，用于校验、冻结、恢复或最终生效 |
-| `ApprovalService.listScenes()` → `MysqlApprovalFlowRepository.listScenes()` | 管理页查询：合并 Registry 定义与数据库发布状态，保留尚未配置的场景 |
-
-`GET /scenes` 经 Controller、Service 到配置 Repository，再调用 `Registry.listSceneDefinitions()`；保存与发布流程才写配置表。BOM HTTP 入口 `submitBom()` 固定场景并鉴权后，调用 `ApprovalService.submit({ sceneCode, subjectId, expectedVersion }, audit)`，由通用 `MysqlApprovalRepository.submit()` 执行提交。`approve()` / `reject()` 共用 `decide()`：非末级通过只推进节点，末级通过调用 `finalizeApproval()`，驳回调用 `restoreAfterApprovalEnd()`；申请人撤回也调用恢复方法。
-
-配置聚合由 `ApprovalFlowRepository` / `MysqlApprovalFlowRepository` 负责；申请、节点和操作记录由 `ApprovalRepository` / `MysqlApprovalRepository` 负责。运行仓储在提交事务内调用配置仓储的 `lockPublishedFlow()` 固定选版，该内部协作只发生在 infrastructure，不向 application port 暴露连接类型。配置读取共用 `loadFlow()`；角色/用户配置校验与人员解析共用 `approval-assignees.ts`，资格只通过 Identity 公开能力取得，不越界查询 Identity 表；成功审计共用 `writeApprovalAudit()` 并继续经过平台事务审计 writer。
-
-通用提交先调用 `prepareForApproval()` 获取业务快照及其结构版本、`businessAssigneeResolutions`，校验来源与末级规则、解析资格后实例化业务人员，创建申请后调用 `bindApproval()`，以其返回值保存冻结后的 `subject_version`，不假设所有业务版本都加一。申请及绑定版本在同一事务内完成，提交后的证据及解析人员不改写。账号失效时仍保持 pending、派生 blocked；不重新解析当前工单、不回退给他人。详情区分来源、送审确定人员和实际操作者；待办、分页计数、决定与通知共用这一资格。详情读取只由 Approval 解码 JSON，再交给 handler 的 `readSnapshotForDisplay()` 校验本场景证据版本和结构、补充当前展示引用；BOM 物料解析归 Product。
-
-新增场景需由业务模块声明并注册 handler，提供独立鉴权且固定场景的业务提交入口，再复用通用 `submit()`。不得新增一份场景专属提交 SQL，也不开放让客户端自由指定场景的提交路由。`ApprovalSubjectType` 和 `ApprovalSubjectSnapshot` 明确区分 product、production_demand_correction、production_batch_closeout，管理端分别呈现 BOM、更正影响或逐项收尾结果；每个 handler 负责自己的证据结构校验。
-
-提交先由业务 handler 锁所属聚合根并校验受审内容，再固定发布版本、创建申请及全部节点（首级 pending，其余 waiting），业务模块绑定申请，所有核心落库及成功审计共用一个事务。后续操作先只读定位，再经业务公开 handler 锁并校验当前申请引用和冻结版本，再锁申请和节点。单节点最多一条实际决定受唯一约束保护；没有合格人员只派生 blocked 展示，不因查询写表。Product 的原生错误在 handler 转换为公开失败契约，不泄漏内部 domain 类。
-
-所有表结构见[数据库设计](docs/database.md)，BOM 字段与门禁见[Product](../product/docs/database.md)。已发布配置供历史读取，不被新草稿覆盖。材料名称按当前 ID 解析，不在证据内保存名称快照。
+场景声明、Handler 注册、受审证据版本、业务根锁序、绑定返回版本及负责人解析由[审批场景接入](docs/subject-integration.md)完整维护。Approval 不反向导入业务模块，也不越界读取或写入其表；数据库约束见[数据库设计](docs/database.md)。
 
 ## 开发验证与手工验收
 
-项目处于开发阶段，允许随时清空或重建数据库，不依赖现存业务数据，不保留兼容影子表。迁移 `202609100001-approval-bom-pilot` 拒绝已有旧任务锁定 BOM；这些数据没有人工审批证据，不能伪造为批准。迁移 `202609120001-approval-node-assignees` 追加角色/用户二选一约束，移除个人任务、分派轮次和重新分派权限，保留真实处理记录；执行时暂停相关 API，详见[迁移安全](../../../../../packages/database/docs/migration-safety.md)。原开发库可按统一初始化流程重建。
+初始化与演示数据使用[统一数据库入口](../../../../../ops/runbooks/database-initialization.md)，升级／回滚前置条件见[迁移安全](../../../../../packages/database/docs/migration-safety.md)。开发重置不得伪造不存在的人工审批证据。
 
-手工联调可使用独立库，例如 `easy_mes_approval_probe`。从仓库根执行以下命令，每条数据库命令都显式指定目标库；连接凭证与管理员配置仍从 `.env` 读取。`db:init` 会执行迁移、系统种子与管理员初始化，将目标库的管理员密码设置为 `.env` 中的配置值：
-
-```bash
-DB_NAME=easy_mes_approval_probe corepack pnpm db:init
-DB_NAME=easy_mes_approval_probe ALLOW_DEMO_SEED=1 DEMO_USER_PASSWORD='<至少 6 位的演示密码>' corepack pnpm db:seed:demo
-DB_NAME=easy_mes_approval_probe APP_PORT=3100 corepack pnpm --filter @company/api exec node dist/main.js
-APP_PORT=3100 corepack pnpm --filter @company/admin-web exec vite --host 0.0.0.0 --port 5174
-```
-
-源码修改后先执行 `corepack pnpm --filter @company/api build`。常规启动仍使用根 `dev:api/dev:admin`，其数据库必须已迁移至新结构。演示数据由统一种子生成，可自行新增成品体验送审；不依赖任何机器上已有的临时资料。
-
-相邻测试验证角色/指定用户二选一、字符串 ID、节点与版本命令、拒绝客户端授权字段、接口权限和实时资格解析。真实 MySQL 套件验证节点共享待办、动态成员及指定用户资格、分页/历史范围、单节点并发决定、事务回滚和迁移约束。前端完整类型检查包含组件测试，不得把单独 Vite 打包当作完整类型检查通过；验证边界见根[测试策略](../../../../../docs/testing-strategy.md)。
+相邻测试验证角色／指定用户／业务来源三选一、字符串 ID、节点与版本命令、拒绝客户端授权字段、接口权限和实时资格解析。真实 MySQL 套件验证节点共享待办、动态成员及指定用户资格、分页/历史范围、单节点并发决定、事务回滚和迁移约束。应用类型检查和构建排除相邻测试；测试类型使用对应应用的 `typecheck:test` 独立检查，不得把应用检查通过当作测试或用户验收通过；验证边界见根[测试策略](../../../../../docs/testing-strategy.md)。
 
 相邻后端测试通过 `corepack pnpm --filter @company/api test` 执行，测试类型使用 `corepack pnpm --filter @company/api typecheck:test` 检查。跨模块审批用例位于根 `tests/integration/approval`，BOM 字段移除迁移用例位于 `tests/integration/product`，均由现有 `corepack pnpm test:production:mysql` 入口执行；必须配置专用测试库，环境门禁见根[测试策略](../../../../../docs/testing-strategy.md)。
 

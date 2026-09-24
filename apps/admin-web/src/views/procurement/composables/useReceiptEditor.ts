@@ -70,7 +70,7 @@ export function useReceiptEditor(onSaved: (id: string) => void | Promise<void>) 
       if (!current.isCurrent()) return;
       order.value = result;
       rows.value = result.items
-        .filter((line) => line.status === 'open')
+        .filter((line) => line.status === 'open' && line.fulfillmentMode === 'new_arrival')
         .map((line) => ({
           key: ++sequence,
           line,
@@ -85,7 +85,7 @@ export function useReceiptEditor(onSaved: (id: string) => void | Promise<void>) 
       if (current.isCurrent()) loading.value = false;
     }
   };
-  const checkOrder = async (): Promise<boolean> => {
+  const checkOrder = async (beforeSubmit = false): Promise<boolean> => {
     const currentOrder = order.value;
     if (!currentOrder || !visible.value) return false;
     const current = read.begin(() => visible.value && order.value?.id === currentOrder.id);
@@ -93,8 +93,36 @@ export function useReceiptEditor(onSaved: (id: string) => void | Promise<void>) 
     try {
       const latest = await procurementApi.receiptOrderDetail(currentOrder.id, current.signal);
       if (!current.isCurrent()) return false;
-      stale.value = latest.version !== currentOrder.version || latest.status !== 'ordered';
-      return !stale.value;
+      const latestLines = new Map(latest.items.map((line) => [line.id, line]));
+      stale.value =
+        latest.version !== currentOrder.version ||
+        latest.status !== 'ordered' ||
+        rows.value.some((row) => {
+          const line = latestLines.get(row.line.id);
+          return (
+            !line ||
+            line.version !== row.line.version ||
+            line.status !== 'open' ||
+            line.fulfillmentMode !== 'new_arrival'
+          );
+        });
+      if (stale.value) return false;
+      let quantitiesChanged = false;
+      for (const row of rows.value) {
+        const line = latestLines.get(row.line.id);
+        if (!line) continue;
+        quantitiesChanged ||=
+          Number(line.quantities.receivedQuantity) !==
+            Number(row.line.quantities.receivedQuantity) ||
+          Number(line.quantities.inboundQuantity) !== Number(row.line.quantities.inboundQuantity);
+        row.line = line;
+      }
+      order.value = latest;
+      if (beforeSubmit && quantitiesChanged) {
+        EMessage.warning('累计已到货或已入库数量已更新，本次输入已保留。请核对后再次确认。');
+        return false;
+      }
+      return true;
     } catch (error) {
       if (current.isCurrent()) {
         stale.value = true;
@@ -104,6 +132,9 @@ export function useReceiptEditor(onSaved: (id: string) => void | Promise<void>) 
     } finally {
       if (current.isCurrent()) loading.value = false;
     }
+  };
+  const refreshQuantities = async (): Promise<void> => {
+    if (!command.locked.value) await checkOrder();
   };
   const dirty = computed(() =>
     Boolean(
@@ -185,7 +216,7 @@ export function useReceiptEditor(onSaved: (id: string) => void | Promise<void>) 
     else EMessage.warning('一次到货最多100条明细，请分次登记');
   };
   const confirm = async (): Promise<void> => {
-    if (!canConfirm.value || !(await checkOrder()) || !order.value) return;
+    if (!canConfirm.value || !(await checkOrder(true)) || !order.value) return;
     const target = order.value;
     const body: ConfirmProcurementReceiptPayload = {
       purchaseOrderId: target.id,
@@ -204,7 +235,7 @@ export function useReceiptEditor(onSaved: (id: string) => void | Promise<void>) 
     await command.run(
       { intentType: 'procurement.receipt.confirm', params: {}, query: {}, body },
       (key) => procurementApi.confirmReceipt(body, key),
-      '实际到货已登记，须经质检放行后由仓管确认入库',
+      '实际到货已登记，质检后由库管核对正式清单，再办理入库',
     );
   };
   const search = async (): Promise<void> => {
@@ -244,6 +275,7 @@ export function useReceiptEditor(onSaved: (id: string) => void | Promise<void>) 
     open,
     close,
     selectOrder,
+    refreshQuantities,
     reselect,
     split,
     confirm,

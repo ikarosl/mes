@@ -6,7 +6,6 @@ import { ProductionDomainError } from './production.errors.js';
 export const ADDITIONAL_MATERIAL_DEMAND_TYPES: readonly DemandType[] = [
   DEMAND_TYPE.manualAdditional,
   DEMAND_TYPE.scrapSupplement,
-  DEMAND_TYPE.materialLossSupplement,
 ];
 
 export const isAdditionalMaterialDemand = (type: DemandType): boolean =>

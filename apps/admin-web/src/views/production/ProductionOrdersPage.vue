@@ -230,17 +230,7 @@
               @click="openEdit(row)"
               >编辑</el-button
             >
-            <el-button
-              v-if="
-                row.orderType === 'mass_production' &&
-                (row.status === 'released' || row.status === 'doing')
-              "
-              link
-              type="primary"
-              :disabled="isRowPending(row.id)"
-              @click="openMaterialConfiguration(row)"
-              >物料版本配置</el-button
-            >
+
             <el-button
               link
               type="primary"
@@ -331,12 +321,6 @@
       @next-research-round="openNextResearchRound"
     />
 
-    <WorkOrderMaterialConfigurationDialog
-      v-model:visible="materialConfigurationVisible"
-      :work-order-id="materialConfigurationOrderId"
-      @saved="loadOrders"
-    />
-
     <WorkOrderTransitionDialog
       :visible="transitionDialogVisible"
       :mode="transitionMode"
@@ -379,7 +363,6 @@ import WorkOrderFormDialog from './components/WorkOrderFormDialog.vue';
 import type { WorkOrderFormValue } from './components/WorkOrderFormDialog.vue';
 import WorkOrderDetailDialog from './components/WorkOrderDetailDialog.vue';
 import WorkOrderTransitionDialog from './components/WorkOrderTransitionDialog.vue';
-import WorkOrderMaterialConfigurationDialog from './components/WorkOrderMaterialConfigurationDialog.vue';
 
 defineOptions({ name: 'ProductionOrdersPage' });
 
@@ -643,13 +626,6 @@ const hasMoreActions = (row: WorkOrderItem): boolean =>
   canCloseOrder(row) ||
   canCancelOrder(row) ||
   canStartNextResearchRound(row);
-
-const materialConfigurationVisible = ref(false);
-const materialConfigurationOrderId = ref<string | null>(null);
-const openMaterialConfiguration = (row: WorkOrderItem): void => {
-  materialConfigurationOrderId.value = row.id;
-  materialConfigurationVisible.value = true;
-};
 
 let hasActivated = false;
 onMounted(loadPageData);

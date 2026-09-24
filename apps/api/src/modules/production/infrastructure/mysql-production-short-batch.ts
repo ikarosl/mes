@@ -18,7 +18,19 @@ export const confirmedMaterialOutboundQuantitySql = (
 export const getConfirmedMaterialOutboundQuantity = async (
   db: Db,
   batchId: string,
+  lock = false,
 ): Promise<number> => {
+  if (lock) {
+    const [rows] = await db.query<(RowDataPacket & { outbound_number: string })[]>(
+      `SELECT detail.outbound_number
+       FROM outbound_detail detail
+       JOIN outbound_order outbound ON outbound.id=detail.outbound_id
+       WHERE outbound.production_batch_id=? AND outbound.status='completed'
+       ORDER BY detail.id FOR SHARE`,
+      [batchId],
+    );
+    return rows.reduce((total, row) => total + integerQuantity(row.outbound_number), 0);
+  }
   const [[row]] = await db.query<(RowDataPacket & { quantity: string })[]>(
     `SELECT ${confirmedMaterialOutboundQuantitySql('?')} quantity`,
     [batchId],
@@ -109,22 +121,23 @@ export const evaluateShortBatchStart = async (
       canStart: false,
       blockedReason: '短批授权不存在或已因物料需求计划变化而失效',
     };
-  if ((await getConfirmedMaterialOutboundQuantity(db, batchId)) <= 0)
+  if ((await getConfirmedMaterialOutboundQuantity(db, batchId, lockAuthorization)) <= 0)
     return {
       authorizationId: String(authorization.id),
       canStart: false,
       blockedReason: '短批开工前必须已发生确认领料',
     };
-  const [[violation]] = await db.query<(RowDataPacket & { count: number })[]>(
-    `SELECT COUNT(*) count
+  const [violations] = await db.query<(RowDataPacket & { id: number })[]>(
+    `SELECT demand.id
      FROM production_item_demand demand
      LEFT JOIN production_short_batch_authorization_detail detail
        ON detail.authorization_id=? AND detail.demand_id=demand.id
      WHERE demand.production_batch_id=? AND demand.business_status='active'
-       AND (detail.id IS NULL OR demand.remaining_number>detail.authorized_remaining_quantity)`,
+       AND (detail.id IS NULL OR demand.remaining_number>detail.authorized_remaining_quantity)
+     ORDER BY demand.id${lockAuthorization ? ' FOR SHARE' : ''}`,
     [authorization.id, batchId],
   );
-  if (Number(violation?.count ?? 0) > 0)
+  if (violations.length > 0)
     return {
       authorizationId: String(authorization.id),
       canStart: false,

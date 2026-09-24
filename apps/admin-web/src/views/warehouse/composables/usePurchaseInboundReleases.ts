@@ -16,10 +16,12 @@ interface SelectedRelease {
 }
 
 const sameBasis = (left: ProcurementInboundReleaseItem, right: ProcurementInboundReleaseItem) =>
+  left.roundId === right.roundId &&
+  left.roundVersion === right.roundVersion &&
   left.receiptLineVersion === right.receiptLineVersion &&
-  left.scopeVersion === right.scopeVersion &&
   left.receiptRevisionId === right.receiptRevisionId &&
   left.inspectionId === right.inspectionId &&
+  left.allocationId === right.allocationId &&
   left.approvedRemainingQuantity === right.approvedRemainingQuantity;
 
 /** 列表窗口与跨页已选独立；显式核对只替换同一范围依据，绝不换成拆分后的子范围。 */
@@ -86,11 +88,13 @@ export function usePurchaseInboundReleases(
     await search();
   };
   const isSelected = (id: string): boolean =>
-    selected.value.some((row) => row.source.scopeId === id);
+    selected.value.some((row) => row.source.allocationId === id);
   const toggle = (source: ProcurementInboundReleaseItem): void => {
     if (locked.value) return;
-    if (isSelected(source.scopeId)) {
-      selected.value = selected.value.filter((row) => row.source.scopeId !== source.scopeId);
+    if (isSelected(source.allocationId)) {
+      selected.value = selected.value.filter(
+        (row) => row.source.allocationId !== source.allocationId,
+      );
       return;
     }
     if (supplierId.value && source.supplierId !== supplierId.value) {
@@ -107,9 +111,9 @@ export function usePurchaseInboundReleases(
       error: '',
     });
   };
-  const remove = (scopeId: string): void => {
+  const remove = (allocationId: string): void => {
     if (!locked.value)
-      selected.value = selected.value.filter((row) => row.source.scopeId !== scopeId);
+      selected.value = selected.value.filter((row) => row.source.allocationId !== allocationId);
   };
   const validQuantities = (): boolean => {
     let valid = true;
@@ -127,22 +131,22 @@ export function usePurchaseInboundReleases(
   };
   const recheck = async (adopt = true): Promise<boolean> => {
     if (command.locked.value || !selected.value.length || checking.value) return false;
-    const ids = selected.value.map((row) => row.source.scopeId);
+    const ids = selected.value.map((row) => row.source.allocationId);
     const current = selectedRead.begin(
-      () => ids.join(',') === selected.value.map((row) => row.source.scopeId).join(','),
+      () => ids.join(',') === selected.value.map((row) => row.source.allocationId).join(','),
     );
     checking.value = true;
     checkError.value = '';
     try {
       const result = await procurementInboundsApi.releases(
-        { page: 1, pageSize: 100, scopeIds: ids },
+        { page: 1, pageSize: 100, allocationIds: ids },
         current.signal,
       );
       if (!current.isCurrent()) return false;
-      const sources = new Map(result.items.map((item) => [item.scopeId, item]));
+      const sources = new Map(result.items.map((item) => [item.allocationId, item]));
       let valid = true;
       for (const row of selected.value) {
-        const source = sources.get(row.source.scopeId);
+        const source = sources.get(row.source.allocationId);
         row.error = '';
         if (!source) {
           row.error = '该范围当前不可入库，请移除后从最新放行清单重新选择';
@@ -174,11 +178,12 @@ export function usePurchaseInboundReleases(
       remark: remark.value.trim() || null,
       details: selected.value.map(({ source, quantity }) => ({
         receiptLineId: source.receiptLineId,
+        roundId: source.roundId,
+        roundVersion: source.roundVersion,
         version: source.receiptLineVersion,
-        scopeId: source.scopeId,
-        scopeVersion: source.scopeVersion,
         receiptRevisionId: source.receiptRevisionId,
         inspectionId: source.inspectionId,
+        allocationId: source.allocationId,
         quantity: Number(quantity),
       })),
     };

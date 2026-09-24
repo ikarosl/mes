@@ -25,7 +25,7 @@ export const procurementInboundsApi = {
       url: '/procurement/inbound-releases',
       params: {
         ...params,
-        scopeIds: params.scopeIds?.length ? params.scopeIds.join(',') : undefined,
+        allocationIds: params.allocationIds?.length ? params.allocationIds.join(',') : undefined,
       },
       signal,
       skipErrorHandling: true,

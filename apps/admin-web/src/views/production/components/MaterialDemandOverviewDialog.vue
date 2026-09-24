@@ -241,7 +241,10 @@ const showPurchases = (id: string): void => {
   relatedVisible.value = true;
 };
 const purchaseFromDemand = async (id: string): Promise<void> => {
-  await router.push({ name: 'procurement-orders', query: { demandId: id } });
+  await router.push({
+    name: 'procurement-orders',
+    query: { demandId: id, workOrderId: props.batch?.workOrderId },
+  });
 };
 const groups = computed(() => groupMaterialDemandRows(props.demands));
 const expandedGroups = ref<string[]>([]);

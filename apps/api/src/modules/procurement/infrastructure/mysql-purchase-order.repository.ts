@@ -10,6 +10,9 @@ import type {
   CreatePurchaseOrderPayload,
   UpdatePurchaseOrderPayload,
   PurchaseOrderQuery,
+  PurchaseExcessReceiptCandidateQuery,
+  PurchaseExcessReceiptCandidate,
+  PageResult,
   RelatedPurchasesQuery,
   PurchaseOrderCommandResult,
   CreatePurchaseOrderSupplementPayload,
@@ -31,11 +34,13 @@ import {
   getPurchaseOrder,
   listRelatedPurchases,
 } from './queries/purchase-order.query.js';
+import { listExcessReceiptCandidates } from './queries/purchase-excess-receipts.query.js';
 import {
   type OrderRow,
   type OrderLineRow,
   orderError,
   readOrder,
+  requireDraft,
   readLines,
   readSourceIds,
   sortedIds,
@@ -43,6 +48,7 @@ import {
 } from './mysql-purchase-order.shared.js';
 import {
   requireSupplier,
+  requireSuppliers,
   requireSupplementEvidence,
   assertSources,
   insertOrder,
@@ -51,6 +57,7 @@ import {
   closeOrderLine,
   refreshOrderCompletion,
   auditOrder,
+  requireOrderWithoutReceiptFacts,
 } from './mysql-purchase-order.write.js';
 
 @Injectable()
@@ -70,6 +77,14 @@ export class MysqlPurchaseOrderRepository extends PurchaseOrderRepository {
   get(id: string) {
     return withTransaction(this.pool, (connection) => getPurchaseOrder(connection, id));
   }
+  excessReceiptCandidates(
+    id: string,
+    query: PurchaseExcessReceiptCandidateQuery & { page: number; pageSize: number },
+  ): Promise<PageResult<PurchaseExcessReceiptCandidate>> {
+    return withTransaction(this.pool, (connection) =>
+      listExcessReceiptCandidates(connection, id, query),
+    );
+  }
   related(query: RelatedPurchasesQuery & { page: number; pageSize: number }) {
     return listRelatedPurchases(this.pool, query);
   }
@@ -80,8 +95,11 @@ export class MysqlPurchaseOrderRepository extends PurchaseOrderRepository {
   ): Promise<PurchaseOrderCommandResult> {
     return withTransaction(this.pool, async (connection) => {
       const demands = await this.requireSources(payload.items);
-      assertSources(payload.items, demands);
-      await requireSupplier(connection, payload.supplierId);
+      assertSources(payload.items, demands, payload.workOrderId);
+      await requireSuppliers(
+        connection,
+        payload.items.map((line) => line.supplierId),
+      );
       const id = await insertOrder(connection, payload, context);
       const refs = await this.requireMaterials(payload.items);
       await insertLines(connection, id, payload.items, refs, context);
@@ -99,14 +117,17 @@ export class MysqlPurchaseOrderRepository extends PurchaseOrderRepository {
       const locator = await this.locate(connection, id);
       requireDraft(locator.order);
       if (!locator.order.supplement_reason)
-        assertSources(payload.items, await this.requireSources(payload.items));
+        assertSources(payload.items, await this.requireSources(payload.items), payload.workOrderId);
       const order = await this.lockRoots(connection, id, locator.lines);
       requireDraft(order);
       requireOptimisticUpdate(
         order.version === payload.version && order.version === locator.order.version ? 1 : 0,
       );
-      await requireSupplier(connection, payload.supplierId);
       const lines = await readLines(connection, id, true);
+      await requireSuppliers(
+        connection,
+        payload.items.map((line) => line.supplierId),
+      );
       const sources = await readSourceIds(
         connection,
         lines.map((line) => String(line.id)),
@@ -117,7 +138,7 @@ export class MysqlPurchaseOrderRepository extends PurchaseOrderRepository {
             lineId: string;
             evidence: string;
             receiptLineId?: string | null;
-            supplierReturnId?: string | null;
+            allocationId?: string | null;
           }
         | undefined;
       if (order.supplement_reason) {
@@ -128,7 +149,9 @@ export class MysqlPurchaseOrderRepository extends PurchaseOrderRepository {
           !next ||
           lines.length !== 1 ||
           payload.items.length !== 1 ||
-          String(order.supplier_id) !== payload.supplierId ||
+          (order.work_order_id === null ? null : String(order.work_order_id)) !==
+            payload.workOrderId ||
+          String(line.supplier_id) !== next.supplierId ||
           order.source_type !== payload.sourceType ||
           String(line.item_id) !== next.itemId ||
           String(line.material_variant_id) !== next.materialVariantId ||
@@ -141,17 +164,17 @@ export class MysqlPurchaseOrderRepository extends PurchaseOrderRepository {
           evidence: line.supplement_evidence!,
           receiptLineId:
             line.origin_receipt_line_id === null ? null : String(line.origin_receipt_line_id),
-          supplierReturnId:
-            line.origin_supplier_return_id === null ? null : String(line.origin_supplier_return_id),
+          allocationId:
+            line.origin_allocation_id === null ? null : String(line.origin_allocation_id),
         };
       }
       const refs = await this.requireMaterials(payload.items);
       await deleteDraftLines(connection, lines);
       await insertLines(connection, id, payload.items, refs, context, origin);
       await connection.execute(
-        'UPDATE purchase_order SET supplier_id=?,source_type=?,remark=?,version=version+1,updated_by=? WHERE id=? AND version=?',
+        'UPDATE procurement_order SET work_order_id=?,source_type=?,remark=?,version=version+1,updated_by=? WHERE id=? AND version=?',
         [
-          payload.supplierId,
+          payload.workOrderId,
           payload.sourceType,
           payload.remark ?? null,
           context.actorId,
@@ -177,25 +200,36 @@ export class MysqlPurchaseOrderRepository extends PurchaseOrderRepository {
       requireDraft(locator.order);
       const candidateLines = toDraftLines(locator.lines, locator.sources);
       if (!locator.order.supplement_reason)
-        assertSources(candidateLines, await this.requireSources(candidateLines));
+        assertSources(
+          candidateLines,
+          await this.requireSources(candidateLines),
+          locator.order.work_order_id === null ? null : String(locator.order.work_order_id),
+        );
       const order = await this.lockRoots(connection, id, locator.lines);
       requireDraft(order);
       requireOptimisticUpdate(
         order.version === version && order.version === locator.order.version ? 1 : 0,
       );
-      await requireSupplier(connection, String(order.supplier_id));
       const lines = await readLines(connection, id, true);
       const sources = await readSourceIds(
         connection,
         lines.map((line) => String(line.id)),
         true,
       );
-      if (JSON.stringify(toDraftLines(lines, sources)) !== JSON.stringify(candidateLines))
+      if (
+        order.work_order_id !== locator.order.work_order_id ||
+        order.source_type !== locator.order.source_type ||
+        JSON.stringify(toDraftLines(lines, sources)) !== JSON.stringify(candidateLines)
+      )
         return orderError(
           '采购草稿来源已变化，请刷新后重新下单',
           PROCUREMENT_ERROR_CODES.procurementSourceUnavailable,
         );
       if (!lines.length) return orderError('采购单没有物料行');
+      await requireSuppliers(
+        connection,
+        lines.map((line) => String(line.supplier_id)),
+      );
       if (order.supplement_reason)
         await this.assertSupplementOrigins(connection, order, lines, sources);
       const refs = await this.requireMaterials(candidateLines);
@@ -206,20 +240,18 @@ export class MysqlPurchaseOrderRepository extends PurchaseOrderRepository {
             String(line.origin_order_line_id),
             order.supplement_reason,
             line.origin_receipt_line_id === null ? undefined : String(line.origin_receipt_line_id),
-            line.origin_supplier_return_id === null
-              ? undefined
-              : String(line.origin_supplier_return_id),
+            line.origin_allocation_id === null ? undefined : String(line.origin_allocation_id),
           );
       const refMap = new Map(refs.map((ref) => [`${ref.itemId}:${ref.materialVariantId}`, ref]));
       for (const line of lines) {
         const ref = refMap.get(`${line.item_id}:${line.material_variant_id}`)!;
         await connection.execute(
-          `UPDATE purchase_order_line SET item_code_snapshot=?,material_variant_code_snapshot=?,unit_snapshot=?,status='open',version=version+1,updated_by=? WHERE id=?`,
+          `UPDATE procurement_order_line SET item_code_snapshot=?,material_variant_code_snapshot=?,unit_snapshot=?,status='open',version=version+1,updated_by=? WHERE id=?`,
           [ref.itemCode, ref.materialVariantCode, ref.unit, context.actorId, line.id],
         );
       }
       await connection.execute(
-        "UPDATE purchase_order SET status='ordered',ordered_by=?,ordered_at=NOW(),version=version+1,updated_by=? WHERE id=?",
+        "UPDATE procurement_order SET status='ordered',ordered_by=?,ordered_at=NOW(),version=version+1,updated_by=? WHERE id=?",
         [context.actorId, context.actorId, id],
       );
       await auditOrder(
@@ -241,7 +273,7 @@ export class MysqlPurchaseOrderRepository extends PurchaseOrderRepository {
     context: CommandContext,
   ): Promise<PurchaseOrderCommandResult> {
     return withTransaction(this.pool, async (connection) => {
-      const order = await readOrder(connection, id, true);
+      const order = await this.lockRoots(connection, id, await readLines(connection, id));
       requireOptimisticUpdate(order.version === version ? 1 : 0);
       if (order.status !== 'draft' && order.status !== 'ordered')
         return orderError('仅草稿或已下单采购可以取消', PROCUREMENT_ERROR_CODES.purchaseOrderState);
@@ -251,17 +283,12 @@ export class MysqlPurchaseOrderRepository extends PurchaseOrderRepository {
           '已有人工结束的采购行，请逐行处理剩余采购',
           PROCUREMENT_ERROR_CODES.purchaseOrderState,
         );
-      const [[arrival]] = await connection.query<RowDataPacket[]>(
-        'SELECT id FROM procurement_receipt_line WHERE purchase_order_id=? ORDER BY id LIMIT 1 FOR SHARE',
-        [id],
-      );
-      if (arrival)
-        return orderError('已有确认到货，采购不能取消，请逐行人工结束', 'PURCHASE_ORDER_STATE');
+      await requireOrderWithoutReceiptFacts(connection, id);
       for (const line of lines)
         if (line.status === 'draft' || line.status === 'open')
           await closeOrderLine(connection, order, line, 'cancelled', reason, context);
       await connection.execute(
-        "UPDATE purchase_order SET status='cancelled',version=version+1,updated_by=? WHERE id=?",
+        "UPDATE procurement_order SET status='cancelled',version=version+1,updated_by=? WHERE id=?",
         [context.actorId, id],
       );
       await auditOrder(
@@ -283,7 +310,7 @@ export class MysqlPurchaseOrderRepository extends PurchaseOrderRepository {
   ): Promise<PurchaseOrderCommandResult> {
     return withTransaction(this.pool, async (connection) => {
       const orderId = await this.locateLineOrder(connection, id);
-      const order = await readOrder(connection, orderId, true);
+      const order = await this.lockRoots(connection, orderId, await readLines(connection, orderId));
       if (order.status !== 'ordered')
         return orderError('仅已下单采购行可以结束', PROCUREMENT_ERROR_CODES.purchaseOrderState);
       const lines = await readLines(connection, orderId, true);
@@ -336,17 +363,18 @@ export class MysqlPurchaseOrderRepository extends PurchaseOrderRepository {
           '补单必须追溯已经正式下单的采购行',
           PROCUREMENT_ERROR_CODES.purchaseOrderState,
         );
-      await requireSupplier(connection, String(original.supplier_id));
       const lines = await readLines(connection, originalId, true);
       const line = lines.find((row) => String(row.id) === id);
       if (!line) return orderError('原采购行不存在', PROCUREMENT_ERROR_CODES.purchaseOrderNotFound);
+      await requireSupplier(connection, String(line.supplier_id));
       const sources = await readSourceIds(connection, [id], true);
       const draft: CreatePurchaseOrderPayload = {
-        supplierId: String(original.supplier_id),
+        workOrderId: original.work_order_id === null ? null : String(original.work_order_id),
         sourceType: original.source_type,
         remark: payload.remark ?? null,
         items: [
           {
+            supplierId: String(line.supplier_id),
             itemId: String(line.item_id),
             materialVariantId: String(line.material_variant_id),
             plannedQuantity: payload.plannedQuantity,
@@ -361,13 +389,13 @@ export class MysqlPurchaseOrderRepository extends PurchaseOrderRepository {
         id,
         payload.supplementReason,
         payload.originReceiptLineId,
-        payload.originSupplierReturnId,
+        payload.originAllocationId,
       );
       await insertLines(connection, orderId, draft.items, refs, context, {
         lineId: id,
         evidence: payload.supplementEvidence,
         receiptLineId: payload.originReceiptLineId ?? null,
-        supplierReturnId: payload.originSupplierReturnId ?? null,
+        allocationId: payload.originAllocationId ?? null,
       });
       await auditOrder(connection, context, 'purchase-order.supplement', orderId, null, {
         originOrderLineId: id,
@@ -411,7 +439,7 @@ export class MysqlPurchaseOrderRepository extends PurchaseOrderRepository {
   }
   private async locateLineOrder(connection: PoolConnection, id: string): Promise<string> {
     const [[row]] = await connection.query<(RowDataPacket & { purchase_order_id: number })[]>(
-      'SELECT purchase_order_id FROM purchase_order_line WHERE id=?',
+      'SELECT purchase_order_id FROM procurement_order_line WHERE id=?',
       [id],
     );
     if (!row) return orderError('采购行不存在', PROCUREMENT_ERROR_CODES.purchaseOrderNotFound);
@@ -428,7 +456,7 @@ export class MysqlPurchaseOrderRepository extends PurchaseOrderRepository {
     let originalOrderIds: string[] = [];
     if (origins.length) {
       const [rows] = await connection.query<(RowDataPacket & { purchase_order_id: number })[]>(
-        `SELECT purchase_order_id FROM purchase_order_line WHERE id IN (${idsSql(origins)})`,
+        `SELECT purchase_order_id FROM procurement_order_line WHERE id IN (${idsSql(origins)})`,
         origins,
       );
       originalOrderIds = rows.map((row) => String(row.purchase_order_id));
@@ -449,15 +477,20 @@ export class MysqlPurchaseOrderRepository extends PurchaseOrderRepository {
     for (const line of lines) {
       if (line.origin_order_line_id === null) return orderError('补单缺少原采购行');
       const [[origin]] = await connection.query<
-        (OrderLineRow & { supplier_id: number; source_type: string; ordered_at: Date | null })[]
+        (OrderLineRow & {
+          work_order_id: number | null;
+          source_type: string;
+          ordered_at: Date | null;
+        })[]
       >(
-        `SELECT l.*,o.supplier_id,o.source_type,o.ordered_at FROM purchase_order_line l JOIN purchase_order o ON o.id=l.purchase_order_id WHERE l.id=? FOR SHARE`,
+        `SELECT l.*,o.work_order_id,o.source_type,o.ordered_at FROM procurement_order_line l JOIN procurement_order o ON o.id=l.purchase_order_id WHERE l.id=? FOR SHARE`,
         [line.origin_order_line_id],
       );
       if (
         !origin ||
         !origin.ordered_at ||
-        String(origin.supplier_id) !== String(order.supplier_id) ||
+        String(origin.supplier_id) !== String(line.supplier_id) ||
+        origin.work_order_id !== order.work_order_id ||
         origin.source_type !== order.source_type ||
         String(origin.item_id) !== String(line.item_id) ||
         String(origin.material_variant_id) !== String(line.material_variant_id)
@@ -472,15 +505,12 @@ export class MysqlPurchaseOrderRepository extends PurchaseOrderRepository {
     }
   }
 }
-const requireDraft = (order: OrderRow) => {
-  if (order.status !== 'draft')
-    orderError('只有采购草稿可以修改或下单', PROCUREMENT_ERROR_CODES.purchaseOrderState);
-};
 const toDraftLines = (
   lines: OrderLineRow[],
   sources: Map<string, string[]>,
 ): PurchaseOrderDraftLine[] =>
   lines.map((line) => ({
+    supplierId: String(line.supplier_id),
     itemId: String(line.item_id),
     materialVariantId: String(line.material_variant_id),
     plannedQuantity: Number(line.planned_quantity),

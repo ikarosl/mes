@@ -2,6 +2,7 @@ import { ref } from 'vue';
 import type {
   ProcurementInboundInspectionItem,
   ProcurementInboundInspectionQuery,
+  ReceiptRoundStatus,
 } from '@company/contracts';
 import { procurementApi } from '../../../api/procurement';
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
@@ -9,6 +10,7 @@ import { usePageActivationRefresh } from '../../../composables/requests/usePageA
 import { EMessage } from '../../../utils/message';
 export function useInboundInspectionsList() {
   const keyword = ref(''),
+    roundStatus = ref<ReceiptRoundStatus | ''>(''),
     status = ref<NonNullable<ProcurementInboundInspectionQuery['status']> | ''>(''),
     rows = ref<ProcurementInboundInspectionItem[]>([]),
     page = ref(1),
@@ -27,6 +29,7 @@ export function useInboundInspectionsList() {
         {
           keyword: keyword.value.trim() || undefined,
           status: status.value || undefined,
+          roundStatus: roundStatus.value || undefined,
           page: page.value,
           pageSize: pageSize.value,
         },
@@ -49,6 +52,7 @@ export function useInboundInspectionsList() {
   const reset = async (): Promise<void> => {
     keyword.value = '';
     status.value = '';
+    roundStatus.value = '';
     await search();
   };
   const changePage = async (value: number): Promise<void> => {
@@ -63,6 +67,7 @@ export function useInboundInspectionsList() {
   return {
     keyword,
     status,
+    roundStatus,
     rows,
     page,
     pageSize,

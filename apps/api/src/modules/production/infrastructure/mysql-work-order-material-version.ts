@@ -4,6 +4,7 @@ import { ProductionDomainError } from '../domain/production.errors.js';
 
 export type LockedWorkOrderMaterialPolicy = {
   workOrderId: string;
+  productionBatchId: string;
   orderType: WorkOrderType;
 };
 
@@ -22,33 +23,23 @@ export async function lockWorkOrderForBatch(
     [identity.work_order_id],
   );
   if (!order) throw new ProductionDomainError('NOT_FOUND', '生产工单不存在');
-  return { workOrderId: String(order.id), orderType: order.order_type };
+  return { workOrderId: String(order.id), orderType: order.order_type, productionBatchId };
 }
 
-/** 批量单只校验已保存的工单选版，禁止需求或补料隐式创建配置。 */
-export async function requireWorkOrderMaterialVariant(
+/** 所有后续需求只引用本任务初配冻结的版本。研发无统一版本锁。 */
+export async function requireTaskMaterialVariant(
   db: PoolConnection,
   policy: LockedWorkOrderMaterialPolicy,
   materialId: string | number,
   materialVariantId: string | number,
-  _actorId: string,
 ): Promise<void> {
   if (policy.orderType === 'research') return;
-  const [[choice]] = await db.query<(RowDataPacket & { material_variant_id: number })[]>(
-    `SELECT material_variant_id FROM work_order_material_versions
-      WHERE work_order_id=? AND material_id=? FOR UPDATE`,
-    [policy.workOrderId, materialId],
+  const [[choice]] = await db.query<(RowDataPacket & { locked_material_variant_id: number })[]>(
+    `SELECT locked_material_variant_id FROM production_material_requirement_basis
+      WHERE production_batch_id=? AND material_id=? FOR SHARE`,
+    [policy.productionBatchId, materialId],
   );
-  if (choice) {
-    if (String(choice.material_variant_id) !== String(materialVariantId))
-      throw new ProductionDomainError(
-        'INVALID_INPUT',
-        '所选版本与工单物料配置不一致，请重新加载；任务及补料必须使用工单配置版本',
-      );
-    return;
-  }
-  throw new ProductionDomainError(
-    'INVALID_STATE',
-    '请先在工单管理中完整配置物料版本，再生成任务需求',
-  );
+  if (!choice) throw new ProductionDomainError('INVALID_STATE', '请先确认本任务的完整初始需求');
+  if (String(choice.locked_material_variant_id) !== String(materialVariantId))
+    throw new ProductionDomainError('INVALID_INPUT', '所选版本与本任务初始需求锁定版本不一致');
 }

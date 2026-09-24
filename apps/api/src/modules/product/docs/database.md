@@ -12,7 +12,7 @@ BOM 单位用量使用 `INT`；`chk_integer_storage_product_materials` 限制其
 
 职责：统一维护物料和成品分类，不再创建第二套库存分类表。
 
-分类仍由 Product 模块所有。`products.category_id`、`materials.category_id` 及分类自身的 `parent_id` 均引用这张表；API 路径 `/product/categories`、权限和公开 `ProductCategory` 契约不随物理表名改变。
+分类仍由 Product 模块所有。旧临时决策中“移除父子层级”的目标与当前树结构缺少明确取代关系，保留为[冲突 CO-01](../../../../../../docs/documentation-conflicts.md#co-01)，当前结构不等于已裁决撤回该目标。`products.category_id`、`materials.category_id` 及分类自身的 `parent_id` 均引用这张表；API 路径 `/product/categories`、权限和公开 `ProductCategory` 契约不随物理表名改变。
 
 | 字段            | 类型              | 说明                                            |
 | --------------- | ----------------- | ----------------------------------------------- |
@@ -111,7 +111,7 @@ products.default_route_id → process_routes → process_route_steps
 
 ### 3. `product_materials`
 
-职责：维护成品的统一 BOM 明细，是生产需求基础生成的唯一 BOM 数据源。
+职责：维护成品的统一 BOM 明细，是批量生产需求基础生成的唯一 BOM 数据源。
 
 | 字段                  | 类型              | 说明                           |
 | --------------------- | ----------------- | ------------------------------ |
@@ -139,7 +139,7 @@ products.default_route_id → process_routes → process_route_steps
 
 - `product_id` 指向成品表；成品 ID 与物料 ID 可以数值相同，不再保留自引用不等式。
 - `material_id` 指向 `materials.id`；需要精确库存版本时由 Production 在需求或物流事实中选择 `material_variant_id`。
-- `production_item_demand` 必须保存 `product_material_id` 和 BOM 数量、单位快照；批次追溯统一依靠精确版本及库存批次引用，不配置 BOM 追溯开关。
+- 批量 `production_item_demand` 必须保存 `product_material_id` 和 BOM 数量、单位快照；研发不依赖 BOM，四个 BOM 专属字段为空，仍保存真实物料、版本、单位和需求数量；批次追溯统一依靠精确版本及库存批次引用，不配置 BOM 追溯开关。
 - BOM 最后一级审批通过时，`products.bom_locked_at` 与审批终态同事务写入；此后本表所有新增、修改、删除、停用、恢复和批量替换操作均拒绝。
 - 任务取消、需求完成或库存归零不能解除锁定。原则性用料变化必须新建产品和编码。
 - 锁定前修改 BOM 不得回写已经生成的生产需求。
@@ -147,7 +147,7 @@ products.default_route_id → process_routes → process_route_steps
 
 #### 单版本 BOM 锁定事实
 
-审批业务边界见 [ADR-0006](../../../../../../docs/adr/0006-approval-workflow-boundaries.md)。本次只接入 BOM，工单审批仍未实施。
+审批接入由[业务规则](product-rules.md#bom-命令与审批)维护，选择理由见 [ADR-0006](../../../../../../docs/adr/0006-approval-workflow-boundaries.md)。Product 只接入 BOM，工单审批仍未实施。
 
 这两个既有表在 BOM 锁定中的白话分工是：
 
@@ -157,7 +157,7 @@ products.default_route_id → process_routes → process_route_steps
 正式规则：
 
 1. 系统不建立 BOM 版本头、版本行或当前版本指针；同一个 `products.id` 只有一份有效 BOM 定义。
-2. BOM 末级批准、申请结束及写入 `products.bom_locked_at/bom_locked_by` 必须处于同一事务。生产任务只校验已有批准事实并冻结路线工序快照。
+2. BOM 末级批准、申请结束及写入 `products.bom_locked_at/bom_locked_by` 必须处于同一事务。批量任务校验已有批准事实并冻结路线工序快照；研发只校验成品资格。
 3. 锁定事实只允许从“未锁定”写成“已锁定”，没有解锁命令。任务取消、需求完成、库存归零或所有路线停用均不能清空锁定事实。
 4. 批准后 `bom_locked_by` 与 `bom_locked_at` 必须同时非空，记录最后一级实际处理人。没有审批证据的旧锁定数据须按开发约定重置。
 5. 已锁定产品拒绝 BOM 行新增、修改、删除、停用、恢复和批量替换。产品确需发生原则性用料变化时，管理员新建产品和编码，再复制并重新复核 BOM 与路线。
@@ -165,14 +165,14 @@ products.default_route_id → process_routes → process_route_steps
 
 #### BOM 审批接入结构
 
-`202609100001-approval-bom-pilot` 追加以下字段与约束。审批运行表见 [Approval 数据库设计](../../approval/docs/database.md)。
+成品审批状态、聚合版本及申请引用如下，和前述成品身份字段共同组成当前 `products` 结构。审批运行表见 [Approval 数据库设计](../../approval/docs/database.md)。
 
 | `products` 字段 | 类型 | 语义 |
 | --- | --- | --- |
-| 新增 `bom_status` | `VARCHAR(30) NOT NULL DEFAULT 'draft'` | `draft/pending_approval/approved`，独立于成品启停 |
-| 新增 `bom_approval_instance_id` | `BIGINT UNSIGNED NULL` | 当前送审或最终批准的申请 FK `approval_instances.id` |
-| 新增 `version` | `INT NOT NULL DEFAULT 0` | 聚合乐观锁，不是 BOM 业务版本 |
-| 既有 `bom_locked_at/by` | 保留原类型 | 由最终 BOM 批准写入永久锁定事实，操作人是最后一级实际批准人 |
+| `bom_status` | `VARCHAR(30) NOT NULL DEFAULT 'draft'` | `draft/pending_approval/approved`，独立于成品启停 |
+| `bom_approval_instance_id` | `BIGINT UNSIGNED NULL` | 当前送审或最终批准的申请 FK `approval_instances.id` |
+| `version` | `INT NOT NULL DEFAULT 0` | 聚合乐观锁，不是 BOM 业务版本 |
+| `bom_locked_at/by` | 同成品字段表 | 由最终 BOM 批准写入永久锁定事实，操作人是最后一级实际批准人 |
 
 CHECK：`version >= 0`；`draft` 时申请关联和锁定字段均为空；`pending_approval` 时申请关联非空、锁定字段为空；`approved` 时申请关联、锁定时间和操作人均非空。索引 `bom_approval_instance_id`；外键仅保证申请存在，Product 与 Approval 同事务验证申请场景、对象类型、`subject_id`、状态及业务关联相符。完整各级人员从审批事实查询，不把最后一人误当全部审批人员。
 
@@ -182,7 +182,7 @@ BOM 替换命令必须包含客户端读取的 `version` 与完整 `items`；锁
 
 提交时校验客户端期望版本，写待审批及申请关联并递增 `version`；申请保存提交冻结后的版本。非末级审批不改 Product。最终批准核对当前申请和冻结版本，检查 BOM 资格后写 `approved` 与锁定事实并递增版本。驳回或撤回清空当前申请关联、恢复 `draft` 并递增版本；旧申请和证据保留在 Approval，不复用旧申请。
 
-已批准产品的名称等原本允许修改的展示字段仍遵守既有主数据规则；BOM 原则性变更继续新建成品编码。后续创建任务只校验批准及当前业务资格，不再触发首次锁定。单一 `product_materials` 结构保留，不增加版本头、版本行、`bom_revision` 或名称影子表。改表只能追加 migration；开发环境可重置，不把既有任务锁定回填成不存在的人工审批。
+已批准产品的名称等原本允许修改的展示字段仍遵守既有主数据规则；BOM 原则性变更继续新建成品编码。后续创建批量任务只校验批准及当前业务资格，不再触发首次锁定。单一 `product_materials` 结构保留，不增加版本头、版本行、`bom_revision` 或名称影子表。改表只能追加 migration；开发环境可重置，不把既有任务锁定回填成不存在的人工审批。
 
 ---
 
@@ -274,8 +274,7 @@ BOM 替换命令必须包含客户端读取的 `version` 与完整 `items`；锁
 ## 2.5 路线与 BOM 的边界
 
 当前模型不再建立 `route_step_materials`。`process_route_steps` 只保存路线工序顺序、负责人、SOP
-和规则快照；物料消耗统一来自产品级 `product_materials`，生产批次在创建时冻结完整 BOM，随后由
-Production 一次完整配置全部 BOM 行的精确 `material_variant_id`。任何按工序绑定 BOM、按路线步骤推导需求
+和规则快照；物料消耗统一来自产品级 `product_materials`，批量任务由 Production 一次完整确认全部 BOM 行的精确 `material_variant_id` 并冻结本任务配置；研发不依赖 BOM。任何按工序绑定 BOM、按路线步骤推导需求
 或以工序范围筛选补料的语义均已删除，不得恢复旁路表。
 
 ## 2.6 `material_variants`
@@ -293,7 +292,7 @@ Production 一次完整配置全部 BOM 行的精确 `material_variant_id`。任
 | `status`              | `TINYINT`         | `1` 启用、`0` 停用                 |
 | `is_deleted`          | `TINYINT`         | 软删除标记                         |
 
-当前实现中，同一基础物料的启用、未删除版本构成候选集合；停用只阻止新选择，不改变需求、批次、分配、出入库、退料、
+生产新选版使用同一基础物料的启用、未删除版本；停用只阻止生产新选择，不改变需求、批次、分配、出入库、退料、
 报废、盘点及库存流水中已冻结的版本快照。跨模块只能通过 Product 的 `MaterialVariantQuery` 读取候选，
 不得直接查询本表。
 
@@ -303,7 +302,7 @@ Production 一次完整配置全部 BOM 行的精确 `material_variant_id`。任
 
 物料版本约束：`UNIQUE (material_id, major_version, minor_version)`、`UNIQUE (variant_code)`、`UNIQUE (id, material_id)`；版本编码由基础物料编码与大小版本生成。版本表同样保存完整主数据审计字段与备注，身份字段创建后不可修改。不同基础物料可以具有相同大小版本号。
 
-BOM 只选择基础物料，不能固定大小版本。版本候选不等于管理员已经认可替代：Production 按工单类型决定是否允许选择另一版本，详见[工单物料版本规则](../../production/docs/database/work-orders-and-batches.md)。已停用版本继续用于历史查询，但不允许新增需求选择。
+BOM 只选择基础物料，不能固定大小版本。版本候选不等于管理员已经认可替代：Production 按任务类型决定是否允许选择另一版本：批量同任务锁版，研发按每次需求选版，详见[工单物料版本规则](../../production/docs/database/work-orders-and-batches.md)。已停用版本继续用于历史查询，但不允许新增需求选择。
 
 ## 3. 数据库实施与应用适配边界
 
@@ -311,11 +310,11 @@ BOM 只选择基础物料，不能固定大小版本。版本候选不等于管�
 
 拆表迁移仅接受空业务表，遇到既有成品、物料版本、路线或工单时在任何结构改动前拒绝执行，应重置开发库后从第一条 migration 重建。回滚同样只接受空业务表。不得修改已执行 migration，不设置双写或影子表。
 
-本设计是目标 schema 的权威定义；现有 API、DTO、查询适配器与页面仍需按[roadmap](../../../../../../docs/roadmap.md)完成适配后才能连接新结构提供完整业务操作。
+迁移执行条件见[迁移安全](../../../../../../packages/database/docs/migration-safety.md)；待验收和未完成事项见[路线图](../../../../../../docs/roadmap.md)。
 
 ### 物料名称的跨模块展示读取
 
-Product 向 Production 与 Inventory 的 `infrastructure/queries/` 开放只读 `materials.id` 与 `materials.material_name`，登记于根 `scripts/api-data-ownership.mjs`。改动这些字段时须检查登记调用方。名称表示当前称呼，历史引用也按稳定 ID 解析，不过滤停用或软删除；禁止物理删除被引用物料。权限、状态、版本可用性及写入资格仍通过 Product 公共能力校验。改名审批尚未实现，见根 roadmap。
+Product 向 Production、Procurement 与 Inventory 的 `infrastructure/queries/` 开放只读 `materials.id` 与 `materials.material_name`，登记于根 `scripts/api-data-ownership.mjs`。改动这些字段时须检查登记调用方。名称表示当前称呼，历史引用也按稳定 ID 解析，不过滤停用或软删除；禁止物理删除被引用物料。权限、状态、版本可用性及写入资格仍通过 Product 公共能力校验。改名审批尚未实现，见根 roadmap。
 
 所有路线步骤均须报工，不设置是否报工字段；工序检验规则仍独立保存。
 

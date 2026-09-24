@@ -1,229 +1,160 @@
 <template>
-  <div>
+  <el-form
+    label-width="160px"
+    :disabled="disabled"
+  >
+    <el-form-item label="发起时申报数量">{{ coveredQuantity }} {{ unit }}（仅供核对）</el-form-item>
+    <el-form-item
+      label="检验方式"
+      required
+    >
+      <el-radio-group
+        :model-value="model.inspectionMethod"
+        @change="changeMethod"
+      >
+        <el-radio
+          v-for="method in QUALITY_INBOUND_METHODS"
+          :key="method"
+          :value="method"
+          >{{ QUALITY_INSPECTION_METHOD_LABELS[method] }}</el-radio
+        >
+      </el-radio-group>
+    </el-form-item>
+    <el-form-item
+      :label="model.inspectionMethod === 'sampling' ? '样本合格数' : '合格数'"
+      required
+    >
+      <el-input-number
+        v-model="model.qualifiedQuantity"
+        :min="0"
+        :max="PURCHASE_ORDER_MAX_QUANTITY"
+        :precision="0"
+        controls-position="right"
+      />
+    </el-form-item>
+    <el-form-item
+      :label="model.inspectionMethod === 'sampling' ? '样本不合格数' : '不合格数'"
+      required
+    >
+      <el-input-number
+        v-model="model.unqualifiedQuantity"
+        :min="0"
+        :max="PURCHASE_ORDER_MAX_QUANTITY"
+        :precision="0"
+        controls-position="right"
+      />
+    </el-form-item>
+    <el-form-item
+      label="放行结论"
+      required
+    >
+      <el-select
+        v-model="model.releaseDecision"
+        placeholder="核对数量后选择结论"
+      >
+        <el-option
+          v-for="decision in QUALITY_RELEASE_DECISIONS"
+          :key="decision"
+          :value="decision"
+          :label="QUALITY_RELEASE_DECISION_LABELS[decision]"
+        />
+      </el-select>
+    </el-form-item>
     <el-alert
-      v-if="coveredQuantity === 0"
-      title="本次实收更正范围为零，仍须由质检核实真实情况并留存说明和凭据；不产生放行量。"
+      v-if="preview"
       type="info"
       :closable="false"
       class="notice"
-    />
-    <el-form
-      label-width="130px"
-      :disabled="disabled"
     >
-      <el-form-item label="本次覆盖量">{{ coveredQuantity }} {{ unit }}</el-form-item>
-      <el-form-item
-        label="检验方式"
-        required
-      >
-        <el-radio-group
-          v-if="coveredQuantity > 0"
-          :model-value="model.inspectionMethod"
-          @change="changeMethod"
-          ><el-radio value="full">{{ QUALITY_INBOUND_METHOD_LABELS.full }}</el-radio
-          ><el-radio value="sampling">{{
-            QUALITY_INBOUND_METHOD_LABELS.sampling
-          }}</el-radio></el-radio-group
-        >
-        <span v-else>{{ QUALITY_INBOUND_METHOD_LABELS.review_only }}</span>
-      </el-form-item>
-      <template v-if="coveredQuantity > 0 && model.inspectionMethod === 'full'">
-        <el-form-item
-          label="实际合格量"
-          required
-          ><el-input-number
-            :model-value="model.qualifiedQuantity ?? undefined"
-            :precision="0"
-            :min="0"
-            :max="coveredQuantity"
-            controls-position="right"
-            @update:model-value="model.qualifiedQuantity = $event ?? null"
-        /></el-form-item>
-        <el-form-item
-          label="实际不合格量"
-          required
-          ><el-input-number
-            :model-value="model.unqualifiedQuantity ?? undefined"
-            :precision="0"
-            :min="0"
-            :max="coveredQuantity"
-            controls-position="right"
-            @update:model-value="model.unqualifiedQuantity = $event ?? null"
-          /><span class="hint">两项合计须等于覆盖量</span></el-form-item
-        >
-      </template>
-      <template v-if="coveredQuantity > 0 && model.inspectionMethod === 'sampling'">
-        <el-form-item
-          label="实际样本量"
-          required
-          ><el-input-number
-            :model-value="model.sampleQuantity ?? undefined"
-            :precision="0"
-            :min="1"
-            :max="coveredQuantity"
-            controls-position="right"
-            @update:model-value="model.sampleQuantity = $event ?? null"
-          /><span class="hint">抽样比例 {{ sampleRatio }}</span></el-form-item
-        >
-        <el-form-item
-          label="样本内不合格量"
-          required
-          ><el-input-number
-            :model-value="model.sampleUnqualifiedQuantity ?? undefined"
-            :precision="0"
-            :min="0"
-            :max="model.sampleQuantity ?? coveredQuantity"
-            controls-position="right"
-            @update:model-value="model.sampleUnqualifiedQuantity = $event ?? null"
-        /></el-form-item>
-      </template>
-      <template v-if="coveredQuantity > 0">
-        <el-form-item
-          label="实际剔除不良量"
-          required
-          ><el-input-number
-            v-model="model.removedDefectQuantity"
-            :precision="0"
-            :min="0"
-            :max="coveredQuantity"
-            controls-position="right"
-        /></el-form-item>
-        <el-form-item
-          label="是否批准入库"
-          required
-          ><el-radio-group
-            v-model="approvalChoice"
-            @change="approvalChanged"
-            ><el-radio :value="true">明确批准</el-radio
-            ><el-radio :value="false">不批准</el-radio></el-radio-group
-          ></el-form-item
-        >
-        <el-form-item
-          label="后续处置"
-          required
-          ><el-select v-model="model.disposition"
-            ><el-option
-              v-for="value in dispositions"
-              :key="value"
-              :value="value"
-              :label="QUALITY_INBOUND_DISPOSITION_LABELS[value]" /></el-select
-        ></el-form-item>
-        <p class="hint">
-          检验记录和放行不会自动入库；样本不合格比例不推算整批报废量。放行前必须剔除已知不良，实际放行额度由服务端核验。
-        </p>
-      </template>
-      <el-form-item
-        label="检验结论说明"
-        required
-        ><el-input
-          v-model="model.remark"
-          type="textarea"
-          :rows="3"
-          :maxlength="QUALITY_INBOUND_TEXT_MAX_LENGTH"
-          show-word-limit
-      /></el-form-item>
-      <el-form-item
-        label="凭据编号 / 位置"
-        required
-        ><el-input
-          v-model="model.evidence"
-          type="textarea"
-          :rows="2"
-          :maxlength="QUALITY_INBOUND_TEXT_MAX_LENGTH"
-          show-word-limit
-      /></el-form-item>
-    </el-form>
-  </div>
+      {{ model.inspectionMethod === 'sampling' ? '本次抽检数量' : '实际检查总数' }}：{{
+        preview.inspectedQuantity
+      }}。
+      {{
+        model.inspectionMethod === 'sampling'
+          ? '样本结果用于判断整批实物，样本数量不等于整批数量。'
+          : '检查数量与原申报不同，在库管定稿时核对。'
+      }}
+      库管负责核实整批数量并确认正式清单；本次结果不自动入库或退回。
+    </el-alert>
+    <el-form-item
+      label="线下检验时间"
+      required
+    >
+      <el-date-picker
+        v-model="model.inspectedAt"
+        type="datetime"
+        value-format="YYYY-MM-DDTHH:mm:ssZ"
+      />
+    </el-form-item>
+    <el-form-item
+      label="检验结论说明"
+      required
+      ><el-input
+        v-model="model.remark"
+        type="textarea"
+        :rows="3"
+        :maxlength="QUALITY_INBOUND_TEXT_MAX_LENGTH"
+        show-word-limit
+    /></el-form-item>
+    <el-form-item
+      label="凭据编号 / 位置"
+      required
+      ><el-input
+        v-model="model.evidence"
+        type="textarea"
+        :rows="2"
+        :maxlength="QUALITY_INBOUND_TEXT_MAX_LENGTH"
+        show-word-limit
+    /></el-form-item>
+  </el-form>
 </template>
-
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, watch } from 'vue';
+import {
+  QUALITY_INBOUND_METHODS,
+  QUALITY_INSPECTION_METHOD_LABELS,
+  QUALITY_RELEASE_DECISIONS,
+  QUALITY_RELEASE_DECISION_LABELS,
+  QUALITY_INBOUND_TEXT_MAX_LENGTH,
+  PURCHASE_ORDER_MAX_QUANTITY,
+} from '@company/constants';
 import type { QualityInboundInspectionInput } from '@company/contracts';
 import {
-  QUALITY_INBOUND_METHOD_LABELS,
-  QUALITY_INBOUND_DISPOSITION_LABELS,
-  QUALITY_INBOUND_TEXT_MAX_LENGTH,
-} from '@company/constants';
-const model = defineModel<QualityInboundInspectionInput>({ required: true });
-const props = defineProps<{
-  coveredQuantity: number;
-  unit: string;
-  disabled: boolean;
-  caseId: string;
-}>();
+  inboundInspectionInput,
+  inboundInspectionPreview,
+  type InboundInspectionDraft,
+} from '../../quality/inbound-inspection';
+const model = defineModel<InboundInspectionDraft>({ required: true });
+defineProps<{ coveredQuantity: number; unit: string; disabled: boolean; caseId: string }>();
 const emit = defineEmits<{ valid: [boolean] }>();
-const approvalChoice = ref<boolean>();
-const dispositions = ['release', 'await_full_inspection', 'await_decision', 'return_all'] as const;
-const sampleRatio = computed(() =>
-  props.coveredQuantity > 0 && model.value.sampleQuantity !== null
-    ? `${((model.value.sampleQuantity / props.coveredQuantity) * 100).toFixed(2)}%`
-    : '—',
-);
-const changeMethod = (value: string | number | boolean | undefined): void => {
-  if (value !== 'full' && value !== 'sampling') return;
-  model.value.inspectionMethod = value;
-  model.value.qualifiedQuantity = null;
-  model.value.unqualifiedQuantity = null;
-  model.value.sampleQuantity = null;
-  model.value.sampleUnqualifiedQuantity = null;
-  model.value.removedDefectQuantity = 0;
-  model.value.inboundApproved = false;
-  approvalChoice.value = undefined;
-  model.value.disposition = 'await_decision';
+const preview = computed(() => inboundInspectionPreview(model.value));
+const valid = computed(() => inboundInspectionInput(model.value) !== null);
+const changeMethod = (value: string | number | boolean | undefined) => {
+  if (!QUALITY_INBOUND_METHODS.includes(value as QualityInboundInspectionInput['inspectionMethod']))
+    return;
+  model.value.inspectionMethod = value as QualityInboundInspectionInput['inspectionMethod'];
+  model.value.qualifiedQuantity = undefined;
+  model.value.unqualifiedQuantity = undefined;
+  model.value.releaseDecision = undefined;
 };
-const approvalChanged = (): void => {
-  model.value.inboundApproved = approvalChoice.value === true;
-};
-const integer = (value: number | null): boolean =>
-  value !== null && Number.isInteger(value) && value >= 0;
-const valid = computed(() => {
-  const input = model.value;
-  if (!input.remark.trim() || !input.evidence.trim()) return false;
-  if (props.coveredQuantity === 0)
-    return (
-      input.inspectionMethod === 'review_only' && input.disposition === 'receipt_zero_confirmed'
-    );
-  if (
-    approvalChoice.value === undefined ||
-    (input.disposition === 'release') !== input.inboundApproved
-  )
-    return false;
-  if (!integer(input.removedDefectQuantity) || input.removedDefectQuantity > props.coveredQuantity)
-    return false;
-  if (input.inspectionMethod === 'full')
-    return (
-      integer(input.qualifiedQuantity) &&
-      integer(input.unqualifiedQuantity) &&
-      Number(input.qualifiedQuantity) + Number(input.unqualifiedQuantity) === props.coveredQuantity
-    );
-  return (
-    integer(input.sampleQuantity) &&
-    Number(input.sampleQuantity) > 0 &&
-    Number(input.sampleQuantity) <= props.coveredQuantity &&
-    integer(input.sampleUnqualifiedQuantity) &&
-    Number(input.sampleUnqualifiedQuantity) <= Number(input.sampleQuantity)
-  );
-});
-watch(valid, (value) => emit('valid', value), { immediate: true });
 watch(
-  () => [props.caseId, model.value],
+  () => [model.value.qualifiedQuantity, model.value.unqualifiedQuantity],
   () => {
-    approvalChoice.value = undefined;
+    model.value.releaseDecision = undefined;
   },
 );
+watch(valid, (value) => emit('valid', value), { immediate: true });
 </script>
-
 <style scoped>
-.notice {
-  margin-bottom: 16px;
-}
 .hint {
   margin-left: 12px;
   color: #6b7280;
   font-size: 13px;
-  line-height: 1.7;
+}
+.notice {
+  margin: 12px 0 20px;
 }
 .el-select {
-  width: 240px;
+  width: 280px;
 }
 </style>

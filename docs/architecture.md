@@ -1,217 +1,85 @@
 # Easy MES Next 架构规范
 
-本文是项目代码架构与模块边界的唯一基准。数据库公共规则以 `database-conventions.md` 为准，业务表设计由各 API 模块就近维护；HTTP 接口以
-`api-conventions.md` 为准，编码细节以 `coding-standards.md` 为准；管理端规则以
-`../apps/admin-web/docs/` 为准。
+本文维护模块划分、依赖、数据所有权和跨模块事务规则。产品范围见[产品范围](product-scope.md)，数据库、HTTP、编码和前端细节分别由对应规范维护。
 
 ## 1. 架构风格与当前范围
 
-项目采用“模块化单体 + 端口适配器”。一个 NestJS API 进程承载当前模块，不拆微服务，不为
-完整 MES 预建空模块。
-
-当前正式范围：
-
-- Identity/System：认证、RBAC、操作日志和管理端权限基础设施。
-- Product：产品分类、产品主数据、产品物料、技术文件、工序和工艺路线。
-- Approval：BOM、生产需求更正和批次收尾场景的顺序节点配置（角色、指定用户或业务关联人员）、申请、节点共享待办与决定；业务生效由各所有者 handler 执行，角色成员实时解析，业务人员在送审时冻结且资格实时核验，工单下达审批尚未接入。
-- Notification：通用站内消息、固定收件集合、本人已读及提交后空钩子，Approval 为首个调用方。
-- Production：生产工单、批次、工序报工追溯、需求纠错和逐项收尾，以及依赖的物料需求、分配、领料和生产退料。更正申请、收尾草稿、行动、线下质检记录及批准产出版本由 Production 所有，Approval 只通过公开处理器协作，不直接修改 Production 表。
-- Inventory：现有库存批次、唯一库存流水与余额投影、外购及成品入库整表、现有物料库存盘点；Production 通过公开能力完成库存操作。
-- Procurement：供应商名称目录、按需求／独立备料采购、来源映射、采购关闭事实、到货与实收修订、未入库实物范围及实际退供应商；编排检验及入库，不写生产需求或库存表。
-- Quality：本期外购来料初检、复核办理及不可变检验结论，通过公开能力核验真实放行依据，不接管 Production 结案质检。
-
-通用 Inventory（其他出入库、报废）、完整在线 Quality 和 Traceability（全流程追溯）仍须后续明确范围后追加，不得仅凭已有 UI 原型提前实现。当前盘点仅覆盖现有 `item_batch × stock_status` 账本，退料仅覆盖已确认生产领料并固定释放到公共可用库存。
+项目采用模块化单体与端口适配器，一个 NestJS API 进程承载业务；不为完整 MES 预建空模块，不提前拆微服务。各模块入口见[文档索引](README.md#应用与模块)，已实现、待实施及未批准范围分别见[产品范围](product-scope.md)与[路线图](roadmap.md)。
 
 ## 2. 模块与功能的划分
 
-独立业务模块应同时具备多数条件：独立业务术语、独立规则和状态、明确数据所有权、少量公开
-能力以及独立测试价值。不能因为只有一张表、一个页面或文件过长就建立模块。
+独立模块应具备独立业务语言、规则与状态、明确数据所有权、少量公开能力及独立测试价值。共享业务语言、所有权和事务的功能留在同一模块，按变化原因拆 Controller、Service、Port 和 Adapter；一张表、一个页面或文件过长都不是建模块的充分理由。
 
-共享同一业务语言、数据所有权和事务的能力保留在同一模块，按功能拆分 Controller、Service、
-Port 和 Adapter。当前 Product 保持一个 NestJS 模块，内部划分 technical-file、catalog、
-process-step 和 process-route；只有工艺能力出现独立生命周期、团队所有权或大量外部调用时才
-提取 ProcessModule。
+Product 的目录、技术文件、工序和路线仍属于同一模块。只有工艺能力形成独立生命周期、所有权或大量外部调用时才评估提取；Production 与 Inventory 的分工见[生产职责](../apps/api/src/modules/production/docs/module-boundaries.md)。
 
-Production 保有工单任务、生产执行、需求履约和结案产出资格；Inventory 拥有批次、账本、入库及盘点，见[Production 内部职责](../apps/api/src/modules/production/docs/module-boundaries.md)和[Inventory](../apps/api/src/modules/inventory/README.md)。生产单据与库存操作复用同池事务，出库／履约仍原子提交，不把不同来源的报废合并为通用写入口。
-
-采购一期遵守[采购业务设计](procurement-inbound-design.md)与 [ADR-0013](adr/0013-procurement-source-and-stock-boundaries.md)，逐表所有权、公开契约与事务见[技术设计](procurement-inbound-technical-design.md)。当前 Procurement 通过 Production／Product 公开能力核验采购资格，并在同池事务内编排 Quality 与 Inventory；到货、复核和范围属于采购入库前实物处理，库存只由仓管实际确认生成。用户验收与后置事项见[路线图](roadmap.md)，不增加第二库存账本或双写。
-
-`common` 仅存放真正跨模块且不含业务知识的能力，例如审计上下文、HTTP 安全装饰器和时间格式。
-`common` 不拥有业务表，也不得成为绕过模块边界的万能目录。`operation_logs` 是项目级平台审计
-基础设施，不归属 `common` 或任何业务模块（见 §4）。common 对模块边界规则的唯一豁免是审计写入：
-`common/audit/transactional-audit-writer`
-是写 `operation_logs` 的唯一合法咽喉，任何模块在自身事务 executor 内直接调用它追加成功审计，
-不经过目标模块 public 能力转发（见 §4 与 §6）。
-
-HTTP 幂等也是跨业务模块的平台能力：`common/idempotency` 只定义协议无关的
-`IdempotencyExecutor` 调用契约，不拥有表、不实现事务；MySQL 适配器统一放在
-`infrastructure/idempotency`（`mysql-idempotency.executor`、`idempotency-housekeeping.service`、
-`IdempotencyKeyGuard` 与平台 module，见 §4 数据所有权）。`http_idempotency_records` 的 migration
-（`202608050001-http-idempotency-records`）已追加，平台表写入口已限定 executor 与 housekeeping；
-业务代码不注册直通实现，未启用端点收到幂等键一律返回 `400 IDEMPOTENCY_NOT_SUPPORTED`，不静默放行。
-命令上下文与幂等能力分离：`CommandContext` 仅承载 actor/requestId/IP/User-Agent；只有已声明并验收的
-application 用例接收 `IdempotentCommandContext`。幂等键不得进入 application port 或 Repository，Service
-调用业务 Repository 前必须收窄回 `CommandContext`。启用范围由各模块 scope 常量和 Controller 装饰器定义，并汇总在幂等专题；新增命令仍须逐一登记 scope、完整结果 codec 和闭环验证。采购正式测试集按用户黑盒及 UI 验收后的明确通知安排。
-具体实施边界见 [`idempotency.md`](../apps/api/docs/idempotency.md)。
+`common` 只放跨模块且不含业务知识的抽象与工具，不拥有业务表。审计 Writer 是下节明确登记的例外；HTTP 幂等抽象放 `common/idempotency`，MySQL 实现与装配放 `infrastructure/idempotency`，不能把 `common` 变成绕过模块边界的入口。
 
 ## 3. 模块内部依赖
 
 ```text
 presentation -> application -> domain
 infrastructure -> application ports + domain
-domain -> 纯 TypeScript，不依赖 NestJS、MySQL、HTTP、存储 SDK
 ```
 
-| 来源层         | 可以依赖                                     | 禁止依赖                                              |
-| -------------- | -------------------------------------------- | ----------------------------------------------------- |
-| domain         | 本模块 domain、纯共享契约                    | application、presentation、infrastructure、框架和 SDK |
-| application    | 本模块 domain、ports、contracts              | presentation、infrastructure、数据库连接和 SDK        |
-| presentation   | 本模块 application、公共 HTTP 能力           | infrastructure、SQL、数据库连接                       |
-| infrastructure | 本模块 application ports、domain、基础设施包 | 其他模块内部实现                                      |
+| 层 | 允许依赖 | 禁止依赖 |
+| --- | --- | --- |
+| domain | 本模块纯规则、纯共享契约 | 其他内部层、框架、数据库、HTTP 与 SDK |
+| application | 本模块 domain、ports、contracts | presentation、infrastructure、连接与 SDK |
+| presentation | 本模块 application、公共 HTTP 能力 | infrastructure、SQL、数据库连接 |
+| infrastructure | 本模块 application ports、domain、基础设施包 | 其他模块内部实现 |
 
-Controller 只负责协议映射、DTO、权限装饰器和响应转换，不写 SQL、不管理事务、不处理 Token 密钥。
-
-Identity 的密码算法和令牌签发/验证通过 `PasswordHasher`、`TokenService` 应用端口访问，bcrypt、JWT SDK
-与签名密钥配置由该模块 infrastructure 所有；application 不直接导入 `bcryptjs` 或 `jose`。
+Controller 只做 DTO、协议映射、鉴权声明和响应转换，不写 SQL、不开事务、不处理 Token 密钥。Identity 密码与令牌通过应用端口访问，bcrypt/JWT SDK 和密钥配置归其 infrastructure。
 
 ## 4. 模块公开边界与数据所有权
 
-- 可被其他模块使用的模块必须提供根级 `public.ts`。
-- 跨模块只能引用目标模块 `public.ts` 导出的 Facade、抽象 token 或稳定契约。
-- 禁止引用其他模块的 Repository、domain、presentation、infrastructure 或深层 application 文件。
-- `@company/contracts` 只保存传输契约，不保存 Pool、PoolConnection、事务 executor 或 SDK 类型。
-- 每张业务表有唯一所属模块；模块不能直接修改其他模块的表。跨模块只读展示查询适用下述正式规则，未登记读取仍禁止。
-- `operation_logs` 是项目级平台审计基础设施，不属于 Identity/System、Product、Production 或 `common`
-  的业务数据。其结构由项目数据库规范定义，变更统一在 `packages/database/migrations` 追加 migration；
-  历史上与 RBAC 表位于同一初始 migration 不构成 Identity/System 所有权。写入通道由
-  `common/audit/transactional-audit-writer` 统一承担，是跨模块 `public.ts` 规则的显式且唯一豁免：各模块
-  可在自身事务 executor 中直接调用该 writer，无需经任何模块的 `public.ts` 转发。除该 writer 外，任何
-  模块、Repository 或 Controller 禁止直接写该表。审计查询当前仍由 Identity/System 对外提供公开能力。
-- `http_idempotency_records` 是项目级 HTTP 幂等基础设施，不归属任何业务模块或 `common`。
-  业务 application 只依赖 `common/idempotency` 的抽象端口；平台内表写入入口限于
-  `infrastructure/idempotency`：`mysql-idempotency.executor`（业务登记/更新/重放）与
-  `idempotency-housekeeping.service`（到期物理清理）。全局 `IdempotencyKeyGuard` 同属该平台
-  基础设施，由 `infrastructure/idempotency` 装配并公开导出，组合根只经该装配对象引用。业务
-  Controller、Service 和 Repository 均不得直接查询或修改该表。重放、冲突与失败通过平台 in-memory
-  指标（`idempotency.metrics`）与带脱敏键摘要的日志观测，不伪造第二条业务成功审计。
-- 跨模块业务校验读通过目标模块公开 Query/Directory Facade；跨模块写通过目标模块公开应用服务。页面展示读允许登记的数据库联查，不要求为纯展示字段增加 Facade 调用链。
-- 公开 Query 必须按用途区分过滤语义，不能用同一个默认带状态过滤的方法同时承担写操作校验与历史展示：
-  写操作校验按明确用途检查状态、删除及业务条件；采购允许停用精确版本，生产出库要求版本启用，两者仍要求基础物料及分类有效。历史、审计和既有单据展示允许解析已停用或软删除
-  的引用，但不得把该结果用于新增、编辑、分配、入库等写操作。方法名和返回类型必须体现 `enabled/current`
-  与 `display/history` 等语义差异，Adapter 测试分别覆盖“停用数据被校验查询排除”和“停用数据仍可用于历史展示”。
-  （该问题在多表联查出现，历史追溯查询使用了正常的产品列表查询，这里正常的产品列表过滤了停用产品，但是历史追溯不应该过滤此状态）
-- 组合根 `AppModule` 只能引用业务模块 `public.ts` 公开的装配对象，以及项目级基础设施/展示装配，不得
-  深入模块内部层（application/domain/presentation/infrastructure），也不写业务逻辑；该规则由
-  `scripts/check-api-architecture.mjs` 强制执行。
+- 跨模块代码只导入目标模块根级 `public.ts` 的稳定契约、Facade 或注入 token，不导入内部 Repository、domain 或其他深层实现。组合根 `AppModule` 同样通过公开装配对象接入模块和平台设施，不写业务逻辑。
+- 每张业务表由一个模块所有；跨模块命令与资格读取通过所属模块公开能力。业务表的当前结构由模块文档维护，所有权及允许的展示读登记在 [api-data-ownership.mjs](../scripts/api-data-ownership.mjs)。migration 集中存放不改变所有权，已删除表的历史登记不授权恢复该表。
+- application port 和 `@company/contracts` 不暴露数据库行、连接、事务 executor、SQL 或 SDK 类型。
+- 公开查询按用途区分当前写入资格与历史展示。历史引用可包含停用／软删除资料，但不得用于新增或写入校验；名称和返回类型应体现用途，分别验证状态过滤。具体采购／生产资格由 [Product](../apps/api/src/modules/product/README.md) 所有。
+- 库存由 Inventory 唯一记账，生产需求由 Production 所有；仓库页面或 HTTP 路径不创建独立 Warehouse 账本。跨模块事务、来源与锁序见[库存协作协议](inventory-extraction-design.md)，采购链路见[采购技术设计](procurement-inbound-technical-design.md)。
 
-当前数据所有权：
+平台表有以下独立边界：
 
-| 所有者/类别      | 拥有或管理的数据                                                                                                                         |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| Identity/System  | departments、users、roles、permissions、关联表、refresh_tokens                                                                           |
-| Product          | item_categories、products、materials、material_variants、product_materials、technical_files、process_steps、process_routes 及关联表                                 |
-| Production       | 工单任务、工序执行、需求及更正、分配、补料、领料出库、生产退料、领后损耗、结案草稿、质检记录及批准产出；精确表清单见 `scripts/api-data-ownership.mjs` |
-| Inventory | item_batch、inventory_transaction、inventory_batch_balance、inventory_material_variant_balance、inbound_order、inbound_detail、stock_check_order、stock_check_detail；历史 inventory_item_balance 保留所有权登记 |
-| Procurement | procurement_supplier、purchase_order、purchase_order_line、purchase_order_line_source、purchase_order_line_closure、procurement_receipt、procurement_receipt_line、procurement_receipt_revision、procurement_receipt_scope、procurement_supplier_return |
-| Quality | quality_inbound_case、quality_inbound_inspection |
-| Approval | approval_flow_definitions、approval_flow_versions、approval_flow_steps、approval_instances、approval_instance_steps、approval_actions |
-| Notification | notifications、notification_recipients |
-| 平台审计基础设施 | operation_logs                                                                                                                           |
-| 平台幂等基础设施 | http_idempotency_records（已落地）                                                                                                       |
-| common           | 不拥有业务表                                                                                                                             |
+| 表 | 所有权与访问 |
+| --- | --- |
+| `operation_logs` | 平台审计；唯一写入口为 `common/audit/transactional-audit-writer`，模块在自身事务直接调用，无需 public 转发。这是跨模块写入规则的显式例外；其他 Repository／Controller 不得直接写。Identity 提供审计查询。 |
+| `http_idempotency_records` | 平台 HTTP 幂等；只允许 `infrastructure/idempotency` 的 executor 登记／重放及 housekeeping 到期清理，业务 Controller、Service、Repository 不直接读写。Guard 通过平台装配公开。 |
 
-`operation_logs` 的唯一写入能力由 `common/audit/transactional-audit-writer` 承担（见 §4 审计豁免与
-§6）；目录位置表示共享基础设施入口，不表示 `common` 拥有该表。
-
-公开方法和锁序见[库存提取设计](inventory-extraction-design.md)及[采购技术设计](procurement-inbound-technical-design.md)。Inventory 整体拥有八张库存／入库／盘点表，Production 保有分配、出库、生产退料和需求履约；Procurement 拥有采购及未入库实物，Quality 只拥有本期来料检验。新增所有权须随对应代码与 migration 登记。
-
-Product 获取用户选项必须调用 Identity 的公开目录服务，不能直接查询 `users`。
-
-Inventory 是库存账本的唯一写入所有者，承接外购、成品、生产领料、生产退料和现有盘点的库存操作；这些流程共享同一事务设施，库存数量只写 `inventory_transaction`。成品使用明确的 `product_id` 分支，物料使用 `item_id/material_variant_id`。`/warehouse/return-orders` 由 Production 编排，`/warehouse/stock-checks` 由 Inventory 办理；保留 HTTP 路径不表示数据同属一个模块，也不建立 Warehouse 账本。
-
-Production 内部退料只负责现场余料回仓，禁止通过需求计划 Writer 创建或恢复需求，也不得修改分配履约、物料计划版本或短批授权。损耗确认与人工追加分别负责产生其明确来源的新需求；执行模块独立校验开工/完工，短批授权与开工不读取退料或按净领用量设置门槛。仓库 UI 属于这些能力的展示入口，不能另行定义退料补领语义。修改任一相关能力须遵守 [Production 写入职责表](../apps/api/src/modules/production/docs/database/return-scrap-and-stocktake.md#业务语义与写入职责)。
+平台表不因最初 migration 位置而归属 Identity 或 `common`。审计完整规则见[事务审计](../apps/api/docs/audit.md)，幂等上下文、scope、结果重放及脱敏观测见[幂等契约](../apps/api/docs/idempotency.md)；成功重放不制造第二条业务审计。
 
 ### 展示查询的跨模块读取
 
-决策依据见 [ADR-0005](adr/0005-controlled-display-reads.md)。
+选择理由见 [ADR-0005](adr/0005-controlled-display-reads.md)。
 
-- 专用目录为各模块 `infrastructure/queries/`，通过 `scripts/api-data-ownership.mjs` 的 `API_DISPLAY_READ_ACCESS` 登记目录、目标表和批准字段。Production 与 Inventory 可读取 Product 当前物料名称，并按登记字段组合彼此的库存／生产来源展示；联查或相关子查询 SQL 可在本模块 infrastructure 查询中组合复用，不暴露到 application port、Controller 或前端。
-- Procurement 的登记展示读取覆盖 Product 当前名称、Production 来源、Quality 办理／结论及 Inventory 实际入库关联字段；完整 Quality 记录由公开批量查询补齐。关闭和入库命令仍通过锁内的 Quality／Inventory 公开能力核验事实，不将页面统计当作写入资格。
-- 展示查询只提供名称、搜索、排序和页面组合结果；禁止跨模块写入、DDL、锁定或存储过程调用。命令中的权限、启用状态、选版、库存资格和事务规则继续经过所属模块业务能力；SELECT 是否参与业务决策比方法名是否叫 Query 更重要。
-- 名称按稳定物料 ID 读取当前值，不过滤停用或软删除。历史记录不会因主数据状态变化被排除；编码、版本、数量、单位继续读取相应业务事实。搜索必须使用同一当前名称来源，筛选先于分页，不在应用层逐行查名称。
-- 表结构修改须检查已登记目录及 SQL 组合调用方。保持公开查询契约、筛选语义、行数和分页稳定；不因为内部 SQL 改动而向上层泄漏表或 SDK 类型。此规则不开放跨模块深层 import，不引入新服务或第二套读库。
+- 读取放在登记的 `infrastructure/queries/` 专用目录，目标表及字段通过 `API_DISPLAY_READ_ACCESS` 明确授权。固定 SQL 片段可在本模块 infrastructure 组合，不向 application、Controller 或前端泄漏 SQL。
+- 只用于展示、搜索、排序和分页；禁止跨模块写入、DDL、锁定或存储过程调用，也不能替代命令权限、状态、版本和数量资格。按查询实际用途判定，不能仅凭方法名含 Query 放行。
+- 筛选先于分页，不逐行查名称。物料名称及历史身份统一遵守[数据库规则](database-conventions.md#基础物料名称与历史身份)。Product 获取用户候选仍经 Identity 公开目录，不直接读 `users`。
+- 改表必须核对登记调用方，保持公开查询的筛选、行数与分页语义。不因展示读取开放深层 import、第二套读库或业务写能力。
 
 ## 5. Port、Adapter 与文件拆分
 
-Port 按调用者需要和变化原因设计，应保持窄而明确。一个 Adapter 可以实现多个紧密相关的 Port；
-接口数量不是单一职责的判定标准。
-
-Repository（`modules/*/infrastructure`）超过 500 行、Vue 视图文件超过 1000 行（ESLint `max-lines`）只产生
-维护性警告。拆分必须依据业务能力、事务边界、测试隔离或独立变化原因，禁止为了满足行数机械移动代码。
-Controller、Service 和 SQL 不得混写在同一文件。
+Port 按调用者需要和变化原因保持窄而明确；一个 Adapter 可以实现多个紧密相关的 Port。Repository 超过 500 行、Vue 超过 1000 行是维护性警告，按聚合、事务和独立变化原因拆分，不机械搬移代码压行数。Controller、Service 与 SQL 不混写。
 
 ## 6. 事务与审计
 
-- Controller 不开启事务。
-- application 描述业务动作；infrastructure 使用数据库连接执行原子写入。
-- application port 不得暴露数据库连接类型。
-- 核心业务写入和成功审计使用同一个事务 executor；审计失败时整体回滚并返回失败。
-- 启用 HTTP 幂等的命令由平台 `IdempotencyExecutor` 开启外层事务；幂等记录、业务写入和成功审计必须
-  复用同一数据库连接并原子提交。幂等端口不得暴露连接类型，Controller 不负责开启该事务。
-- 审计写入不归属任何业务模块：所有模块在自身事务 executor 内直接调用
-  `common/audit/transactional-audit-writer` 追加成功审计，不通过目标模块 public 能力转发（见 §4 豁免）。
-- 通用 HTTP、登录、401/403 和失败日志采用 best-effort；写日志失败不能覆盖原响应或原异常。
-- 禁止 fire-and-forget 核心写操作。
-- 跨多个业务模块的写入在出现真实用例前不预建分布式事务；优先由一个明确用例通过公开 Facade 编排。
-
-通用 Notification 的消息、收件人仍与触发业务和成功审计同事务落库；仅外部通知扩展钩子在最外层事务确认提交成功、释放连接后异步调度，业务响应不等待其完成。回滚不触发，钩子异常独立捕获，不能把核心写入移入钩子。Notification 拥有通用发布与提交后通知端口，事务基础设施只管理通用生命周期；Approval 只是首个调用方。默认空实现及 best-effort 边界见 [ADR-0007](adr/0007-general-notification-boundaries.md) 和[通知设计](notification-design.md)。
+- application 描述业务用例，infrastructure 执行数据库事务，Controller 不开启事务。核心业务写入与成功审计原子提交，审计失败整体回滚，禁止 fire-and-forget 核心写操作。
+- 跨模块用例通过公开能力复用同池事务，不预建分布式事务。启用幂等的命令由平台 executor 开启外层事务，幂等记录、业务和审计复用同一连接；Repository 只接普通 `CommandContext`。
+- 通用请求、认证拒绝和失败日志采用 best-effort，日志失败不覆盖原响应或异常。
+- 站内消息及收件人与业务同事务；提交后扩展仅在最外层成功提交并释放连接后调度，回滚丢弃。钩子失败不改变已提交结果，进程内钩子不保证可靠外部送达；协议见[通知设计](notification-design.md)。
 
 ## 7. 基础设施
 
-- MySQL 是业务事实来源；Redis 只在出现多实例协调需求后通过端口引入。
-- HTTP 幂等闭环使用 MySQL 唯一约束和事务协调；当前轻量 MES 不为该能力引入 Redis，也不增加服务端
-  幂等键预领取接口。
-- 技术文件统一使用 S3 标准对象存储接口，业务只保存 bucket、objectKey、版本、校验和和元数据。
-- domain、application 和 presentation 不得直接依赖具体数据库或存储 SDK；infrastructure adapter 可以。
-- 数据库时间和公共接口时间遵守 [`database-conventions.md`](database-conventions.md) 的 `Asia/Shanghai / +08:00` 规则。
+- MySQL 是业务事实来源，HTTP 幂等使用其唯一约束与事务，不增加服务端幂等键预领取入口。
+- Redis 只在多实例协调等需求获批后通过窄端口引入，见 [ADR-0002](adr/0002-optional-redis.md)。
+- 技术文件统一使用 S3，业务保存对象身份和元数据；SDK 只在 infrastructure，详见[技术文件](../apps/api/src/modules/product/docs/technical-files.md)。
+- 数据库和接口时间遵守[统一类型与状态规则](database-conventions.md#统一类型与状态规则)。
 
 ## 8. 前端结构
 
-- 前端依赖方向为“页面/业务弹窗 -> list/options/editor composable -> `src/api`”；候选数据所有权为
-  “composable 实现复用、所有者实例局部化”，详细的数据分类、所有权和刷新矩阵见 `../apps/admin-web/docs/architecture.md`。
-- 正式分页列表属于页面，ID 绑定关键明细属于当前业务弹窗；同一候选接口被多个页面/弹窗消费时复用 composable
-  实现，但实例局部持有，禁止模块级可变单例、进程级隐式缓存或跨页面 Pinia 候选缓存。
-- 谁持有候选实例谁负责它的页面激活刷新；下拉展开只刷新自身资源；写操作成功只刷新受影响列表，禁止用全页面
-  `loadData()` 或 `refreshAll()` 掩盖所有权不清。
-- 异步请求必须具备与其作用域匹配的 last-request-wins 响应乱序和目标 ID 守卫；关键明细失败不得伪装成可保存的空数据。
-- 前端权限统一作用于菜单、路由和整页入口，不要求对页面内操作按钮做细粒度权限隐藏；按钮是否可用仍可按业务状态控制。
-- 前端可见性不是安全边界，每个后端接口必须独立声明并校验所需权限。
-- 顶部栏根据路由 `meta.title` 显示当前页面名称，业务内容区不重复同名标题。
-- 业务页通常从筛选区、工具栏或主体卡片开始。
-- 可选说明只表达长期有效的业务规则、风险或帮助，不显示迁移验证和测试占位文案。
-- 页面保持稳定路由名、组件名和 keep-alive 行为。
-- 超长页面按筛选、表格、表单、详情弹窗和 composable 拆分，不机械拆纯展示片段。
+前端数据所有权、局部候选、请求生命周期与缓存由[管理端架构](../apps/admin-web/docs/architecture.md)维护，页面展示由[视觉规范](../apps/admin-web/docs/visual-design.md)维护。页面权限覆盖菜单、路由和整页，不要求按钮级权限隐藏；业务状态仍可禁用操作，每个后端接口独立鉴权。
 
 ## 9. 自动约束
 
-SQL 对象所有者集中登记在 [`scripts/api-data-ownership.mjs`](../scripts/api-data-ownership.mjs)，包括业务表、
-可重建余额投影及平台表。架构检查从 TypeScript AST 解码字符串和模板，对所有 API 层生成按所有者隔离的
-访问检查，覆盖已登记业务模块之间的双向访问、反引号表名、schema 限定名和常见读写/清空语句。
-新增 migration 的 `CREATE TABLE/VIEW` 必须同时登记所有者；历史已删除表的登记只用于边界检查，不代表
-可以恢复该表。专用展示目录按 `API_DISPLAY_READ_ACCESS` 放行只读目标表，并检查常见写入/锁定 SQL、通配读取和显式别名字段；这不是完整 SQL 权限解析器，未限定字段、动态组合和业务用途必须人工评审。Identity 的审计查询与唯一审计 Writer、平台幂等表规则仍按 §4 执行。
-动态拼接的表名不能由静态扫描完整推断，必须采用固定白名单并由代码评审核对归属；检查通过不替代 SQL 评审。
+依赖与公开边界由 ESLint 和 [check-api-architecture.mjs](../scripts/check-api-architecture.mjs)检查；新增表／视图须登记所有者。脚本检查已登记展示目录的目标表、字段及常见写入／锁定 SQL，不能完整解析动态 SQL 或判断业务用途；动态表名使用固定白名单并人工评审，检查通过不替代 SQL 审查。
 
-| 规则                    | 自动措施                                                        |
-| ----------------------- | --------------------------------------------------------------- |
-| 分层反向依赖            | ESLint `no-restricted-imports`                                  |
-| 跨模块深层 import       | ESLint `boundaries/dependencies`                                |
-| domain 引入框架/数据库  | ESLint error                                                    |
-| Repository/Vue 文件过长 | ESLint warning                                                  |
-| DTO、分页和错误结构     | 单元测试、契约测试                                              |
-| 核心写入与审计原子性    | Repository 事务测试                                             |
-| 审计写入唯一咽喉        | 架构测试（仅 `transactional-audit-writer` 可写 operation_logs） |
-| 命令上下文/幂等能力分离 | 架构测试（旧类型禁用、Repository 禁止幂等上下文、用例白名单）   |
-| 数据表所有权            | 架构测试和代码评审                                              |
-| 文档失效链接            | `pnpm docs:check`                                               |
-
-新增模块时必须先登记业务能力、数据所有权和公开入口，再实现代码并补充边界测试。
+分层、唯一审计写入口、命令上下文与幂等能力分离遵守架构门禁；DTO／分页／错误以及事务原子性按[测试策略](testing-strategy.md)验证。文档链接用 `pnpm docs:check` 检查。新增模块先明确业务能力、所有权和公开入口，再实现并验证边界。

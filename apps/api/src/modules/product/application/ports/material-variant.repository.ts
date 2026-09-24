@@ -31,6 +31,10 @@ export abstract class MaterialVariantQuery {
   abstract listPurchasableByMaterials(input: {
     materialIds: string[];
   }): Promise<MaterialVariantRecord[]>;
+  abstract listProductionMaterials(input: {
+    keyword?: string;
+    includeIds?: string[];
+  }): Promise<MaterialOption[]>;
   abstract listPurchasableMaterials(input: {
     keyword?: string;
     includeIds?: string[];

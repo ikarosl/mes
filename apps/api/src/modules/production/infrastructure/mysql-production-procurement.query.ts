@@ -5,12 +5,15 @@ import type {
   ProcurementDemandCandidate,
   ProcurementDemandCandidateQuery,
   ProcurementDemandResolution,
+  ProcurementDemandWorkOrder,
+  ProcurementDemandWorkOrderQuery,
 } from '@company/contracts';
 import type { Pool, RowDataPacket } from 'mysql2/promise';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
 import { MaterialVariantQuery } from '../../product/public.js';
 import {
   ProductionProcurementQuery,
+  ProductionProcurementInputError,
   type ProductionProcurementResult,
 } from '../application/production-procurement.query.js';
 import {
@@ -18,6 +21,7 @@ import {
   readDemandCandidatePage,
   readDemandMaterialNames,
   readDemandReferences,
+  readDemandWorkOrderPage,
 } from './queries/procurement-demand.query.js';
 
 type LocatorRow = RowDataPacket & {
@@ -60,10 +64,35 @@ export class MysqlProductionProcurementQuery extends ProductionProcurementQuery 
     super();
   }
 
+  listWorkOrders(
+    query: ProcurementDemandWorkOrderQuery,
+  ): Promise<PageResult<ProcurementDemandWorkOrder>> {
+    return withActiveConnection(this.pool, async (db) => {
+      const materialIds = await readCandidateMaterialIds(db, {});
+      const variants = materialIds.length
+        ? await this.variants.listPurchasableByMaterials({ materialIds })
+        : [];
+      return readDemandWorkOrderPage(
+        db,
+        query,
+        variants.map((variant) => variant.id),
+      );
+    });
+  }
+
   listCandidates(
     query: ProcurementDemandCandidateQuery,
   ): Promise<PageResult<ProcurementDemandCandidate>> {
     return withActiveConnection(this.pool, async (db) => {
+      if (!query.workOrderId) throw new ProductionProcurementInputError('请先选择一个工单');
+      if (query.batchId) {
+        const [[batch]] = await db.query<(RowDataPacket & { work_order_id: number | string })[]>(
+          'SELECT work_order_id FROM production_batches WHERE id=?',
+          [query.batchId],
+        );
+        if (!batch || String(batch.work_order_id) !== query.workOrderId)
+          throw new ProductionProcurementInputError('任务不属于所选工单');
+      }
       const materialIds = await readCandidateMaterialIds(db, query);
       const variants = materialIds.length
         ? await this.variants.listPurchasableByMaterials({ materialIds })
@@ -139,6 +168,12 @@ export class MysqlProductionProcurementQuery extends ProductionProcurementQuery 
         db,
         sortedIds(demands.map((row) => String(row.item_id))),
       );
+      const hintByDemand = new Map(
+        (await readDemandReferences(db, ids)).map((demand) => [
+          demand.demandId,
+          demand.supplierHint,
+        ]),
+      );
       const result: ProcurementDemandCandidate[] = [];
       if (demands.length !== ids.length)
         return { status: 'not-found', message: '采购来源需求不存在' };
@@ -176,6 +211,7 @@ export class MysqlProductionProcurementQuery extends ProductionProcurementQuery 
           demandQuantity: String(row.need_number),
           remainingDemandQuantity: String(row.remaining_number),
           businessStatus: row.business_status,
+          supplierHint: hintByDemand.get(demandId) ?? null,
           pendingCorrectionId:
             row.pending_correction_id === null ? null : String(row.pending_correction_id),
         };

@@ -13,8 +13,8 @@ import { fixedIntegerQuantity, integerQuantity } from '../domain/integer-quantit
 export type DemandRow = RowDataPacket & {
   id: number;
   production_batch_id: number;
-  requirement_basis_id: number;
-  product_material_id: number;
+  requirement_basis_id: number | null;
+  product_material_id: number | null;
   item_id: number;
   material_variant_id: number;
   item_code_snapshot: string;
@@ -200,9 +200,9 @@ export const mapDemand = (
     },
     demandId: String(row.id),
     productionBatchId: String(row.production_batch_id),
-    productMaterialId: String(row.product_material_id),
+    productMaterialId: row.product_material_id === null ? null : String(row.product_material_id),
     itemId: String(row.item_id),
-    requirementBasisId: String(row.requirement_basis_id),
+    requirementBasisId: row.requirement_basis_id === null ? null : String(row.requirement_basis_id),
     materialVariantId: String(row.material_variant_id),
     materialVariantCode: row.material_variant_code_snapshot,
     itemCode: row.item_code_snapshot,

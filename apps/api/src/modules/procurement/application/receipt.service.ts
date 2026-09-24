@@ -1,10 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import type {
   ConfirmProcurementReceiptPayload,
+  ConfirmReceiptAcceptancePayload,
   CorrectReceiptLinePayload,
   StartReceiptReviewPayload,
   InspectReceiptLinePayload,
-  TerminateReceiptScopePayload,
+  RejectReceiptLinePayload,
+  RevokeReceiptRejectionPayload,
   ConfirmSupplierReturnPayload,
   ConfirmProcurementInboundPayload,
   ProcurementReceiptCommandResult,
@@ -21,7 +23,9 @@ import {
   CORRECT_RECEIPT_SCOPE,
   START_RECEIPT_REVIEW_SCOPE,
   INSPECT_RECEIPT_SCOPE,
-  TERMINATE_RECEIPT_RETURN_SCOPE,
+  ACCEPT_RECEIPT_SCOPE,
+  REJECT_RECEIPT_SCOPE,
+  REVOKE_RECEIPT_REJECTION_SCOPE,
   CONFIRM_SUPPLIER_RETURN_SCOPE,
   CONFIRM_PROCUREMENT_INBOUND_SCOPE,
 } from './idempotency/procurement-idempotency-scopes.contract.js';
@@ -58,7 +62,6 @@ export class ReceiptService {
   ): Promise<ProcurementReceiptCommandResult> {
     const body = {
       ...payload,
-      adjustments: payload.adjustments.map((adjustment) => ({ ...adjustment })),
     };
     const execution = await this.idempotency.execute({
       scope: CORRECT_RECEIPT_SCOPE,
@@ -105,20 +108,57 @@ export class ReceiptService {
     });
     return execution.result;
   }
-  async terminateReturn(
+  async accept(
     id: string,
-    payload: TerminateReceiptScopePayload,
+    payload: ConfirmReceiptAcceptancePayload,
     context: IdempotentCommandContext,
   ): Promise<ProcurementReceiptCommandResult> {
-    const body = { ...payload };
+    const body = { ...payload, details: payload.details.map((detail) => ({ ...detail })) };
     const execution = await this.idempotency.execute({
-      scope: TERMINATE_RECEIPT_RETURN_SCOPE,
+      scope: ACCEPT_RECEIPT_SCOPE,
       key: context.idempotencyKey,
       actorId: context.actorId,
       requestId: context.requestId,
       request: { params: { id }, body },
       resultCodec: receiptCommandResultCodec,
-      handler: () => this.repository.terminateReturn(id, body, auditContext(context)),
+      handler: () => this.repository.accept(id, body, auditContext(context)),
+    });
+    return execution.result;
+  }
+  async reject(
+    id: string,
+    payload: RejectReceiptLinePayload,
+    context: IdempotentCommandContext,
+  ): Promise<ProcurementReceiptCommandResult> {
+    const body = {
+      ...payload,
+      ownership: payload.ownership?.map((owner) => ({ ...owner })),
+    };
+    const execution = await this.idempotency.execute({
+      scope: REJECT_RECEIPT_SCOPE,
+      key: context.idempotencyKey,
+      actorId: context.actorId,
+      requestId: context.requestId,
+      request: { params: { id }, body },
+      resultCodec: receiptCommandResultCodec,
+      handler: () => this.repository.reject(id, body, auditContext(context)),
+    });
+    return execution.result;
+  }
+  async revokeRejection(
+    id: string,
+    payload: RevokeReceiptRejectionPayload,
+    context: IdempotentCommandContext,
+  ): Promise<ProcurementReceiptCommandResult> {
+    const body = { ...payload };
+    const execution = await this.idempotency.execute({
+      scope: REVOKE_RECEIPT_REJECTION_SCOPE,
+      key: context.idempotencyKey,
+      actorId: context.actorId,
+      requestId: context.requestId,
+      request: { params: { id }, body },
+      resultCodec: receiptCommandResultCodec,
+      handler: () => this.repository.revokeRejection(id, body, auditContext(context)),
     });
     return execution.result;
   }

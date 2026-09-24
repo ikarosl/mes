@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
   BATCH_STEP_STATUSES,
+  WORK_ORDER_TYPES,
   PRODUCTION_BATCH_STATUSES,
   PRODUCTION_CLOSEOUT_MODES,
 } from '@company/constants';
@@ -12,7 +13,7 @@ import type {
 import { CREATE_BATCH_IDEMPOTENCY_SCOPE } from './production-idempotency-scopes.contract.js';
 
 /**
- * createBatch 幂等结果 codec（scope `production.batch.create.v7`）。
+ * createBatch 幂等结果 codec（scope `production.batch.create.v8`）。
  *
  * 每个已发布 scope 的请求指纹规则、成功结果结构和本 Zod schema 保持固定；
  * 后续不兼容变更必须升级 scope 和对应 codec；旧 scope 记录不得由新 schema 猜测解析，
@@ -68,6 +69,7 @@ export const productionBatchDetailSchema: z.ZodType<ProductionBatchDetail> = z
     id: z.string(),
     workOrderId: z.string(),
     workOrderNo: z.string(),
+    orderType: z.enum(WORK_ORDER_TYPES),
     productId: z.string(),
     productCode: z.string(),
     productName: z.string(),

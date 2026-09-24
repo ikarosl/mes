@@ -27,6 +27,7 @@ import SuppliersPage from '../views/procurement/SuppliersPage.vue';
 import PurchaseOrdersPage from '../views/procurement/PurchaseOrdersPage.vue';
 import PurchaseReceiptsPage from '../views/procurement/PurchaseReceiptsPage.vue';
 import InboundInspectionsPage from '../views/quality/InboundInspectionsPage.vue';
+import FinishedInspectionsPage from '../views/quality/FinishedInspectionsPage.vue';
 
 // 生产管理
 import ProductionOrdersPage from '../views/production/ProductionOrdersPage.vue';
@@ -216,6 +217,15 @@ export const router = createRouter({
           InboundInspectionsPage,
           PERMISSIONS.quality.inboundInspections.view,
           'InboundInspectionsPage',
+        ),
+
+        page(
+          'quality/finished-inspections',
+          'quality-finished-inspections',
+          '成品质检',
+          FinishedInspectionsPage,
+          PERMISSIONS.quality.finishedInspections.view,
+          'FinishedInspectionsPage',
         ),
 
         // 生产管理

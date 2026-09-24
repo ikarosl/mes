@@ -18,12 +18,19 @@ import {
   BatchIdParamDto,
   ConfigureMaterialDemandsDto,
   MaterialDemandManagementQueryDto,
+  ProductionMaterialOptionsQueryDto,
 } from './dto/production-material.dto.js';
 
 @Controller('production')
 @UseFilters(ProductionDomainExceptionFilter)
 export class ProductionMaterialDemandController {
   constructor(private readonly service: ProductionMaterialDemandService) {}
+
+  @Get('material-demands/material-options')
+  @RequirePermission(PERMISSIONS.production.materialDemands.view)
+  materialOptions(@Query() query: ProductionMaterialOptionsQueryDto) {
+    return this.service.listMaterialOptions(query);
+  }
 
   @Get('material-demands')
   @RequirePermission(PERMISSIONS.production.materialDemands.view)

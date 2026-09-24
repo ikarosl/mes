@@ -1,9 +1,21 @@
 import { Injectable } from '@nestjs/common';
-import type { CommandContext } from '../../../common/audit/audit.types.js';
+import type {
+  CommandContext,
+  IdempotentCommandContext,
+} from '../../../common/audit/audit.types.js';
+import { IdempotencyExecutor } from '../../../common/idempotency/idempotency-executor.js';
 import { IdentityDirectoryService } from '../../identity/public.js';
 import { TechnicalFileContentQuery } from '../../product/public.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
 import { ProductionExecutionRepository } from './ports/production-execution.repository.js';
+import {
+  START_RESEARCH_EXECUTION_SCOPE,
+  COMPLETE_RESEARCH_EXECUTION_SCOPE,
+} from './idempotency/production-idempotency-scopes.contract.js';
+import {
+  researchExecutionStartResultCodec,
+  researchExecutionCompletionResultCodec,
+} from './idempotency/production-research-execution-result.codec.js';
 
 @Injectable()
 export class ProductionExecutionService {
@@ -11,10 +23,47 @@ export class ProductionExecutionService {
     private readonly execution: ProductionExecutionRepository,
     private readonly identity: IdentityDirectoryService,
     private readonly technicalFileContent: TechnicalFileContentQuery,
+    private readonly idempotency: IdempotencyExecutor,
   ) {}
 
   getCompletionCheck(batchId: string) {
     return this.execution.getCompletionCheck(batchId);
+  }
+
+  async startResearchExecution(
+    batchId: string,
+    version: number,
+    context: IdempotentCommandContext,
+  ) {
+    const execution = await this.idempotency.execute({
+      scope: START_RESEARCH_EXECUTION_SCOPE,
+      key: context.idempotencyKey,
+      actorId: context.actorId,
+      requestId: context.requestId,
+      request: { params: { batchId }, body: { version } },
+      resultCodec: researchExecutionStartResultCodec,
+      handler: () =>
+        this.execution.startResearchExecution(batchId, version, commandContext(context)),
+    });
+    return execution.result;
+  }
+
+  async completeResearchExecution(
+    batchId: string,
+    version: number,
+    context: IdempotentCommandContext,
+  ) {
+    const execution = await this.idempotency.execute({
+      scope: COMPLETE_RESEARCH_EXECUTION_SCOPE,
+      key: context.idempotencyKey,
+      actorId: context.actorId,
+      requestId: context.requestId,
+      request: { params: { batchId }, body: { version } },
+      resultCodec: researchExecutionCompletionResultCodec,
+      handler: () =>
+        this.execution.completeResearchExecution(batchId, version, commandContext(context)),
+    });
+    return execution.result;
   }
 
   completeExecution(batchId: string, version: number, context: CommandContext) {
@@ -93,3 +142,10 @@ export class ProductionExecutionService {
     }
   }
 }
+
+const commandContext = ({
+  actorId,
+  requestId,
+  ip,
+  userAgent,
+}: IdempotentCommandContext): CommandContext => ({ actorId, requestId, ip, userAgent });

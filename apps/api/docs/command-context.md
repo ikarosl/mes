@@ -1,46 +1,15 @@
 # 命令上下文与请求 ID
 
-命令审计元数据与 HTTP 幂等能力是两个正交概念。生产代码统一使用以下类型：
+[CommandContext](../src/common/audit/audit.types.ts) 保存操作者及请求审计元数据，不代表 HTTP 幂等；IdempotentCommandContext 另要求已认证 actorId 与已验证幂等键。类型以代码为准，不另维护声明副本。
 
-```ts
-interface CommandContext {
-  actorId: string | null;
-  requestId: string;
-  ip: string | null;
-  userAgent: string | null;
-}
+Repository 将 context.actorId 显式映射到 operation_logs.user_id 或业务 created_by/updated_by/deleted_by；不能把上下文对象直接视为数据库字段。业务成功审计与业务事实同事务，日志归属及脱敏见[事务审计](audit.md)。
 
-interface IdempotentCommandContext extends CommandContext {
-  actorId: string;
-  idempotencyKey: string;
-}
-```
+请求中间件接受符合[公共 API 规范](../../../docs/api-conventions.md#7-请求上下文与幂等键)的 X-Request-Id，否则生成 UUID，并写入请求／响应。User-Agent 入上下文前最多 512 字符，避免不可信头部破坏核心事务。`@CurrentCommandContext()` 只读认证用户、requestId、IP、User-Agent，不解析 Idempotency-Key。
 
-`CommandContext` 只说明该命令携带了操作者和请求审计元数据，不代表端点支持 HTTP 幂等。Identity、Product
-以及 Production 普通写命令都使用该类型；写 `operation_logs.user_id` 或业务表
-`created_by/updated_by/deleted_by` 时，由 Repository 明确把 `context.actorId` 映射到对应字段。
-`AuditContext` 与 `CurrentAuditContext` 已完成迁移并从生产代码删除。
+只有显式 `@IdempotentEndpoint({ scope })` 且 application executor 已接线的认证端点使用 `@CurrentIdempotentCommandContext()`：Guard 校验并 trim header，写入请求局部私有属性，参数装饰器只读该值；缺少用户或已验证键须防御性拒绝。DTO、鉴权及头部校验均在幂等登记前完成。
 
-请求上下文中间件接受有效的 `X-Request-Id`；若不存在则生成 UUID，并写入请求和响应。User-Agent 在进入
-命令上下文前最多保留 512 个字符。`@CurrentCommandContext()` 只读取认证用户、requestId、IP 和 User-Agent，
-不得解析 `Idempotency-Key`。
+幂等键只到 application executor；传入 port／Repository 前重新收窄为 CommandContext，不能把键、HTTP header 或其解析职责下放。未启用端点含 Public 误带任意键都拒绝，范围见[幂等契约](idempotency.md#1-当前启用范围)。
 
-只有显式声明 `@IdempotentEndpoint({ scope })` 且已经完成 application executor 闭环的认证端点，才使用
-`@CurrentIdempotentCommandContext()` 与 `IdempotentCommandContext`。全局 `IdempotencyKeyGuard` 先校验并
-trim 请求头，再将规范化键写入请求局部私有属性；参数装饰器只读取该已验证值，不重复解析原始 header。
-缺少认证用户或已验证键属于非法装配状态，必须防御性拒绝。
+首次登记的 requestId 保存为 initial_request_id 并关联成功审计；重放使用本次 requestId，不覆盖首次值、不新增业务成功审计、不把原始键写入 operation_logs。历史 operation_logs.request_id 可空，并可按索引筛选调查。
 
-幂等能力止于 application 用例：Service 把 `idempotencyKey` 交给 `IdempotencyExecutor`，传给 application
-port/Repository 的对象必须重新收窄为 `CommandContext`，Repository 不得读取 header 或幂等键。当前启用范围由 Production 的 scope 常量和 Controller 装饰器定义，并汇总在[幂等契约](idempotency.md#1-当前启用范围)；其他端点误带任意 `Idempotency-Key` 均返回 `400 IDEMPOTENCY_NOT_SUPPORTED`，包括 `@Public()` 端点。
-
-Product 文件上传虽需要 `CommandContext` 记录审计，但对象存储写入不在 MySQL executor 的单事务边界内，
-因此当前不得声明幂等、不得发送 `Idempotency-Key`、不得开启 unsafe 自动重试。外部 HTTP、消息发送等非
-事务副作用同样必须先设计 outbox、补偿或恢复闭环，不能直接套用 MySQL executor。
-
-已启用命令首次登记均以 `IdempotentCommandContext.requestId` 保存 `initial_request_id`，用于关联首次成功审计；
-重放请求拥有自己的 request ID，但不得覆盖首次值，也不新增业务成功审计。前端键生命周期与硬刷新边界见
-[`idempotency.md`](idempotency.md) §9。
-
-业务写操作的审计日志在同一个事务中将请求 ID 与业务写入一并持久化。通用请求、失败和安全拒绝日志为尽力而为（best-effort），且绝不能包含密码、令牌、Cookie、签名、凭证或原始请求体。
-
-`operation_logs.request_id` 可为空以兼容历史数据，并已建立索引用于调查。可通过现有的操作日志请求 ID 筛选器进行查询。
+Product 文件上传虽需要命令审计，但对象存储不在 MySQL 事务内，当前不能声明该幂等能力、发送幂等键或开启写入自动重试。外部 HTTP／消息等同样须先设计 outbox、补偿或恢复闭环；详见[幂等事务边界](idempotency.md#2-项目级决定)。

@@ -30,6 +30,26 @@
         <ReceiptLineSummary :line="line" />
         <div class="history-actions">
           <el-button
+            type="primary"
+            :disabled="blocked || !canReviewReceipt(line)"
+            @click="actions?.open(line, 'review', undefined, undefined, true)"
+          >
+            {{
+              line.currentRound.status === 'uninspected' ? '发起整批检验' : '发起整批复检 / 更正'
+            }}
+          </el-button>
+          <el-button
+            v-if="currentReceiptCase(line)"
+            type="primary"
+            :disabled="blocked"
+            @click="actions?.open(line, 'inspect', undefined, currentReceiptCase(line), true)"
+            >填写本轮检验结果</el-button
+          >
+          <el-button @click="history?.open(line.id, 'rounds', line)"
+            >处理轮次 {{ line.historyTotals.rounds }}</el-button
+          >
+
+          <el-button
             v-if="
               auth.can(PERMISSIONS.production.inbounds.view) &&
               Number(line.quantities.pendingInboundQuantity) > 0
@@ -56,8 +76,22 @@
             >入库记录 {{ line.historyTotals.inbounds }}</el-button
           >
         </div>
+        <el-alert
+          v-if="['reinspection_required', 'quality_rejected'].includes(line.currentRound.status)"
+          type="warning"
+          :closable="false"
+          class="notice"
+          title="本次检查记录已保存，但本批仍不允许正常定稿或入库；可发起整批复检，库管仍可独立拒收。"
+        />
         <div
-          v-if="selectedCase?.inspection"
+          v-if="currentInspection"
+          class="selected-record"
+        >
+          <strong>本批当前检验依据</strong
+          ><InboundInspectionRecord :inspection="currentInspection" />
+        </div>
+        <div
+          v-if="selectedCase?.inspection && selectedCase.inspection.id !== currentInspection?.id"
           class="selected-record"
         >
           <strong
@@ -65,12 +99,10 @@
             {{ QUALITY_INBOUND_CASE_STATUS_LABELS[selectedCase.status] }}</strong
           ><InboundInspectionRecord :inspection="selectedCase.inspection" />
         </div>
-        <ReceiptLineScopes
+        <ReceiptLineAllocations
           :line="line"
           :quality="true"
           :disabled="blocked"
-          @review="actions?.open(line, 'review', $event, undefined, true)"
-          @inspect="actions?.open(line, 'inspect', undefined, $event, true)"
           @history="history?.open(line.id, $event, line)"
         />
       </template>
@@ -90,6 +122,7 @@
 </template>
 <script setup lang="ts">
 import { computed, onActivated, ref } from 'vue';
+import { canReviewReceipt, currentReceiptCase } from '../receipt-round-presentation';
 import { useRouter } from 'vue-router';
 import type {
   ProcurementInboundInspectionItem,
@@ -103,7 +136,7 @@ import { useLatestReadRequest } from '../../../composables/requests/useLatestRea
 import { DialogWidth } from '../../../utils/dialog';
 import { EMessage } from '../../../utils/message';
 import ReceiptLineSummary from './ReceiptLineSummary.vue';
-import ReceiptLineScopes from './ReceiptLineScopes.vue';
+import ReceiptLineAllocations from './ReceiptLineAllocations.vue';
 import ReceiptLineActionDialog from './ReceiptLineActionDialog.vue';
 import ReceiptHistoryDialog from './ReceiptHistoryDialog.vue';
 import InboundInspectionRecord from './InboundInspectionRecord.vue';
@@ -122,6 +155,12 @@ const actions = ref<InstanceType<typeof ReceiptLineActionDialog>>(),
 const read = useLatestReadRequest(() => {
   loading.value = false;
 });
+const currentInspection = computed(
+  () =>
+    line.value?.cases.find(
+      (record) => record.inspection?.id === line.value?.currentRound.inspectionId,
+    )?.inspection ?? null,
+);
 const blocked = computed(() => loading.value || readError.value || Boolean(actions.value?.visible));
 const load = async (): Promise<void> => {
   if (!visible.value || !read.isActive()) return;

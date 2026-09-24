@@ -18,6 +18,7 @@ import { writeTransactionalAudit } from '../../../common/audit/transactional-aud
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
 import {
   MaterialVariantQuery,
+  ProductInventoryEligibility,
   ProductSnapshotQuery,
   type ProductBomSnapshot,
 } from '../../product/public.js';
@@ -35,7 +36,7 @@ import {
 } from './mysql-production-demand-plan.writer.js';
 import {
   lockWorkOrderForBatch,
-  requireWorkOrderMaterialVariant,
+  requireTaskMaterialVariant,
 } from './mysql-work-order-material-version.js';
 import { findBatch } from './mysql-production.shared.js';
 
@@ -60,14 +61,19 @@ type BasisRow = RowDataPacket & {
   quantity_per_unit_snapshot: string;
   planned_output_quantity_snapshot: string;
   required_number: string;
+  locked_material_variant_id: number;
+  supplier_hint: string | null;
 };
 
 type DemandRow = RowDataPacket & {
   id: number;
   production_batch_id: number;
-  requirement_basis_id: number;
-  product_material_id: number;
+  requirement_basis_id: number | null;
+  product_material_id: number | null;
   item_id: number;
+  item_code_snapshot: string;
+  item_name: string;
+  unit_snapshot: string;
   material_variant_id: number;
   material_variant_code_snapshot: string;
   need_number: string;
@@ -75,12 +81,7 @@ type DemandRow = RowDataPacket & {
   demand_type: DemandType;
   parent_demand_id: number | null;
   business_status: DemandBusinessStatus;
-};
-
-type WorkOrderVariantLockRow = RowDataPacket & {
-  production_batch_id: number;
-  material_id: number;
-  material_variant_id: number;
+  supplier_hint: string | null;
 };
 
 /**
@@ -98,6 +99,7 @@ export class MysqlProductionMaterialDemandConfigurationRepository extends Produc
     @Inject(DATABASE_POOL) private readonly pool: Pool,
     private readonly products: ProductSnapshotQuery,
     private readonly materialVariants: MaterialVariantQuery,
+    private readonly eligibility: ProductInventoryEligibility,
   ) {
     super();
   }
@@ -118,136 +120,122 @@ export class MysqlProductionMaterialDemandConfigurationRepository extends Produc
     const [basisRows] = await this.pool.query<BasisRow[]>(
       `SELECT id,production_batch_id,product_material_id,material_id,
           material_code_snapshot,${currentMaterialNameSql('production_material_requirement_basis.material_id')} material_name,unit_snapshot,
-          quantity_per_unit_snapshot,planned_output_quantity_snapshot,required_number
+          quantity_per_unit_snapshot,planned_output_quantity_snapshot,required_number,locked_material_variant_id,supplier_hint
        FROM production_material_requirement_basis
-       WHERE production_batch_id IN (${placeholders(batchIds)})
-       ORDER BY production_batch_id,id`,
+       WHERE production_batch_id IN (${placeholders(batchIds)}) ORDER BY production_batch_id,id`,
       batchIds,
     );
     const [demandRows] = await this.pool.query<DemandRow[]>(
-      `SELECT id,production_batch_id,requirement_basis_id,product_material_id,item_id,
-          material_variant_id,material_variant_code_snapshot,need_number,remaining_number,
-          demand_type,parent_demand_id,business_status
-       FROM production_item_demand
-       WHERE production_batch_id IN (${placeholders(batchIds)})
-       ORDER BY production_batch_id,requirement_basis_id,id`,
+      `SELECT d.id,d.production_batch_id,d.requirement_basis_id,d.product_material_id,d.item_id,
+          d.item_code_snapshot,${currentMaterialNameSql('d.item_id')} item_name,d.unit_snapshot,
+          d.material_variant_id,d.material_variant_code_snapshot,d.need_number,d.remaining_number,
+          d.demand_type,d.parent_demand_id,d.business_status,COALESCE(basis.supplier_hint,d.supplier_hint) supplier_hint
+       FROM production_item_demand d
+       LEFT JOIN production_material_requirement_basis basis ON basis.id=d.requirement_basis_id
+       WHERE d.production_batch_id IN (${placeholders(batchIds)}) ORDER BY d.production_batch_id,d.id`,
       batchIds,
     );
     const basisByBatch = groupBy(basisRows, (row) => String(row.production_batch_id));
     const boms = new Map<string, ProductBomSnapshot>();
     for (const batch of batches) {
-      // Once a batch has left pending, its requirement basis is the complete,
-      // immutable BOM snapshot. Historical demand management must not fail or
-      // lose frozen quantities merely because current Product data was disabled.
-      // Material names are a current display projection, never part of the frozen formula.
-      if (batch.status !== 'pending') continue;
-      const result = await this.products.getBomSnapshot(String(batch.product_id));
-      if (result.status === 'success') boms.set(String(batch.id), result.value);
+      if (batch.status !== 'pending' || batch.order_type === 'research') continue;
+      const result = await this.products.getApprovedBomSnapshot(String(batch.product_id));
+      if (result.status !== 'success')
+        throw new ProductionDomainError('INVALID_INPUT', result.message);
+      boms.set(String(batch.id), result.value);
     }
     const materialIds = [
       ...new Set([
         ...basisRows.map((basis) => String(basis.material_id)),
+        ...demandRows.map((demand) => String(demand.item_id)),
         ...[...boms.values()].flatMap((bom) => bom.lines.map((line) => line.materialId)),
       ]),
     ];
-    // The management page is a selectable-candidate surface: only enabled
-    // variants are returned. Historical disabled variants remain visible through
-    // the demand snapshot itself, but can never be selected again.
     const allVariants = await this.materialVariants.listEnabledByMaterials(materialIds);
-    const [lockRows] = await this.pool.query<WorkOrderVariantLockRow[]>(
-      `SELECT b.id production_batch_id,lock_row.material_id,lock_row.material_variant_id
-       FROM production_batches b
-       JOIN work_order_material_versions lock_row ON lock_row.work_order_id=b.work_order_id
-       WHERE b.id IN (${placeholders(batchIds)})`,
-      batchIds,
-    );
-    const lockedVariantByBatchMaterial = new Map(
-      lockRows.map((row) => [
-        `${row.production_batch_id}:${row.material_id}`,
-        String(row.material_variant_id),
-      ]),
-    );
-    const demandByBasis = groupBy(demandRows, (row) => String(row.requirement_basis_id));
     const variantByMaterial = groupBy(allVariants, (variant) => variant.materialId);
+    const demandByMaterial = groupBy(
+      demandRows,
+      (row) => `${row.production_batch_id}:${row.item_id}`,
+    );
     const rows: MaterialDemandManagementRow[] = [];
     for (const batch of batches) {
       const existingBasis = basisByBatch.get(String(batch.id)) ?? [];
-      const basisByProductMaterial = new Map(
-        existingBasis.map((basis) => [String(basis.product_material_id), basis]),
-      );
-      const bom = boms.get(String(batch.id));
-      const currentLines = bom?.lines ?? [];
-      const currentLineIds = new Set(currentLines.map((line) => line.productMaterialId));
-      const frozenOnlyLines: ProductBomSnapshot['lines'] = existingBasis
-        .filter((basis) => !currentLineIds.has(String(basis.product_material_id)))
-        .map((basis) => ({
-          productMaterialId: String(basis.product_material_id),
-          materialId: String(basis.material_id),
-          itemCode: basis.material_code_snapshot,
-          productName: basis.material_name,
-          unit: basis.unit_snapshot,
-          quantityPerUnit: String(basis.quantity_per_unit_snapshot),
-        }));
-      for (const line of [...currentLines, ...frozenOnlyLines]) {
-        const basis = basisByProductMaterial.get(line.productMaterialId);
-        const basisId = basis?.id ? String(basis.id) : `${batch.id}:${line.productMaterialId}`;
-        const requiredQuantity = String(
-          basis?.required_number ??
-            multiplyIntegerQuantities(line.quantityPerUnit, batch.planned_quantity),
-        );
-        const materialId = basis ? String(basis.material_id) : line.materialId;
-        const normalDemands = (demandByBasis.get(String(basis?.id ?? '')) ?? []).filter(
-          (demand) => demand.demand_type === 'normal',
-        );
-        const configuredQuantity = normalDemands.reduce(
-          (total, demand) => total + integerQuantity(demand.need_number),
-          0,
-        );
+      const bases = new Map(existingBasis.map((basis) => [String(basis.material_id), basis]));
+      const frozenLines = existingBasis.map((basis) => ({
+        productMaterialId: String(basis.product_material_id),
+        materialId: String(basis.material_id),
+        itemCode: basis.material_code_snapshot,
+        productName: basis.material_name,
+        unit: basis.unit_snapshot,
+        quantityPerUnit: String(basis.quantity_per_unit_snapshot),
+      }));
+      const researchLines = [
+        ...new Map(
+          demandRows
+            .filter((demand) => String(demand.production_batch_id) === String(batch.id))
+            .map((demand) => [
+              String(demand.item_id),
+              {
+                productMaterialId: null,
+                materialId: String(demand.item_id),
+                itemCode: demand.item_code_snapshot,
+                productName: demand.item_name,
+                unit: demand.unit_snapshot,
+                quantityPerUnit: null,
+              },
+            ]),
+        ).values(),
+      ];
+      const lines =
+        batch.order_type === 'research'
+          ? researchLines
+          : (boms.get(String(batch.id))?.lines ?? frozenLines);
+      for (const line of lines) {
+        const basis = bases.get(line.materialId);
+        const demands = demandByMaterial.get(`${batch.id}:${line.materialId}`) ?? [];
+        const initial = demands.filter((demand) => demand.demand_type === 'normal');
         const variants: MaterialDemandManagementVariant[] = (
-          variantByMaterial.get(materialId) ?? []
-        ).map((variant) => {
-          const selected = normalDemands.find(
-            (demand) => String(demand.material_variant_id) === variant.id,
-          );
-          return {
-            materialVariantId: variant.id,
-            materialVariantCode: variant.variantCode,
-            majorVersion: variant.majorVersion,
-            minorVersion: variant.minorVersion,
-            selectedQuantity: selected ? String(selected.need_number) : null,
-            status: variant.status,
-          };
-        });
-        const demands: MaterialDemandManagementDemand[] = (
-          demandByBasis.get(String(basis?.id ?? '')) ?? []
-        ).map((demand) => ({
-          demandId: String(demand.id),
-          materialVariantId: String(demand.material_variant_id),
-          materialVariantCode: demand.material_variant_code_snapshot,
-          demandQuantity: String(demand.need_number),
-          remainingQuantity: String(demand.remaining_number),
-          demandType: demand.demand_type,
-          parentDemandId: demand.parent_demand_id === null ? null : String(demand.parent_demand_id),
-          businessStatus: demand.business_status,
+          variantByMaterial.get(line.materialId) ?? []
+        ).map((variant) => ({
+          materialVariantId: variant.id,
+          materialVariantCode: variant.variantCode,
+          majorVersion: variant.majorVersion,
+          minorVersion: variant.minorVersion,
+          status: variant.status,
+          selectedQuantity:
+            initial
+              .find((demand) => String(demand.material_variant_id) === variant.id)
+              ?.need_number?.toString() ?? null,
         }));
         rows.push({
-          id: basisId,
+          id: basis ? String(basis.id) : `${batch.id}:${line.materialId}`,
           productionBatchId: String(batch.id),
           batchNo: batch.batch_no,
           workOrderNo: batch.work_order_no,
           orderType: batch.order_type,
           requirementBasisId: basis ? String(basis.id) : null,
           productMaterialId: line.productMaterialId,
-          materialId: materialId,
-          materialCode: basis?.material_code_snapshot ?? line.itemCode,
-          materialName: basis?.material_name ?? line.productName,
-          unit: basis?.unit_snapshot ?? line.unit,
-          requiredQuantity,
-          configuredQuantity: String(configuredQuantity),
-          lockedMaterialVariantId:
-            lockedVariantByBatchMaterial.get(`${batch.id}:${materialId}`) ?? null,
-          status: normalDemands.length > 0 ? 'configured' : 'pending',
-          demands,
+          materialId: line.materialId,
+          materialCode: line.itemCode,
+          materialName: line.productName,
+          unit: line.unit,
+          requiredQuantity:
+            line.quantityPerUnit === null
+              ? null
+              : String(
+                  basis?.required_number ??
+                    multiplyIntegerQuantities(line.quantityPerUnit, batch.planned_quantity),
+                ),
+          configuredQuantity: String(
+            (batch.order_type === 'research' ? demands : initial).reduce(
+              (total, demand) => total + integerQuantity(demand.need_number),
+              0,
+            ),
+          ),
+          lockedMaterialVariantId: basis ? String(basis.locked_material_variant_id) : null,
+          supplierHint: basis?.supplier_hint ?? null,
+          status: demands.length ? 'configured' : 'pending',
+          demands: demands.map(mapManagementDemand),
           variants,
         });
       }
@@ -279,13 +267,15 @@ export class MysqlProductionMaterialDemandConfigurationRepository extends Produc
     await withTransaction(this.pool, async (db) => {
       const orderPolicy = await lockWorkOrderForBatch(db, productionBatchId);
       const batch = await findBatch(db, productionBatchId, true);
+      if (orderPolicy.orderType !== 'mass_production')
+        throw new ProductionDomainError('INVALID_INPUT', '研发任务请通过手工提需录入物料');
       if (batch.status !== 'pending')
         throw new ProductionDomainError('INVALID_STATE', '只有待配置生产批次可以确认版本需求');
 
       // This is deliberately repeated inside the local transaction. The Product
       // public query reuses the active connection, so the BOM and exact-version
       // status used to write facts are the same snapshot as the locked batch.
-      const bomResult = await this.products.getBomSnapshot(String(batch.product_id));
+      const bomResult = await this.products.getApprovedBomSnapshot(String(batch.product_id));
       if (bomResult.status !== 'success')
         throw new ProductionDomainError(
           bomResult.status === 'not-found' ? 'NOT_FOUND' : 'INVALID_INPUT',
@@ -324,13 +314,6 @@ export class MysqlProductionMaterialDemandConfigurationRepository extends Produc
           const variant = variantsById.get(split.materialVariantId);
           if (!variant || variant.materialId !== line.materialId)
             throw new ProductionDomainError('INVALID_INPUT', '只能选择对应基础物料下的启用版本');
-          await requireWorkOrderMaterialVariant(
-            db,
-            orderPolicy,
-            line.materialId,
-            split.materialVariantId,
-            context.actorId!,
-          );
         }
       }
       const [existingBasisRows] = await db.query<
@@ -365,8 +348,8 @@ export class MysqlProductionMaterialDemandConfigurationRepository extends Produc
         const [basis] = await db.execute<ResultSetHeader>(
           `INSERT INTO production_material_requirement_basis
            (production_batch_id,product_material_id,material_id,material_code_snapshot,
-            unit_snapshot,quantity_per_unit_snapshot,planned_output_quantity_snapshot,required_number,created_by)
-           VALUES (?,?,?,?,?,?,?,?,?)`,
+            unit_snapshot,quantity_per_unit_snapshot,planned_output_quantity_snapshot,required_number,created_by,locked_material_variant_id,supplier_hint)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
           [
             productionBatchId,
             line.productMaterialId,
@@ -377,6 +360,8 @@ export class MysqlProductionMaterialDemandConfigurationRepository extends Produc
             batch.planned_quantity,
             multiplyIntegerQuantities(line.quantityPerUnit, batch.planned_quantity),
             context.actorId,
+            requirement.splits[0]!.materialVariantId,
+            requirement.splits[0]!.supplierHint?.trim() || null,
           ],
         );
         for (const split of requirement.splits) {
@@ -435,84 +420,93 @@ export class MysqlProductionMaterialDemandConfigurationRepository extends Produc
       if (!reason) throw new ProductionDomainError('INVALID_INPUT', '人工追加原因不能为空');
       const orderPolicy = await lockWorkOrderForBatch(db, command.productionBatchId);
       const batch = await findBatch(db, command.productionBatchId, true);
-      if (['pending', 'cancelled', 'completed', 'terminated', 'closing'].includes(batch.status))
-        throw new ProductionDomainError(
-          'INVALID_STATE',
-          '只有已生成初始需求的进行中任务可以人工追加',
-        );
+      if (
+        ['cancelled', 'completed', 'terminated', 'closing'].includes(batch.status) ||
+        (batch.status === 'pending' && orderPolicy.orderType !== 'research')
+      )
+        throw new ProductionDomainError('INVALID_STATE', '当前任务不能手工提需');
       const [basisRows] = await db.query<BasisRow[]>(
-        `SELECT id,production_batch_id,product_material_id,material_id,
-            material_code_snapshot,${currentMaterialNameSql('production_material_requirement_basis.material_id')} material_name,unit_snapshot,
-            quantity_per_unit_snapshot,planned_output_quantity_snapshot,required_number
-         FROM production_material_requirement_basis WHERE production_batch_id=? FOR UPDATE`,
+        `SELECT id,production_batch_id,product_material_id,material_id,material_code_snapshot,
+          unit_snapshot,quantity_per_unit_snapshot,planned_output_quantity_snapshot,required_number,
+          locked_material_variant_id,supplier_hint
+         FROM production_material_requirement_basis WHERE production_batch_id=? FOR SHARE`,
         [command.productionBatchId],
       );
-      const basisByProductMaterial = new Map(
-        basisRows.map((basis) => [String(basis.product_material_id), basis]),
-      );
-      const requirementByLine = new Map(
-        command.requirements.map((requirement) => [requirement.productMaterialId, requirement]),
-      );
-      if (
-        command.requirements.length === 0 ||
-        command.requirements.length !== requirementByLine.size
-      )
+      const bases = new Map(basisRows.map((basis) => [String(basis.material_id), basis]));
+      const materialIds = command.requirements.map((requirement) => requirement.materialId);
+      if (!materialIds.length || new Set(materialIds).size !== materialIds.length)
         throw new ProductionDomainError(
           'INVALID_INPUT',
-          '人工追加至少需要一种且不能重复选择基础物料',
+          '至少选择一种物料，同次提需的基础物料不能重复',
         );
-      const materialIds = command.requirements.map((requirement) => {
-        const basis = basisByProductMaterial.get(requirement.productMaterialId);
-        if (!basis)
-          throw new ProductionDomainError('INVALID_INPUT', '人工追加物料不属于任务冻结 BOM');
-        return String(basis.material_id);
-      });
-      const variants = await this.materialVariants.listEnabledByMaterials(materialIds, {
-        lock: true,
-      });
-      const variantsById = new Map(variants.map((variant) => [variant.id, variant]));
-      const lines: DemandPlanLine[] = [];
       for (const requirement of command.requirements) {
-        const basis = basisByProductMaterial.get(requirement.productMaterialId)!;
-        const splitIds = new Set(requirement.splits.map((split) => split.materialVariantId));
-        if (requirement.splits.length === 0 || splitIds.size !== requirement.splits.length)
+        if (
+          !requirement.splits.length ||
+          new Set(requirement.splits.map((split) => split.materialVariantId)).size !==
+            requirement.splits.length
+        )
           throw new ProductionDomainError(
             'INVALID_INPUT',
-            '每种追加物料至少选择一个且不能重复选择版本',
+            '每种物料至少选择一个且不能重复选择版本',
           );
         if (orderPolicy.orderType === 'mass_production' && requirement.splits.length !== 1)
-          throw new ProductionDomainError(
-            'INVALID_INPUT',
-            '批量生产工单的同一基础物料只能追加一个版本',
-          );
+          throw new ProductionDomainError('INVALID_INPUT', '批量任务同一种物料只能使用已锁定版本');
         for (const split of requirement.splits) {
-          if (!Number.isSafeInteger(split.quantity) || split.quantity <= 0)
-            throw new ProductionDomainError('INVALID_INPUT', '人工追加数量必须为正整数');
-          const variant = variantsById.get(split.materialVariantId);
-          if (!variant || variant.materialId !== String(basis.material_id))
+          if (
+            !Number.isSafeInteger(split.quantity) ||
+            split.quantity <= 0 ||
+            split.quantity > 99_999_999
+          )
+            throw new ProductionDomainError('INVALID_INPUT', '需求数量必须为范围内的正整数');
+          if (orderPolicy.orderType === 'mass_production' && split.supplierHint?.trim())
             throw new ProductionDomainError(
               'INVALID_INPUT',
-              '人工追加只能选择对应基础物料下的启用版本',
+              '批量任务的供应商提示随初始需求冻结，追加时不能修改',
             );
-          await requireWorkOrderMaterialVariant(
+        }
+      }
+      const references = await this.eligibility.requireProductionIssuableReferences({
+        references: command.requirements.flatMap((requirement) =>
+          requirement.splits.map((split) => ({
+            itemId: requirement.materialId,
+            materialVariantId: split.materialVariantId,
+          })),
+        ),
+      });
+      if (references.status !== 'success')
+        throw new ProductionDomainError('INVALID_INPUT', references.message);
+      const byVariant = new Map(
+        references.value.map((reference) => [reference.materialVariantId, reference]),
+      );
+      const lines: DemandPlanLine[] = [];
+      for (const requirement of command.requirements) {
+        const basis = bases.get(requirement.materialId);
+        if (orderPolicy.orderType === 'mass_production' && !basis)
+          throw new ProductionDomainError('INVALID_INPUT', '追加物料不属于本任务冻结 BOM');
+        for (const split of requirement.splits) {
+          const reference = byVariant.get(split.materialVariantId);
+          if (!reference || reference.itemId !== requirement.materialId)
+            throw new ProductionDomainError('INVALID_INPUT', '物料与版本不匹配');
+          await requireTaskMaterialVariant(
             db,
             orderPolicy,
-            basis.material_id,
-            variant.id,
-            context.actorId!,
+            requirement.materialId,
+            split.materialVariantId,
           );
           lines.push({
-            identityId: `${basis.id}:${variant.id}`,
-            requirementBasisId: basis.id,
-            productMaterialId: basis.product_material_id,
-            itemId: basis.material_id,
-            materialVariantId: variant.id,
-            materialVariantCode: variant.variantCode,
-            itemCode: basis.material_code_snapshot,
-            quantityPerUnit: String(basis.quantity_per_unit_snapshot),
-            unit: basis.unit_snapshot,
-            plannedOutputQuantity: String(basis.planned_output_quantity_snapshot),
+            identityId: `${requirement.materialId}:${split.materialVariantId}`,
+            requirementBasisId: basis?.id ?? null,
+            productMaterialId: basis?.product_material_id ?? null,
+            itemId: reference.itemId,
+            materialVariantId: reference.materialVariantId,
+            materialVariantCode: reference.materialVariantCode,
+            itemCode: reference.itemCode,
+            quantityPerUnit: basis ? String(basis.quantity_per_unit_snapshot) : null,
+            plannedOutputQuantity: basis ? String(basis.planned_output_quantity_snapshot) : null,
+            unit: basis?.unit_snapshot ?? reference.unit,
             needNumber: String(split.quantity),
+            supplierHint:
+              orderPolicy.orderType === 'research' ? split.supplierHint?.trim() || null : null,
             demandType: 'manual_additional',
           });
         }
@@ -533,6 +527,8 @@ export class MysqlProductionMaterialDemandConfigurationRepository extends Produc
           businessActionNo: additionNo,
         },
         lines,
+        expectedBatchVersion: batch.version,
+        transitionToMaterialPending: batch.status === 'pending',
       });
       await this.audit(db, context, String(addition.insertId), {
         additionNo,
@@ -599,3 +595,15 @@ const groupBy = <T>(values: T[], key: (value: T) => string): Map<string, T[]> =>
   }
   return grouped;
 };
+
+const mapManagementDemand = (demand: DemandRow): MaterialDemandManagementDemand => ({
+  demandId: String(demand.id),
+  materialVariantId: String(demand.material_variant_id),
+  materialVariantCode: demand.material_variant_code_snapshot,
+  demandQuantity: String(demand.need_number),
+  remainingQuantity: String(demand.remaining_number),
+  demandType: demand.demand_type,
+  parentDemandId: demand.parent_demand_id === null ? null : String(demand.parent_demand_id),
+  businessStatus: demand.business_status,
+  supplierHint: demand.supplier_hint,
+});

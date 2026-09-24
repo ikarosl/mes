@@ -8,7 +8,7 @@
     @update:model-value="$emit('update:visible', $event)"
   >
     <el-alert
-      title="可跨工单、跨页选择；同一物料精确版本合并为采购行。采购数量另行填写，不分摊到需求。"
+      title="仅选择当前工单的需求，可跨任务、跨页选择。采购数量另行填写，不分摊到需求。"
       type="info"
       :closable="false"
     />
@@ -45,7 +45,7 @@
       >
     </el-form>
     <div
-      v-if="workOrderId || batchId"
+      v-if="batchId"
       class="selection-summary"
     >
       <el-tag
@@ -77,89 +77,81 @@
         description="没有符合条件的采购需求"
       />
       <section
-        v-for="order in grouped"
-        :key="order.id"
+        v-for="batch in grouped"
+        :key="batch.id"
         class="work-order-group"
       >
-        <h3>
-          {{ order.no }}（当前页）<el-button
+        <h4>
+          任务 {{ batch.no }}（当前页）<el-button
             link
             type="primary"
-            @click="filterGroup(order.id, undefined, order.no)"
-            >只看此工单</el-button
+            @click="filterGroup(batch.id, batch.no)"
+            >只看此任务</el-button
           >
-        </h3>
-        <div
-          v-for="batch in order.batches"
-          :key="batch.id"
-          class="batch-group"
+        </h4>
+        <el-table
+          :data="batch.rows"
+          row-key="demandId"
         >
-          <h4>
-            任务 {{ batch.no }}（当前页）<el-button
-              link
-              type="primary"
-              @click="filterGroup(order.id, batch.id, `${order.no} / ${batch.no}`)"
-              >只看此任务</el-button
-            >
-          </h4>
-          <el-table
-            :data="batch.rows"
-            row-key="demandId"
+          <el-table-column
+            label="选择"
+            width="65"
+            ><template #default="{ row }"
+              ><el-checkbox
+                :model-value="selected.has(row.demandId)"
+                :aria-label="`选择需求 ${row.demandId}`"
+                :disabled="!!materialVariantId && row.materialVariantId !== materialVariantId"
+                @change="toggle(row)" /></template
+          ></el-table-column>
+          <el-table-column
+            prop="itemCode"
+            label="物料编码"
+            min-width="140"
+          />
+          <el-table-column
+            prop="itemName"
+            label="物料名称"
+            min-width="140"
+          />
+          <el-table-column
+            prop="materialVariantCode"
+            label="精确版本"
+            min-width="190"
+          />
+          <el-table-column
+            label="需求类型"
+            width="135"
+            ><template #default="{ row }">{{
+              DEMAND_GENERATION_GROUP_TYPE_LABELS[row.demandType as DemandType]
+            }}</template></el-table-column
           >
-            <el-table-column
-              label="选择"
-              width="65"
-              ><template #default="{ row }"
-                ><el-checkbox
-                  :model-value="selected.has(row.demandId)"
-                  :aria-label="`选择需求 ${row.demandId}`"
-                  @change="toggle(row)" /></template
-            ></el-table-column>
-            <el-table-column
-              prop="itemCode"
-              label="物料编码"
-              min-width="140"
-            />
-            <el-table-column
-              prop="itemName"
-              label="物料名称"
-              min-width="140"
-            />
-            <el-table-column
-              prop="materialVariantCode"
-              label="精确版本"
-              min-width="190"
-            />
-            <el-table-column
-              label="需求类型"
-              width="135"
-              ><template #default="{ row }">{{
-                DEMAND_GENERATION_GROUP_TYPE_LABELS[row.demandType as DemandType]
-              }}</template></el-table-column
-            >
-            <el-table-column
-              label="需求状态"
-              width="100"
-              ><template #default="{ row }">{{
-                DEMAND_BUSINESS_STATUS_LABELS[row.businessStatus as DemandBusinessStatus]
-              }}</template></el-table-column
-            >
-            <el-table-column
-              label="需求量"
-              width="110"
-              ><template #default="{ row }"
-                >{{ Number(row.demandQuantity) }} {{ row.unit }}</template
-              ></el-table-column
-            >
-            <el-table-column
-              label="剩余缺口"
-              width="110"
-              ><template #default="{ row }">{{
-                Number(row.remainingDemandQuantity)
-              }}</template></el-table-column
-            >
-          </el-table>
-        </div>
+          <el-table-column
+            label="需求状态"
+            width="100"
+            ><template #default="{ row }">{{
+              DEMAND_BUSINESS_STATUS_LABELS[row.businessStatus as DemandBusinessStatus]
+            }}</template></el-table-column
+          >
+          <el-table-column
+            prop="supplierHint"
+            label="生产采购提示"
+            min-width="190"
+          />
+          <el-table-column
+            label="需求量"
+            width="110"
+            ><template #default="{ row }"
+              >{{ Number(row.demandQuantity) }} {{ row.unit }}</template
+            ></el-table-column
+          >
+          <el-table-column
+            label="剩余缺口"
+            width="110"
+            ><template #default="{ row }">{{
+              Number(row.remainingDemandQuantity)
+            }}</template></el-table-column
+          >
+        </el-table>
       </section>
     </div>
     <PaginationFooter
@@ -202,7 +194,13 @@ import { useLatestReadRequest } from '../../../composables/requests/useLatestRea
 import { DialogWidth } from '../../../utils/dialog';
 import { EMessage } from '../../../utils/message';
 
-const props = defineProps<{ visible: boolean; selectedIds: string[] }>();
+const props = defineProps<{
+  visible: boolean;
+  selectedIds: string[];
+  workOrderId: string;
+  itemId?: string;
+  materialVariantId?: string;
+}>();
 const emit = defineEmits<{
   'update:visible': [boolean];
   selected: [ProcurementDemandCandidate[]];
@@ -214,7 +212,6 @@ const keyword = ref(''),
   loading = ref(false),
   resolving = ref(false);
 const demandType = ref<DemandType | ''>(''),
-  workOrderId = ref<string>(),
   batchId = ref<string>(),
   groupFilterLabel = ref('');
 const rows = ref<ProcurementDemandCandidate[]>([]);
@@ -226,31 +223,19 @@ const resolutionRead = useLatestReadRequest(() => {
   resolving.value = false;
 });
 const grouped = computed(() => {
-  const orders = new Map<
-    string,
-    {
-      id: string;
-      no: string;
-      batches: { id: string; no: string; rows: ProcurementDemandCandidate[] }[];
-    }
-  >();
+  const batches = new Map<string, { id: string; no: string; rows: ProcurementDemandCandidate[] }>();
   for (const row of rows.value) {
-    let order = orders.get(row.workOrderId);
-    if (!order) {
-      order = { id: row.workOrderId, no: row.workOrderNo, batches: [] };
-      orders.set(row.workOrderId, order);
-    }
-    let batch = order.batches.find((item) => item.id === row.productionBatchId);
+    let batch = batches.get(row.productionBatchId);
     if (!batch) {
       batch = { id: row.productionBatchId, no: row.batchNo, rows: [] };
-      order.batches.push(batch);
+      batches.set(batch.id, batch);
     }
     batch.rows.push(row);
   }
-  return [...orders.values()];
+  return [...batches.values()];
 });
 const load = async (): Promise<void> => {
-  if (!props.visible || !read.isActive()) return;
+  if (!props.visible || !props.workOrderId || !read.isActive()) return;
   const current = read.begin(() => props.visible);
   loading.value = true;
   try {
@@ -260,7 +245,8 @@ const load = async (): Promise<void> => {
         page: page.value,
         pageSize: pageSize.value,
         demandType: demandType.value || undefined,
-        workOrderId: workOrderId.value,
+        workOrderId: props.workOrderId,
+        itemId: props.itemId,
         batchId: batchId.value,
       },
       current.signal,
@@ -281,7 +267,7 @@ const resolveSelection = async (): Promise<ProcurementDemandCandidate[] | null> 
   if (!ids.length) return [];
   resolving.value = true;
   try {
-    const result = await procurementApi.resolveDemands(ids, current.signal);
+    const result = await procurementApi.resolveDemands(props.workOrderId, ids, current.signal);
     if (!current.isCurrent()) return null;
     selected.value = new Map(
       ids.map((id) => [
@@ -331,18 +317,12 @@ const search = async (): Promise<void> => {
   page.value = 1;
   await load();
 };
-const filterGroup = async (
-  order: string,
-  batch: string | undefined,
-  label: string,
-): Promise<void> => {
-  workOrderId.value = order;
+const filterGroup = async (batch: string | undefined, label: string): Promise<void> => {
   batchId.value = batch;
   groupFilterLabel.value = label;
   await search();
 };
 const clearGroupFilter = async (): Promise<void> => {
-  workOrderId.value = undefined;
   batchId.value = undefined;
   groupFilterLabel.value = '';
   await search();
@@ -380,6 +360,8 @@ watch(
       ]),
     );
     page.value = 1;
+    batchId.value = undefined;
+    keyword.value = '';
     void refreshAll();
   },
 );

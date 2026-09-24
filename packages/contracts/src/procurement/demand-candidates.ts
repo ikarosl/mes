@@ -8,7 +8,7 @@ import type {
 
 export interface ProcurementDemandCandidateQuery extends PageQuery {
   keyword?: string;
-  workOrderId?: string;
+  workOrderId: string;
   batchId?: string;
   itemId?: string;
   demandType?: DemandType;
@@ -34,6 +34,7 @@ export interface ProcurementDemandCandidate {
   remainingDemandQuantity: string;
   businessStatus: DemandBusinessStatus;
   pendingCorrectionId: string | null;
+  supplierHint: string | null;
 }
 
 /** 不在当前候选窗口中的历史需求仍返回 demand；仅不存在的 ID 返回 null。 */
@@ -42,4 +43,12 @@ export interface ProcurementDemandResolution {
   demand: ProcurementDemandCandidate | null;
   eligible: boolean;
   blockedReason: string | null;
+}
+
+export interface ProcurementDemandWorkOrder {
+  id: string;
+  workOrderNo: string;
+}
+export interface ProcurementDemandWorkOrderQuery extends PageQuery {
+  keyword?: string;
 }

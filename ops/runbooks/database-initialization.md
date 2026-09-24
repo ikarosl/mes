@@ -1,9 +1,14 @@
 # 数据库首次初始化与演示数据
 
-**重置流程 前提** 
-**将现有数据打包到备份文件夹下，并移除了原数据目录**
-MySQL 官方镜像明确说明：数据目录已初始化时，MYSQL_ROOT_PASSWORD、MYSQL_USER 等初始化变量会被忽略，不会修改已有账号。**所以必须移除原数据目录**
-``` bash 
+API 发布脚本只执行 migration 和 Bucket 初始化，不在每次部署时创建或重置管理员。首次初始化在 migration 成功后依次执行 system seed、管理员初始化；演示数据必须单独启用。已有库正常升级不要求清空数据。
+
+## 可选：重建开发／测试库
+
+仅在需要完全重置开发／测试库时使用本节。先停止整个 Compose 栈，将已停止的 MySQL 数据目录保留到备份位置，再创建空目录；原数据不会迁移进新库。已有数据目录不会因修改初始化环境变量而更新数据库账号密码，重建后使用 `/etc/easy-mes/mysql.env` 的配置初始化。
+
+以下命令在测试服务器以具备目录与 Docker 权限的账号执行。服务目录与备份边界见[部署手册](compose-server-deployment.md)；此处保留旧目录不是自动备份或已验证恢复能力。
+
+```bash
 compose=(
   docker compose
   --project-name easy-mes
@@ -13,28 +18,24 @@ compose=(
 )
 
 "${compose[@]}" down
-
 reset_stamp="$(date +%Y%m%d-%H%M%S)"
-mv -- /srv/easy-mes/mysql \
-  "/srv/easy-mes/backups/mysql/reset-${reset_stamp}"
-
+mv -- /srv/easy-mes/mysql "/srv/easy-mes/backups/mysql/reset-${reset_stamp}"
 install -d -o 999 -g 999 -m 750 /srv/easy-mes/mysql
-
 "${compose[@]}" up -d --wait mysql
-
-此时 root 密码就是你刚写入 MYSQL_ROOT_PASSWORD 的新值。交互式登录，避免密码进入命令历史：
-"${compose[@]}" exec mysql mysql -uroot -p
-
-然后初始化最新数据库结构和基础数据：
-"${compose[@]}" run --rm --no-deps api \
-  node node_modules/@company/database/dist/migrate.js
-
-"${compose[@]}" run --rm --no-deps api \
-  node node_modules/@company/database/dist/seed.js
 ```
 
+需要检查新账号时交互式登录，避免密码进入命令历史：
 
+```bash
+"${compose[@]}" exec mysql mysql -uroot -p
+```
 
+空库使用当前 API 镜像应用迁移，再继续下方 seed 和管理员初始化：
+
+```bash
+"${compose[@]}" run --rm --no-deps api \
+  node node_modules/@company/database/dist/migrate.js
+```
 
 ## System seed
 
@@ -60,7 +61,6 @@ echo
 export ADMIN_PASSWORD
 export ADMIN_USERNAME=admin
 export ADMIN_DISPLAY_NAME='系统管理员'
------
 docker compose \
   --project-name easy-mes \
   --env-file /etc/easy-mes/deploy.env \
@@ -103,22 +103,3 @@ unset DEMO_USER_PASSWORD
 ```
 
 Demo seed 按业务编码幂等更新，不删除其他业务数据；`admin` 管理员仍由 `bootstrap-admin` 单独创建。
-
-# 发布脚本自动执行脚本（只是**提示本段不用参考**）
-
----
-
-发布
-``` bash migration
-docker compose \
-  --project-name easy-mes \
-  --env-file /etc/easy-mes/deploy.env \
-  --env-file /opt/easy-mes/release.env \
-  --file /opt/easy-mes/compose.prod.yml \
-  run --rm --no-deps api \
-  node node_modules/@company/database/dist/migrate.js
-  
-```
-
-API 发布脚本负责执行 **migration**，但不会在每次部署时创建或重置管理员账号。首次环境初始化在 API migration 成功后手工执行 system seed 和 `bootstrap-admin`。
----

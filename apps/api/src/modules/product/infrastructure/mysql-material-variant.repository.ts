@@ -124,10 +124,24 @@ export class MysqlMaterialVariantRepository extends MaterialVariantRepository {
     });
   }
 
-  async listPurchasableMaterials(input: {
+  listProductionMaterials(input: {
     keyword?: string;
     includeIds?: string[];
   }): Promise<MaterialOption[]> {
+    return this.listMaterialOptions(input, true);
+  }
+
+  listPurchasableMaterials(input: {
+    keyword?: string;
+    includeIds?: string[];
+  }): Promise<MaterialOption[]> {
+    return this.listMaterialOptions(input, false);
+  }
+
+  private async listMaterialOptions(
+    input: { keyword?: string; includeIds?: string[] },
+    enabledOnly: boolean,
+  ): Promise<MaterialOption[]> {
     const includeIds = [...new Set(input.includeIds ?? [])];
     if (includeIds.length > 100) {
       throw new ProductDomainError('INVALID_INPUT', '回显物料最多 100 项');
@@ -144,7 +158,7 @@ export class MysqlMaterialVariantRepository extends MaterialVariantRepository {
           FROM materials p JOIN item_categories c ON c.id=p.category_id
          WHERE p.status=1 AND p.is_deleted=0 AND c.status=1 AND c.is_deleted=0
            AND c.item_kind='material'
-           AND EXISTS (SELECT 1 FROM material_variants v WHERE v.material_id=p.id AND v.is_deleted=0)`;
+           AND EXISTS (SELECT 1 FROM material_variants v WHERE v.material_id=p.id AND v.is_deleted=0${enabledOnly ? ' AND v.status=1' : ''})`;
       const keyword = input.keyword?.trim();
       const [window] = await db.query<OptionRow[]>(
         `${base}${keyword ? ' AND (p.material_code LIKE ? OR p.material_name LIKE ?)' : ''}

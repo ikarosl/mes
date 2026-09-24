@@ -1,9 +1,11 @@
 import type {
   ConfirmProcurementReceiptPayload,
+  ConfirmReceiptAcceptancePayload,
   CorrectReceiptLinePayload,
   StartReceiptReviewPayload,
   InspectReceiptLinePayload,
-  TerminateReceiptScopePayload,
+  RejectReceiptLinePayload,
+  RevokeReceiptRejectionPayload,
   ConfirmSupplierReturnPayload,
   ConfirmProcurementInboundPayload,
   ProcurementReceiptCommandResult,
@@ -11,6 +13,11 @@ import type {
 } from '@company/contracts';
 import type { CommandContext } from '../../../../common/audit/audit.types.js';
 export abstract class ProcurementReceiptRepository {
+  abstract accept(
+    id: string,
+    payload: ConfirmReceiptAcceptancePayload,
+    context: CommandContext,
+  ): Promise<ProcurementReceiptCommandResult>;
   abstract confirmReceipt(
     payload: ConfirmProcurementReceiptPayload,
     context: CommandContext,
@@ -30,9 +37,14 @@ export abstract class ProcurementReceiptRepository {
     payload: InspectReceiptLinePayload,
     context: CommandContext,
   ): Promise<ProcurementReceiptCommandResult>;
-  abstract terminateReturn(
+  abstract reject(
     id: string,
-    payload: TerminateReceiptScopePayload,
+    payload: RejectReceiptLinePayload,
+    context: CommandContext,
+  ): Promise<ProcurementReceiptCommandResult>;
+  abstract revokeRejection(
+    id: string,
+    payload: RevokeReceiptRejectionPayload,
     context: CommandContext,
   ): Promise<ProcurementReceiptCommandResult>;
   abstract confirmReturn(

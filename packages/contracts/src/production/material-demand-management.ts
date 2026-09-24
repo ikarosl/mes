@@ -27,6 +27,7 @@ export interface MaterialDemandManagementDemand {
   demandQuantity: string;
   remainingQuantity: string;
   businessStatus: DemandBusinessStatus;
+  supplierHint: string | null;
 }
 
 export interface MaterialDemandManagementRow {
@@ -36,15 +37,16 @@ export interface MaterialDemandManagementRow {
   workOrderNo: string;
   orderType: WorkOrderType;
   requirementBasisId: string | null;
-  productMaterialId: string;
+  productMaterialId: string | null;
   materialId: string;
   materialCode: string;
   materialName: string;
   unit: string;
-  requiredQuantity: string;
+  requiredQuantity: string | null;
   configuredQuantity: string;
-  /** 批量工单已经为该基础物料锁定的具体版本；研发任务恒为 null。 */
+  /** 批量任务初始需求确认时锁定的具体版本；研发任务恒为 null。 */
   lockedMaterialVariantId: string | null;
+  supplierHint: string | null;
   status: 'pending' | 'configured';
   demands: MaterialDemandManagementDemand[];
   variants: MaterialDemandManagementVariant[];
@@ -60,6 +62,7 @@ export type MaterialDemandManagementPage = {
 export interface MaterialDemandVariantSplitInput {
   materialVariantId: string;
   quantity: number;
+  supplierHint?: string | null;
 }
 
 export interface MaterialDemandRequirementInput {
@@ -73,11 +76,21 @@ export interface ConfigureMaterialDemandsPayload {
 
 export interface AddManualMaterialDemandsPayload {
   reason: string;
-  requirements: MaterialDemandRequirementInput[];
+  requirements: ManualMaterialDemandRequirementInput[];
+}
+
+export interface ManualMaterialDemandRequirementInput {
+  materialId: string;
+  splits: MaterialDemandVariantSplitInput[];
 }
 
 export interface AddManualMaterialDemandsResult {
   additionId: string;
   additionNo: string;
   demandIds: string[];
+}
+
+export interface ProductionMaterialOptionsQuery {
+  keyword?: string;
+  includeIds?: string[];
 }

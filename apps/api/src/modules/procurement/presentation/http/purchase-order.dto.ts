@@ -14,6 +14,7 @@ import {
   MaxLength,
   Min,
   ValidateNested,
+  ValidateIf,
 } from 'class-validator';
 import {
   DEMAND_TYPES,
@@ -47,7 +48,11 @@ export class PurchaseOrderQueryDto extends PageQueryDto {
   @IsOptional() @IsIn(PURCHASE_ORDER_STATUSES) status?: PurchaseOrderStatus;
   @IsOptional() @Matches(/^[1-9]\d{0,19}$/) originOrderLineId?: string;
 }
+export class PurchaseExcessReceiptCandidateQueryDto extends PageQueryDto {
+  @IsOptional() @Matches(/^[1-9]\d{0,19}$/) receiptLineId?: string;
+}
 export class PurchaseOrderDraftLineDto {
+  @Matches(/^[1-9]\d{0,19}$/) supplierId!: string;
   @Matches(/^[1-9]\d{0,19}$/) itemId!: string;
   @Matches(/^[1-9]\d{0,19}$/) materialVariantId!: string;
   @IsInt() @Min(1) @Max(PURCHASE_ORDER_MAX_QUANTITY) plannedQuantity!: number;
@@ -58,7 +63,9 @@ export class PurchaseOrderDraftLineDto {
   demandIds!: string[];
 }
 export class CreatePurchaseOrderDto {
-  @Matches(/^[1-9]\d{0,19}$/) supplierId!: string;
+  @ValidateIf((_object, value) => value !== null)
+  @Matches(/^[1-9]\d{0,19}$/)
+  workOrderId!: string | null;
   @IsIn(PURCHASE_ORDER_SOURCE_TYPES) sourceType!: PurchaseOrderSourceType;
   @IsOptional() @Transform(trim) @IsString() @MaxLength(2000) remark?: string | null;
   @IsArray()
@@ -83,21 +90,25 @@ export class ClosePurchaseOrderLineDto extends CancelPurchaseOrderDto {
 export class CreatePurchaseOrderSupplementDto {
   @IsIn(PURCHASE_ORDER_SUPPLEMENT_REASONS) supplementReason!: PurchaseOrderSupplementReason;
   @IsOptional() @Matches(/^[1-9]\d{0,19}$/) originReceiptLineId?: string;
-  @IsOptional() @Matches(/^[1-9]\d{0,19}$/) originSupplierReturnId?: string;
+  @IsOptional() @Matches(/^[1-9]\d{0,19}$/) originAllocationId?: string;
   @IsInt() @Min(1) @Max(PURCHASE_ORDER_MAX_QUANTITY) plannedQuantity!: number;
   @Transform(trim) @IsString() @IsNotEmpty() @MaxLength(2000) supplementEvidence!: string;
   @IsOptional() @Transform(trim) @IsString() @MaxLength(2000) remark?: string | null;
 }
 export class ProcurementDemandCandidateQueryDto extends PageQueryDto {
   @IsOptional() @Transform(trim) @IsString() @MaxLength(100) keyword?: string;
-  @IsOptional() @Matches(/^[1-9]\d{0,19}$/) workOrderId?: string;
+  @Matches(/^[1-9]\d{0,19}$/) workOrderId!: string;
   @IsOptional() @Matches(/^[1-9]\d{0,19}$/) batchId?: string;
   @IsOptional() @Matches(/^[1-9]\d{0,19}$/) itemId?: string;
   @IsOptional()
   @IsIn(DEMAND_TYPES)
   demandType?: DemandType;
 }
+export class ProcurementDemandWorkOrderQueryDto extends PageQueryDto {
+  @IsOptional() @Transform(trim) @IsString() @MaxLength(100) keyword?: string;
+}
 export class ResolveProcurementDemandsDto {
+  @Matches(/^[1-9]\d{0,19}$/) workOrderId!: string;
   @IsArray()
   @ArrayMinSize(1)
   @ArrayMaxSize(PURCHASE_ORDER_MAX_DEMANDS)

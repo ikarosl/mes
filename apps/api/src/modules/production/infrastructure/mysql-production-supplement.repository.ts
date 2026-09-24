@@ -26,7 +26,7 @@ import { mysqlProductionDemandPlanWriter } from './mysql-production-demand-plan.
 import { findBatch } from './mysql-production.shared.js';
 import {
   lockWorkOrderForBatch,
-  requireWorkOrderMaterialVariant,
+  requireTaskMaterialVariant,
 } from './mysql-work-order-material-version.js';
 import { MaterialVariantQuery } from '../../product/public.js';
 
@@ -464,12 +464,11 @@ export class MysqlProductionSupplementRepository extends ProductionSupplementRep
         return { line, original };
       });
       for (const { line, original } of demandLines) {
-        await requireWorkOrderMaterialVariant(
+        await requireTaskMaterialVariant(
           connection,
           orderPolicy,
           original.itemId,
           line.materialVariantId,
-          actorId,
         );
       }
       const demandIds = await mysqlProductionDemandPlanWriter.createDemandGroup(connection, {

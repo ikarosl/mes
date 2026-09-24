@@ -176,13 +176,6 @@ export interface MaterialLossItem {
   cancelledById?: string | null;
   cancelledByName?: string | null;
   cancelledAt?: string | null;
-  supplement: null | {
-    supplementId: string;
-    supplementNo: string;
-    status: 'approved' | 'fulfilled' | 'cancelled';
-    demandId: string;
-    demandQuantity: string;
-  };
 }
 
 export type CancelMaterialLossPayload = ReasonedVersionedCommand;
@@ -320,7 +313,6 @@ export interface InventoryMaterialDemandTraceItem {
   supplementId: string | null;
   supplementNo: string | null;
   abnormalDispositionNo: string | null;
-  materialLossScrapNo: string | null;
   createdAt: string;
 }
 

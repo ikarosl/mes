@@ -11,6 +11,8 @@
             maxlength="100"
             placeholder="输入单号或供应商" /></el-form-item
         ><el-form-item
+          ><el-checkbox v-model="awaitingAcceptance">仅待核对清单</el-checkbox></el-form-item
+        ><el-form-item
           ><el-button
             type="primary"
             native-type="submit"
@@ -52,9 +54,16 @@
           label="采购单号"
           min-width="185"
         /><el-table-column
-          prop="supplierName"
           label="供应商"
           min-width="210"
+          show-overflow-tooltip
+          ><template #default="{ row }">{{
+            supplierSummary(row.suppliers)
+          }}</template></el-table-column
+        ><el-table-column
+          prop="awaitingAcceptanceCount"
+          label="待定稿批次"
+          width="110"
         /><el-table-column
           prop="lineCount"
           label="明细数"
@@ -102,7 +111,8 @@
   </section>
 </template>
 <script setup lang="ts">
-import { nextTick, onActivated, ref, watch } from 'vue';
+import { supplierSummary } from './supplier-summary';
+import { nextTick, onActivated, onScopeDispose, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import { procurementApi } from '../../api/procurement';
@@ -110,6 +120,7 @@ import TableToolbar from '../../components/TableToolbar.vue';
 import PaginationFooter from '../../components/PaginationFooter.vue';
 import { formatDateTimeForDisplay } from '../../utils/date';
 import { EMessage } from '../../utils/message';
+import { useTabsStore } from '../../stores/tabs';
 import { useLatestReadRequest } from '../../composables/requests/useLatestReadRequest';
 import { useReceiptsList } from './composables/useReceiptsList';
 import ReceiptCreateDialog from './components/ReceiptCreateDialog.vue';
@@ -118,6 +129,7 @@ defineOptions({ name: 'PurchaseReceiptsPage' });
 const route = useRoute(),
   router = useRouter();
 const {
+  awaitingAcceptance,
   keyword,
   rows,
   page,
@@ -143,6 +155,7 @@ const release = async (): Promise<boolean> => {
   if (detail.value?.visible && !(await detail.value.close())) return false;
   return true;
 };
+onScopeDispose(useTabsStore().registerCloseGuard('procurement-receipts', release));
 const navigate = async (id: string, lineId?: string): Promise<boolean> => {
   if (navigating) return false;
   navigating = true;

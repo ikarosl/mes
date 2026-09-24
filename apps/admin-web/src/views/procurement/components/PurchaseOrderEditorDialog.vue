@@ -41,41 +41,25 @@
       @submit.prevent="save"
     >
       <el-form-item
-        label="供应商"
+        v-if="sourceType === 'demand'"
+        label="所属工单"
         required
       >
-        <el-select
-          v-model="supplierId"
-          class="supplier-field"
-          filterable
-          remote
-          reserve-keyword
-          :remote-method="suppliers.search"
-          :loading="suppliers.loading.value"
-          :disabled="supplement"
-          placeholder="搜索供应商名称"
-          @visible-change="supplierVisible"
-        >
-          <el-option
-            v-for="supplier in suppliers.options.value"
-            :key="supplier.id"
-            :value="supplier.id"
-            :label="supplier.supplierName"
-          />
-          <el-option
-            v-if="supplierId && !supplierExists"
-            :value="supplierId"
-            :label="`${original?.supplierName ?? supplierId}（当前不可选）`"
-            disabled
-          />
-        </el-select>
+        <strong>{{ workOrderNo || '尚未选择工单' }}</strong>
         <el-button
+          v-if="!supplement"
           link
           type="primary"
-          @click="refresh"
-          >刷新候选与依据</el-button
+          @click="workOrderPickerVisible = true"
+          >{{ workOrderId ? '切换工单' : '选择工单' }}</el-button
         >
       </el-form-item>
+      <el-button
+        link
+        type="primary"
+        @click="refresh"
+        >刷新候选与依据</el-button
+      >
       <el-form-item label="备注"
         ><el-input
           v-model="remark"
@@ -85,13 +69,14 @@
           show-word-limit
       /></el-form-item>
       <div class="line-toolbar">
-        <strong>采购明细</strong>
+        <strong>采购明细 {{ rows.length }} / 100；来源映射 {{ sourceCount }} / 100</strong>
         <el-button
           v-if="!supplement && sourceType === 'demand'"
           type="primary"
           plain
-          @click="pickerVisible = true"
-          >选择需求（已选 {{ selectedIds.length }} 条）</el-button
+          :disabled="!workOrderId"
+          @click="selectSources()"
+          >添加需求（已关联 {{ selectedIds.length }} 条）</el-button
         >
         <el-button
           v-if="!supplement && sourceType === 'stock'"
@@ -139,6 +124,18 @@
           </template>
         </el-table-column>
         <el-table-column
+          label="实际供应商"
+          min-width="260"
+          ><template #default="{ row }">
+            <PurchaseSupplierSelect
+              v-model:supplier-id="row.supplierId"
+              :supplier-name="row.supplierName"
+              :disabled="supplement || command.locked.value"
+              :refresh-token="supplierRefreshToken"
+              @ready="row.supplierReady = $event"
+            /> </template
+        ></el-table-column>
+        <el-table-column
           label="采购数量"
           width="210"
           ><template #default="{ row }"
@@ -166,15 +163,28 @@
         <el-table-column
           v-if="!supplement"
           label="操作"
-          width="80"
-          ><template #default="{ $index }"
+          width="165"
+          ><template #default="{ row, $index }"
             ><el-button
               link
               type="danger"
               @click="rows.splice($index, 1)"
               >移除</el-button
-            ></template
-          ></el-table-column
+            >
+            <el-button
+              link
+              type="primary"
+              @click="splitRow(row)"
+              >拆供应商行</el-button
+            >
+            <el-button
+              v-if="sourceType === 'demand'"
+              link
+              type="primary"
+              @click="selectSources(row)"
+              >编辑来源</el-button
+            >
+          </template></el-table-column
         >
       </el-table>
       <p
@@ -209,19 +219,27 @@
   </el-dialog>
   <ProcurementDemandPickerDialog
     v-model:visible="pickerVisible"
-    :selected-ids="selectedIds"
+    :selected-ids="pickerSelectedIds"
+    :work-order-id="workOrderId"
+    :item-id="sourceRow?.itemId"
+    :material-variant-id="sourceRow?.materialVariantId"
     @selected="adoptDemands"
+  />
+  <ProcurementWorkOrderPickerDialog
+    v-model:visible="workOrderPickerVisible"
+    @selected="selectWorkOrder"
   />
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
 import { PURCHASE_ORDER_SOURCE_TYPE_LABELS, PURCHASE_ORDER_MAX_QUANTITY } from '@company/constants';
 import { DialogWidth } from '../../../utils/dialog';
 import { usePurchaseOrderEditor } from '../composables/usePurchaseOrderEditor';
 import ProcurementDemandPickerDialog from './ProcurementDemandPickerDialog.vue';
 import PurchaseOrderSources from './PurchaseOrderSources.vue';
 import PurchaseMaterialSelect from './PurchaseMaterialSelect.vue';
+import PurchaseSupplierSelect from './PurchaseSupplierSelect.vue';
+import ProcurementWorkOrderPickerDialog from './ProcurementWorkOrderPickerDialog.vue';
 const emit = defineEmits<{ saved: [string] }>();
 const {
   visible,
@@ -230,14 +248,22 @@ const {
   freshnessError,
   pickerVisible,
   sourceType,
-  supplierId,
+  workOrderId,
+  workOrderNo,
+  workOrderPickerVisible,
+  sourceRow,
+  pickerSelectedIds,
+  supplierRefreshToken,
+  selectWorkOrder,
+  selectSources,
+  splitRow,
   remark,
   original,
   rows,
-  suppliers,
   command,
   supplement,
   selectedIds,
+  sourceCount,
   canSave,
   open,
   close,
@@ -247,12 +273,6 @@ const {
   addRow,
   changeMaterial,
 } = usePurchaseOrderEditor((id) => emit('saved', id));
-const supplierExists = computed(() =>
-  suppliers.options.value.some((supplier) => supplier.id === supplierId.value),
-);
-const supplierVisible = (open: boolean): void => {
-  if (open) void suppliers.refresh();
-};
 const beforeClose = (): void => {
   void close();
 };

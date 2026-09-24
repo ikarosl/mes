@@ -4,11 +4,21 @@ import { HttpExceptionFilter } from '../../../../presentation/http/http-exceptio
 import { ProcurementDomainError } from '../../domain/procurement.errors.js';
 import { QualityCommandError } from '../../../quality/public.js';
 import { InventoryCommandError } from '../../../inventory/public.js';
+import { ProductionProcurementInputError } from '../../../production/public.js';
 
-@Catch(ProcurementDomainError, QualityCommandError, InventoryCommandError)
+@Catch(
+  ProcurementDomainError,
+  QualityCommandError,
+  InventoryCommandError,
+  ProductionProcurementInputError,
+)
 export class ProcurementDomainExceptionFilter extends HttpExceptionFilter {
   override catch(
-    exception: ProcurementDomainError | QualityCommandError | InventoryCommandError,
+    exception:
+      | ProcurementDomainError
+      | QualityCommandError
+      | InventoryCommandError
+      | ProductionProcurementInputError,
     host: ArgumentsHost,
   ): void {
     const status =

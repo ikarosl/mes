@@ -2,6 +2,8 @@ import type {
   PageResult,
   ProcurementDemandCandidate,
   ProcurementDemandCandidateQuery,
+  ProcurementDemandWorkOrder,
+  ProcurementDemandWorkOrderQuery,
 } from '@company/contracts';
 import type { Pool, PoolConnection, RowDataPacket } from 'mysql2/promise';
 import { currentMaterialNameSql } from './material-name.sql.js';
@@ -17,11 +19,13 @@ const demandSelect = `SELECT CAST(d.id AS CHAR) demandId,
   CAST(d.material_variant_id AS CHAR) materialVariantId,
   d.material_variant_code_snapshot materialVariantCode,d.unit_snapshot unit,
   d.demand_type demandType,d.need_number demandQuantity,d.remaining_number remainingDemandQuantity,
-  d.business_status businessStatus,CAST(d.pending_correction_id AS CHAR) pendingCorrectionId
+  d.business_status businessStatus,CAST(d.pending_correction_id AS CHAR) pendingCorrectionId,
+  COALESCE(basis.supplier_hint,d.supplier_hint) supplierHint
   FROM production_item_demand d JOIN production_batches b ON b.id=d.production_batch_id
-  JOIN work_orders w ON w.id=b.work_order_id`;
+  JOIN work_orders w ON w.id=b.work_order_id
+  LEFT JOIN production_material_requirement_basis basis ON basis.id=d.requirement_basis_id`;
 
-function candidateFilter(query: ProcurementDemandCandidateQuery): {
+function candidateFilter(query: Partial<ProcurementDemandCandidateQuery>): {
   sql: string;
   values: string[];
 } {
@@ -53,7 +57,7 @@ function candidateFilter(query: ProcurementDemandCandidateQuery): {
 
 export async function readCandidateMaterialIds(
   db: Db,
-  query: ProcurementDemandCandidateQuery,
+  query: Partial<ProcurementDemandCandidateQuery>,
 ): Promise<string[]> {
   const where = candidateFilter(query);
   const [rows] = await db.query<(RowDataPacket & { item_id: number | string })[]>(
@@ -116,4 +120,32 @@ function mapDemand(row: DemandRow): ProcurementDemandCandidate {
     demandQuantity: String(row.demandQuantity),
     remainingDemandQuantity: String(row.remainingDemandQuantity),
   };
+}
+
+export async function readDemandWorkOrderPage(
+  db: Db,
+  query: ProcurementDemandWorkOrderQuery,
+  variantIds: string[],
+): Promise<PageResult<ProcurementDemandWorkOrder>> {
+  const page = Math.max(1, query.page ?? 1),
+    pageSize = Math.min(100, Math.max(1, query.pageSize ?? 10));
+  if (!variantIds.length) return { items: [], total: 0, page, pageSize };
+  const where = candidateFilter({});
+  where.sql += ` AND d.material_variant_id IN (${variantIds.map(() => '?').join(',')})`;
+  where.values.push(...variantIds);
+  if (query.keyword?.trim()) {
+    where.sql += ' AND w.work_order_no LIKE ?';
+    where.values.push(`%${query.keyword.trim()}%`);
+  }
+  const from = `FROM production_item_demand d JOIN production_batches b ON b.id=d.production_batch_id
+    JOIN work_orders w ON w.id=b.work_order_id WHERE ${where.sql}`;
+  const [[count]] = await db.query<(RowDataPacket & { total: number })[]>(
+    `SELECT COUNT(DISTINCT w.id) total ${from}`,
+    where.values,
+  );
+  const [rows] = await db.query<(RowDataPacket & ProcurementDemandWorkOrder)[]>(
+    `SELECT DISTINCT CAST(w.id AS CHAR) id,w.work_order_no workOrderNo ${from} ORDER BY w.work_order_no DESC LIMIT ? OFFSET ?`,
+    [...where.values, pageSize, (page - 1) * pageSize],
+  );
+  return { items: rows, total: Number(count?.total ?? 0), page, pageSize };
 }

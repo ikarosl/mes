@@ -120,7 +120,7 @@ export class MysqlInventoryPurchaseInboundWriter {
         const batchId = receiptBatches.get(line.receiptLineId)!;
         const [detail] = await db.execute<ResultSetHeader>(
           `INSERT INTO inbound_detail(inbound_id,item_id,material_variant_id,batch_id,item_code_snapshot,inbound_number,unit_snapshot,stock_status,
-           procurement_receipt_line_id,procurement_receipt_revision_id,procurement_scope_id,procurement_inspection_id,created_by)
+           procurement_receipt_line_id,procurement_receipt_revision_id,procurement_inspection_id,procurement_allocation_id,created_by)
            VALUES (?,?,?,?,?,?,?,'available',?,?,?,?,?)`,
           [
             inboundId,
@@ -132,8 +132,8 @@ export class MysqlInventoryPurchaseInboundWriter {
             line.unit,
             line.receiptLineId,
             line.receiptRevisionId,
-            line.scopeId,
             line.inspectionId,
+            line.allocationId,
             context.actorId,
           ],
         );
@@ -149,14 +149,14 @@ export class MysqlInventoryPurchaseInboundWriter {
             fixedIntegerQuantity(line.quantity),
             line.unit,
             inboundDetailId,
-            `PRI:${line.scopeId}`,
+            `PRI:${inboundDetailId}`,
             input.remark ?? null,
             context.actorId,
           ],
         );
         details.push({
           receiptLineId: line.receiptLineId,
-          scopeId: line.scopeId,
+          allocationId: line.allocationId,
           batchId,
           inboundDetailId,
           transactionId: String(transaction.insertId),
@@ -215,7 +215,7 @@ function validateInput(input: ConfirmPurchaseReceiptInput): void {
     input.details.length > 100
   )
     throw new InventoryDomainError('INVALID_INPUT', '供应商名称或入库明细数量无效');
-  const scopeIds = new Set<string>();
+  const allocationIds = new Set<string>();
   const receipts = new Map<string, PurchaseReceiptInboundLine>();
   const boundBatches = new Map<string, string>();
   for (const line of input.details) {
@@ -223,7 +223,7 @@ function validateInput(input: ConfirmPurchaseReceiptInput): void {
       line.receiptLineId,
       line.receiptRevisionId,
       line.inspectionId,
-      line.scopeId,
+      line.allocationId,
       line.itemId,
       line.materialVariantId,
     ];
@@ -231,7 +231,7 @@ function validateInput(input: ConfirmPurchaseReceiptInput): void {
     const quantity = Number(line.quantity);
     if (
       ids.some((id) => !/^[1-9]\d*$/.test(id)) ||
-      scopeIds.has(line.scopeId) ||
+      allocationIds.has(line.allocationId) ||
       !Number.isSafeInteger(quantity) ||
       quantity <= 0 ||
       quantity > MAX_PERSISTED_INTEGER_QUANTITY ||
@@ -240,7 +240,7 @@ function validateInput(input: ConfirmPurchaseReceiptInput): void {
       !line.unit.trim()
     )
       throw new InventoryDomainError('INVALID_INPUT', '入库范围、物料身份或整数数量无效');
-    scopeIds.add(line.scopeId);
+    allocationIds.add(line.allocationId);
     const prior = receipts.get(line.receiptLineId);
     if (
       prior &&
@@ -270,4 +270,4 @@ const uniqueSorted = (ids: string[]): string[] => [...new Set(ids)].sort(compare
 const compareLines = (a: PurchaseReceiptInboundLine, b: PurchaseReceiptInboundLine): number =>
   compareId(a.materialVariantId, b.materialVariantId) ||
   compareId(a.receiptLineId, b.receiptLineId) ||
-  compareId(a.scopeId, b.scopeId);
+  compareId(a.allocationId, b.allocationId);

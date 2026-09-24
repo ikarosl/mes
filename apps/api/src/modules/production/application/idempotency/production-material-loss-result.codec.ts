@@ -46,16 +46,6 @@ const schema: z.ZodType<MaterialLossItem> = z
     cancelledById: z.string().nullable().optional(),
     cancelledByName: z.string().nullable().optional(),
     cancelledAt: z.string().nullable().optional(),
-    supplement: z
-      .object({
-        supplementId: z.string(),
-        supplementNo: z.string(),
-        status: z.enum(['approved', 'fulfilled']),
-        demandId: z.string(),
-        demandQuantity: z.string(),
-      })
-      .strict()
-      .nullable(),
   })
   .strict();
 

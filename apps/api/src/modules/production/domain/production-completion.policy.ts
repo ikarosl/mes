@@ -3,6 +3,7 @@ import type {
   ProductionBatchStatus,
   ProductionExecutionCompletionBlocker,
   ProductionExecutionCompletionCheck,
+  WorkOrderType,
 } from '@company/contracts';
 import { integerQuantity } from './integer-quantity.js';
 
@@ -19,6 +20,7 @@ export const evaluateProductionExecutionCompletion = (input: {
   batchStatus: ProductionBatchStatus;
   version: number;
   plannedQuantity: string;
+  orderType?: WorkOrderType;
   activeMaterialDemandCount?: number;
   unfulfilledSupplementCount?: number;
   requiredSteps: RequiredCompletionStep[];
@@ -29,16 +31,21 @@ export const evaluateProductionExecutionCompletion = (input: {
   const finalStep = requiredSteps.at(-1) ?? null;
   const blockers: ProductionExecutionCompletionBlocker[] = [];
   if (input.batchStatus !== 'doing') blockers.push('batch_not_doing');
-  if (requiredSteps.length === 0) blockers.push('no_route_step');
-  if (requiredSteps.some((step) => step.status !== 'completed'))
+  const research = input.orderType === 'research';
+  if (!research && requiredSteps.length === 0) blockers.push('no_route_step');
+  if (!research && requiredSteps.some((step) => step.status !== 'completed'))
     blockers.push('required_step_incomplete');
   if (
+    !research &&
     finalStep &&
     integerQuantity(finalStep.effectiveNormalQuantity) !== integerQuantity(input.plannedQuantity)
   )
     blockers.push('final_step_quantity_insufficient');
-  if ((input.activeMaterialDemandCount ?? 0) > 0) blockers.push('active_material_demand_remains');
-  if ((input.unfulfilledSupplementCount ?? 0) > 0) blockers.push('unfulfilled_material_supplement');
+  // 研发结束只声明本轮执行结束，剩余需求和未决单据在正常结案中逐项处理。
+  if (!research && (input.activeMaterialDemandCount ?? 0) > 0)
+    blockers.push('active_material_demand_remains');
+  if (!research && (input.unfulfilledSupplementCount ?? 0) > 0)
+    blockers.push('unfulfilled_material_supplement');
 
   return {
     productionBatchId: input.productionBatchId,

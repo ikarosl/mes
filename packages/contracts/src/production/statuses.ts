@@ -52,8 +52,7 @@ export type InventoryReferenceType =
 
 export type InboundOrderStatus = 'pending' | 'completed' | 'cancelled';
 
-export type DemandType =
-  'normal' | 'manual_additional' | 'scrap_supplement' | 'material_loss_supplement';
+export type DemandType = 'normal' | 'manual_additional' | 'scrap_supplement';
 
 /** 同一次需求生成动作的分组类型。 */
 export type DemandGenerationGroupType = DemandType;
@@ -108,7 +107,7 @@ export type ScrapScene =
   'warehouse_allocated' | 'return_after_outbound' | 'production_consumed' | 'in_stock';
 
 export type ScrapStatus = 'pending' | 'confirmed' | 'cancelled';
-export type MaterialLossPurpose = 'replenishment' | 'closeout_record';
+export type MaterialLossPurpose = 'production_record' | 'closeout_record';
 
 export type StockCheckStatus = 'pending' | 'counting' | 'completed' | 'cancelled';
 

@@ -6,4 +6,6 @@ export * from './production/index.js';
 export * from './approval.js';
 export * from './notification.js';
 export * from './procurement/index.js';
+export * from './quality/inspection.js';
 export * from './quality/inbound-inspections.js';
+export * from './quality/finished-inspections.js';

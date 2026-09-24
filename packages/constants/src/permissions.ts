@@ -17,11 +17,16 @@ export const PERMISSIONS = {
     receipts: {
       view: 'procurement:receipts:view',
       confirm: 'procurement:receipts:confirm',
+      accept: 'procurement:receipts:accept',
       correct: 'procurement:receipts:correct',
       return: 'procurement:receipts:return',
     },
   },
   quality: {
+    finishedInspections: {
+      view: 'quality:finished-inspections:view',
+      record: 'quality:finished-inspections:record',
+    },
     inboundInspections: {
       view: 'quality:inbound-inspections:view',
       review: 'quality:inbound-inspections:review',
@@ -115,7 +120,6 @@ export const PERMISSIONS = {
       view: 'production:tasks:view',
       terminate: 'production:tasks:terminate',
       manageOutput: 'production:tasks:manage-output',
-      recordInspection: 'production:tasks:record-inspection',
     },
     workerTasks: { view: 'production:worker-tasks:view' },
     trace: { view: 'production:trace:view' },

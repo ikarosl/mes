@@ -15,17 +15,17 @@ import type {
 export interface ProductionItemDemandItem {
   id: string;
   productionBatchId: string;
-  productMaterialId: string;
+  productMaterialId: string | null;
   itemId: string;
   /** Frozen base-material formula and exact selected stock identity. */
-  requirementBasisId: string;
+  requirementBasisId: string | null;
   materialVariantId: string;
   materialVariantCode: string;
   itemCode: string;
   itemName: string;
-  quantityPerUnit: string;
+  quantityPerUnit: string | null;
   unit: string;
-  plannedOutputQuantity: string;
+  plannedOutputQuantity: string | null;
   needNumber: string;
   demandType: DemandType;
   businessStatus: DemandBusinessStatus;
@@ -66,9 +66,9 @@ export interface ProductionMaterialDemandItem extends DemandGenerationSource {
   correction?: DemandCorrectionTrace;
   demandId: string;
   productionBatchId: string;
-  productMaterialId: string;
+  productMaterialId: string | null;
   itemId: string;
-  requirementBasisId: string;
+  requirementBasisId: string | null;
   materialVariantId: string;
   materialVariantCode: string;
   itemCode: string;

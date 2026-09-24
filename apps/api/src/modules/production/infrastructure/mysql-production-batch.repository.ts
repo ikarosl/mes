@@ -123,7 +123,7 @@ export class MysqlProductionBatchRepository {
 
   async withBatchCreationTransaction<T>(
     workOrderId: string,
-    action: (workOrderProductId: string) => Promise<T>,
+    action: (workOrderProductId: string, orderType: ProductionBatchItem['orderType']) => Promise<T>,
   ): Promise<T> {
     return withTransaction(this.pool, async (connection) => {
       const order = await findWorkOrder(connection, workOrderId, true);
@@ -132,7 +132,7 @@ export class MysqlProductionBatchRepository {
           'INVALID_STATE',
           '只有已下达或生产中的工单可以创建生产批次',
         );
-      return action(String(order.product_id));
+      return action(String(order.product_id), order.order_type);
     });
   }
 

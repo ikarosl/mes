@@ -1,3 +1,4 @@
+import { listReceiptAllocationCandidates } from './queries/receipt-acceptance.query.js';
 import { Inject, Injectable } from '@nestjs/common';
 import { withTransaction } from '@company/database';
 import type { Pool } from 'mysql2/promise';
@@ -28,6 +29,7 @@ import {
   receiptSelect,
   RECEIPT_COLUMNS,
   mapReceipt,
+  readReceiptSuppliers,
   pageInput,
 } from './queries/receipt-read.shared.js';
 
@@ -40,6 +42,9 @@ export class MysqlProcurementReceiptQuery extends ProcurementReceiptQuery {
   ) {
     super();
   }
+  allocationCandidates(id: string, query: PageQuery) {
+    return withTransaction(this.pool, (db) => listReceiptAllocationCandidates(db, id, query));
+  }
   listReceipts(query: ReceiptListQuery) {
     return withTransaction(this.pool, (db) => listReceipts(db, query));
   }
@@ -51,7 +56,7 @@ export class MysqlProcurementReceiptQuery extends ProcurementReceiptQuery {
       );
       if (!row) throw new ProcurementDomainError('RECEIPT_NOT_FOUND', '到货单不存在');
       return {
-        ...mapReceipt(row),
+        ...mapReceipt(row, (await readReceiptSuppliers(db, [id])).get(id) ?? []),
         items: await readReceiptLines(db, this.quality, { receiptId: id }),
       };
     });
@@ -88,13 +93,23 @@ export class MysqlProcurementReceiptQuery extends ProcurementReceiptQuery {
   }
   listReceiptOrders(query: PurchaseOrderQuery) {
     return withTransaction(this.pool, (db) =>
-      listPurchaseOrders(db, { ...query, ...pageInput(query), status: 'ordered' }),
+      listPurchaseOrders(db, {
+        ...query,
+        ...pageInput(query),
+        status: 'ordered',
+        onlyNewArrival: true,
+      }),
     );
   }
   getReceiptOrder(id: string) {
     return withTransaction(this.pool, async (db) => {
       const order = await getPurchaseOrder(db, id);
-      if (order.status !== 'ordered')
+      if (
+        order.status !== 'ordered' ||
+        !order.items.some(
+          (line) => line.status === 'open' && line.fulfillmentMode === 'new_arrival',
+        )
+      )
         throw new ProcurementDomainError('RECEIPT_STATE', '只有已下单采购可以登记到货');
       return order;
     });

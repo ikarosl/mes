@@ -2,7 +2,6 @@ import type {
   ProductionOutputDetail,
   ProductionOutputCommandResult,
   SaveProductionOutputPayload,
-  RecordProductionOutputInspectionPayload,
   SubmitProductionOutputPayload,
   BeginProductionOutputCorrectionPayload,
 } from '@company/contracts';
@@ -13,11 +12,6 @@ export abstract class ProductionOutputRepository {
   abstract saveDraft(
     batchId: string,
     payload: SaveProductionOutputPayload,
-    context: CommandContext,
-  ): Promise<ProductionOutputCommandResult>;
-  abstract recordInspection(
-    batchId: string,
-    payload: RecordProductionOutputInspectionPayload,
     context: CommandContext,
   ): Promise<ProductionOutputCommandResult>;
   abstract beginCorrection(

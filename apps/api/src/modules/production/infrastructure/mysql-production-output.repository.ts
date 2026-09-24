@@ -1,3 +1,4 @@
+import { QualityFinishedInspectionQuery } from '../../quality/public.js';
 import { InventoryInboundCommand } from '../../inventory/public.js';
 import { isDeepStrictEqual } from 'node:util';
 import { Inject, Injectable } from '@nestjs/common';
@@ -10,7 +11,6 @@ import type {
   ProductionOutputDraft,
   ProductionOutputQuantities,
   SaveProductionOutputPayload,
-  RecordProductionOutputInspectionPayload,
   BeginProductionOutputCorrectionPayload,
   SubmitProductionOutputPayload,
   BatchCloseoutApprovalSnapshot,
@@ -46,6 +46,7 @@ export class MysqlProductionOutputRepository extends ProductionOutputRepository 
     @Inject(DATABASE_POOL) private readonly pool: Pool,
     private readonly closeout: MysqlProductionCloseoutRepository,
     private readonly inventory: InventoryInboundCommand,
+    private readonly quality: QualityFinishedInspectionQuery,
   ) {
     super();
   }
@@ -81,61 +82,6 @@ export class MysqlProductionOutputRepository extends ProductionOutputRepository 
       await this.writeDraft(db, row.id, payload, context);
       await this.audit(db, context, 'draft', row, draftOf(row), payload);
       return result(row);
-    });
-  }
-  recordInspection(
-    batchId: string,
-    payload: RecordProductionOutputInspectionPayload,
-    context: CommandContext,
-  ): Promise<ProductionOutputCommandResult> {
-    return withTransaction(this.pool, async (db) => {
-      actor(context);
-      const row = await lockOutputBatch(db, batchId);
-      requireEditableOutput(row, payload.version);
-      const state = await this.loadState(db, row, true);
-      const draft = state.detail.draft;
-      if (!draft)
-        throw new ProductionDomainError('INVALID_STATE', '产线须先保存申报草稿，再登记检验记录');
-      validateQuantities(payload.inspected, Number(state.evidenceCheck.plannedQuantity));
-      const inspectedAt = new Date(payload.inspectedAt);
-      if (
-        !Number.isFinite(inspectedAt.getTime()) ||
-        !payload.resultNote.trim() ||
-        !payload.evidenceReference.trim()
-      )
-        throw new ProductionDomainError('INVALID_INPUT', '请填写检验时间、结论及凭据');
-      const [created] = await db.execute<ResultSetHeader>(
-        `INSERT INTO production_output_inspection
-         (closeout_id,production_batch_id,declared_version,declared_available_quantity,declared_extra_quantity,declared_scrap_quantity,
-          available_quantity,extra_quantity,additional_scrap_quantity,inspected_at,result_note,evidence_reference,previous_inspection_id,created_by)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-        [
-          row.id,
-          batchId,
-          row.version,
-          draft.availableQuantity,
-          draft.extraQuantity,
-          draft.additionalScrapQuantity,
-          payload.inspected.availableQuantity,
-          payload.inspected.extraQuantity,
-          payload.inspected.additionalScrapQuantity,
-          inspectedAt,
-          payload.resultNote,
-          payload.evidenceReference,
-          state.detail.latestInspectionId,
-          context.actorId,
-        ],
-      );
-      // 检验人员只新增记录，不改产线数量或替管理员选择检验引用。
-      await db.execute(
-        'UPDATE production_batch_closeout SET version=version+1,updated_by=? WHERE id=?',
-        [context.actorId, row.id],
-      );
-      await this.audit(db, context, 'inspection', row, null, {
-        inspectionRecordId: String(created.insertId),
-        ...payload,
-      });
-      return { ...result(row), inspectionRecordId: String(created.insertId) };
     });
   }
   beginCorrection(
@@ -403,7 +349,15 @@ export class MysqlProductionOutputRepository extends ProductionOutputRepository 
     lock: boolean,
     forFinalApproval = false,
   ): Promise<OutputState> {
-    return loadOutputState(db, row, this.closeout, lock, forFinalApproval, this.inventory);
+    return loadOutputState(
+      db,
+      row,
+      this.closeout,
+      lock,
+      forFinalApproval,
+      this.inventory,
+      this.quality,
+    );
   }
 }
 function actor(context: CommandContext): void {

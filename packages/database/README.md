@@ -1,6 +1,6 @@
 # packages/database
 
-数据库基础设施包，负责 MySQL 连接池、事务上下文、migration/seed 运行器和数据库初始化命令。它集中承载 migration 文件，但不拥有 Identity、Product、Production、Approval 或 Notification 的业务表设计。
+数据库基础设施包，负责 MySQL 连接池、事务上下文、migration/seed 运行器和数据库初始化命令。它集中承载 migration 文件，但不拥有任何业务模块的表设计；业务所有者索引见下方“业务数据库设计”。
 
 ## 导出能力
 
@@ -24,14 +24,18 @@ docs/         # 迁移运行与安全说明
 
 常用命令由仓库根统一暴露：
 
-- `pnpm db:ensure`
-- `pnpm db:migrate`
-- `pnpm db:migrate:status`
-- `pnpm db:seed`
-- `pnpm db:bootstrap-admin`
-- `pnpm db:init`
+| 根命令 | 用途 |
+| --- | --- |
+| `pnpm db:ensure` | 按环境配置创建不存在的数据库 |
+| `pnpm db:migrate` | 应用 schema 与版本化权限目录，不创建角色或账号 |
+| `pnpm db:migrate:status` | 查询 pending、applied 或 checksum-mismatch |
+| `pnpm db:seed` | 幂等写入无凭证的系统基础数据 |
+| `pnpm db:bootstrap-admin` | seed 后按 ADMIN_* 创建／更新管理员，重跑会重置其密码 |
+| `pnpm db:init` | 依次 ensure、migrate、seed、bootstrap-admin；生产仅升级 schema 时不使用此入口 |
 
 数据库变更只能追加成对 migration，已经执行的文件不可修改。详细规则见[迁移顺序](docs/90-migration-order.md)、[迁移门禁](docs/migration-readiness.md)和[迁移安全](docs/migration-safety.md)。
+
+开发与 CI 的运行器使用 `tsx src/*.ts`；对应 `*:compiled` 包脚本使用 `node dist/*.js`，只消费构建产物。两类公开脚本均由 Turbo 先构建 workspace 依赖，`:run` 后缀是内部调度任务，不作为独立执行入口。生产镜像的产物与迁移调用见[发布手册](../../ops/runbooks/compose-server-deployment.md#独立发布)。
 
 `db:ensure` 的直接执行判断使用本机文件路径，Windows 与 Linux 均会实际创建目标库；通过导入复用 `ensureDatabaseExists` 时不自动连接数据库。
 
@@ -72,3 +76,5 @@ corepack pnpm --filter @company/database test
 corepack pnpm --filter @company/database typecheck
 corepack pnpm migration:check
 ```
+
+迁移逐项的暂停写入、非空守卫、回滚限制和恢复方式见[迁移安全](docs/migration-safety.md)；当前结构由上方业务所有者文档维护，不在包入口重复实施流水。migration 文件存在不表示目标数据库已执行，实际状态通过 `db:migrate:status` 查询。

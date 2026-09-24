@@ -27,7 +27,7 @@
 API 和管理端的应用构建、应用类型检查不编译相邻测试文件；测试通过 Vitest 独立运行。测试类型检查分别使用
 `corepack pnpm --filter @company/api typecheck:test` 与 `corepack pnpm --filter @company/admin-web typecheck:test`，在集中修复或验证测试时单独执行，不阻塞应用构建。用户暂缓正式测试期间，旧夹具的契约迁移记录到路线图；不能以应用检查通过代替测试检查。
 
-新增或修复业务规则必须补相邻测试；跨模块契约、数据库事务或 HTTP 管线发生变化时，补对应根 Integration/API 测试。历史代码重构前先以 characterization test 锁定现有行为。
+交付和正式测试的先后顺序以 [AGENTS.md](../AGENTS.md#数据库与交付约定) 为准。进入正式测试阶段后，新增或修复业务规则必须补相邻测试；跨模块契约、数据库事务或 HTTP 管线发生变化时，补对应根 Integration/API 测试。在已获准编写测试的阶段，历史代码重构前先以 characterization test 锁定现有行为。
 
 ## 业务 MySQL Integration
 
@@ -46,13 +46,34 @@ corepack pnpm test:production:mysql
 2. `TEST_DB_HOST/PORT/NAME` 必填，`DB_HOST/PORT/NAME` 必须分别与其完全相等。
 3. 数据库名必须以 `_test` 结尾；命令会在任何 migration 或清理前失败关闭。
 4. 套件先构建运行时依赖的 workspace，再复用 `db:init` 初始化专用库并运行 `tests/integration`。
-5. 本地 WSL Compose 默认使用宿主 `3307` 到容器 `3306`；CI 服务容器使用 `3306`。完整环境变量示例见根 [README](../README.md#数据库命令)。
+5. 本地 WSL Compose 默认使用宿主 `3307` 到容器 `3306`；CI 服务容器使用 `3306`。按下方示例在当前终端临时设置，系统环境变量优先于根 `.env`。
+
+PowerShell：
+
+```powershell
+$env:RUN_MYSQL_INTEGRATION='1'
+$env:TEST_DB_HOST='127.0.0.1'
+$env:TEST_DB_PORT='3307'
+$env:TEST_DB_NAME='easy_mes_test'
+$env:DB_HOST=$env:TEST_DB_HOST
+$env:DB_PORT=$env:TEST_DB_PORT
+$env:DB_NAME=$env:TEST_DB_NAME
+pnpm test:production:mysql
+```
+
+Bash：
+
+```bash
+RUN_MYSQL_INTEGRATION=1 TEST_DB_HOST=127.0.0.1 TEST_DB_PORT=3307 \
+TEST_DB_NAME=easy_mes_test DB_HOST=127.0.0.1 DB_PORT=3307 \
+DB_NAME=easy_mes_test pnpm test:production:mysql
+```
+
+也可在仓库根 `.env` 配置 `TEST_DB_*`，但为避免常规开发连接被改为测试库，建议只在执行命令的终端临时覆盖 `DB_*`。系统环境变量优先于 `.env`。
 
 Docker 不是执行前提。已有本机 MySQL 服务时直接使用其实际主机和端口，临时将 `DB_*` 与 `TEST_DB_*` 同时指向独立测试库后运行上述命令；不要仅为测试改写常规 `.env` 或把开发库当作清理目标。`test:production:mysql` 自行初始化测试库，无需执行启动容器的 `infra:init`。
 
-审批回归以 [ADR-0008](adr/0008-approval-node-assignees.md) 的节点共享待办为准：相邻测试覆盖角色/指定用户契约、接口入口权限、客户端授权字段拒绝、候选解析与配置/待办交互；真实 MySQL 覆盖成员变化、指定用户资格、分页前过滤、实际决定者历史访问、并发决定、事务回滚、BOM 冻结和迁移约束。角色节点不以历史通知或个人任务作为处理资格。
-
-通知测试由 [Notification](../apps/api/src/modules/notification/README.md) 所有：相邻测试覆盖发布规范化、接口 DTO/身份及错误映射，数据库包验证最外层提交后调度、回滚丢弃和钩子异常隔离，管理端验证角标轮询、会话竞态、点击已读和路由详情。根 `tests/integration/notification` 通过真实 MySQL 验证并发去重、本人隔离、首次已读、事务审计和迁移保护；审批套件验证实际业务动作与通知联动。测试保证站内落库和进程内钩子语义，不代表可靠外部投递。
+审批场景验证见 [Approval](../apps/api/src/modules/approval/README.md)，通知发布、本人隔离与提交后钩子验证见 [Notification](../apps/api/src/modules/notification/README.md)；跨模块套件入口与 fixture 清理要求见[tests](../tests/README.md)。模块专题维护业务覆盖，本规范不重复逐条列出。
 
 库存事务测试删除 fixture 流水时，只允许使用以 `_test` 或 `_ci` 结尾的专用库，并在独占连接上短暂设置 `@company_inventory_test_cleanup = 1`。删除必须限定当前 fixture，随后立即清空会话变量；该机制不得用于开发、演示或生产数据库。
 

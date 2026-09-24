@@ -1,5 +1,4 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { DEMAND_GENERATION_GROUP_TYPE } from '@company/constants';
 import { withTransaction } from '@company/database';
 import type {
   CreateMaterialLossPayload,
@@ -14,13 +13,9 @@ import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
 import { integerQuantity } from '../domain/integer-quantity.js';
-import { requireSameVariantForMaterialLoss } from '../domain/production-material-requirement.policy.js';
-import { mysqlProductionDemandPlanWriter } from './mysql-production-demand-plan.writer.js';
+import { requireMaterialLossSourceVariant } from '../domain/production-material-requirement.policy.js';
 import { findBatch } from './mysql-production.shared.js';
-import {
-  lockWorkOrderForBatch,
-  requireWorkOrderMaterialVariant,
-} from './mysql-work-order-material-version.js';
+import { lockWorkOrderForBatch } from './mysql-work-order-material-version.js';
 import { ProductionMaterialLossRepository } from '../application/ports/production-material-loss.repository.js';
 import {
   decimal,
@@ -139,10 +134,7 @@ export class MysqlProductionMaterialLossRepository extends ProductionMaterialLos
       await lockWorkOrderForBatch(db, payload.productionBatchId);
       const batch = await findBatch(db, payload.productionBatchId, true);
       if (!['material_partially_outbound', 'material_outbound', 'doing'].includes(batch.status))
-        throw new ProductionDomainError(
-          'INVALID_STATE',
-          '批次已停止生产，不能再申请会生成补料的损耗',
-        );
+        throw new ProductionDomainError('INVALID_STATE', '任务已停止生产，请通过结案登记物料损坏');
       await lockIds(db, 'production_item_allocation', [payload.allocationId]);
       const candidates = await this.findMaterialLossCandidates(db, payload.productionBatchId);
       const candidate = candidates.find(
@@ -158,7 +150,7 @@ export class MysqlProductionMaterialLossRepository extends ProductionMaterialLos
         `INSERT INTO item_scrap
          (scrap_no,production_batch_id,demand_id,allocation_id,item_id,material_variant_id,batch_id,scrap_scene,
           loss_purpose,scrap_number,unit_snapshot,reason_type,status,remark,created_by,updated_by)
-         VALUES (?,?,?,?,?,?,?,'production_consumed','replenishment',?,?,?,'pending',?,?,?)`,
+         VALUES (?,?,?,?,?,?,?,'production_consumed','production_record',?,?,?,'pending',?,?,?)`,
         [
           scrapNo,
           payload.productionBatchId,
@@ -189,6 +181,7 @@ export class MysqlProductionMaterialLossRepository extends ProductionMaterialLos
           allocationId: payload.allocationId,
           scrapQuantity: decimal(payload.scrapQuantity),
           reasonType: payload.reasonType,
+          purpose: 'production_record',
         },
       );
       return readMaterialLossDisplay(db, scrapId);
@@ -202,10 +195,10 @@ export class MysqlProductionMaterialLossRepository extends ProductionMaterialLos
         [scrapId],
       );
       if (!identity) throw new ProductionDomainError('NOT_FOUND', '损耗记录不存在');
-      const orderPolicy = await lockWorkOrderForBatch(db, String(identity.production_batch_id));
+      await lockWorkOrderForBatch(db, String(identity.production_batch_id));
       await findBatch(db, String(identity.production_batch_id), true);
       const scrap = await this.findMaterialLoss(db, scrapId, true);
-      if (scrap.loss_purpose !== 'replenishment')
+      if (scrap.loss_purpose !== 'production_record')
         throw new ProductionDomainError(
           'SCRAP_CONFIRM_NOT_ALLOWED',
           '结案损坏登记已确认且不补料，不能使用在产损耗确认',
@@ -225,7 +218,7 @@ export class MysqlProductionMaterialLossRepository extends ProductionMaterialLos
           'SCRAP_QUANTITY_EXCEEDED',
           '当前领料、退料或损耗占用已变化，请刷新后重试',
         );
-      requireSameVariantForMaterialLoss(
+      requireMaterialLossSourceVariant(
         String(scrap.material_variant_id),
         String(candidate.material_variant_id),
       );
@@ -236,80 +229,6 @@ export class MysqlProductionMaterialLossRepository extends ProductionMaterialLos
       );
       requireAffected(updated, '损耗记录');
 
-      const supplementNo = businessNo('BL');
-      const [supplement] = await db.execute<ResultSetHeader>(
-        `INSERT INTO production_material_supplement
-         (supplement_no,source_type,step_scrap_record_id,material_loss_scrap_id,
-          production_batch_id,batch_step_record_id,status,remark,created_by,updated_by)
-         VALUES (?,'material_loss',NULL,?,?,NULL,'approved',?,?,?)`,
-        [
-          supplementNo,
-          scrapId,
-          scrap.production_batch_id,
-          scrap.remark,
-          context.actorId,
-          context.actorId,
-        ],
-      );
-      const [[sourceDemand]] = await db.query<
-        (RowDataPacket & {
-          id: number;
-          parent_demand_id: number | null;
-          requirement_basis_id: number;
-          product_material_id: number;
-          item_id: number;
-          material_variant_id: number;
-          item_code_snapshot: string;
-          material_variant_code_snapshot: string;
-          quantity_per_unit_snapshot: string;
-          unit_snapshot: string;
-          planned_output_quantity_snapshot: string;
-        })[]
-      >(
-        `SELECT id,parent_demand_id,requirement_basis_id,product_material_id,item_id,material_variant_id,item_code_snapshot,material_variant_code_snapshot,quantity_per_unit_snapshot,
-          unit_snapshot,planned_output_quantity_snapshot
-         FROM production_item_demand WHERE id=? FOR UPDATE`,
-        [scrap.demand_id],
-      );
-      if (!sourceDemand) throw new ProductionDomainError('NOT_FOUND', '损耗来源需求不存在');
-      requireSameVariantForMaterialLoss(
-        String(scrap.material_variant_id),
-        String(sourceDemand.material_variant_id),
-      );
-      await requireWorkOrderMaterialVariant(
-        db,
-        orderPolicy,
-        sourceDemand.item_id,
-        sourceDemand.material_variant_id,
-        context.actorId!,
-      );
-      const rootDemandId = sourceDemand.parent_demand_id ?? sourceDemand.id;
-      const [demandId] = await mysqlProductionDemandPlanWriter.createDemandGroup(db, {
-        batchId: scrap.production_batch_id,
-        actorId: context.actorId,
-        source: {
-          type: DEMAND_GENERATION_GROUP_TYPE.materialLossSupplement,
-          supplementId: supplement.insertId,
-        },
-        lines: [
-          {
-            identityId: scrapId,
-            requirementBasisId: sourceDemand.requirement_basis_id,
-            productMaterialId: sourceDemand.product_material_id,
-            itemId: sourceDemand.item_id,
-            materialVariantId: sourceDemand.material_variant_id,
-            materialVariantCode: sourceDemand.material_variant_code_snapshot,
-            itemCode: sourceDemand.item_code_snapshot,
-            quantityPerUnit: String(sourceDemand.quantity_per_unit_snapshot),
-            unit: sourceDemand.unit_snapshot,
-            plannedOutputQuantity: String(sourceDemand.planned_output_quantity_snapshot),
-            needNumber: String(integerQuantity(scrap.scrap_number)),
-            demandType: 'material_loss_supplement',
-            parentDemandId: rootDemandId,
-            supplementId: supplement.insertId,
-          },
-        ],
-      });
       await writeInventoryAudit(
         db,
         context,
@@ -320,9 +239,8 @@ export class MysqlProductionMaterialLossRepository extends ProductionMaterialLos
         {
           status: 'confirmed',
           version: version + 1,
-          supplementId: String(supplement.insertId),
-          demandId: demandId!,
-          demandQuantity: String(scrap.scrap_number),
+          purpose: scrap.loss_purpose,
+          scrapQuantity: String(scrap.scrap_number),
         },
       );
       return readMaterialLossDisplay(db, scrapId);
@@ -337,7 +255,7 @@ export class MysqlProductionMaterialLossRepository extends ProductionMaterialLos
   ) {
     return withTransaction(this.pool, async (db) => {
       const scrap = await this.findMaterialLoss(db, scrapId, true);
-      if (scrap.loss_purpose !== 'replenishment')
+      if (scrap.loss_purpose !== 'production_record')
         throw new ProductionDomainError('SCRAP_CANCEL_NOT_ALLOWED', '已确认的结案损坏登记不能取消');
       if (scrap.status === 'cancelled') return readMaterialLossDisplay(db, scrapId);
       if (scrap.status !== 'pending')

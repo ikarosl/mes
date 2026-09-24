@@ -9,13 +9,27 @@ export const API_DATA_OWNERSHIP = Object.freeze({
     'purchase_order_line',
     'purchase_order_line_source',
     'purchase_order_line_closure',
+    'procurement_order',
+    'procurement_order_line',
+    'procurement_order_line_source',
+    'procurement_order_line_closure',
     'procurement_receipt',
     'procurement_receipt_line',
     'procurement_receipt_revision',
+    'procurement_receipt_round',
     'procurement_receipt_scope',
     'procurement_supplier_return',
+    'procurement_receipt_acceptance',
+    'procurement_receipt_acceptance_line', // Historical migration ownership.
+    'procurement_receipt_allocation',
   ]),
-  quality: Object.freeze(['quality_inbound_case', 'quality_inbound_inspection']),
+  quality: Object.freeze([
+    'quality_inbound_case',
+    'quality_inbound_inspection',
+    'quality_finished_inspection', // Retired; common records now own both kinds.
+    'quality_inspection_case',
+    'quality_inspection_record',
+  ]),
   inventory: Object.freeze([
     'item_batch',
     'inventory_transaction',
@@ -65,7 +79,7 @@ export const API_DATA_OWNERSHIP = Object.freeze({
     'work_order_material_versions',
     'production_batches',
     'production_batch_termination', // Retired; historical migrations retain ownership.
-    'production_output_inspection',
+    'production_output_inspection', // Retired name; Quality owns the renamed finished inspection table.
     'production_output_revision',
     'production_demand_correction',
     'production_batch_closeout',
@@ -100,6 +114,25 @@ export const API_DATA_OWNERSHIP = Object.freeze({
 /** 展示查询的正式只读依赖；不授予业务校验、跨模块写入或深层 import 权限。 */
 export const API_DISPLAY_READ_ACCESS = Object.freeze([
   {
+    directory: 'apps/api/src/modules/quality/infrastructure/queries/',
+    tables: {
+      production_batch_closeout: [
+        'id',
+        'production_batch_id',
+        'version',
+        'pending_approval_id',
+        'current_revision_id',
+        'correction_reason',
+        'available_quantity',
+        'extra_quantity',
+        'additional_scrap_quantity',
+        'updated_at',
+      ],
+      production_batches: ['id', 'batch_no', 'work_order_id', 'planned_quantity', 'status'],
+      work_orders: ['id', 'work_order_no', 'product_code_snapshot', 'product_name_snapshot'],
+    },
+  },
+  {
     directory: 'apps/api/src/modules/procurement/infrastructure/queries/',
     tables: {
       item_batch: ['id', 'batch_code', 'batch_status'],
@@ -109,8 +142,8 @@ export const API_DISPLAY_READ_ACCESS = Object.freeze([
         'inbound_id',
         'procurement_receipt_line_id',
         'procurement_receipt_revision_id',
-        'procurement_scope_id',
         'procurement_inspection_id',
+        'procurement_allocation_id',
         'batch_id',
         'item_id',
         'material_variant_id',
@@ -130,26 +163,34 @@ export const API_DISPLAY_READ_ACCESS = Object.freeze([
         'unit_snapshot',
         'stock_status',
       ],
-      quality_inbound_case: [
+      quality_inspection_case: [
         'id',
         'receipt_line_id',
         'status',
-        'target_scope_id',
-        'covered_quantity',
+        'incoming_round_id',
+        'declared_quantity',
+        'source_kind',
         'case_type',
         'created_at',
       ],
-      quality_inbound_inspection: [
+      quality_inspection_record: [
         'id',
         'receipt_line_id',
         'receipt_revision_id',
         'case_id',
-        'inbound_approved',
-        'disposition',
+        'release_decision',
       ],
 
       materials: ['id', 'material_name'],
-      production_item_demand: ['id', 'production_batch_id', 'need_number', 'remaining_number'],
+      production_item_demand: [
+        'id',
+        'production_batch_id',
+        'need_number',
+        'remaining_number',
+        'requirement_basis_id',
+        'supplier_hint',
+      ],
+      production_material_requirement_basis: ['id', 'supplier_hint'],
       work_orders: ['id', 'work_order_no'],
       production_batches: ['id', 'batch_no', 'work_order_id'],
     },

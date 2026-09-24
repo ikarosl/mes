@@ -1,6 +1,8 @@
 import type { Pool, PoolConnection, RowDataPacket } from 'mysql2/promise';
 import type {
   PurchaseOrderItem,
+  PurchaseFulfillmentMode,
+  ProcurementSupplierSummary,
   PurchaseOrderLineStatus,
   PurchaseOrderLineClosure,
 } from '@company/contracts';
@@ -12,7 +14,7 @@ export type Db = Pool | PoolConnection;
 export type OrderRow = RowDataPacket & {
   id: number;
   purchase_no: string;
-  supplier_id: number;
+  work_order_id: number | null;
   source_type: PurchaseOrderItem['sourceType'];
   supplement_reason: PurchaseOrderItem['supplementReason'];
   status: PurchaseOrderItem['status'];
@@ -23,8 +25,10 @@ export type OrderRow = RowDataPacket & {
   updated_at: Date;
 };
 export type OrderLineRow = RowDataPacket & {
+  fulfillment_mode: PurchaseFulfillmentMode;
   id: number;
   purchase_order_id: number;
+  supplier_id: number;
   line_no: number;
   item_id: number;
   material_variant_id: number;
@@ -36,7 +40,7 @@ export type OrderLineRow = RowDataPacket & {
   version: number;
   origin_order_line_id: number | null;
   origin_receipt_line_id: number | null;
-  origin_supplier_return_id: number | null;
+  origin_allocation_id: number | null;
   supplement_evidence: string | null;
 };
 export type ClosureRow = RowDataPacket & {
@@ -69,7 +73,7 @@ export const orderError = (
 };
 export const readOrder = async (db: Db, id: string, lock = false): Promise<OrderRow> => {
   const [[row]] = await db.query<OrderRow[]>(
-    `SELECT * FROM purchase_order WHERE id=?${lock ? ' FOR UPDATE' : ''}`,
+    `SELECT * FROM procurement_order WHERE id=?${lock ? ' FOR UPDATE' : ''}`,
     [id],
   );
   if (!row) return orderError('采购单不存在', PROCUREMENT_ERROR_CODES.purchaseOrderNotFound);
@@ -77,7 +81,7 @@ export const readOrder = async (db: Db, id: string, lock = false): Promise<Order
 };
 export const readLines = async (db: Db, id: string, lock = false): Promise<OrderLineRow[]> => {
   const [rows] = await db.query<OrderLineRow[]>(
-    `SELECT * FROM purchase_order_line WHERE purchase_order_id=? ORDER BY id${lock ? ' FOR UPDATE' : ''}`,
+    `SELECT * FROM procurement_order_line WHERE purchase_order_id=? ORDER BY id${lock ? ' FOR UPDATE' : ''}`,
     [id],
   );
   return rows;
@@ -91,7 +95,7 @@ export const readSourceIds = async (
   const [rows] = await db.query<
     (RowDataPacket & { purchase_order_line_id: number; demand_id: number })[]
   >(
-    `SELECT purchase_order_line_id,demand_id FROM purchase_order_line_source WHERE purchase_order_line_id IN (${idsSql(lineIds)}) ORDER BY purchase_order_line_id,demand_id${lock ? ' FOR SHARE' : ''}`,
+    `SELECT purchase_order_line_id,demand_id FROM procurement_order_line_source WHERE purchase_order_line_id IN (${idsSql(lineIds)}) ORDER BY purchase_order_line_id,demand_id${lock ? ' FOR SHARE' : ''}`,
     lineIds,
   );
   const map = new Map<string, string[]>();
@@ -102,12 +106,14 @@ export const readSourceIds = async (
   return map;
 };
 export const mapOrder = (
-  row: OrderRow & { supplier_name: string; line_count: number },
+  row: OrderRow & { work_order_no: string | null; line_count: number },
+  suppliers: ProcurementSupplierSummary[],
 ): PurchaseOrderItem => ({
   id: String(row.id),
   purchaseNo: row.purchase_no,
-  supplierId: String(row.supplier_id),
-  supplierName: row.supplier_name,
+  suppliers,
+  workOrderId: row.work_order_id === null ? null : String(row.work_order_id),
+  workOrderNo: row.work_order_no,
   sourceType: row.source_type,
   supplementReason: row.supplement_reason,
   status: row.status,
@@ -132,3 +138,8 @@ export const mapClosure = (row: ClosureRow): PurchaseOrderLineClosure => ({
   qualityReturnedQuantity: String(row.quality_returned_quantity),
   createdAt: toBeijingISOString(row.created_at),
 });
+
+export const requireDraft = (order: OrderRow) => {
+  if (order.status !== 'draft')
+    orderError('只有采购草稿可以修改或下单', PROCUREMENT_ERROR_CODES.purchaseOrderState);
+};

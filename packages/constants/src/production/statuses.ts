@@ -97,18 +97,12 @@ export const PRODUCTION_EXECUTION_COMPLETION_BLOCKER_LABELS = {
   unfulfilled_material_supplement: '仍有未齐套补料单，需完成有效需求或办理批次收尾',
 } as const;
 
-export const DEMAND_TYPES = [
-  'normal',
-  'manual_additional',
-  'scrap_supplement',
-  'material_loss_supplement',
-] as const;
+export const DEMAND_TYPES = ['normal', 'manual_additional', 'scrap_supplement'] as const;
 
 export const DEMAND_TYPE = {
   normal: DEMAND_TYPES[0],
   manualAdditional: DEMAND_TYPES[1],
   scrapSupplement: DEMAND_TYPES[2],
-  materialLossSupplement: DEMAND_TYPES[3],
 } as const;
 
 /** 一次需求生成动作的类型；与该组内需求的 demand_type 保持一致。 */
@@ -118,14 +112,12 @@ export const DEMAND_GENERATION_GROUP_TYPE = {
   normal: DEMAND_TYPE.normal,
   manualAdditional: DEMAND_TYPE.manualAdditional,
   scrapSupplement: DEMAND_TYPE.scrapSupplement,
-  materialLossSupplement: DEMAND_TYPE.materialLossSupplement,
 } as const;
 
 export const DEMAND_GENERATION_GROUP_TYPE_LABELS = {
   normal: '初始物料需求',
   manual_additional: '人工追加需求',
   scrap_supplement: '报废补料',
-  material_loss_supplement: '损耗补料',
 } as const;
 
 export const DEMAND_BUSINESS_STATUSES = ['active', 'fulfilled', 'cancelled', 'closed'] as const;

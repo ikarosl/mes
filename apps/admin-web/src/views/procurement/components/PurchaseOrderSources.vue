@@ -15,6 +15,11 @@
       min-width="170"
     />
     <el-table-column
+      prop="supplierHint"
+      label="生产采购提示"
+      min-width="190"
+    />
+    <el-table-column
       prop="demandId"
       label="需求记录"
       min-width="140"

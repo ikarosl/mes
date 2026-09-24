@@ -8,15 +8,16 @@ import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { requireOptimisticUpdate } from '../../../common/persistence/optimistic-lock.js';
 import type { ProductInventoryEligibility } from '../../product/public.js';
 import { readOrder, readLines, sortedIds } from './mysql-purchase-order.shared.js';
-import { requireSupplier } from './mysql-purchase-order.write.js';
+import { requireSuppliers } from './mysql-purchase-order.write.js';
 import {
   receiptError,
   requireQuantity,
   requireAggregateQuantity,
   insertRevision,
-  insertScope,
   auditReceipt,
 } from './mysql-receipt.shared.js';
+
+import { insertRound } from './mysql-receipt-round.shared.js';
 
 export const confirmReceiptArrival = async (
   connection: PoolConnection,
@@ -28,7 +29,6 @@ export const confirmReceiptArrival = async (
   requireOptimisticUpdate(order.version === payload.purchaseOrderVersion ? 1 : 0);
   if (order.status !== 'ordered')
     return receiptError('只有已下单且尚未结束的采购单可以新增到货', 'RECEIPT_STATE');
-  await requireSupplier(connection, String(order.supplier_id));
   const lines = await readLines(connection, payload.purchaseOrderId, true);
   const selectedIds = sortedIds(payload.details.map((detail) => detail.purchaseOrderLineId));
   if (!payload.details.length || payload.details.length > 100)
@@ -40,9 +40,15 @@ export const confirmReceiptArrival = async (
     for (const detail of payload.details.filter((row) => row.purchaseOrderLineId === id)) {
       requireOptimisticUpdate(line.version === detail.version ? 1 : 0);
       requireQuantity(detail.receivedQuantity, '实收数量');
+      if (line.fulfillment_mode === 'existing_receipt')
+        return receiptError('该补单承接已到货实物，请在原到货清单分配，不能重复登记到货');
     }
     return { line };
   });
+  await requireSuppliers(
+    connection,
+    selected.map(({ line }) => String(line.supplier_id)),
+  );
   const eligibility = await product.requirePurchasableReferences({
     references: selected.map(({ line }) => ({
       itemId: String(line.item_id),
@@ -56,18 +62,13 @@ export const confirmReceiptArrival = async (
       [line.id],
     );
     const entries = payload.details.filter((row) => row.purchaseOrderLineId === String(line.id));
-    const total = requireAggregateQuantity(
+    requireAggregateQuantity(
       [
         ...revisions.map((row) => Number(row.received_quantity)),
         ...entries.map((row) => row.receivedQuantity),
       ],
       '采购行累计实收',
     );
-    if (
-      total > Number(line.planned_quantity) &&
-      entries.some((row) => !row.overReceiptNote?.trim())
-    )
-      return receiptError('超出原采购计划的实收需要填写免费超量说明；额外购买请建立独立补单');
   }
   const [receipt] = await connection.execute<ResultSetHeader>(
     'INSERT INTO procurement_receipt(receipt_no,purchase_order_id,received_at,handover_evidence,remark,created_by) VALUES(?,?,?,?,?,?)',
@@ -112,32 +113,29 @@ export const confirmReceiptArrival = async (
       'UPDATE procurement_receipt_line SET current_receipt_revision_id=? WHERE id=?',
       [revisionId, lineId],
     );
-    await insertScope(
+    await insertRound(
       connection,
       {
-        receiptLineId: lineId,
-        receiptRevisionId: revisionId,
-        parentScopeId: null,
+        lineId,
+        revisionId,
+        previous: null,
+        trigger: 'receipt',
         quantity: detail.receivedQuantity,
-        disposition: 'uninspected',
-        transitionType: 'receipt',
-        inspectionId: null,
-        reviewCaseId: null,
-        terminationRootScopeId: null,
-        terminationReason: null,
+        status: 'uninspected',
+        reason: '首次实收确认',
       },
       context,
     );
   }
   for (const { line } of selected)
     await connection.execute(
-      'UPDATE purchase_order_line SET version=version+1,updated_by=? WHERE id=?',
+      'UPDATE procurement_order_line SET version=version+1,updated_by=? WHERE id=?',
       [context.actorId, line.id],
     );
-  await connection.execute('UPDATE purchase_order SET version=version+1,updated_by=? WHERE id=?', [
-    context.actorId,
-    order.id,
-  ]);
+  await connection.execute(
+    'UPDATE procurement_order SET version=version+1,updated_by=? WHERE id=?',
+    [context.actorId, order.id],
+  );
   await auditReceipt(connection, context, 'receipt.confirm', receiptId, null, payload);
   return {
     receiptId,

@@ -182,14 +182,22 @@ export class ProductionService {
         }
         return this.production.withBatchCreationTransaction(
           workOrderId,
-          async (workOrderProductId) => {
-            const route = this.requireProduct(
-              await productDefinitions.requireApprovedBomForProductionTask(
-                workOrderProductId,
-                normalizedPayload.routeId ?? null,
-                commandContext,
-              ),
-            );
+          async (workOrderProductId, orderType) => {
+            const research = orderType === 'research';
+            if (research) {
+              this.requireProduct(await this.products.getProductionProduct(workOrderProductId));
+              if (normalizedPayload.routeId || normalizedPayload.stepOverrides?.length)
+                throw new ProductionDomainError('INVALID_INPUT', '研发任务不配置工艺路线或工序');
+            }
+            const route = research
+              ? null
+              : this.requireProduct(
+                  await productDefinitions.requireApprovedBomForProductionTask(
+                    workOrderProductId,
+                    normalizedPayload.routeId ?? null,
+                    commandContext,
+                  ),
+                );
             const stepOverrides = await this.resolveStepOverrides(
               normalizedPayload.stepOverrides ?? [],
               route,

@@ -13,10 +13,6 @@ export type DemandGenerationGroupSource = (
       supplementId: BusinessId;
     }
   | {
-      type: typeof DEMAND_GENERATION_GROUP_TYPE.materialLossSupplement;
-      supplementId: BusinessId;
-    }
-  | {
       type: typeof DEMAND_GENERATION_GROUP_TYPE.manualAdditional;
       productionBatchId: BusinessId;
       businessActionNo: string;
@@ -27,7 +23,6 @@ const GROUP_KEY_PREFIX: Record<DemandGenerationGroupType, string> = {
   normal: 'NORMAL',
   manual_additional: 'ADDITIONAL',
   scrap_supplement: 'SCRAPSUP',
-  material_loss_supplement: 'LOSSSUP',
 };
 
 export const buildDemandGenerationGroupKey = (source: DemandGenerationGroupSource): string => {
@@ -36,7 +31,6 @@ export const buildDemandGenerationGroupKey = (source: DemandGenerationGroupSourc
     case DEMAND_GENERATION_GROUP_TYPE.normal:
       return `${prefix}:${source.productionBatchId}`;
     case DEMAND_GENERATION_GROUP_TYPE.scrapSupplement:
-    case DEMAND_GENERATION_GROUP_TYPE.materialLossSupplement:
       return `${prefix}:${source.supplementId}`;
     case DEMAND_GENERATION_GROUP_TYPE.manualAdditional:
       return `${prefix}:${source.productionBatchId}:${source.businessActionNo}`;

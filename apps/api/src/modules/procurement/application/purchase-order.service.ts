@@ -8,8 +8,12 @@ import type {
   CreatePurchaseOrderSupplementPayload,
   PurchaseOrderCommandResult,
   PurchaseOrderQuery,
+  PurchaseExcessReceiptCandidateQuery,
+  PurchaseExcessReceiptCandidate,
+  PageResult,
   RelatedPurchasesQuery,
   ProcurementDemandCandidateQuery,
+  ProcurementDemandWorkOrderQuery,
 } from '@company/contracts';
 import type {
   CommandContext,
@@ -48,6 +52,16 @@ export class PurchaseOrderService {
   get(id: string) {
     return this.repository.get(id);
   }
+  excessReceiptCandidates(
+    id: string,
+    query: PurchaseExcessReceiptCandidateQuery,
+  ): Promise<PageResult<PurchaseExcessReceiptCandidate>> {
+    return this.repository.excessReceiptCandidates(id, {
+      ...query,
+      page: query.page ?? 1,
+      pageSize: query.pageSize ?? 10,
+    });
+  }
   related(query: RelatedPurchasesQuery) {
     return this.repository.related({
       ...query,
@@ -61,8 +75,19 @@ export class PurchaseOrderService {
       keyword: query.keyword?.trim() || undefined,
     });
   }
-  resolve(demandIds: string[]) {
-    return this.production.resolveDemands({ demandIds });
+  workOrders(query: ProcurementDemandWorkOrderQuery) {
+    return this.production.listWorkOrders({
+      ...query,
+      keyword: query.keyword?.trim() || undefined,
+    });
+  }
+  async resolve(workOrderId: string, demandIds: string[]) {
+    const rows = await this.production.resolveDemands({ demandIds });
+    return rows.map((row) =>
+      row.demand && row.demand.workOrderId !== workOrderId
+        ? { ...row, eligible: false, blockedReason: '需求不属于所选工单' }
+        : row,
+    );
   }
   materialOptions(query: { keyword?: string; includeIds?: string[] }) {
     return this.variants.listPurchasableMaterials({

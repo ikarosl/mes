@@ -12,13 +12,13 @@ export const PURCHASE_ORDER_STATUS_LABELS = {
 } as const;
 export const PURCHASE_ORDER_LINE_STATUS_LABELS = {
   draft: '草稿',
-  open: '待收货',
+  open: '进行中',
   closed: '已结束',
   cancelled: '已取消',
 } as const;
 export const PURCHASE_ORDER_SUPPLEMENT_REASON_LABELS = {
   excess_purchase: '超量补单',
-  quality_replacement: '不合格补货',
+  quality_replacement: '质量补发',
 } as const;
 export const PURCHASE_ORDER_CLOSURE_REASON_LABELS = {
   quality_target: '质检达标',

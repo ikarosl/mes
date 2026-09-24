@@ -75,7 +75,7 @@ export abstract class ProductionRepository {
   abstract listWorkOrderBatches(workOrderId: string): Promise<ProductionBatchItem[]>;
   abstract withBatchCreationTransaction<T>(
     workOrderId: string,
-    action: (workOrderProductId: string) => Promise<T>,
+    action: (workOrderProductId: string, orderType: ProductionBatchItem['orderType']) => Promise<T>,
   ): Promise<T>;
   abstract createBatch(
     workOrderId: string,

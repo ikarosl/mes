@@ -1,15 +1,15 @@
 <template>
   <el-dialog
     v-model="visible"
-    title="质量退回后补发 · 独立采购补单"
+    title="供应商质量补发 · 独立采购单"
     :width="DialogWidth.md"
     :before-close="beforeClose"
     :close-on-click-modal="false"
     :show-close="!command.busy.value"
   >
-    <template v-if="line && supplierReturn">
+    <template v-if="line && basis">
       <el-alert
-        title="补发单追溯本次真实质量退回，原需求已关闭仍保留来源。额外采购量独立填写，不自动冲减原单或按退回量分摊。"
+        title="依据库管已确认的质量退回处置和供应商补发约定建单。可先补后退，无需先关原单；创建补发单不会登记实际退回。"
         type="info"
         :closable="false"
         class="notice"
@@ -23,15 +23,16 @@
       />
       <p>{{ line.itemCode }} · {{ line.itemName }} · {{ line.materialVariantCode }}</p>
       <p>
-        依据：{{ supplierReturn.returnNo }}，实际质量退回
-        {{ Number(supplierReturn.returnedQuantity) }} {{ line.unit }}
+        依据：质量退回分配明细 {{ basis.allocationId }}；
+        {{ basis.returned ? '本笔已退' : '本范围待退' }} {{ Number(basis.quantity) }}
+        {{ line.unit }}
       </p>
       <el-form
         :disabled="command.locked.value"
-        label-width="110px"
+        label-width="140px"
         @submit.prevent="save"
         ><el-form-item
-          label="补发采购量"
+          label="约定补发量"
           required
           ><el-input-number
             v-model="quantity"
@@ -40,10 +41,11 @@
             :precision="0"
             controls-position="right" /></el-form-item
         ><el-form-item
-          label="补发真实依据"
+          label="供应商补发约定"
           required
           ><el-input
             v-model="evidence"
+            placeholder="填写供应商确认补发的数量、沟通时间及可追溯凭据；实际退回另行登记"
             type="textarea"
             :rows="3"
             maxlength="2000"
@@ -78,15 +80,20 @@
 </template>
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import type { ProcurementReceiptLine, SupplierReturnItem } from '@company/contracts';
+import type { ProcurementReceiptLine } from '@company/contracts';
 import { PURCHASE_ORDER_MAX_QUANTITY } from '@company/constants';
 import { procurementApi } from '../../../api/procurement';
 import { DialogWidth } from '../../../utils/dialog';
 import { useProcurementCommand } from '../composables/useProcurementCommand';
+interface ReplacementBasis {
+  allocationId: string;
+  quantity: string;
+  returned: boolean;
+}
 const emit = defineEmits<{ saved: [string] }>();
 const visible = ref(false),
   line = ref<ProcurementReceiptLine | null>(null),
-  supplierReturn = ref<SupplierReturnItem | null>(null),
+  basis = ref<ReplacementBasis | null>(null),
   quantity = ref<number | undefined>(),
   evidence = ref(''),
   remark = ref('');
@@ -102,10 +109,10 @@ const canSave = computed(
     Number(quantity.value) <= PURCHASE_ORDER_MAX_QUANTITY &&
     Boolean(evidence.value.trim()),
 );
-const open = (source: ProcurementReceiptLine, returned: SupplierReturnItem): void => {
-  if (visible.value || command.locked.value || returned.reasonType !== 'quality') return;
+const open = (source: ProcurementReceiptLine, selection: ReplacementBasis): void => {
+  if (visible.value || command.locked.value || !selection.allocationId) return;
   line.value = source;
-  supplierReturn.value = returned;
+  basis.value = selection;
   quantity.value = undefined;
   evidence.value = '';
   remark.value = '';
@@ -118,12 +125,12 @@ const close = async (): Promise<boolean> => {
   return true;
 };
 const save = async (): Promise<void> => {
-  if (!canSave.value || !line.value || !supplierReturn.value) return;
+  if (!canSave.value || !line.value || !basis.value) return;
   const id = line.value.purchaseOrderLineId;
   const body = {
     supplementReason: 'quality_replacement' as const,
     originReceiptLineId: line.value.id,
-    originSupplierReturnId: supplierReturn.value.id,
+    originAllocationId: basis.value.allocationId,
     plannedQuantity: Number(quantity.value),
     supplementEvidence: evidence.value.trim(),
     remark: remark.value.trim() || null,
@@ -131,7 +138,7 @@ const save = async (): Promise<void> => {
   await command.run(
     { intentType: 'procurement.order.quality-replacement', params: { id }, query: {}, body },
     (key) => procurementApi.createSupplement(id, body, key),
-    '不合格补货草稿已创建，请核对后正式下单',
+    '质量补发草稿已创建，请核对后正式下单',
   );
 };
 const beforeClose = (): void => {

@@ -120,13 +120,11 @@ export class ProductionSupplyDemandQueries {
          work_order.id work_order_id,work_order.work_order_no,demand.demand_type,
          demand.need_number,demand.remaining_number,demand.unit_snapshot,demand.pending_correction_id,demand.replaces_demand_id,
          demand.parent_demand_id,demand.supplement_id,supplement.supplement_no,
-         disposition.disposition_no abnormal_disposition_no,
-         material_loss.scrap_no material_loss_scrap_no,demand.created_at
+         disposition.disposition_no abnormal_disposition_no,demand.created_at
        FROM production_item_demand demand
        JOIN production_batches batch ON batch.id=demand.production_batch_id
        JOIN work_orders work_order ON work_order.id=batch.work_order_id
        LEFT JOIN production_material_supplement supplement ON supplement.id=demand.supplement_id
-       LEFT JOIN item_scrap material_loss ON material_loss.id=supplement.material_loss_scrap_id
        LEFT JOIN batch_step_scrap_records step_scrap
          ON step_scrap.id=supplement.step_scrap_record_id
        LEFT JOIN batch_step_abnormal_dispositions disposition
@@ -197,7 +195,6 @@ type DemandTraceRow = RowDataPacket & {
   supplement_id: number | null;
   supplement_no: string | null;
   abnormal_disposition_no: string | null;
-  material_loss_scrap_no: string | null;
   created_at: Date;
 };
 
@@ -220,6 +217,5 @@ const mapDemandTrace = (row: DemandTraceRow): InventoryMaterialDemandTraceItem =
   supplementId: row.supplement_id === null ? null : String(row.supplement_id),
   supplementNo: row.supplement_no,
   abnormalDispositionNo: row.abnormal_disposition_no,
-  materialLossScrapNo: row.material_loss_scrap_no,
   createdAt: toBeijingISOString(row.created_at),
 });

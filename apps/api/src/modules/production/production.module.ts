@@ -1,10 +1,8 @@
+import { QualityModule } from '../quality/public.js';
+import { MysqlProductionFinishedInspectionSource } from './infrastructure/mysql-production-finished-inspection-source.js';
 import { InventoryModule } from '../inventory/public.js';
 import { ProductionProcurementQuery } from './application/production-procurement.query.js';
 import { MysqlProductionProcurementQuery } from './infrastructure/mysql-production-procurement.query.js';
-import { WorkOrderMaterialConfigurationService } from './application/work-order-material-configuration.service.js';
-import { WorkOrderMaterialConfigurationRepository } from './application/ports/work-order-material-configuration.repository.js';
-import { MysqlWorkOrderMaterialConfigurationRepository } from './infrastructure/mysql-work-order-material-configuration.repository.js';
-import { WorkOrderMaterialConfigurationController } from './presentation/http/work-order-material-configuration.controller.js';
 import { ProductionTerminationService } from './application/production-termination.service.js';
 import { ProductionTerminationRepository } from './application/ports/production-termination.repository.js';
 import { MysqlProductionTerminationRepository } from './infrastructure/mysql-production-termination.repository.js';
@@ -90,14 +88,8 @@ import { ProductionMaterialOutboundRepository } from './application/ports/produc
 import { MysqlProductionMaterialOutboundRepository } from './infrastructure/mysql-production-material-outbound.repository.js';
 
 // 装配按职责分组；各用例继续共享 Production 所有权及同池事务。
-const planningControllers = [ProductionController, WorkOrderMaterialConfigurationController];
+const planningControllers = [ProductionController];
 const planningProviders = [
-  WorkOrderMaterialConfigurationService,
-  MysqlWorkOrderMaterialConfigurationRepository,
-  {
-    provide: WorkOrderMaterialConfigurationRepository,
-    useExisting: MysqlWorkOrderMaterialConfigurationRepository,
-  },
   ProductionService,
   MysqlWorkOrderRepository,
   MysqlProductionBatchRepository,
@@ -160,6 +152,7 @@ const closeoutControllers = [
   ProductionOutputController,
 ];
 const closeoutProviders = [
+  MysqlProductionFinishedInspectionSource,
   ProductionCloseoutMaterialLossService,
   MysqlProductionCloseoutMaterialLossRepository,
   {
@@ -212,6 +205,7 @@ const queryProviders = [
 
 @Module({
   imports: [
+    QualityModule,
     InventoryModule,
     DatabaseModule,
     IdentityModule,

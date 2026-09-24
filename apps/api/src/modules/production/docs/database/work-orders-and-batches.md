@@ -26,59 +26,48 @@
 
 一个前序允许关联多个后续研发方向，不额外维护轮次计数、研发项目表或成功／失败字段。所有前序均在新工单创建前存在，且关系不可改，配合非自指约束形成可逐轮追溯的关系。后续草稿被取消时仍保留关联，不删除历史。
 
-`POST /production/work-orders` 增加可选 `previousResearchOrderId`，同原创建命令使用 HTTP 幂等。列表和详情返回该 ID；详情另含只读 `previousResearchOrder` 摘要与 `nextResearchOrders` 直接后续列表，提供工单号、成品 ID／编码／名称及状态。查询仍按 Production 权限执行，直接前后关系通过现有详情接口逐轮浏览，不新增追溯路由或复制整条链快照。
+`POST /production/work-orders` 接受可选 `previousResearchOrderId`，同原创建命令使用 HTTP 幂等。列表和详情返回该 ID；详情另含只读 `previousResearchOrder` 摘要与 `nextResearchOrders` 直接后续列表，提供工单号、成品 ID／编码／名称及状态。查询仍按 Production 权限执行，直接前后关系通过现有详情接口逐轮浏览，不新增追溯路由或复制整条链快照。
 
 管理端在终态研发工单的列表菜单及详情提供“开启下一轮研发”，重新读取前序详情后复用新增工单弹窗，预填计划数量、负责人、客户、质量等级、外部订单号、备注；新成品和计划日期清空并要求重选，类型固定为研发。失效负责人仍沿原候选校验处理；预填资料可修改，前序关联只读。
 
-新成品通过 Product 原有入口建立，新 BOM 独立送审，新生产任务仍执行现有 BOM 已批准门禁。续轮只带出可编辑计划资料，不复制或改写旧需求、分配、批次、库存、报工、BOM 批准记录和审批事实；本轮拼版多物料版本配置保持原规则。
+新成品通过 Product 原有入口建立，研发任务不要求 BOM 或工艺路线。续轮只带出可编辑计划资料，不复制或改写旧需求、分配、批次、库存、报工、BOM 批准记录和审批事实；本轮可以直接手工提出任意有效物料及版本的需求。
 
 迁移 `202609170005-research-work-order-lineage` 直接追加可空关联及约束，旧工单不推测前序。down 在存在任何研发关联时拒绝丢弃历史，开发环境可按统一约定重置后回退；已执行 migration 不修改。
 
 ## 工单类型与物料版本规则
 
-`work_orders.order_type` 是必填 `VARCHAR(30)`，只允许 `mass_production`（批量生产）和 `research`（研发任务），不设数据库默认值。草稿可修改类型，下达后永久固定；生产批次沿工单读取类型，不重复维护可变任务类型。
+`work_orders.order_type` 只允许 `mass_production` 与 `research`，草稿可改、下达后固定。任务沿所属工单读取类型，HTTP `ProductionBatchItem.orderType` 明确返回此值，不另存任务类型列。长期决定见 [ADR-0014](../../../../../../../docs/adr/0014-task-material-policy-and-output-inspection.md)。
 
-| 规则 | 批量生产 | 研发任务 |
+| 规则 | 批量任务 | 研发任务 |
 | --- | --- | --- |
-| 基础物料候选 | 产品 BOM | 产品 BOM，不开放 BOM 外物料 |
-| 同一基础物料版本 | 有效任务和正常完工历史使用同一版本；已取消／已终止任务保留旧版本 | 可选择多个启用版本 |
-| 首次正常需求数量 | BOM 单耗 × 批次计划量，选一个版本 | 可按多个版本拆分，合计仍等于 BOM 应需量 |
-| 人工追加、报废补料、损耗补料 | 必须使用工单已锁定版本 | 管理员可另选同一基础物料启用版本并输入数量 |
-| 父需求 | 同批次、同 BOM 基础；版本遵守工单锁定 | 同批次、同 BOM 基础；允许与父需求版本不同 |
+| 创建任务 | 经 Product 复核已批准、锁定且有效的 BOM | 只复核有效自制成品，不读取、不审批 BOM |
+| 初始需求 | 完整覆盖 BOM，数量为单耗 × 任务计划量，每物料选择一个版本 | 管理员从有效物料目录手工提需，版本与正整数数量逐笔填写 |
+| 版本一致性 | 同任务同基础物料固定一个精确版本，不同任务可不同 | 工单和任务无统一版本锁，同物料可使用多个启用版本 |
+| 后续人工提需 | 仅本任务冻结 BOM 物料，继续原锁定版本 | 可追加此前未用过的物料、其他版本和数量 |
+| 供应商提示 | 初配随版本一起冻结 | 本次具体需求可选填写，后续不强制继承 |
+| 工艺执行 | 冻结路线、工序与 SOP，按工序报工 | 不继承默认路线，不生成工序，使用任务级开始／结束 |
+| 领料损坏 | 仅记录实际损坏，需要更多物料另行人工提需 | 相同规则；不自动生成同版等量需求 |
 
-“同物料”按 `materials.id` 判断，不按名称或分类判断。“研发不限版本”不取消基础物料归属、正整数数量、启用状态、审计和幂等校验，也不改变现有 BOM 锁定规则。研发正常需求的超额数量通过人工追加需求表达。
+“同物料”按稳定 `materials.id` 判断，不按名称或分类。无版本锁仍要求实际需求、分配、领料保持精确版本一致，物料与版本当前有效、数量正整数、权限、审计、幂等及实际库存额度均继续校验。
 
-### `work_order_material_versions`
+### 批量任务确认与冻结
 
-职责：保存管理员在工单管理中完整确认的精确物料版本配置，属于 Production 的可变工单配置。它不保存数量，不替代 `production_item_demand`，不建立影子表。Product BOM 固定基础物料与单耗；精确版本包含 `material_variants.major_version/minor_version`，BOM 本身不固定这两个字段。
+`production_material_requirement_basis` 同时承担本任务 BOM 公式、`locked_material_variant_id` 和 `supplier_hint` 的冻结配置。管理员在任务初始需求窗口一次确认全部 BOM 行，基础、锁版提示、正式需求、任务状态和成功审计同事务提交。初次确认前可以调整选择，提交后不提供修改入口；需要另一版本时创建新任务，旧任务按实际执行情况取消或结案，正常完工历史不阻断其他任务选版。
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `work_order_id` | `BIGINT UNSIGNED` | 所属工单 |
-| `material_id` | `BIGINT UNSIGNED` | 已批准 BOM 中的基础物料 |
-| `material_variant_id` | `BIGINT UNSIGNED` | 管理员选择的精确版本 |
-| `created_by / created_at` | `BIGINT UNSIGNED / DATETIME` | 首次配置人员、时间，永久保留 |
-| `updated_by / updated_at` | `BIGINT UNSIGNED / DATETIME` | 最近修改人员、时间 |
-| `version` | `INT` | 行版本，默认 0，修改递增；整份配置提交同时校验并推进 `work_orders.version` |
+本表以 `UNIQUE(production_batch_id,material_id)` 明确一任务一物料一配置，版本归属及下游需求版本由组合外键约束。任务基础禁止更新、删除。研发不写基础；不保留 `work_order_material_versions`、工单配置接口或跨任务修改阻断。
 
-`PRIMARY KEY (work_order_id,material_id)`，版本与基础物料仍由 `(material_variant_id,material_id) -> material_variants(id,material_id)` 组合 FK 校验。工单及创建／修改人保留外键；行版本非负。禁止删除行、改变所属工单、基础物料或创建审计。更新不回写旧需求、已领料事实及库存流水。
+初配、追加和工序报废补料仍按工单 → 任务 → 所需事实顺序锁定，工单锁服务父状态和计划并发，不表示工单统一锁版。初配在 Product 公共能力内复核 BOM 与启用版本；后续命令校验本任务基础。供应商提示不限制实际采购或领料供应商，采购逐来源展示并独立选择实际供应商。
 
-只有 `mass_production` 且工单为 `released/doing` 时可配置；通过 Product 的 `getApprovedBomSnapshot` 独立核验 BOM 已批准，不要求路线有效、不新增工单审批。首次配置和修改都必须一次覆盖全部 BOM 基础物料，每种选择一个启用的精确版本，并填写原因。研发工单仍在任务内选择与拆分版本，不写本表。
-
-修改门禁以整个工单为范围：只要任一非 `cancelled/terminated` 任务已经生成过任何类型、任何业务状态的需求，便禁止修改。正常完工 `completed` 的历史同样阻断；`closing` 即使已关闭全部需求，也要等首份收尾清单批准成为 `terminated`。尚未生成需求的待配置任务不阻断，生成时读取当前工单配置。不能仅检查活动需求、未领数量或库存余额。
-
-未出库任务通过取消命令将活动需求置 `cancelled`、释放预留并取消待出库安排；已出库任务先进入 `closing`，逐项关闭剩余需求并完成收尾批准，最终保持 `terminated`，不改成 `cancelled`。已领齐需求保留 `fulfilled`，旧任务、原需求量、版本快照和出入库事实不删除。不存在其他阻断任务后，管理员可以重新配置并创建新任务；正常完工历史不能借此改版。
-
-配置保存、正常需求、人工追加、报废方案确认和损耗补料统一先锁工单，再锁批次。保存事务重新查询阻断任务及需求（当前读）、完整 BOM 和启用候选；更新配置、工单版本、成功审计和 HTTP 幂等结果同事务。数据库插入／更新触发器也锁工单并拒绝被有效任务引用的配置写入。所有需求入口只校验并复用本表，缺项拒绝生成，不能隐式插入选版。事务失败整体回滚。
-
-| API | 契约与权限 |
+| API | 契约 |
 | --- | --- |
-| `GET /production/work-orders/:workOrderId/material-configuration` | `production:orders:view`；返回工单版本、完整 BOM 行、启用候选、已选版本（停用版本保留编码）、可配置性及首个阻断任务 |
-| `PUT /production/work-orders/:workOrderId/material-configuration` | `production:orders:update`；body 为 `{ version, reason, selections: [{ materialId, materialVariantId }] }`，最多 200 行；必填 `Idempotency-Key`，scope `production.work-order.material-configuration.save.v1`；返回 `{ workOrderId, version }` |
+| `GET /production/material-demands` | 任务需求基础及历史需求投影；研发 BOM 专属字段为空 |
+| `GET /production/material-demands/material-options` | 研发手工提需有效物料远程候选，关键词窗口 50 项，最多 100 个 `includeIds` 回显 |
+| `POST /production/batches/:batchId/material-demands/configurations` | 批量专用，完整 `requirements[{productMaterialId,splits:[{materialVariantId,quantity,supplierHint?}]}]`，每行一个版本 |
+| `POST /production/batches/:batchId/material-demands/additions` | `{reason,requirements:[{materialId,splits:[{materialVariantId,quantity,supplierHint?}]}]}`；研发首次与后续均使用该入口，批量追加不接受修改供应商提示 |
 
-管理端工单列表用“物料版本配置”替换原“生产批次”按钮，仅在已下达或生产中的批量单显示；任务仍通过生产任务页管理。弹窗展示阻断原因并保留未提交草稿，远端版本变化后要求显式重新加载；未知保存结果保留原内容与幂等键。批量任务的初始需求窗口只读继承工单选版、按 BOM 单耗乘任务计划量显示数量，配置缺项或版本失效时禁止确认；研发拆分继续沿原规则。
+创建研发任务保留工单可用状态、负责人、日期及计划额度校验；不得传入路线或工序覆盖。工单向有效任务分配的总计划量仍不超过工单计划，`cancelled/terminated` 释放额度，`closing/completed` 保留占用。实际可用产出可超计划，超出部分进入计划外清单，不回改任务计划。
 
-迁移 `202609170007-work-order-material-configuration` 追加修改审计与行版本，用带生命周期门禁的触发器替换永久更新禁令。既有配置此前不可变，其修改人／时间取原创建人／时间，不推测历史变更。升级期间暂停 Production 写入；down 要求配置表为空，避免丢弃已经使用的可变配置审计。开发环境允许统一重置，所有 migration 可从空库恢复最新结构，不修改已执行文件。
+迁移 `202609200001-task-material-policy` 替换配置粒度、扩展基础与需求约束；up/down 均拒绝既有生产任务，开发数据通过统一初始化入口重建，不推断历史配置或双写。
 
 ## 3.2 生产执行表
 
@@ -139,14 +128,14 @@
 - 工单表示整体生产计划。
 - 一个工单可以拆分为多个生产批次。
 - 工单处于 `released` 或 `doing` 且仍有未分配计划量时均可继续创建生产批次；首批次开工不冻结工单剩余任务拆分能力。
-- 生产领料、生产入库、半成品入库等动作建议落到 `production_batches` 维度。
+- 当前生产领料与批准成品入库关联 `production_batches`；其他自产半成品入库不属于当前范围。
 - 产品快照在工单下达时冻结，后续修改产品主数据不得回写历史工单。
 - 工单下达事务先锁工单，确认 `work_order_owner_id` 非空，再通过 Identity 公开能力复核账号启用且未删除；草稿仍允许暂缺负责人。下达只校验账号，不授予审批权限，任务结案送审时由 Approval 独立检查 `approval:decide`。
 - 负责人仅可随草稿编辑，下达后不提供负责人转交接口。结案送审固定当时的负责人及来源工单证据，后续节点不重新解析或自动替换人员。
 - `quality_level` 是客户自定义等级，不建立固定状态字典或 `CHECK`；如后续需要客户级等级主数据，必须另行建模，不能把自由文本解释为质量结论。
 - 工单实际开工时间不单独持久化，由所属批次的最早 `started_at` 推导；工单实际完工时间由已完工批次的 `completed_at` 汇总，避免形成第二执行事实来源。
 
-当前采用单一 BOM 模型，不建设 BOM 版本头、版本行或当前版本指针。BOM 最终审批通过时，由 Product 与审批同事务写入 `products.bom_locked_at/bom_locked_by`；生产任务创建只通过 Product 公开能力验证已批准及当前物料资格；此后 `product_materials` 永久只读。任务取消、需求完成、库存归零和路线状态变化都不能解锁。原则性用料变化必须创建新产品和新编码，再显式复制、复核 BOM 与路线。产品名称等展示字段修改不改变稳定产品身份，也不破坏既有 ID 引用。
+当前采用单一 BOM 模型，不建设 BOM 版本头、版本行或当前版本指针。BOM 最终审批通过时，由 Product 与审批同事务写入 `products.bom_locked_at/bom_locked_by`；批量任务创建通过 Product 公开能力验证已批准及当前物料资格，研发任务不依赖 BOM；此后 `product_materials` 永久只读。任务取消、需求完成、库存归零和路线状态变化都不能解锁。原则性用料变化必须创建新产品和新编码，再显式复制、复核 BOM 与路线。产品名称等展示字段修改不改变稳定产品身份，也不破坏既有 ID 引用。
 
 #### 工单审批接入目标结构（尚未实施）
 
@@ -164,13 +153,13 @@
 
 提交时冻结全部工单可编辑资料，包括成品 ID/编码/名称/单位、类型、数量、客户、外部订单号、质量要求、交期、负责人和备注；保存审批证据并在递增工单版本后记录该冻结版本。下达写入本次已审查的成品快照，重新核对当前成品身份和使用资格，不能最后一步悄悄换成别的产品或未审查资料。来源成品名称后来变化不回写受审证据。
 
-下达审批不要求 BOM 已完整或已批准，销售可基于有效成品编码先正式下达任务；生产任务创建才要求 Product 已批准且永久锁定的 BOM，并继续检查工单余量、路线、物料等原业务资格。现有直接下达接口必须改为审批提交或拒绝绕过，不能保留平行直通入口。
+下达审批不要求 BOM 已完整或已批准，销售可基于有效成品编码先正式下达任务；批量任务创建才要求 Product 已批准且永久锁定的 BOM，并继续检查工单余量、路线、物料等原业务资格。现有直接下达接口必须改为审批提交或拒绝绕过，不能保留平行直通入口。
 
 这些目标约束需与审批上线共同追加 migration，现有历史工单不能伪造批准依据；当前开发环境可重置并用统一种子验证。
 
 #### 生产工单状态与管理动作
 
-未来审批设计见 [ADR-0006](../../../../../../../docs/adr/0006-approval-workflow-boundaries.md)：沿用现有工单承接只有成品编码及必要资料、尚无完整 BOM 的任务，工单审批必须核对成品身份与外部订单要求。工单最终批准后下达，生产任务创建另行要求 BOM 已经独立审批通过并永久锁定。工单审批尚未实施，以下状态表仍描述当前直接下达机制；新增审批门禁与状态机细化见 [roadmap](../../../../../../../docs/roadmap.md)。
+未来审批设计见 [ADR-0006](../../../../../../../docs/adr/0006-approval-workflow-boundaries.md)：沿用现有工单承接只有成品编码及必要资料、尚无完整 BOM 的任务，工单审批必须核对成品身份与外部订单要求。工单最终批准后下达，批量任务创建另行要求 BOM 已经独立审批通过并永久锁定；研发不要求 BOM。工单审批尚未实施，以下状态表仍描述当前直接下达机制；新增审批门禁与状态机细化见 [roadmap](../../../../../../../docs/roadmap.md)。
 
 生产工单的成功完工不由生产批次自动回写。管理员必须通过显式“确认工单完工”命令复核工单计划量、非取消批次、当前批准清单的计划内产出及未结案批次后，再把工单转为 `completed`。管理端确认不替代后端事务校验。
 
@@ -277,7 +266,7 @@
 - 创建生产批次只接受 `released`、`doing` 工单，并在工单锁内重新汇总排除 `cancelled/terminated` 后的任务计划量；有效分配量加本次新增量不得超过工单计划量。创建批次本身不推动工单进入 `doing`。
 - `pending` 只允许在创建批次时由数据库默认值产生，已有批次不得迁回 `pending`。释放尚未出库的有效分配后，如果批次不再齐套，允许 `material_assigned → material_pending`；这不是重新开放正常需求生成。
 - 所有 `production_batches.status` 和 `work_orders.status` 写入都必须先通过 `production-status.policy.ts` 的统一转换校验；SQL 中的旧状态条件和乐观锁只用于防并发覆盖，不能替代领域校验。
-- 生产批次的“取消任务”与“结束本轮”分开：已领料或执行中批次使用 `terminated`，规则见[批次结束与产出处置](production-termination.md)。只允许 `pending`、`material_pending`、`material_assigned` 取消，即任务尚未开工且物料尚未实际出库；`material_partially_outbound` 已形成库存事实，不能取消。
+- 生产批次的“取消任务”与“结束本轮”分开：已领料或执行中任务不再取消，正常结束通过 `normal` 结案成为 `completed`，提前放弃通过 `early` 结案成为 `terminated`，规则见[批次结束与产出处置](production-termination.md)。只允许 `pending`、`material_pending`、`material_assigned` 取消，即任务尚未开工且物料尚未实际出库；`material_partially_outbound` 已形成库存事实，不能取消。
 - 取消前管理端必须读取服务端实时影响摘要，展示将取消的待确认出库单、有效预留和活动需求数量，并要求填写取消原因；提交事务仍须重新锁定批次及相关单据校验，不能信任前端摘要。
 - 取消事务把 `pending_picking` 待出库单转为 `cancelled`、把活动分配转为 `cancelled` 以释放库存预留、把活动需求转为 `cancelled`，最后把生产批次状态、取消原因、取消人和取消时间同一条更新写入；这些写入和成功审计同事务提交，不生成 `inventory_transaction`。
 - `material_partially_outbound`、`material_outbound`、`doing`、`completed` 明令禁止取消。只要存在已确认出库事实，即使批次状态异常滞后也必须拒绝；第一版不提供强制取消或绕过入口。已开工批次通过独立逐项收尾及结案流程结束，不能复用本取消命令。
@@ -288,12 +277,12 @@
 - 有效短批授权确认首笔部分领料后，批次从 `material_pending` 进入 `material_partially_outbound`；该状态只表达已经发生部分出库，不表达授权是否仍有效。
 - `material_partially_outbound` 不因后续完成分配而回退到 `material_assigned/material_pending`。当前版本授权失效但全部活动需求已经完成分配时，可以不关联短批授权继续普通领料；全部需求确认出库后前进到 `material_outbound`。
 - `material_outbound` 与此前是否使用短批授权无关：普通任务由 `material_assigned` 进入；短批任务若在实际开工前补齐全部领料，也由 `material_partially_outbound` 进入。批次已经凭短批授权进入 `doing` 后，后续补齐物料不回退到 `material_outbound`。
-- `material_outbound` 形成后新增的工序报废或生产领料损耗补料需求由 `production_item_demand.business_status` 表达，不要求批次状态回退。此时只有活动补料需求可以重新进入分配、候选与制单链路，已经满足的正常需求及其历史分配不得重新成为出库候选。
+- `material_outbound` 形成后新增的人工追加或工序报废补料需求由 `production_item_demand.business_status` 表达，不要求批次状态回退。此时只有活动追加或工序补料需求可以重新进入分配、候选与制单链路，已经满足的正常需求及其历史分配不得重新成为出库候选。
 - 首工序开工事务重新检查授权仍有效、版本匹配、已发生确认领料（不扣除退料，全部退回也不影响开工资格），且实际缺口没有超过逐需求批准值，成功后进入 `doing` 并消费授权。
-- 短批开工后剩余活动需求继续分配和出库；存在活动需求时批次不得完成。完整授权表、剩余需求关闭和出库关联规则见 [生产需求、分配与领料出库](demand-allocation-and-outbound.md)。
+- 短批开工后剩余活动需求继续分配和出库；批量执行完工及最终结案仍受活动需求门禁约束；研发可先结束执行，再在正常结案中处理剩余需求。完整授权表、剩余需求关闭和出库关联规则见 [生产需求、分配与领料出库](demand-allocation-and-outbound.md)。
 - 批次查询除授权状态外还派生短批授权动作，供管理端决定显示“授权、重新授权、调整、查看、无需授权”。该字段不是写入事实，授权预览和提交事务必须按锁内最新需求、分配及授权明细重新计算。
 
-当前生产执行完工数量规则：
+当前批量生产执行完工数量规则（研发按任务级结束，不要求工序或领齐剩余需求，最终结案仍须处理物料待办）：
 
 - 以本批次中 `step_order_snapshot` 最大的工序作为数量来源工序，同序时按工序记录 ID 降序确定；查询字段 `lastStepReportedQuantity` 从该工序的不可变 `batch_step_reports` 聚合 `effective_normal`，计入冲销和替代事实，不在批次表缓存数量。进行中或提前结束任务已有的有效末工序报工也按同一口径展示；无工序或尚无报工时查询返回 `0`，不代表已执行完成。
 - 执行完工命令必须在事务内重新锁定并校验所有工序均为 `completed`、需求和补料已满足、末道有效正常量达到执行目标；成功只记录 `execution_completed_at/by`、进入 `closing` 并创建 normal 结案草稿，不另存一份执行完成量。
@@ -301,7 +290,7 @@
 - 正常执行确认尚未最终结案；提前停止使用 early closing 逐项收尾。两种模式均登记最终产出和质检事实，交工单负责人同一结案流程批准，管理员产出处置不改报工事实。正常工序已完但最终可用不足计划可以按实际批准，不强制补产。
 - 批次表不保存执行数量或最终合格数量。质检留存独立记录，审定产出只来自当前批准清单。工序记录用 `normalQuantity` 表示有效正常报工量，不能解释为质检合格量或回写为批次数量。
 
-当前数量结构由追加迁移 `202609170008-drop-batch-output-counters` 删除批次旧数量列及其约束，计划数量的正整数约束保留。既有迁移不修改；回退仅从末工序报工恢复已经正常确认执行完成的旧完成量，不推造质检合格量。详情、追溯与幂等结果契约同步使用派生字段，不提供旧字段兼容双写。
+批次只保存计划与生命周期，不缓存执行／最终合格量；详情、追溯及幂等结果使用派生字段，不提供旧计数字段的兼容双写。数量结构回退只可从真实执行事实恢复，不能推造质检合格量；运行守卫见[迁移安全](../../../../../../../packages/database/docs/migration-safety.md)。
 
 任务列表、详情及工单下属任务通过 `finalOutput` 返回当前批准清单的 `revisionNo/availableQuantity/extraQuantity/scrapQuantity`；未有批准清单时返回 `null`，已批准零产出则明确返回零。只关联 `production_batch_closeout.current_revision_id`，不累加历史版本，不读取更正草稿，也不双写批次数量。`scrapQuantity` 为该版历史工序报废与结案新增报废合计。执行报工量独立使用 `lastStepReportedQuantity`，追溯与工单操作核对使用相同口径。
 
@@ -325,6 +314,8 @@
 `assignedQuantity` 是所有非 `cancelled/terminated` 任务的计划量合计；`closing` 与正常完工 `completed` 仍占用。`terminatedPlannedQuantity` 是已终止任务原计划量合计，仅作历史展示。`remainingQuantity` 为工单计划减有效分配；列表、详情、工单候选与创建事务共用同一 SQL 口径。页面主数显示有效分配，附注“已终止计划 N，不占额度”；不把历史累计安排量作为分配上限。
 
 首份提前结束清单批准成为 `terminated` 才释放原计划额度，原任务计划量不改零。此规则只控制任务分配，不扣除终止任务已经批准的产出，也不保证累计产出小于工单计划；已终止产出继续按当前批准清单汇总。产出更正不会回写分配额度，取消和提前结束不抹除已发生事实。
+
+任务表单的 `GET /production/work-orders/options` 由 `production:tasks:view` 授权，只返回 `released/doing` 且按上述口径仍有可分配余量的工单。它是全量候选，业务预期不超过 20 条不等于 SQL 上限；不分页、不按关键词截断，也不得设置 `LIMIT 20/50`，前端本地筛选。候选只辅助选择，创建任务仍在工单锁内重新核验状态和额度。
 
 ## 工单产出查询口径
 

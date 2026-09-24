@@ -23,7 +23,7 @@ export const selectExecutionBatchSummaries = async (
 ): Promise<PageResult<ProductionExecutionBatchSummary>> => {
   const page = query.page ?? 1;
   const pageSize = query.pageSize ?? 20;
-  const conditions = ['1=1'];
+  const conditions = ["wo.order_type='mass_production'"];
   const values: Array<string | number> = [];
   if (query.keyword) {
     conditions.push(

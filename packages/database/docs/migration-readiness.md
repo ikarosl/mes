@@ -1,7 +1,5 @@
 # 迁移就绪门禁
 
-CI 通过 `pnpm migration:check` 拒绝禁止的历史表结构、未注册的持久表、格式错误的 up/down 配对以及历史 migration 变更；仅用于失败前置校验的临时表不登记为领域表。持久表注册以 `scripts/check-migration-readiness.mjs` 为自动化事实来源，业务语义由 [Production 数据库设计](../../../apps/api/src/modules/production/docs/database/README.md) 等所有者文档维护。
+运行 `pnpm migration:check` 检查禁止的历史结构、未登记的持久表、up/down 配对和历史 migration 变更。检查实现与持久表登记见 [check-migration-readiness.mjs](../../../scripts/check-migration-readiness.mjs)；只用于失败前置校验的临时表不登记为领域表。
 
-需求表支持 `normal/manual_additional/scrap_supplement/material_loss_supplement`；业务状态只允许 `active/cancelled`。补料单直接拥有补料需求，不再注册重复的补料明细表。`item_scrap` 当前只允许 `production_consumed` 生产领料损耗；不得据此恢复 `source_scrap_id`，也不得开放仓库已分配报废、退料后报废或库存内报废接口。
-
-PR CI 还会执行格式检查、文档检查、架构检查、迁移就绪检查、密钥检查、依赖检查、构建检查、类型检查、单元测试和新鲜迁移检查。未完成阶段的 Production 和 warehouse UI 警告暂不作为迁移完成信号。
+失败时按输出核对文件配对、表所有权及当前追加规则，不能通过改已执行 migration 消除错误。业务语义由[各表所有者](../README.md#业务数据库设计)维护。此静态检查不证明迁移已执行、可回滚或业务已验收，运行验证见[迁移安全](migration-safety.md#验证边界)，完整 CI 门禁见[测试策略](../../../docs/testing-strategy.md)。
