@@ -380,7 +380,6 @@ function relatedNewTargetsFor(detailKey: string) {
       ? [
           {
             clientKey: item.target.clientKey,
-            batchCode: item.target.batchCode,
             label: `第 ${index + 1} 条明细的新批次`,
           },
         ]

@@ -1,5 +1,5 @@
 import {
-  IsDateString,
+  IsISO8601,
   IsIn,
   IsInt,
   IsNotEmpty,
@@ -52,7 +52,7 @@ export class RecordFinishedInspectionDto
   @IsInt() @Min(0) @Max(PRODUCTION_OUTPUT_QUANTITY_MAX) qualifiedQuantity!: number;
   @IsInt() @Min(0) @Max(PRODUCTION_OUTPUT_QUANTITY_MAX) unqualifiedQuantity!: number;
   @IsIn(PRODUCTION_OUTPUT_RELEASE_DECISIONS) releaseDecision!: ProductionOutputReleaseDecision;
-  @IsDateString() inspectedAt!: string;
+  @IsISO8601({ strict: true }) @Matches(/(?:Z|[+-]\d{2}:\d{2})$/) inspectedAt!: string;
   @IsString() @IsNotEmpty() @MaxLength(5000) resultNote!: string;
   @IsString() @IsNotEmpty() @MaxLength(5000) evidenceReference!: string;
 }

@@ -43,6 +43,7 @@ Controller 只做 DTO、协议映射、鉴权声明和响应转换，不写 SQL�
 | 表 | 所有权与访问 |
 | --- | --- |
 | `operation_logs` | 平台审计；唯一写入口为 `common/audit/transactional-audit-writer`，模块在自身事务直接调用，无需 public 转发。这是跨模块写入规则的显式例外；其他 Repository／Controller 不得直接写。Identity 提供审计查询。 |
+| `business_number_daily_sequence` | 平台编号；唯一运行时写入口为 `infrastructure/numbering/mysql-business-number`，业务 infrastructure 在当前事务内调用。前缀、技术字段、离线 seed 例外和归批边界见[业务编号](../apps/api/docs/business-numbering.md)。 |
 | `http_idempotency_records` | 平台 HTTP 幂等；只允许 `infrastructure/idempotency` 的 executor 登记／重放及 housekeeping 到期清理，业务 Controller、Service、Repository 不直接读写。Guard 通过平台装配公开。 |
 
 平台表不因最初 migration 位置而归属 Identity 或 `common`。审计完整规则见[事务审计](../apps/api/docs/audit.md)，幂等上下文、scope、结果重放及脱敏观测见[幂等契约](../apps/api/docs/idempotency.md)；成功重放不制造第二条业务审计。

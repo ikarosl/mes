@@ -142,7 +142,6 @@ export function usePurchaseInboundReleases(
         ? [
             {
               clientKey: row.target.clientKey,
-              batchCode: row.target.batchCode,
               label: `第 ${index + 1} 条明细的新批次`,
             },
           ]

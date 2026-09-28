@@ -1,3 +1,4 @@
+import { allocateBusinessNumber } from '../../../infrastructure/numbering/mysql-business-number.js';
 import { Inject, Injectable } from '@nestjs/common';
 import { withTransaction } from '@company/database';
 import type {
@@ -19,7 +20,6 @@ import { lockWorkOrderForBatch } from './mysql-work-order-material-version.js';
 import { ProductionMaterialLossRepository } from '../application/ports/production-material-loss.repository.js';
 import {
   decimal,
-  businessNo,
   requireVersion,
   requireAffected,
   lockIds,
@@ -145,7 +145,7 @@ export class MysqlProductionMaterialLossRepository extends ProductionMaterialLos
           'SCRAP_QUANTITY_EXCEEDED',
           '损耗数量超过当前已确认领料的可申报数量，请刷新后重试',
         );
-      const scrapNo = businessNo('SH');
+      const scrapNo = await allocateBusinessNumber(db, 'material_loss');
       const [created] = await db.execute<ResultSetHeader>(
         `INSERT INTO item_scrap
          (scrap_no,production_batch_id,demand_id,allocation_id,item_id,material_variant_id,batch_id,scrap_scene,

@@ -12,7 +12,7 @@ Quality 所有 `quality_inspection_record` 是每个任务当前成品轮次剩�
 
 只有明确 `released` 才产生本轮建议量R：全检R=G，抽检R=C-F。契约字段 `releasedQuantity` 表示本轮R；待复检或不放行该值为零，但零值不能代替明确放行资格；样本合格数只描述实际检查结果，不按样本合格率推算整批。没有独立的剔除数量输入，也不自动把不合格数登记为产品报废。
 
-`RecordFinishedInspectionPayload` 与事实响应分开。请求提交 `inspectionMethod/qualifiedQuantity/unqualifiedQuantity/releaseDecision`，抽检必须提交 `coveredQuantity`；全检和零产出可省略该值，显式提交时必须与服务端派生值一致。请求不提交 `inspectedQuantity`。检验时间、结论和凭据仍必填。`normalizeFinishedInspectionFacts` 通过 `normalizeInspectionQuantities` 校验并转换为 C/N/F 应用输入（持久化统一 C/G/F）；写入、读取记录和 Production 审批解析通过公开纯规则 `evaluateOutputInspection` 复用同一数量校验及派生公式。
+`RecordFinishedInspectionPayload` 与事实响应分开。请求提交 `inspectionMethod/qualifiedQuantity/unqualifiedQuantity/releaseDecision`，抽检必须提交 `coveredQuantity`；全检和零产出可省略该值，显式提交时必须与服务端派生值一致。请求不提交 `inspectedQuantity`。检验时间、结论和凭据仍必填；`inspectedAt` 须为带 `Z` 或显式时区偏移的 ISO 8601 时间，服务端保存所表示的同一时刻。`normalizeFinishedInspectionFacts` 通过 `normalizeInspectionQuantities` 校验并转换为 C/N/F 应用输入（持久化统一 C/G/F）；写入、读取记录和 Production 审批解析通过公开纯规则 `evaluateOutputInspection` 复用同一数量校验及派生公式。
 
 产线三项数量和版本保留为登记当时的来源快照，只供核对；不限制实际检验总数，也不自动改变实测 G/F。例如产线申报 10，质检核实实际有 12：全检填合格 11、不合格 1，形成 C=N=12；抽检填实际送检总数 12、样本合格 4、不合格 1，形成 C=12、N=5。两种情况明确放行后的本次建议量都为 11。管理端提示实物总数与原申报的差异，产线管理员随后修正计划内、计划外及实际报废，主动引用最新检验记录送审。质检不合格数不能自动作为已报废数量。
 

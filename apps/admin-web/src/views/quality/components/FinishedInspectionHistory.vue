@@ -12,7 +12,7 @@
       v-for="record in records"
       :key="record.id"
       :name="record.id"
-      :title="`质检 #${record.id} · ${record.createdByName} · ${record.inspectedAt}${record.id === latestInspectionId ? ' · 最新记录' : ''}`"
+      :title="`质检 #${record.id} · ${record.createdByName} · ${formatDateTimeForDisplay(record.inspectedAt)}${record.id === latestInspectionId ? ' · 最新记录' : ''}`"
     >
       <el-descriptions
         :column="3"
@@ -25,7 +25,9 @@
         <el-descriptions-item label="前次记录">{{
           record.previousInspectionId ? `#${record.previousInspectionId}` : '首次检验'
         }}</el-descriptions-item>
-        <el-descriptions-item label="登记时间">{{ record.createdAt }}</el-descriptions-item>
+        <el-descriptions-item label="登记时间">{{
+          formatDateTimeForDisplay(record.createdAt)
+        }}</el-descriptions-item>
         <el-descriptions-item
           label="当时申报（计划内 / 外 / 报废）"
           :span="3"
@@ -51,6 +53,7 @@
 import { ref } from 'vue';
 import type { ProductionOutputInspection } from '@company/contracts';
 import FinishedInspectionFacts from './FinishedInspectionFacts.vue';
+import { formatDateTimeForDisplay } from '../../../utils/date';
 defineProps<{ records: ProductionOutputInspection[]; latestInspectionId: string | null }>();
 const expanded = ref<string[]>([]);
 </script>

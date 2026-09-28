@@ -22,7 +22,7 @@ const researchOrderReferenceSchema = z
 const createdWorkOrderSchema: z.ZodType<WorkOrderDetail> = z
   .object({
     id: z.string(),
-    workOrderNo: z.string().regex(/^\d{4}-\d{2}-\d{2}-[1-9]\d*$/),
+    workOrderNo: z.string().min(1),
     orderType: z.enum(WORK_ORDER_TYPES),
     previousResearchOrderId: nullableString,
     productId: z.string(),

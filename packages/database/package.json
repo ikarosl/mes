@@ -51,6 +51,7 @@
   },
   "dependencies": {
     "@company/config": "workspace:*",
+    "@company/constants": "workspace:*",
     "bcryptjs": "catalog:",
     "mysql2": "catalog:"
   },

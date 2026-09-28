@@ -1,11 +1,10 @@
-import { randomUUID } from 'node:crypto';
+import { allocateBusinessNumber } from '../../../infrastructure/numbering/mysql-business-number.js';
 import { Inject, Injectable } from '@nestjs/common';
 import { withActiveConnection } from '@company/database';
 import { fixedIntegerQuantity, MAX_PERSISTED_INTEGER_QUANTITY } from '@company/utils';
 import type { Pool, PoolConnection, ResultSetHeader } from 'mysql2/promise';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { writeTransactionalAudit } from '../../../common/audit/transactional-audit-writer.js';
-import { toBeijingISOString } from '../../../common/time/date-time.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
 import { ProductInventoryEligibility } from '../../product/public.js';
 import { InventoryStockCommand } from '../application/inventory-stock.command.js';
@@ -75,19 +74,16 @@ export class MysqlInventoryPurchaseInboundWriter {
             throw new InventoryDomainError('INVALID_STATE', '目标库存批次身份不符、被冻结或停用');
           batchId = line.target.batchId;
         } else {
-          const identity = `${line.materialVariantId}:${line.unit}:${line.target.batchCode ?? ''}`;
+          const identity = `${line.itemId}:${line.materialVariantId}:${line.unit}`;
           const prior = newByKey.get(line.target.clientKey);
           if (prior && prior.identity !== identity)
-            throw new InventoryDomainError(
-              'INVALID_INPUT',
-              '共用新批次的物料身份、单位或批号不一致',
-            );
+            throw new InventoryDomainError('INVALID_INPUT', '共用新批次的物料身份或单位不一致');
           batchId = prior?.batchId ?? (await createBatch(db, input, line, context));
           newByKey.set(line.target.clientKey, { batchId, identity });
         }
         resolved.set(line, batchId);
       }
-      const inboundNo = automaticCode('PI');
+      const inboundNo = await allocateBusinessNumber(db, 'purchase_inbound');
       const [order] = await db.execute<ResultSetHeader>(
         `INSERT INTO inbound_order(inbound_no,source_type,provider,status,inbound_at,operator_id,remark,created_by,updated_by)
          VALUES (?,'purchased',?,'completed',CURRENT_TIMESTAMP,?,?,?,?)`,
@@ -186,9 +182,7 @@ async function createBatch(
         line.itemCode,
         line.materialVariantCode,
         line.unit,
-        line.target.mode === 'new' && line.target.batchCode
-          ? line.target.batchCode.trim()
-          : automaticCode('IB'),
+        await allocateBusinessNumber(db, 'inventory_batch'),
         null,
         input.remark ?? null,
         context.actorId,
@@ -245,23 +239,16 @@ function validateInput(input: ConfirmPurchaseReceiptInput): void {
       throw new InventoryDomainError('INVALID_INPUT', '入库明细标识不能重复');
     detailKeys.add(line.detailKey);
     if (line.target.mode === 'new') {
-      if (
-        !line.target.clientKey.trim() ||
-        line.target.clientKey.length > 100 ||
-        (line.target.batchCode !== undefined &&
-          (!line.target.batchCode.trim() || line.target.batchCode.length > 100))
-      )
-        throw new InventoryDomainError('INVALID_INPUT', '新批次标识或批号无效');
-      const identity = `${line.materialVariantId}:${line.unit}:${line.target.batchCode ?? ''}`;
+      if (!line.target.clientKey.trim() || line.target.clientKey.length > 100)
+        throw new InventoryDomainError('INVALID_INPUT', '新批次标识无效');
+      const identity = `${line.itemId}:${line.materialVariantId}:${line.unit}`;
       const prior = newTargets.get(line.target.clientKey);
       if (prior && prior !== identity)
-        throw new InventoryDomainError('INVALID_INPUT', '共用新批次的物料身份、单位或批号不一致');
+        throw new InventoryDomainError('INVALID_INPUT', '共用新批次的物料身份或单位不一致');
       newTargets.set(line.target.clientKey, identity);
     }
   }
 }
-const automaticCode = (prefix: 'PI' | 'IB'): string =>
-  `${prefix}-${toBeijingISOString(Date.now()).slice(0, 10).replaceAll('-', '')}-${randomUUID().replaceAll('-', '').slice(0, 16).toUpperCase()}`;
 const compareId = (a: string, b: string): number =>
   BigInt(a) < BigInt(b) ? -1 : BigInt(a) > BigInt(b) ? 1 : 0;
 const uniqueSorted = (ids: string[]): string[] => [...new Set(ids)].sort(compareId);

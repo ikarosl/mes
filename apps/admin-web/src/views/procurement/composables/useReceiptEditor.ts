@@ -7,6 +7,7 @@ import type {
   PurchaseOrderLine,
 } from '@company/contracts';
 import { PURCHASE_ORDER_MAX_QUANTITY } from '@company/constants';
+import { toBeijingISOString } from '@company/utils';
 import { procurementApi } from '../../../api/procurement';
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
 import { EMessage } from '../../../utils/message';
@@ -171,7 +172,7 @@ export function useReceiptEditor(onSaved: (id: string) => void | Promise<void>) 
     keyword.value = '';
     page.value = 1;
     stale.value = false;
-    receivedAt.value = new Date().toISOString();
+    receivedAt.value = toBeijingISOString(Date.now());
     handoverEvidence.value = '';
     remark.value = '';
     visible.value = true;
@@ -221,7 +222,7 @@ export function useReceiptEditor(onSaved: (id: string) => void | Promise<void>) 
     const body: ConfirmProcurementReceiptPayload = {
       purchaseOrderId: target.id,
       purchaseOrderVersion: target.version,
-      receivedAt: receivedAt.value,
+      receivedAt: toBeijingISOString(receivedAt.value),
       handoverEvidence: handoverEvidence.value.trim(),
       remark: remark.value.trim() || null,
       details: activeRows.value.map((row) => ({

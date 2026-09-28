@@ -1,5 +1,5 @@
+import { allocateBusinessNumber } from '../../../infrastructure/numbering/mysql-business-number.js';
 import { currentMaterialNameSql } from './queries/material-name.sql.js';
-import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import { DEMAND_GENERATION_GROUP_TYPE } from '@company/constants';
 import { withTransaction } from '@company/database';
@@ -167,7 +167,7 @@ export class MysqlProductionSupplementRepository extends ProductionSupplementRep
             status,remark,created_by,updated_by)
            VALUES (?,?,?,?,?,'draft',?,?,?)`,
           [
-            `SSP-${Date.now()}-${randomUUID().slice(0, 8)}`,
+            await allocateBusinessNumber(connection, 'scrap_supplement_plan'),
             dispositionId,
             source.production_batch_id,
             source.batch_step_record_id,
@@ -422,7 +422,7 @@ export class MysqlProductionSupplementRepository extends ProductionSupplementRep
           actorId,
         ],
       );
-      const supplementNo = `SUP-${Date.now()}-${randomUUID().slice(0, 8)}`;
+      const supplementNo = await allocateBusinessNumber(connection, 'material_supplement');
       const [supplement] = await connection.execute<ResultSetHeader>(
         `INSERT INTO production_material_supplement
          (supplement_no,source_type,step_scrap_record_id,production_batch_id,batch_step_record_id,

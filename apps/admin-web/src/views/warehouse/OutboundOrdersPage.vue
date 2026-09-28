@@ -243,6 +243,7 @@ import { OUTBOUND_ORDER_STATUSES, OUTBOUND_ORDER_STATUS_LABELS } from '@company/
 import TableToolbar from '../../components/TableToolbar.vue';
 import PaginationFooter from '../../components/PaginationFooter.vue';
 import { EMessage } from '../../utils/message';
+import { formatDateTimeForDisplay } from '../../utils/date';
 import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
 import MaterialOutboundOrderCreateDialog from '../production/components/MaterialOutboundOrderCreateDialog.vue';
 import MaterialOutboundOrderDetailDialog from '../production/components/MaterialOutboundOrderDetailDialog.vue';
@@ -434,8 +435,7 @@ const statusTag = (status: OutboundOrderStatus) =>
   status === 'completed' ? 'success' : status === 'cancelled' ? 'info' : 'warning';
 const statusLabel = (status: OutboundOrderStatus) => OUTBOUND_ORDER_STATUS_LABELS[status];
 const isPending = (action: string, id: string) => orders.pendingKeys.value.has(`${action}:${id}`);
-const formatTime = (value: string): string =>
-  new Date(value).toLocaleString('zh-CN', { hour12: false });
+const formatTime = (value: string): string => formatDateTimeForDisplay(value);
 const escapeHtml = (value: string): string =>
   value.replace(
     /[&<>'"]/g,

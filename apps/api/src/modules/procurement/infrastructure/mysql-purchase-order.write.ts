@@ -1,5 +1,5 @@
 import { emptyClosureFacts } from './mysql-purchase-order-closure.facts.js';
-import { randomUUID } from 'node:crypto';
+import { allocateBusinessNumber } from '../../../infrastructure/numbering/mysql-business-number.js';
 import type { PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import type {
   CreatePurchaseOrderPayload,
@@ -61,7 +61,7 @@ export const insertOrder = async (
   const [result] = await connection.execute<ResultSetHeader>(
     'INSERT INTO procurement_order(purchase_no,work_order_id,source_type,supplement_reason,remark,created_by,updated_by) VALUES(?,?,?,?,?,?,?)',
     [
-      `PO-${Date.now()}-${randomUUID().slice(0, 8).toUpperCase()}`,
+      await allocateBusinessNumber(connection, 'purchase_order'),
       payload.workOrderId,
       payload.sourceType,
       supplement,

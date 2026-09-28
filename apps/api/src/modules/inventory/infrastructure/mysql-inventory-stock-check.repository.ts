@@ -1,3 +1,4 @@
+import { allocateBusinessNumber } from '../../../infrastructure/numbering/mysql-business-number.js';
 import { InventoryStockCommand } from '../application/inventory-stock.command.js';
 import { currentMaterialNameSql } from './queries/material-name.sql.js';
 import { Inject, Injectable } from '@nestjs/common';
@@ -25,7 +26,6 @@ import {
   numericSort,
   decimal,
   iso,
-  businessNo,
   requireVersion,
   requireAffected,
   groupBy,
@@ -172,7 +172,7 @@ export class MysqlInventoryStockCheckRepository extends InventoryStockCheckRepos
         numericSort,
       );
       await this.inventory.lockMaterialBatches(batchIds);
-      const checkNo = payload.checkNo || businessNo('PD');
+      const checkNo = await allocateBusinessNumber(db, 'stock_check');
       let created: ResultSetHeader;
       try {
         [created] = await db.execute<ResultSetHeader>(

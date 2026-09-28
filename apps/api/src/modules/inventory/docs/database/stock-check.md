@@ -80,7 +80,7 @@
 - `result` 为 STORED 生成列：`CASE WHEN actual_quantity IS NULL THEN NULL WHEN actual_quantity>system_quantity THEN 'surplus' WHEN actual_quantity<system_quantity THEN 'shortage' ELSE 'matched' END`。两列禁止由接口独立写入。
 - 盘点调整应生成 `inventory_transaction`，类型为 `stock_check_adjustment`。
 - 盘点明细应记录盘点时的系统数量快照，避免后续库存变动影响盘点结果。
-- 创建盘点单时由管理员从当前正库存 `item_batch × stock_status` 候选中选择明细，系统在创建事务内冻结账面数量；空明细、重复批次状态组合和非正库存均拒绝。
+- 创建盘点单时由管理员从当前正库存 `item_batch × stock_status` 候选中选择明细，系统在创建事务内分配 PD 编号并冻结账面数量；请求不接受手填 `checkNo`。空明细、重复批次状态组合和非正库存均拒绝。
 - 首次保存任意实盘数量时主单从 `pending` 进入 `counting`；允许分次保存，未录入明细保持 `actual_quantity = NULL`。
 - 完成盘点要求所有明细已录入。事务按批次 ID 升序锁定库存批次并经 Inventory 对余额投影做当前读重新取得账面数量；任一当前数量与快照不同则整单拒绝，要求取消后重新建单，禁止用旧快照调整变化后的库存。
 - 校验通过后，差异非零的明细各生成一条 `stock_check_adjustment` 流水，匹配明细不生成零流水；全部明细统一标记 `adjusted = 1`，主单更新为 `completed`，流水、状态和成功审计同事务提交。当前不提供完成后再单独“生成调整”的第二入口。

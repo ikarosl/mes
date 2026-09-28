@@ -109,9 +109,10 @@
         label="实际到货时间"
         required
         ><el-date-picker
-          v-model="receivedAt"
+          :model-value="toBeijingDateTimeInputValue(receivedAt)"
           type="datetime"
-          value-format="YYYY-MM-DDTHH:mm:ssZ"
+          value-format="YYYY-MM-DD HH:mm:ss"
+          @update:model-value="receivedAt = fromBeijingDateTimeInputValue($event)"
       /></el-form-item>
       <el-form-item
         label="交接凭据"
@@ -250,6 +251,7 @@
 import { supplierSummary } from '../supplier-summary';
 import { PURCHASE_ORDER_MAX_QUANTITY } from '@company/constants';
 import { DialogWidth } from '../../../utils/dialog';
+import { fromBeijingDateTimeInputValue, toBeijingDateTimeInputValue } from '../../../utils/date';
 import PaginationFooter from '../../../components/PaginationFooter.vue';
 import { useReceiptEditor } from '../composables/useReceiptEditor';
 const emit = defineEmits<{ saved: [string] }>();

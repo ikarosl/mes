@@ -134,9 +134,7 @@ export class MysqlProductionFinishedInboundRepository extends ProductionFinished
       if (
         line.target.mode === 'new'
           ? !line.target.clientKey.trim() || 'batchId' in line.target
-          : !/^[1-9]\d*$/.test(line.target.batchId) ||
-            'clientKey' in line.target ||
-            'batchCode' in line.target
+          : !/^[1-9]\d*$/.test(line.target.batchId) || 'clientKey' in line.target
       )
         throw new ProductionDomainError('INVALID_INPUT', '请选择有效目标批次');
       totalByAllocation.set(

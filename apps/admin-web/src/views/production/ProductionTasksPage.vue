@@ -711,7 +711,6 @@ const submitTask = async (data: TaskFormValue): Promise<void> => {
       EMessage.success('任务已更新');
     } else {
       const payload: CreateProductionBatchPayload = {
-        batchNo: data.batchNo || '',
         routeId: data.routeId || null,
         plannedQuantity: data.plannedQuantity,
         ownerId: data.ownerId || null,

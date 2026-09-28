@@ -60,6 +60,7 @@ const allowedTables = new Set([
   'route_step_materials',
   'work_orders',
   'work_order_daily_sequence',
+  'business_number_daily_sequence',
   'work_order_material_versions',
   'production_batches',
   'batch_step_records',

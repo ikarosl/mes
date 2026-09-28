@@ -23,6 +23,8 @@
 
 ## 验证
 
+构建和常规类型检查只包含应用源码；正式测试文件由 Vitest 运行，并通过 `corepack pnpm --filter @company/contracts typecheck:test` 单独检查类型。验证顺序见[测试策略](../../docs/testing-strategy.md)。
+
 ```text
 corepack pnpm --filter @company/contracts typecheck
 corepack pnpm --filter @company/contracts test

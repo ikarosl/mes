@@ -53,6 +53,7 @@ import { RequestError } from '@company/request';
 import { productionResearchApi } from '../../../api/production-research';
 import { useIdempotentIntent } from '../../../composables/idempotency/useIdempotentIntent';
 import { DialogWidth } from '../../../utils/dialog';
+import { toBeijingDateTimeInputValue } from '../../../utils/date';
 import { EMessage } from '../../../utils/message';
 import { RouteMessageBox } from '../../../utils/route-message-box';
 
@@ -71,7 +72,7 @@ const isId = (value: unknown): value is string =>
 const isTimestamp = (value: unknown): value is string =>
   typeof value === 'string' &&
   /^\d{4}-\d{2}-\d{2}T/.test(value) &&
-  Number.isFinite(Date.parse(value));
+  toBeijingDateTimeInputValue(value) !== '';
 const hasCompleteResult = (
   result: ResearchExecutionStartResult | ProductionExecutionCompletionResult,
   action: 'start' | 'complete',

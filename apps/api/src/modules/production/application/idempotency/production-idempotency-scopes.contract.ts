@@ -26,7 +26,7 @@ export const BEGIN_OUTPUT_CORRECTION_SCOPE = 'production.output.correction.begin
 export const CANCEL_OUTPUT_CORRECTION_SCOPE = 'production.output.correction.cancel.v1' as const;
 
 /** createBatch 创建生产批次；scope 与当前请求及结果 codec 绑定。 */
-export const CREATE_BATCH_IDEMPOTENCY_SCOPE = 'production.batch.create.v8' as const;
+export const CREATE_BATCH_IDEMPOTENCY_SCOPE = 'production.batch.create.v9' as const;
 /** 创建物料分配。 */
 export const CREATE_MATERIAL_ALLOCATION_IDEMPOTENCY_SCOPE =
   'production.material-allocation.create.v1' as const;
@@ -48,7 +48,7 @@ export const CREATE_PURCHASE_INBOUND_IDEMPOTENCY_SCOPE =
 /** 确认外购物料入库单。 */
 export const CONFIRM_PURCHASE_INBOUND_IDEMPOTENCY_SCOPE =
   'production.purchase-inbound.confirm.v1' as const;
-export const CONFIRM_FINISHED_INBOUND_SCOPE = 'production.finished-inbound.confirm.v2' as const;
+export const CONFIRM_FINISHED_INBOUND_SCOPE = 'production.finished-inbound.confirm.v3' as const;
 /** 创建工序报工。 */
 export const CREATE_STEP_REPORT_IDEMPOTENCY_SCOPE = 'production.step-report.create.v3' as const;
 /** 管理员更正工序报工。 */
@@ -72,4 +72,4 @@ export const RECORD_CLOSEOUT_MATERIAL_LOSS_SCOPE =
   'production.closeout.material-loss.record.v1' as const;
 
 /** 服务端按北京时间日期分配不可修改的工单号。 */
-export const CREATE_WORK_ORDER_IDEMPOTENCY_SCOPE = 'production.work-order.create.v3' as const;
+export const CREATE_WORK_ORDER_IDEMPOTENCY_SCOPE = 'production.work-order.create.v4' as const;

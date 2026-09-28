@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import { isBatchNoValid } from '@company/code-rules';
 import type {
   CreateProductionBatchPayload,
   CreateWorkOrderPayload,
@@ -147,7 +146,6 @@ export class ProductionService {
   ) {
     const normalizedPayload = normalizeCreateBatchPayload(payload);
     const fingerprintBody = {
-      batchNo: normalizedPayload.batchNo,
       routeId: normalizedPayload.routeId,
       plannedQuantity: normalizedPayload.plannedQuantity,
       ownerId: normalizedPayload.ownerId,
@@ -164,12 +162,6 @@ export class ProductionService {
     // 纯格式校验只由请求内容决定，放在幂等 executor 外；会受数据库状态影响的业务校验（负责人是否
     // 启用等）移入 handler，重放不重复执行——否则负责人停用后同键重试会 400 而非重放原结果。
     this.assertPlanDates(normalizedPayload.planStartDate, normalizedPayload.planEndDate);
-    if (
-      normalizedPayload.batchNo &&
-      !isBatchNoValid(normalizedPayload.batchNo, PRODUCTION_BATCH_NO_RULE)
-    ) {
-      throw new ProductionDomainError('INVALID_INPUT', '手动批次号必须符合 task_batch-001 格式');
-    }
     // 幂等能力止于 application service：repository 只接收不含幂等键的命令审计元数据。
     const commandContext: CommandContext = {
       actorId: audit.actorId,
@@ -395,5 +387,3 @@ export class ProductionService {
     );
   }
 }
-
-const PRODUCTION_BATCH_NO_RULE = { prefix: 'task_batch', padding: 3 } as const;

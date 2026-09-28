@@ -280,7 +280,7 @@ import {
   type OperationResult,
 } from '@company/contracts';
 import { systemApi } from '../../api/system';
-import { formatDateTimeForDisplay } from '../../utils/date';
+import { formatDateTimeForDisplay, fromBeijingDateTimeInputValue } from '../../utils/date';
 import { DialogWidth } from '../../utils/dialog';
 import { EMessage } from '../../utils/message';
 
@@ -375,8 +375,8 @@ const buildDiff = (before: unknown, after: unknown) => {
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
-const toIso = (value?: string) =>
-  value ? new Date(value.replace(' ', 'T')).toISOString() : undefined;
+const toIso = (value?: string): string | undefined =>
+  value ? fromBeijingDateTimeInputValue(value) : undefined;
 onMounted(loadLogs);
 </script>
 

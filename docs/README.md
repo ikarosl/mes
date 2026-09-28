@@ -6,6 +6,7 @@
 
 - [总体架构](architecture.md)
 - [HTTP/API 约定](api-conventions.md)
+- [业务自动编号](../apps/api/docs/business-numbering.md)
 - [编码规范](coding-standards.md)
 - [测试策略](testing-strategy.md)
 - [数据库公共约定](database-conventions.md)
@@ -42,7 +43,6 @@
 ## 共享 Workspace
 
 - [认证客户端](../packages/auth-client/README.md)
-- [业务编码规则](../packages/code-rules/README.md)
 - [环境配置加载](../packages/config/README.md)
 - [共享常量](../packages/constants/README.md)
 - [传输契约](../packages/contracts/README.md)
@@ -72,3 +72,5 @@
 - [任务用料边界、研发执行与产出检验](adr/0014-task-material-policy-and-output-inspection.md)
 - [统一质检数量与放行语义](adr/0015-unified-quality-quantity-semantics.md)
 - [入库授权与库存批次分离](adr/0016-inbound-authorizations-and-stock-batches.md)：成品分次入库、剩余授权与两来源自主归批
+
+- [统一业务编号与北京时间职责](adr/0017-business-numbering-and-beijing-time.md)

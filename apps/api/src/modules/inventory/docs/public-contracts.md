@@ -6,7 +6,7 @@
 
 `InventoryInboundCommand.confirmPurchaseReceipt` 接收来源已锁定并验证的到货授权明细。每条输入含独立 `detailKey`、到货/实收修订/检验/allocation 引用、物料精确版本与单位快照、正整数量和 `target`。`confirmFinishedOutput` 接收 Production 在同池事务内已锁定并验证的当前轮授权明细，每条输入含 allocation ID、revision ID、类别、正整数量与 `target`。成品与采购可以在一单中提交多条明细；一授权可在不同单或同单分次执行，多授权可归同批次。Inventory 不代替来源模块判断当前轮、审批、质量与剩余额度。
 
-共用目标类型见 [`InventoryInboundTarget`](../../../../../../packages/contracts/src/production/inventory-target.ts)：`{mode:'new',clientKey,batchCode?}` 或 `{mode:'existing',batchId}`。同一请求的相同 `clientKey` 明确共用一个新批次；相同批号本身不触发复用。新批号缺省自动生成，已有批次须精确匹配成品或物料版本及单位，且状态为 `available`。同目标的每条实际明细保持正整数上限，批次累计余额使用 BIGINT 投影，不套用单笔上限。请求不能把别的来源、供应商或类别写成库批的唯一归属。
+共用目标类型见 [`InventoryInboundTarget`](../../../../../../packages/contracts/src/production/inventory-target.ts)：`{mode:'new',clientKey}` 或 `{mode:'existing',batchId}`。同一请求的相同 `clientKey` 明确共用一个新批次且只取一次 IB；已有目标沿用原批号。新批号仅在真实创建 `item_batch` 时由服务端生成；已有批次须精确匹配成品或物料版本及单位，且状态为 `available`。同目标的每条实际明细保持正整数上限，批次累计余额使用 BIGINT 投影，不套用单笔上限。请求不能把别的来源、供应商或类别写成库批的唯一归属。
 
 两种确认均在调用者事务内原子创建已完成主单、每条实际明细、匹配正流水和成功审计。物料正流水为 `purchase_inbound`，成品为 `production_inbound`。成品主单/库批采用中性 `finished_product`；计划内外归属由 `production_output_allocation.category` 经 `inbound_detail.production_output_allocation_id` 追溯。HTTP 幂等由来源用例处理。
 

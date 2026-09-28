@@ -51,7 +51,6 @@ export class FinishedInboundTargetDto {
   @IsNotEmpty()
   @MaxLength(100)
   clientKey?: string;
-  @IsOptional() @IsString() @IsNotEmpty() @MaxLength(100) batchCode?: string;
   @ValidateIf((target: FinishedInboundTargetDto) => target.mode === 'existing')
   @IsDefined()
   @IsString()

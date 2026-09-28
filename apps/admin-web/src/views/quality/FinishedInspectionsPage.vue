@@ -90,10 +90,12 @@
           }}</template></el-table-column
         >
         <el-table-column
-          prop="latestInspectedAt"
           label="最近检验时间"
           min-width="190"
-        />
+          ><template #default="{ row }">{{
+            formatDateTimeForDisplay(row.latestInspectedAt)
+          }}</template></el-table-column
+        >
         <el-table-column
           label="操作"
           width="120"
@@ -135,6 +137,7 @@ import type { ProductionOutputReleaseDecision } from '@company/contracts';
 import TableToolbar from '../../components/TableToolbar.vue';
 import PaginationFooter from '../../components/PaginationFooter.vue';
 import { EMessage } from '../../utils/message';
+import { formatDateTimeForDisplay } from '../../utils/date';
 import { useFinishedInspectionsList } from './composables/useFinishedInspectionsList';
 import FinishedInspectionDialog from './components/FinishedInspectionDialog.vue';
 defineOptions({ name: 'FinishedInspectionsPage' });

@@ -17,7 +17,8 @@
     "typecheck": "corepack pnpm --workspace-root exec turbo run typecheck:run --filter=@company/contracts",
     "typecheck:run": "tsc -p tsconfig.json --noEmit",
     "test": "corepack pnpm --workspace-root exec turbo run test:run --filter=@company/contracts",
-    "test:run": "vitest run --config ../../vitest.config.ts src"
+    "test:run": "vitest run --config ../../vitest.config.ts src",
+    "typecheck:test": "tsc -p tsconfig.test.json --noEmit"
   },
   "devDependencies": {
     "typescript": "catalog:",

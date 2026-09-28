@@ -11,7 +11,7 @@ export const START_RECEIPT_REVIEW_SCOPE = 'procurement.receipt.review.v2' as con
 export const INSPECT_RECEIPT_SCOPE = 'procurement.receipt.inspect.v3' as const;
 export const REJECT_RECEIPT_SCOPE = 'procurement.receipt.reject.v2' as const;
 export const CONFIRM_SUPPLIER_RETURN_SCOPE = 'procurement.receipt.return.v4' as const;
-export const CONFIRM_PROCUREMENT_INBOUND_SCOPE = 'procurement.inbound.confirm.v5' as const;
+export const CONFIRM_PROCUREMENT_INBOUND_SCOPE = 'procurement.inbound.confirm.v6' as const;
 
 export const ACCEPT_RECEIPT_SCOPE = 'procurement.receipt.accept.v3' as const;
 

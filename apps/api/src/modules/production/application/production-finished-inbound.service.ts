@@ -44,9 +44,7 @@ export class ProductionFinishedInboundService {
     for (const { target } of payload.details) {
       if (
         (target.mode === 'new' && 'batchId' in target && target.batchId !== undefined) ||
-        (target.mode === 'existing' &&
-          (('clientKey' in target && target.clientKey !== undefined) ||
-            ('batchCode' in target && target.batchCode !== undefined)))
+        (target.mode === 'existing' && 'clientKey' in target && target.clientKey !== undefined)
       )
         throw new ProductionDomainError('INVALID_INPUT', '请选择有效目标批次');
     }
@@ -62,7 +60,6 @@ export class ProductionFinishedInboundService {
             ? {
                 mode: 'new',
                 clientKey: line.target.clientKey.trim(),
-                batchCode: line.target.batchCode?.trim(),
               }
             : { mode: 'existing', batchId: line.target.batchId },
       })),

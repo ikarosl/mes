@@ -20,7 +20,7 @@ import { MaterialVariantQuery, type ProductionProductSnapshot } from '../../prod
 import { requireWorkOrderTransition } from '../domain/production-status.policy.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
 import { fixedIntegerQuantity, integerQuantity } from '../domain/integer-quantity.js';
-import { allocateWorkOrderNumber } from './mysql-work-order-number.js';
+import { allocateBusinessNumber } from '../../../infrastructure/numbering/mysql-business-number.js';
 import { lastStepReportedQuantitySql } from './mysql-production-reporting.sql.js';
 import { mapBatches } from './mysql-production-batch-display.mapper.js';
 import {
@@ -158,7 +158,7 @@ export class MysqlWorkOrderRepository {
         payload.orderType,
         product.id,
       );
-      const workOrderNo = await allocateWorkOrderNumber(connection);
+      const workOrderNo = await allocateBusinessNumber(connection, 'work_order');
       const [result] = await connection.execute<ResultSetHeader>(
         `INSERT INTO work_orders (work_order_no,order_type,previous_research_order_id,product_id,product_code_snapshot,product_name_snapshot,unit_snapshot,planned_quantity,customer_name,quality_level,work_order_owner_id,plan_start_date,plan_end_date,external_order_no,remark,created_by,updated_by)
          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,

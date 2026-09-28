@@ -1,22 +1,12 @@
 # Production 工单与批次数据库设计
 
-## 工单自动编号
+## 工单与任务自动编号
 
-创建工单时由服务端按北京时间（`Asia/Shanghai`，UTC+08:00）生成 `yyyy-MM-dd-N`，例如 `2026-09-17-1`、`2026-09-17-2`。每天序号从 1 开始；创建和编辑请求均不接受 `workOrderNo`，返回详情提供生成的编号。草稿也已正式占用编号，下达、取消、关闭均不回收；编号永久不变，数据库更新触发器同时保护该约束。不承诺序号无缺口。
+工单创建时服务端在现有创建事务内取得 `WOYYYYMMDD-n`，生产任务创建时取得 `TBYYYYMMDD-n`。日期为数据库当前北京自然日，每类每日从 1 独立递增，不补零；格式、平台序列表及回滚边界由[统一业务编号](../../../../../docs/business-numbering.md)维护。创建和编辑请求都不接受工单号，创建任务请求不接受批次号；编号随创建事实固定，取消、关闭和重新下达均不回收。
 
-`work_order_daily_sequence` 是 Production 的技术编号登记，不承载生产计划或库存事实：
+`POST /production/work-orders` 必须携带 `Idempotency-Key`，scope 为 `production.work-order.create.v4`；任务创建 scope 为 `production.batch.create.v9`。同键同规范化输入重放首次结果，不再次取号；同键异内容拒绝。产品和负责人资格仅在首次执行时核验，成功重放不受后来主数据变化影响。结果未知时客户端保留原键和输入，修改内容不得自动换键再创建。
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `number_date` | `DATE` | 北京时间自然日，主键 |
-| `last_sequence` | `BIGINT UNSIGNED` | 本日已分配的最大序号，必须大于 0 |
-| `created_at` / `updated_at` | `DATETIME(3)` | 技术计数创建／更新时间 |
-
-应用从数据库 UTC 时钟换算北京时间，原子 upsert 日计数并在同一事务内读取序号。日主键行锁串行化同日并发创建，不使用 `MAX(work_order_no)+1`，不依赖客户端日期。计数、工单、成功审计、HTTP 幂等结果同事务提交；创建失败整体回滚。已提交编号不因业务状态变化回退，计数不提供业务更新或删除入口；不额外复制操作者，创建人由工单与成功审计记录。
-
-`POST /production/work-orders` 必须携带 `Idempotency-Key`，scope 为 `production.work-order.create.v3`。同操作者、同键、同规范化内容在重放窗口内返回首次创建响应，不再次取号；同键不同内容拒绝。产品和负责人资格仅在首次执行时核验，成功重放不受后来主数据变化影响。前端在结果未知时保留原键和输入，修改内容不得自动换键再创建，关闭必须明确放弃该未决意图。
-
-迁移 `202609170003-work-order-auto-number` 在升级前要求 `work_orders` 为空；开发环境按约定统一重置，不转换旧手填号、不推算历史日计数。回滚也先要求工单为空，避免删除计数后重用已存在编号；升级与回滚期间暂停 Production 写入。
+`202609170003-work-order-auto-number` 是原工单日序列表的历史迁移；追加迁移 `202609280001-business-number-daily-sequence` 在空业务库切换为统一平台序列并删除旧序列表。旧编号不转换，开发数据经统一初始化入口重建；当前应用不读写 `work_order_daily_sequence`。
 
 ## 研发轮次关联与资料带出
 
@@ -224,7 +214,7 @@
 - 检查约束：`CHECK (planned_quantity = TRUNCATE(planned_quantity, 0))`
 - 检查约束：`CHECK (plan_start_date IS NULL OR plan_end_date IS NULL OR plan_end_date >= plan_start_date)`
 - 检查约束：`CHECK (status <> 'completed' OR (completed_at IS NOT NULL AND completed_by IS NOT NULL))`
-- 唯一约束：`UNIQUE (batch_no)`；批次号在全系统范围内唯一，自动编号与手动输入均由后端校验
+- 唯一约束：`UNIQUE (batch_no)`；批次号在全系统范围内唯一，仅服务端自动分配，不接受手填
 - 组合引用索引：`UNIQUE (id, work_order_id)`、`UNIQUE (id, product_id)`
 - 检查约束：`CHECK (status IN ('pending', 'material_pending', 'material_assigned', 'material_partially_outbound', 'material_outbound', 'doing', 'completed', 'cancelled', 'terminated', 'closing'))`
 - 检查约束：`CHECK (material_plan_version > 0)`

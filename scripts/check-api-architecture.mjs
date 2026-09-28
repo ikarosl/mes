@@ -50,6 +50,10 @@ const idempotencyRecordsWritePattern =
  * ——scope 只能经由契约常量标识符引用。
  */
 const knownIdempotencyScopes = [
+  'procurement.inbound.confirm.v6',
+  'production.batch.create.v9',
+  'production.finished-inbound.confirm.v3',
+  'production.work-order.create.v4',
   'procurement.receipt.correct.v3',
   'procurement.receipt.accept.v3',
   'procurement.receipt.reject.v2',
@@ -543,11 +547,13 @@ const applyDataOwnershipChecks = async (sources, violations) => {
     const moduleName = relative.match(/^apps\/api\/src\/modules\/([^/]+)\//)?.[1];
     const sourceOwner =
       moduleName ??
-      (relative.startsWith('apps/api/src/infrastructure/idempotency/')
-        ? 'platform-idempotency'
-        : relative === 'apps/api/src/common/audit/transactional-audit-writer.ts'
-          ? 'platform-audit'
-          : null);
+      (relative === 'apps/api/src/infrastructure/numbering/mysql-business-number.ts'
+        ? 'platform-numbering'
+        : relative.startsWith('apps/api/src/infrastructure/idempotency/')
+          ? 'platform-idempotency'
+          : relative === 'apps/api/src/common/audit/transactional-audit-writer.ts'
+            ? 'platform-audit'
+            : null);
     const forbidden = new Set();
     const displayAccess = API_DISPLAY_READ_ACCESS.find((rule) =>
       relative.startsWith(rule.directory),

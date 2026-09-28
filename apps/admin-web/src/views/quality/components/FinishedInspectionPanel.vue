@@ -168,11 +168,12 @@
         label="线下检验时间"
         required
         ><el-date-picker
-          :model-value="inspection.inspectedAt"
+          :model-value="toBeijingDateTimeInputValue(inspection.inspectedAt)"
           type="datetime"
-          value-format="YYYY-MM-DDTHH:mm:ssZ"
+          value-format="YYYY-MM-DD HH:mm:ss"
           @update:model-value="
-            (value: string | null) => $emit('change', { inspectedAt: value ?? '' })
+            (value: string | null) =>
+              $emit('change', { inspectedAt: fromBeijingDateTimeInputValue(value) })
           "
       /></el-form-item>
       <el-form-item
@@ -216,6 +217,7 @@
 </template>
 <script setup lang="ts">
 import { computed } from 'vue';
+import { fromBeijingDateTimeInputValue, toBeijingDateTimeInputValue } from '../../../utils/date';
 import type {
   FinishedInspectionTaskDetail,
   ProductionOutputQuantities,

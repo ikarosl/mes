@@ -18,13 +18,13 @@
       >
         <el-option
           :value="modelValue.clientKey"
-          label="当前新批次"
+          :label="isSharedNewTarget ? '已与其他明细共建' : '当前新批次'"
         />
         <el-option
           v-for="target in distinctRelatedTargets"
           :key="target.clientKey"
           :value="target.clientKey"
-          :label="target.batchCode ? `与批号 ${target.batchCode} 共建` : `与${target.label}共建`"
+          :label="`与${target.label}共建`"
         />
       </el-select>
       <el-button
@@ -34,14 +34,7 @@
         @click="separateNewBatch"
         >独立新批次</el-button
       >
-      <el-input
-        :model-value="modelValue.batchCode ?? ''"
-        :disabled="disabled || isSharedNewTarget"
-        maxlength="100"
-        clearable
-        placeholder="新批号（留空由系统生成）"
-        @update:model-value="setBatchCode"
-      />
+      <span class="hint">新库存批号由系统生成；选择同一归组可让多条明细共用批次。</span>
     </template>
     <template v-else>
       <el-select
@@ -84,7 +77,7 @@ const props = defineProps<{
   productId?: string;
   unit: string;
   disabled?: boolean;
-  relatedNewTargets?: Array<{ clientKey: string; batchCode?: string; label: string }>;
+  relatedNewTargets?: Array<{ clientKey: string; label: string }>;
 }>();
 const emit = defineEmits<{ 'update:modelValue': [value: InventoryInboundTarget] }>();
 const candidates = ref<InventoryInboundBatchCandidate[]>([]);
@@ -116,18 +109,13 @@ function setMode(value: string | number | boolean | undefined) {
 }
 function joinNewBatch(clientKey: string) {
   const shared = (props.relatedNewTargets ?? []).find((item) => item.clientKey === clientKey);
-  if (shared) emit('update:modelValue', { mode: 'new', clientKey, batchCode: shared.batchCode });
+  if (shared) emit('update:modelValue', { mode: 'new', clientKey });
 }
 function separateNewBatch() {
   emit('update:modelValue', {
     mode: 'new',
     clientKey: crypto.randomUUID(),
-    batchCode: props.modelValue.mode === 'new' ? props.modelValue.batchCode : undefined,
   });
-}
-function setBatchCode(value: string) {
-  if (props.modelValue.mode === 'new')
-    emit('update:modelValue', { ...props.modelValue, batchCode: value || undefined });
 }
 function setBatchId(value: string) {
   emit('update:modelValue', { mode: 'existing', batchId: value || '' });
@@ -190,6 +178,10 @@ watch(
   flex-direction: column;
   gap: 6px;
   min-width: 240px;
+}
+.hint {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
 }
 .error {
   color: var(--el-color-danger);

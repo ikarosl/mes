@@ -127,3 +127,7 @@ up 顺序先统一 Quality，再切换正式分配；down 反向。上下行均�
 - up/down/up 验证另需检查边界索引、空/非空守卫和中间状态；升级及并发迁移器验证是独立覆盖项。
 - 涉及成品、物料与路线拆分的完整 schema 验证还须覆盖 demo 重复加载，确认 Product/Production 只补缺失样例，不覆盖已有业务编辑或批准事实。
 - 验证是否已完成、用户验收及正式测试排期由[测试策略](../../../docs/testing-strategy.md)和[路线图](../../../docs/roadmap.md)维护，不由本页的执行要求推断。
+
+### 202609280001：业务日序号与库存批号唯一
+
+暂停 Production、Procurement、Inventory、Approval 及演示写入。up/down 在永久 DDL 前要求所有相关编号业务表和 http_idempotency_records 为空；不转换旧编号、幂等快照或重建历史计数，开发数据使用统一初始化入口重建。up 创建平台 business_number_daily_sequence、为 item_batch.batch_code 增加全局唯一键并删除旧 work_order_daily_sequence；down 反向恢复空结构，工单编号不可变触发器始终保留。旧应用与新 schema 不混跑，回滚后须切回对应应用。全局批号唯一不限制 inbound_detail 对同一 batch_id 的多次引用。

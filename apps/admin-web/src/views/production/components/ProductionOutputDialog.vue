@@ -196,7 +196,7 @@
                     v-for="record in detail.inspections"
                     :key="record.id"
                     :value="record.id"
-                    :label="`质检 #${record.id} · ${record.inspectedAt} · ${record.createdByName}${record.id === detail.latestInspectionId ? '（最新）' : '（历史，不可送审）'}`"
+                    :label="`质检 #${record.id} · ${formatDateTimeForDisplay(record.inspectedAt)} · ${record.createdByName}${record.id === detail.latestInspectionId ? '（最新）' : '（历史，不可送审）'}`"
                     :disabled="record.id !== detail.latestInspectionId"
                   />
                 </el-select>
@@ -374,7 +374,8 @@
             : '历史版本，仅供追溯，不用于入库'
         }}
         · 审批 #{{ printingRevision.approvalInstanceId }} · 批准人
-        {{ printingRevision.approvedByName }} · {{ printingRevision.approvedAt }}
+        {{ printingRevision.approvedByName }} ·
+        {{ formatDateTimeForDisplay(printingRevision.approvedAt) }}
       </p>
       <BatchCloseoutEvidence :snapshot="printingRevision.snapshot" /></article
   ></Teleport>
@@ -389,6 +390,7 @@ import {
   PRODUCTION_OUTPUT_STATUS_LABELS,
 } from '@company/constants';
 import { DialogWidth } from '../../../utils/dialog';
+import { formatDateTimeForDisplay } from '../../../utils/date';
 import { formatQuantity as quantity } from '../production-status';
 import { useProductionOutput } from '../composables/useProductionOutput';
 import BatchCloseoutEvidence from './BatchCloseoutEvidence.vue';

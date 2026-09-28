@@ -179,6 +179,7 @@ import { approvalApi } from '../../api/approval';
 import PaginationFooter from '../../components/PaginationFooter.vue';
 import TableToolbar from '../../components/TableToolbar.vue';
 import { EMessage } from '../../utils/message';
+import { formatDateTimeForDisplay } from '../../utils/date';
 import { useAuthStore } from '../../stores/auth';
 import ApprovalInstanceDetailDialog from './components/ApprovalInstanceDetailDialog.vue';
 import { useApprovalInstances } from './composables/useApprovalInstances';
@@ -225,8 +226,7 @@ const detail = ref<ApprovalInstanceDetail | null>(null);
 const submitting = ref(false);
 let detailRequestToken = 0;
 
-const formatDateTime = (value: string | null): string =>
-  value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '—';
+const formatDateTime = (value: string | null): string => formatDateTimeForDisplay(value, '—');
 const statusMeta = (status: ApprovalInstanceStatus) =>
   ({
     label: APPROVAL_INSTANCE_STATUS_LABELS[status],
