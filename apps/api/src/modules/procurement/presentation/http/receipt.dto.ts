@@ -5,7 +5,9 @@ import {
   ArrayUnique,
   Equals,
   IsArray,
+  IsDefined,
   IsIn,
+  IsObject,
   IsInt,
   IsISO8601,
   IsNotEmpty,
@@ -16,6 +18,7 @@ import {
   MaxLength,
   Min,
   ValidateNested,
+  ValidateIf,
 } from 'class-validator';
 import {
   PURCHASE_ORDER_MAX_QUANTITY,
@@ -37,6 +40,7 @@ import type {
   ReceiptHistoryKind,
   ReceiptAllocationDisposition,
   ReceiptReturnReason,
+  InventoryInboundTarget,
 } from '@company/contracts';
 import { PageQueryDto } from '../../../../presentation/http/dto/page-query.dto.js';
 import { PurchaseOrderIdDto, PurchaseOrderVersionDto } from './purchase-order.dto.js';
@@ -164,7 +168,31 @@ export class ConfirmSupplierReturnDto extends ReceiptAllocationCommandDto {
   @Transform(trim) @IsString() @IsNotEmpty() @MaxLength(2000) handoverEvidence!: string;
   @IsOptional() @Transform(trim) @IsString() @MaxLength(2000) remark?: string | null;
 }
+export class InboundTargetDto {
+  @IsIn(['new', 'existing']) mode!: 'new' | 'existing';
+  @ValidateIf((target: InboundTargetDto) => target.mode === 'new')
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
+  clientKey?: string;
+  @ValidateIf(
+    (target: InboundTargetDto, value: unknown) => target.mode === 'new' && value !== undefined,
+  )
+  @Transform(trim)
+  @IsString()
+  @MaxLength(100)
+  batchCode?: string;
+  @ValidateIf((target: InboundTargetDto) => target.mode === 'existing')
+  @Matches(ID)
+  batchId?: string;
+}
 export class ConfirmProcurementInboundDetailDto extends ReceiptAllocationCommandDto {
+  @IsString() @IsNotEmpty() @MaxLength(100) detailKey!: string;
+  @IsDefined()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => InboundTargetDto)
+  target!: InventoryInboundTarget;
   @Matches(ID) receiptLineId!: string;
   @Matches(ID) receiptRevisionId!: string;
   @Matches(ID) inspectionId!: string;
@@ -175,7 +203,7 @@ export class ConfirmProcurementInboundDto {
   @IsArray()
   @ArrayMinSize(1)
   @ArrayMaxSize(100)
-  @ArrayUnique((item: ConfirmProcurementInboundDetailDto) => item.allocationId)
+  @ArrayUnique((item: ConfirmProcurementInboundDetailDto) => item.detailKey)
   @ValidateNested({ each: true })
   @Type(() => ConfirmProcurementInboundDetailDto)
   details!: ConfirmProcurementInboundDetailDto[];

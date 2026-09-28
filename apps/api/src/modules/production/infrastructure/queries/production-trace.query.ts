@@ -53,11 +53,14 @@ type TraceInventoryRow = RowDataPacket & {
 const SUMMARY_SELECT = `SELECT b.id production_batch_id,b.batch_no,b.status batch_status,
   wo.id work_order_id,wo.work_order_no,b.product_id,wo.product_code_snapshot product_code,
   wo.product_name_snapshot product_name,b.planned_quantity,${lastStepReportedQuantitySql('b.id')} last_step_reported_quantity,b.started_at,b.completed_at,
-  b.execution_completed_at,c.closeout_mode,c.current_revision_id,r.revision_no,r.available_quantity,r.extra_quantity,
+  b.execution_completed_at,c.closeout_mode,c.current_revision_id,r.revision_no,
+  (round.baseline_planned_received+COALESCE((SELECT a.quantity FROM production_output_allocation a WHERE a.revision_id=r.id AND a.category='self_made'),0)) available_quantity,
+  (round.baseline_extra_received+COALESCE((SELECT a.quantity FROM production_output_allocation a WHERE a.revision_id=r.id AND a.category='production_extra'),0)) extra_quantity,
   (r.additional_scrap_quantity+r.existing_scrap_quantity) scrap_quantity
   FROM production_batches b JOIN work_orders wo ON wo.id=b.work_order_id
   LEFT JOIN production_batch_closeout c ON c.production_batch_id=b.id
-  LEFT JOIN production_output_revision r ON r.id=c.current_revision_id AND r.closeout_id=c.id`;
+  LEFT JOIN production_output_revision r ON r.id=c.current_revision_id AND r.closeout_id=c.id
+  LEFT JOIN production_output_round round ON round.id=r.round_id`;
 
 /** Read-only presentation projection; never used as command eligibility. */
 export class ProductionTraceQueries {

@@ -338,6 +338,7 @@ export interface InventoryBatchItem {
   sourceProductionBatchId: string | null;
   sourceProductionBatchNo: string | null;
   inboundSources: Array<{
+    inboundDetailId: string;
     inboundId: string;
     inboundNo: string;
     provider: string | null;
@@ -347,6 +348,13 @@ export interface InventoryBatchItem {
     sourceType: InventorySourceType;
     outputRevisionId: string | null;
     outputRevisionNo: number | null;
+    productionOutputAllocationId: string | null;
+    productionBatchId: string | null;
+    workOrderId: string | null;
+    procurementReceiptLineId: string | null;
+    procurementReceiptRevisionId: string | null;
+    procurementInspectionId: string | null;
+    procurementAllocationId: string | null;
   }>;
 }
 

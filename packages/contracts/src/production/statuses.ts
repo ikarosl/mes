@@ -19,6 +19,7 @@ export type BatchStepAbnormalDispositionType = 'rework' | 'scrap';
 export type InventorySourceType =
   | 'self_made'
   | 'production_extra'
+  | 'finished_product'
   | 'purchased'
   | 'outsourced'
   | 'return_inbound'

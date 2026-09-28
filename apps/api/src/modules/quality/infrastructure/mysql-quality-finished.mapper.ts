@@ -5,8 +5,11 @@ import { evaluateOutputInspection } from '../domain/finished-inspection.policy.j
 export type InspectionRow = RowDataPacket & {
   id: number;
   closeout_id: number;
+  finished_round_id: number;
   production_batch_id: number;
   declared_version: number;
+  baseline_planned_received: number | string;
+  baseline_extra_received: number | string;
   declared_available_quantity: string;
   declared_extra_quantity: string;
   declared_scrap_quantity: string;
@@ -33,8 +36,16 @@ export function mapFinishedInspection(row: InspectionRow): ProductionOutputInspe
   return {
     id: String(row.id),
     closeoutId: String(row.closeout_id),
+    roundId: String(row.finished_round_id),
     batchId: String(row.production_batch_id),
     declaredVersion: row.declared_version,
+    baselinePlannedReceived: String(row.baseline_planned_received),
+    baselineExtraReceived: String(row.baseline_extra_received),
+    cumulativeSuggestionQuantity: String(
+      Number(row.baseline_planned_received) +
+        Number(row.baseline_extra_received) +
+        evaluateOutputInspection(facts).releasedQuantity,
+    ),
     declared: {
       availableQuantity: Number(row.declared_available_quantity),
       extraQuantity: Number(row.declared_extra_quantity),

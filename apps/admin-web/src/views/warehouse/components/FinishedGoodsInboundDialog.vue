@@ -1,454 +1,546 @@
 <template>
   <el-dialog
     :model-value="visible"
-    :title="`${FINISHED_GOODS_INBOUND_SOURCE_LABELS[effectiveSourceType]} · ${targetId ? '单据核对' : '创建草稿'}`"
+    :title="inboundId ? '成品入库详情' : '确认成品入库'"
     :width="DialogWidth.workbench"
     workbench
     :close-on-click-modal="false"
-    :before-close="editor.close"
-    @update:model-value="(value: boolean) => !value && editor.close()"
+    :before-close="close"
+    @update:model-value="(value: boolean) => !value && close()"
   >
-    <el-alert
-      v-if="error"
-      :title="error"
-      type="error"
-      :closable="false"
-      show-icon
-    />
-    <el-alert
-      v-if="lastSuccess"
-      :title="lastSuccess"
-      type="success"
-      :closable="false"
-      class="notice"
-    />
-    <el-alert
-      title="按本类别批准数量收齐后，一次确认入库"
-      description="草稿不增加库存。生产流转和额外产出分别办理，形成不同库存批次；仓管不能改写批准数量。实物不符时先线下核对，数量确需更正时由产线管理员重新办理清单更正审批。"
-      type="info"
-      :closable="false"
-      class="notice"
-    />
-    <div v-loading="loading">
-      <template v-if="!targetId">
-        <div class="toolbar notice">
-          <el-input
-            v-model="keyword"
-            clearable
-            placeholder="搜索已结案工单 / 任务 / 成品"
-            style="max-width: 430px"
-            @keyup.enter="editor.searchCandidates"
-          /><el-button
-            :loading="candidateLoading"
-            @click="editor.searchCandidates"
-            >查询可办理任务</el-button
-          >
-        </div>
+    <template v-if="inboundId">
+      <div v-loading="loading">
         <el-alert
-          v-if="candidateError"
-          :title="candidateError"
+          v-if="error"
           type="error"
+          :title="error"
           :closable="false"
-          class="notice"
         />
-        <el-table
-          v-loading="candidateLoading"
-          :data="candidates"
-          row-key="productionBatchId"
-          max-height="280"
-          empty-text="暂无本类别可办理任务，请先完成产出清单审批"
-          class="notice"
-        >
-          <el-table-column
-            label="工单 / 任务"
-            min-width="180"
-            ><template #default="{ row }"
-              >{{ row.workOrderNo }}
-              <div class="muted">{{ row.batchNo }}</div></template
-            ></el-table-column
+        <template v-if="detail">
+          <el-descriptions
+            :column="3"
+            border
           >
-          <el-table-column
-            label="成品"
-            min-width="180"
-            ><template #default="{ row }"
-              >{{ row.productCode }} · {{ row.productName }}</template
-            ></el-table-column
-          >
-          <el-table-column
-            label="批准依据"
-            min-width="150"
-            ><template #default="{ row }"
-              >第 {{ row.revisionNo }} 版 · {{ quantity(row.approvedQuantity) }}
-              {{ row.unit }}</template
-            ></el-table-column
-          >
-          <el-table-column
-            label="办理条件"
-            min-width="200"
-            ><template #default="{ row }">{{
-              row.canCreate ? '可创建入库草稿' : row.blockers.join('；')
-            }}</template></el-table-column
-          >
-          <el-table-column
-            label="选择"
-            width="100"
-            fixed="right"
-            ><template #default="{ row }"
-              ><el-button
-                link
-                type="primary"
-                :disabled="
-                  !row.canCreate ||
-                  candidateLoading ||
-                  Boolean(candidateError) ||
-                  submitting ||
-                  unresolved
-                "
-                @click="editor.selectCandidate(row)"
-                >{{
-                  candidate?.productionBatchId === row.productionBatchId ? '已选择' : '选择任务'
-                }}</el-button
-              ></template
-            ></el-table-column
-          >
-        </el-table>
-        <el-pagination
-          :total="candidateTotal"
-          :page-size="10"
-          :current-page="candidatePage"
-          layout="total, prev, pager, next"
-          @current-change="editor.changeCandidatePage"
-        />
-      </template>
-      <template v-if="detail || candidate">
-        <el-descriptions
-          :column="3"
-          border
-          class="notice"
-        >
-          <el-descriptions-item label="工单 / 任务"
-            >{{ detail?.workOrderNo ?? candidate?.workOrderNo }} /
-            {{ detail?.batchNo ?? candidate?.batchNo }}</el-descriptions-item
-          >
-          <el-descriptions-item label="成品"
-            >{{ detail?.productCode ?? candidate?.productCode }} ·
-            {{ detail?.productName ?? candidate?.productName }}</el-descriptions-item
-          >
-          <el-descriptions-item label="业务来源">{{
-            FINISHED_GOODS_INBOUND_SOURCE_LABELS[effectiveSourceType]
-          }}</el-descriptions-item>
-          <el-descriptions-item label="入库单">{{
-            detail?.inboundNo ?? '保存后生成'
-          }}</el-descriptions-item>
-          <el-descriptions-item label="状态">{{
-            detail ? inboundOrderStatusLabel(detail.status) : '待保存草稿'
-          }}</el-descriptions-item>
-          <el-descriptions-item label="本次完整入库数量"
-            >{{ quantity(expectedQuantity) }}
-            {{ detail?.unit ?? candidate?.unit }}</el-descriptions-item
-          >
-        </el-descriptions>
-        <el-alert
-          v-if="stale"
-          type="warning"
-          :closable="false"
-          title="服务端单据已变化，未保存输入已保留。请重新加载后核对，不能直接保存旧草稿。"
-          class="notice"
-        />
-        <el-alert
-          v-if="detail?.status === 'pending' && detail.blockers.length"
-          type="warning"
-          :closable="false"
-          title="确认入库前仍需处理"
-          class="notice"
-          ><ul>
-            <li
-              v-for="blocker in detail.blockers"
-              :key="blocker"
+            <el-descriptions-item label="入库单">{{ detail.inboundNo }}</el-descriptions-item>
+            <el-descriptions-item label="工单 / 任务"
+              >{{ detail.workOrderNo }} / {{ detail.batchNo }}</el-descriptions-item
             >
-              {{ blocker }}
-            </li>
-          </ul></el-alert
-        >
-        <section
-          v-if="
-            detail &&
-            detail.outputRevisionId !== detail.currentOutputRevisionId &&
-            detail.status === 'pending'
-          "
-          class="revision-comparison"
-        >
-          <strong>批准清单已更新，请核对采用依据</strong>
-          <p>
-            本单采用第 {{ detail.approvedOutput.revisionNo }} 版：{{
-              quantity(detail.inboundQuantity)
-            }}
-            {{ detail.unit }}；最新第 {{ detail.currentApprovedOutput.revisionNo }} 版：{{
-              quantity(currentApprovedQuantity)
-            }}
-            {{ detail.unit }}。
-          </p>
-          <p
-            v-if="Number(currentApprovedQuantity) <= 0"
-            class="muted"
+            <el-descriptions-item label="成品"
+              >{{ detail.productCode }} · {{ detail.productName }}</el-descriptions-item
+            >
+            <el-descriptions-item label="确认时间">{{
+              formatDateTimeForDisplay(detail.inboundAt)
+            }}</el-descriptions-item>
+            <el-descriptions-item label="确认人">{{ detail.createdByName }}</el-descriptions-item>
+            <el-descriptions-item label="备注">{{ detail.remark || '-' }}</el-descriptions-item>
+          </el-descriptions>
+          <el-table
+            :data="detail.details"
+            row-key="inboundDetailId"
+            class="section"
           >
-            最新清单本类别数量为零，请取消当前草稿；无需办理零数量入库。
-          </p>
-          <el-button
-            v-else
-            :disabled="locked || adoptedLatest"
-            type="primary"
-            plain
-            @click="editor.acceptLatest"
-            >{{ adoptedLatest ? '已选择新版，保存后生效' : '核对后采用最新批准版' }}</el-button
-          >
-        </section>
-        <el-form
-          label-position="top"
-          :disabled="locked"
-          class="notice"
-        >
-          <el-form-item
-            label="成品库存批次号"
-            required
-            ><el-input
-              v-model="form.batchCode"
-              maxlength="100"
-              show-word-limit
-              placeholder="为本次入库填写独立库存批次号"
-          /></el-form-item>
-          <el-form-item label="仓管备注"
-            ><el-input
-              v-model="form.remark"
-              type="textarea"
-              :rows="2"
-              maxlength="5000"
-              show-word-limit
-          /></el-form-item>
-        </el-form>
-        <el-descriptions
-          v-if="detail"
-          :column="3"
-          border
-        >
-          <el-descriptions-item label="创建人">{{ detail.createdByName }}</el-descriptions-item>
-          <el-descriptions-item label="创建时间">{{
-            formatDateTimeForDisplay(detail.createdAt)
-          }}</el-descriptions-item>
-          <el-descriptions-item label="确认人">{{
-            detail.operatorName ?? '尚未确认'
-          }}</el-descriptions-item>
-          <el-descriptions-item label="入库时间">{{
-            detail.inboundAt ? formatDateTimeForDisplay(detail.inboundAt) : '尚未确认'
-          }}</el-descriptions-item>
-          <el-descriptions-item label="库存批次记录"
-            ><el-button
-              v-if="detail.itemBatchId"
-              link
-              type="primary"
-              @click="openInventory(detail.itemBatchId)"
-              >#{{ detail.itemBatchId }} · {{ detail.batchCode }}</el-button
-            ><span v-else>确认入库后生成</span></el-descriptions-item
-          >
-          <el-descriptions-item label="正库存流水">{{
-            detail.inventoryTransactionId ? `#${detail.inventoryTransactionId}` : '尚未产生'
-          }}</el-descriptions-item>
-          <el-descriptions-item
-            v-if="detail.cancelReason"
-            label="取消原因"
-            :span="3"
-            >{{ detail.cancelReason }} · {{ detail.cancelledByName }} ·
-            {{
-              detail.cancelledAt ? formatDateTimeForDisplay(detail.cancelledAt) : ''
-            }}</el-descriptions-item
-          >
-        </el-descriptions>
-        <el-collapse
-          v-if="detail"
-          v-model="evidencePanels"
-          class="notice"
-        >
-          <el-collapse-item
-            :title="`本单采用依据 · 第 ${detail.approvedOutput.revisionNo} 版批准清单 / 质检记录`"
-            name="adopted"
-            ><p>
-              批准人 {{ detail.approvedOutput.approvedByName }} ·
-              {{ formatDateTimeForDisplay(detail.approvedOutput.approvedAt) }}
-              <el-button
-                link
-                type="primary"
-                @click="openApproval(detail.approvedOutput.approvalInstanceId)"
-                >审批记录 #{{ detail.approvedOutput.approvalInstanceId }}</el-button
+            <el-table-column
+              label="授权来源"
+              min-width="190"
+            >
+              <template #default="{ row }"
+                >{{
+                  FINISHED_GOODS_INBOUND_SOURCE_LABELS[row.sourceType as FinishedGoodsInboundSource]
+                }}
+                · 清单第 {{ row.revisionNo }} 版<br /><span class="muted"
+                  >授权 {{ row.allocationId }}</span
+                ></template
               >
-            </p>
-            <BatchCloseoutEvidence :snapshot="detail.approvedOutput.snapshot"
-          /></el-collapse-item>
-          <el-collapse-item
-            v-if="detail.outputRevisionId !== detail.currentOutputRevisionId"
-            :title="`最新依据 · 第 ${detail.currentApprovedOutput.revisionNo} 版批准清单 / 质检记录`"
-            name="latest"
-            ><BatchCloseoutEvidence :snapshot="detail.currentApprovedOutput.snapshot"
-          /></el-collapse-item>
-        </el-collapse>
-      </template>
-    </div>
-    <el-alert
-      v-if="unresolved"
-      title="提交结果尚未确认，原操作和幂等标识已保留，请重试原操作或核对后关闭。"
-      type="warning"
-      :closable="false"
-      class="notice"
-    />
-    <template #footer
-      ><div class="toolbar">
-        <div>
-          <el-button
-            :disabled="submitting"
-            @click="editor.close"
-            >关闭</el-button
-          ><el-button
-            :disabled="busy || unresolved"
-            @click="editor.refresh"
-            >刷新核对</el-button
-          ><el-button
-            v-if="stale"
-            :disabled="busy || unresolved"
-            @click="editor.reloadDraft"
-            >重新加载草稿</el-button
-          >
-        </div>
-        <div>
-          <el-button
-            v-if="unresolved"
-            type="primary"
-            :loading="submitting"
-            @click="editor.retry"
-            >重试原操作</el-button
-          ><template v-else
-            ><span
-              v-if="dirty"
-              class="muted"
-              >草稿未保存</span
-            ><el-button
-              v-if="detail?.canCancel"
-              type="danger"
-              plain
-              :disabled="busy || Boolean(error)"
-              @click="editor.cancel"
-              >取消草稿</el-button
-            ><el-button
-              v-if="!detail || detail.canEdit"
-              :disabled="!canSave || Number(expectedQuantity) <= 0"
-              :loading="submitting"
-              @click="editor.save"
-              >{{ detail ? '保存草稿' : '创建入库草稿' }}</el-button
-            ><el-button
-              v-if="detail?.status === 'pending'"
-              type="primary"
-              :disabled="!canConfirm"
-              :loading="submitting"
-              @click="editor.confirm"
-              >已收齐，确认入库</el-button
+            </el-table-column>
+            <el-table-column
+              label="实际入库"
+              min-width="120"
+              ><template #default="{ row }"
+                >{{ formatQuantity(row.quantity) }} {{ detail.unit }}</template
+              ></el-table-column
+            >
+            <el-table-column
+              label="库存批次"
+              min-width="150"
+              ><template #default="{ row }"
+                >{{ row.batchCode }} (#{{ row.itemBatchId }})</template
+              ></el-table-column
+            >
+            <el-table-column
+              label="批准与质检依据"
+              min-width="210"
+            >
+              <template #default="{ row }">
+                <template v-if="row.approvedOutput"
+                  >质检记录 {{ row.approvedOutput.inspectionRecordId }}<br />审批
+                  {{ row.approvedOutput.approvalInstanceId }}</template
+                >
+                <span v-else>批准版 {{ row.outputRevisionId }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column
+              prop="inventoryTransactionId"
+              label="库存流水"
+              min-width="110"
+            />
+          </el-table>
+        </template>
+      </div>
+    </template>
+    <template v-else>
+      <el-alert
+        title="选择当前有效授权、本次数量和目标库存批次后直接确认。已入与剩余按任务及来源类别累计，部分入库后可继续办理。"
+        type="info"
+        :closable="false"
+      />
+      <div class="toolbar section">
+        <el-input
+          v-model="keyword"
+          clearable
+          placeholder="搜索工单、任务或成品"
+          @keyup.enter="loadCandidates"
+        />
+        <el-button
+          :loading="loading"
+          @click="loadCandidates"
+          >查询</el-button
+        >
+        <el-button
+          :loading="checking"
+          :disabled="command.locked.value || !selected.length"
+          @click="recheck(true)"
+          >重新核对已选</el-button
+        >
+      </div>
+      <el-alert
+        v-if="error"
+        :title="error"
+        type="error"
+        :closable="false"
+      />
+      <el-table
+        v-loading="loading"
+        :data="candidates"
+        row-key="allocationId"
+        max-height="250"
+      >
+        <el-table-column width="45"
+          ><template #default="{ row }"
+            ><el-checkbox
+              :model-value="selected.some((item) => item.source.allocationId === row.allocationId)"
+              :disabled="
+                command.locked.value ||
+                !row.canConfirm ||
+                (!!selected.length &&
+                  selected[0]?.source.productionBatchId !== row.productionBatchId)
+              "
+              @change="toggle(row)" /></template
+        ></el-table-column>
+        <el-table-column
+          label="工单 / 任务"
+          min-width="150"
+          ><template #default="{ row }"
+            >{{ row.workOrderNo }} / {{ row.batchNo }}</template
+          ></el-table-column
+        >
+        <el-table-column
+          label="成品 / 来源"
+          min-width="160"
+          ><template #default="{ row }"
+            >{{ row.productCode }} · {{ row.productName }}<br />{{
+              FINISHED_GOODS_INBOUND_SOURCE_LABELS[row.sourceType as FinishedGoodsInboundSource]
+            }}</template
+          ></el-table-column
+        >
+        <el-table-column
+          label="批准 / 已入 / 剩余"
+          min-width="210"
+          ><template #default="{ row }"
+            >{{ row.authorizedQuantity }} / {{ row.receivedQuantity }} / {{ row.remainingQuantity }}
+            {{ row.unit }}</template
+          ></el-table-column
+        >
+        <el-table-column
+          label="资格"
+          min-width="140"
+          ><template #default="{ row }">{{
+            row.canConfirm ? '可入库' : row.blockers.join('；')
+          }}</template></el-table-column
+        >
+      </el-table>
+      <PaginationFooter
+        :total="candidateTotal"
+        :current-page="candidatePage"
+        :page-size="10"
+        @page-change="changeCandidatePage"
+      />
+      <el-table
+        :data="selected"
+        row-key="detailKey"
+        class="section"
+      >
+        <el-table-column
+          label="本次授权"
+          min-width="180"
+          ><template #default="{ row }"
+            >{{
+              FINISHED_GOODS_INBOUND_SOURCE_LABELS[
+                row.source.sourceType as FinishedGoodsInboundSource
+              ]
+            }}
+            · 第 {{ row.source.revisionNo }} 版<br /><span class="muted"
+              >剩余 {{ row.source.remainingQuantity }} {{ row.source.unit }}</span
             ></template
-          >
-        </div>
-      </div></template
-    >
+          ></el-table-column
+        >
+        <el-table-column
+          label="本次入库"
+          min-width="125"
+          ><template #default="{ row }"
+            ><el-input-number
+              v-model="row.quantity"
+              :precision="0"
+              :min="1"
+              :disabled="command.locked.value" /></template
+        ></el-table-column>
+        <el-table-column
+          label="目标批次"
+          min-width="270"
+          ><template #default="{ row }"
+            ><InboundBatchTargetPicker
+              v-model="row.target"
+              item-kind="finished_product"
+              :product-id="row.source.productId"
+              :unit="row.source.unit"
+              :related-new-targets="relatedNewTargetsFor(row.detailKey)"
+              :disabled="command.locked.value" /></template
+        ></el-table-column>
+        <el-table-column width="115"
+          ><template #default="{ row }"
+            ><el-button
+              link
+              :disabled="command.locked.value"
+              @click="split(row.detailKey)"
+              >拆入</el-button
+            ><el-button
+              link
+              type="danger"
+              :disabled="command.locked.value"
+              @click="remove(row.detailKey)"
+              >移除</el-button
+            ></template
+          ></el-table-column
+        >
+      </el-table>
+      <el-input
+        v-model="remark"
+        class="section"
+        type="textarea"
+        :rows="2"
+        maxlength="2000"
+        placeholder="入库备注（可选）"
+        :disabled="command.locked.value"
+      />
+      <el-alert
+        v-if="checkError"
+        class="section"
+        :title="checkError"
+        type="error"
+        :closable="false"
+      />
+      <el-alert
+        v-if="command.status.value !== 'idle'"
+        class="section"
+        title="确认结果未知：保留原授权、数量、目标批次和幂等键。请核对历史后按原操作重试。"
+        type="warning"
+        :closable="false"
+      />
+    </template>
+    <template #footer>
+      <el-button @click="close">关闭</el-button>
+      <template v-if="!inboundId">
+        <el-button
+          v-if="command.status.value === 'pending'"
+          type="primary"
+          :loading="command.busy.value"
+          @click="command.retry"
+          >按原操作重试</el-button
+        >
+        <el-button
+          v-else
+          type="primary"
+          :loading="command.busy.value"
+          :disabled="command.locked.value || checking || !selected.length"
+          @click="confirm"
+          >确认实际入库</el-button
+        >
+      </template>
+    </template>
   </el-dialog>
 </template>
 <script setup lang="ts">
 import { ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
-import type { FinishedGoodsInboundSource } from '@company/contracts';
+import type {
+  FinishedGoodsInboundCandidate,
+  FinishedGoodsInboundOrderDetail,
+  FinishedGoodsInboundSource,
+  InventoryInboundTarget,
+  ConfirmFinishedGoodsInboundPayload,
+  FinishedGoodsInboundCommandResult,
+} from '@company/contracts';
 import { FINISHED_GOODS_INBOUND_SOURCE_LABELS } from '@company/constants';
+import { productionApi } from '../../../api/production';
+import { useProcurementCommand } from '../../procurement/composables/useProcurementCommand';
+import { EMessage } from '../../../utils/message';
 import { DialogWidth } from '../../../utils/dialog';
 import { formatDateTimeForDisplay } from '../../../utils/date';
-import { inboundOrderStatusLabel } from '../../../constants/business-status';
-import { formatQuantity as quantity } from '../../production/production-status';
-import BatchCloseoutEvidence from '../../production/components/BatchCloseoutEvidence.vue';
-import { useFinishedGoodsInboundEditor } from '../composables/useFinishedGoodsInboundEditor';
+import { formatQuantity } from '../../production/production-status';
+import PaginationFooter from '../../../components/PaginationFooter.vue';
+import InboundBatchTargetPicker from './InboundBatchTargetPicker.vue';
+defineOptions({ name: 'FinishedGoodsInboundDialog' });
 const props = defineProps<{
   visible: boolean;
-  active: boolean;
   inboundId: string | null;
   sourceType: FinishedGoodsInboundSource;
+  active: boolean;
 }>();
-const emit = defineEmits<{ 'update:visible': [boolean]; changed: [] }>();
-const editor = useFinishedGoodsInboundEditor(
-  props,
-  () => emit('changed'),
-  () => emit('update:visible', false),
-);
-const {
-  detail,
-  targetId,
-  form,
-  candidate,
-  candidates,
-  keyword,
-  candidatePage,
-  candidateTotal,
-  candidateLoading,
-  candidateError,
-  loading,
-  submitting,
-  unresolved,
-  error,
-  lastSuccess,
-  dirty,
-  busy,
-  locked,
-  stale,
-  sourceType: effectiveSourceType,
-  canSave,
-  canConfirm,
-  adoptedLatest,
-  expectedQuantity,
-  currentApprovedQuantity,
-} = editor;
-const evidencePanels = ref<string[]>([]),
-  router = useRouter();
+const emit = defineEmits<{ 'update:visible': [value: boolean]; changed: [] }>();
+interface Selection {
+  detailKey: string;
+  source: FinishedGoodsInboundCandidate;
+  quantity: number;
+  target: InventoryInboundTarget;
+}
+const candidates = ref<FinishedGoodsInboundCandidate[]>([]),
+  selected = ref<Selection[]>([]),
+  detail = ref<FinishedGoodsInboundOrderDetail | null>(null);
+const candidatePage = ref(1),
+  candidateTotal = ref(0),
+  keyword = ref(''),
+  remark = ref('');
+const loading = ref(false),
+  checking = ref(false),
+  error = ref(''),
+  checkError = ref('');
+let requestNo = 0;
+const command = useProcurementCommand<FinishedGoodsInboundCommandResult>(async () => {
+  emit('changed');
+  selected.value = [];
+  remark.value = '';
+  await loadCandidates();
+}, '成品入库');
+async function loadCandidates() {
+  if (!props.visible || props.inboundId) return;
+  const current = ++requestNo;
+  loading.value = true;
+  error.value = '';
+  try {
+    const page = await productionApi.finishedGoodsInboundCandidates({
+      keyword: keyword.value.trim() || undefined,
+      page: candidatePage.value,
+      pageSize: 10,
+    });
+    if (current !== requestNo) return;
+    candidates.value = page.items;
+    candidateTotal.value = page.total;
+  } catch (failure) {
+    if (current === requestNo) {
+      error.value = '授权候选加载失败';
+      EMessage.error(failure);
+    }
+  } finally {
+    if (current === requestNo) loading.value = false;
+  }
+}
+async function loadDetail() {
+  if (!props.visible || !props.inboundId) return;
+  const current = ++requestNo;
+  loading.value = true;
+  error.value = '';
+  try {
+    const data = await productionApi.getFinishedGoodsInbound(props.inboundId);
+    if (current === requestNo) detail.value = data;
+  } catch (failure) {
+    if (current === requestNo) {
+      error.value = '入库详情加载失败';
+      EMessage.error(failure);
+    }
+  } finally {
+    if (current === requestNo) loading.value = false;
+  }
+}
+function relatedNewTargetsFor(detailKey: string) {
+  const current = selected.value.find((item) => item.detailKey === detailKey);
+  if (!current) return [];
+  return selected.value.flatMap((item, index) =>
+    item.detailKey !== detailKey &&
+    item.source.productId === current.source.productId &&
+    item.source.unit === current.source.unit &&
+    item.target.mode === 'new'
+      ? [
+          {
+            clientKey: item.target.clientKey,
+            batchCode: item.target.batchCode,
+            label: `第 ${index + 1} 条明细的新批次`,
+          },
+        ]
+      : [],
+  );
+}
+function toggle(source: FinishedGoodsInboundCandidate) {
+  if (command.locked.value) return;
+  const index = selected.value.findIndex(
+    (item) => item.source.allocationId === source.allocationId,
+  );
+  if (index >= 0) {
+    selected.value.splice(index, 1);
+    return;
+  }
+  if (
+    !source.canConfirm ||
+    (selected.value.length &&
+      selected.value[0]?.source.productionBatchId !== source.productionBatchId)
+  )
+    return;
+  selected.value.push({
+    detailKey: crypto.randomUUID(),
+    source: { ...source },
+    quantity: Number(source.remainingQuantity),
+    target: { mode: 'new', clientKey: crypto.randomUUID() },
+  });
+}
+function remove(detailKey: string) {
+  if (command.locked.value) return;
+  selected.value = selected.value.filter((item) => item.detailKey !== detailKey);
+}
+function split(detailKey: string) {
+  if (command.locked.value || selected.value.length >= 100) return;
+  const item = selected.value.find((row) => row.detailKey === detailKey);
+  if (!item) return;
+  selected.value.push({
+    detailKey: crypto.randomUUID(),
+    source: { ...item.source },
+    quantity: 1,
+    target: { mode: 'new', clientKey: crypto.randomUUID() },
+  });
+}
+async function recheck(adopt: boolean): Promise<boolean> {
+  if (!selected.value.length || command.locked.value) return false;
+  checking.value = true;
+  checkError.value = '';
+  try {
+    const page = await productionApi.finishedGoodsInboundCandidates({
+      keyword: selected.value[0]!.source.batchNo,
+      page: 1,
+      pageSize: 100,
+    });
+    const latest = new Map(page.items.map((item) => [item.allocationId, item]));
+    for (const item of selected.value) {
+      const current = latest.get(item.source.allocationId);
+      if (!current || !current.canConfirm) {
+        checkError.value = '授权已失效，请移除后重新选择';
+        return false;
+      }
+      if (
+        current.outputRevisionId !== item.source.outputRevisionId ||
+        current.remainingQuantity !== item.source.remainingQuantity
+      ) {
+        if (!adopt) {
+          checkError.value = '授权版本或余量已变化，请明确重新核对';
+          return false;
+        }
+        item.source = { ...current };
+      }
+    }
+    return true;
+  } catch (failure) {
+    checkError.value = '授权重新核对失败';
+    EMessage.error(failure);
+    return false;
+  } finally {
+    checking.value = false;
+  }
+}
+async function confirm() {
+  if (command.locked.value || !(await recheck(false))) return;
+  for (const item of selected.value) {
+    const aggregate = selected.value
+      .filter((row) => row.source.allocationId === item.source.allocationId)
+      .reduce((sum, row) => sum + row.quantity, 0);
+    if (
+      !Number.isSafeInteger(item.quantity) ||
+      item.quantity <= 0 ||
+      aggregate > Number(item.source.remainingQuantity) ||
+      (item.target.mode === 'existing' && !item.target.batchId)
+    ) {
+      checkError.value = '请核对本次数量、剩余额度与目标批次';
+      return;
+    }
+  }
+  const body: ConfirmFinishedGoodsInboundPayload = {
+    productionBatchId: selected.value[0]!.source.productionBatchId,
+    details: selected.value.map((item) => ({
+      detailKey: item.detailKey,
+      allocationId: item.source.allocationId,
+      revisionId: item.source.outputRevisionId,
+      quantity: item.quantity,
+      target: item.target,
+    })),
+    remark: remark.value.trim() || null,
+  };
+  await command.run(
+    { intentType: 'production.finished-inbound.confirm', params: {}, query: {}, body },
+    (key) => productionApi.confirmFinishedGoodsInbound(body, key),
+    '成品入库已确认',
+  );
+}
+async function close(): Promise<boolean> {
+  if (!(await command.canClose(!!selected.value.length || !!remark.value))) return false;
+  requestNo++;
+  selected.value = [];
+  detail.value = null;
+  remark.value = '';
+  error.value = '';
+  checkError.value = '';
+  emit('update:visible', false);
+  return true;
+}
+async function prepareTargetSwitch() {
+  return !props.visible || close();
+}
+function currentInboundId() {
+  return props.inboundId;
+}
+function changeCandidatePage(page: number) {
+  candidatePage.value = page;
+  void loadCandidates();
+}
 watch(
-  () => props.visible,
-  (value) => {
-    if (value) evidencePanels.value = [];
+  () => [props.visible, props.inboundId, props.sourceType] as const,
+  () => {
+    requestNo++;
+    candidates.value = [];
+    selected.value = [];
+    detail.value = null;
+    keyword.value = '';
+    candidatePage.value = 1;
+    candidateTotal.value = 0;
+    if (props.visible) void (props.inboundId ? loadDetail() : loadCandidates());
   },
+  { immediate: true },
 );
-watch(
-  () => props.active,
-  (active) => {
-    if (active && props.visible && !submitting.value && !unresolved.value) void editor.refresh();
-  },
-);
-const openApproval = (instanceId: string) =>
-  router.push({ name: 'approval-inbox', query: { instanceId } });
-const openInventory = (itemBatchId: string) =>
-  router.push({ name: 'warehouse-inventory', query: { itemBatchId } });
-defineExpose({
-  prepareTargetSwitch: editor.prepareTargetSwitch,
-  currentInboundId: () => targetId.value,
-});
+defineExpose({ prepareTargetSwitch, currentInboundId });
 </script>
 <style scoped>
-.notice {
-  margin-top: 14px;
-}
 .toolbar {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 12px;
+  gap: 8px;
+}
+.section {
+  margin-top: 14px;
 }
 .muted {
-  font-size: 12px;
   color: var(--el-text-color-secondary);
-  line-height: 1.7;
-}
-.revision-comparison {
-  margin-top: 16px;
-  padding: 16px;
-  background: var(--el-color-warning-light-9);
-  border-left: 3px solid var(--el-color-warning);
+  font-size: 12px;
 }
 </style>

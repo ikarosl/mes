@@ -16,6 +16,7 @@ import {
   REVIEW_OUTPUT_MATERIAL_SCOPE,
   SUBMIT_PRODUCTION_OUTPUT_SCOPE,
   BEGIN_OUTPUT_CORRECTION_SCOPE,
+  BEGIN_OUTPUT_REINSPECTION_SCOPE,
   CANCEL_OUTPUT_CORRECTION_SCOPE,
 } from '../../application/idempotency/production-idempotency-scopes.contract.js';
 import {
@@ -23,6 +24,7 @@ import {
   ReviewProductionOutputMaterialDto,
   SubmitProductionOutputDto,
   BeginProductionOutputCorrectionDto,
+  BeginProductionOutputReinspectionDto,
 } from './dto/production-output.dto.js';
 import { TerminationBatchParamDto } from './dto/production-termination.dto.js';
 import { VersionedCommandDto } from '../../../../presentation/http/dto/versioned-command.dto.js';
@@ -81,6 +83,17 @@ export class ProductionOutputController {
     @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
   ) {
     return this.service.beginCorrection(batchId, body, context);
+  }
+  @Post('reinspections')
+  @RequirePermission(PERMISSIONS.production.tasks.manageOutput)
+  @AuditInApplication()
+  @IdempotentEndpoint({ scope: BEGIN_OUTPUT_REINSPECTION_SCOPE })
+  beginReinspection(
+    @Param() { batchId }: TerminationBatchParamDto,
+    @Body() body: BeginProductionOutputReinspectionDto,
+    @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
+  ) {
+    return this.service.beginReinspection(batchId, body, context);
   }
   @Post('corrections/cancel')
   @RequirePermission(PERMISSIONS.production.tasks.manageOutput)

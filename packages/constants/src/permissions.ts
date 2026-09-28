@@ -144,9 +144,7 @@ export const PERMISSIONS = {
       create: 'production:inbounds:create',
       confirm: 'production:inbounds:confirm',
       cancel: 'production:inbounds:cancel',
-      createFinished: 'production:inbounds:create-finished',
       confirmFinished: 'production:inbounds:confirm-finished',
-      cancelFinished: 'production:inbounds:cancel-finished',
     },
     batches: {
       create: 'production:batches:create',

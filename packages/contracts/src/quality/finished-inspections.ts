@@ -1,5 +1,8 @@
 import type { PageQuery, VersionedCommand } from '../common.js';
-import type { ProductionOutputQuantities } from '../production/output.js';
+import type {
+  ProductionOutputQuantities,
+  ProductionOutputRoundStatus,
+} from '../production/output.js';
 
 export type ProductionOutputInspectionMethod = 'full' | 'sampling' | 'zero_confirmation';
 export type ProductionOutputReleaseDecision = 'released' | 'pending_reinspection' | 'not_released';
@@ -15,8 +18,12 @@ export interface ProductionOutputInspectionFacts {
 export interface ProductionOutputInspection extends ProductionOutputInspectionFacts {
   id: string;
   closeoutId: string;
+  roundId: string;
   batchId: string;
   declaredVersion: number;
+  baselinePlannedReceived: string;
+  baselineExtraReceived: string;
+  cumulativeSuggestionQuantity: string;
   declared: ProductionOutputQuantities;
   /** 实际检查合格数；抽检时仅表示样本合格数。 */
   qualifiedQuantity: number;
@@ -56,14 +63,22 @@ export interface FinishedInspectionTaskItem {
   productName: string;
   plannedQuantity: string;
   version: number;
+  currentRoundId: string | null;
+  currentRoundStatus: ProductionOutputRoundStatus | null;
   latestInspectionId: string | null;
   latestReleaseDecision: ProductionOutputReleaseDecision | null;
   latestInspectedAt: string | null;
+  canStartInspection: boolean;
   canRecordInspection: boolean;
 }
 export interface FinishedInspectionTaskDetail extends FinishedInspectionTaskItem {
   declared: ProductionOutputQuantities | null;
   latestInspection: ProductionOutputInspection | null;
+}
+export interface StartFinishedInspectionResult {
+  batchId: string;
+  roundId: string;
+  version: number;
 }
 export interface FinishedInspectionCommandResult {
   batchId: string;

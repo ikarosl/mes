@@ -1,29 +1,28 @@
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
-import { withActiveConnection, withTransaction } from '@company/database';
-import { fixedIntegerQuantity, integerQuantity } from '@company/utils';
-import type { Pool, RowDataPacket, ResultSetHeader } from 'mysql2/promise';
-import type {
-  FinishedGoodsInboundSource,
-  InboundOrderStatus,
-  ProductionOutputReceipts,
-} from '@company/contracts';
+import { withActiveConnection } from '@company/database';
+import {
+  fixedIntegerQuantity,
+  integerQuantity,
+  MAX_PERSISTED_INTEGER_QUANTITY,
+} from '@company/utils';
+import type { Pool, PoolConnection, RowDataPacket, ResultSetHeader } from 'mysql2/promise';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
+import { writeTransactionalAudit } from '../../../common/audit/transactional-audit-writer.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
 import { ProductInventoryEligibility } from '../../product/public.js';
 import {
   InventoryInboundCommand,
-  type FinishedInboundStorage,
-  type FinishedInboundWrite,
+  type FinishedOutputInput,
+  type FinishedOutputResult,
 } from '../application/inventory-inbound.command.js';
-import { InventoryDomainError } from '../domain/inventory.errors.js';
-import { MysqlInventoryPurchaseInboundWriter } from './mysql-inventory-purchase-inbound.writer.js';
 import type {
   ConfirmPurchaseReceiptInput,
   ConfirmPurchaseReceiptResult,
 } from '../application/inventory-purchase-inbound.types.js';
+import { InventoryDomainError } from '../domain/inventory.errors.js';
+import { MysqlInventoryPurchaseInboundWriter } from './mysql-inventory-purchase-inbound.writer.js';
 
-type FinishedRow = RowDataPacket & FinishedInboundStorage;
 @Injectable()
 export class MysqlInventoryInboundCommand extends InventoryInboundCommand {
   constructor(
@@ -33,249 +32,297 @@ export class MysqlInventoryInboundCommand extends InventoryInboundCommand {
   ) {
     super();
   }
+
   confirmPurchaseReceipt(
     input: ConfirmPurchaseReceiptInput,
     context: CommandContext,
   ): Promise<ConfirmPurchaseReceiptResult> {
     return this.purchases.confirm(input, context);
   }
-  getFinishedLocator(id: string): Promise<{ productionBatchId: string }> {
-    return withActiveConnection(this.pool, async (db) => {
-      const [[row]] = await db.query<(RowDataPacket & { productionBatchId: string })[]>(
-        "SELECT CAST(production_batch_id AS CHAR) productionBatchId FROM inbound_order WHERE id=? AND source_type IN ('self_made','production_extra')",
-        [id],
+
+  confirmFinishedOutput(
+    input: FinishedOutputInput,
+    context: CommandContext,
+  ): Promise<FinishedOutputResult> {
+    validateFinished(input);
+    return withActiveConnection(this.pool, async (connection) => {
+      if (connection === this.pool) throw new Error('成品入库确认必须位于 Production 同池事务中');
+      const db = connection as PoolConnection;
+      const eligibility = await this.products.lockHistoricalReferences({
+        references: [],
+        productIds: [input.productId],
+      });
+      if (eligibility.status !== 'success')
+        throw new InventoryDomainError('INVALID_INPUT', eligibility.message);
+      const existingIds = [
+        ...new Set(
+          input.details.flatMap((detail) =>
+            detail.target.mode === 'existing' ? [detail.target.batchId] : [],
+          ),
+        ),
+      ].sort((a, b) => (BigInt(a) < BigInt(b) ? -1 : BigInt(a) > BigInt(b) ? 1 : 0));
+      const [existingRows] = existingIds.length
+        ? await db.query<
+            (RowDataPacket & {
+              id: string | number;
+              product_id: string | number;
+              unit_snapshot: string;
+              batch_status: string;
+              batch_code: string;
+            })[]
+          >(
+            `SELECT id,product_id,unit_snapshot,batch_status,batch_code FROM item_batch WHERE id IN (${existingIds.map(() => '?').join(',')}) ORDER BY id FOR UPDATE`,
+            existingIds,
+          )
+        : [[] as never[]];
+      const existing = new Map(existingRows.map((row) => [String(row.id), row]));
+      const newByKey = new Map<string, { batchId: string; identity: string }>();
+      const resolved = new Map<FinishedOutputInput['details'][number], string>();
+      for (const detail of input.details) {
+        let batchId: string;
+        if (detail.target.mode === 'existing') {
+          const batch = existing.get(detail.target.batchId);
+          if (
+            !batch ||
+            String(batch.product_id) !== input.productId ||
+            batch.unit_snapshot !== input.unit ||
+            batch.batch_status !== 'available'
+          )
+            throw new InventoryDomainError(
+              'INVALID_STATE',
+              '目标成品批次身份、单位或状态不允许入库',
+            );
+          batchId = detail.target.batchId;
+        } else {
+          const identity = `${input.productId}:${input.unit}:${detail.target.batchCode ?? ''}`;
+          const prior = newByKey.get(detail.target.clientKey);
+          if (prior && prior.identity !== identity)
+            throw new InventoryDomainError(
+              'INVALID_INPUT',
+              '共用新批次的成品身份、单位或批号不一致',
+            );
+          if (prior) batchId = prior.batchId;
+          else {
+            let created: ResultSetHeader;
+            try {
+              [created] = await db.execute<ResultSetHeader>(
+                `INSERT INTO item_batch(product_id,item_code_snapshot,unit_snapshot,batch_code,source_type,batch_status,remark,created_by,updated_by)
+               VALUES (?,?,?,?,'finished_product','available',?,?,?)`,
+                [
+                  input.productId,
+                  input.productCode,
+                  input.unit,
+                  detail.target.batchCode?.trim() ?? code('IB'),
+                  input.remark ?? null,
+                  context.actorId,
+                  context.actorId,
+                ],
+              );
+            } catch (error) {
+              if (isDuplicate(error))
+                throw new InventoryDomainError('CONFLICT', '目标成品批号已存在，请刷新后重试');
+              throw error;
+            }
+            batchId = String(created.insertId);
+            newByKey.set(detail.target.clientKey, { batchId, identity });
+          }
+        }
+        resolved.set(detail, batchId);
+      }
+      const inboundNo = code('FI');
+      const [order] = await db.execute<ResultSetHeader>(
+        `INSERT INTO inbound_order(inbound_no,source_type,work_order_id,production_batch_id,product_id,status,inbound_at,operator_id,remark,created_by,updated_by)
+         VALUES (?,'finished_product',?,?,?,'pending',CURRENT_TIMESTAMP,?,?,?,?)`,
+        [
+          inboundNo,
+          input.workOrderId,
+          input.productionBatchId,
+          input.productId,
+          context.actorId,
+          input.remark ?? null,
+          context.actorId,
+          context.actorId,
+        ],
       );
-      if (!row) throw new InventoryDomainError('NOT_FOUND', '成品入库单不存在');
-      return { productionBatchId: row.productionBatchId };
+      const inboundId = String(order.insertId);
+      const details: FinishedOutputResult['details'] = [];
+      for (const detail of input.details) {
+        const batchId = resolved.get(detail)!;
+        const [insert] = await db.execute<ResultSetHeader>(
+          `INSERT INTO inbound_detail(inbound_id,product_id,batch_id,production_output_allocation_id,item_code_snapshot,inbound_number,unit_snapshot,stock_status,created_by)
+           VALUES (?,?,?,?,?,?,?,'available',?)`,
+          [
+            inboundId,
+            input.productId,
+            batchId,
+            detail.allocationId,
+            input.productCode,
+            fixedIntegerQuantity(detail.quantity),
+            input.unit,
+            context.actorId,
+          ],
+        );
+        const inboundDetailId = String(insert.insertId);
+        const [transaction] = await db.execute<ResultSetHeader>(
+          `INSERT INTO inventory_transaction(product_id,batch_id,transaction_type,quantity,unit_snapshot,stock_status,reference_type,reference_detail_id,idempotency_key,remark,created_by)
+           VALUES (?,?,'production_inbound',?,?,'available','inbound_detail',?,?,?,?)`,
+          [
+            input.productId,
+            batchId,
+            fixedIntegerQuantity(detail.quantity),
+            input.unit,
+            inboundDetailId,
+            `FGI:${inboundDetailId}`,
+            input.remark ?? null,
+            context.actorId,
+          ],
+        );
+        details.push({
+          detailKey: detail.detailKey,
+          allocationId: detail.allocationId,
+          batchId,
+          inboundDetailId,
+          transactionId: String(transaction.insertId),
+        });
+      }
+      await db.execute("UPDATE inbound_order SET status='completed' WHERE id=?", [inboundId]);
+      await writeTransactionalAudit(db, {
+        logType: 'business',
+        module: 'inventory',
+        action: 'inventory.finished-inbound.confirm',
+        userId: context.actorId,
+        targetType: 'inbound_order',
+        targetId: inboundId,
+        result: 'success',
+        beforeData: null,
+        afterData: { inboundNo, details },
+        requestId: context.requestId,
+        ip: context.ip,
+        userAgent: context.userAgent,
+      });
+      return { inboundId, inboundNo, details };
     });
   }
-  getFinishedOrder(id: string, lock = false): Promise<FinishedInboundStorage> {
+
+  readFinishedAllocationReceipts(
+    allocationIds: string[],
+    lock: boolean,
+  ): Promise<Record<string, string>> {
+    const ids = [...new Set(allocationIds)];
+    if (ids.length > 100 || ids.some((id) => !/^[1-9]\d*$/.test(id)))
+      throw new InventoryDomainError('INVALID_INPUT', '一次最多查询 100 份有效成品授权');
+    if (!ids.length) return Promise.resolve({});
     return withActiveConnection(this.pool, async (db) => {
-      if (lock && db === this.pool) throw new Error('成品入库锁必须位于调用方事务中');
-      const [[row]] = await db.query<FinishedRow[]>(
-        `SELECT CAST(o.id AS CHAR) inboundId,o.inbound_no inboundNo,CAST(o.production_batch_id AS CHAR) productionBatchId,
-         CAST(o.work_order_id AS CHAR) workOrderId,CAST(o.product_id AS CHAR) productId,CAST(o.output_revision_id AS CHAR) outputRevisionId,
-         o.source_type sourceType,o.status,o.version,CAST(d.id AS CHAR) detailId,d.inbound_number quantity,d.requested_batch_code batchCode,CAST(d.batch_id AS CHAR) batchId,
-         CAST((SELECT tx.id FROM inventory_transaction tx WHERE tx.product_id=o.product_id AND tx.reference_type='inbound_detail' AND tx.reference_detail_id=d.id AND tx.transaction_type='production_inbound') AS CHAR) transactionId,
-         CAST(o.created_by AS CHAR) createdBy,o.created_at createdAt,CAST(o.operator_id AS CHAR) operatorId,o.inbound_at inboundAt,o.remark,o.cancel_reason cancelReason,CAST(o.cancelled_by AS CHAR) cancelledBy,o.cancelled_at cancelledAt
-         FROM inbound_order o JOIN inbound_detail d ON d.inbound_id=o.id AND d.product_id=o.product_id
-         WHERE o.id=? AND o.source_type IN ('self_made','production_extra')${lock ? ' FOR UPDATE' : ''}`,
-        [id],
-      );
-      if (!row) throw new InventoryDomainError('NOT_FOUND', '成品入库单不存在');
-      return { ...row, quantity: String(row.quantity) };
-    });
-  }
-  listFinishedSlots(
-    batchId: string,
-    source: FinishedGoodsInboundSource,
-  ): Promise<Array<{ id: string; status: InboundOrderStatus }>> {
-    return withActiveConnection(this.pool, async (db) => {
-      if (db === this.pool) throw new Error('成品入库类别锁必须位于调用方事务中');
-      const [rows] = await db.query<(RowDataPacket & { id: number; status: InboundOrderStatus })[]>(
-        "SELECT id,status FROM inbound_order WHERE production_batch_id=? AND source_type=? AND status IN ('pending','completed') ORDER BY id FOR UPDATE",
-        [batchId, source],
-      );
-      return rows.map((row) => ({ id: String(row.id), status: row.status }));
-    });
-  }
-  readFinishedReceipts(batchId: string, lock: boolean): Promise<ProductionOutputReceipts> {
-    return withActiveConnection(this.pool, async (db) => {
-      if (lock && db === this.pool) throw new Error('成品收货事实锁必须位于调用方事务中');
+      if (lock && db === this.pool) throw new Error('成品授权消费事实锁必须位于调用方事务中');
       const [rows] = await db.query<
-        (RowDataPacket & {
-          id: number;
-          source_type: FinishedGoodsInboundSource;
-          quantity: string;
-        })[]
+        (RowDataPacket & { allocation_id: string | number; quantity: string | number })[]
       >(
-        `SELECT o.id,o.source_type,d.inbound_number quantity
+        `SELECT d.production_output_allocation_id allocation_id,t.quantity
+         FROM inbound_detail d JOIN inbound_order o ON o.id=d.inbound_id
+         JOIN inventory_transaction t ON t.reference_type='inbound_detail' AND t.reference_detail_id=d.id
+           AND t.transaction_type='production_inbound' AND t.product_id=d.product_id AND t.batch_id=d.batch_id
+           AND t.quantity=d.inbound_number AND t.unit_snapshot=d.unit_snapshot AND t.stock_status=d.stock_status
+         WHERE o.status='completed' AND o.source_type='finished_product'
+           AND d.production_output_allocation_id IN (${ids.map(() => '?').join(',')})
+         ORDER BY d.production_output_allocation_id,d.id${lock ? ' FOR SHARE' : ''}`,
+        ids,
+      );
+      const totals: Record<string, string> = Object.fromEntries(ids.map((id) => [id, '0']));
+      for (const row of rows) {
+        const id = String(row.allocation_id);
+        totals[id] = fixedIntegerQuantity(
+          integerQuantity(totals[id] ?? '0') + integerQuantity(row.quantity),
+        );
+      }
+      return totals;
+    });
+  }
+
+  readFinishedTaskAllocationReceipts(
+    batchId: string,
+    lock: boolean,
+  ): Promise<Record<string, string>> {
+    if (!/^[1-9]\d*$/.test(batchId))
+      throw new InventoryDomainError('INVALID_INPUT', '任务身份无效');
+    return withActiveConnection(this.pool, async (db) => {
+      if (lock && db === this.pool) throw new Error('成品任务收货事实锁必须位于调用方事务中');
+      const [rows] = await db.query<
+        (RowDataPacket & { allocation_id: number | string; quantity: number | string })[]
+      >(
+        `SELECT d.production_output_allocation_id allocation_id,t.quantity
          FROM inbound_order o JOIN inbound_detail d ON d.inbound_id=o.id
-         WHERE o.production_batch_id=? AND o.status='completed' AND o.source_type IN ('self_made','production_extra') ORDER BY o.id,d.id${lock ? ' FOR SHARE' : ''}`,
+         JOIN inventory_transaction t ON t.reference_type='inbound_detail' AND t.reference_detail_id=d.id
+           AND t.transaction_type='production_inbound' AND t.product_id=d.product_id AND t.batch_id=d.batch_id
+           AND t.quantity=d.inbound_number AND t.unit_snapshot=d.unit_snapshot AND t.stock_status=d.stock_status
+         WHERE o.production_batch_id=? AND o.status='completed' AND o.source_type='finished_product'
+         ORDER BY o.id,d.id${lock ? ' FOR SHARE' : ''}`,
         [batchId],
       );
-      const production = rows.find((row) => row.source_type === 'self_made'),
-        extra = rows.find((row) => row.source_type === 'production_extra');
-      return {
-        productionInboundId: production ? String(production.id) : null,
-        productionReceivedQuantity: production
-          ? fixedIntegerQuantity(
-              rows
-                .filter((row) => row.source_type === 'self_made')
-                .reduce((total, row) => total + integerQuantity(row.quantity), 0),
-            )
-          : '0',
-        extraInboundId: extra ? String(extra.id) : null,
-        extraReceivedQuantity: extra
-          ? fixedIntegerQuantity(
-              rows
-                .filter((row) => row.source_type === 'production_extra')
-                .reduce((total, row) => total + integerQuantity(row.quantity), 0),
-            )
-          : '0',
-      };
-    });
-  }
-  createFinishedDraft(
-    input: FinishedInboundWrite,
-    context: CommandContext,
-  ): Promise<{ inboundId: string }> {
-    return withTransaction(this.pool, async (db) => {
-      await this.lockProduct(input.productId);
-      const [order] = await db.execute<ResultSetHeader>(
-        `INSERT INTO inbound_order (inbound_no,source_type,work_order_id,production_batch_id,product_id,output_revision_id,status,remark,created_by,updated_by)
-         VALUES (?,?,?,?,?,?,'pending',?,?,?)`,
-        [
-          `FI-${Date.now()}-${randomUUID().slice(0, 8).toUpperCase()}`,
-          input.sourceType,
-          input.workOrderId,
-          input.productionBatchId,
-          input.productId,
-          input.outputRevisionId,
-          input.remark,
-          context.actorId,
-          context.actorId,
-        ],
-      );
-      const id = String(order.insertId);
-      await db.execute(
-        "INSERT INTO inbound_detail (inbound_id,product_id,requested_batch_code,item_code_snapshot,inbound_number,unit_snapshot,stock_status,created_by) VALUES (?,?,?,?,?,?,'available',?)",
-        [
-          id,
-          input.productId,
-          input.batchCode,
-          input.itemCode,
-          input.quantity,
-          input.unit,
-          context.actorId,
-        ],
-      );
-      return { inboundId: id };
-    });
-  }
-  updateFinishedDraft(
-    id: string,
-    version: number,
-    input: FinishedInboundWrite,
-    context: CommandContext,
-  ): Promise<void> {
-    return withTransaction(this.pool, async (db) => {
-      await this.lockProduct(input.productId);
-      const row = await this.getFinishedOrder(id, true);
-      requirePending(row, version);
-      requireSource(row, input);
-      await db.execute(
-        'UPDATE inbound_detail SET requested_batch_code=?,inbound_number=? WHERE id=? AND batch_id IS NULL',
-        [input.batchCode, input.quantity, row.detailId],
-      );
-      await db.execute(
-        'UPDATE inbound_order SET output_revision_id=?,remark=?,version=version+1,updated_by=? WHERE id=?',
-        [input.outputRevisionId, input.remark, context.actorId, id],
-      );
-    });
-  }
-  cancelFinishedDraft(
-    id: string,
-    version: number,
-    reason: string,
-    context: CommandContext,
-  ): Promise<void> {
-    return withTransaction(this.pool, async (db) => {
-      const row = await this.getFinishedOrder(id, true);
-      requirePending(row, version);
-      await db.execute(
-        "UPDATE inbound_order SET status='cancelled',cancel_reason=?,cancelled_by=?,cancelled_at=NOW(),version=version+1,updated_by=? WHERE id=?",
-        [reason, context.actorId, context.actorId, id],
-      );
-    });
-  }
-  confirmFinishedReceipt(
-    id: string,
-    version: number,
-    input: FinishedInboundWrite,
-    context: CommandContext,
-  ): Promise<{ itemBatchId: string; inventoryTransactionId: string }> {
-    return withTransaction(this.pool, async (db) => {
-      await this.lockProduct(input.productId);
-      const row = await this.getFinishedOrder(id, true);
-      requirePending(row, version);
-      requireSource(row, input);
-      if (
-        row.outputRevisionId !== input.outputRevisionId ||
-        Number(row.quantity) !== Number(input.quantity)
-      )
-        throw new InventoryDomainError(
-          'CONCURRENT_MODIFICATION',
-          '入库草稿未采用最新批准清单，请先核对数量并保存',
+      const totals: Record<string, string> = {};
+      for (const row of rows) {
+        const id = String(row.allocation_id);
+        totals[id] = fixedIntegerQuantity(
+          integerQuantity(totals[id] ?? '0') + integerQuantity(row.quantity),
         );
-      const [batch] = await db.execute<ResultSetHeader>(
-        `INSERT INTO item_batch (product_id,item_code_snapshot,unit_snapshot,batch_code,source_type,source_work_order_id,source_production_batch_id,batch_status,remark,created_by,updated_by)
-         VALUES (?,?,?,?,?,?,?,'available',?,?,?)`,
-        [
-          input.productId,
-          input.itemCode,
-          input.unit,
-          row.batchCode,
-          input.sourceType,
-          input.workOrderId,
-          input.productionBatchId,
-          row.remark,
-          context.actorId,
-          context.actorId,
-        ],
-      );
-      await db.execute('UPDATE inbound_detail SET batch_id=? WHERE id=? AND batch_id IS NULL', [
-        batch.insertId,
-        row.detailId,
-      ]);
-      const [transaction] = await db.execute<ResultSetHeader>(
-        `INSERT INTO inventory_transaction (product_id,batch_id,transaction_type,quantity,unit_snapshot,stock_status,reference_type,reference_detail_id,idempotency_key,remark,created_by)
-         VALUES (?,?,'production_inbound',?,?,'available','inbound_detail',?,?,?,?)`,
-        [
-          input.productId,
-          batch.insertId,
-          input.quantity,
-          input.unit,
-          row.detailId,
-          `FGI:${id}:${row.detailId}`,
-          row.remark,
-          context.actorId,
-        ],
-      );
-      await db.execute(
-        "UPDATE inbound_order SET status='completed',inbound_at=NOW(),operator_id=?,updated_by=?,version=version+1 WHERE id=?",
-        [context.actorId, context.actorId, id],
-      );
-      return {
-        itemBatchId: String(batch.insertId),
-        inventoryTransactionId: String(transaction.insertId),
-      };
+      }
+      return totals;
     });
   }
-  private async lockProduct(productId: string): Promise<void> {
-    const result = await this.products.lockHistoricalReferences({
-      references: [],
-      productIds: [productId],
-    });
-    if (result.status !== 'success')
-      throw new InventoryDomainError(
-        result.status === 'not-found' ? 'NOT_FOUND' : 'INVALID_INPUT',
-        result.message,
-      );
-  }
 }
-function requirePending(row: FinishedInboundStorage, version: number): void {
-  if (row.status !== 'pending' || row.batchId !== null)
-    throw new InventoryDomainError('INVALID_STATE', '只有尚未入库的待确认成品单可以操作');
-  if (row.version !== version)
-    throw new InventoryDomainError('CONCURRENT_MODIFICATION', '入库单已变化，请刷新核对');
-}
-function requireSource(row: FinishedInboundStorage, input: FinishedInboundWrite): void {
+
+function validateFinished(input: FinishedOutputInput): void {
   if (
-    row.productionBatchId !== input.productionBatchId ||
-    row.workOrderId !== input.workOrderId ||
-    row.productId !== input.productId ||
-    row.sourceType !== input.sourceType
+    !/^[1-9]\d*$/.test(input.productionBatchId) ||
+    !/^[1-9]\d*$/.test(input.workOrderId) ||
+    !/^[1-9]\d*$/.test(input.productId) ||
+    !input.productCode.trim() ||
+    !input.unit.trim() ||
+    !input.details.length ||
+    input.details.length > 100
   )
-    throw new InventoryDomainError('CONFLICT', '成品入库来源不一致');
+    throw new InventoryDomainError('INVALID_INPUT', '成品入库来源或明细无效');
+  const keys = new Map<string, string>();
+  const detailKeys = new Set<string>();
+  for (const detail of input.details) {
+    const quantity = Number(detail.quantity);
+    if (
+      !/^[1-9]\d*$/.test(detail.allocationId) ||
+      !/^[1-9]\d*$/.test(detail.revisionId) ||
+      !detail.detailKey.trim() ||
+      detail.detailKey.length > 100 ||
+      !Number.isSafeInteger(quantity) ||
+      quantity <= 0 ||
+      quantity > MAX_PERSISTED_INTEGER_QUANTITY ||
+      !['self_made', 'production_extra'].includes(detail.sourceType)
+    )
+      throw new InventoryDomainError('INVALID_INPUT', '成品授权或数量无效');
+    if (detailKeys.has(detail.detailKey))
+      throw new InventoryDomainError('INVALID_INPUT', '成品入库明细标识不能重复');
+    detailKeys.add(detail.detailKey);
+    if (detail.target.mode === 'existing') {
+      if (!/^[1-9]\d*$/.test(detail.target.batchId))
+        throw new InventoryDomainError('INVALID_INPUT', '目标批次无效');
+    } else {
+      if (
+        !detail.target.clientKey.trim() ||
+        detail.target.clientKey.length > 100 ||
+        (detail.target.batchCode !== undefined &&
+          (!detail.target.batchCode.trim() || detail.target.batchCode.length > 100))
+      )
+        throw new InventoryDomainError('INVALID_INPUT', '新批次标识或批号无效');
+      const identity = `${input.productId}:${input.unit}:${detail.target.batchCode ?? ''}`;
+      const previous = keys.get(detail.target.clientKey);
+      if (previous && previous !== identity)
+        throw new InventoryDomainError('INVALID_INPUT', '共用新批次的身份不一致');
+      keys.set(detail.target.clientKey, identity);
+    }
+  }
+}
+const code = (prefix: 'FI' | 'IB') =>
+  `${prefix}-${Date.now()}-${randomUUID().slice(0, 8).toUpperCase()}`;
+
+function isDuplicate(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  const value = error as { code?: string; cause?: unknown };
+  return value.code === 'ER_DUP_ENTRY' || (value.cause !== undefined && isDuplicate(value.cause));
 }

@@ -143,6 +143,13 @@ export async function readReceiptLines(
     ids,
   );
   const inbounds = groupRows(inboundRows);
+  const [batchRows] = await db.query<ReadRow[]>(
+    `${inboundFactSelect('DISTINCT detail.procurement_receipt_line_id receipt_line_id,detail.batch_id,batch.batch_code')}
+    AND detail.procurement_receipt_line_id IN (${marks})`,
+    ids,
+  );
+  const batches = groupRows(batchRows);
+
   const [inboundSums] = await db.query<ReadRow[]>(
     `${inboundFactSelect('detail.procurement_receipt_line_id receipt_line_id,SUM(tx.quantity) quantity')}
     AND detail.procurement_receipt_line_id IN (${marks}) GROUP BY detail.procurement_receipt_line_id`,
@@ -245,8 +252,10 @@ export async function readReceiptLines(
       ),
       rounds: (rounds.get(id) ?? []).map(mapRound),
       currentReceiptRevisionId: text(row.current_receipt_revision_id),
-      batchId: nullableText(row.batch_id),
-      batchCode: nullableText(row.batch_code),
+      batches: (batches.get(id) ?? []).map((fact) => ({
+        batchId: text(fact.batch_id),
+        batchCode: text(fact.batch_code),
+      })),
       overReceiptNote: nullableText(row.over_receipt_note),
       version: Number(row.version),
       quantities,

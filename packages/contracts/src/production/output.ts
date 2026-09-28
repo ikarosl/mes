@@ -5,6 +5,38 @@ import type { BatchCloseoutApprovalSnapshot } from './closeout.js';
 
 export type ProductionCloseoutMode = 'normal' | 'early';
 export type ProductionOutputStatus = 'draft' | 'reviewing' | 'approved' | 'correcting';
+export type ProductionOutputRoundStatus =
+  | 'pending_inspection'
+  | 'inspecting'
+  | 'pending_finalization'
+  | 'reviewing'
+  | 'finalized'
+  | 'superseded';
+export type ProductionOutputRoundTrigger = 'initial' | 'reinspection' | 'finalization_correction';
+export interface ProductionOutputRound {
+  id: string;
+  closeoutId: string;
+  roundNo: number;
+  previousRoundId: string | null;
+  triggerType: ProductionOutputRoundTrigger;
+  baseRevisionId: string | null;
+  baselinePlannedReceived: string;
+  baselineExtraReceived: string;
+  startingDeclaredRemaining: string;
+  status: ProductionOutputRoundStatus;
+  reason: string | null;
+  version: number;
+}
+export interface ProductionOutputAllocation {
+  id: string;
+  revisionId: string;
+  roundId: string;
+  category: 'self_made' | 'production_extra';
+  quantity: string;
+  receivedQuantity: string;
+  remainingQuantity: string;
+}
+
 export interface ProductionOutputQuantities {
   /** 计划内可入库产出，不超过任务计划。 */
   availableQuantity: number;
@@ -20,6 +52,8 @@ export interface ProductionOutputDraft extends ProductionOutputQuantities {
 }
 export interface ProductionOutputRevision {
   id: string;
+  roundId: string;
+  allocations: ProductionOutputAllocation[];
   closeoutId: string;
   batchId: string;
   revisionNo: number;
@@ -38,9 +72,7 @@ export interface ProductionOutputRevision {
   snapshot: BatchCloseoutApprovalSnapshot;
 }
 export interface ProductionOutputReceipts {
-  productionInboundId: string | null;
   productionReceivedQuantity: string;
-  extraInboundId: string | null;
   extraReceivedQuantity: string;
 }
 export interface ProductionOutputDetail {
@@ -57,6 +89,8 @@ export interface ProductionOutputDetail {
   approvalInstanceId: string | null;
   pendingApprovalId: string | null;
   currentRevisionId: string | null;
+  currentRoundId: string | null;
+  rounds: ProductionOutputRound[];
   latestInspectionId: string | null;
   inspections: ProductionOutputInspection[];
   revisions: ProductionOutputRevision[];
@@ -65,6 +99,7 @@ export interface ProductionOutputDetail {
   canRecordInspection: boolean;
   canSubmit: boolean;
   canBeginCorrection: boolean;
+  canBeginReinspection: boolean;
   canCancelCorrection: boolean;
   blockers: string[];
   /** 草稿、检验引用、基准批准版及收尾依据的联合指纹。 */
@@ -82,6 +117,10 @@ export interface ReviewProductionOutputMaterialPayload extends VersionedCommand 
 }
 export interface BeginProductionOutputCorrectionPayload extends VersionedCommand {
   currentRevisionId: string;
+  reason: string;
+}
+export interface BeginProductionOutputReinspectionPayload extends VersionedCommand {
+  currentRevisionId: string | null;
   reason: string;
 }
 export interface ProductionOutputCommandResult {

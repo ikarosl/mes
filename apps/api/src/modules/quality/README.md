@@ -18,13 +18,13 @@ Quality 不导入或查询 Procurement。它按传入来源保存检验事实并
 
 ## 成品质检
 
-独立页面与来料质检同级。`GET /quality/finished-inspections` 按任务分页，支持关键字及待检／已有记录筛选；`GET /:batchId` 返回轻量来源、草稿数量和最新记录；`GET /:batchId/records` 分页留存历史；`POST /:batchId/actions/record` 新增本任务本轮完整范围的检验记录及明确放行结论。页面读写权限分别为 `quality:finished-inspections:view/record`。全检独立填写实检合格与不合格数，抽检另填实际送检整批总量；实际检查总数由两项相加，全检送检总数也由此形成。明确放行时全检建议为实检合格数，抽检建议为整批送检总数减样本不合格数。零产出仍须明确核实，保存时间、说明及凭据；产线申报快照仅作参考，不限制实测总数。
+独立页面与来料质检同级。`GET /quality/finished-inspections` 按任务分页，支持关键字及待检／已有记录筛选；`GET /:batchId` 返回轻量来源、草稿数量和最新记录；`GET /:batchId/records` 分页留存历史；`POST /:batchId/actions/start` 明确开始并由 Production 固定本轮已入基准与剩余范围、置 inspecting 并暂停旧剩余授权，开始时不创建 Quality case；`POST /:batchId/actions/record` 新增本任务当前轮完整剩余范围的检验记录及明确放行结论。页面读写权限分别为 `quality:finished-inspections:view/record`。全检独立填写实检合格与不合格数，抽检另填实际送检整批总量；实际检查总数由两项相加，全检送检总数也由此形成。明确放行时全检建议为实检合格数，抽检建议为整批送检总数减样本不合格数。零产出仍须明确核实，保存时间、说明及凭据；产线申报快照仅作参考，不限制实测总数。
 
 `QualityFinishedInspectionSourceRegistry` 只接受 Production 注册的来源能力；运行时调用其 `prepare/advance`，由 Production 在共享事务锁定工单、任务和结案根、核验草稿及版本并推进自身版本。Quality 不导入 Production，来源命令不通过跨模块 SQL 判断业务资格。Quality自己创建完成的 `quality_inspection_case` 与不可变 `quality_inspection_record`、核对前驱并写成功审计；任一步失败连同幂等结果回滚。批准或送审期间不能绕过 Production 的更正／撤回流程登记新依据。
 
 `QualityFinishedInspectionQuery.readForCloseout` 提供本任务的不可变记录；Production在送审和批准时通过来源锁内共享读核对最新引用、明确放行结论和批准快照，不以派生建议量限制定稿。`evaluateOutputInspection` 公开纯规则供批准证据严格解析。列表的跨模块只读字段登记于 `scripts/api-data-ownership.mjs`，只做展示、筛选及分页。检验不改变产出三项、报废量、产品额度或库存。
 
-**CQ-01 待实施**：固定发起时已入基准、完整剩余范围和复检开始冻结尚未落地，不能用动态已入量伪造累计建议。完整已确认目标由[成品专题](docs/finished-inspections.md#部分已入后的复检已确认目标待实施)维护，实施与验收见[路线图](../../../../../docs/roadmap.md#cq-01成品剩余复检整改)。
+Production 轮次固定计划内／外历史已入 I₀ 和剩余范围；Quality case 以 finished_round_id 一轮一份记录。本轮建议 R 与固定 I₀ 形成累计建议，只作核对，不因后续入库或库批变化而改变。实现及待验收分开标注，状态见[路线图](../../../../../docs/roadmap.md)。
 
 字段和数量规则见[成品检验数据库专题](docs/finished-inspections.md)。不建设部分复检叠加额度、完整质量范围树、自动抽样方案或在线质量体系。
 

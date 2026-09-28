@@ -1,5 +1,6 @@
 import type {
   FinishedInspectionCommandResult,
+  StartFinishedInspectionResult,
   FinishedInspectionTaskDetail,
   FinishedInspectionTaskQuery,
   FinishedInspectionTaskItem,
@@ -16,6 +17,11 @@ export interface RecordFinishedInspectionInput extends ProductionOutputInspectio
   evidenceReference: string;
 }
 export abstract class FinishedInspectionRepository {
+  abstract start(
+    batchId: string,
+    version: number,
+    context: CommandContext,
+  ): Promise<StartFinishedInspectionResult>;
   abstract listTasks(
     query: FinishedInspectionTaskQuery,
   ): Promise<PageResult<FinishedInspectionTaskItem>>;

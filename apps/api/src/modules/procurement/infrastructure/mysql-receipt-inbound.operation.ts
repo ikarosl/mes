@@ -1,4 +1,4 @@
-import type { PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
+import type { PoolConnection, RowDataPacket } from 'mysql2/promise';
 import type {
   ConfirmProcurementInboundPayload,
   ConfirmProcurementInboundResult,
@@ -41,9 +41,9 @@ export const confirmReceiptInbound = async (
   if (
     !payload.details.length ||
     payload.details.length > 100 ||
-    new Set(payload.details.map((row) => row.allocationId)).size !== payload.details.length
+    new Set(payload.details.map((row) => row.detailKey)).size !== payload.details.length
   )
-    return receiptError('入库必须选择 1 至 100 个不同放行范围');
+    return receiptError('入库必须提交 1 至 100 条不同明细');
   const lineIds = sortedIds(payload.details.map((row) => row.receiptLineId));
   const [locators] = await connection.query<
     (RowDataPacket & { id: number; purchase_order_id: number })[]
@@ -145,9 +145,17 @@ export const confirmReceiptInbound = async (
       receiptLineId: selectedRow.detail.receiptLineId,
     });
   }
+  const amountByAllocation = new Map<string, number>();
+  for (const { detail, row } of selected) {
+    const total = (amountByAllocation.get(detail.allocationId) ?? 0) + detail.quantity;
+    if (!Number.isSafeInteger(total) || total > row.remaining_quantity)
+      return receiptError('本次入库合计超过正式分配剩余量，请刷新', 'RECEIPT_STATE');
+    amountByAllocation.set(detail.allocationId, total);
+  }
   const details = selected.map(({ detail, line }) => {
     const orderLine = orderLines.get(String(line.purchase_order_line_id))!;
     return {
+      detailKey: detail.detailKey,
       receiptLineId: detail.receiptLineId,
       receiptRevisionId: detail.receiptRevisionId,
       inspectionId: detail.inspectionId,
@@ -158,25 +166,13 @@ export const confirmReceiptInbound = async (
       materialVariantCode: orderLine.material_variant_code_snapshot,
       unit: orderLine.unit_snapshot,
       quantity: String(detail.quantity),
-      batchId: line.batch_id === null ? null : String(line.batch_id),
+      target: detail.target,
     };
   });
   const result = await inventory.confirmPurchaseReceipt(
     { provider: supplier!.supplier_name, remark: payload.remark ?? null, details },
     context,
   );
-  for (const detail of result.details) {
-    const line = lines.get(detail.receiptLineId)!;
-    if (line.batch_id === null) {
-      const [binding] = await connection.execute<ResultSetHeader>(
-        'UPDATE procurement_receipt_line SET batch_id=? WHERE id=? AND batch_id IS NULL',
-        [detail.batchId, detail.receiptLineId],
-      );
-      if (binding.affectedRows !== 1) return receiptError('内部批号绑定已变化', 'RECEIPT_STATE');
-      line.batch_id = detail.batchId;
-    } else if (String(line.batch_id) !== detail.batchId)
-      return receiptError('同一到货必须沿用首次入库内部批号', 'RECEIPT_STATE');
-  }
   for (const id of lineIds) await touchReceiptLine(connection, id, context);
   for (const receiptId of sortedIds([...lines.values()].map((line) => String(line.receipt_id))))
     await auditReceipt(connection, context, 'receipt.inbound', receiptId, null, {

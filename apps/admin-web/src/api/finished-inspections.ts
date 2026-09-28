@@ -1,5 +1,6 @@
 import type {
   FinishedInspectionCommandResult,
+  StartFinishedInspectionResult,
   FinishedInspectionTaskDetail,
   FinishedInspectionTaskItem,
   FinishedInspectionTaskQuery,
@@ -38,6 +39,16 @@ export const finishedInspectionsApi = {
       url: `${root}/${batchId}/records`,
       params,
       signal,
+      skipErrorHandling: true,
+    }),
+  start: (batchId: string, data: { version: number }, key: string) =>
+    request<StartFinishedInspectionResult>({
+      url: `${root}/${batchId}/actions/start`,
+      method: 'POST',
+      data,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: key },
+      retryIdempotentWrite: true,
+      retryTimes: 2,
       skipErrorHandling: true,
     }),
   record: (batchId: string, data: RecordFinishedInspectionPayload, key: string) =>

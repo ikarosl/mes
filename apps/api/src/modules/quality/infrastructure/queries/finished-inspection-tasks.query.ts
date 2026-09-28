@@ -17,6 +17,8 @@ type TaskRow = RowDataPacket & {
   product_name_snapshot: string;
   planned_quantity: string;
   version: number;
+  current_round_id: number | null;
+  current_round_status: FinishedInspectionTaskItem['currentRoundStatus'];
   latest_id: number | null;
   release_decision: ProductionOutputReleaseDecision | null;
   inspected_at: Date | null;
@@ -28,7 +30,7 @@ type TaskRow = RowDataPacket & {
   additional_scrap_quantity: string | null;
   status: string;
 };
-const SELECT = `SELECT b.id batch_id,b.batch_no,b.work_order_id,w.work_order_no,w.product_code_snapshot,w.product_name_snapshot,b.planned_quantity,b.status,c.version,c.pending_approval_id,c.current_revision_id,c.correction_reason,c.available_quantity,c.extra_quantity,c.additional_scrap_quantity,i.id latest_id,i.release_decision,i.inspected_at FROM production_batch_closeout c JOIN production_batches b ON b.id=c.production_batch_id JOIN work_orders w ON w.id=b.work_order_id
+const SELECT = `SELECT b.id batch_id,b.batch_no,b.work_order_id,w.work_order_no,w.product_code_snapshot,w.product_name_snapshot,b.planned_quantity,b.status,c.version,c.current_round_id,round.status current_round_status,c.pending_approval_id,c.current_revision_id,c.correction_reason,c.available_quantity,c.extra_quantity,c.additional_scrap_quantity,i.id latest_id,i.release_decision,i.inspected_at FROM production_batch_closeout c LEFT JOIN production_output_round round ON round.id=c.current_round_id JOIN production_batches b ON b.id=c.production_batch_id JOIN work_orders w ON w.id=b.work_order_id
  LEFT JOIN quality_inspection_record i ON i.id=(SELECT MAX(latest.id) FROM quality_inspection_record latest WHERE latest.closeout_id=c.id)`;
 function mapTask(row: TaskRow): FinishedInspectionTaskItem {
   return {
@@ -40,14 +42,23 @@ function mapTask(row: TaskRow): FinishedInspectionTaskItem {
     productName: row.product_name_snapshot,
     plannedQuantity: String(row.planned_quantity),
     version: row.version,
+    currentRoundId: row.current_round_id === null ? null : String(row.current_round_id),
+    currentRoundStatus: row.current_round_status,
     latestInspectionId: row.latest_id === null ? null : String(row.latest_id),
     latestReleaseDecision: row.release_decision,
     latestInspectedAt: row.inspected_at === null ? null : toBeijingISOString(row.inspected_at),
+    canStartInspection:
+      ['closing', 'completed', 'terminated'].includes(row.status) &&
+      row.pending_approval_id === null &&
+      (row.current_revision_id === null || row.correction_reason !== null) &&
+      row.available_quantity !== null &&
+      row.current_round_status === 'pending_inspection',
     canRecordInspection:
       ['closing', 'completed', 'terminated'].includes(row.status) &&
       row.pending_approval_id === null &&
       (row.current_revision_id === null || row.correction_reason !== null) &&
-      row.available_quantity !== null,
+      row.available_quantity !== null &&
+      row.current_round_status === 'inspecting',
   };
 }
 export async function listFinishedInspectionTasks(

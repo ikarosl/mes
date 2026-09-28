@@ -1,3 +1,4 @@
+import type { InventoryInboundBatchCandidate, PageResult } from '@company/contracts';
 import { Inject, Injectable } from '@nestjs/common';
 import { withActiveConnection } from '@company/database';
 import { integerQuantity } from '@company/utils';
@@ -29,6 +30,63 @@ export class MysqlInventoryInboundQuery extends InventoryInboundQuery {
     super();
   }
 
+  async listInboundBatchCandidates(input: {
+    itemKind: 'material' | 'finished_product';
+    materialVariantId?: string;
+    productId?: string;
+    unit: string;
+    keyword?: string;
+    page: number;
+    pageSize: number;
+  }): Promise<PageResult<InventoryInboundBatchCandidate>> {
+    const identity = input.itemKind === 'material' ? input.materialVariantId : input.productId;
+    if (
+      !identity ||
+      !/^[1-9]\d*$/.test(identity) ||
+      !input.unit.trim() ||
+      input.unit.length > 20 ||
+      !Number.isSafeInteger(input.page) ||
+      input.page < 1 ||
+      !Number.isSafeInteger(input.pageSize) ||
+      input.pageSize < 1 ||
+      input.pageSize > 100
+    )
+      throw new InventoryDomainError('INVALID_INPUT', '批次候选身份或分页无效');
+    const column = input.itemKind === 'material' ? 'material_variant_id' : 'product_id';
+    const keyword = input.keyword?.trim();
+    const where = `b.${column}=? AND b.unit_snapshot=? AND b.batch_status='available'${keyword ? ' AND b.batch_code LIKE ?' : ''}`;
+    const params = keyword ? [identity, input.unit, `%${keyword}%`] : [identity, input.unit];
+    const [[count]] = await this.pool.query<(RowDataPacket & { total: number })[]>(
+      `SELECT COUNT(*) total FROM item_batch b WHERE ${where}`,
+      params,
+    );
+    const [rows] = await this.pool.query<
+      (RowDataPacket & {
+        id: number | string;
+        batch_code: string;
+        unit_snapshot: string;
+        current_quantity: string;
+      })[]
+    >(
+      `SELECT b.id,b.batch_code,b.unit_snapshot,COALESCE(balance.current_quantity,0) current_quantity
+      FROM item_batch b LEFT JOIN inventory_batch_balance balance ON balance.batch_id=b.id AND balance.stock_status='available'
+      WHERE ${where} ORDER BY b.id DESC LIMIT ? OFFSET ?`,
+      [...params, input.pageSize, (input.page - 1) * input.pageSize],
+    );
+    return {
+      items: rows.map((row) => ({
+        batchId: String(row.id),
+        batchCode: row.batch_code,
+        unit: row.unit_snapshot,
+        batchStatus: 'available' as const,
+        availableQuantity: String(row.current_quantity),
+      })),
+      total: Number(count?.total ?? 0),
+      page: input.page,
+      pageSize: input.pageSize,
+    };
+  }
+
   getReceiptInboundFacts(input: { receiptLineIds: string[] }): Promise<ReceiptInboundFacts[]> {
     const ids = [...new Set(input.receiptLineIds)];
     if (ids.length > 100 || ids.some((id) => !/^[1-9]\d*$/.test(id)))
@@ -56,8 +114,6 @@ export class MysqlInventoryInboundQuery extends InventoryInboundQuery {
           receiptLineId,
           {
             receiptLineId,
-            batchId: null,
-            batchCode: null,
             inboundQuantity: '0',
             receipts: [],
           },
@@ -68,15 +124,15 @@ export class MysqlInventoryInboundQuery extends InventoryInboundQuery {
         const target = byReceipt.get(String(row.receipt_line_id))!;
         const batchId = String(row.batch_id);
         const detailId = String(row.detail_id);
-        if (seenDetails.has(detailId) || (target.batchId !== null && target.batchId !== batchId))
-          throw new InventoryDomainError('INVALID_STATE', '到货入库事实存在重复流水或多个内部批次');
+        if (seenDetails.has(detailId))
+          throw new InventoryDomainError('INVALID_STATE', '到货入库事实存在重复正流水');
         seenDetails.add(detailId);
-        target.batchId = batchId;
-        target.batchCode = row.batch_code;
         target.inboundQuantity = String(
           integerQuantity(target.inboundQuantity) + integerQuantity(row.quantity),
         );
         target.receipts.push({
+          batchId,
+          batchCode: row.batch_code,
           inboundId: String(row.inbound_id),
           inboundNo: row.inbound_no,
           inboundDetailId: detailId,

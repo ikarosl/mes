@@ -83,55 +83,69 @@
             >
               <div class="quantity-fields">
                 <el-form-item
-                  label="计划内产出"
+                  label="计划内累计目标"
+                  :error="quantityErrors.available"
                   required
                 >
                   <el-input-number
                     v-model="draft.availableQuantity"
-                    :min="0"
-                    :max="Number(detail.check.plannedQuantity)"
                     :precision="0"
-                    :disabled="Boolean(detail.receipts.productionInboundId)"
                   />
                   <span class="unit">{{ detail.check.unit }}</span>
                   <p
-                    v-if="detail.receipts.productionInboundId"
+                    v-if="Number(detail.receipts.productionReceivedQuantity) > 0"
                     class="receipt-lock-note"
-                    style="max-width: 100px; margin: 0 6px"
                   >
                     已有生产流转入库 {{ quantity(detail.receipts.productionReceivedQuantity) }}
-                    {{ detail.check.unit }}，此类别数量已锁定。
+                    {{ detail.check.unit }}，累计目标不得低于历史已入量。
+                  </p>
+                  <p
+                    v-if="
+                      Number(detail.receipts.productionReceivedQuantity) >=
+                      Number(detail.check.plannedQuantity)
+                    "
+                    class="receipt-lock-note"
+                  >
+                    计划内已达任务计划上限，新增可入库产出请填计划外。
                   </p>
                 </el-form-item>
                 <el-form-item
-                  label="计划外产出"
+                  label="计划外累计目标"
+                  :error="quantityErrors.extra"
                   required
                   ><el-input-number
                     v-model="draft.extraQuantity"
-                    :min="0"
-                    :max="PRODUCTION_OUTPUT_QUANTITY_MAX"
                     :precision="0"
-                    :disabled="Boolean(detail.receipts.extraInboundId)"
                   /><span class="unit">{{ detail.check.unit }}</span>
                   <p
-                    v-if="detail.receipts.extraInboundId"
+                    v-if="Number(detail.receipts.extraReceivedQuantity) > 0"
                     class="receipt-lock-note"
                   >
                     已确认额外产出入库 {{ quantity(detail.receipts.extraReceivedQuantity) }}
-                    {{ detail.check.unit }}，此类别数量已锁定。
+                    {{ detail.check.unit }}，累计目标不得低于历史已入量。
                   </p></el-form-item
                 >
                 <el-form-item
                   label="本次新增成品报废"
+                  :error="quantityErrors.scrap"
                   required
                   ><el-input-number
                     v-model="draft.additionalScrapQuantity"
-                    :min="0"
-                    :max="PRODUCTION_OUTPUT_QUANTITY_MAX"
                     :precision="0"
                   /><span class="unit">{{ detail.check.unit }}</span></el-form-item
                 >
               </div>
+              <p
+                v-if="correctionBasis"
+                class="quantity-summary"
+              >
+                本轮固定历史已入基准：计划内 {{ quantity(correctionBasis.planned) }} + 计划外
+                {{ quantity(correctionBasis.extra) }} = {{ quantity(correctionBasis.total) }}
+                {{ detail.check.unit }}；当前累计目标
+                {{ quantity(draft.availableQuantity + draft.extraQuantity) }}
+                {{ detail.check.unit }}； 审批后拟新增授权 {{ quantity(correctionBasis.proposed) }}
+                {{ detail.check.unit }}。
+              </p>
               <p class="quantity-summary">
                 计划缺口
                 <strong>{{
@@ -146,7 +160,7 @@
                 {{ detail.check.unit }}。
               </p>
               <p class="muted">
-                新增报废不重复包含历史工序报废，不包含原材料损耗，也不触发补料或补产。已入库类别的数量不可再改。
+                新增报废不重复包含历史工序报废，不包含原材料损耗，也不触发补料或补产。各类累计目标不得低于对应历史已入量。
               </p>
               <el-form-item
                 label="产出说明 / 计划差异原因"
@@ -270,6 +284,7 @@
               :unresolved="unresolved"
               :error="error"
               @begin-correction="editor.beginCorrection"
+              @begin-reinspection="editor.beginReinspection"
               @cancel-correction="editor.cancelCorrection"
               @select-revision="selectedRevisionId = $event"
               @open-approval="openApproval"
@@ -372,7 +387,6 @@ import {
   PERMISSIONS,
   PRODUCTION_CLOSEOUT_MODE_LABELS,
   PRODUCTION_OUTPUT_STATUS_LABELS,
-  PRODUCTION_OUTPUT_QUANTITY_MAX,
 } from '@company/constants';
 import { DialogWidth } from '../../../utils/dialog';
 import { formatQuantity as quantity } from '../production-status';
@@ -405,6 +419,7 @@ const {
   selectedInspection,
   inspectionReleased,
   quantityAdvice,
+  quantityErrors,
 } = editor;
 const router = useRouter();
 const auth = useAuthStore();
@@ -424,6 +439,19 @@ const activeTab = ref('draft'),
 const selectedRevision = computed(
   () => detail.value?.revisions.find((row) => row.id === selectedRevisionId.value) ?? null,
 );
+const correctionBasis = computed(() => {
+  if (!detail.value?.correctionReason) return null;
+  const round = detail.value.rounds.find((row) => row.id === detail.value?.currentRoundId);
+  if (!round) return null;
+  const planned = Number(round.baselinePlannedReceived);
+  const extra = Number(round.baselineExtraReceived);
+  return {
+    planned,
+    extra,
+    total: planned + extra,
+    proposed: draft.availableQuantity + draft.extraQuantity - planned - extra,
+  };
+});
 watch(
   () => props.visible,
   (visible) => {
@@ -490,7 +518,6 @@ onBeforeUnmount(() => {
 }
 .receipt-lock-note {
   flex-basis: 100%;
-  max-width: 100px;
   margin: 0 6px;
   color: var(--el-text-color-regular);
   font-size: 13px;

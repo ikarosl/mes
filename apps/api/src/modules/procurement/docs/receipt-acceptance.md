@@ -7,7 +7,7 @@
 | 表 | 唯一职责 | 是否随实际入退改写 |
 | --- | --- | --- |
 | procurement_receipt | 一次真实到货交接主单 | 否 |
-| procurement_receipt_line | 精确物料到货身份、原采购行、当前 revision/round 指针及批次绑定 | 仅指针、版本等聚合状态 |
+| procurement_receipt_line | 精确物料到货身份、原采购行、当前 revision/round 指针；目标库存批次属于逐笔入库明细 | 仅指针、版本等聚合状态 |
 | procurement_receipt_revision | 本次到货核实总量 T 的不可变版本 | 否，数量变化追加版本 |
 | procurement_receipt_round | 整批剩余实物的办理资格与前后轮关联 | 办理推进状态；换轮使旧轮 superseded |
 | procurement_receipt_acceptance | 库管引用 QC 后确认的 C、前后实收版本和偏离依据 | 否，更正追加新轮、新清单 |
@@ -79,6 +79,6 @@ m1/x1 独立到货、误将 10 定稿为 11、部分入库后更正、撤销拒�
 
 ## 实际执行
 
-只有当前 finalized 轮正常 inbound 分配能入库。实际 inbound_detail 直接引用 allocation_id，可分多次消费同一分配；采购关闭不改变已有资格。退回直接引用 return 分配并一次交接全部余量。余量由授权数量减真实入退事实计算，当前轮以外显示历史未执行量但不得执行。
+只有当前 finalized 轮正常 inbound 分配能入库。实际 inbound_detail 直接引用 allocation_id，可分多次消费同一分配；一次提交也可把同一分配拆入多个目标，按分配汇总本次数量后与剩余额度核对。目标可选新建或已有合资格批次，Inventory 校验精确版本、单位、状态和容量；同次提交仍限同一供应商。采购关闭不改变已有资格。退回直接引用 return 分配并一次交接全部余量。余量由授权数量减真实入退事实计算，当前轮以外显示历史未执行量但不得执行。
 
 锁到货聚合后重新计算事实，并校验行／轮版本、明确 QC 及正式授权。旧客户端选择不会被自动换为新分配；未知结果按同键重试。实际 I 来自 Inventory public 的已完成入库及匹配正流水，B 来自真实退回交接，不能用 allocation 或 round 状态代替库存事实。

@@ -183,7 +183,28 @@ export class ReceiptService {
     payload: ConfirmProcurementInboundPayload,
     context: IdempotentCommandContext,
   ): Promise<ConfirmProcurementInboundResult> {
-    const body = { ...payload, details: payload.details.map((detail) => ({ ...detail })) };
+    const body: ConfirmProcurementInboundPayload = {
+      remark: payload.remark,
+      details: payload.details.map((detail) => ({
+        detailKey: detail.detailKey,
+        receiptLineId: detail.receiptLineId,
+        roundId: detail.roundId,
+        roundVersion: detail.roundVersion,
+        version: detail.version,
+        receiptRevisionId: detail.receiptRevisionId,
+        allocationId: detail.allocationId,
+        inspectionId: detail.inspectionId,
+        quantity: detail.quantity,
+        target:
+          detail.target.mode === 'new'
+            ? {
+                mode: 'new',
+                clientKey: detail.target.clientKey,
+                batchCode: detail.target.batchCode,
+              }
+            : { mode: 'existing', batchId: detail.target.batchId },
+      })),
+    };
     const execution = await this.idempotency.execute({
       scope: CONFIRM_PROCUREMENT_INBOUND_SCOPE,
       key: context.idempotencyKey,

@@ -22,13 +22,11 @@
 
 ## 2. 身份与约束
 
-真实身份链是 `inbound_detail.batch_id → item_batch.id`，内部批号读 `item_batch.batch_code`。物料以 `item_id/material_variant_id` 组合身份传播；成品用独立 `product_id`，不能把产品 ID 写进物料列，也不建立第二套批次或账本。名称读取当前 `materials.material_name`，编码、精确版本与单位继续使用原快照。
+真实目标链为 `inbound_detail.batch_id -> item_batch.id`，内部批号只从 `item_batch.batch_code` 读取。物料使用 `item_id/material_variant_id`，成品使用独立 `product_id`，两组互斥。所有实际明细的批次均非空，成品没有持久化仓库草稿或 `requested_batch_code`。
 
-`202609170002-finished-goods-inbound` 已使 `inbound_detail.batch_id` 物理可空，但物料分支 CHECK 仍强制非空，只有成品草稿可以暂不绑定库存批次。新采购到货表独立保存可空 `batch_id`；确认时原子建批并生成已完成入库明细，因此无需为并不存在的新外购草稿放宽物料 CHECK。
+成品主单和成品库批统一标记 `finished_product`，不保存单一类别/批准版。每条成品明细以 `production_output_allocation_id` 追溯类别、批准版、检查与生产任务；一单可包含多份授权，一份授权可在多张单/多个目标批次中执行。物料入库的采购来源四列成组引用，采购到货不再保存单一 `batch_id`。单据、明细和流水同事务，正流水、身份、数量、单位、批次状态有外键、CHECK 和触发器守卫。
 
-成品 `inbound_order` 的 `(output_revision_id,production_batch_id,work_order_id,product_id)` 外键继续指向原批准清单；`active_finished_slot` 及其唯一键继续保证同一任务同一类别最多一张有效草稿或已确认单。提取只转移写入所有者，不改变来源资格、数量与永久占位。
-
-主数据引用、批次身份和成品已完成明细的保护触发器全部保留。库存流水不可更新／删除，当前成品不开放冲销。物料冲销字段和数据库能力不等于已开放通用业务操作。
+主数据引用、批次不可变身份和成品已完成明细保护仍有效。库存流水不可更新/删除；当前成品不开放冲销。旧批次单值来源字段不能作为归属事实，查询必须从实际明细及匹配正流水汇聚来源。
 
 ## 3. 事实、投影与锁
 
@@ -42,11 +40,9 @@
 
 ## 4. 采购来源引用
 
-`inbound_detail` 保存真实到货明细、实收修订、检验结论与不可变分配引用。`procurement_allocation_id` 使用非唯一索引，同一分配可以多次实际入库，同到货多个分配沿用一个批次；成品专用唯一约束与物料／批次组合外键保持。准确字段维护于[入库明细](database/inventory-ledger-and-inbound.md#9-inbound_detail)。
+`inbound_detail` 保留真实到货明细、实收修订、检验结论与不可变分配引用。`procurement_allocation_id` 为非唯一索引，同一授权可多次实际入库并选择不同批次。`procurement_receipt_line.batch_id` 已删除；来源到目标的关系由每条已完成入库明细记录。采购同单同供应商与原单/补单归属继续由 Procurement 核验，库批共用不重挂采购来源。
 
-每个到货明细首次实际入库生成并绑定唯一库存批次；同一确认涉及该到货多个分配时只生成一次。采购层在同一事务将到货 `batch_id` 从空绑定，Inventory 写 `item_batch.batch_code` 与原 `inbound_detail.batch_id`，后续实收修订和复检不更换已绑定批次。
-
-供应商批号留在采购到货追溯字段。采购关闭证据、复核状态、未处置范围与退供应商事实归来源所有者，不放进库存批次状态，不覆盖入库明细或流水。所有外购都须由Procurement核验Quality有效明确放行结论、当前finalized轮次及正式可入余量。来料数量上限取库管正式授权，含有依据的超建议数量，不再以Quality的G或C−F重复封顶；Inventory不能相信客户端合格标记。
+库存命令复核 Product 精确身份、单位、可用批次状态和容量，按 `target` 创建或引用目标批次。来料质量、当前办理轮、授权可执行余额由 Procurement/Quality 在同池事务内校验，不能因为选择已有批次绕过。实际已入量从匹配正流水汇总，不从余额反推；退料和采购更正不改写历史来源。
 
 ## 5. 迁移策略
 

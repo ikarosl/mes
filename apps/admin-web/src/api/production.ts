@@ -4,10 +4,7 @@ import type {
   FinishedGoodsInboundCandidate,
   FinishedGoodsInboundOrderItem,
   FinishedGoodsInboundOrderDetail,
-  CreateFinishedGoodsInboundPayload,
-  UpdateFinishedGoodsInboundPayload,
   ConfirmFinishedGoodsInboundPayload,
-  CancelFinishedGoodsInboundPayload,
   FinishedGoodsInboundCommandResult,
   BatchTerminationCheck,
   DemandCorrectionCheck,
@@ -25,6 +22,7 @@ import type {
   ReviewProductionOutputMaterialPayload,
   SubmitProductionOutputPayload,
   BeginProductionOutputCorrectionPayload,
+  BeginProductionOutputReinspectionPayload,
   ProductionOutputCommandResult,
   CreateProductionBatchPayload,
   CreateMaterialAllocationsPayload,
@@ -146,51 +144,9 @@ export const productionApi = {
       url: `/production/finished-goods-inbounds/${id}`,
       skipErrorHandling: true,
     }),
-  createFinishedGoodsInbound: (data: CreateFinishedGoodsInboundPayload, idempotencyKey: string) =>
+  confirmFinishedGoodsInbound: (data: ConfirmFinishedGoodsInboundPayload, idempotencyKey: string) =>
     request<FinishedGoodsInboundCommandResult>({
-      url: '/production/finished-goods-inbounds',
-      method: 'POST',
-      data,
-      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
-      skipErrorHandling: true,
-      retryIdempotentWrite: true,
-      retryTimes: 2,
-    }),
-  updateFinishedGoodsInbound: (
-    id: string,
-    data: UpdateFinishedGoodsInboundPayload,
-    idempotencyKey: string,
-  ) =>
-    request<FinishedGoodsInboundCommandResult>({
-      url: `/production/finished-goods-inbounds/${id}`,
-      method: 'PUT',
-      data,
-      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
-      skipErrorHandling: true,
-      retryIdempotentWrite: true,
-      retryTimes: 2,
-    }),
-  confirmFinishedGoodsInbound: (
-    id: string,
-    data: ConfirmFinishedGoodsInboundPayload,
-    idempotencyKey: string,
-  ) =>
-    request<FinishedGoodsInboundCommandResult>({
-      url: `/production/finished-goods-inbounds/${id}/actions/confirm`,
-      method: 'POST',
-      data,
-      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
-      skipErrorHandling: true,
-      retryIdempotentWrite: true,
-      retryTimes: 2,
-    }),
-  cancelFinishedGoodsInbound: (
-    id: string,
-    data: CancelFinishedGoodsInboundPayload,
-    idempotencyKey: string,
-  ) =>
-    request<FinishedGoodsInboundCommandResult>({
-      url: `/production/finished-goods-inbounds/${id}/actions/cancel`,
+      url: '/production/finished-goods-inbounds/actions/confirm',
       method: 'POST',
       data,
       headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
@@ -444,6 +400,20 @@ export const productionApi = {
   ) =>
     request<ProductionOutputCommandResult>({
       url: `/production/batches/${id}/output/corrections`,
+      method: 'POST',
+      data,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      skipErrorHandling: true,
+      retryIdempotentWrite: true,
+      retryTimes: 2,
+    }),
+  beginProductionOutputReinspection: (
+    id: string,
+    data: BeginProductionOutputReinspectionPayload,
+    idempotencyKey: string,
+  ) =>
+    request<ProductionOutputCommandResult>({
+      url: `/production/batches/${id}/output/reinspections`,
       method: 'POST',
       data,
       headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },

@@ -284,7 +284,8 @@
               v-else
               class="variant-text"
             >
-              {{ INVENTORY_ITEM_KIND_LABELS.finished_product }} · {{ row.sourceProductionBatchNo }}
+              {{ INVENTORY_ITEM_KIND_LABELS.finished_product }} ·
+              {{ row.sourceProductionBatchNo || '来源见明细' }}
             </div></template
           ></el-table-column
         ><el-table-column
@@ -294,18 +295,18 @@
         /><el-table-column
           label="来源"
           width="110"
-          ><template #default="{ row }">{{
-            inventorySourceTypeLabel(row.sourceType)
-          }}</template></el-table-column
+          ><template #default="{ row }">{{ sourceSummary(row) }}</template></el-table-column
         ><el-table-column
           prop="provider"
           label="供应方 / 来源工单"
           min-width="180"
           ><template #default="{ row }"
             ><template v-if="row.itemKind === 'finished_product'"
-              >{{ row.sourceWorkOrderNo }}
-              <div class="secondary">{{ row.sourceProductionBatchNo }}</div></template
-            ><span v-else>{{ row.provider || '-' }}</span></template
+              >{{ row.sourceWorkOrderNo || '多来源，见明细' }}
+              <div class="secondary">
+                {{ row.sourceProductionBatchNo || '按入库明细追溯' }}
+              </div></template
+            ><span v-else>{{ row.provider || '多来源，见明细' }}</span></template
           ></el-table-column
         ><el-table-column
           label="账面可用量"
@@ -395,18 +396,16 @@
               label="物料版本"
               >{{ variantCode(detail) }}</el-descriptions-item
             ><el-descriptions-item label="库存批次">{{ detail.batchCode }}</el-descriptions-item
-            ><el-descriptions-item label="来源">{{
-              inventorySourceTypeLabel(detail.sourceType)
-            }}</el-descriptions-item
+            ><el-descriptions-item label="来源">{{ sourceSummary(detail) }}</el-descriptions-item
             ><el-descriptions-item
               v-if="detail.itemKind === 'material'"
               label="供应方"
-              >{{ detail.provider || '-' }}</el-descriptions-item
+              >{{ detail.provider || '多来源，见下方入库明细' }}</el-descriptions-item
             ><el-descriptions-item
               v-else
               label="来源工单 / 任务"
-              >{{ detail.sourceWorkOrderNo }} /
-              {{ detail.sourceProductionBatchNo }}</el-descriptions-item
+              >{{ detail.sourceWorkOrderNo || '多来源' }} /
+              {{ detail.sourceProductionBatchNo || '见下方入库明细' }}</el-descriptions-item
             ><el-descriptions-item label="批次状态">{{
               inventoryBatchStatusLabel(detail.batchStatus)
             }}</el-descriptions-item
@@ -439,6 +438,30 @@
                   >{{ row.inboundNo }}</el-button
                 ></template
               ></el-table-column
+            ><el-table-column
+              label="来源类别"
+              min-width="110"
+            >
+              <template #default="{ row }">{{
+                inventorySourceTypeLabel(row.sourceType)
+              }}</template> </el-table-column
+            ><el-table-column
+              label="来源授权"
+              min-width="170"
+            >
+              <template #default="{ row }">
+                <template v-if="row.productionOutputAllocationId"
+                  >成品授权 #{{ row.productionOutputAllocationId }}<br />任务 #{{
+                    row.productionBatchId
+                  }}</template
+                >
+                <template v-else-if="row.procurementAllocationId"
+                  >采购分配 #{{ row.procurementAllocationId }}<br />到货明细 #{{
+                    row.procurementReceiptLineId
+                  }}</template
+                >
+                <span v-else>入库明细 #{{ row.inboundDetailId }}</span>
+              </template> </el-table-column
             ><el-table-column
               prop="provider"
               label="供应方"
@@ -573,6 +596,10 @@ import { inventoryTransactionAssociationText } from './warehouse-inventory-prese
 defineOptions({ name: 'WarehouseInventoryPage' });
 const route = useRoute(),
   router = useRouter();
+const sourceSummary = (row: InventoryBatchItem) => {
+  const kinds = [...new Set(row.inboundSources.map((source) => source.sourceType))];
+  return kinds.length > 1 ? '多来源' : inventorySourceTypeLabel(kinds[0] ?? row.sourceType);
+};
 const inventoryAvailable = (row: InventoryBatchItem) =>
   Number(
     row.itemKind === 'finished_product'

@@ -146,6 +146,21 @@ export class ProductionService {
     audit: IdempotentCommandContext,
   ) {
     const normalizedPayload = normalizeCreateBatchPayload(payload);
+    const fingerprintBody = {
+      batchNo: normalizedPayload.batchNo,
+      routeId: normalizedPayload.routeId,
+      plannedQuantity: normalizedPayload.plannedQuantity,
+      ownerId: normalizedPayload.ownerId,
+      planStartDate: normalizedPayload.planStartDate,
+      planEndDate: normalizedPayload.planEndDate,
+      remark: normalizedPayload.remark,
+      stepOverrides: Array.isArray(normalizedPayload.stepOverrides)
+        ? normalizedPayload.stepOverrides.map((override) => ({
+            routeStepId: override.routeStepId,
+            actualSopFileId: override.actualSopFileId,
+          }))
+        : normalizedPayload.stepOverrides,
+    } satisfies CreateProductionBatchPayload;
     // 纯格式校验只由请求内容决定，放在幂等 executor 外；会受数据库状态影响的业务校验（负责人是否
     // 启用等）移入 handler，重放不重复执行——否则负责人停用后同键重试会 400 而非重放原结果。
     this.assertPlanDates(normalizedPayload.planStartDate, normalizedPayload.planEndDate);
@@ -169,7 +184,7 @@ export class ProductionService {
       requestId: audit.requestId,
       request: {
         params: { workOrderId },
-        body: normalizedPayload,
+        body: fingerprintBody,
       },
       resultCodec: productionBatchResultCodec,
       handler: async () => {

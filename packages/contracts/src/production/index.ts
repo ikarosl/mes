@@ -6,6 +6,7 @@ export * from './material-demand-management.js';
 export * from './outbound.js';
 export * from './inbound.js';
 export * from './inventory.js';
+export * from './inventory-target.js';
 export * from './execution.js';
 export * from './abnormal.js';
 export * from './supplement.js';

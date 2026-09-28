@@ -70,6 +70,8 @@ const allowedTables = new Set([
   'production_batch_termination', // Retired; historical migrations retain ownership.
   'production_output_inspection',
   'production_output_revision',
+  'production_output_round',
+  'production_output_allocation',
   'production_demand_correction',
   'production_batch_closeout',
   'production_batch_closeout_action',

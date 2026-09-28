@@ -1,4 +1,5 @@
 import type { PageQuery } from '../common.js';
+import type { InventoryInboundTarget } from '../production/inventory-target.js';
 
 export interface ProcurementInboundReleaseQuery extends PageQuery {
   keyword?: string;
@@ -28,8 +29,6 @@ export interface ProcurementInboundReleaseItem {
   materialVariantCode: string;
   unit: string;
   supplierBatchCode: string | null;
-  batchId: string | null;
-  batchCode: string | null;
   receiptRevisionId: string;
   inspectionId: string;
   approvedRemainingQuantity: string;
@@ -37,6 +36,7 @@ export interface ProcurementInboundReleaseItem {
 export interface ConfirmProcurementInboundPayload {
   remark?: string | null;
   details: Array<{
+    detailKey: string;
     receiptLineId: string;
     roundId: string;
     roundVersion: number;
@@ -45,12 +45,14 @@ export interface ConfirmProcurementInboundPayload {
     allocationId: string;
     inspectionId: string;
     quantity: number;
+    target: InventoryInboundTarget;
   }>;
 }
 export interface ConfirmProcurementInboundResult {
   inboundId: string;
   inboundNo: string;
   details: Array<{
+    detailKey: string;
     receiptLineId: string;
     allocationId: string;
     batchId: string;

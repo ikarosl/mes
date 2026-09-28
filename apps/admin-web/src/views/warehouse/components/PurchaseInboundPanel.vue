@@ -9,7 +9,7 @@
     </el-radio-group>
     <template v-if="view === 'releases'">
       <el-alert
-        title="仅显示质检允许继续且库管已定稿的可入剩余量。数量以正式清单授权为准；整批复检、更正或拒收后旧范围不可再用。可分次入库，同一到货沿用内部批号。"
+        title="仅显示质检允许继续且库管已定稿的可入剩余量。数量以正式清单授权为准；整批复检、更正或拒收后旧范围不可再用。可分次入库，每次按明细选择新建或已有库存批次。"
         type="info"
         :closable="false"
         show-icon
@@ -115,13 +115,7 @@
               row.supplierBatchCode || '未提供'
             }}</template></el-table-column
           >
-          <el-table-column
-            label="内部批号"
-            min-width="180"
-            ><template #default="{ row }">{{
-              row.batchCode || '首次入库时生成'
-            }}</template></el-table-column
-          >
+
           <el-table-column
             label="清单剩余可入"
             min-width="110"
@@ -278,7 +272,7 @@
       @update:model-value="closeConfirmation"
     >
       <el-alert
-        title="按本次实际入库填写正整数，可调小为分次入库。同一到货的多个放行范围共用内部批号，确认前请核对实物。"
+        title="按本次实际入库填写正整数，可调小为分次入库。每条入库明细选择新建或已有批次；同一授权可拆入多个目标，本次合计不能超过剩余量。"
         type="info"
         show-icon
         :closable="false"
@@ -300,7 +294,7 @@
       />
       <el-table
         :data="releases.selected.value"
-        row-key="source.allocationId"
+        row-key="detailKey"
         max-height="430"
       >
         <el-table-column
@@ -320,13 +314,27 @@
           ></el-table-column
         >
         <el-table-column
-          label="供应商批号 / 内部批号"
-          min-width="190"
-          ><template #default="{ row }"
-            ><div>{{ row.source.supplierBatchCode || '未提供供应商批号' }}</div>
-            <div class="muted">{{ row.source.batchCode || '首次入库时生成' }}</div></template
-          ></el-table-column
+          label="供应商批号"
+          min-width="150"
+          ><template #default="{ row }">{{
+            row.source.supplierBatchCode || '未提供'
+          }}</template></el-table-column
         >
+        <el-table-column
+          label="目标库存批次"
+          min-width="270"
+        >
+          <template #default="{ row }">
+            <InboundBatchTargetPicker
+              v-model="row.target"
+              item-kind="material"
+              :material-variant-id="row.source.materialVariantId"
+              :unit="row.source.unit"
+              :related-new-targets="releases.relatedNewTargetsFor(row.detailKey)"
+              :disabled="releases.locked.value"
+            />
+          </template>
+        </el-table-column>
         <el-table-column
           label="清单剩余可入"
           width="110"
@@ -355,17 +363,23 @@
             </div></template
           ></el-table-column
         >
-        <el-table-column width="75"
-          ><template #default="{ row }"
-            ><el-button
+        <el-table-column width="110">
+          <template #default="{ row }">
+            <el-button
+              link
+              :disabled="releases.locked.value"
+              @click="releases.split(row.detailKey)"
+              >拆入</el-button
+            >
+            <el-button
               type="danger"
               link
               :disabled="releases.locked.value"
-              @click="releases.remove(row.source.allocationId)"
+              @click="releases.remove(row.detailKey)"
               >移除</el-button
-            ></template
-          ></el-table-column
-        >
+            >
+          </template>
+        </el-table-column>
       </el-table>
       <el-form
         label-width="80px"
@@ -433,6 +447,7 @@ import { formatQuantity } from '../../production/production-status';
 import { usePurchaseInbounds } from '../../production/composables/usePurchaseInbounds';
 import { usePurchaseInboundReleases } from '../composables/usePurchaseInboundReleases';
 import PurchaseInboundHistoryDialog from './PurchaseInboundHistoryDialog.vue';
+import InboundBatchTargetPicker from './InboundBatchTargetPicker.vue';
 
 defineOptions({ name: 'PurchaseInboundPanel' });
 const props = withDefaults(

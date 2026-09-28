@@ -33,6 +33,12 @@ const quantitiesValid = (value: ProductionOutputQuantities | null | undefined, p
       Number.isSafeInteger(number) && number >= 0 && number <= PRODUCTION_OUTPUT_QUANTITY_MAX,
   ) &&
   value.availableQuantity <= plan;
+const quantityError = (value: number, minimum: number, maximum: number, label: string) => {
+  if (!Number.isSafeInteger(value)) return `${label}须填写整数`;
+  if (value < minimum) return `${label}不得低于 ${minimum} 件`;
+  if (value > maximum) return `${label}不得超过 ${maximum} 件`;
+  return '';
+};
 
 function validateDetail(value: ProductionOutputDetail, batchId: string) {
   const fail = () => {
@@ -125,10 +131,34 @@ export function useProductionOutput(
       !detail.value?.canEdit ||
       stale.value,
   );
+  const quantityErrors = computed(() => {
+    const plan = Number(detail.value?.check.plannedQuantity ?? 0);
+    return {
+      available: quantityError(
+        draft.availableQuantity,
+        Number(detail.value?.receipts.productionReceivedQuantity ?? 0),
+        Math.min(plan, PRODUCTION_OUTPUT_QUANTITY_MAX),
+        '计划内累计目标',
+      ),
+      extra: quantityError(
+        draft.extraQuantity,
+        Number(detail.value?.receipts.extraReceivedQuantity ?? 0),
+        PRODUCTION_OUTPUT_QUANTITY_MAX,
+        '计划外累计目标',
+      ),
+      scrap: quantityError(
+        draft.additionalScrapQuantity,
+        0,
+        PRODUCTION_OUTPUT_QUANTITY_MAX,
+        '本次新增成品报废',
+      ),
+    };
+  });
   const valid = computed(
     () =>
       !!detail.value &&
       quantitiesValid(draft, Number(detail.value.check.plannedQuantity)) &&
+      Object.values(quantityErrors.value).every((message) => !message) &&
       !!draft.reason.trim() &&
       !!draft.materialReviewNote.trim(),
   );
@@ -148,12 +178,10 @@ export function useProductionOutput(
     if (!inspection || !inspectionReleased.value) return '';
     const total = draft.availableQuantity + draft.extraQuantity;
     const received =
-      Number(detail.value?.receipts.productionReceivedQuantity ?? 0) +
-      Number(detail.value?.receipts.extraReceivedQuantity ?? 0);
-    if (received > 0)
-      return `本次检验建议量 ${inspection.releasedQuantity} 件；清单累计可入库量 ${total} 件，历史已入库 ${received} 件。请按本次送检范围核对剩余产出，勿将本次建议直接当作累计数量。数量差异不阻断送审。`;
-    if (total === inspection.releasedQuantity) return '';
-    return `清单可入库量 ${total} 件，本次检验建议量 ${inspection.releasedQuantity} 件，相差 ${total - inspection.releasedQuantity} 件。请核对实际产出与报废；数量差异不阻断送审，由负责人审批确认。`;
+      Number(inspection.baselinePlannedReceived) + Number(inspection.baselineExtraReceived);
+    const suggested = Number(inspection.cumulativeSuggestionQuantity);
+    if (total === suggested && received === 0) return '';
+    return `检验所在轮固定已入基准 ${received} 件，本轮建议 ${inspection.releasedQuantity} 件，累计建议 ${suggested} 件；当前草稿累计目标 ${total} 件。数量差异仅提示，由负责人核对审批。`;
   });
 
   async function load(resetDraft = false) {
@@ -282,7 +310,7 @@ export function useProductionOutput(
     let reason: string;
     try {
       const answer = await RouteMessageBox.prompt(
-        '原批准清单保留；更正送审后，数量变化的类别暂停入库。请说明更正原因。',
+        '开始更正会立即冻结旧轮剩余入库授权；历史已入继续保留。请说明更正原因。',
         '发起清单更正',
         {
           inputType: 'textarea',
@@ -304,6 +332,43 @@ export function useProductionOutput(
       '已建立更正草稿；原批准记录继续保留',
     );
   }
+  async function beginReinspection() {
+    if (
+      !detail.value?.canBeginReinspection ||
+      !props.batchId ||
+      busy.value ||
+      unresolved.value ||
+      error.value
+    )
+      return;
+    const batchId = props.batchId,
+      version = detail.value.version,
+      currentRevisionId = detail.value.currentRevisionId;
+    let reason: string;
+    try {
+      const answer = await RouteMessageBox.prompt(
+        '开始复检会立即冻结旧轮剩余入库授权；历史已入继续保留。请说明本次剩余实物复检原因。',
+        '发起剩余产出复检',
+        {
+          inputType: 'textarea',
+          inputValidator: (value) =>
+            (!!value?.trim() && value.trim().length <= 5000) || '请填写不超过 5000 字的复检原因',
+          confirmButtonText: '开始复检',
+        },
+      );
+      reason = answer.value.trim();
+    } catch {
+      return;
+    }
+    if (props.batchId !== batchId || !props.visible || detail.value.version !== version) return;
+    const body = { version, currentRevisionId, reason };
+    await run(
+      'production.output.reinspection',
+      body,
+      (key) => productionApi.beginProductionOutputReinspection(batchId, body, key),
+      '已开始新一轮剩余产出复检，旧轮剩余入库资格已冻结',
+    );
+  }
   async function cancelCorrection() {
     if (
       !detail.value?.canCancelCorrection ||
@@ -317,7 +382,7 @@ export function useProductionOutput(
       version = detail.value.version;
     try {
       await RouteMessageBox.confirm(
-        '取消本次更正后，继续使用原批准清单；已经留存的质检记录不会删除。',
+        '取消本次更正后，旧轮剩余授权仍冻结；可重新发起更正并审批取得新授权。已经留存的质检记录不会删除。',
         '取消清单更正',
         { type: 'warning', confirmButtonText: '取消更正' },
       );
@@ -395,11 +460,13 @@ export function useProductionOutput(
     latestInspection,
     inspectionReleased,
     quantityAdvice,
+    quantityErrors,
     load,
     reloadDraft,
     save,
     submit,
     beginCorrection,
+    beginReinspection,
     cancelCorrection,
     close,
     retry,

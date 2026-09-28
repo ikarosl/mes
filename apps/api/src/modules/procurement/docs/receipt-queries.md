@@ -57,7 +57,7 @@ currentInspectionConsumedQuantity 只累计引用当前 QC 的真实入库／退
 
 入库候选须是当前 round.finalized 的 inbound allocation、无终止约束、有本轮 acceptance、Quality 完成且明确 released，当前轮／清单／分配的 QC 与 revision 同源一致。普通分配更正可继承同批旧检查，不要求 case 创建于新轮。旧轮失效立即从候选消失，不把用户选择静默替换成新分配。
 
-候选按实际分配采购单筛选，返回 roundId/roundVersion、行版本、allocationId、acceptanceId、inspectionId、receiptRevisionId 及正式剩余量。allocationIds 一次解析已选分配；同一 allocation 可分多次实际入库，每次重读余量，不能累加历史授权。物料用途／批次状态在分页前过滤；采购关闭不隐藏有效物流。
+候选按实际分配采购单筛选，返回 roundId/roundVersion、行版本、allocationId、acceptanceId、inspectionId、receiptRevisionId 及正式剩余量。allocationIds 一次解析已选分配；同一 allocation 可分多次实际入库，每次重读余量，不能累加历史授权。物料用途在分页前过滤；目标批次由库管在确认时选择并由 Inventory 锁内检查，采购关闭不隐藏有效物流。
 
 allocation-candidates返回已正式下单原行及existing_receipt补单；remainingBindingQuantity=0表示已经永久使用过首次绑定资格，不表示历史绑定归属可丢弃。展示候选不能代替确认时的锁内校验。正式清单历史保留核实量、原检查、超建议依据及准确采购分配；不合计历史各版作为当前额度。
 
@@ -65,4 +65,4 @@ allocation-candidates返回已正式下单原行及existing_receipt补单；rema
 
 ## 所有权与追溯
 
-`scripts/api-data-ownership.mjs`登记Procurement所有的round表，以及展示所需Quality incoming_round_id和Inventory正式分配引用。查询不写、锁外部模块表。供应商与物料当前名称按稳定ID读取，历史不因停用或软删除消失；批号直接取receipt_line.batch_id关联item_batch，不另存内部批号快照。已确认库存provider保持原文本，不从它反推供应商身份。
+`scripts/api-data-ownership.mjs`登记Procurement所有的round表，以及展示所需Quality incoming_round_id和Inventory正式分配引用。查询不写、锁外部模块表。供应商与物料当前名称按稳定ID读取，历史不因停用或软删除消失；到货行的批次集合与每笔入库历史从已确认 inbound_detail 及匹配正库存流水读取；每笔历史展示目标批次 ID 和批号，不用一个批次代表整条到货。已确认库存provider保持原文本，不从它反推供应商身份。

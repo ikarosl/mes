@@ -109,7 +109,6 @@ export async function listInboundReleases(
     `current_round.inspection_id=inspection.id`,
     `acceptance.round_id=current_round.id`,
     `qc.status='completed'`,
-    `(batch.id IS NULL OR batch.batch_status='available')`,
     `(${allocationRemaining('allocation.id', 'allocation.quantity')})>0`,
     `line.material_variant_id IN (${slots(eligible.map((v) => v.id))})`,
   );
@@ -129,7 +128,6 @@ export async function listInboundReleases(
     JOIN procurement_order_line pol ON pol.id=line.purchase_order_line_id
     JOIN procurement_supplier supplier ON supplier.id=pol.supplier_id
     JOIN materials material ON material.id=line.item_id
-    LEFT JOIN item_batch batch ON batch.id=line.batch_id
     JOIN procurement_receipt_round current_round ON current_round.id=line.current_round_id
     JOIN procurement_receipt_allocation allocation ON allocation.receipt_line_id=line.id AND allocation.round_id=current_round.id
     JOIN procurement_receipt_acceptance acceptance ON acceptance.id=allocation.acceptance_id
@@ -168,8 +166,6 @@ export async function listInboundReleases(
       materialVariantCode: text(row.material_variant_code_snapshot),
       unit: text(row.unit_snapshot),
       supplierBatchCode: nullableText(row.supplier_batch_code),
-      batchId: nullableText(row.batch_id),
-      batchCode: nullableText(row.batch_code),
       receiptRevisionId: text(row.receipt_revision_id),
       inspectionId: text(row.inspection_id),
       approvedRemainingQuantity: text(row.quantity),

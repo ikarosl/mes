@@ -207,7 +207,7 @@ export const terminationCheckSchema = z.object({
     })
     .nullable(),
 });
-export const CLOSEOUT_APPROVAL_SNAPSHOT_SCHEMA_VERSION = 6;
+export const CLOSEOUT_APPROVAL_SNAPSHOT_SCHEMA_VERSION = 7;
 const outputQuantitiesSchema = z.object({
   availableQuantity: amount,
   extraQuantity: amount,
@@ -217,7 +217,11 @@ const outputInspectionSchema = z
   .object({
     id,
     closeoutId: id,
+    roundId: id,
     batchId: id,
+    baselinePlannedReceived: quantity,
+    baselineExtraReceived: quantity,
+    cumulativeSuggestionQuantity: quantity,
     declaredVersion: version,
     declared: outputQuantitiesSchema,
     inspectionMethod: z.enum(PRODUCTION_OUTPUT_INSPECTION_METHODS),

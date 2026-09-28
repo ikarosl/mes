@@ -21,6 +21,12 @@
     <el-descriptions-item label="整批处理结论">{{
       PRODUCTION_OUTPUT_RELEASE_DECISION_LABELS[inspection.releaseDecision]
     }}</el-descriptions-item>
+    <el-descriptions-item label="检验轮固定已入基准">{{
+      Number(inspection.baselinePlannedReceived) + Number(inspection.baselineExtraReceived)
+    }}</el-descriptions-item>
+    <el-descriptions-item label="累计建议量">{{
+      inspection.cumulativeSuggestionQuantity
+    }}</el-descriptions-item>
     <el-descriptions-item label="本次检验建议量">{{
       inspection.releaseDecision === PRODUCTION_OUTPUT_RELEASE_DECISIONS[0]
         ? inspection.releasedQuantity

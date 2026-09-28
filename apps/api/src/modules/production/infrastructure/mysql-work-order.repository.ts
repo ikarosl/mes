@@ -481,10 +481,11 @@ export class MysqlWorkOrderRepository {
   ): Promise<WorkOrderBatchSummaryRow[]> {
     const [rows] = await connection.query<WorkOrderBatchSummaryRow[]>(
       `SELECT b.id,b.batch_no,b.status,b.planned_quantity,${lastStepReportedQuantitySql('b.id', true)} last_step_reported_quantity,
-        c.current_revision_id,r.available_quantity approved_available_quantity
+        c.current_revision_id,(round.baseline_planned_received+COALESCE((SELECT a.quantity FROM production_output_allocation a WHERE a.revision_id=r.id AND a.category='self_made'),0)) approved_available_quantity
        FROM production_batches b
        LEFT JOIN production_batch_closeout c ON c.production_batch_id=b.id
        LEFT JOIN production_output_revision r ON r.id=c.current_revision_id AND r.closeout_id=c.id
+       LEFT JOIN production_output_round round ON round.id=r.round_id
        WHERE b.work_order_id=?
        ORDER BY b.id
        FOR UPDATE`,

@@ -22,7 +22,6 @@ export type ReceiptLineRow = RowDataPacket & {
   supplier_batch_code: string | null;
   current_receipt_revision_id: number;
   current_round_id: number | null;
-  batch_id: number | string | null;
   over_receipt_note: string | null;
   version: number;
 };

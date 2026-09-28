@@ -1,6 +1,8 @@
 import { Inject, Injectable, type OnModuleInit } from '@nestjs/common';
 import { withActiveConnection } from '@company/database';
 import type { Pool, PoolConnection, ResultSetHeader } from 'mysql2/promise';
+import type { StartFinishedInspectionResult } from '@company/contracts';
+import { writeInventoryAudit } from './mysql-production-inventory.shared.js';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
 import {
@@ -46,15 +48,58 @@ export class MysqlProductionFinishedInspectionSource
       throw error;
     }
   }
+  start(
+    batchId: string,
+    version: number,
+    context: CommandContext,
+  ): Promise<StartFinishedInspectionResult> {
+    return this.active(async (db) => {
+      const row = await lockOutputBatch(db, batchId);
+      requireEditableOutput(row, version);
+      if (!draftOf(row) || row.current_round_id === null)
+        throw new QualityCommandError('INVALID_STATE', '请先保存本轮产出草稿');
+      const [changed] = await db.execute<ResultSetHeader>(
+        "UPDATE production_output_round SET status='inspecting',version=version+1,updated_by=? WHERE id=? AND closeout_id=? AND status='pending_inspection'",
+        [context.actorId, row.current_round_id, row.id],
+      );
+      if (changed.affectedRows !== 1)
+        throw new QualityCommandError('INVALID_STATE', '本轮已开始、已完成或已被替代');
+      await db.execute(
+        'UPDATE production_batch_closeout SET version=version+1,updated_by=? WHERE id=?',
+        [context.actorId, row.id],
+      );
+      await writeInventoryAudit(
+        db,
+        context,
+        'production-output.inspection.start',
+        'production_batch',
+        batchId,
+        null,
+        { closeoutId: String(row.id), roundId: String(row.current_round_id) },
+      );
+      return { batchId, roundId: String(row.current_round_id), version: row.version + 1 };
+    });
+  }
   prepare(batchId: string, version: number): Promise<FinishedInspectionSource> {
     return this.active(async (db) => {
       const row = await lockOutputBatch(db, batchId);
       requireEditableOutput(row, version);
+      if (row.current_round_id === null)
+        throw new QualityCommandError('INVALID_STATE', '请先保存本轮产出草稿');
+      const [[round]] = await db.query<
+        (import('mysql2/promise').RowDataPacket & { status: string })[]
+      >('SELECT status FROM production_output_round WHERE id=? AND closeout_id=? FOR UPDATE', [
+        row.current_round_id,
+        row.id,
+      ]);
+      if (!round || round.status !== 'inspecting')
+        throw new QualityCommandError('INVALID_STATE', '当前办理轮次不能登记检验，请刷新');
       const declared = draftOf(row);
       if (!declared)
         throw new QualityCommandError('INVALID_STATE', '产线须先保存产出草稿，再登记检验');
       return {
         closeoutId: String(row.id),
+        roundId: String(row.current_round_id),
         batchId,
         version: row.version,
         declared: {
@@ -70,6 +115,10 @@ export class MysqlProductionFinishedInspectionSource
       const [updated] = await db.execute<ResultSetHeader>(
         'UPDATE production_batch_closeout SET version=version+1,updated_by=? WHERE id=? AND production_batch_id=? AND version=?',
         [context.actorId, source.closeoutId, source.batchId, source.version],
+      );
+      await db.execute(
+        "UPDATE production_output_round SET status='pending_finalization',version=version+1,updated_by=? WHERE id=? AND closeout_id=? AND status<>'superseded'",
+        [context.actorId, source.roundId, source.closeoutId],
       );
       if (updated.affectedRows !== 1)
         throw new QualityCommandError('CONCURRENT_MODIFICATION', '产出来源已变化，请刷新');

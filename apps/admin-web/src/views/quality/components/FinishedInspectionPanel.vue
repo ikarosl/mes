@@ -5,10 +5,14 @@
       <el-button
         type="primary"
         :disabled="
-          !detail.canRecordInspection || busy || unresolved || Boolean(error) || inspectionOpen
+          (!detail.canStartInspection && !detail.canRecordInspection) ||
+          busy ||
+          unresolved ||
+          Boolean(error) ||
+          inspectionOpen
         "
         @click="$emit('start')"
-        >{{ detail.latestInspectionId ? '新增复检记录' : '登记线下质检' }}</el-button
+        >{{ detail.canStartInspection ? '开始本轮检验' : '填写本轮检验' }}</el-button
       >
     </div>
     <el-alert

@@ -1,4 +1,7 @@
+import type { InventoryInboundTarget } from '@company/contracts';
+
 export interface PurchaseReceiptInboundLine {
+  detailKey: string;
   allocationId: string;
   receiptLineId: string;
   receiptRevisionId: string;
@@ -9,7 +12,7 @@ export interface PurchaseReceiptInboundLine {
   materialVariantCode: string;
   unit: string;
   quantity: string;
-  batchId: string | null;
+  target: InventoryInboundTarget;
 }
 
 /** 来源模块须已锁到货及消费范围，并通过 Quality 校验有效放行依据。 */
@@ -23,6 +26,7 @@ export interface ConfirmPurchaseReceiptResult {
   inboundId: string;
   inboundNo: string;
   details: Array<{
+    detailKey: string;
     receiptLineId: string;
     allocationId: string;
     batchId: string;
@@ -33,6 +37,8 @@ export interface ConfirmPurchaseReceiptResult {
 
 export interface ReceiptInboundFact {
   allocationId: string;
+  batchId: string;
+  batchCode: string;
   inboundId: string;
   inboundNo: string;
   inboundDetailId: string;
@@ -45,8 +51,6 @@ export interface ReceiptInboundFact {
 
 export interface ReceiptInboundFacts {
   receiptLineId: string;
-  batchId: string | null;
-  batchCode: string | null;
   inboundQuantity: string;
   receipts: ReceiptInboundFact[];
 }

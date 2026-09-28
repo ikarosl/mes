@@ -4,6 +4,7 @@ import type {
   ReviewProductionOutputMaterialPayload,
   SubmitProductionOutputPayload,
   BeginProductionOutputCorrectionPayload,
+  BeginProductionOutputReinspectionPayload,
 } from '@company/contracts';
 import type {
   CommandContext,
@@ -20,6 +21,7 @@ import {
   REVIEW_OUTPUT_MATERIAL_SCOPE,
   SUBMIT_PRODUCTION_OUTPUT_SCOPE,
   BEGIN_OUTPUT_CORRECTION_SCOPE,
+  BEGIN_OUTPUT_REINSPECTION_SCOPE,
   CANCEL_OUTPUT_CORRECTION_SCOPE,
 } from './idempotency/production-idempotency-scopes.contract.js';
 import {
@@ -133,6 +135,27 @@ export class ProductionOutputService {
       request: { params: { batchId }, body },
       resultCodec: productionOutputResultCodec,
       handler: () => this.repository.beginCorrection(batchId, body, narrow(context)),
+    });
+    return execution.result;
+  }
+  async beginReinspection(
+    batchId: string,
+    payload: BeginProductionOutputReinspectionPayload,
+    context: IdempotentCommandContext,
+  ) {
+    const body = {
+      version: payload.version,
+      currentRevisionId: payload.currentRevisionId,
+      reason: payload.reason.trim(),
+    };
+    const execution = await this.idempotency.execute({
+      scope: BEGIN_OUTPUT_REINSPECTION_SCOPE,
+      key: context.idempotencyKey,
+      actorId: context.actorId,
+      requestId: context.requestId,
+      request: { params: { batchId }, body },
+      resultCodec: productionOutputResultCodec,
+      handler: () => this.repository.beginReinspection(batchId, body, narrow(context)),
     });
     return execution.result;
   }

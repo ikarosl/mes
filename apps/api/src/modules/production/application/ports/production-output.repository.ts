@@ -4,6 +4,7 @@ import type {
   SaveProductionOutputPayload,
   SubmitProductionOutputPayload,
   BeginProductionOutputCorrectionPayload,
+  BeginProductionOutputReinspectionPayload,
 } from '@company/contracts';
 import type { CommandContext } from '../../../../common/audit/audit.types.js';
 import type { ApprovalSubjectPreparation } from '../../../approval/public.js';
@@ -17,6 +18,11 @@ export abstract class ProductionOutputRepository {
   abstract beginCorrection(
     batchId: string,
     payload: BeginProductionOutputCorrectionPayload,
+    context: CommandContext,
+  ): Promise<ProductionOutputCommandResult>;
+  abstract beginReinspection(
+    batchId: string,
+    payload: BeginProductionOutputReinspectionPayload,
     context: CommandContext,
   ): Promise<ProductionOutputCommandResult>;
   abstract cancelCorrection(

@@ -8,11 +8,14 @@
       class="notice"
     />
     <div class="toolbar">
-      <p class="muted">
-        仅最新有效批准清单可用于入库。收齐本类别全部数量后一次确认；更正不重新开启工序。
-      </p>
+      <p class="muted">仅当前轮已定稿的剩余授权可用于分次入库；更正不重新开启工序。</p>
       <div>
         <el-button
+          v-if="detail.canBeginReinspection"
+          :disabled="busy || unresolved || Boolean(error)"
+          @click="$emit('begin-reinspection')"
+          >发起剩余产出复检</el-button
+        ><el-button
           v-if="detail.canBeginCorrection"
           :disabled="busy || unresolved || Boolean(error)"
           @click="$emit('begin-correction')"
@@ -30,13 +33,13 @@
       border
     >
       <el-descriptions-item label="生产流转入库">{{
-        detail.receipts.productionInboundId
-          ? `已入库 ${detail.receipts.productionReceivedQuantity} ${detail.check.unit} · 入库单 #${detail.receipts.productionInboundId}`
+        Number(detail.receipts.productionReceivedQuantity) > 0
+          ? `历史已入 ${detail.receipts.productionReceivedQuantity} ${detail.check.unit}`
           : '尚未确认入库'
       }}</el-descriptions-item>
       <el-descriptions-item label="额外产出入库">{{
-        detail.receipts.extraInboundId
-          ? `已入库 ${detail.receipts.extraReceivedQuantity} ${detail.check.unit} · 入库单 #${detail.receipts.extraInboundId}`
+        Number(detail.receipts.extraReceivedQuantity) > 0
+          ? `历史已入 ${detail.receipts.extraReceivedQuantity} ${detail.check.unit}`
           : '尚未确认入库'
       }}</el-descriptions-item>
     </el-descriptions>
@@ -130,6 +133,7 @@ defineProps<{
 }>();
 defineEmits<{
   'begin-correction': [];
+  'begin-reinspection': [];
   'cancel-correction': [];
   'select-revision': [string];
   'open-approval': [string];

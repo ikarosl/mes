@@ -122,6 +122,8 @@ export interface ReceiptInboundHistoryItem {
   inboundNo: string;
   inboundDetailId: string;
   transactionId: string;
+  batchId: string;
+  batchCode: string;
   inspectionId: string;
   receiptRevisionId: string;
   quantity: string;
@@ -150,8 +152,7 @@ export interface ProcurementReceiptLine {
   unit: string;
   supplierBatchCode: string | null;
   currentReceiptRevisionId: string;
-  batchId: string | null;
-  batchCode: string | null;
+  batches: Array<{ batchId: string; batchCode: string }>;
   overReceiptNote: string | null;
   version: number;
   quantities: ReceiptQuantitySummary;

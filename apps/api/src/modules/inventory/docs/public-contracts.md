@@ -1,50 +1,17 @@
 # Inventory 公开能力
 
-本文维护 Inventory 的调用者契约；跨模块所有权、事务及完整锁序见[库存协作协议](../../../../../../docs/inventory-extraction-design.md)，表字段及状态见[数据库边界](database.md)。端口只导出协议无关类型，不能传入连接、Executor 或 SQL；正式签名以 application 端口为准。
+本章维护 Inventory 向 Production、Procurement 开放的事务能力。完整锁序见[库存协作协议](../../../../../../docs/inventory-extraction-design.md)，物理字段见[数据库边界](database.md)。公开端口只传业务身份与数量，不暴露 SQL 或连接。
 
-## 库存与入库命令
+`InventoryStockCommand` 继续负责物料批次锁、生产领料负流水和退料正流水。预留与业务需求仍属 Production；库存余额只由 `inventory_transaction` 及其触发器投影决定。
 
-`InventoryStockCommand` 承担下列窄能力：
+`InventoryInboundCommand.confirmPurchaseReceipt` 接收来源已锁定并验证的到货授权明细。每条输入含独立 `detailKey`、到货/实收修订/检验/allocation 引用、物料精确版本与单位快照、正整数量和 `target`。`confirmFinishedOutput` 接收 Production 在同池事务内已锁定并验证的当前轮授权明细，每条输入含 allocation ID、revision ID、类别、正整数量与 `target`。成品与采购可以在一单中提交多条明细；一授权可在不同单或同单分次执行，多授权可归同批次。Inventory 不代替来源模块判断当前轮、审批、质量与剩余额度。
 
-| 方法 | 输入／返回及责任 |
-| --- | --- |
-| `lockMaterialBatches(ids)` | 无锁定位历史物料／版本后，通过 Product `lockHistoricalReferences({references})` 先锁父身份，再按稳定数字 ID 顺序锁批次并复核身份，返回物料 ID、精确版本、批号、单位、批次状态及现有库存量；不能返回数据库行／连接类型 |
-| `recordProductionOutbound(lines, context)` | 已由 Production 验证需求／分配／版本及数量的明细；Inventory 再核对批次身份、状态和总余额，追加 `production_material_outbound` 负流水，保留 `PMO:<order>:<detail>` 防重键 |
-| `recordProductionReturn(lines, context)` | 已由 Production 验证可退额度的明细；复用原库存批次，追加 `material_return_inbound` 公共可用库存正流水，保留来源和 `RETURN:<detail>` 防重键 |
+共用目标类型见 [`InventoryInboundTarget`](../../../../../../packages/contracts/src/production/inventory-target.ts)：`{mode:'new',clientKey,batchCode?}` 或 `{mode:'existing',batchId}`。同一请求的相同 `clientKey` 明确共用一个新批次；相同批号本身不触发复用。新批号缺省自动生成，已有批次须精确匹配成品或物料版本及单位，且状态为 `available`。同目标的每条实际明细保持正整数上限，批次累计余额使用 BIGINT 投影，不套用单笔上限。请求不能把别的来源、供应商或类别写成库批的唯一归属。
 
-预留仍属于 Production。`lockMaterialBatches` 只返回账面数量，不自行减去生产预留；Production 在同一批次锁内合计有效分配的未出库占用并判断可分配量。端口不开放任意 transaction type、任意来源表或通用覆盖余额入口。
+两种确认均在调用者事务内原子创建已完成主单、每条实际明细、匹配正流水和成功审计。物料正流水为 `purchase_inbound`，成品为 `production_inbound`。成品主单/库批采用中性 `finished_product`；计划内外归属由 `production_output_allocation.category` 经 `inbound_detail.production_output_allocation_id` 追溯。HTTP 幂等由来源用例处理。
 
-`InventoryInboundCommand` 拥有入库表写入及锁定能力：
+`InventoryInboundCommand.readFinishedTaskAllocationReceipts(batchId,lock)` 返回该任务各授权的历史实际入库量，由 Production 按授权类别汇总计划内外；`readFinishedAllocationReceipts(ids,lock)` 返回每授权实际执行量。它们只读取已完成入库明细和匹配的正流水，不用当前库存余额。`InventoryInboundQuery.getReceiptInboundFacts({receiptLineIds})` 同样按到货历史全部修订累计，返回每笔来源的 `batchId/batchCode` 集合，不预设一个到货只用一个库批。
 
-| 方法组 | 调用者与责任 |
-| --- | --- |
-| `getFinishedLocator`／`getFinishedOrder`／`listFinishedSlots`／`readFinishedReceipts` | Production 通过不带数据库类型的结果定位任务、锁入库单、核对当前类别有效单据及累计实际入库；其中带锁读取必须由来源锁在先的事务调用 |
-| `createFinishedDraft`／`updateFinishedDraft`／`cancelFinishedDraft` | Production 先校验批准来源及在审状态；Inventory 写主从表并校验单据版本／状态，保留取消事实与唯一类别约束 |
-| `confirmFinishedReceipt` | Production 在当前来源锁内核对清单 ID 与整类批准量；Inventory 创建原成品批次、绑定明细、写 `production_inbound` 正流水并确认单据；不新增分次成品规则 |
-| `confirmPurchaseReceipt` | Procurement 先锁到货／当前轮和正式分配并经 Quality 核对依据，再由 Inventory 创建已完成采购入库主从记录、生成或复用库存批次及正流水；详见下节 |
+库存批次候选公开查询 `listInboundBatchCandidates` 按成品 ID 或物料精确版本、授权单位、可用状态、批号关键词稳定分页。HTTP 入口分别为 `GET /warehouse/finished-inbound-batch-candidates`（`production:inbounds:view`）和 `GET /warehouse/material-inbound-batch-candidates`（`warehouse:inbound:view`），无需额外采购或任务页面权限。命令事务仍复核身份与状态，候选结果不授予写资格。
 
-旧 `/production/purchase-inbounds` 入口只保留 HTTP 查询契约，无采购来源的创建、确认和取消 POST 路由已移除。采购入库由新到货质检流程办理，开发库按统一约定重置，不伪造旧 pending 的采购来源。
-
-`InventoryInboundRepository` 提供现有库存批次、流水和入库历史查询，`InventoryStockCommand.materialBatchReferences` 提供历史批次展示身份。生产命令需要的身份、锁内余额与已入类别读取使用上述公开能力；展示联查遵守[登记协议](../../../../../../docs/inventory-extraction-design.md#6-展示目录与字段白名单)。库存总列表若展示预留量，预留 SQL 只能在已登记只读目录读取 Production 分配／出库，不将其转成 Inventory 预留事实。公开失败使用稳定 `InventoryCommandError`，不导出内部领域错误或 SQL 异常。
-
-盘点使用 `InventoryStockCheckRepository/Service` 独立用例；其业务实现整体迁入 Inventory，不通过 Production 代理写表。
-
-## 当前读取与批次锁
-
-`lockMaterialBatches`、`materialQuantity`、成品类别槽位及带锁收货读取要求调用方已有活跃同池事务；普通引用展示允许在事务外调用。库存批次身份先经 Product 历史引用共享锁，批次状态取 `FOR UPDATE` 当前值，余额投影取 `FOR SHARE` 当前值。`readFinishedReceipts(lock=true)` 同时对入库主从表当前读，不能只锁主单后使用明细快照汇总。
-
-所有库存批次锁先经 Product 历史引用共享锁，再按数值 ID 顺序锁批次。历史锁只验证引用存在，不代替用途资格；停用版本的采购与生产领料采用不同资格。无锁定位后必须在锁内重核。
-
-## 采购入库协议
-
-精确输入及返回类型见[采购入库端口](../application/inventory-purchase-inbound.types.ts)，命令见[InventoryInboundCommand](../application/inventory-inbound.command.ts)。
-
-`confirmPurchaseReceipt` 输入供应商名称、备注及最多 100 条实际入库明细，逐条包含到货／修订／检验／allocation ID、精确物料身份与快照、整数字符串数量及可空批次 ID。来源必须先由 Procurement 锁定当前到货行／轮次，验证 Quality 明确放行和正式分配剩余量。同一 allocation 可分多次入库，不拆分或改写授权行。Inventory 复核 Product 采购资格及已有批次状态，再原子生成 completed 入库主从单、首次批次、正流水和成功审计；返回入库单 ID／编号及各实际明细的到货、allocation、批次、入库明细和流水 ID。同一调用中同到货多分配只建一个批次，批号为 `IB-北京时间日期-随机唯一段`，入库号前缀为 `PI`。
-
-`getReceiptInboundFacts({receiptLineIds})` 按最多 100 个稳定到货 ID 返回 `{receiptLineId,batchId,batchCode,inboundQuantity,receipts}`。零入库返回空明细和数量 `0`；历史明细逐条保留修订、检验、allocation、入库单、流水和确认时间。主单必须 completed，正流水须与明细身份、批次、数量、单位及状态匹配；不按最新修订或轮次过滤，不读取余额。事务内使用主从事实与批次关联的当前共享读，随后不再申请 Product 锁或写入。后续到货更正、复检或拒收只影响未执行资格，不覆盖实际入库事实。
-
-## 身份与查询返回
-
-物料分支使用 itemId/materialVariantId，成品分支使用 productId，两组身份互斥。入库／库存查询的另一分支字段真实返回 null，禁止 String(null) 或用空字符串伪造物料身份。状态枚举可能包含预留用途，公开端口没有开放的事务类型不能据此自行生成库存流水。
-
-InventoryCommandError 是对外稳定失败结果；调用者按业务边界处理，不暴露 SQL 异常或 Inventory 内部领域错误。
+`InventoryInboundRepository` 提供入库/库存历史查询；库批来源集合从每条完成的 `inbound_detail` 与匹配正流水关联授权、批准版、采购到货和检验，不从 `item_batch` 单值推断。共批后的领用只能追溯到库批及其来源集合，不能推断领用精确消耗哪次来源。库存查询可只读联表，但业务命令校验继续通过来源公开能力。盘点仍是 Inventory 自有用例，仅处理物料批次。

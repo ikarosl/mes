@@ -1,6 +1,7 @@
 export const INVENTORY_SOURCE_TYPES = [
   'self_made',
   'production_extra',
+  'finished_product',
   'purchased',
   'outsourced',
   'return_inbound',
@@ -21,6 +22,7 @@ export const INVENTORY_ITEM_KIND_LABELS = {
 export const INVENTORY_SOURCE_TYPE_LABELS = {
   self_made: '生产流转入库',
   production_extra: '额外产出入库',
+  finished_product: '成品入库',
   purchased: '外购物料入库',
   outsourced: '委外入库',
   return_inbound: '退回入库',

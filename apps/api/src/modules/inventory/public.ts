@@ -6,8 +6,8 @@ export {
 } from './application/inventory-stock.command.js';
 export {
   InventoryInboundCommand,
-  type FinishedInboundStorage,
-  type FinishedInboundWrite,
+  type FinishedOutputInput,
+  type FinishedOutputResult,
 } from './application/inventory-inbound.command.js';
 export {
   InventoryInboundRepository,

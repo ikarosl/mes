@@ -15,10 +15,11 @@ import { MysqlInventoryPurchaseInboundWriter } from './infrastructure/mysql-inve
 import { MysqlInventoryInboundRepository } from './infrastructure/mysql-inventory-inbound.repository.js';
 import { MysqlInventoryStockCheckRepository } from './infrastructure/mysql-inventory-stock-check.repository.js';
 import { InventoryStockCheckController } from './presentation/http/inventory-stock-check.controller.js';
+import { InboundBatchCandidateController } from './presentation/http/inbound-batch-candidate.controller.js';
 
 @Module({
   imports: [DatabaseModule, ProductModule, IdentityModule],
-  controllers: [InventoryStockCheckController],
+  controllers: [InventoryStockCheckController, InboundBatchCandidateController],
   providers: [
     MysqlInventoryPurchaseInboundWriter,
     InventoryStockCheckService,

@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | Procurement | procurement_order*、receipt/line/revision/round、receipt_acceptance/allocation、supplier_return；来源命令 | 采购来源、实物草稿、正式分配、退回及关闭，禁止写需求或库存 |
 | Quality | quality_inspection_case/record；QualityInboundCommand/Query、QualityFinishedInspectionQuery及来源registry | 共用不可变检查事实；来料G/F与结论，成品保留C规则；不写来源草稿 |
-| Production | 任务、production_batch_closeout、production_output_revision | 产线修正、结案审批、批准清单，公开能力引用QC |
+| Production | 任务、production_batch_closeout、production_output_round/revision/allocation | 产线修正、结案审批、批准清单，公开能力引用QC |
 | Inventory | item_batch、inbound_order/detail、inventory_transaction与余额 | 只记录实际库存，消费精确正式依据，不能把待检保管量写成可用库存 |
 
 表均按公共审计、整数数量、FK/组合FK、并发和不可变规则设计。Quality source_kind与显式来源组互斥；结果冗余稳定来源ID仅用于组合FK，由case约束一致。采购原始来源仍固定，履约归属从不可变分配及有效范围取得。
@@ -21,7 +21,7 @@
 
 人工拒收创建 manual_rejection/finalized 轮及无 acceptance 的 return/manual_rejection 分配，真实退回引用分配／拒收轮。撤销拒收需原因及剩余量，追加 rejection_revocation/uninspected，不改 revision；拒收后更正 T 也按 receipt_correction 回待检，如仍拒收须再决定。旧未完成检查失效，旧事实保留，已入库退货不在此入口。
 
-成品沿现有线下登记，Quality通过Production注册来源能力锁可编辑根，原子创建完成case/record并推进来源版本；产线管理员引用最新记录送审，Inventory按批准清单每类一次确认。
+成品按 [ADR-0016](adr/0016-inbound-authorizations-and-stock-batches.md) 管理来源轮次及剩余授权。Quality通过Production注册来源能力锁内固定检查来源，独立开始及完成检查；产线管理员引用有效记录送审，负责人批准后按授权分次入库。两来源实际入库都由库管选择新建或已有合资格批次，来料其他业务规则保持。
 
 ## 结构、接口与界面所有者
 
@@ -30,7 +30,7 @@
 - [到货命令](../apps/api/src/modules/procurement/docs/receipts.md)：状态、权限、幂等与实际退回。
 - [查询](../apps/api/src/modules/procurement/docs/receipt-queries.md)：候选、分页、分配历史与真实执行量。
 - [Quality数据库](../apps/api/src/modules/quality/docs/database.md)：共用两表与同源约束。
-- [库存来源](../apps/api/src/modules/inventory/docs/database/inventory-ledger-and-inbound.md)：正式分配引用、固定批次及唯一账本。
+- [库存来源](../apps/api/src/modules/inventory/docs/database/inventory-ledger-and-inbound.md)：正式分配引用、自主归批及唯一账本。
 - [管理端交互](../apps/admin-web/docs/incoming-inspection-adoption.md)：数量输入、核对/分配、未知结果恢复、跨页导航。
 
 ## 迁移与验证

@@ -3,6 +3,7 @@ import { withActiveConnection, withTransaction } from '@company/database';
 import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import type {
   FinishedInspectionCommandResult,
+  StartFinishedInspectionResult,
   FinishedInspectionTaskDetail,
   FinishedInspectionTaskQuery,
   PageQuery,
@@ -25,7 +26,7 @@ import {
   listFinishedInspectionTasks,
   readFinishedInspectionTask,
 } from './queries/finished-inspection-tasks.query.js';
-const SELECT = `SELECT r.id,r.closeout_id,r.production_batch_id,c.declared_version,c.declared_available_quantity,c.declared_extra_quantity,c.declared_scrap_quantity,r.inspection_method,r.covered_quantity,(r.qualified_quantity+r.unqualified_quantity) inspected_quantity,r.unqualified_quantity,r.release_decision,r.inspected_at,r.result_note,r.evidence_reference,r.previous_record_id previous_inspection_id,r.created_by,r.created_at FROM quality_inspection_record r JOIN quality_inspection_case c ON c.id=r.case_id`;
+import { finishedInspectionSelect as SELECT } from './queries/finished-inspection-round.sql.js';
 @Injectable()
 export class MysqlQualityFinishedRepository
   extends FinishedInspectionRepository
@@ -84,11 +85,20 @@ export class MysqlQualityFinishedRepository
       if (lock && !('release' in db))
         throw new QualityCommandError('INVALID_STATE', '检验当前读要求来源活动事务');
       const [rows] = await db.query<InspectionRow[]>(
-        `${SELECT} WHERE r.closeout_id=? AND r.production_batch_id=? ORDER BY r.id${lock ? ' FOR SHARE' : ''}`,
+        `${SELECT} WHERE r.closeout_id=? AND r.production_batch_id=? ORDER BY r.id${lock ? ' FOR SHARE OF r,c' : ''}`,
         [closeoutId, batchId],
       );
       return rows.map(mapFinishedInspection);
     });
+  }
+  start(
+    batchId: string,
+    version: number,
+    context: CommandContext,
+  ): Promise<StartFinishedInspectionResult> {
+    return withTransaction(this.pool, () =>
+      this.sources.require().start(batchId, version, context),
+    );
   }
   record(
     batchId: string,
@@ -109,15 +119,18 @@ export class MysqlQualityFinishedRepository
         throw new QualityCommandError('INVALID_INPUT', '请填写检验时间、结论及凭据');
       const source = await this.sources.require().prepare(batchId, payload.version);
       const records = await this.readForCloseout(source.closeoutId, batchId, true);
+      if (records.some((record) => record.roundId === source.roundId))
+        throw new QualityCommandError('INVALID_STATE', '本轮检验已完成，请明确发起下一轮复检');
       const previousId = records.at(-1)?.id ?? null;
       const [createdCase] = await db.execute<ResultSetHeader>(
-        `INSERT INTO quality_inspection_case(source_kind,closeout_id,production_batch_id,declared_version,
+        `INSERT INTO quality_inspection_case(source_kind,closeout_id,production_batch_id,finished_round_id,declared_version,
           declared_available_quantity,declared_extra_quantity,declared_scrap_quantity,declared_quantity,
           case_type,status,reason,completed_by,completed_at,created_by,updated_by)
-          VALUES('finished',?,?,?,?,?,?,?,?,'completed',?,?,NOW(),?,?)`,
+          VALUES('finished',?,?,?,?,?,?,?,?,?,'completed',?,?,NOW(),?,?)`,
         [
           source.closeoutId,
           batchId,
+          source.roundId,
           source.version,
           source.declared.availableQuantity,
           source.declared.extraQuantity,

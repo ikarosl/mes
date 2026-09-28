@@ -302,6 +302,10 @@
           width="110"
           ><template #default="{ row }">{{ Number(row.quantity) }}</template></el-table-column
         ><el-table-column
+          prop="batchCode"
+          label="目标库存批次"
+          min-width="160"
+        /><el-table-column
           prop="transactionId"
           label="库存事实记录"
           min-width="170"

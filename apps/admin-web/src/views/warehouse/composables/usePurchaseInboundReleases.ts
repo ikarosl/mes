@@ -3,6 +3,7 @@ import type {
   ConfirmProcurementInboundPayload,
   ConfirmProcurementInboundResult,
   ProcurementInboundReleaseItem,
+  InventoryInboundTarget,
 } from '@company/contracts';
 import { procurementInboundsApi } from '../../../api/procurement-inbounds';
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
@@ -10,6 +11,8 @@ import { useProcurementCommand } from '../../procurement/composables/useProcurem
 import { EMessage } from '../../../utils/message';
 
 interface SelectedRelease {
+  detailKey: string;
+  target: InventoryInboundTarget;
   source: ProcurementInboundReleaseItem;
   quantity: number | undefined;
   error: string;
@@ -106,24 +109,68 @@ export function usePurchaseInboundReleases(
       return;
     }
     selected.value.push({
+      detailKey: crypto.randomUUID(),
+      target: { mode: 'new', clientKey: crypto.randomUUID() },
       source: { ...source },
       quantity: Number(source.approvedRemainingQuantity),
       error: '',
     });
   };
-  const remove = (allocationId: string): void => {
-    if (!locked.value)
-      selected.value = selected.value.filter((row) => row.source.allocationId !== allocationId);
+  const remove = (detailKey: string): void => {
+    if (!locked.value) selected.value = selected.value.filter((row) => row.detailKey !== detailKey);
+  };
+  const split = (detailKey: string): void => {
+    if (locked.value || selected.value.length >= 100) return;
+    const source = selected.value.find((row) => row.detailKey === detailKey);
+    if (!source) return;
+    selected.value.push({
+      detailKey: crypto.randomUUID(),
+      source: { ...source.source },
+      quantity: 1,
+      target: { mode: 'new', clientKey: crypto.randomUUID() },
+      error: '',
+    });
+  };
+  const relatedNewTargetsFor = (detailKey: string) => {
+    const current = selected.value.find((row) => row.detailKey === detailKey);
+    if (!current) return [];
+    return selected.value.flatMap((row, index) =>
+      row.detailKey !== detailKey &&
+      row.source.materialVariantId === current.source.materialVariantId &&
+      row.source.unit === current.source.unit &&
+      row.target.mode === 'new'
+        ? [
+            {
+              clientKey: row.target.clientKey,
+              batchCode: row.target.batchCode,
+              label: `第 ${index + 1} 条明细的新批次`,
+            },
+          ]
+        : [],
+    );
   };
   const validQuantities = (): boolean => {
     let valid = true;
+    const sums = new Map<string, number>();
     for (const row of selected.value) {
-      if (
-        !Number.isSafeInteger(row.quantity) ||
-        Number(row.quantity) <= 0 ||
-        Number(row.quantity) > Number(row.source.approvedRemainingQuantity)
-      ) {
-        row.error = '填写不超过当前批准剩余量的正整数';
+      row.error = '';
+      if (!Number.isSafeInteger(row.quantity) || Number(row.quantity) <= 0) {
+        row.error = '请填写正整数';
+        valid = false;
+      } else {
+        sums.set(
+          row.source.allocationId,
+          (sums.get(row.source.allocationId) ?? 0) + Number(row.quantity),
+        );
+      }
+      if (row.target.mode === 'existing' && !row.target.batchId) {
+        row.error = '请选择已有批次';
+        valid = false;
+      }
+    }
+    for (const row of selected.value) {
+      if ((sums.get(row.source.allocationId) ?? 0) > Number(row.source.approvedRemainingQuantity)) {
+        row.error = '同一授权的本次合计超过剩余量';
         valid = false;
       }
     }
@@ -131,7 +178,7 @@ export function usePurchaseInboundReleases(
   };
   const recheck = async (adopt = true): Promise<boolean> => {
     if (command.locked.value || !selected.value.length || checking.value) return false;
-    const ids = selected.value.map((row) => row.source.allocationId);
+    const ids = [...new Set(selected.value.map((row) => row.source.allocationId))];
     const current = selectedRead.begin(
       () => ids.join(',') === selected.value.map((row) => row.source.allocationId).join(','),
     );
@@ -176,7 +223,9 @@ export function usePurchaseInboundReleases(
     if (locked.value || !(await recheck(false))) return;
     const body: ConfirmProcurementInboundPayload = {
       remark: remark.value.trim() || null,
-      details: selected.value.map(({ source, quantity }) => ({
+      details: selected.value.map(({ detailKey, source, quantity, target }) => ({
+        detailKey,
+        target,
         receiptLineId: source.receiptLineId,
         roundId: source.roundId,
         roundVersion: source.roundVersion,
@@ -232,6 +281,8 @@ export function usePurchaseInboundReleases(
     isSelected,
     toggle,
     remove,
+    split,
+    relatedNewTargetsFor,
     recheck,
     open,
     submit,

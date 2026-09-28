@@ -1,20 +1,17 @@
-import type { PageQuery, ReasonedVersionedCommand, VersionedCommand } from '../common.js';
-import type { InboundOrderStatus } from './statuses.js';
+import type { PageQuery } from '../common.js';
 import type { ProductionOutputRevision } from './output.js';
-
+import type { InventoryInboundTarget } from './inventory-target.js';
 export type FinishedGoodsInboundSource = 'self_made' | 'production_extra';
-
+export type FinishedGoodsInboundTarget = InventoryInboundTarget;
 export interface FinishedGoodsInboundQuery extends PageQuery {
   keyword?: string;
   sourceType?: FinishedGoodsInboundSource;
-  status?: InboundOrderStatus;
+  status?: 'completed';
 }
-
 export interface FinishedGoodsInboundCandidateQuery extends PageQuery {
   keyword?: string;
-  sourceType: FinishedGoodsInboundSource;
+  sourceType?: FinishedGoodsInboundSource;
 }
-
 export interface FinishedGoodsInboundCandidate {
   productionBatchId: string;
   batchNo: string;
@@ -25,21 +22,31 @@ export interface FinishedGoodsInboundCandidate {
   productName: string;
   unit: string;
   sourceType: FinishedGoodsInboundSource;
+  allocationId: string;
   outputRevisionId: string;
   revisionNo: number;
-  approvedQuantity: string;
-  pendingInboundId: string | null;
-  completedInboundId: string | null;
-  canCreate: boolean;
+  authorizedQuantity: string;
+  receivedQuantity: string;
+  remainingQuantity: string;
+  canConfirm: boolean;
   blockers: string[];
 }
-
+export interface FinishedGoodsInboundOrderLine {
+  inboundDetailId: string;
+  allocationId: string;
+  outputRevisionId: string;
+  revisionNo: number;
+  sourceType: FinishedGoodsInboundSource;
+  quantity: string;
+  itemBatchId: string;
+  batchCode: string;
+  inventoryTransactionId: string;
+  approvedOutput?: ProductionOutputRevision;
+}
 export interface FinishedGoodsInboundOrderItem {
   inboundId: string;
   inboundNo: string;
-  sourceType: FinishedGoodsInboundSource;
-  status: InboundOrderStatus;
-  version: number;
+  status: 'completed';
   productionBatchId: string;
   batchNo: string;
   workOrderId: string;
@@ -48,57 +55,27 @@ export interface FinishedGoodsInboundOrderItem {
   productCode: string;
   productName: string;
   unit: string;
-  outputRevisionId: string;
-  currentOutputRevisionId: string;
-  revisionNo: number;
   inboundQuantity: string;
-  batchCode: string;
-  itemBatchId: string | null;
-  inventoryTransactionId: string | null;
+  details: FinishedGoodsInboundOrderLine[];
   createdById: string;
   createdByName: string;
   createdAt: string;
-  operatorId: string | null;
-  operatorName: string | null;
-  inboundAt: string | null;
+  inboundAt: string;
   remark: string | null;
-  cancelReason: string | null;
-  cancelledById: string | null;
-  cancelledByName: string | null;
-  cancelledAt: string | null;
-  canEdit: boolean;
-  canConfirm: boolean;
-  canCancel: boolean;
-  blockers: string[];
 }
-
-export interface FinishedGoodsInboundOrderDetail extends FinishedGoodsInboundOrderItem {
-  /** 仓管在入库权限内读取实际采用的批准依据，无需任务管理权限。 */
-  approvedOutput: ProductionOutputRevision;
-  /** 最新批准依据；明确展示旧单接受新版前后的差额。 */
-  currentApprovedOutput: ProductionOutputRevision;
+export type FinishedGoodsInboundOrderDetail = FinishedGoodsInboundOrderItem;
+export interface ConfirmFinishedGoodsInboundLine {
+  detailKey: string;
+  allocationId: string;
+  revisionId: string;
+  quantity: number;
+  target: FinishedGoodsInboundTarget;
 }
-
-export interface CreateFinishedGoodsInboundPayload {
+export interface ConfirmFinishedGoodsInboundPayload {
   productionBatchId: string;
-  sourceType: FinishedGoodsInboundSource;
-  outputRevisionId: string;
-  batchCode: string;
+  details: ConfirmFinishedGoodsInboundLine[];
   remark?: string | null;
 }
-
-export interface UpdateFinishedGoodsInboundPayload extends VersionedCommand {
-  outputRevisionId: string;
-  batchCode: string;
-  remark?: string | null;
-}
-
-export interface ConfirmFinishedGoodsInboundPayload extends VersionedCommand {
-  outputRevisionId: string;
-}
-
-export type CancelFinishedGoodsInboundPayload = ReasonedVersionedCommand;
-
 export interface FinishedGoodsInboundCommandResult {
   inboundId: string;
 }

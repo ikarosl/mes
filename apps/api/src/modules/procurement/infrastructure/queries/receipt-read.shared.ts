@@ -31,11 +31,10 @@ export const lineSelect = (columns: string) => `SELECT ${columns} FROM procureme
   JOIN procurement_order po ON po.id=line.purchase_order_id
   JOIN procurement_order_line pol ON pol.id=line.purchase_order_line_id
   JOIN procurement_supplier supplier ON supplier.id=pol.supplier_id
-  JOIN materials material ON material.id=line.item_id
-  LEFT JOIN item_batch batch ON batch.id=line.batch_id`;
+  JOIN materials material ON material.id=line.item_id`;
 export const LINE_COLUMNS = `line.id,line.receipt_id,line.purchase_order_id,line.purchase_order_line_id,line.line_no,
   line.item_id,pol.item_code_snapshot,material.material_name,line.material_variant_id,pol.material_variant_code_snapshot,
-  pol.unit_snapshot,line.supplier_batch_code,line.current_receipt_revision_id,line.batch_id,batch.batch_code,
+  pol.unit_snapshot,line.supplier_batch_code,line.current_receipt_revision_id,
   line.over_receipt_note,line.version,line.current_round_id,r.receipt_no,po.purchase_no,pol.supplier_id,supplier.supplier_name`;
 export const inboundFactSelect = (
   columns: string,
@@ -44,11 +43,12 @@ export const inboundFactSelect = (
     AND tx.transaction_type='purchase_inbound' AND tx.quantity=detail.inbound_number AND tx.quantity>0
     AND tx.batch_id=detail.batch_id AND tx.item_id=detail.item_id AND tx.material_variant_id=detail.material_variant_id
     AND tx.unit_snapshot=detail.unit_snapshot AND tx.stock_status=detail.stock_status
+  JOIN item_batch batch ON batch.id=detail.batch_id
   WHERE inbound.source_type='purchased' AND inbound.status='completed' AND detail.stock_status='available'`;
 export const INBOUND_FACT_COLUMNS = `inbound.id inbound_id,inbound.inbound_no,detail.id inbound_detail_id,tx.id transaction_id,
   detail.procurement_receipt_line_id receipt_line_id,
   detail.procurement_allocation_id allocation_id,detail.procurement_inspection_id inspection_id,detail.procurement_receipt_revision_id receipt_revision_id,
-  tx.quantity,inbound.inbound_at`;
+  tx.quantity,detail.batch_id,batch.batch_code,inbound.inbound_at`;
 export function mapReceipt(
   row: ReadRow,
   suppliers: ProcurementSupplierSummary[],
@@ -145,6 +145,8 @@ export function mapInbound(row: ReadRow): ReceiptInboundHistoryItem {
     inboundNo: text(row.inbound_no),
     inboundDetailId: text(row.inbound_detail_id),
     transactionId: text(row.transaction_id),
+    batchId: text(row.batch_id),
+    batchCode: text(row.batch_code),
     allocationId: text(row.allocation_id),
     inspectionId: text(row.inspection_id),
     receiptRevisionId: text(row.receipt_revision_id),

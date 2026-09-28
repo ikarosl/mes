@@ -1,74 +1,30 @@
-# 批准清单与成品流转入库
+# 批准产出与成品分次入库
 
-Production 拥有批准产出来源资格及用例编排；Inventory 拥有本章引用的入库主从表、库存批次、流水及余额，并通过公开能力在同一事务内写入。仍与物料库存共用 `inventory_transaction` 唯一账本。当前字段与约束由 [Inventory 库存设计](../../../inventory/docs/database/inventory-ledger-and-inbound.md)维护；[ADR-0011](../../../../../../../docs/adr/0011-task-closeout-output-list-and-finished-goods-inbound.md)保留结案与入库的决策依据。本章维护生产来源资格、批准清单及调用编排。
+Production 拥有结案草稿、办理轮次、不可变批准版及授权明细，并锁内判定当前可执行资格；Inventory 拥有入库主从、库存批次和唯一流水事实。完整跨模块关系见[已批准方案](../../../../../../../docs/finished-inbound-redesign-proposal.md)和[结案规则](production-termination.md)。本章维护 Production 的入库命令及公开边界。
 
-## 身份与范围
+## 当前授权与数量
 
-成品来源使用 Product 成品身份，物料和成品不共用一个外键身份，也不建立第二套库存账本。互斥字段、批次唯一性、快照及查询隔离见 [Inventory 成品身份与范围](../../../inventory/docs/database/inventory-ledger-and-inbound.md#成品身份与范围)。Production 只提供批准来源和资格，不直接写库存表。
+`production_output_round` 固定开始时同任务全部历史实际已入计划内／外基准、剩余申报范围、前轮和前版。开始定稿更正或明确复检时，旧轮立即标为 `superseded`；旧批准、授权和入库事实均不改写。取消更正、审批驳回或撤回不会恢复旧轮授权；可重新发起更正或复检，再经负责人审批产生当前轮新授权。
 
-## 入库单与批准版本
+批准时为累计计划内／外目标分别减去本轮固定已入基准，仅为正数的类别建立一条 `production_output_allocation`。授权行不可变；同一授权可多次、同次多明细执行。批准版 API 的累计数量由本轮基准＋对应授权派生，`production_output_revision` 不另存两份累计物理列。累计目标各自不得低于任务历史已入事实，计划内仍不得超过任务计划。已执行量取 Inventory 实际完成的入库明细及匹配正流水，不用库存批次当前余额；当前可执行余额为授权量减该授权已执行量，且仅当前轮 `finalized` 与当前批准版一致时有效。耗尽的授权退出候选。
 
-复用 Inventory 的 [入库主从表](../../../inventory/docs/database/inventory-ledger-and-inbound.md#34-入库表)。Production 批准版本是来源事实；库存主单保存实际采用版本，并由同源外键、类别唯一占位和事务核验防止错配或重复入库。草稿不是已实收库存。
+质检建议仅提示，不能直接授予入库资格。沿用旧检验的纯定稿更正，累计建议使用**检验所在轮**固定已入基准加该记录的本轮建议，不把新定稿轮基准加到旧建议。复检覆盖同任务全部剩余实物，须开始新轮并登记新检验；待复检和不放行均不能用旧授权继续入库。
 
-两类来源分别为：
+## 直接确认事务
 
-| 来源 | 名称 | 批准数量 |
-| --- | --- | --- |
-| `self_made` | 生产流转入库 | 当前有效批准版 `available_quantity` |
-| `production_extra` | 额外产出入库 | 当前有效批准版 `extra_quantity` |
+`POST /api/production/finished-goods-inbounds/actions/confirm` 使用 `production:inbounds:confirm-finished`，输入 `productionBatchId`、可选备注以及非空 `details`。每条明细含唯一 `detailKey`、当前 `allocationId/revisionId`、正整数 `quantity`、目标 `{mode:new,clientKey,batchCode?}` 或 `{mode:existing,batchId}`。同次可混合计划内／外，把同一授权拆入多个批次，并以相同 `clientKey` 把多明细归到同一新批次。没有持久化待确认入库草稿，旧创建、编辑、取消命令不开放。
 
-每张单数量等于对应类别的全部批准数量，不开放分次收货；数量为零不建单。两个类别没有办理先后依赖，可以在不同时间分别确认。已确认类别不能通过更改批准数量另建同类单据追加收货。
+锁序为工单 → 生产任务 → 结案根 → 当前授权 → Inventory 批次。Production 在同一事务核验任务已结案、轮次已定稿且仍为当前轮、版本是当前批准版、无审批冻结，并按授权聚合本次数量，通过 Inventory public 能力取得各授权历史已执行量后检查剩余额度。随后调用 `InventoryInboundCommand.confirmFinishedOutput`；Inventory 核验产品与目标批次，写主单、多明细、批次、正流水及成功审计。入库单主表的 `finished_product` 只表示成品来源，类别和批准版由每条明细所引用的授权确定。Inventory 批次可承接多次来源，来源查询沿明细追溯，不从库存余额倒推某版本已入量。
 
-## 命令、锁序与确认事务
+任何一项失败均回滚整次确认；幂等键和业务事实一起提交。Production 不直接写 Inventory 表，也不查询其内部表做业务写资格。候选和历史展示在已登记的专用只读查询中读取批准字段及入库事实；每条历史明细返回授权、批准版、检验依据、数量、批次和流水。批号从 `item_batch.batch_code` 读，废弃 `requested_batch_code`。
 
-写命令锁序为：**工单 → 生产任务 → 结案根 → Product 历史成品身份共享锁 → Inventory 入库单 → 库存批次**。与结案清单更正使用相同根锁。首次创建有效类别草稿时，数据库唯一占位再次防止并发重复；API 还须使用幂等键和版本校验。
+## HTTP 查询与权限
 
-创建／编辑草稿锁内复核：任务存在且已结案；选择的是结案根 `current_revision_id`；成品与任务一致；类别量为正；该类尚未确认；不存在另一张有效同类草稿；相应类别没有受在审更正冻结。草稿可以修改批号、说明及引用的最新批准版本，数量随所选版本的对应类别整体更新。
-
-确认时重新执行上述资格核对，不能只信任创建草稿时的检查：
-
-1. 锁定来源及入库单，复核待确认状态、版本、最新有效批准版和类别冻结。
-2. 复核该明细数量等于最新清单该类别的全量，仓管已核对实物并收齐；旧纸质清单和旧草稿不能绕过当前版本。
-3. 创建新的成品 `item_batch`，记录成品、批号、工单、任务、来源类别、编码和单位；将批次 ID 回填该明细。
-4. 追加一条 `inventory_transaction`：`production_inbound`、正数、`available`，引用该明细，同事务维护批次余额。
-5. 将主单置 `completed`，写确认人、时间、版本及成功审计，和幂等结果一起提交。
-
-数据库触发器允许这个事务内部的合法中间步骤：主单仍为 pending 时先建立批次、回填明细及追加流水，再将主单完成。不能在每条 SQL 上禁止该顺序。草稿创建不建批次由创建命令保证；completed 的数据库守卫要求恰好一条与采用批准版数量、成品批次、来源和正流水一致的明细。取消只允许尚未绑定库存批次的待确认成品单，不写流水，并保留取消明细。
-
-成品流水唯一键 `(product_id,reference_type,reference_detail_id,transaction_type)` 防止相同成品明细重复记账；结合类别唯一占位、明确的源版本和幂等协议共同防重。流水不可变规则继续适用；本阶段不提供成品出库、成品库存报废或已确认成品入库冲销。
-
-## 清单更正与收货
-
-更正批准不改已发生的库存流水。已确认类别批准量保持原值；另一尚未确认类别仍可更正。**当前实现**在更正在审期间仅冻结数量受影响类别；仅修改报废或说明不自动冻结两个类别。读取冻结依据须比较正在审批的草稿和当前批准版，不能根据页面缓存推断。
-
-更正批准后 `current_revision_id` 切换，未确认草稿引用旧版时必须刷新并保存新版后才能确认。历史入库单始终保留当次实际采用的批准版；不回写为新版本。仓管线下拒收不强制创建差异单，差异与核实结果保留于清单更正及前后审批。
-
-**CQ-01已确认目标，待实施**：发起剩余实物复检时，Production固定已入基准I₀及全部剩余送检范围，立即冻结剩余入库资格，不再等到数量变化的清单进入审批才冻结。明确放行、产线核对及新清单批准全部完成后，仓管才能采用新依据办理；待复检／不放行不恢复旧依据，取消更正不能隐含恢复已暂停的旧放行。
-
-固定 I₀、本轮建议与累计比较、原有说明和负责人审批的完整目标由[结案专题](production-termination.md#部分已入后的复检已确认目标待实施)维护。新依据的 I₀ 不随入库增长，历史建议不累加；本篇只维护当前与目标对收货冻结的影响。
-
-正式批准数量仍是实际入库授权，检验建议不替代或自动扩大它。既有类别一次确认、已入类别锁量、计划内任务上限及库存防重规则保留，建议值、批准版本及实际入库可关联追溯。完整数量定义见[Quality已确认目标](../../../quality/docs/finished-inspections.md#部分已入后的复检已确认目标待实施)。此项不增加任意分次成品入库、在库质量、成品出库或已确认入库冲销。固定基准、剩余范围快照与冻结差异仍登记于[CQ-01](../../../../../../../docs/documentation-conflicts.md#cq-01)，整改及验收统一见[路线图](../../../../../../../docs/roadmap.md#cq-01成品剩余复检整改)。
-
-## 余额投影
-
-成品入库通过 Inventory 公开能力写入唯一库存流水，同事务维护批次余额；Production 不直接维护余额。物料/成品投影分支、重建与对账见 [Inventory 余额规则](../../../inventory/docs/database/inventory-ledger-and-inbound.md#74-余额投影维护规则)。
-
-## API 与权限
-
-页面仍为入库管理，不新增独立成品菜单或路由权限。接口约定：
-
-| 路径（`/api/production/finished-goods-inbounds`） | 权限与用途 |
+| 路径（`/api/production/finished-goods-inbounds`） | 权限与结果 |
 | --- | --- |
-| `GET /` | 既有 `production:inbounds:view`；分页查询两类成品单据 |
-| `GET /candidates` | 同上；查询任务、当前批准版、两类量及各类草稿／确认／冻结状态 |
-| `GET /:inboundId` | 同上；单据、明细、采用批准版和库存来源追溯 |
-| `POST /` | `production:inbounds:create-finished`；创建草稿 |
-| `PUT /:inboundId` | 同上；按版本修改草稿并核对最新清单 |
-| `POST /:inboundId/actions/confirm` | `production:inbounds:confirm-finished`；仓管整类一次确认 |
-| `POST /:inboundId/actions/cancel` | `production:inbounds:cancel-finished`；填写原因取消未确认单 |
+| `GET /` | `production:inbounds:view`；已确认单据分页，按明细显示类别与来源 |
+| `GET /candidates` | 同上；当前未耗尽授权、各授权量／已执行／剩余额度及阻断原因 |
+| `GET /:inboundId` | 同上；每条明细实际批次、原批准版、质检与审批证据 |
+| `POST /actions/confirm` | `production:inbounds:confirm-finished`；直接多明细确认 |
 
-以上新写权限均挂既有入库查看权限。页面内部按钮不要求逐项隐藏；每个后端入口独立鉴权，质检人员或产线草稿权限不能替代仓库确认权限。
-
-## 迁移边界
-
-成品身份切换的空数据守卫、停写、up/down 顺序及失败恢复见 [202609170002 迁移边界](../../../../../../../packages/database/docs/migration-safety.md#202609170002成品入库身份)。历史 SQL 不表示当前环境已执行迁移；不得用只执行 schema 的方式开放尚未接入的业务能力。
+页面权限不代替上述后端独立鉴权。库存、批次、归批资格及约束由[Inventory 所有者](../../../inventory/docs/database/inventory-ledger-and-inbound.md)维护；本章不复制其结构。迁移只追加成对文件，开发数据按[迁移安全](../../../../../../../packages/database/docs/migration-safety.md)和统一初始化入口重建。正式测试与用户验收状态见[路线图](../../../../../../../docs/roadmap.md)。

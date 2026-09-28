@@ -36,6 +36,14 @@ type InventoryRow = RowDataPacket & {
 type SourceRow = RowDataPacket & {
   batch_id: number;
   inbound_id: number;
+  inbound_detail_id: number;
+  production_output_allocation_id: number | null;
+  production_batch_id: number | null;
+  work_order_id: number | null;
+  procurement_receipt_line_id: number | null;
+  procurement_receipt_revision_id: number | null;
+  procurement_inspection_id: number | null;
+  procurement_allocation_id: number | null;
   inbound_no: string;
   provider: string | null;
   inbound_at: Date;
@@ -59,10 +67,9 @@ type TransactionRow = RowDataPacket & {
   created_at: Date;
 };
 // 成品名称使用 Production 已冻结的来源工单名称；物料继续读当前名称，不跨模块读取 products。
-const displayNameSql = `CASE WHEN ib.product_id IS NULL THEN ${currentMaterialNameSql('ib.item_id')} ELSE source_order.product_name_snapshot END`;
-const batchSourceSql = (columns: string): string => `SELECT ${columns} FROM item_batch ib
-  LEFT JOIN production_batches source_batch ON source_batch.id=ib.source_production_batch_id
-  LEFT JOIN work_orders source_order ON source_order.id=source_batch.work_order_id`;
+const finishedNameSql = `(SELECT wo.product_name_snapshot FROM inbound_detail d JOIN inbound_order o ON o.id=d.inbound_id JOIN work_orders wo ON wo.id=o.work_order_id WHERE d.batch_id=ib.id AND o.status='completed' ORDER BY d.id LIMIT 1)`;
+const displayNameSql = `CASE WHEN ib.product_id IS NULL THEN ${currentMaterialNameSql('ib.item_id')} ELSE ${finishedNameSql} END`;
+const batchSourceSql = (columns: string): string => `SELECT ${columns} FROM item_batch ib`;
 
 export async function listInventoryBatches(
   db: Db,
@@ -76,12 +83,21 @@ export async function listInventoryBatches(
       query.itemKind === 'material' ? 'ib.product_id IS NULL' : 'ib.product_id IS NOT NULL',
     );
   if (query.sourceType) {
-    where.push('ib.source_type=?');
-    params.push(query.sourceType);
+    const sourceBatchIdsSql = `SELECT source_detail.batch_id FROM inbound_detail source_detail
+      JOIN inbound_order source_order ON source_order.id=source_detail.inbound_id AND source_order.status='completed'
+      LEFT JOIN production_output_allocation source_allocation ON source_allocation.id=source_detail.production_output_allocation_id
+      WHERE COALESCE(source_allocation.category,source_order.source_type)=? OR source_order.source_type=?`;
+    where.push(`ib.id IN (${sourceBatchIdsSql})`);
+    params.push(query.sourceType, query.sourceType);
   }
   if (query.keyword) {
+    const sourceKeywordBatchIdsSql = `SELECT source_detail.batch_id FROM inbound_detail source_detail
+      JOIN inbound_order source_order ON source_order.id=source_detail.inbound_id AND source_order.status='completed'
+      LEFT JOIN production_batches source_batch ON source_batch.id=source_order.production_batch_id
+      LEFT JOIN work_orders source_work_order ON source_work_order.id=source_order.work_order_id
+      WHERE source_batch.batch_no LIKE ? OR source_work_order.work_order_no LIKE ?`;
     where.push(
-      `(ib.item_code_snapshot LIKE ? OR ${displayNameSql} LIKE ? OR ib.material_variant_code_snapshot LIKE ? OR source_batch.batch_no LIKE ? OR source_order.work_order_no LIKE ?)`,
+      `(ib.item_code_snapshot LIKE ? OR ${displayNameSql} LIKE ? OR ib.material_variant_code_snapshot LIKE ? OR ib.id IN (${sourceKeywordBatchIdsSql}))`,
     );
     params.push(...Array<string>(5).fill(`%${query.keyword}%`));
   }
@@ -153,26 +169,39 @@ async function loadInventories(
   const placeholders = ids.map(() => '?').join(',');
   const [rows] = await db.query<InventoryRow[]>(
     `SELECT ib.id,ib.item_id,ib.product_id,ib.material_variant_id,ib.item_code_snapshot,
-     ib.material_variant_code_snapshot,ib.unit_snapshot,ib.batch_code,ib.source_type,ib.provider,
-     ib.batch_status,ib.source_work_order_id,ib.source_production_batch_id,
+     ib.material_variant_code_snapshot,ib.unit_snapshot,ib.batch_code,ib.source_type,source_summary.provider,
+     ib.batch_status,source_summary.source_work_order_id,source_summary.source_production_batch_id,
      ${displayNameSql} item_name,source_order.work_order_no source_work_order_no,source_batch.batch_no source_production_batch_no,
      COALESCE(balance.current_quantity,0) on_hand,
      CASE WHEN ib.product_id IS NOT NULL THEN 0 ELSE COALESCE((SELECT SUM(GREATEST(a.assigned_number-COALESCE((SELECT SUM(od.outbound_number)
        FROM outbound_detail od JOIN outbound_order oo ON oo.id=od.outbound_id WHERE od.allocation_id=a.id AND oo.status='completed'),0),0))
        FROM production_item_allocation a WHERE a.batch_id=ib.id AND a.item_id=ib.item_id AND a.material_variant_id=ib.material_variant_id AND a.allocation_status NOT IN ('released','cancelled')),0) END reserved
      FROM item_batch ib
-     LEFT JOIN production_batches source_batch ON source_batch.id=ib.source_production_batch_id
-     LEFT JOIN work_orders source_order ON source_order.id=source_batch.work_order_id
+     LEFT JOIN (SELECT d.batch_id,
+       CASE WHEN COUNT(DISTINCT o.provider)=1 AND SUM(o.provider IS NULL)=0 THEN MIN(o.provider) ELSE NULL END provider,
+       CASE WHEN COUNT(DISTINCT o.work_order_id)=1 AND SUM(o.work_order_id IS NULL)=0 THEN MIN(o.work_order_id) ELSE NULL END source_work_order_id,
+       CASE WHEN COUNT(DISTINCT o.production_batch_id)=1 AND SUM(o.production_batch_id IS NULL)=0 THEN MIN(o.production_batch_id) ELSE NULL END source_production_batch_id
+       FROM inbound_detail d JOIN inbound_order o ON o.id=d.inbound_id AND o.status='completed'
+       JOIN inventory_transaction t ON t.reference_type='inbound_detail' AND t.reference_detail_id=d.id
+         AND t.batch_id=d.batch_id AND t.quantity=d.inbound_number AND t.unit_snapshot=d.unit_snapshot AND t.stock_status=d.stock_status
+         AND t.transaction_type IN ('purchase_inbound','production_inbound') AND t.quantity>0
+         AND ((d.product_id IS NOT NULL AND t.product_id=d.product_id) OR (d.product_id IS NULL AND t.item_id=d.item_id AND t.material_variant_id=d.material_variant_id))
+       WHERE d.batch_id IN (${placeholders}) GROUP BY d.batch_id) source_summary ON source_summary.batch_id=ib.id
+     LEFT JOIN production_batches source_batch ON source_batch.id=source_summary.source_production_batch_id
+     LEFT JOIN work_orders source_order ON source_order.id=source_summary.source_work_order_id
      LEFT JOIN inventory_batch_balance balance ON balance.batch_id=ib.id AND balance.stock_status='available'
      WHERE ib.id IN (${placeholders}) ORDER BY ib.id DESC`,
-    ids,
+    [...ids, ...ids],
   );
   const [sources] = await db.query<SourceRow[]>(
-    `SELECT d.batch_id,o.id inbound_id,o.inbound_no,o.provider,o.inbound_at,d.inbound_number,it.id transaction_id,o.source_type,o.output_revision_id,r.revision_no output_revision_no
+    `SELECT d.batch_id,d.id inbound_detail_id,o.id inbound_id,o.inbound_no,o.provider,o.inbound_at,d.inbound_number,it.id transaction_id,COALESCE(a.category,o.source_type) source_type,r.id output_revision_id,r.revision_no output_revision_no,d.production_output_allocation_id,o.production_batch_id,o.work_order_id,d.procurement_receipt_line_id,d.procurement_receipt_revision_id,d.procurement_inspection_id,d.procurement_allocation_id
      FROM inbound_detail d JOIN inbound_order o ON o.id=d.inbound_id AND o.status='completed'
      JOIN inventory_transaction it ON it.reference_type='inbound_detail' AND it.reference_detail_id=d.id
-       AND it.transaction_type IN ('purchase_inbound','production_inbound') AND it.quantity>0
-     LEFT JOIN production_output_revision r ON r.id=o.output_revision_id
+       AND it.transaction_type IN ('purchase_inbound','production_inbound') AND it.quantity=d.inbound_number AND it.quantity>0
+       AND it.batch_id=d.batch_id AND it.unit_snapshot=d.unit_snapshot AND it.stock_status=d.stock_status
+       AND ((d.product_id IS NOT NULL AND it.product_id=d.product_id) OR (d.product_id IS NULL AND it.item_id=d.item_id AND it.material_variant_id=d.material_variant_id))
+     LEFT JOIN production_output_allocation a ON a.id=d.production_output_allocation_id
+     LEFT JOIN production_output_revision r ON r.id=a.revision_id
      WHERE d.batch_id IN (${placeholders}) ORDER BY d.batch_id,d.id`,
     ids,
   );
@@ -217,6 +246,7 @@ async function loadInventories(
     sourceProductionBatchId: nullableId(row.source_production_batch_id),
     sourceProductionBatchNo: row.source_production_batch_no,
     inboundSources: (byBatch.get(String(row.id)) ?? []).map((source) => ({
+      inboundDetailId: String(source.inbound_detail_id),
       inboundId: String(source.inbound_id),
       inboundNo: source.inbound_no,
       provider: source.provider,
@@ -226,6 +256,13 @@ async function loadInventories(
       sourceType: source.source_type,
       outputRevisionId: nullableId(source.output_revision_id),
       outputRevisionNo: source.output_revision_no,
+      productionOutputAllocationId: nullableId(source.production_output_allocation_id),
+      productionBatchId: nullableId(source.production_batch_id),
+      workOrderId: nullableId(source.work_order_id),
+      procurementReceiptLineId: nullableId(source.procurement_receipt_line_id),
+      procurementReceiptRevisionId: nullableId(source.procurement_receipt_revision_id),
+      procurementInspectionId: nullableId(source.procurement_inspection_id),
+      procurementAllocationId: nullableId(source.procurement_allocation_id),
     })),
   }));
 }

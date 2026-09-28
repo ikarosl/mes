@@ -41,11 +41,18 @@
           >
         </el-descriptions>
         <el-alert
-          v-if="!detail.canRecordInspection"
+          v-if="!detail.canStartInspection && !detail.canRecordInspection"
           title="当前任务暂不能登记检验，请核对产出草稿或审批状态；已有记录仍可查看。"
           type="info"
           :closable="false"
           class="notice"
+        />
+        <el-alert
+          v-if="detail.currentRoundId"
+          type="info"
+          :closable="false"
+          class="notice"
+          :title="`当前办理轮次 #${detail.currentRoundId} · ${detail.currentRoundStatus ?? '待核对'}`"
         />
         <FinishedInspectionPanel
           :detail="detail"

@@ -11,7 +11,7 @@
 | id / source_kind | 主键；incoming 与 finished 的来源字段组完整且互斥 |
 | receipt_line_id / receipt_revision_id | 来料来源及发起时实收修订，组合 FK |
 | incoming_round_id | 来料整批处理轮次；与 receipt_line_id 组合 FK，唯一，一轮最多一次办理 |
-| closeout_id / production_batch_id | 成品结案与任务，同源组合 FK；来料时为空 |
+| closeout_id / production_batch_id / finished_round_id | 成品结案、任务与办理轮次，同源组合 FK；finished_round_id 唯一，一轮最多一份 case；来料时为空 |
 | declared_version / declared_available_quantity / declared_extra_quantity / declared_scrap_quantity | 成品草稿版本与三项原申报快照；来料为空 |
 | declared_quantity | 发起时申报数量D；来料是整轮尚未处置实物量，必须为正；不由抽检样本反推 |
 | case_type | initial / reinspection / inspection_correction / receipt_correction，表示办理目的 |
@@ -25,7 +25,7 @@
 
 `startCase/completeCase/supersedeCases` 只接受同池活动事务；Procurement 先锁到货与当前轮并校验资格。Quality 核对自己的版本、状态、轮次和原申报修订，不查询 Procurement 表。完成结果后由来源模块把轮次推进为待复检、不放行或待定稿；case 的 completed 不代表允许入库。
 
-成品仍沿原入口，由 Production public 锁定可编辑来源后，Quality 同事务创建 completed 办理及结果。没有新增成品轮次、单独发起冻结或库管超建议授权。
+成品先经明确开始动作由 Production public 建立并冻结来源轮次、将其推进 inspecting；Quality 的 start 接口仅编排该公开能力，此时不创建 case/record。登记时 Production public 锁定当前轮次与来源版本，Quality 在 record 同事务创建 completed case 与不可变结果；同一 finished_round_id 不能再次创建 case，必须开始新轮复检。Quality 不写来源轮次或库管超建议授权。
 
 ## 不可变结果 quality_inspection_record
 
@@ -45,9 +45,11 @@ UPDATE/DELETE 触发器禁止覆盖结果。N由G+F派生，不单独保存。�
 
 来料明确放行后，由 Procurement 定稿核实C，提示全检建议G、抽检建议C−F。用户已批准库管填写依据确认超建议数量；原G/F不改写。待复检及不放行仍不能生成正常可入依据。`QualityInboundQuery.requireReleaseBasis` 只核验 completed、明确放行、精确case/record及同到货来源，不再用旧C作硬上限；Procurement必须核验当前轮、正式授权和未消费量。
 
-成品保留检验事实的计数约束及零产出核实：全检C=N>0，抽检0<N≤C，明确放行后的派生数分别为G、C−F；其余结论不产生放行资格。零量核实仅成品使用，C=G=F=0且明确确认。应用将派生数作为定稿建议，数量差异不拦保存、送审或批准；仍要求最新记录明确放行。检验事实条件CHECK与已批准量的实际执行防重保留，表及契约结构不因建议语义改变。[CQ-01](../../../../../../docs/documentation-conflicts.md#cq-01)的固定已入基准、剩余范围快照与开始复检冻结尚待实施。
+成品保留检验事实的计数约束及零产出核实：全检C=N>0，抽检0<N≤C，明确放行后的派生数分别为G、C−F；其余结论不产生放行资格。零量核实仅成品使用，C=G=F=0且明确确认。应用将派生数作为定稿建议，数量差异不拦保存、送审或批准；仍要求最新记录明确放行。检验事实条件CHECK与已批准量的实际执行防重保留，结果表继续只保存本轮 C/G/F，固定已入基准保存在 Production 轮次。Quality 读取结果时以 case.finished_round_id 关联其基准，返回 `baselinePlannedReceived`、`baselineExtraReceived` 与派生累计建议 `I₀计划内＋I₀计划外＋R`；历史结果不因以后入库、归批或领用改变。
 
 ## 迁移及查询
+
+`202609240001-unified-inbound-allocation-target` 增加成品 `finished_round_id`、唯一键及同来源组合外键；来料 incoming_round_id 约束保持独立。
 
 `202609220001-receipt-processing-rounds` 追加成对迁移，切换来料轮次来源、失效原因及来源区分的数量CHECK。上下行在永久DDL前拒绝已有相关来料事实，不猜历史、不双写；未触及的成品事实允许保留。由开发初始化入口重建后应用，无需修改执行过的迁移。
 

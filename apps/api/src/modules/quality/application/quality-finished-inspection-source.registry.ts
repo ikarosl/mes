@@ -1,15 +1,21 @@
 import { Injectable } from '@nestjs/common';
-import type { ProductionOutputQuantities } from '@company/contracts';
+import type { ProductionOutputQuantities, StartFinishedInspectionResult } from '@company/contracts';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { QualityCommandError } from '../quality-command.error.js';
 export interface FinishedInspectionSource {
   closeoutId: string;
+  roundId: string;
   batchId: string;
   version: number;
   declared: ProductionOutputQuantities;
 }
 /** 来源模块负责锁、状态与版本；Quality 只写检验事实。调用必须共享活动事务。 */
 export interface QualityFinishedInspectionSourceHandler {
+  start(
+    batchId: string,
+    version: number,
+    context: CommandContext,
+  ): Promise<StartFinishedInspectionResult>;
   prepare(batchId: string, version: number): Promise<FinishedInspectionSource>;
   advance(source: FinishedInspectionSource, context: CommandContext): Promise<void>;
 }

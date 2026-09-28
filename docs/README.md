@@ -14,6 +14,7 @@
 - [未解决冲突索引](documentation-conflicts.md)：当前状态、双方证据、影响和待处理问题；不新增业务规则
 - [采购与外购物料入库质检业务设计](procurement-inbound-design.md)（逐行供应商、单工单需求采购）
 - [采购到入库技术设计](procurement-inbound-technical-design.md)：当前表结构、状态及公开契约
+- [成品分次入库伪结构与数据示例](finished-inbound-redesign-proposal.md)：已确认模型的职责对照、实际批号与分次入库示例；实施验证及验收由路线图维护
 - [库存协作协议](inventory-extraction-design.md)：跨模块来源、事务与锁序
 - [采购管理端设计](../apps/admin-web/docs/procurement-inbound.md)：输入、候选分页、草稿、并发与幂等约束
 - [审批接入边界](approval-design.md)
@@ -70,3 +71,4 @@
 - [采购来源、检验后入库与事实边界](adr/0013-procurement-source-and-stock-boundaries.md)
 - [任务用料边界、研发执行与产出检验](adr/0014-task-material-policy-and-output-inspection.md)
 - [统一质检数量与放行语义](adr/0015-unified-quality-quantity-semantics.md)
+- [入库授权与库存批次分离](adr/0016-inbound-authorizations-and-stock-batches.md)：成品分次入库、剩余授权与两来源自主归批

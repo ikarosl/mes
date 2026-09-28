@@ -21,6 +21,7 @@ export const HANDLE_BATCH_CLOSEOUT_SCOPE = 'production.batch-closeout.handle.v1'
 export const REVIEW_OUTPUT_MATERIAL_SCOPE = 'production.output.material-review.v1' as const;
 export const SAVE_PRODUCTION_OUTPUT_SCOPE = 'production.output.draft.v1' as const;
 export const SUBMIT_PRODUCTION_OUTPUT_SCOPE = 'production.output.submit.v1' as const;
+export const BEGIN_OUTPUT_REINSPECTION_SCOPE = 'production.output.reinspection.begin.v1' as const;
 export const BEGIN_OUTPUT_CORRECTION_SCOPE = 'production.output.correction.begin.v1' as const;
 export const CANCEL_OUTPUT_CORRECTION_SCOPE = 'production.output.correction.cancel.v1' as const;
 
@@ -47,10 +48,7 @@ export const CREATE_PURCHASE_INBOUND_IDEMPOTENCY_SCOPE =
 /** 确认外购物料入库单。 */
 export const CONFIRM_PURCHASE_INBOUND_IDEMPOTENCY_SCOPE =
   'production.purchase-inbound.confirm.v1' as const;
-export const CREATE_FINISHED_INBOUND_SCOPE = 'production.finished-inbound.create.v1' as const;
-export const UPDATE_FINISHED_INBOUND_SCOPE = 'production.finished-inbound.update.v1' as const;
-export const CONFIRM_FINISHED_INBOUND_SCOPE = 'production.finished-inbound.confirm.v1' as const;
-export const CANCEL_FINISHED_INBOUND_SCOPE = 'production.finished-inbound.cancel.v1' as const;
+export const CONFIRM_FINISHED_INBOUND_SCOPE = 'production.finished-inbound.confirm.v2' as const;
 /** 创建工序报工。 */
 export const CREATE_STEP_REPORT_IDEMPOTENCY_SCOPE = 'production.step-report.create.v3' as const;
 /** 管理员更正工序报工。 */

@@ -80,10 +80,12 @@ export class MysqlProductionTerminationRepository extends ProductionTerminationR
     header.reportedNormalQuantity = String(header.reportedNormalQuantity);
     header.existingScrapQuantity = String(header.existingScrapQuantity);
     const [[fact]] = await db.query<Fact[]>(
-      `SELECT r.id,r.revision_no,r.approval_instance_id,r.available_quantity,r.extra_quantity,
+      `SELECT r.id,r.revision_no,r.approval_instance_id,(round.baseline_planned_received+COALESCE((SELECT a.quantity FROM production_output_allocation a WHERE a.revision_id=r.id AND a.category='self_made'),0)) available_quantity,
+       (round.baseline_extra_received+COALESCE((SELECT a.quantity FROM production_output_allocation a WHERE a.revision_id=r.id AND a.category='production_extra'),0)) extra_quantity,
        r.additional_scrap_quantity,r.existing_scrap_quantity,r.review_snapshot,r.created_by,r.created_at
        FROM production_batch_closeout c JOIN production_output_revision r
          ON r.id=c.current_revision_id AND r.closeout_id=c.id
+       JOIN production_output_round round ON round.id=r.round_id
        WHERE c.production_batch_id=?${share}`,
       [batchId],
     );

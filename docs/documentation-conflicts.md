@@ -6,7 +6,6 @@
 
 | 编号 | 主题 | 类型／当前状态 | 待处理 |
 | --- | --- | --- | --- |
-| [CQ-01](#cq-01) | 成品检验数量建议及已有入库后新检验的C范围 | 数量提示已实现；剩余范围与冻结仍待整改 | 固定历史已入基准及剩余范围，补齐复检开始冻结 |
 | [CP-01](#cp-01) | 上游报工更正的下游数量下限 | 文档两种口径；待裁决 | effective_normal与effective_direct_reported的适用边界 |
 | [CP-02](#cp-02) | 过程复检关联source_rework_id | 历史提案批准状态待确认；当前明确未定稿 | 保留提案或确认撤回，不提前建模 |
 | [CO-01](#co-01) | 产品分类扁平化与树结构 | 旧目标与当前实现冲突；待裁决 | 旧扁平化目标是否仍有效 |
@@ -17,15 +16,9 @@
 
 ## CQ-01
 
-**数量建议已采用非阻断语义；固定已入基准、剩余范围快照及复检开始冻结仍有实现差异。** 原数量硬门禁由[ADR-0015](adr/0015-unified-quality-quantity-semantics.md#成品数量与职责)明确取代。当前未完成项不再包括质检建议与定稿数量的大小比较。
+成品剩余复检的语义已由 [ADR-0015](adr/0015-unified-quality-quantity-semantics.md#成品数量与职责)及 [ADR-0016](adr/0016-inbound-authorizations-and-stock-batches.md)明确：检查排除已入实物，开始重新办理时固定来源已入基准并暂停旧授权；数量建议不限制最终定稿，旧库存事实不改写。原“每类别一次入库／已入类别锁量”由类别历史已入下限和剩余授权替代。
 
-- 当前规则：[Production检查](../apps/api/src/modules/production/infrastructure/mysql-production-output.read.ts)要求引用最新且明确released的记录，不以清单总量或历史已入量超过本次建议为由阻断；[审批快照解析](../apps/api/src/modules/production/application/production-approval-snapshot.schema.ts)校验事实与派生建议，未将建议用作清单上限。历史未放行零量证据可读，不代表具有新送审／批准资格。
-- 已确认待实施：新复检覆盖本任务全部剩余送检实物，已经入库的实物不计入本轮C/G/F。发起复检时固定已入基准I₀及剩余身份／版本，冻结剩余入库资格；明确放行、产线核对和新清单批准后恢复。全检建议R=G、抽检R=C−F，累计建议S=I₀＋R只供差异核对，不限最终数量。详细定义见[Quality已确认目标](../apps/api/src/modules/quality/docs/finished-inspections.md#部分已入后的复检已确认目标待实施)。
-- 差异证据：[来源快照](../apps/api/src/modules/production/infrastructure/mysql-production-finished-inspection-source.ts)尚未固定I₀及剩余范围；[入库门禁](../apps/api/src/modules/production/infrastructure/mysql-production-finished-inbound.read.ts)仅在更正在审且类别数量变化时冻结该类别，未实现复检开始即冻结剩余资格。当前页面分列当前已入量和本次建议，不用动态当前值伪造I₀或累计建议。
-- 影响示例：计划内10件已入，剩余实物G=2/F=0且明确放行时，清单不会因为本次建议只有2而被拦截；但尚不能证明发起该次检查时已入基准固定为10，也不能仅凭打开检验表单认定剩余入库已被冻结。
-- 保持边界：原说明及负责人审批保留，不新增强制超建议说明或额外审批。已入类别数量及原批准／检验／库存事实不改写；质检不决定计划内外、报废或库存处置。计划内上限及计数合法性保持，待复检／不放行不能通过数量差异绕过，实际入库按有效正式批准量防重复。本项不新增在库质量、成品出库或入库冲销。
-
-剩余整改、用户验收及待补正式测试统一见[路线图](roadmap.md#cq-01成品剩余复检整改)。本项在固定基准与冻结差异消除前保留，不再列为业务范围待裁决。
+本项不再有待裁决的业务定义。结构切换、整体验证及用户验收的未完成事项集中在[统一整改清单](roadmap.md#成品物料入库统一整改代码核对清单)，不得由已确认规则推断验证通过。完整规则由 [Production](../apps/api/src/modules/production/docs/database/production-termination.md)与 [Quality](../apps/api/src/modules/quality/docs/finished-inspections.md)维护；本锚点仅供旧引用定位。
 
 ## CP-01
 

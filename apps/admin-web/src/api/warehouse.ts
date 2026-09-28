@@ -10,6 +10,7 @@ import type {
   MaterialLossItem,
   MaterialLossQuery,
   PageResult,
+  InventoryInboundBatchCandidate,
   ReturnOrderBatchOption,
   ReturnOrderCandidateItem,
   ReturnOrderItem,
@@ -32,6 +33,34 @@ const request = async <T>(config: RetryRequestConfig) => {
 };
 
 export const warehouseApi = {
+  listInboundBatchCandidates: (
+    params: {
+      itemKind: 'material' | 'finished_product';
+      materialVariantId?: string;
+      productId?: string;
+      unit: string;
+      keyword?: string;
+      page: number;
+      pageSize: number;
+    },
+    signal?: AbortSignal,
+  ) =>
+    request<PageResult<InventoryInboundBatchCandidate>>({
+      url:
+        params.itemKind === 'material'
+          ? '/warehouse/material-inbound-batch-candidates'
+          : '/warehouse/finished-inbound-batch-candidates',
+      params: {
+        materialVariantId: params.materialVariantId,
+        productId: params.productId,
+        unit: params.unit,
+        keyword: params.keyword,
+        page: params.page,
+        pageSize: params.pageSize,
+      },
+      signal,
+      skipErrorHandling: true,
+    }),
   listMaterialLosses: (params: MaterialLossQuery) =>
     request<PageResult<MaterialLossItem>>({ url: '/warehouse/scraps', params }),
   getMaterialLoss: (scrapId: string) =>

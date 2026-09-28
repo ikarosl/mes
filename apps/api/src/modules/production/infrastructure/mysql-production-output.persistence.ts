@@ -16,6 +16,7 @@ export type CloseoutRow = RowDataPacket & {
   material_review_note: string | null;
   inspection_record_id: number | null;
   current_revision_id: number | null;
+  current_round_id: number | null;
   correction_reason: string | null;
   approval_instance_id: number | null;
   pending_approval_id: number | null;

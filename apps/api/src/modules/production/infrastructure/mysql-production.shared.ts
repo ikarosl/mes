@@ -138,11 +138,13 @@ export type StepRow = RowDataPacket & {
 };
 
 export const WORK_ORDER_SELECT = `SELECT wo.id,wo.work_order_no,wo.order_type,wo.previous_research_order_id,wo.product_id,wo.product_code_snapshot,wo.product_name_snapshot,wo.unit_snapshot,wo.planned_quantity,wo.customer_name,wo.quality_level,wo.work_order_owner_id,wo.plan_start_date,wo.plan_end_date,${workOrderAssignedQuantitySql('wo.id')} assigned_quantity,${workOrderTerminatedPlanSql('wo.id')} terminated_planned_quantity,wo.status,wo.released_at,wo.cancel_reason,wo.cancelled_by,wo.cancelled_at,wo.close_type,wo.close_reason,wo.closed_by,wo.closed_at,wo.external_order_no,wo.remark,wo.version,wo.created_at,wo.updated_at,
-  COALESCE((SELECT SUM(r.available_quantity) FROM production_batch_closeout c
+  COALESCE((SELECT SUM(round.baseline_planned_received+COALESCE((SELECT a.quantity FROM production_output_allocation a WHERE a.revision_id=r.id AND a.category='self_made'),0)) FROM production_batch_closeout c
     JOIN production_output_revision r ON r.id=c.current_revision_id AND r.closeout_id=c.id
+    JOIN production_output_round round ON round.id=r.round_id
     WHERE r.work_order_id=wo.id),0) final_available_quantity,
-  COALESCE((SELECT SUM(r.extra_quantity) FROM production_batch_closeout c
+  COALESCE((SELECT SUM(round.baseline_extra_received+COALESCE((SELECT a.quantity FROM production_output_allocation a WHERE a.revision_id=r.id AND a.category='production_extra'),0)) FROM production_batch_closeout c
     JOIN production_output_revision r ON r.id=c.current_revision_id AND r.closeout_id=c.id
+    JOIN production_output_round round ON round.id=r.round_id
     WHERE r.work_order_id=wo.id),0) final_extra_quantity,
   COALESCE((SELECT SUM(r.additional_scrap_quantity+r.existing_scrap_quantity) FROM production_batch_closeout c
     JOIN production_output_revision r ON r.id=c.current_revision_id AND r.closeout_id=c.id
@@ -158,8 +160,9 @@ export const WORK_ORDER_SELECT = `SELECT wo.id,wo.work_order_no,wo.order_type,wo
   FROM work_orders wo`;
 export const BATCH_SELECT = `SELECT b.id,b.work_order_id,wo.work_order_no,wo.order_type,b.product_id,wo.product_code_snapshot,wo.product_name_snapshot,b.batch_no,b.route_id,b.route_code_snapshot,b.route_version_snapshot,b.planned_quantity,${lastStepReportedQuantitySql('b.id')} last_step_reported_quantity,b.plan_start_date,b.plan_end_date,b.started_at,b.status,b.material_plan_version,
   c.closeout_mode,c.current_revision_id,b.execution_completed_at,b.execution_completed_by,
-  r.revision_no approved_output_revision_no,r.available_quantity approved_available_quantity,
-  r.extra_quantity approved_extra_quantity,(r.existing_scrap_quantity+r.additional_scrap_quantity) approved_scrap_quantity,
+  r.revision_no approved_output_revision_no,
+  (round.baseline_planned_received+COALESCE((SELECT a.quantity FROM production_output_allocation a WHERE a.revision_id=r.id AND a.category='self_made'),0)) approved_available_quantity,
+  (round.baseline_extra_received+COALESCE((SELECT a.quantity FROM production_output_allocation a WHERE a.revision_id=r.id AND a.category='production_extra'),0)) approved_extra_quantity,(r.existing_scrap_quantity+r.additional_scrap_quantity) approved_scrap_quantity,
   CASE
     WHEN EXISTS (SELECT 1 FROM production_short_batch_authorization authorization WHERE authorization.production_batch_id=b.id AND authorization.status='active' AND authorization.material_plan_version=b.material_plan_version) THEN 'valid'
     WHEN EXISTS (SELECT 1 FROM production_short_batch_authorization authorization WHERE authorization.production_batch_id=b.id AND authorization.status='active') THEN 'stale'
@@ -167,7 +170,8 @@ export const BATCH_SELECT = `SELECT b.id,b.work_order_id,wo.work_order_no,wo.ord
     ELSE 'none'
   END short_batch_authorization_status,
   b.batch_owner_id owner_id,b.completed_at,b.completed_by,b.cancel_reason,b.cancelled_by,b.cancelled_at,b.remark,b.version,b.created_at,b.updated_at FROM production_batches b JOIN work_orders wo ON wo.id=b.work_order_id LEFT JOIN production_batch_closeout c ON c.production_batch_id=b.id
-  LEFT JOIN production_output_revision r ON r.id=c.current_revision_id AND r.closeout_id=c.id AND r.production_batch_id=b.id`;
+  LEFT JOIN production_output_revision r ON r.id=c.current_revision_id AND r.closeout_id=c.id AND r.production_batch_id=b.id
+  LEFT JOIN production_output_round round ON round.id=r.round_id`;
 const BATCH_LOCK_SELECT = `SELECT b.id,b.work_order_id,wo.work_order_no,wo.order_type,b.product_id,wo.product_code_snapshot,wo.product_name_snapshot,b.batch_no,b.route_id,b.route_code_snapshot,b.route_version_snapshot,b.planned_quantity,0 last_step_reported_quantity,b.plan_start_date,b.plan_end_date,b.started_at,b.status,b.material_plan_version,
   NULL closeout_mode,NULL current_revision_id,b.execution_completed_at,b.execution_completed_by,
   NULL approved_output_revision_no,NULL approved_available_quantity,NULL approved_extra_quantity,NULL approved_scrap_quantity,

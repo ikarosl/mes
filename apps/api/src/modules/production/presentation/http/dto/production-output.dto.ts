@@ -14,6 +14,7 @@ import type {
   SaveProductionOutputPayload,
   SubmitProductionOutputPayload,
   BeginProductionOutputCorrectionPayload,
+  BeginProductionOutputReinspectionPayload,
 } from '@company/contracts';
 import { VersionedCommandDto } from '../../../../../presentation/http/dto/versioned-command.dto.js';
 export class SaveProductionOutputDto
@@ -41,6 +42,13 @@ export class BeginProductionOutputCorrectionDto
   @IsString() @IsNotEmpty() @MaxLength(5000) reason!: string;
 }
 
+export class BeginProductionOutputReinspectionDto
+  extends VersionedCommandDto
+  implements BeginProductionOutputReinspectionPayload
+{
+  @IsOptional() @IsString() @Matches(/^[1-9]\d{0,19}$/) currentRevisionId: string | null = null;
+  @IsString() @IsNotEmpty() @MaxLength(5000) reason!: string;
+}
 export class ReviewProductionOutputMaterialDto
   extends VersionedCommandDto
   implements ReviewProductionOutputMaterialPayload

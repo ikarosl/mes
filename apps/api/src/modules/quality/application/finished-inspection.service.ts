@@ -13,6 +13,8 @@ import { IdentityDirectoryService } from '../../identity/public.js';
 import { FinishedInspectionRepository } from './ports/finished-inspection.repository.js';
 import {
   FINISHED_INSPECTION_RECORD_SCOPE,
+  FINISHED_INSPECTION_START_SCOPE,
+  finishedInspectionStartResultCodec,
   finishedInspectionResultCodec,
 } from './idempotency/finished-inspection-idempotency.contract.js';
 @Injectable()
@@ -46,6 +48,25 @@ export class FinishedInspectionService {
       ).map((u) => [u.id, u.displayName]),
     );
     return records.map((r) => ({ ...r, createdByName: names.get(r.createdBy) ?? r.createdBy }));
+  }
+  async start(batchId: string, version: number, context: IdempotentCommandContext) {
+    const body = { version };
+    const { result } = await this.idempotency.execute({
+      scope: FINISHED_INSPECTION_START_SCOPE,
+      key: context.idempotencyKey,
+      actorId: context.actorId,
+      requestId: context.requestId,
+      request: { params: { batchId }, body },
+      resultCodec: finishedInspectionStartResultCodec,
+      handler: () =>
+        this.repository.start(batchId, version, {
+          actorId: context.actorId,
+          requestId: context.requestId,
+          ip: context.ip,
+          userAgent: context.userAgent,
+        }),
+    });
+    return result;
   }
   async record(
     batchId: string,

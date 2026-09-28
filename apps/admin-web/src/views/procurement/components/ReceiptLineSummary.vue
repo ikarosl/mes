@@ -22,10 +22,15 @@
         >{{ line.supplierBatchCode || '未提供' }}</el-descriptions-item
       >
       <el-descriptions-item
-        label="内部批号"
+        label="已入库存批次"
         :span="2"
-        >{{ line.batchCode || '首次确认入库时生成' }}</el-descriptions-item
       >
+        {{
+          line.batches.length
+            ? line.batches.map((batch) => batch.batchCode).join('、')
+            : '暂无实际入库'
+        }}
+      </el-descriptions-item>
       <el-descriptions-item
         label="当前处理阶段"
         :span="2"

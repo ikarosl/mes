@@ -7,9 +7,13 @@ import {
   IdempotentEndpoint,
   RequirePermission,
 } from '../../../../common/security/auth.decorators.js';
+import { VersionedCommandDto } from '../../../../presentation/http/dto/versioned-command.dto.js';
 import { PageQueryDto } from '../../../../presentation/http/dto/page-query.dto.js';
 import { FinishedInspectionService } from '../../application/finished-inspection.service.js';
-import { FINISHED_INSPECTION_RECORD_SCOPE } from '../../application/idempotency/finished-inspection-idempotency.contract.js';
+import {
+  FINISHED_INSPECTION_RECORD_SCOPE,
+  FINISHED_INSPECTION_START_SCOPE,
+} from '../../application/idempotency/finished-inspection-idempotency.contract.js';
 import {
   FinishedInspectionBatchParamDto,
   FinishedInspectionTaskQueryDto,
@@ -34,6 +38,17 @@ export class FinishedInspectionController {
   @RequirePermission(PERMISSIONS.quality.finishedInspections.view)
   records(@Param() { batchId }: FinishedInspectionBatchParamDto, @Query() query: PageQueryDto) {
     return this.service.listRecords(batchId, query);
+  }
+  @Post(':batchId/actions/start')
+  @RequirePermission(PERMISSIONS.quality.finishedInspections.record)
+  @AuditInApplication()
+  @IdempotentEndpoint({ scope: FINISHED_INSPECTION_START_SCOPE })
+  start(
+    @Param() { batchId }: FinishedInspectionBatchParamDto,
+    @Body() body: VersionedCommandDto,
+    @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
+  ) {
+    return this.service.start(batchId, body.version, context);
   }
   @Post(':batchId/actions/record')
   @RequirePermission(PERMISSIONS.quality.finishedInspections.record)

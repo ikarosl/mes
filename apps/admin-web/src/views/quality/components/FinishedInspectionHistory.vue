@@ -18,6 +18,7 @@
         :column="3"
         border
       >
+        <el-descriptions-item label="检查轮次">#{{ record.roundId }}</el-descriptions-item>
         <el-descriptions-item label="当时申报版本">{{
           record.declaredVersion
         }}</el-descriptions-item>

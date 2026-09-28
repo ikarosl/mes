@@ -22,17 +22,6 @@
             :value="source"
             :label="FINISHED_GOODS_INBOUND_SOURCE_LABELS[source]" /></el-select
       ></el-form-item>
-      <el-form-item label="状态"
-        ><el-select
-          v-model="query.status"
-          clearable
-          placeholder="全部状态"
-          ><el-option
-            v-for="(label, value) in inboundOrderStatusLabels"
-            :key="value"
-            :value="value"
-            :label="label" /></el-select
-      ></el-form-item>
       <el-form-item
         ><el-button
           type="primary"
@@ -52,12 +41,9 @@
       <TableToolbar :total="total"
         ><template #actions
           ><el-button
-            v-for="source in FINISHED_GOODS_INBOUND_SOURCES"
-            :key="source"
             type="primary"
-            :plain="source === 'production_extra'"
-            @click="openCreate(source)"
-            >{{ FINISHED_GOODS_INBOUND_SOURCE_LABELS[source] }}</el-button
+            @click="openCreate('self_made')"
+            >选择成品授权入库</el-button
           ></template
         ><template #tools
           ><el-button
@@ -71,7 +57,7 @@
         v-loading="loading"
         :data="rows"
         row-key="inboundId"
-        empty-text="暂无成品入库单，可按已批准产出清单创建"
+        empty-text="暂无已确认成品入库单，可选择有效授权直接确认"
       >
         <el-table-column
           prop="inboundNo"
@@ -82,7 +68,9 @@
           label="业务来源"
           min-width="130"
           ><template #default="{ row }">{{
-            FINISHED_GOODS_INBOUND_SOURCE_LABELS[row.sourceType as FinishedGoodsInboundSource]
+            FINISHED_GOODS_INBOUND_SOURCE_LABELS[
+              row.details[0]?.sourceType as FinishedGoodsInboundSource
+            ]
           }}</template></el-table-column
         >
         <el-table-column
@@ -98,40 +86,20 @@
           min-width="190"
           ><template #default="{ row }"
             >{{ row.productCode }} · {{ row.productName }}
-            <div class="muted">{{ row.batchCode }}</div></template
-          ></el-table-column
-        >
-        <el-table-column
-          label="采用清单 / 数量"
-          min-width="165"
-          ><template #default="{ row }"
-            >第 {{ row.revisionNo }} 版 · {{ formatQuantity(row.inboundQuantity) }} {{ row.unit }}
-            <div
-              v-if="
-                row.status === 'pending' && row.outputRevisionId !== row.currentOutputRevisionId
-              "
-              class="warning"
-            >
-              批准依据已更新
+            <div class="muted">
+              {{ [...new Set(row.details.map((item: any) => item.batchCode))].join('、') }}
             </div></template
           ></el-table-column
         >
         <el-table-column
-          label="状态"
-          width="105"
-          ><template #default="{ row }"
-            ><el-tag
-              :type="
-                row.status === 'completed'
-                  ? 'success'
-                  : row.status === 'pending'
-                    ? 'warning'
-                    : 'info'
-              "
-              >{{ inboundOrderStatusLabel(row.status) }}</el-tag
-            ></template
-          ></el-table-column
+          label="实际入库数量"
+          min-width="165"
         >
+          <template #default="{ row }"
+            >{{ formatQuantity(row.inboundQuantity) }} {{ row.unit }} ·
+            {{ row.details.length }} 条明细</template
+          >
+        </el-table-column>
         <el-table-column
           label="确认时间"
           min-width="170"
@@ -148,7 +116,7 @@
               link
               type="primary"
               @click="openDetail(row.inboundId)"
-              >{{ row.status === 'pending' ? '核对 / 办理' : '查看详情' }}</el-button
+              >查看详情</el-button
             ></template
           ></el-table-column
         >
@@ -182,10 +150,6 @@ import {
 } from '@company/constants';
 import TableToolbar from '../../../components/TableToolbar.vue';
 import PaginationFooter from '../../../components/PaginationFooter.vue';
-import {
-  inboundOrderStatusLabel,
-  inboundOrderStatusLabels,
-} from '../../../constants/business-status';
 import { formatDateTimeForDisplay } from '../../../utils/date';
 import { formatQuantity } from '../../production/production-status';
 import { useFinishedGoodsInbounds } from '../composables/useFinishedGoodsInbounds';

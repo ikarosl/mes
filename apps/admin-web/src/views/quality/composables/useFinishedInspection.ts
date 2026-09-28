@@ -69,6 +69,8 @@ export function useFinishedInspection(changed: () => void) {
     recordsLoading.value = false;
   });
   const intent = useIdempotentIntent('质检记录');
+  const startIntent = useIdempotentIntent('开始成品质检');
+  let pendingStart: { batchId: string; version: number } | null = null;
   let pending: { batchId: string; body: RecordFinishedInspectionPayload } | null = null;
   const busy = computed(() => loading.value || submitting.value);
   const locked = computed(() => submitting.value || unresolved.value);
@@ -152,9 +154,57 @@ export function useFinishedInspection(changed: () => void) {
     await refresh();
     return true;
   }
-  function startInspection() {
+  function openInspectionForm() {
+    if (!detail.value?.canRecordInspection || !detail.value.declared) return;
+    Object.assign(inspection, emptyForm(), { inspectedAt: new Date().toISOString() });
+    Object.assign(inspectionDeclared, detail.value.declared);
+    inspectionVersion.value = detail.value.version;
+    inspectionOpen.value = true;
+  }
+  async function runStart() {
+    if (submitting.value || !pendingStart) return;
+    const command = pendingStart;
+    submitting.value = true;
+    try {
+      await startIntent.execute(
+        {
+          intentType: 'quality.finished-inspection.start',
+          params: { batchId: command.batchId },
+          query: {},
+          body: { version: command.version },
+        },
+        async (key) => {
+          const result = await finishedInspectionsApi.start(
+            command.batchId,
+            { version: command.version },
+            key,
+          );
+          if (
+            !result ||
+            result.batchId !== command.batchId ||
+            !/^[1-9]\d*$/.test(result.roundId) ||
+            result.version !== command.version + 1
+          )
+            throw new RequestError('服务器未返回完整的检验开始结果，请刷新后核对。', 502);
+          return result;
+        },
+      );
+      pendingStart = null;
+      unresolved.value = false;
+      changed();
+      await refresh();
+      if (batchId.value === command.batchId) openInspectionForm();
+    } catch (failure) {
+      unresolved.value = startIntent.getStatus() !== 'idle';
+      if (!unresolved.value) pendingStart = null;
+      EMessage.error(failure);
+    } finally {
+      submitting.value = false;
+    }
+  }
+  async function startInspection() {
     if (
-      !detail.value?.canRecordInspection ||
+      !detail.value ||
       !detail.value.declared ||
       busy.value ||
       unresolved.value ||
@@ -162,13 +212,29 @@ export function useFinishedInspection(changed: () => void) {
       inspectionOpen.value
     )
       return;
-    const declared = detail.value.declared;
-    Object.assign(inspection, emptyForm(), {
-      inspectedAt: new Date().toISOString(),
-    });
-    Object.assign(inspectionDeclared, declared);
-    inspectionVersion.value = detail.value.version;
-    inspectionOpen.value = true;
+    if (detail.value.canRecordInspection) {
+      openInspectionForm();
+      return;
+    }
+    if (!detail.value.canStartInspection) return;
+    const command = { batchId: batchId.value, version: detail.value.version };
+    try {
+      await RouteMessageBox.confirm(
+        '开始后固定本轮送检依据，随后填写检验事实。',
+        '开始本轮成品质检',
+        { confirmButtonText: '开始检验' },
+      );
+    } catch {
+      return;
+    }
+    if (
+      !visible.value ||
+      batchId.value !== command.batchId ||
+      detail.value?.version !== command.version
+    )
+      return;
+    pendingStart = command;
+    await runStart();
   }
   function changeInspection(changes: Partial<ProductionOutputInspectionForm>) {
     if (busy.value || unresolved.value || !inspectionOpen.value) return;
@@ -320,7 +386,9 @@ export function useFinishedInspection(changed: () => void) {
     read.invalidate();
     historyRead.invalidate();
     intent.reset();
+    startIntent.reset();
     pending = null;
+    pendingStart = null;
     unresolved.value = false;
     inspectionOpen.value = false;
     visible.value = false;
@@ -369,7 +437,7 @@ export function useFinishedInspection(changed: () => void) {
     changeInspection,
     discardInspection,
     recordInspection,
-    retry: run,
+    retry: async () => (pendingStart ? runStart() : run()),
     changePage,
     changePageSize,
   };

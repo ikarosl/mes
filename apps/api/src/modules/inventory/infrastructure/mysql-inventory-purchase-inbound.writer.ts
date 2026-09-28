@@ -1,12 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import { withActiveConnection } from '@company/database';
-import {
-  fixedIntegerQuantity,
-  integerQuantity,
-  MAX_PERSISTED_INTEGER_QUANTITY,
-} from '@company/utils';
-import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
+import { fixedIntegerQuantity, MAX_PERSISTED_INTEGER_QUANTITY } from '@company/utils';
+import type { Pool, PoolConnection, ResultSetHeader } from 'mysql2/promise';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { writeTransactionalAudit } from '../../../common/audit/transactional-audit-writer.js';
 import { toBeijingISOString } from '../../../common/time/date-time.js';
@@ -56,50 +52,40 @@ export class MysqlInventoryPurchaseInboundWriter {
           throw new InventoryDomainError('INVALID_INPUT', '入库物料与精确版本身份不一致');
       }
       const batchIds = uniqueSorted(
-        input.details.flatMap((line) => (line.batchId ? [line.batchId] : [])),
+        input.details.flatMap((line) =>
+          line.target.mode === 'existing' ? [line.target.batchId] : [],
+        ),
       );
       const locked = await this.stock.lockMaterialBatches(batchIds);
       const lockedById = new Map(locked.map((batch) => [batch.id, batch]));
-      const sourceByBatch = new Map<string, string>();
-      if (batchIds.length) {
-        const [rows] = await db.query<
-          (RowDataPacket & { id: number | string; source_type: string })[]
-        >(
-          `SELECT id,source_type FROM item_batch WHERE id IN (${batchIds.map(() => '?').join(',')}) ORDER BY id FOR UPDATE`,
-          batchIds,
-        );
-        for (const row of rows) sourceByBatch.set(String(row.id), row.source_type);
-      }
-      const receiptBatches = new Map<string, string>();
-      const batchQuantities = new Map<string, number>();
+      const resolved = new Map<PurchaseReceiptInboundLine, string>();
+      const newByKey = new Map<string, { batchId: string; identity: string }>();
       const ordered = [...input.details].sort(compareLines);
       for (const line of ordered) {
-        const existing = line.batchId ? lockedById.get(line.batchId) : undefined;
-        if (
-          line.batchId &&
-          (!existing ||
+        let batchId: string;
+        if (line.target.mode === 'existing') {
+          const existing = lockedById.get(line.target.batchId);
+          if (
+            !existing ||
             existing.itemId !== line.itemId ||
             existing.materialVariantId !== line.materialVariantId ||
             existing.unit !== line.unit ||
-            existing.batchStatus !== 'available' ||
-            sourceByBatch.get(line.batchId) !== 'purchased')
-        )
-          throw new InventoryDomainError(
-            'INVALID_STATE',
-            '到货绑定的库存批次身份不符、被冻结或停用',
-          );
-        let batchId = receiptBatches.get(line.receiptLineId) ?? line.batchId;
-        if (!batchId) batchId = await createBatch(db, input, line, context);
-        receiptBatches.set(line.receiptLineId, batchId);
-        batchQuantities.set(
-          batchId,
-          (batchQuantities.get(batchId) ?? 0) + integerQuantity(line.quantity),
-        );
-      }
-      for (const [batchId, added] of batchQuantities) {
-        const available = integerQuantity(lockedById.get(batchId)?.availableQuantity ?? '0');
-        if (available + added > MAX_PERSISTED_INTEGER_QUANTITY)
-          throw new InventoryDomainError('INVALID_INPUT', '入库后批次可用数量超过允许上限');
+            existing.batchStatus !== 'available'
+          )
+            throw new InventoryDomainError('INVALID_STATE', '目标库存批次身份不符、被冻结或停用');
+          batchId = line.target.batchId;
+        } else {
+          const identity = `${line.materialVariantId}:${line.unit}:${line.target.batchCode ?? ''}`;
+          const prior = newByKey.get(line.target.clientKey);
+          if (prior && prior.identity !== identity)
+            throw new InventoryDomainError(
+              'INVALID_INPUT',
+              '共用新批次的物料身份、单位或批号不一致',
+            );
+          batchId = prior?.batchId ?? (await createBatch(db, input, line, context));
+          newByKey.set(line.target.clientKey, { batchId, identity });
+        }
+        resolved.set(line, batchId);
       }
       const inboundNo = automaticCode('PI');
       const [order] = await db.execute<ResultSetHeader>(
@@ -117,7 +103,7 @@ export class MysqlInventoryPurchaseInboundWriter {
       const inboundId = String(order.insertId);
       const details: ConfirmPurchaseReceiptResult['details'] = [];
       for (const line of ordered) {
-        const batchId = receiptBatches.get(line.receiptLineId)!;
+        const batchId = resolved.get(line)!;
         const [detail] = await db.execute<ResultSetHeader>(
           `INSERT INTO inbound_detail(inbound_id,item_id,material_variant_id,batch_id,item_code_snapshot,inbound_number,unit_snapshot,stock_status,
            procurement_receipt_line_id,procurement_receipt_revision_id,procurement_inspection_id,procurement_allocation_id,created_by)
@@ -155,6 +141,7 @@ export class MysqlInventoryPurchaseInboundWriter {
           ],
         );
         details.push({
+          detailKey: line.detailKey,
           receiptLineId: line.receiptLineId,
           allocationId: line.allocationId,
           batchId,
@@ -187,24 +174,38 @@ async function createBatch(
   line: PurchaseReceiptInboundLine,
   context: CommandContext,
 ): Promise<string> {
-  const [result] = await db.execute<ResultSetHeader>(
-    `INSERT INTO item_batch(item_id,material_variant_id,item_code_snapshot,material_variant_code_snapshot,unit_snapshot,batch_code,
+  let result: ResultSetHeader;
+  try {
+    [result] = await db.execute<ResultSetHeader>(
+      `INSERT INTO item_batch(item_id,material_variant_id,item_code_snapshot,material_variant_code_snapshot,unit_snapshot,batch_code,
      source_type,provider,batch_status,remark,created_by,updated_by)
      VALUES (?,?,?,?,?,?,'purchased',?,'available',?,?,?)`,
-    [
-      line.itemId,
-      line.materialVariantId,
-      line.itemCode,
-      line.materialVariantCode,
-      line.unit,
-      automaticCode('IB'),
-      input.provider.trim(),
-      input.remark ?? null,
-      context.actorId,
-      context.actorId,
-    ],
-  );
+      [
+        line.itemId,
+        line.materialVariantId,
+        line.itemCode,
+        line.materialVariantCode,
+        line.unit,
+        line.target.mode === 'new' && line.target.batchCode
+          ? line.target.batchCode.trim()
+          : automaticCode('IB'),
+        null,
+        input.remark ?? null,
+        context.actorId,
+        context.actorId,
+      ],
+    );
+  } catch (error) {
+    if (isDuplicate(error))
+      throw new InventoryDomainError('CONFLICT', '目标内部批号已存在，请刷新后重试');
+    throw error;
+  }
   return String(result.insertId);
+}
+function isDuplicate(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  const value = error as { code?: string; cause?: unknown };
+  return value.code === 'ER_DUP_ENTRY' || (value.cause !== undefined && isDuplicate(value.cause));
 }
 
 function validateInput(input: ConfirmPurchaseReceiptInput): void {
@@ -215,9 +216,8 @@ function validateInput(input: ConfirmPurchaseReceiptInput): void {
     input.details.length > 100
   )
     throw new InventoryDomainError('INVALID_INPUT', '供应商名称或入库明细数量无效');
-  const allocationIds = new Set<string>();
-  const receipts = new Map<string, PurchaseReceiptInboundLine>();
-  const boundBatches = new Map<string, string>();
+  const newTargets = new Map<string, string>();
+  const detailKeys = new Set<string>();
   for (const line of input.details) {
     const ids = [
       line.receiptLineId,
@@ -227,39 +227,37 @@ function validateInput(input: ConfirmPurchaseReceiptInput): void {
       line.itemId,
       line.materialVariantId,
     ];
-    if (line.batchId !== null) ids.push(line.batchId);
+    if (line.target.mode === 'existing') ids.push(line.target.batchId);
     const quantity = Number(line.quantity);
     if (
       ids.some((id) => !/^[1-9]\d*$/.test(id)) ||
-      allocationIds.has(line.allocationId) ||
       !Number.isSafeInteger(quantity) ||
       quantity <= 0 ||
       quantity > MAX_PERSISTED_INTEGER_QUANTITY ||
+      !line.detailKey.trim() ||
+      line.detailKey.length > 100 ||
       !line.itemCode.trim() ||
       !line.materialVariantCode.trim() ||
       !line.unit.trim()
     )
       throw new InventoryDomainError('INVALID_INPUT', '入库范围、物料身份或整数数量无效');
-    allocationIds.add(line.allocationId);
-    const prior = receipts.get(line.receiptLineId);
-    if (
-      prior &&
-      (prior.itemId !== line.itemId ||
-        prior.materialVariantId !== line.materialVariantId ||
-        prior.itemCode !== line.itemCode ||
-        prior.materialVariantCode !== line.materialVariantCode ||
-        prior.unit !== line.unit ||
-        prior.batchId !== line.batchId)
-    )
-      throw new InventoryDomainError('INVALID_INPUT', '同一到货的物料版本、单位及批次绑定必须一致');
-    if (
-      line.batchId &&
-      boundBatches.has(line.batchId) &&
-      boundBatches.get(line.batchId) !== line.receiptLineId
-    )
-      throw new InventoryDomainError('INVALID_INPUT', '不同到货明细不能复用同一内部库存批次');
-    if (line.batchId) boundBatches.set(line.batchId, line.receiptLineId);
-    receipts.set(line.receiptLineId, line);
+    if (detailKeys.has(line.detailKey))
+      throw new InventoryDomainError('INVALID_INPUT', '入库明细标识不能重复');
+    detailKeys.add(line.detailKey);
+    if (line.target.mode === 'new') {
+      if (
+        !line.target.clientKey.trim() ||
+        line.target.clientKey.length > 100 ||
+        (line.target.batchCode !== undefined &&
+          (!line.target.batchCode.trim() || line.target.batchCode.length > 100))
+      )
+        throw new InventoryDomainError('INVALID_INPUT', '新批次标识或批号无效');
+      const identity = `${line.materialVariantId}:${line.unit}:${line.target.batchCode ?? ''}`;
+      const prior = newTargets.get(line.target.clientKey);
+      if (prior && prior !== identity)
+        throw new InventoryDomainError('INVALID_INPUT', '共用新批次的物料身份、单位或批号不一致');
+      newTargets.set(line.target.clientKey, identity);
+    }
   }
 }
 const automaticCode = (prefix: 'PI' | 'IB'): string =>

@@ -1,6 +1,6 @@
 # ADR-0011：任务统一结案、产出清单与成品入库
 
-状态：Accepted。本文保留跨模块职责及选择依据。当前完整规则见 [Production 结案设计](../../apps/api/src/modules/production/docs/database/production-termination.md)、[Quality 成品检验](../../apps/api/src/modules/quality/docs/finished-inspections.md)及[成品入库](../../apps/api/src/modules/production/docs/database/finished-goods-inbound.md)。数量与统一事实的后续选择见 [ADR-0015](0015-unified-quality-quantity-semantics.md)，不改变负责人审批、批准清单及每类一次入库边界。
+状态：Accepted。本文保留跨模块职责及选择依据。当前完整规则见 [Production 结案设计](../../apps/api/src/modules/production/docs/database/production-termination.md)、[Quality 成品检验](../../apps/api/src/modules/quality/docs/finished-inspections.md)及[成品入库](../../apps/api/src/modules/production/docs/database/finished-goods-inbound.md)。数量与统一事实的后续选择见 [ADR-0015](0015-unified-quality-quantity-semantics.md)，负责人审批和批准清单边界保留；每类一次入库、类别独占批次和已入类别锁量由 [ADR-0016](0016-inbound-authorizations-and-stock-batches.md) 取代。
 
 ## 背景与适用范围
 
@@ -32,21 +32,19 @@
 
 报废独立于质检不合格、少申报和原材料损耗；历史已确认工序报废只读引用，新增只记尚未记录的实际报废，避免重复。计划缺口按计划量减计划内可用产出，报废不计入达标。最终报废不补料、不补产、不写库存。半成品、待判库存、已入库质量冲销与完整在线质量仍不在本决策范围。
 
-部分类别已入库后新检验的 C 范围已按 [ADR-0015](0015-unified-quality-quantity-semantics.md#成品数量与职责)明确为剩余送检实物，固定已入基准并在复检开始冻结剩余入库；代码仍待整改，差异证据保留于 [CQ-01](../documentation-conflicts.md#cq-01)。已入类别锁量与历史事实边界保持，不能把已确认目标视为已经实现。
+部分类别已入库后新检验的 C 范围已按 [ADR-0015](0015-unified-quality-quantity-semantics.md#成品数量与职责)明确为剩余送检实物，固定已入基准并在复检开始冻结剩余入库；轮次及授权模型见 [ADR-0016](0016-inbound-authorizations-and-stock-batches.md)，实施验证与验收以路线图为准。历史事实边界保持；已入类别锁量由 ADR-0016 的历史已入下限及剩余授权取代。
 
 ## 清单与仓库入库
 
-批准清单形成可打印、可追溯的入库依据。生产流转与额外产出分两类、各建独立批次，可在不同时间办理；每类收齐批准量后一次确认，零量不建入库。不开放同类分次追加收货，也不因库存后来被领用重新获得入库额度。
+批准清单形成可打印、可追溯的入库依据。按 [ADR-0016](0016-inbound-authorizations-and-stock-batches.md)，计划内外分别形成不可变授权，可以分多次交接并选择新建或已有库存批次。类别归属不决定是否拆库批；没有剩余可入授权时不创建入库，库存后来被领用不恢复额度。
 
-只有仓管核对并明确确认才写 Inventory 唯一库存流水。服务端重新校验来源、最新有效批准版、类别、数量、重复确认与并发，不能只依靠页面按钮，不能由结案审批自动入库。当前身份、类别槽位和事务规则见[成品入库设计](../../apps/api/src/modules/production/docs/database/finished-goods-inbound.md)。
+只有仓管核对并明确确认才写 Inventory 唯一库存流水。来源模块在锁内核验当前轮、有效批准依据、授权及本次总消费量；Inventory 核验目标身份及明细流水一致性。多条明细各自追溯当时的批准版与检验，主单不承担唯一批准版本。具体字段与命令由[成品入库设计](../../apps/api/src/modules/production/docs/database/finished-goods-inbound.md)维护。
 
 ## 数量不符与清单更正
 
-仓管发现不符可线下拒收，不要求系统拒收单或差异账本。漏送先补齐；批准数量有误才由产线发起更正，保留原版、前后数量与原因，重新经工单负责人审批。短少不自动成为报废，仅在检验范围或依据改变时追加整批检验。
+仓管发现批准数量不符，由产线显式发起更正，保留原版、原因及历史执行，再经工单负责人审批。只调整有效检验范围内的剩余分配不强制重复检查；新范围或新结论另行检验。短少不会自动成为报废。
 
-更正送审暂停受影响产出的入库；批准后新版生效，驳回／撤回不改旧批准量，也不自动证明实物一致。再次收货必须核验最新版本，旧纸质清单不能绕过服务端校验。
-
-已入类别的批准数量锁定，不能增量追加或减量消除事实；尚未入库类别可按规则更正。本次建议与历史已入量不作阻断性比较，已入事实不重新计入新检验。固定基准和剩余范围快照仍属CQ-01待办，当前分列已入量与本次建议，不补造累计建议。报废等非入库信息仍可依审批更正；更正不重开工序，不提前开放已入库冲销。
+开始更正即固定历史已入基准并暂停旧剩余授权，最终批准只授予新剩余数量。已入类别的累计批准目标不得少于该类别真实已入量；库存明细、类别及原依据不回写。驳回、撤回及取消更正不隐含恢复旧授权。固定检查基准与非阻断建议规则见 ADR-0015，累计／剩余结构见 ADR-0016；均不开放已入质量冲销或重开生产。
 
 ## 实施边界
 
