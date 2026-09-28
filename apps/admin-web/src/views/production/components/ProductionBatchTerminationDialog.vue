@@ -278,10 +278,12 @@
                 width="100"
               />
               <el-table-column
-                prop="createdAt"
                 label="时间"
                 min-width="180"
-              />
+                ><template #default="{ row }">{{
+                  formatDateTimeForDisplay(row.createdAt)
+                }}</template></el-table-column
+              >
             </el-table>
           </el-tab-pane>
         </el-tabs>
@@ -442,6 +444,7 @@ import {
   DEMAND_BUSINESS_STATUS_LABELS,
 } from '@company/constants';
 import { DialogWidth } from '../../../utils/dialog';
+import { formatDateTimeForDisplay } from '../../../utils/date';
 import { batchStatusMeta, formatQuantity as quantity } from '../production-status';
 import { useBatchCloseout } from '../composables/useBatchCloseout';
 import BatchCloseoutWorklist from './BatchCloseoutWorklist.vue';

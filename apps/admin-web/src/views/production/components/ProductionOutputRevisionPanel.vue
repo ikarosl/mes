@@ -77,10 +77,12 @@
         width="110"
       />
       <el-table-column
-        prop="approvedAt"
         label="批准时间"
         min-width="175"
-      />
+        ><template #default="{ row }">{{
+          formatDateTimeForDisplay(row.approvedAt)
+        }}</template></el-table-column
+      >
       <el-table-column
         prop="correctionReason"
         label="更正原因"
@@ -124,6 +126,7 @@
 <script setup lang="ts">
 import type { ProductionOutputDetail, ProductionOutputRevision } from '@company/contracts';
 import BatchCloseoutEvidence from './BatchCloseoutEvidence.vue';
+import { formatDateTimeForDisplay } from '../../../utils/date';
 defineProps<{
   detail: ProductionOutputDetail;
   selectedRevision: ProductionOutputRevision | null;

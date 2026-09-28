@@ -85,7 +85,6 @@ export class CreateStockCheckLineDto {
   @IsIn(STOCK_STATUSES) stockStatus!: CreateStockCheckPayload['details'][number]['stockStatus'];
 }
 export class CreateStockCheckDto implements CreateStockCheckPayload {
-  @IsOptional() @IsString() @MaxLength(100) checkNo?: string | null;
   @IsOptional() @IsString() @MaxLength(5000) remark?: string | null;
   @IsArray()
   @ArrayMinSize(1)

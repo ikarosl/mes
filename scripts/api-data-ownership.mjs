@@ -75,7 +75,7 @@ export const API_DATA_OWNERSHIP = Object.freeze({
   ]),
   production: Object.freeze([
     'work_orders',
-    'work_order_daily_sequence',
+    'work_order_daily_sequence', // Retired; historical migration ownership.
     'work_order_material_versions',
     'production_batches',
     'production_batch_termination', // Retired; historical migrations retain ownership.
@@ -109,6 +109,7 @@ export const API_DATA_OWNERSHIP = Object.freeze({
     'return_detail',
   ]),
   'platform-audit': Object.freeze(['operation_logs']),
+  'platform-numbering': Object.freeze(['business_number_daily_sequence']),
   'platform-idempotency': Object.freeze(['http_idempotency_records']),
   database: Object.freeze(['_schema_migrations']),
 });

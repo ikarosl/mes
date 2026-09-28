@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { allocateBusinessNumber } from '../../../infrastructure/numbering/mysql-business-number.js';
 import { Inject, Injectable } from '@nestjs/common';
 import { withTransaction } from '@company/database';
 import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
@@ -406,7 +406,7 @@ const insertReport = async (
      (report_no,production_batch_id,batch_step_record_id,report_type,reversal_of_report_id,replaces_report_id,reported_quantity,normal_quantity,abnormal_quantity,abnormal_origin,unit_snapshot,remark,created_by)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [
-      `SR-${Date.now()}-${randomUUID().slice(0, 12)}`,
+      await allocateBusinessNumber(connection, 'step_report'),
       input.batchId,
       input.stepRecordId,
       input.reportType,
@@ -436,7 +436,7 @@ const insertDisposition = async (
      (disposition_no,production_batch_id,batch_step_record_id,batch_step_report_id,review_status,created_by,updated_by)
      VALUES (?,?,?,?,'pending_review',?,?)`,
     [
-      `BAD-${Date.now()}-${randomUUID().slice(0, 12)}`,
+      await allocateBusinessNumber(connection, 'abnormal_disposition'),
       batchId,
       stepRecordId,
       reportId,

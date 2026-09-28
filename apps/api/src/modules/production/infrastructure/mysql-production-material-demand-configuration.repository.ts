@@ -1,5 +1,5 @@
+import { allocateBusinessNumber } from '../../../infrastructure/numbering/mysql-business-number.js';
 import { currentMaterialNameSql } from './queries/material-name.sql.js';
-import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import { DEMAND_GENERATION_GROUP_TYPE } from '@company/constants';
 import { withTransaction } from '@company/database';
@@ -511,7 +511,7 @@ export class MysqlProductionMaterialDemandConfigurationRepository extends Produc
           });
         }
       }
-      const additionNo = `MD-${new Date().toISOString().slice(0, 10).replaceAll('-', '')}-${randomUUID().slice(0, 8).toUpperCase()}`;
+      const additionNo = await allocateBusinessNumber(db, 'manual_material_demand');
       const [addition] = await db.execute<ResultSetHeader>(
         `INSERT INTO production_manual_demand_addition
          (addition_no,production_batch_id,reason,created_by) VALUES (?,?,?,?)`,

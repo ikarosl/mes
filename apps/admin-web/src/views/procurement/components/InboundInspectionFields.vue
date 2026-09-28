@@ -85,9 +85,10 @@
       required
     >
       <el-date-picker
-        v-model="model.inspectedAt"
+        :model-value="toBeijingDateTimeInputValue(model.inspectedAt)"
         type="datetime"
-        value-format="YYYY-MM-DDTHH:mm:ssZ"
+        value-format="YYYY-MM-DD HH:mm:ss"
+        @update:model-value="model.inspectedAt = fromBeijingDateTimeInputValue($event)"
       />
     </el-form-item>
     <el-form-item
@@ -123,6 +124,7 @@ import {
   PURCHASE_ORDER_MAX_QUANTITY,
 } from '@company/constants';
 import type { QualityInboundInspectionInput } from '@company/contracts';
+import { fromBeijingDateTimeInputValue, toBeijingDateTimeInputValue } from '../../../utils/date';
 import {
   inboundInspectionInput,
   inboundInspectionPreview,

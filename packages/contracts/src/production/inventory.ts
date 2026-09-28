@@ -204,7 +204,6 @@ export interface StockCheckCandidateQuery extends PageQuery {
 }
 
 export interface CreateStockCheckPayload {
-  checkNo?: string | null;
   remark?: string | null;
   details: Array<{
     itemBatchId: string;

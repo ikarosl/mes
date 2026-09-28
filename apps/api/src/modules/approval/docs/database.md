@@ -94,7 +94,7 @@ CHECK 保证角色节点只填写 `role_id`，用户节点只填写 `assignee_us
 | 字段 | 类型及空值 | 含义 |
 | --- | --- | --- |
 | `id` | `BIGINT UNSIGNED NOT NULL` | 主键 |
-| `instance_no` | `VARCHAR(100) NOT NULL` | 唯一申请编号 |
+| `instance_no` | `VARCHAR(100) NOT NULL` | 服务端在送审事务内分配 AP 编号，唯一 |
 | `scene_code` | `VARCHAR(100) NOT NULL` | 稳定场景编码 |
 | `subject_type` | `VARCHAR(50) NOT NULL` | 场景确定的对象类型：`product / production_demand_correction / production_batch_closeout` |
 | `subject_id` | `BIGINT UNSIGNED NOT NULL` | 业务对象 ID |

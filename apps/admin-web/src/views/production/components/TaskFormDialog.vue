@@ -11,6 +11,11 @@
       :model="form"
       :disabled="submitting"
     >
+      <el-form-item
+        v-if="editingTaskId"
+        label="任务批次号"
+        >{{ existingBatchNo }}</el-form-item
+      >
       <template v-if="!editingTaskId">
         <el-form-item
           label="选择工单"
@@ -117,12 +122,7 @@
           title="工单额度刷新失败，请刷新核对后再保存任务。"
           class="work-order-summary"
         />
-        <el-form-item label="批次号">
-          <el-input
-            v-model="form.batchNo"
-            placeholder="留空自动生成"
-          />
-        </el-form-item>
+        <el-form-item label="任务批次号">由系统自动生成</el-form-item>
         <el-form-item
           v-if="selectedWorkOrder"
           label="产品"
@@ -310,7 +310,6 @@ import { approvedUsableQuantity, plannedOutputGapText } from '../production-outp
 
 export type TaskFormValue = {
   workOrderId: string;
-  batchNo: string;
   routeId: string;
   ownerId: string;
   plannedQuantity: number;
@@ -338,9 +337,9 @@ const emit = defineEmits<{
   (e: 'save', data: TaskFormValue): void;
 }>();
 
+const existingBatchNo = ref('');
 const initialForm = (): Omit<TaskFormValue, 'stepOverrides'> => ({
   workOrderId: '',
-  batchNo: '',
   routeId: '',
   ownerId: '',
   plannedQuantity: 1,
@@ -513,6 +512,7 @@ const handleWorkOrderChange = (workOrderId: string): void => {
 };
 
 const resetForm = (): void => {
+  existingBatchNo.value = '';
   pendingRouteWorkOrderId = null;
   Object.assign(form, initialForm());
   resetStepPreview();
@@ -529,10 +529,10 @@ const setForm = (row: {
   remark: string | null;
 }): void => {
   editingTaskOriginalQuantity.value = Number(row.plannedQuantity);
+  existingBatchNo.value = row.batchNo;
   pendingRouteWorkOrderId = null; // 编辑模式工单只读回显，不参与默认路线补算
   Object.assign(form, {
     workOrderId: row.workOrderId,
-    batchNo: row.batchNo,
     routeId: row.routeId ?? '',
     ownerId: row.ownerId ?? '',
     plannedQuantity: Number(row.plannedQuantity),

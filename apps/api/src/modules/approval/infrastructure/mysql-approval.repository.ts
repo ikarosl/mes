@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { allocateBusinessNumber } from '../../../infrastructure/numbering/mysql-business-number.js';
 import { Inject, Injectable } from '@nestjs/common';
 import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import { withTransaction } from '@company/database';
@@ -216,7 +216,7 @@ export class MysqlApprovalRepository extends ApprovalRepository {
       }));
       // 业务节点固定送审时身份；所有节点仍实时检查资格，角色不冻结候选名单。
       const candidates = await this.resolveCandidates(resolvedSteps);
-      const instanceNo = this.newInstanceNo();
+      const instanceNo = await allocateBusinessNumber(connection, 'approval_instance');
       const [insert] = await connection.execute<ResultSetHeader>(
         `INSERT INTO approval_instances
           (instance_no,scene_code,subject_type,subject_id,flow_version_id,title,subject_version,
@@ -745,9 +745,6 @@ export class MysqlApprovalRepository extends ApprovalRepository {
   }
   private requireActor(audit: CommandContext): void {
     if (!audit.actorId) throw new ApprovalDomainError('FORBIDDEN', '缺少当前操作人');
-  }
-  private newInstanceNo(): string {
-    return `AP-${randomUUID()}`;
   }
   private async nextActionNo(db: Db, instanceId: string | number): Promise<number> {
     const [[row]] = await db.query<(RowDataPacket & { value: number })[]>(

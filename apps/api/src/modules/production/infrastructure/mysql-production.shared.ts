@@ -2,6 +2,7 @@ import {
   workOrderAssignedQuantitySql,
   workOrderTerminatedPlanSql,
 } from './mysql-work-order-allocation.sql.js';
+import { beijingWallDateTimeToISOString } from '@company/utils';
 import { toBeijingISOString, toDateOnlyString } from '../../../common/time/date-time.js';
 import type { Pool, PoolConnection, RowDataPacket } from 'mysql2/promise';
 import type {
@@ -368,16 +369,16 @@ export const workOrderAudit = (row: WorkOrderRow) => ({
   customerName: row.customer_name,
   qualityLevel: row.quality_level,
   workOrderOwnerId: row.work_order_owner_id === null ? null : String(row.work_order_owner_id),
-  planStartDate: row.plan_start_date,
-  planEndDate: row.plan_end_date,
+  planStartDate: toDateOnlyString(row.plan_start_date),
+  planEndDate: toDateOnlyString(row.plan_end_date),
   externalOrderNo: row.external_order_no,
   remark: row.remark,
   version: row.version,
 });
 export const batchAudit = (row: BatchRow) => ({
   ownerId: row.owner_id === null ? null : String(row.owner_id),
-  planStartDate: row.plan_start_date,
-  planEndDate: row.plan_end_date,
+  planStartDate: toDateOnlyString(row.plan_start_date),
+  planEndDate: toDateOnlyString(row.plan_end_date),
   remark: row.remark,
   version: row.version,
 });
@@ -396,8 +397,11 @@ export const multiply = (left: string, right: string): string => {
     );
   }
 };
-/** 数据库驱动对 DATE/DATETIME 列返回 Date 实例（类型曾误标 string），统一转北京 ISO 字符串。 */
+/** MySQL DATETIME strings, when supplied, are Beijing wall times. */
 const date = (value: Date | string | null): string | null => {
   if (value === null) return null;
-  return typeof value === 'string' ? value : toBeijingISOString(value);
+  if (value instanceof Date) return toBeijingISOString(value);
+  return /(?:Z|[+-]\d{2}:\d{2})$/.test(value)
+    ? toBeijingISOString(value)
+    : beijingWallDateTimeToISOString(value);
 };

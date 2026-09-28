@@ -1,5 +1,7 @@
 import type { QualityInboundInspectionInput, QualityReleaseDecision } from '@company/contracts';
 import { PURCHASE_ORDER_MAX_QUANTITY } from '@company/constants';
+import { toBeijingISOString } from '@company/utils';
+import { toBeijingDateTimeInputValue } from '../../utils/date';
 
 export type InboundInspectionDraft = Omit<
   QualityInboundInspectionInput,
@@ -14,7 +16,7 @@ export const initialInboundInspection = (): InboundInspectionDraft => ({
   qualifiedQuantity: undefined,
   unqualifiedQuantity: undefined,
   releaseDecision: undefined,
-  inspectedAt: new Date().toISOString(),
+  inspectedAt: toBeijingISOString(Date.now()),
   remark: '',
   evidence: '',
 });
@@ -44,7 +46,7 @@ export function inboundInspectionInput(
     !input.remark.trim() ||
     !input.evidence.trim() ||
     !input.inspectedAt ||
-    !Number.isFinite(new Date(input.inspectedAt).getTime())
+    !toBeijingDateTimeInputValue(input.inspectedAt)
   )
     return null;
   return {
@@ -52,5 +54,6 @@ export function inboundInspectionInput(
     qualifiedQuantity: quantities.qualifiedQuantity,
     unqualifiedQuantity: quantities.unqualifiedQuantity,
     releaseDecision: input.releaseDecision,
+    inspectedAt: toBeijingISOString(input.inspectedAt),
   };
 }

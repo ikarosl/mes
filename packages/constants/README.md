@@ -4,6 +4,8 @@
 
 新增封闭代码同步 constants、contracts 与数据库 CHECK；权限目录随对应 migration 发布。预留代码、旧历史动作或展示用状态不代表已开放相应命令。Vue 与 Repository 不另存代码字典副本。
 
+内部业务编号的语义类型与人工前缀映射维护在 [business-number.ts](src/business-number.ts)，运行与数据库边界见[业务编号](../../apps/api/docs/business-numbering.md)。
+
 导出入口见 [src/index.ts](src/index.ts)，完整状态及映射直接查源码，本入口不重复枚举。
 
 ## 验证

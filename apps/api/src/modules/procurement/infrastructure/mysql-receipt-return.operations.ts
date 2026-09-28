@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { allocateBusinessNumber } from '../../../infrastructure/numbering/mysql-business-number.js';
 import type { PoolConnection, ResultSetHeader } from 'mysql2/promise';
 import type {
   ConfirmSupplierReturnPayload,
@@ -140,7 +140,7 @@ export async function confirmReceiptReturn(
   const [created] = await db.execute<ResultSetHeader>(
     `INSERT INTO procurement_supplier_return(return_no,receipt_line_id,receipt_revision_id,allocation_id,inspection_id,reason_type,returned_quantity,returned_at,handover_evidence,remark,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
     [
-      `SR-${Date.now()}-${randomUUID().slice(0, 8).toUpperCase()}`,
+      await allocateBusinessNumber(db, 'supplier_return'),
       id,
       row.receipt_revision_id,
       row.id,

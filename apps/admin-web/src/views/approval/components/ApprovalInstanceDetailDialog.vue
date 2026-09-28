@@ -341,6 +341,7 @@ import DemandCorrectionEvidence from '../../production/components/DemandCorrecti
 import BatchCloseoutEvidence from '../../production/components/BatchCloseoutEvidence.vue';
 import { DialogWidth } from '../../../utils/dialog';
 import { EMessage } from '../../../utils/message';
+import { formatDateTimeForDisplay } from '../../../utils/date';
 
 defineOptions({ name: 'ApprovalInstanceDetailDialog' });
 
@@ -454,8 +455,7 @@ const actionLabel = (type: ApprovalActionType) => APPROVAL_ACTION_TYPE_LABELS[ty
 const sceneLabel = (sceneCode: string) => APPROVAL_SCENE_LABELS[sceneCode] ?? sceneCode;
 const actionStepNo = (stepId: string): number | null =>
   props.detail?.steps.find((step) => step.id === stepId)?.stepNo ?? null;
-const formatDateTime = (value: string | null): string =>
-  value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '—';
+const formatDateTime = (value: string | null): string => formatDateTimeForDisplay(value, '—');
 
 const requireComment = (message: string): string | null => {
   const value = comment.value.trim();

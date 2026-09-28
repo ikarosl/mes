@@ -1,3 +1,4 @@
+import { allocateBusinessNumber } from '../../../infrastructure/numbering/mysql-business-number.js';
 import { InventoryStockCommand } from '../../inventory/public.js';
 import { Inject, Injectable } from '@nestjs/common';
 import { withTransaction } from '@company/database';
@@ -23,7 +24,6 @@ import {
   numericSort,
   decimal,
   iso,
-  businessNo,
   requireVersion,
   requireAffected,
   lockIds,
@@ -198,7 +198,7 @@ export class MysqlProductionReturnRepository extends ProductionReturnRepository 
           );
         }
       }
-      const returnNo = businessNo('TL');
+      const returnNo = await allocateBusinessNumber(db, 'production_material_return');
       const [created] = await db.execute<ResultSetHeader>(
         `INSERT INTO return_order
          (return_no,production_batch_id,work_order_id,status,remark,created_by,updated_by)

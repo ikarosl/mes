@@ -84,7 +84,6 @@ export function usePurchaseInboundReleases(
   });
   const quantityErrors = computed(() => {
     const errors = new Map<string, string>();
-    const newBatchCodes = new Map<string, string>();
     for (const row of selected.value) {
       if (parseInboundQuantity(row.quantity) === null)
         errors.set(row.detailKey, '请输入 1～99999999 的正整数');
@@ -92,13 +91,6 @@ export function usePurchaseInboundReleases(
         errors.set(row.detailKey, '请选择已有批次');
       else if (row.target.mode === 'new' && !row.target.clientKey)
         errors.set(row.detailKey, '请选择本次复用的新批次');
-      if (row.target.mode === 'new' && row.target.batchCode?.trim()) {
-        const codeKey = `${row.source.materialVariantId}:${row.target.batchCode.trim().toLocaleLowerCase()}`;
-        const existingKey = newBatchCodes.get(codeKey);
-        if (existingKey && existingKey !== row.target.clientKey)
-          errors.set(row.detailKey, '新批号重复；如需共建，请明确选择“复用本次新批次”');
-        newBatchCodes.set(codeKey, row.target.clientKey);
-      }
     }
     for (const group of groupSummaries.value) {
       if (group.total > group.allowance) {
@@ -230,7 +222,6 @@ export function usePurchaseInboundReleases(
         ? [
             {
               clientKey: row.target.clientKey,
-              batchCode: row.target.batchCode,
               label: `${row.source.receiptNo} · ${row.source.itemCode} · 第 ${index + 1} 条目标`,
             },
           ]

@@ -123,6 +123,7 @@ import type { NotificationItem } from '@company/contracts';
 import { useNotifications } from './useNotifications';
 import { notificationTarget } from './notification-targets';
 import { EMessage } from '../../utils/message';
+import { formatDateTimeForDisplay } from '../../utils/date';
 
 defineOptions({ name: 'NotificationBell' });
 const router = useRouter();
@@ -147,8 +148,7 @@ const filters = NOTIFICATION_READ_FILTERS.map((value) => ({
   value,
   label: NOTIFICATION_READ_FILTER_LABELS[value],
 }));
-const formatDateTime = (value: string) =>
-  new Date(value).toLocaleString('zh-CN', { hour12: false });
+const formatDateTime = (value: string): string => formatDateTimeForDisplay(value, '—');
 const openTarget = async (item: NotificationItem) => {
   const target = notificationTarget(item);
   if (!target || !(await read(item))) return;

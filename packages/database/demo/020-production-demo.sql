@@ -1,7 +1,7 @@
 -- Draft examples only: version choice requires an administrator's demand confirmation.
 -- The demo runner wraps this file and numbering writes in the same transaction.
 SET @demo_actor_id = (SELECT id FROM users WHERE username = 'admin' AND deleted_at IS NULL LIMIT 1);
-SET @demo_number_date = DATE_FORMAT(UTC_TIMESTAMP(3) + INTERVAL 8 HOUR, '%Y-%m-%d');
+SET @demo_number_date = DATE_FORMAT(CURRENT_DATE(), '%Y-%m-%d');
 
 CREATE TEMPORARY TABLE demo_work_order_candidates AS
 SELECT sample.external_order_no, sample.order_type, sample.quantity, sample.remark,
@@ -17,12 +17,12 @@ WHERE NOT EXISTS (
 );
 
 SET @demo_new_order_count = (SELECT COUNT(*) FROM demo_work_order_candidates);
-INSERT INTO work_order_daily_sequence (number_date,last_sequence)
-SELECT @demo_number_date,@demo_new_order_count WHERE @demo_new_order_count>0
+INSERT INTO business_number_daily_sequence (number_kind,number_date,last_sequence)
+SELECT 'work_order',@demo_number_date,@demo_new_order_count WHERE @demo_new_order_count>0
 ON DUPLICATE KEY UPDATE last_sequence=last_sequence+@demo_new_order_count;
 SET @demo_sequence_start = (
-  SELECT last_sequence-@demo_new_order_count FROM work_order_daily_sequence
-  WHERE number_date=@demo_number_date
+  SELECT last_sequence-@demo_new_order_count FROM business_number_daily_sequence
+  WHERE number_kind='work_order' AND number_date=@demo_number_date
 );
 
 INSERT INTO work_orders (
@@ -30,7 +30,7 @@ INSERT INTO work_orders (
   product_name_snapshot, unit_snapshot, planned_quantity, plan_start_date,
   plan_end_date, status, remark, created_by, updated_by
 )
-SELECT CONCAT(@demo_number_date,'-',@demo_sequence_start+ROW_NUMBER() OVER (ORDER BY external_order_no)),
+SELECT CONCAT(@demo_work_order_prefix,REPLACE(@demo_number_date,'-',''),'-',@demo_sequence_start+ROW_NUMBER() OVER (ORDER BY external_order_no)),
   external_order_no, order_type, product_id, item_code, product_name, unit, quantity,
   @demo_number_date, DATE_ADD(@demo_number_date,INTERVAL 7 DAY), 'draft', remark,
   @demo_actor_id, @demo_actor_id

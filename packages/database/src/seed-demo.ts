@@ -1,3 +1,4 @@
+import { BUSINESS_NUMBER_PREFIX } from '@company/constants';
 import { loadWorkspaceEnv } from '@company/config';
 import bcrypt from 'bcryptjs';
 import { assertDemoSeedEnabled, readDemoSeeds } from './demo-utils.js';
@@ -11,6 +12,7 @@ const pool = createDatabasePool({ multipleStatements: true });
 try {
   await withTransaction(pool, async (connection) => {
     await connection.query('SET @demo_password_hash = ?', [passwordHash]);
+    await connection.query('SET @demo_work_order_prefix = ?', [BUSINESS_NUMBER_PREFIX.work_order]);
     for (const seed of await readDemoSeeds()) {
       await connection.query(seed.sql);
       console.log(`已执行演示数据种子：${seed.name}`);

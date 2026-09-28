@@ -1,7 +1,7 @@
 import { workOrderAssignedQuantitySql } from './mysql-work-order-allocation.sql.js';
 import { lockWorkOrderForBatch } from './mysql-work-order-material-version.js';
 import { Inject, Injectable } from '@nestjs/common';
-import { generateBatchNo } from '@company/code-rules';
+import { allocateBusinessNumber } from '../../../infrastructure/numbering/mysql-business-number.js';
 import { withTransaction } from '@company/database';
 import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import type {
@@ -150,12 +150,7 @@ export class MysqlProductionBatchRepository {
           'INVALID_STATE',
           '只有已下达或生产中的工单可以创建生产批次',
         );
-      const batchNo = payload.batchNo ?? (await this.nextBatchNo(connection));
-      const [[duplicate]] = await connection.query<RowDataPacket[]>(
-        'SELECT id FROM production_batches WHERE work_order_id=? AND batch_no=? FOR UPDATE',
-        [workOrderId, batchNo],
-      );
-      if (duplicate) throw new ProductionDomainError('CONFLICT', '同一工单下的生产批次号已存在');
+      const batchNo = await allocateBusinessNumber(connection, 'production_batch');
       const [[assigned]] = await connection.query<(RowDataPacket & { quantity: string })[]>(
         `SELECT ${workOrderAssignedQuantitySql('?', true)} quantity`,
         [workOrderId],
@@ -222,7 +217,7 @@ export class MysqlProductionBatchRepository {
         'production-batch.create',
         String(result.insertId),
         null,
-        { ...payload, routeId: route?.id ?? null, stepCount: route?.steps.length ?? 0 },
+        { ...payload, batchNo, routeId: route?.id ?? null, stepCount: route?.steps.length ?? 0 },
       );
       return this.getDetail(connection, String(result.insertId));
     }).catch((error) => ensureNoDuplicate(error, '单据编号或幂等键已存在'));
@@ -430,17 +425,6 @@ export class MysqlProductionBatchRepository {
     );
     const [item] = await mapBatches(db, [batch], this.variants);
     return { ...item!, stepRecords: steps.map(mapStep) };
-  }
-  private async nextBatchNo(connection: PoolConnection): Promise<string> {
-    const [rows] = await connection.query<(RowDataPacket & { batch_no: string })[]>(
-      "SELECT batch_no FROM production_batches WHERE batch_no LIKE 'task_batch-%' FOR UPDATE",
-    );
-    const next =
-      rows.reduce((highest, row) => {
-        const suffix = Number(row.batch_no.slice('task_batch-'.length));
-        return Number.isSafeInteger(suffix) && suffix > highest ? suffix : highest;
-      }, 0) + 1;
-    return generateBatchNo({ prefix: 'task_batch', sequence: next, padding: 3 });
   }
   private assertVersion(result: ResultSetHeader, message: string): void {
     if (result.affectedRows !== 1)

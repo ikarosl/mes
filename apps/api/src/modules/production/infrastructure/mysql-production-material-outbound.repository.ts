@@ -1,8 +1,8 @@
+import { allocateBusinessNumber } from '../../../infrastructure/numbering/mysql-business-number.js';
 import { materialOutboundDetailsSql } from './queries/material-outbound-details.sql.js';
 import { MaterialVariantQuery, ProductInventoryEligibility } from '../../product/public.js';
 import { InventoryStockCommand } from '../../inventory/public.js';
 import { currentMaterialNameSql } from './queries/material-name.sql.js';
-import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import { withTransaction } from '@company/database';
 import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
@@ -141,7 +141,7 @@ export class MysqlProductionMaterialOutboundRepository extends ProductionMateria
             '制单数量超过当前可制单数量',
           );
       }
-      const outboundNo = `PMO-${Date.now()}-${randomUUID().slice(0, 8)}`;
+      const outboundNo = await allocateBusinessNumber(connection, 'production_material_outbound');
       const [orderResult] = await connection.execute<ResultSetHeader>(
         `INSERT INTO outbound_order (outbound_no,production_batch_id,work_order_id,short_batch_authorization_id,status,outbound_at,operator_id,remark,created_by,updated_by) VALUES (?,?,?,?,'pending_picking',NULL,NULL,?,?,?)`,
         [

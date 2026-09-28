@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import type { PoolConnection, ResultSetHeader } from 'mysql2/promise';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { writeTransactionalAudit } from '../../../common/audit/transactional-audit-writer.js';
@@ -21,8 +20,6 @@ export const numericSort = (a: string, b: string): number => Number(a) - Number(
 export const decimal = fixedIntegerQuantity;
 export const iso = (value: Date | null): string | null =>
   value ? toBeijingISOString(value) : null;
-export const businessNo = (prefix: string): string =>
-  `${prefix}-${new Date().toISOString().slice(0, 10).replaceAll('-', '')}-${randomUUID().slice(0, 8).toUpperCase()}`;
 export const requireVersion = (current: number, expected: number, target: string): void => {
   if (current !== expected)
     throw new ProductionDomainError('CONCURRENT_MODIFICATION', `${target}版本已变化，请刷新后重试`);

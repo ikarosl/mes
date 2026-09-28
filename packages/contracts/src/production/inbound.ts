@@ -52,13 +52,11 @@ export interface PurchaseInboundOrderQuery extends PageQuery {
 }
 
 export interface CreatePurchaseInboundPayload {
-  inboundNo?: string | null;
   provider?: string | null;
   remark?: string | null;
   details: Array<{
     itemId: string;
     materialVariantId: string;
-    batchCode: string;
     inboundQuantity: number;
     remark?: string | null;
   }>;

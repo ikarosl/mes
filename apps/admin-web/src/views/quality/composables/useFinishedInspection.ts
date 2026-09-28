@@ -1,5 +1,6 @@
 import { computed, onActivated, onScopeDispose, reactive, ref } from 'vue';
 import { RequestError } from '@company/request';
+import { toBeijingISOString } from '@company/utils';
 import { PRODUCTION_OUTPUT_RELEASE_DECISION_LABELS } from '@company/constants';
 import type {
   FinishedInspectionTaskDetail,
@@ -11,6 +12,7 @@ import { finishedInspectionsApi } from '../../../api/finished-inspections';
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
 import { useIdempotentIntent } from '../../../composables/idempotency/useIdempotentIntent';
 import { EMessage } from '../../../utils/message';
+import { toBeijingDateTimeInputValue } from '../../../utils/date';
 import { RouteMessageBox } from '../../../utils/route-message-box';
 import { useTabsStore } from '../../../stores/tabs';
 import {
@@ -81,7 +83,7 @@ export function useFinishedInspection(changed: () => void) {
     () =>
       inspectionFormQuantities(inspection) !== null &&
       !!inspection.inspectedAt &&
-      Number.isFinite(Date.parse(inspection.inspectedAt)) &&
+      !!toBeijingDateTimeInputValue(inspection.inspectedAt) &&
       !!inspection.resultNote.trim() &&
       inspection.resultNote.length <= 5000 &&
       !!inspection.evidenceReference.trim() &&
@@ -156,7 +158,7 @@ export function useFinishedInspection(changed: () => void) {
   }
   function openInspectionForm() {
     if (!detail.value?.canRecordInspection || !detail.value.declared) return;
-    Object.assign(inspection, emptyForm(), { inspectedAt: new Date().toISOString() });
+    Object.assign(inspection, emptyForm(), { inspectedAt: toBeijingISOString(Date.now()) });
     Object.assign(inspectionDeclared, detail.value.declared);
     inspectionVersion.value = detail.value.version;
     inspectionOpen.value = true;
@@ -338,7 +340,7 @@ export function useFinishedInspection(changed: () => void) {
           ? { coveredQuantity: quantities.coveredQuantity }
           : {}),
         releaseDecision: inspection.releaseDecision,
-        inspectedAt: new Date(inspection.inspectedAt).toISOString(),
+        inspectedAt: toBeijingISOString(inspection.inspectedAt),
         resultNote: inspection.resultNote.trim(),
         evidenceReference: inspection.evidenceReference.trim(),
       };

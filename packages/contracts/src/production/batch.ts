@@ -129,7 +129,6 @@ export interface ProductionBatchDetail extends ProductionBatchItem {
 }
 
 export interface CreateProductionBatchPayload {
-  batchNo?: string | null;
   routeId?: string | null;
   plannedQuantity: number;
   ownerId?: string | null;

@@ -7,13 +7,12 @@
 | 编号 | 主题 | 类型／当前状态 | 待处理 |
 | --- | --- | --- | --- |
 | [CQ-02](#cq-02) | 成品当前待检轮次被历史放行结论排除 | 文档与查询实现差异；已观察，待核对修正 | 确认当前待办筛选与轮次办理资格一致，保留历史记录查询 |
-| [CP-01](#cp-01) | 上游报工更正的下游数量下限 | 文档两种口径；待裁决 | effective_normal与effective_direct_reported的适用边界 |
+| [CP-01](#cp-01) | 报工数量解耦与管理员批量冲销 | 数量、权限下放及批量冲销已确认；实现待整改 | 执行状态及结案后补录待定 |
 | [CP-02](#cp-02) | 过程复检关联source_rework_id | 历史提案批准状态待确认；当前明确未定稿 | 保留提案或确认撤回，不提前建模 |
 | [CO-01](#co-01) | 产品分类扁平化与树结构 | 旧目标与当前实现冲突；待裁决 | 旧扁平化目标是否仍有效 |
 | [CO-02](#co-02) | Identity主数据审计字段 | 公共规范与owner／migration差异；待裁决 | 补齐规范还是明确经批准的例外 |
 | [CO-03](#co-03) | 演示工单生成旧业务备注 | 代码残留与已明确新规则冲突；待修正 | 后续修改demo SQL，核对展示及初始化行为 |
 | [CO-04](#co-04) | 部署迁移前业务停写 | 执行前置缺口；待明确责任并修正 | 人工维护窗口与脚本自动停写的责任及恢复流程 |
-| [CO-05](#co-05) | 工单编号显式UTC＋8 | 公共时间规范与业务实现差异；待确认例外 | 保留数据库时钟但统一转换责任或明确专项例外 |
 
 ## CQ-01
 
@@ -33,12 +32,14 @@
 
 ## CP-01
 
-**上游冲销／更正应保护哪一种下游数量。**
+**报工定位、统一首工上限、员工日常操作权限下放及管理员批量冲销已确认；状态与结案后补录细则待定，当前实现尚未整改。**
 
-- 一方：[生产流程§14](../apps/api/src/modules/production/docs/business-workflow.md)与[执行专题§4.2.2](../apps/api/src/modules/production/docs/database/execution-traceability-quality.md)要求更正后上游effective_normal不得小于下游effective_normal。
-- 另一方：执行专题§4.2.3及[当前报工Repository](../apps/api/src/modules/production/infrastructure/mysql-production-reporting.repository.ts)冲销／更正调用使用下游effective_direct_reported；该值包含直接正常／异常报工净量，排除返工完成报工，不能与有效正常量互换。
-- 影响：下游已有异常或返工时，两口径可对同一上游更正给出不同结果。
-- 待决：确认应保护的投入／放行事实及返工例外，再统一两处设计与实现；现有代码不能单独充当旧规则被批准取代的证据。
+- 已确认方向：报工承担执行记录与差异追溯，取消相邻工序实际报工量的硬依赖，保留多次汇总、冲销／原子更正；各道统一采用首工投入上限。日常操作下放到负责工序的员工，管理员提供同任务跨工序批量冲销，保留预览、原子提交与具体依赖保护。完整规则与待确认方案由[执行专题](../apps/api/src/modules/production/docs/database/execution-traceability-quality.md#cp-01-报工整改边界)维护。
+- 原冲突证据：生产流程 §14 与执行专题 §4.2.2 原规则为“更正后上游 `effective_normal` 不得小于下游 `effective_normal`”；执行专题 §4.2.3 与[报工 Repository](../apps/api/src/modules/production/infrastructure/mysql-production-reporting.repository.ts)使用下游 `effective_direct_reported`，包含直接正常／异常报工净量、排除返工完成。两者曾在下游异常／返工时给出不同判断，不能视为等义字段。
+- 当前实现差异：报工和更正仍受前道实际正常量限制；[开工规则](../apps/api/src/modules/production/domain/production-execution.policy.ts)要求后道开工前前道正常量大于零，[路线数量](../apps/api/src/modules/production/domain/production-route-quantity.policy.ts)和自动完工仍耦合，任务结束由[完工检查](../apps/api/src/modules/production/domain/production-completion.policy.ts)要求末道正常量等于计划量。当前接口仅有单条冲销／更正，管理员批量冲销尚未实现。
+- 待决边界：进度目标、员工明确开工／完工／重开，以及结案中或批准后的纯正常报工历史纠错。当前审批冻结报工基准，后续清单更正沿用原核对快照；若开放历史纠错，须区分原审批量和当前净报工，不能覆盖原证据或自动生成新的异常／返工／补料。具体业务引用的合法性仍须校验，权限下放不授予任意修改他人工序的资格。
+
+实施顺序、文档联动与验收场景集中在[CP-01 整改清单](roadmap.md#cp-01报工数量解耦与管理员批量冲销整改)。本项在细则定稿且实现差异消除前保留；清单存在不代表代码、正式测试或用户验收已经完成。
 
 ## CP-02
 
@@ -87,9 +88,4 @@
 
 ## CO-05
 
-**工单编号显式UTC＋8是否属于公共时间规范的例外。**
-
-- 一方：[数据库公共规范“统一类型与状态规则”](database-conventions.md#统一类型与状态规则)要求数据库、驱动和会话统一使用北京时间／+08:00，禁止各业务模块自行加减小时。
-- 另一方：[工单编号owner](../apps/api/src/modules/production/docs/database/work-orders-and-batches.md#工单自动编号)明确以数据库时钟转北京时间日期；[mysql-work-order-number.ts](../apps/api/src/modules/production/infrastructure/mysql-work-order-number.ts)使用UTC_TIMESTAMP(3)＋INTERVAL 8 HOUR，demo SQL采用相同表达式。
-- 影响：该表达式目前得到北京时间编号日期，并非发现了错误日期；但它与全仓“业务不自行换算”的职责约束存在未登记例外。
-- 待决：是否保留编号的专项数据库时钟转换例外，或由统一时间设施承担；继续保留北京时间自然日、日计数锁及幂等编号边界，不据此擅改编号算法。
+统一编号的转换职责已由 [ADR-0017](adr/0017-business-numbering-and-beijing-time.md)明确：平台分配器在统一 +08:00 数据库会话读取北京自然日，业务模块和 demo 不再自行 UTC 加八小时。仍保留数据库时钟、日计数锁及幂等边界。本锚点仅保留既有引用，验证和验收见[路线图](roadmap.md)。

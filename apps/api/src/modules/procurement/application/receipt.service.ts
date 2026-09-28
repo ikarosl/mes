@@ -200,7 +200,6 @@ export class ReceiptService {
             ? {
                 mode: 'new',
                 clientKey: detail.target.clientKey,
-                batchCode: detail.target.batchCode,
               }
             : { mode: 'existing', batchId: detail.target.batchId },
       })),

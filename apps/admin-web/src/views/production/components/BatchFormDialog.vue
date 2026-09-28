@@ -12,12 +12,9 @@
       :model="form"
       :disabled="submitting"
     >
-      <el-form-item label="批次号">
-        <el-input
-          v-model="form.batchNo"
-          placeholder="不填则系统自动生成"
-        />
-      </el-form-item>
+      <el-form-item label="批次号">{{
+        editingBatchId ? existingBatchNo : '由系统自动生成'
+      }}</el-form-item>
       <el-form-item
         label="计划数量"
         required
@@ -99,7 +96,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onActivated, reactive, watch } from 'vue';
+import { computed, onActivated, reactive, ref, watch } from 'vue';
 import type { ProductionBatchItem, ProcessRouteOption, UserOption } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
 import { toDateInputValue } from '../../../utils/date';
@@ -108,7 +105,6 @@ import { buildLiveOptions, hasUnavailableSelection } from '../../../utils/live-o
 import { useProcessRouteOptions } from '../../../composables/options/useProcessRouteOptions';
 
 export type BatchFormValue = {
-  batchNo: string;
   routeId: string;
   plannedQuantity: number;
   ownerId: string;
@@ -160,7 +156,6 @@ onActivated(() => {
 });
 
 const initialForm = (): BatchFormValue => ({
-  batchNo: '',
   routeId: '',
   plannedQuantity: 1,
   ownerId: '',
@@ -170,6 +165,7 @@ const initialForm = (): BatchFormValue => ({
 });
 
 const form = reactive<BatchFormValue>(initialForm());
+const existingBatchNo = ref('');
 
 /** 路线下拉实时选项：已选路线在候选被移除时显示「ID（已失效）」并禁用 */
 const routeChoices = computed(() =>
@@ -185,12 +181,13 @@ const userChoices = computed(() =>
 );
 
 const resetForm = (): void => {
+  existingBatchNo.value = '';
   Object.assign(form, initialForm());
 };
 
 const setForm = (row: ProductionBatchItem): void => {
+  existingBatchNo.value = row.batchNo;
   Object.assign(form, {
-    batchNo: row.batchNo,
     routeId: row.routeId ?? '',
     plannedQuantity: Number(row.plannedQuantity),
     ownerId: row.ownerId ?? '',

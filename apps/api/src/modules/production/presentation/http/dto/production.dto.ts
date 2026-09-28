@@ -130,7 +130,6 @@ export class CreateBatchStepOverrideDto {
   @IsOptional() @IsString() @MaxLength(20) actualSopFileId?: string | null;
 }
 export class CreateProductionBatchDto implements CreateProductionBatchPayload {
-  @IsOptional() @IsString() @MaxLength(100) batchNo?: string | null;
   @IsOptional() @IsString() @MaxLength(20) routeId?: string | null;
   @Type(() => Number) @IsInt() @Min(1) @Max(MAX_QUANTITY) plannedQuantity!: number;
   @IsOptional() @IsString() @MaxLength(20) ownerId?: string | null;

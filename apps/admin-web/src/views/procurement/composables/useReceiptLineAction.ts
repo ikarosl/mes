@@ -14,6 +14,7 @@ import type {
 } from '@company/contracts';
 import { RequestError } from '@company/request';
 import { PURCHASE_ORDER_MAX_QUANTITY } from '@company/constants';
+import { toBeijingISOString } from '@company/utils';
 import { procurementApi } from '../../../api/procurement';
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
 import { EMessage } from '../../../utils/message';
@@ -227,7 +228,7 @@ export function useReceiptLineAction(
     reason.value = '';
     handoverEvidence.value = '';
     returnRemark.value = '';
-    returnedAt.value = new Date().toISOString();
+    returnedAt.value = toBeijingISOString(Date.now());
     correctedQuantity.value = Number(target.quantities.receivedQuantity);
     caseType.value = target.currentRound.status === 'uninspected' ? 'initial' : 'reinspection';
     physicalIdentityConfirmed.value = false;
@@ -349,7 +350,7 @@ export function useReceiptLineAction(
         ...round,
         allocationId: range.id,
         receiptRevisionId: range.receiptRevisionId,
-        returnedAt: returnedAt.value,
+        returnedAt: toBeijingISOString(returnedAt.value),
         handoverEvidence: handoverEvidence.value.trim(),
         remark: returnRemark.value.trim() || null,
       };

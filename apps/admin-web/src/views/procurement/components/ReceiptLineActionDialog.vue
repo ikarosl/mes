@@ -105,9 +105,10 @@
               label="实际交接时间"
               required
               ><el-date-picker
-                v-model="returnedAt"
+                :model-value="toBeijingDateTimeInputValue(returnedAt)"
                 type="datetime"
-                value-format="YYYY-MM-DDTHH:mm:ssZ"
+                value-format="YYYY-MM-DD HH:mm:ss"
+                @update:model-value="returnedAt = fromBeijingDateTimeInputValue($event)"
             /></el-form-item>
             <el-form-item
               label="交接凭据"
@@ -252,6 +253,7 @@ import { computed } from 'vue';
 import type { ProcurementReceiptCommandResult } from '@company/contracts';
 import { PURCHASE_ORDER_MAX_QUANTITY, QUALITY_INBOUND_CASE_TYPE_LABELS } from '@company/constants';
 import { DialogWidth } from '../../../utils/dialog';
+import { fromBeijingDateTimeInputValue, toBeijingDateTimeInputValue } from '../../../utils/date';
 import { useReceiptLineAction } from '../composables/useReceiptLineAction';
 import ReceiptLineSummary from './ReceiptLineSummary.vue';
 import InboundInspectionFields from './InboundInspectionFields.vue';

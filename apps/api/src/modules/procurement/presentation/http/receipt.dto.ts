@@ -175,13 +175,6 @@ export class InboundTargetDto {
   @IsNotEmpty()
   @MaxLength(100)
   clientKey?: string;
-  @ValidateIf(
-    (target: InboundTargetDto, value: unknown) => target.mode === 'new' && value !== undefined,
-  )
-  @Transform(trim)
-  @IsString()
-  @MaxLength(100)
-  batchCode?: string;
   @ValidateIf((target: InboundTargetDto) => target.mode === 'existing')
   @Matches(ID)
   batchId?: string;

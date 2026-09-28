@@ -1,3 +1,4 @@
+import { allocateBusinessNumber } from '../../../infrastructure/numbering/mysql-business-number.js';
 import { Inject, Injectable } from '@nestjs/common';
 import { withTransaction } from '@company/database';
 import type { Pool, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
@@ -8,7 +9,7 @@ import { ProductionCloseoutMaterialLossRepository } from '../application/ports/p
 import { ProductionDomainError } from '../domain/production.errors.js';
 import { lockOutputBatch, requireOutputVersion } from './mysql-production-output.persistence.js';
 import { MysqlProductionTerminationRepository } from './mysql-production-termination.repository.js';
-import { businessNo, writeInventoryAudit } from './mysql-production-inventory.shared.js';
+import { writeInventoryAudit } from './mysql-production-inventory.shared.js';
 
 @Injectable()
 export class MysqlProductionCloseoutMaterialLossRepository extends ProductionCloseoutMaterialLossRepository {
@@ -63,7 +64,7 @@ export class MysqlProductionCloseoutMaterialLossRepository extends ProductionClo
         [payload.allocationId, batchId],
       );
       if (!source) throw new ProductionDomainError('NOT_FOUND', '原领料分配不存在');
-      const scrapNo = businessNo('SH');
+      const scrapNo = await allocateBusinessNumber(db, 'material_loss');
       const [record] = await db.execute<ResultSetHeader>(
         `INSERT INTO item_scrap
         (scrap_no,production_batch_id,demand_id,allocation_id,item_id,material_variant_id,batch_id,scrap_scene,loss_purpose,closeout_id,

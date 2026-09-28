@@ -2,7 +2,7 @@ import {
   ArrayMaxSize,
   ArrayUnique,
   IsArray,
-  IsDateString,
+  IsISO8601,
   IsEmail,
   IsIn,
   IsInt,
@@ -178,6 +178,12 @@ export class OperationLogQueryDto extends PageQueryDto {
   @IsOptional() @Matches(/^[A-Za-z0-9_-]{1,128}$/) requestId?: string;
   @IsOptional() @IsString() @MaxLength(64) targetType?: string;
   @IsOptional() @IsNumberString({ no_symbols: true }) targetId?: string;
-  @IsOptional() @IsDateString() createdAtFrom?: string;
-  @IsOptional() @IsDateString() createdAtTo?: string;
+  @IsOptional()
+  @IsISO8601({ strict: true })
+  @Matches(/(?:Z|[+-]\d{2}:\d{2})$/)
+  createdAtFrom?: string;
+  @IsOptional()
+  @IsISO8601({ strict: true })
+  @Matches(/(?:Z|[+-]\d{2}:\d{2})$/)
+  createdAtTo?: string;
 }

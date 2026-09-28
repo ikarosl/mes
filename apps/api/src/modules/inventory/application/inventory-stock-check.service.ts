@@ -41,7 +41,7 @@ export class InventoryStockCheckService {
       '同一盘点单不能重复选择库存批次与状态',
     );
     const created = await this.stockChecks.createStockCheck(
-      { checkNo: clean(payload.checkNo), remark: clean(payload.remark), details: payload.details },
+      { remark: clean(payload.remark), details: payload.details },
       context,
     );
     return (await this.enrichStockChecks([created]))[0]!;

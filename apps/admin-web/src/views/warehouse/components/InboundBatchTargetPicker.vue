@@ -19,14 +19,7 @@
         class="hint"
         >新建 {{ identity }} 的独立库存批次</span
       >
-      <el-input
-        :model-value="modelValue.batchCode ?? ''"
-        :disabled="disabled"
-        maxlength="100"
-        clearable
-        placeholder="新批号（留空由系统生成）"
-        @update:model-value="setBatchCode"
-      />
+      <span class="hint">新库存批号由系统在确认入库时生成。</span>
     </template>
     <template v-else-if="choice === 'reuse'">
       <el-select
@@ -39,11 +32,7 @@
           v-for="target in relatedNewTargets"
           :key="target.clientKey"
           :value="target.clientKey"
-          :label="
-            target.batchCode
-              ? `${target.label} · 批号 ${target.batchCode}`
-              : `${target.label} · 自动批号`
-          "
+          :label="`${target.label} · 自动批号`"
         />
       </el-select>
       <span class="hint">仅明确选中同一请求内的新批次，才会共用一个批号。</span>
@@ -101,7 +90,7 @@ const props = defineProps<{
   unit: string;
   identity?: string;
   disabled?: boolean;
-  relatedNewTargets?: Array<{ clientKey: string; batchCode?: string; label: string }>;
+  relatedNewTargets?: Array<{ clientKey: string; label: string }>;
   newBatchOwner?: boolean;
 }>();
 const emit = defineEmits<{ 'update:modelValue': [value: InventoryInboundTarget] }>();
@@ -149,11 +138,7 @@ function setMode(value: string | number | boolean | undefined) {
 }
 function joinNewBatch(clientKey: string) {
   const shared = relatedNewTargets.value.find((item) => item.clientKey === clientKey);
-  if (shared) emit('update:modelValue', { mode: 'new', clientKey, batchCode: shared.batchCode });
-}
-function setBatchCode(value: string) {
-  if (props.modelValue.mode === 'new')
-    emit('update:modelValue', { ...props.modelValue, batchCode: value || undefined });
+  if (shared) emit('update:modelValue', { mode: 'new', clientKey });
 }
 function setBatchId(value: string) {
   emit('update:modelValue', { mode: 'existing', batchId: value || '' });
@@ -209,17 +194,6 @@ watch(
     if (props.modelValue.mode === 'existing') void load();
   },
 );
-watch(
-  () => [props.modelValue, props.relatedNewTargets, props.newBatchOwner] as const,
-  () => {
-    const target = props.modelValue;
-    if (target.mode !== 'new' || props.newBatchOwner !== false || !target.clientKey) return;
-    const owner = relatedNewTargets.value.find((item) => item.clientKey === target.clientKey);
-    if (owner && owner.batchCode !== target.batchCode)
-      emit('update:modelValue', { ...target, batchCode: owner.batchCode });
-  },
-  { deep: true },
-);
 </script>
 <style scoped>
 .batch-target {
@@ -227,6 +201,10 @@ watch(
   flex-direction: column;
   gap: 6px;
   min-width: 240px;
+}
+.hint {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
 }
 .error {
   color: var(--el-color-danger);

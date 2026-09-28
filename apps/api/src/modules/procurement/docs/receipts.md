@@ -44,4 +44,4 @@ Quality 填方法、合格 G、不合格 F、结论、时间、说明和凭据�
 
 动作位于 /procurement/receipt-lines/:id/actions/：correct-receipt、start-review、inspect、accept、reject、revoke-rejection、return。更正用 receipts:correct；检验用 Quality review/inspect；定稿／拒收／撤销用 receipts:accept；退回用 receipts:return；入库用 production:inbounds:confirm，每个后端接口独立鉴权。
 
-所有写入要求 Idempotency-Key；版本与 codec 在 application/idempotency 中集中登记。采购入库逐明细目标和结果结构切换为 `procurement.inbound.confirm.v5`，指纹包含每条 detailKey、来源行／轮版本、修订、质检、allocation、数量及目标 mode／clientKey／batchCode 或 batchId；同键只重放原已确认结果。未知结果冻结原 body/key 重试，不自动换新轮或新ID。成功操作即使后续轮次变化仍只重放原结果。契约与 schema 同版切换，不保留 scope 接口或双写。
+所有写入要求 Idempotency-Key；版本与 codec 在 application/idempotency 中集中登记。采购入库逐明细目标和结果结构切换为 `procurement.inbound.confirm.v6`，指纹包含每条 detailKey、来源行／轮版本、修订、质检、allocation、数量及目标 mode／clientKey 或 batchId；同键只重放原已确认结果。未知结果冻结原 body/key 重试，不自动换新轮或新ID。成功操作即使后续轮次变化仍只重放原结果。契约与 schema 同版切换，不保留 scope 接口或双写。

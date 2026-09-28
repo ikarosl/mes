@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { allocateBusinessNumber } from '../../../infrastructure/numbering/mysql-business-number.js';
 import { Inject, Injectable } from '@nestjs/common';
 import { withActiveConnection } from '@company/database';
 import {
@@ -94,13 +94,10 @@ export class MysqlInventoryInboundCommand extends InventoryInboundCommand {
             );
           batchId = detail.target.batchId;
         } else {
-          const identity = `${input.productId}:${input.unit}:${detail.target.batchCode ?? ''}`;
+          const identity = `${input.productId}:${input.unit}`;
           const prior = newByKey.get(detail.target.clientKey);
           if (prior && prior.identity !== identity)
-            throw new InventoryDomainError(
-              'INVALID_INPUT',
-              '共用新批次的成品身份、单位或批号不一致',
-            );
+            throw new InventoryDomainError('INVALID_INPUT', '共用新批次的成品身份或单位不一致');
           if (prior) batchId = prior.batchId;
           else {
             let created: ResultSetHeader;
@@ -112,7 +109,7 @@ export class MysqlInventoryInboundCommand extends InventoryInboundCommand {
                   input.productId,
                   input.productCode,
                   input.unit,
-                  detail.target.batchCode?.trim() ?? code('IB'),
+                  await allocateBusinessNumber(db, 'inventory_batch'),
                   input.remark ?? null,
                   context.actorId,
                   context.actorId,
@@ -129,7 +126,7 @@ export class MysqlInventoryInboundCommand extends InventoryInboundCommand {
         }
         resolved.set(detail, batchId);
       }
-      const inboundNo = code('FI');
+      const inboundNo = await allocateBusinessNumber(db, 'finished_inbound');
       const [order] = await db.execute<ResultSetHeader>(
         `INSERT INTO inbound_order(inbound_no,source_type,work_order_id,production_batch_id,product_id,status,inbound_at,operator_id,remark,created_by,updated_by)
          VALUES (?,'finished_product',?,?,?,'pending',CURRENT_TIMESTAMP,?,?,?,?)`,
@@ -303,14 +300,9 @@ function validateFinished(input: FinishedOutputInput): void {
       if (!/^[1-9]\d*$/.test(detail.target.batchId))
         throw new InventoryDomainError('INVALID_INPUT', '目标批次无效');
     } else {
-      if (
-        !detail.target.clientKey.trim() ||
-        detail.target.clientKey.length > 100 ||
-        (detail.target.batchCode !== undefined &&
-          (!detail.target.batchCode.trim() || detail.target.batchCode.length > 100))
-      )
-        throw new InventoryDomainError('INVALID_INPUT', '新批次标识或批号无效');
-      const identity = `${input.productId}:${input.unit}:${detail.target.batchCode ?? ''}`;
+      if (!detail.target.clientKey.trim() || detail.target.clientKey.length > 100)
+        throw new InventoryDomainError('INVALID_INPUT', '新批次标识无效');
+      const identity = `${input.productId}:${input.unit}`;
       const previous = keys.get(detail.target.clientKey);
       if (previous && previous !== identity)
         throw new InventoryDomainError('INVALID_INPUT', '共用新批次的身份不一致');
@@ -318,8 +310,6 @@ function validateFinished(input: FinishedOutputInput): void {
     }
   }
 }
-const code = (prefix: 'FI' | 'IB') =>
-  `${prefix}-${Date.now()}-${randomUUID().slice(0, 8).toUpperCase()}`;
 
 function isDuplicate(error: unknown): boolean {
   if (typeof error !== 'object' || error === null) return false;

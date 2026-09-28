@@ -1,3 +1,4 @@
+import { beijingTodayUtc } from '../../utils/date';
 import type { ProductionBatchStatus, WorkOrderType } from '@company/contracts';
 
 export interface DeadlinePresentation {
@@ -18,18 +19,6 @@ export const batchCloseoutActionLabel = (
   if (status === 'terminated' || status === 'completed') return '查看结案信息';
   if (status === 'closing') return mode === 'normal' ? '核对产出清单' : '继续收尾';
   return '提前结束';
-};
-
-const beijingTodayUtc = (now = new Date()): number => {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'Asia/Shanghai',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(now);
-  const value = (type: Intl.DateTimeFormatPartTypes) =>
-    Number(parts.find((part) => part.type === type)?.value ?? 0);
-  return Date.UTC(value('year'), value('month') - 1, value('day'));
 };
 
 const dateUtc = (value: string | null): number | null => {

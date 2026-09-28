@@ -48,13 +48,13 @@ down 首先要求采购根为空，之后依赖顺序删除触发器、关闭／
 
 | 表 | 类型与关键约束 |
 | --- | --- |
-| procurement_receipt | 不可变交接事实；唯一 receipt_no、采购根、真实时间／凭据、创建审计 |
+| procurement_receipt | 不可变交接事实；自动 RC、唯一 receipt_no、采购根、真实时间／凭据、创建审计 |
 | procurement_receipt_line | 可变聚合；精确身份及原采购行固定；current_revision/current_round 同到货 FK；不保存目标库存批次，逐笔目标从 inbound_detail 读取；M审计/version |
 | procurement_receipt_revision | 不可变本次到货核实总量；同明细 revision_no 唯一、previous_revision_id 同源、非负 T、同批确认及原因 |
 | procurement_receipt_round | 可变资格；同明细 round_no 唯一；previous/source_allocation_round_id 同到货 FK；起始 revision/starting_quantity；当前 QC；原因及 M审计/version |
 | procurement_receipt_acceptance | 不可变定稿；每 round 唯一、同到货；正常 QC 必填；前后 revision、C、override_reason、previous_acceptance及创建审计 |
 | procurement_receipt_allocation | 不可变去向授权；同轮 line_no 唯一；同到货 round FK、普通 acceptance 同轮组合 FK；owner、正 quantity、去向及原因、termination_reason、创建审计 |
-| procurement_supplier_return | 不可变真实退回；唯一 return_no/allocation_id；同到货 allocation FK、revision、数量／时间／凭据；非人工拒收必须 QC |
+| procurement_supplier_return | 不可变真实退回；自动 VR、唯一 return_no/allocation_id；同到货 allocation FK、revision、数量／时间／凭据；非人工拒收必须 QC |
 
 round.status 为 uninspected/reviewing/reinspection_required/quality_rejected/awaiting_acceptance/finalized/superseded；trigger_type 为 receipt/receipt_correction/review/acceptance_correction/manual_rejection/rejection_revocation。状态与方法 full/sampling 分开。旧轮 superseded 即收回其全部剩余授权，allocation 自身不改状态、不拆子行。source_allocation_round_id 只继承采购归属／终止约束；经过已定稿零剩余且无分配的轮次必须清空，不能恢复更老授权。
 

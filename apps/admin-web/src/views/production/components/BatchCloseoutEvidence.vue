@@ -68,7 +68,7 @@
         snapshot.inspection.createdByName
       }}</el-descriptions-item>
       <el-descriptions-item label="线下检验时间">{{
-        snapshot.inspection.inspectedAt
+        formatDateTimeForDisplay(snapshot.inspection.inspectedAt)
       }}</el-descriptions-item>
       <el-descriptions-item label="当时申报版本">{{
         snapshot.inspection.declaredVersion
@@ -133,10 +133,12 @@
         width="100"
       />
       <el-table-column
-        prop="createdAt"
         label="处理时间"
         min-width="160"
-      />
+        ><template #default="{ row }">{{
+          formatDateTimeForDisplay(row.createdAt)
+        }}</template></el-table-column
+      >
     </el-table>
     <h4>物料核对依据</h4>
     <el-table
@@ -176,6 +178,7 @@ import {
   PRODUCTION_CLOSEOUT_MODE_LABELS,
 } from '@company/constants';
 import { formatQuantity as quantity } from '../production-status';
+import { formatDateTimeForDisplay } from '../../../utils/date';
 import ProductionMaterialLossRecords from './ProductionMaterialLossRecords.vue';
 import ProductionOutputInspectionFacts from '../../quality/components/FinishedInspectionFacts.vue';
 defineProps<{ snapshot: BatchCloseoutApprovalSnapshot }>();

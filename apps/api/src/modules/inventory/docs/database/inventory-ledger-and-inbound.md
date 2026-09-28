@@ -44,9 +44,9 @@
 | `remark` / `version` | `TEXT NULL` / `INT` | 备注及乐观锁版本 |
 | `created_by/at`、`updated_by/at` | 业务审计类型 | 创建、更新人与时间 |
 
-主键 `id`；唯一键 `(material_variant_id,batch_code)`、`(product_id,batch_code)`、`(id,item_id)`、`(id,item_id,material_variant_id)`、`(id,product_id)`；物料与成品身份互斥 CHECK，`batch_status` 与 `source_type` 代码 CHECK。外键分别保护物料、精确版本、成品及历史来源工单/任务，索引 `(item_id,batch_status)`、`(product_id,batch_status)` 支持候选查询。身份、批号、单位、来源描述不可回改；状态可以按批次管理动作变化。新成品库批 `source_type='finished_product'` 且 `provider/source_work_order_id/source_production_batch_id` 必须为空。
+主键 `id`；全局唯一键 `(batch_code)`，并保留组合键 `(material_variant_id,batch_code)`、`(product_id,batch_code)`、`(id,item_id)`、`(id,item_id,material_variant_id)`、`(id,product_id)`；物料与成品身份互斥 CHECK，`batch_status` 与 `source_type` 代码 CHECK。外键分别保护物料、精确版本、成品及历史来源工单/任务，索引 `(item_id,batch_status)`、`(product_id,batch_status)` 支持候选查询。身份、批号、单位、来源描述不可回改；状态可以按批次管理动作变化。新成品库批 `source_type='finished_product'` 且 `provider/source_work_order_id/source_production_batch_id` 必须为空。
 
-新批次可用指定批号或自动批号；同请求只有相同 `clientKey` 才共用一个新批次。同产品或同物料精确版本、相同单位且 `available` 的已有批次可再次入库。批号相同本身不自动表示复用。一个库批可以有多个来源，一份来源授权也可以分入不同库批。批次余额与已入历史从流水、明细分别推导，不能以一方替代另一方。
+新批次仅由服务端在真实插入时分配 IB 编号，物料和成品共用序列；同请求只有相同 `clientKey` 才共用一个新批次且只取号一次。同产品或同物料精确版本、相同单位且 `available` 的已有批次可再次入库，不取新 IB。批号不作为请求中的归批选择依据。一个库批可以有多个来源，一份来源授权也可以分入不同库批。批次余额与已入历史从流水、明细分别推导，不能以一方替代另一方。
 
 ---
 
@@ -269,7 +269,7 @@
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `id` | `BIGINT UNSIGNED` | 主键 |
-| `inbound_no` | `VARCHAR(100)` | 唯一入库单号 |
+| `inbound_no` | `VARCHAR(100)` | 唯一入库单号；采购 PI、成品 FI 分别自动分配 |
 | `source_type` | `VARCHAR(30)` | 采购 `purchased`；成品统一 `finished_product` |
 | `provider` | `VARCHAR(100) NULL` | 采购本单供应商；成品为空 |
 | `work_order_id` / `production_batch_id` | `BIGINT UNSIGNED NULL` | 成品来源工单/任务，采购为空 |

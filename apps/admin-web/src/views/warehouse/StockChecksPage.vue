@@ -174,13 +174,7 @@
           label-width="90px"
         >
           <el-row :gutter="16">
-            <el-col :span="12"
-              ><el-form-item label="盘点单号"
-                ><el-input
-                  v-model="createForm.checkNo"
-                  placeholder="留空由系统生成"
-                  maxlength="100" /></el-form-item
-            ></el-col>
+            <el-col :span="12"><el-form-item label="盘点单号">由系统自动生成</el-form-item></el-col>
             <el-col :span="12"
               ><el-form-item label="备注"
                 ><el-input
@@ -475,7 +469,7 @@ const loading = ref(false);
 const pendingAction = ref('');
 const createVisible = ref(false);
 const submitting = ref(false);
-const createForm = reactive({ checkNo: '', remark: '' });
+const createForm = reactive({ remark: '' });
 const candidateQuery = reactive<{
   page: number;
   pageSize: number;
@@ -542,7 +536,6 @@ async function loadCandidates() {
   }
 }
 function openCreate() {
-  createForm.checkNo = '';
   createForm.remark = '';
   candidateQuery.page = 1;
   candidateQuery.keyword = '';
@@ -578,7 +571,6 @@ async function submitCreate() {
   submitting.value = true;
   try {
     await warehouseApi.createStockCheck({
-      checkNo: createForm.checkNo.trim() || null,
       remark: createForm.remark.trim() || null,
       details: [...selectedTargets.value.values()].map((row) => ({
         itemBatchId: row.itemBatchId,
@@ -732,9 +724,7 @@ const statusTag = (status: StockCheckStatus) =>
         ? 'primary'
         : 'warning';
 function createHasDraft() {
-  return Boolean(
-    createForm.checkNo.trim() || createForm.remark.trim() || selectedTargets.value.size,
-  );
+  return Boolean(createForm.remark.trim() || selectedTargets.value.size);
 }
 async function beforeCreateClose(done: () => void) {
   if (!createHasDraft()) return done();

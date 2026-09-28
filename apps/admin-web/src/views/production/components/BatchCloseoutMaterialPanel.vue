@@ -83,7 +83,7 @@
             v-if="row.review?.reviewedAt"
             class="muted"
           >
-            {{ row.review.reviewedAt }} · 操作人 #{{ row.review.actorId }}
+            {{ formatDateTimeForDisplay(row.review.reviewedAt) }} · 操作人 #{{ row.review.actorId }}
           </div>
         </template>
       </el-table-column>
@@ -125,6 +125,7 @@ import {
   DEMAND_GENERATION_GROUP_TYPE_LABELS,
 } from '@company/constants';
 import { formatQuantity as quantity } from '../production-status';
+import { formatDateTimeForDisplay } from '../../../utils/date';
 const props = defineProps<{
   check: BatchTerminationCheck;
   detail: BatchCloseoutDetail | null;

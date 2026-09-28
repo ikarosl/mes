@@ -66,6 +66,7 @@ migration 的物理位置不表示业务所有权。业务表设计跟随代码�
 - [Inventory 数据库设计](../../apps/api/src/modules/inventory/docs/database.md)
 - [Production 数据库设计](../../apps/api/src/modules/production/docs/database/README.md)
 - [平台操作审计](../../apps/api/docs/audit.md)
+- [平台业务编号](../../apps/api/docs/business-numbering.md)
 - [平台 HTTP 幂等](../../apps/api/docs/idempotency.md)
 - [跨模块数据库约定](../../docs/database-conventions.md)
 

@@ -329,7 +329,6 @@ const groupSummaries = computed(() => {
 });
 const quantityErrors = computed(() => {
   const errors = new Map<string, string>();
-  const newBatchCodes = new Map<string, string>();
   for (const row of selected.value) {
     if (parseInboundQuantity(row.quantity) === null)
       errors.set(row.detailKey, '请输入 1～99999999 的正整数');
@@ -337,13 +336,6 @@ const quantityErrors = computed(() => {
       errors.set(row.detailKey, '请选择已有批次');
     else if (row.target.mode === 'new' && !row.target.clientKey)
       errors.set(row.detailKey, '请选择本次复用的新批次');
-    if (row.target.mode === 'new' && row.target.batchCode?.trim()) {
-      const codeKey = `${row.source.productId}:${row.target.batchCode.trim().toLocaleLowerCase()}`;
-      const existingKey = newBatchCodes.get(codeKey);
-      if (existingKey && existingKey !== row.target.clientKey)
-        errors.set(row.detailKey, '新批号重复；如需共建，请明确选择“复用本次新批次”');
-      newBatchCodes.set(codeKey, row.target.clientKey);
-    }
   }
   for (const group of groupSummaries.value) {
     if (group.total > group.allowance) {
@@ -380,9 +372,7 @@ async function loadDetail(): Promise<void> {
     if (current === requestNo) loading.value = false;
   }
 }
-function relatedNewTargetsFor(
-  detailKey: string,
-): Array<{ clientKey: string; batchCode?: string; label: string }> {
+function relatedNewTargetsFor(detailKey: string): Array<{ clientKey: string; label: string }> {
   const current = selected.value.find((item) => item.detailKey === detailKey);
   if (!current) return [];
   return selected.value.flatMap((item, index) =>
@@ -394,7 +384,6 @@ function relatedNewTargetsFor(
       ? [
           {
             clientKey: item.target.clientKey,
-            batchCode: item.target.batchCode,
             label: `${item.source.batchNo} · ${item.source.productCode} · 第 ${index + 1} 条目标`,
           },
         ]
@@ -412,7 +401,7 @@ function isNewBatchOwnerFor(detailKey: string): boolean {
 }
 function targetLabel(row: FinishedInboundSelection): string {
   if (row.target.mode === 'existing') return `已有批次 #${row.target.batchId || '待选'}`;
-  return `${isNewBatchOwnerFor(row.detailKey) ? '新建批次' : '复用本次新批次'} ${row.target.batchCode || '自动批号'}`;
+  return `${isNewBatchOwnerFor(row.detailKey) ? '新建批次' : '复用本次新批次'} · 系统生成批号`;
 }
 function remove(detailKey: string): void {
   if (!locked.value) selected.value = selected.value.filter((item) => item.detailKey !== detailKey);

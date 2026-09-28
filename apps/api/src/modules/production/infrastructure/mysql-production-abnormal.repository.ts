@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { allocateBusinessNumber } from '../../../infrastructure/numbering/mysql-business-number.js';
 import { Inject, Injectable } from '@nestjs/common';
 import { withTransaction } from '@company/database';
 import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
@@ -118,7 +118,7 @@ export class MysqlProductionAbnormalRepository extends ProductionAbnormalReposit
          (rework_no,abnormal_disposition_id,production_batch_id,batch_step_record_id,source_report_id,responsible_user_id,rework_quantity,unit_snapshot,status,remark,created_by,updated_by)
          VALUES (?,?,?,?,?,?,?,?,'pending',?,?,?)`,
         [
-          `RW-${Date.now()}-${randomUUID().slice(0, 8)}`,
+          await allocateBusinessNumber(connection, 'rework'),
           dispositionId,
           source.production_batch_id,
           source.batch_step_record_id,
@@ -357,7 +357,7 @@ const insertRejectedSourceReversal = async (
      (report_no,production_batch_id,batch_step_record_id,report_type,reversal_of_report_id,replaces_report_id,reported_quantity,normal_quantity,abnormal_quantity,abnormal_origin,unit_snapshot,remark,created_by)
      VALUES (?,?,?,'reversal',?,NULL,?,?,?,?,?,?,?)`,
     [
-      `SR-${Date.now()}-${randomUUID().slice(0, 12)}`,
+      await allocateBusinessNumber(connection, 'step_report'),
       source.production_batch_id,
       source.batch_step_record_id,
       source.batch_step_report_id,
@@ -458,7 +458,7 @@ const insertReworkReport = async (
      (report_no,production_batch_id,batch_step_record_id,report_type,reported_quantity,normal_quantity,abnormal_quantity,abnormal_origin,unit_snapshot,remark,created_by)
      VALUES (?,?,?,'normal',?,?,?,?,?,?,?)`,
     [
-      `SR-RW-${Date.now()}-${randomUUID().slice(0, 10)}`,
+      await allocateBusinessNumber(connection, 'step_report'),
       rework.productionBatchId,
       rework.stepRecordId,
       fixed(payload.normalQuantity + payload.abnormalQuantity),
@@ -484,7 +484,7 @@ const insertDisposition = async (
      (disposition_no,production_batch_id,batch_step_record_id,batch_step_report_id,review_status,created_by,updated_by)
      VALUES (?,?,?,?,'pending_review',?,?)`,
     [
-      `BAD-${Date.now()}-${randomUUID().slice(0, 12)}`,
+      await allocateBusinessNumber(connection, 'abnormal_disposition'),
       rework.productionBatchId,
       rework.stepRecordId,
       reportId,

@@ -534,7 +534,7 @@ const summary = (row: PurchaseInboundOrderItem) =>
   row.quantitySummary.map((item) => `${formatQuantity(item.quantity)} ${item.unit}`).join(' / ');
 const targetLabel = (target: InventoryInboundTarget, detailKey: string): string => {
   if (target.mode === 'existing') return `已有批次 #${target.batchId || '待选'}`;
-  return `${releases.isNewBatchOwnerFor(detailKey) ? '新建批次' : '复用本次新批次'} ${target.batchCode || '自动批号'}`;
+  return `${releases.isNewBatchOwnerFor(detailKey) ? '新建批次' : '复用本次新批次'} · 系统生成批号`;
 };
 const loadHistory = () =>
   history.load({
