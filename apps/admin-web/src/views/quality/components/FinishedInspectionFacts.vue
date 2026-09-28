@@ -6,30 +6,33 @@
     <el-descriptions-item label="检验方式">{{
       PRODUCTION_OUTPUT_INSPECTION_METHOD_LABELS[inspection.inspectionMethod]
     }}</el-descriptions-item>
-    <el-descriptions-item label="整批实际送检总数">{{
-      inspection.coveredQuantity
-    }}</el-descriptions-item>
-    <el-descriptions-item :label="isSampling ? '样本检查总数' : '实际检查总数'">{{
-      inspection.inspectedQuantity
-    }}</el-descriptions-item>
-    <el-descriptions-item :label="isSampling ? '样本合格数' : '合格数'">{{
-      inspection.qualifiedQuantity
-    }}</el-descriptions-item>
-    <el-descriptions-item :label="isSampling ? '样本不合格数' : '不合格数'">{{
-      inspection.unqualifiedQuantity
-    }}</el-descriptions-item>
+    <el-descriptions-item label="整批实际送检总数"
+      >{{ inspection.coveredQuantity }} 件</el-descriptions-item
+    >
+    <el-descriptions-item :label="isSampling ? '样本检查总数' : '实际检查总数'"
+      >{{ inspection.inspectedQuantity }} 件</el-descriptions-item
+    >
+    <el-descriptions-item :label="isSampling ? '样本合格数' : '合格数'"
+      >{{ inspection.qualifiedQuantity }} 件</el-descriptions-item
+    >
+    <el-descriptions-item :label="isSampling ? '样本不合格数' : '不合格数'"
+      >{{ inspection.unqualifiedQuantity }} 件</el-descriptions-item
+    >
     <el-descriptions-item label="整批处理结论">{{
       PRODUCTION_OUTPUT_RELEASE_DECISION_LABELS[inspection.releaseDecision]
     }}</el-descriptions-item>
-    <el-descriptions-item label="检验轮固定已入基准">{{
-      Number(inspection.baselinePlannedReceived) + Number(inspection.baselineExtraReceived)
-    }}</el-descriptions-item>
-    <el-descriptions-item label="累计建议量">{{
-      inspection.cumulativeSuggestionQuantity
-    }}</el-descriptions-item>
+    <el-descriptions-item label="检验轮固定已入基准"
+      >{{
+        Number(inspection.baselinePlannedReceived) + Number(inspection.baselineExtraReceived)
+      }}
+      件</el-descriptions-item
+    >
+    <el-descriptions-item label="累计建议量"
+      >{{ inspection.cumulativeSuggestionQuantity }} 件</el-descriptions-item
+    >
     <el-descriptions-item label="本次检验建议量">{{
       inspection.releaseDecision === PRODUCTION_OUTPUT_RELEASE_DECISIONS[0]
-        ? inspection.releasedQuantity
+        ? `${inspection.releasedQuantity} 件`
         : '未放行'
     }}</el-descriptions-item>
   </el-descriptions>
@@ -41,9 +44,12 @@
     :title="`实际送检总数与当时申报相差 ${difference > 0 ? '+' : ''}${difference} 件`"
     :description="`当时申报 ${declaredTotal} 件，实际送检 ${inspection.coveredQuantity} 件；检验记录不回写产线草稿。`"
   />
-  <p class="inspection-note">
-    明确放行时，全检建议量为合格数，抽检建议量为实际送检总数减样本不合格数，不按样本比例推算整批。数量差异仅提示，最终产出由产线管理员核对并提交负责人审批；不合格不自动登记报废。
-  </p>
+  <details class="inspection-note">
+    <summary>数量如何计算</summary>
+    <p>
+      明确放行时，全检建议量为合格数，抽检建议量为实际送检总数减样本不合格数，不按样本比例推算整批。数量差异仅提示，最终产出由产线管理员核对并提交负责人审批；不合格不自动登记报废。
+    </p>
+  </details>
 </template>
 <script setup lang="ts">
 import { computed } from 'vue';
@@ -68,5 +74,9 @@ const difference = computed(() => props.inspection.coveredQuantity - declaredTot
   color: var(--el-text-color-secondary);
   font-size: 13px;
   line-height: 1.7;
+}
+.inspection-note summary {
+  cursor: pointer;
+  color: #306188;
 }
 </style>

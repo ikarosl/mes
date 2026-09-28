@@ -16,32 +16,90 @@
         class="notice"
       />
       <template v-if="line && inspection">
-        <ReceiptLineSummary :line="line" />
-        <InboundInspectionRecord :inspection="inspection" />
+        <el-descriptions
+          :column="3"
+          border
+          size="small"
+          class="acceptance-identity"
+        >
+          <el-descriptions-item label="本批物料 / 版本">
+            <strong>{{ line.itemName }}</strong> · {{ line.itemCode }} ·
+            {{ line.materialVariantCode }}
+          </el-descriptions-item>
+          <el-descriptions-item label="供应商 / 批号">
+            {{ line.supplierName }} · {{ line.supplierBatchCode || '未提供批号' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="当前轮次">
+            第 {{ line.currentRound.roundNo }} 轮 ·
+            {{ RECEIPT_ROUND_STATUS_LABELS[line.currentRound.status] }}
+          </el-descriptions-item>
+        </el-descriptions>
+        <el-alert
+          v-if="line.quantities.hasOpenReview"
+          type="warning"
+          title="当前存在质量阻断，整批暂停正常定稿。请刷新依据并核对当前轮。"
+          :closable="false"
+          class="notice"
+        />
         <el-alert
           v-if="inspectionConsumed > 0"
           type="info"
           :closable="false"
           class="notice"
         >
-          本记录已处置量 {{ inspectionConsumed }} {{ line.unit }}，已入或已退事实不重新授权。
+          当前检验依据已有 {{ inspectionConsumed }} {{ line.unit }} 实际处置，不重新授权。
           {{
             inspection.inspectionMethod === 'full'
               ? `本次剩余建议量为 max(0, ${inspection.qualifiedQuantity} − ${inspectionConsumed})。`
               : '抽检仍以本次核实剩余总量减原样本不合格数给出保守建议；数量异常须另填依据。'
           }}
         </el-alert>
-        <el-alert
-          :type="correctedTotal === Number(line.quantities.receivedQuantity) ? 'info' : 'warning'"
-          :closable="false"
-          class="notice"
+        <el-descriptions
+          :column="3"
+          border
+          size="small"
+          class="review-summary"
         >
-          本次定稿实物 {{ quantity ?? '待填写' }} {{ line.unit }}；质检建议可入量
-          {{ limit ?? '依据不一致，待核对' }}。 到货总量 {{ line.quantities.receivedQuantity }} →
-          {{ Number.isFinite(correctedTotal) ? correctedTotal : '待填写' }}。 已入库
-          {{ line.quantities.inboundQuantity }}、已退回
-          {{ line.quantities.returnedQuantity }} 保留原事实。
-        </el-alert>
+          <el-descriptions-item label="实物账">
+            <div>本批到货核实 {{ line.quantities.receivedQuantity }} {{ line.unit }}</div>
+            <div>
+              历史已入 {{ line.quantities.inboundQuantity }} · 已退
+              {{ line.quantities.returnedQuantity }} {{ line.unit }}
+            </div>
+            <div>本轮未处置 {{ line.quantities.unprocessedQuantity }} {{ line.unit }}</div>
+          </el-descriptions-item>
+          <el-descriptions-item label="检验依据">
+            <div>检验记录 #{{ inspection.id }}</div>
+            <div>
+              合格 {{ inspection.qualifiedQuantity }} · 不合格 {{ inspection.unqualifiedQuantity }}
+            </div>
+            <div>
+              本轮建议可入
+              {{ quantity === undefined ? '待填写核实剩余量' : (limit ?? '依据不一致，待核对') }}
+              {{ quantity === undefined ? '' : line.unit }}
+            </div>
+          </el-descriptions-item>
+          <el-descriptions-item label="本轮去向草稿">
+            <div>核实剩余 {{ quantity ?? '待填写' }} {{ line.unit }}</div>
+            <div>
+              原单 / 补单可入 {{ inboundTotal }} · 待退 {{ returnTotal }} · 待处理
+              {{ pendingTotal }} {{ line.unit }}
+            </div>
+            <div>
+              到货总量复核 {{ line.quantities.receivedQuantity }} →
+              {{ Number.isFinite(correctedTotal) ? correctedTotal : '待填写' }}
+            </div>
+          </el-descriptions-item>
+        </el-descriptions>
+        <el-collapse class="evidence-collapse">
+          <el-collapse-item
+            name="evidence"
+            title="查看完整检验凭据与数量依据"
+          >
+            <InboundInspectionRecord :inspection="inspection" />
+            <ReceiptLineSummary :line="line" />
+          </el-collapse-item>
+        </el-collapse>
         <el-form :disabled="command.locked.value || stale || loading">
           <el-form-item
             label="库管核实本批未处置实物总量"
@@ -180,14 +238,20 @@
               "
               >增加分配</el-button
             >
-            <span
-              >全部分配 {{ total }} / {{ quantity ?? '待填写' }}；最终可入库
-              {{ inboundTotal }}；质检建议 {{ limit ?? '待核对' }}</span
-            >
+            <span :class="{ 'allocation-mismatch': quantity !== undefined && total !== quantity }">
+              已分配 {{ total }} / 应处理 {{ quantity ?? '待填写' }} {{ line.unit }}；差额
+              {{ quantity === undefined ? '待填写' : quantity - total }} {{ line.unit }}
+            </span>
           </div>
-          <p class="hint">
-            补单须先正式下单，再选择承接本次实物。尚未下单的超发量保留待处理；补单不再登记第二次到货。整批复检保留已绑定采购归属，请核对新去向；实物总量确有计数更正时，同时核对受影响的采购份额并说明依据。待退回是处置安排，实际交接另行确认。
-          </p>
+          <p class="hint">待退回是去向安排，实际交接另行确认；补单须先正式下单，再承接本次实物。</p>
+          <el-collapse class="allocation-help">
+            <el-collapse-item
+              name="rules"
+              title="补单与更正核对说明"
+            >
+              尚未下单的超发量保留待处理；补单不再登记第二次到货。整批复检保留已绑定采购归属，请核对新去向；实物总量确有计数更正时，同时核对受影响的采购份额并说明依据。
+            </el-collapse-item>
+          </el-collapse>
           <el-form-item
             ><el-checkbox v-model="physicalIdentityConfirmed"
               >已核对为本次同批实物，数量差异为计数修正</el-checkbox
@@ -244,6 +308,7 @@
   </el-dialog>
 </template>
 <script setup lang="ts">
+import { computed } from 'vue';
 import type { ProcurementReceiptCommandResult } from '@company/contracts';
 import {
   RECEIPT_ALLOCATION_DISPOSITIONS,
@@ -251,6 +316,7 @@ import {
   RECEIPT_RETURN_REASONS,
   SUPPLIER_RETURN_REASON_LABELS,
   PURCHASE_ORDER_MAX_QUANTITY,
+  RECEIPT_ROUND_STATUS_LABELS,
 } from '@company/constants';
 import { DialogWidth } from '../../../utils/dialog';
 import { useReceiptAcceptance } from '../composables/useReceiptAcceptance';
@@ -282,6 +348,16 @@ const {
   close,
   confirm,
 } = useReceiptAcceptance((result) => emit('saved', result));
+const returnTotal = computed(() =>
+  details.value
+    .filter((row) => row.disposition === 'return')
+    .reduce((sum, row) => sum + Number(row.quantity), 0),
+);
+const pendingTotal = computed(() =>
+  details.value
+    .filter((row) => row.disposition === 'pending')
+    .reduce((sum, row) => sum + Number(row.quantity), 0),
+);
 const beforeClose = () => {
   void close();
 };
@@ -294,6 +370,18 @@ defineExpose({ open, close, visible, locked: command.locked });
 .notice {
   margin: 16px 0;
 }
+.review-summary {
+  margin: 8px 0 12px;
+}
+.acceptance-identity {
+  margin-bottom: 8px;
+}
+.evidence-collapse {
+  margin-bottom: 12px;
+}
+.review-summary :deep(.el-descriptions__content) > div {
+  margin-bottom: 4px;
+}
 .allocation-actions {
   display: flex;
   align-items: center;
@@ -304,6 +392,13 @@ defineExpose({ open, close, visible, locked: command.locked });
   color: #6b7280;
   font-size: 13px;
   line-height: 1.8;
+}
+.allocation-mismatch {
+  color: #b45309;
+  font-weight: 600;
+}
+.allocation-help {
+  margin-bottom: 16px;
 }
 .el-input-number {
   width: 145px;

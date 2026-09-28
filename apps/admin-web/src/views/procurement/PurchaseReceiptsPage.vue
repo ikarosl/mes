@@ -44,16 +44,19 @@
         v-loading="loading"
         :data="rows"
         row-key="id"
-        empty-text="暂无采购到货记录"
+        :empty-text="
+          awaitingAcceptance
+            ? '当前筛选下没有待核对清单的到货记录'
+            : '当前筛选下没有到货记录，可登记实际到货或调整查询'
+        "
         ><el-table-column
-          prop="receiptNo"
-          label="到货单号"
-          min-width="185"
-        /><el-table-column
-          prop="purchaseNo"
-          label="采购单号"
-          min-width="185"
-        /><el-table-column
+          label="到货 / 采购单"
+          min-width="240"
+          ><template #default="{ row }">
+            <strong>{{ row.receiptNo }}</strong>
+            <div class="secondary">采购 {{ row.purchaseNo }}</div>
+          </template></el-table-column
+        ><el-table-column
           label="供应商"
           min-width="210"
           show-overflow-tooltip
@@ -61,25 +64,32 @@
             supplierSummary(row.suppliers)
           }}</template></el-table-column
         ><el-table-column
-          prop="awaitingAcceptanceCount"
-          label="待定稿批次"
-          width="110"
-        /><el-table-column
-          prop="lineCount"
-          label="明细数"
-          width="85"
-        /><el-table-column
+          label="明细 / 当前待核对"
+          min-width="190"
+          ><template #default="{ row }">
+            <span>{{ row.lineCount }} 条到货明细</span>
+            <el-tag
+              v-if="row.awaitingAcceptanceCount > 0"
+              size="small"
+              type="warning"
+              class="pending-tag"
+            >
+              待定稿 {{ row.awaitingAcceptanceCount }} 条
+            </el-tag>
+            <span
+              v-else
+              class="secondary"
+            >
+              · 无待定稿明细</span
+            >
+          </template></el-table-column
+        ><el-table-column
           label="实际到货时间"
           width="190"
           ><template #default="{ row }">{{
             formatDateTimeForDisplay(row.receivedAt)
           }}</template></el-table-column
         ><el-table-column
-          prop="handoverEvidence"
-          label="交接凭据"
-          min-width="210"
-          show-overflow-tooltip
-        /><el-table-column
           label="操作"
           width="110"
           fixed="right"
@@ -258,5 +268,12 @@ onActivated(() => {
   background: #fff;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
+}
+.secondary {
+  color: #6b7280;
+  font-size: 13px;
+}
+.pending-tag {
+  margin-left: 8px;
 }
 </style>

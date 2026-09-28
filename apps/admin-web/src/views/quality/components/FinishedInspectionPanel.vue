@@ -1,7 +1,15 @@
 <template>
   <section>
     <div class="toolbar">
-      <p class="muted">质检仅留存当时记录，不改写产线草稿。复检新增记录，历史记录不可覆盖。</p>
+      <p class="muted">
+        {{
+          detail.canRecordInspection
+            ? '本轮已开始，可继续填写检查结果。'
+            : detail.canStartInspection
+              ? '开始本轮检验后，送检依据将固定，再填写检查结果。'
+              : '本轮暂无可执行的检验动作，仍可查看记录。'
+        }}
+      </p>
       <el-button
         type="primary"
         :disabled="
@@ -37,10 +45,11 @@
       :disabled="busy || unresolved || Boolean(error)"
       class="inspection-form"
     >
-      <p>
-        本次留存申报版本 {{ declaredVersion }}：计划内 {{ declared.availableQuantity }} / 计划外
-        {{ declared.extraQuantity }} / 新增报废 {{ declared.additionalScrapQuantity }}。
-      </p>
+      <div class="form-context">
+        申报版本 {{ declaredVersion }} · 计划内 {{ declared.availableQuantity }} 件 · 计划外
+        {{ declared.extraQuantity }} 件 · 新增报废 {{ declared.additionalScrapQuantity }} 件
+      </div>
+      <h3>检查事实</h3>
       <el-form-item
         label="检验方式"
         required
@@ -114,13 +123,20 @@
       >
         <el-descriptions-item
           :label="isSampling ? '样本检查总数（自动计算）' : '实际检查总数（自动计算）'"
-          >{{ inspectedTotal }}</el-descriptions-item
+          >{{ inspectedTotal
+          }}<template v-if="typeof inspectedTotal === 'number'"> 件</template></el-descriptions-item
         >
-        <el-descriptions-item label="整批实际送检总数">{{ actualTotal }}</el-descriptions-item>
+        <el-descriptions-item label="整批实际送检总数"
+          >{{ actualTotal
+          }}<template v-if="typeof actualTotal === 'number'"> 件</template></el-descriptions-item
+        >
       </el-descriptions>
-      <p class="muted">
-        全检总数由合格数加不合格数计算。抽检的样本检查总数不得超过整批实际送检总数；实际总数按现场核实填写，可以与申报草稿不同。
-      </p>
+      <details class="muted quantity-help">
+        <summary>数量如何计算</summary>
+        <p>
+          全检总数由合格数加不合格数计算。抽检的样本检查总数不得超过整批实际送检总数；实际总数按现场核实填写，可以与申报草稿不同。
+        </p>
+      </details>
       <el-alert
         v-if="difference !== null && difference !== 0"
         type="warning"
@@ -137,6 +153,7 @@
         title="样本合格数与不合格数之和不能超过整批实际送检总数"
         class="notice"
       />
+      <h3>明确结论与下一步</h3>
       <el-form-item
         label="本批处理结论"
         required
@@ -158,12 +175,13 @@
         </el-select>
       </el-form-item>
       <el-alert
-        :title="`本次检验建议量：${releasedQuantity}`"
-        description="明确放行时，全检建议量为合格数，抽检建议量为实际送检总数减样本不合格数。数量差异不限制产出定稿；待复检或不放行仍阻断结案。不合格不自动登记报废。"
+        :title="`本次检验建议量：${typeof releasedQuantity === 'number' ? `${releasedQuantity} 件` : releasedQuantity}`"
+        description="明确放行后由产线管理员核对产出清单并送负责人审批；待复检或不放行继续阻断。不合格不自动登记报废。"
         type="info"
         :closable="false"
         class="notice"
       />
+      <h3>检验时间与凭据</h3>
       <el-form-item
         label="线下检验时间"
         required
@@ -324,6 +342,22 @@ defineEmits<{
   padding: 16px;
   border: 1px solid var(--el-border-color);
   border-radius: 6px;
+}
+.inspection-form h3 {
+  margin: 16px 0 10px;
+  color: #283a50;
+  font-size: 15px;
+}
+.form-context {
+  padding: 9px 12px;
+  border-radius: 4px;
+  background: #f5f7fa;
+  color: #6b7280;
+  font-size: 13px;
+}
+.quantity-help summary {
+  color: #306188;
+  cursor: pointer;
 }
 .notice {
   margin-top: 12px;

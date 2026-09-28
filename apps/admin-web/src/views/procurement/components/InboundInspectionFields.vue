@@ -3,7 +3,9 @@
     label-width="160px"
     :disabled="disabled"
   >
-    <el-form-item label="发起时申报数量">{{ coveredQuantity }} {{ unit }}（仅供核对）</el-form-item>
+    <div class="inspection-reference">
+      发起时申报 {{ coveredQuantity }} {{ unit }} · 仅供核对整批范围
+    </div>
     <el-form-item
       label="检验方式"
       required
@@ -20,30 +22,32 @@
         >
       </el-radio-group>
     </el-form-item>
-    <el-form-item
-      :label="model.inspectionMethod === 'sampling' ? '样本合格数' : '合格数'"
-      required
-    >
-      <el-input-number
-        v-model="model.qualifiedQuantity"
-        :min="0"
-        :max="PURCHASE_ORDER_MAX_QUANTITY"
-        :precision="0"
-        controls-position="right"
-      />
-    </el-form-item>
-    <el-form-item
-      :label="model.inspectionMethod === 'sampling' ? '样本不合格数' : '不合格数'"
-      required
-    >
-      <el-input-number
-        v-model="model.unqualifiedQuantity"
-        :min="0"
-        :max="PURCHASE_ORDER_MAX_QUANTITY"
-        :precision="0"
-        controls-position="right"
-      />
-    </el-form-item>
+    <div class="inspection-quantity-grid">
+      <el-form-item
+        :label="model.inspectionMethod === 'sampling' ? '样本合格数' : '合格数'"
+        required
+      >
+        <el-input-number
+          v-model="model.qualifiedQuantity"
+          :min="0"
+          :max="PURCHASE_ORDER_MAX_QUANTITY"
+          :precision="0"
+          controls-position="right"
+        />
+      </el-form-item>
+      <el-form-item
+        :label="model.inspectionMethod === 'sampling' ? '样本不合格数' : '不合格数'"
+        required
+      >
+        <el-input-number
+          v-model="model.unqualifiedQuantity"
+          :min="0"
+          :max="PURCHASE_ORDER_MAX_QUANTITY"
+          :precision="0"
+          controls-position="right"
+        />
+      </el-form-item>
+    </div>
     <el-form-item
       label="放行结论"
       required
@@ -60,22 +64,22 @@
         />
       </el-select>
     </el-form-item>
-    <el-alert
+    <div
       v-if="preview"
-      type="info"
-      :closable="false"
-      class="notice"
+      class="inspection-preview"
     >
-      {{ model.inspectionMethod === 'sampling' ? '本次抽检数量' : '实际检查总数' }}：{{
-        preview.inspectedQuantity
-      }}。
-      {{
-        model.inspectionMethod === 'sampling'
-          ? '样本结果用于判断整批实物，样本数量不等于整批数量。'
-          : '检查数量与原申报不同，在库管定稿时核对。'
-      }}
-      库管负责核实整批数量并确认正式清单；本次结果不自动入库或退回。
-    </el-alert>
+      <strong
+        >{{ model.inspectionMethod === 'sampling' ? '本次样本' : '实际检查' }}
+        {{ preview.inspectedQuantity }}</strong
+      >
+      <span v-if="model.inspectionMethod === 'sampling'"
+        >样本结果用于判断整批，样本数不等于整批实物量。</span
+      >
+      <span v-else-if="preview.inspectedQuantity !== coveredQuantity"
+        >检查数与发起时申报量不同，库管定稿时需核对。</span
+      >
+      <span>本结论不自动形成入库或退回事实。</span>
+    </div>
     <el-form-item
       label="线下检验时间"
       required
@@ -153,6 +157,30 @@ watch(valid, (value) => emit('valid', value), { immediate: true });
 }
 .notice {
   margin: 12px 0 20px;
+}
+.inspection-reference,
+.inspection-preview {
+  margin-bottom: 16px;
+  padding: 8px 12px;
+  background: #f5f7fa;
+  color: #1f2937;
+}
+.inspection-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  border-left: 3px solid #306188;
+}
+.inspection-quantity-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+@media (max-width: 900px) {
+  .inspection-quantity-grid {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
 }
 .el-select {
   width: 280px;

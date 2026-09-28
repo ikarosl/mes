@@ -9,35 +9,88 @@
   >
     <div v-loading="loading">
       <el-alert
-        v-if="rows.length"
-        :title="policyDescription"
-        type="info"
+        v-if="loadError"
+        title="初始需求读取失败，当前不能确认。请重试读取。"
+        type="error"
         :closable="false"
-        show-icon
+      />
+      <div
+        v-if="batch && rows.length"
+        class="configuration-context"
+      >
+        <div class="task-identity">
+          <strong>{{ batch.workOrderNo }} · {{ batch.productName }}</strong>
+          <span>{{ batch.productCode }} · 任务计划 {{ quantity(batch.plannedQuantity) }}</span>
+        </div>
+        <div class="selection-progress">
+          <strong>已选版本 {{ selectedCount }} / {{ rows.length }} 项</strong>
+          <span v-if="pendingCount">待选 {{ pendingCount }} 项</span>
+          <span v-else>已完成选版</span>
+        </div>
+      </div>
+      <p
+        v-if="rows.length"
+        class="configuration-rule"
+      >
+        数量按 BOM 单耗 ×
+        任务计划量固定；每项选一个精确版本。确认后本任务版本与采购提示冻结，采购提示仅供参考。
+      </p>
+      <div
+        v-if="rows.length"
+        class="editor-toolbar"
+      >
+        <el-radio-group
+          v-model="viewMode"
+          size="small"
+        >
+          <el-radio-button label="all">全部</el-radio-button>
+          <el-radio-button label="pending">仅未选版</el-radio-button>
+        </el-radio-group>
+        <el-input
+          v-model="keyword"
+          clearable
+          placeholder="搜索物料名称或编码"
+        />
+      </div>
+      <el-empty
+        v-if="!loading && loadError"
+        description="读取失败，请重试"
       />
       <el-empty
-        v-if="!loading && rows.length === 0"
+        v-else-if="!loading && rows.length === 0"
         description="当前任务没有可配置的 BOM 物料"
+      />
+      <el-empty
+        v-else-if="!loading && filteredRows.length === 0"
+        description="当前筛选无匹配物料"
       />
       <el-table
         v-else
-        :data="rows"
+        :data="filteredRows"
         class="demand-editor"
       >
         <el-table-column
-          label="基础物料"
-          width="240"
+          label="BOM 物料"
+          min-width="230"
           fixed="left"
         >
           <template #default="{ row }">
-            <div class="primary">{{ row.materialCode }}</div>
-            <div class="secondary">{{ row.materialName }}</div>
-            <div class="secondary">应配置 {{ quantity(row.requiredQuantity) }} {{ row.unit }}</div>
+            <div class="primary">{{ row.materialName }}</div>
+            <div class="secondary">{{ row.materialCode }}</div>
           </template>
         </el-table-column>
         <el-table-column
-          label="具体版本及数量"
-          min-width="560"
+          label="本任务需求量"
+          width="150"
+          align="right"
+        >
+          <template #default="{ row }">
+            <strong>{{ quantity(row.requiredQuantity) }} {{ row.unit }}</strong>
+          </template>
+        </el-table-column>
+        <el-table-column
+          label="精确版本"
+          min-width="300"
         >
           <template #default="{ row }">
             <div
@@ -48,7 +101,7 @@
               <el-select
                 v-model="split.materialVariantId"
                 filterable
-                placeholder="选择具体版本"
+                placeholder="选择本任务使用的版本"
                 :disabled="submitting || unresolved"
               >
                 <el-option
@@ -56,31 +109,85 @@
                   :key="variant.materialVariantId"
                   :value="variant.materialVariantId"
                   :label="variant.materialVariantCode"
-                />
+                >
+                  {{ variant.materialVariantCode }} · {{ variant.majorVersion }} /
+                  {{ variant.minorVersion }}
+                </el-option>
               </el-select>
-              <span class="fixed-quantity"
-                >{{ quantity(row.requiredQuantity) }} {{ row.unit }}</span
-              >
             </div>
+            <span
+              v-if="!row.variants.length"
+              class="row-warning"
+              >暂无可选版本，请先维护启用的精确版本</span
+            >
+            <span
+              v-else-if="!row.splits[0]?.materialVariantId"
+              class="row-warning"
+              >尚未选版</span
+            >
+          </template>
+        </el-table-column>
+        <el-table-column
+          label="采购提示"
+          min-width="185"
+        >
+          <template #default="{ row }">
+            <el-button
+              link
+              type="primary"
+              @click="toggleHint(row.id)"
+            >
+              {{
+                expandedHints.includes(row.id)
+                  ? '收起提示'
+                  : row.supplierHint
+                    ? '编辑提示'
+                    : '添加提示'
+              }}
+            </el-button>
+            <span
+              v-if="row.supplierHint && !expandedHints.includes(row.id)"
+              class="hint-preview"
+              >{{ row.supplierHint }}</span
+            >
             <el-input
+              v-if="expandedHints.includes(row.id)"
               v-model="row.supplierHint"
+              type="textarea"
+              :rows="2"
               maxlength="500"
-              placeholder="可选：供应商或采购要求提示，确认后随本任务冻结"
+              placeholder="选填：供应商或采购要求参考；不代表实际采购供应商"
               :disabled="submitting || unresolved"
             />
-            <div
-              class="summary"
-              :class="{ invalid: configuredTotal(row) !== Number(row.requiredQuantity) }"
+          </template>
+        </el-table-column>
+        <el-table-column
+          label="配置状态"
+          width="110"
+        >
+          <template #default="{ row }">
+            <el-tag
+              :type="row.splits[0]?.materialVariantId ? 'success' : 'warning'"
+              size="small"
             >
-              已配置 {{ configuredTotal(row) }} / 应配置 {{ quantity(row.requiredQuantity) }}
-              {{ row.unit }}
-            </div>
+              {{ row.splits[0]?.materialVariantId ? '已选版' : '待选版' }}
+            </el-tag>
           </template>
         </el-table-column>
       </el-table>
     </div>
     <template #footer>
       <el-button @click="close">取消</el-button>
+      <el-button
+        v-if="loadError"
+        @click="load"
+        >重试读取</el-button
+      >
+      <span
+        v-if="pendingCount"
+        class="footer-hint"
+        >还有 {{ pendingCount }} 项待选版</span
+      >
       <el-button
         type="primary"
         :loading="submitting"
@@ -116,18 +223,48 @@ const props = defineProps<{ visible: boolean; batch: ProductionBatchItem | null 
 const emit = defineEmits<{ 'update:visible': [boolean]; configured: [] }>();
 const rows = ref<RowDraft[]>([]);
 const loading = ref(false);
+const loadError = ref(false);
 let loadVersion = 0;
 const submitting = ref(false);
 const intent = useIdempotentIntent();
-
-const policyDescription =
-  '每种物料选择本任务使用的一个版本，数量按 BOM 单耗与任务计划量计算；确认后版本和供应商提示固定，其他任务可独立选版。';
 const unresolved = ref(false);
+const keyword = ref('');
+const viewMode = ref<'all' | 'pending'>('all');
+const expandedHints = ref<string[]>([]);
+const initialDraft = ref('');
+const selectedCount = computed(
+  () => rows.value.filter((row) => Boolean(row.splits[0]?.materialVariantId)).length,
+);
+const pendingCount = computed(() => rows.value.length - selectedCount.value);
+const filteredRows = computed(() => {
+  const search = keyword.value.trim().toLocaleLowerCase();
+  return rows.value.filter(
+    (row) =>
+      (viewMode.value === 'all' || !row.splits[0]?.materialVariantId) &&
+      (!search || `${row.materialName} ${row.materialCode}`.toLocaleLowerCase().includes(search)),
+  );
+});
+const draftSnapshot = computed(() =>
+  JSON.stringify(
+    rows.value.map((row) => [
+      row.id,
+      row.splits[0]?.materialVariantId ?? '',
+      row.supplierHint ?? '',
+    ]),
+  ),
+);
+const dirty = computed(() => rows.value.length > 0 && draftSnapshot.value !== initialDraft.value);
+const toggleHint = (id: string): void => {
+  expandedHints.value = expandedHints.value.includes(id)
+    ? expandedHints.value.filter((current) => current !== id)
+    : [...expandedHints.value, id];
+};
 const configuredTotal = (row: RowDraft): number =>
   row.splits.reduce((total, split) => total + (Number(split.quantity) || 0), 0);
 const canSubmit = computed(
   () =>
     !loading.value &&
+    !loadError.value &&
     rows.value.length > 0 &&
     rows.value.every(
       (row) =>
@@ -160,6 +297,7 @@ const load = async (): Promise<void> => {
   const version = ++loadVersion;
   const batchId = props.batch.id;
   loading.value = true;
+  loadError.value = false;
   try {
     const result = await loadBatchMaterialDemands(batchId);
     if (version !== loadVersion || !props.visible || props.batch?.id !== batchId) return;
@@ -175,8 +313,10 @@ const load = async (): Promise<void> => {
         ],
       };
     });
+    initialDraft.value = draftSnapshot.value;
   } catch (error) {
     if (version !== loadVersion || !props.visible || props.batch?.id !== batchId) return;
+    loadError.value = true;
     EMessage.error(error, '初始物料需求加载失败');
   } finally {
     if (version === loadVersion) loading.value = false;
@@ -230,6 +370,16 @@ const close = async (): Promise<boolean> => {
     } catch {
       return false;
     }
+  } else if (dirty.value) {
+    try {
+      await RouteMessageBox.confirm(
+        '已选择的版本或采购提示尚未确认。放弃后本次修改将丢失。',
+        '放弃需求配置',
+        { type: 'warning', confirmButtonText: '放弃修改', cancelButtonText: '继续配置' },
+      );
+    } catch {
+      return false;
+    }
   }
   intent.reset();
   unresolved.value = false;
@@ -249,6 +399,11 @@ watch(
     loading.value = false;
     if (visible) {
       rows.value = [];
+      loadError.value = false;
+      keyword.value = '';
+      viewMode.value = 'all';
+      expandedHints.value = [];
+      initialDraft.value = '';
       void load();
     }
   },
@@ -257,17 +412,62 @@ watch(
 
 <style scoped>
 .demand-editor {
-  margin-top: 16px;
+  margin-top: 12px;
+}
+.configuration-context,
+.editor-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.configuration-context {
+  padding: 8px 0 12px;
+  border-bottom: 1px solid #e5e7eb;
+}
+.configuration-rule {
+  margin: 10px 0 0;
+  color: #6b7280;
+  font-size: 13px;
+}
+.task-identity,
+.selection-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.task-identity span,
+.selection-progress span {
+  color: #6b7280;
+}
+.selection-progress {
+  text-align: right;
+}
+.editor-toolbar {
+  margin-top: 12px;
+}
+.editor-toolbar :deep(.el-input) {
+  max-width: 260px;
 }
 .primary {
   color: #1f2937;
   font-weight: 600;
 }
 .secondary,
-.summary {
+.hint-preview {
   margin-top: 4px;
-  color: #909399;
+  color: #6b7280;
   font-size: 12px;
+}
+.hint-preview {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.row-warning,
+.footer-hint {
+  color: #b45309;
 }
 .split-row {
   display: flex;
@@ -276,16 +476,6 @@ watch(
   margin-bottom: 8px;
 }
 .split-row :deep(.el-select) {
-  width: 330px;
-}
-.split-row :deep(.el-input-number) {
-  width: 130px;
-}
-.fixed-quantity {
-  min-width: 130px;
-  color: #606266;
-}
-.summary.invalid {
-  color: #e6a23c;
+  width: 100%;
 }
 </style>

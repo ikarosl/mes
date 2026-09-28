@@ -205,15 +205,16 @@ export function useReceiptEditor(onSaved: (id: string) => void | Promise<void>) 
     await loadOrders();
   };
   const split = (row: ReceiptDraftRow): void => {
-    if (rows.value.length < 100)
-      rows.value.push({
+    if (rows.value.length < 100) {
+      const lastIndex = rows.value.map((item) => item.line.id).lastIndexOf(row.line.id);
+      rows.value.splice(lastIndex + 1, 0, {
         key: ++sequence,
         line: row.line,
         receivedQuantity: undefined,
         supplierBatchCode: '',
         overReceiptNote: '',
       });
-    else EMessage.warning('一次到货最多100条明细，请分次登记');
+    } else EMessage.warning('一次到货最多100条明细，请分次登记');
   };
   const confirm = async (): Promise<void> => {
     if (!canConfirm.value || !(await checkOrder(true)) || !order.value) return;

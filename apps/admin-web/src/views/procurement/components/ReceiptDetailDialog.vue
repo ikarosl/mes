@@ -36,118 +36,241 @@
             >{{ detail.remark || '—' }}</el-descriptions-item
           ></el-descriptions
         >
-        <el-tabs
-          v-model="activeLine"
-          class="receipt-lines"
-          ><el-tab-pane
-            v-for="line in detail.items"
-            :key="line.id"
-            :name="line.id"
-            :label="`${line.lineNo}. ${line.materialVariantCode}`"
+        <div class="receipt-workbench">
+          <nav
+            class="receipt-index"
+            aria-label="到货明细"
           >
-            <ReceiptLineSummary :line="line" />
-            <div class="actions">
-              <el-button
-                v-if="
-                  auth.can(PERMISSIONS.procurement.orders.view) &&
-                  Number(line.quantities.unprocessedQuantity) > 0
-                "
-                :disabled="blocked"
-                @click="goExcessSupplement(line)"
-                >前往采购办理超量补单</el-button
+            <strong>到货明细 · {{ detail.items.length }} 条</strong>
+            <button
+              v-for="line in detail.items"
+              :key="line.id"
+              type="button"
+              class="receipt-index-item"
+              :class="{ active: activeLine === line.id }"
+              :aria-current="activeLine === line.id ? 'true' : undefined"
+              @click="activeLine = line.id"
+            >
+              <span class="line-identity">{{ line.lineNo }}. {{ line.itemName }}</span>
+              <span class="line-version">{{ line.itemCode }} · {{ line.materialVariantCode }}</span>
+              <span class="line-version">供应商批号 {{ line.supplierBatchCode || '未提供' }}</span>
+              <el-tag
+                size="small"
+                :type="lineStageType(line)"
+                >{{ lineStageLabel(line) }}</el-tag
               >
-              <el-button
-                :disabled="blocked"
-                @click="actionDialog?.open(line, 'correct')"
-                >更正实收</el-button
-              ><el-button
-                :disabled="blocked || !canAcceptReceipt(line)"
-                @click="acceptanceDialog?.open(line)"
-              >
-                {{
-                  line.currentRound.status === 'finalized' ? '更正整批正式分配' : '核对整批定稿'
-                }} </el-button
-              ><el-button
-                type="danger"
-                plain
-                :disabled="blocked || !canRejectReceipt(line)"
-                @click="actionDialog?.open(line, 'reject')"
-                >人工拒收</el-button
-              >
-              <el-button
-                v-if="canRevokeReceiptRejection(line)"
-                :disabled="blocked"
-                @click="actionDialog?.open(line, 'revoke')"
-                >撤销拒收并重新办理</el-button
-              >
-              <el-button @click="history?.open(line.id, 'rounds', line)"
-                >处理轮次 {{ line.historyTotals.rounds }}</el-button
-              >
-              <el-dropdown
-                v-if="
-                  line.allocations.some(
-                    (row) =>
-                      row.disposition === 'return' &&
-                      row.returnReason === 'quality' &&
-                      Number(row.remainingQuantity) > 0,
-                  )
-                "
-                :disabled="blocked"
-                @command="openReplacement(line, $event)"
-              >
-                <el-button :disabled="blocked">创建质量补发单</el-button>
-                <template #dropdown
-                  ><el-dropdown-menu>
-                    <el-dropdown-item
-                      v-for="range in line.allocations.filter(
-                        (row) =>
-                          row.disposition === 'return' &&
-                          row.returnReason === 'quality' &&
-                          Number(row.remainingQuantity) > 0,
-                      )"
-                      :key="range.id"
-                      :command="range"
-                    >
-                      质量待退 {{ range.remainingQuantity }} {{ line.unit }} · 分配
-                      {{ range.id }}
-                    </el-dropdown-item>
-                  </el-dropdown-menu></template
+            </button>
+          </nav>
+          <section
+            v-if="selectedLine"
+            class="receipt-current"
+          >
+            <ReceiptLineSummary :line="selectedLine" />
+            <div class="work-section">
+              <div class="section-heading">
+                <strong>当前办理</strong>
+                <span
+                  >第 {{ selectedLine.currentRound.roundNo }} 轮 ·
+                  {{ lineStageLabel(selectedLine) }}</span
                 >
-              </el-dropdown>
-              <el-button
-                v-if="auth.can(PERMISSIONS.quality.inboundInspections.view)"
-                :disabled="blocked"
-                @click="goQuality(line.id)"
-                >来料检验 / 复检</el-button
-              ><el-button
-                v-if="
-                  auth.can(PERMISSIONS.production.inbounds.view) &&
-                  Number(line.quantities.pendingInboundQuantity) > 0
-                "
-                :disabled="blocked"
-                @click="goInbound(line.id)"
-                >办理正式清单入库</el-button
-              ><el-button @click="history?.open(line.id, 'revisions', line)"
-                >实收修订 {{ line.historyTotals.revisions }}</el-button
-              ><el-button @click="history?.open(line.id, 'cases', line)"
-                >检验历史 {{ line.historyTotals.cases }}</el-button
-              ><el-button @click="history?.open(line.id, 'acceptances', line)"
-                >正式清单 {{ line.historyTotals.acceptances }}</el-button
-              ><el-button @click="history?.open(line.id, 'returns', line)"
-                >退回记录 {{ line.historyTotals.returns }}</el-button
-              ><el-button @click="history?.open(line.id, 'inbounds', line)"
-                >入库记录 {{ line.historyTotals.inbounds }}</el-button
+              </div>
+              <div
+                v-if="Number(selectedLine.quantities.unprocessedQuantity) === 0"
+                class="done-message"
               >
+                本批已处理完。实物入库与退回记录可在下方历史与依据查看。
+              </div>
+              <div
+                v-else
+                class="current-actions"
+              >
+                <template
+                  v-if="
+                    [
+                      'uninspected',
+                      'reviewing',
+                      'reinspection_required',
+                      'quality_rejected',
+                    ].includes(selectedLine.currentRound.status) && !isReceiptRejected(selectedLine)
+                  "
+                >
+                  <span
+                    >下一步：{{
+                      selectedLine.currentRound.status === 'reviewing'
+                        ? '继续本轮来料检验'
+                        : '办理来料检验或复检'
+                    }}</span
+                  >
+                  <el-button
+                    v-if="auth.can(PERMISSIONS.quality.inboundInspections.view)"
+                    type="primary"
+                    :disabled="blocked"
+                    @click="goQuality(selectedLine.id)"
+                    >前往来料检验</el-button
+                  >
+                  <span
+                    v-else
+                    class="action-note"
+                    >请由具备来料检验权限的人员办理</span
+                  >
+                </template>
+                <template v-else-if="selectedLine.currentRound.status === 'awaiting_acceptance'">
+                  <span>下一步：核对整批数量与正式去向</span>
+                  <el-button
+                    type="primary"
+                    :disabled="blocked || !canAcceptReceipt(selectedLine)"
+                    @click="acceptanceDialog?.open(selectedLine)"
+                    >核对整批定稿</el-button
+                  >
+                  <span
+                    v-if="!canAcceptReceipt(selectedLine)"
+                    class="action-note"
+                    >当前缺少可引用的检验放行依据</span
+                  >
+                </template>
+                <template v-else-if="isReceiptRejected(selectedLine)">
+                  <span>当前为人工拒收；请按下方有效待退分配确认实际交接。</span>
+                </template>
+                <template v-else-if="Number(selectedLine.quantities.pendingInboundQuantity) > 0">
+                  <span>下一步：办理当前有效正式分配的实际入库</span>
+                  <el-button
+                    v-if="auth.can(PERMISSIONS.production.inbounds.view)"
+                    type="primary"
+                    :disabled="blocked"
+                    @click="goInbound(selectedLine.id)"
+                    >办理入库</el-button
+                  >
+                  <span
+                    v-else
+                    class="action-note"
+                    >请由具备入库权限的人员办理</span
+                  >
+                </template>
+                <template v-else-if="Number(selectedLine.quantities.pendingReturnQuantity) > 0">
+                  <span>下一步：在下方当前去向中确认实际退回</span>
+                </template>
+                <template v-else>
+                  <span>当前仍有未处置实物，请核对下方待处理分配。</span>
+                  <el-button
+                    v-if="canAcceptReceipt(selectedLine)"
+                    type="primary"
+                    :disabled="blocked"
+                    @click="acceptanceDialog?.open(selectedLine)"
+                    >更正整批正式分配</el-button
+                  >
+                </template>
+              </div>
+              <ReceiptLineAllocations
+                :line="selectedLine"
+                :quality="false"
+                :disabled="blocked"
+                @return="actionDialog?.open(selectedLine, 'return', $event)"
+                @inbound="goInbound(selectedLine.id)"
+                @history="history?.open(selectedLine.id, $event, selectedLine)"
+              />
             </div>
-            <ReceiptLineAllocations
-              :line="line"
-              :quality="false"
-              :disabled="blocked"
-              @return="actionDialog?.open(line, 'return', $event)"
-              @inbound="goInbound(line.id)"
-              @history="history?.open(line.id, $event, line)"
-            /> </el-tab-pane
-        ></el-tabs>
+            <el-collapse
+              v-model="expandedSections"
+              class="secondary-sections"
+            >
+              <el-collapse-item
+                name="exceptions"
+                title="异常处置与采购承接"
+              >
+                <div class="section-actions">
+                  <el-button
+                    v-if="
+                      auth.can(PERMISSIONS.quality.inboundInspections.view) &&
+                      canReviewReceipt(selectedLine)
+                    "
+                    :disabled="blocked"
+                    @click="goQuality(selectedLine.id)"
+                    >来料检验 / 复检</el-button
+                  >
+                  <el-button
+                    :disabled="blocked"
+                    @click="actionDialog?.open(selectedLine, 'correct')"
+                    >更正实收</el-button
+                  >
+                  <el-button
+                    type="danger"
+                    plain
+                    :disabled="blocked || !canRejectReceipt(selectedLine)"
+                    @click="actionDialog?.open(selectedLine, 'reject')"
+                    >人工拒收</el-button
+                  >
+                  <el-button
+                    v-if="canRevokeReceiptRejection(selectedLine)"
+                    :disabled="blocked"
+                    @click="actionDialog?.open(selectedLine, 'revoke')"
+                    >撤销拒收并重新办理</el-button
+                  >
+                  <el-button
+                    v-if="
+                      selectedLine.currentRound.status === 'finalized' &&
+                      canAcceptReceipt(selectedLine)
+                    "
+                    :disabled="blocked"
+                    @click="acceptanceDialog?.open(selectedLine)"
+                    >更正整批正式分配</el-button
+                  >
+                  <el-button
+                    v-if="
+                      auth.can(PERMISSIONS.procurement.orders.view) &&
+                      Number(selectedLine.quantities.unprocessedQuantity) > 0
+                    "
+                    :disabled="blocked"
+                    @click="goExcessSupplement(selectedLine)"
+                    >前往采购办理超量补单</el-button
+                  >
+                  <el-dropdown
+                    v-if="qualityReturnAllocations(selectedLine).length"
+                    :disabled="blocked"
+                    @command="openReplacement(selectedLine, $event)"
+                  >
+                    <el-button :disabled="blocked">创建质量补发单</el-button>
+                    <template #dropdown>
+                      <el-dropdown-menu>
+                        <el-dropdown-item
+                          v-for="range in qualityReturnAllocations(selectedLine)"
+                          :key="range.id"
+                          :command="range"
+                          >质量待退 {{ range.remainingQuantity }} {{ selectedLine.unit }} · 分配
+                          {{ range.id }}</el-dropdown-item
+                        >
+                      </el-dropdown-menu>
+                    </template>
+                  </el-dropdown>
+                </div>
+              </el-collapse-item>
+              <el-collapse-item
+                name="history"
+                title="历史与依据"
+              >
+                <div class="section-actions">
+                  <el-button @click="history?.open(selectedLine.id, 'rounds', selectedLine)"
+                    >处理轮次 {{ selectedLine.historyTotals.rounds }}</el-button
+                  >
+                  <el-button @click="history?.open(selectedLine.id, 'revisions', selectedLine)"
+                    >实收修订 {{ selectedLine.historyTotals.revisions }}</el-button
+                  >
+                  <el-button @click="history?.open(selectedLine.id, 'cases', selectedLine)"
+                    >检验历史 {{ selectedLine.historyTotals.cases }}</el-button
+                  >
+                  <el-button @click="history?.open(selectedLine.id, 'acceptances', selectedLine)"
+                    >正式清单 {{ selectedLine.historyTotals.acceptances }}</el-button
+                  >
+                  <el-button @click="history?.open(selectedLine.id, 'returns', selectedLine)"
+                    >退回记录 {{ selectedLine.historyTotals.returns }}</el-button
+                  >
+                  <el-button @click="history?.open(selectedLine.id, 'inbounds', selectedLine)"
+                    >入库记录 {{ selectedLine.historyTotals.inbounds }}</el-button
+                  >
+                </div>
+              </el-collapse-item>
+            </el-collapse>
+          </section>
+        </div>
       </template>
     </div>
     <template #footer
@@ -178,6 +301,8 @@ import {
   canAcceptReceipt,
   canRejectReceipt,
   canRevokeReceiptRejection,
+  canReviewReceipt,
+  isReceiptRejected,
 } from '../receipt-round-presentation';
 import { computed, onActivated, ref } from 'vue';
 import { useRouter } from 'vue-router';
@@ -186,7 +311,11 @@ import type {
   ProcurementReceiptLine,
   ReceiptAllocationItem,
 } from '@company/contracts';
-import { PERMISSIONS } from '@company/constants';
+import {
+  PERMISSIONS,
+  RECEIPT_ROUND_STATUS_LABELS,
+  RECEIPT_ROUND_TRIGGER_LABELS,
+} from '@company/constants';
 import { procurementApi } from '../../../api/procurement';
 import { useAuthStore } from '../../../stores/auth';
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
@@ -205,9 +334,35 @@ const auth = useAuthStore(),
 const visible = ref(false),
   id = ref(''),
   activeLine = ref(''),
+  expandedSections = ref<string[]>([]),
   loading = ref(false),
   readError = ref(false);
 const detail = ref<ProcurementReceiptDetail | null>(null);
+const selectedLine = computed(() =>
+  detail.value?.items.find((line) => line.id === activeLine.value),
+);
+const lineStageLabel = (line: ProcurementReceiptLine): string => {
+  if (Number(line.quantities.unprocessedQuantity) === 0) return '本批已处理完';
+  if (isReceiptRejected(line)) return RECEIPT_ROUND_TRIGGER_LABELS.manual_rejection;
+  return RECEIPT_ROUND_STATUS_LABELS[line.currentRound.status];
+};
+const lineStageType = (line: ProcurementReceiptLine): 'success' | 'warning' | 'danger' | 'info' => {
+  if (Number(line.quantities.unprocessedQuantity) === 0) return 'success';
+  if (isReceiptRejected(line) || line.currentRound.status === 'quality_rejected') return 'danger';
+  if (
+    line.currentRound.status === 'awaiting_acceptance' ||
+    line.currentRound.status === 'reinspection_required'
+  )
+    return 'warning';
+  return 'info';
+};
+const qualityReturnAllocations = (line: ProcurementReceiptLine): ReceiptAllocationItem[] =>
+  line.allocations.filter(
+    (row) =>
+      row.disposition === 'return' &&
+      row.returnReason === 'quality' &&
+      Number(row.remainingQuantity) > 0,
+  );
 const replacementDialog = ref<InstanceType<typeof QualityReplacementDialog>>();
 const acceptanceDialog = ref<InstanceType<typeof ReceiptAcceptanceDialog>>();
 const actionDialog = ref<InstanceType<typeof ReceiptLineActionDialog>>(),
@@ -250,6 +405,7 @@ const open = async (target: string, lineId?: string): Promise<void> => {
   if (visible.value && !(await close())) return;
   id.value = target;
   activeLine.value = lineId ?? '';
+  expandedSections.value = [];
   detail.value = null;
   readError.value = false;
   visible.value = true;
@@ -336,16 +492,108 @@ defineExpose({
 .notice {
   margin-bottom: 16px;
 }
-.receipt-lines {
-  margin-top: 20px;
-}
-.actions {
+.receipt-workbench {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 16px 0;
+  align-items: flex-start;
+  gap: 16px;
+  margin-top: 16px;
 }
-.actions .el-button {
+.receipt-index {
+  display: flex;
+  flex: 0 0 235px;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 620px;
+  overflow-y: auto;
+  padding-right: 8px;
+  border-right: 1px solid #e5e7eb;
+}
+.receipt-index > strong {
+  margin-bottom: 4px;
+}
+.receipt-index-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  width: 100%;
+  padding: 8px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  color: #1f2937;
+  cursor: pointer;
+  text-align: left;
+}
+.receipt-index-item.active {
+  background: #f3f7fb;
+  border-color: #306188;
+}
+.line-identity {
+  font-weight: 600;
+}
+.line-version,
+.section-heading span,
+.action-note {
+  color: #6b7280;
+  font-size: 13px;
+}
+.receipt-current {
+  flex: 1;
+  min-width: 0;
+}
+.work-section {
+  margin-top: 16px;
+}
+.section-heading,
+.current-actions,
+.section-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+.section-heading {
+  margin-bottom: 10px;
+}
+.current-actions,
+.done-message {
+  padding: 12px;
+  background: #f5f7fa;
+  border-left: 3px solid #306188;
+}
+.done-message {
+  border-color: #22c55e;
+}
+.secondary-sections {
+  margin-top: 18px;
+}
+.section-actions {
+  padding: 4px 0 10px;
+}
+.section-actions .el-button {
   margin-left: 0;
+}
+@media (max-width: 1600px) {
+  .receipt-workbench {
+    flex-direction: column;
+  }
+  .receipt-index {
+    flex: none;
+    flex-direction: row;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    padding-right: 0;
+    padding-bottom: 8px;
+    border-right: 0;
+    border-bottom: 1px solid #e5e7eb;
+  }
+  .receipt-index-item {
+    flex: 0 0 200px;
+  }
+  .receipt-current {
+    width: 100%;
+  }
 }
 </style>

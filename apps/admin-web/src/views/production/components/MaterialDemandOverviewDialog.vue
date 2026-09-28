@@ -58,40 +58,123 @@
           </template>
           <el-table
             :data="group.rows"
+            row-key="demandId"
+            :expand-row-keys="expandedDemandIds"
             class="group-table"
+            @expand-change="handleDemandExpand"
           >
             <el-table-column
-              prop="itemCode"
-              label="基础物料编码"
-              min-width="150"
-              fixed="left"
-            />
-            <el-table-column
-              label="物料名称"
-              min-width="150"
-            >
-              <template #default="{ row }">{{ row.itemName }}</template>
-            </el-table-column>
-            <el-table-column
-              prop="materialVariantCode"
-              label="具体版本"
-              min-width="190"
-            />
-            <el-table-column
-              label="需求 / 已分配 / 已出库"
-              min-width="230"
+              type="expand"
+              width="52"
             >
               <template #default="{ row }">
-                {{ quantity(row.demandQuantity) }} / {{ quantity(row.allocatedQuantity) }} /
-                {{ quantity(row.outboundQuantity) }} {{ row.unit }}
+                <div class="demand-evidence">
+                  <div>
+                    <span>已分配</span
+                    ><strong>{{ quantity(row.allocatedQuantity) }} {{ row.unit }}</strong>
+                  </div>
+                  <div v-if="row.businessStatus === 'active'">
+                    <span>未分配缺口</span
+                    ><strong>{{ quantity(row.remainingQuantity) }} {{ row.unit }}</strong>
+                  </div>
+                  <div class="evidence-purchases">
+                    <span>采购关系只供追溯，不计入已领量</span>
+                    <el-button
+                      link
+                      type="primary"
+                      @click="showPurchases(row.demandId)"
+                    >
+                      {{
+                        purchaseCounts.get(row.demandId) === undefined
+                          ? '查看相关采购'
+                          : `相关采购 ${purchaseCounts.get(row.demandId)} 单`
+                      }}
+                    </el-button>
+                    <el-button
+                      v-if="auth.can(PERMISSIONS.procurement.orders.view)"
+                      link
+                      type="primary"
+                      @click="purchaseFromDemand(row.demandId)"
+                      >发起采购</el-button
+                    >
+                  </div>
+                  <div
+                    v-if="hasCorrectionTrace(row)"
+                    class="correction-trace"
+                  >
+                    <span>关闭 / 替代</span>
+                    <span v-if="row.correction?.closeCause">{{
+                      DEMAND_CLOSE_CAUSE_LABELS[row.correction.closeCause as DemandCloseCause]
+                    }}</span>
+                    <span v-if="row.correction?.replacesDemandId"
+                      >替代 #{{ row.correction.replacesDemandId }}</span
+                    >
+                    <span v-if="row.correction?.replacementDemandId"
+                      >后继 #{{ row.correction.replacementDemandId }}</span
+                    >
+                    <el-button
+                      v-if="row.correction?.closeoutApprovalId"
+                      link
+                      type="primary"
+                      @click="
+                        router.push({
+                          name: 'approval-inbox',
+                          query: { instanceId: row.correction.closeoutApprovalId },
+                        })
+                      "
+                      >结案审批</el-button
+                    >
+                    <span v-else-if="row.correction?.closeoutId"
+                      >收尾 #{{ row.correction.closeoutId }}，待提交结案审批</span
+                    >
+                  </div>
+                </div>
               </template>
             </el-table-column>
             <el-table-column
-              label="剩余缺口"
-              width="120"
+              label="物料 / 精确版本"
+              min-width="250"
+              fixed="left"
+            >
+              <template #default="{ row }">
+                <strong class="material-name">{{ row.itemName }}</strong>
+                <div class="material-identity">
+                  {{ row.itemCode }} · {{ row.materialVariantCode }}
+                </div>
+              </template>
+            </el-table-column>
+            <el-table-column
+              label="需求量"
+              width="115"
               align="right"
             >
-              <template #default="{ row }">{{ quantity(row.remainingQuantity) }}</template>
+              <template #default="{ row }"
+                >{{ quantity(row.demandQuantity) }} {{ row.unit }}</template
+              >
+            </el-table-column>
+            <el-table-column
+              label="已领"
+              width="115"
+              align="right"
+            >
+              <template #default="{ row }"
+                >{{ quantity(row.outboundQuantity) }} {{ row.unit }}</template
+              >
+            </el-table-column>
+            <el-table-column
+              label="未领"
+              width="130"
+              align="right"
+            >
+              <template #default="{ row }">
+                {{ quantity(row.remainingDemandQuantity) }} {{ row.unit }}
+                <div
+                  v-if="row.businessStatus !== 'active'"
+                  class="historical-note"
+                >
+                  历史余量
+                </div>
+              </template>
             </el-table-column>
             <el-table-column
               label="进度"
@@ -102,63 +185,8 @@
               </template>
             </el-table-column>
             <el-table-column
-              label="关闭 / 替代关系"
-              min-width="200"
-            >
-              <template #default="{ row }">
-                <span v-if="row.correction?.closeCause">{{
-                  DEMAND_CLOSE_CAUSE_LABELS[row.correction.closeCause as DemandCloseCause]
-                }}</span>
-                <span v-if="row.correction?.replacesDemandId">
-                  · 替代 #{{ row.correction.replacesDemandId }}</span
-                >
-                <span v-if="row.correction?.replacementDemandId">
-                  · 后继 #{{ row.correction.replacementDemandId }}</span
-                >
-                <el-button
-                  v-if="row.correction?.closeoutApprovalId"
-                  link
-                  type="primary"
-                  @click="
-                    router.push({
-                      name: 'approval-inbox',
-                      query: { instanceId: row.correction.closeoutApprovalId },
-                    })
-                  "
-                  >结案审批</el-button
-                >
-                <span v-else-if="row.correction?.closeoutId">
-                  · 收尾 #{{ row.correction.closeoutId }}，待提交结案审批</span
-                >
-              </template>
-            </el-table-column>
-            <el-table-column
-              label="相关采购"
-              width="165"
-            >
-              <template #default="{ row }">
-                <el-button
-                  link
-                  type="primary"
-                  @click="showPurchases(row.demandId)"
-                  >{{
-                    purchaseCounts.get(row.demandId) === undefined
-                      ? '查看相关采购'
-                      : `相关采购 ${purchaseCounts.get(row.demandId)} 单`
-                  }}</el-button
-                >
-                <el-button
-                  v-if="auth.can(PERMISSIONS.procurement.orders.view)"
-                  link
-                  type="primary"
-                  @click="purchaseFromDemand(row.demandId)"
-                  >发起采购</el-button
-                >
-              </template>
-            </el-table-column>
-            <el-table-column
               label="操作"
-              width="150"
+              width="140"
               fixed="right"
             >
               <template #default="{ row }"
@@ -248,6 +276,26 @@ const purchaseFromDemand = async (id: string): Promise<void> => {
 };
 const groups = computed(() => groupMaterialDemandRows(props.demands));
 const expandedGroups = ref<string[]>([]);
+const expandedDemandIds = ref<string[]>([]);
+let knownBatchId: string | null = null;
+let knownGroupKeys = new Set<string>();
+const handleDemandExpand = (
+  row: ProductionMaterialDemandItem,
+  expandedRows: ProductionMaterialDemandItem[],
+): void => {
+  const current = new Set(expandedDemandIds.value);
+  if (expandedRows.some((entry) => entry.demandId === row.demandId)) current.add(row.demandId);
+  else current.delete(row.demandId);
+  expandedDemandIds.value = [...current];
+};
+const hasCorrectionTrace = (row: ProductionMaterialDemandItem): boolean =>
+  Boolean(
+    row.correction?.closeCause ||
+    row.correction?.replacesDemandId ||
+    row.correction?.replacementDemandId ||
+    row.correction?.closeoutApprovalId ||
+    row.correction?.closeoutId,
+  );
 const canAdd = computed(() =>
   Boolean(
     props.batch &&
@@ -257,9 +305,21 @@ const canAdd = computed(() =>
 const progressLabel = (row: ProductionMaterialDemandItem): string =>
   MATERIAL_DEMAND_PROGRESS_LABELS[row.demandProgressStatus];
 watch(
-  groups,
-  (value) => {
-    expandedGroups.value = value.map((group) => group.generationGroupKey);
+  () => [props.batch?.id ?? null, groups.value] as const,
+  ([batchId, value]) => {
+    const keys = value.map((group) => group.generationGroupKey);
+    if (batchId !== knownBatchId) {
+      expandedGroups.value = keys;
+      expandedDemandIds.value = [];
+      knownBatchId = batchId;
+    } else {
+      expandedGroups.value = keys.filter(
+        (key) => expandedGroups.value.includes(key) || !knownGroupKeys.has(key),
+      );
+      const demandIds = new Set(props.demands.map((row) => row.demandId));
+      expandedDemandIds.value = expandedDemandIds.value.filter((id) => demandIds.has(id));
+    }
+    knownGroupKeys = new Set(keys);
   },
   { immediate: true },
 );
@@ -302,5 +362,35 @@ watch(
 }
 .group-table {
   margin-bottom: 12px;
+}
+.material-name {
+  color: #1f2937;
+}
+.material-identity {
+  margin-top: 4px;
+  color: #6b7280;
+}
+.historical-note {
+  color: #6b7280;
+  font-size: 12px;
+}
+.demand-evidence {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 24px;
+  padding: 8px 20px;
+}
+.demand-evidence > div {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.demand-evidence span:first-child {
+  color: #6b7280;
+}
+.correction-trace {
+  width: 100%;
 }
 </style>

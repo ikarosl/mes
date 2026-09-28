@@ -6,6 +6,7 @@
 
 | 编号 | 主题 | 类型／当前状态 | 待处理 |
 | --- | --- | --- | --- |
+| [CQ-02](#cq-02) | 成品当前待检轮次被历史放行结论排除 | 文档与查询实现差异；已观察，待核对修正 | 确认当前待办筛选与轮次办理资格一致，保留历史记录查询 |
 | [CP-01](#cp-01) | 上游报工更正的下游数量下限 | 文档两种口径；待裁决 | effective_normal与effective_direct_reported的适用边界 |
 | [CP-02](#cp-02) | 过程复检关联source_rework_id | 历史提案批准状态待确认；当前明确未定稿 | 保留提案或确认撤回，不提前建模 |
 | [CO-01](#co-01) | 产品分类扁平化与树结构 | 旧目标与当前实现冲突；待裁决 | 旧扁平化目标是否仍有效 |
@@ -19,6 +20,16 @@
 成品剩余复检的语义已由 [ADR-0015](adr/0015-unified-quality-quantity-semantics.md#成品数量与职责)及 [ADR-0016](adr/0016-inbound-authorizations-and-stock-batches.md)明确：检查排除已入实物，开始重新办理时固定来源已入基准并暂停旧授权；数量建议不限制最终定稿，旧库存事实不改写。原“每类别一次入库／已入类别锁量”由类别历史已入下限和剩余授权替代。
 
 本项不再有待裁决的业务定义。结构切换、整体验证及用户验收的未完成事项集中在[统一整改清单](roadmap.md#成品物料入库统一整改代码核对清单)，不得由已确认规则推断验证通过。完整规则由 [Production](../apps/api/src/modules/production/docs/database/production-termination.md)与 [Quality](../apps/api/src/modules/quality/docs/finished-inspections.md)维护；本锚点仅供旧引用定位。
+
+## CQ-02
+
+**成品检验待办筛选没有纳入当前办理轮次。**
+
+- 规则依据：[成品前端约束“查询与跨页引用”](../apps/admin-web/docs/finished-inspections.md#查询与跨页引用)区分当前轮待检与已有检验历史，允许查询范围重叠；[Quality 成品规则](../apps/api/src/modules/quality/docs/finished-inspections.md#部分已入后的复检与固定范围)要求新检查在当前有效轮次办理，历史事实保留。
+- 实现证据：[finished-inspection-tasks.query.ts](../apps/api/src/modules/quality/infrastructure/queries/finished-inspection-tasks.query.ts)从结案根的全部历史取最大检验记录 ID；`pending` 仅按无历史记录或历史最新结论 `pending_reinspection` 筛选，未看当前轮状态。同文件 `canStartInspection`／`canRecordInspection` 又分别采用当前轮 `pending_inspection`／`inspecting`。
+- Chrome 观察：2026-09-28 本机成品质检默认待检结果为 0；切已有记录后，`2026-09-28-1 / task_batch-004` 详情显示当前轮 #10 待检且“开始本轮检验”可用，历史 #9 为放行。观察范围及限制见 [UI／UX 评审](ui-ux-review.md)。
+- 影响：已有历史放行的新轮待检任务可能从默认工作队列漏出，用户需去历史范围寻找；这不证明历史放行事实错误，也不等于后端允许未检入库。
+- 待处理：由 Quality／Production 所有者核对当前待办的具体范围及办理资格，统一筛选与显示；不改写历史记录、不用最新历史结论替代当前轮资格，不在本次评审中自行变更业务语义。实施及验收跟踪在[路线图](roadmap.md#uiux-专项改版前端待验收)。
 
 ## CP-01
 

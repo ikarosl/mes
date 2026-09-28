@@ -4,21 +4,34 @@
     border
     size="small"
   >
-    <el-descriptions-item label="检验记录">{{ inspection.id }}</el-descriptions-item>
+    <el-descriptions-item label="检验记录">#{{ inspection.id }}</el-descriptions-item>
     <el-descriptions-item label="检验方式">{{
       QUALITY_INSPECTION_METHOD_LABELS[inspection.inspectionMethod]
     }}</el-descriptions-item>
-    <el-descriptions-item
-      :label="inspection.inspectionMethod === 'sampling' ? '样本合格 / 不合格' : '合格 / 不合格'"
-      >{{ inspection.qualifiedQuantity }} /
-      {{ inspection.unqualifiedQuantity }}</el-descriptions-item
-    >
     <el-descriptions-item label="实际检查数">{{
       inspection.inspectedQuantity
     }}</el-descriptions-item>
-    <el-descriptions-item label="质量结论">{{
-      QUALITY_RELEASE_DECISION_LABELS[inspection.releaseDecision]
-    }}</el-descriptions-item>
+    <el-descriptions-item
+      :label="inspection.inspectionMethod === 'sampling' ? '样本合格' : '合格数'"
+      >{{ inspection.qualifiedQuantity }}</el-descriptions-item
+    >
+    <el-descriptions-item
+      :label="inspection.inspectionMethod === 'sampling' ? '样本不合格' : '不合格数'"
+      >{{ inspection.unqualifiedQuantity }}</el-descriptions-item
+    >
+    <el-descriptions-item label="质量结论">
+      <el-tag
+        :type="
+          inspection.releaseDecision === 'released'
+            ? 'success'
+            : inspection.releaseDecision === 'not_released'
+              ? 'danger'
+              : 'warning'
+        "
+      >
+        {{ QUALITY_RELEASE_DECISION_LABELS[inspection.releaseDecision] }}
+      </el-tag>
+    </el-descriptions-item>
     <el-descriptions-item label="线下检验时间">{{
       formatDateTimeForDisplay(inspection.inspectedAt)
     }}</el-descriptions-item>

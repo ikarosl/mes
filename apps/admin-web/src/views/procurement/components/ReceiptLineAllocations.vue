@@ -71,6 +71,7 @@
       <el-table-column
         label="执行 / 追溯"
         min-width="220"
+        fixed="right"
         ><template #default="{ row }">
           <el-button
             v-if="

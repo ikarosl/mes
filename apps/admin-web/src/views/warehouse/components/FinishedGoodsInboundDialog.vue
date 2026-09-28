@@ -1,7 +1,7 @@
 <template>
   <el-dialog
-    :model-value="visible"
-    :title="inboundId ? '成品入库详情' : '确认成品入库'"
+    :model-value="active && visible"
+    :title="inboundId ? '成品入库详情' : '核对成品入库'"
     :width="DialogWidth.workbench"
     workbench
     :close-on-click-modal="false"
@@ -26,7 +26,8 @@
               >{{ detail.workOrderNo }} / {{ detail.batchNo }}</el-descriptions-item
             >
             <el-descriptions-item label="成品"
-              >{{ detail.productCode }} · {{ detail.productName }}</el-descriptions-item
+              >{{ detail.productCode }} · {{ detail.productName }} ·
+              {{ detail.unit }}</el-descriptions-item
             >
             <el-descriptions-item label="确认时间">{{
               formatDateTimeForDisplay(detail.inboundAt)
@@ -42,16 +43,14 @@
             <el-table-column
               label="授权来源"
               min-width="190"
-            >
-              <template #default="{ row }"
+              ><template #default="{ row }"
                 >{{
                   FINISHED_GOODS_INBOUND_SOURCE_LABELS[row.sourceType as FinishedGoodsInboundSource]
                 }}
-                · 清单第 {{ row.revisionNo }} 版<br /><span class="muted"
-                  >授权 {{ row.allocationId }}</span
-                ></template
-              >
-            </el-table-column>
+                · 清单第 {{ row.revisionNo }} 版
+                <div class="muted">授权 {{ row.allocationId }}</div></template
+              ></el-table-column
+            >
             <el-table-column
               label="实际入库"
               min-width="120"
@@ -69,15 +68,13 @@
             <el-table-column
               label="批准与质检依据"
               min-width="210"
-            >
-              <template #default="{ row }">
-                <template v-if="row.approvedOutput"
+              ><template #default="{ row }"
+                ><template v-if="row.approvedOutput"
                   >质检记录 {{ row.approvedOutput.inspectionRecordId }}<br />审批
                   {{ row.approvedOutput.approvalInstanceId }}</template
-                >
-                <span v-else>批准版 {{ row.outputRevisionId }}</span>
-              </template>
-            </el-table-column>
+                ><span v-else>批准版 {{ row.outputRevisionId }}</span></template
+              ></el-table-column
+            >
             <el-table-column
               prop="inventoryTransactionId"
               label="库存流水"
@@ -89,22 +86,12 @@
     </template>
     <template v-else>
       <el-alert
-        title="选择当前有效授权、本次数量和目标库存批次后直接确认。已入与剩余按任务及来源类别累计，部分入库后可继续办理。"
+        title="核对每份授权的本次数量和目标批次；确认后将新增实际库存记录。"
         type="info"
         :closable="false"
       />
       <div class="toolbar section">
-        <el-input
-          v-model="keyword"
-          clearable
-          placeholder="搜索工单、任务或成品"
-          @keyup.enter="loadCandidates"
-        />
-        <el-button
-          :loading="loading"
-          @click="loadCandidates"
-          >查询</el-button
-        >
+        <strong>{{ selected[0]?.source.workOrderNo }} / {{ selected[0]?.source.batchNo }}</strong>
         <el-button
           :loading="checking"
           :disabled="command.locked.value || !selected.length"
@@ -113,125 +100,125 @@
         >
       </div>
       <el-alert
-        v-if="error"
-        :title="error"
+        v-if="checkError"
+        :title="checkError"
         type="error"
         :closable="false"
-      />
-      <el-table
-        v-loading="loading"
-        :data="candidates"
-        row-key="allocationId"
-        max-height="250"
-      >
-        <el-table-column width="45"
-          ><template #default="{ row }"
-            ><el-checkbox
-              :model-value="selected.some((item) => item.source.allocationId === row.allocationId)"
-              :disabled="
-                command.locked.value ||
-                !row.canConfirm ||
-                (!!selected.length &&
-                  selected[0]?.source.productionBatchId !== row.productionBatchId)
-              "
-              @change="toggle(row)" /></template
-        ></el-table-column>
-        <el-table-column
-          label="工单 / 任务"
-          min-width="150"
-          ><template #default="{ row }"
-            >{{ row.workOrderNo }} / {{ row.batchNo }}</template
-          ></el-table-column
-        >
-        <el-table-column
-          label="成品 / 来源"
-          min-width="160"
-          ><template #default="{ row }"
-            >{{ row.productCode }} · {{ row.productName }}<br />{{
-              FINISHED_GOODS_INBOUND_SOURCE_LABELS[row.sourceType as FinishedGoodsInboundSource]
-            }}</template
-          ></el-table-column
-        >
-        <el-table-column
-          label="批准 / 已入 / 剩余"
-          min-width="210"
-          ><template #default="{ row }"
-            >{{ row.authorizedQuantity }} / {{ row.receivedQuantity }} / {{ row.remainingQuantity }}
-            {{ row.unit }}</template
-          ></el-table-column
-        >
-        <el-table-column
-          label="资格"
-          min-width="140"
-          ><template #default="{ row }">{{
-            row.canConfirm ? '可入库' : row.blockers.join('；')
-          }}</template></el-table-column
-        >
-      </el-table>
-      <PaginationFooter
-        :total="candidateTotal"
-        :current-page="candidatePage"
-        :page-size="10"
-        @page-change="changeCandidatePage"
       />
       <el-table
         :data="selected"
         row-key="detailKey"
         class="section"
+        max-height="430"
       >
         <el-table-column
-          label="本次授权"
-          min-width="180"
+          label="授权 / 成品"
+          min-width="210"
           ><template #default="{ row }"
             >{{
               FINISHED_GOODS_INBOUND_SOURCE_LABELS[
                 row.source.sourceType as FinishedGoodsInboundSource
               ]
             }}
-            · 第 {{ row.source.revisionNo }} 版<br /><span class="muted"
-              >剩余 {{ row.source.remainingQuantity }} {{ row.source.unit }}</span
-            ></template
+            · 第 {{ row.source.revisionNo }} 版
+            <div>{{ row.source.productCode }} · {{ row.source.productName }}</div>
+            <div class="muted">
+              授权 {{ row.source.allocationId }} · {{ row.source.unit }}
+            </div></template
           ></el-table-column
         >
         <el-table-column
           label="本次入库"
-          min-width="125"
+          min-width="165"
           ><template #default="{ row }"
-            ><el-input-number
+            ><el-input
               v-model="row.quantity"
-              :precision="0"
-              :min="1"
-              :disabled="command.locked.value" /></template
-        ></el-table-column>
+              inputmode="numeric"
+              :disabled="locked"
+              :aria-label="`本次入库数量 ${row.source.productCode}`"
+            />
+            <div
+              v-if="quantityErrors.get(row.detailKey)"
+              class="error"
+            >
+              {{ quantityErrors.get(row.detailKey) }}
+            </div></template
+          ></el-table-column
+        >
         <el-table-column
-          label="目标批次"
-          min-width="270"
+          label="目标库存批次"
+          min-width="310"
           ><template #default="{ row }"
             ><InboundBatchTargetPicker
               v-model="row.target"
               item-kind="finished_product"
               :product-id="row.source.productId"
               :unit="row.source.unit"
+              :identity="`${row.source.productCode} / ${row.source.productName} / ${row.source.unit}`"
               :related-new-targets="relatedNewTargetsFor(row.detailKey)"
-              :disabled="command.locked.value" /></template
+              :new-batch-owner="isNewBatchOwnerFor(row.detailKey)"
+              :disabled="locked" /></template
         ></el-table-column>
-        <el-table-column width="115"
+        <el-table-column
+          label="调整目标"
+          width="170"
           ><template #default="{ row }"
-            ><el-button
-              link
-              :disabled="command.locked.value"
-              @click="split(row.detailKey)"
-              >拆入</el-button
-            ><el-button
+            ><InboundSplitControl
+              :quantity="row.quantity"
+              :disabled="locked || selected.length >= 100"
+              @split="(quantity) => split(row.detailKey, quantity)"
+            /><el-button
               link
               type="danger"
-              :disabled="command.locked.value"
+              :disabled="locked"
               @click="remove(row.detailKey)"
-              >移除</el-button
+              >移除此目标</el-button
             ></template
           ></el-table-column
         >
       </el-table>
+      <div
+        v-if="groupSummaries.length"
+        class="allocation-review"
+      >
+        <strong
+          >本次核对 · {{ groupSummaries.length }} 份授权 · {{ selected.length }} 条目标明细</strong
+        >
+        <div
+          v-for="group in groupSummaries"
+          :key="group.source.allocationId"
+          class="allocation-line"
+          :class="{ error: !group.valid || group.after < 0 }"
+        >
+          <span
+            >{{ FINISHED_GOODS_INBOUND_SOURCE_LABELS[group.source.sourceType] }} ·
+            {{ group.source.productCode }} · 第 {{ group.source.revisionNo }} 版</span
+          >
+          <span
+            >批准 {{ formatQuantity(group.source.authorizedQuantity) }} / 历史已入
+            {{ formatQuantity(group.source.receivedQuantity) }} / 可入
+            {{ formatQuantity(group.allowance) }} {{ group.source.unit }}</span
+          >
+          <strong
+            >本次合计 {{ group.valid ? formatQuantity(group.total) : '待修正' }}
+            {{ group.source.unit }} · 本次后剩余
+            {{ group.valid && group.after >= 0 ? formatQuantity(group.after) : '待修正' }}
+            {{ group.source.unit }}</strong
+          >
+        </div>
+        <details class="receipt-preview">
+          <summary>预览本次入库明细</summary>
+          <div
+            v-for="row in selected"
+            :key="row.detailKey"
+            class="receipt-line"
+          >
+            {{ FINISHED_GOODS_INBOUND_SOURCE_LABELS[row.source.sourceType] }} · 清单第
+            {{ row.source.revisionNo }} 版 · {{ row.source.productCode }} · {{ targetLabel(row) }} ·
+            {{ row.quantity || '待填' }} {{ row.source.unit }}
+          </div>
+        </details>
+      </div>
       <el-input
         v-model="remark"
         class="section"
@@ -239,25 +226,22 @@
         :rows="2"
         maxlength="2000"
         placeholder="入库备注（可选）"
-        :disabled="command.locked.value"
-      />
-      <el-alert
-        v-if="checkError"
-        class="section"
-        :title="checkError"
-        type="error"
-        :closable="false"
+        :disabled="locked"
       />
       <el-alert
         v-if="command.status.value !== 'idle'"
         class="section"
-        title="确认结果未知：保留原授权、数量、目标批次和幂等键。请核对历史后按原操作重试。"
+        title="确认结果未知：已保留原授权、数量、目标批次和幂等键。请核对记录后按原操作重试。"
         type="warning"
         :closable="false"
       />
     </template>
     <template #footer>
-      <el-button @click="close">关闭</el-button>
+      <el-button
+        :disabled="checking || command.busy.value"
+        @click="close"
+        >关闭</el-button
+      >
       <template v-if="!inboundId">
         <el-button
           v-if="command.status.value === 'pending'"
@@ -270,7 +254,7 @@
           v-else
           type="primary"
           :loading="command.busy.value"
-          :disabled="command.locked.value || checking || !selected.length"
+          :disabled="locked || !canSubmit"
           @click="confirm"
           >确认实际入库</el-button
         >
@@ -278,13 +262,13 @@
     </template>
   </el-dialog>
 </template>
+
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { computed, onActivated, onDeactivated, ref, watch } from 'vue';
 import type {
   FinishedGoodsInboundCandidate,
   FinishedGoodsInboundOrderDetail,
   FinishedGoodsInboundSource,
-  InventoryInboundTarget,
   ConfirmFinishedGoodsInboundPayload,
   FinishedGoodsInboundCommandResult,
 } from '@company/contracts';
@@ -295,73 +279,100 @@ import { EMessage } from '../../../utils/message';
 import { DialogWidth } from '../../../utils/dialog';
 import { formatDateTimeForDisplay } from '../../../utils/date';
 import { formatQuantity } from '../../production/production-status';
-import PaginationFooter from '../../../components/PaginationFooter.vue';
+import { parseInboundQuantity } from '../inbound-quantity';
+import type { FinishedInboundSelection } from '../finished-inbound-selection';
 import InboundBatchTargetPicker from './InboundBatchTargetPicker.vue';
+import InboundSplitControl from './InboundSplitControl.vue';
+
 defineOptions({ name: 'FinishedGoodsInboundDialog' });
-const props = defineProps<{
-  visible: boolean;
-  inboundId: string | null;
-  sourceType: FinishedGoodsInboundSource;
-  active: boolean;
-}>();
-const emit = defineEmits<{ 'update:visible': [value: boolean]; changed: [] }>();
-interface Selection {
-  detailKey: string;
-  source: FinishedGoodsInboundCandidate;
-  quantity: number;
-  target: InventoryInboundTarget;
-}
-const candidates = ref<FinishedGoodsInboundCandidate[]>([]),
-  selected = ref<Selection[]>([]),
-  detail = ref<FinishedGoodsInboundOrderDetail | null>(null);
-const candidatePage = ref(1),
-  candidateTotal = ref(0),
-  keyword = ref(''),
-  remark = ref('');
-const loading = ref(false),
-  checking = ref(false),
-  error = ref(''),
-  checkError = ref('');
+const props = defineProps<{ visible: boolean; inboundId: string | null; active: boolean }>();
+const selected = defineModel<FinishedInboundSelection[]>('selected', { required: true });
+const emit = defineEmits<{ 'update:visible': [value: boolean]; changed: [inboundId: string] }>();
+const detail = ref<FinishedGoodsInboundOrderDetail | null>(null);
+const remark = ref('');
+const loading = ref(false);
+const checking = ref(false);
+const error = ref('');
+const checkError = ref('');
 let requestNo = 0;
-const command = useProcurementCommand<FinishedGoodsInboundCommandResult>(async () => {
-  emit('changed');
+let checkNo = 0;
+let pageActive = true;
+let discarding = false;
+const command = useProcurementCommand<FinishedGoodsInboundCommandResult>((result) => {
   selected.value = [];
   remark.value = '';
-  await loadCandidates();
+  emit('changed', result.inboundId);
 }, '成品入库');
-async function loadCandidates() {
-  if (!props.visible || props.inboundId) return;
-  const current = ++requestNo;
-  loading.value = true;
-  error.value = '';
-  try {
-    const page = await productionApi.finishedGoodsInboundCandidates({
-      keyword: keyword.value.trim() || undefined,
-      page: candidatePage.value,
-      pageSize: 10,
-    });
-    if (current !== requestNo) return;
-    candidates.value = page.items;
-    candidateTotal.value = page.total;
-  } catch (failure) {
-    if (current === requestNo) {
-      error.value = '授权候选加载失败';
-      EMessage.error(failure);
-    }
-  } finally {
-    if (current === requestNo) loading.value = false;
+const locked = computed(() => command.locked.value || checking.value);
+const groupSummaries = computed(() => {
+  const groups = new Map<
+    string,
+    { source: FinishedGoodsInboundCandidate; total: number; valid: boolean }
+  >();
+  for (const row of selected.value) {
+    const group = groups.get(row.source.allocationId) ?? {
+      source: row.source,
+      total: 0,
+      valid: true,
+    };
+    const quantity = parseInboundQuantity(row.quantity);
+    group.source = row.source;
+    if (quantity === null) group.valid = false;
+    else group.total += quantity;
+    groups.set(row.source.allocationId, group);
   }
-}
-async function loadDetail() {
-  if (!props.visible || !props.inboundId) return;
+  return [...groups.values()].map((group) => ({
+    ...group,
+    allowance: Number(group.source.remainingQuantity),
+    after: Number(group.source.remainingQuantity) - group.total,
+  }));
+});
+const quantityErrors = computed(() => {
+  const errors = new Map<string, string>();
+  const newBatchCodes = new Map<string, string>();
+  for (const row of selected.value) {
+    if (parseInboundQuantity(row.quantity) === null)
+      errors.set(row.detailKey, '请输入 1～99999999 的正整数');
+    else if (row.target.mode === 'existing' && !row.target.batchId)
+      errors.set(row.detailKey, '请选择已有批次');
+    else if (row.target.mode === 'new' && !row.target.clientKey)
+      errors.set(row.detailKey, '请选择本次复用的新批次');
+    if (row.target.mode === 'new' && row.target.batchCode?.trim()) {
+      const codeKey = `${row.source.productId}:${row.target.batchCode.trim().toLocaleLowerCase()}`;
+      const existingKey = newBatchCodes.get(codeKey);
+      if (existingKey && existingKey !== row.target.clientKey)
+        errors.set(row.detailKey, '新批号重复；如需共建，请明确选择“复用本次新批次”');
+      newBatchCodes.set(codeKey, row.target.clientKey);
+    }
+  }
+  for (const group of groupSummaries.value) {
+    if (group.total > group.allowance) {
+      for (const row of selected.value.filter(
+        (item) => item.source.allocationId === group.source.allocationId,
+      ))
+        errors.set(row.detailKey, '本次合计超过该授权剩余额度');
+    }
+  }
+  return errors;
+});
+const canSubmit = computed(
+  () =>
+    selected.value.length > 0 &&
+    !quantityErrors.value.size &&
+    selected.value.every((row) => row.source.canConfirm),
+);
+
+async function loadDetail(): Promise<void> {
+  if (!pageActive || !props.visible || !props.active || !props.inboundId) return;
   const current = ++requestNo;
+  const id = props.inboundId;
   loading.value = true;
   error.value = '';
   try {
-    const data = await productionApi.getFinishedGoodsInbound(props.inboundId);
-    if (current === requestNo) detail.value = data;
+    const data = await productionApi.getFinishedGoodsInbound(id);
+    if (current === requestNo && props.inboundId === id && props.active) detail.value = data;
   } catch (failure) {
-    if (current === requestNo) {
+    if (current === requestNo && props.inboundId === id && props.active) {
       error.value = '入库详情加载失败';
       EMessage.error(failure);
     }
@@ -369,121 +380,148 @@ async function loadDetail() {
     if (current === requestNo) loading.value = false;
   }
 }
-function relatedNewTargetsFor(detailKey: string) {
+function relatedNewTargetsFor(
+  detailKey: string,
+): Array<{ clientKey: string; batchCode?: string; label: string }> {
   const current = selected.value.find((item) => item.detailKey === detailKey);
   if (!current) return [];
   return selected.value.flatMap((item, index) =>
     item.detailKey !== detailKey &&
     item.source.productId === current.source.productId &&
     item.source.unit === current.source.unit &&
-    item.target.mode === 'new'
+    item.target.mode === 'new' &&
+    item.target.clientKey
       ? [
           {
             clientKey: item.target.clientKey,
             batchCode: item.target.batchCode,
-            label: `第 ${index + 1} 条明细的新批次`,
+            label: `${item.source.batchNo} · ${item.source.productCode} · 第 ${index + 1} 条目标`,
           },
         ]
       : [],
   );
 }
-function toggle(source: FinishedGoodsInboundCandidate) {
-  if (command.locked.value) return;
-  const index = selected.value.findIndex(
-    (item) => item.source.allocationId === source.allocationId,
+function isNewBatchOwnerFor(detailKey: string): boolean {
+  const row = selected.value.find((item) => item.detailKey === detailKey);
+  if (!row || row.target.mode !== 'new') return false;
+  const clientKey = row.target.clientKey;
+  return (
+    selected.value.find((item) => item.target.mode === 'new' && item.target.clientKey === clientKey)
+      ?.detailKey === detailKey
   );
-  if (index >= 0) {
-    selected.value.splice(index, 1);
-    return;
-  }
-  if (
-    !source.canConfirm ||
-    (selected.value.length &&
-      selected.value[0]?.source.productionBatchId !== source.productionBatchId)
-  )
-    return;
-  selected.value.push({
-    detailKey: crypto.randomUUID(),
-    source: { ...source },
-    quantity: Number(source.remainingQuantity),
-    target: { mode: 'new', clientKey: crypto.randomUUID() },
-  });
 }
-function remove(detailKey: string) {
-  if (command.locked.value) return;
-  selected.value = selected.value.filter((item) => item.detailKey !== detailKey);
+function targetLabel(row: FinishedInboundSelection): string {
+  if (row.target.mode === 'existing') return `已有批次 #${row.target.batchId || '待选'}`;
+  return `${isNewBatchOwnerFor(row.detailKey) ? '新建批次' : '复用本次新批次'} ${row.target.batchCode || '自动批号'}`;
 }
-function split(detailKey: string) {
-  if (command.locked.value || selected.value.length >= 100) return;
+function remove(detailKey: string): void {
+  if (!locked.value) selected.value = selected.value.filter((item) => item.detailKey !== detailKey);
+}
+function split(detailKey: string, splitQuantity: number): void {
+  if (locked.value || selected.value.length >= 100) return;
   const item = selected.value.find((row) => row.detailKey === detailKey);
-  if (!item) return;
+  const originalQuantity = item ? parseInboundQuantity(item.quantity) : null;
+  if (!item || originalQuantity === null || splitQuantity < 1 || splitQuantity >= originalQuantity)
+    return;
+  item.quantity = String(originalQuantity - splitQuantity);
   selected.value.push({
     detailKey: crypto.randomUUID(),
     source: { ...item.source },
-    quantity: 1,
+    quantity: String(splitQuantity),
     target: { mode: 'new', clientKey: crypto.randomUUID() },
   });
 }
+function sameBasis(
+  left: FinishedGoodsInboundCandidate,
+  right: FinishedGoodsInboundCandidate,
+): boolean {
+  return (
+    left.productionBatchId === right.productionBatchId &&
+    left.productId === right.productId &&
+    left.sourceType === right.sourceType &&
+    left.outputRevisionId === right.outputRevisionId &&
+    left.remainingQuantity === right.remainingQuantity &&
+    left.authorizedQuantity === right.authorizedQuantity &&
+    left.receivedQuantity === right.receivedQuantity
+  );
+}
+function selectionSignature(): string {
+  return selected.value.map((row) => `${row.detailKey}:${row.source.allocationId}`).join('|');
+}
 async function recheck(adopt: boolean): Promise<boolean> {
-  if (!selected.value.length || command.locked.value) return false;
+  if (
+    !pageActive ||
+    !selected.value.length ||
+    locked.value ||
+    !props.active ||
+    !props.visible ||
+    props.inboundId
+  )
+    return false;
+  const current = ++checkNo;
+  const signature = selectionSignature();
+  const isCurrent = () =>
+    current === checkNo &&
+    signature === selectionSignature() &&
+    props.active &&
+    props.visible &&
+    !props.inboundId;
+  const ids = new Set(selected.value.map((row) => row.source.allocationId));
+  const latest = new Map<string, FinishedGoodsInboundCandidate>();
   checking.value = true;
   checkError.value = '';
   try {
-    const page = await productionApi.finishedGoodsInboundCandidates({
-      keyword: selected.value[0]!.source.batchNo,
-      page: 1,
-      pageSize: 100,
-    });
-    const latest = new Map(page.items.map((item) => [item.allocationId, item]));
+    let page = 1;
+    let total = Infinity;
+    while (ids.size && (page - 1) * 100 < total) {
+      const result = await productionApi.finishedGoodsInboundCandidates({
+        keyword: selected.value[0]!.source.batchNo,
+        page,
+        pageSize: 100,
+      });
+      if (!isCurrent()) return false;
+      total = result.total;
+      for (const candidate of result.items)
+        if (ids.delete(candidate.allocationId)) latest.set(candidate.allocationId, candidate);
+      if (!result.items.length) break;
+      page++;
+    }
     for (const item of selected.value) {
-      const current = latest.get(item.source.allocationId);
-      if (!current || !current.canConfirm) {
-        checkError.value = '授权已失效，请移除后重新选择';
+      const currentSource = latest.get(item.source.allocationId);
+      if (!currentSource || !currentSource.canConfirm) {
+        checkError.value = '有授权已失效，请移除该授权后重新选择';
         return false;
       }
-      if (
-        current.outputRevisionId !== item.source.outputRevisionId ||
-        current.remainingQuantity !== item.source.remainingQuantity
-      ) {
+      if (!sameBasis(item.source, currentSource)) {
         if (!adopt) {
           checkError.value = '授权版本或余量已变化，请明确重新核对';
           return false;
         }
-        item.source = { ...current };
+        item.source = { ...currentSource };
       }
     }
-    return true;
+    return canSubmit.value;
   } catch (failure) {
-    checkError.value = '授权重新核对失败';
-    EMessage.error(failure);
+    if (isCurrent()) {
+      checkError.value = '授权重新核对失败';
+      EMessage.error(failure);
+    }
     return false;
   } finally {
-    checking.value = false;
+    if (current === checkNo) checking.value = false;
   }
 }
-async function confirm() {
-  if (command.locked.value || !(await recheck(false))) return;
-  for (const item of selected.value) {
-    const aggregate = selected.value
-      .filter((row) => row.source.allocationId === item.source.allocationId)
-      .reduce((sum, row) => sum + row.quantity, 0);
-    if (
-      !Number.isSafeInteger(item.quantity) ||
-      item.quantity <= 0 ||
-      aggregate > Number(item.source.remainingQuantity) ||
-      (item.target.mode === 'existing' && !item.target.batchId)
-    ) {
-      checkError.value = '请核对本次数量、剩余额度与目标批次';
-      return;
-    }
-  }
+async function confirm(): Promise<void> {
+  if (locked.value || !canSubmit.value || !(await recheck(false))) return;
+  const source = selected.value[0]?.source;
+  if (!source) return;
   const body: ConfirmFinishedGoodsInboundPayload = {
-    productionBatchId: selected.value[0]!.source.productionBatchId,
+    productionBatchId: source.productionBatchId,
     details: selected.value.map((item) => ({
       detailKey: item.detailKey,
       allocationId: item.source.allocationId,
       revisionId: item.source.outputRevisionId,
-      quantity: item.quantity,
+      quantity: Number(item.quantity),
       target: item.target,
     })),
     remark: remark.value.trim() || null,
@@ -494,46 +532,98 @@ async function confirm() {
     '成品入库已确认',
   );
 }
+async function discardDraft(): Promise<boolean> {
+  if (discarding || checking.value) return false;
+  discarding = true;
+  try {
+    if (!(await command.canClose(!!selected.value.length || !!remark.value))) return false;
+    requestNo++;
+    checkNo++;
+    selected.value = [];
+    detail.value = null;
+    remark.value = '';
+    error.value = '';
+    checkError.value = '';
+    emit('update:visible', false);
+    return true;
+  } finally {
+    discarding = false;
+  }
+}
 async function close(): Promise<boolean> {
-  if (!(await command.canClose(!!selected.value.length || !!remark.value))) return false;
+  if (checking.value || command.busy.value) return false;
+  if (command.status.value !== 'idle') return discardDraft();
   requestNo++;
-  selected.value = [];
   detail.value = null;
-  remark.value = '';
   error.value = '';
-  checkError.value = '';
   emit('update:visible', false);
   return true;
 }
-async function prepareTargetSwitch() {
-  return !props.visible || close();
+function prepareTargetSwitch(): Promise<boolean> {
+  return discardDraft();
 }
-function currentInboundId() {
+function currentInboundId(): string | null {
   return props.inboundId;
 }
-function changeCandidatePage(page: number) {
-  candidatePage.value = page;
-  void loadCandidates();
+function isLocked(): boolean {
+  return locked.value;
+}
+function hasDraft(): boolean {
+  return !!selected.value.length || !!remark.value || command.status.value !== 'idle';
+}
+let refreshQueued = false;
+function refreshOpenedContext(): void {
+  if (refreshQueued) return;
+  refreshQueued = true;
+  queueMicrotask(() => {
+    refreshQueued = false;
+    if (!pageActive || !props.visible || !props.active) return;
+    if (props.inboundId) void loadDetail();
+    else if (selected.value.length && !command.locked.value) void recheck(false);
+  });
+}
+function invalidateOpenedReads(): void {
+  requestNo++;
+  checkNo++;
+  loading.value = false;
+  checking.value = false;
 }
 watch(
-  () => [props.visible, props.inboundId, props.sourceType] as const,
+  () => [props.visible, props.inboundId] as const,
   () => {
-    requestNo++;
-    candidates.value = [];
-    selected.value = [];
+    invalidateOpenedReads();
     detail.value = null;
-    keyword.value = '';
-    candidatePage.value = 1;
-    candidateTotal.value = 0;
-    if (props.visible) void (props.inboundId ? loadDetail() : loadCandidates());
+    error.value = '';
+    refreshOpenedContext();
   },
   { immediate: true },
 );
-defineExpose({ prepareTargetSwitch, currentInboundId });
+watch(
+  () => props.active,
+  (active) => {
+    if (!active) {
+      invalidateOpenedReads();
+    } else refreshOpenedContext();
+  },
+);
+let activated = false;
+onActivated(() => {
+  pageActive = true;
+  if (activated) refreshOpenedContext();
+  activated = true;
+});
+onDeactivated(() => {
+  pageActive = false;
+  invalidateOpenedReads();
+});
+defineExpose({ prepareTargetSwitch, discardDraft, close, currentInboundId, isLocked, hasDraft });
 </script>
+
 <style scoped>
 .toolbar {
   display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 8px;
 }
 .section {
@@ -542,5 +632,33 @@ defineExpose({ prepareTargetSwitch, currentInboundId });
 .muted {
   color: var(--el-text-color-secondary);
   font-size: 12px;
+}
+.error {
+  color: var(--el-color-danger);
+  font-size: 12px;
+}
+.allocation-review {
+  padding: 14px 4px;
+  border-top: 1px solid var(--el-border-color);
+}
+.allocation-line {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+.receipt-preview {
+  margin-top: 10px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+.receipt-preview summary {
+  color: var(--el-color-primary);
+  cursor: pointer;
+}
+.receipt-line {
+  padding: 5px 0;
 }
 </style>

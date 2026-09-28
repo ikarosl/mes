@@ -1,40 +1,17 @@
 <template>
-  <div>
+  <div class="line-summary">
     <el-descriptions
-      :column="4"
+      :column="3"
       border
       size="small"
     >
-      <el-descriptions-item label="实际供应商">{{ line.supplierName }}</el-descriptions-item>
       <el-descriptions-item
-        label="物料"
-        :span="2"
-        >{{ line.itemCode }} · {{ line.itemName }}</el-descriptions-item
-      >
-      <el-descriptions-item
-        label="精确版本"
-        :span="2"
-        >{{ line.materialVariantCode }}</el-descriptions-item
-      >
-      <el-descriptions-item
-        label="供应商批号"
-        :span="2"
-        >{{ line.supplierBatchCode || '未提供' }}</el-descriptions-item
-      >
-      <el-descriptions-item
-        label="已入库存批次"
+        label="物料 / 版本"
         :span="2"
       >
-        {{
-          line.batches.length
-            ? line.batches.map((batch) => batch.batchCode).join('、')
-            : '暂无实际入库'
-        }}
+        <strong>{{ line.itemName }}</strong> · {{ line.itemCode }} · {{ line.materialVariantCode }}
       </el-descriptions-item>
-      <el-descriptions-item
-        label="当前处理阶段"
-        :span="2"
-      >
+      <el-descriptions-item label="当前阶段">
         <el-tag :type="isReceiptRejected(line) ? 'danger' : 'info'">
           {{
             isReceiptRejected(line)
@@ -44,55 +21,83 @@
         </el-tag>
         <span class="round-number">第 {{ line.currentRound.roundNo }} 轮</span>
       </el-descriptions-item>
-      <el-descriptions-item
-        label="当前未处置总量"
-        :span="2"
-        >{{ Number(line.quantities.unprocessedQuantity) }} {{ line.unit }}</el-descriptions-item
-      >
-      <el-descriptions-item label="本次到货核实总量"
+      <el-descriptions-item label="实际供应商">{{ line.supplierName }}</el-descriptions-item>
+      <el-descriptions-item label="供应商批号">{{
+        line.supplierBatchCode || '未提供'
+      }}</el-descriptions-item>
+      <el-descriptions-item label="明细身份">#{{ line.id }}</el-descriptions-item>
+    </el-descriptions>
+    <el-descriptions
+      :column="4"
+      border
+      size="small"
+      class="quantity-summary"
+    >
+      <el-descriptions-item label="本批核实总量"
         >{{ Number(line.quantities.receivedQuantity) }} {{ line.unit }}</el-descriptions-item
       >
-      <el-descriptions-item label="待检 / 待定稿量">{{
-        Number(line.quantities.undeterminedQuantity)
-      }}</el-descriptions-item>
-      <el-descriptions-item label="有效批准量">{{
-        Number(line.quantities.approvedQuantity)
-      }}</el-descriptions-item>
-      <el-descriptions-item label="累计已入量">{{
-        Number(line.quantities.inboundQuantity)
-      }}</el-descriptions-item>
-      <el-descriptions-item label="当前可入量">{{
-        Number(line.quantities.pendingInboundQuantity)
-      }}</el-descriptions-item>
-      <el-descriptions-item label="当前待退量">{{
-        Number(line.quantities.pendingReturnQuantity)
-      }}</el-descriptions-item>
-      <el-descriptions-item label="累计已退量">{{
-        Number(line.quantities.returnedQuantity)
-      }}</el-descriptions-item>
-      <el-descriptions-item label="质量阻断"
-        ><el-tag
-          v-if="line.quantities.hasOpenReview"
-          type="warning"
-          >整批暂停正常办理</el-tag
-        ><span v-else>无</span></el-descriptions-item
+      <el-descriptions-item label="累计已入"
+        >{{ Number(line.quantities.inboundQuantity) }} {{ line.unit }}</el-descriptions-item
+      >
+      <el-descriptions-item label="累计已退"
+        >{{ Number(line.quantities.returnedQuantity) }} {{ line.unit }}</el-descriptions-item
+      >
+      <el-descriptions-item label="本轮未处置"
+        ><strong
+          >{{ Number(line.quantities.unprocessedQuantity) }} {{ line.unit }}</strong
+        ></el-descriptions-item
       >
     </el-descriptions>
-    <p
-      class="help"
-      style="color: chocolate"
+    <div
+      v-if="line.quantities.hasOpenReview"
+      class="quality-blocker"
     >
-      本次到货明细 {{ line.id }}：核实总量 {{ Number(line.quantities.receivedQuantity) }}
-      {{ line.unit }} = 已入库 {{ Number(line.quantities.inboundQuantity) }} + 已退回
-      {{ Number(line.quantities.returnedQuantity) }} + 未处置
-      {{ Number(line.quantities.unprocessedQuantity) }}。后续新到货另建记录，不累计到本明细。
-    </p>
-    <p
-      v-if="line.overReceiptNote"
-      class="help"
-    >
-      超量接受依据：{{ line.overReceiptNote }}
-    </p>
+      质量阻断：整批暂停正常定稿与入库
+    </div>
+    <el-collapse class="quantity-basis">
+      <el-collapse-item
+        title="查看本轮授权与数量依据"
+        name="basis"
+      >
+        <el-descriptions
+          :column="4"
+          border
+          size="small"
+        >
+          <el-descriptions-item label="待检 / 待定稿"
+            >{{ Number(line.quantities.undeterminedQuantity) }}
+            {{ line.unit }}</el-descriptions-item
+          >
+          <el-descriptions-item label="当前可入"
+            >{{ Number(line.quantities.pendingInboundQuantity) }}
+            {{ line.unit }}</el-descriptions-item
+          >
+          <el-descriptions-item label="当前待退"
+            >{{ Number(line.quantities.pendingReturnQuantity) }}
+            {{ line.unit }}</el-descriptions-item
+          >
+          <el-descriptions-item label="有效批准"
+            >{{ Number(line.quantities.approvedQuantity) }} {{ line.unit }}</el-descriptions-item
+          >
+          <el-descriptions-item
+            label="已入库存批次"
+            :span="4"
+            >{{
+              line.batches.length
+                ? line.batches.map((batch) => batch.batchCode).join('、')
+                : '暂无实际入库'
+            }}</el-descriptions-item
+          >
+          <el-descriptions-item
+            v-if="line.overReceiptNote"
+            label="超量接受依据"
+            :span="4"
+            >{{ line.overReceiptNote }}</el-descriptions-item
+          >
+        </el-descriptions>
+        <p class="help">本批核实总量 = 累计已入 + 累计已退 + 本轮未处置；新到货另建记录。</p>
+      </el-collapse-item>
+    </el-collapse>
   </div>
 </template>
 <script setup lang="ts">
@@ -103,7 +108,18 @@ defineProps<{ line: ProcurementReceiptLine }>();
 </script>
 <style scoped>
 .round-number {
-  margin-left: 12px;
+  margin-left: 8px;
+}
+.quantity-summary,
+.quantity-basis {
+  margin-top: 8px;
+}
+.quality-blocker {
+  margin-top: 8px;
+  padding: 8px 12px;
+  color: #9a3412;
+  background: #fff7ed;
+  border-left: 3px solid #f59e0b;
 }
 .help {
   color: #6b7280;

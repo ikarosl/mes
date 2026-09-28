@@ -9,12 +9,14 @@ import { procurementInboundsApi } from '../../../api/procurement-inbounds';
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
 import { useProcurementCommand } from '../../procurement/composables/useProcurementCommand';
 import { EMessage } from '../../../utils/message';
+import { RouteMessageBox } from '../../../utils/route-message-box';
+import { parseInboundQuantity } from '../inbound-quantity';
 
 interface SelectedRelease {
   detailKey: string;
   target: InventoryInboundTarget;
   source: ProcurementInboundReleaseItem;
-  quantity: number | undefined;
+  quantity: string;
   error: string;
 }
 
@@ -36,7 +38,9 @@ export function usePurchaseInboundReleases(
   const page = ref(1),
     pageSize = ref(10),
     total = ref(0),
-    loading = ref(false);
+    loading = ref(false),
+    loadError = ref(''),
+    hasLoaded = ref(false);
   const selected = ref<SelectedRelease[]>([]),
     remark = ref(''),
     visible = ref(false);
@@ -57,11 +61,67 @@ export function usePurchaseInboundReleases(
   }, '入库单');
   const locked = computed(() => command.locked.value || checking.value);
   const supplierId = computed(() => selected.value[0]?.source.supplierId);
+  const groupSummaries = computed(() => {
+    const groups = new Map<
+      string,
+      { source: ProcurementInboundReleaseItem; total: number; valid: boolean; count: number }
+    >();
+    for (const row of selected.value) {
+      const id = row.source.allocationId;
+      const group = groups.get(id) ?? { source: row.source, total: 0, valid: true, count: 0 };
+      const quantity = parseInboundQuantity(row.quantity);
+      group.source = row.source;
+      group.count++;
+      if (quantity === null) group.valid = false;
+      else group.total += quantity;
+      groups.set(id, group);
+    }
+    return [...groups.values()].map((group) => ({
+      ...group,
+      allowance: Number(group.source.approvedRemainingQuantity),
+      after: Number(group.source.approvedRemainingQuantity) - group.total,
+    }));
+  });
+  const quantityErrors = computed(() => {
+    const errors = new Map<string, string>();
+    const newBatchCodes = new Map<string, string>();
+    for (const row of selected.value) {
+      if (parseInboundQuantity(row.quantity) === null)
+        errors.set(row.detailKey, '请输入 1～99999999 的正整数');
+      else if (row.target.mode === 'existing' && !row.target.batchId)
+        errors.set(row.detailKey, '请选择已有批次');
+      else if (row.target.mode === 'new' && !row.target.clientKey)
+        errors.set(row.detailKey, '请选择本次复用的新批次');
+      if (row.target.mode === 'new' && row.target.batchCode?.trim()) {
+        const codeKey = `${row.source.materialVariantId}:${row.target.batchCode.trim().toLocaleLowerCase()}`;
+        const existingKey = newBatchCodes.get(codeKey);
+        if (existingKey && existingKey !== row.target.clientKey)
+          errors.set(row.detailKey, '新批号重复；如需共建，请明确选择“复用本次新批次”');
+        newBatchCodes.set(codeKey, row.target.clientKey);
+      }
+    }
+    for (const group of groupSummaries.value) {
+      if (group.total > group.allowance) {
+        for (const row of selected.value.filter(
+          (item) => item.source.allocationId === group.source.allocationId,
+        ))
+          errors.set(row.detailKey, '本次合计超过该授权剩余额度');
+      }
+    }
+    return errors;
+  });
+  const canSubmit = computed(
+    () =>
+      selected.value.length > 0 &&
+      !quantityErrors.value.size &&
+      !selected.value.some((row) => row.error),
+  );
 
   async function load(): Promise<void> {
     if (!listRead.isActive()) return;
     const current = listRead.begin();
     loading.value = true;
+    loadError.value = '';
     try {
       const result = await procurementInboundsApi.releases(
         {
@@ -75,8 +135,12 @@ export function usePurchaseInboundReleases(
       if (!current.isCurrent()) return;
       rows.value = result.items;
       total.value = result.total;
+      hasLoaded.value = true;
     } catch (error) {
-      if (current.isCurrent()) EMessage.error(error, '放行范围加载失败');
+      if (current.isCurrent()) {
+        loadError.value = '放行范围读取失败，请重试';
+        EMessage.error(error, '放行范围加载失败');
+      }
     } finally {
       if (current.isCurrent()) loading.value = false;
     }
@@ -92,9 +156,25 @@ export function usePurchaseInboundReleases(
   };
   const isSelected = (id: string): boolean =>
     selected.value.some((row) => row.source.allocationId === id);
-  const toggle = (source: ProcurementInboundReleaseItem): void => {
+  const toggle = async (source: ProcurementInboundReleaseItem): Promise<void> => {
     if (locked.value) return;
     if (isSelected(source.allocationId)) {
+      const targetCount = selected.value.filter(
+        (row) => row.source.allocationId === source.allocationId,
+      ).length;
+      if (targetCount > 1) {
+        try {
+          await RouteMessageBox.confirm(
+            `取消整份授权将移除 ${targetCount} 条目标明细，确定继续吗？`,
+            '取消已选授权',
+            { type: 'warning', confirmButtonText: '移除整份授权' },
+          );
+        } catch {
+          return;
+        }
+      }
+      if (locked.value) return;
+      // Candidate deselection removes its whole authorization; row removal below removes one target.
       selected.value = selected.value.filter(
         (row) => row.source.allocationId !== source.allocationId,
       );
@@ -112,21 +192,29 @@ export function usePurchaseInboundReleases(
       detailKey: crypto.randomUUID(),
       target: { mode: 'new', clientKey: crypto.randomUUID() },
       source: { ...source },
-      quantity: Number(source.approvedRemainingQuantity),
+      quantity: source.approvedRemainingQuantity,
       error: '',
     });
   };
   const remove = (detailKey: string): void => {
     if (!locked.value) selected.value = selected.value.filter((row) => row.detailKey !== detailKey);
   };
-  const split = (detailKey: string): void => {
+  const split = (detailKey: string, splitQuantity: number): void => {
     if (locked.value || selected.value.length >= 100) return;
     const source = selected.value.find((row) => row.detailKey === detailKey);
-    if (!source) return;
+    const originalQuantity = source ? parseInboundQuantity(source.quantity) : null;
+    if (
+      !source ||
+      originalQuantity === null ||
+      splitQuantity < 1 ||
+      splitQuantity >= originalQuantity
+    )
+      return;
+    source.quantity = String(originalQuantity - splitQuantity);
     selected.value.push({
       detailKey: crypto.randomUUID(),
       source: { ...source.source },
-      quantity: 1,
+      quantity: String(splitQuantity),
       target: { mode: 'new', clientKey: crypto.randomUUID() },
       error: '',
     });
@@ -143,44 +231,30 @@ export function usePurchaseInboundReleases(
             {
               clientKey: row.target.clientKey,
               batchCode: row.target.batchCode,
-              label: `第 ${index + 1} 条明细的新批次`,
+              label: `${row.source.receiptNo} · ${row.source.itemCode} · 第 ${index + 1} 条目标`,
             },
           ]
         : [],
     );
   };
-  const validQuantities = (): boolean => {
-    let valid = true;
-    const sums = new Map<string, number>();
-    for (const row of selected.value) {
-      row.error = '';
-      if (!Number.isSafeInteger(row.quantity) || Number(row.quantity) <= 0) {
-        row.error = '请填写正整数';
-        valid = false;
-      } else {
-        sums.set(
-          row.source.allocationId,
-          (sums.get(row.source.allocationId) ?? 0) + Number(row.quantity),
-        );
-      }
-      if (row.target.mode === 'existing' && !row.target.batchId) {
-        row.error = '请选择已有批次';
-        valid = false;
-      }
-    }
-    for (const row of selected.value) {
-      if ((sums.get(row.source.allocationId) ?? 0) > Number(row.source.approvedRemainingQuantity)) {
-        row.error = '同一授权的本次合计超过剩余量';
-        valid = false;
-      }
-    }
-    return valid;
+  const isNewBatchOwnerFor = (detailKey: string): boolean => {
+    const row = selected.value.find((item) => item.detailKey === detailKey);
+    if (!row || row.target.mode !== 'new') return false;
+    const clientKey = row.target.clientKey;
+    return (
+      selected.value.find(
+        (item) => item.target.mode === 'new' && item.target.clientKey === clientKey,
+      )?.detailKey === detailKey
+    );
   };
+  const validQuantities = (): boolean => canSubmit.value;
   const recheck = async (adopt = true): Promise<boolean> => {
     if (command.locked.value || !selected.value.length || checking.value) return false;
     const ids = [...new Set(selected.value.map((row) => row.source.allocationId))];
     const current = selectedRead.begin(
-      () => ids.join(',') === selected.value.map((row) => row.source.allocationId).join(','),
+      () =>
+        ids.join(',') ===
+        [...new Set(selected.value.map((row) => row.source.allocationId))].join(','),
     );
     checking.value = true;
     checkError.value = '';
@@ -192,6 +266,7 @@ export function usePurchaseInboundReleases(
       if (!current.isCurrent()) return false;
       const sources = new Map(result.items.map((item) => [item.allocationId, item]));
       let valid = true;
+      const refreshed = new Map<string, ProcurementInboundReleaseItem>();
       for (const row of selected.value) {
         const source = sources.get(row.source.allocationId);
         row.error = '';
@@ -201,10 +276,13 @@ export function usePurchaseInboundReleases(
         } else if (!sameBasis(row.source, source) && !adopt) {
           row.error = '放行依据或剩余量已变化，请点击“重新核对已选”';
           valid = false;
-        } else if (adopt) {
-          row.source = { ...source };
-        }
+        } else if (adopt) refreshed.set(row.source.allocationId, source);
       }
+      if (valid && adopt)
+        for (const row of selected.value) {
+          const source = refreshed.get(row.source.allocationId);
+          if (source) row.source = { ...source };
+        }
       return validQuantities() && valid;
     } catch (error) {
       if (current.isCurrent())
@@ -220,7 +298,7 @@ export function usePurchaseInboundReleases(
     if (!command.locked.value) void recheck(false);
   };
   const submit = async (): Promise<void> => {
-    if (locked.value || !(await recheck(false))) return;
+    if (locked.value || !validQuantities() || !(await recheck(false))) return;
     const body: ConfirmProcurementInboundPayload = {
       remark: remark.value.trim() || null,
       details: selected.value.map(({ detailKey, source, quantity, target }) => ({
@@ -267,6 +345,8 @@ export function usePurchaseInboundReleases(
     pageSize,
     total,
     loading,
+    loadError,
+    hasLoaded,
     selected,
     remark,
     visible,
@@ -275,6 +355,9 @@ export function usePurchaseInboundReleases(
     command,
     locked,
     supplierId,
+    groupSummaries,
+    quantityErrors,
+    canSubmit,
     load,
     search,
     reset,
@@ -283,6 +366,7 @@ export function usePurchaseInboundReleases(
     remove,
     split,
     relatedNewTargetsFor,
+    isNewBatchOwnerFor,
     recheck,
     open,
     submit,

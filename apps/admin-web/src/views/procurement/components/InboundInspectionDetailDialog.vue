@@ -28,52 +28,78 @@
           }}</el-descriptions-item></el-descriptions
         >
         <ReceiptLineSummary :line="line" />
-        <div class="history-actions">
-          <el-button
-            type="primary"
-            :disabled="blocked || !canReviewReceipt(line)"
-            @click="actions?.open(line, 'review', undefined, undefined, true)"
-          >
-            {{
-              line.currentRound.status === 'uninspected' ? '发起整批检验' : '发起整批复检 / 更正'
-            }}
-          </el-button>
-          <el-button
-            v-if="currentReceiptCase(line)"
-            type="primary"
-            :disabled="blocked"
-            @click="actions?.open(line, 'inspect', undefined, currentReceiptCase(line), true)"
-            >填写本轮检验结果</el-button
-          >
-          <el-button @click="history?.open(line.id, 'rounds', line)"
-            >处理轮次 {{ line.historyTotals.rounds }}</el-button
-          >
-
-          <el-button
-            v-if="
-              auth.can(PERMISSIONS.production.inbounds.view) &&
-              Number(line.quantities.pendingInboundQuantity) > 0
+        <div class="current-action">
+          <strong>当前办理 · 第 {{ line.currentRound.roundNo }} 轮</strong>
+          <template v-if="Number(line.quantities.unprocessedQuantity) === 0">
+            <span>本批已处理完，可在下方查阅检验与实物处置记录。</span>
+          </template>
+          <template v-else-if="currentReceiptCase(line)">
+            <span>本轮检验已发起，需填写检查事实与放行结论。</span>
+            <el-button
+              type="primary"
+              :disabled="blocked"
+              @click="actions?.open(line, 'inspect', undefined, currentReceiptCase(line), true)"
+              >填写本轮检验结果</el-button
+            >
+          </template>
+          <template
+            v-else-if="
+              canReviewReceipt(line) &&
+              ['uninspected', 'reinspection_required', 'quality_rejected'].includes(
+                line.currentRound.status,
+              )
             "
-            type="primary"
-            plain
-            :disabled="blocked"
-            @click="goInbound"
-            >仓管确认入库</el-button
           >
+            <span>{{
+              line.currentRound.status === 'uninspected'
+                ? '本批待检验。'
+                : '本批仍有质量阻断，可发起整批复检。'
+            }}</span>
+            <el-button
+              type="primary"
+              :disabled="blocked"
+              @click="actions?.open(line, 'review', undefined, undefined, true)"
+              >{{
+                line.currentRound.status === 'uninspected' ? '发起整批检验' : '发起整批复检'
+              }}</el-button
+            >
+          </template>
+          <template v-else-if="line.currentRound.status === 'awaiting_acceptance'">
+            <span>本轮检查已完成，待库管核对并定稿正式去向。</span>
+            <el-button
+              v-if="auth.can(PERMISSIONS.procurement.receipts.view)"
+              :disabled="blocked"
+              @click="goReceipt"
+              >前往到货定稿</el-button
+            >
+          </template>
+          <template v-else-if="Number(line.quantities.pendingInboundQuantity) > 0">
+            <span>正式清单已授权入库，待仓管确认实际入库。</span>
+            <el-button
+              v-if="auth.can(PERMISSIONS.production.inbounds.view)"
+              type="primary"
+              :disabled="blocked"
+              @click="goInbound"
+              >办理入库</el-button
+            >
+          </template>
+          <template v-else>
+            <span>请核对当前正式去向及尚未处置实物。</span>
+          </template>
+        </div>
+        <div
+          v-if="
+            canReviewReceipt(line) &&
+            ['awaiting_acceptance', 'finalized'].includes(line.currentRound.status)
+          "
+          class="secondary-action"
+        >
           <el-button
-            v-if="auth.can(PERMISSIONS.procurement.receipts.view)"
+            link
+            type="primary"
             :disabled="blocked"
-            @click="goReceipt"
-            >查看到货 / 实收更正</el-button
-          >
-          <el-button @click="history?.open(line.id, 'revisions', line)"
-            >实收修订 {{ line.historyTotals.revisions }}</el-button
-          ><el-button @click="history?.open(line.id, 'cases', line)"
-            >检验历史 {{ line.historyTotals.cases }}</el-button
-          ><el-button @click="history?.open(line.id, 'returns', line)"
-            >退回记录 {{ line.historyTotals.returns }}</el-button
-          ><el-button @click="history?.open(line.id, 'inbounds', line)"
-            >入库记录 {{ line.historyTotals.inbounds }}</el-button
+            @click="actions?.open(line, 'review', undefined, undefined, true)"
+            >发起整批复检 / 更正</el-button
           >
         </div>
         <el-alert
@@ -90,21 +116,67 @@
           <strong>本批当前检验依据</strong
           ><InboundInspectionRecord :inspection="currentInspection" />
         </div>
-        <div
-          v-if="selectedCase?.inspection && selectedCase.inspection.id !== currentInspection?.id"
-          class="selected-record"
-        >
-          <strong
-            >所选历史检验结论 ·
-            {{ QUALITY_INBOUND_CASE_STATUS_LABELS[selectedCase.status] }}</strong
-          ><InboundInspectionRecord :inspection="selectedCase.inspection" />
-        </div>
         <ReceiptLineAllocations
           :line="line"
           :quality="true"
           :disabled="blocked"
           @history="history?.open(line.id, $event, line)"
         />
+        <el-collapse
+          v-model="expandedSections"
+          class="history-section"
+        >
+          <el-collapse-item
+            name="history"
+            title="历史与来源记录"
+          >
+            <div
+              v-if="
+                selectedCase?.inspection && selectedCase.inspection.id !== currentInspection?.id
+              "
+              class="selected-record"
+            >
+              <strong
+                >所选历史检验结论 ·
+                {{ QUALITY_INBOUND_CASE_STATUS_LABELS[selectedCase.status] }}</strong
+              >
+              <p class="historical-note">此记录属于历史办理，仅供追溯，不代表当前轮采用依据。</p>
+              <InboundInspectionRecord :inspection="selectedCase.inspection" />
+            </div>
+            <div class="history-actions">
+              <el-button @click="history?.open(line.id, 'rounds', line)"
+                >处理轮次 {{ line.historyTotals.rounds }}</el-button
+              >
+              <el-button @click="history?.open(line.id, 'revisions', line)"
+                >实收修订 {{ line.historyTotals.revisions }}</el-button
+              >
+              <el-button @click="history?.open(line.id, 'cases', line)"
+                >检验历史 {{ line.historyTotals.cases }}</el-button
+              >
+              <el-button @click="history?.open(line.id, 'returns', line)"
+                >退回记录 {{ line.historyTotals.returns }}</el-button
+              >
+              <el-button @click="history?.open(line.id, 'inbounds', line)"
+                >入库记录 {{ line.historyTotals.inbounds }}</el-button
+              >
+              <el-button
+                v-if="auth.can(PERMISSIONS.procurement.receipts.view)"
+                :disabled="blocked"
+                @click="goReceipt"
+                >查看到货 / 实收更正</el-button
+              >
+              <el-button
+                v-if="
+                  auth.can(PERMISSIONS.production.inbounds.view) &&
+                  Number(line.quantities.pendingInboundQuantity) > 0
+                "
+                :disabled="blocked"
+                @click="goInbound"
+                >仓管确认入库</el-button
+              >
+            </div>
+          </el-collapse-item>
+        </el-collapse>
       </template>
     </div>
     <template #footer
@@ -145,6 +217,7 @@ const auth = useAuthStore(),
   router = useRouter();
 const visible = ref(false),
   lineId = ref(''),
+  expandedSections = ref<string[]>([]),
   loading = ref(false),
   readError = ref(false);
 const line = ref<ProcurementReceiptLine | null>(null),
@@ -171,6 +244,12 @@ const load = async (): Promise<void> => {
     const result = await procurementApi.inspectionReceiptLine(target, current.signal);
     if (current.isCurrent()) {
       line.value = result;
+      if (
+        selectedCase.value?.inspection &&
+        selectedCase.value.inspection.id !== result.currentRound.inspectionId &&
+        !expandedSections.value.includes('history')
+      )
+        expandedSections.value = [...expandedSections.value, 'history'];
       readError.value = false;
     }
   } catch (error) {
@@ -188,6 +267,7 @@ const open = async (id: string, context?: ProcurementInboundInspectionItem): Pro
   line.value = null;
   task.value = context ?? null;
   selectedCase.value = context?.case ?? null;
+  expandedSections.value = [];
   readError.value = false;
   visible.value = true;
   await load();
@@ -238,14 +318,33 @@ defineExpose({
 .notice {
   margin-bottom: 16px;
 }
+.current-action,
 .history-actions {
   display: flex;
+  align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-  margin: 16px 0;
+  margin: 12px 0;
+}
+.current-action {
+  padding: 12px;
+  background: #f5f7fa;
+  border-left: 3px solid #306188;
+}
+.current-action strong {
+  width: 100%;
+}
+.current-action span {
+  color: #1f2937;
+}
+.secondary-action {
+  margin-bottom: 12px;
 }
 .history-actions .el-button {
   margin-left: 0;
+}
+.history-section {
+  margin-top: 18px;
 }
 .selected-record {
   margin: 20px 0;
@@ -253,5 +352,9 @@ defineExpose({
 .selected-record strong {
   display: block;
   margin-bottom: 10px;
+}
+.historical-note {
+  margin: 0 0 10px;
+  color: #6b7280;
 }
 </style>

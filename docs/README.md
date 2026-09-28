@@ -17,6 +17,7 @@
 - [成品分次入库伪结构与数据示例](finished-inbound-redesign-proposal.md)：已确认模型的职责对照、实际批号与分次入库示例；实施验证及验收由路线图维护
 - [库存协作协议](inventory-extraction-design.md)：跨模块来源、事务与锁序
 - [采购管理端设计](../apps/admin-web/docs/procurement-inbound.md)：输入、候选分页、草稿、并发与幂等约束
+- [需求至入库与生产结案 UI／UX 评审](ui-ux-review.md)：Chrome 走查证据与待确认改版建议，不替代当前所有者规则
 - [审批接入边界](approval-design.md)
 - [通用通知设计与提交后扩展钩子](notification-design.md)
 

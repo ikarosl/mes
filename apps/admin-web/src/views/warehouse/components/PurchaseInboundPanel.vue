@@ -4,16 +4,14 @@
       v-model="view"
       @change="refresh"
     >
-      <el-radio-button value="releases">待入库放行清单</el-radio-button>
-      <el-radio-button value="history">已确认入库</el-radio-button>
+      <el-radio-button value="releases">待入库</el-radio-button>
+      <el-radio-button value="history">已入库记录</el-radio-button>
     </el-radio-group>
     <template v-if="view === 'releases'">
-      <el-alert
-        title="仅显示质检允许继续且库管已定稿的可入剩余量。数量以正式清单授权为准；整批复检、更正或拒收后旧范围不可再用。可分次入库，每次按明细选择新建或已有库存批次。"
-        type="info"
-        :closable="false"
-        show-icon
-      />
+      <details class="rules">
+        <summary>查看入库资格与分次规则</summary>
+        仅显示当前有效的正式清单剩余额度；复检、更正或拒收后旧授权不能继续办理。每次按真实余量核对，可分到多个目标批次。
+      </details>
       <section class="query-panel">
         <el-form
           inline
@@ -43,6 +41,12 @@
           >
         </el-form>
       </section>
+      <el-alert
+        v-if="releases.loadError.value"
+        :title="releases.loadError.value"
+        type="error"
+        :closable="false"
+      />
       <section class="table-panel">
         <TableToolbar>
           <template #actions>
@@ -57,7 +61,7 @@
               @click="releases.clear"
               >清空已选</el-button
             >
-            <span class="muted">跨页保留已选范围，同一入库单须为同一供应商</span>
+            <span class="muted">跨页保留已选范围；同一入库单限同一供应商</span>
           </template>
           <template #tools
             ><el-button
@@ -73,7 +77,13 @@
           v-loading="releases.loading.value"
           :data="releases.rows.value"
           row-key="allocationId"
-          empty-text="暂无可入库放行范围"
+          :empty-text="
+            releases.loadError.value
+              ? '读取失败，请刷新重试'
+              : releases.query.keyword || releases.query.receiptLineId
+                ? '当前筛选无可入库授权，请清除筛选'
+                : '无当前可入授权；请先核对到货检验与正式清单'
+          "
         >
           <el-table-column width="48"
             ><template #default="{ row }"
@@ -83,7 +93,7 @@
                   releases.locked.value ||
                   (!!releases.supplierId.value && releases.supplierId.value !== row.supplierId)
                 "
-                :aria-label="`选择 ${row.receiptNo} ${row.itemCode}`"
+                :aria-label="`${releases.isSelected(row.allocationId) ? '取消整份授权' : '选择授权'} ${row.receiptNo} ${row.itemCode}`"
                 @change="releases.toggle(row)" /></template
           ></el-table-column>
           <el-table-column
@@ -117,8 +127,8 @@
           >
 
           <el-table-column
-            label="清单剩余可入"
-            min-width="110"
+            label="当前可入额度"
+            min-width="145"
             align="right"
             ><template #default="{ row }"
               >{{ formatQuantity(row.approvedRemainingQuantity) }} {{ row.unit }}</template
@@ -272,7 +282,7 @@
       @update:model-value="closeConfirmation"
     >
       <el-alert
-        title="按本次实际入库填写正整数，可调小为分次入库。每条入库明细选择新建或已有批次；同一授权可拆入多个目标，本次合计不能超过剩余量。"
+        title="核对每份授权的本次数量和目标批次；确认后将新增实际库存记录。"
         type="info"
         show-icon
         :closable="false"
@@ -330,7 +340,9 @@
               item-kind="material"
               :material-variant-id="row.source.materialVariantId"
               :unit="row.source.unit"
+              :identity="`${row.source.itemCode} / ${row.source.materialVariantCode} / ${row.source.unit}`"
               :related-new-targets="releases.relatedNewTargetsFor(row.detailKey)"
+              :new-batch-owner="releases.isNewBatchOwnerFor(row.detailKey)"
               :disabled="releases.locked.value"
             />
           </template>
@@ -348,39 +360,76 @@
           label="本次入库"
           min-width="190"
           ><template #default="{ row }"
-            ><el-input-number
+            ><el-input
               v-model="row.quantity"
-              :precision="0"
-              :min="1"
+              inputmode="numeric"
               :disabled="releases.locked.value"
-              controls-position="right"
+              :aria-label="`本次入库数量 ${row.source.itemCode}`"
             />
             <div
-              v-if="row.error"
+              v-if="row.error || releases.quantityErrors.value.get(row.detailKey)"
               class="error"
             >
-              {{ row.error }}
+              {{ row.error || releases.quantityErrors.value.get(row.detailKey) }}
             </div></template
           ></el-table-column
         >
         <el-table-column width="110">
           <template #default="{ row }">
-            <el-button
-              link
-              :disabled="releases.locked.value"
-              @click="releases.split(row.detailKey)"
-              >拆入</el-button
-            >
+            <InboundSplitControl
+              :quantity="row.quantity"
+              :disabled="releases.locked.value || releases.selected.value.length >= 100"
+              @split="(quantity) => releases.split(row.detailKey, quantity)"
+            />
             <el-button
               type="danger"
               link
               :disabled="releases.locked.value"
               @click="releases.remove(row.detailKey)"
-              >移除</el-button
+              >移除此目标</el-button
             >
           </template>
         </el-table-column>
       </el-table>
+      <div
+        v-if="releases.groupSummaries.value.length"
+        class="allocation-review"
+      >
+        <strong
+          >本次核对 · {{ releases.groupSummaries.value.length }} 份授权 ·
+          {{ releases.selected.value.length }} 条目标明细</strong
+        >
+        <div
+          v-for="group in releases.groupSummaries.value"
+          :key="group.source.allocationId"
+          class="allocation-line"
+          :class="{ error: !group.valid || group.after < 0 }"
+        >
+          <span
+            >{{ group.source.receiptNo }} · {{ group.source.itemCode }} /
+            {{ group.source.materialVariantCode }} · 分配 {{ group.source.allocationId }}</span
+          >
+          <span
+            >本次合计 {{ group.valid ? formatQuantity(group.total) : '待修正' }} / 可入
+            {{ formatQuantity(group.allowance) }} {{ group.source.unit }} · 本次后剩余
+            {{ group.valid && group.after >= 0 ? formatQuantity(group.after) : '待修正' }}
+            {{ group.source.unit }}</span
+          >
+        </div>
+        <details class="rules">
+          <summary>预览本次入库明细</summary>
+          <div
+            v-for="row in releases.selected.value"
+            :key="row.detailKey"
+            class="receipt-line"
+          >
+            {{ row.source.receiptNo }} · {{ row.source.itemCode }} /
+            {{ row.source.materialVariantCode }} ·
+            {{ targetLabel(row.target, row.detailKey) }}
+            · {{ row.quantity || '待填' }} {{ row.source.unit }}
+          </div>
+        </details>
+      </div>
       <el-form
         label-width="80px"
         class="remark-form"
@@ -417,7 +466,7 @@
           v-else
           type="primary"
           :loading="releases.command.busy.value"
-          :disabled="releases.locked.value || !releases.selected.value.length"
+          :disabled="releases.locked.value || !releases.canSubmit.value"
           @click="releases.submit"
           >确认实际入库</el-button
         >
@@ -432,12 +481,13 @@
 </template>
 
 <script setup lang="ts">
-import { onActivated, onMounted, ref, watch } from 'vue';
+import { onActivated, onMounted, onScopeDispose, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { Refresh } from '@element-plus/icons-vue';
 import { PERMISSIONS } from '@company/constants';
 import { useAuthStore } from '../../../stores/auth';
-import type { PurchaseInboundOrderItem } from '@company/contracts';
+import { useTabsStore } from '../../../stores/tabs';
+import type { InventoryInboundTarget, PurchaseInboundOrderItem } from '@company/contracts';
 import { formatDateTimeForDisplay } from '../../../utils/date';
 import TableToolbar from '../../../components/TableToolbar.vue';
 import PaginationFooter from '../../../components/PaginationFooter.vue';
@@ -448,6 +498,7 @@ import { usePurchaseInbounds } from '../../production/composables/usePurchaseInb
 import { usePurchaseInboundReleases } from '../composables/usePurchaseInboundReleases';
 import PurchaseInboundHistoryDialog from './PurchaseInboundHistoryDialog.vue';
 import InboundBatchTargetPicker from './InboundBatchTargetPicker.vue';
+import InboundSplitControl from './InboundSplitControl.vue';
 
 defineOptions({ name: 'PurchaseInboundPanel' });
 const props = withDefaults(
@@ -481,6 +532,10 @@ const releases = usePurchaseInboundReleases(async (result) => {
 });
 const summary = (row: PurchaseInboundOrderItem) =>
   row.quantitySummary.map((item) => `${formatQuantity(item.quantity)} ${item.unit}`).join(' / ');
+const targetLabel = (target: InventoryInboundTarget, detailKey: string): string => {
+  if (target.mode === 'existing') return `已有批次 #${target.batchId || '待选'}`;
+  return `${releases.isNewBatchOwnerFor(detailKey) ? '新建批次' : '复用本次新批次'} ${target.batchCode || '自动批号'}`;
+};
 const loadHistory = () =>
   history.load({
     page: historyPage.value,
@@ -606,6 +661,7 @@ onActivated(() => {
   if (activated && props.active) void refreshActive();
   activated = true;
 });
+onScopeDispose(useTabsStore().registerCloseGuard('warehouse-inbound', releases.clear));
 </script>
 
 <style scoped>
@@ -644,5 +700,30 @@ onActivated(() => {
 }
 .remark-form {
   margin-top: 16px;
+}
+.rules {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  padding: 8px 16px;
+}
+.rules summary {
+  color: var(--el-color-primary);
+  cursor: pointer;
+}
+.allocation-review {
+  padding: 14px 16px;
+  border-top: 1px solid var(--el-border-color);
+}
+.allocation-line,
+.receipt-line {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+.receipt-line {
+  display: block;
 }
 </style>
