@@ -12,12 +12,20 @@
     <el-descriptions-item :label="isSampling ? '样本检查总数' : '实际检查总数'"
       >{{ inspection.inspectedQuantity }} 件</el-descriptions-item
     >
-    <el-descriptions-item :label="isSampling ? '样本合格数' : '合格数'"
-      >{{ inspection.qualifiedQuantity }} 件</el-descriptions-item
-    >
-    <el-descriptions-item :label="isSampling ? '样本不合格数' : '不合格数'"
-      >{{ inspection.unqualifiedQuantity }} 件</el-descriptions-item
-    >
+    <el-descriptions-item :label="isSampling ? '样本合格数' : '合格数'">
+      <InspectionQuantity
+        :value="inspection.qualifiedQuantity"
+        kind="qualified"
+        unit="件"
+      />
+    </el-descriptions-item>
+    <el-descriptions-item :label="isSampling ? '样本不合格数' : '不合格数'">
+      <InspectionQuantity
+        :value="inspection.unqualifiedQuantity"
+        kind="unqualified"
+        unit="件"
+      />
+    </el-descriptions-item>
     <el-descriptions-item label="整批处理结论">{{
       PRODUCTION_OUTPUT_RELEASE_DECISION_LABELS[inspection.releaseDecision]
     }}</el-descriptions-item>
@@ -44,15 +52,17 @@
     :title="`实际送检总数与当时申报相差 ${difference > 0 ? '+' : ''}${difference} 件`"
     :description="`当时申报 ${declaredTotal} 件，实际送检 ${inspection.coveredQuantity} 件；检验记录不回写产线草稿。`"
   />
-  <details class="inspection-note">
-    <summary>数量如何计算</summary>
-    <p>
-      明确放行时，全检建议量为合格数，抽检建议量为实际送检总数减样本不合格数，不按样本比例推算整批。数量差异仅提示，最终产出由产线管理员核对并提交负责人审批；不合格不自动登记报废。
-    </p>
-  </details>
+  <InlineHint class="inspection-note">
+    放行时建议量 = <strong>{{ isSampling ? '实际送检数 − 样本不合格数' : '合格数' }}</strong
+    >；
+    <template v-if="isSampling">不按样本比例推算。</template>
+    产出仍须核对审批，<strong>不合格不自动报废</strong>。
+  </InlineHint>
 </template>
 <script setup lang="ts">
 import { computed } from 'vue';
+import InlineHint from '../../../components/InlineHint.vue';
+import InspectionQuantity from './InspectionQuantity.vue';
 import type { ProductionOutputInspection } from '@company/contracts';
 import {
   PRODUCTION_OUTPUT_INSPECTION_METHOD_LABELS,
@@ -71,12 +81,6 @@ const difference = computed(() => props.inspection.coveredQuantity - declaredTot
 </script>
 <style scoped>
 .inspection-note {
-  color: var(--el-text-color-secondary);
-  font-size: 13px;
-  line-height: 1.7;
-}
-.inspection-note summary {
-  cursor: pointer;
-  color: #306188;
+  margin-top: 12px;
 }
 </style>

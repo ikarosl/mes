@@ -19,6 +19,7 @@
 - [库存协作协议](inventory-extraction-design.md)：跨模块来源、事务与锁序
 - [采购管理端设计](../apps/admin-web/docs/procurement-inbound.md)：输入、候选分页、草稿、并发与幂等约束
 - [需求至入库与生产结案 UI／UX 评审](ui-ux-review.md)：Chrome 走查证据与待确认改版建议，不替代当前所有者规则
+- [前端组件复用审查](frontend-component-reuse-review.md)：静态重复证据、组件／composable 边界及保留差异；仅记录，未批准实施
 - [审批接入边界](approval-design.md)
 - [通用通知设计与提交后扩展钩子](notification-design.md)
 
@@ -75,3 +76,4 @@
 - [入库授权与库存批次分离](adr/0016-inbound-authorizations-and-stock-batches.md)：成品分次入库、剩余授权与两来源自主归批
 
 - [统一业务编号与北京时间职责](adr/0017-business-numbering-and-beijing-time.md)
+- [外购物料按实际确认成单](adr/0018-purchase-inbound-multiple-suppliers.md)：跨供应商合单与逐明细来源

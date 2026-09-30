@@ -53,11 +53,10 @@ export const confirmReceiptInbound = async (
   );
   if (locators.length !== lineIds.length)
     return receiptError('到货明细不存在', 'RECEIPT_NOT_FOUND');
-  await lockReceiptRoots(connection, lineIds);
+  const lockedOrderIds = await lockReceiptRoots(connection, lineIds);
   const orders = [];
   const orderLines = new Map<string, OrderLineRow>();
-  for (const orderId of sortedIds(locators.map((row) => String(row.purchase_order_id))))
-    orders.push(await readOrder(connection, orderId, true));
+  for (const orderId of lockedOrderIds) orders.push(await readOrder(connection, orderId, true));
   for (const order of orders)
     for (const line of await readLines(connection, String(order.id), true))
       orderLines.set(String(line.id), line);
@@ -95,20 +94,11 @@ export const confirmReceiptInbound = async (
     if (active.reduce((sum, s) => sum + s.remaining_quantity, 0) !== remaining)
       return receiptError('正式可处置量与本批剩余实物不一致', 'RECEIPT_STATE');
   }
-  const supplierIds = sortedIds(
-    [...lines.values()].map((line) => {
-      const orderLine = orderLines.get(String(line.purchase_order_line_id));
-      if (!orderLine || String(orderLine.purchase_order_id) !== String(line.purchase_order_id))
-        return receiptError('采购来源归属已变化', 'RECEIPT_STATE');
-      return String(orderLine.supplier_id);
-    }),
-  );
-  if (supplierIds.length !== 1) return receiptError('同一次入库确认必须来自同一供应商，请分别确认');
-  const [[supplier]] = await connection.query<(RowDataPacket & { supplier_name: string })[]>(
-    'SELECT supplier_name FROM procurement_supplier WHERE id=? AND is_deleted=0 FOR SHARE',
-    [supplierIds[0]],
-  );
-  if (!supplier) return receiptError('供应商不存在或已删除');
+  for (const line of lines.values()) {
+    const original = orderLines.get(String(line.purchase_order_line_id));
+    if (!original || String(original.purchase_order_id) !== String(line.purchase_order_id))
+      return receiptError('采购来源归属已变化', 'RECEIPT_STATE');
+  }
   const selected = [];
   for (const detail of payload.details) {
     const line = lines.get(detail.receiptLineId)!;
@@ -133,8 +123,31 @@ export const confirmReceiptInbound = async (
       detail.quantity > row.remaining_quantity
     )
       return receiptError('正式分配、实收版本或可入剩余量已变化，请刷新', 'RECEIPT_STATE');
-    selected.push({ detail, line, row });
+    const assignedLine = orderLines.get(String(row.purchase_order_line_id));
+    if (
+      !assignedLine ||
+      String(assignedLine.supplier_id) !==
+        String(orderLines.get(String(line.purchase_order_line_id))!.supplier_id) ||
+      String(assignedLine.item_id) !== String(line.item_id) ||
+      String(assignedLine.material_variant_id) !== String(line.material_variant_id)
+    )
+      return receiptError('正式分配采购来源归属已变化', 'RECEIPT_STATE');
+    selected.push({ detail, line, row, assignedLine });
   }
+  const supplierIds = sortedIds(
+    selected.map(({ assignedLine }) => String(assignedLine.supplier_id)),
+  );
+  const [suppliers] = await connection.query<
+    (RowDataPacket & { id: number; supplier_name: string })[]
+  >(
+    `SELECT id,supplier_name FROM procurement_supplier WHERE id IN (${idsSql(supplierIds)})
+     AND is_deleted=0 ORDER BY id FOR SHARE`,
+    supplierIds,
+  );
+  if (suppliers.length !== supplierIds.length) return receiptError('供应商不存在或已删除');
+  const supplierNames = new Map(
+    suppliers.map((supplier) => [String(supplier.id), supplier.supplier_name]),
+  );
   for (const inspectionId of sortedIds(selected.map(({ detail }) => detail.inspectionId))) {
     const review = await quality.getCaseByInspection(inspectionId);
     const selectedRow = selected.find(({ detail }) => detail.inspectionId === inspectionId)!;
@@ -152,8 +165,8 @@ export const confirmReceiptInbound = async (
       return receiptError('本次入库合计超过正式分配剩余量，请刷新', 'RECEIPT_STATE');
     amountByAllocation.set(detail.allocationId, total);
   }
-  const details = selected.map(({ detail, line }) => {
-    const orderLine = orderLines.get(String(line.purchase_order_line_id))!;
+  const details = selected.map(({ detail, line, assignedLine }) => {
+    const original = orderLines.get(String(line.purchase_order_line_id))!;
     return {
       detailKey: detail.detailKey,
       receiptLineId: detail.receiptLineId,
@@ -162,15 +175,16 @@ export const confirmReceiptInbound = async (
       allocationId: detail.allocationId,
       itemId: String(line.item_id),
       materialVariantId: String(line.material_variant_id),
-      itemCode: orderLine.item_code_snapshot,
-      materialVariantCode: orderLine.material_variant_code_snapshot,
-      unit: orderLine.unit_snapshot,
+      itemCode: original.item_code_snapshot,
+      materialVariantCode: original.material_variant_code_snapshot,
+      unit: original.unit_snapshot,
+      supplierNameSnapshot: supplierNames.get(String(assignedLine.supplier_id))!,
       quantity: String(detail.quantity),
       target: detail.target,
     };
   });
   const result = await inventory.confirmPurchaseReceipt(
-    { provider: supplier!.supplier_name, remark: payload.remark ?? null, details },
+    { remark: payload.remark ?? null, details },
     context,
   );
   for (const id of lineIds) await touchReceiptLine(connection, id, context);

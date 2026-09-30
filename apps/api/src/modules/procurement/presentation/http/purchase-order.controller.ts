@@ -21,6 +21,7 @@ import {
   PurchaseOrderIdDto,
   PurchaseOrderQueryDto,
   PurchaseExcessReceiptCandidateQueryDto,
+  PurchaseQualityReplacementCandidateQueryDto,
   CreatePurchaseOrderDto,
   UpdatePurchaseOrderDto,
   PurchaseOrderVersionDto,
@@ -56,6 +57,14 @@ export class PurchaseOrderController {
     @Query() query: PurchaseExcessReceiptCandidateQueryDto,
   ) {
     return this.service.excessReceiptCandidates(id, query);
+  }
+  @Get('purchase-order-lines/:id/quality-replacement-candidates')
+  @RequirePermission(PERMISSIONS.procurement.orders.view)
+  qualityReplacementCandidates(
+    @Param() { id }: PurchaseOrderIdDto,
+    @Query() query: PurchaseQualityReplacementCandidateQueryDto,
+  ) {
+    return this.service.qualityReplacementCandidates(id, query);
   }
   @Get('demand-work-orders')
   @RequirePermission(PERMISSIONS.procurement.orders.view)
@@ -146,7 +155,7 @@ export class PurchaseOrderController {
   ) {
     return this.service.closeLine(id, body, context);
   }
-  @Post('purchase-order-lines/:id/supplements')
+  @Post('purchase-orders/:id/supplements')
   @RequirePermission(PERMISSIONS.procurement.orders.create)
   @AuditInApplication()
   @IdempotentEndpoint({ scope: CREATE_PURCHASE_ORDER_SUPPLEMENT_SCOPE })

@@ -25,6 +25,7 @@ import { ProcurementDomainExceptionFilter } from './procurement-domain-exception
 import { PurchaseOrderIdDto, PurchaseOrderQueryDto } from './purchase-order.dto.js';
 import {
   ReceiptListQueryDto,
+  ReceiptAllocationCandidateQueryDto,
   ReceiptReleaseQueryDto,
   InboundInspectionQueryDto,
   ReceiptHistoryPathDto,
@@ -51,6 +52,11 @@ export class ProcurementReceiptController {
   list(@Query() query: ReceiptListQueryDto) {
     return this.query.listReceipts(query);
   }
+  @Get('receipt-lines')
+  @RequirePermission(PERMISSIONS.procurement.receipts.view)
+  listLines(@Query() query: ReceiptListQueryDto) {
+    return this.query.listReceiptLines(query);
+  }
   @Get('receipts/:id')
   @RequirePermission(PERMISSIONS.procurement.receipts.view)
   get(@Param() { id }: PurchaseOrderIdDto) {
@@ -73,7 +79,10 @@ export class ProcurementReceiptController {
   }
   @Get('receipt-lines/:id/allocation-candidates')
   @RequirePermission(PERMISSIONS.procurement.receipts.view)
-  allocationCandidates(@Param() { id }: PurchaseOrderIdDto, @Query() query: PageQueryDto) {
+  allocationCandidates(
+    @Param() { id }: PurchaseOrderIdDto,
+    @Query() query: ReceiptAllocationCandidateQueryDto,
+  ) {
     return this.query.allocationCandidates(id, query);
   }
   @Get('receipt-lines/:id/:historyKind')

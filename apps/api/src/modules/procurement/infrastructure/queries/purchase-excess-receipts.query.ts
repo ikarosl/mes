@@ -31,10 +31,20 @@ export async function listExcessReceiptCandidates(
       PROCUREMENT_ERROR_CODES.purchaseOrderState,
     );
 
-  const filter = `line.purchase_order_line_id=?${query.receiptLineId ? ' AND line.id=?' : ''}`;
-  const params = [purchaseOrderLineId, ...(query.receiptLineId ? [query.receiptLineId] : [])];
+  const filters = ['line.purchase_order_line_id=?'];
+  const params = [purchaseOrderLineId];
+  if (query.receiptLineId) {
+    filters.push('line.id=?');
+    params.push(query.receiptLineId);
+  }
+  if (query.keyword) {
+    filters.push('(receipt.receipt_no LIKE ? OR line.supplier_batch_code LIKE ?)');
+    params.push(`%${query.keyword}%`, `%${query.keyword}%`);
+  }
+  const filter = filters.join(' AND ');
   const [[count]] = await db.query<ReadRow[]>(
-    `SELECT COUNT(*) total FROM procurement_receipt_line line WHERE ${filter}`,
+    `SELECT COUNT(*) total FROM procurement_receipt_line line
+      JOIN procurement_receipt receipt ON receipt.id=line.receipt_id WHERE ${filter}`,
     params,
   );
   const [rows] = await db.query<ReadRow[]>(

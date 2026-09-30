@@ -3,9 +3,10 @@
     label-width="160px"
     :disabled="disabled"
   >
-    <div class="inspection-reference">
-      发起时申报 {{ coveredQuantity }} {{ unit }} · 仅供核对整批范围
-    </div>
+    <InlineHint class="inspection-reference">
+      发起时申报快照 <strong>{{ coveredQuantity }} {{ unit }}</strong
+      >；仅供核对，不等于当前剩余或本次实检。
+    </InlineHint>
     <el-form-item
       label="检验方式"
       required
@@ -22,12 +23,14 @@
         >
       </el-radio-group>
     </el-form-item>
+    <!-- Element Plus InputNumber 仅在挂载时写入 aria-disabled；锁定状态变化时重挂载以同步无障碍状态。 -->
     <div class="inspection-quantity-grid">
       <el-form-item
         :label="model.inspectionMethod === 'sampling' ? '样本合格数' : '合格数'"
         required
       >
         <el-input-number
+          :key="disabled ? 'qualified-locked' : 'qualified-ready'"
           v-model="model.qualifiedQuantity"
           :min="0"
           :max="PURCHASE_ORDER_MAX_QUANTITY"
@@ -40,6 +43,7 @@
         required
       >
         <el-input-number
+          :key="disabled ? 'unqualified-locked' : 'unqualified-ready'"
           v-model="model.unqualifiedQuantity"
           :min="0"
           :max="PURCHASE_ORDER_MAX_QUANTITY"
@@ -54,7 +58,8 @@
     >
       <el-select
         v-model="model.releaseDecision"
-        placeholder="核对数量后选择结论"
+        :disabled="!preview"
+        :placeholder="preview ? '核对数量后选择结论' : '先填写合格数与不合格数'"
       >
         <el-option
           v-for="decision in QUALITY_RELEASE_DECISIONS"
@@ -64,22 +69,28 @@
         />
       </el-select>
     </el-form-item>
-    <div
+    <InlineHint
       v-if="preview"
+      :tone="
+        model.inspectionMethod !== 'sampling' && preview.inspectedQuantity !== coveredQuantity
+          ? 'warning'
+          : 'info'
+      "
       class="inspection-preview"
     >
-      <strong
-        >{{ model.inspectionMethod === 'sampling' ? '本次样本' : '实际检查' }}
-        {{ preview.inspectedQuantity }}</strong
-      >
-      <span v-if="model.inspectionMethod === 'sampling'"
-        >样本结果用于判断整批，样本数不等于整批实物量。</span
-      >
-      <span v-else-if="preview.inspectedQuantity !== coveredQuantity"
-        >检查数与发起时申报量不同，库管定稿时需核对。</span
-      >
-      <span>本结论不自动形成入库或退回事实。</span>
-    </div>
+      {{ model.inspectionMethod === 'sampling' ? '本次样本' : '实际检查' }}
+      <strong>{{ preview.inspectedQuantity }} {{ unit }}</strong
+      >。
+      <template v-if="model.inspectionMethod === 'sampling'">
+        样本判断整批资格，不改变本轮剩余范围。
+      </template>
+      <template v-else-if="preview.inspectedQuantity !== coveredQuantity">
+        与发起申报快照相差
+        <strong>{{ Math.abs(preview.inspectedQuantity - coveredQuantity) }} {{ unit }}</strong
+        >，库管定稿时需核对。
+      </template>
+      明确放行后仍须库管核对定稿；本结论不自动形成入库或退回事实。
+    </InlineHint>
     <el-form-item
       label="线下检验时间"
       required
@@ -124,6 +135,7 @@ import {
   PURCHASE_ORDER_MAX_QUANTITY,
 } from '@company/constants';
 import type { QualityInboundInspectionInput } from '@company/contracts';
+import InlineHint from '../../../components/InlineHint.vue';
 import { fromBeijingDateTimeInputValue, toBeijingDateTimeInputValue } from '../../../utils/date';
 import {
   inboundInspectionInput,
@@ -143,39 +155,16 @@ const changeMethod = (value: string | number | boolean | undefined) => {
   model.value.unqualifiedQuantity = undefined;
   model.value.releaseDecision = undefined;
 };
-watch(
-  () => [model.value.qualifiedQuantity, model.value.unqualifiedQuantity],
-  () => {
-    model.value.releaseDecision = undefined;
-  },
-);
 watch(valid, (value) => emit('valid', value), { immediate: true });
 </script>
 <style scoped>
-.hint {
-  margin-left: 12px;
-  color: #6b7280;
-  font-size: 13px;
-}
-.notice {
-  margin: 12px 0 20px;
-}
 .inspection-reference,
 .inspection-preview {
   margin-bottom: 16px;
-  padding: 8px 12px;
-  background: #f5f7fa;
-  color: #1f2937;
-}
-.inspection-preview {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 16px;
-  border-left: 3px solid #306188;
 }
 .inspection-quantity-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr;
   gap: 16px;
 }
 @media (max-width: 900px) {

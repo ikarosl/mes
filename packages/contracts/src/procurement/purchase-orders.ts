@@ -19,8 +19,10 @@ export interface PurchaseOrderQuery extends PageQuery {
   sourceType?: PurchaseOrderSourceType;
   status?: PurchaseOrderStatus;
   originOrderLineId?: string;
+  originAllocationId?: string;
 }
 export interface PurchaseExcessReceiptCandidateQuery extends PageQuery {
+  keyword?: string;
   receiptLineId?: string;
 }
 export interface PurchaseExcessReceiptCandidate {
@@ -32,6 +34,34 @@ export interface PurchaseExcessReceiptCandidate {
   supplierBatchCode: string | null;
   receivedQuantity: string;
   unprocessedQuantity: string;
+}
+export interface PurchaseQualityReplacementCandidateQuery extends PageQuery {
+  keyword?: string;
+  receiptLineId?: string;
+  allocationId?: string;
+}
+export interface PurchaseQualityReplacementCandidate {
+  allocationId: string;
+  receiptLineId: string;
+  receiptId: string;
+  receiptNo: string;
+  receiptLineNo: number;
+  receivedAt: string;
+  supplierBatchCode: string | null;
+  sourcePurchaseOrderLineId: string;
+  sourcePurchaseNo: string;
+  allocationPurchaseOrderLineId: string | null;
+  allocationPurchaseNo: string | null;
+  allocationQuantity: string;
+  pendingReturnQuantity: string;
+  returnedQuantity: string;
+  returnNo: string | null;
+  isCurrent: boolean;
+  linkedSupplements: Array<{
+    status: PurchaseOrderStatus;
+    count: number;
+    plannedQuantity: string;
+  }>;
 }
 export interface ProcurementSupplierSummary {
   id: string;
@@ -125,13 +155,17 @@ export type CancelPurchaseOrderPayload = ReasonedVersionedCommand;
 export interface ClosePurchaseOrderLinePayload extends ReasonedVersionedCommand {
   reasonType: PurchaseOrderClosureReason;
 }
-/** 质量补发引用已确认的质量退回分配，补发依据记录供应商约定。 */
-export interface CreatePurchaseOrderSupplementPayload {
-  supplementReason: PurchaseOrderSupplementReason;
-  originReceiptLineId?: string;
+/** 同一原采购单、同一补因；各行独立保留真实到货或质量退回分配依据。 */
+export interface CreatePurchaseOrderSupplementLinePayload {
+  originOrderLineId: string;
+  originReceiptLineId: string;
   originAllocationId?: string;
   plannedQuantity: number;
   supplementEvidence: string;
+}
+export interface CreatePurchaseOrderSupplementPayload {
+  supplementReason: PurchaseOrderSupplementReason;
+  items: CreatePurchaseOrderSupplementLinePayload[];
   remark?: string | null;
 }
 export interface PurchaseOrderCommandResult {

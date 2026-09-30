@@ -85,25 +85,18 @@ export class MysqlInventoryPurchaseInboundWriter {
       }
       const inboundNo = await allocateBusinessNumber(db, 'purchase_inbound');
       const [order] = await db.execute<ResultSetHeader>(
-        `INSERT INTO inbound_order(inbound_no,source_type,provider,status,inbound_at,operator_id,remark,created_by,updated_by)
-         VALUES (?,'purchased',?,'completed',CURRENT_TIMESTAMP,?,?,?,?)`,
-        [
-          inboundNo,
-          input.provider.trim(),
-          context.actorId,
-          input.remark ?? null,
-          context.actorId,
-          context.actorId,
-        ],
+        `INSERT INTO inbound_order(inbound_no,source_type,status,inbound_at,operator_id,remark,created_by,updated_by)
+         VALUES (?,'purchased','completed',CURRENT_TIMESTAMP,?,?,?,?)`,
+        [inboundNo, context.actorId, input.remark ?? null, context.actorId, context.actorId],
       );
       const inboundId = String(order.insertId);
       const details: ConfirmPurchaseReceiptResult['details'] = [];
       for (const line of ordered) {
         const batchId = resolved.get(line)!;
         const [detail] = await db.execute<ResultSetHeader>(
-          `INSERT INTO inbound_detail(inbound_id,item_id,material_variant_id,batch_id,item_code_snapshot,inbound_number,unit_snapshot,stock_status,
+          `INSERT INTO inbound_detail(inbound_id,item_id,material_variant_id,batch_id,item_code_snapshot,inbound_number,unit_snapshot,stock_status,supplier_name_snapshot,
            procurement_receipt_line_id,procurement_receipt_revision_id,procurement_inspection_id,procurement_allocation_id,created_by)
-           VALUES (?,?,?,?,?,?,?,'available',?,?,?,?,?)`,
+           VALUES (?,?,?,?,?,?,?,'available',?,?,?,?,?,?)`,
           [
             inboundId,
             line.itemId,
@@ -112,6 +105,7 @@ export class MysqlInventoryPurchaseInboundWriter {
             line.itemCode,
             fixedIntegerQuantity(line.quantity),
             line.unit,
+            line.supplierNameSnapshot.trim(),
             line.receiptLineId,
             line.receiptRevisionId,
             line.inspectionId,
@@ -203,13 +197,8 @@ function isDuplicate(error: unknown): boolean {
 }
 
 function validateInput(input: ConfirmPurchaseReceiptInput): void {
-  if (
-    !input.provider.trim() ||
-    input.provider.trim().length > 100 ||
-    !input.details.length ||
-    input.details.length > 100
-  )
-    throw new InventoryDomainError('INVALID_INPUT', '供应商名称或入库明细数量无效');
+  if (!input.details.length || input.details.length > 100)
+    throw new InventoryDomainError('INVALID_INPUT', '入库明细数量无效');
   const newTargets = new Map<string, string>();
   const detailKeys = new Set<string>();
   for (const line of input.details) {
@@ -232,9 +221,11 @@ function validateInput(input: ConfirmPurchaseReceiptInput): void {
       line.detailKey.length > 100 ||
       !line.itemCode.trim() ||
       !line.materialVariantCode.trim() ||
-      !line.unit.trim()
+      !line.unit.trim() ||
+      !line.supplierNameSnapshot.trim() ||
+      line.supplierNameSnapshot.trim().length > 100
     )
-      throw new InventoryDomainError('INVALID_INPUT', '入库范围、物料身份或整数数量无效');
+      throw new InventoryDomainError('INVALID_INPUT', '入库范围、供应商、物料身份或整数数量无效');
     if (detailKeys.has(line.detailKey))
       throw new InventoryDomainError('INVALID_INPUT', '入库明细标识不能重复');
     detailKeys.add(line.detailKey);

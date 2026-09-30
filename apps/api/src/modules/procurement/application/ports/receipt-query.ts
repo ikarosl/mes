@@ -1,9 +1,11 @@
-import type { ReceiptAllocationCandidate } from '@company/contracts';
 import type {
   PageQuery,
   PageResult,
+  ReceiptAllocationCandidateQuery,
+  ReceiptAllocationCandidateResult,
   ProcurementReceiptQuery as ReceiptListQuery,
   ProcurementReceiptItem,
+  ProcurementReceiptLineListItem,
   ProcurementReceiptDetail,
   ProcurementReceiptLine,
   ProcurementInboundReleaseQuery,
@@ -20,9 +22,12 @@ import type {
 export abstract class ProcurementReceiptQuery {
   abstract allocationCandidates(
     id: string,
-    query: PageQuery,
-  ): Promise<PageResult<ReceiptAllocationCandidate>>;
+    query: ReceiptAllocationCandidateQuery,
+  ): Promise<ReceiptAllocationCandidateResult>;
   abstract listReceipts(query: ReceiptListQuery): Promise<PageResult<ProcurementReceiptItem>>;
+  abstract listReceiptLines(
+    query: ReceiptListQuery,
+  ): Promise<PageResult<ProcurementReceiptLineListItem>>;
   abstract getReceipt(id: string): Promise<ProcurementReceiptDetail>;
   abstract getReceiptLine(id: string): Promise<ProcurementReceiptLine>;
   abstract listInboundReleases(

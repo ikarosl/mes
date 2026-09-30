@@ -264,14 +264,13 @@
 
 ### 8. `inbound_order`
 
-职责：记录一次实际入库确认的主单、操作人与时间；可包含多条来源授权及多个目标批次。
+职责：记录一次实际入库确认的主单、操作人与时间；可包含多条来源授权及多个目标批次。外购物料可跨供应商、采购及到货，供应商属于各条实际入库明细，主单不保存唯一供应商。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `id` | `BIGINT UNSIGNED` | 主键 |
 | `inbound_no` | `VARCHAR(100)` | 唯一入库单号；采购 PI、成品 FI 分别自动分配 |
 | `source_type` | `VARCHAR(30)` | 采购 `purchased`；成品统一 `finished_product` |
-| `provider` | `VARCHAR(100) NULL` | 采购本单供应商；成品为空 |
 | `work_order_id` / `production_batch_id` | `BIGINT UNSIGNED NULL` | 成品来源工单/任务，采购为空 |
 | `product_id` | `BIGINT UNSIGNED NULL` | 成品身份，采购为空 |
 | `status` | `VARCHAR(30)` | `pending/completed/cancelled`；实际确认同事务完成 |
@@ -280,7 +279,7 @@
 | `cancel_reason` / `cancelled_by` / `cancelled_at` | `TEXT NULL` / `BIGINT UNSIGNED NULL` / `DATETIME NULL` | 历史取消信息 |
 | `created_by/at`、`updated_by/at` | 业务审计类型 | 创建、更新人与时间 |
 
-`inbound_no` 唯一；`(id,source_type)` 与 `(id,product_id)` 支持同源明细引用；`(production_batch_id,work_order_id)` 组合外键校验任务属于工单；工单、操作人及审计用户保留外键。来源 CHECK 要求 `finished_product` 主单的产品、任务、工单非空且供应商为空，其他来源的产品为空。状态、版本仍受原 CHECK。成品不保存 `output_revision_id` 或类别唯一槽位：实际批准版由各明细授权追溯。完成触发器要求每条成品明细均有匹配正流水、批次、授权、身份、数量和单位；确认后来源不可改写。
+`inbound_no` 唯一；`(id,source_type)` 与 `(id,product_id)` 支持同源明细引用；`(production_batch_id,work_order_id)` 组合外键校验任务属于工单；工单、操作人及审计用户保留外键。来源 CHECK 要求 `finished_product` 主单的产品、任务、工单非空，其他来源的产品为空。状态、版本仍受原 CHECK。成品不保存 `output_revision_id` 或类别唯一槽位：实际批准版由各明细授权追溯。完成触发器要求每条成品明细均有匹配正流水、批次、授权、身份、数量和单位；确认后来源不可改写。
 
 ---
 
@@ -297,6 +296,7 @@
 | `batch_id` | `BIGINT UNSIGNED NOT NULL` | 本条实际选择或创建的库存批次 |
 | `procurement_receipt_line_id` / `procurement_receipt_revision_id` | `BIGINT UNSIGNED NULL` | 采购到货及本次采用实收修订 |
 | `procurement_inspection_id` / `procurement_allocation_id` | `BIGINT UNSIGNED NULL` | 采购检验和正式授权 |
+| `supplier_name_snapshot` | `VARCHAR(100) NULL` | 外购物料确认时供应商名称；成品为空，不能用于反推供应商身份 |
 | `item_code_snapshot` | `VARCHAR(100)` | 本次入库编码快照 |
 | `inbound_number` | `INT` | 本条正整数数量，单笔上限 `99999999` |
 | `unit_snapshot` | `VARCHAR(20)` | 本次单位快照 |
@@ -307,6 +307,8 @@
 身份 CHECK 要求物料 `item_id/material_variant_id` 成组、成品 `product_id/production_output_allocation_id` 成组且互斥；采购四个来源列成组。外键包括主单、物料、精确版本、批次物料/版本/成品组合、采购到货/修订/检验/正式分配、成品正式授权；成品主单 `(inbound_id,product_id)` 同源校验。`(id,product_id,batch_id)` 供成品流水 FK；`(inbound_id,product_id)` 是非唯一支撑索引，同单允许多条成品明细；`(procurement_allocation_id,id)`、`(production_output_allocation_id,id)` 支持一授权多次执行。数量及库存状态保留 CHECK。
 
 每条成品明细有一个 `production_inbound` 正流水；采购明细有匹配 `purchase_inbound` 正流水。成品插入/流水/主单完成守卫核对授权、任务、批次身份、单位、数量和状态；成品明细不可修改或删除。`requested_batch_code` 已删除，批号由 `item_batch.batch_code` 展示。采购更正、成品复检和批准版更替不会重挂历史明细或已入流水。
+
+供应商稳定 ID 沿该明细真实采购来源解析，确认时名称由 Procurement 锁内读取后交 Inventory 写入 `supplier_name_snapshot`；供应商后来改名不回写已入明细。CHECK 要求有正式采购分配引用的明细名称快照非空，成品明细该字段为空。主单供应商集合、库存批次来源与生产追溯均从实际明细汇聚，不从第一条来源或 `item_batch.provider` 推断整单身份。同一库批可以容纳多供应商来源，后续领料只约束批次库存与数量，不分摊或断言消耗了哪家供应商、哪次到货的份额。
 
 ---
 

@@ -11,118 +11,204 @@
       >
         <strong>{{ line.itemName }}</strong> · {{ line.itemCode }} · {{ line.materialVariantCode }}
       </el-descriptions-item>
-      <el-descriptions-item label="当前阶段">
-        <el-tag :type="isReceiptRejected(line) ? 'danger' : 'info'">
-          {{
-            isReceiptRejected(line)
-              ? RECEIPT_ROUND_TRIGGER_LABELS.manual_rejection
-              : RECEIPT_ROUND_STATUS_LABELS[line.currentRound.status]
-          }}
-        </el-tag>
+      <el-descriptions-item label="本轮阶段">
+        <el-tag
+          :type="receiptLineStageType(line)"
+          :effect="receiptLineStageEffect(line)"
+          >{{ receiptLineStageLabel(line) }}</el-tag
+        >
         <span class="round-number">第 {{ line.currentRound.roundNo }} 轮</span>
       </el-descriptions-item>
       <el-descriptions-item label="实际供应商">{{ line.supplierName }}</el-descriptions-item>
       <el-descriptions-item label="供应商批号">{{
         line.supplierBatchCode || '未提供'
       }}</el-descriptions-item>
-      <el-descriptions-item label="明细身份">#{{ line.id }}</el-descriptions-item>
-    </el-descriptions>
-    <el-descriptions
-      :column="4"
-      border
-      size="small"
-      class="quantity-summary"
-    >
-      <el-descriptions-item label="本批核实总量"
-        >{{ Number(line.quantities.receivedQuantity) }} {{ line.unit }}</el-descriptions-item
-      >
-      <el-descriptions-item label="累计已入"
-        >{{ Number(line.quantities.inboundQuantity) }} {{ line.unit }}</el-descriptions-item
-      >
-      <el-descriptions-item label="累计已退"
-        >{{ Number(line.quantities.returnedQuantity) }} {{ line.unit }}</el-descriptions-item
-      >
-      <el-descriptions-item label="本轮未处置"
-        ><strong
-          >{{ Number(line.quantities.unprocessedQuantity) }} {{ line.unit }}</strong
-        ></el-descriptions-item
+      <el-descriptions-item label="到货明细"
+        >第 {{ line.lineNo }} 行
+        <span class="source-id">到货明细 ID：{{ line.id }}</span></el-descriptions-item
       >
     </el-descriptions>
-    <div
-      v-if="line.quantities.hasOpenReview"
-      class="quality-blocker"
-    >
-      质量阻断：整批暂停正常定稿与入库
-    </div>
-    <el-collapse class="quantity-basis">
-      <el-collapse-item
-        title="查看本轮授权与数量依据"
-        name="basis"
+
+    <template v-if="mode === 'inspection'">
+      <el-descriptions
+        :column="1"
+        border
+        size="small"
+        class="quantity-summary"
       >
-        <el-descriptions
-          :column="4"
-          border
-          size="small"
-        >
-          <el-descriptions-item label="待检 / 待定稿"
-            >{{ Number(line.quantities.undeterminedQuantity) }}
-            {{ line.unit }}</el-descriptions-item
+        <el-descriptions-item label="本轮剩余 · 检验对象">
+          <strong
+            :class="
+              isKnownZero(line.quantities.unprocessedQuantity)
+                ? 'quantity-zero'
+                : 'quantity-current'
+            "
+            >{{ quantityText(line.quantities.unprocessedQuantity) }} {{ line.unit }}</strong
           >
-          <el-descriptions-item label="当前可入"
-            >{{ Number(line.quantities.pendingInboundQuantity) }}
-            {{ line.unit }}</el-descriptions-item
+        </el-descriptions-item>
+      </el-descriptions>
+      <InlineHint
+        v-if="hasHistoricalDisposal"
+        class="line-hint"
+      >
+        历史实物处置：已入 {{ quantityText(line.quantities.inboundQuantity) }}、已退
+        {{ quantityText(line.quantities.returnedQuantity) }}
+        {{ line.unit }}；本次检验只处理上方剩余量。
+      </InlineHint>
+    </template>
+    <template v-else>
+      <el-descriptions
+        :column="4"
+        border
+        size="small"
+        class="quantity-summary"
+      >
+        <el-descriptions-item label="本批核实总量">
+          {{ quantityText(line.quantities.receivedQuantity) }} {{ line.unit }}
+        </el-descriptions-item>
+        <el-descriptions-item label="累计已入">
+          <span :class="isKnownZero(line.quantities.inboundQuantity) ? 'quantity-zero' : undefined">
+            {{ quantityText(line.quantities.inboundQuantity) }} {{ line.unit }}
+          </span>
+        </el-descriptions-item>
+        <el-descriptions-item label="累计已退">
+          <span
+            :class="isKnownZero(line.quantities.returnedQuantity) ? 'quantity-zero' : undefined"
           >
-          <el-descriptions-item label="当前待退"
-            >{{ Number(line.quantities.pendingReturnQuantity) }}
-            {{ line.unit }}</el-descriptions-item
+            {{ quantityText(line.quantities.returnedQuantity) }} {{ line.unit }}
+          </span>
+        </el-descriptions-item>
+        <el-descriptions-item label="本轮剩余">
+          <strong
+            :class="
+              isKnownZero(line.quantities.unprocessedQuantity)
+                ? 'quantity-zero'
+                : 'quantity-current'
+            "
+            >{{ quantityText(line.quantities.unprocessedQuantity) }} {{ line.unit }}</strong
           >
-          <el-descriptions-item label="有效批准"
-            >{{ Number(line.quantities.approvedQuantity) }} {{ line.unit }}</el-descriptions-item
-          >
-          <el-descriptions-item
-            label="已入库存批次"
-            :span="4"
-            >{{
-              line.batches.length
-                ? line.batches.map((batch) => batch.batchCode).join('、')
-                : '暂无实际入库'
-            }}</el-descriptions-item
-          >
-          <el-descriptions-item
-            v-if="line.overReceiptNote"
-            label="超量接受依据"
-            :span="4"
-            >{{ line.overReceiptNote }}</el-descriptions-item
-          >
-        </el-descriptions>
-        <p class="help">本批核实总量 = 累计已入 + 累计已退 + 本轮未处置；新到货另建记录。</p>
-      </el-collapse-item>
-    </el-collapse>
+        </el-descriptions-item>
+      </el-descriptions>
+      <InlineHint
+        v-if="
+          !isKnownZero(line.quantities.unprocessedQuantity) &&
+          line.currentRound.status === 'finalized'
+        "
+        class="line-hint"
+      >
+        本轮剩余去向：
+        <template v-if="Number(line.quantities.undeterminedQuantity) > 0">
+          待处理
+          <strong>{{ quantityText(line.quantities.undeterminedQuantity) }} {{ line.unit }}</strong
+          >；
+        </template>
+        <template v-if="Number(line.quantities.pendingInboundQuantity) > 0">
+          可入
+          <strong>{{ quantityText(line.quantities.pendingInboundQuantity) }} {{ line.unit }}</strong
+          >；
+        </template>
+        <template v-if="Number(line.quantities.pendingReturnQuantity) > 0">
+          待退
+          <strong>{{ quantityText(line.quantities.pendingReturnQuantity) }} {{ line.unit }}</strong
+          >。
+        </template>
+        <template v-if="!hasRemainingComponent">分配数量待核对。</template>
+      </InlineHint>
+      <InlineHint
+        v-else-if="!isKnownZero(line.quantities.unprocessedQuantity)"
+        :tone="phaseTone"
+        class="line-hint"
+        >{{ phaseHint }}</InlineHint
+      >
+      <InlineHint
+        v-if="line.overReceiptNote"
+        class="line-hint"
+      >
+        超量接受依据：{{ line.overReceiptNote }}
+      </InlineHint>
+    </template>
+    <InlineHint
+      v-if="mode === 'inspection' && line.quantities.hasOpenReview"
+      :tone="phaseTone"
+      class="line-hint"
+    >
+      {{ phaseHint }}
+    </InlineHint>
   </div>
 </template>
 <script setup lang="ts">
-import { RECEIPT_ROUND_STATUS_LABELS, RECEIPT_ROUND_TRIGGER_LABELS } from '@company/constants';
+import { computed } from 'vue';
 import type { ProcurementReceiptLine } from '@company/contracts';
-import { isReceiptRejected } from '../receipt-round-presentation';
-defineProps<{ line: ProcurementReceiptLine }>();
+import InlineHint from '../../../components/InlineHint.vue';
+import {
+  receiptLineStageLabel,
+  receiptLineStageType,
+  receiptLineStageEffect,
+} from '../receipt-round-presentation';
+
+const props = withDefaults(
+  defineProps<{ line: ProcurementReceiptLine; mode?: 'full' | 'inspection' }>(),
+  {
+    mode: 'full',
+  },
+);
+const hasHistoricalDisposal = computed(
+  () =>
+    Number(props.line.quantities.inboundQuantity) > 0 ||
+    Number(props.line.quantities.returnedQuantity) > 0,
+);
+const hasRemainingComponent = computed(() =>
+  [
+    props.line.quantities.undeterminedQuantity,
+    props.line.quantities.pendingInboundQuantity,
+    props.line.quantities.pendingReturnQuantity,
+  ].some((value) => Number(value) > 0),
+);
+const phaseTone = computed<'info' | 'warning' | 'danger'>(() => {
+  if (props.line.currentRound.status === 'quality_rejected') return 'danger';
+  if (props.line.currentRound.status === 'reinspection_required') return 'warning';
+  return 'info';
+});
+const phaseHint = computed(() => {
+  switch (props.line.currentRound.status) {
+    case 'reviewing':
+      return '本轮检验进行中，尚未形成正常定稿与入库资格。';
+    case 'reinspection_required':
+      return '本轮待复检；质量阻断期间不能正常定稿或入库。';
+    case 'quality_rejected':
+      return '本轮检验未放行；正常定稿与入库仍被阻断。';
+    case 'awaiting_acceptance':
+      return '本轮检查已放行，待库管核对正式去向。';
+    case 'uninspected':
+      return '本轮剩余待发起检验，尚无可执行分配。';
+    default:
+      return '请核对本轮阶段和当前正式分配。';
+  }
+});
+const quantityText = (value: string): string =>
+  value.trim() && Number.isFinite(Number(value)) ? String(Number(value)) : '待核对';
+const isKnownZero = (value: string): boolean => value.trim() !== '' && Number(value) === 0;
 </script>
 <style scoped>
 .round-number {
   margin-left: 8px;
 }
+.source-id {
+  display: block;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
 .quantity-summary,
-.quantity-basis {
+.line-hint {
   margin-top: 8px;
 }
-.quality-blocker {
-  margin-top: 8px;
-  padding: 8px 12px;
-  color: #9a3412;
-  background: #fff7ed;
-  border-left: 3px solid #f59e0b;
+.quantity-current {
+  color: var(--el-text-color-primary);
+  font-weight: 700;
 }
-.help {
-  color: #6b7280;
-  font-size: 13px;
+.quantity-zero {
+  color: var(--el-text-color-placeholder);
+  font-weight: 400;
 }
 </style>

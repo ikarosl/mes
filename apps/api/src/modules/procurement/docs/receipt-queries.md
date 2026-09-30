@@ -7,16 +7,22 @@
 | GET路径（省略/api） | 权限 | 内容 |
 | --- | --- | --- |
 | /procurement/receipts、/:id | procurement:receipts:view | 主单分页、明细当前轮次和执行份额 |
-| /procurement/receipt-lines/:id | procurement:receipts:view | 单个明细，含receiptId和currentRound |
+| /procurement/receipt-lines | procurement:receipts:view | 跨主单到货行分页，返回当前轮次与数量摘要 |
+| /procurement/receipt-lines/:id | procurement:receipts:view | 单个明细，含receiptId/receiptNo、登记原purchaseNo/采购行号和currentRound |
 | /procurement/receipt-order-options[/:id] | procurement:receipts:view | 已下单且可登记新到货的采购候选，不要求采购管理页权限 |
 | /procurement/receipt-lines/:id/:historyKind | receipts:view或quality:inbound-inspections:view | rounds/revisions/allocations/cases/returns/inbounds/acceptances独立分页 |
 | /quality/inbound-inspections[/:id] | quality:inbound-inspections:view | 待检轮次与真实检验办理联合分页、真实case定位 |
-| /quality/inbound-inspections/receipt-lines/:id | quality:inbound-inspections:view | 质检使用的当前来源版本及轮次 |
+| /quality/inbound-inspections/receipt-lines/:id | quality:inbound-inspections:view | 质检使用的当前来源版本、轮次、到货单号及登记原采购单号 |
 | /procurement/inbound-releases | production:inbounds:view | 当前合法正式可入范围分页 |
-| /procurement/receipt-lines/:id/allocation-candidates | procurement:receipts:view | 原采购行和同次已到货补单候选 |
-| /procurement/purchase-order-lines/:id/excess-receipt-candidates | procurement:orders:view | 采购页超量补单的真实到货候选，公共分页及 receiptLineId 精确解析 |
+| /procurement/receipt-lines/:id/allocation-candidates | procurement:receipts:view | 原采购行和同次已到货补单的远程搜索与归属解析 |
+| /procurement/purchase-order-lines/:id/excess-receipt-candidates | procurement:orders:view | 采购页超量补单的真实到货候选，keyword 搜到货单号／供应商批号，receiptLineId 精确解析 |
+| /procurement/purchase-order-lines/:id/quality-replacement-candidates | procurement:orders:view | 采购页质量补发的正式质量退回分配候选，按 allocation 分页；keyword 搜到货单号／供应商批号／实际退回单号，receiptLineId/allocationId 精确解析 |
 
-分页默认10、上限100，批量ID最多100且不重复。所有筛选在分页前执行，排序含稳定ID。供应商按具体采购行关联；主单只返回去重供应商集合。供应商筛选使用EXISTS，不使主单或总数重复；详情仍展示该主单全部明细。
+除 `allocation-candidates` 固定10条搜索窗口外，分页默认10、上限100，批量ID最多100且不重复。所有筛选在窗口截取前执行，排序含稳定ID。供应商按具体采购行关联；主单只返回去重供应商集合。供应商筛选使用EXISTS，不使主单或总数重复；详情仍展示该主单全部明细。
+
+`/procurement/receipts` 的 `items` 和 `total` 始终以到货主单计数；`/procurement/receipt-lines` 的 `items` 和 `total` 始终以到货行计数。两个列表共用 `ReceiptListQueryDto`：`page`、`pageSize`、`keyword`、`awaitingAcceptance=yes`、`purchaseOrderId` 和 `supplierId`。主单的供应商及待定稿筛选以存在匹配行判断，不把多个匹配行扩成多张主单；行列表的供应商筛选只匹配该行原采购行供应商，待定稿只匹配该行当前轮状态。`keyword` 匹配到货单号、采购单号、实际供应商、当前物料名、采购行物料编码和精确版本编码；主单通过明细 `EXISTS` 命中物料或供应商，`total` 仍不重复。筛选先于分页；行列表按到货时间降序、主单 ID 降序、行号升序、行 ID 升序稳定排序。
+
+行列表返回 `PageResult<ProcurementReceiptLineListItem>`。每条只含行及主单身份、物料与供应商展示字段、完整 `currentRound`、完整 `quantities`；不装载 `rounds`、`cases`、`allocations` 等历史或详情数组。行列表、到货详情和单行详情共用的 `purchaseOrderLineNo` 取登记来源 `procurement_order_line.line_no`，与到货行自身的 `lineNo` 分开；`purchaseOrderLineId` 保留为定位采购行的 ID。当前页批量读取轮次、修订、当前正式分配和实际入退事实，数量口径与详情共用同一投影；需要完整来源或历史时按行 ID 读取详情及独立历史分页。
 
 ## 当前轮次与历史
 
@@ -41,15 +47,17 @@ revision/acceptance/return/inbound各预览最新10条。case预览包含最新1
 
 关闭命令的归属投影对Procurement自有行、轮次、范围和分配使用锁内当前读；不得混用无锁定位阶段建立的较早快照。展示查询仍按同一只读快照组装，不能代替关闭时的当前事实核验。
 
-ownershipSources/ownershipSourceQuantity 返回当前或明确继承来源的未消费采购归属和数量。无来源或已全部执行时为空／0；不按最新历史ID猜测。仅拒收在有补单且总量变化时要求这些归属的输入；普通实收更正只改 T。
+`ownershipSources/ownershipSourceQuantity` 返回当前或明确继承来源的未消费采购归属和数量。无来源或已全部执行时为空／0；不按最新历史ID猜测。定稿草稿用其中正数量且非原采购行的归属初始化保留补单份额；原采购行由 `purchaseOrderLineId` 标识，`originalRemainingPlannedQuantity=max(0,原采购行计划量−当前正式已授权履约量)` 在同一详情快照中提供本批可入初值的采购计划参考。两项均只作显示和输入初值，不代替候选 ID 解析或确认时的锁内资格校验。仅拒收在有补单且总量变化时要求这些归属的输入；普通实收更正只改 T。
 
-currentInspectionConsumedQuantity 只累计引用当前 QC 的真实入库／退回量，不累计历史授权量。沿用全检记录时建议 max(0,G−本记录已处置量)，新QC从0计算；实际入库仍消费当前正式授权。
+`currentInspectionExecution` 分列 `inboundQuantity`、`qualityReturnedQuantity`、`otherReturnedQuantity`，只累计引用当前 inspectionId 的真实入库／退回，不累计历史授权量；当前无 QC 时三项均为 0。真实质量退回按分配的 quality 原因识别，其他原因归入后一类。全检沿用同一记录的建议按[正式清单数量规则](receipt-acceptance.md#数量与建议)计算，新 QC 不扣旧检验执行事实；实际入库仍消费当前正式授权。
 
 ## 检验列表
 
-待检项来自当前uninspected轮次，`taskKind=uninspected`、`case=null`，不伪造case或scope。已发起项`taskKind=case`，返回真实case以及roundId/roundVersion/roundStatus。`coveredQuantity`仅表示发起时申报量，不能解释为质检实测总量或放行数量。
+待检项来自当前uninspected轮次，`taskKind=uninspected`、`case=null`，不伪造case或scope。已发起项`taskKind=case`，返回真实case；`roundId/roundVersion/roundStatus`仍描述发起轮，旧轮的`roundStatus`显示superseded，`sourceRoundNo`给出真实发起轮序号。两类列表项同时返回到货行的`currentRound={id,roundNo,status,inspectionId}`和持久`receiptLineNo`；按到货行 ID 单查也返回单号与原采购单号，供质量权限下精确定位来源。`coveredQuantity`仅表示发起时申报量，不能解释为质检实测总量或放行数量。
 
-`status`过滤办理状态（或uninspected）；`roundStatus`过滤业务阶段，区分reinspection_required、quality_rejected、awaiting_acceptance等。已替代轮次的历史case仍可查看，但不出现在当前轮阶段待办中；已完成检查不等于允许后续流转。caseType仅表达办理目的，与full/sampling检验方式不同。
+`isCurrentlyAdopted`仅当真实case的`inspection.id`等于当前轮`inspectionId`时为true；`isInherited`还要求该case发起轮与当前轮不同。当前轮未完成的case和待检占位均不是已采用结果。完成case所在的旧轮可为superseded，同时该结果仍被新轮明确引用；旧轮状态不能代替当前采用关系，更不能授予旧轮写入资格。
+
+`status`过滤办理状态（或uninspected）；`roundStatus`保留发起轮业务阶段口径；`currentRoundStatus`按当前整批轮状态过滤，并且只返回当前轮任务或当前明确采用的case。两种阶段筛选都在count及分页前执行，历史case不会因为到货行的当前状态而混入当前阶段。`caseType`仅表达办理目的，与full/sampling检验方式不同。按真实case ID精确读取始终定位原case，`taskKey`与`total`不因继承重复。
 
 关键词匹配到货单号、采购单号、实际供应商、当前物料名、物料编码和精确版本编码。质检页面按来源行供应商筛选，不因同主单另一供应商命中而混入不相关任务。
 
@@ -57,12 +65,16 @@ currentInspectionConsumedQuantity 只累计引用当前 QC 的真实入库／退
 
 入库候选须是当前 round.finalized 的 inbound allocation、无终止约束、有本轮 acceptance、Quality 完成且明确 released，当前轮／清单／分配的 QC 与 revision 同源一致。普通分配更正可继承同批旧检查，不要求 case 创建于新轮。旧轮失效立即从候选消失，不把用户选择静默替换成新分配。
 
-候选按实际分配采购单筛选，返回 roundId/roundVersion、行版本、allocationId、acceptanceId、inspectionId、receiptRevisionId 及正式剩余量。allocationIds 一次解析已选分配；同一 allocation 可分多次实际入库，每次重读余量，不能累加历史授权。物料用途在分页前过滤；目标批次由库管在确认时选择并由 Inventory 锁内检查，采购关闭不隐藏有效物流。
+候选按实际分配采购单筛选，返回 roundId/roundVersion、行版本、allocationId、acceptanceId、inspectionId、inspectionCaseId、receiptRevisionId 及正式剩余量。`inspectionCaseId` 取该分配 acceptance 采用的 `inspectionId` 所属真实检验 case，和 `receiptLineId` 一起用于精确定位历史检验记录；不得用到货行当前轮 case 代替。`receiptLineNo`、`receiptReceivedAt` 和 `receiptPurchaseNo` 标识原到货，既有 `purchaseNo` 标识 allocation 实际归属采购单；两者可能不同。分页总数与切页单位仍为 allocation，当前页按到货分块时不得宣称包含整张到货单的所有分配。allocationIds 一次解析已选分配；同一 allocation 可分多次实际入库，每次重读余量，不能累加历史授权。物料用途在分页前过滤；目标批次由库管在确认时选择并由 Inventory 锁内检查，采购关闭不隐藏有效物流。
 
-allocation-candidates返回已正式下单原行及existing_receipt补单；remainingBindingQuantity=0表示已经永久使用过首次绑定资格，不表示历史绑定归属可丢弃。展示候选不能代替确认时的锁内校验。正式清单历史保留核实量、原检查、超建议依据及准确采购分配；不合计历史各版作为当前额度。
+`allocation-candidates` 仅返回已正式下单的原采购行及关联本到货行的 `existing_receipt` 补单，仍要求采购行处于 open/closed。`keyword`（最多100字符）按采购单号模糊搜索，按原采购行优先、采购行 ID 降序稳定排列，固定只返回前10条；`hasMore` 表示还有匹配项，继续缩小关键词即可定位，新正式下单补单可在弹窗内重新搜索取得。该接口不接受 page/pageSize。`includeIds` 是逗号分隔的采购行 ID，最多100个、不可重复；它在同一到货行候选资格内精确解析，不受搜索窗口限制，也不扩大候选范围。
 
-超量补单到货候选只返回到货明细 ID、单号、行号、时间、供应商批号及两项数量，不加载质检或正式清单历史。`receivedQuantity` 为该次到货当前修订总量，`unprocessedQuantity=T-I-R`；I 复用 `inboundFactSelect` 核对库存流水，R 来自实际退回事实，同页批量读取而非逐明细查询。分页与数量在同一只读快照组装。候选不按未处置量或当前检验状态过滤，也不以采购关闭排除历史到货；创建及绑定资格仍由对应写命令校验。
+响应为 `{items,resolved,hasMore}`；`items` 是至多10条搜索窗口，`resolved` 只包含已显式请求且仍合格的 `includeIds`，按请求 ID 顺序返回，不占用搜索窗口。原采购行、保留归属和数量初值由到货行详情提供；候选只负责搜索与已选 ID 当前资格解析，不重复计算整批归属或采购计划余量。搜索窗口缺少已选 ID 不能证明其失效，只有显式解析后缺失才能如此判断。`remainingBindingQuantity=0` 表示已经永久使用过首次绑定资格，不表示历史绑定归属可丢弃。展示候选不能代替确认时的锁内校验。正式清单历史保留核实量、原检查、超建议依据及准确采购分配；不合计历史各版作为当前额度。
+
+超量补单到货候选只返回到货明细 ID、单号、行号、时间、供应商批号及两项数量，不加载质检或正式清单历史。`receivedQuantity` 为该次到货当前修订总量，`unprocessedQuantity=T-I-R`；I 复用 `inboundFactSelect` 核对库存流水，R 来自实际退回事实，同页批量读取而非逐明细查询。keyword 在分页前匹配到货单号或供应商批号，COUNT 与数据使用同一筛选及只读快照。候选不按未处置量或当前检验状态过滤，也不以采购关闭排除历史到货；创建及绑定资格仍由对应写命令校验。
+
+质量补发候选限定到货登记来源采购行，正式分配的履约采购行可与来源不同，分别返回身份和采购单号。只返回 disposition=return、return_reason=quality，且仍属当前 finalized 轮或已有真实质量退回的分配；复检／更正后失效且未实际退回的历史分配不列入。返回到货单、持久到货行号、分配量、当前待退量、实际已退量与退回单号，关联补单按主单状态汇总数量与计划量；已关联单号经采购单列表的 originOrderLineId＋originAllocationId 在分页前精确筛选。keyword 在分页前匹配到货单号、供应商批号或真实退回单号，COUNT 与数据使用相同条件。候选查询与分页在同一只读事务组装，只作展示，创建及下单仍逐行锁内重核资格。排列按到货时间、到货行 ID、分配 ID 倒序稳定排序。
 
 ## 所有权与追溯
 
-`scripts/api-data-ownership.mjs`登记Procurement所有的round表，以及展示所需Quality incoming_round_id和Inventory正式分配引用。查询不写、锁外部模块表。供应商与物料当前名称按稳定ID读取，历史不因停用或软删除消失；到货行的批次集合与每笔入库历史从已确认 inbound_detail 及匹配正库存流水读取；每笔历史展示目标批次 ID 和批号，不用一个批次代表整条到货。已确认库存provider保持原文本，不从它反推供应商身份。
+`scripts/api-data-ownership.mjs`登记Procurement所有的round表，以及展示所需Quality incoming_round_id和Inventory正式分配引用。查询不写、锁外部模块表。供应商与物料当前名称按稳定ID读取，历史不因停用或软删除消失；到货行的批次集合与每笔入库历史从已确认 inbound_detail 及匹配正库存流水读取；每笔历史展示目标批次 ID 和批号，不用一个批次代表整条到货。已确认入库的供应商历史名称由 [Inventory 明细快照](../../inventory/docs/database/inventory-ledger-and-inbound.md#9-inbound_detail)提供，不从文本反推供应商身份。

@@ -32,9 +32,9 @@ Quality 填方法、合格 G、不合格 F、结论、时间、说明和凭据�
 
 ## 实际入库与退回
 
-入库选择1～100个不同的当前 allocation，同一供应商，可跨原单／补单。请求携行 version、roundId/roundVersion、allocationId、receiptRevisionId、inspectionId 和本次数量。服务端锁内核对当前轮 finalized、disposition=inbound、正常 acceptance、同源当前 revision/QC、有效 released 以及真实剩余。
+入库一次提交 1～100 条目标明细，可选不同供应商、采购及到货的当前有效 allocation，同一 allocation 允许拆到多个目标；一次确认生成一张入库单。请求携行 version、roundId/roundVersion、allocationId、receiptRevisionId、inspectionId 和本次数量。服务端逐供应商核验有效身份，锁内解析每行确认时供应商名称，并核对当前轮 finalized、disposition=inbound、正常 acceptance、同源当前 revision/QC、有效 released 以及真实剩余。任何明细不合格均整体回滚。
 
-一个 allocation 可分多次实际入库；不拆分或修改分配行。每次创建 inbound_detail 和唯一库存正流水，引用同一个 allocation_id；余量=授权 quantity−真实已入−真实已退。库存流水幂等键以本次 inbound_detail 身份生成，HTTP 同键重试只重放原结果。每条执行明细由库管选择新建或已有的合资格目标库存批次；同一授权本次拆成多明细时按 allocation 合计校验不超余量。到货行不绑定唯一批次，逐笔目标从 inbound_detail 与正库存流水追溯。同次确认仍限同一供应商，采购归属和实际退回规则不变。
+一个 allocation 可分多次实际入库；不拆分或修改分配行。每次创建 inbound_detail 和唯一库存正流水，引用同一个 allocation_id；余量=授权 quantity−真实已入−真实已退。库存流水幂等键以本次 inbound_detail 身份生成，HTTP 同键重试只重放原结果。每条执行明细由库管选择新建或已有的合资格目标库存批次；同一授权本次拆成多明细时按 allocation 合计校验不超余量。到货行不绑定唯一批次，逐笔目标从 inbound_detail 与正库存流水追溯。跨供应商合单不改变各行采购归属和实际退回规则，供应商名称与来源保存边界见 [Inventory](../../inventory/docs/public-contracts.md)。
 
 实际退回一次办理所选 return 分配的全部余量，保存真实交接时间、凭据和数量，不写库存。普通质量／超发／采购终止退回须正常定稿及 QC；manual_rejection 仅可凭当前真实拒收轮和分配办理，允许无正常清单／QC。不能凭客户端声明退回原因豁免依据。采购关闭不阻止已有合法物流，已入和已退不被后续轮次覆盖。
 

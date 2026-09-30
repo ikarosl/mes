@@ -43,6 +43,7 @@ export const usePurchaseInbounds = () => {
       const result = await productionApi.getPurchaseInbound(id, current.signal);
       if (!current.isCurrent()) return;
       if (result.sourceType !== 'purchased') throw new Error('该记录不属于外购物料入库');
+      if (result.status !== 'completed') throw new Error('该记录不属于已入库记录');
       detail.value = result;
     } catch (error) {
       if (current.isCurrent())
@@ -56,6 +57,7 @@ export const usePurchaseInbounds = () => {
     detail.value = null;
     detailError.value = '';
   };
+  const cancelList = (): void => listRequest.invalidate();
   return {
     rows,
     total,
@@ -64,6 +66,7 @@ export const usePurchaseInbounds = () => {
     detailLoading,
     detailError,
     load,
+    cancelList,
     loadDetail,
     closeDetail,
   };

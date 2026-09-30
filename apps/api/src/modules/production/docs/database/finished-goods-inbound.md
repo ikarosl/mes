@@ -27,4 +27,6 @@ Production 拥有结案草稿、办理轮次、不可变批准版及授权明细
 | `GET /:inboundId` | 同上；每条明细实际批次、原批准版、质检与审批证据 |
 | `POST /actions/confirm` | `production:inbounds:confirm-finished`；直接多明细确认 |
 
+列表保留单据概览和实际执行明细，完整批准与检验依据由单据详情按每条入库明细引用的 `outputRevisionId` 读取历史版本，不替换为任务最新版本。详情响应中的确认人、批准人及检验人展示名通过 Identity 公开能力批量补齐；姓名为查询时展示投影，不改写批准版或检验快照中的人员标识与业务事实。批准版授权的累计已入／剩余量仍表示查询时执行情况，本次历史入库数量以对应入库明细为准。
+
 页面权限不代替上述后端独立鉴权。库存、批次、归批资格及约束由[Inventory 所有者](../../../inventory/docs/database/inventory-ledger-and-inbound.md)维护；本章不复制其结构。迁移只追加成对文件，开发数据按[迁移安全](../../../../../../../packages/database/docs/migration-safety.md)和统一初始化入口重建。正式测试与用户验收状态见[路线图](../../../../../../../docs/roadmap.md)。

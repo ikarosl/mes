@@ -41,19 +41,6 @@
           :closable="false"
           class="notice"
         />
-        <el-alert
-          v-if="inspectionConsumed > 0"
-          type="info"
-          :closable="false"
-          class="notice"
-        >
-          当前检验依据已有 {{ inspectionConsumed }} {{ line.unit }} 实际处置，不重新授权。
-          {{
-            inspection.inspectionMethod === 'full'
-              ? `本次剩余建议量为 max(0, ${inspection.qualifiedQuantity} − ${inspectionConsumed})。`
-              : '抽检仍以本次核实剩余总量减原样本不合格数给出保守建议；数量异常须另填依据。'
-          }}
-        </el-alert>
         <el-descriptions
           :column="3"
           border
@@ -69,14 +56,40 @@
             <div>本轮未处置 {{ line.quantities.unprocessedQuantity }} {{ line.unit }}</div>
           </el-descriptions-item>
           <el-descriptions-item label="检验依据">
-            <div>检验记录 #{{ inspection.id }}</div>
             <div>
-              合格 {{ inspection.qualifiedQuantity }} · 不合格 {{ inspection.unqualifiedQuantity }}
+              {{ inspectionRoundNo === undefined ? '' : `第 ${inspectionRoundNo} 轮 · `
+              }}{{ QUALITY_INSPECTION_METHOD_LABELS[inspection.inspectionMethod] }} ·
+              {{ formatDateTimeForDisplay(inspection.inspectedAt) }}
             </div>
             <div>
-              本轮建议可入
-              {{ quantity === undefined ? '待填写核实剩余量' : (limit ?? '依据不一致，待核对') }}
-              {{ quantity === undefined ? '' : line.unit }}
+              合格
+              <InspectionQuantity
+                :value="inspection.qualifiedQuantity"
+                kind="qualified"
+              />
+              · 不合格
+              <InspectionQuantity
+                :value="inspection.unqualifiedQuantity"
+                kind="unqualified"
+              />
+            </div>
+            <div v-if="inspection.inspectionMethod === 'full'">
+              同一检验建议可入：全检 {{ inspection.inspectedQuantity }} − 已入
+              {{ inspectionExecution.inboundQuantity }} − 其他已退
+              {{ inspectionExecution.otherReturnedQuantity }} − MAX(质量已退
+              {{ inspectionExecution.qualityReturnedQuantity }}，不合格
+              {{ inspection.unqualifiedQuantity }})
+              <template v-if="limit === null">；建议待核对</template>
+              <template v-else-if="fullLimitBeforeFloor !== null && fullLimitBeforeFloor < 0">
+                = {{ fullLimitBeforeFloor }}，按 0 取值 {{ limit }} {{ line.unit }}
+              </template>
+              <template v-else>= {{ limit }} {{ line.unit }}</template>
+            </div>
+            <div v-else>
+              抽检建议：草稿核实剩余 {{ quantity ?? '待填写' }} − 样本不合格
+              {{ inspection.unqualifiedQuantity }}
+              <template v-if="limit !== null">= {{ limit }} {{ line.unit }}</template>
+              <template v-else>；建议待核对</template>
             </div>
           </el-descriptions-item>
           <el-descriptions-item label="本轮去向草稿">
@@ -91,15 +104,41 @@
             </div>
           </el-descriptions-item>
         </el-descriptions>
-        <el-collapse class="evidence-collapse">
+        <el-collapse class="evidence-collapse business-collapse">
           <el-collapse-item
             name="evidence"
             title="查看完整检验凭据与数量依据"
           >
-            <InboundInspectionRecord :inspection="inspection" />
+            <InboundInspectionRecord
+              :inspection="inspection"
+              :round-no="inspectionRoundNo"
+            />
             <ReceiptLineSummary :line="line" />
           </el-collapse-item>
         </el-collapse>
+        <div class="allocation-search-toolbar">
+          <span>按采购单号搜索归属；刷新会清除搜索，已填分配保留。</span>
+          <el-button
+            :loading="allocationOptions.loading.value"
+            :disabled="command.locked.value || stale || loading"
+            @click="refreshCandidates"
+            >刷新采购归属</el-button
+          >
+        </div>
+        <el-alert
+          v-if="allocationOptions.error.value"
+          type="error"
+          title="采购归属加载失败，已填内容保留。请点击刷新采购归属重试。"
+          :closable="false"
+          class="notice"
+        />
+        <el-alert
+          v-else-if="allocationOptions.invalidSelectedIds.value.length"
+          type="warning"
+          title="部分已选采购归属当前不可用，已保留原选择。请重新选择后再确认。"
+          :closable="false"
+          class="notice"
+        />
         <el-form :disabled="command.locked.value || stale || loading">
           <el-form-item
             label="库管核实本批未处置实物总量"
@@ -113,6 +152,24 @@
               controls-position="right"
             />
           </el-form-item>
+          <InlineHint
+            tone="info"
+            class="physical-balance-hint"
+          >
+            实物剩余：核实 {{ line.quantities.receivedQuantity }} − 已入
+            {{ line.quantities.inboundQuantity }} − 已退
+            <strong>{{ line.quantities.returnedQuantity }}</strong> = 剩余
+            <strong>{{ line.quantities.unprocessedQuantity }}</strong> {{ line.unit }}。
+            <template
+              v-if="
+                quantity !== undefined &&
+                Number(quantity) !== Number(line.quantities.unprocessedQuantity)
+              "
+            >
+              本次草稿核实剩余 {{ quantity }}、复核到货总量
+              {{ Number.isFinite(correctedTotal) ? correctedTotal : '待填写' }} {{ line.unit }}。
+            </template>
+          </InlineHint>
           <el-alert
             v-if="quantityMismatch"
             type="warning"
@@ -120,34 +177,33 @@
             class="notice"
             title="核实数量与原申报或全检总数不一致，请与现场核对，并在下方保存核对说明；原检查事实保持不变。"
           />
-          <el-alert
+          <InlineHint
             v-if="overrideRequired"
-            type="warning"
-            :closable="false"
-            class="notice"
+            tone="warning"
+            class="override-hint"
           >
-            {{
-              limit === null
-                ? '抽检样本与核实总量不一致，无法计算有效建议量。'
-                : `最终可入量超过质检建议 ${inboundTotal - limit}。`
-            }}
-            库管须填写异常核对或超建议确认依据并承担数量定稿责任，这不代表质检更改了原合格、不合格数。
-          </el-alert>
+            <template v-if="limit === null">
+              本轮建议可入无法计算：草稿核实剩余 {{ quantity }}、检验检查
+              {{ inspection.inspectedQuantity }}、不合格 {{ inspection.unqualifiedQuantity }}
+              {{ line.unit }}；请核对并填写异常依据。
+            </template>
+            <template v-else>
+              草稿可入 {{ inboundTotal }} − 本轮建议可入 {{ limit }} = 超出
+              <strong>{{ inboundTotal - limit }}</strong> {{ line.unit }}；请填写超建议确认依据。
+            </template>
+          </InlineHint>
           <el-alert
-            v-if="candidates.some((candidate) => Number(candidate.retainedBindingQuantity) > 0)"
+            v-if="retainedOwners.length"
             type="info"
             :closable="false"
             class="notice"
           >
             <span
-              v-for="candidate in candidates.filter(
-                (row) => Number(row.retainedBindingQuantity) > 0,
-              )"
-              :key="candidate.purchaseOrderLineId"
+              v-for="owner in retainedOwners"
+              :key="owner.purchaseOrderLineId"
               class="binding-note"
             >
-              {{ candidate.purchaseNo }}：原剩余归属 {{ candidate.retainedBindingQuantity }}
-              {{ line.unit }}。
+              {{ owner.purchaseNo }}：原剩余归属 {{ owner.quantity }} {{ line.unit }}。
             </span>
           </el-alert>
           <el-table :data="details">
@@ -155,19 +211,21 @@
               label="采购归属"
               min-width="250"
               ><template #default="{ row }">
-                <el-select
+                <RemoteSearchSelect
                   v-model="row.purchaseOrderLineId"
-                  clearable
-                  placeholder="待明确补单"
-                  @clear="row.purchaseOrderLineId = null"
-                >
-                  <el-option
-                    v-for="candidate in candidates"
-                    :key="candidate.purchaseOrderLineId"
-                    :value="candidate.purchaseOrderLineId"
-                    :label="`${candidate.purchaseNo} · ${candidate.isOriginal ? '原采购行' : '已到货补单'} · 计划 ${candidate.plannedQuantity}${candidate.remainingBindingQuantity === null ? '' : ` · 待首次承接 ${candidate.remainingBindingQuantity}`}`"
-                  />
-                </el-select> </template
+                  :options="allocationOptions.optionsFor(row.purchaseOrderLineId)"
+                  :loading="allocationOptions.loading.value"
+                  :error="allocationOptions.error.value"
+                  :disabled="command.locked.value || stale || loading"
+                  :has-more="allocationOptions.hasMore.value"
+                  more-text="仅显示前 10 条匹配，请继续输入采购单号缩小范围"
+                  placeholder="输入采购单号搜索"
+                  empty-text="没有匹配的采购单，请确认补单已正式下单"
+                  missing-selection-label="原已选采购归属（待重新核验）"
+                  @search="allocationOptions.search"
+                  @open="allocationOptions.search('')"
+                  @refresh="allocationOptions.refresh"
+                /> </template
             ></el-table-column>
             <el-table-column
               label="去向"
@@ -243,15 +301,9 @@
               {{ quantity === undefined ? '待填写' : quantity - total }} {{ line.unit }}
             </span>
           </div>
-          <p class="hint">待退回是去向安排，实际交接另行确认；补单须先正式下单，再承接本次实物。</p>
-          <el-collapse class="allocation-help">
-            <el-collapse-item
-              name="rules"
-              title="补单与更正核对说明"
-            >
-              尚未下单的超发量保留待处理；补单不再登记第二次到货。整批复检保留已绑定采购归属，请核对新去向；实物总量确有计数更正时，同时核对受影响的采购份额并说明依据。
-            </el-collapse-item>
-          </el-collapse>
+          <InlineHint class="allocation-help">
+            待退是去向安排，实际交接另行确认；<strong>补单须先正式下单</strong>，不重复登记到货；未落实量留待处理；计数更正须核对采购归属并说明差异依据。
+          </InlineHint>
           <el-form-item
             ><el-checkbox v-model="physicalIdentityConfirmed"
               >已核对为本次同批实物，数量差异为计数修正</el-checkbox
@@ -317,11 +369,16 @@ import {
   SUPPLIER_RETURN_REASON_LABELS,
   PURCHASE_ORDER_MAX_QUANTITY,
   RECEIPT_ROUND_STATUS_LABELS,
+  QUALITY_INSPECTION_METHOD_LABELS,
 } from '@company/constants';
 import { DialogWidth } from '../../../utils/dialog';
+import { formatDateTimeForDisplay } from '../../../utils/date';
+import InlineHint from '../../../components/InlineHint.vue';
+import RemoteSearchSelect from '../../../components/RemoteSearchSelect.vue';
 import { useReceiptAcceptance } from '../composables/useReceiptAcceptance';
 import ReceiptLineSummary from './ReceiptLineSummary.vue';
 import InboundInspectionRecord from './InboundInspectionRecord.vue';
+import InspectionQuantity from '../../quality/components/InspectionQuantity.vue';
 const emit = defineEmits<{ saved: [ProcurementReceiptCommandResult] }>();
 const {
   visible,
@@ -334,8 +391,11 @@ const {
   physicalIdentityConfirmed,
   line,
   inspection,
-  inspectionConsumed,
-  candidates,
+  inspectionExecution,
+  fullLimitBeforeFloor,
+  retainedOwners,
+  allocationOptions,
+  refreshCandidates,
   details,
   quantity,
   limit,
@@ -348,6 +408,15 @@ const {
   close,
   confirm,
 } = useReceiptAcceptance((result) => emit('saved', result));
+const inspectionRoundNo = computed(() => {
+  const receiptLine = line.value;
+  const record = inspection.value;
+  if (!receiptLine || !record) return undefined;
+  const caseRecord = receiptLine.cases.find((row) => row.inspection?.id === record.id);
+  if (!caseRecord) return undefined;
+  if (receiptLine.currentRound.id === caseRecord.roundId) return receiptLine.currentRound.roundNo;
+  return receiptLine.rounds.find((round) => round.id === caseRecord.roundId)?.roundNo;
+});
 const returnTotal = computed(() =>
   details.value
     .filter((row) => row.disposition === 'return')
@@ -370,6 +439,10 @@ defineExpose({ open, close, visible, locked: command.locked });
 .notice {
   margin: 16px 0;
 }
+.physical-balance-hint,
+.override-hint {
+  margin: 12px 0 16px;
+}
 .review-summary {
   margin: 8px 0 12px;
 }
@@ -388,17 +461,24 @@ defineExpose({ open, close, visible, locked: command.locked });
   gap: 20px;
   margin: 12px 0;
 }
-.hint {
-  color: #6b7280;
-  font-size: 13px;
-  line-height: 1.8;
+.allocation-search-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.allocation-search-toolbar {
+  margin: 12px 0;
+  color: var(--el-text-color-secondary);
+  font-size: var(--el-font-size-base);
 }
 .allocation-mismatch {
-  color: #b45309;
+  color: var(--el-color-warning-dark-2);
   font-weight: 600;
 }
 .allocation-help {
-  margin-bottom: 16px;
+  margin: 8px 0 16px;
 }
 .el-input-number {
   width: 145px;

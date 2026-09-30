@@ -7,26 +7,27 @@
   <el-collapse
     v-else
     v-model="expanded"
+    class="business-collapse"
   >
     <el-collapse-item
       v-for="record in records"
       :key="record.id"
       :name="record.id"
-      :title="`轮次 #${record.roundId} · ${PRODUCTION_OUTPUT_RELEASE_DECISION_LABELS[record.releaseDecision]} · ${formatDateTimeForDisplay(record.inspectedAt)}${record.roundId === currentRoundId ? ' · 本轮记录' : record.id === latestInspectionId ? ' · 最近历史记录' : ''}`"
+      :title="`${record.roundId === currentRoundId ? '本轮检验' : '历史检验'} · ${PRODUCTION_OUTPUT_RELEASE_DECISION_LABELS[record.releaseDecision]} · ${formatDateTimeForDisplay(record.inspectedAt)}${record.roundId !== currentRoundId && record.id === latestInspectionId ? ' · 最近一条' : ''}`"
     >
       <el-descriptions
         :column="3"
         border
       >
-        <el-descriptions-item label="检查轮次"
-          >#{{ record.roundId }} ·
-          {{ record.roundId === currentRoundId ? '本轮' : '历史轮' }}</el-descriptions-item
-        >
+        <el-descriptions-item label="所属检验轮">{{
+          record.roundId === currentRoundId ? '本轮' : '历史轮'
+        }}</el-descriptions-item>
+        <el-descriptions-item label="检验记录 ID">{{ record.id }}</el-descriptions-item>
         <el-descriptions-item label="当时申报版本">{{
           record.declaredVersion
         }}</el-descriptions-item>
-        <el-descriptions-item label="前次记录">{{
-          record.previousInspectionId ? `#${record.previousInspectionId}` : '首次检验'
+        <el-descriptions-item label="前次检验">{{
+          record.previousInspectionId ? `记录 ID：${record.previousInspectionId}` : '首次检验'
         }}</el-descriptions-item>
         <el-descriptions-item label="检验时间">{{
           formatDateTimeForDisplay(record.inspectedAt)

@@ -60,7 +60,6 @@ export function usePurchaseInboundReleases(
     await Promise.all([load(), onConfirmed(result)]);
   }, '入库单');
   const locked = computed(() => command.locked.value || checking.value);
-  const supplierId = computed(() => selected.value[0]?.source.supplierId);
   const groupSummaries = computed(() => {
     const groups = new Map<
       string,
@@ -90,7 +89,7 @@ export function usePurchaseInboundReleases(
       else if (row.target.mode === 'existing' && !row.target.batchId)
         errors.set(row.detailKey, '请选择已有批次');
       else if (row.target.mode === 'new' && !row.target.clientKey)
-        errors.set(row.detailKey, '请选择本次复用的新批次');
+        errors.set(row.detailKey, '新建批次目标无效，请重新选择');
     }
     for (const group of groupSummaries.value) {
       if (group.total > group.allowance) {
@@ -148,6 +147,72 @@ export function usePurchaseInboundReleases(
   };
   const isSelected = (id: string): boolean =>
     selected.value.some((row) => row.source.allocationId === id);
+  const pageGroupIds = (sources: ProcurementInboundReleaseItem[]): Set<string> =>
+    new Set(sources.map((source) => source.allocationId));
+  const isPageGroupSelected = (sources: ProcurementInboundReleaseItem[]): boolean =>
+    sources.length > 0 && sources.every((source) => isSelected(source.allocationId));
+  const isPageGroupPartSelected = (sources: ProcurementInboundReleaseItem[]): boolean =>
+    sources.some((source) => isSelected(source.allocationId));
+  const hasSelectionOutsidePageGroup = (sources: ProcurementInboundReleaseItem[]): boolean => {
+    const ids = pageGroupIds(sources);
+    return selected.value.some((row) => !ids.has(row.source.allocationId));
+  };
+  const addPageGroup = (sources: ProcurementInboundReleaseItem[]): boolean => {
+    if (locked.value || !sources.length) return false;
+    const missing = [
+      ...new Map(
+        sources
+          .filter((source) => !isSelected(source.allocationId))
+          .map((source) => [source.allocationId, source]),
+      ).values(),
+    ];
+    if (selected.value.length + missing.length > 100) {
+      EMessage.warning('一次最多包含 100 条目标明细，请减少已选范围或另单办理');
+      return false;
+    }
+    selected.value = [
+      ...selected.value,
+      ...missing.map((source) => ({
+        detailKey: crypto.randomUUID(),
+        target: { mode: 'new' as const, clientKey: crypto.randomUUID() },
+        source: { ...source },
+        quantity: source.approvedRemainingQuantity,
+        error: '',
+      })),
+    ];
+    return true;
+  };
+  const togglePageGroup = async (sources: ProcurementInboundReleaseItem[]): Promise<void> => {
+    if (locked.value || !sources.length) return;
+    if (!isPageGroupSelected(sources)) {
+      addPageGroup(sources);
+      return;
+    }
+    const ids = pageGroupIds(sources);
+    const affected = selected.value.filter((row) => ids.has(row.source.allocationId));
+    const selectedCounts = new Map<string, number>();
+    for (const row of affected)
+      selectedCounts.set(
+        row.source.allocationId,
+        (selectedCounts.get(row.source.allocationId) ?? 0) + 1,
+      );
+    if ([...selectedCounts.values()].some((count) => count > 1)) {
+      try {
+        await RouteMessageBox.confirm(
+          `取消本页该组选择将移除 ${affected.length} 条目标明细（含拆分草稿），确定继续吗？`,
+          '取消本组选中',
+          { type: 'warning', confirmButtonText: '移除本组目标' },
+        );
+      } catch {
+        return;
+      }
+    }
+    if (locked.value) return;
+    selected.value = selected.value.filter((row) => !ids.has(row.source.allocationId));
+  };
+  const reviewPageGroup = (sources: ProcurementInboundReleaseItem[]): void => {
+    if (addPageGroup(sources)) open();
+  };
   const toggle = async (source: ProcurementInboundReleaseItem): Promise<void> => {
     if (locked.value) return;
     if (isSelected(source.allocationId)) {
@@ -170,10 +235,6 @@ export function usePurchaseInboundReleases(
       selected.value = selected.value.filter(
         (row) => row.source.allocationId !== source.allocationId,
       );
-      return;
-    }
-    if (supplierId.value && source.supplierId !== supplierId.value) {
-      EMessage.warning('一张入库单只能选择同一供应商的放行范围');
       return;
     }
     if (selected.value.length >= 100) {
@@ -210,33 +271,6 @@ export function usePurchaseInboundReleases(
       target: { mode: 'new', clientKey: crypto.randomUUID() },
       error: '',
     });
-  };
-  const relatedNewTargetsFor = (detailKey: string) => {
-    const current = selected.value.find((row) => row.detailKey === detailKey);
-    if (!current) return [];
-    return selected.value.flatMap((row, index) =>
-      row.detailKey !== detailKey &&
-      row.source.materialVariantId === current.source.materialVariantId &&
-      row.source.unit === current.source.unit &&
-      row.target.mode === 'new'
-        ? [
-            {
-              clientKey: row.target.clientKey,
-              label: `${row.source.receiptNo} · ${row.source.itemCode} · 第 ${index + 1} 条目标`,
-            },
-          ]
-        : [],
-    );
-  };
-  const isNewBatchOwnerFor = (detailKey: string): boolean => {
-    const row = selected.value.find((item) => item.detailKey === detailKey);
-    if (!row || row.target.mode !== 'new') return false;
-    const clientKey = row.target.clientKey;
-    return (
-      selected.value.find(
-        (item) => item.target.mode === 'new' && item.target.clientKey === clientKey,
-      )?.detailKey === detailKey
-    );
   };
   const validQuantities = (): boolean => canSubmit.value;
   const recheck = async (adopt = true): Promise<boolean> => {
@@ -345,7 +379,6 @@ export function usePurchaseInboundReleases(
     checkError,
     command,
     locked,
-    supplierId,
     groupSummaries,
     quantityErrors,
     canSubmit,
@@ -353,11 +386,14 @@ export function usePurchaseInboundReleases(
     search,
     reset,
     isSelected,
+    isPageGroupSelected,
+    isPageGroupPartSelected,
+    hasSelectionOutsidePageGroup,
+    togglePageGroup,
+    reviewPageGroup,
     toggle,
     remove,
     split,
-    relatedNewTargetsFor,
-    isNewBatchOwnerFor,
     recheck,
     open,
     submit,

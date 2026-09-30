@@ -23,7 +23,10 @@
         :closable="false"
         class="notice"
       />
-      <ReceiptLineSummary :line="line" />
+      <ReceiptLineSummary
+        :line="line"
+        :mode="action === 'inspect' || action === 'review' ? 'inspection' : 'full'"
+      />
       <div
         v-loading="loading"
         class="form-body"
@@ -44,16 +47,13 @@
           @submit.prevent="confirm"
         >
           <template v-if="action === 'correct'">
-            <el-alert
-              :title="
+            <InlineHint class="notice">
+              {{
                 rejected
                   ? '更正本次到货核实总量后，旧拒收决定退出当前效力，剩余实物回到待检。若仍需拒收，请重新办理人工拒收；已入／已退事实保留。'
                   : '填写本次到货核实总量。全部未处置分配将被替代，剩余实物重新待检；归零不产生零量检验。已入／已退事实保留，不能代替新到货或真实损耗。'
-              "
-              type="info"
-              :closable="false"
-              class="notice"
-            />
+              }}
+            </InlineHint>
             <el-form-item
               label="更正后本次到货总量"
               required
@@ -67,11 +67,14 @@
               />
             </el-form-item>
             <el-form-item label="已入 / 已退锁定量"
-              >{{ disposedQuantity }} {{ line.unit }}</el-form-item
+              ><strong>{{ disposedQuantity }} {{ line.unit }}</strong></el-form-item
             >
             <el-form-item label="更正后未处置量"
-              >{{ Number.isFinite(correctedRemaining) ? correctedRemaining : '待填写' }}
-              {{ line.unit }}</el-form-item
+              ><strong>{{
+                Number.isFinite(correctedRemaining)
+                  ? `${correctedRemaining} ${line.unit}`
+                  : '待填写'
+              }}</strong></el-form-item
             >
             <el-form-item
               label="实物身份核对"
@@ -92,14 +95,16 @@
             /></el-form-item>
           </template>
           <template v-else-if="action === 'return'">
-            <el-alert
-              title="本次将该范围全部剩余待退量一次交还供应商，不支持分次退回。填写实际交接凭据后确认。"
-              type="warning"
-              :closable="false"
+            <InlineHint
+              tone="warning"
               class="notice"
-            />
+            >
+              本次将该范围全部剩余待退量一次交还供应商，不支持分次退回。填写实际交接凭据后确认。
+            </InlineHint>
             <el-form-item label="本次全部退回量"
-              >{{ Number(allocation?.remainingQuantity ?? 0) }} {{ line.unit }}</el-form-item
+              ><strong>{{
+                allocation ? `${Number(allocation.remainingQuantity)} ${line.unit}` : '待核对'
+              }}</strong></el-form-item
             >
             <el-form-item
               label="实际交接时间"
@@ -127,20 +132,20 @@
             /></el-form-item>
           </template>
           <template v-else>
-            <el-alert
-              :title="
+            <InlineHint
+              :tone="action === 'review' ? 'info' : 'warning'"
+              class="notice"
+            >
+              {{
                 action === 'review'
                   ? '确认发起后，本批全部剩余实物进入检验中，原可入及待退分配一并暂停。抽检也判断整批资格，样本不是独立处置范围。'
                   : action === 'revoke'
                     ? '撤销本轮拒收决定，剩余实物重新待检。旧拒收记录保留，不直接恢复旧可入分配；请重新质检和定稿。'
                     : '人工拒收本批全部剩余实物，原入库资格及尚未完成检验立即失效。拒收不等于质检不合格或已经退回；交接后另行确认实际退回。'
-              "
-              type="warning"
-              :closable="false"
-              class="notice"
-            />
+              }}
+            </InlineHint>
             <el-form-item label="本批剩余实物"
-              >{{ remainingQuantity }} {{ line.unit }}</el-form-item
+              ><strong>{{ remainingQuantity }} {{ line.unit }}</strong></el-form-item
             >
             <el-form-item
               v-if="action === 'review' && caseType !== 'initial'"
@@ -254,6 +259,7 @@ import type { ProcurementReceiptCommandResult } from '@company/contracts';
 import { PURCHASE_ORDER_MAX_QUANTITY, QUALITY_INBOUND_CASE_TYPE_LABELS } from '@company/constants';
 import { DialogWidth } from '../../../utils/dialog';
 import { fromBeijingDateTimeInputValue, toBeijingDateTimeInputValue } from '../../../utils/date';
+import InlineHint from '../../../components/InlineHint.vue';
 import { useReceiptLineAction } from '../composables/useReceiptLineAction';
 import ReceiptLineSummary from './ReceiptLineSummary.vue';
 import InboundInspectionFields from './InboundInspectionFields.vue';

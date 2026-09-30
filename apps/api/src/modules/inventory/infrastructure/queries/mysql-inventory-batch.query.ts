@@ -178,7 +178,7 @@ async function loadInventories(
        FROM production_item_allocation a WHERE a.batch_id=ib.id AND a.item_id=ib.item_id AND a.material_variant_id=ib.material_variant_id AND a.allocation_status NOT IN ('released','cancelled')),0) END reserved
      FROM item_batch ib
      LEFT JOIN (SELECT d.batch_id,
-       CASE WHEN COUNT(DISTINCT o.provider)=1 AND SUM(o.provider IS NULL)=0 THEN MIN(o.provider) ELSE NULL END provider,
+       CASE WHEN COUNT(DISTINCT d.supplier_name_snapshot)=1 AND SUM(d.supplier_name_snapshot IS NULL)=0 THEN MIN(d.supplier_name_snapshot) ELSE NULL END provider,
        CASE WHEN COUNT(DISTINCT o.work_order_id)=1 AND SUM(o.work_order_id IS NULL)=0 THEN MIN(o.work_order_id) ELSE NULL END source_work_order_id,
        CASE WHEN COUNT(DISTINCT o.production_batch_id)=1 AND SUM(o.production_batch_id IS NULL)=0 THEN MIN(o.production_batch_id) ELSE NULL END source_production_batch_id
        FROM inbound_detail d JOIN inbound_order o ON o.id=d.inbound_id AND o.status='completed'
@@ -194,7 +194,7 @@ async function loadInventories(
     [...ids, ...ids],
   );
   const [sources] = await db.query<SourceRow[]>(
-    `SELECT d.batch_id,d.id inbound_detail_id,o.id inbound_id,o.inbound_no,o.provider,o.inbound_at,d.inbound_number,it.id transaction_id,COALESCE(a.category,o.source_type) source_type,r.id output_revision_id,r.revision_no output_revision_no,d.production_output_allocation_id,o.production_batch_id,o.work_order_id,d.procurement_receipt_line_id,d.procurement_receipt_revision_id,d.procurement_inspection_id,d.procurement_allocation_id
+    `SELECT d.batch_id,d.id inbound_detail_id,o.id inbound_id,o.inbound_no,d.supplier_name_snapshot provider,o.inbound_at,d.inbound_number,it.id transaction_id,COALESCE(a.category,o.source_type) source_type,r.id output_revision_id,r.revision_no output_revision_no,d.production_output_allocation_id,o.production_batch_id,o.work_order_id,d.procurement_receipt_line_id,d.procurement_receipt_revision_id,d.procurement_inspection_id,d.procurement_allocation_id
      FROM inbound_detail d JOIN inbound_order o ON o.id=d.inbound_id AND o.status='completed'
      JOIN inventory_transaction it ON it.reference_type='inbound_detail' AND it.reference_detail_id=d.id
        AND it.transaction_type IN ('purchase_inbound','production_inbound') AND it.quantity=d.inbound_number AND it.quantity>0

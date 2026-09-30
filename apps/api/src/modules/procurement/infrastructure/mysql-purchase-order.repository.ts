@@ -12,6 +12,8 @@ import type {
   PurchaseOrderQuery,
   PurchaseExcessReceiptCandidateQuery,
   PurchaseExcessReceiptCandidate,
+  PurchaseQualityReplacementCandidateQuery,
+  PurchaseQualityReplacementCandidate,
   PageResult,
   RelatedPurchasesQuery,
   PurchaseOrderCommandResult,
@@ -29,12 +31,14 @@ import {
 } from '../../product/public.js';
 import { ProductionProcurementQuery } from '../../production/public.js';
 import { PurchaseOrderRepository } from '../application/ports/purchase-order.repository.js';
+import { normalizePurchaseDraft } from '../domain/purchase-order.policy.js';
 import {
   listPurchaseOrders,
   getPurchaseOrder,
   listRelatedPurchases,
 } from './queries/purchase-order.query.js';
 import { listExcessReceiptCandidates } from './queries/purchase-excess-receipts.query.js';
+import { listQualityReplacementCandidates } from './queries/purchase-quality-replacements.query.js';
 import {
   type OrderRow,
   type OrderLineRow,
@@ -47,7 +51,6 @@ import {
   idsSql,
 } from './mysql-purchase-order.shared.js';
 import {
-  requireSupplier,
   requireSuppliers,
   requireSupplementEvidence,
   assertSources,
@@ -83,6 +86,14 @@ export class MysqlPurchaseOrderRepository extends PurchaseOrderRepository {
   ): Promise<PageResult<PurchaseExcessReceiptCandidate>> {
     return withTransaction(this.pool, (connection) =>
       listExcessReceiptCandidates(connection, id, query),
+    );
+  }
+  qualityReplacementCandidates(
+    id: string,
+    query: PurchaseQualityReplacementCandidateQuery & { page: number; pageSize: number },
+  ): Promise<PageResult<PurchaseQualityReplacementCandidate>> {
+    return withTransaction(this.pool, (connection) =>
+      listQualityReplacementCandidates(connection, id, query),
     );
   }
   related(query: RelatedPurchasesQuery & { page: number; pageSize: number }) {
@@ -133,44 +144,48 @@ export class MysqlPurchaseOrderRepository extends PurchaseOrderRepository {
         lines.map((line) => String(line.id)),
         true,
       );
-      let origin:
-        | {
+      let origins:
+        | Array<{
             lineId: string;
             evidence: string;
             receiptLineId?: string | null;
             allocationId?: string | null;
-          }
+          }>
         | undefined;
       if (order.supplement_reason) {
-        const line = lines[0];
-        const next = payload.items[0];
         if (
-          !line ||
-          !next ||
-          lines.length !== 1 ||
-          payload.items.length !== 1 ||
+          lines.length !== payload.items.length ||
           (order.work_order_id === null ? null : String(order.work_order_id)) !==
             payload.workOrderId ||
-          String(line.supplier_id) !== next.supplierId ||
-          order.source_type !== payload.sourceType ||
-          String(line.item_id) !== next.itemId ||
-          String(line.material_variant_id) !== next.materialVariantId ||
-          JSON.stringify(sortedIds(sources.get(String(line.id)) ?? [])) !==
-            JSON.stringify(sortedIds(next.demandIds))
+          order.source_type !== payload.sourceType
         )
           return orderError('补单只能调整计划量与备注，原采购、物料和需求追溯不能改变');
-        origin = {
-          lineId: String(line.origin_order_line_id),
-          evidence: line.supplement_evidence!,
-          receiptLineId:
-            line.origin_receipt_line_id === null ? null : String(line.origin_receipt_line_id),
-          allocationId:
-            line.origin_allocation_id === null ? null : String(line.origin_allocation_id),
-        };
+        origins = lines.map((line, index) => {
+          const next = payload.items[index];
+          if (
+            !next ||
+            line.origin_order_line_id === null ||
+            line.supplement_evidence === null ||
+            String(line.supplier_id) !== next.supplierId ||
+            String(line.item_id) !== next.itemId ||
+            String(line.material_variant_id) !== next.materialVariantId ||
+            JSON.stringify(sortedIds(sources.get(String(line.id)) ?? [])) !==
+              JSON.stringify(sortedIds(next.demandIds))
+          )
+            return orderError('补单只能调整计划量与备注，原采购、物料和需求追溯不能改变');
+          return {
+            lineId: String(line.origin_order_line_id),
+            evidence: line.supplement_evidence,
+            receiptLineId:
+              line.origin_receipt_line_id === null ? null : String(line.origin_receipt_line_id),
+            allocationId:
+              line.origin_allocation_id === null ? null : String(line.origin_allocation_id),
+          };
+        });
       }
       const refs = await this.requireMaterials(payload.items);
       await deleteDraftLines(connection, lines);
-      await insertLines(connection, id, payload.items, refs, context, origin);
+      await insertLines(connection, id, payload.items, refs, context, origins);
       await connection.execute(
         'UPDATE procurement_order SET work_order_id=?,source_type=?,remark=?,version=version+1,updated_by=? WHERE id=? AND version=?',
         [
@@ -356,49 +371,64 @@ export class MysqlPurchaseOrderRepository extends PurchaseOrderRepository {
     context: CommandContext,
   ): Promise<PurchaseOrderCommandResult> {
     return withTransaction(this.pool, async (connection) => {
-      const originalId = await this.locateLineOrder(connection, id);
-      const original = await readOrder(connection, originalId, true);
+      const original = await readOrder(connection, id, true);
       if (!original.ordered_at)
         return orderError(
-          '补单必须追溯已经正式下单的采购行',
+          '补单必须追溯已经正式下单的采购单',
           PROCUREMENT_ERROR_CODES.purchaseOrderState,
         );
-      const lines = await readLines(connection, originalId, true);
-      const line = lines.find((row) => String(row.id) === id);
-      if (!line) return orderError('原采购行不存在', PROCUREMENT_ERROR_CODES.purchaseOrderNotFound);
-      await requireSupplier(connection, String(line.supplier_id));
-      const sources = await readSourceIds(connection, [id], true);
-      const draft: CreatePurchaseOrderPayload = {
+      const selectedIds = sortedIds(payload.items.map((item) => item.originOrderLineId));
+      if (selectedIds.length !== payload.items.length)
+        return orderError('一张补单不能重复引用同一原采购行');
+      const lines = await readLines(connection, id, true);
+      const byId = new Map(lines.map((line) => [String(line.id), line]));
+      const selected = payload.items.map((item) => {
+        const line = byId.get(item.originOrderLineId);
+        if (!line) return orderError('原采购行不属于所选采购单');
+        return line;
+      });
+      await requireSuppliers(
+        connection,
+        selected.map((line) => String(line.supplier_id)),
+      );
+      const sources = await readSourceIds(connection, selectedIds, true);
+      const draft = normalizePurchaseDraft({
         workOrderId: original.work_order_id === null ? null : String(original.work_order_id),
         sourceType: original.source_type,
         remark: payload.remark ?? null,
-        items: [
-          {
-            supplierId: String(line.supplier_id),
-            itemId: String(line.item_id),
-            materialVariantId: String(line.material_variant_id),
-            plannedQuantity: payload.plannedQuantity,
-            demandIds: sources.get(id) ?? [],
-          },
-        ],
-      };
+        items: selected.map((line, index) => ({
+          supplierId: String(line.supplier_id),
+          itemId: String(line.item_id),
+          materialVariantId: String(line.material_variant_id),
+          plannedQuantity: payload.items[index]!.plannedQuantity,
+          demandIds: sources.get(String(line.id)) ?? [],
+        })),
+      });
       const orderId = await insertOrder(connection, draft, context, payload.supplementReason);
       const refs = await this.requireMaterials(draft.items);
-      await requireSupplementEvidence(
+      for (const item of payload.items)
+        await requireSupplementEvidence(
+          connection,
+          item.originOrderLineId,
+          payload.supplementReason,
+          item.originReceiptLineId,
+          item.originAllocationId,
+        );
+      await insertLines(
         connection,
-        id,
-        payload.supplementReason,
-        payload.originReceiptLineId,
-        payload.originAllocationId,
+        orderId,
+        draft.items,
+        refs,
+        context,
+        payload.items.map((item) => ({
+          lineId: item.originOrderLineId,
+          evidence: item.supplementEvidence,
+          receiptLineId: item.originReceiptLineId,
+          allocationId: item.originAllocationId ?? null,
+        })),
       );
-      await insertLines(connection, orderId, draft.items, refs, context, {
-        lineId: id,
-        evidence: payload.supplementEvidence,
-        receiptLineId: payload.originReceiptLineId ?? null,
-        allocationId: payload.originAllocationId ?? null,
-      });
       await auditOrder(connection, context, 'purchase-order.supplement', orderId, null, {
-        originOrderLineId: id,
+        originPurchaseOrderId: id,
         ...payload,
       });
       return { purchaseOrderId: orderId, version: 0 };
@@ -474,16 +504,29 @@ export class MysqlPurchaseOrderRepository extends PurchaseOrderRepository {
     lines: OrderLineRow[],
     sources: Map<string, string[]>,
   ) {
+    let originalOrderId: string | undefined;
+    const originalLineIds = new Set<string>();
     for (const line of lines) {
       if (line.origin_order_line_id === null) return orderError('补单缺少原采购行');
+      const originalLineId = String(line.origin_order_line_id);
+      if (originalLineIds.has(originalLineId))
+        return orderError('一张补单不能重复引用同一原采购行');
+      originalLineIds.add(originalLineId);
       const [[origin]] = await connection.query<
-        (OrderLineRow & {
-          work_order_id: number | null;
-          source_type: string;
-          ordered_at: Date | null;
-        })[]
+        (RowDataPacket &
+          Pick<
+            OrderLineRow,
+            'id' | 'purchase_order_id' | 'supplier_id' | 'item_id' | 'material_variant_id'
+          > & {
+            work_order_id: number | null;
+            source_type: string;
+            ordered_at: Date | null;
+          })[]
       >(
-        `SELECT l.*,o.work_order_id,o.source_type,o.ordered_at FROM procurement_order_line l JOIN procurement_order o ON o.id=l.purchase_order_id WHERE l.id=? FOR SHARE`,
+        `SELECT l.id,l.purchase_order_id,l.supplier_id,l.item_id,l.material_variant_id,
+          o.work_order_id,o.source_type,o.ordered_at
+          FROM procurement_order_line l JOIN procurement_order o ON o.id=l.purchase_order_id
+          WHERE l.id=? FOR SHARE`,
         [line.origin_order_line_id],
       );
       if (
@@ -496,6 +539,9 @@ export class MysqlPurchaseOrderRepository extends PurchaseOrderRepository {
         String(origin.material_variant_id) !== String(line.material_variant_id)
       )
         return orderError('补单原采购身份不一致');
+      if (originalOrderId && originalOrderId !== String(origin.purchase_order_id))
+        return orderError('一张补单只能追溯同一原采购单');
+      originalOrderId = String(origin.purchase_order_id);
       const originalSources = await readSourceIds(connection, [String(origin.id)], true);
       if (
         JSON.stringify(sortedIds(originalSources.get(String(origin.id)) ?? [])) !==

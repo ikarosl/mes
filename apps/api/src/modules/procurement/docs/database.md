@@ -40,6 +40,8 @@
 
 source 和 supplier 等跨行归属在锁内校验，不借展示查询判断资格。采购行当前保存 origin_receipt_line_id（同原采购行组合FK）和 origin_allocation_id（同到货正式分配组合FK）。质量处置引用必须同时有原采购行/原到货且履约方式为 new_arrival；补发依据 supplement_evidence 必填。实际退回通过分配反查，不再在采购行保存 origin_supplier_return_id。关闭事实只冻结关闭证据，累计入库始终由 Inventory 流水事实决定。
 
+同一原采购主单、同一 supplement_reason 可生成多行补单；原因仍属补单主单，具体原采购行、到货、质量退回分配和约定证据分别保存在各补单行。每行只保留一份到货／分配依据，同单 `(item_id,material_variant_id,supplier_id)` 唯一；跨原采购主单合并及不同补因混单由命令拒绝，当前无需为多行新增表或列。创建和下单逐行核对原行与来源身份，草稿修改保留各行依据，不把某行依据复制给其他行。
+
 down 首先要求采购根为空，之后依赖顺序删除触发器、关闭／来源／行／主单和6个订单权限。迁移不写角色或业务种子。已执行 migration 不修改；开发环境允许按统一命令重置。
 
 ## 到货、整批轮次与 Quality 关联
@@ -78,7 +80,7 @@ Quality 当前两表为quality_inspection_case/record，Inventory原表仍由各
 
 既有六张 `procurement_` 表不改名；HTTP `/procurement/purchase-orders`、领域 `PurchaseOrder` 及稳定来源 ID 术语继续使用。表名前缀统一不要求改写所有 API 名称。
 
-采购和到货的历史供应商名称按稳定 supplier_id 读取当前名称，历史读取不因主数据软删除丢失；写入资格继续要求供应商有效。现有 Inventory `provider` 是文本来源资料，不作为供应商身份，也不反推 supplier_id；已确认批次、入库及审计中的历史文本不因供应商改名回写。基础物料名称继续按当前主数据展示，不新增名称快照。
+采购和到货的历史供应商名称按稳定 supplier_id 读取当前名称，历史读取不因主数据软删除丢失；写入资格继续要求供应商有效。Inventory 的[入库明细供应商名称快照](../../inventory/docs/database/inventory-ledger-and-inbound.md#9-inbound_detail)与既有批次 provider 文本只表达历史来源，不作为供应商身份，也不反推 supplier_id；已确认明细、批次及审计中的历史文本不因供应商改名回写。基础物料名称继续按当前主数据展示，不新增名称快照。
 
 本项目处于开发阶段，允许完全重置数据库，无需保留兼容性数据。通过成对 migration 统一调整表名、FK、唯一键、索引、触发器引用及 `scripts/api-data-ownership.mjs`，不修改既有 190001/190002/190004 文件；所有权登记增加当前新表名，并按登记规则保留旧名的历史所有权，不能让旧名成为无所有者对象。新迁移前置检查拒绝未清空且不符合目标结构的旧采购链，不能静默删除事实、批量复制主单供应商冒充新明细确认，或猜测跨工单旧单应归属哪个工单。切换前可重置开发业务数据，再由统一 migration/seed 恢复。
 

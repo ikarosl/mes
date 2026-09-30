@@ -94,6 +94,7 @@
           <template #default="{ row }">
             <PurchaseOrderExpandedRows
               :detail="expansion.entries[row.id]?.detail ?? null"
+              :focused-line-id="focusedOrderId === row.id ? focusedLineId : undefined"
               :loading="expansion.entries[row.id]?.loading ?? false"
               :failed="expansion.entries[row.id]?.failed ?? false"
               :disabled="blocked"
@@ -101,7 +102,8 @@
               @refresh="expansion.read(row.id, true)"
               @close-line="handleAction(row.id, 'close', $event)"
               @supplements="showSupplements"
-              @excess-supplement="openExcessSupplement(row.id, $event)"
+              @supplement="openSupplement(row.id, $event)"
+              @supplement-origin="openSupplement($event, undefined, 'excess_purchase')"
               @receipts="goReceipts(row.id)"
               @source-receipt="goSourceReceipt"
               @navigate="navigate"
@@ -227,9 +229,11 @@
       ref="supplements"
       @navigate="navigate"
     />
-    <ReceiptExcessSupplementDialog
-      ref="excessSupplement"
+    <PurchaseOrderSupplementDialog
+      ref="supplement"
       @saved="saved"
+      @navigate="navigate"
+      @source-order="openSupplement($event.orderId, undefined, $event.reason ?? 'excess_purchase')"
     />
   </section>
 </template>
@@ -262,7 +266,7 @@ import PurchaseOrderEditorDialog from './components/PurchaseOrderEditorDialog.vu
 import PurchaseOrderActionDialog from './components/PurchaseOrderActionDialog.vue';
 import PurchaseOrderExpandedRows from './components/PurchaseOrderExpandedRows.vue';
 import RelatedSupplementsDialog from './components/RelatedSupplementsDialog.vue';
-import ReceiptExcessSupplementDialog from './components/ReceiptExcessSupplementDialog.vue';
+import PurchaseOrderSupplementDialog from './components/PurchaseOrderSupplementDialog.vue';
 import { usePurchaseOrderExpansion } from './composables/usePurchaseOrderExpansion';
 import { useAuthStore } from '../../stores/auth';
 
@@ -291,37 +295,56 @@ const displayRows = computed(() =>
 );
 const editor = ref<InstanceType<typeof PurchaseOrderEditorDialog>>(),
   actions = ref<InstanceType<typeof PurchaseOrderActionDialog>>(),
-  excessSupplement = ref<InstanceType<typeof ReceiptExcessSupplementDialog>>(),
+  supplement = ref<InstanceType<typeof PurchaseOrderSupplementDialog>>(),
   supplements = ref<InstanceType<typeof RelatedSupplementsDialog>>();
 const navigating = ref(false);
+const focusedOrderId = ref('');
+const focusedLineId = ref('');
+let pendingLocate = false;
+const finishNavigation = (): void => {
+  navigating.value = false;
+  if (pendingLocate) {
+    pendingLocate = false;
+    void locate();
+  }
+};
 const blocked = computed(
   () =>
     navigating.value ||
-    Boolean(editor.value?.locked || actions.value?.locked || excessSupplement.value?.locked),
+    Boolean(editor.value?.locked || actions.value?.locked || supplement.value?.locked),
 );
 const releaseDialogs = async (): Promise<boolean> => {
-  if (editor.value?.locked || actions.value?.locked || excessSupplement.value?.locked) {
+  if (editor.value?.locked || actions.value?.locked || supplement.value?.locked) {
     EMessage.warning('请先确认当前操作结果，再切换采购记录');
     return false;
   }
   if (editor.value?.visible && !(await editor.value.close())) return false;
   if (actions.value?.visible && !(await actions.value.close())) return false;
-  if (excessSupplement.value?.visible && !(await excessSupplement.value.close())) return false;
+  if (supplement.value?.visible && !(await supplement.value.close())) return false;
+  if (supplements.value?.visible) supplements.value.close();
   return true;
 };
-const navigate = async (id: string): Promise<boolean> => {
+const navigate = async (id: string, lineId?: string): Promise<boolean> => {
   if (navigating.value) return false;
   navigating.value = true;
   try {
     if (!(await releaseDialogs())) return false;
     const loaded = await expansion.focus(id);
     if (loaded) {
+      if (lineId && !expansion.entries[id]?.detail?.items.some((item) => item.id === lineId)) {
+        EMessage.warning('指定采购行已不在该采购单中，请重新核对来源');
+        return false;
+      }
+      focusedOrderId.value = lineId ? id : '';
+      focusedLineId.value = lineId ?? '';
       await nextTick();
-      document.getElementById(`purchase-order-${id}`)?.scrollIntoView({ block: 'nearest' });
+      document
+        .getElementById(lineId ? `purchase-order-line-${lineId}` : `purchase-order-${id}`)
+        ?.scrollIntoView({ block: 'nearest' });
     }
     return loaded;
   } finally {
-    navigating.value = false;
+    finishNavigation();
   }
 };
 const create = async (
@@ -336,7 +359,7 @@ const create = async (
     await editor.value?.open(type, undefined, demandIds, workOrderId);
     return true;
   } finally {
-    navigating.value = false;
+    finishNavigation();
   }
 };
 const edit = async (id: string): Promise<void> => {
@@ -352,7 +375,7 @@ const edit = async (id: string): Promise<void> => {
     }
     await editor.value?.open(value.sourceType, value);
   } finally {
-    navigating.value = false;
+    finishNavigation();
   }
 };
 const handleAction = async (id: string, action: 'place' | 'cancel' | 'close', lineId?: string) => {
@@ -362,28 +385,31 @@ const handleAction = async (id: string, action: 'place' | 'cancel' | 'close', li
     if (!(await releaseDialogs())) return;
     await actions.value?.open(id, action, lineId);
   } finally {
-    navigating.value = false;
+    finishNavigation();
   }
 };
 const saved = async (id: string): Promise<void> => {
   await load({ refreshExpanded: false });
   await expansion.focus(id);
 };
-const openExcessSupplement = async (
+const openSupplement = async (
   orderId: string,
-  lineId: string,
+  lineId?: string,
+  reason?: PurchaseOrderSupplementReason,
   receiptLineId?: string,
+  allocationId?: string,
 ): Promise<boolean> => {
   if (navigating.value) return false;
   navigating.value = true;
   try {
     if (!(await releaseDialogs())) return false;
     if (!(await expansion.focus(orderId))) return false;
-    const detail = expansion.entries[orderId]?.detail;
-    if (!detail) return false;
-    return (await excessSupplement.value?.open(detail, lineId, receiptLineId)) ?? false;
+    return (
+      (await supplement.value?.open(orderId, { lineId, reason, receiptLineId, allocationId })) ??
+      false
+    );
   } finally {
-    navigating.value = false;
+    finishNavigation();
   }
 };
 const actionChanged = async (id: string, latest: PurchaseOrderDetail | null): Promise<void> => {
@@ -410,53 +436,130 @@ const goSourceReceipt = async (id: string) => {
     await router.push({ name: 'procurement-receipts', query: { receiptLineId: id } });
 };
 let consumed = '';
+let routeRevision = 0;
 let accepted: {
   purchaseOrderId?: string;
+  purchaseOrderLineId?: string;
   demandId?: string;
   workOrderId?: string;
   supplementLineId?: string;
+  supplementReason?: string;
   receiptLineId?: string;
+  allocationId?: string;
 } = {};
 const locate = async (): Promise<void> => {
+  const revision = routeRevision;
   if (route.name !== 'procurement-orders') return;
   await nextTick();
+  if (revision !== routeRevision || route.name !== 'procurement-orders') return;
   const orderId =
     typeof route.query.purchaseOrderId === 'string' ? route.query.purchaseOrderId : '';
+  const orderLineId =
+    typeof route.query.purchaseOrderLineId === 'string' ? route.query.purchaseOrderLineId : '';
   const demandId = typeof route.query.demandId === 'string' ? route.query.demandId : '';
   const workOrderId = typeof route.query.workOrderId === 'string' ? route.query.workOrderId : '';
   const supplementLineId =
     typeof route.query.supplementLineId === 'string' ? route.query.supplementLineId : '';
   const receiptLineId =
     typeof route.query.receiptLineId === 'string' ? route.query.receiptLineId : '';
-  const token = JSON.stringify([orderId, demandId, workOrderId, supplementLineId, receiptLineId]);
-  if (token === consumed || (!orderId && !demandId)) return;
+  const supplementReason =
+    route.query.supplementReason === 'excess_purchase' ||
+    route.query.supplementReason === 'quality_replacement'
+      ? route.query.supplementReason
+      : '';
+  const allocationId = typeof route.query.allocationId === 'string' ? route.query.allocationId : '';
+  const token = JSON.stringify([
+    orderId,
+    orderLineId,
+    demandId,
+    workOrderId,
+    supplementLineId,
+    supplementReason,
+    receiptLineId,
+    allocationId,
+  ]);
+  if (!orderId && !demandId) return;
+  if (token === consumed) {
+    if (supplementLineId && supplement.value?.visible) return;
+    if (demandId && editor.value?.visible) return;
+    if (
+      orderId &&
+      !editor.value?.visible &&
+      !actions.value?.visible &&
+      !supplement.value?.visible &&
+      !supplements.value?.visible &&
+      expansion.expanded.value.includes(orderId) &&
+      (!orderLineId || focusedLineId.value === orderLineId)
+    ) {
+      document
+        .getElementById(
+          orderLineId ? `purchase-order-line-${orderLineId}` : `purchase-order-${orderId}`,
+        )
+        ?.scrollIntoView({ block: 'nearest' });
+      return;
+    }
+  }
+  if (navigating.value) {
+    pendingLocate = true;
+    return;
+  }
   consumed = token;
   const succeeded = orderId
     ? supplementLineId
-      ? await openExcessSupplement(orderId, supplementLineId, receiptLineId || undefined)
-      : await navigate(orderId)
+      ? await openSupplement(
+          orderId,
+          supplementLineId,
+          supplementReason || undefined,
+          receiptLineId || undefined,
+          allocationId || undefined,
+        )
+      : await navigate(orderId, orderLineId || undefined)
     : await create('demand', [demandId], workOrderId || undefined);
+  if (
+    revision !== routeRevision ||
+    route.name !== 'procurement-orders' ||
+    JSON.stringify([
+      typeof route.query.purchaseOrderId === 'string' ? route.query.purchaseOrderId : '',
+      typeof route.query.purchaseOrderLineId === 'string' ? route.query.purchaseOrderLineId : '',
+      typeof route.query.demandId === 'string' ? route.query.demandId : '',
+      typeof route.query.workOrderId === 'string' ? route.query.workOrderId : '',
+      typeof route.query.supplementLineId === 'string' ? route.query.supplementLineId : '',
+      typeof route.query.supplementReason === 'string' ? route.query.supplementReason : '',
+      typeof route.query.receiptLineId === 'string' ? route.query.receiptLineId : '',
+      typeof route.query.allocationId === 'string' ? route.query.allocationId : '',
+    ]) !== token
+  )
+    return;
   if (succeeded)
     accepted = orderId
       ? {
           purchaseOrderId: orderId,
-          ...(supplementLineId ? { supplementLineId, receiptLineId } : {}),
+          ...(orderLineId ? { purchaseOrderLineId: orderLineId } : {}),
+          ...(supplementLineId
+            ? { supplementLineId, supplementReason, receiptLineId, allocationId }
+            : {}),
         }
       : { demandId, workOrderId };
   else {
     const nextQuery = { ...route.query };
     delete nextQuery.purchaseOrderId;
+    delete nextQuery.purchaseOrderLineId;
     delete nextQuery.demandId;
     delete nextQuery.workOrderId;
     delete nextQuery.supplementLineId;
+    delete nextQuery.supplementReason;
     delete nextQuery.receiptLineId;
+    delete nextQuery.allocationId;
     await router.replace({ query: { ...nextQuery, ...accepted } });
     consumed = JSON.stringify([
       accepted.purchaseOrderId ?? '',
+      accepted.purchaseOrderLineId ?? '',
       accepted.demandId ?? '',
       accepted.workOrderId ?? '',
       accepted.supplementLineId ?? '',
+      accepted.supplementReason ?? '',
       accepted.receiptLineId ?? '',
+      accepted.allocationId ?? '',
     ]);
   }
 };
@@ -464,15 +567,19 @@ watch(
   () => [
     route.name,
     route.query.purchaseOrderId,
+    route.query.purchaseOrderLineId,
     route.query.demandId,
     route.query.workOrderId,
     route.query.supplementLineId,
+    route.query.supplementReason,
     route.query.receiptLineId,
+    route.query.allocationId,
   ],
   () => {
+    routeRevision += 1;
     void locate();
   },
-  { immediate: true },
+  { immediate: true, flush: 'sync' },
 );
 onActivated(() => {
   void locate();
@@ -505,5 +612,11 @@ onActivated(() => {
   height: 48px;
   background: #f9fafb;
   color: #1f2937;
+}
+.data-table {
+  container-type: inline-size;
+}
+.data-table :deep(.el-table__expanded-cell:has(> .order-lines)) {
+  padding: 0;
 }
 </style>

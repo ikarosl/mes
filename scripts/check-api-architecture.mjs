@@ -61,6 +61,7 @@ const knownIdempotencyScopes = [
   'procurement.receipt.return.v4',
   'procurement.inbound.confirm.v5',
   'procurement.inbound.confirm.v4',
+  'procurement.purchase-order.supplement.v4',
   'procurement.purchase-order.supplement.v3',
   'procurement.receipt.confirm.v2',
   'procurement.receipt.correct.v2',
@@ -84,7 +85,9 @@ const knownIdempotencyScopes = [
   'procurement.inbound.confirm.v2',
 
   'procurement.purchase-order.create.v2',
+  'procurement.purchase-order.update.v3',
   'procurement.purchase-order.update.v2',
+  'procurement.purchase-order.place.v2',
   'procurement.purchase-order.place.v1',
   'procurement.purchase-order.cancel.v1',
   'procurement.purchase-order-line.close.v1',

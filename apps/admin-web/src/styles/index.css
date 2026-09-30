@@ -176,6 +176,121 @@ body {
   border-bottom: 1px solid #f0f2f5;
 }
 
+/* Opt-in disclosure treatment for business groups and longer evidence previews. */
+button.business-disclosure,
+details.business-disclosure > summary,
+.business-collapse .el-collapse-item__header {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 7px 10px;
+  border: 1px solid var(--el-color-primary-light-7);
+  border-radius: 6px;
+  background: var(--el-color-primary-light-9);
+  color: var(--el-text-color-primary);
+  cursor: pointer;
+  font: inherit;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease;
+}
+button.business-disclosure:hover,
+details.business-disclosure > summary:hover,
+.business-collapse .el-collapse-item__header:hover {
+  border-color: var(--el-color-primary-light-5);
+  background: var(--el-color-primary-light-8);
+}
+button.business-disclosure:focus-visible,
+details.business-disclosure > summary:focus-visible,
+.business-collapse .el-collapse-item__header:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 2px;
+}
+button.business-disclosure .fold-icon,
+button.business-disclosure .fold-action,
+.business-collapse .el-collapse-item__arrow {
+  color: var(--el-color-primary);
+}
+button.business-disclosure .fold-icon {
+  width: 12px;
+  font-size: 12px;
+  text-align: center;
+}
+button.business-disclosure .fold-action {
+  font-size: 12px;
+}
+details.business-disclosure > summary {
+  font-size: 14px;
+  list-style: none;
+}
+details.business-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+details.business-disclosure > summary::before {
+  content: '›';
+  width: 12px;
+  color: var(--el-color-primary);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1;
+  text-align: center;
+  transition: transform 0.15s ease;
+}
+details.business-disclosure[open] > summary::before {
+  transform: rotate(90deg);
+}
+.business-collapse.el-collapse {
+  border-top: 0;
+  border-bottom: 0;
+}
+.business-collapse .el-collapse-item__header {
+  display: flex;
+  height: auto;
+  min-height: 44px;
+  margin-top: 8px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+.business-collapse .el-collapse-item__arrow {
+  font-size: 14px;
+}
+.business-collapse .el-collapse-item__wrap {
+  border-bottom-color: var(--el-border-color-lighter);
+}
+.business-expandable-table .el-table__expand-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--el-color-primary-light-7);
+  border-radius: 6px;
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease;
+}
+.business-expandable-table .el-table__expand-icon--expanded {
+  transform: none;
+}
+.business-expandable-table .el-table__expand-icon:hover {
+  border-color: var(--el-color-primary-light-5);
+  background: var(--el-color-primary-light-8);
+}
+.business-expandable-table .el-table__expand-icon:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 2px;
+}
+.business-expandable-table .el-table__expand-icon .el-icon {
+  color: var(--el-color-primary);
+  transition: transform var(--el-transition-duration-fast) ease-in-out;
+}
+.business-expandable-table .el-table__expand-icon--expanded .el-icon {
+  transform: rotate(90deg);
+}
+
 .route-dialog-workbench > .el-dialog__footer {
   border-top: 1px solid var(--el-border-color-lighter);
   padding-top: 12px;

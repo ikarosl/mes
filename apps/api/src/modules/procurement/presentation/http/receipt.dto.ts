@@ -55,6 +55,17 @@ export class ReceiptListQueryDto extends PageQueryDto {
   @IsOptional() @Matches(ID) supplierId?: string;
   @IsOptional() @Matches(ID) purchaseOrderId?: string;
 }
+export class ReceiptAllocationCandidateQueryDto {
+  @IsOptional() @Transform(trim) @IsString() @MaxLength(100) keyword?: string;
+  @IsOptional()
+  @Transform(csv)
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(100)
+  @ArrayUnique()
+  @Matches(ID, { each: true })
+  includeIds?: string[];
+}
 export class ReceiptReleaseQueryDto extends ReceiptListQueryDto {
   @IsOptional() @Matches(ID) receiptLineId?: string;
   @IsOptional()
@@ -70,6 +81,9 @@ export class InboundInspectionQueryDto extends ReceiptListQueryDto {
   @IsOptional()
   @IsIn(RECEIPT_ROUND_STATUSES)
   roundStatus?: ProcurementInboundInspectionQuery['roundStatus'];
+  @IsOptional()
+  @IsIn(RECEIPT_ROUND_STATUSES)
+  currentRoundStatus?: ProcurementInboundInspectionQuery['currentRoundStatus'];
   @IsOptional()
   @IsIn(QUALITY_INBOUND_TASK_STATUSES)
   status?: ProcurementInboundInspectionQuery['status'];

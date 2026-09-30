@@ -81,11 +81,19 @@ export const listPurchaseOrders = async (
     where.push('o.source_type=?');
     params.push(query.sourceType);
   }
-  if (query.originOrderLineId) {
+  if (query.originOrderLineId || query.originAllocationId) {
+    const originFilters = ['origin_link.purchase_order_id=o.id'];
+    if (query.originOrderLineId) {
+      originFilters.push('origin_link.origin_order_line_id=?');
+      params.push(query.originOrderLineId);
+    }
+    if (query.originAllocationId) {
+      originFilters.push('origin_link.origin_allocation_id=?');
+      params.push(query.originAllocationId);
+    }
     where.push(
-      'EXISTS(SELECT 1 FROM procurement_order_line origin_link WHERE origin_link.purchase_order_id=o.id AND origin_link.origin_order_line_id=?)',
+      `EXISTS(SELECT 1 FROM procurement_order_line origin_link WHERE ${originFilters.join(' AND ')})`,
     );
-    params.push(query.originOrderLineId);
   }
   const [[count]] = await db.query<(RowDataPacket & { total: number })[]>(
     `SELECT COUNT(*) total FROM procurement_order o WHERE ${where.join(' AND ')}`,

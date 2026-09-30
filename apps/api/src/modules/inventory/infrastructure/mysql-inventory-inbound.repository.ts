@@ -6,6 +6,7 @@ import type {
   InventoryBatchItem,
   InventoryBatchQuery,
   PageResult,
+  PurchaseInboundDetailItem,
   PurchaseInboundOrderItem,
   PurchaseInboundOrderQuery,
 } from '@company/contracts';
@@ -14,13 +15,16 @@ import { DATABASE_POOL } from '../../../infrastructure/database/database.module.
 import { InventoryInboundRepository } from '../application/ports/inventory-inbound.repository.js';
 import { InventoryDomainError } from '../domain/inventory.errors.js';
 import { getInventoryBatch, listInventoryBatches } from './queries/mysql-inventory-batch.query.js';
+import {
+  loadPurchaseInboundSources,
+  loadPurchaseInboundSupplierIds,
+} from './queries/purchase-inbound-source.query.js';
 import { fixedIntegerQuantity, integerQuantity } from '@company/utils';
 
 type OrderRow = RowDataPacket & {
   id: number;
   inbound_no: string;
   source_type: 'purchased';
-  provider: string | null;
   status: 'pending' | 'completed' | 'cancelled';
   inbound_at: Date | null;
   operator_id: number | null;
@@ -50,6 +54,7 @@ type DetailRow = RowDataPacket & {
   procurement_receipt_revision_id: number | null;
   procurement_inspection_id: number | null;
   procurement_allocation_id: number | null;
+  supplier_name_snapshot: string | null;
 };
 @Injectable()
 export class MysqlInventoryInboundRepository extends InventoryInboundRepository {
@@ -63,7 +68,9 @@ export class MysqlInventoryInboundRepository extends InventoryInboundRepository 
     const where = ["o.source_type='purchased'"];
     const params: Array<string | number | null> = [];
     if (query.keyword) {
-      where.push('(o.inbound_no LIKE ? OR o.provider LIKE ?)');
+      where.push(`(o.inbound_no LIKE ? OR EXISTS (
+        SELECT 1 FROM inbound_detail supplier_detail
+        WHERE supplier_detail.inbound_id=o.id AND supplier_detail.supplier_name_snapshot LIKE ?))`);
       params.push(`%${query.keyword}%`, `%${query.keyword}%`);
     }
     if (query.status) {
@@ -85,8 +92,17 @@ export class MysqlInventoryInboundRepository extends InventoryInboundRepository 
       this.pool,
       rows.map((row) => String(row.id)),
     );
+    const detailIds = [...details.values()].flatMap((items) =>
+      items.map((item) => String(item.id)),
+    );
+    const [sources, supplierIds] = await Promise.all([
+      loadPurchaseInboundSources(this.pool, detailIds),
+      loadPurchaseInboundSupplierIds(this.pool, detailIds),
+    ]);
     return {
-      items: rows.map((row) => this.mapOrder(row, details.get(String(row.id)) ?? [])),
+      items: rows.map((row) =>
+        this.mapOrder(row, details.get(String(row.id)) ?? [], sources, supplierIds),
+      ),
       total: Number(count?.total ?? 0),
       page,
       pageSize,
@@ -153,20 +169,39 @@ export class MysqlInventoryInboundRepository extends InventoryInboundRepository 
     row: OrderRow,
   ): Promise<PurchaseInboundOrderItem> {
     const details = await this.loadDetails(db, String(row.id));
-    return this.mapOrder(row, details);
+    const detailIds = details.map((detail) => String(detail.id));
+    const [sources, supplierIds] = await Promise.all([
+      loadPurchaseInboundSources(db, detailIds),
+      loadPurchaseInboundSupplierIds(db, detailIds),
+    ]);
+    return this.mapOrder(row, details, sources, supplierIds);
   }
-  private mapOrder(row: OrderRow, details: DetailRow[]): PurchaseInboundOrderItem {
+  private mapOrder(
+    row: OrderRow,
+    details: DetailRow[],
+    sources: Map<string, NonNullable<PurchaseInboundDetailItem['procurementSource']>>,
+    supplierIds: Map<string, string>,
+  ): PurchaseInboundOrderItem {
     const summary = new Map<string, number>();
+    const suppliers = new Map<string, { supplierId: string | null; supplierName: string }>();
     for (const x of details)
       summary.set(
         x.unit_snapshot,
         (summary.get(x.unit_snapshot) ?? 0) + integerQuantity(x.inbound_number),
       );
+    for (const x of details) {
+      if (x.supplier_name_snapshot === null) continue;
+      const supplierId = supplierIds.get(String(x.id)) ?? null;
+      suppliers.set(supplierId ?? `name:${x.supplier_name_snapshot}`, {
+        supplierId,
+        supplierName: x.supplier_name_snapshot,
+      });
+    }
     return {
       inboundId: String(row.id),
       inboundNo: row.inbound_no,
       sourceType: 'purchased',
-      provider: row.provider,
+      suppliers: [...suppliers.values()],
       status: row.status,
       inboundAt: iso(row.inbound_at),
       operatorId: row.operator_id === null ? null : String(row.operator_id),
@@ -206,6 +241,9 @@ export class MysqlInventoryInboundRepository extends InventoryInboundRepository 
         procurementReceiptRevisionId: idOrNull(x.procurement_receipt_revision_id),
         procurementInspectionId: idOrNull(x.procurement_inspection_id),
         procurementAllocationId: idOrNull(x.procurement_allocation_id),
+        supplierId: supplierIds.get(String(x.id)) ?? null,
+        supplierName: x.supplier_name_snapshot,
+        procurementSource: sources.get(String(x.id)) ?? null,
       })),
     };
   }

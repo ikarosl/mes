@@ -32,15 +32,15 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="整批阶段">
+        <el-form-item label="当前整批阶段">
           <el-select
-            v-model="roundStatus"
+            v-model="currentRoundStatus"
             clearable
             placeholder="全部"
             style="width: 170px"
           >
             <el-option
-              v-for="value in RECEIPT_ROUND_STATUSES"
+              v-for="value in currentRoundStatuses"
               :key="value"
               :value="value"
               :label="RECEIPT_ROUND_STATUS_LABELS[value]"
@@ -63,9 +63,13 @@
       class="table-panel"
     >
       <TableToolbar>
-        <template #actions
-          ><span class="help">按采购单浏览本页检验对象；放行后仍由库管核对定稿。</span></template
-        >
+        <template #actions>
+          <InlineHint>
+            本页
+            <strong>{{ rows.length }}</strong>
+            项检验事项（含待检），按采购单分组（同单可跨页）；<strong>放行后仍需库管定稿</strong>。
+          </InlineHint>
+        </template>
         <template #tools>
           <el-button
             text
@@ -87,12 +91,9 @@
           />
         </template>
       </TableToolbar>
-      <div class="page-scope">
-        当前页 {{ rows.length }} 条记录，按原采购单分组；同一采购单的其他到货明细可能在别页。
-      </div>
       <el-empty
         v-if="!groups.length && !loading"
-        description="当前筛选下暂无来料检验记录"
+        description="当前筛选下暂无来料检验事项"
         :image-size="72"
       />
       <div
@@ -102,23 +103,28 @@
       >
         <div class="document-heading">
           <button
-            class="fold-button"
+            class="fold-button business-disclosure"
             type="button"
             :aria-expanded="!collapsedPurchases.has(group.purchaseOrderId)"
             @click="togglePurchase(group.purchaseOrderId)"
           >
-            <span class="fold-icon">{{
-              collapsedPurchases.has(group.purchaseOrderId) ? '▶' : '▼'
-            }}</span>
+            <span
+              class="fold-icon"
+              aria-hidden="true"
+              >{{ collapsedPurchases.has(group.purchaseOrderId) ? '▶' : '▼' }}</span
+            >
             <strong>采购单 {{ group.purchaseNo }}</strong>
+            <span class="fold-action">{{
+              collapsedPurchases.has(group.purchaseOrderId) ? '展开' : '收起'
+            }}</span>
           </button>
           <span class="document-meta"
-            >本页含本单 {{ group.records }} 条记录 · {{ group.lines.length }} 条到货明细</span
+            >本页含本单 {{ group.records }} 项检验事项 · {{ group.lines.length }} 条到货明细</span
           >
           <span class="document-meta">本页供应商：{{ group.suppliers.join('、') }}</span>
           <span class="document-counts"
-            >本页待检 {{ group.pending }} 条 · 检验中 {{ group.reviewing }} 条 · 质量阻断
-            {{ group.blocked }} 条</span
+            >本页所涉到货行当前阶段：待检 / 待复检 {{ group.pending }} 条 · 检验中
+            {{ group.reviewing }} 条 · 质量阻断 {{ group.blocked }} 条</span
           >
         </div>
         <div
@@ -131,14 +137,14 @@
             class="receipt-group"
           >
             <div class="receipt-heading">
-              到货单 {{ receipt.receiptNo }} <span>本页 {{ receipt.records }} 条记录</span>
+              到货单 {{ receipt.receiptNo }} <span>本页 {{ receipt.records }} 项检验事项</span>
             </div>
             <div
               class="line-grid column-heading"
               aria-hidden="true"
             >
               <span>物料 / 精确版本</span><span>实际供应商</span><span>申报参考量</span
-              ><span>当前轮 / 状态</span><span>检验结论</span><span>下一步</span>
+              ><span>当前处理 / 整批阶段</span><span>检验记录 / 结论</span><span>下一步</span>
             </div>
             <div
               v-for="line in receipt.lines"
@@ -150,54 +156,82 @@
                 <div class="identity">
                   <strong>{{ line.base.itemName }}</strong
                   ><span>{{ line.base.itemCode }} · {{ line.base.materialVariantCode }}</span>
+                  <span class="source-id"
+                    >第 {{ line.base.receiptLineNo }} 行 · 到货明细 ID：{{
+                      line.receiptLineId
+                    }}</span
+                  >
                 </div>
                 <div>{{ line.base.supplierName }}</div>
                 <div>
-                  <template v-if="line.current"
-                    >{{ Number(line.current.coveredQuantity) }} {{ line.current.unit }}</template
+                  {{ Number((line.current ?? line.base).coveredQuantity) }} {{ line.base.unit }}
+                  <span
+                    v-if="line.current?.isInherited"
+                    class="reference-note"
+                    >沿用检验的原申报量，非当前剩余量</span
                   >
                   <span
-                    v-else
-                    class="muted"
-                    >当前轮未列于本页</span
+                    v-else-if="!line.current"
+                    class="reference-note"
+                    >本页历史项的原申报量，非当前剩余量</span
                   >
                 </div>
                 <div>
-                  <template v-if="line.current">
-                    <span class="round-reference">本轮 #{{ line.current.roundId }}</span>
-                    <el-tag
-                      size="small"
-                      :type="roundTagType(line.current.roundStatus)"
-                      >{{ RECEIPT_ROUND_STATUS_LABELS[line.current.roundStatus] }}</el-tag
+                  <span class="round-reference"
+                    >当前处理第 {{ line.base.currentRound.roundNo }} 轮</span
+                  >
+                  <el-tag
+                    size="small"
+                    :type="receiptRoundTagType(line.base.currentRound.status)"
+                    :effect="receiptRoundTagEffect(line.base.currentRound.status)"
+                    >{{ RECEIPT_ROUND_STATUS_LABELS[line.base.currentRound.status] }}</el-tag
+                  >
+                  <span
+                    v-if="!line.current"
+                    class="round-absence muted"
+                    >当前检验或待检项未列在本页</span
+                  >
+                </div>
+                <div class="inspection-result">
+                  <template v-if="line.current?.case?.inspection">
+                    <el-button
+                      class="inspection-id-link"
+                      link
+                      type="primary"
+                      @click="navigate(line.receiptLineId, line.current)"
+                      >检验记录 ID {{ line.current.case.inspection.id }}</el-button
+                    >
+                    <span
+                      >{{ line.current.isInherited ? '当前采用 · 沿用此前检验' : '当前采用' }} ·
+                      {{
+                        QUALITY_RELEASE_DECISION_LABELS[
+                          line.current.case.inspection.releaseDecision
+                        ]
+                      }}</span
                     >
                   </template>
-                  <span
-                    v-else
-                    class="muted"
-                    >仅有本页历史记录</span
-                  >
-                </div>
-                <div>
-                  <template v-if="line.current?.case?.inspection"
-                    ><span class="basis-label">本轮结果</span
-                    >{{
-                      QUALITY_RELEASE_DECISION_LABELS[line.current.case.inspection.releaseDecision]
-                    }}</template
-                  >
-                  <template v-else-if="line.latestHistoricalDecision">
-                    <span class="basis-label">最近历史结论 · 非本轮</span>
-                    {{ QUALITY_RELEASE_DECISION_LABELS[line.latestHistoricalDecision] }}
+                  <template v-else>
+                    <span class="muted">{{
+                      line.current ? '当前办理尚未产生检验记录' : '当前检验未列在本页'
+                    }}</span>
+                    <template v-if="line.pageHistoricalInspection?.case?.inspection">
+                      <el-button
+                        class="inspection-id-link"
+                        link
+                        type="primary"
+                        @click="navigate(line.receiptLineId, line.pageHistoricalInspection)"
+                        >历史检验记录 ID
+                        {{ line.pageHistoricalInspection.case.inspection.id }}</el-button
+                      >
+                      <span class="historical-decision"
+                        >本页历史结果 · 非当前采用：{{
+                          QUALITY_RELEASE_DECISION_LABELS[
+                            line.pageHistoricalInspection.case.inspection.releaseDecision
+                          ]
+                        }}</span
+                      >
+                    </template>
                   </template>
-                  <span
-                    v-else-if="line.current"
-                    class="muted"
-                    >本轮尚无检验结果</span
-                  >
-                  <span
-                    v-else
-                    class="muted"
-                    >请在详情核对当前依据</span
-                  >
                 </div>
                 <div>
                   <el-button
@@ -213,11 +247,16 @@
                 class="history-area"
               >
                 <button
-                  class="history-toggle"
+                  class="history-toggle business-disclosure"
                   type="button"
                   :aria-expanded="expandedHistory.has(line.receiptLineId)"
                   @click="toggleHistory(line.receiptLineId)"
                 >
+                  <span
+                    class="fold-icon"
+                    aria-hidden="true"
+                    >{{ expandedHistory.has(line.receiptLineId) ? '▼' : '▶' }}</span
+                  >
                   {{ expandedHistory.has(line.receiptLineId) ? '收起' : '查看' }}本页历史
                   {{ line.history.length }} 条
                 </button>
@@ -229,9 +268,10 @@
                     v-for="record in line.history"
                     :key="record.taskKey"
                     class="history-row"
+                    :class="{ selected: highlightedCaseId === record.case?.id }"
                   >
                     <span
-                      >历史轮 #{{ record.roundId }} ·
+                      >处理第 {{ record.sourceRoundNo }} 轮 ·
                       {{
                         record.case
                           ? QUALITY_INBOUND_CASE_TYPE_LABELS[record.case.caseType]
@@ -243,11 +283,21 @@
                         ? QUALITY_INBOUND_CASE_STATUS_LABELS[record.case.status]
                         : RECEIPT_ROUND_STATUS_LABELS[record.roundStatus]
                     }}</span>
-                    <span>{{
-                      record.case?.inspection
-                        ? QUALITY_RELEASE_DECISION_LABELS[record.case.inspection.releaseDecision]
-                        : '无检验结果'
-                    }}</span>
+                    <span class="inspection-result">
+                      <template v-if="record.case?.inspection">
+                        <el-button
+                          class="inspection-id-link"
+                          link
+                          type="primary"
+                          @click="navigate(record.receiptLineId, record)"
+                          >检验记录 ID {{ record.case.inspection.id }}</el-button
+                        >
+                        <span>{{
+                          QUALITY_RELEASE_DECISION_LABELS[record.case.inspection.releaseDecision]
+                        }}</span>
+                      </template>
+                      <span v-else>未产生检验记录</span>
+                    </span>
                     <span>{{
                       formatDateTimeForDisplay(record.case?.inspection?.inspectedAt)
                     }}</span>
@@ -282,11 +332,7 @@
 import { computed, nextTick, onActivated, onScopeDispose, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { Refresh } from '@element-plus/icons-vue';
-import type {
-  ProcurementInboundInspectionItem,
-  QualityReleaseDecision,
-  ReceiptRoundStatus,
-} from '@company/contracts';
+import type { ProcurementInboundInspectionItem } from '@company/contracts';
 import {
   QUALITY_INBOUND_CASE_STATUSES,
   QUALITY_INBOUND_CASE_STATUS_LABELS,
@@ -297,21 +343,31 @@ import {
 } from '@company/constants';
 import { procurementApi } from '../../api/procurement';
 import TableToolbar from '../../components/TableToolbar.vue';
+import InlineHint from '../../components/InlineHint.vue';
 import PaginationFooter from '../../components/PaginationFooter.vue';
 import { EMessage } from '../../utils/message';
 import { formatDateTimeForDisplay } from '../../utils/date';
 import { useTabsStore } from '../../stores/tabs';
 import { useLatestReadRequest } from '../../composables/requests/useLatestReadRequest';
 import { useInboundInspectionsList } from '../procurement/composables/useInboundInspectionsList';
+import {
+  receiptRoundTagType,
+  receiptRoundTagEffect,
+} from '../procurement/receipt-round-presentation';
 import InboundInspectionDetailDialog from '../procurement/components/InboundInspectionDetailDialog.vue';
 
 defineOptions({ name: 'InboundInspectionsPage' });
+const currentRoundStatuses = RECEIPT_ROUND_STATUSES.filter((value) => value !== 'superseded');
+const isCurrentItem = (item: ProcurementInboundInspectionItem): boolean =>
+  item.isCurrentlyAdopted ||
+  (item.roundId === item.currentRound.id &&
+    (item.taskKind === 'uninspected' || item.case?.status === 'reviewing'));
 type InspectionLine = {
   receiptLineId: string;
   base: ProcurementInboundInspectionItem;
   current: ProcurementInboundInspectionItem | null;
   history: ProcurementInboundInspectionItem[];
-  latestHistoricalDecision: QualityReleaseDecision | null;
+  pageHistoricalInspection: ProcurementInboundInspectionItem | null;
 };
 type ReceiptGroup = {
   receiptId: string;
@@ -335,7 +391,7 @@ const route = useRoute(),
 const {
   keyword,
   status,
-  roundStatus,
+  currentRoundStatus,
   rows,
   page,
   pageSize,
@@ -351,6 +407,7 @@ const detail = ref<InstanceType<typeof InboundInspectionDetailDialog>>();
 const collapsedPurchases = ref(new Set<string>());
 const expandedHistory = ref(new Set<string>());
 const highlightedLineId = ref('');
+const highlightedCaseId = ref('');
 const groups = computed<PurchaseGroup[]>(() => {
   const purchases = new Map<string, PurchaseGroup>();
   const receipts = new Map<string, ReceiptGroup>();
@@ -387,24 +444,26 @@ const groups = computed<PurchaseGroup[]>(() => {
         base: row,
         current: null,
         history: [],
-        latestHistoricalDecision: null,
+        pageHistoricalInspection: null,
       };
       lines.set(row.receiptLineId, line);
       purchase.lines.push(line);
       receipt.lines.push(line);
     }
-    if (row.roundStatus !== 'superseded' && row.case?.status !== 'superseded' && !line.current)
+    if (
+      isCurrentItem(row) &&
+      (!line.current || (row.isCurrentlyAdopted && !line.current.isCurrentlyAdopted))
+    ) {
+      if (line.current) line.history.push(line.current);
       line.current = row;
-    else {
+    } else {
       line.history.push(row);
-      if (!line.latestHistoricalDecision && row.case?.inspection) {
-        line.latestHistoricalDecision = row.case.inspection.releaseDecision;
-      }
     }
   }
   for (const purchase of purchases.values()) {
     for (const line of purchase.lines) {
-      const stage = line.current?.roundStatus;
+      line.pageHistoricalInspection = line.history.find((item) => item.case?.inspection) ?? null;
+      const stage = line.base.currentRound.status;
       if (stage === 'uninspected' || stage === 'reinspection_required') purchase.pending += 1;
       if (stage === 'reviewing') purchase.reviewing += 1;
       if (stage === 'quality_rejected') purchase.blocked += 1;
@@ -417,16 +476,11 @@ const groups = computed<PurchaseGroup[]>(() => {
     (a, b) => b.pending + b.reviewing + b.blocked - (a.pending + a.reviewing + a.blocked),
   );
 });
-const roundTagType = (value: ReceiptRoundStatus) =>
-  value === 'quality_rejected' || value === 'reinspection_required'
-    ? 'warning'
-    : value === 'reviewing'
-      ? 'primary'
-      : 'info';
 const lineAction = (item: ProcurementInboundInspectionItem | null) =>
-  item?.roundStatus === 'uninspected' || item?.roundStatus === 'reinspection_required'
+  item?.currentRound.status === 'uninspected' ||
+  item?.currentRound.status === 'reinspection_required'
     ? '查看 / 核对待检'
-    : item?.roundStatus === 'reviewing'
+    : item?.currentRound.status === 'reviewing'
       ? '查看 / 填写结果'
       : '查看详情';
 function togglePurchase(id: string) {
@@ -487,6 +541,14 @@ onScopeDispose(
 );
 const locator = useLatestReadRequest(() => {});
 let navigating = false;
+let pendingLocate = false;
+const finishNavigation = (): void => {
+  navigating = false;
+  if (pendingLocate) {
+    pendingLocate = false;
+    void locate();
+  }
+};
 const navigate = async (
   id: string,
   context?: ProcurementInboundInspectionItem,
@@ -500,7 +562,8 @@ const navigate = async (
   try {
     if (detail.value?.visible && !(await detail.value.close())) return false;
     revealLine(id);
-    if (context && context.roundStatus === 'superseded') {
+    highlightedCaseId.value = context?.case?.id ?? '';
+    if (context && !isCurrentItem(context)) {
       const next = new Set(expandedHistory.value);
       next.add(id);
       expandedHistory.value = next;
@@ -508,21 +571,33 @@ const navigate = async (
     await detail.value?.open(id, context);
     return true;
   } finally {
-    navigating = false;
+    finishNavigation();
   }
 };
 let consumed = '',
   accepted: Record<string, string> = {};
+let routeRevision = 0;
 const locate = async (): Promise<void> => {
+  const revision = routeRevision;
   if (route.name !== 'quality-inbound-inspections') return;
   await nextTick();
+  if (revision !== routeRevision || route.name !== 'quality-inbound-inspections') return;
   const lineId = typeof route.query.receiptLineId === 'string' ? route.query.receiptLineId : '',
     caseId = typeof route.query.caseId === 'string' ? route.query.caseId : '';
   const token = JSON.stringify([lineId, caseId]);
-  if (token === consumed || (!lineId && !caseId)) return;
+  const sameDetail =
+    detail.value?.visible &&
+    (!lineId || detail.value.openedLineId === lineId) &&
+    detail.value.openedCaseId === caseId;
+  if ((!lineId && !caseId) || (token === consumed && (navigating || sameDetail))) return;
+  if (navigating) {
+    pendingLocate = true;
+    return;
+  }
   consumed = token;
   const current = locator.begin(
     () =>
+      revision === routeRevision &&
       route.name === 'quality-inbound-inspections' &&
       JSON.stringify([
         typeof route.query.receiptLineId === 'string' ? route.query.receiptLineId : '',
@@ -534,6 +609,7 @@ const locate = async (): Promise<void> => {
     if (caseId) {
       const task = await procurementApi.getInspection(caseId, current.signal);
       if (!current.isCurrent()) return;
+      if (lineId && task.receiptLineId !== lineId) throw new Error('检验记录与到货明细不匹配');
       succeeded = await navigate(task.receiptLineId, task);
     } else succeeded = await navigate(lineId);
   } catch (error) {
@@ -553,9 +629,10 @@ const locate = async (): Promise<void> => {
 watch(
   () => [route.name, route.query.receiptLineId, route.query.caseId],
   () => {
+    routeRevision += 1;
     void locate();
   },
-  { immediate: true },
+  { immediate: true, flush: 'sync' },
 );
 onActivated(() => {
   void locate();
@@ -575,15 +652,10 @@ onActivated(() => {
   border: 1px solid #e5e7eb;
   border-radius: 8px;
 }
-.help,
-.page-scope,
 .document-meta,
 .muted {
   color: #6b7280;
   font-size: 13px;
-}
-.page-scope {
-  padding: 0 20px 12px;
 }
 .document-block {
   margin: 0 16px 14px;
@@ -598,28 +670,12 @@ onActivated(() => {
   padding: 12px 16px;
   background: #f8fafc;
 }
-.fold-button,
-.history-toggle {
-  border: 0;
-  background: none;
-  color: #306188;
-  cursor: pointer;
-  font: inherit;
-  padding: 0;
-}
 .fold-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  color: #1f2937;
-}
-.fold-icon {
-  font-size: 11px;
-  color: #306188;
+  font-size: 14px;
 }
 .document-counts {
   font-size: 13px;
-  color: #283a50;
+  color: var(--el-text-color-primary);
 }
 .receipt-group + .receipt-group {
   border-top: 1px solid #e5e7eb;
@@ -627,7 +683,7 @@ onActivated(() => {
 .receipt-heading {
   padding: 9px 16px;
   background: #fbfcfe;
-  color: #283a50;
+  color: var(--el-text-color-primary);
   font-weight: 600;
 }
 .receipt-heading span {
@@ -660,7 +716,7 @@ onActivated(() => {
   border-top: 1px solid #eef0f2;
 }
 .line-item.highlighted {
-  box-shadow: inset 3px 0 #306188;
+  box-shadow: inset 3px 0 var(--el-color-primary);
 }
 .identity {
   display: flex;
@@ -669,16 +725,40 @@ onActivated(() => {
 }
 .identity span,
 .round-reference,
-.basis-label {
+.historical-decision {
   color: #6b7280;
+  font-size: 12px;
+}
+.identity .source-id {
+  overflow-wrap: anywhere;
   font-size: 12px;
 }
 .round-reference {
   display: block;
   margin-bottom: 3px;
 }
-.basis-label {
+.round-absence {
   display: block;
+  margin-top: 3px;
+}
+.reference-note {
+  display: block;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+.inspection-result {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
+.inspection-id-link {
+  height: auto;
+  padding: 0;
+  font-weight: 600;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .history-area {
   padding: 0 16px 10px;
@@ -695,16 +775,20 @@ onActivated(() => {
 .history-row {
   display: grid;
   grid-template-columns:
-    minmax(170px, 1.5fr) minmax(80px, 0.7fr) minmax(130px, 1fr) minmax(150px, 1fr)
+    minmax(170px, 1.5fr) minmax(80px, 0.7fr) minmax(190px, 1fr) minmax(150px, 1fr)
     100px;
   gap: 12px;
   align-items: center;
-  min-width: 680px;
+  min-width: 740px;
   min-height: 34px;
   color: #6b7280;
   font-size: 12px;
 }
 .history-row + .history-row {
   border-top: 1px solid #e5e7eb;
+}
+.history-row.selected {
+  background: var(--el-color-primary-light-9);
+  box-shadow: inset 3px 0 var(--el-color-primary);
 }
 </style>

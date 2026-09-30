@@ -13,7 +13,9 @@ const schema: z.ZodType<PurchaseInboundOrderItem> = z
     inboundId: z.string(),
     inboundNo: z.string(),
     sourceType: z.literal('purchased'),
-    provider: z.string().nullable(),
+    suppliers: z.array(
+      z.object({ supplierId: z.string().nullable(), supplierName: z.string() }).strict(),
+    ),
     status: z.enum(INBOUND_ORDER_STATUSES),
     inboundAt: z.string().nullable(),
     operatorId: z.string().nullable(),
@@ -49,6 +51,37 @@ const schema: z.ZodType<PurchaseInboundOrderItem> = z
           procurementReceiptRevisionId: z.string().nullable(),
           procurementInspectionId: z.string().nullable(),
           procurementAllocationId: z.string().nullable(),
+          supplierId: z.string().nullable(),
+          supplierName: z.string().nullable(),
+          procurementSource: z
+            .object({
+              receipt: z
+                .object({
+                  receiptId: z.string(),
+                  receiptNo: z.string(),
+                  receiptLineId: z.string(),
+                  receiptLineNo: z.number().int().positive(),
+                  purchaseOrderNo: z.string(),
+                })
+                .strict(),
+              purchaseOrder: z
+                .object({
+                  purchaseOrderId: z.string(),
+                  purchaseOrderNo: z.string(),
+                  purchaseOrderLineId: z.string(),
+                  purchaseOrderLineNo: z.number().int().positive(),
+                })
+                .strict(),
+              inspection: z
+                .object({
+                  inspectionId: z.string(),
+                  caseId: z.string(),
+                  inspectedAt: z.string(),
+                })
+                .strict(),
+            })
+            .strict()
+            .nullable(),
         })
         .strict(),
     ),

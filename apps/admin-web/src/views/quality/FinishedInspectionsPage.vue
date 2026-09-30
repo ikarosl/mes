@@ -45,7 +45,11 @@
     >
       <TableToolbar>
         <template #actions>
-          <span class="help">每个任务独立办理当前检验轮；已有记录可与当前待办重叠。</span>
+          <InlineHint>
+            本页
+            <strong>{{ rows.length }}</strong>
+            项任务，按工单分组（同单可跨页）；各任务独立办理，<strong>已有记录仍可能待检</strong>。
+          </InlineHint>
         </template>
         <template #tools>
           <el-button
@@ -68,9 +72,6 @@
           />
         </template>
       </TableToolbar>
-      <div class="page-scope">
-        当前页 {{ rows.length }} 项任务，按工单分组；同一工单的其他任务可能在别页。
-      </div>
       <div
         v-if="!groups.length && !loading"
         class="empty-area"
@@ -99,13 +100,20 @@
       >
         <div class="document-heading">
           <button
-            class="fold-button"
+            class="fold-button business-disclosure"
             type="button"
             :aria-expanded="!collapsedOrders.has(group.workOrderId)"
             @click="toggleOrder(group.workOrderId)"
           >
-            <span class="fold-icon">{{ collapsedOrders.has(group.workOrderId) ? '▶' : '▼' }}</span>
+            <span
+              class="fold-icon"
+              aria-hidden="true"
+              >{{ collapsedOrders.has(group.workOrderId) ? '▶' : '▼' }}</span
+            >
             <strong>工单 {{ group.workOrderNo }}</strong>
+            <span class="fold-action">{{
+              collapsedOrders.has(group.workOrderId) ? '展开' : '收起'
+            }}</span>
           </button>
           <span class="document-meta">成品 {{ group.productCode }} · {{ group.productName }}</span>
           <span class="document-meta">本页含本单 {{ group.tasks.length }} 项任务</span>
@@ -134,10 +142,11 @@
             <span>{{ Number(task.plannedQuantity) }}</span>
             <div>
               <template v-if="task.currentRoundId && task.currentRoundStatus">
-                <span class="round-reference">轮次 #{{ task.currentRoundId }}</span>
+                <span class="round-reference">本轮</span>
                 <el-tag
                   size="small"
-                  :type="roundTagType(task.currentRoundStatus)"
+                  :type="finishedRoundTagType(task.currentRoundStatus)"
+                  :effect="finishedRoundTagEffect(task.currentRoundStatus)"
                   >{{ PRODUCTION_OUTPUT_ROUND_STATUS_LABELS[task.currentRoundStatus] }}</el-tag
                 >
               </template>
@@ -201,12 +210,14 @@ import {
   PRODUCTION_OUTPUT_RELEASE_DECISION_LABELS,
   PRODUCTION_OUTPUT_ROUND_STATUS_LABELS,
 } from '@company/constants';
-import type { FinishedInspectionTaskItem, ProductionOutputRoundStatus } from '@company/contracts';
+import type { FinishedInspectionTaskItem } from '@company/contracts';
 import TableToolbar from '../../components/TableToolbar.vue';
+import InlineHint from '../../components/InlineHint.vue';
 import PaginationFooter from '../../components/PaginationFooter.vue';
 import { EMessage } from '../../utils/message';
 import { formatDateTimeForDisplay } from '../../utils/date';
 import { useFinishedInspectionsList } from './composables/useFinishedInspectionsList';
+import { finishedRoundTagType, finishedRoundTagEffect } from './inspection-presentation';
 import FinishedInspectionDialog from './components/FinishedInspectionDialog.vue';
 
 defineOptions({ name: 'FinishedInspectionsPage' });
@@ -260,8 +271,6 @@ const groups = computed<WorkOrderGroup[]>(() => {
   }
   return [...orders.values()];
 });
-const roundTagType = (value: ProductionOutputRoundStatus) =>
-  value === 'pending_inspection' || value === 'inspecting' ? 'warning' : 'info';
 const taskAction = (task: FinishedInspectionTaskItem) =>
   task.canStartInspection
     ? '查看 / 开始检验'
@@ -317,6 +326,7 @@ function revealTask(id: string) {
   }
 }
 let navigating = false;
+let openedBatchId = '';
 async function navigate(id: string): Promise<boolean> {
   if (navigating) return false;
   if (detail.value?.locked) {
@@ -327,24 +337,31 @@ async function navigate(id: string): Promise<boolean> {
   try {
     if (detail.value?.visible && !(await detail.value.close())) return false;
     revealTask(id);
-    return (await detail.value?.open(id)) ?? false;
+    const opened = (await detail.value?.open(id)) ?? false;
+    if (opened) openedBatchId = id;
+    return opened;
   } finally {
     navigating = false;
   }
 }
-let consumed = '',
-  accepted = '';
+let accepted = '';
 async function locate() {
   if (route.name !== 'quality-finished-inspections') return;
   await nextTick();
   const id = typeof route.query.batchId === 'string' ? route.query.batchId : '';
-  if (!id || consumed === id) return;
-  consumed = id;
+  if (!id || navigating) return;
+  if (openedBatchId === id && detail.value?.visible) {
+    accepted = id;
+    return;
+  }
   const succeeded = await navigate(id);
-  if (route.name !== 'quality-finished-inspections' || route.query.batchId !== id) return;
+  if (route.name !== 'quality-finished-inspections') return;
+  if (route.query.batchId !== id) {
+    void locate();
+    return;
+  }
   if (succeeded) accepted = id;
   else {
-    consumed = accepted;
     const query = { ...route.query };
     delete query.batchId;
     await router.replace({ query: { ...query, ...(accepted ? { batchId: accepted } : {}) } });
@@ -375,15 +392,10 @@ onActivated(() => {
   border: 1px solid #e5e7eb;
   border-radius: 8px;
 }
-.help,
-.page-scope,
 .document-meta,
 .muted {
   color: #6b7280;
   font-size: 13px;
-}
-.page-scope {
-  padding: 0 20px 12px;
 }
 .empty-area {
   padding-bottom: 20px;
@@ -407,22 +419,10 @@ onActivated(() => {
   background: #f8fafc;
 }
 .fold-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: #1f2937;
-  cursor: pointer;
-  font: inherit;
-}
-.fold-icon {
-  font-size: 11px;
-  color: #306188;
+  font-size: 14px;
 }
 .document-counts {
-  color: #283a50;
+  color: var(--el-text-color-primary);
   font-size: 13px;
 }
 .document-body {
@@ -448,7 +448,7 @@ onActivated(() => {
   border-top: 1px solid #eef0f2;
 }
 .task-row.highlighted {
-  box-shadow: inset 3px 0 #306188;
+  box-shadow: inset 3px 0 var(--el-color-primary);
 }
 .round-reference,
 .basis-label,

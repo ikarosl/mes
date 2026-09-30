@@ -32,10 +32,23 @@ export const lineSelect = (columns: string) => `SELECT ${columns} FROM procureme
   JOIN procurement_order_line pol ON pol.id=line.purchase_order_line_id
   JOIN procurement_supplier supplier ON supplier.id=pol.supplier_id
   JOIN materials material ON material.id=line.item_id`;
-export const LINE_COLUMNS = `line.id,line.receipt_id,line.purchase_order_id,line.purchase_order_line_id,line.line_no,
+export const LINE_COLUMNS = `line.id,line.receipt_id,line.purchase_order_id,line.purchase_order_line_id,pol.line_no purchase_order_line_no,line.line_no,
   line.item_id,pol.item_code_snapshot,material.material_name,line.material_variant_id,pol.material_variant_code_snapshot,
   pol.unit_snapshot,line.supplier_batch_code,line.current_receipt_revision_id,
   line.over_receipt_note,line.version,line.current_round_id,r.receipt_no,po.purchase_no,pol.supplier_id,supplier.supplier_name`;
+const CURRENT_ROUND_COLUMNS = `round.id,round.receipt_line_id,round.round_no,round.previous_round_id,
+  round.trigger_type,round.receipt_revision_id,round.starting_quantity,round.status,
+  round.inspection_id,round.reason,round.version,round.created_by,round.created_at`;
+export async function readCurrentRounds(db: Db, ids: string[]): Promise<Map<string, ReadRow>> {
+  if (!ids.length) return new Map();
+  const [rows] = await db.query<ReadRow[]>(
+    `SELECT ${CURRENT_ROUND_COLUMNS} FROM procurement_receipt_round round
+    JOIN procurement_receipt_line line ON line.current_round_id=round.id
+    WHERE line.id IN (${slots(ids)})`,
+    ids,
+  );
+  return new Map(rows.map((row) => [text(row.receipt_line_id), row]));
+}
 export const inboundFactSelect = (
   columns: string,
 ) => `SELECT ${columns} FROM inbound_detail detail JOIN inbound_order inbound ON inbound.id=detail.inbound_id

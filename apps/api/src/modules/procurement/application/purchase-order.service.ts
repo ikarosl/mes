@@ -10,6 +10,8 @@ import type {
   PurchaseOrderQuery,
   PurchaseExcessReceiptCandidateQuery,
   PurchaseExcessReceiptCandidate,
+  PurchaseQualityReplacementCandidateQuery,
+  PurchaseQualityReplacementCandidate,
   PageResult,
   RelatedPurchasesQuery,
   ProcurementDemandCandidateQuery,
@@ -58,6 +60,18 @@ export class PurchaseOrderService {
   ): Promise<PageResult<PurchaseExcessReceiptCandidate>> {
     return this.repository.excessReceiptCandidates(id, {
       ...query,
+      keyword: query.keyword?.trim() || undefined,
+      page: query.page ?? 1,
+      pageSize: query.pageSize ?? 10,
+    });
+  }
+  qualityReplacementCandidates(
+    id: string,
+    query: PurchaseQualityReplacementCandidateQuery,
+  ): Promise<PageResult<PurchaseQualityReplacementCandidate>> {
+    return this.repository.qualityReplacementCandidates(id, {
+      ...query,
+      keyword: query.keyword?.trim() || undefined,
       page: query.page ?? 1,
       pageSize: query.pageSize ?? 10,
     });
@@ -188,8 +202,11 @@ export class PurchaseOrderService {
     context: IdempotentCommandContext,
   ): Promise<PurchaseOrderCommandResult> {
     const body = {
-      ...payload,
-      supplementEvidence: payload.supplementEvidence.trim(),
+      supplementReason: payload.supplementReason,
+      items: payload.items.map((item) => ({
+        ...item,
+        supplementEvidence: item.supplementEvidence.trim(),
+      })),
       remark: payload.remark?.trim() || null,
     };
     const execution = await this.idempotency.execute({

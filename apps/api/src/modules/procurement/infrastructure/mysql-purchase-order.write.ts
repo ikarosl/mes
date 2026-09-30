@@ -78,15 +78,16 @@ export const insertLines = async (
   lines: PurchaseOrderDraftLine[],
   references: InventoryMaterialEligibility[],
   context: CommandContext,
-  origin?: {
+  origins?: Array<{
     lineId: string;
     evidence: string;
     receiptLineId?: string | null;
     allocationId?: string | null;
-  },
+  }>,
 ) => {
   const map = new Map(references.map((row) => [`${row.itemId}:${row.materialVariantId}`, row]));
   for (const [index, line] of lines.entries()) {
+    const origin = origins?.[index];
     const ref = map.get(`${line.itemId}:${line.materialVariantId}`);
     if (!ref) return orderError('采购物料资格已变化');
     const [result] = await connection.execute<ResultSetHeader>(

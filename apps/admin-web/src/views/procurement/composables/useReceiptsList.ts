@@ -1,5 +1,5 @@
 import { ref } from 'vue';
-import type { ProcurementReceiptItem } from '@company/contracts';
+import type { ProcurementReceiptLineListItem } from '@company/contracts';
 import { procurementApi } from '../../../api/procurement';
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
 import { usePageActivationRefresh } from '../../../composables/requests/usePageActivationRefresh';
@@ -7,7 +7,7 @@ import { EMessage } from '../../../utils/message';
 export function useReceiptsList() {
   const awaitingAcceptance = ref(false);
   const keyword = ref(''),
-    rows = ref<ProcurementReceiptItem[]>([]),
+    rows = ref<ProcurementReceiptLineListItem[]>([]),
     page = ref(1),
     pageSize = ref(10),
     total = ref(0),
@@ -20,7 +20,7 @@ export function useReceiptsList() {
     const current = read.begin();
     loading.value = true;
     try {
-      const result = await procurementApi.listReceipts(
+      const result = await procurementApi.listReceiptLines(
         {
           awaitingAcceptance: awaitingAcceptance.value ? 'yes' : undefined,
           keyword: keyword.value.trim() || undefined,

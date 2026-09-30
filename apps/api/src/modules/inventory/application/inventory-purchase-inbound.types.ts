@@ -11,13 +11,13 @@ export interface PurchaseReceiptInboundLine {
   itemCode: string;
   materialVariantCode: string;
   unit: string;
+  supplierNameSnapshot: string;
   quantity: string;
   target: InventoryInboundTarget;
 }
 
 /** 来源模块须已锁到货及消费范围，并通过 Quality 校验有效放行依据。 */
 export interface ConfirmPurchaseReceiptInput {
-  provider: string;
   remark?: string | null;
   details: PurchaseReceiptInboundLine[];
 }

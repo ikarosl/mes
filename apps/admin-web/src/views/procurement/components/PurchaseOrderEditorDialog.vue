@@ -95,8 +95,31 @@
         empty-text="请选择需求或添加采购物料"
       >
         <el-table-column type="expand"
-          ><template #default="{ row }"><PurchaseOrderSources :sources="row.sources" /></template
-        ></el-table-column>
+          ><template #default="{ row }">
+            <PurchaseOrderSources :sources="row.sources" />
+            <el-descriptions
+              v-if="supplement && originalLine(row.key)"
+              :column="2"
+              border
+              size="small"
+              title="本行冻结的补单来源"
+            >
+              <el-descriptions-item label="原采购"
+                >{{ originalLine(row.key)?.originPurchaseNo }} · 原行
+                {{ originalLine(row.key)?.originOrderLineId }}</el-descriptions-item
+              >
+              <el-descriptions-item label="原到货明细 ID">{{
+                originalLine(row.key)?.originReceiptLineId
+              }}</el-descriptions-item>
+              <el-descriptions-item label="质量退回分配 ID">{{
+                originalLine(row.key)?.originAllocationId || '不适用'
+              }}</el-descriptions-item>
+              <el-descriptions-item label="本行补单依据">{{
+                originalLine(row.key)?.supplementEvidence
+              }}</el-descriptions-item>
+            </el-descriptions>
+          </template></el-table-column
+        >
         <el-table-column
           label="物料与精确版本"
           min-width="360"
@@ -187,12 +210,6 @@
           </template></el-table-column
         >
       </el-table>
-      <p
-        v-if="supplement"
-        class="help"
-      >
-        原补单依据：{{ original?.items[0]?.supplementEvidence }}
-      </p>
     </el-form>
     <template #footer>
       <el-button
@@ -273,6 +290,7 @@ const {
   addRow,
   changeMaterial,
 } = usePurchaseOrderEditor((id) => emit('saved', id));
+const originalLine = (id: string) => original.value?.items.find((line) => line.id === id);
 const beforeClose = (): void => {
   void close();
 };

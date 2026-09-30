@@ -4,6 +4,8 @@ import type {
   PurchaseOrderQuery,
   PurchaseExcessReceiptCandidateQuery,
   PurchaseExcessReceiptCandidate,
+  PurchaseQualityReplacementCandidateQuery,
+  PurchaseQualityReplacementCandidate,
   PurchaseOrderItem,
   PurchaseOrderDetail,
   PageResult,
@@ -24,6 +26,10 @@ export abstract class PurchaseOrderRepository {
     id: string,
     query: PurchaseExcessReceiptCandidateQuery & { page: number; pageSize: number },
   ): Promise<PageResult<PurchaseExcessReceiptCandidate>>;
+  abstract qualityReplacementCandidates(
+    id: string,
+    query: PurchaseQualityReplacementCandidateQuery & { page: number; pageSize: number },
+  ): Promise<PageResult<PurchaseQualityReplacementCandidate>>;
   abstract related(
     query: RelatedPurchasesQuery & { page: number; pageSize: number },
   ): Promise<RelatedPurchasesResult>;

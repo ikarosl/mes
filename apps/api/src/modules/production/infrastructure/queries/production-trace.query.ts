@@ -182,7 +182,8 @@ export class ProductionTraceQueries {
     >(
       `SELECT DISTINCT ib.id item_batch_id,ib.material_variant_id,ib.batch_code,ib.item_code_snapshot item_code,
         ${currentMaterialNameSql('ib.item_id')} item_name,ib.material_variant_code_snapshot material_variant_code,
-        COALESCE(o.inbound_no,ro.return_no) source_document_no,o.provider,
+        COALESCE(o.inbound_no,ro.return_no) source_document_no,
+        CASE WHEN o.id IS NOT NULL THEN d.supplier_name_snapshot ELSE NULL END provider,
         COALESCE(o.inbound_at,ro.return_at,tx.created_at) confirmed_at,
         tx.quantity,tx.id transaction_id,tx.transaction_type
        FROM production_item_allocation a JOIN item_batch ib ON ib.id=a.batch_id

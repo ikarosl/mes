@@ -47,9 +47,16 @@ export class PurchaseOrderQueryDto extends PageQueryDto {
   @IsOptional() @IsIn(PURCHASE_ORDER_SOURCE_TYPES) sourceType?: PurchaseOrderSourceType;
   @IsOptional() @IsIn(PURCHASE_ORDER_STATUSES) status?: PurchaseOrderStatus;
   @IsOptional() @Matches(/^[1-9]\d{0,19}$/) originOrderLineId?: string;
+  @IsOptional() @Matches(/^[1-9]\d{0,19}$/) originAllocationId?: string;
 }
 export class PurchaseExcessReceiptCandidateQueryDto extends PageQueryDto {
+  @IsOptional() @Transform(trim) @IsString() @MaxLength(100) keyword?: string;
   @IsOptional() @Matches(/^[1-9]\d{0,19}$/) receiptLineId?: string;
+}
+export class PurchaseQualityReplacementCandidateQueryDto extends PageQueryDto {
+  @IsOptional() @Transform(trim) @IsString() @MaxLength(100) keyword?: string;
+  @IsOptional() @Matches(/^[1-9]\d{0,19}$/) receiptLineId?: string;
+  @IsOptional() @Matches(/^[1-9]\d{0,19}$/) allocationId?: string;
 }
 export class PurchaseOrderDraftLineDto {
   @Matches(/^[1-9]\d{0,19}$/) supplierId!: string;
@@ -87,12 +94,21 @@ export class CancelPurchaseOrderDto extends PurchaseOrderVersionDto {
 export class ClosePurchaseOrderLineDto extends CancelPurchaseOrderDto {
   @IsIn(PURCHASE_ORDER_CLOSURE_REASONS) reasonType!: PurchaseOrderClosureReason;
 }
-export class CreatePurchaseOrderSupplementDto {
-  @IsIn(PURCHASE_ORDER_SUPPLEMENT_REASONS) supplementReason!: PurchaseOrderSupplementReason;
-  @IsOptional() @Matches(/^[1-9]\d{0,19}$/) originReceiptLineId?: string;
+export class CreatePurchaseOrderSupplementLineDto {
+  @Matches(/^[1-9]\d{0,19}$/) originOrderLineId!: string;
+  @Matches(/^[1-9]\d{0,19}$/) originReceiptLineId!: string;
   @IsOptional() @Matches(/^[1-9]\d{0,19}$/) originAllocationId?: string;
   @IsInt() @Min(1) @Max(PURCHASE_ORDER_MAX_QUANTITY) plannedQuantity!: number;
   @Transform(trim) @IsString() @IsNotEmpty() @MaxLength(2000) supplementEvidence!: string;
+}
+export class CreatePurchaseOrderSupplementDto {
+  @IsIn(PURCHASE_ORDER_SUPPLEMENT_REASONS) supplementReason!: PurchaseOrderSupplementReason;
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(PURCHASE_ORDER_MAX_LINES)
+  @ValidateNested({ each: true })
+  @Type(() => CreatePurchaseOrderSupplementLineDto)
+  items!: CreatePurchaseOrderSupplementLineDto[];
   @IsOptional() @Transform(trim) @IsString() @MaxLength(2000) remark?: string | null;
 }
 export class ProcurementDemandCandidateQueryDto extends PageQueryDto {

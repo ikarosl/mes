@@ -70,7 +70,9 @@ export const lockReceiptRoots = async (
     );
     roots.push(...rows.map((row) => String(row.purchase_order_id)));
   }
-  for (const root of sortedIds(roots)) await readOrder(connection, root, true);
+  const lockedRoots = sortedIds(roots);
+  for (const root of lockedRoots) await readOrder(connection, root, true);
+  return lockedRoots;
 };
 export const lockReceiptLine = async (
   connection: PoolConnection,

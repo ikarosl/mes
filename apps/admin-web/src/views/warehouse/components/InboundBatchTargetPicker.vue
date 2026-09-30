@@ -1,41 +1,28 @@
 <template>
   <div class="batch-target">
     <el-radio-group
-      :model-value="choice"
+      :model-value="modelValue.mode"
       :disabled="disabled"
       @change="setMode"
     >
-      <el-radio-button value="new">新建批次</el-radio-button>
-      <el-radio-button value="existing">已有批次</el-radio-button>
       <el-radio-button
-        v-if="relatedNewTargets?.length"
-        value="reuse"
-        >复用本次新批次</el-radio-button
+        style="margin: 2px"
+        value="new"
+        >新建批次</el-radio-button
+      >
+      <el-radio-button
+        style="margin: 2px; box-sizing: border-box"
+        value="existing"
+        >已有批次</el-radio-button
       >
     </el-radio-group>
-    <template v-if="choice === 'new' && modelValue.mode === 'new'">
+    <template v-if="modelValue.mode === 'new'">
       <span
         v-if="identity"
         class="hint"
         >新建 {{ identity }} 的独立库存批次</span
       >
       <span class="hint">新库存批号由系统在确认入库时生成。</span>
-    </template>
-    <template v-else-if="choice === 'reuse'">
-      <el-select
-        :model-value="modelValue.mode === 'new' ? modelValue.clientKey : ''"
-        :disabled="disabled"
-        placeholder="明确选择本次共建的批次"
-        @update:model-value="joinNewBatch"
-      >
-        <el-option
-          v-for="target in relatedNewTargets"
-          :key="target.clientKey"
-          :value="target.clientKey"
-          :label="`${target.label} · 自动批号`"
-        />
-      </el-select>
-      <span class="hint">仅明确选中同一请求内的新批次，才会共用一个批号。</span>
     </template>
     <template v-else>
       <span
@@ -51,7 +38,7 @@
         clearable
         :remote-method="search"
         :loading="loading"
-        placeholder="搜索并选择可入库批次"
+        placeholder="按日期搜索并选择可入库批次"
         @visible-change="onVisible"
         @update:model-value="setBatchId"
       >
@@ -90,36 +77,12 @@ const props = defineProps<{
   unit: string;
   identity?: string;
   disabled?: boolean;
-  relatedNewTargets?: Array<{ clientKey: string; label: string }>;
-  newBatchOwner?: boolean;
 }>();
 const emit = defineEmits<{ 'update:modelValue': [value: InventoryInboundTarget] }>();
 const candidates = ref<InventoryInboundBatchCandidate[]>([]);
 const loading = ref(false);
 const error = ref('');
 const keyword = ref('');
-const relatedNewTargets = computed(() => [
-  ...new Map(
-    (props.relatedNewTargets ?? [])
-      .filter((item) => item.clientKey)
-      .map((item) => [item.clientKey, item]),
-  ).values(),
-]);
-const isSharedNewTarget = computed(() => {
-  const target = props.modelValue;
-  return (
-    target.mode === 'new' &&
-    props.newBatchOwner === false &&
-    relatedNewTargets.value.some((item) => item.clientKey === target.clientKey)
-  );
-});
-const choice = computed(() =>
-  props.modelValue.mode === 'existing'
-    ? 'existing'
-    : !props.modelValue.clientKey || isSharedNewTarget.value
-      ? 'reuse'
-      : 'new',
-);
 const selectedBatchId = computed(() => {
   const target = props.modelValue;
   return target.mode === 'existing' ? target.batchId : '';
@@ -130,15 +93,10 @@ const selectedBatch = computed(() =>
 let requestNo = 0;
 function setMode(value: string | number | boolean | undefined) {
   if (value === 'new') emit('update:modelValue', { mode: 'new', clientKey: crypto.randomUUID() });
-  if (value === 'reuse') emit('update:modelValue', { mode: 'new', clientKey: '' });
   if (value === 'existing') {
     emit('update:modelValue', { mode: 'existing', batchId: '' });
     void load();
   }
-}
-function joinNewBatch(clientKey: string) {
-  const shared = relatedNewTargets.value.find((item) => item.clientKey === clientKey);
-  if (shared) emit('update:modelValue', { mode: 'new', clientKey });
 }
 function setBatchId(value: string) {
   emit('update:modelValue', { mode: 'existing', batchId: value || '' });

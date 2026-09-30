@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     v-model="visible"
-    title="该采购行的相关补单"
+    :title="allocationId ? '该质量分配的相关补单' : '该采购行的相关补单'"
     :width="DialogWidth.lg"
   >
     <p class="help">
@@ -98,6 +98,7 @@ import PaginationFooter from '../../../components/PaginationFooter.vue';
 const emit = defineEmits<{ navigate: [string] }>();
 const visible = ref(false),
   lineId = ref(''),
+  allocationId = ref(''),
   rows = ref<PurchaseOrderItem[]>([]),
   loading = ref(false),
   page = ref(1),
@@ -109,11 +110,19 @@ const read = useLatestReadRequest(() => {
 const load = async (): Promise<void> => {
   if (!visible.value || !read.isActive()) return;
   const id = lineId.value,
-    current = read.begin(() => visible.value && lineId.value === id);
+    allocation = allocationId.value,
+    current = read.begin(
+      () => visible.value && lineId.value === id && allocationId.value === allocation,
+    );
   loading.value = true;
   try {
     const result = await procurementApi.listOrders(
-      { originOrderLineId: id, page: page.value, pageSize: pageSize.value },
+      {
+        originOrderLineId: id,
+        originAllocationId: allocation || undefined,
+        page: page.value,
+        pageSize: pageSize.value,
+      },
       current.signal,
     );
     if (current.isCurrent()) {
@@ -126,8 +135,9 @@ const load = async (): Promise<void> => {
     if (current.isCurrent()) loading.value = false;
   }
 };
-const open = async (id: string): Promise<void> => {
+const open = async (id: string, sourceAllocationId?: string): Promise<void> => {
   lineId.value = id;
+  allocationId.value = sourceAllocationId ?? '';
   rows.value = [];
   total.value = 0;
   page.value = 1;
@@ -147,13 +157,16 @@ const navigate = (id: string): void => {
   visible.value = false;
   emit('navigate', id);
 };
+const close = (): void => {
+  visible.value = false;
+};
 watch(visible, (value) => {
   if (!value) read.invalidate();
 });
 onActivated(() => {
   if (visible.value) void load();
 });
-defineExpose({ open });
+defineExpose({ open, close, visible });
 </script>
 <style scoped>
 .help {

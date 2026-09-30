@@ -36,6 +36,8 @@
 
 **完整候选集缺失**才可认定已选项失效：保留原 ID 并显示“已失效”，阻止保存。分页、搜索或窗口候选未包含选中项不表示失效，须以 includeIds 或已选 ID 解析核验。第一次读取失败不可把空数组当可用结果；高风险操作按自身契约要求最新核验成功。
 
+[RemoteSearchSelect](../src/components/RemoteSearchSelect.vue) 复用 Element Plus 的远程输入能力，统一有限搜索结果、空态、失败重试和已选名称兜底；组件只接收展示数据并发出事件，不内置请求或业务资格。候选窗口、已选解析和取消仍由消费侧 options composable 持有，草稿初始化依据由详情提供，不能依赖一次搜索结果拼齐。
+
 ## 5. 写意图与错误
 
 [useIdempotentIntent](../src/composables/idempotency/useIdempotentIntent.ts) 由当前 editor 持有；API wrapper 不生成键。首次正式提交才生成加密随机 UUID，同时锁定首次 body、路径／查询参数、版本和令牌；前端稳定签名只判断内容变化，不替代服务端指纹。`intentType` 不是 scope 版本，不发送 `Idempotency-Scope` 或 `X-Api-Version`。

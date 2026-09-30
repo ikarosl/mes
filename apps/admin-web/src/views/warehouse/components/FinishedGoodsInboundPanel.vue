@@ -8,10 +8,9 @@
       <el-radio-button value="history">已入库记录</el-radio-button>
     </el-radio-group>
     <template v-if="view === 'candidates'">
-      <details class="rules">
-        <summary>查看成品入库资格与分次规则</summary>
-        仅当前有效且尚有剩余额度的批准授权可办理；同一入库单限同一生产任务。每份授权可分次、分目标批次入库，确认时会重新核对资格。
-      </details>
+      <InlineHint class="inbound-hint">
+        按<strong>当前有效余量</strong>分次、分批入库；同一入库单限<strong>同一生产任务</strong>，确认时重新核对资格。
+      </InlineHint>
       <el-form
         :inline="true"
         class="query-panel"
@@ -24,7 +23,7 @@
             placeholder="工单 / 任务 / 成品"
             @keyup.enter="searchCandidates"
         /></el-form-item>
-        <el-form-item label="授权类别"
+        <el-form-item label="来源类别"
           ><el-select
             v-model="candidateSource"
             clearable
@@ -68,115 +67,38 @@
               @click="clearSelection"
               >放弃草稿</el-button
             >
-            <span class="muted">跨页保留已选授权；同一入库单限同一任务</span> </template
+            <span class="muted">按明细分页，工单分组仅含本页；跨页保留已选</span> </template
           ><template #tools
             ><el-button
               :icon="Refresh"
               text
               circle
               :loading="candidateLoading"
-              aria-label="刷新成品授权"
+              aria-label="刷新可入库明细"
               @click="loadCandidates" /></template
         ></TableToolbar>
-        <el-table
-          v-loading="candidateLoading"
-          :data="candidates"
-          row-key="allocationId"
+        <FinishedGoodsInboundCandidateGroups
+          :rows="candidates"
+          :loading="candidateLoading"
+          :selected-task-id="selectedTaskId"
+          :is-selected="isSelected"
+          :can-view-inspection="auth.can(PERMISSIONS.quality.finishedInspections.view)"
           :empty-text="
             candidateError
               ? '读取失败，请刷新重试'
               : candidateKeyword || candidateSource
-                ? '当前筛选无可入库授权，请清除筛选'
-                : '无当前可入授权；请先核对成品质检与批准产出清单'
+                ? '当前筛选无可入库明细，请清除筛选'
+                : '暂无可入库明细；请先核对成品质检与批准产出清单'
           "
-        >
-          <el-table-column width="50"
-            ><template #default="{ row }"
-              ><el-checkbox
-                :model-value="isSelected(row.allocationId)"
-                :disabled="
-                  !row.canConfirm ||
-                  (selectedTaskId !== null && selectedTaskId !== row.productionBatchId)
-                "
-                :aria-label="`${isSelected(row.allocationId) ? '取消整份授权' : '选择授权'} ${row.batchNo} ${row.productCode} ${FINISHED_GOODS_INBOUND_SOURCE_LABELS[row.sourceType as FinishedGoodsInboundSource]}`"
-                @change="toggle(row)" /></template
-          ></el-table-column>
-          <el-table-column
-            label="工单 / 任务"
-            min-width="170"
-            ><template #default="{ row }"
-              >{{ row.workOrderNo }}
-              <div class="muted">{{ row.batchNo }}</div></template
-            ></el-table-column
-          >
-          <el-table-column
-            label="成品 / 类别"
-            min-width="200"
-            ><template #default="{ row }"
-              >{{ row.productCode }} · {{ row.productName }}
-              <div class="muted">
-                {{
-                  FINISHED_GOODS_INBOUND_SOURCE_LABELS[row.sourceType as FinishedGoodsInboundSource]
-                }}
-                · {{ row.unit }}
-              </div></template
-            ></el-table-column
-          >
-          <el-table-column
-            label="采用依据"
-            min-width="160"
-            ><template #default="{ row }"
-              >批准清单第 {{ row.revisionNo }} 版
-              <div class="muted">授权 {{ row.allocationId }}</div></template
-            ></el-table-column
-          >
-          <el-table-column
-            label="批准 / 历史已入 / 当前剩余"
-            min-width="205"
-            ><template #default="{ row }"
-              ><div>批准 {{ formatQuantity(row.authorizedQuantity) }} {{ row.unit }}</div>
-              <div>已入 {{ formatQuantity(row.receivedQuantity) }} {{ row.unit }}</div>
-              <strong
-                >剩余 {{ formatQuantity(row.remainingQuantity) }} {{ row.unit }}</strong
-              ></template
-            ></el-table-column
-          >
-          <el-table-column
-            label="当前资格"
-            min-width="160"
-            ><template #default="{ row }"
-              ><span :class="row.canConfirm ? 'available' : 'error'">{{
-                row.canConfirm
-                  ? selectedTaskId && selectedTaskId !== row.productionBatchId
-                    ? '需与已选授权同一任务'
-                    : '可入库'
-                  : row.blockers.join('；') || '当前不可入库'
-              }}</span></template
-            ></el-table-column
-          >
-          <el-table-column
-            label="操作"
-            width="110"
-            fixed="right"
-            ><template #default="{ row }"
-              ><el-button
-                link
-                type="primary"
-                :disabled="
-                  !row.canConfirm ||
-                  (selectedTaskId !== null && selectedTaskId !== row.productionBatchId)
-                "
-                @click="openFromCandidate(row)"
-                >办理入库</el-button
-              ></template
-            ></el-table-column
-          >
-        </el-table>
+          @toggle="toggle"
+          @open="openFromCandidate"
+          @inspection="goInspection"
+        />
         <PaginationFooter
           :total="candidateTotal"
           :current-page="candidatePage"
           :page-size="10"
-          total-suffix="份授权"
+          total-suffix="条明细"
           @page-change="changeCandidatePage"
         />
       </div>
@@ -185,16 +107,16 @@
       <el-form
         :inline="true"
         class="query-panel"
-        @submit.prevent="list.search"
+        @submit.prevent="searchHistory"
       >
         <el-form-item label="关键字"
           ><el-input
             v-model="query.keyword"
             clearable
             placeholder="入库单 / 工单 / 任务 / 成品"
-            @keyup.enter="list.search"
+            @keyup.enter="searchHistory"
         /></el-form-item>
-        <el-form-item label="授权类别"
+        <el-form-item label="来源类别"
           ><el-select
             v-model="query.sourceType"
             clearable
@@ -209,9 +131,9 @@
           ><el-button
             type="primary"
             :loading="loading"
-            @click="list.search"
+            @click="searchHistory"
             >查询</el-button
-          ><el-button @click="list.reset">重置</el-button></el-form-item
+          ><el-button @click="resetHistory">重置</el-button></el-form-item
         >
       </el-form>
       <el-alert
@@ -229,12 +151,75 @@
               circle
               :loading="loading"
               aria-label="刷新成品入库记录"
-              @click="list.load" /></template
+              @click="refreshHistory" /></template
         ></TableToolbar>
-        <el-table
-          v-loading="loading"
-          :data="rows"
-          row-key="inboundId"
+        <section
+          v-if="locatedInboundId && !locatedOnPage"
+          class="current-location"
+        >
+          <div
+            v-if="detachedOrder"
+            class="current-location-note"
+          >
+            此定位单不计入当前筛选页
+          </div>
+          <div
+            v-else
+            class="current-location-heading"
+          >
+            <strong>当前定位</strong>
+            <span>此入库单不计入当前筛选页</span>
+            <el-button
+              link
+              @click="clearHistoryLocation"
+              >取消定位</el-button
+            >
+          </div>
+          <div
+            v-if="!detachedOrder"
+            v-loading="list.detailLoading[locatedInboundId]"
+            class="current-location-body"
+          >
+            <el-alert
+              v-if="list.detailErrors[locatedInboundId]"
+              :title="list.detailErrors[locatedInboundId]"
+              type="error"
+              :closable="false"
+            />
+            <el-button
+              v-if="list.detailErrors[locatedInboundId]"
+              type="primary"
+              link
+              @click="retryHistoryDetail(locatedInboundId)"
+              >重试读取定位单</el-button
+            >
+            <div
+              v-if="!list.detailErrors[locatedInboundId]"
+              class="location-status"
+            >
+              {{ loading ? '正在核对当前页…' : '正在读取定位单…' }}
+            </div>
+          </div>
+          <FinishedGoodsInboundHistoryGroups
+            v-if="detachedOrder"
+            :rows="[detachedOrder]"
+            :loading="false"
+            empty-text=""
+            :details="list.details"
+            :detail-loading="list.detailLoading"
+            :detail-errors="list.detailErrors"
+            :located-inbound-id="locatedInboundId"
+            @expand="loadHistoryDetail"
+            @retry="retryHistoryDetail"
+            @batch="goBatch"
+            @approval="goApproval"
+            @clear-location="clearHistoryLocation"
+          />
+        </section>
+        <FinishedGoodsInboundHistoryGroups
+          ref="historyGroups"
+          :rows="rows"
+          :loading="loading"
           :empty-text="
             error
               ? '读取失败，请刷新重试'
@@ -242,84 +227,22 @@
                 ? '当前筛选无已入库记录，请清除筛选'
                 : '暂无已确认成品入库记录；可切换到待入库办理'
           "
-        >
-          <el-table-column
-            prop="inboundNo"
-            label="入库单"
-            min-width="180"
-          />
-          <el-table-column
-            label="真实授权来源"
-            min-width="210"
-            ><template #default="{ row }"
-              ><div
-                v-for="item in sourceSummary(row)"
-                :key="item.source"
-              >
-                {{ FINISHED_GOODS_INBOUND_SOURCE_LABELS[item.source] }}
-                {{ formatQuantity(item.quantity) }} {{ row.unit }}
-              </div></template
-            ></el-table-column
-          >
-          <el-table-column
-            label="工单 / 任务"
-            min-width="190"
-            ><template #default="{ row }"
-              >{{ row.workOrderNo }}
-              <div class="muted">{{ row.batchNo }}</div></template
-            ></el-table-column
-          >
-          <el-table-column
-            label="成品 / 库存批次"
-            min-width="220"
-            ><template #default="{ row }"
-              >{{ row.productCode }} · {{ row.productName }}
-              <div class="muted">
-                {{
-                  [
-                    ...new Set(
-                      row.details.map((item: FinishedGoodsInboundOrderLine) => item.batchCode),
-                    ),
-                  ].join('、')
-                }}
-              </div></template
-            ></el-table-column
-          >
-          <el-table-column
-            label="实际入库数量"
-            min-width="155"
-            ><template #default="{ row }"
-              >{{ formatQuantity(row.inboundQuantity) }} {{ row.unit }} ·
-              {{ row.details.length }} 条明细</template
-            ></el-table-column
-          >
-          <el-table-column
-            label="确认时间"
-            min-width="170"
-            ><template #default="{ row }">{{
-              formatDateTimeForDisplay(row.inboundAt)
-            }}</template></el-table-column
-          >
-          <el-table-column
-            label="操作"
-            width="110"
-            fixed="right"
-            ><template #default="{ row }"
-              ><el-button
-                link
-                type="primary"
-                @click="openDetail(row.inboundId)"
-                >查看详情</el-button
-              ></template
-            ></el-table-column
-          >
-        </el-table>
+          :details="list.details"
+          :detail-loading="list.detailLoading"
+          :detail-errors="list.detailErrors"
+          :located-inbound-id="locatedInboundId"
+          @expand="loadHistoryDetail"
+          @retry="retryHistoryDetail"
+          @batch="goBatch"
+          @approval="goApproval"
+          @clear-location="clearHistoryLocation"
+        />
         <PaginationFooter
           :total="total"
           :current-page="query.page ?? 1"
           :page-size="query.pageSize ?? 20"
-          @update:page-size="list.changePageSize"
-          @page-change="list.changePage"
+          @update:page-size="changeHistoryPageSize"
+          @page-change="changeHistoryPage"
         />
       </div>
     </template>
@@ -327,7 +250,6 @@
       ref="editorDialog"
       v-model:visible="visible"
       v-model:selected="selected"
-      :inbound-id="selectedId"
       :active="active"
       @changed="onChanged"
     />
@@ -335,31 +257,38 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onActivated, onMounted, onScopeDispose, ref, watch } from 'vue';
+import {
+  computed,
+  nextTick,
+  onActivated,
+  onDeactivated,
+  onMounted,
+  onScopeDispose,
+  ref,
+  watch,
+} from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { Refresh } from '@element-plus/icons-vue';
-import type {
-  FinishedGoodsInboundCandidate,
-  FinishedGoodsInboundOrderItem,
-  FinishedGoodsInboundOrderLine,
-  FinishedGoodsInboundSource,
-} from '@company/contracts';
+import type { FinishedGoodsInboundCandidate, FinishedGoodsInboundSource } from '@company/contracts';
 import {
   FINISHED_GOODS_INBOUND_SOURCES,
   FINISHED_GOODS_INBOUND_SOURCE_LABELS,
+  PERMISSIONS,
 } from '@company/constants';
 import { productionApi } from '../../../api/production';
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
 import { EMessage } from '../../../utils/message';
 import { RouteMessageBox } from '../../../utils/route-message-box';
 import { useTabsStore } from '../../../stores/tabs';
+import { useAuthStore } from '../../../stores/auth';
 import TableToolbar from '../../../components/TableToolbar.vue';
+import InlineHint from '../../../components/InlineHint.vue';
 import PaginationFooter from '../../../components/PaginationFooter.vue';
-import { formatDateTimeForDisplay } from '../../../utils/date';
-import { formatQuantity } from '../../production/production-status';
 import { useFinishedGoodsInbounds } from '../composables/useFinishedGoodsInbounds';
 import type { FinishedInboundSelection } from '../finished-inbound-selection';
 import FinishedGoodsInboundDialog from './FinishedGoodsInboundDialog.vue';
+import FinishedGoodsInboundCandidateGroups from './FinishedGoodsInboundCandidateGroups.vue';
+import FinishedGoodsInboundHistoryGroups from './FinishedGoodsInboundHistoryGroups.vue';
 
 defineOptions({ name: 'FinishedGoodsInboundPanel' });
 const props = defineProps<{ requestedInboundId?: string | null; active: boolean }>();
@@ -380,14 +309,31 @@ const list = useFinishedGoodsInbounds();
 const { query, rows, total, loading, error } = list;
 const route = useRoute();
 const router = useRouter();
+const auth = useAuthStore();
 const editorDialog = ref<InstanceType<typeof FinishedGoodsInboundDialog> | null>(null);
+const historyGroups = ref<InstanceType<typeof FinishedGoodsInboundHistoryGroups> | null>(null);
 const visible = ref(false);
-const selectedId = ref<string | null>(null);
+const locatedInboundId = ref<string | null>(null);
+const locationOrigin = ref<'route' | 'confirmed' | null>(null);
+const locatedOnPage = computed(
+  () =>
+    !!locatedInboundId.value && rows.value.some((row) => row.inboundId === locatedInboundId.value),
+);
+const detachedOrder = computed(() =>
+  locatedInboundId.value && !locatedOnPage.value
+    ? (list.details[locatedInboundId.value] ?? null)
+    : null,
+);
 let changingTarget = false;
+let historyLoadSequence = 0;
+let pageActive = true;
 
 async function loadCandidates(): Promise<void> {
-  if (!props.active || view.value !== 'candidates' || !candidateRead.isActive()) return;
-  const current = candidateRead.begin(() => props.active && view.value === 'candidates');
+  if (!pageActive || !props.active || view.value !== 'candidates' || !candidateRead.isActive())
+    return;
+  const current = candidateRead.begin(
+    () => pageActive && props.active && view.value === 'candidates',
+  );
   candidateLoading.value = true;
   candidateError.value = '';
   try {
@@ -402,7 +348,7 @@ async function loadCandidates(): Promise<void> {
     candidateTotal.value = page.total;
   } catch (failure) {
     if (!current.isCurrent()) return;
-    candidateError.value = '成品授权读取失败，请重试';
+    candidateError.value = '可入库明细读取失败，请重试';
     EMessage.error(failure);
   } finally {
     if (current.isCurrent()) candidateLoading.value = false;
@@ -463,13 +409,26 @@ async function openFromCandidate(source: FinishedGoodsInboundCandidate): Promise
   if (!isSelected(source.allocationId)) await toggle(source);
   if (isSelected(source.allocationId)) await openCreate();
 }
-function sourceSummary(
-  row: FinishedGoodsInboundOrderItem,
-): Array<{ source: FinishedGoodsInboundSource; quantity: number }> {
-  const grouped = new Map<FinishedGoodsInboundSource, number>();
-  for (const item of row.details)
-    grouped.set(item.sourceType, (grouped.get(item.sourceType) ?? 0) + Number(item.quantity));
-  return [...grouped].map(([source, quantity]) => ({ source, quantity }));
+async function goInspection(batchId: string): Promise<void> {
+  if (editorDialog.value?.isLocked()) {
+    EMessage.warning('请先完成当前入库操作的核对或原操作重试');
+    return;
+  }
+  await router.push({ name: 'quality-finished-inspections', query: { batchId } });
+}
+async function goBatch(itemBatchId: string): Promise<void> {
+  if (editorDialog.value?.isLocked()) {
+    EMessage.warning('请先完成当前入库操作的核对或原操作重试');
+    return;
+  }
+  await router.push({ name: 'warehouse-inventory', query: { itemBatchId } });
+}
+async function goApproval(instanceId: string): Promise<void> {
+  if (editorDialog.value?.isLocked()) {
+    EMessage.warning('请先完成当前入库操作的核对或原操作重试');
+    return;
+  }
+  await router.push({ name: 'approval-inbox', query: { instanceId } });
 }
 async function prepareTargetSwitch(): Promise<boolean> {
   if (!editorDialog.value) return !selected.value.length;
@@ -479,11 +438,9 @@ async function prepareTargetSwitch(): Promise<boolean> {
 }
 async function openCreate(): Promise<void> {
   if (changingTarget || (!selected.value.length && !editorDialog.value?.hasDraft())) return;
-  if (visible.value && !editorDialog.value?.currentInboundId()) return;
+  if (visible.value) return;
   changingTarget = true;
   try {
-    if (visible.value && editorDialog.value && !(await editorDialog.value.close())) return;
-    selectedId.value = null;
     visible.value = true;
   } finally {
     changingTarget = false;
@@ -495,66 +452,177 @@ async function clearSelection(): Promise<void> {
 }
 async function restoreCurrentNavigation(rejectedId: string): Promise<void> {
   if (route.name !== 'warehouse-inbound' || route.query.inboundId !== rejectedId) return;
-  const inboundId = editorDialog.value?.currentInboundId() ?? undefined;
-  await router.replace({ query: { ...route.query, inboundId } });
+  await router.replace({
+    query: { ...route.query, inboundId: locatedInboundId.value ?? undefined },
+  });
 }
-async function openDetail(id: string, fromNavigation = false): Promise<void> {
-  if (visible.value && editorDialog.value?.currentInboundId() === id) return;
-  if (changingTarget) {
-    if (fromNavigation) await restoreCurrentNavigation(id);
+function retainVisibleDetails(): void {
+  list.retainDetails([
+    ...rows.value.map((row) => row.inboundId),
+    ...(locatedInboundId.value ? [locatedInboundId.value] : []),
+  ]);
+}
+function loadHistoryDetail(id: string): void {
+  if (pageActive && props.active && view.value === 'history') void list.loadDetail(id);
+}
+function retryHistoryDetail(id: string): void {
+  if (pageActive && props.active && view.value === 'history') void list.loadDetail(id, true);
+}
+async function loadHistory(refreshExpanded = false): Promise<void> {
+  if (!pageActive || !props.active || view.value !== 'history') return;
+  const sequence = ++historyLoadSequence;
+  if (locatedInboundId.value) void list.loadDetail(locatedInboundId.value, refreshExpanded);
+  const loaded = await list.load();
+  if (
+    !loaded ||
+    sequence !== historyLoadSequence ||
+    !pageActive ||
+    !props.active ||
+    view.value !== 'history'
+  )
     return;
-  }
-  changingTarget = true;
-  try {
-    if (!(await prepareTargetSwitch())) {
-      if (fromNavigation) await restoreCurrentNavigation(id);
-      return;
-    }
-    if (fromNavigation && (route.name !== 'warehouse-inbound' || route.query.inboundId !== id))
-      return;
-    view.value = 'history';
-    selectedId.value = id;
-    visible.value = true;
-  } finally {
-    changingTarget = false;
-  }
+  retainVisibleDetails();
+  if (locatedInboundId.value && !locatedOnPage.value)
+    void list.loadDetail(locatedInboundId.value, refreshExpanded);
+  await nextTick();
+  for (const id of historyGroups.value?.expandedIds() ?? [])
+    void list.loadDetail(id, refreshExpanded);
+}
+function searchHistory(): void {
+  query.page = 1;
+  void loadHistory();
+}
+function resetHistory(): void {
+  query.keyword = undefined;
+  query.sourceType = undefined;
+  searchHistory();
+}
+function changeHistoryPage(page: number): void {
+  query.page = page;
+  void loadHistory();
+}
+function changeHistoryPageSize(size: number): void {
+  query.pageSize = size;
+  searchHistory();
+}
+function refreshHistory(): void {
+  void loadHistory(true);
+}
+function clearHistoryLocation(): void {
+  const oldId = locatedInboundId.value;
+  locatedInboundId.value = null;
+  locationOrigin.value = null;
+  retainVisibleDetails();
+  if (oldId && route.name === 'warehouse-inbound' && route.query.inboundId === oldId)
+    void router.replace({ query: { ...route.query, inboundId: undefined } });
 }
 function onChanged(id: string): void {
   candidateRead.invalidate();
+  visible.value = false;
   view.value = 'history';
-  selectedId.value = id;
-  void list.load();
+  locatedInboundId.value = id;
+  locationOrigin.value = 'confirmed';
+  if (route.name === 'warehouse-inbound' && route.query.inboundId)
+    void router.replace({ query: { ...route.query, inboundId: undefined } });
+  void loadHistory();
 }
 function refreshActive(): void {
-  if (!props.active) return;
+  if (!pageActive || !props.active) return;
   if (view.value === 'candidates') void loadCandidates();
   else {
     candidateRead.invalidate();
-    void list.load();
+    void loadHistory(true);
+  }
+}
+let navigating = false;
+let pendingLocation: string | null | undefined;
+async function locate(id: string | null | undefined): Promise<void> {
+  if (!pageActive) {
+    pendingLocation = id;
+    return;
+  }
+  if (!id) {
+    if (navigating) {
+      pendingLocation = null;
+      return;
+    }
+    if (locationOrigin.value === 'route') clearHistoryLocation();
+    return;
+  }
+  if (navigating) {
+    pendingLocation = id;
+    return;
+  }
+  if (id === locatedInboundId.value && view.value === 'history') return;
+  navigating = true;
+  try {
+    if (!(await prepareTargetSwitch())) {
+      await restoreCurrentNavigation(id);
+      return;
+    }
+    if (id !== props.requestedInboundId || route.name !== 'warehouse-inbound') return;
+    view.value = 'history';
+    locatedInboundId.value = id;
+    locationOrigin.value = 'route';
+    retainVisibleDetails();
+    void loadHistory();
+  } finally {
+    navigating = false;
+    const next = pendingLocation;
+    pendingLocation = undefined;
+    if (next !== undefined && next === props.requestedInboundId) void locate(next);
   }
 }
 watch(
   () => props.requestedInboundId,
   (id) => {
-    if (id) void openDetail(id, true);
+    void locate(id);
   },
   { immediate: true },
 );
 watch(view, (value) => {
   if (value === 'history') candidateRead.invalidate();
+  else {
+    historyLoadSequence++;
+    list.cancelList();
+    list.cancelDetails();
+  }
 });
-onMounted(refreshActive);
+onMounted(() => {
+  if (!props.requestedInboundId) refreshActive();
+});
 watch(
   () => props.active,
   (active) => {
     if (active) refreshActive();
-    else candidateRead.invalidate();
+    else {
+      candidateRead.invalidate();
+      historyLoadSequence++;
+      list.cancelList();
+      list.cancelDetails();
+    }
   },
 );
 let activated = false;
 onActivated(() => {
-  if (activated && props.active) refreshActive();
+  pageActive = true;
+  const hasPendingLocation = pendingLocation !== undefined;
+  let locatingNewTarget = false;
+  if (hasPendingLocation) {
+    const next = pendingLocation;
+    pendingLocation = undefined;
+    locatingNewTarget = !!next && (next !== locatedInboundId.value || view.value !== 'history');
+    void locate(next);
+  }
+  if (activated && props.active && !locatingNewTarget) refreshActive();
   activated = true;
+});
+onDeactivated(() => {
+  pageActive = false;
+  candidateRead.invalidate();
+  historyLoadSequence++;
+  list.cancelList();
+  list.cancelDetails();
 });
 onScopeDispose(
   useTabsStore().registerCloseGuard('warehouse-inbound', async () =>
@@ -586,19 +654,7 @@ onScopeDispose(
   font-size: 12px;
   line-height: 1.7;
 }
-.available {
-  color: var(--el-color-success-dark-2);
-}
-.error {
-  color: var(--el-color-danger);
-}
-.rules {
-  color: var(--el-text-color-secondary);
-  font-size: 12px;
-  padding: 8px 16px;
-}
-.rules summary {
-  color: var(--el-color-primary);
-  cursor: pointer;
+.inbound-hint {
+  margin: 0;
 }
 </style>

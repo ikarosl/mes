@@ -4,6 +4,7 @@ import { withTransaction } from '@company/database';
 import type { Pool } from 'mysql2/promise';
 import type {
   PageQuery,
+  ReceiptAllocationCandidateQuery,
   ProcurementReceiptQuery as ReceiptListQuery,
   ProcurementInboundReleaseQuery,
   ProcurementInboundInspectionQuery,
@@ -19,6 +20,7 @@ import { ProcurementDomainError } from '../domain/procurement.errors.js';
 import { readReceiptLines } from './queries/receipt-lines.query.js';
 import {
   listReceipts,
+  listReceiptLines,
   listInboundReleases,
   listInspections,
 } from './queries/receipt-lists.query.js';
@@ -42,11 +44,14 @@ export class MysqlProcurementReceiptQuery extends ProcurementReceiptQuery {
   ) {
     super();
   }
-  allocationCandidates(id: string, query: PageQuery) {
+  allocationCandidates(id: string, query: ReceiptAllocationCandidateQuery) {
     return withTransaction(this.pool, (db) => listReceiptAllocationCandidates(db, id, query));
   }
   listReceipts(query: ReceiptListQuery) {
     return withTransaction(this.pool, (db) => listReceipts(db, query));
+  }
+  listReceiptLines(query: ReceiptListQuery) {
+    return withTransaction(this.pool, (db) => listReceiptLines(db, query));
   }
   getReceipt(id: string) {
     return withTransaction(this.pool, async (db) => {

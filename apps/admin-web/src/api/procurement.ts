@@ -11,6 +11,8 @@ import type {
   PurchaseOrderQuery,
   PurchaseExcessReceiptCandidateQuery,
   PurchaseExcessReceiptCandidate,
+  PurchaseQualityReplacementCandidateQuery,
+  PurchaseQualityReplacementCandidate,
   PurchaseOrderItem,
   PurchaseOrderDetail,
   CreatePurchaseOrderPayload,
@@ -29,6 +31,7 @@ import type {
   RelatedPurchasesResult,
   ProcurementReceiptQuery,
   ProcurementReceiptItem,
+  ProcurementReceiptLineListItem,
   ProcurementReceiptDetail,
   ProcurementReceiptLine,
   ConfirmProcurementReceiptPayload,
@@ -41,7 +44,8 @@ import type {
   ProcurementReceiptCommandResult,
   ConfirmReceiptAcceptancePayload,
   ReceiptAcceptanceItem,
-  ReceiptAllocationCandidate,
+  ReceiptAllocationCandidateQuery,
+  ReceiptAllocationCandidateResult,
   ProcurementInboundInspectionQuery,
   ProcurementInboundInspectionItem,
   PageQuery,
@@ -90,11 +94,27 @@ export const procurementApi = {
       signal,
       skipErrorHandling: true,
     }),
+  qualityReplacementCandidates: (
+    purchaseOrderLineId: string,
+    params: PurchaseQualityReplacementCandidateQuery,
+    signal?: AbortSignal,
+  ): Promise<PageResult<PurchaseQualityReplacementCandidate>> =>
+    request({
+      url: `/procurement/purchase-order-lines/${purchaseOrderLineId}/quality-replacement-candidates`,
+      params,
+      signal,
+      skipErrorHandling: true,
+    }),
   listReceipts: (
     params: ProcurementReceiptQuery,
     signal?: AbortSignal,
   ): Promise<PageResult<ProcurementReceiptItem>> =>
     request({ url: '/procurement/receipts', params, signal, skipErrorHandling: true }),
+  listReceiptLines: (
+    params: ProcurementReceiptQuery,
+    signal?: AbortSignal,
+  ): Promise<PageResult<ProcurementReceiptLineListItem>> =>
+    request({ url: '/procurement/receipt-lines', params, signal, skipErrorHandling: true }),
   getReceipt: (id: string, signal?: AbortSignal): Promise<ProcurementReceiptDetail> =>
     request({ url: `/procurement/receipts/${id}`, signal, skipErrorHandling: true }),
   getReceiptLine: (id: string, signal?: AbortSignal): Promise<ProcurementReceiptLine> =>
@@ -148,12 +168,15 @@ export const procurementApi = {
     }),
   receiptAllocationCandidates: (
     id: string,
-    params: PageQuery,
+    params: ReceiptAllocationCandidateQuery,
     signal?: AbortSignal,
-  ): Promise<PageResult<ReceiptAllocationCandidate>> =>
+  ): Promise<ReceiptAllocationCandidateResult> =>
     request({
       url: `/procurement/receipt-lines/${id}/allocation-candidates`,
-      params,
+      params: {
+        ...params,
+        includeIds: params.includeIds?.length ? params.includeIds.join(',') : undefined,
+      },
       signal,
       skipErrorHandling: true,
     }),
@@ -335,7 +358,7 @@ export const procurementApi = {
     data: CreatePurchaseOrderSupplementPayload,
     key: string,
   ): Promise<PurchaseOrderCommandResult> =>
-    command(`/procurement/purchase-order-lines/${id}/supplements`, data, key),
+    command(`/procurement/purchase-orders/${id}/supplements`, data, key),
   demandWorkOrders: (
     params: ProcurementDemandWorkOrderQuery,
     signal?: AbortSignal,

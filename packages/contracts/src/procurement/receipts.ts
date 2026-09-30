@@ -129,10 +129,15 @@ export interface ReceiptInboundHistoryItem {
   quantity: string;
   confirmedAt: string;
 }
+export interface ReceiptInspectionExecution {
+  inboundQuantity: string;
+  qualityReturnedQuantity: string;
+  otherReturnedQuantity: string;
+}
 export interface ProcurementReceiptLine {
   currentRound: ReceiptRoundItem;
-  /** 当前引用的同一份检验关联范围中，已经实际入库或退回的数量。 */
-  currentInspectionConsumedQuantity: string;
+  /** 当前引用的同一份检验所关联的真实执行量；没有当前检验时各项为 0。 */
+  currentInspectionExecution: ReceiptInspectionExecution;
   /** 最近未消费执行份额的采购归属，仅作更正和拒收的人工核对来源。 */
   ownershipSources: Array<{ purchaseOrderLineId: string; purchaseNo: string; quantity: string }>;
   ownershipSourceQuantity: string;
@@ -141,8 +146,14 @@ export interface ProcurementReceiptLine {
   supplierName: string;
   id: string;
   receiptId: string;
+  receiptNo: string;
   purchaseOrderId: string;
+  purchaseNo: string;
   purchaseOrderLineId: string;
+  /** 原采购行计划量减当前正式已授权履约量，供本批定稿初值参考。 */
+  originalRemainingPlannedQuantity: string;
+  /** 登记来源采购行的持久行号，区别于本到货单的 lineNo。 */
+  purchaseOrderLineNo: number;
   lineNo: number;
   itemId: string;
   itemCode: string;
@@ -163,6 +174,30 @@ export interface ProcurementReceiptLine {
   inbounds: ReceiptInboundHistoryItem[];
   acceptances: ReceiptAcceptanceItem[];
   historyTotals: Record<ReceiptHistoryKind, number>;
+}
+export interface ProcurementReceiptLineListItem extends Pick<
+  ProcurementReceiptLine,
+  | 'id'
+  | 'receiptId'
+  | 'purchaseOrderId'
+  | 'purchaseOrderLineId'
+  | 'purchaseOrderLineNo'
+  | 'lineNo'
+  | 'itemId'
+  | 'itemCode'
+  | 'itemName'
+  | 'materialVariantId'
+  | 'materialVariantCode'
+  | 'unit'
+  | 'supplierId'
+  | 'supplierName'
+  | 'supplierBatchCode'
+  | 'currentRound'
+  | 'quantities'
+> {
+  receiptNo: string;
+  purchaseNo: string;
+  receivedAt: string;
 }
 export interface ProcurementReceiptDetail extends ProcurementReceiptItem {
   items: ProcurementReceiptLine[];
@@ -245,6 +280,7 @@ export interface ProcurementReceiptCommandResult {
 }
 export interface ProcurementInboundInspectionQuery extends Omit<QualityInboundCaseQuery, 'status'> {
   roundStatus?: ReceiptRoundStatus;
+  currentRoundStatus?: ReceiptRoundStatus;
   keyword?: string;
   supplierId?: string;
   status?: 'uninspected' | 'reviewing' | 'completed' | 'superseded';
@@ -253,10 +289,15 @@ export interface ProcurementInboundInspectionItem {
   roundId: string;
   roundVersion: number;
   roundStatus: ReceiptRoundStatus;
+  sourceRoundNo: number;
+  currentRound: Pick<ReceiptRoundItem, 'id' | 'roundNo' | 'status' | 'inspectionId'>;
+  isCurrentlyAdopted: boolean;
+  isInherited: boolean;
   taskKey: string;
   taskKind: 'uninspected' | 'case';
   case: QualityInboundCaseItem | null;
   receiptLineId: string;
+  receiptLineNo: number;
   receiptLineVersion: number;
   coveredQuantity: string;
   receiptId: string;
@@ -329,8 +370,6 @@ export interface ReceiptAcceptanceItem {
   details: ReceiptAllocationDetailItem[];
 }
 export interface ReceiptAllocationCandidate {
-  retainedBindingQuantity: string;
-  remainingPlannedQuantity: string;
   purchaseOrderLineId: string;
   purchaseOrderId: string;
   purchaseNo: string;
@@ -338,4 +377,13 @@ export interface ReceiptAllocationCandidate {
   fulfillmentMode: 'new_arrival' | 'existing_receipt';
   isOriginal: boolean;
   remainingBindingQuantity: string | null;
+}
+export interface ReceiptAllocationCandidateQuery {
+  keyword?: string;
+  includeIds?: string[];
+}
+export interface ReceiptAllocationCandidateResult {
+  items: ReceiptAllocationCandidate[];
+  resolved: ReceiptAllocationCandidate[];
+  hasMore: boolean;
 }

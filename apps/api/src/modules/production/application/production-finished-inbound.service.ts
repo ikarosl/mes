@@ -37,8 +37,37 @@ export class ProductionFinishedInboundService {
   }
   async get(id: string) {
     const row = await this.repository.get(id);
-    const names = await this.names([row.createdById]);
-    return { ...row, createdByName: names.get(row.createdById) ?? row.createdById };
+    const names = await this.names([
+      row.createdById,
+      ...row.details.flatMap((line) =>
+        line.approvedOutput
+          ? [line.approvedOutput.approvedBy, line.approvedOutput.snapshot.inspection.createdBy]
+          : [],
+      ),
+    ]);
+    return {
+      ...row,
+      createdByName: names.get(row.createdById) ?? row.createdById,
+      details: row.details.map((line) => {
+        const revision = line.approvedOutput;
+        if (!revision) return line;
+        const inspection = revision.snapshot.inspection;
+        return {
+          ...line,
+          approvedOutput: {
+            ...revision,
+            approvedByName: names.get(revision.approvedBy) ?? revision.approvedBy,
+            snapshot: {
+              ...revision.snapshot,
+              inspection: {
+                ...inspection,
+                createdByName: names.get(inspection.createdBy) ?? inspection.createdBy,
+              },
+            },
+          },
+        };
+      }),
+    };
   }
   async confirm(payload: ConfirmFinishedGoodsInboundPayload, context: IdempotentCommandContext) {
     for (const { target } of payload.details) {

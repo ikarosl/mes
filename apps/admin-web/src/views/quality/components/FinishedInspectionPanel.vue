@@ -131,12 +131,15 @@
           }}<template v-if="typeof actualTotal === 'number'"> 件</template></el-descriptions-item
         >
       </el-descriptions>
-      <details class="muted quantity-help">
-        <summary>数量如何计算</summary>
-        <p>
-          全检总数由合格数加不合格数计算。抽检的样本检查总数不得超过整批实际送检总数；实际总数按现场核实填写，可以与申报草稿不同。
-        </p>
-      </details>
+      <InlineHint class="quantity-help">
+        <template v-if="isSampling"
+          >样本合格与不合格之和<strong>不得超过整批实际送检数</strong>；整批数量按现场核实填写。</template
+        >
+        <template v-else
+          >全检总数 =
+          <strong>合格数 + 不合格数</strong>；按现场核实填写，可以与申报量不同。</template
+        >
+      </InlineHint>
       <el-alert
         v-if="difference !== null && difference !== 0"
         type="warning"
@@ -235,6 +238,7 @@
 </template>
 <script setup lang="ts">
 import { computed } from 'vue';
+import InlineHint from '../../../components/InlineHint.vue';
 import { fromBeijingDateTimeInputValue, toBeijingDateTimeInputValue } from '../../../utils/date';
 import type {
   FinishedInspectionTaskDetail,
@@ -347,7 +351,7 @@ defineEmits<{
 }
 .inspection-form h3 {
   margin: 16px 0 10px;
-  color: #283a50;
+  color: var(--el-text-color-primary);
   font-size: 15px;
 }
 .form-context {
@@ -357,9 +361,8 @@ defineEmits<{
   color: #6b7280;
   font-size: 13px;
 }
-.quantity-help summary {
-  color: #306188;
-  cursor: pointer;
+.quantity-help {
+  margin-top: 12px;
 }
 .notice {
   margin-top: 12px;

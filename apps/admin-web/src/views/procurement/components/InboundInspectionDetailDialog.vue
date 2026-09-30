@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     v-model="visible"
-    :title="`来料检验${task ? ` · ${task.receiptNo}` : ''}`"
+    :title="`来料检验${line ? ` · ${line.receiptNo} · 第 ${line.lineNo} 行` : ''}`"
     :width="DialogWidth.workbench"
     workbench
     :before-close="beforeClose"
@@ -17,14 +17,14 @@
       />
       <template v-if="line">
         <el-descriptions
-          v-if="task"
           :column="3"
           border
           class="notice"
-          ><el-descriptions-item label="到货单">{{ task.receiptNo }}</el-descriptions-item
-          ><el-descriptions-item label="采购单">{{ task.purchaseNo }}</el-descriptions-item
+          ><el-descriptions-item label="到货明细"
+            >{{ line.receiptNo }} · 第 {{ line.lineNo }} 行</el-descriptions-item
+          ><el-descriptions-item label="采购单">{{ line.purchaseNo }}</el-descriptions-item
           ><el-descriptions-item label="供应商">{{
-            task.supplierName
+            line.supplierName
           }}</el-descriptions-item></el-descriptions
         >
         <ReceiptLineSummary :line="line" />
@@ -104,7 +104,7 @@
         </div>
         <el-alert
           v-if="['reinspection_required', 'quality_rejected'].includes(line.currentRound.status)"
-          type="warning"
+          :type="line.currentRound.status === 'quality_rejected' ? 'error' : 'warning'"
           :closable="false"
           class="notice"
           title="本次检查记录已保存，但本批仍不允许正常定稿或入库；可发起整批复检，库管仍可独立拒收。"
@@ -113,8 +113,31 @@
           v-if="currentInspection"
           class="selected-record"
         >
-          <strong>本批当前检验依据</strong
-          ><InboundInspectionRecord :inspection="currentInspection" />
+          <strong
+            >本批当前检验依据<span v-if="currentCaseRoundNo !== undefined">
+              · 检验所属处理第 {{ currentCaseRoundNo }} 轮</span
+            ></strong
+          >
+          <InboundInspectionRecord
+            :inspection="currentInspection"
+            :round-no="currentCaseRoundNo"
+          />
+        </div>
+        <div
+          v-if="selectedCase?.inspection && selectedCase.inspection.id !== currentInspection?.id"
+          class="selected-record"
+        >
+          <strong
+            >所选历史检验结论 · {{ QUALITY_INBOUND_CASE_STATUS_LABELS[selectedCase.status]
+            }}<span v-if="selectedCaseRoundNo !== undefined">
+              · 第 {{ selectedCaseRoundNo }} 轮</span
+            ></strong
+          >
+          <p class="historical-note">此记录属于历史办理，仅供追溯，不代表当前轮采用依据。</p>
+          <InboundInspectionRecord
+            :inspection="selectedCase.inspection"
+            :round-no="selectedCaseRoundNo"
+          />
         </div>
         <ReceiptLineAllocations
           :line="line"
@@ -122,64 +145,14 @@
           :disabled="blocked"
           @history="history?.open(line.id, $event, line)"
         />
-        <el-collapse
-          v-model="expandedSections"
-          class="history-section"
-        >
-          <el-collapse-item
-            name="history"
-            title="历史与来源记录"
-          >
-            <div
-              v-if="
-                selectedCase?.inspection && selectedCase.inspection.id !== currentInspection?.id
-              "
-              class="selected-record"
-            >
-              <strong
-                >所选历史检验结论 ·
-                {{ QUALITY_INBOUND_CASE_STATUS_LABELS[selectedCase.status] }}</strong
-              >
-              <p class="historical-note">此记录属于历史办理，仅供追溯，不代表当前轮采用依据。</p>
-              <InboundInspectionRecord :inspection="selectedCase.inspection" />
-            </div>
-            <div class="history-actions">
-              <el-button @click="history?.open(line.id, 'rounds', line)"
-                >处理轮次 {{ line.historyTotals.rounds }}</el-button
-              >
-              <el-button @click="history?.open(line.id, 'revisions', line)"
-                >实收修订 {{ line.historyTotals.revisions }}</el-button
-              >
-              <el-button @click="history?.open(line.id, 'cases', line)"
-                >检验历史 {{ line.historyTotals.cases }}</el-button
-              >
-              <el-button @click="history?.open(line.id, 'returns', line)"
-                >退回记录 {{ line.historyTotals.returns }}</el-button
-              >
-              <el-button @click="history?.open(line.id, 'inbounds', line)"
-                >入库记录 {{ line.historyTotals.inbounds }}</el-button
-              >
-              <el-button
-                v-if="auth.can(PERMISSIONS.procurement.receipts.view)"
-                :disabled="blocked"
-                @click="goReceipt"
-                >查看到货 / 实收更正</el-button
-              >
-              <el-button
-                v-if="
-                  auth.can(PERMISSIONS.production.inbounds.view) &&
-                  Number(line.quantities.pendingInboundQuantity) > 0
-                "
-                :disabled="blocked"
-                @click="goInbound"
-                >仓管确认入库</el-button
-              >
-            </div>
-          </el-collapse-item>
-        </el-collapse>
       </template>
     </div>
     <template #footer
+      ><el-button
+        v-if="line && auth.can(PERMISSIONS.procurement.receipts.view)"
+        :disabled="blocked"
+        @click="goReceipt"
+        >查看到货 / 实收更正</el-button
       ><el-button
         :disabled="actions?.locked"
         @click="load"
@@ -217,23 +190,30 @@ const auth = useAuthStore(),
   router = useRouter();
 const visible = ref(false),
   lineId = ref(''),
-  expandedSections = ref<string[]>([]),
   loading = ref(false),
   readError = ref(false);
 const line = ref<ProcurementReceiptLine | null>(null),
-  task = ref<ProcurementInboundInspectionItem | null>(null),
   selectedCase = ref<QualityInboundCaseItem | null>(null);
 const actions = ref<InstanceType<typeof ReceiptLineActionDialog>>(),
   history = ref<InstanceType<typeof ReceiptHistoryDialog>>();
 const read = useLatestReadRequest(() => {
   loading.value = false;
 });
-const currentInspection = computed(
+const currentCase = computed(
   () =>
     line.value?.cases.find(
       (record) => record.inspection?.id === line.value?.currentRound.inspectionId,
-    )?.inspection ?? null,
+    ) ?? null,
 );
+const currentInspection = computed(() => currentCase.value?.inspection ?? null);
+const roundNoForCase = (record: QualityInboundCaseItem | null): number | undefined => {
+  const receiptLine = line.value;
+  if (!receiptLine || !record) return undefined;
+  if (receiptLine.currentRound.id === record.roundId) return receiptLine.currentRound.roundNo;
+  return receiptLine.rounds.find((round) => round.id === record.roundId)?.roundNo;
+};
+const currentCaseRoundNo = computed(() => roundNoForCase(currentCase.value));
+const selectedCaseRoundNo = computed(() => roundNoForCase(selectedCase.value));
 const blocked = computed(() => loading.value || readError.value || Boolean(actions.value?.visible));
 const load = async (): Promise<void> => {
   if (!visible.value || !read.isActive()) return;
@@ -244,12 +224,6 @@ const load = async (): Promise<void> => {
     const result = await procurementApi.inspectionReceiptLine(target, current.signal);
     if (current.isCurrent()) {
       line.value = result;
-      if (
-        selectedCase.value?.inspection &&
-        selectedCase.value.inspection.id !== result.currentRound.inspectionId &&
-        !expandedSections.value.includes('history')
-      )
-        expandedSections.value = [...expandedSections.value, 'history'];
       readError.value = false;
     }
   } catch (error) {
@@ -265,9 +239,7 @@ const open = async (id: string, context?: ProcurementInboundInspectionItem): Pro
   if (visible.value && !(await close())) return;
   lineId.value = id;
   line.value = null;
-  task.value = context ?? null;
   selectedCase.value = context?.case ?? null;
-  expandedSections.value = [];
   readError.value = false;
   visible.value = true;
   await load();
@@ -311,6 +283,8 @@ defineExpose({
   open,
   close,
   visible,
+  openedLineId: computed(() => (visible.value ? lineId.value : '')),
+  openedCaseId: computed(() => (visible.value ? (selectedCase.value?.id ?? '') : '')),
   locked: computed(() => Boolean(actions.value?.locked || history.value?.locked)),
 });
 </script>
@@ -318,8 +292,7 @@ defineExpose({
 .notice {
   margin-bottom: 16px;
 }
-.current-action,
-.history-actions {
+.current-action {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -328,23 +301,17 @@ defineExpose({
 }
 .current-action {
   padding: 12px;
-  background: #f5f7fa;
-  border-left: 3px solid #306188;
+  background: var(--el-fill-color-light);
+  border-left: 3px solid var(--el-color-primary);
 }
 .current-action strong {
   width: 100%;
 }
 .current-action span {
-  color: #1f2937;
+  color: var(--el-text-color-primary);
 }
 .secondary-action {
   margin-bottom: 12px;
-}
-.history-actions .el-button {
-  margin-left: 0;
-}
-.history-section {
-  margin-top: 18px;
 }
 .selected-record {
   margin: 20px 0;
@@ -355,6 +322,6 @@ defineExpose({
 }
 .historical-note {
   margin: 0 0 10px;
-  color: #6b7280;
+  color: var(--el-text-color-regular);
 }
 </style>

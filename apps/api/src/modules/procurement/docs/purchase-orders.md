@@ -8,14 +8,15 @@
 
 | 方法与路径（省略 /api） | 权限（省略 procurement:orders:） | 请求 |
 | --- | --- | --- |
-| GET /procurement/purchase-orders、/:id | view | keyword/supplierId/sourceType/status/originOrderLineId，公共分页；originOrderLineId 精确反查原行的相关独立补单 |
+| GET /procurement/purchase-orders、/:id | view | keyword/supplierId/sourceType/status/originOrderLineId/originAllocationId，公共分页；两个来源条件须命中同一补单行，按原行或质量分配精确反查相关补单 |
 | POST /procurement/purchase-orders | create | workOrderId/sourceType/remark/items（每行 supplierId） |
 | PATCH /procurement/purchase-orders/:id | update | 上述完整草稿及 version |
 | POST /procurement/purchase-orders/:id/actions/place | place | version |
 | POST /procurement/purchase-orders/:id/actions/cancel | cancel | version/reason |
 | POST /procurement/purchase-order-lines/:id/actions/close | close | 行 version、reasonType=quality_target/quality_return_completed/manual_end/cancelled、reason |
-| POST /procurement/purchase-order-lines/:id/supplements | create | supplementReason、plannedQuantity、supplementEvidence、originReceiptLineId/originAllocationId、remark |
-| GET /procurement/purchase-order-lines/:id/excess-receipt-candidates | view | 公共分页、可选 receiptLineId 精确定位；返回本原采购行的真实到货及当前实收／未处置量，供采购页选择超量补单依据 |
+| POST /procurement/purchase-orders/:id/supplements | create | `id` 为原采购主单；supplementReason、items（每行 originOrderLineId、originReceiptLineId、质量补发必填 originAllocationId、plannedQuantity、supplementEvidence）、remark |
+| GET /procurement/purchase-order-lines/:id/excess-receipt-candidates | view | 公共分页；keyword 搜到货单号／供应商批号，receiptLineId 精确定位；返回本原采购行的真实到货及当前实收／未处置量 |
+| GET /procurement/purchase-order-lines/:id/quality-replacement-candidates | view | 按质量退回分配分页；keyword 搜到货单号／供应商批号／真实退回单号，receiptLineId/allocationId 精确定位；当前有效质量待退及已实际质量退回均可选，返回待退／已退、实际退回单号、来源与分配归属及关联补单状态数量摘要 |
 | GET /procurement/demand-work-orders | view | page/pageSize/keyword，只返回包含合资格需求的工单 |
 | GET /procurement/demand-candidates | view | 必填 workOrderId，分页及 keyword/batchId/itemId/demandType |
 | POST /procurement/demand-candidates/resolve | view | workOrderId/demandIds，显式解析每个已选项，异工单返回阻断；只读，无幂等头 |
@@ -24,7 +25,7 @@
 
 GET `/procurement/related-purchases` 接受批量 demandIds 和公共分页，合法查看权限任一：`procurement:orders:view`、`production:tasks:view`、`production:material-demands:view`、`production:materials:view`。响应为分页关联采购行与逐需求 distinct 采购单数；行计划量明确是不分摊的整行数量。当前需求已关闭、被更正、已履约或基础物料停用都不抹去关联历史。查询按集合处理，禁止逐需求 N+1。
 
-六类订单写命令均要求 Idempotency-Key，采购主单和补单在实际创建事务内由服务端分配 PO 编号；create/update scope 为 `procurement.purchase-order.create.v2/update.v2`；place/cancel 仍为各自 `.v1`，supplement 使用 `.v3`，行关闭为 `procurement.purchase-order-line.close.v1`。PATCH 同样使用幂等以保证整体替换草稿行的响应不确定时安全重放。application 规范化请求并收窄审计上下文传给 port，平台 executor 与业务、审计复用同一事务。所有写结果为 `{purchaseOrderId,version}`，首次和重放返回同一 codec 快照，再 GET 当前详情。
+六类订单写命令均要求 Idempotency-Key，采购主单和补单在实际创建事务内由服务端分配 PO 编号；create 为 `procurement.purchase-order.create.v2`，update 为 `.update.v3`，place 为 `.place.v2`，cancel 仍为 `.cancel.v1`，supplement 为 `.supplement.v4`，行关闭为 `procurement.purchase-order-line.close.v1`。PATCH 同样使用幂等以保证整体替换草稿行的响应不确定时安全重放。application 规范化请求并收窄审计上下文传给 port，平台 executor 与业务、审计复用同一事务。所有写结果为 `{purchaseOrderId,version}`，首次和重放返回同一 codec 快照，再 GET 当前详情。
 
 ## 当前状态、来源与事务
 
@@ -85,13 +86,13 @@ GET `/procurement/related-purchases` 接受批量 demandIds 和公共分页，�
 
 下单先非锁定位草稿来源，再按 Production 根 → Procurement 原根／当前根（数值 ID 排序）→ 供应商与采购行 → Product 锁序办理。取得采购根后检查版本及完整来源映射未变化，变化即失败，不继续补锁新的 Production 根。锁后业务读取使用当前锁读；无锁定位结果只用于确定锁集合。新增单没有已存在的采购根，先核供应商后插入新根，再检查 Product 并写行。写入失败全部回滚。
 
-超量补单是独立单号、ID 和草稿，仅允许引用已正式下单的原行，继承供应商、来源类别和完整需求关联。旧需求资格不重新判定、不重开，不因来源后来关闭而失去追溯；Product 和供应商仍重新核验。要求真实到货引用及非空现场依据文字。补单草稿只调整数量及备注，原身份和依据保持；超量补单按已到货承接规则核验绑定，质量补发不设累计补发额度或次数上限。
+补单是独立单号、ID 和草稿，一张补单只引用同一已正式下单原采购单且只选择一种补因，可选该原单的多条不同物料行；每条补单行只引用一条原采购行、一条真实到货及一份具体依据，同一原行不得重复加入。各行继承原供应商、精确物料版本和完整需求关联，主单继承来源类别及工单。旧需求资格不重新判定、不重开，不因来源后来关闭而失去追溯；Product 和供应商仍重新核验。超量要求真实到货引用及非空现场依据文字；补单草稿只调整各行计划量及主单备注，行数、顺序、原身份、需求和依据保持。超量补单按已到货承接规则核验绑定，质量补发不设累计补发额度或次数上限。
 
-采购页的超量补单到货候选独立使用 `procurement:orders:view`，不借用到货管理页权限。候选严格按原采购行读取，不把相同物料的其他采购到货混入；允许原采购已关闭、到货已执行完的历史事实作为依据，未处置量只是参考，不改变创建补单及定稿绑定的服务端资格规则。列表按到货时间和明细 ID 倒序分页，`receiptLineId` 仅在该原行内精确解析，用于跨页面定位。
+采购页的超量补单到货候选独立使用 `procurement:orders:view`，不借用到货管理页权限。候选严格按原采购行读取，不把相同物料的其他采购到货混入；允许原采购已关闭、到货已执行完的历史事实作为依据，未处置量只是参考，不改变创建补单及定稿绑定的服务端资格规则。keyword 在分页前匹配到货单号或供应商批号，列表按到货时间和明细 ID 倒序分页，`receiptLineId` 仅在该原行内精确解析，用于跨页面定位。
 
 采购行详情批量返回当前 quantities 与 allowedCloseReasons，读写复用 `allowedPurchaseOrderClosureReasons`。取消要求从未有任何到货明细，实收更正为零仍不能取消。关闭根据锁内当前修订、有效范围、Quality 未完成复核、实际退回和 Inventory 累计入库计算 A/U/L/I/J/R/R质量：质检达标 L>=计划；质量退回处置完成 A>=计划、L<计划、U=0、无待退、L+R质量>=计划且无复核；人工结束必须说明原因。正常关闭不要求已经全部入库，关闭事实冻结当时依据 ID 与数量，后续修订和物流不覆盖关闭事实或重开采购。
 
-质量补发必须提交原采购行、originReceiptLineId、originAllocationId 及非空 supplementEvidence（供应商补发约定）。引用同次到货正式清单中 disposition=return、return_reason=quality 的分配明细；创建及正式下单均在原采购根锁内确认仍有该分配的质量待退或已退范围。被更正取消或全部进入复核的旧处置不可新建或下单，不能只引用历史检验不合格数。超发及采购终止退回不适用。允许先补后退，不要求实际退回或原单关闭；补发不自动登记退回、不关闭原单、不新增需求。实际退回独立通过相同 allocation_id 追溯。补单保留原来源映射，不按既有补单累计量限制补发；采购核对约定数量与相关补单，Product 与供应商资格仍重新检查。
+质量补发每行必须提交 originOrderLineId、originReceiptLineId、originAllocationId 及非空 supplementEvidence（供应商补发约定）。引用同次到货正式清单中 disposition=return、return_reason=quality 的分配明细；创建及正式下单均在原采购根锁内逐行确认仍有该分配的质量待退或已退范围。候选按**到货登记来源原采购行**组织，正式分配的履约采购行另行展示，不能拿它替代到货来源。被更正取消或全部进入复核的旧处置不可新建或下单，不能只引用历史检验不合格数。超发及采购终止退回不适用。允许先补后退，不要求实际退回或原单关闭；补发不自动登记退回、不关闭原单、不新增需求。实际退回独立通过相同 allocation_id 追溯。补单保留各原行来源映射，不按既有补单累计量限制补发；采购核对约定数量与相关补单，Product 与供应商资格仍重新检查。采购页质量候选使用 `procurement:orders:view`，摘要按订单状态汇总；需查看关联补发单号时使用采购单列表的 originOrderLineId＋originAllocationId 精确分页过滤。
 
 成功审计 action 为 `purchase-order.create/update/place/cancel/supplement` 或 `purchase-order-line.close`，同业务事务写入。验证与验收顺序遵守 [AGENTS.md](../../../../../../AGENTS.md#数据库与交付约定)。
 
@@ -121,7 +122,7 @@ GET `/procurement/related-purchases` 接受批量 demandIds 和公共分页，�
 
 正式下单冻结每行供应商、物料精确版本、计划量及来源，并固定按需主单工单。普通按需写事务先校验 Production 来源根，再锁 Procurement 根与行；供应商按 ID 去重并以数值顺序锁定／校验，避免多行多供应商交叉锁。公开 Product 资格及当前数量、状态门禁继续有效。请求规范化、指纹、结果 codec 和幂等 scope 必须随契约切换审视，不能把新请求解释为旧主单供应商契约。
 
-补单入口只从一个原采购行创建单行独立新单。补单继承并锁定**原采购行**的供应商、物料精确版本和来源类别；按需补单保持原单工单，原需求关闭或工单结束仍不要求重新激活。创建请求不开放 supplierId/workOrderId；补单草稿复用普通 PATCH 完整形状时，这些身份字段必须与继承值一致，只能调整现有补单规则允许的数量和备注。质量补发的正式质量退回处置、原到货及原采购行必须同属该供应商；超量补单也沿所引用原行追溯，不从多供应商主单随意选一个供应商。若要向另一供应商另行购买，应按相应普通采购入口建单，不能改写异常补单的原供应商身份。不扩大为多原单、多行补单。
+补单入口从一个已正式下单的原采购主单选择一至多条不同原行，创建一张同补因独立新单。每条补单行继承并锁定对应**原采购行**的供应商、物料精确版本及完整需求来源；按需补单保持原单工单，原需求关闭或工单结束仍不要求重新激活。创建请求不开放 supplierId/workOrderId；补单草稿复用普通 PATCH 完整形状时，行数与顺序以及这些身份字段必须与继承值一致，只能调整逐行计划量和主单备注。质量补发的正式质量退回处置、原到货及原采购行必须同属相应供应商；超量补单也沿所引用原行追溯，不从多供应商主单随意选一个供应商。若要向另一供应商另行购买，应按相应普通采购入口建单，不能改写异常补单的原供应商身份。不跨原采购主单合单，也不让同一补单行绑定多份到货或退回依据。
 
 关闭继续以具体采购行判断 Q/A/U/L/I/J/R，其他供应商同物料行的实收或放行不能抵补。行关闭只停止该行新增到货；主单完成仍由所有行终态聚合，已到实物待办不随主单完成消失。表名与约束见[数据库设计](database.md)。
 

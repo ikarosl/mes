@@ -36,13 +36,13 @@
         </el-descriptions>
         <div class="current-basis">
           <div>
-            <span class="section-caption">当前办理轮次</span>
-            <strong>{{
-              detail.currentRoundId ? `轮次 #${detail.currentRoundId}` : '尚无当前轮'
-            }}</strong>
+            <span class="section-caption">当前检验阶段</span>
+            <strong v-if="!detail.currentRoundId">尚未建立检验轮</strong>
             <el-tag
               v-if="detail.currentRoundStatus"
               size="small"
+              :type="finishedRoundTagType(detail.currentRoundStatus)"
+              :effect="finishedRoundTagEffect(detail.currentRoundStatus)"
               >{{ PRODUCTION_OUTPUT_ROUND_STATUS_LABELS[detail.currentRoundStatus] }}</el-tag
             >
           </div>
@@ -54,9 +54,16 @@
               }}</strong>
               <span class="basis-detail"
                 >实送检 {{ currentInspection.coveredQuantity }} 件 · 实检合格
-                {{ currentInspection.qualifiedQuantity }} 件 · 不合格
-                {{ currentInspection.unqualifiedQuantity }} 件</span
-              >
+                <InspectionQuantity
+                  :value="currentInspection.qualifiedQuantity"
+                  kind="qualified"
+                  unit="件" />
+                · 不合格
+                <InspectionQuantity
+                  :value="currentInspection.unqualifiedQuantity"
+                  kind="unqualified"
+                  unit="件"
+              /></span>
               <span class="basis-detail">正式采用以产出清单引用为准</span>
             </template>
             <strong
@@ -167,8 +174,10 @@ import { DialogWidth } from '../../../utils/dialog';
 import { formatDateTimeForDisplay } from '../../../utils/date';
 import PaginationFooter from '../../../components/PaginationFooter.vue';
 import { useFinishedInspection } from '../composables/useFinishedInspection';
+import { finishedRoundTagType, finishedRoundTagEffect } from '../inspection-presentation';
 import FinishedInspectionPanel from './FinishedInspectionPanel.vue';
 import FinishedInspectionHistory from './FinishedInspectionHistory.vue';
+import InspectionQuantity from './InspectionQuantity.vue';
 const emit = defineEmits<{ changed: [] }>();
 const editor = useFinishedInspection(() => emit('changed'));
 const {
@@ -241,7 +250,7 @@ defineExpose({ visible, locked, open: editor.open, close: editor.close });
   color: #1f2937;
 }
 .current-basis .basis-warning {
-  color: #b45309;
+  color: var(--el-color-warning-dark-2);
 }
 @media (max-width: 960px) {
   .current-basis {

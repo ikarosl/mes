@@ -8,6 +8,10 @@ import { requireOptimisticUpdate } from '../../../common/persistence/optimistic-
 import type { InventoryInboundQuery } from '../../inventory/public.js';
 import type { QualityInboundQuery } from '../../quality/public.js';
 import { allocateReceiptQuantities } from '../domain/receipt-allocation.policy.js';
+import {
+  summarizeReceiptInspectionExecution,
+  suggestedReceiptInboundQuantity,
+} from '../domain/receipt-inspection-suggestion.policy.js';
 import { sortedIds } from './mysql-purchase-order.shared.js';
 import {
   lockReceiptLine,
@@ -81,18 +85,24 @@ export async function confirmReceiptAcceptance(
   const inboundQuantity = allocations
     .filter((a) => a.disposition === 'inbound')
     .reduce((sum, a) => sum + a.quantity, 0);
-  const qualified = Number(inspection.qualifiedQuantity);
-  const unqualified = Number(inspection.unqualifiedQuantity);
-  const sampled = qualified + unqualified;
-  const consumed = priorAllocations
-    .filter((row) => String(row.inspection_id) === inspection.id)
-    .reduce((sum, row) => sum + row.inbound_quantity + row.returned_quantity, 0);
-  const suggestion =
-    inspection.inspectionMethod === 'full'
-      ? Math.max(0, qualified - consumed)
-      : sampled <= confirmedQuantity && unqualified <= confirmedQuantity
-        ? confirmedQuantity - unqualified
-        : null;
+  const execution = summarizeReceiptInspectionExecution(
+    priorAllocations.map((row) => ({
+      inspectionId: row.inspection_id === null ? null : String(row.inspection_id),
+      inboundQuantity: row.inbound_quantity,
+      returnedQuantity: row.returned_quantity,
+      returnReason: row.return_reason,
+    })),
+    inspection.id,
+  );
+  const suggestion = suggestedReceiptInboundQuantity(
+    {
+      method: inspection.inspectionMethod,
+      qualifiedQuantity: Number(inspection.qualifiedQuantity),
+      unqualifiedQuantity: Number(inspection.unqualifiedQuantity),
+    },
+    confirmedQuantity,
+    execution,
+  );
   const overrideReason = payload.overrideReason?.trim() || null;
   if ((suggestion === null || inboundQuantity > suggestion) && !overrideReason)
     return receiptError('可入数量超过质检建议或样本与核实数量不一致，请填写数量异常核对依据');

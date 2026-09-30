@@ -17,7 +17,11 @@ export interface ProcurementInboundReleaseItem {
   receiptId: string;
   receiptNo: string;
   receiptLineId: string;
+  receiptLineNo: number;
   receiptLineVersion: number;
+  receiptReceivedAt: string;
+  /** Original purchase order of the receipt; purchaseNo is this allocation's assigned order. */
+  receiptPurchaseNo: string;
   purchaseOrderId: string;
   purchaseNo: string;
   supplierId: string;
@@ -31,6 +35,8 @@ export interface ProcurementInboundReleaseItem {
   supplierBatchCode: string | null;
   receiptRevisionId: string;
   inspectionId: string;
+  /** Case of the inspection adopted by this acceptance. */
+  inspectionCaseId: string;
   approvedRemainingQuantity: string;
 }
 export interface ConfirmProcurementInboundPayload {

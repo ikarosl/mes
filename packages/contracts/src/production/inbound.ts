@@ -18,13 +18,38 @@ export interface PurchaseInboundDetailItem {
   procurementReceiptRevisionId: string | null;
   procurementInspectionId: string | null;
   procurementAllocationId: string | null;
+  supplierId: string | null;
+  supplierName: string | null;
+  /** Historical source of this actual inbound detail; absent on legacy purchased inbounds. */
+  procurementSource: {
+    receipt: {
+      receiptId: string;
+      receiptNo: string;
+      receiptLineId: string;
+      receiptLineNo: number;
+      /** Purchase order on which this delivery was originally registered. */
+      purchaseOrderNo: string;
+    };
+    /** Purchase order assigned by this detail's immutable allocation. */
+    purchaseOrder: {
+      purchaseOrderId: string;
+      purchaseOrderNo: string;
+      purchaseOrderLineId: string;
+      purchaseOrderLineNo: number;
+    };
+    inspection: {
+      inspectionId: string;
+      caseId: string;
+      inspectedAt: string;
+    };
+  } | null;
 }
 
 export interface PurchaseInboundOrderItem {
   inboundId: string;
   inboundNo: string;
   sourceType: 'purchased';
-  provider: string | null;
+  suppliers: Array<{ supplierId: string | null; supplierName: string }>;
   status: InboundOrderStatus;
   inboundAt: string | null;
   operatorId: string | null;

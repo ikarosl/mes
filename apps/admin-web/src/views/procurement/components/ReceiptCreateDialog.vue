@@ -126,33 +126,21 @@
           />
         </el-form-item>
       </div>
-      <el-collapse
-        v-model="expandedDetails"
-        class="optional-details"
+      <el-form-item
+        label="备注（选填）"
+        class="remark-field"
       >
-        <el-collapse-item
-          name="remark"
-          title="选填备注"
-        >
-          <el-input
-            v-model="remark"
-            type="textarea"
-            :rows="2"
-            maxlength="2000"
-          />
-        </el-collapse-item>
-        <el-collapse-item
-          name="help"
-          title="登记口径与累计量说明"
-        >
-          <p>
-            本次只登记实际收到的实物。未填写数量的行不收货；同一采购行不同供应商批号分成不同明细。
-          </p>
-          <p>
-            累计量按采购行归属统计，不含本次输入；已到货包含已退回，已入库不代表当前库存。补单承接已到货实物时无需重复登记。
-          </p>
-        </el-collapse-item>
-      </el-collapse>
+        <el-input
+          v-model="remark"
+          type="textarea"
+          :rows="2"
+          maxlength="2000"
+        />
+      </el-form-item>
+      <InlineHint class="receipt-entry-hint">
+        本次只登记<strong>实际收到的实物</strong>；未填写数量的行不收货，同一采购行的不同供应商批号分成不同明细。<br />
+        累计量按采购行归属统计，<strong>不含本次输入</strong>；已到货包含已退回，已入库不代表当前库存。补单承接已到货实物时无需重复登记。
+      </InlineHint>
       <div class="entry-heading">
         <strong>本次到货明细</strong>
         <span>只填写本次实收数量；计划与累计量仅供核对</span>
@@ -269,12 +257,13 @@
   </el-dialog>
 </template>
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed } from 'vue';
 import { supplierSummary } from '../supplier-summary';
 import { PURCHASE_ORDER_MAX_QUANTITY } from '@company/constants';
 import { DialogWidth } from '../../../utils/dialog';
 import { fromBeijingDateTimeInputValue, toBeijingDateTimeInputValue } from '../../../utils/date';
 import PaginationFooter from '../../../components/PaginationFooter.vue';
+import InlineHint from '../../../components/InlineHint.vue';
 import { useReceiptEditor } from '../composables/useReceiptEditor';
 const emit = defineEmits<{ saved: [string] }>();
 const {
@@ -304,7 +293,6 @@ const {
   changePage,
   changePageSize,
 } = useReceiptEditor((id) => emit('saved', id));
-const expandedDetails = ref<string[]>([]);
 const lineSummaries = computed(() => {
   const summaries = new Map<
     string,
@@ -389,12 +377,11 @@ defineExpose({ open, close, visible, locked: command.locked });
   grid-template-columns: 1fr 1fr;
   gap: 16px;
 }
-.optional-details {
-  margin: 0 0 16px;
+.remark-field {
+  margin-bottom: 12px;
 }
-.optional-details p {
-  margin: 8px 0;
-  color: #6b7280;
+.receipt-entry-hint {
+  margin-bottom: 12px;
 }
 .entry-heading {
   display: flex;

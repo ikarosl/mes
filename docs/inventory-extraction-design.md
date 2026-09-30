@@ -28,7 +28,7 @@ item_batch.batch_code 是内部批号，inbound_detail.batch_id 引用真实库�
 
 ## 4. 授权消费与目标库存批次
 
-按 [ADR-0016](adr/0016-inbound-authorizations-and-stock-batches.md)，来源资格与库管归批分开。Procurement 保留原有到货、质检、定稿、复检、采购归属和退回规则；一次采购入库仍只选择同一供应商。Production 在有效批准轮内提供计划内外剩余授权，库管可以分次消费。
+按 [ADR-0016](adr/0016-inbound-authorizations-and-stock-batches.md)，来源资格与库管归批分开。Procurement 保留原有到货、质检、定稿、复检、采购归属和退回规则；一次外购物料确认可跨供应商，逐明细保存来源，见 [ADR-0018](adr/0018-purchase-inbound-multiple-suppliers.md)。Production 在有效批准轮内提供计划内外剩余授权，库管可以分次消费。
 
 1. 来源模块按稳定顺序锁来源根、当前轮及所选授权，核对版本、明确放行和本次按授权汇总的消费量。不同目标明细引用同一授权时也必须合计校验，不逐条独立放过总超量。
 2. HTTP 请求只能表达授权选择、本次数量和新建／已有目标；来源身份、单位、编码及供应商由所属模块锁内解析，不信任客户端资格快照。
