@@ -8,6 +8,7 @@ Vue 3 管理端。专题只维护代码或页面不容易解释的约束及原�
 - [视觉设计](docs/visual-design.md)与[路由、弹窗和标签页](docs/route-dialogs-and-tabs.md)：显示规范及接入方式。
 - [HTTP 错误处理](docs/http-error-handling.md)：认证、重试、消息去重和已知限制。
 - [采购与入库](docs/procurement-inbound.md)、[来料检验与定稿](docs/incoming-inspection-adoption.md)、[成品质检与产出](docs/finished-inspections.md)：专题前端约束。
+- [通用出库 UI 预览](docs/general-outbound-preview.md)：成品／物料 mock 交互、生产领料隔离及数据库接入差异评估；后端未实施。
 - [成品产出清单、复检与入库操作手册](../../docs/manuals/finished-output-inspection-inbound.md)：使用步骤和当前限制。
 
 ## 验证

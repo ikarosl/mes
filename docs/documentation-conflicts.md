@@ -13,6 +13,7 @@
 | [CO-02](#co-02) | Identity主数据审计字段 | 公共规范与owner／migration差异；待裁决 | 补齐规范还是明确经批准的例外 |
 | [CO-03](#co-03) | 演示工单生成旧业务备注 | 代码残留与已明确新规则冲突；待修正 | 后续修改demo SQL，核对展示及初始化行为 |
 | [CO-04](#co-04) | 部署迁移前业务停写 | 执行前置缺口；待明确责任并修正 | 人工维护窗口与脚本自动停写的责任及恢复流程 |
+| [CO-06](#co-06) | Production 职责文档残留成品一次入库／独占库批限制 | 文档与已批准 ADR／migration 差异；待同步 | 核对 ADR-0016 取代范围并收敛所有者入口文案 |
 
 ## CQ-01
 
@@ -89,3 +90,12 @@
 ## CO-05
 
 统一编号的转换职责已由 [ADR-0017](adr/0017-business-numbering-and-beijing-time.md)明确：平台分配器在统一 +08:00 数据库会话读取北京自然日，业务模块和 demo 不再自行 UTC 加八小时。仍保留数据库时钟、日计数锁及幂等边界。本锚点仅保留既有引用，验证和验收见[路线图](roadmap.md)。
+
+## CO-06
+
+**Production 职责文档仍保留已被 ADR-0016 明确取代的成品入库限制。**
+
+- 一方：[Production 职责 §2、§4](../apps/api/src/modules/production/docs/module-boundaries.md)仍写“按两类分别收齐一次确认”“已入类别不能借清单更正追加收货”和“两类成品分别建批”。
+- 另一方：[ADR-0016](adr/0016-inbound-authorizations-and-stock-batches.md)明确授权可分次消费、一份授权可入多个库批、多份授权可共用库批，并明确取代每类别一次入库、类别独占库批及已入整类锁量；[Inventory 当前定义](../apps/api/src/modules/inventory/docs/database/inventory-ledger-and-inbound.md)及 [202609240001 migration](../packages/database/migrations/202609240001-unified-inbound-allocation-target.up.sql)保存授权到实际入库明细的关系，移除每单单一成品明细限制，新成品库批不持有单一生产来源。
+- 影响：从职责入口阅读会误以为来源类别仍决定库批身份，或分次入库仍被禁止，导致数据库评估和后续实现采用相互冲突的前提。
+- 待处理：依据 ADR-0016 已明确的取代范围同步 Production 职责入口，并核对其链接专题；保留审批、历史已入下限与事实不可改写，不由本项扩大成品出库／冲销范围。此项是文档同步缺口，不重新裁决已经批准的分次入库模型，也不代表运行验证或用户验收通过。待办见[路线图](roadmap.md#成品物料入库统一整改代码核对清单)。
