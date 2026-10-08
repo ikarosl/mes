@@ -21,11 +21,11 @@ import {
   readAllocations,
   lockReceiptRoots,
   requireAllocation,
-  requireQuantity,
-  receiptError,
   touchReceiptLine,
   auditReceipt,
 } from './mysql-receipt.shared.js';
+import { receiptError } from '../domain/procurement.errors.js';
+import { requireQuantity } from '../domain/receipt-quantity.policy.js';
 
 import { lockRound, receiptBalance } from './mysql-receipt-round.shared.js';
 

@@ -16,22 +16,41 @@
         class="notice"
       />
       <template v-if="line">
-        <el-descriptions
-          :column="3"
-          border
-          class="notice"
-          ><el-descriptions-item label="到货明细"
-            >{{ line.receiptNo }} · 第 {{ line.lineNo }} 行</el-descriptions-item
-          ><el-descriptions-item label="采购单">{{ line.purchaseNo }}</el-descriptions-item
-          ><el-descriptions-item label="供应商">{{
-            line.supplierName
-          }}</el-descriptions-item></el-descriptions
+        <InboundInspectionSummary :line="line" />
+        <div
+          v-if="currentInspection"
+          class="selected-record"
         >
-        <ReceiptLineSummary :line="line" />
+          <strong
+            >本批当前检验依据<span v-if="currentCaseRoundNo !== undefined">
+              · 检验所属处理第 {{ currentCaseRoundNo }} 轮</span
+            ></strong
+          >
+          <InboundInspectionRecord
+            :inspection="currentInspection"
+            :round-no="currentCaseRoundNo"
+          />
+        </div>
+        <div
+          v-if="selectedCase?.inspection && selectedCase.inspection.id !== currentInspection?.id"
+          class="selected-record"
+        >
+          <strong
+            >所选历史检验结论 · {{ QUALITY_INBOUND_CASE_STATUS_LABELS[selectedCase.status]
+            }}<span v-if="selectedCaseRoundNo !== undefined">
+              · 第 {{ selectedCaseRoundNo }} 轮</span
+            ></strong
+          >
+          <p class="historical-note">此记录属于历史办理，仅供追溯，不代表当前轮采用依据。</p>
+          <InboundInspectionRecord
+            :inspection="selectedCase.inspection"
+            :round-no="selectedCaseRoundNo"
+          />
+        </div>
         <div class="current-action">
           <strong>当前办理 · 第 {{ line.currentRound.roundNo }} 轮</strong>
           <template v-if="Number(line.quantities.unprocessedQuantity) === 0">
-            <span>本批已处理完，可在下方查阅检验与实物处置记录。</span>
+            <span>本批已处理完，可查阅检验依据与检验历史。</span>
           </template>
           <template v-else-if="currentReceiptCase(line)">
             <span>本轮检验已发起，需填写检查事实与放行结论。</span>
@@ -66,25 +85,13 @@
           </template>
           <template v-else-if="line.currentRound.status === 'awaiting_acceptance'">
             <span>本轮检查已完成，待库管核对并定稿正式去向。</span>
-            <el-button
-              v-if="auth.can(PERMISSIONS.procurement.receipts.view)"
-              :disabled="blocked"
-              @click="goReceipt"
-              >前往到货定稿</el-button
-            >
-          </template>
-          <template v-else-if="Number(line.quantities.pendingInboundQuantity) > 0">
-            <span>正式清单已授权入库，待仓管确认实际入库。</span>
-            <el-button
-              v-if="auth.can(PERMISSIONS.production.inbounds.view)"
-              type="primary"
-              :disabled="blocked"
-              @click="goInbound"
-              >办理入库</el-button
-            >
           </template>
           <template v-else>
-            <span>请核对当前正式去向及尚未处置实物。</span>
+            <span>{{
+              isReceiptRejected(line)
+                ? '本批已人工拒收，检验记录仅供追溯。'
+                : '本轮检验办理已完成，可查看检验依据或发起复检。'
+            }}</span>
           </template>
         </div>
         <div
@@ -109,42 +116,11 @@
           class="notice"
           title="本次检查记录已保存，但本批仍不允许正常定稿或入库；可发起整批复检，库管仍可独立拒收。"
         />
-        <div
-          v-if="currentInspection"
-          class="selected-record"
-        >
-          <strong
-            >本批当前检验依据<span v-if="currentCaseRoundNo !== undefined">
-              · 检验所属处理第 {{ currentCaseRoundNo }} 轮</span
-            ></strong
-          >
-          <InboundInspectionRecord
-            :inspection="currentInspection"
-            :round-no="currentCaseRoundNo"
-          />
-        </div>
-        <div
-          v-if="selectedCase?.inspection && selectedCase.inspection.id !== currentInspection?.id"
-          class="selected-record"
-        >
-          <strong
-            >所选历史检验结论 · {{ QUALITY_INBOUND_CASE_STATUS_LABELS[selectedCase.status]
-            }}<span v-if="selectedCaseRoundNo !== undefined">
-              · 第 {{ selectedCaseRoundNo }} 轮</span
-            ></strong
-          >
-          <p class="historical-note">此记录属于历史办理，仅供追溯，不代表当前轮采用依据。</p>
-          <InboundInspectionRecord
-            :inspection="selectedCase.inspection"
-            :round-no="selectedCaseRoundNo"
-          />
-        </div>
-        <ReceiptLineAllocations
-          :line="line"
-          :quality="true"
+        <el-button
           :disabled="blocked"
-          @history="history?.open(line.id, $event, line)"
-        />
+          @click="history?.open(line)"
+          >检验历史</el-button
+        >
       </template>
     </div>
     <template #footer
@@ -152,26 +128,30 @@
         v-if="line && auth.can(PERMISSIONS.procurement.receipts.view)"
         :disabled="blocked"
         @click="goReceipt"
-        >查看到货 / 实收更正</el-button
+        >查看到货</el-button
       ><el-button
         :disabled="actions?.locked"
         @click="load"
-        >刷新当前范围</el-button
+        >刷新检验详情</el-button
       ><el-button @click="close">关闭</el-button></template
     >
   </el-dialog>
   <ReceiptLineActionDialog
     ref="actions"
     @saved="saved"
-  /><ReceiptHistoryDialog ref="history" />
+  /><InboundInspectionHistoryDialog ref="history" />
 </template>
 <script setup lang="ts">
 import { computed, onActivated, ref } from 'vue';
-import { canReviewReceipt, currentReceiptCase } from '../receipt-round-presentation';
+import {
+  canReviewReceipt,
+  currentReceiptCase,
+  isReceiptRejected,
+} from '../receipt-round-presentation';
 import { useRouter } from 'vue-router';
 import type {
   ProcurementInboundInspectionItem,
-  ProcurementReceiptLine,
+  ProcurementInboundInspectionDetail,
   QualityInboundCaseItem,
 } from '@company/contracts';
 import { QUALITY_INBOUND_CASE_STATUS_LABELS, PERMISSIONS } from '@company/constants';
@@ -180,10 +160,9 @@ import { procurementApi } from '../../../api/procurement';
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
 import { DialogWidth } from '../../../utils/dialog';
 import { EMessage } from '../../../utils/message';
-import ReceiptLineSummary from './ReceiptLineSummary.vue';
-import ReceiptLineAllocations from './ReceiptLineAllocations.vue';
+import InboundInspectionSummary from './InboundInspectionSummary.vue';
 import ReceiptLineActionDialog from './ReceiptLineActionDialog.vue';
-import ReceiptHistoryDialog from './ReceiptHistoryDialog.vue';
+import InboundInspectionHistoryDialog from './InboundInspectionHistoryDialog.vue';
 import InboundInspectionRecord from './InboundInspectionRecord.vue';
 const emit = defineEmits<{ changed: [] }>();
 const auth = useAuthStore(),
@@ -192,10 +171,10 @@ const visible = ref(false),
   lineId = ref(''),
   loading = ref(false),
   readError = ref(false);
-const line = ref<ProcurementReceiptLine | null>(null),
+const line = ref<ProcurementInboundInspectionDetail | null>(null),
   selectedCase = ref<QualityInboundCaseItem | null>(null);
 const actions = ref<InstanceType<typeof ReceiptLineActionDialog>>(),
-  history = ref<InstanceType<typeof ReceiptHistoryDialog>>();
+  history = ref<InstanceType<typeof InboundInspectionHistoryDialog>>();
 const read = useLatestReadRequest(() => {
   loading.value = false;
 });
@@ -213,7 +192,10 @@ const roundNoForCase = (record: QualityInboundCaseItem | null): number | undefin
   return receiptLine.rounds.find((round) => round.id === record.roundId)?.roundNo;
 };
 const currentCaseRoundNo = computed(() => roundNoForCase(currentCase.value));
-const selectedCaseRoundNo = computed(() => roundNoForCase(selectedCase.value));
+const selectedSourceRoundNo = ref<number>();
+const selectedCaseRoundNo = computed(
+  () => selectedSourceRoundNo.value ?? roundNoForCase(selectedCase.value),
+);
 const blocked = computed(() => loading.value || readError.value || Boolean(actions.value?.visible));
 const load = async (): Promise<void> => {
   if (!visible.value || !read.isActive()) return;
@@ -240,33 +222,27 @@ const open = async (id: string, context?: ProcurementInboundInspectionItem): Pro
   lineId.value = id;
   line.value = null;
   selectedCase.value = context?.case ?? null;
+  selectedSourceRoundNo.value = context?.sourceRoundNo;
   readError.value = false;
   visible.value = true;
   await load();
 };
 const close = async (): Promise<boolean> => {
-  if (actions.value?.locked || history.value?.locked) {
+  if (actions.value?.locked) {
     EMessage.warning('请先确认本次检验操作结果');
     return false;
   }
   if (actions.value?.visible && !(await actions.value.close())) return false;
-  if (history.value?.visible && !(await history.value.close())) return false;
+  history.value?.close();
   visible.value = false;
   read.invalidate();
   return true;
 };
 const saved = async (): Promise<void> => {
   selectedCase.value = null;
+  selectedSourceRoundNo.value = undefined;
   emit('changed');
   await load();
-};
-const goInbound = async (): Promise<void> => {
-  const id = line.value?.id;
-  if (id && (await close()))
-    await router.push({
-      name: 'warehouse-inbound',
-      query: { sourceType: 'purchased', receiptLineId: id },
-    });
 };
 const goReceipt = async (): Promise<void> => {
   const id = line.value?.id;
@@ -285,7 +261,7 @@ defineExpose({
   visible,
   openedLineId: computed(() => (visible.value ? lineId.value : '')),
   openedCaseId: computed(() => (visible.value ? (selectedCase.value?.id ?? '') : '')),
-  locked: computed(() => Boolean(actions.value?.locked || history.value?.locked)),
+  locked: computed(() => Boolean(actions.value?.locked)),
 });
 </script>
 <style scoped>

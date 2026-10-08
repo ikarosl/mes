@@ -2,9 +2,9 @@ import { Inject, Injectable } from '@nestjs/common';
 import { withActiveConnection, withTransaction } from '@company/database';
 import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import type {
+  BeginFinishedReinspectionPayload,
   FinishedInspectionCommandResult,
   StartFinishedInspectionResult,
-  FinishedInspectionTaskDetail,
   FinishedInspectionTaskQuery,
   PageQuery,
   PageResult,
@@ -15,6 +15,7 @@ import { writeTransactionalAudit } from '../../../common/audit/transactional-aud
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
 import {
   FinishedInspectionRepository,
+  type FinishedInspectionStoredDetail,
   type RecordFinishedInspectionInput,
 } from '../application/ports/finished-inspection.repository.js';
 import type { QualityFinishedInspectionQuery } from '../application/quality-finished-inspection.query.js';
@@ -41,7 +42,7 @@ export class MysqlQualityFinishedRepository
   listTasks(query: FinishedInspectionTaskQuery) {
     return withActiveConnection(this.pool, (db) => listFinishedInspectionTasks(db, query));
   }
-  detail(batchId: string): Promise<FinishedInspectionTaskDetail | null> {
+  detail(batchId: string): Promise<FinishedInspectionStoredDetail | null> {
     return withActiveConnection(this.pool, async (db) => {
       const task = await readFinishedInspectionTask(db, batchId);
       if (!task) return null;
@@ -76,6 +77,24 @@ export class MysqlQualityFinishedRepository
       };
     });
   }
+  getRecord(batchId: string, recordId: string): Promise<ProductionOutputInspection | null> {
+    return withActiveConnection(this.pool, async (db) => {
+      const [[row]] = await db.query<InspectionRow[]>(
+        `${SELECT} WHERE r.id=? AND r.production_batch_id=? AND c.production_batch_id=? AND c.source_kind='finished'`,
+        [recordId, batchId, batchId],
+      );
+      return row ? mapFinishedInspection(row) : null;
+    });
+  }
+  hasForCloseout(closeoutId: string, batchId: string): Promise<boolean> {
+    return withActiveConnection(this.pool, async (db) => {
+      const [rows] = await db.query<RowDataPacket[]>(
+        'SELECT id FROM quality_inspection_record WHERE closeout_id=? AND production_batch_id=? LIMIT 1',
+        [closeoutId, batchId],
+      );
+      return rows.length > 0;
+    });
+  }
   readForCloseout(
     closeoutId: string,
     batchId: string,
@@ -98,6 +117,15 @@ export class MysqlQualityFinishedRepository
   ): Promise<StartFinishedInspectionResult> {
     return withTransaction(this.pool, () =>
       this.sources.require().start(batchId, version, context),
+    );
+  }
+  beginReinspection(
+    batchId: string,
+    payload: BeginFinishedReinspectionPayload,
+    context: CommandContext,
+  ): Promise<StartFinishedInspectionResult> {
+    return withTransaction(this.pool, () =>
+      this.sources.require().beginReinspection(batchId, payload, context),
     );
   }
   record(
@@ -152,8 +180,8 @@ export class MysqlQualityFinishedRepository
           source.closeoutId,
           batchId,
           payload.inspectionMethod,
-          payload.coveredQuantity,
-          payload.inspectedQuantity - payload.unqualifiedQuantity,
+          null,
+          payload.qualifiedQuantity,
           payload.unqualifiedQuantity,
           payload.releaseDecision,
           inspectedAt,

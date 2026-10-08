@@ -42,6 +42,8 @@ Quality 填方法、合格 G、不合格 F、结论、时间、说明和凭据�
 
 按数值ID锁原采购及关联补单根，再锁到货行／当前轮，读取不可变分配及锁内实际事实，经 public 核对 Quality／Inventory。状态、预期行／轮版本在新增事实前校验。更正、复检、拒收、撤销、定稿、入库及退回同源互斥；业务写入、审计和幂等结果同事务。
 
+数量、轮次推进、定稿放行与说明、采购归属及拒收分配计划由本模块 domain 纯规则处理，只接收普通业务数据，不查询数据库或持有连接。infrastructure 在原锁内检查点调用规则，负责按序取事实、校验预期版本、跨模块调用、持久化和审计；不把所有判断提前到事务外，也不为调用一个总规则函数而提前读取后续事实。复检、更正、拒收保留各自条件，共用规则只覆盖实际一致的数量及归属约束。
+
 动作位于 /procurement/receipt-lines/:id/actions/：correct-receipt、start-review、inspect、accept、reject、revoke-rejection、return。更正用 receipts:correct；检验用 Quality review/inspect；定稿／拒收／撤销用 receipts:accept；退回用 receipts:return；入库用 production:inbounds:confirm，每个后端接口独立鉴权。
 
 所有写入要求 Idempotency-Key；版本与 codec 在 application/idempotency 中集中登记。采购入库逐明细目标和结果结构切换为 `procurement.inbound.confirm.v6`，指纹包含每条 detailKey、来源行／轮版本、修订、质检、allocation、数量及目标 mode／clientKey 或 batchId；同键只重放原已确认结果。未知结果冻结原 body/key 重试，不自动换新轮或新ID。成功操作即使后续轮次变化仍只重放原结果。契约与 schema 同版切换，不保留 scope 接口或双写。

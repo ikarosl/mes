@@ -59,13 +59,13 @@ Production 所有结案、产出草稿和批准清单；质检记录由 Quality 
 
 产出草稿仍为任务唯一可编辑 `production_batch_closeout`：`available_quantity`、`extra_quantity` 是拟批准的累计计划内／外目标，`additional_scrap_quantity` 是本次新增成品报废。每字段为 `0..99999999` 整数，计划内不超过任务计划，计划内外累计目标各自不得低于同任务历史真实已入量。历史工序产品报废只读引用；原材料损耗不计入成品报废。计划缺口只比较任务计划与计划内目标，计划外和报废不抵扣。草稿、检验、批准均不直接产生库存流水。
 
-每个 `production_output_round` 在启动时固定前一轮、前批准版、同任务计划内外历史已入基准及申报剩余实物量。首轮在首次保存产出草稿时建立；Quality 明确 `start` 后才能记录本轮检验。纯定稿更正和剩余复检都在发起时建新轮、标旧轮 `superseded` 并立即冻结旧剩余授权。复检必须登记新轮检验；仅分配定稿更正可以沿用仍适用的旧检验。同轮检验一条完整范围记录；新检验只覆盖本任务全部尚未入库的送检实物，排除已入和已独立处置报废，不建立范围树。取消更正、审批驳回或撤回都不恢复旧授权；可再发起新轮，经原负责人审批取得新授权。
+每个 `production_output_round` 在建立时固定前一轮、前批准版、同任务计划内外历史已入基准及申报剩余实物量。首轮在首次保存产出草稿时建立，Quality 明确 `start` 后才能记录；复检由 Quality 入口或保留的 Production 命令共用同一来源写能力，发起时建新轮并直接进入 `inspecting`，无须再执行 `start`。纯定稿更正在发起时建 `pending_inspection` 新轮，可沿用仍适用的旧放行检验。两类新轮都标旧轮 `superseded` 并立即冻结旧剩余授权；复检必须登记新轮检验，同轮检验一条完整范围记录。新检验只覆盖本任务全部尚未入库的送检实物，排除已入和已独立处置报废，不建立范围树。无剩余实物不发起复检；已批准清单更正中如草稿新增未入实物，以当前草稿累计目标减历史已入固定新轮申报剩余量。连续复检无需先取消更正，当前草稿及其原检验引用保留供核对，但旧引用在复检轮无送审资格；新轮明确放行后须由管理员主动改选当前适用记录。取消更正、审批驳回或撤回都不恢复旧授权；可再发起新轮，经原负责人审批取得新授权。
 
-Quality 独立核实 C/G/F：全检 C=G+F>0，抽检 `0<G+F<=C`，零产出专用 `zero_confirmation` 核实全零；`released/pending_reinspection/not_released` 为明确结论。仅明确放行时，全检建议 R=G、抽检建议 R=C−F，其他结论阻断送审与批准。建议量仅提示，不以超过建议阻断草稿保存、送审或审批，也不自动产生报废。累计建议 = **所引用检验实际检查轮**固定计划内外已入基准之和＋该检验 R；沿用旧检验时不能使用新定稿轮基准。审批证据保留此检验、原轮基准、草稿、物料安排和审批人。已入事实从 Inventory 公开能力读取，不从库存批次余额倒推。
+Quality 的全检／抽检仅记录 G/F，N=G+F 自动派生且普通检查 N>0；不核实整批 C、不生成本次放行量或累计建议。零产出专用 `zero_confirmation` 要求 G=F=N=0 且明确 `released`。普通检验可明确选择 `released/pending_reinspection/not_released`，后两种结论阻断送审与批准。仅在 Production 定稿引用 `full+released` 记录时，比较累计目标 `A+E` 与**原引用检验轮**固定计划内／外已入基准加 G，差额只提示，不阻断草稿保存、送审或审批；抽检不外推整批，也不作整批量差异。沿用旧检验时不使用新定稿轮基准。检验不自动产生报废。审批证据保留检验事实、原轮基准、草稿、物料安排和审批人。已入事实从 Inventory 公开能力读取，不从库存批次余额倒推。
 
 负责人末级批准原子追加 `production_output_revision` 和每类正数剩余授权 `production_output_allocation`。某类授权量 = 草稿累计目标 − 本轮该类固定已入基准；为零时没有该类授权行。批准版 API 的累计数从基准＋授权派生，版表不保存第二套累计物理列。`current_revision_id` 只说明最新批准版；仓库可执行资格另要求对应当前轮已定稿。历史批准、授权和入库明细不回挂新版本。批准版工单汇总只取每任务当前版；执行结束、结案审批和实际入库分别展示。正常首次批准使任务 `completed`，提前结束首次批准使任务 `terminated`；后续清单更正不重开生产或工序。
 
-收尾送审仍须逐项处理未决事项、物料实核有效、无待确认退料或损耗，并在锁内冻结当前工单负责人；资格失效不得回退给其他人。质检建议差异只提示，任务计划上限、历史已入下限、当前轮放行和负责人审批仍独立强制。完整入库资格和分次消费见[成品入库](finished-goods-inbound.md)。
+收尾送审仍须逐项处理未决事项、物料实核有效、无待确认退料或损耗，并在锁内冻结当前工单负责人；资格失效不得回退给其他人。仅全检放行的产出数量差异作非阻断定稿提示；任务计划上限、历史已入下限、当前轮放行和负责人审批仍独立强制。完整入库资格和分次消费见[成品入库](finished-goods-inbound.md)。
 
 ## 数据结构
 
@@ -109,9 +109,9 @@ Quality 独立核实 C/G/F：全检 C=G+F>0，抽检 `0<G+F<=C`，零产出专�
 
 检验表与写事务、DTO、领域放行规则、复检前驱及独立 HTTP 入口均属于 Quality，完整字段约束见[Quality 成品检验专题](../../../quality/docs/finished-inspections.md)。以下仅描述 Production 批准证据引用的契约。Production 通过 Quality public 当前共享读获取同任务记录，不能直接读取或改写其表。Quality 经注册来源回调由 Production 自己锁定并推进结案根，避免循环依赖。
 
-Production 消费 `ProductionOutputInspection` 公开契约：记录 ID、同任务／结案根身份、当时申报版本与三项数量、检验时间、说明／凭据、前驱、操作者，以及 `coveredQuantity/inspectedQuantity/qualifiedQuantity/unqualifiedQuantity/releaseDecision/releasedQuantity`。这些字段用于审批证据，不表示它们都重复落在检验结果表中。
+Production 消费 `ProductionOutputInspection` 公开契约：记录 ID、同任务／结案根身份、当时申报版本与三项数量、检验时间、说明／凭据、前驱、操作者，以及 `inspectedQuantity/qualifiedQuantity/unqualifiedQuantity/releaseDecision`。成品契约及审批证据不包含 `coveredQuantity/releasedQuantity/cumulativeSuggestionQuantity`；N=G+F 为只读派生，不重复落表。
 
-Quality case 以 `finished_round_id` 引用实际检查轮次，record 保存 C/G/F、明确结论和前驱。Production 只通过 Quality public 读取不可变检验，不直接查询或改写检验表；Quality 经来源 registry 调用 Production 在同事务中校验并推进当前轮。原始申报快照和实际检查轮基准分别保留，检验保存推进结案根版本，不替管理员选择最终依据。说明和凭据去空白非空、各不超过 5000 字；零产出同样适用。
+Quality case 以 `finished_round_id` 引用实际检查轮次，record 保存 G/F、明确结论和前驱；共用 `covered_quantity` 列对新成品记录为 NULL。Production 只通过 Quality public 读取不可变检验，不直接查询或改写检验表；Quality 经来源 registry 调用 Production 在同事务中校验并推进当前轮。原始申报快照和实际检查轮基准分别保留，检验保存推进结案根版本，不替管理员选择最终依据。说明和凭据去空白非空、各不超过 5000 字；零产出同样适用。
 
 ### `production_output_round` 与 `production_output_allocation`
 
@@ -149,21 +149,25 @@ Quality case 以 `finished_round_id` 引用实际检查轮次，record 保存 C/
 | `POST /output/draft` | 保存草稿并选择检验依据；tasks:manage-output |
 | `POST /output/submit` | 版本及 submissionToken 送审；tasks:manage-output |
 | `POST /output/corrections` | 指定当前批准版并开启纯定稿更正，立即冻结旧剩余授权；tasks:manage-output |
-| `POST /output/reinspections` | 明确发起剩余实物复检并开始新轮；tasks:manage-output |
+| `POST /output/reinspections` | 产线保留入口，复用同一来源能力发起并直接开始复检；tasks:manage-output |
 | `POST /output/corrections/cancel` | 取消未送审更正草稿；tasks:manage-output |
 
-Quality 独立查询路径为 `GET /api/quality/finished-inspections/:batchId`，使用 `quality:finished-inspections:view`，不套用 Production 路径前缀。
+Quality 独立查询路径为 `GET /api/quality/finished-inspections/:batchId`，使用 `quality:finished-inspections:view`；主要复检入口 `POST /api/quality/finished-inspections/:batchId/actions/reinspect` 使用 `quality:finished-inspections:record`，经 Production 来源能力共享事务。Production 的复检命令与该入口同样直接启动新轮，均不要求对方模块的页面权限。
+
+详情的复检预览通过 `ProductionOutputRepository.previewReinspection` 在同一读取事务内加载草稿、当前轮状态、当前批准版累计目标、Quality 检验记录存在性及 Inventory 真实历史已入量，不加载完整收尾事项、历史批准快照或逐授权余额。累计目标仍按批准版自身轮次基准加本版授权派生；更正中优先采用草稿。预览、完整产出详情及复检命令共用 [复检纯规则](../../domain/production-output-reinspection.policy.ts)，阻断优先级和剩余量计算只维护一份；命令继续在来源锁内重新读取事实，不以页面预览作为写入资格。当前批准版引用和历史入库归属仍须有效。
 
 旧 `/closeout/output`、`/closeout/submit` 和 Production 的 `/output/inspections` 写入口删除。写命令均有独立 RBAC、版本和幂等校验，契约见[幂等约定](../../../../../docs/idempotency.md)；质检权限不授予改写草稿的能力。
 
 审批场景沿用 `production.batch.closeout`、对象 `production_batch_closeout`，名称为“生产任务结案”。末节点必须 `business + production.work_order_owner`；前序节点可配置角色或指定用户。事务在工单 → 批次 → 草稿锁序内读取工单负责人，和证据一并交给 Approval；负责人无有效审批资格时拒绝，不回退到提交人或管理员。审批冻结所解析用户，待办和决定实时核对其账号及权限。
 
-当前审批证据结构仅接受版本 `7`，包含结案模式、前版、更正原因、具体全检／抽检／零量核实事实及派生建议量、产出三项、原收尾处理与逐笔物料损耗证据，以及 `workOrderOwnerEvidence`。解析独立校验实际总数、检查／合格／不合格数量、派生结果及计划内上限，不把质检建议作为可用总量上限；不含范围说明或剔除量，不读旧版、不补造缺失快照。写流程另行要求最新记录明确released。
+当前结案审批证据结构仅接受 `schemaVersion=8`，包含结案模式、前版、更正原因、具体全检／抽检／零量核实 G/F/N 事实、放行结论、原检验轮固定已入基准、产出三项、原收尾处理与逐笔物料损耗证据，以及 `workOrderOwnerEvidence`。解析独立校验 G/F、派生 N、零量放行、计划内上限与来源资格；不含整批 C、本次放行建议、累计建议、抽检整批推算、范围说明或剔除量，不读旧版、不补造缺失快照。写流程另行要求最新适用记录明确 `released`。
 
-初次送审须所有事项处理完、无待确认退料／损耗、物料实核仍有效，并引用最新且明确released的检验；待复检与不放行均阻断。质检数量只作建议，不以数量差异阻止送审或批准。提交令牌包含产出、检验范围及事实、基准版和收尾事实；最终批准重新核对，变化时拒绝且整体回滚。更正沿用原批准的收尾证据，核对当前版、收货事实与本次检验，不能因历史退料后续变化重写原证据。批准节点决定、新版、有效指针、任务终态、审计和通知共享事务。
+审批详情与批准清单响应使用 `BatchCloseoutApprovalDisplaySnapshot`：在解析原快照后，由 Production 按 `closeoutId + previousRevisionId` 读取不可变批准记录的真实 `revision_no`，补充只读 `previousRevisionNo`。完整清单与按 ID 读取的历史清单采用同一映射；不按数组位置、当前版减一或记录 ID 推算版次。没有前版或同根引用无法读取时返回 `null`，调用方结合原 `previousRevisionId` 区分首次结案和引用缺失。登记人名称同样作为只读显示信息解析。展示字段不写回历史 JSON、不参与送审指纹或批准比较，不改变快照结构版本；Approval 通过所属 handler 获取展示信息，不直接读取 Production 表。
+
+初次送审须所有事项处理完、无待确认退料／损耗、物料实核仍有效，并引用最新且明确 `released` 的适用检验；待复检与不放行均阻断。全检产出差异提示不阻止送审或批准。提交令牌包含产出、检验身份和 G/F/N 事实、原检验轮基准、基准版和收尾事实；最终批准重新核对，变化时拒绝且整体回滚。更正沿用原批准的收尾证据，核对当前版、已入事实与本次检验，不能因历史退料后续变化重写原证据。批准节点决定、新版、有效指针、任务终态、审计和通知共享事务。
 
 ## 迁移与历史事实保护
 
 运行守卫、停写及 up/down 顺序见[迁移安全](../../../../../../../packages/database/docs/migration-safety.md)。结案／批准清单与检验结构切换不得猜测旧审批、全检方式、范围或放行事实；需要空业务数据的升级与回退均在首个永久 DDL 前检查，开发数据通过统一初始化入口重建。
 
-当前检验引用为 Quality 的 case／record，申报快照与真实 C/G/F 结果分别留存；Production 只引用同一事实，不复制检验表或恢复旧独立表。数据库迁移存在不证明环境已执行。未完成正式测试与用户验收统一见[路线图](../../../../../../../docs/roadmap.md)。
+当前检验引用为 Quality 的 case／record，申报快照与 G/F 检查事实分别留存；Production 只引用同一事实，不复制检验表或恢复旧独立表。`202610080001-finished-inspection-measurements` 成对迁移按空业务守卫切换成品条件约束，详见 [Quality 数据库](../../../quality/docs/database.md)。数据库迁移存在不证明环境已执行。未完成运行验证、正式测试与用户验收统一见[路线图](../../../../../../../docs/roadmap.md)。

@@ -150,11 +150,34 @@
             </el-table-column>
             <el-table-column
               label="本条采用的历史检验"
-              min-width="290"
+              min-width="230"
             >
               <template #default="{ row }">
                 <template v-if="row.approvedOutput?.snapshot.inspection">
-                  <div>
+                  <el-button
+                    v-if="
+                      canViewFinishedInspections &&
+                      row.approvedOutput.snapshot.inspection.batchId === order.productionBatchId
+                    "
+                    type="primary"
+                    link
+                    class="source-link"
+                    :title="`检验时间：${formatDateTimeForDisplay(row.approvedOutput.snapshot.inspection.inspectedAt)}`"
+                    @click.stop="
+                      emit(
+                        'inspection',
+                        order.productionBatchId,
+                        row.approvedOutput.snapshot.inspection.id,
+                      )
+                    "
+                    >检验记录 ID {{ row.approvedOutput.snapshot.inspection.id }}</el-button
+                  >
+                  <span
+                    v-else
+                    :title="`检验时间：${formatDateTimeForDisplay(row.approvedOutput.snapshot.inspection.inspectedAt)}`"
+                    >检验记录 ID {{ row.approvedOutput.snapshot.inspection.id }}</span
+                  >
+                  <div class="trace-meta">
                     结论
                     {{
                       PRODUCTION_OUTPUT_RELEASE_DECISION_LABELS[
@@ -162,25 +185,6 @@
                           .releaseDecision as ProductionOutputReleaseDecision
                       ]
                     }}
-                  </div>
-                  <div class="trace-meta">
-                    检验人
-                    {{
-                      displayPerson(
-                        row.approvedOutput.snapshot.inspection.createdByName,
-                        row.approvedOutput.snapshot.inspection.createdBy,
-                      )
-                    }}
-                  </div>
-                  <div class="trace-meta">
-                    检验时间
-                    {{
-                      formatDateTimeForDisplay(row.approvedOutput.snapshot.inspection.inspectedAt)
-                    }}
-                  </div>
-                  <div class="trace-meta">
-                    检验凭据
-                    {{ row.approvedOutput.snapshot.inspection.evidenceReference || '未提供' }}
                   </div>
                 </template>
                 <div
@@ -218,6 +222,7 @@ import {
   PERMISSIONS,
 } from '@company/constants';
 import { useAuthStore } from '../../../stores/auth';
+import { useRouteAccess } from '../../../composables/useRouteAccess';
 import { formatDateTimeForDisplay } from '../../../utils/date';
 import { formatQuantity } from '../../production/production-status';
 import InboundGroupHeader from './InboundGroupHeader.vue';
@@ -237,20 +242,16 @@ const emit = defineEmits<{
   retry: [id: string];
   batch: [itemBatchId: string];
   approval: [instanceId: string];
+  inspection: [batchId: string, recordId: string];
   'clear-location': [];
 }>();
 const auth = useAuthStore();
+const { canAccessRoute } = useRouteAccess();
 const canViewInventory = computed(() => auth.can(PERMISSIONS.production.inventory.view));
-const canViewApproval = computed(() =>
-  [
-    PERMISSIONS.approval.view,
-    PERMISSIONS.approval.decide,
-    PERMISSIONS.approval.configure,
-    PERMISSIONS.product.products.manageBom,
-    PERMISSIONS.production.materials.correctDemand,
-    PERMISSIONS.production.tasks.terminate,
-  ].some((permission) => auth.can(permission)),
+const canViewFinishedInspections = computed(() =>
+  auth.can(PERMISSIONS.quality.finishedInspections.view),
 );
+const canViewApproval = computed(() => canAccessRoute({ name: 'approval-inbox' }));
 const container = ref<HTMLElement | null>(null);
 const collapsedInboundIds = ref(new Set<string>());
 const orderedInboundIds = computed(() => props.rows.map((row) => row.inboundId));

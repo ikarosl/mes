@@ -196,12 +196,14 @@
           >
             <template #default="{ row }">
               <el-button
+                v-if="canAccessRoute({ name: 'warehouse-inventory' })"
                 class="source-link"
                 type="primary"
                 link
                 @click="goSource('warehouse-inventory', { itemBatchId: row.itemBatchId })"
                 >{{ row.batchCode }}</el-button
               >
+              <span v-else>{{ row.batchCode }}</span>
             </template>
           </el-table-column>
           <el-table-column
@@ -224,6 +226,7 @@ import { nextTick, ref, watch } from 'vue';
 import { PERMISSIONS } from '@company/constants';
 import type { PurchaseInboundOrderItem } from '@company/contracts';
 import { useAuthStore } from '../../../stores/auth';
+import { useRouteAccess } from '../../../composables/useRouteAccess';
 import { formatDateTimeForDisplay } from '../../../utils/date';
 import { formatQuantity } from '../../production/production-status';
 import InboundGroupHeader from './InboundGroupHeader.vue';
@@ -237,6 +240,7 @@ const props = defineProps<{
 }>();
 defineEmits<{ 'clear-location': [] }>();
 const auth = useAuthStore();
+const { canAccessRoute } = useRouteAccess();
 const container = ref<HTMLElement | null>(null);
 const collapsedInboundIds = ref(new Set<string>());
 watch(

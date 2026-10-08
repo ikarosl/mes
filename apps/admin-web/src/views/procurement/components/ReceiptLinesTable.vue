@@ -272,7 +272,7 @@ const groups = computed<ReceiptPageGroup[]>(() => {
   return [...byReceipt.values()];
 });
 const hasInbound = (row: ProcurementReceiptLineListItem): boolean =>
-  auth.can(PERMISSIONS.production.inbounds.view) &&
+  auth.can(PERMISSIONS.warehouse.inbound.view) &&
   row.currentRound.status === 'finalized' &&
   Number(row.quantities.pendingInboundQuantity) > 0;
 const hasReturn = (row: ProcurementReceiptLineListItem): boolean =>

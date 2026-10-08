@@ -1,7 +1,10 @@
 import { Inject, Injectable, type OnModuleInit } from '@nestjs/common';
 import { withActiveConnection } from '@company/database';
 import type { Pool, PoolConnection, ResultSetHeader } from 'mysql2/promise';
-import type { StartFinishedInspectionResult } from '@company/contracts';
+import type {
+  BeginFinishedReinspectionPayload,
+  StartFinishedInspectionResult,
+} from '@company/contracts';
 import { writeInventoryAudit } from './mysql-production-inventory.shared.js';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
@@ -12,6 +15,7 @@ import {
   type FinishedInspectionSource,
 } from '../../quality/public.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
+import { ProductionOutputRepository } from '../application/ports/production-output.repository.js';
 import {
   draftOf,
   lockOutputBatch,
@@ -24,9 +28,32 @@ export class MysqlProductionFinishedInspectionSource
   constructor(
     @Inject(DATABASE_POOL) private readonly pool: Pool,
     private readonly registry: QualityFinishedInspectionSourceRegistry,
+    private readonly output: ProductionOutputRepository,
   ) {}
   onModuleInit(): void {
     this.registry.register(this);
+  }
+  async previewReinspection(batchId: string) {
+    const preview = await this.output.previewReinspection(batchId);
+    if (!preview) throw new QualityCommandError('NOT_FOUND', '成品质检任务不存在');
+    return preview;
+  }
+  beginReinspection(
+    batchId: string,
+    payload: BeginFinishedReinspectionPayload,
+    context: CommandContext,
+  ): Promise<StartFinishedInspectionResult> {
+    return this.active(async (db) => {
+      await this.output.beginReinspection(batchId, payload, context);
+      const [[row]] = await db.query<
+        (import('mysql2/promise').RowDataPacket & { current_round_id: number; version: number })[]
+      >(
+        'SELECT current_round_id,version FROM production_batch_closeout WHERE production_batch_id=?',
+        [batchId],
+      );
+      if (!row?.current_round_id) throw new QualityCommandError('INVALID_STATE', '复检轮次未建立');
+      return { batchId, roundId: String(row.current_round_id), version: row.version };
+    });
   }
   private async active<T>(run: (db: PoolConnection) => Promise<T>): Promise<T> {
     try {
@@ -40,9 +67,11 @@ export class MysqlProductionFinishedInspectionSource
         throw new QualityCommandError(
           error.code === 'NOT_FOUND'
             ? 'NOT_FOUND'
-            : error.code === 'CONCURRENT_MODIFICATION'
-              ? 'CONCURRENT_MODIFICATION'
-              : 'INVALID_STATE',
+            : error.code === 'INVALID_INPUT'
+              ? 'INVALID_INPUT'
+              : error.code === 'CONCURRENT_MODIFICATION'
+                ? 'CONCURRENT_MODIFICATION'
+                : 'INVALID_STATE',
           error.message,
         );
       throw error;

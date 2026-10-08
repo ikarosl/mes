@@ -12,8 +12,8 @@
 | /procurement/receipt-order-options[/:id] | procurement:receipts:view | 已下单且可登记新到货的采购候选，不要求采购管理页权限 |
 | /procurement/receipt-lines/:id/:historyKind | receipts:view或quality:inbound-inspections:view | rounds/revisions/allocations/cases/returns/inbounds/acceptances独立分页 |
 | /quality/inbound-inspections[/:id] | quality:inbound-inspections:view | 待检轮次与真实检验办理联合分页、真实case定位 |
-| /quality/inbound-inspections/receipt-lines/:id | quality:inbound-inspections:view | 质检使用的当前来源版本、轮次、到货单号及登记原采购单号 |
-| /procurement/inbound-releases | production:inbounds:view | 当前合法正式可入范围分页 |
+| /quality/inbound-inspections/receipt-lines/:id | quality:inbound-inspections:view | 专用质检详情 `ProcurementInboundInspectionDetail`，含来源身份、版本、当前轮、实物范围及当前检验依据 |
+| /procurement/inbound-releases | warehouse:inbound:view | 当前合法正式可入范围分页 |
 | /procurement/receipt-lines/:id/allocation-candidates | procurement:receipts:view | 原采购行和同次已到货补单的远程搜索与归属解析 |
 | /procurement/purchase-order-lines/:id/excess-receipt-candidates | procurement:orders:view | 采购页超量补单的真实到货候选，keyword 搜到货单号／供应商批号，receiptLineId 精确解析 |
 | /procurement/purchase-order-lines/:id/quality-replacement-candidates | procurement:orders:view | 采购页质量补发的正式质量退回分配候选，按 allocation 分页；keyword 搜到货单号／供应商批号／实际退回单号，receiptLineId/allocationId 精确解析 |
@@ -25,6 +25,8 @@
 行列表返回 `PageResult<ProcurementReceiptLineListItem>`。每条只含行及主单身份、物料与供应商展示字段、完整 `currentRound`、完整 `quantities`；不装载 `rounds`、`cases`、`allocations` 等历史或详情数组。行列表、到货详情和单行详情共用的 `purchaseOrderLineNo` 取登记来源 `procurement_order_line.line_no`，与到货行自身的 `lineNo` 分开；`purchaseOrderLineId` 保留为定位采购行的 ID。当前页批量读取轮次、修订、当前正式分配和实际入退事实，数量口径与详情共用同一投影；需要完整来源或历史时按行 ID 读取详情及独立历史分页。
 
 ## 当前轮次与历史
+
+质检来源详情走独立 `getInspectionReceiptLine` 查询，不复用 `getReceiptLine`／完整到货详情组装。仅查询来源身份、当前轮与版本、当前实收修订和真实入退汇总，以及当前轮在途办理／当前明确引用的检验；通过 Quality public 批量读取完整检验事实，来源轮号精确取得，不受历史十条窗口限制。`quantities` 仅含核实总量、真实已入、真实已退及剩余实物，累计事实供录入表单解释范围；不返回授权去向或待执行量。不读取采购归属、正式分配、清单、入退明细、库存批次集合、历史预览与七类计数。详情、连续录入及提交前重核共用此契约；检验历史独立调用 `cases` 分页端点，具体历史 case 仍可用 `/:id` 精确定位。下面的完整预览与分配规则仅用于采购到货详情。
 
 `receipt_line.current_round_id`是当前整批流程入口，不使用MAX(scope.id)。`currentRound`返回轮次、前驱、触发原因、起始未处置量、状态、关联检验及版本。`rounds`为最新10轮预览，完整轮次链单独分页读取。起始量是历史快照，不能当作已分配后的额外数量池。
 

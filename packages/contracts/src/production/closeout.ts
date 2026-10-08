@@ -83,6 +83,11 @@ export interface BatchCloseoutApprovalSnapshot {
   output: BatchCloseoutOutput;
   actions: BatchCloseoutAction[];
 }
+/** 只读响应补充的引用信息，不写回审批或批准清单的历史 JSON。 */
+export interface BatchCloseoutApprovalDisplaySnapshot extends BatchCloseoutApprovalSnapshot {
+  /** 按同一结案根的 previousRevisionId 读取真实 revision_no；无前版或引用缺失时为空。 */
+  previousRevisionNo: number | null;
+}
 export interface BeginBatchCloseoutPayload {
   version: number;
   reason: string;

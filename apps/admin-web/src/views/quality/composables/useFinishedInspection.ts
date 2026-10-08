@@ -3,6 +3,7 @@ import { RequestError } from '@company/request';
 import { toBeijingISOString } from '@company/utils';
 import { PRODUCTION_OUTPUT_RELEASE_DECISION_LABELS } from '@company/constants';
 import type {
+  BeginFinishedReinspectionPayload,
   FinishedInspectionTaskDetail,
   ProductionOutputInspection,
   ProductionOutputQuantities,
@@ -23,10 +24,10 @@ import {
 
 const emptyForm = (): ProductionOutputInspectionForm => ({
   inspectionMethod: 'full',
-  coveredQuantity: undefined,
   qualifiedQuantity: undefined,
   unqualifiedQuantity: undefined,
-  releaseDecision: 'pending_reinspection',
+  releaseDecision: undefined,
+  zeroConfirmed: false,
   inspectedAt: '',
   resultNote: '',
   evidenceReference: '',
@@ -38,11 +39,14 @@ function isValidInspectionRecord(record: ProductionOutputInspection, target: str
   return (
     quantities !== null &&
     record.qualifiedQuantity === quantities.qualifiedQuantity &&
-    record.releasedQuantity === quantities.releasedQuantity
+    record.inspectedQuantity === quantities.inspectedQuantity
   );
 }
 
-export function useFinishedInspection(changed: () => void) {
+export function useFinishedInspection(
+  changed: () => void,
+  extraDraftMessage: () => string | null = () => null,
+) {
   const visible = ref(false),
     batchId = ref(''),
     detail = ref<FinishedInspectionTaskDetail | null>(null);
@@ -56,9 +60,11 @@ export function useFinishedInspection(changed: () => void) {
     pageSize = ref(10);
   const recordsLoading = ref(false),
     recordsError = ref('');
+  const focusedRecordId = ref<string | null>(null);
   const inspection = reactive(emptyForm()),
     inspectionOpen = ref(false),
-    inspectionVersion = ref<number | null>(null);
+    inspectionVersion = ref<number | null>(null),
+    inspectionBaseline = ref<number | null>(null);
   const inspectionDeclared = reactive<ProductionOutputQuantities>({
     availableQuantity: 0,
     extraQuantity: 0,
@@ -72,7 +78,10 @@ export function useFinishedInspection(changed: () => void) {
   });
   const intent = useIdempotentIntent('质检记录');
   const startIntent = useIdempotentIntent('开始成品质检');
+  const reinspectionIntent = useIdempotentIntent('开始成品复检');
   let pendingStart: { batchId: string; version: number } | null = null;
+  let pendingReinspection: { batchId: string; body: BeginFinishedReinspectionPayload } | null =
+    null;
   let pending: { batchId: string; body: RecordFinishedInspectionPayload } | null = null;
   const busy = computed(() => loading.value || submitting.value);
   const locked = computed(() => submitting.value || unresolved.value);
@@ -82,6 +91,9 @@ export function useFinishedInspection(changed: () => void) {
   const inspectionValid = computed(
     () =>
       inspectionFormQuantities(inspection) !== null &&
+      inspectionBaseline.value !== null &&
+      !!inspection.releaseDecision &&
+      (inspection.inspectionMethod !== 'zero_confirmation' || inspection.zeroConfirmed) &&
       !!inspection.inspectedAt &&
       !!toBeijingDateTimeInputValue(inspection.inspectedAt) &&
       !!inspection.resultNote.trim() &&
@@ -93,10 +105,22 @@ export function useFinishedInspection(changed: () => void) {
   async function loadRecords() {
     if (!visible.value || !historyRead.isActive()) return;
     const target = batchId.value,
-      current = historyRead.begin(() => visible.value && batchId.value === target);
+      recordId = focusedRecordId.value,
+      current = historyRead.begin(
+        () => visible.value && batchId.value === target && focusedRecordId.value === recordId,
+      );
     recordsLoading.value = true;
     recordsError.value = '';
     try {
+      if (recordId) {
+        const result = await finishedInspectionsApi.getRecord(target, recordId, current.signal);
+        if (!current.isCurrent()) return;
+        if (!result || result.id !== recordId || !isValidInspectionRecord(result, target))
+          throw new Error('检验记录与定位对象不一致，请刷新重试');
+        records.value = [result];
+        total.value = 1;
+        return;
+      }
       const result = await finishedInspectionsApi.records(
         target,
         { page: page.value, pageSize: pageSize.value },
@@ -143,24 +167,39 @@ export function useFinishedInspection(changed: () => void) {
   async function refresh() {
     await Promise.all([load(), loadRecords()]);
   }
-  async function open(target: string) {
+  async function open(target: string, recordId?: string) {
     if (locked.value || visible.value) return false;
     batchId.value = target;
     visible.value = true;
     detail.value = null;
     records.value = [];
+    focusedRecordId.value = recordId ?? null;
     page.value = 1;
     total.value = 0;
     inspectionOpen.value = false;
     inspectionVersion.value = null;
+    inspectionBaseline.value = null;
     await refresh();
-    return true;
+    return visible.value && batchId.value === target;
+  }
+  async function focusRecord(recordId: string | null) {
+    historyRead.invalidate();
+    focusedRecordId.value = recordId;
+    records.value = [];
+    recordsError.value = '';
+    page.value = 1;
+    total.value = 0;
+    await loadRecords();
   }
   function openInspectionForm() {
     if (!detail.value?.canRecordInspection || !detail.value.declared) return;
     Object.assign(inspection, emptyForm(), { inspectedAt: toBeijingISOString(Date.now()) });
     Object.assign(inspectionDeclared, detail.value.declared);
     inspectionVersion.value = detail.value.version;
+    inspectionBaseline.value =
+      detail.value.baselinePlannedReceived === null || detail.value.baselineExtraReceived === null
+        ? null
+        : Number(detail.value.baselinePlannedReceived) + Number(detail.value.baselineExtraReceived);
     inspectionOpen.value = true;
   }
   async function runStart() {
@@ -222,7 +261,7 @@ export function useFinishedInspection(changed: () => void) {
     const command = { batchId: batchId.value, version: detail.value.version };
     try {
       await RouteMessageBox.confirm(
-        '开始后固定本轮送检依据，随后填写检验事实。',
+        '本轮送检范围已在产出草稿保存时固定。确认后进入检验中，可继续填写检查事实。',
         '开始本轮成品质检',
         { confirmButtonText: '开始检验' },
       );
@@ -238,19 +277,84 @@ export function useFinishedInspection(changed: () => void) {
     pendingStart = command;
     await runStart();
   }
+  async function runReinspection(): Promise<boolean> {
+    if (submitting.value || !pendingReinspection) return false;
+    const command = pendingReinspection;
+    submitting.value = true;
+    try {
+      await reinspectionIntent.execute(
+        {
+          intentType: 'quality.finished-inspection.reinspect',
+          params: { batchId: command.batchId },
+          query: {},
+          body: command.body,
+        },
+        async (key) => {
+          const result = await finishedInspectionsApi.beginReinspection(
+            command.batchId,
+            command.body,
+            key,
+          );
+          if (
+            !result ||
+            result.batchId !== command.batchId ||
+            !/^[1-9]\d*$/.test(result.roundId) ||
+            result.version !== command.body.version + 1
+          )
+            throw new RequestError('服务器未返回完整的复检开始结果，请刷新后核对当前轮。', 502);
+          return result;
+        },
+      );
+      pendingReinspection = null;
+      unresolved.value = false;
+      changed();
+      await refresh();
+      if (batchId.value === command.batchId) openInspectionForm();
+      return true;
+    } catch (failure) {
+      unresolved.value = reinspectionIntent.getStatus() !== 'idle';
+      if (!unresolved.value) pendingReinspection = null;
+      EMessage.error(failure);
+      return false;
+    } finally {
+      submitting.value = false;
+    }
+  }
+  async function beginReinspection(reason: string): Promise<boolean> {
+    if (
+      !detail.value?.canBeginReinspection ||
+      !reason.trim() ||
+      reason.trim().length > 5000 ||
+      busy.value ||
+      unresolved.value ||
+      error.value ||
+      inspectionOpen.value
+    )
+      return false;
+    const command = {
+      batchId: batchId.value,
+      body: {
+        version: detail.value.version,
+        currentRevisionId: detail.value.currentRevisionId,
+        reason: reason.trim(),
+      },
+    };
+    pendingReinspection = command;
+    return runReinspection();
+  }
   function changeInspection(changes: Partial<ProductionOutputInspectionForm>) {
     if (busy.value || unresolved.value || !inspectionOpen.value) return;
     if (changes.inspectionMethod && changes.inspectionMethod !== inspection.inspectionMethod) {
       Object.assign(inspection, {
-        coveredQuantity: undefined,
         qualifiedQuantity: undefined,
         unqualifiedQuantity: undefined,
+        releaseDecision: undefined,
+        zeroConfirmed: false,
       });
     }
     Object.assign(inspection, changes);
     if (inspection.inspectionMethod === 'zero_confirmation') {
       Object.assign(inspection, {
-        coveredQuantity: 0,
         qualifiedQuantity: 0,
         unqualifiedQuantity: 0,
         releaseDecision: 'released',
@@ -259,18 +363,21 @@ export function useFinishedInspection(changed: () => void) {
     }
     if (
       changes.inspectionMethod !== undefined ||
-      'coveredQuantity' in changes ||
       'qualifiedQuantity' in changes ||
       'unqualifiedQuantity' in changes
     )
-      inspection.releaseDecision = 'pending_reinspection';
+      inspection.releaseDecision = undefined;
   }
   async function discardInspection() {
     if (locked.value) return;
     try {
-      await RouteMessageBox.confirm('放弃本次尚未保存的检验填写？', '放弃填写', {
-        type: 'warning',
-      });
+      await RouteMessageBox.confirm(
+        '放弃本地填写？当前检验轮保持办理中；如已发起复检，剩余入库仍暂停。',
+        '放弃填写',
+        {
+          type: 'warning',
+        },
+      );
     } catch {
       return;
     }
@@ -329,30 +436,23 @@ export function useFinishedInspection(changed: () => void) {
     )
       return;
     const quantities = inspectionFormQuantities(inspection);
-    if (!quantities) return;
+    const decision = inspection.releaseDecision;
+    if (!quantities || !decision) return;
     const target = batchId.value,
       body: RecordFinishedInspectionPayload = {
         version: detail.value.version,
         inspectionMethod: inspection.inspectionMethod,
         qualifiedQuantity: quantities.qualifiedQuantity,
         unqualifiedQuantity: quantities.unqualifiedQuantity,
-        ...(inspection.inspectionMethod === 'sampling'
-          ? { coveredQuantity: quantities.coveredQuantity }
-          : {}),
-        releaseDecision: inspection.releaseDecision,
+        releaseDecision: decision,
         inspectedAt: toBeijingISOString(inspection.inspectedAt),
         resultNote: inspection.resultNote.trim(),
         evidenceReference: inspection.evidenceReference.trim(),
       };
-    const declaredTotal = inspectionDeclared.availableQuantity + inspectionDeclared.extraQuantity;
-    const difference = quantities.coveredQuantity - declaredTotal;
-    const differenceNote =
-      difference === 0
-        ? ''
-        : `实际送检总数与当时申报 ${declaredTotal} 件相差 ${difference > 0 ? '+' : ''}${difference} 件，产线草稿保持原记录。`;
+    if (inspectionBaseline.value === null) return;
     try {
       await RouteMessageBox.confirm(
-        `实际整批送检 ${quantities.coveredQuantity} 件，本次检查 ${quantities.inspectedQuantity} 件，合格 ${body.qualifiedQuantity} 件，不合格 ${body.unqualifiedQuantity} 件，结论为“${PRODUCTION_OUTPUT_RELEASE_DECISION_LABELS[inspection.releaseDecision]}”。${inspection.releaseDecision === 'released' ? `本次建议量 ${quantities.releasedQuantity} 件，数量差异不限制产出定稿。` : '当前结论阻断结案。'}${differenceNote}不合格不自动登记报废；保存后不可覆盖，复检另存记录。`,
+        `本次${inspection.inspectionMethod === 'sampling' ? '样本' : ''}检查 ${quantities.inspectedQuantity} 件，合格 ${body.qualifiedQuantity} 件，不合格 ${body.unqualifiedQuantity} 件，结论为“${PRODUCTION_OUTPUT_RELEASE_DECISION_LABELS[decision]}”。${decision === 'released' ? '产线管理员仍须核对产出清单。' : '当前结论阻断结案。'}不合格不自动登记报废；保存后不可覆盖，复检另存记录。`,
         '保存成品质检记录',
         { confirmButtonText: '确认保存' },
       );
@@ -372,12 +472,15 @@ export function useFinishedInspection(changed: () => void) {
   }
   async function close(): Promise<boolean> {
     if (submitting.value) return false;
-    if (unresolved.value || inspectionOpen.value) {
+    const extraDraft = extraDraftMessage();
+    if (unresolved.value || inspectionOpen.value || extraDraft) {
       try {
         await RouteMessageBox.confirm(
           unresolved.value
             ? '提交结果尚未确认，请先核对检验历史。关闭会放弃本地重试标识，确认关闭？'
-            : '存在未保存的检验填写，确认放弃并关闭？',
+            : inspectionOpen.value
+              ? '存在未保存的检验填写，确认放弃本地输入并关闭？当前检验轮保持办理中；如已发起复检，剩余入库仍暂停。'
+              : (extraDraft ?? ''),
           '关闭成品质检',
           { type: 'warning' },
         );
@@ -389,8 +492,10 @@ export function useFinishedInspection(changed: () => void) {
     historyRead.invalidate();
     intent.reset();
     startIntent.reset();
+    reinspectionIntent.reset();
     pending = null;
     pendingStart = null;
+    pendingReinspection = null;
     unresolved.value = false;
     inspectionOpen.value = false;
     visible.value = false;
@@ -423,9 +528,11 @@ export function useFinishedInspection(changed: () => void) {
     pageSize,
     recordsLoading,
     recordsError,
+    focusedRecordId,
     inspection,
     inspectionOpen,
     inspectionVersion,
+    inspectionBaseline,
     inspectionDeclared,
     busy,
     locked,
@@ -435,11 +542,14 @@ export function useFinishedInspection(changed: () => void) {
     close,
     refresh,
     loadRecords,
+    focusRecord,
     startInspection,
+    beginReinspection,
     changeInspection,
     discardInspection,
     recordInspection,
-    retry: async () => (pendingStart ? runStart() : run()),
+    retry: async () =>
+      pendingReinspection ? runReinspection() : pendingStart ? runStart() : run(),
     changePage,
     changePageSize,
   };

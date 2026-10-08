@@ -438,7 +438,7 @@
         >
           <template #default="{ row }">
             <el-button
-              v-if="auth.can(PERMISSIONS.production.inbounds.view)"
+              v-if="auth.can(PERMISSIONS.warehouse.inbound.view)"
               link
               type="primary"
               @click="goInbound(row.inboundId)"

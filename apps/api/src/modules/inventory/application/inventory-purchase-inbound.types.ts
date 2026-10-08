@@ -38,7 +38,6 @@ export interface ConfirmPurchaseReceiptResult {
 export interface ReceiptInboundFact {
   allocationId: string;
   batchId: string;
-  batchCode: string;
   inboundId: string;
   inboundNo: string;
   inboundDetailId: string;

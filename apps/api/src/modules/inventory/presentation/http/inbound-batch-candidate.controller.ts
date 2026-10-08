@@ -27,7 +27,7 @@ export class InboundBatchCandidateController {
   }
 
   @Get('finished-inbound-batch-candidates')
-  @RequirePermission(PERMISSIONS.production.inbounds.view)
+  @RequirePermission(PERMISSIONS.warehouse.inbound.view)
   listFinished(@Query() query: FinishedInboundBatchCandidateQueryDto) {
     return this.query.listInboundBatchCandidates({
       itemKind: 'finished_product',

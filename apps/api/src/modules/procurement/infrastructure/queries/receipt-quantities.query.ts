@@ -31,6 +31,65 @@ export async function readReceiptQuantitySummaries(
     const id = text(row.receipt_line_id);
     activeByLine.set(id, [...(activeByLine.get(id) ?? []), row]);
   }
+  const physical = await readReceiptPhysicalQuantities(db, ids);
+  for (const id of ids) {
+    const currentRound = currentRounds.get(id);
+    if (!currentRound) throw new Error('到货明细缺少当前处理轮次');
+    const active = activeByLine.get(id) ?? [];
+    const remaining = (disposition: string) =>
+      active
+        .filter((row) => text(row.disposition) === disposition)
+        .reduce(
+          (total, row) =>
+            total +
+            Number(row.quantity) -
+            Number(row.inbound_quantity) -
+            Number(row.returned_quantity),
+          0,
+        );
+    const facts = physical.get(id)!;
+    const inbound = Number(facts.inboundQuantity);
+    const returned = Number(facts.returnedQuantity);
+    const unprocessed = Number(facts.unprocessedQuantity);
+    const pendingInbound = remaining('inbound');
+    const pendingReturn = remaining('return');
+    result.set(id, {
+      unprocessedQuantity: String(unprocessed),
+      receivedQuantity: facts.receivedQuantity,
+      undeterminedQuantity: String(
+        currentRound.status === 'finalized' ? remaining('pending') : unprocessed,
+      ),
+      approvedQuantity: String(inbound + pendingInbound),
+      inboundQuantity: String(inbound),
+      returnDueQuantity: String(returned + pendingReturn),
+      returnedQuantity: String(returned),
+      qualityReturnedQuantity: facts.qualityReturnedQuantity,
+      pendingInboundQuantity: String(pendingInbound),
+      pendingReturnQuantity: String(pendingReturn),
+      hasOpenReview: ['reviewing', 'reinspection_required', 'quality_rejected'].includes(
+        text(currentRound.status),
+      ),
+    });
+  }
+  return result;
+}
+
+type ReceiptPhysicalQuantities = Pick<
+  ReceiptQuantitySummary,
+  | 'receivedQuantity'
+  | 'inboundQuantity'
+  | 'returnedQuantity'
+  | 'unprocessedQuantity'
+  | 'qualityReturnedQuantity'
+>;
+/** 只汇总真实实物事实；质检范围不需要读取正式分配。 */
+export async function readReceiptPhysicalQuantities(
+  db: Db,
+  ids: string[],
+): Promise<Map<string, ReceiptPhysicalQuantities>> {
+  const result = new Map<string, ReceiptPhysicalQuantities>();
+  if (!ids.length) return result;
+  const marks = slots(ids);
   const [inboundSums] = await db.query<ReadRow[]>(
     `${inboundFactSelect('detail.procurement_receipt_line_id receipt_line_id,SUM(tx.quantity) quantity')}
     AND detail.procurement_receipt_line_id IN (${marks}) GROUP BY detail.procurement_receipt_line_id`,
@@ -57,41 +116,15 @@ export async function readReceiptQuantitySummaries(
     currentRevisions.map((row) => [text(row.receipt_line_id), Number(row.received_quantity)]),
   );
   for (const id of ids) {
-    const currentRound = currentRounds.get(id);
-    if (!currentRound) throw new Error('到货明细缺少当前处理轮次');
-    const active = activeByLine.get(id) ?? [];
-    const remaining = (disposition: string) =>
-      active
-        .filter((row) => text(row.disposition) === disposition)
-        .reduce(
-          (total, row) =>
-            total +
-            Number(row.quantity) -
-            Number(row.inbound_quantity) -
-            Number(row.returned_quantity),
-          0,
-        );
+    const received = receivedTotals.get(id) ?? 0;
     const inbound = inboundTotals.get(id) ?? 0;
     const returned = Number(returnTotals.get(id)?.quantity ?? 0);
-    const unprocessed = (receivedTotals.get(id) ?? 0) - inbound - returned;
-    const pendingInbound = remaining('inbound');
-    const pendingReturn = remaining('return');
     result.set(id, {
-      unprocessedQuantity: String(unprocessed),
-      receivedQuantity: String(receivedTotals.get(id) ?? 0),
-      undeterminedQuantity: String(
-        currentRound.status === 'finalized' ? remaining('pending') : unprocessed,
-      ),
-      approvedQuantity: String(inbound + pendingInbound),
+      receivedQuantity: String(received),
       inboundQuantity: String(inbound),
-      returnDueQuantity: String(returned + pendingReturn),
       returnedQuantity: String(returned),
+      unprocessedQuantity: String(received - inbound - returned),
       qualityReturnedQuantity: String(returnTotals.get(id)?.quality_quantity ?? 0),
-      pendingInboundQuantity: String(pendingInbound),
-      pendingReturnQuantity: String(pendingReturn),
-      hasOpenReview: ['reviewing', 'reinspection_required', 'quality_rejected'].includes(
-        text(currentRound.status),
-      ),
     });
   }
   return result;

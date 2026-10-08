@@ -113,7 +113,10 @@
                       >后继 #{{ row.correction.replacementDemandId }}</span
                     >
                     <el-button
-                      v-if="row.correction?.closeoutApprovalId"
+                      v-if="
+                        row.correction?.closeoutApprovalId &&
+                        canAccessRoute({ name: 'approval-inbox' })
+                      "
                       link
                       type="primary"
                       @click="
@@ -124,7 +127,8 @@
                       "
                       >结案审批</el-button
                     >
-                    <span v-else-if="row.correction?.closeoutId"
+                    <span
+                      v-else-if="row.correction?.closeoutId && !row.correction?.closeoutApprovalId"
                       >收尾 #{{ row.correction.closeoutId }}，待提交结案审批</span
                     >
                   </div>
@@ -241,12 +245,14 @@ import DemandCorrectionDialog from './DemandCorrectionDialog.vue';
 import RelatedPurchasesDialog from '../../procurement/components/RelatedPurchasesDialog.vue';
 import { useRelatedPurchaseCounts } from '../../procurement/composables/useRelatedPurchaseCounts';
 import { useAuthStore } from '../../../stores/auth';
+import { useRouteAccess } from '../../../composables/useRouteAccess';
 import { DialogWidth } from '../../../utils/dialog';
 import { formatDateForDisplay } from '../../../utils/date';
 import { formatQuantity as quantity } from '../production-status';
 import { groupMaterialDemandRows } from '../material-demand-group-presentation';
 const router = useRouter();
 const auth = useAuthStore();
+const { canAccessRoute } = useRouteAccess();
 
 const props = defineProps<{
   visible: boolean;

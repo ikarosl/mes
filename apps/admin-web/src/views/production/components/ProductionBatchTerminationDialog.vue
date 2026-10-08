@@ -326,7 +326,7 @@
             >刷新核对</el-button
           >
           <el-button
-            v-if="detail?.approvalInstanceId"
+            v-if="detail?.approvalInstanceId && canAccessRoute({ name: 'approval-inbox' })"
             link
             type="primary"
             @click="openApproval(detail.approvalInstanceId)"
@@ -431,6 +431,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
+import { useRouteAccess } from '../../../composables/useRouteAccess';
 import type {
   BatchTerminationMaterial,
   BatchCloseoutItemKind,
@@ -458,6 +459,7 @@ const emit = defineEmits<{
   'open-output': [string];
 }>();
 const router = useRouter();
+const { canAccessRoute } = useRouteAccess();
 const editor = useBatchCloseout(
   props,
   () => emit('terminated'),
@@ -556,8 +558,10 @@ async function openOutput() {
   await nextTick();
   if (!props.visible) emit('open-output', batchId);
 }
-const openApproval = (instanceId: string) =>
-  router.push({ name: 'approval-inbox', query: { instanceId } });
+const openApproval = (instanceId: string) => {
+  if (!canAccessRoute({ name: 'approval-inbox' })) return;
+  return router.push({ name: 'approval-inbox', query: { instanceId } });
+};
 </script>
 <style scoped>
 .section {

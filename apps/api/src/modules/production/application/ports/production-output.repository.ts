@@ -8,8 +8,11 @@ import type {
 } from '@company/contracts';
 import type { CommandContext } from '../../../../common/audit/audit.types.js';
 import type { ApprovalSubjectPreparation } from '../../../approval/public.js';
+import type { OutputReinspectionPreview } from '../../domain/production-output-reinspection.policy.js';
 export abstract class ProductionOutputRepository {
   abstract detail(batchId: string): Promise<ProductionOutputDetail | null>;
+  abstract previewReinspection(batchId: string): Promise<OutputReinspectionPreview | null>;
+  abstract readPreviousRevisionNo(closeoutId: string, revisionId: string): Promise<number | null>;
   abstract saveDraft(
     batchId: string,
     payload: SaveProductionOutputPayload,

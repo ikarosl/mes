@@ -18,6 +18,7 @@ import { ProcurementReceiptQuery } from '../application/ports/receipt-query.js';
 import { QualityCommandError } from '../../quality/public.js';
 import { ProcurementDomainError } from '../domain/procurement.errors.js';
 import { readReceiptLines } from './queries/receipt-lines.query.js';
+import { readInspectionReceiptLine } from './queries/receipt-inspection-detail.query.js';
 import {
   listReceipts,
   listReceiptLines,
@@ -72,6 +73,9 @@ export class MysqlProcurementReceiptQuery extends ProcurementReceiptQuery {
       if (!lines[0]) throw new ProcurementDomainError('RECEIPT_NOT_FOUND', '到货明细不存在');
       return lines[0];
     });
+  }
+  getInspectionReceiptLine(id: string) {
+    return withTransaction(this.pool, (db) => readInspectionReceiptLine(db, this.quality, id));
   }
   listInboundReleases(query: ProcurementInboundReleaseQuery) {
     return withTransaction(this.pool, (db) => listInboundReleases(db, this.variants, query));

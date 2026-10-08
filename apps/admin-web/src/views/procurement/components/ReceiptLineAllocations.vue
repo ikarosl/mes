@@ -97,7 +97,10 @@
           <div class="allocation-row-actions">
             <el-button
               v-if="
-                !quality && row.disposition === 'inbound' && canExecuteReceiptAllocation(line, row)
+                !quality &&
+                row.disposition === 'inbound' &&
+                canExecuteReceiptAllocation(line, row) &&
+                canAccessRoute({ name: 'warehouse-inbound' })
               "
               link
               type="primary"
@@ -158,6 +161,8 @@ import {
   receiptAllocationExecutionTag,
 } from '../receipt-round-presentation';
 import { computed } from 'vue';
+import { useRouteAccess } from '../../../composables/useRouteAccess';
+const { canAccessRoute } = useRouteAccess();
 const isKnownZero = (value: string): boolean => value.trim() !== '' && Number(value) === 0;
 const props = defineProps<{ line: ProcurementReceiptLine; quality: boolean; disabled: boolean }>();
 const remarkedAllocations = computed(() =>

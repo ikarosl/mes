@@ -53,6 +53,7 @@ export function useFinishedGoodsInbounds() {
     try {
       const result = await productionApi.getFinishedGoodsInbound(id);
       if (disposed || detailVersions.get(id) !== version) return;
+      if (result.inboundId !== id) throw new Error('入库详情与请求单据不一致');
       details[id] = result;
     } catch {
       if (disposed || detailVersions.get(id) !== version) return;

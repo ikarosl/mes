@@ -18,6 +18,7 @@ import {
   FINISHED_INSPECTION_LIST_STATUSES,
 } from '@company/constants';
 import type {
+  BeginFinishedReinspectionPayload,
   ProductionOutputInspectionMethod,
   ProductionOutputReleaseDecision,
   RecordFinishedInspectionPayload,
@@ -36,19 +37,25 @@ export class FinishedInspectionTaskQueryDto
 export class FinishedInspectionBatchParamDto {
   @IsString() @Matches(/^[1-9]\d{0,19}$/) batchId!: string;
 }
+export class FinishedInspectionRecordParamDto extends FinishedInspectionBatchParamDto {
+  @IsString() @Matches(/^[1-9]\d{0,19}$/) recordId!: string;
+}
+export class BeginFinishedReinspectionDto
+  extends VersionedCommandDto
+  implements BeginFinishedReinspectionPayload
+{
+  @ValidateIf((_object: BeginFinishedReinspectionDto, value: unknown) => value !== null)
+  @IsString()
+  @Matches(/^[1-9]\d{0,19}$/)
+  currentRevisionId!: string | null;
+
+  @IsString() @IsNotEmpty() @MaxLength(5000) reason!: string;
+}
 export class RecordFinishedInspectionDto
   extends VersionedCommandDto
   implements RecordFinishedInspectionPayload
 {
   @IsIn(PRODUCTION_OUTPUT_INSPECTION_METHODS) inspectionMethod!: ProductionOutputInspectionMethod;
-  @ValidateIf(
-    (object: RecordFinishedInspectionDto, value: unknown) =>
-      object.inspectionMethod === 'sampling' || value !== undefined,
-  )
-  @IsInt()
-  @Min(0)
-  @Max(PRODUCTION_OUTPUT_QUANTITY_MAX)
-  coveredQuantity?: number;
   @IsInt() @Min(0) @Max(PRODUCTION_OUTPUT_QUANTITY_MAX) qualifiedQuantity!: number;
   @IsInt() @Min(0) @Max(PRODUCTION_OUTPUT_QUANTITY_MAX) unqualifiedQuantity!: number;
   @IsIn(PRODUCTION_OUTPUT_RELEASE_DECISIONS) releaseDecision!: ProductionOutputReleaseDecision;

@@ -2,6 +2,7 @@ import { normalizeFinishedInspectionFacts } from '../domain/finished-inspection.
 import { QualityCommandError } from '../quality-command.error.js';
 import { Injectable } from '@nestjs/common';
 import type {
+  BeginFinishedReinspectionPayload,
   FinishedInspectionTaskQuery,
   PageQuery,
   ProductionOutputInspection,
@@ -11,8 +12,10 @@ import type { IdempotentCommandContext } from '../../../common/audit/audit.types
 import { IdempotencyExecutor } from '../../../common/idempotency/idempotency-executor.js';
 import { IdentityDirectoryService } from '../../identity/public.js';
 import { FinishedInspectionRepository } from './ports/finished-inspection.repository.js';
+import { QualityFinishedInspectionSourceRegistry } from './quality-finished-inspection-source.registry.js';
 import {
   FINISHED_INSPECTION_RECORD_SCOPE,
+  FINISHED_REINSPECTION_BEGIN_SCOPE,
   FINISHED_INSPECTION_START_SCOPE,
   finishedInspectionStartResultCodec,
   finishedInspectionResultCodec,
@@ -23,6 +26,7 @@ export class FinishedInspectionService {
     private readonly repository: FinishedInspectionRepository,
     private readonly identity: IdentityDirectoryService,
     private readonly idempotency: IdempotencyExecutor,
+    private readonly sources: QualityFinishedInspectionSourceRegistry,
   ) {}
   listTasks(query: FinishedInspectionTaskQuery) {
     return this.repository.listTasks(query);
@@ -30,8 +34,10 @@ export class FinishedInspectionService {
   async detail(batchId: string) {
     const detail = await this.repository.detail(batchId);
     if (!detail) throw new QualityCommandError('NOT_FOUND', '成品质检任务不存在');
+    const preview = await this.sources.require().previewReinspection(batchId);
     return {
       ...detail,
+      ...preview,
       latestInspection: detail.latestInspection
         ? (await this.names([detail.latestInspection]))[0]!
         : null,
@@ -40,6 +46,11 @@ export class FinishedInspectionService {
   async listRecords(batchId: string, query: PageQuery) {
     const page = await this.repository.listRecords(batchId, query);
     return { ...page, items: await this.names(page.items) };
+  }
+  async getRecord(batchId: string, recordId: string): Promise<ProductionOutputInspection> {
+    const record = await this.repository.getRecord(batchId, recordId);
+    if (!record) throw new QualityCommandError('NOT_FOUND', '成品质检记录不存在');
+    return (await this.names([record]))[0]!;
   }
   private async names(records: ProductionOutputInspection[]) {
     const names = new Map(
@@ -60,6 +71,33 @@ export class FinishedInspectionService {
       resultCodec: finishedInspectionStartResultCodec,
       handler: () =>
         this.repository.start(batchId, version, {
+          actorId: context.actorId,
+          requestId: context.requestId,
+          ip: context.ip,
+          userAgent: context.userAgent,
+        }),
+    });
+    return result;
+  }
+  async beginReinspection(
+    batchId: string,
+    payload: BeginFinishedReinspectionPayload,
+    context: IdempotentCommandContext,
+  ) {
+    const body = {
+      version: payload.version,
+      currentRevisionId: payload.currentRevisionId,
+      reason: payload.reason.trim(),
+    };
+    const { result } = await this.idempotency.execute({
+      scope: FINISHED_REINSPECTION_BEGIN_SCOPE,
+      key: context.idempotencyKey,
+      actorId: context.actorId,
+      requestId: context.requestId,
+      request: { params: { batchId }, body },
+      resultCodec: finishedInspectionStartResultCodec,
+      handler: () =>
+        this.repository.beginReinspection(batchId, body, {
           actorId: context.actorId,
           requestId: context.requestId,
           ip: context.ip,

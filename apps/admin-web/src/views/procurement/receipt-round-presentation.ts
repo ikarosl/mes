@@ -13,7 +13,9 @@ import type {
 export type ReceiptDetailIntent =
   'acceptance' | 'correct' | 'reject' | 'revoke' | 'allocations' | 'history';
 
-type ReceiptRoundSummary = Pick<ProcurementReceiptLine, 'currentRound' | 'quantities'>;
+type ReceiptRoundSummary = Pick<ProcurementReceiptLine, 'currentRound'> & {
+  quantities: Pick<ProcurementReceiptLine['quantities'], 'unprocessedQuantity'>;
+};
 type TagAppearance = {
   type: 'primary' | 'success' | 'warning' | 'danger' | 'info';
   effect: 'light' | 'plain';
@@ -84,7 +86,7 @@ export const receiptLineStageEffect = (line: ReceiptRoundSummary): TagAppearance
   if (isReceiptRejected(line)) return 'plain';
   return receiptRoundTagEffect(line.currentRound.status);
 };
-export const currentReceiptCase = (line: ProcurementReceiptLine) =>
+export const currentReceiptCase = (line: Pick<ProcurementReceiptLine, 'currentRound' | 'cases'>) =>
   line.cases.find(
     (record) => record.roundId === line.currentRound.id && record.status === 'reviewing',
   );

@@ -80,6 +80,8 @@
 
 约束：`UNIQUE (code)`；`parent_id -> permissions.id`；`CHECK (type IN ('menu', 'page', 'button', 'api'))`。
 
+共用入库页面权限为 `warehouse:inbound:view`，归属 `warehouse:view`，类型为 `page`，路由为 `/warehouse/inbound-orders`；各读取接口通过该编码独立鉴权，不通过权限目录中的单一路径匹配代替接口声明。编码迁移保留原权限 ID、启停／删除状态、角色授权及子权限引用，不并存旧查看编码。入库确认等写权限独立保留，目录父子关系不隐式授予子权限。
+
 ## 1.5 `user_roles`
 
 | 字段         | 类型              | 说明     |

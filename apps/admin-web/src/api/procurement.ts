@@ -34,6 +34,7 @@ import type {
   ProcurementReceiptLineListItem,
   ProcurementReceiptDetail,
   ProcurementReceiptLine,
+  ProcurementInboundInspectionDetail,
   ConfirmProcurementReceiptPayload,
   CorrectReceiptLinePayload,
   StartReceiptReviewPayload,
@@ -279,7 +280,10 @@ export const procurementApi = {
     }),
   getInspection: (id: string, signal?: AbortSignal): Promise<ProcurementInboundInspectionItem> =>
     request({ url: `/quality/inbound-inspections/${id}`, signal, skipErrorHandling: true }),
-  inspectionReceiptLine: (id: string, signal?: AbortSignal): Promise<ProcurementReceiptLine> =>
+  inspectionReceiptLine: (
+    id: string,
+    signal?: AbortSignal,
+  ): Promise<ProcurementInboundInspectionDetail> =>
     request({
       url: `/quality/inbound-inspections/receipt-lines/${id}`,
       signal,

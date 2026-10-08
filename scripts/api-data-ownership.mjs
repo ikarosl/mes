@@ -135,8 +135,12 @@ export const API_DISPLAY_READ_ACCESS = Object.freeze([
       production_output_round: [
         'id',
         'status',
+        'round_no',
+        'trigger_type',
+        'reason',
         'baseline_planned_received',
         'baseline_extra_received',
+        'starting_declared_remaining',
       ],
       production_batches: ['id', 'batch_no', 'work_order_id', 'planned_quantity', 'status'],
       work_orders: ['id', 'work_order_no', 'product_code_snapshot', 'product_name_snapshot'],

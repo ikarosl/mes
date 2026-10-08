@@ -60,7 +60,7 @@
 
 ## ADR
 
-全局方向决策（0001—0005）保留在根目录；模块决策（0008—0010、0012）的当前规则由所属模块完整维护；跨模块决策（0006、0007、0011、0013—0015）保留共同边界，各模块维护其执行细节。已实现不表示决策作废，也不等于用户验收通过；部分取代与未解决冲突继续显式保留。
+全局方向决策（0001—0005）保留在根目录；模块决策（0008—0010、0012）的当前规则由所属模块完整维护；跨模块决策（0006、0007、0011、0013—0015、0019）保留共同边界，各模块维护其执行细节。已实现不表示决策作废，也不等于用户验收通过；部分取代与未解决冲突继续显式保留。
 
 - [ADR 目录](adr/)
 - [工单、BOM 与顺序多级审批的业务边界](adr/0006-approval-workflow-boundaries.md)
@@ -72,8 +72,9 @@
 - [历史工单选版决策（选版及阻断规则由 ADR-0014 取代）](adr/0012-work-order-material-configuration.md)
 - [采购来源、检验后入库与事实边界](adr/0013-procurement-source-and-stock-boundaries.md)
 - [任务用料边界、研发执行与产出检验](adr/0014-task-material-policy-and-output-inspection.md)
-- [统一质检数量与放行语义](adr/0015-unified-quality-quantity-semantics.md)
+- [统一质检数量与放行语义](adr/0015-unified-quality-quantity-semantics.md)：成品 C/R/S 旧裁决由 ADR-0019 取代，来料规则保持
 - [入库授权与库存批次分离](adr/0016-inbound-authorizations-and-stock-batches.md)：成品分次入库、剩余授权与两来源自主归批
 
 - [统一业务编号与北京时间职责](adr/0017-business-numbering-and-beijing-time.md)
 - [外购物料按实际确认成单](adr/0018-purchase-inbound-multiple-suppliers.md)：跨供应商合单与逐明细来源
+- [成品质检只记录检查事实](adr/0019-finished-inspection-measurement-simplification.md)：取代成品 C/R/S，保留来料库管整批核实

@@ -409,6 +409,7 @@
 <script setup lang="ts">
 import { computed, onActivated, onMounted, onScopeDispose, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { useRouteAccess } from '../../../composables/useRouteAccess';
 import { Refresh } from '@element-plus/icons-vue';
 import { useTabsStore } from '../../../stores/tabs';
 import TableToolbar from '../../../components/TableToolbar.vue';
@@ -435,7 +436,9 @@ const props = withDefaults(
 );
 const route = useRoute(),
   router = useRouter();
+const { canAccessRoute } = useRouteAccess();
 const goSource = async (name: string, query: Record<string, string>): Promise<void> => {
+  if (!canAccessRoute({ name, query })) return;
   if (releases.command.locked.value || releases.checking.value) {
     EMessage.warning('请先完成当前入库操作的核对或原操作重试');
     return;

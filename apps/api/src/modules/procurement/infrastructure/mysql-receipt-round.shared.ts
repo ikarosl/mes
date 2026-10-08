@@ -4,13 +4,17 @@ import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { requireOptimisticUpdate } from '../../../common/persistence/optimistic-lock.js';
 import type { QualityInboundCommand } from '../../quality/public.js';
 import {
-  receiptError,
-  requireAggregateQuantity,
-  requireQuantity,
   type ReceiptLineRow,
   type RevisionRow,
   type AllocationRow,
 } from './mysql-receipt.shared.js';
+import { receiptError } from '../domain/procurement.errors.js';
+import {
+  requireAggregateQuantity,
+  requireQuantity,
+  calculateReceiptBalance,
+} from '../domain/receipt-quantity.policy.js';
+import { nextReceiptAllocationSourceRoundId } from '../domain/receipt-round.policy.js';
 
 export type RoundRow = RowDataPacket & {
   id: number;
@@ -55,11 +59,14 @@ export async function receiptBalance(
     [line.current_receipt_revision_id, line.id],
   );
   if (!revision) return receiptError('当前实收修订不存在', 'RECEIPT_STATE');
-  const inbound = allocations.reduce((sum, row) => sum + row.inbound_quantity, 0);
-  const returned = allocations.reduce((sum, row) => sum + row.returned_quantity, 0);
-  const remaining = Number(revision.received_quantity) - inbound - returned;
-  requireQuantity(remaining, '本批未处置量', true);
-  return { revision, inbound, returned, remaining };
+  const balance = calculateReceiptBalance(
+    Number(revision.received_quantity),
+    allocations.map((row) => ({
+      inboundQuantity: row.inbound_quantity,
+      returnedQuantity: row.returned_quantity,
+    })),
+  );
+  return { revision, ...balance };
 }
 
 export async function insertRound(
@@ -77,15 +84,27 @@ export async function insertRound(
   context: CommandContext,
 ) {
   requireQuantity(input.quantity, '本轮实物量', true);
-  // Carry only the last still-relevant allocation basis. A finalized empty round clears it.
-  let sourceRoundId = input.previous?.source_allocation_round_id ?? null;
+  let hasAllocations = false;
   if (input.previous?.status === 'finalized') {
     const [[source]] = await db.query<RowDataPacket[]>(
       'SELECT id FROM procurement_receipt_allocation WHERE round_id=? LIMIT 1 FOR SHARE',
       [input.previous.id],
     );
-    sourceRoundId = source ? input.previous.id : null;
+    hasAllocations = Boolean(source);
   }
+  const sourceRoundId = nextReceiptAllocationSourceRoundId(
+    input.previous
+      ? {
+          id: String(input.previous.id),
+          status: input.previous.status,
+          sourceAllocationRoundId:
+            input.previous.source_allocation_round_id === null
+              ? null
+              : String(input.previous.source_allocation_round_id),
+        }
+      : null,
+    hasAllocations,
+  );
   const [result] = await db.execute<ResultSetHeader>(
     `INSERT INTO procurement_receipt_round(receipt_line_id,round_no,previous_round_id,trigger_type,receipt_revision_id,
       starting_quantity,status,inspection_id,reason,created_by,updated_by,source_allocation_round_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
@@ -182,9 +201,4 @@ export async function assertReceiptAggregate(
     [...others.map((r) => Number(r.received_quantity)), total],
     '采购行累计实收',
   );
-}
-
-export function requireNotRejected(round: RoundRow) {
-  if (round.trigger_type === 'manual_rejection')
-    receiptError('本轮已人工拒收，请先更正实收或撤销拒收重新办理', 'RECEIPT_STATE');
 }

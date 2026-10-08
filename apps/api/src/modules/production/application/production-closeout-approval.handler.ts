@@ -40,6 +40,12 @@ export class ProductionCloseoutApprovalHandler implements ApprovalSubjectHandler
   async readSnapshotForDisplay(snapshot: unknown, schemaVersion: number) {
     return productionApprovalCall(async () => {
       const subjectSnapshot = readCloseoutApprovalSnapshot(snapshot, schemaVersion);
+      const previousRevisionNo = subjectSnapshot.previousRevisionId
+        ? await this.repository.readPreviousRevisionNo(
+            subjectSnapshot.closeoutId,
+            subjectSnapshot.previousRevisionId,
+          )
+        : null;
       const users = await this.identity.listUserReferencesByIds([
         subjectSnapshot.inspection.createdBy,
       ]);
@@ -47,6 +53,7 @@ export class ProductionCloseoutApprovalHandler implements ApprovalSubjectHandler
       return {
         subjectSnapshot: {
           ...subjectSnapshot,
+          previousRevisionNo,
           inspection: {
             ...subjectSnapshot.inspection,
             createdByName: inspector?.displayName ?? subjectSnapshot.inspection.createdBy,

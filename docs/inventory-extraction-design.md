@@ -64,6 +64,8 @@ Inventory 可在登记查询中展示 Production 的有效预留，但不取得�
 
 Inventory 只直接锁自有表，不在公开命令内读锁生产来源或反向调用调用者。Product 身份锁通过其公开能力取得，Product 停用／启用只锁自身主数据。按需求下单统一采用 Production 工单／任务／需求 → 采购根 → Product；先无锁定位草稿来源，再锁来源与采购根并重核引用，变化则并发失败，不在持有采购根后补锁新的生产来源。不能同时保留“Product → 采购根”的提交路径和“采购根 → Product”的到货路径，也不能在持有库存锁后回调 Production。
 
+采购历史已入事实的当前读不取得历史库批锁；事实端口与展示批号读取分离，具体字段见 [Inventory 公开能力](../apps/api/src/modules/inventory/docs/public-contracts.md)。已有目标批次由实际入库命令按完整集合和稳定顺序一次取得排他锁，避免不同采购来源共批时先持有历史共享锁、再互相等待升级为排他锁。
+
 ### 父身份外键锁与循环审查
 
 `inventory_transaction` 外键引用 `materials`，余额触发器写入 `inventory_material_variant_balance` 时还引用 `material_variants`，因此写流水会隐式获取 Product 父行共享锁。退料／盘点若先占库存批次，再等待被采购资格查询占用的 Product 父行，同时采购又等待同一库存批次，会形成环。

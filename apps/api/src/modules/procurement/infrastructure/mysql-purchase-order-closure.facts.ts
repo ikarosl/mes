@@ -1,16 +1,10 @@
-import type { PoolConnection, RowDataPacket } from 'mysql2/promise';
+import type { PoolConnection } from 'mysql2/promise';
 import type { ReceiptQuantitySummary } from '@company/contracts';
 import type { InventoryInboundQuery } from '../../inventory/public.js';
 import type { QualityInboundQuery } from '../../quality/public.js';
 import { projectDraftOwnership } from '../domain/receipt-ownership.projection.js';
-import { idsSql } from './mysql-purchase-order.shared.js';
-import {
-  type ReceiptLineRow,
-  readAllocations,
-  type AllocationRow,
-  requireAggregateQuantity,
-  requireQuantity,
-} from './mysql-receipt.shared.js';
+import { type ReceiptLineRow, readReceiptExecutionFacts } from './mysql-receipt.shared.js';
+import { requireAggregateQuantity, requireQuantity } from '../domain/receipt-quantity.policy.js';
 
 export const emptyClosureFacts = () => ({
   hasReceipt: false,
@@ -57,9 +51,9 @@ export const purchaseLineClosureFacts = async (
   const result = emptyClosureFacts();
   if (!lines.length) return result;
   result.hasReceipt = true;
-  const rows: AllocationRow[] = [];
-  for (const line of lines)
-    rows.push(...(await readAllocations(connection, String(line.id), inventory)));
+  const ids = lines.map((line) => String(line.id));
+  const execution = await readReceiptExecutionFacts(connection, ids, inventory);
+  const rows = execution.allocations;
   const origins = new Map(
     lines.map((line) => [String(line.id), String(line.purchase_order_line_id)]),
   );
@@ -104,24 +98,10 @@ export const purchaseLineClosureFacts = async (
     .reduce((sum, row) => sum + row.returned_quantity, 0);
   for (const q of [inbound, returned, pendingInbound, pendingReturn, undetermined, qualityReturned])
     requireQuantity(q, '关闭依据数量', true);
-  const ids = lines.map((line) => String(line.id));
-  const [returns] = await connection.query<
-    (RowDataPacket & { id: number; allocation_id: number })[]
-  >(
-    `SELECT id,allocation_id FROM procurement_supplier_return WHERE receipt_line_id IN (${idsSql(ids)}) FOR SHARE`,
-    ids,
-  );
   const ownedIds = new Set(owned.map((row) => String(row.id)));
-  const inboundDetailIds: string[] = [];
-  for (let offset = 0; offset < ids.length; offset += 100)
-    for (const fact of await inventory.getReceiptInboundFacts({
-      receiptLineIds: ids.slice(offset, offset + 100),
-    }))
-      inboundDetailIds.push(
-        ...fact.receipts
-          .filter((row) => ownedIds.has(row.allocationId))
-          .map((row) => row.inboundDetailId),
-      );
+  const inboundDetailIds = execution.inbounds.flatMap((fact) =>
+    fact.receipts.filter((row) => ownedIds.has(row.allocationId)).map((row) => row.inboundDetailId),
+  );
   let hasOpenReview = pending.some((owner) => owner.hasOpenReview);
   for (let offset = 0; offset < ids.length; offset += 100)
     hasOpenReview ||= (
@@ -159,7 +139,7 @@ export const purchaseLineClosureFacts = async (
       ...new Set(owned.flatMap((row) => (row.inspection_id ? [String(row.inspection_id)] : []))),
     ],
     inboundDetailIds,
-    supplierReturnIds: returns
+    supplierReturnIds: execution.returns
       .filter((row) => ownedIds.has(String(row.allocation_id)))
       .map((row) => String(row.id)),
   };

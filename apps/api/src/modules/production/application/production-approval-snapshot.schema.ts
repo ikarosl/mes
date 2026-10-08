@@ -207,7 +207,7 @@ export const terminationCheckSchema = z.object({
     })
     .nullable(),
 });
-export const CLOSEOUT_APPROVAL_SNAPSHOT_SCHEMA_VERSION = 7;
+export const CLOSEOUT_APPROVAL_SNAPSHOT_SCHEMA_VERSION = 8;
 const outputQuantitiesSchema = z.object({
   availableQuantity: amount,
   extraQuantity: amount,
@@ -221,16 +221,13 @@ const outputInspectionSchema = z
     batchId: id,
     baselinePlannedReceived: quantity,
     baselineExtraReceived: quantity,
-    cumulativeSuggestionQuantity: quantity,
     declaredVersion: version,
     declared: outputQuantitiesSchema,
     inspectionMethod: z.enum(PRODUCTION_OUTPUT_INSPECTION_METHODS),
-    coveredQuantity: amount,
     inspectedQuantity: amount,
+    qualifiedQuantity: amount,
     unqualifiedQuantity: amount,
     releaseDecision: z.enum(PRODUCTION_OUTPUT_RELEASE_DECISIONS),
-    qualifiedQuantity: amount,
-    releasedQuantity: amount,
     inspectedAt: z.string(),
     resultNote: z.string(),
     evidenceReference: z.string(),
@@ -242,14 +239,9 @@ const outputInspectionSchema = z
   .strict()
   .superRefine((inspection, context) => {
     try {
-      const quantities = evaluateOutputInspection(inspection);
-      if (
-        quantities.qualifiedQuantity !== inspection.qualifiedQuantity ||
-        quantities.releasedQuantity !== inspection.releasedQuantity
-      )
-        context.addIssue({ code: 'custom', message: '检验合格数或放行量与事实不一致' });
+      evaluateOutputInspection(inspection);
     } catch {
-      context.addIssue({ code: 'custom', message: '检验方式、实际送检总数或实检数量无效' });
+      context.addIssue({ code: 'custom', message: '检验方式、合格数、不合格数或实际检查数无效' });
     }
   });
 const closeoutSnapshotBaseSchema = z.object({
@@ -288,7 +280,7 @@ export const closeoutSnapshotSchema = closeoutSnapshotBaseSchema
   )
   .refine(
     // 历史证据保持可读；新送审和最终批准由 loadOutputState 明确要求 released。
-    // 检验派生数量仅供清单核对，不限制正式数量或历史已入数量。
+    // 检验事实用于清单核对，不限制正式数量或历史已入数量。
     (snapshot) => snapshot.inspection.releaseDecision !== 'pending_reinspection',
     { message: '检验尚未完成' },
   )

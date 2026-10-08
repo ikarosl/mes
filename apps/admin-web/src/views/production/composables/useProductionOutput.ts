@@ -1,4 +1,4 @@
-import { computed, onActivated, reactive, ref, watch } from 'vue';
+import { computed, onActivated, onScopeDispose, reactive, ref, watch } from 'vue';
 import type {
   ProductionOutputDetail,
   ProductionOutputDraft,
@@ -15,6 +15,7 @@ import {
 import { EMessage } from '../../../utils/message';
 import { RouteMessageBox } from '../../../utils/route-message-box';
 import { inspectionQuantities } from '../../quality/finished-inspection';
+import { useTabsStore } from '../../../stores/tabs';
 
 const emptyDraft = (): ProductionOutputDraft => ({
   availableQuantity: 0,
@@ -70,7 +71,7 @@ function validateDetail(value: ProductionOutputDetail, batchId: string) {
       typeof record.id === 'string' &&
       quantitiesValid(record.declared, plan) &&
       quantities.qualifiedQuantity === record.qualifiedQuantity &&
-      quantities.releasedQuantity === record.releasedQuantity &&
+      quantities.inspectedQuantity === record.inspectedQuantity &&
       typeof record.resultNote === 'string'
     );
   };
@@ -163,27 +164,6 @@ export function useProductionOutput(
       !!draft.materialReviewNote.trim(),
   );
   const canSubmit = computed(() => detail.value?.canSubmit && !locked.value && !dirty.value);
-  const selectedInspection = computed(
-    () => detail.value?.inspections.find((row) => row.id === draft.inspectionRecordId) ?? null,
-  );
-  const latestInspection = computed(
-    () =>
-      detail.value?.inspections.find((row) => row.id === detail.value?.latestInspectionId) ?? null,
-  );
-  const inspectionReleased = computed(
-    () => selectedInspection.value?.releaseDecision === 'released',
-  );
-  const quantityAdvice = computed(() => {
-    const inspection = selectedInspection.value;
-    if (!inspection || !inspectionReleased.value) return '';
-    const total = draft.availableQuantity + draft.extraQuantity;
-    const received =
-      Number(inspection.baselinePlannedReceived) + Number(inspection.baselineExtraReceived);
-    const suggested = Number(inspection.cumulativeSuggestionQuantity);
-    if (total === suggested && received === 0) return '';
-    return `检验所在轮固定已入基准 ${received} 件，本轮建议 ${inspection.releasedQuantity} 件，累计建议 ${suggested} 件；当前草稿累计目标 ${total} 件。数量差异仅提示，由负责人核对审批。`;
-  });
-
   async function load(resetDraft = false) {
     if (!props.visible || !props.batchId) return;
     const batchId = props.batchId,
@@ -219,6 +199,19 @@ export function useProductionOutput(
       }
     }
     await load(true);
+  }
+  function retainReviewedDraft(version: number): boolean {
+    if (
+      !detail.value?.canEdit ||
+      detail.value.version !== version ||
+      busy.value ||
+      unresolved.value ||
+      error.value
+    )
+      return false;
+    // 仅在用户逐项核对本地输入和最新草稿后确认版本；不替换原检验引用。
+    loadedVersion.value = version;
+    return true;
   }
   async function run(
     name: string,
@@ -332,43 +325,6 @@ export function useProductionOutput(
       '已建立更正草稿；原批准记录继续保留',
     );
   }
-  async function beginReinspection() {
-    if (
-      !detail.value?.canBeginReinspection ||
-      !props.batchId ||
-      busy.value ||
-      unresolved.value ||
-      error.value
-    )
-      return;
-    const batchId = props.batchId,
-      version = detail.value.version,
-      currentRevisionId = detail.value.currentRevisionId;
-    let reason: string;
-    try {
-      const answer = await RouteMessageBox.prompt(
-        '开始复检会立即冻结旧轮剩余入库授权；历史已入继续保留。请说明本次剩余实物复检原因。',
-        '发起剩余产出复检',
-        {
-          inputType: 'textarea',
-          inputValidator: (value) =>
-            (!!value?.trim() && value.trim().length <= 5000) || '请填写不超过 5000 字的复检原因',
-          confirmButtonText: '开始复检',
-        },
-      );
-      reason = answer.value.trim();
-    } catch {
-      return;
-    }
-    if (props.batchId !== batchId || !props.visible || detail.value.version !== version) return;
-    const body = { version, currentRevisionId, reason };
-    await run(
-      'production.output.reinspection',
-      body,
-      (key) => productionApi.beginProductionOutputReinspection(batchId, body, key),
-      '已开始新一轮剩余产出复检，旧轮剩余入库资格已冻结',
-    );
-  }
   async function cancelCorrection() {
     if (
       !detail.value?.canCancelCorrection ||
@@ -394,11 +350,11 @@ export function useProductionOutput(
       'production.output.cancel-correction',
       { version },
       (key) => productionApi.cancelProductionOutputCorrection(batchId, version, key),
-      '清单更正已取消，继续使用原批准清单',
+      '清单更正已取消，剩余入库仍暂停；需重新办理并审批取得新授权',
     );
   }
-  async function close() {
-    if (submitting.value) return;
+  async function close(): Promise<boolean> {
+    if (submitting.value) return false;
     if (unresolved.value || dirty.value) {
       try {
         await RouteMessageBox.confirm(
@@ -409,7 +365,7 @@ export function useProductionOutput(
           { type: 'warning' },
         );
       } catch {
-        return;
+        return false;
       }
     }
     request.invalidate();
@@ -418,6 +374,7 @@ export function useProductionOutput(
     pending = null;
     unresolved.value = false;
     closed();
+    return true;
   }
   async function retry() {
     if (pending) await run(pending.name, pending.body, pending.send, pending.message);
@@ -442,6 +399,11 @@ export function useProductionOutput(
     if (activated && !submitting.value && !unresolved.value) void load();
     activated = true;
   });
+  const unregisterCloseGuard = useTabsStore().registerCloseGuard(
+    'production-tasks',
+    async () => !props.visible || (await close()),
+  );
+  onScopeDispose(unregisterCloseGuard);
   return {
     detail,
     draft,
@@ -456,17 +418,13 @@ export function useProductionOutput(
     locked,
     valid,
     canSubmit,
-    selectedInspection,
-    latestInspection,
-    inspectionReleased,
-    quantityAdvice,
     quantityErrors,
     load,
     reloadDraft,
+    retainReviewedDraft,
     save,
     submit,
     beginCorrection,
-    beginReinspection,
     cancelCorrection,
     close,
     retry,

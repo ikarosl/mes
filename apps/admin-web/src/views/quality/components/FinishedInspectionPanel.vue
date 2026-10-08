@@ -1,28 +1,11 @@
 <template>
   <section>
-    <div class="toolbar">
-      <p class="muted">
-        {{
-          detail.canRecordInspection
-            ? '本轮已开始，可继续填写检查结果。'
-            : detail.canStartInspection
-              ? '开始本轮检验后，送检依据将固定，再填写检查结果。'
-              : '本轮暂无可执行的检验动作，仍可查看记录。'
-        }}
-      </p>
-      <el-button
-        type="primary"
-        :disabled="
-          (!detail.canStartInspection && !detail.canRecordInspection) ||
-          busy ||
-          unresolved ||
-          Boolean(error) ||
-          inspectionOpen
-        "
-        @click="$emit('start')"
-        >{{ detail.canStartInspection ? '开始本轮检验' : '填写本轮检验' }}</el-button
-      >
-    </div>
+    <InlineHint
+      v-if="!inspectionOpen"
+      class="section-hint"
+    >
+      {{ handlingHint }}
+    </InlineHint>
     <el-alert
       v-if="inspectionStale"
       title="申报内容已被其他操作更新，请放弃本次填写后重新登记质检。"
@@ -45,193 +28,208 @@
       :disabled="busy || unresolved || Boolean(error)"
       class="inspection-form"
     >
-      <div class="form-context">
-        申报版本 {{ declaredVersion }} · 计划内 {{ declared.availableQuantity }} 件 · 计划外
-        {{ declared.extraQuantity }} 件 · 新增报废 {{ declared.additionalScrapQuantity }} 件
-      </div>
-      <h3>检查事实</h3>
-      <el-form-item
-        label="检验方式"
-        required
-      >
-        <el-select
-          :model-value="inspection.inspectionMethod"
-          @update:model-value="
-            (value: ProductionOutputInspectionMethod) =>
-              $emit('change', { inspectionMethod: value })
-          "
-        >
-          <el-option
-            v-for="method in PRODUCTION_OUTPUT_INSPECTION_METHODS"
-            :key="method"
-            :value="method"
-            :label="PRODUCTION_OUTPUT_INSPECTION_METHOD_LABELS[method]"
-          />
-        </el-select>
-      </el-form-item>
-      <div class="quantity-fields">
-        <el-form-item
-          v-if="isSampling"
-          label="核实的整批实际送检总数"
-          required
-        >
-          <el-input-number
-            :model-value="inspection.coveredQuantity"
-            :min="1"
-            :max="PRODUCTION_OUTPUT_QUANTITY_MAX"
-            :precision="0"
-            placeholder="按现场核实填写"
-            @update:model-value="
-              (value: number | undefined) => $emit('change', { coveredQuantity: value })
-            "
-          />
-        </el-form-item>
-        <el-form-item
-          :label="isSampling ? '样本合格数' : '合格数'"
-          required
-        >
-          <el-input-number
-            :model-value="inspection.qualifiedQuantity"
-            :min="0"
-            :max="PRODUCTION_OUTPUT_QUANTITY_MAX"
-            :precision="0"
-            :disabled="isZeroConfirmation"
-            @update:model-value="
-              (value: number | undefined) => $emit('change', { qualifiedQuantity: value })
-            "
-          />
-        </el-form-item>
-        <el-form-item
-          :label="isSampling ? '样本不合格数' : '不合格数'"
-          required
-        >
-          <el-input-number
-            :model-value="inspection.unqualifiedQuantity"
-            :min="0"
-            :max="PRODUCTION_OUTPUT_QUANTITY_MAX"
-            :precision="0"
-            :disabled="isZeroConfirmation"
-            @update:model-value="
-              (value: number | undefined) => $emit('change', { unqualifiedQuantity: value })
-            "
-          />
-        </el-form-item>
-      </div>
-      <el-descriptions
-        :column="2"
-        border
-      >
-        <el-descriptions-item
-          :label="isSampling ? '样本检查总数（自动计算）' : '实际检查总数（自动计算）'"
-          >{{ inspectedTotal
-          }}<template v-if="typeof inspectedTotal === 'number'"> 件</template></el-descriptions-item
-        >
-        <el-descriptions-item label="整批实际送检总数"
-          >{{ actualTotal
-          }}<template v-if="typeof actualTotal === 'number'"> 件</template></el-descriptions-item
-        >
-      </el-descriptions>
-      <InlineHint class="quantity-help">
-        <template v-if="isSampling"
-          >样本合格与不合格之和<strong>不得超过整批实际送检数</strong>；整批数量按现场核实填写。</template
-        >
-        <template v-else
-          >全检总数 =
-          <strong>合格数 + 不合格数</strong>；按现场核实填写，可以与申报量不同。</template
-        >
-      </InlineHint>
-      <el-alert
-        v-if="difference !== null && difference !== 0"
-        type="warning"
-        show-icon
-        :closable="false"
-        class="notice"
-        :title="`实际送检总数与产线申报相差 ${difference > 0 ? '+' : ''}${difference} 件`"
-        :description="`当时申报可送检 ${declaredTotal} 件，现场核实 ${actualTotal} 件。请在检验结果说明中记录差异；本次检验不会修改产线草稿。`"
-      />
-      <el-alert
-        v-if="sampleExceedsTotal"
-        type="warning"
-        :closable="false"
-        title="样本合格数与不合格数之和不能超过整批实际送检总数"
-        class="notice"
-      />
-      <h3>明确结论与下一步</h3>
-      <el-form-item
-        label="本批处理结论"
-        required
-      >
-        <span v-if="isZeroConfirmation">确认无送检产出，本次建议量为 0</span>
-        <el-select
-          v-else
-          :model-value="inspection.releaseDecision"
-          @update:model-value="
-            (value: ProductionOutputReleaseDecision) => $emit('change', { releaseDecision: value })
-          "
-        >
-          <el-option
-            v-for="decision in PRODUCTION_OUTPUT_RELEASE_DECISIONS"
-            :key="decision"
-            :value="decision"
-            :label="PRODUCTION_OUTPUT_RELEASE_DECISION_LABELS[decision]"
-          />
-        </el-select>
-      </el-form-item>
-      <el-alert
-        :title="`本次检验建议量：${typeof releasedQuantity === 'number' ? `${releasedQuantity} 件` : releasedQuantity}`"
-        description="明确放行后由产线管理员核对产出清单并送负责人审批；待复检或不放行继续阻断。不合格不自动登记报废。"
-        type="info"
-        :closable="false"
-        class="notice"
-      />
-      <h3>检验时间与凭据</h3>
-      <el-form-item
-        label="线下检验时间"
-        required
-        ><el-date-picker
-          :model-value="toBeijingDateTimeInputValue(inspection.inspectedAt)"
-          type="datetime"
-          value-format="YYYY-MM-DD HH:mm:ss"
-          @update:model-value="
-            (value: string | null) =>
-              $emit('change', { inspectedAt: fromBeijingDateTimeInputValue(value) })
-          "
-      /></el-form-item>
-      <el-form-item
-        label="检验结果说明"
-        required
-        ><el-input
-          :model-value="inspection.resultNote"
-          type="textarea"
-          :rows="2"
-          maxlength="5000"
-          show-word-limit
-          @update:model-value="(value: string) => $emit('change', { resultNote: value ?? '' })"
-      /></el-form-item>
-      <el-form-item
-        label="凭据编号 / 存放位置"
-        required
-        ><el-input
-          :model-value="inspection.evidenceReference"
-          type="textarea"
-          :rows="2"
-          maxlength="5000"
-          show-word-limit
-          required
-          placeholder="必填：线下质检单编号或凭据存放位置，零产出确认也需填写"
-          @update:model-value="
-            (value: string) => $emit('change', { evidenceReference: value ?? '' })
-          "
-      /></el-form-item>
-      <div class="toolbar">
-        <el-button @click="$emit('discard')">放弃填写</el-button
-        ><el-button
-          type="primary"
-          :disabled="!inspectionValid || inspectionStale"
-          :loading="submitting"
-          @click="$emit('record')"
-          >留存本次质检记录</el-button
-        >
+      <div class="form-layout">
+        <div class="form-main">
+          <InlineHint class="form-context">
+            正在填写本轮检验。<strong>现场实测量独立填写</strong>；产线申报仅供核对，保存后不会回写草稿。
+          </InlineHint>
+          <h3>检查事实</h3>
+          <el-form-item
+            label="检验方式"
+            required
+          >
+            <el-select
+              :model-value="inspection.inspectionMethod"
+              @update:model-value="
+                (value: ProductionOutputInspectionMethod) =>
+                  $emit('change', { inspectionMethod: value })
+              "
+            >
+              <el-option
+                v-for="method in PRODUCTION_OUTPUT_INSPECTION_METHODS"
+                :key="method"
+                :value="method"
+                :label="PRODUCTION_OUTPUT_INSPECTION_METHOD_LABELS[method]"
+              />
+            </el-select>
+          </el-form-item>
+          <div class="quantity-fields">
+            <el-form-item
+              :label="isSampling ? '样本合格数' : '合格数'"
+              required
+            >
+              <el-input-number
+                :model-value="inspection.qualifiedQuantity"
+                :min="0"
+                :max="PRODUCTION_OUTPUT_QUANTITY_MAX"
+                :precision="0"
+                :disabled="isZeroConfirmation"
+                @update:model-value="
+                  (value: number | undefined) => $emit('change', { qualifiedQuantity: value })
+                "
+              />
+            </el-form-item>
+            <el-form-item
+              :label="isSampling ? '样本不合格数' : '不合格数'"
+              required
+            >
+              <el-input-number
+                :model-value="inspection.unqualifiedQuantity"
+                :min="0"
+                :max="PRODUCTION_OUTPUT_QUANTITY_MAX"
+                :precision="0"
+                :disabled="isZeroConfirmation"
+                @update:model-value="
+                  (value: number | undefined) => $emit('change', { unqualifiedQuantity: value })
+                "
+              />
+            </el-form-item>
+          </div>
+          <InlineHint class="quantity-help">
+            <template v-if="isSampling"
+              >样本检查数 =
+              <strong>样本合格数 + 样本不合格数</strong>；仅记录实检样本，不推算整批数量。</template
+            >
+            <template v-else
+              >检查数 = <strong>合格数 + 不合格数</strong>；按现场实检填写。</template
+            >
+          </InlineHint>
+          <h3>明确结论与下一步</h3>
+          <el-form-item
+            label="本批处理结论"
+            required
+          >
+            <span v-if="isZeroConfirmation">确认无可检成品，检查数为 0</span>
+            <el-select
+              v-else
+              :model-value="inspection.releaseDecision"
+              placeholder="请选择处理结论"
+              @update:model-value="
+                (value: ProductionOutputReleaseDecision) =>
+                  $emit('change', { releaseDecision: value })
+              "
+            >
+              <el-option
+                v-for="decision in PRODUCTION_OUTPUT_RELEASE_DECISIONS"
+                :key="decision"
+                :value="decision"
+                :label="PRODUCTION_OUTPUT_RELEASE_DECISION_LABELS[decision]"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item
+            v-if="isZeroConfirmation"
+            label="零产出核实"
+            required
+          >
+            <el-checkbox
+              :model-value="inspection.zeroConfirmed"
+              @update:model-value="(value: boolean) => $emit('change', { zeroConfirmed: value })"
+              >已核实本轮没有可检成品，确认检查数为 0</el-checkbox
+            >
+          </el-form-item>
+          <InlineHint class="quantity-help"
+            >放行后由产线管理员核对产出清单并送负责人审批；待复检或不放行继续阻断。</InlineHint
+          >
+          <h3>检验时间与凭据</h3>
+          <el-form-item
+            label="线下检验时间"
+            required
+            ><el-date-picker
+              :model-value="toBeijingDateTimeInputValue(inspection.inspectedAt)"
+              type="datetime"
+              value-format="YYYY-MM-DD HH:mm:ss"
+              @update:model-value="
+                (value: string | null) =>
+                  $emit('change', { inspectedAt: fromBeijingDateTimeInputValue(value) })
+              "
+          /></el-form-item>
+          <el-form-item
+            label="检验结果说明"
+            required
+            ><el-input
+              :model-value="inspection.resultNote"
+              type="textarea"
+              :rows="2"
+              maxlength="5000"
+              show-word-limit
+              @update:model-value="(value: string) => $emit('change', { resultNote: value ?? '' })"
+          /></el-form-item>
+          <el-form-item
+            label="凭据编号 / 存放位置"
+            required
+            ><el-input
+              :model-value="inspection.evidenceReference"
+              type="textarea"
+              :rows="2"
+              maxlength="5000"
+              show-word-limit
+              required
+              placeholder="必填：线下质检单编号或凭据存放位置，零产出确认也需填写"
+              @update:model-value="
+                (value: string) => $emit('change', { evidenceReference: value ?? '' })
+              "
+          /></el-form-item>
+        </div>
+        <aside class="reference-panel">
+          <h3>本轮核对参考</h3>
+          <el-descriptions
+            :column="1"
+            border
+            size="small"
+          >
+            <el-descriptions-item label="本轮建立时已入">
+              {{ baselineReceived === null ? '尚未固定' : baselineReceived + ' 件' }}
+            </el-descriptions-item>
+            <el-descriptions-item label="本轮建立时剩余">
+              {{
+                detail.startingDeclaredRemaining === null
+                  ? '尚未固定'
+                  : Number(detail.startingDeclaredRemaining) + ' 件'
+              }}
+            </el-descriptions-item>
+            <el-descriptions-item label="产线申报累计目标"
+              >{{ declaredCumulative }} 件</el-descriptions-item
+            >
+            <el-descriptions-item label="其中计划内 / 外"
+              >{{ declared.availableQuantity }} /
+              {{ declared.extraQuantity }} 件</el-descriptions-item
+            >
+            <el-descriptions-item label="另行申报新增报废"
+              >{{ declared.additionalScrapQuantity }} 件</el-descriptions-item
+            >
+            <el-descriptions-item :label="isSampling ? '本次实检样本' : '本次实检总数'"
+              >{{ inspectedTotal
+              }}<template v-if="typeof inspectedTotal === 'number'">
+                件</template
+              ></el-descriptions-item
+            >
+            <el-descriptions-item :label="isSampling ? '样本合格 / 不合格' : '实检合格 / 不合格'">
+              <template
+                v-if="
+                  inspection.qualifiedQuantity !== undefined &&
+                  inspection.unqualifiedQuantity !== undefined
+                "
+              >
+                <InspectionQuantity
+                  :value="inspection.qualifiedQuantity"
+                  kind="qualified"
+                  unit="件"
+                />
+                /
+                <InspectionQuantity
+                  :value="inspection.unqualifiedQuantity"
+                  kind="unqualified"
+                  unit="件"
+                />
+              </template>
+              <template v-else>请填写数量</template>
+            </el-descriptions-item>
+          </el-descriptions>
+          <InlineHint class="reference-help"
+            >产出仍须单独核对审批；不合格不自动登记报废。</InlineHint
+          >
+        </aside>
       </div>
     </el-form>
   </section>
@@ -239,6 +237,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import InlineHint from '../../../components/InlineHint.vue';
+import InspectionQuantity from './InspectionQuantity.vue';
 import { fromBeijingDateTimeInputValue, toBeijingDateTimeInputValue } from '../../../utils/date';
 import type {
   FinishedInspectionTaskDetail,
@@ -253,23 +252,29 @@ import {
   PRODUCTION_OUTPUT_RELEASE_DECISIONS,
   PRODUCTION_OUTPUT_RELEASE_DECISION_LABELS,
 } from '@company/constants';
-import {
-  inspectionFormQuantities,
-  type ProductionOutputInspectionForm,
-} from '../finished-inspection';
+import type { ProductionOutputInspectionForm } from '../finished-inspection';
 const props = defineProps<{
   detail: FinishedInspectionTaskDetail;
   declared: ProductionOutputQuantities;
-  declaredVersion: number | null;
+  baselineReceived: number | null;
   inspection: ProductionOutputInspectionForm;
   inspectionOpen: boolean;
   inspectionStale: boolean;
-  inspectionValid: boolean;
   busy: boolean;
   unresolved: boolean;
   error: string;
-  submitting: boolean;
 }>();
+const handlingHint = computed(() => {
+  if (props.detail.canRecordInspection) return '本轮已开始，可继续填写检验结果。';
+  if (props.detail.canStartInspection) return '本轮送检范围已固定；开始检验后可填写检验结果。';
+  if (props.detail.nextAction === 'review_output')
+    return '本轮检验已完成，可前往产出清单核对数量与检验引用。';
+  if (props.detail.nextAction === 'start_reinspection')
+    return '本轮检验结果已留存。需要重新检查时，请开始复检并登记新一轮结果。';
+  if (props.detail.nextAction === 'view_approval') return '清单正在审批，检验记录可在历史中查看。';
+  if (props.detail.nextAction === 'save_draft') return '请先保存产出草稿，再开始本轮检验。';
+  return '检验记录已留存，可在检验历史中查看明细。';
+});
 const isSampling = computed(
   () => props.inspection.inspectionMethod === PRODUCTION_OUTPUT_INSPECTION_METHODS[1],
 );
@@ -279,7 +284,6 @@ const isZeroConfirmation = computed(
 const inspectionQuantitiesAreZero = computed(
   () => props.inspectionOpen && isZeroConfirmation.value,
 );
-const quantities = computed(() => inspectionFormQuantities(props.inspection));
 const inspectedTotal = computed(() => {
   const qualified = props.inspection.qualifiedQuantity;
   const unqualified = props.inspection.unqualifiedQuantity;
@@ -290,81 +294,68 @@ const inspectedTotal = computed(() => {
     ? total
     : '请核对数量';
 });
-const actualTotal = computed(() => {
-  if (!isSampling.value) return inspectedTotal.value;
-  const covered = props.inspection.coveredQuantity;
-  if (covered === undefined) return '请填写数量';
-  return Number.isSafeInteger(covered) && covered > 0 && covered <= PRODUCTION_OUTPUT_QUANTITY_MAX
-    ? covered
-    : '请核对数量';
-});
-const declaredTotal = computed(
+const declaredCumulative = computed(
   () => props.declared.availableQuantity + props.declared.extraQuantity,
 );
-const difference = computed(() =>
-  typeof actualTotal.value === 'number' ? actualTotal.value - declaredTotal.value : null,
-);
-const sampleExceedsTotal = computed(
-  () =>
-    isSampling.value &&
-    typeof inspectedTotal.value === 'number' &&
-    typeof actualTotal.value === 'number' &&
-    inspectedTotal.value > actualTotal.value,
-);
-const releasedQuantity = computed(() =>
-  !quantities.value
-    ? '请核对数量'
-    : props.inspection.releaseDecision === PRODUCTION_OUTPUT_RELEASE_DECISIONS[0]
-      ? quantities.value.releasedQuantity
-      : '未放行',
-);
-defineEmits<{
-  start: [];
-  record: [];
-  discard: [];
-  change: [Partial<ProductionOutputInspectionForm>];
-}>();
+defineEmits<{ change: [Partial<ProductionOutputInspectionForm>] }>();
 </script>
 <style scoped>
-.toolbar,
 .quantity-fields {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   flex-wrap: wrap;
-  gap: 16px;
-}
-.quantity-fields {
   justify-content: flex-start;
   gap: 32px;
 }
-.muted {
-  color: var(--el-text-color-secondary);
-  font-size: 13px;
-  line-height: 1.7;
-}
 .inspection-form {
-  margin: 16px 0;
-  padding: 16px;
-  border: 1px solid var(--el-border-color);
-  border-radius: 6px;
+  margin-top: 12px;
 }
 .inspection-form h3 {
-  margin: 16px 0 10px;
+  margin: 0 0 12px;
   color: var(--el-text-color-primary);
   font-size: 15px;
 }
 .form-context {
-  padding: 9px 12px;
-  border-radius: 4px;
-  background: #f5f7fa;
-  color: #6b7280;
-  font-size: 13px;
+  margin-bottom: 16px;
+}
+.form-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 290px;
+  align-items: start;
+  gap: 24px;
+}
+.form-main {
+  min-width: 0;
+}
+.form-main h3:not(:first-child) {
+  margin-top: 20px;
+}
+.reference-panel {
+  position: sticky;
+  top: 0;
+  min-width: 0;
+}
+.reference-panel :deep(.el-descriptions__label) {
+  width: 120px;
+}
+.reference-help {
+  margin-top: 12px;
 }
 .quantity-help {
   margin-top: 12px;
 }
+.section-hint {
+  margin-top: 12px;
+}
 .notice {
   margin-top: 12px;
+}
+@media (max-width: 820px) {
+  .form-layout {
+    grid-template-columns: 1fr;
+  }
+  .reference-panel {
+    position: static;
+  }
 }
 </style>

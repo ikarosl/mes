@@ -140,7 +140,6 @@ export const PERMISSIONS = {
     },
     inventory: { view: 'production:inventory:view' },
     inbounds: {
-      view: 'production:inbounds:view',
       create: 'production:inbounds:create',
       confirm: 'production:inbounds:confirm',
       cancel: 'production:inbounds:cancel',

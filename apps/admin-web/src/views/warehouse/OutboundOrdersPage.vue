@@ -241,6 +241,7 @@ import type {
 } from '@company/contracts';
 import { OUTBOUND_ORDER_STATUSES, OUTBOUND_ORDER_STATUS_LABELS } from '@company/constants';
 import TableToolbar from '../../components/TableToolbar.vue';
+import { useRouteAccess } from '../../composables/useRouteAccess';
 import PaginationFooter from '../../components/PaginationFooter.vue';
 import { EMessage } from '../../utils/message';
 import { formatDateTimeForDisplay } from '../../utils/date';
@@ -256,6 +257,7 @@ defineOptions({ name: 'OutboundOrdersPage' });
 
 const orders = useMaterialOutboundOrders();
 const router = useRouter();
+const { canAccessRoute } = useRouteAccess();
 const query = reactive<MaterialOutboundQuery>({ page: 1, pageSize: 20 });
 const createVisible = ref(false);
 const createSubmitting = ref(false);
@@ -273,6 +275,7 @@ const resetQuery = () => {
   return loadRows();
 };
 const resolveBlockedBatch = async (batchNo: string): Promise<void> => {
+  if (!canAccessRoute({ name: 'production-tasks' })) return;
   createVisible.value = false;
   await router.push({ name: 'production-tasks', query: { keyword: batchNo } });
 };

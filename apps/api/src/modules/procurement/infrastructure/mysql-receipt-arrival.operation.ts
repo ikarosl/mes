@@ -9,13 +9,9 @@ import { requireOptimisticUpdate } from '../../../common/persistence/optimistic-
 import type { ProductInventoryEligibility } from '../../product/public.js';
 import { readOrder, readLines, sortedIds } from './mysql-purchase-order.shared.js';
 import { requireSuppliers } from './mysql-purchase-order.write.js';
-import {
-  receiptError,
-  requireQuantity,
-  requireAggregateQuantity,
-  insertRevision,
-  auditReceipt,
-} from './mysql-receipt.shared.js';
+import { insertRevision, auditReceipt } from './mysql-receipt.shared.js';
+import { receiptError } from '../domain/procurement.errors.js';
+import { requireQuantity, requireAggregateQuantity } from '../domain/receipt-quantity.policy.js';
 
 import { insertRound } from './mysql-receipt-round.shared.js';
 

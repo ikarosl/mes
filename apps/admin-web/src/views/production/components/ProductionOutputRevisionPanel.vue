@@ -1,33 +1,15 @@
 <template>
   <section>
-    <el-alert
-      v-if="detail.correctionReason"
-      :title="`本次更正原因：${detail.correctionReason}`"
-      type="info"
-      :closable="false"
+    <InlineHint
       class="notice"
-    />
-    <div class="toolbar">
-      <p class="muted">仅当前轮已定稿的剩余授权可用于分次入库；更正不重新开启工序。</p>
-      <div>
-        <el-button
-          v-if="detail.canBeginReinspection"
-          :disabled="busy || unresolved || Boolean(error)"
-          @click="$emit('begin-reinspection')"
-          >发起剩余产出复检</el-button
-        ><el-button
-          v-if="detail.canBeginCorrection"
-          :disabled="busy || unresolved || Boolean(error)"
-          @click="$emit('begin-correction')"
-          >发起清单更正</el-button
-        ><el-button
-          v-if="detail.canCancelCorrection"
-          :disabled="busy || unresolved || Boolean(error)"
-          @click="$emit('cancel-correction')"
-          >取消本次更正</el-button
-        >
-      </div>
-    </div>
+      :tone="detail.canExecuteCurrentRevision ? 'info' : 'warning'"
+    >
+      {{
+        detail.canExecuteCurrentRevision
+          ? '最新批准清单属于当前已定稿轮，可按剩余授权分次入库。'
+          : detail.executionBlockedReason || '批准记录保留供追溯，不代表当前允许入库。'
+      }}
+    </InlineHint>
     <el-descriptions
       :column="2"
       border
@@ -59,7 +41,7 @@
         width="120"
         ><template #default="{ row }"
           >第 {{ row.revisionNo }} 版{{
-            row.id === detail.currentRevisionId ? '（有效）' : '（历史）'
+            row.id === detail.currentRevisionId ? '（最新批准）' : '（历史）'
           }}</template
         ></el-table-column
       >
@@ -99,6 +81,7 @@
             @click="$emit('select-revision', row.id)"
             >查看清单</el-button
           ><el-button
+            v-if="canAccessRoute({ name: 'approval-inbox' })"
             link
             type="primary"
             @click="$emit('open-approval', row.approvalInstanceId)"
@@ -115,18 +98,28 @@
         <strong
           >第 {{ selectedRevision.revisionNo }} 版批准清单 ·
           {{
-            selectedRevision.id === detail.currentRevisionId ? '当前有效版本' : '历史版本，仅供追溯'
+            selectedRevision.id === detail.currentRevisionId ? '最新批准版本' : '历史版本，仅供追溯'
           }}</strong
         ><el-button @click="$emit('print')">打印本版清单</el-button>
       </div>
+      <p class="muted">
+        {{
+          selectedRevision.id === detail.currentRevisionId && detail.canExecuteCurrentRevision
+            ? '执行前仍须核对当前剩余额度。'
+            : '本版仅保留批准依据，不授予当前入库资格。'
+        }}
+      </p>
       <BatchCloseoutEvidence :snapshot="selectedRevision.snapshot" />
     </section>
   </section>
 </template>
 <script setup lang="ts">
+import { useRouteAccess } from '../../../composables/useRouteAccess';
 import type { ProductionOutputDetail, ProductionOutputRevision } from '@company/contracts';
 import BatchCloseoutEvidence from './BatchCloseoutEvidence.vue';
+import InlineHint from '../../../components/InlineHint.vue';
 import { formatDateTimeForDisplay } from '../../../utils/date';
+const { canAccessRoute } = useRouteAccess();
 defineProps<{
   detail: ProductionOutputDetail;
   selectedRevision: ProductionOutputRevision | null;
@@ -135,9 +128,6 @@ defineProps<{
   error: string;
 }>();
 defineEmits<{
-  'begin-correction': [];
-  'begin-reinspection': [];
-  'cancel-correction': [];
   'select-revision': [string];
   'open-approval': [string];
   print: [];

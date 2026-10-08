@@ -9,12 +9,14 @@ import type { QualityInboundCommand } from '../../quality/public.js';
 import type { InventoryInboundQuery } from '../../inventory/public.js';
 import {
   lockReceiptLine,
-  requireQuantity,
-  receiptError,
   insertRevision,
   receiptResult,
   auditReceipt,
 } from './mysql-receipt.shared.js';
+import {
+  requireReceiptCorrectionInput,
+  planReceiptCorrection,
+} from '../domain/receipt-round.policy.js';
 import {
   lockRound,
   receiptBalance,
@@ -33,16 +35,18 @@ export async function correctReceiptLine(
   const { line, allocations } = await lockReceiptLine(db, id, inventory);
   requireOptimisticUpdate(line.version === payload.version ? 1 : 0);
   const round = await lockRound(db, line, payload);
-  if (String(line.current_receipt_revision_id) !== payload.previousRevisionId)
-    return receiptError('实收修订已经变化，请刷新', 'RECEIPT_STATE');
-  if (payload.physicalIdentityConfirmed !== true)
-    return receiptError('必须核实这是原到货实物的录入更正，不是新来货或损耗');
-  requireQuantity(payload.receivedQuantity, '更正后本次到货核实总量', true);
+  requireReceiptCorrectionInput({
+    currentRevisionId: String(line.current_receipt_revision_id),
+    previousRevisionId: payload.previousRevisionId,
+    physicalIdentityConfirmed: payload.physicalIdentityConfirmed,
+    receivedQuantity: payload.receivedQuantity,
+  });
   const balance = await receiptBalance(db, line, allocations);
-  if (payload.receivedQuantity === Number(balance.revision.received_quantity))
-    return receiptError('没有实收数量变化');
-  if (payload.receivedQuantity < balance.inbound + balance.returned)
-    return receiptError('更正实收不能少于已实际入库及退回量');
+  const transition = planReceiptCorrection(
+    payload.receivedQuantity,
+    Number(balance.revision.received_quantity),
+    balance,
+  );
   await assertReceiptAggregate(db, line, payload.receivedQuantity);
   const revisionId = await insertRevision(
     db,
@@ -53,16 +57,15 @@ export async function correctReceiptLine(
     payload.reason,
     context,
   );
-  const remaining = payload.receivedQuantity - balance.inbound - balance.returned;
   const next = await replaceRound(
     db,
     line,
     round,
     {
       revisionId,
-      quantity: remaining,
+      quantity: transition.remaining,
       trigger: 'receipt_correction',
-      status: remaining === 0 ? 'finalized' : 'uninspected',
+      status: transition.status,
       reason: payload.reason,
     },
     context,

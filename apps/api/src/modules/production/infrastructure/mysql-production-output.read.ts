@@ -2,6 +2,7 @@ import type { InventoryInboundCommand } from '../../inventory/public.js';
 import { createHash } from 'node:crypto';
 import { APPROVAL_ASSIGNEE_SOURCES } from '@company/constants';
 import { ProductionDomainError } from '../domain/production.errors.js';
+import { evaluateOutputReinspection } from '../domain/production-output-reinspection.policy.js';
 import type { QualityFinishedInspectionQuery } from '../../quality/public.js';
 import type {
   BatchCloseoutApprovalSnapshot,
@@ -46,12 +47,45 @@ type RevisionRow = RowDataPacket & {
   created_by: number;
   created_at: Date;
 };
+export async function readOutputRevisionNumbers(
+  db: PoolConnection,
+  closeoutId: string,
+  revisionIds: readonly string[],
+): Promise<Map<string, number>> {
+  if (!revisionIds.length) return new Map();
+  const ids = [...new Set(revisionIds)];
+  const [rows] = await db.query<(RowDataPacket & { id: number; revision_no: number })[]>(
+    `SELECT id,revision_no FROM production_output_revision WHERE closeout_id=? AND id IN (${ids.map(() => '?').join(',')})`,
+    [closeoutId, ...ids],
+  );
+  return new Map(rows.map((row) => [String(row.id), Number(row.revision_no)]));
+}
 export async function readOutputRevisions(
   db: PoolConnection,
   closeoutId: number,
   lock: boolean,
   inventory: InventoryInboundCommand,
 ): Promise<ProductionOutputRevision[]> {
+  return readOutputRevisionDetails(db, closeoutId, lock, inventory);
+}
+export async function readOutputRevisionsByIds(
+  db: PoolConnection,
+  closeoutId: number,
+  revisionIds: readonly string[],
+  inventory: InventoryInboundCommand,
+): Promise<ProductionOutputRevision[]> {
+  return readOutputRevisionDetails(db, closeoutId, false, inventory, [...new Set(revisionIds)]);
+}
+async function readOutputRevisionDetails(
+  db: PoolConnection,
+  closeoutId: number,
+  lock: boolean,
+  inventory: InventoryInboundCommand,
+  revisionIds?: readonly string[],
+): Promise<ProductionOutputRevision[]> {
+  if (revisionIds?.length === 0) return [];
+  const placeholders = revisionIds?.map(() => '?').join(',');
+  const values = [closeoutId, ...(revisionIds ?? [])];
   const [rows] = await db.query<RevisionRow[]>(
     `SELECT r.id,r.closeout_id,r.round_id,r.production_batch_id,r.revision_no,r.previous_revision_id,
       r.approval_instance_id,r.inspection_record_id,r.planned_quantity,r.additional_scrap_quantity,
@@ -60,10 +94,25 @@ export async function readOutputRevisions(
       COALESCE((SELECT a.quantity FROM production_output_allocation a WHERE a.revision_id=r.id AND a.category='self_made'),0) planned_allocation,
       COALESCE((SELECT a.quantity FROM production_output_allocation a WHERE a.revision_id=r.id AND a.category='production_extra'),0) extra_allocation
       FROM production_output_revision r JOIN production_output_round round ON round.id=r.round_id
-      WHERE r.closeout_id=? ORDER BY r.revision_no${lock ? ' FOR SHARE' : ''}`,
-    [closeoutId],
+      WHERE r.closeout_id=?${placeholders ? ` AND r.id IN (${placeholders})` : ''}
+      ORDER BY r.revision_no${lock ? ' FOR SHARE' : ''}`,
+    values,
   );
-  const revisions = rows.map((row) => ({
+  if (!rows.length) return [];
+  const snapshots = rows.map((row) =>
+    readCloseoutApprovalSnapshot(
+      outputJson(row.review_snapshot),
+      CLOSEOUT_APPROVAL_SNAPSHOT_SCHEMA_VERSION,
+    ),
+  );
+  const previousRevisionNumbers = await readOutputRevisionNumbers(
+    db,
+    String(closeoutId),
+    snapshots.flatMap((snapshot) =>
+      snapshot.previousRevisionId ? [snapshot.previousRevisionId] : [],
+    ),
+  );
+  const revisions = rows.map((row, index) => ({
     id: String(row.id),
     roundId: String(row.round_id),
     allocations: [],
@@ -84,10 +133,11 @@ export async function readOutputRevisions(
     approvedBy: String(row.created_by),
     approvedByName: String(row.created_by),
     approvedAt: toBeijingISOString(row.created_at),
-    snapshot: readCloseoutApprovalSnapshot(
-      outputJson(row.review_snapshot),
-      CLOSEOUT_APPROVAL_SNAPSHOT_SCHEMA_VERSION,
-    ),
+    snapshot: {
+      ...snapshots[index],
+      previousRevisionNo:
+        previousRevisionNumbers.get(snapshots[index].previousRevisionId ?? '') ?? null,
+    },
   }));
   const [allocationRows] = await db.query<
     (RowDataPacket & {
@@ -98,8 +148,10 @@ export async function readOutputRevisions(
       quantity: string;
     })[]
   >(
-    `SELECT id,revision_id,round_id,category,quantity FROM production_output_allocation WHERE closeout_id=? ORDER BY id${lock ? ' FOR SHARE' : ''}`,
-    [closeoutId],
+    `SELECT id,revision_id,round_id,category,quantity FROM production_output_allocation
+      WHERE closeout_id=?${placeholders ? ` AND revision_id IN (${placeholders})` : ''}
+      ORDER BY id${lock ? ' FOR SHARE' : ''}`,
+    values,
   );
   const received: Record<string, string> = {};
   for (let index = 0; index < allocationRows.length; index += 100)
@@ -214,6 +266,51 @@ export async function loadOutputState(
   )
     blockers.push('累计产出不能低于各类别历史已入数量');
   const currentRound = rounds.find((round) => round.id === nullableOutputId(row.current_round_id));
+  const currentRoundInspection = inspections.find((record) => record.roundId === currentRound?.id);
+  const latestInspection = inspections.at(-1) ?? null;
+  const applicableInspectionId =
+    currentRound?.status === 'superseded' || currentRound?.status === 'inspecting'
+      ? null
+      : currentRoundInspection
+        ? currentRoundInspection.releaseDecision === 'released'
+          ? currentRoundInspection.id
+          : null
+        : currentRound?.triggerType === 'finalization_correction' &&
+            latestInspection?.releaseDecision === 'released'
+          ? latestInspection.id
+          : null;
+  const canExecuteCurrentRevision =
+    base !== null &&
+    currentRound?.id === base.roundId &&
+    currentRound.status === 'finalized' &&
+    row.pending_approval_id === null &&
+    row.correction_reason === null &&
+    base.allocations.some((allocation) => Number(allocation.remainingQuantity) > 0);
+  const executionBlockedReason = canExecuteCurrentRevision
+    ? null
+    : base === null
+      ? '尚无批准清单'
+      : currentRound?.id === base.roundId &&
+          currentRound.status === 'finalized' &&
+          base.allocations.every((allocation) => Number(allocation.remainingQuantity) <= 0)
+        ? '已无剩余待入库量'
+        : row.pending_approval_id !== null
+          ? '清单正在审批中，旧版剩余入库已暂停'
+          : '当前轮次尚未重新定稿，旧版剩余入库已暂停';
+  const reinspection = evaluateOutputReinspection({
+    hasPendingApproval: row.pending_approval_id !== null,
+    hasCorrection: row.correction_reason !== null,
+    draft,
+    approved: base
+      ? {
+          availableQuantity: Number(base.availableQuantity),
+          extraQuantity: Number(base.extraQuantity),
+        }
+      : null,
+    hasInspection: inspections.length > 0,
+    currentRound: currentRound ?? null,
+    receipts,
+  });
   if (row.current_round_id !== null && !currentRound) blockers.push('当前办理轮次无效');
   if (currentRound?.status === 'inspecting') blockers.push('本轮检验已开始，须先完成检验记录');
   const selectedInspectionRoundNo =
@@ -273,18 +370,17 @@ export async function loadOutputState(
       currentRoundId: nullableOutputId(row.current_round_id),
       rounds,
       latestInspectionId,
+      applicableInspectionId,
       inspections,
       revisions,
       receipts,
       canEdit,
       canRecordInspection: canEdit && draft !== null && currentRound?.status === 'inspecting',
       canSubmit: blockers.length === 0,
-      canBeginReinspection:
-        row.pending_approval_id === null &&
-        ((base !== null && row.correction_reason === null) ||
-          (base === null &&
-            currentRound !== undefined &&
-            inspections.some((record) => record.roundId === currentRound.id))),
+      canBeginReinspection: reinspection.canBeginReinspection,
+      reinspectionBlockedReason: reinspection.reinspectionBlockedReason,
+      canExecuteCurrentRevision,
+      executionBlockedReason,
       canBeginCorrection:
         base !== null && row.pending_approval_id === null && row.correction_reason === null,
       canCancelCorrection:

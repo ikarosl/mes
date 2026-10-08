@@ -1,5 +1,4 @@
 import type { PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
-import { MAX_PERSISTED_INTEGER_QUANTITY } from '@company/utils';
 import type {
   ReceiptAllocationDisposition,
   ReceiptReturnReason,
@@ -7,8 +6,9 @@ import type {
 } from '@company/contracts';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { writeTransactionalAudit } from '../../../common/audit/transactional-audit-writer.js';
-import { ProcurementDomainError } from '../domain/procurement.errors.js';
-import type { InventoryInboundQuery } from '../../inventory/public.js';
+import { receiptError } from '../domain/procurement.errors.js';
+import { requireQuantity } from '../domain/receipt-quantity.policy.js';
+import type { InventoryInboundQuery, ReceiptInboundFacts } from '../../inventory/public.js';
 import { readOrder, sortedIds } from './mysql-purchase-order.shared.js';
 
 export type ReceiptLineRow = RowDataPacket & {
@@ -48,12 +48,6 @@ export type RevisionRow = RowDataPacket & {
   receipt_line_id: number;
   revision_no: number;
   received_quantity: number;
-};
-export const receiptError = (
-  message: string,
-  code: 'INVALID_RECEIPT' | 'RECEIPT_STATE' | 'RECEIPT_NOT_FOUND' = 'INVALID_RECEIPT',
-): never => {
-  throw new ProcurementDomainError(code, message);
 };
 export const lockReceiptRoots = async (
   connection: PoolConnection,
@@ -99,43 +93,90 @@ export const readAllocations = async (
   id: string,
   inventory: InventoryInboundQuery,
 ): Promise<AllocationRow[]> => {
-  const [rows] = await connection.query<AllocationRow[]>(
-    `SELECT a.*,r.status round_status,COALESCE(h.after_receipt_revision_id,r.receipt_revision_id) receipt_revision_id,
+  return (await readReceiptExecutionFacts(connection, [id], inventory)).allocations;
+};
+
+type SupplierReturnFactRow = RowDataPacket & {
+  id: number;
+  receipt_line_id: number;
+  allocation_id: number;
+  returned_quantity: number;
+};
+
+export interface ReceiptExecutionFacts {
+  allocations: AllocationRow[];
+  inbounds: ReceiptInboundFacts[];
+  returns: SupplierReturnFactRow[];
+}
+
+/**锁定源根和接收行后调用；所有读都加入同一个事务。*/
+export async function readReceiptExecutionFacts(
+  connection: PoolConnection,
+  receiptLineIds: string[],
+  inventory: InventoryInboundQuery,
+): Promise<ReceiptExecutionFacts> {
+  const ids = sortedIds(receiptLineIds);
+  const result: ReceiptExecutionFacts = { allocations: [], inbounds: [], returns: [] };
+  for (let offset = 0; offset < ids.length; offset += 100) {
+    const batch = ids.slice(offset, offset + 100);
+    const placeholders = batch.map(() => '?').join(',');
+    const [rows] = await connection.query<AllocationRow[]>(
+      `SELECT a.id,a.receipt_line_id,a.round_id,a.acceptance_id,a.purchase_order_line_id,
+      a.quantity,a.disposition,a.return_reason,a.termination_reason,a.remark,
+      r.status round_status,COALESCE(h.after_receipt_revision_id,r.receipt_revision_id) receipt_revision_id,
       h.inspection_record_id inspection_id FROM procurement_receipt_allocation a
       JOIN procurement_receipt_round r ON r.id=a.round_id
       LEFT JOIN procurement_receipt_acceptance h ON h.id=a.acceptance_id
-      WHERE a.receipt_line_id=? ORDER BY a.id FOR SHARE`,
-    [id],
-  );
-  const [facts] = await inventory.getReceiptInboundFacts({ receiptLineIds: [id] });
-  const [returns] = await connection.query<
-    (RowDataPacket & { allocation_id: number; returned_quantity: number })[]
-  >(
-    'SELECT allocation_id,returned_quantity FROM procurement_supplier_return WHERE receipt_line_id=? FOR SHARE',
-    [id],
-  );
-  const inbound = new Map<string, number>();
-  for (const fact of facts?.receipts ?? [])
-    inbound.set(fact.allocationId, (inbound.get(fact.allocationId) ?? 0) + Number(fact.quantity));
-  const returned = new Map(
-    returns.map((row) => [String(row.allocation_id), Number(row.returned_quantity)]),
-  );
-  const known = new Set(rows.map((row) => String(row.id)));
-  if ([...inbound.keys(), ...returned.keys()].some((key) => !known.has(key)))
-    receiptError('实际入退缺少对应的处置分配', 'RECEIPT_STATE');
-  for (const row of rows) {
-    row.inbound_quantity = inbound.get(String(row.id)) ?? 0;
-    row.returned_quantity = returned.get(String(row.id)) ?? 0;
-    row.remaining_quantity = Number(row.quantity) - row.inbound_quantity - row.returned_quantity;
-    requireQuantity(row.remaining_quantity, '分配未执行量', true);
-    if (
-      (row.inbound_quantity > 0 && row.disposition !== 'inbound') ||
-      (row.returned_quantity > 0 && row.disposition !== 'return')
-    )
-      receiptError('实际执行与分配去向不一致', 'RECEIPT_STATE');
+      WHERE a.receipt_line_id IN (${placeholders}) ORDER BY a.receipt_line_id,a.id FOR SHARE`,
+      batch,
+    );
+    const facts = await inventory.getReceiptInboundFacts({ receiptLineIds: batch });
+    const [returns] = await connection.query<SupplierReturnFactRow[]>(
+      `SELECT id,receipt_line_id,allocation_id,returned_quantity FROM procurement_supplier_return
+     WHERE receipt_line_id IN (${placeholders}) ORDER BY receipt_line_id,id FOR SHARE`,
+      batch,
+    );
+    // Include receipt identity in the key: batching must not weaken same-receipt validation.
+    const key = (receiptId: string | number, allocationId: string | number) =>
+      `${receiptId}:${allocationId}`;
+    const inbound = new Map<string, number>();
+    for (const receipt of facts)
+      for (const fact of receipt.receipts) {
+        const id = key(receipt.receiptLineId, fact.allocationId);
+        inbound.set(id, (inbound.get(id) ?? 0) + Number(fact.quantity));
+      }
+    const returned = new Map(
+      returns.map((row) => [
+        key(row.receipt_line_id, row.allocation_id),
+        Number(row.returned_quantity),
+      ]),
+    );
+    const known = new Set(rows.map((row) => key(row.receipt_line_id, row.id)));
+    if ([...inbound.keys(), ...returned.keys()].some((key) => !known.has(key)))
+      receiptError('实际入退缺少对应的处置分配', 'RECEIPT_STATE');
+    for (const row of rows) {
+      const id = key(row.receipt_line_id, row.id);
+      const inboundQuantity = inbound.get(id) ?? 0;
+      const returnedQuantity = returned.get(id) ?? 0;
+      const remainingQuantity = Number(row.quantity) - inboundQuantity - returnedQuantity;
+      requireQuantity(remainingQuantity, '分配未执行量', true);
+      if (
+        (inboundQuantity > 0 && row.disposition !== 'inbound') ||
+        (returnedQuantity > 0 && row.disposition !== 'return')
+      )
+        receiptError('实际执行与分配去向不一致', 'RECEIPT_STATE');
+      result.allocations.push({
+        ...row,
+        inbound_quantity: inboundQuantity,
+        returned_quantity: returnedQuantity,
+        remaining_quantity: remainingQuantity,
+      });
+    }
+    result.inbounds.push(...facts);
+    for (const returned of returns) result.returns.push(returned);
   }
-  return rows;
-};
+  return result;
+}
 export const requireAllocation = (
   allocations: AllocationRow[],
   id: string,
@@ -150,23 +191,6 @@ export const requireAllocation = (
   )
     return receiptError('分配已经执行或所属轮次失效，请刷新', 'RECEIPT_STATE');
   return row;
-};
-export const requireQuantity = (value: number, label: string, allowZero = false) => {
-  if (
-    !Number.isSafeInteger(value) ||
-    value < (allowZero ? 0 : 1) ||
-    value > MAX_PERSISTED_INTEGER_QUANTITY
-  )
-    receiptError(`${label}必须是${allowZero ? '0' : '1'}～${MAX_PERSISTED_INTEGER_QUANTITY}的整数`);
-};
-export const requireAggregateQuantity = (values: readonly number[], label: string): number => {
-  for (const value of values) requireQuantity(value, label, true);
-  const total = values.reduce((sum, value) => sum + BigInt(value), 0n);
-  if (total > BigInt(MAX_PERSISTED_INTEGER_QUANTITY))
-    return receiptError(
-      `${label}超过系统数量存储上限 ${MAX_PERSISTED_INTEGER_QUANTITY}，此限制与采购计划量无关`,
-    );
-  return Number(total);
 };
 export const touchReceiptLine = (connection: PoolConnection, id: string, context: CommandContext) =>
   connection.execute(

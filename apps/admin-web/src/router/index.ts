@@ -135,6 +135,7 @@ export const router = createRouter({
             PERMISSIONS.product.products.manageBom,
             PERMISSIONS.production.materials.correctDemand,
             PERMISSIONS.production.tasks.terminate,
+            PERMISSIONS.production.tasks.manageOutput,
           ],
           'ApprovalInboxPage',
         ),
@@ -284,7 +285,7 @@ export const router = createRouter({
           'warehouse-inbound',
           '入库管理',
           InboundOrdersPage,
-          PERMISSIONS.production.inbounds.view,
+          PERMISSIONS.warehouse.inbound.view,
           'InboundOrdersPage',
         ),
         page(

@@ -6,9 +6,10 @@
 | --- | --- |
 | [ADR-0013](adr/0013-procurement-source-and-stock-boundaries.md) | 采购来源、单工单与逐行供应商、采购量和需求独立、实际物流及唯一库存账本。未被后续明确取代的边界继续有效。 |
 | [ADR-0014](adr/0014-task-material-policy-and-output-inspection.md) | 任务锁版、研发手工需求和任务执行、损耗与追加需求分离、产出及结案职责；成品质检归 Quality，Production 管理产出和批准清单。取代工单统一锁版等明确旧条款，采购来源仍须是具体正式需求。 |
-| [ADR-0015](adr/0015-unified-quality-quantity-semantics.md) | 统一检验事实、来料整批轮次与检后正式分配、来料数量建议及有依据超建议；成品保留独立C，其定稿数量使用非阻断建议；固定已入基准、剩余范围快照及复检开始冻结纳入ADR-0016的来源轮次。取代 ADR-0013 的独立剔除量、QC 直接可入、检前采购拆批、部分复检与 QC 硬上限；归并 ADR-0014 数量公式，保留生产职责；已入类别锁量及同到货固定库批由 ADR-0016 明确取代。 |
+| [ADR-0015](adr/0015-unified-quality-quantity-semantics.md) | 统一检验事实、来料整批轮次与检后正式分配、来料数量建议及有依据超建议；其成品 C/R/S 旧数量裁决由 ADR-0019 取代。取代 ADR-0013 的独立剔除量、QC 直接可入、检前采购拆批、部分复检与 QC 硬上限；已入类别锁量及同到货固定库批由 ADR-0016 明确取代。 |
+| [ADR-0019](adr/0019-finished-inspection-measurement-simplification.md) | 成品质检只记 G/F，普通 N>0，零产出明确放行；仅 Production 放行全检定稿按原检验轮固定已入基准加 G 作非阻断提示。来料库管 C 核实及 Procurement 建议不变。 |
 
-成品数量建议已由ADR-0015单独确认，输入职责和依据要求仍以各自所有者文档为准，不能外推到尚未批准的检验类型；成品固定已入基准、剩余范围快照及开始冻结的实现差异保留于[CQ-01](documentation-conflicts.md#cq-01)。基础物料名称、历史展示及稳定身份遵守[数据库公共规则](database-conventions.md#基础物料名称与历史身份)。
+成品与来料的输入职责和依据要求仍以各自所有者文档为准，不能外推到尚未批准的检验类型；成品固定已入基准、剩余范围快照及开始冻结的取代关系见[CQ-01](documentation-conflicts.md#cq-01)，实施与验收见[路线图](roadmap.md)。基础物料名称、历史展示及稳定身份遵守[数据库公共规则](database-conventions.md#基础物料名称与历史身份)。
 
 ## 1. 已确定的边界
 

@@ -8,6 +8,7 @@ import type {
   CorrectReceiptLinePayload,
   ProcurementReceiptCommandResult,
   ProcurementReceiptLine,
+  ProcurementInboundInspectionDetail,
   QualityInboundCaseItem,
   ReceiptAllocationItem,
   StartReceiptReviewPayload,
@@ -27,6 +28,9 @@ import {
 } from '../receipt-round-presentation';
 
 export type ReceiptLineAction = 'correct' | 'return' | 'reject' | 'revoke' | 'review' | 'inspect';
+type ReceiptActionSource = ProcurementReceiptLine | ProcurementInboundInspectionDetail;
+const hasReceiptAllocations = (source: ReceiptActionSource): source is ProcurementReceiptLine =>
+  'allocations' in source;
 export function useReceiptLineAction(
   onSaved: (result: ProcurementReceiptCommandResult) => void | Promise<void>,
 ) {
@@ -35,7 +39,7 @@ export function useReceiptLineAction(
     stale = ref(false),
     qualityContext = ref(false);
   const action = ref<ReceiptLineAction>('correct'),
-    line = ref<ProcurementReceiptLine | null>(null),
+    line = ref<ReceiptActionSource | null>(null),
     allocation = ref<ReceiptAllocationItem | null>(null),
     caseRecord = ref<QualityInboundCaseItem | null>(null);
   const reason = ref(''),
@@ -115,7 +119,9 @@ export function useReceiptLineAction(
       ) &&
       Number.isSafeInteger(ownershipTarget.value) &&
       ownershipTarget.value >= 0 &&
-      Number(line.value?.ownershipSourceQuantity) !== ownershipTarget.value,
+      line.value !== null &&
+      'ownershipSourceQuantity' in line.value &&
+      Number(line.value.ownershipSourceQuantity) !== ownershipTarget.value,
   );
   const ownershipRequired = computed(() => ownershipChanged.value && action.value === 'reject');
   const ownershipTotal = computed(() =>
@@ -170,7 +176,7 @@ export function useReceiptLineAction(
     const current = read.begin(() => visible.value && line.value?.id === target.id);
     loading.value = true;
     try {
-      const latest = qualityContext.value
+      const latest: ReceiptActionSource = qualityContext.value
         ? await procurementApi.inspectionReceiptLine(target.id, current.signal)
         : await procurementApi.getReceiptLine(target.id, current.signal);
       if (!current.isCurrent()) return false;
@@ -180,14 +186,16 @@ export function useReceiptLineAction(
         latest.currentReceiptRevisionId !== target.currentReceiptRevisionId ||
         latest.currentRound.id !== target.currentRound.id ||
         latest.currentRound.version !== target.currentRound.version;
+      const checkedAllocation = allocation.value;
       if (
-        allocation.value &&
-        !latest?.allocations.some(
-          (item) =>
-            item.id === allocation.value?.id &&
-            item.isCurrent &&
-            item.remainingQuantity === allocation.value.remainingQuantity,
-        )
+        checkedAllocation &&
+        (!hasReceiptAllocations(latest) ||
+          !latest.allocations.some(
+            (item) =>
+              item.id === checkedAllocation.id &&
+              item.isCurrent &&
+              item.remainingQuantity === checkedAllocation.remainingQuantity,
+          ))
       )
         stale.value = true;
       if (
@@ -212,14 +220,16 @@ export function useReceiptLineAction(
     }
   };
   const open = (
-    target: ProcurementReceiptLine,
+    target: ReceiptActionSource,
     kind: ReceiptLineAction,
     sourceAllocation?: ReceiptAllocationItem,
     qualityCase?: QualityInboundCaseItem,
     forQuality = false,
   ): void => {
     if (visible.value || command.locked.value) return;
-    line.value = JSON.parse(JSON.stringify(target)) as ProcurementReceiptLine;
+    if (!('allocations' in target) && (!forQuality || !['review', 'inspect'].includes(kind)))
+      return;
+    line.value = JSON.parse(JSON.stringify(target)) as ReceiptActionSource;
     allocation.value = sourceAllocation ? { ...sourceAllocation } : null;
     caseRecord.value = qualityCase ? { ...qualityCase } : null;
     action.value = kind;
@@ -232,12 +242,14 @@ export function useReceiptLineAction(
     correctedQuantity.value = Number(target.quantities.receivedQuantity);
     caseType.value = target.currentRound.status === 'uninspected' ? 'initial' : 'reinspection';
     physicalIdentityConfirmed.value = false;
-    ownership.value = target.ownershipSources.map((source) => ({
-      purchaseOrderLineId: source.purchaseOrderLineId,
-      purchaseNo: source.purchaseNo,
-      previousQuantity: Number(source.quantity),
-      quantity: undefined,
-    }));
+    ownership.value = ('ownershipSources' in target ? target.ownershipSources : []).map(
+      (source) => ({
+        purchaseOrderLineId: source.purchaseOrderLineId,
+        purchaseNo: source.purchaseNo,
+        previousQuantity: Number(source.quantity),
+        quantity: undefined,
+      }),
+    );
     inspection.value = initialInboundInspection();
     inspectionValid.value = false;
     baseline = snapshot();

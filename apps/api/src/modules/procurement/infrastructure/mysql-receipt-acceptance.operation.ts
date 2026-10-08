@@ -7,27 +7,27 @@ import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { requireOptimisticUpdate } from '../../../common/persistence/optimistic-lock.js';
 import type { InventoryInboundQuery } from '../../inventory/public.js';
 import type { QualityInboundQuery } from '../../quality/public.js';
-import { allocateReceiptQuantities } from '../domain/receipt-allocation.policy.js';
 import {
-  summarizeReceiptInspectionExecution,
-  suggestedReceiptInboundQuantity,
-} from '../domain/receipt-inspection-suggestion.policy.js';
+  requireReceiptAcceptanceState,
+  requireReceiptAcceptanceInspection,
+  evaluateReceiptAcceptanceQuantities,
+  requireReceiptAcceptanceRemaining,
+} from '../domain/receipt-acceptance.policy.js';
+import { requireReceiptNotRejected } from '../domain/receipt-round.policy.js';
 import { sortedIds } from './mysql-purchase-order.shared.js';
 import {
   lockReceiptLine,
   lockReceiptRoots,
-  receiptError,
   insertRevision,
   insertAllocation,
   receiptResult,
   auditReceipt,
-  requireAggregateQuantity,
 } from './mysql-receipt.shared.js';
+import { requireAggregateQuantity } from '../domain/receipt-quantity.policy.js';
 import {
   lockRound,
   receiptBalance,
   precedingAllocations,
-  requireNotRejected,
   replaceRound,
   assertReceiptAggregate,
 } from './mysql-receipt-round.shared.js';
@@ -58,61 +58,34 @@ export async function confirmReceiptAcceptance(
   requireOptimisticUpdate(line.version === payload.version ? 1 : 0);
   let round = await lockRound(db, line, payload);
   const sources = precedingAllocations(round, priorAllocations);
-  requireNotRejected(round);
-  if (
-    !['awaiting_acceptance', 'finalized'].includes(round.status) ||
-    String(line.current_receipt_revision_id) !== payload.receiptRevisionId ||
-    !payload.physicalIdentityConfirmed
-  )
-    return receiptError('本轮尚不允许定稿，或实收版本已变化，请刷新', 'RECEIPT_STATE');
-  const review = await quality.getCase(payload.caseId);
-  const inspection = review?.inspection;
-  if (
-    !review ||
-    review.status !== 'completed' ||
-    review.receiptLineId !== id ||
-    !inspection ||
-    inspection.id !== payload.inspectionId ||
-    String(round.inspection_id) !== inspection.id ||
-    inspection.releaseDecision !== 'released'
-  )
-    return receiptError(
-      '必须引用本轮有效且明确放行的质检记录；待复检或不放行不能定为可入',
-      'RECEIPT_STATE',
-    );
-  const allocations = allocateReceiptQuantities(payload.details, payload.confirmedQuantity);
-  const confirmedQuantity = payload.confirmedQuantity;
-  const inboundQuantity = allocations
-    .filter((a) => a.disposition === 'inbound')
-    .reduce((sum, a) => sum + a.quantity, 0);
-  const execution = summarizeReceiptInspectionExecution(
-    priorAllocations.map((row) => ({
-      inspectionId: row.inspection_id === null ? null : String(row.inspection_id),
-      inboundQuantity: row.inbound_quantity,
-      returnedQuantity: row.returned_quantity,
-      returnReason: row.return_reason,
-    })),
-    inspection.id,
-  );
-  const suggestion = suggestedReceiptInboundQuantity(
+  requireReceiptNotRejected(round.trigger_type);
+  const transition = requireReceiptAcceptanceState({
+    status: round.status,
+    currentRevisionId: String(line.current_receipt_revision_id),
+    receiptRevisionId: payload.receiptRevisionId,
+    physicalIdentityConfirmed: payload.physicalIdentityConfirmed,
+  });
+  const { caseId, inspection } = requireReceiptAcceptanceInspection(
+    await quality.getCase(payload.caseId),
     {
-      method: inspection.inspectionMethod,
-      qualifiedQuantity: Number(inspection.qualifiedQuantity),
-      unqualifiedQuantity: Number(inspection.unqualifiedQuantity),
+      receiptLineId: id,
+      inspectionId: payload.inspectionId,
+      roundInspectionId: round.inspection_id === null ? null : String(round.inspection_id),
     },
-    confirmedQuantity,
-    execution,
   );
-  const overrideReason = payload.overrideReason?.trim() || null;
-  if ((suggestion === null || inboundQuantity > suggestion) && !overrideReason)
-    return receiptError('可入数量超过质检建议或样本与核实数量不一致，请填写数量异常核对依据');
-  if (overrideReason && overrideReason.length > 2000)
-    return receiptError('数量异常核对依据最多 2000 字');
-  const remark = payload.remark.trim();
-  if (!remark || remark.length > 2000) return receiptError('请填写核对说明，最多 2000 字');
+  const { allocations, confirmedQuantity, inboundQuantity, suggestion, overrideReason, remark } =
+    evaluateReceiptAcceptanceQuantities(
+      payload,
+      inspection,
+      priorAllocations.map((row) => ({
+        inspectionId: row.inspection_id === null ? null : String(row.inspection_id),
+        inboundQuantity: row.inbound_quantity,
+        returnedQuantity: row.returned_quantity,
+        returnReason: row.return_reason,
+      })),
+    );
   const balance = await receiptBalance(db, line, priorAllocations);
-  if (round.status === 'finalized' && balance.remaining === 0)
-    return receiptError('本批已无未处置实物，不能恢复已入库或已退回数量', 'RECEIPT_STATE');
+  requireReceiptAcceptanceRemaining(round.status, balance.remaining);
   await requireAllocationOwnership(db, line, sources, allocations, confirmedQuantity);
   const nextTotal = requireAggregateQuantity(
     [balance.inbound, balance.returned, confirmedQuantity],
@@ -130,7 +103,7 @@ export async function confirmReceiptAcceptance(
       remark,
       context,
     );
-  if (round.status === 'finalized') {
+  if (transition.replaceRound) {
     round = await replaceRound(
       db,
       line,
@@ -210,6 +183,6 @@ export async function confirmReceiptAcceptance(
     roundId: String(round.id),
     acceptanceId: String(created.insertId),
     inspectionId: inspection.id,
-    caseIds: [review.id],
+    caseIds: [caseId],
   });
 }

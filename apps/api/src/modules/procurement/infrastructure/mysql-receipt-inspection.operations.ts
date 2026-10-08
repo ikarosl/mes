@@ -10,17 +10,18 @@ import type { InventoryInboundQuery } from '../../inventory/public.js';
 import type { QualityInboundCommand, QualityInboundQuery } from '../../quality/public.js';
 import {
   lockReceiptLine,
-  receiptError,
   touchReceiptLine,
   receiptResult,
   auditReceipt,
 } from './mysql-receipt.shared.js';
 import {
-  lockRound,
-  receiptBalance,
-  replaceRound,
-  requireNotRejected,
-} from './mysql-receipt-round.shared.js';
+  requireReceiptNotRejected,
+  planReceiptReview,
+  requireReceiptInspecting,
+  requireReceiptInspectionCase,
+  roundStatusAfterInspection,
+} from '../domain/receipt-round.policy.js';
+import { lockRound, receiptBalance, replaceRound } from './mysql-receipt-round.shared.js';
 
 export async function startReceiptReview(
   db: PoolConnection,
@@ -33,13 +34,10 @@ export async function startReceiptReview(
   const { line, allocations } = await lockReceiptLine(db, id, inventory);
   requireOptimisticUpdate(line.version === payload.version ? 1 : 0);
   let round = await lockRound(db, line, payload);
-  requireNotRejected(round);
+  requireReceiptNotRejected(round.trigger_type);
   const { remaining } = await receiptBalance(db, line, allocations);
-  if (round.status === 'reviewing' || remaining <= 0)
-    return receiptError('本批正在检查或已无未处置实物', 'RECEIPT_STATE');
-  if (payload.caseType === 'initial' && round.status !== 'uninspected')
-    return receiptError('已有检验结论，请使用复检或检验更正');
-  if (round.status !== 'uninspected') {
+  const transition = planReceiptReview(round.status, remaining, payload.caseType);
+  if (transition.replaceRound) {
     round = await replaceRound(
       db,
       line,
@@ -94,18 +92,13 @@ export async function inspectReceiptLine(
   const { line } = await lockReceiptLine(db, id, inventory);
   requireOptimisticUpdate(line.version === payload.version ? 1 : 0);
   const round = await lockRound(db, line, payload);
-  if (round.status !== 'reviewing')
-    return receiptError('本轮已结束、拒收或被替代，请刷新', 'RECEIPT_STATE');
-  const review = await query.getCase(payload.caseId);
-  if (
-    !review ||
-    review.status !== 'reviewing' ||
-    review.receiptLineId !== id ||
-    review.roundId !== String(round.id) ||
-    review.receiptRevisionId !== payload.receiptRevisionId ||
-    String(line.current_receipt_revision_id) !== payload.receiptRevisionId
-  )
-    return receiptError('检验办理与当前轮次或实收修订不匹配', 'RECEIPT_STATE');
+  requireReceiptInspecting(round.status);
+  const review = requireReceiptInspectionCase(await query.getCase(payload.caseId), {
+    receiptLineId: id,
+    roundId: String(round.id),
+    receiptRevisionId: payload.receiptRevisionId,
+    currentRevisionId: String(line.current_receipt_revision_id),
+  });
   const [[previous]] = await db.query<(RowDataPacket & { inspection_id: number | null })[]>(
     'SELECT inspection_id FROM procurement_receipt_round WHERE receipt_line_id=? AND round_no<? AND inspection_id IS NOT NULL ORDER BY round_no DESC LIMIT 1',
     [id, round.round_no],
@@ -122,12 +115,7 @@ export async function inspectReceiptLine(
     },
     context,
   );
-  const status =
-    inspection.releaseDecision === 'released'
-      ? 'awaiting_acceptance'
-      : inspection.releaseDecision === 'pending_reinspection'
-        ? 'reinspection_required'
-        : 'quality_rejected';
+  const status = roundStatusAfterInspection(inspection.releaseDecision);
   await db.execute(
     'UPDATE procurement_receipt_round SET status=?,inspection_id=?,version=version+1,updated_by=? WHERE id=?',
     [status, inspection.id, context.actorId, round.id],

@@ -94,7 +94,7 @@ export class ProcurementReceiptController {
     return this.query.history(id, historyKind, query);
   }
   @Get('inbound-releases')
-  @RequirePermission(PERMISSIONS.production.inbounds.view)
+  @RequirePermission(PERMISSIONS.warehouse.inbound.view)
   releases(@Query() query: ReceiptReleaseQueryDto) {
     return this.query.listInboundReleases(query);
   }
@@ -209,7 +209,7 @@ export class ProcurementInboundInspectionController {
   @Get('receipt-lines/:id')
   @RequirePermission(PERMISSIONS.quality.inboundInspections.view)
   line(@Param() { id }: PurchaseOrderIdDto) {
-    return this.query.getReceiptLine(id);
+    return this.query.getInspectionReceiptLine(id);
   }
   @Get(':id')
   @RequirePermission(PERMISSIONS.quality.inboundInspections.view)

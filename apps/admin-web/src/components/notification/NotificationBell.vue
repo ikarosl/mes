@@ -92,7 +92,7 @@
             <time>{{ formatDateTime(item.createdAt) }}</time>
           </button>
           <el-button
-            v-if="notificationTarget(item)"
+            v-if="canOpenTarget(item)"
             link
             type="primary"
             :loading="pending.has(item.id)"
@@ -124,9 +124,11 @@ import { useNotifications } from './useNotifications';
 import { notificationTarget } from './notification-targets';
 import { EMessage } from '../../utils/message';
 import { formatDateTimeForDisplay } from '../../utils/date';
+import { useRouteAccess } from '../../composables/useRouteAccess';
 
 defineOptions({ name: 'NotificationBell' });
 const router = useRouter();
+const { canAccessRoute } = useRouteAccess();
 const {
   items,
   unreadCount,
@@ -149,9 +151,14 @@ const filters = NOTIFICATION_READ_FILTERS.map((value) => ({
   label: NOTIFICATION_READ_FILTER_LABELS[value],
 }));
 const formatDateTime = (value: string): string => formatDateTimeForDisplay(value, '—');
+const canOpenTarget = (item: NotificationItem): boolean => {
+  const target = notificationTarget(item);
+  return target !== null && canAccessRoute(target);
+};
 const openTarget = async (item: NotificationItem) => {
   const target = notificationTarget(item);
-  if (!target || !(await read(item))) return;
+  if (!target || !canAccessRoute(target) || !(await read(item))) return;
+  if (!canAccessRoute(target)) return;
   visible.value = false;
   try {
     await router.push(target);

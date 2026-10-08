@@ -1,3 +1,8 @@
+import {
+  requireReceiptNotRejected,
+  requireReceiptRejection,
+  requireRejectionRevocation,
+} from '../domain/receipt-round.policy.js';
 import { allocateBusinessNumber } from '../../../infrastructure/numbering/mysql-business-number.js';
 import type { PoolConnection, ResultSetHeader } from 'mysql2/promise';
 import type {
@@ -13,17 +18,16 @@ import type { QualityInboundCommand } from '../../quality/public.js';
 import {
   lockReceiptLine,
   requireAllocation,
-  receiptError,
   touchReceiptLine,
   receiptResult,
   auditReceipt,
 } from './mysql-receipt.shared.js';
+import { receiptError } from '../domain/procurement.errors.js';
 import {
   lockRound,
   receiptBalance,
   precedingAllocations,
   replaceRound,
-  requireNotRejected,
 } from './mysql-receipt-round.shared.js';
 import { createRejectionAllocations } from './mysql-receipt-rejection.shared.js';
 
@@ -39,10 +43,9 @@ export async function rejectReceiptLine(
   requireOptimisticUpdate(line.version === payload.version ? 1 : 0);
   const round = await lockRound(db, line, payload);
   const sources = precedingAllocations(round, allocations);
-  requireNotRejected(round);
+  requireReceiptNotRejected(round.trigger_type);
   const { remaining } = await receiptBalance(db, line, allocations);
-  if (remaining <= 0) return receiptError('本批已无尚未处置实物', 'RECEIPT_STATE');
-  if (!payload.reason.trim()) return receiptError('请填写整批拒收原因');
+  requireReceiptRejection(remaining, payload.reason);
   const next = await replaceRound(
     db,
     line,
@@ -90,9 +93,12 @@ export async function revokeReceiptRejection(
   requireOptimisticUpdate(line.version === payload.version ? 1 : 0);
   const round = await lockRound(db, line, payload);
   const { remaining } = await receiptBalance(db, line, allocations);
-  if (round.trigger_type !== 'manual_rejection' || round.status !== 'finalized' || remaining <= 0)
-    return receiptError('只有当前人工拒收且仍有未处置实物，才能撤销拒收', 'RECEIPT_STATE');
-  if (!payload.reason.trim()) return receiptError('请填写撤销拒收原因');
+  requireRejectionRevocation({
+    trigger: round.trigger_type,
+    status: round.status,
+    remaining,
+    reason: payload.reason,
+  });
   const next = await replaceRound(
     db,
     line,

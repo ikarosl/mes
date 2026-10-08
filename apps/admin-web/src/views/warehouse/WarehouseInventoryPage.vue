@@ -380,7 +380,7 @@
     <el-dialog
       v-model="detailVisible"
       title="库存批次详情"
-      :width="DialogWidth.xl"
+      :width="DialogWidth.workbench"
       ><div
         v-loading="detailLoading"
         class="detail-body"
@@ -432,11 +432,12 @@
             ><el-table-column label="入库单号"
               ><template #default="{ row }"
                 ><el-button
+                  v-if="canAccessRoute({ name: 'warehouse-inbound' })"
                   link
                   type="primary"
                   @click="openInbound(row.inboundId, row.sourceType)"
                   >{{ row.inboundNo }}</el-button
-                ></template
+                ><span v-else>{{ row.inboundNo }}</span></template
               ></el-table-column
             ><el-table-column
               label="来源类别"
@@ -587,6 +588,7 @@ import {
   stockStatusLabel,
 } from '../../constants/business-status';
 import { DialogWidth } from '../../utils/dialog';
+import { useRouteAccess } from '../../composables/useRouteAccess';
 import { formatDateTimeForDisplay } from '../../utils/date';
 import { EMessage } from '../../utils/message';
 import { formatQuantity } from '../production/production-status';
@@ -596,6 +598,7 @@ import { inventoryTransactionAssociationText } from './warehouse-inventory-prese
 defineOptions({ name: 'WarehouseInventoryPage' });
 const route = useRoute(),
   router = useRouter();
+const { canAccessRoute } = useRouteAccess();
 const sourceSummary = (row: InventoryBatchItem) => {
   const kinds = [...new Set(row.inboundSources.map((source) => source.sourceType))];
   return kinds.length > 1 ? '多来源' : inventorySourceTypeLabel(kinds[0] ?? row.sourceType);
@@ -606,8 +609,10 @@ const inventoryAvailable = (row: InventoryBatchItem) =>
       ? row.onHandAvailableQuantity
       : row.availableToAllocateQuantity,
   );
-const openInbound = (inboundId: string, sourceType: string) =>
-  router.push({ name: 'warehouse-inbound', query: { inboundId, sourceType } });
+const openInbound = (inboundId: string, sourceType: string) => {
+  if (!canAccessRoute({ name: 'warehouse-inbound' })) return;
+  return router.push({ name: 'warehouse-inbound', query: { inboundId, sourceType } });
+};
 const viewMode = ref<'supply-demand' | 'inventory-batches'>('supply-demand');
 const {
   items: supplyDemandItems,

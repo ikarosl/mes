@@ -153,7 +153,7 @@
               <header class="summary-heading">
                 <strong>审定产出</strong>
                 <el-button
-                  v-if="detail.summary.closeoutMode"
+                  v-if="detail.summary.closeoutMode && canAccessRoute({ name: 'production-tasks' })"
                   type="primary"
                   link
                   @click="openOutput(detail.summary.productionBatchId)"
@@ -520,6 +520,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { usePageActivationRefresh } from '../../composables/requests/usePageActivationRefresh';
+import { useRouteAccess } from '../../composables/useRouteAccess';
 import ProductionOutputDialog from './components/ProductionOutputDialog.vue';
 import ProductionBatchTerminationDialog from './components/ProductionBatchTerminationDialog.vue';
 import type { InventoryTransactionType } from '@company/contracts';
@@ -534,6 +535,7 @@ import { approvedUsableQuantity, plannedOutputGapText } from './production-outpu
 import { useProductionTrace } from './composables/useProductionTrace';
 
 defineOptions({ name: 'ProductionTracePage' });
+const { canAccessRoute } = useRouteAccess();
 const sourceLabel = (value: InventoryTransactionType) =>
   INVENTORY_TRANSACTION_TYPE_LABELS[value] ?? value;
 
@@ -541,6 +543,7 @@ const outputVisible = ref(false),
   closeoutVisible = ref(false),
   outputBatchId = ref<string | null>(null);
 const openOutput = (batchId: string) => {
+  if (!canAccessRoute({ name: 'production-tasks' })) return;
   outputBatchId.value = batchId;
   outputVisible.value = true;
 };

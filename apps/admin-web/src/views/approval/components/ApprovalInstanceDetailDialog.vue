@@ -216,7 +216,7 @@
       >
         <el-descriptions
           v-if="ownerEvidence"
-          :column="3"
+          :column="2"
           border
           class="summary"
         >
@@ -225,9 +225,6 @@
           }}</el-descriptions-item>
           <el-descriptions-item label="送审时工单负责人">{{
             ownerEvidenceName
-          }}</el-descriptions-item>
-          <el-descriptions-item label="送审时工单版本">{{
-            ownerEvidence.workOrderVersion
           }}</el-descriptions-item>
         </el-descriptions>
         <BatchCloseoutEvidence :snapshot="closeoutSnapshot" />

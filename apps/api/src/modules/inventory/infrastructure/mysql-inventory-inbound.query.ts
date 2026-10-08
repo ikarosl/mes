@@ -15,7 +15,6 @@ type FactRow = RowDataPacket & {
   inbound_at: Date;
   detail_id: number | string;
   batch_id: number | string;
-  batch_code: string;
   receipt_line_id: number | string;
   receipt_revision_id: number | string;
   inspection_id: number | string;
@@ -94,12 +93,13 @@ export class MysqlInventoryInboundQuery extends InventoryInboundQuery {
     if (!ids.length) return Promise.resolve([]);
     ids.sort((a, b) => (BigInt(a) < BigInt(b) ? -1 : BigInt(a) > BigInt(b) ? 1 : 0));
     return withActiveConnection(this.pool, async (db) => {
+      // 保留事实当前读；批次身份由组合外键保证，不为展示批号提前取得库批共享锁。
+      // 共批入库只在确认写入时统一锁定目标批次，避免历史共享锁再升级为排他锁。
       const [rows] = await db.query<FactRow[]>(
-        `SELECT o.id inbound_id,o.inbound_no,o.inbound_at,d.id detail_id,d.batch_id,ib.batch_code,
+        `SELECT o.id inbound_id,o.inbound_no,o.inbound_at,d.id detail_id,d.batch_id,
          d.procurement_receipt_line_id receipt_line_id,d.procurement_receipt_revision_id receipt_revision_id,
          d.procurement_allocation_id allocation_id,d.procurement_inspection_id inspection_id,tx.id transaction_id,tx.quantity
          FROM inbound_order o JOIN inbound_detail d ON d.inbound_id=o.id
-         JOIN item_batch ib ON ib.id=d.batch_id AND ib.item_id=d.item_id AND ib.material_variant_id=d.material_variant_id
          JOIN inventory_transaction tx ON tx.reference_type='inbound_detail' AND tx.reference_detail_id=d.id
            AND tx.transaction_type='purchase_inbound' AND tx.quantity=d.inbound_number AND tx.quantity>0
            AND tx.batch_id=d.batch_id AND tx.item_id=d.item_id AND tx.material_variant_id=d.material_variant_id
@@ -132,7 +132,6 @@ export class MysqlInventoryInboundQuery extends InventoryInboundQuery {
         );
         target.receipts.push({
           batchId,
-          batchCode: row.batch_code,
           inboundId: String(row.inbound_id),
           inboundNo: row.inbound_no,
           inboundDetailId: detailId,

@@ -92,6 +92,8 @@ GET `/procurement/related-purchases` 接受批量 demandIds 和公共分页，�
 
 采购行详情批量返回当前 quantities 与 allowedCloseReasons，读写复用 `allowedPurchaseOrderClosureReasons`。取消要求从未有任何到货明细，实收更正为零仍不能取消。关闭根据锁内当前修订、有效范围、Quality 未完成复核、实际退回和 Inventory 累计入库计算 A/U/L/I/J/R/R质量：质检达标 L>=计划；质量退回处置完成 A>=计划、L<计划、U=0、无待退、L+R质量>=计划且无复核；人工结束必须说明原因。正常关闭不要求已经全部入库，关闭事实冻结当时依据 ID 与数量，后续修订和物流不覆盖关闭事实或重开采购。
 
+关闭命令先锁定采购根、采购行及相关到货／当前修订／轮次，再按到货 ID 数值排序、每批最多 100 条读取全部历史分配、Inventory public 的实际入库及真实退回。分配余量计算与关闭证据复用同一次事实读取，不为生成证据再次查询入退事实；先按到货校验同源和执行去向，再按采购归属统计，不能只读取当前轮而漏掉历史已执行量。所有批次在同一事务内顺序当前读，Quality 未完成复核继续按公开端口分批核验；锁不会在判断与写入之间释放。
+
 质量补发每行必须提交 originOrderLineId、originReceiptLineId、originAllocationId 及非空 supplementEvidence（供应商补发约定）。引用同次到货正式清单中 disposition=return、return_reason=quality 的分配明细；创建及正式下单均在原采购根锁内逐行确认仍有该分配的质量待退或已退范围。候选按**到货登记来源原采购行**组织，正式分配的履约采购行另行展示，不能拿它替代到货来源。被更正取消或全部进入复核的旧处置不可新建或下单，不能只引用历史检验不合格数。超发及采购终止退回不适用。允许先补后退，不要求实际退回或原单关闭；补发不自动登记退回、不关闭原单、不新增需求。实际退回独立通过相同 allocation_id 追溯。补单保留各原行来源映射，不按既有补单累计量限制补发；采购核对约定数量与相关补单，Product 与供应商资格仍重新检查。采购页质量候选使用 `procurement:orders:view`，摘要按订单状态汇总；需查看关联补发单号时使用采购单列表的 originOrderLineId＋originAllocationId 精确分页过滤。
 
 成功审计 action 为 `purchase-order.create/update/place/cancel/supplement` 或 `purchase-order-line.close`，同业务事务写入。验证与验收顺序遵守 [AGENTS.md](../../../../../../AGENTS.md#数据库与交付约定)。

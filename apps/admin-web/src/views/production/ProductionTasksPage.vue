@@ -445,6 +445,7 @@
       @open-output="openOutput"
     />
     <ProductionOutputDialog
+      ref="outputDialog"
       v-model:visible="outputVisible"
       :batch-id="outputBatchId"
       @changed="loadTasks"
@@ -462,8 +463,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onActivated, onMounted, ref } from 'vue';
-import { useRoute } from 'vue-router';
+import { computed, nextTick, onActivated, onMounted, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import TableToolbar from '../../components/TableToolbar.vue';
 import PaginationFooter from '../../components/PaginationFooter.vue';
@@ -532,6 +533,7 @@ const researchExecutionChanged = async (batchId: string, completed: boolean) => 
 };
 
 const route = useRoute();
+const router = useRouter();
 
 const {
   batches,
@@ -580,10 +582,55 @@ const createBatchIntent = useIdempotentIntent();
 /* ====== 弹窗状态 ====== */
 const outputVisible = ref(false),
   outputBatchId = ref<string | null>(null);
-const openOutput = (batchId: string) => {
-  outputBatchId.value = batchId;
-  outputVisible.value = true;
+const outputDialog = ref<InstanceType<typeof ProductionOutputDialog> | null>(null);
+let locatingOutput = false;
+const openOutput = async (batchId: string): Promise<boolean> => {
+  if (outputVisible.value && outputBatchId.value === batchId) return true;
+  if (locatingOutput || outputDialog.value?.navigationLocked) return false;
+  locatingOutput = true;
+  try {
+    if (outputVisible.value && outputDialog.value && !(await outputDialog.value.close()))
+      return false;
+    await nextTick();
+    outputBatchId.value = batchId;
+    outputVisible.value = true;
+    return true;
+  } finally {
+    locatingOutput = false;
+  }
 };
+let acceptedOutput = '';
+let locatingRouteOutput = false;
+async function locateOutput(): Promise<void> {
+  if (route.name !== 'production-tasks' || locatingRouteOutput) return;
+  const id = typeof route.query.batchId === 'string' ? route.query.batchId : '';
+  if (!/^[1-9]\d*$/.test(id)) return;
+  locatingRouteOutput = true;
+  try {
+    await nextTick();
+    const opened = await openOutput(id);
+    if (route.name !== 'production-tasks' || route.query.batchId !== id) return;
+    if (opened) acceptedOutput = id;
+    else {
+      const query = { ...route.query };
+      delete query.batchId;
+      const retainedBatchId = outputVisible.value ? outputBatchId.value : acceptedOutput;
+      await router.replace({
+        query: { ...query, ...(retainedBatchId ? { batchId: retainedBatchId } : {}) },
+      });
+    }
+  } finally {
+    locatingRouteOutput = false;
+    if (route.name === 'production-tasks' && route.query.batchId !== id) void locateOutput();
+  }
+}
+watch(
+  () => [route.name, route.query.batchId],
+  () => {
+    void locateOutput();
+  },
+  { immediate: true },
+);
 const openCloseoutItems = (batchId: string) => {
   terminationBatchId.value = batchId;
   terminationVisible.value = true;
@@ -1098,6 +1145,7 @@ onMounted(() => {
 });
 /** 页面重新激活：定向刷新页面持有的候选（负责人 + SOP 文件）；弹窗自持候选由弹窗自身刷新 */
 onActivated(() => {
+  void locateOutput();
   void userSource.refresh();
   void refreshSopFiles();
 });

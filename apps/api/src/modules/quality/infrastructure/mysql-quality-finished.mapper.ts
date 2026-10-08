@@ -14,7 +14,7 @@ export type InspectionRow = RowDataPacket & {
   declared_extra_quantity: string;
   declared_scrap_quantity: string;
   inspection_method: ProductionOutputInspection['inspectionMethod'];
-  covered_quantity: string;
+  qualified_quantity: string;
   inspected_quantity: string;
   unqualified_quantity: string;
   release_decision: ProductionOutputInspection['releaseDecision'];
@@ -28,11 +28,12 @@ export type InspectionRow = RowDataPacket & {
 export function mapFinishedInspection(row: InspectionRow): ProductionOutputInspection {
   const facts = {
     inspectionMethod: row.inspection_method,
-    coveredQuantity: Number(row.covered_quantity),
     inspectedQuantity: Number(row.inspected_quantity),
+    qualifiedQuantity: Number(row.qualified_quantity),
     unqualifiedQuantity: Number(row.unqualified_quantity),
     releaseDecision: row.release_decision,
   };
+  evaluateOutputInspection(facts);
   return {
     id: String(row.id),
     closeoutId: String(row.closeout_id),
@@ -41,18 +42,12 @@ export function mapFinishedInspection(row: InspectionRow): ProductionOutputInspe
     declaredVersion: row.declared_version,
     baselinePlannedReceived: String(row.baseline_planned_received),
     baselineExtraReceived: String(row.baseline_extra_received),
-    cumulativeSuggestionQuantity: String(
-      Number(row.baseline_planned_received) +
-        Number(row.baseline_extra_received) +
-        evaluateOutputInspection(facts).releasedQuantity,
-    ),
     declared: {
       availableQuantity: Number(row.declared_available_quantity),
       extraQuantity: Number(row.declared_extra_quantity),
       additionalScrapQuantity: Number(row.declared_scrap_quantity),
     },
     ...facts,
-    ...evaluateOutputInspection(facts),
     inspectedAt: toBeijingISOString(row.inspected_at),
     resultNote: row.result_note,
     evidenceReference: row.evidence_reference,

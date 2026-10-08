@@ -21,7 +21,7 @@ export class ProductionInboundController {
     private readonly service: ProductionInboundService,
     private readonly supplyDemand: ProductionSupplyDemandService,
   ) {}
-  @Get('purchase-inbounds') @RequirePermission(PERMISSIONS.production.inbounds.view) list(
+  @Get('purchase-inbounds') @RequirePermission(PERMISSIONS.warehouse.inbound.view) list(
     @Query() q: PurchaseInboundQueryDto,
   ) {
     return this.service.list({
@@ -31,7 +31,7 @@ export class ProductionInboundController {
       status: q.status,
     });
   }
-  @Get('purchase-inbounds/:inboundId') @RequirePermission(PERMISSIONS.production.inbounds.view) get(
+  @Get('purchase-inbounds/:inboundId') @RequirePermission(PERMISSIONS.warehouse.inbound.view) get(
     @Param() p: InboundIdParamDto,
   ) {
     return this.service.get(p.inboundId);

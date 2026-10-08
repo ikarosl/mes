@@ -14,7 +14,7 @@ import { QualityCommandError } from '../quality-command.error.js';
 const validQuantity = (value: number) =>
   Number.isSafeInteger(value) && value >= 0 && value <= MAX_PERSISTED_INTEGER_QUANTITY;
 
-/** Finished inspections retain verified C and derive a quantity recommendation for finalization. */
+/** Finished inspections record G/F and derive only the inspected count N. */
 export function normalizeInspectionQuantities(
   input: QualityInspectionQuantityInput,
 ): QualityInspectionQuantities {
@@ -30,32 +30,15 @@ export function normalizeInspectionQuantities(
     invalid('合格数、不合格数必须为有效的非负整数');
   const inspectedQuantity = input.qualifiedQuantity + input.unqualifiedQuantity;
   if (!validQuantity(inspectedQuantity)) invalid('实际检查总数超过支持范围');
-  const coveredQuantity =
-    input.inspectionMethod === 'sampling' ? input.coveredQuantity : inspectedQuantity;
-  if (coveredQuantity === undefined || !validQuantity(coveredQuantity))
-    return invalid('抽检须独立核实实际送检整批总数');
-  if (
-    input.inspectionMethod !== 'sampling' &&
-    input.coveredQuantity !== undefined &&
-    input.coveredQuantity !== inspectedQuantity
-  )
-    invalid('全检核实总数必须等于合格数加不合格数');
   if (input.inspectionMethod === 'zero_confirmation') {
-    if (coveredQuantity !== 0 || inspectedQuantity !== 0 || input.releaseDecision !== 'released')
-      invalid('零量核实须明确确认全部数量为零');
-  } else if (
-    coveredQuantity === 0 ||
-    inspectedQuantity === 0 ||
-    inspectedQuantity > coveredQuantity
-  ) {
-    invalid('须有实际检查数量，抽检样本不能超过核实后的整批总数');
+    if (inspectedQuantity !== 0 || input.releaseDecision !== 'released')
+      invalid('零量核实须明确放行且合格、不合格均为零');
+  } else if (inspectedQuantity === 0) {
+    invalid('须有实际检查数量');
   }
   return {
     ...input,
-    coveredQuantity,
     inspectedQuantity,
-    releasedQuantity:
-      input.releaseDecision === 'released' ? coveredQuantity - input.unqualifiedQuantity : 0,
   };
 }
 

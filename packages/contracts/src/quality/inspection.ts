@@ -7,13 +7,9 @@ export interface QualityInspectionQuantityInput {
   inspectionMethod: QualityInspectionMethod;
   qualifiedQuantity: number;
   unqualifiedQuantity: number;
-  coveredQuantity?: number;
   releaseDecision: QualityReleaseDecision;
 }
 
 export interface QualityInspectionQuantities extends QualityInspectionQuantityInput {
-  coveredQuantity: number;
   inspectedQuantity: number;
-  /** Field name retained; derived finished-output suggestion, not a finalization or inbound limit. */
-  releasedQuantity: number;
 }

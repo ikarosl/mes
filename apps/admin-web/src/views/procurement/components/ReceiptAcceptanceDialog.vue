@@ -73,24 +73,6 @@
                 kind="unqualified"
               />
             </div>
-            <div v-if="inspection.inspectionMethod === 'full'">
-              同一检验建议可入：全检 {{ inspection.inspectedQuantity }} − 已入
-              {{ inspectionExecution.inboundQuantity }} − 其他已退
-              {{ inspectionExecution.otherReturnedQuantity }} − MAX(质量已退
-              {{ inspectionExecution.qualityReturnedQuantity }}，不合格
-              {{ inspection.unqualifiedQuantity }})
-              <template v-if="limit === null">；建议待核对</template>
-              <template v-else-if="fullLimitBeforeFloor !== null && fullLimitBeforeFloor < 0">
-                = {{ fullLimitBeforeFloor }}，按 0 取值 {{ limit }} {{ line.unit }}
-              </template>
-              <template v-else>= {{ limit }} {{ line.unit }}</template>
-            </div>
-            <div v-else>
-              抽检建议：草稿核实剩余 {{ quantity ?? '待填写' }} − 样本不合格
-              {{ inspection.unqualifiedQuantity }}
-              <template v-if="limit !== null">= {{ limit }} {{ line.unit }}</template>
-              <template v-else>；建议待核对</template>
-            </div>
           </el-descriptions-item>
           <el-descriptions-item label="本轮去向草稿">
             <div>核实剩余 {{ quantity ?? '待填写' }} {{ line.unit }}</div>
@@ -154,12 +136,30 @@
           </el-form-item>
           <InlineHint
             tone="info"
-            class="physical-balance-hint"
+            class="inspection-suggestion-hint"
           >
-            实物剩余：核实 {{ line.quantities.receivedQuantity }} − 已入
-            {{ line.quantities.inboundQuantity }} − 已退
-            <strong>{{ line.quantities.returnedQuantity }}</strong> = 剩余
-            <strong>{{ line.quantities.unprocessedQuantity }}</strong> {{ line.unit }}。
+            <template v-if="inspection.inspectionMethod === 'full'">
+              <strong>同一检验建议可入：</strong>全检 {{ inspection.inspectedQuantity }} − 已入
+              {{ inspectionExecution.inboundQuantity }} − 其他已退
+              {{ inspectionExecution.otherReturnedQuantity }} − MAX(质量已退
+              {{ inspectionExecution.qualityReturnedQuantity }}，不合格
+              {{ inspection.unqualifiedQuantity }})
+              <template v-if="limit === null">；<strong>建议待核对</strong></template>
+              <template v-else-if="fullLimitBeforeFloor !== null && fullLimitBeforeFloor < 0">
+                = {{ fullLimitBeforeFloor }}，按 0 取值 <strong>{{ limit }} {{ line.unit }}</strong>
+              </template>
+              <template v-else
+                >= <strong>{{ limit }} {{ line.unit }}</strong></template
+              >
+            </template>
+            <template v-else>
+              <strong>抽检建议可入：</strong>草稿核实剩余 {{ quantity ?? '待填写' }} − 样本不合格
+              {{ inspection.unqualifiedQuantity }}
+              <template v-if="limit !== null"
+                >= <strong>{{ limit }} {{ line.unit }}</strong></template
+              >
+              <template v-else>；<strong>建议待核对</strong></template>
+            </template>
             <template
               v-if="
                 quantity !== undefined &&
@@ -439,7 +439,7 @@ defineExpose({ open, close, visible, locked: command.locked });
 .notice {
   margin: 16px 0;
 }
-.physical-balance-hint,
+.inspection-suggestion-hint,
 .override-hint {
   margin: 12px 0 16px;
 }

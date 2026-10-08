@@ -24,8 +24,14 @@
         class="notice"
       />
       <ReceiptLineSummary
+        v-if="'allocations' in line"
         :line="line"
         :mode="action === 'inspect' || action === 'review' ? 'inspection' : 'full'"
+      />
+      <InboundInspectionSummary
+        v-else
+        :line="line"
+        show-disposal
       />
       <div
         v-loading="loading"
@@ -262,6 +268,7 @@ import { fromBeijingDateTimeInputValue, toBeijingDateTimeInputValue } from '../.
 import InlineHint from '../../../components/InlineHint.vue';
 import { useReceiptLineAction } from '../composables/useReceiptLineAction';
 import ReceiptLineSummary from './ReceiptLineSummary.vue';
+import InboundInspectionSummary from './InboundInspectionSummary.vue';
 import InboundInspectionFields from './InboundInspectionFields.vue';
 const emit = defineEmits<{ saved: [ProcurementReceiptCommandResult] }>();
 const {

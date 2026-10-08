@@ -1,5 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import type { ProductionOutputQuantities, StartFinishedInspectionResult } from '@company/contracts';
+import type {
+  BeginFinishedReinspectionPayload,
+  ProductionOutputQuantities,
+  StartFinishedInspectionResult,
+} from '@company/contracts';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { QualityCommandError } from '../quality-command.error.js';
 export interface FinishedInspectionSource {
@@ -9,8 +13,21 @@ export interface FinishedInspectionSource {
   version: number;
   declared: ProductionOutputQuantities;
 }
+export interface FinishedReinspectionPreview {
+  canBeginReinspection: boolean;
+  reinspectionBlockedReason: string | null;
+  reinspectionRemainingQuantity: string | null;
+  receivedPlannedQuantity: string;
+  receivedExtraQuantity: string;
+}
 /** 来源模块负责锁、状态与版本；Quality 只写检验事实。调用必须共享活动事务。 */
 export interface QualityFinishedInspectionSourceHandler {
+  previewReinspection(batchId: string): Promise<FinishedReinspectionPreview>;
+  beginReinspection(
+    batchId: string,
+    payload: BeginFinishedReinspectionPayload,
+    context: CommandContext,
+  ): Promise<StartFinishedInspectionResult>;
   start(
     batchId: string,
     version: number,

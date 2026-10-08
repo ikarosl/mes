@@ -46,6 +46,7 @@ export class ProductionOutputService {
           detail.workOrderOwnerId,
           ...detail.inspections.map((row) => row.createdBy),
           ...detail.revisions.map((row) => row.approvedBy),
+          ...detail.revisions.map((row) => row.snapshot.inspection.createdBy),
         ].filter(Boolean),
       ),
     ];
@@ -62,6 +63,14 @@ export class ProductionOutputService {
       revisions: detail.revisions.map((row) => ({
         ...row,
         approvedByName: names.get(row.approvedBy) ?? row.approvedBy,
+        snapshot: {
+          ...row.snapshot,
+          inspection: {
+            ...row.snapshot.inspection,
+            createdByName:
+              names.get(row.snapshot.inspection.createdBy) ?? row.snapshot.inspection.createdBy,
+          },
+        },
       })),
     };
   }

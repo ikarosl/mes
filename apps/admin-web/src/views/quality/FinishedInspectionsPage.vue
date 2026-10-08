@@ -118,7 +118,8 @@
           <span class="document-meta">成品 {{ group.productCode }} · {{ group.productName }}</span>
           <span class="document-meta">本页含本单 {{ group.tasks.length }} 项任务</span>
           <span class="document-counts"
-            >本页待开始 {{ group.startable }} 项 · 检验中可填写 {{ group.recordable }} 项</span
+            >本页待开始 {{ group.startable }} 项 · 待填写 {{ group.recordable }} 项 · 复检待处理
+            {{ group.reinspectionFollowups }} 项</span
           >
         </div>
         <div
@@ -129,8 +130,8 @@
             class="task-grid column-heading"
             aria-hidden="true"
           >
-            <span>任务</span><span>计划量</span><span>当前检验轮</span><span>本轮检查</span
-            ><span>最近检验记录</span><span>下一步</span>
+            <span>任务</span><span>计划量</span><span>当前办理</span><span>检验记录参考</span
+            ><span>下一步</span>
           </div>
           <div
             v-for="task in group.tasks"
@@ -139,34 +140,39 @@
             :class="{ highlighted: highlightedBatchId === task.batchId }"
           >
             <strong>{{ task.batchNo }}</strong>
-            <span>{{ Number(task.plannedQuantity) }}</span>
+            <span>{{ Number(task.plannedQuantity) }} 件</span>
             <div>
-              <template v-if="task.currentRoundId && task.currentRoundStatus">
-                <span class="round-reference">本轮</span>
-                <el-tag
-                  size="small"
-                  :type="finishedRoundTagType(task.currentRoundStatus)"
-                  :effect="finishedRoundTagEffect(task.currentRoundStatus)"
-                  >{{ PRODUCTION_OUTPUT_ROUND_STATUS_LABELS[task.currentRoundStatus] }}</el-tag
-                >
-              </template>
-              <span
-                v-else
-                class="muted"
-                >尚无当前轮</span
+              <el-tag
+                size="small"
+                :type="finishedStageTagType(task.stage)"
+                >{{ FINISHED_INSPECTION_STAGE_LABELS[task.stage] }}</el-tag
               >
+              <span class="round-reference">{{
+                task.currentRoundNo ? '第 ' + task.currentRoundNo + ' 轮' : '尚无检验轮'
+              }}</span>
             </div>
-            <span :class="{ muted: !task.canStartInspection && !task.canRecordInspection }">
-              {{
-                task.canStartInspection || task.canRecordInspection
-                  ? '本轮尚无检验结果'
-                  : '进入详情核对本轮检查'
-              }}
-            </span>
             <div>
-              <template v-if="task.latestReleaseDecision">
-                <span class="basis-label">最近记录结论 · 正式引用以产出清单为准</span>
-                {{ PRODUCTION_OUTPUT_RELEASE_DECISION_LABELS[task.latestReleaseDecision] }}
+              <template v-if="task.latestInspectionId">
+                <span class="basis-label"
+                  >{{
+                    task.currentRoundInspectionId === task.latestInspectionId
+                      ? '本轮检验记录'
+                      : '最近历史记录'
+                  }}
+                  · 正式引用以清单为准</span
+                >
+                <el-button
+                  class="inspection-id-link"
+                  link
+                  type="primary"
+                  @click="openRecord(task.batchId, task.latestInspectionId)"
+                  >检验记录 ID：{{ task.latestInspectionId }}</el-button
+                >
+                {{
+                  task.latestReleaseDecision
+                    ? PRODUCTION_OUTPUT_RELEASE_DECISION_LABELS[task.latestReleaseDecision]
+                    : '结论未提供'
+                }}
                 <span class="record-time">{{
                   formatDateTimeForDisplay(task.latestInspectedAt)
                 }}</span>
@@ -177,12 +183,14 @@
                 >尚无检验记录</span
               >
             </div>
-            <el-button
-              link
-              type="primary"
-              @click="navigate(task.batchId)"
-              >{{ taskAction(task) }}</el-button
-            >
+            <div>
+              <el-button
+                link
+                type="primary"
+                @click="openTask(task.batchId)"
+                >{{ FINISHED_INSPECTION_NEXT_ACTION_LABELS[task.nextAction] }}</el-button
+              >
+            </div>
           </div>
         </div>
       </div>
@@ -197,6 +205,7 @@
     <FinishedInspectionDialog
       ref="detail"
       @changed="load"
+      @record-focus-cleared="clearRecordLocation"
     />
   </section>
 </template>
@@ -207,8 +216,9 @@ import { Refresh } from '@element-plus/icons-vue';
 import {
   FINISHED_INSPECTION_LIST_STATUSES,
   FINISHED_INSPECTION_LIST_STATUS_LABELS,
+  FINISHED_INSPECTION_STAGE_LABELS,
+  FINISHED_INSPECTION_NEXT_ACTION_LABELS,
   PRODUCTION_OUTPUT_RELEASE_DECISION_LABELS,
-  PRODUCTION_OUTPUT_ROUND_STATUS_LABELS,
 } from '@company/constants';
 import type { FinishedInspectionTaskItem } from '@company/contracts';
 import TableToolbar from '../../components/TableToolbar.vue';
@@ -217,7 +227,7 @@ import PaginationFooter from '../../components/PaginationFooter.vue';
 import { EMessage } from '../../utils/message';
 import { formatDateTimeForDisplay } from '../../utils/date';
 import { useFinishedInspectionsList } from './composables/useFinishedInspectionsList';
-import { finishedRoundTagType, finishedRoundTagEffect } from './inspection-presentation';
+import { finishedStageTagType } from './inspection-presentation';
 import FinishedInspectionDialog from './components/FinishedInspectionDialog.vue';
 
 defineOptions({ name: 'FinishedInspectionsPage' });
@@ -229,6 +239,7 @@ type WorkOrderGroup = {
   tasks: FinishedInspectionTaskItem[];
   startable: number;
   recordable: number;
+  reinspectionFollowups: number;
 };
 const route = useRoute(),
   router = useRouter();
@@ -262,21 +273,18 @@ const groups = computed<WorkOrderGroup[]>(() => {
         tasks: [],
         startable: 0,
         recordable: 0,
+        reinspectionFollowups: 0,
       };
       orders.set(task.workOrderId, order);
     }
     order.tasks.push(task);
     if (task.canStartInspection) order.startable += 1;
     if (task.canRecordInspection) order.recordable += 1;
+    if (task.stage === 'needs_reinspection' || task.stage === 'not_released')
+      order.reinspectionFollowups += 1;
   }
   return [...orders.values()];
 });
-const taskAction = (task: FinishedInspectionTaskItem) =>
-  task.canStartInspection
-    ? '查看 / 开始检验'
-    : task.canRecordInspection
-      ? '查看 / 继续填写'
-      : '查看详情';
 function toggleOrder(id: string) {
   const next = new Set(collapsedOrders.value);
   if (next.has(id)) {
@@ -327,7 +335,36 @@ function revealTask(id: string) {
 }
 let navigating = false;
 let openedBatchId = '';
-async function navigate(id: string): Promise<boolean> {
+let openedRecordId = '';
+async function openTask(id: string) {
+  if (!(await navigate(id))) return;
+  accepted = id;
+  acceptedRecordId = '';
+  if (route.query.batchId !== id || route.query.inspectionId || route.query.action) {
+    const query = { ...route.query };
+    query.batchId = id;
+    delete query.inspectionId;
+    delete query.action;
+    await router.replace({ name: 'quality-finished-inspections', query });
+  }
+}
+async function openRecord(batchId: string, recordId: string) {
+  if (!(await navigate(batchId, 'record', recordId))) return;
+  accepted = batchId;
+  acceptedRecordId = recordId;
+  if (
+    route.query.batchId !== batchId ||
+    route.query.inspectionId !== recordId ||
+    route.query.action
+  ) {
+    const query = { ...route.query };
+    query.batchId = batchId;
+    query.inspectionId = recordId;
+    delete query.action;
+    await router.replace({ name: 'quality-finished-inspections', query });
+  }
+}
+async function navigate(id: string, action?: string, recordId?: string): Promise<boolean> {
   if (navigating) return false;
   if (detail.value?.locked) {
     EMessage.warning('请先确认当前检验操作结果再切换');
@@ -337,38 +374,72 @@ async function navigate(id: string): Promise<boolean> {
   try {
     if (detail.value?.visible && !(await detail.value.close())) return false;
     revealTask(id);
-    const opened = (await detail.value?.open(id)) ?? false;
-    if (opened) openedBatchId = id;
+    const opened = (await detail.value?.open(id, action, recordId)) ?? false;
+    if (opened) {
+      openedBatchId = id;
+      openedRecordId = action === 'record' ? (recordId ?? '') : '';
+    }
     return opened;
   } finally {
     navigating = false;
   }
 }
 let accepted = '';
+let acceptedRecordId = '';
+async function clearRecordLocation() {
+  openedRecordId = '';
+  acceptedRecordId = '';
+  if (route.query.batchId !== openedBatchId || !route.query.inspectionId) return;
+  const query = { ...route.query };
+  delete query.inspectionId;
+  await router.replace({ name: 'quality-finished-inspections', query });
+}
+async function consumeReinspectionAction(id: string) {
+  if (route.query.batchId !== id || route.query.action !== 'reinspect') return;
+  const query = { ...route.query };
+  delete query.action;
+  await router.replace({ name: 'quality-finished-inspections', query });
+}
 async function locate() {
   if (route.name !== 'quality-finished-inspections') return;
   await nextTick();
   const id = typeof route.query.batchId === 'string' ? route.query.batchId : '';
+  const recordId = typeof route.query.inspectionId === 'string' ? route.query.inspectionId : '';
+  const action = recordId ? 'record' : route.query.action === 'reinspect' ? 'reinspect' : undefined;
   if (!id || navigating) return;
-  if (openedBatchId === id && detail.value?.visible) {
+  if (openedBatchId === id && openedRecordId === recordId && detail.value?.visible) {
+    if (action === 'reinspect') detail.value.focusReinspection();
     accepted = id;
+    acceptedRecordId = recordId;
+    await consumeReinspectionAction(id);
     return;
   }
-  const succeeded = await navigate(id);
+  const succeeded = await navigate(id, action, recordId || undefined);
   if (route.name !== 'quality-finished-inspections') return;
-  if (route.query.batchId !== id) {
+  if (route.query.batchId !== id || (route.query.inspectionId || '') !== recordId) {
     void locate();
     return;
   }
-  if (succeeded) accepted = id;
-  else {
+  if (succeeded) {
+    accepted = id;
+    acceptedRecordId = recordId;
+    await consumeReinspectionAction(id);
+  } else {
     const query = { ...route.query };
     delete query.batchId;
-    await router.replace({ query: { ...query, ...(accepted ? { batchId: accepted } : {}) } });
+    delete query.inspectionId;
+    delete query.action;
+    await router.replace({
+      query: {
+        ...query,
+        ...(accepted ? { batchId: accepted } : {}),
+        ...(acceptedRecordId ? { inspectionId: acceptedRecordId } : {}),
+      },
+    });
   }
 }
 watch(
-  () => [route.name, route.query.batchId],
+  () => [route.name, route.query.batchId, route.query.inspectionId, route.query.action],
   () => {
     void locate();
   },
@@ -431,8 +502,8 @@ onActivated(() => {
 .task-grid {
   display: grid;
   grid-template-columns:
-    minmax(150px, 1.3fr) minmax(80px, 0.7fr) minmax(135px, 1.1fr) minmax(160px, 1.4fr)
-    minmax(200px, 1.6fr) minmax(130px, 1fr);
+    minmax(130px, 1.2fr) minmax(85px, 0.7fr) minmax(160px, 1.3fr)
+    minmax(230px, 2fr) minmax(140px, 1.1fr);
   gap: 12px;
   align-items: center;
   min-width: 850px;
@@ -458,9 +529,17 @@ onActivated(() => {
   font-size: 12px;
 }
 .round-reference {
-  margin-bottom: 3px;
+  margin-top: 5px;
 }
 .record-time {
   margin-top: 2px;
+}
+.inspection-id-link {
+  height: auto;
+  padding: 0;
+  font-weight: 600;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 </style>

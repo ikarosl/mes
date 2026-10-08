@@ -1,7 +1,7 @@
 import type { ProductionOutputInspection } from '../quality/finished-inspections.js';
 import type { VersionedCommand } from '../common.js';
 import type { BatchTerminationCheck } from './termination.js';
-import type { BatchCloseoutApprovalSnapshot } from './closeout.js';
+import type { BatchCloseoutApprovalDisplaySnapshot } from './closeout.js';
 
 export type ProductionCloseoutMode = 'normal' | 'early';
 export type ProductionOutputStatus = 'draft' | 'reviewing' | 'approved' | 'correcting';
@@ -69,7 +69,7 @@ export interface ProductionOutputRevision {
   approvedBy: string;
   approvedByName: string;
   approvedAt: string;
-  snapshot: BatchCloseoutApprovalSnapshot;
+  snapshot: BatchCloseoutApprovalDisplaySnapshot;
 }
 export interface ProductionOutputReceipts {
   productionReceivedQuantity: string;
@@ -92,6 +92,8 @@ export interface ProductionOutputDetail {
   currentRoundId: string | null;
   rounds: ProductionOutputRound[];
   latestInspectionId: string | null;
+  /** 当前轮可用于下一版定稿且明确放行的检验依据；复检新轮不得沿用旧结果。 */
+  applicableInspectionId: string | null;
   inspections: ProductionOutputInspection[];
   revisions: ProductionOutputRevision[];
   receipts: ProductionOutputReceipts;
@@ -100,6 +102,10 @@ export interface ProductionOutputDetail {
   canSubmit: boolean;
   canBeginCorrection: boolean;
   canBeginReinspection: boolean;
+  reinspectionBlockedReason: string | null;
+  /** 当前批准版是否仍属于已定稿的当前轮。 */
+  canExecuteCurrentRevision: boolean;
+  executionBlockedReason: string | null;
   canCancelCorrection: boolean;
   blockers: string[];
   /** 草稿、检验引用、基准批准版及收尾依据的联合指纹。 */

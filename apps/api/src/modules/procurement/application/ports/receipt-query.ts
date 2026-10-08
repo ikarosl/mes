@@ -8,6 +8,7 @@ import type {
   ProcurementReceiptLineListItem,
   ProcurementReceiptDetail,
   ProcurementReceiptLine,
+  ProcurementInboundInspectionDetail,
   ProcurementInboundReleaseQuery,
   ProcurementInboundReleaseItem,
   ProcurementInboundInspectionQuery,
@@ -30,6 +31,7 @@ export abstract class ProcurementReceiptQuery {
   ): Promise<PageResult<ProcurementReceiptLineListItem>>;
   abstract getReceipt(id: string): Promise<ProcurementReceiptDetail>;
   abstract getReceiptLine(id: string): Promise<ProcurementReceiptLine>;
+  abstract getInspectionReceiptLine(id: string): Promise<ProcurementInboundInspectionDetail>;
   abstract listInboundReleases(
     query: ProcurementInboundReleaseQuery,
   ): Promise<PageResult<ProcurementInboundReleaseItem>>;

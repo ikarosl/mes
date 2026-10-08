@@ -213,6 +213,7 @@
             @retry="retryHistoryDetail"
             @batch="goBatch"
             @approval="goApproval"
+            @inspection="goInspection"
             @clear-location="clearHistoryLocation"
           />
         </section>
@@ -235,6 +236,7 @@
           @retry="retryHistoryDetail"
           @batch="goBatch"
           @approval="goApproval"
+          @inspection="goInspection"
           @clear-location="clearHistoryLocation"
         />
         <PaginationFooter
@@ -268,6 +270,7 @@ import {
   watch,
 } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { useRouteAccess } from '../../../composables/useRouteAccess';
 import { Refresh } from '@element-plus/icons-vue';
 import type { FinishedGoodsInboundCandidate, FinishedGoodsInboundSource } from '@company/contracts';
 import {
@@ -309,6 +312,7 @@ const list = useFinishedGoodsInbounds();
 const { query, rows, total, loading, error } = list;
 const route = useRoute();
 const router = useRouter();
+const { canAccessRoute } = useRouteAccess();
 const auth = useAuthStore();
 const editorDialog = ref<InstanceType<typeof FinishedGoodsInboundDialog> | null>(null);
 const historyGroups = ref<InstanceType<typeof FinishedGoodsInboundHistoryGroups> | null>(null);
@@ -409,14 +413,19 @@ async function openFromCandidate(source: FinishedGoodsInboundCandidate): Promise
   if (!isSelected(source.allocationId)) await toggle(source);
   if (isSelected(source.allocationId)) await openCreate();
 }
-async function goInspection(batchId: string): Promise<void> {
+async function goInspection(batchId: string, inspectionId?: string): Promise<void> {
+  if (!canAccessRoute({ name: 'quality-finished-inspections' })) return;
   if (editorDialog.value?.isLocked()) {
     EMessage.warning('请先完成当前入库操作的核对或原操作重试');
     return;
   }
-  await router.push({ name: 'quality-finished-inspections', query: { batchId } });
+  await router.push({
+    name: 'quality-finished-inspections',
+    query: { batchId, ...(inspectionId ? { inspectionId } : {}) },
+  });
 }
 async function goBatch(itemBatchId: string): Promise<void> {
+  if (!canAccessRoute({ name: 'warehouse-inventory' })) return;
   if (editorDialog.value?.isLocked()) {
     EMessage.warning('请先完成当前入库操作的核对或原操作重试');
     return;
@@ -424,6 +433,7 @@ async function goBatch(itemBatchId: string): Promise<void> {
   await router.push({ name: 'warehouse-inventory', query: { itemBatchId } });
 }
 async function goApproval(instanceId: string): Promise<void> {
+  if (!canAccessRoute({ name: 'approval-inbox' })) return;
   if (editorDialog.value?.isLocked()) {
     EMessage.warning('请先完成当前入库操作的核对或原操作重试');
     return;

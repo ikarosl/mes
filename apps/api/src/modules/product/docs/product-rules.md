@@ -53,4 +53,6 @@ BOM 审批证据仅接受当前结构版本 2；开发环境通过数据重置�
 
 `/options` 采用所有合法消费页面视图权限的 any-of 并集，不能仅授予配置页面。例如分类候选服务产品与分类页；成品、路线和用户候选也服务生产工单与任务页。跨模块候选仍由其所有者维护，Product 不记录 Production 接口清单。
 
+入库页消费的 `/materials/options` 与 `/material-variants/by-material/:materialId` 将 `warehouse:inbound:view` 纳入 any-of 并集，无需另授主数据管理权限；候选读取不授予库存写入资格。
+
 候选响应只包含选择所需最小字段；状态、关键词和业务筛选在服务端处理。生产新选版与采购用途候选不能混用，历史展示引用更不能作为写入资格。页面局部读取失败遵守[管理端错误处理](../../../../../admin-web/docs/http-error-handling.md)，不借候选 403 触发整页全局跳转。

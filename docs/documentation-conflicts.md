@@ -6,7 +6,6 @@
 
 | 编号 | 主题 | 类型／当前状态 | 待处理 |
 | --- | --- | --- | --- |
-| [CQ-02](#cq-02) | 成品当前待检轮次被历史放行结论排除 | 文档与查询实现差异；已观察，待核对修正 | 确认当前待办筛选与轮次办理资格一致，保留历史记录查询 |
 | [CP-01](#cp-01) | 报工数量解耦与管理员批量冲销 | 数量、权限下放及批量冲销已确认；实现待整改 | 执行状态及结案后补录待定 |
 | [CP-02](#cp-02) | 过程复检关联source_rework_id | 历史提案批准状态待确认；当前明确未定稿 | 保留提案或确认撤回，不提前建模 |
 | [CO-01](#co-01) | 产品分类扁平化与树结构 | 旧目标与当前实现冲突；待裁决 | 旧扁平化目标是否仍有效 |
@@ -14,21 +13,29 @@
 | [CO-03](#co-03) | 演示工单生成旧业务备注 | 代码残留与已明确新规则冲突；待修正 | 后续修改demo SQL，核对展示及初始化行为 |
 | [CO-04](#co-04) | 部署迁移前业务停写 | 执行前置缺口；待明确责任并修正 | 人工维护窗口与脚本自动停写的责任及恢复流程 |
 
+## CO-06
+
+共用入库查看权限已确认统一为 `warehouse:inbound:view`。菜单、路由、入库候选与历史读取及共享常量采用同一编码；成对迁移 `202610080002` 原位改名旧权限记录，保留既有角色授权，demo 显式授予新查看编码。写权限维持独立，未扩展本次迁移范围。
+
+原差异是入库页面使用已登记的 `production:inbounds:view`，物料批次候选却要求未登记的仓储编码，导致普通角色在选择已有批次时出现 403。本项不再有待裁决的权限语义；当前目录规则见 [Identity](../apps/api/src/modules/identity/docs/database.md#14-permissions)，页面约束见[管理端](../apps/admin-web/docs/procurement-inbound.md#81-权限消费)。最小角色与迁移验收集中在[路线图](roadmap.md#采购到入库与来料整批处理待验收)，管理员通配权限或应用检查不能替代该验收。本锚点仅保留原冲突与裁决关系。
+
 ## CQ-01
 
-成品剩余复检的语义已由 [ADR-0015](adr/0015-unified-quality-quantity-semantics.md#成品数量与职责)及 [ADR-0016](adr/0016-inbound-authorizations-and-stock-batches.md)明确：检查排除已入实物，开始重新办理时固定来源已入基准并暂停旧授权；数量建议不限制最终定稿，旧库存事实不改写。原“每类别一次入库／已入类别锁量”由类别历史已入下限和剩余授权替代。
+成品剩余复检的范围与授权语义已由 [ADR-0015](adr/0015-unified-quality-quantity-semantics.md#成品数量与职责)及 [ADR-0016](adr/0016-inbound-authorizations-and-stock-batches.md)明确：检查排除已入实物，建立新轮时固定来源已入基准并暂停旧授权，旧库存事实不改写。原“每类别一次入库／已入类别锁量”由类别历史已入下限和剩余授权替代。其成品整批 C、本次 R 与累计 S 建议裁决现由 [ADR-0019](adr/0019-finished-inspection-measurement-simplification.md) 精确取代：Quality 只记录 G/F；仅 Production 定稿引用 `full+released` 时按原检验轮已入基准加 G 提示累计目标差额，抽检不外推整批。来料 C 与 Procurement 定稿建议仍有效。
 
-本项不再有待裁决的业务定义。结构切换、整体验证及用户验收的未完成事项集中在[统一整改清单](roadmap.md#成品物料入库统一整改代码核对清单)，不得由已确认规则推断验证通过。完整规则由 [Production](../apps/api/src/modules/production/docs/database/production-termination.md)与 [Quality](../apps/api/src/modules/quality/docs/finished-inspections.md)维护；本锚点仅供旧引用定位。
+本项不再有待裁决的业务定义。新数量契约与迁移集成、整体验证及用户验收的未完成事项集中在[成品质检与产出核对整改](roadmap.md#成品质检与产出核对整改)；原分次入库验收仍见[统一整改清单](roadmap.md#成品物料入库统一整改代码核对清单)。不得由已确认规则推断验证通过。完整规则由 [Production](../apps/api/src/modules/production/docs/database/production-termination.md)与 [Quality](../apps/api/src/modules/quality/docs/finished-inspections.md)维护；本锚点仅供旧引用定位。
 
 ## CQ-02
 
-**成品检验待办筛选没有纳入当前办理轮次。**
+**用户已确认待办应按当前办理状态查询，相关查询已修正；本项不再有未裁决的业务定义或已知查询差异。**
 
 - 规则依据：[成品前端约束“查询与跨页引用”](../apps/admin-web/docs/finished-inspections.md#查询与跨页引用)区分当前轮待检与已有检验历史，允许查询范围重叠；[Quality 成品规则](../apps/api/src/modules/quality/docs/finished-inspections.md#部分已入后的复检与固定范围)要求新检查在当前有效轮次办理，历史事实保留。
-- 实现证据：[finished-inspection-tasks.query.ts](../apps/api/src/modules/quality/infrastructure/queries/finished-inspection-tasks.query.ts)从结案根的全部历史取最大检验记录 ID；`pending` 仅按无历史记录或历史最新结论 `pending_reinspection` 筛选，未看当前轮状态。同文件 `canStartInspection`／`canRecordInspection` 又分别采用当前轮 `pending_inspection`／`inspecting`。
+- 原实现证据：[finished-inspection-tasks.query.ts](../apps/api/src/modules/quality/infrastructure/queries/finished-inspection-tasks.query.ts)从结案根的全部历史取最大检验记录 ID；原 `pending` 仅按无历史记录或历史最新结论 `pending_reinspection` 筛选，未看当前轮状态。同文件 `canStartInspection`／`canRecordInspection` 又分别采用当前轮 `pending_inspection`／`inspecting`。
 - Chrome 观察：2026-09-28 本机成品质检默认待检结果为 0；切已有记录后，`2026-09-28-1 / task_batch-004` 详情显示当前轮 #10 待检且“开始本轮检验”可用，历史 #9 为放行。观察范围及限制见 [UI／UX 评审](ui-ux-review.md)。
-- 影响：已有历史放行的新轮待检任务可能从默认工作队列漏出，用户需去历史范围寻找；这不证明历史放行事实错误，也不等于后端允许未检入库。
-- 待处理：由 Quality／Production 所有者核对当前待办的具体范围及办理资格，统一筛选与显示；不改写历史记录、不用最新历史结论替代当前轮资格，不在本次评审中自行变更业务语义。实施及验收跟踪在[路线图](roadmap.md#uiux-专项改版前端待验收)。
+- 原影响：已有历史放行的新轮待检任务可能从默认工作队列漏出，用户需去历史范围寻找；这不证明历史放行事实错误，也不等于后端允许未检入库。
+- 已裁决范围：由 Quality／Production 的当前办理投影统一查询与显示，纳入当前需要开始、填写或继续复检的任务；只有旧历史、已有适用放行依据的纯清单更正不冒充待检。历史记录查询仍可与当前待办重叠，不改写历史检验、批准版或库存事实。
+- 当前实现：`pending` 根据当前轮状态及该轮实际检查结论查询，排除无产出草稿、在审及沿用适用放行依据的纯清单更正；列表只用于导航，详情重新读取 Production 来源资格，写入时继续独立校验。历史最新记录仍仅作历史展示及适用依据判断，不再单独决定待办。
+- 剩余事项：场景核对和用户验收集中在[成品质检与产出核对整改](roadmap.md#成品质检与产出核对整改)。本锚点保留原证据及裁决关系，不将类型、构建或启动通过当作待办场景验收通过。
 
 ## CP-01
 
@@ -54,7 +61,7 @@
 
 **产品分类的扁平化目标是否仍有效。**
 
-- 一方：原[供需方案阶段C（保留原句）](../temp/供需预警与生产定义边界最终方案.md)称“根据已确认范围”将产品分类收敛为扁平并移除父分类；[待询问记录](../temp/--待询问.md)也记录移除分类父子层级。
+- 一方：原供需方案阶段 C（`temp/供需预警与生产定义边界最终方案.md`）称“根据已确认范围”将产品分类收敛为扁平并移除父分类；待询问记录（`temp/--待询问.md`）也记录移除分类父子层级。两个本地草案文件当前缺失，本项保留先前摘录与原路径，待补回证据复核；文件缺失不代表原目标已撤回。
 - 另一方：[Product数据库](../apps/api/src/modules/product/docs/database.md)与[分类Repository](../apps/api/src/modules/product/infrastructure/mysql-product-category.repository.ts)保留parent_id、祖先递归及树编辑；[202609170004迁移](../packages/database/migrations/202609170004-rename-item-categories.up.sql)只改表及约束名，保留父级FK。
 - 影响：后续分类维护、迁移和demo是否继续允许层级没有一致的目标说明。
 - 待决：明确撤回扁平化目标或确认其仍待实施及边界；不能凭当前树代码断定旧目标取消。复制新产品／路线的独立后续入口另列路线图，不合并裁决。

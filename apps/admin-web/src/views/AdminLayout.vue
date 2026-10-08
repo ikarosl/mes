@@ -6,7 +6,11 @@
         router
         :default-active="$route.path"
       >
-        <el-menu-item index="/"><span>首页</span></el-menu-item>
+        <el-menu-item
+          v-if="auth.can(PERMISSIONS.dashboard.view)"
+          index="/"
+          ><span>首页</span></el-menu-item
+        >
         <el-sub-menu
           v-if="systemItems.length"
           index="system"
@@ -188,14 +192,7 @@ const approvalMenus = [
   {
     title: '审批待办',
     path: '/approval/inbox',
-    permission: [
-      PERMISSIONS.approval.view,
-      PERMISSIONS.approval.decide,
-      PERMISSIONS.approval.configure,
-      PERMISSIONS.product.products.manageBom,
-      PERMISSIONS.production.materials.correctDemand,
-      PERMISSIONS.production.tasks.terminate,
-    ] as const,
+    permission: router.resolve({ name: 'approval-inbox' }).meta.permission,
   },
   { title: '审批流程配置', path: '/approval/flows', permission: PERMISSIONS.approval.configure },
 ];
@@ -282,7 +279,7 @@ const warehouseMenus = [
   {
     title: '入库管理',
     path: '/warehouse/inbound-orders',
-    permission: PERMISSIONS.production.inbounds.view,
+    permission: PERMISSIONS.warehouse.inbound.view,
   },
   {
     title: '出库管理',

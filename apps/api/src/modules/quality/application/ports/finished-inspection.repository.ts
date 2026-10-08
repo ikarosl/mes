@@ -1,4 +1,5 @@
 import type {
+  BeginFinishedReinspectionPayload,
   FinishedInspectionCommandResult,
   StartFinishedInspectionResult,
   FinishedInspectionTaskDetail,
@@ -16,7 +17,16 @@ export interface RecordFinishedInspectionInput extends ProductionOutputInspectio
   resultNote: string;
   evidenceReference: string;
 }
+export type FinishedInspectionStoredDetail = Omit<
+  FinishedInspectionTaskDetail,
+  'reinspectionRemainingQuantity' | 'receivedPlannedQuantity' | 'receivedExtraQuantity'
+>;
 export abstract class FinishedInspectionRepository {
+  abstract beginReinspection(
+    batchId: string,
+    payload: BeginFinishedReinspectionPayload,
+    context: CommandContext,
+  ): Promise<StartFinishedInspectionResult>;
   abstract start(
     batchId: string,
     version: number,
@@ -25,11 +35,12 @@ export abstract class FinishedInspectionRepository {
   abstract listTasks(
     query: FinishedInspectionTaskQuery,
   ): Promise<PageResult<FinishedInspectionTaskItem>>;
-  abstract detail(batchId: string): Promise<FinishedInspectionTaskDetail | null>;
+  abstract detail(batchId: string): Promise<FinishedInspectionStoredDetail | null>;
   abstract listRecords(
     batchId: string,
     query: PageQuery,
   ): Promise<PageResult<ProductionOutputInspection>>;
+  abstract getRecord(batchId: string, recordId: string): Promise<ProductionOutputInspection | null>;
   abstract record(
     batchId: string,
     payload: RecordFinishedInspectionInput,

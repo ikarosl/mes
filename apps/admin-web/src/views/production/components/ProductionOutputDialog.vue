@@ -1,8 +1,8 @@
 <template>
   <el-dialog
     :model-value="visible"
-    title="产出清单与结案核对"
-    :width="DialogWidth.xl"
+    :title="dialogTitle"
+    :width="DialogWidth.workbench"
     workbench
     :close-on-click-modal="false"
     :before-close="editor.close"
@@ -26,6 +26,7 @@
       <template v-if="detail">
         <el-descriptions
           :column="3"
+          size="small"
           border
           class="summary"
         >
@@ -50,207 +51,64 @@
           }}</el-descriptions-item>
         </el-descriptions>
         <el-alert
-          title="产线草稿 → 质检留存记录 → 管理员核对清单 → 工单负责人审批 → 仓管入库"
-          description="质检记录与产线草稿分别保存。批准清单仅作为入库依据，不自动增加库存。计划内产出不得超过计划；额外产出与新增报废据实填写。"
-          type="info"
-          :closable="false"
-          class="notice"
-        />
-        <el-alert
           v-if="stale"
-          title="其他操作已更新清单。当前输入已保留，请重新加载后核对，不能直接提交旧草稿。"
+          title="清单或质检依据已更新，当前输入已保留。请核对更新后继续填写，或重新加载服务端草稿。"
           type="warning"
           :closable="false"
           class="notice"
         />
+        <div
+          v-if="
+            currentRound?.status !== 'inspecting' ||
+            detail.canBeginCorrection ||
+            detail.canCancelCorrection
+          "
+          class="current-action"
+          role="status"
+        >
+          <div
+            v-if="currentRound?.status !== 'inspecting'"
+            class="current-description"
+          >
+            <strong>{{ currentStep }}</strong
+            ><span>{{ currentStepNote }}</span>
+          </div>
+          <div class="actions">
+            <el-button
+              v-if="canViewFinishedInspections && currentRound?.status !== 'inspecting'"
+              :disabled="busy || unresolved"
+              @click="openFinishedInspection(detail.canBeginReinspection ? 'reinspect' : '')"
+              >{{ detail.canBeginReinspection ? '前往复检' : '前往成品质检' }}</el-button
+            >
+            <el-button
+              v-if="detail.canBeginCorrection"
+              :disabled="busy || unresolved"
+              @click="editor.beginCorrection"
+              >更正清单</el-button
+            >
+            <el-button
+              v-if="detail.canCancelCorrection"
+              :disabled="busy || unresolved"
+              @click="editor.cancelCorrection"
+              >取消本次更正</el-button
+            >
+          </div>
+        </div>
         <el-tabs
           v-model="activeTab"
-          class="notice"
+          class="notice output-tabs"
         >
           <el-tab-pane
-            label="产出草稿"
+            :label="detail.canEdit ? '本次核对' : '清单与采用依据'"
             name="draft"
           >
-            <p
-              v-if="!detail.draft"
-              class="muted"
-            >
-              尚无产出草稿。请先填写并保存，再登记线下质检记录。
-            </p>
-            <el-form
-              label-position="top"
-              :disabled="locked"
-            >
-              <div class="quantity-fields">
-                <el-form-item
-                  label="计划内累计目标"
-                  :error="quantityErrors.available"
-                  required
-                >
-                  <el-input-number
-                    v-model="draft.availableQuantity"
-                    :precision="0"
-                  />
-                  <span class="unit">{{ detail.check.unit }}</span>
-                  <p
-                    v-if="Number(detail.receipts.productionReceivedQuantity) > 0"
-                    class="receipt-lock-note"
-                  >
-                    已有生产流转入库 {{ quantity(detail.receipts.productionReceivedQuantity) }}
-                    {{ detail.check.unit }}，累计目标不得低于历史已入量。
-                  </p>
-                  <p
-                    v-if="
-                      Number(detail.receipts.productionReceivedQuantity) >=
-                      Number(detail.check.plannedQuantity)
-                    "
-                    class="receipt-lock-note"
-                  >
-                    计划内已达任务计划上限，新增可入库产出请填计划外。
-                  </p>
-                </el-form-item>
-                <el-form-item
-                  label="计划外累计目标"
-                  :error="quantityErrors.extra"
-                  required
-                  ><el-input-number
-                    v-model="draft.extraQuantity"
-                    :precision="0"
-                  /><span class="unit">{{ detail.check.unit }}</span>
-                  <p
-                    v-if="Number(detail.receipts.extraReceivedQuantity) > 0"
-                    class="receipt-lock-note"
-                  >
-                    已确认额外产出入库 {{ quantity(detail.receipts.extraReceivedQuantity) }}
-                    {{ detail.check.unit }}，累计目标不得低于历史已入量。
-                  </p></el-form-item
-                >
-                <el-form-item
-                  label="本次新增成品报废"
-                  :error="quantityErrors.scrap"
-                  required
-                  ><el-input-number
-                    v-model="draft.additionalScrapQuantity"
-                    :precision="0"
-                  /><span class="unit">{{ detail.check.unit }}</span></el-form-item
-                >
-              </div>
-              <p
-                v-if="correctionBasis"
-                class="quantity-summary"
-              >
-                本轮固定历史已入基准：计划内 {{ quantity(correctionBasis.planned) }} + 计划外
-                {{ quantity(correctionBasis.extra) }} = {{ quantity(correctionBasis.total) }}
-                {{ detail.check.unit }}；当前累计目标
-                {{ quantity(draft.availableQuantity + draft.extraQuantity) }}
-                {{ detail.check.unit }}； 审批后拟新增授权 {{ quantity(correctionBasis.proposed) }}
-                {{ detail.check.unit }}。
-              </p>
-              <p class="quantity-summary">
-                计划缺口
-                <strong>{{
-                  quantity(Number(detail.check.plannedQuantity) - draft.availableQuantity)
-                }}</strong
-                >；历史工序报废 {{ quantity(detail.check.existingScrapQuantity) }}，累计成品报废
-                {{
-                  quantity(
-                    Number(detail.check.existingScrapQuantity) + draft.additionalScrapQuantity,
-                  )
-                }}
-                {{ detail.check.unit }}。
-              </p>
-              <p class="muted">
-                新增报废不重复包含历史工序报废，不包含原材料损耗，也不触发补料或补产。各类累计目标不得低于对应历史已入量。
-              </p>
-              <el-form-item
-                label="产出说明 / 计划差异原因"
-                required
-                ><el-input
-                  v-model="draft.reason"
-                  type="textarea"
-                  :rows="2"
-                  maxlength="5000"
-                  show-word-limit
-              /></el-form-item>
-              <el-form-item
-                label="物料核对总结及后续安排"
-                required
-                ><el-input
-                  v-model="draft.materialReviewNote"
-                  type="textarea"
-                  :rows="2"
-                  maxlength="5000"
-                  show-word-limit
-              /></el-form-item>
-              <el-form-item
-                label="本次引用的质检记录"
-                required
-              >
-                <el-select
-                  v-model="draft.inspectionRecordId"
-                  placeholder="质检记录保存后，由管理员选择最新记录"
-                  clearable
-                  style="width: 100%"
-                >
-                  <el-option
-                    v-for="record in detail.inspections"
-                    :key="record.id"
-                    :value="record.id"
-                    :label="`质检 #${record.id} · ${formatDateTimeForDisplay(record.inspectedAt)} · ${record.createdByName}${record.id === detail.latestInspectionId ? '（最新）' : '（历史，不可送审）'}`"
-                    :disabled="record.id !== detail.latestInspectionId"
-                  />
-                </el-select>
-              </el-form-item>
-            </el-form>
-            <el-descriptions
-              v-if="selectedInspection"
-              :column="3"
-              border
-            >
-              <el-descriptions-item label="本次检验建议量">{{
-                inspectionReleased ? selectedInspection.releasedQuantity : '未放行'
-              }}</el-descriptions-item>
-              <el-descriptions-item label="清单累计可入库量">{{
-                draft.availableQuantity + draft.extraQuantity
-              }}</el-descriptions-item>
-              <el-descriptions-item
-                label="质检说明"
-                :span="3"
-                >{{ selectedInspection.resultNote }}</el-descriptions-item
-              >
-            </el-descriptions>
-            <el-alert
-              v-if="
-                selectedInspection &&
-                (!inspectionReleased || selectedInspection.id !== detail.latestInspectionId)
-              "
-              title="送审前须引用最新且明确放行的检验记录；待复检或不放行仍阻断送审。数量建议不限制定稿，报废由管理员另行核对。"
-              type="warning"
-              :closable="false"
-              class="notice"
+            <ProductionOutputReviewForm
+              :detail="detail"
+              :draft="draft"
+              :locked="locked"
+              :quantity-errors="quantityErrors"
+              @change="Object.assign(draft, $event)"
             />
-            <el-alert
-              v-if="quantityAdvice"
-              :title="quantityAdvice"
-              type="warning"
-              :closable="false"
-              class="notice"
-            />
-            <el-alert
-              v-if="detail.blockers.length && detail.canEdit"
-              type="warning"
-              :closable="false"
-              title="送审前仍需处理"
-              class="notice"
-              ><ul>
-                <li
-                  v-for="blocker in detail.blockers"
-                  :key="blocker"
-                >
-                  {{ blocker }}
-                </li>
-              </ul></el-alert
-            >
           </el-tab-pane>
           <el-tab-pane
             :label="`质检记录（${detail.inspections.length}）`"
@@ -264,17 +122,19 @@
                 v-if="canViewFinishedInspections"
                 type="primary"
                 :disabled="busy || unresolved"
-                @click="openFinishedInspection"
+                @click="openFinishedInspection()"
                 >前往成品质检</el-button
               >
             </div>
             <FinishedInspectionHistory
               :records="detail.inspections"
+              :unit="detail.check.unit"
               :latest-inspection-id="detail.latestInspectionId"
+              :current-round-id="detail.currentRoundId"
             />
           </el-tab-pane>
           <el-tab-pane
-            :label="`批准清单与更正（${detail.revisions.length}）`"
+            :label="`批准清单（${detail.revisions.length}）`"
             name="revisions"
           >
             <ProductionOutputRevisionPanel
@@ -283,9 +143,6 @@
               :busy="busy"
               :unresolved="unresolved"
               :error="error"
-              @begin-correction="editor.beginCorrection"
-              @begin-reinspection="editor.beginReinspection"
-              @cancel-correction="editor.cancelCorrection"
               @select-revision="selectedRevisionId = $event"
               @open-approval="openApproval"
               @print="printRevision"
@@ -318,6 +175,13 @@
             >刷新核对</el-button
           ><el-button
             v-if="stale"
+            type="primary"
+            plain
+            :disabled="busy || unresolved || !detail?.canEdit"
+            @click="openReconcile"
+            >核对并保留填写</el-button
+          ><el-button
+            v-if="stale"
             :disabled="busy || unresolved"
             @click="editor.reloadDraft"
             >重新加载草稿</el-button
@@ -327,7 +191,7 @@
             @click="openCloseout"
             >收尾与物料核对</el-button
           ><el-button
-            v-if="detail?.approvalInstanceId"
+            v-if="detail?.approvalInstanceId && canAccessRoute({ name: 'approval-inbox' })"
             link
             type="primary"
             @click="openApproval(detail.approvalInstanceId)"
@@ -361,6 +225,86 @@
       </div></template
     >
   </el-dialog>
+  <el-dialog
+    v-model="navigationVisible"
+    title="前往成品质检"
+    :width="DialogWidth.md"
+    :close-on-click-modal="false"
+    :show-close="!busy"
+    :before-close="closeNavigation"
+  >
+    <InlineHint
+      >当前产出填写尚未保存。可保存后前往，或保留本地填写并切换页面；返回后仍需核对最新依据。</InlineHint
+    >
+    <p
+      v-if="!valid"
+      class="muted"
+    >
+      存在未完成或无效的填写项，暂不能保存；仍可保留填写并前往质检。
+    </p>
+    <template #footer>
+      <el-button
+        :disabled="busy"
+        @click="navigationVisible = false"
+        >留在此页</el-button
+      >
+      <el-button
+        :disabled="busy || unresolved"
+        @click="goToInspection"
+        >保留填写并前往</el-button
+      >
+      <el-button
+        type="primary"
+        :loading="submitting"
+        :disabled="locked || !valid"
+        @click="saveAndGoToInspection"
+        >保存并前往</el-button
+      >
+    </template>
+  </el-dialog>
+  <el-dialog
+    v-model="reconcileVisible"
+    title="核对更新后的草稿"
+    :width="DialogWidth.lg"
+    :close-on-click-modal="false"
+  >
+    <InlineHint tone="warning"
+      >清单或检验轮已变更。请对照以下内容；确认后保留本地填写，检验引用仍需在核对区明确采用。</InlineHint
+    >
+    <el-table
+      :data="reconcileRows"
+      border
+      class="notice"
+    >
+      <el-table-column
+        prop="label"
+        label="核对项"
+        width="150"
+      />
+      <el-table-column
+        prop="server"
+        label="服务端最新草稿"
+      />
+      <el-table-column
+        prop="local"
+        label="本地保留的填写"
+      />
+    </el-table>
+    <p class="muted">
+      本次可采用检验：{{
+        detail?.applicableInspectionId ? `#${detail.applicableInspectionId}` : '暂无有效放行依据'
+      }}。保留填写不会自动保存或提交审批。
+    </p>
+    <template #footer>
+      <el-button @click="reconcileVisible = false">返回核对</el-button>
+      <el-button
+        type="primary"
+        :disabled="busy || unresolved || !detail?.canEdit"
+        @click="retainReviewedDraft"
+        >已核对，保留本地填写</el-button
+      >
+    </template>
+  </el-dialog>
   <Teleport to="body"
     ><article
       v-if="printingRevision"
@@ -370,7 +314,7 @@
       <p>
         {{
           printingRevision.id === detail?.currentRevisionId
-            ? '当前有效版本'
+            ? '最新批准版本，不单独代表当前入库资格'
             : '历史版本，仅供追溯，不用于入库'
         }}
         · 审批 #{{ printingRevision.approvalInstanceId }} · 批准人
@@ -383,6 +327,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
+import { useRouteAccess } from '../../../composables/useRouteAccess';
 import type { ProductionOutputRevision } from '@company/contracts';
 import {
   PERMISSIONS,
@@ -397,6 +342,8 @@ import BatchCloseoutEvidence from './BatchCloseoutEvidence.vue';
 import FinishedInspectionHistory from '../../quality/components/FinishedInspectionHistory.vue';
 import { useAuthStore } from '../../../stores/auth';
 import ProductionOutputRevisionPanel from './ProductionOutputRevisionPanel.vue';
+import ProductionOutputReviewForm from './ProductionOutputReviewForm.vue';
+import InlineHint from '../../../components/InlineHint.vue';
 const props = defineProps<{ visible: boolean; batchId: string | null }>();
 const emit = defineEmits<{ 'update:visible': [boolean]; changed: []; 'open-closeout': [string] }>();
 const editor = useProductionOutput(
@@ -418,49 +365,132 @@ const {
   locked,
   valid,
   canSubmit,
-  selectedInspection,
-  inspectionReleased,
-  quantityAdvice,
   quantityErrors,
 } = editor;
 const router = useRouter();
+const { canAccessRoute } = useRouteAccess();
 const auth = useAuthStore();
 const canViewFinishedInspections = computed(() =>
   auth.can(PERMISSIONS.quality.finishedInspections.view),
 );
-async function openFinishedInspection() {
-  const batchId = props.batchId;
-  if (!batchId) return;
-  await editor.close();
-  await nextTick();
-  if (!props.visible)
-    await router.push({ name: 'quality-finished-inspections', query: { batchId } });
+const navigationVisible = ref(false);
+const reconcileVisible = ref(false);
+const reconcileVersion = ref<number | null>(null);
+const reconcileRows = computed(() => [
+  {
+    label: '计划内累计目标',
+    server: detail.value?.draft?.availableQuantity ?? '—',
+    local: draft.availableQuantity,
+  },
+  {
+    label: '计划外累计目标',
+    server: detail.value?.draft?.extraQuantity ?? '—',
+    local: draft.extraQuantity,
+  },
+  {
+    label: '新增成品报废',
+    server: detail.value?.draft?.additionalScrapQuantity ?? '—',
+    local: draft.additionalScrapQuantity,
+  },
+  {
+    label: '引用检验记录',
+    server: detail.value?.draft?.inspectionRecordId ?? '未引用',
+    local: draft.inspectionRecordId ?? '未引用',
+  },
+  { label: '产出说明', server: detail.value?.draft?.reason ?? '—', local: draft.reason },
+  {
+    label: '物料核对总结',
+    server: detail.value?.draft?.materialReviewNote ?? '—',
+    local: draft.materialReviewNote,
+  },
+]);
+function openReconcile(): void {
+  reconcileVersion.value = detail.value?.version ?? null;
+  reconcileVisible.value = true;
 }
+function retainReviewedDraft(): void {
+  if (reconcileVersion.value !== null && editor.retainReviewedDraft(reconcileVersion.value))
+    reconcileVisible.value = false;
+}
+const inspectionAction = ref('');
+function openFinishedInspection(action = ''): void {
+  if (!props.batchId || busy.value || unresolved.value) return;
+  inspectionAction.value = action;
+  if (dirty.value) navigationVisible.value = true;
+  else void goToInspection();
+}
+async function goToInspection(): Promise<void> {
+  if (!props.batchId || busy.value || unresolved.value) return;
+  navigationVisible.value = false;
+  // 保持 editor 存活，由路由缓存隐藏弹窗；返回后刷新依据并保留原输入。
+  await router.push({
+    name: 'quality-finished-inspections',
+    query: {
+      batchId: props.batchId,
+      ...(inspectionAction.value ? { action: inspectionAction.value } : {}),
+    },
+  });
+}
+async function saveAndGoToInspection(): Promise<void> {
+  await editor.save();
+  if (!dirty.value && !error.value && !unresolved.value) await goToInspection();
+}
+function closeNavigation(): void {
+  if (!busy.value) navigationVisible.value = false;
+}
+const currentRound = computed(() =>
+  detail.value?.rounds.find((row) => row.id === detail.value?.currentRoundId),
+);
+const dialogTitle = computed(() =>
+  detail.value?.status === 'reviewing'
+    ? '产出清单 · 审批中'
+    : detail.value?.status === 'approved'
+      ? '产出批准清单'
+      : '产出清单与结案核对',
+);
+const currentStep = computed(() => {
+  if (detail.value?.status === 'reviewing') return '清单正在审批';
+  if (detail.value?.canExecuteCurrentRevision) return '最新批准清单可执行';
+  if (detail.value?.status === 'approved') return '批准记录保留，当前不可入库';
+  if (!detail.value?.draft) return '先保存产出草稿';
+  if (currentRound.value?.status === 'inspecting') return '检验办理中，暂不能送审 / 入库';
+  if (!detail.value?.applicableInspectionId) return '等待有效放行依据';
+  return '核对产出与质检依据';
+});
+const currentStepNote = computed(() => {
+  if (!detail.value?.draft) return '保存后前往质检；检验记录与产出草稿分别留存。';
+  if (detail.value?.status === 'reviewing') return '数量及引用已冻结，审批完成后形成新授权。';
+  if (detail.value?.currentRevisionId && detail.value.executionBlockedReason)
+    return detail.value.executionBlockedReason;
+  if (detail.value?.canExecuteCurrentRevision)
+    return '入库按有效剩余额度办理，批准本身不增加库存。';
+  if (currentRound.value?.status === 'inspecting')
+    return '在成品质检页完成并保存本轮结果后，再回到此处核对采用依据。';
+  if (!detail.value?.applicableInspectionId)
+    return '可先保存产出填写；取得本轮适用放行依据后再送审。';
+  return '明确采用检验依据，核对数量并保存后送负责人审批。';
+});
 const activeTab = ref('draft'),
   selectedRevisionId = ref<string | null>(null);
 const selectedRevision = computed(
   () => detail.value?.revisions.find((row) => row.id === selectedRevisionId.value) ?? null,
 );
-const correctionBasis = computed(() => {
-  if (!detail.value?.correctionReason) return null;
-  const round = detail.value.rounds.find((row) => row.id === detail.value?.currentRoundId);
-  if (!round) return null;
-  const planned = Number(round.baselinePlannedReceived);
-  const extra = Number(round.baselineExtraReceived);
-  return {
-    planned,
-    extra,
-    total: planned + extra,
-    proposed: draft.availableQuantity + draft.extraQuantity - planned - extra,
-  };
-});
+let opening = true;
 watch(
-  () => props.visible,
-  (visible) => {
-    if (visible) {
-      activeTab.value = 'draft';
-      selectedRevisionId.value = null;
-    }
+  () => [props.visible, props.batchId],
+  () => {
+    if (props.visible) opening = true;
+  },
+);
+watch(
+  () => [detail.value?.id, detail.value?.status],
+  () => {
+    if (!detail.value) return;
+    if (opening) {
+      activeTab.value =
+        detail.value.status === 'approved' && detail.value.revisions.length ? 'revisions' : 'draft';
+      opening = false;
+    } else if (detail.value.status === 'correcting') activeTab.value = 'draft';
   },
 );
 watch(
@@ -472,12 +502,14 @@ watch(
 async function openCloseout() {
   const batchId = props.batchId;
   if (!batchId) return;
-  await editor.close();
+  if (busy.value || unresolved.value || !(await editor.close())) return;
   await nextTick();
   if (!props.visible) emit('open-closeout', batchId);
 }
-const openApproval = (instanceId: string) =>
-  router.push({ name: 'approval-inbox', query: { instanceId } });
+const openApproval = async (instanceId: string): Promise<void> => {
+  if (busy.value || unresolved.value || !canAccessRoute({ name: 'approval-inbox' })) return;
+  await router.push({ name: 'approval-inbox', query: { instanceId } });
+};
 const printingRevision = ref<ProductionOutputRevision | null>(null);
 const finishPrint = () => {
   printingRevision.value = null;
@@ -492,8 +524,46 @@ async function printRevision() {
 onBeforeUnmount(() => {
   window.removeEventListener('afterprint', finishPrint);
 });
+defineExpose({
+  close: editor.close,
+  refresh: editor.load,
+  navigationLocked: computed(() => busy.value || unresolved.value),
+});
 </script>
 <style scoped>
+.current-action {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin: 16px 0;
+  padding: 12px;
+  background: var(--el-fill-color-light);
+}
+.current-description {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 240px;
+}
+.current-description span {
+  color: var(--el-text-color-regular);
+  font-size: 13px;
+}
+.actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.actions :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+.output-tabs :deep(.el-tabs__content) {
+  overflow: visible;
+}
 .inspection-toolbar {
   display: flex;
   align-items: center;
@@ -505,7 +575,6 @@ onBeforeUnmount(() => {
 .notice {
   margin-top: 12px;
 }
-.quantity-fields,
 .toolbar {
   display: flex;
   align-items: center;
@@ -513,29 +582,10 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   gap: 16px;
 }
-.quantity-fields {
-  justify-content: flex-start;
-  align-items: flex-start;
-  gap: 32px;
-}
-.receipt-lock-note {
-  flex-basis: 100%;
-  margin: 0 6px;
-  color: var(--el-text-color-regular);
-  font-size: 13px;
-  line-height: 1.7;
-}
-.unit {
-  margin-left: 8px;
-}
 .muted {
   color: var(--el-text-color-secondary);
   font-size: 13px;
   line-height: 1.7;
-}
-.quantity-summary {
-  padding: 12px;
-  background: var(--el-fill-color-light);
 }
 </style>
 <style>

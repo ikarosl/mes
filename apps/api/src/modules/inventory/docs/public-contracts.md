@@ -10,9 +10,9 @@
 
 两种确认均在调用者事务内原子创建已完成主单、每条实际明细、匹配正流水和成功审计。物料正流水为 `purchase_inbound`，成品为 `production_inbound`。成品主单/库批采用中性 `finished_product`；计划内外归属由 `production_output_allocation.category` 经 `inbound_detail.production_output_allocation_id` 追溯。HTTP 幂等由来源用例处理。
 
-`InventoryInboundCommand.readFinishedTaskAllocationReceipts(batchId,lock)` 返回该任务各授权的历史实际入库量，由 Production 按授权类别汇总计划内外；`readFinishedAllocationReceipts(ids,lock)` 返回每授权实际执行量。它们只读取已完成入库明细和匹配的正流水，不用当前库存余额。`InventoryInboundQuery.getReceiptInboundFacts({receiptLineIds})` 同样按到货历史全部修订累计，返回每笔来源的 `batchId/batchCode` 集合，不预设一个到货只用一个库批。
+`InventoryInboundCommand.readFinishedTaskAllocationReceipts(batchId,lock)` 返回该任务各授权的历史实际入库量，由 Production 按授权类别汇总计划内外；`readFinishedAllocationReceipts(ids,lock)` 返回每授权实际执行量。它们只读取已完成入库明细和匹配的正流水，不用当前库存余额。`InventoryInboundQuery.getReceiptInboundFacts({receiptLineIds})` 同样按到货历史全部修订累计，返回每笔实际入库的来源、allocation、明细、流水、`batchId` 和数量，不预设一个到货只用一个库批。该事实端口不返回展示批号；在调用者同池事务内只对入库主从单和匹配正流水做当前读，不关联或锁定 `item_batch`，批次身份由既有组合外键保证。批号仍由独立展示查询读取，目标批次仅在实际写入时按[统一锁序](../../../../../../docs/inventory-extraction-design.md#7-事务与锁序)锁定。
 
-库存批次候选公开查询 `listInboundBatchCandidates` 按成品 ID 或物料精确版本、授权单位、可用状态、批号关键词稳定分页。HTTP 入口分别为 `GET /warehouse/finished-inbound-batch-candidates`（`production:inbounds:view`）和 `GET /warehouse/material-inbound-batch-candidates`（`warehouse:inbound:view`），无需额外采购或任务页面权限。命令事务仍复核身份与状态，候选结果不授予写资格。
+库存批次候选公开查询 `listInboundBatchCandidates` 按成品 ID 或物料精确版本、授权单位、可用状态、批号关键词稳定分页。HTTP 入口分别为 `GET /warehouse/finished-inbound-batch-candidates`（`warehouse:inbound:view`）和 `GET /warehouse/material-inbound-batch-candidates`（`warehouse:inbound:view`），无需额外采购或任务页面权限。命令事务仍复核身份与状态，候选结果不授予写资格。
 
 外购入库列表和详情的主单供应商摘要使用 `suppliers` 集合，逐明细的 `supplierId` 从真实采购来源读取，`supplierName` 为确认时名称快照；缺少来源身份时不从名称猜 ID。关键词按明细供应商快照匹配，使用 EXISTS 保持主单计数。库存批次及生产追溯的每笔来源供应方同样取该实际明细快照，不能把合单中另一家供应商显示到本行。
 

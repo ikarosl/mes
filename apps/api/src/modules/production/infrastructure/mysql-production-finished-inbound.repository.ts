@@ -14,7 +14,7 @@ import { InventoryInboundCommand } from '../../inventory/public.js';
 import { ProductionFinishedInboundRepository } from '../application/ports/production-finished-inbound.repository.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
 import { lockOutputBatch } from './mysql-production-output.persistence.js';
-import { readOutputRevisions } from './mysql-production-output.read.js';
+import { readOutputRevisionsByIds } from './mysql-production-output.read.js';
 import { listFinishedOrders, getFinishedOrder } from './queries/finished-inbound-display.sql.js';
 import { finishedAllocationReceivedSql } from './queries/finished-inbound-candidates.sql.js';
 
@@ -69,13 +69,17 @@ export class MysqlProductionFinishedInboundRepository extends ProductionFinished
         [order.productionBatchId],
       );
       if (!closeout) throw new ProductionDomainError('INVALID_STATE', '成品入库来源已失效');
-      const revisions = await readOutputRevisions(db, closeout.id, false, this.inventory);
+      const revisions = await readOutputRevisionsByIds(
+        db,
+        closeout.id,
+        order.details.map((line) => line.outputRevisionId),
+        this.inventory,
+      );
+      const revisionsById = new Map(revisions.map((revision) => [revision.id, revision]));
       return {
         ...order,
         details: order.details.map((line) => {
-          const approvedOutput = revisions.find(
-            (revision) => revision.id === line.outputRevisionId,
-          );
+          const approvedOutput = revisionsById.get(line.outputRevisionId);
           if (!approvedOutput)
             throw new ProductionDomainError('INVALID_STATE', '成品入库批准依据已失效');
           return { ...line, approvedOutput };

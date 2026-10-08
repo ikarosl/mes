@@ -1,4 +1,5 @@
 import type {
+  BeginFinishedReinspectionPayload,
   FinishedInspectionCommandResult,
   StartFinishedInspectionResult,
   FinishedInspectionTaskDetail,
@@ -41,9 +42,25 @@ export const finishedInspectionsApi = {
       signal,
       skipErrorHandling: true,
     }),
+  getRecord: (batchId: string, recordId: string, signal?: AbortSignal) =>
+    request<ProductionOutputInspection>({
+      url: `${root}/${batchId}/records/${recordId}`,
+      signal,
+      skipErrorHandling: true,
+    }),
   start: (batchId: string, data: { version: number }, key: string) =>
     request<StartFinishedInspectionResult>({
       url: `${root}/${batchId}/actions/start`,
+      method: 'POST',
+      data,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: key },
+      retryIdempotentWrite: true,
+      retryTimes: 2,
+      skipErrorHandling: true,
+    }),
+  beginReinspection: (batchId: string, data: BeginFinishedReinspectionPayload, key: string) =>
+    request<StartFinishedInspectionResult>({
+      url: `${root}/${batchId}/actions/reinspect`,
       method: 'POST',
       data,
       headers: { [IDEMPOTENCY_KEY_HEADER]: key },

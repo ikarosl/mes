@@ -39,8 +39,14 @@ import {
   requireEditableOutput,
   requireOutputVersion,
 } from './mysql-production-output.persistence.js';
-import { loadOutputState, snapshotOf, type OutputState } from './mysql-production-output.read.js';
+import {
+  loadOutputState,
+  readOutputRevisionNumbers,
+  snapshotOf,
+  type OutputState,
+} from './mysql-production-output.read.js';
 import { startOutputRound } from './mysql-production-output-round.js';
+import { readOutputReinspectionPreview } from './mysql-production-output-reinspection.read.js';
 
 @Injectable()
 export class MysqlProductionOutputRepository extends ProductionOutputRepository {
@@ -60,6 +66,17 @@ export class MysqlProductionOutputRepository extends ProductionOutputRepository 
         [batchId],
       );
       return row ? (await this.loadState(db, row, false)).detail : null;
+    });
+  }
+  previewReinspection(batchId: string) {
+    return withTransaction(this.pool, (db) =>
+      readOutputReinspectionPreview(db, batchId, this.inventory, this.quality),
+    );
+  }
+  readPreviousRevisionNo(closeoutId: string, revisionId: string): Promise<number | null> {
+    return withTransaction(this.pool, async (db) => {
+      const numbers = await readOutputRevisionNumbers(db, closeoutId, [revisionId]);
+      return numbers.get(revisionId) ?? null;
     });
   }
   saveDraft(
@@ -122,13 +139,18 @@ export class MysqlProductionOutputRepository extends ProductionOutputRepository 
       requireOutputVersion(row, payload.version);
       if (
         row.pending_approval_id !== null ||
-        row.correction_reason !== null ||
+        (trigger === 'finalization_correction' && row.correction_reason !== null) ||
         nullableOutputId(row.current_revision_id) !== payload.currentRevisionId
       )
         throw new ProductionDomainError('INVALID_STATE', '当前清单不能开始更正，请刷新核对');
       if (!payload.reason.trim())
-        throw new ProductionDomainError('INVALID_INPUT', '请填写清单更正原因');
+        throw new ProductionDomainError(
+          'INVALID_INPUT',
+          trigger === 'reinspection' ? '请填写复检原因' : '请填写清单更正原因',
+        );
       const state = await this.loadState(db, row, true);
+      if (trigger === 'reinspection' && !state.detail.canBeginReinspection)
+        throw new ProductionDomainError('INVALID_STATE', '当前轮次不能再次发起复检，请刷新核对');
       if (!state.base && trigger === 'reinspection') {
         const draft = state.detail.draft;
         if (
@@ -139,7 +161,7 @@ export class MysqlProductionOutputRepository extends ProductionOutputRepository 
           )
         )
           throw new ProductionDomainError('INVALID_STATE', '当前没有需要复检的检验轮次');
-        await startOutputRound(
+        const roundId = await startOutputRound(
           db,
           row,
           this.inventory,
@@ -147,6 +169,14 @@ export class MysqlProductionOutputRepository extends ProductionOutputRepository 
           'reinspection',
           payload.reason,
           draft.availableQuantity + draft.extraQuantity,
+        );
+        await db.execute(
+          "UPDATE production_output_round SET status='inspecting',version=version+1,updated_by=? WHERE id=? AND status='pending_inspection'",
+          [context.actorId, roundId],
+        );
+        await db.execute(
+          'UPDATE production_batch_closeout SET version=version+1,updated_by=? WHERE id=?',
+          [context.actorId, row.id],
         );
         await this.audit(
           db,
@@ -160,7 +190,11 @@ export class MysqlProductionOutputRepository extends ProductionOutputRepository 
       }
       if (!state.base)
         throw new ProductionDomainError('INVALID_STATE', '尚无批准清单，不需要办理更正');
-      await startOutputRound(
+      const nextDraft =
+        row.correction_reason !== null && state.detail.draft
+          ? state.detail.draft
+          : state.base.snapshot.output;
+      const roundId = await startOutputRound(
         db,
         row,
         this.inventory,
@@ -169,13 +203,19 @@ export class MysqlProductionOutputRepository extends ProductionOutputRepository 
         payload.reason,
         Math.max(
           0,
-          Number(state.base.availableQuantity) +
-            Number(state.base.extraQuantity) -
+          (trigger === 'reinspection'
+            ? nextDraft.availableQuantity + nextDraft.extraQuantity
+            : Number(state.base.availableQuantity) + Number(state.base.extraQuantity)) -
             Number(state.detail.receipts.productionReceivedQuantity) -
             Number(state.detail.receipts.extraReceivedQuantity),
         ),
       );
-      await this.writeDraft(db, row.id, state.base.snapshot.output, context);
+      if (trigger === 'reinspection')
+        await db.execute(
+          "UPDATE production_output_round SET status='inspecting',version=version+1,updated_by=? WHERE id=? AND status='pending_inspection'",
+          [context.actorId, roundId],
+        );
+      await this.writeDraft(db, row.id, nextDraft, context);
       await db.execute('UPDATE production_batch_closeout SET correction_reason=? WHERE id=?', [
         payload.reason,
         row.id,
@@ -183,7 +223,7 @@ export class MysqlProductionOutputRepository extends ProductionOutputRepository 
       await this.audit(
         db,
         context,
-        'correction.begin',
+        trigger === 'reinspection' ? 'reinspection.begin' : 'correction.begin',
         row,
         { currentRevisionId: payload.currentRevisionId },
         { reason: payload.reason },

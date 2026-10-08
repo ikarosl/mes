@@ -199,6 +199,35 @@ export interface ProcurementReceiptLineListItem extends Pick<
   purchaseNo: string;
   receivedAt: string;
 }
+/** 质检详情及录入核对；不携带仓库分配、执行明细或历史预览。 */
+export interface ProcurementInboundInspectionDetail extends Pick<
+  ProcurementReceiptLine,
+  | 'id'
+  | 'receiptId'
+  | 'receiptNo'
+  | 'purchaseNo'
+  | 'purchaseOrderLineId'
+  | 'lineNo'
+  | 'itemCode'
+  | 'itemName'
+  | 'materialVariantCode'
+  | 'unit'
+  | 'supplierName'
+  | 'supplierBatchCode'
+  | 'version'
+  | 'currentReceiptRevisionId'
+  | 'currentRound'
+> {
+  /** 实物范围；累计量仅供录入时解释剩余范围，不含授权数量。 */
+  quantities: Pick<
+    ReceiptQuantitySummary,
+    'receivedQuantity' | 'inboundQuantity' | 'returnedQuantity' | 'unprocessedQuantity'
+  >;
+  /** 仅当前轮在途办理和当前明确引用的检验。 */
+  cases: QualityInboundCaseItem[];
+  /** 仅上述检验的来源轮号，不是历史轮次预览。 */
+  rounds: Array<Pick<ReceiptRoundItem, 'id' | 'roundNo'>>;
+}
 export interface ProcurementReceiptDetail extends ProcurementReceiptItem {
   items: ProcurementReceiptLine[];
 }

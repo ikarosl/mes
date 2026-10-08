@@ -21,17 +21,17 @@ import {
 export class ProductionFinishedInboundController {
   constructor(private readonly service: ProductionFinishedInboundService) {}
   @Get()
-  @RequirePermission(PERMISSIONS.production.inbounds.view)
+  @RequirePermission(PERMISSIONS.warehouse.inbound.view)
   list(@Query() query: FinishedInboundQueryDto) {
     return this.service.list(query);
   }
   @Get('candidates')
-  @RequirePermission(PERMISSIONS.production.inbounds.view)
+  @RequirePermission(PERMISSIONS.warehouse.inbound.view)
   candidates(@Query() query: FinishedInboundCandidateQueryDto) {
     return this.service.candidates(query);
   }
   @Get(':inboundId')
-  @RequirePermission(PERMISSIONS.production.inbounds.view)
+  @RequirePermission(PERMISSIONS.warehouse.inbound.view)
   get(@Param() { inboundId }: FinishedInboundIdParamDto) {
     return this.service.get(inboundId);
   }

@@ -67,6 +67,7 @@
           <span>{{ option.batchNo }} · {{ option.workOrderNo }} · {{ option.productName }}</span>
           <el-tag type="warning">{{ option.outboundEligibility.blockedReason }}</el-tag>
           <el-button
+            v-if="canAccessRoute({ name: 'production-tasks' })"
             link
             type="primary"
             @click="$emit('resolveBatch', option.batchNo)"
@@ -194,12 +195,14 @@ import type {
   MaterialOutboundCandidateItem,
 } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
+import { useRouteAccess } from '../../../composables/useRouteAccess';
 import { RouteMessageBox as ElMessageBox } from '../../../utils/route-message-box';
 import type { IdempotentIntentStatus } from '../../../composables/idempotency/useIdempotentIntent';
 import { formatQuantity } from '../production-status';
 import { groupMaterialDemandRows } from '../material-demand-group-presentation';
 
 defineOptions({ name: 'MaterialOutboundOrderCreateDialog' });
+const { canAccessRoute } = useRouteAccess();
 
 const props = defineProps<{
   modelValue: boolean;

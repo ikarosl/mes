@@ -205,7 +205,7 @@
                     >，按有效分配办理实际入库</span
                   >
                   <el-button
-                    v-if="auth.can(PERMISSIONS.production.inbounds.view)"
+                    v-if="auth.can(PERMISSIONS.warehouse.inbound.view)"
                     type="primary"
                     :disabled="blocked"
                     @click="goInbound(selectedLine.id)"
@@ -424,6 +424,7 @@ import {
 } from '../receipt-round-presentation';
 import { computed, nextTick, onActivated, ref } from 'vue';
 import { useRouter } from 'vue-router';
+import { useRouteAccess } from '../../../composables/useRouteAccess';
 import type {
   ProcurementReceiptDetail,
   ProcurementReceiptLine,
@@ -631,7 +632,9 @@ const goExcessSupplement = async (line: ProcurementReceiptLine): Promise<void> =
       },
     });
 };
+const { canAccessRoute } = useRouteAccess();
 const goInbound = async (lineId: string): Promise<void> => {
+  if (!canAccessRoute({ name: 'warehouse-inbound' })) return;
   if (await close())
     await router.push({
       name: 'warehouse-inbound',

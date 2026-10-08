@@ -209,7 +209,7 @@ export class ProductController {
     PERMISSIONS.product.products.view,
     PERMISSIONS.production.materials.view,
     PERMISSIONS.production.materialDemands.view,
-    PERMISSIONS.production.inbounds.view,
+    PERMISSIONS.warehouse.inbound.view,
     PERMISSIONS.product.materialVariants.view,
   ])
   materialOptions() {
@@ -258,7 +258,7 @@ export class ProductController {
     PERMISSIONS.product.products.view,
     PERMISSIONS.production.materials.view,
     PERMISSIONS.production.materialDemands.view,
-    PERMISSIONS.production.inbounds.view,
+    PERMISSIONS.warehouse.inbound.view,
   ])
   materialVariantsByMaterial(@Param() { materialId }: MaterialVariantMaterialParamDto) {
     return this.service.listMaterialVariantsByMaterial(materialId);

@@ -17,8 +17,8 @@
 选择将检查事实、生产处置、批准依据和实际入库分开，避免原申报错误锁住现场实测数量，也避免不合格直接变成报废或库存变化。
 
 1. Quality 独立保存检验和明确放行；Production 管理员依据实测核对计划内、计划外与实际报废，工单负责人批准，仓管实际确认入库。任何一方不得改写另一方事实。
-2. 原申报版本和数量只作来源快照，修正原申报或计划内外分类不必重复检验；新增送检实物、重新纳入不合格品或结论改变须有新的整批依据。复检保留前驱，只以最新有效记录提供额度，不累加历次额度。
-3. 全检、抽检、零产出核实的定义、公式和差异示例统一维护于[Quality成品数量规则](../../apps/api/src/modules/quality/docs/finished-inspections.md#数量输入与放行)。Production保持清单核对及负责人审批，计划内仍受任务计划约束。[ADR-0015](0015-unified-quality-quantity-semantics.md#成品数量与职责)已明确质检计算只作数量建议、不因定稿差异阻断；剩余复检、历史基准及冻结原则同样已确认。[ADR-0016](0016-inbound-authorizations-and-stock-batches.md)进一步明确来源轮次、固定检查基准及剩余授权。
+2. 原申报版本和数量只作来源快照，修正原申报或计划内外分类不必重复检验；新增送检实物、重新纳入不合格品或结论改变须有新的当前轮检验依据。复检保留前驱，只以当前适用的明确放行记录作为审批资格，不从检查事实生成额度。
+3. 全检、抽检、零产出核实的当前 G/F 定义和请求语义统一维护于[Quality 成品数量规则](../../apps/api/src/modules/quality/docs/finished-inspections.md#数量输入与放行)。Production 保持清单核对及负责人审批，计划内仍受任务计划约束。[ADR-0015](0015-unified-quality-quantity-semantics.md#成品数量与职责)保留剩余复检、历史基准及冻结原则；其成品 C/R/S 数量建议部分由 [ADR-0019](0019-finished-inspection-measurement-simplification.md) 取代。[ADR-0016](0016-inbound-authorizations-and-stock-batches.md)进一步明确来源轮次、固定检查基准及剩余授权。
 4. 成品每类一次入库和整类锁量由 [ADR-0016](0016-inbound-authorizations-and-stock-batches.md) 的分次授权与历史已入下限取代；不开放已入库质量冲销、待判库存或完整在线质量系统。
 
 ## 与已有决策的关系

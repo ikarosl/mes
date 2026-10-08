@@ -130,7 +130,7 @@
           <el-table-column label="审批"
             ><template #default="{ row }"
               ><el-button
-                v-if="row.approvalInstanceId"
+                v-if="row.approvalInstanceId && canAccessRoute({ name: 'approval-inbox' })"
                 link
                 type="primary"
                 @click="openApproval(row.approvalInstanceId)"
@@ -177,12 +177,14 @@ import { useRouter } from 'vue-router';
 import type { DemandCorrectionHistoryItem, DemandCorrectionKind } from '@company/contracts';
 import { DEMAND_CORRECTION_KIND_LABELS, DEMAND_CORRECTION_STATE_LABELS } from '@company/constants';
 import { DialogWidth } from '../../../utils/dialog';
+import { useRouteAccess } from '../../../composables/useRouteAccess';
 import { formatQuantity as quantity } from '../production-status';
 import { useDemandCorrection } from '../composables/useDemandCorrection';
 import DemandCorrectionEvidence from './DemandCorrectionEvidence.vue';
 const props = defineProps<{ visible: boolean; demandId: string | null }>();
 const emit = defineEmits<{ 'update:visible': [boolean]; changed: [] }>();
 const router = useRouter();
+const { canAccessRoute } = useRouteAccess();
 const editor = useDemandCorrection(
   props,
   () => emit('changed'),
@@ -204,8 +206,10 @@ const {
 const kinds = computed<DemandCorrectionKind[]>(() =>
   check.value?.demandType === 'manual_additional' ? ['quantity', 'close'] : ['quantity'],
 );
-const openApproval = (instanceId: string) =>
-  router.push({ name: 'approval-inbox', query: { instanceId } });
+const openApproval = (instanceId: string) => {
+  if (!canAccessRoute({ name: 'approval-inbox' })) return;
+  return router.push({ name: 'approval-inbox', query: { instanceId } });
+};
 </script>
 <style scoped>
 .el-form {
