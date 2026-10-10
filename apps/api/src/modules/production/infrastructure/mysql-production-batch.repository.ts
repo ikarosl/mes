@@ -23,6 +23,15 @@ import type { ResolvedBatchStepOverride } from '../application/ports/production.
 import { requireBatchTransition } from '../domain/production-status.policy.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
 import { integerQuantity } from '../domain/integer-quantity.js';
+import { evaluateAssignmentAvailability } from '../domain/production-execution.policy.js';
+import { calculateRouteStepQuantities } from '../domain/production-route-quantity.policy.js';
+import { selectRouteSupplementSources } from './mysql-production-supplement-activation.js';
+import {
+  pendingReportingApproval,
+  PROJECTION_STEP_SELECT,
+  toRouteQuantityStep,
+} from './mysql-production-reporting.persistence.js';
+import type { ProjectionStepRow } from './mysql-production-reporting.projection.js';
 import { mysqlProductionDemandPlanWriter } from './mysql-production-demand-plan.writer.js';
 import { mapBatches } from './mysql-production-batch-display.mapper.js';
 import {
@@ -424,7 +433,46 @@ export class MysqlProductionBatchRepository {
       [id],
     );
     const [item] = await mapBatches(db, [batch], this.variants);
-    return { ...item!, stepRecords: steps.map(mapStep) };
+    const [projections] = await db.query<ProjectionStepRow[]>(PROJECTION_STEP_SELECT, [id]);
+    const projectionById = new Map(projections.map((step) => [String(step.id), step]));
+    const supplements = (await selectRouteSupplementSources(db, [id])).get(id) ?? [];
+    const quantities = calculateRouteStepQuantities(
+      batch.planned_quantity,
+      projections.map(toRouteQuantityStep),
+      supplements,
+    );
+    const pendingApprovalId = await pendingReportingApproval(db, id);
+    return {
+      ...item!,
+      stepRecords: steps.map((step) => {
+        const projection = projectionById.get(String(step.id))!;
+        const quantity = quantities.get(String(step.id))!;
+        const executionEditBlockedReason =
+          pendingApprovalId !== null
+            ? '结案或产出更正在审批，工序参数被冻结'
+            : ['cancelled', 'completed', 'terminated', 'closing'].includes(batch.status)
+              ? '任务已结束执行，不能调整实际 SOP'
+              : step.status !== 'pending' && step.status !== 'assigned'
+                ? '工序开始后不能调整实际 SOP'
+                : null;
+        return {
+          ...mapStep(step),
+          upperLimitQuantity: quantity.upperLimitQuantity,
+          effectiveDirectReportedQuantity: String(projection.effective_direct_reported),
+          effectiveDirectNormalQuantity: String(projection.effective_direct_normal),
+          effectiveDirectAbnormalQuantity: String(projection.effective_direct_abnormal),
+          ...evaluateAssignmentAvailability({
+            batchStatus: batch.status,
+            stepStatus: step.status,
+            hasReportHistory: Number(projection.report_count) > 0,
+            hasStarted: step.started_at !== null,
+            pendingApprovalId,
+          }),
+          canEditExecution: executionEditBlockedReason === null,
+          executionEditBlockedReason,
+        };
+      }),
+    };
   }
   private assertVersion(result: ResultSetHeader, message: string): void {
     if (result.affectedRows !== 1)

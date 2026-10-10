@@ -16,6 +16,10 @@ Vue 3 管理端。专题只维护代码或页面不容易解释的约束及原�
 
 交付和正式测试顺序遵守根 [AGENTS.md](../../AGENTS.md)。待实现、黑盒及 UI 验收统一由[路线图](../../docs/roadmap.md)维护，文档和实现存在不代表验收通过。
 
+## 审批组件展示
+
+启动管理端开发服务后，直接访问 `/dev/approval-components` 查看 BOM、结案和需求更正的 mock 展示，无需登录。入口、样例及本地模拟边界见[演示页说明](src/views/approval/demo/README.md)。
+
 ## 审批交互与验收场景
 
 以下是人工验收情景，**不是已通过记录**；状态见[审批验收待办](../../docs/roadmap.md#审批试探验收与后续扩展)。业务规则见 [Approval](../api/src/modules/approval/README.md)，前端防误操作约束见[管理端架构](docs/architecture.md#审批bom-与通知)。验收需已准备迁移、启用角色及具备相应权限的账号。

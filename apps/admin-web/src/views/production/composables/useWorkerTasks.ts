@@ -1,94 +1,38 @@
 import { ref } from 'vue';
-import type { BatchStepAbnormalOrigin, ProductionWorkerTaskItem } from '@company/contracts';
+import type { ProductionWorkerTaskItem } from '@company/contracts';
 import { productionApi } from '../../../api/production';
-import { useIdempotentIntent } from '../../../composables/idempotency/useIdempotentIntent';
+import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
+import { EMessage } from '../../../utils/message';
 
 export const useWorkerTasks = () => {
   const tasks = ref<ProductionWorkerTaskItem[]>([]);
-  const loading = ref(false);
-  const startPendingIds = ref(new Set<string>());
-  const reportPendingIds = ref(new Set<string>());
-  const reportIntents = new Map<string, ReturnType<typeof useIdempotentIntent>>();
-  let requestToken = 0;
-
+  const loading = ref(false),
+    total = ref(0),
+    page = ref(1),
+    pageSize = ref(20),
+    errorText = ref('');
+  const reads = useLatestReadRequest(() => (loading.value = false));
   const load = async (): Promise<void> => {
-    const token = ++requestToken;
+    if (!reads.isActive()) return;
+    const { isCurrent, signal } = reads.begin();
     loading.value = true;
+    errorText.value = '';
     try {
-      const rows = await productionApi.listWorkerTasks();
-      if (token === requestToken) tasks.value = rows;
-    } finally {
-      if (token === requestToken) loading.value = false;
-    }
-  };
-
-  const start = async (task: ProductionWorkerTaskItem): Promise<void> => {
-    if (startPendingIds.value.has(task.stepRecordId)) return;
-    startPendingIds.value = new Set(startPendingIds.value).add(task.stepRecordId);
-    try {
-      await productionApi.startStep(task.productionBatchId, task.stepRecordId, task.version);
-      await load();
-    } finally {
-      const next = new Set(startPendingIds.value);
-      next.delete(task.stepRecordId);
-      startPendingIds.value = next;
-    }
-  };
-
-  const report = async (
-    task: ProductionWorkerTaskItem,
-    normalQuantity: number,
-    abnormalQuantity: number,
-    abnormalOrigin: BatchStepAbnormalOrigin | null,
-    remark: string | null,
-  ): Promise<void> => {
-    if (reportPendingIds.value.has(task.stepRecordId)) return;
-    reportPendingIds.value = new Set(reportPendingIds.value).add(task.stepRecordId);
-    const body = {
-      version: task.version,
-      normalQuantity,
-      abnormalQuantity,
-      abnormalOrigin: abnormalQuantity > 0 ? abnormalOrigin : null,
-      remark: remark?.trim() || null,
-    };
-    const intent = reportIntents.get(task.stepRecordId) ?? useIdempotentIntent();
-    reportIntents.set(task.stepRecordId, intent);
-    try {
-      await intent.execute(
-        {
-          intentType: 'production.step-report.create',
-          params: { batchId: task.productionBatchId, stepRecordId: task.stepRecordId },
-          query: {},
-          body,
-        },
-        (key) =>
-          productionApi.createStepReport(task.productionBatchId, task.stepRecordId, body, key),
+      const result = await productionApi.listWorkerTasks(
+        { page: page.value, pageSize: pageSize.value },
+        { skipErrorHandling: true, signal },
       );
-      reportIntents.delete(task.stepRecordId);
-      await load();
+      if (!isCurrent()) return;
+      tasks.value = result.items;
+      total.value = result.total;
+    } catch (error) {
+      if (!isCurrent()) return;
+      tasks.value = [];
+      errorText.value = '本人任务刷新失败，旧操作依据已清除，请重试。';
+      EMessage.error(error, errorText.value);
     } finally {
-      const next = new Set(reportPendingIds.value);
-      next.delete(task.stepRecordId);
-      reportPendingIds.value = next;
+      if (isCurrent()) loading.value = false;
     }
   };
-
-  const getReportIntentStatus = (stepRecordId: string) =>
-    reportIntents.get(stepRecordId)?.getStatus() ?? 'idle';
-  const resetReportIntent = (stepRecordId: string): void => {
-    reportIntents.get(stepRecordId)?.reset();
-    reportIntents.delete(stepRecordId);
-  };
-
-  return {
-    tasks,
-    loading,
-    startPendingIds,
-    reportPendingIds,
-    load,
-    start,
-    report,
-    getReportIntentStatus,
-    resetReportIntent,
-  };
+  return { tasks, loading, total, page, pageSize, errorText, load };
 };

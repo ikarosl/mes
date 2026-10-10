@@ -5,23 +5,19 @@ import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql
 import type {
   ApproveBatchStepReworkPayload,
   BatchStepAbnormalDispositionItem,
-  BatchStepStatus,
   CompleteReworkPayload,
   CompleteReworkResult,
   RejectBatchStepAbnormalDispositionPayload,
   ReworkRecordItem,
+  ReworkRecordView,
 } from '@company/contracts';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { writeTransactionalAudit } from '../../../common/audit/transactional-audit-writer.js';
-import { toBeijingISOString } from '../../../common/time/date-time.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
 import { ProductionAbnormalRepository } from '../application/ports/production-abnormal.repository.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
 import { integerQuantity } from '../domain/integer-quantity.js';
-import { isRequiredNormalCompleted } from '../domain/production-reporting.policy.js';
 import { requireReworkCompletionQuantities } from '../domain/production-rework.policy.js';
-import { calculateRouteStepQuantities } from '../domain/production-route-quantity.policy.js';
-import { selectRouteSupplementSources } from './mysql-production-supplement-activation.js';
 import { findBatch } from './mysql-production.shared.js';
 import {
   mapDisposition,
@@ -29,26 +25,16 @@ import {
   type DispositionRow,
   type ReportRow,
 } from './mysql-production-reporting.projection.js';
-import { add, fixed } from './mysql-production-reporting-quantity.js';
-
-type ReworkRow = RowDataPacket & {
-  id: number;
-  rework_no: string;
-  abnormal_disposition_id: number;
-  production_batch_id: number;
-  batch_step_record_id: number;
-  source_report_id: number;
-  responsible_user_id: number;
-  rework_quantity: string;
-  unit_snapshot: string;
-  status: ReworkRecordItem['status'];
-  completed_report_id: number | null;
-  started_at: Date | null;
-  completed_at: Date | null;
-  version: number;
-  remark: string | null;
-  created_at: Date;
-};
+import { fixed } from './mysql-production-reporting-quantity.js';
+import { lockWorkOrderForBatch } from './mysql-work-order-material-version.js';
+import { requireUnfrozenStepActions } from './mysql-production-step-actions.persistence.js';
+import { mapRework, REWORK_COLUMNS, type ReworkRow } from './mysql-production-rework.projection.js';
+import {
+  mapReworkView,
+  REWORK_VIEW_FIELDS,
+  REWORK_VIEW_JOINS,
+  type ReworkViewRow,
+} from './mysql-production-report-trace.read.js';
 
 type DispositionSourceRow = DispositionRow & {
   reported_quantity: string;
@@ -61,27 +47,20 @@ type DispositionSourceRow = DispositionRow & {
   responsible_user_id: number | null;
 };
 
-type StepAggregateRow = RowDataPacket & {
-  id: number;
-  status: BatchStepStatus;
-  step_order_snapshot: number;
-  effective_direct_reported: string;
-  effective_normal: string;
-};
-
 @Injectable()
 export class MysqlProductionAbnormalRepository extends ProductionAbnormalRepository {
   constructor(@Inject(DATABASE_POOL) private readonly pool: Pool) {
     super();
   }
 
-  async listReworks(batchId: string): Promise<ReworkRecordItem[]> {
+  async listReworks(batchId: string): Promise<ReworkRecordView[]> {
     await findBatch(this.pool, batchId);
-    const [rows] = await this.pool.query<ReworkRow[]>(
-      `${REWORK_SELECT} WHERE rw.production_batch_id=? ORDER BY rw.created_at,rw.id`,
+    const [rows] = await this.pool.query<ReworkViewRow[]>(
+      `SELECT ${REWORK_VIEW_FIELDS} FROM rework_records rw ${REWORK_VIEW_JOINS}
+       WHERE rw.production_batch_id=? ORDER BY rw.created_at,rw.id`,
       [batchId],
     );
-    return rows.map(mapRework);
+    return rows.map(mapReworkView);
   }
 
   approveRework(
@@ -104,6 +83,7 @@ export class MysqlProductionAbnormalRepository extends ProductionAbnormalReposit
           '异常处置单已变化，请刷新后重试',
         );
       requireEffectiveAbnormalSource(source);
+      // 保留批准时的来源工序负责人快照，仅用于追溯，不授予或限制返工执行权限。
       if (source.responsible_user_id === null)
         throw new ProductionDomainError('INVALID_STATE', '来源工序没有负责人，不能创建返工单');
       const [updated] = await connection.execute<ResultSetHeader>(
@@ -185,8 +165,8 @@ export class MysqlProductionAbnormalRepository extends ProductionAbnormalReposit
       const actorId = requireActor(context);
       await lockReworkContext(connection, reworkId);
       const row = await selectRework(connection, reworkId, true);
+      // HTTP 独立校验 production:rework:execute；来源负责人快照不限定返工办理人。
       if (row.status === 'doing') return row;
-      requireReworkActor(row, actorId);
       if (row.status !== 'pending')
         throw new ProductionDomainError('INVALID_STATE', '只有待返工单可以开始');
       if (row.version !== version)
@@ -209,9 +189,8 @@ export class MysqlProductionAbnormalRepository extends ProductionAbnormalReposit
   ): Promise<CompleteReworkResult> {
     return withTransaction(this.pool, async (connection) => {
       const actorId = requireActor(context);
-      const batch = await lockReworkContext(connection, reworkId);
+      await lockReworkContext(connection, reworkId);
       const rework = await selectRework(connection, reworkId, true);
-      requireReworkActor(rework, actorId);
       if (rework.status !== 'doing')
         throw new ProductionDomainError('INVALID_STATE', '只有返工中的单据可以完成');
       if (rework.version !== payload.version) throw concurrentRework();
@@ -220,59 +199,71 @@ export class MysqlProductionAbnormalRepository extends ProductionAbnormalReposit
         payload.normalQuantity,
         payload.abnormalQuantity,
       );
-      const steps = await selectStepAggregates(connection, rework.productionBatchId);
-      const step = steps.find((row) => String(row.id) === rework.stepRecordId);
-      if (!step) throw new ProductionDomainError('NOT_FOUND', '返工工序不存在');
-      const supplements =
-        (await selectRouteSupplementSources(connection, [rework.productionBatchId])).get(
-          rework.productionBatchId,
-        ) ?? [];
-      const quantity = calculateRouteStepQuantities(
-        batch.planned_quantity,
-        steps.map((row) => ({
-          id: row.id,
-          stepOrder: row.step_order_snapshot,
-          status: row.status,
-          effectiveDirectReported: row.effective_direct_reported,
-          effectiveNormal: row.effective_normal,
-        })),
-        supplements,
-      ).get(rework.stepRecordId)!;
-      // 返工恢复已有异常对象，只校验当前正常目标，不再次消耗普通报工投入额度。
-      const required = quantity.requiredNormalQuantity;
-      const nextNormal = add(step.effective_normal, payload.normalQuantity);
-      if (integerQuantity(nextNormal) > integerQuantity(required))
-        throw new ProductionDomainError(
-          'STEP_REPORT_QUANTITY_EXCEEDED',
-          '返工正常数量超过工序当前正常目标',
-        );
-      const reportId = await insertReworkReport(connection, rework, payload, actorId);
-      const dispositionId =
-        payload.abnormalQuantity > 0
-          ? await insertDisposition(connection, rework, reportId, actorId)
+      const normalReportId =
+        payload.normalQuantity > 0
+          ? await insertReworkReport(
+              connection,
+              rework,
+              {
+                normalQuantity: payload.normalQuantity,
+                abnormalQuantity: 0,
+                remark: payload.remark,
+              },
+              actorId,
+            )
           : null;
-      const completed = isRequiredNormalCompleted(nextNormal, required);
+      const abnormalReportId =
+        payload.abnormalQuantity > 0
+          ? await insertReworkReport(
+              connection,
+              rework,
+              {
+                normalQuantity: 0,
+                abnormalQuantity: payload.abnormalQuantity,
+                remark: payload.remark,
+              },
+              actorId,
+            )
+          : null;
+      const dispositionId =
+        abnormalReportId !== null
+          ? await insertDisposition(connection, rework, abnormalReportId, actorId)
+          : null;
       await connection.execute(
-        `UPDATE batch_step_records
-         SET status=?,completed_at=${completed ? 'COALESCE(completed_at,NOW())' : 'NULL'},version=version+1,updated_by=?
-         WHERE id=?`,
-        [completed ? 'completed' : 'doing', actorId, rework.stepRecordId],
+        'UPDATE batch_step_records SET version=version+1,updated_by=? WHERE id=?',
+        [actorId, rework.stepRecordId],
       );
       const [updated] = await connection.execute<ResultSetHeader>(
         `UPDATE rework_records
-         SET status='completed',completed_report_id=?,completed_at=NOW(),version=version+1,remark=?,updated_by=?
+         SET status='completed',completed_normal_report_id=?,completed_abnormal_report_id=?,
+           completed_at=NOW(),version=version+1,remark=?,updated_by=?
          WHERE id=? AND status='doing' AND version=?`,
-        [reportId, payload.remark ?? rework.remark, actorId, reworkId, payload.version],
+        [
+          normalReportId,
+          abnormalReportId,
+          payload.remark ?? rework.remark,
+          actorId,
+          reworkId,
+          payload.version,
+        ],
       );
       if (updated.affectedRows !== 1) throw concurrentRework();
       await audit(connection, context, 'production-rework.complete', reworkId, {
-        reportId,
+        normalReportId,
+        abnormalReportId,
         normalQuantity: fixed(payload.normalQuantity),
         abnormalQuantity: fixed(payload.abnormalQuantity),
       });
       return {
         rework: await selectRework(connection, reworkId),
-        report: mapReport(await selectReport(connection, reportId)),
+        normalReport:
+          normalReportId === null
+            ? null
+            : mapReport(await selectReport(connection, normalReportId)),
+        abnormalReport:
+          abnormalReportId === null
+            ? null
+            : mapReport(await selectReport(connection, abnormalReportId)),
         abnormalDisposition: dispositionId
           ? mapDisposition(await selectDispositionSource(connection, dispositionId))
           : null,
@@ -290,7 +281,9 @@ const lockDispositionContext = async (
     [dispositionId],
   );
   if (!identity) throw new ProductionDomainError('NOT_FOUND', '异常处置单不存在');
+  await lockWorkOrderForBatch(connection, String(identity.production_batch_id));
   const batch = await findBatch(connection, String(identity.production_batch_id), true);
+  await requireUnfrozenStepActions(connection, String(identity.production_batch_id));
   if (batch.status !== 'doing')
     throw new ProductionDomainError('INVALID_STATE', '只有生产执行中的异常可以处置');
   await lockBatchSteps(connection, String(identity.production_batch_id));
@@ -302,7 +295,9 @@ const lockReworkContext = async (connection: PoolConnection, reworkId: string) =
     [reworkId],
   );
   if (!identity) throw new ProductionDomainError('NOT_FOUND', '返工单不存在');
+  await lockWorkOrderForBatch(connection, String(identity.production_batch_id));
   const batch = await findBatch(connection, String(identity.production_batch_id), true);
+  await requireUnfrozenStepActions(connection, String(identity.production_batch_id));
   if (batch.status !== 'doing')
     throw new ProductionDomainError('INVALID_STATE', '只有生产执行中的返工单可以操作');
   await lockBatchSteps(connection, String(identity.production_batch_id));
@@ -339,11 +334,13 @@ const requireEffectiveAbnormalSource = (source: DispositionSourceRow): void => {
 
 const requireRejectableDirectAbnormalSource = (source: DispositionSourceRow): void => {
   requireEffectiveAbnormalSource(source);
-  if (!source.is_direct_report || integerQuantity(source.normal_quantity) > 0)
+  if (!source.is_direct_report)
     throw new ProductionDomainError(
       'INVALID_STATE',
-      '该异常来自返工完成或历史混合报工，不能整笔驳回，请使用报工更正流程',
+      '该异常来自返工完成，不能通用驳回或更正；返工结果专用修正尚未开放',
     );
+  if (integerQuantity(source.normal_quantity) > 0)
+    throw new ProductionDomainError('INVALID_STATE', '该异常来自历史混合报工，不能整笔驳回');
 };
 
 const insertRejectedSourceReversal = async (
@@ -395,62 +392,17 @@ const selectReworkByDisposition = async (
   dispositionId: string,
 ): Promise<ReworkRecordItem> => {
   const [rows] = await connection.query<ReworkRow[]>(
-    `${REWORK_SELECT} WHERE rw.abnormal_disposition_id=?`,
+    `${REWORK_SELECT} WHERE rw.abnormal_disposition_id=? FOR SHARE`,
     [dispositionId],
   );
   if (!rows[0]) throw new ProductionDomainError('INVALID_STATE', '已批准处置缺少返工事实');
   return mapRework(rows[0]);
 };
 
-const mapRework = (row: ReworkRow): ReworkRecordItem => ({
-  reworkId: String(row.id),
-  reworkNo: row.rework_no,
-  abnormalDispositionId: String(row.abnormal_disposition_id),
-  productionBatchId: String(row.production_batch_id),
-  stepRecordId: String(row.batch_step_record_id),
-  sourceReportId: String(row.source_report_id),
-  responsibleUserId: String(row.responsible_user_id),
-  responsibleUserName: null,
-  reworkQuantity: String(row.rework_quantity),
-  unit: row.unit_snapshot,
-  status: row.status,
-  completedReportId: row.completed_report_id === null ? null : String(row.completed_report_id),
-  startedAt: row.started_at ? toBeijingISOString(row.started_at) : null,
-  completedAt: row.completed_at ? toBeijingISOString(row.completed_at) : null,
-  version: row.version,
-  remark: row.remark,
-  createdAt: toBeijingISOString(row.created_at),
-});
-
-const requireReworkActor = (row: ReworkRecordItem, actorId: string): void => {
-  if (row.responsibleUserId !== actorId)
-    throw new ProductionDomainError('NOT_STEP_ASSIGNEE', '只有返工负责人可以执行返工');
-};
-
-const selectStepAggregates = async (
-  connection: PoolConnection,
-  batchId: string,
-): Promise<StepAggregateRow[]> => {
-  const [rows] = await connection.query<StepAggregateRow[]>(
-    `SELECT sr.id,sr.status,sr.step_order_snapshot,
-      COALESCE(SUM(CASE WHEN r.report_type='normal' THEN r.normal_quantity ELSE -r.normal_quantity END),0) effective_normal,
-      COALESCE(SUM(CASE WHEN rw.id IS NULL THEN
-        CASE WHEN r.report_type='normal' THEN r.reported_quantity ELSE -r.reported_quantity END
-        ELSE 0 END),0) effective_direct_reported
-     FROM batch_step_records sr
-     LEFT JOIN batch_step_reports r ON r.batch_step_record_id=sr.id
-     LEFT JOIN rework_records rw ON rw.completed_report_id=r.id
-     WHERE sr.production_batch_id=? GROUP BY sr.id
-     ORDER BY sr.step_order_snapshot,sr.id`,
-    [batchId],
-  );
-  return rows;
-};
-
 const insertReworkReport = async (
   connection: PoolConnection,
   rework: ReworkRecordItem,
-  payload: CompleteReworkPayload,
+  payload: Pick<CompleteReworkPayload, 'normalQuantity' | 'abnormalQuantity' | 'remark'>,
   actorId: string,
 ): Promise<string> => {
   const [result] = await connection.execute<ResultSetHeader>(
@@ -533,17 +485,14 @@ const audit = (
     userAgent: context.userAgent,
   });
 
-const REWORK_SELECT = `SELECT rw.id,rw.rework_no,rw.abnormal_disposition_id,rw.production_batch_id,
-  rw.batch_step_record_id,rw.source_report_id,rw.responsible_user_id,rw.rework_quantity,
-  rw.unit_snapshot,rw.status,rw.completed_report_id,rw.started_at,rw.completed_at,rw.version,
-  rw.remark,rw.created_at FROM rework_records rw`;
+const REWORK_SELECT = `SELECT ${REWORK_COLUMNS} FROM rework_records rw`;
 
 const DISPOSITION_SOURCE_SELECT = `SELECT d.id,d.disposition_no,d.production_batch_id,
   d.batch_step_record_id,d.batch_step_report_id,d.review_status,d.disposition_type,d.remark,d.version,
-  d.created_at,r.reported_quantity,r.normal_quantity,r.abnormal_quantity,r.abnormal_origin,r.unit_snapshot,r.report_type,
-  CASE WHEN NOT EXISTS (SELECT 1 FROM batch_step_reports reversal WHERE reversal.reversal_of_report_id=r.id) THEN 1 ELSE 0 END is_effective,
-  CASE WHEN r.replaces_report_id IS NULL
-    AND NOT EXISTS (SELECT 1 FROM rework_records completed_rework WHERE completed_rework.completed_report_id=r.id)
+  d.created_at,r.reported_quantity,r.normal_quantity,r.abnormal_quantity,r.abnormal_quantity source_abnormal_quantity,r.abnormal_origin,r.unit_snapshot,r.report_type,
+  CASE WHEN NOT EXISTS (SELECT 1 FROM batch_step_reports reversal WHERE reversal.reversal_of_report_id=r.id FOR SHARE) THEN 1 ELSE 0 END is_effective,
+  CASE WHEN NOT EXISTS (SELECT 1 FROM rework_records completed_rework
+    WHERE completed_rework.completed_normal_report_id=r.id OR completed_rework.completed_abnormal_report_id=r.id FOR SHARE)
     THEN 1 ELSE 0 END is_direct_report,
   sr.responsible_user_id
   FROM batch_step_abnormal_dispositions d

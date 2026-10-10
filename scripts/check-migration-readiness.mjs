@@ -64,6 +64,7 @@ const allowedTables = new Set([
   'work_order_material_versions',
   'production_batches',
   'batch_step_records',
+  'batch_step_execution_actions',
   'batch_step_reports',
   'batch_step_abnormal_dispositions',
   'rework_records',

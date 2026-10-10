@@ -1,6 +1,6 @@
 import type { ProductionOutputInspection } from '../quality/finished-inspections.js';
 import type { VersionedCommand } from '../common.js';
-import type { BatchTerminationCheck } from './termination.js';
+import type { BatchTerminationCheck, ProductionReportedNormalComparison } from './termination.js';
 import type { BatchCloseoutApprovalDisplaySnapshot } from './closeout.js';
 
 export type ProductionCloseoutMode = 'normal' | 'early';
@@ -75,7 +75,7 @@ export interface ProductionOutputReceipts {
   productionReceivedQuantity: string;
   extraReceivedQuantity: string;
 }
-export interface ProductionOutputDetail {
+export interface ProductionOutputDetail extends ProductionReportedNormalComparison {
   id: string;
   batchId: string;
   version: number;

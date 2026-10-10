@@ -149,17 +149,14 @@
         </p>
         <template v-else-if="check.zeroRemainderImpact.fulfillsSupplement">
           <p>
-            按本次核对结果，批准后原补料单将齐套，以上原授权具备物料条件。工序执行仍须满足负责人、批次状态及前道正常放行量。
+            按本次核对结果，批准后原补料单将齐套，原补产授权可激活。实际办理仍须满足当前负责人及任务阶段资格。
           </p>
           <p>
-            立即重开的工序：{{
-              check.zeroRemainderImpact.reopenedSteps
-                .map(
-                  (item) =>
-                    item.stepName + '（正常目标 ' + quantity(item.requiredNormalQuantity) + '）',
-                )
-                .join('、') || '无'
-            }}。
+            本次激活补产
+            {{ quantity(check.zeroRemainderImpact.activatedSupplementQuantity) }}，各道统一上限为
+            {{
+              quantity(check.zeroRemainderImpact.upperLimitQuantity)
+            }}。工序状态保持，实际继续加工须明确重开。
           </p>
         </template>
         <p v-else-if="!check.zeroRemainderImpact.hasConfirmedIssue">
@@ -171,7 +168,7 @@
           }}，批准本次更正不放行补产。
         </p>
       </template>
-      <p>最终批准重新核对上述依据；实际齐套和重开结果保存在更正历史中。</p>
+      <p>最终批准重新核对上述依据；实际齐套与授权激活结果保存在更正历史中。</p>
       <p>整张补料单零领料、全部要求免除时，不自动放行补产。</p>
     </template>
   </section>

@@ -51,7 +51,7 @@ export const useProductionAbnormalActions = (actions: Actions) => ({
       await actions.startRework(item);
       EMessage.success('返工已开始');
     } catch (error) {
-      EMessage.error(error, '返工开始失败，请确认当前账号是返工负责人');
+      EMessage.error(error, '返工开始失败，请刷新后核对单据状态和办理权限');
     }
   },
   handleCompleteRework: async (

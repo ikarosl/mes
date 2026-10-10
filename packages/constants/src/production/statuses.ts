@@ -83,7 +83,6 @@ export const PRODUCTION_EXECUTION_COMPLETION_BLOCKERS = [
   'batch_not_doing',
   'no_route_step',
   'required_step_incomplete',
-  'final_step_quantity_insufficient',
   'active_material_demand_remains',
   'unfulfilled_material_supplement',
 ] as const;
@@ -92,9 +91,40 @@ export const PRODUCTION_EXECUTION_COMPLETION_BLOCKER_LABELS = {
   batch_not_doing: '批次尚未进入生产执行状态',
   no_route_step: '批次没有工序',
   required_step_incomplete: '仍有工序未完成',
-  final_step_quantity_insufficient: '最后一道工序的有效正常数量尚未达到计划数量',
   active_material_demand_remains: '仍有未完成物料需求，请继续领料、申请更正或办理批次收尾',
   unfulfilled_material_supplement: '仍有未齐套补料单，需完成有效需求或办理批次收尾',
+} as const;
+
+export const BATCH_STEP_REPORT_DEPENDENCY_KINDS = [
+  'abnormal_disposition',
+  'replacement_report',
+  'rework_source',
+  'rework_completion',
+  'scrap_record',
+] as const;
+
+export const BATCH_STEP_REPORT_REVERSAL_BLOCKED_CODES = [
+  'batch_not_allowed',
+  'approval_pending',
+  'not_found',
+  'step_mismatch',
+  'version_changed',
+  'not_effective_normal',
+  'business_dependency',
+  'normal_only',
+  'historical_normal_only',
+  'step_not_started',
+] as const;
+
+export const MAX_BATCH_STEP_REPORT_REVERSALS = 100;
+export const PRODUCTION_REPORT_QUANTITY_MAX = 99_999_999;
+
+export const BATCH_STEP_REPORT_DEPENDENCY_LABELS = {
+  abnormal_disposition: '异常处置',
+  replacement_report: '替代报工',
+  rework_source: '返工来源',
+  rework_completion: '返工完成',
+  scrap_record: '报废记录',
 } as const;
 
 export const DEMAND_TYPES = ['normal', 'manual_additional', 'scrap_supplement'] as const;

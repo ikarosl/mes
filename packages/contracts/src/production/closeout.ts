@@ -1,6 +1,10 @@
 import type { ProductionOutputInspection } from '../quality/finished-inspections.js';
 import type { ProductionCloseoutMode, ProductionOutputDraft } from './output.js';
-import type { BatchTerminationCheck, BatchTerminationImpact } from './termination.js';
+import type {
+  BatchTerminationCheck,
+  BatchTerminationImpact,
+  ProductionReportedNormalComparison,
+} from './termination.js';
 import type { DemandBusinessStatus, DemandType } from './statuses.js';
 
 /** 收尾操作页的当前投影，不回写原需求或已经固化的审批证据。 */
@@ -79,7 +83,7 @@ export interface BatchCloseoutApprovalSnapshot {
   inspection: ProductionOutputInspection;
   closeoutId: string;
   workOrderOwnerEvidence: BatchCloseoutWorkOrderOwnerEvidence;
-  check: BatchTerminationCheck;
+  check: Omit<BatchTerminationCheck, keyof ProductionReportedNormalComparison>;
   output: BatchCloseoutOutput;
   actions: BatchCloseoutAction[];
 }

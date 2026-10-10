@@ -13,11 +13,13 @@ import type { MysqlProductionCloseoutRepository } from './mysql-production-close
 import type { PoolConnection, RowDataPacket } from 'mysql2/promise';
 import type { ProductionOutputRevision } from '@company/contracts';
 import { toBeijingISOString } from '../../../common/time/date-time.js';
+import { fixedIntegerQuantity } from '../domain/integer-quantity.js';
 import { readOutputRounds } from './mysql-production-output-round.js';
 import { readProductionOutputReceipts } from './mysql-production-output-receipts.js';
 import {
   readCloseoutApprovalSnapshot,
   CLOSEOUT_APPROVAL_SNAPSHOT_SCHEMA_VERSION,
+  terminationCheckSchema,
 } from '../application/production-approval-snapshot.schema.js';
 import {
   nullableOutputId,
@@ -214,7 +216,7 @@ export async function loadOutputState(
   const base = revisions.find((revision) => revision.id === currentRevisionId) ?? null;
   if (currentRevisionId && !base)
     throw new ProductionDomainError('INVALID_STATE', '当前批准清单引用无效');
-  const evidenceCheck = base?.snapshot.check ?? closeout.check;
+  const evidenceCheck = base?.snapshot.check ?? terminationCheckSchema.parse(closeout.check);
   const actions = base?.snapshot.actions ?? closeout.actions;
   const draft = draftOf(row);
   const selectedInspection =
@@ -360,6 +362,14 @@ export async function loadOutputState(
               ? 'approved'
               : 'draft',
       check: closeout.check,
+      approvedReportedNormalQuantity: base?.snapshot.check.reportedNormalQuantity ?? null,
+      currentReportedNormalQuantity: closeout.check.currentReportedNormalQuantity,
+      reportedNormalQuantityDifference: base
+        ? fixedIntegerQuantity(
+            Number(closeout.check.currentReportedNormalQuantity) -
+              Number(base.snapshot.check.reportedNormalQuantity),
+          )
+        : null,
       workOrderOwnerId: ownerEvidence.ownerId,
       workOrderOwnerName: ownerEvidence.ownerId,
       draft,

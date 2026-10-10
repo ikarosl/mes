@@ -23,41 +23,39 @@ export type RouteSupplementSource = {
 };
 
 export type RouteStepQuantity = {
+  /** 计划量加全路线已履约补产授权，各道工序统一使用。 */
+  upperLimitQuantity: string;
+  /** 计划量加本工序之后的已履约补产授权，只作路径建议目标。 */
   requiredNormalQuantity: string;
-  releasedInputQuantity: string;
   availableReportQuantity: string;
   remainingNormalQuantity: string;
+  previousStepNormalQuantity: string | null;
+  directReportedVsPreviousNormalDifference: string | null;
+  normalVsPreviousNormalDifference: string | null;
+  normalVsTargetDifference: string;
+  /** 全路线已履约补产授权数量，是统一投入上限的增量。 */
   activatedSupplementInputQuantity: string;
+  /** 本工序之后的已履约补产授权数量，是建议正常目标的增量。 */
   activatedSupplementTargetQuantity: string;
+  /** 全路线待履约补产授权数量，尚不计入统一投入上限。 */
   pendingSupplementInputQuantity: string;
-  isSupplementReopened: boolean;
-  supplementBlockedReason: string | null;
+  /** 全路线补产授权来源，包含已履约和待履约来源。 */
   supplementSources: RouteSupplementSource[];
 };
 
-/** 齐套后需要重新执行的原已完成工序，预览与实际推进共用。 */
-export function supplementReopenedStepIds(
-  steps: RouteQuantityStep[],
-  quantities: Map<string, RouteStepQuantity>,
-  sources: RouteSupplementSource[],
-  newlyFulfilledSupplementIds: readonly string[],
-): string[] {
-  const newOrders = sources
-    .filter((source) => newlyFulfilledSupplementIds.includes(source.supplementId))
-    .map((source) => source.sourceStepOrder);
-  return steps
-    .filter(
-      (step) =>
-        newOrders.some((order) => step.stepOrder <= order) &&
-        step.status === 'completed' &&
-        integerQuantity(step.effectiveNormal) <
-          integerQuantity(quantities.get(String(step.id))?.requiredNormalQuantity ?? 0),
-    )
-    .map((step) => String(step.id));
-}
+export const calculateUnifiedReportLimit = (
+  plannedQuantity: number | string,
+  supplements: readonly RouteSupplementSource[],
+): string =>
+  fixed(
+    integerQuantity(plannedQuantity) +
+      supplements
+        .filter((source) => source.status === 'material_ready')
+        .reduce((total, source) => integerQuantity(total + integerQuantity(source.quantity)), 0),
+  );
 
 /**
- * 根据不可变报工事实和已完成补料的获批报废补产，计算工艺路线的数量闸门。
+ * 根据不可变报工及已履约补产授权计算统一上限、路线目标和差异。
  * 返回值是汇总投影，调用方不得将其作为第二份数量事实持久化。
  */
 export const calculateRouteStepQuantities = (
@@ -71,51 +69,46 @@ export const calculateRouteStepQuantities = (
       left.stepOrder - right.stepOrder || String(left.id).localeCompare(String(right.id)),
   );
   const result = new Map<string, RouteStepQuantity>();
+  const upperLimit = integerQuantity(calculateUnifiedReportLimit(planned, supplements));
+  const materialReady = supplements.filter((source) => source.status === 'material_ready');
+  const activatedInput = materialReady.reduce(
+    (total, source) => integerQuantity(total + integerQuantity(source.quantity)),
+    0,
+  );
+  const pendingInput = supplements
+    .filter((source) => source.status === 'pending_material')
+    .reduce((total, source) => integerQuantity(total + integerQuantity(source.quantity)), 0);
 
   for (const [index, step] of ordered.entries()) {
-    const affecting = supplements.filter((source) => source.sourceStepOrder >= step.stepOrder);
-    const materialReady = affecting.filter((source) => source.status === 'material_ready');
     const downstreamActivated = materialReady.filter(
       (source) => source.sourceStepOrder > step.stepOrder,
     );
-    const activatedInput = materialReady.reduce(
-      (total, source) => total + integerQuantity(source.quantity),
-      0,
-    );
     const activatedTarget = downstreamActivated.reduce(
-      (total, source) => total + integerQuantity(source.quantity),
+      (total, source) => integerQuantity(total + integerQuantity(source.quantity)),
       0,
     );
-    const pendingInput = affecting
-      .filter((source) => source.status === 'pending_material')
-      .reduce((total, source) => total + integerQuantity(source.quantity), 0);
-    const required = planned + activatedTarget;
+    const required = integerQuantity(planned + activatedTarget);
     const previous = ordered[index - 1];
-    const released = !previous
-      ? planned + activatedInput
-      : integerQuantity(previous.effectiveNormal);
+    const previousNormal = previous ? integerQuantity(previous.effectiveNormal) : null;
     const directReported = integerQuantity(step.effectiveDirectReported);
     const effectiveNormal = integerQuantity(step.effectiveNormal);
-    const available = Math.max(0, released - directReported);
+    const available = Math.max(0, upperLimit - directReported);
     const remaining = Math.max(0, required - effectiveNormal);
-    const isSupplementReopened =
-      activatedTarget > 0 && step.status === 'doing' && effectiveNormal >= planned && remaining > 0;
-    const supplementBlockedReason =
-      index > 0 && activatedInput > 0 && remaining > 0 && available === 0
-        ? '等待前道补产形成新的正常放行量'
-        : null;
-
     result.set(String(step.id), {
+      upperLimitQuantity: fixed(upperLimit),
       requiredNormalQuantity: fixed(required),
-      releasedInputQuantity: fixed(released),
       availableReportQuantity: fixed(available),
       remainingNormalQuantity: fixed(remaining),
+      previousStepNormalQuantity: previousNormal === null ? null : fixed(previousNormal),
+      directReportedVsPreviousNormalDifference:
+        previousNormal === null ? null : fixed(directReported - previousNormal),
+      normalVsPreviousNormalDifference:
+        previousNormal === null ? null : fixed(effectiveNormal - previousNormal),
+      normalVsTargetDifference: fixed(effectiveNormal - required),
       activatedSupplementInputQuantity: fixed(activatedInput),
       activatedSupplementTargetQuantity: fixed(activatedTarget),
       pendingSupplementInputQuantity: fixed(pendingInput),
-      isSupplementReopened,
-      supplementBlockedReason,
-      supplementSources: affecting,
+      supplementSources: supplements,
     });
   }
 

@@ -120,11 +120,7 @@
                 row.fulfilledSupplementIds.length
                   ? '齐套补料单 #' + row.fulfilledSupplementIds.join('、#')
                   : '未新增齐套'
-              }}；{{
-                row.reopenedStepIds.length
-                  ? '重开工序 #' + row.reopenedStepIds.join('、#')
-                  : '未重开工序'
-              }}</template
+              }}；工序状态保持</template
             ></el-table-column
           >
           <el-table-column label="审批"

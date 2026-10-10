@@ -208,10 +208,7 @@ export class CorrectBatchStepReportDto
   extends VersionedCommandDto
   implements CorrectBatchStepReportPayload
 {
-  @Type(() => Number) @IsInt() @Min(0) @Max(MAX_QUANTITY) normalQuantity!: number;
-  @Type(() => Number) @IsInt() @Min(0) @Max(MAX_QUANTITY) abnormalQuantity!: number;
-  @IsOptional() @IsIn(BATCH_STEP_ABNORMAL_ORIGINS) abnormalOrigin?:
-    'current_step' | 'previous_step' | null;
+  @Type(() => Number) @IsInt() @Min(1) @Max(MAX_QUANTITY) normalQuantity!: number;
   @IsString() @IsNotEmpty() @MaxLength(5000) reason!: string;
 }
 

@@ -1,5 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import type {
+  ReopenProductionStepPayload,
+  ProductionStepCommandResult,
+  PageResult,
+  ProductionStepExecutionHistoryItem,
+} from '@company/contracts';
+import type {
   CommandContext,
   IdempotentCommandContext,
 } from '../../../common/audit/audit.types.js';
@@ -71,9 +77,9 @@ export class ProductionExecutionService {
     return this.execution.completeExecution(batchId, version, context);
   }
 
-  listMyTasks(context: CommandContext) {
+  listMyTasks(context: CommandContext, query: { page: number; pageSize: number }) {
     if (!context.actorId) throw new ProductionDomainError('NOT_STEP_ASSIGNEE', '缺少当前员工身份');
-    return this.execution.listWorkerTasks(context.actorId);
+    return this.execution.listWorkerTasks(context.actorId, query);
   }
 
   getStepSopContent(batchId: string, stepRecordId: string) {
@@ -111,12 +117,81 @@ export class ProductionExecutionService {
     return this.execution.reassignStep(batchId, stepRecordId, responsibleUserId, version, context);
   }
 
-  startStep(batchId: string, stepRecordId: string, version: number, context: CommandContext) {
+  startStep(
+    batchId: string,
+    stepRecordId: string,
+    version: number,
+    context: CommandContext,
+    asAdministrator = false,
+  ) {
     if (!context.actorId) throw new ProductionDomainError('NOT_STEP_ASSIGNEE', '缺少当前员工身份');
-    return this.execution.startStep(batchId, stepRecordId, version, {
-      ...context,
-      actorId: context.actorId,
-    });
+    return this.execution.startStep(
+      batchId,
+      stepRecordId,
+      version,
+      {
+        ...context,
+        actorId: context.actorId,
+      },
+      asAdministrator,
+    );
+  }
+
+  completeStep(
+    batchId: string,
+    stepRecordId: string,
+    version: number,
+    context: CommandContext,
+    asAdministrator = false,
+  ): Promise<ProductionStepCommandResult> {
+    return this.execution.completeStep(
+      batchId,
+      stepRecordId,
+      version,
+      requireActor(context),
+      asAdministrator,
+    );
+  }
+
+  reopenStep(
+    batchId: string,
+    stepRecordId: string,
+    payload: ReopenProductionStepPayload,
+    context: CommandContext,
+    asAdministrator = false,
+  ): Promise<ProductionStepCommandResult> {
+    return this.execution.reopenStep(
+      batchId,
+      stepRecordId,
+      { version: payload.version, reason: payload.reason.trim() },
+      requireActor(context),
+      asAdministrator,
+    );
+  }
+
+  async listStepExecutionHistory(
+    batchId: string,
+    stepRecordId: string,
+    query: { page: number; pageSize: number },
+    context?: CommandContext,
+  ): Promise<PageResult<ProductionStepExecutionHistoryItem>> {
+    const history = await this.execution.listStepExecutionHistory(
+      batchId,
+      stepRecordId,
+      query,
+      context ? requireActor(context).actorId : undefined,
+    );
+    const users = await this.identity.listUserReferencesByIds([
+      ...new Set(history.items.map((item) => item.createdById)),
+    ]);
+    const names = new Map(users.map((user) => [user.id, user.displayName]));
+    return {
+      ...history,
+      items: history.items.map((item) => ({
+        ...item,
+        createdByName: names.get(item.createdById) ?? null,
+      })),
+    };
   }
 
   private async requireActiveUser(userId: string): Promise<void> {
@@ -149,3 +224,8 @@ const commandContext = ({
   ip,
   userAgent,
 }: IdempotentCommandContext): CommandContext => ({ actorId, requestId, ip, userAgent });
+
+const requireActor = (context: CommandContext): CommandContext & { actorId: string } => {
+  if (!context.actorId) throw new ProductionDomainError('NOT_STEP_ASSIGNEE', '缺少当前操作人身份');
+  return { ...context, actorId: context.actorId };
+};

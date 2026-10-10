@@ -60,6 +60,23 @@ body {
   background: #fff;
   border-bottom: 1px solid #e5e7eb;
 }
+.topbar-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.sidebar-toggle.el-button {
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  font-size: 20px;
+}
+.sidebar-toggle.el-button:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 2px;
+}
 .user {
   margin-right: 16px;
 }

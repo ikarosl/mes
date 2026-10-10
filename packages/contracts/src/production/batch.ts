@@ -119,6 +119,19 @@ export interface BatchStepRecordItem {
   normalQuantity: string;
   abnormalQuantity: string;
   reworkQuantity: string;
+  /** 全路线共用同一上限口径，每道工序独立核算直接报工净量。 */
+  upperLimitQuantity: string;
+  effectiveDirectReportedQuantity: string;
+  effectiveDirectNormalQuantity: string;
+  effectiveDirectAbnormalQuantity: string;
+  canAssign: boolean;
+  assignBlockedReason: string | null;
+  canReassign: boolean;
+  reassignBlockedReason: string | null;
+  canUnassign: boolean;
+  unassignBlockedReason: string | null;
+  canEditExecution: boolean;
+  executionEditBlockedReason: string | null;
   unit: string;
   remark: string | null;
   version: number;

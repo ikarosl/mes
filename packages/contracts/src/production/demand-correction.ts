@@ -64,7 +64,8 @@ export interface DemandCorrectionCheck {
     fulfillsSupplement: boolean;
     blockingDemandIds: string[];
     hasConfirmedIssue: boolean;
-    reopenedSteps: { stepId: string; stepName: string; requiredNormalQuantity: string }[];
+    activatedSupplementQuantity: string;
+    upperLimitQuantity: string;
   };
   authorizations: { id: string; quantity: string; stepName: string }[];
   blockers: string[];
@@ -97,7 +98,6 @@ export interface DemandCorrectionHistoryItem {
   createdAt: string;
   appliedAt: string | null;
   fulfilledSupplementIds: string[];
-  reopenedStepIds: string[];
 }
 export interface ProductionApprovalResult {
   subjectId: string;

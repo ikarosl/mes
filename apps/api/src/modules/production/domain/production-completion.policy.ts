@@ -5,7 +5,6 @@ import type {
   ProductionExecutionCompletionCheck,
   WorkOrderType,
 } from '@company/contracts';
-import { integerQuantity } from './integer-quantity.js';
 
 export interface RequiredCompletionStep {
   id: string;
@@ -35,12 +34,6 @@ export const evaluateProductionExecutionCompletion = (input: {
   if (!research && requiredSteps.length === 0) blockers.push('no_route_step');
   if (!research && requiredSteps.some((step) => step.status !== 'completed'))
     blockers.push('required_step_incomplete');
-  if (
-    !research &&
-    finalStep &&
-    integerQuantity(finalStep.effectiveNormalQuantity) !== integerQuantity(input.plannedQuantity)
-  )
-    blockers.push('final_step_quantity_insufficient');
   // 研发结束只声明本轮执行结束，剩余需求和未决单据在正常结案中逐项处理。
   if (!research && (input.activeMaterialDemandCount ?? 0) > 0)
     blockers.push('active_material_demand_remains');

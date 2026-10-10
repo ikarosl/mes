@@ -32,6 +32,9 @@ type Header = RowDataPacket &
     | 'canTerminate'
     | 'blockers'
     | 'checkToken'
+    | 'approvedReportedNormalQuantity'
+    | 'currentReportedNormalQuantity'
+    | 'reportedNormalQuantityDifference'
   >;
 type Fact = RowDataPacket & {
   id: number;
@@ -99,6 +102,12 @@ export class MysqlProductionTerminationRepository extends ProductionTerminationR
       return {
         ...snapshot.check,
         ...header,
+        reportedNormalQuantity: snapshot.check.reportedNormalQuantity,
+        approvedReportedNormalQuantity: snapshot.check.reportedNormalQuantity,
+        currentReportedNormalQuantity: header.reportedNormalQuantity,
+        reportedNormalQuantityDifference: fixedIntegerQuantity(
+          Number(header.reportedNormalQuantity) - Number(snapshot.check.reportedNormalQuantity),
+        ),
         canTerminate: false,
         blockers: ['本批次已结束'],
         termination: {
@@ -230,6 +239,9 @@ export class MysqlProductionTerminationRepository extends ProductionTerminationR
     const evidence = { ...header, impacts, materials, lossRecords, blockers };
     return {
       ...evidence,
+      approvedReportedNormalQuantity: null,
+      currentReportedNormalQuantity: header.reportedNormalQuantity,
+      reportedNormalQuantityDifference: null,
       checkToken: createHash('sha256').update(JSON.stringify(evidence)).digest('hex'),
       canTerminate: blockers.length === 0,
       termination: null,

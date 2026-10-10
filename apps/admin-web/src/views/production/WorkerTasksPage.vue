@@ -1,34 +1,30 @@
 <template>
   <div class="worker-tasks-page">
     <section class="table-panel">
-      <TableToolbar :total="tasks.length">
-        <template #actions>
-          <div class="tasks-caption">
-            <strong>本人现场工序</strong>
-            <span>仅显示当前分配给你的待执行、执行中和已完成工序</span>
-          </div>
-        </template>
-        <template #tools>
-          <el-tooltip
-            content="刷新"
-            placement="top"
-          >
-            <el-button
-              :icon="Refresh"
-              text
-              circle
-              :loading="loading"
-              @click="reload"
-            />
-          </el-tooltip>
-        </template>
-      </TableToolbar>
+      <TableToolbar :total="total"
+        ><template #actions
+          ><div class="tasks-caption">
+            <strong>本人现场工序</strong><span>当前分派与历史记录</span>
+          </div></template
+        ><template #tools
+          ><el-button
+            :icon="Refresh"
+            text
+            circle
+            :loading="loading"
+            aria-label="刷新本人任务"
+            @click="reload" /></template
+      ></TableToolbar>
+      <InlineHint class="execution-tip"
+        >开始、明确完成和重开分别记录状态动作；数量分布不代表完工或质量放行。已完成工序新增报工须先重新开工，记录纠错不要求重开；进入结案后员工只读。</InlineHint
+      >
       <el-alert
+        v-if="errorText"
         class="execution-tip"
-        type="info"
+        :title="errorText"
+        type="error"
         :closable="false"
         show-icon
-        title="只有当前负责人可以开工，开工时间由系统记录；正常报工与异常报工分别提交本次数量，不填写累计数。异常报工会自动生成待处置记录。"
       />
       <el-table
         v-loading="loading"
@@ -36,241 +32,270 @@
         empty-text="当前没有分配给你的工序"
       >
         <el-table-column
-          prop="workOrderNo"
-          label="工单号"
-          min-width="150"
-        />
-        <el-table-column
-          prop="batchNo"
-          label="生产批次"
-          min-width="150"
-        />
-        <el-table-column
-          label="产品"
-          min-width="190"
+          label="工单 / 任务"
+          min-width="140"
+          ><template #default="{ row }"
+            >{{ row.workOrderNo }}<br />{{ row.batchNo }}</template
+          ></el-table-column
         >
-          <template #default="{ row }">{{ row.productCode }} / {{ row.productName }}</template>
-        </el-table-column>
         <el-table-column
-          label="工序"
-          min-width="170"
+          label="产品 / 工序"
+          min-width="150"
+          ><template #default="{ row }"
+            >{{ row.productCode }} / {{ row.productName }}
+            <div>{{ row.stepOrder }}. {{ row.stepName }}</div></template
+          ></el-table-column
         >
-          <template #default="{ row }">
-            {{ row.stepOrder }}. {{ row.stepName }}
-            <div class="step-flags">
-              <el-tag
-                v-if="Number(row.pendingSupplementInputQuantity) > 0"
+        <el-table-column
+          label="工序状态与数量"
+          min-width="400"
+          ><template #default="{ row }"
+            ><div class="state-line">
+              <el-tag :type="stepStatusMeta(row.status).type">{{ stepStatusLabel(row) }}</el-tag
+              ><el-tag
                 size="small"
-                type="warning"
                 effect="plain"
-                >待补料激活</el-tag
-              >
-              <el-tag
-                v-if="row.isSupplementReopened"
-                size="small"
-                type="warning"
-                >补产重开</el-tag
+                :type="batchStatusMeta(row.batchStatus).type"
+                >任务{{ batchStatusMeta(row.batchStatus).label }}</el-tag
               >
             </div>
-          </template>
-        </el-table-column>
+            <ProductionStepQuantitySummary
+              :step="row"
+              :planned-quantity="row.plannedQuantity"
+              show-distribution
+              :show-reopen-hint="row.batchStatus === 'doing'" /></template
+        ></el-table-column>
         <el-table-column
           label="SOP"
-          min-width="190"
-        >
-          <template #default="{ row }">
-            <template v-if="row.sopFileName">
-              <div>{{ row.sopFileName }}</div>
+          min-width="90"
+          ><template #default="{ row }"
+            ><template v-if="row.sopFileName"
+              ><div>{{ row.sopFileName }}</div>
               <el-button
                 link
                 type="primary"
                 :loading="sopPendingIds.has(row.stepRecordId)"
                 @click="downloadSop(row)"
                 >下载 SOP</el-button
-              >
-            </template>
-            <span
+              ></template
+            ><span
               v-else
               class="muted"
               >未配置</span
-            >
-          </template>
-        </el-table-column>
-        <el-table-column
-          label="正常数量进度"
-          min-width="170"
+            ></template
+          ></el-table-column
         >
-          <template #default="{ row }">
-            {{ formatQuantity(row.effectiveNormalQuantity) }} /
-            {{ formatQuantity(row.requiredNormalQuantity) }} {{ row.unit }}
-            <div
-              v-if="Number(row.activatedSupplementTargetQuantity) > 0"
-              class="quantity-supplement"
-            >
-              计划 {{ formatQuantity(row.baseNormalQuantity) }} + 下游补产
-              {{ formatQuantity(row.activatedSupplementTargetQuantity) }}
-            </div>
-            <div
-              v-if="row.status === 'doing'"
-              class="quantity-release"
-            >
-              放行 {{ formatQuantity(row.releasedNormalQuantity) }}，普通报工已占用
-              {{ formatQuantity(row.effectiveDirectReportedQuantity) }}，当前可报
-              {{ formatQuantity(row.availableNormalQuantity) }} {{ row.unit }}
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column
-          label="累计异常数"
-          min-width="130"
-        >
-          <template #default="{ row }">
-            {{ formatQuantity(row.effectiveAbnormalQuantity) }} {{ row.unit }}
-          </template>
-        </el-table-column>
-        <el-table-column
-          label="状态"
-          width="110"
-        >
-          <template #default="{ row }">
-            <el-tag :type="stepStatusMeta(row.status).type">
-              {{ stepStatusLabel(row.status) }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column
-          label="开工时间"
-          width="170"
-        >
-          <template #default="{ row }">{{ formatDateTimeForDisplay(row.startedAt) }}</template>
-        </el-table-column>
         <el-table-column
           label="操作"
-          width="300"
+          min-width="230"
           fixed="right"
+          ><template #default="{ row }"
+            ><ProductionStepActions
+              :step="row"
+              worker
+              :disabled="loading"
+              @action="(action) => stepActionDialogsRef?.open(row, action)"
+              @history="stepActionDialogsRef?.openHistory(row)"
+            />
+            <div class="report-actions">
+              <el-button
+                link
+                type="primary"
+                :disabled="loading || !canOpenProductionReport(row)"
+                @click="reportCreate.open(row, 'normal')"
+                >正常报工</el-button
+              ><el-button
+                link
+                type="primary"
+                :disabled="loading || !canOpenProductionReport(row)"
+                @click="reportCreate.open(row, 'abnormal')"
+                >异常报工</el-button
+              ><el-button
+                link
+                type="primary"
+                :disabled="loading"
+                @click="openRecords(row)"
+                >记录与纠错</el-button
+              >
+            </div>
+            <div
+              v-if="!canOpenProductionReport(row)"
+              class="blocked-reason"
+            >
+              {{ productionReportBlockedReason(row) }}
+            </div></template
+          ></el-table-column
         >
-          <template #default="{ row }">
-            <el-button
-              v-if="row.status === 'assigned'"
-              type="primary"
-              :loading="startPendingIds.has(row.stepRecordId)"
-              :disabled="!row.canStart"
-              @click="startTask(row)"
-              >开始工序</el-button
-            >
-            <span
-              v-if="row.status === 'assigned' && !row.canStart"
-              class="blocked-reason"
-              >{{ row.startBlockedReason }}</span
-            >
-            <el-button
-              v-if="row.status === 'doing'"
-              type="success"
-              :loading="reportPendingIds.has(row.stepRecordId)"
-              :disabled="Number(row.availableNormalQuantity) <= 0"
-              @click="openReport(row, 'normal')"
-              >正常报工</el-button
-            >
-            <el-button
-              v-if="row.status === 'doing'"
-              type="danger"
-              plain
-              :loading="reportPendingIds.has(row.stepRecordId)"
-              :disabled="Number(row.availableNormalQuantity) <= 0"
-              @click="openReport(row, 'abnormal')"
-              >异常报工</el-button
-            >
-            <span
-              v-if="row.status === 'doing' && row.supplementBlockedReason"
-              class="blocked-reason"
-              >{{ row.supplementBlockedReason }}</span
-            >
-            <span
-              v-else-if="row.status !== 'assigned' && row.status !== 'doing'"
-              class="muted"
-              >无需开工操作</span
-            >
-          </template>
-        </el-table-column>
       </el-table>
+      <PaginationFooter
+        :total="total"
+        :current-page="page"
+        :page-size="pageSize"
+        @page-change="changePage"
+        @update:page-size="changePageSize"
+      />
     </section>
-    <BatchStepReportDialog
-      v-model="reportVisible"
-      :task="reportTask"
-      :mode="reportMode"
-      :submitting="Boolean(reportTask && reportPendingIds.has(reportTask.stepRecordId))"
-      :intent-status="reportTask ? getReportIntentStatus(reportTask.stepRecordId) : 'idle'"
-      @reset-intent="reportTask && resetReportIntent(reportTask.stepRecordId)"
-      @submit="submitReport"
+    <ProductionStepActionDialogs
+      ref="stepActionDialogsRef"
+      :steps="tasks"
+      worker
+      :disabled="loading"
+      @changed="reload"
     />
+    <el-dialog
+      v-model="recordsVisible"
+      title="本人工序 · 报工历史与纠错"
+      :width="DialogWidth.workbench"
+      workbench
+    >
+      <template v-if="recordsTask"
+        ><el-descriptions
+          :column="3"
+          border
+          ><el-descriptions-item label="任务">{{ recordsTask.batchNo }}</el-descriptions-item
+          ><el-descriptions-item label="工序"
+            >{{ recordsTask.stepOrder }}. {{ recordsTask.stepName }}</el-descriptions-item
+          ><el-descriptions-item label="工序状态">{{
+            BATCH_STEP_STATUS_LABELS[recordsTask.status]
+          }}</el-descriptions-item></el-descriptions
+        ><InlineHint class="execution-tip"
+          >记录保留当时的实际录入人。数量纠错不要求先重开；请按每条记录的资格和原因办理。</InlineHint
+        ><el-alert
+          v-if="!currentRecordsTask"
+          title="本任务已不在当前可操作列表中或刷新失败，当前仅保留显示；请刷新本人任务重新核对。"
+          type="warning"
+          :closable="false"
+          show-icon /><ProductionStepReportTable
+          :batch-id="recordsTask.productionBatchId"
+          :step-record-id="recordsTask.stepRecordId"
+          :version="currentRecordsTask?.version ?? recordsTask.version"
+          :refresh-key="refreshKey"
+          :disabled="loading || !currentRecordsTask"
+          :active="recordsVisible"
+          @view-detail="reportTrace.open"
+          @view-report="reportTrace.open"
+          @view-process="reportTrace.open"
+          @correct="(report) => openAdjustment('correct', report)"
+          @reverse="(report) => openAdjustment('reverse', report)"
+      /></template>
+      <template #footer><el-button @click="recordsVisible = false">关闭</el-button></template>
+    </el-dialog>
+    <BatchStepReportDialog
+      ref="reportDialogRef"
+      v-model="reportCreate.visible"
+      :task="reportCreate.task"
+      :mode="reportCreate.mode"
+      :submitting="reportCreate.submitting"
+      :intent-status="reportCreate.intentStatus"
+      :context-ready="reportCreate.contextReady"
+      @reset-intent="reportCreate.resetIntent"
+      @submit="reportCreate.submit"
+    />
+    <ProductionReportAdjustmentDialog :editor="reportEditor" />
   </div>
+  <ProductionReportTraceDialog :reader="reportTrace" />
 </template>
 
 <script setup lang="ts">
-import { onActivated, onMounted, ref } from 'vue';
+import { computed, onScopeDispose, ref, watch } from 'vue';
+import { useRoute } from 'vue-router';
 import { Refresh } from '@element-plus/icons-vue';
 import { BATCH_STEP_STATUS_LABELS } from '@company/constants';
-import type {
-  BatchStepAbnormalOrigin,
-  BatchStepStatus,
-  ProductionWorkerTaskItem,
-} from '@company/contracts';
-import { EMessage } from '../../utils/message';
+import type { BatchStepReportView, ProductionWorkerTaskItem } from '@company/contracts';
 import { productionApi } from '../../api/production';
-import { formatDateTimeForDisplay } from '../../utils/date';
+import { usePageActivationRefresh } from '../../composables/requests/usePageActivationRefresh';
+import { useTabsStore } from '../../stores/tabs';
 import TableToolbar from '../../components/TableToolbar.vue';
-import { formatQuantity, stepStatusMeta } from './production-status';
+import PaginationFooter from '../../components/PaginationFooter.vue';
+import InlineHint from '../../components/InlineHint.vue';
+import { DialogWidth } from '../../utils/dialog';
+import { EMessage } from '../../utils/message';
+import { batchStatusMeta, stepStatusMeta } from './production-status';
 import { useWorkerTasks } from './composables/useWorkerTasks';
+import { useProductionReportCreate } from './composables/useProductionReportCreate';
+import { useProductionReportAdjustment } from './composables/useProductionReportAdjustment';
 import BatchStepReportDialog from './components/BatchStepReportDialog.vue';
+import ProductionStepQuantitySummary from './components/ProductionStepQuantitySummary.vue';
+import { canOpenProductionReport, productionReportBlockedReason } from './production-report-input';
+import ProductionStepActions from './components/ProductionStepActions.vue';
+import ProductionStepActionDialogs from './components/ProductionStepActionDialogs.vue';
+import ProductionStepReportTable from './components/ProductionStepReportTable.vue';
+import ProductionReportAdjustmentDialog from './components/ProductionReportAdjustmentDialog.vue';
+import ProductionReportTraceDialog from './components/ProductionReportTraceDialog.vue';
+import { useProductionReportTrace } from './composables/useProductionReportTrace';
 
 defineOptions({ name: 'ProductionWorkerTasksPage' });
-
-const {
-  tasks,
-  loading,
-  startPendingIds,
-  reportPendingIds,
-  load,
-  start,
-  report,
-  getReportIntentStatus,
-  resetReportIntent,
-} = useWorkerTasks();
-const reportVisible = ref(false);
-const reportTask = ref<ProductionWorkerTaskItem | null>(null);
-const reportMode = ref<'normal' | 'abnormal'>('normal');
-const sopPendingIds = ref(new Set<string>());
-const stepStatusLabel = (status: BatchStepStatus): string => BATCH_STEP_STATUS_LABELS[status];
+const recordsVisible = ref(false),
+  recordsTaskSnapshot = ref<ProductionWorkerTaskItem | null>(null),
+  refreshKey = ref(0);
+const { tasks, loading, total, page, pageSize, errorText, load } = useWorkerTasks();
+const stepStatusLabel = (row: ProductionWorkerTaskItem): string =>
+  BATCH_STEP_STATUS_LABELS[row.status];
+const getStep = (id: string): ProductionWorkerTaskItem | null =>
+  tasks.value.find((item) => item.stepRecordId === id) ?? null;
+const currentRecordsTask = computed(() =>
+  recordsTaskSnapshot.value ? getStep(recordsTaskSnapshot.value.stepRecordId) : null,
+);
+const recordsTask = computed(() => currentRecordsTask.value ?? recordsTaskSnapshot.value);
+const reportTrace = useProductionReportTrace({
+  contextId: () =>
+    recordsTask.value
+      ? `${recordsTask.value.productionBatchId}:${recordsTask.value.stepRecordId}`
+      : null,
+});
+watch(
+  recordsVisible,
+  (visible) => {
+    if (!visible) reportTrace.close();
+  },
+  { flush: 'sync' },
+);
 const reload = async (): Promise<void> => {
-  try {
-    await load();
-  } catch (error) {
-    EMessage.error(error, '本人任务加载失败');
-  }
+  await load();
+  refreshKey.value += 1;
 };
-const startTask = async (task: ProductionWorkerTaskItem): Promise<void> => {
-  try {
-    await start(task);
-    EMessage.success('工序已开始，开工时间已由系统记录');
-  } catch (error) {
-    const code =
-      typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : '';
-    const fallback =
-      code === 'NOT_STEP_ASSIGNEE'
-        ? '该工序已改派，请刷新本人任务'
-        : code === 'STEP_START_NOT_ALLOWED'
-          ? '开工前置条件尚未满足，请刷新后查看原因'
-          : code === 'CONCURRENT_MODIFICATION'
-            ? '工序状态已变化，请刷新后重试'
-            : '工序开工失败';
-    EMessage.error(error, fallback);
-  }
+const reportCreate = useProductionReportCreate({
+  getContext: getStep,
+  isReady: () => !loading.value && !errorText.value,
+  refresh: reload,
+});
+const reportEditor = useProductionReportAdjustment({
+  getStep,
+  getBatchStatus: () => recordsTask.value?.batchStatus ?? null,
+  isReady: () => !loading.value && !errorText.value,
+  refresh: reload,
+});
+const openAdjustment = (mode: 'correct' | 'reverse', report: BatchStepReportView): void => {
+  if (recordsTask.value) reportEditor.open(mode, recordsTask.value, report);
 };
-const openReport = (task: ProductionWorkerTaskItem, mode: 'normal' | 'abnormal'): void => {
-  reportTask.value = task;
-  reportMode.value = mode;
-  reportVisible.value = true;
+const reportDialogRef = ref<InstanceType<typeof BatchStepReportDialog> | null>(null);
+const stepActionDialogsRef = ref<InstanceType<typeof ProductionStepActionDialogs> | null>(null);
+const canChangeContext = async (): Promise<boolean> => {
+  if (reportCreate.visible && !(await reportDialogRef.value?.canDiscard())) return false;
+  if (reportEditor.visible && !(await reportEditor.discard())) return false;
+  reportCreate.visible = false;
+  reportEditor.visible = false;
+  return true;
 };
+const openRecords = async (task: ProductionWorkerTaskItem): Promise<void> => {
+  if (!(await canChangeContext())) return;
+  recordsTaskSnapshot.value = { ...task };
+  recordsVisible.value = true;
+};
+const changePage = async (next: number): Promise<void> => {
+  if (!(await canChangeContext())) return;
+  recordsVisible.value = false;
+  page.value = next;
+  await reload();
+};
+const changePageSize = async (next: number): Promise<void> => {
+  if (!(await canChangeContext())) return;
+  recordsVisible.value = false;
+  pageSize.value = next;
+  page.value = 1;
+  await reload();
+};
+const sopPendingIds = ref(new Set<string>());
 const downloadSop = async (task: ProductionWorkerTaskItem): Promise<void> => {
   if (!task.sopFileName || sopPendingIds.value.has(task.stepRecordId)) return;
   sopPendingIds.value = new Set(sopPendingIds.value).add(task.stepRecordId);
@@ -287,7 +312,7 @@ const downloadSop = async (task: ProductionWorkerTaskItem): Promise<void> => {
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    window.setTimeout(() => URL.revokeObjectURL(url), 60000);
   } catch (error) {
     EMessage.error(error, 'SOP 文件下载失败');
   } finally {
@@ -296,61 +321,25 @@ const downloadSop = async (task: ProductionWorkerTaskItem): Promise<void> => {
     sopPendingIds.value = next;
   }
 };
-const submitReport = async (payload: {
-  normalQuantity: number;
-  abnormalQuantity: number;
-  abnormalOrigin: BatchStepAbnormalOrigin | null;
-  remark: string | null;
-}): Promise<void> => {
-  if (!reportTask.value) return;
-  try {
-    await report(
-      reportTask.value,
-      payload.normalQuantity,
-      payload.abnormalQuantity,
-      payload.abnormalOrigin,
-      payload.remark,
-    );
-    reportVisible.value = false;
-    EMessage.success(reportMode.value === 'normal' ? '正常报工已记录' : '异常报工已提交待处置');
-  } catch (error) {
-    const code =
-      typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : '';
-    const fallback =
-      code === 'STEP_REPORT_QUANTITY_EXCEEDED'
-        ? '本次报工数量超过上游当前放行的可报数量，请刷新后重试'
-        : code === 'INVALID_INPUT'
-          ? '正常报工与异常报工必须分别提交，请重新填写'
-          : code === 'NOT_STEP_ASSIGNEE'
-            ? '该工序已改派，请刷新本人任务'
-            : code === 'CONCURRENT_MODIFICATION'
-              ? '工序数据已变化，请刷新后重新报工'
-              : '报工失败';
-    EMessage.error(error, fallback);
-  }
-};
-
-onMounted(reload);
-onActivated(reload);
+const route = useRoute();
+const unregister = useTabsStore().registerCloseGuard(String(route.name), canChangeContext);
+onScopeDispose(unregister);
+usePageActivationRefresh(reload);
 </script>
 
 <style scoped>
 .worker-tasks-page {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
-}
-.table-panel {
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  background: #ffffff;
+  min-width: 0;
+  max-width: 100%;
 }
 .table-panel {
   overflow: hidden;
-}
-.table-panel :deep(.table-toolbar) {
-  min-height: 56px;
-  align-items: center;
-  border-bottom: 1px solid #e5e7eb;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  background: var(--el-bg-color);
 }
 .tasks-caption {
   display: flex;
@@ -358,44 +347,33 @@ onActivated(reload);
   gap: 12px;
 }
 .tasks-caption strong {
-  color: #1f2937;
+  color: var(--el-text-color-primary);
   font-size: 16px;
 }
-.tasks-caption span {
-  color: #6b7280;
+.tasks-caption span,
+.muted {
+  color: var(--el-text-color-secondary);
   font-size: 12px;
 }
 .execution-tip {
   margin: 12px 16px;
   width: auto;
 }
-.table-panel :deep(.el-table) {
-  border-top: 1px solid #e5e7eb;
-}
-.blocked-reason {
-  display: block;
-  margin-top: 6px;
-  color: #b45309;
-  font-size: 12px;
-}
-.muted {
-  color: #9ca3af;
-  font-size: 13px;
-}
-.quantity-release {
-  margin-top: 4px;
-  color: #6b7280;
-  font-size: 12px;
-}
-.quantity-supplement {
-  margin-top: 4px;
-  color: var(--el-color-warning-dark-2);
-  font-size: 12px;
-}
-.step-flags {
+.state-line {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 5px;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.report-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+.blocked-reason {
+  margin-top: 6px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
 }
 </style>

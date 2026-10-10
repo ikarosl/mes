@@ -186,6 +186,12 @@ export const PERMISSIONS = {
   },
 } as const;
 
+/** 工序执行与报工提示使用版本化权限目录中的名称。 */
+export const PRODUCTION_STEP_PERMISSION_LABELS = {
+  [PERMISSIONS.production.steps.report]: '工序报工',
+  [PERMISSIONS.production.steps.manageExecution]: '工序执行与报工管理',
+} as const;
+
 /**
  * 权限匹配：required 为单个权限或任意之一权限集（any-of，跨页面 /options 授权用）。
  * 未提供 required 视为放行；空数组视为拒绝一切。

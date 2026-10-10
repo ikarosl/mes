@@ -1,6 +1,10 @@
 <template>
   <div class="shell">
-    <aside class="sidebar">
+    <aside
+      v-show="!isSidebarCollapsed"
+      id="admin-sidebar"
+      class="sidebar"
+    >
       <div class="brand">MES 追溯系统</div>
       <el-menu
         router
@@ -93,7 +97,19 @@
     </aside>
     <section class="main">
       <header class="topbar">
-        <span>{{ String($route.meta.title ?? '') }}</span>
+        <div class="topbar-heading">
+          <el-button
+            class="sidebar-toggle"
+            text
+            :icon="isSidebarCollapsed ? Expand : Fold"
+            :title="sidebarToggleLabel"
+            :aria-label="sidebarToggleLabel"
+            :aria-expanded="!isSidebarCollapsed"
+            aria-controls="admin-sidebar"
+            @click="toggleSidebar"
+          />
+          <span>{{ String($route.meta.title ?? '') }}</span>
+        </div>
         <div>
           <NotificationBell />
           <span class="user">{{ auth.session?.user.displayName }}</span
@@ -138,8 +154,9 @@
   </div>
 </template>
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
+import { Expand, Fold } from '@element-plus/icons-vue';
 import { PERMISSIONS } from '@company/constants';
 import { useAuthStore } from '../stores/auth';
 import { useTabsStore } from '../stores/tabs';
@@ -148,6 +165,8 @@ defineOptions({ name: 'AdminLayout' });
 const auth = useAuthStore();
 const tabs = useTabsStore();
 const router = useRouter();
+const isSidebarCollapsed = ref(false);
+const sidebarToggleLabel = computed(() => (isSidebarCollapsed.value ? '展开侧边栏' : '收起侧边栏'));
 const contentRef = ref<HTMLElement>();
 let contentObserver: ResizeObserver | undefined;
 
@@ -160,6 +179,12 @@ const updateOverlayBounds = (): void => {
   content.style.setProperty('--route-overlay-left', `${left}px`);
   content.style.setProperty('--route-overlay-width', `${width}px`);
   content.style.setProperty('--route-overlay-height', `${height}px`);
+};
+
+const toggleSidebar = async (): Promise<void> => {
+  isSidebarCollapsed.value = !isSidebarCollapsed.value;
+  await nextTick();
+  updateOverlayBounds();
 };
 
 onMounted(() => {

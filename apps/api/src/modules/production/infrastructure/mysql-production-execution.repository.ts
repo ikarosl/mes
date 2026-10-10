@@ -9,18 +9,34 @@ import type {
   ProductionCloseoutMode,
   WorkOrderStatus,
   ResearchExecutionStartResult,
+  ReopenProductionStepPayload,
+  PageResult,
+  ProductionStepExecutionHistoryItem,
 } from '@company/contracts';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { writeTransactionalAudit } from '../../../common/audit/transactional-audit-writer.js';
 import { toBeijingISOString } from '../../../common/time/date-time.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
+import { IdentityDirectoryService } from '../../identity/public.js';
 import { ProductionExecutionRepository } from '../application/ports/production-execution.repository.js';
 import {
   requireAssignableStep,
   requireAssignedStep,
   requireFirstStepStartable,
   requireFollowingStepStartable,
+  requireReassignableStep,
 } from '../domain/production-execution.policy.js';
+import {
+  appendStepExecutionAction,
+  lockExecutionSteps,
+  lockExecutionStep,
+  auditStep,
+  stepAuditState,
+  mapStepCommandResult,
+  requireUnfrozenStepActions,
+  selectStepExecutionHistory,
+  hasStepReportHistory,
+} from './mysql-production-step-actions.persistence.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
 import { evaluateProductionExecutionCompletion } from '../domain/production-completion.policy.js';
 import {
@@ -36,17 +52,8 @@ import {
   getConfirmedMaterialOutboundQuantity,
 } from './mysql-production-short-batch.js';
 import { lockWorkOrderForBatch } from './mysql-work-order-material-version.js';
+import { executeStepStateCommand } from './mysql-production-step-state.commands.js';
 
-type ExecutionStepRow = RowDataPacket & {
-  id: number;
-  production_batch_id: number;
-  step_order_snapshot: number;
-  status: BatchStepStatus;
-  responsible_user_id: number | null;
-  effective_normal: string;
-  started_at: Date | null;
-  version: number;
-};
 type CompletionStepRow = RowDataPacket & {
   id: number;
   step_order_snapshot: number;
@@ -56,7 +63,10 @@ type CompletionStepRow = RowDataPacket & {
 };
 @Injectable()
 export class MysqlProductionExecutionRepository extends ProductionExecutionRepository {
-  constructor(@Inject(DATABASE_POOL) private readonly pool: Pool) {
+  constructor(
+    @Inject(DATABASE_POOL) private readonly pool: Pool,
+    private readonly identity: IdentityDirectoryService,
+  ) {
     super();
   }
   async startResearchExecution(
@@ -271,8 +281,8 @@ export class MysqlProductionExecutionRepository extends ProductionExecutionRepos
       );
     });
   }
-  async listWorkerTasks(actorId: string) {
-    return selectWorkerTasks(this.pool, actorId);
+  async listWorkerTasks(actorId: string, query: { page: number; pageSize: number }) {
+    return selectWorkerTasks(this.pool, actorId, query);
   }
 
   async getStepSopSnapshot(batchId: string, stepRecordId: string, responsibleUserId?: string) {
@@ -327,17 +337,22 @@ export class MysqlProductionExecutionRepository extends ProductionExecutionRepos
     stepRecordId: string,
     version: number,
     context: CommandContext & { actorId: string },
+    asAdministrator = false,
   ): Promise<ProductionStepCommandResult> {
     return withTransaction(this.pool, async (connection) => {
+      await lockWorkOrderForBatch(connection, batchId);
       const batch = await findBatch(connection, batchId, true);
-      if (batch.status === 'terminated' || batch.status === 'closing')
+      await requireUnfrozenStepActions(connection, batchId);
+      if (!['material_outbound', 'material_partially_outbound', 'doing'].includes(batch.status))
         throw new ProductionDomainError('STEP_START_NOT_ALLOWED', '本轮已结束，不能继续开工');
       const steps = await lockExecutionSteps(connection, batchId);
       const index = steps.findIndex((step) => String(step.id) === stepRecordId);
       if (index < 0) throw new ProductionDomainError('NOT_FOUND', '批次工序记录不存在');
       const current = steps[index]!;
-      if (String(current.responsible_user_id) !== context.actorId)
+      if (!asAdministrator && String(current.responsible_user_id) !== context.actorId)
         throw new ProductionDomainError('NOT_STEP_ASSIGNEE', '只有当前派工员工可以开始该工序');
+      if (current.responsible_user_id === null)
+        throw new ProductionDomainError('STEP_START_NOT_ALLOWED', '工序尚未派工，不能开始');
       if (
         (current.status === 'doing' || current.status === 'completed') &&
         current.started_at !== null
@@ -346,7 +361,8 @@ export class MysqlProductionExecutionRepository extends ProductionExecutionRepos
       if (current.status !== 'assigned')
         throw new ProductionDomainError('STEP_START_NOT_ALLOWED', '当前工序状态不允许开工');
 
-      if (index === 0) {
+      const startsTask = index === 0 && batch.status !== 'doing';
+      if (startsTask) {
         const shortBatchStart =
           batch.status === 'material_partially_outbound'
             ? await evaluateShortBatchStart(connection, batchId, batch.material_plan_version, true)
@@ -359,18 +375,14 @@ export class MysqlProductionExecutionRepository extends ProductionExecutionRepos
         requireFirstStepStartable(batch.status, shortBatchStart?.canStart ?? false);
         requireBatchTransition(batch.status, 'doing');
       } else {
-        const previous = steps[index - 1]!;
-        requireFollowingStepStartable({
-          batchStatus: batch.status,
-          previousEffectiveNormal: Number(previous.effective_normal),
-        });
+        requireFollowingStepStartable({ batchStatus: batch.status });
       }
       const [updated] = await connection.execute<ResultSetHeader>(
         "UPDATE batch_step_records SET status='doing',started_at=NOW(),version=version+1,updated_by=? WHERE id=? AND production_batch_id=? AND status='assigned' AND version=?",
         [context.actorId, stepRecordId, batchId, version],
       );
       assertVersion(updated, '工序派工状态已变化，请刷新任务后重试');
-      if (index === 0) {
+      if (startsTask) {
         const [batchUpdated] = await connection.execute<ResultSetHeader>(
           "UPDATE production_batches SET status='doing',started_at=COALESCE(started_at,NOW()),version=version+1,updated_by=? WHERE id=? AND status IN ('material_outbound','material_partially_outbound')",
           [context.actorId, batchId],
@@ -402,15 +414,81 @@ export class MysqlProductionExecutionRepository extends ProductionExecutionRepos
             [batchId, batch.material_plan_version],
           );
       }
-      await auditStep(connection, context, 'production-step.start', stepRecordId, {
-        status: 'doing',
-        responsibleUserId: context.actorId,
-        version: version + 1,
-        batchStatus: index === 0 ? 'doing' : batch.status,
-        ...(index === 0 ? { workOrderStatus: 'doing' } : {}),
+      const after = await lockExecutionStep(connection, batchId, stepRecordId, false);
+      await appendStepExecutionAction(connection, {
+        batchId,
+        stepRecordId,
+        actionType: 'start',
+        actorId: context.actorId,
+        before: current,
+        after,
       });
+      await auditStep(
+        connection,
+        context,
+        'production-step.start',
+        stepRecordId,
+        {
+          status: 'doing',
+          responsibleUserId: String(current.responsible_user_id),
+          version: version + 1,
+          startedAt: after.started_at ? toBeijingISOString(after.started_at) : null,
+          completedAt: null,
+          batchStatus: startsTask ? 'doing' : batch.status,
+          ...(startsTask ? { workOrderStatus: 'doing' } : {}),
+        },
+        stepAuditState(current),
+      );
       return this.commandResult(connection, batchId, stepRecordId);
     });
+  }
+
+  completeStep(
+    batchId: string,
+    stepRecordId: string,
+    version: number,
+    context: CommandContext & { actorId: string },
+    asAdministrator = false,
+  ): Promise<ProductionStepCommandResult> {
+    return executeStepStateCommand(
+      this.pool,
+      'complete',
+      batchId,
+      stepRecordId,
+      { version },
+      context,
+      asAdministrator,
+    );
+  }
+
+  reopenStep(
+    batchId: string,
+    stepRecordId: string,
+    payload: ReopenProductionStepPayload,
+    context: CommandContext & { actorId: string },
+    asAdministrator = false,
+  ): Promise<ProductionStepCommandResult> {
+    return executeStepStateCommand(
+      this.pool,
+      'reopen',
+      batchId,
+      stepRecordId,
+      payload,
+      context,
+      asAdministrator,
+    );
+  }
+
+  async listStepExecutionHistory(
+    batchId: string,
+    stepRecordId: string,
+    query: { page: number; pageSize: number },
+    responsibleUserId?: string,
+  ): Promise<PageResult<ProductionStepExecutionHistoryItem>> {
+    const step = await lockExecutionStep(this.pool, batchId, stepRecordId, false);
+    if (responsibleUserId && String(step.responsible_user_id) !== responsibleUserId)
+      throw new ProductionDomainError('NOT_STEP_ASSIGNEE', '该工序未分配给当前员工');
+    return selectStepExecutionHistory(this.pool, batchId, stepRecordId, query);
   }
 
   private async changeAssignment(
@@ -422,7 +500,10 @@ export class MysqlProductionExecutionRepository extends ProductionExecutionRepos
     context: CommandContext,
   ): Promise<ProductionStepCommandResult> {
     return withTransaction(this.pool, async (connection) => {
+      if (!context.actorId) throw new ProductionDomainError('INVALID_INPUT', '缺少当前操作人身份');
+      await lockWorkOrderForBatch(connection, batchId);
       const batch = await findBatch(connection, batchId, true);
+      await requireUnfrozenStepActions(connection, batchId);
       if (
         batch.status === 'cancelled' ||
         batch.status === 'completed' ||
@@ -431,10 +512,17 @@ export class MysqlProductionExecutionRepository extends ProductionExecutionRepos
       )
         throw new ProductionDomainError(
           'STEP_ASSIGNMENT_CONFLICT',
-          '已取消或已完成批次不能调整派工',
+          '任务已结束执行或取消，不能调整派工',
         );
-      const current = await lockExecutionStep(connection, batchId, stepRecordId);
-
+      const current = (await lockExecutionSteps(connection, batchId)).find(
+        (step) => String(step.id) === stepRecordId,
+      );
+      if (!current) throw new ProductionDomainError('NOT_FOUND', '批次工序记录不存在');
+      if (responsibleUserId) {
+        const active = await this.identity.listActiveUserOptionsByIds([responsibleUserId]);
+        if (active.length !== 1)
+          throw new ProductionDomainError('INVALID_INPUT', '派工员工不存在或已停用');
+      }
       if (action === 'assign') {
         if (
           current.status === 'assigned' &&
@@ -446,26 +534,52 @@ export class MysqlProductionExecutionRepository extends ProductionExecutionRepos
         if (current.status === 'pending' && current.responsible_user_id === null)
           return this.commandResult(connection, batchId, stepRecordId);
         requireAssignedStep(current.status);
+        if (
+          current.started_at !== null ||
+          (await hasStepReportHistory(connection, stepRecordId, true))
+        )
+          throw new ProductionDomainError(
+            'STEP_ASSIGNMENT_CONFLICT',
+            '已有开工或报工历史的工序不能撤回派工',
+          );
       } else {
         if (
-          current.status === 'assigned' &&
+          (current.status === 'assigned' ||
+            current.status === 'doing' ||
+            current.status === 'completed') &&
           String(current.responsible_user_id) === responsibleUserId
         )
           return this.commandResult(connection, batchId, stepRecordId);
-        requireAssignedStep(current.status);
+        requireReassignableStep(current.status);
+        if (
+          (current.status === 'doing' || current.status === 'completed') &&
+          batch.status !== 'doing'
+        )
+          throw new ProductionDomainError(
+            'STEP_ASSIGNMENT_CONFLICT',
+            '只有执行中的任务可以改派已开始工序',
+          );
       }
 
-      const targetStatus = action === 'unassign' ? 'pending' : 'assigned';
+      const targetStatus =
+        action === 'unassign' ? 'pending' : action === 'assign' ? 'assigned' : current.status;
       const [updated] = await connection.execute<ResultSetHeader>(
         'UPDATE batch_step_records SET status=?,responsible_user_id=?,version=version+1,updated_by=? WHERE id=? AND production_batch_id=? AND version=?',
         [targetStatus, responsibleUserId, context.actorId, stepRecordId, batchId, version],
       );
       assertVersion(updated, '工序派工已被其他操作修改，请刷新后重试');
-      await auditStep(connection, context, `production-step.${action}`, stepRecordId, {
-        status: targetStatus,
-        responsibleUserId,
-        version: version + 1,
-      });
+      await auditStep(
+        connection,
+        context,
+        `production-step.${action}`,
+        stepRecordId,
+        {
+          status: targetStatus,
+          responsibleUserId,
+          version: version + 1,
+        },
+        stepAuditState(current),
+      );
       return this.commandResult(connection, batchId, stepRecordId);
     });
   }
@@ -475,83 +589,16 @@ export class MysqlProductionExecutionRepository extends ProductionExecutionRepos
     batchId: string,
     stepRecordId: string,
   ): Promise<ProductionStepCommandResult> {
-    const batch = await findBatch(connection, batchId);
-    const step = await lockExecutionStep(connection, batchId, stepRecordId, false);
-    return {
-      productionBatchId: batchId,
-      batchStatus: batch.status,
-      batchVersion: batch.version,
-      stepRecordId,
-      stepStatus: step.status,
-      responsibleUserId:
-        step.responsible_user_id === null ? null : String(step.responsible_user_id),
-      startedAt: step.started_at ? toBeijingISOString(step.started_at) : null,
-      version: step.version,
-    };
+    const batch = await findBatch(connection, batchId, true);
+    const step = await lockExecutionStep(connection, batchId, stepRecordId);
+    return mapStepCommandResult(batchId, batch, stepRecordId, step);
   }
 }
-
-const lockExecutionSteps = async (
-  connection: PoolConnection,
-  batchId: string,
-): Promise<ExecutionStepRow[]> => {
-  await connection.query(
-    'SELECT id FROM batch_step_records WHERE production_batch_id=? ORDER BY step_order_snapshot,id FOR UPDATE',
-    [batchId],
-  );
-  const [rows] = await connection.query<ExecutionStepRow[]>(
-    `SELECT sr.id,sr.production_batch_id,sr.step_order_snapshot,sr.status,sr.responsible_user_id,
-     sr.started_at,sr.version,
-     COALESCE((SELECT SUM(CASE WHEN r.report_type='normal' THEN r.normal_quantity ELSE -r.normal_quantity END) FROM batch_step_reports r WHERE r.batch_step_record_id=sr.id),0) effective_normal
-     FROM batch_step_records sr WHERE sr.production_batch_id=? ORDER BY sr.step_order_snapshot,sr.id`,
-    [batchId],
-  );
-  return rows;
-};
-
-const lockExecutionStep = async (
-  connection: PoolConnection,
-  batchId: string,
-  stepRecordId: string,
-  lock = true,
-): Promise<ExecutionStepRow> => {
-  const [rows] = await connection.query<ExecutionStepRow[]>(
-    `SELECT sr.id,sr.production_batch_id,sr.step_order_snapshot,sr.status,sr.responsible_user_id,
-     sr.started_at,sr.version,
-     COALESCE((SELECT SUM(CASE WHEN r.report_type='normal' THEN r.normal_quantity ELSE -r.normal_quantity END) FROM batch_step_reports r WHERE r.batch_step_record_id=sr.id),0) effective_normal
-     FROM batch_step_records sr WHERE sr.id=? AND sr.production_batch_id=?${lock ? ' FOR UPDATE' : ''}`,
-    [stepRecordId, batchId],
-  );
-  if (!rows[0]) throw new ProductionDomainError('NOT_FOUND', '批次工序记录不存在');
-  return rows[0];
-};
 
 const assertVersion = (result: ResultSetHeader, message: string): void => {
   if (result.affectedRows !== 1)
     throw new ProductionDomainError('CONCURRENT_MODIFICATION', message);
 };
-
-const auditStep = (
-  connection: PoolConnection,
-  context: CommandContext,
-  action: string,
-  stepRecordId: string,
-  afterData: unknown,
-): Promise<void> =>
-  writeTransactionalAudit(connection, {
-    logType: 'business',
-    module: 'production',
-    action,
-    userId: context.actorId,
-    targetId: stepRecordId,
-    targetType: 'batch_step_record',
-    result: 'success',
-    beforeData: null,
-    afterData,
-    requestId: context.requestId,
-    ip: context.ip,
-    userAgent: context.userAgent,
-  });
 
 const selectRequiredCompletionSteps = async (
   db: Db,
@@ -606,11 +653,6 @@ const throwCompletionBlocker = (check: ProductionExecutionCompletionCheck): neve
     throw new ProductionDomainError('NO_REQUIRED_REPORTING_STEP', '批次没有工序，不能执行完工');
   if (blocker === 'required_step_incomplete')
     throw new ProductionDomainError('REQUIRED_STEP_INCOMPLETE', '仍有工序尚未完成');
-  if (blocker === 'final_step_quantity_insufficient')
-    throw new ProductionDomainError(
-      'FINAL_STEP_QUANTITY_INSUFFICIENT',
-      '末道工序的有效正常数量未达到批次计划数量',
-    );
   if (blocker === 'active_material_demand_remains')
     throw new ProductionDomainError(
       'ACTIVE_MATERIAL_DEMAND_REMAINS',

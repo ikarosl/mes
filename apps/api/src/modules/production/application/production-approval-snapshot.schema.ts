@@ -23,6 +23,7 @@ const id = z.string().regex(/^[1-9]\d*$/);
 const quantity = z.string().regex(/^\d+(\.0+)?$/);
 const version = z.number().int().nonnegative();
 const amount = z.number().int().min(0).max(99_999_999);
+export const DEMAND_CORRECTION_APPROVAL_SNAPSHOT_SCHEMA_VERSION = 2;
 export const demandCorrectionCheckSchema = z.object({
   demandId: id,
   batchId: id,
@@ -80,9 +81,8 @@ export const demandCorrectionCheckSchema = z.object({
       fulfillsSupplement: z.boolean(),
       blockingDemandIds: z.array(id),
       hasConfirmedIssue: z.boolean(),
-      reopenedSteps: z.array(
-        z.object({ stepId: id, stepName: z.string(), requiredNormalQuantity: quantity }),
-      ),
+      activatedSupplementQuantity: quantity,
+      upperLimitQuantity: quantity,
     })
     .nullable(),
   blockers: z.array(z.string()),

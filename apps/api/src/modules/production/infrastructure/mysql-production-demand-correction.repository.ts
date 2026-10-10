@@ -4,7 +4,6 @@ import { withTransaction } from '@company/database';
 import type { Pool, PoolConnection, RowDataPacket, ResultSetHeader } from 'mysql2/promise';
 import type {
   DemandCorrectionApprovalSnapshot,
-  BatchStepStatus,
   DemandCorrectionCheck,
   DemandCorrectionHistoryItem,
   DemandCorrectionChainItem,
@@ -18,7 +17,8 @@ import { toBeijingISOString } from '../../../common/time/date-time.js';
 import { ProductionDemandCorrectionRepository } from '../application/ports/production-demand-correction.repository.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
 import { correctionRemaining } from '../domain/production-demand-correction.policy.js';
-import { fixedIntegerQuantity } from '../domain/integer-quantity.js';
+import { fixedIntegerQuantity, integerQuantity } from '../domain/integer-quantity.js';
+import { calculateUnifiedReportLimit } from '../domain/production-route-quantity.policy.js';
 import { lockWorkOrderForBatch } from './mysql-work-order-material-version.js';
 import { findBatch, type BatchRow } from './mysql-production.shared.js';
 import {
@@ -31,10 +31,7 @@ import {
 } from './mysql-production-supplement-activation.js';
 import { loadSupplementRequirements } from './mysql-production-supplement-requirements.js';
 import { evaluateSupplementFulfillment } from '../domain/production-supplement-fulfillment.policy.js';
-import {
-  calculateRouteStepQuantities,
-  supplementReopenedStepIds,
-} from '../domain/production-route-quantity.policy.js';
+import { DEMAND_CORRECTION_APPROVAL_SNAPSHOT_SCHEMA_VERSION } from '../application/production-approval-snapshot.schema.js';
 import { writeInventoryAudit } from './mysql-production-inventory.shared.js';
 
 type Demand = RowDataPacket & {
@@ -78,7 +75,7 @@ type Correction = RowDataPacket & {
   new_demand_id: number | null;
   applied_at: Date | null;
   ended_at: Date | null;
-  result_snapshot: { fulfilledSupplementIds: string[]; reopenedStepIds: string[] } | string | null;
+  result_snapshot: { fulfilledSupplementIds: string[] } | string | null;
   created_at: Date;
   version: number;
 };
@@ -125,11 +122,10 @@ export class MysqlProductionDemandCorrectionRepository extends ProductionDemandC
       return rows.map((row) => {
         const result =
           row.result_snapshot === null
-            ? { fulfilledSupplementIds: [], reopenedStepIds: [] }
+            ? { fulfilledSupplementIds: [] }
             : typeof row.result_snapshot === 'string'
               ? (JSON.parse(row.result_snapshot) as {
                   fulfilledSupplementIds: string[];
-                  reopenedStepIds: string[];
                 })
               : row.result_snapshot;
         return {
@@ -200,7 +196,7 @@ export class MysqlProductionDemandCorrectionRepository extends ProductionDemandC
       return {
         title: `${check.workOrderNo} / ${check.batchNo} · ${check.itemCode} 需求更正`,
         subjectVersion: row.version,
-        snapshotSchemaVersion: 1,
+        snapshotSchemaVersion: DEMAND_CORRECTION_APPROVAL_SNAPSHOT_SCHEMA_VERSION,
         businessAssigneeResolutions: [],
         snapshot: this.snapshot(row),
       };
@@ -358,19 +354,14 @@ export class MysqlProductionDemandCorrectionRepository extends ProductionDemandC
       });
       await db.execute(
         `UPDATE production_demand_correction SET new_demand_id=?,applied_by=?,applied_at=NOW(),ended_at=NOW(),
-        result_snapshot=JSON_OBJECT('fulfilledSupplementIds',JSON_ARRAY(),'reopenedStepIds',JSON_ARRAY()),version=version+1,updated_by=? WHERE id=?`,
+        result_snapshot=JSON_OBJECT('fulfilledSupplementIds',JSON_ARRAY()),version=version+1,updated_by=? WHERE id=?`,
         [newDemandId, context.actorId, context.actorId, correctionId],
       );
       await db.query(
-        'SELECT id FROM batch_step_records WHERE production_batch_id=? ORDER BY id FOR UPDATE',
+        'SELECT id FROM batch_step_records WHERE production_batch_id=? ORDER BY step_order_snapshot,id FOR UPDATE',
         [batch.id],
       );
-      const activation = await fulfillReadySupplements(
-        db,
-        String(batch.id),
-        batch.planned_quantity,
-        context.actorId,
-      );
+      const activation = await fulfillReadySupplements(db, String(batch.id), context.actorId);
       await db.execute('UPDATE production_demand_correction SET result_snapshot=? WHERE id=?', [
         JSON.stringify(activation),
         correctionId,
@@ -592,25 +583,6 @@ export class MysqlProductionDemandCorrectionRepository extends ProductionDemandC
     );
     const pendingCorrectionId = id(demand.pending_correction_id);
     const ownPending = ownCorrectionId !== undefined && pendingCorrectionId === ownCorrectionId;
-    const [steps] =
-      demand.supplement_id === null
-        ? [[]]
-        : await db.query<
-            (RowDataPacket & {
-              stepId: string;
-              stepName: string;
-              status: BatchStepStatus;
-              version: number;
-              stepOrder: number;
-              effectiveNormal: string;
-            })[]
-          >(
-            `SELECT CAST(s.id AS CHAR) stepId,s.step_name_snapshot stepName,s.status,s.version,s.step_order_snapshot stepOrder,
-        COALESCE((SELECT SUM(CASE WHEN r.report_type='normal' THEN r.normal_quantity ELSE -r.normal_quantity END)
-          FROM batch_step_reports r WHERE r.batch_step_record_id=s.id${suffix}),0) effectiveNormal
-       FROM batch_step_records s WHERE s.production_batch_id=? ORDER BY s.step_order_snapshot,s.id${suffix}`,
-            [batchId],
-          );
     const [requirementRows] =
       demand.supplement_id === null
         ? [[]]
@@ -674,35 +646,24 @@ export class MysqlProductionDemandCorrectionRepository extends ProductionDemandC
           ? { ...source, status: 'material_ready' as const }
           : source,
       );
-      const routeSteps = steps.map((step) => ({
-        id: step.stepId,
-        stepOrder: step.stepOrder,
-        status: step.status,
-        effectiveNormal: step.effectiveNormal,
-        effectiveDirectReported: 0,
-      }));
-      const quantities = calculateRouteStepQuantities(
-        batch.planned_quantity,
-        routeSteps,
-        simulatedSources,
-      );
-      const reopened = supplementReopenedStepIds(
-        routeSteps,
-        quantities,
-        simulatedSources,
-        readiness.fulfilled ? [String(demand.supplement_id)] : [],
-      );
       zeroRemainderImpact = {
         fulfillsSupplement: readiness.fulfilled,
         blockingDemandIds: readiness.blockingDemandIds,
         hasConfirmedIssue: simulated.some((requirement) => requirement.issuedQuantity > 0),
-        reopenedSteps: steps
-          .filter((step) => reopened.includes(step.stepId))
-          .map((step) => ({
-            stepId: step.stepId,
-            stepName: step.stepName,
-            requiredNormalQuantity: quantities.get(step.stepId)!.requiredNormalQuantity,
-          })),
+        activatedSupplementQuantity: fixedIntegerQuantity(
+          sources
+            .filter(
+              (source) =>
+                source.supplementId === String(demand.supplement_id) &&
+                source.status === 'pending_material' &&
+                readiness.fulfilled,
+            )
+            .reduce(
+              (total, source) => integerQuantity(total + integerQuantity(source.quantity)),
+              0,
+            ),
+        ),
+        upperLimitQuantity: calculateUnifiedReportLimit(batch.planned_quantity, simulatedSources),
       };
     }
     const blockers: string[] = [];
@@ -792,7 +753,7 @@ export class MysqlProductionDemandCorrectionRepository extends ProductionDemandC
       canCorrect: blockers.length === 0,
     };
     return {
-      check: { ...body, checkToken: hash({ body, returns, losses, steps, sources }) },
+      check: { ...body, checkToken: hash({ body, returns, losses, sources }) },
       demand,
       batch,
       additionNo: addition?.addition_no ?? null,

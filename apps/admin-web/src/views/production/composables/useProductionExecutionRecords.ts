@@ -2,16 +2,15 @@ import { EMessage } from '../../../utils/message';
 import { ref, watch } from 'vue';
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
 import type {
-  BatchStepExecutionRecordItem,
-  BatchStepReportItem,
   ProductionExecutionBatchSummary,
   ProductionExecutionRecordGroup,
   ProductionExecutionCompletionCheck,
   BatchStepAbnormalDispositionItem,
-  BatchStepAbnormalOrigin,
   ReworkRecordItem,
+  ReworkRecordView,
   ApproveScrapSupplementLinePayload,
   ProductionScrapSupplementPlanItem,
+  CompleteReworkPayload,
 } from '@company/contracts';
 import { productionApi } from '../../../api/production';
 import {
@@ -19,59 +18,95 @@ import {
   useIdempotentIntent,
 } from '../../../composables/idempotency/useIdempotentIntent';
 
+export interface ProductionReworkCompletionRequest {
+  rework: ReworkRecordItem;
+  body: CompleteReworkPayload;
+}
+
 export const useProductionExecutionRecords = () => {
   const batches = ref<ProductionExecutionBatchSummary[]>([]);
   const total = ref(0);
+  const pageSize = 10;
   const loading = ref(false);
+  const listErrorText = ref('');
   const detailLoading = ref(false);
   const selectedBatchId = ref<string | null>(null);
   const record = ref<ProductionExecutionRecordGroup | null>(null);
   const completionCheck = ref<ProductionExecutionCompletionCheck | null>(null);
-  const reworks = ref<ReworkRecordItem[]>([]);
+  const reworks = ref<ReworkRecordView[]>([]);
   const pendingKeys = ref(new Set<string>());
-  const correctionIntents = new Map<string, ReturnType<typeof useIdempotentIntent>>();
-  const reworkCompletionIntents = new Map<string, ReturnType<typeof useIdempotentIntent>>();
+  const reworkCompletionIntents = new Map<
+    string,
+    { intent: ReturnType<typeof useIdempotentIntent>; request: ProductionReworkCompletionRequest }
+  >();
   const supplementIntents = new Map<string, ReturnType<typeof useIdempotentIntent>>();
 
   const listRequests = useLatestReadRequest(() => (loading.value = false));
   const detailRequests = useLatestReadRequest(() => (detailLoading.value = false));
+  const clearCurrentDetails = (): void => {
+    detailRequests.invalidate();
+    record.value = null;
+    completionCheck.value = null;
+    reworks.value = [];
+  };
   watch(
     selectedBatchId,
     () => {
-      detailRequests.invalidate();
-      detailLoading.value = false;
-      record.value = null;
-      completionCheck.value = null;
-      reworks.value = [];
+      clearCurrentDetails();
     },
     { flush: 'sync' },
   );
 
-  const loadBatches = async (keyword = '', page = 1): Promise<void> => {
-    if (!listRequests.isActive()) return;
+  let listKeyword = '',
+    listPage = 1;
+  const loadBatches = async (
+    keyword = '',
+    page = 1,
+    options: { preserveSelection?: boolean } = {},
+  ): Promise<number | null> => {
+    if (!listRequests.isActive()) return null;
+    const queryKeyword = keyword.trim();
+    detailRequests.invalidate();
+    if (listKeyword !== queryKeyword || listPage !== page) clearCurrentDetails();
+    listKeyword = queryKeyword;
+    listPage = page;
     const { isCurrent, signal } = listRequests.begin();
     loading.value = true;
+    listErrorText.value = '';
     try {
       const result = await productionApi.listExecutionBatchSummaries(
         {
-          keyword: keyword || undefined,
+          keyword: queryKeyword || undefined,
           page,
-          pageSize: 20,
+          pageSize,
         },
         { skipErrorHandling: true, signal },
       );
-      if (!isCurrent()) return;
+      if (!isCurrent()) return null;
       batches.value = result.items;
       total.value = result.total;
-      if (!result.items.some((item) => item.id === selectedBatchId.value)) {
-        record.value = null;
-        completionCheck.value = null;
-        reworks.value = [];
+      if (selectedBatchId.value && result.items.some((item) => item.id === selectedBatchId.value)) {
+        await selectBatch(selectedBatchId.value);
+      } else {
+        clearCurrentDetails();
+        // 激活刷新不能因分页窗口变化自动换任务或关闭尚未确认的写意图。
+        if (options.preserveSelection && selectedBatchId.value) {
+          await selectBatch(selectedBatchId.value);
+          return isCurrent() ? result.total : null;
+        }
         selectedBatchId.value = null;
         if (result.items[0]) await selectBatch(result.items[0].id);
       }
+      return isCurrent() ? result.total : null;
     } catch (error) {
-      if (isCurrent()) EMessage.error(error, '加载失败，请重试');
+      if (isCurrent()) {
+        batches.value = [];
+        total.value = 0;
+        clearCurrentDetails();
+        listErrorText.value = '生产批次加载失败，旧操作依据已清除，请重试。';
+        EMessage.error(error, listErrorText.value);
+      }
+      return null;
     } finally {
       if (isCurrent()) loading.value = false;
     }
@@ -133,6 +168,7 @@ export const useProductionExecutionRecords = () => {
   const requireCurrentBatch = (batchId: string): void => {
     if (
       !detailRequests.isActive() ||
+      loading.value ||
       detailLoading.value ||
       selectedBatchId.value !== batchId ||
       record.value?.productionBatchId !== batchId
@@ -153,63 +189,6 @@ export const useProductionExecutionRecords = () => {
       pendingKeys.value = next;
     }
   };
-  const reverse = (
-    step: BatchStepExecutionRecordItem,
-    report: BatchStepReportItem,
-    reason: string,
-  ): Promise<void> =>
-    withPending(`reverse:${report.reportId}`, async () => {
-      requireCurrentBatch(step.productionBatchId);
-      await productionApi.reverseStepReport(
-        step.productionBatchId,
-        step.stepRecordId,
-        report.reportId,
-        { version: step.version, reason: reason.trim() },
-      );
-      await refreshSelectedBatch(step.productionBatchId);
-    });
-  const correct = (
-    step: BatchStepExecutionRecordItem,
-    report: BatchStepReportItem,
-    normalQuantity: number,
-    abnormalQuantity: number,
-    abnormalOrigin: BatchStepAbnormalOrigin | null,
-    reason: string,
-  ): Promise<void> =>
-    withPending(`correct:${report.reportId}`, async () => {
-      requireCurrentBatch(step.productionBatchId);
-      const body = {
-        version: step.version,
-        normalQuantity,
-        abnormalQuantity,
-        abnormalOrigin: abnormalQuantity > 0 ? abnormalOrigin : null,
-        reason: reason.trim(),
-      };
-      const intent = correctionIntents.get(report.reportId) ?? useIdempotentIntent();
-      correctionIntents.set(report.reportId, intent);
-      await intent.execute(
-        {
-          intentType: 'production.step-report.correct',
-          params: {
-            batchId: step.productionBatchId,
-            stepRecordId: step.stepRecordId,
-            reportId: report.reportId,
-          },
-          query: {},
-          body,
-        },
-        (key) =>
-          productionApi.correctStepReport(
-            step.productionBatchId,
-            step.stepRecordId,
-            report.reportId,
-            body,
-            key,
-          ),
-      );
-      correctionIntents.delete(report.reportId);
-      await refreshSelectedBatch(step.productionBatchId);
-    });
   const completeExecution = (): Promise<void> => {
     const check = completionCheck.value;
     if (!check) return Promise.resolve();
@@ -218,12 +197,6 @@ export const useProductionExecutionRecords = () => {
       await productionApi.completeProductionExecution(check.productionBatchId, check.version);
       await refreshSelectedBatch(check.productionBatchId);
     });
-  };
-  const getCorrectionIntentStatus = (reportId: string) =>
-    correctionIntents.get(reportId)?.getStatus() ?? 'idle';
-  const resetCorrectionIntent = (reportId: string): void => {
-    correctionIntents.get(reportId)?.reset();
-    correctionIntents.delete(reportId);
   };
   const approveRework = (
     disposition: BatchStepAbnormalDispositionItem,
@@ -262,27 +235,75 @@ export const useProductionExecutionRecords = () => {
     remark: string,
   ): Promise<void> =>
     withPending(`complete-rework:${rework.reworkId}`, async () => {
-      requireCurrentBatch(rework.productionBatchId);
-      const body = {
-        version: rework.version,
-        normalQuantity,
-        abnormalQuantity,
-        remark: remark.trim() || null,
-      };
-      const intent = reworkCompletionIntents.get(rework.reworkId) ?? useIdempotentIntent();
-      reworkCompletionIntents.set(rework.reworkId, intent);
-      await intent.execute(
-        {
-          intentType: 'production.rework.complete',
-          params: { reworkId: rework.reworkId },
-          query: {},
-          body,
-        },
-        (key) => productionApi.completeRework(rework.reworkId, body, key),
-      );
+      let entry = reworkCompletionIntents.get(rework.reworkId);
+      if (!entry || entry.intent.getStatus() === 'idle') {
+        requireCurrentBatch(rework.productionBatchId);
+        const current = reworks.value.find((item) => item.reworkId === rework.reworkId);
+        if (
+          record.value?.batchStatus !== 'doing' ||
+          record.value.pendingApprovalId !== null ||
+          current?.status !== 'doing' ||
+          current.version !== rework.version ||
+          current.productionBatchId !== rework.productionBatchId ||
+          current.responsibleUserId !== rework.responsibleUserId ||
+          current.reworkQuantity !== rework.reworkQuantity
+        )
+          throw new Error('当前返工或任务已不能新登记完成结果，请刷新后核对');
+        entry = {
+          intent: useIdempotentIntent('返工完成结果'),
+          request: {
+            rework: { ...rework },
+            body: {
+              version: rework.version,
+              normalQuantity,
+              abnormalQuantity,
+              remark: remark.trim() || null,
+            },
+          },
+        };
+        reworkCompletionIntents.set(rework.reworkId, entry);
+      } else if (
+        !detailRequests.isActive() ||
+        selectedBatchId.value !== entry.request.rework.productionBatchId
+      ) {
+        throw new Error('请返回原任务核对或按原请求重试返工完成结果');
+      }
+      const { intent, request } = entry;
+      try {
+        await intent.execute(
+          {
+            intentType: 'production.rework.complete',
+            params: { reworkId: request.rework.reworkId },
+            query: {},
+            body: request.body,
+          },
+          (key) => productionApi.completeRework(request.rework.reworkId, request.body, key),
+        );
+      } catch (error) {
+        if (intent.getStatus() === 'idle') reworkCompletionIntents.delete(rework.reworkId);
+        throw error;
+      }
       reworkCompletionIntents.delete(rework.reworkId);
-      await refreshSelectedBatch(rework.productionBatchId);
+      await refreshSelectedBatch(request.rework.productionBatchId);
     });
+  const getReworkCompletionIntentStatus = (reworkId: string) =>
+    reworkCompletionIntents.get(reworkId)?.intent.getStatus() ?? 'idle';
+  const getReworkCompletionRequest = (
+    reworkId: string,
+  ): ProductionReworkCompletionRequest | null => {
+    const request = reworkCompletionIntents.get(reworkId)?.request;
+    return request ? { rework: { ...request.rework }, body: { ...request.body } } : null;
+  };
+  const getReworkCompletionRequests = (): ProductionReworkCompletionRequest[] =>
+    [...reworkCompletionIntents.values()].map(({ request }) => ({
+      rework: { ...request.rework },
+      body: { ...request.body },
+    }));
+  const resetReworkCompletionIntent = (reworkId: string): void => {
+    if (pendingKeys.value.has(`complete-rework:${reworkId}`)) return;
+    reworkCompletionIntents.get(reworkId)?.intent.reset();
+    reworkCompletionIntents.delete(reworkId);
+  };
   const loadSupplementCandidates = (dispositionId: string) =>
     productionApi.listSupplementCandidates(dispositionId);
   const loadScrapSupplementPlan = (dispositionId: string) =>
@@ -350,7 +371,9 @@ export const useProductionExecutionRecords = () => {
   return {
     batches,
     total,
+    pageSize,
     loading,
+    listErrorText,
     detailLoading,
     selectedBatchId,
     record,
@@ -359,15 +382,15 @@ export const useProductionExecutionRecords = () => {
     pendingKeys,
     loadBatches,
     selectBatch,
-    reverse,
-    correct,
     completeExecution,
-    getCorrectionIntentStatus,
-    resetCorrectionIntent,
     approveRework,
     rejectDisposition,
     startRework,
     completeRework,
+    getReworkCompletionIntentStatus,
+    getReworkCompletionRequest,
+    getReworkCompletionRequests,
+    resetReworkCompletionIntent,
     loadSupplementCandidates,
     loadScrapSupplementPlan,
     saveScrapSupplementPlan,

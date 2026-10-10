@@ -1,13 +1,18 @@
 import type { RowDataPacket } from 'mysql2/promise';
 import type {
   BatchStepAbnormalDispositionItem,
+  BatchStepAbnormalDispositionView,
   BatchStepExecutionRecordItem,
   BatchStepReportItem,
   BatchStepStatus,
+  ProductionStepQuantityProjection,
+  ProductionStepActionAvailability,
+  ProductionStepQuotaDistribution,
 } from '@company/contracts';
 import { toBeijingISOString } from '../../../common/time/date-time.js';
 import type { RouteStepQuantity } from '../domain/production-route-quantity.policy.js';
 import { fixedIntegerQuantity } from '../domain/integer-quantity.js';
+import type { reportWriteEligibility } from '../domain/production-reporting.policy.js';
 
 export type ReportRow = RowDataPacket & {
   id: number;
@@ -35,6 +40,7 @@ export type DispositionRow = RowDataPacket & {
   batch_step_record_id: number;
   batch_step_report_id: number;
   abnormal_origin: BatchStepAbnormalDispositionItem['abnormalOrigin'];
+  source_abnormal_quantity: string;
   review_status: BatchStepAbnormalDispositionItem['reviewStatus'];
   disposition_type: 'rework' | 'scrap' | null;
   remark: string | null;
@@ -53,14 +59,29 @@ export type ProjectionStepRow = RowDataPacket & {
   unit_snapshot: string;
   effective_reported: string;
   effective_direct_reported: string;
+  effective_direct_normal: string;
+  effective_direct_abnormal: string;
   effective_normal: string;
   effective_abnormal: string;
   started_at: Date | null;
   completed_at: Date | null;
   version: number;
+  report_count: number;
+  first_reported_at: Date | null;
+  last_reported_at: Date | null;
 };
 
-export const mapReport = (row: ReportRow): BatchStepReportItem => ({
+export const mapReport = (
+  row: ReportRow,
+  eligibility: Pick<
+    BatchStepReportItem,
+    'canReverse' | 'canCorrect' | 'correctionBlockedReason'
+  > = {
+    canReverse: false,
+    canCorrect: false,
+    correctionBlockedReason: '该记录仅供历史查看',
+  },
+): BatchStepReportItem => ({
   reportId: String(row.id),
   reportNo: row.report_no,
   productionBatchId: String(row.production_batch_id),
@@ -78,6 +99,7 @@ export const mapReport = (row: ReportRow): BatchStepReportItem => ({
   createdByName: null,
   createdAt: toBeijingISOString(row.created_at),
   isEffective: Boolean(row.is_effective),
+  ...eligibility,
 });
 
 export const mapDisposition = (row: DispositionRow): BatchStepAbnormalDispositionItem => ({
@@ -86,6 +108,7 @@ export const mapDisposition = (row: DispositionRow): BatchStepAbnormalDispositio
   productionBatchId: String(row.production_batch_id),
   stepRecordId: String(row.batch_step_record_id),
   sourceReportId: String(row.batch_step_report_id),
+  sourceAbnormalQuantity: String(row.source_abnormal_quantity),
   abnormalOrigin: row.abnormal_origin,
   reviewStatus: row.review_status,
   dispositionType: row.disposition_type,
@@ -98,8 +121,10 @@ export const mapExecutionStep = (
   row: ProjectionStepRow,
   plannedQuantity: string,
   quantity: RouteStepQuantity,
-  reports: ReportRow[],
-  dispositions: DispositionRow[],
+  dispositions: BatchStepAbnormalDispositionView[],
+  reporting: ReturnType<typeof reportWriteEligibility>,
+  actions: ProductionStepActionAvailability,
+  quotaDistribution: ProductionStepQuotaDistribution,
 ): BatchStepExecutionRecordItem => ({
   stepRecordId: String(row.id),
   productionBatchId: String(row.production_batch_id),
@@ -111,25 +136,55 @@ export const mapExecutionStep = (
   status: row.status,
   unit: row.unit_snapshot,
   baseNormalQuantity: fixed(plannedQuantity),
-  requiredNormalQuantity: quantity.requiredNormalQuantity,
-  releasedNormalQuantity: quantity.releasedInputQuantity,
-  availableNormalQuantity: quantity.availableReportQuantity,
-  effectiveReportedQuantity: String(row.effective_reported),
-  effectiveDirectReportedQuantity: String(row.effective_direct_reported),
-  effectiveNormalQuantity: String(row.effective_normal),
-  effectiveAbnormalQuantity: String(row.effective_abnormal),
-  remainingNormalQuantity: quantity.remainingNormalQuantity,
+  ...mapQuantityProjection(row, quantity),
   activatedSupplementInputQuantity: quantity.activatedSupplementInputQuantity,
   activatedSupplementTargetQuantity: quantity.activatedSupplementTargetQuantity,
   pendingSupplementInputQuantity: quantity.pendingSupplementInputQuantity,
-  isSupplementReopened: quantity.isSupplementReopened,
-  supplementBlockedReason: quantity.supplementBlockedReason,
   supplementSources: quantity.supplementSources,
   startedAt: row.started_at ? toBeijingISOString(row.started_at) : null,
   completedAt: row.completed_at ? toBeijingISOString(row.completed_at) : null,
   version: row.version,
-  reports: reports.map(mapReport),
-  abnormalDispositions: dispositions.map(mapDisposition),
+  reportCount: Number(row.report_count),
+  hasReportHistory: Number(row.report_count) > 0,
+  firstReportedAt: row.first_reported_at ? toBeijingISOString(row.first_reported_at) : null,
+  lastReportedAt: row.last_reported_at ? toBeijingISOString(row.last_reported_at) : null,
+  ...reporting,
+  canAdminStart: actions.canStart,
+  startBlockedReason: actions.startBlockedReason,
+  canAdminComplete: actions.canComplete,
+  completeBlockedReason: actions.completeBlockedReason,
+  canAdminReopen: actions.canReopen,
+  reopenBlockedReason: actions.reopenBlockedReason,
+  abnormalDispositions: dispositions,
+  quotaDistribution,
+});
+
+export const mapQuantityProjection = (
+  row: Pick<
+    ProjectionStepRow,
+    | 'effective_reported'
+    | 'effective_direct_reported'
+    | 'effective_direct_normal'
+    | 'effective_direct_abnormal'
+    | 'effective_normal'
+    | 'effective_abnormal'
+  >,
+  quantity: RouteStepQuantity,
+): ProductionStepQuantityProjection => ({
+  upperLimitQuantity: quantity.upperLimitQuantity,
+  requiredNormalQuantity: quantity.requiredNormalQuantity,
+  availableReportQuantity: quantity.availableReportQuantity,
+  effectiveReportedQuantity: fixed(row.effective_reported),
+  effectiveDirectReportedQuantity: fixed(row.effective_direct_reported),
+  effectiveDirectNormalQuantity: fixed(row.effective_direct_normal),
+  effectiveDirectAbnormalQuantity: fixed(row.effective_direct_abnormal),
+  effectiveNormalQuantity: fixed(row.effective_normal),
+  effectiveAbnormalQuantity: fixed(row.effective_abnormal),
+  remainingNormalQuantity: quantity.remainingNormalQuantity,
+  previousStepNormalQuantity: quantity.previousStepNormalQuantity,
+  directReportedVsPreviousNormalDifference: quantity.directReportedVsPreviousNormalDifference,
+  normalVsPreviousNormalDifference: quantity.normalVsPreviousNormalDifference,
+  normalVsTargetDifference: quantity.normalVsTargetDifference,
 });
 
 export const groupRowsBy = <T>(rows: T[], key: (row: T) => string): Map<string, T[]> => {

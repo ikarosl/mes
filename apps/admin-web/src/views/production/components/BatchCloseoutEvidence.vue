@@ -10,6 +10,10 @@
       <el-descriptions-item label="计划数量">{{
         quantity(snapshot.check.plannedQuantity)
       }}</el-descriptions-item>
+      <el-descriptions-item label="本次送审时末道正常报工"
+        >{{ quantity(snapshot.check.reportedNormalQuantity) }}
+        {{ snapshot.check.unit }}</el-descriptions-item
+      >
       <el-descriptions-item label="计划内可入库产出">{{
         quantity(snapshot.output.availableQuantity)
       }}</el-descriptions-item>

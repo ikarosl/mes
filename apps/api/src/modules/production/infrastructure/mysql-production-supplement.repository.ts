@@ -706,6 +706,7 @@ const mapDisposition = (row: SourceRow): BatchStepAbnormalDispositionItem => ({
   productionBatchId: String(row.production_batch_id),
   stepRecordId: String(row.batch_step_record_id),
   sourceReportId: String(row.batch_step_report_id),
+  sourceAbnormalQuantity: String(row.abnormal_quantity),
   abnormalOrigin: row.abnormal_origin,
   reviewStatus: row.review_status,
   dispositionType: row.disposition_type,

@@ -115,7 +115,7 @@ const openSupplement = (): void => {
   position: sticky;
   left: 48px;
   width: calc(100cqw - 68px);
-  margin: 0 20px 16px 48px;
+  margin: 10px 20px 16px 48px;
   padding: 16px;
   border: 1px solid #e5e7eb;
   border-radius: 8px;

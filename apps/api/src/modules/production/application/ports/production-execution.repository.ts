@@ -4,6 +4,9 @@ import type {
   ProductionStepCommandResult,
   ProductionWorkerTaskItem,
   ResearchExecutionStartResult,
+  PageResult,
+  ProductionStepExecutionHistoryItem,
+  ReopenProductionStepPayload,
 } from '@company/contracts';
 import type { CommandContext } from '../../../../common/audit/audit.types.js';
 
@@ -31,7 +34,10 @@ export abstract class ProductionExecutionRepository {
     version: number,
     context: CommandContext,
   ): Promise<ProductionExecutionCompletionResult>;
-  abstract listWorkerTasks(actorId: string): Promise<ProductionWorkerTaskItem[]>;
+  abstract listWorkerTasks(
+    actorId: string,
+    query: { page: number; pageSize: number },
+  ): Promise<PageResult<ProductionWorkerTaskItem>>;
   abstract getStepSopSnapshot(
     batchId: string,
     stepRecordId: string,
@@ -62,5 +68,26 @@ export abstract class ProductionExecutionRepository {
     stepRecordId: string,
     version: number,
     context: CommandContext & { actorId: string },
+    asAdministrator?: boolean,
   ): Promise<ProductionStepCommandResult>;
+  abstract completeStep(
+    batchId: string,
+    stepRecordId: string,
+    version: number,
+    context: CommandContext & { actorId: string },
+    asAdministrator?: boolean,
+  ): Promise<ProductionStepCommandResult>;
+  abstract reopenStep(
+    batchId: string,
+    stepRecordId: string,
+    payload: ReopenProductionStepPayload,
+    context: CommandContext & { actorId: string },
+    asAdministrator?: boolean,
+  ): Promise<ProductionStepCommandResult>;
+  abstract listStepExecutionHistory(
+    batchId: string,
+    stepRecordId: string,
+    query: { page: number; pageSize: number },
+    responsibleUserId?: string,
+  ): Promise<PageResult<ProductionStepExecutionHistoryItem>>;
 }

@@ -1,36 +1,11 @@
 <template>
   <div class="execution-page">
-    <section class="query-panel">
-      <el-form
-        class="query-form"
-        :inline="true"
-      >
-        <el-form-item label="关键字">
-          <el-input
-            v-model="keyword"
-            clearable
-            placeholder="批次号 / 工单号 / 产品"
-            @keyup.enter="search"
-          />
-        </el-form-item>
-        <el-form-item class="query-actions">
-          <el-button
-            type="primary"
-            :loading="loading"
-            @click="search"
-            >查询</el-button
-          >
-          <el-button @click="resetSearch">重置</el-button>
-        </el-form-item>
-      </el-form>
-    </section>
-
     <section class="records-section">
       <TableToolbar :total="total">
         <template #actions>
           <div class="records-caption">
             <strong>报工记录</strong>
-            <span>选择任务查看工序数量、报工明细及调整记录</span>
+            <span>选择任务查看状态、数量差异和不可变报工历史</span>
           </div>
         </template>
         <template #tools>
@@ -41,16 +16,9 @@
             "
             type="primary"
             plain
+            :disabled="contextLoading"
             @click="openOutput(completionCheck.productionBatchId)"
             >产出清单与结案</el-button
-          >
-          <el-button
-            v-if="completionCheck?.batchStatus === 'doing'"
-            type="primary"
-            :disabled="detailLoading || !completionCheck.canComplete"
-            :loading="completionPending"
-            @click="completionVisible = true"
-            >生产执行完工</el-button
           >
           <el-tooltip
             content="刷新当前批次"
@@ -60,7 +28,7 @@
               :icon="Refresh"
               text
               circle
-              :loading="detailLoading"
+              :loading="contextLoading"
               @click="refreshCurrent"
             />
           </el-tooltip>
@@ -69,325 +37,354 @@
 
       <div class="workspace">
         <ProductionExecutionBatchList
+          v-model:keyword="keywordDraft"
           :batches="batches"
           :loading="loading"
           :selected-batch-id="selectedBatchId"
           :current-page="currentPage"
           :total="total"
+          :page-size="pageSize"
+          :applied-keyword="appliedKeyword"
+          :disabled="navigationPending"
+          :error-text="listErrorText"
+          @search="search"
+          @reset-search="resetSearch"
           @select="selectBatch"
           @change-page="changePage"
         />
 
         <main
-          v-loading="detailLoading"
+          ref="recordPanelRef"
+          v-loading="contextLoading"
           class="record-panel"
         >
-          <template v-if="record">
-            <section
-              :class="['batch-health', selectedBatchRiskClass]"
-              aria-label="任务报工摘要"
-            >
-              <div class="batch-health-header">
-                <div class="batch-health-title">
-                  <strong>{{ record.batchNo }}</strong>
-                  <el-tag
-                    size="small"
-                    :type="batchStatusMeta(record.batchStatus).type"
-                  >
-                    {{ batchStatusMeta(record.batchStatus).label }}
-                  </el-tag>
-                  <el-tag
-                    v-if="selectedOverdueDays > 0"
-                    size="small"
-                    type="warning"
-                    >已逾期 {{ selectedOverdueDays }} 天</el-tag
-                  >
-                  <el-tag
-                    v-if="selectedBatch && executionBatchHasAbnormal(selectedBatch)"
-                    size="small"
-                    type="danger"
-                    >存在工序异常</el-tag
-                  >
-                  <span
-                    v-if="currentStepLabel"
-                    class="current-step"
-                    >当前工序 {{ currentStepLabel }}</span
-                  >
-                </div>
-                <div class="batch-progress">
-                  <span>工序 {{ completedStepCount }} / {{ record.steps.length }}</span>
+          <section
+            v-if="record"
+            :class="['batch-health', selectedBatchRiskClass]"
+            aria-label="任务报工摘要"
+          >
+            <div class="batch-health-header">
+              <div class="batch-health-title">
+                <strong>{{ record.batchNo }}</strong>
+                <el-tag
+                  size="small"
+                  :type="batchStatusMeta(record.batchStatus).type"
+                  >{{ batchStatusMeta(record.batchStatus).label }}</el-tag
+                >
+                <span class="batch-progress"
+                  >明确完成 {{ completedStepCount }} / {{ record.steps.length }} 道
                   <el-progress
                     :percentage="stepProgressPercentage"
-                    :stroke-width="6"
+                    :stroke-width="5"
                     :show-text="false"
-                    :status="pendingAbnormalCount > 0 ? 'exception' : undefined"
                   />
-                </div>
+                </span>
+                <el-tag
+                  v-if="selectedOverdueDays > 0"
+                  size="small"
+                  type="warning"
+                  >已逾期 {{ selectedOverdueDays }} 天</el-tag
+                >
+                <el-tag
+                  v-if="pendingAbnormalCount > 0"
+                  size="small"
+                  type="danger"
+                  >待处置 {{ pendingAbnormalCount }} 项</el-tag
+                >
               </div>
+              <el-button
+                link
+                type="primary"
+                :aria-expanded="taskDetailsExpanded"
+                aria-controls="execution-task-details"
+                @click="taskDetailsExpanded = !taskDetailsExpanded"
+                >{{ taskDetailsExpanded ? '收起详情' : '任务详情' }}</el-button
+              >
+            </div>
+            <div class="batch-info-line">
+              <span>工单 {{ record.workOrderNo }}</span>
+              <span>{{ record.productCode }} / {{ record.productName }}</span>
+              <span>计划 {{ formatQuantity(record.plannedQuantity) }}</span>
+              <span>计划完成 {{ selectedBatch?.planEndDate || '—' }}</span>
+            </div>
+            <div
+              v-show="taskDetailsExpanded"
+              id="execution-task-details"
+              class="task-details"
+            >
               <el-descriptions
-                :column="4"
+                :column="3"
                 border
               >
-                <el-descriptions-item label="生产工单">{{
-                  record.workOrderNo
-                }}</el-descriptions-item>
-                <el-descriptions-item
-                  label="产品"
-                  :span="2"
-                  >{{ record.productCode }} / {{ record.productName }}</el-descriptions-item
+                <el-descriptions-item label="报工历史"
+                  >{{ reportHistoryCount }} 条</el-descriptions-item
                 >
-                <el-descriptions-item label="计划完成">{{
-                  selectedBatch?.planEndDate || '—'
-                }}</el-descriptions-item>
-                <el-descriptions-item label="计划数量">{{
-                  formatQuantity(record.plannedQuantity)
-                }}</el-descriptions-item>
-                <el-descriptions-item label="有效报工"
-                  >{{ effectiveReportCount }} 条</el-descriptions-item
-                >
-                <el-descriptions-item label="工序异常合计">
-                  <span :class="{ 'danger-text': effectiveAbnormalQuantity > 0 }">{{
+                <el-descriptions-item label="工序异常记录净量"
+                  ><span :class="{ 'danger-text': effectiveAbnormalQuantity > 0 }">{{
                     formatQuantity(effectiveAbnormalQuantity)
-                  }}</span>
-                </el-descriptions-item>
-                <el-descriptions-item label="待处置异常">
-                  <span :class="{ 'danger-text': pendingAbnormalCount > 0 }"
-                    >{{ pendingAbnormalCount }} 项</span
-                  >
-                </el-descriptions-item>
+                  }}</span></el-descriptions-item
+                >
+                <el-descriptions-item label="当前工序">{{
+                  currentStepLabel || '—'
+                }}</el-descriptions-item>
               </el-descriptions>
-            </section>
-            <p class="record-note">
-              本页数量用于工序执行核对，最终产出请查看批准清单。更正和冲销后，原报工记录仍可追溯。
-            </p>
-
-            <section
+              <p class="record-note">
+                本页数量用于工序执行核对，最终产出请查看批准清单。更正和冲销后，原报工记录仍可追溯。
+              </p>
+            </div>
+            <div
               v-if="completionCheck && completionCheck.batchStatus === 'doing'"
               class="completion-check"
             >
-              <div>
-                <strong>生产执行完工检查</strong>
+              <div class="completion-heading">
+                <strong>执行完工</strong>
+                <span :class="{ 'completion-blocked': !completionCheck.canComplete }">{{
+                  completionSummary
+                }}</span>
+                <el-button
+                  link
+                  type="primary"
+                  :aria-expanded="completionDetailsExpanded"
+                  aria-controls="execution-completion-details"
+                  @click="completionDetailsExpanded = !completionDetailsExpanded"
+                  >{{ completionDetailsExpanded ? '收起检查' : '检查详情' }}</el-button
+                >
+                <el-button
+                  type="primary"
+                  size="small"
+                  :disabled="contextLoading || !completionCheck.canComplete"
+                  :loading="completionPending"
+                  @click="completionVisible = true"
+                  >生产执行完工</el-button
+                >
+              </div>
+              <div
+                v-show="completionDetailsExpanded"
+                id="execution-completion-details"
+                class="completion-details"
+              >
                 <p>
                   {{ completionCheck.completedRequiredStepCount }} /
-                  {{ completionCheck.requiredStepCount }} 道工序已完成；末道工序
-                  {{ completionCheck.finalRequiredStepName || '—' }} 有效正常数量
-                  {{ formatQuantity(completionCheck.finalEffectiveNormalQuantity) }} /
-                  {{ formatQuantity(completionCheck.plannedQuantity) }}。
+                  {{ completionCheck.requiredStepCount }} 道工序已完成；末道
+                  {{ completionCheck.finalRequiredStepName || '—' }} 正常累计
+                  {{ formatQuantity(completionCheck.finalEffectiveNormalQuantity) }}；计划
+                  {{ formatQuantity(completionCheck.plannedQuantity) }}，仅作数量核对。
                 </p>
+                <ul v-if="completionCheck.blockers.length">
+                  <li
+                    v-for="blocker in completionCheck.blockers"
+                    :key="blocker"
+                  >
+                    {{ PRODUCTION_EXECUTION_COMPLETION_BLOCKER_LABELS[blocker] }}
+                  </li>
+                </ul>
               </div>
-              <el-tag :type="completionCheck.canComplete ? 'success' : 'warning'">
-                {{ completionCheck.canComplete ? '可执行完工' : '尚不满足完工条件' }}
-              </el-tag>
-              <ul v-if="completionCheck.blockers.length">
-                <li
-                  v-for="blocker in completionCheck.blockers"
-                  :key="blocker"
-                >
-                  {{ PRODUCTION_EXECUTION_COMPLETION_BLOCKER_LABELS[blocker] }}
-                </li>
-              </ul>
-            </section>
+            </div>
+          </section>
 
+          <el-alert
+            v-if="record?.pendingApprovalId"
+            class="dialog-tip"
+            type="warning"
+            :closable="false"
+            show-icon
+            title="当前结案或产出更正正在审批，状态和报工纠错均冻结。申请人撤回或有权审批人驳回后，管理员仍须重新核对资格；员工继续只读。"
+          />
+          <ProductionExecutionToolbar
+            v-if="record || selectedReports.length || bulkLocked"
+            :scroll-container="recordPanelRef"
+            :has-steps="Boolean(record?.steps.length)"
+            :disabled="contextLoading"
+            :can-expand-all="canExpandAllSteps"
+            :can-collapse-all="canCollapseAllSteps"
+            :selected-count="selectedReports.length"
+            :selected-step-count="selectedStepCount"
+            :can-preview="canPreviewBulkReverse"
+            :preview-blocked-reason="bulkPreviewBlockedReason"
+            :pending="bulkLocked"
+            @expand-all="expandAllSteps"
+            @collapse-all="collapseAllSteps"
+            @view-selection="selectionVisible = true"
+            @preview="openBulkReverse"
+            @recover="openBulkReverse"
+          />
+          <template v-if="record">
             <article
               v-for="step in record.steps"
               :key="step.stepRecordId"
-              :class="['step-card', { 'has-abnormal': stepHasAbnormal(step) }]"
+              class="step-card"
+              :data-step-id="step.stepRecordId"
             >
-              <header>
-                <div class="step-title">
-                  <h2>{{ step.stepOrder }}. {{ step.stepName }}</h2>
+              <header class="step-header">
+                <button
+                  type="button"
+                  class="step-toggle"
+                  :disabled="contextLoading"
+                  :aria-expanded="isStepExpanded(step.stepRecordId)"
+                  :aria-controls="`execution-step-${step.stepRecordId}`"
+                  @click="toggleStep(step.stepRecordId)"
+                >
+                  <span class="fold-control">{{
+                    isStepExpanded(step.stepRecordId) ? '▾ 收起' : '▸ 展开'
+                  }}</span>
+                  <span class="step-title"
+                    ><strong>{{ step.stepOrder }}. {{ step.stepName }}</strong
+                    ><span>办理人 {{ step.responsibleUserName || '未派工' }}</span></span
+                  >
+                  <el-tag
+                    size="small"
+                    :type="stepStatusMeta(step.status).type"
+                    >{{ BATCH_STEP_STATUS_LABELS[step.status] }}</el-tag
+                  >
+                </button>
+                <ProductionStepQuotaDistribution
+                  :step="step"
+                  :planned-quantity="record.plannedQuantity"
+                  :batch-doing="record.batchStatus === 'doing'"
+                  :processing-expanded="isProcessingDetailExpanded(step.stepRecordId)"
+                  :disabled="contextLoading"
+                  @toggle-processing="toggleProcessingDetail(step.stepRecordId)"
+                  @view-scraps="scrapDetails.open(record, step)"
+                  @view-report="reportTrace.open"
+                />
+              </header>
+              <div
+                v-if="hasVisitedStep(step.stepRecordId)"
+                v-show="isStepExpanded(step.stepRecordId)"
+                :id="`execution-step-${step.stepRecordId}`"
+                class="step-body"
+              >
+                <div class="step-command-bar">
+                  <ProductionStepActions
+                    :step="step"
+                    :disabled="contextLoading || bulkLocked"
+                    @action="(action) => stepActionDialogsRef?.open(step, action)"
+                    @history="stepActionDialogsRef?.openHistory(step)"
+                  />
+                  <div class="report-actions">
+                    <el-tooltip
+                      :disabled="canReportStep(step) && !contextLoading"
+                      :content="reportBlockedReasonForStep(step) || '当前不可报工'"
+                      ><span
+                        ><el-button
+                          link
+                          type="primary"
+                          :disabled="contextLoading || bulkLocked || !canReportStep(step)"
+                          @click="openReport(step, 'normal')"
+                          >代报正常</el-button
+                        ><el-button
+                          link
+                          type="primary"
+                          :disabled="contextLoading || bulkLocked || !canReportStep(step)"
+                          @click="openReport(step, 'abnormal')"
+                          >代报异常</el-button
+                        ></span
+                      ></el-tooltip
+                    ><el-tooltip
+                      :disabled="canReportStep(step, true) && !contextLoading"
+                      :content="reportBlockedReasonForStep(step, true) || '当前无历史补录资格'"
+                      ><span
+                        ><el-button
+                          link
+                          type="primary"
+                          :disabled="contextLoading || bulkLocked || !canReportStep(step, true)"
+                          @click="openReport(step, 'normal', true)"
+                          >正常历史补录</el-button
+                        ></span
+                      ></el-tooltip
+                    >
+                  </div>
+                </div>
+                <div
+                  v-if="!canReportStep(step)"
+                  class="report-blocked-reason"
+                >
+                  {{ reportBlockedReasonForStep(step) }}
+                </div>
+                <div class="normal-quantity-composition">
+                  <strong>正常来源</strong>
+                  <span>直接正常 {{ formatQuantity(step.effectiveDirectNormalQuantity) }}</span>
                   <span
-                    >{{ step.stepCode }} · {{ step.responsibleUserName || '未派工' }} · 单位
+                    >＋ {{ BATCH_STEP_REWORK_RESULT_LABELS.normal }}
+                    {{ formatQuantity(stepReworkRecoveredQuantity(step)) }}
                     {{ step.unit }}</span
                   >
                 </div>
-                <div class="step-tags">
-                  <el-tag
-                    v-if="Number(step.pendingSupplementInputQuantity) > 0"
-                    type="warning"
-                    effect="plain"
+                <section
+                  v-if="step.previousStepNormalQuantity !== null"
+                  class="quantity-check"
+                >
+                  <button
+                    type="button"
+                    class="section-toggle"
+                    :disabled="contextLoading"
+                    :aria-expanded="isQuantityCheckExpanded(step.stepRecordId)"
+                    :aria-controls="`quantity-check-${step.stepRecordId}`"
+                    @click="toggleQuantityCheck(step.stepRecordId)"
                   >
-                    待补料激活 {{ formatQuantity(step.pendingSupplementInputQuantity) }}
-                  </el-tag>
-                  <el-tag
-                    v-if="step.isSupplementReopened"
-                    type="warning"
+                    {{
+                      isQuantityCheckExpanded(step.stepRecordId) ? '▾ 收起数量核对' : '▸ 数量核对'
+                    }}
+                  </button>
+                  <el-descriptions
+                    v-show="isQuantityCheckExpanded(step.stepRecordId)"
+                    :id="`quantity-check-${step.stepRecordId}`"
+                    class="step-metrics"
+                    :column="2"
+                    border
                   >
-                    补产重开
-                  </el-tag>
-                  <el-tag :type="stepStatusMeta(step.status).type">{{
-                    stepStatusLabel(step.status)
-                  }}</el-tag>
+                    <el-descriptions-item label="前道正常数量"
+                      >{{ formatQuantity(step.previousStepNormalQuantity) }}
+                      {{ step.unit }}</el-descriptions-item
+                    >
+                    <el-descriptions-item label="直接报工与前道正常之差"
+                      >{{ formatQuantityDifference(step.directReportedVsPreviousNormalDifference) }}
+                      {{ step.unit }}</el-descriptions-item
+                    >
+                    <el-descriptions-item label="正常数量与前道正常之差"
+                      >{{ formatQuantityDifference(step.normalVsPreviousNormalDifference) }}
+                      {{ step.unit }}</el-descriptions-item
+                    >
+                  </el-descriptions>
+                </section>
+                <div
+                  v-if="step.supplementSources.length"
+                  class="supplement-route"
+                >
+                  <strong>报废补产来源</strong
+                  ><span
+                    v-for="source in step.supplementSources"
+                    :key="source.supplementId"
+                    >来源 {{ source.sourceStepOrder }}. {{ source.sourceStepName }} ·
+                    {{ formatQuantity(source.quantity) }} {{ step.unit }} ·
+                    {{
+                      source.status === 'material_ready' ? '补料已齐，授权已生效' : '等待补料领用'
+                    }}</span
+                  >
                 </div>
-              </header>
-              <div
-                v-if="step.supplementSources?.length"
-                class="supplement-route"
-              >
-                <strong>补产路线</strong>
-                <span
-                  v-for="source in step.supplementSources"
-                  :key="source.supplementId"
-                >
-                  来源 {{ source.sourceStepOrder }}. {{ source.sourceStepName }} ·
-                  {{ formatQuantity(source.quantity) }} {{ step.unit }} ·
-                  {{ source.status === 'material_ready' ? '补料已齐，可执行' : '等待补料领用' }}
-                </span>
-              </div>
-              <el-alert
-                v-if="step.supplementBlockedReason"
-                class="supplement-blocked"
-                type="warning"
-                :closable="false"
-                show-icon
-                :title="step.supplementBlockedReason"
-              />
-              <el-descriptions
-                class="step-metrics"
-                :column="5"
-                border
-              >
-                <el-descriptions-item label="正常目标">
-                  {{ formatQuantity(step.requiredNormalQuantity) }}
-                  <small
-                    v-if="Number(step.activatedSupplementTargetQuantity) > 0"
-                    class="quantity-note"
-                  >
-                    计划 {{ formatQuantity(step.baseNormalQuantity) }} + 下游补产
-                    {{ formatQuantity(step.activatedSupplementTargetQuantity) }}
-                  </small>
-                </el-descriptions-item>
-                <el-descriptions-item label="已报正常">{{
-                  formatQuantity(step.effectiveNormalQuantity)
-                }}</el-descriptions-item>
-                <el-descriptions-item label="已报异常">
-                  <span :class="{ 'danger-text': Number(step.effectiveAbnormalQuantity) > 0 }">{{
-                    formatQuantity(step.effectiveAbnormalQuantity)
-                  }}</span>
-                </el-descriptions-item>
-                <el-descriptions-item label="剩余需报">{{
-                  formatQuantity(step.remainingNormalQuantity)
-                }}</el-descriptions-item>
-                <el-descriptions-item label="当前可报">{{
-                  formatQuantity(step.availableNormalQuantity)
-                }}</el-descriptions-item>
-              </el-descriptions>
-              <details class="quantity-details">
-                <summary>数量依据</summary>
-                <el-descriptions
-                  :column="3"
-                  border
-                >
-                  <el-descriptions-item label="投入放行">{{
-                    formatQuantity(step.releasedNormalQuantity)
-                  }}</el-descriptions-item>
-                  <el-descriptions-item label="普通报工累计">{{
-                    formatQuantity(step.effectiveDirectReportedQuantity)
-                  }}</el-descriptions-item>
-                  <el-descriptions-item label="已激活补产投入">{{
-                    formatQuantity(step.activatedSupplementInputQuantity)
-                  }}</el-descriptions-item>
-                </el-descriptions>
-              </details>
-              <el-table
-                :data="step.reports"
-                empty-text="暂无报工记录"
-              >
-                <el-table-column
-                  prop="reportNo"
-                  label="报工单号"
-                  min-width="190"
+                <ProductionStepReportTable
+                  :batch-id="record.productionBatchId"
+                  :step-record-id="step.stepRecordId"
+                  :version="step.version"
+                  :refresh-key="recordRefreshKey"
+                  :active="isStepExpanded(step.stepRecordId)"
+                  :disabled="contextLoading || bulkLocked"
+                  selectable
+                  :selected-ids="selectedReportIds"
+                  @view-detail="reportTrace.open"
+                  @view-report="reportTrace.open"
+                  @view-process="reportTrace.open"
+                  @select-report="(report, checked) => selectReport(step, report, checked)"
+                  @correct="(report) => reportEditor.open('correct', step, report)"
+                  @reverse="(report) => reportEditor.open('reverse', step, report)"
                 />
-                <el-table-column
-                  label="记录类型"
-                  width="100"
-                >
-                  <template #default="{ row }">{{ reportTypeLabel(row) }}</template>
-                </el-table-column>
-                <el-table-column
-                  label="正常数量"
-                  width="110"
-                >
-                  <template #default="{ row }">{{ formatQuantity(row.normalQuantity) }}</template>
-                </el-table-column>
-                <el-table-column
-                  label="异常数量"
-                  width="110"
-                >
-                  <template #default="{ row }">
-                    <strong
-                      :class="{
-                        'danger-text': row.isEffective && Number(row.abnormalQuantity) > 0,
-                      }"
-                      >{{ formatQuantity(row.abnormalQuantity) }}</strong
-                    >
-                  </template>
-                </el-table-column>
-                <el-table-column
-                  label="关联报工"
-                  min-width="180"
-                >
-                  <template #default="{ row }">
-                    <span v-if="row.reversalOfReportId">冲销 #{{ row.reversalOfReportId }}</span>
-                    <span v-else-if="row.correctionOfReportId"
-                      >更正 #{{ row.correctionOfReportId }}</span
-                    >
-                    <span v-else>原始报工</span>
-                  </template>
-                </el-table-column>
-                <el-table-column
-                  label="记录状态"
-                  width="90"
-                >
-                  <template #default="{ row }">
-                    <el-tag :type="row.isEffective ? 'success' : 'info'">{{
-                      row.isEffective ? '有效' : '已冲销'
-                    }}</el-tag>
-                  </template>
-                </el-table-column>
-                <el-table-column
-                  label="报工人 / 时间"
-                  min-width="190"
-                >
-                  <template #default="{ row }"
-                    >{{ row.createdByName || row.createdById }}<br />{{
-                      formatDateTimeForDisplay(row.createdAt)
-                    }}</template
-                  >
-                </el-table-column>
-                <el-table-column
-                  label="操作"
-                  width="150"
-                  fixed="right"
-                >
-                  <template #default="{ row }">
-                    <template v-if="canChange(step, row)">
-                      <el-button
-                        link
-                        type="primary"
-                        @click="openCorrection(step, row)"
-                        >更正</el-button
-                      >
-                      <el-button
-                        link
-                        type="danger"
-                        @click="openReverse(step, row)"
-                        >冲销</el-button
-                      >
-                    </template>
-                    <el-tooltip
-                      v-else-if="row.reportType === 'normal' && row.isEffective"
-                      :content="adjustmentBlockReason(step, row) || ''"
-                      placement="top"
-                    >
-                      <span class="disabled-action">不可调整</span>
-                    </el-tooltip>
-                  </template>
-                </el-table-column>
-              </el-table>
+              </div>
               <AbnormalReworkPanel
+                v-if="hasVisitedStep(step.stepRecordId)"
+                v-model:expansion="processingExpansion"
+                :content-visible="isStepExpanded(step.stepRecordId)"
+                :disabled="contextLoading || bulkLocked"
                 :dispositions="step.abnormalDispositions"
-                :reports="step.reports"
                 :reworks="reworks.filter((item) => item.stepRecordId === step.stepRecordId)"
                 :pending-keys="pendingKeys"
                 :unit="step.unit"
@@ -399,10 +396,11 @@
                 :plan-confirmer="handleApproveScrapSupplement"
                 :intent-status-loader="getSupplementIntentStatus"
                 :intent-resetter="resetSupplementIntent"
+                @view-report="reportTrace.open"
                 @approve="handleApproveRework"
                 @reject="handleRejectDisposition"
                 @start="handleStartRework"
-                @complete="handleCompleteRework"
+                @complete="(rework) => reworkEditor.open(rework, step)"
               />
             </article>
           </template>
@@ -414,126 +412,61 @@
       </div>
     </section>
 
-    <el-dialog
-      v-model="changeVisible"
-      :title="changeMode === 'correct' ? '更正报工' : '冲销报工'"
-      width="min(640px, 75vw)"
-      :before-close="beforeChangeClose"
-      :close-on-click-modal="false"
-    >
-      <el-alert
-        class="dialog-tip"
-        :type="changeMode === 'correct' ? 'info' : 'warning'"
-        :closable="false"
-        show-icon
-        :title="
-          changeMode === 'correct'
-            ? '填写更正后的完整数量。原报工记录保留，更正后重新核对本工序及后续工序的数量。'
-            : '冲销后，原报工数量不再计入工序汇总；记录和冲销原因仍保留用于追溯。'
-        "
-      />
-      <el-descriptions
-        v-if="changeStep && changeReport"
-        class="change-context"
-        :column="2"
-        border
-      >
-        <el-descriptions-item label="工序"
-          >{{ changeStep.stepOrder }}. {{ changeStep.stepName }}</el-descriptions-item
-        >
-        <el-descriptions-item label="原报工单">{{ changeReport.reportNo }}</el-descriptions-item>
-        <el-descriptions-item label="原正常数量"
-          >{{ formatQuantity(changeReport.normalQuantity) }}
-          {{ changeReport.unit }}</el-descriptions-item
-        >
-        <el-descriptions-item label="原异常数量"
-          >{{ formatQuantity(changeReport.abnormalQuantity) }}
-          {{ changeReport.unit }}</el-descriptions-item
-        >
-      </el-descriptions>
-      <el-alert
-        v-if="changeStep && changeReport"
-        class="dialog-tip"
-        :type="changeHasDownstreamConflict || changeExceedsReleased ? 'error' : 'warning'"
-        :closable="false"
-        show-icon
-        :title="changeImpactText"
-      />
-      <el-form label-position="top">
-        <template v-if="changeMode === 'correct'">
-          <el-form-item
-            label="更正后正常数量"
-            required
-          >
-            <el-input-number
-              v-model="changeForm.normalQuantity"
-              :min="0"
-              :max="replacementNormalMaximum"
-              :step="1"
-              :precision="0"
-            />
-          </el-form-item>
-          <el-form-item
-            label="更正后异常数量"
-            required
-          >
-            <el-input-number
-              v-model="changeForm.abnormalQuantity"
-              :min="0"
-              :step="1"
-              :precision="0"
-            />
-          </el-form-item>
-          <el-form-item
-            v-if="changeForm.abnormalQuantity > 0"
-            label="更正后异常来源"
-            required
-          >
-            <el-radio-group v-model="changeForm.abnormalOrigin">
-              <el-radio value="current_step">当前工序异常</el-radio>
-              <el-radio
-                v-if="changeHasPreviousStep"
-                value="previous_step"
-                >前置工序异常</el-radio
-              >
-            </el-radio-group>
-            <div
-              v-if="!changeHasPreviousStep"
-              class="form-tip"
-            >
-              当前为首道工序，只能选择当前工序异常。
-            </div>
-          </el-form-item>
-        </template>
-        <el-form-item
-          label="原因"
-          required
-        >
-          <el-input
-            v-model="changeForm.reason"
-            type="textarea"
-            :rows="3"
-            maxlength="5000"
-            show-word-limit
-          />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="requestChangeClose">取消</el-button>
-        <el-button
-          type="primary"
-          :loading="changePending"
-          :disabled="!canSubmitChange"
-          @click="submitChange"
-          >{{ changeMode === 'correct' ? '确认更正' : '确认冲销' }}</el-button
-        >
-      </template>
-    </el-dialog>
+    <ProductionStepActionDialogs
+      ref="stepActionDialogsRef"
+      :steps="record?.steps ?? []"
+      :disabled="contextLoading || bulkLocked"
+      @changed="refreshCurrent"
+    />
+    <ProductionReportAdjustmentDialog :editor="reportEditor" />
+    <ProductionReworkCompletionDialog
+      :editor="reworkEditor"
+      @view-report="reportTrace.open"
+    />
+    <BatchStepReportDialog
+      ref="reportDialogRef"
+      v-model="reportCreate.visible"
+      :task="reportCreate.task"
+      :mode="reportCreate.mode"
+      :submitting="reportCreate.submitting"
+      :intent-status="reportCreate.intentStatus"
+      :historical="reportCreate.historical"
+      :context-ready="reportCreate.contextReady"
+      @reset-intent="reportCreate.resetIntent"
+      @submit="reportCreate.submit"
+    />
+    <ProductionReportSelectionDialog
+      v-model="selectionVisible"
+      :batch-no="record?.batchNo || selectedBatch?.batchNo || null"
+      :selections="selectedReports"
+      :locked="bulkLocked"
+      :refreshing="contextLoading"
+      :can-preview="canPreviewBulkReverse"
+      :preview-blocked-reason="bulkPreviewBlockedReason"
+      @remove-report="removeSelection"
+      @clear="clearSelection"
+      @refresh="refreshSelection"
+      @preview="openBulkReverse"
+    />
+    <BatchStepBulkReverseDialog
+      ref="bulkDialogRef"
+      v-model="bulkVisible"
+      :record="record"
+      :selections="selectedReports"
+      :disabled="contextLoading"
+      @remove-report="removeSelection"
+      @refresh-selection="refreshSelection"
+      @changed="onBulkChanged"
+      @locked-change="bulkLocked = $event"
+    />
 
     <el-dialog
       v-model="completionVisible"
-      title="确认生产执行完工"
+      title="确认任务执行结束"
       width="min(640px, 75vw)"
+      :show-close="!completionPending"
+      :close-on-click-modal="false"
+      :close-on-press-escape="!completionPending"
     >
       <el-alert
         class="dialog-tip"
@@ -559,17 +492,26 @@
       </el-descriptions>
       <p class="completion-note">本操作只确认生产执行完成，不代表质量放行，也不会生成成品入库。</p>
       <template #footer>
-        <el-button @click="completionVisible = false">取消</el-button>
+        <el-button
+          :disabled="completionPending"
+          @click="completionVisible = false"
+          >取消</el-button
+        >
         <el-button
           type="primary"
           :loading="completionPending"
-          :disabled="detailLoading || !completionCheck?.canComplete"
+          :disabled="contextLoading || completionPending || !completionCheck?.canComplete"
           @click="submitCompletion"
           >确认生产执行完工</el-button
         >
       </template>
     </el-dialog>
   </div>
+  <ProductionReportTraceDialog :reader="reportTrace" />
+  <ProductionStepScrapDetailsDialog
+    :reader="scrapDetails"
+    @view-report="reportTrace.open"
+  />
   <ProductionOutputDialog
     v-model:visible="outputVisible"
     :batch-id="outputBatchId"
@@ -585,67 +527,82 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue';
-import { usePageActivationRefresh } from '../../composables/requests/usePageActivationRefresh';
+import { computed, onScopeDispose, ref, watch } from 'vue';
+import { useRoute } from 'vue-router';
 import { Refresh } from '@element-plus/icons-vue';
 import {
-  BATCH_STEP_REPORT_TYPE_LABELS,
+  BATCH_STEP_REWORK_RESULT_LABELS,
   BATCH_STEP_STATUS_LABELS,
   PRODUCTION_EXECUTION_COMPLETION_BLOCKER_LABELS,
 } from '@company/constants';
-import type {
-  BatchStepExecutionRecordItem,
-  BatchStepAbnormalOrigin,
-  BatchStepReportItem,
-  BatchStepStatus,
-} from '@company/contracts';
-import { RequestError } from '@company/request';
-import { formatDateTimeForDisplay } from '../../utils/date';
+import type { BatchStepExecutionRecordItem } from '@company/contracts';
+import { usePageActivationRefresh } from '../../composables/requests/usePageActivationRefresh';
+import { useTabsStore } from '../../stores/tabs';
 import { EMessage } from '../../utils/message';
-import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
 import TableToolbar from '../../components/TableToolbar.vue';
-import { batchStatusMeta, formatQuantity, stepStatusMeta } from './production-status';
+import {
+  batchStatusMeta,
+  formatQuantity,
+  formatQuantityDifference,
+  stepStatusMeta,
+} from './production-status';
 import ProductionExecutionBatchList from './components/ProductionExecutionBatchList.vue';
+import ProductionExecutionToolbar from './components/ProductionExecutionToolbar.vue';
+import ProductionReportSelectionDialog from './components/ProductionReportSelectionDialog.vue';
 import ProductionOutputDialog from './components/ProductionOutputDialog.vue';
 import ProductionBatchTerminationDialog from './components/ProductionBatchTerminationDialog.vue';
 import AbnormalReworkPanel from './components/AbnormalReworkPanel.vue';
+import ProductionStepQuotaDistribution from './components/ProductionStepQuotaDistribution.vue';
+import ProductionStepScrapDetailsDialog from './components/ProductionStepScrapDetailsDialog.vue';
+import ProductionStepActions from './components/ProductionStepActions.vue';
+import ProductionStepActionDialogs from './components/ProductionStepActionDialogs.vue';
+import ProductionStepReportTable from './components/ProductionStepReportTable.vue';
+import ProductionReportTraceDialog from './components/ProductionReportTraceDialog.vue';
+import ProductionReportAdjustmentDialog from './components/ProductionReportAdjustmentDialog.vue';
+import ProductionReworkCompletionDialog from './components/ProductionReworkCompletionDialog.vue';
+import BatchStepReportDialog from './components/BatchStepReportDialog.vue';
+import BatchStepBulkReverseDialog from './components/BatchStepBulkReverseDialog.vue';
 import { useProductionExecutionRecords } from './composables/useProductionExecutionRecords';
 import { useProductionAbnormalActions } from './composables/useProductionAbnormalActions';
-import {
-  executionBatchHasAbnormal,
-  executionBatchOverdueDays,
-  executionBatchRiskClass,
-} from './production-execution-risk';
+import { useProductionReportAdjustment } from './composables/useProductionReportAdjustment';
+import { useProductionReworkCompletion } from './composables/useProductionReworkCompletion';
+import { useProductionReportCreate } from './composables/useProductionReportCreate';
+import { useProductionReportSelection } from './composables/useProductionReportSelection';
+import { useProductionExecutionSummary } from './composables/useProductionExecutionSummary';
+import { useProductionReportTrace } from './composables/useProductionReportTrace';
+import { useProductionExecutionNavigation } from './composables/useProductionExecutionNavigation';
+import { useProductionExecutionSections } from './composables/useProductionExecutionSections';
+import { useProductionStepScrapDetails } from './composables/useProductionStepScrapDetails';
+import type { ProductionReportContext } from './production-report-selection';
+import { canOpenProductionReport, productionReportBlockedReason } from './production-report-input';
+import { stepReworkRecoveredQuantity } from './production-step-quantity-presentation';
 
 defineOptions({ name: 'ProductionExecutionRecordsPage' });
 const outputVisible = ref(false),
   closeoutVisible = ref(false),
   outputBatchId = ref<string | null>(null);
-const openOutput = (batchId: string) => {
+const openOutput = (batchId: string): void => {
+  if (contextLoading.value) return;
   outputBatchId.value = batchId;
   outputVisible.value = true;
 };
-const openCloseoutItems = (batchId: string) => {
+const openCloseoutItems = (batchId: string): void => {
+  if (contextLoading.value) return;
   outputBatchId.value = batchId;
   closeoutVisible.value = true;
 };
-const keyword = ref('');
-const currentPage = ref(1);
-const changeVisible = ref(false);
-const completionVisible = ref(false);
-const changeMode = ref<'correct' | 'reverse'>('correct');
-const changeStep = ref<BatchStepExecutionRecordItem | null>(null);
-const changeReport = ref<BatchStepReportItem | null>(null);
-const changeForm = reactive<{
-  normalQuantity: number;
-  abnormalQuantity: number;
-  abnormalOrigin: BatchStepAbnormalOrigin | null;
-  reason: string;
-}>({ normalQuantity: 0, abnormalQuantity: 0, abnormalOrigin: null, reason: '' });
+const completionVisible = ref(false),
+  recordRefreshKey = ref(0);
+const recordPanelRef = ref<HTMLElement | null>(null);
+const reportDialogRef = ref<InstanceType<typeof BatchStepReportDialog> | null>(null);
+const stepActionDialogsRef = ref<InstanceType<typeof ProductionStepActionDialogs> | null>(null);
+const bulkDialogRef = ref<InstanceType<typeof BatchStepBulkReverseDialog> | null>(null);
 const {
   batches,
   total,
+  pageSize,
   loading,
+  listErrorText,
   detailLoading,
   selectedBatchId,
   record,
@@ -653,16 +610,16 @@ const {
   reworks,
   pendingKeys,
   loadBatches,
-  selectBatch,
-  reverse,
-  correct,
+  selectBatch: readBatch,
   completeExecution,
-  getCorrectionIntentStatus,
-  resetCorrectionIntent,
   approveRework,
   rejectDisposition,
   startRework,
   completeRework,
+  getReworkCompletionIntentStatus,
+  getReworkCompletionRequest,
+  getReworkCompletionRequests,
+  resetReworkCompletionIntent,
   loadSupplementCandidates,
   loadScrapSupplementPlan,
   saveScrapSupplementPlan,
@@ -670,20 +627,199 @@ const {
   getSupplementIntentStatus,
   resetSupplementIntent,
 } = useProductionExecutionRecords();
+const contextLoading = computed(() => loading.value || detailLoading.value);
+const {
+  taskDetailsExpanded,
+  completionDetailsExpanded,
+  isStepExpanded,
+  hasVisitedStep,
+  toggleStep,
+  canExpandAllSteps,
+  canCollapseAllSteps,
+  expandAllSteps,
+  collapseAllSteps,
+  isQuantityCheckExpanded,
+  toggleQuantityCheck,
+  isProcessingDetailExpanded,
+  toggleProcessingDetail,
+} = useProductionExecutionSections(selectedBatchId, record);
+const completionSummary = computed(() => {
+  const check = completionCheck.value;
+  if (!check) return '';
+  if (check.canComplete) return '可执行完工';
+  const first = check.blockers[0];
+  return first
+    ? `${PRODUCTION_EXECUTION_COMPLETION_BLOCKER_LABELS[first]}${check.blockers.length > 1 ? `，另 ${check.blockers.length - 1} 项阻断` : ''}`
+    : '尚不满足完工条件';
+});
+const processingExpansion = ref<Record<string, boolean>>({});
+const reportTrace = useProductionReportTrace({
+  contextId: () => selectedBatchId.value,
+});
+const scrapDetails = useProductionStepScrapDetails({
+  contextId: () => selectedBatchId.value,
+  isReady: () => !contextLoading.value && record.value !== null,
+});
+const {
+  selectedReports,
+  selectedReportIds,
+  selectionVisible,
+  bulkVisible,
+  bulkLocked,
+  clearSelection,
+  removeSelection,
+  selectReport,
+  updateSelectionVersions,
+} = useProductionReportSelection(selectedBatchId);
+const selectedStepCount = computed(
+  () => new Set(selectedReports.value.map((item) => item.stepRecordId)).size,
+);
+const canPreviewBulkReverse = computed(
+  () =>
+    !bulkLocked.value &&
+    !contextLoading.value &&
+    record.value?.canBatchReverse === true &&
+    selectedReports.value.length > 0,
+);
+const bulkPreviewBlockedReason = computed(() => {
+  if (contextLoading.value || !record.value) return '当前详情尚未就绪，请刷新后核对';
+  if (!record.value.canBatchReverse)
+    return record.value.batchReverseBlockedReason || '当前任务不可批量冲销';
+  if (!selectedReports.value.length) return '请先选择需要冲销的普通正常报工';
+  return null;
+});
+const openBulkReverse = (): void => {
+  if (!bulkLocked.value && !canPreviewBulkReverse.value) return;
+  selectionVisible.value = false;
+  bulkVisible.value = true;
+};
+const refreshCurrent = (): Promise<void> => executionNavigation.refresh();
+const getStep = (id: string): BatchStepExecutionRecordItem | null =>
+  record.value?.steps.find((item) => item.stepRecordId === id) ?? null;
+const reportEditor = useProductionReportAdjustment({
+  getStep,
+  getBatchStatus: () => record.value?.batchStatus ?? null,
+  isReady: () =>
+    !contextLoading.value && record.value !== null && record.value.pendingApprovalId === null,
+  refresh: refreshCurrent,
+});
+const reworkEditor = useProductionReworkCompletion({
+  getBatchId: () => selectedBatchId.value,
+  getBatch: () => record.value,
+  getRework: (id) => reworks.value.find((item) => item.reworkId === id) ?? null,
+  isReady: () => !contextLoading.value && !bulkLocked.value && record.value !== null,
+  complete: completeRework,
+  getIntentStatus: getReworkCompletionIntentStatus,
+  getRequest: getReworkCompletionRequest,
+  getRequests: getReworkCompletionRequests,
+  resetIntent: resetReworkCompletionIntent,
+});
+const contextForStep = (
+  step: BatchStepExecutionRecordItem,
+  historical = false,
+): ProductionReportContext | null =>
+  record.value
+    ? {
+        ...step,
+        batchNo: record.value.batchNo,
+        plannedQuantity: record.value.plannedQuantity,
+        hasPreviousStep: step.previousStepNormalQuantity !== null,
+        canReport: historical ? step.canCreateHistoricalReport : step.canReport,
+        reportBlockedReason: historical
+          ? step.historicalCorrectionBlockedReason
+          : step.reportBlockedReason,
+      }
+    : null;
+const canReportStep = (step: BatchStepExecutionRecordItem, historical = false): boolean => {
+  const context = contextForStep(step, historical);
+  return context !== null && canOpenProductionReport(context, historical);
+};
+const reportBlockedReasonForStep = (
+  step: BatchStepExecutionRecordItem,
+  historical = false,
+): string | null => {
+  const context = contextForStep(step, historical);
+  return context ? productionReportBlockedReason(context, historical) : '当前任务依据不可用';
+};
+const reportCreate = useProductionReportCreate({
+  getContext: (id, historical) => {
+    const step = getStep(id);
+    return step ? contextForStep(step, historical) : null;
+  },
+  isReady: () =>
+    !contextLoading.value && record.value !== null && record.value.pendingApprovalId === null,
+  refresh: refreshCurrent,
+});
+const openReport = (
+  step: BatchStepExecutionRecordItem,
+  mode: 'normal' | 'abnormal',
+  historical = false,
+): void => {
+  const context = contextForStep(step, historical);
+  if (context) reportCreate.open(context, mode, historical);
+};
+const refreshSelection = async (): Promise<void> => {
+  if (bulkLocked.value) return;
+  await refreshCurrent();
+  if (record.value && !detailLoading.value) {
+    updateSelectionVersions(record.value);
+    EMessage.success('已刷新所选工序依据，请重新预览各条记录资格');
+  }
+};
+const canChangeTarget = async (): Promise<boolean> => {
+  if (bulkLocked.value) {
+    EMessage.warning('批量结果尚未确认，请先在原弹窗重试或核对后关闭');
+    return false;
+  }
+  if (reportCreate.visible && !(await reportDialogRef.value?.canDiscard())) return false;
+  if (reportEditor.visible && !(await reportEditor.discard())) return false;
+  if (!(await reworkEditor.discard())) return false;
+  if (bulkVisible.value && !(await bulkDialogRef.value?.discard())) return false;
+  reportCreate.visible = false;
+  reportEditor.visible = false;
+  reworkEditor.visible = false;
+  selectionVisible.value = false;
+  bulkVisible.value = false;
+  return true;
+};
+const executionNavigation = useProductionExecutionNavigation({
+  selectedBatchId,
+  pageSize,
+  loadBatches,
+  selectBatch: readBatch,
+  canChangeTarget,
+  onReadComplete: () => {
+    recordRefreshKey.value += 1;
+  },
+});
+const {
+  keywordDraft,
+  appliedKeyword,
+  currentPage,
+  navigationPending,
+  search,
+  resetSearch,
+  changePage,
+  selectBatch,
+} = executionNavigation;
 watch(
   selectedBatchId,
   () => {
     completionVisible.value = false;
-    changeVisible.value = false;
+    processingExpansion.value = {};
   },
   { flush: 'sync' },
 );
+const onBulkChanged = async (): Promise<void> => {
+  selectionVisible.value = false;
+  selectedReports.value = [];
+  await refreshCurrent();
+};
 const {
   handleApproveRework,
   handleRejectDisposition,
   handleApproveScrapSupplement,
   handleStartRework,
-  handleCompleteRework,
 } = useProductionAbnormalActions({
   approveRework,
   rejectDisposition,
@@ -696,310 +832,68 @@ const completionPending = computed(() =>
     ? pendingKeys.value.has(`complete:${completionCheck.value.productionBatchId}`)
     : false,
 );
-const completedStepCount = computed(
-  () => record.value?.steps.filter((step) => step.status === 'completed').length ?? 0,
-);
-const selectedBatch = computed(
-  () => batches.value.find((batch) => batch.id === selectedBatchId.value) ?? null,
-);
-const stepProgressPercentage = computed(() => {
-  const totalSteps = record.value?.steps.length ?? 0;
-  return totalSteps > 0 ? Math.round((completedStepCount.value / totalSteps) * 100) : 0;
-});
-const effectiveReportCount = computed(
-  () =>
-    record.value?.steps.reduce(
-      (total, step) =>
-        total +
-        step.reports.filter((report) => report.reportType === 'normal' && report.isEffective)
-          .length,
-      0,
-    ) ?? 0,
-);
-const effectiveAbnormalQuantity = computed(
-  () =>
-    record.value?.steps.reduce(
-      (total, step) => total + Number(step.effectiveAbnormalQuantity),
-      0,
-    ) ?? 0,
-);
-const currentStepLabel = computed(() => {
-  const step =
-    record.value?.steps.find((item) => item.status === 'doing') ??
-    record.value?.steps.find((item) => item.status === 'assigned');
-  return step ? `${step.stepOrder}. ${step.stepName}` : null;
-});
-const pendingAbnormalCount = computed(
-  () =>
-    record.value?.steps.reduce(
-      (total, step) =>
-        total +
-        step.abnormalDispositions.filter((item) => item.reviewStatus === 'pending_review').length,
-      0,
-    ) ?? 0,
-);
-const selectedOverdueDays = computed(() =>
-  selectedBatch.value ? executionBatchOverdueDays(selectedBatch.value) : 0,
-);
-const selectedBatchRiskClass = computed(() =>
-  selectedBatch.value ? executionBatchRiskClass(selectedBatch.value) : '',
-);
-const stepHasAbnormal = (step: BatchStepExecutionRecordItem): boolean =>
-  Number(step.effectiveAbnormalQuantity) > 0 ||
-  step.abnormalDispositions.some((item) => item.reviewStatus === 'pending_review');
-const changeKey = computed(() =>
-  changeReport.value ? `${changeMode.value}:${changeReport.value.reportId}` : '',
-);
-const changePending = computed(() => pendingKeys.value.has(changeKey.value));
-const changeIntentStatus = computed(() =>
-  changeMode.value === 'correct' && changeReport.value
-    ? getCorrectionIntentStatus(changeReport.value.reportId)
-    : 'idle',
-);
-const changedEffectiveNormal = computed(() => {
-  if (!changeStep.value || !changeReport.value) return 0;
-  const withoutOriginal =
-    Number(changeStep.value.effectiveNormalQuantity) - Number(changeReport.value.normalQuantity);
-  return Math.max(
-    0,
-    withoutOriginal + (changeMode.value === 'correct' ? changeForm.normalQuantity : 0),
-  );
-});
-const replacementNormalMaximum = computed(() => {
-  if (!changeStep.value || !changeReport.value) return 0;
-  const withoutOriginal =
-    Number(changeStep.value.effectiveNormalQuantity) - Number(changeReport.value.normalQuantity);
-  return Math.max(0, Number(changeStep.value.releasedNormalQuantity) - withoutOriginal);
-});
-const changedDownstream = computed(() => {
-  if (!record.value || !changeStep.value) return null;
-  const index = record.value.steps.findIndex(
-    (step) => step.stepRecordId === changeStep.value?.stepRecordId,
-  );
-  return index < 0 ? null : (record.value.steps[index + 1] ?? null);
-});
-const changeHasPreviousStep = computed(() => {
-  if (!record.value || !changeStep.value) return false;
-  return (
-    record.value.steps.findIndex((step) => step.stepRecordId === changeStep.value?.stepRecordId) > 0
-  );
-});
-const changeHasDownstreamConflict = computed(
-  () =>
-    changedDownstream.value !== null &&
-    changedEffectiveNormal.value < Number(changedDownstream.value.effectiveReportedQuantity),
-);
-const changeExceedsReleased = computed(() => {
-  if (!changeStep.value || !changeReport.value) return false;
-  const withoutOriginal =
-    Number(changeStep.value.effectiveReportedQuantity) -
-    Number(changeReport.value.reportedQuantity);
-  const replacement =
-    changeMode.value === 'correct' ? changeForm.normalQuantity + changeForm.abnormalQuantity : 0;
-  return withoutOriginal + replacement > Number(changeStep.value.releasedNormalQuantity);
-});
-const changeImpactText = computed(() => {
-  if (!changeStep.value) return '';
-  const quantity = `${formatQuantity(changedEffectiveNormal.value)} ${changeStep.value.unit}`;
-  if (changeHasDownstreamConflict.value)
-    return `调整后有效正常放行量为 ${quantity}，低于下游工序已报正常与异常总量 ${formatQuantity(changedDownstream.value?.effectiveReportedQuantity ?? 0)}，请先从下游冲销。`;
-  if (changeExceedsReleased.value) return `调整后有效总报工量超过上游当前放行量，不能提交。`;
-  const willComplete =
-    changedEffectiveNormal.value === Number(changeStep.value.requiredNormalQuantity);
-  return `调整后有效正常量为 ${quantity}；工序将${willComplete ? '保持或进入已完成' : '保持或退回进行中'}。工序状态和完成时间将相应更新。`;
-});
-const canSubmitChange = computed(
-  () =>
-    changeForm.reason.trim().length > 0 &&
-    (changeMode.value === 'reverse' ||
-      (changeForm.normalQuantity + changeForm.abnormalQuantity > 0 &&
-        (changeForm.abnormalQuantity === 0 || changeForm.abnormalOrigin !== null))) &&
-    (changeForm.abnormalOrigin !== 'previous_step' || changeHasPreviousStep.value) &&
-    !changeHasDownstreamConflict.value &&
-    !changeExceedsReleased.value,
-);
-const stepStatusLabel = (status: BatchStepStatus) => BATCH_STEP_STATUS_LABELS[status];
-const reportTypeLabel = (report: BatchStepReportItem) =>
-  BATCH_STEP_REPORT_TYPE_LABELS[report.reportType];
-const adjustmentBlockReason = (
-  step: BatchStepExecutionRecordItem,
-  report: BatchStepReportItem,
-): string | null => {
-  if (report.reportType !== 'normal' || !report.isEffective) return null;
-  if (step.abnormalDispositions.some((item) => item.sourceReportId === report.reportId))
-    return '该报工已有异常处置记录，不能直接更正或冲销';
-  if (step.reports.some((item) => item.correctionOfReportId === report.reportId))
-    return '该报工已有更正记录，不能再次冲销或更正';
-  return null;
-};
-const canChange = (step: BatchStepExecutionRecordItem, report: BatchStepReportItem) =>
-  report.reportType === 'normal' &&
-  report.isEffective &&
-  adjustmentBlockReason(step, report) === null;
-const search = async () => {
-  try {
-    currentPage.value = 1;
-    await loadBatches(keyword.value, currentPage.value);
-  } catch (error) {
-    EMessage.error(error, '生产批次加载失败');
-  }
-};
-const resetSearch = async (): Promise<void> => {
-  keyword.value = '';
-  selectedBatchId.value = null;
-  record.value = null;
-  await search();
-};
-const changePage = async (page: number): Promise<void> => {
-  currentPage.value = page;
-  try {
-    await loadBatches(keyword.value, page);
-  } catch (error) {
-    EMessage.error(error, '生产批次加载失败');
-  }
-};
-const refreshCurrent = async () => {
-  if (selectedBatchId.value) await selectBatch(selectedBatchId.value);
-  else await search();
-};
-const prepareChange = (
-  mode: 'correct' | 'reverse',
-  step: BatchStepExecutionRecordItem,
-  report: BatchStepReportItem,
-) => {
-  changeMode.value = mode;
-  changeStep.value = step;
-  changeReport.value = report;
-  changeForm.normalQuantity = Number(report.normalQuantity);
-  changeForm.abnormalQuantity = Number(report.abnormalQuantity);
-  const stepIndex = record.value?.steps.findIndex(
-    (item) => item.stepRecordId === step.stepRecordId,
-  );
-  changeForm.abnormalOrigin =
-    Number(report.abnormalQuantity) > 0 && stepIndex === 0 ? 'current_step' : report.abnormalOrigin;
-  changeForm.reason = '';
-  changeVisible.value = true;
-};
-const openCorrection = (step: BatchStepExecutionRecordItem, report: BatchStepReportItem) =>
-  prepareChange('correct', step, report);
-const openReverse = (step: BatchStepExecutionRecordItem, report: BatchStepReportItem) =>
-  prepareChange('reverse', step, report);
-const canDiscardChange = async (): Promise<boolean> => {
-  if (changePending.value) return false;
-  if (changeIntentStatus.value === 'idle') return true;
-  try {
-    await ElMessageBox.confirm(
-      '上次更正结果尚未确认。请先刷新报工记录核对；放弃重试后再次更正可能产生重复记录。',
-      '确认放弃本次更正重试',
-      { type: 'warning', confirmButtonText: '核对后仍要放弃', cancelButtonText: '继续保留' },
-    );
-    if (changeReport.value) resetCorrectionIntent(changeReport.value.reportId);
-    return true;
-  } catch {
-    return false;
-  }
-};
-const beforeChangeClose = async (done: () => void): Promise<void> => {
-  if (await canDiscardChange()) done();
-};
-const requestChangeClose = async (): Promise<void> => {
-  if (await canDiscardChange()) changeVisible.value = false;
-};
-const submitChange = async () => {
-  if (!changeStep.value || !changeReport.value || !canSubmitChange.value) return;
-  try {
-    if (changeMode.value === 'correct')
-      await correct(
-        changeStep.value,
-        changeReport.value,
-        changeForm.normalQuantity,
-        changeForm.abnormalQuantity,
-        changeForm.abnormalQuantity > 0 ? changeForm.abnormalOrigin : null,
-        changeForm.reason,
-      );
-    else await reverse(changeStep.value, changeReport.value, changeForm.reason);
-    changeVisible.value = false;
-    EMessage.success(changeMode.value === 'correct' ? '报工已更正，原记录已保留' : '报工已冲销');
-  } catch (error) {
-    const code =
-      typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : '';
-    const dependency =
-      error instanceof RequestError && error.details
-        ? (error.details as {
-            conflictingStepOrder?: number;
-            conflictingStepName?: string;
-            downstreamEffectiveReportedQuantity?: string;
-          })
-        : null;
-    const fallback =
-      code === 'DOWNSTREAM_QUANTITY_CONFLICT'
-        ? dependency?.conflictingStepName
-          ? `调整后正常放行量低于第 ${dependency.conflictingStepOrder} 道工序“${dependency.conflictingStepName}”已报正常与异常总量 ${formatQuantity(dependency.downstreamEffectiveReportedQuantity ?? 0)}，请先从最下游开始冲销`
-          : '调整后正常放行量低于下游已报正常与异常总量，请先从最下游开始冲销'
-        : code === 'STEP_REPORT_DEPENDENCY_CONFLICT'
-          ? '该报工已有异常处置或更正记录，当前不能直接调整'
-          : code === 'STEP_REPORT_QUANTITY_EXCEEDED'
-            ? '调整后数量超过上游当前放行量，请刷新后核对'
-            : code === 'CONCURRENT_MODIFICATION'
-              ? '工序数据已变化，请刷新后重新核对调整影响'
-              : '报工调整失败，请刷新后重试';
-    EMessage.error(error, fallback);
-  }
-};
-const submitCompletion = async () => {
+const {
+  completedStepCount,
+  selectedBatch,
+  stepProgressPercentage,
+  reportHistoryCount,
+  effectiveAbnormalQuantity,
+  currentStepLabel,
+  pendingAbnormalCount,
+  selectedOverdueDays,
+  selectedBatchRiskClass,
+} = useProductionExecutionSummary(record, batches, selectedBatchId);
+const submitCompletion = async (): Promise<void> => {
   if (!completionCheck.value?.canComplete) return;
   try {
     await completeExecution();
     completionVisible.value = false;
-    EMessage.success('生产执行已结束，请核对产出清单并提交结案审批');
+    EMessage.success('任务执行已结束，员工状态与报工已转只读；请核对产出并提交结案审批');
     if (selectedBatchId.value) openOutput(selectedBatchId.value);
   } catch (error) {
-    EMessage.error(error, '生产执行完工失败，请刷新后核对完工条件');
+    EMessage.error(error, '任务执行结束失败，请刷新后核对');
   }
 };
+const route = useRoute();
+const unregister = useTabsStore().registerCloseGuard(String(route.name), async () => {
+  if (completionPending.value) return false;
+  return canChangeTarget();
+});
+onScopeDispose(unregister);
 usePageActivationRefresh(refreshCurrent);
 </script>
 
 <style scoped>
 .execution-page {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  gap: 16px;
+  grid-template-rows: minmax(0, 1fr);
   height: 100%;
   min-height: 0;
 }
-.query-panel,
 .records-section,
 .step-card {
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--el-border-color-lighter);
   border-radius: 8px;
-  background: #ffffff;
+  background: var(--el-bg-color);
 }
-.query-panel {
-  padding: 20px 20px 4px;
-}
-.query-form {
+.step-command-bar {
   display: flex;
-  align-items: flex-start;
-  gap: 10px 22px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  flex-wrap: wrap;
+  margin-top: 12px;
 }
-.query-form :deep(.el-form-item) {
-  margin-right: 0;
-  margin-bottom: 16px;
+.report-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
-.query-form :deep(.el-form-item__label) {
-  height: 34px;
-  padding-right: 8px;
-  color: #1f2937;
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 34px;
-}
-.query-form :deep(.el-input) {
-  width: 240px;
-}
-.query-actions {
-  margin-left: auto;
+.report-blocked-reason {
+  margin: 6px 0 8px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
 }
 .records-section {
   display: flex;
@@ -1011,7 +905,7 @@ usePageActivationRefresh(refreshCurrent);
   flex: 0 0 auto;
   min-height: 56px;
   align-items: center;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--el-border-color-lighter);
 }
 .records-caption {
   display: flex;
@@ -1019,12 +913,12 @@ usePageActivationRefresh(refreshCurrent);
   gap: 12px;
 }
 .records-caption strong {
-  color: #1f2937;
+  color: var(--el-text-color-primary);
   font-size: 16px;
 }
 .records-caption span,
 .step-title > span {
-  color: #6b7280;
+  color: var(--el-text-color-secondary);
   font-size: 12px;
 }
 .workspace {
@@ -1041,9 +935,10 @@ usePageActivationRefresh(refreshCurrent);
   min-height: 0;
   overflow-x: auto;
   overflow-y: auto;
-  padding: 16px 20px 20px;
+  padding: 0 20px 20px;
 }
 .batch-health {
+  margin-top: 16px;
   padding-left: 10px;
   border-left: 3px solid var(--el-border-color-light);
 }
@@ -1054,8 +949,7 @@ usePageActivationRefresh(refreshCurrent);
   border-left-color: var(--el-color-danger);
 }
 .batch-health :deep(.el-descriptions__cell),
-.step-metrics :deep(.el-descriptions__cell),
-.quantity-details :deep(.el-descriptions__cell) {
+.step-metrics :deep(.el-descriptions__cell) {
   font-size: 14px;
   overflow-wrap: anywhere;
 }
@@ -1068,7 +962,7 @@ usePageActivationRefresh(refreshCurrent);
 .batch-health-header {
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 10px;
+  margin-bottom: 6px;
 }
 .batch-health-title {
   flex-wrap: wrap;
@@ -1076,6 +970,17 @@ usePageActivationRefresh(refreshCurrent);
 .batch-health-title > strong {
   color: var(--el-text-color-primary);
   font-size: 16px;
+}
+.batch-info-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  color: var(--el-text-color-regular);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.task-details {
+  margin-top: 10px;
 }
 .current-step,
 .batch-progress,
@@ -1098,16 +1003,38 @@ usePageActivationRefresh(refreshCurrent);
   line-height: 1.6;
 }
 .completion-check {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px 16px;
-  margin-top: 12px;
-  padding: 10px 12px;
-  border: 1px solid var(--el-border-color-light);
-  border-radius: 8px;
-  background: var(--el-fill-color-lighter);
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--el-border-color-lighter);
 }
-.completion-check p,
+.completion-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+.completion-heading > span {
+  flex: 1;
+  min-width: 0;
+  color: var(--el-text-color-regular);
+  font-size: 13px;
+}
+.completion-heading .completion-blocked {
+  color: var(--el-color-warning-dark-2);
+}
+.completion-details p,
+.completion-note {
+  margin: 8px 0;
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.completion-details ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--el-color-warning-dark-2);
+  font-size: 13px;
+}
 .completion-note {
   margin: 6px 0 0;
   color: var(--el-text-color-secondary);
@@ -1130,32 +1057,53 @@ usePageActivationRefresh(refreshCurrent);
   margin-top: 12px;
   padding: 12px 16px;
 }
-.step-card.has-abnormal {
-  border-color: var(--el-color-danger);
-}
-.step-card header {
+.step-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 8px 12px;
 }
+.step-toggle {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  min-width: 250px;
+  padding: 2px 0;
+  border: 0;
+  color: var(--el-text-color-primary);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.step-toggle:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+.step-toggle > .el-tag,
+.fold-control {
+  flex: 0 0 auto;
+}
+.fold-control {
+  color: var(--el-text-color-regular);
+  font-size: 12px;
+}
 .step-title {
   display: flex;
+  flex: 1;
   align-items: baseline;
   flex-wrap: wrap;
-  gap: 6px 12px;
+  gap: 4px 10px;
 }
-.step-card h2 {
-  margin: 0;
+.step-title strong {
   font-size: 15px;
 }
-.step-tags {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-  gap: 8px;
+.step-body {
+  margin-top: 6px;
+  padding-top: 4px;
+  border-top: 1px solid var(--el-border-color-lighter);
 }
 .supplement-route {
   display: flex;
@@ -1173,60 +1121,52 @@ usePageActivationRefresh(refreshCurrent);
 .supplement-route strong {
   color: var(--el-color-warning-dark-2);
 }
-.supplement-blocked {
-  margin-top: 12px;
-}
 .step-metrics {
   margin: 10px 0 0;
 }
-.quantity-note {
-  display: block;
-  color: var(--el-color-warning-dark-2);
-  font-size: 12px;
+.step-metrics :deep(.el-descriptions__content) {
+  white-space: nowrap;
+  overflow-wrap: normal;
 }
-.quantity-details {
-  margin: 6px 0;
-}
-.quantity-details summary {
-  width: fit-content;
-  padding: 4px 0;
-  color: var(--el-text-color-regular);
-  font-size: 12px;
-  cursor: pointer;
-}
-.quantity-details[open] summary {
-  margin-bottom: 6px;
-}
-.abnormal-list {
+.normal-quantity-composition {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 12px;
-  padding: 12px;
-  border: 1px solid var(--el-color-danger-light-7);
-  background: var(--el-color-danger-light-9);
-  border-radius: 8px;
+  gap: 4px 8px;
+  margin-top: 8px;
+  color: var(--el-text-color-regular);
+  font-size: 13px;
+  line-height: 1.6;
 }
-.warning-text {
-  color: #f59e0b;
+.normal-quantity-composition > span {
+  white-space: nowrap;
+}
+.quantity-check {
+  margin-top: 6px;
+}
+.section-toggle {
+  padding: 2px 0;
+  border: 0;
+  color: var(--el-text-color-regular);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.section-toggle:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 3px;
+}
+.section-toggle:disabled {
+  cursor: default;
+  opacity: 0.6;
 }
 .danger-text {
   color: var(--el-color-danger);
 }
-.disabled-action {
-  color: #9ca3af;
-  font-size: 13px;
-  cursor: help;
-}
 .dialog-tip {
   margin-bottom: 16px;
-}
-.change-context {
-  margin-bottom: 16px;
-}
-.execution-page :deep(.el-dialog .el-input-number) {
-  width: 100%;
 }
 @media (max-width: 1000px) {
   .workspace {
@@ -1235,13 +1175,6 @@ usePageActivationRefresh(refreshCurrent);
   }
   .batch-health-header {
     flex-wrap: wrap;
-  }
-  .query-form {
-    display: grid;
-    grid-template-columns: minmax(280px, 1fr) auto;
-  }
-  .query-actions {
-    margin-left: 0;
   }
 }
 </style>

@@ -50,6 +50,17 @@ const idempotencyRecordsWritePattern =
  * ——scope 只能经由契约常量标识符引用。
  */
 const knownIdempotencyScopes = [
+  'production.batch.create.v10',
+  'production.demand-correction.submit.v2',
+  'production.step-report.create.v4',
+  'production.step-report.correct.v5',
+  'production.step-report.correct.v4',
+  'production.step-report.history-create.v1',
+  'production.step-report.history-correct.v1',
+  'production.step-report.batch-reverse.v1',
+  'production.rework.complete.v3',
+  'production.rework.complete.v2',
+  'production.abnormal.scrap-supplement-plan.confirm.v2',
   'procurement.inbound.confirm.v6',
   'production.batch.create.v9',
   'production.finished-inbound.confirm.v3',

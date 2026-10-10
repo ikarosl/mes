@@ -3,9 +3,17 @@
     :model-value="visible"
     :title="mode === 'assign' ? '工序派工' : '工序改派'"
     :width="DialogWidth.sm"
+    :close-on-click-modal="false"
+    :show-close="!submitting"
+    :close-on-press-escape="!submitting"
     @update:model-value="$emit('update:visible', $event)"
     @open="$emit('refresh-users')"
   >
+    <InlineHint
+      v-if="mode === 'reassign'"
+      class="assignment-note"
+      >改派只切换当前办理人；保留工序状态、开完工时间、报工数量和历史录入人。返工由管理员在异常处置中办理。</InlineHint
+    >
     <el-form
       v-if="stepRecord"
       label-width="100px"
@@ -37,11 +45,18 @@
       </el-form-item>
     </el-form>
     <template #footer>
-      <el-button @click="$emit('update:visible', false)">取消</el-button>
+      <el-button
+        :disabled="submitting"
+        @click="$emit('update:visible', false)"
+        >取消</el-button
+      >
       <el-button
         type="primary"
         :loading="submitting"
-        :disabled="!responsibleUserId"
+        :disabled="
+          !responsibleUserId ||
+          (mode === 'reassign' && responsibleUserId === stepRecord?.responsibleUserId)
+        "
         @click="submit"
       >
         {{ mode === 'assign' ? '确认派工' : '确认改派' }}
@@ -54,6 +69,7 @@
 import { ref, watch } from 'vue';
 import type { BatchStepRecordItem, UserOption } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
+import InlineHint from '../../../components/InlineHint.vue';
 
 const props = defineProps<{
   visible: boolean;
@@ -86,5 +102,8 @@ const submit = (): void => {
 <style scoped>
 :deep(.el-select) {
   width: 100%;
+}
+.assignment-note {
+  margin-bottom: 16px;
 }
 </style>

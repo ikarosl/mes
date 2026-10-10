@@ -51,6 +51,16 @@ import type {
   ProductionStepCommandResult,
   ProductionWorkerTaskItem,
   BatchStepReportCommandResult,
+  BatchStepReportView,
+  BatchStepReportDetail,
+  BatchStepScrapRecordView,
+  BatchReverseStepReportsPreview,
+  BatchReverseStepReportsCommandResult,
+  PreviewBatchReverseStepReportsPayload,
+  BatchReverseStepReportsPayload,
+  HistoricalBatchStepReportPayload,
+  ProductionStepExecutionHistoryItem,
+  ReopenProductionStepPayload,
   CorrectBatchStepReportCommandResult,
   CorrectBatchStepReportPayload,
   CreateBatchStepReportPayload,
@@ -86,6 +96,7 @@ import type {
   CompleteReworkResult,
   RejectBatchStepAbnormalDispositionPayload,
   ReworkRecordItem,
+  ReworkRecordView,
   CancelProductionBatchPayload,
   AuthorizeShortBatchPayload,
   ShortBatchAuthorizationPreview,
@@ -615,7 +626,12 @@ export const productionApi = {
       data,
     }),
 
-  listWorkerTasks: () => request<ProductionWorkerTaskItem[]>({ url: '/production/worker-tasks' }),
+  listWorkerTasks: (params: { page: number; pageSize: number }, options: ReadRequestOptions = {}) =>
+    request<PageResult<ProductionWorkerTaskItem>>({
+      ...options,
+      url: '/production/worker-tasks',
+      params,
+    }),
 
   batchStepSopContent: (batchId: string, stepRecordId: string) =>
     request<Blob>({
@@ -664,10 +680,95 @@ export const productionApi = {
       data: { version },
     }),
 
+  completeStep: (batchId: string, stepRecordId: string, version: number) =>
+    request<ProductionStepCommandResult>({
+      url: `/production/batches/${batchId}/step-records/${stepRecordId}/actions/complete`,
+      method: 'POST',
+      data: { version },
+    }),
+
+  reopenStep: (batchId: string, stepRecordId: string, data: ReopenProductionStepPayload) =>
+    request<ProductionStepCommandResult>({
+      url: `/production/batches/${batchId}/step-records/${stepRecordId}/actions/reopen`,
+      method: 'POST',
+      data,
+    }),
+
+  adminStartStep: (batchId: string, stepRecordId: string, version: number) =>
+    request<ProductionStepCommandResult>({
+      url: `/production/batches/${batchId}/step-records/${stepRecordId}/actions/admin-start`,
+      method: 'POST',
+      data: { version },
+    }),
+
+  adminCompleteStep: (batchId: string, stepRecordId: string, version: number) =>
+    request<ProductionStepCommandResult>({
+      url: `/production/batches/${batchId}/step-records/${stepRecordId}/actions/admin-complete`,
+      method: 'POST',
+      data: { version },
+    }),
+
+  adminReopenStep: (batchId: string, stepRecordId: string, data: ReopenProductionStepPayload) =>
+    request<ProductionStepCommandResult>({
+      url: `/production/batches/${batchId}/step-records/${stepRecordId}/actions/admin-reopen`,
+      method: 'POST',
+      data,
+    }),
+
+  listStepExecutionActions: (
+    batchId: string,
+    stepRecordId: string,
+    worker: boolean,
+    params: { page: number; pageSize: number },
+    options: ReadRequestOptions = {},
+  ) =>
+    request<PageResult<ProductionStepExecutionHistoryItem>>({
+      ...options,
+      url: worker
+        ? `/production/worker-tasks/batches/${batchId}/step-records/${stepRecordId}/execution-actions`
+        : `/production/batches/${batchId}/step-records/${stepRecordId}/execution-actions`,
+      params,
+    }),
+
   getBatchExecutionRecords: (batchId: string, options: ReadRequestOptions = {}) =>
     request<ProductionExecutionRecordGroup>({
       ...options,
       url: `/production/batches/${batchId}/execution-records`,
+    }),
+
+  listStepReports: (
+    batchId: string,
+    stepRecordId: string,
+    params: { page: number; pageSize: number },
+    options: ReadRequestOptions = {},
+  ) =>
+    request<PageResult<BatchStepReportView>>({
+      ...options,
+      url: `/production/batches/${batchId}/step-records/${stepRecordId}/reports`,
+      params,
+    }),
+
+  getStepReportDetail: (
+    batchId: string,
+    stepRecordId: string,
+    reportId: string,
+    options: ReadRequestOptions = {},
+  ) =>
+    request<BatchStepReportDetail>({
+      ...options,
+      url: `/production/batches/${batchId}/step-records/${stepRecordId}/reports/${reportId}`,
+    }),
+
+  listStepScrapRecords: (
+    batchId: string,
+    stepRecordId: string,
+    params: { page: number; pageSize: number },
+    options: ReadRequestOptions = {},
+  ) =>
+    request<PageResult<BatchStepScrapRecordView>>({
+      ...options,
+      url: `/production/batches/${batchId}/step-records/${stepRecordId}/scrap-records`,
+      params,
     }),
 
   listExecutionBatchSummaries: (params: ProductionBatchQuery, options: ReadRequestOptions = {}) =>
@@ -733,8 +834,78 @@ export const productionApi = {
       retryTimes: 2,
     }),
 
+  createHistoricalStepReport: (
+    batchId: string,
+    stepRecordId: string,
+    data: HistoricalBatchStepReportPayload,
+    idempotencyKey: string,
+  ) =>
+    request<BatchStepReportCommandResult>({
+      url: `/production/batches/${batchId}/step-records/${stepRecordId}/historical-reports`,
+      method: 'POST',
+      data,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      retryIdempotentWrite: true,
+      retryTimes: 2,
+    }),
+
+  reverseHistoricalStepReport: (
+    batchId: string,
+    stepRecordId: string,
+    reportId: string,
+    data: ReverseBatchStepReportPayload,
+  ) =>
+    request<BatchStepReportCommandResult>({
+      url: `/production/batches/${batchId}/step-records/${stepRecordId}/historical-reports/${reportId}/actions/reverse`,
+      method: 'POST',
+      data,
+    }),
+
+  correctHistoricalStepReport: (
+    batchId: string,
+    stepRecordId: string,
+    reportId: string,
+    data: HistoricalBatchStepReportPayload,
+    idempotencyKey: string,
+  ) =>
+    request<CorrectBatchStepReportCommandResult>({
+      url: `/production/batches/${batchId}/step-records/${stepRecordId}/historical-reports/${reportId}/actions/correct`,
+      method: 'POST',
+      data,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      retryIdempotentWrite: true,
+      retryTimes: 2,
+    }),
+
+  previewBatchReverseStepReports: (
+    batchId: string,
+    data: PreviewBatchReverseStepReportsPayload,
+    options: ReadRequestOptions = {},
+  ) =>
+    request<BatchReverseStepReportsPreview>({
+      ...options,
+      url: `/production/batches/${batchId}/step-reports/actions/preview-reverse`,
+      method: 'POST',
+      data,
+    }),
+
+  batchReverseStepReports: (
+    batchId: string,
+    data: BatchReverseStepReportsPayload,
+    idempotencyKey: string,
+  ) =>
+    request<BatchReverseStepReportsCommandResult>({
+      url: `/production/batches/${batchId}/step-reports/actions/reverse`,
+      method: 'POST',
+      data,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      retryIdempotentWrite: true,
+      retryTimes: 2,
+      skipErrorHandling: true,
+    }),
+
   listBatchReworks: (batchId: string, options: ReadRequestOptions = {}) =>
-    request<ReworkRecordItem[]>({ ...options, url: `/production/batches/${batchId}/reworks` }),
+    request<ReworkRecordView[]>({ ...options, url: `/production/batches/${batchId}/reworks` }),
 
   approveDispositionRework: (dispositionId: string, data: ApproveBatchStepReworkPayload) =>
     request<ReworkRecordItem>({

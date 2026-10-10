@@ -60,7 +60,14 @@ export interface BatchTerminationRecord {
   createdAt: string;
 }
 
-export interface BatchTerminationCheck {
+/** 批准证据与当前事实对照，不进入冻结的审批 check。 */
+export interface ProductionReportedNormalComparison {
+  approvedReportedNormalQuantity: string | null;
+  currentReportedNormalQuantity: string;
+  reportedNormalQuantityDifference: string | null;
+}
+
+export interface BatchTerminationCheck extends ProductionReportedNormalComparison {
   batchId: string;
   batchNo: string;
   batchStatus: ProductionBatchStatus;

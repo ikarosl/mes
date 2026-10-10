@@ -8,7 +8,10 @@ import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { DEMAND_CORRECTION_APPROVAL_SCENE } from '../approval-scenes.js';
 import { ProductionDemandCorrectionRepository } from './ports/production-demand-correction.repository.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
-import { demandCorrectionSnapshotSchema } from './production-approval-snapshot.schema.js';
+import {
+  demandCorrectionSnapshotSchema,
+  DEMAND_CORRECTION_APPROVAL_SNAPSHOT_SCHEMA_VERSION,
+} from './production-approval-snapshot.schema.js';
 
 /** 只把 Production 拥有的业务命令注册给通用审批引擎。 */
 @Injectable()
@@ -42,7 +45,7 @@ export class ProductionDemandCorrectionApprovalHandler
   }
   async readSnapshotForDisplay(snapshot: unknown, schemaVersion: number) {
     const parsed = demandCorrectionSnapshotSchema.safeParse(snapshot);
-    if (schemaVersion !== 1 || !parsed.success)
+    if (schemaVersion !== DEMAND_CORRECTION_APPROVAL_SNAPSHOT_SCHEMA_VERSION || !parsed.success)
       throw new ApprovalSubjectError('CONFLICT', '需求更正审批证据结构无法读取');
     return { subjectSnapshot: parsed.data, materialNames: {} };
   }

@@ -32,7 +32,12 @@ export class ProductionTraceService {
       this.outbounds.listOutbounds(batchId),
       this.trace.listInventoryTransactions(batchId),
       this.trace.listMaterialInboundSources(batchId),
-      this.reporting.getBatchExecution(batchId),
+      this.reporting.getBatchExecution(batchId, {
+        actorId: null,
+        canReadAllReports: true,
+        canManageExecution: false,
+        canReport: false,
+      }),
     ]);
     return {
       summary,

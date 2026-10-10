@@ -12,6 +12,7 @@ const schema: z.ZodType<ApproveScrapSupplementResult> = z.object({
     productionBatchId: z.string(),
     stepRecordId: z.string(),
     sourceReportId: z.string(),
+    sourceAbnormalQuantity: z.string(),
     abnormalOrigin: z.enum(['current_step', 'previous_step']),
     reviewStatus: z.enum(['pending_review', 'approved', 'rejected', 'cancelled']),
     dispositionType: z.enum(['rework', 'scrap']).nullable(),

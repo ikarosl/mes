@@ -713,7 +713,6 @@ export class MysqlProductionMaterialOutboundRepository extends ProductionMateria
       const supplementFulfillment = await fulfillReadySupplements(
         connection,
         String(order.production_batch_id),
-        lockedBatch.planned_quantity,
         context.actorId,
       );
       await this.audit(
@@ -727,7 +726,6 @@ export class MysqlProductionMaterialOutboundRepository extends ProductionMateria
           version: version + 1,
           transactionCount: details.length,
           fulfilledSupplementIds: supplementFulfillment.fulfilledSupplementIds,
-          reopenedStepIds: supplementFulfillment.reopenedStepIds,
         },
       );
       const batch = await findBatch(connection, String(order.production_batch_id));

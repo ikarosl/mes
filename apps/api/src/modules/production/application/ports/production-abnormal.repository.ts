@@ -5,11 +5,12 @@ import type {
   CompleteReworkResult,
   RejectBatchStepAbnormalDispositionPayload,
   ReworkRecordItem,
+  ReworkRecordView,
 } from '@company/contracts';
 import type { CommandContext } from '../../../../common/audit/audit.types.js';
 
 export abstract class ProductionAbnormalRepository {
-  abstract listReworks(batchId: string): Promise<ReworkRecordItem[]>;
+  abstract listReworks(batchId: string): Promise<ReworkRecordView[]>;
   abstract approveRework(
     dispositionId: string,
     payload: ApproveBatchStepReworkPayload,

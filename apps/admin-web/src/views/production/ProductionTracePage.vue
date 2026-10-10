@@ -436,61 +436,47 @@
                       BATCH_STEP_STATUS_LABELS[step.status]
                     }}</el-tag>
                   </header>
+                  <ProductionStepProgress
+                    :reported-quantity="step.effectiveDirectReportedQuantity"
+                    :upper-limit-quantity="step.upperLimitQuantity"
+                    :direct-normal-quantity="step.effectiveDirectNormalQuantity"
+                    :direct-abnormal-quantity="step.effectiveDirectAbnormalQuantity"
+                    :unit="step.unit"
+                  />
                   <p class="step-summary">
-                    有效正常 {{ formatQuantity(step.effectiveNormalQuantity) }} /
-                    {{ formatQuantity(step.requiredNormalQuantity) }}； 有效异常
-                    {{ formatQuantity(step.effectiveAbnormalQuantity) }}；待处置异常
+                    正常累计（含{{ BATCH_STEP_REWORK_RESULT_LABELS.normal }}）{{
+                      formatQuantity(step.effectiveNormalQuantity)
+                    }}；建议目标
+                    {{ formatQuantity(step.requiredNormalQuantity) }}；正常与建议目标之差
+                    {{ formatQuantityDifference(step.normalVsTargetDifference) }}；待处置异常
                     {{
                       step.abnormalDispositions.filter(
                         (item) => item.reviewStatus === 'pending_review',
                       ).length
                     }}
-                    条
+                    项。报工比例不代替工序完成状态。
                   </p>
-                  <el-table
-                    :data="step.reports"
-                    size="small"
-                    empty-text="暂无报工事实"
+                  <ProductionStepExecutionHistoryDialog
+                    v-model="historyVisibleByStep[step.stepRecordId]"
+                    :batch-id="step.productionBatchId"
+                    :step-record-id="step.stepRecordId"
+                    :step-name="step.stepName"
+                  />
+                  <el-button
+                    link
+                    type="primary"
+                    @click="historyVisibleByStep[step.stepRecordId] = true"
+                    >状态业务历史</el-button
                   >
-                    <el-table-column
-                      prop="reportNo"
-                      label="报工单号"
-                      min-width="180"
-                    />
-                    <el-table-column
-                      label="事实关系"
-                      min-width="170"
-                    >
-                      <template #default="{ row }">
-                        <span v-if="row.reversalOfReportId"
-                          >冲销 #{{ row.reversalOfReportId }}</span
-                        >
-                        <span v-else-if="row.correctionOfReportId"
-                          >替代 #{{ row.correctionOfReportId }}</span
-                        >
-                        <span v-else>原始报工</span>
-                      </template>
-                    </el-table-column>
-                    <el-table-column
-                      label="正常 / 异常"
-                      min-width="150"
-                    >
-                      <template #default="{ row }"
-                        >{{ formatQuantity(row.normalQuantity) }} /
-                        {{ formatQuantity(row.abnormalQuantity) }}</template
-                      >
-                    </el-table-column>
-                    <el-table-column
-                      label="有效性"
-                      width="90"
-                    >
-                      <template #default="{ row }"
-                        ><el-tag :type="row.isEffective ? 'success' : 'info'">{{
-                          row.isEffective ? '有效' : '已冲销'
-                        }}</el-tag></template
-                      >
-                    </el-table-column>
-                  </el-table>
+                  <ProductionStepReportTable
+                    :batch-id="step.productionBatchId"
+                    :step-record-id="step.stepRecordId"
+                    :version="step.version"
+                    :show-actions="false"
+                    @view-detail="reportTrace.open"
+                    @view-report="reportTrace.open"
+                    @view-process="reportTrace.open"
+                  />
                 </article>
               </el-tab-pane>
             </el-tabs>
@@ -503,6 +489,7 @@
       </div>
     </section>
   </div>
+  <ProductionReportTraceDialog :reader="reportTrace" />
   <ProductionOutputDialog
     v-model:visible="outputVisible"
     :batch-id="outputBatchId"
@@ -518,19 +505,33 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { reactive, ref } from 'vue';
 import { usePageActivationRefresh } from '../../composables/requests/usePageActivationRefresh';
 import { useRouteAccess } from '../../composables/useRouteAccess';
 import ProductionOutputDialog from './components/ProductionOutputDialog.vue';
+import ProductionStepProgress from './components/ProductionStepProgress.vue';
+import ProductionStepReportTable from './components/ProductionStepReportTable.vue';
+import ProductionReportTraceDialog from './components/ProductionReportTraceDialog.vue';
+import { useProductionReportTrace } from './composables/useProductionReportTrace';
+import ProductionStepExecutionHistoryDialog from './components/ProductionStepExecutionHistoryDialog.vue';
 import ProductionBatchTerminationDialog from './components/ProductionBatchTerminationDialog.vue';
 import type { InventoryTransactionType } from '@company/contracts';
 
 import { Refresh } from '@element-plus/icons-vue';
-import { BATCH_STEP_STATUS_LABELS, INVENTORY_TRANSACTION_TYPE_LABELS } from '@company/constants';
+import {
+  BATCH_STEP_REWORK_RESULT_LABELS,
+  BATCH_STEP_STATUS_LABELS,
+  INVENTORY_TRANSACTION_TYPE_LABELS,
+} from '@company/constants';
 import TableToolbar from '../../components/TableToolbar.vue';
 import { formatDateTimeForDisplay } from '../../utils/date';
 import { EMessage } from '../../utils/message';
-import { batchStatusMeta, formatQuantity, stepStatusMeta } from './production-status';
+import {
+  batchStatusMeta,
+  formatQuantity,
+  formatQuantityDifference,
+  stepStatusMeta,
+} from './production-status';
 import { approvedUsableQuantity, plannedOutputGapText } from './production-output-quantity';
 import { useProductionTrace } from './composables/useProductionTrace';
 
@@ -551,11 +552,15 @@ const openCloseoutItems = (batchId: string) => {
   outputBatchId.value = batchId;
   closeoutVisible.value = true;
 };
+const historyVisibleByStep = reactive<Record<string, boolean>>({});
 const keyword = ref('');
 const currentPage = ref(1);
 const activeTab = ref('materials');
 const { items, total, loading, detailLoading, selectedBatchId, detail, search, selectBatch } =
   useProductionTrace();
+const reportTrace = useProductionReportTrace({
+  contextId: () => selectedBatchId.value,
+});
 const variantCode = (row: { materialVariantCode?: string | null }): string =>
   row.materialVariantCode || '未记录版本';
 

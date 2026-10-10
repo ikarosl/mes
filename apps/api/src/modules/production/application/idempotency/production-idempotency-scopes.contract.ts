@@ -15,7 +15,7 @@
  * 不读取旧 schema，不引入临时兼容窗口。
  */
 
-export const SUBMIT_DEMAND_CORRECTION_SCOPE = 'production.demand-correction.submit.v1' as const;
+export const SUBMIT_DEMAND_CORRECTION_SCOPE = 'production.demand-correction.submit.v2' as const;
 export const BEGIN_BATCH_CLOSEOUT_SCOPE = 'production.batch-closeout.begin.v1' as const;
 export const HANDLE_BATCH_CLOSEOUT_SCOPE = 'production.batch-closeout.handle.v1' as const;
 export const REVIEW_OUTPUT_MATERIAL_SCOPE = 'production.output.material-review.v1' as const;
@@ -26,7 +26,7 @@ export const BEGIN_OUTPUT_CORRECTION_SCOPE = 'production.output.correction.begin
 export const CANCEL_OUTPUT_CORRECTION_SCOPE = 'production.output.correction.cancel.v1' as const;
 
 /** createBatch 创建生产批次；scope 与当前请求及结果 codec 绑定。 */
-export const CREATE_BATCH_IDEMPOTENCY_SCOPE = 'production.batch.create.v9' as const;
+export const CREATE_BATCH_IDEMPOTENCY_SCOPE = 'production.batch.create.v10' as const;
 /** 创建物料分配。 */
 export const CREATE_MATERIAL_ALLOCATION_IDEMPOTENCY_SCOPE =
   'production.material-allocation.create.v1' as const;
@@ -50,14 +50,21 @@ export const CONFIRM_PURCHASE_INBOUND_IDEMPOTENCY_SCOPE =
   'production.purchase-inbound.confirm.v1' as const;
 export const CONFIRM_FINISHED_INBOUND_SCOPE = 'production.finished-inbound.confirm.v3' as const;
 /** 创建工序报工。 */
-export const CREATE_STEP_REPORT_IDEMPOTENCY_SCOPE = 'production.step-report.create.v3' as const;
-/** 管理员更正工序报工。 */
-export const CORRECT_STEP_REPORT_IDEMPOTENCY_SCOPE = 'production.step-report.correct.v3' as const;
-/** 返工整单完成。 */
-export const COMPLETE_REWORK_IDEMPOTENCY_SCOPE = 'production.rework.complete.v1' as const;
+export const CREATE_STEP_REPORT_IDEMPOTENCY_SCOPE = 'production.step-report.create.v4' as const;
+/** 纯正常直接报工全量替代更正。 */
+export const CORRECT_STEP_REPORT_IDEMPOTENCY_SCOPE = 'production.step-report.correct.v5' as const;
+/** 结案后普通正常报工历史补录和原子更正。 */
+export const CREATE_HISTORICAL_STEP_REPORT_SCOPE =
+  'production.step-report.history-create.v1' as const;
+export const CORRECT_HISTORICAL_STEP_REPORT_SCOPE =
+  'production.step-report.history-correct.v1' as const;
+/** 同任务跨工序全部成功或全部回滚的全量冲销。 */
+export const BATCH_REVERSE_STEP_REPORTS_SCOPE = 'production.step-report.batch-reverse.v1' as const;
+/** 返工整单完成，正数正常恢复和再次异常分别形成结果报工。 */
+export const COMPLETE_REWORK_IDEMPOTENCY_SCOPE = 'production.rework.complete.v3' as const;
 /** 异常报废补料方案确认并生成正式闭环事实。 */
 export const CONFIRM_SCRAP_SUPPLEMENT_PLAN_IDEMPOTENCY_SCOPE =
-  'production.abnormal.scrap-supplement-plan.confirm.v1' as const;
+  'production.abnormal.scrap-supplement-plan.confirm.v2' as const;
 /** 创建生产领料损耗补料。 */
 export const CREATE_MATERIAL_LOSS_IDEMPOTENCY_SCOPE = 'production.material-loss.create.v3' as const;
 /** 确认生产领料损耗补料。 */

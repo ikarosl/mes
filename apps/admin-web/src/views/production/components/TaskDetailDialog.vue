@@ -101,49 +101,72 @@
               <template #default="{ row }">{{ row.needInspection ? '是' : '否' }}</template>
             </el-table-column>
             <el-table-column
-              label="状态"
-              width="110"
+              label="工序状态与报工比例"
+              min-width="290"
             >
-              <template #default="{ row }">{{
-                STEP_STATUS_LABELS[row.status] ?? row.status
-              }}</template>
+              <template #default="{ row }">
+                <el-tag
+                  class="step-status"
+                  :type="stepStatusMeta(row.status).type"
+                  >{{ STEP_STATUS_LABELS[row.status] ?? row.status }}</el-tag
+                >
+                <ProductionStepProgress
+                  :reported-quantity="row.effectiveDirectReportedQuantity"
+                  :upper-limit-quantity="row.upperLimitQuantity"
+                  :direct-normal-quantity="row.effectiveDirectNormalQuantity"
+                  :direct-abnormal-quantity="row.effectiveDirectAbnormalQuantity"
+                  :unit="row.unit"
+                />
+              </template>
             </el-table-column>
             <el-table-column
-              label="报工/正常/异常"
+              label="累计正常 / 异常"
               width="170"
             >
               <template #default="{ row }">
-                {{ formatQuantity(row.outputQuantity) }} /
                 {{ formatQuantity(row.normalQuantity) }} /
                 {{ formatQuantity(row.abnormalQuantity) }}
+                <div class="quantity-note">
+                  正常累计含{{ BATCH_STEP_REWORK_RESULT_LABELS.normal }}
+                </div>
               </template>
             </el-table-column>
             <el-table-column
               label="操作"
-              width="220"
+              width="240"
               fixed="right"
             >
               <template #default="{ row }">
                 <el-button
-                  v-if="row.status === 'pending' && batch.status !== 'terminated'"
+                  v-if="row.status === 'pending'"
                   link
                   type="primary"
                   :loading="assignmentPendingIds.has(row.id)"
+                  :disabled="!row.canAssign"
                   @click="$emit('assign-step', row)"
                   >派工</el-button
                 >
-                <template v-else-if="row.status === 'assigned' && batch.status !== 'terminated'">
+                <template
+                  v-else-if="
+                    row.status === 'assigned' ||
+                    row.status === 'doing' ||
+                    row.status === 'completed'
+                  "
+                >
                   <el-button
                     link
                     type="primary"
                     :loading="assignmentPendingIds.has(row.id)"
+                    :disabled="!row.canReassign"
                     @click="$emit('reassign-step', row)"
                     >改派</el-button
                   >
                   <el-button
+                    v-if="row.status === 'assigned'"
                     link
                     type="danger"
                     :loading="assignmentPendingIds.has(row.id)"
+                    :disabled="!row.canUnassign"
                     @click="$emit('unassign-step', row)"
                     >撤回</el-button
                   >
@@ -151,13 +174,22 @@
                 <el-button
                   link
                   type="primary"
-                  :disabled="
-                    batch.status === 'terminated' ||
-                    (row.status !== 'pending' && row.status !== 'assigned')
-                  "
+                  :disabled="!row.canEditExecution"
                   @click="$emit('edit-step-execution', row)"
                   >调整</el-button
                 >
+                <div
+                  v-if="row.status === 'pending' && row.assignBlockedReason"
+                  class="quantity-note"
+                >
+                  {{ row.assignBlockedReason }}
+                </div>
+                <div
+                  v-else-if="!row.canReassign && row.reassignBlockedReason"
+                  class="quantity-note"
+                >
+                  {{ row.reassignBlockedReason }}
+                </div>
               </template>
             </el-table-column>
           </el-table>
@@ -167,7 +199,6 @@
           >
             暂无工序记录
           </div>
-          <!-- TODO(4.2-C): batch_step_reports 分批报工、异常展示和管理员更正尚未落地。 -->
         </el-tab-pane>
         <el-tab-pane label="物料需求">
           <div class="empty-hint">
@@ -180,11 +211,18 @@
 </template>
 
 <script setup lang="ts">
+import { BATCH_STEP_REWORK_RESULT_LABELS } from '@company/constants';
 import type { BatchStepRecordItem, ProductionBatchDetail } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
 import BatchApprovedOutput from './BatchApprovedOutput.vue';
+import ProductionStepProgress from './ProductionStepProgress.vue';
 import { formatDateTimeForDisplay } from '../../../utils/date';
-import { STEP_STATUS_LABELS, batchStatusMeta, formatQuantity } from '../production-status';
+import {
+  STEP_STATUS_LABELS,
+  batchStatusMeta,
+  formatQuantity,
+  stepStatusMeta,
+} from '../production-status';
 
 defineProps<{
   visible: boolean;
@@ -204,6 +242,14 @@ defineEmits<{
 <style scoped>
 .detail-tabs {
   margin-top: 18px;
+}
+.step-status {
+  margin-bottom: 8px;
+}
+.quantity-note {
+  margin-top: 4px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
 }
 .detail-table {
   width: 100%;

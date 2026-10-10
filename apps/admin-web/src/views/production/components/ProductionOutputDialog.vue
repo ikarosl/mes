@@ -49,10 +49,22 @@
           <el-descriptions-item label="最终审批负责人">{{
             detail.workOrderOwnerName
           }}</el-descriptions-item>
+          <el-descriptions-item label="原批准依据的末道正常量">{{
+            detail.approvedReportedNormalQuantity === null
+              ? '尚无批准依据'
+              : quantity(detail.approvedReportedNormalQuantity) + ' ' + detail.check.unit
+          }}</el-descriptions-item>
+          <el-descriptions-item label="当前末道净正常报工"
+            >{{ quantity(detail.currentReportedNormalQuantity) }}
+            {{ detail.check.unit }}</el-descriptions-item
+          >
+          <el-descriptions-item label="当前量与批准依据之差">{{
+            formatQuantityDifference(detail.reportedNormalQuantityDifference)
+          }}</el-descriptions-item>
         </el-descriptions>
         <el-alert
           v-if="stale"
-          title="清单或质检依据已更新，当前输入已保留。请核对更新后继续填写，或重新加载服务端草稿。"
+          title="清单或质检依据已更新，当前输入已保留。请核对更新后继续填写，或重新加载已保存草稿。"
           type="warning"
           :closable="false"
           class="notice"
@@ -157,7 +169,7 @@
     </div>
     <el-alert
       v-if="unresolved"
-      title="提交结果尚未确认，原操作和幂等标识已保留，请重试原操作或核对后关闭。"
+      title="提交结果尚未确认，已保留原操作，请重试原操作或核对后关闭。"
       type="warning"
       :closable="false"
       class="notice"
@@ -283,7 +295,7 @@
       />
       <el-table-column
         prop="server"
-        label="服务端最新草稿"
+        label="最新已保存草稿"
       />
       <el-table-column
         prop="local"
@@ -336,7 +348,7 @@ import {
 } from '@company/constants';
 import { DialogWidth } from '../../../utils/dialog';
 import { formatDateTimeForDisplay } from '../../../utils/date';
-import { formatQuantity as quantity } from '../production-status';
+import { formatQuantity as quantity, formatQuantityDifference } from '../production-status';
 import { useProductionOutput } from '../composables/useProductionOutput';
 import BatchCloseoutEvidence from './BatchCloseoutEvidence.vue';
 import FinishedInspectionHistory from '../../quality/components/FinishedInspectionHistory.vue';

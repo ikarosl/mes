@@ -12,6 +12,7 @@ export interface BatchStepAbnormalDispositionItem {
   productionBatchId: string;
   stepRecordId: string;
   sourceReportId: string;
+  sourceAbnormalQuantity: string;
   abnormalOrigin: BatchStepAbnormalOrigin;
   reviewStatus: BatchStepAbnormalReviewStatus;
   dispositionType: 'rework' | 'scrap' | null;
@@ -35,12 +36,14 @@ export interface ReworkRecordItem {
   productionBatchId: string;
   stepRecordId: string;
   sourceReportId: string;
+  /** 批准时的来源工序负责人快照，仅用于追溯，不作为返工执行授权。 */
   responsibleUserId: string;
   responsibleUserName: string | null;
   reworkQuantity: string;
   unit: string;
   status: ReworkStatus;
-  completedReportId: string | null;
+  completedNormalReportId: string | null;
+  completedAbnormalReportId: string | null;
   startedAt: string | null;
   completedAt: string | null;
   version: number;
@@ -58,6 +61,7 @@ export interface CompleteReworkPayload extends VersionedCommand {
 
 export interface CompleteReworkResult {
   rework: ReworkRecordItem;
-  report: BatchStepReportItem;
+  normalReport: BatchStepReportItem | null;
+  abnormalReport: BatchStepReportItem | null;
   abnormalDisposition: BatchStepAbnormalDispositionItem | null;
 }

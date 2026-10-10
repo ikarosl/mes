@@ -1,63 +1,81 @@
-import { allocateBusinessNumber } from '../../../infrastructure/numbering/mysql-business-number.js';
+import {
+  selectBatchExecutionRecords,
+  selectStepReportPage,
+  selectStepReportDetail,
+} from './mysql-production-reporting.read.js';
 import { Inject, Injectable } from '@nestjs/common';
 import { withTransaction } from '@company/database';
-import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
+import { PERMISSIONS, PRODUCTION_STEP_PERMISSION_LABELS } from '@company/constants';
+import type { Pool, PoolConnection } from 'mysql2/promise';
 import type {
+  BatchReverseStepReportsCommandResult,
+  BatchReverseStepReportsPayload,
   BatchStepReportCommandResult,
-  BatchStepStatus,
   CorrectBatchStepReportCommandResult,
   CorrectBatchStepReportPayload,
   CreateBatchStepReportPayload,
+  HistoricalBatchStepReportPayload,
+  PageQuery,
+  PageResult,
+  BatchStepReportView,
+  BatchStepReportDetail,
+  BatchStepScrapRecordView,
+  PreviewBatchReverseStepReportsPayload,
   ProductionBatchQuery,
   ProductionExecutionRecordGroup,
   ReverseBatchStepReportPayload,
 } from '@company/contracts';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
-import { writeTransactionalAudit } from '../../../common/audit/transactional-audit-writer.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
 import { MaterialVariantQuery } from '../../product/public.js';
+import { readProductionSnapshot } from './mysql-production-read-snapshot.js';
+import { selectStepScrapPage } from './mysql-production-scrap.read.js';
 import { ProductionReportingRepository } from '../application/ports/production-reporting.repository.js';
 import {
-  isRequiredNormalCompleted,
   requireAbnormalOrigin,
   requireDirectReportQuantities,
-  requireNoDownstreamQuantityConflict,
-  requireReportWithinReleased,
-  requireReportQuantities,
+  requireNormalReportCorrectionQuantity,
+  requireReportWithinUpperLimit,
+  type ProductionReportingAccess,
 } from '../domain/production-reporting.policy.js';
 import { integerQuantity } from '../domain/integer-quantity.js';
-import {
-  calculateRouteStepQuantities,
-  type RouteQuantityStep,
-} from '../domain/production-route-quantity.policy.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
-import { findBatch } from './mysql-production.shared.js';
 import { selectExecutionBatchSummaries } from './mysql-production-reporting-batch.projection.js';
 import {
-  groupRowsBy,
   mapDisposition,
-  mapExecutionStep,
+  mapQuantityProjection,
   mapReport,
-  type DispositionRow,
   type ProjectionStepRow,
   type ReportRow,
 } from './mysql-production-reporting.projection.js';
-import { add, fixed, subtract } from './mysql-production-reporting-quantity.js';
-import { selectRouteSupplementSources } from './mysql-production-supplement-activation.js';
+import { add, subtract } from './mysql-production-reporting-quantity.js';
+import { invalidateUnapprovedCloseoutBasis } from './mysql-production-closeout-basis.js';
+import {
+  advanceReportingStepVersion,
+  auditReporting,
+  correctableReportReason,
+  insertReportingDisposition,
+  insertReportingFact,
+  lockReportingContext,
+  mapEligibleReport,
+  normalOnlyReportReason,
+  reportDependencies,
+  requireReportingWrite,
+  requireReportVersion,
+  selectReportingDisposition,
+  selectReportingFact,
+  type ReportingContext,
+  type ReportingPhase,
+} from './mysql-production-reporting.persistence.js';
+import {
+  previewBulkReportReversal,
+  requireBulkReportSelection,
+  reverseBulkReportingFacts,
+} from './mysql-production-reporting-bulk.js';
 
-type LockedStepRow = RowDataPacket & {
-  id: number;
-  step_order_snapshot: number;
-  step_name_snapshot: string;
-  status: BatchStepStatus;
-  responsible_user_id: number | null;
-  unit_snapshot: string;
-  effective_reported: string;
-  effective_direct_reported: string;
-  effective_normal: string;
-  effective_abnormal: string;
-  version: number;
-};
+const MANAGE_EXECUTION_PERMISSION_LABEL =
+  PRODUCTION_STEP_PERMISSION_LABELS[PERMISSIONS.production.steps.manageExecution];
+
 @Injectable()
 export class MysqlProductionReportingRepository extends ProductionReportingRepository {
   constructor(
@@ -71,535 +89,439 @@ export class MysqlProductionReportingRepository extends ProductionReportingRepos
     return selectExecutionBatchSummaries(this.pool, query, this.variants);
   }
 
-  async getBatchExecution(batchId: string): Promise<ProductionExecutionRecordGroup> {
-    const batch = await findBatch(this.pool, batchId);
-    const [steps] = await this.pool.query<ProjectionStepRow[]>(PROJECTION_STEP_SELECT, [batchId]);
-    const [reports] = await this.pool.query<ReportRow[]>(REPORT_SELECT_BATCH, [batchId]);
-    const [dispositions] = await this.pool.query<DispositionRow[]>(DISPOSITION_SELECT_BATCH, [
-      batchId,
-    ]);
-    const supplements =
-      (await selectRouteSupplementSources(this.pool, [batchId])).get(batchId) ?? [];
-    const quantities = calculateRouteStepQuantities(
-      batch.planned_quantity,
-      steps.map(toRouteQuantityStep),
-      supplements,
+  getBatchExecution(
+    batchId: string,
+    access: ProductionReportingAccess,
+  ): Promise<ProductionExecutionRecordGroup> {
+    return readProductionSnapshot(this.pool, (db) =>
+      selectBatchExecutionRecords(db, batchId, access),
     );
-    const reportsByStep = groupRowsBy(reports, (row) => String(row.batch_step_record_id));
-    const dispositionsByStep = groupRowsBy(dispositions, (row) => String(row.batch_step_record_id));
-    return {
-      productionBatchId: batchId,
-      batchNo: batch.batch_no,
-      workOrderId: String(batch.work_order_id),
-      workOrderNo: batch.work_order_no,
-      productCode: batch.product_code_snapshot,
-      productName: batch.product_name_snapshot,
-      batchStatus: batch.status,
-      plannedQuantity: String(batch.planned_quantity),
-      steps: steps.map((step) =>
-        mapExecutionStep(
-          step,
-          batch.planned_quantity,
-          quantities.get(String(step.id))!,
-          reportsByStep.get(String(step.id)) ?? [],
-          dispositionsByStep.get(String(step.id)) ?? [],
-        ),
-      ),
-    };
+  }
+  listStepReports(
+    batchId: string,
+    stepRecordId: string,
+    query: PageQuery,
+    access: ProductionReportingAccess,
+  ): Promise<PageResult<BatchStepReportView>> {
+    return withTransaction(this.pool, (db) =>
+      selectStepReportPage(db, batchId, stepRecordId, query, access),
+    );
+  }
+
+  getStepReport(
+    batchId: string,
+    stepRecordId: string,
+    reportId: string,
+    access: ProductionReportingAccess,
+  ): Promise<BatchStepReportDetail> {
+    return withTransaction(this.pool, (db) =>
+      selectStepReportDetail(db, batchId, stepRecordId, reportId, access),
+    );
+  }
+
+  listStepScraps(
+    batchId: string,
+    stepRecordId: string,
+    query: PageQuery,
+    access: ProductionReportingAccess,
+  ): Promise<PageResult<BatchStepScrapRecordView>> {
+    return readProductionSnapshot(this.pool, (db) =>
+      selectStepScrapPage(db, batchId, stepRecordId, query, access),
+    );
   }
 
   createReport(
     batchId: string,
     stepRecordId: string,
     payload: CreateBatchStepReportPayload,
-    context: CommandContext & { actorId: string },
-  ): Promise<BatchStepReportCommandResult> {
-    return withTransaction(this.pool, async (connection) => {
-      const { current, index, required, released } = await lockContext(
-        connection,
-        batchId,
-        stepRecordId,
-      );
-      if (current.status !== 'doing' || String(current.responsible_user_id) !== context.actorId)
-        throw new ProductionDomainError(
-          current.status !== 'doing' ? 'STEP_REPORT_NOT_ALLOWED' : 'NOT_STEP_ASSIGNEE',
-          current.status !== 'doing' ? '只有进行中的工序可以报工' : '只有当前负责人可以报工',
-        );
-      assertVersion(current, payload.version);
-      requireDirectReportQuantities(payload.normalQuantity, payload.abnormalQuantity);
-      const abnormalOrigin = requireAbnormalOrigin(
-        payload.abnormalQuantity,
-        payload.abnormalOrigin,
-        index > 0,
-      );
-      requireReportWithinReleased(
-        current.effective_direct_reported,
-        payload.normalQuantity,
-        payload.abnormalQuantity,
-        released,
-      );
-      const reportId = await insertReport(connection, {
-        batchId,
-        stepRecordId,
-        reportType: 'normal',
-        normalQuantity: payload.normalQuantity,
-        abnormalQuantity: payload.abnormalQuantity,
-        abnormalOrigin,
-        unit: current.unit_snapshot,
-        remark: payload.remark ?? null,
-        actorId: context.actorId,
-      });
-      const dispositionId =
-        payload.abnormalQuantity > 0
-          ? await insertDisposition(connection, batchId, stepRecordId, reportId, context.actorId)
-          : null;
-      await updateStepAfterFacts(
-        connection,
-        current,
-        add(current.effective_normal, payload.normalQuantity),
-        required,
-        context.actorId,
-      );
-      await audit(connection, context, 'production-step-report.create', reportId, {
-        batchId,
-        stepRecordId,
-        normalQuantity: fixed(payload.normalQuantity),
-        abnormalQuantity: fixed(payload.abnormalQuantity),
-      });
-      return commandResult(
-        connection,
-        batchId,
-        stepRecordId,
-        required,
-        released,
-        reportId,
-        dispositionId,
-      );
-    });
+    context: CommandContext,
+    access: ProductionReportingAccess,
+  ) {
+    return this.createFact(batchId, stepRecordId, payload, context, access, 'execution');
   }
-
+  createHistoricalReport(
+    batchId: string,
+    stepRecordId: string,
+    payload: HistoricalBatchStepReportPayload,
+    context: CommandContext,
+    access: ProductionReportingAccess,
+  ) {
+    return this.createFact(
+      batchId,
+      stepRecordId,
+      {
+        version: payload.version,
+        normalQuantity: payload.normalQuantity,
+        abnormalQuantity: 0,
+        abnormalOrigin: null,
+        remark: payload.reason,
+      },
+      context,
+      access,
+      'history',
+    );
+  }
   reverseReport(
     batchId: string,
     stepRecordId: string,
     reportId: string,
     payload: ReverseBatchStepReportPayload,
     context: CommandContext,
-  ): Promise<BatchStepReportCommandResult> {
-    return withTransaction(this.pool, async (connection) => {
-      const actorId = requireActor(context);
-      const { current, required, released, downstream } = await lockContext(
-        connection,
-        batchId,
-        stepRecordId,
-      );
-      const target = await lockReport(connection, batchId, stepRecordId, reportId);
-      const existing = await findReversal(connection, reportId);
-      if (existing)
-        return commandResult(
-          connection,
-          batchId,
-          stepRecordId,
-          required,
-          released,
-          String(existing.id),
-          null,
-        );
-      requireCorrectable(target);
-      assertVersion(current, payload.version);
-      const correctedNormal = subtract(current.effective_normal, target.normal_quantity);
-      requireNoDownstreamQuantityConflict(
-        correctedNormal,
-        downstream?.effective_direct_reported ?? 0,
-        dependencyConflictDetails(
-          correctedNormal,
-          downstream,
-          downstream?.effective_direct_reported ?? 0,
-        ),
-      );
-      const reversalId = await insertReport(connection, {
-        batchId,
-        stepRecordId,
-        reportType: 'reversal',
-        normalQuantity: integerQuantity(target.normal_quantity),
-        abnormalQuantity: integerQuantity(target.abnormal_quantity),
-        abnormalOrigin: target.abnormal_origin,
-        unit: target.unit_snapshot,
-        remark: payload.reason,
-        actorId,
-        reversalOfReportId: reportId,
-      });
-      await updateStepAfterFacts(connection, current, correctedNormal, required, actorId);
-      await audit(connection, context, 'production-step-report.reverse', reversalId, {
-        batchId,
-        stepRecordId,
-        reversalOfReportId: reportId,
-        reason: payload.reason,
-      });
-      return commandResult(connection, batchId, stepRecordId, required, released, reversalId, null);
-    });
+    access: ProductionReportingAccess,
+  ) {
+    return this.reverseFact(batchId, stepRecordId, reportId, payload, context, access, 'execution');
   }
-
+  reverseHistoricalReport(
+    batchId: string,
+    stepRecordId: string,
+    reportId: string,
+    payload: ReverseBatchStepReportPayload,
+    context: CommandContext,
+    access: ProductionReportingAccess,
+  ) {
+    return this.reverseFact(batchId, stepRecordId, reportId, payload, context, access, 'history');
+  }
   correctReport(
     batchId: string,
     stepRecordId: string,
     reportId: string,
     payload: CorrectBatchStepReportPayload,
     context: CommandContext,
-  ): Promise<CorrectBatchStepReportCommandResult> {
-    return withTransaction(this.pool, async (connection) => {
-      const actorId = requireActor(context);
-      const { current, index, required, released, downstream } = await lockContext(
-        connection,
-        batchId,
-        stepRecordId,
+    access: ProductionReportingAccess,
+  ) {
+    return this.correctFact(batchId, stepRecordId, reportId, payload, context, access, 'execution');
+  }
+  correctHistoricalReport(
+    batchId: string,
+    stepRecordId: string,
+    reportId: string,
+    payload: HistoricalBatchStepReportPayload,
+    context: CommandContext,
+    access: ProductionReportingAccess,
+  ) {
+    return this.correctFact(batchId, stepRecordId, reportId, payload, context, access, 'history');
+  }
+
+  previewBatchReverse(
+    batchId: string,
+    payload: PreviewBatchReverseStepReportsPayload,
+    access: ProductionReportingAccess,
+  ) {
+    requireAdministrator(access);
+    requireBulkReportSelection(payload.reports);
+    return withTransaction(this.pool, async (db) => {
+      const context = await lockReportingContext(db, batchId);
+      const dependencies = await reportDependencies(
+        db,
+        payload.reports.map((item) => item.reportId),
+        true,
       );
-      assertVersion(current, payload.version);
-      requireReportQuantities(payload.normalQuantity, payload.abnormalQuantity);
+      return previewBulkReportReversal(context, payload.reports, dependencies);
+    });
+  }
+
+  batchReverse(
+    batchId: string,
+    payload: BatchReverseStepReportsPayload,
+    context: CommandContext,
+    access: ProductionReportingAccess,
+  ): Promise<BatchReverseStepReportsCommandResult> {
+    requireAdministrator(access);
+    requireBulkReportSelection(payload.reports);
+    requireReason(payload.reason);
+    return withTransaction(this.pool, (db) =>
+      reverseBulkReportingFacts(db, batchId, payload, context),
+    );
+  }
+
+  private createFact(
+    batchId: string,
+    stepRecordId: string,
+    payload: CreateBatchStepReportPayload,
+    context: CommandContext,
+    access: ProductionReportingAccess,
+    phase: ReportingPhase,
+  ): Promise<BatchStepReportCommandResult> {
+    return withTransaction(this.pool, async (db) => {
+      const actorId = requireActor(context),
+        locked = await lockReportingContext(db, batchId),
+        step = requireStep(locked.steps, stepRecordId);
+      requireReportingWrite(locked, step, access, phase, 'create');
+      requireReportVersion(step, payload.version);
+      requireDirectReportQuantities(payload.normalQuantity, payload.abnormalQuantity);
+      if (phase === 'history') requireReason(payload.remark ?? '');
       const abnormalOrigin = requireAbnormalOrigin(
         payload.abnormalQuantity,
         payload.abnormalOrigin,
-        index > 0,
+        locked.steps.indexOf(step) > 0,
       );
-      const target = await lockReport(connection, batchId, stepRecordId, reportId);
-      requireCorrectable(target);
-      const correctedNormal = add(
-        subtract(current.effective_normal, target.normal_quantity),
+      requireReportWithinUpperLimit(
+        step.effective_direct_reported,
         payload.normalQuantity,
+        payload.abnormalQuantity,
+        locked.quantities.get(stepRecordId)!.upperLimitQuantity,
       );
-      const correctedReported = add(
-        subtract(current.effective_direct_reported, target.reported_quantity),
-        add(payload.normalQuantity, payload.abnormalQuantity),
-      );
-      requireReportWithinReleased(correctedReported, 0, 0, released);
-      requireNoDownstreamQuantityConflict(
-        correctedNormal,
-        downstream?.effective_direct_reported ?? 0,
-        dependencyConflictDetails(
-          correctedNormal,
-          downstream,
-          downstream?.effective_direct_reported ?? 0,
-        ),
-      );
-      const reversalId = await insertReport(connection, {
-        batchId,
-        stepRecordId,
-        reportType: 'reversal',
-        normalQuantity: integerQuantity(target.normal_quantity),
-        abnormalQuantity: integerQuantity(target.abnormal_quantity),
-        abnormalOrigin: target.abnormal_origin,
-        unit: target.unit_snapshot,
-        remark: payload.reason,
-        actorId,
-        reversalOfReportId: reportId,
-      });
-      const replacementId = await insertReport(connection, {
+      const reportId = await insertReportingFact(db, {
         batchId,
         stepRecordId,
         reportType: 'normal',
         normalQuantity: payload.normalQuantity,
         abnormalQuantity: payload.abnormalQuantity,
         abnormalOrigin,
+        unit: step.unit_snapshot,
+        remark: payload.remark ?? null,
+        actorId,
+      });
+      const dispositionId =
+        payload.abnormalQuantity > 0
+          ? await insertReportingDisposition(db, batchId, stepRecordId, reportId, actorId)
+          : null;
+      await advanceReportingStepVersion(db, step, actorId);
+      await invalidateUnapprovedCloseoutBasis(db, batchId, actorId);
+      await auditReporting(
+        db,
+        context,
+        phase === 'history'
+          ? 'production-step-report.history-create'
+          : 'production-step-report.create',
+        reportId,
+        {
+          batchId,
+          stepRecordId,
+          normalQuantity: String(payload.normalQuantity),
+          abnormalQuantity: String(payload.abnormalQuantity),
+          reason: payload.remark ?? null,
+        },
+      );
+      return this.reportCommandResult(db, batchId, stepRecordId, reportId, dispositionId, access);
+    });
+  }
+
+  private reverseFact(
+    batchId: string,
+    stepRecordId: string,
+    reportId: string,
+    payload: ReverseBatchStepReportPayload,
+    context: CommandContext,
+    access: ProductionReportingAccess,
+    phase: ReportingPhase,
+  ): Promise<BatchStepReportCommandResult> {
+    requireReason(payload.reason);
+    return withTransaction(this.pool, async (db) => {
+      const actorId = requireActor(context),
+        locked = await lockReportingContext(db, batchId),
+        step = requireStep(locked.steps, stepRecordId);
+      requireReportingWrite(locked, step, access, phase, 'correction');
+      const target = requireTargetReport(locked, stepRecordId, reportId),
+        dependencies = (await reportDependencies(db, [reportId], true)).get(reportId) ?? [];
+      if (dependencies.length)
+        throw new ProductionDomainError(
+          'STEP_REPORT_DEPENDENCY_CONFLICT',
+          correctableReportReason(target, dependencies, phase)!,
+          { reportId, dependencies },
+        );
+      const normalOnlyReason = normalOnlyReportReason(target, phase);
+      if (normalOnlyReason)
+        throw new ProductionDomainError('STEP_REPORT_NOT_ALLOWED', normalOnlyReason);
+      const existing = locked.reports.find((row) => String(row.reversal_of_report_id) === reportId);
+      if (existing)
+        return this.reportCommandResult(
+          db,
+          batchId,
+          stepRecordId,
+          String(existing.id),
+          null,
+          access,
+        );
+      requireCorrectable(target, dependencies, phase);
+      requireReportVersion(step, payload.version);
+      const reversalId = await insertReversal(db, target, payload.reason, actorId);
+      await advanceReportingStepVersion(db, step, actorId);
+      await invalidateUnapprovedCloseoutBasis(db, batchId, actorId);
+      await auditReporting(
+        db,
+        context,
+        phase === 'history'
+          ? 'production-step-report.history-reverse'
+          : 'production-step-report.reverse',
+        reversalId,
+        { batchId, stepRecordId, reversalOfReportId: reportId, reason: payload.reason },
+      );
+      return this.reportCommandResult(db, batchId, stepRecordId, reversalId, null, access);
+    });
+  }
+
+  private correctFact(
+    batchId: string,
+    stepRecordId: string,
+    reportId: string,
+    payload: CorrectBatchStepReportPayload,
+    context: CommandContext,
+    access: ProductionReportingAccess,
+    phase: ReportingPhase,
+  ): Promise<CorrectBatchStepReportCommandResult> {
+    requireReason(payload.reason);
+    return withTransaction(this.pool, async (db) => {
+      const actorId = requireActor(context),
+        locked = await lockReportingContext(db, batchId),
+        step = requireStep(locked.steps, stepRecordId);
+      requireReportingWrite(locked, step, access, phase, 'correction');
+      requireReportVersion(step, payload.version);
+      requireNormalReportCorrectionQuantity(payload.normalQuantity);
+      const target = requireTargetReport(locked, stepRecordId, reportId),
+        dependencies = (await reportDependencies(db, [reportId], true)).get(reportId) ?? [];
+      requireCorrectable(target, dependencies, phase);
+      const correctedReported = add(
+        subtract(step.effective_direct_reported, target.reported_quantity),
+        payload.normalQuantity,
+      );
+      requireReportWithinUpperLimit(
+        correctedReported,
+        0,
+        0,
+        locked.quantities.get(stepRecordId)!.upperLimitQuantity,
+      );
+      const reversalId = await insertReversal(db, target, payload.reason, actorId);
+      const replacementId = await insertReportingFact(db, {
+        batchId,
+        stepRecordId,
+        reportType: 'normal',
+        normalQuantity: payload.normalQuantity,
+        abnormalQuantity: 0,
+        abnormalOrigin: null,
         unit: target.unit_snapshot,
         remark: payload.reason,
         actorId,
         replacesReportId: reportId,
       });
-      const dispositionId =
-        payload.abnormalQuantity > 0
-          ? await insertDisposition(connection, batchId, stepRecordId, replacementId, actorId)
-          : null;
-      await updateStepAfterFacts(connection, current, correctedNormal, required, actorId);
-      await audit(connection, context, 'production-step-report.correct', replacementId, {
+      await advanceReportingStepVersion(db, step, actorId);
+      await invalidateUnapprovedCloseoutBasis(db, batchId, actorId);
+      await auditReporting(
+        db,
+        context,
+        phase === 'history'
+          ? 'production-step-report.history-correct'
+          : 'production-step-report.correct',
+        replacementId,
+        {
+          batchId,
+          stepRecordId,
+          correctionOfReportId: reportId,
+          reversalReportId: reversalId,
+          reason: payload.reason,
+        },
+      );
+      const result = await this.reportCommandResult(
+        db,
         batchId,
         stepRecordId,
-        correctionOfReportId: reportId,
-        reversalReportId: reversalId,
-        reason: payload.reason,
-      });
-      const summary = await summaryResult(connection, batchId, stepRecordId, required, released);
+        replacementId,
+        null,
+        access,
+      );
+      const { report, ...summary } = result;
       return {
         ...summary,
-        reversal: mapReport(await selectReport(connection, String(reversalId))),
-        replacement: mapReport(await selectReport(connection, String(replacementId))),
-        abnormalDisposition: dispositionId
-          ? mapDisposition(await selectDisposition(connection, String(dispositionId)))
-          : null,
+        reversal: mapReport(await selectReportingFact(db, reversalId)),
+        replacement: report,
       };
     });
   }
+
+  private async reportCommandResult(
+    db: PoolConnection,
+    batchId: string,
+    stepRecordId: string,
+    reportId: string,
+    dispositionId: string | null,
+    access: ProductionReportingAccess,
+  ): Promise<BatchStepReportCommandResult> {
+    const updated = await lockReportingContext(db, batchId),
+      step = requireStep(updated.steps, stepRecordId),
+      report = await selectReportingFact(db, reportId);
+    const dependencies = (await reportDependencies(db, [reportId], true)).get(reportId) ?? [];
+    return {
+      ...commandSummary(updated, step),
+      report: mapEligibleReport(
+        report,
+        step,
+        updated.batch.status,
+        updated.pendingApprovalId,
+        access,
+        dependencies,
+      ),
+      abnormalDisposition: dispositionId
+        ? mapDisposition(await selectReportingDisposition(db, dispositionId))
+        : null,
+    };
+  }
 }
-
-const lockContext = async (connection: PoolConnection, batchId: string, stepRecordId: string) => {
-  const batch = await findBatch(connection, batchId, true);
-  if (batch.status !== 'doing')
-    throw new ProductionDomainError('STEP_REPORT_NOT_ALLOWED', '生产批次不在执行中');
-  await connection.query(
-    'SELECT id FROM batch_step_records WHERE production_batch_id=? ORDER BY step_order_snapshot,id FOR UPDATE',
-    [batchId],
-  );
-  const [steps] = await connection.query<LockedStepRow[]>(LOCKED_STEP_SELECT, [batchId]);
-  const index = steps.findIndex((row) => String(row.id) === stepRecordId);
-  if (index < 0) throw new ProductionDomainError('NOT_FOUND', '批次工序记录不存在');
-  const current = steps[index]!;
-  const supplements =
-    (await selectRouteSupplementSources(connection, [batchId])).get(batchId) ?? [];
-  const quantity = calculateRouteStepQuantities(
-    batch.planned_quantity,
-    steps.map(toRouteQuantityStep),
-    supplements,
-  ).get(stepRecordId)!;
-  const required = quantity.requiredNormalQuantity;
-  const released = quantity.releasedInputQuantity;
-  return { batch, steps, current, index, required, released, downstream: steps[index + 1] ?? null };
-};
-
-const requireCorrectable = (target: ReportRow): void => {
-  if (target.report_type !== 'normal' || !target.is_effective)
-    throw new ProductionDomainError('STEP_REPORT_ALREADY_REVERSED', '原报工已经冲销或不可更正');
-};
-
-const lockReport = async (
-  connection: PoolConnection,
-  batchId: string,
-  stepRecordId: string,
-  reportId: string,
-): Promise<ReportRow> => {
-  const [rows] = await connection.query<ReportRow[]>(`${REPORT_SELECT} AND r.id=? FOR UPDATE`, [
-    batchId,
-    stepRecordId,
-    reportId,
-  ]);
-  const row = rows[0];
-  if (!row) throw new ProductionDomainError('NOT_FOUND', '报工事实不存在');
-  const [dependencies] = await connection.query<RowDataPacket[]>(
-    `SELECT id FROM batch_step_abnormal_dispositions WHERE batch_step_report_id=?
-     UNION ALL SELECT id FROM batch_step_reports WHERE replaces_report_id=?
-     UNION ALL SELECT id FROM rework_records WHERE completed_report_id=? LIMIT 1`,
-    [reportId, reportId, reportId],
-  );
-  if (dependencies.length > 0)
-    throw new ProductionDomainError(
-      'STEP_REPORT_DEPENDENCY_CONFLICT',
-      '该报工已有异常处置或更正依赖，不能再次冲销或更正',
-    );
-  return row;
-};
-
-const insertReport = async (
-  connection: PoolConnection,
-  input: {
-    batchId: string;
-    stepRecordId: string;
-    reportType: 'normal' | 'reversal';
-    normalQuantity: number;
-    abnormalQuantity: number;
-    abnormalOrigin: CreateBatchStepReportPayload['abnormalOrigin'];
-    unit: string;
-    remark: string | null;
-    actorId: string;
-    reversalOfReportId?: string;
-    replacesReportId?: string;
-  },
-): Promise<string> => {
-  const [result] = await connection.execute<ResultSetHeader>(
-    `INSERT INTO batch_step_reports
-     (report_no,production_batch_id,batch_step_record_id,report_type,reversal_of_report_id,replaces_report_id,reported_quantity,normal_quantity,abnormal_quantity,abnormal_origin,unit_snapshot,remark,created_by)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    [
-      await allocateBusinessNumber(connection, 'step_report'),
-      input.batchId,
-      input.stepRecordId,
-      input.reportType,
-      input.reversalOfReportId ?? null,
-      input.replacesReportId ?? null,
-      fixed(input.normalQuantity + input.abnormalQuantity),
-      fixed(input.normalQuantity),
-      fixed(input.abnormalQuantity),
-      input.abnormalOrigin ?? null,
-      input.unit,
-      input.remark,
-      input.actorId,
-    ],
-  );
-  return String(result.insertId);
-};
-
-const insertDisposition = async (
-  connection: PoolConnection,
-  batchId: string,
-  stepRecordId: string,
-  reportId: string,
-  actorId: string,
-): Promise<string> => {
-  const [result] = await connection.execute<ResultSetHeader>(
-    `INSERT INTO batch_step_abnormal_dispositions
-     (disposition_no,production_batch_id,batch_step_record_id,batch_step_report_id,review_status,created_by,updated_by)
-     VALUES (?,?,?,?,'pending_review',?,?)`,
-    [
-      await allocateBusinessNumber(connection, 'abnormal_disposition'),
-      batchId,
-      stepRecordId,
-      reportId,
-      actorId,
-      actorId,
-    ],
-  );
-  return String(result.insertId);
-};
-
-const updateStepAfterFacts = async (
-  connection: PoolConnection,
-  step: LockedStepRow,
-  effectiveNormal: string,
-  required: string,
-  actorId: string,
-): Promise<void> => {
-  const completed = isRequiredNormalCompleted(effectiveNormal, required);
-  await connection.execute(
-    `UPDATE batch_step_records SET status=?,completed_at=${completed ? 'COALESCE(completed_at,NOW())' : 'NULL'},version=version+1,updated_by=? WHERE id=?`,
-    [completed ? 'completed' : 'doing', actorId, step.id],
-  );
-};
-
-const commandResult = async (
-  connection: PoolConnection,
-  batchId: string,
-  stepRecordId: string,
-  required: string,
-  released: string,
-  reportId: string,
-  dispositionId: string | null,
-): Promise<BatchStepReportCommandResult> => ({
-  ...(await summaryResult(connection, batchId, stepRecordId, required, released)),
-  report: mapReport(await selectReport(connection, reportId)),
-  abnormalDisposition: dispositionId
-    ? mapDisposition(await selectDisposition(connection, dispositionId))
-    : null,
-});
-
-const summaryResult = async (
-  connection: PoolConnection,
-  batchId: string,
-  stepRecordId: string,
-  required: string,
-  released: string,
-) => {
-  const [rows] = await connection.query<LockedStepRow[]>(
-    `SELECT sr.id,sr.step_order_snapshot,sr.status,sr.responsible_user_id,sr.unit_snapshot,sr.version,${SUMMARY_COLUMNS}
-     FROM batch_step_records sr LEFT JOIN batch_step_reports r ON r.batch_step_record_id=sr.id
-     WHERE sr.production_batch_id=? AND sr.id=? GROUP BY sr.id`,
-    [batchId, stepRecordId],
-  );
-  const row = rows[0]!;
-  return {
-    productionBatchId: batchId,
-    stepRecordId,
-    stepStatus: row.status,
-    stepVersion: row.version,
-    requiredNormalQuantity: fixed(required),
-    releasedNormalQuantity: fixed(released),
-    availableNormalQuantity: fixed(
-      Math.max(0, Number(released) - Number(row.effective_direct_reported)),
-    ),
-    effectiveReportedQuantity: String(row.effective_reported),
-    effectiveNormalQuantity: String(row.effective_normal),
-    effectiveAbnormalQuantity: String(row.effective_abnormal),
-    remainingNormalQuantity: fixed(Math.max(0, Number(required) - Number(row.effective_normal))),
-  };
-};
-
-const selectReport = async (connection: PoolConnection, reportId: string): Promise<ReportRow> => {
-  const [rows] = await connection.query<ReportRow[]>(`${REPORT_SELECT_BY_ID}`, [reportId]);
-  if (!rows[0]) throw new ProductionDomainError('NOT_FOUND', '报工事实不存在');
-  return rows[0];
-};
-const selectDisposition = async (
-  connection: PoolConnection,
-  dispositionId: string,
-): Promise<DispositionRow> => {
-  const [rows] = await connection.query<DispositionRow[]>(`${DISPOSITION_SELECT} WHERE d.id=?`, [
-    dispositionId,
-  ]);
-  if (!rows[0]) throw new ProductionDomainError('NOT_FOUND', '异常处置单不存在');
-  return rows[0];
-};
-const findReversal = async (
-  connection: PoolConnection,
-  reportId: string,
-): Promise<ReportRow | undefined> => {
-  const [rows] = await connection.query<ReportRow[]>(`${REPORT_SELECT_BY_REVERSAL}`, [reportId]);
-  return rows[0];
-};
 
 const requireActor = (context: CommandContext): string => {
   if (!context.actorId) throw new ProductionDomainError('INVALID_INPUT', '缺少当前操作人身份');
   return context.actorId;
 };
-const assertVersion = (step: LockedStepRow, version: number): void => {
-  if (step.version !== version)
-    throw new ProductionDomainError('CONCURRENT_MODIFICATION', '工序状态已变化，请刷新后重试');
+const requireAdministrator = (access: ProductionReportingAccess): void => {
+  if (!access.canManageExecution)
+    throw new ProductionDomainError(
+      'NOT_STEP_ASSIGNEE',
+      `此操作需要「${MANAGE_EXECUTION_PERMISSION_LABEL}」权限`,
+    );
 };
-const dependencyConflictDetails = (
-  correctedNormal: string,
-  downstream: LockedStepRow | null,
-  downstreamReported: string | number,
-): Record<string, unknown> | undefined =>
-  downstream
-    ? {
-        conflictingStepRecordId: String(downstream.id),
-        conflictingStepOrder: downstream.step_order_snapshot,
-        conflictingStepName: downstream.step_name_snapshot,
-        downstreamEffectiveReportedQuantity: String(downstreamReported),
-        correctedUpstreamNormalQuantity: correctedNormal,
-      }
-    : undefined;
-const SUMMARY_COLUMNS = `COALESCE(SUM(CASE WHEN r.report_type='normal' THEN r.reported_quantity ELSE -r.reported_quantity END),0) effective_reported,
-  COALESCE(SUM(CASE WHEN NOT EXISTS (
-    SELECT 1 FROM rework_records direct_rework WHERE direct_rework.completed_report_id=r.id
-  ) THEN CASE WHEN r.report_type='normal' THEN r.reported_quantity ELSE -r.reported_quantity END ELSE 0 END),0) effective_direct_reported,
-  COALESCE(SUM(CASE WHEN r.report_type='normal' THEN r.normal_quantity ELSE -r.normal_quantity END),0) effective_normal,
-  COALESCE(SUM(CASE WHEN r.report_type='normal' THEN r.abnormal_quantity ELSE -r.abnormal_quantity END),0) effective_abnormal`;
-const LOCKED_STEP_SELECT = `SELECT sr.id,sr.step_order_snapshot,sr.step_name_snapshot,sr.status,sr.responsible_user_id,sr.unit_snapshot,sr.version,${SUMMARY_COLUMNS}
-  FROM batch_step_records sr LEFT JOIN batch_step_reports r ON r.batch_step_record_id=sr.id
-  WHERE sr.production_batch_id=? GROUP BY sr.id ORDER BY sr.step_order_snapshot,sr.id`;
-const PROJECTION_STEP_SELECT = `SELECT sr.id,sr.production_batch_id,sr.step_order_snapshot,sr.step_code_snapshot,sr.step_name_snapshot,sr.status,sr.responsible_user_id,sr.unit_snapshot,sr.started_at,sr.completed_at,sr.version,${SUMMARY_COLUMNS}
-  FROM batch_step_records sr LEFT JOIN batch_step_reports r ON r.batch_step_record_id=sr.id
-  WHERE sr.production_batch_id=? GROUP BY sr.id ORDER BY sr.step_order_snapshot,sr.id`;
-const REPORT_FIELDS = `r.id,r.report_no,r.production_batch_id,r.batch_step_record_id,r.report_type,r.reversal_of_report_id,r.replaces_report_id,r.reported_quantity,r.normal_quantity,r.abnormal_quantity,r.abnormal_origin,r.unit_snapshot,r.remark,r.created_by,r.created_at,
-  CASE WHEN r.report_type='reversal' THEN 1 WHEN NOT EXISTS (SELECT 1 FROM batch_step_reports reversal WHERE reversal.reversal_of_report_id=r.id) THEN 1 ELSE 0 END is_effective`;
-const REPORT_SELECT = `SELECT ${REPORT_FIELDS} FROM batch_step_reports r WHERE r.production_batch_id=? AND r.batch_step_record_id=?`;
-const REPORT_SELECT_BY_ID = `SELECT ${REPORT_FIELDS} FROM batch_step_reports r WHERE r.id=?`;
-const REPORT_SELECT_BY_REVERSAL = `SELECT ${REPORT_FIELDS} FROM batch_step_reports r WHERE r.reversal_of_report_id=?`;
-const REPORT_SELECT_BATCH = `SELECT ${REPORT_FIELDS} FROM batch_step_reports r WHERE r.production_batch_id=? ORDER BY r.created_at,r.id`;
-const DISPOSITION_SELECT = `SELECT d.id,d.disposition_no,d.production_batch_id,d.batch_step_record_id,d.batch_step_report_id,source_report.abnormal_origin,d.review_status,d.disposition_type,d.remark,d.version,d.created_at FROM batch_step_abnormal_dispositions d JOIN batch_step_reports source_report ON source_report.id=d.batch_step_report_id`;
-const DISPOSITION_SELECT_BATCH = `${DISPOSITION_SELECT} WHERE d.production_batch_id=? ORDER BY d.created_at,d.id`;
-
-const audit = (
-  connection: PoolConnection,
-  context: CommandContext,
-  action: string,
+const requireReason = (reason: string): void => {
+  if (!reason.trim() || reason.length > 5000)
+    throw new ProductionDomainError('INVALID_INPUT', '请填写不超过5000字的真实纠错原因');
+};
+const requireStep = (steps: ProjectionStepRow[], id: string): ProjectionStepRow => {
+  const step = steps.find((row) => String(row.id) === id);
+  if (!step) throw new ProductionDomainError('NOT_FOUND', '批次工序记录不存在');
+  return step;
+};
+const requireTargetReport = (
+  context: ReportingContext,
+  stepRecordId: string,
   reportId: string,
-  afterData: unknown,
-): Promise<void> =>
-  writeTransactionalAudit(connection, {
-    logType: 'business',
-    module: 'production',
-    action,
-    userId: context.actorId,
-    targetId: reportId,
-    targetType: 'batch_step_report',
-    result: 'success',
-    beforeData: null,
-    afterData,
-    requestId: context.requestId,
-    ip: context.ip,
-    userAgent: context.userAgent,
+): ReportRow => {
+  const report = context.reports.find(
+    (row) => String(row.id) === reportId && String(row.batch_step_record_id) === stepRecordId,
+  );
+  if (!report) throw new ProductionDomainError('NOT_FOUND', '当前任务工序下没有该报工事实');
+  return report;
+};
+const requireCorrectable = (
+  report: ReportRow,
+  dependencies: Parameters<typeof correctableReportReason>[1],
+  phase: ReportingPhase,
+): void => {
+  const reason = correctableReportReason(report, dependencies, phase);
+  if (reason)
+    throw new ProductionDomainError(
+      dependencies.length
+        ? 'STEP_REPORT_DEPENDENCY_CONFLICT'
+        : !report.is_effective || report.report_type !== 'normal'
+          ? 'STEP_REPORT_ALREADY_REVERSED'
+          : 'STEP_REPORT_NOT_ALLOWED',
+      reason,
+      { reportId: String(report.id), dependencies },
+    );
+};
+const insertReversal = (db: PoolConnection, target: ReportRow, reason: string, actorId: string) =>
+  insertReportingFact(db, {
+    batchId: String(target.production_batch_id),
+    stepRecordId: String(target.batch_step_record_id),
+    reportType: 'reversal',
+    normalQuantity: integerQuantity(target.normal_quantity),
+    abnormalQuantity: integerQuantity(target.abnormal_quantity),
+    abnormalOrigin: target.abnormal_origin,
+    unit: target.unit_snapshot,
+    remark: reason,
+    actorId,
+    reversalOfReportId: String(target.id),
   });
-
-const toRouteQuantityStep = (step: LockedStepRow | ProjectionStepRow): RouteQuantityStep => ({
-  id: step.id,
-  stepOrder: step.step_order_snapshot,
-  status: step.status,
-  effectiveDirectReported: step.effective_direct_reported,
-  effectiveNormal: step.effective_normal,
+const commandSummary = (context: ReportingContext, step: ProjectionStepRow) => ({
+  productionBatchId: String(context.batch.id),
+  stepRecordId: String(step.id),
+  stepStatus: step.status,
+  stepVersion: step.version,
+  ...mapQuantityProjection(step, context.quantities.get(String(step.id))!),
 });

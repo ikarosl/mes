@@ -1,11 +1,5 @@
 import type { Pool, PoolConnection, RowDataPacket } from 'mysql2/promise';
-import type { BatchStepStatus } from '@company/contracts';
-import {
-  calculateRouteStepQuantities,
-  supplementReopenedStepIds,
-  type RouteQuantityStep,
-  type RouteSupplementSource,
-} from '../domain/production-route-quantity.policy.js';
+import type { RouteSupplementSource } from '../domain/production-route-quantity.policy.js';
 import { supplementFulfillment } from './mysql-production-supplement-requirements.js';
 
 type Db = Pool | PoolConnection;
@@ -22,16 +16,8 @@ type SupplementSourceRow = RowDataPacket & {
   production_batch_id: number;
 };
 
-type ReopenStepRow = RowDataPacket & {
-  id: number;
-  step_order_snapshot: number;
-  status: BatchStepStatus;
-  effective_normal: string;
-};
-
 export type SupplementActivationResult = {
   fulfilledSupplementIds: string[];
-  reopenedStepIds: string[];
 };
 
 export const selectRouteSupplementSources = async (
@@ -80,7 +66,6 @@ export const selectRouteSupplementSources = async (
 export const fulfillReadySupplements = async (
   connection: PoolConnection,
   batchId: string,
-  plannedQuantity: string,
   actorId: string,
 ): Promise<SupplementActivationResult> => {
   await connection.query(
@@ -100,8 +85,7 @@ export const fulfillReadySupplements = async (
     if ((await supplementFulfillment(connection, String(row.id))).fulfilled)
       fulfilledSupplementIds.push(String(row.id));
   }
-  if (fulfilledSupplementIds.length === 0)
-    return { fulfilledSupplementIds: [], reopenedStepIds: [] };
+  if (fulfilledSupplementIds.length === 0) return { fulfilledSupplementIds: [] };
 
   await connection.execute(
     `UPDATE production_material_supplement
@@ -110,48 +94,5 @@ export const fulfillReadySupplements = async (
     [actorId, actorId, ...fulfilledSupplementIds],
   );
 
-  const [steps] = await connection.query<ReopenStepRow[]>(
-    `SELECT step_record.id,step_record.step_order_snapshot,
-      step_record.status,
-      COALESCE((SELECT SUM(CASE WHEN report.report_type='normal'
-        THEN report.normal_quantity ELSE -report.normal_quantity END) FROM batch_step_reports report WHERE report.batch_step_record_id=step_record.id FOR SHARE),0) effective_normal
-     FROM batch_step_records step_record
-     WHERE step_record.production_batch_id=?
-     ORDER BY step_record.step_order_snapshot,step_record.id FOR UPDATE`,
-    [batchId],
-  );
-  const sources =
-    (await selectRouteSupplementSources(connection, [batchId], true)).get(batchId) ?? [];
-  const quantities = calculateRouteStepQuantities(
-    plannedQuantity,
-    steps.map<RouteQuantityStep>((step) => ({
-      id: step.id,
-      stepOrder: step.step_order_snapshot,
-      status: step.status,
-      effectiveDirectReported: 0,
-      effectiveNormal: step.effective_normal,
-    })),
-    sources,
-  );
-  const reopenedStepIds = supplementReopenedStepIds(
-    steps.map((step) => ({
-      id: step.id,
-      stepOrder: step.step_order_snapshot,
-      status: step.status,
-      effectiveDirectReported: 0,
-      effectiveNormal: step.effective_normal,
-    })),
-    quantities,
-    sources,
-    fulfilledSupplementIds,
-  );
-  for (const stepId of reopenedStepIds) {
-    await connection.execute(
-      `UPDATE batch_step_records
-       SET status='doing',completed_at=NULL,version=version+1,updated_by=?
-       WHERE id=? AND status='completed'`,
-      [actorId, stepId],
-    );
-  }
-  return { fulfilledSupplementIds, reopenedStepIds };
+  return { fulfilledSupplementIds };
 };

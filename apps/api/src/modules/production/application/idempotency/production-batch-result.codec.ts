@@ -13,7 +13,7 @@ import type {
 import { CREATE_BATCH_IDEMPOTENCY_SCOPE } from './production-idempotency-scopes.contract.js';
 
 /**
- * createBatch 幂等结果 codec（scope `production.batch.create.v9`）。
+ * createBatch 幂等结果 codec（scope `production.batch.create.v10`）。
  *
  * 每个已发布 scope 的请求指纹规则、成功结果结构和本 Zod schema 保持固定；
  * 后续不兼容变更必须升级 scope 和对应 codec；旧 scope 记录不得由新 schema 猜测解析，
@@ -57,6 +57,18 @@ const batchStepRecordSchema: z.ZodType<BatchStepRecordItem> = z
     normalQuantity: z.string(),
     abnormalQuantity: z.string(),
     reworkQuantity: z.string(),
+    upperLimitQuantity: z.string(),
+    effectiveDirectReportedQuantity: z.string(),
+    effectiveDirectNormalQuantity: z.string(),
+    effectiveDirectAbnormalQuantity: z.string(),
+    canAssign: z.boolean(),
+    assignBlockedReason: nullableString,
+    canReassign: z.boolean(),
+    reassignBlockedReason: nullableString,
+    canUnassign: z.boolean(),
+    unassignBlockedReason: nullableString,
+    canEditExecution: z.boolean(),
+    executionEditBlockedReason: nullableString,
 
     unit: z.string(),
     remark: nullableString,

@@ -4,6 +4,7 @@ import type {
   CompleteReworkPayload,
   RejectBatchStepAbnormalDispositionPayload,
   ReworkRecordItem,
+  ReworkRecordView,
 } from '@company/contracts';
 import type {
   CommandContext,
@@ -23,7 +24,7 @@ export class ProductionAbnormalService {
     private readonly idempotency: IdempotencyExecutor,
   ) {}
 
-  async listReworks(batchId: string): Promise<ReworkRecordItem[]> {
+  async listReworks(batchId: string): Promise<ReworkRecordView[]> {
     return this.enrich(await this.repository.listReworks(batchId));
   }
 
@@ -83,7 +84,7 @@ export class ProductionAbnormalService {
     return execution.result;
   }
 
-  private async enrich(rows: ReworkRecordItem[]): Promise<ReworkRecordItem[]> {
+  private async enrich<T extends ReworkRecordItem>(rows: T[]): Promise<T[]> {
     const users = await this.identity.listUserReferencesByIds([
       ...new Set(rows.map((row) => row.responsibleUserId)),
     ]);

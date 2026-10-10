@@ -67,6 +67,25 @@ export const formatQuantity = (value: string | number | null | undefined): strin
     : '-';
 };
 
+/** 比例只使用服务端完整的直接报工净量与统一上限，不作为工序状态。 */
+export const reportPercentage = (reported: string, upperLimit: string): number | null => {
+  const numerator = Number(reported);
+  const denominator = Number(upperLimit);
+  if (!Number.isFinite(numerator) || !Number.isFinite(denominator) || denominator <= 0) return null;
+  return (numerator / denominator) * 100;
+};
+
+export const formatReportPercentage = (reported: string, upperLimit: string): string => {
+  const percentage = reportPercentage(reported, upperLimit);
+  return percentage === null ? '—' : `${percentage.toFixed(1)}%`;
+};
+
+export const formatQuantityDifference = (value: string | null | undefined): string => {
+  if (value === null || value === undefined) return '—';
+  const amount = Number(value);
+  return `${amount > 0 ? '+' : ''}${formatQuantity(value)}`;
+};
+
 /** 工单剩余可分配数量 */
 export const getWorkOrderRemaining = (order: {
   plannedQuantity: string | number;

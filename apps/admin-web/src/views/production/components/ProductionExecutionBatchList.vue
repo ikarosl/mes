@@ -4,6 +4,45 @@
       <strong>生产批次</strong>
       <span>点击切换记录</span>
     </div>
+    <form
+      class="batch-search"
+      @submit.prevent="$emit('search')"
+    >
+      <el-input
+        :model-value="keyword"
+        :disabled="disabled || loading"
+        clearable
+        placeholder="批次号 / 工单号 / 产品"
+        aria-label="搜索生产批次"
+        @update:model-value="$emit('update:keyword', $event)"
+      />
+      <div class="batch-search-actions">
+        <el-button
+          native-type="submit"
+          size="small"
+          type="primary"
+          :disabled="disabled"
+          :loading="loading"
+          >查询</el-button
+        >
+        <el-button
+          native-type="button"
+          size="small"
+          :disabled="disabled || loading"
+          @click="$emit('reset-search')"
+          >重置</el-button
+        >
+      </div>
+      <span class="applied-filter">当前筛选：{{ appliedKeyword || '全部批次' }}</span>
+    </form>
+    <el-alert
+      v-if="errorText"
+      class="batch-error"
+      :title="errorText"
+      type="error"
+      :closable="false"
+      show-icon
+    />
     <div
       v-loading="loading"
       class="batch-items"
@@ -12,6 +51,7 @@
         v-for="batch in batches"
         :key="batch.id"
         type="button"
+        :disabled="disabled || loading"
         :class="[
           'batch-item',
           executionBatchRiskClass(batch),
@@ -58,26 +98,37 @@
         </div>
       </button>
       <el-empty
-        v-if="!loading && batches.length === 0"
-        description="未找到生产批次"
+        v-if="!loading && !errorText && batches.length === 0"
+        description="未找到匹配的生产批次"
         :image-size="72"
       />
     </div>
-    <el-pagination
-      v-if="total > 20"
-      class="batch-pagination"
-      small
-      layout="prev, pager, next"
-      :current-page="currentPage"
-      :page-size="20"
-      :total="total"
-      @current-change="$emit('change-page', $event)"
-    />
+    <div class="batch-footer">
+      <div
+        class="batch-page-summary"
+        aria-live="polite"
+      >
+        <span>共 {{ total }} 条</span>
+        <span>第 {{ currentPage }} / {{ pageCount }} 页 · {{ pageSize }} 条/页</span>
+      </div>
+      <el-pagination
+        class="batch-pagination"
+        small
+        layout="prev, pager, next"
+        :pager-count="5"
+        :disabled="disabled || loading"
+        :current-page="currentPage"
+        :page-size="pageSize"
+        :total="total"
+        @update:current-page="changePage"
+      />
+    </div>
   </aside>
 </template>
 
 <script setup lang="ts">
 import type { ProductionExecutionBatchSummary } from '@company/contracts';
+import { computed } from 'vue';
 import { formatDateForDisplay } from '../../../utils/date';
 import { batchStatusMeta, formatQuantity } from '../production-status';
 import {
@@ -88,17 +139,31 @@ import {
 } from '../production-execution-risk';
 
 defineOptions({ name: 'ProductionExecutionBatchList' });
-defineProps<{
+const props = defineProps<{
   batches: ProductionExecutionBatchSummary[];
   loading: boolean;
   selectedBatchId: string | null;
   currentPage: number;
   total: number;
+  pageSize: number;
+  keyword: string;
+  appliedKeyword: string;
+  errorText: string;
+  disabled: boolean;
 }>();
-defineEmits<{
+const emit = defineEmits<{
   select: [batchId: string];
   'change-page': [page: number];
+  'update:keyword': [keyword: string];
+  search: [];
+  'reset-search': [];
 }>();
+const pageCount = computed(() => Math.max(1, Math.ceil(props.total / props.pageSize)));
+const changePage = (page: number): void => {
+  // 总数变化会触发 Element Plus 的页码校正，读取中由资源所有者同步页码。
+  if (!props.loading && !props.disabled && !props.errorText && page !== props.currentPage)
+    emit('change-page', page);
+};
 </script>
 
 <style scoped>
@@ -108,8 +173,8 @@ defineEmits<{
   min-height: 0;
   overflow: hidden;
   padding: 16px;
-  border-right: 1px solid #e5e7eb;
-  background: #f9fafb;
+  border-right: 1px solid var(--el-border-color-lighter);
+  background: var(--el-fill-color-light);
 }
 .batch-list-heading,
 .batch-item-title,
@@ -124,11 +189,11 @@ defineEmits<{
   flex: 0 0 auto;
 }
 .batch-list-heading strong {
-  color: #1f2937;
+  color: var(--el-text-color-primary);
   font-size: 14px;
 }
 .batch-list-heading span {
-  color: #9ca3af;
+  color: var(--el-text-color-secondary);
   font-size: 12px;
 }
 .batch-items {
@@ -145,9 +210,9 @@ defineEmits<{
   gap: 4px;
   width: 100%;
   padding: 12px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--el-border-color-lighter);
   border-radius: 8px;
-  background: #ffffff;
+  background: var(--el-bg-color);
   color: inherit;
   text-align: left;
   cursor: pointer;
@@ -164,7 +229,7 @@ defineEmits<{
 }
 .batch-item span,
 .batch-item small {
-  color: #6b7280;
+  color: var(--el-text-color-regular);
 }
 .batch-item-title :deep(.el-tag) {
   flex: 0 0 auto;
@@ -181,10 +246,49 @@ defineEmits<{
 .danger-text {
   color: var(--el-color-danger);
 }
-.batch-pagination {
+.batch-search {
+  display: grid;
   flex: 0 0 auto;
+  gap: 8px;
+  margin-top: 12px;
+}
+.batch-search-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.batch-search-actions :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+.applied-filter {
+  color: var(--el-text-color-regular);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.batch-error {
+  flex: 0 0 auto;
+  margin-top: 8px;
+}
+.batch-item:disabled {
+  cursor: default;
+}
+.batch-footer {
+  flex: 0 0 auto;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--el-border-color-lighter);
+}
+.batch-page-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--el-text-color-regular);
+  font-size: 12px;
+}
+.batch-pagination {
   justify-content: center;
-  margin-top: 14px;
+  margin-top: 8px;
 }
 @media (max-width: 1000px) {
   .batch-list {
