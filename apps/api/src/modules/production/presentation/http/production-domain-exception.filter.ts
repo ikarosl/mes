@@ -61,8 +61,6 @@ const statusFor = (code: ProductionDomainError['code']): number => {
     code === 'OUTBOUND_ALLOCATION_CHANGED' ||
     code === 'OUTBOUND_CONFIRM_NOT_ALLOWED' ||
     code === 'OUTBOUND_CANCEL_NOT_ALLOWED' ||
-    code === 'SHORT_BATCH_AUTHORIZATION_NOT_ALLOWED' ||
-    code === 'SHORT_BATCH_AUTHORIZATION_STALE' ||
     code === 'INBOUND_CONFIRM_NOT_ALLOWED' ||
     code === 'INBOUND_CANCEL_NOT_ALLOWED' ||
     code === 'RETURN_QUANTITY_EXCEEDED' ||

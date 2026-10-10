@@ -203,6 +203,16 @@
             @click="openCloseout"
             >收尾与物料核对</el-button
           ><el-button
+            v-if="
+              detail?.check.batchStatus === 'closing' &&
+              !detail.currentRevisionId &&
+              !detail.pendingApprovalId
+            "
+            type="warning"
+            :disabled="busy || unresolved"
+            @click="openWithdrawal"
+            >撤回结束</el-button
+          ><el-button
             v-if="detail?.approvalInstanceId && canAccessRoute({ name: 'approval-inbox' })"
             link
             type="primary"
@@ -357,7 +367,12 @@ import ProductionOutputRevisionPanel from './ProductionOutputRevisionPanel.vue';
 import ProductionOutputReviewForm from './ProductionOutputReviewForm.vue';
 import InlineHint from '../../../components/InlineHint.vue';
 const props = defineProps<{ visible: boolean; batchId: string | null }>();
-const emit = defineEmits<{ 'update:visible': [boolean]; changed: []; 'open-closeout': [string] }>();
+const emit = defineEmits<{
+  'update:visible': [boolean];
+  changed: [];
+  'open-closeout': [string];
+  'open-withdrawal': [string];
+}>();
 const editor = useProductionOutput(
   props,
   () => emit('changed'),
@@ -454,13 +469,21 @@ const currentRound = computed(() =>
   detail.value?.rounds.find((row) => row.id === detail.value?.currentRoundId),
 );
 const dialogTitle = computed(() =>
-  detail.value?.status === 'reviewing'
-    ? '产出清单 · 审批中'
-    : detail.value?.status === 'approved'
-      ? '产出批准清单'
-      : '产出清单与结案核对',
+  detail.value && !detail.value.currentRevisionId && detail.value.check.batchStatus !== 'closing'
+    ? '保留产出记录'
+    : detail.value?.status === 'reviewing'
+      ? '产出清单 · 审批中'
+      : detail.value?.status === 'approved'
+        ? '产出批准清单'
+        : '产出清单与结案核对',
 );
 const currentStep = computed(() => {
+  if (
+    detail.value &&
+    !detail.value.currentRevisionId &&
+    detail.value.check.batchStatus !== 'closing'
+  )
+    return '任务已恢复生产，产出记录仅供复核';
   if (detail.value?.status === 'reviewing') return '清单正在审批';
   if (detail.value?.canExecuteCurrentRevision) return '最新批准清单可执行';
   if (detail.value?.status === 'approved') return '批准记录保留，当前不可入库';
@@ -470,6 +493,12 @@ const currentStep = computed(() => {
   return '核对产出与质检依据';
 });
 const currentStepNote = computed(() => {
+  if (
+    detail.value &&
+    !detail.value.currentRevisionId &&
+    detail.value.check.batchStatus !== 'closing'
+  )
+    return '历史草稿、检查与收尾事实继续保留；再次结束任务后按当前资格核对产出与质检。';
   if (!detail.value?.draft) return '保存后前往质检；检验记录与产出草稿分别留存。';
   if (detail.value?.status === 'reviewing') return '数量及引用已冻结，审批完成后形成新授权。';
   if (detail.value?.currentRevisionId && detail.value.executionBlockedReason)
@@ -517,6 +546,12 @@ async function openCloseout() {
   if (busy.value || unresolved.value || !(await editor.close())) return;
   await nextTick();
   if (!props.visible) emit('open-closeout', batchId);
+}
+async function openWithdrawal(): Promise<void> {
+  const batchId = props.batchId;
+  if (!batchId || busy.value || unresolved.value || !(await editor.close())) return;
+  await nextTick();
+  if (!props.visible) emit('open-withdrawal', batchId);
 }
 const openApproval = async (instanceId: string): Promise<void> => {
   if (busy.value || unresolved.value || !canAccessRoute({ name: 'approval-inbox' })) return;

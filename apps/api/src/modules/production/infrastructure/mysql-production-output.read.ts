@@ -241,8 +241,15 @@ export async function loadOutputState(
     workOrderVersion: owner.version,
     ownerId: nullableOutputId(owner.work_order_owner_id) ?? '',
   };
-  const canEdit = row.pending_approval_id === null && (!base || row.correction_reason !== null);
+  const inCloseoutPhase = ['closing', 'completed', 'terminated'].includes(
+    closeout.check.batchStatus,
+  );
+  const canEdit =
+    inCloseoutPhase &&
+    row.pending_approval_id === null &&
+    (!base || row.correction_reason !== null);
   const blockers: string[] = [];
+  if (!inCloseoutPhase) blockers.push('任务尚未进入结案阶段，执行期间产出和检验只读');
   if (!base) {
     blockers.push(...closeout.check.blockers);
     if (closeout.pendingItems.length) blockers.push('先完成所有收尾事项');
@@ -271,7 +278,9 @@ export async function loadOutputState(
   const currentRoundInspection = inspections.find((record) => record.roundId === currentRound?.id);
   const latestInspection = inspections.at(-1) ?? null;
   const applicableInspectionId =
-    currentRound?.status === 'superseded' || currentRound?.status === 'inspecting'
+    !inCloseoutPhase ||
+    currentRound?.status === 'superseded' ||
+    currentRound?.status === 'inspecting'
       ? null
       : currentRoundInspection
         ? currentRoundInspection.releaseDecision === 'released'
@@ -282,6 +291,7 @@ export async function loadOutputState(
           ? latestInspection.id
           : null;
   const canExecuteCurrentRevision =
+    inCloseoutPhase &&
     base !== null &&
     currentRound?.id === base.roundId &&
     currentRound.status === 'finalized' &&
@@ -300,6 +310,7 @@ export async function loadOutputState(
           ? '清单正在审批中，旧版剩余入库已暂停'
           : '当前轮次尚未重新定稿，旧版剩余入库已暂停';
   const reinspection = evaluateOutputReinspection({
+    batchStatus: closeout.check.batchStatus,
     hasPendingApproval: row.pending_approval_id !== null,
     hasCorrection: row.correction_reason !== null,
     draft,
@@ -392,8 +403,12 @@ export async function loadOutputState(
       canExecuteCurrentRevision,
       executionBlockedReason,
       canBeginCorrection:
-        base !== null && row.pending_approval_id === null && row.correction_reason === null,
+        inCloseoutPhase &&
+        base !== null &&
+        row.pending_approval_id === null &&
+        row.correction_reason === null,
       canCancelCorrection:
+        inCloseoutPhase &&
         base !== null &&
         row.pending_approval_id === null &&
         row.correction_reason !== null &&

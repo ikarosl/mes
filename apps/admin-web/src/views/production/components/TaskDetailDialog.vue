@@ -27,6 +27,15 @@
         }}</el-descriptions-item>
         <el-descriptions-item label="负责人">{{ batch.ownerName || '-' }}</el-descriptions-item>
         <el-descriptions-item label="版本号">{{ batch.version }}</el-descriptions-item>
+        <el-descriptions-item label="任务开工时间">{{
+          formatDateTimeForDisplay(batch.startedAt, '尚未开工')
+        }}</el-descriptions-item>
+        <el-descriptions-item label="任务开工人 ID">{{
+          batch.startedById || '尚未开工'
+        }}</el-descriptions-item>
+        <el-descriptions-item label="开工说明">{{
+          batch.startReason || (batch.startedAt ? '未填写说明' : '尚未开工')
+        }}</el-descriptions-item>
         <el-descriptions-item
           label="当前批准产出"
           :span="3"
@@ -199,6 +208,61 @@
           >
             暂无工序记录
           </div>
+        </el-tab-pane>
+        <el-tab-pane label="开工依据">
+          <template v-if="batch.startMaterialSnapshot">
+            <p>
+              {{
+                batch.startMaterialSnapshot.hasMaterialShortage
+                  ? '开工时仍有物料缺口；当时的说明与数量如下。'
+                  : '开工时未记录有效物料缺口。'
+              }}
+            </p>
+            <el-table
+              :data="batch.startMaterialSnapshot.lines"
+              empty-text="开工时没有有效物料需求"
+            >
+              <el-table-column
+                prop="itemCode"
+                label="物料编码"
+                min-width="150"
+              />
+              <el-table-column
+                prop="materialVariantCode"
+                label="精确版本"
+                min-width="180"
+              />
+              <el-table-column
+                label="开工时需求量"
+                min-width="150"
+                align="right"
+                ><template #default="{ row }"
+                  >{{ formatQuantity(row.demandQuantity) }} {{ row.unit }}</template
+                ></el-table-column
+              >
+              <el-table-column
+                label="开工时已领"
+                min-width="150"
+                align="right"
+                ><template #default="{ row }"
+                  >{{ formatQuantity(row.confirmedOutboundQuantity) }} {{ row.unit }}</template
+                ></el-table-column
+              >
+              <el-table-column
+                label="开工时未领"
+                min-width="150"
+                align="right"
+                ><template #default="{ row }"
+                  >{{ formatQuantity(row.remainingQuantity) }} {{ row.unit }}</template
+                ></el-table-column
+              >
+            </el-table>
+          </template>
+          <el-empty
+            v-else
+            :image-size="64"
+            description="尚无任务开工依据"
+          />
         </el-tab-pane>
         <el-tab-pane label="物料需求">
           <div class="empty-hint">

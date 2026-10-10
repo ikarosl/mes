@@ -4,7 +4,11 @@ import type {
   BatchStepAbnormalOrigin,
   BatchStepReportType,
   ProductionBatchStatus,
+  DemandType,
+  DemandBusinessStatus,
+  WorkOrderStatus,
 } from './statuses.js';
+import type { WorkOrderType } from './work-order.js';
 import type { BatchStepAbnormalDispositionItem } from './abnormal.js';
 import type { ProductionStepSupplementSourceItem } from './supplement.js';
 import type { BatchStepAbnormalDispositionView } from './report-view.js';
@@ -169,6 +173,7 @@ export interface BatchStepExecutionRecordItem extends ProductionStepQuantityProj
   canCorrectReport: boolean;
   correctionBlockedReason: string | null;
   canCreateHistoricalReport: boolean;
+  historicalCreateBlockedReason: string | null;
   historicalCorrectionBlockedReason: string | null;
   canAdminStart: boolean;
   startBlockedReason: string | null;
@@ -299,16 +304,14 @@ export interface BatchReverseStepReportsCommandResult {
 }
 
 export type ProductionExecutionCompletionBlocker =
-  | 'batch_not_doing'
-  | 'no_route_step'
-  | 'required_step_incomplete'
-  | 'active_material_demand_remains'
-  | 'unfulfilled_material_supplement';
+  'batch_not_doing' | 'no_route_step' | 'required_step_incomplete';
 
 export interface ProductionExecutionCompletionCheck {
   productionBatchId: string;
   batchStatus: ProductionBatchStatus;
   version: number;
+  closeoutId: string | null;
+  closeoutVersion: number | null;
   plannedQuantity: string;
   requiredStepCount: number;
   completedRequiredStepCount: number;
@@ -321,14 +324,53 @@ export interface ProductionExecutionCompletionCheck {
   blockers: ProductionExecutionCompletionBlocker[];
 }
 
-export type CompleteProductionExecutionPayload = VersionedCommand;
+export interface CompleteProductionExecutionPayload extends VersionedCommand {
+  closeoutVersion: number | null;
+}
 
-export type StartResearchExecutionPayload = VersionedCommand;
+/** 开工只核对需求履约缺口，不把领料减退料／损耗推算成现场库存。 */
+export interface ProductionExecutionStartMaterialLine {
+  demandId: string;
+  demandType: DemandType;
+  businessStatus: DemandBusinessStatus;
+  itemId: string;
+  itemCode: string;
+  materialVariantId: string;
+  materialVariantCode: string;
+  unit: string;
+  demandQuantity: string;
+  confirmedOutboundQuantity: string;
+  remainingQuantity: string;
+}
 
-export interface ResearchExecutionStartResult {
+export interface ProductionExecutionStartMaterialSnapshot {
+  /** 批量已完整初配 BOM；研发曾有至少一条正式需求，不要求当前仍活动或未履约。 */
+  hasInitialMaterialConfiguration: boolean;
+  hasMaterialShortage: boolean;
+  lines: ProductionExecutionStartMaterialLine[];
+}
+
+export interface ProductionExecutionStartCheck extends ProductionExecutionStartMaterialSnapshot {
+  productionBatchId: string;
+  batchStatus: ProductionBatchStatus;
+  version: number;
+  orderType: WorkOrderType;
+  workOrderStatus: WorkOrderStatus;
+  requiresReason: boolean;
+  canStart: boolean;
+  blockedReason: string | null;
+}
+
+export interface StartProductionExecutionPayload extends VersionedCommand {
+  reason?: string | null;
+}
+
+export interface ProductionExecutionStartResult {
   productionBatchId: string;
   batchStatus: 'doing';
   startedAt: string;
+  startedById: string;
+  startReason: string | null;
   version: number;
 }
 

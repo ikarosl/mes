@@ -1,4 +1,14 @@
+import { BATCH_CLOSEOUT_ITEM_KINDS } from './statuses.js';
+
 export const PRODUCTION_STEP_EXECUTION_ACTION_TYPES = ['start', 'complete', 'reopen'] as const;
+
+export const PRODUCTION_TASK_CLOSEOUT_ACTION_TYPES = ['enter', 'withdraw'] as const;
+/** task 只用于行动历史，不能通过逐项处理入口执行。 */
+export const BATCH_CLOSEOUT_ACTION_KINDS = [...BATCH_CLOSEOUT_ITEM_KINDS, 'task'] as const;
+export const PRODUCTION_TASK_CLOSEOUT_ACTION_LABELS = {
+  enter: '任务执行结束',
+  withdraw: '撤回任务结束',
+} as const;
 
 /** 历史动作值只用于读取，不开放历史更正命令。 */
 export const PRODUCTION_STEP_EXECUTION_HISTORY_ACTION_TYPES = [

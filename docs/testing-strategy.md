@@ -24,8 +24,8 @@
 
 根 `pnpm verify` 依次覆盖格式、文档链接、架构、migration、秘密和生产依赖扫描、Lint、构建、类型检查及单元/组件测试。禁止使用 `--passWithNoTests` 让缺失测试静默通过。
 
-API、管理端以及 contracts／utils 的应用构建、应用类型检查不编译相邻测试文件；测试通过 Vitest 独立运行。测试类型检查分别使用
-`corepack pnpm --filter @company/api typecheck:test`、`corepack pnpm --filter @company/admin-web typecheck:test`、`corepack pnpm --filter @company/contracts typecheck:test` 和 `corepack pnpm --filter @company/utils typecheck:test`，在集中修复或验证测试时单独执行，不阻塞应用构建。用户暂缓正式测试期间，旧夹具的契约迁移记录到路线图；不能以应用检查通过代替测试检查。
+API、管理端以及 contracts／constants／utils 的应用构建、应用类型检查不编译相邻测试文件；测试通过 Vitest 独立运行。测试类型检查分别使用
+`corepack pnpm --filter @company/api typecheck:test`、`corepack pnpm --filter @company/admin-web typecheck:test`、`corepack pnpm --filter @company/contracts typecheck:test`、`corepack pnpm --filter @company/constants typecheck:test` 和 `corepack pnpm --filter @company/utils typecheck:test`，在集中修复或验证测试时单独执行，不阻塞应用构建。用户暂缓正式测试期间，旧夹具的契约迁移记录到路线图；不能以应用检查通过代替测试检查。
 
 交付和正式测试的先后顺序以 [AGENTS.md](../AGENTS.md#数据库与交付约定) 为准。进入正式测试阶段后，新增或修复业务规则必须补相邻测试；跨模块契约、数据库事务或 HTTP 管线发生变化时，补对应根 Integration/API 测试。在已获准编写测试的阶段，历史代码重构前先以 characterization test 锁定现有行为。
 

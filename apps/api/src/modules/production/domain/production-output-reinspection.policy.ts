@@ -1,4 +1,8 @@
-import type { ProductionOutputReceipts, ProductionOutputRound } from '@company/contracts';
+import type {
+  ProductionBatchStatus,
+  ProductionOutputReceipts,
+  ProductionOutputRound,
+} from '@company/contracts';
 
 interface OutputTarget {
   availableQuantity: number;
@@ -6,6 +10,7 @@ interface OutputTarget {
 }
 
 export interface OutputReinspectionFacts {
+  batchStatus: ProductionBatchStatus;
   hasPendingApproval: boolean;
   hasCorrection: boolean;
   draft: OutputTarget | null;
@@ -35,28 +40,30 @@ export function evaluateOutputReinspection(
       Number(facts.receipts.extraReceivedQuantity)
     : null;
   const round = facts.currentRound;
-  const blockedReason = facts.hasPendingApproval
-    ? '清单正在审批中，请先撤回或驳回'
-    : !facts.draft
-      ? '请先保存产出草稿'
-      : !facts.hasInspection
-        ? '当前尚无检验记录，请先完成首次检验'
-        : remaining !== null && remaining <= 0
-          ? '当前批准清单已无剩余实物可复检'
-          : round?.status === 'inspecting'
-            ? '本轮检验正在填写，请继续登记结果'
-            : round?.status === 'pending_inspection' &&
-                round.triggerType !== 'finalization_correction'
-              ? '本轮检验尚未开始，请先完成当前轮次'
-              : round?.status === 'reviewing'
-                ? '清单正在审批中，请先撤回或驳回'
-                : round?.status === 'pending_finalization' ||
-                    round?.status === 'finalized' ||
-                    round?.status === 'superseded' ||
-                    (round?.status === 'pending_inspection' &&
-                      round.triggerType === 'finalization_correction')
-                  ? null
-                  : '当前轮次不能发起复检';
+  const blockedReason = !['closing', 'completed', 'terminated'].includes(facts.batchStatus)
+    ? '任务尚未进入结案阶段，不能办理成品复检'
+    : facts.hasPendingApproval
+      ? '清单正在审批中，请先撤回或驳回'
+      : !facts.draft
+        ? '请先保存产出草稿'
+        : !facts.hasInspection
+          ? '当前尚无检验记录，请先完成首次检验'
+          : remaining !== null && remaining <= 0
+            ? '当前批准清单已无剩余实物可复检'
+            : round?.status === 'inspecting'
+              ? '本轮检验正在填写，请继续登记结果'
+              : round?.status === 'pending_inspection' &&
+                  round.triggerType !== 'finalization_correction'
+                ? '本轮检验尚未开始，请先完成当前轮次'
+                : round?.status === 'reviewing'
+                  ? '清单正在审批中，请先撤回或驳回'
+                  : round?.status === 'pending_finalization' ||
+                      round?.status === 'finalized' ||
+                      round?.status === 'superseded' ||
+                      (round?.status === 'pending_inspection' &&
+                        round.triggerType === 'finalization_correction')
+                    ? null
+                    : '当前轮次不能发起复检';
   return {
     canBeginReinspection: blockedReason === null,
     reinspectionBlockedReason: blockedReason,

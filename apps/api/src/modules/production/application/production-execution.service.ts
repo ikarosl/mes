@@ -4,6 +4,8 @@ import type {
   ProductionStepCommandResult,
   PageResult,
   ProductionStepExecutionHistoryItem,
+  StartProductionExecutionPayload,
+  CompleteProductionExecutionPayload,
 } from '@company/contracts';
 import type {
   CommandContext,
@@ -15,13 +17,14 @@ import { TechnicalFileContentQuery } from '../../product/public.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
 import { ProductionExecutionRepository } from './ports/production-execution.repository.js';
 import {
-  START_RESEARCH_EXECUTION_SCOPE,
+  START_PRODUCTION_EXECUTION_SCOPE,
+  COMPLETE_PRODUCTION_EXECUTION_SCOPE,
   COMPLETE_RESEARCH_EXECUTION_SCOPE,
 } from './idempotency/production-idempotency-scopes.contract.js';
 import {
-  researchExecutionStartResultCodec,
-  researchExecutionCompletionResultCodec,
-} from './idempotency/production-research-execution-result.codec.js';
+  productionExecutionStartResultCodec,
+  productionExecutionCompletionResultCodec,
+} from './idempotency/production-execution-result.codec.js';
 
 @Injectable()
 export class ProductionExecutionService {
@@ -36,27 +39,31 @@ export class ProductionExecutionService {
     return this.execution.getCompletionCheck(batchId);
   }
 
-  async startResearchExecution(
+  getStartCheck(batchId: string) {
+    return this.execution.getStartCheck(batchId);
+  }
+
+  async startExecution(
     batchId: string,
-    version: number,
+    payload: StartProductionExecutionPayload,
     context: IdempotentCommandContext,
   ) {
+    const body = { version: payload.version, reason: payload.reason?.trim() || null };
     const execution = await this.idempotency.execute({
-      scope: START_RESEARCH_EXECUTION_SCOPE,
+      scope: START_PRODUCTION_EXECUTION_SCOPE,
       key: context.idempotencyKey,
       actorId: context.actorId,
       requestId: context.requestId,
-      request: { params: { batchId }, body: { version } },
-      resultCodec: researchExecutionStartResultCodec,
-      handler: () =>
-        this.execution.startResearchExecution(batchId, version, commandContext(context)),
+      request: { params: { batchId }, body },
+      resultCodec: productionExecutionStartResultCodec,
+      handler: () => this.execution.startExecution(batchId, body, commandContext(context)),
     });
     return execution.result;
   }
 
   async completeResearchExecution(
     batchId: string,
-    version: number,
+    payload: CompleteProductionExecutionPayload,
     context: IdempotentCommandContext,
   ) {
     const execution = await this.idempotency.execute({
@@ -64,17 +71,29 @@ export class ProductionExecutionService {
       key: context.idempotencyKey,
       actorId: context.actorId,
       requestId: context.requestId,
-      request: { params: { batchId }, body: { version } },
-      resultCodec: researchExecutionCompletionResultCodec,
+      request: { params: { batchId }, body: { ...payload } },
+      resultCodec: productionExecutionCompletionResultCodec,
       handler: () =>
-        this.execution.completeResearchExecution(batchId, version, commandContext(context)),
+        this.execution.completeResearchExecution(batchId, payload, commandContext(context)),
     });
     return execution.result;
   }
 
-  completeExecution(batchId: string, version: number, context: CommandContext) {
-    if (!context.actorId) throw new ProductionDomainError('INVALID_INPUT', '缺少当前操作人身份');
-    return this.execution.completeExecution(batchId, version, context);
+  async completeExecution(
+    batchId: string,
+    payload: CompleteProductionExecutionPayload,
+    context: IdempotentCommandContext,
+  ) {
+    const execution = await this.idempotency.execute({
+      scope: COMPLETE_PRODUCTION_EXECUTION_SCOPE,
+      key: context.idempotencyKey,
+      actorId: context.actorId,
+      requestId: context.requestId,
+      request: { params: { batchId }, body: { ...payload } },
+      resultCodec: productionExecutionCompletionResultCodec,
+      handler: () => this.execution.completeExecution(batchId, payload, commandContext(context)),
+    });
+    return execution.result;
   }
 
   listMyTasks(context: CommandContext, query: { page: number; pageSize: number }) {

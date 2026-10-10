@@ -44,6 +44,7 @@ export type DemandRow = RowDataPacket & {
   version: number;
   created_at: Date;
   allocated_quantity: string;
+  remaining_allocated_quantity: string;
   outbound_quantity: string;
 };
 
@@ -94,7 +95,6 @@ export type OutboundRow = RowDataPacket & {
   batch_no: string;
   work_order_id: number;
   work_order_no: string;
-  short_batch_authorization_id: number | null;
   product_id: number;
   product_code: string;
   product_name: string;
@@ -135,6 +135,7 @@ export const DEMAND_SELECT = `SELECT d.id,d.production_batch_id,d.requirement_ba
   (SELECT successor.id FROM production_item_demand successor WHERE successor.replaces_demand_id=d.id) replacement_demand_id,
   (SELECT correction.approval_instance_id FROM production_demand_correction correction WHERE correction.id=COALESCE(d.pending_correction_id,d.close_correction_id)) correction_approval_id,d.closeout_id,(SELECT closeout.approval_instance_id FROM production_batch_closeout closeout WHERE closeout.id=d.closeout_id) closeout_approval_id,d.fulfilled_by,d.fulfilled_at,d.version,d.created_at,
   COALESCE((SELECT SUM(a.assigned_number) FROM production_item_allocation a WHERE a.demand_id=d.id AND a.allocation_status NOT IN ('released','cancelled')),0) allocated_quantity,
+  COALESCE((SELECT SUM(GREATEST(a.assigned_number-COALESCE((SELECT SUM(od.outbound_number) FROM outbound_detail od JOIN outbound_order oo ON oo.id=od.outbound_id WHERE od.allocation_id=a.id AND oo.status='completed'),0),0)) FROM production_item_allocation a WHERE a.demand_id=d.id AND a.allocation_status NOT IN ('released','cancelled')),0) remaining_allocated_quantity,
   COALESCE((SELECT SUM(od.outbound_number) FROM outbound_detail od JOIN outbound_order oo ON oo.id=od.outbound_id WHERE od.demand_id=d.id AND oo.status='completed'),0) outbound_quantity
   FROM production_item_demand d
   LEFT JOIN production_material_supplement s ON s.id=d.supplement_id
@@ -216,7 +217,11 @@ export const mapDemand = (
       row.business_status !== 'active'
         ? '0'
         : decimal(
-            Math.max(0, integerQuantity(row.need_number) - integerQuantity(row.allocated_quantity)),
+            Math.max(
+              0,
+              integerQuantity(row.remaining_number) -
+                integerQuantity(row.remaining_allocated_quantity),
+            ),
           ),
     demandType: row.demand_type,
     generationGroupKey: row.generation_group_key,
@@ -241,13 +246,14 @@ const progress = (row: DemandRow): MaterialDemandProgressStatus => {
   if (row.business_status === 'closed') return 'closed';
   if (row.pending_correction_id != null) return 'correction_pending';
   const need = integerQuantity(row.need_number);
-  const allocated = integerQuantity(row.allocated_quantity);
+  const remaining = integerQuantity(row.remaining_number);
+  const remainingAllocated = integerQuantity(row.remaining_allocated_quantity);
   const outbound = integerQuantity(row.outbound_quantity);
   if (outbound >= need) return 'outbound';
-  if (outbound > 0 && allocated < need) return 'shortage';
+  if (outbound > 0 && remainingAllocated < remaining) return 'shortage';
   if (outbound > 0) return 'partially_outbound';
-  if (allocated >= need) return 'allocated';
-  if (allocated > 0) return 'partially_allocated';
+  if (remainingAllocated >= remaining) return 'allocated';
+  if (remainingAllocated > 0) return 'partially_allocated';
   return 'pending_allocation';
 };
 

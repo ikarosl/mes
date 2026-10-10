@@ -1,11 +1,8 @@
 import type { WorkOrderType } from './work-order.js';
 import type { PageQuery, VersionedCommand } from '../common.js';
 import type { ProductionCloseoutMode } from './output.js';
-import type {
-  ProductionBatchStatus,
-  BatchStepStatus,
-  ShortBatchAuthorizationAction,
-} from './statuses.js';
+import type { ProductionExecutionStartMaterialSnapshot } from './execution.js';
+import type { ProductionBatchStatus, BatchStepStatus } from './statuses.js';
 
 export interface ProductionBatchQuery extends PageQuery {
   keyword?: string;
@@ -40,20 +37,18 @@ export interface ProductionBatchItem {
   planStartDate: string | null;
   planEndDate: string | null;
   startedAt: string | null;
+  startedById: string | null;
+  startReason: string | null;
+  startMaterialSnapshot: ProductionExecutionStartMaterialSnapshot | null;
   status: ProductionBatchStatus;
   closeoutMode: ProductionCloseoutMode | null;
+  closeoutVersion: number | null;
   currentOutputRevisionId: string | null;
   /** 当前有效批准版；尚未批准时为 null，不从报工量或草稿推算。 */
   finalOutput: ProductionBatchFinalOutput | null;
   /** 工序执行确认时间，与最终结案审批时间分别展示。 */
   executionCompletedAt: string | null;
   executionCompletedBy: string | null;
-  /** 整组物料需求计划版本，用于使短批授权在需求集变化后失效。 */
-  materialPlanVersion: number;
-  /** 列表页的短批授权派生状态；写接口仍由后端事务重新校验。 */
-  shortBatchAuthorizationStatus: 'none' | 'valid' | 'stale' | 'consumed';
-  /** 列表页短批授权按钮动作；提交时仍由授权预览事务重新计算。 */
-  shortBatchAuthorizationAction: ShortBatchAuthorizationAction;
   ownerId: string | null;
   ownerName: string | null;
   completedAt: string | null;

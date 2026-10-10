@@ -230,21 +230,11 @@
             >
             <el-button
               v-if="
-                row.status === 'material_pending' || row.status === 'material_partially_outbound'
-              "
-              link
-              type="warning"
-              :disabled="row.shortBatchAuthorizationAction === 'not_required'"
-              @click="openShortBatchAuthorization(row)"
-              >{{ shortBatchAuthorizationActionLabel(row) }}</el-button
-            >
-            <el-button
-              v-if="
+                row.status === 'material_pending' ||
                 row.status === 'material_assigned' ||
                 row.status === 'material_partially_outbound' ||
                 row.status === 'material_outbound' ||
-                row.status === 'doing' ||
-                (row.status === 'material_pending' && row.shortBatchAuthorizationStatus === 'valid')
+                row.status === 'doing'
               "
               link
               type="primary"
@@ -273,20 +263,32 @@
             >
             <el-button
               v-if="
-                row.orderType === 'research' &&
-                ['material_outbound', 'material_partially_outbound'].includes(row.status)
+                [
+                  'pending',
+                  'material_pending',
+                  'material_assigned',
+                  'material_partially_outbound',
+                  'material_outbound',
+                ].includes(row.status)
               "
               link
               type="success"
-              @click="openResearchExecution(row, 'start')"
-              >开始研发</el-button
+              @click="openExecutionStart(row)"
+              >任务开工</el-button
             >
             <el-button
               v-if="row.orderType === 'research' && row.status === 'doing'"
               link
               type="success"
-              @click="openResearchExecution(row, 'complete')"
+              @click="openResearchExecution(row)"
               >结束本轮研发</el-button
+            >
+            <el-button
+              v-if="row.status === 'closing'"
+              link
+              type="warning"
+              @click="openCloseoutWithdrawal(row)"
+              >撤回结束</el-button
             >
             <el-dropdown trigger="click">
               <el-button
@@ -399,9 +401,30 @@
 
     <ResearchExecutionDialog
       v-model:visible="researchExecutionVisible"
-      :batch="researchExecutionBatch"
-      :action="researchExecutionAction"
+      :batch="batches.find((row) => row.id === researchExecutionBatch?.id) ?? null"
       @changed="researchExecutionChanged"
+    />
+    <ProductionExecutionStartDialog
+      ref="executionStartDialog"
+      v-model:visible="executionStartVisible"
+      :batch-id="executionStartBatch?.id ?? null"
+      :batch-label="
+        executionStartBatch
+          ? `${executionStartBatch.batchNo} · ${executionStartBatch.productName}`
+          : ''
+      "
+      @changed="taskPhaseChanged"
+    />
+    <ProductionCloseoutWithdrawalDialog
+      ref="closeoutWithdrawalDialog"
+      v-model:visible="closeoutWithdrawalVisible"
+      :batch-id="closeoutWithdrawalBatch?.id ?? null"
+      :batch-label="
+        closeoutWithdrawalBatch
+          ? `${closeoutWithdrawalBatch.batchNo} · ${closeoutWithdrawalBatch.productName}`
+          : ''
+      "
+      @changed="taskPhaseChanged"
     />
 
     <MaterialDemandAllocationDialog
@@ -423,26 +446,20 @@
       :demands="visibleMaterialDemands"
       :outbounds="materials.outbounds.value"
       :loading-outbounds="materials.loadingOutbounds.value"
+      :loading-demands="materials.loadingDemands.value"
+      :intent-status="materials.getOutboundIntentStatus()"
       :submitting="materials.submitting.value"
-      :short-batch="materialBatchIsShortBatch"
       @update:visible="handleMaterialOutboundClose"
       @submit="handleMaterialOutbound"
     />
 
-    <ShortBatchAuthorizationDialog
-      :visible="shortBatchAuthorizationVisible"
-      :preview="shortBatchAuthorizationPreview"
-      :loading="shortBatchAuthorizationLoading"
-      :submitting="shortBatchAuthorizationSubmitting"
-      @update:visible="shortBatchAuthorizationVisible = $event"
-      @submit="submitShortBatchAuthorization"
-    />
-
     <ProductionBatchTerminationDialog
+      ref="terminationDialog"
       v-model:visible="terminationVisible"
       :batch-id="terminationBatchId"
-      @terminated="loadTasks"
+      @terminated="closeoutChanged"
       @open-output="openOutput"
+      @open-withdrawal="openOutputWithdrawal"
     />
     <ProductionOutputDialog
       ref="outputDialog"
@@ -450,6 +467,7 @@
       :batch-id="outputBatchId"
       @changed="loadTasks"
       @open-closeout="openCloseoutItems"
+      @open-withdrawal="openOutputWithdrawal"
     />
     <ProductionBatchCancelDialog
       :visible="batchCancelDialogVisible"
@@ -478,10 +496,8 @@ import type {
   CreateMaterialOutboundPayload,
   ProductionMaterialAllocationItem,
   ProductionMaterialDemandItem,
-  ShortBatchAuthorizationPreview,
 } from '@company/contracts';
 import { normalizeCreateBatchPayload } from '@company/utils';
-import { SHORT_BATCH_AUTHORIZATION_ACTION_LABELS } from '@company/constants';
 import { productionApi } from '../../api/production';
 import { formatDateForDisplay } from '../../utils/date';
 import { EMessage } from '../../utils/message';
@@ -500,7 +516,6 @@ import StepExecutionDialog from './components/StepExecutionDialog.vue';
 import type { StepExecutionValue } from './components/StepExecutionDialog.vue';
 import MaterialDemandAllocationDialog from './components/MaterialDemandAllocationDialog.vue';
 import MaterialOutboundDialog from './components/MaterialOutboundDialog.vue';
-import ShortBatchAuthorizationDialog from './components/ShortBatchAuthorizationDialog.vue';
 import { useProductionMaterials } from './composables/useProductionMaterials';
 import StepAssignmentDialog from './components/StepAssignmentDialog.vue';
 import { useStepAssignments } from './composables/useStepAssignments';
@@ -516,21 +531,75 @@ import MaterialDemandConfigurationDialog from './components/MaterialDemandConfig
 import MaterialDemandOverviewDialog from './components/MaterialDemandOverviewDialog.vue';
 import ManualMaterialDemandDialog from './components/ManualMaterialDemandDialog.vue';
 import ResearchExecutionDialog from './components/ResearchExecutionDialog.vue';
+import ProductionExecutionStartDialog from './components/ProductionExecutionStartDialog.vue';
+import ProductionCloseoutWithdrawalDialog from './components/ProductionCloseoutWithdrawalDialog.vue';
 
 defineOptions({ name: 'ProductionTasksPage' });
 
 const researchExecutionVisible = ref(false);
 const researchExecutionBatch = ref<ProductionBatchItem | null>(null);
-const researchExecutionAction = ref<'start' | 'complete'>('start');
-const openResearchExecution = (batch: ProductionBatchItem, action: 'start' | 'complete') => {
+const openResearchExecution = (batch: ProductionBatchItem) => {
   researchExecutionBatch.value = batch;
-  researchExecutionAction.value = action;
   researchExecutionVisible.value = true;
 };
 const researchExecutionChanged = async (batchId: string, completed: boolean) => {
-  await loadTasks();
+  await taskPhaseChanged(batchId);
   if (completed) openOutput(batchId);
 };
+const executionStartVisible = ref(false);
+const executionStartBatch = ref<ProductionBatchItem | null>(null);
+const executionStartDialog = ref<InstanceType<typeof ProductionExecutionStartDialog> | null>(null);
+const closeoutWithdrawalVisible = ref(false);
+const closeoutWithdrawalBatch = ref<ProductionBatchItem | null>(null);
+const closeoutWithdrawalDialog = ref<InstanceType<
+  typeof ProductionCloseoutWithdrawalDialog
+> | null>(null);
+const terminationDialog = ref<InstanceType<typeof ProductionBatchTerminationDialog> | null>(null);
+const openExecutionStart = async (batch: ProductionBatchItem): Promise<void> => {
+  if (executionStartVisible.value && !(await executionStartDialog.value?.close())) return;
+  await nextTick();
+  executionStartBatch.value = { ...batch };
+  executionStartVisible.value = true;
+};
+const openCloseoutWithdrawal = async (batch: ProductionBatchItem): Promise<void> => {
+  if (closeoutWithdrawalVisible.value && !(await closeoutWithdrawalDialog.value?.close())) return;
+  await nextTick();
+  closeoutWithdrawalBatch.value = { ...batch };
+  closeoutWithdrawalVisible.value = true;
+};
+const openOutputWithdrawal = async (batchId: string): Promise<void> => {
+  try {
+    const batch =
+      batches.value.find((row) => row.id === batchId) ?? (await productionApi.getBatch(batchId));
+    await openCloseoutWithdrawal(batch);
+  } catch (error) {
+    EMessage.error(error, '撤回任务详情查询失败');
+  }
+};
+const closeoutChanged = async (): Promise<void> => {
+  if (terminationBatchId.value) await taskPhaseChanged(terminationBatchId.value);
+};
+async function taskPhaseChanged(batchId: string): Promise<void> {
+  const updates: Promise<unknown>[] = [loadTasks()];
+  if (activeBatch.value?.id === batchId && detailDialogVisible.value)
+    updates.push(
+      productionApi.getBatch(batchId).then((detail) => {
+        if (activeBatch.value?.id === batchId) activeBatch.value = detail;
+      }),
+    );
+  if (materials.batchId.value === batchId)
+    updates.push(materials.loadDemands(), materials.loadOutbounds());
+  if (materialDemandBatch.value?.id === batchId && materialDemandOverviewVisible.value)
+    updates.push(loadMaterialDemandOverview());
+  if (outputVisible.value && outputBatchId.value === batchId)
+    updates.push(outputDialog.value?.refresh() ?? Promise.resolve());
+  if (terminationVisible.value && terminationBatchId.value === batchId)
+    updates.push(terminationDialog.value?.refresh() ?? Promise.resolve());
+  const results = await Promise.allSettled(updates);
+  for (const result of results)
+    if (result.status === 'rejected')
+      EMessage.error(result.reason, '任务已变更，部分详情刷新失败，请重新核对');
+}
 
 const route = useRoute();
 const router = useRouter();
@@ -676,17 +745,11 @@ const materialDemandBatch = ref<ProductionBatchItem | null>(null);
 const materialOverviewDemands = ref<ProductionMaterialDemandItem[]>([]);
 const materialOverviewLoading = ref(false);
 const materialOutboundVisible = ref(false);
-const shortBatchAuthorizationVisible = ref(false);
-const shortBatchAuthorizationLoading = ref(false);
-const shortBatchAuthorizationSubmitting = ref(false);
-const shortBatchAuthorizationPreview = ref<ShortBatchAuthorizationPreview | null>(null);
-const shortBatchAuthorizationBatchId = ref<string | null>(null);
 const batchCancelDialogVisible = ref(false);
 const batchCancelSubmitting = ref(false);
 const cancellingBatch = ref<ProductionBatchItem | null>(null);
 const batchCancellationCheck = ref<ProductionBatchCancellationCheck | null>(null);
 const materials = useProductionMaterials();
-const materialBatchIsShortBatch = ref(false);
 const visibleMaterialDemands = computed(() => materials.demands.value);
 const taskFormDialogRef = ref<{
   setForm: (row: ProductionBatchItem) => void;
@@ -912,64 +975,11 @@ const handleMaterialRelease = async (
 const openMaterialOutbound = async (row: ProductionBatchItem): Promise<void> => {
   if (!(await prepareMaterialBatch(row.id))) return;
   materials.setBatch(row.id);
-  materialBatchIsShortBatch.value =
-    row.status === 'material_partially_outbound' ||
-    row.shortBatchAuthorizationStatus === 'valid' ||
-    row.shortBatchAuthorizationStatus === 'consumed';
   materialOutboundVisible.value = true;
   try {
     await Promise.all([materials.loadDemands(), materials.loadOutbounds()]);
   } catch (error) {
     EMessage.error(error, '生产领料数据查询失败');
-  }
-};
-const openShortBatchAuthorization = async (row: ProductionBatchItem): Promise<void> => {
-  shortBatchAuthorizationBatchId.value = row.id;
-  shortBatchAuthorizationPreview.value = null;
-  shortBatchAuthorizationVisible.value = true;
-  shortBatchAuthorizationLoading.value = true;
-  try {
-    shortBatchAuthorizationPreview.value = await productionApi.getShortBatchAuthorizationPreview(
-      row.id,
-    );
-  } catch (error) {
-    EMessage.error(error, '短批授权缺口查询失败');
-  } finally {
-    shortBatchAuthorizationLoading.value = false;
-  }
-};
-const shortBatchAuthorizationActionLabel = (row: ProductionBatchItem): string =>
-  SHORT_BATCH_AUTHORIZATION_ACTION_LABELS[row.shortBatchAuthorizationAction];
-const submitShortBatchAuthorization = async (reason: string): Promise<void> => {
-  const batchId = shortBatchAuthorizationBatchId.value;
-  const preview = shortBatchAuthorizationPreview.value;
-  if (
-    !batchId ||
-    !preview ||
-    preview.blockedReason !== null ||
-    !['authorize', 'reauthorize', 'adjust'].includes(preview.authorizationAction) ||
-    shortBatchAuthorizationSubmitting.value
-  )
-    return;
-  shortBatchAuthorizationSubmitting.value = true;
-  try {
-    await productionApi.authorizeShortBatch(batchId, {
-      version: preview.batchVersion,
-      reason,
-    });
-    EMessage.success('短批开工已授权，后续可继续分配和领料');
-    shortBatchAuthorizationVisible.value = false;
-    await loadTasks();
-  } catch (error) {
-    EMessage.error(error, '短批授权失败');
-    try {
-      shortBatchAuthorizationPreview.value =
-        await productionApi.getShortBatchAuthorizationPreview(batchId);
-    } catch {
-      // 保留原窗口与错误信息，由用户重新打开时刷新。
-    }
-  } finally {
-    shortBatchAuthorizationSubmitting.value = false;
   }
 };
 const handleMaterialOutbound = async (payload: CreateMaterialOutboundPayload): Promise<void> => {
@@ -1039,6 +1049,7 @@ const handleMaterialAllocationClose = async (visible: boolean): Promise<void> =>
     materialAllocationVisible.value = false;
 };
 const handleMaterialOutboundClose = async (visible: boolean): Promise<void> => {
+  if (materials.submitting.value) return;
   if (visible) {
     materialOutboundVisible.value = true;
     return;
@@ -1061,8 +1072,6 @@ const materialErrorFallback = (error: unknown, fallback: string): string => {
     ALLOCATION_ALREADY_OUTBOUND: '该分配已发生出库，不能释放',
     OUTBOUND_EXCEEDS_ALLOCATION: '出库数量超过当前未出库量，请刷新后重试',
     ALLOCATION_PENDING_OUTBOUND: '该分配已有待确认出库单，请先取消相关单据',
-    SHORT_BATCH_AUTHORIZATION_STALE:
-      '物料需求计划已变化：仍有分配缺口时请重新短批授权；全部活动需求完成分配后可按普通齐套方式继续领料',
     CONCURRENT_MODIFICATION: '数据已被其他操作修改，请刷新后重试',
   };
   return messages[code] ?? fallback;

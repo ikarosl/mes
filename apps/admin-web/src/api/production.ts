@@ -13,6 +13,9 @@ import type {
   ProductionApprovalResult,
   BatchCloseoutDetail,
   BatchCloseoutCommandResult,
+  BatchCloseoutWithdrawalCheck,
+  WithdrawBatchCloseoutPayload,
+  WithdrawBatchCloseoutResult,
   BeginBatchCloseoutPayload,
   HandleBatchCloseoutItemPayload,
   RecordCloseoutMaterialLossPayload,
@@ -67,6 +70,10 @@ import type {
   ProductionExecutionRecordGroup,
   ProductionExecutionCompletionCheck,
   ProductionExecutionCompletionResult,
+  CompleteProductionExecutionPayload,
+  ProductionExecutionStartCheck,
+  StartProductionExecutionPayload,
+  ProductionExecutionStartResult,
   ProductionExecutionBatchSummary,
   ReverseBatchStepReportPayload,
   ProductionTraceWorkOrderGroup,
@@ -98,10 +105,6 @@ import type {
   ReworkRecordItem,
   ReworkRecordView,
   CancelProductionBatchPayload,
-  AuthorizeShortBatchPayload,
-  ShortBatchAuthorizationPreview,
-  ShortBatchAuthorizationResult,
-  CloseRemainingMaterialDemandsResult,
   MaterialDemandManagementPage,
   MaterialOption,
   ProductionMaterialOptionsQuery,
@@ -307,6 +310,25 @@ export const productionApi = {
   getBatchCloseout: (id: string) =>
     request<BatchCloseoutDetail | null>({
       url: `/production/batches/${id}/closeout`,
+      skipErrorHandling: true,
+    }),
+  getCloseoutWithdrawalCheck: (batchId: string, options: ReadRequestOptions = {}) =>
+    request<BatchCloseoutWithdrawalCheck>({
+      ...options,
+      url: `/production/batches/${batchId}/closeout/withdraw-check`,
+    }),
+  withdrawBatchCloseout: (
+    batchId: string,
+    data: WithdrawBatchCloseoutPayload,
+    idempotencyKey: string,
+  ) =>
+    request<WithdrawBatchCloseoutResult>({
+      url: `/production/batches/${batchId}/closeout/withdraw`,
+      method: 'POST',
+      data,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      retryIdempotentWrite: true,
+      retryTimes: 2,
       skipErrorHandling: true,
     }),
   submitDemandCorrection: (
@@ -535,25 +557,6 @@ export const productionApi = {
       url: `/production/material-demands/${demandId}/available-item-batches`,
     }),
 
-  getShortBatchAuthorizationPreview: (batchId: string) =>
-    request<ShortBatchAuthorizationPreview>({
-      url: `/production/batches/${batchId}/short-batch-authorization-preview`,
-    }),
-
-  authorizeShortBatch: (batchId: string, data: AuthorizeShortBatchPayload) =>
-    request<ShortBatchAuthorizationResult>({
-      url: `/production/batches/${batchId}/actions/authorize-short-batch`,
-      method: 'POST',
-      data,
-    }),
-
-  closeRemainingMaterialDemands: (batchId: string, data: { version: number; reason: string }) =>
-    request<CloseRemainingMaterialDemandsResult>({
-      url: `/production/batches/${batchId}/actions/close-remaining-material-demands`,
-      method: 'POST',
-      data,
-    }),
-
   createMaterialAllocations: (
     batchId: string,
     data: CreateMaterialAllocationsPayload,
@@ -575,19 +578,30 @@ export const productionApi = {
       data: { version },
     }),
 
-  createMaterialOutbound: (
+  createMaterialOutbound: async (
     batchId: string,
     data: CreateMaterialOutboundPayload,
     idempotencyKey: string,
-  ) =>
-    request<MaterialOutboundCommandResult>({
+  ) => {
+    const result = await request<MaterialOutboundCommandResult>({
       url: `/production/batches/${batchId}/material-outbounds`,
       method: 'POST',
       data,
       headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
       retryIdempotentWrite: true,
       retryTimes: 2,
-    }),
+    });
+    if (
+      !result?.outbound ||
+      result.outbound.productionBatchId !== batchId ||
+      !/^[1-9]\d*$/.test(result.outbound.outboundId) ||
+      result.outbound.status !== 'pending_picking' ||
+      !Array.isArray(result.outbound.details) ||
+      result.outbound.details.length !== data.details.length
+    )
+      throw new RequestError('服务器未返回完整的制单结果，请重试原操作以核对结果。', 502);
+    return result;
+  },
 
   listMaterialOutbounds: (batchId: string) =>
     request<MaterialOutboundItem[]>({ url: `/production/batches/${batchId}/material-outbounds` }),
@@ -784,11 +798,40 @@ export const productionApi = {
       url: `/production/batches/${batchId}/execution-completion-check`,
     }),
 
-  completeProductionExecution: (batchId: string, version: number) =>
+  getExecutionStartCheck: (batchId: string, options: ReadRequestOptions = {}) =>
+    request<ProductionExecutionStartCheck>({
+      ...options,
+      url: `/production/batches/${batchId}/execution-start-check`,
+    }),
+
+  startProductionExecution: (
+    batchId: string,
+    data: StartProductionExecutionPayload,
+    idempotencyKey: string,
+  ) =>
+    request<ProductionExecutionStartResult>({
+      url: `/production/batches/${batchId}/actions/start-execution`,
+      method: 'POST',
+      data,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      retryIdempotentWrite: true,
+      retryTimes: 2,
+      skipErrorHandling: true,
+    }),
+
+  completeProductionExecution: (
+    batchId: string,
+    data: CompleteProductionExecutionPayload,
+    idempotencyKey: string,
+  ) =>
     request<ProductionExecutionCompletionResult>({
       url: `/production/batches/${batchId}/actions/complete-execution`,
       method: 'POST',
-      data: { version },
+      data,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+      retryIdempotentWrite: true,
+      retryTimes: 2,
+      skipErrorHandling: true,
     }),
 
   createStepReport: (

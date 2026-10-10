@@ -16,7 +16,7 @@ import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { writeTransactionalAudit } from '../../../common/audit/transactional-audit-writer.js';
 import { toDateOnlyString } from '../../../common/time/date-time.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
-import { MaterialVariantQuery, type ProductionProductSnapshot } from '../../product/public.js';
+import type { ProductionProductSnapshot } from '../../product/public.js';
 import { requireWorkOrderTransition } from '../domain/production-status.policy.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
 import { fixedIntegerQuantity, integerQuantity } from '../domain/integer-quantity.js';
@@ -72,10 +72,7 @@ const requirePlanDates = (
 
 @Injectable()
 export class MysqlWorkOrderRepository {
-  constructor(
-    @Inject(DATABASE_POOL) private readonly pool: Pool,
-    private readonly variants: MaterialVariantQuery,
-  ) {}
+  constructor(@Inject(DATABASE_POOL) private readonly pool: Pool) {}
 
   async list(query: WorkOrderQuery): Promise<PageResult<WorkOrderItem>> {
     const page = query.page ?? 1;
@@ -502,7 +499,7 @@ export class MysqlWorkOrderRepository {
     );
     return {
       ...mapWorkOrder(order),
-      batches: await mapBatches(db, batches, this.variants),
+      batches: mapBatches(batches),
       ...(await readResearchOrderRelations(db, order)),
     };
   }

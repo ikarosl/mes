@@ -9,7 +9,7 @@
 | 要修改的内容 | 当前规则入口 |
 | --- | --- |
 | 工单、任务、批量锁版、研发轮次 | [工单与任务](docs/database/work-orders-and-batches.md) |
-| 提需、分配、短批、领料、需求更正 | [需求与履约](docs/database/demand-allocation-and-outbound.md) |
+| 提需、分配、分次领料、需求更正 | [需求与履约](docs/database/demand-allocation-and-outbound.md) |
 | 派工、SOP、报工、异常、返工、补产 | [生产执行](docs/database/execution-traceability-quality.md) |
 | 退料、已领物料损耗 | [退料与损耗](docs/database/return-scrap-and-stocktake.md) |
 | 收尾、物料实核、产出清单及审批 | [任务结案](docs/database/production-termination.md) |
@@ -19,7 +19,7 @@
 
 - 批量任务在完整确认初始 BOM 需求时独立冻结版本与供应商提示，同任务同物料保持一个版本。研发无 BOM、路线及工序，首次与后续均手工提需。
 - 需求只以 `production_item_demand`、库存只以 `inventory_transaction` 为事实来源。需求身份、原量和已执行物流不覆盖；分配是预留，确认领料才履约并扣库存。
-- 确认出库的需求余额、物流、任务状态、短批授权、补料齐套及库存变化原子提交，不能拆为多次提交。
+- 确认出库的需求余额、物流、任务状态、补料履约及库存变化原子提交，不能拆为多次提交；有效分配可分次领料。
 - 批量工序明确派工、开始、完成／重开；工序数量使用统一上限，相邻数量差异只提示，执行中可改派当前办理人。状态历史只读，不开放历史状态更正或撤销误开工；进入结案后员工只读，普通正常报工历史纠错仅管理员可办，在审双方冻结。正常更正、异常驳回及返工整单拆分规则见[生产执行](docs/database/execution-traceability-quality.md#cp-01-报工整改边界)。研发按任务级开始和结束；执行结束不等于结案批准或库存入库。
 - 执行记录及员工报工弹窗的额度分布使用同口径只读快照，员工分类只读取当前页本人工序，报废明细独立分页追溯；分类可靠性与当前归属读取边界见[生产执行](docs/database/execution-traceability-quality.md#执行记录额度分布已确认)，展示投影不改变写入资格或库存事实。
 
@@ -47,7 +47,7 @@ Production 公开当前需求资格和历史来源，采购量不分摊、不回
 
 ### 退料、损耗与需求的职责边界
 
-退料回原批次的公共可用库存，不恢复需求履约或改变计划、短批与执行状态。损耗占用可退额度，不自动补料或再次扣库存；额外用料独立提需。各用例允许写入见[职责表](docs/database/return-scrap-and-stocktake.md#业务语义与写入职责)。
+退料回原批次的公共可用库存，不恢复需求履约或改变计划与执行状态。损耗占用可退额度，不自动补料或再次扣库存；额外用料独立提需。各用例允许写入见[职责表](docs/database/return-scrap-and-stocktake.md#业务语义与写入职责)。
 
 ### 退料去向与追溯来源
 

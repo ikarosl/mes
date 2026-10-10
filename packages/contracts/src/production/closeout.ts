@@ -5,7 +5,8 @@ import type {
   BatchTerminationImpact,
   ProductionReportedNormalComparison,
 } from './termination.js';
-import type { DemandBusinessStatus, DemandType } from './statuses.js';
+import type { DemandBusinessStatus, DemandType, ProductionBatchStatus } from './statuses.js';
+import type { ProductionTaskCloseoutActionType } from './execution-actions.js';
 
 /** 收尾操作页的当前投影，不回写原需求或已经固化的审批证据。 */
 export interface BatchCloseoutDemand {
@@ -36,9 +37,14 @@ export interface BatchCloseoutMaterialReview {
 }
 
 export type BatchCloseoutItemKind = BatchTerminationImpact['kind'] | 'material';
+/** 历史任务行动不属于逐项收尾命令的可操作事项。 */
+export type BatchCloseoutActionKind = BatchCloseoutItemKind | 'task';
 export interface BatchCloseoutAction {
   id: string;
-  kind: BatchCloseoutItemKind;
+  kind: BatchCloseoutActionKind;
+  actionType: ProductionTaskCloseoutActionType | null;
+  /** 撤回所关联的进入行动；进入行动本身以 id 为身份。 */
+  entryActionId: string | null;
   targetId: string;
   label: string;
   previousStatus: string;
@@ -65,6 +71,9 @@ export interface BatchCloseoutDetail {
   actions: BatchCloseoutAction[];
   check: BatchTerminationCheck;
   canHandle: boolean;
+  canWithdraw: boolean;
+  withdrawBlockedReason: string | null;
+  withdrawRestoredStatus: ProductionBatchStatus | null;
   blockers: string[];
 }
 /** 送审时从已锁定工单读取，与审批节点解析人员使用同一份事实。 */
@@ -94,6 +103,7 @@ export interface BatchCloseoutApprovalDisplaySnapshot extends BatchCloseoutAppro
 }
 export interface BeginBatchCloseoutPayload {
   version: number;
+  closeoutVersion: number | null;
   reason: string;
 }
 export interface HandleBatchCloseoutItemPayload {
@@ -107,6 +117,31 @@ export interface HandleBatchCloseoutItemPayload {
 export interface BatchCloseoutCommandResult {
   closeoutId: string;
   batchId: string;
+}
+
+export interface BatchCloseoutWithdrawalCheck {
+  batchId: string;
+  batchStatus: ProductionBatchStatus;
+  version: number;
+  closeoutId: string | null;
+  closeoutVersion: number | null;
+  restoreStatus: ProductionBatchStatus | null;
+  canWithdraw: boolean;
+  blockedReason: string | null;
+}
+
+export interface WithdrawBatchCloseoutPayload {
+  version: number;
+  closeoutVersion: number;
+  reason: string;
+}
+
+export interface WithdrawBatchCloseoutResult extends BatchCloseoutCommandResult {
+  batchStatus: ProductionBatchStatus;
+  version: number;
+  closeoutVersion: number;
+  entryActionId: string;
+  withdrawalActionId: string;
 }
 
 export interface RecordCloseoutMaterialLossPayload {

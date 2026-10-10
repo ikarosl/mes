@@ -1,5 +1,9 @@
 import type { PoolConnection, RowDataPacket } from 'mysql2/promise';
-import type { ProductionOutputRoundStatus, ProductionOutputRoundTrigger } from '@company/contracts';
+import type {
+  ProductionBatchStatus,
+  ProductionOutputRoundStatus,
+  ProductionOutputRoundTrigger,
+} from '@company/contracts';
 import type { InventoryInboundCommand } from '../../inventory/public.js';
 import type { QualityFinishedInspectionQuery } from '../../quality/public.js';
 import {
@@ -11,6 +15,7 @@ import { readProductionOutputReceipts } from './mysql-production-output-receipts
 
 type PreviewRow = RowDataPacket & {
   id: number;
+  batch_status: ProductionBatchStatus;
   available_quantity: string | null;
   extra_quantity: string | null;
   correction_reason: string | null;
@@ -28,10 +33,11 @@ export async function readOutputReinspectionPreview(
   quality: QualityFinishedInspectionQuery,
 ): Promise<OutputReinspectionPreview | null> {
   const [[row]] = await db.query<PreviewRow[]>(
-    `SELECT c.id,c.available_quantity,c.extra_quantity,c.correction_reason,
+    `SELECT c.id,b.status batch_status,c.available_quantity,c.extra_quantity,c.correction_reason,
       c.pending_approval_id,c.current_revision_id,
       round.status round_status,round.trigger_type round_trigger_type
-      FROM production_batch_closeout c LEFT JOIN production_output_round round
+      FROM production_batch_closeout c JOIN production_batches b ON b.id=c.production_batch_id
+      LEFT JOIN production_output_round round
         ON round.id=c.current_round_id AND round.closeout_id=c.id
       WHERE c.production_batch_id=?`,
     [batchId],
@@ -66,6 +72,7 @@ export async function readOutputReinspectionPreview(
   const hasInspection = await quality.hasForCloseout(String(row.id), batchId);
   const receipts = await readProductionOutputReceipts(db, inventory, batchId, false);
   return evaluateOutputReinspection({
+    batchStatus: row.batch_status,
     hasPendingApproval: row.pending_approval_id !== null,
     hasCorrection: row.correction_reason !== null,
     draft:

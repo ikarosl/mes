@@ -16,15 +16,15 @@
 
 | 所有者 | 可写职责 | 禁止混用 |
 | --- | --- | --- |
-| `ProductionReturnRepository` | 退料主单／明细和审计；同事务调用 Inventory 公开能力追加正流水 | 不创建/恢复/取消需求，不修改分配履约、批次状态、物料计划版本、短批授权，不调用需求计划 Writer |
+| `ProductionReturnRepository` | 退料主单／明细和审计；同事务调用 Inventory 公开能力追加正流水 | 不创建/恢复/取消需求，不修改分配履约、批次状态，不调用需求计划 Writer |
 | `ProductionMaterialLossRepository` | 现场损坏/丢失的损耗申报与确认，独立保存损坏事实 | 不把余料退回当损耗，不重复扣减仓库库存，不增加产品补产额度 |
 | `ProductionCloseoutMaterialLossRepository` | 初次结案中的已领物料损坏立即确认，不补料，永久占用可退上限 | 不扩展在产损耗确认、不写库存、不改需求或补产 |
 | 需求配置与需求计划 Writer | 明确的初始配置、人工追加、补料生成、剩余需求关闭及计划版本推进 | 不提供退料重开需求的接口，不通过净领用量反推需求 |
 | 物料分配与出库 Repository | 分配预留、确认出库扣库存和需求余额 | 退料不减少既有履约量，也不恢复原分配可制单量 |
-| 生产执行 Repository | 独立开工/完工校验 | 不因退料创建需求、产品补产额度或回退工序状态；短批授权及开工不读取退料 |
+| 生产执行 Repository | 独立开工/完工校验 | 不因退料创建需求、产品补产额度或回退工序状态；开工不按退料推算现场余额 |
 | 管理端与查询投影 | 展示来源、可退额度和明确操作提示 | 不将净领用量用作需求余额，不从损耗自动追加需求 |
 
-所有退料一律不修改 `production_item_demand.need_number/remaining_number/business_status/fulfilled_by/fulfilled_at`。短批未开工也没有例外：退料不推进 `material_plan_version`，不作废已有授权；短批授权预览、员工任务按钮和开工命令只检查已发生确认领料及有效授权覆盖当前需求，不读取退料、不按净领用量判断。即使全部退回也不因此阻止短批开工。原有活动需求继续由领料履约或显式关闭管理动作处理。
+所有退料不修改 `production_item_demand.need_number/remaining_number/business_status/fulfilled_by/fulfilled_at`，不改变任务开工资格。开工只展示正式需求缺口，不按净领用量推算现场余额。原活动需求继续由领料履约或显式关闭管理动作处理。
 
 ## 3.7 退料表
 
@@ -192,7 +192,7 @@
 - `production_consumed` 创建与确认时只允许选择状态为 `material_partially_outbound/material_outbound/doing` 的生产批次及其已确认领料分配行；部分出库后尚未开工时，现场暂存或搬运中的已领物料也可能发生损耗。物料、库存批次、需求、单位和生产批次都从服务端候选复制，不接受客户端自由拼接 ID 或单位。
 - 同一分配行当前可申报损耗量为“累计确认出库量 - `pending/returned` 退料占用量 - `pending/confirmed` 的 `production_consumed` 损耗占用量”；创建和确认事务都必须重新锁定来源分配行并校验，损耗数量必须大于 `0` 且不得超过该上限。取消待确认损耗必须填写原因并释放占用。
 - 在产 `production_record` 创建后为 `pending`；管理员确认只把本单变为 `confirmed`。结案登记由独立命令直接形成确认事实。两种用途均不产生补料单或需求。
-- 损耗确认与成功审计、HTTP 幂等结果同事务提交，不推进物料计划版本或改变产品数量授权。已确认损耗不得改量或取消，错误修正须独立冲销设计。
+- 损耗确认与成功审计、HTTP 幂等结果同事务提交，不推进任务版本或改变产品数量授权。已确认损耗不得改量或取消，错误修正须独立冲销设计。
 - 损耗不自动补料；历史自动补料数据不得推测转换。升级及回退的空数据／审批证据守卫见[迁移安全](../../../../../../../packages/database/docs/migration-safety.md)。
 - 通用库存报废仍未进入当前正式范围。`warehouse_allocated/return_after_outbound/in_stock` 的命令、接口和页面操作继续禁用，不得因实现生产领料损耗而一并开放。
 

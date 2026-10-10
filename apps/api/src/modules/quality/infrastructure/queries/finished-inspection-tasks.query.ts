@@ -7,6 +7,7 @@ import type {
   PageResult,
   ProductionOutputQuantities,
   ProductionOutputReleaseDecision,
+  ProductionBatchStatus,
 } from '@company/contracts';
 import { toBeijingISOString } from '../../../../common/time/date-time.js';
 type Db = Pool | PoolConnection;
@@ -38,13 +39,15 @@ type TaskRow = RowDataPacket & {
   available_quantity: string | null;
   extra_quantity: string | null;
   additional_scrap_quantity: string | null;
-  status: string;
+  status: ProductionBatchStatus;
 };
 const SELECT = `SELECT b.id batch_id,b.batch_no,b.work_order_id,w.work_order_no,w.product_code_snapshot,w.product_name_snapshot,b.planned_quantity,b.status,c.version,c.current_round_id,round.status current_round_status,round.round_no current_round_no,round.trigger_type current_round_trigger_type,round.reason current_round_reason,round.baseline_planned_received,round.baseline_extra_received,round.starting_declared_remaining,c.pending_approval_id,c.current_revision_id,c.correction_reason,c.available_quantity,c.extra_quantity,c.additional_scrap_quantity,i.id latest_id,i.release_decision,i.inspected_at,current_inspection.id current_inspection_id,current_inspection.release_decision current_release_decision FROM production_batch_closeout c LEFT JOIN production_output_round round ON round.id=c.current_round_id JOIN production_batches b ON b.id=c.production_batch_id JOIN work_orders w ON w.id=b.work_order_id
  LEFT JOIN quality_inspection_record i ON i.id=(SELECT MAX(latest.id) FROM quality_inspection_record latest WHERE latest.closeout_id=c.id)
  LEFT JOIN quality_inspection_case current_case ON current_case.finished_round_id=round.id AND current_case.source_kind='finished'
  LEFT JOIN quality_inspection_record current_inspection ON current_inspection.case_id=current_case.id`;
-const PENDING = `c.available_quantity IS NOT NULL AND c.pending_approval_id IS NULL AND (
+const PENDING = `b.status IN ('closing','completed','terminated')
+ AND c.available_quantity IS NOT NULL AND c.pending_approval_id IS NULL
+ AND (c.current_revision_id IS NULL OR c.correction_reason IS NOT NULL) AND (
   round.status='inspecting' OR
   (round.status='pending_inspection' AND (round.trigger_type<>'finalization_correction' OR i.id IS NULL OR i.release_decision<>'released')) OR
   (round.status='pending_finalization' AND current_inspection.release_decision IN ('pending_reinspection','not_released'))
@@ -56,6 +59,8 @@ function nextWorkflow(
   stage: FinishedInspectionStage;
   nextAction: FinishedInspectionNextAction;
 } {
+  if (!['closing', 'completed', 'terminated'].includes(row.status))
+    return { stage: 'blocked', nextAction: 'view_history' };
   if (row.pending_approval_id !== null) return { stage: 'reviewing', nextAction: 'view_approval' };
   if (row.available_quantity === null) return { stage: 'awaiting_draft', nextAction: 'save_draft' };
   if (row.current_round_status === 'inspecting')
@@ -88,8 +93,9 @@ function nextWorkflow(
   };
 }
 function mapTask(row: TaskRow): FinishedInspectionTaskItem {
-  const reinspectionBlockedReason =
-    row.pending_approval_id !== null
+  const reinspectionBlockedReason = !['closing', 'completed', 'terminated'].includes(row.status)
+    ? '任务尚未进入结案阶段，不能办理成品复检'
+    : row.pending_approval_id !== null
       ? '清单正在审批中，请先撤回或驳回'
       : row.available_quantity === null
         ? '请先保存产出草稿'

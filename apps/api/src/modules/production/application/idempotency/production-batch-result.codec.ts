@@ -1,11 +1,17 @@
 import { z } from 'zod';
 import {
   BATCH_STEP_STATUSES,
+  DEMAND_TYPES,
+  DEMAND_BUSINESS_STATUSES,
   WORK_ORDER_TYPES,
   PRODUCTION_BATCH_STATUSES,
   PRODUCTION_CLOSEOUT_MODES,
 } from '@company/constants';
-import type { BatchStepRecordItem, ProductionBatchDetail } from '@company/contracts';
+import type {
+  BatchStepRecordItem,
+  ProductionBatchDetail,
+  ProductionExecutionStartMaterialSnapshot,
+} from '@company/contracts';
 import type {
   IdempotencyResultCodec,
   JsonValue,
@@ -13,7 +19,7 @@ import type {
 import { CREATE_BATCH_IDEMPOTENCY_SCOPE } from './production-idempotency-scopes.contract.js';
 
 /**
- * createBatch 幂等结果 codec（scope `production.batch.create.v10`）。
+ * createBatch 幂等结果 codec，scope 与当前请求及结果结构绑定。
  *
  * 每个已发布 scope 的请求指纹规则、成功结果结构和本 Zod schema 保持固定；
  * 后续不兼容变更必须升级 scope 和对应 codec；旧 scope 记录不得由新 schema 猜测解析，
@@ -25,6 +31,31 @@ import { CREATE_BATCH_IDEMPOTENCY_SCOPE } from './production-idempotency-scopes.
  *  - 重放记录结构损坏 → decode 抛错，executor 走 corrupt 路径（500 + 告警），绝不伪造 200 或重跑 handler。
  */
 const nullableString = z.string().nullable();
+
+export const productionExecutionStartMaterialSnapshotSchema: z.ZodType<ProductionExecutionStartMaterialSnapshot> =
+  z
+    .object({
+      hasInitialMaterialConfiguration: z.boolean(),
+      hasMaterialShortage: z.boolean(),
+      lines: z.array(
+        z
+          .object({
+            demandId: z.string(),
+            demandType: z.enum(DEMAND_TYPES),
+            businessStatus: z.enum(DEMAND_BUSINESS_STATUSES),
+            itemId: z.string(),
+            itemCode: z.string(),
+            materialVariantId: z.string(),
+            materialVariantCode: z.string(),
+            unit: z.string(),
+            demandQuantity: z.string(),
+            confirmedOutboundQuantity: z.string(),
+            remainingQuantity: z.string(),
+          })
+          .strict(),
+      ),
+    })
+    .strict();
 
 const batchStepRecordSchema: z.ZodType<BatchStepRecordItem> = z
   .object({
@@ -97,9 +128,13 @@ export const productionBatchDetailSchema: z.ZodType<ProductionBatchDetail> = z
     planStartDate: nullableString,
     planEndDate: nullableString,
     startedAt: nullableString,
+    startedById: nullableString,
+    startReason: nullableString,
+    startMaterialSnapshot: productionExecutionStartMaterialSnapshotSchema.nullable(),
 
     status: z.enum(PRODUCTION_BATCH_STATUSES),
     closeoutMode: z.enum(PRODUCTION_CLOSEOUT_MODES).nullable(),
+    closeoutVersion: z.number().int().nonnegative().nullable(),
     currentOutputRevisionId: nullableString,
     finalOutput: z
       .object({
@@ -112,16 +147,6 @@ export const productionBatchDetailSchema: z.ZodType<ProductionBatchDetail> = z
       .nullable(),
     executionCompletedAt: nullableString,
     executionCompletedBy: nullableString,
-    materialPlanVersion: z.number().int().positive(),
-    shortBatchAuthorizationStatus: z.enum(['none', 'valid', 'stale', 'consumed']),
-    shortBatchAuthorizationAction: z.enum([
-      'authorize',
-      'reauthorize',
-      'adjust',
-      'view',
-      'not_required',
-    ]),
-
     ownerId: nullableString,
     ownerName: nullableString,
     completedAt: nullableString,

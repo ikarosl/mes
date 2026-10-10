@@ -14,7 +14,6 @@ import {
 } from '../domain/production-route-quantity.policy.js';
 import { evaluateProductionStepActionAvailability } from '../domain/production-step-actions.policy.js';
 import { reportWriteEligibility } from '../domain/production-reporting.policy.js';
-import { selectShortBatchStartabilityByBatch } from './mysql-production-short-batch.js';
 import { selectRouteSupplementSources } from './mysql-production-supplement-activation.js';
 import { mapQuantityProjection, groupRowsBy } from './mysql-production-reporting.projection.js';
 import {
@@ -108,7 +107,6 @@ async function selectWorkerTaskPage(
   const batchIds = [...new Set(rows.map((row) => String(row.production_batch_id)))];
   if (!batchIds.length) return { items: [], total: Number(count?.total ?? 0), page, pageSize };
   const supplementsByBatch = await selectRouteSupplementSources(db, batchIds);
-  const shortBatchStartabilityByBatch = await selectShortBatchStartabilityByBatch(db, batchIds);
   const routeSteps = await selectProjectionStepsByBatchIds(db, batchIds);
   const stepsByBatch = groupRowsBy(routeSteps, (step) => String(step.production_batch_id));
   const quantitiesByStep = new Map<string, RouteStepQuantity>(),
@@ -140,7 +138,6 @@ async function selectWorkerTaskPage(
         row,
         quantitiesByStep.get(String(row.step_record_id))!,
         firstStepIds.has(String(row.step_record_id)),
-        shortBatchStartabilityByBatch.get(String(row.production_batch_id)) ?? false,
         actorId,
         quotaDistributions.get(String(row.step_record_id))!,
       ),
@@ -155,7 +152,6 @@ function mapWorkerTask(
   row: WorkerTaskRow,
   quantity: RouteStepQuantity,
   isFirst: boolean,
-  shortBatchStartAllowed: boolean,
   actorId: string,
   quotaDistribution: ProductionStepQuotaDistribution,
 ): ProductionWorkerTaskItem {
@@ -167,7 +163,6 @@ function mapWorkerTask(
     hasStarted: row.started_at !== null,
     hasResponsibleUser: true,
     isFirstStep: isFirst,
-    shortBatchStartAllowed,
     pendingApprovalId,
   });
   const reporting = reportWriteEligibility(

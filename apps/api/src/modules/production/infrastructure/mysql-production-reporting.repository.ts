@@ -27,7 +27,6 @@ import type {
 } from '@company/contracts';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
-import { MaterialVariantQuery } from '../../product/public.js';
 import { readProductionSnapshot } from './mysql-production-read-snapshot.js';
 import { selectStepScrapPage } from './mysql-production-scrap.read.js';
 import { ProductionReportingRepository } from '../application/ports/production-reporting.repository.js';
@@ -78,15 +77,12 @@ const MANAGE_EXECUTION_PERMISSION_LABEL =
 
 @Injectable()
 export class MysqlProductionReportingRepository extends ProductionReportingRepository {
-  constructor(
-    @Inject(DATABASE_POOL) private readonly pool: Pool,
-    private readonly variants: MaterialVariantQuery,
-  ) {
+  constructor(@Inject(DATABASE_POOL) private readonly pool: Pool) {
     super();
   }
 
   listExecutionBatches(query: ProductionBatchQuery) {
-    return selectExecutionBatchSummaries(this.pool, query, this.variants);
+    return selectExecutionBatchSummaries(this.pool, query);
   }
 
   getBatchExecution(

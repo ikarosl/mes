@@ -23,6 +23,10 @@ export type CloseoutRow = RowDataPacket & {
   review_snapshot: object | string | null;
   version: number;
 };
+export const CLOSEOUT_COLUMNS = `id,production_batch_id,closeout_mode,reason,output_reason,
+  available_quantity,extra_quantity,additional_scrap_quantity,material_review_note,
+  inspection_record_id,current_revision_id,current_round_id,correction_reason,
+  approval_instance_id,pending_approval_id,review_snapshot,version`;
 export const nullableOutputId = (value: number | string | null): string | null =>
   value === null ? null : String(value);
 export const outputJson = (value: object | string | null): unknown =>

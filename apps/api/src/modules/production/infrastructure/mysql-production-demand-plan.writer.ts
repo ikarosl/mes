@@ -40,8 +40,8 @@ type CreateDemandGroupParams = {
 /**
  * 生产需求计划的事务内唯一写入口。
  *
- * `production_item_demand` 是需求事实，`material_plan_version` 是批次级并发与短批授权令牌；
- * 任何新增、重开或取消需求都必须在调用者既有事务中同步推进令牌。
+ * `production_item_demand` 是需求事实；新增、关闭或取消需求与批次 `version`
+ * 在调用者既有事务中同步更新，继续使用批次乐观锁保护整组需求变更。
  */
 export class MysqlProductionDemandPlanWriter {
   async createDemandGroup(db: Db, params: CreateDemandGroupParams): Promise<string[]> {
@@ -91,7 +91,7 @@ export class MysqlProductionDemandPlanWriter {
     return demandIds;
   }
 
-  /** 关闭和新建属于同一需求计划变更；只推进一次批次/计划版本。 */
+  /** 关闭和新建属于同一需求变更；只推进一次批次版本。 */
   async applyCorrection(
     db: Db,
     params: CreateDemandGroupParams & {
@@ -119,7 +119,6 @@ export class MysqlProductionDemandPlanWriter {
     if (closed.affectedRows !== 1)
       throw new ProductionDomainError('CONCURRENT_MODIFICATION', '原需求在审状态已变化');
     const ids = await this.insertDemandGroup(db, params);
-    await this.supersedeActiveAuthorization(db, params.batchId);
     await this.advanceBatchPlan(db, params);
     return ids[0] ?? null;
   }
@@ -150,24 +149,7 @@ export class MysqlProductionDemandPlanWriter {
     );
     if (closed.affectedRows !== 1)
       throw new ProductionDomainError('INVALID_STATE', '需求不存在、已结束或正在审批');
-    await this.supersedeActiveAuthorization(db, params.batchId);
     await this.advanceBatchPlan(db, params);
-  }
-
-  async cancelRemainingDemands(
-    _db: Db,
-    _params: {
-      batchId: string | number;
-      actorId: string | null;
-      reason: string;
-      expectedBatchVersion: number;
-      cancelSource?: 'short_batch_remaining_close' | 'production_termination';
-    },
-  ): Promise<number> {
-    throw new ProductionDomainError(
-      'INVALID_STATE',
-      '批量取消剩余需求已停用，请逐项收尾或提交需求纠错审批',
-    );
   }
 
   async cancelBatchDemands(
@@ -192,10 +174,9 @@ export class MysqlProductionDemandPlanWriter {
        WHERE production_batch_id=? AND business_status='active'`,
       [params.reason, params.actorId, params.actorId, params.batchId],
     );
-    await this.supersedeActiveAuthorization(db, params.batchId);
     const [updated] = await db.execute<ResultSetHeader>(
       `UPDATE production_batches
-       SET status='cancelled',material_plan_version=material_plan_version+1,
+       SET status='cancelled',
            cancel_reason=?,cancelled_by=?,cancelled_at=NOW(),version=version+1,updated_by=?
        WHERE id=? AND status IN ('pending','material_pending','material_assigned') AND version=?`,
       [params.reason, params.actorId, params.actorId, params.batchId, params.expectedBatchVersion],
@@ -219,20 +200,11 @@ export class MysqlProductionDemandPlanWriter {
     const [updated] = await db.execute<ResultSetHeader>(
       `UPDATE production_batches
        SET ${params.transitionToMaterialPending ? "status='material_pending'," : ''}
-           material_plan_version=material_plan_version+1,version=version+1,updated_by=?
+           version=version+1,updated_by=?
        WHERE id=?${expectedVersionClause}`,
       values,
     );
     this.requireBatchUpdated(updated);
-  }
-
-  private async supersedeActiveAuthorization(db: Db, batchId: string | number): Promise<void> {
-    await db.execute(
-      `UPDATE production_short_batch_authorization
-       SET status='superseded',version=version+1
-       WHERE production_batch_id=? AND status='active'`,
-      [batchId],
-    );
   }
 
   private requireBatchUpdated(result: ResultSetHeader): void {

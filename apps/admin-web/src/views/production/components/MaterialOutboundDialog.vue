@@ -3,20 +3,23 @@
     :model-value="visible"
     title="生产领料出库"
     :width="DialogWidth.xl"
+    :close-on-click-modal="false"
+    :show-close="!submitting"
+    :close-on-press-escape="!submitting"
     @update:model-value="$emit('update:visible', $event)"
   >
     <div class="dialog-body">
       <el-alert
-        title="创建后进入待出库状态，不会立即扣减库存；请打印单据完成拣货、领料和签字，再到出库管理中整单确认。"
+        title="有效需求可按当前分配分次领料。创建后进入待出库状态，不会立即扣减库存；请打印单据完成拣货、领料和签字，再到出库管理中整单确认。"
         type="info"
         :closable="false"
       />
       <el-alert
-        v-if="shortBatch"
-        class="short-batch-alert"
-        title="当前任务已有短批或部分领料记录。仍有分配缺口时需要当前需求版本的短批授权；全部活动需求分配完成后可按普通齐套方式继续领料。"
+        v-if="intentStatus !== 'idle'"
+        class="outbound-groups"
         type="warning"
         :closable="false"
+        title="上次制单结果尚未确认，原明细与数量已保留；请重试原操作或先核对出库单列表。"
       />
       <div class="outbound-groups">
         <section
@@ -35,6 +38,7 @@
             <el-table-column
               type="selection"
               width="50"
+              :selectable="() => !controlsLocked"
             />
             <el-table-column
               prop="itemName"
@@ -92,6 +96,7 @@
                   :max="Number(row.availableToOrderQuantity)"
                   :step="1"
                   :precision="0"
+                  :disabled="controlsLocked"
                 />
               </template>
             </el-table-column>
@@ -103,6 +108,7 @@
         class="remark"
         type="textarea"
         :rows="2"
+        :disabled="controlsLocked"
         maxlength="5000"
         placeholder="出库备注（可选）"
       />
@@ -150,9 +156,9 @@
       ><el-button
         type="primary"
         :loading="submitting"
-        :disabled="!canSubmit"
+        :disabled="submitting || !canSubmit"
         @click="submit"
-        >创建待出库单</el-button
+        >{{ intentStatus === 'pending' ? '重试原制单' : '创建待出库单' }}</el-button
       ></template
     >
   </el-dialog>
@@ -170,6 +176,7 @@ import { formatDateTimeForDisplay } from '../../../utils/date';
 import { formatQuantity } from '../production-status';
 import { OUTBOUND_ORDER_STATUS_LABELS } from '@company/constants';
 import { groupMaterialDemandRows } from '../material-demand-group-presentation';
+import type { IdempotentIntentStatus } from '../../../composables/idempotency/useIdempotentIntent';
 type OutboundAllocation = ProductionMaterialAllocationItem & {
   itemName: string;
   generationGroupKey: string;
@@ -182,7 +189,8 @@ const props = defineProps<{
   outbounds: MaterialOutboundItem[];
   loadingOutbounds: boolean;
   submitting: boolean;
-  shortBatch?: boolean;
+  loadingDemands: boolean;
+  intentStatus: IdempotentIntentStatus;
 }>();
 const emit = defineEmits<{
   (e: 'update:visible', value: boolean): void;
@@ -197,6 +205,8 @@ const emit = defineEmits<{
 const selectedByGroup = reactive<Record<string, OutboundAllocation[]>>({});
 const quantities = reactive<Record<string, number>>({});
 const remark = ref('');
+const controlsLocked = computed(() => props.submitting || props.intentStatus !== 'idle');
+const chosenAllocations = computed(() => Object.values(selectedByGroup).flat());
 const availableAllocations = computed<OutboundAllocation[]>(() =>
   props.demands
     .filter((d) => d.businessStatus === 'active')
@@ -213,17 +223,23 @@ const availableAllocations = computed<OutboundAllocation[]>(() =>
     ),
 );
 const selection = computed(() => {
-  const currentIds = new Set(availableAllocations.value.map((row) => row.allocationId));
-  return Object.values(selectedByGroup)
-    .flat()
-    .filter((row) => currentIds.has(row.allocationId));
+  if (controlsLocked.value) return chosenAllocations.value;
+  const currentRows = new Map(availableAllocations.value.map((row) => [row.allocationId, row]));
+  return chosenAllocations.value.flatMap((row) => currentRows.get(row.allocationId) ?? []);
 });
-const allocationGroups = computed(() => groupMaterialDemandRows(availableAllocations.value));
+const allocationGroups = computed(() =>
+  groupMaterialDemandRows(
+    controlsLocked.value ? chosenAllocations.value : availableAllocations.value,
+  ),
+);
 const selectedGroupCount = computed(
   () => new Set(selection.value.map((row) => row.generationGroupKey)).size,
 );
 const canSubmit = computed(
   () =>
+    !props.loadingDemands &&
+    !props.loadingOutbounds &&
+    (props.intentStatus === 'pending' || props.intentStatus === 'idle') &&
     selection.value.length > 0 &&
     selection.value.every((row) => {
       const quantity = quantities[row.allocationId];
@@ -234,6 +250,10 @@ const canSubmit = computed(
       );
     }),
 );
+watch(availableAllocations, (rows) => {
+  if (controlsLocked.value) return;
+  for (const row of rows) quantities[row.allocationId] ??= Number(row.availableToOrderQuantity);
+});
 watch(
   () => props.visible,
   (visible) => {
@@ -245,12 +265,14 @@ watch(
   },
 );
 const handleGroupSelection = (generationGroupKey: string, rows: OutboundAllocation[]): void => {
+  if (controlsLocked.value) return;
   selectedByGroup[generationGroupKey] = rows;
 };
 const clearSelections = (): void => {
   for (const key of Object.keys(selectedByGroup)) delete selectedByGroup[key];
 };
-const submit = () =>
+const submit = () => {
+  if (!canSubmit.value || props.submitting) return;
   emit('submit', {
     details: selection.value.map((row) => ({
       allocationId: row.allocationId,
@@ -258,6 +280,7 @@ const submit = () =>
     })),
     remark: remark.value.trim() || null,
   });
+};
 const statusLabel = (status: MaterialOutboundItem['status']) =>
   OUTBOUND_ORDER_STATUS_LABELS[status];
 </script>
@@ -277,9 +300,6 @@ const statusLabel = (status: MaterialOutboundItem['status']) =>
 .group-header span {
   color: var(--el-text-color-secondary);
   font-size: 12px;
-}
-.short-batch-alert {
-  margin-top: 12px;
 }
 .remark {
   margin: 16px 0;

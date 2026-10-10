@@ -6,8 +6,6 @@ import type {
   DemandGenerationGroupType,
   DemandBusinessStatus,
   MaterialDemandProgressStatus,
-  ShortBatchAuthorizationAction,
-  ShortBatchAuthorizationCoverage,
   AllocationStatus,
   InventorySourceType,
 } from './statuses.js';
@@ -89,63 +87,6 @@ export interface ProductionMaterialDemandItem extends DemandGenerationSource {
   demandProgressStatus: MaterialDemandProgressStatus;
   version: number;
   allocations: ProductionMaterialAllocationItem[];
-}
-
-export type ShortBatchAuthorizationStatus = 'none' | 'valid' | 'stale' | 'consumed';
-
-export interface ShortBatchAuthorizationPreviewLine extends DemandGenerationSource {
-  pendingCorrectionId?: string | null;
-  demandId: string;
-  itemId: string;
-  materialVariantId: string;
-  materialVariantCode: string;
-  itemCode: string;
-  itemName: string;
-  unit: string;
-  demandQuantity: string;
-  confirmedOutboundQuantity: string;
-  expectedOutboundQuantity: string;
-  authorizedRemainingQuantity: string;
-  /** 既有有效或失效授权的允许缺口；从未授权时为空。 */
-  existingAuthorizedRemainingQuantity: string | null;
-}
-
-export interface ShortBatchAuthorizationPreview {
-  productionBatchId: string;
-  batchStatus: ProductionBatchStatus;
-  batchVersion: number;
-  materialPlanVersion: number;
-  authorizationStatus: ShortBatchAuthorizationStatus;
-  authorizationAction: ShortBatchAuthorizationAction;
-  authorizationCoverage: ShortBatchAuthorizationCoverage;
-  blockedReason: string | null;
-  lines: ShortBatchAuthorizationPreviewLine[];
-}
-
-export interface AuthorizeShortBatchPayload extends VersionedCommand {
-  reason: string;
-}
-
-export interface ShortBatchAuthorizationResult {
-  authorizationId: string;
-  productionBatchId: string;
-  batchStatus: ProductionBatchStatus;
-  batchVersion: number;
-  materialPlanVersion: number;
-  status: 'active';
-  reason: string;
-  authorizedById: string;
-  authorizedAt: string;
-  lines: ShortBatchAuthorizationPreviewLine[];
-}
-
-export interface CloseRemainingMaterialDemandsResult {
-  productionBatchId: string;
-  batchStatus: ProductionBatchStatus;
-  batchVersion: number;
-  materialPlanVersion: number;
-  cancelledDemandCount: number;
-  releasedAllocationCount: number;
 }
 
 export interface AvailableItemBatchItem {

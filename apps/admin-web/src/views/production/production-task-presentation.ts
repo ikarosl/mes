@@ -74,15 +74,13 @@ export const taskNextActionPresentation = (batch: {
   if (batch.status === 'cancelled') return { label: '任务已取消', tone: 'muted' };
   if (batch.orderType === 'research' && batch.status === 'doing')
     return { label: '研发中 / 本轮结束后核对产出', tone: 'primary' };
-  if (batch.orderType === 'research' && batch.status === 'material_outbound')
-    return { label: '可开始研发', tone: 'primary' };
   if (batch.status === 'material_partially_outbound')
-    return { label: '短批已部分领料', tone: 'warning' };
+    return { label: '已部分领料，可继续办理', tone: 'warning' };
   if (
     batch.hasActiveMaterialOutbound ||
     !['pending', 'material_pending', 'material_assigned'].includes(batch.status)
   ) {
-    return { label: '物料操作已完成', tone: 'success' };
+    return { label: '可继续办理物料与生产', tone: 'success' };
   }
   if (batch.status === 'pending') return { label: '待配置物料需求', tone: 'warning' };
   if (batch.status === 'material_pending') return { label: '待完成物料分配', tone: 'warning' };

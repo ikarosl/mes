@@ -22,6 +22,10 @@ export const useMaterialOutboundOrders = () => {
   const candidateLoading = ref(false);
   const pendingKeys = ref(new Set<string>());
   const createIntent = useIdempotentIntent();
+  let createRequest: {
+    batchId: string;
+    payload: ReturnType<typeof normalizeMaterialOutboundPayload>;
+  } | null = null;
   const confirmIntents = new Map<string, ReturnType<typeof useIdempotentIntent>>();
   let listRequest = 0;
   let detailRequest = 0;
@@ -78,17 +82,29 @@ export const useMaterialOutboundOrders = () => {
     batchId: string,
     payload: CreateMaterialOutboundPayload,
   ): Promise<MaterialOutboundItem> => {
-    const normalized = normalizeMaterialOutboundPayload(payload);
-    const result = await createIntent.execute(
-      {
-        intentType: 'production.material-outbound.create',
-        params: { batchId },
-        query: {},
-        body: normalized,
-      },
-      (key) => productionApi.createMaterialOutbound(batchId, normalized, key),
-    );
-    return result.outbound;
+    createRequest ??= { batchId, payload: normalizeMaterialOutboundPayload(payload) };
+    const command = createRequest;
+    if (command.batchId !== batchId) throw new Error('请先核对原任务的制单结果，再切换任务');
+    try {
+      const result = await createIntent.execute(
+        {
+          intentType: 'production.material-outbound.create',
+          params: { batchId: command.batchId },
+          query: {},
+          body: command.payload,
+        },
+        (key) => productionApi.createMaterialOutbound(command.batchId, command.payload, key),
+      );
+      createRequest = null;
+      return result.outbound;
+    } catch (error) {
+      if (createIntent.getStatus() === 'idle') createRequest = null;
+      throw error;
+    }
+  };
+  const resetCreateIntent = (): void => {
+    createIntent.reset();
+    createRequest = null;
   };
 
   const confirm = async (row: MaterialOutboundItem): Promise<MaterialOutboundItem> => {
@@ -149,7 +165,7 @@ export const useMaterialOutboundOrders = () => {
     candidateLoading,
     pendingKeys,
     getCreateIntentStatus: createIntent.getStatus,
-    resetCreateIntent: createIntent.reset,
+    resetCreateIntent,
     load,
     loadDetail,
     loadBatchOptions,

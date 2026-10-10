@@ -21,7 +21,6 @@ import {
   selectStepQuotaFacts,
 } from './mysql-production-quota.read.js';
 import { selectRouteSupplementSources } from './mysql-production-supplement-activation.js';
-import { selectShortBatchStartabilityByBatch } from './mysql-production-short-batch.js';
 import {
   groupRowsBy,
   mapExecutionStep,
@@ -67,8 +66,6 @@ export async function selectBatchExecutionRecords(
   );
   const byStep = groupRowsBy(dispositions, (row) => row.stepRecordId);
   const quotaDistributions = calculateStepQuotaDistributions(steps, quantities, quotaFacts);
-  const shortBatchStartAllowed =
-    (await selectShortBatchStartabilityByBatch(db, [batchId])).get(batchId) ?? false;
   const batchReverseBlockedReason = !access.canManageExecution
     ? `批量冲销需要「${MANAGE_EXECUTION_PERMISSION_LABEL}」权限`
     : pendingApprovalId !== null
@@ -95,7 +92,6 @@ export async function selectBatchExecutionRecords(
         hasStarted: step.started_at !== null,
         hasResponsibleUser: step.responsible_user_id !== null,
         isFirstStep: index === 0,
-        shortBatchStartAllowed,
         pendingApprovalId,
       });
       if (!access.canManageExecution) {

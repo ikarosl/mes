@@ -190,7 +190,9 @@ export function requireReportingWrite(
   );
   const reason =
     phase === 'history'
-      ? eligibility.historicalCorrectionBlockedReason
+      ? intent === 'create'
+        ? eligibility.historicalCreateBlockedReason
+        : eligibility.historicalCorrectionBlockedReason
       : intent === 'create'
         ? eligibility.reportBlockedReason
         : eligibility.correctionBlockedReason;

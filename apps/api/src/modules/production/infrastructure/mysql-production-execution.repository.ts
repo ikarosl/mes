@@ -6,9 +6,10 @@ import type {
   ProductionExecutionCompletionCheck,
   ProductionExecutionCompletionResult,
   ProductionStepCommandResult,
-  ProductionCloseoutMode,
-  WorkOrderStatus,
-  ResearchExecutionStartResult,
+  ProductionExecutionStartCheck,
+  ProductionExecutionStartResult,
+  StartProductionExecutionPayload,
+  CompleteProductionExecutionPayload,
   ReopenProductionStepPayload,
   PageResult,
   ProductionStepExecutionHistoryItem,
@@ -22,8 +23,7 @@ import { ProductionExecutionRepository } from '../application/ports/production-e
 import {
   requireAssignableStep,
   requireAssignedStep,
-  requireFirstStepStartable,
-  requireFollowingStepStartable,
+  requireTaskExecutingForStepStart,
   requireReassignableStep,
 } from '../domain/production-execution.policy.js';
 import {
@@ -48,9 +48,10 @@ import type { BatchRow, Db } from './mysql-production.shared.js';
 import { selectWorkerTasks } from './mysql-production-worker-task.projection.js';
 import { selectProductionStepSopSnapshot } from './mysql-production-step-sop.projection.js';
 import {
-  evaluateShortBatchStart,
-  getConfirmedMaterialOutboundQuantity,
-} from './mysql-production-short-batch.js';
+  readProductionExecutionStartCheck,
+  startMaterialSnapshotOf,
+} from './mysql-production-execution-start.js';
+import { enterTaskCloseout } from './mysql-production-closeout-task-actions.js';
 import { lockWorkOrderForBatch } from './mysql-work-order-material-version.js';
 import { executeStepStateCommand } from './mysql-production-step-state.commands.js';
 
@@ -69,87 +70,81 @@ export class MysqlProductionExecutionRepository extends ProductionExecutionRepos
   ) {
     super();
   }
-  async startResearchExecution(
+  getStartCheck(batchId: string): Promise<ProductionExecutionStartCheck> {
+    return withTransaction(this.pool, async (connection) =>
+      readProductionExecutionStartCheck(connection, await findBatch(connection, batchId)),
+    );
+  }
+
+  async startExecution(
     batchId: string,
-    version: number,
+    payload: StartProductionExecutionPayload,
     context: CommandContext,
-  ): Promise<ResearchExecutionStartResult> {
+  ): Promise<ProductionExecutionStartResult> {
     return withTransaction(this.pool, async (connection) => {
-      if (!context.actorId) throw new ProductionDomainError('INVALID_INPUT', '缺少当前操作人身份');
+      const actorId = context.actorId;
+      if (!actorId) throw new ProductionDomainError('INVALID_INPUT', '缺少当前操作人身份');
       const policy = await lockWorkOrderForBatch(connection, batchId);
-      if (policy.orderType !== 'research')
-        throw new ProductionDomainError('INVALID_STATE', '该开始入口仅适用于研发任务');
       const batch = await findBatch(connection, batchId, true);
-      if (batch.version !== version)
+      if (batch.version !== payload.version)
         throw new ProductionDomainError('CONCURRENT_MODIFICATION', '任务已变化，请刷新后重试');
-      const [[order]] = await connection.query<(RowDataPacket & { status: WorkOrderStatus })[]>(
-        'SELECT status FROM work_orders WHERE id=? FOR UPDATE',
-        [policy.workOrderId],
-      );
-      if (!order || !['released', 'doing'].includes(order.status))
-        throw new ProductionDomainError('INVALID_STATE', '当前工单状态不允许开始研发');
-      const shortStart =
-        batch.status === 'material_partially_outbound'
-          ? await evaluateShortBatchStart(connection, batchId, batch.material_plan_version, true)
-          : null;
-      if (batch.status !== 'material_outbound' && !shortStart?.canStart)
+      const check = await readProductionExecutionStartCheck(connection, batch, true);
+      if (!check.canStart)
         throw new ProductionDomainError(
           'INVALID_STATE',
-          shortStart?.blockedReason ?? '研发须完成领料，或取得当前物料计划的有效短批授权后开始',
+          check.blockedReason ?? '当前任务不允许开工',
         );
-      if (
-        batch.status === 'material_outbound' &&
-        (await getConfirmedMaterialOutboundQuantity(connection, batchId, true)) <= 0
-      )
-        throw new ProductionDomainError('INVALID_STATE', '研发开工前必须已发生确认领料');
-      if (
-        batch.status === 'material_outbound' &&
-        (await countActiveMaterialDemands(connection, batchId, true)) > 0
-      )
-        throw new ProductionDomainError(
-          'INVALID_STATE',
-          '新增需求尚未领齐，请完成本任务需求后开始研发',
-        );
+      const reason = payload.reason?.trim() || null;
+      if (check.requiresReason && !reason)
+        throw new ProductionDomainError('INVALID_INPUT', '当前仍有物料缺口，请填写开工说明');
+      if (reason && reason.length > 5000)
+        throw new ProductionDomainError('INVALID_INPUT', '开工说明不得超过五千字');
       requireBatchTransition(batch.status, 'doing');
+      const materialSnapshot = startMaterialSnapshotOf(check);
       const [changed] = await connection.execute<ResultSetHeader>(
-        `UPDATE production_batches SET status='doing',started_at=NOW(),version=version+1,updated_by=?
-         WHERE id=? AND version=? AND status IN ('material_outbound','material_partially_outbound')`,
-        [context.actorId, batchId, version],
+        `UPDATE production_batches SET status='doing',started_at=COALESCE(started_at,NOW()),
+         started_by=?,start_reason=?,start_material_snapshot=?,version=version+1,updated_by=?
+         WHERE id=? AND version=? AND status=?`,
+        [
+          actorId,
+          reason,
+          JSON.stringify(materialSnapshot),
+          actorId,
+          batchId,
+          payload.version,
+          batch.status,
+        ],
       );
-      assertVersion(changed, '研发任务已变化，请刷新后重试');
-      if (order.status === 'released') {
-        requireWorkOrderTransition(order.status, 'doing');
-        await connection.execute(
+      assertVersion(changed, '任务已变化，请刷新后重试');
+      if (check.workOrderStatus === 'released') {
+        requireWorkOrderTransition(check.workOrderStatus, 'doing');
+        const [changedOrder] = await connection.execute<ResultSetHeader>(
           "UPDATE work_orders SET status='doing',version=version+1,updated_by=? WHERE id=? AND status='released'",
-          [context.actorId, policy.workOrderId],
+          [actorId, policy.workOrderId],
         );
-      }
-      if (shortStart) {
-        const [consumed] = await connection.execute<ResultSetHeader>(
-          `UPDATE production_short_batch_authorization SET status='consumed',used_at=NOW(),version=version+1
-           WHERE production_batch_id=? AND material_plan_version=? AND status='active'`,
-          [batchId, batch.material_plan_version],
-        );
-        assertVersion(consumed, '短批授权已变化，请刷新后重试');
+        assertVersion(changedOrder, '工单已变化，请刷新后重试');
       }
       const after = await findBatch(connection, batchId, true);
-      if (!after.started_at) throw new ProductionDomainError('CONFLICT', '研发开始时间未记录');
-      const result: ResearchExecutionStartResult = {
+      if (!after.started_at || after.started_by === null)
+        throw new ProductionDomainError('CONFLICT', '任务开工事实未记录');
+      const result: ProductionExecutionStartResult = {
         productionBatchId: batchId,
         batchStatus: 'doing',
         startedAt: toBeijingISOString(after.started_at),
+        startedById: String(after.started_by),
+        startReason: after.start_reason,
         version: after.version,
       };
       await writeTransactionalAudit(connection, {
         logType: 'business',
         module: 'production',
-        action: 'production-research.start',
-        userId: context.actorId,
+        action: 'production-execution.start',
+        userId: actorId,
         targetId: batchId,
         targetType: 'production_batch',
         result: 'success',
-        beforeData: { status: batch.status, version },
-        afterData: result,
+        beforeData: { status: batch.status, version: batch.version },
+        afterData: { ...result, startMaterialSnapshot: materialSnapshot },
         requestId: context.requestId,
         ip: context.ip,
         userAgent: context.userAgent,
@@ -158,28 +153,39 @@ export class MysqlProductionExecutionRepository extends ProductionExecutionRepos
     });
   }
 
-  completeResearchExecution(batchId: string, version: number, context: CommandContext) {
+  completeResearchExecution(
+    batchId: string,
+    payload: CompleteProductionExecutionPayload,
+    context: CommandContext,
+  ) {
     return withTransaction(this.pool, async (connection) => {
       const policy = await lockWorkOrderForBatch(connection, batchId);
       if (policy.orderType !== 'research')
         throw new ProductionDomainError('INVALID_STATE', '该结束入口仅适用于研发任务');
-      return this.completeExecution(batchId, version, context);
+      return this.completeExecution(batchId, payload, context);
     });
   }
-  async getCompletionCheck(batchId: string): Promise<ProductionExecutionCompletionCheck> {
-    const batch = await findBatch(this.pool, batchId);
-    const steps = await selectRequiredCompletionSteps(this.pool, batchId);
-    return mapCompletionCheck(
-      batchId,
-      batch,
-      steps,
-      await countActiveMaterialDemands(this.pool, batchId),
-      await countUnfulfilledSupplements(this.pool, batchId),
-    );
+
+  getCompletionCheck(batchId: string): Promise<ProductionExecutionCompletionCheck> {
+    return withTransaction(this.pool, async (connection) => {
+      const batch = await findBatch(connection, batchId);
+      const [[closeout]] = await connection.query<
+        (RowDataPacket & { id: number; version: number })[]
+      >('SELECT id,version FROM production_batch_closeout WHERE production_batch_id=?', [batchId]);
+      return mapCompletionCheck(
+        batchId,
+        batch,
+        await selectRequiredCompletionSteps(connection, batchId),
+        await countActiveMaterialDemands(connection, batchId),
+        await countUnfulfilledSupplements(connection, batchId),
+        closeout ? { id: String(closeout.id), version: closeout.version } : null,
+      );
+    });
   }
+
   async completeExecution(
     batchId: string,
-    version: number,
+    payload: CompleteProductionExecutionPayload,
     context: CommandContext,
   ): Promise<ProductionExecutionCompletionResult> {
     return withTransaction(this.pool, async (connection) => {
@@ -187,42 +193,16 @@ export class MysqlProductionExecutionRepository extends ProductionExecutionRepos
       if (!actorId) throw new ProductionDomainError('INVALID_INPUT', '缺少当前操作人身份');
       await lockWorkOrderForBatch(connection, batchId);
       const batch = await findBatch(connection, batchId, true);
-      const [[closeout]] = await connection.query<
-        (RowDataPacket & { id: number; closeout_mode: ProductionCloseoutMode })[]
-      >(
-        'SELECT id,closeout_mode FROM production_batch_closeout WHERE production_batch_id=? FOR UPDATE',
-        [batchId],
-      );
-      if (
-        closeout?.closeout_mode === 'normal' &&
-        (batch.status === 'closing' || batch.status === 'completed')
-      ) {
-        const steps = await selectRequiredCompletionSteps(connection, batchId, true);
-        return completionResult(
-          batchId,
-          batch,
-          String(closeout.id),
-          String(steps.at(-1)?.effective_normal ?? 0),
-        );
-      }
+      if (batch.version !== payload.version)
+        throw new ProductionDomainError('CONCURRENT_MODIFICATION', '任务已变化，请刷新后重试');
       if (batch.status !== 'doing')
         throw new ProductionDomainError(
           'BATCH_EXECUTION_COMPLETION_NOT_ALLOWED',
           '只有执行中的任务可以确认本轮执行结束',
         );
       requireBatchTransition(batch.status, 'closing');
-      if (closeout) throw new ProductionDomainError('CONFLICT', '生产任务已有结案记录，请刷新核对');
-      if (batch.version !== version)
-        throw new ProductionDomainError(
-          'CONCURRENT_MODIFICATION',
-          '生产批次状态已变化，请刷新后重试',
-        );
       await connection.query(
         'SELECT id FROM batch_step_records WHERE production_batch_id=? ORDER BY step_order_snapshot,id FOR UPDATE',
-        [batchId],
-      );
-      await connection.query(
-        'SELECT id FROM production_item_demand WHERE production_batch_id=? ORDER BY id FOR UPDATE',
         [batchId],
       );
       const steps = await selectRequiredCompletionSteps(connection, batchId, true);
@@ -234,25 +214,16 @@ export class MysqlProductionExecutionRepository extends ProductionExecutionRepos
         await countUnfulfilledSupplements(connection, batchId),
       );
       if (!check.canComplete) throwCompletionBlocker(check);
-      const [created] = await connection.execute<ResultSetHeader>(
-        `INSERT INTO production_batch_closeout
-         (production_batch_id,closeout_mode,reason,created_by,updated_by) VALUES (?,'normal',?,?,?)`,
-        [
-          batchId,
-          batch.order_type === 'research'
-            ? '本轮研发结束，核对物料和产出后结案'
-            : '工序执行完成，核对产出后结案',
-          actorId,
-          actorId,
-        ],
+      const entry = await enterTaskCloseout(
+        connection,
+        batch,
+        payload.closeoutVersion,
+        'normal',
+        batch.order_type === 'research'
+          ? '本轮研发结束，核对物料和产出后结案'
+          : '工序执行完成，核对物料和产出后结案',
+        actorId,
       );
-      const [updated] = await connection.execute<ResultSetHeader>(
-        `UPDATE production_batches
-         SET status='closing',execution_completed_at=NOW(),execution_completed_by=?,updated_by=?,version=version+1
-         WHERE id=? AND status='doing' AND version=?`,
-        [actorId, actorId, batchId, version],
-      );
-      assertVersion(updated, '生产批次状态已变化，请刷新后重试');
       await writeTransactionalAudit(connection, {
         logType: 'business',
         module: 'production',
@@ -261,13 +232,17 @@ export class MysqlProductionExecutionRepository extends ProductionExecutionRepos
         targetId: batchId,
         targetType: 'production_batch',
         result: 'success',
-        beforeData: { status: batch.status, version: batch.version },
+        beforeData: {
+          status: batch.status,
+          version: batch.version,
+          closeoutVersion: payload.closeoutVersion,
+        },
         afterData: {
           status: 'closing',
-          closeoutId: String(created.insertId),
+          ...entry,
           closeoutMode: 'normal',
           lastStepReportedQuantity: check.finalEffectiveNormalQuantity,
-          version: version + 1,
+          version: batch.version + 1,
         },
         requestId: context.requestId,
         ip: context.ip,
@@ -276,7 +251,7 @@ export class MysqlProductionExecutionRepository extends ProductionExecutionRepos
       return completionResult(
         batchId,
         await findBatch(connection, batchId, true),
-        String(created.insertId),
+        entry.closeoutId,
         check.finalEffectiveNormalQuantity,
       );
     });
@@ -343,8 +318,7 @@ export class MysqlProductionExecutionRepository extends ProductionExecutionRepos
       await lockWorkOrderForBatch(connection, batchId);
       const batch = await findBatch(connection, batchId, true);
       await requireUnfrozenStepActions(connection, batchId);
-      if (!['material_outbound', 'material_partially_outbound', 'doing'].includes(batch.status))
-        throw new ProductionDomainError('STEP_START_NOT_ALLOWED', '本轮已结束，不能继续开工');
+      requireTaskExecutingForStepStart({ batchStatus: batch.status });
       const steps = await lockExecutionSteps(connection, batchId);
       const index = steps.findIndex((step) => String(step.id) === stepRecordId);
       if (index < 0) throw new ProductionDomainError('NOT_FOUND', '批次工序记录不存在');
@@ -361,59 +335,11 @@ export class MysqlProductionExecutionRepository extends ProductionExecutionRepos
       if (current.status !== 'assigned')
         throw new ProductionDomainError('STEP_START_NOT_ALLOWED', '当前工序状态不允许开工');
 
-      const startsTask = index === 0 && batch.status !== 'doing';
-      if (startsTask) {
-        const shortBatchStart =
-          batch.status === 'material_partially_outbound'
-            ? await evaluateShortBatchStart(connection, batchId, batch.material_plan_version, true)
-            : null;
-        if (shortBatchStart && !shortBatchStart.canStart)
-          throw new ProductionDomainError(
-            'STEP_START_NOT_ALLOWED',
-            shortBatchStart.blockedReason ?? '当前短批授权不允许开工',
-          );
-        requireFirstStepStartable(batch.status, shortBatchStart?.canStart ?? false);
-        requireBatchTransition(batch.status, 'doing');
-      } else {
-        requireFollowingStepStartable({ batchStatus: batch.status });
-      }
       const [updated] = await connection.execute<ResultSetHeader>(
         "UPDATE batch_step_records SET status='doing',started_at=NOW(),version=version+1,updated_by=? WHERE id=? AND production_batch_id=? AND status='assigned' AND version=?",
         [context.actorId, stepRecordId, batchId, version],
       );
       assertVersion(updated, '工序派工状态已变化，请刷新任务后重试');
-      if (startsTask) {
-        const [batchUpdated] = await connection.execute<ResultSetHeader>(
-          "UPDATE production_batches SET status='doing',started_at=COALESCE(started_at,NOW()),version=version+1,updated_by=? WHERE id=? AND status IN ('material_outbound','material_partially_outbound')",
-          [context.actorId, batchId],
-        );
-        if (batchUpdated.affectedRows !== 1)
-          throw new ProductionDomainError('STEP_START_NOT_ALLOWED', '生产批次开工状态已变化');
-        const [[workOrder]] = await connection.query<
-          (RowDataPacket & { status: WorkOrderStatus })[]
-        >('SELECT status FROM work_orders WHERE id=? FOR UPDATE', [String(batch.work_order_id)]);
-        if (!workOrder || (workOrder.status !== 'released' && workOrder.status !== 'doing'))
-          throw new ProductionDomainError(
-            'STEP_START_NOT_ALLOWED',
-            '生产工单当前状态不允许批次开工',
-          );
-        if (workOrder.status === 'released') {
-          requireWorkOrderTransition(workOrder.status, 'doing');
-          const [workOrderUpdated] = await connection.execute<ResultSetHeader>(
-            "UPDATE work_orders SET status='doing',version=version+1,updated_by=? WHERE id=? AND status='released'",
-            [context.actorId, String(batch.work_order_id)],
-          );
-          if (workOrderUpdated.affectedRows !== 1)
-            throw new ProductionDomainError('STEP_START_NOT_ALLOWED', '生产工单开工状态已变化');
-        }
-        if (batch.status === 'material_partially_outbound')
-          await connection.execute(
-            `UPDATE production_short_batch_authorization
-             SET status='consumed',used_at=NOW(),version=version+1
-             WHERE production_batch_id=? AND material_plan_version=? AND status='active'`,
-            [batchId, batch.material_plan_version],
-          );
-      }
       const after = await lockExecutionStep(connection, batchId, stepRecordId, false);
       await appendStepExecutionAction(connection, {
         batchId,
@@ -434,8 +360,7 @@ export class MysqlProductionExecutionRepository extends ProductionExecutionRepos
           version: version + 1,
           startedAt: after.started_at ? toBeijingISOString(after.started_at) : null,
           completedAt: null,
-          batchStatus: startsTask ? 'doing' : batch.status,
-          ...(startsTask ? { workOrderStatus: 'doing' } : {}),
+          batchStatus: batch.status,
         },
         stepAuditState(current),
       );
@@ -624,11 +549,14 @@ const mapCompletionCheck = (
   steps: CompletionStepRow[],
   activeMaterialDemandCount: number,
   unfulfilledSupplementCount: number,
+  closeout: { id: string; version: number } | null = null,
 ): ProductionExecutionCompletionCheck =>
   evaluateProductionExecutionCompletion({
     productionBatchId: batchId,
     batchStatus: batch.status,
     version: batch.version,
+    closeoutId: closeout?.id ?? null,
+    closeoutVersion: closeout?.version ?? null,
     plannedQuantity: String(batch.planned_quantity),
     orderType: batch.order_type,
     activeMaterialDemandCount,
@@ -644,20 +572,10 @@ const mapCompletionCheck = (
 
 const throwCompletionBlocker = (check: ProductionExecutionCompletionCheck): never => {
   const blocker = check.blockers[0];
-  if (blocker === 'unfulfilled_material_supplement')
-    throw new ProductionDomainError(
-      'BATCH_EXECUTION_COMPLETION_NOT_ALLOWED',
-      '仍有未齐套补料单，不能正常完工；不再补产请办理批次收尾',
-    );
   if (blocker === 'no_route_step')
     throw new ProductionDomainError('NO_REQUIRED_REPORTING_STEP', '批次没有工序，不能执行完工');
   if (blocker === 'required_step_incomplete')
     throw new ProductionDomainError('REQUIRED_STEP_INCOMPLETE', '仍有工序尚未完成');
-  if (blocker === 'active_material_demand_remains')
-    throw new ProductionDomainError(
-      'ACTIVE_MATERIAL_DEMAND_REMAINS',
-      '仍有未完成物料需求，请继续领料或显式关闭剩余需求后再完工',
-    );
   throw new ProductionDomainError(
     'BATCH_EXECUTION_COMPLETION_NOT_ALLOWED',
     '只有生产执行中的批次可以确认完工',

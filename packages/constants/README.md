@@ -14,5 +14,8 @@
 
 ```text
 corepack pnpm --filter @company/constants typecheck
+corepack pnpm --filter @company/constants typecheck:test
 corepack pnpm --filter @company/constants test
 ```
+
+应用构建与类型检查不编译相邻测试；`typecheck:test` 独立检查测试文件，Vitest 继续执行正式测试。暂缓正式测试时，将旧契约断言迁移列入路线图，不以应用检查通过代替测试通过。

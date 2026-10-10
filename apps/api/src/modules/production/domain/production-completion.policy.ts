@@ -18,6 +18,8 @@ export const evaluateProductionExecutionCompletion = (input: {
   productionBatchId: string;
   batchStatus: ProductionBatchStatus;
   version: number;
+  closeoutId?: string | null;
+  closeoutVersion?: number | null;
   plannedQuantity: string;
   orderType?: WorkOrderType;
   activeMaterialDemandCount?: number;
@@ -34,16 +36,14 @@ export const evaluateProductionExecutionCompletion = (input: {
   if (!research && requiredSteps.length === 0) blockers.push('no_route_step');
   if (!research && requiredSteps.some((step) => step.status !== 'completed'))
     blockers.push('required_step_incomplete');
-  // 研发结束只声明本轮执行结束，剩余需求和未决单据在正常结案中逐项处理。
-  if (!research && (input.activeMaterialDemandCount ?? 0) > 0)
-    blockers.push('active_material_demand_remains');
-  if (!research && (input.unfulfilledSupplementCount ?? 0) > 0)
-    blockers.push('unfulfilled_material_supplement');
+  // 剩余需求和未履约补料只作核对信息，统一留在结案中逐项处理。
 
   return {
     productionBatchId: input.productionBatchId,
     batchStatus: input.batchStatus,
     version: input.version,
+    closeoutId: input.closeoutId ?? null,
+    closeoutVersion: input.closeoutVersion ?? null,
     plannedQuantity: input.plannedQuantity,
     requiredStepCount: requiredSteps.length,
     completedRequiredStepCount: requiredSteps.filter((step) => step.status === 'completed').length,

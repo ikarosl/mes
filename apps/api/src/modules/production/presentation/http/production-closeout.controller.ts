@@ -14,10 +14,12 @@ import { ProductionCloseoutService } from '../../application/production-closeout
 import {
   BEGIN_BATCH_CLOSEOUT_SCOPE,
   HANDLE_BATCH_CLOSEOUT_SCOPE,
+  WITHDRAW_BATCH_CLOSEOUT_SCOPE,
 } from '../../application/idempotency/production-idempotency-scopes.contract.js';
 import {
   BeginBatchCloseoutDto,
   HandleBatchCloseoutItemDto,
+  WithdrawBatchCloseoutDto,
 } from './dto/production-closeout.dto.js';
 import { TerminationBatchParamDto } from './dto/production-termination.dto.js';
 @Controller('production/batches/:batchId/closeout')
@@ -43,6 +45,22 @@ export class ProductionCloseoutController {
     @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
   ) {
     return this.service.begin(batchId, body, context);
+  }
+  @Get('withdraw-check')
+  @RequirePermission(PERMISSIONS.production.tasks.view)
+  withdrawalCheck(@Param() { batchId }: TerminationBatchParamDto) {
+    return this.service.withdrawalCheck(batchId);
+  }
+  @Post('withdraw')
+  @RequirePermission(PERMISSIONS.production.tasks.terminate)
+  @AuditInApplication()
+  @IdempotentEndpoint({ scope: WITHDRAW_BATCH_CLOSEOUT_SCOPE })
+  withdraw(
+    @Param() { batchId }: TerminationBatchParamDto,
+    @Body() body: WithdrawBatchCloseoutDto,
+    @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
+  ) {
+    return this.service.withdraw(batchId, body, context);
   }
   @Post('items')
   @RequirePermission(PERMISSIONS.production.tasks.terminate)

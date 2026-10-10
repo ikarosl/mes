@@ -9,13 +9,21 @@
   >
     <div class="dialog-body">
       <el-alert
-        title="本步骤只创建待出库凭据，不扣减库存。请核对后打印，用于拣货、领料和签字。"
+        title="有效需求按当前分配分次制单，后续仍可继续办理剩余需求。本步骤只创建待出库凭据，不扣减库存；请核对后打印，用于拣货、领料和签字。"
         type="info"
         :closable="false"
+      />
+      <el-alert
+        v-if="intentStatus !== 'idle'"
+        class="blocked-summary"
+        type="warning"
+        :closable="false"
+        title="制单结果尚未确认，原任务、明细和数量已保留；请重试原制单或核对出库单列表。"
       />
       <el-form
         class="create-form"
         label-width="96px"
+        :disabled="controlsLocked"
       >
         <el-form-item
           label="生产批次"
@@ -70,7 +78,7 @@
             v-if="canAccessRoute({ name: 'production-tasks' })"
             link
             type="primary"
-            @click="$emit('resolveBatch', option.batchNo)"
+            @click="resolveBatch(option.batchNo)"
             >前往生产任务处理</el-button
           >
         </div>
@@ -100,6 +108,7 @@
             <el-table-column
               type="selection"
               width="50"
+              :selectable="() => !controlsLocked"
             />
             <el-table-column
               label="物料"
@@ -161,6 +170,7 @@
                   :max="Number(row.availableToOrderQuantity)"
                   :step="1"
                   :precision="0"
+                  :disabled="controlsLocked"
                 />
                 <span class="unit-text">{{ row.unit }}</span>
               </template>
@@ -181,7 +191,7 @@
         :disabled="!canSubmit"
         @click="submit"
       >
-        创建待出库单
+        {{ intentStatus === 'pending' ? '重试原制单' : '创建待出库单' }}
       </el-button>
     </template>
   </el-dialog>
@@ -225,7 +235,11 @@ const batchId = ref('');
 const remark = ref('');
 const quantities = reactive<Record<string, number>>({});
 const selectedByGroup = reactive<Record<string, MaterialOutboundCandidateItem[]>>({});
-const candidateGroups = computed(() => groupMaterialDemandRows(props.candidates));
+const controlsLocked = computed(() => props.submitting || props.intentStatus !== 'idle');
+const chosenCandidates = computed(() => Object.values(selectedByGroup).flat());
+const candidateGroups = computed(() =>
+  groupMaterialDemandRows(controlsLocked.value ? chosenCandidates.value : props.candidates),
+);
 const eligibleBatchOptions = computed(() =>
   props.batchOptions.filter((option) => option.outboundEligibility.eligible),
 );
@@ -233,10 +247,9 @@ const blockedBatchOptions = computed(() =>
   props.batchOptions.filter((option) => !option.outboundEligibility.eligible),
 );
 const selectedCandidates = computed(() => {
-  const currentIds = new Set(props.candidates.map((row) => row.allocationId));
-  return Object.values(selectedByGroup)
-    .flat()
-    .filter((row) => currentIds.has(row.allocationId));
+  if (controlsLocked.value) return chosenCandidates.value;
+  const currentRows = new Map(props.candidates.map((row) => [row.allocationId, row]));
+  return chosenCandidates.value.flatMap((row) => currentRows.get(row.allocationId) ?? []);
 });
 const selectedGroupCount = computed(
   () => new Set(selectedCandidates.value.map((row) => row.generationGroupKey)).size,
@@ -244,6 +257,11 @@ const selectedGroupCount = computed(
 const canSubmit = computed(
   () =>
     Boolean(batchId.value) &&
+    !props.optionLoading &&
+    !props.candidateLoading &&
+    (props.intentStatus === 'pending' ||
+      (props.intentStatus === 'idle' &&
+        eligibleBatchOptions.value.some((option) => option.productionBatchId === batchId.value))) &&
     selectedCandidates.value.length > 0 &&
     selectedCandidates.value.every((row) => {
       const quantity = quantities[row.allocationId];
@@ -263,8 +281,9 @@ const variantCode = (row: { materialVariantCode?: string | null }): string =>
 watch(
   () => props.candidates,
   (candidates) => {
+    if (controlsLocked.value) return;
     for (const row of candidates)
-      quantities[row.allocationId] = Number(row.availableToOrderQuantity);
+      quantities[row.allocationId] ??= Number(row.availableToOrderQuantity);
   },
 );
 watch(
@@ -283,6 +302,7 @@ const handleGroupSelection = (
   generationGroupKey: string,
   rows: MaterialOutboundCandidateItem[],
 ): void => {
+  if (controlsLocked.value) return;
   selectedByGroup[generationGroupKey] = rows;
 };
 const submit = (): void => {
@@ -295,6 +315,9 @@ const submit = (): void => {
     remark: remark.value,
   });
 };
+const resolveBatch = async (batchNo: string): Promise<void> => {
+  if (await canDiscard()) emit('resolveBatch', batchNo);
+};
 const beforeClose = async (done: () => void): Promise<void> => {
   if (!(await canDiscard())) return;
   done();
@@ -306,6 +329,7 @@ const updateVisible = (visible: boolean): void => {
   emit('update:modelValue', visible);
 };
 const canDiscard = async (): Promise<boolean> => {
+  if (props.submitting) return false;
   if (props.intentStatus !== 'idle') {
     try {
       await ElMessageBox.confirm(

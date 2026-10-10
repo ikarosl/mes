@@ -8,6 +8,9 @@ import type {
   BeginBatchCloseoutPayload,
   HandleBatchCloseoutItemPayload,
   BatchCloseoutCommandResult,
+  BatchCloseoutWithdrawalCheck,
+  WithdrawBatchCloseoutPayload,
+  WithdrawBatchCloseoutResult,
 } from '@company/contracts';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
@@ -23,7 +26,19 @@ import { writeInventoryAudit } from './mysql-production-inventory.shared.js';
 import { loadCloseoutItems } from './mysql-production-closeout-items.js';
 import { allocationNeedsCloseoutSql } from './mysql-production-material.sql.js';
 
-import { type CloseoutRow as Closeout } from './mysql-production-output.persistence.js';
+import {
+  CLOSEOUT_COLUMNS,
+  type CloseoutRow as Closeout,
+} from './mysql-production-output.persistence.js';
+import {
+  enterTaskCloseout,
+  readTaskCloseoutEntry,
+  readTaskCloseoutWithdrawalCheck,
+  appendTaskCloseoutAction,
+  taskStateOf,
+  taskCloseoutFactOf,
+  assertTaskActionVersion,
+} from './mysql-production-closeout-task-actions.js';
 type Action = RowDataPacket & {
   id: number;
   item_kind: BatchCloseoutAction['kind'];
@@ -52,10 +67,101 @@ export class MysqlProductionCloseoutRepository extends ProductionCloseoutReposit
   detail(batchId: string): Promise<BatchCloseoutDetail | null> {
     return withTransaction(this.pool, async (db) => {
       const [[row]] = await db.query<Closeout[]>(
-        'SELECT * FROM production_batch_closeout WHERE production_batch_id=?',
+        `SELECT ${CLOSEOUT_COLUMNS} FROM production_batch_closeout WHERE production_batch_id=?`,
         [batchId],
       );
       return row ? this.loadDetail(db, row, false) : null;
+    });
+  }
+
+  withdrawalCheck(batchId: string): Promise<BatchCloseoutWithdrawalCheck> {
+    return withTransaction(this.pool, async (db) => {
+      const batch = await findBatch(db, batchId);
+      const [[row]] = await db.query<Closeout[]>(
+        `SELECT ${CLOSEOUT_COLUMNS} FROM production_batch_closeout WHERE production_batch_id=?`,
+        [batchId],
+      );
+      return readTaskCloseoutWithdrawalCheck(db, batch, row ?? null);
+    });
+  }
+
+  withdraw(
+    batchId: string,
+    payload: WithdrawBatchCloseoutPayload,
+    context: CommandContext,
+  ): Promise<WithdrawBatchCloseoutResult> {
+    return withTransaction(this.pool, async (db) => {
+      this.actor(context);
+      const actorId = context.actorId!;
+      await lockWorkOrderForBatch(db, batchId);
+      const batch = await findBatch(db, batchId, true);
+      const [[row]] = await db.query<Closeout[]>(
+        `SELECT ${CLOSEOUT_COLUMNS} FROM production_batch_closeout WHERE production_batch_id=? FOR UPDATE`,
+        [batchId],
+      );
+      if (batch.version !== payload.version || row?.version !== payload.closeoutVersion)
+        throw new ProductionDomainError(
+          'CONCURRENT_MODIFICATION',
+          '任务或结案记录已变化，请刷新核对',
+        );
+      const check = await readTaskCloseoutWithdrawalCheck(db, batch, row ?? null, true);
+      if (!check.canWithdraw || !check.restoreStatus || !row)
+        throw new ProductionDomainError(
+          'INVALID_STATE',
+          check.blockedReason ?? '当前任务不能撤回结束',
+        );
+      requireBatchTransition(batch.status, check.restoreStatus);
+      const reason = payload.reason.trim();
+      if (!reason || reason.length > 5000)
+        throw new ProductionDomainError('INVALID_INPUT', '请填写五千字以内的撤回说明');
+      const entry = await readTaskCloseoutEntry(db, row, true);
+      if (!entry) throw new ProductionDomainError('INVALID_STATE', '本次进入结案的行动依据已变化');
+      const [changedBatch] = await db.execute<ResultSetHeader>(
+        `UPDATE production_batches SET status=?,execution_completed_at=NULL,execution_completed_by=NULL,
+         version=version+1,updated_by=? WHERE id=? AND version=? AND status='closing'`,
+        [check.restoreStatus, actorId, batchId, payload.version],
+      );
+      assertTaskActionVersion(changedBatch);
+      const [changedRoot] = await db.execute<ResultSetHeader>(
+        `UPDATE production_batch_closeout SET review_snapshot=NULL,version=version+1,updated_by=?
+         WHERE id=? AND version=? AND current_revision_id IS NULL AND pending_approval_id IS NULL`,
+        [actorId, row.id, payload.closeoutVersion],
+      );
+      assertTaskActionVersion(changedRoot);
+      const afterBatch = await findBatch(db, batchId, true);
+      const afterRoot = { ...row, version: row.version + 1, review_snapshot: null };
+      const withdrawalActionId = await appendTaskCloseoutAction(db, {
+        closeoutId: String(row.id),
+        batchId,
+        actorId,
+        label: '撤回任务结束',
+        reason,
+        fact: {
+          actionType: 'withdraw',
+          entryActionId: String(entry.id),
+          before: taskStateOf(batch, row),
+          after: taskStateOf(afterBatch, afterRoot),
+        },
+      });
+      const result: WithdrawBatchCloseoutResult = {
+        closeoutId: String(row.id),
+        batchId,
+        batchStatus: check.restoreStatus,
+        version: afterBatch.version,
+        closeoutVersion: afterRoot.version,
+        entryActionId: String(entry.id),
+        withdrawalActionId,
+      };
+      await writeInventoryAudit(
+        db,
+        context,
+        'production-batch.closeout.withdraw',
+        'production_batch',
+        batchId,
+        taskStateOf(batch, row),
+        { ...result, reason },
+      );
+      return result;
     });
   }
 
@@ -83,19 +189,15 @@ export class MysqlProductionCloseoutRepository extends ProductionCloseoutReposit
         throw new ProductionDomainError('INVALID_STATE', '先撤回或驳回在途需求更正，再开始收尾');
       if (!payload.reason.trim())
         throw new ProductionDomainError('INVALID_INPUT', '请填写收尾原因');
-      const [created] = await db.execute<ResultSetHeader>(
-        "INSERT INTO production_batch_closeout (production_batch_id,closeout_mode,reason,created_by,updated_by) VALUES (?,'early',?,?,?)",
-        [batchId, payload.reason, context.actorId, context.actorId],
+      const entry = await enterTaskCloseout(
+        db,
+        batch,
+        payload.closeoutVersion,
+        'early',
+        payload.reason.trim(),
+        context.actorId!,
       );
-      await db.execute(
-        "UPDATE production_batches SET status='closing',version=version+1,updated_by=? WHERE id=?",
-        [context.actorId, batchId],
-      );
-      await db.execute(
-        "UPDATE production_short_batch_authorization SET status='superseded',version=version+1 WHERE production_batch_id=? AND status='active'",
-        [batchId],
-      );
-      const result = { closeoutId: String(created.insertId), batchId };
+      const result = { closeoutId: entry.closeoutId, batchId };
       await writeInventoryAudit(
         db,
         context,
@@ -103,7 +205,12 @@ export class MysqlProductionCloseoutRepository extends ProductionCloseoutReposit
         'production_batch',
         batchId,
         { status: batch.status },
-        { ...result, reason: payload.reason, status: 'closing' },
+        {
+          ...result,
+          entryActionId: entry.entryActionId,
+          reason: payload.reason,
+          status: 'closing',
+        },
       );
       return result;
     });
@@ -286,7 +393,7 @@ export class MysqlProductionCloseoutRepository extends ProductionCloseoutReposit
     if (batch.status !== 'closing')
       throw new ProductionDomainError('INVALID_STATE', '批次不在收尾阶段');
     const [[row]] = await db.query<Closeout[]>(
-      'SELECT * FROM production_batch_closeout WHERE production_batch_id=? FOR UPDATE',
+      `SELECT ${CLOSEOUT_COLUMNS} FROM production_batch_closeout WHERE production_batch_id=? FOR UPDATE`,
       [batchId],
     );
     if (!row) throw new ProductionDomainError('NOT_FOUND', '收尾记录不存在');
@@ -334,6 +441,12 @@ export class MysqlProductionCloseoutRepository extends ProductionCloseoutReposit
     if (row.pending_approval_id !== null) blockers.push('收尾审批正在进行');
     if (materialReviews.some((review) => review.status !== 'reviewed'))
       blockers.push('逐项核对物料安排；领退料或损耗变化后须重新核对');
+    const withdrawal = await readTaskCloseoutWithdrawalCheck(
+      db,
+      await findBatch(db, String(row.production_batch_id)),
+      row,
+      lock,
+    );
     return {
       id: String(row.id),
       batchId: String(row.production_batch_id),
@@ -354,6 +467,14 @@ export class MysqlProductionCloseoutRepository extends ProductionCloseoutReposit
         return {
           id: String(action.id),
           kind: action.item_kind,
+          actionType:
+            action.item_kind === 'task'
+              ? (taskCloseoutFactOf(action.fact_snapshot)?.actionType ?? null)
+              : null,
+          entryActionId:
+            action.item_kind === 'task'
+              ? (taskCloseoutFactOf(action.fact_snapshot)?.entryActionId ?? null)
+              : null,
           targetId: String(action.target_id),
           label: action.label,
           previousStatus: action.previous_status,
@@ -371,6 +492,9 @@ export class MysqlProductionCloseoutRepository extends ProductionCloseoutReposit
         check.batchStatus === 'closing' &&
         row.pending_approval_id === null &&
         row.current_revision_id === null,
+      canWithdraw: withdrawal.canWithdraw,
+      withdrawBlockedReason: withdrawal.blockedReason,
+      withdrawRestoredStatus: withdrawal.restoreStatus,
       blockers,
     };
   }

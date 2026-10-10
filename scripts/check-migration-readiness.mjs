@@ -96,8 +96,8 @@ const allowedTables = new Set([
   'inventory_item_balance', // Retired; historical up/down migrations still create this projection.
   'inventory_material_variant_balance',
   'production_item_allocation',
-  'production_short_batch_authorization',
-  'production_short_batch_authorization_detail',
+  'production_short_batch_authorization', // Retired; historical migration ownership.
+  'production_short_batch_authorization_detail', // Retired; historical migration ownership.
   'outbound_order',
   'outbound_detail',
   'return_order',

@@ -50,6 +50,15 @@ const idempotencyRecordsWritePattern =
  * ——scope 只能经由契约常量标识符引用。
  */
 const knownIdempotencyScopes = [
+  'production.batch.create.v11',
+  'production.batch-closeout.begin.v2',
+  'production.batch-closeout.withdraw.v1',
+  'production.material-outbound.create.v4',
+  'production.material-outbound.confirm.v3',
+  'production.step-report.history-create.v2',
+  'production.execution.start.v1',
+  'production.execution.complete.v1',
+  'production.research.complete.v2',
   'production.batch.create.v10',
   'production.demand-correction.submit.v2',
   'production.step-report.create.v4',
@@ -366,12 +375,12 @@ const checks = [
       message: `${module} application port 不得泄漏 mysql2 类型`,
     },
   ]),
-  // 需求计划事实与批次 material_plan_version 必须由同一事务写入口联动，避免新增调用者漏推版本。
+  // 需求计划事实与批次 version 必须由同一事务写入口联动，避免新增调用者漏推版本。
   {
     directory: 'apps/api/src/modules/production',
     pattern: /\bINSERT\s+INTO\s+production_item_demand\b/i,
     message:
-      'production_item_demand 新增只能经 mysql-production-demand-plan.writer，确保同步推进 material_plan_version',
+      'production_item_demand 新增只能经 mysql-production-demand-plan.writer，确保同步推进批次 version',
     exclude: [
       'apps/api/src/modules/production/infrastructure/mysql-production-demand-plan.writer.ts',
     ],
@@ -381,7 +390,7 @@ const checks = [
     pattern:
       /\bUPDATE\s+production_item_demand[\s\S]{0,500}?(?:cancel_source\s*=|remaining_number\s*=\s*remaining_number\s*\+)/i,
     message:
-      '需求计划取消或重开只能经 mysql-production-demand-plan.writer，确保同步推进 material_plan_version',
+      '需求计划取消或重开只能经 mysql-production-demand-plan.writer，确保同步推进批次 version',
     exclude: [
       'apps/api/src/modules/production/infrastructure/mysql-production-demand-plan.writer.ts',
     ],

@@ -29,7 +29,12 @@ import { AssignProductionStepDto, BatchStepRecordParamDto } from './dto/producti
 import { BatchIdParamDto } from './dto/production-material.dto.js';
 import { ReopenProductionStepDto } from './dto/production-step-actions.dto.js';
 import {
-  START_RESEARCH_EXECUTION_SCOPE,
+  StartProductionExecutionDto,
+  CompleteProductionExecutionDto,
+} from './dto/production-task-execution.dto.js';
+import {
+  START_PRODUCTION_EXECUTION_SCOPE,
+  COMPLETE_PRODUCTION_EXECUTION_SCOPE,
   COMPLETE_RESEARCH_EXECUTION_SCOPE,
 } from '../../application/idempotency/production-idempotency-scopes.contract.js';
 
@@ -38,16 +43,22 @@ import {
 export class ProductionExecutionController {
   constructor(private readonly service: ProductionExecutionService) {}
 
-  @Post('batches/:batchId/actions/start-research')
+  @Get('batches/:batchId/execution-start-check')
+  @RequirePermission(PERMISSIONS.production.tasks.view)
+  startCheck(@Param() { batchId }: BatchIdParamDto) {
+    return this.service.getStartCheck(batchId);
+  }
+
+  @Post('batches/:batchId/actions/start-execution')
   @RequirePermission(PERMISSIONS.production.batches.transition)
   @AuditInApplication()
-  @IdempotentEndpoint({ scope: START_RESEARCH_EXECUTION_SCOPE })
-  startResearch(
+  @IdempotentEndpoint({ scope: START_PRODUCTION_EXECUTION_SCOPE })
+  startExecution(
     @Param() { batchId }: BatchIdParamDto,
-    @Body() body: VersionedCommandDto,
+    @Body() body: StartProductionExecutionDto,
     @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
   ) {
-    return this.service.startResearchExecution(batchId, body.version, context);
+    return this.service.startExecution(batchId, body, context);
   }
 
   @Post('batches/:batchId/actions/complete-research')
@@ -56,10 +67,10 @@ export class ProductionExecutionController {
   @IdempotentEndpoint({ scope: COMPLETE_RESEARCH_EXECUTION_SCOPE })
   completeResearch(
     @Param() { batchId }: BatchIdParamDto,
-    @Body() body: VersionedCommandDto,
+    @Body() body: CompleteProductionExecutionDto,
     @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
   ) {
-    return this.service.completeResearchExecution(batchId, body.version, context);
+    return this.service.completeResearchExecution(batchId, body, context);
   }
 
   @Get('batches/:batchId/execution-completion-check')
@@ -71,12 +82,13 @@ export class ProductionExecutionController {
   @Post('batches/:batchId/actions/complete-execution')
   @RequirePermission(PERMISSIONS.production.steps.manageExecution)
   @AuditInApplication()
+  @IdempotentEndpoint({ scope: COMPLETE_PRODUCTION_EXECUTION_SCOPE })
   completeExecution(
     @Param() { batchId }: BatchIdParamDto,
-    @Body() body: VersionedCommandDto,
-    @CurrentCommandContext() context: CommandContext,
+    @Body() body: CompleteProductionExecutionDto,
+    @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
   ) {
-    return this.service.completeExecution(batchId, body.version, context);
+    return this.service.completeExecution(batchId, body, context);
   }
 
   @Get('worker-tasks')

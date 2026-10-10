@@ -10,7 +10,6 @@ export interface ProductionStepActionState {
   hasStarted: boolean;
   hasResponsibleUser: boolean;
   isFirstStep: boolean;
-  shortBatchStartAllowed?: boolean;
   pendingApprovalId: string | null;
 }
 
@@ -20,21 +19,14 @@ export function evaluateProductionStepActionAvailability(
 ): ProductionStepActionAvailability {
   const frozen = input.pendingApprovalId !== null;
   const executing = input.batchStatus === 'doing';
-  const startPhase =
-    executing ||
-    (input.isFirstStep &&
-      (input.batchStatus === 'material_outbound' ||
-        (input.batchStatus === 'material_partially_outbound' && input.shortBatchStartAllowed)));
   const startBlockedReason = frozen
     ? '结案或产出更正在审批，工序状态被冻结'
     : !input.hasResponsibleUser
       ? '工序尚未派工'
       : input.stepStatus !== 'assigned' || input.hasStarted
         ? '只有已派工且未开始的工序可以开始'
-        : !startPhase
-          ? input.isFirstStep
-            ? '须先完成领料或取得当前物料计划的有效短批授权'
-            : '任务尚未进入执行中，或已结束执行'
+        : !executing
+          ? '请由管理员先明确开始任务执行；结束执行后工序只读'
           : null;
   const executionBlockedReason = frozen
     ? '结案或产出更正在审批，工序状态被冻结'

@@ -3,7 +3,10 @@ import type {
   ProductionExecutionCompletionResult,
   ProductionStepCommandResult,
   ProductionWorkerTaskItem,
-  ResearchExecutionStartResult,
+  ProductionExecutionStartCheck,
+  ProductionExecutionStartResult,
+  StartProductionExecutionPayload,
+  CompleteProductionExecutionPayload,
   PageResult,
   ProductionStepExecutionHistoryItem,
   ReopenProductionStepPayload,
@@ -18,20 +21,21 @@ export interface ProductionStepSopSnapshot {
 }
 
 export abstract class ProductionExecutionRepository {
-  abstract startResearchExecution(
+  abstract getStartCheck(batchId: string): Promise<ProductionExecutionStartCheck>;
+  abstract startExecution(
     batchId: string,
-    version: number,
+    payload: StartProductionExecutionPayload,
     context: CommandContext,
-  ): Promise<ResearchExecutionStartResult>;
+  ): Promise<ProductionExecutionStartResult>;
   abstract completeResearchExecution(
     batchId: string,
-    version: number,
+    payload: CompleteProductionExecutionPayload,
     context: CommandContext,
   ): Promise<ProductionExecutionCompletionResult>;
   abstract getCompletionCheck(batchId: string): Promise<ProductionExecutionCompletionCheck>;
   abstract completeExecution(
     batchId: string,
-    version: number,
+    payload: CompleteProductionExecutionPayload,
     context: CommandContext,
   ): Promise<ProductionExecutionCompletionResult>;
   abstract listWorkerTasks(

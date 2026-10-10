@@ -11,7 +11,8 @@ import {
   PRODUCTION_BATCH_STATUSES,
   WORK_ORDER_STATUSES,
   WORK_ORDER_TYPES,
-  BATCH_CLOSEOUT_ITEM_KINDS,
+  BATCH_CLOSEOUT_ACTION_KINDS,
+  PRODUCTION_TASK_CLOSEOUT_ACTION_TYPES,
   PRODUCTION_CLOSEOUT_MODES,
   PRODUCTION_OUTPUT_INSPECTION_METHODS,
   PRODUCTION_OUTPUT_RELEASE_DECISIONS,
@@ -98,19 +99,31 @@ export const demandCorrectionSnapshotSchema = z.object({
   newRemainingQuantity: amount,
   reason: z.string(),
 });
-export const closeoutActionSchema = z.object({
-  id,
-  kind: z.enum(BATCH_CLOSEOUT_ITEM_KINDS),
-  targetId: id,
-  label: z.string(),
-  previousStatus: z.string(),
-  resultingStatus: z.string(),
-  quantity: quantity.nullable(),
-  unit: z.string().nullable(),
-  reason: z.string(),
-  actorId: id,
-  createdAt: z.string(),
-});
+export const closeoutActionSchema = z
+  .object({
+    id,
+    kind: z.enum(BATCH_CLOSEOUT_ACTION_KINDS),
+    actionType: z.enum(PRODUCTION_TASK_CLOSEOUT_ACTION_TYPES).nullable(),
+    entryActionId: id.nullable(),
+    targetId: id,
+    label: z.string(),
+    previousStatus: z.string(),
+    resultingStatus: z.string(),
+    quantity: quantity.nullable(),
+    unit: z.string().nullable(),
+    reason: z.string(),
+    actorId: id,
+    createdAt: z.string(),
+  })
+  .refine(
+    (action) =>
+      action.kind === 'task'
+        ? action.actionType === 'enter'
+          ? action.entryActionId === null
+          : action.actionType === 'withdraw' && action.entryActionId !== null
+        : action.actionType === null && action.entryActionId === null,
+    { message: '任务进入／撤回行动与逐项收尾行动的历史类型不一致' },
+  );
 export const closeoutOutputSchema = z.object({
   availableQuantity: amount,
   extraQuantity: amount,
@@ -207,7 +220,7 @@ export const terminationCheckSchema = z.object({
     })
     .nullable(),
 });
-export const CLOSEOUT_APPROVAL_SNAPSHOT_SCHEMA_VERSION = 8;
+export const CLOSEOUT_APPROVAL_SNAPSHOT_SCHEMA_VERSION = 9;
 const outputQuantitiesSchema = z.object({
   availableQuantity: amount,
   extraQuantity: amount,

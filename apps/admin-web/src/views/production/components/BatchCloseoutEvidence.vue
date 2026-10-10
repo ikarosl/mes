@@ -74,21 +74,20 @@
       清单累计可入库量：{{ snapshot.output.availableQuantity + snapshot.output.extraQuantity }}
       {{ snapshot.check.unit }}；批准清单不代表已入库，请结合历史已入库事实核对。
     </InlineHint>
-    <h4>管理员逐项处理结果</h4>
+    <h4>管理员收尾与任务行动</h4>
     <el-table
       :data="snapshot.actions"
       size="small"
     >
       <el-table-column label="事项"
         ><template #default="{ row }"
-          >{{ BATCH_TERMINATION_IMPACT_LABELS[row.kind as BatchCloseoutItemKind] }} ·
-          {{ row.label }}</template
+          >{{ batchCloseoutActionLabel(row) }} · {{ row.label }}</template
         ></el-table-column
       >
       <el-table-column label="处理结果"
         ><template #default="{ row }"
-          >{{ statusLabel(row.kind, row.previousStatus) }} →
-          {{ statusLabel(row.kind, row.resultingStatus) }}</template
+          >{{ batchCloseoutActionStatusLabel(row.kind, row.previousStatus) }} →
+          {{ batchCloseoutActionStatusLabel(row.kind, row.resultingStatus) }}</template
         ></el-table-column
       >
       <el-table-column
@@ -147,23 +146,18 @@
   </section>
 </template>
 <script setup lang="ts">
-import type {
-  BatchCloseoutApprovalDisplaySnapshot,
-  BatchCloseoutItemKind,
-} from '@company/contracts';
-import {
-  BATCH_TERMINATION_IMPACT_LABELS,
-  BATCH_CLOSEOUT_STATUS_LABELS,
-  PRODUCTION_CLOSEOUT_MODE_LABELS,
-} from '@company/constants';
+import type { BatchCloseoutApprovalDisplaySnapshot } from '@company/contracts';
+import { PRODUCTION_CLOSEOUT_MODE_LABELS } from '@company/constants';
 import { formatQuantity as quantity } from '../production-status';
 import { formatDateTimeForDisplay } from '../../../utils/date';
 import ProductionMaterialLossRecords from './ProductionMaterialLossRecords.vue';
 import FinishedInspectionRecordDetail from '../../quality/components/FinishedInspectionRecordDetail.vue';
 import InlineHint from '../../../components/InlineHint.vue';
+import {
+  batchCloseoutActionLabel,
+  batchCloseoutActionStatusLabel,
+} from '../batch-closeout-action-presentation';
 defineProps<{ snapshot: BatchCloseoutApprovalDisplaySnapshot }>();
-const statusLabel = (kind: string, status: string) =>
-  BATCH_CLOSEOUT_STATUS_LABELS[kind]?.[status] ?? '未知状态';
 </script>
 <style scoped>
 .output-note {

@@ -1,7 +1,15 @@
 <template>
   <el-dialog
     :model-value="visible"
-    :title="check?.termination ? '结案信息核对' : detail ? '批次逐项收尾' : '提前结束生产'"
+    :title="
+      check?.termination
+        ? '结案信息核对'
+        : canBegin
+          ? '提前结束生产'
+          : detail
+            ? '批次逐项收尾'
+            : '提前结束生产'
+    "
     :width="DialogWidth.workbench"
     workbench
     :close-on-click-modal="false"
@@ -62,18 +70,22 @@
           :title="
             check.termination
               ? '本批次已结束，以下内容仅供查阅'
-              : '先处理收尾事项，再核对物料并填写产出清单'
+              : check.batchStatus !== 'closing' && detail
+                ? '任务已恢复生产，收尾历史仅供复核'
+                : '先处理收尾事项，再核对物料并填写产出清单'
           "
           :description="
             check.termination
               ? '以下展示收尾与物料核对记录，最终产出请打开批准清单查看。需要办理退料时，请在退料管理重新核对当前可退数量。'
-              : '进入收尾即停止生产。每项处理保留独立记录；驳回结案审批不会恢复已关闭事项。余料在退料管理办理，现场损坏在物料实核中登记；原待确认损耗请先处理或取消。'
+              : check.batchStatus !== 'closing' && detail
+                ? '历史收尾根的保留不代表当前仍可编辑产出或办理质检；再次结束任务后按最新事实核对。已处理事实不会因撤回结束自动恢复。'
+                : '进入收尾即停止生产。每项处理保留独立记录；驳回结案审批不会恢复已关闭事项。余料在退料管理办理，现场损坏在物料实核中登记；原待确认损耗请先处理或取消。'
           "
           type="info"
           :closable="false"
         />
         <el-form
-          v-if="!detail && !check.termination"
+          v-if="canBegin"
           label-position="top"
           class="section"
           :disabled="busy || unresolved"
@@ -92,13 +104,33 @@
             />
           </el-form-item>
         </el-form>
+        <el-alert
+          v-if="canBegin && check.blockers.length"
+          class="notice"
+          type="warning"
+          :closable="false"
+          title="开始收尾前仍需处理"
+        >
+          <ul class="blockers">
+            <li
+              v-for="blocker in check.blockers"
+              :key="blocker"
+            >
+              {{ blocker }}
+            </li>
+          </ul>
+        </el-alert>
         <el-tabs
-          v-else
+          v-if="detail || check.termination"
           v-model="activeTab"
           class="section"
         >
           <el-tab-pane
-            :label="`收尾事项（${check.termination ? 0 : (detail?.pendingItems.length ?? 0)}）`"
+            :label="
+              readonly
+                ? '收尾历史'
+                : `收尾事项（${check.termination ? 0 : (detail?.pendingItems.length ?? 0)}）`
+            "
             name="items"
           >
             <el-collapse
@@ -259,8 +291,7 @@
                 label="事项"
                 min-width="180"
                 ><template #default="{ row }"
-                  >{{ BATCH_TERMINATION_IMPACT_LABELS[row.kind as BatchCloseoutItemKind] }} ·
-                  {{ row.label }}</template
+                  >{{ batchCloseoutActionLabel(row) }} · {{ row.label }}</template
                 ></el-table-column
               >
               <el-table-column
@@ -272,7 +303,8 @@
                 label="结果"
                 min-width="140"
                 ><template #default="{ row }"
-                  >{{ BATCH_CLOSEOUT_STATUS_LABELS[row.kind]?.[row.resultingStatus]
+                  >{{ batchCloseoutActionStatusLabel(row.kind, row.previousStatus) }} →
+                  {{ batchCloseoutActionStatusLabel(row.kind, row.resultingStatus)
                   }}{{
                     row.quantity == null
                       ? ''
@@ -340,6 +372,13 @@
             @click="openApproval(detail.approvalInstanceId)"
             >{{ detail.pendingApprovalId ? '查看在审申请' : '查看最近审批' }}</el-button
           >
+          <el-button
+            v-if="detail?.canWithdraw"
+            type="warning"
+            :disabled="busy || unresolved"
+            @click="openWithdrawal"
+            >撤回结束</el-button
+          >
         </div>
         <div class="footer-actions">
           <el-button
@@ -350,9 +389,11 @@
             >重试原操作</el-button
           >
           <el-button
-            v-else-if="check && !detail && !check.termination"
+            v-else-if="canBegin"
             type="warning"
-            :disabled="locked || !reason.trim()"
+            :disabled="
+              busy || unresolved || Boolean(error) || !check?.canTerminate || !reason.trim()
+            "
             @click="editor.begin"
             >开始收尾</el-button
           >
@@ -437,18 +478,15 @@
   />
 </template>
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
+import { computed, nextTick, onScopeDispose, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { useRouteAccess } from '../../../composables/useRouteAccess';
 import type {
   BatchTerminationMaterial,
-  BatchCloseoutItemKind,
   DemandType,
   DemandBusinessStatus,
 } from '@company/contracts';
 import {
-  BATCH_TERMINATION_IMPACT_LABELS,
-  BATCH_CLOSEOUT_STATUS_LABELS,
   DEMAND_GENERATION_GROUP_TYPE_LABELS,
   DEMAND_BUSINESS_STATUS_LABELS,
 } from '@company/constants';
@@ -464,11 +502,17 @@ import BatchCloseoutWorklist from './BatchCloseoutWorklist.vue';
 import BatchCloseoutMaterialPanel from './BatchCloseoutMaterialPanel.vue';
 import ProductionMaterialLossRecords from './ProductionMaterialLossRecords.vue';
 import ProductionCloseoutMaterialLossDialog from './ProductionCloseoutMaterialLossDialog.vue';
+import { useTabsStore } from '../../../stores/tabs';
+import {
+  batchCloseoutActionLabel,
+  batchCloseoutActionStatusLabel,
+} from '../batch-closeout-action-presentation';
 const props = defineProps<{ visible: boolean; batchId: string | null }>();
 const emit = defineEmits<{
   'update:visible': [boolean];
   terminated: [];
   'open-output': [string];
+  'open-withdrawal': [string];
 }>();
 const router = useRouter();
 const { canAccessRoute } = useRouteAccess();
@@ -491,7 +535,15 @@ const {
   selected,
   itemReason,
   readonly,
+  canBegin,
 } = editor;
+async function openWithdrawal(): Promise<void> {
+  const batchId = props.batchId;
+  if (!batchId || busy.value || unresolved.value) return;
+  await closeWorkbench();
+  await nextTick();
+  if (!props.visible) emit('open-withdrawal', batchId);
+}
 const activeTab = ref('items');
 const demandPanels = ref(['demands']);
 const materialLossVisible = ref(false),
@@ -560,9 +612,17 @@ async function materialLossRecorded() {
   await editor.load();
 }
 async function closeWorkbench() {
+  if (!props.visible) return;
   if (materialLossVisible.value && !(await materialLossDialog.value?.close())) return;
   await editor.close();
 }
+onScopeDispose(
+  useTabsStore().registerCloseGuard(String(useRoute().name), async () => {
+    await closeWorkbench();
+    await nextTick();
+    return !props.visible;
+  }),
+);
 async function openOutput() {
   const batchId = props.batchId;
   if (!batchId) return;
@@ -574,6 +634,15 @@ const openApproval = (instanceId: string) => {
   if (!canAccessRoute({ name: 'approval-inbox' })) return;
   return router.push({ name: 'approval-inbox', query: { instanceId } });
 };
+defineExpose({
+  refresh: editor.load,
+  close: async (): Promise<boolean> => {
+    await closeWorkbench();
+    await nextTick();
+    return !props.visible;
+  },
+  navigationLocked: computed(() => busy.value || unresolved.value),
+});
 </script>
 <style scoped>
 .section {

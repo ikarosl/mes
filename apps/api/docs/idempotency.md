@@ -111,7 +111,7 @@ scope 是服务端独占版本，客户端不能选择／协商。不兼容的�
 
 以下是平台容易遗漏的接线边界，业务资格与数量算法仍由模块所有者维护：
 
-- [生产需求](../src/modules/production/docs/database/demand-allocation-and-outbound.md)：需求事实、锁版基础／material_plan_version、审计和结果同事务，重放不再生成需求或推进版本。研发开始／结束同样保存原状态转换结果，重放不再消费授权或推进任务。
+- [生产需求](../src/modules/production/docs/database/demand-allocation-and-outbound.md)：需求事实、锁版基础、任务版本、审计和结果同事务，重放不再生成需求或推进版本。管理员任务开工、研发结束与撤回结束保存原状态转换结果，重放不追加开工或进入／撤回事实。
 - [审批与收尾](../src/modules/production/docs/database/production-termination.md)：送审的业务记录绑定、Approval 实例／节点、审计及通知均在外层事务，不先保存申请再异步补审批。通用批准／驳回／撤回仍依赖当前节点和版本，不据此宣称 HTTP 幂等重放。损坏登记与实核版本同事务，不能附加第二次库存扣减。
 - [成品质检](../src/modules/quality/docs/finished-inspections.md)：先规范化 G/F、派生 N、方式与明确结论，再对完整检查事实指纹；不接收成品整批 C，也不计算放行量。说明与凭据 trim，结果保存 batchId、实际 inspectionId 和新 version，不能只保存成功布尔值。登记 namespace 为 `quality.finished-inspection.record.v3`，旧 v2 结果不按新事实语义重放。
 - [成品入库](../src/modules/production/docs/database/finished-goods-inbound.md)：来源锁内复核、库存批次／流水、单据与审计同事务，结果严格保留 inboundId，重放不再建批或写库存；不能换键绕过当前来源锁。

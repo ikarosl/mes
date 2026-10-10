@@ -7,16 +7,28 @@ Production 所有结案、产出草稿和批准清单；质检记录由 Quality 
 ## 流程与状态
 
 - 未领料、未开工任务使用取消，保留原取消资格校验。
-- 批量正常执行完成校验全部工序明确完成、需求和补料，不要求末道正常报工等于计划；研发正常结束不检查工序或末道报工，也不要求此时已领齐剩余需求，物料待办在结案中处理。两类任务均记录 `execution_completed_at/by`，由 `doing` 进入 `closing`，建立 `normal` 结案草稿，不在批次表存储报工汇总数量。此时尚未最终结案。
+- 批量正常执行完成只校验全部工序明确完成，不要求报工量达标、需求领齐或补料履约；研发不检查工序。两类任务记录 `execution_completed_at/by`，由 `doing` 进入 `closing`，创建或复用唯一 `normal` 结案主记录；剩余物料事项在送审前处理。
 - 提前停止从 `material_partially_outbound/material_outbound/doing` 进入 `closing`，建立 `early` 收尾草稿；先逐项处理未结束事项，再核对物料和产出。在途需求纠错须先撤回或驳回。
 - 首份清单末级批准后，`normal` 批次进入 `completed` 并记录最终结案时间／人，`early` 批次进入 `terminated`。正常工序完成后的质检可用量不足计划也按这一次结案审批接受实际结果，不另建短产审批。
 - 批准清单更正不重开批次、工序或工单；保留旧版，批准后生成新版并推进唯一有效版本指针。
 
-进入 `closing` 即停止派工、实际开工、返工执行、新增需求、在产损耗登记及普通分配／出库；员工状态与报工只读。管理员当前无在审申请时可办理限定的普通正常报工历史纠错，不恢复执行或改派资格，不改原批准证据、批准产出或库存；初次结案和后续产出更正在审均冻结写入。状态历史只读，不开放历史状态更正或撤销误开工；保留工序状态及未完成工序逐项终止，完整边界见[执行与纠错权限](execution-traceability-quality.md#执行结案与纠错权限已确认)。实际退料仍在退料管理办理；不是要求把所有已领物料退回。管理员核实可退余料、已耗用与损坏情况并留存安排。驳回／撤回只解除本次送审冻结，不恢复已关闭需求、工序执行资格、员工写入或已办理退料。
+进入 `closing` 即停止派工、实际开工、返工执行、新增需求、在产损耗登记及普通分配／出库；员工状态与报工只读。管理员当前无在审申请时可办理限定的普通正常报工历史纠错，不恢复执行或改派资格，不改原批准证据、批准产出或库存；初次结案和后续产出更正在审均冻结写入。状态历史只读，不开放历史状态更正或撤销误开工；保留工序状态及未完成工序逐项终止，完整边界见[执行与纠错权限](execution-traceability-quality.md#执行结案与纠错权限已确认)。实际退料仍在退料管理办理；不是要求把所有已领物料退回。管理员核实可退余料、已耗用与损坏情况并留存安排。审批驳回／撤回只解除本次送审冻结，不恢复已关闭需求、工序执行资格、员工写入或已办理退料。
 
 页面操作使用“提前结束”“继续收尾”“核对产出清单”“查看结案信息”。正常完成执行后直接核对产出，并可进入同一物料核对工作台；没有待处理事项时明确展示空态。
 
 提前结束清单首次批准为 `terminated` 后，原任务计划不再占工单分配额度；`closing` 期间仍占用。原计划、领料及批准产出保留，任务额度及版本边界见[工单设计](work-orders-and-batches.md)。
+
+## 撤回结束与再次收尾
+
+管理员发现遗漏需求、分配、领料或报工时，可在 `closing` 且尚无批准版本、无当前在审申请时执行“撤回结束”。在审先由审批原入口撤回／驳回。请求同时携带任务与结案版本及原因，恢复阶段由服务端读取本次进入行动决定，不接受任意目标状态。
+
+已开工任务恢复 `doing`，保留首次任务开工信息；未开工任务恢复原准备阶段。当前 `execution_completed_at/by` 清空，原完成时点进入历史。工单不随任务撤回倒退。已关闭需求、释放预留、取消单据／补料／返工、终止工序、检验及库存事实不恢复；需要时通过各自已有能力补建、办理或纠错。任务回到执行中会恢复员工原执行权限，已完成工序仍须明确重开才能新增报工。
+
+正常与提前结束均复用 `production_batch_closeout` 唯一根，重入更新本次模式、原因和版本，追加进入行动；历史行动与原审批申请保留。再次送审根据当前事实生成新快照。物料实核继续按实际事实变化判断是否需要重核，不因一次撤回全部失效。
+
+撤回不检查报工完整性、不推断新产出、不判断原检验实物范围，不自动清除检验引用或改变轮次。管理员判断是否继续引用；原显式复检、定稿更正和引用资格规则继续有效。任务恢复执行期间停止产出及 Quality 写入，读取资格也按当前任务阶段返回。
+
+进入／撤回在工单→任务→结案根锁序下，与版本、成功审计及幂等结果同事务完成。行动复用 `production_batch_closeout_action`：`item_kind=task`、`target_id` 为任务 ID，前后状态为真实变更；`fact_snapshot` 保存 `actionType`、进入前状态、模式及完成时点，撤回关联 `entryActionId`。历史行动种类包含 task，但逐项处理接口只接受原子事项种类，不能借该接口调整任务状态。
 
 ## 逐项处理
 
@@ -32,7 +44,7 @@ Production 所有结案、产出草稿和批准清单；质检记录由 Quality 
 | --- | --- | --- |
 | 待出库单 | 仅 `pending_picking → cancelled`，取消来源 `production_termination`；其他未完成状态须先到对应管理页处理 | 已确认出库、整单原明细、库存流水 |
 | 分配 | 先处理待出库单，再核对并释放仍有未出库预留的分配；冻结或异常分配即使预留为零也须人工核对处理。`active` 且已全部领料、无未完成出库的分配不列为释放待办 | 原分配量、原库存批次和已领量；只释放尚未出库的预留 |
-| 活动需求 | 先处理待出库单、剩余预留及冻结或异常分配，再由统一 Writer 写 `closed / batch_closeout`；已全部领料的正常有效分配不阻断关闭。每次需求关闭推进一次物料计划和批次版本 | 原 `need_number/remaining_number`、已领事实及关闭原因 |
+| 活动需求 | 先处理待出库单、剩余预留及冻结或异常分配，再由统一 Writer 写 `closed / batch_closeout`；已全部领料的正常有效分配不阻断关闭。每次需求关闭推进一次任务版本 | 原 `need_number/remaining_number`、已领事实及关闭原因 |
 | 未完成工序 | `pending/assigned/doing → terminated`；明确记录终止人、时间、说明和收尾 ID | 原负责人、首次开工和报工事实，处理前状态留于行动快照；不填写正常完工时间 |
 | 待处理异常 | `pending_review → terminated`，记录处理人和时间 | 原异常报工及来源，不生成新报废补料事实 |
 | 未完成返工 | `pending/doing → cancelled` | 已发生报工与完成返工事实 |
@@ -49,7 +61,7 @@ Production 所有结案、产出草稿和批准清单；质检记录由 Quality 
 
 正常执行完成和提前结束的初次 `closing` 均可登记已领物料损坏；仅送审前开放，当前批准版非空或正在审批时拒绝。已结案后不补登记，也不借成品清单更正修改损坏事实。管理员在物料实核中选择原分配、填写实际损坏数量和原因，明确确认后即写入 `item_scrap(loss_purpose=closeout_record,status=confirmed)`，关联当前 `closeout_id`；审批驳回不撤销这个已确认事实，当前不提供冲销或改量。
 
-独立 `ProductionCloseoutMaterialLossService`／Port／Adapter 承担完整写事务。锁序为工单 → 批次 → 收尾根 → 分配；按当前读核验“已确认领料 − pending/returned 退料 − pending/confirmed 损耗”。原需求已关闭、分配已释放仍可作为真实领料来源，不能以活动状态替代来源校验。不会创建补料需求、补产授权或库存流水，也不推进物料计划版本；仅增加损耗事实、收尾版本、成功审计和幂等结果。
+独立 `ProductionCloseoutMaterialLossService`／Port／Adapter 承担完整写事务。锁序为工单 → 批次 → 收尾根 → 分配；按当前读核验“已确认领料 − pending/returned 退料 − pending/confirmed 损耗”。原需求已关闭、分配已释放仍可作为真实领料来源，不能以活动状态替代来源校验。不会创建补料需求、补产授权或库存流水；仅增加损耗事实、收尾版本、成功审计和幂等结果。
 
 `POST /production/batches/:batchId/closeout/material-losses` 独立要求 `production:tasks:manage-output`。请求为 `version/checkToken/allocationId/scrapQuantity/reason`，不接受用途、物料身份或单位。数量为正整数且不得超过当前可退上限；物料、版本、库存批次、单位均取来源分配。首次确认之后永久占用本来源可退上限，不因关闭补料需求释放。
 
@@ -90,12 +102,12 @@ Quality 的全检／抽检仅记录 G/F，N=G+F 自动派生且普通检查 N>0�
 
 ### `production_batch_closeout_action`
 
-不可变逐项处理事实，UPDATE/DELETE 触发器禁止改写，无 `version/updated_*/is_deleted`。
+不可变任务生命周期与逐项处理事实，UPDATE/DELETE 触发器禁止改写，无 `version/updated_*/is_deleted`。
 
 | 字段 | 类型／约束 | 含义 |
 | --- | --- | --- |
 | `id / closeout_id` | 自增主键／非空 FK 收尾记录 | 索引 `(closeout_id,id)` |
-| `item_kind` | `VARCHAR(30)`，CHECK 封闭枚举 | step、abnormal、rework、supplement、outbound、demand、allocation、material |
+| `item_kind` | `VARCHAR(30)`，CHECK 封闭枚举 | task、step、abnormal、rework、supplement、outbound、demand、allocation、material |
 | `target_id` | `BIGINT UNSIGNED NOT NULL` | 本模块目标记录；类型与同批次归属锁内校验 |
 | `label` | `VARCHAR(200) NOT NULL` | 来源记录标识 |
 | `previous_status / resulting_status` | `VARCHAR(40) NOT NULL` | 实际处理前后状态 |
@@ -160,7 +172,7 @@ Quality 独立查询路径为 `GET /api/quality/finished-inspections/:batchId`�
 
 审批场景沿用 `production.batch.closeout`、对象 `production_batch_closeout`，名称为“生产任务结案”。末节点必须 `business + production.work_order_owner`；前序节点可配置角色或指定用户。事务在工单 → 批次 → 草稿锁序内读取工单负责人，和证据一并交给 Approval；负责人无有效审批资格时拒绝，不回退到提交人或管理员。审批冻结所解析用户，待办和决定实时核对其账号及权限。
 
-当前结案审批证据结构仅接受 `schemaVersion=8`，包含结案模式、前版、更正原因、具体全检／抽检／零量核实 G/F/N 事实、放行结论、原检验轮固定已入基准、产出三项、原收尾处理与逐笔物料损耗证据，以及 `workOrderOwnerEvidence`。解析独立校验 G/F、派生 N、零量放行、计划内上限与来源资格；不含整批 C、本次放行建议、累计建议、抽检整批推算、范围说明或剔除量，不读旧版、不补造缺失快照。写流程另行要求最新适用记录明确 `released`。
+当前结案审批证据结构仅接受 `schemaVersion=9`，包含任务进入／撤回行动、结案模式、前版、更正原因、具体全检／抽检／零量核实 G/F/N 事实、放行结论、原检验轮固定已入基准、产出三项、原收尾处理与逐笔物料损耗证据，以及 `workOrderOwnerEvidence`。解析独立校验 G/F、派生 N、零量放行、计划内上限与来源资格；不含整批 C、本次放行建议、累计建议、抽检整批推算、范围说明或剔除量，不读旧版、不补造缺失快照。写流程另行要求最新适用记录明确 `released`。
 
 审批详情与批准清单响应使用 `BatchCloseoutApprovalDisplaySnapshot`：在解析原快照后，由 Production 按 `closeoutId + previousRevisionId` 读取不可变批准记录的真实 `revision_no`，补充只读 `previousRevisionNo`。完整清单与按 ID 读取的历史清单采用同一映射；不按数组位置、当前版减一或记录 ID 推算版次。没有前版或同根引用无法读取时返回 `null`，调用方结合原 `previousRevisionId` 区分首次结案和引用缺失。登记人名称同样作为只读显示信息解析。展示字段不写回历史 JSON、不参与送审指纹或批准比较，不改变快照结构版本；Approval 通过所属 handler 获取展示信息，不直接读取 Production 表。
 

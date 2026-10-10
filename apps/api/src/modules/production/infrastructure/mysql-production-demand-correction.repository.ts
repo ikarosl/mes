@@ -389,7 +389,6 @@ export class MysqlProductionDemandCorrectionRepository extends ProductionDemandC
           instanceId,
           newDemandId,
           closeCause,
-          materialPlanVersion: batch.material_plan_version + 1,
           ...activation,
         },
       );

@@ -16,7 +16,7 @@ import {
   mapStepCommandResult,
 } from './mysql-production-step-actions.persistence.js';
 
-/** 只更改工序状态；首工启动及任务结束继续由执行 Repository 负责。 */
+/** 只更改工序状态；任务开工及结束由独立任务命令负责。 */
 export const executeStepStateCommand = (
   pool: Pool,
   action: 'complete' | 'reopen',

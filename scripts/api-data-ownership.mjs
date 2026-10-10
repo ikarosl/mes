@@ -101,8 +101,8 @@ export const API_DATA_OWNERSHIP = Object.freeze({
     'production_manual_demand_addition',
     'production_item_demand',
     'production_item_allocation',
-    'production_short_batch_authorization',
-    'production_short_batch_authorization_detail',
+    'production_short_batch_authorization', // Retired; historical migration ownership.
+    'production_short_batch_authorization_detail', // Retired; historical migration ownership.
     'item_scrap',
     'outbound_order',
     'outbound_detail',

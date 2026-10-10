@@ -189,15 +189,6 @@ export const useProductionExecutionRecords = () => {
       pendingKeys.value = next;
     }
   };
-  const completeExecution = (): Promise<void> => {
-    const check = completionCheck.value;
-    if (!check) return Promise.resolve();
-    return withPending(`complete:${check.productionBatchId}`, async () => {
-      requireCurrentBatch(check.productionBatchId);
-      await productionApi.completeProductionExecution(check.productionBatchId, check.version);
-      await refreshSelectedBatch(check.productionBatchId);
-    });
-  };
   const approveRework = (
     disposition: BatchStepAbnormalDispositionItem,
     remark: string,
@@ -382,7 +373,6 @@ export const useProductionExecutionRecords = () => {
     pendingKeys,
     loadBatches,
     selectBatch,
-    completeExecution,
     approveRework,
     rejectDisposition,
     startRework,

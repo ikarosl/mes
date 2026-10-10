@@ -52,6 +52,13 @@ export function useBatchCloseout(
     successMessage: string;
   } | null = null;
   const readonly = computed(() => Boolean(detail.value && !detail.value.canHandle));
+  const canBegin = computed(() =>
+    Boolean(
+      check.value &&
+      !['closing', 'completed', 'terminated', 'cancelled'].includes(check.value.batchStatus) &&
+      !check.value.termination,
+    ),
+  );
   async function load(initialize = false) {
     const batchId = props.batchId;
     if (!batchId || !props.visible) return;
@@ -67,7 +74,7 @@ export function useBatchCloseout(
       validateCloseoutResponse(preview, closeout, batchId);
       check.value = closeout?.check ?? preview;
       detail.value = closeout;
-      if (initialize) reason.value = closeout?.reason ?? '';
+      if (initialize) reason.value = closeout?.canHandle ? closeout.reason : '';
     } catch (failure) {
       if (current()) {
         error.value = failure instanceof Error ? failure.message : '加载失败';
@@ -123,6 +130,8 @@ export function useBatchCloseout(
     if (
       !props.batchId ||
       !check.value ||
+      !canBegin.value ||
+      !check.value.canTerminate ||
       !reason.value.trim() ||
       unresolved.value ||
       submitting.value ||
@@ -132,7 +141,11 @@ export function useBatchCloseout(
     )
       return;
     const batchId = props.batchId;
-    const body = { version: check.value.version, reason: reason.value.trim() };
+    const body = {
+      version: check.value.version,
+      closeoutVersion: detail.value?.version ?? null,
+      reason: reason.value.trim(),
+    };
     batchHandling.value = true;
     try {
       try {
@@ -144,7 +157,12 @@ export function useBatchCloseout(
       } catch {
         return;
       }
-      if (props.batchId !== batchId || !props.visible || check.value?.version !== body.version)
+      if (
+        props.batchId !== batchId ||
+        !props.visible ||
+        check.value?.version !== body.version ||
+        (detail.value?.version ?? null) !== body.closeoutVersion
+      )
         return;
       await run(
         'production.closeout.begin',
@@ -288,9 +306,7 @@ export function useBatchCloseout(
     }
     if (
       !unresolved.value &&
-      (selected.value ||
-        itemDraftDirty.value ||
-        (!detail.value && !readonly.value && reason.value.trim()))
+      (selected.value || itemDraftDirty.value || (canBegin.value && reason.value.trim()))
     ) {
       try {
         await RouteMessageBox.confirm('尚有未保存的本项说明，确认放弃这些输入？', '关闭收尾窗口', {
@@ -345,6 +361,7 @@ export function useBatchCloseout(
     selected,
     itemReason,
     readonly,
+    canBegin,
     load,
     begin,
     handle,

@@ -4,7 +4,6 @@ import type {
   ProductionBatchQuery,
   ProductionExecutionBatchSummary,
 } from '@company/contracts';
-import type { MaterialVariantQuery } from '../../product/public.js';
 import { BATCH_SELECT, type BatchRow } from './mysql-production.shared.js';
 import { mapBatches } from './mysql-production-batch-display.mapper.js';
 import { fixedIntegerQuantity } from '../domain/integer-quantity.js';
@@ -19,7 +18,6 @@ type ExecutionBatchRow = BatchRow & {
 export const selectExecutionBatchSummaries = async (
   pool: Pool,
   query: ProductionBatchQuery,
-  variants: MaterialVariantQuery,
 ): Promise<PageResult<ProductionExecutionBatchSummary>> => {
   const page = query.page ?? 1;
   const pageSize = query.pageSize ?? 20;
@@ -52,7 +50,7 @@ export const selectExecutionBatchSummaries = async (
      ORDER BY base.created_at DESC,base.id DESC LIMIT ? OFFSET ?`,
     [...values, pageSize, (page - 1) * pageSize],
   );
-  const batches = await mapBatches(pool, rows, variants);
+  const batches = mapBatches(rows);
   return {
     items: rows.map((row, index) => ({
       ...batches[index]!,

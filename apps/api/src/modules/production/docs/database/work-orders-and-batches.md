@@ -188,7 +188,10 @@
 | `planned_quantity`       | `INT`   | 本批次计划生产数量              |
 | `plan_start_date`        | `DATE`            | 本批次计划开始日期，可为空        |
 | `plan_end_date`          | `DATE`            | 本批次计划完工日期，可为空        |
-| `started_at`              | `DATETIME`        | 批次实际开工时间，可为空        |
+| `started_at` | `DATETIME` | 首次管理员任务开工时间；撤回结束时保留 |
+| `started_by` | `BIGINT UNSIGNED` | 首次任务开工人，FK 用户 |
+| `start_reason` | `TEXT` | 开工说明；存在活动需求领料缺口时必填 |
+| `start_material_snapshot` | `JSON` | 首次开工锁内读取的需求与领料缺口快照，仅提示和追溯，不形成产能额度 |
 | `completed_at`           | `DATETIME`        | 正常结案末级批准时间，可为空            |
 | `execution_completed_at / execution_completed_by` | `DATETIME / BIGINT UNSIGNED` | 正常执行确认时间／人员，成对填写，人员 FK 用户 |
 | `completed_by`           | `BIGINT UNSIGNED` | 完工确认人，可为空              |
@@ -196,7 +199,6 @@
 | `cancelled_by`           | `BIGINT UNSIGNED` | 取消人；历史未记录数据可为空    |
 | `cancelled_at`           | `DATETIME`        | 取消时间；历史未记录数据可为空  |
 | `status`                 | `VARCHAR(40)`     | 生产批次状态                    |
-| `material_plan_version`  | `INT UNSIGNED`    | 当前整组物料需求计划版本，默认 `1`；用于判断短批授权是否过期 |
 | `batch_owner_id`         | `BIGINT UNSIGNED` | 批次负责人，负责该批次执行，可为空 |
 | `remark`                 | `TEXT`            | 备注                            |
 | `version`                | `INT`             | 乐观锁版本号，默认 `0`          |
@@ -217,7 +219,6 @@
 - 唯一约束：`UNIQUE (batch_no)`；批次号在全系统范围内唯一，仅服务端自动分配，不接受手填
 - 组合引用索引：`UNIQUE (id, work_order_id)`、`UNIQUE (id, product_id)`
 - 检查约束：`CHECK (status IN ('pending', 'material_pending', 'material_assigned', 'material_partially_outbound', 'material_outbound', 'doing', 'completed', 'cancelled', 'terminated', 'closing'))`
-- 检查约束：`CHECK (material_plan_version > 0)`
 - 组合索引：`INDEX (work_order_id, status)`，用于按工单查询有效生产批次
 - 索引：`INDEX (plan_start_date)`，用于生产排程与按计划开工日筛选
 
@@ -228,7 +229,7 @@
 | `pending`           | 待开始                 |
 | `material_pending`  | 待生成或待确认物料需求 |
 | `material_assigned` | 物料已分配             |
-| `material_partially_outbound` | 已确认一部分领料，但仍有活动物料需求 （该状态仅在短批授权的批次下才会出现，正常情况原始物料需求应该被整体满足出库，不可能出部分出库的情况） |
+| `material_partially_outbound` | 尚未开工，已经确认部分领料；不表示开工资格或当前现场余额 |
 | `material_outbound` | 尚未开工，且已经完成当时全部活动需求的确认领用；后续补料需求不使本状态回退 |
 | `doing`             | 生产中                 |
 | `completed`         | 生产完成               |
@@ -241,15 +242,15 @@
 | 当前状态 | 允许的下一状态 |
 | --- | --- |
 | `pending` | `material_pending`、`cancelled` |
-| `material_pending` | `material_assigned`、`material_partially_outbound`、`material_outbound`、`cancelled` |
-| `material_assigned` | `material_pending`、`material_outbound`、`cancelled` |
+| `material_pending` | `material_assigned`、`material_partially_outbound`、`material_outbound`、`doing`、`cancelled` |
+| `material_assigned` | `material_pending`、`material_partially_outbound`、`material_outbound`、`doing`、`cancelled` |
 | `material_partially_outbound` | `material_outbound`、`doing`、`closing` |
 | `material_outbound` | `doing`、`closing` |
 | `doing` | `closing` |
-| `closing` | 首份清单末级批准后 normal → `completed`，early → `terminated` |
+| `closing` | 首份清单末级批准后 normal → `completed`，early → `terminated`；批准前明确撤回结束恢复本次进入前阶段 |
 | `completed`、`cancelled`、`terminated` | 无，终态 |
 
-状态边仅是必要条件；实际命令还必须满足下面的取消、齐套、短批授权和执行门禁。
+状态边仅是必要条件；实际命令还必须满足配置、任务阶段、权限、版本及所属业务资格。
 
 任务生成与取消规则：
 
@@ -261,21 +262,20 @@
 - 取消事务把 `pending_picking` 待出库单转为 `cancelled`、把活动分配转为 `cancelled` 以释放库存预留、把活动需求转为 `cancelled`，最后把生产批次状态、取消原因、取消人和取消时间同一条更新写入；这些写入和成功审计同事务提交，不生成 `inventory_transaction`。
 - `material_partially_outbound`、`material_outbound`、`doing`、`completed` 明令禁止取消。只要存在已确认出库事实，即使批次状态异常滞后也必须拒绝；第一版不提供强制取消或绕过入口。已开工批次通过独立逐项收尾及结案流程结束，不能复用本取消命令。
 
-短批状态与版本规则：
+### 管理员任务开工与物料阶段
 
-- `material_plan_version` 不是单条需求版本，而是“管理员授权时看到的整组物料计划编号”。创建或取消需求时递增；继续确认出库只会缩小缺口，不递增。退料是余料回仓，不恢复需求、不推进该版本、不改变授权状态；短批开工只要求已发生确认领料，不扣除退料。
-- 有效短批授权确认首笔部分领料后，批次从 `material_pending` 进入 `material_partially_outbound`；该状态只表达已经发生部分出库，不表达授权是否仍有效。
-- `material_partially_outbound` 不因后续完成分配而回退到 `material_assigned/material_pending`。当前版本授权失效但全部活动需求已经完成分配时，可以不关联短批授权继续普通领料；全部需求确认出库后前进到 `material_outbound`。
-- `material_outbound` 与此前是否使用短批授权无关：普通任务由 `material_assigned` 进入；短批任务若在实际开工前补齐全部领料，也由 `material_partially_outbound` 进入。批次已经凭短批授权进入 `doing` 后，后续补齐物料不回退到 `material_outbound`。
-- `material_outbound` 形成后新增的人工追加或工序报废补料需求由 `production_item_demand.business_status` 表达，不要求批次状态回退。此时只有活动追加或工序补料需求可以重新进入分配、候选与制单链路，已经满足的正常需求及其历史分配不得重新成为出库候选。
-- 首工序开工事务重新检查授权仍有效、版本匹配、已发生确认领料（不扣除退料，全部退回也不影响开工资格），且实际缺口没有超过逐需求批准值，成功后进入 `doing` 并消费授权。
-- 短批开工后剩余活动需求继续分配和出库；批量执行完工及最终结案仍受活动需求门禁约束；研发可先结束执行，再在正常结案中处理剩余需求。完整授权表、剩余需求关闭和出库关联规则见 [生产需求、分配与领料出库](demand-allocation-and-outbound.md)。
-- 批次查询除授权状态外还派生短批授权动作，供管理端决定显示“授权、重新授权、调整、查看、无需授权”。该字段不是写入事实，授权预览和提交事务必须按锁内最新需求、分配及授权明细重新计算。
+管理员通过统一任务开工命令推进任务为 `doing`，并在工单尚为 `released` 时推进工单。两类任务都必须先有正式需求配置：批量必须已有完整的 `production_material_requirement_basis` 配置事实；研发不要求 BOM 或工序，但至少须手工配置一条本任务的 `production_item_demand` 正式需求，不能在从未提需时开工。配置资格判断是否已形成正式事实，不按当前活动需求数量判断；已履约或已关闭的需求仍保留配置历史。原始需求关闭不删除批量基础，也不重新开放初始配置，额外用料使用已有人工提需。
+
+开工不要求领料、分配齐套或短批授权。预览显示当前正式需求及已确认领料、未领余量；缺料时提交说明。事务重新读取当前事实并保存 `started_at/started_by/start_reason/start_material_snapshot`，首次开工后不覆盖。未开工时开工人、说明与快照均为空；有开工时间时必须同时存在开工人和快照。
+
+工序开始仅检查任务处于执行中、当前派工与工序自身状态，不再推进任务或工单。需求变更由统一 Writer 推进任务 `version`，不再保留短批专用物料计划版本。正常物流推进按[物料办理资格](demand-allocation-and-outbound.md#物料办理资格)处理；任务执行中不因领料回到物料阶段。
+
+收尾未批准时可明确[撤回结束](production-termination.md#撤回结束与再次收尾)。恢复状态取本次进入事实，已开工恢复执行中，未开工恢复原准备阶段，不重算齐套、不复活需求或分配。`material_*` 是办理阶段；页面不得由阶段直接断言所有物料操作已完成。
 
 当前批量生产执行完工数量规则（研发按任务级结束，不要求工序或领齐剩余需求，最终结案仍须处理物料待办）：
 
 - 以本批次中 `step_order_snapshot` 最大的工序作为数量来源工序，同序时按工序记录 ID 降序确定；查询字段 `lastStepReportedQuantity` 从该工序的不可变 `batch_step_reports` 聚合 `effective_normal`，计入冲销和替代事实，不在批次表缓存数量。进行中或提前结束任务已有的有效末工序报工也按同一口径展示；无工序或尚无报工时查询返回 `0`，不代表已执行完成。
-- 执行完工命令必须在事务内重新锁定并校验所有工序均为 `completed`、需求和补料已满足、末道有效正常量达到执行目标；成功只记录 `execution_completed_at/by`、进入 `closing` 并创建 normal 结案草稿，不另存一份执行完成量。
+- 执行完工命令在事务内校验全部工序均为 `completed`，不要求末道正常量达标，也不因活动需求或未履约补料阻止进入收尾；记录 `execution_completed_at/by`、进入 `closing` 并创建或复用 normal 结案主记录。物料事项在送审前处理。
 - 当前至少需要存在一道工序；没有数量来源工序的批次不得执行完工确认。
 - 正常执行确认尚未最终结案；提前停止使用 early closing 逐项收尾。两种模式均登记最终产出和质检事实，交工单负责人同一结案流程批准，管理员产出处置不改报工事实。正常工序已完但最终可用不足计划可以按实际批准，不强制补产。
 - 批次表不保存执行数量或最终合格数量。质检留存独立记录，审定产出只来自当前批准清单。工序记录用 `normalQuantity` 表示有效正常报工量，不能解释为质检合格量或回写为批次数量。

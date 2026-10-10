@@ -93,6 +93,30 @@
                 >
               </div>
               <el-button
+                v-if="
+                  [
+                    'pending',
+                    'material_pending',
+                    'material_assigned',
+                    'material_partially_outbound',
+                    'material_outbound',
+                  ].includes(record.batchStatus)
+                "
+                link
+                type="primary"
+                :disabled="contextLoading || bulkLocked"
+                @click="openExecutionStart"
+                >任务开工</el-button
+              >
+              <el-button
+                v-if="record.batchStatus === 'closing'"
+                link
+                type="warning"
+                :disabled="contextLoading || bulkLocked"
+                @click="openCloseoutWithdrawal(record.productionBatchId)"
+                >撤回结束</el-button
+              >
+              <el-button
                 link
                 type="primary"
                 :aria-expanded="taskDetailsExpanded"
@@ -154,7 +178,7 @@
                   size="small"
                   :disabled="contextLoading || !completionCheck.canComplete"
                   :loading="completionPending"
-                  @click="completionVisible = true"
+                  @click="openExecutionCompletion"
                   >生产执行完工</el-button
                 >
               </div>
@@ -189,6 +213,13 @@
             :closable="false"
             show-icon
             title="当前结案或产出更正正在审批，状态和报工纠错均冻结。申请人撤回或有权审批人驳回后，管理员仍须重新核对资格；员工继续只读。"
+          />
+          <el-alert
+            v-if="record?.batchStatus === 'closing' && !record.pendingApprovalId"
+            class="dialog-tip"
+            type="info"
+            :closable="false"
+            title="任务正在结案阶段。需要补报时，请先撤回结束；已有正常报工的冲销与更正继续按当前资格办理。"
           />
           <ProductionExecutionToolbar
             v-if="record || selectedReports.length || bulkLocked"
@@ -460,52 +491,27 @@
       @locked-change="bulkLocked = $event"
     />
 
-    <el-dialog
-      v-model="completionVisible"
-      title="确认任务执行结束"
-      width="min(640px, 75vw)"
-      :show-close="!completionPending"
-      :close-on-click-modal="false"
-      :close-on-press-escape="!completionPending"
-    >
-      <el-alert
-        class="dialog-tip"
-        type="warning"
-        :closable="false"
-        show-icon
-        title="确认后结束工序执行并进入产出核对。末工序报工数量保留，管理员须登记产出、引用质检记录并提交结案审批；本操作不增加库存。"
-      />
-      <el-descriptions
-        v-if="record && completionCheck"
-        :column="2"
-        border
-      >
-        <el-descriptions-item label="生产批次">{{ record.batchNo }}</el-descriptions-item>
-        <el-descriptions-item label="生产工单">{{ record.workOrderNo }}</el-descriptions-item>
-        <el-descriptions-item label="计划数量">{{
-          formatQuantity(completionCheck.plannedQuantity)
-        }}</el-descriptions-item>
-        <el-descriptions-item label="末工序正常报工">
-          {{ completionCheck.finalRequiredStepName }} ·
-          {{ formatQuantity(completionCheck.finalEffectiveNormalQuantity) }}
-        </el-descriptions-item>
-      </el-descriptions>
-      <p class="completion-note">本操作只确认生产执行完成，不代表质量放行，也不会生成成品入库。</p>
-      <template #footer>
-        <el-button
-          :disabled="completionPending"
-          @click="completionVisible = false"
-          >取消</el-button
-        >
-        <el-button
-          type="primary"
-          :loading="completionPending"
-          :disabled="contextLoading || completionPending || !completionCheck?.canComplete"
-          @click="submitCompletion"
-          >确认生产执行完工</el-button
-        >
-      </template>
-    </el-dialog>
+    <ProductionExecutionStartDialog
+      ref="executionStartDialog"
+      v-model:visible="executionStartVisible"
+      :batch-id="taskActionBatchId"
+      :batch-label="taskActionLabel"
+      @changed="taskPhaseChanged"
+    />
+    <ProductionExecutionCompletionDialog
+      ref="executionCompletionDialog"
+      v-model:visible="completionVisible"
+      :batch-id="taskActionBatchId"
+      :batch-label="taskActionLabel"
+      @changed="executionCompleted"
+    />
+    <ProductionCloseoutWithdrawalDialog
+      ref="closeoutWithdrawalDialog"
+      v-model:visible="closeoutWithdrawalVisible"
+      :batch-id="taskActionBatchId"
+      :batch-label="taskActionLabel"
+      @changed="taskPhaseChanged"
+    />
   </div>
   <ProductionReportTraceDialog :reader="reportTrace" />
   <ProductionStepScrapDetailsDialog
@@ -513,21 +519,25 @@
     @view-report="reportTrace.open"
   />
   <ProductionOutputDialog
+    ref="outputDialog"
     v-model:visible="outputVisible"
     :batch-id="outputBatchId"
     @changed="refreshCurrent"
     @open-closeout="openCloseoutItems"
+    @open-withdrawal="openCloseoutWithdrawal"
   />
   <ProductionBatchTerminationDialog
+    ref="closeoutDialog"
     v-model:visible="closeoutVisible"
     :batch-id="outputBatchId"
     @terminated="refreshCurrent"
     @open-output="openOutput"
+    @open-withdrawal="openCloseoutWithdrawal"
   />
 </template>
 
 <script setup lang="ts">
-import { computed, onScopeDispose, ref, watch } from 'vue';
+import { computed, nextTick, onScopeDispose, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { Refresh } from '@element-plus/icons-vue';
 import {
@@ -551,6 +561,9 @@ import ProductionExecutionToolbar from './components/ProductionExecutionToolbar.
 import ProductionReportSelectionDialog from './components/ProductionReportSelectionDialog.vue';
 import ProductionOutputDialog from './components/ProductionOutputDialog.vue';
 import ProductionBatchTerminationDialog from './components/ProductionBatchTerminationDialog.vue';
+import ProductionExecutionStartDialog from './components/ProductionExecutionStartDialog.vue';
+import ProductionExecutionCompletionDialog from './components/ProductionExecutionCompletionDialog.vue';
+import ProductionCloseoutWithdrawalDialog from './components/ProductionCloseoutWithdrawalDialog.vue';
 import AbnormalReworkPanel from './components/AbnormalReworkPanel.vue';
 import ProductionStepQuotaDistribution from './components/ProductionStepQuotaDistribution.vue';
 import ProductionStepScrapDetailsDialog from './components/ProductionStepScrapDetailsDialog.vue';
@@ -581,6 +594,53 @@ defineOptions({ name: 'ProductionExecutionRecordsPage' });
 const outputVisible = ref(false),
   closeoutVisible = ref(false),
   outputBatchId = ref<string | null>(null);
+const outputDialog = ref<InstanceType<typeof ProductionOutputDialog> | null>(null);
+const closeoutDialog = ref<InstanceType<typeof ProductionBatchTerminationDialog> | null>(null);
+const executionStartVisible = ref(false);
+const closeoutWithdrawalVisible = ref(false);
+const taskActionBatchId = ref<string | null>(null);
+const taskActionLabel = ref('');
+const executionStartDialog = ref<InstanceType<typeof ProductionExecutionStartDialog> | null>(null);
+const executionCompletionDialog = ref<InstanceType<
+  typeof ProductionExecutionCompletionDialog
+> | null>(null);
+const closeoutWithdrawalDialog = ref<InstanceType<
+  typeof ProductionCloseoutWithdrawalDialog
+> | null>(null);
+const prepareTaskAction = async (batchId: string): Promise<boolean> => {
+  if (contextLoading.value || !(await canChangeTarget())) return false;
+  await nextTick();
+  if (
+    route.name !== 'production-execution-records' ||
+    selectedBatchId.value !== batchId ||
+    !record.value
+  )
+    return false;
+  taskActionBatchId.value = batchId;
+  taskActionLabel.value = `${record.value.batchNo} · ${record.value.productName}`;
+  return true;
+};
+const openExecutionStart = async (): Promise<void> => {
+  if (selectedBatchId.value && (await prepareTaskAction(selectedBatchId.value)))
+    executionStartVisible.value = true;
+};
+const openExecutionCompletion = async (): Promise<void> => {
+  if (selectedBatchId.value && (await prepareTaskAction(selectedBatchId.value)))
+    completionVisible.value = true;
+};
+const openCloseoutWithdrawal = async (batchId: string): Promise<void> => {
+  if (await prepareTaskAction(batchId)) closeoutWithdrawalVisible.value = true;
+};
+const taskPhaseChanged = async (batchId: string): Promise<void> => {
+  await refreshCurrent();
+  if (outputVisible.value && outputBatchId.value === batchId) await outputDialog.value?.refresh();
+  if (closeoutVisible.value && outputBatchId.value === batchId)
+    await closeoutDialog.value?.refresh();
+};
+const executionCompleted = async (batchId: string): Promise<void> => {
+  await taskPhaseChanged(batchId);
+  if (selectedBatchId.value === batchId) openOutput(batchId);
+};
 const openOutput = (batchId: string): void => {
   if (contextLoading.value) return;
   outputBatchId.value = batchId;
@@ -611,7 +671,6 @@ const {
   pendingKeys,
   loadBatches,
   selectBatch: readBatch,
-  completeExecution,
   approveRework,
   rejectDisposition,
   startRework,
@@ -726,11 +785,12 @@ const contextForStep = (
         hasPreviousStep: step.previousStepNormalQuantity !== null,
         canReport: historical ? step.canCreateHistoricalReport : step.canReport,
         reportBlockedReason: historical
-          ? step.historicalCorrectionBlockedReason
+          ? step.historicalCreateBlockedReason
           : step.reportBlockedReason,
       }
     : null;
 const canReportStep = (step: BatchStepExecutionRecordItem, historical = false): boolean => {
+  if (historical && record.value?.batchStatus === 'closing') return false;
   const context = contextForStep(step, historical);
   return context !== null && canOpenProductionReport(context, historical);
 };
@@ -738,6 +798,8 @@ const reportBlockedReasonForStep = (
   step: BatchStepExecutionRecordItem,
   historical = false,
 ): string | null => {
+  if (historical && record.value?.batchStatus === 'closing')
+    return '任务处于结案阶段，请先撤回任务结束后新增报工';
   const context = contextForStep(step, historical);
   return context ? productionReportBlockedReason(context, historical) : '当前任务依据不可用';
 };
@@ -771,6 +833,12 @@ const canChangeTarget = async (): Promise<boolean> => {
     EMessage.warning('批量结果尚未确认，请先在原弹窗重试或核对后关闭');
     return false;
   }
+  if (executionStartVisible.value && !(await executionStartDialog.value?.close())) return false;
+  if (closeoutWithdrawalVisible.value && !(await closeoutWithdrawalDialog.value?.close()))
+    return false;
+  if (completionVisible.value && !(await executionCompletionDialog.value?.close())) return false;
+  if (outputVisible.value && !(await outputDialog.value?.close())) return false;
+  if (closeoutVisible.value && !(await closeoutDialog.value?.close())) return false;
   if (reportCreate.visible && !(await reportDialogRef.value?.canDiscard())) return false;
   if (reportEditor.visible && !(await reportEditor.discard())) return false;
   if (!(await reworkEditor.discard())) return false;
@@ -827,11 +895,7 @@ const {
   startRework,
   completeRework,
 });
-const completionPending = computed(() =>
-  completionCheck.value
-    ? pendingKeys.value.has(`complete:${completionCheck.value.productionBatchId}`)
-    : false,
-);
+const completionPending = computed(() => Boolean(executionCompletionDialog.value?.submitting));
 const {
   completedStepCount,
   selectedBatch,
@@ -843,17 +907,6 @@ const {
   selectedOverdueDays,
   selectedBatchRiskClass,
 } = useProductionExecutionSummary(record, batches, selectedBatchId);
-const submitCompletion = async (): Promise<void> => {
-  if (!completionCheck.value?.canComplete) return;
-  try {
-    await completeExecution();
-    completionVisible.value = false;
-    EMessage.success('任务执行已结束，员工状态与报工已转只读；请核对产出并提交结案审批');
-    if (selectedBatchId.value) openOutput(selectedBatchId.value);
-  } catch (error) {
-    EMessage.error(error, '任务执行结束失败，请刷新后核对');
-  }
-};
 const route = useRoute();
 const unregister = useTabsStore().registerCloseGuard(String(route.name), async () => {
   if (completionPending.value) return false;

@@ -32,6 +32,7 @@ type ReportCorrectionEligibility = {
   canCorrectReport: boolean;
   correctionBlockedReason: string | null;
   canCreateHistoricalReport: boolean;
+  historicalCreateBlockedReason: string | null;
   historicalCorrectionBlockedReason: string | null;
 };
 
@@ -62,10 +63,14 @@ export const reportCorrectionEligibility = (
       : !access.canManageExecution
         ? `历史报工纠错需要「${MANAGE_EXECUTION_PERMISSION_LABEL}」权限`
         : null;
+  const historicalCreateBlockedReason =
+    historicalReason ??
+    (batchStatus === 'closing' ? '任务处于结案阶段，请先撤回任务结束后新增报工' : null);
   return {
     canCorrectReport: reason === null,
     correctionBlockedReason: reason,
-    canCreateHistoricalReport: historicalReason === null,
+    canCreateHistoricalReport: historicalCreateBlockedReason === null,
+    historicalCreateBlockedReason,
     historicalCorrectionBlockedReason: historicalReason,
   };
 };

@@ -16,7 +16,8 @@
  */
 
 export const SUBMIT_DEMAND_CORRECTION_SCOPE = 'production.demand-correction.submit.v2' as const;
-export const BEGIN_BATCH_CLOSEOUT_SCOPE = 'production.batch-closeout.begin.v1' as const;
+export const BEGIN_BATCH_CLOSEOUT_SCOPE = 'production.batch-closeout.begin.v2' as const;
+export const WITHDRAW_BATCH_CLOSEOUT_SCOPE = 'production.batch-closeout.withdraw.v1' as const;
 export const HANDLE_BATCH_CLOSEOUT_SCOPE = 'production.batch-closeout.handle.v1' as const;
 export const REVIEW_OUTPUT_MATERIAL_SCOPE = 'production.output.material-review.v1' as const;
 export const SAVE_PRODUCTION_OUTPUT_SCOPE = 'production.output.draft.v1' as const;
@@ -26,16 +27,16 @@ export const BEGIN_OUTPUT_CORRECTION_SCOPE = 'production.output.correction.begin
 export const CANCEL_OUTPUT_CORRECTION_SCOPE = 'production.output.correction.cancel.v1' as const;
 
 /** createBatch 创建生产批次；scope 与当前请求及结果 codec 绑定。 */
-export const CREATE_BATCH_IDEMPOTENCY_SCOPE = 'production.batch.create.v10' as const;
+export const CREATE_BATCH_IDEMPOTENCY_SCOPE = 'production.batch.create.v11' as const;
 /** 创建物料分配。 */
 export const CREATE_MATERIAL_ALLOCATION_IDEMPOTENCY_SCOPE =
   'production.material-allocation.create.v1' as const;
 /** 创建生产领料出库单。 */
 export const CREATE_MATERIAL_OUTBOUND_IDEMPOTENCY_SCOPE =
-  'production.material-outbound.create.v3' as const;
+  'production.material-outbound.create.v4' as const;
 /** 确认生产领料出库单。 */
 export const CONFIRM_MATERIAL_OUTBOUND_IDEMPOTENCY_SCOPE =
-  'production.material-outbound.confirm.v2' as const;
+  'production.material-outbound.confirm.v3' as const;
 /** 管理员确认基础 BOM 明细的精确版本需求。 */
 export const CONFIGURE_MATERIAL_DEMANDS_IDEMPOTENCY_SCOPE =
   'production.material-demands.configure.v2' as const;
@@ -55,7 +56,7 @@ export const CREATE_STEP_REPORT_IDEMPOTENCY_SCOPE = 'production.step-report.crea
 export const CORRECT_STEP_REPORT_IDEMPOTENCY_SCOPE = 'production.step-report.correct.v5' as const;
 /** 结案后普通正常报工历史补录和原子更正。 */
 export const CREATE_HISTORICAL_STEP_REPORT_SCOPE =
-  'production.step-report.history-create.v1' as const;
+  'production.step-report.history-create.v2' as const;
 export const CORRECT_HISTORICAL_STEP_REPORT_SCOPE =
   'production.step-report.history-correct.v1' as const;
 /** 同任务跨工序全部成功或全部回滚的全量冲销。 */
@@ -71,8 +72,9 @@ export const CREATE_MATERIAL_LOSS_IDEMPOTENCY_SCOPE = 'production.material-loss.
 export const CONFIRM_MATERIAL_LOSS_IDEMPOTENCY_SCOPE =
   'production.material-loss.confirm.v3' as const;
 
-export const START_RESEARCH_EXECUTION_SCOPE = 'production.research.start.v1' as const;
-export const COMPLETE_RESEARCH_EXECUTION_SCOPE = 'production.research.complete.v1' as const;
+export const START_PRODUCTION_EXECUTION_SCOPE = 'production.execution.start.v1' as const;
+export const COMPLETE_PRODUCTION_EXECUTION_SCOPE = 'production.execution.complete.v1' as const;
+export const COMPLETE_RESEARCH_EXECUTION_SCOPE = 'production.research.complete.v2' as const;
 
 /** 初次结案时登记原材料损坏，只占可退额度，不生成补料。 */
 export const RECORD_CLOSEOUT_MATERIAL_LOSS_SCOPE =

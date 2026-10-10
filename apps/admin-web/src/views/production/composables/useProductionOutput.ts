@@ -1,4 +1,5 @@
 import { computed, onActivated, onScopeDispose, reactive, ref, watch } from 'vue';
+import { useRoute } from 'vue-router';
 import type {
   ProductionOutputDetail,
   ProductionOutputDraft,
@@ -400,7 +401,7 @@ export function useProductionOutput(
     activated = true;
   });
   const unregisterCloseGuard = useTabsStore().registerCloseGuard(
-    'production-tasks',
+    String(useRoute().name),
     async () => !props.visible || (await close()),
   );
   onScopeDispose(unregisterCloseGuard);

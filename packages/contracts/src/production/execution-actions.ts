@@ -1,6 +1,9 @@
 import type { VersionedCommand } from '../common.js';
 import type { BatchStepStatus } from './statuses.js';
 
+/** 任务结束入口和撤回记录属于结案根的不可变行动历史。 */
+export type ProductionTaskCloseoutActionType = 'enter' | 'withdraw';
+
 export type ProductionStepExecutionActionType = 'start' | 'complete' | 'reopen';
 /** 已保存的历史动作只读；历史更正不代表当前存在写命令。 */
 export type ProductionStepExecutionHistoryActionType =

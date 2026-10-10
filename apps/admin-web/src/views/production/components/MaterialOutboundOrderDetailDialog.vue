@@ -158,7 +158,8 @@ const emit = defineEmits<{
 }>();
 
 const notice = computed(() => {
-  if (props.detail?.status === 'completed') return '整张单据已确认，每条明细均已生成负库存流水。';
+  if (props.detail?.status === 'completed')
+    return '整张单据已确认，每条明细均已生成负库存流水；当前有效需求的剩余量可继续分次办理。';
   if (props.detail?.status === 'cancelled')
     return '单据已取消，未扣减库存；明细仅作为历史记录保留。';
   return '单据尚未扣减库存，可打印用于拣货、领料和签字。';

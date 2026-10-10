@@ -3,20 +3,17 @@ import type {
   ProductionBatchStatus,
   OutboundOrderStatus,
   MaterialOutboundBlockedCode,
-  MaterialOutboundMode,
 } from './statuses.js';
 import type { DemandGenerationSource } from './material.js';
 
 export type MaterialOutboundEligibility =
   | {
       eligible: true;
-      outboundMode: MaterialOutboundMode;
       blockedCode: null;
       blockedReason: null;
     }
   | {
       eligible: false;
-      outboundMode: null;
       blockedCode: MaterialOutboundBlockedCode;
       blockedReason: string;
     };
@@ -59,7 +56,6 @@ export interface MaterialOutboundItem {
   batchNo: string;
   workOrderId: string;
   workOrderNo: string;
-  shortBatchAuthorizationId?: string | null;
   productId: string;
   productCode: string;
   productName: string;

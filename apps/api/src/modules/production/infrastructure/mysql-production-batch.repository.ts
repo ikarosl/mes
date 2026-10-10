@@ -18,7 +18,7 @@ import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { writeTransactionalAudit } from '../../../common/audit/transactional-audit-writer.js';
 import { toDateOnlyString } from '../../../common/time/date-time.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
-import { MaterialVariantQuery, type ProcessRouteSnapshot } from '../../product/public.js';
+import type { ProcessRouteSnapshot } from '../../product/public.js';
 import type { ResolvedBatchStepOverride } from '../application/ports/production.repository.js';
 import { requireBatchTransition } from '../domain/production-status.policy.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
@@ -56,10 +56,7 @@ import {
 
 @Injectable()
 export class MysqlProductionBatchRepository {
-  constructor(
-    @Inject(DATABASE_POOL) private readonly pool: Pool,
-    private readonly variants: MaterialVariantQuery,
-  ) {}
+  constructor(@Inject(DATABASE_POOL) private readonly pool: Pool) {}
 
   async list(query: ProductionBatchQuery): Promise<PageResult<ProductionBatchItem>> {
     const page = query.page ?? 1;
@@ -99,7 +96,7 @@ export class MysqlProductionBatchRepository {
       [...values, pageSize, (page - 1) * pageSize],
     );
     return {
-      items: await mapBatches(this.pool, rows, this.variants),
+      items: mapBatches(rows),
       total: Number(count?.total ?? 0),
       page,
       pageSize,
@@ -424,7 +421,7 @@ export class MysqlProductionBatchRepository {
       `${BATCH_SELECT} WHERE b.work_order_id=? ORDER BY b.created_at DESC,b.id DESC`,
       [workOrderId],
     );
-    return mapBatches(db, rows, this.variants);
+    return mapBatches(rows);
   }
   private async getDetail(db: Db, id: string): Promise<ProductionBatchDetail> {
     const batch = await findBatch(db, id);
@@ -432,7 +429,7 @@ export class MysqlProductionBatchRepository {
       `${STEP_RECORD_SELECT} WHERE sr.production_batch_id=? ORDER BY sr.step_order_snapshot,sr.id`,
       [id],
     );
-    const [item] = await mapBatches(db, [batch], this.variants);
+    const [item] = mapBatches([batch]);
     const [projections] = await db.query<ProjectionStepRow[]>(PROJECTION_STEP_SELECT, [id]);
     const projectionById = new Map(projections.map((step) => [String(step.id), step]));
     const supplements = (await selectRouteSupplementSources(db, [id])).get(id) ?? [];
