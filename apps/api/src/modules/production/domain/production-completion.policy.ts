@@ -7,11 +7,7 @@ import type {
 } from '@company/contracts';
 
 export interface RequiredCompletionStep {
-  id: string;
-  order: number;
-  name: string;
   status: BatchStepStatus;
-  effectiveNormalQuantity: string;
 }
 
 export const evaluateProductionExecutionCompletion = (input: {
@@ -26,10 +22,7 @@ export const evaluateProductionExecutionCompletion = (input: {
   unfulfilledSupplementCount?: number;
   requiredSteps: RequiredCompletionStep[];
 }): ProductionExecutionCompletionCheck => {
-  const requiredSteps = [...input.requiredSteps].sort(
-    (left, right) => left.order - right.order || Number(left.id) - Number(right.id),
-  );
-  const finalStep = requiredSteps.at(-1) ?? null;
+  const requiredSteps = input.requiredSteps;
   const blockers: ProductionExecutionCompletionBlocker[] = [];
   if (input.batchStatus !== 'doing') blockers.push('batch_not_doing');
   const research = input.orderType === 'research';
@@ -47,9 +40,6 @@ export const evaluateProductionExecutionCompletion = (input: {
     plannedQuantity: input.plannedQuantity,
     requiredStepCount: requiredSteps.length,
     completedRequiredStepCount: requiredSteps.filter((step) => step.status === 'completed').length,
-    finalRequiredStepId: finalStep?.id ?? null,
-    finalRequiredStepName: finalStep?.name ?? null,
-    finalEffectiveNormalQuantity: finalStep?.effectiveNormalQuantity ?? '0',
     activeMaterialDemandCount: input.activeMaterialDemandCount ?? 0,
     unfulfilledSupplementCount: input.unfulfilledSupplementCount ?? 0,
     canComplete: blockers.length === 0,

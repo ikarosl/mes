@@ -144,7 +144,6 @@ export const terminationCheckSchema = z.object({
   productName: z.string(),
   unit: z.string(),
   plannedQuantity: quantity,
-  reportedNormalQuantity: quantity,
   existingScrapQuantity: quantity,
   version,
   checkToken: z.string(),
@@ -220,7 +219,7 @@ export const terminationCheckSchema = z.object({
     })
     .nullable(),
 });
-export const CLOSEOUT_APPROVAL_SNAPSHOT_SCHEMA_VERSION = 9;
+export const CLOSEOUT_APPROVAL_SNAPSHOT_SCHEMA_VERSION = 10;
 const outputQuantitiesSchema = z.object({
   availableQuantity: amount,
   extraQuantity: amount,

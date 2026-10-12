@@ -57,13 +57,6 @@
           <template #default="{ row }">{{ formatQuantity(row.plannedQuantity) }}</template>
         </el-table-column>
         <el-table-column
-          label="末工序正常报工量"
-          width="150"
-          align="right"
-        >
-          <template #default="{ row }">{{ formatQuantity(row.lastStepReportedQuantity) }}</template>
-        </el-table-column>
-        <el-table-column
           label="当前批准产出"
           min-width="230"
         >

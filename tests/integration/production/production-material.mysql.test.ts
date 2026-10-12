@@ -17,15 +17,18 @@ import { ProductionMaterialService } from '../../../apps/api/src/modules/product
 import { MysqlProductionMaterialLossRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-material-loss.repository.js';
 import { MysqlProductionMaterialOutboundRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-material-outbound.repository.js';
 import { MysqlProductionMaterialRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-material.repository.js';
-import {
-  evaluateShortBatchStart,
-  getConfirmedMaterialOutboundQuantity,
-} from '../../../apps/api/src/modules/production/infrastructure/mysql-production-short-batch.js';
+import { MysqlProductionExecutionRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-execution.repository.js';
 import { MysqlProductionTraceRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-trace.repository.js';
 import { ProductionInboundService } from '../../../apps/api/src/modules/production/application/production-inbound.service.js';
-import { MysqlProductionInboundRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-inbound.repository.js';
+import { MysqlInventoryInboundRepository } from '../../../apps/api/src/modules/inventory/infrastructure/mysql-inventory-inbound.repository.js';
 import { MysqlProductionSupplyDemandRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-supply-demand.repository.js';
 import { MysqlMaterialVariantRepository } from '../../../apps/api/src/modules/product/infrastructure/mysql-material-variant.repository.js';
+import { MysqlInventoryStockCommand } from '../../../apps/api/src/modules/inventory/infrastructure/mysql-inventory-stock.command.js';
+import { MysqlProductInventoryEligibility } from '../../../apps/api/src/modules/product/infrastructure/mysql-product-inventory-eligibility.query.js';
+import {
+  deleteFixtureMaterialBasis,
+  deleteFixtureMaterialLosses,
+} from './production-material-test-cleanup.js';
 
 loadWorkspaceEnv();
 const describeMysql = process.env.RUN_MYSQL_INTEGRATION === '1' ? describe : describe.skip;
@@ -34,6 +37,7 @@ describeMysql('Production material MySQL transactions', () => {
   let pool: Pool;
   let repository: MysqlProductionMaterialRepository;
   let service: ProductionMaterialService;
+  let execution: MysqlProductionExecutionRepository;
   let outbounds: MysqlProductionMaterialOutboundRepository;
   let outboundService: ProductionMaterialOutboundService;
   let materialVariants: MysqlMaterialVariantRepository;
@@ -55,14 +59,28 @@ describeMysql('Production material MySQL transactions', () => {
       timezone: '+08:00',
       connectionLimit: 6,
     });
-    repository = new MysqlProductionMaterialRepository(pool);
-    outbounds = new MysqlProductionMaterialOutboundRepository(pool);
+    const productEligibility = new MysqlProductInventoryEligibility(pool);
+    materialVariants = new MysqlMaterialVariantRepository(pool, productEligibility);
+    const inventory = new MysqlInventoryStockCommand(pool, productEligibility);
+    repository = new MysqlProductionMaterialRepository(
+      pool,
+      inventory,
+      materialVariants,
+      productEligibility,
+    );
+    outbounds = new MysqlProductionMaterialOutboundRepository(
+      pool,
+      inventory,
+      productEligibility,
+      materialVariants,
+    );
+    const identity = new IdentityDirectoryService(new MysqlRbacRepository(pool));
     outboundService = new ProductionMaterialOutboundService(
       outbounds,
-      new IdentityDirectoryService(new MysqlRbacRepository(pool)),
+      identity,
       new MysqlIdempotencyExecutor(pool),
     );
-    materialVariants = new MysqlMaterialVariantRepository(pool);
+    execution = new MysqlProductionExecutionRepository(pool, identity);
     service = new ProductionMaterialService(
       repository,
       new ProductSnapshotService(new MysqlProductSnapshotRepository(pool)),
@@ -133,26 +151,9 @@ describeMysql('Production material MySQL transactions', () => {
     }
   });
 
-  it('keeps the normal outbound gate, then permits only an explicitly authorized short batch', async () => {
-    const f = await fixture(pool, actorId, 'short-batch');
+  it('confirms partial outbound and handles the remaining demand after administrator start', async () => {
+    const f = await fixture(pool, actorId, 'partial-outbound-start');
     try {
-      const allocationBlockedPreview = await repository.getShortBatchAuthorizationPreview(
-        String(f.batchId),
-      );
-      expect(allocationBlockedPreview).toMatchObject({
-        authorizationAction: 'authorize',
-        authorizationCoverage: 'none',
-        blockedReason: '当前尚无可预计出库分配，且批次没有已确认领料',
-      });
-      await expect(
-        repository.authorizeShortBatch(
-          String(f.batchId),
-          allocationBlockedPreview.batchVersion,
-          '尚无分配时不应授权',
-          ctx(actorId, `${f.token}-allocation-blocked-authorize`),
-        ),
-      ).rejects.toMatchObject({ code: 'SHORT_BATCH_AUTHORIZATION_NOT_ALLOWED' });
-
       const allocated = await repository.createAllocations(
         String(f.batchId),
         {
@@ -166,52 +167,6 @@ describeMysql('Production material MySQL transactions', () => {
         },
         ctx(actorId, f.token),
       );
-      await expect(
-        outbounds.createOutbound(
-          String(f.batchId),
-          {
-            details: [
-              { allocationId: allocated.allocations[0]!.allocationId, outboundQuantity: 6 },
-            ],
-          },
-          ctx(actorId, `${f.token}-blocked`),
-        ),
-      ).rejects.toMatchObject({ code: 'INVALID_STATE' });
-
-      const preview = await repository.getShortBatchAuthorizationPreview(String(f.batchId));
-      expect(preview).toMatchObject({
-        authorizationAction: 'authorize',
-        authorizationCoverage: 'none',
-        materialPlanVersion: 1,
-      });
-      expect(preview.lines[0]).toMatchObject({
-        generationGroupKey: `NORMAL:${f.batchId}`,
-        generationGroupType: 'normal',
-        supplementNo: null,
-        expectedOutboundQuantity: '6.0000',
-        authorizedRemainingQuantity: '4.0000',
-      });
-      const authorization = await repository.authorizeShortBatch(
-        String(f.batchId),
-        preview.batchVersion,
-        '允许已到料部分先行生产',
-        ctx(actorId, `${f.token}-authorize`),
-      );
-      expect(authorization.lines[0]?.authorizedRemainingQuantity).toBe('4.0000');
-      const currentPreview = await repository.getShortBatchAuthorizationPreview(String(f.batchId));
-      expect(currentPreview).toMatchObject({
-        authorizationAction: 'view',
-        authorizationCoverage: 'covered',
-      });
-      await expect(
-        repository.authorizeShortBatch(
-          String(f.batchId),
-          currentPreview.batchVersion,
-          '不应重复授权',
-          ctx(actorId, `${f.token}-duplicate-authorize`),
-        ),
-      ).rejects.toMatchObject({ code: 'SHORT_BATCH_AUTHORIZATION_NOT_ALLOWED' });
-
       const outbound = await outbounds.createOutbound(
         String(f.batchId),
         {
@@ -219,135 +174,70 @@ describeMysql('Production material MySQL transactions', () => {
         },
         ctx(actorId, `${f.token}-outbound`),
       );
-      expect(outbound.outbound.shortBatchAuthorizationId).toBe(authorization.authorizationId);
       const confirmed = await outbounds.confirmOutbound(
         outbound.outbound.outboundId,
         outbound.outbound.version,
         ctx(actorId, `${f.token}-confirm`),
       );
       expect(confirmed.batchStatus).toBe('material_partially_outbound');
-      expect(
-        (await outbounds.listOutboundBatchOptions()).find(
-          (row) => row.productionBatchId === String(f.batchId),
-        )?.outboundEligibility,
-      ).toMatchObject({
-        eligible: false,
-        blockedCode: 'allocation_incomplete',
+      const [[demandAfterPartialOutbound]] = await pool.query<
+        (RowDataPacket & { business_status: string; remaining_number: string | number })[]
+      >('SELECT business_status,remaining_number FROM production_item_demand WHERE id=?', [
+        f.demandId,
+      ]);
+      expect(demandAfterPartialOutbound).toMatchObject({
+        business_status: 'active',
       });
-      const [[detail]] = await pool.query<
-        (RowDataPacket & { authorized_remaining_quantity: string })[]
-      >(
-        `SELECT authorized_remaining_quantity
-         FROM production_short_batch_authorization_detail
-         WHERE authorization_id=? AND demand_id=?`,
-        [authorization.authorizationId, f.demandId],
-      );
-      expect(Number(detail?.authorized_remaining_quantity)).toBe(4);
-      await expect(
-        evaluateShortBatchStart(pool, String(f.batchId), authorization.materialPlanVersion),
-      ).resolves.toMatchObject({
-        authorizationId: authorization.authorizationId,
+      expect(Number(demandAfterPartialOutbound?.remaining_number)).toBe(4);
+
+      const startCheck = await execution.getStartCheck(String(f.batchId));
+      expect(startCheck).toMatchObject({
         canStart: true,
-        blockedReason: null,
+        hasInitialMaterialConfiguration: true,
+        hasMaterialShortage: true,
+        requiresReason: true,
       });
-
-      await pool.execute(
-        `UPDATE production_batches
-         SET material_plan_version=material_plan_version+1,version=version+1
-         WHERE id=?`,
-        [f.batchId],
-      );
-      await expect(
-        evaluateShortBatchStart(pool, String(f.batchId), authorization.materialPlanVersion + 1),
-      ).resolves.toMatchObject({
-        authorizationId: null,
-        canStart: false,
-      });
-
-      const renewedPreview = await repository.getShortBatchAuthorizationPreview(String(f.batchId));
-      expect(renewedPreview).toMatchObject({
-        authorizationAction: 'reauthorize',
-        authorizationCoverage: 'stale',
-        authorizationStatus: 'stale',
-        materialPlanVersion: 2,
-      });
-      const renewed = await repository.authorizeShortBatch(
+      const started = await execution.startExecution(
         String(f.batchId),
-        renewedPreview.batchVersion,
-        '需求计划变化后重新复核',
-        ctx(actorId, `${f.token}-reauthorize`),
+        { version: startCheck.version, reason: '有剩余需求，按计划继续执行' },
+        ctx(actorId, `${f.token}-admin-start`),
       );
-      await pool.execute(
-        `UPDATE production_short_batch_authorization
-         SET status='consumed',used_at=NOW(),version=version+1
-         WHERE id=? AND status='active'`,
-        [renewed.authorizationId],
-      );
-      await pool.execute(
-        `UPDATE production_batches
-         SET status='doing',version=version+1
-         WHERE id=? AND status='material_partially_outbound'`,
-        [f.batchId],
-      );
-      const continuedAllocation = await repository.createAllocations(
+      expect(started).toMatchObject({
+        batchStatus: 'doing',
+        startReason: '有剩余需求，按计划继续执行',
+      });
+
+      const remainingAllocation = await repository.createAllocations(
         String(f.batchId),
         {
           allocations: [
             {
               demandId: String(f.demandId),
               itemBatchId: String(f.itemBatch2),
-              assignedQuantity: 1,
+              assignedQuantity: 4,
             },
           ],
         },
-        ctx(actorId, `${f.token}-continued-allocation`),
+        ctx(actorId, `${f.token}-remaining-allocation`),
       );
-      const candidates = await outbounds.listOutboundCandidates(String(f.batchId));
-      expect(candidates.map((row) => row.allocationId)).toContain(
-        continuedAllocation.allocations[0]!.allocationId,
-      );
-      const options = await outbounds.listOutboundBatchOptions();
-      expect(options.map((row) => row.productionBatchId)).toContain(String(f.batchId));
-      const continuedOutbound = await outbounds.createOutbound(
+      const remainingOutbound = await outbounds.createOutbound(
         String(f.batchId),
         {
           details: [
             {
-              allocationId: continuedAllocation.allocations[0]!.allocationId,
-              outboundQuantity: 1,
+              allocationId: remainingAllocation.allocations[0]!.allocationId,
+              outboundQuantity: 4,
             },
           ],
         },
-        ctx(actorId, `${f.token}-continued-outbound`),
+        ctx(actorId, `${f.token}-remaining-outbound`),
       );
-      await outbounds.cancelOutbound(
-        continuedOutbound.outbound.outboundId,
-        continuedOutbound.outbound.version,
-        '关闭剩余需求前取消待出库单',
-        ctx(actorId, `${f.token}-continued-outbound-cancel`),
+      const completed = await outbounds.confirmOutbound(
+        remainingOutbound.outbound.outboundId,
+        remainingOutbound.outbound.version,
+        ctx(actorId, `${f.token}-remaining-confirm`),
       );
-      const closed = await repository.closeRemainingDemands(
-        String(f.batchId),
-        renewed.batchVersion + 1,
-        '按短批实际产量关闭余量',
-        ctx(actorId, `${f.token}-close-remaining`),
-      );
-      expect(closed).toMatchObject({
-        batchStatus: 'doing',
-        cancelledDemandCount: 1,
-        materialPlanVersion: 3,
-      });
-      const [[cancelledDemand]] = await pool.query<
-        (RowDataPacket & { cancel_source: string; cancel_reason: string })[]
-      >(
-        `SELECT cancel_source,cancel_reason FROM production_item_demand
-         WHERE id=? AND business_status='cancelled'`,
-        [f.demandId],
-      );
-      expect(cancelledDemand).toMatchObject({
-        cancel_source: 'short_batch_remaining_close',
-        cancel_reason: '按短批实际产量关闭余量',
-      });
+      expect(completed.batchStatus).toBe('doing');
       expect(
         (await outbounds.listOutboundBatchOptions()).map((row) => row.productionBatchId),
       ).not.toContain(String(f.batchId));
@@ -356,8 +246,8 @@ describeMysql('Production material MySQL transactions', () => {
     }
   });
 
-  it('continues ordinary outbound after a material loss plan change becomes fully allocated', async () => {
-    const f = await fixture(pool, actorId, 'short-loss');
+  it('records material loss without generating demand and continues the remaining outbound', async () => {
+    const f = await fixture(pool, actorId, 'loss-and-remaining-outbound');
     const inventory = new MysqlProductionMaterialLossRepository(pool);
     try {
       const firstAllocation = await repository.createAllocations(
@@ -372,13 +262,6 @@ describeMysql('Production material MySQL transactions', () => {
           ],
         },
         ctx(actorId, `${f.token}-first-allocation`),
-      );
-      const preview = await repository.getShortBatchAuthorizationPreview(String(f.batchId));
-      const authorization = await repository.authorizeShortBatch(
-        String(f.batchId),
-        preview.batchVersion,
-        '允许部分物料先行领用',
-        ctx(actorId, `${f.token}-authorize`),
       );
       const firstOutbound = await outbounds.createOutbound(
         String(f.batchId),
@@ -404,7 +287,7 @@ describeMysql('Production material MySQL transactions', () => {
           allocationId: firstAllocation.allocations[0]!.allocationId,
           scrapQuantity: 1,
           reasonType: '现场损耗',
-          remark: '短批开工前发生损耗',
+          remark: '记录独立的现场损耗事实',
         },
         ctx(actorId, `${f.token}-loss-create`),
       );
@@ -413,19 +296,16 @@ describeMysql('Production material MySQL transactions', () => {
         loss.version,
         ctx(actorId, `${f.token}-loss-confirm`),
       );
-      expect(confirmedLoss.supplement?.demandId).toBeTruthy();
-      const lossSourcePreview = await repository.getShortBatchAuthorizationPreview(
-        String(f.batchId),
+      expect(confirmedLoss).toMatchObject({
+        status: 'confirmed',
+        purpose: 'production_record',
+        scrapQuantity: '1',
+      });
+      const [[demandCount]] = await pool.query<(RowDataPacket & { count: number })[]>(
+        'SELECT COUNT(*) count FROM production_item_demand WHERE production_batch_id=?',
+        [f.batchId],
       );
-      expect(lossSourcePreview.lines).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            demandId: confirmedLoss.supplement!.demandId,
-            generationGroupType: 'material_loss_supplement',
-            supplementNo: confirmedLoss.supplement!.supplementNo,
-          }),
-        ]),
-      );
+      expect(Number(demandCount?.count)).toBe(1);
 
       const remainingNormalAllocation = await repository.createAllocations(
         String(f.batchId),
@@ -440,58 +320,7 @@ describeMysql('Production material MySQL transactions', () => {
         },
         ctx(actorId, `${f.token}-remaining-normal-allocation`),
       );
-      await expect(
-        outbounds.createOutbound(
-          String(f.batchId),
-          {
-            details: [
-              {
-                allocationId: remainingNormalAllocation.allocations[0]!.allocationId,
-                outboundQuantity: 4,
-              },
-            ],
-          },
-          ctx(actorId, `${f.token}-supplement-still-missing`),
-        ),
-      ).rejects.toMatchObject({ code: 'SHORT_BATCH_AUTHORIZATION_STALE' });
-      expect(
-        (await outbounds.listOutboundBatchOptions()).find(
-          (row) => row.productionBatchId === String(f.batchId),
-        )?.outboundEligibility,
-      ).toMatchObject({
-        eligible: false,
-        blockedCode: 'short_batch_authorization_stale',
-      });
-
-      const supplementAllocation = await repository.createAllocations(
-        String(f.batchId),
-        {
-          allocations: [
-            {
-              demandId: confirmedLoss.supplement!.demandId,
-              itemBatchId: String(f.itemBatch2),
-              assignedQuantity: 1,
-            },
-          ],
-        },
-        ctx(actorId, `${f.token}-supplement-allocation`),
-      );
-      const fullyAllocatedPreview = await repository.getShortBatchAuthorizationPreview(
-        String(f.batchId),
-      );
-      expect(fullyAllocatedPreview).toMatchObject({
-        authorizationStatus: 'stale',
-        authorizationAction: 'not_required',
-        blockedReason: '物料已齐套，无需短批授权',
-      });
-      expect(fullyAllocatedPreview.materialPlanVersion).toBeGreaterThan(
-        authorization.materialPlanVersion,
-      );
-      expect(
-        (await outbounds.listOutboundBatchOptions()).map((row) => row.productionBatchId),
-      ).toContain(String(f.batchId));
-
-      const continuedOutbound = await outbounds.createOutbound(
+      const remainingOutbound = await outbounds.createOutbound(
         String(f.batchId),
         {
           details: [
@@ -499,192 +328,27 @@ describeMysql('Production material MySQL transactions', () => {
               allocationId: remainingNormalAllocation.allocations[0]!.allocationId,
               outboundQuantity: 4,
             },
-            {
-              allocationId: supplementAllocation.allocations[0]!.allocationId,
-              outboundQuantity: 1,
-            },
           ],
         },
-        ctx(actorId, `${f.token}-fully-allocated-outbound`),
+        ctx(actorId, `${f.token}-remaining-outbound`),
       );
-      expect(continuedOutbound.outbound.shortBatchAuthorizationId).toBeNull();
-      const completed = await outbounds.confirmOutbound(
-        continuedOutbound.outbound.outboundId,
-        continuedOutbound.outbound.version,
-        ctx(actorId, `${f.token}-fully-allocated-outbound-confirm`),
-      );
-      expect(completed.batchStatus).toBe('material_outbound');
-      expect(
-        (await repository.listDemands(String(f.batchId))).map((row) => row.businessStatus),
-      ).toEqual(['fulfilled', 'fulfilled']);
-      expect(
-        (await outbounds.listOutboundBatchOptions()).map((row) => row.productionBatchId),
-      ).not.toContain(String(f.batchId));
-
-      const postOutboundLoss = await inventory.createMaterialLoss(
-        {
-          productionBatchId: String(f.batchId),
-          allocationId: firstAllocation.allocations[0]!.allocationId,
-          scrapQuantity: 1,
-          reasonType: '领料后损耗',
-          remark: '验证已领齐批次只因活动补料重新进入候选',
-        },
-        ctx(actorId, `${f.token}-post-outbound-loss-create`),
-      );
-      await inventory.confirmMaterialLoss(
-        postOutboundLoss.id,
-        postOutboundLoss.version,
-        ctx(actorId, `${f.token}-post-outbound-loss-confirm`),
-      );
-      expect(
-        (await outbounds.listOutboundBatchOptions()).find(
-          (row) => row.productionBatchId === String(f.batchId),
-        )?.outboundEligibility,
-      ).toMatchObject({ eligible: false, blockedCode: 'allocation_incomplete' });
-      expect(await outbounds.listOutboundCandidates(String(f.batchId))).toEqual([]);
-    } finally {
-      await cleanup(pool, f);
-    }
-  });
-
-  it('reauthorizes current shortages without new allocations when fulfilled demand still has net confirmed outbound', async () => {
-    const f = await fixture(pool, actorId, 'short-loss-reauthorize');
-    const inventory = new MysqlProductionMaterialLossRepository(pool);
-    try {
-      const additionalGroupKey = `ADDITIONAL:${f.batchId}:missing-b`;
-      const manualAdditionId = await ins(
-        pool,
-        'INSERT INTO production_manual_demand_addition (addition_no,production_batch_id,reason,created_by) VALUES (?,?,?,?)',
-        [`${additionalGroupKey}:NO`, f.batchId, '验证人工追加沿用当前需求', actorId],
-      );
-      const missingDemandId = await ins(
-        pool,
-        `INSERT INTO production_item_demand
-         (production_batch_id,requirement_basis_id,product_material_id,item_id,material_variant_id,
-          item_code_snapshot,material_variant_code_snapshot,quantity_per_unit_snapshot,unit_snapshot,
-          planned_output_quantity_snapshot,need_number,
-          remaining_number,demand_type,generation_group_key,manual_addition_id,idempotency_key,
-          business_status,created_by,updated_by)
-         VALUES (?,?,?,?,?,?,?,'1.0000','kg','10.0000','10.0000',10,
-          'manual_additional',?,?,?,'active',?,?)`,
-        [
-          f.batchId,
-          f.requirementBasisId,
-          f.productMaterialId,
-          f.materialId,
-          f.materialVariant1Id,
-          `${f.token}-missing-b`,
-          `${f.token}-m-v1-A`,
-          additionalGroupKey,
-          manualAdditionId,
-          `${additionalGroupKey}:${f.demandId}`,
-          actorId,
-          actorId,
-        ],
-      );
-      await pool.execute(
-        `UPDATE production_batches
-         SET material_plan_version=material_plan_version+1,version=version+1
-         WHERE id=?`,
-        [f.batchId],
-      );
-
-      const allocation = await repository.createAllocations(
-        String(f.batchId),
-        {
-          allocations: [
-            {
-              demandId: String(f.demandId),
-              itemBatchId: String(f.itemBatch1),
-              assignedQuantity: 10,
-            },
-          ],
-        },
-        ctx(actorId, `${f.token}-allocation-a`),
-      );
-      const firstPreview = await repository.getShortBatchAuthorizationPreview(String(f.batchId));
-      const firstAuthorization = await repository.authorizeShortBatch(
-        String(f.batchId),
-        firstPreview.batchVersion,
-        '物料 A 先行领用，物料 B 允许缺口',
-        ctx(actorId, `${f.token}-authorize`),
-      );
-      const outbound = await outbounds.createOutbound(
-        String(f.batchId),
-        {
-          details: [
-            {
-              allocationId: allocation.allocations[0]!.allocationId,
-              outboundQuantity: 10,
-            },
-          ],
-        },
-        ctx(actorId, `${f.token}-outbound-a`),
-      );
-      await outbounds.confirmOutbound(
-        outbound.outbound.outboundId,
-        outbound.outbound.version,
-        ctx(actorId, `${f.token}-outbound-a-confirm`),
+      const remainingConfirmed = await outbounds.confirmOutbound(
+        remainingOutbound.outbound.outboundId,
+        remainingOutbound.outbound.version,
+        ctx(actorId, `${f.token}-remaining-confirm`),
       );
       expect(
         (await repository.listDemands(String(f.batchId))).find(
           (demand) => demand.demandId === String(f.demandId),
         )?.businessStatus,
       ).toBe('fulfilled');
-
-      const loss = await inventory.createMaterialLoss(
-        {
-          productionBatchId: String(f.batchId),
-          allocationId: allocation.allocations[0]!.allocationId,
-          scrapQuantity: 1,
-          reasonType: '现场损耗',
-        },
-        ctx(actorId, `${f.token}-loss-create`),
-      );
-      const confirmedLoss = await inventory.confirmMaterialLoss(
-        loss.id,
-        loss.version,
-        ctx(actorId, `${f.token}-loss-confirm`),
-      );
-
-      const renewedPreview = await repository.getShortBatchAuthorizationPreview(String(f.batchId));
-      expect(renewedPreview).toMatchObject({
-        authorizationStatus: 'stale',
-        authorizationAction: 'reauthorize',
-        blockedReason: null,
-      });
-      expect(renewedPreview.lines).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            demandId: String(missingDemandId),
-            expectedOutboundQuantity: '0.0000',
-            authorizedRemainingQuantity: '10.0000',
-          }),
-          expect.objectContaining({
-            demandId: confirmedLoss.supplement!.demandId,
-            expectedOutboundQuantity: '0.0000',
-            authorizedRemainingQuantity: '1.0000',
-          }),
-        ]),
-      );
-      expect(await getConfirmedMaterialOutboundQuantity(pool, String(f.batchId))).toBe(10);
-
-      const renewedAuthorization = await repository.authorizeShortBatch(
-        String(f.batchId),
-        renewedPreview.batchVersion,
-        '确认现有净领料后接受 B 与损耗补料 A 的缺口',
-        ctx(actorId, `${f.token}-reauthorize`),
-      );
-      expect(renewedAuthorization.materialPlanVersion).toBeGreaterThan(
-        firstAuthorization.materialPlanVersion,
-      );
-      await expect(
-        evaluateShortBatchStart(pool, String(f.batchId), renewedAuthorization.materialPlanVersion),
-      ).resolves.toMatchObject({
-        authorizationId: renewedAuthorization.authorizationId,
-        canStart: true,
-        blockedReason: null,
-      });
+      expect(remainingConfirmed.batchStatus).toBe('material_outbound');
+      expect(
+        (await repository.listDemands(String(f.batchId))).map((row) => row.businessStatus),
+      ).toEqual(['fulfilled']);
+      expect(
+        (await outbounds.listOutboundBatchOptions()).map((row) => row.productionBatchId),
+      ).not.toContain(String(f.batchId));
     } finally {
       await cleanup(pool, f);
     }
@@ -1129,7 +793,7 @@ describeMysql('Production material MySQL transactions', () => {
         ctx(actorId, `${f.token}-outbound-create`),
       );
       const inboundService = new ProductionInboundService(
-        new MysqlProductionInboundRepository(pool),
+        new MysqlInventoryInboundRepository(pool, materialVariants),
         new ProductSnapshotService(new MysqlProductSnapshotRepository(pool)),
         materialVariants,
         new IdentityDirectoryService(new MysqlRbacRepository(pool)),
@@ -1635,7 +1299,7 @@ describeMysql('Production material MySQL transactions', () => {
   it('creates pending purchase inbound without stock, confirms once, and cancels without ledger', async () => {
     const f = await fixture(pool, actorId, 'inbound');
     const inboundService = new ProductionInboundService(
-      new MysqlProductionInboundRepository(pool),
+      new MysqlInventoryInboundRepository(pool, materialVariants),
       new ProductSnapshotService(new MysqlProductSnapshotRepository(pool)),
       materialVariants,
       new IdentityDirectoryService(new MysqlRbacRepository(pool)),
@@ -1889,7 +1553,7 @@ const fixture = async (
   const wo = await ins(
     pool,
     "INSERT INTO work_orders (work_order_no,order_type,product_id,product_code_snapshot,product_name_snapshot,unit_snapshot,planned_quantity,status) VALUES (?,?,?,?,?,?,'10.0000','released')",
-    [`${token}-wo`, 'research', product, `${token}-p`, '产品', 'pcs'],
+    [`${token}-wo`, 'mass_production', product, `${token}-p`, '产品', 'pcs'],
   );
   const batch = await ins(
     pool,
@@ -1899,10 +1563,10 @@ const fixture = async (
   const basis = await ins(
     pool,
     `INSERT INTO production_material_requirement_basis
-      (production_batch_id,product_material_id,material_id,material_code_snapshot,
+      (production_batch_id,product_material_id,material_id,locked_material_variant_id,material_code_snapshot,
        unit_snapshot,quantity_per_unit_snapshot,planned_output_quantity_snapshot,required_number,created_by)
-     VALUES (?,?,?,?,'kg','1.0000','10.0000','10.0000',?)`,
-    [batch, pm, material, `${token}-m`, actorId],
+     VALUES (?,?,?,?,?,'kg','1.0000','10.0000','10.0000',?)`,
+    [batch, pm, material, materialVariant1Id, `${token}-m`, actorId],
   );
   const demand = await ins(
     pool,
@@ -2000,31 +1664,7 @@ const cleanup = async (pool: Pool, f: Fixture) => {
   );
   await pool.execute('DELETE FROM outbound_detail WHERE production_batch_id=?', [f.batchId]);
   await pool.execute('DELETE FROM outbound_order WHERE production_batch_id=?', [f.batchId]);
-  await pool.execute(
-    'DELETE FROM production_short_batch_authorization_detail WHERE authorization_id IN (SELECT id FROM production_short_batch_authorization WHERE production_batch_id=?)',
-    [f.batchId],
-  );
-  await pool.execute(
-    'DELETE FROM production_short_batch_authorization WHERE production_batch_id=?',
-    [f.batchId],
-  );
-  await pool.execute(
-    `DELETE FROM production_item_allocation
-     WHERE production_batch_id=? AND demand_id IN (
-       SELECT id FROM production_item_demand
-       WHERE production_batch_id=? AND demand_type='material_loss_supplement'
-     )`,
-    [f.batchId, f.batchId],
-  );
-  await pool.execute(
-    "DELETE FROM production_item_demand WHERE production_batch_id=? AND demand_type='material_loss_supplement'",
-    [f.batchId],
-  );
-  await pool.execute(
-    "DELETE FROM production_material_supplement WHERE production_batch_id=? AND source_type='material_loss'",
-    [f.batchId],
-  );
-  await pool.execute('DELETE FROM item_scrap WHERE production_batch_id=?', [f.batchId]);
+  await deleteFixtureMaterialLosses(pool, f.batchId);
   await pool.execute('DELETE FROM production_item_allocation WHERE production_batch_id=?', [
     f.batchId,
   ]);
@@ -2032,14 +1672,8 @@ const cleanup = async (pool: Pool, f: Fixture) => {
   await pool.execute('DELETE FROM production_manual_demand_addition WHERE production_batch_id=?', [
     f.batchId,
   ]);
-  await pool.execute(
-    'DELETE FROM production_material_requirement_basis WHERE production_batch_id=?',
-    [f.batchId],
-  );
+  await deleteFixtureMaterialBasis(pool, f.batchId);
   await pool.execute('DELETE FROM production_batches WHERE id=?', [f.batchId]);
-  await pool.execute('DELETE FROM work_order_material_versions WHERE work_order_id=?', [
-    f.workOrderId,
-  ]);
   await pool.execute('DELETE FROM work_orders WHERE id=?', [f.workOrderId]);
   await pool.execute('DELETE FROM product_materials WHERE id=?', [f.productMaterialId]);
   if (f.ownsItemBatches) {

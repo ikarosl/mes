@@ -83,16 +83,12 @@ export const PRODUCTION_EXECUTION_COMPLETION_BLOCKERS = [
   'batch_not_doing',
   'no_route_step',
   'required_step_incomplete',
-  'active_material_demand_remains',
-  'unfulfilled_material_supplement',
 ] as const;
 
 export const PRODUCTION_EXECUTION_COMPLETION_BLOCKER_LABELS = {
   batch_not_doing: '批次尚未进入生产执行状态',
   no_route_step: '批次没有工序',
   required_step_incomplete: '仍有工序未完成',
-  active_material_demand_remains: '仍有未完成物料需求，请继续领料、申请更正或办理批次收尾',
-  unfulfilled_material_supplement: '仍有未齐套补料单，需完成有效需求或办理批次收尾',
 } as const;
 
 export const BATCH_STEP_REPORT_DEPENDENCY_KINDS = [

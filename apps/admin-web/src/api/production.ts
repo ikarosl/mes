@@ -41,6 +41,8 @@ import type {
   CloseWorkOrderPayload,
   PageResult,
   ProductionBatchDetail,
+  ProductionBatchStartRecord,
+  ProductionBatchStepRecords,
   ProductionBatchCancellationCheck,
   ProductionBatchItem,
   ProductionBatchQuery,
@@ -288,8 +290,21 @@ export const productionApi = {
   listBatches: (params: ProductionBatchQuery) =>
     request<PageResult<ProductionBatchItem>>({ url: '/production/batches', params }),
 
-  /** 获取生产批次详情（含工序记录） */
-  getBatch: (id: string) => request<ProductionBatchDetail>({ url: `/production/batches/${id}` }),
+  /** 获取生产任务轻量详情 */
+  getBatch: (id: string, options: ReadRequestOptions = {}) =>
+    request<ProductionBatchDetail>({ ...options, url: `/production/batches/${id}` }),
+
+  getBatchStartRecord: (id: string, options: ReadRequestOptions = {}) =>
+    request<ProductionBatchStartRecord | null>({
+      ...options,
+      url: `/production/batches/${id}/start-record`,
+    }),
+
+  getBatchStepRecords: (id: string, options: ReadRequestOptions = {}) =>
+    request<ProductionBatchStepRecords>({
+      ...options,
+      url: `/production/batches/${id}/step-records`,
+    }),
 
   getBatchTerminationCheck: (id: string) =>
     request<BatchTerminationCheck>({
@@ -297,15 +312,17 @@ export const productionApi = {
       skipErrorHandling: true,
     }),
 
-  getDemandCorrectionCheck: (id: string) =>
+  getDemandCorrectionCheck: (id: string, options: ReadRequestOptions = {}) =>
     request<DemandCorrectionCheck>({
       url: `/production/material-demands/${id}/correction-check`,
       skipErrorHandling: true,
+      ...options,
     }),
-  getDemandCorrectionHistory: (id: string) =>
+  getDemandCorrectionHistory: (id: string, options: ReadRequestOptions = {}) =>
     request<DemandCorrectionHistoryItem[]>({
       url: `/production/material-demands/${id}/corrections`,
       skipErrorHandling: true,
+      ...options,
     }),
   getBatchCloseout: (id: string) =>
     request<BatchCloseoutDetail | null>({
@@ -479,7 +496,7 @@ export const productionApi = {
     recordId: string,
     data: UpdateBatchStepExecutionPayload,
   ) =>
-    request<ProductionBatchDetail>({
+    request<ProductionStepCommandResult>({
       url: `/production/batches/${batchId}/step-records/${recordId}/execution`,
       method: 'PATCH',
       data,
@@ -492,8 +509,9 @@ export const productionApi = {
       data,
     }),
 
-  listMaterialDemands: (batchId: string) =>
+  listMaterialDemands: (batchId: string, options: ReadRequestOptions = {}) =>
     request<ProductionMaterialDemandItem[]>({
+      ...options,
       url: `/production/batches/${batchId}/material-demands`,
     }),
 

@@ -79,9 +79,7 @@ const statusFor = (code: ProductionDomainError['code']): number => {
     code === 'DOWNSTREAM_QUANTITY_CONFLICT' ||
     code === 'BATCH_EXECUTION_COMPLETION_NOT_ALLOWED' ||
     code === 'NO_REQUIRED_REPORTING_STEP' ||
-    code === 'REQUIRED_STEP_INCOMPLETE' ||
-    code === 'FINAL_STEP_QUANTITY_INSUFFICIENT' ||
-    code === 'ACTIVE_MATERIAL_DEMAND_REMAINS'
+    code === 'REQUIRED_STEP_INCOMPLETE'
   )
     return HttpStatus.CONFLICT;
   return HttpStatus.BAD_REQUEST;

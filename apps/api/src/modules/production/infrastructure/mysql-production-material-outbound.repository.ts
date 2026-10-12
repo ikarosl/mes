@@ -52,16 +52,6 @@ export class MysqlProductionMaterialOutboundRepository extends ProductionMateria
     super();
   }
 
-  async findBatchIdsWithActiveOutbounds(batchIds: string[]): Promise<Set<string>> {
-    if (batchIds.length === 0) return new Set();
-    const [rows] = await this.pool.query<(RowDataPacket & { production_batch_id: number })[]>(
-      `SELECT DISTINCT production_batch_id FROM outbound_order
-       WHERE status<>'cancelled' AND production_batch_id IN (${placeholders(batchIds)})`,
-      batchIds,
-    );
-    return new Set(rows.map((row) => String(row.production_batch_id)));
-  }
-
   async createOutbound(
     batchId: string,
     payload: CreateMaterialOutboundPayload,

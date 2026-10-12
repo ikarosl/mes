@@ -1,6 +1,14 @@
 import { beijingTodayUtc } from '../../utils/date';
 import type { ProductionBatchStatus, WorkOrderType } from '@company/contracts';
 
+const TASK_TYPE_TAG_TYPES: Record<WorkOrderType, 'primary' | 'warning'> = {
+  mass_production: 'primary',
+  research: 'warning',
+};
+
+export const taskTypeTagType = (orderType: WorkOrderType): 'primary' | 'warning' =>
+  TASK_TYPE_TAG_TYPES[orderType];
+
 export interface DeadlinePresentation {
   label: string;
   overdueDays: number;
@@ -20,6 +28,9 @@ export const batchCloseoutActionLabel = (
   if (status === 'closing') return mode === 'normal' ? '核对产出清单' : '继续收尾';
   return '提前结束';
 };
+
+export const batchCloseoutActionType = (status: ProductionBatchStatus): 'primary' | 'warning' =>
+  status === 'terminated' || status === 'completed' ? 'primary' : 'warning';
 
 const dateUtc = (value: string | null): number | null => {
   if (!value) return null;
@@ -60,7 +71,6 @@ export const taskNextActionPresentation = (batch: {
     | 'cancelled'
     | 'terminated'
     | 'closing';
-  hasActiveMaterialOutbound?: boolean;
   orderType?: WorkOrderType;
   closeoutMode?: 'normal' | 'early' | null;
 }): TaskNextActionPresentation => {
@@ -68,21 +78,13 @@ export const taskNextActionPresentation = (batch: {
     return { label: batchCloseoutActionLabel(batch.status, batch.closeoutMode), tone: 'muted' };
   if (batch.status === 'closing')
     return {
-      label: batch.closeoutMode === 'normal' ? '核对产出 / 结案审批' : '继续逐项收尾 / 结案审批',
+      label: batch.closeoutMode === 'normal' ? '核对产出 / 结案审批' : '处理收尾 / 结案审批',
       tone: 'warning',
     };
   if (batch.status === 'cancelled') return { label: '任务已取消', tone: 'muted' };
   if (batch.orderType === 'research' && batch.status === 'doing')
-    return { label: '研发中 / 本轮结束后核对产出', tone: 'primary' };
-  if (batch.status === 'material_partially_outbound')
-    return { label: '已部分领料，可继续办理', tone: 'warning' };
-  if (
-    batch.hasActiveMaterialOutbound ||
-    !['pending', 'material_pending', 'material_assigned'].includes(batch.status)
-  ) {
-    return { label: '可继续办理物料与生产', tone: 'success' };
-  }
-  if (batch.status === 'pending') return { label: '待配置物料需求', tone: 'warning' };
-  if (batch.status === 'material_pending') return { label: '待完成物料分配', tone: 'warning' };
-  return { label: '待创建领料出库单', tone: 'primary' };
+    return { label: '结束本轮后核对产出', tone: 'primary' };
+  if (batch.status === 'doing') return { label: '可继续办理物料与生产', tone: 'success' };
+  if (batch.status === 'pending') return { label: '需先配置物料需求', tone: 'warning' };
+  return { label: '开工时核对需求与缺口', tone: 'primary' };
 };

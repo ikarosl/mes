@@ -14,7 +14,7 @@
               completionCheck &&
               ['closing', 'completed', 'terminated'].includes(completionCheck.batchStatus)
             "
-            type="primary"
+            :type="batchCloseoutActionType(completionCheck.batchStatus)"
             plain
             :disabled="contextLoading"
             @click="openOutput(completionCheck.productionBatchId)"
@@ -174,7 +174,7 @@
                   >{{ completionDetailsExpanded ? '收起检查' : '检查详情' }}</el-button
                 >
                 <el-button
-                  type="primary"
+                  type="warning"
                   size="small"
                   :disabled="contextLoading || !completionCheck.canComplete"
                   :loading="completionPending"
@@ -189,10 +189,7 @@
               >
                 <p>
                   {{ completionCheck.completedRequiredStepCount }} /
-                  {{ completionCheck.requiredStepCount }} 道工序已完成；末道
-                  {{ completionCheck.finalRequiredStepName || '—' }} 正常累计
-                  {{ formatQuantity(completionCheck.finalEffectiveNormalQuantity) }}；计划
-                  {{ formatQuantity(completionCheck.plannedQuantity) }}，仅作数量核对。
+                  {{ completionCheck.requiredStepCount }} 道工序已完成。
                 </p>
                 <ul v-if="completionCheck.blockers.length">
                   <li
@@ -556,6 +553,7 @@ import {
   formatQuantityDifference,
   stepStatusMeta,
 } from './production-status';
+import { batchCloseoutActionType } from './production-task-presentation';
 import ProductionExecutionBatchList from './components/ProductionExecutionBatchList.vue';
 import ProductionExecutionToolbar from './components/ProductionExecutionToolbar.vue';
 import ProductionReportSelectionDialog from './components/ProductionReportSelectionDialog.vue';

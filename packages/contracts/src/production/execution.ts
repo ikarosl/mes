@@ -315,9 +315,6 @@ export interface ProductionExecutionCompletionCheck {
   plannedQuantity: string;
   requiredStepCount: number;
   completedRequiredStepCount: number;
-  finalRequiredStepId: string | null;
-  finalRequiredStepName: string | null;
-  finalEffectiveNormalQuantity: string;
   activeMaterialDemandCount: number;
   unfulfilledSupplementCount?: number;
   canComplete: boolean;
@@ -378,8 +375,6 @@ export interface ProductionExecutionCompletionResult {
   productionBatchId: string;
   batchStatus: 'closing' | 'completed';
   closeoutId: string;
-  /** 完成校验时的末道工序有效正常报工量，不写入批次数量字段。 */
-  lastStepReportedQuantity: string;
   executionCompletedAt: string;
   executionCompletedById: string;
   version: number;

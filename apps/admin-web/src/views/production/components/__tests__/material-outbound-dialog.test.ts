@@ -75,37 +75,6 @@ const StubTableColumn = defineComponent({
 });
 
 describe('MaterialOutboundDialog', () => {
-  it('explains both stale-authorization and fully-allocated continuation paths', () => {
-    const wrapper = mount(MaterialOutboundDialog, {
-      props: {
-        visible: true,
-        demands: [],
-        outbounds: [],
-        loadingOutbounds: false,
-        submitting: false,
-        shortBatch: true,
-      },
-      global: {
-        stubs: {
-          'el-dialog': { template: '<div><slot/><slot name="footer"/></div>' },
-          'el-alert': {
-            props: ['title'],
-            template: '<div class="stub-alert">{{ title }}</div>',
-          },
-          'el-table': true,
-          'el-table-column': true,
-          'el-input': true,
-          'el-input-number': true,
-          'el-button': true,
-        },
-        directives: { loading: () => undefined },
-      },
-    });
-    const alerts = wrapper.findAll('.stub-alert').map((row) => row.text());
-    expect(alerts).toContainEqual(expect.stringContaining('仍有分配缺口时需要'));
-    expect(alerts).toContainEqual(expect.stringContaining('全部活动需求分配完成后'));
-  });
-
   it('offers only active allocations with positive orderable quantity', () => {
     const wrapper = mount(MaterialOutboundDialog, {
       props: {
@@ -134,7 +103,9 @@ describe('MaterialOutboundDialog', () => {
         ] as never,
         outbounds: [],
         loadingOutbounds: false,
+        loadingDemands: false,
         submitting: false,
+        intentStatus: 'idle',
       },
       global: {
         stubs: {
@@ -159,11 +130,13 @@ describe('MaterialOutboundDialog', () => {
         visible: true,
         demands: [
           demand('d1', 'NORMAL:b1', 'normal', null, 'a1'),
-          demand('d2', 'LOSSSUP:9', 'material_loss_supplement', 'SUP-00009', 'a2'),
+          demand('d2', 'SCRAPSUP:9', 'scrap_supplement', 'SUP-00009', 'a2'),
         ] as never,
         outbounds: [],
         loadingOutbounds: false,
+        loadingDemands: false,
         submitting: false,
+        intentStatus: 'idle',
       },
       global: {
         stubs: {
@@ -183,6 +156,7 @@ describe('MaterialOutboundDialog', () => {
       availableAllocations: Array<{ allocationId: string; generationGroupKey: string }>;
       selectedGroupCount: number;
       handleGroupSelection: (key: string, rows: unknown[]) => void;
+      quantities: Record<string, number>;
       submit: () => void;
     };
     const [normal, loss] = vm.availableAllocations;
@@ -194,6 +168,8 @@ describe('MaterialOutboundDialog', () => {
     );
     vm.handleGroupSelection(normal!.generationGroupKey, [normal!]);
     vm.handleGroupSelection(loss!.generationGroupKey, [loss!]);
+    vm.quantities.a1 = 1;
+    vm.quantities.a2 = 1;
     vm.submit();
 
     expect(vm.selectedGroupCount).toBe(2);
@@ -212,7 +188,9 @@ describe('MaterialOutboundDialog', () => {
         demands: [],
         outbounds: [outboundRow],
         loadingOutbounds: false,
+        loadingDemands: false,
         submitting: false,
+        intentStatus: 'idle',
       },
       global: {
         stubs: {
@@ -229,7 +207,7 @@ describe('MaterialOutboundDialog', () => {
     });
     const timeColumn = wrapper.find('.stub-column[data-label="制单时间"]');
     expect(timeColumn.exists()).toBe(true);
-    expect(timeColumn.text()).toContain('2026-08-31 08:05:09');
+    expect(timeColumn.text()).toContain('2026-08-31 16:05:09');
     expect(timeColumn.text()).not.toContain('2026-08-31T08:05:09');
   });
 });
@@ -237,7 +215,7 @@ describe('MaterialOutboundDialog', () => {
 const demand = (
   demandId: string,
   generationGroupKey: string,
-  generationGroupType: 'normal' | 'material_loss_supplement',
+  generationGroupType: 'normal' | 'scrap_supplement',
   supplementNo: string | null,
   allocationId: string,
 ) => ({

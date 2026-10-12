@@ -3,8 +3,8 @@
     :model-value="visible"
     :title="`物料需求${batch ? ` · ${batch.batchNo}` : ''}`"
     :width="DialogWidth.workbench"
+    :before-close="beforeClose"
     workbench
-    @update:model-value="$emit('update:visible', $event)"
   >
     <div class="overview-toolbar">
       <div
@@ -14,389 +14,333 @@
         <span>{{ batch.workOrderNo }}</span>
         <span>{{ batch.productCode }} · {{ batch.productName }}</span>
       </div>
-      <el-button
-        v-if="canAdd"
-        type="primary"
-        @click="$emit('add-manual')"
-      >
-        人工追加需求
-      </el-button>
+      <div class="toolbar-actions">
+        <el-button
+          :loading="loading"
+          @click="$emit('refresh')"
+          >刷新</el-button
+        >
+        <el-button
+          v-if="canAdd"
+          type="primary"
+          @click="addManual"
+        >
+          人工追加需求
+        </el-button>
+      </div>
     </div>
+    <el-alert
+      v-if="error"
+      :title="error"
+      type="error"
+      :closable="false"
+      show-icon
+    />
     <div
+      v-else
       v-loading="loading"
       class="overview-body"
     >
       <el-empty
-        v-if="!loading && groups.length === 0"
+        v-if="demandGroups.length === 0 && !loading"
         description="当前任务没有已生成需求"
       />
-      <el-collapse
-        v-else
-        v-model="expandedGroups"
+      <section
+        v-for="group in demandGroups"
+        :key="group.generationGroupKey"
+        class="demand-group"
       >
-        <el-collapse-item
-          v-for="group in groups"
-          :key="group.generationGroupKey"
-          :name="group.generationGroupKey"
+        <header class="demand-group-header">
+          <strong>{{ generationGroupTitle(group) }}</strong>
+          <span class="demand-group-time">
+            本次生成 {{ formatDateTimeForDisplay(group.rows[0]?.createdAt) }}
+          </span>
+        </header>
+        <el-table
+          :data="group.rows"
+          row-key="demandId"
         >
-          <template #title>
-            <div class="group-title">
-              <strong>{{ group.label }}</strong>
-              <span>{{ formatDateForDisplay(group.rows[0]?.createdAt) }}</span>
-              <span
-                v-if="group.rows[0]?.generationReason"
-                class="group-reason"
-              >
-                {{ group.rows[0].generationReason }}
-              </span>
-              <el-tag
-                size="small"
-                type="info"
-                >{{ group.rows.length }} 条</el-tag
-              >
-            </div>
-          </template>
-          <el-table
-            :data="group.rows"
-            row-key="demandId"
-            :expand-row-keys="expandedDemandIds"
-            class="group-table"
-            @expand-change="handleDemandExpand"
+          <el-table-column
+            label="需求 ID"
+            width="140"
+            fixed="left"
           >
-            <el-table-column
-              type="expand"
-              width="52"
-            >
-              <template #default="{ row }">
-                <div class="demand-evidence">
-                  <div>
-                    <span>已分配</span
-                    ><strong>{{ quantity(row.allocatedQuantity) }} {{ row.unit }}</strong>
-                  </div>
-                  <div v-if="row.businessStatus === 'active'">
-                    <span>未分配缺口</span
-                    ><strong>{{ quantity(row.remainingQuantity) }} {{ row.unit }}</strong>
-                  </div>
-                  <div class="evidence-purchases">
-                    <span>采购关系只供追溯，不计入已领量</span>
-                    <el-button
-                      link
-                      type="primary"
-                      @click="showPurchases(row.demandId)"
-                    >
-                      {{
-                        purchaseCounts.get(row.demandId) === undefined
-                          ? '查看相关采购'
-                          : `相关采购 ${purchaseCounts.get(row.demandId)} 单`
-                      }}
-                    </el-button>
-                    <el-button
-                      v-if="auth.can(PERMISSIONS.procurement.orders.view)"
-                      link
-                      type="primary"
-                      @click="purchaseFromDemand(row.demandId)"
-                      >发起采购</el-button
-                    >
-                  </div>
-                  <div
-                    v-if="hasCorrectionTrace(row)"
-                    class="correction-trace"
-                  >
-                    <span>关闭 / 替代</span>
-                    <span v-if="row.correction?.closeCause">{{
-                      DEMAND_CLOSE_CAUSE_LABELS[row.correction.closeCause as DemandCloseCause]
-                    }}</span>
-                    <span v-if="row.correction?.replacesDemandId"
-                      >替代 #{{ row.correction.replacesDemandId }}</span
-                    >
-                    <span v-if="row.correction?.replacementDemandId"
-                      >后继 #{{ row.correction.replacementDemandId }}</span
-                    >
-                    <el-button
-                      v-if="
-                        row.correction?.closeoutApprovalId &&
-                        canAccessRoute({ name: 'approval-inbox' })
-                      "
-                      link
-                      type="primary"
-                      @click="
-                        router.push({
-                          name: 'approval-inbox',
-                          query: { instanceId: row.correction.closeoutApprovalId },
-                        })
-                      "
-                      >结案审批</el-button
-                    >
-                    <span
-                      v-else-if="row.correction?.closeoutId && !row.correction?.closeoutApprovalId"
-                      >收尾 #{{ row.correction.closeoutId }}，待提交结案审批</span
-                    >
-                  </div>
-                </div>
-              </template>
-            </el-table-column>
-            <el-table-column
-              label="物料 / 精确版本"
-              min-width="250"
-              fixed="left"
-            >
-              <template #default="{ row }">
-                <strong class="material-name">{{ row.itemName }}</strong>
-                <div class="material-identity">
-                  {{ row.itemCode }} · {{ row.materialVariantCode }}
-                </div>
-              </template>
-            </el-table-column>
-            <el-table-column
-              label="需求量"
-              width="115"
-              align="right"
-            >
-              <template #default="{ row }"
-                >{{ quantity(row.demandQuantity) }} {{ row.unit }}</template
+            <template #default="{ row }">
+              <span class="demand-id">id:{{ row.demandId }}</span>
+              <div
+                v-if="row.correction?.replacesDemandId"
+                class="secondary"
               >
-            </el-table-column>
-            <el-table-column
-              label="已领"
-              width="115"
-              align="right"
+                更正自 id:{{ row.correction.replacesDemandId }}
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="物料 / 精确版本"
+            min-width="210"
+            fixed="left"
+          >
+            <template #default="{ row }">
+              <strong>{{ row.itemName }}</strong>
+              <div class="secondary">{{ row.itemCode }} · {{ row.materialVariantCode }}</div>
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="需求量"
+            width="100"
+            align="right"
+          >
+            <template #default="{ row }"
+              >{{ quantity(row.demandQuantity) }} {{ row.unit }}</template
             >
-              <template #default="{ row }"
-                >{{ quantity(row.outboundQuantity) }} {{ row.unit }}</template
+          </el-table-column>
+          <el-table-column
+            label="已领"
+            width="100"
+            align="right"
+          >
+            <template #default="{ row }"
+              >{{ quantity(row.outboundQuantity) }} {{ row.unit }}</template
+            >
+          </el-table-column>
+          <el-table-column
+            label="未领"
+            width="100"
+            align="right"
+          >
+            <template #default="{ row }">
+              {{ quantity(row.remainingDemandQuantity) }} {{ row.unit }}
+              <div
+                v-if="row.businessStatus !== 'active'"
+                class="secondary"
               >
-            </el-table-column>
-            <el-table-column
-              label="未领"
-              width="130"
-              align="right"
-            >
-              <template #default="{ row }">
-                {{ quantity(row.remainingDemandQuantity) }} {{ row.unit }}
-                <div
-                  v-if="row.businessStatus !== 'active'"
-                  class="historical-note"
-                >
-                  历史余量
+                历史余量
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="需求状态"
+            min-width="150"
+          >
+            <template #default="{ row }">
+              <el-tag
+                :type="materialDemandProgressMeta(row.demandProgressStatus).type"
+                effect="light"
+                size="small"
+                >{{ materialDemandProgressMeta(row.demandProgressStatus).label }}</el-tag
+              >
+              <div
+                v-if="row.correction?.replacementDemandId"
+                class="secondary"
+              >
+                已由 id:{{ row.correction.replacementDemandId }} 替代
+              </div>
+              <template v-else-if="row.businessStatus === 'active'">
+                <div class="secondary">
+                  已分配 {{ quantity(row.allocatedQuantity) }} {{ row.unit }}
+                </div>
+                <div class="secondary">
+                  未分配 {{ quantity(row.remainingQuantity) }} {{ row.unit }}
                 </div>
               </template>
-            </el-table-column>
-            <el-table-column
-              label="进度"
-              width="120"
-            >
-              <template #default="{ row }">
-                <el-tag size="small">{{ progressLabel(row) }}</el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column
-              label="操作"
-              width="140"
-              fixed="right"
-            >
-              <template #default="{ row }"
-                ><el-button
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="操作"
+            width="180"
+            fixed="right"
+          >
+            <template #default="{ row }">
+              <div class="row-actions">
+                <el-button
                   link
                   type="primary"
-                  @click="
-                    correctionDemandId = row.demandId;
-                    correctionVisible = true;
-                  "
-                  >{{
-                    ['manual_additional', 'scrap_supplement'].includes(row.demandType) &&
-                    row.businessStatus === 'active' &&
-                    !row.correction?.pendingCorrectionId
-                      ? '更正此需求'
-                      : '查看更正与追溯'
-                  }}</el-button
-                ></template
-              >
-            </el-table-column>
-          </el-table>
-        </el-collapse-item>
-      </el-collapse>
+                  @click="showPurchases(row.demandId)"
+                  >相关采购</el-button
+                >
+                <el-button
+                  link
+                  type="primary"
+                  @click="showTrace(row.demandId)"
+                  >变更追溯</el-button
+                >
+              </div>
+            </template>
+          </el-table-column>
+        </el-table>
+      </section>
     </div>
-    <template #footer><el-button @click="$emit('update:visible', false)">关闭</el-button></template>
+    <template #footer><el-button @click="close">关闭</el-button></template>
   </el-dialog>
+  <ProductionDemandTraceDialog
+    ref="traceDialog"
+    v-model:visible="traceVisible"
+    :batch="batch"
+    :demand-id="traceDemandId"
+    :demands="demands"
+    @correct="openCorrection"
+  />
   <DemandCorrectionDialog
+    ref="correctionDialog"
     v-model:visible="correctionVisible"
     :demand-id="correctionDemandId"
-    @changed="$emit('changed')"
+    @changed="correctionChanged"
   />
   <RelatedPurchasesDialog
     v-model:visible="relatedVisible"
     :demand-id="relatedDemandId"
+    :work-order-id="batch?.workOrderId ?? null"
   />
 </template>
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
-import type {
-  ProductionBatchItem,
-  ProductionMaterialDemandItem,
-  DemandCloseCause,
-} from '@company/contracts';
-import {
-  MATERIAL_DEMAND_PROGRESS_LABELS,
-  DEMAND_CLOSE_CAUSE_LABELS,
-  PERMISSIONS,
-} from '@company/constants';
+import type { ProductionBatchItem, ProductionMaterialDemandItem } from '@company/contracts';
 import DemandCorrectionDialog from './DemandCorrectionDialog.vue';
+import ProductionDemandTraceDialog from './ProductionDemandTraceDialog.vue';
 import RelatedPurchasesDialog from '../../procurement/components/RelatedPurchasesDialog.vue';
-import { useRelatedPurchaseCounts } from '../../procurement/composables/useRelatedPurchaseCounts';
-import { useAuthStore } from '../../../stores/auth';
-import { useRouteAccess } from '../../../composables/useRouteAccess';
 import { DialogWidth } from '../../../utils/dialog';
-import { formatDateForDisplay } from '../../../utils/date';
-import { formatQuantity as quantity } from '../production-status';
-import { groupMaterialDemandRows } from '../material-demand-group-presentation';
-const router = useRouter();
-const auth = useAuthStore();
-const { canAccessRoute } = useRouteAccess();
+import { formatDateTimeForDisplay } from '../../../utils/date';
+import { formatQuantity as quantity, materialDemandProgressMeta } from '../production-status';
+import {
+  groupMaterialDemandRows,
+  type MaterialDemandGroup,
+} from '../material-demand-group-presentation';
 
 const props = defineProps<{
   visible: boolean;
   batch: ProductionBatchItem | null;
   demands: ProductionMaterialDemandItem[];
   loading: boolean;
+  error?: string;
 }>();
-defineEmits<{ 'update:visible': [boolean]; 'add-manual': []; changed: [] }>();
-
-const correctionDemandId = ref<string | null>(null),
-  correctionVisible = ref(false);
-const relatedDemandId = ref<string | null>(null),
-  relatedVisible = ref(false);
-const { counts: purchaseCounts } = useRelatedPurchaseCounts(
-  () => props.visible,
-  () => props.demands.map((row) => row.demandId),
-);
-const showPurchases = (id: string): void => {
+const emit = defineEmits<{
+  'update:visible': [boolean];
+  'add-manual': [];
+  changed: [];
+  refresh: [];
+}>();
+const correctionDialog = ref<InstanceType<typeof DemandCorrectionDialog> | null>(null);
+const traceDialog = ref<InstanceType<typeof ProductionDemandTraceDialog> | null>(null);
+const correctionDemandId = ref<string | null>(null);
+const correctionVisible = ref(false);
+const traceDemandId = ref<string | null>(null);
+const traceVisible = ref(false);
+const relatedDemandId = ref<string | null>(null);
+const relatedVisible = ref(false);
+const demandGroups = computed(() => groupMaterialDemandRows(props.demands));
+const generationGroupTitle = (group: MaterialDemandGroup<ProductionMaterialDemandItem>): string =>
+  group.rows.some((row) => row.correction?.replacesDemandId)
+    ? `更正生成 · 来源 ${group.supplementNo ?? group.label}`
+    : group.label;
+const closeEditor = async (): Promise<boolean> =>
+  !correctionVisible.value || (await correctionDialog.value?.close()) === true;
+const close = async (): Promise<boolean> => {
+  if (!(await closeEditor())) return false;
+  traceVisible.value = false;
+  relatedVisible.value = false;
+  emit('update:visible', false);
+  return true;
+};
+const beforeClose = async (done: () => void): Promise<void> => {
+  if (await close()) done();
+};
+const showPurchases = async (id: string): Promise<void> => {
+  if (!(await closeEditor())) return;
+  traceVisible.value = false;
   relatedDemandId.value = id;
   relatedVisible.value = true;
 };
-const purchaseFromDemand = async (id: string): Promise<void> => {
-  await router.push({
-    name: 'procurement-orders',
-    query: { demandId: id, workOrderId: props.batch?.workOrderId },
-  });
+const showTrace = async (id: string): Promise<void> => {
+  if (!(await closeEditor())) return;
+  relatedVisible.value = false;
+  traceDemandId.value = id;
+  traceVisible.value = true;
 };
-const groups = computed(() => groupMaterialDemandRows(props.demands));
-const expandedGroups = ref<string[]>([]);
-const expandedDemandIds = ref<string[]>([]);
-let knownBatchId: string | null = null;
-let knownGroupKeys = new Set<string>();
-const handleDemandExpand = (
-  row: ProductionMaterialDemandItem,
-  expandedRows: ProductionMaterialDemandItem[],
-): void => {
-  const current = new Set(expandedDemandIds.value);
-  if (expandedRows.some((entry) => entry.demandId === row.demandId)) current.add(row.demandId);
-  else current.delete(row.demandId);
-  expandedDemandIds.value = [...current];
+const openCorrection = async (id: string): Promise<void> => {
+  if (!(await closeEditor())) return;
+  correctionDemandId.value = id;
+  correctionVisible.value = true;
 };
-const hasCorrectionTrace = (row: ProductionMaterialDemandItem): boolean =>
-  Boolean(
-    row.correction?.closeCause ||
-    row.correction?.replacesDemandId ||
-    row.correction?.replacementDemandId ||
-    row.correction?.closeoutApprovalId ||
-    row.correction?.closeoutId,
-  );
+const correctionChanged = (): void => {
+  emit('changed');
+  if (traceVisible.value) void traceDialog.value?.refresh();
+};
+const addManual = async (): Promise<void> => {
+  if (await closeEditor()) emit('add-manual');
+};
 const canAdd = computed(() =>
   Boolean(
     props.batch &&
     !['pending', 'completed', 'cancelled', 'terminated', 'closing'].includes(props.batch.status),
   ),
 );
-const progressLabel = (row: ProductionMaterialDemandItem): string =>
-  MATERIAL_DEMAND_PROGRESS_LABELS[row.demandProgressStatus];
 watch(
-  () => [props.batch?.id ?? null, groups.value] as const,
-  ([batchId, value]) => {
-    const keys = value.map((group) => group.generationGroupKey);
-    if (batchId !== knownBatchId) {
-      expandedGroups.value = keys;
-      expandedDemandIds.value = [];
-      knownBatchId = batchId;
-    } else {
-      expandedGroups.value = keys.filter(
-        (key) => expandedGroups.value.includes(key) || !knownGroupKeys.has(key),
-      );
-      const demandIds = new Set(props.demands.map((row) => row.demandId));
-      expandedDemandIds.value = expandedDemandIds.value.filter((id) => demandIds.has(id));
+  () => props.visible,
+  (visible) => {
+    if (!visible) {
+      traceVisible.value = false;
+      relatedVisible.value = false;
     }
-    knownGroupKeys = new Set(keys);
   },
-  { immediate: true },
 );
+defineExpose({ close });
 </script>
 
 <style scoped>
-.overview-toolbar {
+.overview-toolbar,
+.batch-context,
+.toolbar-actions,
+.row-actions {
   display: flex;
   align-items: center;
+  gap: 12px;
+}
+.overview-toolbar {
   justify-content: space-between;
-  gap: 16px;
+  flex-wrap: wrap;
   margin-bottom: 16px;
 }
 .batch-context {
-  display: flex;
-  align-items: center;
   flex-wrap: wrap;
-  gap: 8px 12px;
-  color: #606266;
+  color: var(--el-text-color-regular);
 }
 .overview-body {
   min-height: 180px;
 }
-.group-title {
+.demand-group + .demand-group {
+  margin-top: 16px;
+}
+.demand-group-header {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
   gap: 12px;
-  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--el-border-color-lighter);
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-primary);
 }
-.group-title span {
-  color: #909399;
-  font-size: 12px;
+.demand-group-header strong {
+  font-size: 14px;
 }
-.group-title .group-reason {
-  overflow: hidden;
-  max-width: 360px;
-  color: #606266;
-  text-overflow: ellipsis;
+.demand-group-time {
+  color: var(--el-text-color-regular);
+  font-size: 13px;
   white-space: nowrap;
 }
-.group-table {
-  margin-bottom: 12px;
+.demand-id {
+  white-space: nowrap;
 }
-.material-name {
-  color: #1f2937;
-}
-.material-identity {
+.secondary {
   margin-top: 4px;
-  color: #6b7280;
-}
-.historical-note {
-  color: #6b7280;
+  color: var(--el-text-color-secondary);
   font-size: 12px;
+  overflow-wrap: anywhere;
 }
-.demand-evidence {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 24px;
-  padding: 8px 20px;
-}
-.demand-evidence > div {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.demand-evidence span:first-child {
-  color: #6b7280;
-}
-.correction-trace {
-  width: 100%;
+.toolbar-actions .el-button + .el-button,
+.row-actions .el-button + .el-button {
+  margin-left: 0;
 }
 </style>

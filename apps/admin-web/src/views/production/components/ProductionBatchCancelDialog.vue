@@ -34,9 +34,6 @@
         <el-descriptions-item label="计划数量">
           {{ formatQuantity(batch.plannedQuantity) }}
         </el-descriptions-item>
-        <el-descriptions-item label="末工序正常报工量">
-          {{ formatQuantity(batch.lastStepReportedQuantity) }}
-        </el-descriptions-item>
       </el-descriptions>
 
       <div class="dialog-section-title">取消后的联动处理</div>

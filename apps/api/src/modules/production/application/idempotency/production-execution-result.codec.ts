@@ -21,7 +21,6 @@ const completionSchema = z
     productionBatchId: id,
     batchStatus: z.enum(['closing', 'completed']),
     closeoutId: id,
-    lastStepReportedQuantity: z.string().regex(/^\d+$/),
     executionCompletedAt: z.string().datetime({ offset: true }),
     executionCompletedById: id,
     version: z.number().int().positive(),

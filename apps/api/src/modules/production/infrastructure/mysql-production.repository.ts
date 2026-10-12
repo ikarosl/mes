@@ -8,6 +8,9 @@ import type {
   ProductionBatchCancellationCheck,
   ProductionBatchItem,
   ProductionBatchQuery,
+  ProductionBatchStartRecord,
+  ProductionBatchStepRecords,
+  ProductionStepCommandResult,
   UpdateBatchStepExecutionPayload,
   UpdateProductionBatchPayload,
   UpdateWorkOrderPayload,
@@ -23,7 +26,6 @@ import {
   type ResolvedBatchStepOverride,
 } from '../application/ports/production.repository.js';
 import { MysqlProductionBatchRepository } from './mysql-production-batch.repository.js';
-import { MysqlProductionMaterialOutboundRepository } from './mysql-production-material-outbound.repository.js';
 import { MysqlWorkOrderRepository } from './mysql-work-order.repository.js';
 
 /**
@@ -35,7 +37,6 @@ export class MysqlProductionRepository extends ProductionRepository {
   constructor(
     private readonly workOrders: MysqlWorkOrderRepository,
     private readonly batches: MysqlProductionBatchRepository,
-    private readonly outbounds: MysqlProductionMaterialOutboundRepository,
   ) {
     super();
   }
@@ -97,21 +98,17 @@ export class MysqlProductionRepository extends ProductionRepository {
   ): Promise<WorkOrderDetail> {
     return this.workOrders.close(id, version, reason, audit);
   }
-  async listBatches(query: ProductionBatchQuery): Promise<PageResult<ProductionBatchItem>> {
-    const page = await this.batches.list(query);
-    const activeOutboundBatchIds = await this.outbounds.findBatchIdsWithActiveOutbounds(
-      page.items.map((batch) => batch.id),
-    );
-    return {
-      ...page,
-      items: page.items.map((batch) => ({
-        ...batch,
-        hasActiveMaterialOutbound: activeOutboundBatchIds.has(batch.id),
-      })),
-    };
+  listBatches(query: ProductionBatchQuery): Promise<PageResult<ProductionBatchItem>> {
+    return this.batches.list(query);
   }
   getBatch(id: string): Promise<ProductionBatchDetail> {
     return this.batches.get(id);
+  }
+  getBatchStepRecords(id: string): Promise<ProductionBatchStepRecords> {
+    return this.batches.getStepRecords(id);
+  }
+  getBatchStartRecord(id: string): Promise<ProductionBatchStartRecord | null> {
+    return this.batches.getStartRecord(id);
   }
   getBatchCancellationCheck(id: string): Promise<ProductionBatchCancellationCheck> {
     return this.batches.getCancellationCheck(id);
@@ -156,7 +153,7 @@ export class MysqlProductionRepository extends ProductionRepository {
     actualSop:
       { id: string; fileName: string; objectKey: string; versionNo: string } | null | undefined,
     audit: CommandContext,
-  ): Promise<ProductionBatchDetail> {
+  ): Promise<ProductionStepCommandResult> {
     return this.batches.updateStepExecution(batchId, recordId, payload, actualSop, audit);
   }
   getBatchProductId(batchId: string): Promise<string> {

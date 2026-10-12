@@ -62,8 +62,7 @@ describe('permissionMatches', () => {
       outbound: 'production:materials:outbound',
       confirmOutbound: 'production:materials:outbound-confirm',
       cancelOutbound: 'production:materials:outbound-cancel',
-      authorizeShortBatch: 'production:materials:authorize-short-batch',
-      closeRemainingDemands: 'production:materials:close-remaining-demands',
+      correctDemand: 'production:materials:correct-demand',
     });
     expect(ALLOCATION_STATUS_LABELS.released).toBe('已释放');
   });

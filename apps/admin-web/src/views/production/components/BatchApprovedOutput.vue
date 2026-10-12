@@ -4,11 +4,13 @@
     class="approved-output"
   >
     <strong>可用 {{ formatQuantity(approvedUsableQuantity(output)) }}</strong>
-    <div>
+    <div v-if="!compact">
       计划内 {{ formatQuantity(output.availableQuantity) }} / 计划外
       {{ formatQuantity(output.extraQuantity) }}
     </div>
-    <div>报废 {{ formatQuantity(output.scrapQuantity) }} · 第 {{ output.revisionNo }} 版</div>
+    <div v-if="!compact">
+      报废 {{ formatQuantity(output.scrapQuantity) }} · 第 {{ output.revisionNo }} 版
+    </div>
   </div>
   <span
     v-else
@@ -22,7 +24,7 @@ import type { ProductionBatchItem } from '@company/contracts';
 import { approvedUsableQuantity } from '../production-output-quantity';
 import { formatQuantity } from '../production-status';
 
-defineProps<{ output: ProductionBatchItem['finalOutput'] }>();
+defineProps<{ output: ProductionBatchItem['finalOutput']; compact?: boolean }>();
 </script>
 
 <style scoped>

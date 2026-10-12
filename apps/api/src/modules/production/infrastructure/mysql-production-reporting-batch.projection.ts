@@ -4,11 +4,11 @@ import type {
   ProductionBatchQuery,
   ProductionExecutionBatchSummary,
 } from '@company/contracts';
-import { BATCH_SELECT, type BatchRow } from './mysql-production.shared.js';
+import { BATCH_SUMMARY_SELECT, type BatchSummaryRow } from './mysql-production.shared.js';
 import { mapBatches } from './mysql-production-batch-display.mapper.js';
 import { fixedIntegerQuantity } from '../domain/integer-quantity.js';
 
-type ExecutionBatchRow = BatchRow & {
+type ExecutionBatchRow = BatchSummaryRow & {
   completed_step_count: number;
   total_step_count: number;
   effective_abnormal: string;
@@ -46,7 +46,7 @@ export const selectExecutionBatchSummaries = async (
         FROM batch_step_reports r WHERE r.production_batch_id=base.id),0) effective_abnormal,
       (SELECT COUNT(*) FROM batch_step_abnormal_dispositions d
         WHERE d.production_batch_id=base.id AND d.review_status='pending_review') pending_abnormal_count
-     FROM (${BATCH_SELECT} WHERE ${where}) base
+     FROM (${BATCH_SUMMARY_SELECT} WHERE ${where}) base
      ORDER BY base.created_at DESC,base.id DESC LIMIT ? OFFSET ?`,
     [...values, pageSize, (page - 1) * pageSize],
   );

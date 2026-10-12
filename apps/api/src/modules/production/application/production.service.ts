@@ -6,6 +6,9 @@ import type {
   ProductionBatchCancellationCheck,
   ProductionBatchItem,
   ProductionBatchQuery,
+  ProductionBatchStartRecord,
+  ProductionBatchStepRecords,
+  ProductionStepCommandResult,
   UpdateProductionBatchPayload,
   UpdateBatchStepExecutionPayload,
   UpdateWorkOrderPayload,
@@ -60,6 +63,30 @@ export class ProductionService {
   }
   async getBatch(id: string) {
     return this.enrichBatchDetail(await this.production.getBatch(id));
+  }
+  async getBatchStepRecords(id: string): Promise<ProductionBatchStepRecords> {
+    const result = await this.production.getBatchStepRecords(id);
+    const names = await this.resolveUserNames(
+      result.stepRecords.flatMap((step) => [step.defaultResponsibleUserId, step.responsibleUserId]),
+    );
+    return {
+      ...result,
+      stepRecords: result.stepRecords.map((step) => ({
+        ...step,
+        defaultResponsibleUserName: step.defaultResponsibleUserId
+          ? (names.get(step.defaultResponsibleUserId) ?? null)
+          : null,
+        responsibleUserName: step.responsibleUserId
+          ? (names.get(step.responsibleUserId) ?? null)
+          : null,
+      })),
+    };
+  }
+  async getBatchStartRecord(id: string): Promise<ProductionBatchStartRecord | null> {
+    const record = await this.production.getBatchStartRecord(id);
+    if (record === null) return null;
+    const names = await this.resolveUserNames([record.startedById]);
+    return { ...record, startedByName: names.get(record.startedById) ?? null };
   }
   getBatchCancellationCheck(id: string): Promise<ProductionBatchCancellationCheck> {
     return this.production.getBatchCancellationCheck(id);
@@ -245,7 +272,7 @@ export class ProductionService {
     recordId: string,
     payload: UpdateBatchStepExecutionPayload,
     audit: CommandContext,
-  ) {
+  ): Promise<ProductionStepCommandResult> {
     const actualSop =
       payload.actualSopFileId === undefined
         ? undefined
@@ -254,9 +281,7 @@ export class ProductionService {
           : this.requireProduct(
               await this.products.getEnabledSopFileSnapshot(payload.actualSopFileId!),
             );
-    return this.enrichBatchDetail(
-      await this.production.updateBatchStepExecution(batchId, recordId, payload, actualSop, audit),
-    );
+    return this.production.updateBatchStepExecution(batchId, recordId, payload, actualSop, audit);
   }
   private async requireActiveUser(id: string | null): Promise<void> {
     if (!id) return;
@@ -282,44 +307,24 @@ export class ProductionService {
   }
 
   private async enrichBatches(batches: ProductionBatchItem[]): Promise<ProductionBatchItem[]> {
-    const names = await this.resolveUserNames(
-      batches.flatMap((batch) => [batch.ownerId, batch.cancelledBy]),
-    );
+    const names = await this.resolveUserNames(batches.map((batch) => batch.ownerId));
     return batches.map((batch) => ({
       ...batch,
       ownerName: batch.ownerId ? (names.get(batch.ownerId) ?? null) : null,
-      ...(batch.status === 'cancelled'
-        ? {
-            cancelledByName: batch.cancelledBy ? (names.get(batch.cancelledBy) ?? null) : null,
-          }
-        : {}),
     }));
   }
 
   private async enrichBatchDetail(batch: ProductionBatchDetail): Promise<ProductionBatchDetail> {
-    const stepRecords = batch.stepRecords ?? [];
     const names = await this.resolveUserNames([
       batch.ownerId,
+      batch.startedById,
       batch.cancelledBy,
-      ...stepRecords.flatMap((step) => [step.defaultResponsibleUserId, step.responsibleUserId]),
     ]);
     return {
       ...batch,
       ownerName: batch.ownerId ? (names.get(batch.ownerId) ?? null) : null,
-      ...(batch.status === 'cancelled'
-        ? {
-            cancelledByName: batch.cancelledBy ? (names.get(batch.cancelledBy) ?? null) : null,
-          }
-        : {}),
-      stepRecords: stepRecords.map((step) => ({
-        ...step,
-        defaultResponsibleUserName: step.defaultResponsibleUserId
-          ? (names.get(step.defaultResponsibleUserId) ?? null)
-          : null,
-        responsibleUserName: step.responsibleUserId
-          ? (names.get(step.responsibleUserId) ?? null)
-          : null,
-      })),
+      startedByName: batch.startedById ? (names.get(batch.startedById) ?? null) : null,
+      cancelledByName: batch.cancelledBy ? (names.get(batch.cancelledBy) ?? null) : null,
     };
   }
 

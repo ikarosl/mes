@@ -1,6 +1,12 @@
-import type { BatchStepStatus, ProductionBatchStatus, WorkOrderStatus } from '@company/contracts';
+import type {
+  BatchStepStatus,
+  MaterialDemandProgressStatus,
+  ProductionBatchStatus,
+  WorkOrderStatus,
+} from '@company/contracts';
 import {
   BATCH_STEP_STATUS_LABELS,
+  MATERIAL_DEMAND_PROGRESS_LABELS,
   PRODUCTION_TERMINATED_LABEL,
   PRODUCTION_CLOSING_LABEL,
 } from '@company/constants';
@@ -58,6 +64,26 @@ export const batchStatusMeta = (status: ProductionBatchStatus): StatusMeta<Produ
 
 export const stepStatusMeta = (status: BatchStepStatus): StatusMeta<BatchStepStatus> =>
   STEP_STATUS_META.find((item) => item.value === status) ?? STEP_STATUS_META[0];
+
+const MATERIAL_DEMAND_PROGRESS_TAG_TYPES: Record<MaterialDemandProgressStatus, StatusTagType> = {
+  pending_allocation: 'warning',
+  partially_allocated: 'warning',
+  allocated: 'primary',
+  shortage: 'danger',
+  partially_outbound: 'warning',
+  outbound: 'success',
+  cancelled: 'info',
+  closed: 'info',
+  correction_pending: 'warning',
+};
+
+export const materialDemandProgressMeta = (
+  status: MaterialDemandProgressStatus,
+): StatusMeta<MaterialDemandProgressStatus> => ({
+  value: status,
+  label: MATERIAL_DEMAND_PROGRESS_LABELS[status],
+  type: MATERIAL_DEMAND_PROGRESS_TAG_TYPES[status],
+});
 
 /** 整数数量格式化：千分位分隔；非法值显示 `-` */
 export const formatQuantity = (value: string | number | null | undefined): string => {

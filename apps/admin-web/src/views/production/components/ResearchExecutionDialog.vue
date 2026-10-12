@@ -33,7 +33,7 @@
         >关闭</el-button
       >
       <el-button
-        type="primary"
+        type="warning"
         :loading="submitting"
         :disabled="!canSubmit"
         @click="submit"
@@ -74,8 +74,7 @@ const hasCompleteResult = (result: ProductionExecutionCompletionResult): boolean
   'closeoutId' in result &&
   isId(result.closeoutId) &&
   isTimestamp(result.executionCompletedAt) &&
-  isId(result.executionCompletedById) &&
-  /^\d+(\.0+)?$/.test(result.lastStepReportedQuantity);
+  isId(result.executionCompletedById);
 const intent = useIdempotentIntent('研发执行记录');
 const submitting = ref(false);
 const retrying = ref(false);

@@ -21,15 +21,14 @@ import { requireWorkOrderTransition } from '../domain/production-status.policy.j
 import { ProductionDomainError } from '../domain/production.errors.js';
 import { fixedIntegerQuantity, integerQuantity } from '../domain/integer-quantity.js';
 import { allocateBusinessNumber } from '../../../infrastructure/numbering/mysql-business-number.js';
-import { lastStepReportedQuantitySql } from './mysql-production-reporting.sql.js';
 import { mapBatches } from './mysql-production-batch-display.mapper.js';
 import {
   readResearchOrderRelations,
   requireResearchPredecessor,
 } from './mysql-work-order-research.js';
 import {
-  BATCH_SELECT,
-  type BatchRow,
+  BATCH_SUMMARY_SELECT,
+  type BatchSummaryRow,
   type Db,
   ensureNoDuplicate,
   findWorkOrder,
@@ -55,7 +54,6 @@ type WorkOrderBatchSummaryRow = RowDataPacket & {
     | 'terminated'
     | 'closing';
   planned_quantity: string;
-  last_step_reported_quantity: string;
   current_revision_id: number | null;
   approved_available_quantity: string | null;
 };
@@ -477,7 +475,7 @@ export class MysqlWorkOrderRepository {
     workOrderId: string,
   ): Promise<WorkOrderBatchSummaryRow[]> {
     const [rows] = await connection.query<WorkOrderBatchSummaryRow[]>(
-      `SELECT b.id,b.batch_no,b.status,b.planned_quantity,${lastStepReportedQuantitySql('b.id', true)} last_step_reported_quantity,
+      `SELECT b.id,b.batch_no,b.status,b.planned_quantity,
         c.current_revision_id,(round.baseline_planned_received+COALESCE((SELECT a.quantity FROM production_output_allocation a WHERE a.revision_id=r.id AND a.category='self_made'),0)) approved_available_quantity
        FROM production_batches b
        LEFT JOIN production_batch_closeout c ON c.production_batch_id=b.id
@@ -493,8 +491,8 @@ export class MysqlWorkOrderRepository {
 
   private async getDetail(db: Db, id: string): Promise<WorkOrderDetail> {
     const order = await findWorkOrder(db, id);
-    const [batches] = await db.query<BatchRow[]>(
-      `${BATCH_SELECT} WHERE b.work_order_id=? ORDER BY b.created_at DESC,b.id DESC`,
+    const [batches] = await db.query<BatchSummaryRow[]>(
+      `${BATCH_SUMMARY_SELECT} WHERE b.work_order_id=? ORDER BY b.created_at DESC,b.id DESC`,
       [id],
     );
     return {
@@ -554,7 +552,6 @@ const workOrderBatchDetails = (
     batchNo: batch.batch_no,
     status: batch.status,
     plannedQuantity: String(batch.planned_quantity),
-    lastStepReportedQuantity: String(batch.last_step_reported_quantity),
     approvedAvailableQuantity:
       batch.approved_available_quantity === null ? null : String(batch.approved_available_quantity),
     currentOutputRevisionId:

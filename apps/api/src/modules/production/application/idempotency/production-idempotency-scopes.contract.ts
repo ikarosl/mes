@@ -27,7 +27,7 @@ export const BEGIN_OUTPUT_CORRECTION_SCOPE = 'production.output.correction.begin
 export const CANCEL_OUTPUT_CORRECTION_SCOPE = 'production.output.correction.cancel.v1' as const;
 
 /** createBatch 创建生产批次；scope 与当前请求及结果 codec 绑定。 */
-export const CREATE_BATCH_IDEMPOTENCY_SCOPE = 'production.batch.create.v11' as const;
+export const CREATE_BATCH_IDEMPOTENCY_SCOPE = 'production.batch.create.v13' as const;
 /** 创建物料分配。 */
 export const CREATE_MATERIAL_ALLOCATION_IDEMPOTENCY_SCOPE =
   'production.material-allocation.create.v1' as const;
@@ -73,8 +73,8 @@ export const CONFIRM_MATERIAL_LOSS_IDEMPOTENCY_SCOPE =
   'production.material-loss.confirm.v3' as const;
 
 export const START_PRODUCTION_EXECUTION_SCOPE = 'production.execution.start.v1' as const;
-export const COMPLETE_PRODUCTION_EXECUTION_SCOPE = 'production.execution.complete.v1' as const;
-export const COMPLETE_RESEARCH_EXECUTION_SCOPE = 'production.research.complete.v2' as const;
+export const COMPLETE_PRODUCTION_EXECUTION_SCOPE = 'production.execution.complete.v2' as const;
+export const COMPLETE_RESEARCH_EXECUTION_SCOPE = 'production.research.complete.v3' as const;
 
 /** 初次结案时登记原材料损坏，只占可退额度，不生成补料。 */
 export const RECORD_CLOSEOUT_MATERIAL_LOSS_SCOPE =

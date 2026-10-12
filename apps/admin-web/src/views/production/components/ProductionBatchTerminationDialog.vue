@@ -50,19 +50,8 @@
           <el-descriptions-item label="成品"
             >{{ check.productCode }} · {{ check.productName }}</el-descriptions-item
           >
-          <el-descriptions-item label="当前末道净正常报工">{{
-            quantity(check.currentReportedNormalQuantity)
-          }}</el-descriptions-item>
           <el-descriptions-item label="历史报废">{{
             quantity(check.existingScrapQuantity)
-          }}</el-descriptions-item>
-          <el-descriptions-item label="原批准依据的末道正常量">{{
-            check.approvedReportedNormalQuantity === null
-              ? '尚无批准依据'
-              : quantity(check.approvedReportedNormalQuantity) + ' ' + check.unit
-          }}</el-descriptions-item>
-          <el-descriptions-item label="当前量与批准依据之差">{{
-            formatQuantityDifference(check.reportedNormalQuantityDifference)
           }}</el-descriptions-item>
         </el-descriptions>
         <el-alert
@@ -405,7 +394,7 @@
               >核对物料 →</el-button
             >
             <el-button
-              type="primary"
+              :type="readonly ? 'primary' : 'warning'"
               :disabled="busy || unresolved"
               @click="openOutput"
               >{{ readonly ? '查看产出清单' : '核对产出清单 →' }}</el-button
@@ -492,11 +481,7 @@ import {
 } from '@company/constants';
 import { DialogWidth } from '../../../utils/dialog';
 import { formatDateTimeForDisplay } from '../../../utils/date';
-import {
-  batchStatusMeta,
-  formatQuantity as quantity,
-  formatQuantityDifference,
-} from '../production-status';
+import { batchStatusMeta, formatQuantity as quantity } from '../production-status';
 import { useBatchCloseout } from '../composables/useBatchCloseout';
 import BatchCloseoutWorklist from './BatchCloseoutWorklist.vue';
 import BatchCloseoutMaterialPanel from './BatchCloseoutMaterialPanel.vue';

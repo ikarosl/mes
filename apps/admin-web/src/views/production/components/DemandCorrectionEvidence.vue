@@ -1,48 +1,63 @@
 <template>
   <section>
     <el-descriptions
-      :column="3"
+      :column="mode === 'command' ? 2 : 3"
       border
     >
       <el-descriptions-item label="工单 / 任务"
         >{{ check.workOrderNo }} / {{ check.batchNo }}</el-descriptions-item
       >
-      <el-descriptions-item label="需求"
-        >#{{ check.demandId }} · {{ check.itemCode }}</el-descriptions-item
+      <el-descriptions-item label="当前需求"
+        >id:{{ check.demandId }} ·
+        {{ DEMAND_GENERATION_GROUP_TYPE_LABELS[check.demandType] }}</el-descriptions-item
       >
-      <el-descriptions-item label="版本 / 单位"
-        >{{ check.materialVariantCode }} / {{ check.unit }}</el-descriptions-item
+      <el-descriptions-item label="物料 / 版本 / 单位"
+        >{{ check.itemCode }} / {{ check.materialVariantCode }} /
+        {{ check.unit }}</el-descriptions-item
       >
-      <el-descriptions-item label="原补料单">{{ check.supplementNo ?? '—' }}</el-descriptions-item>
-      <el-descriptions-item label="原始需求">{{
-        check.parentDemandId ? `#${check.parentDemandId}` : '—'
-      }}</el-descriptions-item>
-      <el-descriptions-item label="来源说明">{{ check.sourceReason ?? '—' }}</el-descriptions-item>
-      <el-descriptions-item label="当前总要求">{{
+      <template v-if="mode === 'full'">
+        <el-descriptions-item label="原补料单">{{
+          check.supplementNo ?? '—'
+        }}</el-descriptions-item>
+        <el-descriptions-item label="原始需求">{{
+          check.parentDemandId ? `id:${check.parentDemandId}` : '—'
+        }}</el-descriptions-item>
+        <el-descriptions-item label="来源说明">{{
+          check.sourceReason ?? '—'
+        }}</el-descriptions-item>
+      </template>
+      <el-descriptions-item label="当前目标总量">{{
         quantity(check.currentTotalQuantity)
       }}</el-descriptions-item>
-      <el-descriptions-item label="链上累计已领">{{
+      <el-descriptions-item label="历次累计已领">{{
         quantity(check.issuedQuantity)
       }}</el-descriptions-item>
-      <el-descriptions-item label="旧需求待关闭余量">{{
-        quantity(check.oldRemainingQuantity)
-      }}</el-descriptions-item>
+      <el-descriptions-item
+        v-if="mode === 'full'"
+        label="旧需求待关闭余量"
+        >{{ quantity(check.oldRemainingQuantity) }}</el-descriptions-item
+      >
     </el-descriptions>
-    <p>原方案和已领料记录保留。替代需求只承接剩余量；退料另行办理，不抵减累计已领。</p>
+    <p v-if="mode === 'full'">
+      原方案和已领料记录保留。替代需求只承接剩余量；退料另行办理，不抵减累计已领。
+    </p>
     <el-table
+      v-if="mode === 'full'"
       :data="check.chain"
       size="small"
     >
       <el-table-column
-        prop="demandId"
-        label="需求 ID"
-        width="100"
-      />
+        label="需求"
+        width="110"
+        ><template #default="{ row }">id:{{ row.demandId }}</template></el-table-column
+      >
       <el-table-column
-        prop="replacesDemandId"
         label="替代自"
-        width="100"
-      />
+        width="110"
+        ><template #default="{ row }">{{
+          row.replacesDemandId ? `id:${row.replacesDemandId}` : '—'
+        }}</template></el-table-column
+      >
       <el-table-column label="原数量"
         ><template #default="{ row }">{{ quantity(row.demandQuantity) }}</template></el-table-column
       >
@@ -62,13 +77,13 @@
         }}</template></el-table-column
       >
     </el-table>
-    <template v-if="check.supplementRequirements.length">
+    <template v-if="mode === 'full' && check.supplementRequirements.length">
       <h4>原补料方案与当前要求</h4>
       <p
         v-for="line in check.originalPlan"
         :key="line.originalDemandId"
       >
-        原方案 #{{ line.planId }}：原始需求 #{{ line.originalDemandId }}，计划补料
+        原方案 id:{{ line.planId }}：原始需求 id:{{ line.originalDemandId }}，计划补料
         {{ quantity(line.plannedQuantity) }}。
       </p>
       <el-table
@@ -76,10 +91,10 @@
         size="small"
       >
         <el-table-column
-          prop="demandId"
-          label="需求 ID"
-          width="95"
-        />
+          label="需求"
+          width="110"
+          ><template #default="{ row }">id:{{ row.demandId }}</template></el-table-column
+        >
         <el-table-column
           prop="itemCode"
           label="物料编码"
@@ -102,12 +117,36 @@
           ></el-table-column
         >
         <el-table-column
-          prop="replacesDemandId"
           label="替代自"
-          width="95"
-        />
+          width="110"
+          ><template #default="{ row }">{{
+            row.replacesDemandId ? `id:${row.replacesDemandId}` : '—'
+          }}</template></el-table-column
+        >
       </el-table>
     </template>
+    <section
+      v-if="mode === 'command' && check.supplementNo"
+      class="impact-group"
+    >
+      <h4>补料履约依据</h4>
+      <p>原补料单 {{ check.supplementNo }}；本次更正继续归属该单，原确认方案保留。</p>
+      <p
+        v-for="requirement in otherActiveRequirements"
+        :key="requirement.demandId"
+      >
+        同单需求 id:{{ requirement.demandId }} · {{ requirement.itemCode }} /
+        {{ requirement.materialVariantCode }}：待领 {{ quantity(requirement.remainingQuantity) }}
+        {{ requirement.unit }}，{{
+          requirement.pendingCorrectionId
+            ? MATERIAL_DEMAND_PROGRESS_LABELS.correction_pending
+            : DEMAND_BUSINESS_STATUS_LABELS[requirement.businessStatus]
+        }}。
+      </p>
+      <p v-if="otherActiveRequirements.length">
+        同单其他有效要求仍须满足，批准本次更正不会免除这些要求。
+      </p>
+    </section>
     <template v-if="check.reservations.length">
       <h4>批准后释放的未出库预留</h4>
       <el-table
@@ -115,9 +154,10 @@
         size="small"
       >
         <el-table-column
-          prop="allocationId"
-          label="分配 ID"
-        /><el-table-column
+          v-if="mode === 'full'"
+          label="分配"
+          ><template #default="{ row }">id:{{ row.allocationId }}</template></el-table-column
+        ><el-table-column
           prop="inventoryBatchCode"
           label="库存批次"
         />
@@ -130,20 +170,28 @@
       v-if="check.pendingOutboundNos.length"
       type="warning"
       :closable="false"
-      :title="`先处理待出库单：${check.pendingOutboundNos.join('、')}`"
-    />
+      :title="`须先处理待出库单：${check.pendingOutboundNos.join('、')}`"
+    >
+      涉及当前需求的待出库单须送审前处理；混合单据还关联其他需求，请核对整单影响范围。
+    </el-alert>
     <template v-if="check.authorizations.length">
       <h4>原补产授权影响</h4>
       <p
         v-for="authorization in check.authorizations"
         :key="authorization.id"
       >
-        授权 #{{ authorization.id }}：{{ authorization.stepName }}，{{
+        授权 id:{{ authorization.id }}：{{ authorization.stepName }}，{{
           quantity(authorization.quantity)
         }}
         件。仅在原补料单全部有效要求满足后放行。
       </p>
-      <template v-if="check.zeroRemainderImpact">
+      <template
+        v-if="
+          check.zeroRemainderImpact &&
+          newRemainingQuantity !== undefined &&
+          newRemainingQuantity >= 0
+        "
+      >
         <p v-if="newRemainingQuantity !== 0">
           本次仍需新建需求并领齐后才能放行补产，批准更正不会立即增加可执行额度。
         </p>
@@ -164,16 +212,17 @@
         </p>
         <p v-else>
           仍有未满足要求：{{
-            check.zeroRemainderImpact.blockingDemandIds.map((id) => '#' + id).join('、')
+            check.zeroRemainderImpact.blockingDemandIds.map((id) => `id:${id}`).join('、')
           }}，批准本次更正不放行补产。
         </p>
       </template>
-      <p>最终批准重新核对上述依据；实际齐套与授权激活结果保存在更正历史中。</p>
+      <p>最终批准重新核对上述依据；实际齐套与授权激活结果保存在更正记录中。</p>
       <p>整张补料单零领料、全部要求免除时，不自动放行补产。</p>
     </template>
   </section>
 </template>
 <script setup lang="ts">
+import { computed } from 'vue';
 import type {
   DemandCorrectionCheck,
   DemandCloseCause,
@@ -183,16 +232,33 @@ import {
   DEMAND_CLOSE_CAUSE_LABELS,
   DEMAND_BUSINESS_STATUS_LABELS,
   MATERIAL_DEMAND_PROGRESS_LABELS,
+  DEMAND_GENERATION_GROUP_TYPE_LABELS,
 } from '@company/constants';
 import { formatQuantity as quantity } from '../production-status';
-defineProps<{ check: DemandCorrectionCheck; newRemainingQuantity?: number }>();
+const props = withDefaults(
+  defineProps<{
+    check: DemandCorrectionCheck;
+    newRemainingQuantity?: number;
+    mode?: 'full' | 'command';
+  }>(),
+  { mode: 'full', newRemainingQuantity: undefined },
+);
+const otherActiveRequirements = computed(() =>
+  props.check.supplementRequirements.filter(
+    (requirement) =>
+      requirement.businessStatus === 'active' && requirement.demandId !== props.check.demandId,
+  ),
+);
 </script>
 <style scoped>
 section p {
-  color: #606266;
+  color: var(--el-text-color-regular);
   line-height: 1.6;
 }
 h4 {
   margin-bottom: 8px;
+}
+.impact-group {
+  margin-top: 16px;
 }
 </style>

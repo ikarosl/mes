@@ -1,10 +1,6 @@
 import type { ProductionOutputInspection } from '../quality/finished-inspections.js';
 import type { ProductionCloseoutMode, ProductionOutputDraft } from './output.js';
-import type {
-  BatchTerminationCheck,
-  BatchTerminationImpact,
-  ProductionReportedNormalComparison,
-} from './termination.js';
+import type { BatchTerminationCheck, BatchTerminationImpact } from './termination.js';
 import type { DemandBusinessStatus, DemandType, ProductionBatchStatus } from './statuses.js';
 import type { ProductionTaskCloseoutActionType } from './execution-actions.js';
 
@@ -92,7 +88,7 @@ export interface BatchCloseoutApprovalSnapshot {
   inspection: ProductionOutputInspection;
   closeoutId: string;
   workOrderOwnerEvidence: BatchCloseoutWorkOrderOwnerEvidence;
-  check: Omit<BatchTerminationCheck, keyof ProductionReportedNormalComparison>;
+  check: BatchTerminationCheck;
   output: BatchCloseoutOutput;
   actions: BatchCloseoutAction[];
 }

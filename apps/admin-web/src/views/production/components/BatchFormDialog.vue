@@ -97,7 +97,7 @@
 
 <script setup lang="ts">
 import { computed, onActivated, reactive, ref, watch } from 'vue';
-import type { ProductionBatchItem, ProcessRouteOption, UserOption } from '@company/contracts';
+import type { ProductionBatchDetail, ProcessRouteOption, UserOption } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
 import { toDateInputValue } from '../../../utils/date';
 import { EMessage } from '../../../utils/message';
@@ -185,7 +185,7 @@ const resetForm = (): void => {
   Object.assign(form, initialForm());
 };
 
-const setForm = (row: ProductionBatchItem): void => {
+const setForm = (row: ProductionBatchDetail): void => {
   existingBatchNo.value = row.batchNo;
   Object.assign(form, {
     routeId: row.routeId ?? '',

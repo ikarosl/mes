@@ -38,6 +38,11 @@ import type {
 import { toRequestError, type RetryRequestConfig } from '@company/request';
 import { httpClient } from './http';
 
+interface ReadRequestOptions {
+  skipErrorHandling?: boolean;
+  signal?: AbortSignal;
+}
+
 const request = async <T>(config: RetryRequestConfig) => {
   try {
     return (await httpClient.request<T>(config)).data;
@@ -59,8 +64,12 @@ const cleanProductPayload = (data: ProductPayload): ProductPayload => ({
 });
 
 export const productApi = {
-  technicalFiles: (params: TechnicalFileQuery) =>
-    request<PageResult<TechnicalFileListItem>>({ url: `${base}/technical-files`, params }),
+  technicalFiles: (params: TechnicalFileQuery, options: ReadRequestOptions = {}) =>
+    request<PageResult<TechnicalFileListItem>>({
+      ...options,
+      url: `${base}/technical-files`,
+      params,
+    }),
   technicalFileContent: (id: string) =>
     request<Blob>({
       url: `${base}/technical-files/${id}/content`,
@@ -202,6 +211,6 @@ export const productApi = {
     request<ProcessRouteStepItem[]>({ url: `${base}/process-routes/${id}/steps` }),
   replaceRouteSteps: (id: string, items: ProcessRouteStepPayload[]) =>
     request<void>({ url: `${base}/process-routes/${id}/steps`, method: 'PUT', data: { items } }),
-  userOptions: () =>
-    request<UserOption[]>({ url: `${base}/users/options`, skipErrorHandling: true }),
+  userOptions: (options: ReadRequestOptions = {}) =>
+    request<UserOption[]>({ ...options, url: `${base}/users/options`, skipErrorHandling: true }),
 };

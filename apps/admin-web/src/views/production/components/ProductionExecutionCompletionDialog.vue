@@ -14,7 +14,7 @@
         type="warning"
         :closable="false"
         show-icon
-        title="确认后结束工序执行并进入产出核对。末工序报工数量保留，管理员须登记产出、引用质检记录并提交结案审批；本操作不增加库存。"
+        title="确认后结束工序执行并进入产出核对。管理员须登记产出、引用质检记录并提交结案审批；本操作不增加库存。"
       />
       <el-descriptions
         v-if="basis"
@@ -25,10 +25,6 @@
         <el-descriptions-item label="计划数量">{{
           formatQuantity(basis.plannedQuantity)
         }}</el-descriptions-item>
-        <el-descriptions-item label="末工序正常报工"
-          >{{ basis.finalRequiredStepName }} ·
-          {{ formatQuantity(basis.finalEffectiveNormalQuantity) }}</el-descriptions-item
-        >
         <el-descriptions-item label="明确完成工序"
           >{{ basis.completedRequiredStepCount }} /
           {{ basis.requiredStepCount }}</el-descriptions-item
@@ -83,7 +79,7 @@
       >
       <el-button
         v-if="unresolved"
-        type="primary"
+        type="warning"
         :loading="submitting"
         :disabled="!canRetry"
         @click="editor.submit"
@@ -91,7 +87,7 @@
       >
       <el-button
         v-else
-        type="primary"
+        type="warning"
         :loading="submitting"
         :disabled="!canSubmit"
         @click="editor.submit"
@@ -151,8 +147,7 @@ const editor = useProductionTaskCommand<
       result.version !== body.version + 1 ||
       !/^[1-9]\d*$/.test(result.closeoutId) ||
       !/^[1-9]\d*$/.test(result.executionCompletedById) ||
-      !toBeijingDateTimeInputValue(result.executionCompletedAt) ||
-      !/^\d+(\.0+)?$/.test(result.lastStepReportedQuantity)
+      !toBeijingDateTimeInputValue(result.executionCompletedAt)
     )
       throw new RequestError('服务器未返回完整的执行结束结果，请重试原操作以核对结果。', 502);
   },

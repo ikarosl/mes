@@ -11,42 +11,39 @@ import type {
   ProductionBatchCancellationCheck,
   ProductionBatchItem,
   ProductionBatchQuery,
+  ProductionBatchStartRecord,
+  ProductionBatchStepRecords,
+  ProductionStepCommandResult,
   UpdateBatchStepExecutionPayload,
   UpdateProductionBatchPayload,
 } from '@company/contracts';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { writeTransactionalAudit } from '../../../common/audit/transactional-audit-writer.js';
-import { toDateOnlyString } from '../../../common/time/date-time.js';
+import { toBeijingISOString, toDateOnlyString } from '../../../common/time/date-time.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
 import type { ProcessRouteSnapshot } from '../../product/public.js';
 import type { ResolvedBatchStepOverride } from '../application/ports/production.repository.js';
 import { requireBatchTransition } from '../domain/production-status.policy.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
 import { integerQuantity } from '../domain/integer-quantity.js';
-import { evaluateAssignmentAvailability } from '../domain/production-execution.policy.js';
-import { calculateRouteStepQuantities } from '../domain/production-route-quantity.policy.js';
-import { selectRouteSupplementSources } from './mysql-production-supplement-activation.js';
 import {
-  pendingReportingApproval,
-  PROJECTION_STEP_SELECT,
-  toRouteQuantityStep,
-} from './mysql-production-reporting.persistence.js';
-import type { ProjectionStepRow } from './mysql-production-reporting.projection.js';
+  selectBatchOverview,
+  selectBatchStartRecord,
+  selectBatchStepRecords,
+} from './mysql-production-batch.read.js';
+import { readProductionSnapshot } from './mysql-production-read-snapshot.js';
 import { mysqlProductionDemandPlanWriter } from './mysql-production-demand-plan.writer.js';
 import { mapBatches } from './mysql-production-batch-display.mapper.js';
 import {
-  BATCH_SELECT,
+  BATCH_SUMMARY_SELECT,
   batchAudit,
-  type BatchRow,
+  type BatchSummaryRow,
   type Db,
   ensureNoDuplicate,
   findBatch,
   findStepRecord,
   findWorkOrder,
-  mapStep,
-  STEP_RECORD_SELECT,
   stepAudit,
-  type StepRow,
 } from './mysql-production.shared.js';
 
 import {
@@ -91,8 +88,8 @@ export class MysqlProductionBatchRepository {
       `SELECT COUNT(*) total FROM production_batches b JOIN work_orders wo ON wo.id=b.work_order_id WHERE ${where}`,
       values,
     );
-    const [rows] = await this.pool.query<BatchRow[]>(
-      `${BATCH_SELECT} WHERE ${where} ORDER BY b.created_at DESC,b.id DESC LIMIT ? OFFSET ?`,
+    const [rows] = await this.pool.query<BatchSummaryRow[]>(
+      `${BATCH_SUMMARY_SELECT} WHERE ${where} ORDER BY b.created_at DESC,b.id DESC LIMIT ? OFFSET ?`,
       [...values, pageSize, (page - 1) * pageSize],
     );
     return {
@@ -104,7 +101,15 @@ export class MysqlProductionBatchRepository {
   }
 
   async get(id: string): Promise<ProductionBatchDetail> {
-    return this.getDetail(this.pool, id);
+    return selectBatchOverview(this.pool, id);
+  }
+
+  getStepRecords(id: string): Promise<ProductionBatchStepRecords> {
+    return readProductionSnapshot(this.pool, (db) => selectBatchStepRecords(db, id));
+  }
+
+  getStartRecord(id: string): Promise<ProductionBatchStartRecord | null> {
+    return selectBatchStartRecord(this.pool, id);
   }
 
   async getCancellationCheck(id: string): Promise<ProductionBatchCancellationCheck> {
@@ -225,7 +230,7 @@ export class MysqlProductionBatchRepository {
         null,
         { ...payload, batchNo, routeId: route?.id ?? null, stepCount: route?.steps.length ?? 0 },
       );
-      return this.getDetail(connection, String(result.insertId));
+      return selectBatchOverview(connection, String(result.insertId));
     }).catch((error) => ensureNoDuplicate(error, '单据编号或幂等键已存在'));
   }
 
@@ -272,7 +277,7 @@ export class MysqlProductionBatchRepository {
         batchAudit(before),
         payload,
       );
-      return this.getDetail(connection, id);
+      return selectBatchOverview(connection, id);
     });
   }
 
@@ -307,7 +312,7 @@ export class MysqlProductionBatchRepository {
     return withTransaction(this.pool, async (connection) => {
       await lockWorkOrderForBatch(connection, id);
       const before = await findBatch(connection, id, true);
-      if (before.status === 'cancelled') return this.getDetail(connection, id);
+      if (before.status === 'cancelled') return selectBatchOverview(connection, id);
       requireBatchTransition(before.status, 'cancelled');
       if (before.version !== version)
         throw new ProductionDomainError(
@@ -360,7 +365,7 @@ export class MysqlProductionBatchRepository {
         cancelledDemandCount: cancellationState.demandIds.length,
         version: version + 1,
       });
-      return this.getDetail(connection, id);
+      return selectBatchOverview(connection, id);
     });
   }
 
@@ -371,7 +376,7 @@ export class MysqlProductionBatchRepository {
     actualSop:
       { id: string; fileName: string; objectKey: string; versionNo: string } | null | undefined,
     audit: CommandContext,
-  ): Promise<ProductionBatchDetail> {
+  ): Promise<ProductionStepCommandResult> {
     return withTransaction(this.pool, async (connection) => {
       const batch = await findBatch(connection, batchId, true);
       if (
@@ -412,64 +417,27 @@ export class MysqlProductionBatchRepository {
         stepAudit(before),
         payload,
       );
-      return this.getDetail(connection, batchId);
+      return {
+        productionBatchId: batchId,
+        batchStatus: batch.status,
+        batchVersion: batch.version,
+        stepRecordId: recordId,
+        stepStatus: before.status,
+        responsibleUserId:
+          before.responsible_user_id === null ? null : String(before.responsible_user_id),
+        startedAt: before.started_at === null ? null : toBeijingISOString(before.started_at),
+        completedAt: before.completed_at === null ? null : toBeijingISOString(before.completed_at),
+        version: payload.version + 1,
+      };
     });
   }
 
   private async listForWorkOrderIn(db: Db, workOrderId: string): Promise<ProductionBatchItem[]> {
-    const [rows] = await db.query<BatchRow[]>(
-      `${BATCH_SELECT} WHERE b.work_order_id=? ORDER BY b.created_at DESC,b.id DESC`,
+    const [rows] = await db.query<BatchSummaryRow[]>(
+      `${BATCH_SUMMARY_SELECT} WHERE b.work_order_id=? ORDER BY b.created_at DESC,b.id DESC`,
       [workOrderId],
     );
     return mapBatches(rows);
-  }
-  private async getDetail(db: Db, id: string): Promise<ProductionBatchDetail> {
-    const batch = await findBatch(db, id);
-    const [steps] = await db.query<StepRow[]>(
-      `${STEP_RECORD_SELECT} WHERE sr.production_batch_id=? ORDER BY sr.step_order_snapshot,sr.id`,
-      [id],
-    );
-    const [item] = mapBatches([batch]);
-    const [projections] = await db.query<ProjectionStepRow[]>(PROJECTION_STEP_SELECT, [id]);
-    const projectionById = new Map(projections.map((step) => [String(step.id), step]));
-    const supplements = (await selectRouteSupplementSources(db, [id])).get(id) ?? [];
-    const quantities = calculateRouteStepQuantities(
-      batch.planned_quantity,
-      projections.map(toRouteQuantityStep),
-      supplements,
-    );
-    const pendingApprovalId = await pendingReportingApproval(db, id);
-    return {
-      ...item!,
-      stepRecords: steps.map((step) => {
-        const projection = projectionById.get(String(step.id))!;
-        const quantity = quantities.get(String(step.id))!;
-        const executionEditBlockedReason =
-          pendingApprovalId !== null
-            ? '结案或产出更正在审批，工序参数被冻结'
-            : ['cancelled', 'completed', 'terminated', 'closing'].includes(batch.status)
-              ? '任务已结束执行，不能调整实际 SOP'
-              : step.status !== 'pending' && step.status !== 'assigned'
-                ? '工序开始后不能调整实际 SOP'
-                : null;
-        return {
-          ...mapStep(step),
-          upperLimitQuantity: quantity.upperLimitQuantity,
-          effectiveDirectReportedQuantity: String(projection.effective_direct_reported),
-          effectiveDirectNormalQuantity: String(projection.effective_direct_normal),
-          effectiveDirectAbnormalQuantity: String(projection.effective_direct_abnormal),
-          ...evaluateAssignmentAvailability({
-            batchStatus: batch.status,
-            stepStatus: step.status,
-            hasReportHistory: Number(projection.report_count) > 0,
-            hasStarted: step.started_at !== null,
-            pendingApprovalId,
-          }),
-          canEditExecution: executionEditBlockedReason === null,
-          executionEditBlockedReason,
-        };
-      }),
-    };
   }
   private assertVersion(result: ResultSetHeader, message: string): void {
     if (result.affectedRows !== 1)

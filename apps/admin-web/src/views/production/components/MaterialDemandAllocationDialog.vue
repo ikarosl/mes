@@ -76,12 +76,19 @@
             }}</template></el-table-column
           >
           <el-table-column
-            label="进度"
+            label="需求状态"
             width="110"
-            ><template #default="{ row }"
-              ><el-tag>{{ progressLabel(row.demandProgressStatus) }}</el-tag></template
-            ></el-table-column
+            fixed="right"
           >
+            <template #default="{ row }">
+              <el-tag
+                :type="materialDemandProgressMeta(row.demandProgressStatus).type"
+                effect="light"
+                size="small"
+                >{{ materialDemandProgressMeta(row.demandProgressStatus).label }}</el-tag
+              >
+            </template>
+          </el-table-column>
         </el-table>
       </section>
 
@@ -206,15 +213,11 @@ import type {
   ProductionMaterialAllocationItem,
   ProductionMaterialDemandItem,
 } from '@company/contracts';
-import {
-  ALLOCATION_STATUS_LABELS,
-  DEMAND_GENERATION_GROUP_TYPE_LABELS,
-  MATERIAL_DEMAND_PROGRESS_LABELS,
-} from '@company/constants';
+import { ALLOCATION_STATUS_LABELS, DEMAND_GENERATION_GROUP_TYPE_LABELS } from '@company/constants';
 import { DialogWidth } from '../../../utils/dialog';
 import { RouteMessageBox } from '../../../utils/route-message-box';
 import { formatDateForDisplay } from '../../../utils/date';
-import { formatQuantity } from '../production-status';
+import { formatQuantity, materialDemandProgressMeta } from '../production-status';
 
 interface DemandGenerationGroupView {
   generationGroupKey: string;
@@ -374,8 +377,6 @@ const confirmRelease = async (row: ProductionMaterialAllocationItem) => {
     /* 用户取消 */
   }
 };
-const progressLabel = (status: ProductionMaterialDemandItem['demandProgressStatus']): string =>
-  MATERIAL_DEMAND_PROGRESS_LABELS[status];
 const allocationLabel = (status: AllocationStatus) => ALLOCATION_STATUS_LABELS[status];
 const generationGroupLabel = (group: DemandGenerationGroupView): string => {
   const label = DEMAND_GENERATION_GROUP_TYPE_LABELS[group.generationGroupType];

@@ -12,7 +12,7 @@ Dialog 和短时确认框只遮罩 `AdminLayout` 的 `.content`，不阻断菜�
 
 ## 3. 联动流程
 
-切换标签关闭短时 MessageBox，保留编辑 Dialog 及草稿；重新激活由候选持有者定向刷新，不以缓存候选保证当前资格。报工／追溯的短延时刷新与失败差异见[架构 §6](architecture.md#6-生命周期与定向刷新)，不得为减少渲染直接禁用 KeepAlive。
+切换标签关闭短时 MessageBox，保留编辑 Dialog 及草稿；返回后是否读取由资源所有者及已批准的刷新策略决定，不以缓存候选保证当前业务资格。候选、列表与详情的触发边界，以及报工／追溯的短延时刷新与失败差异见[架构 §6](architecture.md#6-生命周期与定向刷新)，不得为减少渲染直接禁用 KeepAlive。
 
 有草稿或未确认写意图的 editor 使用 `useTabsStore().registerCloseGuard(routeName, async () => boolean)`，在 `onScopeDispose` 注销。同页可注册多个 guard，全部允许才移出缓存；检查也覆盖非活动标签。提交中返回 false，脏草稿／未知结果须明确确认放弃。普通路由切换不执行关闭 guard，也不丢弃意图。
 
@@ -45,21 +45,9 @@ await RouteMessageBox.confirm('确认停用该产品吗？', '停用产品', {
 
 确认框不承载表单、详情或需缓存的编辑内容。切路由自动关闭，回来须重新发起；长提示仅正文滚动，标题和确认按钮可见。
 
-## 6. Live Options
+## 6. 选择组件接入
 
-[buildLiveOptions/hasUnavailableSelection](../src/utils/live-options.ts) 适用于可变外部候选，不用于稳定枚举或普通输入。下面的 `categories` 必须是完整有效候选集；分页／搜索窗口需先解析已选 ID，不能将窗口缺项标失效。
-
-```ts
-const selected = computed(() => form.categoryId ? [form.categoryId] : []);
-const choices = computed(() =>
-  buildLiveOptions(categories.value, selected.value, item => item.id),
-);
-// 提交前检查；刷新失败的阻断由候选状态另外判断。
-const hasInvalidChoice = () =>
-  hasUnavailableSelection(categories.value, selected.value, item => item.id);
-```
-
-渲染保留 unavailable 的原 ID，显示“已失效”并禁用该项，保存前阻止失效选择。刷新时机和实例归属只维护在[管理端架构](architecture.md#6-生命周期与定向刷新)，不要复制一份生命周期实现。未接入后端的业务不能伪造实时候选。
+选择组件不再接入旧 Live Options 设计；其存量遗留范围、停止使用与维护的约束、替换标准及已选值核验由[管理端架构 §4](architecture.md#4-选择组件与候选契约)统一维护。静态枚举、有界候选与远程搜索按该标准接入，不因使用 `el-select` 或组件的 `options` 属性而沿用旧封装。刷新时机见[架构 §6](architecture.md#6-生命周期与定向刷新)，未接入后端的业务不能伪造实时候选。
 
 ## 8. 验证重点
 

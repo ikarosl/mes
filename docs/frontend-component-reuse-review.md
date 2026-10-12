@@ -60,7 +60,7 @@
 
 ### FR-06：生产批次摘要表
 
-- 证据：[BatchListDialog.vue](../apps/admin-web/src/views/production/components/BatchListDialog.vue) 第 26–100 行、[WorkOrderDetailDialog.vue](../apps/admin-web/src/views/production/components/WorkOrderDetailDialog.vue) 第 201–244 行、[WorkOrderTransitionDialog.vue](../apps/admin-web/src/views/production/components/WorkOrderTransitionDialog.vue) 第 40–85 行重复批次号、计划量、末工序正常报工量、当前批准产出和状态。
+- 证据：[BatchListDialog.vue](../apps/admin-web/src/views/production/components/BatchListDialog.vue)、[WorkOrderDetailDialog.vue](../apps/admin-web/src/views/production/components/WorkOrderDetailDialog.vue)、[WorkOrderTransitionDialog.vue](../apps/admin-web/src/views/production/components/WorkOrderTransitionDialog.vue) 重复批次号、计划量、当前批准产出和状态。
 - 建议：`views/production/components/ProductionBatchSummaryTable.vue`，接收 `ProductionBatchItem[]`，按实际差异提供 `showDates/showOwner/maxHeight`，用 `actions` 插槽承载已有编辑动作。内部继续使用 `BatchApprovedOutput`。
 - 边界：新增批次、编辑及工单关闭命令不进入该表。当前一处状态为文字、两处为标签，统一前需确认展示方式；不扩成任意列配置的表格引擎。
 

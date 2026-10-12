@@ -84,9 +84,6 @@ const batchRow = {
   routeId: null,
   routeCode: null,
   status: 'pending',
-  materialPlanVersion: 1,
-  shortBatchAuthorizationStatus: 'none',
-  shortBatchAuthorizationAction: 'authorize',
   ownerName: null,
   version: 0,
 };
@@ -239,7 +236,7 @@ describe('ProductionTasksPage', () => {
 
   it('does not expose the removed one-click generation action after a batch is material-pending', async () => {
     listBatches.mockResolvedValue({
-      items: [{ ...batchRow, status: 'material_pending', materialPlanVersion: 2 }],
+      items: [{ ...batchRow, status: 'material_pending' }],
       total: 1,
       page: 1,
       pageSize: 10,
@@ -249,50 +246,6 @@ describe('ProductionTasksPage', () => {
 
     expect(wrapper.text()).not.toContain('生成物料');
     expect(wrapper.text()).not.toContain('需求已生成');
-  });
-
-  it('turns a current short-batch authorization into a read-only entry instead of another submit', async () => {
-    listBatches.mockResolvedValue({
-      items: [
-        {
-          ...batchRow,
-          status: 'material_partially_outbound',
-          shortBatchAuthorizationStatus: 'valid',
-          shortBatchAuthorizationAction: 'view',
-        },
-      ],
-      total: 1,
-      page: 1,
-      pageSize: 10,
-    });
-    const wrapper = mountPage();
-    await flushPromises();
-
-    const button = wrapper.findAll('button').find((item) => item.text().trim() === '查看短批授权');
-    expect(button).toBeDefined();
-    expect(button!.attributes('disabled')).toBeUndefined();
-  });
-
-  it('disables short-batch authorization when the backend says it is no longer required', async () => {
-    listBatches.mockResolvedValue({
-      items: [
-        {
-          ...batchRow,
-          status: 'material_partially_outbound',
-          shortBatchAuthorizationStatus: 'stale',
-          shortBatchAuthorizationAction: 'not_required',
-        },
-      ],
-      total: 1,
-      page: 1,
-      pageSize: 10,
-    });
-    const wrapper = mountPage();
-    await flushPromises();
-
-    const button = wrapper.findAll('button').find((item) => item.text().trim() === '物料已齐套');
-    expect(button).toBeDefined();
-    expect(button!.attributes('disabled')).toBeDefined();
   });
 
   it('expanding the 负责人 filter refreshes only the user options source', async () => {

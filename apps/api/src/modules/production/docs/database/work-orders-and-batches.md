@@ -4,7 +4,7 @@
 
 工单创建时服务端在现有创建事务内取得 `WOYYYYMMDD-n`，生产任务创建时取得 `TBYYYYMMDD-n`。日期为数据库当前北京自然日，每类每日从 1 独立递增，不补零；格式、平台序列表及回滚边界由[统一业务编号](../../../../../docs/business-numbering.md)维护。创建和编辑请求都不接受工单号，创建任务请求不接受批次号；编号随创建事实固定，取消、关闭和重新下达均不回收。
 
-`POST /production/work-orders` 必须携带 `Idempotency-Key`，scope 为 `production.work-order.create.v4`；任务创建 scope 为 `production.batch.create.v10`。同键同规范化输入重放首次结果，不再次取号；同键异内容拒绝。产品和负责人资格仅在首次执行时核验，成功重放不受后来主数据变化影响。结果未知时客户端保留原键和输入，修改内容不得自动换键再创建。
+`POST /production/work-orders` 必须携带 `Idempotency-Key`，scope 为 `production.work-order.create.v4`；任务创建 scope 为 `production.batch.create.v13`。同键同规范化输入重放首次结果，不再次取号；同键异内容拒绝。产品和负责人资格仅在首次执行时核验，成功重放不受后来主数据变化影响。结果未知时客户端保留原键和输入，修改内容不得自动换键再创建。任务创建结果保存轻量任务概览，不包含工序、开工说明或开工物料快照；结果结构与 scope 固定，开发切换遵守[幂等 scope 版本规则](../../../../../docs/idempotency.md#13-scope-版本与开发重置)。
 
 `202609170003-work-order-auto-number` 是原工单日序列表的历史迁移；追加迁移 `202609280001-business-number-daily-sequence` 在空业务库切换为统一平台序列并删除旧序列表。旧编号不转换，开发数据经统一初始化入口重建；当前应用不读写 `work_order_daily_sequence`。
 
@@ -167,7 +167,7 @@
 
 - “取消”只表达从未下达的草稿作废；工单一经下达，提前终止统一使用“关闭”，不得再执行 `released/doing -> cancelled`。
 - `completed` 表达生产计划足量完成，`closed` 同时覆盖成功完工后的归档以及下达后的提前结案；查询直接使用 `close_type` 区分，不得把提前关闭展示为正常完工。
-- 提前关闭不得自动取消生产批次。存在未终态或缺少批准清单的批次时返回批次编号、状态、计划量、末工序报工量及审定计划内产出，由管理员逐批核对后执行正常结案、未执行取消，或逐项收尾与审批结束。
+- 提前关闭不得自动取消生产批次。存在未终态或缺少批准清单的批次时返回批次编号、状态、计划量及审定计划内产出，由管理员逐批核对后执行正常结案、未执行取消，或逐项收尾与审批结束。
 - 草稿取消、提前关闭和完工后归档均提交工单 `version`；终态类型、原因、操作人、操作时间与状态在业务主表同一条更新中写入，并与成功操作日志同事务提交。`operation_logs` 只承担审计和排障，不作为工单详情的业务事实查询来源，也不复用 `remark` 覆盖原备注。
 
 ---
@@ -268,21 +268,37 @@
 
 开工不要求领料、分配齐套或短批授权。预览显示当前正式需求及已确认领料、未领余量；缺料时提交说明。事务重新读取当前事实并保存 `started_at/started_by/start_reason/start_material_snapshot`，首次开工后不覆盖。未开工时开工人、说明与快照均为空；有开工时间时必须同时存在开工人和快照。
 
+任务概览 `ProductionBatchDetail.startedByName` 根据 `startedById` 返回首次实际开工人的当前显示姓名，与任务负责人 `ownerName` 分别表达。姓名与概览其他人员引用一起，经 Identity 公开的 `listUserReferencesByIds` 去重批量解析，保留停用及软删除账号的历史展示；未开工或引用无法解析时返回 `null`，只用于展示，不参与命令资格。该字段随概览及返回概览的创建、编辑、取消命令提供；任务列表和工单下属任务只解析任务负责人。取消人姓名使用概览的 `cancelledByName`。
+
 工序开始仅检查任务处于执行中、当前派工与工序自身状态，不再推进任务或工单。需求变更由统一 Writer 推进任务 `version`，不再保留短批专用物料计划版本。正常物流推进按[物料办理资格](demand-allocation-and-outbound.md#物料办理资格)处理；任务执行中不因领料回到物料阶段。
 
 收尾未批准时可明确[撤回结束](production-termination.md#撤回结束与再次收尾)。恢复状态取本次进入事实，已开工恢复执行中，未开工恢复原准备阶段，不重算齐套、不复活需求或分配。`material_*` 是办理阶段；页面不得由阶段直接断言所有物料操作已完成。
 
 当前批量生产执行完工数量规则（研发按任务级结束，不要求工序或领齐剩余需求，最终结案仍须处理物料待办）：
 
-- 以本批次中 `step_order_snapshot` 最大的工序作为数量来源工序，同序时按工序记录 ID 降序确定；查询字段 `lastStepReportedQuantity` 从该工序的不可变 `batch_step_reports` 聚合 `effective_normal`，计入冲销和替代事实，不在批次表缓存数量。进行中或提前结束任务已有的有效末工序报工也按同一口径展示；无工序或尚无报工时查询返回 `0`，不代表已执行完成。
-- 执行完工命令在事务内校验全部工序均为 `completed`，不要求末道正常量达标，也不因活动需求或未履约补料阻止进入收尾；记录 `execution_completed_at/by`、进入 `closing` 并创建或复用 normal 结案主记录。物料事项在送审前处理。
-- 当前至少需要存在一道工序；没有数量来源工序的批次不得执行完工确认。
+- 执行完工命令在事务内校验全部工序均为 `completed`，不读取报工数量，也不因活动需求或未履约补料阻止进入收尾；记录 `execution_completed_at/by`、进入 `closing` 并创建或复用 normal 结案主记录。物料事项在送审前处理。
+- 批量任务至少需要存在一道工序；无工序的批量任务不得执行完工确认。预览返回工序总数和已明确完成数，不选取任何特定工序代表整项任务。
 - 正常执行确认尚未最终结案；提前停止使用 early closing 逐项收尾。两种模式均登记最终产出和质检事实，交工单负责人同一结案流程批准，管理员产出处置不改报工事实。正常工序已完但最终可用不足计划可以按实际批准，不强制补产。
 - 批次表不保存执行数量或最终合格数量。质检留存独立记录，审定产出只来自当前批准清单。工序记录用 `normalQuantity` 表示有效正常报工量，不能解释为质检合格量或回写为批次数量。
 
 批次只保存计划与生命周期，不缓存执行／最终合格量；详情、追溯及幂等结果使用派生字段，不提供旧计数字段的兼容双写。数量结构回退只可从真实执行事实恢复，不能推造质检合格量；运行守卫见[迁移安全](../../../../../../../packages/database/docs/migration-safety.md)。
 
-任务列表、详情及工单下属任务通过 `finalOutput` 返回当前批准清单的 `revisionNo/availableQuantity/extraQuantity/scrapQuantity`；未有批准清单时返回 `null`，已批准零产出则明确返回零。只关联 `production_batch_closeout.current_revision_id`，不累加历史版本，不读取更正草稿，也不双写批次数量。`scrapQuantity` 为该版历史工序报废与结案新增报废合计。执行报工量独立使用 `lastStepReportedQuantity`，追溯与工单操作核对使用相同口径。
+任务列表、概览及工单下属任务通过 `finalOutput` 返回当前批准清单的 `revisionNo/availableQuantity/extraQuantity/scrapQuantity`；未有批准清单时返回 `null`，已批准零产出则明确返回零。只关联 `production_batch_closeout.current_revision_id`，不累加历史版本，不读取更正草稿，也不双写批次数量。`scrapQuantity` 为该版历史工序报废与结案新增报废合计；追溯与工单操作核对使用相同批准产出口径。工序报工仅按每道工序表达，任务、工单、追溯、执行结束和结案不提供特定工序的特殊数量汇总。
+
+### 任务查询与命令响应
+
+任务读取按用途独立查询，以下四个端点均独立要求 `production:tasks:view`，路径参数通过 `IdParamDto` 校验。任务不存在返回 `NOT_FOUND`，不以空子资源掩盖不存在。
+
+| API | 响应及读取边界 |
+| --- | --- |
+| `GET /production/batches` | 分页 `ProductionBatchItem` 摘要：任务、工单及成品身份，路线摘要，计划量及日期，负责人，生命周期时间与状态，任务及结案版本，当前批准产出；不读取工序投影、说明、取消详情或开工物料快照 |
+| `GET /production/batches/:id` | `ProductionBatchDetail` 轻量概览：摘要加任务备注、开工人摘要、执行完成人、结案完成人、取消事实和创建／更新时间；不读取工序集合、工序资格、开工说明或物料快照 |
+| `GET /production/batches/:id/step-records` | `ProductionBatchStepRecords`：`batch` 只含 ID、任务编号、工单编号、工单类型、成品编码／名称、计划量、状态及路线编码／版本，`stepRecords` 返回全部冻结工序、数量摘要及当前派工／改派／撤回／SOP 资格；研发返回空工序数组 |
+| `GET /production/batches/:id/start-record` | 未开工返回 `null`；已开工返回 `ProductionBatchStartRecord`，含任务 ID、首次开工人 ID／当前姓名、时间、说明与已存物料快照。只读取开工时保存的事实，不用当前需求重新计算；已开工记录缺开工人、缺快照或快照结构损坏时失败 |
+
+工单下属任务、工单详情中的任务集合和执行记录页的任务摘要使用相同的 `ProductionBatchItem` 基础投影，不读取开工物料快照。工序及当前资格在同一只读一致性快照内生成，姓名通过 Identity 公开历史引用批量解析，展示资格不替代锁内命令复核。
+
+任务创建、编辑及取消返回轻量 `ProductionBatchDetail`。实际 SOP 调整只返回 `ProductionStepCommandResult`，保存任务／工序身份、状态及新工序版本；调用方重新读取工序子资源核对当前快照。正常执行结束与研发结束返回生命周期确认结果，不携带工序报工数量；幂等 scope 分别为 `production.execution.complete.v2`、`production.research.complete.v3`。
 
 工单汇总、完工／关闭确认与各任务使用相同批准口径。可用产出合计为计划内加计划外，不含报废；既有 `finalOutput.totalQuantity` 表达含报废的总处置量，不得标成合格或可入库数量。计划缺口为负数时，页面展示“超出 N”，不修改计划额度规则。
 

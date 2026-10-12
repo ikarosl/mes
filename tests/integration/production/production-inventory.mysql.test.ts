@@ -7,12 +7,18 @@ import {
   type RowDataPacket,
 } from '../../../apps/api/node_modules/mysql2/promise.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { MysqlProductionInboundRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-inbound.repository.js';
+import { MysqlInventoryInboundRepository } from '../../../apps/api/src/modules/inventory/infrastructure/mysql-inventory-inbound.repository.js';
 import { MysqlProductionMaterialLossRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-material-loss.repository.js';
 import { MysqlProductionReturnRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-return.repository.js';
-import { MysqlProductionStockCheckRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-stock-check.repository.js';
 import { MysqlProductionTraceRepository } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-trace.repository.js';
-import { getConfirmedMaterialOutboundQuantity } from '../../../apps/api/src/modules/production/infrastructure/mysql-production-short-batch.js';
+import { MysqlMaterialVariantRepository } from '../../../apps/api/src/modules/product/infrastructure/mysql-material-variant.repository.js';
+import { MysqlInventoryStockCheckRepository } from '../../../apps/api/src/modules/inventory/infrastructure/mysql-inventory-stock-check.repository.js';
+import { MysqlInventoryStockCommand } from '../../../apps/api/src/modules/inventory/infrastructure/mysql-inventory-stock.command.js';
+import { MysqlProductInventoryEligibility } from '../../../apps/api/src/modules/product/infrastructure/mysql-product-inventory-eligibility.query.js';
+import {
+  deleteFixtureMaterialBasis,
+  deleteFixtureMaterialLosses,
+} from './production-material-test-cleanup.js';
 
 loadWorkspaceEnv();
 const describeMysql = process.env.RUN_MYSQL_INTEGRATION === '1' ? describe : describe.skip;
@@ -20,7 +26,8 @@ const describeMysql = process.env.RUN_MYSQL_INTEGRATION === '1' ? describe : des
 describeMysql('Production return and stock-check MySQL transactions', () => {
   let pool: Pool;
   let returnRepository: MysqlProductionReturnRepository;
-  let stockCheckRepository: MysqlProductionStockCheckRepository;
+  let stockCheckRepository: MysqlInventoryStockCheckRepository;
+  let productEligibility: MysqlProductInventoryEligibility;
   let lossRepository: MysqlProductionMaterialLossRepository;
   let actorId: number;
   let actorUsername: string;
@@ -36,8 +43,10 @@ describeMysql('Production return and stock-check MySQL transactions', () => {
       timezone: '+08:00',
       connectionLimit: 4,
     });
-    returnRepository = new MysqlProductionReturnRepository(pool);
-    stockCheckRepository = new MysqlProductionStockCheckRepository(pool);
+    productEligibility = new MysqlProductInventoryEligibility(pool);
+    const inventoryStock = new MysqlInventoryStockCommand(pool, productEligibility);
+    returnRepository = new MysqlProductionReturnRepository(pool, inventoryStock);
+    stockCheckRepository = new MysqlInventoryStockCheckRepository(pool, inventoryStock);
     lossRepository = new MysqlProductionMaterialLossRepository(pool);
     actorUsername = `return-stock-actor-${Date.now()}`;
     actorId = await insert(
@@ -129,13 +138,11 @@ describeMysql('Production return and stock-check MySQL transactions', () => {
     }
   });
 
-  it('preserves short-batch demand and authorization while returning surplus before start', async () => {
+  it('preserves demand and confirmed outbound facts while returning surplus before start', async () => {
     const fixture = await createFixture(pool, actorId);
     try {
       await pool.execute(
-        `UPDATE production_batches
-         SET status='material_partially_outbound',material_plan_version=3
-         WHERE id=?`,
+        "UPDATE production_batches SET status='material_partially_outbound' WHERE id=?",
         [fixture.productionBatchId],
       );
       await pool.execute(
@@ -144,38 +151,25 @@ describeMysql('Production return and stock-check MySQL transactions', () => {
          WHERE id=?`,
         [fixture.demandId],
       );
-      const authorizationId = await insert(
-        pool,
-        `INSERT INTO production_short_batch_authorization
-         (production_batch_id,material_plan_version,status,reason,authorized_by)
-         VALUES (?,3,'active','退料前授权',?)`,
-        [fixture.productionBatchId, actorId],
-      );
       const pendingReturn = await returnRepository.createReturnOrder(
         {
           productionBatchId: String(fixture.productionBatchId),
           details: [{ allocationId: String(fixture.allocationId), returnQuantity: 5 }],
         },
-        context(actorId, `${fixture.token}-short-return-create`),
+        context(actorId, `${fixture.token}-return-create`),
       );
 
       await returnRepository.confirmReturnOrder(
         pendingReturn.id,
         pendingReturn.version,
-        context(actorId, `${fixture.token}-short-return-confirm`),
+        context(actorId, `${fixture.token}-return-confirm`),
       );
 
-      const [[batch]] = await pool.query<
-        (RowDataPacket & { material_plan_version: number; version: number })[]
-      >('SELECT material_plan_version,version FROM production_batches WHERE id=?', [
-        fixture.productionBatchId,
-      ]);
-      expect(batch?.material_plan_version).toBe(3);
-      const [[authorization]] = await pool.query<(RowDataPacket & { status: string })[]>(
-        'SELECT status FROM production_short_batch_authorization WHERE id=?',
-        [authorizationId],
+      const [[batch]] = await pool.query<(RowDataPacket & { version: number })[]>(
+        'SELECT version FROM production_batches WHERE id=?',
+        [fixture.productionBatchId],
       );
-      expect(authorization?.status).toBe('active');
+      expect(batch?.version).toBe(0);
       const [[demand]] = await pool.query<
         (RowDataPacket & { remaining_number: string; business_status: string })[]
       >('SELECT remaining_number,business_status FROM production_item_demand WHERE id=?', [
@@ -183,15 +177,19 @@ describeMysql('Production return and stock-check MySQL transactions', () => {
       ]);
       expect(Number(demand?.remaining_number)).toBe(5);
       expect(demand?.business_status).toBe('active');
-      expect(
-        await getConfirmedMaterialOutboundQuantity(pool, String(fixture.productionBatchId)),
-      ).toBe(5);
+      const [[outboundFacts]] = await pool.query<(RowDataPacket & { quantity: string | number })[]>(
+        `SELECT COALESCE(-SUM(quantity),0) quantity
+         FROM inventory_transaction
+         WHERE batch_id=? AND transaction_type='production_material_outbound'`,
+        [fixture.itemBatchId],
+      );
+      expect(Number(outboundFacts?.quantity)).toBe(5);
     } finally {
       await cleanup(pool, fixture);
     }
   });
 
-  it('creates and confirms a material loss for a partially outbound batch and advances its plan', async () => {
+  it('confirms a material loss without creating demand or stock movement', async () => {
     const fixture = await createFixture(pool, actorId);
     try {
       await pool.execute(
@@ -205,22 +203,21 @@ describeMysql('Production return and stock-check MySQL transactions', () => {
           batchStatus: 'material_partially_outbound',
         }),
       );
-      const [[beforeBatch]] = await pool.query<
-        (RowDataPacket & { material_plan_version: number; version: number })[]
-      >('SELECT material_plan_version,version FROM production_batches WHERE id=?', [
-        fixture.productionBatchId,
-      ]);
+      const [[beforeBatch]] = await pool.query<(RowDataPacket & { version: number })[]>(
+        'SELECT version FROM production_batches WHERE id=?',
+        [fixture.productionBatchId],
+      );
       const created = await lossRepository.createMaterialLoss(
         {
           productionBatchId: String(fixture.productionBatchId),
           allocationId: String(fixture.allocationId),
           scrapQuantity: 2,
           reasonType: '现场损耗',
-          remark: '确认后等量补料',
+          remark: '仅确认损耗记录',
         },
         context(actorId, `${fixture.token}-loss-create`),
       );
-      expect(created).toMatchObject({ status: 'pending', scrapQuantity: '2.0000' });
+      expect(created).toMatchObject({ status: 'pending', scrapQuantity: '2' });
 
       const confirmed = await lossRepository.confirmMaterialLoss(
         created.id,
@@ -230,36 +227,35 @@ describeMysql('Production return and stock-check MySQL transactions', () => {
       expect(confirmed).toMatchObject({
         status: 'confirmed',
         version: 1,
-        supplement: {
-          status: 'approved',
-          demandQuantity: '2.0000',
-        },
+        purpose: 'production_record',
+        scrapQuantity: '2',
       });
-      const [[demand]] = await pool.query<
-        (RowDataPacket & {
-          demand_type: string;
-          need_number: string;
-          supplement_id: number;
-          generation_group_key: string;
-        })[]
-      >(
-        'SELECT demand_type,need_number,supplement_id,generation_group_key FROM production_item_demand WHERE id=?',
-        [confirmed.supplement!.demandId],
+      const [[demandCount]] = await pool.query<(RowDataPacket & { count: number })[]>(
+        'SELECT COUNT(*) count FROM production_item_demand WHERE production_batch_id=?',
+        [fixture.productionBatchId],
       );
-      expect(demand).toMatchObject({
-        demand_type: 'material_loss_supplement',
-        need_number: '2.0000',
+      expect(Number(demandCount?.count)).toBe(1);
+      const [[lossFact]] = await pool.query<
+        (RowDataPacket & { loss_purpose: string; status: string; scrap_number: string })[]
+      >('SELECT loss_purpose,status,scrap_number FROM item_scrap WHERE id=?', [confirmed.id]);
+      expect(lossFact).toMatchObject({
+        loss_purpose: 'production_record',
+        status: 'confirmed',
       });
-      expect(demand?.generation_group_key).toBe(`LOSSSUP:${demand.supplement_id}`);
-      const [[batch]] = await pool.query<
-        (RowDataPacket & { material_plan_version: number; version: number })[]
-      >('SELECT material_plan_version,version FROM production_batches WHERE id=?', [
-        fixture.productionBatchId,
-      ]);
-      expect(batch).toMatchObject({
-        material_plan_version: beforeBatch!.material_plan_version + 1,
-        version: beforeBatch!.version + 1,
-      });
+      expect(Number(lossFact?.scrap_number)).toBe(2);
+      const [[inventoryFacts]] = await pool.query<
+        (RowDataPacket & { quantity: string | number; count: number })[]
+      >(
+        'SELECT SUM(quantity) quantity,COUNT(*) count FROM inventory_transaction WHERE batch_id=?',
+        [fixture.itemBatchId],
+      );
+      expect(Number(inventoryFacts?.quantity)).toBe(5);
+      expect(Number(inventoryFacts?.count)).toBe(2);
+      const [[batch]] = await pool.query<(RowDataPacket & { version: number })[]>(
+        'SELECT version FROM production_batches WHERE id=?',
+        [fixture.productionBatchId],
+      );
+      expect(batch?.version).toBe(beforeBatch!.version);
     } finally {
       await cleanup(pool, fixture);
     }
@@ -437,7 +433,10 @@ describeMysql('Production return and stock-check MySQL transactions', () => {
 
   it('classifies purchase, return and stock-check trace sources without losing current material identity', async () => {
     const fixture = await createFixture(pool, actorId);
-    const inboundRepository = new MysqlProductionInboundRepository(pool);
+    const inboundRepository = new MysqlInventoryInboundRepository(
+      pool,
+      new MysqlMaterialVariantRepository(pool, productEligibility),
+    );
     const traceRepository = new MysqlProductionTraceRepository(pool);
     const inboundNo = `${fixture.token}-trace-purchase`;
     let inboundId: string | null = null;
@@ -831,7 +830,7 @@ async function createFixture(pool: Pool, actorId: number): Promise<Fixture> {
   const workOrderId = await insert(
     pool,
     "INSERT INTO work_orders(work_order_no,order_type,product_id,product_code_snapshot,product_name_snapshot,unit_snapshot,planned_quantity,status) VALUES (?,?,?,?,?,?,'10.0000','released')",
-    [`${token}-wo`, 'research', productId, `${token}-p`, '成品', 'pcs'],
+    [`${token}-wo`, 'mass_production', productId, `${token}-p`, '成品', 'pcs'],
   );
   const productionBatchId = await insert(
     pool,
@@ -841,10 +840,10 @@ async function createFixture(pool: Pool, actorId: number): Promise<Fixture> {
   const requirementBasisId = await insert(
     pool,
     `INSERT INTO production_material_requirement_basis
-      (production_batch_id,product_material_id,material_id,material_code_snapshot,
+      (production_batch_id,product_material_id,material_id,locked_material_variant_id,material_code_snapshot,
        unit_snapshot,quantity_per_unit_snapshot,planned_output_quantity_snapshot,required_number,created_by)
-     VALUES (?,?,?,?,'kg','1.0000','10.0000','10.0000',?)`,
-    [productionBatchId, productMaterialId, materialId, `${token}-m`, actorId],
+     VALUES (?,?,?,?,?,'kg','1.0000','10.0000','10.0000',?)`,
+    [productionBatchId, productMaterialId, materialId, materialVariantId, `${token}-m`, actorId],
   );
   const demandId = await insert(
     pool,
@@ -955,40 +954,14 @@ async function cleanup(pool: Pool, fixture: Fixture) {
   await pool.execute('DELETE FROM return_order WHERE production_batch_id=?', [
     fixture.productionBatchId,
   ]);
-  await pool.execute(
-    `DELETE FROM production_short_batch_authorization_detail
-     WHERE authorization_id IN (
-       SELECT id FROM production_short_batch_authorization WHERE production_batch_id=?
-     )`,
-    [fixture.productionBatchId],
-  );
-  await pool.execute(
-    'DELETE FROM production_short_batch_authorization WHERE production_batch_id=?',
-    [fixture.productionBatchId],
-  );
   await pool.execute('DELETE FROM outbound_detail WHERE outbound_id=?', [fixture.outboundOrderId]);
   await pool.execute('DELETE FROM outbound_order WHERE id=?', [fixture.outboundOrderId]);
-  await pool.execute(
-    "DELETE FROM production_item_demand WHERE production_batch_id=? AND demand_type='material_loss_supplement'",
-    [fixture.productionBatchId],
-  );
-  await pool.execute(
-    "DELETE FROM production_material_supplement WHERE production_batch_id=? AND source_type='material_loss'",
-    [fixture.productionBatchId],
-  );
-  await pool.execute('DELETE FROM item_scrap WHERE production_batch_id=?', [
-    fixture.productionBatchId,
-  ]);
+  await deleteFixtureMaterialLosses(pool, fixture.productionBatchId);
   await pool.execute('DELETE FROM production_item_allocation WHERE id=?', [fixture.allocationId]);
   await pool.execute('DELETE FROM production_item_demand WHERE id=?', [fixture.demandId]);
   await pool.execute('DELETE FROM item_batch WHERE id=?', [fixture.itemBatchId]);
-  await pool.execute('DELETE FROM production_material_requirement_basis WHERE id=?', [
-    fixture.requirementBasisId,
-  ]);
+  await deleteFixtureMaterialBasis(pool, fixture.productionBatchId);
   await pool.execute('DELETE FROM production_batches WHERE id=?', [fixture.productionBatchId]);
-  await pool.execute('DELETE FROM work_order_material_versions WHERE work_order_id=?', [
-    fixture.workOrderId,
-  ]);
   await pool.execute('DELETE FROM work_orders WHERE id=?', [fixture.workOrderId]);
   await pool.execute('DELETE FROM product_materials WHERE id=?', [fixture.productMaterialId]);
   await pool.execute('DELETE FROM material_variants WHERE material_id=?', [fixture.materialId]);

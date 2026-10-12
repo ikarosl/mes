@@ -14,11 +14,14 @@ describe('production status policy', () => {
     );
     expect(() => requireWorkOrderTransition('released', 'completed')).not.toThrow();
   });
-  it('does not permit reporting before the material chain reaches outbound', () => {
+  it('permits an explicit task start after initial material configuration', () => {
     expect(() => requireBatchTransition('pending', 'material_pending')).not.toThrow();
     expect(() => requireBatchTransition('pending', 'doing')).toThrow(
       '生产批次不能从 pending 变更为 doing',
     );
+    expect(() => requireBatchTransition('material_pending', 'doing')).not.toThrow();
+    expect(() => requireBatchTransition('material_assigned', 'doing')).not.toThrow();
+    expect(() => requireBatchTransition('material_partially_outbound', 'doing')).not.toThrow();
     expect(() => requireBatchTransition('material_outbound', 'doing')).not.toThrow();
   });
 
@@ -49,13 +52,26 @@ describe('production status policy', () => {
         'material_assigned',
         'material_partially_outbound',
         'material_outbound',
+        'doing',
         'cancelled',
       ],
-      material_assigned: ['material_pending', 'material_outbound', 'cancelled'],
+      material_assigned: [
+        'material_pending',
+        'material_partially_outbound',
+        'material_outbound',
+        'doing',
+        'cancelled',
+      ],
       material_partially_outbound: ['material_outbound', 'doing', 'closing'],
       material_outbound: ['doing', 'closing'],
-      doing: ['completed', 'closing'],
-      closing: ['terminated'],
+      doing: ['closing'],
+      closing: [
+        'doing',
+        'material_partially_outbound',
+        'material_outbound',
+        'completed',
+        'terminated',
+      ],
       completed: [],
       cancelled: [],
       terminated: [],

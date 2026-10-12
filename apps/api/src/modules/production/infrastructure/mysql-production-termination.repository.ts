@@ -16,7 +16,6 @@ import { ProductionDomainError } from '../domain/production.errors.js';
 import { fixedIntegerQuantity } from '../domain/integer-quantity.js';
 import { allocationNeedsCloseoutSql } from './mysql-production-material.sql.js';
 import { readCloseoutLossRecords } from './mysql-production-closeout-loss.read.js';
-import { lastStepReportedQuantitySql } from './mysql-production-reporting.sql.js';
 import {
   CLOSEOUT_APPROVAL_SNAPSHOT_SCHEMA_VERSION,
   readCloseoutApprovalSnapshot,
@@ -32,9 +31,6 @@ type Header = RowDataPacket &
     | 'canTerminate'
     | 'blockers'
     | 'checkToken'
-    | 'approvedReportedNormalQuantity'
-    | 'currentReportedNormalQuantity'
-    | 'reportedNormalQuantityDifference'
   >;
 type Fact = RowDataPacket & {
   id: number;
@@ -73,14 +69,12 @@ export class MysqlProductionTerminationRepository extends ProductionTerminationR
        CAST(wo.id AS CHAR) workOrderId,wo.work_order_no workOrderNo,wo.order_type orderType,wo.status workOrderStatus,
        wo.product_code_snapshot productCode,wo.product_name_snapshot productName,wo.unit_snapshot unit,
        b.planned_quantity plannedQuantity,b.version,
-       ${lastStepReportedQuantitySql('b.id', lock)} reportedNormalQuantity,
        COALESCE((SELECT SUM(s.scrap_quantity) FROM batch_step_scrap_records s WHERE s.production_batch_id=b.id${share}),0) existingScrapQuantity
        FROM production_batches b JOIN work_orders wo ON wo.id=b.work_order_id WHERE b.id=?${lock ? ' FOR UPDATE' : ''}`,
       [batchId],
     );
     if (!header) throw new ProductionDomainError('NOT_FOUND', '生产批次不存在');
     header.plannedQuantity = String(header.plannedQuantity);
-    header.reportedNormalQuantity = String(header.reportedNormalQuantity);
     header.existingScrapQuantity = String(header.existingScrapQuantity);
     const [[fact]] = await db.query<Fact[]>(
       `SELECT r.id,r.revision_no,r.approval_instance_id,(round.baseline_planned_received+COALESCE((SELECT a.quantity FROM production_output_allocation a WHERE a.revision_id=r.id AND a.category='self_made'),0)) available_quantity,
@@ -102,12 +96,6 @@ export class MysqlProductionTerminationRepository extends ProductionTerminationR
       return {
         ...snapshot.check,
         ...header,
-        reportedNormalQuantity: snapshot.check.reportedNormalQuantity,
-        approvedReportedNormalQuantity: snapshot.check.reportedNormalQuantity,
-        currentReportedNormalQuantity: header.reportedNormalQuantity,
-        reportedNormalQuantityDifference: fixedIntegerQuantity(
-          Number(header.reportedNormalQuantity) - Number(snapshot.check.reportedNormalQuantity),
-        ),
         canTerminate: false,
         blockers: ['本批次已结束'],
         termination: {
@@ -239,9 +227,6 @@ export class MysqlProductionTerminationRepository extends ProductionTerminationR
     const evidence = { ...header, impacts, materials, lossRecords, blockers };
     return {
       ...evidence,
-      approvedReportedNormalQuantity: null,
-      currentReportedNormalQuantity: header.reportedNormalQuantity,
-      reportedNormalQuantityDifference: null,
       checkToken: createHash('sha256').update(JSON.stringify(evidence)).digest('hex'),
       canTerminate: blockers.length === 0,
       termination: null,

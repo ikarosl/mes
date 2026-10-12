@@ -49,18 +49,6 @@
           <el-descriptions-item label="最终审批负责人">{{
             detail.workOrderOwnerName
           }}</el-descriptions-item>
-          <el-descriptions-item label="原批准依据的末道正常量">{{
-            detail.approvedReportedNormalQuantity === null
-              ? '尚无批准依据'
-              : quantity(detail.approvedReportedNormalQuantity) + ' ' + detail.check.unit
-          }}</el-descriptions-item>
-          <el-descriptions-item label="当前末道净正常报工"
-            >{{ quantity(detail.currentReportedNormalQuantity) }}
-            {{ detail.check.unit }}</el-descriptions-item
-          >
-          <el-descriptions-item label="当前量与批准依据之差">{{
-            formatQuantityDifference(detail.reportedNormalQuantityDifference)
-          }}</el-descriptions-item>
         </el-descriptions>
         <el-alert
           v-if="stale"
@@ -358,7 +346,7 @@ import {
 } from '@company/constants';
 import { DialogWidth } from '../../../utils/dialog';
 import { formatDateTimeForDisplay } from '../../../utils/date';
-import { formatQuantity as quantity, formatQuantityDifference } from '../production-status';
+import { formatQuantity as quantity } from '../production-status';
 import { useProductionOutput } from '../composables/useProductionOutput';
 import BatchCloseoutEvidence from './BatchCloseoutEvidence.vue';
 import FinishedInspectionHistory from '../../quality/components/FinishedInspectionHistory.vue';

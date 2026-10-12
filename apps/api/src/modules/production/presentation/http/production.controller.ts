@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseFilters } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, Res, UseFilters } from '@nestjs/common';
+import type { ProductionBatchStartRecord } from '@company/contracts';
 import { PERMISSIONS } from '@company/constants';
 import type {
   CommandContext,
@@ -143,6 +144,20 @@ export class ProductionController {
   @RequirePermission(PERMISSIONS.production.tasks.view)
   batch(@Param() { id }: IdParamDto) {
     return this.service.getBatch(id);
+  }
+  @Get('batches/:id/step-records')
+  @RequirePermission(PERMISSIONS.production.tasks.view)
+  batchStepRecords(@Param() { id }: IdParamDto) {
+    return this.service.getBatchStepRecords(id);
+  }
+  @Get('batches/:id/start-record')
+  @RequirePermission(PERMISSIONS.production.tasks.view)
+  async batchStartRecord(
+    @Param() { id }: IdParamDto,
+    @Res() response: { json(body: ProductionBatchStartRecord | null): void },
+  ): Promise<void> {
+    // 未开工是有效 JSON null，不能由 Nest 转成空响应体。
+    response.json(await this.service.getBatchStartRecord(id));
   }
   @Get('batches/:id/cancellation-check')
   @RequirePermission(PERMISSIONS.production.tasks.view)

@@ -19,6 +19,10 @@ import { MysqlRbacRepository } from '../../../apps/api/src/modules/identity/infr
 import { ProductionReportingService } from '../../../apps/api/src/modules/production/application/production-reporting.service.js';
 import { ProductionSupplementService } from '../../../apps/api/src/modules/production/application/production-supplement.service.js';
 import { MysqlMaterialVariantRepository } from '../../../apps/api/src/modules/product/infrastructure/mysql-material-variant.repository.js';
+import {
+  deleteFixtureMaterialBasis,
+  deleteFixtureStepExecutionActions,
+} from './production-material-test-cleanup.js';
 
 loadWorkspaceEnv();
 const describeMysql = process.env.RUN_MYSQL_INTEGRATION === '1' ? describe : describe.skip;
@@ -51,7 +55,8 @@ describeMysql('Production execution MySQL transactions', () => {
       timezone: '+08:00',
       connectionLimit: 6,
     });
-    repository = new MysqlProductionExecutionRepository(pool);
+    const identity = new IdentityDirectoryService(new MysqlRbacRepository(pool));
+    repository = new MysqlProductionExecutionRepository(pool, identity);
     reporting = new MysqlProductionReportingRepository(pool);
     abnormal = new MysqlProductionAbnormalRepository(pool);
     supplement = new MysqlProductionSupplementRepository(
@@ -62,7 +67,7 @@ describeMysql('Production execution MySQL transactions', () => {
     outbounds = new MysqlProductionMaterialOutboundRepository(pool);
     reportingService = new ProductionReportingService(
       reporting,
-      new IdentityDirectoryService(new MysqlRbacRepository(pool)),
+      identity,
       new MysqlIdempotencyExecutor(pool),
     );
     supplementService = new ProductionSupplementService(
@@ -73,8 +78,8 @@ describeMysql('Production execution MySQL transactions', () => {
 
   afterAll(async () => pool?.end());
 
-  it('assigns and starts the first step while starting the batch in one transaction', async () => {
-    const fixture = await createFixture(pool, 'start');
+  it('requires administrator batch start before a worker starts the first step', async () => {
+    const fixture = await createFixture(pool, repository, 'start', { autoStart: false });
     try {
       const assigned = await repository.assignStep(
         String(fixture.batchId),
@@ -84,6 +89,43 @@ describeMysql('Production execution MySQL transactions', () => {
         context(fixture.actorId, `${fixture.token}-assign`),
       );
       expect(assigned).toMatchObject({ stepStatus: 'assigned', version: 1 });
+      await expect(
+        repository.startStep(
+          String(fixture.batchId),
+          String(fixture.firstStepRecordId),
+          1,
+          context(fixture.workerId, `${fixture.token}-premature-start`),
+        ),
+      ).rejects.toMatchObject({ code: 'STEP_START_NOT_ALLOWED' });
+      const [[beforeStart]] = await pool.query<
+        (RowDataPacket & { status: string; started_at: Date | null; started_by: number | null })[]
+      >('SELECT status,started_at,started_by FROM production_batches WHERE id=?', [
+        fixture.batchId,
+      ]);
+      expect(beforeStart).toMatchObject({
+        status: 'material_outbound',
+        started_at: null,
+        started_by: null,
+      });
+      expect(
+        await auditCount(pool, `${fixture.token}-premature-start`, 'production-step.start'),
+      ).toBe(0);
+
+      const startCheck = await repository.getStartCheck(String(fixture.batchId));
+      expect(startCheck).toMatchObject({
+        batchStatus: 'material_outbound',
+        version: 0,
+        hasInitialMaterialConfiguration: true,
+        hasMaterialShortage: false,
+        requiresReason: false,
+        canStart: true,
+      });
+      const startedTask = await repository.startExecution(
+        String(fixture.batchId),
+        { version: startCheck.version },
+        context(fixture.actorId, `${fixture.token}-admin-start`),
+      );
+      expect(startedTask).toMatchObject({ batchStatus: 'doing', version: 1, startReason: null });
 
       const started = await repository.startStep(
         String(fixture.batchId),
@@ -98,11 +140,16 @@ describeMysql('Production execution MySQL transactions', () => {
       const [[row]] = await pool.query<
         (RowDataPacket & {
           batch_started_at: Date | null;
+          batch_started_by: number | null;
+          batch_start_reason: string | null;
+          batch_start_material_snapshot: unknown;
           step_started_at: Date | null;
           work_order_status: string;
         })[]
       >(
-        `SELECT b.started_at batch_started_at,s.started_at step_started_at,wo.status work_order_status
+        `SELECT b.started_at batch_started_at,b.started_by batch_started_by,
+         b.start_reason batch_start_reason,b.start_material_snapshot batch_start_material_snapshot,
+         s.started_at step_started_at,wo.status work_order_status
          FROM production_batches b
          JOIN batch_step_records s ON s.production_batch_id=b.id
          JOIN work_orders wo ON wo.id=b.work_order_id
@@ -110,8 +157,14 @@ describeMysql('Production execution MySQL transactions', () => {
         [fixture.batchId, fixture.firstStepRecordId],
       );
       expect(row?.batch_started_at).not.toBeNull();
+      expect(row?.batch_started_by).toBe(fixture.actorId);
+      expect(row?.batch_start_reason).toBeNull();
+      expect(row?.batch_start_material_snapshot).not.toBeNull();
       expect(row?.step_started_at).not.toBeNull();
       expect(row?.work_order_status).toBe('doing');
+      expect(
+        await auditCount(pool, `${fixture.token}-admin-start`, 'production-execution.start'),
+      ).toBe(1);
       expect(await auditCount(pool, `${fixture.token}-start`, 'production-step.start')).toBe(1);
     } finally {
       await cleanup(pool, fixture);
@@ -119,7 +172,7 @@ describeMysql('Production execution MySQL transactions', () => {
   });
 
   it('requires a report for every step instead of exposing a manual complete-step command', async () => {
-    const fixture = await createFixture(pool, 'complete-non-reporting');
+    const fixture = await createFixture(pool, repository, 'complete-non-reporting');
     try {
       await repository.assignStep(
         String(fixture.batchId),
@@ -156,7 +209,7 @@ describeMysql('Production execution MySQL transactions', () => {
   });
 
   it('rejects a non-assignee without changing state or writing success audit', async () => {
-    const fixture = await createFixture(pool, 'actor');
+    const fixture = await createFixture(pool, repository, 'actor');
     try {
       await repository.assignStep(
         String(fixture.batchId),
@@ -187,7 +240,7 @@ describeMysql('Production execution MySQL transactions', () => {
   });
 
   it('does not start a following step before upstream normal quantity is released', async () => {
-    const fixture = await createFixture(pool, 'upstream');
+    const fixture = await createFixture(pool, repository, 'upstream');
     try {
       await repository.assignStep(
         String(fixture.batchId),
@@ -223,7 +276,7 @@ describeMysql('Production execution MySQL transactions', () => {
   });
 
   it('serializes competing assignments and preserves one responsible employee', async () => {
-    const fixture = await createFixture(pool, 'race');
+    const fixture = await createFixture(pool, repository, 'race');
     try {
       const results = await Promise.allSettled([
         repository.assignStep(
@@ -249,7 +302,7 @@ describeMysql('Production execution MySQL transactions', () => {
   });
 
   it('rolls back assignment when transactional success audit fails', async () => {
-    const fixture = await createFixture(pool, 'audit-rollback');
+    const fixture = await createFixture(pool, repository, 'audit-rollback');
     try {
       await expect(
         repository.assignStep(
@@ -272,7 +325,7 @@ describeMysql('Production execution MySQL transactions', () => {
   });
 
   it('records split reports, creates pending abnormal disposition and consumes abnormal release capacity', async () => {
-    const fixture = await createFixture(pool, 'report');
+    const fixture = await createFixture(pool, repository, 'report');
     try {
       await repository.assignStep(
         String(fixture.batchId),
@@ -354,7 +407,7 @@ describeMysql('Production execution MySQL transactions', () => {
   });
 
   it('closes a source-bound rework as a new immutable report in one transaction', async () => {
-    const fixture = await createFixture(pool, 'rework');
+    const fixture = await createFixture(pool, repository, 'rework');
     try {
       await repository.assignStep(
         String(fixture.batchId),
@@ -440,7 +493,7 @@ describeMysql('Production execution MySQL transactions', () => {
   });
 
   it('keeps a scrap supplement plan non-allocatable until atomic confirmation creates formal facts', async () => {
-    const fixture = await createFixture(pool, 'scrap-supplement');
+    const fixture = await createFixture(pool, repository, 'scrap-supplement');
     try {
       await repository.assignStep(
         String(fixture.batchId),
@@ -679,7 +732,7 @@ describeMysql('Production execution MySQL transactions', () => {
   });
 
   it('rolls back every scrap-supplement confirmation write when any in-transaction write fails', async () => {
-    const fixture = await createFixture(pool, 'supp-rollback');
+    const fixture = await createFixture(pool, repository, 'supp-rollback');
     try {
       await repository.assignStep(
         String(fixture.batchId),
@@ -828,7 +881,7 @@ describeMysql('Production execution MySQL transactions', () => {
   });
 
   it('rejects staging and confirmation once the abnormal is approved for rework', async () => {
-    const fixture = await createFixture(pool, 'supp-rework');
+    const fixture = await createFixture(pool, repository, 'supp-rework');
     try {
       await repository.assignStep(
         String(fixture.batchId),
@@ -927,7 +980,7 @@ describeMysql('Production execution MySQL transactions', () => {
   });
 
   it('rejects staging and confirmation once the abnormal is rejected', async () => {
-    const fixture = await createFixture(pool, 'supp-reject');
+    const fixture = await createFixture(pool, repository, 'supp-reject');
     try {
       await repository.assignStep(
         String(fixture.batchId),
@@ -1026,7 +1079,7 @@ describeMysql('Production execution MySQL transactions', () => {
   });
 
   it('rejects staging and confirmation once the batch is no longer in production', async () => {
-    const fixture = await createFixture(pool, 'supp-closed');
+    const fixture = await createFixture(pool, repository, 'supp-closed');
     try {
       await repository.assignStep(
         String(fixture.batchId),
@@ -1123,7 +1176,7 @@ describeMysql('Production execution MySQL transactions', () => {
   });
 
   it('activates downstream scrap replacement only after supplemental outbound and propagates it from the first step', async () => {
-    const fixture = await createFixture(pool, 'supplement-route');
+    const fixture = await createFixture(pool, repository, 'supplement-route');
     try {
       await repository.assignStep(
         String(fixture.batchId),
@@ -1316,7 +1369,7 @@ describeMysql('Production execution MySQL transactions', () => {
   });
 
   it('uses upstream normal output only as the current release limit, never as downstream completion target', async () => {
-    const fixture = await createFixture(pool, 'report-release-limit');
+    const fixture = await createFixture(pool, repository, 'report-release-limit');
     try {
       await repository.assignStep(
         String(fixture.batchId),
@@ -1400,7 +1453,7 @@ describeMysql('Production execution MySQL transactions', () => {
   });
 
   it('corrects by appending reversal and replacement and reopens a completed step', async () => {
-    const fixture = await createFixture(pool, 'correct');
+    const fixture = await createFixture(pool, repository, 'correct');
     try {
       await repository.assignStep(
         String(fixture.batchId),
@@ -1442,7 +1495,7 @@ describeMysql('Production execution MySQL transactions', () => {
   });
 
   it('serializes concurrent reports with the same step version', async () => {
-    const fixture = await createFixture(pool, 'report-race');
+    const fixture = await createFixture(pool, repository, 'report-race');
     try {
       await repository.assignStep(
         String(fixture.batchId),
@@ -1479,7 +1532,7 @@ describeMysql('Production execution MySQL transactions', () => {
   });
 
   it('replays report creation and correction without duplicating immutable facts', async () => {
-    const fixture = await createFixture(pool, 'report-idempotency');
+    const fixture = await createFixture(pool, repository, 'report-idempotency');
     try {
       await repository.assignStep(
         String(fixture.batchId),
@@ -1557,7 +1610,7 @@ describeMysql('Production execution MySQL transactions', () => {
   });
 
   it('completes production execution from the final required step and naturally replays', async () => {
-    const fixture = await createFixture(pool, 'complete');
+    const fixture = await createFixture(pool, repository, 'complete');
     try {
       await completeRequiredSteps(repository, reporting, fixture);
       const check = await repository.getCompletionCheck(String(fixture.batchId));
@@ -1608,15 +1661,17 @@ describeMysql('Production execution MySQL transactions', () => {
   });
 
   it('rejects incomplete execution and rolls back completion if success audit fails', async () => {
-    const incomplete = await createFixture(pool, 'complete-incomplete');
+    const incomplete = await createFixture(pool, repository, 'complete-incomplete');
     try {
-      await pool.execute("UPDATE production_batches SET status='doing' WHERE id=?", [
-        incomplete.batchId,
-      ]);
+      const check = await repository.getCompletionCheck(String(incomplete.batchId));
+      expect(check).toMatchObject({
+        canComplete: false,
+        blockers: expect.arrayContaining(['required_step_incomplete']),
+      });
       await expect(
         repository.completeExecution(
           String(incomplete.batchId),
-          0,
+          { version: check.version, closeoutVersion: check.closeoutVersion },
           context(incomplete.actorId, `${incomplete.token}-blocked`),
         ),
       ).rejects.toMatchObject({ code: 'REQUIRED_STEP_INCOMPLETE' });
@@ -1627,7 +1682,7 @@ describeMysql('Production execution MySQL transactions', () => {
       await cleanup(pool, incomplete);
     }
 
-    const rollback = await createFixture(pool, 'complete-audit-rollback');
+    const rollback = await createFixture(pool, repository, 'complete-audit-rollback');
     try {
       await completeRequiredSteps(repository, reporting, rollback);
       await expect(
@@ -1679,7 +1734,12 @@ type Fixture = {
   secondStepRecordId: number;
 };
 
-const createFixture = async (pool: Pool, suffix: string): Promise<Fixture> => {
+const createFixture = async (
+  pool: Pool,
+  repository: MysqlProductionExecutionRepository,
+  suffix: string,
+  options: { autoStart?: boolean } = {},
+): Promise<Fixture> => {
   const token = `pe-${suffix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const [[actor]] = await pool.query<(RowDataPacket & { id: number })[]>(
     'SELECT id FROM users ORDER BY id LIMIT 1',
@@ -1753,7 +1813,7 @@ const createFixture = async (pool: Pool, suffix: string): Promise<Fixture> => {
   const workOrderId = await insert(
     pool,
     "INSERT INTO work_orders (work_order_no,order_type,product_id,product_code_snapshot,product_name_snapshot,unit_snapshot,planned_quantity,status) VALUES (?,?,?,?,?,?,'10.0000','released')",
-    [`${token}-wo`, 'research', productId, `${token}-product`, 'Execution product', 'pcs'],
+    [`${token}-wo`, 'mass_production', productId, `${token}-product`, 'Execution product', 'pcs'],
   );
   const batchId = await insert(
     pool,
@@ -1763,10 +1823,10 @@ const createFixture = async (pool: Pool, suffix: string): Promise<Fixture> => {
   const requirementBasisId = await insert(
     pool,
     `INSERT INTO production_material_requirement_basis
-      (production_batch_id,product_material_id,material_id,material_code_snapshot,
+      (production_batch_id,product_material_id,material_id,locked_material_variant_id,material_code_snapshot,
        unit_snapshot,quantity_per_unit_snapshot,planned_output_quantity_snapshot,required_number,created_by)
-     VALUES (?,?,?,?,'kg','1.0000','10.0000','10.0000',?)`,
-    [batchId, productMaterialId, materialId, `${token}-m`, actor.id],
+     VALUES (?,?,?,?,?,'kg','1.0000','10.0000','10.0000',?)`,
+    [batchId, productMaterialId, materialId, materialVariantId, `${token}-m`, actor.id],
   );
   const firstStepRecordId = await insert(
     pool,
@@ -1814,7 +1874,7 @@ const createFixture = async (pool: Pool, suffix: string): Promise<Fixture> => {
       actor.id,
     ],
   );
-  return {
+  const fixture: Fixture = {
     token,
     actorId: actor.id,
     workerId,
@@ -1835,6 +1895,15 @@ const createFixture = async (pool: Pool, suffix: string): Promise<Fixture> => {
     firstStepRecordId,
     secondStepRecordId,
   };
+  if (options.autoStart !== false) {
+    const startCheck = await repository.getStartCheck(String(batchId));
+    await repository.startExecution(
+      String(batchId),
+      { version: startCheck.version },
+      context(actor.id, `${token}-admin-start`),
+    );
+  }
+  return fixture;
 };
 
 const completeRequiredSteps = async (
@@ -1908,10 +1977,7 @@ const cleanup = async (pool: Pool, fixture: Fixture): Promise<void> => {
   await pool.execute('DELETE FROM production_item_demand WHERE production_batch_id=?', [
     fixture.batchId,
   ]);
-  await pool.execute(
-    'DELETE FROM production_material_requirement_basis WHERE production_batch_id=?',
-    [fixture.batchId],
-  );
+  await deleteFixtureMaterialBasis(pool, fixture.batchId);
   await pool.execute('DELETE FROM batch_step_abnormal_dispositions WHERE production_batch_id=?', [
     fixture.batchId,
   ]);
@@ -1922,13 +1988,11 @@ const cleanup = async (pool: Pool, fixture: Fixture): Promise<void> => {
   await pool.execute('DELETE FROM batch_step_reports WHERE production_batch_id=?', [
     fixture.batchId,
   ]);
+  await deleteFixtureStepExecutionActions(pool, fixture.batchId);
   await pool.execute('DELETE FROM batch_step_records WHERE production_batch_id=?', [
     fixture.batchId,
   ]);
   await pool.execute('DELETE FROM production_batches WHERE id=?', [fixture.batchId]);
-  await pool.execute('DELETE FROM work_order_material_versions WHERE work_order_id=?', [
-    fixture.workOrderId,
-  ]);
   await pool.execute('DELETE FROM work_orders WHERE id=?', [fixture.workOrderId]);
   const [itemBatches] = await pool.query<(RowDataPacket & { id: number })[]>(
     'SELECT id FROM item_batch WHERE batch_code LIKE ?',

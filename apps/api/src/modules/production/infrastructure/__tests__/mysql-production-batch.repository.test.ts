@@ -234,7 +234,6 @@ describe('MysqlProductionBatchRepository persistence', () => {
     expect(mutationSql).toContain('production_item_demand');
     expect(mutationSql).toContain("status IN ('pending','material_pending','material_assigned')");
     expect(mutationSql).toContain('cancel_reason=?');
-    expect(mutationSql).toContain('production_short_batch_authorization');
     expect(connection.execute.mock.calls[4]?.[1]).toEqual(['计划调整', '1', '1', '21', 2]);
     expect(String(connection.execute.mock.calls[5]?.[0])).toContain('INSERT INTO operation_logs');
     expect(connection.commit).toHaveBeenCalledOnce();

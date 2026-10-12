@@ -3,68 +3,61 @@ import { evaluateMaterialOutboundEligibility } from '../production-material-outb
 
 const base = {
   batchStatus: 'material_partially_outbound' as const,
-  authorizationStatus: 'stale' as const,
-  allActiveDemandsAllocated: false,
   hasActiveAllocation: true,
   hasOrderableAllocation: true,
-  hasOrderableAdditionalAllocation: false,
 };
 
 describe('evaluateMaterialOutboundEligibility', () => {
-  it('把需求版本变化且仍有分配缺口投影为重新授权阻断', () => {
-    expect(evaluateMaterialOutboundEligibility(base)).toMatchObject({
-      eligible: false,
-      blockedCode: 'short_batch_authorization_stale',
-    });
+  it('allows the first partial outbound order as soon as an allocation is available', () => {
+    expect(
+      evaluateMaterialOutboundEligibility({ ...base, batchStatus: 'material_pending' }),
+    ).toEqual({ eligible: true, blockedCode: null, blockedReason: null });
   });
 
-  it('部分出库后完成全部活动需求分配时允许普通齐套制单', () => {
-    expect(
-      evaluateMaterialOutboundEligibility({ ...base, allActiveDemandsAllocated: true }),
-    ).toEqual({
+  it('allows a partially outbound batch to order its available allocation', () => {
+    expect(evaluateMaterialOutboundEligibility(base)).toEqual({
       eligible: true,
-      outboundMode: 'normal',
       blockedCode: null,
       blockedReason: null,
     });
   });
 
-  it('短批授权有效时允许短批制单', () => {
-    expect(
-      evaluateMaterialOutboundEligibility({ ...base, authorizationStatus: 'valid' }),
-    ).toMatchObject({ eligible: true, outboundMode: 'short_batch' });
+  it('allows an ordinary demand to be picked while its batch is executing', () => {
+    expect(evaluateMaterialOutboundEligibility({ ...base, batchStatus: 'doing' })).toEqual({
+      eligible: true,
+      blockedCode: null,
+      blockedReason: null,
+    });
   });
 
-  it('没有可制单分配时优先说明占用事实', () => {
-    expect(
-      evaluateMaterialOutboundEligibility({ ...base, hasOrderableAllocation: false }),
-    ).toMatchObject({ eligible: false, blockedCode: 'no_orderable_allocation' });
+  it('explains when every active allocation is reserved by another pending order', () => {
+    expect(evaluateMaterialOutboundEligibility({ ...base, hasOrderableAllocation: false })).toEqual(
+      {
+        eligible: false,
+        blockedCode: 'no_orderable_allocation',
+        blockedReason: '暂无可制单分配，可能已被其他待出库单占用',
+      },
+    );
   });
 
-  it('已确认出库耗尽的分配不伪装成待出库占用', () => {
+  it('explains when no active allocation remains', () => {
     expect(
       evaluateMaterialOutboundEligibility({
         ...base,
         hasActiveAllocation: false,
         hasOrderableAllocation: false,
       }),
-    ).toMatchObject({ eligible: false, blockedCode: 'allocation_incomplete' });
+    ).toEqual({
+      eligible: false,
+      blockedCode: 'allocation_incomplete',
+      blockedReason: '物料尚未形成可制单分配，请先完成分配',
+    });
   });
 
-  it('已完成整组领料的未开工批次只允许活动补料分配重新制单', () => {
-    expect(
-      evaluateMaterialOutboundEligibility({
-        ...base,
-        batchStatus: 'material_outbound',
-        hasOrderableAdditionalAllocation: false,
-      }),
-    ).toMatchObject({ eligible: false, blockedCode: 'allocation_incomplete' });
-    expect(
-      evaluateMaterialOutboundEligibility({
-        ...base,
-        batchStatus: 'material_outbound',
-        hasOrderableAdditionalAllocation: true,
-      }),
-    ).toMatchObject({ eligible: true, outboundMode: 'normal' });
+  it('does not offer an outbound order after the batch enters closeout', () => {
+    expect(evaluateMaterialOutboundEligibility({ ...base, batchStatus: 'closing' })).toMatchObject({
+      eligible: false,
+      blockedCode: 'allocation_incomplete',
+    });
   });
 });

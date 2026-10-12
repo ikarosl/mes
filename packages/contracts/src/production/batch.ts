@@ -32,14 +32,9 @@ export interface ProductionBatchItem {
   routeCode: string | null;
   routeVersion: string | null;
   plannedQuantity: string;
-  /** 末道工序有效正常报工量，从正向及冲销事实派生，不是最终批准产出。 */
-  lastStepReportedQuantity: string;
   planStartDate: string | null;
   planEndDate: string | null;
   startedAt: string | null;
-  startedById: string | null;
-  startReason: string | null;
-  startMaterialSnapshot: ProductionExecutionStartMaterialSnapshot | null;
   status: ProductionBatchStatus;
   closeoutMode: ProductionCloseoutMode | null;
   closeoutVersion: number | null;
@@ -48,22 +43,10 @@ export interface ProductionBatchItem {
   finalOutput: ProductionBatchFinalOutput | null;
   /** 工序执行确认时间，与最终结案审批时间分别展示。 */
   executionCompletedAt: string | null;
-  executionCompletedBy: string | null;
   ownerId: string | null;
   ownerName: string | null;
   completedAt: string | null;
-  completedBy: string | null;
-  /** 取消信息由取消及详情响应提供；新建任务时省略。 */
-  cancelReason?: string | null;
-  cancelledBy?: string | null;
-  cancelledByName?: string | null;
-  cancelledAt?: string | null;
-  remark: string | null;
   version: number;
-  createdAt: string;
-  updatedAt: string;
-  /** 批次是否已有未取消的生产领料出库单；批次列表用于区分“待建单”和“已建单”。 */
-  hasActiveMaterialOutbound?: boolean;
 }
 
 export type ProductionBatchCancellationBlocker =
@@ -133,7 +116,47 @@ export interface BatchStepRecordItem {
 }
 
 export interface ProductionBatchDetail extends ProductionBatchItem {
+  startedById: string | null;
+  /** 首次任务开工人的当前显示姓名；未开工或引用无法解析时为 null。 */
+  startedByName: string | null;
+  executionCompletedBy: string | null;
+  completedBy: string | null;
+  cancelReason: string | null;
+  cancelledBy: string | null;
+  cancelledByName: string | null;
+  cancelledAt: string | null;
+  remark: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** 工序工作台的任务上下文，不承载任务详情、开工物料快照或结案产出。 */
+export interface ProductionBatchStepRecordsHeader {
+  id: string;
+  batchNo: string;
+  workOrderNo: string;
+  orderType: WorkOrderType;
+  productCode: string;
+  productName: string;
+  plannedQuantity: string;
+  status: ProductionBatchStatus;
+  routeCode: string | null;
+  routeVersion: string | null;
+}
+
+export interface ProductionBatchStepRecords {
+  batch: ProductionBatchStepRecordsHeader;
   stepRecords: BatchStepRecordItem[];
+}
+
+/** 已保存的首次开工事实；未开工时查询返回 null，不根据当前需求重算快照。 */
+export interface ProductionBatchStartRecord {
+  productionBatchId: string;
+  startedAt: string;
+  startedById: string;
+  startedByName: string | null;
+  startReason: string | null;
+  startMaterialSnapshot: ProductionExecutionStartMaterialSnapshot;
 }
 
 export interface CreateProductionBatchPayload {

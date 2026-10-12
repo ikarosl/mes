@@ -56,11 +56,7 @@ import { lockWorkOrderForBatch } from './mysql-work-order-material-version.js';
 import { executeStepStateCommand } from './mysql-production-step-state.commands.js';
 
 type CompletionStepRow = RowDataPacket & {
-  id: number;
-  step_order_snapshot: number;
-  step_name_snapshot: string;
   status: BatchStepStatus;
-  effective_normal: string;
 };
 @Injectable()
 export class MysqlProductionExecutionRepository extends ProductionExecutionRepository {
@@ -241,7 +237,6 @@ export class MysqlProductionExecutionRepository extends ProductionExecutionRepos
           status: 'closing',
           ...entry,
           closeoutMode: 'normal',
-          lastStepReportedQuantity: check.finalEffectiveNormalQuantity,
           version: batch.version + 1,
         },
         requestId: context.requestId,
@@ -252,7 +247,6 @@ export class MysqlProductionExecutionRepository extends ProductionExecutionRepos
         batchId,
         await findBatch(connection, batchId, true),
         entry.closeoutId,
-        check.finalEffectiveNormalQuantity,
       );
     });
   }
@@ -532,10 +526,7 @@ const selectRequiredCompletionSteps = async (
 ): Promise<CompletionStepRow[]> => {
   const share = lock ? ' FOR SHARE' : '';
   const [rows] = await db.query<CompletionStepRow[]>(
-    `SELECT sr.id,sr.step_order_snapshot,sr.step_name_snapshot,sr.status,
-      COALESCE((SELECT SUM(CASE WHEN r.report_type='normal' THEN r.normal_quantity ELSE -r.normal_quantity END)
-        FROM batch_step_reports r WHERE r.batch_step_record_id=sr.id${share}),0) effective_normal
-     FROM batch_step_records sr
+    `SELECT sr.status FROM batch_step_records sr
      WHERE sr.production_batch_id=?
      ORDER BY sr.step_order_snapshot,sr.id${share}`,
     [batchId],
@@ -562,11 +553,7 @@ const mapCompletionCheck = (
     activeMaterialDemandCount,
     unfulfilledSupplementCount,
     requiredSteps: steps.map((step) => ({
-      id: String(step.id),
-      order: step.step_order_snapshot,
-      name: step.step_name_snapshot,
       status: step.status,
-      effectiveNormalQuantity: String(step.effective_normal),
     })),
   });
 
@@ -606,7 +593,6 @@ const completionResult = (
   batchId: string,
   batch: BatchRow,
   closeoutId: string,
-  lastStepReportedQuantity: string,
 ): ProductionExecutionCompletionResult => {
   if (
     (batch.status !== 'closing' && batch.status !== 'completed') ||
@@ -618,7 +604,6 @@ const completionResult = (
     productionBatchId: batchId,
     batchStatus: batch.status,
     closeoutId,
-    lastStepReportedQuantity: String(lastStepReportedQuantity),
     executionCompletedAt: toBeijingISOString(batch.execution_completed_at),
     executionCompletedById: String(batch.execution_completed_by),
     version: batch.version,

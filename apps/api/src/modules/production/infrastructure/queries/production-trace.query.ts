@@ -11,7 +11,6 @@ import type {
 } from '@company/contracts';
 import { toBeijingISOString } from '../../../../common/time/date-time.js';
 import { ProductionDomainError } from '../../domain/production.errors.js';
-import { lastStepReportedQuantitySql } from '../mysql-production-reporting.sql.js';
 
 type TraceSummaryRow = RowDataPacket & {
   production_batch_id: number;
@@ -23,7 +22,6 @@ type TraceSummaryRow = RowDataPacket & {
   product_code: string;
   product_name: string;
   planned_quantity: string;
-  last_step_reported_quantity: string;
   closeout_mode: ProductionTraceBatchSummary['closeoutMode'];
   current_revision_id: number | null;
   execution_completed_at: Date | null;
@@ -52,7 +50,7 @@ type TraceInventoryRow = RowDataPacket & {
 
 const SUMMARY_SELECT = `SELECT b.id production_batch_id,b.batch_no,b.status batch_status,
   wo.id work_order_id,wo.work_order_no,b.product_id,wo.product_code_snapshot product_code,
-  wo.product_name_snapshot product_name,b.planned_quantity,${lastStepReportedQuantitySql('b.id')} last_step_reported_quantity,b.started_at,b.completed_at,
+  wo.product_name_snapshot product_name,b.planned_quantity,b.started_at,b.completed_at,
   b.execution_completed_at,c.closeout_mode,c.current_revision_id,r.revision_no,
   (round.baseline_planned_received+COALESCE((SELECT a.quantity FROM production_output_allocation a WHERE a.revision_id=r.id AND a.category='self_made'),0)) available_quantity,
   (round.baseline_extra_received+COALESCE((SELECT a.quantity FROM production_output_allocation a WHERE a.revision_id=r.id AND a.category='production_extra'),0)) extra_quantity,
@@ -224,7 +222,6 @@ const mapSummary = (row: TraceSummaryRow): ProductionTraceBatchSummary => ({
   productCode: row.product_code,
   productName: row.product_name,
   plannedQuantity: String(row.planned_quantity),
-  lastStepReportedQuantity: String(row.last_step_reported_quantity),
   closeoutMode: row.closeout_mode,
   currentOutputRevisionId:
     row.current_revision_id === null ? null : String(row.current_revision_id),
