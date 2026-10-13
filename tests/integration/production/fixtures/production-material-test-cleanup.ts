@@ -1,4 +1,4 @@
-import type { Pool, RowDataPacket } from '../../../apps/api/node_modules/mysql2/promise.js';
+import type { Pool, RowDataPacket } from '../../../../apps/api/node_modules/mysql2/promise.js';
 
 const IMMUTABLE_FIXTURE_CLEANUP_TARGETS = {
   materialBasis: {

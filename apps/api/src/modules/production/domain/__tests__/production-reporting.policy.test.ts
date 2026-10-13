@@ -1,33 +1,26 @@
 import { describe, expect, it } from 'vitest';
 import {
-  isRequiredNormalCompleted,
-  requireNoDownstreamQuantityConflict,
   requireAbnormalOrigin,
   requireDirectReportQuantities,
-  requireReportWithinReleased,
   requireReportQuantities,
+  requireReportWithinUpperLimit,
 } from '../production-reporting.policy.js';
 
 describe('production reporting policy', () => {
-  it('accepts a split report and detects exact completion', () => {
+  it('accepts a split report within the unified report limit', () => {
     expect(() => requireReportQuantities(3, 1)).not.toThrow();
-    expect(() => requireReportWithinReleased('3.0000', 3, 1, '7.0000')).not.toThrow();
-    expect(() => requireReportWithinReleased(0, 8, 1, 9)).not.toThrow();
-    expect(isRequiredNormalCompleted('7.0000', '7')).toBe(true);
+    expect(() => requireReportWithinUpperLimit('3.0000', 3, 1, '7.0000')).not.toThrow();
   });
 
-  it('rejects empty, excessive and downstream-conflicting quantities', () => {
+  it('rejects empty and excessive quantities', () => {
     expect(() => requireReportQuantities(0, 0)).toThrowError(
       expect.objectContaining({ code: 'INVALID_INPUT' }),
     );
-    expect(() => requireReportWithinReleased('4', 2, 2, '7')).toThrowError(
+    expect(() => requireReportWithinUpperLimit('4', 2, 2, '7')).toThrowError(
       expect.objectContaining({ code: 'STEP_REPORT_QUANTITY_EXCEEDED' }),
     );
-    expect(() => requireReportWithinReleased(0, 8, 2, 9)).toThrowError(
+    expect(() => requireReportWithinUpperLimit(0, 8, 2, 9)).toThrowError(
       expect.objectContaining({ code: 'STEP_REPORT_QUANTITY_EXCEEDED' }),
-    );
-    expect(() => requireNoDownstreamQuantityConflict('2', '3')).toThrowError(
-      expect.objectContaining({ code: 'DOWNSTREAM_QUANTITY_CONFLICT' }),
     );
   });
 
@@ -44,20 +37,6 @@ describe('production reporting policy', () => {
     expect(requireAbnormalOrigin(2, 'previous_step', true)).toBe('previous_step');
     expect(() => requireAbnormalOrigin(2, 'previous_step', false)).toThrowError(
       expect.objectContaining({ code: 'INVALID_INPUT', message: '首道工序不能上报前置工序异常' }),
-    );
-  });
-
-  it('attaches the conflicting downstream step projection to correction errors', () => {
-    const details = {
-      conflictingStepRecordId: '12',
-      conflictingStepOrder: 3,
-      conflictingStepName: '焊接',
-      downstreamEffectiveReportedQuantity: '10.0000',
-      correctedUpstreamNormalQuantity: '9.0000',
-    };
-
-    expect(() => requireNoDownstreamQuantityConflict('9', '10', details)).toThrowError(
-      expect.objectContaining({ code: 'DOWNSTREAM_QUANTITY_CONFLICT', details }),
     );
   });
 });

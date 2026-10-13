@@ -448,7 +448,7 @@ Production 统一拥有一套补料履约判定与状态推进能力，由需求
 - `draft` 要求 `confirmed_supplement_id IS NULL`；`confirmed` 要求其非空且指向同批次 `production_material_supplement`。
 - 明细使用 `(plan_id, original_demand_id)` 唯一约束；原始需求、批次、BOM 明细和物料使用组合外键保持一致。
 - 草稿可通过 `version` 乐观锁反复整体替换明细；每次保存必须记录成功操作日志。`confirmed` 为终态，不得恢复为 `draft` 或继续编辑。
-- 草稿保存同时提交 `planVersion` 和 `dispositionVersion`，分别防止覆盖旧方案和基于过期异常暂存；保存不改变异常处置状态。只有复核后的最终确认才生成正式事实，管理端不能调用绕过方案复核的直接批准入口。
+- 草稿保存同时提交 `planVersion` 和 `dispositionVersion`，分别防止覆盖旧方案和基于过期异常暂存；保存不改变异常处置状态。最终确认命令及内部持久化端口仅接受方案 `version` 和 `dispositionVersion`，锁内读取已保存的方案明细和说明，不接收再次提交的批准明细；只有复核后的最终确认才生成正式事实，不提供绕过方案复核的直接批准入口。
 - 草稿行不是需求事实，因此不写 `production_item_demand`、不产生幂等需求键，也不允许分配和出库。
 - 最终确认必须锁定待处置异常及方案版本，重新校验来源报工有效、完整 BOM 需求基础、启用物料版本和数量；同一事务批准异常、创建工序报废事实、补产授权、补料单、正式需求，将方案转为 `confirmed` 并关联补料单，同时提交成功审计和 HTTP 幂等结果。
 - 当前不计算或保存推荐补料数量。候选来自批次完整 BOM 基础，`planned_quantity` 完全由管理员填写；工序级定量 BOM 未定稿前不得用产品 BOM 总用量或异常数量自动推算。

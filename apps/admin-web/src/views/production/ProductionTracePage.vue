@@ -475,7 +475,6 @@
                     :show-actions="false"
                     @view-detail="reportTrace.open"
                     @view-report="reportTrace.open"
-                    @view-process="reportTrace.open"
                   />
                 </article>
               </el-tab-pane>

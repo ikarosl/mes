@@ -9,7 +9,6 @@ export interface ProductionStepActionState {
   stepStatus: BatchStepStatus;
   hasStarted: boolean;
   hasResponsibleUser: boolean;
-  isFirstStep: boolean;
   pendingApprovalId: string | null;
 }
 

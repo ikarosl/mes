@@ -1,4 +1,3 @@
-import type { BatchStepStatus } from '@company/contracts';
 import { fixedIntegerQuantity, integerQuantity } from './integer-quantity.js';
 
 const fixed = fixedIntegerQuantity;
@@ -6,7 +5,6 @@ const fixed = fixedIntegerQuantity;
 export type RouteQuantityStep = {
   id: number | string;
   stepOrder: number;
-  status: BatchStepStatus;
   effectiveDirectReported: number | string;
   effectiveNormal: number | string;
 };

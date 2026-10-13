@@ -241,7 +241,6 @@
               v-for="step in record.steps"
               :key="step.stepRecordId"
               class="step-card"
-              :data-step-id="step.stepRecordId"
             >
               <header class="step-header">
                 <button
@@ -401,7 +400,6 @@
                   :selected-ids="selectedReportIds"
                   @view-detail="reportTrace.open"
                   @view-report="reportTrace.open"
-                  @view-process="reportTrace.open"
                   @select-report="(report, checked) => selectReport(step, report, checked)"
                   @correct="(report) => reportEditor.open('correct', step, report)"
                   @reverse="(report) => reportEditor.open('reverse', step, report)"
@@ -923,7 +921,7 @@ usePageActivationRefresh(refreshCurrent);
 }
 .records-section,
 .step-card {
-  border: 1px solid var(--el-border-color-lighter);
+  border: 1px solid #c2c2c3;
   border-radius: 8px;
   background: var(--el-bg-color);
 }
@@ -987,6 +985,7 @@ usePageActivationRefresh(refreshCurrent);
   overflow-x: auto;
   overflow-y: auto;
   padding: 0 20px 20px;
+  background: var(--el-fill-color-light);
 }
 .batch-health {
   margin-top: 16px;

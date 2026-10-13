@@ -1,7 +1,9 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { flushPromises, mount } from '@vue/test-utils';
+import { createPinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createMemoryHistory, createRouter } from 'vue-router';
 import ProductionExecutionRecordsPage from '../ProductionExecutionRecordsPage.vue';
 
 const api = vi.hoisted(() => ({
@@ -12,6 +14,16 @@ const api = vi.hoisted(() => ({
   completeProductionExecution: vi.fn(),
 }));
 vi.mock('../../../api/production', () => ({ productionApi: api }));
+
+const testPlugins = () => [
+  createPinia(),
+  createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/', name: 'production-execution-records', component: { render: () => null } },
+    ],
+  }),
+];
 
 describe('ProductionExecutionRecordsPage', () => {
   beforeEach(() => {
@@ -44,7 +56,7 @@ describe('ProductionExecutionRecordsPage', () => {
     const batchListSource = readFileSync(batchListPath!, 'utf8');
 
     expect(pageSource).toMatch(
-      /\.execution-page\s*\{[^}]*grid-template-rows: auto minmax\(0, 1fr\);[^}]*height: 100%;[^}]*min-height: 0;/s,
+      /\.execution-page\s*\{[^}]*grid-template-rows: minmax\(0, 1fr\);[^}]*height: 100%;[^}]*min-height: 0;/s,
     );
     expect(pageSource).toMatch(
       /\.workspace\s*\{[^}]*flex: 1;[^}]*min-height: 0;[^}]*overflow: hidden;/s,
@@ -60,9 +72,10 @@ describe('ProductionExecutionRecordsPage', () => {
     );
   });
 
-  it('uses the current project query-panel shell without duplicating the route title', () => {
+  it('uses the current execution workspace shell without duplicating the route title', () => {
     const wrapper = mount(ProductionExecutionRecordsPage, {
       global: {
+        plugins: testPlugins(),
         stubs: {
           TableToolbar: { template: '<div><slot name="actions"/><slot name="tools"/></div>' },
           'el-form': { template: '<form><slot/></form>' },
@@ -86,9 +99,9 @@ describe('ProductionExecutionRecordsPage', () => {
         directives: { loading: () => undefined },
       },
     });
-    expect(wrapper.find('.query-panel').exists()).toBe(true);
+    expect(wrapper.find('.workspace').exists()).toBe(true);
     expect(wrapper.find('.page-heading').exists()).toBe(false);
-    expect(wrapper.find('.records-caption').text()).toContain('选择生产批次后查看');
+    expect(wrapper.find('.records-caption').text()).toContain('选择任务查看状态');
     expect(wrapper.find('h1').exists()).toBe(false);
   });
 
@@ -126,15 +139,90 @@ describe('ProductionExecutionRecordsPage', () => {
           stepCode: 'S1',
           stepName: '工序一',
           status: 'doing',
+          unit: 'pcs',
           responsibleUserName: '员工',
-          requiredNormalQuantity: '10.0000',
-          releasedNormalQuantity: '10.0000',
-          availableNormalQuantity: '0.0000',
+          upperLimitQuantity: '10.0000',
+          availableReportQuantity: '0.0000',
+          effectiveReportedQuantity: '10.0000',
+          effectiveDirectReportedQuantity: '10.0000',
+          effectiveDirectNormalQuantity: '9.0000',
+          effectiveDirectAbnormalQuantity: '1.0000',
           effectiveNormalQuantity: '9.0000',
           effectiveAbnormalQuantity: '1.0000',
-          remainingNormalQuantity: '1.0000',
-          reports: [],
-          abnormalDispositions: [{ dispositionId: '1', reviewStatus: 'pending_review' }],
+          previousStepNormalQuantity: null,
+          directReportedVsPreviousNormalDifference: null,
+          normalVsPreviousNormalDifference: null,
+          normalVsTargetDifference: '-1.0000',
+          baseNormalQuantity: '10.0000',
+          activatedSupplementInputQuantity: '0.0000',
+          activatedSupplementTargetQuantity: '0.0000',
+          pendingSupplementInputQuantity: '0.0000',
+          supplementSources: [],
+          startedAt: '2026-10-13T09:00:00+08:00',
+          completedAt: null,
+          version: 3,
+          reportCount: 2,
+          hasReportHistory: true,
+          firstReportedAt: '2026-10-13T09:01:00+08:00',
+          lastReportedAt: '2026-10-13T09:02:00+08:00',
+          canReport: true,
+          reportBlockedReason: null,
+          canCorrectReport: false,
+          correctionBlockedReason: '存在异常处置',
+          canCreateHistoricalReport: false,
+          historicalCreateBlockedReason: null,
+          historicalCorrectionBlockedReason: null,
+          canAdminStart: false,
+          startBlockedReason: null,
+          canAdminComplete: false,
+          completeBlockedReason: null,
+          canAdminReopen: false,
+          reopenBlockedReason: null,
+          quotaDistribution: {
+            scrappedQuantity: '0.0000',
+            processingQuantity: '0.0000',
+            terminatedQuantity: '0.0000',
+            pendingReviewQuantity: '1.0000',
+            pendingReworkQuantity: '0.0000',
+            doingReworkQuantity: '0.0000',
+            isReliable: true,
+            unavailableReason: null,
+            pendingDispositions: [
+              {
+                dispositionId: '1',
+                dispositionNo: 'AD-1',
+                quantity: '1.0000',
+                sourceReport: {
+                  reportId: '21',
+                  reportNo: 'R-21',
+                  productionBatchId: '1',
+                  stepRecordId: '11',
+                },
+              },
+            ],
+            pendingReworks: [],
+            doingReworks: [],
+            terminatedDispositions: [],
+            cancelledReworks: [],
+          },
+          abnormalDispositions: [
+            {
+              dispositionId: '1',
+              dispositionNo: 'AD-1',
+              productionBatchId: '1',
+              stepRecordId: '11',
+              sourceReportId: '21',
+              sourceAbnormalQuantity: '1.0000',
+              abnormalOrigin: 'current_step',
+              reviewStatus: 'pending_review',
+              dispositionType: null,
+              remark: null,
+              version: 0,
+              createdAt: '2026-10-13T09:02:00+08:00',
+              sourceReportNo: 'R-21',
+              sourceReportSourceKind: 'direct_abnormal',
+            },
+          ],
         },
         {
           stepRecordId: '12',
@@ -142,32 +230,84 @@ describe('ProductionExecutionRecordsPage', () => {
           stepCode: 'S2',
           stepName: '工序二',
           status: 'completed',
+          unit: 'pcs',
           responsibleUserName: '员工',
-          requiredNormalQuantity: '10.0000',
-          releasedNormalQuantity: '9.0000',
-          availableNormalQuantity: '0.0000',
+          upperLimitQuantity: '10.0000',
+          availableReportQuantity: '0.0000',
+          effectiveReportedQuantity: '9.0000',
+          effectiveDirectReportedQuantity: '9.0000',
+          effectiveDirectNormalQuantity: '9.0000',
+          effectiveDirectAbnormalQuantity: '0.0000',
           effectiveNormalQuantity: '9.0000',
           effectiveAbnormalQuantity: '0.0000',
-          remainingNormalQuantity: '1.0000',
-          reports: [],
+          previousStepNormalQuantity: '9.0000',
+          directReportedVsPreviousNormalDifference: '0.0000',
+          normalVsPreviousNormalDifference: '0.0000',
+          normalVsTargetDifference: '-1.0000',
+          baseNormalQuantity: '10.0000',
+          activatedSupplementInputQuantity: '0.0000',
+          activatedSupplementTargetQuantity: '0.0000',
+          pendingSupplementInputQuantity: '0.0000',
+          supplementSources: [],
+          startedAt: '2026-10-13T09:03:00+08:00',
+          completedAt: '2026-10-13T09:04:00+08:00',
+          version: 4,
+          reportCount: 1,
+          hasReportHistory: true,
+          firstReportedAt: '2026-10-13T09:04:00+08:00',
+          lastReportedAt: '2026-10-13T09:04:00+08:00',
+          canReport: false,
+          reportBlockedReason: '工序已明确完成',
+          canCorrectReport: true,
+          correctionBlockedReason: null,
+          canCreateHistoricalReport: false,
+          historicalCreateBlockedReason: null,
+          historicalCorrectionBlockedReason: null,
+          canAdminStart: false,
+          startBlockedReason: null,
+          canAdminComplete: false,
+          completeBlockedReason: null,
+          canAdminReopen: true,
+          reopenBlockedReason: null,
+          quotaDistribution: {
+            scrappedQuantity: '0.0000',
+            processingQuantity: '0.0000',
+            terminatedQuantity: '0.0000',
+            pendingReviewQuantity: '0.0000',
+            pendingReworkQuantity: '0.0000',
+            doingReworkQuantity: '0.0000',
+            isReliable: true,
+            unavailableReason: null,
+            pendingDispositions: [],
+            pendingReworks: [],
+            doingReworks: [],
+            terminatedDispositions: [],
+            cancelledReworks: [],
+          },
           abnormalDispositions: [],
         },
       ],
+      workOrderId: '2',
+      pendingApprovalId: null,
+      canBatchReverse: false,
+      batchReverseBlockedReason: null,
     });
     api.getExecutionCompletionCheck.mockResolvedValue({
       productionBatchId: '1',
       batchStatus: 'doing',
+      version: 1,
+      closeoutId: null,
+      closeoutVersion: null,
       canComplete: false,
       blockers: [],
       completedRequiredStepCount: 1,
       requiredStepCount: 2,
-      finalRequiredStepName: '工序二',
-      finalEffectiveNormalQuantity: '9.0000',
+      activeMaterialDemandCount: 0,
       plannedQuantity: '10.0000',
-      version: 1,
     });
     const wrapper = mount(ProductionExecutionRecordsPage, {
       global: {
+        plugins: testPlugins(),
         stubs: {
           TableToolbar: { template: '<div><slot name="actions"/><slot name="tools"/></div>' },
           'el-form': { template: '<form><slot/></form>' },
@@ -194,8 +334,9 @@ describe('ProductionExecutionRecordsPage', () => {
     await flushPromises();
     expect(wrapper.find('.batch-item.risk-error').exists()).toBe(true);
     expect(wrapper.find('.batch-health.risk-error').exists()).toBe(true);
-    expect(wrapper.find('.step-card.has-abnormal').exists()).toBe(true);
+    expect(wrapper.find('.step-quota-distribution').exists()).toBe(true);
+    expect(wrapper.find('.step-quota-distribution').text()).toContain('处理中');
     expect(wrapper.text()).toContain('已逾期');
-    expect(wrapper.text()).toContain('待处置异常1');
+    expect(wrapper.text()).toContain('待处置 1 项');
   });
 });

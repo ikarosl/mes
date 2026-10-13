@@ -13,7 +13,8 @@ const rework = {
   reworkQuantity: '2.0000',
   unit: '件',
   status: 'pending' as const,
-  completedReportId: null,
+  completedNormalReportId: null,
+  completedAbnormalReportId: null,
   startedAt: null,
   completedAt: null,
   version: 0,
@@ -47,8 +48,13 @@ describe('ProductionAbnormalService', () => {
 
   it('runs completion under the registered idempotency scope with a narrow context', async () => {
     const completed = {
-      rework: { ...rework, status: 'completed' as const, completedReportId: '8' },
-      report: {},
+      rework: {
+        ...rework,
+        status: 'completed' as const,
+        completedNormalReportId: '8',
+      },
+      normalReport: {},
+      abnormalReport: null,
       abnormalDisposition: null,
     };
     const repository = { completeRework: vi.fn().mockResolvedValue(completed) };
@@ -74,7 +80,7 @@ describe('ProductionAbnormalService', () => {
     );
     expect(idempotency.execute).toHaveBeenCalledWith(
       expect.objectContaining({
-        scope: 'production.rework.complete.v1',
+        scope: 'production.rework.complete.v3',
         key: 'key',
         request: expect.objectContaining({
           params: { reworkId: '5' },

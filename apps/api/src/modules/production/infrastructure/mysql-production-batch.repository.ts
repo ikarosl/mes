@@ -38,7 +38,6 @@ import {
   BATCH_SUMMARY_SELECT,
   batchAudit,
   type BatchSummaryRow,
-  type Db,
   ensureNoDuplicate,
   findBatch,
   findStepRecord,
@@ -116,11 +115,6 @@ export class MysqlProductionBatchRepository {
     const batch = await findBatch(this.pool, id);
     const state = await loadBatchCancellationState(this.pool, id, false);
     return buildBatchCancellationCheck(id, batch, state);
-  }
-
-  async listForWorkOrder(workOrderId: string): Promise<ProductionBatchItem[]> {
-    await findWorkOrder(this.pool, workOrderId);
-    return this.listForWorkOrderIn(this.pool, workOrderId);
   }
 
   async getProductId(id: string): Promise<string> {
@@ -432,13 +426,6 @@ export class MysqlProductionBatchRepository {
     });
   }
 
-  private async listForWorkOrderIn(db: Db, workOrderId: string): Promise<ProductionBatchItem[]> {
-    const [rows] = await db.query<BatchSummaryRow[]>(
-      `${BATCH_SUMMARY_SELECT} WHERE b.work_order_id=? ORDER BY b.created_at DESC,b.id DESC`,
-      [workOrderId],
-    );
-    return mapBatches(rows);
-  }
   private assertVersion(result: ResultSetHeader, message: string): void {
     if (result.affectedRows !== 1)
       throw new ProductionDomainError('CONCURRENT_MODIFICATION', message);

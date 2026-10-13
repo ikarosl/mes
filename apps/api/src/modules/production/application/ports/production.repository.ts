@@ -76,7 +76,6 @@ export abstract class ProductionRepository {
   abstract getBatchStepRecords(id: string): Promise<ProductionBatchStepRecords>;
   abstract getBatchStartRecord(id: string): Promise<ProductionBatchStartRecord | null>;
   abstract getBatchCancellationCheck(id: string): Promise<ProductionBatchCancellationCheck>;
-  abstract listWorkOrderBatches(workOrderId: string): Promise<ProductionBatchItem[]>;
   abstract withBatchCreationTransaction<T>(
     workOrderId: string,
     action: (workOrderProductId: string, orderType: ProductionBatchItem['orderType']) => Promise<T>,

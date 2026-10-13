@@ -126,8 +126,6 @@ export const INSPECTION_TYPES = ['process', 'final'] as const;
 
 export const INSPECTION_RESULTS = ['pending', 'passed', 'failed', 'conditional'] as const;
 
-export const REWORK_RESULTS = ['pending', 'passed', 'failed'] as const;
-
 export const FINISHED_FLOW_TYPES = [
   'warehouse_inbound',
   'quality_release',

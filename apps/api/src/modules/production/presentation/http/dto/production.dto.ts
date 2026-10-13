@@ -19,7 +19,7 @@ import {
 } from 'class-validator';
 import type {
   ApproveBatchStepReworkPayload,
-  ApproveScrapSupplementPayload,
+  AssignProductionStepPayload,
   CancelWorkOrderPayload,
   CompleteReworkPayload,
   CreateProductionBatchPayload,
@@ -182,7 +182,10 @@ export class UpdateBatchStepExecutionDto
   @IsOptional() @IsString() @MaxLength(20) actualSopFileId?: string | null;
 }
 
-export class AssignProductionStepDto extends VersionedCommandDto {
+export class AssignProductionStepDto
+  extends VersionedCommandDto
+  implements AssignProductionStepPayload
+{
   @IsString() @IsNotEmpty() @MaxLength(20) responsibleUserId!: string;
 }
 
@@ -245,19 +248,6 @@ export class ApproveScrapSupplementLineDto {
   @IsString() @IsNotEmpty() @MaxLength(20) requirementBasisId!: string;
   @IsString() @IsNotEmpty() @MaxLength(20) materialVariantId!: string;
   @Type(() => Number) @IsInt() @Min(1) @Max(MAX_QUANTITY) supplementQuantity!: number;
-}
-
-export class ApproveScrapSupplementDto
-  extends VersionedCommandDto
-  implements ApproveScrapSupplementPayload
-{
-  @IsArray()
-  @ArrayMinSize(1)
-  @ArrayMaxSize(200)
-  @ValidateNested({ each: true })
-  @Type(() => ApproveScrapSupplementLineDto)
-  details!: ApproveScrapSupplementLineDto[];
-  @IsOptional() @IsString() @MaxLength(5000) remark?: string | null;
 }
 
 export class SaveProductionScrapSupplementPlanDto {

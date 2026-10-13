@@ -103,26 +103,12 @@ export class ProductionSupplementService {
             'INVALID_INPUT',
             '暂存方案中的物料已不属于当前有效候选，请重新编辑后确认',
           );
-        return this.repository.approve(
-          dispositionId,
-          {
-            version: normalized.dispositionVersion,
-            details: plan.lines.map((line) => ({
-              originalDemandId: line.originalDemandId,
-              requirementBasisId: line.requirementBasisId,
-              materialVariantId: line.materialVariantId,
-              supplementQuantity: Number(line.plannedQuantity),
-            })),
-            remark: plan.remark,
-          },
-          {
-            actorId: context.actorId,
-            requestId: context.requestId,
-            ip: context.ip,
-            userAgent: context.userAgent,
-          },
-          { planId: plan.planId, version: normalized.version },
-        );
+        return this.repository.confirmPlan(dispositionId, normalized, {
+          actorId: context.actorId,
+          requestId: context.requestId,
+          ip: context.ip,
+          userAgent: context.userAgent,
+        });
       },
     });
     return execution.result;

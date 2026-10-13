@@ -16,7 +16,6 @@ import type {
   WorkOrderType,
 } from '@company/contracts';
 import { ProductionDomainError } from '../domain/production.errors.js';
-import { multiplyIntegerQuantities } from '../domain/integer-quantity.js';
 
 /**
  * 把数据库驱动错误映射为稳定的模块错误。application 层不得识别 `ER_DUP_ENTRY` 等驱动错误码，
@@ -411,17 +410,6 @@ export const stepAudit = (row: StepRow) => ({
   responsibleUserId: row.responsible_user_id === null ? null : String(row.responsible_user_id),
   version: row.version,
 });
-export const multiply = (left: string, right: string): string => {
-  try {
-    return multiplyIntegerQuantities(left, right);
-  } catch {
-    throw new ProductionDomainError(
-      'INVALID_INPUT',
-      'BOM 单位用量与批次计划量必须为整数，且需求数量不能超过 99999999',
-    );
-  }
-};
-
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 

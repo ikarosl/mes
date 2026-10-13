@@ -168,7 +168,6 @@ function summarizeLockedStep(
 export const toRouteQuantityStep = (step: ProjectionStepRow) => ({
   id: step.id,
   stepOrder: step.step_order_snapshot,
-  status: step.status,
   effectiveDirectReported: step.effective_direct_reported,
   effectiveNormal: step.effective_normal,
 });

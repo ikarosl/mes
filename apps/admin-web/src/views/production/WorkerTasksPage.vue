@@ -174,7 +174,6 @@
           :active="recordsVisible"
           @view-detail="reportTrace.open"
           @view-report="reportTrace.open"
-          @view-process="reportTrace.open"
           @correct="(report) => openAdjustment('correct', report)"
           @reverse="(report) => openAdjustment('reverse', report)"
       /></template>

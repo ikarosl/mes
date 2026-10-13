@@ -45,7 +45,6 @@ export const executeStepStateCommand = (
       stepStatus: current.status,
       hasStarted: current.started_at !== null,
       hasResponsibleUser: current.responsible_user_id !== null,
-      isFirstStep: steps[0]?.id === current.id,
       pendingApprovalId: null,
     });
     const reason = payload.reason?.trim();

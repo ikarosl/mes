@@ -37,14 +37,14 @@ describe('production execution contracts', () => {
     const payload: AssignProductionStepPayload = { responsibleUserId: '7', version: 2 };
     const task = {
       requiredNormalQuantity: '10.0000',
-      releasedNormalQuantity: '6.0000',
-      availableNormalQuantity: '2.0000',
+      upperLimitQuantity: '10.0000',
+      availableReportQuantity: '2.0000',
       effectiveNormalQuantity: '4.0000',
       canStart: false,
     } as ProductionWorkerTaskItem;
     expect(payload).toEqual({ responsibleUserId: '7', version: 2 });
     expect(task.requiredNormalQuantity).toBe('10.0000');
-    expect(task.availableNormalQuantity).toBe('2.0000');
+    expect(task.availableReportQuantity).toBe('2.0000');
   });
 
   it('models each report as a delta and correction as a replacement command', () => {
@@ -57,7 +57,6 @@ describe('production execution contracts', () => {
     const correction: CorrectBatchStepReportPayload = {
       version: 4,
       normalQuantity: 1,
-      abnormalQuantity: 0,
       reason: '录入更正',
     };
     expect(report).not.toHaveProperty('completedQuantity');
@@ -66,8 +65,8 @@ describe('production execution contracts', () => {
   });
 
   it('keeps execution completion server-derived', () => {
-    const payload: CompleteProductionExecutionPayload = { version: 5 };
-    expect(payload).toEqual({ version: 5 });
+    const payload: CompleteProductionExecutionPayload = { version: 5, closeoutVersion: null };
+    expect(payload).toEqual({ version: 5, closeoutVersion: null });
     expect(payload).not.toHaveProperty('completedQuantity');
     expect(payload).not.toHaveProperty('qualifiedQuantity');
   });
@@ -77,7 +76,8 @@ describe('production execution contracts', () => {
       reworkId: '9',
       sourceReportId: '3',
       reworkQuantity: '2.0000',
-      completedReportId: null,
+      completedNormalReportId: null,
+      completedAbnormalReportId: null,
       status: 'doing',
     } as ReworkRecordItem;
     const payload: CompleteReworkPayload = {
@@ -85,7 +85,8 @@ describe('production execution contracts', () => {
       normalQuantity: 2,
       abnormalQuantity: 0,
     };
-    expect(rework.completedReportId).toBeNull();
+    expect(rework.completedNormalReportId).toBeNull();
+    expect(rework.completedAbnormalReportId).toBeNull();
     expect(payload.normalQuantity + payload.abnormalQuantity).toBe(2);
   });
 
@@ -128,14 +129,12 @@ describe('production material contracts', () => {
 
   it('models pending purchase inbound separately from ledger-derived inventory', () => {
     const inbound: CreatePurchaseInboundPayload = {
-      inboundNo: null,
       provider: '供应商 A',
       remark: null,
       details: [
         {
           itemId: '1',
           materialVariantId: 'variant-1',
-          batchCode: 'LOT-1',
           inboundQuantity: 5,
           remark: null,
         },

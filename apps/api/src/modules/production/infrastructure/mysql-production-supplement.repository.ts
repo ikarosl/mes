@@ -5,7 +5,7 @@ import { DEMAND_GENERATION_GROUP_TYPE } from '@company/constants';
 import { withTransaction } from '@company/database';
 import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import type {
-  ApproveScrapSupplementPayload,
+  ConfirmProductionScrapSupplementPlanPayload,
   ApproveScrapSupplementResult,
   BatchStepAbnormalDispositionItem,
   BatchStepAbnormalOrigin,
@@ -318,11 +318,10 @@ export class MysqlProductionSupplementRepository extends ProductionSupplementRep
     };
   }
 
-  approve(
+  confirmPlan(
     dispositionId: string,
-    payload: ApproveScrapSupplementPayload,
+    payload: ConfirmProductionScrapSupplementPlanPayload,
     context: CommandContext,
-    planReference?: { planId: string; version: number },
   ): Promise<ApproveScrapSupplementResult> {
     return withTransaction(this.pool, async (connection) => {
       const actorId = requireActor(context);
@@ -345,7 +344,7 @@ export class MysqlProductionSupplementRepository extends ProductionSupplementRep
       const source = await selectSource(connection, dispositionId, true);
       if (source.review_status !== 'pending_review')
         throw new ProductionDomainError('INVALID_STATE', '仅待处置异常可以批准报废补料');
-      if (source.version !== payload.version)
+      if (source.version !== payload.dispositionVersion)
         throw new ProductionDomainError(
           'CONCURRENT_MODIFICATION',
           '异常处置单已变化，请刷新后重试',
@@ -356,29 +355,24 @@ export class MysqlProductionSupplementRepository extends ProductionSupplementRep
         integerQuantity(source.abnormal_quantity) <= 0
       )
         throw new ProductionDomainError('INVALID_STATE', '来源异常报工已失效或没有异常数量');
-      let effectivePayload = payload;
-      if (planReference) {
-        const plan = await selectPlan(connection, dispositionId, true);
-        if (!plan || plan.planId !== planReference.planId)
-          throw new ProductionDomainError('NOT_FOUND', '报废补料暂存方案不存在');
-        if (plan.status !== 'draft')
-          throw new ProductionDomainError('INVALID_STATE', '报废补料方案已经确认');
-        if (plan.version !== planReference.version)
-          throw new ProductionDomainError(
-            'CONCURRENT_MODIFICATION',
-            '报废补料方案已被其他人修改，请重新复核',
-          );
-        effectivePayload = {
-          version: payload.version,
-          remark: plan.remark,
-          details: plan.lines.map((line) => ({
-            originalDemandId: line.originalDemandId,
-            requirementBasisId: line.requirementBasisId,
-            materialVariantId: line.materialVariantId,
-            supplementQuantity: Number(line.plannedQuantity),
-          })),
-        };
-      }
+      const plan = await selectPlan(connection, dispositionId, true);
+      if (!plan) throw new ProductionDomainError('NOT_FOUND', '报废补料暂存方案不存在');
+      if (plan.status !== 'draft')
+        throw new ProductionDomainError('INVALID_STATE', '报废补料方案已经确认');
+      if (plan.version !== payload.version)
+        throw new ProductionDomainError(
+          'CONCURRENT_MODIFICATION',
+          '报废补料方案已被其他人修改，请重新复核',
+        );
+      const effectivePayload = {
+        remark: plan.remark,
+        details: plan.lines.map((line) => ({
+          originalDemandId: line.originalDemandId,
+          requirementBasisId: line.requirementBasisId,
+          materialVariantId: line.materialVariantId,
+          supplementQuantity: Number(line.plannedQuantity),
+        })),
+      };
       const entryStep = routeSteps[0];
       if (!entryStep) throw new ProductionDomainError('INVALID_STATE', '生产批次没有路线工序');
       const ids = effectivePayload.details.map((line) => line.originalDemandId);
@@ -401,7 +395,13 @@ export class MysqlProductionSupplementRepository extends ProductionSupplementRep
         `UPDATE batch_step_abnormal_dispositions
          SET review_status='approved',disposition_type='scrap',reviewed_by=?,reviewed_at=NOW(),remark=?,version=version+1,updated_by=?
          WHERE id=? AND review_status='pending_review' AND version=?`,
-        [actorId, effectivePayload.remark ?? null, actorId, dispositionId, payload.version],
+        [
+          actorId,
+          effectivePayload.remark ?? null,
+          actorId,
+          dispositionId,
+          payload.dispositionVersion,
+        ],
       );
       if (updated.affectedRows !== 1)
         throw new ProductionDomainError(
@@ -514,28 +514,24 @@ export class MysqlProductionSupplementRepository extends ProductionSupplementRep
           unit: original.unit,
         }),
       );
-      if (planReference) {
-        const [confirmed] = await connection.execute<ResultSetHeader>(
-          `UPDATE production_scrap_supplement_plan
-           SET status='confirmed',confirmed_supplement_id=?,version=version+1,updated_by=?
-           WHERE id=? AND status='draft' AND version=?`,
-          [supplement.insertId, actorId, planReference.planId, planReference.version],
+      const [confirmed] = await connection.execute<ResultSetHeader>(
+        `UPDATE production_scrap_supplement_plan
+         SET status='confirmed',confirmed_supplement_id=?,version=version+1,updated_by=?
+         WHERE id=? AND status='draft' AND version=?`,
+        [supplement.insertId, actorId, plan.planId, payload.version],
+      );
+      if (confirmed.affectedRows !== 1)
+        throw new ProductionDomainError(
+          'CONCURRENT_MODIFICATION',
+          '报废补料方案已被其他人修改，请重新复核',
         );
-        if (confirmed.affectedRows !== 1)
-          throw new ProductionDomainError(
-            'CONCURRENT_MODIFICATION',
-            '报废补料方案已被其他人修改，请重新复核',
-          );
-      }
       await writeTransactionalAudit(connection, {
         logType: 'business',
-        action: planReference
-          ? 'production-abnormal.confirm-scrap-supplement-plan'
-          : 'production-abnormal.approve-scrap-supplement',
+        action: 'production-abnormal.confirm-scrap-supplement-plan',
         module: 'production',
         userId: context.actorId,
-        targetType: planReference ? 'scrap_supplement_plan' : 'abnormal_disposition',
-        targetId: planReference?.planId ?? dispositionId,
+        targetType: 'scrap_supplement_plan',
+        targetId: plan.planId,
         result: 'success',
         beforeData: null,
         afterData: {

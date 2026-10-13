@@ -50,11 +50,7 @@
         min-width="160"
       >
         <template #default="{ row }"
-          ><strong
-            class="report-identifier"
-            :data-report-id="row.reportId"
-            >{{ row.reportNo }}</strong
-          ></template
+          ><strong class="report-identifier">{{ row.reportNo }}</strong></template
         >
       </el-table-column>
       <el-table-column
@@ -144,14 +140,6 @@
               @click="$emit('view-detail', reportReference(row))"
               >查看详情</el-button
             >
-            <el-button
-              v-if="reportHasProcessing(row)"
-              link
-              type="primary"
-              :disabled="loading"
-              @click="$emit('view-process', reportReference(row))"
-              >查看处理过程</el-button
-            >
           </div>
           <div
             v-if="reportReadOnlyReason(row)"
@@ -184,7 +172,6 @@ import ProductionReportRelations from './ProductionReportRelations.vue';
 import {
   reportBusinessLabel,
   reportEffectMeta,
-  reportHasProcessing,
   reportQuantityChange,
   reportReadOnlyReason,
   reportReference,
@@ -217,7 +204,6 @@ const emit = defineEmits<{
   reverse: [report: BatchStepReportView];
   'view-detail': [report: BatchStepReportReference];
   'view-report': [report: BatchStepReportReference];
-  'view-process': [report: BatchStepReportReference];
 }>();
 const reports = ref<BatchStepReportView[]>([]);
 const loading = ref(false);

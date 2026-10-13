@@ -27,7 +27,6 @@
       :active="modelValue"
       @view-detail="reportTrace.open"
       @view-report="reportTrace.open"
-      @view-process="reportTrace.open"
     />
     <template #footer>
       <el-button @click="$emit('update:modelValue', false)">返回原请求</el-button>

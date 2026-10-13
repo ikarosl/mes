@@ -381,7 +381,7 @@ const {
   handlePageChange,
 } = useWorkOrdersList();
 
-/** 页面持有的候选实例：产品（筛选 + 工单弹窗）、负责人（工单/详情/批次弹窗） */
+/** 页面持有的候选实例：产品（筛选 + 工单弹窗）、负责人（工单/详情弹窗） */
 const productSource = useProductOptions();
 const userSource = useUserOptions();
 

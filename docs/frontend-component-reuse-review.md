@@ -15,7 +15,7 @@
 | FR-03 | 两个领料制单入口的分配选择表重复 | 高 | Production 模块组件 | 值得抽离，先适配不同字段契约 |
 | FR-04 | 用户／角色页重复实现已有分页组件 | 高 | 采用现有组件 | 保留原分页事件与布局 |
 | FR-05 | 日志页独立分页，公共组件缺固定页容量模式 | 中 | 公共组件可选能力 | 不直接替换导致新增页容量操作 |
-| FR-06 | 三处生产批次摘要表重复 | 中 | Production 模块组件 | 核心列共享，业务动作留在父级 |
+| FR-06 | 两处生产批次摘要表重复 | 中 | Production 模块组件 | 核心列共享，业务动作留在父级 |
 | FR-07 | 单据分组折叠按钮结构重复 | 中 | 公共展示组件 | CSS 已复用，只收敛按钮结构与事件 |
 | FR-08 | 外购入库单／多供应商分区组操作重复 | 中 | Warehouse 模块组件 | 仅封装组选择与核对入口 |
 | FR-09 | 四个仓储页关键词／状态筛选条重复 | 低 | Warehouse 模块组件 | 可选，不扩成通用列表框架 |
@@ -60,9 +60,9 @@
 
 ### FR-06：生产批次摘要表
 
-- 证据：[BatchListDialog.vue](../apps/admin-web/src/views/production/components/BatchListDialog.vue)、[WorkOrderDetailDialog.vue](../apps/admin-web/src/views/production/components/WorkOrderDetailDialog.vue)、[WorkOrderTransitionDialog.vue](../apps/admin-web/src/views/production/components/WorkOrderTransitionDialog.vue) 重复批次号、计划量、当前批准产出和状态。
-- 建议：`views/production/components/ProductionBatchSummaryTable.vue`，接收 `ProductionBatchItem[]`，按实际差异提供 `showDates/showOwner/maxHeight`，用 `actions` 插槽承载已有编辑动作。内部继续使用 `BatchApprovedOutput`。
-- 边界：新增批次、编辑及工单关闭命令不进入该表。当前一处状态为文字、两处为标签，统一前需确认展示方式；不扩成任意列配置的表格引擎。
+- 证据：[WorkOrderDetailDialog.vue](../apps/admin-web/src/views/production/components/WorkOrderDetailDialog.vue)、[WorkOrderTransitionDialog.vue](../apps/admin-web/src/views/production/components/WorkOrderTransitionDialog.vue) 重复批次号、计划量、当前批准产出和状态。
+- 建议：`views/production/components/ProductionBatchSummaryTable.vue`，接收 `ProductionBatchItem[]`，按实际差异提供 `showOwner/maxHeight`。内部继续使用 `BatchApprovedOutput`。
+- 边界：新增批次、编辑及工单关闭命令不进入该表。当前一处状态为文字、一处为标签，统一前需确认展示方式；不扩成任意列配置的表格引擎。
 
 ### FR-07：分组折叠按钮
 

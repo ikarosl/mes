@@ -76,7 +76,6 @@ const statusFor = (code: ProductionDomainError['code']): number => {
     code === 'STEP_REPORT_QUANTITY_EXCEEDED' ||
     code === 'STEP_REPORT_ALREADY_REVERSED' ||
     code === 'STEP_REPORT_DEPENDENCY_CONFLICT' ||
-    code === 'DOWNSTREAM_QUANTITY_CONFLICT' ||
     code === 'BATCH_EXECUTION_COMPLETION_NOT_ALLOWED' ||
     code === 'NO_REQUIRED_REPORTING_STEP' ||
     code === 'REQUIRED_STEP_INCOMPLETE'

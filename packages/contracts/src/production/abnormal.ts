@@ -3,6 +3,7 @@ import type {
   ReworkStatus,
   BatchStepAbnormalReviewStatus,
   BatchStepAbnormalOrigin,
+  BatchStepAbnormalDispositionType,
 } from './statuses.js';
 import type { BatchStepReportItem } from './execution.js';
 
@@ -15,7 +16,7 @@ export interface BatchStepAbnormalDispositionItem {
   sourceAbnormalQuantity: string;
   abnormalOrigin: BatchStepAbnormalOrigin;
   reviewStatus: BatchStepAbnormalReviewStatus;
-  dispositionType: 'rework' | 'scrap' | null;
+  dispositionType: BatchStepAbnormalDispositionType | null;
   remark: string | null;
   version: number;
   createdAt: string;
@@ -50,8 +51,6 @@ export interface ReworkRecordItem {
   remark: string | null;
   createdAt: string;
 }
-
-export type StartReworkPayload = VersionedCommand;
 
 export interface CompleteReworkPayload extends VersionedCommand {
   normalQuantity: number;

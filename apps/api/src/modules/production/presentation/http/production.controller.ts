@@ -116,11 +116,6 @@ export class ProductionController {
   ) {
     return this.service.closeWorkOrder(workOrderId, body.version, body.reason ?? null, audit);
   }
-  @Get('work-orders/:workOrderId/batches')
-  @RequirePermission(PERMISSIONS.production.tasks.view)
-  workOrderBatches(@Param() { workOrderId }: WorkOrderIdParamDto) {
-    return this.service.listWorkOrderBatches(workOrderId);
-  }
   @Post('work-orders/:workOrderId/batches')
   @RequirePermission(PERMISSIONS.production.batches.create)
   @AuditInApplication()

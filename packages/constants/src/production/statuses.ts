@@ -45,11 +45,6 @@ export const BATCH_STEP_STATUS_LABELS = {
 
 export const BATCH_STEP_REPORT_TYPES = ['normal', 'reversal'] as const;
 
-export const BATCH_STEP_REPORT_TYPE_LABELS = {
-  normal: '普通报工',
-  reversal: '冲销事实',
-} as const;
-
 export const BATCH_STEP_ABNORMAL_REVIEW_STATUSES = [
   'pending_review',
   'approved',

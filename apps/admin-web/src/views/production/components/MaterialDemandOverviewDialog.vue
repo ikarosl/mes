@@ -16,6 +16,16 @@
       </div>
       <div class="toolbar-actions">
         <el-button
+          :disabled="!hasCollapsedGroups"
+          @click="expandAllGroups"
+          >全部展开</el-button
+        >
+        <el-button
+          :disabled="!hasExpandedGroups"
+          @click="collapseAllGroups"
+          >全部收起</el-button
+        >
+        <el-button
           :loading="loading"
           @click="$emit('refresh')"
           >刷新</el-button
@@ -45,17 +55,16 @@
         v-if="demandGroups.length === 0 && !loading"
         description="当前任务没有已生成需求"
       />
-      <section
+      <MaterialDemandGroupSection
         v-for="group in demandGroups"
         :key="group.generationGroupKey"
         class="demand-group"
+        :title="generationGroupTitle(group)"
+        :count="group.rows.length"
+        :summary="`本次生成 ${formatDateTimeForDisplay(group.rows[0]?.createdAt)}`"
+        :expanded="!collapsedGroupKeys.has(group.generationGroupKey)"
+        @toggle="toggleGroup(group.generationGroupKey)"
       >
-        <header class="demand-group-header">
-          <strong>{{ generationGroupTitle(group) }}</strong>
-          <span class="demand-group-time">
-            本次生成 {{ formatDateTimeForDisplay(group.rows[0]?.createdAt) }}
-          </span>
-        </header>
         <el-table
           :data="group.rows"
           row-key="demandId"
@@ -168,7 +177,7 @@
             </template>
           </el-table-column>
         </el-table>
-      </section>
+      </MaterialDemandGroupSection>
     </div>
     <template #footer><el-button @click="close">关闭</el-button></template>
   </el-dialog>
@@ -197,6 +206,7 @@
 import { computed, ref, watch } from 'vue';
 import type { ProductionBatchItem, ProductionMaterialDemandItem } from '@company/contracts';
 import DemandCorrectionDialog from './DemandCorrectionDialog.vue';
+import MaterialDemandGroupSection from './MaterialDemandGroupSection.vue';
 import ProductionDemandTraceDialog from './ProductionDemandTraceDialog.vue';
 import RelatedPurchasesDialog from '../../procurement/components/RelatedPurchasesDialog.vue';
 import { DialogWidth } from '../../../utils/dialog';
@@ -229,6 +239,28 @@ const traceVisible = ref(false);
 const relatedDemandId = ref<string | null>(null);
 const relatedVisible = ref(false);
 const demandGroups = computed(() => groupMaterialDemandRows(props.demands));
+const collapsedGroupKeys = ref(new Set<string>());
+const hasCollapsedGroups = computed(() =>
+  demandGroups.value.some((group) => collapsedGroupKeys.value.has(group.generationGroupKey)),
+);
+const hasExpandedGroups = computed(() =>
+  demandGroups.value.some((group) => !collapsedGroupKeys.value.has(group.generationGroupKey)),
+);
+const toggleGroup = (key: string): void => {
+  if (collapsedGroupKeys.value.has(key)) collapsedGroupKeys.value.delete(key);
+  else collapsedGroupKeys.value.add(key);
+};
+const expandAllGroups = (): void => collapsedGroupKeys.value.clear();
+const collapseAllGroups = (): void => {
+  for (const group of demandGroups.value) collapsedGroupKeys.value.add(group.generationGroupKey);
+};
+watch(
+  [() => props.visible, () => props.batch?.id],
+  () => {
+    collapsedGroupKeys.value = new Set();
+  },
+  { flush: 'sync' },
+);
 const generationGroupTitle = (group: MaterialDemandGroup<ProductionMaterialDemandItem>): string =>
   group.rows.some((row) => row.correction?.replacesDemandId)
     ? `更正生成 · 来源 ${group.supplementNo ?? group.label}`
@@ -310,25 +342,6 @@ defineExpose({ close });
 }
 .demand-group + .demand-group {
   margin-top: 16px;
-}
-.demand-group-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 12px;
-  padding: 10px 12px;
-  border: 1px solid var(--el-border-color-lighter);
-  background: var(--el-fill-color-light);
-  color: var(--el-text-color-primary);
-}
-.demand-group-header strong {
-  font-size: 14px;
-}
-.demand-group-time {
-  color: var(--el-text-color-regular);
-  font-size: 13px;
-  white-space: nowrap;
 }
 .demand-id {
   white-space: nowrap;

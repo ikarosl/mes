@@ -106,8 +106,6 @@ export type InspectionResult = 'pending' | 'passed' | 'failed' | 'conditional';
 
 export type ReworkStatus = 'pending' | 'doing' | 'completed' | 'cancelled';
 
-export type ReworkResult = 'pending' | 'passed' | 'failed';
-
 export type FinishedFlowType =
   'warehouse_inbound' | 'quality_release' | 'warehouse_outbound' | 'other';
 

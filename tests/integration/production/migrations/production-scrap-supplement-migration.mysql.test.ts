@@ -1,28 +1,29 @@
-import { loadWorkspaceEnv } from '../../../packages/config/src/index.js';
+import { loadWorkspaceEnv } from '../../../../packages/config/src/index.js';
 import {
   createConnection,
   type Connection,
   type RowDataPacket,
-} from '../../../apps/api/node_modules/mysql2/promise.js';
-import { readdir, readFile } from 'node:fs/promises';
+} from '../../../../apps/api/node_modules/mysql2/promise.js';
+import { readdir } from 'node:fs/promises';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import {
+  MIGRATIONS_DIR,
+  type ConnectionOptions,
+  applyMigrations,
+  upMigrations,
+  tableExists,
+  insert,
+  required,
+} from '../../fixtures/mysql-migration-fixture.js';
 
 loadWorkspaceEnv();
 const describeMysql = process.env.RUN_MYSQL_INTEGRATION === '1' ? describe : describe.skip;
-
-const MIGRATIONS_DIR = new URL('../../../packages/database/migrations/', import.meta.url);
 const SCRAP_REPLENISHMENT_PREFIXES = [
   '202608200001',
   '202608200002',
   '202608200003',
   '202608240004',
 ];
-type ConnectionOptions = {
-  host: string;
-  port: number;
-  user: string;
-  password: string;
-};
 
 /**
  * 生产报废补料方案链路的 MySQL 迁移验证：
@@ -101,37 +102,6 @@ describeMysql('Production scrap supplement migrations', () => {
     }
   });
 
-  it('rebuilds the legacy item-balance projection on down and removes it again on up', async () => {
-    const tempDb = `ssp_mig_item_balance_${Date.now()}_test`;
-    const connection = await createTempDatabase(tempDb);
-    let fixture: ItemBalanceProjectionFixture | undefined;
-    try {
-      await applyMigrations(connection, await upMigrations());
-      await expectItemBalanceProjection(connection, false);
-
-      // Leave a ledger fact in place before the down migration so its backfill
-      // is observable rather than merely proving that an empty table exists.
-      fixture = await insertItemBalanceProjectionFixture(connection);
-      await applyMigrations(connection, await downMigrationsFor(['202609080001']));
-      await expectItemBalanceProjection(connection, true);
-      const [[backfilled]] = await connection.query<
-        (RowDataPacket & { current_quantity: string | number })[]
-      >(
-        `SELECT current_quantity FROM inventory_item_balance
-         WHERE item_id=? AND stock_status='available' AND batch_status='available'`,
-        [fixture.materialId],
-      );
-      expect(Number(backfilled?.current_quantity)).toBe(7);
-
-      await deleteItemBalanceProjectionFixture(connection, fixture);
-      await applyMigrations(connection, await upMigrationsFor(['202609080001']));
-      await expectItemBalanceProjection(connection, false);
-    } finally {
-      await connection.end();
-      await dropTempDatabase(tempDb);
-    }
-  });
-
   it('upgrades an existing old-schema database with legacy data without losing anything', async () => {
     const tempDb = `ssp_mig_upgrade_${Date.now()}_test`;
     const connection = await createTempDatabase(tempDb);
@@ -163,18 +133,6 @@ describeMysql('Production scrap supplement migrations', () => {
   };
 });
 
-const applyMigrations = async (connection: Connection, names: string[]): Promise<void> => {
-  for (const name of names) {
-    const sql = await readFile(new URL(name, MIGRATIONS_DIR), 'utf8');
-    try {
-      await connection.query(sql);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      throw new Error(`migration ${name} failed: ${message}`, { cause: error });
-    }
-  }
-};
-
 const schemaIndexes = async (connection: Connection): Promise<RowDataPacket[]> => {
   const [rows] = await connection.query<RowDataPacket[]>(
     `SELECT TABLE_NAME, INDEX_NAME, NON_UNIQUE, SEQ_IN_INDEX, COLUMN_NAME, SUB_PART,
@@ -185,24 +143,6 @@ const schemaIndexes = async (connection: Connection): Promise<RowDataPacket[]> =
   return rows;
 };
 
-const upMigrations = async (): Promise<string[]> => {
-  const names = (await readdir(MIGRATIONS_DIR)).filter((name) => name.endsWith('.up.sql')).sort();
-  return names;
-};
-
-const upMigrationsFor = async (prefixes: string[]): Promise<string[]> => {
-  const names = await upMigrations();
-  return names.filter((name) => prefixes.includes(name.slice(0, 12)));
-};
-
-const downMigrationsFor = async (prefixes: string[]): Promise<string[]> => {
-  const names = (await readdir(MIGRATIONS_DIR)).filter((name) => name.endsWith('.down.sql')).sort();
-  return prefixes
-    .slice()
-    .reverse()
-    .flatMap((prefix) => names.filter((name) => name.startsWith(prefix)));
-};
-
 const upMigrationsBefore = async (prefix: string): Promise<string[]> => {
   const names = await upMigrations();
   return names.filter((name) => name.slice(0, 12) < prefix);
@@ -211,23 +151,6 @@ const upMigrationsBefore = async (prefix: string): Promise<string[]> => {
 const upMigrationsFrom = async (prefix: string): Promise<string[]> => {
   const names = await upMigrations();
   return names.filter((name) => name.slice(0, 12) >= prefix && name.slice(0, 12) < '202609040001');
-};
-
-const tableExists = async (connection: Connection, table: string): Promise<boolean> => {
-  const [[row]] = await connection.query<(RowDataPacket & { count: number })[]>(
-    `SELECT COUNT(*) count FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name=?`,
-    [table],
-  );
-  return Number(row?.count ?? 0) === 1;
-};
-
-const triggerExists = async (connection: Connection, trigger: string): Promise<boolean> => {
-  const [[row]] = await connection.query<(RowDataPacket & { count: number })[]>(
-    `SELECT COUNT(*) count FROM information_schema.triggers
-     WHERE trigger_schema=DATABASE() AND trigger_name=?`,
-    [trigger],
-  );
-  return Number(row?.count ?? 0) === 1;
 };
 
 const columnExists = async (
@@ -341,107 +264,6 @@ const expectLatestVariantSchema = async (connection: Connection): Promise<void> 
         'trg_inventory_transaction_cleanup_variant_balance','trg_item_batch_move_variant_balance')`,
   );
   expect(Number(triggerCount?.count)).toBe(6);
-};
-
-const expectItemBalanceProjection = async (
-  connection: Connection,
-  expected: boolean,
-): Promise<void> => {
-  expect(await tableExists(connection, 'inventory_item_balance')).toBe(expected);
-  for (const trigger of [
-    'trg_inventory_item_balance_reject_negative_insert',
-    'trg_inventory_item_balance_reject_negative_update',
-    'trg_item_batch_move_item_balance',
-  ]) {
-    expect(await triggerExists(connection, trigger)).toBe(expected);
-  }
-  // 080001 keeps these names for the batch-level projection; only their
-  // obsolete item-balance branch is removed.
-  expect(await triggerExists(connection, 'trg_inventory_transaction_update_balances')).toBe(true);
-  expect(await triggerExists(connection, 'trg_inventory_transaction_cleanup_balances')).toBe(true);
-};
-
-type ItemBalanceProjectionFixture = {
-  actorId: number;
-  categoryId: number;
-  materialId: number;
-  materialVariantId: number;
-  itemBatchId: number;
-  transactionId: number;
-};
-
-const insertItemBalanceProjectionFixture = async (
-  connection: Connection,
-): Promise<ItemBalanceProjectionFixture> => {
-  const token = `item-balance-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  const actorId = await insert(
-    connection,
-    'INSERT INTO users (username,password_hash,display_name) VALUES (?,?,?)',
-    [`${token}-actor`, 'migration-test-only', 'Inventory migration actor'],
-  );
-  const categoryId = await insert(
-    connection,
-    "INSERT INTO item_categories (category_code,category_name,item_kind) VALUES (?,?,'material')",
-    [`${token}-category`, 'Inventory migration material'],
-  );
-  const materialId = await insert(
-    connection,
-    `INSERT INTO materials
-       (material_code,material_name,category_id,unit,acquire_method,created_by,updated_by)
-     VALUES (?,? ,?,'kg','purchased',?,?)`,
-    [`${token}-material`, 'Inventory migration material', categoryId, actorId, actorId],
-  );
-  const materialVariantId = await insert(
-    connection,
-    `INSERT INTO material_variants
-       (material_id,major_version,minor_version,variant_code,created_by,updated_by)
-     VALUES (?,'v1','A',?,?,?)`,
-    [materialId, `${token}-v1-A`, actorId, actorId],
-  );
-  const itemBatchId = await insert(
-    connection,
-    `INSERT INTO item_batch
-       (item_id,material_variant_id,item_code_snapshot,material_variant_code_snapshot,
-        unit_snapshot,batch_code,source_type,created_by,updated_by)
-     VALUES (?,?,?,?,'kg',?,'purchased',?,?)`,
-    [
-      materialId,
-      materialVariantId,
-      `${token}-material`,
-      `${token}-v1-A`,
-      `${token}-batch`,
-      actorId,
-      actorId,
-    ],
-  );
-  const transactionId = await insert(
-    connection,
-    `INSERT INTO inventory_transaction
-       (item_id,material_variant_id,batch_id,transaction_type,quantity,unit_snapshot,
-        stock_status,reference_type,reference_detail_id,idempotency_key,created_by)
-     VALUES (?,?,?,'purchase_inbound','7.0000','kg','available','manual',0,?,?)`,
-    [materialId, materialVariantId, itemBatchId, `${token}-opening`, actorId],
-  );
-  return { actorId, categoryId, materialId, materialVariantId, itemBatchId, transactionId };
-};
-
-const deleteItemBalanceProjectionFixture = async (
-  connection: Connection,
-  fixture: ItemBalanceProjectionFixture,
-): Promise<void> => {
-  await connection.query('SET @company_inventory_test_cleanup = 1');
-  try {
-    await connection.execute('DELETE FROM inventory_transaction WHERE id=?', [
-      fixture.transactionId,
-    ]);
-  } finally {
-    await connection.query('SET @company_inventory_test_cleanup = NULL');
-  }
-  await connection.execute('DELETE FROM item_batch WHERE id=?', [fixture.itemBatchId]);
-  await connection.execute('DELETE FROM material_variants WHERE id=?', [fixture.materialVariantId]);
-  await connection.execute('DELETE FROM materials WHERE id=?', [fixture.materialId]);
-  await connection.execute('DELETE FROM item_categories WHERE id=?', [fixture.categoryId]);
-  await connection.execute('DELETE FROM users WHERE id=?', [fixture.actorId]);
 };
 
 type LegacyFixture = {
@@ -687,15 +509,4 @@ const expectLegacyDataMigrated = async (
     [fixture.batchId],
   );
   expect(Number(demandCount?.count)).toBe(1);
-};
-
-const insert = async (connection: Connection, sql: string, values: unknown[]): Promise<number> => {
-  const [result] = await connection.execute(sql, values as never);
-  return Number((result as { insertId: number }).insertId);
-};
-
-const required = (name: string): string => {
-  const value = process.env[name];
-  if (!value) throw new Error(`Missing ${name}`);
-  return value;
 };

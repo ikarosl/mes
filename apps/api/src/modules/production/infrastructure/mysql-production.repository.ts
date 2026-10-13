@@ -113,9 +113,6 @@ export class MysqlProductionRepository extends ProductionRepository {
   getBatchCancellationCheck(id: string): Promise<ProductionBatchCancellationCheck> {
     return this.batches.getCancellationCheck(id);
   }
-  listWorkOrderBatches(workOrderId: string): Promise<ProductionBatchItem[]> {
-    return this.batches.listForWorkOrder(workOrderId);
-  }
   withBatchCreationTransaction<T>(
     workOrderId: string,
     action: (workOrderProductId: string, orderType: ProductionBatchItem['orderType']) => Promise<T>,

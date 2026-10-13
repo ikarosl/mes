@@ -85,13 +85,12 @@ export async function selectBatchExecutionRecords(
     pendingApprovalId,
     canBatchReverse: batchReverseBlockedReason === null,
     batchReverseBlockedReason,
-    steps: steps.map((step, index) => {
+    steps: steps.map((step) => {
       const actions = evaluateProductionStepActionAvailability({
         batchStatus: batch.status,
         stepStatus: step.status,
         hasStarted: step.started_at !== null,
         hasResponsibleUser: step.responsible_user_id !== null,
-        isFirstStep: index === 0,
         pendingApprovalId,
       });
       if (!access.canManageExecution) {

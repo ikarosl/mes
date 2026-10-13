@@ -30,7 +30,7 @@ describe('ProductionAbnormalController', () => {
     expect(Reflect.getMetadata(METHOD_METADATA, approve)).toBe(RequestMethod.POST);
     expect(Reflect.getMetadata(IDEMPOTENT_ENDPOINT, approve)).toBeUndefined();
     expect(Reflect.getMetadata(IDEMPOTENT_ENDPOINT, complete)).toEqual({
-      scope: 'production.rework.complete.v1',
+      scope: 'production.rework.complete.v3',
     });
   });
 });

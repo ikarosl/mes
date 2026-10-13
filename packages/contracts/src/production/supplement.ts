@@ -32,11 +32,6 @@ export interface ApproveScrapSupplementLinePayload {
   supplementQuantity: number;
 }
 
-export interface ApproveScrapSupplementPayload extends VersionedCommand {
-  details: ApproveScrapSupplementLinePayload[];
-  remark?: string | null;
-}
-
 export interface ProductionScrapSupplementPlanLineItem {
   originalDemandId: string;
   requirementBasisId: string;

@@ -267,10 +267,6 @@ export const productionApi = {
       data,
     }),
 
-  /** 查询工单下的生产批次列表 */
-  listOrderBatches: (workOrderId: string) =>
-    request<ProductionBatchItem[]>({ url: `/production/work-orders/${workOrderId}/batches` }),
-
   /** 在工单下创建生产批次（幂等试点端点：键由业务意图 composable 生成并传入，本包装只转发） */
   createOrderBatch: (
     workOrderId: string,

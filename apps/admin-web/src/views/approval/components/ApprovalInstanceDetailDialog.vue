@@ -531,7 +531,7 @@ const withdraw = (): void => emit('withdraw', comment.value.trim());
   gap: 8px;
 }
 .step-card {
-  border: 1px solid #e5e7eb;
+  border: 1px solid #d0d2d2;
   border-radius: 6px;
   padding: 12px 14px;
   background: #fff;

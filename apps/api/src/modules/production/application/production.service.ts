@@ -91,10 +91,6 @@ export class ProductionService {
   getBatchCancellationCheck(id: string): Promise<ProductionBatchCancellationCheck> {
     return this.production.getBatchCancellationCheck(id);
   }
-  async listWorkOrderBatches(id: string) {
-    return this.enrichBatches(await this.production.listWorkOrderBatches(id));
-  }
-
   async createWorkOrder(payload: CreateWorkOrderPayload, audit: IdempotentCommandContext) {
     const body = this.cleanWorkOrder(payload);
     if (!body.planStartDate || !body.planEndDate)

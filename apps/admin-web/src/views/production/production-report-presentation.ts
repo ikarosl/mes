@@ -70,14 +70,6 @@ export const reportReadOnlyReason = (report: BatchStepReportView): string | null
   return !report.canCorrect && !report.canReverse ? report.correctionBlockedReason : null;
 };
 
-export const reportHasProcessing = (report: BatchStepReportView): boolean =>
-  Boolean(report.reworkOrigin) ||
-  report.dependencies.some((item) =>
-    ['abnormal_disposition', 'rework_source', 'rework_completion', 'scrap_record'].includes(
-      item.kind,
-    ),
-  );
-
 export const reportDependencyLabel = (dependency: BatchStepReportDependencyView): string => {
   if (dependency.businessNo) return dependency.businessNo;
   return dependency.kind === 'scrap_record' ? `报废事实（记录 ID ${dependency.id}）` : '关联事实';

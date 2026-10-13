@@ -162,7 +162,6 @@ function mapWorkerTask(
     stepStatus: row.step_status,
     hasStarted: row.started_at !== null,
     hasResponsibleUser: true,
-    isFirstStep: isFirst,
     pendingApprovalId,
   });
   const reporting = reportWriteEligibility(

@@ -69,7 +69,7 @@ const makePlan = (
   ...overrides,
 });
 
-const approveResult = {
+const confirmationResult = {
   disposition: {
     dispositionId: 'disp1',
     dispositionNo: 'D-1',
@@ -233,11 +233,11 @@ describe('ProductionSupplementService', () => {
     expect(repository.savePlan).not.toHaveBeenCalled();
   });
 
-  it('confirms only the server-side draft and persists its selected variant', async () => {
+  it('confirms only the saved server-side draft with both optimistic-lock versions', async () => {
     const repository = {
       getPlan: vi.fn().mockResolvedValue(makePlan()),
       getCandidateContext: vi.fn().mockResolvedValue(makeCandidateContext()),
-      approve: vi.fn().mockResolvedValue(approveResult),
+      confirmPlan: vi.fn().mockResolvedValue(confirmationResult),
     };
     const idempotency = makeIdempotency();
     const service = new ProductionSupplementService(repository as never, idempotency as never);
@@ -248,22 +248,10 @@ describe('ProductionSupplementService', () => {
       idempotentContext,
     );
 
-    expect(repository.approve).toHaveBeenCalledWith(
+    expect(repository.confirmPlan).toHaveBeenCalledWith(
       'disp1',
-      {
-        version: 2,
-        details: [
-          {
-            originalDemandId: 'd1',
-            requirementBasisId: 'basis-1',
-            materialVariantId: 'v2',
-            supplementQuantity: 1,
-          },
-        ],
-        remark: '补料',
-      },
+      { version: 3, dispositionVersion: 2 },
       expect.objectContaining({ actorId: '9' }),
-      { planId: 'p1', version: 3 },
     );
     expect(result.supplement.demands[0]).toMatchObject({
       materialVariantId: 'v2',
@@ -288,7 +276,7 @@ describe('ProductionSupplementService', () => {
       getCandidateContext: vi.fn().mockResolvedValue({
         candidates: [makeCandidate({ variants: [firstVariant] })],
       }),
-      approve: vi.fn(),
+      confirmPlan: vi.fn(),
     };
     const service = new ProductionSupplementService(
       repository as never,
@@ -298,7 +286,7 @@ describe('ProductionSupplementService', () => {
     await expect(
       service.confirmPlan('disp1', { version: 3, dispositionVersion: 2 }, idempotentContext),
     ).rejects.toMatchObject({ code: 'INVALID_INPUT' });
-    expect(repository.approve).not.toHaveBeenCalled();
+    expect(repository.confirmPlan).not.toHaveBeenCalled();
   });
 
   it('lists every frozen BOM candidate without route-step material filtering', async () => {

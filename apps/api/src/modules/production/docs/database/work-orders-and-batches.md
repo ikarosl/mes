@@ -291,12 +291,12 @@
 
 | API | 响应及读取边界 |
 | --- | --- |
-| `GET /production/batches` | 分页 `ProductionBatchItem` 摘要：任务、工单及成品身份，路线摘要，计划量及日期，负责人，生命周期时间与状态，任务及结案版本，当前批准产出；不读取工序投影、说明、取消详情或开工物料快照 |
+| `GET /production/batches` | 分页 `ProductionBatchItem` 摘要，可按 `workOrderId` 筛选工单任务：任务、工单及成品身份，路线摘要，计划量及日期，负责人，生命周期时间与状态，任务及结案版本，当前批准产出；不读取工序投影、说明、取消详情或开工物料快照 |
 | `GET /production/batches/:id` | `ProductionBatchDetail` 轻量概览：摘要加任务备注、开工人摘要、执行完成人、结案完成人、取消事实和创建／更新时间；不读取工序集合、工序资格、开工说明或物料快照 |
 | `GET /production/batches/:id/step-records` | `ProductionBatchStepRecords`：`batch` 只含 ID、任务编号、工单编号、工单类型、成品编码／名称、计划量、状态及路线编码／版本，`stepRecords` 返回全部冻结工序、数量摘要及当前派工／改派／撤回／SOP 资格；研发返回空工序数组 |
 | `GET /production/batches/:id/start-record` | 未开工返回 `null`；已开工返回 `ProductionBatchStartRecord`，含任务 ID、首次开工人 ID／当前姓名、时间、说明与已存物料快照。只读取开工时保存的事实，不用当前需求重新计算；已开工记录缺开工人、缺快照或快照结构损坏时失败 |
 
-工单下属任务、工单详情中的任务集合和执行记录页的任务摘要使用相同的 `ProductionBatchItem` 基础投影，不读取开工物料快照。工序及当前资格在同一只读一致性快照内生成，姓名通过 Identity 公开历史引用批量解析，展示资格不替代锁内命令复核。
+工单任务集合由 `GET /production/work-orders/:workOrderId` 的详情 `batches` 返回，要求 `production:orders:view`；任务页通过带 `workOrderId` 的任务分页查询读取，要求 `production:tasks:view`。详情任务集合和执行记录页的任务摘要使用相同的 `ProductionBatchItem` 基础投影，不读取开工物料快照。工序及当前资格在同一只读一致性快照内生成，姓名通过 Identity 公开历史引用批量解析，展示资格不替代锁内命令复核。
 
 任务创建、编辑及取消返回轻量 `ProductionBatchDetail`。实际 SOP 调整只返回 `ProductionStepCommandResult`，保存任务／工序身份、状态及新工序版本；调用方重新读取工序子资源核对当前快照。正常执行结束与研发结束返回生命周期确认结果，不携带工序报工数量；幂等 scope 分别为 `production.execution.complete.v2`、`production.research.complete.v3`。
 
