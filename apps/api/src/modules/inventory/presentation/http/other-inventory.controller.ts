@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, UseFilters } from '@nestjs/common';
 import { PERMISSIONS } from '@company/constants';
+import type { OtherStockMaterials } from '@company/contracts';
 import type { IdempotentCommandContext } from '../../../../common/audit/audit.types.js';
 import {
   AuditInApplication,
@@ -20,6 +21,7 @@ import {
   OtherInventoryDraftDto,
   SaveOtherInventoryDraftDto,
   OtherStockCandidateQueryDto,
+  OtherStockMaterialQueryDto,
   OtherStockObjectQueryDto,
 } from './dto/other-inventory.dto.js';
 
@@ -152,6 +154,14 @@ export class OtherStockCandidateController {
   ])
   candidates(@Query() query: OtherStockCandidateQueryDto) {
     return this.service.candidates(query);
+  }
+  @Get('other-stock-materials')
+  @RequirePermission([
+    PERMISSIONS.warehouse.otherInbounds.view,
+    PERMISSIONS.warehouse.otherOutbounds.view,
+  ])
+  materials(@Query() query: OtherStockMaterialQueryDto): Promise<OtherStockMaterials> {
+    return this.service.stockMaterials(query);
   }
   @Get('other-stock-objects')
   @RequirePermission([

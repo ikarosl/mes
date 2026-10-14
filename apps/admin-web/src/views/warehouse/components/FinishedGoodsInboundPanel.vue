@@ -461,7 +461,7 @@ async function clearSelection(): Promise<void> {
   await editorDialog.value.discardDraft();
 }
 async function restoreCurrentNavigation(rejectedId: string): Promise<void> {
-  if (route.name !== 'warehouse-inbound' || route.query.inboundId !== rejectedId) return;
+  if (route.name !== 'warehouse-inbound-finished' || route.query.inboundId !== rejectedId) return;
   await router.replace({
     query: { ...route.query, inboundId: locatedInboundId.value ?? undefined },
   });
@@ -523,7 +523,7 @@ function clearHistoryLocation(): void {
   locatedInboundId.value = null;
   locationOrigin.value = null;
   retainVisibleDetails();
-  if (oldId && route.name === 'warehouse-inbound' && route.query.inboundId === oldId)
+  if (oldId && route.name === 'warehouse-inbound-finished' && route.query.inboundId === oldId)
     void router.replace({ query: { ...route.query, inboundId: undefined } });
 }
 function onChanged(id: string): void {
@@ -532,7 +532,7 @@ function onChanged(id: string): void {
   view.value = 'history';
   locatedInboundId.value = id;
   locationOrigin.value = 'confirmed';
-  if (route.name === 'warehouse-inbound' && route.query.inboundId)
+  if (route.name === 'warehouse-inbound-finished' && route.query.inboundId)
     void router.replace({ query: { ...route.query, inboundId: undefined } });
   void loadHistory();
 }
@@ -570,7 +570,7 @@ async function locate(id: string | null | undefined): Promise<void> {
       await restoreCurrentNavigation(id);
       return;
     }
-    if (id !== props.requestedInboundId || route.name !== 'warehouse-inbound') return;
+    if (id !== props.requestedInboundId || route.name !== 'warehouse-inbound-finished') return;
     view.value = 'history';
     locatedInboundId.value = id;
     locationOrigin.value = 'route';

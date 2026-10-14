@@ -1,28 +1,18 @@
 <template>
   <div class="batch-target">
-    <el-radio-group
+    <InboundBatchModeSwitch
       :model-value="modelValue.mode"
       :disabled="disabled"
-      @change="setMode"
-    >
-      <el-radio-button
-        style="margin: 2px"
-        value="new"
-        >新建批次</el-radio-button
-      >
-      <el-radio-button
-        style="margin: 2px; box-sizing: border-box"
-        value="existing"
-        >已有批次</el-radio-button
-      >
-    </el-radio-group>
+      @update:model-value="setMode"
+    />
     <template v-if="modelValue.mode === 'new'">
-      <span
-        v-if="identity"
-        class="hint"
-        >新建 {{ identity }} 的独立库存批次</span
-      >
-      <span class="hint">新库存批号由系统在确认入库时生成。</span>
+      <InboundNewBatchSelect
+        :model-value="modelValue.clientKey"
+        :groups="newBatchGroups ?? []"
+        :disabled="disabled"
+        @update:model-value="setNewBatchKey"
+      />
+      <span class="hint">批号在确认入库时生成。</span>
     </template>
     <template v-else>
       <span
@@ -67,6 +57,10 @@
 import { computed, ref, watch } from 'vue';
 import type { InventoryInboundBatchCandidate, InventoryInboundTarget } from '@company/contracts';
 import { warehouseApi } from '../../../api/warehouse';
+import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
+import type { NewBatchGroupChoice } from '../inbound-new-batch-groups';
+import InboundBatchModeSwitch from './InboundBatchModeSwitch.vue';
+import InboundNewBatchSelect from './InboundNewBatchSelect.vue';
 
 defineOptions({ name: 'InboundBatchTargetPicker' });
 const props = defineProps<{
@@ -76,6 +70,7 @@ const props = defineProps<{
   productId?: string;
   unit: string;
   identity?: string;
+  newBatchGroups?: readonly NewBatchGroupChoice[];
   disabled?: boolean;
 }>();
 const emit = defineEmits<{ 'update:modelValue': [value: InventoryInboundTarget] }>();
@@ -90,33 +85,38 @@ const selectedBatchId = computed(() => {
 const selectedBatch = computed(() =>
   candidates.value.find((item) => item.batchId === selectedBatchId.value),
 );
-let requestNo = 0;
+const reader = useLatestReadRequest(() => (loading.value = false));
 function setMode(value: string | number | boolean | undefined) {
+  if (props.disabled || value === props.modelValue.mode) return;
   if (value === 'new') emit('update:modelValue', { mode: 'new', clientKey: crypto.randomUUID() });
-  if (value === 'existing') {
-    emit('update:modelValue', { mode: 'existing', batchId: '' });
-    void load();
-  }
+  if (value === 'existing') emit('update:modelValue', { mode: 'existing', batchId: '' });
+}
+function setNewBatchKey(clientKey: string): void {
+  if (!props.disabled && props.modelValue.mode === 'new')
+    emit('update:modelValue', { mode: 'new', clientKey });
 }
 function setBatchId(value: string) {
-  emit('update:modelValue', { mode: 'existing', batchId: value || '' });
+  if (!props.disabled) emit('update:modelValue', { mode: 'existing', batchId: value || '' });
 }
 async function load() {
-  if (props.modelValue.mode !== 'existing') return;
-  const current = ++requestNo;
+  if (props.modelValue.mode !== 'existing' || !reader.isActive()) return;
+  const current = reader.begin(() => props.modelValue.mode === 'existing');
   loading.value = true;
   error.value = '';
   try {
-    const page = await warehouseApi.listInboundBatchCandidates({
-      itemKind: props.itemKind,
-      materialVariantId: props.materialVariantId,
-      productId: props.productId,
-      unit: props.unit,
-      keyword: keyword.value.trim() || undefined,
-      page: 1,
-      pageSize: 50,
-    });
-    if (current !== requestNo) return;
+    const page = await warehouseApi.listInboundBatchCandidates(
+      {
+        itemKind: props.itemKind,
+        materialVariantId: props.materialVariantId,
+        productId: props.productId,
+        unit: props.unit,
+        keyword: keyword.value.trim() || undefined,
+        page: 1,
+        pageSize: 50,
+      },
+      current.signal,
+    );
+    if (!current.isCurrent()) return;
     candidates.value = page.items;
     const selectedId = props.modelValue.mode === 'existing' ? props.modelValue.batchId : '';
     if (selectedId && !page.items.some((item) => item.batchId === selectedId)) {
@@ -133,9 +133,9 @@ async function load() {
       ];
     }
   } catch {
-    if (current === requestNo) error.value = '批次候选加载失败，请重试';
+    if (current.isCurrent()) error.value = '批次候选加载失败，请重试';
   } finally {
-    if (current === requestNo) loading.value = false;
+    if (current.isCurrent()) loading.value = false;
   }
 }
 function search(value: string) {
@@ -145,6 +145,14 @@ function search(value: string) {
 function onVisible(visible: boolean) {
   if (visible) void load();
 }
+watch(
+  () => props.modelValue.mode,
+  (mode) => {
+    reader.invalidate();
+    error.value = '';
+    if (mode === 'existing') void load();
+  },
+);
 watch(
   () => [props.itemKind, props.materialVariantId, props.productId, props.unit],
   () => {
@@ -160,16 +168,14 @@ watch(
   gap: 6px;
   min-width: 240px;
 }
+
 .hint {
   color: var(--el-text-color-secondary);
   font-size: 12px;
 }
+
 .error {
   color: var(--el-color-danger);
-  font-size: 12px;
-}
-.hint {
-  color: var(--el-text-color-secondary);
   font-size: 12px;
 }
 </style>

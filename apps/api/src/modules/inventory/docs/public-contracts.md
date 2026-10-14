@@ -34,9 +34,11 @@
 
 其他草稿有效行 1–50 条，办理原因必填；保存按父版本变更行、移除行软删除，确认／取消冻结整单。不新增审批、质量定稿或来源履约。new 目标仅其他入库可选，保存不建 item_batch；确认才分组建批并回填 batchId，取消无空批次。客户端不能传人工内部批号或生产日期；其他出库只有已有批次。
 
-`ProductOtherStockQuery.listObjects` 提供明确物料精确版本／成品的新批次候选及已选回显，不以列表候选授予写资格。resolveReferences 在同池事务锁内核验身份：requireEnabled=true 要求对象／分类及精确版本启用且未删除，new 使用该资格；existing 用 requireEnabled=false 保留停用或删除历史身份，再核对原批次单位及 available 状态。其他用途不授予采购或生产领料资格。
+`ProductOtherStockQuery.listMaterials/listObjects` 分别提供基础物料和明确物料精确版本／成品的新批次候选及已选回显；物料先选基础身份，再按 `materialId` 服务端查询精确版本，成品直接选择独立成品身份。候选与回显资格、关键词、窗口和完整性由 [Product](../../product/docs/product-rules.md#候选历史展示与写入资格) 维护，不以列表候选授予写资格。resolveReferences 在同池事务锁内核验身份：requireEnabled=true 要求对象／分类及精确版本启用且未删除，new 使用该资格；existing 用 requireEnabled=false 保留停用或删除历史身份，再核对原批次单位及 available 状态。其他用途不授予采购或生产领料资格。
 
-`GET /warehouse/other-stock-objects` 和 `/warehouse/other-stock-candidates` 分别提供库存对象与已有库批候选，共用其他入／出库查看权限。候选未预留量仅供展示，确认必须当前读重核，不能直接使用候选数量写流水。
+`GET /warehouse/other-stock-materials` 接收 `keyword/includeIds`，返回 `OtherStockMaterials`；`GET /warehouse/other-stock-objects` 接收 `itemKind/keyword/includeIds` 及仅物料类型可用的可选 `materialId`，返回 `OtherStockObjects`。`includeIds` 分别解析基础物料 ID 与当前 `itemKind` 的精确版本／成品 ID，ID 必须是有效数据库身份，最多 100 项。两个端点沿库存用途提供当前启用候选，无需采购或主数据管理权限。`GET /warehouse/other-stock-candidates` 提供已有库批候选，沿历史身份显示物料／精确版本或成品。
+
+三个候选入口供其他入库／出库页面使用，统一按 `warehouse:other-inbounds:view` 与 `warehouse:other-outbounds:view` 的 any-of 并集授权。候选未预留量仅供展示，确认必须当前读重核，不能直接使用候选数量写流水。
 
 ## 当前预留协作
 

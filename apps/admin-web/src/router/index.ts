@@ -45,6 +45,9 @@ import StockChecksPage from '../views/warehouse/StockChecksPage.vue';
 import WarehouseInventoryPage from '../views/warehouse/WarehouseInventoryPage.vue';
 import OtherInboundsPage from '../views/warehouse/OtherInboundsPage.vue';
 import OtherOutboundsPage from '../views/warehouse/OtherOutboundsPage.vue';
+import PurchaseInboundPanel from '../views/warehouse/components/PurchaseInboundPanel.vue';
+import FinishedGoodsInboundPanel from '../views/warehouse/components/FinishedGoodsInboundPanel.vue';
+import ProductionOutboundPanel from '../views/warehouse/components/ProductionOutboundPanel.vue';
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -52,6 +55,8 @@ declare module 'vue-router' {
     title?: string;
     permission?: string | readonly string[];
     tab?: boolean;
+    tabName?: string;
+    menuPath?: string;
     keepAliveName?: string;
   }
 }
@@ -282,22 +287,76 @@ export const router = createRouter({
           PERMISSIONS.production.inventory.view,
           'WarehouseInventoryPage',
         ),
-        page(
-          'warehouse/inbound-orders',
-          'warehouse-inbound',
-          '入库管理',
-          InboundOrdersPage,
-          PERMISSIONS.warehouse.inbound.view,
-          'InboundOrdersPage',
-        ),
-        page(
-          'warehouse/outbound-orders',
-          'warehouse-outbound',
-          '出库管理',
-          OutboundOrdersPage,
-          PERMISSIONS.production.materials.view,
-          'OutboundOrdersPage',
-        ),
+        {
+          path: 'warehouse/inbound-orders',
+          component: InboundOrdersPage,
+          meta: {
+            title: '入库管理',
+            tab: true,
+            tabName: 'warehouse-inbound',
+            menuPath: '/warehouse/inbound-orders',
+            keepAliveName: 'InboundOrdersPage',
+          },
+          children: [
+            {
+              path: '',
+              name: 'warehouse-inbound',
+              component: PurchaseInboundPanel,
+              props: (route) => ({
+                active: true,
+                requestedInboundId:
+                  typeof route.query.inboundId === 'string' ? route.query.inboundId : null,
+                requestedReceiptLineId:
+                  typeof route.query.receiptLineId === 'string' ? route.query.receiptLineId : null,
+              }),
+              meta: { permission: PERMISSIONS.warehouse.inbound.view },
+            },
+            {
+              path: 'finished',
+              name: 'warehouse-inbound-finished',
+              component: FinishedGoodsInboundPanel,
+              props: (route) => ({
+                active: true,
+                requestedInboundId:
+                  typeof route.query.inboundId === 'string' ? route.query.inboundId : null,
+              }),
+              meta: { permission: PERMISSIONS.warehouse.inbound.view },
+            },
+            {
+              path: 'other',
+              alias: '/warehouse/other-inbounds',
+              name: 'warehouse-other-inbounds',
+              component: OtherInboundsPage,
+              meta: { permission: PERMISSIONS.warehouse.otherInbounds.view },
+            },
+          ],
+        },
+        {
+          path: 'warehouse/outbound-orders',
+          component: OutboundOrdersPage,
+          meta: {
+            title: '出库管理',
+            tab: true,
+            tabName: 'warehouse-outbound',
+            menuPath: '/warehouse/outbound-orders',
+            keepAliveName: 'OutboundOrdersPage',
+          },
+          children: [
+            {
+              path: '',
+              name: 'warehouse-outbound',
+              component: ProductionOutboundPanel,
+              meta: { permission: PERMISSIONS.production.materials.view },
+            },
+            {
+              path: 'other',
+              alias: '/warehouse/other-outbounds',
+              name: 'warehouse-other-outbounds',
+              component: OtherOutboundsPage,
+              meta: { permission: PERMISSIONS.warehouse.otherOutbounds.view },
+            },
+          ],
+        },
         page(
           'warehouse/return-orders',
           'warehouse-returns',
@@ -305,22 +364,6 @@ export const router = createRouter({
           ReturnOrdersPage,
           PERMISSIONS.warehouse.returns.view,
           'ReturnOrdersPage',
-        ),
-        page(
-          'warehouse/other-inbounds',
-          'warehouse-other-inbounds',
-          '其他入库',
-          OtherInboundsPage,
-          PERMISSIONS.warehouse.otherInbounds.view,
-          'OtherInboundsPage',
-        ),
-        page(
-          'warehouse/other-outbounds',
-          'warehouse-other-outbounds',
-          '其他出库',
-          OtherOutboundsPage,
-          PERMISSIONS.warehouse.otherOutbounds.view,
-          'OtherOutboundsPage',
         ),
         page(
           'warehouse/scraps',
@@ -363,8 +406,33 @@ router.beforeEach(async (to) => {
       return { name: 'login', query: { redirect: to.fullPath } };
     }
   }
-  if (!auth.can(to.meta.permission)) return { name: 'no-permission' };
+  // 旧入库链接仍按真实来源定位；分类各自保留查看权限。
+  if (
+    to.name === 'warehouse-inbound' &&
+    typeof to.query.inboundId === 'string' &&
+    to.query.inboundId &&
+    to.query.sourceType !== 'purchased'
+  )
+    return { name: 'warehouse-inbound-finished', query: to.query, hash: to.hash, replace: true };
+
+  // 通用菜单地址允许最小查看角色进入自己可见的分类，不扩大原分类准入。
+  if (!auth.can(to.meta.permission)) {
+    if (
+      to.name === 'warehouse-inbound' &&
+      !to.query.inboundId &&
+      !to.query.receiptLineId &&
+      auth.can(PERMISSIONS.warehouse.otherInbounds.view)
+    )
+      return { name: 'warehouse-other-inbounds', query: to.query, hash: to.hash, replace: true };
+    if (
+      to.name === 'warehouse-outbound' &&
+      !to.query.outboundId &&
+      auth.can(PERMISSIONS.warehouse.otherOutbounds.view)
+    )
+      return { name: 'warehouse-other-outbounds', query: to.query, hash: to.hash, replace: true };
+    return { name: 'no-permission' };
+  }
   return true;
 });
 
-router.afterEach((to) => useTabsStore().visit(to));
+router.afterEach((to) => useTabsStore().visit(to, router));

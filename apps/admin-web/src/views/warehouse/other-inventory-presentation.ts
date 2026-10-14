@@ -3,9 +3,10 @@ import type {
   OtherInventoryLine,
   OtherInventoryOrder,
   OtherInventoryStatus,
-  OtherStockObject,
+  OtherStockMaterial,
 } from '@company/contracts';
 import { OTHER_INVENTORY_ORDER_STATUSES } from '@company/constants';
+import type { OtherInventoryDraftLine } from './other-inventory-draft';
 
 export const otherInventoryPendingStatus = (
   direction: OtherInventoryDirection,
@@ -57,5 +58,21 @@ export const otherInventoryNewBatchGroupLabel = (
   ];
   return `本单新批次组 ${keys.indexOf(line.newBatchKey) + 1}`;
 };
-export const otherStockObjectLabel = (object: OtherStockObject): string =>
-  `${object.code} · ${object.name}${object.materialVariantCode ? ` · 版本 ${object.materialVariantCode}` : ''} · ${object.unit}`;
+export const otherStockMaterialLabel = (material: OtherStockMaterial): string =>
+  `${material.code} · ${material.name} · ${material.unit}`;
+
+export const otherInventoryDraftBatchSummary = (
+  current: OtherInventoryDraftLine,
+  lines: OtherInventoryDraftLine[],
+): string => {
+  if (current.target.mode !== 'new') return current.batch?.batchCode ?? '尚未选择库存批次';
+  const clientKey = current.target.clientKey;
+  const matchingRows = lines.flatMap((line, index) =>
+    line.target.mode === 'new' && line.target.clientKey === clientKey ? [index + 1] : [],
+  );
+  if (matchingRows.length < 2) return '独立新建，确认时生成批号';
+  const firstRow = matchingRows[0];
+  return lines[firstRow - 1]?.key === current.key
+    ? `新建批次，${matchingRows.length} 行共用`
+    : `共用第 ${firstRow} 行的新批次（${matchingRows.length} 行）`;
+};

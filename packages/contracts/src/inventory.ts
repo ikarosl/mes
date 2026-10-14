@@ -89,8 +89,23 @@ export interface OtherStockCandidate {
 }
 export interface OtherStockObjectQuery {
   itemKind: OtherInventoryItemKind;
+  materialId?: string;
   keyword?: string;
   includeIds?: string[];
+}
+export interface OtherStockMaterialQuery {
+  keyword?: string;
+  includeIds?: string[];
+}
+export interface OtherStockMaterial {
+  id: string;
+  code: string;
+  name: string;
+  unit: string;
+}
+export interface OtherStockMaterials {
+  items: OtherStockMaterial[];
+  hasMore: boolean;
 }
 export interface OtherStockObject {
   id: string;

@@ -38,7 +38,8 @@
         label="成品 / 入库来源"
         min-width="210"
         ><template #default="{ row }"
-          ><div>{{ row.source.productCode }} · {{ row.source.productName }}</div>
+          ><div class="muted">本次第 {{ targetRowNumbers.get(row.rowKey) }} 行</div>
+          <div>{{ row.source.productCode }} · {{ row.source.productName }}</div>
           <div class="muted">
             {{
               FINISHED_GOODS_INBOUND_SOURCE_LABELS[
@@ -109,6 +110,7 @@
             :product-id="row.source.productId"
             :unit="row.source.unit"
             :identity="`${row.source.productCode} / ${row.source.productName} / ${row.source.unit}`"
+            :new-batch-groups="newBatchChoices(row.source)"
             :disabled="locked" /></template
       ></el-table-column>
       <el-table-column
@@ -185,6 +187,11 @@ import { EMessage } from '../../../utils/message';
 import { DialogWidth } from '../../../utils/dialog';
 import { formatQuantity } from '../../production/production-status';
 import { parseInboundQuantity } from '../inbound-quantity';
+import {
+  buildInboundNewBatchGroups,
+  inboundBatchIdentityKey,
+  type InboundNewBatchGroup,
+} from '../inbound-new-batch-groups';
 import type { FinishedInboundSelection } from '../finished-inbound-selection';
 import InboundBatchTargetPicker from './InboundBatchTargetPicker.vue';
 import InboundSplitControl from './InboundSplitControl.vue';
@@ -205,6 +212,22 @@ const command = useProcurementCommand<FinishedGoodsInboundCommandResult>((result
   emit('changed', result.inboundId);
 }, '成品入库');
 const locked = computed(() => command.locked.value || checking.value);
+const batchIdentity = (source: FinishedGoodsInboundCandidate): string =>
+  inboundBatchIdentityKey({
+    itemKind: 'finished_product',
+    productId: source.productId,
+    unit: source.unit,
+  });
+const newBatchGroups = computed(() =>
+  buildInboundNewBatchGroups(selected.value, (row) => batchIdentity(row.source)),
+);
+const newBatchChoices = (source: FinishedGoodsInboundCandidate): InboundNewBatchGroup[] =>
+  newBatchGroups.value.filter(
+    (group) => !group.hasConflictingIdentity && group.identityKey === batchIdentity(source),
+  );
+const targetRowNumbers = computed(
+  () => new Map(selected.value.map((row, index) => [row.rowKey, index + 1])),
+);
 const groupSummaries = computed(() => {
   const groups = new Map<
     string,
@@ -242,6 +265,11 @@ const quantitySummaries = computed(() => {
 });
 const quantityErrors = computed(() => {
   const errors = new Map<string, string>();
+  const conflictingKeys = new Set(
+    newBatchGroups.value
+      .filter((group) => group.hasConflictingIdentity)
+      .map((group) => group.value),
+  );
   for (const row of selected.value) {
     if (parseInboundQuantity(row.quantity) === null)
       errors.set(row.rowKey, '请输入 1～99999999 的正整数');
@@ -249,6 +277,8 @@ const quantityErrors = computed(() => {
       errors.set(row.rowKey, '请选择已有批次');
     else if (row.target.mode === 'new' && !row.target.clientKey)
       errors.set(row.rowKey, '新建批次目标无效，请重新选择');
+    else if (row.target.mode === 'new' && conflictingKeys.has(row.target.clientKey))
+      errors.set(row.rowKey, '共用新批次须为同一成品及单位，请重新选择目标');
   }
   for (const group of groupSummaries.value) {
     if (group.total > group.allowance) {

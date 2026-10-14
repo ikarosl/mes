@@ -1,6 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { MATERIAL_OPTIONS_WINDOW_SIZE } from '@company/constants';
 import type {
+  OtherStockMaterialQuery,
+  OtherStockMaterials,
   OtherStockObject,
   OtherStockObjectQuery,
   OtherStockObjects,
@@ -23,6 +25,12 @@ type ObjectRow = RowDataPacket & {
   code: string;
   name: string;
   material_variant_code: string | null;
+  unit: string;
+};
+type MaterialRow = RowDataPacket & {
+  id: string;
+  code: string;
+  name: string;
   unit: string;
 };
 type ParentRow = RowDataPacket & {
@@ -79,6 +87,48 @@ export class MysqlProductOtherStockQuery extends ProductOtherStockQuery {
     super();
   }
 
+  async listMaterials(query: OtherStockMaterialQuery): Promise<OtherStockMaterials> {
+    const includeIds = [...new Set(query.includeIds ?? [])];
+    if (includeIds.length > 100 || includeIds.some((id) => !validId(id))) {
+      throw new ProductDomainError('INVALID_INPUT', '回显物料 ID 无效，最多回显 100 项');
+    }
+    const base = `SELECT CAST(m.id AS CHAR) id,m.material_code code,m.material_name name,m.unit
+        FROM materials m JOIN item_categories c ON c.id=m.category_id
+       WHERE m.status=1 AND m.is_deleted=0
+         AND c.status=1 AND c.is_deleted=0 AND c.item_kind='material'
+         AND EXISTS (SELECT 1 FROM material_variants v
+                      WHERE v.material_id=m.id AND v.status=1 AND v.is_deleted=0)`;
+    const keyword = query.keyword?.trim();
+    const keywordFilter = keyword ? ' AND (m.material_code LIKE ? OR m.material_name LIKE ?)' : '';
+    const keywordParameters = keyword ? [`%${keyword}%`, `%${keyword}%`] : [];
+    return withActiveConnection(this.pool, async (db) => {
+      const [window] = await db.query<MaterialRow[]>(
+        `${base}${keywordFilter} ORDER BY m.material_code,m.id LIMIT ?`,
+        [...keywordParameters, MATERIAL_OPTIONS_WINDOW_SIZE + 1],
+      );
+      const selected = includeIds.length
+        ? (
+            await db.query<MaterialRow[]>(
+              `${base} AND m.id IN (${includeIds.map(() => '?').join(',')}) ORDER BY m.material_code,m.id`,
+              includeIds,
+            )
+          )[0]
+        : [];
+      const rows = new Map(
+        [...window.slice(0, MATERIAL_OPTIONS_WINDOW_SIZE), ...selected].map((row) => [row.id, row]),
+      );
+      return {
+        items: [...rows.values()].map((row) => ({
+          id: row.id,
+          code: row.code,
+          name: row.name,
+          unit: row.unit,
+        })),
+        hasMore: window.length > MATERIAL_OPTIONS_WINDOW_SIZE,
+      };
+    });
+  }
+
   async listObjects(query: OtherStockObjectQuery): Promise<OtherStockObjects> {
     const includeIds = [...new Set(query.includeIds ?? [])];
     if (
@@ -89,6 +139,9 @@ export class MysqlProductOtherStockQuery extends ProductOtherStockQuery {
       throw new ProductDomainError('INVALID_INPUT', '库存对象类型或回显 ID 无效，最多回显 100 项');
     }
     const material = query.itemKind === 'material';
+    if (query.materialId !== undefined && (!material || !validId(query.materialId))) {
+      throw new ProductDomainError('INVALID_INPUT', '基础物料筛选仅允许物料类型且 ID 必须有效');
+    }
     const base = material
       ? `SELECT CAST(v.id AS CHAR) id,CAST(m.id AS CHAR) item_id,
                 CAST(v.id AS CHAR) material_variant_id,NULL product_id,
@@ -110,17 +163,19 @@ export class MysqlProductOtherStockQuery extends ProductOtherStockQuery {
         : ' AND (p.item_code LIKE ? OR p.product_name LIKE ?)'
       : '';
     const keywordParameters = keyword ? Array<string>(material ? 3 : 2).fill(`%${keyword}%`) : [];
+    const materialFilter = query.materialId !== undefined ? ' AND m.id=?' : '';
+    const materialParameters = query.materialId !== undefined ? [query.materialId] : [];
     const orderBy = material ? 'm.material_code,v.variant_code,v.id' : 'p.item_code,p.id';
     return withActiveConnection(this.pool, async (db) => {
       const [window] = await db.query<ObjectRow[]>(
-        `${base}${keywordFilter} ORDER BY ${orderBy} LIMIT ?`,
-        [...keywordParameters, MATERIAL_OPTIONS_WINDOW_SIZE + 1],
+        `${base}${materialFilter}${keywordFilter} ORDER BY ${orderBy} LIMIT ?`,
+        [...materialParameters, ...keywordParameters, MATERIAL_OPTIONS_WINDOW_SIZE + 1],
       );
       const selected = includeIds.length
         ? (
             await db.query<ObjectRow[]>(
-              `${base} AND ${material ? 'v' : 'p'}.id IN (${includeIds.map(() => '?').join(',')}) ORDER BY ${orderBy}`,
-              includeIds,
+              `${base}${materialFilter} AND ${material ? 'v' : 'p'}.id IN (${includeIds.map(() => '?').join(',')}) ORDER BY ${orderBy}`,
+              [...materialParameters, ...includeIds],
             )
           )[0]
         : [];

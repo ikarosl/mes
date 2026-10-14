@@ -5,7 +5,10 @@ import type {
   OtherInventoryOrder,
   OtherInventoryOrderQuery,
   OtherStockCandidateQuery,
+  OtherStockMaterialQuery,
+  OtherStockMaterials,
   OtherStockObjectQuery,
+  OtherStockObjects,
   SaveOtherInventoryDraftPayload,
 } from '@company/contracts';
 import type { IdempotentCommandContext } from '../../../common/audit/audit.types.js';
@@ -35,7 +38,10 @@ export class OtherInventoryService {
   candidates(query: OtherStockCandidateQuery) {
     return this.repository.candidates(query);
   }
-  stockObjects(query: OtherStockObjectQuery) {
+  stockMaterials(query: OtherStockMaterialQuery): Promise<OtherStockMaterials> {
+    return this.objects.listMaterials(query);
+  }
+  stockObjects(query: OtherStockObjectQuery): Promise<OtherStockObjects> {
     return this.objects.listObjects(query);
   }
   create(

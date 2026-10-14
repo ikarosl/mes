@@ -3,6 +3,7 @@ import type {
   OtherInventoryItemKind,
   OtherInventoryLine,
   OtherStockCandidate,
+  OtherStockMaterial,
   OtherStockObject,
 } from '@company/contracts';
 
@@ -11,12 +12,19 @@ export interface OtherInventoryDraftLine {
   id?: string;
   lineNo?: number;
   itemKind: OtherInventoryItemKind;
+  material: OtherStockMaterial | null;
+  materialVerified: boolean;
   object: OtherStockObject | null;
   objectVerified: boolean;
   batch: OtherStockCandidate | null;
   target: InventoryInboundTarget;
   quantity: number | undefined;
   remark: string;
+}
+
+export interface OtherInventoryDraftLineUpdate {
+  key: string;
+  patch: Partial<Omit<OtherInventoryDraftLine, 'key'>>;
 }
 
 export const newOtherInventoryBatchKey = (): string => `draft-${crypto.randomUUID()}`;
@@ -26,6 +34,8 @@ export const newOtherInventoryDraftLine = (isInbound: boolean): OtherInventoryDr
   return {
     key,
     itemKind: 'material',
+    material: null,
+    materialVerified: false,
     object: null,
     objectVerified: false,
     batch: null,
@@ -42,6 +52,11 @@ export const otherInventoryDraftLineFromDetail = (
   id: line.id,
   lineNo: line.lineNo,
   itemKind: line.itemKind,
+  material:
+    line.itemKind === 'material' && line.itemId
+      ? { id: line.itemId, code: line.itemCode, name: line.itemName, unit: line.unit }
+      : null,
+  materialVerified: false,
   object: {
     id: line.materialVariantId ?? line.productId ?? '',
     itemKind: line.itemKind,
@@ -81,3 +96,20 @@ export const otherInventoryDraftLineFromDetail = (
 
 export const otherInventoryDraftIdentity = (line: OtherInventoryDraftLine): string =>
   `${line.itemKind}:${line.object?.id ?? ''}:${line.object?.unit ?? ''}`;
+
+export const otherInventoryDraftMatchesBatch = (line: OtherInventoryDraftLine): boolean => {
+  const { object, batch, target } = line;
+  return Boolean(
+    target.mode === 'existing' &&
+    object &&
+    batch &&
+    target.batchId === batch.batchId &&
+    line.itemKind === batch.itemKind &&
+    object.itemKind === batch.itemKind &&
+    object.id === (batch.materialVariantId ?? batch.productId) &&
+    object.itemId === batch.itemId &&
+    object.materialVariantId === batch.materialVariantId &&
+    object.productId === batch.productId &&
+    object.unit === batch.unit,
+  );
+};

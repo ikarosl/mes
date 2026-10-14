@@ -5,6 +5,8 @@ import type {
   OtherInventoryOrderQuery,
   OtherStockCandidate,
   OtherStockCandidateQuery,
+  OtherStockMaterialQuery,
+  OtherStockMaterials,
   OtherStockObjectQuery,
   OtherStockObjects,
   PageResult,
@@ -103,6 +105,13 @@ export const otherInventoryApi = {
   stockObjects: (params: OtherStockObjectQuery, signal?: AbortSignal) =>
     request<OtherStockObjects>({
       url: '/warehouse/other-stock-objects',
+      params,
+      signal,
+      skipErrorHandling: true,
+    }),
+  stockMaterials: (params: OtherStockMaterialQuery, signal?: AbortSignal) =>
+    request<OtherStockMaterials>({
+      url: '/warehouse/other-stock-materials',
       params,
       signal,
       skipErrorHandling: true,

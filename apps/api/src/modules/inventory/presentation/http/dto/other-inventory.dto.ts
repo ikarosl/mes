@@ -14,8 +14,10 @@ import {
   Max,
   MaxLength,
   Min,
+  ValidateBy,
   ValidateIf,
   ValidateNested,
+  type ValidationArguments,
 } from 'class-validator';
 import {
   OTHER_INVENTORY_DIRECTIONS,
@@ -28,10 +30,17 @@ import type {
   OtherInventoryLinePayload,
   OtherInventoryOrderQuery,
   OtherStockCandidateQuery,
+  OtherStockMaterialQuery,
   OtherStockObjectQuery,
   SaveOtherInventoryDraftPayload,
 } from '@company/contracts';
 import { PageQueryDto } from '../../../../../presentation/http/dto/page-query.dto.js';
+
+const isStockCandidateId = (value: unknown): boolean =>
+  typeof value === 'string' &&
+  /^[1-9]\d{0,19}$/.test(value) &&
+  BigInt(value) <= 18_446_744_073_709_551_615n;
+
 export class OtherInventoryIdParamDto {
   @IsString() @Matches(/^[1-9]\d{0,19}$/) orderId!: string;
 }
@@ -91,8 +100,7 @@ export class OtherStockCandidateQueryDto extends PageQueryDto implements OtherSt
   @IsOptional() @Matches(/^[1-9]\d{0,19}$/) productId?: string;
   @IsOptional() @IsString() @MaxLength(100) keyword?: string;
 }
-export class OtherStockObjectQueryDto implements OtherStockObjectQuery {
-  @IsIn(['material', 'finished_product']) itemKind!: OtherStockObjectQuery['itemKind'];
+export class OtherStockMaterialQueryDto implements OtherStockMaterialQuery {
   @IsOptional() @IsString() @MaxLength(100) keyword?: string;
   @IsOptional()
   @Transform(({ value }: { value: unknown }) =>
@@ -100,6 +108,33 @@ export class OtherStockObjectQueryDto implements OtherStockObjectQuery {
   )
   @IsArray()
   @ArrayMaxSize(100)
-  @Matches(/^[1-9]\d{0,19}$/, { each: true })
+  @ValidateBy(
+    {
+      name: 'isStockCandidateId',
+      validator: {
+        validate: isStockCandidateId,
+        defaultMessage: () => '回显 ID 必须是有效的数据库 ID',
+      },
+    },
+    { each: true },
+  )
   includeIds?: string[];
+}
+export class OtherStockObjectQueryDto
+  extends OtherStockMaterialQueryDto
+  implements OtherStockObjectQuery
+{
+  @IsIn(['material', 'finished_product']) itemKind!: OtherStockObjectQuery['itemKind'];
+  @ValidateIf((_query, value: unknown) => value !== undefined)
+  @ValidateBy({
+    name: 'isOtherStockMaterialFilter',
+    validator: {
+      validate: (value: unknown, args?: ValidationArguments): boolean =>
+        isStockCandidateId(value) &&
+        args?.object instanceof OtherStockObjectQueryDto &&
+        args.object.itemKind === 'material',
+      defaultMessage: () => '基础物料筛选仅允许物料类型且 ID 必须有效',
+    },
+  })
+  materialId?: string;
 }

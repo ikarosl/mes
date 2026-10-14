@@ -3,7 +3,10 @@
     :model-value="editor.visible.value"
     :title="dialogTitle"
     :width="DialogWidth.workbench"
+    workbench
     :close-on-click-modal="false"
+    :close-on-press-escape="!editor.submitting.value"
+    :show-close="!editor.submitting.value"
     :before-close="editor.beforeClose"
     @update:model-value="handleVisible"
   >
@@ -11,14 +14,7 @@
       v-loading="editor.loading.value"
       class="order-dialog"
     >
-      <InlineHint>
-        {{
-          direction === 'inbound'
-            ? '保存草稿不增加库存，确认时才生成新批次及正库存流水。'
-            : '保存草稿不占用库存，确认时按可用库存扣除生产预留后核对并整单出库。'
-        }}
-        每单保留 1–50 条有效明细，确认或取消后不可编辑。
-      </InlineHint>
+      <InlineHint> 草稿不影响库存；确认后整单生效且不可修改。 </InlineHint>
       <el-alert
         v-if="editor.intentStatus.value !== 'idle'"
         type="warning"
@@ -123,17 +119,16 @@
               :rows="2"
               maxlength="5000"
               show-word-limit
-              placeholder="说明本次其他入出库原因"
+              :placeholder="`说明本次其他${direction === 'inbound' ? '入库' : '出库'}原因`"
             />
           </el-form-item>
-          <el-form-item label="单据备注">
+          <el-form-item label="单据备注（可选）">
             <el-input
               v-model="editor.form.remark"
               type="textarea"
               :rows="2"
               maxlength="5000"
-              show-word-limit
-              placeholder="人工补差时可注明原单号"
+              placeholder="补充说明或关联原单号"
             />
           </el-form-item>
         </div>
@@ -142,28 +137,23 @@
           <el-button
             type="primary"
             plain
-            :disabled="editor.controlsLocked.value || editor.lines.value.length >= 50"
+            :disabled="
+              editor.controlsLocked.value ||
+              !editor.readReady.value ||
+              editor.lines.value.length >= 50
+            "
             @click="editor.addLine"
           >
             添加明细
           </el-button>
         </div>
-        <div class="draft-lines">
-          <OtherStockDraftLine
-            v-for="line in editor.lines.value"
-            :key="line.key"
-            :line="line"
-            :direction="direction"
-            :disabled="editor.controlsLocked.value || !editor.readReady.value"
-            :new-batch-groups="newBatchGroups(line)"
-            @update-line="updateLine"
-            @remove="editor.removeLine"
-          />
-          <el-empty
-            v-if="!editor.lines.value.length"
-            description="请添加至少一条有效明细后保存"
-          />
-        </div>
+        <OtherStockDraftTable
+          :lines="editor.lines.value"
+          :direction="direction"
+          :disabled="editor.controlsLocked.value || !editor.readReady.value"
+          @update-line="updateLine"
+          @remove="editor.removeLine"
+        />
         <p
           v-if="editor.validationMessage.value"
           class="validation-note"
@@ -351,10 +341,7 @@ import InlineHint from '../../../components/InlineHint.vue';
 import { DialogWidth } from '../../../utils/dialog';
 import { formatDateTimeForDisplay } from '../../../utils/date';
 import type { useOtherInventoryOrderEditor } from '../composables/useOtherInventoryOrderEditor';
-import {
-  otherInventoryDraftIdentity,
-  type OtherInventoryDraftLine,
-} from '../other-inventory-draft';
+import type { OtherInventoryDraftLineUpdate } from '../other-inventory-draft';
 import {
   activeOtherInventoryLines,
   otherInventoryNewBatchGroupLabel,
@@ -362,7 +349,7 @@ import {
   otherInventoryQuantitySummary,
   otherInventoryStatusTag,
 } from '../other-inventory-presentation';
-import OtherStockDraftLine from './OtherStockDraftLine.vue';
+import OtherStockDraftTable from './OtherStockDraftTable.vue';
 
 defineOptions({ name: 'OtherInventoryOrderDialog' });
 const props = defineProps<{
@@ -383,30 +370,10 @@ const dialogTitle = computed(() => {
             : '';
   return `${prefix}${OTHER_INVENTORY_DIRECTION_LABELS[props.direction]}单${editor.mode.value === 'detail' ? '详情' : ''}`;
 });
-function updateLine(value: OtherInventoryDraftLine): void {
-  editor.lines.value = editor.lines.value.map((line) => (line.key === value.key ? value : line));
-}
-function newBatchGroups(current: OtherInventoryDraftLine): { value: string; label: string }[] {
-  const allKeys = [
-    ...new Set(
-      editor.lines.value.flatMap((line) =>
-        line.target.mode === 'new' ? [line.target.clientKey] : [],
-      ),
-    ),
-  ];
-  const identity = otherInventoryDraftIdentity(current);
-  const matching = editor.lines.value.filter(
-    (line) => line.target.mode === 'new' && otherInventoryDraftIdentity(line) === identity,
+function updateLine(value: OtherInventoryDraftLineUpdate): void {
+  editor.lines.value = editor.lines.value.map((line) =>
+    line.key === value.key ? { ...line, ...value.patch } : line,
   );
-  const counts = new Map<string, number>();
-  for (const line of matching) {
-    if (line.target.mode === 'new')
-      counts.set(line.target.clientKey, (counts.get(line.target.clientKey) ?? 0) + 1);
-  }
-  return [...counts].map(([value, count]) => ({
-    value,
-    label: `本单新批次组 ${allKeys.indexOf(value) + 1}（${count} 行）`,
-  }));
 }
 function handleVisible(value: boolean): void {
   if (!value && editor.visible.value) void editor.close();
@@ -421,7 +388,7 @@ function handleVisible(value: boolean): void {
 }
 .reason-fields {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
   gap: 20px;
 }
 .draft-heading,
@@ -433,11 +400,6 @@ function handleVisible(value: boolean): void {
 }
 .draft-heading {
   margin-bottom: 12px;
-}
-.draft-lines {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
 }
 .latest-summary {
   padding: 10px 12px;

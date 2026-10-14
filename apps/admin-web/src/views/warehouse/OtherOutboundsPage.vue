@@ -1,7 +1,7 @@
 <template>
   <OtherInventoryOrdersPanel
     direction="outbound"
-    route-name="warehouse-other-outbounds"
+    route-name="warehouse-outbound"
   />
 </template>
 <script setup lang="ts">

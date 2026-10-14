@@ -11,6 +11,11 @@ import { useProcurementCommand } from '../../procurement/composables/useProcurem
 import { EMessage } from '../../../utils/message';
 import { RouteMessageBox } from '../../../utils/route-message-box';
 import { parseInboundQuantity } from '../inbound-quantity';
+import {
+  buildInboundNewBatchGroups,
+  inboundBatchIdentityKey,
+  type InboundNewBatchGroup,
+} from '../inbound-new-batch-groups';
 
 interface SelectedRelease {
   rowKey: string;
@@ -60,6 +65,20 @@ export function usePurchaseInboundReleases(
     await Promise.all([load(), onConfirmed(result)]);
   }, '入库单');
   const locked = computed(() => command.locked.value || checking.value);
+  const batchIdentity = (source: ProcurementInboundReleaseItem): string =>
+    inboundBatchIdentityKey({
+      itemKind: 'material',
+      itemId: source.itemId,
+      materialVariantId: source.materialVariantId,
+      unit: source.unit,
+    });
+  const newBatchGroups = computed(() =>
+    buildInboundNewBatchGroups(selected.value, (row) => batchIdentity(row.source)),
+  );
+  const newBatchChoices = (source: ProcurementInboundReleaseItem): InboundNewBatchGroup[] =>
+    newBatchGroups.value.filter(
+      (group) => !group.hasConflictingIdentity && group.identityKey === batchIdentity(source),
+    );
   const groupSummaries = computed(() => {
     const groups = new Map<
       string,
@@ -83,6 +102,11 @@ export function usePurchaseInboundReleases(
   });
   const quantityErrors = computed(() => {
     const errors = new Map<string, string>();
+    const conflictingKeys = new Set(
+      newBatchGroups.value
+        .filter((group) => group.hasConflictingIdentity)
+        .map((group) => group.value),
+    );
     for (const row of selected.value) {
       if (parseInboundQuantity(row.quantity) === null)
         errors.set(row.rowKey, '请输入 1～99999999 的正整数');
@@ -90,6 +114,8 @@ export function usePurchaseInboundReleases(
         errors.set(row.rowKey, '请选择已有批次');
       else if (row.target.mode === 'new' && !row.target.clientKey)
         errors.set(row.rowKey, '新建批次目标无效，请重新选择');
+      else if (row.target.mode === 'new' && conflictingKeys.has(row.target.clientKey))
+        errors.set(row.rowKey, '共用新批次须为同一物料、精确版本及单位，请重新选择目标');
     }
     for (const group of groupSummaries.value) {
       if (group.total > group.allowance) {
@@ -379,6 +405,7 @@ export function usePurchaseInboundReleases(
     command,
     locked,
     groupSummaries,
+    newBatchChoices,
     quantityErrors,
     canSubmit,
     load,

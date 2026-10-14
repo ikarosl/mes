@@ -605,21 +605,33 @@ export const productionApi = {
   listMaterialOutbounds: (batchId: string) =>
     request<MaterialOutboundItem[]>({ url: `/production/batches/${batchId}/material-outbounds` }),
 
-  listMaterialOutboundOrders: (params: MaterialOutboundQuery) =>
-    request<PageResult<MaterialOutboundItem>>({ url: '/production/material-outbounds', params }),
-
-  getMaterialOutbound: (outboundId: string) =>
-    request<MaterialOutboundItem>({ url: `/production/material-outbounds/${outboundId}` }),
-
-  listMaterialOutboundBatchOptions: () =>
-    request<MaterialOutboundBatchOption[]>({
-      url: '/production/material-outbounds/batch-options',
+  listMaterialOutboundOrders: (params: MaterialOutboundQuery, signal?: AbortSignal) =>
+    request<PageResult<MaterialOutboundItem>>({
+      url: '/production/material-outbounds',
+      params,
+      signal,
       skipErrorHandling: true,
     }),
 
-  listMaterialOutboundCandidates: (batchId: string) =>
+  getMaterialOutbound: (outboundId: string, signal?: AbortSignal) =>
+    request<MaterialOutboundItem>({
+      url: `/production/material-outbounds/${outboundId}`,
+      signal,
+      skipErrorHandling: true,
+    }),
+
+  listMaterialOutboundBatchOptions: (signal?: AbortSignal) =>
+    request<MaterialOutboundBatchOption[]>({
+      url: '/production/material-outbounds/batch-options',
+      signal,
+      skipErrorHandling: true,
+    }),
+
+  listMaterialOutboundCandidates: (batchId: string, signal?: AbortSignal) =>
     request<MaterialOutboundCandidateItem[]>({
       url: `/production/batches/${batchId}/material-outbound-candidates`,
+      signal,
+      skipErrorHandling: true,
     }),
 
   confirmMaterialOutbound: (outboundId: string, version: number, idempotencyKey: string) =>

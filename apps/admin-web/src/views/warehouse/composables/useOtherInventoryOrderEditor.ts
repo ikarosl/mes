@@ -18,7 +18,9 @@ import { EMessage } from '../../../utils/message';
 import { RouteMessageBox } from '../../../utils/route-message-box';
 import {
   newOtherInventoryDraftLine,
+  otherInventoryDraftIdentity,
   otherInventoryDraftLineFromDetail,
+  otherInventoryDraftMatchesBatch,
   type OtherInventoryDraftLine,
 } from '../other-inventory-draft';
 import {
@@ -70,6 +72,7 @@ export function useOtherInventoryOrderEditor(
       details: lines.value.map((line) => ({
         id: line.id,
         itemKind: line.itemKind,
+        materialId: line.material?.id ?? null,
         objectId: line.object?.id ?? null,
         quantity: line.quantity,
         target: line.target,
@@ -88,8 +91,10 @@ export function useOtherInventoryOrderEditor(
     if (form.reason.length > 5000 || form.remark.length > 5000)
       return '原因及备注不能超过 5000 个字符';
     if (!lines.value.length || lines.value.length > 50) return '每单须保留 1–50 条有效明细';
+    const newBatchIdentities = new Map<string, string>();
     for (const line of lines.value) {
       if (!line.object?.id) return '请为每行选择精确物料版本或成品';
+      if (line.object.itemKind !== line.itemKind) return '明细类型与库存对象不一致，请重新选择';
       if (
         !Number.isInteger(line.quantity) ||
         !line.quantity ||
@@ -100,8 +105,24 @@ export function useOtherInventoryOrderEditor(
       if (line.remark.length > 5000) return '行备注不能超过 5000 个字符';
       if (line.target.mode === 'existing' && (!line.target.batchId || !line.batch))
         return '请为每行选择已有库存批次';
+      if (line.target.mode === 'existing' && !otherInventoryDraftMatchesBatch(line))
+        return '库存对象、精确版本及单位须与所选批次一致，请重新选择批次';
+      if (direction === 'outbound' && line.target.mode !== 'existing')
+        return '其他出库仅可选择已有库存批次';
       if (line.target.mode === 'new' && (!line.target.clientKey.trim() || !line.objectVerified))
         return '请重新核验新批次的库存对象；停用或读取失败的对象不能新建批次';
+      if (line.target.mode === 'new') {
+        if (
+          line.itemKind === 'material' &&
+          (!line.materialVerified || !line.material || line.object.itemId !== line.material.id)
+        )
+          return '请重新核验物料及其精确版本；版本须属于所选物料';
+        const identity = otherInventoryDraftIdentity(line);
+        const existingIdentity = newBatchIdentities.get(line.target.clientKey);
+        if (existingIdentity && existingIdentity !== identity)
+          return '共用新批次的明细须为同物料版本或同成品、同单位';
+        newBatchIdentities.set(line.target.clientKey, identity);
+      }
     }
     return '';
   });

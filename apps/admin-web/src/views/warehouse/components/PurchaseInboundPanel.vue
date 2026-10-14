@@ -189,7 +189,7 @@
       </section>
     </template>
     <el-dialog
-      :model-value="active && releases.visible.value"
+      :model-value="active && pageActive && releases.visible.value"
       title="核对外购物料入库"
       :width="DialogWidth.workbench"
       workbench
@@ -243,7 +243,8 @@
               label="到货行 / 实际归属采购"
               min-width="180"
               ><template #default="{ row }"
-                ><div>第 {{ row.source.receiptLineNo }} 行</div>
+                ><div class="muted">本次第 {{ targetRowNumbers.get(row.rowKey) }} 行</div>
+                <div>到货第 {{ row.source.receiptLineNo }} 行</div>
                 <div class="muted">
                   {{ row.source.purchaseNo
                   }}<span v-if="row.source.purchaseNo !== row.source.receiptPurchaseNo">
@@ -285,6 +286,7 @@
                   :material-variant-id="row.source.materialVariantId"
                   :unit="row.source.unit"
                   :identity="`${row.source.itemCode} / ${row.source.materialVariantCode} / ${row.source.unit}`"
+                  :new-batch-groups="releases.newBatchChoices(row.source)"
                   :disabled="releases.locked.value"
                 />
               </template>
@@ -407,7 +409,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onActivated, onMounted, onScopeDispose, ref, watch } from 'vue';
+import { computed, onActivated, onDeactivated, onMounted, onScopeDispose, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useRouteAccess } from '../../../composables/useRouteAccess';
 import { Refresh } from '@element-plus/icons-vue';
@@ -452,6 +454,7 @@ const historyKeyword = ref(''),
   historySize = ref(10);
 const currentInboundId = ref<string | null>(null);
 const locationOrigin = ref<'route' | 'confirmed' | null>(null);
+const pageActive = ref(true);
 const releases = usePurchaseInboundReleases(async (result) => {
   if (route.name === 'warehouse-inbound' && (route.query.inboundId || route.query.receiptLineId))
     await router.replace({
@@ -511,9 +514,12 @@ const quantitySummaries = computed(() => {
     ]),
   );
 });
+const targetRowNumbers = computed(
+  () => new Map(releases.selected.value.map((row, index) => [row.rowKey, index + 1])),
+);
 let historyLoadSequence = 0;
 const syncHistoryLocation = async (refreshDetached = false): Promise<void> => {
-  if (!props.active || view.value !== 'history') return;
+  if (!pageActive.value || !props.active || view.value !== 'history') return;
   const id = currentInboundId.value;
   if (!id) return;
   if (locatedOnPage.value) {
@@ -523,6 +529,7 @@ const syncHistoryLocation = async (refreshDetached = false): Promise<void> => {
   if (refreshDetached || history.detail.value?.inboundId !== id) await history.loadDetail(id);
 };
 const loadHistory = async (refreshDetached = false): Promise<void> => {
+  if (!pageActive.value || !props.active || view.value !== 'history') return;
   const sequence = ++historyLoadSequence;
   await history.load({
     page: historyPage.value,
@@ -530,7 +537,12 @@ const loadHistory = async (refreshDetached = false): Promise<void> => {
     keyword: historyKeyword.value.trim() || undefined,
     status: 'completed',
   });
-  if (sequence === historyLoadSequence && props.active && view.value === 'history')
+  if (
+    sequence === historyLoadSequence &&
+    pageActive.value &&
+    props.active &&
+    view.value === 'history'
+  )
     await syncHistoryLocation(refreshDetached);
 };
 const searchHistory = () => {
@@ -559,9 +571,11 @@ const releaseSize = (size: number) => {
 };
 const refresh = () => (view.value === 'releases' ? releases.load() : loadHistory());
 const refreshActive = async (): Promise<void> => {
+  if (!pageActive.value || !props.active) return;
   if (view.value === 'history') await loadHistory(true);
   else await releases.load();
-  if (releases.visible.value && !releases.command.locked.value) await releases.recheck(false);
+  if (pageActive.value && releases.visible.value && !releases.command.locked.value)
+    await releases.recheck(false);
 };
 const closeConfirmation = () => {
   void releases.close();
@@ -591,6 +605,10 @@ async function locate(
   inboundId: string | null | undefined,
   receiptLineId: string | null | undefined,
 ): Promise<void> {
+  if (!pageActive.value) {
+    pendingLocation = [inboundId, receiptLineId];
+    return;
+  }
   if (!inboundId && !receiptLineId) {
     pendingLocation = null;
     if (locationOrigin.value === 'route') {
@@ -637,7 +655,12 @@ async function locate(
       await restore();
       return;
     }
-    if (inboundId !== props.requestedInboundId || receiptLineId !== props.requestedReceiptLineId)
+    if (
+      !pageActive.value ||
+      route.name !== 'warehouse-inbound' ||
+      inboundId !== props.requestedInboundId ||
+      receiptLineId !== props.requestedReceiptLineId
+    )
       return;
     if (inboundId) {
       await showInbound(inboundId, 'route');
@@ -670,7 +693,8 @@ watch(view, (value) => {
   }
 });
 onMounted(() => {
-  if (props.active) void refreshActive();
+  if (props.active && !props.requestedInboundId && !props.requestedReceiptLineId)
+    void refreshActive();
 });
 watch(
   () => props.active,
@@ -685,8 +709,18 @@ watch(
 );
 let activated = false;
 onActivated(() => {
-  if (activated && props.active) void refreshActive();
+  pageActive.value = true;
+  const next = pendingLocation;
+  pendingLocation = null;
+  if (next) void locate(next[0], next[1]);
+  else if (activated && props.active) void refreshActive();
   activated = true;
+});
+onDeactivated(() => {
+  pageActive.value = false;
+  historyLoadSequence += 1;
+  history.cancelList();
+  history.closeDetail();
 });
 onScopeDispose(useTabsStore().registerCloseGuard('warehouse-inbound', releases.clear));
 </script>

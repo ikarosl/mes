@@ -364,6 +364,7 @@ const reset = (): void => {
 const clearSelections = (): void => {
   for (const key of Object.keys(selectedByGroup)) delete selectedByGroup[key];
 };
+defineExpose({ canDiscard });
 </script>
 
 <style scoped>

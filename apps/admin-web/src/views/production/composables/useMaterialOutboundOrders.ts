@@ -9,6 +9,7 @@ import type {
 import { normalizeMaterialOutboundPayload } from '@company/utils';
 import { productionApi } from '../../../api/production';
 import { useIdempotentIntent } from '../../../composables/idempotency/useIdempotentIntent';
+import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
 
 export const useMaterialOutboundOrders = () => {
   const rows = ref<MaterialOutboundItem[]>([]);
@@ -27,54 +28,72 @@ export const useMaterialOutboundOrders = () => {
     payload: ReturnType<typeof normalizeMaterialOutboundPayload>;
   } | null = null;
   const confirmIntents = new Map<string, ReturnType<typeof useIdempotentIntent>>();
-  let listRequest = 0;
-  let detailRequest = 0;
-  let candidateRequest = 0;
+  const listRead = useLatestReadRequest(() => (loading.value = false));
+  const detailRead = useLatestReadRequest(() => (detailLoading.value = false));
+  const optionRead = useLatestReadRequest(() => (optionLoading.value = false));
+  const candidateRead = useLatestReadRequest(() => (candidateLoading.value = false));
 
   const load = async (query: MaterialOutboundQuery): Promise<void> => {
-    const token = ++listRequest;
+    if (!listRead.isActive()) return;
+    const current = listRead.begin();
     loading.value = true;
     try {
-      const result = await productionApi.listMaterialOutboundOrders(query);
-      if (token === listRequest) {
+      const result = await productionApi.listMaterialOutboundOrders(query, current.signal);
+      if (current.isCurrent()) {
         rows.value = result.items;
         total.value = result.total;
       }
+    } catch (error) {
+      if (current.isCurrent()) throw error;
     } finally {
-      if (token === listRequest) loading.value = false;
+      if (current.isCurrent()) loading.value = false;
     }
   };
 
-  const loadDetail = async (outboundId: string): Promise<MaterialOutboundItem> => {
-    const token = ++detailRequest;
+  const loadDetail = async (outboundId: string): Promise<MaterialOutboundItem | null> => {
+    if (!detailRead.isActive()) return null;
+    const current = detailRead.begin();
+    if (detail.value?.outboundId !== outboundId) detail.value = null;
     detailLoading.value = true;
     try {
-      const result = await productionApi.getMaterialOutbound(outboundId);
-      if (token === detailRequest) detail.value = result;
+      const result = await productionApi.getMaterialOutbound(outboundId, current.signal);
+      if (!current.isCurrent()) return null;
+      detail.value = result;
       return result;
+    } catch (error) {
+      if (current.isCurrent()) throw error;
+      return null;
     } finally {
-      if (token === detailRequest) detailLoading.value = false;
+      if (current.isCurrent()) detailLoading.value = false;
     }
   };
 
   const loadBatchOptions = async (): Promise<void> => {
+    if (!optionRead.isActive()) return;
+    const current = optionRead.begin();
     optionLoading.value = true;
     try {
-      batchOptions.value = await productionApi.listMaterialOutboundBatchOptions();
+      const result = await productionApi.listMaterialOutboundBatchOptions(current.signal);
+      if (current.isCurrent()) batchOptions.value = result;
+    } catch (error) {
+      if (current.isCurrent()) throw error;
     } finally {
-      optionLoading.value = false;
+      if (current.isCurrent()) optionLoading.value = false;
     }
   };
 
   const loadCandidates = async (batchId: string): Promise<void> => {
-    const token = ++candidateRequest;
+    if (!candidateRead.isActive()) return;
+    const current = candidateRead.begin();
     candidateLoading.value = true;
     candidates.value = [];
     try {
-      const result = await productionApi.listMaterialOutboundCandidates(batchId);
-      if (token === candidateRequest) candidates.value = result;
+      const result = await productionApi.listMaterialOutboundCandidates(batchId, current.signal);
+      if (current.isCurrent()) candidates.value = result;
+    } catch (error) {
+      if (current.isCurrent()) throw error;
     } finally {
-      if (token === candidateRequest) candidateLoading.value = false;
+      if (current.isCurrent()) candidateLoading.value = false;
     }
   };
 
@@ -166,6 +185,10 @@ export const useMaterialOutboundOrders = () => {
     pendingKeys,
     getCreateIntentStatus: createIntent.getStatus,
     resetCreateIntent,
+    hasUnconfirmedConfirm: () =>
+      [...confirmIntents.values()].some((intent) => intent.getStatus() !== 'idle'),
+    resetConfirmIntents: () => confirmIntents.clear(),
+    cancelDetailRead: detailRead.invalidate,
     load,
     loadDetail,
     loadBatchOptions,

@@ -8,7 +8,7 @@
       <div class="brand">MES 追溯系统</div>
       <el-menu
         router
-        :default-active="$route.path"
+        :default-active="$route.meta.menuPath ?? $route.path"
       >
         <el-menu-item
           v-if="auth.can(PERMISSIONS.dashboard.view)"
@@ -90,6 +90,7 @@
             v-for="item in warehouseItems"
             :key="item.path"
             :index="item.path"
+            :route="item.route"
             >{{ item.title }}</el-menu-item
           ></el-sub-menu
         >
@@ -124,9 +125,9 @@
       <nav class="tabs">
         <div
           v-for="tab in tabs.tabs"
-          :key="tab.path"
+          :key="tab.name"
           class="tab"
-          :class="{ active: tab.path === $route.fullPath }"
+          :class="{ active: tab.name === ($route.meta.tabName ?? $route.name) }"
           @click="$router.push(tab.path)"
         >
           <span>{{ tab.title }}</span
@@ -146,7 +147,7 @@
           ><keep-alive :include="tabs.keepAliveNames">
             <component
               :is="Component"
-              :key="$route.name"
+              :key="$route.meta.tabName ?? $route.name"
             /> </keep-alive
         ></router-view>
       </main>
@@ -294,50 +295,45 @@ const warehouseMenus = [
   {
     title: '采购到货',
     path: '/procurement/receipts',
-    permission: PERMISSIONS.procurement.receipts.view,
+    routeNames: ['procurement-receipts'],
   },
   {
     title: '库存查询',
     path: '/warehouse/inventory',
-    permission: PERMISSIONS.production.inventory.view,
+    routeNames: ['warehouse-inventory'],
   },
   {
     title: '入库管理',
     path: '/warehouse/inbound-orders',
-    permission: PERMISSIONS.warehouse.inbound.view,
+    routeNames: ['warehouse-inbound', 'warehouse-inbound-finished', 'warehouse-other-inbounds'],
   },
   {
     title: '出库管理',
     path: '/warehouse/outbound-orders',
-    permission: PERMISSIONS.production.materials.view,
+    routeNames: ['warehouse-outbound', 'warehouse-other-outbounds'],
   },
   {
     title: '退料管理',
     path: '/warehouse/return-orders',
-    permission: PERMISSIONS.warehouse.returns.view,
-  },
-  {
-    title: '其他入库',
-    path: '/warehouse/other-inbounds',
-    permission: PERMISSIONS.warehouse.otherInbounds.view,
-  },
-  {
-    title: '其他出库',
-    path: '/warehouse/other-outbounds',
-    permission: PERMISSIONS.warehouse.otherOutbounds.view,
+    routeNames: ['warehouse-returns'],
   },
   {
     title: '报废管理',
     path: '/warehouse/scraps',
-    permission: PERMISSIONS.warehouse.scraps.view,
+    routeNames: ['warehouse-scraps'],
   },
   {
     title: '盘点管理',
     path: '/warehouse/stock-checks',
-    permission: PERMISSIONS.warehouse.stockChecks.view,
+    routeNames: ['warehouse-stock-checks'],
   },
 ];
-const warehouseItems = computed(() => warehouseMenus.filter((item) => auth.can(item.permission)));
+const warehouseItems = computed(() =>
+  warehouseMenus.flatMap((item) => {
+    const name = item.routeNames.find((name) => auth.can(router.resolve({ name }).meta.permission));
+    return name ? [{ ...item, route: { name } }] : [];
+  }),
+);
 const signOut = async () => {
   await auth.logout();
   await router.replace('/login');

@@ -48,6 +48,7 @@
             @click="editor.open('create')"
             >创建{{ title }}单</el-button
           >
+          <span class="independent-note">独立办理，不计入采购或生产履约</span>
         </template>
         <template #tools>
           <el-tooltip
@@ -239,12 +240,12 @@ onMounted(orders.load);
 }
 .query-panel,
 .table-panel {
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
+  border: 1px solid var(--el-border-color);
+  border-radius: 6px;
   background: var(--el-bg-color);
 }
 .query-panel {
-  padding: 20px 20px 4px;
+  padding: 16px 16px 0;
 }
 .query-form {
   display: flex;
@@ -256,7 +257,7 @@ onMounted(orders.load);
   margin-bottom: 16px;
 }
 .query-form :deep(.el-input) {
-  width: 290px;
+  width: 280px;
 }
 .query-form :deep(.el-select) {
   width: 170px;
@@ -275,6 +276,10 @@ onMounted(orders.load);
 .data-table :deep(th.el-table__cell) {
   height: 48px;
   background: var(--el-fill-color-light);
+}
+.independent-note {
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
 }
 .secondary-text {
   margin-top: 3px;
