@@ -30,6 +30,7 @@
  * false，让错误原样冒泡保留堆栈与诊断信息——宁可保持通用 500，也不把非瞬态错误误判为可重试。
  */
 const TRANSIENT_MYSQL_CODES = new Set<string>([
+  'ER_LOCK_NOWAIT', // 3572：当前读锁冲突，整笔命令回滚后重试
   'ER_LOCK_DEADLOCK', // 1213：死锁，InnoDB 已回滚一方事务，重试即可
   'ER_LOCK_WAIT_TIMEOUT', // 1205：锁等待超时（innodb_lock_wait_timeout 到期）
   'PROTOCOL_CONNECTION_LOST', // 2013：连接丢失（服务器关闭连接/网络中断）

@@ -244,13 +244,7 @@ export const ALLOCATION_STATUSES = [
   'abnormal',
 ] as const;
 
-export const OUTBOUND_ORDER_STATUSES = [
-  'pending_picking',
-  'picked',
-  'partially_outbound',
-  'completed',
-  'cancelled',
-] as const;
+export const OUTBOUND_ORDER_STATUSES = ['pending_picking', 'completed', 'cancelled'] as const;
 
 export const ALLOCATION_STATUS_LABELS = {
   active: '有效',
@@ -287,8 +281,6 @@ export const MATERIAL_DEMAND_PROGRESS_LABELS = {
 
 export const OUTBOUND_ORDER_STATUS_LABELS = {
   pending_picking: '待出库',
-  picked: '已拣货',
-  partially_outbound: '部分出库',
   completed: '已出库',
   cancelled: '已取消',
 } as const;

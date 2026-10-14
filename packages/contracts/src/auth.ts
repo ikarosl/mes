@@ -20,15 +20,6 @@ export interface TokenResponse {
   user: UserProfile;
 }
 
-export interface JwtClaims {
-  sub: string;
-  username: string;
-  kind: AuthTokenKind;
-  exp: number;
-  iat: number;
-  jti?: string;
-}
-
 export const AUTH_API = {
   login: '/auth/login',
   refresh: '/auth/refresh',

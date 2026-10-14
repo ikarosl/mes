@@ -501,19 +501,13 @@ describe('productionApi', () => {
     ]);
   });
 
-  it('uses separate admin and employee SOP snapshot download routes', async () => {
+  it('uses the employee SOP snapshot download route', async () => {
     const { productionApi } = await import('../production');
     request.mockResolvedValue({ data: new Blob(['sop']) });
 
-    await productionApi.batchStepSopContent('1', '9');
     await productionApi.workerTaskSopContent('1', '9');
 
-    expect(request.mock.calls.slice(-2).map(([config]) => config)).toEqual([
-      {
-        url: '/production/batches/1/step-records/9/sop-content',
-        responseType: 'blob',
-        timeout: 0,
-      },
+    expect(request.mock.calls.slice(-1).map(([config]) => config)).toEqual([
       {
         url: '/production/worker-tasks/batches/1/step-records/9/sop-content',
         responseType: 'blob',

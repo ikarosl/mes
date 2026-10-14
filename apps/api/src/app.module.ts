@@ -1,3 +1,4 @@
+import { InventoryReservationsModule } from './infrastructure/inventory-reservations/inventory-reservations.module.js';
 import { Module } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { AppController } from './app.controller.js';
@@ -12,6 +13,7 @@ import { NotificationModule } from './modules/notification/public.js';
 import { HttpExceptionFilter } from './presentation/http/http-exception.filter.js';
 @Module({
   imports: [
+    InventoryReservationsModule,
     HealthModule,
     IdentityModule,
     NotificationModule,

@@ -1,4 +1,15 @@
+import { IdempotencyModule } from '../../infrastructure/idempotency/idempotency.module.js';
+import { OtherInventoryService } from './application/other-inventory.service.js';
+import { OtherInventoryRepository } from './application/ports/other-inventory.repository.js';
+import { MysqlOtherInventoryRepository } from './infrastructure/mysql-other-inventory.repository.js';
+import {
+  OtherInboundController,
+  OtherOutboundController,
+  OtherStockCandidateController,
+} from './presentation/http/other-inventory.controller.js';
 import { Module } from '@nestjs/common';
+import { InventoryProductionDocumentCommand } from './application/inventory-production-document.command.js';
+import { MysqlInventoryProductionDocumentCommand } from './infrastructure/mysql-inventory-production-document.command.js';
 import { DatabaseModule } from '../../infrastructure/database/database.module.js';
 import { ProductModule } from '../product/public.js';
 import { IdentityModule } from '../identity/public.js';
@@ -18,9 +29,21 @@ import { InventoryStockCheckController } from './presentation/http/inventory-sto
 import { InboundBatchCandidateController } from './presentation/http/inbound-batch-candidate.controller.js';
 
 @Module({
-  imports: [DatabaseModule, ProductModule, IdentityModule],
-  controllers: [InventoryStockCheckController, InboundBatchCandidateController],
+  imports: [DatabaseModule, ProductModule, IdentityModule, IdempotencyModule],
+  controllers: [
+    OtherInboundController,
+    OtherOutboundController,
+    OtherStockCandidateController,
+    InventoryStockCheckController,
+    InboundBatchCandidateController,
+  ],
   providers: [
+    OtherInventoryService,
+    { provide: OtherInventoryRepository, useClass: MysqlOtherInventoryRepository },
+    {
+      provide: InventoryProductionDocumentCommand,
+      useClass: MysqlInventoryProductionDocumentCommand,
+    },
     MysqlInventoryPurchaseInboundWriter,
     InventoryStockCheckService,
     { provide: InventoryStockCommand, useClass: MysqlInventoryStockCommand },
@@ -30,6 +53,7 @@ import { InboundBatchCandidateController } from './presentation/http/inbound-bat
     { provide: InventoryStockCheckRepository, useClass: MysqlInventoryStockCheckRepository },
   ],
   exports: [
+    InventoryProductionDocumentCommand,
     InventoryStockCommand,
     InventoryInboundCommand,
     InventoryInboundQuery,

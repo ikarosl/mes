@@ -629,13 +629,7 @@ function returnVariantSummary(row: ReturnOrderItem): string {
 }
 const quantity = (value: string | number) => Number(value).toFixed(0);
 const statusTag = (status: ReturnOrderStatus) =>
-  status === 'returned'
-    ? 'success'
-    : status === 'cancelled'
-      ? 'info'
-      : status === 'scrapped'
-        ? 'danger'
-        : 'warning';
+  status === 'returned' ? 'success' : status === 'cancelled' ? 'info' : 'warning';
 function hasDraft() {
   return Boolean(
     form.productionBatchId || form.remark.trim() || candidates.value.some((item) => item.selected),

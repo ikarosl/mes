@@ -50,6 +50,16 @@ const idempotencyRecordsWritePattern =
  * ——scope 只能经由契约常量标识符引用。
  */
 const knownIdempotencyScopes = [
+  'procurement.inbound.confirm.v7',
+  'production.finished-inbound.confirm.v4',
+  'inventory.other-inbound.create.v1',
+  'inventory.other-inbound.save.v1',
+  'inventory.other-inbound.confirm.v1',
+  'inventory.other-inbound.cancel.v1',
+  'inventory.other-outbound.create.v1',
+  'inventory.other-outbound.save.v1',
+  'inventory.other-outbound.confirm.v1',
+  'inventory.other-outbound.cancel.v1',
   'production.batch.create.v13',
   'production.batch.create.v12',
   'production.batch-closeout.begin.v2',
@@ -246,6 +256,8 @@ const checks = [
     message:
       '只有已登记的 Production 幂等命令可使用 IdempotentCommandContext；新增命令必须先完成契约登记与验收',
     exclude: [
+      'apps/api/src/modules/inventory/application/other-inventory.service.ts',
+      'apps/api/src/modules/inventory/presentation/http/other-inventory.controller.ts',
       'apps/api/src/modules/procurement/application/purchase-order.service.ts',
       'apps/api/src/modules/procurement/application/receipt.service.ts',
       'apps/api/src/modules/quality/application/finished-inspection.service.ts',
@@ -291,6 +303,8 @@ const checks = [
     message:
       '只有已登记的 Production application 用例可依赖 IdempotencyExecutor；新增用例必须先完成契约登记与验收',
     exclude: [
+      'apps/api/src/modules/inventory/application/other-inventory.service.ts',
+      'apps/api/src/modules/inventory/presentation/http/other-inventory.controller.ts',
       'apps/api/src/modules/procurement/application/purchase-order.service.ts',
       'apps/api/src/modules/procurement/application/receipt.service.ts',
       'apps/api/src/modules/quality/application/finished-inspection.service.ts',
@@ -328,6 +342,7 @@ const checks = [
     message:
       '只有已登记的 production API wrapper 可设置 Idempotency-Key/retryIdempotentWrite；新增调用必须先登记后端幂等契约',
     exclude: [
+      'apps/admin-web/src/api/other-inventory.ts',
       'apps/admin-web/src/api/production.ts',
       'apps/admin-web/src/api/production-research.ts',
       'apps/admin-web/src/api/finished-inspections.ts',

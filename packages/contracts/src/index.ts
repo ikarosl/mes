@@ -1,4 +1,5 @@
 export * from './common.js';
+export * from './inventory.js';
 export * from './auth.js';
 export * from './system.js';
 export * from './product/index.js';

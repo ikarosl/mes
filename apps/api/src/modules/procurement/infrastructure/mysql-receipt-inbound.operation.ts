@@ -38,12 +38,8 @@ export const confirmReceiptInbound = async (
   inventory: InventoryInboundCommand,
   inventoryQuery: InventoryInboundQuery,
 ): Promise<ConfirmProcurementInboundResult> => {
-  if (
-    !payload.details.length ||
-    payload.details.length > 100 ||
-    new Set(payload.details.map((row) => row.detailKey)).size !== payload.details.length
-  )
-    return receiptError('入库必须提交 1 至 100 条不同明细');
+  if (!payload.details.length || payload.details.length > 100)
+    return receiptError('入库必须提交 1 至 100 条明细');
   const lineIds = sortedIds(payload.details.map((row) => row.receiptLineId));
   const [locators] = await connection.query<
     (RowDataPacket & { id: number; purchase_order_id: number })[]
@@ -168,7 +164,6 @@ export const confirmReceiptInbound = async (
   const details = selected.map(({ detail, line, assignedLine }) => {
     const original = orderLines.get(String(line.purchase_order_line_id))!;
     return {
-      detailKey: detail.detailKey,
       receiptLineId: detail.receiptLineId,
       receiptRevisionId: detail.receiptRevisionId,
       inspectionId: detail.inspectionId,

@@ -317,6 +317,16 @@ const warehouseMenus = [
     permission: PERMISSIONS.warehouse.returns.view,
   },
   {
+    title: '其他入库',
+    path: '/warehouse/other-inbounds',
+    permission: PERMISSIONS.warehouse.otherInbounds.view,
+  },
+  {
+    title: '其他出库',
+    path: '/warehouse/other-outbounds',
+    permission: PERMISSIONS.warehouse.otherOutbounds.view,
+  },
+  {
     title: '报废管理',
     path: '/warehouse/scraps',
     permission: PERMISSIONS.warehouse.scraps.view,

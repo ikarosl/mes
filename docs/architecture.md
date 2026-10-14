@@ -36,7 +36,7 @@ Controller 只做 DTO、协议映射、鉴权声明和响应转换，不写 SQL�
 - 每张业务表由一个模块所有；跨模块命令与资格读取通过所属模块公开能力。业务表的当前结构由模块文档维护，所有权及允许的展示读登记在 [api-data-ownership.mjs](../scripts/api-data-ownership.mjs)。migration 集中存放不改变所有权，已删除表的历史登记不授权恢复该表。
 - application port 和 `@company/contracts` 不暴露数据库行、连接、事务 executor、SQL 或 SDK 类型。
 - 公开查询按用途区分当前写入资格与历史展示。历史引用可包含停用／软删除资料，但不得用于新增或写入校验；名称和返回类型应体现用途，分别验证状态过滤。具体采购／生产资格由 [Product](../apps/api/src/modules/product/README.md) 所有。
-- 库存由 Inventory 唯一记账，生产需求由 Production 所有；仓库页面或 HTTP 路径不创建独立 Warehouse 账本。跨模块事务、来源与锁序见[库存协作协议](inventory-extraction-design.md)，采购链路见[采购技术设计](procurement-inbound-technical-design.md)。
+- 库存由 Inventory 唯一记账，生产需求由 Production 所有；仓库页面或 HTTP 路径不创建独立 Warehouse 账本。跨模块事务、来源与锁序见[库存协作协议](inventory-extraction-design.md)，采购链路见[采购技术设计](procurement-inbound-technical-design.md)。独立其他出库的预留当前读通过组合根装配 Inventory 窄读取端口与 Production 公开查询，不将业务来源资格回调或跨模块表写入开放给 Inventory。
 
 平台表有以下独立边界：
 

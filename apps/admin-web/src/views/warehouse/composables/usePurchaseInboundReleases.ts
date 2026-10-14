@@ -13,7 +13,7 @@ import { RouteMessageBox } from '../../../utils/route-message-box';
 import { parseInboundQuantity } from '../inbound-quantity';
 
 interface SelectedRelease {
-  detailKey: string;
+  rowKey: string;
   target: InventoryInboundTarget;
   source: ProcurementInboundReleaseItem;
   quantity: string;
@@ -85,18 +85,18 @@ export function usePurchaseInboundReleases(
     const errors = new Map<string, string>();
     for (const row of selected.value) {
       if (parseInboundQuantity(row.quantity) === null)
-        errors.set(row.detailKey, '请输入 1～99999999 的正整数');
+        errors.set(row.rowKey, '请输入 1～99999999 的正整数');
       else if (row.target.mode === 'existing' && !row.target.batchId)
-        errors.set(row.detailKey, '请选择已有批次');
+        errors.set(row.rowKey, '请选择已有批次');
       else if (row.target.mode === 'new' && !row.target.clientKey)
-        errors.set(row.detailKey, '新建批次目标无效，请重新选择');
+        errors.set(row.rowKey, '新建批次目标无效，请重新选择');
     }
     for (const group of groupSummaries.value) {
       if (group.total > group.allowance) {
         for (const row of selected.value.filter(
           (item) => item.source.allocationId === group.source.allocationId,
         ))
-          errors.set(row.detailKey, '本次合计超过该授权剩余额度');
+          errors.set(row.rowKey, '本次合计超过该授权剩余额度');
       }
     }
     return errors;
@@ -173,7 +173,7 @@ export function usePurchaseInboundReleases(
     selected.value = [
       ...selected.value,
       ...missing.map((source) => ({
-        detailKey: crypto.randomUUID(),
+        rowKey: crypto.randomUUID(),
         target: { mode: 'new' as const, clientKey: crypto.randomUUID() },
         source: { ...source },
         quantity: source.approvedRemainingQuantity,
@@ -242,19 +242,19 @@ export function usePurchaseInboundReleases(
       return;
     }
     selected.value.push({
-      detailKey: crypto.randomUUID(),
+      rowKey: crypto.randomUUID(),
       target: { mode: 'new', clientKey: crypto.randomUUID() },
       source: { ...source },
       quantity: source.approvedRemainingQuantity,
       error: '',
     });
   };
-  const remove = (detailKey: string): void => {
-    if (!locked.value) selected.value = selected.value.filter((row) => row.detailKey !== detailKey);
+  const remove = (rowKey: string): void => {
+    if (!locked.value) selected.value = selected.value.filter((row) => row.rowKey !== rowKey);
   };
-  const split = (detailKey: string, splitQuantity: number): void => {
+  const split = (rowKey: string, splitQuantity: number): void => {
     if (locked.value || selected.value.length >= 100) return;
-    const source = selected.value.find((row) => row.detailKey === detailKey);
+    const source = selected.value.find((row) => row.rowKey === rowKey);
     const originalQuantity = source ? parseInboundQuantity(source.quantity) : null;
     if (
       !source ||
@@ -265,7 +265,7 @@ export function usePurchaseInboundReleases(
       return;
     source.quantity = String(originalQuantity - splitQuantity);
     selected.value.push({
-      detailKey: crypto.randomUUID(),
+      rowKey: crypto.randomUUID(),
       source: { ...source.source },
       quantity: String(splitQuantity),
       target: { mode: 'new', clientKey: crypto.randomUUID() },
@@ -326,8 +326,7 @@ export function usePurchaseInboundReleases(
     if (locked.value || !validQuantities() || !(await recheck(false))) return;
     const body: ConfirmProcurementInboundPayload = {
       remark: remark.value.trim() || null,
-      details: selected.value.map(({ detailKey, source, quantity, target }) => ({
-        detailKey,
+      details: selected.value.map(({ source, quantity, target }) => ({
         target,
         receiptLineId: source.receiptLineId,
         roundId: source.roundId,

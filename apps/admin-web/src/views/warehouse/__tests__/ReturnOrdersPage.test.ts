@@ -68,8 +68,6 @@ const returnOrder = {
       batchCode: 'IB-001',
       returnQuantity: '2.0000',
       unit: '件',
-      returnStockStatus: 'available' as const,
-      releaseAfterReturn: true as const,
       inventoryTransactionId: null,
       remark: null,
     },

@@ -6,12 +6,15 @@
 
 - 当前只提供编译期 interface、type 和常量，不提供运行时 schema、OpenAPI 生成或兼容性检查。HTTP 校验由 API class DTO 与 ValidationPipe 承担；引入生成方案须先明确唯一维护位置并迁移现有 DTO。
 - 不暴露数据库行、连接、SDK 或内部领域对象。稳定代码来自 [constants](../constants/README.md)，ID、数量、时间、分页及空值遵守[HTTP 规范](../../docs/api-conventions.md)。可空身份保留真正的 `null`，不能序列化为字符串 `"null"`。
+- JWT 载荷由 [Identity 的令牌适配器](../../apps/api/src/modules/identity/infrastructure/jwt-token.service.ts)维护；共享认证契约提供登录输入、会话资料、令牌响应及令牌种类。
 - 不另存业务规则副本；变更字段时同步所属模块的语义说明、API DTO 与实际消费方。展示投影、受审快照、业务事实分别建模，不因字段相似而互换。
 
 ## 业务语义入口
 
 | 契约 | 当前规则 |
 | --- | --- |
+| 认证、用户、角色与权限 | [Identity](../../apps/api/src/modules/identity/README.md)；系统管理使用 `system.ts` 的 `System*` 契约 |
+| 通知查询与首次已读 | [Notification](../../apps/api/src/modules/notification/README.md#接口及权限登记) |
 | 产品、BOM 与候选 | [Product](../../apps/api/src/modules/product/README.md) |
 | 工单、任务与产出汇总 | [工单与任务](../../apps/api/src/modules/production/docs/database/work-orders-and-batches.md) |
 | 需求、替代与补料 | [需求设计](../../apps/api/src/modules/production/docs/database/demand-allocation-and-outbound.md) |

@@ -1,13 +1,15 @@
 import type { RowDataPacket } from 'mysql2/promise';
 import type { ProductionBatchCancellationCheck } from '@company/contracts';
 import type { BatchRow, Db } from './mysql-production.shared.js';
+import type { InventoryProductionDocumentCommand } from '../../inventory/public.js';
 
 export type BatchCancellationState = {
-  outbounds: (RowDataPacket & {
-    id: number;
+  outbounds: {
+    id: string;
     outbound_no: string;
     status: string;
-  })[];
+    version: number;
+  }[];
   allocationIds: string[];
   demandIds: string[];
   pendingCorrectionDemandIds: string[];
@@ -17,14 +19,18 @@ export const loadBatchCancellationState = async (
   db: Db,
   batchId: string,
   lock: boolean,
+  documents: InventoryProductionDocumentCommand,
 ): Promise<BatchCancellationState> => {
   const suffix = lock ? ' FOR UPDATE' : '';
-  const [outbounds] = await db.query<BatchCancellationState['outbounds']>(
-    `SELECT id,outbound_no,status FROM outbound_order
-     WHERE production_batch_id=? AND status<>'cancelled'
-     ORDER BY id${suffix}`,
-    [batchId],
-  );
+  const facts = await documents.facts({ productionBatchId: batchId, lock });
+  const outbounds = facts.outbounds
+    .filter((order) => order.status !== 'cancelled')
+    .map((order) => ({
+      id: order.id,
+      outbound_no: order.no,
+      status: order.status === 'pending' ? 'pending_picking' : order.status,
+      version: order.version,
+    }));
   const [allocations] = await db.query<(RowDataPacket & { id: number })[]>(
     `SELECT id FROM production_item_allocation
      WHERE production_batch_id=? AND allocation_status='active'

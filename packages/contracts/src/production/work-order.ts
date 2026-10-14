@@ -125,8 +125,6 @@ export interface UpdateWorkOrderPayload extends VersionedCommand {
   remark?: string | null;
 }
 
-export type CompleteWorkOrderPayload = VersionedCommand;
-
 export interface CancelWorkOrderPayload extends VersionedCommand {
   reason: string;
 }

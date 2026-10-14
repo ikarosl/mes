@@ -9,4 +9,5 @@ export const materialOutboundDetailsSql = (
        LEFT JOIN production_material_supplement s ON s.id=d.supplement_id
        LEFT JOIN inventory_transaction it ON it.reference_type='outbound_detail'
          AND it.reference_detail_id=od.id AND it.transaction_type='production_material_outbound'
-       WHERE od.outbound_id IN (${ids.map(() => '?').join(',')}) ORDER BY od.outbound_id,od.id`;
+       WHERE od.source_type='production_material' AND od.is_deleted=0
+         AND od.outbound_id IN (${ids.map(() => '?').join(',')}) ORDER BY od.outbound_id,od.id`;

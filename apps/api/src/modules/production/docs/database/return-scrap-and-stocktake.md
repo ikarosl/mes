@@ -12,11 +12,11 @@
 
 生产退料是现场多余物料（包括生产结束或订单中途关闭产生的余料）退回仓库的通道。仅处理已确认领料且仍可退的公共可用物料，固定回原库存批次。订单关闭和剩余需求关闭须由独立生命周期命令办理，退料不触发这些动作。
 
-损耗列表、详情和候选的库存批号／物料编码展示由 `infrastructure/queries/material-loss-display.query.ts` 承担，只读访问登记的 Inventory 批次字段；当前物料名称仍读取 Product 当前名称，不过滤历史停用或删除记录。损耗创建、确认及取消的资格查询只读取 Production 自有损耗、分配、领料、退料和需求事实，不使用库存展示查询作为业务校验。结案核对需要共享锁时仅锁 `item_scrap` 事实，再批量读取不可变批次展示字段，不因展示联查锁定其他模块库存数据。查询拆分不改变原可退／损耗额度、分页、排序或 HTTP 响应。
+损耗列表、详情和候选的库存批号／物料编码展示由 `infrastructure/queries/material-loss-display.query.ts` 承担，只读访问登记的 Inventory 批次字段；当前物料名称仍读取 Product 当前名称，不过滤历史停用或删除记录。损耗创建、确认及取消读取 Production 自有损耗、分配和需求事实，通过 Inventory 公开当前读取得实际领退料；不使用库存展示查询作为业务校验。结案核对需要共享锁时仅锁 `item_scrap` 事实，再批量读取不可变批次展示字段，不因展示联查锁定其他模块库存数据。查询拆分不改变原可退／损耗额度、分页、排序或 HTTP 响应。
 
 | 所有者 | 可写职责 | 禁止混用 |
 | --- | --- | --- |
-| `ProductionReturnRepository` | 退料主单／明细和审计；同事务调用 Inventory 公开能力追加正流水 | 不创建/恢复/取消需求，不修改分配履约、批次状态，不调用需求计划 Writer |
+| `ProductionReturnRepository` | 退料来源、额度与命令编排和审计；同事务调用 Inventory 创建／确认／取消公共入库单 | 不创建/恢复/取消需求，不修改分配履约、批次状态，不调用需求计划 Writer |
 | `ProductionMaterialLossRepository` | 现场损坏/丢失的损耗申报与确认，独立保存损坏事实 | 不把余料退回当损耗，不重复扣减仓库库存，不增加产品补产额度 |
 | `ProductionCloseoutMaterialLossRepository` | 初次结案中的已领物料损坏立即确认，不补料，永久占用可退上限 | 不扩展在产损耗确认、不写库存、不改需求或补产 |
 | 需求配置与需求计划 Writer | 明确的初始配置、人工追加、补料生成、剩余需求关闭及计划版本推进 | 不提供退料重开需求的接口，不通过净领用量反推需求 |
@@ -28,94 +28,15 @@
 
 ## 3.7 退料表
 
----
+生产退料使用 Inventory 所有的 `inbound_order/detail(source_type=return_inbound)`，旧 `return_order/detail` 由公共入库替代，不保留第二份主从或退料数量。公共字段、外键、审计及完成守卫见 [Inventory 数据库](../../../inventory/docs/database.md)。Production 只拥有退料来源资格、额度和办理编排，不能直接写入或锁定公共单据。
 
-### 14. `return_order`
-
-职责：维护生产退料主单，记录某个生产批次的一次退料动作。
-
-| 字段                  | 类型              | 说明                                      |
-| --------------------- | ----------------- | ----------------------------------------- |
-| `id`                  | `BIGINT UNSIGNED` | 主键                                      |
-| `return_no`           | `VARCHAR(100)`    | 退料单号                                  |
-| `production_batch_id` | `BIGINT UNSIGNED` | 生产批次 ID，关联 `production_batches.id` |
-| `work_order_id`       | `BIGINT UNSIGNED` | 工单 ID，冗余保存                         |
-| `status`              | `VARCHAR(30)`     | 退料单状态，默认 `pending`                |
-| `return_at`           | `DATETIME`        | 实际退料时间                              |
-| `operator_id`         | `BIGINT UNSIGNED` | 操作人 ID                                 |
-| `version`             | `INT`             | 乐观锁版本号，默认 `0`                    |
-| `remark`              | `TEXT`            | 备注                                      |
-| `cancel_reason`       | `TEXT`            | 取消原因；历史未记录数据可为空            |
-| `cancelled_by`        | `BIGINT UNSIGNED` | 取消人；历史未记录数据可为空              |
-| `cancelled_at`        | `DATETIME`        | 取消时间；历史未记录数据可为空            |
-| 业务审计字段          | 见统一规则        | 可变业务单据审计字段                      |
-
-约束：
-
-- 主键：`id`
-- 唯一约束：`UNIQUE (return_no)`
-- 唯一约束：`UNIQUE (id, production_batch_id)`
-- 外键：`FOREIGN KEY (production_batch_id, work_order_id) REFERENCES production_batches(id, work_order_id)`
-- 外键：`FOREIGN KEY (operator_id) REFERENCES users(id)`
-- 外键：`FOREIGN KEY (cancelled_by) REFERENCES users(id)`
-- 检查约束：`CHECK (status IN ('pending', 'returned', 'scrapped', 'cancelled'))`
-- 组合索引：`INDEX (status, created_at)`，用于退料单状态分页
-
-说明：
-
-- 退料主单表达一次退料动作。
-- 具体退回哪个分配行、哪个批次、多少数量，由 `return_detail` 记录。
-- 确认退料后回到原库存批次，释放为公共可用库存；原生产任务关联仅用于来源追溯，不代表继续占用。
-- 当前已实现的最小退料只接受已确认生产领料，固定退回 `available` 并设置 `release_after_return = 1` 释放公共库存。不提供退回后保留给原生产任务的模式，也不开放退料报废命令。
-
----
-
-### 15. `return_detail`
-
-职责：维护生产退料明细，记录某个分配行按原精确版本退回原库存批次的数量，固定释放为公共可用库存。
-
-| 字段                   | 类型              | 说明                                     |
-| ---------------------- | ----------------- | ---------------------------------------- |
-| `id`                   | `BIGINT UNSIGNED` | 主键                                     |
-| `return_id`            | `BIGINT UNSIGNED` | 退料主单 ID，关联 `return_order.id`      |
-| `production_batch_id`  | `BIGINT UNSIGNED` | 生产批次 ID，冗余保存                    |
-| `demand_id`            | `BIGINT UNSIGNED` | 需求 ID                                  |
-| `allocation_id`        | `BIGINT UNSIGNED` | 分配明细 ID                              |
-| `item_id`              | `BIGINT UNSIGNED` | 退料对象 ID                              |
-| `material_variant_id`  | `BIGINT UNSIGNED` | 退料精确物料版本 ID                      |
-| `batch_id`             | `BIGINT UNSIGNED` | 退料库存批次 ID                          |
-| `return_number`        | `INT`   | 本次退料数量                             |
-| `unit_snapshot`        | `VARCHAR(20)`     | 退料时单位快照                           |
-| `return_stock_status`  | `VARCHAR(20)`     | 退回后的库存状态，固定 `available`       |
-| `release_after_return` | `TINYINT`         | 固定为 `1`，退回后释放给公共库存 |
-| `remark`               | `TEXT`            | 备注                                     |
-| `created_by`           | `BIGINT UNSIGNED` | 创建人                                   |
-| `created_at`           | `DATETIME`        | 创建时间，默认 `CURRENT_TIMESTAMP`       |
-
-约束：
-
-- 主键：`id`
-- 外键：`FOREIGN KEY (return_id, production_batch_id) REFERENCES return_order(id, production_batch_id)`
-- 外键：`FOREIGN KEY (demand_id, production_batch_id) REFERENCES production_item_demand(id, production_batch_id)`
-- 外键：`FOREIGN KEY (allocation_id, demand_id, production_batch_id, item_id, batch_id, material_variant_id) REFERENCES production_item_allocation(id, demand_id, production_batch_id, item_id, batch_id, material_variant_id)`
-- 外键：`FOREIGN KEY (batch_id, item_id, material_variant_id) REFERENCES item_batch(id, item_id, material_variant_id)`
-- 检查约束：`CHECK (return_number > 0)`
-- 检查约束：`chk_return_detail_current_scope CHECK (return_stock_status = 'available' AND release_after_return = 1)`，只允许退回公共可用库存。
-- 整数约束：`chk_return_detail_quantity_integer CHECK (return_number = TRUNCATE(return_number, 0))`
-- 唯一约束：`UNIQUE (return_id, allocation_id)`
-- 组合候选键：`uk_return_detail_source UNIQUE (id, allocation_id, demand_id, production_batch_id, item_id, batch_id)`。该物理键为六列；精确版本由上述分配来源及库存批次组合外键保证，不能将本键解释为未约束版本，也不据此开放退料后报废。
-
-说明：
-
-- `return_stock_status = available` 的退料会增加库存流水中的可用库存。
-- `release_after_return = 1` 表示退回后释放给公共库存，不再继续占用原生产批次。
-- 退料入库应生成 `inventory_transaction`，类型为 `material_return_inbound`。
-- 创建待退料单时即占用可退数量；可退数量为同一 allocation 已确认领料累计减去其他 `pending/returned` 退料明细累计，再减去 `pending/confirmed` 的 `production_consumed` 损耗累计。取消待退料单释放占用。
-- 退料候选、创建和确认使用相同额度口径；创建及确认先锁定来源 allocation，再以当前读校验领料、退料与损耗占用，避免旧事务快照遗漏并发占用。
-- 退料候选返回 `occupiedLossQuantity`，为同一分配来源的待确认及已确认损耗合计；管理端并列展示已确认领料、退料占用、损耗占用及可退数量。待确认损耗取消后释放占用，已确认损耗持续扣减本来源的可退上限，另行追加需求的取消或关闭均不撤销损耗；当前不支持已确认损耗冲销。
-- 确认退料按 `item_batch.id` 升序锁定涉及批次，重新校验可退数量，并将主单更新、正库存流水和成功审计放在同一事务。
-
----
+- 一单一个任务，关联工单；每条明细以 `return_allocation_id`、`demand_id`、任务、物料精确版本、原库存批次和单位指向原已领料分配。一个分配在同单只出现一次。
+- 创建 `pending` 时占可退额度，不记库存；整单确认 `pending → completed`，每条有效明细生成一条 `material_return_inbound` 正流水，引用 `inbound_detail.id`；取消 `pending → cancelled` 释放占用。单据不开放编辑、部分确认、终态恢复或退料报废。
+- 退料固定原批次、`stock_status=available`；原批次即使冻结或停用，历史真实回仓仍可办理，但不解除批次状态。回仓不恢复原需求、履约、分配可领量或任务阶段。
+- 可新增数量为同分配已完成生产领料累计，减 `pending/completed` 生产退料累计，再减 `pending/confirmed` 生产领料损耗。人工其他入库不参与退料额度。确认核对包括本单的全部占用，不重复减本次数量。
+- 候选、创建、确认和损耗共用该额度。写命令先锁任务和原分配，经 `InventoryProductionDocumentCommand.facts` 当前读真实单据，再锁自身损耗事实；Inventory 自己按公共锁序执行批次、单据、流水与完成守卫。来源命令成功审计与实际回仓同事务提交。
+- 退料 HTTP 使用 `returnNo/returnAt/returnQuantity` 和 `pending/returned/cancelled`；`returned` 映射公共完成态 `completed`。固定原批次可用库存回仓由上述业务规则表达，响应不附带固定状态或释放标记，也不提供退料报废状态。列表、详情和打印展示由已登记查询读取公共入库，只限定 `return_inbound`。
+- `occupiedLossQuantity` 是同分配待确认及已确认损耗合计；取消待确认损耗释放占用，确认后持续扣可退上限，另行需求的取消或关闭均不撤销损耗。当前不支持已确认损耗冲销。
 
 ## 3.8 报废表
 

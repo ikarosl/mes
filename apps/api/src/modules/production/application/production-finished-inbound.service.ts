@@ -80,7 +80,6 @@ export class ProductionFinishedInboundService {
     const body: ConfirmFinishedGoodsInboundPayload = {
       productionBatchId: payload.productionBatchId,
       details: payload.details.map((line) => ({
-        detailKey: line.detailKey.trim(),
         allocationId: line.allocationId,
         revisionId: line.revisionId,
         quantity: line.quantity,

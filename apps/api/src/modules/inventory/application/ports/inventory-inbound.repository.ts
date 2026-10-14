@@ -7,16 +7,6 @@ import type {
   PurchaseInboundOrderQuery,
 } from '@company/contracts';
 
-export interface PurchaseInboundItemSnapshot {
-  id: string;
-  materialVariantId: string;
-  materialVariantCode: string;
-  itemCode: string;
-  productName: string;
-  unit: string;
-  itemKind: 'material' | 'finished_product';
-}
-
 export abstract class InventoryInboundRepository {
   abstract list(query: PurchaseInboundOrderQuery): Promise<PageResult<PurchaseInboundOrderItem>>;
   abstract get(inboundId: string): Promise<PurchaseInboundOrderItem>;

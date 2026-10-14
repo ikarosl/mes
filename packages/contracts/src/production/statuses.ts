@@ -40,12 +40,13 @@ export type InventoryTransactionType =
   | 'scrap_outbound'
   | 'stock_check_adjustment'
   | 'status_transfer_in'
-  | 'status_transfer_out';
+  | 'status_transfer_out'
+  | 'other_inbound'
+  | 'other_outbound';
 
 export type InventoryReferenceType =
   | 'inbound_detail'
   | 'outbound_detail'
-  | 'return_detail'
   | 'scrap'
   | 'stock_check_detail'
   | 'inspection_record'
@@ -78,8 +79,7 @@ export type BatchStepAbnormalOrigin = 'current_step' | 'previous_step';
 
 export type AllocationStatus = 'active' | 'released' | 'cancelled' | 'frozen' | 'abnormal';
 
-export type OutboundOrderStatus =
-  'pending_picking' | 'picked' | 'partially_outbound' | 'completed' | 'cancelled';
+export type OutboundOrderStatus = 'pending_picking' | 'completed' | 'cancelled';
 
 export type MaterialOutboundBlockedCode = 'allocation_incomplete' | 'no_orderable_allocation';
 
@@ -88,10 +88,7 @@ export type BatchStepReportType = 'normal' | 'reversal';
 export type BatchStepAbnormalReviewStatus =
   'pending_review' | 'approved' | 'rejected' | 'cancelled' | 'terminated';
 
-export type ReturnOrderStatus = 'pending' | 'returned' | 'scrapped' | 'cancelled';
-
-export type ScrapScene =
-  'warehouse_allocated' | 'return_after_outbound' | 'production_consumed' | 'in_stock';
+export type ReturnOrderStatus = 'pending' | 'returned' | 'cancelled';
 
 export type ScrapStatus = 'pending' | 'confirmed' | 'cancelled';
 export type MaterialLossPurpose = 'production_record' | 'closeout_record';
@@ -100,13 +97,4 @@ export type StockCheckStatus = 'pending' | 'counting' | 'completed' | 'cancelled
 
 export type StockCheckResult = 'surplus' | 'shortage' | 'matched';
 
-export type InspectionType = 'process' | 'final';
-
-export type InspectionResult = 'pending' | 'passed' | 'failed' | 'conditional';
-
 export type ReworkStatus = 'pending' | 'doing' | 'completed' | 'cancelled';
-
-export type FinishedFlowType =
-  'warehouse_inbound' | 'quality_release' | 'warehouse_outbound' | 'other';
-
-export type FinishedFlowStatus = 'confirmed' | 'cancelled';

@@ -186,7 +186,6 @@ export class ReceiptService {
     const body: ConfirmProcurementInboundPayload = {
       remark: payload.remark,
       details: payload.details.map((detail) => ({
-        detailKey: detail.detailKey,
         receiptLineId: detail.receiptLineId,
         roundId: detail.roundId,
         roundVersion: detail.roundVersion,

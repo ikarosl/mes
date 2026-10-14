@@ -13,7 +13,6 @@ export interface FinishedOutputInput {
   unit: string;
   remark?: string | null;
   details: Array<{
-    detailKey: string;
     allocationId: string;
     revisionId: string;
     sourceType: FinishedGoodsInboundSource;
@@ -25,7 +24,6 @@ export interface FinishedOutputResult {
   inboundId: string;
   inboundNo: string;
   details: Array<{
-    detailKey: string;
     allocationId: string;
     batchId: string;
     inboundDetailId: string;

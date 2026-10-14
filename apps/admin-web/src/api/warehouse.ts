@@ -63,8 +63,6 @@ export const warehouseApi = {
     }),
   listMaterialLosses: (params: MaterialLossQuery) =>
     request<PageResult<MaterialLossItem>>({ url: '/warehouse/scraps', params }),
-  getMaterialLoss: (scrapId: string) =>
-    request<MaterialLossItem>({ url: `/warehouse/scraps/${scrapId}` }),
   listMaterialLossBatchOptions: () =>
     request<MaterialLossBatchOption[]>({ url: '/warehouse/scraps/batch-options' }),
   listMaterialLossCandidates: (batchId: string) =>

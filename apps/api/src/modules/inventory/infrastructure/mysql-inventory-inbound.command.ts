@@ -95,7 +95,8 @@ export class MysqlInventoryInboundCommand extends InventoryInboundCommand {
           batchId = detail.target.batchId;
         } else {
           const identity = `${input.productId}:${input.unit}`;
-          const prior = newByKey.get(detail.target.clientKey);
+          const clientKey = detail.target.clientKey.trim();
+          const prior = newByKey.get(clientKey);
           if (prior && prior.identity !== identity)
             throw new InventoryDomainError('INVALID_INPUT', '共用新批次的成品身份或单位不一致');
           if (prior) batchId = prior.batchId;
@@ -121,21 +122,20 @@ export class MysqlInventoryInboundCommand extends InventoryInboundCommand {
               throw error;
             }
             batchId = String(created.insertId);
-            newByKey.set(detail.target.clientKey, { batchId, identity });
+            newByKey.set(clientKey, { batchId, identity });
           }
         }
         resolved.set(detail, batchId);
       }
       const inboundNo = await allocateBusinessNumber(db, 'finished_inbound');
       const [order] = await db.execute<ResultSetHeader>(
-        `INSERT INTO inbound_order(inbound_no,source_type,work_order_id,production_batch_id,product_id,status,inbound_at,operator_id,remark,created_by,updated_by)
-         VALUES (?,'finished_product',?,?,?,'pending',CURRENT_TIMESTAMP,?,?,?,?)`,
+        `INSERT INTO inbound_order(inbound_no,source_type,work_order_id,production_batch_id,product_id,status,remark,created_by,updated_by)
+         VALUES (?,'finished_product',?,?,?,'pending',?,?,?)`,
         [
           inboundNo,
           input.workOrderId,
           input.productionBatchId,
           input.productId,
-          context.actorId,
           input.remark ?? null,
           context.actorId,
           context.actorId,
@@ -143,23 +143,35 @@ export class MysqlInventoryInboundCommand extends InventoryInboundCommand {
       );
       const inboundId = String(order.insertId);
       const details: FinishedOutputResult['details'] = [];
-      for (const detail of input.details) {
+      const insertedDetails: Array<{
+        detail: FinishedOutputInput['details'][number];
+        batchId: string;
+        inboundDetailId: string;
+      }> = [];
+      for (const [index, detail] of input.details.entries()) {
         const batchId = resolved.get(detail)!;
         const [insert] = await db.execute<ResultSetHeader>(
-          `INSERT INTO inbound_detail(inbound_id,product_id,batch_id,production_output_allocation_id,item_code_snapshot,inbound_number,unit_snapshot,stock_status,created_by)
-           VALUES (?,?,?,?,?,?,?,'available',?)`,
+          `INSERT INTO inbound_detail(inbound_id,line_no,source_type,product_id,batch_id,target_mode,new_batch_key,production_output_allocation_id,item_code_snapshot,inbound_number,unit_snapshot,stock_status,created_by,updated_by)
+           VALUES (?,?,'finished_product',?,?,?,?,?,?,?,?,'available',?,?)`,
           [
             inboundId,
+            index + 1,
             input.productId,
             batchId,
+            detail.target.mode,
+            detail.target.mode === 'new' ? detail.target.clientKey.trim() : null,
             detail.allocationId,
             input.productCode,
             fixedIntegerQuantity(detail.quantity),
             input.unit,
             context.actorId,
+            context.actorId,
           ],
         );
-        const inboundDetailId = String(insert.insertId);
+        insertedDetails.push({ detail, batchId, inboundDetailId: String(insert.insertId) });
+      }
+      // 写入全部来源明细后才记账，父单在此期间保持未记账的待确认态。
+      for (const { detail, batchId, inboundDetailId } of insertedDetails) {
         const [transaction] = await db.execute<ResultSetHeader>(
           `INSERT INTO inventory_transaction(product_id,batch_id,transaction_type,quantity,unit_snapshot,stock_status,reference_type,reference_detail_id,idempotency_key,remark,created_by)
            VALUES (?,?,'production_inbound',?,?,'available','inbound_detail',?,?,?,?)`,
@@ -169,20 +181,22 @@ export class MysqlInventoryInboundCommand extends InventoryInboundCommand {
             fixedIntegerQuantity(detail.quantity),
             input.unit,
             inboundDetailId,
-            `FGI:${inboundDetailId}`,
+            `INBOUND:${inboundDetailId}`,
             input.remark ?? null,
             context.actorId,
           ],
         );
         details.push({
-          detailKey: detail.detailKey,
           allocationId: detail.allocationId,
           batchId,
           inboundDetailId,
           transactionId: String(transaction.insertId),
         });
       }
-      await db.execute("UPDATE inbound_order SET status='completed' WHERE id=?", [inboundId]);
+      await db.execute(
+        "UPDATE inbound_order SET status='completed',inbound_at=CURRENT_TIMESTAMP,operator_id=?,version=version+1,updated_by=? WHERE id=?",
+        [context.actorId, context.actorId, inboundId],
+      );
       await writeTransactionalAudit(db, {
         logType: 'business',
         module: 'inventory',
@@ -279,23 +293,17 @@ function validateFinished(input: FinishedOutputInput): void {
   )
     throw new InventoryDomainError('INVALID_INPUT', '成品入库来源或明细无效');
   const keys = new Map<string, string>();
-  const detailKeys = new Set<string>();
   for (const detail of input.details) {
     const quantity = Number(detail.quantity);
     if (
       !/^[1-9]\d*$/.test(detail.allocationId) ||
       !/^[1-9]\d*$/.test(detail.revisionId) ||
-      !detail.detailKey.trim() ||
-      detail.detailKey.length > 100 ||
       !Number.isSafeInteger(quantity) ||
       quantity <= 0 ||
       quantity > MAX_PERSISTED_INTEGER_QUANTITY ||
       !['self_made', 'production_extra'].includes(detail.sourceType)
     )
       throw new InventoryDomainError('INVALID_INPUT', '成品授权或数量无效');
-    if (detailKeys.has(detail.detailKey))
-      throw new InventoryDomainError('INVALID_INPUT', '成品入库明细标识不能重复');
-    detailKeys.add(detail.detailKey);
     if (detail.target.mode === 'existing') {
       if (!/^[1-9]\d*$/.test(detail.target.batchId))
         throw new InventoryDomainError('INVALID_INPUT', '目标批次无效');
@@ -303,10 +311,11 @@ function validateFinished(input: FinishedOutputInput): void {
       if (!detail.target.clientKey.trim() || detail.target.clientKey.length > 100)
         throw new InventoryDomainError('INVALID_INPUT', '新批次标识无效');
       const identity = `${input.productId}:${input.unit}`;
-      const previous = keys.get(detail.target.clientKey);
+      const clientKey = detail.target.clientKey.trim();
+      const previous = keys.get(clientKey);
       if (previous && previous !== identity)
         throw new InventoryDomainError('INVALID_INPUT', '共用新批次的身份不一致');
-      keys.set(detail.target.clientKey, identity);
+      keys.set(clientKey, identity);
     }
   }
 }

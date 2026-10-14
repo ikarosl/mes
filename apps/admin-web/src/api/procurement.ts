@@ -30,7 +30,6 @@ import type {
   RelatedPurchasesQuery,
   RelatedPurchasesResult,
   ProcurementReceiptQuery,
-  ProcurementReceiptItem,
   ProcurementReceiptLineListItem,
   ProcurementReceiptDetail,
   ProcurementReceiptLine,
@@ -106,11 +105,6 @@ export const procurementApi = {
       signal,
       skipErrorHandling: true,
     }),
-  listReceipts: (
-    params: ProcurementReceiptQuery,
-    signal?: AbortSignal,
-  ): Promise<PageResult<ProcurementReceiptItem>> =>
-    request({ url: '/procurement/receipts', params, signal, skipErrorHandling: true }),
   listReceiptLines: (
     params: ProcurementReceiptQuery,
     signal?: AbortSignal,

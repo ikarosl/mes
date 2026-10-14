@@ -16,13 +16,10 @@ import type {
   ProductCategoryQuery,
   ProductGroupItem,
   ProductGroupQuery,
-  ProductListItem,
-  ProductListQuery,
   ProductMaterialItem,
   ProductMaterialPayload,
   ReplaceProductMaterialsCommand,
   MaterialVariantItem,
-  MaterialVariantListQuery,
   MaterialVariantPayload,
   MaterialListItem,
   MaterialListQuery,
@@ -91,8 +88,6 @@ export const productApi = {
   setCategoryStatus: (id: string, status: number) =>
     request<void>({ url: `${base}/categories/${id}/status`, method: 'PATCH', data: { status } }),
 
-  products: (params: ProductListQuery) =>
-    request<PageResult<ProductListItem>>({ url: `${base}/products`, params }),
   productGroups: (params: ProductGroupQuery) =>
     request<PageResult<ProductGroupItem>>({ url: `${base}/product-groups`, params }),
   productOptions: () =>
@@ -111,8 +106,6 @@ export const productApi = {
     }),
   setProductStatus: (id: string, status: number) =>
     request<void>({ url: `${base}/products/${id}/status`, method: 'PATCH', data: { status } }),
-  materialVariants: (params: MaterialVariantListQuery) =>
-    request<PageResult<MaterialVariantItem>>({ url: `${base}/material-variants`, params }),
   materialVariantsByMaterial: (materialId: string) =>
     request<MaterialVariantItem[]>({
       url: `${base}/material-variants/by-material/${materialId}`,

@@ -22,6 +22,7 @@ import { writeTransactionalAudit } from '../../../common/audit/transactional-aud
 import { toBeijingISOString, toDateOnlyString } from '../../../common/time/date-time.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
 import type { ProcessRouteSnapshot } from '../../product/public.js';
+import { InventoryProductionDocumentCommand } from '../../inventory/public.js';
 import type { ResolvedBatchStepOverride } from '../application/ports/production.repository.js';
 import { requireBatchTransition } from '../domain/production-status.policy.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
@@ -52,7 +53,10 @@ import {
 
 @Injectable()
 export class MysqlProductionBatchRepository {
-  constructor(@Inject(DATABASE_POOL) private readonly pool: Pool) {}
+  constructor(
+    @Inject(DATABASE_POOL) private readonly pool: Pool,
+    private readonly documents: InventoryProductionDocumentCommand,
+  ) {}
 
   async list(query: ProductionBatchQuery): Promise<PageResult<ProductionBatchItem>> {
     const page = query.page ?? 1;
@@ -113,7 +117,7 @@ export class MysqlProductionBatchRepository {
 
   async getCancellationCheck(id: string): Promise<ProductionBatchCancellationCheck> {
     const batch = await findBatch(this.pool, id);
-    const state = await loadBatchCancellationState(this.pool, id, false);
+    const state = await loadBatchCancellationState(this.pool, id, false, this.documents);
     return buildBatchCancellationCheck(id, batch, state);
   }
 
@@ -314,7 +318,12 @@ export class MysqlProductionBatchRepository {
           '生产任务已被其他操作修改，请刷新后重试',
         );
 
-      const cancellationState = await loadBatchCancellationState(connection, id, true);
+      const cancellationState = await loadBatchCancellationState(
+        connection,
+        id,
+        true,
+        this.documents,
+      );
       const confirmedOutbounds = cancellationState.outbounds.filter(
         (outbound) => outbound.status !== 'pending_picking',
       );
@@ -332,13 +341,14 @@ export class MysqlProductionBatchRepository {
         );
 
       const pendingOutboundIds = cancellationState.outbounds.map((outbound) => String(outbound.id));
-      await connection.execute(
-        `UPDATE outbound_order
-         SET status='cancelled',cancel_source='production_batch',cancel_reason=?,cancelled_by=?,
-             cancelled_at=NOW(),version=version+1,updated_by=?
-         WHERE production_batch_id=? AND status='pending_picking'`,
-        [reason, audit.actorId, audit.actorId, id],
-      );
+      for (const outbound of cancellationState.outbounds)
+        await this.documents.cancelOutbound(
+          outbound.id,
+          outbound.version,
+          reason,
+          'production_batch',
+          audit,
+        );
       await connection.execute(
         `UPDATE production_item_allocation
          SET allocation_status='cancelled',version=version+1,updated_by=?

@@ -7,6 +7,8 @@ export const BUSINESS_NUMBER_PREFIX = {
   supplier_return: 'VR',
   purchase_inbound: 'PI',
   finished_inbound: 'FI',
+  other_inbound: 'OI',
+  other_outbound: 'OO',
   inventory_batch: 'IB',
   stock_check: 'PD',
   production_material_outbound: 'PMO',

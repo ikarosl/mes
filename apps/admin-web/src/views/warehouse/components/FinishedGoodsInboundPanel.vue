@@ -403,7 +403,7 @@ async function toggle(source: FinishedGoodsInboundCandidate): Promise<void> {
   )
     return;
   selected.value.push({
-    detailKey: crypto.randomUUID(),
+    rowKey: crypto.randomUUID(),
     source: { ...source },
     quantity: source.remainingQuantity,
     target: { mode: 'new', clientKey: crypto.randomUUID() },

@@ -563,4 +563,4 @@ products
 
 `GET /production/trace/batches/:id` 的物料入库来源按所用库存批次的正数、available 流水展示，`sourceLabel` 取真实 `transaction_type`，无外购单不能一律解释为 initial_stock。这是批次入库历史，不表示其中每笔数量全部被当前任务消费。
 
-`sourceDocumentNo` 当前解析外购入库单及已确认退料单；其他来源未解析时为 null，类型仍取流水。`confirmedAt` 优先使用对应单据确认时间，无关联单据时使用流水时间。供应方仅取对应外购入库明细的确认时供应商名称，不从合单的其他明细或退料推断供应商；前端使用共享流水字典。供应商名称和批次来源规则见 [Inventory](../../../inventory/docs/database/inventory-ledger-and-inbound.md#9-inbound_detail)。
+`sourceDocumentNo` 沿 `inventory_transaction.reference_type=inbound_detail` 解析已完成公共入库单，包含采购、生产退料与其他入库；无对应单据的初始库存等来源为 null，类型仍取真实流水。`confirmedAt` 优先对应单据确认时间，无单据时使用流水时间。供应方仅取采购入库对应明细的确认时供应商名称，不从合单的其他明细、退料或人工其他单推断供应商；前端使用共享流水字典。共同库批仍只追溯来源集合，不分摊某条领料精确消费哪次入库。供应商名称和批次来源规则见 [Inventory](../../../inventory/docs/database/inventory-ledger-and-inbound.md#9-inbound_detail)。

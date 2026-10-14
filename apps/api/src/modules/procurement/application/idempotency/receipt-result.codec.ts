@@ -24,7 +24,6 @@ const inboundSchema = z
       .array(
         z
           .object({
-            detailKey: z.string().min(1),
             receiptLineId: id,
             allocationId: id,
             batchId: id,

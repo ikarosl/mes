@@ -23,8 +23,11 @@ import { findBatch } from './mysql-production.shared.js';
 import { MysqlProductionTerminationRepository } from './mysql-production-termination.repository.js';
 import { mysqlProductionDemandPlanWriter } from './mysql-production-demand-plan.writer.js';
 import { writeInventoryAudit } from './mysql-production-inventory.shared.js';
-import { loadCloseoutItems } from './mysql-production-closeout-items.js';
-import { allocationNeedsCloseoutSql } from './mysql-production-material.sql.js';
+import {
+  demandHasAllocationCloseoutWork,
+  loadCloseoutItems,
+} from './mysql-production-closeout-items.js';
+import { InventoryProductionDocumentCommand } from '../../inventory/public.js';
 
 import {
   CLOSEOUT_COLUMNS,
@@ -60,6 +63,7 @@ export class MysqlProductionCloseoutRepository extends ProductionCloseoutReposit
   constructor(
     @Inject(DATABASE_POOL) private readonly pool: Pool,
     private readonly termination: MysqlProductionTerminationRepository,
+    private readonly documents: InventoryProductionDocumentCommand,
   ) {
     super();
   }
@@ -306,20 +310,27 @@ export class MysqlProductionCloseoutRepository extends ProductionCloseoutReposit
         );
     };
     switch (payload.kind) {
-      case 'outbound':
-        await update(
-          `UPDATE outbound_order SET status='cancelled',cancel_source='production_termination',cancel_reason=?,cancelled_by=?,cancelled_at=NOW(),version=version+1,updated_by=?
-          WHERE id=? AND production_batch_id=? AND status='pending_picking'`,
-          [payload.reason, actor, ...args],
+      case 'outbound': {
+        const outbound = await this.documents.getOutbound(payload.targetId, true);
+        if (
+          outbound.productionBatchId !== batchId ||
+          outbound.status !== 'pending' ||
+          outbound.version !== payload.targetVersion
+        )
+          throw new ProductionDomainError('CONCURRENT_MODIFICATION', '待出库单已变化，请刷新核对');
+        await this.documents.cancelOutbound(
+          outbound.id,
+          outbound.version,
+          payload.reason,
+          'production_termination',
+          context,
         );
         return 'cancelled';
+      }
       case 'allocation': {
-        const [[pending]] = await db.query<RowDataPacket[]>(
-          `SELECT od.id FROM outbound_detail od JOIN outbound_order oo ON oo.id=od.outbound_id
-          WHERE od.allocation_id=? AND oo.status NOT IN ('completed','cancelled') LIMIT 1 FOR SHARE`,
-          [payload.targetId],
-        );
-        if (pending) throw new ProductionDomainError('INVALID_STATE', '先处理该分配的待出库单');
+        const facts = await this.documents.facts({ allocationIds: [payload.targetId], lock: true });
+        if (facts.outbounds.some((order) => order.status === 'pending'))
+          throw new ProductionDomainError('INVALID_STATE', '先处理该分配的待出库单');
         await update(
           `UPDATE production_item_allocation SET allocation_status='released',version=version+1,updated_by=?
           WHERE id=? AND production_batch_id=? AND allocation_status NOT IN ('released','cancelled')`,
@@ -328,12 +339,7 @@ export class MysqlProductionCloseoutRepository extends ProductionCloseoutReposit
         return 'released';
       }
       case 'demand': {
-        const [[reservation]] = await db.query<RowDataPacket[]>(
-          `SELECT id FROM production_item_allocation WHERE demand_id=?
-           AND ${allocationNeedsCloseoutSql('production_item_allocation', true)} LIMIT 1 FOR SHARE`,
-          [payload.targetId],
-        );
-        if (reservation)
+        if (await demandHasAllocationCloseoutWork(db, payload.targetId, this.documents))
           throw new ProductionDomainError(
             'INVALID_STATE',
             '先处理该需求的出库单、剩余预留及冻结或异常分配，再关闭剩余要求',
@@ -415,7 +421,12 @@ export class MysqlProductionCloseoutRepository extends ProductionCloseoutReposit
       `SELECT * FROM production_batch_closeout_action WHERE closeout_id=? ORDER BY id${lock ? ' FOR SHARE' : ''}`,
       [row.id],
     );
-    const { demands, pendingItems, allocationDemands } = await loadCloseoutItems(db, check, lock);
+    const { demands, pendingItems, allocationDemands } = await loadCloseoutItems(
+      db,
+      check,
+      lock,
+      this.documents,
+    );
     const materialReviews = check.materials.map((material) => {
       const reviewed = actions
         .filter(

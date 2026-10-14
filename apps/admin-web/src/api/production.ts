@@ -25,7 +25,6 @@ import type {
   ReviewProductionOutputMaterialPayload,
   SubmitProductionOutputPayload,
   BeginProductionOutputCorrectionPayload,
-  BeginProductionOutputReinspectionPayload,
   ProductionOutputCommandResult,
   CreateProductionBatchPayload,
   CreateMaterialAllocationsPayload,
@@ -453,20 +452,6 @@ export const productionApi = {
       retryIdempotentWrite: true,
       retryTimes: 2,
     }),
-  beginProductionOutputReinspection: (
-    id: string,
-    data: BeginProductionOutputReinspectionPayload,
-    idempotencyKey: string,
-  ) =>
-    request<ProductionOutputCommandResult>({
-      url: `/production/batches/${id}/output/reinspections`,
-      method: 'POST',
-      data,
-      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
-      skipErrorHandling: true,
-      retryIdempotentWrite: true,
-      retryTimes: 2,
-    }),
   cancelProductionOutputCorrection: (id: string, version: number, idempotencyKey: string) =>
     request<ProductionOutputCommandResult>({
       url: `/production/batches/${id}/output/corrections/cancel`,
@@ -659,13 +644,6 @@ export const productionApi = {
       ...options,
       url: '/production/worker-tasks',
       params,
-    }),
-
-  batchStepSopContent: (batchId: string, stepRecordId: string) =>
-    request<Blob>({
-      url: `/production/batches/${batchId}/step-records/${stepRecordId}/sop-content`,
-      responseType: 'blob',
-      timeout: 0,
     }),
 
   workerTaskSopContent: (batchId: string, stepRecordId: string) =>

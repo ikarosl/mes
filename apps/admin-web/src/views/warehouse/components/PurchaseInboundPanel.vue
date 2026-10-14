@@ -237,7 +237,7 @@
           </div>
           <el-table
             :data="group.items"
-            row-key="detailKey"
+            row-key="rowKey"
           >
             <el-table-column
               label="到货行 / 实际归属采购"
@@ -300,19 +300,19 @@
                   :aria-label="`本次入库数量 ${row.source.itemCode}`"
                 />
                 <div
-                  v-if="quantitySummaries[row.detailKey]"
+                  v-if="quantitySummaries[row.rowKey]"
                   class="quantity-summary"
                   :class="{
                     'is-invalid':
-                      !quantitySummaries[row.detailKey].valid ||
-                      quantitySummaries[row.detailKey].after < 0,
+                      !quantitySummaries[row.rowKey].valid ||
+                      quantitySummaries[row.rowKey].after < 0,
                   }"
                 >
-                  <span v-if="quantitySummaries[row.detailKey].count > 1">
-                    {{ quantitySummaries[row.detailKey].count }} 条目标合计
+                  <span v-if="quantitySummaries[row.rowKey].count > 1">
+                    {{ quantitySummaries[row.rowKey].count }} 条目标合计
                     <strong>{{
-                      quantitySummaries[row.detailKey].valid
-                        ? `${formatQuantity(quantitySummaries[row.detailKey].total)} ${row.source.unit}`
+                      quantitySummaries[row.rowKey].valid
+                        ? `${formatQuantity(quantitySummaries[row.rowKey].total)} ${row.source.unit}`
                         : '待修正'
                     }}</strong>
                     ·
@@ -320,25 +320,25 @@
                   <span
                     >可入
                     <strong
-                      >{{ formatQuantity(quantitySummaries[row.detailKey].allowance) }}
+                      >{{ formatQuantity(quantitySummaries[row.rowKey].allowance) }}
                       {{ row.source.unit }}</strong
                     ></span
                   >
                   <span
                     >· 入库后剩余
                     <strong>{{
-                      quantitySummaries[row.detailKey].valid &&
-                      quantitySummaries[row.detailKey].after >= 0
-                        ? `${formatQuantity(quantitySummaries[row.detailKey].after)} ${row.source.unit}`
+                      quantitySummaries[row.rowKey].valid &&
+                      quantitySummaries[row.rowKey].after >= 0
+                        ? `${formatQuantity(quantitySummaries[row.rowKey].after)} ${row.source.unit}`
                         : '待修正'
                     }}</strong></span
                   >
                 </div>
                 <div
-                  v-if="row.error || releases.quantityErrors.value.get(row.detailKey)"
+                  v-if="row.error || releases.quantityErrors.value.get(row.rowKey)"
                   class="error"
                 >
-                  {{ row.error || releases.quantityErrors.value.get(row.detailKey) }}
+                  {{ row.error || releases.quantityErrors.value.get(row.rowKey) }}
                 </div></template
               ></el-table-column
             >
@@ -347,13 +347,13 @@
                 <InboundSplitControl
                   :quantity="row.quantity"
                   :disabled="releases.locked.value || releases.selected.value.length >= 100"
-                  @split="(quantity) => releases.split(row.detailKey, quantity)"
+                  @split="(quantity) => releases.split(row.rowKey, quantity)"
                 />
                 <el-button
                   type="danger"
                   link
                   :disabled="releases.locked.value"
-                  @click="releases.remove(row.detailKey)"
+                  @click="releases.remove(row.rowKey)"
                   >移除此目标</el-button
                 >
               </template>
@@ -502,7 +502,7 @@ const quantitySummaries = computed(() => {
   const firstDetails = new Map<string, string>();
   for (const row of releases.selected.value) {
     if (!firstDetails.has(row.source.allocationId))
-      firstDetails.set(row.source.allocationId, row.detailKey);
+      firstDetails.set(row.source.allocationId, row.rowKey);
   }
   return Object.fromEntries(
     releases.groupSummaries.value.map((group) => [

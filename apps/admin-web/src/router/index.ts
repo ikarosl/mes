@@ -43,6 +43,8 @@ import ReturnOrdersPage from '../views/warehouse/ReturnOrdersPage.vue';
 import ScrapsPage from '../views/warehouse/ScrapsPage.vue';
 import StockChecksPage from '../views/warehouse/StockChecksPage.vue';
 import WarehouseInventoryPage from '../views/warehouse/WarehouseInventoryPage.vue';
+import OtherInboundsPage from '../views/warehouse/OtherInboundsPage.vue';
+import OtherOutboundsPage from '../views/warehouse/OtherOutboundsPage.vue';
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -303,6 +305,22 @@ export const router = createRouter({
           ReturnOrdersPage,
           PERMISSIONS.warehouse.returns.view,
           'ReturnOrdersPage',
+        ),
+        page(
+          'warehouse/other-inbounds',
+          'warehouse-other-inbounds',
+          '其他入库',
+          OtherInboundsPage,
+          PERMISSIONS.warehouse.otherInbounds.view,
+          'OtherInboundsPage',
+        ),
+        page(
+          'warehouse/other-outbounds',
+          'warehouse-other-outbounds',
+          '其他出库',
+          OtherOutboundsPage,
+          PERMISSIONS.warehouse.otherOutbounds.view,
+          'OtherOutboundsPage',
         ),
         page(
           'warehouse/scraps',

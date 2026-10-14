@@ -35,7 +35,7 @@
 
 全局唯一约束位于 `item_batch.batch_code`。它只防止不同批次重号，不限制多张入库单、多条入库明细引用同一 `item_batch.id`。
 
-入库目标仍区分 `{mode:'new',clientKey}` 与 `{mode:'existing',batchId}`。新目标在实际确认事务创建批次时取 IB；同请求相同 clientKey 只创建／取号一次。已有目标复用原批次和批号，不取 IB。每次新入库确认分别生成 PI 或 FI 单号，重复请求按现有幂等重放。具体身份、单位、状态和来源授权校验见 [Inventory 公开能力](../src/modules/inventory/docs/public-contracts.md)。
+入库目标仍区分 `{mode:'new',clientKey}` 与 `{mode:'existing',batchId}`。新目标在实际确认事务创建批次时取 IB；同请求相同 clientKey 只创建／取号一次。已有目标复用原批次和批号，不取 IB。采购／成品入库确认分别生成 PI 或 FI 单号；其他入库／出库首次保存草稿生成 OI／OO，后续确认不重新取单号。其他新批次草稿在确认时才取 IB，取消不建空批次。重复请求按现有幂等重放。具体身份、单位、状态和来源授权校验见 [Inventory 公开能力](../src/modules/inventory/docs/public-contracts.md)。
 
 ## 迁移与验证边界
 

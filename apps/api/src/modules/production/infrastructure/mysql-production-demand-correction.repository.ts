@@ -11,7 +11,11 @@ import type {
 } from '@company/contracts';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
 import type { ApprovalSubjectPreparation } from '../../approval/public.js';
-import { InventoryStockCommand } from '../../inventory/public.js';
+import {
+  InventoryStockCommand,
+  InventoryProductionDocumentCommand,
+} from '../../inventory/public.js';
+import { materialQuantitiesOf } from './mysql-production-material-facts.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
 import { toBeijingISOString } from '../../../common/time/date-time.js';
 import { ProductionDemandCorrectionRepository } from '../application/ports/production-demand-correction.repository.js';
@@ -88,6 +92,7 @@ export class MysqlProductionDemandCorrectionRepository extends ProductionDemandC
   constructor(
     @Inject(DATABASE_POOL) private readonly pool: Pool,
     private readonly inventory: InventoryStockCommand,
+    private readonly documents: InventoryProductionDocumentCommand,
   ) {
     super();
   }
@@ -301,13 +306,25 @@ export class MysqlProductionDemandCorrectionRepository extends ProductionDemandC
             ? 'correction_replaced'
             : 'correction_exhausted';
       // 只释放该需求未出库预留。已领料仍从旧分配/旧需求追溯并办理退料。
-      await db.execute(
-        `UPDATE production_item_allocation SET allocation_status='released',version=version+1,updated_by=?
-        WHERE demand_id=? AND allocation_status='active' AND assigned_number>COALESCE((
-          SELECT SUM(od.outbound_number) FROM outbound_detail od JOIN outbound_order oo ON oo.id=od.outbound_id
-          WHERE od.allocation_id=production_item_allocation.id AND oo.status='completed'),0)`,
-        [context.actorId, demand.id],
+      const [allocationsToRelease] = await db.query<
+        (RowDataPacket & { id: string; assigned_number: string })[]
+      >(
+        `SELECT CAST(id AS CHAR) id,assigned_number FROM production_item_allocation
+         WHERE demand_id=? AND allocation_status='active' ORDER BY id FOR UPDATE`,
+        [demand.id],
       );
+      const issuedByAllocation = materialQuantitiesOf(
+        await this.documents.facts({ demandIds: [String(demand.id)], lock: true }),
+      ).issued;
+      for (const allocation of allocationsToRelease) {
+        if (Number(allocation.assigned_number) <= (issuedByAllocation.get(allocation.id) ?? 0))
+          continue;
+        await db.execute(
+          `UPDATE production_item_allocation SET allocation_status='released',version=version+1,updated_by=?
+           WHERE id=? AND allocation_status='active'`,
+          [context.actorId, allocation.id],
+        );
+      }
       const line: DemandPlanLine = {
         identityId: correctionId,
         requirementBasisId: demand.requirement_basis_id,
@@ -495,18 +512,16 @@ export class MysqlProductionDemandCorrectionRepository extends ProductionDemandC
       parent = previous.replaces_demand_id;
     }
     const chainIds = chainRows.map((row) => String(row.id));
-    const [outbounds] = await db.query<
-      (RowDataPacket & {
-        id: number;
-        demand_id: number;
-        outbound_number: string;
-        status: string;
-        outbound_no: string;
-      })[]
-    >(
-      `SELECT od.id,od.demand_id,od.outbound_number,oo.status,oo.outbound_no FROM outbound_detail od JOIN outbound_order oo ON oo.id=od.outbound_id
-       WHERE od.demand_id IN (${chainIds.map(() => '?').join(',')}) ORDER BY od.id${suffix}`,
-      chainIds,
+    const facts = await this.documents.facts({ demandIds: chainIds, lock });
+    const quantities = materialQuantitiesOf(facts);
+    const outbounds = facts.outbounds.flatMap((order) =>
+      order.details.map((line) => ({
+        id: line.id,
+        demand_id: line.demandId,
+        outbound_number: line.quantity,
+        status: order.status === 'pending' ? 'pending_picking' : order.status,
+        outbound_no: order.no,
+      })),
     );
     const chain = chainRows.map((row): DemandCorrectionChainItem => ({
       demandId: String(row.id),
@@ -533,11 +548,12 @@ export class MysqlProductionDemandCorrectionRepository extends ProductionDemandC
       })[]
     >(
       `SELECT a.id,a.batch_id,a.assigned_number,a.allocation_status,a.version,
-        COALESCE((SELECT SUM(od.outbound_number) FROM outbound_detail od JOIN outbound_order oo ON oo.id=od.outbound_id
-          WHERE od.allocation_id=a.id AND oo.status='completed'${suffix}),0) issued
+        0 issued
        FROM production_item_allocation a WHERE a.demand_id=? ORDER BY a.id${suffix}`,
       [demandId],
     );
+    for (const allocation of allocations)
+      allocation.issued = String(quantities.issued.get(String(allocation.id)) ?? 0);
     // Batch labels are immutable presentation references, not correction eligibility or stock locks.
     const inventoryBatches = new Map(
       (
@@ -546,10 +562,12 @@ export class MysqlProductionDemandCorrectionRepository extends ProductionDemandC
         ])
       ).map((batch) => [batch.id, batch]),
     );
-    const [returns] = await db.query<RowDataPacket[]>(
-      `SELECT rd.id,rd.return_number,ro.status FROM return_detail rd JOIN return_order ro ON ro.id=rd.return_id
-      WHERE rd.demand_id IN (${chainIds.map(() => '?').join(',')}) ORDER BY rd.id${suffix}`,
-      chainIds,
+    const returns = facts.returns.flatMap((order) =>
+      order.details.map((line) => ({
+        id: line.id,
+        return_number: line.quantity,
+        status: order.status === 'completed' ? 'returned' : order.status,
+      })),
     );
     const [losses] = await db.query<(RowDataPacket & { status: string })[]>(
       `SELECT id,scrap_number,status FROM item_scrap

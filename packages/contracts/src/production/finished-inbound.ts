@@ -65,7 +65,6 @@ export interface FinishedGoodsInboundOrderItem {
 }
 export type FinishedGoodsInboundOrderDetail = FinishedGoodsInboundOrderItem;
 export interface ConfirmFinishedGoodsInboundLine {
-  detailKey: string;
   allocationId: string;
   revisionId: string;
   quantity: number;

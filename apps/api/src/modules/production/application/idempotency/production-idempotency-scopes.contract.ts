@@ -43,13 +43,7 @@ export const CONFIGURE_MATERIAL_DEMANDS_IDEMPOTENCY_SCOPE =
 /** 创建人工追加物料需求。 */
 export const ADD_MANUAL_MATERIAL_DEMAND_IDEMPOTENCY_SCOPE =
   'production.material-demands.add-manual.v3' as const;
-/** 创建外购物料入库单。 */
-export const CREATE_PURCHASE_INBOUND_IDEMPOTENCY_SCOPE =
-  'production.purchase-inbound.create.v1' as const;
-/** 确认外购物料入库单。 */
-export const CONFIRM_PURCHASE_INBOUND_IDEMPOTENCY_SCOPE =
-  'production.purchase-inbound.confirm.v1' as const;
-export const CONFIRM_FINISHED_INBOUND_SCOPE = 'production.finished-inbound.confirm.v3' as const;
+export const CONFIRM_FINISHED_INBOUND_SCOPE = 'production.finished-inbound.confirm.v4' as const;
 /** 创建工序报工。 */
 export const CREATE_STEP_REPORT_IDEMPOTENCY_SCOPE = 'production.step-report.create.v4' as const;
 /** 纯正常直接报工全量替代更正。 */

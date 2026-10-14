@@ -30,7 +30,7 @@
     />
     <el-table
       :data="selected"
-      row-key="detailKey"
+      row-key="rowKey"
       class="section"
       max-height="430"
     >
@@ -59,19 +59,18 @@
             :aria-label="`本次入库数量 ${row.source.productCode}`"
           />
           <div
-            v-if="quantitySummaries[row.detailKey]"
+            v-if="quantitySummaries[row.rowKey]"
             class="quantity-summary"
             :class="{
               'is-invalid':
-                !quantitySummaries[row.detailKey].valid ||
-                quantitySummaries[row.detailKey].after < 0,
+                !quantitySummaries[row.rowKey].valid || quantitySummaries[row.rowKey].after < 0,
             }"
           >
-            <span v-if="quantitySummaries[row.detailKey].count > 1">
-              {{ quantitySummaries[row.detailKey].count }} 条目标合计
+            <span v-if="quantitySummaries[row.rowKey].count > 1">
+              {{ quantitySummaries[row.rowKey].count }} 条目标合计
               <strong>{{
-                quantitySummaries[row.detailKey].valid
-                  ? `${formatQuantity(quantitySummaries[row.detailKey].total)} ${row.source.unit}`
+                quantitySummaries[row.rowKey].valid
+                  ? `${formatQuantity(quantitySummaries[row.rowKey].total)} ${row.source.unit}`
                   : '待修正'
               }}</strong>
               ·
@@ -79,25 +78,24 @@
             <span
               >可入
               <strong
-                >{{ formatQuantity(quantitySummaries[row.detailKey].allowance) }}
+                >{{ formatQuantity(quantitySummaries[row.rowKey].allowance) }}
                 {{ row.source.unit }}</strong
               ></span
             >
             <span
               >· 入库后剩余
               <strong>{{
-                quantitySummaries[row.detailKey].valid &&
-                quantitySummaries[row.detailKey].after >= 0
-                  ? `${formatQuantity(quantitySummaries[row.detailKey].after)} ${row.source.unit}`
+                quantitySummaries[row.rowKey].valid && quantitySummaries[row.rowKey].after >= 0
+                  ? `${formatQuantity(quantitySummaries[row.rowKey].after)} ${row.source.unit}`
                   : '待修正'
               }}</strong></span
             >
           </div>
           <div
-            v-if="quantityErrors.get(row.detailKey)"
+            v-if="quantityErrors.get(row.rowKey)"
             class="error"
           >
-            {{ quantityErrors.get(row.detailKey) }}
+            {{ quantityErrors.get(row.rowKey) }}
           </div></template
         ></el-table-column
       >
@@ -120,12 +118,12 @@
           ><InboundSplitControl
             :quantity="row.quantity"
             :disabled="locked || selected.length >= 100"
-            @split="(quantity) => split(row.detailKey, quantity)"
+            @split="(quantity) => split(row.rowKey, quantity)"
           /><el-button
             link
             type="danger"
             :disabled="locked"
-            @click="remove(row.detailKey)"
+            @click="remove(row.rowKey)"
             >移除此目标</el-button
           ></template
         ></el-table-column
@@ -236,7 +234,7 @@ const quantitySummaries = computed(() => {
   const firstDetails = new Map<string, string>();
   for (const row of selected.value) {
     if (!firstDetails.has(row.source.allocationId))
-      firstDetails.set(row.source.allocationId, row.detailKey);
+      firstDetails.set(row.source.allocationId, row.rowKey);
   }
   return Object.fromEntries(
     groupSummaries.value.map((group) => [firstDetails.get(group.source.allocationId)!, group]),
@@ -246,18 +244,18 @@ const quantityErrors = computed(() => {
   const errors = new Map<string, string>();
   for (const row of selected.value) {
     if (parseInboundQuantity(row.quantity) === null)
-      errors.set(row.detailKey, '请输入 1～99999999 的正整数');
+      errors.set(row.rowKey, '请输入 1～99999999 的正整数');
     else if (row.target.mode === 'existing' && !row.target.batchId)
-      errors.set(row.detailKey, '请选择已有批次');
+      errors.set(row.rowKey, '请选择已有批次');
     else if (row.target.mode === 'new' && !row.target.clientKey)
-      errors.set(row.detailKey, '新建批次目标无效，请重新选择');
+      errors.set(row.rowKey, '新建批次目标无效，请重新选择');
   }
   for (const group of groupSummaries.value) {
     if (group.total > group.allowance) {
       for (const row of selected.value.filter(
         (item) => item.source.allocationId === group.source.allocationId,
       ))
-        errors.set(row.detailKey, '本次合计超过该授权剩余额度');
+        errors.set(row.rowKey, '本次合计超过该授权剩余额度');
     }
   }
   return errors;
@@ -269,18 +267,18 @@ const canSubmit = computed(
     selected.value.every((row) => row.source.canConfirm),
 );
 
-function remove(detailKey: string): void {
-  if (!locked.value) selected.value = selected.value.filter((item) => item.detailKey !== detailKey);
+function remove(rowKey: string): void {
+  if (!locked.value) selected.value = selected.value.filter((item) => item.rowKey !== rowKey);
 }
-function split(detailKey: string, splitQuantity: number): void {
+function split(rowKey: string, splitQuantity: number): void {
   if (locked.value || selected.value.length >= 100) return;
-  const item = selected.value.find((row) => row.detailKey === detailKey);
+  const item = selected.value.find((row) => row.rowKey === rowKey);
   const originalQuantity = item ? parseInboundQuantity(item.quantity) : null;
   if (!item || originalQuantity === null || splitQuantity < 1 || splitQuantity >= originalQuantity)
     return;
   item.quantity = String(originalQuantity - splitQuantity);
   selected.value.push({
-    detailKey: crypto.randomUUID(),
+    rowKey: crypto.randomUUID(),
     source: { ...item.source },
     quantity: String(splitQuantity),
     target: { mode: 'new', clientKey: crypto.randomUUID() },
@@ -301,7 +299,7 @@ function sameBasis(
   );
 }
 function selectionSignature(): string {
-  return selected.value.map((row) => `${row.detailKey}:${row.source.allocationId}`).join('|');
+  return selected.value.map((row) => `${row.rowKey}:${row.source.allocationId}`).join('|');
 }
 async function recheck(adopt: boolean): Promise<boolean> {
   if (!pageActive || !selected.value.length || locked.value || !props.active || !props.visible)
@@ -362,7 +360,6 @@ async function confirm(): Promise<void> {
   const body: ConfirmFinishedGoodsInboundPayload = {
     productionBatchId: source.productionBatchId,
     details: selected.value.map((item) => ({
-      detailKey: item.detailKey,
       allocationId: item.source.allocationId,
       revisionId: item.source.outputRevisionId,
       quantity: Number(item.quantity),

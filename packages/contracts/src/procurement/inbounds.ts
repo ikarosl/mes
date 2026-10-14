@@ -42,7 +42,6 @@ export interface ProcurementInboundReleaseItem {
 export interface ConfirmProcurementInboundPayload {
   remark?: string | null;
   details: Array<{
-    detailKey: string;
     receiptLineId: string;
     roundId: string;
     roundVersion: number;
@@ -58,7 +57,6 @@ export interface ConfirmProcurementInboundResult {
   inboundId: string;
   inboundNo: string;
   details: Array<{
-    detailKey: string;
     receiptLineId: string;
     allocationId: string;
     batchId: string;

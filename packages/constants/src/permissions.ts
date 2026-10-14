@@ -138,9 +138,7 @@ export const PERMISSIONS = {
     },
     inventory: { view: 'production:inventory:view' },
     inbounds: {
-      create: 'production:inbounds:create',
       confirm: 'production:inbounds:confirm',
-      cancel: 'production:inbounds:cancel',
       confirmFinished: 'production:inbounds:confirm-finished',
     },
     batches: {
@@ -158,6 +156,20 @@ export const PERMISSIONS = {
     rework: { execute: 'production:rework:execute' },
   },
   warehouse: {
+    otherInbounds: {
+      view: 'warehouse:other-inbounds:view',
+      create: 'warehouse:other-inbounds:create',
+      update: 'warehouse:other-inbounds:update',
+      confirm: 'warehouse:other-inbounds:confirm',
+      cancel: 'warehouse:other-inbounds:cancel',
+    },
+    otherOutbounds: {
+      view: 'warehouse:other-outbounds:view',
+      create: 'warehouse:other-outbounds:create',
+      update: 'warehouse:other-outbounds:update',
+      confirm: 'warehouse:other-outbounds:confirm',
+      cancel: 'warehouse:other-outbounds:cancel',
+    },
     view: 'warehouse:view',
     inventory: { view: 'warehouse:inventory:view' },
     inbound: { view: 'warehouse:inbound:view' },

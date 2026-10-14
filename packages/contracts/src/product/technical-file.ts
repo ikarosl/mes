@@ -26,7 +26,3 @@ export interface TechnicalFileListItem {
   createdAt: string | null;
   updatedAt: string | null;
 }
-
-export interface SetDefaultSopPayload {
-  fileId: string | null;
-}

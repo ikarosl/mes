@@ -135,15 +135,13 @@ export const DEMAND_SELECT = `SELECT d.id,d.production_batch_id,d.requirement_ba
   (SELECT successor.id FROM production_item_demand successor WHERE successor.replaces_demand_id=d.id) replacement_demand_id,
   (SELECT correction.approval_instance_id FROM production_demand_correction correction WHERE correction.id=COALESCE(d.pending_correction_id,d.close_correction_id)) correction_approval_id,d.closeout_id,(SELECT closeout.approval_instance_id FROM production_batch_closeout closeout WHERE closeout.id=d.closeout_id) closeout_approval_id,d.fulfilled_by,d.fulfilled_at,d.version,d.created_at,
   COALESCE((SELECT SUM(a.assigned_number) FROM production_item_allocation a WHERE a.demand_id=d.id AND a.allocation_status NOT IN ('released','cancelled')),0) allocated_quantity,
-  COALESCE((SELECT SUM(GREATEST(a.assigned_number-COALESCE((SELECT SUM(od.outbound_number) FROM outbound_detail od JOIN outbound_order oo ON oo.id=od.outbound_id WHERE od.allocation_id=a.id AND oo.status='completed'),0),0)) FROM production_item_allocation a WHERE a.demand_id=d.id AND a.allocation_status NOT IN ('released','cancelled')),0) remaining_allocated_quantity,
-  COALESCE((SELECT SUM(od.outbound_number) FROM outbound_detail od JOIN outbound_order oo ON oo.id=od.outbound_id WHERE od.demand_id=d.id AND oo.status='completed'),0) outbound_quantity
+  0 remaining_allocated_quantity,0 outbound_quantity
   FROM production_item_demand d
   LEFT JOIN production_material_supplement s ON s.id=d.supplement_id
   LEFT JOIN production_manual_demand_addition mda ON mda.id=d.manual_addition_id`;
 
 export const ALLOCATION_SELECT = `SELECT a.id,a.demand_id,a.production_batch_id,a.item_id,a.material_variant_id,a.batch_id,a.assigned_number,NULL batch_code,NULL material_variant_code_snapshot,d.demand_type,d.business_status demand_business_status,d.pending_correction_id,d.generation_group_key,COALESCE(s.supplement_no,mda.addition_no) supplement_no,
-  COALESCE((SELECT SUM(od.outbound_number) FROM outbound_detail od JOIN outbound_order oo ON oo.id=od.outbound_id WHERE od.allocation_id=a.id AND oo.status='completed'),0) outbound_quantity,
-  COALESCE((SELECT SUM(od.outbound_number) FROM outbound_detail od JOIN outbound_order oo ON oo.id=od.outbound_id WHERE od.allocation_id=a.id AND oo.status IN ('pending_picking','picked','partially_outbound')),0) pending_outbound_quantity,
+  0 outbound_quantity,0 pending_outbound_quantity,
   a.unit_snapshot,a.allocation_status,a.version,a.remark,a.created_at
   FROM production_item_allocation a JOIN production_item_demand d ON d.id=a.demand_id LEFT JOIN production_material_supplement s ON s.id=d.supplement_id LEFT JOIN production_manual_demand_addition mda ON mda.id=d.manual_addition_id`;
 

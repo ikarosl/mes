@@ -1,7 +1,6 @@
 import type { InventoryInboundTarget } from '@company/contracts';
 
 export interface PurchaseReceiptInboundLine {
-  detailKey: string;
   allocationId: string;
   receiptLineId: string;
   receiptRevisionId: string;
@@ -26,7 +25,6 @@ export interface ConfirmPurchaseReceiptResult {
   inboundId: string;
   inboundNo: string;
   details: Array<{
-    detailKey: string;
     receiptLineId: string;
     allocationId: string;
     batchId: string;

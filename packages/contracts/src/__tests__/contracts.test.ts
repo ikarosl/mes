@@ -10,9 +10,6 @@ import type {
   CompleteProductionExecutionPayload,
   ProductionTraceDetail,
   CreateMaterialOutboundPayload,
-  ConfirmMaterialOutboundPayload,
-  CreatePurchaseInboundPayload,
-  InventoryBatchItem,
   ProductionExecutionBatchSummary,
   CompleteReworkPayload,
   ReworkRecordItem,
@@ -114,39 +111,14 @@ describe('production material contracts', () => {
     expect(payload.allocations[0]?.demandId).toBe(demand.demandId);
   });
 
-  it('separates pending order creation from versioned whole-order confirmation', () => {
+  it('models pending outbound order creation from allocation quantities', () => {
     const create: CreateMaterialOutboundPayload = {
       details: [
         { allocationId: '1', outboundQuantity: 2 },
         { allocationId: '2', outboundQuantity: 3 },
       ],
     };
-    const confirm: ConfirmMaterialOutboundPayload = { version: 0 };
     expect(create.details).toHaveLength(2);
     expect(create).not.toHaveProperty('status');
-    expect(confirm).toEqual({ version: 0 });
-  });
-
-  it('models pending purchase inbound separately from ledger-derived inventory', () => {
-    const inbound: CreatePurchaseInboundPayload = {
-      provider: '供应商 A',
-      remark: null,
-      details: [
-        {
-          itemId: '1',
-          materialVariantId: 'variant-1',
-          inboundQuantity: 5,
-          remark: null,
-        },
-      ],
-    };
-    const inventory = {
-      itemBatchId: '2',
-      onHandAvailableQuantity: '5.0000',
-      reservedQuantity: '2.0000',
-      availableToAllocateQuantity: '3.0000',
-    } as InventoryBatchItem;
-    expect(inbound).not.toHaveProperty('status');
-    expect(inventory.availableToAllocateQuantity).toBe('3.0000');
   });
 });

@@ -28,10 +28,6 @@ export interface InventoryProductionMovement {
 export abstract class InventoryStockCommand {
   abstract lockMaterialBatches(ids: string[]): Promise<InventoryMaterialBatchReference[]>;
   abstract materialBatchReferences(ids: string[]): Promise<InventoryMaterialBatchReference[]>;
-  abstract materialTransactionReferences(
-    referenceType: 'return_detail' | 'outbound_detail',
-    detailIds: string[],
-  ): Promise<Array<{ detailId: string; transactionId: string }>>;
   abstract recordProductionOutbound(
     orderId: string,
     lines: InventoryProductionMovement[],

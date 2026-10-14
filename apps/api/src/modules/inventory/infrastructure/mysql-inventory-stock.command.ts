@@ -117,31 +117,6 @@ export class MysqlInventoryStockCommand extends InventoryStockCommand {
     });
   }
 
-  materialTransactionReferences(
-    referenceType: 'return_detail' | 'outbound_detail',
-    detailIds: string[],
-  ): Promise<Array<{ detailId: string; transactionId: string }>> {
-    if (!detailIds.length) return Promise.resolve([]);
-    return withActiveConnection(this.pool, async (db) => {
-      const [rows] = await db.query<
-        (RowDataPacket & { id: number; reference_detail_id: number })[]
-      >(
-        `SELECT id,reference_detail_id FROM inventory_transaction WHERE reference_type=? AND reference_detail_id IN (${detailIds.map(() => '?').join(',')}) AND transaction_type=? ORDER BY id`,
-        [
-          referenceType,
-          ...detailIds,
-          referenceType === 'return_detail'
-            ? 'material_return_inbound'
-            : 'production_material_outbound',
-        ],
-      );
-      return rows.map((row) => ({
-        detailId: String(row.reference_detail_id),
-        transactionId: String(row.id),
-      }));
-    });
-  }
-
   materialQuantity(batchId: string, stockStatus: StockStatus): Promise<string> {
     return withActiveConnection(this.pool, async (db) => {
       if (db === this.pool) throw new Error('库存数量校验必须位于调用方事务中');
@@ -217,9 +192,9 @@ export class MysqlInventoryStockCommand extends InventoryStockCommand {
             returning ? 'material_return_inbound' : 'production_material_outbound',
             fixedIntegerQuantity(integerQuantity(line.quantity) * (returning ? 1 : -1)),
             line.unit,
-            returning ? 'return_detail' : 'outbound_detail',
+            returning ? 'inbound_detail' : 'outbound_detail',
             line.detailId,
-            returning ? `RETURN:${line.detailId}` : `PMO:${orderId}:${line.detailId}`,
+            returning ? `INBOUND:${line.detailId}` : `OUTBOUND:${line.detailId}`,
             returning ? `RETURN:${orderId}` : null,
             line.remark ?? null,
             context.actorId,

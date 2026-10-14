@@ -19,6 +19,7 @@ import { writeTransactionalAudit } from '../../../common/audit/transactional-aud
 import { toBeijingISOString } from '../../../common/time/date-time.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
 import { IdentityDirectoryService } from '../../identity/public.js';
+import { InventoryProductionDocumentCommand } from '../../inventory/public.js';
 import { ProductionExecutionRepository } from '../application/ports/production-execution.repository.js';
 import {
   requireAssignableStep,
@@ -63,12 +64,17 @@ export class MysqlProductionExecutionRepository extends ProductionExecutionRepos
   constructor(
     @Inject(DATABASE_POOL) private readonly pool: Pool,
     private readonly identity: IdentityDirectoryService,
+    private readonly documents: InventoryProductionDocumentCommand,
   ) {
     super();
   }
   getStartCheck(batchId: string): Promise<ProductionExecutionStartCheck> {
     return withTransaction(this.pool, async (connection) =>
-      readProductionExecutionStartCheck(connection, await findBatch(connection, batchId)),
+      readProductionExecutionStartCheck(
+        connection,
+        await findBatch(connection, batchId),
+        this.documents,
+      ),
     );
   }
 
@@ -84,7 +90,12 @@ export class MysqlProductionExecutionRepository extends ProductionExecutionRepos
       const batch = await findBatch(connection, batchId, true);
       if (batch.version !== payload.version)
         throw new ProductionDomainError('CONCURRENT_MODIFICATION', '任务已变化，请刷新后重试');
-      const check = await readProductionExecutionStartCheck(connection, batch, true);
+      const check = await readProductionExecutionStartCheck(
+        connection,
+        batch,
+        this.documents,
+        true,
+      );
       if (!check.canStart)
         throw new ProductionDomainError(
           'INVALID_STATE',

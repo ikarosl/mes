@@ -8,7 +8,6 @@ import {
   DEMAND_TYPES,
   DEMAND_GENERATION_GROUP_TYPES,
   DEMAND_GENERATION_GROUP_TYPE_LABELS,
-  FINISHED_FLOW_TYPES,
   INVENTORY_REFERENCE_TYPE_LABELS,
   INVENTORY_REFERENCE_TYPES,
   INVENTORY_SOURCE_TYPES,
@@ -21,7 +20,6 @@ import {
   OUTBOUND_ORDER_STATUSES,
   PRODUCTION_EXECUTION_COMPLETION_BLOCKERS,
   REWORK_STATUSES,
-  SCRAP_SCENES,
   STOCK_STATUSES,
 } from '../index';
 
@@ -39,8 +37,6 @@ const persistedCodeSets = [
   DEMAND_TYPES,
   OUTBOUND_ORDER_STATUSES,
   PRODUCTION_EXECUTION_COMPLETION_BLOCKERS,
-  SCRAP_SCENES,
-  FINISHED_FLOW_TYPES,
 ] as const;
 
 describe('business persisted codes', () => {
@@ -51,14 +47,8 @@ describe('business persisted codes', () => {
     }
   });
 
-  it('keeps inventory status and scrap scenes stable', () => {
+  it('keeps inventory status stable', () => {
     expect(STOCK_STATUSES).toEqual(['available', 'pending_inspection', 'frozen', 'defective']);
-    expect(SCRAP_SCENES).toEqual([
-      'warehouse_allocated',
-      'return_after_outbound',
-      'production_consumed',
-      'in_stock',
-    ]);
   });
 
   it('provides complete inventory transaction and reference labels', () => {

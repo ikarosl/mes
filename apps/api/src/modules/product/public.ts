@@ -1,5 +1,9 @@
 export { ProductModule } from './product.module.js';
 export {
+  ProductOtherStockQuery,
+  type OtherStockIdentityReference,
+} from './application/product-other-stock.query.js';
+export {
   ProductInventoryEligibility,
   type MaterialIdentityReference,
   type InventoryMaterialEligibility,

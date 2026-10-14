@@ -70,18 +70,13 @@ describe('productApi contract mapping', () => {
     });
   });
 
-  it('passes product and route pagination filters as query parameters', async () => {
+  it('passes route pagination filters as query parameters', async () => {
     request.mockResolvedValue({ data: { items: [], total: 0, page: 3, pageSize: 50 } });
     const { productApi } = await import('../product');
 
-    await productApi.products({ page: 3, pageSize: 50, categoryId: '2', status: 1 });
     await productApi.routes({ page: 1, pageSize: 10, status: 'draft' });
 
     expect(request).toHaveBeenNthCalledWith(1, {
-      url: '/product/products',
-      params: { page: 3, pageSize: 50, categoryId: '2', status: 1 },
-    });
-    expect(request).toHaveBeenNthCalledWith(2, {
       url: '/product/process-routes',
       params: { page: 1, pageSize: 10, status: 'draft' },
     });
@@ -107,13 +102,6 @@ describe('productApi contract mapping', () => {
       status: 1,
     });
     await productApi.materialOptions();
-    await productApi.materialVariants({
-      page: 1,
-      pageSize: 10,
-      materialId: 'm1',
-      keyword: 'v1',
-      status: 1,
-    });
     await productApi.materialVariantsByMaterial('m1');
 
     expect(request).toHaveBeenNthCalledWith(1, {
@@ -136,10 +124,6 @@ describe('productApi contract mapping', () => {
       skipErrorHandling: true,
     });
     expect(request).toHaveBeenNthCalledWith(4, {
-      url: '/product/material-variants',
-      params: { page: 1, pageSize: 10, materialId: 'm1', keyword: 'v1', status: 1 },
-    });
-    expect(request).toHaveBeenNthCalledWith(5, {
       url: '/product/material-variants/by-material/m1',
       skipErrorHandling: true,
     });

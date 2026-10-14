@@ -2,6 +2,8 @@ import { QualityModule } from '../quality/public.js';
 import { MysqlProductionFinishedInspectionSource } from './infrastructure/mysql-production-finished-inspection-source.js';
 import { InventoryModule } from '../inventory/public.js';
 import { ProductionProcurementQuery } from './application/production-procurement.query.js';
+import { ProductionReservationQuery } from './application/production-reservation.query.js';
+import { MysqlProductionReservationQuery } from './infrastructure/mysql-production-reservation.query.js';
 import { MysqlProductionProcurementQuery } from './infrastructure/mysql-production-procurement.query.js';
 import { ProductionTerminationService } from './application/production-termination.service.js';
 import { ProductionTerminationRepository } from './application/ports/production-termination.repository.js';
@@ -193,6 +195,8 @@ const warehouseProviders = [
 ];
 const queryControllers = [ProductionTraceController];
 const queryProviders = [
+  MysqlProductionReservationQuery,
+  { provide: ProductionReservationQuery, useExisting: MysqlProductionReservationQuery },
   MysqlProductionProcurementQuery,
   { provide: ProductionProcurementQuery, useExisting: MysqlProductionProcurementQuery },
   ProductionTraceService,
@@ -229,6 +233,6 @@ const queryProviders = [
     ...warehouseProviders,
     ...queryProviders,
   ],
-  exports: [ProductionProcurementQuery],
+  exports: [ProductionProcurementQuery, ProductionReservationQuery],
 })
 export class ProductionModule {}

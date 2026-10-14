@@ -4,7 +4,7 @@
 
 ## 1. 当前启用范围
 
-幂等按端点显式启用，以 Controller 的 `@IdempotentEndpoint({ scope })` 和 application scope 契约为准：[Production](../src/modules/production/application/idempotency/production-idempotency-scopes.contract.ts)、[Procurement](../src/modules/procurement/application/idempotency/procurement-idempotency-scopes.contract.ts)、[Quality](../src/modules/quality/application/idempotency/finished-inspection-idempotency.contract.ts)。本文不复制命令与版本清单。
+幂等按端点显式启用，以 Controller 的 `@IdempotentEndpoint({ scope })` 和 application scope 契约为准：[Production](../src/modules/production/application/idempotency/production-idempotency-scopes.contract.ts)、[Procurement](../src/modules/procurement/application/idempotency/procurement-idempotency-scopes.contract.ts)、[Quality](../src/modules/quality/application/idempotency/finished-inspection-idempotency.contract.ts)、[Inventory](../src/modules/inventory/application/idempotency/other-inventory-idempotency-scopes.contract.ts)。本文不复制命令与版本清单。
 
 客户端只发送 Idempotency-Key，不传 scope。未启用端点含 Public 携带任意键（空值／超长值也包括）返回 `400 IDEMPOTENCY_NOT_SUPPORTED`；启用端点缺少键或 trim 后长度不在 1～150 返回 `400 VALIDATION_ERROR`。不能忽略 header 制造伪幂等信号，也不能仅按 HTTP 方法扩大启用范围。
 
@@ -76,10 +76,12 @@ application 将 DTO 及嵌套 DTO 显式转成普通对象并完成 trim 后再�
 | 情况 | 结果 |
 | --- | --- |
 | 同键不同指纹 | `409 IDEMPOTENCY_CONFLICT` |
-| 已识别的 MySQL 锁等待、死锁、连接中断或池关闭 | `503 IDEMPOTENCY_STORAGE_RETRYABLE` |
+| 已识别的 MySQL NOWAIT 冲突、锁等待、死锁、连接中断或池关闭 | `503 IDEMPOTENCY_STORAGE_RETRYABLE` |
 | 已保存结果无法通过 codec | `500 IDEMPOTENCY_RESULT_CORRUPT` |
 | 业务／权限校验失败 | 保留原错误，失败结果不保存 |
 | 指纹、executor 或 handler 的未知代码异常 | `500 INTERNAL_SERVER_ERROR`，不能因处于幂等链路而改写分类 |
+
+其他出入库四类写操作由 application 在 executor 整个事务已经结束后有限重试，最多三次，保持原 scope、键、操作者及规范化请求；绝不在失败事务内重试单条库存 SQL。
 
 其他 SDK 网络错误不误判为 MySQL retryable。损坏记录保留供调查，同键重试不会自行修复，不自动另建意图。诊断仅记录 requestId、scope、分类及键 SHA-256 前 12 位；不输出原键、载荷、Token、Cookie、凭证。原异常链仅开发环境可记录，其他环境的脱敏边界见 [API 诊断](../README.md#http-错误诊断)。
 

@@ -8,7 +8,6 @@ import {
 } from '../../../../../common/security/auth.decorators.js';
 import { ProductionMaterialLossController } from '../production-material-loss.controller.js';
 import { ProductionReturnController } from '../production-return.controller.js';
-import { ProductionStockCheckController } from '../production-stock-check.controller.js';
 
 describe('Production warehouse controller contracts', () => {
   it('uses page permissions for reads and independent action permissions for writes', () => {
@@ -39,24 +38,6 @@ describe('Production warehouse controller contracts', () => {
     expect(
       Reflect.getMetadata(REQUIRED_PERMISSION, ProductionReturnController.prototype.confirmReturn),
     ).toBe(PERMISSIONS.warehouse.returns.confirm);
-    expect(
-      Reflect.getMetadata(
-        REQUIRED_PERMISSION,
-        ProductionStockCheckController.prototype.stockCheckCandidates,
-      ),
-    ).toBe(PERMISSIONS.warehouse.stockChecks.view);
-    expect(
-      Reflect.getMetadata(
-        REQUIRED_PERMISSION,
-        ProductionStockCheckController.prototype.saveStockCheckCounts,
-      ),
-    ).toBe(PERMISSIONS.warehouse.stockChecks.count);
-    expect(
-      Reflect.getMetadata(
-        REQUIRED_PERMISSION,
-        ProductionStockCheckController.prototype.completeStockCheck,
-      ),
-    ).toBe(PERMISSIONS.warehouse.stockChecks.complete);
   });
 
   it('uses versioned idempotency scopes for loss creation and confirmation', () => {
@@ -88,10 +69,6 @@ describe('Production warehouse controller contracts', () => {
       ProductionMaterialLossController.prototype.cancelMaterialLoss,
       ProductionReturnController.prototype.confirmReturn,
       ProductionReturnController.prototype.cancelReturn,
-      ProductionStockCheckController.prototype.createStockCheck,
-      ProductionStockCheckController.prototype.saveStockCheckCounts,
-      ProductionStockCheckController.prototype.completeStockCheck,
-      ProductionStockCheckController.prototype.cancelStockCheck,
     ]) {
       expect(Reflect.getMetadata(AUDIT_IN_APPLICATION, handler)).toBe(true);
     }

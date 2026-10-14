@@ -139,7 +139,8 @@ export class ProductionTraceQueries {
        JOIN inventory_transaction tx ON tx.reference_type='outbound_detail'
          AND tx.reference_detail_id=od.id AND tx.transaction_type='production_material_outbound'
        JOIN item_batch ib ON ib.id=tx.batch_id
-       WHERE o.production_batch_id=?
+       WHERE o.source_type='production_material' AND o.status='completed'
+         AND od.is_deleted=0 AND o.production_batch_id=?
        ORDER BY tx.created_at,tx.id`,
       [batchId],
     );
@@ -180,17 +181,15 @@ export class ProductionTraceQueries {
     >(
       `SELECT DISTINCT ib.id item_batch_id,ib.material_variant_id,ib.batch_code,ib.item_code_snapshot item_code,
         ${currentMaterialNameSql('ib.item_id')} item_name,ib.material_variant_code_snapshot material_variant_code,
-        COALESCE(o.inbound_no,ro.return_no) source_document_no,
-        CASE WHEN o.id IS NOT NULL THEN d.supplier_name_snapshot ELSE NULL END provider,
-        COALESCE(o.inbound_at,ro.return_at,tx.created_at) confirmed_at,
+        o.inbound_no source_document_no,
+        CASE WHEN o.source_type='purchased' THEN d.supplier_name_snapshot ELSE NULL END provider,
+        COALESCE(o.inbound_at,tx.created_at) confirmed_at,
         tx.quantity,tx.id transaction_id,tx.transaction_type
        FROM production_item_allocation a JOIN item_batch ib ON ib.id=a.batch_id
        JOIN inventory_transaction tx ON tx.batch_id=ib.id AND tx.item_id=ib.item_id
          AND tx.material_variant_id=ib.material_variant_id AND tx.quantity>0
-       LEFT JOIN inbound_detail d ON tx.reference_type='inbound_detail' AND tx.reference_detail_id=d.id
+       LEFT JOIN inbound_detail d ON tx.reference_type='inbound_detail' AND tx.reference_detail_id=d.id AND d.is_deleted=0
        LEFT JOIN inbound_order o ON o.id=d.inbound_id AND o.status='completed'
-       LEFT JOIN return_detail rd ON tx.reference_type='return_detail' AND tx.reference_detail_id=rd.id
-       LEFT JOIN return_order ro ON ro.id=rd.return_id AND ro.status='returned'
        WHERE a.production_batch_id=? AND tx.stock_status='available'
        ORDER BY ib.id,tx.id`,
       [batchId],

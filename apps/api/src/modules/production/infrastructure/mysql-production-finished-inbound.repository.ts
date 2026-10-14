@@ -128,11 +128,7 @@ export class MysqlProductionFinishedInboundRepository extends ProductionFinished
     if (!context.actorId || !payload.details.length || payload.details.length > 100)
       throw new ProductionDomainError('INVALID_INPUT', '请选择有效的成品入库明细');
     const totalByAllocation = new Map<string, number>();
-    const detailKeys = new Set<string>();
     for (const line of payload.details) {
-      if (!line.detailKey.trim() || detailKeys.has(line.detailKey))
-        throw new ProductionDomainError('INVALID_INPUT', '入库明细标识必须唯一');
-      detailKeys.add(line.detailKey);
       if (!Number.isSafeInteger(line.quantity) || line.quantity < 1 || line.quantity > 99_999_999)
         throw new ProductionDomainError('INVALID_INPUT', '每条入库数量须为正整数');
       if (
@@ -200,7 +196,6 @@ export class MysqlProductionFinishedInboundRepository extends ProductionFinished
             if (!row || String(row.revision_id) !== line.revisionId)
               throw new ProductionDomainError('INVALID_STATE', '成品授权与批准版不匹配');
             return {
-              detailKey: line.detailKey,
               allocationId: line.allocationId,
               revisionId: line.revisionId,
               sourceType: row.category,

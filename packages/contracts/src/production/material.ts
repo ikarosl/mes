@@ -1,4 +1,3 @@
-import type { VersionedCommand } from '../common.js';
 import type { DemandCorrectionTrace } from './demand-correction.js';
 import type {
   ProductionBatchStatus,
@@ -9,26 +8,6 @@ import type {
   AllocationStatus,
   InventorySourceType,
 } from './statuses.js';
-
-export interface ProductionItemDemandItem {
-  id: string;
-  productionBatchId: string;
-  productMaterialId: string | null;
-  itemId: string;
-  /** Frozen base-material formula and exact selected stock identity. */
-  requirementBasisId: string | null;
-  materialVariantId: string;
-  materialVariantCode: string;
-  itemCode: string;
-  itemName: string;
-  quantityPerUnit: string | null;
-  unit: string;
-  plannedOutputQuantity: string | null;
-  needNumber: string;
-  demandType: DemandType;
-  businessStatus: DemandBusinessStatus;
-  version: number;
-}
 
 /** 需求生成动作的稳定追溯投影；展示文案由前端共享映射生成。 */
 export interface DemandGenerationSource {
@@ -123,5 +102,3 @@ export interface MaterialAllocationCommandResult {
   batchVersion: number;
   allocations: ProductionMaterialAllocationItem[];
 }
-
-export type ReleaseMaterialAllocationPayload = VersionedCommand;

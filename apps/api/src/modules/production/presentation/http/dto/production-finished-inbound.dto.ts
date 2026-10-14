@@ -58,7 +58,6 @@ export class FinishedInboundTargetDto {
   batchId?: string;
 }
 export class ConfirmFinishedInboundLineDto implements ConfirmFinishedGoodsInboundLine {
-  @IsString() @IsNotEmpty() @MaxLength(100) detailKey!: string;
   @IsString() @Matches(/^[1-9]\d{0,19}$/) allocationId!: string;
   @IsString() @Matches(/^[1-9]\d{0,19}$/) revisionId!: string;
   @IsInt() @Min(1) @Max(PRODUCTION_OUTPUT_QUANTITY_MAX) quantity!: number;

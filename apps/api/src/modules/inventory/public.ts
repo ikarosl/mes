@@ -1,4 +1,5 @@
 export { InventoryModule } from './inventory.module.js';
+export * from './application/inventory-production-document.command.js';
 export {
   InventoryStockCommand,
   type InventoryMaterialBatchReference,
@@ -9,10 +10,7 @@ export {
   type FinishedOutputInput,
   type FinishedOutputResult,
 } from './application/inventory-inbound.command.js';
-export {
-  InventoryInboundRepository,
-  type PurchaseInboundItemSnapshot,
-} from './application/ports/inventory-inbound.repository.js';
+export { InventoryInboundRepository } from './application/ports/inventory-inbound.repository.js';
 export { InventoryCommandError } from './inventory-command.error.js';
 export { InventoryInboundQuery } from './application/inventory-inbound.query.js';
 export type {
@@ -22,3 +20,5 @@ export type {
   ReceiptInboundFact,
   ReceiptInboundFacts,
 } from './application/inventory-purchase-inbound.types.js';
+
+export * from './application/ports/inventory-reservation-read.port.js';

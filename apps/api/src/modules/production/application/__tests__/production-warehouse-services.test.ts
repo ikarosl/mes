@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ProductionMaterialLossService } from '../production-material-loss.service.js';
 import { ProductionReturnService } from '../production-return.service.js';
-import { ProductionStockCheckService } from '../production-stock-check.service.js';
 
 const context = {
   actorId: '1',
@@ -111,25 +110,9 @@ describe('Production warehouse services', () => {
     expect(result.createdByName).toBe('管理员');
   });
 
-  it('rejects duplicate batch/status stock-check targets', async () => {
-    const service = new ProductionStockCheckService({} as never, {} as never);
-    await expect(
-      service.createStockCheck(
-        {
-          details: [
-            { itemBatchId: '3', stockStatus: 'available' },
-            { itemBatchId: '3', stockStatus: 'available' },
-          ],
-        },
-        context,
-      ),
-    ).rejects.toMatchObject({ code: 'INVALID_INPUT' });
-  });
-
   it.each([
     ['cancelMaterialLoss', '5'],
     ['cancelReturnOrder', '6'],
-    ['cancelStockCheck', '7'],
   ] as const)('trims and persists cancellation reason through %s', async (method, id) => {
     const repository = {
       [method]: vi.fn().mockResolvedValue({
@@ -147,11 +130,9 @@ describe('Production warehouse services', () => {
       idempotency as never,
     );
     const returns = new ProductionReturnService(repository as never, identity as never);
-    const stockChecks = new ProductionStockCheckService(repository as never, identity as never);
     const cancel = {
       cancelMaterialLoss: materialLosses.cancelMaterialLoss.bind(materialLosses),
       cancelReturnOrder: returns.cancelReturnOrder.bind(returns),
-      cancelStockCheck: stockChecks.cancelStockCheck.bind(stockChecks),
     }[method];
 
     await cancel(id, 1, '  计划调整  ', context);

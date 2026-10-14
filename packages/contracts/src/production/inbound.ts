@@ -1,4 +1,4 @@
-import type { PageQuery, ReasonedVersionedCommand } from '../common.js';
+import type { PageQuery } from '../common.js';
 import type { InboundOrderStatus } from './statuses.js';
 
 export interface PurchaseInboundDetailItem {
@@ -69,20 +69,7 @@ export interface PurchaseInboundOrderItem {
   details: PurchaseInboundDetailItem[];
 }
 
-export type CancelPurchaseInboundPayload = ReasonedVersionedCommand;
-
 export interface PurchaseInboundOrderQuery extends PageQuery {
   keyword?: string;
   status?: InboundOrderStatus;
-}
-
-export interface CreatePurchaseInboundPayload {
-  provider?: string | null;
-  remark?: string | null;
-  details: Array<{
-    itemId: string;
-    materialVariantId: string;
-    inboundQuantity: number;
-    remark?: string | null;
-  }>;
 }

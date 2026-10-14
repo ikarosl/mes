@@ -217,8 +217,8 @@
 | 查询数量             | 事实来源                                             |
 | -------------------- | ---------------------------------------------------- |
 | `allocated_quantity` | 由 `production_item_allocation.assigned_number` 汇总 |
-| `outbound_quantity`  | 由 `outbound_detail.outbound_number` 汇总            |
-| `returned_quantity`  | 由 `return_detail.return_number` 汇总                |
+| `outbound_quantity`  | 由 Inventory 已完成 `production_material` 公共出库事实汇总            |
+| `returned_quantity`  | 由 Inventory `return_inbound` 的公共入库事实汇总                |
 | `scrapped_quantity`  | 由 `item_scrap.scrap_number` 汇总                    |
 
 说明：
@@ -365,11 +365,11 @@ Production 统一拥有一套补料履约判定与状态推进能力，由需求
 
 审批绑定／解除只推进需求及更正记录版本；末级批准推进任务版本。先锁工单、任务、申请和旧需求，再读取来源及物流事实；最终核对排除本次绑定的版本变化，其余依据变化要求重新送审。批准、关闭／替代、补料履约、审计及通知同事务，原库存流水不变。
 
-更正依据中的预留批号通过 Inventory 公开 `materialBatchReferences` 批量读取，仅用于展示及冻结原有证据；分配、已领数量、退料和损耗资格仍读取并锁定 Production 自有事实。更正查询不再通过跨库存 JOIN 的 `FOR SHARE` 锁住 `item_batch`，也不使用该公开展示返回的余额或批次状态替代更正业务校验。
+更正依据中的预留批号通过 Inventory 公开 `materialBatchReferences` 批量读取，仅用于展示及冻结原有证据；分配和损耗资格读取并锁定 Production 自有事实，已领与退料事实通过 Inventory 公开当前读取得。更正查询不再通过跨库存 JOIN 的 `FOR SHARE` 锁住 `item_batch`，也不使用该公开展示返回的余额或批次状态替代更正业务校验。
 
 #### 需求数量与进度查询
 
-实现位于 [mysql-production-material.mapper.ts](../../infrastructure/mysql-production-material.mapper.ts) 的 `DEMAND_SELECT`、`mapDemand` 与 `progress`，由 [MysqlProductionMaterialRepository.listDemands](../../infrastructure/mysql-production-material.repository.ts) 按需求返回。计算保留 `demand_id` 及精确物料版本，不将同一任务的不同需求折叠成一个进度状态。
+实现位于 [mysql-production-material.mapper.ts](../../infrastructure/mysql-production-material.mapper.ts) 的自有需求查询、`mapDemand` 与 `progress`，实际领料与剩余预留由 [事实汇总](../../infrastructure/mysql-production-material-facts.ts) 使用 Inventory 公共事实装配，由 [MysqlProductionMaterialRepository.listDemands](../../infrastructure/mysql-production-material.repository.ts) 按需求返回。计算保留 `demand_id` 及精确物料版本，不将同一任务的不同需求折叠成一个进度状态。
 
 ```text
 有效分配量 = sum(未释放、未取消的分配数量)
@@ -561,14 +561,14 @@ approved -> fulfilled / cancelled（仅批次结束）
 - 唯一约束：`UNIQUE (id, demand_id)`
 - 唯一约束：`UNIQUE (id, production_batch_id)`
 - 唯一约束：`UNIQUE (id, item_id)`
-- 组合候选键：`UNIQUE (id, demand_id, production_batch_id, item_id, batch_id, material_variant_id)` — 供 `outbound_detail` 和 `return_detail` 作为组合外键引用，保证出库/退料与 allocation 的需求、生产批次、基础物料、精确版本和库存批次一致
+- 组合候选键：`UNIQUE (id, demand_id, production_batch_id, item_id, batch_id, material_variant_id)` — 供 Inventory 公共 `outbound_detail.allocation_id` 与 `inbound_detail.return_allocation_id` 作为组合外键引用，保证领退料与 allocation 的需求、生产批次、基础物料、精确版本和原库存批次一致
 
 以下累计数量通过查询计算，不作为分配表字段持久化：
 
 | 查询数量            | 事实来源                  |
 | ------------------- | ------------------------- |
-| `outbound_quantity` | 由 `outbound_detail` 汇总 |
-| `returned_quantity` | 由 `return_detail` 汇总   |
+| `outbound_quantity` | 由 Inventory 已完成 `production_material` 公共出库事实汇总 |
+| `returned_quantity` | 由 Inventory `return_inbound` 公共入库事实汇总 |
 | `scrapped_quantity` | 由 `item_scrap` 汇总      |
 
 说明：
@@ -581,10 +581,10 @@ approved -> fulfilled / cancelled（仅批次结束）
 
 #### 分配数量查询
 
-实现位于 [mysql-production-material.mapper.ts](../../infrastructure/mysql-production-material.mapper.ts) 的 `ALLOCATION_SELECT` 与 `mapAllocation`，由 [MysqlProductionMaterialRepository](../../infrastructure/mysql-production-material.repository.ts) 读取；返回的是查询结果，不是数据库视图。
+实现位于 [mysql-production-material.mapper.ts](../../infrastructure/mysql-production-material.mapper.ts) 的自有分配查询与 `mapAllocation`，实际领料由 [事实汇总](../../infrastructure/mysql-production-material-facts.ts) 使用 Inventory 公共事实装配，由 [MysqlProductionMaterialRepository](../../infrastructure/mysql-production-material.repository.ts) 读取；返回的是查询结果，不是数据库视图。
 
 - 已出库量：只汇总主单为 `completed` 的出库明细。
-- 待出库占用：汇总主单为 `pending_picking/picked/partially_outbound` 的出库明细；后两种状态是数据库保留值，当前不开放对应状态转换命令。
+- 待出库占用：只汇总 `production_material` 主单为 `pending_picking` 的有效明细；人工其他出库不参与分配履约。
 - `remainingOutboundQuantity = max(assigned_number - 已出库量, 0)`。
 - `availableToOrderQuantity = max(assigned_number - 已出库量 - 待出库占用, 0)`。
 - 当前退料全部释放到公共库存，不加回原分配的可制单量；已领物料损耗也不再次扣减原分配可制单量，新增用料通过独立人工提需。
@@ -595,104 +595,23 @@ approved -> fulfilled / cancelled（仅批次结束）
 
 ## 3.6 生产领料出库表
 
----
+`outbound_order/detail` 由 Inventory 唯一拥有；生产领料限定 `source_type=production_material`，公共字段、外键、审计及不可变守卫见 [Inventory 数据库](../../../inventory/docs/database.md)。Production 拥有任务、需求和分配来源资格，并编排制单、确认、取消及履约；不能直接写入或锁定公共主从。
 
-### 12. `outbound_order`
+一单一个任务及工单，可以包含该任务多个生成组、需求、物料和原库存批次，每分配同单一行。按生成组展示候选但允许跨组，整单确认／取消；不同时间交接的物料另行制单。需求组类型、分组键及补料单号从 `demand_id` 追溯，不在公共明细复制。
 
-职责：维护生产领料出库主单，记录库管针对某个生产批次的一次出库动作。
+制单与确认按[物料办理资格](#物料办理资格)校验启用精确版本、有效需求及分配、任务阶段与数量。创建仅 `pending_picking`，占可制单量但不写流水；整单确认 `pending_picking → completed`，每条有效明细生成匹配的负数 `production_material_outbound` 流水，引用 `outbound_detail.id`。取消仅 `pending_picking → cancelled`，无流水；来源 `manual/production_batch/production_termination` 分别表达人工、任务取消和收尾取消，并保存原因、人和时间。不保留 `picked/partially_outbound` 或部分确认状态。
 
-| 字段                  | 类型              | 说明                                      |
-| --------------------- | ----------------- | ----------------------------------------- |
-| `id`                  | `BIGINT UNSIGNED` | 主键                                      |
-| `outbound_no`         | `VARCHAR(100)`    | 出库单号                                  |
-| `production_batch_id` | `BIGINT UNSIGNED` | 生产批次 ID，关联 `production_batches.id` |
-| `work_order_id`       | `BIGINT UNSIGNED` | 工单 ID，冗余保存，便于查询               |
-| `status`              | `VARCHAR(30)`     | 出库单状态，默认 `pending_picking`        |
-| `outbound_at`         | `DATETIME`        | 实际出库时间                              |
-| `operator_id`         | `BIGINT UNSIGNED` | 操作人 ID                                 |
-| `version`             | `INT`             | 乐观锁版本号，默认 `0`                    |
-| `remark`              | `TEXT`            | 备注                                      |
-| `cancel_source`       | `VARCHAR(30)`     | `manual` 人工取消、`production_batch` 任务取消或 `production_termination` 本轮结束 |
-| `cancel_reason`       | `TEXT`            | 取消原因；历史未记录数据可为空            |
-| `cancelled_by`        | `BIGINT UNSIGNED` | 取消人；历史未记录数据可为空              |
-| `cancelled_at`        | `DATETIME`        | 取消时间；历史未记录数据可为空            |
-| 业务审计字段          | 见统一规则        | 可变业务单据审计字段                      |
+Production 先锁任务、需求和分配，经 `InventoryProductionDocumentCommand` 锁内读取、创建／确认／取消公共单据；Inventory 核对自有身份、库存状态及余额，追加流水并完成父单。涉及需求的 `remaining_number` 扣减、履约终态、任务状态与版本、补料齐套、来源成功审计及已启用 HTTP 幂等结果仍一起提交。失败整体回滚，不把库存确认与需求履约拆成两次提交。
 
-约束：
+已完成量只计 `production_material+completed`，待确认占用只计 `production_material+pending_picking`，取消不占用。可制单量为 `assigned_number − 已完成量 − 待确认占用`，剩余可领量为 `assigned_number − 已完成量`；退料和人工其他出入库均不恢复原履约。只读列表、详情、打印和追溯由已登记展示查询访问公共单据，不能用于后续写资格。
 
-- 主键：`id`
-- 唯一约束：`UNIQUE (outbound_no)`
-- 唯一约束：`UNIQUE (id, production_batch_id)`
-- 外键：`FOREIGN KEY (production_batch_id, work_order_id) REFERENCES production_batches(id, work_order_id)`
-- 外键：`FOREIGN KEY (operator_id) REFERENCES users(id)`
-- 外键：`FOREIGN KEY (cancelled_by) REFERENCES users(id)`
-- 检查约束：`CHECK (cancel_source IS NULL OR cancel_source IN ('manual', 'production_batch', 'production_termination'))`
-- 检查约束：`CHECK (status IN ('pending_picking', 'picked', 'partially_outbound', 'completed', 'cancelled'))`
-- 组合索引：`INDEX (status, created_at)`，用于出库单状态分页
+批次取消及收尾只经 Inventory 取消未完成生产领料，保留原明细及已领事实；阶段和前置条件见[批次结束设计](production-termination.md)。
 
-说明：
+### 当前有效预留公开能力
 
-- `outbound_order` 表示一次出库动作。
-- 一张出库单可以包含同一生产批次内的多个需求生成组、多个需求、多个物料和多个库存批次；前提是这些明细属于同一次实际拣货与领料交接。不同时间才能备齐的明细不得只为减少单据而提前并单，因为当前确认和取消均按整单执行。
-- 出库单主表建议关联 `production_batch_id`，而不是单个 `demand_id`。
-- 具体出了哪些物料、哪些批次、多少数量，由 `outbound_detail` 记录。
-- 管理端按 `production_item_demand.generation_group_key` 分组展示候选，但选择可以跨组；提交前显示选中的需求组数和分配明细数。出库详情与打印单通过 `outbound_detail.demand_id` 关联需求和补料单，派生展示需求组类型、分组键及补料单号，不在 `outbound_detail` 冗余保存组字段。
-- 人工取消必须填写原因；生产任务级联取消继承任务取消原因，并以 `cancel_source` 明确来源。
-- 制单和确认均按本章[物料办理资格](#物料办理资格)校验，可以只领取部分有效分配。主单不再关联短批授权，确认始终按本单明细逐条履约及记账。
+`ProductionReservationQuery.currentAllocations(batchIds)` 是其他出库取得预留事实的唯一运行时入口，返回有效分配的 `id/batchId/assignedNumber/allocationStatus`，排除 `released/cancelled`。要求调用者活跃同池事务，按分配 ID 排序，以 `FOR SHARE NOWAIT` 只锁 Production 自有分配，不读取或锁定公共出库，不验证来源任务办理资格，也不修改分配。
 
----
-
-### 13. `outbound_detail`
-
-职责：维护生产领料出库明细，记录某次出库动作中每个分配行实际出库的库存对象、批次和数量。
-
-| 字段                  | 类型              | 说明                                              |
-| --------------------- | ----------------- | ------------------------------------------------- |
-| `id`                  | `BIGINT UNSIGNED` | 主键                                              |
-| `outbound_id`         | `BIGINT UNSIGNED` | 出库主单 ID，关联 `outbound_order.id`             |
-| `production_batch_id` | `BIGINT UNSIGNED` | 生产批次 ID，冗余保存，用于查询和约束             |
-| `demand_id`           | `BIGINT UNSIGNED` | 需求 ID，关联 `production_item_demand.id`         |
-| `allocation_id`       | `BIGINT UNSIGNED` | 分配明细 ID，关联 `production_item_allocation.id` |
-| `item_id`             | `BIGINT UNSIGNED` | 出库对象 ID，冗余保存                             |
-| `material_variant_id` | `BIGINT UNSIGNED` | 出库的精确物料版本 ID                             |
-| `batch_id`            | `BIGINT UNSIGNED` | 出库库存批次 ID，冗余保存                         |
-| `outbound_number`     | `INT`   | 本次出库数量                                      |
-| `unit_snapshot`       | `VARCHAR(20)`     | 出库时单位快照                                    |
-| `created_by`          | `BIGINT UNSIGNED` | 创建人                                            |
-| `created_at`          | `DATETIME`        | 创建时间，默认 `CURRENT_TIMESTAMP`                |
-
-约束：
-
-- 主键：`id`
-- 外键：`FOREIGN KEY (outbound_id, production_batch_id) REFERENCES outbound_order(id, production_batch_id)`
-- 外键：`FOREIGN KEY (demand_id, production_batch_id) REFERENCES production_item_demand(id, production_batch_id)`
-- 外键：`FOREIGN KEY (allocation_id, demand_id, production_batch_id, item_id, batch_id, material_variant_id) REFERENCES production_item_allocation(id, demand_id, production_batch_id, item_id, batch_id, material_variant_id)`
-- 外键：`FOREIGN KEY (batch_id, item_id, material_variant_id) REFERENCES item_batch(id, item_id, material_variant_id)`
-- 检查约束：`CHECK (outbound_number > 0)`
-- 唯一约束：`UNIQUE (outbound_id, allocation_id)`
-
-说明：
-
-- `outbound_detail` 是出库事实明细表。
-- 当前明细通过 `batch_id` 关联 `item_batch`，读取建批时的物料编码及版本编码快照；单位使用出库明细自身的 `unit_snapshot`。物料名称通过批次 `item_id` 读取当前主数据，改名后历史出库展示和搜索同步变化。出库明细不重复保存名称、编码快照；精确物料版本仍由既有关系约束。
-- `inventory_transaction` 中的生产领料出库流水应引用 `outbound_detail.id`。
-- 出库明细用于判断某条分配是否已经出库、某条需求是否已经满足。
-- `outbound_id` 用于表达哪些明细属于同一次出库动作。
-- `production_batch_id` 是有价值的冗余字段，便于按生产批次查询出库记录。
-- `generation_group_key`、需求组类型和补料单号属于查询时追溯投影，必须经 `demand_id` 关联需求事实取得；不得为展示便利在本表复制并双写。
-
-当前 Production 实施口径：创建单据只允许写入 `pending_picking`，不生成库存流水；整单确认执行
-`pending_picking -> completed` 并为每条明细生成一条负数 `production_material_outbound` 流水；取消执行
-`pending_picking -> cancelled` 且不生成流水。`picked`、`partially_outbound` 只保留在数据库稳定代码集合中，
-当前不开放操作入口，也不支持单据分批确认。
-
-数量汇总必须连接父单状态：已确认出库量只汇总 `outbound_order.status = 'completed'` 的明细；
-`pending_picking` 明细只占用待制单额度，`cancelled` 明细不占用。可制单数量为“分配数量 - 已确认出库量 -
-待确认单据占用量”，仍可实际出库数量为“分配数量 - 已确认出库量”。
-
----
-
-批次结束将未履约出库、分配、需求和补料一并结束，保留原履约事实；具体状态、锁序和取消来源见[批次结束设计](production-termination.md)。
+Inventory 经 API 组合根适配器取得这些值，再用自己当前已完成生产领料计算逐分配 `max(assigned−issued,0)` 并汇总库批预留。新增或增量分配先持目标库存批次锁；跨任务预留与公共出库余额当前读同样使用 NOWAIT，冲突整体回滚。运行时反向协作仅限这些只读值，完整事务、锁序与有限重试由[库存协作协议](../../../../../../../docs/inventory-extraction-design.md#7-事务与锁序)维护。
 
 ## 采购来源公开能力
 

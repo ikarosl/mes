@@ -9,11 +9,14 @@ import { productionTaskStartBlockedReason } from '../domain/production-execution
 import { integerQuantity } from '../domain/integer-quantity.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
 import type { BatchRow } from './mysql-production.shared.js';
+import type { InventoryProductionDocumentCommand } from '../../inventory/public.js';
+import { materialQuantitiesOf } from './mysql-production-material-facts.js';
 
 /** 调用方在写命令中先锁工单及任务，所有需求变更与履约都推进任务版本。 */
 export async function readProductionExecutionStartCheck(
   db: PoolConnection,
   batch: BatchRow,
+  documents: InventoryProductionDocumentCommand,
   lock = false,
 ): Promise<ProductionExecutionStartCheck> {
   const share = lock ? ' FOR SHARE' : '';
@@ -38,17 +41,18 @@ export async function readProductionExecutionStartCheck(
       CAST(d.material_variant_id AS CHAR) materialVariantId,
       d.material_variant_code_snapshot materialVariantCode,d.unit_snapshot unit,
       d.need_number demandQuantity,d.remaining_number remainingQuantity,
-      COALESCE((SELECT SUM(od.outbound_number) FROM outbound_detail od
-        JOIN outbound_order oo ON oo.id=od.outbound_id
-        WHERE od.demand_id=d.id AND oo.status='completed'${share}),0) confirmedOutboundQuantity
+      0 confirmedOutboundQuantity
       FROM production_item_demand d
       WHERE d.production_batch_id=? AND d.business_status='active' ORDER BY d.id${share}`,
     [batch.id],
   );
+  const issued = materialQuantitiesOf(
+    await documents.facts({ productionBatchId: String(batch.id), lock }),
+  ).issuedByDemand;
   const lines = demands.map((line) => ({
     ...line,
     demandQuantity: String(integerQuantity(line.demandQuantity)),
-    confirmedOutboundQuantity: String(integerQuantity(line.confirmedOutboundQuantity)),
+    confirmedOutboundQuantity: String(issued.get(line.demandId) ?? 0),
     remainingQuantity: String(integerQuantity(line.remainingQuantity)),
   }));
   const hasMaterialShortage = lines.some((line) => integerQuantity(line.remainingQuantity) > 0);

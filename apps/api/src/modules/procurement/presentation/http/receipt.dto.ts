@@ -194,7 +194,6 @@ export class InboundTargetDto {
   batchId?: string;
 }
 export class ConfirmProcurementInboundDetailDto extends ReceiptAllocationCommandDto {
-  @IsString() @IsNotEmpty() @MaxLength(100) detailKey!: string;
   @IsDefined()
   @IsObject()
   @ValidateNested()
@@ -210,7 +209,6 @@ export class ConfirmProcurementInboundDto {
   @IsArray()
   @ArrayMinSize(1)
   @ArrayMaxSize(100)
-  @ArrayUnique((item: ConfirmProcurementInboundDetailDto) => item.detailKey)
   @ValidateNested({ each: true })
   @Type(() => ConfirmProcurementInboundDetailDto)
   details!: ConfirmProcurementInboundDetailDto[];

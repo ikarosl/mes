@@ -28,9 +28,6 @@ export interface NotificationItem {
 export interface NotificationUnreadCount {
   count: number;
 }
-export interface ReadNotificationCommand {
-  version: number;
-}
 export interface NotificationReadResult {
   id: string;
   readAt: string;

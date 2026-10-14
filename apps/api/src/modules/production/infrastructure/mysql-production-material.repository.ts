@@ -1,6 +1,14 @@
 import { MaterialVariantQuery, ProductInventoryEligibility } from '../../product/public.js';
 import { AVAILABLE_MATERIAL_BATCHES_SQL } from './queries/material-available-batches.sql.js';
-import { InventoryStockCommand } from '../../inventory/public.js';
+import {
+  InventoryStockCommand,
+  InventoryProductionDocumentCommand,
+} from '../../inventory/public.js';
+import {
+  hydrateAllocationQuantities,
+  hydrateDemandQuantities,
+  materialQuantitiesOf,
+} from './mysql-production-material-facts.js';
 import { Inject, Injectable } from '@nestjs/common';
 import { withTransaction } from '@company/database';
 import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
@@ -42,6 +50,7 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
     private readonly inventory: InventoryStockCommand,
     private readonly variants: MaterialVariantQuery,
     private readonly productEligibility: ProductInventoryEligibility,
+    private readonly documents: InventoryProductionDocumentCommand,
   ) {
     super();
   }
@@ -69,6 +78,7 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
       [batchId],
     );
     await this.decorateAllocations(allocations);
+    hydrateDemandQuantities(rows, allocations);
     const byDemand = new Map<string, ProductionMaterialAllocationItem[]>();
     for (const row of allocations) {
       const key = String(row.demand_id);
@@ -185,29 +195,13 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
           `SELECT id,demand_id,batch_id,assigned_number FROM production_item_allocation
            WHERE allocation_status NOT IN ('released','cancelled')
              AND (demand_id=? OR (batch_id=? AND item_id=? AND material_variant_id=?))
-           ORDER BY id FOR SHARE`,
+           ORDER BY id FOR SHARE NOWAIT`,
           [line.demandId, line.itemBatchId, demand.item_id, demand.material_variant_id],
         );
         const allocationIds = currentAllocations.map((row) => String(row.id));
-        const issuedByAllocation = new Map<string, number>();
-        if (allocationIds.length) {
-          const [currentIssues] = await connection.query<
-            (RowDataPacket & { allocation_id: number | string; outbound_number: string })[]
-          >(
-            `SELECT od.allocation_id,od.outbound_number FROM outbound_detail od
-             JOIN outbound_order oo ON oo.id=od.outbound_id
-             WHERE od.allocation_id IN (${placeholders(allocationIds)}) AND oo.status='completed'
-             ORDER BY od.id FOR SHARE`,
-            allocationIds,
-          );
-          for (const issue of currentIssues) {
-            const id = String(issue.allocation_id);
-            issuedByAllocation.set(
-              id,
-              (issuedByAllocation.get(id) ?? 0) + integerQuantity(issue.outbound_number),
-            );
-          }
-        }
+        const issuedByAllocation = allocationIds.length
+          ? materialQuantitiesOf(await this.documents.facts({ allocationIds, lock: true })).issued
+          : new Map<string, number>();
         let remainingAllocated = 0;
         let reserved = 0;
         for (const allocation of currentAllocations) {
@@ -240,7 +234,12 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
         );
         inserted.push(String(result.insertId));
       }
-      const complete = await areAllActiveDemandsAllocated(connection, batchId, this.variants);
+      const complete = await areAllActiveDemandsAllocated(
+        connection,
+        batchId,
+        this.variants,
+        this.documents,
+      );
       if (complete && batch.status === 'material_pending') {
         requireBatchTransition(batch.status, 'material_assigned');
         await connection.execute(
@@ -274,6 +273,7 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
         [allocationId, batchId],
       );
       if (!row) throw new ProductionDomainError('NOT_FOUND', '物料分配不存在');
+      await hydrateAllocationQuantities([row], this.documents, true);
       if (row.demand_business_status !== 'active' || row.pending_correction_id !== null)
         throw new ProductionDomainError('INVALID_STATE', '该需求已结束或更正审批中，不能释放分配');
       requireMaterialAllocationBatchStatus(batch.status);
@@ -300,7 +300,7 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
           '物料分配已被其他操作修改，请刷新后重试',
         );
       if (
-        !(await areAllActiveDemandsAllocated(connection, batchId, this.variants)) &&
+        !(await areAllActiveDemandsAllocated(connection, batchId, this.variants, this.documents)) &&
         batch.status === 'material_assigned'
       ) {
         requireBatchTransition(batch.status, 'material_pending');
@@ -335,6 +335,7 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
     return rows.map(mapAllocation);
   }
   private async decorateAllocations(rows: AllocationRow[]): Promise<void> {
+    await hydrateAllocationQuantities(rows, this.documents);
     const references = new Map(
       (
         await this.inventory.materialBatchReferences([

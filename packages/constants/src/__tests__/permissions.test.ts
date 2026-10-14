@@ -86,13 +86,7 @@ describe('permissionMatches', () => {
     expect(PERMISSIONS.production.trace.view).not.toBe(PERMISSIONS.production.tasks.view);
   });
 
-  it('separates purchase inbound commands from read-only inventory access', () => {
-    expect(PERMISSIONS.production.inbounds).toEqual({
-      view: 'production:inbounds:view',
-      create: 'production:inbounds:create',
-      confirm: 'production:inbounds:confirm',
-      cancel: 'production:inbounds:cancel',
-    });
+  it('uses a dedicated read-only inventory permission', () => {
     expect(PERMISSIONS.production.inventory.view).toBe('production:inventory:view');
   });
 

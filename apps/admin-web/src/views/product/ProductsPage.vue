@@ -68,8 +68,20 @@
             @click="openCreateMaterial"
             >新增物料</el-button
           > </template
-        ><template #tools
-          ><el-tooltip content="刷新"
+        ><template #tools>
+          <el-button
+            text
+            :disabled="activeLoading || activeRowKeys.length === 0"
+            @click="collapseAllRows"
+            >收起全部</el-button
+          >
+          <el-button
+            text
+            :disabled="activeLoading || activeRowKeys.length === 0"
+            @click="expandAllRows"
+            >展开所有</el-button
+          >
+          <el-tooltip content="刷新"
             ><el-button
               :icon="Refresh"
               text
@@ -83,9 +95,10 @@
         v-loading="productGroups.loading.value"
         :data="productGroups.groups.value"
         row-key="groupKey"
-        default-expand-all
+        :expand-row-keys="expandedRowKeys.products"
         class="data-table"
         empty-text="暂无成品"
+        @expand-change="handleProductExpandChange"
       >
         <el-table-column type="expand"
           ><template #default="{ row: group }"
@@ -230,9 +243,10 @@
         v-loading="materials.loading.value"
         :data="materials.materials.value"
         row-key="id"
-        default-expand-all
+        :expand-row-keys="expandedRowKeys.materials"
         class="data-table"
         empty-text="暂无物料"
+        @expand-change="handleMaterialExpandChange"
       >
         <el-table-column type="expand"
           ><template #default="{ row: material }"
@@ -451,6 +465,43 @@ const categorySource = useProductCategoryOptions();
 const productGroups = useProductGroupsList();
 const materials = useMaterialsList();
 const viewMode = ref<ViewMode>(route.query.tab === 'materials' ? 'materials' : 'products');
+const expandedRowKeys = ref<Record<ViewMode, string[]>>({ products: [], materials: [] });
+const shouldInitializeExpansion: Record<ViewMode, boolean> = { products: true, materials: true };
+const activeRowKeys = computed(() =>
+  viewMode.value === 'products'
+    ? productGroups.groups.value.map((group) => group.groupKey)
+    : materials.materials.value.map((material) => material.id),
+);
+const syncExpandedRows = (mode: ViewMode, rowKeys: string[]) => {
+  expandedRowKeys.value[mode] = shouldInitializeExpansion[mode]
+    ? rowKeys.slice(0, 1)
+    : expandedRowKeys.value[mode].filter((key) => rowKeys.includes(key));
+  if (rowKeys.length) shouldInitializeExpansion[mode] = false;
+};
+watch(productGroups.groups, (groups) => {
+  syncExpandedRows(
+    'products',
+    groups.map((group) => group.groupKey),
+  );
+});
+watch(materials.materials, (rows) => {
+  syncExpandedRows(
+    'materials',
+    rows.map((material) => material.id),
+  );
+});
+const handleProductExpandChange = (_row: ProductGroupItem, rows: ProductGroupItem[]) => {
+  expandedRowKeys.value.products = rows.map((group) => group.groupKey);
+};
+const handleMaterialExpandChange = (_row: MaterialListItem, rows: MaterialListItem[]) => {
+  expandedRowKeys.value.materials = rows.map((material) => material.id);
+};
+const collapseAllRows = () => {
+  expandedRowKeys.value[viewMode.value] = [];
+};
+const expandAllRows = () => {
+  expandedRowKeys.value[viewMode.value] = activeRowKeys.value;
+};
 const activeQuery = computed(() =>
   viewMode.value === 'products' ? productGroups.query : materials.query,
 );
@@ -477,14 +528,24 @@ const itemKindLabels: Record<ProductItemKind, string> = {
 };
 const acquireMethodLabels = { self_made: '自制', outsourced: '委外', purchased: '外购' };
 const loadActive = () => (viewMode.value === 'products' ? productGroups.load() : materials.load());
-const searchActive = () =>
-  viewMode.value === 'products' ? productGroups.search() : materials.search();
-const resetActive = () =>
-  viewMode.value === 'products' ? productGroups.reset() : materials.reset();
-const changeActivePageSize = (v: number) =>
-  viewMode.value === 'products' ? productGroups.changePageSize(v) : materials.changePageSize(v);
-const changeActivePage = (v: number) =>
-  viewMode.value === 'products' ? productGroups.changePage(v) : materials.changePage(v);
+const searchActive = () => {
+  shouldInitializeExpansion[viewMode.value] = true;
+  return viewMode.value === 'products' ? productGroups.search() : materials.search();
+};
+const resetActive = () => {
+  shouldInitializeExpansion[viewMode.value] = true;
+  return viewMode.value === 'products' ? productGroups.reset() : materials.reset();
+};
+const changeActivePageSize = (v: number) => {
+  shouldInitializeExpansion[viewMode.value] = true;
+  return viewMode.value === 'products'
+    ? productGroups.changePageSize(v)
+    : materials.changePageSize(v);
+};
+const changeActivePage = (v: number) => {
+  shouldInitializeExpansion[viewMode.value] = true;
+  return viewMode.value === 'products' ? productGroups.changePage(v) : materials.changePage(v);
+};
 watch(viewMode, async (mode) => {
   await router.replace({ query: mode === 'materials' ? { tab: 'materials' } : {} });
   await loadActive();

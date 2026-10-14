@@ -1,4 +1,4 @@
-import type { PageQuery, ReasonedVersionedCommand, VersionedCommand } from '../common.js';
+import type { PageQuery, ReasonedVersionedCommand } from '../common.js';
 import type {
   ProductionBatchStatus,
   OutboundOrderStatus,
@@ -116,7 +116,5 @@ export interface MaterialOutboundCandidateItem extends DemandGenerationSource {
   remainingActualOutboundQuantity: string;
   unit: string;
 }
-
-export type ConfirmMaterialOutboundPayload = VersionedCommand;
 
 export type CancelMaterialOutboundPayload = ReasonedVersionedCommand;

@@ -1,16 +1,50 @@
 # Inventory 公开能力
 
-本章维护 Inventory 向 Production、Procurement 开放的事务能力。完整锁序见[库存协作协议](../../../../../../docs/inventory-extraction-design.md)，物理字段见[数据库边界](database.md)。公开端口只传业务身份与数量，不暴露 SQL 或连接。
+本章维护 Inventory 向 Production、Procurement 开放的事务能力，以及其他单据 HTTP 命令。完整锁序与反向预留协作例外见[库存协作协议](../../../../../../docs/inventory-extraction-design.md)，六场景字段及不可变守卫见[数据库边界](database.md)。公开端口只传业务身份、数量和明确结果，不暴露 SQL、连接或 SDK 类型。
 
-`InventoryStockCommand` 继续负责物料批次锁、生产领料负流水和退料正流水。预留与业务需求仍属 Production；库存余额只由 `inventory_transaction` 及其触发器投影决定。
+## 生产领退料
 
-`InventoryInboundCommand.confirmPurchaseReceipt` 接收来源已锁定并验证的到货授权明细。每条输入含独立 `detailKey`、到货/实收修订/检验/allocation 引用、服务端解析的确认时供应商名称、物料精确版本与单位快照、正整数量和 `target`；允许不同供应商合成一张外购入库单，不再接收主单唯一 `provider`。`confirmFinishedOutput` 接收 Production 在同池事务内已锁定并验证的当前轮授权明细，每条输入含 allocation ID、revision ID、类别、正整数量与 `target`。两类各自可以在一单中提交多条明细，不混合来源类型；一授权可在不同单或同单分次执行，多授权可归同批次。Inventory 不代替来源模块判断当前轮、审批、质量与剩余额度。
+`InventoryProductionDocumentCommand` 是 Production 创建／确认／取消实际领退料的入口，生产资格、任务阶段、需求及补料履约由调用者先在来源锁内决定。端口 `getOutbound/getReturn` 返回父单 ID、编号、任务／工单、状态、版本及原分配／需求、精确身份、原库批、数量、单位和备注；公开值状态统一 pending/completed/cancelled，底层出库 pending_picking 映射 pending。带锁版本只锁 Inventory 自有公共主从，不反锁生产来源。
 
-共用目标类型见 [`InventoryInboundTarget`](../../../../../../packages/contracts/src/production/inventory-target.ts)：`{mode:'new',clientKey}` 或 `{mode:'existing',batchId}`。同一请求的相同 `clientKey` 明确共用一个新批次且只取一次 IB；已有目标沿用原批号。新批号仅在真实创建 `item_batch` 时由服务端生成；已有批次须精确匹配成品或物料版本及单位，且状态为 `available`。同目标的每条实际明细保持正整数上限，批次累计余额使用 BIGINT 投影，不套用单笔上限。请求不能把别的来源、供应商或类别写成库批的唯一归属。
+`createOutbound/createReturn` 接收服务端已核验的一任务／工单及每条来源分配的真实身份、数量和单位，创建待确认公共单据，不记库存。`completeOutbound/completeReturn` 整单生成匹配负／正流水并推进父单；取消经 `cancelOutbound/cancelReturn` 比较父版本，领料取消另传受控 manual/production_batch/production_termination。终态重放不递增版本。公共明细及库存写入归 Inventory，来源命令成功审计由 Production 一次写入，同事务包含需求余额、任务版本及补料履约。
 
-两种确认均在调用者事务内原子创建已完成主单、每条实际明细、匹配正流水和成功审计。物料正流水为 `purchase_inbound`，成品为 `production_inbound`。成品主单/库批采用中性 `finished_product`；计划内外归属由 `production_output_allocation.category` 经 `inbound_detail.production_output_allocation_id` 追溯。HTTP 幂等由来源用例处理。
+`facts({productionBatchId?,allocationIds?,demandIds?,lock?})` 至少限定一个范围，多范围取交集；只返回 production_material 和 return_inbound，其他单永不参与生产履约、退料／损耗额度或审批依据。lock=true 要求调用者已有活跃同池事务，对公共父单与实际明细使用当前读及 NOWAIT；普通查询不授予写入资格。它不关联或锁生产分配，也不以库存余额代替历史领退料。
 
-`InventoryInboundCommand.readFinishedTaskAllocationReceipts(batchId,lock)` 返回该任务各授权的历史实际入库量，由 Production 按授权类别汇总计划内外；`readFinishedAllocationReceipts(ids,lock)` 返回每授权实际执行量。它们只读取已完成入库明细和匹配的正流水，不用当前库存余额。`InventoryInboundQuery.getReceiptInboundFacts({receiptLineIds})` 同样按到货历史全部修订累计，返回每笔实际入库的来源、allocation、明细、流水、`batchId` 和数量，不预设一个到货只用一个库批。该事实端口不返回展示批号；在调用者同池事务内只对入库主从单和匹配正流水做当前读，不关联或锁定 `item_batch`，批次身份由既有组合外键保证。批号仍由独立展示查询读取，目标批次仅在实际写入时按[统一锁序](../../../../../../docs/inventory-extraction-design.md#7-事务与锁序)锁定。
+生产退料 HTTP 使用 returnNo/returnAt/returnQuantity 及 pending/returned/cancelled 状态，returned 对应公共 completed。回原批次 available 库存是固定业务规则，响应不另附固定状态或释放标记；退料引用为 inbound_detail，独立退料表不保留。
+
+`InventoryStockCommand` 提供物料批次历史引用、统一父身份及库存批次锁与物料数量。库存流水动作在公共单据 adapter 内执行，Production 不再自行写单据或调用裸流水来替代来源编排；单据与流水关联由登记展示查询读取。
+
+## 采购和批准成品实际入库
+
+`InventoryInboundCommand.confirmPurchaseReceipt` 接收 Procurement 已锁定并核验的到货授权。每条输入含到货／实收修订／检验／allocation、服务端确认时供应商名称、物料精确身份与单位、正整数数量及 target。允许多供应商合成一张采购入库，不保存主单唯一供应商。
+
+`confirmFinishedOutput` 接收 Production 已锁定并核验的当前轮批准授权，每条输入含 allocation、revision、类别、数量及 target。两类可同单多明细、分次执行，单内不混来源；同授权可进多个库批，多授权可共库批。Inventory 复核自有目标、身份、单位、容量与单据一致性，不替来源判断当前轮、批准、质量或剩余额度。
+
+两类确认结果及成功审计通过真实 `inboundDetailId`、`batchId` 和 `transactionId` 关联来源授权，采购明细另含到货行身份；每条入库明细独立生成持久身份和唯一正流水。
+
+目标 [`InventoryInboundTarget`](../../../../../../packages/contracts/src/production/inventory-target.ts) 为 `{mode:'new',clientKey}` 或 `{mode:'existing',batchId}`。单内相同 trim 后 clientKey 才共建一次真实批次、取一个 IB；已有批次精确身份和单位一致且 available。采购／批准成品在同事务按 pending→明细／目标→流水→completed 完成，外部一次确认成单，无持久仓库编辑草稿。采购记 purchase_inbound，批准成品记 production_inbound；成品主单／库批中性 finished_product，类别沿明细产出授权追溯。
+
+`readFinishedTaskAllocationReceipts(batchId,lock)` 返回任务每授权累计真实已入，Production 按类别汇总；`readFinishedAllocationReceipts(ids,lock)` 返回每授权执行量。`InventoryInboundQuery.getReceiptInboundFacts({receiptLineIds})` 按到货历史全部修订累计，返回来源、allocation、明细、流水、batchId 和数量，不预设一到货一库批。锁内事实读取只对自有主从及匹配正流水当前读，不锁历史 item_batch；展示批号独立读取。目标排他锁仅在实际写入时按完整集合取得。
+
+## 其他入出库与幂等
+
+`/warehouse/other-inbounds`、`/warehouse/other-outbounds` 分别提供列表／详情，和创建草稿、保存草稿、整单确认、整单取消四类写命令。每方向独立页面 view/create/update/confirm/cancel 权限，后端每入口鉴权。创建 POST、保存 PATCH `/:orderId`，确认／取消 POST `/:orderId/actions/confirm|cancel`；保存、确认和取消携带父版本，取消另有原因。
+
+八个方向／动作组合分别登记 inventory.other-inbound.*.v1 与 inventory.other-outbound.*.v1 scope（create/save/confirm/cancel）。所有写入口要求 Idempotency-Key，并由平台 executor 将幂等记录、单据、批次、流水、成功审计及完整响应同事务提交；同键同语义重放原结果，同键不同语义拒绝。未知结果和有限重试继续原键；锁等待、NOWAIT 或连接等已分类瞬态失败先整体回滚，有限重试用原语义，不能只重试半次扣库存。Ledger 唯一键不替代 HTTP 幂等。
+
+其他草稿有效行 1–50 条，办理原因必填；保存按父版本变更行、移除行软删除，确认／取消冻结整单。不新增审批、质量定稿或来源履约。new 目标仅其他入库可选，保存不建 item_batch；确认才分组建批并回填 batchId，取消无空批次。客户端不能传人工内部批号或生产日期；其他出库只有已有批次。
+
+`ProductOtherStockQuery.listObjects` 提供明确物料精确版本／成品的新批次候选及已选回显，不以列表候选授予写资格。resolveReferences 在同池事务锁内核验身份：requireEnabled=true 要求对象／分类及精确版本启用且未删除，new 使用该资格；existing 用 requireEnabled=false 保留停用或删除历史身份，再核对原批次单位及 available 状态。其他用途不授予采购或生产领料资格。
+
+`GET /warehouse/other-stock-objects` 和 `/warehouse/other-stock-candidates` 分别提供库存对象与已有库批候选，共用其他入／出库查看权限。候选未预留量仅供展示，确认必须当前读重核，不能直接使用候选数量写流水。
+
+## 当前预留协作
+
+Inventory 定义 `InventoryReservationReadPort.currentAllocations(batchIds)`，API 组合根 adapter 只导入 Production public 的 `ProductionReservationQuery`，返回 id/batchId/assignedNumber/allocationStatus。该端口只读有效 active/frozen/abnormal 分配，不调用来源办理资格或修改分配；Production 只锁自己的分配并使用 FOR SHARE NOWAIT。
+
+Inventory 用该事实及自己当前已完成生产领料核对未预留量，不取得预留所有权。调用位置、批次保护、NOWAIT 冲突和有限重试统一见[公共锁序与预留例外](../../../../../../docs/inventory-extraction-design.md#其他出库保护生产预留的窄例外)，不扩展其他来源业务回调。
+
+## 只读展示
 
 库存批次候选公开查询 `listInboundBatchCandidates` 按成品 ID 或物料精确版本、授权单位、可用状态、批号关键词稳定分页。HTTP 入口分别为 `GET /warehouse/finished-inbound-batch-candidates`（`warehouse:inbound:view`）和 `GET /warehouse/material-inbound-batch-candidates`（`warehouse:inbound:view`），无需额外采购或任务页面权限。命令事务仍复核身份与状态，候选结果不授予写资格。
 

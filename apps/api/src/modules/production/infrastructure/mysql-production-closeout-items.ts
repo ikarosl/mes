@@ -4,12 +4,46 @@ import type {
   BatchCloseoutPendingItem,
   BatchTerminationCheck,
 } from '@company/contracts';
+import type { InventoryProductionDocumentCommand } from '../../inventory/public.js';
+import {
+  allocationRequiresCloseout,
+  materialQuantitiesOf,
+} from './mysql-production-material-facts.js';
+
+/** 调用者已持任务／收尾根锁；资格只读自有分配与 Inventory 当前事实。 */
+export async function demandHasAllocationCloseoutWork(
+  db: PoolConnection,
+  demandId: string,
+  documents: InventoryProductionDocumentCommand,
+): Promise<boolean> {
+  const [allocations] = await db.query<
+    (RowDataPacket & { id: string; assigned_number: string; allocation_status: string })[]
+  >(
+    `SELECT CAST(id AS CHAR) id,assigned_number,allocation_status FROM production_item_allocation
+     WHERE demand_id=? AND allocation_status NOT IN ('released','cancelled') ORDER BY id FOR SHARE NOWAIT`,
+    [demandId],
+  );
+  const quantities = materialQuantitiesOf(
+    await documents.facts({ demandIds: [demandId], lock: true }),
+  );
+  return allocations.some((allocation) =>
+    allocationRequiresCloseout(
+      {
+        id: allocation.id,
+        status: allocation.allocation_status,
+        assignedQuantity: allocation.assigned_number,
+      },
+      quantities,
+    ),
+  );
+}
 
 /** 仅投影当前收尾工作台，不修改需求来源或既有行动快照。 */
 export async function loadCloseoutItems(
   db: PoolConnection,
   check: BatchTerminationCheck,
   lock: boolean,
+  documents: InventoryProductionDocumentCommand,
 ): Promise<{
   demands: BatchCloseoutDemand[];
   pendingItems: BatchCloseoutPendingItem[];
@@ -22,8 +56,7 @@ export async function loadCloseoutItems(
       d.need_number demandQuantity,d.remaining_number remainingQuantity,
       CAST(d.parent_demand_id AS CHAR) parentDemandId,CAST(d.replaces_demand_id AS CHAR) replacesDemandId,
       CAST(d.supplement_id AS CHAR) supplementId,
-      COALESCE((SELECT SUM(od.outbound_number) FROM outbound_detail od JOIN outbound_order oo ON oo.id=od.outbound_id
-        WHERE od.demand_id=d.id AND oo.status='completed'${share}),0) outboundQuantity
+      0 outboundQuantity
      FROM production_item_demand d WHERE d.production_batch_id=? ORDER BY d.id${share}`,
     [check.batchId],
   );
@@ -32,13 +65,10 @@ export async function loadCloseoutItems(
      FROM production_item_allocation WHERE production_batch_id=? ORDER BY id${share}`,
     [check.batchId],
   );
-  const [outboundDemands] = await db.query<
-    (RowDataPacket & { outboundId: string; demandId: string })[]
-  >(
-    `SELECT CAST(od.outbound_id AS CHAR) outboundId,CAST(od.demand_id AS CHAR) demandId
-     FROM outbound_detail od JOIN outbound_order oo ON oo.id=od.outbound_id
-     WHERE oo.production_batch_id=? ORDER BY od.id${share}`,
-    [check.batchId],
+  const facts = await documents.facts({ productionBatchId: check.batchId, lock });
+  const quantities = materialQuantitiesOf(facts);
+  const outboundDemands = facts.outbounds.flatMap((order) =>
+    order.details.map((line) => ({ outboundId: order.id, demandId: line.demandId })),
   );
   const allocationDemands = new Map(allocations.map((row) => [row.id, row.demandId]));
   // 物流模块分阶段解锁；后端与工作台使用同一条件，不能绕过界面跳过前序模块。
@@ -77,7 +107,7 @@ export async function loadCloseoutItems(
       ...row,
       demandQuantity: String(row.demandQuantity),
       remainingQuantity: String(row.remainingQuantity),
-      outboundQuantity: String(row.outboundQuantity),
+      outboundQuantity: String(quantities.issuedByDemand.get(row.id) ?? 0),
     })),
     pendingItems,
     allocationDemands,

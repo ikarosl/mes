@@ -1,6 +1,6 @@
 # Production
 
-负责工单、生产任务、工序执行及异常处置，拥有生产需求、分配、领退料、损耗、结案和批准产出；通过 [Inventory](../inventory/README.md) 公共能力记账，通过 [Quality](../quality/README.md) 引用独立检验事实。库存、盘点与检验表不归 Production。
+负责工单、生产任务、工序执行及异常处置，拥有生产需求、分配、损耗、结案和批准产出，以及领退料来源校验与办理编排；通过 [Inventory](../inventory/README.md) 公共能力写领退料单据和库存，通过 [Quality](../quality/README.md) 引用独立检验事实。公共出入库、库存、盘点与检验表不归 Production。
 
 ## 范围与边界
 

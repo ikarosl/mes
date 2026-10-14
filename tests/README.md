@@ -16,7 +16,6 @@
 | `integration/production/migrations/` | 生产结构的迁移与历史数据验证 |
 | `integration/production/fixtures/` | 生产套件共用的测试数据清理 |
 | `integration/inventory/` | 库存流水不可变性、余额投影及库存事务；`migrations/` 验证库存结构迁移 |
-| `integration/procurement/` | 采购入库场景；`legacy-purchase-inbound` 保留既有旧接口用例，尚未适配当前采购流程 |
 | `integration/fixtures/` | 跨模块复用的迁移读取与执行辅助函数 |
 
 生产领退料用例包含库存影响断言时，仍作为完整生产流程保留，不因涉及库存表就拆断同一用例。跨模块夹具按需复用，目录位置不表示其依赖已全部消除。

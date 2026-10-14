@@ -1,7 +1,14 @@
-import { allocateBusinessNumber } from '../../../infrastructure/numbering/mysql-business-number.js';
 import { materialOutboundDetailsSql } from './queries/material-outbound-details.sql.js';
+import {
+  MATERIAL_OUTBOUND_ORDER_SELECT as OUTBOUND_SELECT,
+  MATERIAL_OUTBOUND_ORDER_COUNT,
+} from './queries/material-outbound-orders.sql.js';
+import { hydrateAllocationQuantities } from './mysql-production-material-facts.js';
 import { MaterialVariantQuery, ProductInventoryEligibility } from '../../product/public.js';
-import { InventoryStockCommand } from '../../inventory/public.js';
+import {
+  InventoryStockCommand,
+  InventoryProductionDocumentCommand,
+} from '../../inventory/public.js';
 import { currentMaterialNameSql } from './queries/material-name.sql.js';
 import { Inject, Injectable } from '@nestjs/common';
 import { withTransaction } from '@company/database';
@@ -48,6 +55,7 @@ export class MysqlProductionMaterialOutboundRepository extends ProductionMateria
     private readonly inventory: InventoryStockCommand,
     private readonly productEligibility: ProductInventoryEligibility,
     private readonly variants: MaterialVariantQuery,
+    private readonly documents: InventoryProductionDocumentCommand,
   ) {
     super();
   }
@@ -71,6 +79,7 @@ export class MysqlProductionMaterialOutboundRepository extends ProductionMateria
       );
       if (allocations.length !== allocationIds.length)
         throw new ProductionDomainError('NOT_FOUND', '出库分配不存在或不属于当前批次');
+      await hydrateAllocationQuantities(allocations, this.documents, true);
       const eligibility = await this.productEligibility.requireProductionIssuableReferences({
         references: allocations.map((row) => ({
           itemId: String(row.item_id),
@@ -99,46 +108,36 @@ export class MysqlProductionMaterialOutboundRepository extends ProductionMateria
             '制单数量超过当前可制单数量',
           );
       }
-      const outboundNo = await allocateBusinessNumber(connection, 'production_material_outbound');
-      const [orderResult] = await connection.execute<ResultSetHeader>(
-        `INSERT INTO outbound_order (outbound_no,production_batch_id,work_order_id,status,outbound_at,operator_id,remark,created_by,updated_by) VALUES (?,?,?,'pending_picking',NULL,NULL,?,?,?)`,
-        [
-          outboundNo,
-          batchId,
-          batch.work_order_id,
-          payload.remark ?? null,
-          context.actorId,
-          context.actorId,
-        ],
+      const created = await this.documents.createOutbound(
+        {
+          productionBatchId: batchId,
+          workOrderId: String(batch.work_order_id),
+          remark: payload.remark,
+          lines: payload.details.map((line) => {
+            const allocation = byId.get(line.allocationId)!;
+            return {
+              allocationId: String(allocation.id),
+              demandId: String(allocation.demand_id),
+              itemId: String(allocation.item_id),
+              materialVariantId: String(allocation.material_variant_id),
+              batchId: String(allocation.batch_id),
+              quantity: String(line.outboundQuantity),
+              unit: allocation.unit_snapshot,
+            };
+          }),
+        },
+        context,
       );
-      for (const line of payload.details) {
-        const allocation = byId.get(line.allocationId)!;
-        await connection.execute<ResultSetHeader>(
-          `INSERT INTO outbound_detail (outbound_id,production_batch_id,demand_id,allocation_id,item_id,material_variant_id,batch_id,outbound_number,unit_snapshot,created_by) VALUES (?,?,?,?,?,?,?,?,?,?)`,
-          [
-            orderResult.insertId,
-            batchId,
-            allocation.demand_id,
-            allocation.id,
-            allocation.item_id,
-            allocation.material_variant_id,
-            allocation.batch_id,
-            line.outboundQuantity,
-            allocation.unit_snapshot,
-            context.actorId,
-          ],
-        );
-      }
       await this.audit(
         connection,
         context,
         'production-material.outbound.create',
-        String(orderResult.insertId),
+        created.id,
         null,
-        { outboundNo, status: 'pending_picking', detailCount: payload.details.length },
+        { outboundNo: created.no, status: 'pending_picking', detailCount: payload.details.length },
       );
       const current = await findBatch(connection, batchId);
-      const outbound = await this.loadOutbound(connection, String(orderResult.insertId));
+      const outbound = await this.loadOutbound(connection, created.id);
       return {
         productionBatchId: batchId,
         batchStatus: current.status,
@@ -151,7 +150,7 @@ export class MysqlProductionMaterialOutboundRepository extends ProductionMateria
   async listOutbounds(batchId: string): Promise<MaterialOutboundItem[]> {
     await findBatch(this.pool, batchId);
     const [rows] = await this.pool.query<OutboundRow[]>(
-      `${OUTBOUND_SELECT} WHERE o.production_batch_id=? ORDER BY o.created_at DESC,o.id DESC`,
+      `${OUTBOUND_SELECT} WHERE o.source_type='production_material' AND o.production_batch_id=? ORDER BY o.created_at DESC,o.id DESC`,
       [batchId],
     );
     return this.loadOutbounds(this.pool, rows);
@@ -162,7 +161,7 @@ export class MysqlProductionMaterialOutboundRepository extends ProductionMateria
   ): Promise<PageResult<MaterialOutboundItem>> {
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 20;
-    const conditions = ['1=1'];
+    const conditions = ["o.source_type='production_material'"];
     const values: Array<string | number> = [];
     if (query.keyword?.trim()) {
       const keyword = `%${query.keyword.trim()}%`;
@@ -175,7 +174,7 @@ export class MysqlProductionMaterialOutboundRepository extends ProductionMateria
     }
     const where = conditions.join(' AND ');
     const [[count]] = await this.pool.query<(RowDataPacket & { total: number })[]>(
-      `SELECT COUNT(*) total FROM outbound_order o JOIN production_batches b ON b.id=o.production_batch_id JOIN work_orders wo ON wo.id=o.work_order_id WHERE ${where}`,
+      `${MATERIAL_OUTBOUND_ORDER_COUNT} WHERE ${where}`,
       values,
     );
     const [rows] = await this.pool.query<OutboundRow[]>(
@@ -225,6 +224,7 @@ export class MysqlProductionMaterialOutboundRepository extends ProductionMateria
        AND d.remaining_number>0 AND d.pending_correction_id IS NULL`,
       batchIds,
     );
+    await hydrateAllocationQuantities(allocations, this.documents);
     const enabledVariants = new Set(
       (
         await this.variants.listEnabledByMaterials([
@@ -298,6 +298,7 @@ export class MysqlProductionMaterialOutboundRepository extends ProductionMateria
       )} WHERE a.production_batch_id=? AND a.allocation_status='active' AND d.business_status='active' AND d.remaining_number>0 AND d.pending_correction_id IS NULL ORDER BY d.id,a.id`,
       [batchId],
     );
+    await hydrateAllocationQuantities(rows, this.documents);
     const enabled = new Set(
       (
         await this.variants.listEnabledByMaterials([
@@ -366,53 +367,32 @@ export class MysqlProductionMaterialOutboundRepository extends ProductionMateria
   ): Promise<MaterialOutboundCommandResult> {
     return withTransaction(this.pool, async (connection) => {
       if (!context.actorId) throw new ProductionDomainError('INVALID_INPUT', '缺少当前操作人身份');
-      const [[identity]] = await connection.query<
-        (RowDataPacket & { production_batch_id: number })[]
-      >('SELECT production_batch_id FROM outbound_order WHERE id=?', [outboundId]);
-      if (!identity) throw new ProductionDomainError('NOT_FOUND', '生产领料出库单不存在');
-      // 所有同批次物料命令统一先锁 production_batches，再锁单据、分配和库存批次，避免交叉等待。
-      const lockedBatch = await findBatch(connection, String(identity.production_batch_id), true);
-      const [[order]] = await connection.query<
-        (RowDataPacket & {
-          id: number;
-          production_batch_id: number;
-          status: string;
-          version: number;
-        })[]
-      >('SELECT id,production_batch_id,status,version FROM outbound_order WHERE id=? FOR UPDATE', [
-        outboundId,
-      ]);
-      if (!order) throw new ProductionDomainError('NOT_FOUND', '生产领料出库单不存在');
-      if (String(order.production_batch_id) !== String(identity.production_batch_id))
+      const identity = await this.documents.getOutbound(outboundId);
+      const lockedBatch = await findBatch(connection, identity.productionBatchId, true);
+      const order = await this.documents.getOutbound(outboundId, true);
+      if (order.productionBatchId !== identity.productionBatchId)
         throw new ProductionDomainError('CONCURRENT_MODIFICATION', '出库单所属批次已变化');
       if (order.status === 'completed') {
         return {
-          productionBatchId: String(order.production_batch_id),
+          productionBatchId: String(order.productionBatchId),
           batchStatus: lockedBatch.status,
           batchVersion: lockedBatch.version,
           outbound: await this.loadOutbound(connection, outboundId),
         };
       }
-      if (order.status !== 'pending_picking')
+      if (order.status !== 'pending')
         throw new ProductionDomainError('OUTBOUND_CONFIRM_NOT_ALLOWED', '只有待出库单可以确认');
       if (order.version !== version)
         throw new ProductionDomainError('CONCURRENT_MODIFICATION', '出库单已变化，请刷新后重试');
       await connection.query(
         `SELECT id FROM batch_step_records
          WHERE production_batch_id=? ORDER BY step_order_snapshot,id FOR UPDATE`,
-        [order.production_batch_id],
+        [order.productionBatchId],
       );
-      const [details] = await connection.query<OutboundDetailRow[]>(
-        `SELECT od.id,od.outbound_id,od.allocation_id,od.demand_id,od.item_id,od.batch_id,
-          NULL batch_code,od.material_variant_id,NULL material_variant_code_snapshot,NULL item_code_snapshot,NULL item_name,od.outbound_number,od.unit_snapshot,
-          NULL inventory_transaction_id
-         FROM outbound_detail od
-         WHERE od.outbound_id=? ORDER BY od.id FOR UPDATE`,
-        [outboundId],
-      );
+      const details = order.details;
       if (details.length === 0)
         throw new ProductionDomainError('INVALID_STATE', '出库单没有可确认明细');
-      const allocationIds = [...new Set(details.map((row) => String(row.allocation_id)))].sort(
+      const allocationIds = [...new Set(details.map((row) => String(row.allocationId)))].sort(
         bigintCompare,
       );
       await lockIds(connection, 'production_item_allocation', allocationIds);
@@ -420,18 +400,19 @@ export class MysqlProductionMaterialOutboundRepository extends ProductionMateria
         `${ALLOCATION_SELECT} WHERE a.id IN (${placeholders(allocationIds)}) ORDER BY a.id FOR UPDATE`,
         allocationIds,
       );
+      await hydrateAllocationQuantities(allocations, this.documents, true);
       if (allocations.length !== allocationIds.length)
         throw new ProductionDomainError('OUTBOUND_ALLOCATION_CHANGED', '出库单对应分配已失效');
       // 制单后可能开工；确认时按当前任务状态重做领料资格校验。
       requireMaterialOutboundBatchStatus(lockedBatch.status);
       const byAllocation = new Map(allocations.map((row) => [String(row.id), row]));
-      const itemBatchIds = [...new Set(details.map((row) => String(row.batch_id)))].sort(
+      const itemBatchIds = [...new Set(details.map((row) => String(row.batchId)))].sort(
         bigintCompare,
       );
       const eligibility = await this.productEligibility.requireProductionIssuableReferences({
         references: details.map((row) => ({
-          itemId: String(row.item_id),
-          materialVariantId: String(row.material_variant_id),
+          itemId: String(row.itemId),
+          materialVariantId: String(row.materialVariantId),
         })),
       });
       if (eligibility.status !== 'success')
@@ -444,33 +425,33 @@ export class MysqlProductionMaterialOutboundRepository extends ProductionMateria
       );
       const requestedByBatch = new Map<
         string,
-        { itemId: number; materialVariantId: number; quantity: number }
+        { itemId: string; materialVariantId: string; quantity: number }
       >();
       const requestedByDemand = new Map<string, number>();
       for (const detail of details) {
-        const allocation = byAllocation.get(String(detail.allocation_id));
+        const allocation = byAllocation.get(String(detail.allocationId));
         if (
           !allocation ||
           allocation.allocation_status !== 'active' ||
-          String(allocation.production_batch_id) !== String(order.production_batch_id)
+          String(allocation.production_batch_id) !== String(order.productionBatchId)
         )
           throw new ProductionDomainError('OUTBOUND_ALLOCATION_CHANGED', '出库单对应分配已失效');
         if (
-          integerQuantity(allocation.outbound_quantity) + integerQuantity(detail.outbound_number) >
+          integerQuantity(allocation.outbound_quantity) + integerQuantity(detail.quantity) >
           integerQuantity(allocation.assigned_number)
         )
           throw new ProductionDomainError('OUTBOUND_EXCEEDS_ALLOCATION', '出库数量超过分配剩余量');
-        const key = String(detail.batch_id);
+        const key = String(detail.batchId);
         const current = requestedByBatch.get(key);
         requestedByBatch.set(key, {
-          itemId: detail.item_id,
-          materialVariantId: detail.material_variant_id,
-          quantity: (current?.quantity ?? 0) + integerQuantity(detail.outbound_number),
+          itemId: detail.itemId,
+          materialVariantId: detail.materialVariantId,
+          quantity: (current?.quantity ?? 0) + integerQuantity(detail.quantity),
         });
-        const demandId = String(detail.demand_id);
+        const demandId = String(detail.demandId);
         requestedByDemand.set(
           demandId,
-          (requestedByDemand.get(demandId) ?? 0) + integerQuantity(detail.outbound_number),
+          (requestedByDemand.get(demandId) ?? 0) + integerQuantity(detail.quantity),
         );
       }
       await lockIds(
@@ -513,26 +494,8 @@ export class MysqlProductionMaterialOutboundRepository extends ProductionMateria
             '出库数量超过需求剩余数量，请刷新后重试',
           );
       }
-      await this.inventory.recordProductionOutbound(
-        outboundId,
-        details.map((detail) => ({
-          itemId: String(detail.item_id),
-          materialVariantId: String(detail.material_variant_id),
-          batchId: String(detail.batch_id),
-          quantity: String(detail.outbound_number),
-          unit: detail.unit_snapshot,
-          detailId: String(detail.id),
-        })),
-        context,
-      );
-      const [updated] = await connection.execute<ResultSetHeader>(
-        `UPDATE outbound_order SET status='completed',outbound_at=NOW(),operator_id=?,version=version+1,updated_by=?
-         WHERE id=? AND status='pending_picking' AND version=?`,
-        [context.actorId, context.actorId, outboundId, version],
-      );
-      if (updated.affectedRows !== 1)
-        throw new ProductionDomainError('CONCURRENT_MODIFICATION', '出库单已变化，请刷新后重试');
-      const allOutbound = await allDemandsOutbound(connection, String(order.production_batch_id));
+      await this.documents.completeOutbound(outboundId, version, context);
+      const allOutbound = await allDemandsOutbound(connection, String(order.productionBatchId));
       const nextMaterialStatus = allOutbound ? 'material_outbound' : 'material_partially_outbound';
       let nextBatchStatus = lockedBatch.status;
       if (
@@ -551,7 +514,7 @@ export class MysqlProductionMaterialOutboundRepository extends ProductionMateria
         [
           nextBatchStatus,
           context.actorId,
-          order.production_batch_id,
+          order.productionBatchId,
           lockedBatch.status,
           lockedBatch.version,
         ],
@@ -560,7 +523,7 @@ export class MysqlProductionMaterialOutboundRepository extends ProductionMateria
         throw new ProductionDomainError('CONCURRENT_MODIFICATION', '生产任务已变化，请刷新后重试');
       const supplementFulfillment = await fulfillReadySupplements(
         connection,
-        String(order.production_batch_id),
+        String(order.productionBatchId),
         context.actorId,
       );
       await this.audit(
@@ -576,9 +539,9 @@ export class MysqlProductionMaterialOutboundRepository extends ProductionMateria
           fulfilledSupplementIds: supplementFulfillment.fulfilledSupplementIds,
         },
       );
-      const batch = await findBatch(connection, String(order.production_batch_id));
+      const batch = await findBatch(connection, String(order.productionBatchId));
       return {
-        productionBatchId: String(order.production_batch_id),
+        productionBatchId: String(order.productionBatchId),
         batchStatus: batch.status,
         batchVersion: batch.version,
         outbound: await this.loadOutbound(connection, outboundId),
@@ -593,21 +556,15 @@ export class MysqlProductionMaterialOutboundRepository extends ProductionMateria
     context: CommandContext,
   ): Promise<MaterialOutboundItem> {
     return withTransaction(this.pool, async (connection) => {
-      const [[order]] = await connection.query<
-        (RowDataPacket & { status: string; version: number })[]
-      >('SELECT status,version FROM outbound_order WHERE id=? FOR UPDATE', [outboundId]);
-      if (!order) throw new ProductionDomainError('NOT_FOUND', '生产领料出库单不存在');
+      const identity = await this.documents.getOutbound(outboundId);
+      await findBatch(connection, identity.productionBatchId, true);
+      const order = await this.documents.getOutbound(outboundId, true);
       if (order.status === 'cancelled') return this.loadOutbound(connection, outboundId);
-      if (order.status !== 'pending_picking')
+      if (order.status !== 'pending')
         throw new ProductionDomainError('OUTBOUND_CANCEL_NOT_ALLOWED', '已确认出库单不能取消');
       if (order.version !== version)
         throw new ProductionDomainError('CONCURRENT_MODIFICATION', '出库单已变化，请刷新后重试');
-      const [updated] = await connection.execute<ResultSetHeader>(
-        "UPDATE outbound_order SET status='cancelled',cancel_source='manual',cancel_reason=?,cancelled_by=?,cancelled_at=NOW(),version=version+1,updated_by=? WHERE id=? AND status='pending_picking' AND version=?",
-        [reason, context.actorId, context.actorId, outboundId, version],
-      );
-      if (updated.affectedRows !== 1)
-        throw new ProductionDomainError('CONCURRENT_MODIFICATION', '出库单已变化，请刷新后重试');
+      await this.documents.cancelOutbound(outboundId, version, reason, 'manual', context);
       await this.audit(
         connection,
         context,
@@ -627,7 +584,10 @@ export class MysqlProductionMaterialOutboundRepository extends ProductionMateria
   ): Promise<MaterialOutboundItem> {
     let row = known;
     if (!row) {
-      const [[found]] = await db.query<OutboundRow[]>(`${OUTBOUND_SELECT} WHERE o.id=?`, [id]);
+      const [[found]] = await db.query<OutboundRow[]>(
+        `${OUTBOUND_SELECT} WHERE o.source_type='production_material' AND o.id=?`,
+        [id],
+      );
       row = found;
     }
     if (!row) throw new ProductionDomainError('NOT_FOUND', '生产领料出库单不存在');
@@ -732,13 +692,6 @@ const allDemandsOutbound = async (db: PoolConnection, batchId: string) => {
   );
   return Number(row?.missing ?? 1) === 0;
 };
-
-const OUTBOUND_SELECT = `SELECT o.id,o.outbound_no,o.production_batch_id,b.batch_no,o.work_order_id,
-  wo.work_order_no,b.product_id,wo.product_code_snapshot product_code,wo.product_name_snapshot product_name,
-  o.status,o.outbound_at,o.operator_id,o.created_by,o.created_at,o.version,o.remark,
-  o.cancel_source,o.cancel_reason,o.cancelled_by,o.cancelled_at
-  FROM outbound_order o JOIN production_batches b ON b.id=o.production_batch_id
-  JOIN work_orders wo ON wo.id=o.work_order_id`;
 
 const summarizeQuantities = (details: OutboundDetailRow[]) => {
   const byUnit = new Map<string, number>();

@@ -1,6 +1,9 @@
 import { allocateBusinessNumber } from '../../../infrastructure/numbering/mysql-business-number.js';
 import { Inject, Injectable } from '@nestjs/common';
 import { withTransaction } from '@company/database';
+import { InventoryProductionDocumentCommand } from '../../inventory/public.js';
+import { materialQuantitiesOf } from './mysql-production-material-facts.js';
+import { MATERIAL_LOSS_BATCH_OPTIONS_SQL } from './queries/material-loss-batch-options.sql.js';
 import type {
   CreateMaterialLossPayload,
   MaterialLossBatchOption,
@@ -70,7 +73,10 @@ type MaterialLossCommandRow = RowDataPacket & {
 
 @Injectable()
 export class MysqlProductionMaterialLossRepository extends ProductionMaterialLossRepository {
-  constructor(@Inject(DATABASE_POOL) private readonly pool: Pool) {
+  constructor(
+    @Inject(DATABASE_POOL) private readonly pool: Pool,
+    private readonly documents: InventoryProductionDocumentCommand,
+  ) {
     super();
   }
 
@@ -92,17 +98,7 @@ export class MysqlProductionMaterialLossRepository extends ProductionMaterialLos
         product_name: string;
         status: 'material_partially_outbound' | 'material_outbound' | 'doing';
       })[]
-    >(
-      `SELECT DISTINCT pb.id,pb.batch_no,wo.work_order_no,
-        wo.product_code_snapshot product_code,wo.product_name_snapshot product_name,pb.status
-       FROM production_batches pb JOIN work_orders wo ON wo.id=pb.work_order_id
-       JOIN production_item_allocation allocation ON allocation.production_batch_id=pb.id
-       WHERE pb.status IN ('material_partially_outbound','material_outbound','doing')
-         AND EXISTS (SELECT 1 FROM outbound_detail detail
-           JOIN outbound_order outbound ON outbound.id=detail.outbound_id
-           WHERE detail.allocation_id=allocation.id AND outbound.status='completed')
-       ORDER BY pb.id DESC`,
-    );
+    >(MATERIAL_LOSS_BATCH_OPTIONS_SQL);
     return rows.map((row) => ({
       productionBatchId: String(row.id),
       batchNo: row.batch_no,
@@ -136,7 +132,7 @@ export class MysqlProductionMaterialLossRepository extends ProductionMaterialLos
       if (!['material_partially_outbound', 'material_outbound', 'doing'].includes(batch.status))
         throw new ProductionDomainError('INVALID_STATE', '任务已停止生产，请通过结案登记物料损坏');
       await lockIds(db, 'production_item_allocation', [payload.allocationId]);
-      const candidates = await this.findMaterialLossCandidates(db, payload.productionBatchId);
+      const candidates = await this.findMaterialLossCandidates(db, payload.productionBatchId, true);
       const candidate = candidates.find(
         (row) => String(row.allocation_id) === payload.allocationId,
       );
@@ -211,6 +207,7 @@ export class MysqlProductionMaterialLossRepository extends ProductionMaterialLos
       const candidates = await this.findMaterialLossCandidates(
         db,
         String(scrap.production_batch_id),
+        true,
       );
       const candidate = candidates.find((row) => row.allocation_id === scrap.allocation_id);
       if (!candidate || materialLossAvailable(candidate) < 0)
@@ -280,30 +277,33 @@ export class MysqlProductionMaterialLossRepository extends ProductionMaterialLos
     });
   }
 
-  private async findMaterialLossCandidates(db: Executor, batchId: string) {
+  private async findMaterialLossCandidates(db: Executor, batchId: string, lock = false) {
+    const share = lock ? ' FOR SHARE NOWAIT' : '';
     const [rows] = await db.query<MaterialLossCandidateRow[]>(
       `SELECT allocation.id allocation_id,allocation.demand_id,
         allocation.production_batch_id,allocation.item_id,allocation.material_variant_id,allocation.batch_id,
         allocation.unit_snapshot,
-        COALESCE((SELECT SUM(detail.outbound_number) FROM outbound_detail detail
-          JOIN outbound_order outbound ON outbound.id=detail.outbound_id
-          WHERE detail.allocation_id=allocation.id AND outbound.status='completed'),0)
-          confirmed_quantity,
-        COALESCE((SELECT SUM(return_detail.return_number) FROM return_detail
-          JOIN return_order ON return_order.id=return_detail.return_id
-          WHERE return_detail.allocation_id=allocation.id
-            AND return_order.status IN ('pending','returned')),0) occupied_return_quantity,
+        0 confirmed_quantity,0 occupied_return_quantity,
         COALESCE((SELECT SUM(loss.scrap_number) FROM item_scrap loss
           WHERE loss.allocation_id=allocation.id
-            AND loss.status IN ('pending','confirmed')),0) occupied_loss_quantity,
+            AND loss.status IN ('pending','confirmed')${share}),0) occupied_loss_quantity,
         0 occupied_quantity
        FROM production_item_allocation allocation
        JOIN production_batches batch ON batch.id=allocation.production_batch_id
        WHERE allocation.production_batch_id=?
          AND batch.status IN ('material_partially_outbound','material_outbound','doing')
-       ORDER BY allocation.id`,
+       ORDER BY allocation.id${share}`,
       [batchId],
     );
+    const quantities = materialQuantitiesOf(
+      await this.documents.facts({ productionBatchId: batchId, lock }),
+    );
+    for (const row of rows) {
+      row.confirmed_quantity = String(quantities.issued.get(String(row.allocation_id)) ?? 0);
+      row.occupied_return_quantity = String(
+        quantities.occupiedReturn.get(String(row.allocation_id)) ?? 0,
+      );
+    }
     return rows;
   }
 

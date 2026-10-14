@@ -53,7 +53,7 @@ Production 所有结案、产出草稿和批准清单；质检记录由 Quality 
 
 分配待办和需求关闭前置校验使用相同条件。未出库预留按 `max(assigned_number − 已确认出库量, 0)` 计算；待出库单不算已确认出库。零预留的正常有效分配仍保留在物料实核及领料追溯中，不为了清空待办将其改为 `released`。
 
-物料实核锁定及计算的依据仅为 Production 的分配、领料、退料和损耗记录。库存批号、物料编码及精确版本编码通过 Inventory 公开查询装饰历史来源，不在收尾查询中跨模块联表锁库存，也不使用当前库存余额推算已领或可退量。
+物料实核和送审批依据由 Production 自有分配、需求、损耗，与 Inventory 公共实际领退料共同组成。写命令只锁 Production 自有事实，经 `InventoryProductionDocumentCommand.facts` 当前读实际 `production_material/return_inbound` 单据；待出库取消也通过 Inventory 窄命令，不直接写或锁公共主从。人工其他出入库不参与原需求、补料或物料实核。库存批号、物料编码及精确版本编码通过公开查询装饰历史来源，不因展示联查锁库存，也不使用当前库存余额推算已领或可退量。
 
 待确认退料和待确认损耗会阻断送审；先完成或取消对应单据。待确认在产损耗进入收尾后先取消，需要保留的真实损坏再通过结案损坏登记，保留结案来源。可退上限不是现场实存数量，不把损坏实物作为可用余料回仓。
 
@@ -61,7 +61,7 @@ Production 所有结案、产出草稿和批准清单；质检记录由 Quality 
 
 正常执行完成和提前结束的初次 `closing` 均可登记已领物料损坏；仅送审前开放，当前批准版非空或正在审批时拒绝。已结案后不补登记，也不借成品清单更正修改损坏事实。管理员在物料实核中选择原分配、填写实际损坏数量和原因，明确确认后即写入 `item_scrap(loss_purpose=closeout_record,status=confirmed)`，关联当前 `closeout_id`；审批驳回不撤销这个已确认事实，当前不提供冲销或改量。
 
-独立 `ProductionCloseoutMaterialLossService`／Port／Adapter 承担完整写事务。锁序为工单 → 批次 → 收尾根 → 分配；按当前读核验“已确认领料 − pending/returned 退料 − pending/confirmed 损耗”。原需求已关闭、分配已释放仍可作为真实领料来源，不能以活动状态替代来源校验。不会创建补料需求、补产授权或库存流水；仅增加损耗事实、收尾版本、成功审计和幂等结果。
+独立 `ProductionCloseoutMaterialLossService`／Port／Adapter 承担完整写事务。先锁工单 → 批次 → 收尾根 → 分配，按公开当前读核验“已完成生产领料 − pending/completed 生产退料 − pending/confirmed 损耗”。原需求已关闭、分配已释放仍可作为真实领料来源，不能以活动状态替代来源校验。不会创建补料需求、补产授权或库存流水；仅增加损耗事实、收尾版本、成功审计和幂等结果。
 
 `POST /production/batches/:batchId/closeout/material-losses` 独立要求 `production:tasks:manage-output`。请求为 `version/checkToken/allocationId/scrapQuantity/reason`，不接受用途、物料身份或单位。数量为正整数且不得超过当前可退上限；物料、版本、库存批次、单位均取来源分配。首次确认之后永久占用本来源可退上限，不因关闭补料需求释放。
 

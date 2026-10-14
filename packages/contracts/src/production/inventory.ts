@@ -67,8 +67,6 @@ export interface ReturnOrderDetailItem {
   batchCode: string;
   returnQuantity: string;
   unit: string;
-  returnStockStatus: 'available';
-  releaseAfterReturn: true;
   inventoryTransactionId: string | null;
   remark: string | null;
 }

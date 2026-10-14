@@ -10,11 +10,18 @@ import type {
 } from '@company/contracts';
 import { toBeijingISOString } from '../../../common/time/date-time.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
-import { InventoryStockCommand } from '../../inventory/public.js';
+import {
+  InventoryStockCommand,
+  InventoryProductionDocumentCommand,
+} from '../../inventory/public.js';
+import {
+  allocationRequiresCloseout,
+  materialQuantitiesOf,
+  type ProductionMaterialQuantities,
+} from './mysql-production-material-facts.js';
 import { ProductionTerminationRepository } from '../application/ports/production-termination.repository.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
 import { fixedIntegerQuantity } from '../domain/integer-quantity.js';
-import { allocationNeedsCloseoutSql } from './mysql-production-material.sql.js';
 import { readCloseoutLossRecords } from './mysql-production-closeout-loss.read.js';
 import {
   CLOSEOUT_APPROVAL_SNAPSHOT_SCHEMA_VERSION,
@@ -50,6 +57,7 @@ export class MysqlProductionTerminationRepository extends ProductionTerminationR
   constructor(
     @Inject(DATABASE_POOL) private readonly pool: Pool,
     private readonly inventory: InventoryStockCommand,
+    private readonly documents: InventoryProductionDocumentCommand,
   ) {
     super();
   }
@@ -113,7 +121,19 @@ export class MysqlProductionTerminationRepository extends ProductionTerminationR
         },
       };
     }
-    const impacts: BatchTerminationImpact[] = [];
+    const facts = await this.documents.facts({ productionBatchId: batchId, lock });
+    const quantities = materialQuantitiesOf(facts);
+    const impacts: BatchTerminationImpact[] = facts.outbounds
+      .filter((order) => order.status === 'pending')
+      .map((order) => ({
+        kind: 'outbound',
+        id: order.id,
+        label: order.no,
+        status: 'pending_picking',
+        version: order.version,
+        quantity: null,
+        unit: null,
+      }));
     const definitions = [
       [
         'step',
@@ -138,18 +158,11 @@ export class MysqlProductionTerminationRepository extends ProductionTerminationR
         "status='approved'",
       ],
       [
-        'outbound',
-        'outbound_order',
-        'outbound_no',
-        'status',
-        "status NOT IN ('completed','cancelled')",
-      ],
-      [
         'allocation',
         'production_item_allocation',
         'CAST(id AS CHAR)',
         'allocation_status',
-        allocationNeedsCloseoutSql('production_item_allocation', lock),
+        "allocation_status NOT IN ('released','cancelled')",
       ],
       [
         'demand',
@@ -179,18 +192,31 @@ export class MysqlProductionTerminationRepository extends ProductionTerminationR
         [batchId],
       );
       impacts.push(
-        ...rows.map((row) => ({
-          kind,
-          id: String(row.id),
-          label: row.label,
-          status: row.status,
-          version: row.version,
-          quantity: row.quantity === null ? null : String(row.quantity),
-          unit: row.unit,
-        })),
+        ...rows
+          .filter(
+            (row) =>
+              kind !== 'allocation' ||
+              allocationRequiresCloseout(
+                {
+                  id: String(row.id),
+                  status: row.status,
+                  assignedQuantity: row.quantity ?? 0,
+                },
+                quantities,
+              ),
+          )
+          .map((row) => ({
+            kind,
+            id: String(row.id),
+            label: row.label,
+            status: row.status,
+            version: row.version,
+            quantity: row.quantity === null ? null : String(row.quantity),
+            unit: row.unit,
+          })),
       );
     }
-    const materials = await this.materials(db, batchId, lock);
+    const materials = await this.materials(db, batchId, lock, quantities);
     const [losses] = await db.query<(RowDataPacket & { id: number })[]>(
       `SELECT id FROM item_scrap WHERE production_batch_id=? AND status='pending' ORDER BY id${lock ? ' FOR UPDATE' : ''}`,
       [batchId],
@@ -199,15 +225,11 @@ export class MysqlProductionTerminationRepository extends ProductionTerminationR
       `SELECT id FROM production_item_demand WHERE production_batch_id=? AND pending_correction_id IS NOT NULL${share}`,
       [batchId],
     );
-    const [pendingReturns] = await db.query<(RowDataPacket & { return_no: string })[]>(
-      `SELECT return_no FROM return_order WHERE production_batch_id=? AND status='pending'${share}`,
-      [batchId],
-    );
+    const pendingReturns = facts.returns.filter((order) => order.status === 'pending');
     const blockers: string[] = [];
     if (pendingReturns.length)
       blockers.push(
-        '请在退料管理完成或取消待确认退料单：' +
-          pendingReturns.map((row) => row.return_no).join('、'),
+        '请在退料管理完成或取消待确认退料单：' + pendingReturns.map((row) => row.no).join('、'),
       );
     if (pendingCorrections.length) blockers.push('请先撤回或驳回在途需求更正，再开始批次收尾');
     if (
@@ -237,6 +259,7 @@ export class MysqlProductionTerminationRepository extends ProductionTerminationR
     db: PoolConnection,
     batchId: string,
     lock: boolean,
+    quantities: ProductionMaterialQuantities,
   ): Promise<BatchTerminationMaterial[]> {
     const share = lock ? ' FOR SHARE' : '';
     const [rows] = await db.query<
@@ -248,14 +271,15 @@ export class MysqlProductionTerminationRepository extends ProductionTerminationR
     >(
       `SELECT CAST(a.id AS CHAR) allocationId,CAST(a.batch_id AS CHAR) itemBatchId,
        a.unit_snapshot unit,a.assigned_number assignedQuantity,
-       COALESCE((SELECT SUM(d.outbound_number) FROM outbound_detail d JOIN outbound_order o ON o.id=d.outbound_id
-         WHERE d.allocation_id=a.id AND o.status='completed'${share}),0) outboundQuantity,
-       COALESCE((SELECT SUM(d.return_number) FROM return_detail d JOIN return_order o ON o.id=d.return_id
-         WHERE d.allocation_id=a.id AND o.status IN ('pending','returned')${share}),0) returnQuantity,
+       0 outboundQuantity,0 returnQuantity,
        COALESCE((SELECT SUM(s.scrap_number) FROM item_scrap s WHERE s.allocation_id=a.id AND s.status IN ('pending','confirmed')${share}),0) lossQuantity
        FROM production_item_allocation a WHERE a.production_batch_id=? ORDER BY a.id${lock ? ' FOR UPDATE' : ''}`,
       [batchId],
     );
+    for (const row of rows) {
+      row.outboundQuantity = String(quantities.issued.get(row.allocationId) ?? 0);
+      row.returnQuantity = String(quantities.occupiedReturn.get(row.allocationId) ?? 0);
+    }
     const references = await this.inventory.materialBatchReferences([
       ...new Set(rows.map((row) => row.itemBatchId)),
     ]);

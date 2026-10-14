@@ -233,7 +233,7 @@ const expectLatestVariantSchema = async (connection: Connection): Promise<void> 
     ['production_item_allocation', 'material_variant_id'],
     ['outbound_detail', 'material_variant_id'],
     ['inbound_detail', 'material_variant_id'],
-    ['return_detail', 'material_variant_id'],
+    // TODO(inventory-migration): 旧退料表断言已移除；正式测试阶段补公共退料来源外键与退役表不存在的覆盖。
     ['item_scrap', 'material_variant_id'],
     ['stock_check_detail', 'material_variant_id'],
     ['inventory_transaction', 'material_variant_id'],
