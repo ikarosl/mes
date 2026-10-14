@@ -2,7 +2,7 @@ import { loadWorkspaceEnv } from '../../../../packages/config/src/index.js';
 import { type Pool, type RowDataPacket } from '../../../../apps/api/node_modules/mysql2/promise.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { type ProductionMaterialService } from '../../../../apps/api/src/modules/production/application/production-material.service.js';
-import { type MysqlProductionMaterialRepository } from '../../../../apps/api/src/modules/production/infrastructure/mysql-production-material.repository.js';
+import { type MysqlProductionMaterialRepository } from '../../../../apps/api/src/modules/production/infrastructure/demand/mysql-production-material.repository.js';
 import * as materialFixtures from './material-test-fixture.js';
 
 loadWorkspaceEnv();

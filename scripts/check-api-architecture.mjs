@@ -400,7 +400,7 @@ const checks = [
     message:
       'production_item_demand 新增只能经 mysql-production-demand-plan.writer，确保同步推进批次 version',
     exclude: [
-      'apps/api/src/modules/production/infrastructure/mysql-production-demand-plan.writer.ts',
+      'apps/api/src/modules/production/infrastructure/demand/mysql-production-demand-plan.writer.ts',
     ],
   },
   {
@@ -410,7 +410,7 @@ const checks = [
     message:
       '需求计划取消或重开只能经 mysql-production-demand-plan.writer，确保同步推进批次 version',
     exclude: [
-      'apps/api/src/modules/production/infrastructure/mysql-production-demand-plan.writer.ts',
+      'apps/api/src/modules/production/infrastructure/demand/mysql-production-demand-plan.writer.ts',
     ],
   },
   // 跨模块深层 import：只能通过目标模块 public.ts

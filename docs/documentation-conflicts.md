@@ -7,6 +7,7 @@
 | 编号 | 主题 | 类型／当前状态 | 待处理 |
 | --- | --- | --- | --- |
 | [CP-02](#cp-02) | 过程复检关联source_rework_id | 历史提案批准状态待确认；当前明确未定稿 | 保留提案或确认撤回，不提前建模 |
+| [CP-03](#cp-03) | 批量任务的路线必选时点 | 工作流要求与创建门禁存在差异；待确认 | 明确是否在创建时阻止无路线任务 |
 | [CO-01](#co-01) | 产品分类扁平化与树结构 | 旧目标与当前实现冲突；待裁决 | 旧扁平化目标是否仍有效 |
 | [CO-02](#co-02) | Identity主数据审计字段 | 公共规范与owner／migration差异；待裁决 | 补齐规范还是明确经批准的例外 |
 | [CO-03](#co-03) | 演示工单生成旧业务备注 | 代码残留与已明确新规则冲突；待修正 | 后续修改demo SQL，核对展示及初始化行为 |
@@ -45,7 +46,7 @@
 **数量解耦、保留工序状态、分阶段更正及执行中改派已按裁决落地；用户验收与正式测试待完成。**
 
 - 已确认方向：报工承担执行记录与差异追溯，取消相邻工序实际报工量的硬依赖，保留多次汇总、冲销／原子更正；各道统一采用首工投入上限。保留工序状态与员工明确开始／完成／重开，数量占比单独展示。工序完成后停止普通新增正常／异常报工，明确重开后才能新增；剩余额度为零也禁止新增，已有报工纠错资格保持独立。通用更正仅纯正常数量，异常待处置时整笔驳回重报；返工整单结果按正常恢复／再次异常原子拆分，均不重复占直接额度。进入结案后员工全部只读，由管理员办理普通正常报工历史纠错，在审双方均冻结；提供同任务跨工序批量冲销。最新裁决移除状态历史更正及撤销误开工写入口，既有动作历史只读保留。执行期间允许管理员改派当前办理人，不改变状态／数量、原报工人或返工来源快照，不建设交接过程。员工不承担返工，移除本人返工入口；管理端沿现有异常处置流程办理。完整规则由[执行专题](../apps/api/src/modules/production/docs/database/execution-traceability-quality.md#cp-01-报工整改边界)维护。
-- 原冲突证据：生产流程 §14 与执行专题 §4.2.2 原规则为“更正后上游 `effective_normal` 不得小于下游 `effective_normal`”；执行专题 §4.2.3 与[报工 Repository](../apps/api/src/modules/production/infrastructure/mysql-production-reporting.repository.ts)使用下游 `effective_direct_reported`，包含直接正常／异常报工净量、排除返工完成。两者曾在下游异常／返工时给出不同判断，不能视为等义字段。
+- 原冲突证据：生产流程 §14 与执行专题 §4.2.2 原规则为“更正后上游 `effective_normal` 不得小于下游 `effective_normal`”；执行专题 §4.2.3 与[报工 Repository](../apps/api/src/modules/production/infrastructure/execution/mysql-production-reporting.repository.ts)使用下游 `effective_direct_reported`，包含直接正常／异常报工净量、排除返工完成。两者曾在下游异常／返工时给出不同判断，不能视为等义字段。
 - 裁决取代范围：取消前道实报上限、上游冲销下游数量下限、后道开工前道正常量门槛、普通报工／返工／补料触发自动完成或重开、任务结束数量等于计划的门槛，以及开工后不能改派的旧规则。最新裁决进一步删除末道工序特殊汇总，包括任务／追溯／执行结果字段、查询聚合、完成预览及结案审批中的数量比较；各工序独立报工事实与批准产出保留。新增报工裁决取代“工序完成后仍可普通补录”的旧口径；本次取代通用双数量更正、单条混合返工完成及状态历史更正写入口，既有不可变事实保留。返工办理裁决取代员工返工入口及冻结来源负责人独占办理的旧规则，不取消批准、开始和整单完成流程。未批准收尾通过独立撤回结束恢复办理阶段后补报；已批准任务保留限定历史新增，已有记录冲销／更正保持独立。任务开工与撤回的验证见[整改清单](roadmap.md#任务开工与收尾撤回整改)。统一上限、具体业务依赖、显式状态动作及结案审批冻结按所有者文档实施；管理员任务开工新裁决进一步取代首工领料／短批门禁，补产授权履约条件仍保留。
 - 追溯与数据库影响：当前工序行保存当前负责人及状态，报工事实保存实际提交人，均不表达完整交接过程；此次不新增交接表。明确执行动作及既有历史更正的只读追溯使用 Production 专有事实 `batch_step_execution_actions`，不能由全局 `operation_logs` 代替。返工拆分需迁移完成关联，保留原状态列不代表整个整改无需 migration。
 - 审批复用与接入差异：现有审批支持申请人撤回／有权审批人驳回并通过 Production restore 清空在审标记，重提保留旧申请及 JSON 证据；撤回不把任务恢复为执行中。管理员普通正常报工历史纠错使用专用命令和权限／阶段校验，须在审写前冻结并隔离执行副作用；最终批准快照只保留受审依据，不能代替这一写前检查。
@@ -60,6 +61,14 @@
 - 另一方：[执行专题§4.3](../apps/api/src/modules/production/docs/database/execution-traceability-quality.md)明确过程检验、多次／抽样检查、复检和冲销未闭环，不得创建旧草案inspection_records；当前相关契约及migration未建立source_rework_id。来料／成品已落地的Quality不等于过程检验已实现。
 - 影响：旧提案的批准或撤回依据尚未明确；当前文档已统一标记未定稿，这不是已实现功能之间的冲突，不能把历史提法当作新增字段或复检接口的授权。
 - 待决：该关联保留为未批准设想、还是有遗漏的批准依据；未确认前保留原提法及未定稿标记，不迁入完整过程质量后端。
+
+## CP-03
+
+**批量任务必须选择有效路线的校验时点尚未统一。**
+
+- 规则证据：[生产工作流](../apps/api/src/modules/production/docs/business-workflow.md)要求执行任务使用有效路线，并说明批量任务冻结所选路线及工序、研发不生成路线或工序。
+- 实现证据：[Product 生产定义读取](../apps/api/src/modules/product/infrastructure/mysql-product-snapshot.repository.ts)的 `requireApprovedBomForProductionTask` 在请求与产品默认路线均为空时返回 `null`；[ProductionService](../apps/api/src/modules/production/application/production.service.ts)在没有工序覆盖项时接受该结果，[批次 Repository](../apps/api/src/modules/production/infrastructure/tasks/mysql-production-batch.repository.ts)可创建无路线、无工序的批量任务。[执行 Repository](../apps/api/src/modules/production/infrastructure/execution/mysql-production-execution.repository.ts)则拒绝没有工序的批量任务执行完工。
+- 影响与待决：需要明确创建时是否必须拒绝缺失路线，以及已创建无路线任务的办理方式；不能仅由 `route_id` 可空推断批量与研发适用相同规则。本次幂等闭环测试使用有效路线验证正常创建路径，不修改该业务门禁，也不将无路线创建视作已批准行为。后续处理见[路线图](roadmap.md#production-与-product-内部结构待验收)。
 
 ## CO-01
 

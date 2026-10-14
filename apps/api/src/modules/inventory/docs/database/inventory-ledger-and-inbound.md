@@ -199,8 +199,8 @@
 当前库存列表与明细由 Inventory Repository 执行 SQL；Production 的供需、候选及追溯展示通过已登记的只读查询组合库存字段，不建立独立数据库视图。所有汇总和加减遵守整数数量规则；库存用完不自动改写 `item_batch.batch_status`。
 
 - 库存批次列表和详情由 [MysqlInventoryInboundRepository](../../infrastructure/mysql-inventory-inbound.repository.ts) 的 `loadInventories` 查询读取 `inventory_batch_balance` 中 `stock_status = available` 的余额，缺行按 `0` 处理；库存流水详情仍读取 `inventory_transaction`。历史账面库存保留，可分配数量还要求批次状态 `available` 且 Product 公开能力确认当前生产用途允许使用该精确版本，否则为 `0`。
-- 初始物料需求配置与人工追加候选由 [MysqlProductionMaterialDemandConfigurationRepository](../../../production/infrastructure/mysql-production-material-demand-configuration.repository.ts) 只读取启用的物料版本，不查询或展示库存；库存余额投影未扣除分配预留，因此不得用于该需求配置窗口的库存提示。
-- 分配候选由 [MysqlProductionMaterialRepository](../../../production/infrastructure/mysql-production-material.repository.ts) 的 `listAvailableItemBatches` 按活动需求的 `item_id + material_variant_id` 匹配库存批次，只返回批次状态为 `available` 且账面可用量大于 `0` 的批次；该入口按当前用途候选展示可用数量；分配锁内余额由 Inventory 在批次锁后对 `inventory_batch_balance` 做当前读，缺行视为零，避免使用事务早期快照。
+- 初始物料需求配置与人工追加候选由 [MysqlProductionMaterialDemandConfigurationRepository](../../../production/infrastructure/demand/mysql-production-material-demand-configuration.repository.ts) 只读取启用的物料版本，不查询或展示库存；库存余额投影未扣除分配预留，因此不得用于该需求配置窗口的库存提示。
+- 分配候选由 [MysqlProductionMaterialRepository](../../../production/infrastructure/demand/mysql-production-material.repository.ts) 的 `listAvailableItemBatches` 按活动需求的 `item_id + material_variant_id` 匹配库存批次，只返回批次状态为 `available` 且账面可用量大于 `0` 的批次；该入口按当前用途候选展示可用数量；分配锁内余额由 Inventory 在批次锁后对 `inventory_batch_balance` 做当前读，缺行视为零，避免使用事务早期快照。
 
 库存批次查询与分配候选使用相同的预留口径：
 
@@ -214,7 +214,7 @@
 
 候选可能显示可继续分配量为 `0` 的正库存批次；返回候选不代表写入资格。分配写事务须锁定需求和库存批次，重新校验批次状态、精确版本、需求缺口及流水余额扣除预留后的数量。
 
-精确版本物料库存及供需信息由 [MysqlProductionSupplyDemandRepository](../../../production/infrastructure/mysql-production-supply-demand.repository.ts) 的 `list` 计算：按 `item_id + material_variant_id` 汇总全部 `active.remaining_number`，与 `inventory_material_variant_balance` 中同物料、同版本的余额匹配，缺行按 `0` 处理。总库存包含该版本全部状态，停用版本的历史库存仍保留。用于生产供需比较的可用库存，除库存状态和批次状态均为 `available` 外，还须由 Product `MaterialVariantQuery.listEnabledByMaterials` 公开能力确认基础物料、分类及精确版本均启用且未删除；不直接读取 Product 状态表作为资格。未满足该用途资格时可用量为 `0`，该数量仍在总库存及不可领库存中展示。缺口为 `max(该版本活动需求剩余量 - 该版本可用库存, 0)`，不同版本不得合并抵扣。资格集合在 SQL 缺口排序和分页前批量解析，不能取出一页后清零可用量而保留错误排序；确认分配／领料仍须在各自写事务内重新校验。
+精确版本物料库存及供需信息由 [MysqlProductionSupplyDemandRepository](../../../production/infrastructure/queries/mysql-production-supply-demand.repository.ts) 的 `list` 计算：按 `item_id + material_variant_id` 汇总全部 `active.remaining_number`，与 `inventory_material_variant_balance` 中同物料、同版本的余额匹配，缺行按 `0` 处理。总库存包含该版本全部状态，停用版本的历史库存仍保留。用于生产供需比较的可用库存，除库存状态和批次状态均为 `available` 外，还须由 Product `MaterialVariantQuery.listEnabledByMaterials` 公开能力确认基础物料、分类及精确版本均启用且未删除；不直接读取 Product 状态表作为资格。未满足该用途资格时可用量为 `0`，该数量仍在总库存及不可领库存中展示。缺口为 `max(该版本活动需求剩余量 - 该版本可用库存, 0)`，不同版本不得合并抵扣。资格集合在 SQL 缺口排序和分页前批量解析，不能取出一页后清零可用量而保留错误排序；确认分配／领料仍须在各自写事务内重新校验。
 
 `GET /production/inventory-material-supply-demand` 每行对应一个有正库存（含其他状态库存）或活动需求的精确版本，`total` 和分页均按版本计数；返回必填 `materialVariantId/materialVariantCode`，编码和单位优先取同版本 ID 最大的活动需求快照，无活动需求时取同版本 ID 最大的库存批次快照；名称按基础物料 ID 读取当前主数据。无需求版本的未完成需求与缺口均为 `0`。先按是否有未完成需求降序，再按缺口降序、物料编码、物料 ID、版本 ID 稳定排序。关键词匹配展示的物料编码、名称或版本编码，也匹配同版本任一活动需求的编码和版本编码快照；搜索不改变该版本完整的库存与需求汇总。无库存且无活动需求的版本不展示，零余额行是否已清理不影响候选集合。
 

@@ -1,7 +1,7 @@
 import { loadWorkspaceEnv } from '../../../../packages/config/src/index.js';
 import { type Pool, type RowDataPacket } from '../../../../apps/api/node_modules/mysql2/promise.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { MysqlProductionSupplyDemandRepository } from '../../../../apps/api/src/modules/production/infrastructure/mysql-production-supply-demand.repository.js';
+import { MysqlProductionSupplyDemandRepository } from '../../../../apps/api/src/modules/production/infrastructure/queries/mysql-production-supply-demand.repository.js';
 import * as materialFixtures from './material-test-fixture.js';
 import type { Fixture } from './material-test-fixture.js';
 

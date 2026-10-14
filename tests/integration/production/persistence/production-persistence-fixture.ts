@@ -4,8 +4,8 @@ import {
   type ResultSetHeader,
   type RowDataPacket,
 } from '../../../../apps/api/node_modules/mysql2/promise.js';
-import { type MysqlProductionBatchRepository } from '../../../../apps/api/src/modules/production/infrastructure/mysql-production-batch.repository.js';
-import { type MysqlProductionMaterialDemandConfigurationRepository } from '../../../../apps/api/src/modules/production/infrastructure/mysql-production-material-demand-configuration.repository.js';
+import { type MysqlProductionBatchRepository } from '../../../../apps/api/src/modules/production/infrastructure/tasks/mysql-production-batch.repository.js';
+import { type MysqlProductionMaterialDemandConfigurationRepository } from '../../../../apps/api/src/modules/production/infrastructure/demand/mysql-production-material-demand-configuration.repository.js';
 import { type ProductionMaterialDemandService } from '../../../../apps/api/src/modules/production/application/production-material-demand.service.js';
 
 export interface ProductionPersistenceContext {

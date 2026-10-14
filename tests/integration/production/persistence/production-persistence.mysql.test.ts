@@ -1,8 +1,8 @@
 import { loadWorkspaceEnv } from '../../../../packages/config/src/index.js';
 import { createPool, type Pool } from '../../../../apps/api/node_modules/mysql2/promise.js';
 import { afterAll, beforeAll, describe } from 'vitest';
-import { MysqlProductionBatchRepository } from '../../../../apps/api/src/modules/production/infrastructure/mysql-production-batch.repository.js';
-import { MysqlProductionMaterialDemandConfigurationRepository } from '../../../../apps/api/src/modules/production/infrastructure/mysql-production-material-demand-configuration.repository.js';
+import { MysqlProductionBatchRepository } from '../../../../apps/api/src/modules/production/infrastructure/tasks/mysql-production-batch.repository.js';
+import { MysqlProductionMaterialDemandConfigurationRepository } from '../../../../apps/api/src/modules/production/infrastructure/demand/mysql-production-material-demand-configuration.repository.js';
 import { ProductionMaterialDemandService } from '../../../../apps/api/src/modules/production/application/production-material-demand.service.js';
 import { MysqlProductSnapshotRepository } from '../../../../apps/api/src/modules/product/infrastructure/mysql-product-snapshot.repository.js';
 import { ProductSnapshotService } from '../../../../apps/api/src/modules/product/application/product-snapshot.service.js';

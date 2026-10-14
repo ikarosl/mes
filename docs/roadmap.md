@@ -2,6 +2,17 @@
 
 本页只维护未完成实施、待决策及待验收事项。正式测试须等用户明确通知，再按 [AGENTS.md](../AGENTS.md#数据库与交付约定)由 Luna MAX 子代理全量验证；应用类型、构建与启动通过不代表用户验收或正式测试通过。当前规则从模块所有者读取，ADR 用于追查理由与取代关系。
 
+## Production 与 Product 内部结构：待验收
+
+本阶段按既有职责整理 Production infrastructure，并拆出生产出库、需求更正、收尾及 Product BOM 的纯规则、读取装配和写入适配。目录与职责入口分别见 [Production](../apps/api/src/modules/production/docs/module-boundaries.md) 和 [Product](../apps/api/src/modules/product/README.md)。模块公开契约、数据所有权、事务和锁序保持原范围，无数据库结构、migration 或 seed 变更。
+
+应用类型检查 16/16、构建 9/9、架构、文档链接、变更范围格式和 Lint 检查通过；Lint 保留文件行数警告。全仓 `pnpm lint` 仍受既有 `temp/` 与 `.worktrees/` 临时脚本的 145 个错误影响，不能记作全仓通过。本工作区验收入口为管理端 `http://localhost:5176`、API `15302`，API 与管理端代理健康检查均返回 200，数据库及对象存储就绪。以上为构建与启动验证，不代表业务回归或用户验收通过。
+
+- [ ] 用户核对目录与职责划分，并手工验收分次领料及重复确认、需求更正与补料履约、收尾逐项处理与物料实核、BOM 编辑／送审／驳回／批准；重点核对旧版本冲突、资格阻断及成功结果。
+- [ ] 其余正式测试等待用户确认设计并明确通知；用户单独要求修复的 [create-batch-closed-loop.mysql.test.ts](../tests/integration/idempotency/create-batch-closed-loop.mysql.test.ts) 已适配当前依赖、自动编号与整数数量，并补齐路线／工序夹具及清理；Luna MAX 在独立 MySQL 库验证该文件 3/3 通过、无跳过。全量 `typecheck:integration` 中该文件的 3 处类型错误已清除，但其余 12 个文件仍有 57 处旧构造及契约错误，不能由这个文件的验证推断全量通过；后续补齐纯规则覆盖并全量验证事务、并发及审批链路。
+- [ ] 确认批量任务缺少请求／默认路线时是否必须在创建阶段阻断，以及无路线任务的办理方式；证据与适用范围见 [CP-03](documentation-conflicts.md#cp-03)。本轮仅用有效路线补齐正常创建测试夹具，不改变该门禁。
+- [ ] 后续继续按实际修改需要整理其余层的职责目录及复杂用例；不为对齐目录数量创建空层或包装简单 CRUD。
+
 ## 选择组件与刷新策略：存量替换
 
 旧 options 设计停止使用与维护的决定已批准，范围与后续选择标准见[管理端架构 §4](../apps/admin-web/docs/architecture.md#4-选择组件与候选契约)。现有消费方仍有旧工具和自动刷新依赖，未完成全项目替换。用户已明确本专项后续单独实施，优先交付生产任务 UI／UX；后续大量候选改用远程搜索／分页的方向已确定，具体资源契约与迁移顺序仍待实施，不能据此宣称统一远程搜索已落地。
@@ -272,7 +283,7 @@
 - [ ] 验收未预留量保护、同批次多行合计、共享新批次组、停用历史身份及冻结批次草稿移除；核对并发分配与其他出库当前读、NOWAIT、整体有限重试、同键重放和父版本冲突。
 - [ ] 联动验收损耗／退料互斥额度、需求更正、收尾取消待出库／待退料阻断／实核、审批依据、采购／成品更正复检已入基准和追溯中的公共单据引用。
 - [ ] 普通角色最小权限验收；管理员通配权限、类型检查、构建和启动不替代业务验收。
-- [ ] 用户明确通知后由 Luna MAX 补回正式测试并全量验证：公共退料、出库所有权、原始流水稳定键、scope与DTO、并发／幂等／回滚、全部新增migration up/down/up、非空守卫及数据库直接写入拒绝。旧退料实现、旧手工采购入库追溯及依赖旧退料夹具的用例按清理授权删除，必要覆盖见 [退料仓储 TODO](../apps/api/src/modules/production/infrastructure/__tests__/production-return.todo.ts)、[退料／损耗／追溯 TODO](../tests/integration/production/materials/return-loss.todo.ts) 和库存流水测试内 TODO；本轮只删除废弃测试代码与夹具，不重写或执行正式测试。
+- [ ] 用户明确通知后由 Luna MAX 补回正式测试并全量验证：公共退料、出库所有权、原始流水稳定键、scope与DTO、并发／幂等／回滚、全部新增migration up/down/up、非空守卫及数据库直接写入拒绝。旧退料实现、旧手工采购入库追溯及依赖旧退料夹具的用例按清理授权删除，必要覆盖见 [退料仓储 TODO](../apps/api/src/modules/production/infrastructure/logistics/__tests__/production-return.todo.ts)、[退料／损耗／追溯 TODO](../tests/integration/production/materials/return-loss.todo.ts) 和库存流水测试内 TODO；本轮只删除废弃测试代码与夹具，不重写或执行正式测试。
 - [ ] 发货、委外等业务仍另行确认范围；不扩盘点成品／零账面、不新增批次更正模块或成对自动提交。
 
 ## 需求纠错与逐项收尾：剩余验收

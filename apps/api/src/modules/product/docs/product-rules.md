@@ -20,6 +20,17 @@
 
 所有路线的所有工序均须报工，不提供报工开关；路线步骤契约和表结构不保存是否报工字段。
 
+## 目录与 BOM 内部职责
+
+`MysqlProductCatalogRepository` 是 application port 的装配入口，委托四个内部职责：
+
+- `MysqlProductCatalogQuery` 负责成品分页、名称分组、候选、BOM 展示和历史物料名称；展示结果不授予编辑或审批资格。
+- `MysqlProductCommands` 负责成品主数据、启停和默认路线。默认路线变更先锁路线、再锁成品根，其余已有写入口保留各自事务顺序。
+- `MysqlProductBomEditor` 负责完整替换 BOM，在同一事务锁成品根、核对版本及编辑资格、校验单位、恢复或写入明细、递增聚合版本并记录成功审计。
+- `MysqlProductBomApproval` 负责送审准备、绑定申请、审批前关联核对、最终批准和恢复草稿；事务可复用 Approval 的同池外层事务。
+
+`domain/product-bom.policy.ts` 维护替换请求的版本、数量、行数及重复物料校验、BOM 编辑与送审状态、冻结申请关联，以及送审和末级批准共用的物料／分类状态及基础单位资格。应用服务在原命令边界调用请求校验；锁定读取、SQL 条件更新和审计仍由 infrastructure 执行，不因领域规则拆分提前或延后数据库操作。共享持久化函数只承载成品根读取、分类校验、规格解析和当前事务审计，不提供另一套业务写入口。
+
 ## BOM 命令与审批
 
 `ProductBomApprovalHandler` 负责声明 BOM 受审快照的结构版本，并通过 `readSnapshotForDisplay()` 校验历史证据、按物料 ID 补充当前名称。Approval 通用提交调用其准备、绑定及终态方法；冻结版本取绑定返回值。BOM 资格和永久锁定规则仍由 Product 实现，不进入审批通用配置仓储。

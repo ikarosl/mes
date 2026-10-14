@@ -21,6 +21,7 @@ import type {
 import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { IdentityDirectoryService } from '../../identity/public.js';
 import { ProductDomainError } from '../domain/product.errors.js';
+import { requireValidBomReplacement } from '../domain/product-bom.policy.js';
 import { ProcessRouteRepository } from './ports/process-route.repository.js';
 import { ProcessRouteStepRepository } from './ports/process-route-step.repository.js';
 import { ProcessStepRepository } from './ports/process-step.repository.js';
@@ -166,30 +167,7 @@ export class ProductService {
     return this.materialVariants.setStatus(id, status, audit);
   }
   replaceMaterials(id: string, command: ReplaceProductMaterialsCommand, audit: CommandContext) {
-    const { items, version } = command;
-    if (!Number.isInteger(version) || version < 0 || version > 2_147_483_647) {
-      throw new ProductDomainError('INVALID_INPUT', '请提供有效的产品版本');
-    }
-    if (items.length > 200) {
-      throw new ProductDomainError('INVALID_INPUT', '一份 BOM 最多包含 200 行明细');
-    }
-    if (new Set(items.map((item) => item.materialId)).size !== items.length) {
-      throw new ProductDomainError('INVALID_INPUT', '同一投入物料不能在一份 BOM 中重复');
-    }
-    if (
-      items.some(
-        (item) =>
-          !Number.isInteger(item.quantityPerUnit) ||
-          item.quantityPerUnit <= 0 ||
-          item.quantityPerUnit > 99_999_999 ||
-          !item.unit.trim(),
-      )
-    ) {
-      throw new ProductDomainError(
-        'INVALID_INPUT',
-        'BOM 单位用量必须是 1 到 99999999 的整数，且用量单位不能为空',
-      );
-    }
+    requireValidBomReplacement(command);
     return this.catalog.replaceMaterials(id, command, audit);
   }
   setDefaultRoute(id: string, routeId: string | null, audit: CommandContext) {

@@ -369,7 +369,7 @@ Production 统一拥有一套补料履约判定与状态推进能力，由需求
 
 #### 需求数量与进度查询
 
-实现位于 [mysql-production-material.mapper.ts](../../infrastructure/mysql-production-material.mapper.ts) 的自有需求查询、`mapDemand` 与 `progress`，实际领料与剩余预留由 [事实汇总](../../infrastructure/mysql-production-material-facts.ts) 使用 Inventory 公共事实装配，由 [MysqlProductionMaterialRepository.listDemands](../../infrastructure/mysql-production-material.repository.ts) 按需求返回。计算保留 `demand_id` 及精确物料版本，不将同一任务的不同需求折叠成一个进度状态。
+实现位于 [mysql-production-material.mapper.ts](../../infrastructure/demand/mysql-production-material.mapper.ts) 的自有需求查询、`mapDemand` 与 `progress`，实际领料与剩余预留由 [事实汇总](../../infrastructure/demand/mysql-production-material-facts.ts) 使用 Inventory 公共事实装配，由 [MysqlProductionMaterialRepository.listDemands](../../infrastructure/demand/mysql-production-material.repository.ts) 按需求返回。计算保留 `demand_id` 及精确物料版本，不将同一任务的不同需求折叠成一个进度状态。
 
 ```text
 有效分配量 = sum(未释放、未取消的分配数量)
@@ -581,7 +581,7 @@ approved -> fulfilled / cancelled（仅批次结束）
 
 #### 分配数量查询
 
-实现位于 [mysql-production-material.mapper.ts](../../infrastructure/mysql-production-material.mapper.ts) 的自有分配查询与 `mapAllocation`，实际领料由 [事实汇总](../../infrastructure/mysql-production-material-facts.ts) 使用 Inventory 公共事实装配，由 [MysqlProductionMaterialRepository](../../infrastructure/mysql-production-material.repository.ts) 读取；返回的是查询结果，不是数据库视图。
+实现位于 [mysql-production-material.mapper.ts](../../infrastructure/demand/mysql-production-material.mapper.ts) 的自有分配查询与 `mapAllocation`，实际领料由 [事实汇总](../../infrastructure/demand/mysql-production-material-facts.ts) 使用 Inventory 公共事实装配，由 [MysqlProductionMaterialRepository](../../infrastructure/demand/mysql-production-material.repository.ts) 读取；返回的是查询结果，不是数据库视图。
 
 - 已出库量：只汇总主单为 `completed` 的出库明细。
 - 待出库占用：只汇总 `production_material` 主单为 `pending_picking` 的有效明细；人工其他出库不参与分配履约。

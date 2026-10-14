@@ -6,12 +6,12 @@ import {
   type RowDataPacket,
 } from '../../../../apps/api/node_modules/mysql2/promise.js';
 import { afterAll, beforeAll } from 'vitest';
-import { MysqlProductionExecutionRepository } from '../../../../apps/api/src/modules/production/infrastructure/mysql-production-execution.repository.js';
-import { MysqlProductionReportingRepository } from '../../../../apps/api/src/modules/production/infrastructure/mysql-production-reporting.repository.js';
-import { MysqlProductionAbnormalRepository } from '../../../../apps/api/src/modules/production/infrastructure/mysql-production-abnormal.repository.js';
-import { MysqlProductionSupplementRepository } from '../../../../apps/api/src/modules/production/infrastructure/mysql-production-supplement.repository.js';
-import { MysqlProductionMaterialOutboundRepository } from '../../../../apps/api/src/modules/production/infrastructure/mysql-production-material-outbound.repository.js';
-import { MysqlProductionMaterialRepository } from '../../../../apps/api/src/modules/production/infrastructure/mysql-production-material.repository.js';
+import { MysqlProductionExecutionRepository } from '../../../../apps/api/src/modules/production/infrastructure/execution/mysql-production-execution.repository.js';
+import { MysqlProductionReportingRepository } from '../../../../apps/api/src/modules/production/infrastructure/execution/mysql-production-reporting.repository.js';
+import { MysqlProductionAbnormalRepository } from '../../../../apps/api/src/modules/production/infrastructure/execution/mysql-production-abnormal.repository.js';
+import { MysqlProductionSupplementRepository } from '../../../../apps/api/src/modules/production/infrastructure/execution/mysql-production-supplement.repository.js';
+import { MysqlProductionMaterialOutboundRepository } from '../../../../apps/api/src/modules/production/infrastructure/logistics/mysql-production-material-outbound.repository.js';
+import { MysqlProductionMaterialRepository } from '../../../../apps/api/src/modules/production/infrastructure/demand/mysql-production-material.repository.js';
 import { MysqlIdempotencyExecutor } from '../../../../apps/api/src/infrastructure/idempotency/mysql-idempotency.executor.js';
 import { IdentityDirectoryService } from '../../../../apps/api/src/modules/identity/application/identity-directory.service.js';
 import { MysqlRbacRepository } from '../../../../apps/api/src/modules/identity/infrastructure/mysql-rbac.repository.js';

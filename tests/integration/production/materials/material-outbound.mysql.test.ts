@@ -2,12 +2,12 @@ import { loadWorkspaceEnv } from '../../../../packages/config/src/index.js';
 import { type Pool, type RowDataPacket } from '../../../../apps/api/node_modules/mysql2/promise.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { type ProductionMaterialOutboundService } from '../../../../apps/api/src/modules/production/application/production-material-outbound.service.js';
-import { MysqlProductionMaterialLossRepository } from '../../../../apps/api/src/modules/production/infrastructure/mysql-production-material-loss.repository.js';
-import { type MysqlProductionMaterialOutboundRepository } from '../../../../apps/api/src/modules/production/infrastructure/mysql-production-material-outbound.repository.js';
-import { type MysqlProductionMaterialRepository } from '../../../../apps/api/src/modules/production/infrastructure/mysql-production-material.repository.js';
-import { type MysqlProductionExecutionRepository } from '../../../../apps/api/src/modules/production/infrastructure/mysql-production-execution.repository.js';
-import { MysqlProductionTraceRepository } from '../../../../apps/api/src/modules/production/infrastructure/mysql-production-trace.repository.js';
-import { MysqlProductionSupplyDemandRepository } from '../../../../apps/api/src/modules/production/infrastructure/mysql-production-supply-demand.repository.js';
+import { MysqlProductionMaterialLossRepository } from '../../../../apps/api/src/modules/production/infrastructure/logistics/mysql-production-material-loss.repository.js';
+import { type MysqlProductionMaterialOutboundRepository } from '../../../../apps/api/src/modules/production/infrastructure/logistics/mysql-production-material-outbound.repository.js';
+import { type MysqlProductionMaterialRepository } from '../../../../apps/api/src/modules/production/infrastructure/demand/mysql-production-material.repository.js';
+import { type MysqlProductionExecutionRepository } from '../../../../apps/api/src/modules/production/infrastructure/execution/mysql-production-execution.repository.js';
+import { MysqlProductionTraceRepository } from '../../../../apps/api/src/modules/production/infrastructure/queries/mysql-production-trace.repository.js';
+import { MysqlProductionSupplyDemandRepository } from '../../../../apps/api/src/modules/production/infrastructure/queries/mysql-production-supply-demand.repository.js';
 import * as materialFixtures from './material-test-fixture.js';
 
 loadWorkspaceEnv();

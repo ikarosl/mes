@@ -12,9 +12,9 @@ import { ProductSnapshotService } from '../../../../apps/api/src/modules/product
 import { MysqlProductSnapshotRepository } from '../../../../apps/api/src/modules/product/infrastructure/mysql-product-snapshot.repository.js';
 import { ProductionMaterialOutboundService } from '../../../../apps/api/src/modules/production/application/production-material-outbound.service.js';
 import { ProductionMaterialService } from '../../../../apps/api/src/modules/production/application/production-material.service.js';
-import { MysqlProductionMaterialOutboundRepository } from '../../../../apps/api/src/modules/production/infrastructure/mysql-production-material-outbound.repository.js';
-import { MysqlProductionMaterialRepository } from '../../../../apps/api/src/modules/production/infrastructure/mysql-production-material.repository.js';
-import { MysqlProductionExecutionRepository } from '../../../../apps/api/src/modules/production/infrastructure/mysql-production-execution.repository.js';
+import { MysqlProductionMaterialOutboundRepository } from '../../../../apps/api/src/modules/production/infrastructure/logistics/mysql-production-material-outbound.repository.js';
+import { MysqlProductionMaterialRepository } from '../../../../apps/api/src/modules/production/infrastructure/demand/mysql-production-material.repository.js';
+import { MysqlProductionExecutionRepository } from '../../../../apps/api/src/modules/production/infrastructure/execution/mysql-production-execution.repository.js';
 import { MysqlMaterialVariantRepository } from '../../../../apps/api/src/modules/product/infrastructure/mysql-material-variant.repository.js';
 import { MysqlInventoryStockCommand } from '../../../../apps/api/src/modules/inventory/infrastructure/mysql-inventory-stock.command.js';
 import { MysqlProductInventoryEligibility } from '../../../../apps/api/src/modules/product/infrastructure/mysql-product-inventory-eligibility.query.js';
