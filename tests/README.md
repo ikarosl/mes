@@ -10,6 +10,7 @@
 
 | 目录 | 内容 |
 | --- | --- |
+| `integration/database/` | 共享事务连接回收及回滚失败后的连接池隔离 |
 | `integration/production/execution/` | 工序状态、报工事实、报废补产执行 |
 | `integration/production/materials/` | 生产分配、领料、退料与损耗、供需及追溯 |
 | `integration/production/persistence/` | 批次与需求持久化、数据库约束及事务 |

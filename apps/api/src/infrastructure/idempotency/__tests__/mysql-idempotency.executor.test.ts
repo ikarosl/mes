@@ -43,6 +43,8 @@ interface FakePoolOptions {
 
 const makeFakePool = (options: FakePoolOptions = {}) => {
   const table = new Map<string, FakeRow>();
+  const release = vi.fn();
+  const destroy = vi.fn();
   let queryCalls = 0;
   const makeConnection = () => {
     const inserted: string[] = [];
@@ -59,7 +61,13 @@ const makeFakePool = (options: FakePoolOptions = {}) => {
         for (const k of inserted) table.delete(k);
         inserted.length = 0;
       },
-      async release() {},
+      release,
+      destroy() {
+        // 断开连接也会丢弃尚未提交的写入，不调用已注入失败的 rollback。
+        for (const k of inserted) table.delete(k);
+        inserted.length = 0;
+        destroy();
+      },
       async execute(sql: string, params: unknown[]): Promise<[ResultSetHeader, unknown[]]> {
         if (sql.startsWith('INSERT INTO http_idempotency_records')) {
           if (options.insertError) throw options.insertError;
@@ -119,6 +127,8 @@ const makeFakePool = (options: FakePoolOptions = {}) => {
       },
     },
     table,
+    release,
+    destroy,
     queryCalls: () => queryCalls,
   };
 };
@@ -593,13 +603,18 @@ describe('MysqlIdempotencyExecutor - 完整事务边界瞬态分类', () => {
   it('rollback 失败不覆盖原始异常：handler 业务错误 + rollback 抛错，rejects 的仍是原业务错误', async () => {
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {
-      const { pool } = makeFakePool({ rollbackError: new Error('rollback connection lost') });
+      const { pool, table, release, destroy } = makeFakePool({
+        rollbackError: new Error('rollback connection lost'),
+      });
       const metrics = new IdempotencyMetrics();
       const executor = new MysqlIdempotencyExecutor(pool as never, metrics);
       const businessError = new Error('业务冲突');
       const handler = vi.fn().mockRejectedValue(businessError);
 
       await expect(executor.execute(makeCommand(handler))).rejects.toBe(businessError);
+      expect(destroy).toHaveBeenCalledOnce();
+      expect(release).not.toHaveBeenCalled();
+      expect(table.size).toBe(0);
       expect(metrics.snapshot()).toMatchObject({ storageRetryable: 0, firstRun: 0 });
     } finally {
       consoleSpy.mockRestore();

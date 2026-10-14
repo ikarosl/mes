@@ -203,6 +203,7 @@ export const withTransaction = async <T>(
     active: true,
   };
   let committed = false;
+  let reusable = false;
   try {
     try {
       await connection.beginTransaction();
@@ -216,6 +217,7 @@ export const withTransaction = async <T>(
     try {
       await connection.commit();
       committed = true;
+      reusable = true;
     } catch (error) {
       throw new DatabaseError(error, '提交数据库事务失败');
     }
@@ -225,6 +227,7 @@ export const withTransaction = async <T>(
     // （原始异常可能是业务错误，覆盖会丢失调用方依赖的错误类型与诊断）。
     try {
       await connection.rollback();
+      reusable = true;
     } catch (rollbackError) {
       // 日志安全规则：work 回调抛出的可能是业务/SDK 异常，message 可能含请求内容、SQL 参数或
       // 凭证，绝不打印原始 message。只记录异常类型（constructor.name）与经过白名单筛选的
@@ -239,7 +242,9 @@ export const withTransaction = async <T>(
     throw error;
   } finally {
     context.active = false;
-    connection.release();
+    // 只有确认事务结束的连接才能归还池；回滚失败时会话状态未知，必须销毁。
+    if (reusable) connection.release();
+    else connection.destroy();
     if (committed) dispatchAfterCommit(context.afterCommit);
     context.afterCommit.clear();
   }

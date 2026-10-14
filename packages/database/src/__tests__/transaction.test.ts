@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import { registerAfterCommit, withActiveConnection, withTransaction } from '../index.js';
+import {
+  DatabaseError,
+  registerAfterCommit,
+  withActiveConnection,
+  withTransaction,
+} from '../index.js';
 
 describe('withTransaction', () => {
   it('commits successful work and releases the connection', async () => {
@@ -14,6 +19,7 @@ describe('withTransaction', () => {
     expect(connection.commit).toHaveBeenCalledOnce();
     expect(connection.rollback).not.toHaveBeenCalled();
     expect(connection.release).toHaveBeenCalledOnce();
+    expect(connection.destroy).not.toHaveBeenCalled();
   });
 
   it('rolls back and releases the connection when work fails', async () => {
@@ -29,6 +35,80 @@ describe('withTransaction', () => {
     expect(connection.commit).not.toHaveBeenCalled();
     expect(connection.rollback).toHaveBeenCalledOnce();
     expect(connection.release).toHaveBeenCalledOnce();
+    expect(connection.destroy).not.toHaveBeenCalled();
+  });
+
+  it('destroys the connection when rollback fails and preserves the original work error', async () => {
+    const connection = transactionConnection();
+    const businessError = new Error('business operation failed');
+    connection.rollback.mockRejectedValue(new Error('rollback command failed'));
+    const pool = { getConnection: vi.fn().mockResolvedValue(connection) };
+    const run = vi.fn();
+    const onError = vi.fn();
+
+    await expect(
+      withTransaction(pool as never, async () =>
+        withTransaction(pool as never, async () => {
+          registerAfterCommit(pool as never, 'rollback-failed', run, onError);
+          throw businessError;
+        }),
+      ),
+    ).rejects.toBe(businessError);
+
+    await withActiveConnection(pool as never, async (queryable) => {
+      expect(queryable).toBe(pool);
+    });
+    await flushAfterCommit();
+
+    expect(connection.rollback).toHaveBeenCalledOnce();
+    expect(pool.getConnection).toHaveBeenCalledOnce();
+    expect(connection.commit).not.toHaveBeenCalled();
+    expect(connection.destroy).toHaveBeenCalledOnce();
+    expect(connection.release).not.toHaveBeenCalled();
+    expect(run).not.toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['begin', '开启数据库事务失败'],
+    ['commit', '提交数据库事务失败'],
+  ] as const)(
+    'destroys the connection when rollback after %s failure also fails and preserves DatabaseError cause',
+    async (stage, message) => {
+      const connection = transactionConnection();
+      const stageError = new Error(`${stage} failed`);
+      connection.rollback.mockRejectedValue(new Error('rollback command failed'));
+      if (stage === 'begin') connection.beginTransaction.mockRejectedValue(stageError);
+      else connection.commit.mockRejectedValue(stageError);
+      const pool = { getConnection: vi.fn().mockResolvedValue(connection) };
+
+      const caught = await withTransaction(pool as never, async () => undefined).catch(
+        (error: unknown) => error,
+      );
+
+      expect(caught).toBeInstanceOf(DatabaseError);
+      expect(caught).toMatchObject({ message });
+      expect((caught as DatabaseError).cause).toBe(stageError);
+      expect(connection.rollback).toHaveBeenCalledOnce();
+      expect(connection.destroy).toHaveBeenCalledOnce();
+      expect(connection.release).not.toHaveBeenCalled();
+    },
+  );
+
+  it('releases after a successful rollback when begin fails without invoking work', async () => {
+    const connection = transactionConnection();
+    const beginError = new Error('begin failed');
+    connection.beginTransaction.mockRejectedValue(beginError);
+    const pool = { getConnection: vi.fn().mockResolvedValue(connection) };
+    const work = vi.fn();
+
+    await expect(withTransaction(pool as never, work)).rejects.toMatchObject({ cause: beginError });
+
+    expect(work).not.toHaveBeenCalled();
+    expect(connection.commit).not.toHaveBeenCalled();
+    expect(connection.rollback).toHaveBeenCalledOnce();
+    expect(connection.release).toHaveBeenCalledOnce();
+    expect(connection.destroy).not.toHaveBeenCalled();
   });
 
   it('reuses the outer connection for nested work on the same pool', async () => {
@@ -48,6 +128,8 @@ describe('withTransaction', () => {
     expect(pool.getConnection).toHaveBeenCalledOnce();
     expect(connection.beginTransaction).toHaveBeenCalledOnce();
     expect(connection.commit).toHaveBeenCalledOnce();
+    expect(connection.release).toHaveBeenCalledOnce();
+    expect(connection.destroy).not.toHaveBeenCalled();
   });
 
   it('deduplicates nested after-commit hooks by key and dispatches them once', async () => {
@@ -136,6 +218,7 @@ describe('withTransaction', () => {
 
     expect(connection.rollback).toHaveBeenCalledOnce();
     expect(connection.release).toHaveBeenCalledOnce();
+    expect(connection.destroy).not.toHaveBeenCalled();
     expect(run).not.toHaveBeenCalled();
     expect(onError).not.toHaveBeenCalled();
   });
@@ -157,6 +240,7 @@ describe('withTransaction', () => {
 
     expect(connection.rollback).toHaveBeenCalledOnce();
     expect(connection.release).toHaveBeenCalledOnce();
+    expect(connection.destroy).not.toHaveBeenCalled();
     expect(run).not.toHaveBeenCalled();
     expect(onError).not.toHaveBeenCalled();
   });
@@ -303,6 +387,7 @@ const transactionConnection = () => ({
   commit: vi.fn(),
   rollback: vi.fn(),
   release: vi.fn(),
+  destroy: vi.fn(),
   execute: vi.fn(),
   query: vi.fn(),
 });

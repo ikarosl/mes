@@ -5,7 +5,7 @@
 ## 导出能力
 
 - `createDatabasePool`：按统一配置创建 MySQL 连接池，并把会话时区设置为 `+08:00`。
-- `withTransaction`：提供可嵌套复用的单数据库事务边界。
+- `withTransaction`：提供可嵌套复用的单数据库事务边界；连接默认不可复用，仅在提交或回滚成功后归还连接池，回滚失败销毁连接并保留原始异常。
 - `registerAfterCommit`：仅在活动事务登记通用任务；最外层成功提交及释放连接后异步调度，回滚丢弃，清除事务上下文并隔离任务错误。
 - `withActiveConnection`：在已有事务中复用活动连接，否则使用连接池。
 - `DatabaseError`：标记数据库边界和事务内已标记连接的查询错误，保留原始 `cause` 供上层分类。

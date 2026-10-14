@@ -9,6 +9,7 @@ const fakeConnection = () => ({
   commit: vi.fn(),
   rollback: vi.fn(),
   release: vi.fn(),
+  destroy: vi.fn(),
   execute: vi.fn(),
   query: vi.fn(),
 });
@@ -151,6 +152,9 @@ describe('withTransaction rollback 失败日志', () => {
         }),
       ).rejects.toBe(businessError);
 
+      expect(connection.destroy).toHaveBeenCalledOnce();
+      expect(connection.release).not.toHaveBeenCalled();
+
       const output = consoleSpy.mock.calls.map((call) => call.join(' ')).join('\n');
       expect(output).not.toContain('password=secret');
       expect(output).not.toContain('username=admin');
@@ -177,6 +181,9 @@ describe('withTransaction rollback 失败日志', () => {
         }),
       ).rejects.toThrow('boom');
 
+      expect(connection.destroy).toHaveBeenCalledOnce();
+      expect(connection.release).not.toHaveBeenCalled();
+
       const output = consoleSpy.mock.calls.map((call) => call.join(' ')).join('\n');
       expect(output).not.toContain('SOMETHING_CUSTOM_123');
       expect(output).not.toContain('weird');
@@ -199,6 +206,9 @@ describe('withTransaction rollback 失败日志', () => {
           throw 'credential-string-value';
         }),
       ).rejects.toBe('credential-string-value');
+
+      expect(connection.destroy).toHaveBeenCalledOnce();
+      expect(connection.release).not.toHaveBeenCalled();
 
       const output = consoleSpy.mock.calls.map((call) => call.join(' ')).join('\n');
       expect(output).not.toContain('credential-string-value');
