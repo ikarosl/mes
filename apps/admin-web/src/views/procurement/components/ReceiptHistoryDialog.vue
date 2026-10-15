@@ -17,11 +17,10 @@
       class="history-context"
     >
       <span
-        ><strong>{{ sourceLine.receiptNo }}</strong> · 第 {{ sourceLine.lineNo }} 行</span
+        ><strong>{{ sourceLine.receiptNo }}</strong> · id:{{ sourceLine.id }}</span
       >
       <span>{{ sourceLine.itemName }}（{{ sourceLine.itemCode }}）</span>
       <span>物料版本：{{ sourceLine.materialVariantCode }}</span>
-      <span class="history-id">到货明细 ID：{{ sourceLine.id }}</span>
     </div>
     <el-tabs
       v-model="tab"

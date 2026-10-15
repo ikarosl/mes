@@ -43,10 +43,9 @@ export interface RecordFinishedInspectionPayload extends VersionedCommand {
   resultNote: string;
   evidenceReference: string;
 }
-export type FinishedInspectionListStatus = 'pending' | 'recorded';
 export interface FinishedInspectionTaskQuery extends PageQuery {
   keyword?: string;
-  status?: FinishedInspectionListStatus;
+  stage?: FinishedInspectionStage;
 }
 export interface FinishedInspectionTaskItem {
   batchId: string;

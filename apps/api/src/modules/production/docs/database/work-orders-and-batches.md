@@ -270,7 +270,7 @@
 
 任务概览 `ProductionBatchDetail.startedByName` 根据 `startedById` 返回首次实际开工人的当前显示姓名，与任务负责人 `ownerName` 分别表达。姓名与概览其他人员引用一起，经 Identity 公开的 `listUserReferencesByIds` 去重批量解析，保留停用及软删除账号的历史展示；未开工或引用无法解析时返回 `null`，只用于展示，不参与命令资格。该字段随概览及返回概览的创建、编辑、取消命令提供；任务列表和工单下属任务只解析任务负责人。取消人姓名使用概览的 `cancelledByName`。
 
-工序开始仅检查任务处于执行中、当前派工与工序自身状态，不再推进任务或工单。需求变更由统一 Writer 推进任务 `version`，不再保留短批专用物料计划版本。正常物流推进按[物料办理资格](demand-allocation-and-outbound.md#物料办理资格)处理；任务执行中不因领料回到物料阶段。
+工序开始仅检查任务处于执行中、当前派工与工序自身状态，不推进任务或工单。需求变更由统一 Writer 推进任务 `version`。正常物流推进按[物料办理资格](demand-allocation-and-outbound.md#物料办理资格)处理；任务执行中不因领料回到物料阶段。
 
 收尾未批准时可明确[撤回结束](production-termination.md#撤回结束与再次收尾)。恢复状态取本次进入事实，已开工恢复执行中，未开工恢复原准备阶段，不重算齐套、不复活需求或分配。`material_*` 是办理阶段；页面不得由阶段直接断言所有物料操作已完成。
 

@@ -12,11 +12,11 @@ Production 拥有结案草稿、办理轮次、不可变批准版及授权明细
 
 ## 直接确认事务
 
-`POST /api/production/finished-goods-inbounds/actions/confirm` 使用 `production:inbounds:confirm-finished`，输入 `productionBatchId`、可选备注以及非空 `details`。每条明细含当前 `allocationId/revisionId`、正整数 `quantity`、目标 `{mode:new,clientKey}` 或 `{mode:existing,batchId}`。同次可混合计划内／外，把同一授权拆入多个批次，并以相同 `clientKey` 把多明细归到同一新批次。新库存批次由 Inventory 在实际插入时分配 IB 编号；复用已有批次不取新 IB，每次确认入库另分配 FI 单号，详见[统一编号](../../../../../docs/business-numbering.md)。没有持久化待确认入库草稿，旧创建、编辑、取消命令不开放。
+`POST /api/production/finished-goods-inbounds/actions/confirm` 使用 `production:inbounds:confirm-finished`，输入 `productionBatchId`、可选备注以及非空 `details`。每条明细含当前 `allocationId/revisionId`、正整数 `quantity`、目标 `{mode:new,clientKey}` 或 `{mode:existing,batchId}`。同次可混合计划内／外，把同一授权拆入多个批次，并以相同 `clientKey` 把多明细归到同一新批次。新库存批次由 Inventory 在实际插入时分配 IB 编号；复用已有批次不取新 IB，每次确认入库另分配 FI 单号，详见[统一编号](../../../../../docs/business-numbering.md)。没有持久化待确认入库草稿，不提供草稿创建、编辑或取消命令。
 
 锁序为工单 → 生产任务 → 结案根 → 当前授权 → Inventory 批次。Production 在同一事务核验任务已结案、轮次已定稿且仍为当前轮、版本是当前批准版、无审批冻结，并按授权聚合本次数量，通过 Inventory public 能力取得各授权历史已执行量后检查剩余额度。随后调用 `InventoryInboundCommand.confirmFinishedOutput`；Inventory 核验产品与目标批次，写主单、多明细、批次、正流水及成功审计。入库单主表的 `finished_product` 只表示成品来源，类别和批准版由每条明细所引用的授权确定。Inventory 批次可承接多次来源，来源查询沿明细追溯，不从库存余额倒推某版本已入量。
 
-任何一项失败均回滚整次确认；幂等键和业务事实一起提交。确认使用 `production.finished-inbound.confirm.v4`，指纹覆盖任务、备注及各明细的授权、批准版、数量和目标；结果严格保存 `inboundId`，同键重试只重放原结果。版本切换遵守[平台幂等规则](../../../../../docs/idempotency.md#13-scope-版本与开发重置)。Production 不直接写 Inventory 表，也不查询其内部表做业务写资格。候选和历史展示在已登记的专用只读查询中读取批准字段及入库事实；每条历史明细返回授权、批准版、检验依据、数量、批次和流水。批号从 `item_batch.batch_code` 读，废弃 `requested_batch_code`。
+任何一项失败均回滚整次确认；幂等键和业务事实一起提交。确认使用 `production.finished-inbound.confirm.v4`，指纹覆盖任务、备注及各明细的授权、批准版、数量和目标；结果严格保存 `inboundId`，同键重试只重放原结果。版本切换遵守[平台幂等规则](../../../../../docs/idempotency.md#13-scope-版本与开发重置)。Production 不直接写 Inventory 表，也不查询其内部表做业务写资格。候选和历史展示在已登记的专用只读查询中读取批准字段及入库事实；每条历史明细返回授权、批准版、检验依据、数量、批次和流水。批号只从 `item_batch.batch_code` 读取。
 
 ## HTTP 查询与权限
 

@@ -30,7 +30,7 @@
 
 列表 scope 为 `todo/mine/all`，API 未传 scope 时默认 todo；管理页默认显式请求 all，包含所有状态。todo 在后端分页和计数前按申请未结束、节点当前活动及登录用户实时资格过滤；mine 包含本人发起的全部历史；普通用户的 all 包含本人发起、本人实际作出通过或驳回决定，以及本人当前可处理的申请。仅曾是候选人或通知收件人不保留历史全文访问权，新加入角色也不会获得已结束申请的历史权限。列表与详情使用同一授权范围，均须满足接口入口权限。`approval:configure` 可读全部申请；`approval:view` 本身不授予全局读取。
 
-前端只传 scope、状态和普通分页筛选，不提供授权角色或用户列表。详情通过 `currentStepId`、`canApprove` 和 `canWithdraw` 表达当前操作；各节点分别展示角色/指定用户或业务来源规则、`resolvedAssigneeUserId/Name`、当前 `eligibleUsers` 和历史真实决定。所有决定都校验申请版本、当前节点与实时资格，非末级审批同样递增版本，迟到请求不得误批下一节点。重新分派接口与权限已经移除。通用批准／驳回／撤回仍不启用 HTTP Idempotency-Key，不自动重试决定请求；Production 两个业务送审入口使用各自的幂等命令，申请创建、绑定、审计和通知同事务。
+前端只传 scope、状态和普通分页筛选，不提供授权角色或用户列表。详情通过 `currentStepId`、`canApprove` 和 `canWithdraw` 表达当前操作；各节点分别展示角色/指定用户或业务来源规则、`resolvedAssigneeUserId/Name`、当前 `eligibleUsers` 和历史真实决定。所有决定都校验申请版本、当前节点与实时资格，非末级审批同样递增版本，迟到请求不得误批下一节点。不提供重新分派接口或权限。通用批准／驳回／撤回仍不启用 HTTP Idempotency-Key，不自动重试决定请求；Production 两个业务送审入口使用各自的幂等命令，申请创建、绑定、审计和通知同事务。
 
 ## 模块与事务边界
 

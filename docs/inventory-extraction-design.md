@@ -1,6 +1,6 @@
 # Inventory：所有权与跨模块事务协议
 
-本文维护 Production、Procurement、Product、Quality 与 Inventory 共同遵守的协议。当前端口由 [Inventory 公开能力](../apps/api/src/modules/inventory/docs/public-contracts.md)维护，库存字段及状态由[数据库所有者](../apps/api/src/modules/inventory/docs/database.md)维护；选择理由见 [ADR-0013](adr/0013-procurement-source-and-stock-boundaries.md)。
+本文维护 Production、Procurement、Product、Quality 与 Inventory 共同遵守的协议。当前端口由 [Inventory 公开能力](../apps/api/src/modules/inventory/docs/public-contracts.md)维护，库存字段及状态由[数据库所有者](../apps/api/src/modules/inventory/docs/database.md)维护；采购来源选择理由见 [ADR-0013](adr/0013-procurement-source-and-stock-boundaries.md)，公共单据结构与预留反向读取的决策边界见 [ADR-0020](adr/0020-shared-stock-documents-and-source-boundaries.md)。
 
 ## 1. 库存约束与 migration 依据
 
@@ -8,7 +8,7 @@ inventory_transaction 是唯一库存事实，只追加；余额由触发器在�
 
 item_batch.batch_code 是唯一内部批号，公共入库明细的 batch_id 引用真实库批。其他入库 new 草稿只保存目标意图、batch_id=NULL，确认才生成并回填真实批次；采购／批准成品仍是一次来源确认成单，不开放仓库编辑草稿。归批键不是人工批号，取消其他草稿不留下空批次。
 
-## 2. 提取后的唯一表所有者
+## 2. 唯一表所有者
 
 | 所有者 | 职责 |
 | --- | --- |
@@ -18,7 +18,7 @@ item_batch.batch_code 是唯一内部批号，公共入库明细的 batch_id 引
 | Quality | 不可变检验事实、复检与结论；不改生产产出或库存 |
 | Product | 基础物料、精确版本及成品身份和用途资格；提供统一父身份锁 |
 
-物理外键可跨所有者，应用写入只能由表所有者完成。历史已删除表仅为不可修改的旧 migration 保留登记，不恢复结构。旧 return_order/detail 由公共 inbound_order/detail(return_inbound) 替代，不建双写、影子或第二份退料数量；outbound_order/detail 整表归 Inventory，即使其行内含生产来源 ID，也不授予 Production 直接写权。
+物理外键可跨所有者，应用写入只能由表所有者完成。历史已删除表仅为不可修改的旧 migration 保留登记，不恢复结构。退料使用公共 inbound_order/detail(return_inbound)，不建双写、影子或第二份退料数量；outbound_order/detail 整表归 Inventory，即使其行内含生产来源 ID，也不授予 Production 直接写权。
 
 ## 3. 公开端口与调用方向
 
@@ -34,14 +34,14 @@ item_batch.batch_code 是唯一内部批号，公共入库明细的 batch_id 引
 2. HTTP 请求只能表达授权选择、本次数量和新建／已有目标；来源身份、单位、编码及供应商由所属模块锁内解析，不信任客户端资格快照。
 3. Inventory 在相同事务锁定 Product 父身份及已有目标批次，核验产品或物料精确版本、单位、批次状态和容量。新批次由明确的请求内标识复用，不能靠相同批号猜测复用；既有批次通过 ID 选择，不自动更换目标。
 4. 采购／成品每条 inbound_detail 消费一份正式授权并指向一个实际 batch_id；每条有效实际明细对应本次唯一原始正流水。多次入库可同批，不同授权可共用目标；合库批不合并检查、不更改采购或生产来源归属。
-5. 原到货不再绑定唯一 batch_id，成品也不按类别独占库批。历史已入累计以来源及明细、匹配正流水计算，不扣当前库存余额；目标批次被其他来源追加或发生领用都不改变原来源基准。
+5. 到货与库存批次通过实际入库明细关联，不限定唯一 batch_id，成品也不按类别独占库批。历史已入累计以来源及明细、匹配正流水计算，不扣当前库存余额；目标批次被其他来源追加或发生领用都不改变原来源基准。
 6. 单据、明细、批次创建、流水、余额投影、成功审计与 HTTP 幂等响应原子提交，失败全部回滚。采购／成品按 pending → 明细／目标 → 流水 → completed 执行，但没有可跨请求继续办理的仓库编辑草稿；事务内部临时状态由 Inventory 守卫控制，不对外增加业务步骤。
 
-成品入库主单不再持有唯一批准版本。正式依据沿“实际明细 → 授权 → 批准版 → 检验”追溯，类别留在授权，批次及主单使用中性成品类型。批号从实际 item_batch 读取，不复制 requested_batch_code。端口、字段与索引由 [Inventory 公开能力](../apps/api/src/modules/inventory/docs/public-contracts.md)及其数据库 owner 维护。
+成品入库主单可包含多份授权，不持有唯一批准版本。正式依据沿“实际明细 → 授权 → 批准版 → 检验”追溯，类别留在授权，批次及主单使用中性成品类型。批号从实际 item_batch 读取，不在明细中重复保存批号。端口、字段与索引由 [Inventory 公开能力](../apps/api/src/modules/inventory/docs/public-contracts.md)及其数据库 owner 维护。
 
 ## 5. 当前实现职责
 
-生产、采购等来源编排调用 Inventory public，Inventory 不深层引用 Production domain 或 HTTP filter。其他出库预留保护明确增加一条只读事实反向协作：Inventory 定义端口，由 API 组合根 adapter 只导入 Production public 装配，不决定来源业务资格，也不修改分配。这一范围取代原完全单向限制，其余来源办理仍保持来源先验证。调用业务由来源模块审计，Inventory 自有用例由 Inventory 审计。机械数量函数使用公共工具，各模块映射公开稳定错误。代码文件位置与方法清单直接从 public.ts 和 application 端口读取，本文不复制文件目录。
+生产、采购等来源编排调用 Inventory public，Inventory 不深层引用 Production domain 或 HTTP filter。其他出库预留保护使用只读事实反向协作：Inventory 定义端口，由 API 组合根 adapter 只导入 Production public 装配，不决定来源业务资格，也不修改分配。仅此范围允许反向读取预留事实，其余来源办理保持来源先验证。调用业务由来源模块审计，Inventory 自有用例由 Inventory 审计。机械数量函数使用公共工具，各模块映射公开稳定错误。代码文件位置与方法清单直接从 public.ts 和 application 端口读取，本文不复制文件目录。
 
 ## 6. 展示目录与字段白名单
 
@@ -107,6 +107,6 @@ Product 用途资格与历史引用锁必须使用相同内部父行顺序；同
 
 ## 9. 维护与验证边界
 
-端口及所有权变更同步模块 owner、调用方和实际登记脚本；具体字段和方法只维护在 owner，公共事务与锁序维护在本文。库存、盘点和成品入库继续使用既有 HTTP／权限；旧无采购来源的外购写入口关闭，既有业务查询保留；退料 HTTP 保留 returned 表达并映射公共 completed，物理引用统一 inbound_detail。其他入／出库四类写命令（创建、保存、确认、取消）逐方向独立登记权限与 HTTP 幂等，不把 ledger 唯一键等同 HTTP 重放。
+端口及所有权变更同步模块 owner、调用方和实际登记脚本；具体字段和方法只维护在 owner，公共事务与锁序维护在本文。库存、盘点和成品入库继续使用既有 HTTP／权限；外购物料写入必须具有采购来源，无采购来源的历史业务仅可查询；退料 HTTP 保留 returned 表达并映射公共 completed，物理引用统一 inbound_detail。其他入／出库四类写命令（创建、保存、确认、取消）逐方向独立登记权限与 HTTP 幂等，不把 ledger 唯一键等同 HTTP 重放。
 
 交付及正式测试顺序见 [AGENTS.md](../AGENTS.md#数据库与交付约定)，待验收见[路线图](roadmap.md)。关键业务验证覆盖分配、领料、补料放行、退料、盘点、成品入库和采购闭环；构建及启动不表示完整业务测试通过。

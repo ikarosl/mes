@@ -4,7 +4,7 @@ Quality 拥有外购来料检验与复核、成品质检及复检的不可变记
 
 成品检查事实、请求语义及放行资格由[成品检验与放行](docs/finished-inspections.md)维护；来料核实数量、正式授权与建议例外由 Procurement 的[正式清单与整批分配](../procurement/docs/receipt-acceptance.md)维护。[统一检验模型](docs/unified-inspection-model.md)与[数据库](docs/database.md)描述当前 case/record 两表及来源边界；[ADR-0019](../../../../../docs/adr/0019-finished-inspection-measurement-simplification.md)取代旧成品 C/R/S 语义，[ADR-0015](../../../../../docs/adr/0015-unified-quality-quantity-semantics.md)保留其余共同边界。
 
-公开入口为 [public.ts](public.ts)。`QualityInboundCommand` 提供 `startCase`、`completeCase`、`supersedeCases`；调用者必须先锁住到货与当前处理轮次，并在同池活动事务内执行。`QualityInboundQuery` 提供分页办理记录、单个办理详情及明确放行依据核验。公开错误 `QualityCommandError` 仅含稳定代码和业务说明，由调用方 presentation 映射 HTTP。
+公开入口为 [public.ts](public.ts)。`QualityInboundCommand` 提供 `startCase`、`completeCase`、`supersedeCases`；调用者必须先锁住到货与当前处理轮次，并在同池活动事务内执行。`QualityInboundQuery` 提供单个到货行的办理历史分页、单个及批量办理详情、在途检查及明确放行依据核验；查询边界见[数据库与查询](docs/database.md#迁移及查询)。公开错误 `QualityCommandError` 仅含稳定代码和业务说明，由调用方 presentation 映射 HTTP。
 
 Quality 不导入或查询 Procurement。它按传入来源保存检验事实并核验自己的记录；当前范围是否仍有效、是否暂停或终止，由 Procurement 锁内校验。`requireReleaseBasis` 不能替代该来源校验。办理的 `reviewing/completed/superseded` 为显式状态，完成与替代均不能恢复。
 
@@ -20,7 +20,7 @@ Quality 不导入或查询 Procurement。它按传入来源保存检验事实并
 
 历史分页之外，`GET /quality/finished-inspections/:batchId/records/:recordId` 可按任务与记录 ID 精确读取既存检验事实，供跨页面定位；它沿用历史读取权限，来源不符返回不存在。具体查询边界见[成品检验与放行](docs/finished-inspections.md)。
 
-独立页面与来料质检同级。`GET /quality/finished-inspections` 按任务分页，待检筛选按当前轮实际需检验或已得待复检／不放行结论判定；无草稿任务仅在全量查询显示，纯定稿更正沿用有效放行记录不列为待检。`GET /:batchId` 返回当前轮基准、复检原因、当前真实已入与拟复检剩余量、办理资格和最新记录；`GET /:batchId/records` 分页留存历史。`POST /:batchId/actions/start` 启动已建立的待检轮；`POST /:batchId/actions/reinspect` 带当前批准版指针与原因，确认后由 Production 同事务建立并直接启动新轮，旧剩余授权立即失效，无须再点一次开始；`POST /:batchId/actions/record` 新增当前轮检查事实及明确放行结论。页面读写权限分别为 `quality:finished-inspections:view/record`。全检与抽检都只填 G/F，实际检查总数 N 自动相加，普通检查 N>0；不输入或返回整批 C、放行建议及累计建议，也不展示抽检合格率。零产出须专用核实并明确放行，保存时间、说明及凭据；产线申报快照仅作参考，不限制实测总数。
+独立页面与来料质检同级。`GET /quality/finished-inspections` 按任务分页，通过 `stage` 精确筛选当前阶段，省略时返回所有阶段；筛选与阶段含义见[成品检验专题](docs/finished-inspections.md#查询与当前阶段)。`GET /:batchId` 返回当前轮基准、复检原因、当前真实已入与拟复检剩余量、办理资格和最新记录；`GET /:batchId/records` 分页留存历史。`POST /:batchId/actions/start` 启动已建立的待检轮；`POST /:batchId/actions/reinspect` 带当前批准版指针与原因，确认后由 Production 同事务建立并直接启动新轮，旧剩余授权立即失效，无须再点一次开始；`POST /:batchId/actions/record` 新增当前轮检查事实及明确放行结论。页面读写权限分别为 `quality:finished-inspections:view/record`。全检与抽检都只填 G/F，实际检查总数 N 自动相加，普通检查 N>0；不输入或返回整批 C、放行建议及累计建议，也不展示抽检合格率。零产出须专用核实并明确放行，保存时间、说明及凭据；产线申报快照仅作参考，不限制实测总数。
 
 `QualityFinishedInspectionSourceRegistry` 只接受 Production 注册的来源能力；运行时调用其 `beginReinspection/start/prepare/advance`，由 Production 在共享事务锁定工单、任务和结案根、核验草稿及版本并推进自身版本。详情的复检资格和当前剩余量经 Production 来源只读能力核对真实已入，命令再锁内复核；列表投影仅供导航。Quality 不导入 Production，来源命令不通过跨模块 SQL 判断业务资格。Quality 自己创建完成的 `quality_inspection_case` 与不可变 `quality_inspection_record`、核对前驱并写成功审计；任一步失败连同幂等结果回滚。批准或送审期间不能绕过 Production 的更正／撤回流程登记新依据。
 

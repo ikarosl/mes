@@ -6,7 +6,7 @@ import { usePageActivationRefresh } from '../../../composables/requests/usePageA
 import { EMessage } from '../../../utils/message';
 export function useFinishedInspectionsList() {
   const keyword = ref(''),
-    status = ref<NonNullable<FinishedInspectionTaskQuery['status']> | ''>('pending'),
+    stage = ref<NonNullable<FinishedInspectionTaskQuery['stage']> | ''>(''),
     rows = ref<FinishedInspectionTaskItem[]>([]),
     page = ref(1),
     pageSize = ref(10),
@@ -23,7 +23,7 @@ export function useFinishedInspectionsList() {
       const result = await finishedInspectionsApi.list(
         {
           keyword: keyword.value.trim() || undefined,
-          status: status.value || undefined,
+          stage: stage.value || undefined,
           page: page.value,
           pageSize: pageSize.value,
         },
@@ -45,7 +45,7 @@ export function useFinishedInspectionsList() {
   };
   const reset = async (): Promise<void> => {
     keyword.value = '';
-    status.value = 'pending';
+    stage.value = '';
     await search();
   };
   const changePage = async (value: number): Promise<void> => {
@@ -59,7 +59,7 @@ export function useFinishedInspectionsList() {
   usePageActivationRefresh(load);
   return {
     keyword,
-    status,
+    stage,
     rows,
     page,
     pageSize,

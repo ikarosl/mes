@@ -48,7 +48,7 @@ export async function listExcessReceiptCandidates(
     params,
   );
   const [rows] = await db.query<ReadRow[]>(
-    `SELECT line.id,line.receipt_id,line.line_no,line.supplier_batch_code,
+    `SELECT line.id,line.receipt_id,line.supplier_batch_code,
       receipt.receipt_no,receipt.received_at,revision.received_quantity
       FROM procurement_receipt_line line
       JOIN procurement_receipt receipt ON receipt.id=line.receipt_id
@@ -78,7 +78,6 @@ export async function listExcessReceiptCandidates(
       id: text(row.id),
       receiptId: text(row.receipt_id),
       receiptNo: text(row.receipt_no),
-      lineNo: Number(row.line_no),
       receivedAt: date(row.received_at),
       supplierBatchCode: nullableText(row.supplier_batch_code),
       receivedQuantity: text(row.received_quantity),

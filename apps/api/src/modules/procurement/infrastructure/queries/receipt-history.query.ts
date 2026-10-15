@@ -29,7 +29,7 @@ export async function readReceiptHistory(
 ): Promise<PageResult<ReceiptHistoryItem>> {
   const { page, pageSize } = pageInput(query);
   if (kind === 'acceptances') return readReceiptAcceptances(db, id, query);
-  if (kind === 'cases') return quality.listCases({ receiptLineIds: [id], page, pageSize });
+  if (kind === 'cases') return quality.listCases(id, { page, pageSize });
   if (kind === 'inbounds') {
     const select = (columns: string) =>
       `${inboundFactSelect(columns)} AND detail.procurement_receipt_line_id=?`;

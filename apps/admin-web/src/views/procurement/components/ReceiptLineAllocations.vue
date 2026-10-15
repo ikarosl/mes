@@ -97,7 +97,6 @@
           <div class="allocation-row-actions">
             <el-button
               v-if="
-                !quality &&
                 row.disposition === 'inbound' &&
                 canExecuteReceiptAllocation(line, row) &&
                 canAccessRoute({ name: 'warehouse-inbound' })
@@ -109,9 +108,7 @@
               >办理实际入库</el-button
             >
             <el-button
-              v-if="
-                !quality && row.disposition === 'return' && canExecuteReceiptAllocation(line, row)
-              "
+              v-if="row.disposition === 'return' && canExecuteReceiptAllocation(line, row)"
               link
               type="primary"
               :disabled="disabled"
@@ -164,7 +161,7 @@ import { computed } from 'vue';
 import { useRouteAccess } from '../../../composables/useRouteAccess';
 const { canAccessRoute } = useRouteAccess();
 const isKnownZero = (value: string): boolean => value.trim() !== '' && Number(value) === 0;
-const props = defineProps<{ line: ProcurementReceiptLine; quality: boolean; disabled: boolean }>();
+const props = defineProps<{ line: ProcurementReceiptLine; disabled: boolean }>();
 const remarkedAllocations = computed(() =>
   props.line.allocations.filter((row) => row.remark?.trim()),
 );

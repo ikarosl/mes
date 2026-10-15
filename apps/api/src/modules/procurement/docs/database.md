@@ -29,7 +29,7 @@
 
 ## 采购单据
 
-`202609190002` 建立采购单据，`202609200002-procurement-order-sources` 追加迁移切换为以下四表，同为 InnoDB、utf8mb4_0900_ai_ci、BIGINT UNSIGNED ID。可变主行具备 created_by/at、updated_by/at、version，人员 FK 指向 users；数量 INT 且 CHECK 限制 0～99999999（计划必须 >0），不持久化物料名称。
+采购单据由以下四表组成，同为 InnoDB、utf8mb4_0900_ai_ci、BIGINT UNSIGNED ID。可变主行具备 created_by/at、updated_by/at、version，人员 FK 指向 users；数量 INT 且 CHECK 限制 0～99999999（计划必须 >0），不持久化物料名称。
 
 | 表 | 字段与约束 |
 | --- | --- |
@@ -38,20 +38,20 @@
 | procurement_order_line_source | 联合PK(purchase_order_line_id,demand_id)，分别FK采购行、Production需求；created_at；反查索引(demand_id,purchase_order_line_id)，无采购分摊量 |
 | procurement_order_line_closure | id、唯一purchase_order_line_id FK；reason_type为4种关闭原因；manual_end/cancelled原因非空；planned/received/undetermined/approved/inbound/return_due/returned/quality_returned_quantity整数；evidence_json冻结依据；created_by/at；触发器拒绝更新和删除 |
 
-source 和 supplier 等跨行归属在锁内校验，不借展示查询判断资格。采购行当前保存 origin_receipt_line_id（同原采购行组合FK）和 origin_allocation_id（同到货正式分配组合FK）。质量处置引用必须同时有原采购行/原到货且履约方式为 new_arrival；补发依据 supplement_evidence 必填。实际退回通过分配反查，不再在采购行保存 origin_supplier_return_id。关闭事实只冻结关闭证据，累计入库始终由 Inventory 流水事实决定。
+source 和 supplier 等跨行归属在锁内校验，不借展示查询判断资格。采购行当前保存 origin_receipt_line_id（同原采购行组合FK）和 origin_allocation_id（同到货正式分配组合FK）。质量处置引用必须同时有原采购行/原到货且履约方式为 new_arrival；补发依据 supplement_evidence 必填。实际退回通过分配反查，采购行不保存 origin_supplier_return_id。关闭事实只冻结关闭证据，累计入库始终由 Inventory 流水事实决定。
 
-同一原采购主单、同一 supplement_reason 可生成多行补单；原因仍属补单主单，具体原采购行、到货、质量退回分配和约定证据分别保存在各补单行。每行只保留一份到货／分配依据，同单 `(item_id,material_variant_id,supplier_id)` 唯一；跨原采购主单合并及不同补因混单由命令拒绝，当前无需为多行新增表或列。创建和下单逐行核对原行与来源身份，草稿修改保留各行依据，不把某行依据复制给其他行。
+同一原采购主单、同一 supplement_reason 可生成多行补单；原因仍属补单主单，具体原采购行、到货、质量退回分配和约定证据分别保存在各补单行。每行只保留一份到货／分配依据，同单 `(item_id,material_variant_id,supplier_id)` 唯一；跨原采购主单合并及不同补因混单由命令拒绝。创建和下单逐行核对原行与来源身份，草稿修改保留各行依据，不把某行依据复制给其他行。
 
 down 首先要求采购根为空，之后依赖顺序删除触发器、关闭／来源／行／主单和6个订单权限。迁移不写角色或业务种子。已执行 migration 不修改；开发环境允许按统一命令重置。
 
 ## 到货、整批轮次与 Quality 关联
 
-当前六表结构由追加的 `202609230001-receipt-allocations` 切换，完整职责和字段见[正式清单](receipt-acceptance.md)。原 scope 删除，acceptance_line 替换为 allocation，不兼容双写。
+六张核心办理表的完整职责和字段见[正式清单](receipt-acceptance.md)，供应商退回独立保存实际执行事实。迁移 `202609230001-receipt-allocations` 的升级及回滚条件见本节迁移保护。
 
 | 表 | 类型与关键约束 |
 | --- | --- |
 | procurement_receipt | 不可变交接事实；自动 RC、唯一 receipt_no、采购根、真实时间／凭据、创建审计 |
-| procurement_receipt_line | 可变聚合；精确身份及原采购行固定；current_revision/current_round 同到货 FK；不保存目标库存批次，逐笔目标从 inbound_detail 读取；M审计/version |
+| procurement_receipt_line | 可变聚合；line_no 保存单内登记顺序，仅供内部稳定排序，公开身份使用 id；精确身份及原采购行固定；current_revision/current_round 同到货 FK；不保存目标库存批次，逐笔目标从 inbound_detail 读取；M审计/version |
 | procurement_receipt_revision | 不可变本次到货核实总量；同明细 revision_no 唯一、previous_revision_id 同源、非负 T、同批确认及原因 |
 | procurement_receipt_round | 可变资格；同明细 round_no 唯一；previous/source_allocation_round_id 同到货 FK；起始 revision/starting_quantity；当前 QC；原因及 M审计/version |
 | procurement_receipt_acceptance | 不可变定稿；每 round 唯一、同到货；正常 QC 必填；前后 revision、C、override_reason、previous_acceptance及创建审计 |
@@ -70,15 +70,15 @@ Inventory inbound_detail 保存 procurement_receipt_line_id/receipt_revision_id/
 
 ## 单工单、逐行供应商与来源约束
 
-Quality 当前两表为quality_inspection_case/record，Inventory原表仍由各自模块所有。四张旧采购表通过 `202609200002` 直接改名，既有到货、来源、关闭及补单组合外键由 MySQL 保持引用；无别名表或双写。up/down 都要求采购业务为空，拒绝推测旧跨工单归属或把头供应商复制成新逐行确认。
+Quality 的 quality_inspection_case/record 与 Inventory 表由各自模块所有。`202609200002` 迁移及回滚要求采购业务为空，保持到货、来源、关闭及补单组合外键引用；不得推测跨工单归属或把主单供应商复制为逐行确认，无别名表或双写。
 
 需求所属工单沿 `production_item_demand → production_batches → work_orders` 解析，不能仅靠 `work_order_id` 外键证明来源相符。普通按需草稿保存和正式下单均须通过 Production 公开能力核对来源资格，并检查全部来源属于同一指定工单；普通备料的 work_order_id 为 NULL、无需求映射。按需补单继承原行来源及原主单工单，核对原始归属，不对已结束工单或已关闭需求重新要求普通采购资格。来源关系允许同一需求关联同物料版本、不同供应商的多行，仍不表示数量分摊。同一主单完全相同的物料、精确版本、供应商只保留一行，合并时去重来源，由用户核对并填写该行最终计划量；后端拒绝未归并的重复行。
 
 应用继续限制每单最多 100 行及合计 100 条来源映射；同需求关联不同供应商行分别计数，不放宽为每行各 100 条。来源表复合主键继续禁止同一行重复需求，Production 公开校验输入则按需求 ID 去重。
 
-到货主表不新增 supplier_id。供应商身份统一沿 `procurement_receipt_line.purchase_order_line_id → procurement_order_line.supplier_id` 取得，采购行正式下单后供应商不可变。到货概览展示来源明细的供应商集合，每行显示具体供应商；不能继续以采购头或第一条明细代表整张到货。实收修订、范围、质量结论和退回均沿原到货明细追溯，不复制可独立修改的供应商字段。补单原行 FK、到货归属组合 FK、关闭与来源 FK 均引用改名后的表。
+到货主表不新增 supplier_id。供应商身份统一沿 `procurement_receipt_line.purchase_order_line_id → procurement_order_line.supplier_id` 取得，采购行正式下单后供应商不可变。到货概览展示来源明细的供应商集合，每行显示具体供应商；不能继续以采购头或第一条明细代表整张到货。实收修订、范围、质量结论和退回均沿原到货明细追溯，不复制可独立修改的供应商字段。补单原行 FK、到货归属组合 FK、关闭与来源 FK 均引用本章采购表。
 
-既有六张 `procurement_` 表不改名；HTTP `/procurement/purchase-orders`、领域 `PurchaseOrder` 及稳定来源 ID 术语继续使用。表名前缀统一不要求改写所有 API 名称。
+HTTP 资源使用 `/procurement/purchase-orders`，领域使用 `PurchaseOrder`，稳定来源 ID 保持采购语义；数据库表统一使用 `procurement_` 前缀。
 
 采购和到货的历史供应商名称按稳定 supplier_id 读取当前名称，历史读取不因主数据软删除丢失；写入资格继续要求供应商有效。Inventory 的[入库明细供应商名称快照](../../inventory/docs/database/inventory-ledger-and-inbound.md#9-inbound_detail)与既有批次 provider 文本只表达历史来源，不作为供应商身份，也不反推 supplier_id；已确认明细、批次及审计中的历史文本不因供应商改名回写。基础物料名称继续按当前主数据展示，不新增名称快照。
 

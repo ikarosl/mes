@@ -143,7 +143,7 @@ import {
   type InboundInspectionDraft,
 } from '../../quality/inbound-inspection';
 const model = defineModel<InboundInspectionDraft>({ required: true });
-defineProps<{ coveredQuantity: number; unit: string; disabled: boolean; caseId: string }>();
+defineProps<{ coveredQuantity: number; unit: string; disabled: boolean }>();
 const emit = defineEmits<{ valid: [boolean] }>();
 const preview = computed(() => inboundInspectionPreview(model.value));
 const valid = computed(() => inboundInspectionInput(model.value) !== null);

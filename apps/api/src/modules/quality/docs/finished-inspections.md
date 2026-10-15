@@ -48,19 +48,41 @@ Quality 只在 Production 准备的当前有效轮次执行 record 时一并创�
 
 本轮待复检或不放行继续阻断正常定稿和入库；新检查完成本身不恢复旧授权。产线管理员核对清单并经负责人批准后，来源按新有效授权恢复剩余执行。纯分配更正可引用仍适用的旧检验依据，不新增一份同轮检查；后续执行不更新原检验轮基准。已入 10、剩余全检 G=2/F=0 时，Production 可对新累计目标与原检验轮固定基准 10 加 G=2 的差额作定稿提示；历史 10 件仍引用其原依据。
 
+## 查询与当前阶段
+
+`GET /api/quality/finished-inspections` 按任务分页，接受 `keyword/stage/page/pageSize`。`keyword` 搜索任务号、工单号、成品编码及名称；可选 `stage` 只接受 `FinishedInspectionStage` 的九种代码，省略表示全部阶段。`status` 不属于允许字段，返回 `400 VALIDATION_ERROR`。按结案根更新时间、根 ID 倒序稳定排序。
+
+每项任务只有一个当前阶段，按下表从上到下先命中即停止；当前轮记录与最近历史记录分开读取，纯清单更正可沿用明确放行的最近记录。
+
+| 条件 | `stage` | 显示名称 |
+| --- | --- | --- |
+| 任务不处于 closing/completed/terminated | blocked | 当前不可办理 |
+| 存在待处理的清单审批 | reviewing | 清单审批中 |
+| 尚未保存产出草稿 | awaiting_draft | 待保存产出草稿 |
+| 当前轮 inspecting | inspecting | 检验中 |
+| 当前轮 pending_inspection，且为 finalization_correction，最近检验明确 released | ready_for_finalization | 待核对产出清单 |
+| 其他当前轮 pending_inspection | awaiting_start | 待检验 |
+| 当前轮检验结论 pending_reinspection | needs_reinspection | 待复检 |
+| 当前轮检验结论 not_released | not_released | 质检不放行 |
+| 当前轮 pending_finalization | ready_for_finalization | 待核对产出清单 |
+| 当前轮 finalized | approved | 已定稿 |
+| 其他情况 | blocked | 当前不可办理 |
+
+筛选、分页总数及响应的 `stage` 使用同一 SQL 阶段表达式，先筛选再分页，不能对当前页再过滤或按历史记录存在性分组。阶段和下一步只供导航；开始、登记和复检仍由来源详情及写入时的锁内资格校验决定。最近历史结论不代替当前轮状态或产出清单实际引用的检验依据。
+
 ## 不可变记录与事务
 
 历史分页接口 `GET /api/quality/finished-inspections/:batchId/records` 按记录 ID 倒序读取；精确接口 `GET /api/quality/finished-inspections/:batchId/records/:recordId` 只返回该任务所属的一条既存成品记录，复用同一事实映射和检验人展示名。两者均要求 `quality:finished-inspections:view`。记录不存在、属于其他任务或不是成品来源时，精确接口统一返回 `NOT_FOUND`，不回退读取最新记录。返回的原申报与轮次固定已入基准属于该记录发生时的历史来源，不随任务后续复检或入库重算。
 
 每次新记录归属于当前成品轮次的全部剩余送检范围；抽检 G/F 只描述实际样本，不证明整批数量。新轮复检追加记录并关联同来源前驱，只采用当前轮有效依据，不叠加历史检查数量。固定范围与开始冻结见上节，不用动态库存余额补造基准。是否仍适用由管理员核实并主动选择引用，需要复检时走已有显式复检入口；不自动检测新增产出或按数量变化强制换轮。
 
-任务[撤回结束](../../production/docs/database/production-termination.md#撤回结束与再次收尾)后，保留检验记录、引用和轮次，执行期间暂停开始、登记及复检；列表不得继续将该任务列为可办理待检，历史仍可查看。重新进入结案后，按当前阶段、审批、轮次及草稿资格办理，不因再次收尾自动作废原检验。既有明确复检、定稿更正的轮次切换规则保持。
+任务[撤回结束](../../production/docs/database/production-termination.md#撤回结束与再次收尾)后，保留检验记录、引用和轮次，执行期间暂停开始、登记及复检；列表当前阶段为“当前不可办理”，历史仍可查看。重新进入结案后，按当前阶段、审批、轮次及草稿资格办理，不因再次收尾自动作废原检验。既有明确复检、定稿更正的轮次切换规则保持。
 
 开始、复检及登记命令分别通过 Production 注册来源能力在同池事务锁定工单→任务→结案根，核对来源版本、当前轮次及草稿资格；首次轮于草稿保存时固定基准，复检新轮于确认时固定基准，登记只在该轮生成一次检查事实。Quality 读取当前前驱、追加记录、写审计，Production 自身能力推进根版本。开始、复检与登记分别使用 `quality.finished-inspection.start.v1`、`quality.finished-reinspection.begin.v1` 与 `quality.finished-inspection.record.v3` 幂等 namespace；复检指纹包含版本、批准版指针和去首尾空白的原因，登记指纹包含规范化后的 G/F 与派生 N、方式、决定、来源版本、时间和去首尾空白的说明／凭据，不含旧整批 C。开始与复检结果为 batchId、roundId、version；登记结果为 batchId、inspectionId、version。
 
 Quality 不写 Production 表。Production 送审和最终批准通过 Quality public 当前共享读重新核对联合指纹、最新记录与快照；`readForCloseout` 的锁内读只锁 Quality case/record，Production 轮次基准关联仅供展示，不借该读路径锁定来源轮次。UPDATE／DELETE 触发器禁止改写事实；保留 `(id,closeout_id)` 引用唯一键及 case的 `(closeout_id,id)` 与结果的 `(production_batch_id,id)` 查询索引。
 
-`QualityFinishedInspectionQuery.hasForCloseout` 仅返回同一结案根与任务是否已有检验记录，供 Production 的复检只读预览使用；它不加载历史记录内容、不判断最新放行资格，也不代替 `readForCloseout` 的锁内依据核验。详情通过来源 `previewReinspection` 获取五项复检预览字段，Production 使用[专门读取与共享纯规则](../../production/docs/database/production-termination.md#api权限与事务)，不再为此构造完整产出详情；HTTP 返回字段与权限不变。
+`QualityFinishedInspectionQuery.hasForCloseout` 仅返回同一结案根与任务是否已有检验记录，供 Production 的复检只读预览使用；它不加载历史记录内容、不判断最新放行资格，也不代替 `readForCloseout` 的锁内依据核验。详情通过来源 `previewReinspection` 获取五项复检预览字段，Production 使用[专门读取与共享纯规则](../../production/docs/database/production-termination.md#api权限与事务)，不为预览构造完整产出详情。
 
 ## 迁移保护
 

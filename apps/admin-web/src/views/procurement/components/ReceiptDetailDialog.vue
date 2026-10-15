@@ -73,7 +73,7 @@
                 :aria-current="activeLine === line.id ? 'true' : undefined"
                 @click="selectLine(line.id)"
               >
-                <span class="line-identity">{{ line.lineNo }}. {{ line.itemName }}</span>
+                <span class="line-identity">id:{{ line.id }} · {{ line.itemName }}</span>
                 <span class="line-version"
                   >{{ line.itemCode }} · {{ line.materialVariantCode }}</span
                 >
@@ -101,7 +101,7 @@
             class="receipt-current"
           >
             <div class="selected-source">
-              <strong>到货 {{ detail.receiptNo }} · 第 {{ selectedLine.lineNo }} 行</strong>
+              <strong>到货 {{ detail.receiptNo }} · id:{{ selectedLine.id }}</strong>
             </div>
             <ReceiptLineSummary :line="selectedLine" />
             <div class="work-section">
@@ -262,7 +262,6 @@
                 </InlineHint>
                 <ReceiptLineAllocations
                   :line="selectedLine"
-                  :quality="false"
                   :disabled="blocked"
                   @return="actionDialog?.open(selectedLine, 'return', $event)"
                   @inbound="goInbound(selectedLine.id)"

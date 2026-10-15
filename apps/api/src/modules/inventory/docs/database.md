@@ -19,13 +19,13 @@
 | Inventory | `stock_check_order`、`stock_check_detail` | [盘点主从表](database/stock-check.md)，仅现有物料库存批次／库存状态 |
 | Inventory，仅历史登记 | `inventory_item_balance` | 已删除投影；保留登记以检查不可修改的历史迁移，不恢复该表 |
 
-`production_item_allocation`、生产需求、`item_scrap`、生产结案及批准产出仍归 Production。旧 `return_order/detail` 已由公共入库替代，不保留影子或双写结构；Production 编排领退料来源、额度和需求履约，经 Inventory 窄能力写入／锁定实际单据。采购到货不是库存批次，采购实收与 Quality 结论不写库存；采购到货表及来料检验表分别见 [Procurement 数据库](../../procurement/docs/database.md)与 [Quality 数据库](../../quality/docs/database.md)，跨模块结构见[采购技术设计](../../../../../../docs/procurement-inbound-technical-design.md)。
+`production_item_allocation`、生产需求、`item_scrap`、生产结案及批准产出仍归 Production。生产退料使用公共入库主从；Production 编排领退料来源、额度和需求履约，经 Inventory 窄能力写入／锁定实际单据。采购到货不是库存批次，采购实收与 Quality 结论不写库存；采购到货表及来料检验表分别见 [Procurement 数据库](../../procurement/docs/database.md)与 [Quality 数据库](../../quality/docs/database.md)，跨模块结构见[采购技术设计](../../../../../../docs/procurement-inbound-technical-design.md)。
 
 ## 2. 身份与约束
 
 真实目标链为 `inbound_detail.batch_id -> item_batch.id`，内部批号只从 `item_batch.batch_code` 读取。物料使用 `item_id/material_variant_id`，成品使用独立 `product_id`，两组互斥。其他入库 new 草稿的 batch_id 可空，只有实际确认才生成／回填真实批次；已完成有效行均非空。批准成品没有可跨请求继续办理的仓库草稿，也不保存 `requested_batch_code`。target_mode/new_batch_key 保存归批意图，不是第二份真实批号。
 
-成品主单和成品库批统一标记 `finished_product`，不保存单一类别/批准版。每条成品明细以 `production_output_allocation_id` 追溯类别、批准版、检查与生产任务；一单可包含多份授权，一份授权可在多张单/多个目标批次中执行。物料入库的采购来源四列成组引用，采购到货不再保存单一 `batch_id`。生产退料行直接引用原任务、需求、return_allocation_id，领料行直接引用原 allocation；其他行不持有这些业务来源。公共单据、明细和流水同事务，来源、身份、方向、数量、单位、批次及生命周期由外键、CHECK 和触发器守卫保护，完整字段只维护在[库存主从与账本](database/inventory-ledger-and-inbound.md)。
+成品主单和成品库批统一标记 `finished_product`，不保存单一类别/批准版。每条成品明细以 `production_output_allocation_id` 追溯类别、批准版、检查与生产任务；一单可包含多份授权，一份授权可在多张单/多个目标批次中执行。物料入库的采购来源四列成组引用，采购到货不保存单一 `batch_id`。生产退料行直接引用原任务、需求、return_allocation_id，领料行直接引用原 allocation；其他行不持有这些业务来源。公共单据、明细和流水同事务，来源、身份、方向、数量、单位、批次及生命周期由外键、CHECK 和触发器守卫保护，完整字段只维护在[库存主从与账本](database/inventory-ledger-and-inbound.md)。
 
 主数据引用、批次不可变身份和成品已完成明细保护仍有效。库存流水不可更新/删除；当前成品不开放冲销。旧批次单值来源字段不能作为归属事实，查询必须从实际明细及匹配正流水汇聚来源。
 
@@ -41,7 +41,7 @@
 
 ## 4. 采购来源引用
 
-`inbound_detail` 保留真实到货明细、实收修订、检验结论与不可变分配引用。`procurement_allocation_id` 为非唯一索引，同一授权可多次实际入库并选择不同批次。`procurement_receipt_line.batch_id` 已删除；来源到目标的关系由每条已完成入库明细记录。采购允许跨供应商一次确认，逐来源有效供应商与原单/补单归属由 Procurement 核验；确认时供应商名称保存在明细，主单不持有唯一供应商，库批共用不重挂采购来源。
+`inbound_detail` 保留真实到货明细、实收修订、检验结论与不可变分配引用。`procurement_allocation_id` 为非唯一索引，同一授权可多次实际入库并选择不同批次。来源到目标的关系由每条已完成入库明细记录。采购允许跨供应商一次确认，逐来源有效供应商与原单/补单归属由 Procurement 核验；确认时供应商名称保存在明细，主单不持有唯一供应商，库批共用不重挂采购来源。
 
 库存命令复核 Product 精确身份、单位、可用批次状态和容量，按 `target` 创建或引用目标批次。来料质量、当前办理轮、授权可执行余额由 Procurement/Quality 在同池事务内校验，不能因为选择已有批次绕过。实际已入量从匹配正流水汇总，不从余额反推；退料和采购更正不改写历史来源。
 

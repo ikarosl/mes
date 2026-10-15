@@ -199,7 +199,6 @@ export async function readReceiptLines(
         ),
       ),
       purchaseOrderLineNo: Number(row.purchase_order_line_no),
-      lineNo: Number(row.line_no),
       supplierId: text(row.supplier_id),
       supplierName: text(row.supplier_name),
       itemId: text(row.item_id),

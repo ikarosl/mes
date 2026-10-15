@@ -15,10 +15,12 @@ import { DATABASE_POOL } from '../../../infrastructure/database/database.module.
 import { MaterialVariantQuery } from '../../product/public.js';
 import { QualityInboundQuery } from '../../quality/public.js';
 import { ProcurementReceiptQuery } from '../application/ports/receipt-query.js';
-import { QualityCommandError } from '../../quality/public.js';
 import { ProcurementDomainError } from '../domain/procurement.errors.js';
 import { readReceiptLines } from './queries/receipt-lines.query.js';
-import { readInspectionReceiptLine } from './queries/receipt-inspection-detail.query.js';
+import {
+  readInspectionCase,
+  readInspectionReceiptLine,
+} from './queries/receipt-inspection-detail.query.js';
 import {
   listReceipts,
   listReceiptLines,
@@ -81,14 +83,10 @@ export class MysqlProcurementReceiptQuery extends ProcurementReceiptQuery {
     return withTransaction(this.pool, (db) => listInboundReleases(db, this.variants, query));
   }
   listInspections(query: ProcurementInboundInspectionQuery) {
-    return withTransaction(this.pool, (db) => listInspections(db, this.quality, query));
+    return withTransaction(this.pool, (db) => listInspections(db, query));
   }
   getInspection(caseId: string) {
-    return withTransaction(this.pool, async (db) => {
-      const result = await listInspections(db, this.quality, { page: 1, pageSize: 1 }, caseId);
-      if (!result.items[0]) throw new QualityCommandError('NOT_FOUND', '检验办理不存在');
-      return result.items[0];
-    });
+    return withTransaction(this.pool, (db) => readInspectionCase(db, this.quality, caseId));
   }
   history(id: string, kind: ReceiptHistoryKind, query: PageQuery) {
     return withTransaction(this.pool, async (db) => {

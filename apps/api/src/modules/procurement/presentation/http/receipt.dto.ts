@@ -25,10 +25,9 @@ import {
   QUALITY_INBOUND_CASE_TYPES,
   QUALITY_INBOUND_METHODS,
   QUALITY_RELEASE_DECISIONS,
-  QUALITY_INBOUND_TASK_STATUSES,
   QUALITY_INBOUND_TEXT_MAX_LENGTH,
   RECEIPT_HISTORY_KINDS,
-  RECEIPT_ROUND_STATUSES,
+  RECEIPT_LINE_STAGES,
   RECEIPT_ALLOCATION_DISPOSITIONS,
   RECEIPT_RETURN_REASONS,
 } from '@company/constants';
@@ -49,10 +48,12 @@ const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? val
 const csv = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.split(',').map((item) => item.trim()) : value;
 const ID = /^[1-9]\d{0,19}$/;
-export class ReceiptListQueryDto extends PageQueryDto {
-  @IsOptional() @IsIn(['yes']) awaitingAcceptance?: 'yes';
+class ReceiptSourceQueryDto extends PageQueryDto {
   @IsOptional() @Transform(trim) @IsString() @MaxLength(100) keyword?: string;
   @IsOptional() @Matches(ID) supplierId?: string;
+}
+export class ReceiptListQueryDto extends ReceiptSourceQueryDto {
+  @IsOptional() @IsIn(['yes']) awaitingAcceptance?: 'yes';
   @IsOptional() @Matches(ID) purchaseOrderId?: string;
 }
 export class ReceiptAllocationCandidateQueryDto {
@@ -77,17 +78,13 @@ export class ReceiptReleaseQueryDto extends ReceiptListQueryDto {
   @Matches(ID, { each: true })
   allocationIds?: string[];
 }
-export class InboundInspectionQueryDto extends ReceiptListQueryDto {
+export class InboundInspectionQueryDto
+  extends ReceiptSourceQueryDto
+  implements ProcurementInboundInspectionQuery
+{
   @IsOptional()
-  @IsIn(RECEIPT_ROUND_STATUSES)
-  roundStatus?: ProcurementInboundInspectionQuery['roundStatus'];
-  @IsOptional()
-  @IsIn(RECEIPT_ROUND_STATUSES)
-  currentRoundStatus?: ProcurementInboundInspectionQuery['currentRoundStatus'];
-  @IsOptional()
-  @IsIn(QUALITY_INBOUND_TASK_STATUSES)
-  status?: ProcurementInboundInspectionQuery['status'];
-  @IsOptional() @IsIn(QUALITY_INBOUND_CASE_TYPES) caseType?: QualityInboundCaseType;
+  @IsIn(RECEIPT_LINE_STAGES)
+  stage?: ProcurementInboundInspectionQuery['stage'];
   @IsOptional()
   @Transform(csv)
   @IsArray()

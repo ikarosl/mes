@@ -4,8 +4,6 @@ export const QUALITY_INBOUND_CASE_TYPES = [
   'inspection_correction',
   'receipt_correction',
 ] as const;
-export const QUALITY_INBOUND_CASE_STATUSES = ['reviewing', 'completed', 'superseded'] as const;
-export const QUALITY_INSPECTION_SOURCE_KINDS = ['incoming', 'finished'] as const;
 export const QUALITY_INSPECTION_METHODS = ['full', 'sampling', 'zero_confirmation'] as const;
 export const QUALITY_INSPECTION_METHOD_LABELS = {
   full: '全检',
@@ -34,22 +32,7 @@ export const QUALITY_INBOUND_CASE_STATUS_LABELS = {
   completed: '已完成',
   superseded: '已失效',
 } as const;
-export const QUALITY_INBOUND_METHOD_LABELS = QUALITY_INSPECTION_METHOD_LABELS;
 export const QUALITY_INBOUND_TEXT_MAX_LENGTH = 4000;
-export const QUALITY_INBOUND_TASK_STATUSES = [
-  'uninspected',
-  ...QUALITY_INBOUND_CASE_STATUSES,
-] as const;
-export const QUALITY_INBOUND_TASK_STATUS_LABELS = {
-  uninspected: '待检',
-  ...QUALITY_INBOUND_CASE_STATUS_LABELS,
-} as const;
-
-export const FINISHED_INSPECTION_LIST_STATUSES = ['pending', 'recorded'] as const;
-export const FINISHED_INSPECTION_LIST_STATUS_LABELS = {
-  pending: '待检 / 待复检',
-  recorded: '已有检验记录',
-} as const;
 export const FINISHED_INSPECTION_STAGES = [
   'awaiting_draft',
   'awaiting_start',
@@ -63,10 +46,10 @@ export const FINISHED_INSPECTION_STAGES = [
 ] as const;
 export const FINISHED_INSPECTION_STAGE_LABELS = {
   awaiting_draft: '待保存产出草稿',
-  awaiting_start: '待开始检验',
-  inspecting: '待填写检验结果',
+  awaiting_start: '待检验',
+  inspecting: '检验中',
   needs_reinspection: '待复检',
-  not_released: '未放行待处理',
+  not_released: '质检不放行',
   ready_for_finalization: '待核对产出清单',
   reviewing: '清单审批中',
   approved: '已定稿',

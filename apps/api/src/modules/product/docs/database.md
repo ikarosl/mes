@@ -10,7 +10,7 @@ BOM 单位用量使用 `INT`；`chk_integer_storage_product_materials` 限制其
 
 ### 1. `item_categories`
 
-职责：统一维护物料和成品分类，不再创建第二套库存分类表。
+职责：统一维护物料和成品分类，不创建第二套库存分类表。
 
 分类仍由 Product 模块所有。旧临时决策中“移除父子层级”的目标与当前树结构缺少明确取代关系，保留为[冲突 CO-01](../../../../../../docs/documentation-conflicts.md#co-01)，当前结构不等于已裁决撤回该目标。`products.category_id`、`materials.category_id` 及分类自身的 `parent_id` 均引用这张表；API 路径 `/product/categories`、权限和公开 `ProductCategory` 契约不随物理表名改变。
 
@@ -37,7 +37,7 @@ BOM 单位用量使用 `INT`；`chk_integer_storage_product_materials` 限制其
 说明：
 
 - `material` 表示原材料、辅料、零部件等；库存中需要精确区分的版本由 `material_variants` 表示。
-- `finished_product` 表示最终成品；半成品不再是独立产品类型。
+- `finished_product` 表示最终成品；不设置独立半成品类型。
 - 分类表达“是什么”，`materials.acquire_method` / `products.acquire_method` 表达“如何获得”，两者不得混用。
 
 ---
@@ -137,7 +137,7 @@ products.default_route_id → process_routes → process_route_steps
 
 说明：
 
-- `product_id` 指向成品表；成品 ID 与物料 ID 可以数值相同，不再保留自引用不等式。
+- `product_id` 指向成品表；成品 ID 与物料 ID 可以数值相同，不限制两者数值不等。
 - `material_id` 指向 `materials.id`；需要精确库存版本时由 Production 在需求或物流事实中选择 `material_variant_id`。
 - 批量 `production_item_demand` 必须保存 `product_material_id` 和 BOM 数量、单位快照；研发不依赖 BOM，四个 BOM 专属字段为空，仍保存真实物料、版本、单位和需求数量；批次追溯统一依靠精确版本及库存批次引用，不配置 BOM 追溯开关。
 - BOM 最后一级审批通过时，`products.bom_locked_at` 与审批终态同事务写入；此后本表所有新增、修改、删除、停用、恢复和批量替换操作均拒绝。
@@ -182,7 +182,7 @@ BOM 替换命令必须包含客户端读取的 `version` 与完整 `items`；锁
 
 提交时校验客户端期望版本，写待审批及申请关联并递增 `version`；申请保存提交冻结后的版本。非末级审批不改 Product。最终批准核对当前申请和冻结版本，检查 BOM 资格后写 `approved` 与锁定事实并递增版本。驳回或撤回清空当前申请关联、恢复 `draft` 并递增版本；旧申请和证据保留在 Approval，不复用旧申请。
 
-已批准产品的名称等原本允许修改的展示字段仍遵守既有主数据规则；BOM 原则性变更继续新建成品编码。后续创建批量任务只校验批准及当前业务资格，不再触发首次锁定。单一 `product_materials` 结构保留，不增加版本头、版本行、`bom_revision` 或名称影子表。改表只能追加 migration；开发环境可重置，不把既有任务锁定回填成不存在的人工审批。
+已批准产品的名称等展示字段遵守主数据修改规则；BOM 原则性变更继续新建成品编码。创建批量任务只校验批准及当前业务资格，不写 BOM 锁定事实。单一 `product_materials` 结构保留，不增加版本头、版本行、`bom_revision` 或名称影子表。改表只能追加 migration；开发环境可重置，不把既有任务锁定回填成不存在的人工审批。
 
 ---
 
@@ -213,7 +213,7 @@ BOM 替换命令必须包含客户端读取的 `version` 与完整 `items`；锁
 
 ## 2.2 `process_steps`
 
-职责：唯一的工序主数据来源，不再创建 `processes`。
+职责：维护唯一的工序主数据。
 
 | 字段                  | 类型              | 说明                  |
 | --------------------- | ----------------- | --------------------- |
@@ -273,9 +273,9 @@ BOM 替换命令必须包含客户端读取的 `version` 与完整 `items`；锁
 
 ## 2.5 路线与 BOM 的边界
 
-当前模型不再建立 `route_step_materials`。`process_route_steps` 只保存路线工序顺序、负责人、SOP
-和规则快照；物料消耗统一来自产品级 `product_materials`，批量任务由 Production 一次完整确认全部 BOM 行的精确 `material_variant_id` 并冻结本任务配置；研发不依赖 BOM。任何按工序绑定 BOM、按路线步骤推导需求
-或以工序范围筛选补料的语义均已删除，不得恢复旁路表。
+不建立 `route_step_materials`。`process_route_steps` 只保存路线工序顺序、负责人、SOP
+和规则快照；物料消耗统一来自产品级 `product_materials`，批量任务由 Production 一次完整确认全部 BOM 行的精确 `material_variant_id` 并冻结本任务配置；研发不依赖 BOM。禁止按工序绑定 BOM、按路线步骤推导需求
+或以工序范围筛选补料，不得建立旁路表。
 
 ## 2.6 `material_variants`
 

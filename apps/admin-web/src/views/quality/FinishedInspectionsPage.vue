@@ -13,18 +13,18 @@
             placeholder="输入单号、编码或名称"
           />
         </el-form-item>
-        <el-form-item label="办理范围">
+        <el-form-item label="当前阶段">
           <el-select
-            v-model="status"
+            v-model="stage"
             clearable
-            placeholder="全部任务"
+            placeholder="全部"
             style="width: 180px"
           >
             <el-option
-              v-for="value in FINISHED_INSPECTION_LIST_STATUSES"
+              v-for="value in FINISHED_INSPECTION_STAGES"
               :key="value"
               :value="value"
-              :label="FINISHED_INSPECTION_LIST_STATUS_LABELS[value]"
+              :label="FINISHED_INSPECTION_STAGE_LABELS[value]"
             />
           </el-select>
         </el-form-item>
@@ -48,7 +48,7 @@
           <InlineHint>
             本页
             <strong>{{ rows.length }}</strong>
-            项任务，按工单分组（同单可跨页）；各任务独立办理，<strong>已有记录仍可能待检</strong>。
+            项任务，按工单分组（同单可跨页）；各任务独立办理。
           </InlineHint>
         </template>
         <template #tools>
@@ -82,12 +82,7 @@
         />
         <div class="empty-actions">
           <el-button
-            v-if="status !== 'recorded'"
-            @click="showRecorded"
-            >查看已有检验记录</el-button
-          >
-          <el-button
-            v-if="status"
+            v-if="stage || keyword"
             @click="showAll"
             >查看全部任务</el-button
           >
@@ -130,7 +125,7 @@
             class="task-grid column-heading"
             aria-hidden="true"
           >
-            <span>任务</span><span>计划量</span><span>当前办理</span><span>检验记录参考</span
+            <span>任务</span><span>计划量</span><span>当前阶段</span><span>检验记录参考</span
             ><span>下一步</span>
           </div>
           <div
@@ -214,8 +209,7 @@ import { computed, nextTick, onActivated, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { Refresh } from '@element-plus/icons-vue';
 import {
-  FINISHED_INSPECTION_LIST_STATUSES,
-  FINISHED_INSPECTION_LIST_STATUS_LABELS,
+  FINISHED_INSPECTION_STAGES,
   FINISHED_INSPECTION_STAGE_LABELS,
   FINISHED_INSPECTION_NEXT_ACTION_LABELS,
   PRODUCTION_OUTPUT_RELEASE_DECISION_LABELS,
@@ -245,7 +239,7 @@ const route = useRoute(),
   router = useRouter();
 const {
   keyword,
-  status,
+  stage,
   rows,
   page,
   pageSize,
@@ -315,12 +309,8 @@ async function resetAndExpand() {
   await reset();
   expandPage();
 }
-async function showRecorded() {
-  status.value = 'recorded';
-  await searchAndExpand();
-}
 async function showAll() {
-  status.value = '';
+  stage.value = '';
   keyword.value = '';
   await searchAndExpand();
 }

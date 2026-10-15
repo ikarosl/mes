@@ -68,14 +68,6 @@ export const RECEIPT_ROUND_STATUS_LABELS = {
   finalized: '已定稿',
   superseded: '历史轮次',
 } as const;
-export const RECEIPT_ROUND_TRIGGERS = [
-  'receipt',
-  'receipt_correction',
-  'review',
-  'acceptance_correction',
-  'manual_rejection',
-  'rejection_revocation',
-] as const;
 export const RECEIPT_ROUND_TRIGGER_LABELS = {
   rejection_revocation: '撤销拒收',
   receipt: '首次到货',
@@ -83,4 +75,25 @@ export const RECEIPT_ROUND_TRIGGER_LABELS = {
   review: '整批复检',
   acceptance_correction: '分配更正',
   manual_rejection: '人工拒收',
+} as const;
+/** 当前到货行的展示阶段，由剩余实物和当前轮共同派生，不持久化。 */
+export const RECEIPT_LINE_STAGES = [
+  'uninspected',
+  'reviewing',
+  'reinspection_required',
+  'quality_rejected',
+  'awaiting_acceptance',
+  'finalized',
+  'manual_rejection',
+  'completed',
+] as const;
+export const RECEIPT_LINE_STAGE_LABELS = {
+  uninspected: RECEIPT_ROUND_STATUS_LABELS.uninspected,
+  reviewing: RECEIPT_ROUND_STATUS_LABELS.reviewing,
+  reinspection_required: RECEIPT_ROUND_STATUS_LABELS.reinspection_required,
+  quality_rejected: RECEIPT_ROUND_STATUS_LABELS.quality_rejected,
+  awaiting_acceptance: RECEIPT_ROUND_STATUS_LABELS.awaiting_acceptance,
+  finalized: RECEIPT_ROUND_STATUS_LABELS.finalized,
+  manual_rejection: RECEIPT_ROUND_TRIGGER_LABELS.manual_rejection,
+  completed: '本批已处理完',
 } as const;

@@ -17,9 +17,7 @@
 - [采购到入库技术设计](procurement-inbound-technical-design.md)：当前表结构、状态及公开契约
 - [成品分次入库伪结构与数据示例](finished-inbound-redesign-proposal.md)：已确认模型的职责对照、实际批号与分次入库示例；实施验证及验收由路线图维护
 - [库存协作协议](inventory-extraction-design.md)：跨模块来源、事务与锁序
-- [通用出入库获批设计备查](tmp_sql_design/README.md)：公共主从与内嵌来源的评审依据；当前规则由 Inventory 所有，待验收见路线图
 - [采购管理端设计](../apps/admin-web/docs/procurement-inbound.md)：输入、候选分页、草稿、并发与幂等约束
-- [需求至入库与生产结案 UI／UX 评审](ui-ux-review.md)：Chrome 走查证据与待确认改版建议，不替代当前所有者规则
 - [前端组件复用审查](frontend-component-reuse-review.md)：静态重复证据、组件／composable 边界及保留差异；仅记录，未批准实施
 - [审批接入边界](approval-design.md)
 - [通用通知设计与提交后扩展钩子](notification-design.md)
@@ -61,7 +59,7 @@
 
 ## ADR
 
-全局方向决策（0001—0005）保留在根目录；模块决策（0008—0010、0012）的当前规则由所属模块完整维护；跨模块决策（0006、0007、0011、0013—0015、0019）保留共同边界，各模块维护其执行细节。已实现不表示决策作废，也不等于用户验收通过；部分取代与未解决冲突继续显式保留。
+全局方向决策（0001—0005）保留在根目录；模块决策（0008—0010、0012）的当前规则由所属模块完整维护；跨模块决策（0006、0007、0011、0013—0015、0019—0020）保留共同边界，各模块维护其执行细节。已实现不表示决策作废，也不等于用户验收通过；部分取代与未解决冲突继续显式保留。
 
 - [ADR 目录](adr/)
 - [工单、BOM 与顺序多级审批的业务边界](adr/0006-approval-workflow-boundaries.md)
@@ -79,3 +77,5 @@
 - [统一业务编号与北京时间职责](adr/0017-business-numbering-and-beijing-time.md)
 - [外购物料按实际确认成单](adr/0018-purchase-inbound-multiple-suppliers.md)：跨供应商合单与逐明细来源
 - [成品质检只记录检查事实](adr/0019-finished-inspection-measurement-simplification.md)：取代成品 C/R/S，保留来料库管整批核实
+
+- [公共出入库单据与来源边界](adr/0020-shared-stock-documents-and-source-boundaries.md)：公共主从与内嵌来源的取舍、其他出库保护预留的反向读取例外

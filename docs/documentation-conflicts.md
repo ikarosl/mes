@@ -2,7 +2,7 @@
 
 本索引维护尚未解决的业务定义或文档与实现差异。各项按证据明确适用范围和待决问题；实现存在只证明当前行为，不能自行撤销原设计。
 
-明确有ADR取代关系的旧工单锁版、研发BOM门禁、损耗自动补料、旧scope树、旧Quality表及旧采购表名已按证据整理，不列为未决冲突。未批准设想和待验收／待正式测试事项见[路线图](roadmap.md)。
+有明确 ADR 取代关系的规则按其适用范围执行，不列为未决冲突；已裁决项保留锚点、证据及取代范围供既有引用定位。未批准设想和待验收／待正式测试事项见[路线图](roadmap.md)。
 
 | 编号 | 主题 | 类型／当前状态 | 待处理 |
 | --- | --- | --- | --- |
@@ -12,6 +12,22 @@
 | [CO-02](#co-02) | Identity主数据审计字段 | 公共规范与owner／migration差异；待裁决 | 补齐规范还是明确经批准的例外 |
 | [CO-03](#co-03) | 演示工单生成旧业务备注 | 代码残留与已明确新规则冲突；待修正 | 后续修改demo SQL，核对展示及初始化行为 |
 | [CO-04](#co-04) | 部署迁移前业务停写 | 执行前置缺口；待明确责任并修正 | 人工维护窗口与脚本自动停写的责任及恢复流程 |
+| [CO-08](#co-08) | Production 审批证据结构版本 | Approval、Production 与路线图的版本描述不一致 | 核对版本适用范围与批准依据，统一所有者引用 |
+
+## CO-08
+
+**Production 审批证据的版本描述不一致，不能由代码存在推断旧版本规则已获准撤销。**
+
+- 一方：[Approval 数据库 §4.1](../apps/api/src/modules/approval/docs/database.md#41-approval_instances)写需求更正证据版本 1、结案产出证据版本 6。
+- 另一方：[Production 需求更正](../apps/api/src/modules/production/docs/database/demand-allocation-and-outbound.md#正式需求更正与替代)写 `schemaVersion=2`，[结案设计](../apps/api/src/modules/production/docs/database/production-termination.md)写 `schemaVersion=10`；[快照 schema](../apps/api/src/modules/production/application/production-approval-snapshot.schema.ts)的两个版本常量分别为 2、10。
+- 重复描述证据：路线图的 CP-01 数据库段写需求 v2／结案 v8，任务验收段写结案 v9；路线图改为引用所属模块，本项保留原数值差异，未将任何版本据此认定为获批或通过验收。
+- 影响与待决：审批读取、历史证据拒绝策略与正式测试夹具的预期可能不同。核对各版本的批准依据和适用范围，确认后由 Production 维护完整证据契约，Approval 引用所属模块；不得为消除文档差异引入旧证据兼容分支或改写历史快照。
+
+## CO-09
+
+到货明细 ID 的统一范围已由用户明确包含采购到货、来料检验、物料待入库／已入库记录、详情／历史及补单依据。展示遵守[采购管理端统一 ID 约定](../apps/admin-web/docs/procurement-inbound.md#21-详情定位)，投影遵守[Procurement 到货查询](../apps/api/src/modules/procurement/docs/receipt-queries.md)，不再有范围待决问题。采购行号、真实处理轮号和入库草稿序号具有独立含义，不属于到货行号展示。
+
+本锚点保留原文档冲突的定位；用户 UI 验收及正式测试见[到货与检验摘要复审](roadmap.md#采购到货与检验摘要复审已实施待验收)，不能以文档同步代替验收。
 
 ## CO-07
 
@@ -31,15 +47,9 @@
 
 ## CQ-02
 
-**用户已确认待办应按当前办理状态查询，相关查询已修正；本项不再有未裁决的业务定义或已知查询差异。**
+成品与来料列表使用单一“当前阶段”筛选的范围已由用户确认。成品的查询条件与响应阶段使用同一当前办理投影，服务端在计数及分页前筛选；历史放行不能遮蔽新轮待检／检验中，纯清单更正沿用适用放行依据进入待核对阶段。历史记录仅作为参考，详情及写命令仍独立核验资格，不修改历史检验、批准版或库存事实。
 
-- 规则依据：[成品前端约束“查询与跨页引用”](../apps/admin-web/docs/finished-inspections.md#查询与跨页引用)区分当前轮待检与已有检验历史，允许查询范围重叠；[Quality 成品规则](../apps/api/src/modules/quality/docs/finished-inspections.md#部分已入后的复检与固定范围)要求新检查在当前有效轮次办理，历史事实保留。
-- 原实现证据：[finished-inspection-tasks.query.ts](../apps/api/src/modules/quality/infrastructure/queries/finished-inspection-tasks.query.ts)从结案根的全部历史取最大检验记录 ID；原 `pending` 仅按无历史记录或历史最新结论 `pending_reinspection` 筛选，未看当前轮状态。同文件 `canStartInspection`／`canRecordInspection` 又分别采用当前轮 `pending_inspection`／`inspecting`。
-- Chrome 观察：2026-09-28 本机成品质检默认待检结果为 0；切已有记录后，`2026-09-28-1 / task_batch-004` 详情显示当前轮 #10 待检且“开始本轮检验”可用，历史 #9 为放行。观察范围及限制见 [UI／UX 评审](ui-ux-review.md)。
-- 原影响：已有历史放行的新轮待检任务可能从默认工作队列漏出，用户需去历史范围寻找；这不证明历史放行事实错误，也不等于后端允许未检入库。
-- 已裁决范围：由 Quality／Production 的当前办理投影统一查询与显示，纳入当前需要开始、填写或继续复检的任务；只有旧历史、已有适用放行依据的纯清单更正不冒充待检。历史记录查询仍可与当前待办重叠，不改写历史检验、批准版或库存事实。
-- 当前实现：`pending` 根据当前轮状态及该轮实际检查结论查询，排除无产出草稿、在审及沿用适用放行依据的纯清单更正；列表只用于导航，详情重新读取 Production 来源资格，写入时继续独立校验。历史最新记录仍仅作历史展示及适用依据判断，不再单独决定待办。
-- 剩余事项：场景核对和用户验收集中在[成品质检与产出核对整改](roadmap.md#成品质检与产出核对整改)。本锚点保留原证据及裁决关系，不将类型、构建或启动通过当作待办场景验收通过。
+本锚点保留“历史放行导致新轮待检从默认范围漏出”的原问题定位；“待办／已有检验记录”两个重叠范围已由单一阶段筛选取代。完整查询规则由[Quality 成品规则](../apps/api/src/modules/quality/docs/finished-inspections.md)及[成品前端约束](../apps/admin-web/docs/finished-inspections.md#查询与跨页引用)维护，剩余场景与正式测试见[成品质检与产出核对整改](roadmap.md#成品质检与产出核对整改)。
 
 ## CP-01
 

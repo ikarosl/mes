@@ -24,7 +24,6 @@ export type InspectionRow = RowDataPacket & {
   case_id: string;
   receipt_line_id: string;
   receipt_revision_id: string;
-  covered_quantity: null;
   inspection_method: QualityInboundInspectionItem['inspectionMethod'];
   qualified_quantity: number;
   unqualified_quantity: number;
@@ -44,12 +43,10 @@ export function mapInspection(row: InspectionRow): QualityInboundInspectionItem 
     caseId: String(row.case_id),
     receiptLineId: String(row.receipt_line_id),
     receiptRevisionId: String(row.receipt_revision_id),
-    coveredQuantity: null,
     inspectionMethod: row.inspection_method,
     qualifiedQuantity: String(row.qualified_quantity),
     unqualifiedQuantity: String(row.unqualified_quantity),
     inspectedQuantity: String(Number(row.qualified_quantity) + Number(row.unqualified_quantity)),
-    releasedQuantity: null,
     releaseDecision: row.release_decision,
     previousRecordId: nullable(row.previous_record_id),
     inspectedAt: toBeijingISOString(row.inspected_at),

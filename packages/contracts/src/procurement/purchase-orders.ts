@@ -29,7 +29,6 @@ export interface PurchaseExcessReceiptCandidate {
   id: string;
   receiptId: string;
   receiptNo: string;
-  lineNo: number;
   receivedAt: string;
   supplierBatchCode: string | null;
   receivedQuantity: string;
@@ -45,7 +44,6 @@ export interface PurchaseQualityReplacementCandidate {
   receiptLineId: string;
   receiptId: string;
   receiptNo: string;
-  receiptLineNo: number;
   receivedAt: string;
   supplierBatchCode: string | null;
   sourcePurchaseOrderLineId: string;

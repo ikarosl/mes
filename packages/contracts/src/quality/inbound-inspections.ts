@@ -1,5 +1,4 @@
 import type { QualityInspectionMethod, QualityReleaseDecision } from './inspection.js';
-import type { PageQuery } from '../common.js';
 
 export type QualityInboundCaseType =
   'initial' | 'reinspection' | 'inspection_correction' | 'receipt_correction';
@@ -21,12 +20,10 @@ export interface QualityInboundInspectionItem {
   caseId: string;
   receiptLineId: string;
   receiptRevisionId: string;
-  coveredQuantity: null;
   inspectionMethod: QualityInboundInspectionMethod;
   qualifiedQuantity: string;
   unqualifiedQuantity: string;
   inspectedQuantity: string;
-  releasedQuantity: null;
   releaseDecision: QualityReleaseDecision;
   previousRecordId: string | null;
   inspectedAt: string;
@@ -53,10 +50,4 @@ export interface QualityInboundCaseItem {
   createdBy: string;
   createdAt: string;
   inspection: QualityInboundInspectionItem | null;
-}
-
-export interface QualityInboundCaseQuery extends PageQuery {
-  receiptLineIds?: string[];
-  status?: QualityInboundCaseStatus;
-  caseType?: QualityInboundCaseType;
 }

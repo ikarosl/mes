@@ -4,7 +4,7 @@
 
 ## 稳定身份与工作流
 
-1. 分类仅使用 `item_kind = material | finished_product`；分类说明“是什么”，`acquire_method` 说明“如何获得”。半成品不再是独立产品类型。
+1. 分类仅使用 `item_kind = material | finished_product`；分类说明“是什么”，`acquire_method` 说明“如何获得”。不设置独立半成品类型。
 2. 成品写入 `products`（`item_code`），基础物料写入 `materials`（`material_code`），编码在各自表内永久唯一；编码和基础单位创建后不可修改，原则变化必须新建产品和编码。
 3. 只有已启用的自制成品可以配置 `product_materials` 和默认路线；采购物料不能配置生产工艺。
 4. BOM 投入对象只能是已启用的基础物料；BOM 是 Production 批量任务生成需求基础的唯一来源；研发手工需求不依赖 BOM。本模块只维护 BOM，不生成需求，也不回写任何历史需求。

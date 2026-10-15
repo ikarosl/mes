@@ -183,18 +183,9 @@ export const API_DISPLAY_READ_ACCESS = Object.freeze([
         'receipt_line_id',
         'status',
         'incoming_round_id',
-        'declared_quantity',
         'source_kind',
-        'case_type',
-        'created_at',
       ],
-      quality_inspection_record: [
-        'id',
-        'receipt_line_id',
-        'receipt_revision_id',
-        'case_id',
-        'release_decision',
-      ],
+      quality_inspection_record: ['id', 'receipt_line_id', 'case_id', 'release_decision'],
 
       materials: ['id', 'material_name'],
       production_item_demand: [
@@ -341,7 +332,7 @@ export const API_DISPLAY_READ_ACCESS = Object.freeze([
   {
     directory: 'apps/api/src/modules/inventory/infrastructure/queries/',
     tables: {
-      procurement_receipt_line: ['id', 'receipt_id', 'line_no'],
+      procurement_receipt_line: ['id', 'receipt_id'],
       procurement_receipt: ['id', 'receipt_no', 'purchase_order_id'],
       procurement_receipt_allocation: ['id', 'receipt_line_id', 'purchase_order_line_id'],
       procurement_order_line: ['id', 'purchase_order_id', 'line_no', 'supplier_id'],

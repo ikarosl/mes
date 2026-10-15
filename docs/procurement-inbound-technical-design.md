@@ -5,9 +5,11 @@
 | 所有者 | 当前表与公开能力 | 边界 |
 | --- | --- | --- |
 | Procurement | procurement_order*、receipt/line/revision/round、receipt_acceptance/allocation、supplier_return；来源命令 | 采购来源、实物草稿、正式分配、退回及关闭，禁止写需求或库存 |
-| Quality | quality_inspection_case/record；QualityInboundCommand/Query、QualityFinishedInspectionQuery及来源registry | 共用不可变检查事实；来料G/F与结论，成品保留C规则；不写来源草稿 |
+| Quality | quality_inspection_case/record；QualityInboundCommand/Query、QualityFinishedInspectionQuery及来源registry | 共用不可变检查事实；来料／成品只记录G/F与明确结论；不写来源草稿 |
 | Production | 任务、production_batch_closeout、production_output_round/revision/allocation | 产线修正、结案审批、批准清单，公开能力引用QC |
 | Inventory | item_batch、inbound_order/detail、inventory_transaction与余额 | 只记录实际库存，消费精确正式依据，不能把待检保管量写成可用库存 |
+
+来料整批 C 由 Procurement 库管定稿核实。成品按 [ADR-0019](adr/0019-finished-inspection-measurement-simplification.md) 仅在 Production 定稿引用放行全检记录时，按原检验轮已入基准加 G 提示累计目标差额；Quality 不生成整批 C 或放行数量建议。
 
 表均按公共审计、整数数量、FK/组合FK、并发和不可变规则设计。Quality source_kind与显式来源组互斥；结果冗余稳定来源ID仅用于组合FK，由case约束一致。采购原始来源仍固定，履约归属从不可变分配及有效范围取得。
 

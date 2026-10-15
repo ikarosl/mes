@@ -66,8 +66,21 @@ type TransactionRow = RowDataPacket & {
   remark: string | null;
   created_at: Date;
 };
-// 成品名称使用 Production 已冻结的来源工单名称；物料继续读当前名称，不跨模块读取 products。
-const finishedNameSql = `(SELECT wo.product_name_snapshot FROM inbound_detail d JOIN inbound_order o ON o.id=d.inbound_id JOIN work_orders wo ON wo.id=o.work_order_id WHERE d.batch_id=ib.id AND o.status='completed' ORDER BY d.id LIMIT 1)`;
+// 来源只认已完成、未删除明细与所属场景的匹配原始正流水，不以库批建批来源推断。
+const completedInboundSourceSql = `FROM inbound_detail d
+  JOIN inbound_order o ON o.id=d.inbound_id AND o.source_type=d.source_type AND o.status='completed' AND d.is_deleted=0
+  JOIN inventory_transaction it ON it.reference_type='inbound_detail' AND it.reference_detail_id=d.id
+    AND it.transaction_type=CASE o.source_type
+      WHEN 'purchased' THEN 'purchase_inbound' WHEN 'finished_product' THEN 'production_inbound'
+      WHEN 'return_inbound' THEN 'material_return_inbound' WHEN 'other' THEN 'other_inbound' END
+    AND it.reversal_of_transaction_id IS NULL AND it.quantity=d.inbound_number AND it.quantity>0
+    AND it.batch_id=d.batch_id AND it.unit_snapshot=d.unit_snapshot AND it.stock_status=d.stock_status
+    AND ((d.product_id IS NOT NULL AND it.product_id=d.product_id) OR (d.product_id IS NULL AND it.item_id=d.item_id AND it.material_variant_id=d.material_variant_id))`;
+// 有真实工单来源时保留冻结名称；其他成品回退到历史身份的当前名称，不补造生产来源。
+const finishedWorkOrderNameSql = `(SELECT wo.product_name_snapshot ${completedInboundSourceSql}
+  JOIN work_orders wo ON wo.id=o.work_order_id WHERE d.batch_id=ib.id ORDER BY d.id LIMIT 1)`;
+const currentProductNameSql = `(SELECT p.product_name FROM products p WHERE p.id=ib.product_id)`;
+const finishedNameSql = `COALESCE(${finishedWorkOrderNameSql},${currentProductNameSql})`;
 const displayNameSql = `CASE WHEN ib.product_id IS NULL THEN ${currentMaterialNameSql('ib.item_id')} ELSE ${finishedNameSql} END`;
 const batchSourceSql = (columns: string): string => `SELECT ${columns} FROM item_batch ib`;
 
@@ -83,18 +96,16 @@ export async function listInventoryBatches(
       query.itemKind === 'material' ? 'ib.product_id IS NULL' : 'ib.product_id IS NOT NULL',
     );
   if (query.sourceType) {
-    const sourceBatchIdsSql = `SELECT source_detail.batch_id FROM inbound_detail source_detail
-      JOIN inbound_order source_order ON source_order.id=source_detail.inbound_id AND source_order.status='completed'
-      LEFT JOIN production_output_allocation source_allocation ON source_allocation.id=source_detail.production_output_allocation_id
-      WHERE COALESCE(source_allocation.category,source_order.source_type)=? OR source_order.source_type=?`;
+    const sourceBatchIdsSql = `SELECT d.batch_id ${completedInboundSourceSql}
+      LEFT JOIN production_output_allocation a ON a.id=d.production_output_allocation_id
+      WHERE COALESCE(a.category,o.source_type)=? OR o.source_type=?`;
     where.push(`ib.id IN (${sourceBatchIdsSql})`);
     params.push(query.sourceType, query.sourceType);
   }
   if (query.keyword) {
-    const sourceKeywordBatchIdsSql = `SELECT source_detail.batch_id FROM inbound_detail source_detail
-      JOIN inbound_order source_order ON source_order.id=source_detail.inbound_id AND source_order.status='completed'
-      LEFT JOIN production_batches source_batch ON source_batch.id=source_order.production_batch_id
-      LEFT JOIN work_orders source_work_order ON source_work_order.id=source_order.work_order_id
+    const sourceKeywordBatchIdsSql = `SELECT d.batch_id ${completedInboundSourceSql}
+      LEFT JOIN production_batches source_batch ON source_batch.id=o.production_batch_id
+      LEFT JOIN work_orders source_work_order ON source_work_order.id=o.work_order_id
       WHERE source_batch.batch_no LIKE ? OR source_work_order.work_order_no LIKE ?`;
     where.push(
       `(ib.item_code_snapshot LIKE ? OR ${displayNameSql} LIKE ? OR ib.material_variant_code_snapshot LIKE ? OR ib.id IN (${sourceKeywordBatchIdsSql}))`,
@@ -181,11 +192,7 @@ async function loadInventories(
        CASE WHEN COUNT(DISTINCT d.supplier_name_snapshot)=1 AND SUM(d.supplier_name_snapshot IS NULL)=0 THEN MIN(d.supplier_name_snapshot) ELSE NULL END provider,
        CASE WHEN COUNT(DISTINCT o.work_order_id)=1 AND SUM(o.work_order_id IS NULL)=0 THEN MIN(o.work_order_id) ELSE NULL END source_work_order_id,
        CASE WHEN COUNT(DISTINCT o.production_batch_id)=1 AND SUM(o.production_batch_id IS NULL)=0 THEN MIN(o.production_batch_id) ELSE NULL END source_production_batch_id
-       FROM inbound_detail d JOIN inbound_order o ON o.id=d.inbound_id AND o.status='completed'
-       JOIN inventory_transaction t ON t.reference_type='inbound_detail' AND t.reference_detail_id=d.id
-         AND t.batch_id=d.batch_id AND t.quantity=d.inbound_number AND t.unit_snapshot=d.unit_snapshot AND t.stock_status=d.stock_status
-         AND t.transaction_type IN ('purchase_inbound','production_inbound') AND t.quantity>0
-         AND ((d.product_id IS NOT NULL AND t.product_id=d.product_id) OR (d.product_id IS NULL AND t.item_id=d.item_id AND t.material_variant_id=d.material_variant_id))
+       ${completedInboundSourceSql}
        WHERE d.batch_id IN (${placeholders}) GROUP BY d.batch_id) source_summary ON source_summary.batch_id=ib.id
      LEFT JOIN production_batches source_batch ON source_batch.id=source_summary.source_production_batch_id
      LEFT JOIN work_orders source_order ON source_order.id=source_summary.source_work_order_id
@@ -195,11 +202,7 @@ async function loadInventories(
   );
   const [sources] = await db.query<SourceRow[]>(
     `SELECT d.batch_id,d.id inbound_detail_id,o.id inbound_id,o.inbound_no,d.supplier_name_snapshot provider,o.inbound_at,d.inbound_number,it.id transaction_id,COALESCE(a.category,o.source_type) source_type,r.id output_revision_id,r.revision_no output_revision_no,d.production_output_allocation_id,o.production_batch_id,o.work_order_id,d.procurement_receipt_line_id,d.procurement_receipt_revision_id,d.procurement_inspection_id,d.procurement_allocation_id
-     FROM inbound_detail d JOIN inbound_order o ON o.id=d.inbound_id AND o.status='completed'
-     JOIN inventory_transaction it ON it.reference_type='inbound_detail' AND it.reference_detail_id=d.id
-       AND it.transaction_type IN ('purchase_inbound','production_inbound') AND it.quantity=d.inbound_number AND it.quantity>0
-       AND it.batch_id=d.batch_id AND it.unit_snapshot=d.unit_snapshot AND it.stock_status=d.stock_status
-       AND ((d.product_id IS NOT NULL AND it.product_id=d.product_id) OR (d.product_id IS NULL AND it.item_id=d.item_id AND it.material_variant_id=d.material_variant_id))
+     ${completedInboundSourceSql}
      LEFT JOIN production_output_allocation a ON a.id=d.production_output_allocation_id
      LEFT JOIN production_output_revision r ON r.id=a.revision_id
      WHERE d.batch_id IN (${placeholders}) ORDER BY d.batch_id,d.id`,

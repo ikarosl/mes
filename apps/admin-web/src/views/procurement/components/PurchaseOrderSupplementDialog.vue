@@ -251,10 +251,10 @@
               size="small"
             >
               <el-table-column
-                label="到货单 / 行"
+                label="到货单 / 明细 ID"
                 min-width="180"
               >
-                <template #default="{ row }">{{ row.receiptNo }} · 第 {{ row.lineNo }} 行</template>
+                <template #default="{ row }">{{ row.receiptNo }} · id:{{ row.id }}</template>
               </el-table-column>
               <el-table-column
                 label="实际到货"
@@ -303,11 +303,11 @@
               size="small"
             >
               <el-table-column
-                label="到货单 / 行"
+                label="到货单 / 明细 ID"
                 min-width="180"
               >
                 <template #default="{ row }"
-                  >{{ row.receiptNo }} · 第 {{ row.receiptLineNo }} 行</template
+                  >{{ row.receiptNo }} · id:{{ row.receiptLineId }}</template
                 >
               </el-table-column>
               <el-table-column
@@ -383,15 +383,16 @@
               v-if="reason === 'excess_purchase' && draft.selectedExcess"
               class="selected-basis"
             >
-              已选 {{ draft.selectedExcess.receiptNo }} · 第 {{ draft.selectedExcess.lineNo }} 行 ·
-              到货明细 ID {{ draft.selectedExcess.id }}
+              已选 {{ draft.selectedExcess.receiptNo }} · id:{{ draft.selectedExcess.id }}
             </div>
             <div
               v-if="reason === 'quality_replacement' && draft.selectedQuality"
               class="selected-basis"
             >
-              已选 {{ draft.selectedQuality.receiptNo }} · 第
-              {{ draft.selectedQuality.receiptLineNo }} 行 · 分配 ID
+              已选 {{ draft.selectedQuality.receiptNo }} · id:{{
+                draft.selectedQuality.receiptLineId
+              }}
+              · 分配 ID
               {{ draft.selectedQuality.allocationId }}
             </div>
             <el-form

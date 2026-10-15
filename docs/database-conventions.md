@@ -7,7 +7,7 @@
 
 ## 采购表命名边界
 
-业务表按所有者命名。Procurement 使用 `procurement_` 前缀，Quality／Inventory 表不因参与采购而改归属；HTTP 路径和既有外键列名不随表名机械替换。现行结构见[采购数据库](../apps/api/src/modules/procurement/docs/database.md)，不再维护旧新表名转换清单。
+业务表按所有者命名。Procurement 使用 `procurement_` 前缀，Quality／Inventory 表不因参与采购而改归属；HTTP 路径和既有外键列名不随表名机械替换。现行结构见[采购数据库](../apps/api/src/modules/procurement/docs/database.md)。
 
 ## 统一审计规则
 

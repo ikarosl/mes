@@ -3,6 +3,22 @@ import type { Db } from '../mysql-purchase-order.shared.js';
 import { allocationInboundSum, allocationReturnedSum } from './receipt-allocation.query.js';
 import { type ReadRow, inboundFactSelect, slots, text } from './receipt-read.shared.js';
 
+const receiptInboundTotalsSelect = (where = ''): string =>
+  `${inboundFactSelect('detail.procurement_receipt_line_id receipt_line_id,SUM(tx.quantity) quantity')}
+    ${where} GROUP BY detail.procurement_receipt_line_id`;
+const receiptReturnTotalsSelect = (where = ''): string =>
+  `SELECT receipt_line_id,SUM(returned_quantity) quantity,
+    SUM(CASE WHEN reason_type='quality' THEN returned_quantity ELSE 0 END) quality_quantity
+  FROM procurement_supplier_return ${where} GROUP BY receipt_line_id`;
+/** 供分页前的阶段筛选使用；与实物数量投影共用库存流水及退回事实。 */
+export const receiptPhysicalQuantityJoins = (): string =>
+  `JOIN procurement_receipt_revision current_revision
+    ON current_revision.id=line.current_receipt_revision_id AND current_revision.receipt_line_id=line.id
+  LEFT JOIN (${receiptInboundTotalsSelect()}) physical_inbound ON physical_inbound.receipt_line_id=line.id
+  LEFT JOIN (${receiptReturnTotalsSelect()}) physical_returns ON physical_returns.receipt_line_id=line.id`;
+export const RECEIPT_UNPROCESSED_QUANTITY =
+  '(current_revision.received_quantity-COALESCE(physical_inbound.quantity,0)-COALESCE(physical_returns.quantity,0))';
+
 export async function readReceiptQuantitySummaries(
   db: Db,
   ids: string[],
@@ -91,17 +107,14 @@ export async function readReceiptPhysicalQuantities(
   if (!ids.length) return result;
   const marks = slots(ids);
   const [inboundSums] = await db.query<ReadRow[]>(
-    `${inboundFactSelect('detail.procurement_receipt_line_id receipt_line_id,SUM(tx.quantity) quantity')}
-    AND detail.procurement_receipt_line_id IN (${marks}) GROUP BY detail.procurement_receipt_line_id`,
+    receiptInboundTotalsSelect(`AND detail.procurement_receipt_line_id IN (${marks})`),
     ids,
   );
   const inboundTotals = new Map(
     inboundSums.map((row) => [text(row.receipt_line_id), Number(row.quantity)]),
   );
   const [returnSums] = await db.query<ReadRow[]>(
-    `SELECT receipt_line_id,SUM(returned_quantity) quantity,
-      SUM(CASE WHEN reason_type='quality' THEN returned_quantity ELSE 0 END) quality_quantity
-    FROM procurement_supplier_return WHERE receipt_line_id IN (${marks}) GROUP BY receipt_line_id`,
+    receiptReturnTotalsSelect(`WHERE receipt_line_id IN (${marks})`),
     ids,
   );
   const returnTotals = new Map(returnSums.map((row) => [text(row.receipt_line_id), row]));

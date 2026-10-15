@@ -8,7 +8,6 @@ type SourceRow = RowDataPacket & {
   receipt_id: number;
   receipt_no: string;
   receipt_line_id: number;
-  receipt_line_no: number;
   receipt_purchase_no: string;
   purchase_order_id: number;
   purchase_no: string;
@@ -28,7 +27,7 @@ export async function loadPurchaseInboundSources(
   if (!detailIds.length) return sources;
   const [rows] = await db.query<SourceRow[]>(
     `SELECT detail.id inbound_detail_id,receipt.id receipt_id,receipt.receipt_no,
-      receipt_line.id receipt_line_id,receipt_line.line_no receipt_line_no,
+      receipt_line.id receipt_line_id,
       receipt_order.purchase_no receipt_purchase_no,
       assigned_order.id purchase_order_id,assigned_order.purchase_no,
       assigned_line.id purchase_order_line_id,assigned_line.line_no purchase_order_line_no,
@@ -54,7 +53,6 @@ export async function loadPurchaseInboundSources(
         receiptId: String(row.receipt_id),
         receiptNo: row.receipt_no,
         receiptLineId: String(row.receipt_line_id),
-        receiptLineNo: Number(row.receipt_line_no),
         purchaseOrderNo: row.receipt_purchase_no,
       },
       purchaseOrder: {

@@ -21,7 +21,7 @@
 
 研发与批量共用产出草稿、独立检验、管理员核对、工单负责人审批及仓管入库。成品按计划内／计划外形成正式授权；授权可分次消费，每条实际入库可选择新建或合资格已有库存批次。两类是授权归属，不是库存批次身份。已入事实不改写，累计更正不得低于对应类别的历史已入量，零量不建授权。研发可关联新成品和新工单继续下一轮，旧轮需求、物料、产出及待入库事实不转移。
 
-成品质检计算提供数量建议，明确放行后由产线核对、负责人批准。重新办理时固定历史已入基准，并暂停旧轮剩余授权；本轮检验仅覆盖剩余实物。批准依据、检查事实及实际入库明细分别保留，详细规则见[成品检验](../apps/api/src/modules/quality/docs/finished-inspections.md)及 [ADR-0016](adr/0016-inbound-authorizations-and-stock-batches.md)。本次结构与流程切换的验证、用户验收和正式测试状态以[路线图](roadmap.md)为准。
+成品质检只记录检查事实与明确结论，产出数量由产线核对、负责人批准；仅引用放行全检记录定稿时，由 Production 按原检验轮已入基准加合格数提示累计目标差额，见 [ADR-0019](adr/0019-finished-inspection-measurement-simplification.md)。重新办理时固定历史已入基准，并暂停旧轮剩余授权；本轮检验仅覆盖剩余实物。批准依据、检查事实及实际入库明细分别保留，详细规则见[成品检验](../apps/api/src/modules/quality/docs/finished-inspections.md)及 [ADR-0016](adr/0016-inbound-authorizations-and-stock-batches.md)。验证、用户验收和正式测试状态以[路线图](roadmap.md)为准。
 
 公共出入库复用主从表，在明细内保存有类型来源外键；生产退料归并公共入库，其他单可独立办理物料和成品，不回写生产／采购履约。其他入出库提供草稿、整单确认与取消，不新增质检定稿或审批。完整规则见 [Inventory](../apps/api/src/modules/inventory/docs/database.md)，用户验收及正式测试仍见[路线图](roadmap.md#通用出入库后续阶段)。
 

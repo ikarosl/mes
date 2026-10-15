@@ -1,6 +1,6 @@
 # 成品分次入库：结构对照与数据示例
 
-本文用简化字段和几条数据解释已确认的分次授权与自主归批方案，不作为完整表定义。方案依据见 [ADR-0016](adr/0016-inbound-authorizations-and-stock-batches.md)，本次实施、用户验收和正式测试状态见[路线图](roadmap.md#成品物料入库统一整改代码核对清单)。
+本文用简化字段和几条数据解释已确认的分次授权与自主归批方案，不作为完整表定义。方案依据见 [ADR-0016](adr/0016-inbound-authorizations-and-stock-batches.md)，实施、用户验收和正式测试状态见[路线图](roadmap.md#成品物料入库统一整改代码核对清单)。
 
 完整字段、约束和接口分别由 [Production 结案与批准版](../apps/api/src/modules/production/docs/database/production-termination.md)、[Procurement 正式分配](../apps/api/src/modules/procurement/docs/receipt-acceptance.md)、[Quality 检验表](../apps/api/src/modules/quality/docs/database.md)及 [Inventory 入库与库存](../apps/api/src/modules/inventory/docs/database/inventory-ledger-and-inbound.md)维护。本文省略通用审计、外键类型和索引细节；以下符号 ID 仅用于说明关系。
 
@@ -10,10 +10,10 @@
 | --- | --- | --- |
 | 来源身份与当前指针 | receipt / receipt_line | 已有 production_batches / production_batch_closeout |
 | 到货核实数量修订 | receipt_revision | 不照搬；成品已有产出草稿、Quality 实测及批准产出，不虚构一次到货 |
-| 剩余实物办理轮次 | receipt_round | 新增 production_output_round |
-| 检验办理与不可变结果 | quality_inspection_case / record | 复用同一套 Quality 表，补成品轮次引用 |
+| 剩余实物办理轮次 | receipt_round | production_output_round |
+| 检验办理与不可变结果 | quality_inspection_case / record | 复用同一套 Quality 表，引用成品轮次 |
 | 正式确认依据 | receipt_acceptance | 复用 production_output_revision，保留负责人审批 |
-| 本轮执行授权 | receipt_allocation | 新增 production_output_allocation |
+| 本轮执行授权 | receipt_allocation | production_output_allocation |
 | 实际入库及库存 | inbound_order/detail、item_batch、inventory_transaction | 复用 Inventory 表，按明细关联授权及目标批次 |
 
 不复制物料的供应商、采购行、补单归属、实收修订、人工拒收和退供应商字段。成品保留生产任务、计划内外、负责人审批、产品报废及零产出核实。Quality 两来源均只录 G/F；来料整批 C 由库管在 Procurement 正式清单核实，成品质检不录整批 C。成品数量简化的取代关系见 [ADR-0019](adr/0019-finished-inspection-measurement-simplification.md)。
@@ -24,16 +24,16 @@
 
 ```text
 id / production_batch_id             结案根及任务
-current_round_id                    新增：当前办理轮次
+current_round_id                    当前办理轮次
 current_revision_id                 最近批准版本；单独有它不代表还能入库
 available_quantity / extra_quantity 当前可编辑草稿的累计计划内／外目标
 inspection_record_id                当前草稿选用的检验依据
 pending_approval_id / version        审批与乐观锁；原说明、报废等字段继续保留
 ```
 
-取消的是仓库入库单的持久化草稿，不是这份产出草稿。任务中间过程、收尾事项与已批准产出仍各按原所有者管理。
+产出草稿由 Production 维护，仓库确认成品入库时一次成单，不保存持久化入库草稿。任务中间过程、收尾事项与已批准产出各按所属模块管理。
 
-### 2.2 办理轮次：新增 production_output_round（Production）
+### 2.2 办理轮次：production_output_round（Production）
 
 ```text
 id / closeout_id / round_no
@@ -55,7 +55,7 @@ reason / created_by / created_at / updated_by / updated_at / version
 ### 2.3 检验：复用 Quality 两表
 
 ```text
-quality_inspection_case：新增 finished_round_id，绑定实际发起检查的轮次
+quality_inspection_case：finished_round_id 绑定实际发起检查的轮次
 quality_inspection_record：保存 case_id、G/F、方式、明确结论、前驱及凭据；共用 covered_quantity 列对两来源新结果均为 NULL
 ```
 
@@ -64,7 +64,7 @@ quality_inspection_record：保存 case_id、G/F、方式、明确结论、前�
 ### 2.4 正式批准：复用 production_output_revision（Production）
 
 ```text
-id / closeout_id / round_id          round_id 新增；每轮至多一个批准版
+id / closeout_id / round_id          每轮至多一个批准版
 revision_no / previous_revision_id
 approval_instance_id                原负责人审批，不能省略
 inspection_record_id                本版实际采用的检验，可来自此前仍适用的检查轮
@@ -73,7 +73,7 @@ additional_scrap_quantity / existing_scrap_quantity
 correction_reason / review_snapshot / created_by / created_at
 ```
 
-### 2.5 授权明细：新增 production_output_allocation（Production）
+### 2.5 授权明细：production_output_allocation（Production）
 
 ```text
 id / revision_id / round_id / closeout_id
@@ -83,7 +83,7 @@ remark / created_by / created_at
 UNIQUE(revision_id, category)        本版每类别一条授权即可；入库可以拆很多次
 ```
 
-本稿选择以“本轮剩余授权”作为唯一结构化明细量。批准版的累计计划内／外量分别由本轮对应已入基准加授权量得到；现有 revision.available_quantity/extra_quantity 在结构切换时改为查询派生，不同时维护另一套可编辑总量。API、打印及审批仍显示累计值，审批快照是不可变当时证据；同事务核对它与基准＋授权一致。草稿填写累计量，批准时转换成授权明细。
+“本轮剩余授权”是唯一结构化明细量。批准版的累计计划内／外量分别由本轮对应已入基准加授权量查询派生，不同时维护另一套可编辑总量。API、打印及审批仍显示累计值，审批快照是不可变当时证据；同事务核对它与基准＋授权一致。草稿填写累计量，批准时转换成授权明细。
 
 例如累计目标计划内80、计划外20，基准计划内0、计划外20，则只创建计划内授权80，不再创建计划外授权20。基准是固定历史快照，不随执行增加；累计展示也不能再加本轮后来入库量。
 
@@ -102,7 +102,7 @@ inventory_transaction              每条实际入库明细对应正流水，库
 item_batch                          库存身份和批号，不持有唯一的计划内外归属
 ```
 
-每条明细只能消费一条授权、进入一个批次；一份授权可被多条明细消费，多份授权可进入同一批次。允许同次确认多授权／多目标时逐明细表达，主单不再保存唯一 output_revision_id，成品 source_type 为 finished_product；批准版由明细的授权引用追溯。物料／成品引用字段组保持明确、互斥和同源约束。批次不能用第一次或最后一次来源代表全部；来源按明细查询。
+每条明细只能消费一条授权、进入一个批次；一份授权可被多条明细消费，多份授权可进入同一批次。允许同次确认多授权／多目标时逐明细表达，主单不保存唯一 output_revision_id，成品 source_type 为 finished_product；批准版由明细的授权引用追溯。物料／成品引用字段组保持明确、互斥和同源约束。批次不能用第一次或最后一次来源代表全部；来源按明细查询。
 
 主单、明细、批次创建、流水和审计原子提交；页面没有服务端可继续办理的入库草稿。选择已有批次须为同成品或同物料精确版本、同单位且状态允许入库。跨任务／到货可共用合资格批次；外购物料单据的跨供应商边界见 [ADR-0018](adr/0018-purchase-inbound-multiple-suppliers.md)。本例使用同任务、同产品的归批。
 
@@ -116,9 +116,9 @@ item_batch                          库存身份和批号，不持有唯一的�
 | D2 | IN002 | A3 | B1（批号001） | 30 |
 | D3 | IN003 | A3 | B1（批号001） | 50 |
 
-批次页显示三次历史，单据页分别显示各次交接；库存余额仍来自流水。授权来源移到明细后，不能继续假设主单或批次只有一个类别／批准版。保留或补齐支持按 batch_id、inbound_id、授权ID定位及稳定分页的索引，先复用已有前缀索引，避免重复建立。多来源混在同一库批后的领用只能追到库批及其来源集合，不能凭这些入库记录推断精确消耗了哪次来源。
+批次页显示三次历史，单据页分别显示各次交接；库存余额仍来自流水。授权来源由明细表达，主单或批次可包含多个类别／批准版。保留或补齐支持按 batch_id、inbound_id、授权ID定位及稳定分页的索引，先复用已有前缀索引，避免重复建立。多来源混在同一库批后的领用只能追到库批及其来源集合，不能凭这些入库记录推断精确消耗了哪次来源。
 
-原 requested_batch_code 是成品待确认草稿的拟用批号。取消持久化入库草稿后删除该列，实际批号经 inbound_detail.batch_id 关联 item_batch.batch_code 查询，不另存一份重复字符串。
+实际批号经 inbound_detail.batch_id 关联 item_batch.batch_code 查询，不在入库明细中保存重复的批号字符串。
 
 ```text
 新批次：target = { mode: new, clientKey: local-1, batchCode: 001 }

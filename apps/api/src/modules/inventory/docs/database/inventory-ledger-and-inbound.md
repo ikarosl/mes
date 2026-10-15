@@ -94,6 +94,16 @@
 
 原始流水唯一键 `(original_posting_key)` 对 inbound_detail、outbound_detail、stock_check_detail 的每条来源只允许一笔原始记账；不会因 `transaction_group_key` 非空跳过去重。另保留 `(idempotency_key)`、`(reversal_of_transaction_id)` 唯一键及原流水 FK。索引为 `(reference_type,reference_detail_id,id)`、物料／成品各自的 `(身份ID,batch_id,stock_status,created_at)`、`(transaction_group_key)`、`(batch_id,stock_status,id)`。
 
+原始流水的 `idempotency_key` 由服务端按实际明细 ID 生成，流水 INSERT 守卫核验精确格式：
+
+| 来源 | `idempotency_key` | 生成的 `original_posting_key` |
+| --- | --- | --- |
+| 入库明细 | `INBOUND:<inboundDetailId>` | `inbound_detail:<inboundDetailId>` |
+| 出库明细 | `OUTBOUND:<outboundDetailId>` | `outbound_detail:<outboundDetailId>` |
+| 非零盘点差额明细 | `STOCKCHECK:<stockCheckDetailId>` | `stock_check_detail:<stockCheckDetailId>` |
+
+例如入库明细 123 的两个键分别为 `INBOUND:123` 和 `inbound_detail:123`；均使用明细 ID，不使用主单号或批次 ID。单据重复确认返回既有结果，不换键追加流水；分组键不能绕过明细防重。此表限定原始记账，基础冲销走独立镜像校验且 `original_posting_key` 为空；HTTP `Idempotency-Key` 保护整次业务命令，与流水键分别维护。
+
 生成来源列为 STORED：只依据普通 reference 列生成，FK 统一 RESTRICT，不级联；触发器读取 NEW.reference_type/reference_detail_id，不能读取 NEW 生成列。分别建立：
 
 | 生成分支 | 有类型来源外键 |
@@ -104,9 +114,9 @@
 
 流水同时建立物料、精确版本、成品及物料／成品批次组合 FK。身份 XOR 和交易类型范围使实际 FK 分支的列全部非空，不能用 NULL 绕过来源校验。旧将所有成品 reference 固定指向 inbound_detail 的 FK 由上述分支替代。六场景只记 available，每条有效明细的原始流水类型、方向、绝对数量、单位、精确身份、真实批次及未删来源必须与单据场景匹配。
 
-交易代码完整集合为 purchase_inbound、production_inbound、outsourced_inbound、production_material_outbound、sales_outbound、material_return_inbound、scrap_outbound、stock_check_adjustment、status_transfer_in、status_transfer_out、other_inbound、other_outbound；非六场景及既有物料盘点的代码不因此开放入口。库存状态仍为 available、pending_inspection、frozen、defective；`reference_type` 保留 inbound_detail、outbound_detail、stock_check_detail、scrap、inspection_record、manual，删除 return_detail，退料改引用 inbound_detail。
+交易代码完整集合为 purchase_inbound、production_inbound、outsourced_inbound、production_material_outbound、sales_outbound、material_return_inbound、scrap_outbound、stock_check_adjustment、status_transfer_in、status_transfer_out、other_inbound、other_outbound；非六场景及既有物料盘点的代码不因此开放入口。库存状态仍为 available、pending_inspection、frozen、defective；`reference_type` 为 inbound_detail、outbound_detail、stock_check_detail、scrap、inspection_record、manual，退料引用 inbound_detail。
 
-流水 UPDATE/DELETE 被数据库拒绝。基础冲销保留同一原流水一次整笔全额反向事实，身份、状态、单位、交易类型和业务引用相同；不因本次结构开放撤销已确认单据、成品冲销、部分冲销或任意 manual 流水。人工补差通过新的其他单据，原业务履约和原明细保留。
+流水 UPDATE/DELETE 被数据库拒绝。基础冲销保留同一原流水一次整笔全额反向事实，身份、状态、单位、交易类型和业务引用相同；当前不开放撤销已确认单据、成品冲销、部分冲销或任意 manual 流水。人工补差通过新的其他单据，原业务履约和原明细保留。
 
 测试专用 `_test/_ci` 库允许 fixture 在同一连接临时设置 `@company_inventory_test_cleanup=1` 清理自身数据，释放连接前清空；非专用库该变量无效。该例外不属于生产写入口。批次详情按时间和流水 ID 倒序展示全部正负流水、真实来源、分组及冲销引用，不只展示入库正流水。
 
@@ -298,7 +308,7 @@ finished_product 要求任务／工单／产品全非空，return_inbound 要求
 
 采购的 `(receipt_line,item_id,material_variant_id)`、`(receipt_revision,receipt_line)`、`(inspection,receipt_line)`、`(allocation,receipt_line)` 分别引用真实来源候选键；这些字段使用各自 procurement 前缀列名。组合 FK 只保证同到货行，当前轮、采用修订／检验、disposition=inbound、正式 allocation 与本次额度仍由 Procurement public 及数据库来源守卫核验。供应商名称为该实际明细确认时的快照；稳定 ID 沿真实来源解析，不能从快照名称猜 ID。
 
-成品授权引用 production_output_allocation(id)，跨表守卫与来源公开命令校验授权→修订→任务／产品、父单同产品及剩余量。移除旧 `(inbound_id,product_id) → inbound_order(id,product_id)` 固定成品 FK：other 主单产品为空而行可为成品，不能继续套用。流水使用本节两类身份候选键。
+成品授权引用 production_output_allocation(id)，跨表守卫与来源公开命令校验授权→修订→任务／产品、父单同产品及剩余量。other 主单产品为空而行可为成品，不使用 `(inbound_id,product_id) → inbound_order(id,product_id)` 固定成品 FK。流水使用本节两类身份候选键。
 
 每个已完成有效明细恰有匹配原始正流水。采购／成品同事务确认按 pending → 明细／目标 → 流水 → completed 执行，外部仍一次来源确认，无新增仓库草稿步骤。供应商摘要、批次来源和追溯按实际明细与匹配流水汇聚，共批不合并检查、不重挂采购／生产授权，也不推断后续领用精确消费某次来源的份额。
 
@@ -306,7 +316,7 @@ finished_product 要求任务／工单／产品全非空，return_inbound 要求
 
 ### 12. `outbound_order`
 
-公共出库整表归 Inventory。生产领料沿用 PMO，其他出库使用 OO；Production 只提供领料资格及履约。未开放 picked/partially_outbound 已移除，其他 pending_picking 在管理端表达草稿／待确认，不增加数据库同义状态。
+公共出库整表归 Inventory。生产领料沿用 PMO，其他出库使用 OO；Production 只提供领料资格及履约。其他出库的 pending_picking 在管理端表达草稿／待确认，不增加数据库同义状态。
 
 | 字段 | SQL定义 | 用途 |
 | --- | --- | --- |
@@ -393,6 +403,24 @@ production_material 行必须有原任务／需求／allocation，且仅物料�
 已软删 new 行不建批，可以永远 batch_id=NULL；completed 仅要求所有有效行有真实目标与匹配流水。target_mode/new_batch_key 确认后保留，键不是人工批号；客户端不能用尾随空格区分组。其他草稿不占库存、不新增生产预留；待确认生产领料占可制单量、生产退料占可退量。
 
 其他已有目标只办理 available 库存，要求批次 available；其他新批次须 ProductOtherStockQuery 返回的当前启用资格。退料保留历史原批次回仓资格，不能解除其冻结／停用；其他单也不能解冻批次或把损坏实物冒充 available。所有 FK 使用 ON UPDATE/DELETE RESTRICT，CHECK 显式检查 IS NULL/IS NOT NULL，不能通过 UNKNOWN 绕过来源互斥。数据库跨表只读守卫不授予其他模块应用写权。
+
+### 数据库守卫职责
+
+CHECK 负责本章定义的值域、身份与来源互斥、字段组和空白限制，FK／UNIQUE 负责真实引用、组合身份及重复事实。以下跨行和生命周期条件由数据库触发器强制，不能只依赖应用校验；来源模块仍须在同事务锁内独立核验权限、当前轮、放行、授权额度及办理资格。
+
+| 写入位置 | 数据库强制条件 |
+| --- | --- |
+| 主单 INSERT | 四种入库均以 `pending`、两种出库均以 `pending_picking` 建立，创建人和修改人齐全；采购／成品一次确认内部也遵守该顺序 |
+| 明细 INSERT／UPDATE | 锁定父单，核对待确认、场景、来源、身份、单位和目标；仅未记账的其他草稿有效行可编辑／软删除，来源行不可改业务内容，已删行不可恢复或改写 |
+| 入库确认落批 | `new` 目标仅允许 `batch_id` 从 NULL 变为同身份真实批次并维护修改审计；数量、来源、目标键和单位不变 |
+| 六场景原始流水 INSERT | 按真实来源锁定父单并读取有效明细；父单须待确认，核对场景对应的类型、方向、精确数量、单位、身份、批次、available 状态及稳定记账键 |
+| 盘点／基础冲销 INSERT | 使用独立分支：盘点核验原盘点阶段、四类库存状态及非零实盘差额；基础冲销核验原已完成事实的同身份同来源反向全额镜像，不要求原父单恢复待确认 |
+| 主单完成 | 至少一条有效行；有效行都有真实批次和唯一匹配原始流水，软删行无流水，确认人／时间齐全 |
+| 主单取消 | 包括软删行在内的全部明细均无流水，取消字段齐全，历史行保留 |
+| 主单 UPDATE／终态 | 数据库要求 `NEW.version=OLD.version+1`；终态父单及全部明细冻结，禁止物理删除；幂等重放不执行 UPDATE |
+| 流水 UPDATE／DELETE | 禁止修改或删除；基础冲销受原流水唯一引用约束，测试库清理仅使用本章规定的受控例外 |
+
+应用保存明细必须同步推进父单版本，同一命令的多行变更只推进一次；编号和场景由授权命令生成。数据库守卫不授予通用流水写入或撤销已确认单据的业务能力。
 
 ## 成品身份与范围
 

@@ -11,12 +11,14 @@ import { requireQuantity } from '../domain/receipt-quantity.policy.js';
 import type { InventoryInboundQuery, ReceiptInboundFacts } from '../../inventory/public.js';
 import { readOrder, sortedIds } from './mysql-purchase-order.shared.js';
 
+export const RECEIPT_LINE_COLUMNS = `id,receipt_id,purchase_order_id,purchase_order_line_id,item_id,material_variant_id,
+  supplier_batch_code,current_receipt_revision_id,current_round_id,over_receipt_note,version`;
+
 export type ReceiptLineRow = RowDataPacket & {
   id: number;
   receipt_id: number;
   purchase_order_id: number;
   purchase_order_line_id: number;
-  line_no: number;
   item_id: number;
   material_variant_id: number;
   supplier_batch_code: string | null;
@@ -81,7 +83,7 @@ export const lockReceiptLine = async (
   if (!locator) return receiptError('到货明细不存在', 'RECEIPT_NOT_FOUND');
   const order = await readOrder(connection, String(locator.purchase_order_id), true);
   const [[line]] = await connection.query<ReceiptLineRow[]>(
-    'SELECT * FROM procurement_receipt_line WHERE id=? FOR UPDATE',
+    `SELECT ${RECEIPT_LINE_COLUMNS} FROM procurement_receipt_line WHERE id=? FOR UPDATE`,
     [id],
   );
   if (!line) return receiptError('到货明细不存在', 'RECEIPT_NOT_FOUND');

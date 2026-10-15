@@ -1,6 +1,6 @@
 # Approval 数据库设计
 
-> [返回模块](../README.md)。本章对应 `202609100001-approval-bom-pilot` 、`202609120001-approval-node-assignees` 及 `202609160001-approval-business-assignees`，定义六张审批表，不包含通知与工单字段。`approval_instance_steps` 是唯一节点待办事实，个人任务表已移除。
+> [返回模块](../README.md)。本章对应 `202609100001-approval-bom-pilot` 、`202609120001-approval-node-assignees` 及 `202609160001-approval-business-assignees`，定义六张审批表，不包含通知与工单字段。`approval_instance_steps` 是唯一节点待办事实。
 
 ## 2. 公共字段和约束
 
@@ -14,7 +14,7 @@
 | 单据审计 D | `created_by/created_at/updated_by/updated_at/version`，`version INT NOT NULL DEFAULT 0 CHECK(version >= 0)`；无软删除列，终止用状态表达 |
 | 事实审计 F | `created_by/created_at`，不可覆盖、删除 |
 
-新审批申请的 `created_by` 必填并表示申请人，不再重复 `applicant_id/submitted_by`；`created_at` 表示提交时间。实际人工作业的操作者必填，事务内派生任务沿用触发人；日后系统作业是否使用空操作者须另行定义。新外键默认限制删除，不级联删除审批、通知或人员历史。所有者校验负责引用对象的状态和业务归属，外键不能替代它。
+审批申请的 `created_by` 必填并表示申请人；`created_at` 表示提交时间。实际人工作业的操作者必填，事务内派生任务沿用触发人；日后系统作业是否使用空操作者须另行定义。新外键默认限制删除，不级联删除审批、通知或人员历史。所有者校验负责引用对象的状态和业务归属，外键不能替代它。
 
 生成列使用 `CASE WHEN ... THEN 1 ELSE NULL END` 构造活动槽，再用组合唯一键约束“最多一条活动记录”；多条历史记录允许槽为空。迁移在 MySQL 上建立生成列唯一约束及 CHECK。该槽是约束辅助值，不是第二份可写状态。
 
@@ -115,7 +115,7 @@ CHECK 保证角色节点只填写 `role_id`，用户节点只填写 `assignee_us
 
 多态 `subject_id` 不建立指向多张业务表的伪外键。提交和每次最终业务操作经所属模块验证对象存在性、场景与对象类型、当前申请关联；`scene_code` 与所选版本所属定义相符由事务校验。申请的场景、对象、流程版本、证据、人员规则及申请人一经提交不可更换。未来收紧自审规则默认只影响新申请，不能静默改写旧申请的规则或历史决定；账号、角色及当前权限仍实时校验。
 
-Production 需求更正证据结构版本为 1；结案产出证据为版本 6，包含模式、检验记录、计划内外产出与报废、更正前版及原因、工单 ID／单号／版本／负责人及来源代码，分别由其 handler 校验。本阶段不维护旧版收尾证据读取，开发数据可按统一流程重置；其申请来源、冻结和生效字段详见 [Production 需求设计](../../production/docs/database/demand-allocation-and-outbound.md#正式需求更正与替代) 与[批次收尾设计](../../production/docs/database/production-termination.md)。Approval 表不复制业务执行数量或工序状态。
+Production 需求更正证据结构版本为 1；结案产出证据为版本 6，包含模式、检验记录、计划内外产出与报废、更正前版及原因、工单 ID／单号／版本／负责人及来源代码，分别由其 handler 校验。本阶段不维护旧版收尾证据读取，开发数据可按统一流程重置；其申请来源、冻结和生效字段详见 [Production 需求设计](../../production/docs/database/demand-allocation-and-outbound.md#正式需求更正与替代) 与[批次收尾设计](../../production/docs/database/production-termination.md)。Approval 表不复制业务执行数量或工序状态。上述证据版本与 Production 所有者文档及当前解析常量存在差异，双方证据与待决问题见[冲突 CO-08](../../../../../../docs/documentation-conflicts.md#co-08)；未确认前不据此调整读写语义。
 
 ### 4.2 `approval_instance_steps`
 
@@ -142,7 +142,7 @@ Production 需求更正证据结构版本为 1；结案产出证据为版本 6�
 
 ### 4.3 动态待办与访问资格
 
-每个节点只有上述一条执行记录，`approval_tasks` 及分派轮次不再存在。查询先通过 Identity 公开能力取得当前用户合格角色及是否具备审批权限，再在 Approval SQL 的分页前过滤当前 pending 节点：角色匹配、模板指定用户匹配或实例业务用户匹配；列表与总数使用相同条件。前端不能指定授权角色或用户。
+每个节点只有上述一条执行记录，待办按实时资格派生。查询先通过 Identity 公开能力取得当前用户合格角色及是否具备审批权限，再在 Approval SQL 的分页前过滤当前 pending 节点：角色匹配、模板指定用户匹配或实例业务用户匹配；列表与总数使用相同条件。前端不能指定授权角色或用户。
 
 当前节点无合格人员时仍保存 pending；响应将该节点投影为 `blocked`，`blockedReason=no_eligible_assignee`。成员新增、移除、账号或权限变化在下一次查询及决定时生效；恢复资格无需写节点或执行重新分派。GET 不改变业务状态。
 

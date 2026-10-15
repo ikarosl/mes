@@ -12,7 +12,7 @@
 
 生产退料 HTTP 使用 returnNo/returnAt/returnQuantity 及 pending/returned/cancelled 状态，returned 对应公共 completed。回原批次 available 库存是固定业务规则，响应不另附固定状态或释放标记；退料引用为 inbound_detail，独立退料表不保留。
 
-`InventoryStockCommand` 提供物料批次历史引用、统一父身份及库存批次锁与物料数量。库存流水动作在公共单据 adapter 内执行，Production 不再自行写单据或调用裸流水来替代来源编排；单据与流水关联由登记展示查询读取。
+`InventoryStockCommand` 提供物料批次历史引用、统一父身份及库存批次锁与物料数量。库存流水动作在公共单据 adapter 内执行，Production 不得自行写单据或调用裸流水来替代来源编排；单据与流水关联由登记展示查询读取。
 
 ## 采购和批准成品实际入库
 
@@ -52,4 +52,8 @@ Inventory 用该事实及自己当前已完成生产领料核对未预留量，�
 
 外购入库列表和详情的主单供应商摘要使用 `suppliers` 集合，逐明细的 `supplierId` 从真实采购来源读取，`supplierName` 为确认时名称快照；缺少来源身份时不从名称猜 ID。关键词按明细供应商快照匹配，使用 EXISTS 保持主单计数。库存批次及生产追溯的每笔来源供应方同样取该实际明细快照，不能把合单中另一家供应商显示到本行。
 
-`InventoryInboundRepository` 提供入库/库存历史查询；库批来源集合从每条完成的 `inbound_detail` 与匹配正流水关联授权、批准版、采购到货和检验，不从 `item_batch` 单值推断。外购物料入库详情的 `procurementSource` 是只读展示投影：到货单号与持久行号取该明细保存的到货行，`receipt.purchaseOrderNo` 是登记原采购单；实际采购归属沿该明细的 `procurement_allocation_id → procurement_receipt_allocation.purchase_order_line_id` 取采购行、主单和行号，不能用到货原采购单代替；`inspection` 仅按该明细保存的 `procurement_inspection_id` 取真实检验记录的 `caseId` 和 `inspectedAt`。旧外购无采购来源或任一关联不完整时整个投影为 `null`，原四个来源 ID 仍逐项返回。查询在登记的 `infrastructure/queries/` 批量只读完成，不参与写入资格校验。共批后的领用只能追溯到库批及其来源集合，不能推断领用精确消耗哪次来源。盘点仍是 Inventory 自有用例，仅处理物料批次。
+`InventoryInboundRepository` 提供入库/库存历史查询。库存批次列表、详情和名称关键词使用同一名称来源：物料按公共规则读当前名称；成品优先保留有效入库来源中首条工单的冻结名称，没有工单来源时按 `product_id` 读取 `products.product_name`，不因成品停用或软删除丢失历史展示，也不由名称补造工单或任务。
+
+库批来源集合、来源类别筛选及来源工单／任务关键词只读取已完成主单的未删除 `inbound_detail`，并匹配该明细所属场景的原始正流水：采购 `purchase_inbound`、批准成品 `production_inbound`、生产退料 `material_return_inbound`、其他入库 `other_inbound`；身份、精确版本、批次、单位、库存状态及数量必须一致。类别沿产出授权或实际主单读取，授权、批准版、采购到货及检验只返回该明细的真实关联；其他入库不产生生产／采购来源。批次供应方和工单／任务摘要仅在所有有效来源均有相同值时返回，否则为 `null`；`item_batch.source_type` 保留建批类别，不作为实际来源集合或唯一工单归属。
+
+外购物料入库详情的 `procurementSource` 是只读展示投影：到货单号与真实明细 ID 取该明细保存的到货行，不读取或返回到货行号；`receipt.purchaseOrderNo` 是登记原采购单；实际采购归属沿该明细的 `procurement_allocation_id → procurement_receipt_allocation.purchase_order_line_id` 取采购行、主单和行号，不能用到货原采购单代替；`inspection` 仅按该明细保存的 `procurement_inspection_id` 取真实检验记录的 `caseId` 和 `inspectedAt`。旧外购无采购来源或任一关联不完整时整个投影为 `null`，原四个来源 ID 仍逐项返回。查询在登记的 `infrastructure/queries/` 批量只读完成，不参与写入资格校验。共批后的领用只能追溯到库批及其来源集合，不能推断领用精确消耗哪次来源。盘点仍是 Inventory 自有用例，仅处理物料批次。

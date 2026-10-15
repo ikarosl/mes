@@ -182,8 +182,13 @@ export const productionApi = {
       signal,
       skipErrorHandling: true,
     }),
-  listInventoryBatches: (params: InventoryBatchQuery) =>
-    request<PageResult<InventoryBatchItem>>({ url: '/production/inventory-batches', params }),
+  listInventoryBatches: (params: InventoryBatchQuery, signal?: AbortSignal) =>
+    request<PageResult<InventoryBatchItem>>({
+      url: '/production/inventory-batches',
+      params,
+      signal,
+      skipErrorHandling: true,
+    }),
   listInventoryMaterialSupplyDemand: (params: InventoryMaterialSupplyDemandQuery) =>
     request<PageResult<InventoryMaterialSupplyDemandItem>>({
       url: '/production/inventory-material-supply-demand',
@@ -194,8 +199,12 @@ export const productionApi = {
       url: `/production/inventory-material-supply-demand/${itemId}/demands`,
       params,
     }),
-  getInventoryBatch: (id: string) =>
-    request<InventoryBatchDetailItem>({ url: `/production/inventory-batches/${id}` }),
+  getInventoryBatch: (id: string, signal?: AbortSignal) =>
+    request<InventoryBatchDetailItem>({
+      url: `/production/inventory-batches/${id}`,
+      signal,
+      skipErrorHandling: true,
+    }),
   searchProductionTrace: (params: ProductionTraceQuery, options: ReadRequestOptions = {}) =>
     request<PageResult<ProductionTraceWorkOrderGroup>>({
       ...options,

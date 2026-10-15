@@ -2,9 +2,9 @@ import { normalizeIncomingInspectionQuantities } from '../domain/inspection-quan
 import { Inject, Injectable } from '@nestjs/common';
 import { QUALITY_INBOUND_CASE_TYPES } from '@company/constants';
 import type {
+  PageQuery,
   PageResult,
   QualityInboundCaseItem,
-  QualityInboundCaseQuery,
   QualityInboundInspectionItem,
 } from '@company/contracts';
 import { withActiveConnection } from '@company/database';
@@ -200,34 +200,17 @@ export class MysqlQualityInboundRepository
     });
   }
 
-  listCases(query: QualityInboundCaseQuery): Promise<PageResult<QualityInboundCaseItem>> {
+  listCases(receiptLineId: string, query: PageQuery): Promise<PageResult<QualityInboundCaseItem>> {
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 10;
-    const clauses: string[] = ["source_kind='incoming'"];
-    const parameters: Array<string | number> = [];
-    if (query.status) {
-      clauses.push('status=?');
-      parameters.push(query.status);
-    }
-    if (query.caseType) {
-      clauses.push('case_type=?');
-      parameters.push(query.caseType);
-    }
-    if (query.receiptLineIds) {
-      if (!query.receiptLineIds.length)
-        return Promise.resolve({ items: [], total: 0, page, pageSize });
-      clauses.push(`receipt_line_id IN (${query.receiptLineIds.map(() => '?').join(',')})`);
-      parameters.push(...query.receiptLineIds);
-    }
-    const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
     return withActiveConnection(this.pool, async (db) => {
       const [[count]] = await db.query<(RowDataPacket & { total: number })[]>(
-        `SELECT COUNT(*) total FROM quality_inspection_case ${where}`,
-        parameters,
+        "SELECT COUNT(*) total FROM quality_inspection_case WHERE source_kind='incoming' AND receipt_line_id=?",
+        [receiptLineId],
       );
       const [rows] = await db.query<CaseRow[]>(
-        `SELECT * FROM quality_inspection_case ${where} ORDER BY id DESC LIMIT ? OFFSET ?`,
-        [...parameters, pageSize, (page - 1) * pageSize],
+        "SELECT * FROM quality_inspection_case WHERE source_kind='incoming' AND receipt_line_id=? ORDER BY id DESC LIMIT ? OFFSET ?",
+        [receiptLineId, pageSize, (page - 1) * pageSize],
       );
       return {
         items: await this.attachInspections(db, rows),

@@ -36,6 +36,4 @@ corepack pnpm migration:check
 corepack pnpm --filter @company/database test
 ```
 
-升级和回滚的部署级约束见[迁移安全](migration-safety.md)，静态注册门禁见[迁移就绪检查](migration-readiness.md)。
-
-具体迁移的依赖顺序、非空守卫及不可单独运行的准备状态见[迁移安全](migration-safety.md)。本文不另存“当前最后一条”清单；以文件注册表和运行器状态为准。
+升级和回滚的部署约束、具体迁移的依赖顺序、非空守卫及不可单独运行的准备状态见[迁移安全](migration-safety.md)，静态注册门禁见[迁移就绪检查](migration-readiness.md)。

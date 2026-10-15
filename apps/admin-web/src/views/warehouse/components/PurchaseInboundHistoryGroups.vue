@@ -77,21 +77,20 @@
                       receiptLineId: row.procurementSource.receipt.receiptLineId,
                     })
                   "
-                  >{{ row.procurementSource.receipt.receiptNo }} · 第
-                  {{ row.procurementSource.receipt.receiptLineNo }} 行</el-button
+                  >{{ row.procurementSource.receipt.receiptNo }} · id:{{
+                    row.procurementSource.receipt.receiptLineId
+                  }}</el-button
                 >
                 <span v-else>
-                  {{ row.procurementSource.receipt.receiptNo }} · 第
-                  {{ row.procurementSource.receipt.receiptLineNo }} 行
+                  {{ row.procurementSource.receipt.receiptNo }} · id:{{
+                    row.procurementSource.receipt.receiptLineId
+                  }}
                 </span>
-                <div class="source-id">
-                  到货明细 ID：{{ row.procurementSource.receipt.receiptLineId }}
-                </div>
               </template>
               <span
                 v-else-if="row.procurementReceiptLineId"
                 class="muted"
-                >来源信息未完整提供<br />到货明细 ID：{{ row.procurementReceiptLineId }}</span
+                >来源信息未完整提供<br />到货明细 id:{{ row.procurementReceiptLineId }}</span
               >
               <span
                 v-else
@@ -341,14 +340,9 @@ const supplierSummary = (order: PurchaseInboundOrderItem): string =>
   text-align: left;
   overflow-wrap: anywhere;
 }
-.source-id,
 .source-label {
   color: var(--el-text-color-secondary);
   font-size: 12px;
-}
-.source-id {
-  margin-top: 3px;
-  overflow-wrap: anywhere;
 }
 .source-label {
   margin-right: 6px;

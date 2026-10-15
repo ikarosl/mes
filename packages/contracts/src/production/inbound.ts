@@ -26,7 +26,6 @@ export interface PurchaseInboundDetailItem {
       receiptId: string;
       receiptNo: string;
       receiptLineId: string;
-      receiptLineNo: number;
       /** Purchase order on which this delivery was originally registered. */
       purchaseOrderNo: string;
     };

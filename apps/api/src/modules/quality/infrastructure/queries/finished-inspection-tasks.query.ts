@@ -29,7 +29,6 @@ type TaskRow = RowDataPacket & {
   baseline_extra_received: string | null;
   starting_declared_remaining: string | null;
   current_inspection_id: number | null;
-  current_release_decision: ProductionOutputReleaseDecision | null;
   latest_id: number | null;
   release_decision: ProductionOutputReleaseDecision | null;
   inspected_at: Date | null;
@@ -40,57 +39,48 @@ type TaskRow = RowDataPacket & {
   extra_quantity: string | null;
   additional_scrap_quantity: string | null;
   status: ProductionBatchStatus;
+  stage: FinishedInspectionStage;
 };
-const SELECT = `SELECT b.id batch_id,b.batch_no,b.work_order_id,w.work_order_no,w.product_code_snapshot,w.product_name_snapshot,b.planned_quantity,b.status,c.version,c.current_round_id,round.status current_round_status,round.round_no current_round_no,round.trigger_type current_round_trigger_type,round.reason current_round_reason,round.baseline_planned_received,round.baseline_extra_received,round.starting_declared_remaining,c.pending_approval_id,c.current_revision_id,c.correction_reason,c.available_quantity,c.extra_quantity,c.additional_scrap_quantity,i.id latest_id,i.release_decision,i.inspected_at,current_inspection.id current_inspection_id,current_inspection.release_decision current_release_decision FROM production_batch_closeout c LEFT JOIN production_output_round round ON round.id=c.current_round_id JOIN production_batches b ON b.id=c.production_batch_id JOIN work_orders w ON w.id=b.work_order_id
+const STAGE = `CASE
+ WHEN b.status NOT IN ('closing','completed','terminated') THEN 'blocked'
+ WHEN c.pending_approval_id IS NOT NULL THEN 'reviewing'
+ WHEN c.available_quantity IS NULL THEN 'awaiting_draft'
+ WHEN round.status='inspecting' THEN 'inspecting'
+ WHEN round.status='pending_inspection' THEN
+  CASE WHEN round.trigger_type='finalization_correction' AND i.release_decision='released'
+   THEN 'ready_for_finalization' ELSE 'awaiting_start' END
+ WHEN current_inspection.release_decision='pending_reinspection' THEN 'needs_reinspection'
+ WHEN current_inspection.release_decision='not_released' THEN 'not_released'
+ WHEN round.status='pending_finalization' THEN 'ready_for_finalization'
+ WHEN round.status='finalized' THEN 'approved'
+ ELSE 'blocked'
+END`;
+const SELECT = `SELECT b.id batch_id,b.batch_no,b.work_order_id,w.work_order_no,w.product_code_snapshot,w.product_name_snapshot,b.planned_quantity,b.status,c.version,c.current_round_id,round.status current_round_status,round.round_no current_round_no,round.trigger_type current_round_trigger_type,round.reason current_round_reason,round.baseline_planned_received,round.baseline_extra_received,round.starting_declared_remaining,c.pending_approval_id,c.current_revision_id,c.correction_reason,c.available_quantity,c.extra_quantity,c.additional_scrap_quantity,i.id latest_id,i.release_decision,i.inspected_at,current_inspection.id current_inspection_id,${STAGE} stage FROM production_batch_closeout c LEFT JOIN production_output_round round ON round.id=c.current_round_id JOIN production_batches b ON b.id=c.production_batch_id JOIN work_orders w ON w.id=b.work_order_id
  LEFT JOIN quality_inspection_record i ON i.id=(SELECT MAX(latest.id) FROM quality_inspection_record latest WHERE latest.closeout_id=c.id)
  LEFT JOIN quality_inspection_case current_case ON current_case.finished_round_id=round.id AND current_case.source_kind='finished'
  LEFT JOIN quality_inspection_record current_inspection ON current_inspection.case_id=current_case.id`;
-const PENDING = `b.status IN ('closing','completed','terminated')
- AND c.available_quantity IS NOT NULL AND c.pending_approval_id IS NULL
- AND (c.current_revision_id IS NULL OR c.correction_reason IS NOT NULL) AND (
-  round.status='inspecting' OR
-  (round.status='pending_inspection' AND (round.trigger_type<>'finalization_correction' OR i.id IS NULL OR i.release_decision<>'released')) OR
-  (round.status='pending_finalization' AND current_inspection.release_decision IN ('pending_reinspection','not_released'))
-)`;
-function nextWorkflow(
-  row: TaskRow,
+function nextActionForStage(
+  stage: FinishedInspectionStage,
   canBeginReinspection: boolean,
-): {
-  stage: FinishedInspectionStage;
-  nextAction: FinishedInspectionNextAction;
-} {
-  if (!['closing', 'completed', 'terminated'].includes(row.status))
-    return { stage: 'blocked', nextAction: 'view_history' };
-  if (row.pending_approval_id !== null) return { stage: 'reviewing', nextAction: 'view_approval' };
-  if (row.available_quantity === null) return { stage: 'awaiting_draft', nextAction: 'save_draft' };
-  if (row.current_round_status === 'inspecting')
-    return { stage: 'inspecting', nextAction: 'record_inspection' };
-  if (row.current_round_status === 'pending_inspection') {
-    if (
-      row.current_round_trigger_type === 'finalization_correction' &&
-      row.release_decision === 'released'
-    )
-      return { stage: 'ready_for_finalization', nextAction: 'review_output' };
-    return { stage: 'awaiting_start', nextAction: 'start_inspection' };
+): FinishedInspectionNextAction {
+  switch (stage) {
+    case 'awaiting_draft':
+      return 'save_draft';
+    case 'awaiting_start':
+      return 'start_inspection';
+    case 'inspecting':
+      return 'record_inspection';
+    case 'ready_for_finalization':
+      return 'review_output';
+    case 'reviewing':
+      return 'view_approval';
+    case 'approved':
+      return 'view_history';
+    case 'needs_reinspection':
+    case 'not_released':
+    case 'blocked':
+      return canBeginReinspection ? 'start_reinspection' : 'view_history';
   }
-  if (row.current_release_decision === 'pending_reinspection')
-    return {
-      stage: 'needs_reinspection',
-      nextAction: canBeginReinspection ? 'start_reinspection' : 'view_history',
-    };
-  if (row.current_release_decision === 'not_released')
-    return {
-      stage: 'not_released',
-      nextAction: canBeginReinspection ? 'start_reinspection' : 'view_history',
-    };
-  if (row.current_round_status === 'pending_finalization')
-    return { stage: 'ready_for_finalization', nextAction: 'review_output' };
-  if (row.current_round_status === 'finalized')
-    return { stage: 'approved', nextAction: 'view_history' };
-  return {
-    stage: 'blocked',
-    nextAction: canBeginReinspection ? 'start_reinspection' : 'view_history',
-  };
 }
 function mapTask(row: TaskRow): FinishedInspectionTaskItem {
   const reinspectionBlockedReason = !['closing', 'completed', 'terminated'].includes(row.status)
@@ -116,7 +106,6 @@ function mapTask(row: TaskRow): FinishedInspectionTaskItem {
                   ? null
                   : '当前轮次不能发起复检';
   const canBeginReinspection = reinspectionBlockedReason === null;
-  const workflow = nextWorkflow(row, canBeginReinspection);
   return {
     batchId: String(row.batch_id),
     batchNo: row.batch_no,
@@ -157,7 +146,8 @@ function mapTask(row: TaskRow): FinishedInspectionTaskItem {
       row.current_round_status === 'inspecting',
     canBeginReinspection,
     reinspectionBlockedReason,
-    ...workflow,
+    stage: row.stage,
+    nextAction: nextActionForStage(row.stage, canBeginReinspection),
   };
 }
 export async function listFinishedInspectionTasks(
@@ -174,8 +164,10 @@ export async function listFinishedInspectionTasks(
     );
     values.push(...Array(4).fill(`%${query.keyword.trim()}%`));
   }
-  if (query.status === 'pending') clauses.push(`(${PENDING})`);
-  if (query.status === 'recorded') clauses.push('i.id IS NOT NULL');
+  if (query.stage) {
+    clauses.push(`(${STAGE})=?`);
+    values.push(query.stage);
+  }
   const where = clauses.length ? ` WHERE ${clauses.join(' AND ')}` : '';
   const [[count]] = await db.query<(RowDataPacket & { total: number })[]>(
     `SELECT COUNT(*) total FROM (${SELECT}${where}) matching_tasks`,

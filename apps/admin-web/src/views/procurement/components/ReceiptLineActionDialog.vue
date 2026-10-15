@@ -23,31 +23,12 @@
         :closable="false"
         class="notice"
       />
-      <ReceiptLineSummary
-        v-if="'allocations' in line"
-        :line="line"
-        :mode="action === 'inspect' || action === 'review' ? 'inspection' : 'full'"
-      />
-      <InboundInspectionSummary
-        v-else
-        :line="line"
-        show-disposal
-      />
+      <ReceiptLineSummary :line="line" />
       <div
         v-loading="loading"
         class="form-body"
       >
-        <InboundInspectionFields
-          v-if="action === 'inspect' && caseRecord"
-          v-model="inspection"
-          :case-id="caseRecord.id"
-          :covered-quantity="Number(caseRecord.coveredQuantity)"
-          :unit="line.unit"
-          :disabled="command.locked.value || loading || stale"
-          @valid="inspectionValid = $event"
-        />
         <el-form
-          v-else
           :disabled="command.locked.value || loading || stale"
           label-width="140px"
           @submit.prevent="confirm"
@@ -139,34 +120,18 @@
           </template>
           <template v-else>
             <InlineHint
-              :tone="action === 'review' ? 'info' : 'warning'"
+              tone="warning"
               class="notice"
             >
               {{
-                action === 'review'
-                  ? '确认发起后，本批全部剩余实物进入检验中，原可入及待退分配一并暂停。抽检也判断整批资格，样本不是独立处置范围。'
-                  : action === 'revoke'
-                    ? '撤销本轮拒收决定，剩余实物重新待检。旧拒收记录保留，不直接恢复旧可入分配；请重新质检和定稿。'
-                    : '人工拒收本批全部剩余实物，原入库资格及尚未完成检验立即失效。拒收不等于质检不合格或已经退回；交接后另行确认实际退回。'
+                action === 'revoke'
+                  ? '撤销本轮拒收决定，剩余实物重新待检。旧拒收记录保留，不直接恢复旧可入分配；请重新质检和定稿。'
+                  : '人工拒收本批全部剩余实物，原入库资格及尚未完成检验立即失效。拒收不等于质检不合格或已经退回；交接后另行确认实际退回。'
               }}
             </InlineHint>
             <el-form-item label="本批剩余实物"
               ><strong>{{ remainingQuantity }} {{ line.unit }}</strong></el-form-item
             >
-            <el-form-item
-              v-if="action === 'review' && caseType !== 'initial'"
-              label="办理原因"
-              required
-            >
-              <el-radio-group v-model="caseType">
-                <el-radio value="reinspection">{{
-                  QUALITY_INBOUND_CASE_TYPE_LABELS.reinspection
-                }}</el-radio>
-                <el-radio value="inspection_correction">{{
-                  QUALITY_INBOUND_CASE_TYPE_LABELS.inspection_correction
-                }}</el-radio>
-              </el-radio-group>
-            </el-form-item>
             <el-form-item
               label="原因"
               required
@@ -243,17 +208,13 @@
         :disabled="!canConfirm"
         @click="confirm"
         >{{
-          action === 'review'
-            ? '确认发起检验 / 复检'
-            : action === 'inspect'
-              ? '保存检验记录'
-              : action === 'return'
-                ? '确认全部已退回供应商'
-                : action === 'correct'
-                  ? '确认整批实收更正'
-                  : action === 'revoke'
-                    ? '撤销拒收并重新办理'
-                    : '确认人工拒收'
+          action === 'return'
+            ? '确认全部已退回供应商'
+            : action === 'correct'
+              ? '确认整批实收更正'
+              : action === 'revoke'
+                ? '撤销拒收并重新办理'
+                : '确认人工拒收'
         }}</el-button
       ></template
     >
@@ -262,31 +223,25 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import type { ProcurementReceiptCommandResult } from '@company/contracts';
-import { PURCHASE_ORDER_MAX_QUANTITY, QUALITY_INBOUND_CASE_TYPE_LABELS } from '@company/constants';
+import { PURCHASE_ORDER_MAX_QUANTITY } from '@company/constants';
 import { DialogWidth } from '../../../utils/dialog';
 import { fromBeijingDateTimeInputValue, toBeijingDateTimeInputValue } from '../../../utils/date';
 import InlineHint from '../../../components/InlineHint.vue';
 import { useReceiptLineAction } from '../composables/useReceiptLineAction';
 import ReceiptLineSummary from './ReceiptLineSummary.vue';
-import InboundInspectionSummary from './InboundInspectionSummary.vue';
-import InboundInspectionFields from './InboundInspectionFields.vue';
 const emit = defineEmits<{ saved: [ProcurementReceiptCommandResult] }>();
 const {
   visible,
   loading,
   stale,
   action,
-  line,
+  line: sourceLine,
   allocation,
-  caseRecord,
   reason,
   handoverEvidence,
   returnedAt,
   returnRemark,
-  caseType,
   physicalIdentityConfirmed,
-  inspection,
-  inspectionValid,
   disposedQuantity,
   correctedQuantity,
   remainingQuantity,
@@ -303,6 +258,9 @@ const {
   close,
   confirm,
 } = useReceiptLineAction((result) => emit('saved', result));
+const line = computed(() =>
+  sourceLine.value && 'allocations' in sourceLine.value ? sourceLine.value : null,
+);
 const title = computed(() =>
   action.value === 'correct'
     ? '更正本次到货核实总量'
@@ -310,11 +268,7 @@ const title = computed(() =>
       ? '确认实际退回供应商'
       : action.value === 'revoke'
         ? '撤销人工拒收并重新办理'
-        : action.value === 'reject'
-          ? '人工拒收整批剩余实物'
-          : action.value === 'review'
-            ? '主动发起检验 / 复检'
-            : '填写检验结论',
+        : '人工拒收整批剩余实物',
 );
 const beforeClose = (): void => {
   void close();

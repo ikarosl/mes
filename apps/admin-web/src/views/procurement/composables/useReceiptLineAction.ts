@@ -27,21 +27,27 @@ import {
   isReceiptRejected,
 } from '../receipt-round-presentation';
 
-export type ReceiptLineAction = 'correct' | 'return' | 'reject' | 'revoke' | 'review' | 'inspect';
+type ReceiptDispositionAction = 'correct' | 'return' | 'reject' | 'revoke';
+type ReceiptInspectionAction = 'review' | 'inspect';
+type ReceiptLineAction = ReceiptDispositionAction | ReceiptInspectionAction;
 type ReceiptActionSource = ProcurementReceiptLine | ProcurementInboundInspectionDetail;
 const hasReceiptAllocations = (source: ReceiptActionSource): source is ProcurementReceiptLine =>
   'allocations' in source;
 export function useReceiptLineAction(
-  onSaved: (result: ProcurementReceiptCommandResult) => void | Promise<void>,
+  onSaved: (
+    result: ProcurementReceiptCommandResult,
+  ) =>
+    void | ProcurementInboundInspectionDetail | Promise<void | ProcurementInboundInspectionDetail>,
+  options: { refreshOnActivated?: boolean } = {},
 ) {
   const visible = ref(false),
     loading = ref(false),
-    stale = ref(false),
-    qualityContext = ref(false);
+    stale = ref(false);
   const action = ref<ReceiptLineAction>('correct'),
     line = ref<ReceiptActionSource | null>(null),
     allocation = ref<ReceiptAllocationItem | null>(null),
     caseRecord = ref<QualityInboundCaseItem | null>(null);
+  const qualityContext = computed(() => line.value !== null && !hasReceiptAllocations(line.value));
   const reason = ref(''),
     handoverEvidence = ref(''),
     returnedAt = ref(''),
@@ -65,8 +71,8 @@ export function useReceiptLineAction(
   const command = useProcurementCommand<ProcurementReceiptCommandResult>(async (result) => {
     const continuing = action.value === 'review' && qualityContext.value ? line.value : null;
     visible.value = false;
-    await onSaved(result);
-    if (continuing && result.caseIds.length === 1) {
+    const refreshed = await onSaved(result);
+    if (continuing && result.caseIds.length === 1 && read.isActive()) {
       try {
         const current = read.begin(
           () =>
@@ -75,7 +81,10 @@ export function useReceiptLineAction(
             action.value === 'review' &&
             !visible.value,
         );
-        const latest = await procurementApi.inspectionReceiptLine(continuing.id, current.signal);
+        const latest =
+          refreshed && refreshed.id === continuing.id
+            ? refreshed
+            : await procurementApi.inspectionReceiptLine(continuing.id, current.signal);
         if (!current.isCurrent()) return;
         const nextCase = latest.cases.find(
           (record) => record.id === result.caseIds[0] && record.status === 'reviewing',
@@ -170,18 +179,21 @@ export function useReceiptLineAction(
     if (action.value === 'revoke') return canRevokeReceiptRejection(line.value);
     return action.value === 'review' ? canReviewReceipt(line.value) : canRejectReceipt(line.value);
   });
-  const check = async (): Promise<boolean> => {
+  const check = async (source?: ReceiptActionSource): Promise<boolean> => {
     const target = line.value;
     if (!target || !visible.value || !read.isActive()) return false;
     const current = read.begin(() => visible.value && line.value?.id === target.id);
     loading.value = true;
     try {
-      const latest: ReceiptActionSource = qualityContext.value
-        ? await procurementApi.inspectionReceiptLine(target.id, current.signal)
-        : await procurementApi.getReceiptLine(target.id, current.signal);
+      const latest: ReceiptActionSource =
+        source ??
+        (qualityContext.value
+          ? await procurementApi.inspectionReceiptLine(target.id, current.signal)
+          : await procurementApi.getReceiptLine(target.id, current.signal));
       if (!current.isCurrent()) return false;
       stale.value =
         !latest ||
+        latest.id !== target.id ||
         latest.version !== target.version ||
         latest.currentReceiptRevisionId !== target.currentReceiptRevisionId ||
         latest.currentRound.id !== target.currentRound.id ||
@@ -219,21 +231,17 @@ export function useReceiptLineAction(
       if (current.isCurrent()) loading.value = false;
     }
   };
-  const open = (
+  const initialize = (
     target: ReceiptActionSource,
     kind: ReceiptLineAction,
     sourceAllocation?: ReceiptAllocationItem,
     qualityCase?: QualityInboundCaseItem,
-    forQuality = false,
   ): void => {
     if (visible.value || command.locked.value) return;
-    if (!('allocations' in target) && (!forQuality || !['review', 'inspect'].includes(kind)))
-      return;
     line.value = JSON.parse(JSON.stringify(target)) as ReceiptActionSource;
     allocation.value = sourceAllocation ? { ...sourceAllocation } : null;
     caseRecord.value = qualityCase ? { ...qualityCase } : null;
     action.value = kind;
-    qualityContext.value = forQuality;
     stale.value = false;
     reason.value = '';
     handoverEvidence.value = '';
@@ -256,6 +264,16 @@ export function useReceiptLineAction(
     visible.value = true;
     void check();
   };
+  const open = (
+    target: ProcurementReceiptLine,
+    kind: ReceiptDispositionAction,
+    sourceAllocation?: ReceiptAllocationItem,
+  ): void => initialize(target, kind, sourceAllocation);
+  const openInspection = (
+    target: ProcurementInboundInspectionDetail,
+    kind: ReceiptInspectionAction,
+    qualityCase?: QualityInboundCaseItem,
+  ): void => initialize(target, kind, undefined, qualityCase);
   const close = async (): Promise<boolean> => {
     if (!(await command.canClose(snapshot() !== baseline))) return false;
     visible.value = false;
@@ -374,7 +392,8 @@ export function useReceiptLineAction(
     }
   };
   onActivated(() => {
-    if (visible.value && !command.locked.value) void check();
+    if (options.refreshOnActivated !== false && visible.value && !command.locked.value)
+      void check();
   });
   return {
     visible,
@@ -405,6 +424,7 @@ export function useReceiptLineAction(
     canConfirm,
     command,
     open,
+    openInspection,
     close,
     check,
     confirm,

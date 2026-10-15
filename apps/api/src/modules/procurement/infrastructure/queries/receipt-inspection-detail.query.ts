@@ -1,5 +1,9 @@
-import type { ProcurementInboundInspectionDetail } from '@company/contracts';
+import type {
+  ProcurementInboundInspectionCaseDetail,
+  ProcurementInboundInspectionDetail,
+} from '@company/contracts';
 import type { QualityInboundQuery } from '../../../quality/public.js';
+import { QualityCommandError } from '../../../quality/public.js';
 import { ProcurementDomainError } from '../../domain/procurement.errors.js';
 import type { Db } from '../mysql-purchase-order.shared.js';
 import {
@@ -12,6 +16,28 @@ import {
 } from './receipt-read.shared.js';
 import { readReceiptPhysicalQuantities } from './receipt-quantities.query.js';
 
+export async function readInspectionCase(
+  db: Db,
+  quality: QualityInboundQuery,
+  caseId: string,
+): Promise<ProcurementInboundInspectionCaseDetail> {
+  const [[reference]] = await db.query<ReadRow[]>(
+    `SELECT q.id,q.receipt_line_id,source.round_no FROM quality_inspection_case q
+      JOIN procurement_receipt_round source
+        ON source.id=q.incoming_round_id AND source.receipt_line_id=q.receipt_line_id
+      WHERE q.id=? AND q.source_kind='incoming'`,
+    [caseId],
+  );
+  if (!reference) throw new QualityCommandError('NOT_FOUND', '检验办理不存在');
+  const [inspectionCase] = await quality.getCases([text(reference.id)]);
+  if (!inspectionCase) throw new QualityCommandError('NOT_FOUND', '检验办理不存在');
+  return {
+    receiptLineId: text(reference.receipt_line_id),
+    sourceRoundNo: Number(reference.round_no),
+    case: inspectionCase,
+  };
+}
+
 export async function readInspectionReceiptLine(
   db: Db,
   quality: QualityInboundQuery,
@@ -19,7 +45,7 @@ export async function readInspectionReceiptLine(
 ): Promise<ProcurementInboundInspectionDetail> {
   const [[row]] = await db.query<ReadRow[]>(
     `${lineSelect(`line.id,line.receipt_id,r.receipt_no,po.purchase_no,line.purchase_order_line_id,
-      line.line_no,pol.item_code_snapshot,material.material_name,pol.material_variant_code_snapshot,
+      pol.item_code_snapshot,material.material_name,pol.material_variant_code_snapshot,
       pol.unit_snapshot,line.supplier_batch_code,supplier.supplier_name,
       line.current_receipt_revision_id,line.version`)} WHERE line.id=?`,
     [id],
@@ -45,7 +71,6 @@ export async function readInspectionReceiptLine(
     receiptNo: text(row.receipt_no),
     purchaseNo: text(row.purchase_no),
     purchaseOrderLineId: text(row.purchase_order_line_id),
-    lineNo: Number(row.line_no),
     itemCode: text(row.item_code_snapshot),
     itemName: text(row.material_name),
     materialVariantCode: text(row.material_variant_code_snapshot),

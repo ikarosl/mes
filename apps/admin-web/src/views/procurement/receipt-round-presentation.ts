@@ -1,21 +1,24 @@
 import {
   RECEIPT_ALLOCATION_EXECUTION_LABELS,
+  RECEIPT_LINE_STAGE_LABELS,
   RECEIPT_ROUND_STATUS_LABELS,
-  RECEIPT_ROUND_TRIGGER_LABELS,
 } from '@company/constants';
 import type {
   ProcurementReceiptLine,
   ReceiptAllocationDisposition,
   ReceiptAllocationItem,
+  ReceiptLineStage,
   ReceiptRoundStatus,
 } from '@company/contracts';
 
 export type ReceiptDetailIntent =
   'acceptance' | 'correct' | 'reject' | 'revoke' | 'allocations' | 'history';
 
-type ReceiptRoundSummary = Pick<ProcurementReceiptLine, 'currentRound'> & {
+type ReceiptRoundSummary = {
+  currentRound: Pick<ProcurementReceiptLine['currentRound'], 'status' | 'triggerType'>;
   quantities: Pick<ProcurementReceiptLine['quantities'], 'unprocessedQuantity'>;
 };
+type ReceiptStageSummary = ReceiptRoundSummary & { stage?: ReceiptLineStage };
 type TagAppearance = {
   type: 'primary' | 'success' | 'warning' | 'danger' | 'info';
   effect: 'light' | 'plain';
@@ -28,6 +31,11 @@ const ROUND_TAGS: Record<ReceiptRoundStatus, TagAppearance> = {
   awaiting_acceptance: { type: 'warning', effect: 'light' },
   finalized: { type: 'success', effect: 'plain' },
   superseded: { type: 'info', effect: 'plain' },
+};
+const LINE_STAGE_TAGS: Record<ReceiptLineStage, TagAppearance> = {
+  ...ROUND_TAGS,
+  manual_rejection: { type: 'danger', effect: 'plain' },
+  completed: { type: 'success', effect: 'light' },
 };
 const ALLOCATION_AUTHORIZATION_TAGS: Record<ReceiptAllocationDisposition, TagAppearance> = {
   inbound: { type: 'primary', effect: 'light' },
@@ -59,33 +67,37 @@ export const canReviewReceipt = (line: ReceiptRoundSummary): boolean =>
     'awaiting_acceptance',
     'finalized',
   ].includes(line.currentRound.status);
-export const canAcceptReceipt = (line: ReceiptRoundSummary): boolean =>
+export const canAcceptReceipt = (
+  line: ReceiptRoundSummary & {
+    currentRound: Pick<ProcurementReceiptLine['currentRound'], 'inspectionId'>;
+  },
+): boolean =>
   !isReceiptRejected(line) &&
   Number(line.quantities.unprocessedQuantity) > 0 &&
   ['awaiting_acceptance', 'finalized'].includes(line.currentRound.status) &&
   !!line.currentRound.inspectionId;
 export const canRejectReceipt = (line: ReceiptRoundSummary): boolean =>
   !isReceiptRejected(line) && Number(line.quantities.unprocessedQuantity) > 0;
-export const receiptLineStageLabel = (line: ReceiptRoundSummary): string => {
-  if (isKnownZero(line.quantities.unprocessedQuantity)) return '本批已处理完';
-  if (isReceiptRejected(line)) return RECEIPT_ROUND_TRIGGER_LABELS.manual_rejection;
-  return RECEIPT_ROUND_STATUS_LABELS[line.currentRound.status];
+const receiptLineStage = (line: ReceiptStageSummary): ReceiptLineStage | 'superseded' => {
+  if (line.stage) return line.stage;
+  if (isKnownZero(line.quantities.unprocessedQuantity)) return 'completed';
+  if (isReceiptRejected(line)) return 'manual_rejection';
+  return line.currentRound.status;
 };
-export const receiptUndeterminedLabel = (line: ReceiptRoundSummary): string => {
-  if (line.currentRound.status === 'finalized') return '待处理';
-  if (line.currentRound.status === 'awaiting_acceptance') return '待核对';
-  return RECEIPT_ROUND_STATUS_LABELS[line.currentRound.status];
+const receiptLineStageTag = (line: ReceiptStageSummary): TagAppearance => {
+  const stage = receiptLineStage(line);
+  return stage === 'superseded' ? ROUND_TAGS.superseded : LINE_STAGE_TAGS[stage];
 };
-export const receiptLineStageType = (line: ReceiptRoundSummary): TagAppearance['type'] => {
-  if (isKnownZero(line.quantities.unprocessedQuantity)) return 'success';
-  if (isReceiptRejected(line)) return 'danger';
-  return receiptRoundTagType(line.currentRound.status);
+export const receiptLineStageLabel = (line: ReceiptStageSummary): string => {
+  const stage = receiptLineStage(line);
+  return stage === 'superseded'
+    ? RECEIPT_ROUND_STATUS_LABELS.superseded
+    : RECEIPT_LINE_STAGE_LABELS[stage];
 };
-export const receiptLineStageEffect = (line: ReceiptRoundSummary): TagAppearance['effect'] => {
-  if (isKnownZero(line.quantities.unprocessedQuantity)) return 'light';
-  if (isReceiptRejected(line)) return 'plain';
-  return receiptRoundTagEffect(line.currentRound.status);
-};
+export const receiptLineStageType = (line: ReceiptStageSummary): TagAppearance['type'] =>
+  receiptLineStageTag(line).type;
+export const receiptLineStageEffect = (line: ReceiptStageSummary): TagAppearance['effect'] =>
+  receiptLineStageTag(line).effect;
 export const currentReceiptCase = (line: Pick<ProcurementReceiptLine, 'currentRound' | 'cases'>) =>
   line.cases.find(
     (record) => record.roundId === line.currentRound.id && record.status === 'reviewing',

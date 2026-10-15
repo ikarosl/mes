@@ -2,6 +2,7 @@ import type { Db } from '../mysql-purchase-order.shared.js';
 import type { RowDataPacket } from 'mysql2/promise';
 import type {
   ProcurementReceiptItem,
+  ProcurementReceiptListSource,
   ProcurementSupplierSummary,
   ReceiptRevisionItem,
   ReceiptRoundItem,
@@ -32,10 +33,26 @@ export const lineSelect = (columns: string) => `SELECT ${columns} FROM procureme
   JOIN procurement_order_line pol ON pol.id=line.purchase_order_line_id
   JOIN procurement_supplier supplier ON supplier.id=pol.supplier_id
   JOIN materials material ON material.id=line.item_id`;
-export const LINE_COLUMNS = `line.id,line.receipt_id,line.purchase_order_id,line.purchase_order_line_id,pol.line_no purchase_order_line_no,line.line_no,
+export const LINE_COLUMNS = `line.id,line.receipt_id,line.purchase_order_id,line.purchase_order_line_id,pol.line_no purchase_order_line_no,
   line.item_id,pol.item_code_snapshot,material.material_name,line.material_variant_id,pol.material_variant_code_snapshot,
   pol.unit_snapshot,line.supplier_batch_code,line.current_receipt_revision_id,
   line.over_receipt_note,line.version,line.current_round_id,r.receipt_no,po.purchase_no,pol.supplier_id,supplier.supplier_name`;
+/** 两个按到货明细分页的工作列表共用来源、排序和映射。 */
+export const RECEIPT_LIST_SOURCE_COLUMNS = `line.receipt_id,r.receipt_no,line.purchase_order_id,po.purchase_no,
+  supplier.supplier_name,material.material_name,pol.material_variant_code_snapshot,pol.unit_snapshot`;
+export const RECEIPT_LINE_LIST_ORDER = 'r.received_at DESC,r.id DESC,line.line_no ASC,line.id ASC';
+export function mapReceiptListSource(row: ReadRow): ProcurementReceiptListSource {
+  return {
+    receiptId: text(row.receipt_id),
+    receiptNo: text(row.receipt_no),
+    purchaseOrderId: text(row.purchase_order_id),
+    purchaseNo: text(row.purchase_no),
+    supplierName: text(row.supplier_name),
+    itemName: text(row.material_name),
+    materialVariantCode: text(row.material_variant_code_snapshot),
+    unit: text(row.unit_snapshot),
+  };
+}
 const CURRENT_ROUND_COLUMNS = `round.id,round.receipt_line_id,round.round_no,round.previous_round_id,
   round.trigger_type,round.receipt_revision_id,round.starting_quantity,round.status,
   round.inspection_id,round.reason,round.version,round.created_by,round.created_at`;

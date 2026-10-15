@@ -1,9 +1,9 @@
-import type { PoolConnection } from 'mysql2/promise';
+import type { PoolConnection, RowDataPacket } from 'mysql2/promise';
 import type { ReceiptQuantitySummary } from '@company/contracts';
 import type { InventoryInboundQuery } from '../../inventory/public.js';
 import type { QualityInboundQuery } from '../../quality/public.js';
 import { projectDraftOwnership } from '../domain/receipt-ownership.projection.js';
-import { type ReceiptLineRow, readReceiptExecutionFacts } from './mysql-receipt.shared.js';
+import { readReceiptExecutionFacts } from './mysql-receipt.shared.js';
 import { requireAggregateQuantity, requireQuantity } from '../domain/receipt-quantity.policy.js';
 
 export const emptyClosureFacts = () => ({
@@ -38,13 +38,17 @@ export const purchaseLineClosureFacts = async (
   inventory: InventoryInboundQuery,
 ) => {
   const [lines] = await connection.query<
-    (ReceiptLineRow & {
+    (RowDataPacket & {
+      id: number;
+      purchase_order_line_id: number;
+      current_round_id: number;
+      current_receipt_revision_id: number;
       received_quantity: number;
       round_status: string;
       source_allocation_round_id: number | null;
     })[]
   >(
-    `SELECT l.*,v.received_quantity,r.status round_status,r.source_allocation_round_id FROM procurement_receipt_line l JOIN procurement_receipt_revision v ON v.id=l.current_receipt_revision_id
+    `SELECT l.id,l.purchase_order_line_id,l.current_round_id,l.current_receipt_revision_id,v.received_quantity,r.status round_status,r.source_allocation_round_id FROM procurement_receipt_line l JOIN procurement_receipt_revision v ON v.id=l.current_receipt_revision_id
       JOIN procurement_receipt_round r ON r.id=l.current_round_id WHERE l.purchase_order_line_id=? OR EXISTS(SELECT 1 FROM procurement_receipt_allocation a WHERE a.receipt_line_id=l.id AND a.purchase_order_line_id=?) ORDER BY l.id FOR UPDATE`,
     [lineId, lineId],
   );

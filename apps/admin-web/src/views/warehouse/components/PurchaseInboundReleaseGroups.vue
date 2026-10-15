@@ -64,13 +64,13 @@
               <el-checkbox
                 :model-value="releases.isSelected(row.allocationId)"
                 :disabled="releases.locked.value"
-                :aria-label="`${releases.isSelected(row.allocationId) ? '取消可入明细选择' : '选择可入明细'} ${row.receiptNo} 第 ${row.receiptLineNo} 行 ${row.itemCode} ${row.purchaseNo}`"
+                :aria-label="`${releases.isSelected(row.allocationId) ? '取消可入明细选择' : '选择可入明细'} ${row.receiptNo} · id:${row.receiptLineId} ${row.itemCode} ${row.purchaseNo}`"
                 @change="releases.toggle(row)"
               />
             </template>
           </el-table-column>
           <el-table-column
-            label="到货行"
+            label="到货明细 ID"
             min-width="130"
           >
             <template #default="{ row }">
@@ -80,14 +80,13 @@
                 type="primary"
                 link
                 @click="goSource('procurement-receipts', { receiptLineId: row.receiptLineId })"
-                >第 {{ row.receiptLineNo }} 行</el-button
+                >id:{{ row.receiptLineId }}</el-button
               >
               <span
                 v-else
                 class="cell-wrap"
-                >第 {{ row.receiptLineNo }} 行</span
+                >id:{{ row.receiptLineId }}</span
               >
-              <div class="source-id">到货明细 ID：{{ row.receiptLineId }}</div>
             </template>
           </el-table-column>
           <el-table-column
@@ -229,8 +228,6 @@ const releaseGroups = computed<ReceiptPageGroup[]>(() => {
     }
     group.items.push(source);
   }
-  for (const group of byReceipt.values())
-    group.items.sort((a, b) => a.receiptLineNo - b.receiptLineNo);
   return [...byReceipt.values()];
 });
 </script>
@@ -257,11 +254,6 @@ const releaseGroups = computed<ReceiptPageGroup[]>(() => {
 .assignment-note {
   color: var(--el-color-warning-dark-2);
   font-size: 12px;
-}
-.source-id {
-  color: var(--el-text-color-secondary);
-  font-size: 12px;
-  overflow-wrap: anywhere;
 }
 .source-link {
   height: auto;

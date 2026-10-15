@@ -1,74 +1,25 @@
 import { ref } from 'vue';
-import type { ProcurementReceiptLineListItem } from '@company/contracts';
 import { procurementApi } from '../../../api/procurement';
-import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
-import { usePageActivationRefresh } from '../../../composables/requests/usePageActivationRefresh';
-import { EMessage } from '../../../utils/message';
+import { useReceiptWorklist } from './useReceiptWorklist';
+
 export function useReceiptsList() {
-  const awaitingAcceptance = ref(false);
-  const keyword = ref(''),
-    rows = ref<ProcurementReceiptLineListItem[]>([]),
-    page = ref(1),
-    pageSize = ref(10),
-    total = ref(0),
-    loading = ref(false);
-  const read = useLatestReadRequest(() => {
-    loading.value = false;
-  });
-  const load = async (): Promise<void> => {
-    if (!read.isActive()) return;
-    const current = read.begin();
-    loading.value = true;
-    try {
-      const result = await procurementApi.listReceiptLines(
+  const awaitingAcceptance = ref(false),
+    keyword = ref('');
+  const list = useReceiptWorklist({
+    fetchPage: (page, signal) =>
+      procurementApi.listReceiptLines(
         {
+          ...page,
           awaitingAcceptance: awaitingAcceptance.value ? 'yes' : undefined,
           keyword: keyword.value.trim() || undefined,
-          page: page.value,
-          pageSize: pageSize.value,
         },
-        current.signal,
-      );
-      if (current.isCurrent()) {
-        rows.value = result.items;
-        total.value = result.total;
-      }
-    } catch (error) {
-      if (current.isCurrent()) EMessage.error(error, '采购到货列表加载失败');
-    } finally {
-      if (current.isCurrent()) loading.value = false;
-    }
-  };
-  const search = async (): Promise<void> => {
-    page.value = 1;
-    await load();
-  };
-  const reset = async (): Promise<void> => {
-    keyword.value = '';
-    awaitingAcceptance.value = false;
-    await search();
-  };
-  const changePage = async (value: number): Promise<void> => {
-    page.value = value;
-    await load();
-  };
-  const changePageSize = async (value: number): Promise<void> => {
-    pageSize.value = value;
-    await search();
-  };
-  usePageActivationRefresh(load);
-  return {
-    awaitingAcceptance,
-    keyword,
-    rows,
-    page,
-    pageSize,
-    total,
-    loading,
-    load,
-    search,
-    reset,
-    changePage,
-    changePageSize,
-  };
+        signal,
+      ),
+    resetFilters: () => {
+      keyword.value = '';
+      awaitingAcceptance.value = false;
+    },
+    errorMessage: '采购到货列表加载失败',
+  });
+  return { awaitingAcceptance, keyword, ...list };
 }

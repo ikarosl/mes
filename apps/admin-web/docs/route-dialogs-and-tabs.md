@@ -22,7 +22,7 @@ Dialog 和短时确认框只遮罩 `AdminLayout` 的 `.content`，不阻断菜�
 
 ## 4. RouteDialog
 
-全局 `<el-dialog>` 已由 [RouteDialog](../src/components/RouteDialog.vue) 接管，业务页不直接导入原生 ElDialog，不设置 `append-to-body=true`：
+全局 `<el-dialog>` 由 [RouteDialog](../src/components/RouteDialog.vue) 接管，业务页不直接导入原生 ElDialog，不设置 `append-to-body=true`：
 
 ```vue
 <el-dialog v-model="visible" title="编辑产品" :width="DialogWidth.md">
@@ -49,7 +49,7 @@ await RouteMessageBox.confirm('确认停用该产品吗？', '停用产品', {
 
 ## 6. 选择组件接入
 
-选择组件不再接入旧 Live Options 设计；其存量遗留范围、停止使用与维护的约束、替换标准及已选值核验由[管理端架构 §4](architecture.md#4-选择组件与候选契约)统一维护。静态枚举、有界候选与远程搜索按该标准接入，不因使用 `el-select` 或组件的 `options` 属性而沿用旧封装。刷新时机见[架构 §6](architecture.md#6-生命周期与定向刷新)，未接入后端的业务不能伪造实时候选。
+选择组件禁止接入存量 Live Options 设计；其存量遗留范围、停止使用与维护的约束、替换标准及已选值核验由[管理端架构 §4](architecture.md#4-选择组件与候选契约)统一维护。静态枚举、有界候选与远程搜索按该标准接入，不因使用 `el-select` 或组件的 `options` 属性而沿用旧封装。刷新时机见[架构 §6](architecture.md#6-生命周期与定向刷新)，未接入后端的业务不能伪造实时候选。
 
 ## 8. 验证重点
 

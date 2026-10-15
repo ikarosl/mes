@@ -7,10 +7,10 @@ import type {
   ProcurementInboundReleaseQuery,
   ProcurementInboundReleaseItem,
   ProcurementInboundInspectionQuery,
-  ProcurementInboundInspectionItem,
+  ProcurementInboundInspectionLineItem,
+  ProcurementInboundInspectionCaseSummary,
 } from '@company/contracts';
 import type { MaterialVariantQuery } from '../../../product/public.js';
-import type { QualityInboundQuery } from '../../../quality/public.js';
 import type { Db } from '../mysql-purchase-order.shared.js';
 import {
   type ReadRow,
@@ -19,6 +19,9 @@ import {
   lineSelect,
   readCurrentRounds,
   LINE_COLUMNS,
+  RECEIPT_LIST_SOURCE_COLUMNS,
+  RECEIPT_LINE_LIST_ORDER,
+  mapReceiptListSource,
   mapReceipt,
   mapRound,
   readReceiptSuppliers,
@@ -28,7 +31,16 @@ import {
   nullableText,
   date,
 } from './receipt-read.shared.js';
-import { readReceiptQuantitySummaries } from './receipt-quantities.query.js';
+import {
+  RECEIPT_UNPROCESSED_QUANTITY,
+  receiptPhysicalQuantityJoins,
+  readReceiptQuantitySummaries,
+} from './receipt-quantities.query.js';
+
+const CURRENT_RECEIPT_LINE_STAGE = `CASE
+  WHEN ${RECEIPT_UNPROCESSED_QUANTITY}=0 THEN 'completed'
+  WHEN current_round.trigger_type='manual_rejection' THEN 'manual_rejection'
+  ELSE current_round.status END`;
 
 const RECEIPT_KEYWORD_LINE_SELECT = `SELECT 1 FROM procurement_receipt_line search_line
   JOIN procurement_order_line search_order_line ON search_order_line.id=search_line.purchase_order_line_id
@@ -117,9 +129,9 @@ export async function listReceiptLines(
     params,
   );
   const [rows] = await db.query<ReadRow[]>(
-    `${lineSelect(LINE_COLUMNS + ',r.received_at')}
+    `${lineSelect(RECEIPT_LIST_SOURCE_COLUMNS + ',line.id,line.supplier_batch_code,r.received_at')}
     WHERE ${where.join(' AND ')}
-    ORDER BY r.received_at DESC,r.id DESC,line.line_no ASC,line.id ASC LIMIT ? OFFSET ?`,
+    ORDER BY ${RECEIPT_LINE_LIST_ORDER} LIMIT ? OFFSET ?`,
     [...params, pageSize, (page - 1) * pageSize],
   );
   const ids = rows.map((row) => text(row.id));
@@ -132,22 +144,8 @@ export async function listReceiptLines(
       const summary = quantities.get(id);
       if (!currentRound || !summary) throw new Error('到货明细缺少当前轮次或数量投影');
       return {
+        ...mapReceiptListSource(row),
         id,
-        receiptId: text(row.receipt_id),
-        receiptNo: text(row.receipt_no),
-        purchaseOrderId: text(row.purchase_order_id),
-        purchaseNo: text(row.purchase_no),
-        purchaseOrderLineId: text(row.purchase_order_line_id),
-        purchaseOrderLineNo: Number(row.purchase_order_line_no),
-        lineNo: Number(row.line_no),
-        itemId: text(row.item_id),
-        itemCode: text(row.item_code_snapshot),
-        itemName: text(row.material_name),
-        materialVariantId: text(row.material_variant_id),
-        materialVariantCode: text(row.material_variant_code_snapshot),
-        unit: text(row.unit_snapshot),
-        supplierId: text(row.supplier_id),
-        supplierName: text(row.supplier_name),
         supplierBatchCode: nullableText(row.supplier_batch_code),
         receivedAt: date(row.received_at),
         currentRound: mapRound(currentRound),
@@ -227,7 +225,6 @@ export async function listInboundReleases(
       receiptId: text(row.receipt_id),
       receiptNo: text(row.receipt_no),
       receiptLineId: text(row.id),
-      receiptLineNo: Number(row.line_no),
       receiptLineVersion: Number(row.version),
       receiptReceivedAt: date(row.received_at),
       receiptPurchaseNo: text(row.purchase_no),
@@ -258,109 +255,96 @@ export async function listInboundReleases(
   };
 }
 
-const TASKS = `(SELECT 'uninspected' task_kind,round.id task_id,round.receipt_line_id,
-    round.id round_id,round.round_no source_round_no,round.version round_version,round.status round_status,round.starting_quantity declared_quantity,
-    NULL case_id,'uninspected' task_status,NULL case_type,round.created_at
-    FROM procurement_receipt_round round JOIN procurement_receipt_line current_line ON current_line.current_round_id=round.id
-    WHERE round.status='uninspected'
-  UNION ALL SELECT 'case',qc.id,qc.receipt_line_id,round.id,round.round_no,round.version,IF(round.id=current_line.current_round_id,round.status,'superseded'),qc.declared_quantity,
-    qc.id,qc.status,qc.case_type,qc.created_at
-    FROM quality_inspection_case qc JOIN procurement_receipt_round round ON round.id=qc.incoming_round_id
-    JOIN procurement_receipt_line current_line ON current_line.id=round.receipt_line_id
-    WHERE qc.source_kind='incoming') task`;
-const ADOPTED_CASE_SELECT = `SELECT 1 FROM quality_inspection_record adopted_record
-  WHERE adopted_record.id=current_round.inspection_id
-    AND adopted_record.receipt_line_id=line.id
-    AND adopted_record.case_id=task.case_id`;
 export async function listInspections(
   db: Db,
-  quality: QualityInboundQuery,
   query: ProcurementInboundInspectionQuery,
-  caseId?: string,
-): Promise<PageResult<ProcurementInboundInspectionItem>> {
+): Promise<PageResult<ProcurementInboundInspectionLineItem>> {
   const { page, pageSize } = pageInput(query);
   const { where, params } = filters(query, true);
-  if (query.status) {
-    where.push('task.task_status=?');
-    params.push(query.status);
-  }
-  if (query.roundStatus) {
-    where.push('task.round_status=?');
-    params.push(query.roundStatus);
-  }
-  if (query.currentRoundStatus) {
-    where.push('current_round.status=?');
-    params.push(query.currentRoundStatus);
-    where.push(`(task.round_id=current_round.id OR EXISTS(${ADOPTED_CASE_SELECT}))`);
-  }
-  if (query.caseType) {
-    where.push('task.case_type=?');
-    params.push(query.caseType);
+  where.push("current_round.status<>'superseded'");
+  if (query.stage) {
+    where.push(`${CURRENT_RECEIPT_LINE_STAGE}=?`);
+    params.push(query.stage);
   }
   if (query.receiptLineIds) {
     if (!query.receiptLineIds.length) return { items: [], total: 0, page, pageSize };
     where.push(`line.id IN (${slots(query.receiptLineIds)})`);
     params.push(...query.receiptLineIds);
   }
-  if (caseId) {
-    where.push('task.case_id=?');
-    params.push(caseId);
-  }
   const select = (columns: string) =>
-    `${lineSelect(columns)} JOIN ${TASKS} ON task.receipt_line_id=line.id
-    JOIN procurement_receipt_round current_round ON current_round.id=line.current_round_id`;
+    `${lineSelect(columns)} JOIN procurement_receipt_round current_round
+      ON current_round.id=line.current_round_id AND current_round.receipt_line_id=line.id
+      ${query.stage ? receiptPhysicalQuantityJoins() : ''}`;
   const [[count]] = await db.query<ReadRow[]>(
     `${select('COUNT(*) total')} WHERE ${where.join(' AND ')}`,
     params,
   );
   const [rows] = await db.query<ReadRow[]>(
-    `${select(LINE_COLUMNS + ',task.task_kind,task.task_id,task.round_id,task.source_round_no,task.round_version,task.round_status,task.declared_quantity,task.case_id,current_round.id active_round_id,current_round.round_no active_round_no,current_round.status active_round_status,current_round.inspection_id active_inspection_id')}
-    WHERE ${where.join(' AND ')} ORDER BY task.created_at DESC,task.task_kind,task.task_id DESC LIMIT ? OFFSET ?`,
+    `SELECT ${RECEIPT_LIST_SOURCE_COLUMNS},line.id,
+      current_round.id active_round_id,current_round.round_no active_round_no,
+      current_round.status active_round_status,current_round.trigger_type active_round_trigger_type,
+      ${CURRENT_RECEIPT_LINE_STAGE} stage,${RECEIPT_UNPROCESSED_QUANTITY} unprocessed_quantity,
+      current_case.id case_id,current_case.incoming_round_id case_round_id,
+      current_case.status case_status,
+      source_round.round_no case_round_no,
+      adopted_record.id adopted_inspection_id,adopted_record.release_decision
+    FROM procurement_receipt_line line
+    JOIN procurement_receipt r ON r.id=line.receipt_id
+    JOIN procurement_order po ON po.id=line.purchase_order_id
+    JOIN procurement_order_line pol ON pol.id=line.purchase_order_line_id
+    JOIN procurement_supplier supplier ON supplier.id=pol.supplier_id
+    JOIN materials material ON material.id=line.item_id
+    JOIN procurement_receipt_round current_round
+      ON current_round.id=line.current_round_id AND current_round.receipt_line_id=line.id
+    ${receiptPhysicalQuantityJoins()}
+    LEFT JOIN quality_inspection_record adopted_record
+      ON adopted_record.id=current_round.inspection_id AND adopted_record.receipt_line_id=line.id
+    LEFT JOIN quality_inspection_case current_case
+      ON current_case.receipt_line_id=line.id AND current_case.source_kind='incoming'
+      AND (current_case.id=adopted_record.case_id OR
+        (adopted_record.id IS NULL AND current_case.incoming_round_id=current_round.id
+          AND current_case.status='reviewing'))
+    LEFT JOIN procurement_receipt_round source_round
+      ON source_round.id=current_case.incoming_round_id AND source_round.receipt_line_id=line.id
+    WHERE ${where.join(' AND ')}
+    ORDER BY ${RECEIPT_LINE_LIST_ORDER} LIMIT ? OFFSET ?`,
     [...params, pageSize, (page - 1) * pageSize],
   );
-  const cases = await quality.getCases(
-    rows.filter((r) => r.case_id !== null).map((r) => text(r.case_id)),
-  );
-  const casesById = new Map(cases.map((item) => [item.id, item]));
   return {
     items: rows.map((row) => {
-      const inspectionCase =
-        row.case_id === null ? null : (casesById.get(text(row.case_id)) ?? null);
-      const currentInspectionId = nullableText(row.active_inspection_id);
-      const roundId = text(row.round_id);
-      const isCurrentlyAdopted =
-        currentInspectionId !== null && inspectionCase?.inspection?.id === currentInspectionId;
+      const receiptLineId = text(row.id);
+      const currentCase: ProcurementInboundInspectionCaseSummary | null =
+        row.case_id === null
+          ? null
+          : {
+              id: text(row.case_id),
+              status: row.case_status as ProcurementInboundInspectionCaseSummary['status'],
+              inspection:
+                row.adopted_inspection_id === null
+                  ? null
+                  : {
+                      id: text(row.adopted_inspection_id),
+                      releaseDecision: row.release_decision as NonNullable<
+                        ProcurementInboundInspectionCaseSummary['inspection']
+                      >['releaseDecision'],
+                    },
+            };
       return {
-        taskKey: `${row.task_kind}:${row.task_id}`,
-        taskKind: row.task_kind as 'uninspected' | 'case',
-        case: inspectionCase,
-        receiptLineId: text(row.id),
-        receiptLineNo: Number(row.line_no),
-        receiptLineVersion: Number(row.version),
-        roundId,
-        roundVersion: Number(row.round_version),
-        roundStatus: row.round_status as ProcurementInboundInspectionItem['roundStatus'],
-        sourceRoundNo: Number(row.source_round_no),
+        ...mapReceiptListSource(row),
+        receiptLineId,
+        stage: row.stage as ProcurementInboundInspectionLineItem['stage'],
         currentRound: {
-          id: text(row.active_round_id),
           roundNo: Number(row.active_round_no),
           status:
-            row.active_round_status as ProcurementInboundInspectionItem['currentRound']['status'],
-          inspectionId: currentInspectionId,
+            row.active_round_status as ProcurementInboundInspectionLineItem['currentRound']['status'],
+          triggerType:
+            row.active_round_trigger_type as ProcurementInboundInspectionLineItem['currentRound']['triggerType'],
         },
-        isCurrentlyAdopted,
-        isInherited: isCurrentlyAdopted && roundId !== text(row.active_round_id),
-        coveredQuantity: text(row.declared_quantity),
-        receiptId: text(row.receipt_id),
-        receiptNo: text(row.receipt_no),
-        purchaseOrderId: text(row.purchase_order_id),
-        purchaseNo: text(row.purchase_no),
-        supplierId: text(row.supplier_id),
-        supplierName: text(row.supplier_name),
-        itemCode: text(row.item_code_snapshot),
-        itemName: text(row.material_name),
-        materialVariantCode: text(row.material_variant_code_snapshot),
-        unit: text(row.unit_snapshot),
+        quantities: { unprocessedQuantity: String(Number(row.unprocessed_quantity)) },
+        currentCase,
+        currentCaseRoundNo: currentCase === null ? null : Number(row.case_round_no),
+        isInherited:
+          currentCase?.inspection != null && text(row.case_round_id) !== text(row.active_round_id),
       };
     }),
     total: Number(count?.total ?? 0),

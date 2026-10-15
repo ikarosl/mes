@@ -15,7 +15,7 @@ import {
   PRODUCTION_OUTPUT_QUANTITY_MAX,
   PRODUCTION_OUTPUT_INSPECTION_METHODS,
   PRODUCTION_OUTPUT_RELEASE_DECISIONS,
-  FINISHED_INSPECTION_LIST_STATUSES,
+  FINISHED_INSPECTION_STAGES,
 } from '@company/constants';
 import type {
   BeginFinishedReinspectionPayload,
@@ -23,7 +23,7 @@ import type {
   ProductionOutputReleaseDecision,
   RecordFinishedInspectionPayload,
   FinishedInspectionTaskQuery,
-  FinishedInspectionListStatus,
+  FinishedInspectionStage,
 } from '@company/contracts';
 import { PageQueryDto } from '../../../../presentation/http/dto/page-query.dto.js';
 import { VersionedCommandDto } from '../../../../presentation/http/dto/versioned-command.dto.js';
@@ -32,7 +32,7 @@ export class FinishedInspectionTaskQueryDto
   implements FinishedInspectionTaskQuery
 {
   @IsOptional() @IsString() @MaxLength(100) keyword?: string;
-  @IsOptional() @IsIn(FINISHED_INSPECTION_LIST_STATUSES) status?: FinishedInspectionListStatus;
+  @IsOptional() @IsIn(FINISHED_INSPECTION_STAGES) stage?: FinishedInspectionStage;
 }
 export class FinishedInspectionBatchParamDto {
   @IsString() @Matches(/^[1-9]\d{0,19}$/) batchId!: string;

@@ -1,303 +1,469 @@
 <template>
   <el-dialog
-    v-model="visible"
-    :title="`来料检验${line ? ` · ${line.receiptNo} · 第 ${line.lineNo} 行` : ''}`"
-    :width="DialogWidth.workbench"
+    :model-value="visible"
+    :title="`来料检验${line ? ` · ${line.receiptNo} · id:${line.id}` : ''}`"
+    :width="DialogWidth.xl"
     workbench
     :before-close="beforeClose"
     :close-on-click-modal="false"
+    :show-close="!command.busy.value"
+    @update:model-value="(value: boolean) => !value && close()"
   >
+    <el-alert
+      v-if="error"
+      :title="error"
+      type="error"
+      :closable="false"
+      show-icon
+      class="notice"
+    />
+    <el-alert
+      v-if="stale && actionOpen"
+      title="检验依据已变化或读取失败，输入已保留。请核对最新详情后放弃本地填写，再按最新范围继续办理；不会自动替换原版本。"
+      type="warning"
+      :closable="false"
+      show-icon
+      class="notice"
+    />
+    <el-alert
+      v-if="command.status.value !== 'idle'"
+      title="提交结果尚未确认，当前输入已锁定。请核对当前轮与检验历史，再原样重试；关闭仅放弃本地重试标识。"
+      type="warning"
+      :closable="false"
+      show-icon
+      class="notice"
+    />
     <div v-loading="loading">
-      <el-alert
-        v-if="readError"
-        title="检验依据加载失败，不能提交结论。请刷新后重新核对。"
-        type="error"
-        :closable="false"
-        class="notice"
+      <InboundInspectionSummary
+        v-if="line"
+        :line="line"
       />
-      <template v-if="line">
-        <InboundInspectionSummary :line="line" />
-        <div
-          v-if="currentInspection"
-          class="selected-record"
+      <el-tabs
+        v-model="activeTab"
+        class="inspection-tabs"
+      >
+        <el-tab-pane
+          label="本次检验"
+          name="current"
+          :disabled="!lineId && Boolean(focusedCaseId)"
         >
-          <strong
-            >本批当前检验依据<span v-if="currentCaseRoundNo !== undefined">
-              · 检验所属处理第 {{ currentCaseRoundNo }} 轮</span
-            ></strong
-          >
-          <InboundInspectionRecord
-            :inspection="currentInspection"
-            :round-no="currentCaseRoundNo"
-          />
-        </div>
-        <div
-          v-if="selectedCase?.inspection && selectedCase.inspection.id !== currentInspection?.id"
-          class="selected-record"
-        >
-          <strong
-            >所选历史检验结论 · {{ QUALITY_INBOUND_CASE_STATUS_LABELS[selectedCase.status]
-            }}<span v-if="selectedCaseRoundNo !== undefined">
-              · 第 {{ selectedCaseRoundNo }} 轮</span
-            ></strong
-          >
-          <p class="historical-note">此记录属于历史办理，仅供追溯，不代表当前轮采用依据。</p>
-          <InboundInspectionRecord
-            :inspection="selectedCase.inspection"
-            :round-no="selectedCaseRoundNo"
-          />
-        </div>
-        <div class="current-action">
-          <strong>当前办理 · 第 {{ line.currentRound.roundNo }} 轮</strong>
-          <template v-if="Number(line.quantities.unprocessedQuantity) === 0">
-            <span>本批已处理完，可查阅检验依据与检验历史。</span>
+          <template v-if="contextLine">
+            <el-descriptions
+              :column="3"
+              border
+              size="small"
+            >
+              <el-descriptions-item label="当前整批阶段">
+                <el-tag
+                  size="small"
+                  :type="receiptLineStageType(contextLine)"
+                  :effect="receiptLineStageEffect(contextLine)"
+                  >{{ receiptLineStageLabel(contextLine) }}</el-tag
+                >
+              </el-descriptions-item>
+              <el-descriptions-item label="当前处理轮"
+                >第 {{ contextLine.currentRound.roundNo }} 轮</el-descriptions-item
+              >
+              <el-descriptions-item label="本轮剩余实物"
+                ><strong
+                  >{{ contextLine.quantities.unprocessedQuantity }} {{ contextLine.unit }}</strong
+                ></el-descriptions-item
+              >
+              <el-descriptions-item
+                v-if="contextLine.currentRound.reason"
+                label="本轮发起原因"
+                :span="3"
+                ><span class="record-text">{{
+                  contextLine.currentRound.reason
+                }}</span></el-descriptions-item
+              >
+            </el-descriptions>
+            <div
+              v-if="currentInspection"
+              class="current-record"
+            >
+              <h3>
+                {{
+                  currentCase?.roundId !== line?.currentRound.id
+                    ? '当前采用 · 沿用此前检验'
+                    : '本轮检验记录'
+                }}
+              </h3>
+              <InboundInspectionRecord
+                :inspection="currentInspection"
+                :round-no="currentCaseRoundNo"
+              />
+            </div>
+            <InlineHint
+              v-if="!actionOpen"
+              :tone="statusTone"
+              class="notice"
+              >{{ statusHint }}</InlineHint
+            >
+            <div
+              v-if="actionOpen && action === 'review'"
+              v-loading="actionLoading"
+              class="action-form"
+            >
+              <h3>{{ caseType === 'initial' ? '发起整批检验' : '开始复检 / 更正' }}</h3>
+              <InlineHint tone="warning">
+                确认后本批全部剩余实物
+                <strong
+                  >{{ contextLine.quantities.unprocessedQuantity }} {{ contextLine.unit }}</strong
+                >
+                进入检验中，<strong>原可入及待退分配一并暂停</strong>。抽检同样判断整批资格；关闭填写不会撤销已发起检验或恢复旧授权。
+              </InlineHint>
+              <el-form
+                label-position="top"
+                :disabled="blocked || stale"
+                @submit.prevent="actions.confirm"
+              >
+                <el-form-item
+                  v-if="caseType !== 'initial'"
+                  label="办理原因类型"
+                  required
+                >
+                  <el-radio-group v-model="caseType">
+                    <el-radio value="reinspection">{{
+                      QUALITY_INBOUND_CASE_TYPE_LABELS.reinspection
+                    }}</el-radio>
+                    <el-radio value="inspection_correction">{{
+                      QUALITY_INBOUND_CASE_TYPE_LABELS.inspection_correction
+                    }}</el-radio>
+                  </el-radio-group>
+                </el-form-item>
+                <el-form-item
+                  label="发起原因"
+                  required
+                >
+                  <el-input
+                    v-model="reason"
+                    type="textarea"
+                    :rows="3"
+                    :maxlength="QUALITY_INBOUND_TEXT_MAX_LENGTH"
+                    show-word-limit
+                  />
+                </el-form-item>
+              </el-form>
+            </div>
+            <div
+              v-else-if="actionOpen && action === 'inspect' && caseRecord"
+              v-loading="actionLoading"
+              class="action-form"
+            >
+              <h3>填写本轮检验结果</h3>
+              <InlineHint
+                v-if="hasDisposal"
+                class="notice"
+              >
+                历史实物处置：已入 {{ contextLine.quantities.inboundQuantity }}、已退
+                {{ contextLine.quantities.returnedQuantity }}
+                {{ contextLine.unit }}；本次检验只处理上方剩余实物。
+              </InlineHint>
+              <InboundInspectionFields
+                v-model="inspection"
+                :covered-quantity="Number(caseRecord.coveredQuantity)"
+                :unit="contextLine.unit"
+                :disabled="blocked || stale"
+                @valid="inspectionValid = $event"
+              />
+            </div>
           </template>
-          <template v-else-if="currentReceiptCase(line)">
-            <span>本轮检验已发起，需填写检查事实与放行结论。</span>
+        </el-tab-pane>
+        <el-tab-pane
+          label="检验历史"
+          name="history"
+        >
+          <InlineHint class="history-hint"
+            >历史记录用于追溯；当前采用关系以本次检验页签的依据为准，历史放行不代表当前可入库。</InlineHint
+          >
+          <div
+            v-if="focusedCaseId"
+            class="history-location"
+          >
+            <span
+              >当前定位：检验办理 ID {{ focusedCaseId
+              }}<template v-if="records[0]?.inspection">
+                · 检验记录 ID {{ records[0].inspection.id }}</template
+              ></span
+            >
             <el-button
               type="primary"
-              :disabled="blocked"
-              @click="actions?.open(line, 'inspect', undefined, currentReceiptCase(line), true)"
-              >填写本轮检验结果</el-button
+              link
+              :disabled="recordsLoading || !lineId"
+              @click="showAllRecords"
+              >查看全部检验历史</el-button
             >
-          </template>
-          <template
-            v-else-if="
-              canReviewReceipt(line) &&
-              ['uninspected', 'reinspection_required', 'quality_rejected'].includes(
-                line.currentRound.status,
-              )
-            "
+          </div>
+          <el-alert
+            v-if="recordsError"
+            :title="recordsError"
+            type="error"
+            :closable="false"
+            show-icon
+            class="notice"
+          />
+          <div
+            v-loading="recordsLoading"
+            class="history-records"
           >
-            <span>{{
-              line.currentRound.status === 'uninspected'
-                ? '本批待检验。'
-                : '本批仍有质量阻断，可发起整批复检。'
-            }}</span>
-            <el-button
-              type="primary"
-              :disabled="blocked"
-              @click="actions?.open(line, 'review', undefined, undefined, true)"
-              >{{
-                line.currentRound.status === 'uninspected' ? '发起整批检验' : '发起整批复检'
-              }}</el-button
-            >
-          </template>
-          <template v-else-if="line.currentRound.status === 'awaiting_acceptance'">
-            <span>本轮检查已完成，待库管核对并定稿正式去向。</span>
-          </template>
-          <template v-else>
-            <span>{{
-              isReceiptRejected(line)
-                ? '本批已人工拒收，检验记录仅供追溯。'
-                : '本轮检验办理已完成，可查看检验依据或发起复检。'
-            }}</span>
-          </template>
-        </div>
-        <div
-          v-if="
-            canReviewReceipt(line) &&
-            ['awaiting_acceptance', 'finalized'].includes(line.currentRound.status)
-          "
-          class="secondary-action"
-        >
-          <el-button
-            link
-            type="primary"
-            :disabled="blocked"
-            @click="actions?.open(line, 'review', undefined, undefined, true)"
-            >发起整批复检 / 更正</el-button
-          >
-        </div>
-        <el-alert
-          v-if="['reinspection_required', 'quality_rejected'].includes(line.currentRound.status)"
-          :type="line.currentRound.status === 'quality_rejected' ? 'error' : 'warning'"
-          :closable="false"
-          class="notice"
-          title="本次检查记录已保存，但本批仍不允许正常定稿或入库；可发起整批复检，库管仍可独立拒收。"
-        />
-        <el-button
-          :disabled="blocked"
-          @click="history?.open(line)"
-          >检验历史</el-button
-        >
-      </template>
+            <InboundInspectionHistory
+              v-if="records.length || (!recordsLoading && !recordsError)"
+              :records="records"
+              :unit="line?.unit"
+              :current-round-id="line?.currentRound.id"
+              :adopted-inspection-id="line?.currentRound.inspectionId"
+              :rounds="line?.rounds"
+              :focused-case-id="focusedCaseId"
+              :focused-source-round-no="focusedSourceRoundNo"
+            />
+          </div>
+          <PaginationFooter
+            v-if="!focusedCaseId && lineId"
+            :total="total"
+            :current-page="page"
+            :page-size="pageSize"
+            @page-change="editor.changePage"
+            @update:page-size="editor.changePageSize"
+          />
+        </el-tab-pane>
+      </el-tabs>
     </div>
-    <template #footer
-      ><el-button
+    <template #footer>
+      <span
+        v-if="command.status.value !== 'idle'"
+        class="warning"
+        >操作结果尚未确认，请先核对并原样重试。</span
+      >
+      <el-button
         v-if="line && auth.can(PERMISSIONS.procurement.receipts.view)"
-        :disabled="blocked"
+        :disabled="command.busy.value"
         @click="goReceipt"
         >查看到货</el-button
-      ><el-button
-        :disabled="actions?.locked"
-        @click="load"
-        >刷新检验详情</el-button
-      ><el-button @click="close">关闭</el-button></template
-    >
+      >
+      <el-button
+        :disabled="command.busy.value"
+        @click="close"
+        >关闭</el-button
+      >
+      <el-button
+        :disabled="busy || recordsLoading"
+        @click="editor.refresh"
+        >刷新</el-button
+      >
+      <el-button
+        v-if="activeTab === 'current' && actionOpen && command.status.value === 'idle'"
+        :disabled="busy"
+        @click="actions.close"
+        >{{ action === 'inspect' ? '放弃填写' : '返回' }}</el-button
+      >
+      <el-button
+        v-if="command.status.value === 'pending'"
+        type="primary"
+        :loading="command.busy.value"
+        @click="command.retry"
+        >原样重试</el-button
+      >
+      <el-button
+        v-else-if="primaryLabel && command.status.value === 'idle'"
+        type="primary"
+        :loading="command.busy.value"
+        :disabled="primaryDisabled"
+        @click="primaryAction"
+        >{{ primaryLabel }}</el-button
+      >
+    </template>
   </el-dialog>
-  <ReceiptLineActionDialog
-    ref="actions"
-    @saved="saved"
-  /><InboundInspectionHistoryDialog ref="history" />
 </template>
 <script setup lang="ts">
-import { computed, onActivated, ref } from 'vue';
+import { computed } from 'vue';
+import { useRouter } from 'vue-router';
+import {
+  PERMISSIONS,
+  QUALITY_INBOUND_CASE_TYPE_LABELS,
+  QUALITY_INBOUND_TEXT_MAX_LENGTH,
+} from '@company/constants';
+import { useAuthStore } from '../../../stores/auth';
+import { DialogWidth } from '../../../utils/dialog';
+import InlineHint from '../../../components/InlineHint.vue';
+import PaginationFooter from '../../../components/PaginationFooter.vue';
 import {
   canReviewReceipt,
-  currentReceiptCase,
   isReceiptRejected,
+  receiptLineStageLabel,
+  receiptLineStageType,
+  receiptLineStageEffect,
 } from '../receipt-round-presentation';
-import { useRouter } from 'vue-router';
-import type {
-  ProcurementInboundInspectionItem,
-  ProcurementInboundInspectionDetail,
-  QualityInboundCaseItem,
-} from '@company/contracts';
-import { QUALITY_INBOUND_CASE_STATUS_LABELS, PERMISSIONS } from '@company/constants';
-import { useAuthStore } from '../../../stores/auth';
-import { procurementApi } from '../../../api/procurement';
-import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
-import { DialogWidth } from '../../../utils/dialog';
-import { EMessage } from '../../../utils/message';
+import { useInboundInspection } from '../composables/useInboundInspection';
 import InboundInspectionSummary from './InboundInspectionSummary.vue';
-import ReceiptLineActionDialog from './ReceiptLineActionDialog.vue';
-import InboundInspectionHistoryDialog from './InboundInspectionHistoryDialog.vue';
+import InboundInspectionFields from './InboundInspectionFields.vue';
+import InboundInspectionHistory from './InboundInspectionHistory.vue';
 import InboundInspectionRecord from './InboundInspectionRecord.vue';
-const emit = defineEmits<{ changed: [] }>();
+
+const emit = defineEmits<{ changed: []; 'record-focus-cleared': [] }>();
 const auth = useAuthStore(),
   router = useRouter();
-const visible = ref(false),
-  lineId = ref(''),
-  loading = ref(false),
-  readError = ref(false);
-const line = ref<ProcurementInboundInspectionDetail | null>(null),
-  selectedCase = ref<QualityInboundCaseItem | null>(null);
-const actions = ref<InstanceType<typeof ReceiptLineActionDialog>>(),
-  history = ref<InstanceType<typeof InboundInspectionHistoryDialog>>();
-const read = useLatestReadRequest(() => {
-  loading.value = false;
-});
-const currentCase = computed(
+const editor = useInboundInspection(() => emit('changed'));
+const {
+  visible,
+  lineId,
+  line,
+  loading,
+  error,
+  activeTab,
+  records,
+  recordsLoading,
+  recordsError,
+  page,
+  pageSize,
+  total,
+  focusedCaseId,
+  focusedSourceRoundNo,
+  actions,
+  reviewingCase,
+  currentCase,
+  currentInspection,
+  currentCaseRoundNo,
+  contextLine,
+  busy,
+  blocked,
+  open,
+  close,
+} = editor;
+const {
+  visible: actionOpen,
+  loading: actionLoading,
+  action,
+  stale,
+  caseType,
+  reason,
+  caseRecord,
+  inspection,
+  inspectionValid,
+  canConfirm,
+  command,
+} = actions;
+const hasDisposal = computed(
   () =>
-    line.value?.cases.find(
-      (record) => record.inspection?.id === line.value?.currentRound.inspectionId,
-    ) ?? null,
+    Number(contextLine.value?.quantities.inboundQuantity) > 0 ||
+    Number(contextLine.value?.quantities.returnedQuantity) > 0,
 );
-const currentInspection = computed(() => currentCase.value?.inspection ?? null);
-const roundNoForCase = (record: QualityInboundCaseItem | null): number | undefined => {
-  const receiptLine = line.value;
-  if (!receiptLine || !record) return undefined;
-  if (receiptLine.currentRound.id === record.roundId) return receiptLine.currentRound.roundNo;
-  return receiptLine.rounds.find((round) => round.id === record.roundId)?.roundNo;
-};
-const currentCaseRoundNo = computed(() => roundNoForCase(currentCase.value));
-const selectedSourceRoundNo = ref<number>();
-const selectedCaseRoundNo = computed(
-  () => selectedSourceRoundNo.value ?? roundNoForCase(selectedCase.value),
+const statusHint = computed(() => {
+  const source = line.value;
+  if (!source) return '';
+  if (Number(source.quantities.unprocessedQuantity) === 0)
+    return '本批已处理完，可查阅检验依据与检验历史。';
+  if (isReceiptRejected(source))
+    return '本批已人工拒收，检验记录仅供追溯；后续处置请在到货页面核对。';
+  if (reviewingCase.value)
+    return '本轮检验已发起，可继续填写检查事实与放行结论。关闭或放弃填写不会撤销已经发起的检验。';
+  if (source.currentRound.status === 'uninspected')
+    return '本批待检验，请明确发起后填写检查事实与放行结论。';
+  if (
+    source.currentRound.status === 'reinspection_required' ||
+    source.currentRound.status === 'quality_rejected'
+  )
+    return '本次检查记录已保存，本批仍阻断正常定稿及入库；可发起整批复检，库管仍可独立拒收。';
+  if (source.currentRound.status === 'awaiting_acceptance')
+    return '本轮检查已完成，待库管核对并定稿正式去向。';
+  if (source.currentRound.status === 'finalized')
+    return '本轮已定稿；需要重新检查时可开始整批复检，旧剩余执行资格随之暂停。';
+  return '当前不能办理检验，请刷新核对当前整批阶段。';
+});
+const statusTone = computed(() =>
+  line.value &&
+  (isReceiptRejected(line.value) ||
+    ['reinspection_required', 'quality_rejected'].includes(line.value.currentRound.status))
+    ? 'warning'
+    : 'info',
 );
-const blocked = computed(() => loading.value || readError.value || Boolean(actions.value?.visible));
-const load = async (): Promise<void> => {
-  if (!visible.value || !read.isActive()) return;
-  const target = lineId.value,
-    current = read.begin(() => visible.value && lineId.value === target);
-  loading.value = true;
-  try {
-    const result = await procurementApi.inspectionReceiptLine(target, current.signal);
-    if (current.isCurrent()) {
-      line.value = result;
-      readError.value = false;
-    }
-  } catch (error) {
-    if (current.isCurrent()) {
-      readError.value = true;
-      EMessage.error(error, '检验范围加载失败');
-    }
-  } finally {
-    if (current.isCurrent()) loading.value = false;
-  }
-};
-const open = async (id: string, context?: ProcurementInboundInspectionItem): Promise<void> => {
-  if (visible.value && !(await close())) return;
-  lineId.value = id;
-  line.value = null;
-  selectedCase.value = context?.case ?? null;
-  selectedSourceRoundNo.value = context?.sourceRoundNo;
-  readError.value = false;
-  visible.value = true;
-  await load();
-};
-const close = async (): Promise<boolean> => {
-  if (actions.value?.locked) {
-    EMessage.warning('请先确认本次检验操作结果');
-    return false;
-  }
-  if (actions.value?.visible && !(await actions.value.close())) return false;
-  history.value?.close();
-  visible.value = false;
-  read.invalidate();
-  return true;
-};
-const saved = async (): Promise<void> => {
-  selectedCase.value = null;
-  selectedSourceRoundNo.value = undefined;
-  emit('changed');
-  await load();
-};
-const goReceipt = async (): Promise<void> => {
+const primaryLabel = computed(() => {
+  if (activeTab.value === 'history') return '返回本次检验';
+  if (!line.value) return '';
+  if (actionOpen.value) return action.value === 'inspect' ? '保存检验记录' : '确认发起检验 / 复检';
+  if (reviewingCase.value) return '填写本轮检验结果';
+  if (canReviewReceipt(line.value))
+    return line.value.currentRound.status === 'uninspected' ? '发起整批检验' : '开始复检';
+  return '查看检验历史';
+});
+const primaryDisabled = computed(() => {
+  if (activeTab.value === 'history')
+    return command.busy.value || (!lineId.value && Boolean(focusedCaseId.value));
+  return blocked.value || (actionOpen.value && !canConfirm.value);
+});
+async function primaryAction(): Promise<void> {
+  if (primaryDisabled.value) return;
+  if (activeTab.value === 'history') activeTab.value = 'current';
+  else if (actionOpen.value) await actions.confirm();
+  else if (reviewingCase.value || (line.value && canReviewReceipt(line.value)))
+    editor.beginAction();
+  else activeTab.value = 'history';
+}
+async function showAllRecords(): Promise<void> {
+  const pending = editor.showAllRecords();
+  emit('record-focus-cleared');
+  await pending;
+}
+async function goReceipt(): Promise<void> {
   const id = line.value?.id;
   if (id && (await close()))
     await router.push({ name: 'procurement-receipts', query: { receiptLineId: id } });
-};
-const beforeClose = (): void => {
+}
+function beforeClose(): void {
   void close();
-};
-onActivated(() => {
-  if (visible.value && !actions.value?.locked) void load();
-});
+}
 defineExpose({
   open,
   close,
   visible,
   openedLineId: computed(() => (visible.value ? lineId.value : '')),
-  openedCaseId: computed(() => (visible.value ? (selectedCase.value?.id ?? '') : '')),
-  locked: computed(() => Boolean(actions.value?.locked)),
+  openedCaseId: computed(() => (visible.value ? focusedCaseId.value : '')),
+  locked: command.locked,
 });
 </script>
 <style scoped>
-.notice {
-  margin-bottom: 16px;
+.inspection-tabs {
+  margin-top: 12px;
 }
-.current-action {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin: 12px 0;
+.inspection-tabs :deep(.el-tabs__content) {
+  overflow: visible;
 }
-.current-action {
-  padding: 12px;
-  background: var(--el-fill-color-light);
-  border-left: 3px solid var(--el-color-primary);
-}
-.current-action strong {
-  width: 100%;
-}
-.current-action span {
-  color: var(--el-text-color-primary);
-}
-.secondary-action {
+.notice,
+.history-hint {
+  margin-top: 12px;
   margin-bottom: 12px;
 }
-.selected-record {
-  margin: 20px 0;
+.current-record,
+.action-form {
+  margin-top: 20px;
 }
-.selected-record strong {
-  display: block;
-  margin-bottom: 10px;
+.current-record h3,
+.action-form h3 {
+  margin: 0 0 12px;
+  font-size: 15px;
 }
-.historical-note {
-  margin: 0 0 10px;
+.action-form .el-form {
+  margin-top: 16px;
+}
+.history-location {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 12px 0;
   color: var(--el-text-color-regular);
+  font-size: 13px;
+}
+.history-records {
+  min-height: 64px;
+}
+.record-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.warning {
+  margin-right: 12px;
+  color: var(--el-color-warning-dark-2);
 }
 </style>

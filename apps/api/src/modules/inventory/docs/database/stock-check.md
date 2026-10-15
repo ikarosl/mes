@@ -73,6 +73,7 @@
 - `result` 由生成表达式保证为空或 surplus／shortage／matched，没有单独的结果值域 CHECK
 - 检查约束：`CHECK (adjusted IN (0, 1))`
 - 唯一约束：`uk_stock_check_detail_target(stock_check_id, item_id, batch_id, stock_status)`；精确版本一致性由批次组合外键保证
+- 候选唯一键：`uk_stock_check_detail_material_reference(id, item_id, material_variant_id, batch_id)`；供库存流水的 `(stock_check_detail_ref, item_id, material_variant_id, batch_id)` 组合外键引用，同时核对盘点明细、物料、精确版本及批次身份，流水约束见[库存账本](inventory-ledger-and-inbound.md#7-inventory_transaction)
 
 说明：
 

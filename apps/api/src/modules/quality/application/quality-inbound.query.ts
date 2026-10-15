@@ -1,7 +1,7 @@
 import type {
+  PageQuery,
   PageResult,
   QualityInboundCaseItem,
-  QualityInboundCaseQuery,
   QualityInboundInspectionItem,
 } from '@company/contracts';
 
@@ -11,7 +11,10 @@ export interface QualityInboundReleaseBasis {
   receiptLineId: string;
 }
 export abstract class QualityInboundQuery {
-  abstract listCases(query: QualityInboundCaseQuery): Promise<PageResult<QualityInboundCaseItem>>;
+  abstract listCases(
+    receiptLineId: string,
+    query: PageQuery,
+  ): Promise<PageResult<QualityInboundCaseItem>>;
   abstract getCaseByInspection(inspectionId: string): Promise<QualityInboundCaseItem | null>;
   abstract getCase(caseId: string): Promise<QualityInboundCaseItem | null>;
   abstract getCases(caseIds: string[]): Promise<QualityInboundCaseItem[]>;

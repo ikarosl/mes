@@ -16,6 +16,7 @@ import {
   type OrderLineRow,
 } from './mysql-purchase-order.shared.js';
 import {
+  RECEIPT_LINE_COLUMNS,
   type ReceiptLineRow,
   type AllocationRow,
   readAllocations,
@@ -56,8 +57,10 @@ export const confirmReceiptInbound = async (
   for (const order of orders)
     for (const line of await readLines(connection, String(order.id), true))
       orderLines.set(String(line.id), line);
-  const [identities] = await connection.query<ReceiptLineRow[]>(
-    `SELECT * FROM procurement_receipt_line WHERE id IN (${idsSql(lineIds)}) ORDER BY id`,
+  const [identities] = await connection.query<
+    (RowDataPacket & { item_id: number; material_variant_id: number })[]
+  >(
+    `SELECT item_id,material_variant_id FROM procurement_receipt_line WHERE id IN (${idsSql(lineIds)}) ORDER BY id`,
     lineIds,
   );
   const eligibility = await product.requirePurchasableReferences({
@@ -71,7 +74,7 @@ export const confirmReceiptInbound = async (
   const allocations = new Map<string, AllocationRow[]>();
   for (const id of lineIds) {
     const [[line]] = await connection.query<ReceiptLineRow[]>(
-      'SELECT * FROM procurement_receipt_line WHERE id=? FOR UPDATE',
+      `SELECT ${RECEIPT_LINE_COLUMNS} FROM procurement_receipt_line WHERE id=? FOR UPDATE`,
       [id],
     );
     if (!line) return receiptError('到货明细不存在', 'RECEIPT_NOT_FOUND');

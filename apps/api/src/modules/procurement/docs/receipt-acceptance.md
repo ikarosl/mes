@@ -13,7 +13,7 @@
 | procurement_receipt_acceptance | 库管引用 QC 后确认的 C、前后实收版本和偏离依据 | 否，更正追加新轮、新清单 |
 | procurement_receipt_allocation | 本轮正式去向、采购归属和授权数量，或人工拒收分配 | 否，实际执行引用它 |
 
-revision 是数量事实，round 是办理资格，acceptance 是普通定稿依据，allocation 是具体执行授权。删除 procurement_receipt_scope；原 acceptance_line 被 allocation 替代，不再复制一份可变范围树。实际供应商退回与库存明细是各自的事实表，不计入这六张核心办理表。
+revision 是数量事实，round 是办理资格，acceptance 是普通定稿依据，allocation 是具体执行授权。不另建可变范围树。实际供应商退回与库存明细是各自的事实表，不计入这六张核心办理表。
 
 ## 整批换轮与继承
 

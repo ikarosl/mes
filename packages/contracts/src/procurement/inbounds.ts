@@ -17,7 +17,6 @@ export interface ProcurementInboundReleaseItem {
   receiptId: string;
   receiptNo: string;
   receiptLineId: string;
-  receiptLineNo: number;
   receiptLineVersion: number;
   receiptReceivedAt: string;
   /** Original purchase order of the receipt; purchaseNo is this allocation's assigned order. */

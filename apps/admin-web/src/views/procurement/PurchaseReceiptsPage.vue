@@ -4,7 +4,7 @@
       <el-form
         inline
         class="query-form"
-        @submit.prevent="search"
+        @submit.prevent="searchAndExpand"
         ><el-form-item label="到货 / 采购 / 供应商 / 物料"
           ><el-input
             v-model="keyword"
@@ -19,41 +19,30 @@
             native-type="submit"
             :loading="loading"
             >查询</el-button
-          ><el-button @click="reset">重置</el-button></el-form-item
+          ><el-button @click="resetAndExpand">重置</el-button></el-form-item
         ></el-form
       >
     </div>
     <div class="table-panel">
-      <TableToolbar
-        ><template #actions
-          ><el-button
-            type="primary"
-            :icon="Plus"
-            @click="create()"
-            >登记实际到货</el-button
-          ></template
-        ><template #tools
-          ><el-button
-            :icon="Refresh"
-            text
-            circle
-            :loading="loading"
-            aria-label="刷新到货明细"
-            @click="load" /></template
-      ></TableToolbar>
-      <div class="list-hint">
-        <InlineHint
-          >按<strong>到货明细</strong>分页；同一到货单只显示<strong>本页命中的明细</strong>。</InlineHint
-        >
-      </div>
       <ReceiptLinesTable
+        ref="worklist"
         :rows="rows"
         :loading="loading"
         :awaiting-acceptance="awaitingAcceptance"
         @detail="navigate"
         @quality="goQuality"
         @inbound="goInbound"
-      />
+        @refresh="load"
+      >
+        <template #actions
+          ><el-button
+            type="primary"
+            :icon="Plus"
+            @click="create()"
+            >登记实际到货</el-button
+          ></template
+        >
+      </ReceiptLinesTable>
       <PaginationFooter
         :total="total"
         :current-page="page"
@@ -75,11 +64,9 @@
 <script setup lang="ts">
 import { nextTick, onActivated, onScopeDispose, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { Plus, Refresh } from '@element-plus/icons-vue';
+import { Plus } from '@element-plus/icons-vue';
 import { procurementApi } from '../../api/procurement';
-import TableToolbar from '../../components/TableToolbar.vue';
 import PaginationFooter from '../../components/PaginationFooter.vue';
-import InlineHint from '../../components/InlineHint.vue';
 import { EMessage } from '../../utils/message';
 import { useTabsStore } from '../../stores/tabs';
 import { useLatestReadRequest } from '../../composables/requests/useLatestReadRequest';
@@ -88,6 +75,7 @@ import type { ReceiptDetailIntent } from './receipt-round-presentation';
 import ReceiptCreateDialog from './components/ReceiptCreateDialog.vue';
 import ReceiptDetailDialog from './components/ReceiptDetailDialog.vue';
 import ReceiptLinesTable from './components/ReceiptLinesTable.vue';
+import type { ReceiptWorklistHandle } from './receipt-worklist';
 defineOptions({ name: 'PurchaseReceiptsPage' });
 const route = useRoute(),
   router = useRouter();
@@ -105,6 +93,15 @@ const {
   changePage,
   changePageSize,
 } = useReceiptsList();
+const worklist = ref<Pick<ReceiptWorklistHandle, 'expandPage'>>();
+async function searchAndExpand(): Promise<void> {
+  await search();
+  worklist.value?.expandPage();
+}
+async function resetAndExpand(): Promise<void> {
+  await reset();
+  worklist.value?.expandPage();
+}
 const editor = ref<InstanceType<typeof ReceiptCreateDialog>>(),
   detail = ref<InstanceType<typeof ReceiptDetailDialog>>();
 const locator = useLatestReadRequest(() => {});
@@ -263,8 +260,8 @@ onActivated(() => {
 .query-panel {
   padding: 20px 20px 4px;
   margin-bottom: 16px;
-  background: #fff;
-  border: 1px solid #e5e7eb;
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color-lighter);
   border-radius: 8px;
 }
 .query-form :deep(.el-input) {
@@ -272,11 +269,8 @@ onActivated(() => {
 }
 .table-panel {
   overflow: hidden;
-  background: #fff;
-  border: 1px solid #e5e7eb;
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color-lighter);
   border-radius: 8px;
-}
-.list-hint {
-  padding: 2px 16px 10px;
 }
 </style>

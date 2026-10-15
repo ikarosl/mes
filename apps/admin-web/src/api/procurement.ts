@@ -47,7 +47,8 @@ import type {
   ReceiptAllocationCandidateQuery,
   ReceiptAllocationCandidateResult,
   ProcurementInboundInspectionQuery,
-  ProcurementInboundInspectionItem,
+  ProcurementInboundInspectionLineItem,
+  ProcurementInboundInspectionCaseDetail,
   PageQuery,
   ReceiptRevisionItem,
   ReceiptRoundItem,
@@ -262,7 +263,7 @@ export const procurementApi = {
   listInspections: (
     params: ProcurementInboundInspectionQuery,
     signal?: AbortSignal,
-  ): Promise<PageResult<ProcurementInboundInspectionItem>> =>
+  ): Promise<PageResult<ProcurementInboundInspectionLineItem>> =>
     request({
       url: '/quality/inbound-inspections',
       params: {
@@ -272,7 +273,10 @@ export const procurementApi = {
       signal,
       skipErrorHandling: true,
     }),
-  getInspection: (id: string, signal?: AbortSignal): Promise<ProcurementInboundInspectionItem> =>
+  getInspection: (
+    id: string,
+    signal?: AbortSignal,
+  ): Promise<ProcurementInboundInspectionCaseDetail> =>
     request({ url: `/quality/inbound-inspections/${id}`, signal, skipErrorHandling: true }),
   inspectionReceiptLine: (
     id: string,

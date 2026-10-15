@@ -4,7 +4,7 @@ import type {
   QualityInboundCaseItem,
   QualityInboundCaseType,
   QualityInboundInspectionInput,
-  QualityInboundCaseQuery,
+  QualityInboundInspectionItem,
 } from '../quality/inbound-inspections.js';
 
 export type ReceiptRoundStatus =
@@ -15,6 +15,16 @@ export type ReceiptRoundStatus =
   | 'awaiting_acceptance'
   | 'finalized'
   | 'superseded';
+/** 当前到货行的展示阶段，不改变轮次状态或执行资格。 */
+export type ReceiptLineStage =
+  | 'uninspected'
+  | 'reviewing'
+  | 'reinspection_required'
+  | 'quality_rejected'
+  | 'awaiting_acceptance'
+  | 'finalized'
+  | 'manual_rejection'
+  | 'completed';
 export type ReceiptRoundTrigger =
   | 'receipt'
   | 'receipt_correction'
@@ -152,9 +162,8 @@ export interface ProcurementReceiptLine {
   purchaseOrderLineId: string;
   /** 原采购行计划量减当前正式已授权履约量，供本批定稿初值参考。 */
   originalRemainingPlannedQuantity: string;
-  /** 登记来源采购行的持久行号，区别于本到货单的 lineNo。 */
+  /** 登记来源采购行的持久行号；到货明细以 id 标识。 */
   purchaseOrderLineNo: number;
-  lineNo: number;
   itemId: string;
   itemCode: string;
   itemName: string;
@@ -175,28 +184,21 @@ export interface ProcurementReceiptLine {
   acceptances: ReceiptAcceptanceItem[];
   historyTotals: Record<ReceiptHistoryKind, number>;
 }
-export interface ProcurementReceiptLineListItem extends Pick<
-  ProcurementReceiptLine,
-  | 'id'
-  | 'receiptId'
-  | 'purchaseOrderId'
-  | 'purchaseOrderLineId'
-  | 'purchaseOrderLineNo'
-  | 'lineNo'
-  | 'itemId'
-  | 'itemCode'
-  | 'itemName'
-  | 'materialVariantId'
-  | 'materialVariantCode'
-  | 'unit'
-  | 'supplierId'
-  | 'supplierName'
-  | 'supplierBatchCode'
-  | 'currentRound'
-  | 'quantities'
-> {
+/** 到货与来料工作列表共用的来源展示；分页单位始终为到货明细。 */
+export interface ProcurementReceiptListSource {
+  receiptId: string;
   receiptNo: string;
+  purchaseOrderId: string;
   purchaseNo: string;
+  supplierName: string;
+  itemName: string;
+  materialVariantCode: string;
+  unit: string;
+}
+export interface ProcurementReceiptLineListItem
+  extends
+    ProcurementReceiptListSource,
+    Pick<ProcurementReceiptLine, 'id' | 'supplierBatchCode' | 'currentRound' | 'quantities'> {
   receivedAt: string;
 }
 /** 质检详情及录入核对；不携带仓库分配、执行明细或历史预览。 */
@@ -207,7 +209,6 @@ export interface ProcurementInboundInspectionDetail extends Pick<
   | 'receiptNo'
   | 'purchaseNo'
   | 'purchaseOrderLineId'
-  | 'lineNo'
   | 'itemCode'
   | 'itemName'
   | 'materialVariantCode'
@@ -307,38 +308,34 @@ export interface ProcurementReceiptCommandResult {
   inspectionId: string | null;
   supplierReturnId: string | null;
 }
-export interface ProcurementInboundInspectionQuery extends Omit<QualityInboundCaseQuery, 'status'> {
-  roundStatus?: ReceiptRoundStatus;
-  currentRoundStatus?: ReceiptRoundStatus;
+export interface ProcurementInboundInspectionQuery extends PageQuery {
+  stage?: ReceiptLineStage;
   keyword?: string;
   supplierId?: string;
-  status?: 'uninspected' | 'reviewing' | 'completed' | 'superseded';
+  receiptLineIds?: string[];
 }
-export interface ProcurementInboundInspectionItem {
-  roundId: string;
-  roundVersion: number;
-  roundStatus: ReceiptRoundStatus;
-  sourceRoundNo: number;
-  currentRound: Pick<ReceiptRoundItem, 'id' | 'roundNo' | 'status' | 'inspectionId'>;
-  isCurrentlyAdopted: boolean;
+export interface ProcurementInboundInspectionCaseSummary extends Pick<
+  QualityInboundCaseItem,
+  'id' | 'status'
+> {
+  inspection: Pick<QualityInboundInspectionItem, 'id' | 'releaseDecision'> | null;
+}
+/** 每条到货行一项，只含当前轮和当前检验摘要，历史独立分页读取。 */
+export interface ProcurementInboundInspectionLineItem extends ProcurementReceiptListSource {
+  stage: ReceiptLineStage;
+  currentRound: Pick<ReceiptRoundItem, 'roundNo' | 'status' | 'triggerType'>;
+  /** 当前剩余实物，仅供展示当前整批阶段，不表示检验记录状态或可执行授权。 */
+  quantities: Pick<ReceiptQuantitySummary, 'unprocessedQuantity'>;
+  currentCase: ProcurementInboundInspectionCaseSummary | null;
+  currentCaseRoundNo: number | null;
   isInherited: boolean;
-  taskKey: string;
-  taskKind: 'uninspected' | 'case';
-  case: QualityInboundCaseItem | null;
   receiptLineId: string;
-  receiptLineNo: number;
-  receiptLineVersion: number;
-  coveredQuantity: string;
-  receiptId: string;
-  receiptNo: string;
-  purchaseOrderId: string;
-  purchaseNo: string;
-  supplierId: string;
-  supplierName: string;
-  itemCode: string;
-  itemName: string;
-  materialVariantCode: string;
-  unit: string;
+}
+/** 按真实 case ID 精确定位历史检验，不包含当前轮或当前实物数量。 */
+export interface ProcurementInboundInspectionCaseDetail {
+  receiptLineId: string;
+  sourceRoundNo: number;
+  case: QualityInboundCaseItem;
 }
 export type ReceiptHistoryKind =
   'rounds' | 'revisions' | 'allocations' | 'cases' | 'returns' | 'inbounds' | 'acceptances';
