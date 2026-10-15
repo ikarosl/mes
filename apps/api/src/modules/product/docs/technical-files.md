@@ -27,7 +27,7 @@ S3_FORCE_PATH_STYLE=true     # 有自定义 endpoint 时默认为 true
 
 ## 删除规则
 
-当前没有技术文件 HTTP 删除入口。Repository 只保留未来恢复入口所需的元数据软删除实现，并在删除前检查当前引用；对象内容不会随业务软删除而物理删除，以保留历史追溯。
+当前没有技术文件 HTTP 删除入口，权限目录不登记删除能力；目录来源与发布规则见 [Identity](../../identity/docs/database.md#14-permissions)。Repository 只保留未来恢复入口所需的元数据软删除实现，并在删除前检查当前引用；对象内容不会随业务软删除而物理删除，以保留历史追溯。
 
 `TechnicalFileStorage.remove` 目前只用于“对象上传成功但数据库写入失败”的补偿清理，不表示允许删除已经登记并可能被历史记录引用的业务文件。
 

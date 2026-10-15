@@ -199,7 +199,7 @@
               >取消整单</el-button
             >
             <el-button
-              v-if="row.status !== 'draft' && auth.can(PERMISSIONS.procurement.receipts.view)"
+              v-if="row.status !== 'draft' && auth.can(PERMISSIONS.warehouse.receipts.view)"
               link
               type="primary"
               :disabled="blocked"
@@ -428,7 +428,7 @@ const showSupplements = async (id: string) => {
   if (await releaseDialogs()) await supplements.value?.open(id);
 };
 const goReceipts = async (id: string) => {
-  if (auth.can(PERMISSIONS.procurement.receipts.view) && (await releaseDialogs()))
+  if (auth.can(PERMISSIONS.warehouse.receipts.view) && (await releaseDialogs()))
     await router.push({ name: 'procurement-receipts', query: { purchaseOrderId: id } });
 };
 const goSourceReceipt = async (id: string) => {

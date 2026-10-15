@@ -247,7 +247,7 @@ const emit = defineEmits<{
 }>();
 const auth = useAuthStore();
 const { canAccessRoute } = useRouteAccess();
-const canViewInventory = computed(() => auth.can(PERMISSIONS.production.inventory.view));
+const canViewInventory = computed(() => auth.can(PERMISSIONS.warehouse.inventory.view));
 const canViewFinishedInspections = computed(() =>
   auth.can(PERMISSIONS.quality.finishedInspections.view),
 );

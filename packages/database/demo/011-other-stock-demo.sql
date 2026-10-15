@@ -25,8 +25,20 @@ WHERE r.code IN ('demo-other-inbound', 'demo-other-outbound');
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r JOIN permissions p ON
   p.code = 'dashboard:view'
-  OR (r.code = 'demo-other-inbound' AND p.code LIKE 'warehouse:other-inbounds:%')
-  OR (r.code = 'demo-other-outbound' AND p.code LIKE 'warehouse:other-outbounds:%')
+  OR (r.code = 'demo-other-inbound' AND p.code IN (
+    'warehouse:other-inbounds:view',
+    'warehouse:other-inbounds:create',
+    'warehouse:other-inbounds:update',
+    'warehouse:other-inbounds:confirm',
+    'warehouse:other-inbounds:cancel'
+  ))
+  OR (r.code = 'demo-other-outbound' AND p.code IN (
+    'warehouse:other-outbounds:view',
+    'warehouse:other-outbounds:create',
+    'warehouse:other-outbounds:update',
+    'warehouse:other-outbounds:confirm',
+    'warehouse:other-outbounds:cancel'
+  ))
 WHERE r.code IN ('demo-other-inbound', 'demo-other-outbound');
 
 SET @other_stock_demo_actor = (SELECT id FROM users WHERE username = 'admin' AND deleted_at IS NULL LIMIT 1);

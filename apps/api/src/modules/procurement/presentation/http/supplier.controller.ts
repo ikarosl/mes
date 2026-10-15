@@ -31,7 +31,7 @@ export class SupplierController {
   @RequirePermission([
     PERMISSIONS.procurement.suppliers.view,
     PERMISSIONS.procurement.orders.view,
-    PERMISSIONS.procurement.receipts.view,
+    PERMISSIONS.warehouse.receipts.view,
   ])
   options(@Query() query: SupplierOptionQueryDto) {
     return this.service.options(query);

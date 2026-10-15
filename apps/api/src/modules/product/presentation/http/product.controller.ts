@@ -258,6 +258,7 @@ export class ProductController {
     PERMISSIONS.product.products.view,
     PERMISSIONS.production.materials.view,
     PERMISSIONS.production.materialDemands.view,
+    PERMISSIONS.production.tasks.view,
     PERMISSIONS.warehouse.inbound.view,
   ])
   materialVariantsByMaterial(@Param() { materialId }: MaterialVariantMaterialParamDto) {

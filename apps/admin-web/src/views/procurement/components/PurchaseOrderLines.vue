@@ -77,7 +77,7 @@
           <p v-if="row.supplementEvidence">补单依据：{{ row.supplementEvidence }}</p>
           <p v-if="row.originReceiptLineId">
             原到货明细：<el-button
-              v-if="auth.can(PERMISSIONS.procurement.receipts.view)"
+              v-if="auth.can(PERMISSIONS.warehouse.receipts.view)"
               link
               type="primary"
               :disabled="disabled"
@@ -247,7 +247,7 @@
           >
           <el-button
             v-if="
-              auth.can(PERMISSIONS.procurement.receipts.view) &&
+              auth.can(PERMISSIONS.warehouse.receipts.view) &&
               (order.status === 'ordered' || order.status === 'completed') &&
               row.status !== 'cancelled'
             "

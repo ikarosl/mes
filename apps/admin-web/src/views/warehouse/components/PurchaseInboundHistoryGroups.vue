@@ -68,7 +68,7 @@
             <template #default="{ row }">
               <template v-if="row.procurementSource">
                 <el-button
-                  v-if="auth.can(PERMISSIONS.procurement.receipts.view)"
+                  v-if="auth.can(PERMISSIONS.warehouse.receipts.view)"
                   class="source-link"
                   type="primary"
                   link

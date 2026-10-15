@@ -3,6 +3,7 @@
     :model-value="visible"
     title="分配权限"
     :width="DialogWidth.xl"
+    :transition="{ css: false }"
     class="permission-dialog"
     :close-on-click-modal="false"
     @update:model-value="$emit('update:visible', $event)"
@@ -12,15 +13,27 @@
       <div class="perm-role-info-row">
         <span class="perm-role-info-item">
           <span class="perm-info-label">角色名称：</span>
-          <span class="perm-info-value">{{ role?.name }}</span>
+          <span
+            class="perm-info-value"
+            :title="role?.name"
+            >{{ role?.name }}</span
+          >
         </span>
         <span class="perm-role-info-item">
           <span class="perm-info-label">角色编码：</span>
-          <span class="perm-info-value">{{ role?.code }}</span>
+          <span
+            class="perm-info-value"
+            :title="role?.code"
+            >{{ role?.code }}</span
+          >
         </span>
         <span class="perm-role-info-item perm-role-desc-item">
           <span class="perm-info-label">描述：</span>
-          <span class="perm-info-value">{{ role?.description ?? '-' }}</span>
+          <span
+            class="perm-info-value"
+            :title="role?.description ?? '-'"
+            >{{ role?.description ?? '-' }}</span
+          >
         </span>
       </div>
       <div class="perm-role-actions">
@@ -40,47 +53,51 @@
       </div>
     </div>
 
-    <div class="perm-section-title">权限配置</div>
+    <InlineHint class="perm-selection-hint">
+      勾选父节点会批量选择本级及全部下级；目录层级不表示授权继承。
+    </InlineHint>
 
     <div class="perm-body">
       <div class="perm-tree-panel">
-        <div class="perm-panel-header">模块目录</div>
+        <div class="perm-panel-header">权限目录</div>
         <div class="perm-tree-search">
           <el-input
             v-model="keyword"
             clearable
             :prefix-icon="Search"
-            placeholder="请输入模块名称"
+            placeholder="请输入权限名称或编码"
           />
         </div>
-        <el-tree
-          ref="treeRef"
-          :data="tree"
-          :props="treeProps"
-          :filter-node-method="filterNode"
-          :expand-on-click-node="false"
-          node-key="id"
-          highlight-current
-          @node-click="handleNodeClick"
-        >
-          <template #default="{ node, data }">
-            <span
-              class="perm-tree-node"
-              :class="{
-                'is-active': activeNode?.id === data.id,
-                'is-leaf-permission': node.level >= 3,
-              }"
-            >
-              <el-checkbox
-                :model-value="isChecked(data)"
-                :indeterminate="isIndeterminate(data)"
-                @click.stop
-                @change="handleCheck(data, $event)"
-              />
-              <span class="perm-tree-label">{{ data.name }}</span>
-            </span>
-          </template>
-        </el-tree>
+        <div class="perm-tree-scroll">
+          <el-tree
+            ref="treeRef"
+            :data="tree"
+            :props="treeProps"
+            :filter-node-method="filterNode"
+            :expand-on-click-node="false"
+            node-key="id"
+            highlight-current
+            @node-click="handleNodeClick"
+          >
+            <template #default="{ data }">
+              <span
+                class="perm-tree-node"
+                :class="{
+                  'is-active': activeNode?.id === data.id,
+                  'is-leaf-permission': !data.children?.length,
+                }"
+              >
+                <el-checkbox
+                  :model-value="isChecked(data)"
+                  :indeterminate="isIndeterminate(data)"
+                  @click.stop
+                  @change="handleCheck(data, $event)"
+                />
+                <span class="perm-tree-label">{{ data.name }}</span>
+              </span>
+            </template>
+          </el-tree>
+        </div>
       </div>
 
       <div class="perm-detail-panel">
@@ -120,6 +137,7 @@
           ref="detailTableRef"
           :data="detailRows"
           class="perm-table"
+          height="100%"
           row-key="id"
           default-expand-all
           :tree-props="{ children: 'children' }"
@@ -156,7 +174,7 @@
           v-else
           class="perm-empty"
         >
-          请从左侧选择一个功能模块查看权限详情
+          请从左侧选择权限查看详情
         </div>
       </div>
     </div>
@@ -166,11 +184,13 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
 import { Search } from '@element-plus/icons-vue';
+import type { TableInstance, TreeInstance } from 'element-plus';
 import type {
   SystemPermissionListItem,
   SystemPermissionTreeNode,
   SystemRoleListItem,
 } from '@company/contracts';
+import InlineHint from '../../../components/InlineHint.vue';
 import { systemApi } from '../../../api/system';
 import { DialogWidth } from '../../../utils/dialog';
 import { EMessage } from '../../../utils/message';
@@ -187,8 +207,8 @@ const emit = defineEmits<{
 
 /* ----- state ----- */
 const tree = ref<SystemPermissionTreeNode[]>([]);
-const treeRef = ref();
-const detailTableRef = ref();
+const treeRef = ref<TreeInstance>();
+const detailTableRef = ref<TableInstance>();
 const keyword = ref('');
 const loading = ref(false);
 const checkedIds = ref<Set<string>>(new Set());
@@ -198,24 +218,9 @@ const activeNode = ref<SystemPermissionTreeNode | null>(null);
 const treeProps = { label: 'name', children: 'children' };
 
 /* ----- computed ----- */
-const levelById = computed(() => {
-  const map = new Map<string, number>();
-  const walk = (nodes: SystemPermissionTreeNode[], level: number): void => {
-    for (const node of nodes) {
-      map.set(node.id, level);
-      walk(node.children ?? [], level + 1);
-    }
-  };
-  walk(tree.value, 1);
-  return map;
-});
-
-const detailRows = computed<SystemPermissionTreeNode[]>(() => {
-  if (!activeNode.value) return [];
-  const lv = levelById.value.get(activeNode.value.id) ?? 1;
-  if (lv >= 3) return [];
-  return lv === 1 ? (activeNode.value.children ?? []) : [activeNode.value];
-});
+const detailRows = computed<SystemPermissionTreeNode[]>(() =>
+  activeNode.value ? [activeNode.value] : [],
+);
 
 const activeScopeCheckedCount = computed(() => {
   const ids = new Set<string>();
@@ -257,13 +262,6 @@ const handleCheck = (node: SystemPermissionTreeNode, checked: boolean | string |
 };
 
 const handleNodeClick = (node: SystemPermissionTreeNode): void => {
-  const lv = levelById.value.get(node.id) ?? 1;
-  if (lv >= 3) {
-    void nextTick(() => {
-      treeRef.value?.setCurrentKey?.(activeNode.value?.id ?? null);
-    });
-    return;
-  }
   activeNode.value = node;
 };
 
@@ -276,7 +274,7 @@ const filterNode = (kw: string, node: SystemPermissionTreeNode): boolean => {
 const getDescription = (node: SystemPermissionTreeNode): string => {
   if (node.apiMethod && node.apiPath) return `${node.apiMethod} ${node.apiPath}`;
   if (node.routePath) return `页面路由 ${node.routePath}`;
-  return '权限分组';
+  return '按权限编码独立授权';
 };
 
 const setDetailExpanded = async (expanded: boolean): Promise<void> => {
@@ -303,8 +301,8 @@ const resetDialog = (): void => {
 };
 
 const buildTree = (items: SystemPermissionListItem[]): SystemPermissionTreeNode[] => {
-  const nodes = new Map(
-    items.map((item) => [item.id, { ...item, children: [] } as SystemPermissionTreeNode]),
+  const nodes = new Map<string, SystemPermissionTreeNode>(
+    items.map((item) => [item.id, { ...item, children: [] }]),
   );
   const roots: SystemPermissionTreeNode[] = [];
   for (const node of nodes.values()) {
@@ -368,30 +366,45 @@ watch(
 </script>
 
 <style scoped>
-.permission-dialog :deep(.el-dialog__body) {
-  padding: 0 20px 10px;
+:global(.el-dialog.permission-dialog) {
+  height: 90%;
+}
+:global(.el-dialog.permission-dialog > .el-dialog__header) {
+  padding-bottom: 12px;
+}
+:global(.el-dialog.permission-dialog > .el-dialog__body) {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 12px;
+  overflow: hidden;
+  padding: 0;
 }
 .perm-role-header {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 14px 20px;
-  margin: 12px 0;
+  padding: 12px 16px;
   border-bottom: 1px solid #e5e7eb;
   background: #f9fafb;
   border-radius: 6px;
 }
 .perm-role-info-row {
   display: flex;
+  flex: 1;
+  min-width: 0;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 40px;
+  gap: 4px 20px;
 }
 .perm-role-info-item {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  min-width: 0;
+  max-width: 100%;
 }
 .perm-role-desc-item {
   flex: 1;
@@ -403,9 +416,20 @@ watch(
   white-space: nowrap;
 }
 .perm-info-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: #1f2937;
   font-size: 14px;
   font-weight: 600;
+}
+.perm-role-desc-item .perm-info-value {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .perm-role-actions {
   display: flex;
@@ -418,30 +442,39 @@ watch(
   height: 32px;
   border-radius: 6px;
 }
-.perm-section-title {
-  height: 36px;
-  color: #1f2937;
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 36px;
+.perm-role-actions :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+.perm-selection-hint {
+  flex-shrink: 0;
 }
 .perm-body {
   display: flex;
+  flex: 1;
   gap: 0;
-  min-height: 460px;
+  min-height: 0;
+  overflow: hidden;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
 }
 .perm-tree-panel {
+  display: flex;
+  flex-direction: column;
   flex: 0 0 280px;
-  overflow-y: auto;
+  min-height: 0;
+  overflow: hidden;
   border-right: 1px solid #e5e7eb;
 }
 .perm-detail-panel {
+  display: flex;
+  flex-direction: column;
   flex: 1;
+  min-width: 0;
+  min-height: 0;
   overflow: hidden;
 }
 .perm-panel-header {
+  flex-shrink: 0;
   height: 40px;
   padding: 0 16px;
   border-bottom: 1px solid #e5e7eb;
@@ -452,6 +485,7 @@ watch(
   line-height: 40px;
 }
 .perm-tree-search {
+  flex-shrink: 0;
   padding: 12px 12px 8px;
 }
 .perm-tree-search :deep(.el-input__wrapper) {
@@ -459,12 +493,22 @@ watch(
   border-radius: 6px;
   box-shadow: 0 0 0 1px #e5e7eb inset;
 }
-.perm-tree-panel :deep(.el-tree) {
+.perm-tree-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.perm-tree-scroll :deep(.el-tree) {
   padding: 0 8px 12px;
 }
 .perm-tree-panel :deep(.el-tree-node__content) {
   height: 36px;
   border-radius: 6px;
+}
+.perm-tree-panel :deep(.el-collapse-transition-enter-active),
+.perm-tree-panel :deep(.el-collapse-transition-leave-active) {
+  transition: none;
 }
 .perm-tree-panel :deep(.el-tree-node__content:hover) {
   background: #f3f4f6;
@@ -490,6 +534,7 @@ watch(
 }
 .perm-detail-header {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   justify-content: space-between;
   height: 40px;
@@ -509,6 +554,7 @@ watch(
 }
 .perm-detail-actions {
   display: inline-flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 8px;
 }
@@ -521,6 +567,8 @@ watch(
   color: #e5e7eb;
 }
 .perm-table {
+  flex: 1;
+  min-height: 0;
   width: 100%;
 }
 .perm-table :deep(.el-table__header th) {
@@ -551,9 +599,9 @@ watch(
 }
 .perm-empty {
   display: flex;
+  flex: 1;
   align-items: center;
   justify-content: center;
-  height: 400px;
   color: #9ca3af;
   font-size: 14px;
 }

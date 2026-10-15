@@ -14,15 +14,9 @@ export const PERMISSIONS = {
       cancel: 'procurement:orders:cancel',
       close: 'procurement:orders:close',
     },
-    receipts: {
-      view: 'procurement:receipts:view',
-      confirm: 'procurement:receipts:confirm',
-      accept: 'procurement:receipts:accept',
-      correct: 'procurement:receipts:correct',
-      return: 'procurement:receipts:return',
-    },
   },
   quality: {
+    view: 'quality:view',
     finishedInspections: {
       view: 'quality:finished-inspections:view',
       record: 'quality:finished-inspections:record',
@@ -96,7 +90,6 @@ export const PERMISSIONS = {
       view: 'product:files:view',
       upload: 'product:files:upload',
       download: 'product:files:download',
-      delete: 'product:files:delete',
       attach: 'product:files:attach',
     },
     routes: {
@@ -126,20 +119,12 @@ export const PERMISSIONS = {
     materials: {
       view: 'production:materials:view',
       allocate: 'production:materials:allocate',
-      outbound: 'production:materials:outbound',
-      confirmOutbound: 'production:materials:outbound-confirm',
-      cancelOutbound: 'production:materials:outbound-cancel',
       correctDemand: 'production:materials:correct-demand',
     },
     materialDemands: {
       view: 'production:material-demands:view',
       configure: 'production:material-demands:configure',
       addManual: 'production:material-demands:add-manual',
-    },
-    inventory: { view: 'production:inventory:view' },
-    inbounds: {
-      confirm: 'production:inbounds:confirm',
-      confirmFinished: 'production:inbounds:confirm-finished',
     },
     batches: {
       create: 'production:batches:create',
@@ -156,6 +141,13 @@ export const PERMISSIONS = {
     rework: { execute: 'production:rework:execute' },
   },
   warehouse: {
+    receipts: {
+      view: 'warehouse:receipts:view',
+      confirm: 'warehouse:receipts:confirm',
+      accept: 'warehouse:receipts:accept',
+      correct: 'warehouse:receipts:correct',
+      return: 'warehouse:receipts:return',
+    },
     otherInbounds: {
       view: 'warehouse:other-inbounds:view',
       create: 'warehouse:other-inbounds:create',
@@ -172,8 +164,17 @@ export const PERMISSIONS = {
     },
     view: 'warehouse:view',
     inventory: { view: 'warehouse:inventory:view' },
-    inbound: { view: 'warehouse:inbound:view' },
-    outbound: { view: 'warehouse:outbound:view' },
+    inbound: {
+      view: 'warehouse:inbound:view',
+      confirmPurchase: 'warehouse:inbound:confirm-purchase',
+      confirmFinished: 'warehouse:inbound:confirm-finished',
+    },
+    outbound: {
+      view: 'warehouse:outbound:view',
+      create: 'warehouse:outbound:create',
+      confirm: 'warehouse:outbound:confirm',
+      cancel: 'warehouse:outbound:cancel',
+    },
     returns: {
       view: 'warehouse:returns:view',
       create: 'warehouse:returns:create',
@@ -194,12 +195,6 @@ export const PERMISSIONS = {
       cancel: 'warehouse:stock-checks:cancel',
     },
   },
-} as const;
-
-/** 工序执行与报工提示使用版本化权限目录中的名称。 */
-export const PRODUCTION_STEP_PERMISSION_LABELS = {
-  [PERMISSIONS.production.steps.report]: '工序报工',
-  [PERMISSIONS.production.steps.manageExecution]: '工序执行与报工管理',
 } as const;
 
 /**

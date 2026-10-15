@@ -35,6 +35,8 @@ docs/         # 迁移运行与安全说明
 
 数据库变更只能追加成对 migration，已经执行的文件不可修改。详细规则见[迁移顺序](docs/90-migration-order.md)、[迁移门禁](docs/migration-readiness.md)和[迁移安全](docs/migration-safety.md)。
 
+权限目录的版本快照随 migration 发布，元数据源为 [constants 显式目录](../constants/src/permission-catalog.ts)；通配管理员基础数据与验收职责账号分别由 [seed](seed/README.md) 和 [demo](demo/README.md) 恢复，不将既有角色配置当作运行前提。
+
 开发与 CI 的运行器使用 `tsx src/*.ts`；对应 `*:compiled` 包脚本使用 `node dist/*.js`，只消费构建产物。两类公开脚本均由 Turbo 先构建 workspace 依赖，`:run` 后缀是内部调度任务，不作为独立执行入口。生产镜像的产物与迁移调用见[发布手册](../../ops/runbooks/compose-server-deployment.md#独立发布)。
 
 `db:ensure` 的直接执行判断使用本机文件路径，Windows 与 Linux 均会实际创建目标库；通过导入复用 `ensureDatabaseExists` 时不自动连接数据库。

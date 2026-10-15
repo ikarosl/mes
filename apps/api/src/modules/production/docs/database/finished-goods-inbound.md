@@ -12,7 +12,7 @@ Production 拥有结案草稿、办理轮次、不可变批准版及授权明细
 
 ## 直接确认事务
 
-`POST /api/production/finished-goods-inbounds/actions/confirm` 使用 `production:inbounds:confirm-finished`，输入 `productionBatchId`、可选备注以及非空 `details`。每条明细含当前 `allocationId/revisionId`、正整数 `quantity`、目标 `{mode:new,clientKey}` 或 `{mode:existing,batchId}`。同次可混合计划内／外，把同一授权拆入多个批次，并以相同 `clientKey` 把多明细归到同一新批次。新库存批次由 Inventory 在实际插入时分配 IB 编号；复用已有批次不取新 IB，每次确认入库另分配 FI 单号，详见[统一编号](../../../../../docs/business-numbering.md)。没有持久化待确认入库草稿，不提供草稿创建、编辑或取消命令。
+`POST /api/production/finished-goods-inbounds/actions/confirm` 使用 `warehouse:inbound:confirm-finished`，输入 `productionBatchId`、可选备注以及非空 `details`。每条明细含当前 `allocationId/revisionId`、正整数 `quantity`、目标 `{mode:new,clientKey}` 或 `{mode:existing,batchId}`。同次可混合计划内／外，把同一授权拆入多个批次，并以相同 `clientKey` 把多明细归到同一新批次。新库存批次由 Inventory 在实际插入时分配 IB 编号；复用已有批次不取新 IB，每次确认入库另分配 FI 单号，详见[统一编号](../../../../../docs/business-numbering.md)。没有持久化待确认入库草稿，不提供草稿创建、编辑或取消命令。
 
 锁序为工单 → 生产任务 → 结案根 → 当前授权 → Inventory 批次。Production 在同一事务核验任务已结案、轮次已定稿且仍为当前轮、版本是当前批准版、无审批冻结，并按授权聚合本次数量，通过 Inventory public 能力取得各授权历史已执行量后检查剩余额度。随后调用 `InventoryInboundCommand.confirmFinishedOutput`；Inventory 核验产品与目标批次，写主单、多明细、批次、正流水及成功审计。入库单主表的 `finished_product` 只表示成品来源，类别和批准版由每条明细所引用的授权确定。Inventory 批次可承接多次来源，来源查询沿明细追溯，不从库存余额倒推某版本已入量。
 
@@ -25,7 +25,7 @@ Production 拥有结案草稿、办理轮次、不可变批准版及授权明细
 | `GET /` | `warehouse:inbound:view`；已确认单据分页，按明细显示类别与来源 |
 | `GET /candidates` | 同上；当前未耗尽授权、各授权量／已执行／剩余额度及阻断原因 |
 | `GET /:inboundId` | 同上；每条明细实际批次、原批准版、质检与审批证据 |
-| `POST /actions/confirm` | `production:inbounds:confirm-finished`；直接多明细确认 |
+| `POST /actions/confirm` | `warehouse:inbound:confirm-finished`；直接多明细确认 |
 
 列表保留单据概览和实际执行明细，完整批准与检验依据由单据详情提取并去重各明细引用的 `outputRevisionId`，在所属结案范围内批量读取这些历史版本。批准快照解析、授权读取与已执行量查询仅覆盖所引用版本，不读取任务全部版本；任务产出清单的完整版本历史查询独立保留。缺少本单引用的批准依据时明确报错，不替换为任务最新版本。详情响应中的确认人、批准人及检验人展示名通过 Identity 公开能力批量补齐；姓名为查询时展示投影，不改写批准版或检验快照中的人员标识与业务事实。批准版授权的累计已入／剩余量仍表示查询时执行情况，本次历史入库数量以对应入库明细为准。
 

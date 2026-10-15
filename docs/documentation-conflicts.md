@@ -35,9 +35,7 @@
 
 ## CO-06
 
-共用入库查看权限已确认统一为 `warehouse:inbound:view`。菜单、路由、入库候选与历史读取及共享常量采用同一编码；成对迁移 `202610080002` 原位改名旧权限记录，保留既有角色授权，demo 显式授予新查看编码。写权限维持独立，未扩展本次迁移范围。
-
-原差异是入库页面使用已登记的 `production:inbounds:view`，物料批次候选却要求未登记的仓储编码，导致普通角色在选择已有批次时出现 403。本项不再有待裁决的权限语义；当前目录规则见 [Identity](../apps/api/src/modules/identity/docs/database.md#14-permissions)，页面约束见[管理端](../apps/admin-web/docs/procurement-inbound.md#81-权限消费)。最小角色与迁移验收集中在[路线图](roadmap.md#采购到入库与来料整批处理待验收)，管理员通配权限或应用检查不能替代该验收。本锚点仅保留原冲突与裁决关系。
+共用外购／成品入库页面、候选及历史读取使用 `warehouse:inbound:view`，两类确认命令分别独立鉴权。权限按业务职责分组，目录、常量、菜单路由和接口声明遵守 [Identity 权限目录](../apps/api/src/modules/identity/docs/database.md#14-permissions)；页面消费边界见[管理端](../apps/admin-web/docs/procurement-inbound.md#81-权限消费)。本项没有待裁决的权限语义，普通角色及迁移验收见[权限目录与职责分组](roadmap.md#权限目录与职责分组待验收)。
 
 ## CQ-01
 

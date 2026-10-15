@@ -215,7 +215,7 @@ export const router = createRouter({
           'procurement-receipts',
           '采购到货',
           PurchaseReceiptsPage,
-          PERMISSIONS.procurement.receipts.view,
+          PERMISSIONS.warehouse.receipts.view,
           'PurchaseReceiptsPage',
         ),
         page(
@@ -284,7 +284,7 @@ export const router = createRouter({
           'warehouse-inventory',
           '库存查询',
           WarehouseInventoryPage,
-          PERMISSIONS.production.inventory.view,
+          PERMISSIONS.warehouse.inventory.view,
           'WarehouseInventoryPage',
         ),
         {
@@ -346,7 +346,7 @@ export const router = createRouter({
               path: '',
               name: 'warehouse-outbound',
               component: ProductionOutboundPanel,
-              meta: { permission: PERMISSIONS.production.materials.view },
+              meta: { permission: PERMISSIONS.warehouse.outbound.view },
             },
             {
               path: 'other',
@@ -368,7 +368,7 @@ export const router = createRouter({
         page(
           'warehouse/scraps',
           'warehouse-scraps',
-          '报废管理',
+          '领料损耗',
           ScrapsPage,
           PERMISSIONS.warehouse.scraps.view,
           'ScrapsPage',

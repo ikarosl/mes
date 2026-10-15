@@ -15,6 +15,8 @@
 | 收尾、物料实核、产出清单及审批 | [任务结案](docs/database/production-termination.md) |
 | 批准成品入库与类别冻结 | [成品入库](docs/database/finished-goods-inbound.md) |
 
+仓储职责的读取和动作仍在来源所属模块执行；生产需求／分配与仓储出库的精确授权边界见[接口权限与消费者](docs/database/demand-allocation-and-outbound.md#http-权限与消费者)，库存及采购入库历史见[只读入口](docs/database/inventory-ledger-and-inbound.md)。权限目录来源由 [Identity](../identity/docs/database.md#14-permissions)维护。
+
 ## 关键不变量
 
 - 批量任务在完整确认初始 BOM 需求时独立冻结版本与供应商提示，同任务同物料保持一个版本。研发无 BOM、路线及工序，首次与后续均手工提需。

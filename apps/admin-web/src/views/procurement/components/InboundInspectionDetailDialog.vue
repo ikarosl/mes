@@ -236,7 +236,7 @@
         >操作结果尚未确认，请先核对并原样重试。</span
       >
       <el-button
-        v-if="line && auth.can(PERMISSIONS.procurement.receipts.view)"
+        v-if="line && auth.can(PERMISSIONS.warehouse.receipts.view)"
         :disabled="command.busy.value"
         @click="goReceipt"
         >查看到货</el-button

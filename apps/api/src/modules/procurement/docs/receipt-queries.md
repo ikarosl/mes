@@ -6,18 +6,20 @@
 
 | GET路径（省略/api） | 权限 | 内容 |
 | --- | --- | --- |
-| /procurement/receipts、/:id | procurement:receipts:view | 主单分页、明细当前轮次和执行份额 |
-| /procurement/receipt-lines | procurement:receipts:view | 跨主单到货行分页，返回当前轮次与数量摘要 |
-| /procurement/receipt-lines/:id | procurement:receipts:view | 单个明细，含receiptId/receiptNo、登记原purchaseNo/采购行号和currentRound |
-| /procurement/receipt-order-options[/:id] | procurement:receipts:view | 已下单且可登记新到货的采购候选，不要求采购管理页权限 |
-| /procurement/receipt-lines/:id/:historyKind | receipts:view或quality:inbound-inspections:view | rounds/revisions/allocations/cases/returns/inbounds/acceptances独立分页 |
+| /procurement/receipts、/:id | warehouse:receipts:view | 主单分页、明细当前轮次和执行份额 |
+| /procurement/receipt-lines | warehouse:receipts:view | 跨主单到货行分页，返回当前轮次与数量摘要 |
+| /procurement/receipt-lines/:id | warehouse:receipts:view | 单个明细，含receiptId/receiptNo、登记原purchaseNo/采购行号和currentRound |
+| /procurement/receipt-order-options[/:id] | warehouse:receipts:view | 到货页登记使用的已下单采购候选和候选详情，不要求采购管理页权限 |
+| /procurement/receipt-lines/:id/:historyKind | warehouse:receipts:view 或 quality:inbound-inspections:view | 到货处置／来料质检共用的 rounds/revisions/allocations/cases/returns/inbounds/acceptances 独立历史分页 |
 | /quality/inbound-inspections | quality:inbound-inspections:view | 按到货行分页，仅含当前轮与当前检验摘要 |
 | /quality/inbound-inspections/:id | quality:inbound-inspections:view | 按真实 case ID 精确读取来源行、来源轮号及完整检验事实 |
 | /quality/inbound-inspections/receipt-lines/:id | quality:inbound-inspections:view | 专用质检详情 `ProcurementInboundInspectionDetail`，含来源身份、版本、当前轮、实物范围及当前检验依据 |
 | /procurement/inbound-releases | warehouse:inbound:view | 当前合法正式可入范围分页 |
-| /procurement/receipt-lines/:id/allocation-candidates | procurement:receipts:view | 原采购行和同次已到货补单的远程搜索与归属解析 |
+| /procurement/receipt-lines/:id/allocation-candidates | warehouse:receipts:view | 原采购行和同次已到货补单的远程搜索与归属解析 |
 | /procurement/purchase-order-lines/:id/excess-receipt-candidates | procurement:orders:view | 采购页超量补单的真实到货候选，keyword 搜到货单号／供应商批号，receiptLineId 精确解析 |
 | /procurement/purchase-order-lines/:id/quality-replacement-candidates | procurement:orders:view | 采购页质量补发的正式质量退回分配候选，按 allocation 分页；keyword 搜到货单号／供应商批号／实际退回单号，receiptLineId/allocationId 精确解析 |
+
+到货登记、处置与分配候选使用仓储到货查看权限，URL 和事实所有者保持 Procurement。来料质检使用专用来源详情与检验权限；采购订单详情、入库或质检页面的导航分别按目标页面授权，不因显示来源单号隐式授予完整采购、仓储或 Quality 能力。权限目录及 any-of 规则见 [Identity](../../identity/docs/database.md#14-permissions)。
 
 除 `allocation-candidates` 固定10条搜索窗口外，分页默认10、上限100，批量ID最多100且不重复。所有筛选在窗口截取前执行，排序含稳定ID。供应商按具体采购行关联；主单只返回去重供应商集合。供应商筛选使用EXISTS，不使主单或总数重复；详情仍展示该主单全部明细。
 

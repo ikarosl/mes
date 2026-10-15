@@ -44,6 +44,16 @@ Quality 填方法、合格 G、不合格 F、结论、时间、说明和凭据�
 
 数量、轮次推进、定稿放行与说明、采购归属及拒收分配计划由本模块 domain 纯规则处理，只接收普通业务数据，不查询数据库或持有连接。infrastructure 在原锁内检查点调用规则，负责按序取事实、校验预期版本、跨模块调用、持久化和审计；不把所有判断提前到事务外，也不为调用一个总规则函数而提前读取后续事实。复检、更正、拒收保留各自条件，共用规则只覆盖实际一致的数量及归属约束。
 
-动作位于 /procurement/receipt-lines/:id/actions/：correct-receipt、start-review、inspect、accept、reject、revoke-rejection、return。更正用 receipts:correct；检验用 Quality review/inspect；定稿／拒收／撤销用 receipts:accept；退回用 receipts:return；入库用 production:inbounds:confirm，每个后端接口独立鉴权。
+| POST 路径（省略 `/api/procurement`） | 独立动作权限 |
+| --- | --- |
+| `/receipts/actions/confirm` | `warehouse:receipts:confirm` |
+| `/receipt-lines/:id/actions/correct-receipt` | `warehouse:receipts:correct` |
+| `/receipt-lines/:id/actions/start-review` | `quality:inbound-inspections:review` |
+| `/receipt-lines/:id/actions/inspect` | `quality:inbound-inspections:inspect` |
+| `/receipt-lines/:id/actions/accept`、`reject`、`revoke-rejection` | `warehouse:receipts:accept` |
+| `/receipt-lines/:id/actions/return` | `warehouse:receipts:return` |
+| `/purchase-inbounds/actions/confirm` | `warehouse:inbound:confirm-purchase` |
+
+到货页的登记采购候选和候选详情仅要求 `warehouse:receipts:view`，办理不依赖采购管理页权限；入库页的正式可入候选、归批候选和历史读取统一要求 `warehouse:inbound:view`。查看与动作分别鉴权，目录父子关系不授予后端子权限，完整规则见 [Identity 权限目录](../../identity/docs/database.md#14-permissions)。这些仓储职责的接口继续由 Procurement 校验来源并编排，Quality 与 Inventory 保持各自事实所有权。
 
 所有写入要求 Idempotency-Key；版本与 codec 在 application/idempotency 中集中登记。采购入库使用 `procurement.inbound.confirm.v7`，指纹包含备注、各明细的来源行／轮版本、修订、质检、allocation、数量及目标 mode／clientKey 或 batchId；结果按真实 inboundDetailId、batchId 和 transactionId 关联来源行及授权，同键只重放原已确认结果。未知结果冻结原 body/key 重试，不自动换新轮或新ID。成功操作即使后续轮次变化仍只重放原结果。版本切换遵守[平台幂等规则](../../../../docs/idempotency.md#13-scope-版本与开发重置)。

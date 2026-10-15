@@ -40,13 +40,17 @@ export class ProductionMaterialController {
   ) {}
 
   @Get('batches/:batchId/material-demands')
-  @RequirePermission(PERMISSIONS.production.materials.view)
+  @RequirePermission([
+    PERMISSIONS.production.materials.view,
+    PERMISSIONS.production.tasks.view,
+    PERMISSIONS.production.materialDemands.view,
+  ])
   demands(@Param() { batchId }: BatchIdParamDto) {
     return this.service.listDemands(batchId);
   }
 
   @Get('material-demands/:demandId/available-item-batches')
-  @RequirePermission(PERMISSIONS.production.materials.view)
+  @RequirePermission([PERMISSIONS.production.materials.view, PERMISSIONS.production.tasks.view])
   available(@Param() { demandId }: DemandIdParamDto) {
     return this.service.listAvailableItemBatches(demandId);
   }
@@ -75,7 +79,7 @@ export class ProductionMaterialController {
   }
 
   @Post('batches/:batchId/material-outbounds')
-  @RequirePermission(PERMISSIONS.production.materials.outbound)
+  @RequirePermission(PERMISSIONS.warehouse.outbound.create)
   @AuditInApplication()
   @IdempotentEndpoint({ scope: CREATE_MATERIAL_OUTBOUND_IDEMPOTENCY_SCOPE })
   outbound(
@@ -87,25 +91,25 @@ export class ProductionMaterialController {
   }
 
   @Get('batches/:batchId/material-outbounds')
-  @RequirePermission(PERMISSIONS.production.materials.view)
+  @RequirePermission([PERMISSIONS.production.materials.view, PERMISSIONS.production.tasks.view])
   outbounds(@Param() { batchId }: BatchIdParamDto) {
     return this.outboundService.listOutbounds(batchId);
   }
 
   @Get('material-outbounds/batch-options')
-  @RequirePermission(PERMISSIONS.production.materials.view)
+  @RequirePermission(PERMISSIONS.warehouse.outbound.view)
   outboundBatchOptions() {
     return this.outboundService.listOutboundBatchOptions();
   }
 
   @Get('batches/:batchId/material-outbound-candidates')
-  @RequirePermission(PERMISSIONS.production.materials.view)
+  @RequirePermission(PERMISSIONS.warehouse.outbound.view)
   outboundCandidates(@Param() { batchId }: BatchIdParamDto) {
     return this.outboundService.listOutboundCandidates(batchId);
   }
 
   @Get('material-outbounds')
-  @RequirePermission(PERMISSIONS.production.materials.view)
+  @RequirePermission(PERMISSIONS.warehouse.outbound.view)
   outboundOrders(@Query() query: MaterialOutboundQueryDto) {
     return this.outboundService.listOutboundOrders({
       page: query.page,
@@ -116,13 +120,13 @@ export class ProductionMaterialController {
   }
 
   @Get('material-outbounds/:outboundId')
-  @RequirePermission(PERMISSIONS.production.materials.view)
+  @RequirePermission(PERMISSIONS.warehouse.outbound.view)
   outboundDetail(@Param() { outboundId }: OutboundIdParamDto) {
     return this.outboundService.getOutbound(outboundId);
   }
 
   @Post('material-outbounds/:outboundId/actions/confirm')
-  @RequirePermission(PERMISSIONS.production.materials.confirmOutbound)
+  @RequirePermission(PERMISSIONS.warehouse.outbound.confirm)
   @AuditInApplication()
   @IdempotentEndpoint({ scope: CONFIRM_MATERIAL_OUTBOUND_IDEMPOTENCY_SCOPE })
   confirmOutbound(
@@ -134,7 +138,7 @@ export class ProductionMaterialController {
   }
 
   @Post('material-outbounds/:outboundId/actions/cancel')
-  @RequirePermission(PERMISSIONS.production.materials.cancelOutbound)
+  @RequirePermission(PERMISSIONS.warehouse.outbound.cancel)
   @AuditInApplication()
   cancelOutbound(
     @Param() { outboundId }: OutboundIdParamDto,

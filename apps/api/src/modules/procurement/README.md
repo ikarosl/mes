@@ -8,6 +8,8 @@
 
 供应商、采购主单／行／来源映射／关闭事实、到货／修订／整批轮次、正式清单／分配及退回由本模块独占，其他模块只能通过 `public.ts` 公开能力交互。`ProcurementQuery.listRelatedPurchases` 提供需求关联历史投影；不开放供应商跨模块写能力。SQL 位于 infrastructure，HTTP class DTO 校验输入，application 通过平台幂等编排命令。资格走 Production/Product 公开能力，展示跨表只读限定在已登记的 `infrastructure/queries/`。
 
+采购配置和订单按 Procurement 权限办理，到货处置与采购实际入库按仓储职责授权，检验按 Quality 权限授权；职责分组不改变上述业务所有权或 HTTP 路径。逐接口边界见[到货查询](docs/receipt-queries.md#接口和权限)及[到货动作](docs/receipts.md#事务权限与防重)，目录来源见 [Identity](../identity/docs/database.md#14-permissions)。
+
 基础物料名称展示和历史身份统一遵守[数据库公共规则](../../../../../docs/database-conventions.md#基础物料名称与历史身份)，当前名称不替代精确版本、编码及单位快照，也不作为写入资格。
 
 - [数据库](docs/database.md)：主数据审计、永久名称唯一键和迁移。

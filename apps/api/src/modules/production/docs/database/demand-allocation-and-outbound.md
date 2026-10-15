@@ -607,6 +607,25 @@ Production 先锁任务、需求和分配，经 `InventoryProductionDocumentComm
 
 批次取消及收尾只经 Inventory 取消未完成生产领料，保留原明细及已领事实；阶段和前置条件见[批次结束设计](production-termination.md)。
 
+### HTTP 权限与消费者
+
+以下路径省略 `/api/production`。权限目录的来源、分组和发布规则见 [Identity](../../../identity/docs/database.md#14-permissions)；页面／宿主读取与写动作分别鉴权。
+
+| 接口 | 权限（多项为 any-of） | 消费者与边界 |
+| --- | --- | --- |
+| `GET /batches/:batchId/material-demands` | `production:materials:view`、`production:tasks:view`、`production:material-demands:view` | 生产任务的需求总览、分配与领料弹窗、需求变更追溯；需求查看为任务内嵌能力，不提供独立需求管理页 |
+| `GET /material-demands`、`GET /material-demands/material-options` | `production:material-demands:view`、`production:tasks:view` | 生产任务内嵌的初配、手工提需及研发候选；分页查询可按任务过滤，不因内嵌入口改为浏览器全量筛选 |
+| `GET /material-demands/:demandId/available-item-batches` | `production:materials:view`、`production:tasks:view` | 任务分配弹窗的库批参考，不是独立库存页读取，也不授予分配写入 |
+| `GET /batches/:batchId/material-outbounds` | `production:materials:view`、`production:tasks:view` | 生产任务内嵌领料记录，不作为仓储出库列表 |
+| `GET /material-outbounds`、`GET /material-outbounds/:outboundId` | `warehouse:outbound:view` | 仓储生产领料列表、详情与打印；无需生产任务或需求页面权限 |
+| `GET /material-outbounds/batch-options`、`GET /batches/:batchId/material-outbound-candidates` | `warehouse:outbound:view` | 仓储制单的任务候选及该任务可制单分配；不调用任务详情、需求列表或分配命令补齐数据 |
+| `POST /batches/:batchId/material-allocations`、`POST /batches/:batchId/material-allocations/:allocationId/actions/release` | `production:materials:allocate` | 创建分配／释放未出库预留；仓储出库查看与动作不包含本能力 |
+| `POST /batches/:batchId/material-outbounds` | `warehouse:outbound:create` | 仓储制单和生产任务内嵌制单共用；来源校验和履约仍由 Production 编排 |
+| `POST /material-outbounds/:outboundId/actions/confirm` | `warehouse:outbound:confirm` | 整单确认出库 |
+| `POST /material-outbounds/:outboundId/actions/cancel` | `warehouse:outbound:cancel` | 取消待出库单，不释放来源分配 |
+
+需求更正的读取和写入权限由[正式需求更正](#正式需求更正与替代)维护；初配与手工提需写命令继续分别要求 `production:material-demands:configure` 与 `production:material-demands:add-manual`。只读 any-of 不授予任一写动作，仓管只需仓储出库查看及对应动作即可办理有效分配的制单、确认和取消；查看缺口或处理分配须独立取得生产能力。查看采购、库存或质检详情的导航继续校验目标页面权限，不由出库查看隐式授权。
+
 ### 当前有效预留公开能力
 
 `ProductionReservationQuery.currentAllocations(batchIds)` 是其他出库取得预留事实的唯一运行时入口，返回有效分配的 `id/batchId/assignedNumber/allocationStatus`，排除 `released/cancelled`。要求调用者活跃同池事务，按分配 ID 排序，以 `FOR SHARE NOWAIT` 只锁 Production 自有分配，不读取或锁定公共出库，不验证来源任务办理资格，也不修改分配。

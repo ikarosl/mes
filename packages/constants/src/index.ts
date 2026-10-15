@@ -2,6 +2,7 @@ export * from './common.js';
 export * from './inventory.js';
 export * from './business-number.js';
 export * from './permissions.js';
+export * from './permission-catalog.js';
 export * from './system.js';
 export * from './product.js';
 export * from './production/index.js';

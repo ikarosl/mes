@@ -48,37 +48,37 @@ export class ProcurementReceiptController {
     private readonly service: ReceiptService,
   ) {}
   @Get('receipts')
-  @RequirePermission(PERMISSIONS.procurement.receipts.view)
+  @RequirePermission(PERMISSIONS.warehouse.receipts.view)
   list(@Query() query: ReceiptListQueryDto) {
     return this.query.listReceipts(query);
   }
   @Get('receipt-lines')
-  @RequirePermission(PERMISSIONS.procurement.receipts.view)
+  @RequirePermission(PERMISSIONS.warehouse.receipts.view)
   listLines(@Query() query: ReceiptListQueryDto) {
     return this.query.listReceiptLines(query);
   }
   @Get('receipts/:id')
-  @RequirePermission(PERMISSIONS.procurement.receipts.view)
+  @RequirePermission(PERMISSIONS.warehouse.receipts.view)
   get(@Param() { id }: PurchaseOrderIdDto) {
     return this.query.getReceipt(id);
   }
   @Get('receipt-lines/:id')
-  @RequirePermission(PERMISSIONS.procurement.receipts.view)
+  @RequirePermission(PERMISSIONS.warehouse.receipts.view)
   line(@Param() { id }: PurchaseOrderIdDto) {
     return this.query.getReceiptLine(id);
   }
   @Get('receipt-order-options')
-  @RequirePermission(PERMISSIONS.procurement.receipts.view)
+  @RequirePermission(PERMISSIONS.warehouse.receipts.view)
   orders(@Query() query: PurchaseOrderQueryDto) {
     return this.query.listReceiptOrders(query);
   }
   @Get('receipt-order-options/:id')
-  @RequirePermission(PERMISSIONS.procurement.receipts.view)
+  @RequirePermission(PERMISSIONS.warehouse.receipts.view)
   order(@Param() { id }: PurchaseOrderIdDto) {
     return this.query.getReceiptOrder(id);
   }
   @Get('receipt-lines/:id/allocation-candidates')
-  @RequirePermission(PERMISSIONS.procurement.receipts.view)
+  @RequirePermission(PERMISSIONS.warehouse.receipts.view)
   allocationCandidates(
     @Param() { id }: PurchaseOrderIdDto,
     @Query() query: ReceiptAllocationCandidateQueryDto,
@@ -87,7 +87,7 @@ export class ProcurementReceiptController {
   }
   @Get('receipt-lines/:id/:historyKind')
   @RequirePermission([
-    PERMISSIONS.procurement.receipts.view,
+    PERMISSIONS.warehouse.receipts.view,
     PERMISSIONS.quality.inboundInspections.view,
   ])
   history(@Param() { id, historyKind }: ReceiptHistoryPathDto, @Query() query: PageQueryDto) {
@@ -99,7 +99,7 @@ export class ProcurementReceiptController {
     return this.query.listInboundReleases(query);
   }
   @Post('receipts/actions/confirm')
-  @RequirePermission(PERMISSIONS.procurement.receipts.confirm)
+  @RequirePermission(PERMISSIONS.warehouse.receipts.confirm)
   @AuditInApplication()
   @IdempotentEndpoint({ scope: CONFIRM_PROCUREMENT_RECEIPT_SCOPE })
   confirm(
@@ -109,7 +109,7 @@ export class ProcurementReceiptController {
     return this.service.confirmReceipt(body, context);
   }
   @Post('receipt-lines/:id/actions/correct-receipt')
-  @RequirePermission(PERMISSIONS.procurement.receipts.correct)
+  @RequirePermission(PERMISSIONS.warehouse.receipts.correct)
   @AuditInApplication()
   @IdempotentEndpoint({ scope: CORRECT_RECEIPT_SCOPE })
   correct(
@@ -142,7 +142,7 @@ export class ProcurementReceiptController {
     return this.service.inspect(id, body, context);
   }
   @Post('receipt-lines/:id/actions/accept')
-  @RequirePermission(PERMISSIONS.procurement.receipts.accept)
+  @RequirePermission(PERMISSIONS.warehouse.receipts.accept)
   @AuditInApplication()
   @IdempotentEndpoint({ scope: ACCEPT_RECEIPT_SCOPE })
   accept(
@@ -153,7 +153,7 @@ export class ProcurementReceiptController {
     return this.service.accept(id, body, context);
   }
   @Post('receipt-lines/:id/actions/reject')
-  @RequirePermission(PERMISSIONS.procurement.receipts.accept)
+  @RequirePermission(PERMISSIONS.warehouse.receipts.accept)
   @AuditInApplication()
   @IdempotentEndpoint({ scope: REJECT_RECEIPT_SCOPE })
   reject(
@@ -164,7 +164,7 @@ export class ProcurementReceiptController {
     return this.service.reject(id, body, context);
   }
   @Post('receipt-lines/:id/actions/revoke-rejection')
-  @RequirePermission(PERMISSIONS.procurement.receipts.accept)
+  @RequirePermission(PERMISSIONS.warehouse.receipts.accept)
   @AuditInApplication()
   @IdempotentEndpoint({ scope: REVOKE_RECEIPT_REJECTION_SCOPE })
   revokeRejection(
@@ -175,7 +175,7 @@ export class ProcurementReceiptController {
     return this.service.revokeRejection(id, body, context);
   }
   @Post('receipt-lines/:id/actions/return')
-  @RequirePermission(PERMISSIONS.procurement.receipts.return)
+  @RequirePermission(PERMISSIONS.warehouse.receipts.return)
   @AuditInApplication()
   @IdempotentEndpoint({ scope: CONFIRM_SUPPLIER_RETURN_SCOPE })
   return(
@@ -186,7 +186,7 @@ export class ProcurementReceiptController {
     return this.service.confirmReturn(id, body, context);
   }
   @Post('purchase-inbounds/actions/confirm')
-  @RequirePermission(PERMISSIONS.production.inbounds.confirm)
+  @RequirePermission(PERMISSIONS.warehouse.inbound.confirmPurchase)
   @AuditInApplication()
   @IdempotentEndpoint({ scope: CONFIRM_PROCUREMENT_INBOUND_SCOPE })
   inbound(

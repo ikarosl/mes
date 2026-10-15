@@ -318,7 +318,7 @@ const warehouseMenus = [
     routeNames: ['warehouse-returns'],
   },
   {
-    title: '报废管理',
+    title: '领料损耗',
     path: '/warehouse/scraps',
     routeNames: ['warehouse-scraps'],
   },

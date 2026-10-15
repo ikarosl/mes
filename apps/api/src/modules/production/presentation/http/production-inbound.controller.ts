@@ -36,7 +36,7 @@ export class ProductionInboundController {
   ) {
     return this.service.get(p.inboundId);
   }
-  @Get('inventory-batches') @RequirePermission(PERMISSIONS.production.inventory.view) inventory(
+  @Get('inventory-batches') @RequirePermission(PERMISSIONS.warehouse.inventory.view) inventory(
     @Query() q: InventoryBatchQueryDto,
   ) {
     return this.service.listInventory({
@@ -50,12 +50,12 @@ export class ProductionInboundController {
     });
   }
   @Get('inventory-batches/:itemBatchId')
-  @RequirePermission(PERMISSIONS.production.inventory.view)
+  @RequirePermission(PERMISSIONS.warehouse.inventory.view)
   inventoryDetail(@Param() p: InventoryBatchIdParamDto) {
     return this.service.getInventory(p.itemBatchId);
   }
   @Get('inventory-material-supply-demand')
-  @RequirePermission(PERMISSIONS.production.inventory.view)
+  @RequirePermission(PERMISSIONS.warehouse.inventory.view)
   materialSupplyDemand(@Query() q: InventoryMaterialSupplyDemandQueryDto) {
     return this.supplyDemand.list({
       page: q.page,
@@ -64,7 +64,7 @@ export class ProductionInboundController {
     });
   }
   @Get('inventory-material-supply-demand/:itemId/demands')
-  @RequirePermission(PERMISSIONS.production.inventory.view)
+  @RequirePermission(PERMISSIONS.warehouse.inventory.view)
   materialDemandTrace(
     @Param() p: InventoryItemIdParamDto,
     @Query() q: InventoryMaterialDemandTraceQueryDto,

@@ -36,7 +36,7 @@ export class ProductionFinishedInboundController {
     return this.service.get(inboundId);
   }
   @Post('actions/confirm')
-  @RequirePermission(PERMISSIONS.production.inbounds.confirmFinished)
+  @RequirePermission(PERMISSIONS.warehouse.inbound.confirmFinished)
   @AuditInApplication()
   @IdempotentEndpoint({ scope: CONFIRM_FINISHED_INBOUND_SCOPE })
   confirm(

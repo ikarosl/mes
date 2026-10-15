@@ -81,8 +81,18 @@ BOM 审批证据仅接受当前结构版本 2；开发环境通过数据重置�
 
 ## 候选接口授权
 
-`/options` 采用所有合法消费页面视图权限的 any-of 并集，不能仅授予配置页面。例如分类候选服务产品与分类页；成品、路线和用户候选也服务生产工单与任务页。跨模块候选仍由其所有者维护，Product 不记录 Production 接口清单。
+Product 自有候选按下表声明 any-of，路径省略 `/api/product`。生产任务内嵌的研发手工提需使用 Production 的用途物料候选，再使用本模块启用版本读取，不要求主数据管理页权限。其他入出库对象通过 Inventory 的独立候选入口读取，不复用本表扩大来源业务资格。
 
-入库页消费的 `/materials/options` 与 `/material-variants/by-material/:materialId` 将 `warehouse:inbound:view` 纳入 any-of 并集，无需另授主数据管理权限；候选读取不授予库存写入资格。
+| 只读候选接口 | 合法消费者 | 任一匹配的视图／宿主权限 |
+| --- | --- | --- |
+| `/categories/options` | 成品、基础物料及分类配置 | `product:products:view`、`product:materials:view`、`product:categories:view` |
+| `/products/options` | 成品、工艺路线、生产工单及任务 | `product:products:view`、`product:routes:view`、`production:orders:view`、`production:tasks:view` |
+| `/materials/options` | 成品 BOM、基础物料与版本配置、生产用料及入库候选 | `product:products:view`、`product:materials:view`、`product:material-variants:view`、`production:materials:view`、`production:material-demands:view`、`warehouse:inbound:view` |
+| `/material-variants/by-material/:materialId` | 成品 BOM、版本配置、生产用料、任务内嵌手工提需及入库候选 | `product:products:view`、`product:material-variants:view`、`production:materials:view`、`production:material-demands:view`、`production:tasks:view`、`warehouse:inbound:view` |
+| `/process-steps/options` | 工序及工艺路线配置 | `product:processes:view`、`product:routes:view` |
+| `/process-routes/options` | 成品默认路线、工艺路线及生产工单／任务 | `product:products:view`、`product:routes:view`、`production:orders:view`、`production:tasks:view` |
+| `/users/options` | 工艺路线及生产工单／任务的负责人候选 | `product:routes:view`、`production:orders:view`、`production:tasks:view` |
+
+目录来源、分组及逐接口授权规则由 [Identity](../../identity/docs/database.md#14-permissions)维护；候选读取不授予主数据编辑、采购、生产或库存写入资格。跨模块候选仍由其所有者维护，Product 不记录 Production 接口清单。
 
 候选响应只包含选择所需最小字段；状态、关键词和业务筛选在服务端处理。生产新选版与采购用途候选不能混用，历史展示引用更不能作为写入资格。页面局部读取失败遵守[管理端错误处理](../../../../../admin-web/docs/http-error-handling.md)，不借候选 403 触发整页全局跳转。
