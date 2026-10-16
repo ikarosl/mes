@@ -28,7 +28,7 @@ docs/         # 迁移运行与安全说明
 | --- | --- |
 | `pnpm db:ensure` | 按环境配置创建不存在的数据库 |
 | `pnpm db:migrate` | 应用 schema 与版本化权限目录，不创建角色或账号 |
-| `pnpm db:migrate:status` | 查询 pending、applied 或 checksum-mismatch |
+| `pnpm db:migrate:status` | 查询 pending 或 applied；已执行文件缺失或校验和异常直接失败 |
 | `pnpm db:seed` | 幂等写入无凭证的系统基础数据 |
 | `pnpm db:bootstrap-admin` | seed 后按 ADMIN_* 创建／更新管理员，重跑会重置其密码 |
 | `pnpm db:init` | 依次 ensure、migrate、seed、bootstrap-admin；生产仅升级 schema 时不使用此入口 |
@@ -53,7 +53,7 @@ docs/         # 迁移运行与安全说明
 
 物理约束只有 `PRIMARY KEY (name)`；没有额外唯一键、二级索引、外键或 CHECK。`checksum` 的摘要算法及已执行文件内容不可变由运行器校验，不由数据库 CHECK 保证。本表不继承业务审计、乐观锁或软删除字段。
 
-运行器持有迁移建议锁后读取登记记录：同名且校验和相同则跳过，不同则报错；尚未登记的迁移在 SQL 执行成功后插入记录。MySQL DDL 与登记写入不构成可整体回滚的事务；失败恢复边界见[迁移安全](docs/migration-safety.md)。
+运行器持有迁移建议锁后读取登记记录：已登记文件缺失或校验和不同则报错；同名且校验和相同则跳过，尚未登记的迁移按文件名升序执行，仅在 SQL 执行成功后插入记录。MySQL DDL 与登记写入不构成可整体回滚的事务；失败恢复边界见[迁移安全](docs/migration-safety.md)。
 
 ## 业务数据库设计
 

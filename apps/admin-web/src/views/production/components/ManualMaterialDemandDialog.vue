@@ -250,7 +250,7 @@ const close = async (): Promise<boolean> => {
   if (status !== 'idle') {
     try {
       await RouteMessageBox.confirm(
-        '本次人工追加结果尚未确认。请先核对需求记录；放弃安全重试后再次提交可能生成重复事实。',
+        '暂时无法确认追加需求是否已生成。请先核对需求记录；关闭后无法继续重试本次提交，重新办理可能重复生成需求。',
         '放弃人工追加',
         { type: 'warning', confirmButtonText: '核对后放弃', cancelButtonText: '继续保留' },
       );

@@ -18,7 +18,7 @@
     <el-alert
       v-if="intentStatus !== 'idle'"
       class="notice"
-      title="提交结果尚未确认，已保留本次选择和原因。请按原请求重试或核对报工历史后关闭。"
+      :title="submissionRecoveryMessage(intentStatus, '报工历史')"
       type="warning"
       :closable="false"
       show-icon
@@ -219,7 +219,7 @@
         :loading="submitting"
         :disabled="!canSubmit"
         @click="submit"
-        >{{ intentStatus === 'pending' ? '按原请求重试' : '确认整体冲销' }}</el-button
+        >{{ intentStatus === 'pending' ? '重试本次提交' : '确认整体冲销' }}</el-button
       ></template
     >
   </el-dialog>
@@ -231,6 +231,7 @@
 </template>
 
 <script setup lang="ts">
+import { submissionRecoveryMessage } from '../../../composables/idempotency/useIdempotentIntent';
 import { computed, ref, watch } from 'vue';
 import type {
   BatchReverseStepReportImpact,
@@ -403,7 +404,7 @@ const discard = async (): Promise<boolean> => {
   try {
     await RouteMessageBox.confirm(
       intentStatus.value !== 'idle'
-        ? '本次整体冲销结果尚未确认。请先核对记录；放弃本地原请求后不能保证安全重试。'
+        ? '暂时无法确认本次冲销是否成功。请先核对报工记录；关闭后无法继续重试本次提交，重新办理可能重复冲销。'
         : '本次填写的冲销原因尚未提交，确认放弃？',
       '关闭批量冲销',
       { type: 'warning', confirmButtonText: '确认放弃', cancelButtonText: '继续保留' },
@@ -471,11 +472,11 @@ const submit = async (): Promise<void> => {
           reportIds.some((id) => !target.body.reports.some((row) => row.reportId === id))
         )
           // 无法确认成功范围时保留原意图，不能清键后另发一次整体操作。
-          throw new RequestError('批量成功结果无法核对，请保留原请求并检查报工历史', 0);
+          throw new RequestError('暂时无法确认本次冲销结果，请保留当前操作并核对报工历史', 0);
         return response;
       },
     );
-    EMessage.success(`已整体冲销 ${result.reversals.length} 条报工，原事实已保留`);
+    EMessage.success(`已冲销 ${result.reversals.length} 条报工，原记录可在历史中查看`);
     submitted.value = null;
     emit('update:modelValue', false);
     emit('changed');

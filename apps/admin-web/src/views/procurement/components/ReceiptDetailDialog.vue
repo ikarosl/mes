@@ -103,15 +103,13 @@
             <div class="selected-source">
               <strong>到货 {{ detail.receiptNo }} · id:{{ selectedLine.id }}</strong>
             </div>
-            <ReceiptLineSummary :line="selectedLine" />
-            <div class="work-section">
-              <div class="section-heading">
-                <strong>当前办理</strong>
-                <span
-                  >第 {{ selectedLine.currentRound.roundNo }} 轮 ·
-                  {{ receiptLineStageLabel(selectedLine) }}</span
-                >
-              </div>
+            <ReceiptLineProcessingCard :line="selectedLine">
+              <template #quantities>
+                <ReceiptLineSummary
+                  :line="selectedLine"
+                  section="quantities"
+                />
+              </template>
               <div
                 v-if="isKnownZero(selectedLine.quantities.unprocessedQuantity)"
                 class="done-message"
@@ -139,12 +137,12 @@
                   >
                 </div>
               </div>
-              <InlineHint
+              <p
                 v-if="isKnownZero(selectedLine.quantities.unprocessedQuantity)"
                 class="done-hint"
               >
-                当前无未处置量，不能直接更正正式分配；同批总量录入有误时先更正实收，新增剩余须重新检验、定稿，已入与已退事实保留。
-              </InlineHint>
+                当前没有待处理数量，无法调整入库和退回安排。若实收总数有误，请先更正实收；新增待处理数量须重新检验并由仓库确认。已入库、已退回记录不变。
+              </p>
               <div
                 v-else
                 class="current-actions"
@@ -159,13 +157,6 @@
                     ].includes(selectedLine.currentRound.status) && !isReceiptRejected(selectedLine)
                   "
                 >
-                  <span
-                    >下一步：{{
-                      selectedLine.currentRound.status === 'reviewing'
-                        ? '继续本轮来料检验'
-                        : '办理来料检验或复检'
-                    }}</span
-                  >
                   <el-button
                     v-if="auth.can(PERMISSIONS.quality.inboundInspections.view)"
                     type="primary"
@@ -180,9 +171,8 @@
                   >
                 </template>
                 <template v-else-if="selectedLine.currentRound.status === 'awaiting_acceptance'">
-                  <span>下一步：核对整批数量与正式去向</span>
                   <el-button
-                    type="primary"
+                    type="warning"
                     :disabled="blocked || !canAcceptReceipt(selectedLine)"
                     @click="acceptanceDialog?.open(selectedLine)"
                     >核对整批定稿</el-button
@@ -193,62 +183,52 @@
                     >当前缺少可引用的检验放行依据</span
                   >
                 </template>
-                <template v-else-if="isReceiptRejected(selectedLine)">
-                  <span>当前为人工拒收。</span>
+                <template v-else-if="!isReceiptRejected(selectedLine)">
+                  <template v-if="Number(selectedLine.quantities.pendingInboundQuantity) > 0">
+                    <el-button
+                      v-if="auth.can(PERMISSIONS.warehouse.inbound.view)"
+                      type="primary"
+                      :disabled="blocked"
+                      @click="goInbound(selectedLine.id)"
+                      >办理入库</el-button
+                    >
+                    <span
+                      v-else
+                      class="action-note"
+                      >请由具备入库权限的人员办理</span
+                    >
+                  </template>
+                  <template v-else-if="Number(selectedLine.quantities.pendingReturnQuantity) === 0">
+                    <el-button
+                      v-if="canAcceptReceipt(selectedLine)"
+                      type="warning"
+                      :disabled="blocked"
+                      @click="acceptanceDialog?.open(selectedLine)"
+                      >更正整批正式分配</el-button
+                    >
+                  </template>
                 </template>
-                <template v-else-if="Number(selectedLine.quantities.pendingInboundQuantity) > 0">
-                  <span
-                    >当前可入
-                    <strong
-                      >{{ Number(selectedLine.quantities.pendingInboundQuantity) }}
-                      {{ selectedLine.unit }}</strong
-                    >，按有效分配办理实际入库</span
-                  >
-                  <el-button
-                    v-if="auth.can(PERMISSIONS.warehouse.inbound.view)"
-                    type="primary"
-                    :disabled="blocked"
-                    @click="goInbound(selectedLine.id)"
-                    >办理入库</el-button
-                  >
-                  <span
-                    v-else
-                    class="action-note"
-                    >请由具备入库权限的人员办理</span
-                  >
-                </template>
-                <template v-else-if="Number(selectedLine.quantities.pendingReturnQuantity) === 0">
-                  <span>当前仍有待处理份额，请核对正式去向。</span>
-                  <el-button
-                    v-if="canAcceptReceipt(selectedLine)"
-                    type="primary"
-                    :disabled="blocked"
-                    @click="acceptanceDialog?.open(selectedLine)"
-                    >更正整批正式分配</el-button
-                  >
-                </template>
-                <InlineHint
+                <el-button
                   v-if="
                     selectedLine.currentRound.status === 'finalized' &&
                     Number(selectedLine.quantities.pendingReturnQuantity) > 0
                   "
-                  tone="warning"
-                  class="return-hint"
+                  type="warning"
+                  plain
+                  :disabled="blocked"
+                  @click="focusAllocations"
+                  >查看待退分配</el-button
                 >
-                  当前待退
-                  <strong
-                    >{{ Number(selectedLine.quantities.pendingReturnQuantity) }}
-                    {{ selectedLine.unit }}</strong
-                  >；在下方选择具体有效分配，核对交接凭据后确认全部余量。
-                  <el-button
-                    link
-                    type="primary"
-                    :disabled="blocked"
-                    @click="focusAllocations"
-                    >查看待退分配</el-button
-                  >
-                </InlineHint>
               </div>
+            </ReceiptLineProcessingCard>
+            <div class="line-identity-summary">
+              <ReceiptLineSummary
+                :line="selectedLine"
+                section="identity"
+              />
+            </div>
+            <div class="work-section">
+              <div class="section-heading"><strong>本轮分配与执行</strong></div>
               <div
                 ref="allocationsSection"
                 class="allocations-section"
@@ -353,7 +333,7 @@
                 </el-dropdown>
               </div>
             </div>
-            <div class="secondary-section">
+            <div class="secondary-section history-section">
               <div class="section-heading"><strong>历史与依据</strong></div>
               <div class="section-actions">
                 <el-button @click="history?.open(selectedLine.id, 'rounds', selectedLine)"
@@ -438,6 +418,7 @@ import { formatDateTimeForDisplay } from '../../../utils/date';
 import { EMessage } from '../../../utils/message';
 import InlineHint from '../../../components/InlineHint.vue';
 import ReceiptLineSummary from './ReceiptLineSummary.vue';
+import ReceiptLineProcessingCard from './ReceiptLineProcessingCard.vue';
 import ReceiptAcceptanceDialog from './ReceiptAcceptanceDialog.vue';
 import ReceiptLineAllocations from './ReceiptLineAllocations.vue';
 import ReceiptLineActionDialog from './ReceiptLineActionDialog.vue';
@@ -729,7 +710,6 @@ defineExpose({
   font-weight: 600;
 }
 .line-version,
-.section-heading span,
 .action-note {
   color: var(--el-text-color-secondary);
   font-size: 13px;
@@ -740,6 +720,9 @@ defineExpose({
 }
 .selected-source {
   margin-bottom: 10px;
+}
+.line-identity-summary {
+  margin-top: 12px;
 }
 .work-section {
   margin-top: 16px;
@@ -757,9 +740,7 @@ defineExpose({
 }
 .current-actions,
 .done-message {
-  padding: 8px 12px;
-  background: var(--el-fill-color-light);
-  border-left: 3px solid var(--el-color-primary);
+  padding: 0;
 }
 .done-message {
   display: flex;
@@ -767,7 +748,6 @@ defineExpose({
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 8px 12px;
-  border-color: var(--el-color-success);
 }
 .done-actions {
   display: flex;
@@ -779,9 +759,10 @@ defineExpose({
 }
 .done-hint {
   margin-top: 8px;
-}
-.return-hint {
-  flex-basis: 100%;
+  margin-bottom: 0;
+  color: var(--el-text-color-regular);
+  font-size: 13px;
+  line-height: 1.6;
 }
 .allocations-section:focus {
   outline: none;
@@ -804,6 +785,13 @@ defineExpose({
   color: var(--el-text-color-secondary);
   font-size: 13px;
   overflow-wrap: anywhere;
+}
+.history-section .section-heading,
+.history-section .section-actions {
+  color: var(--el-text-color-regular);
+}
+.history-section .el-button {
+  --el-button-text-color: var(--el-text-color-regular);
 }
 @media (max-width: 1600px) {
   .receipt-workbench {

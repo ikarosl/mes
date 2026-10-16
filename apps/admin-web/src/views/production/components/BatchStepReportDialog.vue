@@ -101,6 +101,7 @@
 </template>
 
 <script setup lang="ts">
+import { submissionRecoveryMessage } from '../../../composables/idempotency/useIdempotentIntent';
 import { computed, reactive, ref, watch } from 'vue';
 import type { BatchStepAbnormalOrigin } from '@company/contracts';
 import { PRODUCTION_REPORT_QUANTITY_MAX } from '@company/constants';
@@ -163,7 +164,7 @@ const abnormalOriginTip = computed(() =>
 );
 const quantityTip = computed(() =>
   (props.intentStatus ?? 'idle') !== 'idle'
-    ? '上次提交结果尚未确认。已锁定原数量、版本和原因，仅可按原请求重试。'
+    ? submissionRecoveryMessage(props.intentStatus ?? 'idle', '报工记录')
     : props.contextReady === false
       ? '当前依据已变化或加载失败，输入已保留；请重新核对最新工序后办理。'
       : props.task && !canOpenProductionReport(props.task, props.historical)
@@ -206,7 +207,7 @@ const canDiscard = async (): Promise<boolean> => {
     await ElMessageBox.confirm(
       (props.intentStatus ?? 'idle') === 'idle'
         ? '本次报工输入尚未提交，确认放弃？'
-        : '上次报工结果尚未确认。请先刷新任务和报工记录核对；放弃安全重试后再次提交可能重复报工。',
+        : '暂时无法确认报工是否成功。请先核对任务和报工记录；关闭后无法继续重试本次提交，重新办理可能重复报工。',
       '关闭报工',
       { type: 'warning', confirmButtonText: '核对后仍要放弃', cancelButtonText: '继续保留' },
     );

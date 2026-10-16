@@ -750,10 +750,10 @@ const handleTaskDialogClose = async (visible: boolean): Promise<void> => {
   }
   const message =
     state === 'blocked'
-      ? '该提交的幂等结果已损坏，无法确认本次是否已创建批次。关闭后重新发起可能生成重复批次，建议先在批次列表中核对是否已生成。是否仍要关闭？'
+      ? '暂时无法确认批次是否已创建，当前不能继续提交。请先核对批次列表并联系管理员；关闭后重新办理可能重复创建，确认关闭？'
       : state === 'expired'
-        ? '该提交已超出幂等重试窗口（12 小时），旧键已无法安全重试。关闭后重新发起可能生成重复批次，建议先在批次列表中核对是否已生成。是否仍要关闭？'
-        : '上次提交结果未知（网络异常或服务端未确认）。关闭后将无法安全重试；若本次实际已成功，重新提交可能生成重复批次。是否仍要关闭？';
+        ? '本次提交已超过可重试时限。请先核对批次列表；关闭后重新办理可能重复创建，确认关闭？'
+        : '暂时无法确认批次是否已创建。关闭后无法继续重试本次提交，重新办理可能重复创建；请先核对批次列表，确认关闭？';
   try {
     await ElMessageBox.confirm(message, '关闭确认', {
       confirmButtonText: '仍要关闭',
@@ -928,10 +928,10 @@ const handleMaterialOutbound = async (payload: CreateMaterialOutboundPayload): P
 };
 const materialIntentMessage = (operation: string, state: string): string =>
   state === 'blocked'
-    ? `${operation}的幂等结果已损坏，无法确认业务结果。请先刷新需求、出库记录和库存后核对；仍要放弃本次安全重试吗？`
+    ? `暂时无法确认${operation}是否成功，当前不能继续提交。请先核对需求、出库记录和库存，并联系管理员；确认关闭当前操作？`
     : state === 'expired'
-      ? `${operation}已超出 12 小时安全重试窗口。请先核对需求、出库记录和库存；仍要放弃本次意图吗？`
-      : `${operation}的服务端结果尚未确认。放弃后重新提交可能重复形成业务事实，请先核对需求、出库记录和库存；仍要放弃吗？`;
+      ? `${operation}已超过可重试时限。请先核对需求、出库记录和库存；重新办理可能重复提交，确认关闭当前操作？`
+      : `暂时无法确认${operation}是否成功。关闭后无法继续重试本次提交，重新办理可能重复操作；请先核对需求、出库记录和库存，确认关闭？`;
 const confirmMaterialIntentReset = async (
   operation: string,
   status: 'idle' | 'pending' | 'blocked' | 'expired',
@@ -942,7 +942,7 @@ const confirmMaterialIntentReset = async (
     return true;
   }
   try {
-    await ElMessageBox.confirm(materialIntentMessage(operation, status), '放弃幂等意图确认', {
+    await ElMessageBox.confirm(materialIntentMessage(operation, status), '确认关闭当前操作', {
       confirmButtonText: '核对后仍要放弃',
       cancelButtonText: '继续保留',
       type: 'warning',

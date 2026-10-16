@@ -106,7 +106,7 @@
       type="warning"
       :closable="false"
       show-icon
-      title="报废数量沿用来源异常事实；补料品种和数量必须人工选择，不按异常数量自动推算。"
+      title="报废数量取自原异常记录。请按实际需要选择补料品种和数量，系统不会自动填写。"
     />
     <el-descriptions
       v-if="supplementDisposition"
@@ -654,7 +654,7 @@ const loadSupplementCandidates = async (restoredPlan?: ProductionScrapSupplement
     }
     supplementCandidatesReady.value = true;
   } catch {
-    supplementError.value = '补料候选加载失败，请关闭后重试。';
+    supplementError.value = '补料列表加载失败，请关闭后重试。';
   } finally {
     if (requestSerial === supplementRequestSerial) supplementLoading.value = false;
   }
@@ -712,7 +712,7 @@ const abandonSupplementIntent = async () => {
   if (!disposition) return;
   try {
     await RouteMessageBox.confirm(
-      '请确认你已核对异常处置和正式补料需求。放弃后将无法继续复用本次提交标识，重新提交可能生成重复业务事实。',
+      '请先核对异常处置和补料需求。关闭后无法继续重试本次提交，重新办理可能重复生成补料需求。',
       '放弃上次最终确认',
       { type: 'warning', confirmButtonText: '已核对，放弃旧提交' },
     );

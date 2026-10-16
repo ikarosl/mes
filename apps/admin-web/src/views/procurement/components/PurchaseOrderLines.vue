@@ -26,7 +26,7 @@
             :column="4"
             border
             size="small"
-            title="当前履约与仓库待办"
+            title="到货处理与仓库待办"
           >
             <el-descriptions-item label="累计实收">{{
               Number(row.quantities.receivedQuantity)
@@ -70,7 +70,7 @@
             · 原采购行 {{ row.originOrderLineId }}
           </p>
           <p>
-            履约方式：{{
+            到货方式：{{
               PURCHASE_FULFILLMENT_MODE_LABELS[row.fulfillmentMode as PurchaseFulfillmentMode]
             }}
           </p>
@@ -170,7 +170,7 @@
       </template>
     </el-table-column>
     <el-table-column
-      label="履约方式"
+      label="到货方式"
       min-width="140"
       ><template #default="{ row }">{{
         PURCHASE_FULFILLMENT_MODE_LABELS[row.fulfillmentMode as PurchaseFulfillmentMode]
@@ -255,7 +255,7 @@
             type="primary"
             :disabled="disabled"
             @click="$emit('receipts')"
-            >到货记录</el-button
+            >记录到货</el-button
           >
         </div>
       </template></el-table-column

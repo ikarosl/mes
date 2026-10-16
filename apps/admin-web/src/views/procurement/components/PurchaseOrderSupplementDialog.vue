@@ -126,7 +126,7 @@
               aria-label="检索原采购行"
               @update:model-value="linePage = 1"
             />
-            <span>仅列出原单已下单、可引用的到货履约行</span>
+            <span>仅显示原采购单中已下单、可引用的到货明细</span>
           </div>
           <el-table
             :data="pagedLines"
@@ -237,7 +237,7 @@
               :title="
                 draft.basisError
                   ? '所选依据已失效，请重新选择具体到货或分配。'
-                  : '候选读取失败，输入已保留；请重试。'
+                  : '列表加载失败，输入已保留；请重试。'
               "
               type="error"
               :closable="false"

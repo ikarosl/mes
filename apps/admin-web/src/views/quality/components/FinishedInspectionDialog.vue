@@ -383,9 +383,9 @@ const primaryLabel = computed(() => {
     case 'start_reinspection':
       return '开始复检';
     case 'save_draft':
-      return canViewOutput.value ? '前往产出清单' : '';
+      return canViewOutput.value ? '前往保存产出草稿' : '';
     case 'review_output':
-      return canViewOutput.value ? '前往产出清单核对' : '';
+      return canViewOutput.value ? '返回产出清单引用并保存' : '';
     case 'view_approval':
       return canViewOutput.value ? '查看清单审批' : '';
     case 'view_history':

@@ -20,11 +20,7 @@
         type="warning"
         :closable="false"
         show-icon
-        :title="
-          editor.intentStatus.value === 'pending'
-            ? '上次写入结果尚未确认，原请求已保留。请重试原提交或先核对单据列表。'
-            : '原提交已不能安全重试，请核对单据结果后再明确放弃本地重试标识。'
-        "
+        :title="submissionRecoveryMessage(editor.intentStatus.value, '单据列表')"
       />
       <el-alert
         v-if="editor.readError.value"
@@ -289,7 +285,7 @@
         type="warning"
         :loading="editor.submitting.value"
         @click="editor.retry"
-        >重试原提交</el-button
+        >重试本次提交</el-button
       >
       <template v-else-if="editor.intentStatus.value === 'idle'">
         <el-button
@@ -329,6 +325,7 @@
 </template>
 
 <script setup lang="ts">
+import { submissionRecoveryMessage } from '../../../composables/idempotency/useIdempotentIntent';
 import { computed } from 'vue';
 import {
   INVENTORY_ITEM_KIND_LABELS,

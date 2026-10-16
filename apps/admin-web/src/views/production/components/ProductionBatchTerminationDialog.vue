@@ -61,14 +61,14 @@
               ? '本批次已结束，以下内容仅供查阅'
               : check.batchStatus !== 'closing' && detail
                 ? '任务已恢复生产，收尾历史仅供复核'
-                : '先处理收尾事项，再核对物料并填写产出清单'
+                : '处理收尾事项并逐项实核物料，完成后返回产出清单提交审批'
           "
           :description="
             check.termination
               ? '以下展示收尾与物料核对记录，最终产出请打开批准清单查看。需要办理退料时，请在退料管理重新核对当前可退数量。'
               : check.batchStatus !== 'closing' && detail
-                ? '历史收尾根的保留不代表当前仍可编辑产出或办理质检；再次结束任务后按最新事实核对。已处理事实不会因撤回结束自动恢复。'
-                : '进入收尾即停止生产。每项处理保留独立记录；驳回结案审批不会恢复已关闭事项。余料在退料管理办理，现场损坏在物料实核中登记；原待确认损耗请先处理或取消。'
+                ? '任务已恢复生产，收尾记录仅供查看。再次结束任务后，可按当前任务状态办理产出和质检；已完成的处理不会自动撤销。'
+                : '进入收尾后停止生产。余料请到退料管理办理，物料损坏在下方登记；待确认损耗须先处理或取消。已关闭事项不会因结案审批驳回而恢复。'
           "
           type="info"
           :closable="false"
@@ -238,7 +238,7 @@
           <el-tab-pane
             :label="
               check.termination
-                ? '结束时物料快照'
+                ? '任务结束时的物料记录'
                 : `物料实核（${reviewedCount}/${check.materials.length}）`
             "
             name="materials"
@@ -397,7 +397,7 @@
               :type="readonly ? 'primary' : 'warning'"
               :disabled="busy || unresolved"
               @click="openOutput"
-              >{{ readonly ? '查看产出清单' : '核对产出清单 →' }}</el-button
+              >{{ readonly ? '查看产出清单' : '返回产出清单检查并送审 →' }}</el-button
             >
           </template>
         </div>
@@ -640,23 +640,6 @@ defineExpose({
   color: var(--el-text-color-secondary);
   font-size: 12px;
   line-height: 1.7;
-}
-.review-note {
-  margin-top: 6px;
-  white-space: pre-wrap;
-  line-height: 1.6;
-}
-.quantities {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 24px;
-}
-.output-summary {
-  padding: 12px 24px;
-  background: var(--el-fill-color-light);
-  border-radius: 6px;
-  line-height: 1.8;
 }
 .footer-bar,
 .footer-actions {

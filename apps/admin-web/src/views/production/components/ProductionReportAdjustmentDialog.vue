@@ -49,8 +49,8 @@
       <InlineHint class="editor-note">
         {{
           editor.mode === 'correct'
-            ? '填写该记录应保留的完整正常数量，不填写增减量。更正会全量冲销原记录并生成替代记录，原事实和原因继续留存。'
-            : '整条正常报工全量冲销，原事实和原因继续留存。'
+            ? '填写更正后的完整正常数量，不是增减数量。更正后将以新记录替代原报工，原记录和更正原因保留供查阅。'
+            : '整条正常报工将全量冲销，原记录和冲销原因保留供查阅。'
         }}
         数量调整不改变工序状态。
       </InlineHint>
@@ -146,7 +146,7 @@
         @click="editor.submit"
         >{{
           editor.intentStatus === 'pending'
-            ? '按原请求重试'
+            ? '重试本次提交'
             : editor.mode === 'correct'
               ? '确认更正正常数量'
               : '确认全量冲销'
@@ -162,6 +162,7 @@
 </template>
 
 <script setup lang="ts">
+import { submissionRecoveryMessage } from '../../../composables/idempotency/useIdempotentIntent';
 import { computed, ref, watch } from 'vue';
 import type { ProductionReportAdjustmentEditor } from '../composables/useProductionReportAdjustment';
 import InlineHint from '../../../components/InlineHint.vue';
@@ -177,9 +178,7 @@ const previewQuantity = (quantity: number | null): string =>
 const unconfirmedNote = computed(() =>
   props.editor.unknownReverse
     ? '上次冲销结果尚未确认，请先核对报工历史。请勿重新冲销或更正。'
-    : props.editor.intentStatus === 'pending'
-      ? '上次更正结果尚未确认，原数量、版本和请求已锁定。仅可按原请求重试，或先核对报工历史。'
-      : '上次更正结果需要核对，当前不能继续提交。请核对报工历史后再决定是否放弃原请求。',
+    : submissionRecoveryMessage(props.editor.intentStatus, '报工历史'),
 );
 watch(
   () => props.editor.visible,

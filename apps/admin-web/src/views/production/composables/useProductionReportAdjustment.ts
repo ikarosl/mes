@@ -179,7 +179,7 @@ export const useProductionReportAdjustment = (options: ReportAdjustmentOptions) 
     try {
       await RouteMessageBox.confirm(
         intentStatus.value !== 'idle' || unknownReverse.value
-          ? '本次调整结果尚未确认。请先核对报工历史；放弃原请求的安全重试后重新办理，可能重复更正。'
+          ? '暂时无法确认本次调整是否成功。请先核对报工历史；关闭后无法继续重试本次提交，重新办理可能重复更正。'
           : '本次数量或原因尚未提交，确认放弃？',
         '关闭报工调整',
         { type: 'warning', confirmButtonText: '确认放弃', cancelButtonText: '继续保留' },
@@ -265,7 +265,7 @@ export const useProductionReportAdjustment = (options: ReportAdjustmentOptions) 
               Number(result.replacement.abnormalQuantity) !== 0
             )
               // 成功响应不能核对原单和完整替代量时保留首次请求，不能换键再办。
-              throw new RequestError('更正结果无法核对，请保留原请求并检查报工历史', 0);
+              throw new RequestError('暂时无法确认更正结果，请保留当前操作并核对报工历史', 0);
             return result;
           },
         );

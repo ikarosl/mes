@@ -342,7 +342,10 @@ export class MysqlPurchaseOrderRepository extends PurchaseOrderRepository {
           facts.hasReceipt,
         ).includes(payload.reasonType)
       )
-        return orderError('当前到货、质检及退回事实不满足所选关闭条件', 'PURCHASE_ORDER_STATE');
+        return orderError(
+          '当前到货、检验或退回情况不符合所选关闭方式，请核对相关记录',
+          'PURCHASE_ORDER_STATE',
+        );
       await closeOrderLine(
         connection,
         order,

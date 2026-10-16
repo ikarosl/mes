@@ -19,6 +19,7 @@
 - [库存协作协议](inventory-extraction-design.md)：跨模块来源、事务与锁序
 - [采购管理端设计](../apps/admin-web/docs/procurement-inbound.md)：输入、候选分页、草稿、并发与幂等约束
 - [前端组件复用审查](frontend-component-reuse-review.md)：静态重复证据、组件／composable 边界及保留差异；仅记录，未批准实施
+- [用户提示语盘点](user-facing-copy-review.md)：管理端与 API 提示的原文证据、已实施待验收及仍待确认项
 - [审批接入边界](approval-design.md)
 - [通用通知设计与提交后扩展钩子](notification-design.md)
 

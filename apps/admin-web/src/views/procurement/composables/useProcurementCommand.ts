@@ -63,7 +63,7 @@ export function useProcurementCommand<TResult = PurchaseOrderCommandResult>(
       try {
         await RouteMessageBox.confirm(
           status.value !== 'idle'
-            ? '上次操作结果尚未确认。请先核对相关记录；关闭将放弃本次原操作重试，确认关闭吗？'
+            ? '暂时无法确认上次操作是否成功。请先核对相关记录；关闭后无法继续重试本次提交，重新办理可能重复操作，确认关闭吗？'
             : '当前修改尚未保存，确定放弃修改吗？',
           '关闭当前办理',
           { type: 'warning', confirmButtonText: '确认关闭', cancelButtonText: '继续核对' },

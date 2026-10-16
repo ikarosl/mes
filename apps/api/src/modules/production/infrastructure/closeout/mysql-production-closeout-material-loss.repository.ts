@@ -42,7 +42,7 @@ export class MysqlProductionCloseoutMaterialLossRepository extends ProductionClo
       if (check.checkToken !== payload.checkToken)
         throw new ProductionDomainError(
           'CONCURRENT_MODIFICATION',
-          '领料、退料或损耗事实已变化，请刷新核对',
+          '领料、退料或损耗记录已变化，请刷新核对',
         );
       const material = check.materials.find((row) => row.allocationId === payload.allocationId);
       if (!material || payload.scrapQuantity > Number(material.returnableQuantity))

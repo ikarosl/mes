@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     v-model="visible"
-    title="确认实际到货"
+    title="记录到货"
     :width="DialogWidth.workbench"
     workbench
     :before-close="beforeClose"

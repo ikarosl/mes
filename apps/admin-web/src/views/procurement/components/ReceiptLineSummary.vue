@@ -1,6 +1,7 @@
 <template>
   <div class="line-summary">
     <el-descriptions
+      v-if="section !== 'quantities'"
       :column="3"
       border
       size="small"
@@ -11,7 +12,10 @@
       >
         <strong>{{ line.itemName }}</strong> · {{ line.itemCode }} · {{ line.materialVariantCode }}
       </el-descriptions-item>
-      <el-descriptions-item label="本轮阶段">
+      <el-descriptions-item
+        v-if="section === 'all'"
+        label="本轮阶段"
+      >
         <el-tag
           :type="receiptLineStageType(line)"
           :effect="receiptLineStageEffect(line)"
@@ -26,67 +30,124 @@
       <el-descriptions-item label="到货明细 ID">id:{{ line.id }}</el-descriptions-item>
     </el-descriptions>
 
-    <el-descriptions
-      :column="4"
-      border
-      size="small"
-      class="quantity-summary"
+    <div
+      v-if="section === 'quantities'"
+      class="quantity-focus"
     >
-      <el-descriptions-item label="本批核实总量">
-        {{ quantityText(line.quantities.receivedQuantity) }} {{ line.unit }}
-      </el-descriptions-item>
-      <el-descriptions-item label="累计已入">
-        <span :class="isKnownZero(line.quantities.inboundQuantity) ? 'quantity-zero' : undefined">
-          {{ quantityText(line.quantities.inboundQuantity) }} {{ line.unit }}
-        </span>
-      </el-descriptions-item>
-      <el-descriptions-item label="累计已退">
-        <span :class="isKnownZero(line.quantities.returnedQuantity) ? 'quantity-zero' : undefined">
-          {{ quantityText(line.quantities.returnedQuantity) }} {{ line.unit }}
-        </span>
-      </el-descriptions-item>
-      <el-descriptions-item label="本轮剩余">
-        <strong
-          :class="
-            isKnownZero(line.quantities.unprocessedQuantity) ? 'quantity-zero' : 'quantity-current'
-          "
-          >{{ quantityText(line.quantities.unprocessedQuantity) }} {{ line.unit }}</strong
+      <dl>
+        <div>
+          <dt>本轮剩余</dt>
+          <dd :class="{ 'quantity-zero': isKnownZero(line.quantities.unprocessedQuantity) }">
+            {{ quantityText(line.quantities.unprocessedQuantity) }} <small>{{ line.unit }}</small>
+          </dd>
+        </div>
+        <div>
+          <dt>待入库</dt>
+          <dd :class="{ 'quantity-zero': isKnownZero(line.quantities.pendingInboundQuantity) }">
+            {{ quantityText(line.quantities.pendingInboundQuantity) }}
+            <small>{{ line.unit }}</small>
+          </dd>
+        </div>
+        <div>
+          <dt>待退回</dt>
+          <dd :class="{ 'quantity-zero': isKnownZero(line.quantities.pendingReturnQuantity) }">
+            {{ quantityText(line.quantities.pendingReturnQuantity) }} <small>{{ line.unit }}</small>
+          </dd>
+        </div>
+        <div>
+          <dt>待明确去向</dt>
+          <dd :class="{ 'quantity-zero': isKnownZero(line.quantities.undeterminedQuantity) }">
+            {{ quantityText(line.quantities.undeterminedQuantity) }} <small>{{ line.unit }}</small>
+          </dd>
+        </div>
+      </dl>
+      <div class="actual-quantities">
+        <span
+          >本批核实总量
+          <strong
+            >{{ quantityText(line.quantities.receivedQuantity) }} {{ line.unit }}</strong
+          ></span
         >
-      </el-descriptions-item>
-    </el-descriptions>
+        <span
+          >累计已入
+          <strong>{{ quantityText(line.quantities.inboundQuantity) }} {{ line.unit }}</strong></span
+        >
+        <span
+          >累计已退
+          <strong
+            >{{ quantityText(line.quantities.returnedQuantity) }} {{ line.unit }}</strong
+          ></span
+        >
+      </div>
+    </div>
+    <template v-if="section === 'all'">
+      <el-descriptions
+        :column="4"
+        border
+        size="small"
+        class="quantity-summary"
+      >
+        <el-descriptions-item label="本批核实总量">
+          {{ quantityText(line.quantities.receivedQuantity) }} {{ line.unit }}
+        </el-descriptions-item>
+        <el-descriptions-item label="累计已入">
+          <span :class="isKnownZero(line.quantities.inboundQuantity) ? 'quantity-zero' : undefined">
+            {{ quantityText(line.quantities.inboundQuantity) }} {{ line.unit }}
+          </span>
+        </el-descriptions-item>
+        <el-descriptions-item label="累计已退">
+          <span
+            :class="isKnownZero(line.quantities.returnedQuantity) ? 'quantity-zero' : undefined"
+          >
+            {{ quantityText(line.quantities.returnedQuantity) }} {{ line.unit }}
+          </span>
+        </el-descriptions-item>
+        <el-descriptions-item label="本轮剩余">
+          <strong
+            :class="
+              isKnownZero(line.quantities.unprocessedQuantity)
+                ? 'quantity-zero'
+                : 'quantity-current'
+            "
+            >{{ quantityText(line.quantities.unprocessedQuantity) }} {{ line.unit }}</strong
+          >
+        </el-descriptions-item>
+      </el-descriptions>
+      <InlineHint
+        v-if="
+          !isKnownZero(line.quantities.unprocessedQuantity) &&
+          line.currentRound.status === 'finalized'
+        "
+        class="line-hint"
+      >
+        本轮剩余去向：
+        <template v-if="Number(line.quantities.undeterminedQuantity) > 0">
+          待处理
+          <strong>{{ quantityText(line.quantities.undeterminedQuantity) }} {{ line.unit }}</strong
+          >；
+        </template>
+        <template v-if="Number(line.quantities.pendingInboundQuantity) > 0">
+          可入
+          <strong>{{ quantityText(line.quantities.pendingInboundQuantity) }} {{ line.unit }}</strong
+          >；
+        </template>
+        <template v-if="Number(line.quantities.pendingReturnQuantity) > 0">
+          待退
+          <strong>{{ quantityText(line.quantities.pendingReturnQuantity) }} {{ line.unit }}</strong
+          >。
+        </template>
+        <template v-if="!hasRemainingComponent">分配数量待核对。</template>
+      </InlineHint>
+      <InlineHint
+        v-else-if="!isKnownZero(line.quantities.unprocessedQuantity)"
+        :tone="phaseTone"
+        class="line-hint"
+        >{{ phaseHint }}</InlineHint
+      >
+    </template>
     <InlineHint
-      v-if="
-        !isKnownZero(line.quantities.unprocessedQuantity) &&
-        line.currentRound.status === 'finalized'
-      "
-      class="line-hint"
-    >
-      本轮剩余去向：
-      <template v-if="Number(line.quantities.undeterminedQuantity) > 0">
-        待处理
-        <strong>{{ quantityText(line.quantities.undeterminedQuantity) }} {{ line.unit }}</strong
-        >；
-      </template>
-      <template v-if="Number(line.quantities.pendingInboundQuantity) > 0">
-        可入
-        <strong>{{ quantityText(line.quantities.pendingInboundQuantity) }} {{ line.unit }}</strong
-        >；
-      </template>
-      <template v-if="Number(line.quantities.pendingReturnQuantity) > 0">
-        待退
-        <strong>{{ quantityText(line.quantities.pendingReturnQuantity) }} {{ line.unit }}</strong
-        >。
-      </template>
-      <template v-if="!hasRemainingComponent">分配数量待核对。</template>
-    </InlineHint>
-    <InlineHint
-      v-else-if="!isKnownZero(line.quantities.unprocessedQuantity)"
-      :tone="phaseTone"
-      class="line-hint"
-      >{{ phaseHint }}</InlineHint
-    >
-    <InlineHint
-      v-if="line.overReceiptNote"
+      v-if="section !== 'identity' && line.overReceiptNote"
+      :tone="section === 'quantities' ? 'warning' : 'info'"
       class="line-hint"
     >
       超量接受依据：{{ line.overReceiptNote }}
@@ -103,7 +164,13 @@ import {
   receiptLineStageEffect,
 } from '../receipt-round-presentation';
 
-const props = defineProps<{ line: ProcurementReceiptLine }>();
+const props = withDefaults(
+  defineProps<{
+    line: ProcurementReceiptLine;
+    section?: 'all' | 'identity' | 'quantities';
+  }>(),
+  { section: 'all' },
+);
 const hasRemainingComponent = computed(() =>
   [
     props.line.quantities.undeterminedQuantity,
@@ -151,5 +218,49 @@ const isKnownZero = (value: string): boolean => value.trim() !== '' && Number(va
 .quantity-zero {
   color: var(--el-text-color-placeholder);
   font-weight: 400;
+}
+.quantity-focus dl {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 12px 0;
+  border-top: 1px solid var(--el-border-color-lighter);
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+.quantity-focus dt {
+  color: var(--el-text-color-regular);
+  font-size: 13px;
+}
+.quantity-focus dd {
+  margin: 5px 0 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--el-text-color-primary);
+  overflow-wrap: anywhere;
+}
+.quantity-focus dd.quantity-zero {
+  color: var(--el-text-color-placeholder);
+  font-weight: 400;
+}
+.quantity-focus small {
+  font-size: 13px;
+  font-weight: 400;
+}
+.actual-quantities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 20px;
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--el-text-color-regular);
+}
+.actual-quantities strong {
+  color: var(--el-text-color-primary);
+}
+@media (max-width: 720px) {
+  .quantity-focus dl {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 </style>

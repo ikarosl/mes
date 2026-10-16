@@ -12,6 +12,7 @@ export interface CredentialUser {
   username: string;
   passwordHash: string;
   displayName: string;
+  isEnabled: boolean;
 }
 export interface RefreshTokenRecord {
   userId: string;

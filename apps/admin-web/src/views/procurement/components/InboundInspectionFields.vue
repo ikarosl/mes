@@ -4,7 +4,7 @@
     :disabled="disabled"
   >
     <InlineHint class="inspection-reference">
-      发起时申报快照 <strong>{{ coveredQuantity }} {{ unit }}</strong
+      送检时申报数量 <strong>{{ coveredQuantity }} {{ unit }}</strong
       >；仅供核对，不等于当前剩余或本次实检。
     </InlineHint>
     <el-form-item
@@ -85,11 +85,11 @@
         样本判断整批资格，不改变本轮剩余范围。
       </template>
       <template v-else-if="preview.inspectedQuantity !== coveredQuantity">
-        与发起申报快照相差
+        与送检时申报数量相差
         <strong>{{ Math.abs(preview.inspectedQuantity - coveredQuantity) }} {{ unit }}</strong
         >，库管定稿时需核对。
       </template>
-      明确放行后仍须库管核对定稿；本结论不自动形成入库或退回事实。
+      检验完成后仍需仓库确认，入库或退回需另行办理。
     </InlineHint>
     <el-form-item
       label="线下检验时间"

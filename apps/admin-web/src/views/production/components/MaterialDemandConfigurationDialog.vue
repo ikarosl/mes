@@ -363,7 +363,7 @@ const close = async (): Promise<boolean> => {
   if (status !== 'idle') {
     try {
       await RouteMessageBox.confirm(
-        '本次需求生成结果尚未确认。请先核对任务需求；放弃安全重试后再次提交可能生成重复事实。',
+        '暂时无法确认需求是否已生成。请先核对任务需求；关闭后无法继续重试本次提交，重新办理可能重复生成需求。',
         '放弃需求配置',
         { type: 'warning', confirmButtonText: '核对后放弃', cancelButtonText: '继续保留' },
       );

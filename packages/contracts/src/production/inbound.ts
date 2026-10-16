@@ -34,7 +34,6 @@ export interface PurchaseInboundDetailItem {
       purchaseOrderId: string;
       purchaseOrderNo: string;
       purchaseOrderLineId: string;
-      purchaseOrderLineNo: number;
     };
     inspection: {
       inspectionId: string;

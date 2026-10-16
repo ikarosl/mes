@@ -9,7 +9,7 @@
   >
     <el-alert
       title="确认后永久扣减可退上限"
-      description="仅记录已经领到产线的损坏物料。不办理退料、不产生库存流水、不生成补料或补产，也不计入成品报废。结案审批驳回不会撤销本次损坏事实。"
+      description="用于登记已领到产线的物料损坏。登记后会扣减可退上限，不改变仓库库存；补料需另行申请。本次登记立即生效，结案审批驳回也不会撤销。物料退料与成品报废请另行办理。"
       type="warning"
       :closable="false"
       show-icon
@@ -45,7 +45,7 @@
     <el-alert
       v-if="unresolved"
       class="section"
-      title="提交结果未知，原登记内容与幂等标识已保留，请重试原操作"
+      :title="editor.recoveryMessage()"
       type="warning"
       :closable="false"
     />
@@ -89,8 +89,9 @@
         v-if="unresolved"
         type="primary"
         :loading="submitting"
+        :disabled="!editor.canRetry()"
         @click="editor.retry"
-        >重试原登记</el-button
+        >重试本次提交</el-button
       ><el-button
         v-else
         type="primary"

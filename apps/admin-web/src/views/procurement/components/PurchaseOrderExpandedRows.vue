@@ -10,33 +10,15 @@
           {{ formatDateTimeForDisplay(detail?.orderedAt) }}</span
         ></span
       >
-      <div class="supplement-actions">
+      <div class="toolbar-actions">
         <el-button
-          v-if="detail?.orderedAt"
+          v-if="detail?.orderedAt && detail.supplementReason !== 'excess_purchase'"
           link
           type="primary"
-          :disabled="
-            disabled ||
-            loading ||
-            failed ||
-            (detail.supplementReason === 'excess_purchase' && !excessOrigin)
-          "
+          :disabled="disabled || loading || failed"
           @click="openSupplement"
-          >{{
-            detail.supplementReason === 'excess_purchase' ? '前往原采购单办理补单' : '办理补单'
-          }}</el-button
+          >办理补单</el-button
         >
-        <InlineHint
-          v-if="detail?.supplementReason === 'excess_purchase'"
-          :tone="excessOrigin ? 'info' : 'warning'"
-          class="supplement-hint"
-        >
-          <template v-if="excessOrigin"
-            >本单承接原到货；补单回原采购
-            <strong>{{ excessOrigin.purchaseNo }}</strong> 办理。</template
-          >
-          <template v-else>原采购来源缺失或不一致，请先核对各行来源。</template>
-        </InlineHint>
         <el-button
           link
           type="primary"
@@ -46,6 +28,37 @@
         >
       </div>
     </div>
+    <div
+      v-if="detail?.supplementReason === 'excess_purchase' || detail?.remark"
+      class="line-metadata"
+    >
+      <template v-if="detail?.supplementReason === 'excess_purchase'">
+        <span
+          v-if="excessOrigin"
+          class="origin-purchase"
+        >
+          原采购单 <strong>{{ excessOrigin.purchaseNo }}</strong> · 本单承接已到货物料
+        </span>
+        <InlineHint
+          v-else
+          tone="warning"
+          >原采购来源缺失或不一致，请先核对各行来源。</InlineHint
+        >
+        <el-button
+          v-if="detail.orderedAt"
+          link
+          type="primary"
+          :disabled="disabled || loading || failed || !excessOrigin"
+          @click="openSupplement"
+          >前往原单补单</el-button
+        >
+      </template>
+      <span
+        v-if="detail?.remark"
+        class="order-remark"
+        >备注：{{ detail.remark }}</span
+      >
+    </div>
     <el-alert
       v-if="failed"
       title="物料行读取失败，旧内容仅供参考，请刷新本单后办理。"
@@ -53,12 +66,6 @@
       :closable="false"
     />
     <template v-if="detail">
-      <p
-        v-if="detail?.remark"
-        class="order-remark"
-      >
-        备注：{{ detail?.remark }}
-      </p>
       <PurchaseOrderLines
         :order="detail"
         :focused-line-id="focusedLineId"
@@ -127,22 +134,38 @@ const openSupplement = (): void => {
   align-items: center;
   flex-wrap: wrap;
   gap: 8px 12px;
-  margin-bottom: 12px;
+  margin-bottom: 6px;
   color: #606266;
 }
-.supplement-actions {
+.toolbar-actions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   flex-wrap: wrap;
   gap: 4px 8px;
+  margin-left: auto;
 }
-.supplement-hint {
-  max-width: 540px;
+.toolbar-actions :deep(.el-button + .el-button) {
+  margin-left: 0;
 }
-.order-remark {
-  margin: 8px 0 12px;
+.line-metadata {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-bottom: 8px;
   color: #606266;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.line-metadata :deep(.el-button) {
+  flex: none;
+  margin-left: 0;
+}
+.origin-purchase,
+.order-remark {
+  min-width: 0;
+  max-width: 100%;
   overflow-wrap: anywhere;
 }
 </style>

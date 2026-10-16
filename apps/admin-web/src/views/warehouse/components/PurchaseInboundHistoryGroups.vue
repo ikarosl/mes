@@ -137,12 +137,14 @@
                           row.procurementSource.purchaseOrder.purchaseOrderLineId,
                       })
                     "
-                    >{{ row.procurementSource.purchaseOrder.purchaseOrderNo }} · 第
-                    {{ row.procurementSource.purchaseOrder.purchaseOrderLineNo }} 行</el-button
+                    >{{ row.procurementSource.purchaseOrder.purchaseOrderNo }} · id:{{
+                      row.procurementSource.purchaseOrder.purchaseOrderLineId
+                    }}</el-button
                   >
                   <span v-else>
-                    {{ row.procurementSource.purchaseOrder.purchaseOrderNo }} · 第
-                    {{ row.procurementSource.purchaseOrder.purchaseOrderLineNo }} 行
+                    {{ row.procurementSource.purchaseOrder.purchaseOrderNo }} · id:{{
+                      row.procurementSource.purchaseOrder.purchaseOrderLineId
+                    }}
                   </span>
                 </div>
                 <div

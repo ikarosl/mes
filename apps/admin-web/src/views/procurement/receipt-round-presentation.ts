@@ -98,6 +98,146 @@ export const receiptLineStageType = (line: ReceiptStageSummary): TagAppearance['
   receiptLineStageTag(line).type;
 export const receiptLineStageEffect = (line: ReceiptStageSummary): TagAppearance['effect'] =>
   receiptLineStageTag(line).effect;
+
+type ReceiptFlowTone = 'neutral' | 'primary' | 'warning' | 'danger' | 'success';
+interface ReceiptFlowStep {
+  label: string;
+  detail: string;
+  tone: ReceiptFlowTone;
+}
+interface ReceiptProcessingGuide {
+  tone: ReceiptFlowTone;
+  nextStep: string;
+  note: string;
+  steps: ReceiptFlowStep[];
+}
+/** 仅解释当前轮，不从历史检查或分配推断当前执行资格。 */
+export const receiptProcessingGuide = (line: ProcurementReceiptLine): ReceiptProcessingGuide => {
+  const stage = receiptLineStage(line);
+  const completed = stage === 'completed' && isKnownZero(line.quantities.unprocessedQuantity);
+  const rejected = isReceiptRejected(line);
+  const finalized = line.currentRound.status === 'finalized';
+  const inbound = Number(line.quantities.pendingInboundQuantity) > 0;
+  const returned = Number(line.quantities.pendingReturnQuantity) > 0;
+  const undetermined = Number(line.quantities.undeterminedQuantity) > 0;
+  const inspected =
+    !rejected &&
+    !!line.currentRound.inspectionId &&
+    ['awaiting_acceptance', 'finalized'].includes(line.currentRound.status);
+  const inspectionTone: ReceiptFlowTone =
+    stage === 'quality_rejected'
+      ? 'danger'
+      : stage === 'reinspection_required'
+        ? 'warning'
+        : ['uninspected', 'reviewing'].includes(stage)
+          ? 'primary'
+          : 'neutral';
+  const nextSteps: Record<ReceiptLineStage | 'superseded', string> = {
+    uninspected: '前往来料检验，发起本轮整批检查。',
+    reviewing: '继续本轮来料检验，填写检查结果与放行结论。',
+    reinspection_required: '前往来料检验办理复检，放行后重新由仓库确认。',
+    quality_rejected: '本轮未放行，请核对检验结果后办理复检或人工拒收。',
+    awaiting_acceptance: '由仓库核对数量和入库、退回安排。',
+    finalized: undetermined
+      ? '先核对待处理数量的安排；已有入库、退回待办可分别办理。'
+      : inbound && returned
+        ? '按有效分配分别办理入库和退回，两者可并行。'
+        : inbound
+          ? '前往入库，按有效分配确认实际入库。'
+          : returned
+            ? '选择下方有效待退分配，核对交接后确认退回。'
+            : '请核对本轮数量和入库、退回安排。',
+    manual_rejection: '选择下方有效待退分配，核对交接凭据后确认退回。',
+    completed: '当前无需继续入库或退回；核实总量有误时可更正实收。',
+    superseded: '请刷新明细，核对最新处理轮次。',
+  };
+  let tone: ReceiptFlowTone = completed
+    ? 'success'
+    : ['manual_rejection', 'quality_rejected'].includes(stage)
+      ? 'danger'
+      : stage === 'reinspection_required' ||
+          stage === 'awaiting_acceptance' ||
+          (finalized && (undetermined || (!inbound && returned)))
+        ? 'warning'
+        : 'primary';
+  let nextStep = nextSteps[stage];
+  if (
+    !line.quantities.unprocessedQuantity.trim() ||
+    !Number.isFinite(Number(line.quantities.unprocessedQuantity))
+  ) {
+    tone = 'warning';
+    nextStep = '剩余数量待核对，请刷新明细后再办理。';
+  }
+  const finish: ReceiptFlowStep = {
+    label: '处理完成',
+    detail: completed ? '本批无剩余实物' : '实际入库、退回后核对',
+    tone: completed ? 'success' : 'neutral',
+  };
+  const registration: ReceiptFlowStep = { label: '登记到货', detail: '已登记', tone: 'neutral' };
+  if (rejected)
+    return {
+      tone,
+      nextStep,
+      note: '人工拒收直接安排退回，不经过来料检验与正常定稿。',
+      steps: [
+        registration,
+        { label: '人工拒收', detail: '已安排待退', tone: completed ? 'neutral' : 'danger' },
+        {
+          label: '实际退回',
+          detail: completed ? '本批已无待退' : '核对分配与交接',
+          tone: completed ? 'neutral' : 'warning',
+        },
+        finish,
+      ],
+    };
+  const repeatInspection = !inspected && !completed && line.currentRound.triggerType !== 'receipt';
+  return {
+    tone,
+    nextStep,
+    note: repeatInspection
+      ? '本轮须重新经过检验与仓库确认，旧分配不能继续执行；已入已退累计不变。'
+      : '入库与退回按正式分配分别办理，并非每批都需要两种操作。',
+    steps: [
+      registration,
+      {
+        label: '来料检验',
+        detail: inspected
+          ? '已引用放行记录'
+          : completed
+            ? '以本轮记录为准'
+            : receiptLineStageLabel(line),
+        tone: inspectionTone,
+      },
+      {
+        label: '仓库确认',
+        detail:
+          finalized && line.allocations.length
+            ? '已形成正式分配'
+            : completed
+              ? '本轮无待办'
+              : '核对数量与处理安排',
+        tone: stage === 'awaiting_acceptance' ? 'warning' : 'neutral',
+      },
+      {
+        label: '入库 / 退回',
+        detail: completed
+          ? '实际入退见累计'
+          : finalized
+            ? inbound && returned
+              ? '入库与退回并行'
+              : inbound
+                ? '有待入库'
+                : returned
+                  ? '有待退回'
+                  : '仍待明确去向'
+            : '仓库确认后按分配办理',
+        tone:
+          !completed && finalized ? (undetermined || !inbound ? 'warning' : 'primary') : 'neutral',
+      },
+      finish,
+    ],
+  };
+};
 export const currentReceiptCase = (line: Pick<ProcurementReceiptLine, 'currentRound' | 'cases'>) =>
   line.cases.find(
     (record) => record.roundId === line.currentRound.id && record.status === 'reviewing',

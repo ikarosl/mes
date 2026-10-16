@@ -16,7 +16,7 @@
     <el-alert
       v-if="locked"
       class="selection-notice"
-      title="批量提交结果尚未确认，已选清单及原请求继续保留，暂不能修改选择。"
+      title="暂时无法确认批量操作是否成功，已选清单已保留，暂不能修改。请先核对报工记录。"
       type="warning"
       :closable="false"
       show-icon

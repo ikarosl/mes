@@ -46,6 +46,18 @@ export const isIntentExpired = (intent: Pick<PendingIntent, 'firstAttemptAt'>): 
  */
 export type IdempotentIntentStatus = 'idle' | 'pending' | 'blocked' | 'expired';
 
+/** 只负责用户提示；提交、锁定及重试资格仍由各 editor 持有。 */
+export const submissionRecoveryMessage = (
+  status: IdempotentIntentStatus,
+  recordsLabel: string,
+): string => {
+  if (status === 'blocked')
+    return `暂时无法确认本次操作结果，已暂停提交。请先核对${recordsLabel}，仍无法确认时请联系管理员。`;
+  if (status === 'expired')
+    return `本次提交已超过可重试时限，不能继续重试。请先核对${recordsLabel}中是否已成功，确认后再重新办理。`;
+  return `暂时无法确认本次操作是否成功，本次操作内容已保留，暂不能修改。请重试本次提交或先核对${recordsLabel}。`;
+};
+
 /**
  * 递归规范化 JSON 后返回稳定字符串：
  *  - 对象键按升序排序；
@@ -110,9 +122,8 @@ const createUuid = (): string => {
     return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
   }
   // 不降级：幂等键是安全边界，非加密随机数不可接受，阻止提交直到运行环境提供 Web Crypto。
-  throw new Error(
-    '当前环境不支持 Web Crypto（randomUUID/getRandomValues），无法生成安全幂等键，已阻止提交以免重复批次风险',
-  );
+  console.warn('当前环境不支持 Web Crypto（randomUUID/getRandomValues），无法生成安全幂等键');
+  throw new Error('当前浏览器无法安全提交，请使用受支持的浏览器或联系管理员');
 };
 
 /**
@@ -143,21 +154,21 @@ export const useIdempotentIntent = (entityLabel = '批次') => {
     const current = intent;
     if (current.blocked) {
       throw new Error(
-        `该提交的幂等结果已损坏，已阻止继续提交；无法确认本次是否已创建${entityLabel}，重新发起可能生成重复${entityLabel}，请先在${entityLabel}列表中核对结果`,
+        `暂时无法确认本次${entityLabel}操作是否成功，已暂停提交。请先核对相关记录；仍无法确认时请联系管理员`,
       );
     }
     if (isIntentExpired(current)) {
       // 超过服务端重放保证窗口：旧键可能已被清理（同键重试不再保证重放），自动换新键又可能造成
       // 重复批次（首次结果是否成功不可知）。必须提示人工核对，不能静默继续。
       throw new Error(
-        `该提交已超出幂等重试窗口（12 小时），继续提交无法保证安全重试；请先在${entityLabel}列表中核对是否已创建${entityLabel}，确认后重新发起`,
+        `本次${entityLabel}提交已超过可重试时限。请先核对是否已成功，确认后再重新办理`,
       );
     }
     if (current.signature !== signature) {
       // 模糊失败（pending）后修改表单：不换键、不盲发，提示核对结果后由用户显式放弃。
       //todo:这里幂等键的判断需要看一下上下文，我发现问题的场景是，当上一次某窗口提交失败后，在窗口内的操作中切换表单再次提交，百分百触发该提示，但实际是该接口前后端联调有问题，状态码是500
       throw new Error(
-        `上次提交结果未知（网络异常或服务端未确认）。修改内容后重新提交可能生成重复${entityLabel}，请先在${entityLabel}列表中核对是否已创建${entityLabel}，确认后关闭并重新发起`,
+        `暂时无法确认上次${entityLabel}操作是否成功，请勿修改后重复提交。请先核对相关记录`,
       );
     }
     const key = current.key;

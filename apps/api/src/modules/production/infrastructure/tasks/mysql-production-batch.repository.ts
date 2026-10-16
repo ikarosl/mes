@@ -329,7 +329,7 @@ export class MysqlProductionBatchRepository {
       if (confirmedOutbounds.length > 0)
         throw new ProductionDomainError(
           'BATCH_CANCEL_NOT_ALLOWED',
-          '生产任务已有物料出库事实，不能取消',
+          '该任务已有领料出库记录，不能取消',
           {
             outbounds: confirmedOutbounds.map((outbound) => ({
               id: String(outbound.id),

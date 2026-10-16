@@ -143,7 +143,7 @@
     <el-alert
       v-if="command.status.value !== 'idle'"
       class="section"
-      title="确认结果未知：已保留原授权、数量、目标批次和幂等键。请核对记录后按原操作重试。"
+      :title="submissionRecoveryMessage(command.status.value, '入库记录') + '请勿重新建单。'"
       type="warning"
       :closable="false"
     />
@@ -158,7 +158,7 @@
         type="primary"
         :loading="command.busy.value"
         @click="command.retry"
-        >按原操作重试</el-button
+        >重试本次提交</el-button
       >
       <el-button
         v-else
@@ -173,6 +173,7 @@
 </template>
 
 <script setup lang="ts">
+import { submissionRecoveryMessage } from '../../../composables/idempotency/useIdempotentIntent';
 import { computed, onActivated, onDeactivated, ref, watch } from 'vue';
 import type {
   FinishedGoodsInboundCandidate,

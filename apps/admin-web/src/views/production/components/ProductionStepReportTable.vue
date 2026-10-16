@@ -1,7 +1,7 @@
 <template>
   <section class="step-report-table">
     <div class="table-heading">
-      <strong>报工事实</strong>
+      <strong>报工记录</strong>
       <el-button
         link
         type="primary"

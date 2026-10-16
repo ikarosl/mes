@@ -10,7 +10,7 @@
         :title="check.canCancel ? '请核对取消任务的全部影响' : blockerTitle"
         :description="
           check.canCancel
-            ? '提交时后端会重新校验任务状态和出库事实；任一条件变化都会拒绝取消。'
+            ? '请确认以下取消影响。若任务状态或领料记录发生变化，请重新核对。'
             : blockerDescription
         "
         :type="check.canCancel ? 'warning' : 'error'"

@@ -12,7 +12,6 @@ type SourceRow = RowDataPacket & {
   purchase_order_id: number;
   purchase_no: string;
   purchase_order_line_id: number;
-  purchase_order_line_no: number;
   inspection_id: number;
   case_id: number;
   inspected_at: Date;
@@ -30,7 +29,7 @@ export async function loadPurchaseInboundSources(
       receipt_line.id receipt_line_id,
       receipt_order.purchase_no receipt_purchase_no,
       assigned_order.id purchase_order_id,assigned_order.purchase_no,
-      assigned_line.id purchase_order_line_id,assigned_line.line_no purchase_order_line_no,
+      assigned_line.id purchase_order_line_id,
       inspection.id inspection_id,inspection.case_id,inspection.inspected_at
      FROM inbound_detail detail
      JOIN procurement_receipt_line receipt_line ON receipt_line.id=detail.procurement_receipt_line_id
@@ -59,7 +58,6 @@ export async function loadPurchaseInboundSources(
         purchaseOrderId: String(row.purchase_order_id),
         purchaseOrderNo: row.purchase_no,
         purchaseOrderLineId: String(row.purchase_order_line_id),
-        purchaseOrderLineNo: Number(row.purchase_order_line_no),
       },
       inspection: {
         inspectionId: String(row.inspection_id),
