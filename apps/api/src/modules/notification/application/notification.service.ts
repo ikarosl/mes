@@ -54,11 +54,11 @@ export class NotificationService {
   read(id: string, version: number, audit: CommandContext) {
     this.requireActor(audit);
     if (!validId(id) || !Number.isInteger(version) || version < 0 || version > 2147483647)
-      throw new NotificationDomainError('INVALID_INPUT', '通知 ID 或版本无效');
+      throw new NotificationDomainError('INVALID_INPUT', '通知信息无效，请刷新通知列表后重试');
     return this.repository.read(id, version, audit);
   }
   private requireActor(audit: CommandContext) {
     if (!audit.actorId || !validId(audit.actorId))
-      throw new NotificationDomainError('FORBIDDEN', '通知操作需要登录身份');
+      throw new NotificationDomainError('FORBIDDEN', '请先登录后再操作通知');
   }
 }

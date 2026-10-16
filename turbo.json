@@ -52,7 +52,8 @@
         "DB_USER",
         "DB_PASSWORD",
         "DB_NAME",
-        "DB_CONNECTION_LIMIT"
+        "DB_CONNECTION_LIMIT",
+        "DB_MIGRATION_MODE"
       ]
     },
     "migrate:status:run": {
@@ -64,7 +65,8 @@
         "DB_USER",
         "DB_PASSWORD",
         "DB_NAME",
-        "DB_CONNECTION_LIMIT"
+        "DB_CONNECTION_LIMIT",
+        "DB_MIGRATION_MODE"
       ]
     },
     "seed:run": {
@@ -129,7 +131,8 @@
         "DB_USER",
         "DB_PASSWORD",
         "DB_NAME",
-        "DB_CONNECTION_LIMIT"
+        "DB_CONNECTION_LIMIT",
+        "DB_MIGRATION_MODE"
       ]
     },
     "migrate:status:compiled:run": {
@@ -141,7 +144,8 @@
         "DB_USER",
         "DB_PASSWORD",
         "DB_NAME",
-        "DB_CONNECTION_LIMIT"
+        "DB_CONNECTION_LIMIT",
+        "DB_MIGRATION_MODE"
       ]
     },
     "seed:compiled:run": {

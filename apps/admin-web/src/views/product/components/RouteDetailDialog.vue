@@ -8,13 +8,19 @@
     <el-descriptions
       v-if="row"
       :column="2"
+      :label-width="88"
       border
     >
       <el-descriptions-item label="路线编号">{{ row.routeCode }}</el-descriptions-item>
       <el-descriptions-item label="路线名称">{{ row.routeName }}</el-descriptions-item>
       <el-descriptions-item label="版本">{{ row.versionNo || '-' }}</el-descriptions-item>
       <el-descriptions-item label="状态">{{ routeStatusLabel(row.status) }}</el-descriptions-item>
-      <el-descriptions-item label="备注">{{ row.remark || '-' }}</el-descriptions-item>
+      <el-descriptions-item
+        v-if="row.remark"
+        label="备注"
+        :span="2"
+        >{{ row.remark }}</el-descriptions-item
+      >
     </el-descriptions>
 
     <div class="route-detail-steps">
@@ -59,21 +65,25 @@
         >
           <div class="step-card__header">
             <span class="step-card__order">{{ step.stepOrder }}</span>
-            <span class="step-card__name">{{ step.stepCode }} / {{ step.stepName }}</span>
+            <span class="step-card__name">{{ step.stepName }}</span>
+            <span class="step-card__code">{{ step.stepCode }}</span>
             <el-tag
-              v-if="step.needInspection"
-              size="small"
-              type="warning"
-              effect="plain"
-              >需检验</el-tag
-            >
-            <el-tag
-              v-if="step.status === 0"
+              v-if="step.status === SYSTEM_STATUS.disabled"
               size="small"
               type="info"
               effect="plain"
               >已停用</el-tag
             >
+          </div>
+          <div class="step-card__meta">
+            <div class="step-card__meta-item">
+              <span class="step-card__label">默认负责人：</span>
+              <span>{{ step.defaultOwnerName || '未设置' }}</span>
+            </div>
+            <div class="step-card__meta-item">
+              <span class="step-card__label">检验：</span>
+              <span>{{ step.needInspection ? '需检验' : '无需检验' }}</span>
+            </div>
           </div>
           <div
             v-if="step.description"
@@ -81,10 +91,19 @@
           >
             {{ step.description }}
           </div>
-          <div class="step-card__meta">
-            <span>负责人：{{ step.defaultOwnerName || '-' }}</span>
-            <span>SOP：{{ step.sopFileName || '-' }}</span>
-            <span v-if="step.remark">备注：{{ step.remark }}</span>
+          <div
+            v-if="step.sopFileName"
+            class="step-card__detail"
+          >
+            <span class="step-card__label">技术文件：</span>
+            <span class="step-card__detail-value">{{ step.sopFileName }}</span>
+          </div>
+          <div
+            v-if="step.remark"
+            class="step-card__detail"
+          >
+            <span class="step-card__label">路线内备注：</span>
+            <span class="step-card__detail-value">{{ step.remark }}</span>
           </div>
         </div>
       </div>
@@ -94,6 +113,7 @@
 
 <script setup lang="ts">
 import { ref, watch } from 'vue';
+import { SYSTEM_STATUS } from '@company/constants';
 import type {
   ProcessRouteListItem,
   ProcessRouteStatus,
@@ -151,13 +171,13 @@ watch(
 
 <style scoped>
 .route-detail-steps {
-  margin-top: 20px;
+  margin-top: 16px;
 }
 .route-detail-steps__title {
-  margin-bottom: 12px;
+  margin-bottom: 8px;
   font-size: 14px;
   font-weight: 600;
-  color: #1f2937;
+  color: var(--el-text-color-primary);
 }
 .route-detail-steps__state {
   padding: 12px 0;
@@ -165,18 +185,19 @@ watch(
 .step-card-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
   max-height: 420px;
   overflow-y: auto;
 }
 .step-card {
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--el-border-color-lighter);
   border-radius: 8px;
   padding: 12px 16px;
-  background: #ffffff;
+  background: var(--el-bg-color);
 }
 .step-card__header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }
@@ -184,27 +205,55 @@ watch(
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 28px;
-  height: 28px;
-  border-radius: 6px;
-  background: #eff6ff;
-  color: #2563eb;
+  flex-shrink: 0;
+  min-width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-regular);
   font-weight: 600;
 }
 .step-card__name {
   font-weight: 600;
-  color: #1f2937;
+  color: var(--el-text-color-primary);
+  overflow-wrap: anywhere;
+}
+.step-card__code {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  overflow-wrap: anywhere;
 }
 .step-card__desc {
   margin-top: 8px;
-  color: #4b5563;
+  color: var(--el-text-color-regular);
+  overflow-wrap: anywhere;
 }
 .step-card__meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 16px;
+  gap: 8px 24px;
   margin-top: 8px;
-  color: #6b7280;
+  color: var(--el-text-color-regular);
   font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.step-card__meta-item {
+  display: flex;
+  align-items: baseline;
+}
+.step-card__label {
+  flex-shrink: 0;
+  color: var(--el-text-color-secondary);
+}
+.step-card__detail {
+  display: flex;
+  margin-top: 8px;
+  color: var(--el-text-color-regular);
+  font-size: 13px;
+}
+.step-card__detail-value {
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 </style>

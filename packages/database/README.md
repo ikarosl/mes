@@ -28,12 +28,14 @@ docs/         # 迁移运行与安全说明
 | --- | --- |
 | `pnpm db:ensure` | 按环境配置创建不存在的数据库 |
 | `pnpm db:migrate` | 应用 schema 与版本化权限目录，不创建角色或账号 |
-| `pnpm db:migrate:status` | 查询 pending、applied 或 checksum-mismatch |
+| `pnpm db:migrate:status` | 查询 pending、applied、superseded 或 not-required；校验和异常直接失败 |
 | `pnpm db:seed` | 幂等写入无凭证的系统基础数据 |
 | `pnpm db:bootstrap-admin` | seed 后按 ADMIN_* 创建／更新管理员，重跑会重置其密码 |
 | `pnpm db:init` | 依次 ensure、migrate、seed、bootstrap-admin；生产仅升级 schema 时不使用此入口 |
 
 数据库变更只能追加成对 migration，已经执行的文件不可修改。详细规则见[迁移顺序](docs/90-migration-order.md)、[迁移门禁](docs/migration-readiness.md)和[迁移安全](docs/migration-safety.md)。
+
+保留 `202610100002` 业务数据升级公共出入库时，使用[限定保留路径](docs/migration-safety.md#202610150001限定保留数据升级)。该路径需要临时显式设置 `DB_MIGRATION_MODE=preserve-general-inventory`，只支持守卫允许的已有数据，不改变默认空库初始化路径。
 
 开发与 CI 的运行器使用 `tsx src/*.ts`；对应 `*:compiled` 包脚本使用 `node dist/*.js`，只消费构建产物。两类公开脚本均由 Turbo 先构建 workspace 依赖，`:run` 后缀是内部调度任务，不作为独立执行入口。生产镜像的产物与迁移调用见[发布手册](../../ops/runbooks/compose-server-deployment.md#独立发布)。
 
@@ -52,6 +54,8 @@ docs/         # 迁移运行与安全说明
 物理约束只有 `PRIMARY KEY (name)`；没有额外唯一键、二级索引、外键或 CHECK。`checksum` 的摘要算法及已执行文件内容不可变由运行器校验，不由数据库 CHECK 保证。本表不继承业务审计、乐观锁或软删除字段。
 
 运行器持有迁移建议锁后读取登记记录：同名且校验和相同则跳过，不同则报错；尚未登记的迁移在 SQL 执行成功后插入记录。MySQL DDL 与登记写入不构成可整体回滚的事务；失败恢复边界见[迁移安全](docs/migration-safety.md)。
+
+保留数据路径只登记实际执行的 `202610150001-preserve-general-inventory-documents.up.sql` 及其校验和，不为被替代的 `202610140001` 插入记录。替代声明由 `src/migration-plan.ts` 维护，固定原文件校验和。已执行原迁移的环境跳过替代文件；两条互斥路径同时登记、已登记文件缺失或任一校验和不符都直接失败。状态入口显示被真实替代的原文件为 `superseded`、不需要执行的替代文件为 `not-required`，只有 `pending` 表示还有待执行迁移。该状态不代表原文件曾执行。
 
 ## 业务数据库设计
 

@@ -469,7 +469,7 @@
                 ><span class="history-id">{{ displayValue(row.inboundId) }}</span>
               </div>
               <div class="id-pair">
-                <span>库存事实 ID</span
+                <span>库存流水记录 ID</span
                 ><span class="history-id">{{ displayValue(row.transactionId) }}</span>
               </div>
             </div>

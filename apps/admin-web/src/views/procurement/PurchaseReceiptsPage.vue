@@ -39,7 +39,7 @@
             type="primary"
             :icon="Plus"
             @click="create()"
-            >登记实际到货</el-button
+            >记录到货</el-button
           ></template
         >
       </ReceiptLinesTable>

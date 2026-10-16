@@ -57,28 +57,51 @@
           :closable="false"
           class="notice"
         />
+        <ol
+          v-if="detail.canEdit"
+          class="workflow-steps"
+          aria-label="产出清单与结案办理顺序"
+        >
+          <li
+            v-for="(step, index) in workflowSteps"
+            :key="step.title"
+            :class="{ current: index === workflowStep, completed: index < workflowStep }"
+            :aria-current="index === workflowStep ? 'step' : undefined"
+          >
+            <span class="step-number">{{ index + 1 }}</span>
+            <div>
+              <strong>{{ step.title }}</strong>
+              <span>{{ step.note }}</span>
+            </div>
+          </li>
+        </ol>
         <div
-          v-if="
-            currentRound?.status !== 'inspecting' ||
-            detail.canBeginCorrection ||
-            detail.canCancelCorrection
-          "
           class="current-action"
           role="status"
         >
-          <div
-            v-if="currentRound?.status !== 'inspecting'"
-            class="current-description"
-          >
-            <strong>{{ currentStep }}</strong
-            ><span>{{ currentStepNote }}</span>
+          <div class="current-description">
+            <strong>{{ currentStep }}</strong>
+            <span>{{ currentStepNote }}</span>
+            <ul
+              v-if="detail.canEdit && workflowStep === 3 && detail.blockers.length"
+              class="current-blockers"
+            >
+              <li
+                v-for="blocker in detail.blockers"
+                :key="blocker"
+              >
+                {{ blocker }}
+              </li>
+            </ul>
           </div>
           <div class="actions">
             <el-button
-              v-if="canViewFinishedInspections && currentRound?.status !== 'inspecting'"
+              v-if="canViewFinishedInspections && (!detail.canEdit || workflowStep !== 1)"
+              link
+              type="primary"
               :disabled="busy || unresolved"
               @click="openFinishedInspection(detail.canBeginReinspection ? 'reinspect' : '')"
-              >{{ detail.canBeginReinspection ? '前往复检' : '前往成品质检' }}</el-button
+              >{{ inspectionActionLabel }}</el-button
             >
             <el-button
               v-if="detail.canBeginCorrection"
@@ -92,6 +115,18 @@
               @click="editor.cancelCorrection"
               >取消本次更正</el-button
             >
+            <el-button
+              v-if="
+                detail.check.batchStatus === 'closing' &&
+                !detail.currentRevisionId &&
+                !detail.pendingApprovalId
+              "
+              type="warning"
+              plain
+              :disabled="busy || unresolved"
+              @click="openWithdrawal"
+              >撤回结束</el-button
+            >
           </div>
         </div>
         <el-tabs
@@ -99,16 +134,47 @@
           class="notice output-tabs"
         >
           <el-tab-pane
-            :label="detail.canEdit ? '本次核对' : '清单与采用依据'"
+            :label="detail.canEdit ? '本次办理' : '清单与采用依据'"
             name="draft"
           >
             <ProductionOutputReviewForm
+              ref="reviewForm"
               :detail="detail"
               :draft="draft"
               :locked="locked"
               :quantity-errors="quantityErrors"
               @change="Object.assign(draft, $event)"
             />
+            <section
+              v-if="detail.canEdit"
+              class="submission-review"
+            >
+              <div class="submission-heading">
+                <strong>送审前检查</strong>
+                <span v-if="hasSavedInspectionReference && !dirty && detail.canSubmit">
+                  当前产出、质检引用及收尾依据已满足送审要求
+                </span>
+                <span v-else>先保存草稿及质检引用，再完成收尾事项和逐项物料实核</span>
+              </div>
+              <el-alert
+                v-if="detail.blockers.length"
+                type="warning"
+                :closable="false"
+                :title="
+                  detail.draft ? '提交审批前仍需处理' : '以下事项在送审前完成，不影响先保存产出草稿'
+                "
+              >
+                <ul class="blockers">
+                  <li
+                    v-for="blocker in detail.blockers"
+                    :key="blocker"
+                  >
+                    {{ blocker }}
+                  </li>
+                </ul>
+              </el-alert>
+              <InlineHint v-else-if="dirty">当前填写尚未保存，保存后才能提交审批。</InlineHint>
+            </section>
           </el-tab-pane>
           <el-tab-pane
             :label="`质检记录（${detail.inspections.length}）`"
@@ -116,7 +182,7 @@
           >
             <div class="inspection-toolbar">
               <p class="muted">
-                检验登记、复检及放行在成品质检页办理；此处核对历史记录并引用最新依据。
+                检验登记、复检及放行在成品质检页办理。历史仅供查阅；回到“本次办理”选择适用记录并保存。
               </p>
               <el-button
                 v-if="canViewFinishedInspections"
@@ -164,7 +230,7 @@
     />
     <template #footer
       ><div class="toolbar">
-        <div>
+        <div class="footer-secondary">
           <el-button
             :disabled="submitting"
             @click="editor.close"
@@ -174,32 +240,10 @@
             @click="editor.load()"
             >刷新核对</el-button
           ><el-button
-            v-if="stale"
-            type="primary"
-            plain
-            :disabled="busy || unresolved || !detail?.canEdit"
-            @click="openReconcile"
-            >核对并保留填写</el-button
-          ><el-button
-            v-if="stale"
-            :disabled="busy || unresolved"
-            @click="editor.reloadDraft"
-            >重新加载草稿</el-button
-          ><el-button
-            v-if="detail"
+            v-if="detail && (!detail.canEdit || workflowStep !== 3 || stale)"
             :disabled="busy || unresolved"
             @click="openCloseout"
             >收尾与物料核对</el-button
-          ><el-button
-            v-if="
-              detail?.check.batchStatus === 'closing' &&
-              !detail.currentRevisionId &&
-              !detail.pendingApprovalId
-            "
-            type="warning"
-            :disabled="busy || unresolved"
-            @click="openWithdrawal"
-            >撤回结束</el-button
           ><el-button
             v-if="detail?.approvalInstanceId && canAccessRoute({ name: 'approval-inbox' })"
             link
@@ -208,29 +252,78 @@
             >{{ detail.pendingApprovalId ? '查看在审申请' : '查看最近审批' }}</el-button
           >
         </div>
-        <div>
-          <el-button
-            v-if="unresolved"
-            type="primary"
-            :loading="submitting"
-            @click="editor.retry"
-            >重试原操作</el-button
-          ><template v-else-if="detail?.canEdit"
-            ><span class="muted">{{
-              dirty ? '草稿未保存' : detail.draft ? '草稿已保存' : '尚未建立草稿'
-            }}</span
-            ><el-button
-              :disabled="locked || !valid || !dirty"
-              @click="editor.save"
-              >保存产出草稿</el-button
-            ><el-button
-              type="primary"
-              :disabled="!canSubmit"
-              :loading="submitting"
-              @click="editor.submit"
-              >提交结案审批</el-button
-            ></template
+        <div class="footer-next">
+          <span
+            v-if="detail?.canEdit || unresolved"
+            class="footer-status"
+            >{{ footerStatus }}</span
           >
+          <div class="actions">
+            <el-button
+              v-if="unresolved"
+              type="primary"
+              :loading="submitting"
+              @click="editor.retry"
+              >重试原操作</el-button
+            ><template v-else-if="stale">
+              <el-button
+                :disabled="busy"
+                @click="editor.reloadDraft"
+                >重新加载草稿</el-button
+              >
+              <el-button
+                type="primary"
+                :disabled="busy || !detail?.canEdit"
+                @click="openReconcile"
+                >核对并保留填写</el-button
+              >
+            </template>
+            <template v-else-if="detail?.canEdit">
+              <el-button
+                v-if="!detail.draft && canViewFinishedInspections"
+                :disabled="locked || !valid || !dirty"
+                @click="editor.save"
+                >仅保存草稿</el-button
+              >
+              <el-button
+                v-if="dirty || !detail.draft"
+                type="primary"
+                :disabled="locked || !valid || !dirty"
+                :loading="submitting"
+                @click="saveCurrentStep"
+                >{{ saveActionLabel }}</el-button
+              >
+              <el-button
+                v-else-if="workflowStep === 1 && canViewFinishedInspections"
+                type="primary"
+                :disabled="locked"
+                @click="openFinishedInspection(detail.canBeginReinspection ? 'reinspect' : '')"
+                >{{ inspectionActionLabel }}</el-button
+              >
+              <el-button
+                v-else-if="workflowStep === 2"
+                type="primary"
+                :disabled="locked"
+                @click="focusInspectionReference"
+                >核对并引用质检记录</el-button
+              >
+              <el-button
+                v-else-if="workflowStep === 3"
+                type="warning"
+                :disabled="locked"
+                @click="openCloseout"
+                >前往收尾与物料核对</el-button
+              >
+              <el-button
+                v-else-if="workflowStep === 4"
+                type="primary"
+                :disabled="!canSubmit"
+                :loading="submitting"
+                @click="editor.submit"
+                >提交结案审批</el-button
+              >
+            </template>
+          </div>
         </div>
       </div></template
     >
@@ -243,14 +336,18 @@
     :show-close="!busy"
     :before-close="closeNavigation"
   >
-    <InlineHint
-      >当前产出填写尚未保存。可保存后前往，或保留本地填写并切换页面；返回后仍需核对最新依据。</InlineHint
-    >
+    <InlineHint>
+      {{
+        detail?.draft
+          ? '当前产出填写尚未保存。可保存后前往，或保留本地填写并切换页面；返回后仍需核对最新依据。'
+          : '首次质检需要已保存的产出申报。建议保存草稿后前往；仅保留本地填写并前往时可查看质检页，尚不能开始首次检验。'
+      }}
+    </InlineHint>
     <p
       v-if="!valid"
       class="muted"
     >
-      存在未完成或无效的填写项，暂不能保存；仍可保留填写并前往质检。
+      存在未完成或无效的填写项，暂不能保存。保留填写并前往不会保存申报，也不会开始检验。
     </p>
     <template #footer>
       <el-button
@@ -261,14 +358,14 @@
       <el-button
         :disabled="busy || unresolved"
         @click="goToInspection"
-        >保留填写并前往</el-button
+        >{{ detail?.draft ? '保留填写并前往' : '保留填写并查看质检' }}</el-button
       >
       <el-button
         type="primary"
         :loading="submitting"
         :disabled="locked || !valid"
         @click="saveAndGoToInspection"
-        >保存并前往</el-button
+        >保存草稿并前往质检</el-button
       >
     </template>
   </el-dialog>
@@ -340,7 +437,6 @@ import { useRouter } from 'vue-router';
 import { useRouteAccess } from '../../../composables/useRouteAccess';
 import type { ProductionOutputRevision } from '@company/contracts';
 import {
-  PERMISSIONS,
   PRODUCTION_CLOSEOUT_MODE_LABELS,
   PRODUCTION_OUTPUT_STATUS_LABELS,
 } from '@company/constants';
@@ -350,7 +446,6 @@ import { formatQuantity as quantity } from '../production-status';
 import { useProductionOutput } from '../composables/useProductionOutput';
 import BatchCloseoutEvidence from './BatchCloseoutEvidence.vue';
 import FinishedInspectionHistory from '../../quality/components/FinishedInspectionHistory.vue';
-import { useAuthStore } from '../../../stores/auth';
 import ProductionOutputRevisionPanel from './ProductionOutputRevisionPanel.vue';
 import ProductionOutputReviewForm from './ProductionOutputReviewForm.vue';
 import InlineHint from '../../../components/InlineHint.vue';
@@ -384,10 +479,15 @@ const {
 } = editor;
 const router = useRouter();
 const { canAccessRoute } = useRouteAccess();
-const auth = useAuthStore();
 const canViewFinishedInspections = computed(() =>
-  auth.can(PERMISSIONS.quality.finishedInspections.view),
+  canAccessRoute({ name: 'quality-finished-inspections' }),
 );
+const reviewForm = ref<InstanceType<typeof ProductionOutputReviewForm> | null>(null);
+async function focusInspectionReference(): Promise<void> {
+  activeTab.value = 'draft';
+  await nextTick();
+  reviewForm.value?.focusInspection();
+}
 const navigationVisible = ref(false);
 const reconcileVisible = ref(false);
 const reconcileVersion = ref<number | null>(null);
@@ -429,13 +529,13 @@ function retainReviewedDraft(): void {
 }
 const inspectionAction = ref('');
 function openFinishedInspection(action = ''): void {
-  if (!props.batchId || busy.value || unresolved.value) return;
+  if (!props.batchId || busy.value || unresolved.value || !canViewFinishedInspections.value) return;
   inspectionAction.value = action;
   if (dirty.value) navigationVisible.value = true;
   else void goToInspection();
 }
 async function goToInspection(): Promise<void> {
-  if (!props.batchId || busy.value || unresolved.value) return;
+  if (!props.batchId || busy.value || unresolved.value || !canViewFinishedInspections.value) return;
   navigationVisible.value = false;
   // 保持 editor 存活，由路由缓存隐藏弹窗；返回后刷新依据并保留原输入。
   await router.push({
@@ -450,12 +550,104 @@ async function saveAndGoToInspection(): Promise<void> {
   await editor.save();
   if (!dirty.value && !error.value && !unresolved.value) await goToInspection();
 }
+async function saveCurrentStep(): Promise<void> {
+  if (!detail.value?.draft && canViewFinishedInspections.value) {
+    inspectionAction.value = '';
+    await saveAndGoToInspection();
+    return;
+  }
+  await editor.save();
+}
 function closeNavigation(): void {
   if (!busy.value) navigationVisible.value = false;
 }
 const currentRound = computed(() =>
   detail.value?.rounds.find((row) => row.id === detail.value?.currentRoundId),
 );
+const hasSavedInspectionReference = computed(
+  () =>
+    !!detail.value?.applicableInspectionId &&
+    detail.value.draft?.inspectionRecordId === detail.value.applicableInspectionId,
+);
+const workflowStep = computed(() => {
+  if (!detail.value?.draft) return 0;
+  if (currentRound.value?.status === 'inspecting' || !detail.value.applicableInspectionId) return 1;
+  if (dirty.value || !hasSavedInspectionReference.value) return 2;
+  return detail.value.canSubmit ? 4 : 3;
+});
+const workflowSteps = computed(() => [
+  { title: '保存产出草稿', note: detail.value?.draft ? '已保存申报' : '填写数量与安排' },
+  {
+    title: '完成成品质检',
+    note:
+      currentRound.value?.status === 'inspecting'
+        ? '本轮检验中'
+        : detail.value?.applicableInspectionId
+          ? '已有适用放行记录'
+          : '保存申报后办理',
+  },
+  {
+    title: '引用记录并保存',
+    note:
+      hasSavedInspectionReference.value && !dirty.value
+        ? '引用已保存'
+        : draft.inspectionRecordId &&
+            draft.inspectionRecordId === detail.value?.applicableInspectionId
+          ? '待保存本次填写'
+          : '明确选择适用记录',
+  },
+  {
+    title: '收尾与物料核对',
+    note:
+      hasSavedInspectionReference.value && !dirty.value && detail.value?.canSubmit
+        ? detail.value.currentRevisionId
+          ? '沿用批准收尾依据'
+          : '送审条件已满足'
+        : workflowStep.value === 3 && detail.value?.blockers.length
+          ? `仍有 ${detail.value.blockers.length} 项送审阻断`
+          : '处理事项与逐项实核',
+  },
+  { title: '提交结案审批', note: workflowStep.value === 4 ? '可提交负责人审批' : '完成核对后提交' },
+]);
+const inspectionActionLabel = computed(() =>
+  currentRound.value?.status === 'inspecting'
+    ? '继续成品质检'
+    : detail.value?.canBeginReinspection
+      ? '前往复检'
+      : '前往成品质检',
+);
+const saveActionLabel = computed(() =>
+  !detail.value?.draft && canViewFinishedInspections.value
+    ? '保存草稿并前往质检'
+    : draft.inspectionRecordId && draft.inspectionRecordId === detail.value?.applicableInspectionId
+      ? '保存引用与产出草稿'
+      : '保存产出草稿',
+);
+const footerStatus = computed(() => {
+  if (unresolved.value) return '原操作结果未确认，请先重试或核对业务结果。';
+  if (stale.value) return '依据已更新；先核对更新内容，再继续填写。';
+  if (error.value) return '读取失败，当前填写已保留；请刷新核对后继续。';
+  if (!valid.value) {
+    const quantityMessage = Object.values(quantityErrors.value).find(Boolean);
+    if (quantityMessage) return quantityMessage;
+    if (!draft.reason.trim() && !draft.materialReviewNote.trim())
+      return '保存前请填写产出说明和物料安排说明。';
+    if (!draft.reason.trim()) return '保存前请填写产出说明 / 计划差异原因。';
+    return '保存前请填写物料安排说明。';
+  }
+  if (dirty.value) return '当前填写尚未保存，先保存再继续下一步。';
+  if (workflowStep.value === 1)
+    return canViewFinishedInspections.value
+      ? '草稿已保存，下一步完成本轮成品质检。'
+      : '草稿已保存，请由有成品质检页面权限的人员完成检验。';
+  if (workflowStep.value === 2) return '质检已放行，请选择本次使用的记录并保存草稿。';
+  if (workflowStep.value === 3)
+    return detail.value?.blockers[0]
+      ? `暂不能送审：${detail.value.blockers[0]}${detail.value.blockers.length > 1 ? `（另有 ${detail.value.blockers.length - 1} 项，见当前步骤）` : ''}`
+      : '产出与引用已保存，请核对收尾及当前送审资格。';
+  if (workflowStep.value === 4) return '送审条件已满足；提交后冻结本次产出和引用。';
+  return '先填写并保存产出草稿。';
+});
 const dialogTitle = computed(() =>
   detail.value && !detail.value.currentRevisionId && detail.value.check.batchStatus !== 'closing'
     ? '保留产出记录'
@@ -466,6 +658,8 @@ const dialogTitle = computed(() =>
         : '产出清单与结案核对',
 );
 const currentStep = computed(() => {
+  if (detail.value?.canEdit)
+    return `第 ${workflowStep.value + 1} 步 · ${workflowSteps.value[workflowStep.value]?.title}`;
   if (
     detail.value &&
     !detail.value.currentRevisionId &&
@@ -475,29 +669,38 @@ const currentStep = computed(() => {
   if (detail.value?.status === 'reviewing') return '清单正在审批';
   if (detail.value?.canExecuteCurrentRevision) return '最新批准清单可执行';
   if (detail.value?.status === 'approved') return '批准记录保留，当前不可入库';
-  if (!detail.value?.draft) return '先保存产出草稿';
-  if (currentRound.value?.status === 'inspecting') return '检验办理中，暂不能送审 / 入库';
-  if (!detail.value?.applicableInspectionId) return '等待有效放行依据';
-  return '核对产出与质检依据';
+  return '按当前任务资格核对产出记录';
 });
 const currentStepNote = computed(() => {
+  if (detail.value?.canEdit) {
+    if (workflowStep.value === 0)
+      return '先填写产出数量、产出说明和物料初步安排并保存；首次质检需要已保存的申报，质检引用稍后补充。';
+    if (workflowStep.value === 1)
+      return currentRound.value?.status === 'inspecting'
+        ? '本轮检验正在办理，暂不能送审或入库。完成并保存质检结果后，回到此处引用记录。'
+        : canViewFinishedInspections.value
+          ? '产出申报已保存。前往成品质检完成本轮检验，再回来选择适用的放行记录并保存。'
+          : '产出申报已保存。请由有成品质检页面权限的人员完成检验，再刷新核对并引用放行记录。';
+    if (workflowStep.value === 2)
+      return dirty.value
+        ? '核对当前产出及适用质检记录，保存本次填写与引用后，再处理收尾和物料。'
+        : '请在右侧核对检查结果，选择本次产出使用的质检记录并保存草稿。';
+    if (workflowStep.value === 3)
+      return '产出与质检引用已保存。请按下列原因核对送审条件；收尾事项及逐项物料实核在收尾工作台办理，完成后返回此处提交审批。';
+    return '产出、质检引用及收尾依据已满足当前送审要求，可提交工单负责人审批。批准后由仓管按授权办理入库。';
+  }
   if (
     detail.value &&
     !detail.value.currentRevisionId &&
     detail.value.check.batchStatus !== 'closing'
   )
-    return '历史草稿、检查与收尾事实继续保留；再次结束任务后按当前资格核对产出与质检。';
-  if (!detail.value?.draft) return '保存后前往质检；检验记录与产出草稿分别留存。';
+    return '历史草稿、检验和收尾记录保留供查看；再次结束任务后，请核对当前可办理的产出和质检操作。';
   if (detail.value?.status === 'reviewing') return '数量及引用已冻结，审批完成后形成新授权。';
   if (detail.value?.currentRevisionId && detail.value.executionBlockedReason)
     return detail.value.executionBlockedReason;
   if (detail.value?.canExecuteCurrentRevision)
     return '入库按有效剩余额度办理，批准本身不增加库存。';
-  if (currentRound.value?.status === 'inspecting')
-    return '在成品质检页完成并保存本轮结果后，再回到此处核对采用依据。';
-  if (!detail.value?.applicableInspectionId)
-    return '可先保存产出填写；取得本轮适用放行依据后再送审。';
-  return '明确采用检验依据，核对数量并保存后送负责人审批。';
+  return '当前产出记录仅可查看。请在生产任务中核对当前状态和可办理操作。';
 });
 const activeTab = ref('draft'),
   selectedRevisionId = ref<string | null>(null);
@@ -566,14 +769,76 @@ defineExpose({
 });
 </script>
 <style scoped>
+.workflow-steps {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  padding: 0;
+  margin: 16px 0 0;
+  list-style: none;
+}
+.workflow-steps li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px 8px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: var(--el-border-radius-base);
+  background: var(--el-fill-color-light);
+}
+.workflow-steps li > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.workflow-steps strong {
+  font-size: 13px;
+  line-height: 1.6;
+}
+.workflow-steps li > div > span {
+  color: var(--el-text-color-regular);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.step-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border: 1px solid var(--el-border-color);
+  border-radius: 50%;
+  background: var(--el-bg-color);
+  color: var(--el-text-color-regular);
+  font-size: 12px;
+  font-weight: 600;
+}
+.workflow-steps .completed .step-number {
+  border-color: var(--el-color-success-light-5);
+  background: var(--el-color-success-light-9);
+  color: var(--el-color-success);
+}
+.workflow-steps .current {
+  border-color: var(--el-color-primary-light-5);
+  background: var(--el-color-primary-light-9);
+}
+.workflow-steps .current .step-number {
+  border-color: var(--el-color-primary);
+  background: var(--el-color-primary);
+  color: var(--el-color-white);
+}
 .current-action {
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
   gap: 12px;
-  margin: 16px 0;
+  margin: 12px 0 16px;
   padding: 12px;
+  border-left: 3px solid var(--el-color-primary);
   background: var(--el-fill-color-light);
 }
 .current-description {
@@ -587,6 +852,13 @@ defineExpose({
   color: var(--el-text-color-regular);
   font-size: 13px;
 }
+.current-blockers {
+  padding-left: 18px;
+  margin: 4px 0 0;
+  color: var(--el-color-warning-dark-2);
+  font-size: 13px;
+  line-height: 1.7;
+}
 .actions {
   display: flex;
   align-items: center;
@@ -598,6 +870,27 @@ defineExpose({
 }
 .output-tabs :deep(.el-tabs__content) {
   overflow: visible;
+}
+.submission-review {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--el-border-color-lighter);
+}
+.submission-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin-bottom: 12px;
+  font-size: 14px;
+}
+.submission-heading span {
+  color: var(--el-text-color-regular);
+  font-size: 13px;
+}
+.blockers {
+  padding-left: 18px;
+  margin: 4px 0;
 }
 .inspection-toolbar {
   display: flex;
@@ -612,10 +905,33 @@ defineExpose({
 }
 .toolbar {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 16px;
+}
+.footer-secondary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.footer-secondary :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+.footer-next {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  min-width: 320px;
+}
+.footer-status {
+  color: var(--el-text-color-regular);
+  font-size: 13px;
+  line-height: 1.6;
+  text-align: right;
 }
 .muted {
   color: var(--el-text-color-secondary);

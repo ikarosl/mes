@@ -335,7 +335,7 @@ export const API_DISPLAY_READ_ACCESS = Object.freeze([
       procurement_receipt_line: ['id', 'receipt_id'],
       procurement_receipt: ['id', 'receipt_no', 'purchase_order_id'],
       procurement_receipt_allocation: ['id', 'receipt_line_id', 'purchase_order_line_id'],
-      procurement_order_line: ['id', 'purchase_order_id', 'line_no', 'supplier_id'],
+      procurement_order_line: ['id', 'purchase_order_id', 'supplier_id'],
       procurement_order: ['id', 'purchase_no'],
       quality_inspection_record: ['id', 'receipt_line_id', 'case_id', 'inspected_at'],
       quality_inspection_case: ['id', 'receipt_line_id', 'source_kind'],

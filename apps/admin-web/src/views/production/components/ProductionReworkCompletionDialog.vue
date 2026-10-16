@@ -40,11 +40,7 @@
         type="warning"
         :closable="false"
         show-icon
-        :title="
-          editor.intentStatus === 'pending'
-            ? '上次完成结果尚未确认，已保留首次完整请求；仅可按原数量、备注和版本重试。'
-            : '原请求已不能安全重试，请先核对来源与处理过程，再明确放弃本次请求。'
-        "
+        :title="submissionRecoveryMessage(editor.intentStatus, '返工来源与处理记录')"
       />
       <el-form
         label-position="top"
@@ -94,7 +90,7 @@
       <InlineHint
         >{{ BATCH_STEP_REWORK_RESULT_LABELS.normal }}与{{
           BATCH_STEP_REWORK_RESULT_LABELS.abnormal
-        }}合计必须等于原整笔返工数量；有量的两类结果分别生成报工事实，保留同一返工来源，不新增普通报工额度。</InlineHint
+        }}合计必须等于原整笔返工数量；正常与异常的非零数量分别生成报工记录，关联本次返工，不增加普通报工额度。</InlineHint
       >
     </template>
     <template #footer>
@@ -116,13 +112,14 @@
         :loading="editor.submitting"
         :disabled="!editor.canSubmit"
         @click="editor.submit"
-        >{{ editor.intentStatus === 'pending' ? '按原请求重试' : '确认完成返工' }}</el-button
+        >{{ editor.intentStatus === 'pending' ? '重试本次提交' : '确认完成返工' }}</el-button
       >
     </template>
   </el-dialog>
 </template>
 
 <script setup lang="ts">
+import { submissionRecoveryMessage } from '../../../composables/idempotency/useIdempotentIntent';
 import { BATCH_STEP_REWORK_RESULT_LABELS } from '@company/constants';
 import type { BatchStepReportReference } from '@company/contracts';
 import InlineHint from '../../../components/InlineHint.vue';

@@ -8,6 +8,8 @@ Quality 拥有外购来料检验与复核、成品质检及复检的不可变记
 
 Quality 不导入或查询 Procurement。它按传入来源保存检验事实并核验自己的记录；当前范围是否仍有效、是否暂停或终止，由 Procurement 锁内校验。`requireReleaseBasis` 不能替代该来源校验。办理的 `reviewing/completed/superseded` 为显式状态，完成与替代均不能恢复。
 
+来源事务缺失的两条内部调用诊断由成品及来料所属 HTTP 过滤器记录原静态原因和 requestId，用户仅收到联系管理员处理检验的提示及同一请求编号。其 `INVALID_STATE` 分类及 HTTP 状态保留，其他业务错误继续显示具体原因，不将普通内部异常批量转为业务错误。
+
 来料和成品全检／抽检均只填写 G/F，N 自动计算；Quality 不填写整批 C 或放行量。来料由 Procurement 在明确放行后让库管核实 C 及正式分配，超建议量必须留依据。成品仅保留零产出专用核实，要求 G=F=N=0 且明确 `released`；Production 仅在 `full+released` 定稿时按原引用检验轮已入基准与 G 提示累计目标差异。两来源待复检和不放行继续阻断正常定稿。保存检验不写正式分配、退回或库存。
 
 数据字段、约束与审计见[数据库设计](docs/database.md)，当前采购来源见[采购订单](../procurement/docs/purchase-orders.md)，跨模块关系见[采购技术设计](../../../../../docs/procurement-inbound-technical-design.md)。采购事实独立的理由及边界见 [ADR-0013](../../../../../docs/adr/0013-procurement-source-and-stock-boundaries.md)。检验 HTTP 由 Procurement 场景 Controller 使用独立 Quality 权限编排；成品质检则由本模块独立 HTTP 入口办理，同样必须通过来源模块锁内核验。

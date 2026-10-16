@@ -69,7 +69,10 @@
           show-word-limit
       /></el-form-item>
       <div class="line-toolbar">
-        <strong>采购明细 {{ rows.length }} / 100；来源映射 {{ sourceCount }} / 100</strong>
+        <strong>
+          采购明细 {{ rows.length }} / 100
+          <span v-if="sourceType === 'demand'">；关联需求 {{ selectedIds.length }} 条</span>
+        </strong>
         <el-button
           v-if="!supplement && sourceType === 'demand'"
           type="primary"
@@ -177,16 +180,26 @@
           width="75"
         />
         <el-table-column
-          label="来源"
+          label="关联需求"
           width="105"
-          ><template #default="{ row }">{{
-            row.sources.length ? `${row.sources.length} 条需求` : '独立备料'
-          }}</template></el-table-column
+          ><template #default="{ row }">
+            <el-button
+              v-if="sourceType === 'demand' && !supplement"
+              link
+              type="primary"
+              :disabled="command.locked.value"
+              @click="selectSources(row)"
+              >{{ row.sources.length }} 条需求</el-button
+            >
+            <span v-else>{{
+              row.sources.length ? `${row.sources.length} 条需求` : '独立备料'
+            }}</span>
+          </template></el-table-column
         >
         <el-table-column
           v-if="!supplement"
           label="操作"
-          width="165"
+          width="260"
           ><template #default="{ row, $index }"
             ><el-button
               link
@@ -197,15 +210,17 @@
             <el-button
               link
               type="primary"
-              @click="splitRow(row)"
-              >拆供应商行</el-button
+              :disabled="loading || command.locked.value"
+              @click="addPurchaseRow(row)"
+              >添加采购行</el-button
             >
             <el-button
-              v-if="sourceType === 'demand'"
+              v-if="sourceType === 'demand' && row.sources.length > 1"
               link
               type="primary"
-              @click="selectSources(row)"
-              >编辑来源</el-button
+              :disabled="loading || command.locked.value"
+              @click="splitRow(row)"
+              >分开采购</el-button
             >
           </template></el-table-column
         >
@@ -237,6 +252,10 @@
   <ProcurementDemandPickerDialog
     v-model:visible="pickerVisible"
     :selected-ids="pickerSelectedIds"
+    :already-added-ids="pickerAlreadyAddedIds"
+    :other-row-ids="pickerOtherRowIds"
+    :move-source-ids="pickerMoveSourceIds"
+    :disabled="loading || command.locked.value"
     :work-order-id="workOrderId"
     :item-id="sourceRow?.itemId"
     :material-variant-id="sourceRow?.materialVariantId"
@@ -270,17 +289,20 @@ const {
   workOrderPickerVisible,
   sourceRow,
   pickerSelectedIds,
+  pickerMoveSourceIds,
+  pickerAlreadyAddedIds,
+  pickerOtherRowIds,
   supplierRefreshToken,
   selectWorkOrder,
   selectSources,
   splitRow,
+  addPurchaseRow,
   remark,
   original,
   rows,
   command,
   supplement,
   selectedIds,
-  sourceCount,
   canSave,
   open,
   close,
@@ -300,10 +322,6 @@ defineExpose({ open, close, visible, locked: command.locked });
 <style scoped>
 .notice {
   margin-bottom: 16px;
-}
-.supplier-field {
-  width: 380px;
-  margin-right: 12px;
 }
 .line-toolbar {
   display: flex;

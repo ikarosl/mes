@@ -8,7 +8,7 @@
     <template v-if="product">
       <el-alert
         v-if="isBomApproved"
-        title="该 BOM 已审批通过并永久锁定，当前仅可查看。原则变化请新建产品和产品编码。"
+        title="该物料清单已审批通过，仅可查看。若物料的材料、关键参数等根本属性发生变化，请新建物料并使用新编码。"
         type="info"
         :closable="false"
         show-icon
@@ -398,7 +398,7 @@ const handleSubmit = (): void => {
       ),
     )
   ) {
-    EMessage.warning('物料候选项已失效，请重新选择');
+    EMessage.warning('所选物料已不可用，请重新选择');
     return;
   }
   if (new Set(localRows.value.map((r) => r.materialId)).size !== localRows.value.length) {

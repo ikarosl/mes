@@ -16,7 +16,7 @@
             @click="reload" /></template
       ></TableToolbar>
       <InlineHint class="execution-tip"
-        >开始、明确完成和重开分别记录状态动作；数量分布不代表完工或质量放行。已完成工序新增报工须先重新开工，记录纠错不要求重开；进入结案后员工只读。</InlineHint
+        >报工后仍需点击完成工序；报工数量不代表质检结果。已完成工序需先重新开工才能新增报工，更正记录无需重开。结案期间仅可查看。</InlineHint
       >
       <el-alert
         v-if="errorText"

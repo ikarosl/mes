@@ -268,6 +268,8 @@ finished_product 要求任务／工单／产品全非空，return_inbound 要求
 
 来源 FK 内嵌到公共实际明细，不另建退料关联主从或第二份退料数量。删除 source_stage、return_stock_status、release_after_return；公共 stock_status 固定 available。物料名称读取 Product 当前名称；批准成品显示来源工单冻结名称，其他成品通过历史展示能力读取当前名称，不伪造生产来源。
 
+保留旧数据的限定升级前提及字段回填规则见[202610150001 迁移安全](../../../../../../../packages/database/docs/migration-safety.md#202610150001限定保留数据升级)。仅接受无退料、无盘点且历史 `source_stage` 全为 NULL 的采购实际入库及生产领料；保留原主从 ID 和全部库存事实，不重写审批、审计或幂等证据。历史完成行的 `target_mode=existing` 表示已解析的真实目标，新增明细编辑审计以自身创建证据建立迁移基线，不声称还原未保存的操作历史。
+
 | 字段 | SQL定义 | 用途 |
 | --- | --- | --- |
 | `id` | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键 |

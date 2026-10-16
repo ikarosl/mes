@@ -56,7 +56,7 @@
         class="section"
         type="warning"
         :closable="false"
-        title="执行结束结果尚未确认，原请求与提交标识已保留；请重试原操作或核对任务历史。"
+        title="暂时无法确认执行是否已结束，当前操作内容已保留。请先核对任务历史。"
       />
       <el-alert
         v-if="error"

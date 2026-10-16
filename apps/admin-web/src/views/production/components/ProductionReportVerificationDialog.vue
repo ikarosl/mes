@@ -7,7 +7,7 @@
     @update:model-value="$emit('update:modelValue', $event)"
   >
     <InlineHint>
-      原提交内容继续保留。请按报工单号、冲销关系和替代关系核对结果；查看记录不会重新提交或放弃原请求。
+      本次填写内容已保留。请按报工单号、冲销关系和替代关系核对结果；查看记录不会重新提交或关闭当前操作。
     </InlineHint>
     <p class="selected-count">本次核对 {{ reportIds.length }} 条原报工。</p>
     <el-tabs v-model="activeStepId">
@@ -29,7 +29,7 @@
       @view-report="reportTrace.open"
     />
     <template #footer>
-      <el-button @click="$emit('update:modelValue', false)">返回原请求</el-button>
+      <el-button @click="$emit('update:modelValue', false)">返回本次操作</el-button>
     </template>
   </el-dialog>
   <ProductionReportTraceDialog :reader="reportTrace" />

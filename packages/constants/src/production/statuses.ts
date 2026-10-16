@@ -182,7 +182,7 @@ export const PRODUCTION_CLOSING_LABEL = '收尾中';
 export const BATCH_CLOSEOUT_MATERIAL_REVIEW_LABELS = {
   pending: '待核对',
   reviewed: '已核对',
-  stale: '事实已变化，需重核',
+  stale: '相关记录已更新，请重新核对',
 } as const;
 export const BATCH_CLOSEOUT_WORK_GROUPS = [
   {

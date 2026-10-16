@@ -17,6 +17,7 @@ import { toBeijingISOString } from '../../common/time/date-time.js';
 import { createRequestId, isRequestId } from '../../common/http/request-context.middleware.js';
 import { IdempotencyStorageError } from '../../common/idempotency/idempotency.errors.js';
 import { ConcurrencyError } from '../../common/persistence/optimistic-lock.js';
+import { InputValidationException } from './validation.pipe.js';
 
 interface RequestWithContext {
   method?: string;
@@ -55,6 +56,11 @@ export class HttpExceptionFilter implements ExceptionFilter {
             : HttpStatus.INTERNAL_SERVER_ERROR;
     const requestId =
       request.requestId ?? readRequestId(request.headers?.['x-request-id']) ?? createRequestId();
+
+    if (exception instanceof InputValidationException)
+      this.logger.warn(
+        `输入校验失败 requestId=${requestId} path=${safeLogValue(exception.diagnostic.path)} constraint=${safeLogValue(exception.diagnostic.constraint)}`,
+      );
 
     if (
       !isHttpException &&
@@ -274,17 +280,17 @@ const defaultHttpMessage = (status: number): string =>
     [HttpStatus.UNAUTHORIZED]: '未授权，请先登录',
     [HttpStatus.FORBIDDEN]: '无权执行此操作',
     [HttpStatus.NOT_FOUND]: '请求的资源不存在',
-    [HttpStatus.METHOD_NOT_ALLOWED]: '不支持当前请求方法',
+    [HttpStatus.METHOD_NOT_ALLOWED]: '暂时无法完成操作，请稍后重试；如仍失败请联系管理员',
     [HttpStatus.REQUEST_TIMEOUT]: '请求超时，请稍后重试',
     [HttpStatus.CONFLICT]: '请求存在冲突，请刷新后重试',
     [HttpStatus.PAYLOAD_TOO_LARGE]: '请求内容过大',
-    [HttpStatus.UNSUPPORTED_MEDIA_TYPE]: '不支持当前媒体类型',
+    [HttpStatus.UNSUPPORTED_MEDIA_TYPE]: '暂时无法完成操作，请稍后重试；如仍失败请联系管理员',
     [HttpStatus.UNPROCESSABLE_ENTITY]: '请求内容无法处理',
     [HttpStatus.TOO_MANY_REQUESTS]: '请求过于频繁，请稍后重试',
     [HttpStatus.INTERNAL_SERVER_ERROR]: '服务器内部错误，请稍后重试',
-    [HttpStatus.BAD_GATEWAY]: '上游服务异常，请稍后重试',
+    [HttpStatus.BAD_GATEWAY]: '暂时无法完成操作，请稍后重试；如仍失败请联系管理员',
     [HttpStatus.SERVICE_UNAVAILABLE]: '服务暂不可用，请稍后重试',
-    [HttpStatus.GATEWAY_TIMEOUT]: '上游服务响应超时，请稍后重试',
+    [HttpStatus.GATEWAY_TIMEOUT]: '操作响应超时，请稍后重试；如仍失败请联系管理员',
   })[status] ?? '请求失败';
 
 const translateBackendMessage = (message: string, status: number): string => {
@@ -298,7 +304,7 @@ const translateBackendMessage = (message: string, status: number): string => {
     'Forbidden resource': '无权执行此操作',
     Forbidden: '无权执行此操作',
     'Not Found': '请求的资源不存在',
-    'Method Not Allowed': '不支持当前请求方法',
+    'Method Not Allowed': '暂时无法完成操作，请稍后重试；如仍失败请联系管理员',
     'Internal Server Error': '服务器内部错误，请稍后重试',
     'Refresh and retry': '请刷新后重试',
   };

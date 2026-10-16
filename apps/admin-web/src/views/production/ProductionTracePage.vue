@@ -68,25 +68,53 @@
             class="trace-order-group"
           >
             <header>
-              <strong>{{ item.workOrderNo }}</strong>
-              <small>{{ item.productCode }} / {{ item.productName }}</small>
-              <span>{{ item.batches.length }} 个生产批次</span>
-            </header>
-            <button
-              v-for="batch in item.batches"
-              :key="batch.productionBatchId"
-              type="button"
-              :class="['trace-result', { active: selectedBatchId === batch.productionBatchId }]"
-              @click="selectBatch(batch.productionBatchId)"
-            >
-              <strong>{{ batch.batchNo }}</strong>
-              <el-tag
-                size="small"
-                :type="batchStatusMeta(batch.batchStatus).type"
+              <button
+                type="button"
+                class="trace-order-toggle"
+                :aria-expanded="!collapsedWorkOrderIds.has(item.workOrderId)"
+                :aria-controls="`trace-order-batches-${item.workOrderId}`"
+                :aria-label="`${collapsedWorkOrderIds.has(item.workOrderId) ? '展开' : '收起'}工单 ${item.workOrderNo} 的生产批次`"
+                @click="toggleWorkOrder(item.workOrderId)"
               >
-                {{ batchStatusMeta(batch.batchStatus).label }}
-              </el-tag>
-            </button>
+                <span class="trace-order-identity">
+                  <el-icon
+                    class="trace-order-arrow"
+                    :class="{ collapsed: collapsedWorkOrderIds.has(item.workOrderId) }"
+                    aria-hidden="true"
+                    ><ArrowDown
+                  /></el-icon>
+                  <strong>{{ item.workOrderNo }}</strong>
+                </span>
+                <small>{{ item.productCode }} / {{ item.productName }}</small>
+                <span class="trace-order-meta">
+                  <span>{{ item.batches.length }} 个生产批次</span>
+                  <span class="trace-order-action">{{
+                    collapsedWorkOrderIds.has(item.workOrderId) ? '展开' : '收起'
+                  }}</span>
+                </span>
+              </button>
+            </header>
+            <div
+              v-show="!collapsedWorkOrderIds.has(item.workOrderId)"
+              :id="`trace-order-batches-${item.workOrderId}`"
+              class="trace-order-batches"
+            >
+              <button
+                v-for="batch in item.batches"
+                :key="batch.productionBatchId"
+                type="button"
+                :class="['trace-result', { active: selectedBatchId === batch.productionBatchId }]"
+                @click="selectBatch(batch.productionBatchId)"
+              >
+                <strong>{{ batch.batchNo }}</strong>
+                <el-tag
+                  size="small"
+                  :type="batchStatusMeta(batch.batchStatus).type"
+                >
+                  {{ batchStatusMeta(batch.batchStatus).label }}
+                </el-tag>
+              </button>
+            </div>
           </section>
           <el-empty
             v-if="!loading && items.length === 0"
@@ -207,7 +235,7 @@
               >
                 <el-table
                   :data="detail.materialDemands"
-                  empty-text="暂无物料需求事实"
+                  empty-text="暂无物料需求"
                 >
                   <el-table-column
                     prop="itemCode"
@@ -371,7 +399,7 @@
                 </article>
                 <el-empty
                   v-if="detail.materialOutbounds.length === 0"
-                  description="暂无生产领料出库事实"
+                  description="暂无领料出库记录"
                   :image-size="72"
                 />
                 <h2 class="subsection-title">对应库存流水</h2>
@@ -504,7 +532,7 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref } from 'vue';
+import { reactive, ref, watch } from 'vue';
 import { usePageActivationRefresh } from '../../composables/requests/usePageActivationRefresh';
 import { useRouteAccess } from '../../composables/useRouteAccess';
 import ProductionOutputDialog from './components/ProductionOutputDialog.vue';
@@ -516,7 +544,7 @@ import ProductionStepExecutionHistoryDialog from './components/ProductionStepExe
 import ProductionBatchTerminationDialog from './components/ProductionBatchTerminationDialog.vue';
 import type { InventoryTransactionType } from '@company/contracts';
 
-import { Refresh } from '@element-plus/icons-vue';
+import { ArrowDown, Refresh } from '@element-plus/icons-vue';
 import {
   BATCH_STEP_REWORK_RESULT_LABELS,
   BATCH_STEP_STATUS_LABELS,
@@ -557,6 +585,22 @@ const currentPage = ref(1);
 const activeTab = ref('materials');
 const { items, total, loading, detailLoading, selectedBatchId, detail, search, selectBatch } =
   useProductionTrace();
+const collapsedWorkOrderIds = ref(new Set<string>());
+watch(
+  () => items.value.map((item) => item.workOrderId),
+  (ids) => {
+    const currentIds = new Set(ids);
+    collapsedWorkOrderIds.value = new Set(
+      [...collapsedWorkOrderIds.value].filter((id) => currentIds.has(id)),
+    );
+  },
+);
+function toggleWorkOrder(id: string): void {
+  const next = new Set(collapsedWorkOrderIds.value);
+  if (next.has(id)) next.delete(id);
+  else next.add(id);
+  collapsedWorkOrderIds.value = next;
+}
 const reportTrace = useProductionReportTrace({
   contextId: () => selectedBatchId.value,
 });
@@ -681,14 +725,66 @@ usePageActivationRefresh(refresh);
   border-radius: 8px;
   background: var(--el-bg-color);
 }
-.trace-order-group header {
+.trace-order-toggle {
   display: grid;
   gap: 3px;
+  width: 100%;
   padding: 2px 2px 6px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--el-text-color-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
-.trace-order-group header small,
-.trace-order-group header span {
+.trace-order-toggle:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 2px;
+}
+.trace-order-identity {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+.trace-order-identity strong,
+.trace-order-toggle small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.trace-order-arrow {
+  flex: none;
+  margin-top: 3px;
+  font-size: 12px;
+}
+.trace-order-arrow.collapsed {
+  transform: rotate(-90deg);
+}
+.trace-order-toggle small,
+.trace-order-meta {
   color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+.trace-order-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.trace-order-action {
+  flex: none;
+  padding: 0 6px;
+  border: 1px solid var(--el-border-color);
+  border-radius: var(--el-border-radius-small);
+  color: var(--el-text-color-regular);
+  line-height: 20px;
+}
+.trace-order-toggle:hover .trace-order-action {
+  background: var(--el-fill-color);
+}
+.trace-order-batches {
+  display: grid;
+  gap: 8px;
 }
 .trace-result.active {
   border-color: var(--el-color-primary);

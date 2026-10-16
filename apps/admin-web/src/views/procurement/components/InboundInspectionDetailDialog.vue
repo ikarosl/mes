@@ -19,7 +19,7 @@
     />
     <el-alert
       v-if="stale && actionOpen"
-      title="检验依据已变化或读取失败，输入已保留。请核对最新详情后放弃本地填写，再按最新范围继续办理；不会自动替换原版本。"
+      title="检验信息已更新或读取失败，输入已保留。请先核对最新详情；确认放弃本次填写后，再按最新范围办理。"
       type="warning"
       :closable="false"
       show-icon
@@ -27,7 +27,7 @@
     />
     <el-alert
       v-if="command.status.value !== 'idle'"
-      title="提交结果尚未确认，当前输入已锁定。请核对当前轮与检验历史，再原样重试；关闭仅放弃本地重试标识。"
+      title="暂时无法确认检验是否已保存，本次填写内容已保留，暂不能修改。请先核对当前检验与历史记录。关闭后无法继续重试本次提交。"
       type="warning"
       :closable="false"
       show-icon
@@ -356,9 +356,9 @@ const statusHint = computed(() => {
   if (isReceiptRejected(source))
     return '本批已人工拒收，检验记录仅供追溯；后续处置请在到货页面核对。';
   if (reviewingCase.value)
-    return '本轮检验已发起，可继续填写检查事实与放行结论。关闭或放弃填写不会撤销已经发起的检验。';
+    return '本轮检验已发起，可继续填写检查结果与放行结论。关闭或放弃填写不会撤销已经发起的检验。';
   if (source.currentRound.status === 'uninspected')
-    return '本批待检验，请明确发起后填写检查事实与放行结论。';
+    return '本批待检验，请明确发起后填写检查结果与放行结论。';
   if (
     source.currentRound.status === 'reinspection_required' ||
     source.currentRound.status === 'quality_rejected'

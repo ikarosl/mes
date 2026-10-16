@@ -1,98 +1,26 @@
 <template>
   <div class="review-layout">
-    <section class="inspection-basis">
-      <div class="section-heading">
-        <strong>本次质检依据</strong>
-      </div>
-      <div
-        v-if="inspectionInProgress"
-        class="inspection-status"
-        role="status"
-      >
-        <strong>检验办理中，暂不能送审 / 入库</strong>
-        <span>在成品质检页完成并保存本轮结果后，再回到此处核对采用依据。</span>
-      </div>
-      <el-form
-        v-else
-        label-position="top"
-        :disabled="locked"
-        class="basis-selector"
-      >
-        <el-form-item
-          label="本次引用的质检记录"
-          required
-        >
-          <el-select
-            :model-value="draft.inspectionRecordId"
-            placeholder="请选择本次引用的最新检验记录"
-            clearable
-            @update:model-value="selectInspection"
-          >
-            <el-option
-              v-for="record in inspectionOptions"
-              :key="record.id"
-              :value="record.id"
-              :label="inspectionOptionLabel(record)"
-              :disabled="record.id !== detail.applicableInspectionId"
-            />
-          </el-select>
-        </el-form-item>
-      </el-form>
-      <InlineHint
-        v-if="invalidSelection"
-        tone="warning"
-        class="notice"
-      >
-        当前引用不可用于本次送审。请核对最新记录与本轮办理状态，原选择不会自动替换。
-      </InlineHint>
-      <template v-if="displayInspection">
-        <FinishedInspectionRecordDetail
-          :inspection="displayInspection"
-          :column="1"
-          :unit="detail.check.unit"
-          :relationship="basisRelationship"
-        />
-        <InlineHint
-          v-if="
-            applicableInspection &&
-            selectedInspection?.id === applicableInspection.id &&
-            detail.canEdit
-          "
-          class="notice"
-          >已引用此检验；修改后的引用随产出草稿保存。</InlineHint
-        >
-      </template>
-      <p
-        v-else-if="inspectionInProgress"
-        class="muted"
-      >
-        当前未引用检验记录；历史记录可在“质检记录”页签查看。
-      </p>
-      <el-empty
-        v-else
-        :description="
-          applicableInspection
-            ? '尚未引用质检记录，请在上方选择本次适用记录'
-            : detail.inspections.length
-              ? '尚未引用质检记录，历史记录可在质检记录页签查看'
-              : '尚无检验记录，可先保存产出草稿，再前往质检'
-        "
-        :image-size="64"
-      />
-      <InlineHint
-        v-if="!inspectionInProgress && !applicableInspection && detail.canEdit"
-        tone="warning"
-        class="notice"
-        >当前没有可用于本次送审的放行依据。可保存草稿，完成质检后再核对引用。</InlineHint
-      >
-    </section>
     <section class="quantity-review">
       <div class="section-heading">
-        <strong>产出数量核对</strong><span class="muted">单位：{{ detail.check.unit }}</span>
+        <strong
+          ><span
+            v-if="detail.canEdit"
+            class="section-step"
+            >1</span
+          >{{ detail.canEdit ? '填写产出草稿' : '清单产出数量' }}</strong
+        >
+        <span class="muted">单位：{{ detail.check.unit }}</span>
       </div>
+      <p
+        v-if="detail.canEdit"
+        class="section-note"
+      >
+        先保存数量和说明，质检记录可在完成第 2 步后回来引用。数量有调整时须再次保存。
+      </p>
       <el-form
         label-position="top"
         :disabled="locked"
+        @submit.prevent
       >
         <div class="quantity-inputs">
           <el-form-item
@@ -125,39 +53,6 @@
             <span class="field-note">历史已入 {{ detail.receipts.extraReceivedQuantity }}</span>
           </el-form-item>
         </div>
-        <el-descriptions
-          :column="1"
-          size="small"
-          border
-          class="notice"
-        >
-          <el-descriptions-item label="拟定稿累计目标"
-            ><strong>{{ formattedTotal }}</strong> {{ detail.check.unit }}</el-descriptions-item
-          >
-          <el-descriptions-item label="本轮建立时已入">{{
-            round
-              ? `计划内 ${round.baselinePlannedReceived} / 计划外 ${round.baselineExtraReceived} ${detail.check.unit}`
-              : '首份草稿尚未建立检验轮'
-          }}</el-descriptions-item>
-          <el-descriptions-item label="本轮拟新增可入库">
-            <template v-if="round && proposedQuantity !== null">
-              本次清单 {{ formattedTotal }} − 之前已入 {{ baselineReceived }} =
-              <strong>{{ proposedQuantity }}</strong> {{ detail.check.unit }}
-            </template>
-            <template v-else>{{ round ? '待核对' : '保存草稿建立本轮后计算' }}</template>
-          </el-descriptions-item>
-          <el-descriptions-item label="入库数量提示">
-            <InlineHint
-              v-if="samplingNeedsReview"
-              tone="warning"
-              >{{ advice }}</InlineHint
-            >
-            <template v-else>{{ advice }}</template>
-          </el-descriptions-item>
-        </el-descriptions>
-        <InlineHint class="notice"
-          >数量差异只作核对提示；清单经负责人批准后才形成入库依据。</InlineHint
-        >
         <el-form-item
           label="本次新增成品报废"
           :error="quantityErrors.scrap"
@@ -186,11 +81,12 @@
             :rows="2"
             maxlength="5000"
             show-word-limit
+            placeholder="说明实际产出情况，以及与任务计划不一致的原因"
             @update:model-value="$emit('change', { reason: $event })"
           />
         </el-form-item>
         <el-form-item
-          label="物料核对总结及后续安排"
+          label="物料安排说明"
           required
         >
           <el-input
@@ -199,30 +95,177 @@
             :rows="2"
             maxlength="5000"
             show-word-limit
+            placeholder="先说明现场余料、耗用及后续安排；逐项实核后如有变化再补充"
             @update:model-value="$emit('change', { materialReviewNote: $event })"
           />
+          <span
+            v-if="detail.canEdit"
+            class="field-note"
+          >
+            此处先保存安排说明；第 4 步仍须逐项核对物料，填写说明不代表已经完成实核。
+          </span>
         </el-form-item>
       </el-form>
-      <el-alert
-        v-if="detail.blockers.length && detail.canEdit"
-        type="warning"
-        :closable="false"
-        title="送审前仍需处理"
+      <el-descriptions
+        :column="1"
+        size="small"
+        border
+        class="quantity-summary"
       >
-        <ul class="blockers">
-          <li
-            v-for="blocker in detail.blockers"
-            :key="blocker"
+        <el-descriptions-item label="拟定稿累计目标"
+          ><strong>{{ formattedTotal }}</strong> {{ detail.check.unit }}</el-descriptions-item
+        >
+        <el-descriptions-item label="本轮建立时已入">{{
+          round
+            ? `计划内 ${round.baselinePlannedReceived} / 计划外 ${round.baselineExtraReceived} ${detail.check.unit}`
+            : '首份草稿尚未建立检验轮'
+        }}</el-descriptions-item>
+        <el-descriptions-item label="本轮拟新增可入库">
+          <template v-if="round && proposedQuantity !== null">
+            本次清单 {{ formattedTotal }} − 之前已入 {{ baselineReceived }} =
+            <strong>{{ proposedQuantity }}</strong> {{ detail.check.unit }}
+          </template>
+          <template v-else>{{ round ? '待核对' : '保存草稿建立本轮后计算' }}</template>
+        </el-descriptions-item>
+        <el-descriptions-item label="入库数量提示">
+          <InlineHint
+            v-if="samplingNeedsReview"
+            tone="warning"
+            >{{ advice }}</InlineHint
           >
-            {{ blocker }}
-          </li>
-        </ul>
-      </el-alert>
+          <template v-else>{{ advice }}</template>
+        </el-descriptions-item>
+      </el-descriptions>
+      <InlineHint class="notice"
+        >数量差异只作核对提示；清单经负责人批准后才形成入库依据。</InlineHint
+      >
+    </section>
+    <section
+      ref="basisElement"
+      class="inspection-basis"
+    >
+      <div class="section-heading">
+        <strong
+          ><span
+            v-if="detail.canEdit"
+            class="section-step"
+            >3</span
+          >{{ detail.canEdit ? '引用质检记录并保存' : '本清单采用的质检依据' }}</strong
+        >
+      </div>
+      <p
+        v-if="detail.canEdit"
+        class="section-note"
+      >
+        请选择本次产出使用的质检记录，再保存草稿。
+      </p>
+      <div
+        v-if="inspectionInProgress"
+        class="inspection-status"
+        role="status"
+      >
+        <strong>第 2 步进行中 · 本轮检验尚未完成</strong>
+        <span>请在成品质检页完成并保存本轮结果，再回来引用；当前暂不能送审或入库。</span>
+      </div>
+      <InlineHint
+        v-else-if="!detail.draft && detail.canEdit"
+        class="notice"
+      >
+        先在左侧填写并保存产出草稿，再前往成品质检。首次保存无需选择质检记录。
+      </InlineHint>
+      <InlineHint
+        v-else-if="!applicableInspection && detail.canEdit"
+        tone="warning"
+        class="notice"
+      >
+        第 2 步尚未完成：当前没有本次适用的放行记录，请先完成成品质检。
+      </InlineHint>
+      <el-form
+        v-if="!inspectionInProgress && (applicableInspection || !detail.canEdit)"
+        label-position="top"
+        :disabled="locked"
+        @submit.prevent
+      >
+        <el-form-item
+          label="本次引用的质检记录"
+          required
+        >
+          <el-select
+            ref="inspectionSelector"
+            :model-value="draft.inspectionRecordId"
+            placeholder="请选择本次适用的放行记录"
+            clearable
+            @update:model-value="selectInspection"
+          >
+            <el-option
+              v-for="record in inspectionOptions"
+              :key="record.id"
+              :value="record.id"
+              :label="inspectionOptionLabel(record)"
+              :disabled="record.id !== detail.applicableInspectionId"
+            />
+          </el-select>
+          <span
+            v-if="detail.canEdit && applicableInspection"
+            class="field-note"
+          >
+            本次适用：检验记录 ID {{ applicableInspection.id }}；历史记录可查看，不能选为新依据。
+          </span>
+        </el-form-item>
+      </el-form>
+      <InlineHint
+        v-if="invalidSelection"
+        tone="warning"
+        class="notice"
+      >
+        当前引用的检验记录 ID
+        {{ draft.inspectionRecordId }}
+        不可用于本次送审。请核对本轮最新适用记录，原选择不会自动替换。
+      </InlineHint>
+      <div
+        v-if="
+          applicableInspection &&
+          selectedInspection?.id === applicableInspection.id &&
+          detail.canEdit
+        "
+        class="reference-status"
+        role="status"
+      >
+        <el-tag
+          :type="referenceSaved ? 'success' : 'warning'"
+          size="small"
+        >
+          {{ referenceSaved ? '引用已保存' : '已选择，尚未保存' }}
+        </el-tag>
+        <span>{{
+          referenceSaved
+            ? '其他产出填写若有变化，仍须再次保存。'
+            : '请点击底部“保存引用与产出草稿”，再继续物料核对。'
+        }}</span>
+      </div>
+      <FinishedInspectionRecordDetail
+        v-if="displayInspection"
+        :inspection="displayInspection"
+        :column="1"
+        :unit="detail.check.unit"
+        :relationship="basisRelationship"
+      />
+      <p
+        v-else
+        class="empty-basis"
+      >
+        {{
+          applicableInspection
+            ? '尚未引用记录，请在上方选择后核对明细。'
+            : '当前未引用质检记录；已有历史可在“质检记录”页签查看。'
+        }}
+      </p>
     </section>
   </div>
 </template>
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
+import type { SelectInstance } from 'element-plus';
 import type {
   ProductionOutputDetail,
   ProductionOutputDraft,
@@ -239,6 +282,13 @@ const props = defineProps<{
   quantityErrors: { available: string; extra: string; scrap: string };
 }>();
 const emit = defineEmits<{ change: [Partial<ProductionOutputDraft>] }>();
+const basisElement = ref<HTMLElement | null>(null);
+const inspectionSelector = ref<SelectInstance | null>(null);
+function focusInspection(): void {
+  basisElement.value?.scrollIntoView({ block: 'nearest' });
+  inspectionSelector.value?.focus();
+}
+defineExpose({ focusInspection });
 const inspectionOptions = computed(() => [...props.detail.inspections].reverse());
 function inspectionOptionLabel(record: ProductionOutputInspection): string {
   const relationship =
@@ -247,7 +297,7 @@ function inspectionOptionLabel(record: ProductionOutputInspection): string {
       : record.roundId === props.detail.currentRoundId && record.releaseDecision !== 'released'
         ? '本轮未放行，不可选'
         : '已过时，不可选';
-  return `质检记录：id ${record.id} · ${formatDateTimeForDisplay(record.inspectedAt)} · ${record.createdByName}（${relationship}）`;
+  return `检验记录 ID ${record.id} · ${formatDateTimeForDisplay(record.inspectedAt)} · ${record.createdByName}（${relationship}）`;
 }
 function selectInspection(id: string | null | undefined): void {
   emit('change', { inspectionRecordId: id || null });
@@ -264,8 +314,13 @@ const applicableInspection = computed(
 const invalidSelection = computed(
   () =>
     props.detail.canEdit &&
-    !!selectedInspection.value &&
-    selectedInspection.value.id !== applicableInspection.value?.id,
+    !!props.draft.inspectionRecordId &&
+    props.draft.inspectionRecordId !== applicableInspection.value?.id,
+);
+const referenceSaved = computed(
+  () =>
+    !!props.draft.inspectionRecordId &&
+    props.draft.inspectionRecordId === props.detail.draft?.inspectionRecordId,
 );
 const displayInspection = selectedInspection;
 const basisRelationship = computed(() => {
@@ -335,13 +390,11 @@ function changeQuantity(field: keyof ProductionOutputQuantities, value: number |
 <style scoped>
 .review-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
   gap: 24px;
   align-items: start;
 }
 .inspection-basis {
-  position: sticky;
-  top: 0;
   background: var(--el-bg-color);
   min-width: 0;
 }
@@ -354,6 +407,48 @@ function changeQuantity(field: keyof ProductionOutputQuantities, value: number |
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 12px;
+}
+.section-heading strong {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+.section-step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border: 1px solid var(--el-color-primary-light-5);
+  border-radius: 50%;
+  color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
+  font-size: 12px;
+}
+.section-note,
+.empty-basis {
+  margin: 0 0 16px;
+  color: var(--el-text-color-regular);
+  font-size: 13px;
+  line-height: 1.7;
+}
+.empty-basis {
+  padding: 16px;
+  border: 1px dashed var(--el-border-color);
+  border-radius: var(--el-border-radius-base);
+  background: var(--el-fill-color-light);
+}
+.reference-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--el-text-color-regular);
 }
 .inspection-status {
   display: flex;
@@ -383,6 +478,9 @@ function changeQuantity(field: keyof ProductionOutputQuantities, value: number |
 .quantity-inputs :deep(.el-input-number) {
   width: 100%;
 }
+.quantity-summary :deep(.el-descriptions__label) {
+  width: 136px;
+}
 .field-note {
   display: block;
   width: 100%;
@@ -399,16 +497,9 @@ function changeQuantity(field: keyof ProductionOutputQuantities, value: number |
   color: var(--el-text-color-secondary);
   font-size: 12px;
 }
-.blockers {
-  padding-left: 18px;
-  margin: 4px 0;
-}
 @media (max-width: 1200px) {
   .review-layout {
     grid-template-columns: 1fr;
-  }
-  .inspection-basis {
-    position: static;
   }
 }
 </style>

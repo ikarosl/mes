@@ -333,8 +333,8 @@ const canDiscard = async (): Promise<boolean> => {
   if (props.intentStatus !== 'idle') {
     try {
       await ElMessageBox.confirm(
-        '上次创建结果尚未确认。请先在出库单列表核对；放弃安全重试后重新提交可能重复建单。',
-        '放弃幂等意图确认',
+        '暂时无法确认出库单是否已创建。请先核对出库单列表；关闭后无法继续重试本次提交，重新办理可能重复建单。',
+        '确认关闭当前操作',
         { type: 'warning', confirmButtonText: '核对后仍要放弃', cancelButtonText: '继续保留' },
       );
       emit('resetIntent');

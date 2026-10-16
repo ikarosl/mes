@@ -312,7 +312,9 @@ watch(detailVisible, (visible) => {
   if (route.name === 'approval-inbox' && route.query.instanceId) {
     const query = { ...route.query };
     delete query.instanceId;
-    void router.replace({ query }).catch((error) => EMessage.error(error, '详情定位更新失败'));
+    void router
+      .replace({ query })
+      .catch((error) => EMessage.error(error, '审批详情页面状态更新失败，请刷新页面后重试'));
   }
 });
 
@@ -346,6 +348,27 @@ onActivated(() => void load());
 .query-panel {
   margin-bottom: 16px;
   padding: 20px 20px 4px;
+}
+.query-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0 20px;
+}
+.query-form :deep(.el-form-item) {
+  flex: 0 0 auto;
+  margin-right: 0;
+  margin-bottom: 16px;
+}
+.query-form :deep(.el-select) {
+  flex: none;
+  width: 200px;
+}
+.query-actions {
+  margin-left: auto;
+}
+.query-actions :deep(.el-button + .el-button) {
+  margin-left: 8px;
 }
 .inbox-caption {
   display: flex;

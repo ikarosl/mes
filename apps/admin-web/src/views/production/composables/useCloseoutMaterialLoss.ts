@@ -5,7 +5,10 @@ import type {
   RecordCloseoutMaterialLossPayload,
 } from '@company/contracts';
 import { productionApi } from '../../../api/production';
-import { useIdempotentIntent } from '../../../composables/idempotency/useIdempotentIntent';
+import {
+  submissionRecoveryMessage,
+  useIdempotentIntent,
+} from '../../../composables/idempotency/useIdempotentIntent';
 import { EMessage } from '../../../utils/message';
 import { RouteMessageBox } from '../../../utils/route-message-box';
 
@@ -121,7 +124,7 @@ export function useCloseoutMaterialLoss(
     confirming.value = true;
     try {
       await RouteMessageBox.confirm(
-        `确认登记 ${source.value.itemCode} 损坏 ${body.scrapQuantity} ${source.value.unit}？可退上限将由 ${maximum.value} 减为 ${remaining.value}。本次登记立即生效，不补料、不补产，不产生库存流水；结案审批驳回也不会撤销损坏事实。`,
+        `确认登记 ${source.value.itemCode} 损坏 ${body.scrapQuantity} ${source.value.unit}？可退上限将由 ${maximum.value} 减为 ${remaining.value}。本次登记立即生效，不改变仓库库存，也不会自动补料或补产；结案审批驳回也不会撤销本次登记。`,
         '确认结案损坏登记',
         { type: 'warning', confirmButtonText: '确认登记损坏' },
       );
@@ -189,6 +192,8 @@ export function useCloseoutMaterialLoss(
     submitting,
     confirming,
     unresolved,
+    recoveryMessage: () => submissionRecoveryMessage(intent.getStatus(), '损耗记录'),
+    canRetry: () => intent.getStatus() === 'pending',
     stale,
     locked,
     canSubmit,

@@ -16,7 +16,7 @@
     <el-alert
       v-if="inspectionQuantitiesAreZero"
       title="零数量也需质检确认"
-      description="请核实本轮是否确无可送检产出并填写真实说明和凭据；已单独登记的报废不再次计入送检范围。零产出不得伪装为抽检，零量清单不办理成品入库。"
+      description="零产出请按零产出确认填写说明和凭据，不使用抽检方式，也不办理入库。已单独登记的报废不再次计入送检范围。"
       type="info"
       :closable="false"
       show-icon
@@ -33,7 +33,7 @@
           <InlineHint class="form-context">
             正在填写本轮检验。<strong>现场实测量独立填写</strong>；产线申报仅供核对，保存后不会回写草稿。
           </InlineHint>
-          <h3>检查事实</h3>
+          <h3>检查结果</h3>
           <el-form-item
             label="检验方式"
             required
@@ -129,7 +129,7 @@
             >
           </el-form-item>
           <InlineHint class="quantity-help"
-            >放行后由产线管理员核对产出清单并送负责人审批；待复检或不放行继续阻断。</InlineHint
+            >放行后，请返回产出清单选择本次质检记录并保存。完成收尾和物料核对后可提交审批；待复检或未放行时暂不能提交。</InlineHint
           >
           <h3>检验时间与凭据</h3>
           <el-form-item
@@ -268,7 +268,7 @@ const handlingHint = computed(() => {
   if (props.detail.canRecordInspection) return '本轮已开始，可继续填写检验结果。';
   if (props.detail.canStartInspection) return '本轮送检范围已固定；开始检验后可填写检验结果。';
   if (props.detail.nextAction === 'review_output')
-    return '本轮检验已完成，可前往产出清单核对数量与检验引用。';
+    return '本轮检验已完成。请返回产出清单核对数量、明确引用本次适用记录并保存，再完成收尾与物料核对后提交审批。';
   if (props.detail.nextAction === 'start_reinspection')
     return '本轮检验结果已留存。需要重新检查时，请开始复检并登记新一轮结果。';
   if (props.detail.nextAction === 'view_approval') return '清单正在审批，检验记录可在历史中查看。';

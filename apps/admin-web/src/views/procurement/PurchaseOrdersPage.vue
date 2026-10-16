@@ -204,7 +204,7 @@
               type="primary"
               :disabled="blocked"
               @click="goReceipts(row.id)"
-              >到货记录</el-button
+              >记录到货</el-button
             >
           </template>
         </el-table-column>

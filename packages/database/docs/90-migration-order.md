@@ -5,8 +5,10 @@
 ## 事实来源
 
 `packages/database/migrations/*.up.sql` 按文件名升序组成唯一 migration 注册表；同名
-`.down.sql` 提供配对回滚。`src/migration-utils.ts` 负责读取和计算校验和，`src/migrate.ts` 按顺序执行，
-`src/migrate-status.ts` 报告 `pending`、`applied` 或 `checksum-mismatch`。
+`.down.sql` 提供配对回滚。`src/migration-utils.ts` 负责读取和计算校验和，`src/migrate.ts` 按计划执行，
+`src/migrate-status.ts` 报告 `pending`、`applied`、`superseded` 或 `not-required`；已执行文件缺失或校验和不符直接失败并标明文件名。
+
+唯一显式替代声明在 `src/migration-plan.ts`：`202610150001` 可替代尚未执行的 `202610140001`，执行位置是原迁移位置，之后仍执行 `202610140002`。默认使用原路径；保留路径必须显式选择且所有前置 migration 已真实登记。成功后只登记实际替代文件，原文件状态为 `superseded`；原路径已执行的环境中替代文件为 `not-required`。替代文件不是普通的后置 schema 变更，不能直接执行或登记，完整前提见[限定保留升级](migration-safety.md#202610150001限定保留数据升级)。
 
 文档不重复枚举 migration 文件或完成状态，避免注册表演进后产生第二份过期清单。查看当前顺序使用：
 

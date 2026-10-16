@@ -60,7 +60,10 @@
       </el-form>
     </section>
 
-    <section class="table-panel">
+    <section
+      ref="tablePanel"
+      class="table-panel"
+    >
       <TableToolbar>
         <template #actions>
           <el-button
@@ -136,9 +139,10 @@
             {{ formatQuantity(row.assignedQuantity) }}
             <div
               v-if="Number(row.terminatedPlannedQuantity) > 0"
-              class="sub-text"
+              class="order-assignment-note"
             >
-              已终止计划 {{ formatQuantity(row.terminatedPlannedQuantity) }}，不占额度
+              <span>已终止计划 {{ formatQuantity(row.terminatedPlannedQuantity) }}</span>
+              <span>不占额度</span>
             </div>
           </template>
         </el-table-column>
@@ -147,24 +151,49 @@
           min-width="230"
         >
           <template #default="{ row }">
-            <div>可用合计 {{ formatQuantity(approvedUsableQuantity(row.finalOutput)) }}</div>
-            {{ formatQuantity(row.finalOutput?.availableQuantity) }} /
-            {{ formatQuantity(row.finalOutput?.extraQuantity) }} /
-            {{ formatQuantity(row.finalOutput?.scrapQuantity) }}
-            <div
-              v-if="row.finalOutput?.closingBatchCount"
-              class="sub-text"
-            >
-              待结案 {{ row.finalOutput.closingBatchCount }} 批，草稿计划内
-              {{ formatQuantity(row.finalOutput.pendingAvailableQuantity) }}（未计入）
-            </div>
-            <div class="sub-text">
-              计划内
-              {{
-                plannedOutputGapText(
-                  row.finalOutput?.plannedShortfallQuantity ?? row.plannedQuantity,
-                )
-              }}，已批准 {{ row.finalOutput?.finalizedBatchCount ?? 0 }} 批
+            <div class="order-output-summary">
+              <div class="order-output-summary__total">
+                <span>可用合计</span>
+                <strong>{{ formatQuantity(approvedUsableQuantity(row.finalOutput)) }}</strong>
+              </div>
+              <div class="order-output-summary__breakdown">
+                <span>{{ formatQuantity(row.finalOutput?.availableQuantity) }}</span>
+                <span>/</span>
+                <span>{{ formatQuantity(row.finalOutput?.extraQuantity) }}</span>
+                <span>/</span>
+                <span>{{ formatQuantity(row.finalOutput?.scrapQuantity) }}</span>
+              </div>
+              <div class="order-output-meta">
+                <span
+                  v-if="row.finalOutput?.closingBatchCount"
+                  class="order-output-meta__item"
+                >
+                  <span class="order-output-meta__label">待结案</span>
+                  <span>{{ row.finalOutput.closingBatchCount }} 批</span>
+                </span>
+                <span class="order-output-meta__item">
+                  <span class="order-output-meta__label">已批准</span>
+                  <span>{{ row.finalOutput?.finalizedBatchCount ?? 0 }} 批</span>
+                </span>
+                <span class="order-output-meta__item order-output-meta__item--wide">
+                  <span class="order-output-meta__label">计划内</span>
+                  <span>{{
+                    plannedOutputGapText(
+                      row.finalOutput?.plannedShortfallQuantity ?? row.plannedQuantity,
+                    )
+                  }}</span>
+                </span>
+                <span
+                  v-if="row.finalOutput?.closingBatchCount"
+                  class="order-output-meta__item order-output-meta__item--wide"
+                >
+                  <el-tooltip content="待结案任务的计划内产出草稿，尚未计入审定产出。">
+                    <span class="order-output-meta__label">草稿计划内</span>
+                  </el-tooltip>
+                  <span>{{ formatQuantity(row.finalOutput.pendingAvailableQuantity) }}</span>
+                  <span class="order-output-meta__label">未计入</span>
+                </span>
+              </div>
             </div>
           </template>
         </el-table-column>
@@ -213,74 +242,77 @@
         </el-table-column>
         <el-table-column
           label="操作"
-          width="300"
+          :width="actionColumnWidth"
           fixed="right"
         >
+          <template #header><span class="order-actions-heading">操作</span></template>
           <template #default="{ row }">
-            <el-button
-              link
-              type="primary"
-              @click="openDetail(row)"
-              >查看</el-button
-            >
-            <el-button
-              link
-              type="primary"
-              :disabled="!canEditOrder(row)"
-              @click="openEdit(row)"
-              >编辑</el-button
-            >
-
-            <el-button
-              link
-              type="primary"
-              :disabled="row.status !== 'draft' || isRowPending(row.id)"
-              @click="releaseOrder(row)"
-              >下达</el-button
-            >
-            <el-dropdown trigger="click">
+            <div class="order-row-actions">
               <el-button
                 link
                 type="primary"
-                :disabled="!hasMoreActions(row)"
-                >更多</el-button
+                @click="openDetail(row)"
+                >查看</el-button
               >
-              <template #dropdown>
-                <el-dropdown-menu>
-                  <el-dropdown-item
-                    v-if="canStartNextResearchRound(row)"
-                    :disabled="isRowPending(row.id)"
-                    @click="openNextResearchRound(row)"
-                    >开启下一轮研发</el-dropdown-item
-                  >
-                  <el-dropdown-item
-                    v-if="canCompleteOrder(row)"
-                    :disabled="isRowPending(row.id)"
-                    @click="openWorkOrderTransition(row, 'complete')"
-                    >确认工单完工</el-dropdown-item
-                  >
-                  <el-dropdown-item
-                    v-if="canCloseOrder(row)"
-                    :disabled="isRowPending(row.id)"
-                    @click="
-                      openWorkOrderTransition(
-                        row,
-                        row.status === 'completed' ? 'archive' : 'early-close',
-                      )
-                    "
-                    >{{
-                      row.status === 'completed' ? '归档关闭工单' : '提前关闭工单'
-                    }}</el-dropdown-item
-                  >
-                  <el-dropdown-item
-                    v-if="canCancelOrder(row)"
-                    :disabled="isRowPending(row.id)"
-                    @click="cancelOrder(row)"
-                    >取消工单</el-dropdown-item
-                  >
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
+              <el-button
+                link
+                type="primary"
+                :disabled="!canEditOrder(row)"
+                @click="openEdit(row)"
+                >编辑</el-button
+              >
+
+              <el-button
+                link
+                type="primary"
+                :disabled="row.status !== 'draft' || isRowPending(row.id)"
+                @click="releaseOrder(row)"
+                >下达</el-button
+              >
+              <el-dropdown trigger="click">
+                <el-button
+                  link
+                  type="primary"
+                  :disabled="!hasMoreActions(row)"
+                  >更多</el-button
+                >
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item
+                      v-if="canStartNextResearchRound(row)"
+                      :disabled="isRowPending(row.id)"
+                      @click="openNextResearchRound(row)"
+                      >开启下一轮研发</el-dropdown-item
+                    >
+                    <el-dropdown-item
+                      v-if="canCompleteOrder(row)"
+                      :disabled="isRowPending(row.id)"
+                      @click="openWorkOrderTransition(row, 'complete')"
+                      >确认工单完工</el-dropdown-item
+                    >
+                    <el-dropdown-item
+                      v-if="canCloseOrder(row)"
+                      :disabled="isRowPending(row.id)"
+                      @click="
+                        openWorkOrderTransition(
+                          row,
+                          row.status === 'completed' ? 'archive' : 'early-close',
+                        )
+                      "
+                      >{{
+                        row.status === 'completed' ? '归档关闭工单' : '提前关闭工单'
+                      }}</el-dropdown-item
+                    >
+                    <el-dropdown-item
+                      v-if="canCancelOrder(row)"
+                      :disabled="isRowPending(row.id)"
+                      @click="cancelOrder(row)"
+                      >取消工单</el-dropdown-item
+                    >
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -357,6 +389,7 @@ import { useProductOptions } from '../../composables/options/useProductOptions';
 import { useUserOptions } from '../../composables/options/useUserOptions';
 import { ORDER_STATUS_META, formatQuantity, orderStatusMeta } from './production-status';
 import { useWorkOrdersList } from './composables/useWorkOrdersList';
+import { useWorkOrderActionColumn } from './composables/useWorkOrderActionColumn';
 import { canStartNextResearchRound } from './research-work-order';
 import { useWorkOrderDialogs, type WorkOrderFormHandle } from './composables/useWorkOrderDialogs';
 import WorkOrderFormDialog from './components/WorkOrderFormDialog.vue';
@@ -380,6 +413,7 @@ const {
   handlePageSizeChange,
   handlePageChange,
 } = useWorkOrdersList();
+const { tablePanel, actionColumnWidth } = useWorkOrderActionColumn(orders);
 
 /** 页面持有的候选实例：产品（筛选 + 工单弹窗）、负责人（工单/详情弹窗） */
 const productSource = useProductOptions();
@@ -819,6 +853,66 @@ onActivated(() => {
 .orders-table :deep(.el-button.is-link) {
   padding: 0;
   font-weight: 500;
+}
+.order-row-actions {
+  display: inline-flex;
+  width: max-content;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.order-actions-heading {
+  display: inline-block;
+  white-space: nowrap;
+}
+.order-row-actions :deep(.el-button) {
+  margin-left: 0;
+}
+.order-assignment-note {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  margin-top: 4px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+.order-output-summary {
+  display: grid;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.order-output-summary__total,
+.order-output-summary__breakdown {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+.order-output-summary__total {
+  gap: 8px;
+}
+.order-output-summary__breakdown {
+  flex-wrap: wrap;
+}
+.order-output-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px 8px;
+  font-size: 12px;
+  line-height: 18px;
+}
+.order-output-meta__item {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  white-space: nowrap;
+}
+.order-output-meta__item--wide {
+  grid-column: 1 / -1;
+}
+.order-output-meta__label {
+  color: var(--el-text-color-secondary);
 }
 .order-no,
 .product-name {

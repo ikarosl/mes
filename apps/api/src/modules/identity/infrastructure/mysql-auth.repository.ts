@@ -15,14 +15,15 @@ type UserRow = RowDataPacket & {
   password_hash: string;
   display_name: string;
 };
+type CredentialRow = UserRow & { status: number };
 
 @Injectable()
 export class MysqlAuthRepository implements AuthRepository {
   constructor(@Inject(DATABASE_POOL) private readonly pool: Pool) {}
 
   async findCredentials(username: string): Promise<CredentialUser | null> {
-    const [rows] = await this.pool.query<UserRow[]>(
-      'SELECT id,username,password_hash,display_name FROM users WHERE username=? AND status=1 AND deleted_at IS NULL LIMIT 1',
+    const [rows] = await this.pool.query<CredentialRow[]>(
+      'SELECT id,username,password_hash,display_name,status FROM users WHERE username=? AND deleted_at IS NULL LIMIT 1',
       [username],
     );
     const row = rows[0];
@@ -32,6 +33,7 @@ export class MysqlAuthRepository implements AuthRepository {
           username: row.username,
           passwordHash: row.password_hash,
           displayName: row.display_name,
+          isEnabled: row.status === 1,
         }
       : null;
   }

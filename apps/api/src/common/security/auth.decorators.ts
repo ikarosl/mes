@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  Logger,
   SetMetadata,
   UnauthorizedException,
   createParamDecorator,
@@ -16,6 +17,7 @@ export const IDEMPOTENT_ENDPOINT = 'idempotentEndpoint';
 
 /** Guard 校验后的请求内幂等键。Symbol 避免被普通日志或序列化意外暴露。 */
 export const VALIDATED_IDEMPOTENCY_KEY = Symbol('validatedIdempotencyKey');
+const commandContextLogger = new Logger('CommandContext');
 
 export interface CommandContextRequest {
   user?: UserProfile;
@@ -78,13 +80,21 @@ export const CurrentIdempotentCommandContext = createParamDecorator(
     const request = context.switchToHttp().getRequest<CommandContextRequest>();
     const command = commandContextFromRequest(request);
     if (!command.actorId) {
-      throw new UnauthorizedException('幂等命令缺少认证用户上下文');
+      request.requestId ??= command.requestId;
+      commandContextLogger.warn(
+        `requestId=${command.requestId} diagnostic=幂等命令缺少认证用户上下文`,
+      );
+      throw new UnauthorizedException('请先登录后再操作');
     }
     const idempotencyKey = request[VALIDATED_IDEMPOTENCY_KEY];
     if (!idempotencyKey) {
+      request.requestId ??= command.requestId;
+      commandContextLogger.warn(
+        `requestId=${command.requestId} diagnostic=幂等命令缺少已校验的 Idempotency-Key`,
+      );
       throw new BadRequestException({
         code: 'VALIDATION_ERROR',
-        message: '幂等命令缺少已校验的 Idempotency-Key',
+        message: '本次提交校验失败，请先核对操作结果，再重新打开页面或联系管理员',
       });
     }
     return { ...command, actorId: command.actorId, idempotencyKey };

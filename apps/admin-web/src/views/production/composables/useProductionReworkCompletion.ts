@@ -137,7 +137,7 @@ export const useProductionReworkCompletion = (options: ReworkCompletionOptions) 
       try {
         await RouteMessageBox.confirm(
           requests.length > 0
-            ? '返工完成结果尚未确认。请先核对来源与处理过程；放弃原请求的安全重试后重新办理，可能重复提交。'
+            ? '暂时无法确认返工是否已完成。请先核对来源与处理记录；关闭后无法继续重试本次提交，重新办理可能重复提交。'
             : '本次返工数量或备注尚未提交，确认放弃？',
           '关闭返工完成',
           { type: 'warning', confirmButtonText: '确认放弃', cancelButtonText: '继续保留' },
@@ -180,7 +180,7 @@ export const useProductionReworkCompletion = (options: ReworkCompletionOptions) 
       selected.value = null;
       EMessage.success('整笔返工已完成');
     } catch (error) {
-      EMessage.error(error, '返工完成未确认，输入已保留，请核对或按原请求重试');
+      EMessage.error(error, '暂时无法确认返工是否已完成，输入已保留。请先核对处理记录');
     } finally {
       intentStatus.value = options.getIntentStatus(rework.reworkId);
       submitting.value = false;

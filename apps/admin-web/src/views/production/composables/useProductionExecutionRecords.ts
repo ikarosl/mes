@@ -257,7 +257,7 @@ export const useProductionExecutionRecords = () => {
         !detailRequests.isActive() ||
         selectedBatchId.value !== entry.request.rework.productionBatchId
       ) {
-        throw new Error('请返回原任务核对或按原请求重试返工完成结果');
+        throw new Error('请返回原任务核对返工处理记录，或重试本次提交');
       }
       const { intent, request } = entry;
       try {

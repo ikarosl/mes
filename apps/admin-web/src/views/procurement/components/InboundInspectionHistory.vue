@@ -28,7 +28,7 @@
         <el-descriptions-item label="发起时间">{{
           formatDateTimeForDisplay(record.createdAt)
         }}</el-descriptions-item>
-        <el-descriptions-item label="发起时申报快照"
+        <el-descriptions-item label="送检时申报数量"
           >{{ record.coveredQuantity }} {{ unit }}</el-descriptions-item
         >
         <el-descriptions-item

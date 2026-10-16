@@ -281,7 +281,7 @@ export class MysqlProductionOutputRepository extends ProductionOutputRepository 
       if (state.detail.submissionToken !== payload.submissionToken)
         throw new ProductionDomainError(
           'CONCURRENT_MODIFICATION',
-          '产出、检验依据或收尾事实已变化，请刷新核对',
+          '产出、检验依据或收尾记录已变化，请刷新核对',
         );
       return String(row.id);
     });

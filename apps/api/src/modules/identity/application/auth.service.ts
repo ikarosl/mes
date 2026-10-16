@@ -17,6 +17,7 @@ export class AuthService {
     const user = await this.repository.findCredentials(payload.username);
     if (!user || !(await this.passwords.verify(payload.password, user.passwordHash)))
       throw new AuthenticationError('INVALID_CREDENTIALS', '用户名或密码错误');
+    if (!user.isEnabled) throw new AuthenticationError('USER_DISABLED', '账号已停用，请联系管理员');
     const profile = await this.requireProfile(user.id);
     await this.repository.touchLastLogin(user.id);
     const pair = await this.issue(profile);

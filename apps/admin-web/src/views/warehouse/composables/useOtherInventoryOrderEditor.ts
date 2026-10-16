@@ -187,7 +187,7 @@ export function useOtherInventoryOrderEditor(
     try {
       await RouteMessageBox.confirm(
         hasIntent
-          ? '上次写入结果尚未确认，原请求和安全重试标识仍保留。请先核对单据列表；放弃后重新提交可能重复建单或改变库存。'
+          ? '暂时无法确认本次操作是否成功。请先核对单据列表；关闭后无法继续重试本次提交，重新办理可能重复建单或重复变动库存。'
           : '当前输入尚未保存，关闭或切换单据将放弃这些修改。',
         hasIntent ? '放弃未确认提交' : '放弃未保存修改',
         {

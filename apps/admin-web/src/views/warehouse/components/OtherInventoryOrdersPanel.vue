@@ -48,7 +48,9 @@
             @click="editor.open('create')"
             >创建{{ title }}单</el-button
           >
-          <span class="independent-note">独立办理，不计入采购或生产履约</span>
+          <span class="independent-note">{{
+            direction === 'inbound' ? '用于采购收货、生产入库以外的入库' : '用于生产领料以外的出库'
+          }}</span>
         </template>
         <template #tools>
           <el-tooltip
@@ -71,7 +73,18 @@
         :closable="false"
         title="列表读取失败；已显示的数据是上次成功结果，请刷新后核对。"
       />
+      <OtherInboundHistoryGroups
+        v-if="direction === 'inbound'"
+        :rows="orders.rows.value"
+        :loading="orders.loading.value"
+        @detail="editor.open('detail', $event)"
+        @edit="editor.open('edit', $event)"
+        @confirm="editor.open('confirm', $event)"
+        @cancel="editor.open('cancel', $event)"
+        @batch="goBatch"
+      />
       <el-table
+        v-else
         v-loading="orders.loading.value"
         :data="orders.rows.value"
         row-key="id"
@@ -143,7 +156,7 @@
                 row.confirmedAt
                   ? formatDateTimeForDisplay(row.confirmedAt)
                   : row.status === 'cancelled'
-                    ? '未产生库存流水'
+                    ? '已取消，库存未变动'
                     : '等待整单确认'
               }}
             </div>
@@ -201,6 +214,7 @@
 
 <script setup lang="ts">
 import { onMounted } from 'vue';
+import { useRouter } from 'vue-router';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import {
   OTHER_INVENTORY_DIRECTION_LABELS,
@@ -209,7 +223,9 @@ import {
 import type { OtherInventoryDirection, OtherInventoryStatus } from '@company/contracts';
 import TableToolbar from '../../../components/TableToolbar.vue';
 import PaginationFooter from '../../../components/PaginationFooter.vue';
+import { useRouteAccess } from '../../../composables/useRouteAccess';
 import { formatDateTimeForDisplay } from '../../../utils/date';
+import { EMessage } from '../../../utils/message';
 import { useOtherInventoryOrdersList } from '../composables/useOtherInventoryOrdersList';
 import { useOtherInventoryOrderEditor } from '../composables/useOtherInventoryOrderEditor';
 import {
@@ -221,15 +237,27 @@ import {
   otherInventoryStatusTag,
 } from '../other-inventory-presentation';
 import OtherInventoryOrderDialog from './OtherInventoryOrderDialog.vue';
+import OtherInboundHistoryGroups from './OtherInboundHistoryGroups.vue';
 
 defineOptions({ name: 'OtherInventoryOrdersPanel' });
 const props = defineProps<{ direction: OtherInventoryDirection; routeName: string }>();
 const title = OTHER_INVENTORY_DIRECTION_LABELS[props.direction];
 const pendingStatus = otherInventoryPendingStatus(props.direction);
 const statuses = otherInventoryStatuses(props.direction);
+const router = useRouter();
+const { canAccessRoute } = useRouteAccess();
 const orders = useOtherInventoryOrdersList(props.direction);
 const editor = useOtherInventoryOrderEditor(props.direction, props.routeName, orders.load);
 onMounted(orders.load);
+
+async function goBatch(itemBatchId: string): Promise<void> {
+  if (!canAccessRoute({ name: 'warehouse-inventory' })) return;
+  if (editor.controlsLocked.value) {
+    EMessage.warning('请先完成当前入库操作的核对或原操作重试');
+    return;
+  }
+  await router.push({ name: 'warehouse-inventory', query: { itemBatchId } });
+}
 </script>
 
 <style scoped>

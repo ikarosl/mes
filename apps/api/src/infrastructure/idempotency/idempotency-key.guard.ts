@@ -3,9 +3,11 @@ import {
   type CanActivate,
   type ExecutionContext,
   Injectable,
+  Logger,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { IDEMPOTENCY_NOT_SUPPORTED } from '@company/constants';
+import { createRequestId } from '../../common/http/request-context.middleware.js';
 import {
   IDEMPOTENT_ENDPOINT,
   VALIDATED_IDEMPOTENCY_KEY,
@@ -29,6 +31,7 @@ import {
  */
 @Injectable()
 export class IdempotencyKeyGuard implements CanActivate {
+  private readonly logger = new Logger(IdempotencyKeyGuard.name);
   constructor(private readonly reflector: Reflector) {}
 
   canActivate(context: ExecutionContext): boolean {
@@ -46,26 +49,26 @@ export class IdempotencyKeyGuard implements CanActivate {
     const key = (Array.isArray(header) ? header[0] : header)?.trim();
     if (!enabled) {
       if (key !== undefined) {
-        throw new BadRequestException({
-          code: IDEMPOTENCY_NOT_SUPPORTED,
-          message: '该接口不支持 Idempotency-Key',
-        });
+        this.reject(request, IDEMPOTENCY_NOT_SUPPORTED, '该接口不支持 Idempotency-Key');
       }
       return true;
     }
     if (key === undefined) {
-      throw new BadRequestException({
-        code: 'VALIDATION_ERROR',
-        message: '缺少必填的 Idempotency-Key',
-      });
+      this.reject(request, 'VALIDATION_ERROR', '缺少必填的 Idempotency-Key');
     }
     if (key.length === 0 || key.length > 150) {
-      throw new BadRequestException({
-        code: 'VALIDATION_ERROR',
-        message: '幂等键长度必须在 1 到 150 个字符之间',
-      });
+      this.reject(request, 'VALIDATION_ERROR', '幂等键长度必须在 1 到 150 个字符之间');
     }
     request[VALIDATED_IDEMPOTENCY_KEY] = key;
     return true;
+  }
+
+  private reject(request: CommandContextRequest, code: string, diagnostic: string): never {
+    const requestId = (request.requestId ??= createRequestId());
+    this.logger.warn(`提交校验失败 requestId=${requestId} code=${code} diagnostic=${diagnostic}`);
+    throw new BadRequestException({
+      code,
+      message: '本次提交校验失败，请先核对操作结果，再重新打开页面或联系管理员',
+    });
   }
 }

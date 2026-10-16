@@ -89,7 +89,7 @@ export function calculateStepQuotaDistribution(
       normal + abnormal !== integerQuantity(report.reportedQuantity) ||
       report.unit !== facts.unit
     )
-      return unavailable('报工事实数量或单位不一致，请核对相关记录');
+      return unavailable('报工记录的数量或单位不一致，请核对相关记录');
     if (report.reportType === 'reversal') {
       const original = reports.get(report.reversalOfReportId ?? '');
       if (
@@ -124,7 +124,7 @@ export function calculateStepQuotaDistribution(
     }
     for (const resultId of resultIds) {
       if (rework.status !== 'completed' || completedBy.has(resultId))
-        return unavailable('返工完成事实存在重复或状态不一致，请核对相关记录');
+        return unavailable('返工完成记录存在重复或状态不一致，请联系管理员核对');
       completedBy.set(resultId, rework);
     }
   }

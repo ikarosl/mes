@@ -114,10 +114,10 @@ export function useDemandCorrection(
   const unresolved = computed(() => intentStatus.value !== 'idle');
   const unresolvedMessage = computed(() => {
     if (intentStatus.value === 'blocked')
-      return '提交结果无法读取，原请求和标识已保留。请先在需求追溯中核对审批结果，再决定是否放弃本地记录。';
+      return '暂时无法确认本次操作结果，已暂停提交。请先在需求追溯中核对审批结果，仍无法确认时请联系管理员。';
     if (intentStatus.value === 'expired')
-      return '原提交已超出安全重试窗口，原请求和标识已保留。请先在需求追溯中核对审批结果，再决定是否放弃本地记录。';
-    return '提交结果未确认，输入、原请求和提交标识已保留。请重试原提交，或先在需求追溯中核对审批结果。';
+      return '本次提交已超过可重试时限。请先在需求追溯中核对审批结果，确认后再重新办理。';
+    return '暂时无法确认本次操作是否成功，本次填写内容已保留，暂不能修改。请重试本次提交或先在需求追溯中核对审批结果。';
   });
   const dirty = computed(
     () =>
@@ -358,7 +358,7 @@ export function useDemandCorrection(
           try {
             await RouteMessageBox.confirm(
               unresolved.value
-                ? '提交结果未确认。关闭将放弃原请求和本地重试标识；请先在需求追溯中核对审批结果，确认关闭？'
+                ? '暂时无法确认本次操作是否成功。关闭后无法继续重试本次提交，请先在需求追溯中核对审批结果，确认关闭？'
                 : '更正内容尚未提交，确认放弃输入并关闭？',
               '关闭需求更正',
               { type: 'warning', confirmButtonText: '放弃并关闭', cancelButtonText: '继续保留' },

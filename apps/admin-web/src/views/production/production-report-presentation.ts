@@ -57,11 +57,11 @@ export const reportEffectMeta = (
 };
 
 export const reportReadOnlyReason = (report: BatchStepReportView): string | null => {
-  if (report.sourceKind === 'reversal') return '冲销事实只读';
+  if (report.sourceKind === 'reversal') return '冲销记录仅可查看';
   if (report.reversalReport) return `已由 ${report.reversalReport.reportNo} 冲销`;
   if (report.sourceKind === 'rework_completion')
     return report.reworkOrigin
-      ? `${report.reworkOrigin.reworkNo} 的${reportBusinessLabel(report)}，结果事实只读`
+      ? `${report.reworkOrigin.reworkNo} 的${reportBusinessLabel(report)}，该返工结果仅可查看`
       : '返工完成结果只读';
   const documentNos = [
     ...new Set(report.dependencies.map((item) => item.businessNo).filter(Boolean)),
@@ -72,7 +72,7 @@ export const reportReadOnlyReason = (report: BatchStepReportView): string | null
 
 export const reportDependencyLabel = (dependency: BatchStepReportDependencyView): string => {
   if (dependency.businessNo) return dependency.businessNo;
-  return dependency.kind === 'scrap_record' ? `报废事实（记录 ID ${dependency.id}）` : '关联事实';
+  return dependency.kind === 'scrap_record' ? `报废记录（记录 ID ${dependency.id}）` : '关联记录';
 };
 
 export const reportRelations = (

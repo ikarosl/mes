@@ -62,7 +62,7 @@ export const useProductionAbnormalActions = (actions: Actions) => ({
   ) => {
     try {
       await actions.completeRework(item, normalQuantity, abnormalQuantity, remark);
-      EMessage.success('返工已完成并生成报工事实');
+      EMessage.success('返工已完成，报工记录已生成');
     } catch (error) {
       EMessage.error(error, '返工完成失败，请刷新后核对数量和单据状态');
     }

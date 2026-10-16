@@ -306,7 +306,7 @@ const handleSubmit = (): void => {
         ),
     )
   ) {
-    EMessage.warning('工序或负责人候选项已失效，请重新选择');
+    EMessage.warning('所选工序或负责人已不可用，请重新选择');
     return;
   }
   normalizeStepOrders();

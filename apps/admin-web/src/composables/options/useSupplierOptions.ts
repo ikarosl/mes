@@ -10,7 +10,7 @@ export function useSupplierOptions(selectedIds: () => string[]) {
         keyword: keyword.value.trim() || undefined,
         includeIds: selectedIds(),
       }),
-    '供应商候选刷新失败，请重试后再保存',
+    '供应商列表加载失败，请重新加载后再保存',
   );
   const search = async (value: string): Promise<void> => {
     keyword.value = value;

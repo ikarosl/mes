@@ -64,7 +64,7 @@
         type="warning"
         :closable="false"
         show-icon
-        title="撤回结果尚未确认，原请求与提交标识已保留；请重试原操作或核对任务历史。"
+        title="暂时无法确认是否已撤回，当前操作内容已保留。请先核对任务历史。"
       />
       <el-alert
         v-if="error"

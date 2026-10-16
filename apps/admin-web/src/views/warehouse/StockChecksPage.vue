@@ -165,7 +165,7 @@
     >
       <div class="dialog-body">
         <el-alert
-          title="创建时冻结所选库存批次与库存状态的账面数量。完成盘点前若库存流水发生变化，本单将被拒绝完成，需要重新盘点。"
+          title="创建盘点单时记录当前账面数量。完成前若相关库存发生变动，本单无法完成，需重新盘点。"
           type="info"
           :closable="false"
         />
@@ -271,7 +271,7 @@
           type="primary"
           :loading="submitting"
           @click="submitCreate"
-          >创建并冻结账面数</el-button
+          >创建盘点单</el-button
         >
       </template>
     </el-dialog>
@@ -289,7 +289,7 @@
       >
         <el-alert
           v-if="detailEditable"
-          title="可以分次保存实盘数量；全部录入后才能完成盘点。完成时系统会重新核对账面快照，并在同一事务内生成差异调整流水。"
+          title="可以分次保存实盘数量；全部录入后才能完成盘点。完成后按盘点差异调整库存。"
           type="warning"
           :closable="false"
         />
@@ -530,7 +530,7 @@ async function loadCandidates() {
     candidateRows.value = result.items;
     candidateTotal.value = result.total;
   } catch (error) {
-    EMessage.error(error, '库存批次候选加载失败');
+    EMessage.error(error, '库存批次列表加载失败');
   } finally {
     candidatesLoading.value = false;
   }
@@ -637,7 +637,7 @@ async function completeOrder() {
   if (!detail.value || !allCounted.value || detailDirty.value) return;
   try {
     await RouteMessageBox.confirm(
-      `确认完成盘点单 ${detail.value.checkNo}？系统将重新核对库存快照，并立即生成 ${differenceCount()} 项差异调整流水。`,
+      `确认完成盘点单 ${detail.value.checkNo}？完成后将按 ${differenceCount()} 项盘点差异调整库存。`,
       '完成库存盘点',
       { type: 'warning', confirmButtonText: '完成并调整库存' },
     );

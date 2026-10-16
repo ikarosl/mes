@@ -141,7 +141,7 @@ products.default_route_id → process_routes → process_route_steps
 - `material_id` 指向 `materials.id`；需要精确库存版本时由 Production 在需求或物流事实中选择 `material_variant_id`。
 - 批量 `production_item_demand` 必须保存 `product_material_id` 和 BOM 数量、单位快照；研发不依赖 BOM，四个 BOM 专属字段为空，仍保存真实物料、版本、单位和需求数量；批次追溯统一依靠精确版本及库存批次引用，不配置 BOM 追溯开关。
 - BOM 最后一级审批通过时，`products.bom_locked_at` 与审批终态同事务写入；此后本表所有新增、修改、删除、停用、恢复和批量替换操作均拒绝。
-- 任务取消、需求完成或库存归零不能解除锁定。原则性用料变化必须新建产品和编码。
+- 任务取消、需求完成或库存归零不能解除锁定。[原则性用料变化](product-rules.md#稳定身份与工作流)必须新建产品和编码。
 - 锁定前修改 BOM 不得回写已经生成的生产需求。
 - 同一产品和投入对象的 BOM 行软删除后需要再次使用时恢复原记录，不创建相同自然键的新记录。
 

@@ -426,7 +426,10 @@
               >{{ formatQuantity(detail.availableToAllocateQuantity) }}
               {{ detail.unit }}</el-descriptions-item
             ><el-descriptions-item label="说明"
-              >数量仅由库存流水聚合，页面不可编辑。成品不参与物料分配和物料盘点。</el-descriptions-item
+              >库存数量根据出入库记录自动计算，不能直接修改。<template
+                v-if="detail.itemKind === 'finished_product'"
+                >成品不参与物料分配和物料盘点。</template
+              ></el-descriptions-item
             ></el-descriptions
           >
           <h3>已确认入库来源</h3>
