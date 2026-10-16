@@ -29,6 +29,8 @@ export const API_DATA_OWNERSHIP = Object.freeze({
     'quality_finished_inspection', // Retired; common records now own both kinds.
     'quality_inspection_case',
     'quality_inspection_record',
+    'quality_process_inspection',
+    'quality_process_inspection_record',
   ]),
   inventory: Object.freeze([
     'item_batch',
@@ -144,7 +146,22 @@ export const API_DISPLAY_READ_ACCESS = Object.freeze([
         'starting_declared_remaining',
       ],
       production_batches: ['id', 'batch_no', 'work_order_id', 'planned_quantity', 'status'],
-      work_orders: ['id', 'work_order_no', 'product_code_snapshot', 'product_name_snapshot'],
+      work_orders: [
+        'id',
+        'work_order_no',
+        'product_code_snapshot',
+        'product_name_snapshot',
+        'status',
+      ],
+      batch_step_records: [
+        'id',
+        'production_batch_id',
+        'step_order_snapshot',
+        'step_code_snapshot',
+        'step_name_snapshot',
+        'unit_snapshot',
+        'status',
+      ],
     },
   },
   {

@@ -8,7 +8,8 @@ export type ReworkRow = RowDataPacket & {
   abnormal_disposition_id: number;
   production_batch_id: number;
   batch_step_record_id: number;
-  source_report_id: number;
+  source_report_id: number | null;
+  quantity_scope: 'production' | 'inspection';
   responsible_user_id: number;
   rework_quantity: string;
   unit_snapshot: string;
@@ -26,7 +27,7 @@ export const REWORK_COLUMNS = `rw.id,rw.rework_no,rw.abnormal_disposition_id,rw.
   rw.batch_step_record_id,rw.source_report_id,rw.responsible_user_id,rw.rework_quantity,
   rw.unit_snapshot,rw.status,rw.completed_normal_report_id,rw.completed_abnormal_report_id,
   rw.started_at,rw.completed_at,rw.version,
-  rw.remark,rw.created_at`;
+  rw.remark,rw.created_at,COALESCE((SELECT source_report.quantity_scope FROM batch_step_reports source_report WHERE source_report.id=rw.source_report_id),'inspection') quantity_scope`;
 
 /** 命令也使用此基础映射；只读关系字段在独立 View 中扩展。 */
 export const mapRework = (row: ReworkRow): ReworkRecordItem => ({
@@ -35,7 +36,8 @@ export const mapRework = (row: ReworkRow): ReworkRecordItem => ({
   abnormalDispositionId: String(row.abnormal_disposition_id),
   productionBatchId: String(row.production_batch_id),
   stepRecordId: String(row.batch_step_record_id),
-  sourceReportId: String(row.source_report_id),
+  sourceReportId: row.source_report_id === null ? null : String(row.source_report_id),
+  quantityScope: row.quantity_scope,
   responsibleUserId: String(row.responsible_user_id),
   responsibleUserName: null,
   reworkQuantity: String(row.rework_quantity),

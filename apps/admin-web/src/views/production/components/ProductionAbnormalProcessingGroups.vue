@@ -4,13 +4,10 @@
     class="processing-groups"
     aria-label="异常处理过程"
   >
-    <div class="processing-heading">
-      <strong>异常处理过程</strong
-      ><span>{{ pendingCount }} 项待办 / {{ groups.length }} 项记录</span>
-    </div>
+    <ProductionAbnormalProcessingSummary :groups="groups" />
     <article
       v-for="group in groups"
-      :key="group.sourceReport.reportId"
+      :key="processingGroupKey(group)"
       class="processing-group"
     >
       <button
@@ -32,13 +29,9 @@
         class="group-body"
       >
         <div class="process-stage">
-          <strong>{{
-            group.disposition?.sourceReportSourceKind === 'rework_completion'
-              ? `来源${BATCH_STEP_REWORK_RESULT_LABELS.abnormal}`
-              : '来源报工'
-          }}</strong>
+          <strong>{{ group.sourceReport ? '来源报工' : '来源专检' }}</strong>
           <span
-            >{{ group.sourceReport.reportNo }} · 异常
+            >{{ processingGroupSourceLabel(group) }} · 异常
             {{
               formatQuantity(
                 group.disposition?.sourceAbnormalQuantity ?? group.rework?.reworkQuantity,
@@ -46,11 +39,25 @@
             }}
             {{ unit }}</span
           >
+          <span v-if="!group.sourceReport && group.disposition?.processInspectionRecordId"
+            >采用结果记录 ID {{ group.disposition.processInspectionRecordId }}</span
+          >
           <el-button
+            v-if="group.sourceReport"
             link
             type="primary"
             @click="$emit('view-report', group.sourceReport)"
             >查看来源报工</el-button
+          >
+          <el-button
+            v-else-if="
+              group.disposition?.processInspectionId &&
+              canAccessRoute({ name: 'quality-process-inspections' })
+            "
+            link
+            type="primary"
+            @click="viewInspection(group.disposition.processInspectionId)"
+            >查看来源专检</el-button
           >
         </div>
         <div
@@ -62,8 +69,9 @@
             :type="
               group.disposition.reviewStatus === 'pending_review'
                 ? 'warning'
-                : group.disposition.reviewStatus === 'approved'
-                  ? 'success'
+                : group.disposition.reviewStatus === 'approved' &&
+                    group.disposition.dispositionType === 'scrap'
+                  ? 'danger'
                   : 'info'
             "
             size="small"
@@ -92,7 +100,10 @@
               >报废并补料</el-button
             >
             <el-button
-              v-if="group.disposition.sourceReportSourceKind === 'direct_abnormal'"
+              v-if="
+                group.disposition.sourceType === 'report' &&
+                group.disposition.sourceReportSourceKind === 'direct_abnormal'
+              "
               link
               type="danger"
               :disabled="disabled"
@@ -160,7 +171,7 @@
           v-if="group.completedNormalReport"
           class="process-stage"
         >
-          <strong>{{ BATCH_STEP_REWORK_RESULT_LABELS.normal }}</strong>
+          <strong>{{ processingGroupResultLabel(group, 'normal') }}</strong>
           <span>{{ group.completedNormalReport.reportNo }}</span>
           <span v-if="group.rework"
             >{{ resultQuantity(group.rework.completedNormalQuantity) }} {{ unit }}</span
@@ -169,14 +180,14 @@
             link
             type="primary"
             @click="$emit('view-report', group.completedNormalReport)"
-            >查看{{ BATCH_STEP_REWORK_RESULT_LABELS.normal }}报工</el-button
+            >查看{{ processingGroupResultLabel(group, 'normal') }}</el-button
           >
         </div>
         <div
           v-if="group.completedAbnormalReport"
           class="process-stage"
         >
-          <strong>{{ BATCH_STEP_REWORK_RESULT_LABELS.abnormal }}</strong>
+          <strong>{{ processingGroupResultLabel(group, 'abnormal') }}</strong>
           <span>{{ group.completedAbnormalReport.reportNo }}</span>
           <span v-if="group.rework"
             >{{ resultQuantity(group.rework.completedAbnormalQuantity) }} {{ unit }}</span
@@ -185,7 +196,7 @@
             link
             type="primary"
             @click="$emit('view-report', group.completedAbnormalReport)"
-            >查看{{ BATCH_STEP_REWORK_RESULT_LABELS.abnormal }}报工</el-button
+            >查看{{ processingGroupResultLabel(group, 'abnormal') }}</el-button
           >
         </div>
         <p
@@ -204,12 +215,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
-import {
-  BATCH_STEP_ABNORMAL_ORIGIN_LABELS,
-  BATCH_STEP_REWORK_RESULT_LABELS,
-  REWORK_STATUS_LABELS,
-} from '@company/constants';
+import { useRouter } from 'vue-router';
+import { useRouteAccess } from '../../../composables/useRouteAccess';
+import { BATCH_STEP_ABNORMAL_ORIGIN_LABELS, REWORK_STATUS_LABELS } from '@company/constants';
 import type {
   BatchStepAbnormalDispositionView,
   BatchStepReportReference,
@@ -217,11 +225,15 @@ import type {
 } from '@company/contracts';
 import { formatDateTimeForDisplay } from '../../../utils/date';
 import { formatQuantity } from '../production-status';
+import ProductionAbnormalProcessingSummary from './ProductionAbnormalProcessingSummary.vue';
 import {
   dispositionResultLabel,
   processingGroupMeta,
   processingGroupPending,
   processingGroupSummary,
+  processingGroupKey,
+  processingGroupSourceLabel,
+  processingGroupResultLabel,
   type AbnormalProcessingGroup,
 } from '../production-report-presentation';
 
@@ -249,15 +261,19 @@ const emit = defineEmits<{
   start: [rework: ReworkRecordView];
   complete: [rework: ReworkRecordView];
 }>();
-const pendingCount = computed(() => props.groups.filter(processingGroupPending).length);
+const router = useRouter(),
+  { canAccessRoute } = useRouteAccess();
+const viewInspection = async (inspectionId: string): Promise<void> => {
+  await router.push({ name: 'quality-process-inspections', query: { inspectionId } });
+};
 const resultQuantity = (quantity: string | null): string =>
   quantity === null ? '待核对' : formatQuantity(quantity);
 const isExpanded = (group: AbnormalProcessingGroup): boolean =>
-  props.expansion[group.sourceReport.reportId] ?? processingGroupPending(group);
+  props.expansion[processingGroupKey(group)] ?? processingGroupPending(group);
 const toggle = (group: AbnormalProcessingGroup): void =>
   emit('update:expansion', {
     ...props.expansion,
-    [group.sourceReport.reportId]: !isExpanded(group),
+    [processingGroupKey(group)]: !isExpanded(group),
   });
 </script>
 
@@ -266,17 +282,6 @@ const toggle = (group: AbnormalProcessingGroup): void =>
   display: grid;
   gap: 8px;
   margin-top: 12px;
-}
-.processing-heading {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-  font-size: 14px;
-}
-.processing-heading > span {
-  color: var(--el-text-color-secondary);
-  font-size: 12px;
 }
 .processing-group {
   border: 1px solid var(--el-border-color-lighter);

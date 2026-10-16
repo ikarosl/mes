@@ -1,12 +1,18 @@
+import { QualityProcessInspectionCommand } from '../../../quality/public.js';
+import { acceptProcessInspection } from './mysql-production-process-inspection-acceptance.js';
 import { allocateBusinessNumber } from '../../../../infrastructure/numbering/mysql-business-number.js';
 import { Inject, Injectable } from '@nestjs/common';
 import { withTransaction } from '@company/database';
 import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import type {
+  AcceptProcessInspectionPayload,
   ApproveBatchStepReworkPayload,
   BatchStepAbnormalDispositionItem,
   CompleteReworkPayload,
   CompleteReworkResult,
+  PageQuery,
+  PageResult,
+  ProcessInspectionDispositionHistoryItem,
   RejectBatchStepAbnormalDispositionPayload,
   ReworkRecordItem,
   ReworkRecordView,
@@ -35,6 +41,10 @@ import {
   REWORK_VIEW_JOINS,
   type ReworkViewRow,
 } from './mysql-production-report-trace.read.js';
+import {
+  listProcessInspectionDispositions,
+  requireProcessInspectionStep,
+} from './mysql-production-process-inspection.read.js';
 
 type DispositionSourceRow = DispositionRow & {
   reported_quantity: string;
@@ -42,6 +52,7 @@ type DispositionSourceRow = DispositionRow & {
   abnormal_quantity: string;
   unit_snapshot: string;
   report_type: 'normal' | 'reversal';
+  quantity_scope: 'production' | 'inspection';
   is_effective: number;
   is_direct_report: number;
   responsible_user_id: number | null;
@@ -49,8 +60,39 @@ type DispositionSourceRow = DispositionRow & {
 
 @Injectable()
 export class MysqlProductionAbnormalRepository extends ProductionAbnormalRepository {
-  constructor(@Inject(DATABASE_POOL) private readonly pool: Pool) {
+  constructor(
+    @Inject(DATABASE_POOL) private readonly pool: Pool,
+    private readonly processInspections: QualityProcessInspectionCommand,
+  ) {
     super();
+  }
+
+  requireInspectionStep(batchId: string, stepId: string): Promise<void> {
+    return requireProcessInspectionStep(this.pool, batchId, stepId);
+  }
+
+  listInspectionDispositions(
+    batchId: string,
+    stepId: string,
+    query: PageQuery,
+  ): Promise<PageResult<ProcessInspectionDispositionHistoryItem>> {
+    return listProcessInspectionDispositions(this.pool, batchId, stepId, query);
+  }
+
+  acceptInspection(
+    batchId: string,
+    stepId: string,
+    payload: AcceptProcessInspectionPayload,
+    context: CommandContext,
+  ): Promise<BatchStepAbnormalDispositionItem> {
+    return acceptProcessInspection(
+      this.pool,
+      this.processInspections,
+      batchId,
+      stepId,
+      payload,
+      context,
+    );
   }
 
   async listReworks(batchId: string): Promise<ReworkRecordView[]> {
@@ -113,7 +155,8 @@ export class MysqlProductionAbnormalRepository extends ProductionAbnormalReposit
       );
       await audit(connection, context, 'production-abnormal.approve-rework', dispositionId, {
         reworkId: String(created.insertId),
-        sourceReportId: String(source.batch_step_report_id),
+        sourceReportId:
+          source.batch_step_report_id === null ? null : String(source.batch_step_report_id),
         reworkQuantity: String(source.abnormal_quantity),
       });
       return selectRework(connection, String(created.insertId));
@@ -149,7 +192,8 @@ export class MysqlProductionAbnormalRepository extends ProductionAbnormalReposit
       if (updated.affectedRows !== 1) throw concurrentDisposition();
       await audit(connection, context, 'production-abnormal.reject', dispositionId, {
         reason: payload.reason,
-        sourceReportId: String(source.batch_step_report_id),
+        sourceReportId:
+          source.batch_step_report_id === null ? null : String(source.batch_step_report_id),
         reversalReportId,
       });
       return mapDisposition(await selectDispositionSource(connection, dispositionId));
@@ -324,6 +368,8 @@ const selectDispositionSource = async (
 };
 
 const requireEffectiveAbnormalSource = (source: DispositionSourceRow): void => {
+  if (source.source_type === 'process_inspection' && integerQuantity(source.abnormal_quantity) > 0)
+    return;
   if (
     source.report_type !== 'normal' ||
     !source.is_effective ||
@@ -333,6 +379,11 @@ const requireEffectiveAbnormalSource = (source: DispositionSourceRow): void => {
 };
 
 const requireRejectableDirectAbnormalSource = (source: DispositionSourceRow): void => {
+  if (source.source_type === 'process_inspection' || source.quantity_scope === 'inspection')
+    throw new ProductionDomainError(
+      'INVALID_STATE',
+      '专检来源异常及其返工结果不能驳回报工；尚未由产线处理的检查填写错误应由质检人员更正',
+    );
   requireEffectiveAbnormalSource(source);
   if (!source.is_direct_report)
     throw new ProductionDomainError(
@@ -407,12 +458,13 @@ const insertReworkReport = async (
 ): Promise<string> => {
   const [result] = await connection.execute<ResultSetHeader>(
     `INSERT INTO batch_step_reports
-     (report_no,production_batch_id,batch_step_record_id,report_type,reported_quantity,normal_quantity,abnormal_quantity,abnormal_origin,unit_snapshot,remark,created_by)
-     VALUES (?,?,?,'normal',?,?,?,?,?,?,?)`,
+     (report_no,production_batch_id,batch_step_record_id,report_type,quantity_scope,reported_quantity,normal_quantity,abnormal_quantity,abnormal_origin,unit_snapshot,remark,created_by)
+     VALUES (?,?,?,'normal',?,?,?,?,?,?,?,?)`,
     [
       await allocateBusinessNumber(connection, 'step_report'),
       rework.productionBatchId,
       rework.stepRecordId,
+      rework.quantityScope,
       fixed(payload.normalQuantity + payload.abnormalQuantity),
       fixed(payload.normalQuantity),
       fixed(payload.abnormalQuantity),
@@ -488,19 +540,22 @@ const audit = (
 const REWORK_SELECT = `SELECT ${REWORK_COLUMNS} FROM rework_records rw`;
 
 const DISPOSITION_SOURCE_SELECT = `SELECT d.id,d.disposition_no,d.production_batch_id,
-  d.batch_step_record_id,d.batch_step_report_id,d.review_status,d.disposition_type,d.remark,d.version,
-  d.created_at,r.reported_quantity,r.normal_quantity,r.abnormal_quantity,r.abnormal_quantity source_abnormal_quantity,r.abnormal_origin,r.unit_snapshot,r.report_type,
+  d.batch_step_record_id,d.batch_step_report_id,d.source_type,d.process_inspection_id,d.process_inspection_record_id,d.review_status,d.disposition_type,d.remark,d.version,
+  d.created_at,r.reported_quantity,r.normal_quantity,COALESCE(d.inspection_quantity,r.abnormal_quantity) abnormal_quantity,
+  COALESCE(d.inspection_quantity,r.abnormal_quantity) source_abnormal_quantity,
+  COALESCE(r.abnormal_origin,'current_step') abnormal_origin,COALESCE(d.unit_snapshot,r.unit_snapshot) unit_snapshot,
+  r.report_type,COALESCE(r.quantity_scope,'inspection') quantity_scope,
   CASE WHEN NOT EXISTS (SELECT 1 FROM batch_step_reports reversal WHERE reversal.reversal_of_report_id=r.id FOR SHARE) THEN 1 ELSE 0 END is_effective,
   CASE WHEN NOT EXISTS (SELECT 1 FROM rework_records completed_rework
     WHERE completed_rework.completed_normal_report_id=r.id OR completed_rework.completed_abnormal_report_id=r.id FOR SHARE)
     THEN 1 ELSE 0 END is_direct_report,
   sr.responsible_user_id
   FROM batch_step_abnormal_dispositions d
-  JOIN batch_step_reports r ON r.id=d.batch_step_report_id
+  LEFT JOIN batch_step_reports r ON r.id=d.batch_step_report_id
   JOIN batch_step_records sr ON sr.id=d.batch_step_record_id`;
 
 const REPORT_SELECT = `SELECT r.id,r.report_no,r.production_batch_id,r.batch_step_record_id,
-  r.report_type,r.reversal_of_report_id,r.replaces_report_id,r.reported_quantity,r.normal_quantity,
+  r.report_type,r.quantity_scope,r.reversal_of_report_id,r.replaces_report_id,r.reported_quantity,r.normal_quantity,
   r.abnormal_quantity,r.abnormal_origin,r.unit_snapshot,r.remark,r.created_by,r.created_at,
   CASE WHEN r.report_type='reversal' THEN 1 WHEN NOT EXISTS (SELECT 1 FROM batch_step_reports reversal WHERE reversal.reversal_of_report_id=r.id) THEN 1 ELSE 0 END is_effective
   FROM batch_step_reports r`;

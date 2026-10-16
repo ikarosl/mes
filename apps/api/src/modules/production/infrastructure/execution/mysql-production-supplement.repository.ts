@@ -35,7 +35,10 @@ type SourceRow = RowDataPacket & {
   disposition_no: string;
   production_batch_id: number;
   batch_step_record_id: number;
-  batch_step_report_id: number;
+  batch_step_report_id: number | null;
+  source_type: 'report' | 'process_inspection';
+  process_inspection_id: number | null;
+  process_inspection_record_id: number | null;
   review_status: BatchStepAbnormalDispositionItem['reviewStatus'];
   disposition_type: BatchStepAbnormalDispositionItem['dispositionType'];
   remark: string | null;
@@ -62,7 +65,7 @@ type CandidateRow = RowDataPacket & {
   requirement_basis_id: number;
   product_material_id: number;
   item_id: number;
-  material_variant_id: number;
+  locked_material_variant_id: number;
   material_variant_code_snapshot: string;
   item_code_snapshot: string;
   item_name: string;
@@ -78,7 +81,7 @@ type PlanRow = RowDataPacket & {
   abnormal_disposition_id: number;
   production_batch_id: number;
   batch_step_record_id: number;
-  source_report_id: number;
+  source_report_id: number | null;
   status: 'draft' | 'confirmed';
   confirmed_supplement_id: number | null;
   remark: string | null;
@@ -122,7 +125,10 @@ export class MysqlProductionSupplementRepository extends ProductionSupplementRep
     return withTransaction(this.pool, async (connection) => {
       const actorId = requireActor(context);
       const sourceIdentity = await selectSource(connection, dispositionId);
-      await lockWorkOrderForBatch(connection, String(sourceIdentity.production_batch_id));
+      const orderPolicy = await lockWorkOrderForBatch(
+        connection,
+        String(sourceIdentity.production_batch_id),
+      );
       const batch = await findBatch(connection, String(sourceIdentity.production_batch_id), true);
       if (batch.status !== 'doing')
         throw new ProductionDomainError('INVALID_STATE', '仅生产执行中的异常可以暂存报废补料方案');
@@ -153,6 +159,24 @@ export class MysqlProductionSupplementRepository extends ProductionSupplementRep
       if (candidates.length !== ids.length)
         throw new ProductionDomainError('INVALID_INPUT', '补料物料不属于当前批次的有效正常需求');
       const byBasis = new Map(candidates.map((row) => [row.requirementBasisId, row]));
+      const planLines = payload.details.map((line) => {
+        const candidate = byBasis.get(line.requirementBasisId);
+        if (
+          !candidate ||
+          candidate.originalDemandId !== line.originalDemandId ||
+          !candidate.variants.some((variant) => variant.id === line.materialVariantId)
+        )
+          throw new ProductionDomainError('INVALID_INPUT', '补料版本不属于该基础物料的启用版本');
+        return { line, candidate };
+      });
+      for (const { line, candidate } of planLines) {
+        await requireTaskMaterialVariant(
+          connection,
+          orderPolicy,
+          candidate.itemId,
+          line.materialVariantId,
+        );
+      }
       const existing = await selectPlan(connection, dispositionId, true);
       let planId: number;
       if (!existing) {
@@ -203,15 +227,7 @@ export class MysqlProductionSupplementRepository extends ProductionSupplementRep
           [planId],
         );
       }
-      for (const line of payload.details) {
-        const candidate = byBasis.get(line.requirementBasisId);
-        if (
-          !candidate ||
-          candidate.originalDemandId !== line.originalDemandId ||
-          !candidate.variants.some((variant) => variant.id === line.materialVariantId)
-        ) {
-          throw new ProductionDomainError('INVALID_INPUT', '补料版本不属于该基础物料的启用版本');
-        }
+      for (const { line, candidate } of planLines) {
         await connection.execute(
           `INSERT INTO production_scrap_supplement_plan_line
            (plan_id,production_batch_id,original_demand_id,requirement_basis_id,product_material_id,item_id,
@@ -278,9 +294,7 @@ export class MysqlProductionSupplementRepository extends ProductionSupplementRep
     lock = false,
   ): Promise<ProductionSupplementCandidateItem[]> {
     const rows = await selectCandidates(connection, batchId, demandIds, lock);
-    // One candidate is exposed per frozen BOM basis. The normal demand is only
-    // the audit parent; the selected scrap version is independently chosen from
-    // every enabled version of that base material.
+    // 保留完整启用版本目录用于核验旧草稿；后续补料只能使用基础行冻结的版本。
     const firstByBasis = new Map<number, CandidateRow>();
     for (const row of rows) {
       if (!firstByBasis.has(row.requirement_basis_id))
@@ -350,8 +364,8 @@ export class MysqlProductionSupplementRepository extends ProductionSupplementRep
           '异常处置单已变化，请刷新后重试',
         );
       if (
-        source.report_type !== 'normal' ||
-        !source.is_effective ||
+        (source.source_type === 'report' &&
+          (source.report_type !== 'normal' || !source.is_effective)) ||
         integerQuantity(source.abnormal_quantity) <= 0
       )
         throw new ProductionDomainError('INVALID_STATE', '来源异常报工已失效或没有异常数量');
@@ -556,7 +570,8 @@ export class MysqlProductionSupplementRepository extends ProductionSupplementRep
         disposition: mapDisposition(await selectSource(connection, dispositionId)),
         scrapRecord: {
           scrapRecordId: String(scrap.insertId),
-          sourceReportId: String(source.batch_step_report_id),
+          sourceReportId:
+            source.batch_step_report_id === null ? null : String(source.batch_step_report_id),
           scrapQuantity: String(source.abnormal_quantity),
           unit: source.unit_snapshot,
         },
@@ -593,10 +608,10 @@ const selectSource = async (
 ): Promise<SourceRow> => {
   const [rows] = await connection.query<SourceRow[]>(
     `SELECT d.id,d.disposition_no,d.production_batch_id,d.batch_step_record_id,d.batch_step_report_id,
-      d.review_status,d.disposition_type,d.remark,d.version,d.created_at,r.report_type,r.abnormal_quantity,
-      r.abnormal_origin,r.unit_snapshot,s.route_step_id,s.step_order_snapshot,
+      d.source_type,d.process_inspection_id,d.process_inspection_record_id,d.review_status,d.disposition_type,d.remark,d.version,d.created_at,r.report_type,COALESCE(d.inspection_quantity,r.abnormal_quantity) abnormal_quantity,
+      COALESCE(r.abnormal_origin,'current_step') abnormal_origin,COALESCE(d.unit_snapshot,r.unit_snapshot) unit_snapshot,s.route_step_id,s.step_order_snapshot,
       NOT EXISTS(SELECT 1 FROM batch_step_reports rv WHERE rv.reversal_of_report_id=r.id) is_effective
-     FROM batch_step_abnormal_dispositions d JOIN batch_step_reports r ON r.id=d.batch_step_report_id
+     FROM batch_step_abnormal_dispositions d LEFT JOIN batch_step_reports r ON r.id=d.batch_step_report_id
      JOIN batch_step_records s ON s.id=d.batch_step_record_id
      WHERE d.id=?${lock ? ' FOR UPDATE' : ''}`,
     [dispositionId],
@@ -611,15 +626,17 @@ const selectCandidates = async (
   ids: string[] = [],
   lock = false,
 ): Promise<CandidateRow[]> => {
-  const filter = ids.length ? ` AND id IN (${ids.map(() => '?').join(',')})` : '';
+  const filter = ids.length ? ` AND demand.id IN (${ids.map(() => '?').join(',')})` : '';
   const [rows] = await connection.query<CandidateRow[]>(
-    `SELECT id,production_batch_id,requirement_basis_id,product_material_id,item_id,material_variant_id,
-      material_variant_code_snapshot,item_code_snapshot,${currentMaterialNameSql('production_item_demand.item_id')} item_name,quantity_per_unit_snapshot,unit_snapshot,
-      planned_output_quantity_snapshot,need_number
-     FROM production_item_demand
-     WHERE production_batch_id=? AND demand_type='normal'
-       AND business_status IN ('active','fulfilled')${filter}
-     ORDER BY id${lock ? ' FOR UPDATE' : ''}`,
+    `SELECT demand.id,demand.production_batch_id,demand.requirement_basis_id,demand.product_material_id,demand.item_id,
+      (SELECT basis.locked_material_variant_id FROM production_material_requirement_basis basis
+       WHERE basis.id=demand.requirement_basis_id) locked_material_variant_id,
+      demand.material_variant_code_snapshot,demand.item_code_snapshot,${currentMaterialNameSql('demand.item_id')} item_name,demand.quantity_per_unit_snapshot,demand.unit_snapshot,
+      demand.planned_output_quantity_snapshot,demand.need_number
+     FROM production_item_demand demand
+     WHERE demand.production_batch_id=? AND demand.demand_type='normal'
+       AND demand.business_status IN ('active','fulfilled')${filter}
+     ORDER BY demand.id${lock ? ' FOR UPDATE' : ''}`,
     [batchId, ...ids],
   );
   return rows;
@@ -654,7 +671,7 @@ const selectPlan = async (
     dispositionId: String(row.abnormal_disposition_id),
     productionBatchId: String(row.production_batch_id),
     sourceStepRecordId: String(row.batch_step_record_id),
-    sourceReportId: String(row.source_report_id),
+    sourceReportId: row.source_report_id === null ? null : String(row.source_report_id),
     status: row.status,
     confirmedSupplementId:
       row.confirmed_supplement_id === null ? null : String(row.confirmed_supplement_id),
@@ -685,8 +702,9 @@ const mapCandidate = (
   requirementBasisId: String(row.requirement_basis_id),
   productMaterialId: String(row.product_material_id),
   itemId: String(row.item_id),
-  materialVariantId: String(row.material_variant_id),
-  materialVariantCode: row.material_variant_code_snapshot,
+  lockedMaterialVariantId: String(row.locked_material_variant_id),
+  // 正常需求的组合外键包含冻结版本，编码沿用该不可变需求快照。
+  lockedMaterialVariantCode: row.material_variant_code_snapshot,
   variants,
   itemCode: row.item_code_snapshot,
   itemName: row.item_name,
@@ -701,7 +719,12 @@ const mapDisposition = (row: SourceRow): BatchStepAbnormalDispositionItem => ({
   dispositionNo: row.disposition_no,
   productionBatchId: String(row.production_batch_id),
   stepRecordId: String(row.batch_step_record_id),
-  sourceReportId: String(row.batch_step_report_id),
+  sourceReportId: row.batch_step_report_id === null ? null : String(row.batch_step_report_id),
+  sourceType: row.source_type,
+  processInspectionId:
+    row.process_inspection_id === null ? null : String(row.process_inspection_id),
+  processInspectionRecordId:
+    row.process_inspection_record_id === null ? null : String(row.process_inspection_record_id),
   sourceAbnormalQuantity: String(row.abnormal_quantity),
   abnormalOrigin: row.abnormal_origin,
   reviewStatus: row.review_status,

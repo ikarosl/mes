@@ -1,3 +1,10 @@
+import { ProcessInspectionService } from './application/process-inspection.service.js';
+import { ProcessInspectionRepository } from './application/ports/process-inspection.repository.js';
+import { QualityProcessInspectionCommand } from './application/quality-process-inspection.command.js';
+import { QualityProcessInspectionQuery } from './application/quality-process-inspection.query.js';
+import { QualityProcessInspectionSourceRegistry } from './application/quality-process-inspection-source.registry.js';
+import { MysqlProcessInspectionRepository } from './infrastructure/mysql-process-inspection.repository.js';
+import { ProcessInspectionController } from './presentation/http/process-inspection.controller.js';
 import { IdempotencyModule } from '../../infrastructure/idempotency/idempotency.module.js';
 import { IdentityModule } from '../identity/public.js';
 import { FinishedInspectionService } from './application/finished-inspection.service.js';
@@ -14,8 +21,14 @@ import { MysqlQualityInboundRepository } from './infrastructure/mysql-quality-in
 
 @Module({
   imports: [DatabaseModule, IdempotencyModule, IdentityModule],
-  controllers: [FinishedInspectionController],
+  controllers: [FinishedInspectionController, ProcessInspectionController],
   providers: [
+    ProcessInspectionService,
+    { provide: QualityProcessInspectionQuery, useExisting: ProcessInspectionService },
+    QualityProcessInspectionSourceRegistry,
+    MysqlProcessInspectionRepository,
+    { provide: ProcessInspectionRepository, useExisting: MysqlProcessInspectionRepository },
+    { provide: QualityProcessInspectionCommand, useExisting: MysqlProcessInspectionRepository },
     FinishedInspectionService,
     QualityFinishedInspectionSourceRegistry,
     MysqlQualityFinishedRepository,
@@ -26,6 +39,9 @@ import { MysqlQualityInboundRepository } from './infrastructure/mysql-quality-in
     { provide: QualityInboundQuery, useExisting: MysqlQualityInboundRepository },
   ],
   exports: [
+    QualityProcessInspectionCommand,
+    QualityProcessInspectionQuery,
+    QualityProcessInspectionSourceRegistry,
     QualityInboundCommand,
     QualityInboundQuery,
     QualityFinishedInspectionQuery,

@@ -46,7 +46,7 @@ export const selectExecutionBatchSummaries = async (
       (SELECT COUNT(*) FROM batch_step_records sr WHERE sr.production_batch_id=base.id) total_step_count,
       (SELECT COUNT(*) FROM batch_step_records sr WHERE sr.production_batch_id=base.id AND sr.status='completed') completed_step_count,
       COALESCE((SELECT SUM(CASE WHEN r.report_type='normal' THEN r.abnormal_quantity ELSE -r.abnormal_quantity END)
-        FROM batch_step_reports r WHERE r.production_batch_id=base.id),0) effective_abnormal,
+        FROM batch_step_reports r WHERE r.production_batch_id=base.id AND r.quantity_scope='production'),0) effective_abnormal,
       (SELECT COUNT(*) FROM batch_step_abnormal_dispositions d
         WHERE d.production_batch_id=base.id AND d.review_status='pending_review') pending_abnormal_count
      FROM (${BATCH_SUMMARY_SELECT} WHERE ${where}) base

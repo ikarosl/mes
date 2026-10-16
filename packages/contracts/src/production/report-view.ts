@@ -18,13 +18,13 @@ export interface BatchStepReportDependencyView extends BatchStepReportDependency
 }
 
 export interface BatchStepAbnormalDispositionView extends BatchStepAbnormalDispositionItem {
-  sourceReportNo: string;
-  sourceReportSourceKind: BatchStepReportSourceKind;
+  sourceReportNo: string | null;
+  sourceReportSourceKind: BatchStepReportSourceKind | null;
 }
 
 export interface ReworkRecordView extends ReworkRecordItem {
   abnormalDispositionNo: string;
-  sourceReportNo: string;
+  sourceReportNo: string | null;
   completedNormalReportNo: string | null;
   completedAbnormalReportNo: string | null;
   completedNormalQuantity: string | null;

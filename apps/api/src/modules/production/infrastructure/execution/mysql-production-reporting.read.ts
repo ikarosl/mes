@@ -210,7 +210,10 @@ export async function selectStepReportDetail(
         rework.completedAbnormalReportId === reportId,
     ) ?? null;
   const dispositions = await selectDispositionViews(db, batchId, [
-    ...new Set([reportId, ...reworks.map((rework) => rework.sourceReportId)]),
+    ...new Set([
+      reportId,
+      ...reworks.map((rework) => rework.sourceReportId).filter((id): id is string => id !== null),
+    ]),
   ]);
   return {
     ...mapReportView(

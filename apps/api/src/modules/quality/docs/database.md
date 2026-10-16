@@ -1,8 +1,8 @@
 # Quality 检验数据库
 
-本文维护共用检验事实的字段与约束；当前成品规则见[成品检验](finished-inspections.md)，来料来源授权见[正式清单](../../procurement/docs/receipt-acceptance.md)。跨模块决策理由见 [ADR-0015](../../../../../../docs/adr/0015-unified-quality-quantity-semantics.md)和精确取代成品数量旧裁决的 [ADR-0019](../../../../../../docs/adr/0019-finished-inspection-measurement-simplification.md)。Quality 拥有 `quality_inspection_case` 与 `quality_inspection_record`；Procurement 的整批处理轮次、正式数量授权和实际退回不由 Quality 写入。关系见[统一检验模型](unified-inspection-model.md)。
+本文维护共用检验事实的字段与约束；当前成品规则见[成品检验](finished-inspections.md)，来料来源授权见[正式清单](../../procurement/docs/receipt-acceptance.md)。跨模块决策理由见 [ADR-0015](../../../../../../docs/adr/0015-unified-quality-quantity-semantics.md)和精确取代成品数量旧裁决的 [ADR-0019](../../../../../../docs/adr/0019-finished-inspection-measurement-simplification.md)。Quality 拥有 `quality_inspection_case`、`quality_inspection_record`、`quality_process_inspection` 与 `quality_process_inspection_record`；后两表的完整字段、冲销更正及累计承接约束由[工序专检专题](process-inspections.md#数据库结构)维护，不并入来料／成品的检验办理。Procurement 的整批处理轮次、正式数量授权和实际退回不由 Quality 写入。来料与成品关系见[统一检验模型](unified-inspection-model.md)。
 
-两表使用 InnoDB、utf8mb4_0900_ai_ci；ID/人员外键为 BIGINT UNSIGNED，时间为北京时间 DATETIME，单条数量为 INT、0..99999999。办理使用完整可变审计及 version，结果只有创建审计。公共规则见[数据库约定](../../../../../../docs/database-conventions.md)。
+Quality 业务表使用 InnoDB、utf8mb4_0900_ai_ci；ID/人员外键为 BIGINT UNSIGNED，时间为北京时间 DATETIME，单条数量为 INT、0..99999999。办理与专检单使用完整可变审计及 version，结果只有创建审计。公共规则见[数据库约定](../../../../../../docs/database-conventions.md)。
 
 ## 检验办理 quality_inspection_case
 

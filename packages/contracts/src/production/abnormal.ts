@@ -12,7 +12,10 @@ export interface BatchStepAbnormalDispositionItem {
   dispositionNo: string;
   productionBatchId: string;
   stepRecordId: string;
-  sourceReportId: string;
+  sourceReportId: string | null;
+  sourceType: BatchStepAbnormalSourceType;
+  processInspectionId: string | null;
+  processInspectionRecordId: string | null;
   sourceAbnormalQuantity: string;
   abnormalOrigin: BatchStepAbnormalOrigin;
   reviewStatus: BatchStepAbnormalReviewStatus;
@@ -30,16 +33,26 @@ export interface RejectBatchStepAbnormalDispositionPayload extends VersionedComm
   reason: string;
 }
 
+export type BatchStepAbnormalSourceType = 'report' | 'process_inspection';
+export type BatchStepReportQuantityScope = 'production' | 'inspection';
+export interface AcceptProcessInspectionPayload extends VersionedCommand {
+  inspectionId: string;
+  recordId: string;
+  quantity: number;
+  remark?: string | null;
+}
+
 export interface ReworkRecordItem {
   reworkId: string;
   reworkNo: string;
   abnormalDispositionId: string;
   productionBatchId: string;
   stepRecordId: string;
-  sourceReportId: string;
+  sourceReportId: string | null;
   /** 批准时的来源工序负责人快照，仅用于追溯，不作为返工执行授权。 */
   responsibleUserId: string;
   responsibleUserName: string | null;
+  quantityScope: BatchStepReportQuantityScope;
   reworkQuantity: string;
   unit: string;
   status: ReworkStatus;

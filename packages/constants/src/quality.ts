@@ -78,3 +78,12 @@ export const PRODUCTION_OUTPUT_INSPECTION_METHODS = QUALITY_INSPECTION_METHODS;
 export const PRODUCTION_OUTPUT_INSPECTION_METHOD_LABELS = QUALITY_INSPECTION_METHOD_LABELS;
 export const PRODUCTION_OUTPUT_RELEASE_DECISIONS = QUALITY_RELEASE_DECISIONS;
 export const PRODUCTION_OUTPUT_RELEASE_DECISION_LABELS = QUALITY_RELEASE_DECISION_LABELS;
+
+export const PROCESS_INSPECTION_METHODS = ['full', 'sampling'] as const;
+export const PROCESS_INSPECTION_STATUSES = ['active', 'reversed'] as const;
+export const PROCESS_INSPECTION_STATUS_LABELS = { active: '有效', reversed: '已冲销' } as const;
+export const PROCESS_INSPECTION_RECORD_TYPES = ['normal', 'reversal'] as const;
+export const PROCESS_INSPECTION_RECORD_TYPE_LABELS = {
+  normal: '检查结果',
+  reversal: '冲销记录',
+} as const;

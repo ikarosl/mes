@@ -9,3 +9,13 @@ export type {
   FinishedInspectionSource,
 } from './application/quality-finished-inspection-source.registry.js';
 export { evaluateOutputInspection } from './domain/finished-inspection.policy.js';
+
+export { QualityProcessInspectionCommand } from './application/quality-process-inspection.command.js';
+export { QualityProcessInspectionQuery } from './application/quality-process-inspection.query.js';
+export type {
+  ProcessInspectionSource,
+  AcceptProcessInspectionInput,
+  AcceptedProcessInspection,
+} from './application/quality-process-inspection.command.js';
+export { QualityProcessInspectionSourceRegistry } from './application/quality-process-inspection-source.registry.js';
+export type { QualityProcessInspectionSourceHandler } from './application/quality-process-inspection-source.registry.js';

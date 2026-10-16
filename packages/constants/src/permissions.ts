@@ -16,6 +16,10 @@ export const PERMISSIONS = {
     },
   },
   quality: {
+    processInspections: {
+      view: 'quality:process-inspections:view',
+      record: 'quality:process-inspections:record',
+    },
     view: 'quality:view',
     finishedInspections: {
       view: 'quality:finished-inspections:view',

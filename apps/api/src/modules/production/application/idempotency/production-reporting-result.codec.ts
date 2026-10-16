@@ -1,3 +1,7 @@
+import {
+  BATCH_STEP_ABNORMAL_SOURCE_TYPES,
+  BATCH_STEP_REPORT_QUANTITY_SCOPES,
+} from '@company/constants';
 import { z } from 'zod';
 import {
   BATCH_STEP_ABNORMAL_REVIEW_STATUSES,
@@ -6,6 +10,7 @@ import {
   PRODUCTION_BATCH_STATUSES,
 } from '@company/constants';
 import type {
+  BatchStepAbnormalDispositionItem,
   BatchStepReportCommandResult,
   CorrectBatchStepReportCommandResult,
   BatchReverseStepReportsCommandResult,
@@ -29,6 +34,7 @@ const reportSchema = z
     productionBatchId: z.string(),
     stepRecordId: z.string(),
     reportType: z.enum(BATCH_STEP_REPORT_TYPES),
+    quantityScope: z.enum(BATCH_STEP_REPORT_QUANTITY_SCOPES),
     reversalOfReportId: z.string().nullable(),
     correctionOfReportId: z.string().nullable(),
     reportedQuantity: z.string(),
@@ -53,7 +59,10 @@ const dispositionSchema = z
     dispositionNo: z.string(),
     productionBatchId: z.string(),
     stepRecordId: z.string(),
-    sourceReportId: z.string(),
+    sourceReportId: z.string().nullable(),
+    sourceType: z.enum(BATCH_STEP_ABNORMAL_SOURCE_TYPES),
+    processInspectionId: z.string().nullable(),
+    processInspectionRecordId: z.string().nullable(),
     sourceAbnormalQuantity: z.string(),
     abnormalOrigin: z.enum(['current_step', 'previous_step']),
     reviewStatus: z.enum(BATCH_STEP_ABNORMAL_REVIEW_STATUSES),
@@ -148,3 +157,6 @@ export const batchReverseStepReportsResultCodec = {
   ...codec(batchReverseSchema),
   scope: BATCH_REVERSE_STEP_REPORTS_SCOPE,
 } as const;
+
+export const acceptProcessInspectionResultCodec: IdempotencyResultCodec<BatchStepAbnormalDispositionItem> =
+  codec(dispositionSchema);

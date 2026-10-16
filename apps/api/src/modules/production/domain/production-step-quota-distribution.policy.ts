@@ -302,6 +302,7 @@ export function calculateStepQuotaDistribution(
     facts.scraps.some((scrap) => !visitedScraps.has(scrap.scrapRecordId)) ||
     facts.dispositions.some(
       (item) =>
+        item.sourceReportId !== null &&
         !visited.has(item.sourceReportId) &&
         (!reversed.has(item.sourceReportId) ||
           !['rejected', 'cancelled'].includes(item.reviewStatus)),

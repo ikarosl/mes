@@ -10,7 +10,10 @@ type ScrapViewRow = RowDataPacket & {
   id: number;
   production_batch_id: number;
   batch_step_record_id: number;
-  source_report_id: number;
+  source_report_id: number | null;
+  source_type: 'report' | 'process_inspection';
+  process_inspection_id: number | null;
+  process_inspection_record_id: number | null;
   scrap_quantity: string;
   unit_snapshot: string;
   created_by: number;
@@ -40,8 +43,8 @@ type ScrapViewRow = RowDataPacket & {
 const SCRAP_JOINS = `
   JOIN batch_step_abnormal_dispositions d ON d.id=s.abnormal_disposition_id
     AND d.production_batch_id=s.production_batch_id AND d.batch_step_record_id=s.batch_step_record_id
-    AND d.batch_step_report_id=s.source_report_id
-  JOIN batch_step_reports source_report ON source_report.id=s.source_report_id
+    AND d.batch_step_report_id <=> s.source_report_id
+  LEFT JOIN batch_step_reports source_report ON source_report.id=s.source_report_id
     AND source_report.production_batch_id=s.production_batch_id AND source_report.batch_step_record_id=s.batch_step_record_id
   LEFT JOIN rework_records source_rework ON
     (source_rework.completed_normal_report_id=source_report.id OR source_rework.completed_abnormal_report_id=source_report.id)
@@ -71,6 +74,7 @@ export async function selectStepScrapPage(
   const [rows] = await db.query<ScrapViewRow[]>(
     `SELECT s.id,s.production_batch_id,s.batch_step_record_id,s.source_report_id,s.scrap_quantity,
       s.unit_snapshot,s.created_by,s.created_at,d.id disposition_id,d.disposition_no,d.remark disposition_remark,
+      d.source_type,d.process_inspection_id,d.process_inspection_record_id,
       source_report.report_no source_report_no,source_report.report_type source_report_type,
       source_report.normal_quantity source_report_normal,source_report.abnormal_quantity source_report_abnormal,
       source_report.remark source_report_remark,source_rework.id source_rework_id,
@@ -91,18 +95,29 @@ const mapScrapView = (row: ScrapViewRow): BatchStepScrapRecordView => ({
   stepRecordId: String(row.batch_step_record_id),
   scrapQuantity: fixedIntegerQuantity(row.scrap_quantity),
   unit: row.unit_snapshot,
-  sourceReport: {
-    reportId: String(row.source_report_id),
-    reportNo: row.source_report_no,
-    productionBatchId: String(row.production_batch_id),
-    stepRecordId: String(row.batch_step_record_id),
-  },
-  sourceReportSourceKind: reportSourceKind(
-    row.source_report_type,
-    row.source_report_normal,
-    row.source_report_abnormal,
-    row.source_rework_id !== null,
-  ),
+  sourceType: row.source_type,
+  processInspectionId:
+    row.process_inspection_id === null ? null : String(row.process_inspection_id),
+  processInspectionRecordId:
+    row.process_inspection_record_id === null ? null : String(row.process_inspection_record_id),
+  sourceReport:
+    row.source_report_id === null
+      ? null
+      : {
+          reportId: String(row.source_report_id),
+          reportNo: row.source_report_no,
+          productionBatchId: String(row.production_batch_id),
+          stepRecordId: String(row.batch_step_record_id),
+        },
+  sourceReportSourceKind:
+    row.source_report_id === null
+      ? null
+      : reportSourceKind(
+          row.source_report_type,
+          row.source_report_normal,
+          row.source_report_abnormal,
+          row.source_rework_id !== null,
+        ),
   sourceReportRemark: row.source_report_remark,
   dispositionId: String(row.disposition_id),
   dispositionNo: row.disposition_no,

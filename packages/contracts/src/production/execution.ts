@@ -9,7 +9,7 @@ import type {
   WorkOrderStatus,
 } from './statuses.js';
 import type { WorkOrderType } from './work-order.js';
-import type { BatchStepAbnormalDispositionItem } from './abnormal.js';
+import type { BatchStepAbnormalDispositionItem, BatchStepReportQuantityScope } from './abnormal.js';
 import type { ProductionStepSupplementSourceItem } from './supplement.js';
 import type { BatchStepAbnormalDispositionView } from './report-view.js';
 import type { ProductionStepQuotaDistribution } from './quota-distribution.js';
@@ -125,6 +125,7 @@ export interface BatchStepReportItem {
   productionBatchId: string;
   stepRecordId: string;
   reportType: BatchStepReportType;
+  quantityScope: BatchStepReportQuantityScope;
   reversalOfReportId: string | null;
   correctionOfReportId: string | null;
   reportedQuantity: string;

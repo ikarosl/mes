@@ -1,8 +1,8 @@
 # Quality
 
-Quality 拥有外购来料检验与复核、成品质检及复检的不可变记录和明确放行结论。采购实收和到货处置范围属于 Procurement；生产产出草稿、结案审批和批准清单属于 Production；实际入库属于 Inventory。
+Quality 拥有外购来料检验与复核、成品质检及复检的不可变记录和明确放行结论，以及任务工序的现场专检与冲销更正事实。采购实收和到货处置范围属于 Procurement；生产产出草稿、结案审批、批准清单及异常处置属于 Production；实际入库属于 Inventory。
 
-成品检查事实、请求语义及放行资格由[成品检验与放行](docs/finished-inspections.md)维护；来料核实数量、正式授权与建议例外由 Procurement 的[正式清单与整批分配](../procurement/docs/receipt-acceptance.md)维护。[统一检验模型](docs/unified-inspection-model.md)与[数据库](docs/database.md)描述当前 case/record 两表及来源边界；[ADR-0019](../../../../../docs/adr/0019-finished-inspection-measurement-simplification.md)取代旧成品 C/R/S 语义，[ADR-0015](../../../../../docs/adr/0015-unified-quality-quantity-semantics.md)保留其余共同边界。
+成品检查事实、请求语义及放行资格由[成品检验与放行](docs/finished-inspections.md)维护；来料核实数量、正式授权与建议例外由 Procurement 的[正式清单与整批分配](../procurement/docs/receipt-acceptance.md)维护。[统一检验模型](docs/unified-inspection-model.md)描述来料与成品共用 case/record 的来源边界；[数据库](docs/database.md)为 Quality 数据所有权入口。[工序专检](docs/process-inspections.md)维护独立专检单、结果事实、已处理下限及公开能力。[ADR-0019](../../../../../docs/adr/0019-finished-inspection-measurement-simplification.md)取代旧成品 C/R/S 语义，[ADR-0015](../../../../../docs/adr/0015-unified-quality-quantity-semantics.md)保留其余共同边界。
 
 公开入口为 [public.ts](public.ts)。`QualityInboundCommand` 提供 `startCase`、`completeCase`、`supersedeCases`；调用者必须先锁住到货与当前处理轮次，并在同池活动事务内执行。`QualityInboundQuery` 提供单个到货行的办理历史分页、单个及批量办理详情、在途检查及明确放行依据核验；查询边界见[数据库与查询](docs/database.md#迁移及查询)。公开错误 `QualityCommandError` 仅含稳定代码和业务说明，由调用方 presentation 映射 HTTP。
 
@@ -15,6 +15,10 @@ Quality 不导入或查询 Procurement。它按传入来源保存检验事实并
 **采购身份边界**：供应商逐采购行保存，按需求采购限定单工单。Quality 的来源粒度继续为单个到货明细及其修订／整批处理轮次，不合并不同明细或供应商检验。检验页面的 supplierId/supplierName 由 Procurement 查询按原采购行组装，Quality 不新增供应商归属字段、不查询采购表，统一检验表仍由Quality所有。显式复核状态、放行判定和不可变结论规则保持。
 
 验证使用 `corepack pnpm --filter @company/api typecheck`、`corepack pnpm architecture:check` 与 API 构建。交付、用户验收及正式测试顺序遵守 [AGENTS.md](../../../../../AGENTS.md#数据库与交付约定)。
+
+## 工序专检
+
+专检关联任务下具体工序，按现场范围记录全检或抽检 G/F，独立于具体报工。办理列表按工序汇总，工序内分页查看历次检查；冲销一次检查保留工序入口，符合执行资格时可以继续登记。已提交结果通过冲销与替代更正，任务进入结案或已结案后仍允许合法历史更正；产线在生产执行页面通过现有异常处置单处理已核实的不合格数量，由 `QualityProcessInspectionQuery` 提供同源只读依据，`QualityProcessInspectionCommand` 在同一事务维护逐次检查的累计已处理量。HTTP、权限、锁序、数据结构和重复检查边界见[工序专检专题](docs/process-inspections.md)；决策范围见 [ADR-0021](../../../../../docs/adr/0021-process-inspection-and-abnormal-disposition.md)。实施后的手工验收与正式测试状态由[路线图](../../../../../docs/roadmap.md)维护。
 
 ## 成品质检
 

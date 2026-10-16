@@ -10,6 +10,7 @@ export * from './inventory-target.js';
 export * from './execution.js';
 export * from './execution-actions.js';
 export * from './report-view.js';
+export * from './process-inspection-view.js';
 export * from './quota-distribution.js';
 export * from './scrap-view.js';
 export * from './abnormal.js';

@@ -10,6 +10,7 @@ import {
   BATCH_STEP_ABNORMAL_REVIEW_STATUS_LABELS,
   BATCH_STEP_REPORT_SOURCE_KIND_LABELS,
   BATCH_STEP_REWORK_RESULT_LABELS,
+  BATCH_STEP_INSPECTION_REWORK_RESULT_LABELS,
   REWORK_STATUS_LABELS,
 } from '@company/constants';
 import { formatQuantity, type StatusTagType } from './production-status';
@@ -33,6 +34,11 @@ export const reportQuantityChange = (quantity: string, report: BatchStepReportVi
 };
 
 export const reportBusinessLabel = (report: BatchStepReportView): string => {
+  if (report.quantityScope === 'inspection') {
+    return Number(report.normalQuantity) > 0
+      ? BATCH_STEP_INSPECTION_REWORK_RESULT_LABELS.normal
+      : BATCH_STEP_INSPECTION_REWORK_RESULT_LABELS.abnormal;
+  }
   if (report.sourceKind === 'rework_completion' && report.reworkOrigin) {
     if (report.reportId === report.reworkOrigin.completedNormalReportId)
       return BATCH_STEP_REWORK_RESULT_LABELS.normal;
@@ -101,19 +107,22 @@ export const reportRelations = (
 };
 
 export interface AbnormalProcessingGroup {
-  sourceReport: BatchStepReportReference;
+  sourceReport: BatchStepReportReference | null;
   disposition: BatchStepAbnormalDispositionView | null;
   rework: ReworkRecordView | null;
   completedNormalReport: BatchStepReportReference | null;
   completedAbnormalReport: BatchStepReportReference | null;
 }
 
-export const reworkSourceReference = (rework: ReworkRecordView): BatchStepReportReference => ({
-  reportId: rework.sourceReportId,
-  reportNo: rework.sourceReportNo,
-  productionBatchId: rework.productionBatchId,
-  stepRecordId: rework.stepRecordId,
-});
+export const reworkSourceReference = (rework: ReworkRecordView): BatchStepReportReference | null =>
+  rework.sourceReportId && rework.sourceReportNo
+    ? {
+        reportId: rework.sourceReportId,
+        reportNo: rework.sourceReportNo,
+        productionBatchId: rework.productionBatchId,
+        stepRecordId: rework.stepRecordId,
+      }
+    : null;
 
 export const reworkNormalResultReference = (
   rework: ReworkRecordView,
@@ -147,12 +156,18 @@ export const reworkResultReferences = (
   const abnormal = reworkAbnormalResultReference(rework);
   if (normal)
     references.push({
-      label: BATCH_STEP_REWORK_RESULT_LABELS.normal,
+      label:
+        rework.quantityScope === 'inspection'
+          ? BATCH_STEP_INSPECTION_REWORK_RESULT_LABELS.normal
+          : BATCH_STEP_REWORK_RESULT_LABELS.normal,
       report: normal,
     });
   if (abnormal)
     references.push({
-      label: BATCH_STEP_REWORK_RESULT_LABELS.abnormal,
+      label:
+        rework.quantityScope === 'inspection'
+          ? BATCH_STEP_INSPECTION_REWORK_RESULT_LABELS.abnormal
+          : BATCH_STEP_REWORK_RESULT_LABELS.abnormal,
       report: abnormal,
     });
   return references;
@@ -166,12 +181,15 @@ export const abnormalProcessingGroups = (
     const rework =
       reworks.find((item) => item.abnormalDispositionId === disposition.dispositionId) ?? null;
     return {
-      sourceReport: {
-        reportId: disposition.sourceReportId,
-        reportNo: disposition.sourceReportNo,
-        productionBatchId: disposition.productionBatchId,
-        stepRecordId: disposition.stepRecordId,
-      },
+      sourceReport:
+        disposition.sourceReportId && disposition.sourceReportNo
+          ? {
+              reportId: disposition.sourceReportId,
+              reportNo: disposition.sourceReportNo,
+              productionBatchId: disposition.productionBatchId,
+              stepRecordId: disposition.stepRecordId,
+            }
+          : null,
       disposition,
       rework,
       completedNormalReport: rework ? reworkNormalResultReference(rework) : null,
@@ -200,7 +218,9 @@ export const processingGroupPending = (group: AbnormalProcessingGroup): boolean 
   group.rework?.status === 'pending' ||
   group.rework?.status === 'doing';
 
-export const dispositionResultLabel = (item: BatchStepAbnormalDispositionView): string => {
+export const dispositionResultLabel = (
+  item: Pick<BatchStepAbnormalDispositionView, 'reviewStatus' | 'dispositionType'>,
+): string => {
   if (item.reviewStatus === 'approved' && item.dispositionType === 'rework') return '已批准返工';
   if (item.reviewStatus === 'approved' && item.dispositionType === 'scrap') return '已批准报废';
   return BATCH_STEP_ABNORMAL_REVIEW_STATUS_LABELS[item.reviewStatus];
@@ -215,16 +235,18 @@ export const processingGroupMeta = (
     return {
       label: REWORK_STATUS_LABELS[group.rework.status],
       type:
-        group.rework.status === 'completed'
-          ? 'success'
-          : group.rework.status === 'cancelled'
-            ? 'info'
-            : 'primary',
+        group.rework.status === 'completed' || group.rework.status === 'cancelled'
+          ? 'info'
+          : 'primary',
     };
   if (group.disposition)
     return {
       label: dispositionResultLabel(group.disposition),
-      type: group.disposition.reviewStatus === 'approved' ? 'success' : 'info',
+      type:
+        group.disposition.reviewStatus === 'approved' &&
+        group.disposition.dispositionType === 'scrap'
+          ? 'danger'
+          : 'info',
     };
   return { label: '处理记录', type: 'info' };
 };
@@ -232,9 +254,28 @@ export const processingGroupMeta = (
 const recordedResultQuantity = (quantity: string | null | undefined): string =>
   quantity === null || quantity === undefined ? '待核对' : formatQuantity(quantity);
 
+export const processingGroupKey = (group: AbnormalProcessingGroup): string =>
+  group.disposition
+    ? `disposition:${group.disposition.dispositionId}`
+    : `rework:${group.rework?.reworkId}`;
+
+export const processingGroupSourceLabel = (group: AbnormalProcessingGroup): string =>
+  group.sourceReport?.reportNo ??
+  (group.disposition?.processInspectionId
+    ? `工序专检 ID ${group.disposition.processInspectionId}`
+    : '工序专检处置');
+
+export const processingGroupResultLabel = (
+  group: AbnormalProcessingGroup,
+  kind: 'normal' | 'abnormal',
+): string =>
+  group.rework?.quantityScope === 'inspection'
+    ? BATCH_STEP_INSPECTION_REWORK_RESULT_LABELS[kind]
+    : BATCH_STEP_REWORK_RESULT_LABELS[kind];
+
 export const processingGroupSummary = (group: AbnormalProcessingGroup): string => {
   const parts = [
-    `${group.sourceReport.reportNo} · 异常 ${formatQuantity(group.disposition?.sourceAbnormalQuantity ?? group.rework?.reworkQuantity)}`,
+    `${processingGroupSourceLabel(group)} · 异常 ${formatQuantity(group.disposition?.sourceAbnormalQuantity ?? group.rework?.reworkQuantity)}`,
   ];
   if (group.disposition)
     parts.push(`${group.disposition.dispositionNo} · ${dispositionResultLabel(group.disposition)}`);
@@ -242,11 +283,11 @@ export const processingGroupSummary = (group: AbnormalProcessingGroup): string =
     parts.push(`${group.rework.reworkNo} · ${REWORK_STATUS_LABELS[group.rework.status]}`);
   if (group.completedNormalReport)
     parts.push(
-      `${group.completedNormalReport.reportNo} · ${BATCH_STEP_REWORK_RESULT_LABELS.normal} ${recordedResultQuantity(group.rework?.completedNormalQuantity)}`,
+      `${group.completedNormalReport.reportNo} · ${processingGroupResultLabel(group, 'normal')} ${recordedResultQuantity(group.rework?.completedNormalQuantity)}`,
     );
   if (group.completedAbnormalReport)
     parts.push(
-      `${group.completedAbnormalReport.reportNo} · ${BATCH_STEP_REWORK_RESULT_LABELS.abnormal} ${recordedResultQuantity(group.rework?.completedAbnormalQuantity)}`,
+      `${group.completedAbnormalReport.reportNo} · ${processingGroupResultLabel(group, 'abnormal')} ${recordedResultQuantity(group.rework?.completedAbnormalQuantity)}`,
     );
   return parts.join(' → ');
 };

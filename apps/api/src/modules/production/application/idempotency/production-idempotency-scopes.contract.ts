@@ -45,21 +45,21 @@ export const ADD_MANUAL_MATERIAL_DEMAND_IDEMPOTENCY_SCOPE =
   'production.material-demands.add-manual.v3' as const;
 export const CONFIRM_FINISHED_INBOUND_SCOPE = 'production.finished-inbound.confirm.v4' as const;
 /** 创建工序报工。 */
-export const CREATE_STEP_REPORT_IDEMPOTENCY_SCOPE = 'production.step-report.create.v4' as const;
+export const CREATE_STEP_REPORT_IDEMPOTENCY_SCOPE = 'production.step-report.create.v5' as const;
 /** 纯正常直接报工全量替代更正。 */
-export const CORRECT_STEP_REPORT_IDEMPOTENCY_SCOPE = 'production.step-report.correct.v5' as const;
+export const CORRECT_STEP_REPORT_IDEMPOTENCY_SCOPE = 'production.step-report.correct.v6' as const;
 /** 结案后普通正常报工历史补录和原子更正。 */
 export const CREATE_HISTORICAL_STEP_REPORT_SCOPE =
-  'production.step-report.history-create.v2' as const;
+  'production.step-report.history-create.v3' as const;
 export const CORRECT_HISTORICAL_STEP_REPORT_SCOPE =
-  'production.step-report.history-correct.v1' as const;
+  'production.step-report.history-correct.v2' as const;
 /** 同任务跨工序全部成功或全部回滚的全量冲销。 */
-export const BATCH_REVERSE_STEP_REPORTS_SCOPE = 'production.step-report.batch-reverse.v1' as const;
+export const BATCH_REVERSE_STEP_REPORTS_SCOPE = 'production.step-report.batch-reverse.v2' as const;
 /** 返工整单完成，正数正常恢复和再次异常分别形成结果报工。 */
-export const COMPLETE_REWORK_IDEMPOTENCY_SCOPE = 'production.rework.complete.v3' as const;
+export const COMPLETE_REWORK_IDEMPOTENCY_SCOPE = 'production.rework.complete.v4' as const;
 /** 异常报废补料方案确认并生成正式闭环事实。 */
 export const CONFIRM_SCRAP_SUPPLEMENT_PLAN_IDEMPOTENCY_SCOPE =
-  'production.abnormal.scrap-supplement-plan.confirm.v2' as const;
+  'production.abnormal.scrap-supplement-plan.confirm.v3' as const;
 /** 创建生产领料损耗补料。 */
 export const CREATE_MATERIAL_LOSS_IDEMPOTENCY_SCOPE = 'production.material-loss.create.v3' as const;
 /** 确认生产领料损耗补料。 */
@@ -76,3 +76,6 @@ export const RECORD_CLOSEOUT_MATERIAL_LOSS_SCOPE =
 
 /** 服务端按北京时间日期分配不可修改的工单号。 */
 export const CREATE_WORK_ORDER_IDEMPOTENCY_SCOPE = 'production.work-order.create.v4' as const;
+
+/** 依据当前专检结果承接部分不合格量，并原子维护专检消费下限。 */
+export const ACCEPT_PROCESS_INSPECTION_SCOPE = 'production.process-inspection.accept.v1' as const;

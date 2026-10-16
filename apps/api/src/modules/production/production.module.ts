@@ -1,3 +1,4 @@
+import { MysqlProductionProcessInspectionSource } from './infrastructure/execution/mysql-production-process-inspection-source.js';
 import { QualityModule } from '../quality/public.js';
 import { MysqlProductionFinishedInspectionSource } from './infrastructure/closeout/mysql-production-finished-inspection-source.js';
 import { InventoryModule } from '../inventory/public.js';
@@ -105,6 +106,7 @@ const executionControllers = [
   ProductionSupplementController,
 ];
 const executionProviders = [
+  MysqlProductionProcessInspectionSource,
   ProductionExecutionService,
   ProductionReportingService,
   ProductionAbnormalService,

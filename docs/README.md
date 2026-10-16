@@ -33,7 +33,7 @@
 - [Product](../apps/api/src/modules/product/README.md)：[数据库设计](../apps/api/src/modules/product/docs/database.md)
 - [Production](../apps/api/src/modules/production/README.md)：[数据库设计](../apps/api/src/modules/production/docs/database/README.md)、[内部职责](../apps/api/src/modules/production/docs/module-boundaries.md)
 - [Procurement](../apps/api/src/modules/procurement/README.md)：供应商、采购、到货、实收修订和仓库处置编排
-- [Quality](../apps/api/src/modules/quality/README.md)：来料与成品检验、复检、明确放行及不可变结论
+- [Quality](../apps/api/src/modules/quality/README.md)：来料与成品检验、复检、明确放行，以及工序专检与不可变检查事实
 - [Inventory](../apps/api/src/modules/inventory/README.md)：唯一库存账本、批次、入库和盘点
 - [Approval](../apps/api/src/modules/approval/README.md)：[数据库设计](../apps/api/src/modules/approval/docs/database.md)
 - [Notification](../apps/api/src/modules/notification/README.md)：[数据库设计](../apps/api/src/modules/notification/docs/database.md)
@@ -79,3 +79,4 @@
 - [成品质检只记录检查事实](adr/0019-finished-inspection-measurement-simplification.md)：取代成品 C/R/S，保留来料库管整批核实
 
 - [公共出入库单据与来源边界](adr/0020-shared-stock-documents-and-source-boundaries.md)：公共主从与内嵌来源的取舍、其他出库保护预留的反向读取例外
+- [工序专检与异常处置承接](adr/0021-process-inspection-and-abnormal-disposition.md)：独立现场检查、冲销更正下限与既有异常处理来源扩展

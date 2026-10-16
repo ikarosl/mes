@@ -5,7 +5,7 @@ VALUES
   ('生产管理员', 'production', '演示：维护产品资料和生产任务；库存操作由仓管办理', 1, NULL),
   ('仓管', 'warehouse', '演示：采购到货、库存查询、出入库、退料、领料损耗与盘点', 1, NULL),
   ('采购员', 'procurement', '演示：维护供应商和采购单，不办理到货、质检或库存记账', 1, NULL),
-  ('质检员', 'quality', '演示：来料检验与复核、成品质检，不办理库存记账', 1, NULL)
+  ('质检员', 'quality', '演示：来料检验与复核、成品质检和工序专检，不办理库存记账', 1, NULL)
 ON DUPLICATE KEY UPDATE
   name = VALUES(name),
   description = VALUES(description),
@@ -129,6 +129,8 @@ JOIN permissions p ON p.code IN (
   'production:material-demands:add-manual',
   'production:steps:manage-execution',
   'production:steps:manage-abnormal',
+  'quality:view',
+  'quality:process-inspections:view',
   'production:steps:assign',
   'production:rework:execute',
   'production:worker-tasks:view',
@@ -211,6 +213,8 @@ JOIN permissions p ON p.code IN (
   'quality:inbound-inspections:review',
   'quality:inbound-inspections:inspect',
   'quality:finished-inspections:view',
-  'quality:finished-inspections:record'
+  'quality:finished-inspections:record',
+  'quality:process-inspections:view',
+  'quality:process-inspections:record'
 )
 WHERE r.code = 'quality';

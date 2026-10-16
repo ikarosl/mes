@@ -20,3 +20,19 @@ export const BATCH_STEP_REWORK_RESULT_LABELS = {
   normal: '返工正常',
   abnormal: '返工异常',
 } as const;
+
+export const BATCH_STEP_ABNORMAL_SOURCE_TYPES = ['report', 'process_inspection'] as const;
+export const BATCH_STEP_ABNORMAL_SOURCE_TYPE_LABELS = {
+  report: '工序报工',
+  process_inspection: '工序专检',
+} as const;
+export const BATCH_STEP_REPORT_QUANTITY_SCOPES = ['production', 'inspection'] as const;
+export const BATCH_STEP_REPORT_QUANTITY_SCOPE_LABELS = {
+  production: '生产报工',
+  inspection: '专检处置',
+} as const;
+
+export const BATCH_STEP_INSPECTION_REWORK_RESULT_LABELS = {
+  normal: '专检返工合格（不计报工汇总）',
+  abnormal: '专检返工不合格（不计报工汇总）',
+} as const;

@@ -42,15 +42,25 @@
           :column="2"
           border
         >
-          <el-descriptions-item label="来源报工"
+          <el-descriptions-item
+            v-if="item.sourceReport"
+            label="来源报工"
             ><el-button
               link
               type="primary"
               @click="$emit('view-report', item.sourceReport)"
               >{{ item.sourceReport.reportNo }}</el-button
-            ><span class="source-kind">{{
-              BATCH_STEP_REPORT_SOURCE_KIND_LABELS[item.sourceReportSourceKind]
-            }}</span></el-descriptions-item
+            ><span
+              v-if="item.sourceReportSourceKind"
+              class="source-kind"
+              >{{ BATCH_STEP_REPORT_SOURCE_KIND_LABELS[item.sourceReportSourceKind] }}</span
+            ></el-descriptions-item
+          >
+          <el-descriptions-item
+            v-else
+            label="来源专检"
+            >专检单 ID {{ item.processInspectionId }} · 结果记录 ID
+            {{ item.processInspectionRecordId }}</el-descriptions-item
           >
           <el-descriptions-item label="源异常处置">{{ item.dispositionNo }}</el-descriptions-item>
           <el-descriptions-item label="记录人">{{
@@ -60,6 +70,7 @@
             formatDateTimeForDisplay(item.createdAt)
           }}</el-descriptions-item>
           <el-descriptions-item
+            v-if="item.sourceReport"
             label="来源报工说明"
             :span="2"
             >{{ item.sourceReportRemark || '未填写' }}</el-descriptions-item

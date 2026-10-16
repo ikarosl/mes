@@ -1,6 +1,6 @@
 # Production
 
-负责工单、生产任务、工序执行及异常处置，拥有生产需求、分配、损耗、结案和批准产出，以及领退料来源校验与办理编排；通过 [Inventory](../inventory/README.md) 公共能力写领退料单据和库存，通过 [Quality](../quality/README.md) 引用独立检验事实。公共出入库、库存、盘点与检验表不归 Production。
+负责工单、生产任务、工序执行及异常处置，拥有生产需求、分配、损耗、结案和批准产出，以及领退料来源校验与办理编排；通过 [Inventory](../inventory/README.md) 公共能力写领退料单据和库存，通过 [Quality](../quality/README.md) 引用独立检验事实并原子处理工序专检不合格量。公共出入库、库存、盘点与检验表不归 Production。
 
 ## 范围与边界
 
@@ -10,7 +10,7 @@
 | --- | --- |
 | 工单、任务、批量锁版、研发轮次 | [工单与任务](docs/database/work-orders-and-batches.md) |
 | 提需、分配、分次领料、需求更正 | [需求与履约](docs/database/demand-allocation-and-outbound.md) |
-| 派工、SOP、报工、异常、返工、补产 | [生产执行](docs/database/execution-traceability-quality.md) |
+| 派工、SOP、报工、专检处理、异常、返工、补产 | [生产执行](docs/database/execution-traceability-quality.md) |
 | 退料、已领物料损耗 | [退料与损耗](docs/database/return-scrap-and-stocktake.md) |
 | 收尾、物料实核、产出清单及审批 | [任务结案](docs/database/production-termination.md) |
 | 批准成品入库与类别冻结 | [成品入库](docs/database/finished-goods-inbound.md) |

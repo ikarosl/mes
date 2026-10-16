@@ -418,7 +418,7 @@ Production 统一拥有一套补料履约判定与状态推进能力，由需求
 | `abnormal_disposition_id`     | `BIGINT UNSIGNED` | 来源待处置异常 ID，唯一；同一异常只有一个当前方案            |
 | `production_batch_id`         | `BIGINT UNSIGNED` | 生产批次 ID                                                  |
 | `batch_step_record_id`        | `BIGINT UNSIGNED` | 异常上报工序执行节点 ID                                      |
-| `source_report_id`            | `BIGINT UNSIGNED` | 来源异常报工事实 ID                                          |
+| `source_report_id`            | `BIGINT UNSIGNED` | 可空；报工来源关联异常报工，专检来源通过处置单追溯 |
 | `status`                      | `VARCHAR(20)`     | `draft`、`confirmed`                                         |
 | `confirmed_supplement_id`     | `BIGINT UNSIGNED` | 最终确认后生成的补料物流单 ID；草稿为空                      |
 | `remark`                      | `TEXT`            | 方案及最终审批说明                                           |
@@ -436,7 +436,7 @@ Production 统一拥有一套补料履约判定与状态推进能力，由需求
 | `requirement_basis_id`| `BIGINT UNSIGNED` | 当前批次冻结的 BOM 需求基础 ID                          |
 | `product_material_id` | `BIGINT UNSIGNED` | BOM 明细 ID                                             |
 | `item_id`             | `BIGINT UNSIGNED` | 物料 ID                                                 |
-| `material_variant_id` | `BIGINT UNSIGNED` | 管理员选择的精确物料版本 ID                             |
+| `material_variant_id` | `BIGINT UNSIGNED` | 管理员确认的任务冻结精确物料版本 ID                     |
 | `planned_quantity`    | `INT`   | 管理员填写并暂存的补料数量，必须大于 `0`                |
 | `unit_snapshot`       | `VARCHAR(20)`     | 原始正常需求的单位快照                                   |
 | 业务审计字段          | 见统一规则        | `created_by/created_at/updated_by/updated_at`             |
@@ -444,14 +444,16 @@ Production 统一拥有一套补料履约判定与状态推进能力，由需求
 数据库约束与应用规则：
 
 - `UNIQUE (abnormal_disposition_id)`；方案与异常处置一对一，不用新增方案覆盖旧方案。
-- 来源异常使用 `(abnormal_disposition_id, production_batch_id, batch_step_record_id, source_report_id)` 组合外键，禁止跨批次、跨工序或跨报工暂存。
+- 来源异常使用 `(abnormal_disposition_id, production_batch_id, batch_step_record_id, source_report_id)` 组合外键保护报工来源；同处置、任务、工序另设组合外键，专检来源的报工 ID 为空。
 - `draft` 要求 `confirmed_supplement_id IS NULL`；`confirmed` 要求其非空且指向同批次 `production_material_supplement`。
 - 明细使用 `(plan_id, original_demand_id)` 唯一约束；原始需求、批次、BOM 明细和物料使用组合外键保持一致。
 - 草稿可通过 `version` 乐观锁反复整体替换明细；每次保存必须记录成功操作日志。`confirmed` 为终态，不得恢复为 `draft` 或继续编辑。
-- 草稿保存同时提交 `planVersion` 和 `dispositionVersion`，分别防止覆盖旧方案和基于过期异常暂存；保存不改变异常处置状态。最终确认命令及内部持久化端口仅接受方案 `version` 和 `dispositionVersion`，锁内读取已保存的方案明细和说明，不接收再次提交的批准明细；只有复核后的最终确认才生成正式事实，不提供绕过方案复核的直接批准入口。
+- 草稿保存同时提交 `planVersion` 和 `dispositionVersion`，分别防止覆盖旧方案和基于过期异常暂存；保存不改变异常处置状态。保存与最终确认均在锁内通过任务用料能力校验每条物料必须使用本任务初配冻结版本，且版本仍启用；其他启用版本也不能暂存。最终确认命令及内部持久化端口仅接受方案 `version` 和 `dispositionVersion`，锁内读取已保存的方案明细和说明，不接收再次提交的批准明细；只有复核后的最终确认才生成正式事实，不提供绕过方案复核的直接批准入口。
 - 草稿行不是需求事实，因此不写 `production_item_demand`、不产生幂等需求键，也不允许分配和出库。
-- 最终确认必须锁定待处置异常及方案版本，重新校验来源报工有效、完整 BOM 需求基础、启用物料版本和数量；同一事务批准异常、创建工序报废事实、补产授权、补料单、正式需求，将方案转为 `confirmed` 并关联补料单，同时提交成功审计和 HTTP 幂等结果。
+- 最终确认必须锁定待处置异常及方案版本，重新校验处置来源有效（报工有效或已正式承接的专检量）、完整 BOM 需求基础、启用物料版本和数量；同一事务批准异常、创建工序报废事实、补产授权、补料单、正式需求，将方案转为 `confirmed` 并关联补料单，同时提交成功审计和 HTTP 幂等结果。
 - 当前不计算或保存推荐补料数量。候选来自批次完整 BOM 基础，`planned_quantity` 完全由管理员填写；工序级定量 BOM 未定稿前不得用产品 BOM 总用量或异常数量自动推算。
+
+补料候选契约 `ProductionSupplementCandidateItem` 的 `lockedMaterialVariantId` 明确读取 `production_material_requirement_basis.locked_material_variant_id`；`lockedMaterialVariantCode` 使用对应初始正常需求的版本编码快照，其含版本组合外键保证与冻结版本一致。`variants` 保留该物料当前完整启用版本目录供资格核验；目录包含其他版本不授予换版资格，冻结版本不在目录中表示当前不能补料，不自动选择替代版本。
 
 状态机：
 
@@ -501,18 +503,18 @@ approved -> fulfilled / cancelled（仅批次结束）
 ```
 
 - 本表状态只表达补料物流是否齐套，不表达异常审批结果、报废事实是否成立或产品补产授权是否存在。状态转换由最后一项补料确认领用事务触发，必须递增 `version`；终态不得通过通用更新接口恢复为 `approved`。
-- `source_type = 'step_scrap_reproduction'`：管理员批准工序异常为报废时，同一事务创建工序报废事实、产品补产授权、本补料单以及一到多条 `scrap_supplement` 需求。候选来自当前批次冻结的完整 BOM 需求基础，不按发生报废的工序裁剪；管理员选择基础物料下的具体启用版本及补料数量。
+- `source_type = 'step_scrap_reproduction'`：管理员批准工序异常为报废时，同一事务创建工序报废事实、产品补产授权、本补料单以及一到多条 `scrap_supplement` 需求。候选来自当前批次冻结的完整 BOM 需求基础，不按发生报废的工序裁剪；管理员选择基础物料，确认本任务冻结版本仍启用并填写补料数量。
 - 每张补料单创建时必须至少拥有一条 `business_status = 'active'` 且类型与 `source_type` 匹配的直接需求；后续齐套须按前述生效更正链判断全部当前要求。最后一项直接需求的已确认出库累计达到 `need_number` 时，同一事务把补料单转为 `fulfilled`，写入 `fulfilled_by/fulfilled_at`、递增 `version` 并记录成功审计。
 - 工序报废补料单进入 `fulfilled` 后，对应 `batch_step_scrap_reproduction_authorization.authorized_quantity` 才进入路线数量公式，刷新各工序统一上限，不改变工序状态。
 
 ### `batch_step_scrap_records` 与半自动补料
 
-- `batch_step_scrap_records` 是已批准不可返工的工序损失事实：对 `abnormal_disposition_id` 唯一，保存批次、工序、来源报工、异常数量和单位快照；只追加、不更新、不删除。
+- `batch_step_scrap_records` 是已批准不可返工的工序损失事实：对 `abnormal_disposition_id` 唯一，保存批次、工序、可空来源报工、处置数量和单位快照；专检来源沿异常处置追溯专检单及结果；只追加、不更新、不删除。
 - `batch_step_scrap_reproduction_authorization` 是“工序报废补产授权”的不可变事实。它对报废事实和补料单分别唯一，固定生产批次、首工序入口、补产额度截止工序、授权数量和审批人/时间。物料候选不属于路线授权范围。表名显式包含 `scrap`，避免与返工混淆。
 - `production_material_supplement` 是工序报废补料的物流主单；完整字段与约束见上节。状态表示 `approved`（等待补料领用）、`fulfilled`（全部直接需求已确认领用）或 `cancelled`（随本轮结束取消），不承担“是否批准补产”的语义。
 - 补料单直接通过 `production_item_demand.supplement_id` 拥有需求：工序报废来源拥有一到多条 `scrap_supplement`；不另设与需求的物料、数量、单位、原需求重复的补料明细。
 - 系统只提供候选物料，不自动计算每种物料的补料数量。管理员选择物料并手工填写数量，系统不得使用工序异常数量乘 BOM 用量推算补料数量。
-- 报工异常仍必须说明 `abnormal_origin`，但批准报废补料不选择物料截止工序；候选物料来自当前批次完整的 BOM 基础，管理员按基础行明确选择启用版本和数量。
+- 报工异常仍必须说明 `abnormal_origin`，但批准报废补料不选择物料截止工序；候选物料来自当前批次完整的 BOM 基础，管理员按基础行确认冻结启用版本并填写数量。
 - 路线只表达执行顺序，不存在 `route_step_materials` 或按工序范围推导补料候选的旁路语义。
 - 系统校验管理员选择的物料属于当前产品与当前候选、补料数量大于 `0`、单位与原需求口径一致；最终选择直接固化为新增需求的 BOM/物料/数量/单位快照和 `parent_demand_id`。
 - 批准报废与补料是一个原子命令：处置单批准、工序报废事实、补产授权、补料单、每条 `scrap_supplement` 需求、成功审计和 HTTP 幂等结果同事务提交。

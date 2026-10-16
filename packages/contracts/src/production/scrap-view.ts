@@ -1,3 +1,4 @@
+import type { BatchStepAbnormalSourceType } from './abnormal.js';
 import type {
   BatchStepScrapReproductionAuthorizationItem,
   ProductionMaterialSupplementItem,
@@ -23,8 +24,11 @@ export interface BatchStepScrapRecordView {
   stepRecordId: string;
   scrapQuantity: string;
   unit: string;
-  sourceReport: BatchStepReportReference;
-  sourceReportSourceKind: BatchStepReportSourceKind;
+  sourceType: BatchStepAbnormalSourceType;
+  processInspectionId: string | null;
+  processInspectionRecordId: string | null;
+  sourceReport: BatchStepReportReference | null;
+  sourceReportSourceKind: BatchStepReportSourceKind | null;
   sourceReportRemark: string | null;
   dispositionId: string;
   dispositionNo: string;

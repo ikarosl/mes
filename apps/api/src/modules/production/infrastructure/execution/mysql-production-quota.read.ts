@@ -25,7 +25,7 @@ type ScrapRow = RowDataPacket & {
   production_batch_id: number;
   batch_step_record_id: number;
   abnormal_disposition_id: number;
-  source_report_id: number;
+  source_report_id: number | null;
   scrap_quantity: string;
   unit_snapshot: string;
 };
@@ -44,9 +44,9 @@ export async function selectStepQuotaFacts(
 ): Promise<StepQuotaReadFacts> {
   if (stepRecordIds.length === 0) return { reports: [], dispositions: [], reworks: [], scraps: [] };
   const placeholders = stepRecordIds.map(() => '?').join(',');
-  const dispositions = await selectStepDispositionViews(db, stepRecordIds);
+  const allDispositions = await selectStepDispositionViews(db, stepRecordIds);
   const [reportRows] = await db.query<ReportRow[]>(
-    `SELECT ${REPORT_FIELDS} FROM batch_step_reports r WHERE r.batch_step_record_id IN (${placeholders}) ORDER BY r.id`,
+    `SELECT ${REPORT_FIELDS} FROM batch_step_reports r WHERE r.batch_step_record_id IN (${placeholders}) AND r.quantity_scope='production' ORDER BY r.id`,
     [...stepRecordIds],
   );
   const [reworkRows] = await db.query<ReworkRow[]>(
@@ -59,19 +59,22 @@ export async function selectStepQuotaFacts(
      FROM batch_step_scrap_records WHERE batch_step_record_id IN (${placeholders}) ORDER BY id`,
     [...stepRecordIds],
   );
+  const productionReports = new Set(reportRows.map((row) => String(row.id)));
   return {
     reports: reportRows.map((row) => mapReport(row)),
-    dispositions,
-    reworks: reworkRows.map(mapRework),
-    scraps: scrapRows.map((row): StepQuotaScrapFact => ({
-      scrapRecordId: String(row.id),
-      productionBatchId: String(row.production_batch_id),
-      stepRecordId: String(row.batch_step_record_id),
-      dispositionId: String(row.abnormal_disposition_id),
-      sourceReportId: String(row.source_report_id),
-      quantity: String(row.scrap_quantity),
-      unit: row.unit_snapshot,
-    })),
+    dispositions: allDispositions,
+    reworks: reworkRows.filter((row) => row.quantity_scope === 'production').map(mapRework),
+    scraps: scrapRows
+      .filter((row) => productionReports.has(String(row.source_report_id)))
+      .map((row): StepQuotaScrapFact => ({
+        scrapRecordId: String(row.id),
+        productionBatchId: String(row.production_batch_id),
+        stepRecordId: String(row.batch_step_record_id),
+        dispositionId: String(row.abnormal_disposition_id),
+        sourceReportId: String(row.source_report_id),
+        quantity: String(row.scrap_quantity),
+        unit: row.unit_snapshot,
+      })),
   };
 }
 
@@ -82,7 +85,14 @@ export function calculateStepQuotaDistributions(
 ): Map<string, ProductionStepQuotaDistribution> {
   const reportsByStep = groupRowsBy(facts.reports, (row) => row.stepRecordId);
   const reworksByStep = groupRowsBy(facts.reworks, (row) => row.stepRecordId);
-  const dispositionsByStep = groupRowsBy(facts.dispositions, (row) => row.stepRecordId);
+  // 执行页仍需完整异常待办；仅额度分类排除专检及其后继返工分支。
+  const productionReportIds = new Set(facts.reports.map((row) => row.reportId));
+  const dispositionsByStep = groupRowsBy(
+    facts.dispositions.filter(
+      (row) => row.sourceReportId !== null && productionReportIds.has(row.sourceReportId),
+    ),
+    (row) => row.stepRecordId,
+  );
   const scrapsByStep = groupRowsBy(facts.scraps, (row) => row.stepRecordId);
   return new Map(
     steps.map((step) => {

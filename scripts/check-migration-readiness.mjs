@@ -25,6 +25,8 @@ const allowedTables = new Set([
   'quality_finished_inspection',
   'quality_inspection_case',
   'quality_inspection_record',
+  'quality_process_inspection',
+  'quality_process_inspection_record',
   'procurement_receipt_acceptance',
   'procurement_receipt_acceptance_line', // Historical migration ownership.
   'procurement_receipt_allocation',

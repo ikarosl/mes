@@ -4,7 +4,7 @@
 
 ## 1. 当前启用范围
 
-幂等按端点显式启用，以 Controller 的 `@IdempotentEndpoint({ scope })` 和 application scope 契约为准：[Production](../src/modules/production/application/idempotency/production-idempotency-scopes.contract.ts)、[Procurement](../src/modules/procurement/application/idempotency/procurement-idempotency-scopes.contract.ts)、[Quality](../src/modules/quality/application/idempotency/finished-inspection-idempotency.contract.ts)、[Inventory](../src/modules/inventory/application/idempotency/other-inventory-idempotency-scopes.contract.ts)。本文不复制命令与版本清单。
+幂等按端点显式启用，以 Controller 的 `@IdempotentEndpoint({ scope })` 和 application scope 契约为准：[Production](../src/modules/production/application/idempotency/production-idempotency-scopes.contract.ts)、[Procurement](../src/modules/procurement/application/idempotency/procurement-idempotency-scopes.contract.ts)、[Quality 成品质检](../src/modules/quality/application/idempotency/finished-inspection-idempotency.contract.ts)、[Quality 工序专检](../src/modules/quality/application/idempotency/process-inspection-idempotency.contract.ts)、[Inventory](../src/modules/inventory/application/idempotency/other-inventory-idempotency-scopes.contract.ts)。本文不复制命令与版本清单。
 
 客户端只发送 Idempotency-Key，不传 scope。未启用端点含 Public 携带任意键（空值／超长值也包括）返回 `400 IDEMPOTENCY_NOT_SUPPORTED`；启用端点缺少键或 trim 后长度不在 1～150 返回 `400 VALIDATION_ERROR`。不能忽略 header 制造伪幂等信号，也不能仅按 HTTP 方法扩大启用范围。
 

@@ -1,3 +1,7 @@
+import {
+  BATCH_STEP_ABNORMAL_SOURCE_TYPES,
+  BATCH_STEP_REPORT_QUANTITY_SCOPES,
+} from '@company/constants';
 import { z } from 'zod';
 import {
   BATCH_STEP_ABNORMAL_DISPOSITION_TYPES,
@@ -21,7 +25,10 @@ const dispositionSchema = z
     dispositionNo: z.string(),
     productionBatchId: z.string(),
     stepRecordId: z.string(),
-    sourceReportId: z.string(),
+    sourceReportId: z.string().nullable(),
+    sourceType: z.enum(BATCH_STEP_ABNORMAL_SOURCE_TYPES),
+    processInspectionId: z.string().nullable(),
+    processInspectionRecordId: z.string().nullable(),
     sourceAbnormalQuantity: quantitySchema,
     abnormalOrigin: z.enum(BATCH_STEP_ABNORMAL_ORIGINS),
     reviewStatus: z.enum(BATCH_STEP_ABNORMAL_REVIEW_STATUSES),
@@ -39,6 +46,7 @@ const reportSchema = z
     productionBatchId: z.string(),
     stepRecordId: z.string(),
     reportType: z.enum(BATCH_STEP_REPORT_TYPES),
+    quantityScope: z.enum(BATCH_STEP_REPORT_QUANTITY_SCOPES),
     reversalOfReportId: z.string().nullable(),
     correctionOfReportId: z.string().nullable(),
     reportedQuantity: quantitySchema,
@@ -64,7 +72,8 @@ const reworkSchema = z
     abnormalDispositionId: z.string(),
     productionBatchId: z.string(),
     stepRecordId: z.string(),
-    sourceReportId: z.string(),
+    sourceReportId: z.string().nullable(),
+    quantityScope: z.enum(BATCH_STEP_REPORT_QUANTITY_SCOPES),
     responsibleUserId: z.string(),
     responsibleUserName: z.string().nullable(),
     reworkQuantity: quantitySchema,
@@ -106,6 +115,7 @@ const schema = z
       report.productionBatchId === rework.productionBatchId &&
       report.stepRecordId === rework.stepRecordId &&
       report.unit === rework.unit &&
+      report.quantityScope === rework.quantityScope &&
       report.reportId !== rework.sourceReportId &&
       report.reportType === 'normal' &&
       report.reversalOfReportId === null &&

@@ -14,8 +14,8 @@ export interface ProductionSupplementCandidateItem {
   requirementBasisId: string;
   productMaterialId: string;
   itemId: string;
-  materialVariantId: string;
-  materialVariantCode: string;
+  lockedMaterialVariantId: string;
+  lockedMaterialVariantCode: string;
   variants: ProductionSupplementVariantCandidate[];
   itemCode: string;
   itemName: string;
@@ -51,7 +51,7 @@ export interface ProductionScrapSupplementPlanItem {
   dispositionId: string;
   productionBatchId: string;
   sourceStepRecordId: string;
-  sourceReportId: string;
+  sourceReportId: string | null;
   status: 'draft' | 'confirmed';
   confirmedSupplementId: string | null;
   remark: string | null;
@@ -123,7 +123,7 @@ export interface ApproveScrapSupplementResult {
   disposition: BatchStepAbnormalDispositionItem;
   scrapRecord: {
     scrapRecordId: string;
-    sourceReportId: string;
+    sourceReportId: string | null;
     scrapQuantity: string;
     unit: string;
   };

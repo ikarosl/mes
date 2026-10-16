@@ -167,6 +167,12 @@ up 对齐 [constants 显式目录](../../constants/src/permission-catalog.ts)：
 
 down 恢复本次切换前的权限编码和元数据快照，不恢复已清理的角色配置或推测角色授权；新增目录节点的授权随节点移除。开发／演示基础角色与账号由 [system seed](../seed/README.md) 和 [demo](../demo/README.md) 恢复，不依赖历史业务数据。不得在对应旧应用运行时使用新版权限编码，或将目录回滚成功视为业务和用户验收通过。
 
+### 202610150002：工序专检与异常来源
+
+暂停 Quality 专检、Production 报工、异常处置、返工、报废补料和收尾写入，迁移后同步切换 API 与管理端。up 新建 Quality 的 `quality_process_inspection` 根与不可变结果事实表，扩展既有异常处置的互斥来源、专检承接数量及对应下游可空报工引用；现有报工均使用 `production` 计数范围，不推测已有质量事实，不创建承接影子表。新专检页面与登记权限只发布目录，不自动授予已有角色；开发演示授权通过显式 demo 初始化恢复。
+
+down 在首个永久 DDL 前拒绝任何专检根／结果、专检来源处置、`inspection` 范围报工或没有报工来源的返工／报废／补料方案；不得通过删除真实业务事实绕过回滚保护。允许回滚时恢复报工必填来源及约束、删除空专检结构与新增权限目录，不恢复角色历史授权。DDL 中断时保持停写，核对实际约束和迁移登记，不修改已执行文件。业务事实、更正下限和跨模块所有权见 [Quality](../../../apps/api/src/modules/quality/README.md)及 [ADR-0021](../../../docs/adr/0021-process-inspection-and-abnormal-disposition.md)。
+
 ## 验证边界
 
 - 空库 fresh 验证应用全量迁移后再次运行，核对无待执行或校验和冲突；`db:init` 不能替代迁移验证。

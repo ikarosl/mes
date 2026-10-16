@@ -289,6 +289,13 @@
                     @history="stepActionDialogsRef?.openHistory(step)"
                   />
                   <div class="report-actions">
+                    <el-button
+                      link
+                      type="warning"
+                      :disabled="contextLoading || bulkLocked"
+                      @click="openInspectionAcceptance(step.stepRecordId)"
+                      >专检处理</el-button
+                    >
                     <el-tooltip
                       :disabled="canReportStep(step) && !contextLoading"
                       :content="reportBlockedReasonForStep(step) || '当前不可报工'"
@@ -408,6 +415,7 @@
               <AbnormalReworkPanel
                 v-if="hasVisitedStep(step.stepRecordId)"
                 v-model:expansion="processingExpansion"
+                :batch-no="record.batchNo"
                 :content-visible="isStepExpanded(step.stepRecordId)"
                 :disabled="contextLoading || bulkLocked"
                 :dispositions="step.abnormalDispositions"
@@ -438,6 +446,7 @@
       </div>
     </section>
 
+    <ProductionInspectionAcceptanceDialog :editor="inspectionAcceptance" />
     <ProductionStepActionDialogs
       ref="stepActionDialogsRef"
       :steps="record?.steps ?? []"
@@ -565,6 +574,7 @@ import ProductionStepQuotaDistribution from './components/ProductionStepQuotaDis
 import ProductionStepScrapDetailsDialog from './components/ProductionStepScrapDetailsDialog.vue';
 import ProductionStepActions from './components/ProductionStepActions.vue';
 import ProductionStepActionDialogs from './components/ProductionStepActionDialogs.vue';
+import ProductionInspectionAcceptanceDialog from './components/ProductionInspectionAcceptanceDialog.vue';
 import ProductionStepReportTable from './components/ProductionStepReportTable.vue';
 import ProductionReportTraceDialog from './components/ProductionReportTraceDialog.vue';
 import ProductionReportAdjustmentDialog from './components/ProductionReportAdjustmentDialog.vue';
@@ -580,6 +590,8 @@ import { useProductionReportSelection } from './composables/useProductionReportS
 import { useProductionExecutionSummary } from './composables/useProductionExecutionSummary';
 import { useProductionReportTrace } from './composables/useProductionReportTrace';
 import { useProductionExecutionNavigation } from './composables/useProductionExecutionNavigation';
+import { useProductionExecutionLocation } from './composables/useProductionExecutionLocation';
+import { useProductionInspectionAcceptance } from './composables/useProductionInspectionAcceptance';
 import { useProductionExecutionSections } from './composables/useProductionExecutionSections';
 import { useProductionStepScrapDetails } from './composables/useProductionStepScrapDetails';
 import type { ProductionReportContext } from './production-report-selection';
@@ -751,6 +763,31 @@ const openBulkReverse = (): void => {
 const refreshCurrent = (): Promise<void> => executionNavigation.refresh();
 const getStep = (id: string): BatchStepExecutionRecordItem | null =>
   record.value?.steps.find((item) => item.stepRecordId === id) ?? null;
+const inspectionAcceptance = useProductionInspectionAcceptance({
+  isContextReady: (batchId, stepId) =>
+    !contextLoading.value && selectedBatchId.value === batchId && getStep(stepId) !== null,
+  changed: async (batchId) => {
+    if (selectedBatchId.value === batchId) await refreshCurrent();
+  },
+});
+const openInspectionAcceptance = async (stepId: string): Promise<boolean> => {
+  const batchId = selectedBatchId.value;
+  if (!batchId || contextLoading.value || !(await canChangeTarget())) return false;
+  const step = getStep(stepId);
+  if (
+    route.name !== 'production-execution-records' ||
+    selectedBatchId.value !== batchId ||
+    !record.value ||
+    !step
+  )
+    return false;
+  if (!isStepExpanded(stepId)) toggleStep(stepId);
+  return inspectionAcceptance.open({
+    batchId,
+    stepId,
+    label: `${record.value.batchNo} / ${step.stepOrder} · ${step.stepName}`,
+  });
+};
 const reportEditor = useProductionReportAdjustment({
   getStep,
   getBatchStatus: () => record.value?.batchStatus ?? null,
@@ -829,6 +866,7 @@ const canChangeTarget = async (): Promise<boolean> => {
     EMessage.warning('批量结果尚未确认，请先在原弹窗重试或核对后关闭');
     return false;
   }
+  if (!(await inspectionAcceptance.close())) return false;
   if (executionStartVisible.value && !(await executionStartDialog.value?.close())) return false;
   if (closeoutWithdrawalVisible.value && !(await closeoutWithdrawalDialog.value?.close()))
     return false;
@@ -904,12 +942,21 @@ const {
   selectedBatchRiskClass,
 } = useProductionExecutionSummary(record, batches, selectedBatchId);
 const route = useRoute();
+const locateRequestedBatch = useProductionExecutionLocation({
+  loading: contextLoading,
+  selectedBatchId,
+  selectBatch,
+  openStep: openInspectionAcceptance,
+});
 const unregister = useTabsStore().registerCloseGuard(String(route.name), async () => {
   if (completionPending.value) return false;
   return canChangeTarget();
 });
 onScopeDispose(unregister);
-usePageActivationRefresh(refreshCurrent);
+usePageActivationRefresh(async () => {
+  await refreshCurrent();
+  await locateRequestedBatch();
+});
 </script>
 
 <style scoped>

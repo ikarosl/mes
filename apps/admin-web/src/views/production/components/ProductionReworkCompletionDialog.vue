@@ -52,12 +52,12 @@
         :disabled="editor.inputsLocked"
       >
         <el-form-item
-          :label="`${BATCH_STEP_REWORK_RESULT_LABELS.normal}数量`"
+          :label="`${resultLabels.normal}数量`"
           required
         >
           <el-input-number
             :model-value="editor.form.normalQuantity"
-            :aria-label="`${BATCH_STEP_REWORK_RESULT_LABELS.normal}数量`"
+            :aria-label="`${resultLabels.normal}数量`"
             :min="0"
             :max="Number(editor.selected.reworkQuantity)"
             :precision="0"
@@ -66,12 +66,12 @@
           />
         </el-form-item>
         <el-form-item
-          :label="`${BATCH_STEP_REWORK_RESULT_LABELS.abnormal}数量`"
+          :label="`${resultLabels.abnormal}数量`"
           required
         >
           <el-input-number
             :model-value="editor.form.abnormalQuantity"
-            :aria-label="`${BATCH_STEP_REWORK_RESULT_LABELS.abnormal}数量`"
+            :aria-label="`${resultLabels.abnormal}数量`"
             :min="0"
             :max="Number(editor.selected.reworkQuantity)"
             :precision="0"
@@ -92,18 +92,18 @@
         </el-form-item>
       </el-form>
       <InlineHint
-        >{{ BATCH_STEP_REWORK_RESULT_LABELS.normal }}与{{
-          BATCH_STEP_REWORK_RESULT_LABELS.abnormal
+        >{{ resultLabels.normal }}与{{
+          resultLabels.abnormal
         }}合计必须等于原整笔返工数量；有量的两类结果分别生成报工事实，保留同一返工来源，不新增普通报工额度。</InlineHint
       >
     </template>
     <template #footer>
       <el-button
-        v-if="editor.selected"
+        v-if="sourceReport"
         link
         type="primary"
         :disabled="editor.submitting"
-        @click="$emit('view-report', reworkSourceReference(editor.selected))"
+        @click="sourceReport && $emit('view-report', sourceReport)"
         >核对来源与处理过程</el-button
       >
       <el-button
@@ -123,7 +123,11 @@
 </template>
 
 <script setup lang="ts">
-import { BATCH_STEP_REWORK_RESULT_LABELS } from '@company/constants';
+import { computed } from 'vue';
+import {
+  BATCH_STEP_REWORK_RESULT_LABELS,
+  BATCH_STEP_INSPECTION_REWORK_RESULT_LABELS,
+} from '@company/constants';
 import type { BatchStepReportReference } from '@company/contracts';
 import InlineHint from '../../../components/InlineHint.vue';
 import { DialogWidth } from '../../../utils/dialog';
@@ -131,7 +135,15 @@ import type { useProductionReworkCompletion } from '../composables/useProduction
 import { reworkSourceReference } from '../production-report-presentation';
 import { formatQuantity } from '../production-status';
 
-defineProps<{ editor: ReturnType<typeof useProductionReworkCompletion> }>();
+const props = defineProps<{ editor: ReturnType<typeof useProductionReworkCompletion> }>();
+const sourceReport = computed(() =>
+  props.editor.selected ? reworkSourceReference(props.editor.selected) : null,
+);
+const resultLabels = computed(() =>
+  props.editor.selected?.quantityScope === 'inspection'
+    ? BATCH_STEP_INSPECTION_REWORK_RESULT_LABELS
+    : BATCH_STEP_REWORK_RESULT_LABELS,
+);
 defineEmits<{ 'view-report': [report: BatchStepReportReference] }>();
 </script>
 

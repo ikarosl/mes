@@ -29,12 +29,12 @@ const DIRECT_FACT = `NOT EXISTS (SELECT 1 FROM rework_records rw
   WHERE rw.completed_normal_report_id IN (r.id,r.reversal_of_report_id)
     OR rw.completed_abnormal_report_id IN (r.id,r.reversal_of_report_id))`;
 export const REPORT_SUMMARY_COLUMNS = `
-  COALESCE(SUM(CASE WHEN r.report_type='normal' THEN r.reported_quantity ELSE -r.reported_quantity END),0) effective_reported,
-  COALESCE(SUM(CASE WHEN ${DIRECT_FACT} THEN CASE WHEN r.report_type='normal' THEN r.reported_quantity ELSE -r.reported_quantity END ELSE 0 END),0) effective_direct_reported,
-  COALESCE(SUM(CASE WHEN ${DIRECT_FACT} THEN CASE WHEN r.report_type='normal' THEN r.normal_quantity ELSE -r.normal_quantity END ELSE 0 END),0) effective_direct_normal,
-  COALESCE(SUM(CASE WHEN ${DIRECT_FACT} THEN CASE WHEN r.report_type='normal' THEN r.abnormal_quantity ELSE -r.abnormal_quantity END ELSE 0 END),0) effective_direct_abnormal,
-  COALESCE(SUM(CASE WHEN r.report_type='normal' THEN r.normal_quantity ELSE -r.normal_quantity END),0) effective_normal,
-  COALESCE(SUM(CASE WHEN r.report_type='normal' THEN r.abnormal_quantity ELSE -r.abnormal_quantity END),0) effective_abnormal,
+  COALESCE(SUM(CASE WHEN r.quantity_scope='production' THEN CASE WHEN r.report_type='normal' THEN r.reported_quantity ELSE -r.reported_quantity END ELSE 0 END),0) effective_reported,
+  COALESCE(SUM(CASE WHEN r.quantity_scope='production' AND ${DIRECT_FACT} THEN CASE WHEN r.report_type='normal' THEN r.reported_quantity ELSE -r.reported_quantity END ELSE 0 END),0) effective_direct_reported,
+  COALESCE(SUM(CASE WHEN r.quantity_scope='production' AND ${DIRECT_FACT} THEN CASE WHEN r.report_type='normal' THEN r.normal_quantity ELSE -r.normal_quantity END ELSE 0 END),0) effective_direct_normal,
+  COALESCE(SUM(CASE WHEN r.quantity_scope='production' AND ${DIRECT_FACT} THEN CASE WHEN r.report_type='normal' THEN r.abnormal_quantity ELSE -r.abnormal_quantity END ELSE 0 END),0) effective_direct_abnormal,
+  COALESCE(SUM(CASE WHEN r.quantity_scope='production' THEN CASE WHEN r.report_type='normal' THEN r.normal_quantity ELSE -r.normal_quantity END ELSE 0 END),0) effective_normal,
+  COALESCE(SUM(CASE WHEN r.quantity_scope='production' THEN CASE WHEN r.report_type='normal' THEN r.abnormal_quantity ELSE -r.abnormal_quantity END ELSE 0 END),0) effective_abnormal,
   COUNT(r.id) report_count, MIN(r.created_at) first_reported_at, MAX(r.created_at) last_reported_at`;
 const STEP_FIELDS = `sr.id,sr.production_batch_id,sr.step_order_snapshot,sr.step_code_snapshot,sr.step_name_snapshot,
   sr.status,sr.responsible_user_id,sr.unit_snapshot,sr.started_at,sr.completed_at,sr.version`;
@@ -56,14 +56,15 @@ export async function selectProjectionStepsByBatchIds(
   );
   return rows;
 }
-const REPORT_BASE_FIELDS = `r.id,r.report_no,r.production_batch_id,r.batch_step_record_id,r.report_type,
+const REPORT_BASE_FIELDS = `r.id,r.report_no,r.production_batch_id,r.batch_step_record_id,r.report_type,r.quantity_scope,
   r.reversal_of_report_id,r.replaces_report_id,r.reported_quantity,r.normal_quantity,r.abnormal_quantity,
   r.abnormal_origin,r.unit_snapshot,r.remark,r.created_by,r.created_at`;
 export const REPORT_FIELDS = `${REPORT_BASE_FIELDS},CASE WHEN r.report_type='reversal' THEN 1
   WHEN NOT EXISTS (SELECT 1 FROM batch_step_reports reversal WHERE reversal.reversal_of_report_id=r.id) THEN 1 ELSE 0 END is_effective`;
 export const DISPOSITION_SELECT = `SELECT d.id,d.disposition_no,d.production_batch_id,d.batch_step_record_id,d.batch_step_report_id,
-  source_report.abnormal_origin,source_report.abnormal_quantity source_abnormal_quantity,d.review_status,d.disposition_type,d.remark,d.version,d.created_at
-  FROM batch_step_abnormal_dispositions d JOIN batch_step_reports source_report ON source_report.id=d.batch_step_report_id`;
+  d.source_type,d.process_inspection_id,d.process_inspection_record_id,
+  COALESCE(source_report.abnormal_origin,'current_step') abnormal_origin,COALESCE(d.inspection_quantity,source_report.abnormal_quantity) source_abnormal_quantity,d.review_status,d.disposition_type,d.remark,d.version,d.created_at
+  FROM batch_step_abnormal_dispositions d LEFT JOIN batch_step_reports source_report ON source_report.id=d.batch_step_report_id`;
 
 export const numericIdOrder = (left: string, right: string): number => {
   const a = BigInt(left);
@@ -143,7 +144,7 @@ function summarizeLockedStep(
     directNormal = 0,
     directAbnormal = 0;
   const facts = reports.filter((row) => String(row.batch_step_record_id) === String(step.id));
-  for (const row of facts) {
+  for (const row of facts.filter((fact) => fact.quantity_scope === 'production')) {
     const sign = row.report_type === 'normal' ? 1 : -1;
     const n = sign * integerQuantity(row.normal_quantity);
     const a = sign * integerQuantity(row.abnormal_quantity);
@@ -281,6 +282,7 @@ export function correctableReportReason(
 ): string | null {
   if (report.report_type !== 'normal' || !report.is_effective)
     return '原报工已经冲销或不是有效普通报工';
+  if (report.quantity_scope === 'inspection') return '专检处置返工结果不能通过普通报工冲销或更正';
   if (dependencies.some((dependency) => dependency.kind === 'rework_completion'))
     return '返工完成结果受来源业务保护，不能通用冲销或更正';
   const normalOnlyReason = normalOnlyReportReason(report, phase);

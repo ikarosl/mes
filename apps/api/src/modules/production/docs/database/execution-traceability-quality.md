@@ -4,7 +4,7 @@
 
 本章所有计划、报工、异常、报废、补产授权与返工数量均为整数。普通正向事实的正常与异常数量可以分别为 `0`，但合计必须是 `1..99999999` 的整数；数据库以整数 `CHECK` 拒绝小数，路线放行、比较和累计只做整数运算，不使用缩放小数或误差阈值。
 
-本章将“分批报工事实、异常整体处置、最小返工和报废补料”固化为当前可实施设计。异常处置仍以一次有效异常报工为最小审批对象，不拆分数量；返工以来源异常数量整体执行，完成时在同一事务内分别追加非零正常恢复与再次异常事实；报废补料由管理员从当前批次完整 BOM 基础中选择启用的精确物料版本并人工填量，同一审批事务生成工序报废、补产授权、补料单和追加需求。在线过程质检、自动质量放行和返工报工的部分完成仍不在当前范围；线下质检留存、正常或提前结束的实际产出审批遵守[结案设计](production-termination.md)，不改变本章的工序报工数量规则。
+本章将“分批报工事实、异常整体处置、最小返工和报废补料”固化为当前可实施设计。报工来源以一次有效异常报工为最小审批对象，专检来源以一次正式处理为最小处置对象；每张处置单不再拆分数量，返工以来源处置量整体执行，完成时在同一事务内分别追加非零正常恢复与再次异常事实；报废补料由管理员从当前批次完整 BOM 基础中选择启用的精确物料版本并人工填量，同一审批事务生成工序报废、补产授权、补料单和追加需求。工序专检支持独立现场记录及产线处理，自动质量放行和返工报工的部分完成不在当前范围；线下质检留存、正常或提前结束的实际产出审批遵守[结案设计](production-termination.md)，不改变本章的工序报工数量规则。
 
 > CP-01 按已确认口径整改：报工承担执行记录与差异追溯，各道独立使用统一首工上限，执行状态由明确动作维护。下文统一维护目标规则，代码集成及验证状态见[路线图](../../../../../../../docs/roadmap.md#cp-01报工数量解耦与管理员批量冲销整改)；文档同步不表示用户验收或正式测试通过。
 
@@ -115,6 +115,7 @@ SOP 内容从任务工序的默认或现场实际快照解析文件名、对象�
 | `report_no`              | `VARCHAR(100)`    | 报工事实编号，唯一                |
 | `production_batch_id`    | `BIGINT UNSIGNED` | 生产批次 ID                                                          |
 | `batch_step_record_id`   | `BIGINT UNSIGNED` | 工序执行节点 ID                                                      |
+| `quantity_scope`         | `VARCHAR(20)`     | `production` 普通生产计数、`inspection` 专检处置返工结果；服务端从返工来源推导，客户端不能指定 |
 | `report_type`            | `VARCHAR(20)`     | `normal` 正向报工事实、`reversal` 冲销事实；不表示正常品/异常品分类  |
 | `reversal_of_report_id`  | `BIGINT UNSIGNED` | 冲销的原报工 ID；普通报工为空                                       |
 | `replaces_report_id`     | `BIGINT UNSIGNED` | 更正后的普通报工所替代的原报工 ID；非更正报工为空                    |
@@ -143,7 +144,7 @@ SOP 内容从任务工序的默认或现场实际快照解析文件名、对象�
 
 ### 4.2.1 有效数量
 
-冲销行保存与原事实完全相同的三个绝对数量，查询时按类型决定正负号。下式中的 `normal` 指 `report_type = 'normal'` 的正向报工事实，包含直接正常、直接异常、混合及返工完成报工，不表示正常品：
+冲销行保存与原事实完全相同的三个绝对数量，查询时按类型决定正负号。下式仅纳入 `quantity_scope=production`；专检及其多轮返工结果独立追溯，不计入普通生产数量。下式中的 `normal` 指 `report_type = 'normal'` 的正向报工事实，包含直接正常、直接异常、混合及返工完成报工，不表示正常品：
 
 ```text
 effective_reported = SUM(normal.reported_quantity) - SUM(reversal.reported_quantity)
@@ -151,7 +152,7 @@ effective_normal   = SUM(normal.normal_quantity)   - SUM(reversal.normal_quantit
 effective_abnormal = SUM(normal.abnormal_quantity) - SUM(reversal.abnormal_quantity)
 ```
 
-以上是包含直接报工和返工完成的全部净量。直接正常／异常净量分别记为 `DN/DA`，返工完成正常／再次异常净量分别记为 `RN/RA`；每项均按所属正向事实减去对应冲销计算。直接净量须排除 `rework_records.completed_normal_report_id`、`completed_abnormal_report_id` 指向的两类结果报工及以任一结果为原单的冲销，不能仅按报工类型或数量判断来源：
+以上是生产计数范围内包含直接报工和返工完成的全部净量。直接正常／异常净量分别记为 `DN/DA`，返工完成正常／再次异常净量分别记为 `RN/RA`；每项均按所属正向事实减去对应冲销计算。直接净量须排除 `rework_records.completed_normal_report_id`、`completed_abnormal_report_id` 指向的两类结果报工及以任一结果为原单的冲销，不能仅按报工类型或数量判断来源：
 
 ```text
 D  = DN + DA                  // 直接报工净量
@@ -187,7 +188,7 @@ RN = N - DN                   // 跨轮返工恢复正常净量
 
 `GET /api/production/batches/:batchId/step-records/:recordId/reports/:reportId` 提供授权只读详情，与报工分页同样接受 `production:tasks:view`、`production:trace:view`、`production:worker-tasks:view` 中任意一项。只有员工查看权限时，查询必须核验当前工序负责人是当前用户；历史报工人或来源负责人快照本身不扩大报工读取范围；员工不提供独立返工列表或办理入口。三个路径 ID 必须是正整数字符串，且任务、工序、报工严格同源；不能通过错配或非法 ID 读取其他记录。
 
-详情的 `processingChain` 只组合当前报工的来源返工片段和本身异常处置片段：来源报工 → 异常处置 → 返工单 → 正常恢复／残余异常报工。`completedNormalReport`、`completedAbnormalReport` 分别返回真实结果引用，数量为零的一侧为空；残余异常结果保留它自己生成的新处置片段，可沿真实报工引用逐笔导航。未批准返工、未完成返工或报废分支不生成虚假的返工／结果节点。返工读取使用独立 `ReworkRecordView` 返回两类完成单号与数量；基础返工命令结果见[返工模型](#45-rework_records当前最小返工)。这些投影只组合 Production 已有事实，不创建可写汇总或另一个业务状态。
+详情的 `processingChain` 只组合当前报工的来源返工片段和本身异常处置片段：来源报工 → 异常处置 → 返工单 → 正常恢复／残余异常报工。`completedNormalReport`、`completedAbnormalReport` 分别返回真实结果引用，数量为零的一侧为空；残余异常结果保留它自己生成的新处置片段，可沿真实报工引用逐笔导航。未批准返工、未完成返工或报废分支不生成虚假的返工／结果节点。专检首轮没有来源报工，`reworkOrigin` 保留真实返工单及异常处置 ID，`processingChain` 不伪造来源报工节点。返工读取使用独立 `ReworkRecordView` 返回两类完成单号与数量、计数范围及可空来源报工编号；基础返工命令结果见[返工模型](#45-rework_records当前最小返工)。这些投影只组合 Production 已有事实，不创建可写汇总或另一个业务状态。
 
 #### CP-01 报工整改边界
 
@@ -234,7 +235,7 @@ available_report[i]     = MAX(0, U - effective_direct_reported[i])
 
 ##### 执行记录额度分布（已确认）
 
-执行记录页及报工弹窗保留执行状态，数量摘要使用报工额度分布，不把数量占比当作工序进度或状态，也不新增可写汇总字段。正常量 `N` 包含直接正常和返工恢复；已报废 `S` 只取同源报废事实；处理中 `P` 只取有效异常分支当前的待审核、待返工和返工中数量；明确终止处置或取消未完成返工后尚未恢复的数量记为 `T`，独立展示为“已终止未恢复”：
+执行记录页及报工弹窗保留执行状态，数量摘要使用报工额度分布，不把数量占比当作工序进度或状态，也不新增可写汇总字段。本分布只分类 `quantity_scope=production` 的直接根及其后继处置。正常量 `N` 包含该范围内直接正常和返工恢复；已报废 `S` 只取该范围内同源报废事实；处理中 `P` 只取有效异常分支当前的待审核、待返工和返工中数量；明确终止处置或取消未完成返工后尚未恢复的数量记为 `T`，独立展示为“已终止未恢复”：
 
 ```text
 D = 直接正常净量 + 直接异常净量
@@ -245,7 +246,7 @@ N + S + P + T + 剩余额度 = U   // 仅来源链完整且分类可信时成立
 
 - 执行记录及员工任务分页读取分别采用单个 `REPEATABLE READ` 只读事务及一致性快照。`BatchStepExecutionRecordItem.quotaDistribution` 和 `ProductionWorkerTaskItem.quotaDistribution` 复用相同的事实分类策略，并与各自同工序的 `N/U/available` 从同一次快照返回；处理阶段的最小来源引用也来自同一快照，不能拼接另一次返工列表请求或某页报工明细反推分布。`isReliable=true` 要求来源链完整、分类互斥及上述等式成立，不能仅凭总数碰巧相等认定可信。
 - 员工任务仍按当前本人负责工序服务端分页，分类的报工、处置、返工、报废四类事实仅为当前页已授权工序批量读取，不按工序、批次或返工深度追加查询。页内批次的路线汇总只批量读取一次，以保留原前道差等数量投影，不返回其他工序的事实或来源引用；不新增全量员工查询入口，不改变读取权限。报工弹窗直接使用所属读取上下文中的分类，命令请求、基础数量结果及幂等快照不增加分类字段。
-- 分类从仍有效的直接报工根沿整单返工来源逐轮读取。已完成返工的整单量退出 `P`，按明确引用核对正常与异常两个子结果的同源、纯数量类型及合计；正常恢复子报工计入 `N` 并结束该分支，异常子报工沿其新处置继续分类。两子结果都不作为新的直接根，不重复累计旧轮次的异常量。报废必须存在同源、同量真实事实，不能只看处置的 `approved` 状态；待审核和未完成返工也不能用 `D-N-S` 补平。
+- 分类从仍有效且计入生产数量的直接报工根沿整单返工来源逐轮读取，专检处置和所有 `inspection` 后继均不进入 `N/S/P/T`。已完成返工的整单量退出 `P`，按明确引用核对正常与异常两个子结果的同源、纯数量类型及合计；正常恢复子报工计入 `N` 并结束该分支，异常子报工沿其新处置继续分类。两子结果都不作为新的直接根，不重复累计旧轮次的异常量。报废必须存在同源、同量真实事实，不能只看处置的 `approved` 状态；待审核和未完成返工也不能用 `D-N-S` 补平。
 - 合法驳回与来源全量同值冲销同时生效，该来源不再占用 `D`。有效来源仍被历史标为 `rejected/cancelled`、返工完成事实被冲销或更正、缺失或跨归属引用、重复／循环、数量或单位不符均返回 `isReliable=false`、分类量 `null` 及具体原因；页面显示待核对并保留原报工事实，不把未知量当零或重新解释处置结果。当前命令继续拒绝返工完成或混合来源的整笔驳回，历史保护规则不变。
 - 有明确 `terminated` 处置或 `cancelled` 未完成返工的有效来源可归入 `T`，不归入处理中或已报废；有 `T` 时另列真实终止残量，不强凑正常／已报废／处理中／剩余额度四段。正常量不表示质检合格，分布也不是库存或可靠在制品余额。
 - 页面“报工上限 101 = 计划 100 + 已报废补产 1”中的已报废补产只包含关联补料已履约的有效授权，生效定义仍见[统一首工上限](#统一首工上限已确认)。待履约授权另列待生效报废补产，不能把全部已报废数量 `S` 直接加入上限。路径建议正常目标及其目标差保留原只读公式和其他消费方，执行记录页及报工弹窗不展示，前道差收纳为核对信息。
@@ -328,7 +329,7 @@ N + S + P + T + 剩余额度 = U   // 仅来源链完整且分类可信时成立
 统一上限、直接报工净量和提示差异的公式见上方“统一首工上限”与“执行记录额度分布”。`required_normal[i] = Q + SUM(S[j], j > i)` 仅保留路线建议正常目标；不作为写入上限、完工条件或上游冲销下限。
 
 - `batch_step_records` 和任务表不新增可写上限／进度列。上限由计划与不可变补产授权关联已履约补料单实时推导；物料需求数量不参与产品补产量相加，不从客户端接受授权额度。
-- 正常与异常直接报工都消耗本工序上限；返工完成仍计入成果汇总，但不重复计入直接报工。冲销事实负向聚合一次，异常退回重报也不另加第二份额度。
+- 正常与异常直接报工都消耗本工序上限；生产来源返工完成计入成果汇总但不重复计入直接报工；专检来源及其后继返工结果不计入这些汇总。冲销事实负向聚合一次，异常退回重报也不另加第二份额度。
 - 计划 5，B 报废补产 1 且已履约时，A/B/C 上限均为 6；B 无须等待 A 形成第六个正常报工才可记录。A 更正到 4、B 保留 5 时仅提示差异。数量和补料变化均不改变工序状态。
 - 报工写事务按工单、任务、结案根、工序 `step_order_snapshot,id`、报工 ID 的顺序锁定；锁后当前读核验版本、审批冻结、当前办理人、统一上限及具体依赖。管理员批量同工序多条只更新一次版本，不以客户端预览替代提交校验。
 - 补料确认仍原子提交履约、库存事实、出库状态及审计；需求更正批准解除剩余可激活授权但不产生库存流水。两者仅刷新数量投影，不重开工序。不可变授权行不更新，原质量和具体引用保护继续有效。
@@ -338,7 +339,7 @@ N + S + P + T + 剩余额度 = U   // 仅来源链完整且分类可信时成立
 
 工序摘要统一返回上限、直接正常／异常净量、累计成果、数量差异、报工历史条数及首末登记时间；不内嵌全部报工历史。任务工序子资源 `GET /production/batches/:id/step-records` 返回派工、改派、撤回及 SOP 资格和具体原因，任务概览不携带工序集合或资格。查询与人员解析边界见[任务查询](work-orders-and-batches.md#任务查询与命令响应)，写命令仍锁内重新核验。
 
-报工记录、工序状态历史与员工工序均使用服务端分页。报工历史读取沿工序当前归属限制员工范围，管理／追溯页面使用各自查看权限；状态时间线组合执行动作与既有收尾终止事实。员工仅办理普通工序，不提供本人返工查询接口、专用契约或工作台；管理员在已有异常处置流程读取和办理返工，员工数量摘要仍从本人工序投影读取返工成果。前端进度不从某一页记录相加，跨页批量仅保存用户明确选中的记录。
+报工记录、工序状态历史与员工工序均使用服务端分页。报工历史读取沿工序当前归属限制员工范围，管理／追溯页面使用各自查看权限；状态时间线组合执行动作与既有收尾终止事实。员工仅办理普通工序，不提供本人返工查询接口、专用契约或工作台；管理员在已有异常处置流程读取和办理返工，员工数量摘要只从本人工序投影读取生产计数范围内的返工成果。前端进度不从某一页记录相加，跨页批量仅保存用户明确选中的记录。
 
 #### 当前最小返工来源规则与升级预留
 
@@ -354,32 +355,41 @@ N + S + P + T + 剩余额度 = U   // 仅来源链完整且分类可信时成立
 - 一次命令中的报工事实、冲销/替代事实、工序状态与时间、成功 `operation_logs`、幂等成功结果必须使用同一数据库连接和同一事务提交。
 - 响应丢失后的同键同指纹重试必须重放首次结果，不得重新执行当前数量和状态校验；同键不同指纹返回冲突。
 - `report_no` 由首次执行生成并随结果快照保存；重放不得再生成编号。
-- 返工完成使用 `production.rework.complete.v3` scope，严格快照保存 `rework`、可空 `normalReport`、可空 `abnormalReport` 与可空 `abnormalDisposition`；至少存在一个正数子结果，引用、同源身份、纯数量类型、整单合计及异常处置来源都须一致。同键重放返回首次生成的两个真实编号，不读取旧 scalar 结果或追加另一侧事实。
+- 返工完成使用 `production.rework.complete.v4` scope，严格快照保存 `rework`、可空 `normalReport`、可空 `abnormalReport` 与可空 `abnormalDisposition`；至少存在一个正数子结果，引用、同源身份、纯数量类型、整单合计及异常处置来源都须一致。同键重放返回首次生成的两个真实编号，不读取旧 scalar 结果或追加另一侧事实。
 - 已执行迁移 `202608100001-batch-step-reports` 的历史升级前置校验要求旧工序数据满足 `output_quantity = qualified_quantity + abnormal_quantity`、`rework_quantity = 0`，并且有正数报工的工序存在 `updated_by` 或 `created_by`。任一条件不满足时该迁移在首个永久 DDL 前失败，不猜测差额、返工归属或操作人。
 - 该迁移把通过校验的旧工序累计量转为一条 `LEGACY-SR-{stepId}` 普通事实，旧 `qualified_quantity` 只按当时口径进入 `normal_quantity`，不追认其为质量结论。这是保留的历史迁移规则，不代表当前仍有这些工序累计列或批次数量列。
 
-## 4.3 过程自检临时口径与未来质检边界
+## 4.3 工序专检与生产处理
 
-当前暂不实施工序间独立质检、抽检、复检、条件放行和质量放行事实。操作员报工中的 `normal_quantity` 表示该次自检正常记录；`effective_normal` 是事实净汇总，不作为下工序的可报额度。
+工序专检由 Quality 按“任务＋工序执行节点”保存现场合格／不合格事实，支持多次全检和抽检，不关联某笔报工。检查范围、不可变结果冲销及替代、更正下限由 [Quality 专检设计](../../../quality/docs/process-inspections.md)维护。`normal_quantity` 保持自检正常含义，专检不自动修改报工、不把未检实物认定为合格，也不设下工序放行门禁；路线 `need_inspection_snapshot` 仍只作提示。
 
-质量边界：
+产线从生产执行记录的具体工序进入“专检处理”，核对检查范围、实检时间、结果说明、凭据和当前待处理数量后办理，并在同一入口查看历史处理。质检页面负责登记、更正和冲销，不提供生产处理操作。页面的“已处理”表示已建立异常处置单的数量，不表示返工、报废或问题解决已经完成；实际进度使用异常处置和返工状态展示。生产办理直接使用以下接口，不依赖 Quality 页面的读取权限：
 
-- `need_inspection_snapshot` 继续作为路线快照保留，但当前不创建过程检验任务，也不阻塞下工序；应用和页面不得伪造“过程质检已通过”的结论。
-- `normal_quantity` 只表示工序自检正常量，不是最终质量合格量。工序报工只表达对应工序的事实，任务、工单和结案没有特定工序的特殊汇总；批次表不存报工汇总或合格数量，不得把任一道工序的 `effective_normal` 当作最终批准产出。
-- 当前暂不考量生产过程中的质量检测流程。将来引入过程质量及放行约束须单独确认范围和独立事实模型，通过版本化契约迁移，不能静默改变 `normal_quantity` 的既有含义或恢复已取消的数量门禁。
-- 任务结案已提供独立的线下质检留存记录和批准产出清单，但不包含在线检验任务或自动质量放行。完整质量模型仍需单独定稿，不为其预建批次合格数量写入口或推测性的最终质检表。
+| 方法与路径 | 读取边界与权限 |
+| --- | --- |
+| `GET /production/batches/:batchId/step-records/:recordId/process-inspections` | 当前工序有效且待处理量大于零的检查分页；`production:tasks:view` |
+| `GET /production/batches/:batchId/step-records/:recordId/process-inspections/:inspectionId` | 当前工序单次检查详情；同上。处理完或已冲销的检查仍可核对，来源不符返回不存在 |
+| `GET /production/batches/:batchId/step-records/:recordId/inspection-dispositions` | 当前工序全部专检来源的生产处理历史分页；同上，任务工序归属不符返回不存在 |
 
-生产执行确认与最终产出处置分开。批量正常执行确认在事务内校验全部工序明确完成，不要求报工量达标、需求领齐或补料履约；服务端记录 `execution_completed_at/by`，创建或复用 normal 结案草稿并进入 closing，不另存数量或立即 completed。剩余物料事项在送审前处理。最终质检记录和产线清单由工单负责人批准后才正常结案。提前停止走 early 逐项收尾，同用这一结案审批；管理员最终可用量允许短于计划，不反写报工或补产规则。质检只保存线下记录，审定数量由当前批准清单读取，两者均不双写批次数量。
+读取先核验任务工序归属，再调用 `QualityProcessInspectionQuery`，不直接读取 Quality 表。列表返回 `PageResult<ProcessInspectionEntry>`，仅接受标准分页参数，筛选在分页前完成，按检查创建时间及 ID 倒序排列；详情返回相同条目类型，包括当前结果、处理量、待处理量、办理资格提示和版本。列表的数量及条目由 Quality 独立只读一致快照取得。当前只读来源、状态及余额仅用于展示，提交时仍由处理命令锁内重核。
 
-现有草案曾使用 `inspection_records`，但检验批如何占用报工数量、多次/抽样检验、条件放行、复检和冲销仍未闭环，因此当前不得创建该表。
+生产处理历史读取 `batch_step_abnormal_dispositions.source_type=process_inspection` 的全部状态，不依赖当前专检待处理量、有效结果或任务执行资格。返回 `PageResult<ProcessInspectionDispositionHistoryItem>`，使用标准分页并按处置创建时间、ID 倒序；归属核验、总数、页内处置及关联返工共享独立只读一致快照。每行是真实处置单，返回其编号、本次处理数量与单位、`created_by/created_at` 对应的实际处理人和时间、固定的专检单与当时结果 ID，以及当前处置、复核和返工信息。用户名称通过 Identity 公开能力批量补齐；不将当前工序负责人或检验人视作处理人，不用质检当前结果替代历史依据。
 
-后续设计至少必须区分：工序执行节点 `batch_step_records`、具体报工事实 `batch_step_reports`、检验任务/结论和质量放行事实。不得继续把 `batch_step_record_id` 描述为“具体报工记录”；若质检针对某次报工，应显式关联 `batch_step_report_id` 或独立的受检批。
+历史的 `remark` 是当前处置说明，后续批准返工、报废或其他处置动作可能更新，不能标成首次处理时的填写说明。`rework` 复用 `ReworkRecordView` 展示真实返工状态及已完成的正常／残余异常结果；尚未完成的返工不得仅因处置获批就显示处理完成。返工后继异常的 `source_type=report` 不重复列为新的专检处理，后续处置沿生产异常及返工记录追溯。没有待处理检查时，历史仍独立分页可见。
+
+产线在现场确认未登记过的实际问题后，通过 `POST /production/batches/:batchId/step-records/:recordId/inspection-dispositions` 处理一部分当前不合格量。请求携带专检单 ID、当前结果 ID、专检版本、正整数数量和说明，要求 `production:steps:manage-abnormal` 及 HTTP 幂等键。后端先锁工单、任务、结案根和路线工序，再通过 Quality 公开命令锁专检并检查当前结果、版本及剩余量；同一事务增加专检根 `accepted_quantity`、创建现有异常处置单、递增工序版本、写成功审计和幂等结果。仅执行中任务的已开工／已完成工序可新增或处理专检。既有专检允许在任务执行结束、结案及批准产出后更正或冲销，仍锁同一生产根、核验任务已开工且未取消，并由 Quality 保护已处理下限；历史检验纠错不恢复执行、不修改产出审批或库存事实。
+
+不新增生产处理事实表。`batch_step_abnormal_dispositions` 的专检来源行就是处理明细，保存本次处理数量和当时结果 ID。当前待处理量为 Quality 当前有效不合格量减去累计已处理量；后续质检更正不移动已有处置的来源结果。处置批准、完成或收尾终止均不释放已处理量，暂不提供已处理撤回。填写错误的未处理部分由质检人员通过冲销＋替代更正；专检及其返工结果不得走异常报工驳回。
+
+专检处理只引入问题处理来源，不新增普通直接投入，不减原正常报工。批准返工沿用既有返工单，正数正常恢复及残余异常仍追加现有不可变报工事实，两侧 `quantity_scope=inspection`，后继异常返工继续继承；所有普通报工数量和额度分布排除这条来源分支。返工记录、报工历史及异常待办仍保留完整事实，来源说明须明确“不计普通报工汇总”。报工历史条数和首末登记时间包含专检返工结果，与实际历史分页一致；执行页异常列表包含专检处理及其后继残余异常，额度分类过滤不作用于待办列表。专检报废沿用真实报废、补料和补产授权，满足补料履约后进入既有补产上限；专检报废不被伪装成普通已投入的额度归属。
+
+已处理的待处置、未完成返工及补料继续参与既有收尾核对。专检不替代成品检验、批准产出或库存记账；执行结束与最终产出核对仍分开，数量差异由产线实物核实，不反写报工。实际再次检查同一问题应沿既有问题处理记录确认结果，不能把相同不合格实物重复登记为新增待办；独立复检业务模型及质量放行仍不在本期范围。
 
 ## 4.4 `batch_step_abnormal_dispositions`
 
-职责：作为具体异常报工的审批处置单。一条 `batch_step_reports` 普通报工只要 `abnormal_quantity > 0`，就在同一报工事务中自动创建一条处置单；同一道工序可以因多次异常报工产生多条处置单。工序执行状态继续保存在 `batch_step_records.status`，不得增加汇总异常状态替代本表。
+职责：作为异常报工或专检处理的生产处置单。一条 `batch_step_reports` 普通报工只要 `abnormal_quantity > 0`，就在同一报工事务中自动创建一条处置单；同一道工序可以因多次异常报工产生多条处置单。工序执行状态继续保存在 `batch_step_records.status`，不得增加汇总异常状态替代本表。
 
-当前阶段不支持把同一次报工的异常数量拆成“部分返工、部分报废”；该次报工的全部异常数量只能整体批准为返工或报废。异常数量只以不可变的 `batch_step_reports.abnormal_quantity` 为事实来源，本表不重复保存数量。
+报工来源保持一次异常报工整体处置，不拆分部分返工或部分报废，数量来自不可变报工事实。专检来源允许对同一专检单分次处理，每次处理形成一张处置单并保存 `inspection_quantity`；一张处置单仍整体选择返工或报废。两种来源互斥。
 
 | 字段                    | 类型              | 说明                                                        |
 | ----------------------- | ----------------- | ----------------------------------------------------------- |
@@ -387,7 +397,12 @@ N + S + P + T + 剩余额度 = U   // 仅来源链完整且分类可信时成立
 | `disposition_no`        | `VARCHAR(100)`    | 异常处置单号，唯一                                          |
 | `production_batch_id`   | `BIGINT UNSIGNED` | 生产批次 ID                                                 |
 | `batch_step_record_id`  | `BIGINT UNSIGNED` | 工序执行节点 ID                                             |
-| `batch_step_report_id`  | `BIGINT UNSIGNED` | 来源普通报工 ID；当前阶段一条报工最多一张异常处置单          |
+| `source_type` | `VARCHAR(30)` | `report` 或 `process_inspection` |
+| `batch_step_report_id` | `BIGINT UNSIGNED` | 可空；报工来源必填，一条报工最多一张异常处置单 |
+| `process_inspection_id` | `BIGINT UNSIGNED` | 专检来源必填，稳定专检单 ID |
+| `process_inspection_record_id` | `BIGINT UNSIGNED` | 专检来源必填，处理当时的正向结果事实 ID |
+| `inspection_quantity` | `INT` | 专检来源必填，本次处理的正整数数量 |
+| `unit_snapshot` | `VARCHAR(20)` | 专检来源必填，工序单位快照；报工来源从原报工取得 |
 | `review_status`         | `VARCHAR(30)`     | `pending_review`、`approved`、`rejected`、`cancelled`、`terminated`       |
 | `disposition_type`      | `VARCHAR(20)`     | 批准后的处置：`rework`、`scrap`；审批前为空                 |
 | `reviewed_by`           | `BIGINT UNSIGNED` | 审批人；待审批时为空                                        |
@@ -401,6 +416,7 @@ N + S + P + T + 剩余额度 = U   // 仅来源链完整且分类可信时成立
 - `UNIQUE (disposition_no)`
 - `UNIQUE (batch_step_report_id)`，落实当前阶段“一次异常报工整体处置一次”的规则
 - `(batch_step_report_id, batch_step_record_id, production_batch_id) -> batch_step_reports(id, batch_step_record_id, production_batch_id)`，禁止跨工序或跨批次挂错来源
+- 专检来源四字段非空且报工来源为空；报工来源必填且专检字段与专检单位为空。专检单与结果使用组合外键保持同任务、同工序、同专检单。
 - `reviewed_by -> users.id`
 - `CHECK (review_status IN ('pending_review', 'approved', 'rejected', 'cancelled', 'terminated'))`
 - `CHECK (disposition_type IS NULL OR disposition_type IN ('rework', 'scrap'))`
@@ -412,7 +428,7 @@ N + S + P + T + 剩余额度 = U   // 仅来源链完整且分类可信时成立
 
 业务规则：
 
-- 创建处置单前，application 必须确认来源是仍有效的 `normal` 报工且 `abnormal_quantity > 0`；冲销行和纯正常报工不得创建处置单。
+- 报工来源创建处置单前，必须确认来源是仍有效的 `normal` 报工且 `abnormal_quantity > 0`；冲销行和纯正常报工不得创建处置单。专检来源只通过上述正式处理命令建立，不直接读取或改写 Quality 表。
 - 普通状态转换为 `pending_review -> approved/rejected/cancelled`。`approved` 表示异常属实并选择返工或报废；`rejected` 只用于管理员确认整笔员工异常报工的数量或异常来源填写错误，并通过下述“驳回并退回重报”命令进入；`cancelled` 只用于来源报工已被其他合法冲销链终止后的处置单收口。终态处置单不得恢复为 `pending_review`。
 - 审批使用 `version` 乐观锁。批准为 `rework` 时，在同一事务创建一条以本处置单为来源的 `rework_records`；批准为 `scrap` 时，审批请求必须按批次 BOM 基础选择至少一条启用的精确物料版本并填写数量，在同一事务创建 `batch_step_scrap_records`、`batch_step_scrap_reproduction_authorization`、`production_material_supplement` 和 `scrap_supplement` 需求。两个处置目标均对来源处置单建立唯一约束。
 - 管理端批准报废前必须经过“编辑需求 -> 暂存需求 -> 复核并确定报废生成”三段交互。暂存写入 `production_scrap_supplement_plan/_line` 服务端草稿，不创建正式 `production_item_demand`、不改变处置状态，也不允许分配或出库；管理员可以重新打开或返回继续编辑。只有最终点击“确定报废并生成”才执行上一条所述的同事务写入，并把方案转为 `confirmed`。草稿保存以乐观锁保护整体更新，重新打开时读取服务端草稿。
@@ -430,7 +446,7 @@ N + S + P + T + 剩余额度 = U   // 仅来源链完整且分类可信时成立
 
 设计类型：不可变业务事实表。
 
-职责：保存管理员把一张异常处置单整体批准为报废后形成的工序报废事实。报废数量是来源异常报工数量在批准时的快照；已落库事实不得更新或删除。
+职责：保存管理员把一张异常处置单整体批准为报废后形成的工序报废事实。报废数量是来源处置量在批准时的快照；已落库事实不得更新或删除。
 
 | 字段                      | 类型              | 说明                                               |
 | ------------------------- | ----------------- | -------------------------------------------------- |
@@ -438,16 +454,16 @@ N + S + P + T + 剩余额度 = U   // 仅来源链完整且分类可信时成立
 | `abnormal_disposition_id` | `BIGINT UNSIGNED` | 来源异常处置单 ID，唯一                            |
 | `production_batch_id`     | `BIGINT UNSIGNED` | 生产批次 ID                                        |
 | `batch_step_record_id`    | `BIGINT UNSIGNED` | 异常上报所在工序执行节点 ID                        |
-| `source_report_id`        | `BIGINT UNSIGNED` | 来源异常报工事实 ID                                |
-| `scrap_quantity`          | `INT`   | 报废产品数量，等于来源报工的全部异常数量且大于 `0` |
-| `unit_snapshot`           | `VARCHAR(20)`     | 来源报工单位快照                                   |
+| `source_report_id`        | `BIGINT UNSIGNED` | 可空；报工来源保存异常报工 ID，专检来源通过处置单追溯 |
+| `scrap_quantity`          | `INT`   | 报废产品数量，等于该处置单的完整处置数量且大于 `0` |
+| `unit_snapshot`           | `VARCHAR(20)`     | 来源处置单位快照                                   |
 | `created_by`              | `BIGINT UNSIGNED` | 批准并创建报废事实的管理员                         |
 | `created_at`              | `DATETIME`        | 报废事实创建时间                                   |
 
 数据库约束：
 
 - `UNIQUE (abnormal_disposition_id)`，一张异常处置单最多形成一条报废事实。
-- `(abnormal_disposition_id, production_batch_id, batch_step_record_id, source_report_id) -> batch_step_abnormal_dispositions(id, production_batch_id, batch_step_record_id, batch_step_report_id)`，保证处置单、批次、工序和来源报工同源。
+- `(abnormal_disposition_id, production_batch_id, batch_step_record_id, source_report_id) -> batch_step_abnormal_dispositions(id, production_batch_id, batch_step_record_id, batch_step_report_id)`，保证报工来源同源；另以 `(abnormal_disposition_id, production_batch_id, batch_step_record_id)` 组合外键保护无报工的专检来源。
 - `CHECK (scrap_quantity > 0)`。
 - `created_by -> users.id`。
 - 表只保存 `created_by/created_at`，不提供更新、软删除或删除审计字段。
@@ -455,7 +471,7 @@ N + S + P + T + 剩余额度 = U   // 仅来源链完整且分类可信时成立
 
 #### 工序报废只读明细
 
-`GET /production/batches/:batchId/step-records/:recordId/scrap-records` 按创建时间及 ID 倒序返回默认每页 10 条的 `PageResult<BatchStepScrapRecordView>`，总数和当前页共享一致性快照。它读取真实报废事实、严格同任务同工序的来源报工及处置，返回真实来源 `SR/BAD` 编号、报废数量和单位、来源说明、审批说明、事实创建人和时间，以及存在的真实补产授权与补料引用；没有关联时返回 `null`，没有报废业务编号时不得拼造。
+`GET /production/batches/:batchId/step-records/:recordId/scrap-records` 按创建时间及 ID 倒序返回默认每页 10 条的 `PageResult<BatchStepScrapRecordView>`，总数和当前页共享一致性快照。它读取真实报废事实、严格同任务同工序的处置及可空来源报工，返回真实来源 `SR/BAD` 编号、报废数量和单位、来源说明、审批说明、事实创建人和时间，以及存在的真实补产授权与补料引用；没有关联时返回 `null`，没有报废业务编号时不得拼造。专检来源返回专检单及结果 ID，来源报工对象为 `null`，不得伪造报工编号。
 
 该接口与报工历史读取共用 `production.tasks.view`、`production.trace.view`、`production.workerTasks.view` 任一查看权限；仅有员工查看权限时仍须是工序当前负责人。管理员及超级管理员沿通用权限匹配获取授权，不按角色名硬编码。读取必须严格匹配路径任务／工序和事实来源，不扩大报工或异常写权限；即使分布待核对，也允许授权用户读取真实报废明细。
 
@@ -498,7 +514,7 @@ N + S + P + T + 剩余额度 = U   // 仅来源链完整且分类可信时成立
 
 ## 4.5 `rework_records`（当前最小返工）
 
-职责：承载一张已批准返工的异常处置单。返工由生产管理人员办理，固定归属来源工序并沿用来源报工单位，数量等于来源报工的全部异常数量，不拆分来源异常单、不改路线；一次整单完成中的正常与异常结果分别形成事实。来源工序负责人只作批准时快照，不表示返工派工对象。
+职责：承载一张已批准返工的异常处置单。返工由生产管理人员办理，固定归属来源工序并沿用处置来源单位，数量等于该处置单完整处置数量，不拆分来源异常单、不改路线；一次整单完成中的正常与异常结果分别形成事实。来源工序负责人只作批准时快照，不表示返工派工对象。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
@@ -507,10 +523,10 @@ N + S + P + T + 剩余额度 = U   // 仅来源链完整且分类可信时成立
 | `abnormal_disposition_id` | `BIGINT UNSIGNED` | 来源异常处置单，唯一 |
 | `production_batch_id` | `BIGINT UNSIGNED` | 生产批次 ID |
 | `batch_step_record_id` | `BIGINT UNSIGNED` | 返回执行的来源工序 |
-| `source_report_id` | `BIGINT UNSIGNED` | 来源异常报工 |
+| `source_report_id` | `BIGINT UNSIGNED` | 可空；报工来源关联异常报工，专检来源通过处置单追溯 |
 | `responsible_user_id` | `BIGINT UNSIGNED` | 批准时的来源工序负责人快照，不作为返工办理资格 |
 | `rework_quantity` | `INT` | 来源异常数量快照，必须大于 `0` |
-| `unit_snapshot` | `VARCHAR(20)` | 来源报工单位快照 |
+| `unit_snapshot` | `VARCHAR(20)` | 来源处置单位快照 |
 | `status` | `VARCHAR(30)` | `pending`、`doing`、`completed`、`cancelled` |
 | `completed_normal_report_id` | `BIGINT UNSIGNED` | 返工完成时生成的正数纯正常恢复事实，唯一；完成前或该侧为零时为空 |
 | `completed_abnormal_report_id` | `BIGINT UNSIGNED` | 返工完成时生成的正数纯残余异常事实，唯一；完成前或该侧为零时为空 |
@@ -521,13 +537,13 @@ N + S + P + T + 剩余额度 = U   // 仅来源链完整且分类可信时成立
 
 约束与事务规则：
 
-- `UNIQUE (abnormal_disposition_id)`、`UNIQUE (completed_normal_report_id)`、`UNIQUE (completed_abnormal_report_id)`；处置单、工序、来源报工与两个子结果使用批次／工序组合外键保证同源。两个完成引用都非空时必须不同；`pending/doing/cancelled` 均为空，`completed` 至少一侧非空。
-- 批准返工只接受 `pending_review`，且来源普通报工仍有效、异常数量大于 `0`、来源工序存在负责人；处置单更新为 `approved/rework` 与返工单创建、成功审计同事务。
+- `UNIQUE (abnormal_disposition_id)`、`UNIQUE (completed_normal_report_id)`、`UNIQUE (completed_abnormal_report_id)`；处置单、工序及两个子结果使用批次／工序组合外键保证同源；可空来源报工只在报工来源时参加其组合外键。两个完成引用都非空时必须不同；`pending/doing/cancelled` 均为空，`completed` 至少一侧非空。
+- 批准返工只接受 `pending_review`，且来源处置数量大于 `0`、来源工序存在负责人；报工来源还须原普通报工仍有效；处置单更新为 `approved/rework` 与返工单创建、成功审计同事务。
 - 持久化状态机为 `pending -> doing -> completed`；开始和完成由具备 `production:rework:execute` 的生产管理人员办理并使用 `version` 乐观锁，不要求操作者等于来源工序负责人快照。员工查看、普通报工和工序执行权限不包含返工办理权；权限授予以能力为准，不硬编码管理员角色名称。任务提前结束时，收尾逐项处理可将未完成返工 `pending/doing -> cancelled`，保留来源和处理记录。普通生产中不提供独立返工取消入口，不能把收尾能力当作任意取消授权。
 - 单个完成命令提交 `normalQuantity` 和 `abnormalQuantity`，两者非负且合计必须精确等于 `rework_quantity`。同一事务仅为正数侧追加 `batch_step_reports.normal` 事实：正常恢复侧 `normal_quantity>0,abnormal_quantity=0,abnormal_origin=NULL`，残余异常侧 `normal_quantity=0,abnormal_quantity>0,abnormal_origin=current_step`；新待处置单只引用残余异常子报工。随后更新工序版本但保持工序状态，将两个实际结果 ID 写入对应完成引用，并提交成功审计及严格幂等结果；任一环节失败全部回滚。
 - `responsible_user_id` 及契约 `responsibleUserId/responsibleUserName` 保留批准时来源工序负责人信息，历史值不改写，展示须标明快照身份；它不代表实际返修或结果登记人。实际结果登记人由两类报工事实的 `created_by/created_at` 记录，开始／完成成功审计与业务同事务。
-- `ReworkRecordItem` 返回 `completedNormalReportId`、`completedAbnormalReportId`，`CompleteReworkResult` 返回 `normalReport`、`abnormalReport` 和 `abnormalDisposition`；不存在的结果侧及处置为真正的 `null`，不返回旧 `completedReportId/report` 兼容字段。返工结果以两类事实数量表达，不维护 `pending/passed/failed` 的独立结果编码。只读 View 的两类结果编号与对应数量也按实际子事实返回，零量侧为空。
-- 返工完成按来源整笔数量校验，不以普通正常目标或首工投入上限再次封顶，不改变普通工序状态。它只恢复来源异常对象，不增加补产授权或物料需求，也不计入 `effective_direct_reported`。写事务仍按共同业务根和工序顺序锁定，并保护返工事实唯一来源。
+- `ReworkRecordItem` 返回 `completedNormalReportId`、`completedAbnormalReportId`，`CompleteReworkResult` 返回 `normalReport`、`abnormalReport` 和 `abnormalDisposition`；不存在的结果侧及处置为真正的 `null`，不返回旧 `completedReportId/report` 兼容字段。返工结果携带 `quantityScope`，命令结果与历史查询一致；专检源 `sourceReportId/sourceReportNo` 为真正的 `null`。返工结果以两类事实数量表达，不维护 `pending/passed/failed` 的独立结果编码。只读 View 的两类结果编号与对应数量也按实际子事实返回，零量侧为空。
+- 返工完成按来源整笔数量校验，不以普通正常目标或首工投入上限再次封顶，不改变普通工序状态。它只恢复来源异常对象，不增加补产授权或物料需求，也不计入 `effective_direct_reported`。专检源及其后继返工的 `inspection` 结果同时排除普通正常／异常／总量汇总，服务端从源处置或源报工推导，客户端不得指定。写事务仍按共同业务根和工序顺序锁定，并保护返工事实唯一来源。
 - 两类返工结果都是返工单的下游依赖，纯正常恢复侧也不能通过通用报工冲销／更正入口调整，残余异常不能通用驳回重报。结果错误或需要部分完成时必须新增专用返工修正设计，当前没有该修正入口。
 - `202610100001-production-rework-split-completion` 追加成对迁移替换 scalar 完成引用。up 在首个永久 DDL 前拒绝混合、缺失、失效或不同源的历史完成事实，只把已有纯单侧结果分配至真实对应引用，不改报工事实；down 在同一边界拒绝双子结果，不能合成一条历史混合事实。迁移停写和失败恢复见[迁移安全](../../../../../../../packages/database/docs/migration-safety.md#202610100001返工完成双结果引用)。
 
@@ -548,7 +564,7 @@ products
      └─ scrap  -> batch_step_scrap_records -> production_material_supplement
 ```
 
-追溯主链包含报工创建、更正、异常审批、最小返工和报废补料事实。过程质检、最终质量和成品流转只能在各自业务语义闭环后追加到主链。追溯查询可以使用受约束的冗余字段和快照，但任何库存数量只能从 `inventory_transaction` 汇总，任何生产需求只能从 `production_item_demand` 读取。
+追溯主链包含报工创建、更正、异常审批、最小返工和报废补料事实。工序专检以 `quality_process_inspection -> batch_step_abnormal_dispositions` 接入同一处置链；最终质量放行和成品流转里程碑另行设计。追溯查询可以使用受约束的冗余字段和快照，但任何库存数量只能从 `inventory_transaction` 汇总，任何生产需求只能从 `production_item_demand` 读取。
 
 Production 只读追溯查询支持按工单号、生产批次号、物料编码和库存批次号定位生产批次，并读取工单/批次概览、`production_item_demand`、`production_item_allocation`、`outbound_order/outbound_detail`、对应的 `production_material_outbound` 库存流水、`batch_step_records`、`batch_step_reports` 普通/冲销/替代链及有效聚合、`batch_step_abnormal_dispositions` 待处置记录。该投影不创建第二事实表，不返回质量、返工、报废、退料或成品流向占位数据。
 

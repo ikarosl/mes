@@ -134,5 +134,5 @@ export function requireFirstSupplementBinding(
     assigned.some((row) => row.disposition !== 'inbound') ||
     assigned.reduce((sum, row) => sum + row.quantity, 0) !== target.plannedQuantity
   )
-    return receiptError('首次承接补单须以与采购量一致的可入库数量一次绑定到生效采购行');
+    return receiptError('补单入库数量 需要完全一致，且处理为可入库');
 }

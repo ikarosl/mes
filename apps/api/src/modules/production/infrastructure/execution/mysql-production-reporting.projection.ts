@@ -20,6 +20,7 @@ export type ReportRow = RowDataPacket & {
   production_batch_id: number;
   batch_step_record_id: number;
   report_type: 'normal' | 'reversal';
+  quantity_scope: 'production' | 'inspection';
   reversal_of_report_id: number | null;
   replaces_report_id: number | null;
   reported_quantity: string;
@@ -38,7 +39,10 @@ export type DispositionRow = RowDataPacket & {
   disposition_no: string;
   production_batch_id: number;
   batch_step_record_id: number;
-  batch_step_report_id: number;
+  batch_step_report_id: number | null;
+  source_type: 'report' | 'process_inspection';
+  process_inspection_id: number | null;
+  process_inspection_record_id: number | null;
   abnormal_origin: BatchStepAbnormalDispositionItem['abnormalOrigin'];
   source_abnormal_quantity: string;
   review_status: BatchStepAbnormalDispositionItem['reviewStatus'];
@@ -87,6 +91,7 @@ export const mapReport = (
   productionBatchId: String(row.production_batch_id),
   stepRecordId: String(row.batch_step_record_id),
   reportType: row.report_type,
+  quantityScope: row.quantity_scope,
   reversalOfReportId: row.reversal_of_report_id === null ? null : String(row.reversal_of_report_id),
   correctionOfReportId: row.replaces_report_id === null ? null : String(row.replaces_report_id),
   reportedQuantity: String(row.reported_quantity),
@@ -107,7 +112,12 @@ export const mapDisposition = (row: DispositionRow): BatchStepAbnormalDispositio
   dispositionNo: row.disposition_no,
   productionBatchId: String(row.production_batch_id),
   stepRecordId: String(row.batch_step_record_id),
-  sourceReportId: String(row.batch_step_report_id),
+  sourceReportId: row.batch_step_report_id === null ? null : String(row.batch_step_report_id),
+  sourceType: row.source_type,
+  processInspectionId:
+    row.process_inspection_id === null ? null : String(row.process_inspection_id),
+  processInspectionRecordId:
+    row.process_inspection_record_id === null ? null : String(row.process_inspection_record_id),
   sourceAbnormalQuantity: String(row.source_abnormal_quantity),
   abnormalOrigin: row.abnormal_origin,
   reviewStatus: row.review_status,

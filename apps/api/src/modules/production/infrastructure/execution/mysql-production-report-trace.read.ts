@@ -30,7 +30,7 @@ export type ReportViewRow = ReportRow & {
 };
 
 type DispositionViewRow = DispositionRow & {
-  source_report_no: string;
+  source_report_no: string | null;
   source_report_type: ReportRow['report_type'];
   source_normal_quantity: string;
   source_rework_id: number | null;
@@ -38,7 +38,7 @@ type DispositionViewRow = DispositionRow & {
 
 export type ReworkViewRow = ReworkRow & {
   abnormal_disposition_no: string;
-  source_report_no: string;
+  source_report_no: string | null;
   completed_normal_report_no: string | null;
   completed_abnormal_report_no: string | null;
   completed_normal_quantity: string | null;
@@ -70,8 +70,8 @@ export const REWORK_VIEW_FIELDS = `${REWORK_COLUMNS},d.disposition_no abnormal_d
 export const REWORK_VIEW_JOINS = `
   JOIN batch_step_abnormal_dispositions d ON d.id=rw.abnormal_disposition_id
     AND d.production_batch_id=rw.production_batch_id AND d.batch_step_record_id=rw.batch_step_record_id
-    AND d.batch_step_report_id=rw.source_report_id
-  JOIN batch_step_reports source_report ON source_report.id=rw.source_report_id
+    AND d.batch_step_report_id <=> rw.source_report_id
+  LEFT JOIN batch_step_reports source_report ON source_report.id=rw.source_report_id
     AND source_report.production_batch_id=rw.production_batch_id AND source_report.batch_step_record_id=rw.batch_step_record_id
   LEFT JOIN batch_step_reports completed_normal_report ON completed_normal_report.id=rw.completed_normal_report_id
     AND completed_normal_report.production_batch_id=rw.production_batch_id AND completed_normal_report.batch_step_record_id=rw.batch_step_record_id
@@ -79,13 +79,14 @@ export const REWORK_VIEW_JOINS = `
     AND completed_abnormal_report.production_batch_id=rw.production_batch_id AND completed_abnormal_report.batch_step_record_id=rw.batch_step_record_id`;
 
 const DISPOSITION_VIEW_SELECT = `SELECT d.id,d.disposition_no,d.production_batch_id,
-  d.batch_step_record_id,d.batch_step_report_id,source_report.abnormal_origin,
-  source_report.abnormal_quantity source_abnormal_quantity,d.review_status,d.disposition_type,
+  d.batch_step_record_id,d.batch_step_report_id,d.source_type,d.process_inspection_id,d.process_inspection_record_id,
+  COALESCE(source_report.abnormal_origin,'current_step') abnormal_origin,
+  COALESCE(d.inspection_quantity,source_report.abnormal_quantity) source_abnormal_quantity,d.review_status,d.disposition_type,
   d.remark,d.version,d.created_at,source_report.report_no source_report_no,
   source_report.report_type source_report_type,source_report.normal_quantity source_normal_quantity,
   source_rework.id source_rework_id
   FROM batch_step_abnormal_dispositions d
-  JOIN batch_step_reports source_report ON source_report.id=d.batch_step_report_id
+  LEFT JOIN batch_step_reports source_report ON source_report.id=d.batch_step_report_id
     AND source_report.production_batch_id=d.production_batch_id AND source_report.batch_step_record_id=d.batch_step_record_id
   LEFT JOIN rework_records source_rework ON
     (source_rework.completed_normal_report_id=source_report.id OR source_rework.completed_abnormal_report_id=source_report.id)
@@ -150,12 +151,15 @@ export async function selectStepDispositionViews(
 const mapDispositionView = (row: DispositionViewRow): BatchStepAbnormalDispositionView => ({
   ...mapDisposition(row),
   sourceReportNo: row.source_report_no,
-  sourceReportSourceKind: reportSourceKind(
-    row.source_report_type,
-    row.source_normal_quantity,
-    row.source_abnormal_quantity,
-    row.source_rework_id !== null,
-  ),
+  sourceReportSourceKind:
+    row.batch_step_report_id === null
+      ? null
+      : reportSourceKind(
+          row.source_report_type,
+          row.source_normal_quantity,
+          row.source_abnormal_quantity,
+          row.source_rework_id !== null,
+        ),
 });
 
 export async function selectReportReworkViews(
@@ -254,37 +258,41 @@ export function mapReportProcessingChain(
   reworks: ReworkRecordView[],
 ): BatchStepReportProcessingChainItem[] {
   const byDisposition = new Map(reworks.map((row) => [row.abnormalDispositionId, row]));
-  return dispositions.map((disposition) => {
-    const rework = byDisposition.get(disposition.dispositionId) ?? null;
-    const completedReference = (
-      id: string | null | undefined,
-      no: string | null | undefined,
-    ): BatchStepReportReference | null =>
-      rework && id && no
-        ? {
-            reportId: id,
-            reportNo: no,
-            productionBatchId: rework.productionBatchId,
-            stepRecordId: rework.stepRecordId,
-          }
-        : null;
-    return {
-      sourceReport: {
-        reportId: disposition.sourceReportId,
-        reportNo: disposition.sourceReportNo,
-        productionBatchId: disposition.productionBatchId,
-        stepRecordId: disposition.stepRecordId,
-      },
-      disposition,
-      rework,
-      completedNormalReport: completedReference(
-        rework?.completedNormalReportId,
-        rework?.completedNormalReportNo,
-      ),
-      completedAbnormalReport: completedReference(
-        rework?.completedAbnormalReportId,
-        rework?.completedAbnormalReportNo,
-      ),
-    };
-  });
+  return dispositions
+    .filter(
+      (disposition) => disposition.sourceReportId !== null && disposition.sourceReportNo !== null,
+    )
+    .map((disposition) => {
+      const rework = byDisposition.get(disposition.dispositionId) ?? null;
+      const completedReference = (
+        id: string | null | undefined,
+        no: string | null | undefined,
+      ): BatchStepReportReference | null =>
+        rework && id && no
+          ? {
+              reportId: id,
+              reportNo: no,
+              productionBatchId: rework.productionBatchId,
+              stepRecordId: rework.stepRecordId,
+            }
+          : null;
+      return {
+        sourceReport: {
+          reportId: disposition.sourceReportId!,
+          reportNo: disposition.sourceReportNo!,
+          productionBatchId: disposition.productionBatchId,
+          stepRecordId: disposition.stepRecordId,
+        },
+        disposition,
+        rework,
+        completedNormalReport: completedReference(
+          rework?.completedNormalReportId,
+          rework?.completedNormalReportNo,
+        ),
+        completedAbnormalReport: completedReference(
+          rework?.completedAbnormalReportId,
+          rework?.completedAbnormalReportNo,
+        ),
+      };
+    });
 }
