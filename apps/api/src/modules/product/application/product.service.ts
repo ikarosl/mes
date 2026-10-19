@@ -170,9 +170,6 @@ export class ProductService {
     requireValidBomReplacement(command);
     return this.catalog.replaceMaterials(id, command, audit);
   }
-  setDefaultRoute(id: string, routeId: string | null, audit: CommandContext) {
-    return this.catalog.setDefaultRoute(id, routeId, audit);
-  }
   createProcessStep(payload: ProcessStepPayload, audit: CommandContext) {
     return this.processSteps.createProcessStep(this.cleanProcessStep(payload), audit);
   }

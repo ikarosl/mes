@@ -140,13 +140,6 @@
                   ></el-table-column
                 >
                 <el-table-column
-                  label="默认工艺路线"
-                  min-width="170"
-                  ><template #default="{ row }">{{
-                    row.defaultRouteName || '未设置'
-                  }}</template></el-table-column
-                >
-                <el-table-column
                   label="状态"
                   width="90"
                   ><template #default="{ row }"
@@ -177,19 +170,13 @@
                     >
                     <el-dropdown
                       trigger="click"
-                      @command="(c: string) => handleProductCommand(c, row)"
+                      @command="() => toggleProductStatus(row)"
                       ><el-button
                         link
                         type="primary"
                         >更多<el-icon><ArrowDown /></el-icon></el-button
                       ><template #dropdown
                         ><el-dropdown-menu>
-                          <el-dropdown-item
-                            v-if="auth.can(PERMISSIONS.product.products.setDefaultRoute)"
-                            :disabled="row.bomStatus === 'pending_approval'"
-                            command="route"
-                            >设置默认路线</el-dropdown-item
-                          >
                           <el-dropdown-item
                             v-if="auth.can(PERMISSIONS.product.products.changeStatus)"
                             :disabled="row.bomStatus === 'pending_approval'"
@@ -397,14 +384,6 @@
       @submit-approval="submitBomApproval"
       @view-approval="viewBomApproval"
     />
-    <ProductDefaultRouteDialog
-      :visible="routeVisible"
-      :product="activeProduct"
-      :current-route-id="activeProduct?.defaultRouteId ?? null"
-      :submitting="submitting"
-      @update:visible="routeVisible = $event"
-      @confirm="saveDefaultRoute"
-    />
     <MaterialFormDialog
       ref="materialFormRef"
       :visible="materialDialogVisible"
@@ -452,7 +431,6 @@ import { useMaterialsList } from './composables/useMaterialsList';
 import ProductFormDialog, { type ProductFormValue } from './components/ProductFormDialog.vue';
 import ProductDetailDialog from './components/ProductDetailDialog.vue';
 import ProductMaterialDialog, { type MaterialRow } from './components/ProductMaterialDialog.vue';
-import ProductDefaultRouteDialog from './components/ProductDefaultRouteDialog.vue';
 import MaterialFormDialog, { type MaterialFormValue } from './components/MaterialFormDialog.vue';
 import MaterialVariantFormDialog from './components/MaterialVariantFormDialog.vue';
 
@@ -556,7 +534,6 @@ const materialDialogVisible = ref(false);
 const variantDialogVisible = ref(false);
 const detailVisible = ref(false);
 const bomVisible = ref(false);
-const routeVisible = ref(false);
 const submitting = ref(false);
 const editingProductId = ref<string | null>(null);
 const editingProductLocked = ref(false);
@@ -616,12 +593,6 @@ const openDetail = (r: ProductListItem) => {
 const openBom = (r: ProductListItem) => {
   activeProduct.value = r;
   bomVisible.value = true;
-};
-const handleProductCommand = (c: string, r: ProductListItem) => {
-  if (c === 'route') {
-    activeProduct.value = r;
-    routeVisible.value = true;
-  } else void toggleProductStatus(r);
 };
 const runSave = async (action: () => Promise<void>, success: string, failure: string) => {
   submitting.value = true;
@@ -709,18 +680,6 @@ const viewBomApproval = (): void => {
     },
   });
 };
-const saveDefaultRoute = (id: string | null) =>
-  activeProduct.value
-    ? runSave(
-        async () => {
-          await productApi.setDefaultRoute(activeProduct.value!.id, id);
-          routeVisible.value = false;
-          await productGroups.load();
-        },
-        '默认工艺路线已保存',
-        '默认工艺路线保存失败',
-      )
-    : undefined;
 const toggleProductStatus = (r: ProductListItem) =>
   confirmStatus(r.productName, r.status, async () => {
     await productApi.setProductStatus(r.id, r.status === 1 ? 0 : 1);

@@ -218,6 +218,8 @@ export class ProductionService {
               this.requireProduct(await this.products.getProductionProduct(workOrderProductId));
               if (normalizedPayload.routeId || normalizedPayload.stepOverrides?.length)
                 throw new ProductionDomainError('INVALID_INPUT', '研发任务不配置工艺路线或工序');
+            } else if (!normalizedPayload.routeId) {
+              throw new ProductionDomainError('INVALID_INPUT', '请先选择工艺路线后再创建批量任务');
             }
             const route = research
               ? null

@@ -55,8 +55,6 @@ export class MysqlProductCatalogQuery {
         category_code: string;
         category_name: string;
         item_kind: ProductItemKind;
-        default_route_id: number | null;
-        default_route_name: string | null;
         unit: string;
         acquire_method: ProductListItem['acquireMethod'];
         spec_values: string | object | null;
@@ -72,13 +70,12 @@ export class MysqlProductCatalogQuery {
       })[]
     >(
       `SELECT p.id,p.item_code,p.product_name,p.category_id,c.category_code,c.category_name,c.item_kind,
-                    p.default_route_id,r.route_name default_route_name,p.unit,p.acquire_method,p.spec_values,p.status,
+                    p.unit,p.acquire_method,p.spec_values,p.status,
                     COUNT(pm.id) material_count,p.bom_locked_at,p.bom_locked_by,p.bom_status,
                     p.bom_approval_instance_id,p.version,p.remark,p.updated_at
              FROM products p JOIN item_categories c ON c.id=p.category_id
-             LEFT JOIN process_routes r ON r.id=p.default_route_id AND r.is_deleted=0
              LEFT JOIN product_materials pm ON pm.product_id=p.id AND pm.is_deleted=0 AND pm.status=1
-             WHERE ${where} GROUP BY p.id,c.category_code,c.category_name,c.item_kind,r.route_name
+             WHERE ${where} GROUP BY p.id,c.category_code,c.category_name,c.item_kind
              ORDER BY p.item_code,p.id LIMIT ? OFFSET ?`,
       [...parameters, pageSize, (page - 1) * pageSize],
     );
@@ -147,8 +144,6 @@ export class MysqlProductCatalogQuery {
         category_code: string;
         category_name: string;
         item_kind: ProductItemKind;
-        default_route_id: number | null;
-        default_route_name: string | null;
         unit: string;
         acquire_method: ProductListItem['acquireMethod'];
         spec_values: string | object | null;
@@ -164,15 +159,14 @@ export class MysqlProductCatalogQuery {
       })[]
     >(
       `SELECT selected.group_index,p.id,p.item_code,p.product_name,p.category_id,c.category_code,c.category_name,c.item_kind,
-              p.default_route_id,r.route_name default_route_name,p.unit,p.acquire_method,p.spec_values,p.status,
+              p.unit,p.acquire_method,p.spec_values,p.status,
               COUNT(pm.id) material_count,p.bom_locked_at,p.bom_locked_by,p.bom_status,
               p.bom_approval_instance_id,p.version,p.remark,p.updated_at
          FROM products p JOIN item_categories c ON c.id=p.category_id
          JOIN (${selectedGroups}) selected ON p.product_name=selected.product_name AND p.category_id=selected.category_id
-         LEFT JOIN process_routes r ON r.id=p.default_route_id AND r.is_deleted=0
          LEFT JOIN product_materials pm ON pm.product_id=p.id AND pm.is_deleted=0 AND pm.status=1
         WHERE p.is_deleted=0
-        GROUP BY selected.group_index,p.id,c.category_code,c.category_name,c.item_kind,r.route_name
+        GROUP BY selected.group_index,p.id,c.category_code,c.category_name,c.item_kind
         ORDER BY p.product_name,p.category_id,p.item_code,p.id`,
       groupParameters,
     );
@@ -210,9 +204,8 @@ export class MysqlProductCatalogQuery {
         product_name: string;
         acquire_method: ProductOption['acquireMethod'];
         unit: string;
-        default_route_id: number | null;
       })[]
-    >(`SELECT p.id,p.item_code,p.product_name,p.acquire_method,p.unit,p.default_route_id
+    >(`SELECT p.id,p.item_code,p.product_name,p.acquire_method,p.unit
              FROM products p JOIN item_categories c ON c.id=p.category_id
              WHERE p.is_deleted=0 AND p.status=1 AND c.is_deleted=0 AND c.status=1
                AND c.item_kind='finished_product' ORDER BY p.item_code`);
@@ -222,7 +215,6 @@ export class MysqlProductCatalogQuery {
       productName: row.product_name,
       acquireMethod: row.acquire_method,
       unit: row.unit,
-      defaultRouteId: row.default_route_id === null ? null : String(row.default_route_id),
     }));
   }
 
@@ -282,8 +274,6 @@ export class MysqlProductCatalogQuery {
     category_code: string;
     category_name: string;
     item_kind: ProductItemKind;
-    default_route_id: number | null;
-    default_route_name: string | null;
     unit: string;
     acquire_method: ProductListItem['acquireMethod'];
     spec_values: string | object | null;
@@ -305,8 +295,6 @@ export class MysqlProductCatalogQuery {
       categoryCode: row.category_code,
       categoryName: row.category_name,
       itemKind: row.item_kind,
-      defaultRouteId: row.default_route_id === null ? null : String(row.default_route_id),
-      defaultRouteName: row.default_route_name,
       unit: row.unit,
       acquireMethod: row.acquire_method,
       specValues: readProductSpecValues<ProductListItem['specValues'][number]>(row.spec_values),

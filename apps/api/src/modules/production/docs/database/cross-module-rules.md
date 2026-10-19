@@ -56,9 +56,9 @@ Inventory 所有入库明细及流水，Production 提供批准成品来源，Pr
 
 盘点归 [Inventory](../../../inventory/docs/database/stock-check.md)，通过差异流水修正，不直接改余额；Production 不写盘点表或复制其状态规则。
 
-### 3.12.8 产品默认路线与执行快照校验
+### 3.12.8 任务选路与执行快照校验
 
-路线不归属产品，默认路线只建议填单。批量任务在同一事务通过 Product 核验已批准且永久锁定 BOM、有效路线，自动生成步骤快照；研发不读取 BOM 或路线。任务失败、取消和履约不撤销 Product 批准事实。具体快照及禁用条件见[工单任务](work-orders-and-batches.md)与[工序执行](execution-traceability-quality.md#41-batch_step_records)。
+路线不归属产品，创建批量任务时由用户选择，不读取成品的历史默认路线字段。批量任务在同一事务通过 Product 核验已批准且永久锁定 BOM、用户所选路线的启用及未删除资格，并生成步骤快照；研发不读取 BOM 或路线。路线后续停用或归档不改变既有任务快照，也不阻断既有任务计划资料编辑。任务失败、取消和履约不撤销 Product 批准事实。具体快照规则见[工单任务](work-orders-and-batches.md)与[工序执行](execution-traceability-quality.md#41-batch_step_records)。
 
 ### 3.12.9 需求幂等与报废补料候选条件
 

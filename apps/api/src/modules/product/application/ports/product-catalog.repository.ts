@@ -25,11 +25,6 @@ export abstract class ProductCatalogRepository {
     command: ReplaceProductMaterialsCommand,
     audit: CommandContext,
   ): Promise<void>;
-  abstract setDefaultRoute(
-    productId: string,
-    routeId: string | null,
-    audit: CommandContext,
-  ): Promise<void>;
   abstract lockCurrentBomApproval(
     productId: string,
     instanceId: string,

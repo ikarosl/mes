@@ -7,5 +7,5 @@ export abstract class ProductProductionDefinitionCommand {
     productId: string,
     requestedRouteId: string | null,
     audit: CommandContext,
-  ): Promise<ProductQueryResult<ProcessRouteSnapshot | null>>;
+  ): Promise<ProductQueryResult<ProcessRouteSnapshot>>;
 }

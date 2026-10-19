@@ -24,9 +24,6 @@
         row.materialCount > 0 ? `${row.materialCount} 项` : '未配置'
       }}</el-descriptions-item>
       <el-descriptions-item label="BOM 状态">{{ bomStatusLabel(row) }}</el-descriptions-item>
-      <el-descriptions-item label="默认路线">{{
-        row.defaultRouteName || '未设置'
-      }}</el-descriptions-item>
       <el-descriptions-item label="状态">{{
         row.status === 1 ? '启用' : '停用'
       }}</el-descriptions-item>

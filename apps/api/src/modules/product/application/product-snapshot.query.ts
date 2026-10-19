@@ -3,7 +3,6 @@ export interface ProductionProductSnapshot {
   itemCode: string;
   productName: string;
   unit: string;
-  defaultRouteId: string | null;
 }
 
 export interface InventoryItemReference {
@@ -82,10 +81,6 @@ export abstract class ProductSnapshotQuery {
   abstract getProductionProduct(
     productId: string,
   ): Promise<ProductQueryResult<ProductionProductSnapshot>>;
-  abstract getProductionRouteSnapshot(
-    productId: string,
-    requestedRouteId: string | null,
-  ): Promise<ProductQueryResult<ProcessRouteSnapshot | null>>;
   abstract getBomSnapshot(productId: string): Promise<ProductQueryResult<ProductBomSnapshot>>;
   /** 工单选版资格：已批准 BOM 的当前读；不依赖工艺路线。 */
   abstract getApprovedBomSnapshot(

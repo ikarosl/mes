@@ -70,30 +70,7 @@
                 </template>
                 <template v-else>尚未建立</template>
               </el-descriptions-item>
-              <el-descriptions-item label="本轮建立时已入">
-                <template
-                  v-if="
-                    detail.baselinePlannedReceived !== null && detail.baselineExtraReceived !== null
-                  "
-                >
-                  {{
-                    Number(detail.baselinePlannedReceived) + Number(detail.baselineExtraReceived)
-                  }}
-                  件
-                </template>
-                <template v-else>尚未固定</template>
-              </el-descriptions-item>
-              <el-descriptions-item label="本轮建立时剩余">
-                {{
-                  detail.startingDeclaredRemaining === null
-                    ? '尚未固定'
-                    : Number(detail.startingDeclaredRemaining) + ' 件'
-                }}
-              </el-descriptions-item>
-              <el-descriptions-item
-                label="本轮检验记录"
-                :span="2"
-              >
+              <el-descriptions-item label="本轮检验记录">
                 <template v-if="currentInspection">
                   {{ PRODUCTION_OUTPUT_RELEASE_DECISION_LABELS[currentInspection.releaseDecision] }}
                   · {{ currentInspection.inspectionMethod === 'sampling' ? '样本检查' : '检查' }}

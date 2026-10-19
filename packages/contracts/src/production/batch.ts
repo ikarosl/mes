@@ -160,6 +160,7 @@ export interface ProductionBatchStartRecord {
 }
 
 export interface CreateProductionBatchPayload {
+  /** 批量任务必须显式选择；研发任务不得传入路线。 */
   routeId?: string | null;
   plannedQuantity: number;
   ownerId?: string | null;

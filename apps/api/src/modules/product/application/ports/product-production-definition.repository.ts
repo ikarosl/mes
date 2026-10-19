@@ -6,5 +6,5 @@ export abstract class ProductProductionDefinitionRepository {
     productId: string,
     requestedRouteId: string | null,
     audit: CommandContext,
-  ): Promise<ProcessRouteSnapshot | null>;
+  ): Promise<ProcessRouteSnapshot>;
 }

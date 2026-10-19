@@ -102,8 +102,3 @@ WHERE EXISTS (SELECT 1 FROM process_routes WHERE id = @route_id AND status = 'dr
 UPDATE process_routes SET status = 'enabled', updated_by = @demo_actor_id
 WHERE id = @route_id AND status = 'draft'
   AND (SELECT COUNT(*) FROM process_route_steps WHERE route_id = @route_id AND status = 1 AND is_deleted = 0) = 2;
-
-UPDATE products SET default_route_id = @route_id, version=version+1, updated_by = @demo_actor_id
-WHERE item_code IN ('p-micro-20-30', 'p-micro-20-30-02', 'p-micro-20-30-03')
-  AND default_route_id IS NULL AND bom_locked_at IS NULL AND bom_status='draft' AND is_deleted=0
-  AND EXISTS (SELECT 1 FROM process_routes WHERE id = @route_id AND status = 'enabled' AND is_deleted = 0);

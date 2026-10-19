@@ -65,8 +65,6 @@ export interface ProductListItem {
   categoryCode: string;
   categoryName: string;
   itemKind: ProductItemKind;
-  defaultRouteId: string | null;
-  defaultRouteName: string | null;
   unit: string;
   acquireMethod: ProductAcquireMethod;
   specValues: ProductSpecValue[];
@@ -109,7 +107,6 @@ export interface ProductOption {
   productName: string;
   acquireMethod: ProductAcquireMethod;
   unit: string;
-  defaultRouteId: string | null;
 }
 
 export interface ProductMaterialItem {

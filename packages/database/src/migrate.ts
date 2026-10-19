@@ -1,8 +1,8 @@
 import { loadWorkspaceEnv } from '@company/config';
 import { createDatabasePool } from './index.js';
-import { buildMigrationPlan } from './migration-plan.js';
 import {
   acquireMigrationLockQuery,
+  assertAppliedMigrations,
   migrationLockName,
   readMigrations,
   releaseMigrationLockQuery,
@@ -31,8 +31,9 @@ try {
         'SELECT name, checksum FROM _schema_migrations',
       );
       const applied = new Map(rows.map((row) => [row.name, row.checksum]));
-      const plan = buildMigrationPlan(migrations, applied);
-      for (const migration of plan.execution) {
+      assertAppliedMigrations(migrations, applied);
+      for (const migration of migrations) {
+        if (applied.has(migration.name)) continue;
         await connection.query(migration.sql);
         await connection.execute('INSERT INTO _schema_migrations (name, checksum) VALUES (?, ?)', [
           migration.name,

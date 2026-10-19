@@ -134,10 +134,13 @@
         </el-form-item>
       </template>
       <el-form-item
-        v-if="selectedWorkOrder?.orderType !== 'research'"
+        v-if="taskOrderType !== 'research'"
         label="工艺路线"
+        :required="!editingTaskId"
       >
+        <span v-if="editingTaskId">{{ existingRouteLabel }}</span>
         <el-select
+          v-else
           v-model="form.routeId"
           filterable
           clearable
@@ -215,7 +218,7 @@
       </el-form-item>
     </el-form>
     <el-tabs
-      v-if="!editingTaskId && selectedWorkOrder?.orderType !== 'research' && form.routeId"
+      v-if="!editingTaskId && taskOrderType !== 'research' && form.routeId"
       class="detail-tabs"
     >
       <el-tab-pane label="工序执行">
@@ -292,6 +295,7 @@
 import { computed, onActivated, reactive, ref, watch } from 'vue';
 import type {
   ProcessRouteOption,
+  ProductionBatchDetail,
   TechnicalFileListItem,
   UserOption,
   WorkOrderOption,
@@ -300,8 +304,6 @@ import { DialogWidth } from '../../../utils/dialog';
 import { EMessage } from '../../../utils/message';
 import { toDateInputValue } from '../../../utils/date';
 import { buildLiveOptions, hasUnavailableSelection } from '../../../utils/live-options';
-import { resolveDefaultRouteId } from '../production-route-options';
-import { useProductOptions } from '../../../composables/options/useProductOptions';
 import { useProcessRouteOptions } from '../../../composables/options/useProcessRouteOptions';
 import { useTaskRouteSteps } from '../composables/useTaskRouteSteps';
 import { useWorkOrderOptions } from '../composables/useWorkOrderOptions';
@@ -338,6 +340,16 @@ const emit = defineEmits<{
 }>();
 
 const existingBatchNo = ref('');
+const existingTaskContext = ref<Pick<
+  ProductionBatchDetail,
+  'orderType' | 'routeCode' | 'routeVersion'
+> | null>(null);
+const existingRouteLabel = computed(() => {
+  const context = existingTaskContext.value;
+  return context?.routeCode
+    ? `${context.routeCode}${context.routeVersion ? ` / ${context.routeVersion}` : ''}`
+    : '未配置';
+});
 const initialForm = (): Omit<TaskFormValue, 'stepOverrides'> => ({
   workOrderId: '',
   routeId: '',
@@ -348,15 +360,13 @@ const initialForm = (): Omit<TaskFormValue, 'stepOverrides'> => ({
   remark: '',
 });
 
-/** 本弹窗自持候选源：工单（本地过滤）/ 产品 / 工艺路线；打开、展开、页面激活时定向刷新 */
-const productSource = useProductOptions();
+/** 本弹窗自持工单与工艺路线候选；产品身份由所选工单提供。 */
 const routeSource = useProcessRouteOptions();
 const workOrderSource = useWorkOrderOptions();
 
-/** 打开弹窗：刷新本弹窗自持候选（产品 / 路线 / 工单），并请页面刷新它持有的用户 / SOP 文件候选 */
+/** 打开弹窗刷新自持候选，并请页面刷新它持有的用户 / SOP 文件候选。 */
 const onOpen = (): void => {
-  void productSource.refresh();
-  void routeSource.refresh();
+  if (!props.editingTaskId) void routeSource.refresh();
   void workOrderSource.refresh();
   emit('refresh-users');
   emit('refresh-sop-files');
@@ -372,8 +382,7 @@ watch(
 
 onActivated(() => {
   if (props.visible) {
-    void productSource.refresh();
-    void routeSource.refresh();
+    if (!props.editingTaskId) void routeSource.refresh();
     void workOrderSource.refresh();
   }
 });
@@ -388,6 +397,9 @@ const editingTaskOriginalQuantity = ref(0);
 
 const selectedWorkOrder = computed(
   () => workOrderSource.options.value.find((item) => item.id === form.workOrderId) ?? null,
+);
+const taskOrderType = computed(() =>
+  props.editingTaskId ? existingTaskContext.value?.orderType : selectedWorkOrder.value?.orderType,
 );
 /** 候选工单：标记失效已选值 */
 const workOrderChoices = computed(() =>
@@ -447,53 +459,14 @@ const routeChoices = computed(() =>
 const ownerChoices = computed(() =>
   buildLiveOptions(props.userOptions, form.ownerId ? [form.ownerId] : [], (user) => user.id),
 );
-const loadCreateStepPreview = (): void => {
+const handleRouteChange = (): void => {
+  resetStepPreview();
   void fetchStepPreview(form.routeId, Boolean(props.editingTaskId));
 };
-
-/** 待补算默认路线的工单 id：工单 change 时产品/路线候选未就绪，候选就绪后补算（不覆盖用户手动改的路线） */
-let pendingRouteWorkOrderId: string | null = null;
-
-/** 用户手动选择/清空路线：取消待补算的默认路线，避免迟到的默认路线补算覆盖手动选择 */
-const handleRouteChange = (): void => {
-  pendingRouteWorkOrderId = null;
-  loadCreateStepPreview();
-};
-
-const applyDefaultRoute = (order: WorkOrderOption): void => {
-  if (order.orderType === 'research') {
-    form.routeId = '';
-    resetStepPreview();
-    return;
-  }
-  form.routeId = resolveDefaultRouteId(
-    order.productId,
-    productSource.options.value,
-    routeSource.options.value,
-  );
-  loadCreateStepPreview();
-};
-
-/**
- * 产品 / 路线候选就绪后，补算之前因候选未就绪而挂起的默认路线。
- * pending 只在工单 change 时设置，用户手动改路线不会被候选刷新覆盖。
- */
-watch(
-  () => [productSource.options.value, routeSource.options.value],
-  () => {
-    if (!pendingRouteWorkOrderId) return;
-    if (productSource.status.value !== 'ready' || routeSource.status.value !== 'ready') return;
-    const order = workOrderSource.options.value.find((item) => item.id === pendingRouteWorkOrderId);
-    pendingRouteWorkOrderId = null;
-    if (!order || order.id !== form.workOrderId) return; // 工单已切换/清空，丢弃挂起
-    applyDefaultRoute(order);
-  },
-);
 
 const handleWorkOrderChange = (workOrderId: string): void => {
   const order = workOrderSource.options.value.find((item) => item.id === workOrderId);
   // 切换工单：立即清空上一工单的路线与负责人及预览，防止旧产品路线残留到提交校验
-  pendingRouteWorkOrderId = null;
   form.routeId = '';
   form.ownerId = '';
   form.planStartDate = toDateInputValue(order?.planStartDate);
@@ -504,16 +477,11 @@ const handleWorkOrderChange = (workOrderId: string): void => {
   if (!Number.isInteger(form.plannedQuantity) || form.plannedQuantity <= 0) {
     EMessage.warning('该工单已无可分配数量');
   }
-  if (productSource.status.value === 'ready' && routeSource.status.value === 'ready') {
-    applyDefaultRoute(order);
-  } else {
-    pendingRouteWorkOrderId = order.id;
-  }
 };
 
 const resetForm = (): void => {
   existingBatchNo.value = '';
-  pendingRouteWorkOrderId = null;
+  existingTaskContext.value = null;
   Object.assign(form, initialForm());
   resetStepPreview();
 };
@@ -521,7 +489,10 @@ const resetForm = (): void => {
 const setForm = (row: {
   workOrderId: string;
   batchNo: string;
+  orderType: ProductionBatchDetail['orderType'];
   routeId: string | null;
+  routeCode: string | null;
+  routeVersion: string | null;
   ownerId: string | null;
   plannedQuantity: string | number;
   planStartDate: string | null;
@@ -530,7 +501,11 @@ const setForm = (row: {
 }): void => {
   editingTaskOriginalQuantity.value = Number(row.plannedQuantity);
   existingBatchNo.value = row.batchNo;
-  pendingRouteWorkOrderId = null; // 编辑模式工单只读回显，不参与默认路线补算
+  existingTaskContext.value = {
+    orderType: row.orderType,
+    routeCode: row.routeCode,
+    routeVersion: row.routeVersion,
+  };
   Object.assign(form, {
     workOrderId: row.workOrderId,
     routeId: row.routeId ?? '',
@@ -591,7 +566,12 @@ const handleSubmit = (): void => {
     EMessage.warning('所选工单已失效，请重新选择');
     return;
   }
+  if (!props.editingTaskId && taskOrderType.value !== 'research' && !form.routeId) {
+    EMessage.warning('请先选择工艺路线');
+    return;
+  }
   if (
+    !props.editingTaskId &&
     form.routeId &&
     hasUnavailableSelection(availableRouteOptions.value, [form.routeId], (route) => route.id)
   ) {
@@ -607,7 +587,7 @@ const handleSubmit = (): void => {
   }
   emit('save', {
     ...form,
-    routeId: selectedWorkOrder.value?.orderType === 'research' ? '' : form.routeId,
+    routeId: taskOrderType.value === 'research' ? '' : form.routeId,
     stepOverrides: createStepPreview.value
       .filter((step) => step.actualSopFileId)
       .map((step) => ({

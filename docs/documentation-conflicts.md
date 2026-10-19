@@ -7,7 +7,6 @@
 | 编号 | 主题 | 类型／当前状态 | 待处理 |
 | --- | --- | --- | --- |
 | [CP-02](#cp-02) | 过程复检关联source_rework_id | 历史提案批准状态待确认；当前明确未定稿 | 保留提案或确认撤回，不提前建模 |
-| [CP-03](#cp-03) | 批量任务的路线必选时点 | 工作流要求与创建门禁存在差异；待确认 | 明确是否在创建时阻止无路线任务 |
 | [CO-01](#co-01) | 产品分类扁平化与树结构 | 旧目标与当前实现冲突；待裁决 | 旧扁平化目标是否仍有效 |
 | [CO-02](#co-02) | Identity主数据审计字段 | 公共规范与owner／migration差异；待裁决 | 补齐规范还是明确经批准的例外 |
 | [CO-03](#co-03) | 演示工单生成旧业务备注 | 代码残留与已明确新规则冲突；待修正 | 后续修改demo SQL，核对展示及初始化行为 |
@@ -72,11 +71,9 @@
 
 ## CP-03
 
-**批量任务必须选择有效路线的校验时点尚未统一。**
+用户已明确批量任务必须在创建时手动选择有效路线；成品不设默认路线，前后端均不自动补选。研发不选择路线或生成工序。创建门禁及既有任务快照边界由 [Production](../apps/api/src/modules/production/docs/database/work-orders-and-batches.md#工单类型与物料版本规则)和 [Product](../apps/api/src/modules/product/docs/product-rules.md)维护。
 
-- 规则证据：[生产工作流](../apps/api/src/modules/production/docs/business-workflow.md)要求执行任务使用有效路线，并说明批量任务冻结所选路线及工序、研发不生成路线或工序。
-- 实现证据：[Product 生产定义读取](../apps/api/src/modules/product/infrastructure/mysql-product-snapshot.repository.ts)的 `requireApprovedBomForProductionTask` 在请求与产品默认路线均为空时返回 `null`；[ProductionService](../apps/api/src/modules/production/application/production.service.ts)在没有工序覆盖项时接受该结果，[批次 Repository](../apps/api/src/modules/production/infrastructure/tasks/mysql-production-batch.repository.ts)可创建无路线、无工序的批量任务。[执行 Repository](../apps/api/src/modules/production/infrastructure/execution/mysql-production-execution.repository.ts)则拒绝没有工序的批量任务执行完工。
-- 影响与待决：需要明确创建时是否必须拒绝缺失路线，以及已创建无路线任务的办理方式；不能仅由 `route_id` 可空推断批量与研发适用相同规则。本次幂等闭环测试使用有效路线验证正常创建路径，不修改该业务门禁，也不将无路线创建视作已批准行为。后续处理见[路线图](roadmap.md#production-与-product-内部结构待验收)。
+本锚点保留原创建门禁与执行要求差异的裁决定位；本次不补造历史路线、工序或修改数据库。历史无路线且不具备取消资格的任务处置，以及 UI 验收与正式测试，仍由[路线图](roadmap.md#任务手动选路与取消成品默认路线待验收)维护。
 
 ## CO-01
 

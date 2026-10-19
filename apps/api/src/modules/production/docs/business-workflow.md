@@ -31,7 +31,7 @@ Product 维护标准工序及 SOP；生产任务使用创建时的快照，不�
 
 ### 5. 配置工艺路线
 
-路线表达顺序、默认负责人、SOP 和检验标记，独立于产品；产品默认路线只是填单建议。执行任务必须使用有效路线，详细快照与派工规则见[生产执行](database/execution-traceability-quality.md#41-batch_step_records)。
+路线表达顺序、默认负责人、SOP 和检验标记，独立于产品；成品不设置默认路线，创建批量任务时必须由用户选择，不按产品或候选顺序自动填入。创建校验与历史无路线任务边界见[工单与任务](database/work-orders-and-batches.md#工单类型与物料版本规则)，快照与派工规则见[生产执行](database/execution-traceability-quality.md#41-batch_step_records)。
 
 ### 6. 配置成品
 

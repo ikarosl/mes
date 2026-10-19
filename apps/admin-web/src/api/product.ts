@@ -141,13 +141,6 @@ export const productApi = {
       method: 'PUT',
       data: { items, version } satisfies ReplaceProductMaterialsCommand,
     }),
-  setDefaultRoute: (id: string, routeId: string | null) =>
-    request<void>({
-      url: `${base}/products/${id}/default-route`,
-      method: 'PATCH',
-      data: { routeId },
-    }),
-
   processSteps: (params: ProcessStepQuery) =>
     request<PageResult<ProcessStepListItem>>({ url: `${base}/process-steps`, params }),
   processStepOptions: () =>

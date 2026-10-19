@@ -3,10 +3,6 @@
     label-width="160px"
     :disabled="disabled"
   >
-    <InlineHint class="inspection-reference">
-      送检时申报数量 <strong>{{ coveredQuantity }} {{ unit }}</strong
-      >；仅供核对，不等于当前剩余或本次实检。
-    </InlineHint>
     <el-form-item
       label="检验方式"
       required
@@ -52,6 +48,26 @@
         />
       </el-form-item>
     </div>
+    <InlineHint
+      :tone="
+        preview &&
+        model.inspectionMethod !== 'sampling' &&
+        preview.inspectedQuantity !== coveredQuantity
+          ? 'warning'
+          : 'info'
+      "
+      class="inspection-preview"
+    >
+      {{ model.inspectionMethod === 'sampling' ? '样本总数' : '检查总数' }}：
+      <strong v-if="preview">{{ preview.inspectedQuantity }} {{ unit }}</strong>
+      <template v-else>请填写有效数量</template>。
+      <template v-if="model.inspectionMethod === 'sampling'">抽检只填写样本数量。</template>
+      <template v-else-if="preview && preview.inspectedQuantity !== coveredQuantity">
+        与仓库送检数量相差
+        <strong>{{ Math.abs(preview.inspectedQuantity - coveredQuantity) }} {{ unit }}</strong
+        >，仓库确认时需核对。
+      </template>
+    </InlineHint>
     <el-form-item
       label="放行结论"
       required
@@ -69,28 +85,7 @@
         />
       </el-select>
     </el-form-item>
-    <InlineHint
-      v-if="preview"
-      :tone="
-        model.inspectionMethod !== 'sampling' && preview.inspectedQuantity !== coveredQuantity
-          ? 'warning'
-          : 'info'
-      "
-      class="inspection-preview"
-    >
-      {{ model.inspectionMethod === 'sampling' ? '本次样本' : '实际检查' }}
-      <strong>{{ preview.inspectedQuantity }} {{ unit }}</strong
-      >。
-      <template v-if="model.inspectionMethod === 'sampling'">
-        样本判断整批资格，不改变本轮剩余范围。
-      </template>
-      <template v-else-if="preview.inspectedQuantity !== coveredQuantity">
-        与送检时申报数量相差
-        <strong>{{ Math.abs(preview.inspectedQuantity - coveredQuantity) }} {{ unit }}</strong
-        >，库管定稿时需核对。
-      </template>
-      检验完成后仍需仓库确认，入库或退回需另行办理。
-    </InlineHint>
+    <InlineHint class="inspection-preview"> 检验完成后，由仓库核对并办理入库或退回。 </InlineHint>
     <el-form-item
       label="线下检验时间"
       required
@@ -158,7 +153,6 @@ const changeMethod = (value: string | number | boolean | undefined) => {
 watch(valid, (value) => emit('valid', value), { immediate: true });
 </script>
 <style scoped>
-.inspection-reference,
 .inspection-preview {
   margin-bottom: 16px;
 }

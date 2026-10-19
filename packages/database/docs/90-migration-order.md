@@ -5,8 +5,8 @@
 ## 事实来源
 
 `packages/database/migrations/*.up.sql` 按文件名升序组成唯一 migration 注册表；同名
-`.down.sql` 提供配对回滚。`src/migration-utils.ts` 负责读取和计算校验和，`src/migration-plan.ts` 校验已执行记录并筛选待执行项，`src/migrate.ts` 按注册顺序执行，
-`src/migrate-status.ts` 报告 `pending` 或 `applied`；已执行文件缺失或校验和不符直接失败并标明文件名。
+`.down.sql` 提供配对回滚 SQL。`src/migration-utils.ts` 负责读取、计算校验和及共用的已执行记录检查，`src/migrate.ts` 按注册顺序执行尚未登记的迁移，
+`src/migrate-status.ts` 报告 `pending` 或 `applied`；检查行为及登记规则见[迁移登记表](../README.md#迁移登记表-_schema_migrations)。当前运行器只执行 up，没有统一的 down／rollback 命令。
 
 文档不重复枚举 migration 文件或完成状态，避免注册表演进后产生第二份过期清单。查看当前顺序使用：
 

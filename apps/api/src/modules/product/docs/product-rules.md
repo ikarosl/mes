@@ -6,13 +6,13 @@
 
 1. 分类仅使用 `item_kind = material | finished_product`；分类说明“是什么”，`acquire_method` 说明“如何获得”。不设置独立半成品类型。
 2. 成品写入 `products`（`item_code`），基础物料写入 `materials`（`material_code`），编码在各自表内永久唯一；编码和基础单位创建后不可修改。“原则变化”指材料、关键参数等决定成品或物料身份的根本属性变化，不泛指所有用料调整。成品身份发生此类变化时新建成品及成品编码，物料身份发生此类变化时新建物料及物料编码。
-3. 只有已启用的自制成品可以配置 `product_materials` 和默认路线；采购物料不能配置生产工艺。
+3. 只有已启用的自制成品可以配置 `product_materials`；基础物料不配置 BOM。
 4. BOM 投入对象只能是已启用的基础物料；BOM 是 Production 批量任务生成需求基础的唯一来源；研发手工需求不依赖 BOM。本模块只维护 BOM，不生成需求，也不回写任何历史需求。
 5. `material_variants` 是物料库存的精确身份。版本编码由服务端按基础物料编码和版本号生成，创建后不可改；Production 的新需求、补料和生产出库使用启用版本，采购及对应入库允许停用但未删除的版本，基础物料和分类仍须有效。
 6. 工艺路线只表达工序顺序、负责人、SOP 与规则快照，不绑定产品或 BOM 行；批量物料需求按本任务完整 BOM 基础配置并锁版，研发直接手工提需。
 7. 路线创建时固定为 `draft`。只有草稿可以编辑路线内容与步骤；首次启用后，即使后来停用也不可原地修改，调整必须新建版本。
 8. 启用路线前必须至少包含一个启用步骤。保存步骤时后端从 `process_steps` 和 `technical_files` 复制工序与 SOP 快照。
-9. 默认路线必须为 `enabled` 且未删除；生产任务带出产品默认路线，并允许改选其他已启用路线。
+9. 成品不配置默认路线。批量任务创建前必须手动选择路线，并在创建事务内重新核验路线为 `enabled` 且未删除，冻结路线、步骤和 SOP 快照；缺失路线时拒绝创建。研发任务无需路线，不生成工序。路线停用或归档不受成品引用限制，也不改写历史任务快照。
 10. 所有产品资料写操作和 `operation_logs` 在同一数据库事务中提交；审计信息不记录文件内容、Token、Cookie 或其他密钥。
 
 
@@ -27,7 +27,7 @@
 `MysqlProductCatalogRepository` 是 application port 的装配入口，委托四个内部职责：
 
 - `MysqlProductCatalogQuery` 负责成品分页、名称分组、候选、BOM 展示和历史物料名称；展示结果不授予编辑或审批资格。
-- `MysqlProductCommands` 负责成品主数据、启停和默认路线。默认路线变更先锁路线、再锁成品根，其余已有写入口保留各自事务顺序。
+- `MysqlProductCommands` 负责成品主数据和启停，写入与成功审计在同一事务内提交。
 - `MysqlProductBomEditor` 负责完整替换 BOM，在同一事务锁成品根、核对版本及编辑资格、校验单位、恢复或写入明细、递增聚合版本并记录成功审计。
 - `MysqlProductBomApproval` 负责送审准备、绑定申请、审批前关联核对、最终批准和恢复草稿；事务可复用 Approval 的同池外层事务。
 
@@ -43,6 +43,10 @@ BOM 审批证据仅接受当前结构版本 2；开发环境通过数据重置�
 
 
 `ProductSnapshotQuery.getApprovedBomSnapshot` 在活动事务内锁定成品并复核批准依据，为 Production 批量任务初始需求提供不依赖路线的 BOM 快照；它不写审批或锁定事实，也不改变基础物料与精确版本身份。
+
+成品列表、名称分组、候选和生产成品快照不包含默认路线字段。权限目录中的 `product:products:set-default-route` 无对应 HTTP 命令入口；数据库保留列的适用边界见[成品表](database.md#2-products)。
+
+`ProductProductionDefinitionCommand.requireApprovedBomForProductionTask` 是批量任务创建的资格边界：必须提供显式路线 ID，缺失时返回无效输入结果；成功时返回非空路线快照。成品、批准 BOM、所选路线及其步骤在同一创建事务内锁定并复核，不能用候选响应代替当前写入资格。
 
 ## 候选、历史展示与写入资格
 
@@ -92,7 +96,7 @@ Product 自有候选按下表声明 any-of，路径省略 `/api/product`。生�
 | `/materials/options` | 成品 BOM、基础物料与版本配置、生产用料及入库候选 | `product:products:view`、`product:materials:view`、`product:material-variants:view`、`production:materials:view`、`production:material-demands:view`、`warehouse:inbound:view` |
 | `/material-variants/by-material/:materialId` | 成品 BOM、版本配置、生产用料、任务内嵌手工提需及入库候选 | `product:products:view`、`product:material-variants:view`、`production:materials:view`、`production:material-demands:view`、`production:tasks:view`、`warehouse:inbound:view` |
 | `/process-steps/options` | 工序及工艺路线配置 | `product:processes:view`、`product:routes:view` |
-| `/process-routes/options` | 成品默认路线、工艺路线及生产工单／任务 | `product:products:view`、`product:routes:view`、`production:orders:view`、`production:tasks:view` |
+| `/process-routes/options` | 工艺路线及生产工单／任务 | `product:routes:view`、`production:orders:view`、`production:tasks:view` |
 | `/users/options` | 工艺路线及生产工单／任务的负责人候选 | `product:routes:view`、`production:orders:view`、`production:tasks:view` |
 
 目录来源、分组及逐接口授权规则由 [Identity](../../identity/docs/database.md#14-permissions)维护；候选读取不授予主数据编辑、采购、生产或库存写入资格。跨模块候选仍由其所有者维护，Product 不记录 Production 接口清单。

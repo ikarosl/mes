@@ -150,9 +150,6 @@ export class ReplaceProductMaterialsDto implements ReplaceProductMaterialsComman
   @Type(() => ProductMaterialDto)
   items!: ProductMaterialDto[];
 }
-export class DefaultRouteDto {
-  @ValidateIf((_, value) => value !== null) @IsNumberString() routeId!: string | null;
-}
 export class ProcessStepDto {
   @IsString() @IsNotEmpty() @MaxLength(100) stepCode!: string;
   @IsString() @IsNotEmpty() @MaxLength(100) stepName!: string;

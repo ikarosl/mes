@@ -20,7 +20,6 @@ type ProductRow = RowDataPacket & {
   item_code: string;
   product_name: string;
   unit: string;
-  default_route_id: number | null;
   item_kind: InventoryItemReference['itemKind'];
 };
 type ProductDisplayRow = RowDataPacket & {
@@ -63,7 +62,7 @@ export class MysqlProductSnapshotRepository
     if (itemIds.length === 0) return [];
     const [rows] = await this.pool.query<ProductRow[]>(
       `SELECT m.id,m.material_code item_code,m.material_name product_name,m.unit,
-              'material' item_kind,NULL default_route_id
+              'material' item_kind
          FROM materials m
          JOIN item_categories c ON c.id=m.category_id AND c.status=1 AND c.is_deleted=0
         WHERE m.status=1 AND m.deleted_at IS NULL AND c.item_kind='material'
@@ -102,25 +101,16 @@ export class MysqlProductSnapshotRepository
     );
   }
 
-  async getProductionRouteSnapshot(
-    productId: string,
-    requestedRouteId: string | null,
-  ): Promise<ProcessRouteSnapshot | null> {
-    return withTransaction(this.pool, async (connection) => {
-      const product = await this.productionProduct(connection, productId, true);
-      const routeId = requestedRouteId ?? product.defaultRouteId;
-      if (!routeId) return null;
-      return this.routeSnapshot(connection, routeId, true);
-    });
-  }
-
   async requireApprovedBomForProductionTask(
     productId: string,
     requestedRouteId: string | null,
     _audit: CommandContext,
-  ): Promise<ProcessRouteSnapshot | null> {
+  ): Promise<ProcessRouteSnapshot> {
+    if (!requestedRouteId) {
+      throw new ProductDomainError('INVALID_ROUTE', '请先选择工艺路线');
+    }
     return withTransaction(this.pool, async (connection) => {
-      const product = await this.productionProduct(connection, productId, true);
+      await this.productionProduct(connection, productId, true);
       await this.requireApprovedBom(connection, productId);
 
       const [bomLines] = await connection.query<
@@ -164,9 +154,7 @@ export class MysqlProductSnapshotRepository
         );
       }
 
-      const routeId = requestedRouteId ?? product.defaultRouteId;
-      const route = routeId ? await this.routeSnapshot(connection, routeId, true) : null;
-      return route;
+      return this.routeSnapshot(connection, requestedRouteId, true);
     });
   }
 
@@ -348,7 +336,7 @@ export class MysqlProductSnapshotRepository
     lock = false,
   ): Promise<ProductionProductSnapshot> {
     const [[row]] = await db.query<ProductRow[]>(
-      `SELECT p.id,p.item_code,p.product_name,p.unit,p.default_route_id
+      `SELECT p.id,p.item_code,p.product_name,p.unit
          FROM products p JOIN item_categories c ON c.id=p.category_id
         WHERE p.id=? AND p.status=1 AND p.acquire_method='self_made' AND p.is_deleted=0
           AND c.item_kind='finished_product' AND c.status=1 AND c.is_deleted=0${lock ? ' FOR UPDATE' : ''}`,
@@ -360,7 +348,6 @@ export class MysqlProductSnapshotRepository
       itemCode: row.item_code,
       productName: row.product_name,
       unit: row.unit,
-      defaultRouteId: row.default_route_id === null ? null : String(row.default_route_id),
     };
   }
 }

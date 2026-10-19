@@ -49,11 +49,11 @@
         >
           <template v-if="contextLine">
             <el-descriptions
-              :column="3"
+              :column="2"
               border
               size="small"
             >
-              <el-descriptions-item label="当前整批阶段">
+              <el-descriptions-item label="当前状态">
                 <el-tag
                   size="small"
                   :type="receiptLineStageType(contextLine)"
@@ -61,21 +61,24 @@
                   >{{ receiptLineStageLabel(contextLine) }}</el-tag
                 >
               </el-descriptions-item>
-              <el-descriptions-item label="当前处理轮"
-                >第 {{ contextLine.currentRound.roundNo }} 轮</el-descriptions-item
+              <el-descriptions-item
+                v-if="contextCase?.status === 'reviewing'"
+                label="仓库送检数量"
+                ><strong
+                  >{{ contextCase.coveredQuantity }} {{ contextLine.unit }}</strong
+                ></el-descriptions-item
               >
-              <el-descriptions-item label="本轮剩余实物"
+              <el-descriptions-item
+                v-else
+                label="未入库或退回"
                 ><strong
                   >{{ contextLine.quantities.unprocessedQuantity }} {{ contextLine.unit }}</strong
                 ></el-descriptions-item
               >
               <el-descriptions-item
-                v-if="contextLine.currentRound.reason"
-                label="本轮发起原因"
-                :span="3"
-                ><span class="record-text">{{
-                  contextLine.currentRound.reason
-                }}</span></el-descriptions-item
+                :label="inspectionReason.label"
+                :span="2"
+                ><span class="record-text">{{ inspectionReason.text }}</span></el-descriptions-item
               >
             </el-descriptions>
             <div
@@ -151,14 +154,14 @@
               v-loading="actionLoading"
               class="action-form"
             >
-              <h3>填写本轮检验结果</h3>
+              <h3>填写检验结果</h3>
               <InlineHint
                 v-if="hasDisposal"
                 class="notice"
               >
-                历史实物处置：已入 {{ contextLine.quantities.inboundQuantity }}、已退
+                已入库 {{ contextLine.quantities.inboundQuantity }} {{ contextLine.unit }}、已退回
                 {{ contextLine.quantities.returnedQuantity }}
-                {{ contextLine.unit }}；本次检验只处理上方剩余实物。
+                {{ contextLine.unit }}；仓库送检数量已扣除这两部分。
               </InlineHint>
               <InboundInspectionFields
                 v-model="inspection"
@@ -343,6 +346,20 @@ const {
   canConfirm,
   command,
 } = actions;
+const contextCase = computed(() => {
+  const source = contextLine.value;
+  if (!source) return null;
+  if (actionOpen.value && action.value === 'inspect') return caseRecord.value;
+  return source.cases.find((record) => record.roundId === source.currentRound.id) ?? null;
+});
+const inspectionReason = computed(() => {
+  const record = contextCase.value;
+  if (record?.caseType === 'reinspection')
+    return { label: '复检原因', text: record.reason.trim() || '-' };
+  if (record?.caseType === 'inspection_correction')
+    return { label: '更正原因', text: record.reason.trim() || '-' };
+  return { label: '检验原因', text: '-' };
+});
 const hasDisposal = computed(
   () =>
     Number(contextLine.value?.quantities.inboundQuantity) > 0 ||
@@ -381,7 +398,7 @@ const primaryLabel = computed(() => {
   if (activeTab.value === 'history') return '返回本次检验';
   if (!line.value) return '';
   if (actionOpen.value) return action.value === 'inspect' ? '保存检验记录' : '确认发起检验 / 复检';
-  if (reviewingCase.value) return '填写本轮检验结果';
+  if (reviewingCase.value) return '填写检验结果';
   if (canReviewReceipt(line.value))
     return line.value.currentRound.status === 'uninspected' ? '发起整批检验' : '开始复检';
   return '查看检验历史';

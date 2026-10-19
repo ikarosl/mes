@@ -14,6 +14,23 @@ export interface Migration {
 }
 
 /**
+ * 执行与状态查询共用的历史完整性检查。
+ * 先核对全部已登记文件及其校验和，避免执行部分待迁移 SQL 后才发现历史文件缺失或被修改。
+ */
+export const assertAppliedMigrations = (
+  migrations: readonly Migration[],
+  applied: ReadonlyMap<string, string>,
+): void => {
+  const byName = new Map(migrations.map((migration) => [migration.name, migration]));
+  for (const [name, appliedChecksum] of applied) {
+    const migration = byName.get(name);
+    if (!migration) throw new Error(`数据库含当前注册表不存在的 migration：${name}`);
+    if (migration.checksum !== appliedChecksum)
+      throw new Error(`已执行的 migration 内容发生变化：${name}`);
+  }
+};
+
+/**
  * 检查当前数据库是否已创建迁移记录表。
  * 这里只需要存在性结果；`information_schema.tables` 没有 `name` 字段，因此使用常量查询。
  */

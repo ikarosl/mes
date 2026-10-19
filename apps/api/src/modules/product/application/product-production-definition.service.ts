@@ -19,7 +19,7 @@ export class ProductProductionDefinitionService extends ProductProductionDefinit
     productId: string,
     requestedRouteId: string | null,
     audit: CommandContext,
-  ): Promise<ProductQueryResult<ProcessRouteSnapshot | null>> {
+  ): Promise<ProductQueryResult<ProcessRouteSnapshot>> {
     try {
       return {
         status: 'success',

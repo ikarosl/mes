@@ -71,10 +71,6 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
     return this.bom.replaceMaterials(productId, command, audit);
   }
 
-  setDefaultRoute(productId: string, routeId: string | null, audit: CommandContext): Promise<void> {
-    return this.products.setDefaultRoute(productId, routeId, audit);
-  }
-
   lockCurrentBomApproval(
     productId: string,
     instanceId: string,

@@ -26,7 +26,6 @@ import {
 import { ProductService } from '../../application/product.service.js';
 import { ProductDomainExceptionFilter } from './product-domain-exception.filter.js';
 import {
-  DefaultRouteDto,
   ProcessRouteDto,
   ProcessRouteQueryDto,
   ProcessRouteStatusDto,
@@ -324,17 +323,6 @@ export class ProductController {
   ) {
     return this.service.replaceMaterials(id, body, audit);
   }
-  @Patch('products/:id/default-route')
-  @RequirePermission(PERMISSIONS.product.products.setDefaultRoute)
-  @AuditInApplication()
-  defaultRoute(
-    @Param() { id }: ProductIdParamDto,
-    @Body() body: DefaultRouteDto,
-    @CurrentCommandContext() audit: CommandContext,
-  ) {
-    return this.service.setDefaultRoute(id, body.routeId, audit);
-  }
-
   @Get('process-steps')
   @RequirePermission(PERMISSIONS.product.processes.view)
   processSteps(@Query() query: ProcessStepQueryDto) {
@@ -411,9 +399,8 @@ export class ProductController {
     });
   }
   @Get('process-routes/options')
-  // 跨页面选项授权：产品页（默认路线下拉）、工艺路线页、生产工单/任务页（路线下拉）任一视图权限即可读取
+  // 跨页面选项授权：工艺路线页或生产工单/任务页任一视图权限即可读取
   @RequirePermission([
-    PERMISSIONS.product.products.view,
     PERMISSIONS.product.routes.view,
     PERMISSIONS.production.orders.view,
     PERMISSIONS.production.tasks.view,

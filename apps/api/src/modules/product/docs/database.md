@@ -52,7 +52,7 @@ BOM 单位用量使用 `INT`；`chk_integer_storage_product_materials` 限制其
 | `item_code`        | `VARCHAR(100)`    | 成品编码（创建后不可修改）      |
 | `product_name`     | `VARCHAR(200)`    | 名称                                    |
 | `category_id`      | `BIGINT UNSIGNED` | 分类 ID                                 |
-| `default_route_id` | `BIGINT UNSIGNED` | 默认工艺路线，可为空                    |
+| `default_route_id` | `BIGINT UNSIGNED` | 未启用保留列，可为空；应用不读写         |
 | `bom_locked_at`    | `DATETIME`        | BOM 最终审批通过并永久锁定的时间   |
 | `bom_locked_by`    | `BIGINT UNSIGNED` | BOM 最后一级批准人；未批准时为空            |
 | `unit`             | `VARCHAR(20)`     | 唯一基础计量单位，例如 `g`、`kg`、`pcs` |
@@ -78,8 +78,8 @@ BOM 单位用量使用 `INT`；`chk_integer_storage_product_materials` 限制其
 - 成品只写 `products`，基础物料只写 `materials`；二者独立自增，数值相同的 ID 不表示同一对象。
 - `category_id` 必须属于 `finished_product` 分类；名称不唯一，唯一键只约束 `item_code`。
 - 产品编码和基础单位创建后不可修改；编码永久不复用，软删除后继续使用时恢复原记录。
-- BOM 锁定事实与 `default_route_id` 只属于成品；物料表不保留这些字段。
-- `default_route_id` 只是新增生产任务时的快捷默认值，不是路线归属或适用性约束。
+- BOM 锁定事实只属于成品，物料表不保留这些字段。
+- 成品不配置默认路线；`default_route_id` 及其外键保留在当前物理结构中，应用不读取、写入或公开该字段，不以其存量值限制路线停用或归档。生产任务只消费创建请求显式选择的路线。
 
 ### 2.1 `materials`
 
@@ -100,11 +100,11 @@ BOM 单位用量使用 `INT`；`chk_integer_storage_product_materials` 限制其
 
 约束：`UNIQUE (material_code)`；分类和操作者外键；状态与软删除标志只允许 `0/1`；删除必须同时保存删除人和时间。物料编码和单位由更新触发器保护。名称不唯一；物料与成品分别保证各自编码唯一，不建立跨表编码注册表。
 
-分类类型由 Product 写事务校验，分类对象类型创建后不可修改，无论是否存在引用。物料自身不拥有 BOM、默认路线或生产工单；`self_made` 只保留获取方式，不提前开放自产半成品入库能力。
+分类类型由 Product 写事务校验，分类对象类型创建后不可修改，无论是否存在引用。物料自身不拥有 BOM 或生产工单；`self_made` 只保留获取方式，不提前开放自产半成品入库能力。
 
 ```text
 products → product_materials → materials → material_variants
-products.default_route_id → process_routes → process_route_steps
+process_routes → process_route_steps
 ```
 
 ---
@@ -176,7 +176,7 @@ products.default_route_id → process_routes → process_route_steps
 
 CHECK：`version >= 0`；`draft` 时申请关联和锁定字段均为空；`pending_approval` 时申请关联非空、锁定字段为空；`approved` 时申请关联、锁定时间和操作人均非空。索引 `bom_approval_instance_id`；外键仅保证申请存在，Product 与 Approval 同事务验证申请场景、对象类型、`subject_id`、状态及业务关联相符。完整各级人员从审批事实查询，不把最后一人误当全部审批人员。
 
-送审期间冻结成品主表的普通编辑、启停、默认路线变更及所有 BOM 明细修改，确保聚合版本和受审内容稳定；要修改先由申请人撤回。所有成品主表及 BOM 写入口均纳入聚合版本管理，BOM 批量修改也须锁成品根并递增同一 `version`。此冻结范围限于当前成品；基础物料自身的改名仍遵守当前名称展示规则，不冻结整个物料目录。
+送审期间冻结成品主表的普通编辑、启停及所有 BOM 明细修改，确保聚合版本和受审内容稳定；要修改先由申请人撤回。所有成品主表及 BOM 写入口均纳入聚合版本管理，BOM 批量修改也须锁成品根并递增同一 `version`。此冻结范围限于当前成品；基础物料自身的改名仍遵守当前名称展示规则，不冻结整个物料目录。
 
 BOM 替换命令必须包含客户端读取的 `version` 与完整 `items`；锁成品根后，先核对当前版本与命令版本一致，再进行任何明细写入。不一致则返回冲突，不能仅递增版本而允许旧页面覆盖新 BOM。
 
@@ -244,7 +244,7 @@ BOM 替换命令必须包含客户端读取的 `version` 与完整 `items`；锁
 
 约束：`UNIQUE (route_code, version_no)`；`CHECK (status IN ('draft', 'enabled', 'disabled', 'archived'))`；启用后的路线版本不得原地修改步骤，只能创建新版本。
 
-说明：路线独立维护，新增/编辑路线不包含“适用产品”。不建立产品—路线适用关系表；多个成品可选择同一条启用路线作为默认值。新增任务允许选择任意启用且未删除的路线；未指定时使用产品默认路线，并重新校验启用状态。批次创建时冻结路线、步骤和 SOP 快照，后续修改默认值不改变历史任务。
+说明：路线独立维护，新增/编辑路线不包含“适用产品”，不建立产品—路线适用关系表。批量任务创建前必须手动选择任意启用且未删除的路线，在同一创建事务内重新校验并冻结路线、步骤和 SOP 快照，缺失路线时拒绝创建，不从成品读取默认值；研发任务无需路线，不生成工序。路线停用或归档不受成品引用限制，发布后不可原地修改的规则和历史任务快照继续保留。
 
 ## 2.4 `process_route_steps`
 

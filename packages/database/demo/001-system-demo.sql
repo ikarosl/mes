@@ -83,7 +83,6 @@ JOIN permissions p ON p.code IN (
   'product:products:update',
   'product:products:change-status',
   'product:products:manage-bom',
-  'product:products:set-default-route',
   'product:materials:view',
   'product:materials:create',
   'product:materials:update',
