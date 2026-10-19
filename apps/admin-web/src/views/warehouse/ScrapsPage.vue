@@ -316,7 +316,7 @@ import { formatDateTimeForDisplay } from '../../utils/date';
 defineOptions({ name: 'ScrapsPage' });
 const query = reactive<{ page: number; pageSize: number; keyword: string; status?: ScrapStatus }>({
   page: 1,
-  pageSize: 20,
+  pageSize: 10,
   keyword: '',
 });
 const rows = ref<MaterialLossItem[]>([]);

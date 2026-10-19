@@ -35,6 +35,11 @@ export const BATCH_STEP_STATUSES = [
   'terminated',
 ] as const;
 
+/** 本人工序列表只展示已明确派工的当前负责工序。 */
+export const PRODUCTION_WORKER_TASK_STATUSES = Object.freeze(
+  BATCH_STEP_STATUSES.filter((status) => status !== 'pending'),
+);
+
 export const BATCH_STEP_STATUS_LABELS = {
   pending: '待派工',
   assigned: '已派工',

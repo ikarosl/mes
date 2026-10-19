@@ -8,7 +8,7 @@ import { productionApi } from '../../../api/production';
 import { useLatestRequest } from '../../../composables/requests/useLatestRequest';
 import { EMessage } from '../../../utils/message';
 export function useFinishedGoodsInbounds() {
-  const query = reactive<FinishedGoodsInboundQuery>({ page: 1, pageSize: 20 });
+  const query = reactive<FinishedGoodsInboundQuery>({ page: 1, pageSize: 10 });
   const rows = ref<FinishedGoodsInboundOrderItem[]>([]),
     total = ref(0),
     loading = ref(false),

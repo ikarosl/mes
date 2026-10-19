@@ -3,6 +3,7 @@ import type {
   ProductionExecutionCompletionResult,
   ProductionStepCommandResult,
   ProductionWorkerTaskItem,
+  ProductionWorkerTaskQuery,
   ProductionExecutionStartCheck,
   ProductionExecutionStartResult,
   StartProductionExecutionPayload,
@@ -40,7 +41,7 @@ export abstract class ProductionExecutionRepository {
   ): Promise<ProductionExecutionCompletionResult>;
   abstract listWorkerTasks(
     actorId: string,
-    query: { page: number; pageSize: number },
+    query: ProductionWorkerTaskQuery,
   ): Promise<PageResult<ProductionWorkerTaskItem>>;
   abstract getStepSopSnapshot(
     batchId: string,

@@ -7,12 +7,14 @@
         <span>已报废补产 {{ formatQuantity(quota.activatedSupplementInputQuantity) }}</span>
       </el-tooltip>
     </span>
-    <span
+    <el-tooltip
       v-if="Number(quota.pendingSupplementInputQuantity) > 0"
-      class="pending-supplement"
+      content="所有补料全部完成领用出库后才会生效。"
     >
-      待生效报废补产 {{ formatQuantity(quota.pendingSupplementInputQuantity) }} {{ quota.unit }}
-    </span>
+      <span class="pending-supplement">
+        待生效报废补产 {{ formatQuantity(quota.pendingSupplementInputQuantity) }} {{ quota.unit }}
+      </span>
+    </el-tooltip>
     <span
       v-if="showReopenHint && quota.status === 'completed' && hasSupplement"
       class="reopen-hint"

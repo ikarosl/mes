@@ -211,16 +211,13 @@
           </template>
         </el-table-column>
       </el-table>
-      <div class="table-footer">
-        <span class="total-text">共 {{ total }} 条</span>
-        <el-pagination
-          v-model:current-page="currentPage"
-          :page-size="pageSize"
-          :total="total"
-          layout="prev, pager, next, jumper"
-          @current-change="loadLogs"
-        />
-      </div>
+      <PaginationFooter
+        :total="total"
+        :current-page="currentPage"
+        :page-size="pageSize"
+        @update:page-size="handlePageSizeChange"
+        @page-change="handlePageChange"
+      />
     </div>
 
     <!-- 日志详情弹窗 -->
@@ -274,6 +271,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
 import TableToolbar from '../../components/TableToolbar.vue';
+import PaginationFooter from '../../components/PaginationFooter.vue';
 import {
   OPERATION_LOG_MODULE_OPTIONS,
   type OperationLogListItem,
@@ -289,7 +287,7 @@ defineOptions({ name: 'LogsPage' });
 const logs = ref<OperationLogListItem[]>([]);
 const total = ref(0);
 const currentPage = ref(1);
-const pageSize = 10;
+const pageSize = ref(10);
 const loading = ref(false);
 const detailVisible = ref(false);
 const activeLog = ref<OperationLogListItem | null>(null);
@@ -316,7 +314,7 @@ const loadLogs = async () => {
   try {
     const result = await systemApi.logs({
       page: currentPage.value,
-      pageSize,
+      pageSize: pageSize.value,
       keyword: query.keyword || undefined,
       logType: query.logType || undefined,
       module: query.module || undefined,
@@ -335,6 +333,15 @@ const loadLogs = async () => {
   } finally {
     loading.value = false;
   }
+};
+const handlePageChange = async (page: number): Promise<void> => {
+  currentPage.value = page;
+  await loadLogs();
+};
+const handlePageSizeChange = async (size: number): Promise<void> => {
+  pageSize.value = size;
+  currentPage.value = 1;
+  await loadLogs();
 };
 const searchLogs = () => {
   currentPage.value = 1;
@@ -453,42 +460,6 @@ onMounted(loadLogs);
 .data-table :deep(.el-tag--danger) {
   background: #fce8e8;
   color: #ef4444;
-}
-
-.table-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 12px 16px;
-  border-top: 1px solid #e5e7eb;
-}
-.total-text {
-  color: #6b7280;
-  font-size: 14px;
-}
-.table-footer :deep(.el-pagination) {
-  gap: 4px;
-}
-.table-footer :deep(.el-pager li),
-.table-footer :deep(.btn-prev),
-.table-footer :deep(.btn-next) {
-  min-width: 32px;
-  height: 32px;
-  border: 1px solid #e5e7eb;
-  border-radius: 6px;
-}
-.table-footer :deep(.el-pager li.is-active) {
-  border-color: #306188;
-  background: #306188;
-  color: #ffffff;
-}
-.table-footer :deep(.el-pagination__jump) {
-  margin-left: 12px;
-  color: #6b7280;
-}
-.table-footer :deep(.el-pagination__editor) {
-  width: 48px;
 }
 
 .detail-block {

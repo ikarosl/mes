@@ -108,19 +108,17 @@
         class="batch-page-summary"
         aria-live="polite"
       >
-        <span>共 {{ total }} 条</span>
         <span>第 {{ currentPage }} / {{ pageCount }} 页 · {{ pageSize }} 条/页</span>
       </div>
-      <el-pagination
-        class="batch-pagination"
-        small
+      <PaginationFooter
+        compact
+        :show-page-size="false"
         layout="prev, pager, next"
-        :pager-count="5"
         :disabled="disabled || loading"
         :current-page="currentPage"
         :page-size="pageSize"
         :total="total"
-        @update:current-page="changePage"
+        @page-change="changePage"
       />
     </div>
   </aside>
@@ -129,6 +127,7 @@
 <script setup lang="ts">
 import type { ProductionExecutionBatchSummary } from '@company/contracts';
 import { computed } from 'vue';
+import PaginationFooter from '../../../components/PaginationFooter.vue';
 import { formatDateForDisplay } from '../../../utils/date';
 import { batchStatusMeta, formatQuantity } from '../production-status';
 import {
@@ -285,10 +284,6 @@ const changePage = (page: number): void => {
   gap: 8px;
   color: var(--el-text-color-regular);
   font-size: 12px;
-}
-.batch-pagination {
-  justify-content: center;
-  margin-top: 8px;
 }
 @media (max-width: 1000px) {
   .batch-list {

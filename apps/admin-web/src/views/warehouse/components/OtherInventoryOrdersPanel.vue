@@ -200,7 +200,7 @@
       <PaginationFooter
         :total="orders.total.value"
         :current-page="orders.query.page ?? 1"
-        :page-size="orders.query.pageSize ?? 20"
+        :page-size="orders.query.pageSize ?? 10"
         @update:page-size="orders.changePageSize"
         @page-change="orders.changePage"
       />

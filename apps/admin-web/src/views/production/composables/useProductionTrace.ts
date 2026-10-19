@@ -7,6 +7,7 @@ import { productionApi } from '../../../api/production';
 export const useProductionTrace = () => {
   const items = ref<ProductionTraceWorkOrderGroup[]>([]);
   const total = ref(0);
+  const pageSize = ref(10);
   const loading = ref(false);
   const detailLoading = ref(false);
   const selectedBatchId = ref<string | null>(null);
@@ -33,7 +34,7 @@ export const useProductionTrace = () => {
         {
           keyword: keyword.trim() || undefined,
           page,
-          pageSize: 20,
+          pageSize: pageSize.value,
         },
         { skipErrorHandling: true, signal },
       );
@@ -79,5 +80,15 @@ export const useProductionTrace = () => {
     }
   };
 
-  return { items, total, loading, detailLoading, selectedBatchId, detail, search, selectBatch };
+  return {
+    items,
+    total,
+    pageSize,
+    loading,
+    detailLoading,
+    selectedBatchId,
+    detail,
+    search,
+    selectBatch,
+  };
 };

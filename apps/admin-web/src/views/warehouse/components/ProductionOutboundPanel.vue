@@ -200,7 +200,7 @@
       <PaginationFooter
         :total="orders.total.value"
         :current-page="query.page ?? 1"
-        :page-size="query.pageSize ?? 20"
+        :page-size="query.pageSize ?? 10"
         @update:page-size="handlePageSizeChange"
         @page-change="handlePageChange"
       />
@@ -260,7 +260,7 @@ defineOptions({ name: 'ProductionOutboundPanel' });
 const orders = useMaterialOutboundOrders();
 const router = useRouter();
 const { canAccessRoute } = useRouteAccess();
-const query = reactive<MaterialOutboundQuery>({ page: 1, pageSize: 20 });
+const query = reactive<MaterialOutboundQuery>({ page: 1, pageSize: 10 });
 const createVisible = ref(false);
 const createSubmitting = ref(false);
 const detailVisible = ref(false);

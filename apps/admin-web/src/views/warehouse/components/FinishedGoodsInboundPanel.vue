@@ -242,7 +242,7 @@
         <PaginationFooter
           :total="total"
           :current-page="query.page ?? 1"
-          :page-size="query.pageSize ?? 20"
+          :page-size="query.pageSize ?? 10"
           @update:page-size="changeHistoryPageSize"
           @page-change="changeHistoryPage"
         />

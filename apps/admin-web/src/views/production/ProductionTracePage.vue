@@ -121,14 +121,15 @@
             description="未找到生产追溯记录"
             :image-size="72"
           />
-          <el-pagination
-            v-if="total > 20"
-            small
+          <PaginationFooter
+            compact
             layout="prev, pager, next"
             :current-page="currentPage"
-            :page-size="20"
+            :page-size="pageSize"
             :total="total"
-            @current-change="changePage"
+            :disabled="loading"
+            @update:page-size="changePageSize"
+            @page-change="changePage"
           />
         </aside>
 
@@ -551,6 +552,7 @@ import {
   INVENTORY_TRANSACTION_TYPE_LABELS,
 } from '@company/constants';
 import TableToolbar from '../../components/TableToolbar.vue';
+import PaginationFooter from '../../components/PaginationFooter.vue';
 import { formatDateTimeForDisplay } from '../../utils/date';
 import { EMessage } from '../../utils/message';
 import {
@@ -583,8 +585,17 @@ const historyVisibleByStep = reactive<Record<string, boolean>>({});
 const keyword = ref('');
 const currentPage = ref(1);
 const activeTab = ref('materials');
-const { items, total, loading, detailLoading, selectedBatchId, detail, search, selectBatch } =
-  useProductionTrace();
+const {
+  items,
+  total,
+  pageSize,
+  loading,
+  detailLoading,
+  selectedBatchId,
+  detail,
+  search,
+  selectBatch,
+} = useProductionTrace();
 const collapsedWorkOrderIds = ref(new Set<string>());
 watch(
   () => items.value.map((item) => item.workOrderId),
@@ -624,6 +635,10 @@ const resetSearch = async () => {
 const changePage = async (page: number) => {
   currentPage.value = page;
   await search(keyword.value, page);
+};
+const changePageSize = async (size: number): Promise<void> => {
+  pageSize.value = size;
+  await runSearch();
 };
 const refresh = async () => {
   if (selectedBatchId.value) await selectBatch(selectedBatchId.value);

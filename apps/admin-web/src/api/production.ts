@@ -54,6 +54,7 @@ import type {
   WorkOrderQuery,
   ProductionStepCommandResult,
   ProductionWorkerTaskItem,
+  ProductionWorkerTaskQuery,
   BatchStepReportCommandResult,
   BatchStepReportView,
   BatchStepReportDetail,
@@ -660,7 +661,7 @@ export const productionApi = {
       data,
     }),
 
-  listWorkerTasks: (params: { page: number; pageSize: number }, options: ReadRequestOptions = {}) =>
+  listWorkerTasks: (params: ProductionWorkerTaskQuery, options: ReadRequestOptions = {}) =>
     request<PageResult<ProductionWorkerTaskItem>>({
       ...options,
       url: '/production/worker-tasks',

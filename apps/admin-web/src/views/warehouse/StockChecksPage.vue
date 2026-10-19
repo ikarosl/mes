@@ -462,7 +462,7 @@ const query = reactive<{
   pageSize: number;
   keyword: string;
   status?: StockCheckStatus;
-}>({ page: 1, pageSize: 20, keyword: '' });
+}>({ page: 1, pageSize: 10, keyword: '' });
 const rows = ref<StockCheckOrderItem[]>([]);
 const total = ref(0);
 const loading = ref(false);

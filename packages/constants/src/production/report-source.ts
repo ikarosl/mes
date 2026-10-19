@@ -33,6 +33,6 @@ export const BATCH_STEP_REPORT_QUANTITY_SCOPE_LABELS = {
 } as const;
 
 export const BATCH_STEP_INSPECTION_REWORK_RESULT_LABELS = {
-  normal: '专检返工合格（不计报工汇总）',
-  abnormal: '专检返工不合格（不计报工汇总）',
+  normal: '专检返工',
+  abnormal: '专检返工',
 } as const;

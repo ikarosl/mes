@@ -373,7 +373,7 @@
       <PaginationFooter
         :total="batchList.total.value"
         :current-page="batchList.query.page ?? 1"
-        :page-size="batchList.query.pageSize ?? 20"
+        :page-size="batchList.query.pageSize ?? 10"
         @update:page-size="batchList.changePageSize"
         @page-change="batchList.changePage"
       />

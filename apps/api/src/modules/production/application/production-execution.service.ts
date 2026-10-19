@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type {
   ReopenProductionStepPayload,
   ProductionStepCommandResult,
+  ProductionWorkerTaskQuery,
   PageResult,
   ProductionStepExecutionHistoryItem,
   StartProductionExecutionPayload,
@@ -96,9 +97,13 @@ export class ProductionExecutionService {
     return execution.result;
   }
 
-  listMyTasks(context: CommandContext, query: { page: number; pageSize: number }) {
+  listMyTasks(context: CommandContext, query: ProductionWorkerTaskQuery) {
     if (!context.actorId) throw new ProductionDomainError('NOT_STEP_ASSIGNEE', '缺少当前员工身份');
-    return this.execution.listWorkerTasks(context.actorId, query);
+    return this.execution.listWorkerTasks(context.actorId, {
+      ...query,
+      batchNo: query.batchNo?.trim() || undefined,
+      workOrderNo: query.workOrderNo?.trim() || undefined,
+    });
   }
 
   getStepSopContent(batchId: string, stepRecordId: string) {

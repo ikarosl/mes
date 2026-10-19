@@ -126,7 +126,6 @@ import {
 } from '@company/constants';
 
 import { submissionRecoveryMessage } from '../../../composables/idempotency/useIdempotentIntent';
-// import { BATCH_STEP_REWORK_RESULT_LABELS } from '@company/constants';
 
 import type { BatchStepReportReference } from '@company/contracts';
 import InlineHint from '../../../components/InlineHint.vue';

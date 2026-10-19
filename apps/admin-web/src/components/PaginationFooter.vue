@@ -1,9 +1,14 @@
 <template>
-  <div class="pagination-footer">
+  <div
+    class="pagination-footer"
+    :class="{ 'pagination-footer--compact': compact }"
+  >
     <span class="total-text">共 {{ total }} {{ totalSuffix }}</span>
     <div class="table-footer-right">
       <el-select
+        v-if="showPageSize"
         :model-value="pageSize"
+        :disabled="disabled"
         class="page-size-select"
         @update:model-value="$emit('update:pageSize', $event)"
       >
@@ -21,6 +26,9 @@
         />
       </el-select>
       <el-pagination
+        :disabled="disabled"
+        :pager-count="compact ? 5 : 7"
+        :size="compact ? 'small' : 'default'"
         :current-page="currentPage"
         :page-size="pageSize"
         :total="total"
@@ -41,10 +49,16 @@ withDefaults(
     pageSize: number;
     layout?: string;
     totalSuffix?: string;
+    compact?: boolean;
+    disabled?: boolean;
+    showPageSize?: boolean;
   }>(),
   {
     layout: 'prev, pager, next, jumper',
     totalSuffix: '条',
+    compact: false,
+    disabled: false,
+    showPageSize: true,
   },
 );
 
@@ -126,5 +140,42 @@ defineEmits<{
   min-height: 40px;
   border-radius: 4px;
   box-shadow: 0 0 0 1px #dcdfe6 inset;
+}
+
+.pagination-footer--compact {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  height: auto;
+  padding: 8px 0;
+}
+
+.pagination-footer--compact .total-text {
+  font-size: 12px;
+}
+
+.pagination-footer--compact .table-footer-right {
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.pagination-footer--compact .page-size-select {
+  width: 110px;
+}
+
+.pagination-footer--compact .page-size-select :deep(.el-select__wrapper) {
+  min-height: 32px;
+}
+
+.pagination-footer--compact :deep(.el-pagination) {
+  gap: 4px;
+}
+
+.pagination-footer--compact :deep(.el-pager li),
+.pagination-footer--compact :deep(.btn-prev),
+.pagination-footer--compact :deep(.btn-next) {
+  min-width: 28px;
+  height: 28px;
 }
 </style>

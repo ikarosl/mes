@@ -1,10 +1,11 @@
 import type { Pool, PoolConnection, RowDataPacket } from 'mysql2/promise';
+import { PRODUCTION_WORKER_TASK_STATUSES } from '@company/constants';
 import type {
   BatchStepStatus,
-  PageQuery,
   PageResult,
   ProductionBatchStatus,
   ProductionWorkerTaskItem,
+  ProductionWorkerTaskQuery,
   ProductionStepQuotaDistribution,
 } from '@company/contracts';
 import { toBeijingISOString } from '../../../../common/time/date-time.js';
@@ -59,7 +60,7 @@ type WorkerTaskRow = RowDataPacket & {
 const REPORT_SUMMARY = `SELECT r.batch_step_record_id,${REPORT_SUMMARY_COLUMNS} FROM batch_step_reports r GROUP BY r.batch_step_record_id`;
 const WORKER_FROM = `FROM batch_step_records current JOIN production_batches b ON b.id=current.production_batch_id
   JOIN work_orders wo ON wo.id=b.work_order_id`;
-const WORKER_WHERE = `b.status<>'cancelled' AND current.responsible_user_id=? AND current.status IN ('assigned','doing','completed','terminated')`;
+const WORKER_WHERE = `b.status<>'cancelled' AND current.responsible_user_id=? AND current.status IN (${PRODUCTION_WORKER_TASK_STATUSES.map(() => '?').join(',')})`;
 const WORKER_TASK_SELECT = `WITH report_summary AS (${REPORT_SUMMARY})
  SELECT current.id step_record_id,current.production_batch_id,b.batch_no,b.status batch_status,c.pending_approval_id,
   wo.id work_order_id,wo.work_order_no,b.product_id,wo.product_code_snapshot product_code,wo.product_name_snapshot product_name,
@@ -73,17 +74,13 @@ const WORKER_TASK_SELECT = `WITH report_summary AS (${REPORT_SUMMARY})
   COALESCE(current_reports.effective_normal,0) effective_normal,COALESCE(current_reports.effective_abnormal,0) effective_abnormal,
   current.started_at,current.completed_at,current.version
  ${WORKER_FROM} LEFT JOIN production_batch_closeout c ON c.production_batch_id=b.id
- LEFT JOIN report_summary current_reports ON current_reports.batch_step_record_id=current.id
- WHERE ${WORKER_WHERE}
- ORDER BY CASE WHEN b.status='doing' THEN 0 WHEN b.status IN ('material_outbound','material_partially_outbound') THEN 1 ELSE 2 END,
-  CASE current.status WHEN 'doing' THEN 0 WHEN 'assigned' THEN 1 WHEN 'completed' THEN 2 ELSE 3 END,
-  b.id DESC,current.step_order_snapshot,current.id LIMIT ? OFFSET ?`;
+ LEFT JOIN report_summary current_reports ON current_reports.batch_step_record_id=current.id`;
 
 /** 当前本人负责的工序含已结案历史；记录明细由独立分页接口读取。 */
 export async function selectWorkerTasks(
   pool: Pool,
   actorId: string,
-  query: PageQuery,
+  query: ProductionWorkerTaskQuery,
 ): Promise<PageResult<ProductionWorkerTaskItem>> {
   return readProductionSnapshot(pool, (db) => selectWorkerTaskPage(db, actorId, query));
 }
@@ -91,19 +88,34 @@ export async function selectWorkerTasks(
 async function selectWorkerTaskPage(
   db: PoolConnection,
   actorId: string,
-  query: PageQuery,
+  query: ProductionWorkerTaskQuery,
 ): Promise<PageResult<ProductionWorkerTaskItem>> {
   const page = query.page ?? 1,
     pageSize = query.pageSize ?? 10;
+  const conditions = [WORKER_WHERE];
+  const parameters = [actorId, ...PRODUCTION_WORKER_TASK_STATUSES];
+  if (query.status) {
+    conditions.push('current.status=?');
+    parameters.push(query.status);
+  }
+  if (query.batchNo) {
+    conditions.push('LOCATE(?,b.batch_no)>0');
+    parameters.push(query.batchNo);
+  }
+  if (query.workOrderNo) {
+    conditions.push('LOCATE(?,wo.work_order_no)>0');
+    parameters.push(query.workOrderNo);
+  }
+  const where = conditions.join(' AND ');
   const [[count]] = await db.query<(RowDataPacket & { total: number })[]>(
-    `SELECT COUNT(*) total ${WORKER_FROM} WHERE ${WORKER_WHERE}`,
-    [actorId],
+    `SELECT COUNT(*) total ${WORKER_FROM} WHERE ${where}`,
+    parameters,
   );
-  const [rows] = await db.query<WorkerTaskRow[]>(WORKER_TASK_SELECT, [
-    actorId,
-    pageSize,
-    (page - 1) * pageSize,
-  ]);
+  const [rows] = await db.query<WorkerTaskRow[]>(
+    `${WORKER_TASK_SELECT} WHERE ${where}
+     ORDER BY b.id DESC,current.step_order_snapshot,current.id LIMIT ? OFFSET ?`,
+    [...parameters, pageSize, (page - 1) * pageSize],
+  );
   const batchIds = [...new Set(rows.map((row) => String(row.production_batch_id)))];
   if (!batchIds.length) return { items: [], total: Number(count?.total ?? 0), page, pageSize };
   const supplementsByBatch = await selectRouteSupplementSources(db, batchIds);

@@ -9,7 +9,7 @@ import { useLatestReadRequest } from '../../../composables/requests/useLatestRea
 import { EMessage } from '../../../utils/message';
 
 export function useOtherInventoryOrdersList(direction: OtherInventoryDirection) {
-  const query = reactive<OtherInventoryOrderQuery>({ page: 1, pageSize: 20 });
+  const query = reactive<OtherInventoryOrderQuery>({ page: 1, pageSize: 10 });
   const rows = ref<OtherInventoryOrder[]>([]);
   const total = ref(0);
   const loading = ref(false);

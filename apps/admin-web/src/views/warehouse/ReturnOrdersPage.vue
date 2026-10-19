@@ -442,7 +442,7 @@ const query = reactive<{
   status?: ReturnOrderStatus;
 }>({
   page: 1,
-  pageSize: 20,
+  pageSize: 10,
   keyword: '',
 });
 const rows = ref<ReturnOrderItem[]>([]);

@@ -1,5 +1,54 @@
 <template>
   <div class="worker-tasks-page">
+    <section class="query-panel">
+      <el-form
+        class="query-form"
+        :inline="true"
+        :model="query"
+        :disabled="navigationPending"
+        @submit.prevent="search"
+      >
+        <el-form-item label="工序状态">
+          <el-select v-model="query.status">
+            <el-option
+              label="全部"
+              value=""
+            />
+            <el-option
+              v-for="status in PRODUCTION_WORKER_TASK_STATUSES"
+              :key="status"
+              :label="BATCH_STEP_STATUS_LABELS[status]"
+              :value="status"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="任务单号">
+          <el-input
+            v-model="query.batchNo"
+            clearable
+            maxlength="100"
+            placeholder="输入任务单号，支持部分匹配"
+          />
+        </el-form-item>
+        <el-form-item label="工单号">
+          <el-input
+            v-model="query.workOrderNo"
+            clearable
+            maxlength="100"
+            placeholder="输入工单号，支持部分匹配"
+          />
+        </el-form-item>
+        <el-form-item class="query-actions">
+          <el-button
+            type="primary"
+            native-type="submit"
+            :loading="loading"
+            >查询</el-button
+          >
+          <el-button @click="resetQuery">重置</el-button>
+        </el-form-item>
+      </el-form>
+    </section>
     <section class="table-panel">
       <TableToolbar :total="total"
         ><template #actions
@@ -18,6 +67,11 @@
       <InlineHint class="execution-tip"
         >报工后仍需点击完成工序；报工数量不代表质检结果。已完成工序需先重新开工才能新增报工，更正记录无需重开。结案期间仅可查看。</InlineHint
       >
+      <InlineHint
+        v-if="hasAppliedStatus"
+        class="execution-tip"
+        >已按工序状态筛选；开始、完成或重新开工后，不再符合所选状态的工序会移出当前结果。</InlineHint
+      >
       <el-alert
         v-if="errorText"
         class="execution-tip"
@@ -29,7 +83,8 @@
       <el-table
         v-loading="loading"
         :data="tasks"
-        empty-text="当前没有分配给你的工序"
+        row-key="stepRecordId"
+        :empty-text="hasAppliedFilters ? '当前筛选下没有分配给你的工序' : '当前没有分配给你的工序'"
       >
         <el-table-column
           label="工单 / 任务"
@@ -93,7 +148,7 @@
             ><ProductionStepActions
               :step="row"
               worker
-              :disabled="loading"
+              :disabled="listBusy"
               @action="(action) => stepActionDialogsRef?.open(row, action)"
               @history="stepActionDialogsRef?.openHistory(row)"
             />
@@ -101,19 +156,19 @@
               <el-button
                 link
                 type="primary"
-                :disabled="loading || !canOpenProductionReport(row)"
+                :disabled="listBusy || !canOpenProductionReport(row)"
                 @click="reportCreate.open(row, 'normal')"
                 >正常报工</el-button
               ><el-button
                 link
                 type="primary"
-                :disabled="loading || !canOpenProductionReport(row)"
+                :disabled="listBusy || !canOpenProductionReport(row)"
                 @click="reportCreate.open(row, 'abnormal')"
                 >异常报工</el-button
               ><el-button
                 link
                 type="primary"
-                :disabled="loading"
+                :disabled="listBusy"
                 @click="openRecords(row)"
                 >记录与纠错</el-button
               >
@@ -139,7 +194,7 @@
       ref="stepActionDialogsRef"
       :steps="tasks"
       worker
-      :disabled="loading"
+      :disabled="listBusy"
       @changed="reload"
     />
     <el-dialog
@@ -162,7 +217,7 @@
           >记录保留当时的实际录入人。数量纠错不要求先重开；请按每条记录的资格和原因办理。</InlineHint
         ><el-alert
           v-if="!currentRecordsTask"
-          title="本任务已不在当前可操作列表中或刷新失败，当前仅保留显示；请刷新本人任务重新核对。"
+          title="当前列表未包含本工序，可能受筛选、分页或刷新失败影响；此处保留显示，操作前请重新核对。"
           type="warning"
           :closable="false"
           show-icon /><ProductionStepReportTable
@@ -170,7 +225,7 @@
           :step-record-id="recordsTask.stepRecordId"
           :version="currentRecordsTask?.version ?? recordsTask.version"
           :refresh-key="refreshKey"
-          :disabled="loading || !currentRecordsTask"
+          :disabled="listBusy || !currentRecordsTask"
           :active="recordsVisible"
           @view-detail="reportTrace.open"
           @view-report="reportTrace.open"
@@ -196,13 +251,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onScopeDispose, ref, watch } from 'vue';
+import { computed, onActivated, onDeactivated, onScopeDispose, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { Refresh } from '@element-plus/icons-vue';
-import { BATCH_STEP_STATUS_LABELS } from '@company/constants';
+import { BATCH_STEP_STATUS_LABELS, PRODUCTION_WORKER_TASK_STATUSES } from '@company/constants';
 import type { BatchStepReportView, ProductionWorkerTaskItem } from '@company/contracts';
 import { productionApi } from '../../api/production';
 import { usePageActivationRefresh } from '../../composables/requests/usePageActivationRefresh';
+import { useLatestRequest } from '../../composables/requests/useLatestRequest';
 import { useTabsStore } from '../../stores/tabs';
 import TableToolbar from '../../components/TableToolbar.vue';
 import PaginationFooter from '../../components/PaginationFooter.vue';
@@ -227,7 +283,24 @@ defineOptions({ name: 'ProductionWorkerTasksPage' });
 const recordsVisible = ref(false),
   recordsTaskSnapshot = ref<ProductionWorkerTaskItem | null>(null),
   refreshKey = ref(0);
-const { tasks, loading, total, page, pageSize, errorText, load } = useWorkerTasks();
+const {
+  tasks,
+  loading,
+  total,
+  page,
+  pageSize,
+  query,
+  hasAppliedFilters,
+  hasAppliedStatus,
+  errorText,
+  applyFilters,
+  clearFilters,
+  load,
+} = useWorkerTasks();
+const navigationPending = ref(false);
+const listBusy = computed(() => loading.value || navigationPending.value);
+const navigation = useLatestRequest();
+let active = true;
 const stepStatusLabel = (row: ProductionWorkerTaskItem): string =>
   BATCH_STEP_STATUS_LABELS[row.status];
 const getStep = (id: string): ProductionWorkerTaskItem | null =>
@@ -250,18 +323,17 @@ watch(
   { flush: 'sync' },
 );
 const reload = async (): Promise<void> => {
-  await load();
-  refreshKey.value += 1;
+  if (await load()) refreshKey.value += 1;
 };
 const reportCreate = useProductionReportCreate({
   getContext: getStep,
-  isReady: () => !loading.value && !errorText.value,
+  isReady: () => !listBusy.value && !errorText.value,
   refresh: reload,
 });
 const reportEditor = useProductionReportAdjustment({
   getStep,
   getBatchStatus: () => recordsTask.value?.batchStatus ?? null,
-  isReady: () => !loading.value && !errorText.value,
+  isReady: () => !listBusy.value && !errorText.value,
   refresh: reload,
 });
 const openAdjustment = (mode: 'correct' | 'reverse', report: BatchStepReportView): void => {
@@ -269,30 +341,56 @@ const openAdjustment = (mode: 'correct' | 'reverse', report: BatchStepReportView
 };
 const reportDialogRef = ref<InstanceType<typeof BatchStepReportDialog> | null>(null);
 const stepActionDialogsRef = ref<InstanceType<typeof ProductionStepActionDialogs> | null>(null);
-const canChangeContext = async (): Promise<boolean> => {
+const canChangeContext = async (isCurrent: () => boolean = () => true): Promise<boolean> => {
   if (reportCreate.visible && !(await reportDialogRef.value?.canDiscard())) return false;
+  if (!isCurrent()) return false;
   if (reportEditor.visible && !(await reportEditor.discard())) return false;
+  if (!isCurrent()) return false;
   reportCreate.visible = false;
   reportEditor.visible = false;
   return true;
 };
-const openRecords = async (task: ProductionWorkerTaskItem): Promise<void> => {
-  if (!(await canChangeContext())) return;
-  recordsTaskSnapshot.value = { ...task };
-  recordsVisible.value = true;
+const transition = async (action: () => Promise<void>): Promise<void> => {
+  if (!active || navigationPending.value) return;
+  const isCurrent = navigation.begin(() => active);
+  navigationPending.value = true;
+  try {
+    if (!(await canChangeContext(isCurrent)) || !isCurrent()) return;
+    recordsVisible.value = false;
+    await action();
+  } finally {
+    if (isCurrent()) navigationPending.value = false;
+  }
 };
+const openRecords = (task: ProductionWorkerTaskItem): Promise<void> =>
+  transition(async () => {
+    recordsTaskSnapshot.value = { ...task };
+    recordsVisible.value = true;
+  });
+const search = (): Promise<void> =>
+  transition(async () => {
+    applyFilters();
+    await reload();
+  });
+const resetQuery = (): Promise<void> =>
+  transition(async () => {
+    clearFilters();
+    await reload();
+  });
 const changePage = async (next: number): Promise<void> => {
-  if (!(await canChangeContext())) return;
-  recordsVisible.value = false;
-  page.value = next;
-  await reload();
+  if (next === page.value) return;
+  await transition(async () => {
+    page.value = next;
+    await reload();
+  });
 };
 const changePageSize = async (next: number): Promise<void> => {
-  if (!(await canChangeContext())) return;
-  recordsVisible.value = false;
-  pageSize.value = next;
-  page.value = 1;
-  await reload();
+  if (next === pageSize.value) return;
+  await transition(async () => {
+    pageSize.value = next;
+    page.value = 1;
+    await reload();
+  });
 };
 const sopPendingIds = ref(new Set<string>());
 const downloadSop = async (task: ProductionWorkerTaskItem): Promise<void> => {
@@ -323,6 +421,16 @@ const downloadSop = async (task: ProductionWorkerTaskItem): Promise<void> => {
 const route = useRoute();
 const unregister = useTabsStore().registerCloseGuard(String(route.name), canChangeContext);
 onScopeDispose(unregister);
+const invalidateNavigation = (): void => {
+  active = false;
+  navigation.invalidate();
+  navigationPending.value = false;
+};
+onActivated(() => {
+  active = true;
+});
+onDeactivated(invalidateNavigation);
+onScopeDispose(invalidateNavigation);
 usePageActivationRefresh(reload);
 </script>
 
@@ -334,11 +442,35 @@ usePageActivationRefresh(reload);
   min-width: 0;
   max-width: 100%;
 }
+.query-panel,
 .table-panel {
-  overflow: hidden;
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 8px;
   background: var(--el-bg-color);
+}
+.query-panel {
+  padding: 16px 16px 0;
+}
+.query-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 20px;
+}
+.query-form :deep(.el-form-item) {
+  margin-right: 0;
+  margin-bottom: 16px;
+}
+.query-form :deep(.el-select) {
+  width: 150px;
+}
+.query-form :deep(.el-input) {
+  width: 220px;
+}
+.query-actions {
+  margin-left: auto;
+}
+.table-panel {
+  overflow: hidden;
 }
 .tasks-caption {
   display: flex;

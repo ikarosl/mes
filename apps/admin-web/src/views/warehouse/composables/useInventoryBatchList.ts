@@ -23,7 +23,7 @@ export function useInventoryBatchList(
   itemKind: InventoryBatchItem['itemKind'],
   isSelected: () => boolean,
 ): InventoryBatchList {
-  const query = reactive<Omit<InventoryBatchQuery, 'itemKind'>>({ page: 1, pageSize: 20 });
+  const query = reactive<Omit<InventoryBatchQuery, 'itemKind'>>({ page: 1, pageSize: 10 });
   const items = ref<InventoryBatchItem[]>([]);
   const total = ref(0);
   const loading = ref(false);

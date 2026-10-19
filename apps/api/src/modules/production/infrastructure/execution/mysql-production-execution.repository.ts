@@ -6,6 +6,7 @@ import type {
   ProductionExecutionCompletionCheck,
   ProductionExecutionCompletionResult,
   ProductionStepCommandResult,
+  ProductionWorkerTaskQuery,
   ProductionExecutionStartCheck,
   ProductionExecutionStartResult,
   StartProductionExecutionPayload,
@@ -262,7 +263,7 @@ export class MysqlProductionExecutionRepository extends ProductionExecutionRepos
       );
     });
   }
-  async listWorkerTasks(actorId: string, query: { page: number; pageSize: number }) {
+  async listWorkerTasks(actorId: string, query: ProductionWorkerTaskQuery) {
     return selectWorkerTasks(this.pool, actorId, query);
   }
 

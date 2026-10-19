@@ -18,7 +18,7 @@
           {{ editor.step.stepOrder }}. {{ editor.step.stepName }}
         </el-descriptions-item>
         <el-descriptions-item label="报工单号">{{ editor.report.reportNo }}</el-descriptions-item>
-        <el-descriptions-item label="原正常数量">
+        <el-descriptions-item label="本条报工原数量">
           <strong>{{ formatQuantity(editor.report.normalQuantity) }}</strong>
           {{ editor.report.unit }}
         </el-descriptions-item>
@@ -26,34 +26,26 @@
           {{ editor.report.createdByName || '未提供姓名' }}
         </el-descriptions-item>
       </el-descriptions>
-      <div class="adjustment-quantities">
-        <ProductionQuotaBasis
-          :quota="editor.step"
-          :planned-quantity="editor.step.baseNormalQuantity"
-          :show-reopen-hint="false"
-        />
-        <div class="quantity-preview">
-          <span>工序数量（{{ editor.step.unit }}）</span>
-          <span>调整前</span>
-          <span>调整后</span>
-          <strong>工序正常数量</strong>
-          <span>{{ formatQuantity(editor.step.effectiveNormalQuantity) }}</span>
-          <strong>{{ previewQuantity(editor.afterNormalQuantity) }}</strong>
-          <strong>剩余额度</strong>
-          <span>{{ formatQuantity(editor.step.availableReportQuantity) }}</span>
-          <strong :class="{ 'over-limit': (editor.afterAvailableQuantity ?? 0) < 0 }">
-            {{ previewQuantity(editor.afterAvailableQuantity) }}
-          </strong>
-        </div>
-      </div>
+      <ProductionQuotaBasis
+        class="editor-note"
+        :quota="editor.step"
+        :planned-quantity="editor.step.baseNormalQuantity"
+        :show-reopen-hint="false"
+      />
       <InlineHint class="editor-note">
-        {{
-          editor.mode === 'correct'
-            ? '填写更正后的完整正常数量，不是增减数量。更正后将以新记录替代原报工，原记录和更正原因保留供查阅。'
-            : '整条正常报工将全量冲销，原记录和冲销原因保留供查阅。'
-        }}
-        数量调整不改变工序状态。
+        <template v-if="editor.mode === 'correct'">
+          填写本条报工实际应保留的数量。例如，原报工 40 {{ editor.report.unit }}，实际应为 30
+          {{ editor.report.unit }}，就填写 30。
+        </template>
+        <template v-else>
+          将全量冲销本条报工的 <strong>{{ formatQuantity(editor.report.normalQuantity) }}</strong>
+          {{ editor.report.unit }}。
+        </template>
       </InlineHint>
+      <p class="adjustment-note">
+        原记录和{{ editor.mode === 'correct' ? '更正' : '冲销' }}原因保留供查阅。
+        数量调整不改变工序状态。
+      </p>
       <el-alert
         v-if="editor.historical"
         class="editor-note"
@@ -86,21 +78,27 @@
       >
         <el-form-item
           v-if="editor.mode === 'correct'"
-          label="更正后正常数量"
+          label="本条报工更正后数量"
           :error="editor.quantityTouched ? (editor.quantityValidation.error ?? '') : ''"
           required
         >
           <el-input
             :model-value="editor.form.normalQuantity"
             inputmode="numeric"
-            placeholder="请输入应保留的完整正常数量"
-            aria-label="更正后正常数量"
+            placeholder="请输入本条报工实际应保留的数量"
+            aria-label="本条报工更正后数量"
             @update:model-value="editor.setNormalQuantity"
             @blur="editor.touchQuantity"
           />
           <div class="quantity-limit">
-            本条最多 <strong>{{ previewQuantity(editor.maximumQuantity) }}</strong>
-            {{ editor.report.unit }}（以工序报工上限和单次上限核对）
+            本条报工最多可填 <strong>{{ previewQuantity(editor.maximumQuantity) }}</strong>
+            {{ editor.report.unit }}
+          </div>
+          <div
+            v-if="quantityImpact"
+            class="quantity-impact"
+          >
+            更正后：{{ quantityImpact }}
           </div>
           <el-button
             v-if="editor.quantityValidation.quantity === 0"
@@ -112,6 +110,12 @@
             >改为全量冲销</el-button
           >
         </el-form-item>
+        <div
+          v-if="editor.mode === 'reverse' && quantityImpact"
+          class="quantity-impact reverse-impact"
+        >
+          冲销后：{{ quantityImpact }}
+        </div>
         <el-form-item
           :label="editor.mode === 'correct' ? '更正原因' : '冲销原因'"
           required
@@ -175,6 +179,19 @@ const props = defineProps<{ editor: ProductionReportAdjustmentEditor }>();
 const verificationVisible = ref(false);
 const previewQuantity = (quantity: number | null): string =>
   quantity !== null && Number.isFinite(quantity) ? formatQuantity(quantity) : '—';
+const quantityImpact = computed(() => {
+  const editor = props.editor;
+  if (
+    (editor.mode === 'correct' && editor.quantityValidation.error !== null) ||
+    editor.afterNormalQuantity === null ||
+    !Number.isFinite(editor.afterNormalQuantity) ||
+    editor.afterAvailableQuantity === null ||
+    !Number.isFinite(editor.afterAvailableQuantity)
+  )
+    return null;
+  const unit = editor.step?.unit ?? '';
+  return `工序累计正常数量 ${formatQuantity(editor.afterNormalQuantity)} ${unit}，还可报工 ${formatQuantity(editor.afterAvailableQuantity)} ${unit}`;
+});
 const unconfirmedNote = computed(() =>
   props.editor.unknownReverse
     ? '上次冲销结果尚未确认，请先核对报工历史。请勿重新冲销或更正。'
@@ -195,30 +212,13 @@ watch(
 .editor-form {
   margin-top: 16px;
 }
-.adjustment-quantities {
-  display: grid;
-  gap: 10px;
-  margin-top: 12px;
+.adjustment-note {
+  margin: 8px 0 0;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
 }
-.quantity-preview {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 100px 100px;
-  gap: 8px 16px;
-  padding: 10px 12px;
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 6px;
-  font-size: 13px;
-  color: var(--el-text-color-primary);
-}
-.quantity-preview > :nth-child(-n + 3) {
-  color: var(--el-text-color-regular);
-}
-.quantity-preview > :nth-child(3n),
-.quantity-preview > :nth-child(3n - 1) {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-.quantity-limit {
+.quantity-limit,
+.quantity-impact {
   flex-basis: 100%;
   margin-top: 6px;
   color: var(--el-text-color-regular);
@@ -227,10 +227,13 @@ watch(
 .quantity-limit strong {
   color: var(--el-text-color-primary);
 }
+.quantity-impact {
+  font-variant-numeric: tabular-nums;
+}
+.reverse-impact {
+  margin-bottom: 16px;
+}
 .reverse-entry {
   margin-top: 8px;
-}
-.over-limit {
-  color: var(--el-color-danger);
 }
 </style>

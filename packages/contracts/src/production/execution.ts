@@ -1,4 +1,4 @@
-import type { VersionedCommand } from '../common.js';
+import type { PageQuery, VersionedCommand } from '../common.js';
 import type {
   BatchStepStatus,
   BatchStepAbnormalOrigin,
@@ -52,6 +52,14 @@ export interface ProductionStepCommandResult {
   startedAt: string | null;
   completedAt: string | null;
   version: number;
+}
+
+export interface ProductionWorkerTaskQuery extends PageQuery {
+  status?: Exclude<BatchStepStatus, 'pending'>;
+  /** 任务单号文本部分匹配，去除首尾空白后为空时不筛选。 */
+  batchNo?: string;
+  /** 工单号文本部分匹配，去除首尾空白后为空时不筛选。 */
+  workOrderNo?: string;
 }
 
 export interface ProductionWorkerTaskItem extends ProductionStepQuantityProjection {

@@ -28,6 +28,7 @@ import { ProductionDomainExceptionFilter } from './production-domain-exception.f
 import { AssignProductionStepDto, BatchStepRecordParamDto } from './dto/production.dto.js';
 import { BatchIdParamDto } from './dto/production-material.dto.js';
 import { ReopenProductionStepDto } from './dto/production-step-actions.dto.js';
+import { ProductionWorkerTaskQueryDto } from './dto/production-worker-task.dto.js';
 import {
   StartProductionExecutionDto,
   CompleteProductionExecutionDto,
@@ -93,7 +94,10 @@ export class ProductionExecutionController {
 
   @Get('worker-tasks')
   @RequirePermission(PERMISSIONS.production.workerTasks.view)
-  myTasks(@CurrentCommandContext() context: CommandContext, @Query() query: PageQueryDto) {
+  myTasks(
+    @CurrentCommandContext() context: CommandContext,
+    @Query() query: ProductionWorkerTaskQueryDto,
+  ) {
     return this.service.listMyTasks(context, query);
   }
 
