@@ -51,7 +51,10 @@
         >
       </el-form>
     </section>
-    <section class="table-panel">
+    <section
+      ref="productTablePanel"
+      class="table-panel"
+    >
       <TableToolbar :total="activeTotal"
         ><template #actions>
           <el-button
@@ -70,14 +73,16 @@
           > </template
         ><template #tools>
           <el-button
+            v-if="viewMode === 'materials'"
             text
-            :disabled="activeLoading || activeRowKeys.length === 0"
+            :disabled="materials.loading.value || materialRowKeys.length === 0"
             @click="collapseAllRows"
             >收起全部</el-button
           >
           <el-button
+            v-if="viewMode === 'materials'"
             text
-            :disabled="activeLoading || activeRowKeys.length === 0"
+            :disabled="materials.loading.value || materialRowKeys.length === 0"
             @click="expandAllRows"
             >展开所有</el-button
           >
@@ -92,135 +97,105 @@
 
       <el-table
         v-if="viewMode === 'products'"
-        v-loading="productGroups.loading.value"
-        :data="productGroups.groups.value"
-        row-key="groupKey"
-        :expand-row-keys="expandedRowKeys.products"
+        v-loading="products.loading.value"
+        :data="products.products.value"
+        row-key="id"
         class="data-table"
         empty-text="暂无成品"
-        @expand-change="handleProductExpandChange"
       >
-        <el-table-column type="expand"
-          ><template #default="{ row: group }"
-            ><div class="expanded-panel">
-              <el-table
-                :data="group.codes"
-                class="nested-table"
-              >
-                <el-table-column
-                  label="成品编码"
-                  min-width="170"
-                  ><template #default="{ row }"
-                    ><el-button
-                      link
-                      type="primary"
-                      class="code-link"
-                      @click="openDetail(row)"
-                      >{{ row.itemCode }}</el-button
-                    ></template
-                  ></el-table-column
-                >
-                <el-table-column
-                  label="规格摘要"
-                  min-width="210"
-                  show-overflow-tooltip
-                  ><template #default="{ row }">{{
-                    formatSpecSummary(row.specValues)
-                  }}</template></el-table-column
-                >
-                <el-table-column
-                  label="BOM"
-                  width="140"
-                  ><template #default="{ row }"
-                    ><el-tag
-                      :type="bomTag(row).type"
-                      effect="light"
-                      >{{ bomTag(row).label }}</el-tag
-                    ></template
-                  ></el-table-column
-                >
-                <el-table-column
-                  label="状态"
-                  width="90"
-                  ><template #default="{ row }"
-                    ><el-tag :type="row.status === 1 ? 'success' : 'info'">{{
-                      row.status === 1 ? '启用' : '停用'
-                    }}</el-tag></template
-                  ></el-table-column
-                >
-                <el-table-column
-                  label="操作"
-                  width="225"
-                  fixed="right"
-                  ><template #default="{ row }">
-                    <el-button
-                      v-if="auth.can(PERMISSIONS.product.products.update)"
-                      link
-                      type="primary"
-                      :disabled="row.bomStatus === 'pending_approval'"
-                      @click="openEditProduct(row)"
-                      >编辑</el-button
-                    >
-                    <el-button
-                      v-if="auth.can(PERMISSIONS.product.products.manageBom)"
-                      link
-                      type="primary"
-                      @click="openBom(row)"
-                      >BOM</el-button
-                    >
-                    <el-dropdown
-                      trigger="click"
-                      @command="() => toggleProductStatus(row)"
-                      ><el-button
-                        link
-                        type="primary"
-                        >更多<el-icon><ArrowDown /></el-icon></el-button
-                      ><template #dropdown
-                        ><el-dropdown-menu>
-                          <el-dropdown-item
-                            v-if="auth.can(PERMISSIONS.product.products.changeStatus)"
-                            :disabled="row.bomStatus === 'pending_approval'"
-                            command="status"
-                            >{{ row.status === 1 ? '停用' : '启用' }}</el-dropdown-item
-                          >
-                        </el-dropdown-menu></template
-                      ></el-dropdown
-                    >
-                  </template></el-table-column
-                >
-              </el-table>
+        <!-- 数据列按最小宽度的比例分摊余宽，操作列按实际按钮宽度保留。 -->
+        <el-table-column
+          label="成品"
+          min-width="220"
+          ><template #default="{ row }"
+            ><div class="product-identity">
+              <strong>{{ row.productName }}</strong>
+              <span class="product-code">{{ row.itemCode }}</span>
             </div></template
           ></el-table-column
         >
         <el-table-column
-          prop="productName"
-          label="成品名称"
-          min-width="260"
+          label="规格摘要"
+          min-width="200"
           ><template #default="{ row }"
-            ><strong>{{ row.productName }}</strong></template
+            ><el-tooltip
+              :content="formatSpecSummary(row.specValues)"
+              :disabled="!row.specValues.length"
+              :show-after="300"
+              :popper-style="{ maxWidth: '480px', whiteSpace: 'normal', overflowWrap: 'anywhere' }"
+              placement="top"
+              ><div class="product-spec-summary">{{ formatSpecSummary(row.specValues) }}</div>
+            </el-tooltip></template
           ></el-table-column
         >
         <el-table-column
           prop="categoryName"
           label="分类"
           min-width="180"
+          show-overflow-tooltip
         /><el-table-column
-          prop="codeCount"
-          label="编码数"
-          width="110"
+          prop="unit"
+          label="单位"
+          min-width="80"
+          show-overflow-tooltip
         />
         <el-table-column
-          label="操作"
-          width="130"
-          fixed="right"
+          label="BOM"
+          min-width="140"
           ><template #default="{ row }"
-            ><el-button
-              v-if="auth.can(PERMISSIONS.product.products.create)"
-              link
-              type="primary"
-              @click="openCreateCode(row)"
-              >新增编码</el-button
+            ><el-tag
+              :type="bomTag(row).type"
+              effect="light"
+              >{{ bomTag(row).label }}</el-tag
             ></template
+          ></el-table-column
+        >
+        <el-table-column
+          label="状态"
+          min-width="100"
+          ><template #default="{ row }"
+            ><el-tag :type="row.status === 1 ? 'success' : 'info'">{{
+              row.status === 1 ? '启用' : '停用'
+            }}</el-tag></template
+          ></el-table-column
+        >
+        <el-table-column
+          label="操作"
+          :width="productActionColumnWidth"
+          fixed="right"
+          ><template #header><span class="product-actions-heading">操作</span></template>
+          <template #default="{ row }"
+            ><div class="product-row-actions">
+              <el-button
+                link
+                type="primary"
+                @click="openDetail(row)"
+                >详情</el-button
+              >
+              <el-button
+                v-if="auth.can(PERMISSIONS.product.products.update)"
+                link
+                type="primary"
+                :disabled="row.bomStatus === 'pending_approval'"
+                @click="openEditProduct(row)"
+                >编辑</el-button
+              >
+              <el-button
+                v-if="auth.can(PERMISSIONS.product.products.manageBom)"
+                link
+                type="primary"
+                @click="openBom(row)"
+                >BOM</el-button
+              >
+              <el-button
+                v-if="auth.can(PERMISSIONS.product.products.changeStatus)"
+                link
+                :type="row.status === 1 ? 'danger' : 'success'"
+                :disabled="row.bomStatus === 'pending_approval'"
+                @click="toggleProductStatus(row)"
+                >{{ row.status === 1 ? '停用' : '启用' }}</el-button
+              >
+            </div></template
           ></el-table-column
         >
       </el-table>
@@ -230,7 +205,7 @@
         v-loading="materials.loading.value"
         :data="materials.materials.value"
         row-key="id"
-        :expand-row-keys="expandedRowKeys.materials"
+        :expand-row-keys="expandedMaterialRowKeys"
         class="data-table"
         empty-text="暂无物料"
         @expand-change="handleMaterialExpandChange"
@@ -359,7 +334,6 @@
       :visible="productDialogVisible"
       :editing-product-id="editingProductId"
       :editing-product-locked="editingProductLocked"
-      :creating-in-group="creatingInGroup"
       :category-options="categorySource.options.value"
       :item-kind-labels="itemKindLabels"
       :submitting="submitting"
@@ -407,14 +381,13 @@
 <script setup lang="ts">
 import { computed, onActivated, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { ArrowDown, Plus, Refresh } from '@element-plus/icons-vue';
+import { Plus, Refresh } from '@element-plus/icons-vue';
 import { PERMISSIONS, PRODUCT_BOM_STATUS_LABELS } from '@company/constants';
 import type {
   MaterialListItem,
   MaterialPayload,
   MaterialVariantItem,
   ProductAcquireMethod,
-  ProductGroupItem,
   ProductItemKind,
   ProductListItem,
 } from '@company/contracts';
@@ -426,7 +399,8 @@ import { useAuthStore } from '../../stores/auth';
 import { EMessage } from '../../utils/message';
 import { RouteMessageBox } from '../../utils/route-message-box';
 import { useProductCategoryOptions } from '../../composables/options/useProductCategoryOptions';
-import { useProductGroupsList } from './composables/useProductGroupsList';
+import { useTableActionColumn } from '../../composables/useTableActionColumn';
+import { useProductsList } from './composables/useProductsList';
 import { useMaterialsList } from './composables/useMaterialsList';
 import ProductFormDialog, { type ProductFormValue } from './components/ProductFormDialog.vue';
 import ProductDetailDialog from './components/ProductDetailDialog.vue';
@@ -440,48 +414,35 @@ const route = useRoute();
 const router = useRouter();
 const auth = useAuthStore();
 const categorySource = useProductCategoryOptions();
-const productGroups = useProductGroupsList();
+const products = useProductsList();
 const materials = useMaterialsList();
 const viewMode = ref<ViewMode>(route.query.tab === 'materials' ? 'materials' : 'products');
-const expandedRowKeys = ref<Record<ViewMode, string[]>>({ products: [], materials: [] });
-const shouldInitializeExpansion: Record<ViewMode, boolean> = { products: true, materials: true };
-const activeRowKeys = computed(() =>
-  viewMode.value === 'products'
-    ? productGroups.groups.value.map((group) => group.groupKey)
-    : materials.materials.value.map((material) => material.id),
-);
-const syncExpandedRows = (mode: ViewMode, rowKeys: string[]) => {
-  expandedRowKeys.value[mode] = shouldInitializeExpansion[mode]
-    ? rowKeys.slice(0, 1)
-    : expandedRowKeys.value[mode].filter((key) => rowKeys.includes(key));
-  if (rowKeys.length) shouldInitializeExpansion[mode] = false;
-};
-watch(productGroups.groups, (groups) => {
-  syncExpandedRows(
-    'products',
-    groups.map((group) => group.groupKey),
+const { tablePanel: productTablePanel, actionColumnWidth: productActionColumnWidth } =
+  useTableActionColumn(
+    () => (viewMode.value === 'products' ? products.products.value : null),
+    '.product-row-actions, .product-actions-heading',
   );
-});
+const expandedMaterialRowKeys = ref<string[]>([]);
+let shouldInitializeMaterialExpansion = true;
+const materialRowKeys = computed(() => materials.materials.value.map((material) => material.id));
 watch(materials.materials, (rows) => {
-  syncExpandedRows(
-    'materials',
-    rows.map((material) => material.id),
-  );
+  const rowKeys = rows.map((material) => material.id);
+  expandedMaterialRowKeys.value = shouldInitializeMaterialExpansion
+    ? rowKeys.slice(0, 1)
+    : expandedMaterialRowKeys.value.filter((key) => rowKeys.includes(key));
+  if (rowKeys.length) shouldInitializeMaterialExpansion = false;
 });
-const handleProductExpandChange = (_row: ProductGroupItem, rows: ProductGroupItem[]) => {
-  expandedRowKeys.value.products = rows.map((group) => group.groupKey);
-};
 const handleMaterialExpandChange = (_row: MaterialListItem, rows: MaterialListItem[]) => {
-  expandedRowKeys.value.materials = rows.map((material) => material.id);
+  expandedMaterialRowKeys.value = rows.map((material) => material.id);
 };
 const collapseAllRows = () => {
-  expandedRowKeys.value[viewMode.value] = [];
+  expandedMaterialRowKeys.value = [];
 };
 const expandAllRows = () => {
-  expandedRowKeys.value[viewMode.value] = activeRowKeys.value;
+  expandedMaterialRowKeys.value = materialRowKeys.value;
 };
 const activeQuery = computed(() =>
-  viewMode.value === 'products' ? productGroups.query : materials.query,
+  viewMode.value === 'products' ? products.query : materials.query,
 );
 const activeCategories = computed(() =>
   categorySource.options.value.filter(
@@ -489,40 +450,42 @@ const activeCategories = computed(() =>
   ),
 );
 const activeLoading = computed(() =>
-  viewMode.value === 'products' ? productGroups.loading.value : materials.loading.value,
+  viewMode.value === 'products' ? products.loading.value : materials.loading.value,
 );
 const activeTotal = computed(() =>
-  viewMode.value === 'products' ? productGroups.total.value : materials.total.value,
+  viewMode.value === 'products' ? products.total.value : materials.total.value,
 );
 const activePage = computed(() =>
-  viewMode.value === 'products' ? productGroups.currentPage.value : materials.currentPage.value,
+  viewMode.value === 'products' ? products.currentPage.value : materials.currentPage.value,
 );
 const activePageSize = computed(() =>
-  viewMode.value === 'products' ? productGroups.pageSize.value : materials.pageSize.value,
+  viewMode.value === 'products' ? products.pageSize.value : materials.pageSize.value,
 );
 const itemKindLabels: Record<ProductItemKind, string> = {
   material: '物料',
   finished_product: '成品',
 };
 const acquireMethodLabels = { self_made: '自制', outsourced: '委外', purchased: '外购' };
-const loadActive = () => (viewMode.value === 'products' ? productGroups.load() : materials.load());
+const loadActive = () => (viewMode.value === 'products' ? products.load() : materials.load());
 const searchActive = () => {
-  shouldInitializeExpansion[viewMode.value] = true;
-  return viewMode.value === 'products' ? productGroups.search() : materials.search();
+  if (viewMode.value === 'products') return products.search();
+  shouldInitializeMaterialExpansion = true;
+  return materials.search();
 };
 const resetActive = () => {
-  shouldInitializeExpansion[viewMode.value] = true;
-  return viewMode.value === 'products' ? productGroups.reset() : materials.reset();
+  if (viewMode.value === 'products') return products.reset();
+  shouldInitializeMaterialExpansion = true;
+  return materials.reset();
 };
 const changeActivePageSize = (v: number) => {
-  shouldInitializeExpansion[viewMode.value] = true;
-  return viewMode.value === 'products'
-    ? productGroups.changePageSize(v)
-    : materials.changePageSize(v);
+  if (viewMode.value === 'products') return products.changePageSize(v);
+  shouldInitializeMaterialExpansion = true;
+  return materials.changePageSize(v);
 };
 const changeActivePage = (v: number) => {
-  shouldInitializeExpansion[viewMode.value] = true;
-  return viewMode.value === 'products' ? productGroups.changePage(v) : materials.changePage(v);
+  if (viewMode.value === 'products') return products.changePage(v);
+  shouldInitializeMaterialExpansion = true;
+  return materials.changePage(v);
 };
 watch(viewMode, async (mode) => {
   await router.replace({ query: mode === 'materials' ? { tab: 'materials' } : {} });
@@ -537,17 +500,15 @@ const bomVisible = ref(false);
 const submitting = ref(false);
 const editingProductId = ref<string | null>(null);
 const editingProductLocked = ref(false);
-const creatingInGroup = ref(false);
 const editingMaterialId = ref<string | null>(null);
 const activeProduct = ref<ProductListItem | null>(null);
 const activeMaterial = ref<MaterialListItem | null>(null);
 const detailRow = ref<ProductListItem | null>(null);
 // 列表刷新会替换行对象；弹窗不能继续持有审批前的旧状态和版本。
-watch(productGroups.groups, (groups) => {
-  const products = groups.flatMap((group) => group.codes);
-  const current = products.find((product) => product.id === activeProduct.value?.id);
+watch(products.products, (rows) => {
+  const current = rows.find((product) => product.id === activeProduct.value?.id);
   if (current) activeProduct.value = current;
-  const detail = products.find((product) => product.id === detailRow.value?.id);
+  const detail = rows.find((product) => product.id === detailRow.value?.id);
   if (detail) detailRow.value = detail;
 });
 const productFormRef = ref<InstanceType<typeof ProductFormDialog>>();
@@ -567,21 +528,12 @@ const bomTag = (r: ProductListItem): { label: string; type: 'info' | 'success' |
 };
 const openCreateProduct = () => {
   editingProductId.value = null;
-  creatingInGroup.value = false;
   editingProductLocked.value = false;
   productFormRef.value?.resetForm();
   productDialogVisible.value = true;
 };
-const openCreateCode = (g: ProductGroupItem) => {
-  editingProductId.value = null;
-  creatingInGroup.value = true;
-  editingProductLocked.value = false;
-  productFormRef.value?.setCreateDefaults(g);
-  productDialogVisible.value = true;
-};
 const openEditProduct = (r: ProductListItem) => {
   editingProductId.value = r.id;
-  creatingInGroup.value = false;
   editingProductLocked.value = r.bomStatus ? r.bomStatus !== 'draft' : Boolean(r.bomLockedAt);
   productFormRef.value?.setForm(r);
   productDialogVisible.value = true;
@@ -634,7 +586,7 @@ const saveProduct = (d: ProductFormValue) =>
       if (editingProductId.value) await productApi.updateProduct(editingProductId.value, p);
       else await productApi.createProduct(p);
       productDialogVisible.value = false;
-      await productGroups.load();
+      await products.load();
     },
     '成品已保存',
     '成品保存失败',
@@ -649,7 +601,7 @@ const saveBom = (rows: MaterialRow[]) =>
             activeProduct.value!.version,
           );
           bomVisible.value = false;
-          await productGroups.load();
+          await products.load();
         },
         'BOM 已保存',
         'BOM 保存失败',
@@ -661,7 +613,7 @@ const submitBomApproval = () =>
         async () => {
           await approvalApi.submitBom(activeProduct.value!.id, activeProduct.value!.version);
           bomVisible.value = false;
-          await productGroups.load();
+          await products.load();
         },
         'BOM 已提交审批',
         'BOM 提交审批失败',
@@ -681,9 +633,9 @@ const viewBomApproval = (): void => {
   });
 };
 const toggleProductStatus = (r: ProductListItem) =>
-  confirmStatus(r.productName, r.status, async () => {
+  confirmStatus(`${r.productName}（${r.itemCode}）`, r.status, async () => {
     await productApi.setProductStatus(r.id, r.status === 1 ? 0 : 1);
-    await productGroups.load();
+    await products.load();
   });
 const openCreateMaterial = () => {
   editingMaterialId.value = null;
@@ -813,8 +765,41 @@ onActivated(() => {
 .nested-table {
   border-radius: 6px;
 }
-.code-link {
-  font-weight: 600;
+.product-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.product-identity,
+.product-spec-summary {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 20px;
+}
+.product-code {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+.product-spec-summary {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.product-row-actions {
+  display: inline-flex;
+  width: max-content;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.product-actions-heading {
+  display: inline-block;
+  white-space: nowrap;
+}
+.product-row-actions :deep(.el-button) {
+  margin-left: 0;
+  padding: 0;
 }
 .secondary {
   margin-top: 4px;

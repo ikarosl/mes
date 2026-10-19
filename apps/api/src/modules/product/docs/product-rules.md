@@ -18,15 +18,23 @@
 
 已批准的 BOM 继续永久锁定；上述身份边界不开放既有 BOM 修改或新增 BOM 版本，工艺路线版本仍遵守自身发布规则。
 
-分类 `itemKind` 创建后不可修改；修改请求须与原类型一致，更新 SQL 不写该字段。成品分组和组成员关联使用数据库名称比较规则，不以 JavaScript 字符串相等重新分组。
+分类 `itemKind` 创建后不可修改；修改请求须与原类型一致，更新 SQL 不写该字段。
 
 所有路线的所有工序均须报工，不提供报工开关；路线步骤契约和表结构不保存是否报工字段。
+
+## 成品列表与筛选
+
+每个成品有独立的 `products.id` 和永久唯一编码；成品名称是可重复的展示与搜索字段，不形成父成品、成品类型或名称组。同名成品分别维护自身的分类、基础单位、BOM 和启停状态。
+
+`GET /api/product/products` 返回 `PageResult<ProductListItem>`，一行对应一条独立成品记录，`total`、`page` 和 `pageSize` 均按记录计算。列表只包含未删除成品及其未删除的成品分类；`keyword` trim 后匹配名称或成品编码，`categoryId`、`acquireMethod` 和 `status` 精确筛选当前记录，筛选先于计数和分页。返回结果不额外包含同名且未命中筛选的成品。
+
+列表按 `product_name, category_id, item_code, id` 稳定排序，名称比较与排序遵循数据库字段的排序规则；同名记录连续排列，每条记录独立占用分页名额。成品目录仅提供逐记录列表，不提供名称分组查询或可选分组视图。
 
 ## 目录与 BOM 内部职责
 
 `MysqlProductCatalogRepository` 是 application port 的装配入口，委托四个内部职责：
 
-- `MysqlProductCatalogQuery` 负责成品分页、名称分组、候选、BOM 展示和历史物料名称；展示结果不授予编辑或审批资格。
+- `MysqlProductCatalogQuery` 负责逐记录成品分页、候选、BOM 展示和历史物料名称；展示结果不授予编辑或审批资格。
 - `MysqlProductCommands` 负责成品主数据和启停，写入与成功审计在同一事务内提交。
 - `MysqlProductBomEditor` 负责完整替换 BOM，在同一事务锁成品根、核对版本及编辑资格、校验单位、恢复或写入明细、递增聚合版本并记录成功审计。
 - `MysqlProductBomApproval` 负责送审准备、绑定申请、审批前关联核对、最终批准和恢复草稿；事务可复用 Approval 的同池外层事务。
@@ -44,7 +52,7 @@ BOM 审批证据仅接受当前结构版本 2；开发环境通过数据重置�
 
 `ProductSnapshotQuery.getApprovedBomSnapshot` 在活动事务内锁定成品并复核批准依据，为 Production 批量任务初始需求提供不依赖路线的 BOM 快照；它不写审批或锁定事实，也不改变基础物料与精确版本身份。
 
-成品列表、名称分组、候选和生产成品快照不包含默认路线字段。权限目录中的 `product:products:set-default-route` 无对应 HTTP 命令入口；数据库保留列的适用边界见[成品表](database.md#2-products)。
+成品列表、候选和生产成品快照不包含默认路线字段。权限目录中的 `product:products:set-default-route` 无对应 HTTP 命令入口；数据库保留列的适用边界见[成品表](database.md#2-products)。
 
 `ProductProductionDefinitionCommand.requireApprovedBomForProductionTask` 是批量任务创建的资格边界：必须提供显式路线 ID，缺失时返回无效输入结果；成功时返回非空路线快照。成品、批准 BOM、所选路线及其步骤在同一创建事务内锁定并复核，不能用候选响应代替当前写入资格。
 

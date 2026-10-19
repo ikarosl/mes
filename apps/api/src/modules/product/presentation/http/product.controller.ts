@@ -168,17 +168,6 @@ export class ProductController {
       status: query.status,
     });
   }
-  @Get('product-groups')
-  @RequirePermission(PERMISSIONS.product.products.view)
-  productGroups(@Query() query: ProductListQueryDto) {
-    return this.service.listProductGroups({
-      page: query.page,
-      pageSize: query.pageSize,
-      keyword: query.keyword?.trim() || undefined,
-      categoryId: query.categoryId,
-      status: query.status,
-    });
-  }
   @Get('products/options')
   // 跨页面选项授权：成品页、工艺路线页或生产工单/任务页任一视图权限即可读取
   @RequirePermission([

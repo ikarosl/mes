@@ -1,10 +1,10 @@
 import { reactive, ref } from 'vue';
-import type { ProductGroupItem } from '@company/contracts';
+import type { ProductListItem } from '@company/contracts';
 import { productApi } from '../../../api/product';
 import { EMessage } from '../../../utils/message';
 
-export function useProductGroupsList() {
-  const groups = ref<ProductGroupItem[]>([]);
+export function useProductsList() {
+  const products = ref<ProductListItem[]>([]);
   const loading = ref(false);
   const total = ref(0);
   const currentPage = ref(1);
@@ -24,7 +24,7 @@ export function useProductGroupsList() {
     const token = ++requestToken;
     loading.value = true;
     try {
-      const result = await productApi.productGroups({
+      const result = await productApi.products({
         page: currentPage.value,
         pageSize: pageSize.value,
         keyword: query.keyword.trim() || undefined,
@@ -32,7 +32,7 @@ export function useProductGroupsList() {
         status: query.status === '' ? undefined : query.status === 'enabled' ? 1 : 0,
       });
       if (token !== requestToken) return;
-      groups.value = result.items;
+      products.value = result.items;
       total.value = result.total;
     } catch (error) {
       if (token === requestToken) EMessage.error(error, '成品资料加载失败');
@@ -61,7 +61,7 @@ export function useProductGroupsList() {
   };
 
   return {
-    groups,
+    products,
     loading,
     total,
     currentPage,

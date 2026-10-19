@@ -1,13 +1,15 @@
 import { onActivated, onDeactivated, onMounted, onScopeDispose, ref, watch } from 'vue';
-import type { Ref } from 'vue';
-import type { WorkOrderItem } from '@company/contracts';
+import type { Ref, WatchSource } from 'vue';
 
-interface WorkOrderActionColumn {
+interface TableActionColumn {
   tablePanel: Ref<HTMLElement | undefined>;
   actionColumnWidth: Ref<number | undefined>;
 }
 
-export function useWorkOrderActionColumn(orders: Ref<WorkOrderItem[]>): WorkOrderActionColumn {
+export function useTableActionColumn(
+  rows: WatchSource<unknown>,
+  contentSelector: string,
+): TableActionColumn {
   const tablePanel = ref<HTMLElement>();
   const actionColumnWidth = ref<number>();
   let observer: ResizeObserver | undefined;
@@ -26,9 +28,7 @@ export function useWorkOrderActionColumn(orders: Ref<WorkOrderItem[]>): WorkOrde
   const measure = (): void => {
     if (!active || !tablePanel.value) return;
     let width = 0;
-    for (const element of tablePanel.value.querySelectorAll<HTMLElement>(
-      '.order-row-actions, .order-actions-heading',
-    )) {
+    for (const element of tablePanel.value.querySelectorAll<HTMLElement>(contentSelector)) {
       const contentWidth = element.getBoundingClientRect().width;
       if (!contentWidth) continue;
       const cell = element.closest('.cell');
@@ -51,9 +51,7 @@ export function useWorkOrderActionColumn(orders: Ref<WorkOrderItem[]>): WorkOrde
     observer?.disconnect();
     if (!active || !tablePanel.value) return;
     observer?.observe(tablePanel.value);
-    for (const element of tablePanel.value.querySelectorAll(
-      '.order-row-actions, .order-actions-heading',
-    ))
+    for (const element of tablePanel.value.querySelectorAll(contentSelector))
       observer?.observe(element);
     schedule();
   };
@@ -69,7 +67,7 @@ export function useWorkOrderActionColumn(orders: Ref<WorkOrderItem[]>): WorkOrde
     if (frame !== undefined) cancelAnimationFrame(frame);
     frame = undefined;
   };
-  watch([orders, tablePanel], rebind, { flush: 'post' });
+  watch([rows, tablePanel], rebind, { flush: 'post' });
   onMounted(start);
   onActivated(start);
   onDeactivated(stop);

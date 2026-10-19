@@ -82,17 +82,10 @@ describe('productApi contract mapping', () => {
     });
   });
 
-  it('maps grouped product, material, and material-version queries to their routes', async () => {
+  it('maps material and material-version queries to their routes', async () => {
     request.mockResolvedValue({ data: { items: [], total: 0, page: 1, pageSize: 10 } });
     const { productApi } = await import('../product');
 
-    await productApi.productGroups({
-      page: 2,
-      pageSize: 20,
-      keyword: '连接器',
-      categoryId: 'c1',
-      status: 1,
-    });
     await productApi.materialList({
       page: 3,
       pageSize: 50,
@@ -105,10 +98,6 @@ describe('productApi contract mapping', () => {
     await productApi.materialVariantsByMaterial('m1');
 
     expect(request).toHaveBeenNthCalledWith(1, {
-      url: '/product/product-groups',
-      params: { page: 2, pageSize: 20, keyword: '连接器', categoryId: 'c1', status: 1 },
-    });
-    expect(request).toHaveBeenNthCalledWith(2, {
       url: '/product/materials',
       params: {
         page: 3,
@@ -119,11 +108,11 @@ describe('productApi contract mapping', () => {
         status: 1,
       },
     });
-    expect(request).toHaveBeenNthCalledWith(3, {
+    expect(request).toHaveBeenNthCalledWith(2, {
       url: '/product/materials/options',
       skipErrorHandling: true,
     });
-    expect(request).toHaveBeenNthCalledWith(4, {
+    expect(request).toHaveBeenNthCalledWith(3, {
       url: '/product/material-variants/by-material/m1',
       skipErrorHandling: true,
     });

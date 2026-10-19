@@ -1,7 +1,5 @@
 import type {
   ProductListItem,
-  ProductGroupItem,
-  ProductGroupQuery,
   ProductMaterialItem,
   ReplaceProductMaterialsCommand,
   ProductListQuery,
@@ -14,7 +12,6 @@ import type { CommandContext } from '../../../../common/audit/audit.types.js';
 
 export abstract class ProductCatalogRepository {
   abstract listProducts(query: ProductListQuery): Promise<PageResult<ProductListItem>>;
-  abstract listProductGroups(query: ProductGroupQuery): Promise<PageResult<ProductGroupItem>>;
   abstract listProductOptions(): Promise<ProductOption[]>;
   abstract createProduct(payload: ProductPayload, audit: CommandContext): Promise<{ id: string }>;
   abstract updateProduct(id: string, payload: ProductPayload, audit: CommandContext): Promise<void>;

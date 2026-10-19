@@ -14,8 +14,8 @@ import type {
   ProductCategoryOption,
   ProductCategoryPayload,
   ProductCategoryQuery,
-  ProductGroupItem,
-  ProductGroupQuery,
+  ProductListItem,
+  ProductListQuery,
   ProductMaterialItem,
   ProductMaterialPayload,
   ReplaceProductMaterialsCommand,
@@ -88,8 +88,8 @@ export const productApi = {
   setCategoryStatus: (id: string, status: number) =>
     request<void>({ url: `${base}/categories/${id}/status`, method: 'PATCH', data: { status } }),
 
-  productGroups: (params: ProductGroupQuery) =>
-    request<PageResult<ProductGroupItem>>({ url: `${base}/product-groups`, params }),
+  products: (params: ProductListQuery) =>
+    request<PageResult<ProductListItem>>({ url: `${base}/products`, params }),
   productOptions: () =>
     request<ProductOption[]>({ url: `${base}/products/options`, skipErrorHandling: true }),
   createProduct: (data: ProductPayload) =>

@@ -148,27 +148,6 @@ describe('ProductController paginated lists and options', () => {
     expect(service.listRouteOptions).toHaveBeenCalledOnce();
   });
 
-  it('normalizes product-group filters without turning groups into product options', () => {
-    const service = { listProductGroups: vi.fn().mockReturnValue({ items: [], total: 0 }) };
-    const controller = new ProductController(service as never);
-
-    controller.productGroups({
-      page: 2,
-      pageSize: 20,
-      keyword: ' 微带 ',
-      categoryId: '3',
-      status: 1,
-    });
-
-    expect(service.listProductGroups).toHaveBeenCalledWith({
-      page: 2,
-      pageSize: 20,
-      keyword: '微带',
-      categoryId: '3',
-      status: 1,
-    });
-  });
-
   it('serves material options through the material repository boundary', () => {
     const service = { listMaterialOptions: vi.fn().mockReturnValue([{ id: '9' }]) };
     const controller = new ProductController(service as never);

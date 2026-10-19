@@ -387,9 +387,9 @@ import { deadlinePresentation } from './production-task-presentation';
 import { useIdempotentIntent } from '../../composables/idempotency/useIdempotentIntent';
 import { useProductOptions } from '../../composables/options/useProductOptions';
 import { useUserOptions } from '../../composables/options/useUserOptions';
+import { useTableActionColumn } from '../../composables/useTableActionColumn';
 import { ORDER_STATUS_META, formatQuantity, orderStatusMeta } from './production-status';
 import { useWorkOrdersList } from './composables/useWorkOrdersList';
-import { useWorkOrderActionColumn } from './composables/useWorkOrderActionColumn';
 import { canStartNextResearchRound } from './research-work-order';
 import { useWorkOrderDialogs, type WorkOrderFormHandle } from './composables/useWorkOrderDialogs';
 import WorkOrderFormDialog from './components/WorkOrderFormDialog.vue';
@@ -413,7 +413,10 @@ const {
   handlePageSizeChange,
   handlePageChange,
 } = useWorkOrdersList();
-const { tablePanel, actionColumnWidth } = useWorkOrderActionColumn(orders);
+const { tablePanel, actionColumnWidth } = useTableActionColumn(
+  orders,
+  '.order-row-actions, .order-actions-heading',
+);
 
 /** 页面持有的候选实例：产品（筛选 + 工单弹窗）、负责人（工单/详情弹窗） */
 const productSource = useProductOptions();

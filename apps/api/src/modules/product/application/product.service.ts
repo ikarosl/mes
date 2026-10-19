@@ -13,7 +13,6 @@ import type {
   MaterialVariantPayload,
   MaterialListQuery,
   MaterialPayload,
-  ProductGroupQuery,
   ProductListQuery,
   ProductPayload,
   TechnicalFileQuery,
@@ -76,9 +75,6 @@ export class ProductService {
   }
   listProducts(query: ProductListQuery) {
     return this.catalog.listProducts(query);
-  }
-  listProductGroups(query: ProductGroupQuery) {
-    return this.catalog.listProductGroups(query);
   }
   listProductOptions() {
     return this.catalog.listProductOptions();

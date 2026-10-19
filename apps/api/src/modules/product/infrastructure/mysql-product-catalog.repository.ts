@@ -3,8 +3,6 @@ import type { Pool } from 'mysql2/promise';
 import type {
   BomApprovalSnapshot,
   PageResult,
-  ProductGroupItem,
-  ProductGroupQuery,
   ProductListItem,
   ProductListQuery,
   ProductMaterialItem,
@@ -37,10 +35,6 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
 
   listProducts(query: ProductListQuery): Promise<PageResult<ProductListItem>> {
     return this.queries.listProducts(query);
-  }
-
-  listProductGroups(query: ProductGroupQuery): Promise<PageResult<ProductGroupItem>> {
-    return this.queries.listProductGroups(query);
   }
 
   listProductOptions(): Promise<ProductOption[]> {

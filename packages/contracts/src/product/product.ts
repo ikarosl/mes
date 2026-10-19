@@ -12,12 +12,6 @@ export interface ProductListQuery extends PageQuery {
   status?: number;
 }
 
-export interface ProductGroupQuery extends PageQuery {
-  keyword?: string;
-  categoryId?: string;
-  status?: number;
-}
-
 export interface ProductCategoryQuery extends PageQuery {
   categoryCode?: string;
   categoryName?: string;
@@ -77,16 +71,6 @@ export interface ProductListItem {
   version: number;
   remark: string | null;
   updatedAt: string | null;
-}
-
-export interface ProductGroupItem {
-  groupKey: string;
-  productName: string;
-  categoryId: string;
-  categoryCode: string;
-  categoryName: string;
-  codeCount: number;
-  codes: ProductListItem[];
 }
 
 export interface ProductPayload {

@@ -44,13 +44,13 @@ BOM 单位用量使用 `INT`；`chk_integer_storage_product_materials` 限制其
 
 ### 2. `products`
 
-职责：只维护成品。一条记录对应一个确定的成品编码；同名不同编码是不同成品，不另外建立成品大小版本表。
+职责：只维护成品。一条记录对应一个确定的成品编码；同名不同编码是不同成品，名称不形成父成品或成品类型，不另外建立成品大小版本表。
 
 | 字段               | 类型              | 说明                                    |
 | ------------------ | ----------------- | --------------------------------------- |
 | `id`               | `BIGINT UNSIGNED` | 主键，自增                              |
 | `item_code`        | `VARCHAR(100)`    | 成品编码（创建后不可修改）      |
-| `product_name`     | `VARCHAR(200)`    | 名称                                    |
+| `product_name`     | `VARCHAR(200)`    | 可重复的展示与搜索名称                  |
 | `category_id`      | `BIGINT UNSIGNED` | 分类 ID                                 |
 | `default_route_id` | `BIGINT UNSIGNED` | 未启用保留列，可为空；应用不读写         |
 | `bom_locked_at`    | `DATETIME`        | BOM 最终审批通过并永久锁定的时间   |
@@ -317,5 +317,3 @@ BOM 只选择基础物料，不能固定大小版本。版本候选不等于管�
 Product 向 Production、Procurement 与 Inventory 的 `infrastructure/queries/` 开放只读 `materials.id` 与 `materials.material_name`，登记于根 `scripts/api-data-ownership.mjs`。改动这些字段时须检查登记调用方。名称表示当前称呼，历史引用也按稳定 ID 解析，不过滤停用或软删除；禁止物理删除被引用物料。权限、状态、版本可用性及写入资格仍通过 Product 公共能力校验。改名审批尚未实现，见根 roadmap。
 
 所有路线步骤均须报工，不设置是否报工字段；工序检验规则仍独立保存。
-
-成品名称分组、组成员关联均采用数据库字段的排序规则。当前页各组由 SQL 分配内部组序号，应用层只按该序号收集编码，不重新使用 JavaScript 名称相等规则分组。组成员包含该组全部未删除编码，筛选命中决定组是否出现在结果中。
