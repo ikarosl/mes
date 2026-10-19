@@ -156,6 +156,7 @@ export interface MaterialListQuery extends PageQuery {
   status?: number;
 }
 
+/** 基础物料分页行；版本明细通过单个基础物料的目录接口读取。 */
 export interface MaterialListItem {
   id: string;
   materialCode: string;
@@ -167,8 +168,8 @@ export interface MaterialListItem {
   acquireMethod: ProductAcquireMethod;
   specValues: ProductSpecValue[];
   status: number;
+  /** 未软删除的全部版本数，包含停用版本。 */
   variantCount: number;
-  variants: MaterialVariantItem[];
   remark: string | null;
   updatedAt: string | null;
 }

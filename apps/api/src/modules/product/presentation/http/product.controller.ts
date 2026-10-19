@@ -17,6 +17,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { PERMISSIONS } from '@company/constants';
+import type { MaterialVariantItem } from '@company/contracts';
 import type { CommandContext } from '../../../../common/audit/audit.types.js';
 import {
   AuditInApplication,
@@ -202,6 +203,11 @@ export class ProductController {
   ])
   materialOptions() {
     return this.service.listMaterialOptions();
+  }
+  @Get('materials/:id/variants')
+  @RequirePermission([PERMISSIONS.product.products.view, PERMISSIONS.product.materials.view])
+  materialMasterDataVariants(@Param() { id }: ProductIdParamDto): Promise<MaterialVariantItem[]> {
+    return this.service.listMaterialMasterDataVariants(id);
   }
   @Post('materials')
   @RequirePermission(PERMISSIONS.product.materials.create)

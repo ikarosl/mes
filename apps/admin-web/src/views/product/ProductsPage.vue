@@ -212,54 +212,32 @@
       >
         <el-table-column type="expand"
           ><template #default="{ row: material }"
-            ><div class="expanded-panel">
-              <el-table
-                :data="material.variants"
-                class="nested-table"
-                empty-text="暂无物料版本"
+            ><div
+              v-if="expandedMaterialRowKeys.includes(material.id)"
+              class="expanded-panel"
+            >
+              <MaterialVariantsPanel
+                v-if="materialDetailsReady && isMaterialViewActive"
+                :key="material.id"
+                :material-id="material.id"
+                :snapshot-revision="materials.snapshotRevision.value"
+                :can-change-status="auth.can(PERMISSIONS.product.materialVariants.changeStatus)"
+                @change-status="toggleVariantStatus"
+              />
+              <div
+                v-else-if="isMaterialViewActive"
+                class="material-details-placeholder"
+                role="status"
               >
-                <el-table-column
-                  prop="variantCode"
-                  label="完整版本编码"
-                  min-width="240"
-                /><el-table-column
-                  prop="majorVersion"
-                  label="大版本"
-                  width="120"
-                /><el-table-column
-                  prop="minorVersion"
-                  label="小版本"
-                  width="120"
-                />
-                <el-table-column
-                  label="状态"
-                  width="100"
-                  ><template #default="{ row }"
-                    ><el-tag :type="row.status === 1 ? 'success' : 'info'">{{
-                      row.status === 1 ? '启用' : '停用'
-                    }}</el-tag></template
-                  ></el-table-column
+                <span>{{
+                  materials.loading.value ? '正在刷新物料资料…' : '请刷新物料列表后查看版本'
+                }}</span>
+                <el-button
+                  v-if="!materials.loading.value"
+                  @click="loadActive"
+                  >重新加载</el-button
                 >
-                <el-table-column
-                  prop="remark"
-                  label="备注"
-                  min-width="180"
-                  ><template #default="{ row }">{{ row.remark || '—' }}</template></el-table-column
-                >
-                <el-table-column
-                  label="操作"
-                  width="110"
-                  ><template #default="{ row }"
-                    ><el-button
-                      v-if="auth.can(PERMISSIONS.product.materialVariants.changeStatus)"
-                      link
-                      :type="row.status === 1 ? 'danger' : 'success'"
-                      @click="toggleVariantStatus(row)"
-                      >{{ row.status === 1 ? '停用' : '启用' }}</el-button
-                    ></template
-                  ></el-table-column
-                >
-              </el-table>
+              </div>
             </div></template
           ></el-table-column
         >
@@ -379,7 +357,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onActivated, onMounted, ref, watch } from 'vue';
+import { computed, onActivated, onDeactivated, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import { PERMISSIONS, PRODUCT_BOM_STATUS_LABELS } from '@company/constants';
@@ -407,6 +385,7 @@ import ProductDetailDialog from './components/ProductDetailDialog.vue';
 import ProductMaterialDialog, { type MaterialRow } from './components/ProductMaterialDialog.vue';
 import MaterialFormDialog, { type MaterialFormValue } from './components/MaterialFormDialog.vue';
 import MaterialVariantFormDialog from './components/MaterialVariantFormDialog.vue';
+import MaterialVariantsPanel from './components/MaterialVariantsPanel.vue';
 
 defineOptions({ name: 'ProductsPage' });
 type ViewMode = 'products' | 'materials';
@@ -415,23 +394,28 @@ const router = useRouter();
 const auth = useAuthStore();
 const categorySource = useProductCategoryOptions();
 const products = useProductsList();
-const materials = useMaterialsList();
 const viewMode = ref<ViewMode>(route.query.tab === 'materials' ? 'materials' : 'products');
+const pageActive = ref(true);
+const isMaterialViewActive = computed(() => pageActive.value && viewMode.value === 'materials');
+const materials = useMaterialsList(() => isMaterialViewActive.value);
 const { tablePanel: productTablePanel, actionColumnWidth: productActionColumnWidth } =
   useTableActionColumn(
     () => (viewMode.value === 'products' ? products.products.value : null),
     '.product-row-actions, .product-actions-heading',
   );
 const expandedMaterialRowKeys = ref<string[]>([]);
-let shouldInitializeMaterialExpansion = true;
+const materialDetailsReady = ref(false);
 const materialRowKeys = computed(() => materials.materials.value.map((material) => material.id));
-watch(materials.materials, (rows) => {
-  const rowKeys = rows.map((material) => material.id);
-  expandedMaterialRowKeys.value = shouldInitializeMaterialExpansion
-    ? rowKeys.slice(0, 1)
-    : expandedMaterialRowKeys.value.filter((key) => rowKeys.includes(key));
-  if (rowKeys.length) shouldInitializeMaterialExpansion = false;
-});
+watch(
+  materials.snapshotRevision,
+  () => {
+    expandedMaterialRowKeys.value = expandedMaterialRowKeys.value.filter((key) =>
+      materialRowKeys.value.includes(key),
+    );
+    materialDetailsReady.value = true;
+  },
+  { flush: 'sync' },
+);
 const handleMaterialExpandChange = (_row: MaterialListItem, rows: MaterialListItem[]) => {
   expandedMaterialRowKeys.value = rows.map((material) => material.id);
 };
@@ -467,30 +451,41 @@ const itemKindLabels: Record<ProductItemKind, string> = {
 };
 const acquireMethodLabels = { self_made: '自制', outsourced: '委外', purchased: '外购' };
 const loadActive = () => (viewMode.value === 'products' ? products.load() : materials.load());
+const prepareMaterialNavigation = () => {
+  collapseAllRows();
+  materialDetailsReady.value = false;
+};
 const searchActive = () => {
   if (viewMode.value === 'products') return products.search();
-  shouldInitializeMaterialExpansion = true;
+  prepareMaterialNavigation();
   return materials.search();
 };
 const resetActive = () => {
   if (viewMode.value === 'products') return products.reset();
-  shouldInitializeMaterialExpansion = true;
+  prepareMaterialNavigation();
   return materials.reset();
 };
 const changeActivePageSize = (v: number) => {
   if (viewMode.value === 'products') return products.changePageSize(v);
-  shouldInitializeMaterialExpansion = true;
+  prepareMaterialNavigation();
   return materials.changePageSize(v);
 };
 const changeActivePage = (v: number) => {
   if (viewMode.value === 'products') return products.changePage(v);
-  shouldInitializeMaterialExpansion = true;
+  prepareMaterialNavigation();
   return materials.changePage(v);
 };
-watch(viewMode, async (mode) => {
-  await router.replace({ query: mode === 'materials' ? { tab: 'materials' } : {} });
-  await loadActive();
-});
+watch(
+  viewMode,
+  async (mode) => {
+    materials.invalidate();
+    materialDetailsReady.value = false;
+    const loading = loadActive();
+    await router.replace({ query: mode === 'materials' ? { tab: 'materials' } : {} });
+    await loading;
+  },
+  { flush: 'sync' },
+);
 
 const productDialogVisible = ref(false);
 const materialDialogVisible = ref(false);
@@ -700,6 +695,7 @@ onMounted(() => {
 });
 let hasActivated = false;
 onActivated(() => {
+  pageActive.value = true;
   // KeepAlive 首次挂载也会激活；初次加载由 onMounted 负责。
   if (!hasActivated) {
     hasActivated = true;
@@ -707,6 +703,11 @@ onActivated(() => {
   }
   void loadActive();
   void categorySource.refresh();
+});
+onDeactivated(() => {
+  pageActive.value = false;
+  materialDetailsReady.value = false;
+  materials.invalidate();
 });
 </script>
 
@@ -748,8 +749,7 @@ onActivated(() => {
 .data-table {
   width: 100%;
 }
-.data-table :deep(.el-table__header th),
-.nested-table :deep(.el-table__header th) {
+.data-table :deep(.el-table__header th) {
   height: 48px;
   background: #f9fafb;
   color: #1f2937;
@@ -762,8 +762,12 @@ onActivated(() => {
   border-radius: 8px;
   background: #fafbfc;
 }
-.nested-table {
-  border-radius: 6px;
+.material-details-placeholder {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 80px;
+  color: var(--el-text-color-secondary);
 }
 .product-identity {
   display: flex;

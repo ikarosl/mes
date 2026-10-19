@@ -55,6 +55,8 @@ export abstract class MaterialVariantQuery {
 
 export abstract class MaterialVariantRepository extends MaterialVariantQuery {
   abstract list(query: MaterialVariantListQuery): Promise<PageResult<MaterialVariantItem>>;
+  /** 目录管理读取包含停用版本；基础物料及分类须未删除且为物料分类。 */
+  abstract listByMaterial(materialId: string): Promise<MaterialVariantItem[]>;
   abstract create(
     command: CreateMaterialVariantCommand,
     context: CommandContext,

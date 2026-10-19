@@ -86,6 +86,27 @@ export class MysqlMaterialVariantRepository extends MaterialVariantRepository {
     };
   }
 
+  async listByMaterial(materialId: string): Promise<MaterialVariantItem[]> {
+    const [[material]] = await this.pool.query<(RowDataPacket & { id: number })[]>(
+      `SELECT p.id FROM materials p JOIN item_categories c ON c.id=p.category_id
+        WHERE p.id=? AND p.is_deleted=0 AND c.is_deleted=0 AND c.item_kind='material'`,
+      [materialId],
+    );
+    if (!material) throw new ProductDomainError('NOT_FOUND', '基础物料不存在');
+    const { where, parameters } = this.filters({ materialId });
+    const [rows] = await this.pool.query<VariantRow[]>(
+      `SELECT v.id,v.material_id,p.material_code,p.material_name,
+              v.major_version,v.minor_version,v.variant_code,v.status,v.is_deleted,v.remark,v.updated_at
+         FROM material_variants v
+         JOIN materials p ON p.id=v.material_id
+         JOIN item_categories c ON c.id=p.category_id
+        WHERE ${where}
+        ORDER BY v.major_version,v.minor_version,v.id`,
+      parameters,
+    );
+    return rows.map((row) => this.map(row));
+  }
+
   async listDisplayReferencesByIds(
     variantIds: string[],
   ): Promise<MaterialVariantDisplayReference[]> {

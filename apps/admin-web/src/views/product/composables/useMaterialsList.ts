@@ -1,14 +1,16 @@
 import { reactive, ref } from 'vue';
 import type { MaterialListItem } from '@company/contracts';
 import { productApi } from '../../../api/product';
+import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
 import { EMessage } from '../../../utils/message';
 
-export function useMaterialsList() {
+export function useMaterialsList(canRead: () => boolean = () => true) {
   const materials = ref<MaterialListItem[]>([]);
   const loading = ref(false);
   const total = ref(0);
   const currentPage = ref(1);
   const pageSize = ref(10);
+  const snapshotRevision = ref(0);
   const query = reactive<{
     keyword: string;
     categoryId: string;
@@ -18,26 +20,31 @@ export function useMaterialsList() {
     categoryId: '',
     status: '',
   });
-  let requestToken = 0;
+  const reads = useLatestReadRequest(() => (loading.value = false));
 
   const load = async (): Promise<void> => {
-    const token = ++requestToken;
+    if (!reads.isActive() || !canRead()) return;
+    const { isCurrent, signal } = reads.begin(canRead);
     loading.value = true;
     try {
-      const result = await productApi.materialList({
-        page: currentPage.value,
-        pageSize: pageSize.value,
-        keyword: query.keyword.trim() || undefined,
-        categoryId: query.categoryId || undefined,
-        status: query.status === '' ? undefined : query.status === 'enabled' ? 1 : 0,
-      });
-      if (token !== requestToken) return;
+      const result = await productApi.materialList(
+        {
+          page: currentPage.value,
+          pageSize: pageSize.value,
+          keyword: query.keyword.trim() || undefined,
+          categoryId: query.categoryId || undefined,
+          status: query.status === '' ? undefined : query.status === 'enabled' ? 1 : 0,
+        },
+        { signal, skipErrorHandling: true },
+      );
+      if (!isCurrent()) return;
       materials.value = result.items;
       total.value = result.total;
+      snapshotRevision.value += 1;
     } catch (error) {
-      if (token === requestToken) EMessage.error(error, '物料资料加载失败');
+      if (isCurrent()) EMessage.error(error, '物料资料加载失败');
     } finally {
-      if (token === requestToken) loading.value = false;
+      if (isCurrent()) loading.value = false;
     }
   };
 
@@ -66,11 +73,13 @@ export function useMaterialsList() {
     total,
     currentPage,
     pageSize,
+    snapshotRevision,
     query,
     load,
     search,
     reset,
     changePageSize,
     changePage,
+    invalidate: reads.invalidate,
   };
 }

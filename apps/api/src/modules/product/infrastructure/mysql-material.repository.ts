@@ -6,7 +6,6 @@ import type {
   MaterialListQuery,
   MaterialOption,
   MaterialPayload,
-  MaterialVariantItem,
   PageResult,
 } from '@company/contracts';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
@@ -28,18 +27,6 @@ type MaterialRow = RowDataPacket & {
   unit: string;
   acquire_method: MaterialListItem['acquireMethod'];
   spec_values: string | object | null;
-  status: number;
-  remark: string | null;
-  updated_at: Date | null;
-};
-type VariantRow = RowDataPacket & {
-  id: number;
-  material_id: number;
-  material_code: string;
-  material_name: string;
-  major_version: string;
-  minor_version: string;
-  variant_code: string;
   status: number;
   remark: string | null;
   updated_at: Date | null;
@@ -89,33 +76,36 @@ export class MysqlMaterialRepository extends MaterialRepository {
       [...parameters, pageSize, (page - 1) * pageSize],
     );
     const materialIds = materials.map((item) => item.id);
-    const variants = materialIds.length ? await this.variantsByMaterialIds(materialIds) : [];
-    const variantsByMaterial = new Map<string, MaterialVariantItem[]>();
-    for (const variant of variants) {
-      const current = variantsByMaterial.get(variant.materialId) ?? [];
-      current.push(variant);
-      variantsByMaterial.set(variant.materialId, current);
+    const variantCounts = new Map<string, number>();
+    if (materialIds.length) {
+      const [rows] = await this.pool.query<
+        (RowDataPacket & { material_id: number; variant_count: number | string })[]
+      >(
+        `SELECT material_id,COUNT(*) variant_count FROM material_variants
+          WHERE is_deleted=0 AND material_id IN (${materialIds.map(() => '?').join(',')})
+          GROUP BY material_id`,
+        materialIds,
+      );
+      for (const row of rows) {
+        variantCounts.set(String(row.material_id), Number(row.variant_count));
+      }
     }
     return {
-      items: materials.map((row) => {
-        const itemVariants = variantsByMaterial.get(String(row.id)) ?? [];
-        return {
-          id: String(row.id),
-          materialCode: row.material_code,
-          materialName: row.material_name,
-          categoryId: String(row.category_id),
-          categoryCode: row.category_code,
-          categoryName: row.category_name,
-          unit: row.unit,
-          acquireMethod: row.acquire_method,
-          specValues: this.json<MaterialListItem['specValues'][number]>(row.spec_values),
-          status: row.status,
-          variantCount: itemVariants.length,
-          variants: itemVariants,
-          remark: row.remark,
-          updatedAt: this.date(row.updated_at),
-        };
-      }),
+      items: materials.map((row) => ({
+        id: String(row.id),
+        materialCode: row.material_code,
+        materialName: row.material_name,
+        categoryId: String(row.category_id),
+        categoryCode: row.category_code,
+        categoryName: row.category_name,
+        unit: row.unit,
+        acquireMethod: row.acquire_method,
+        specValues: this.json<MaterialListItem['specValues'][number]>(row.spec_values),
+        status: row.status,
+        variantCount: variantCounts.get(String(row.id)) ?? 0,
+        remark: row.remark,
+        updatedAt: this.date(row.updated_at),
+      })),
       total: Number(count?.total ?? 0),
       page,
       pageSize,
@@ -220,29 +210,6 @@ export class MysqlMaterialRepository extends MaterialRepository {
         { status },
       );
     });
-  }
-
-  private async variantsByMaterialIds(materialIds: number[]): Promise<MaterialVariantItem[]> {
-    const [rows] = await this.pool.query<VariantRow[]>(
-      `SELECT v.id,v.material_id,m.material_code,m.material_name,v.major_version,v.minor_version,
-              v.variant_code,v.status,v.remark,v.updated_at
-         FROM material_variants v JOIN materials m ON m.id=v.material_id
-        WHERE v.is_deleted=0 AND v.material_id IN (${materialIds.map(() => '?').join(',')})
-        ORDER BY v.material_id,v.major_version,v.minor_version,v.id`,
-      materialIds,
-    );
-    return rows.map((row) => ({
-      id: String(row.id),
-      materialId: String(row.material_id),
-      materialCode: row.material_code,
-      materialName: row.material_name,
-      majorVersion: row.major_version,
-      minorVersion: row.minor_version,
-      variantCode: row.variant_code,
-      status: row.status,
-      remark: row.remark,
-      updatedAt: this.date(row.updated_at),
-    }));
   }
 
   private async record(db: Db, id: string, lock = false) {

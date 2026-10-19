@@ -30,6 +30,16 @@
 
 列表按 `product_name, category_id, item_code, id` 稳定排序，名称比较与排序遵循数据库字段的排序规则；同名记录连续排列，每条记录独立占用分页名额。成品目录仅提供逐记录列表，不提供名称分组查询或可选分组视图。
 
+## 基础物料目录与版本明细
+
+`GET /api/product/materials` 返回 `PageResult<MaterialListItem>`，一行对应一个 `materials.id`，默认每页 10 条基础物料；编码永久唯一，不按名称或版本分组分页。列表只包含未删除物料及其未删除的物料分类，物料或分类停用仍可查看。`keyword` trim 后匹配基础物料编码、名称或任一未删除版本的编码；`categoryId`、`acquireMethod` 和 `status` 精确筛选基础物料，筛选先于计数和分页，结果按 `material_code, id` 稳定排序。
+
+列表行不包含版本明细，只返回 `variantCount`，统计该基础物料全部未软删除版本，包含停用版本，不受命中的版本关键词限制。数据库只对当前页物料 ID 聚合版本数量，不读取版本明细；没有版本时为 `0`。
+
+`GET /api/product/materials/:id/variants` 是单个基础物料的目录管理读取，返回完整 `MaterialVariantItem[]`，不分页、不截断，包含停用版本并排除软删除版本，按 `major_version, minor_version, id` 稳定排序。基础物料不存在、已软删除，或所属分类已软删除、不是物料分类时返回 `404 NOT_FOUND`；基础物料或分类停用仍允许查看，存在且没有版本时返回空数组。
+
+这两个目录接口分别校验 `product:products:view`、`product:materials:view` 任一视图权限。版本明细用于目录展开及管理展示，不授予新选版或业务写入资格；`/material-variants/by-material/:materialId` 仍按下文的启用候选语义读取。
+
 ## 目录与 BOM 内部职责
 
 `MysqlProductCatalogRepository` 是 application port 的装配入口，委托四个内部职责：

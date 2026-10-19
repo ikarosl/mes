@@ -9,6 +9,7 @@ import type {
   ProductCategoryPayload,
   ProductCategoryQuery,
   ReplaceProductMaterialsCommand,
+  MaterialVariantItem,
   MaterialVariantListQuery,
   MaterialVariantPayload,
   MaterialListQuery,
@@ -87,6 +88,9 @@ export class ProductService {
   }
   listMaterialMasterData(query: MaterialListQuery) {
     return this.materials.list(query);
+  }
+  listMaterialMasterDataVariants(materialId: string): Promise<MaterialVariantItem[]> {
+    return this.materialVariants.listByMaterial(materialId);
   }
   listMaterialOptions() {
     return this.materials.listOptions();

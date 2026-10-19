@@ -123,8 +123,13 @@ export const productApi = {
       method: 'PATCH',
       data: { status },
     }),
-  materialList: (params: MaterialListQuery) =>
-    request<PageResult<MaterialListItem>>({ url: `${base}/materials`, params }),
+  materialList: (params: MaterialListQuery, options: ReadRequestOptions = {}) =>
+    request<PageResult<MaterialListItem>>({ ...options, url: `${base}/materials`, params }),
+  materialVariants: (materialId: string, options: ReadRequestOptions = {}) =>
+    request<MaterialVariantItem[]>({
+      ...options,
+      url: `${base}/materials/${materialId}/variants`,
+    }),
   materialOptions: () =>
     request<MaterialOption[]>({ url: `${base}/materials/options`, skipErrorHandling: true }),
   createMaterial: (data: MaterialPayload) =>
