@@ -12,6 +12,7 @@ import type {
   RevokeReceiptRejectionPayload,
   ConfirmSupplierReturnPayload,
   ConfirmProcurementInboundPayload,
+  VoidProcurementReceiptPayload,
 } from '@company/contracts';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
@@ -28,6 +29,7 @@ import {
   confirmReceiptReturn,
 } from './mysql-receipt-return.operations.js';
 import { confirmReceiptInbound } from './mysql-receipt-inbound.operation.js';
+import { voidProcurementReceipt } from './mysql-receipt-void.operation.js';
 
 @Injectable()
 export class MysqlProcurementReceiptRepository extends ProcurementReceiptRepository {
@@ -40,6 +42,11 @@ export class MysqlProcurementReceiptRepository extends ProcurementReceiptReposit
     private readonly inventoryQuery: InventoryInboundQuery,
   ) {
     super();
+  }
+  voidReceipt(id: string, payload: VoidProcurementReceiptPayload, context: CommandContext) {
+    return withTransaction(this.pool, (connection) =>
+      voidProcurementReceipt(connection, id, payload, context, this.quality, this.inventoryQuery),
+    );
   }
   confirmReceipt(payload: ConfirmProcurementReceiptPayload, context: CommandContext) {
     return withTransaction(this.pool, (connection) =>

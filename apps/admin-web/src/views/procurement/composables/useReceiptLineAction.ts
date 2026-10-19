@@ -25,6 +25,7 @@ import {
   canRejectReceipt,
   canRevokeReceiptRejection,
   isReceiptRejected,
+  isReceiptVoided,
 } from '../receipt-round-presentation';
 
 type ReceiptDispositionAction = 'correct' | 'return' | 'reject' | 'revoke';
@@ -163,7 +164,14 @@ export function useReceiptLineAction(
     });
   let baseline = '';
   const canConfirm = computed(() => {
-    if (!line.value || command.locked.value || loading.value || stale.value) return false;
+    if (
+      !line.value ||
+      isReceiptVoided(line.value) ||
+      command.locked.value ||
+      loading.value ||
+      stale.value
+    )
+      return false;
     if (action.value === 'inspect') return Boolean(caseRecord.value && inspectionValid.value);
     if (action.value === 'return')
       return Boolean(allocation.value && returnedAt.value && handoverEvidence.value.trim());
@@ -193,10 +201,12 @@ export function useReceiptLineAction(
       if (!current.isCurrent()) return false;
       stale.value =
         !latest ||
+        isReceiptVoided(latest) ||
         latest.id !== target.id ||
         latest.version !== target.version ||
         latest.currentReceiptRevisionId !== target.currentReceiptRevisionId ||
         latest.currentRound.id !== target.currentRound.id ||
+        latest.currentRound.status !== target.currentRound.status ||
         latest.currentRound.version !== target.currentRound.version;
       const checkedAllocation = allocation.value;
       if (
@@ -237,7 +247,7 @@ export function useReceiptLineAction(
     sourceAllocation?: ReceiptAllocationItem,
     qualityCase?: QualityInboundCaseItem,
   ): void => {
-    if (visible.value || command.locked.value) return;
+    if (visible.value || command.locked.value || isReceiptVoided(target)) return;
     line.value = JSON.parse(JSON.stringify(target)) as ReceiptActionSource;
     allocation.value = sourceAllocation ? { ...sourceAllocation } : null;
     caseRecord.value = qualityCase ? { ...qualityCase } : null;
@@ -289,7 +299,14 @@ export function useReceiptLineAction(
     }
   };
   const confirm = async (): Promise<void> => {
-    if (!canConfirm.value || !(await check()) || !line.value) return;
+    if (
+      !canConfirm.value ||
+      !(await check()) ||
+      !read.isActive() ||
+      !canConfirm.value ||
+      !line.value
+    )
+      return;
     const target = line.value,
       range = allocation.value,
       qualityCase = caseRecord.value;

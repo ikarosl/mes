@@ -16,6 +16,8 @@ import { MaterialVariantQuery } from '../../product/public.js';
 import { QualityInboundQuery } from '../../quality/public.js';
 import { ProcurementReceiptQuery } from '../application/ports/receipt-query.js';
 import { ProcurementDomainError } from '../domain/procurement.errors.js';
+import { receiptVoidBlockedReason } from '../domain/receipt-void.policy.js';
+import { readReceiptDependentPurchases } from './mysql-receipt-void.shared.js';
 import { readReceiptLines } from './queries/receipt-lines.query.js';
 import {
   readInspectionCase,
@@ -28,7 +30,7 @@ import {
   listInspections,
 } from './queries/receipt-lists.query.js';
 import { readReceiptHistory } from './queries/receipt-history.query.js';
-import { listPurchaseOrders, getPurchaseOrder } from './queries/purchase-order.query.js';
+import { listReceiptOrderOptions, getPurchaseOrder } from './queries/purchase-order.query.js';
 import {
   type ReadRow,
   receiptSelect,
@@ -63,9 +65,33 @@ export class MysqlProcurementReceiptQuery extends ProcurementReceiptQuery {
         [id],
       );
       if (!row) throw new ProcurementDomainError('RECEIPT_NOT_FOUND', '到货单不存在');
+      const receipt = mapReceipt(row, (await readReceiptSuppliers(db, [id])).get(id) ?? []);
+      const items = await readReceiptLines(db, this.quality, { receiptId: id });
+      const blockedReason = receiptVoidBlockedReason({
+        isVoided: receipt.void !== null,
+        hasExecution: items.some(
+          (line) =>
+            Number(line.quantities.inboundQuantity) > 0 ||
+            Number(line.quantities.returnedQuantity) > 0,
+        ),
+        dependentPurchaseNos: await readReceiptDependentPurchases(
+          db,
+          items.map((line) => line.id),
+        ),
+      });
       return {
-        ...mapReceipt(row, (await readReceiptSuppliers(db, [id])).get(id) ?? []),
-        items: await readReceiptLines(db, this.quality, { receiptId: id }),
+        ...receipt,
+        items,
+        voiding: {
+          canVoid: blockedReason === null && items.length > 0,
+          blockedReason,
+          lines: items.map((line) => ({
+            receiptLineId: line.id,
+            version: line.version,
+            roundId: line.currentRound.id,
+            roundVersion: line.currentRound.version,
+          })),
+        },
       };
     });
   }
@@ -100,11 +126,9 @@ export class MysqlProcurementReceiptQuery extends ProcurementReceiptQuery {
   }
   listReceiptOrders(query: PurchaseOrderQuery) {
     return withTransaction(this.pool, (db) =>
-      listPurchaseOrders(db, {
+      listReceiptOrderOptions(db, {
         ...query,
         ...pageInput(query),
-        status: 'ordered',
-        onlyNewArrival: true,
       }),
     );
   }

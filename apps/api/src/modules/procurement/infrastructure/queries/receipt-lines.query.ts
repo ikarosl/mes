@@ -18,6 +18,7 @@ import {
   text,
   nullableText,
   mapRevision,
+  mapReceiptVoid,
   mapRound,
   mapAllocation,
   mapReturn,
@@ -182,6 +183,7 @@ export async function readReceiptLines(
       }),
     );
     return {
+      void: mapReceiptVoid(row),
       id,
       receiptId: text(row.receipt_id),
       receiptNo: text(row.receipt_no),

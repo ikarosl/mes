@@ -21,7 +21,7 @@
             style="width: 170px"
           >
             <el-option
-              v-for="value in RECEIPT_LINE_STAGES"
+              v-for="value in inspectionStages"
               :key="value"
               :value="value"
               :label="RECEIPT_LINE_STAGE_LABELS[value]"
@@ -158,6 +158,7 @@ import InboundInspectionDetailDialog from '../procurement/components/InboundInsp
 defineOptions({ name: 'InboundInspectionsPage' });
 const route = useRoute(),
   router = useRouter();
+const inspectionStages = RECEIPT_LINE_STAGES.filter((value) => value !== 'voided');
 const {
   keyword,
   stage,

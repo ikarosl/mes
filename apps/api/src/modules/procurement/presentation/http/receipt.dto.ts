@@ -120,6 +120,19 @@ export class ReceiptRoundCommandDto extends PurchaseOrderVersionDto {
   @Matches(ID) roundId!: string;
   @IsInt() @Min(0) @Max(2147483647) roundVersion!: number;
 }
+export class ReceiptVoidLineVersionDto extends ReceiptRoundCommandDto {
+  @Matches(ID) receiptLineId!: string;
+}
+export class VoidProcurementReceiptDto extends PurchaseOrderVersionDto {
+  @Transform(trim) @IsString() @IsNotEmpty() @MaxLength(2000) reason!: string;
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(100)
+  @ArrayUnique((line: ReceiptVoidLineVersionDto) => line.receiptLineId)
+  @ValidateNested({ each: true })
+  @Type(() => ReceiptVoidLineVersionDto)
+  lines!: ReceiptVoidLineVersionDto[];
+}
 export class ReceiptOwnershipDto {
   @Matches(ID) purchaseOrderLineId!: string;
   @IsInt() @Min(0) @Max(PURCHASE_ORDER_MAX_QUANTITY) quantity!: number;

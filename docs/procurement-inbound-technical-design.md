@@ -4,12 +4,14 @@
 
 | 所有者 | 当前表与公开能力 | 边界 |
 | --- | --- | --- |
-| Procurement | procurement_order*、receipt/line/revision/round、receipt_acceptance/allocation、supplier_return；来源命令 | 采购来源、实物草稿、正式分配、退回及关闭，禁止写需求或库存 |
+| Procurement | procurement_order*、receipt/line/revision/round、receipt_acceptance/allocation、supplier_return；来源命令 | 采购跟进状态、实物登记及主表作废状态、正式分配和退回，禁止写需求或库存 |
 | Quality | quality_inspection_case/record；QualityInboundCommand/Query、QualityFinishedInspectionQuery及来源registry | 共用不可变检查事实；来料／成品只记录G/F与明确结论；不写来源草稿 |
 | Production | 任务、production_batch_closeout、production_output_round/revision/allocation | 产线修正、结案审批、批准清单，公开能力引用QC |
 | Inventory | item_batch、inbound_order/detail、inventory_transaction与余额 | 只记录实际库存，消费精确正式依据，不能把待检保管量写成可用库存 |
 
 来料整批 C 由 Procurement 库管定稿核实。成品按 [ADR-0019](adr/0019-finished-inspection-measurement-simplification.md) 仅在 Production 定稿引用放行全检记录时，按原检验轮已入基准加 G 提示累计目标差额；Quality 不生成整批 C 或放行数量建议。
+
+采购结束／恢复仅管理跟进意图，不以物流数量为资格，主单按行汇总。到货主单冻结原登记字段，以主表专门字段、修改审计及乐观版本表达一次性整单作废；在无实际入退且已处理补单依赖时撤销未执行资格，原登记和已完成检查保留，采购状态不随作废改变。两者的取舍和取代范围见 [ADR-0022](adr/0022-procurement-state-and-receipt-void.md)。
 
 表均按公共审计、整数数量、FK/组合FK、并发和不可变规则设计。Quality source_kind与显式来源组互斥；结果冗余稳定来源ID仅用于组合FK，由case约束一致。采购原始来源仍固定，履约归属从不可变分配及有效范围取得。
 
@@ -19,7 +21,7 @@
 
 复检／独立更正使旧 round.superseded，全部未实际处置授权退出；previous_round_id 串联整批历史，source_allocation_round_id 仅继承采购归属／终止约束。allocation 保持不可变，实际入退直接关联，部分入库不拆子节点；I/B事实继续保留。T为本次到货核实总量，U=T−I−B，starting_quantity只存起始U。G/F是建议，正式可入数量仍由库管按明确放行记录承担确认责任。
 
-按数值ID锁原采购和关联补单根，再锁到货行、当前轮和份额，经public核对Quality/Inventory；写入、审计、幂等同事务。质检、复检、拒收、定稿、入库和退回在同一来源互斥，数据库锁不跨现场操作。先核对状态/版本再新增事实，禁止先插迟到记录再标历史。未知结果复用原幂等key/body，已成功操作只重放原结果。
+按数值ID锁原采购和关联补单根，再锁到货行、当前轮和份额，经public核对Quality/Inventory；整单作废在到货行后锁定主单、核对主单版本及作废标记，再锁各当前轮。写入、审计、幂等同事务。质检、复检、拒收、定稿、入库、退回和作废在同一来源互斥，数据库锁不跨现场操作。先核对状态/版本再新增事实，禁止先插迟到记录再标历史。未知结果复用原幂等key/body，已成功操作只重放原结果。
 
 人工拒收创建 manual_rejection/finalized 轮及无 acceptance 的 return/manual_rejection 分配，真实退回引用分配／拒收轮。撤销拒收需原因及剩余量，追加 rejection_revocation/uninspected，不改 revision；拒收后更正 T 也按 receipt_correction 回待检，如仍拒收须再决定。旧未完成检查失效，旧事实保留，已入库退货不在此入口。
 

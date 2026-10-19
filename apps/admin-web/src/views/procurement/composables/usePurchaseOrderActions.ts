@@ -1,13 +1,11 @@
 import { computed, onActivated, ref } from 'vue';
-import type {
-  ClosePurchaseOrderLinePayload,
-  PurchaseOrderDetail,
-  PurchaseOrderLine,
-} from '@company/contracts';
+import type { PurchaseOrderDetail, PurchaseOrderLine } from '@company/contracts';
 import { procurementApi } from '../../../api/procurement';
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
 import { EMessage } from '../../../utils/message';
 import { useProcurementCommand } from './useProcurementCommand';
+
+export type PurchaseOrderAction = 'place' | 'cancel' | 'close-order' | 'close' | 'reopen';
 
 export function usePurchaseOrderActions(
   onChanged: (id: string, detail: PurchaseOrderDetail | null) => void,
@@ -17,12 +15,11 @@ export function usePurchaseOrderActions(
     loading = ref(false),
     readError = ref(false);
   const detail = ref<PurchaseOrderDetail | null>(null);
-  const action = ref<'place' | 'cancel' | 'close' | null>(null);
+  const action = ref<PurchaseOrderAction | null>(null);
   const actionLine = ref<PurchaseOrderLine | null>(null),
-    actionOrderVersion = ref(0),
+    actionOrder = ref<PurchaseOrderDetail | null>(null),
     actionStale = ref(false);
   const reason = ref('');
-  const closeReason = ref<ClosePurchaseOrderLinePayload['reasonType']>('manual_end');
   const read = useLatestReadRequest(() => {
     loading.value = false;
   });
@@ -41,15 +38,29 @@ export function usePurchaseOrderActions(
     try {
       const latest = await procurementApi.getOrder(target, current.signal);
       if (!current.isCurrent()) return false;
-      if (action.value && latest.version !== actionOrderVersion.value) actionStale.value = true;
-      if (action.value === 'close' && actionLine.value) {
-        const next = latest.items.find((line) => line.id === actionLine.value?.id);
+      const basis = actionOrder.value;
+      if (action.value && basis) {
+        const expectedLines = basis.items;
         if (
-          !next ||
-          next.version !== actionLine.value.version ||
-          JSON.stringify(next.quantities) !== JSON.stringify(actionLine.value.quantities) ||
-          JSON.stringify(next.allowedCloseReasons) !==
-            JSON.stringify(actionLine.value.allowedCloseReasons)
+          latest.id !== basis.id ||
+          latest.purchaseNo !== basis.purchaseNo ||
+          latest.version !== basis.version ||
+          latest.status !== basis.status ||
+          (action.value === 'cancel' && latest.canCancel !== basis.canCancel) ||
+          latest.items.length !== basis.items.length ||
+          expectedLines.some((line) => {
+            const next = latest.items.find((item) => item.id === line.id);
+            return (
+              !next ||
+              next.version !== line.version ||
+              next.status !== line.status ||
+              next.plannedQuantity !== line.plannedQuantity ||
+              next.supplierId !== line.supplierId ||
+              next.itemId !== line.itemId ||
+              next.materialVariantId !== line.materialVariantId ||
+              next.fulfillmentMode !== line.fulfillmentMode
+            );
+          })
         )
           actionStale.value = true;
       }
@@ -73,6 +84,7 @@ export function usePurchaseOrderActions(
     detail.value = null;
     action.value = null;
     actionLine.value = null;
+    actionOrder.value = null;
     readError.value = false;
     visible.value = true;
     await load();
@@ -84,37 +96,29 @@ export function usePurchaseOrderActions(
     read.invalidate();
     return true;
   };
-  const startAction = (type: 'place' | 'cancel' | 'close', line?: PurchaseOrderLine): void => {
+  const startAction = (type: PurchaseOrderAction, line?: PurchaseOrderLine): void => {
     if (!detail.value || command.locked.value || readError.value || loading.value) return;
     action.value = type;
     actionLine.value = line ?? null;
-    actionOrderVersion.value = detail.value.version;
+    actionOrder.value = detail.value;
     actionStale.value = false;
     reason.value = '';
-    closeReason.value = line?.allowedCloseReasons.includes('quality_target')
-      ? 'quality_target'
-      : line?.allowedCloseReasons.includes('quality_return_completed')
-        ? 'quality_return_completed'
-        : 'manual_end';
   };
   const eligible = computed(() => {
     const target = detail.value;
     if (!target) return false;
     if (action.value === 'place') return target.status === 'draft';
     if (action.value === 'cancel')
-      return (
-        (target.status === 'draft' || target.status === 'ordered') &&
-        target.items.every(
-          (line) =>
-            line.status === 'cancelled' ||
-            (line.status !== 'closed' && line.allowedCloseReasons.includes('cancelled')),
-        )
-      );
+      return (target.status === 'draft' || target.status === 'ordered') && target.canCancel;
+    if (action.value === 'close-order')
+      return target.status === 'ordered' && target.items.some((line) => line.status === 'open');
+    const currentLine = target.items.find((line) => line.id === actionLine.value?.id);
     if (action.value === 'close')
+      return target.status === 'ordered' && currentLine?.status === 'open';
+    if (action.value === 'reopen')
       return (
-        target.status === 'ordered' &&
-        actionLine.value?.status === 'open' &&
-        actionLine.value.allowedCloseReasons.includes(closeReason.value)
+        (target.status === 'ordered' || target.status === 'completed') &&
+        currentLine?.status === 'closed'
       );
     return false;
   });
@@ -122,7 +126,7 @@ export function usePurchaseOrderActions(
     Boolean(
       action.value &&
       eligible.value &&
-      (action.value === 'place' || reason.value.trim()) &&
+      (action.value === 'place' || (reason.value.trim() && reason.value.trim().length <= 2000)) &&
       !actionStale.value &&
       !readError.value &&
       !command.locked.value &&
@@ -130,35 +134,50 @@ export function usePurchaseOrderActions(
     ),
   );
   const confirmAction = async (): Promise<void> => {
-    if (!actionValid.value || !detail.value) return;
+    if (!actionValid.value || !detail.value || !actionOrder.value) return;
     if (!(await load()) || !read.isActive()) return;
-    if (!actionValid.value || !detail.value) return;
-    const target = detail.value;
+    if (!actionValid.value || !detail.value || !actionOrder.value) return;
+    const target = actionOrder.value;
     const line = actionLine.value;
     if (action.value === 'place') {
-      const body = { version: actionOrderVersion.value };
+      const body = { version: target.version };
       await command.run(
         { intentType: 'procurement.order.place', params: { id: target.id }, query: {}, body },
         (key) => procurementApi.placeOrder(target.id, body, key),
         '采购已正式下单',
       );
     } else if (action.value === 'cancel') {
-      const body = { version: actionOrderVersion.value, reason: reason.value.trim() };
+      const body = { version: target.version, reason: reason.value.trim() };
       await command.run(
         { intentType: 'procurement.order.cancel', params: { id: target.id }, query: {}, body },
         (key) => procurementApi.cancelOrder(target.id, body, key),
         '采购单已取消',
       );
-    } else if (action.value === 'close' && line) {
+    } else if (action.value === 'close-order') {
+      const body = { version: target.version, reason: reason.value.trim() };
+      await command.run(
+        { intentType: 'procurement.order.close', params: { id: target.id }, query: {}, body },
+        (key) => procurementApi.closeOrder(target.id, body, key),
+        '采购单已结束',
+      );
+    } else if ((action.value === 'close' || action.value === 'reopen') && line) {
       const body = {
         version: line.version,
-        reasonType: closeReason.value,
         reason: reason.value.trim(),
       };
+      const reopening = action.value === 'reopen';
       await command.run(
-        { intentType: 'procurement.order.line.close', params: { id: line.id }, query: {}, body },
-        (key) => procurementApi.closeOrderLine(line.id, body, key),
-        closeReason.value === 'cancelled' ? '采购行已取消' : '采购行已结束',
+        {
+          intentType: reopening ? 'procurement.order.line.reopen' : 'procurement.order.line.close',
+          params: { id: line.id },
+          query: {},
+          body,
+        },
+        (key) =>
+          reopening
+            ? procurementApi.reopenOrderLine(line.id, body, key)
+            : procurementApi.closeOrderLine(line.id, body, key),
+        reopening ? '采购行已恢复' : '采购行已结束',
       );
     }
   };
@@ -173,9 +192,9 @@ export function usePurchaseOrderActions(
     command,
     action,
     actionLine,
+    actionOrder,
     actionStale,
     reason,
-    closeReason,
     actionValid,
     open,
     close,

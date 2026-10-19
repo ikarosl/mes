@@ -35,15 +35,7 @@ export interface ConfirmPurchaseReceiptResult {
 
 export interface ReceiptInboundFact {
   allocationId: string;
-  batchId: string;
-  inboundId: string;
-  inboundNo: string;
-  inboundDetailId: string;
-  transactionId: string;
-  inspectionId: string;
-  receiptRevisionId: string;
   quantity: string;
-  confirmedAt: string;
 }
 
 export interface ReceiptInboundFacts {

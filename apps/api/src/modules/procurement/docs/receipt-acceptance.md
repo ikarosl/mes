@@ -6,18 +6,18 @@
 
 | 表 | 唯一职责 | 是否随实际入退改写 |
 | --- | --- | --- |
-| procurement_receipt | 一次真实到货交接主单 | 否 |
+| procurement_receipt | 一次真实到货登记，原交接字段冻结；主表保存整单作废状态和版本 | 实际入退不改写；仅允许一次整单作废 |
 | procurement_receipt_line | 精确物料到货身份、原采购行、当前 revision/round 指针；目标库存批次属于逐笔入库明细 | 仅指针、版本等聚合状态 |
 | procurement_receipt_revision | 本次到货核实总量 T 的不可变版本 | 否，数量变化追加版本 |
 | procurement_receipt_round | 整批剩余实物的办理资格与前后轮关联 | 办理推进状态；换轮使旧轮 superseded |
 | procurement_receipt_acceptance | 库管引用 QC 后确认的 C、前后实收版本和偏离依据 | 否，更正追加新轮、新清单 |
 | procurement_receipt_allocation | 本轮正式去向、采购归属和授权数量，或人工拒收分配 | 否，实际执行引用它 |
 
-revision 是数量事实，round 是办理资格，acceptance 是普通定稿依据，allocation 是具体执行授权。不另建可变范围树。实际供应商退回与库存明细是各自的事实表，不计入这六张核心办理表。
+revision 是数量事实，round 是办理资格，acceptance 是普通定稿依据，allocation 是具体执行授权。不另建可变范围树。整单登记作废由主表 `procurement_receipt` 的专门字段保存，原登记字段继续冻结，具体字段、约束与审计由[采购数据库](database.md#到货整批轮次与-quality-关联)维护。实际供应商退回与库存明细是各自的事实表，不计入这六张核心办理表。
 
 ## 整批换轮与继承
 
-line.current_round_id 指向唯一当前轮，previous_round_id 记录前一轮。更正实收、复检、重新定稿、拒收或撤销拒收创建新轮；旧轮 superseded，旧分配保持原值，剩余额度因旧轮失效而不可执行。已入已退仍引用旧分配，不能修改或重复计算为当前资格。
+line.current_round_id 指向唯一当前轮，previous_round_id 记录前一轮。更正实收、复检、重新定稿、拒收、撤销拒收或整单作废创建新轮；旧轮 superseded，旧分配保持原值，剩余额度因旧轮失效而不可执行。已入已退仍引用旧分配，不能修改或重复计算为当前资格。作废的终止轮为 `receipt_void/voided`，清空来源分配指针；原实收修订、清单、分配和已完成检验保留，资格及全单阻断条件见[整单作废](receipts.md#整单到货登记作废)。
 
 round.starting_quantity=创建当时 T−I−B，只是起始剩余快照。round.receipt_revision_id 指向起始数量版本；库管同轮定稿校准后的版本由 acceptance.after_receipt_revision_id 和 line.current_receipt_revision_id 表达。
 
@@ -45,7 +45,7 @@ allocation 不可变字段：
 
 ## 数量与建议
 
-本次到货核实总量 T=实际已入 I+实际已退 B+本轮核实剩余 C。定稿改变 T 时同事务追加 revision；数量不变不新增。QC 保留原 G/F/D。
+有效到货的本次核实总量 T=实际已入 I+实际已退 B+本轮核实剩余 C。定稿改变 T 时同事务追加 revision；数量不变不新增。QC 保留原 G/F/D。作废登记不把 T 更正为 0，其原值留在 revision 历史；有效到货、待处理及执行授权投影均排除该登记。
 
 | 项目 | 全检 | 抽检 |
 | --- | --- | --- |

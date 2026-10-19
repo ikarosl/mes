@@ -6,9 +6,19 @@
 
 确认到货需要已下单且 open 的 new_arrival 采购行、根／行版本、真实交接时间和凭据。按同次实际来货登记，不按采购计划封顶，也不先拆原单和补单。不同来货批次建立不同 receipt_line；本行物料精确版本、供应商及原采购行不因后续操作改变。
 
-首次创建实收 revision 与 uninspected round，line 指向两者；不建分配、不写库存。revision.received_quantity 是**本次到货核实总量 T**，包含这次来货后来已入库和已退回的数量。同原采购行的历次实物到货可按各到货行当前版本汇总；正式履约统计另按原单／补单的分配归属及实际执行计算，不重复计同次实物。不把某行改量当作后来新到货。实际已入 I、实际已退 B，剩余 U=T−I−B；round.starting_quantity 只是新轮创建时 U 的快照，不能累加为实收。
+首次登记初始化主单的创建／修改审计及 `version=0`，`is_voided=0` 且作废原因／人／时间均为空。创建实收 revision 与 uninspected round，line 指向两者；不建分配、不写库存。revision.received_quantity 是**本次到货核实总量 T**，包含这次来货后来已入库和已退回的数量。同原采购行的有效到货按各到货行当前版本汇总，作废登记的 T 只保留历史；正式履约统计另按原单／补单的分配归属及实际执行计算，不重复计同次实物。不把某行改量当作后来新到货。实际已入 I、实际已退 B，剩余 U=T−I−B；round.starting_quantity 只是新轮创建时 U 的快照，不能累加为实收。
 
 独立实收更正提交 receivedQuantity=T、当前行／轮版本、previousRevisionId、同批确认和原因。T 必须变化且不小于 I+B；追加 revision，旧轮 superseded，新轮 trigger=receipt_correction。U>0 回 uninspected，U=0 直接 finalized，无分配、无零量质检。已拒收批次同样回新草稿，旧拒收只保留历史，需要拒收则重新操作。更正不接收 ownership；采购归属留待定稿或重新拒收时核对。真实新货、丢失或损耗不能冒充实收更正。
+
+## 整单到货登记作废
+
+`POST /procurement/receipts/:id/actions/void` 作废整张到货登记，不提供逐行作废。请求为 `{version,reason,lines:[{receiptLineId,version,roundId,roundVersion}]}`；顶层 `version` 为当前到货主单版本，原因 trim 后 1～2000 字，`lines` 必须与锁内整单完整行集合及各行、当前轮版本完全相同。主单过期、漏行、重复、行或轮次变化均在新增事实前拒绝。详情的 `voiding` 仅提供同一只读快照下的预览，提交仍在业务事务内复核。
+
+整单所有行必须真实已入 I=0 且真实已退 B=0，且不存在非 `cancelled` 关联补单依赖。依赖包含 `origin_receipt_line_id` 引用及历史正式分配中的补单承接归属；`draft/ordered/completed` 补单均阻断，已取消补单的历史引用不阻断。用户须先人工处理关联补单，作废命令不自动取消补单或改变归属；已绑定补单解除／换归属的后置事项见[路线图](../../../../../../docs/roadmap.md)。已做 QC、已定稿或已人工拒收不单独阻断作废；任一行已有真实执行则整单拒绝，实际实物处置继续按拒收或退回办理。
+
+成功时以 `id+version+is_voided=0` 原子更新到货主单，写入 `is_voided=1`、`void_reason/voided_by/voided_at` 和最近修改人，主单版本递增一次；原登记字段及创建审计保持冻结，成功审计保存作废状态与版本的前后值、原因及终止轮引用。每行旧当前轮 `superseded`，追加 `receipt_void/voided` 终止轮并推进该行版本；原 revision 的 T、清单、allocation 及已完成 Quality 结果保留，不改 T、不制造退回或库存冲销。终止轮记录作废时 U 的历史快照，不保留来源分配指针、不产生任何新执行授权。经 `QualityInboundCommand.supersedeReceiptCases` 在同池事务终止该行全部历史轮次仍为 reviewing 的办理，迟到检验在新增结果前拒绝。
+
+作废登记保留主单、行及各类历史查询；有效到货及待处理／可入／待退数量退出统计，待定稿、来料质检当前列表、入库和补单候选不再列入。所有后续行写命令、新补单引用及新绑定均拒绝，没有恢复或反作废动作。作废不自动结束或恢复采购；采购取消仍检查历史到货及承接事实，不因作废重新获得资格。新增到货继续要求采购行 open。
 
 ## 整批检验与定稿
 
@@ -40,13 +50,14 @@ Quality 填方法、合格 G、不合格 F、结论、时间、说明和凭据�
 
 ## 事务、权限与防重
 
-按数值ID锁原采购及关联补单根，再锁到货行／当前轮，读取不可变分配及锁内实际事实，经 public 核对 Quality／Inventory。状态、预期行／轮版本在新增事实前校验。更正、复检、拒收、撤销、定稿、入库及退回同源互斥；业务写入、审计和幂等结果同事务。
+按数值ID锁原采购及关联补单根，再锁到货行／当前轮，读取不可变分配及锁内实际事实，经 public 核对 Quality／Inventory。整单作废在锁齐到货行后锁定主单、核对主单版本和未作废标记，再锁各当前轮；其他同源行命令在原锁内复核主表作废标记。状态、主单及预期行／轮版本在新增事实前校验。更正、复检、拒收、撤销、定稿、入库、退回及整单作废同源互斥；业务写入、审计和幂等结果同事务。
 
 数量、轮次推进、定稿放行与说明、采购归属及拒收分配计划由本模块 domain 纯规则处理，只接收普通业务数据，不查询数据库或持有连接。infrastructure 在原锁内检查点调用规则，负责按序取事实、校验预期版本、跨模块调用、持久化和审计；不把所有判断提前到事务外，也不为调用一个总规则函数而提前读取后续事实。复检、更正、拒收保留各自条件，共用规则只覆盖实际一致的数量及归属约束。
 
 | POST 路径（省略 `/api/procurement`） | 独立动作权限 |
 | --- | --- |
 | `/receipts/actions/confirm` | `warehouse:receipts:confirm` |
+| `/receipts/:id/actions/void` | `warehouse:receipts:void` |
 | `/receipt-lines/:id/actions/correct-receipt` | `warehouse:receipts:correct` |
 | `/receipt-lines/:id/actions/start-review` | `quality:inbound-inspections:review` |
 | `/receipt-lines/:id/actions/inspect` | `quality:inbound-inspections:inspect` |
@@ -56,4 +67,4 @@ Quality 填方法、合格 G、不合格 F、结论、时间、说明和凭据�
 
 到货页的登记采购候选和候选详情仅要求 `warehouse:receipts:view`，办理不依赖采购管理页权限；入库页的正式可入候选、归批候选和历史读取统一要求 `warehouse:inbound:view`。查看与动作分别鉴权，目录父子关系不授予后端子权限，完整规则见 [Identity 权限目录](../../identity/docs/database.md#14-permissions)。这些仓储职责的接口继续由 Procurement 校验来源并编排，Quality 与 Inventory 保持各自事实所有权。
 
-所有写入要求 Idempotency-Key；版本与 codec 在 application/idempotency 中集中登记。采购入库使用 `procurement.inbound.confirm.v7`，指纹包含备注、各明细的来源行／轮版本、修订、质检、allocation、数量及目标 mode／clientKey 或 batchId；结果按真实 inboundDetailId、batchId 和 transactionId 关联来源行及授权，同键只重放原已确认结果。未知结果冻结原 body/key 重试，不自动换新轮或新ID。成功操作即使后续轮次变化仍只重放原结果。版本切换遵守[平台幂等规则](../../../../docs/idempotency.md#13-scope-版本与开发重置)。
+所有写入要求 Idempotency-Key；版本与 codec 在 application/idempotency 中集中登记。整单作废使用 `procurement.receipt.void.v2`，指纹包含 receipt ID、主单版本、原因及整单行／轮版本，结果为 `{receiptId,version}`，其中 `version` 是作废后的主单版本。采购入库使用 `procurement.inbound.confirm.v7`，指纹包含备注、各明细的来源行／轮版本、修订、质检、allocation、数量及目标 mode／clientKey 或 batchId；结果按真实 inboundDetailId、batchId 和 transactionId 关联来源行及授权，同键只重放原已确认结果。未知结果冻结原 body/key 重试，不自动换新轮或新ID。成功操作即使后续轮次变化仍只重放原结果。版本切换遵守[平台幂等规则](../../../../docs/idempotency.md#13-scope-版本与开发重置)。

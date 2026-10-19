@@ -12,9 +12,10 @@ import type {
 } from '@company/contracts';
 
 export type ReceiptDetailIntent =
-  'acceptance' | 'correct' | 'reject' | 'revoke' | 'allocations' | 'history';
+  'acceptance' | 'correct' | 'reject' | 'revoke' | 'allocations' | 'history' | 'void';
 
 type ReceiptRoundSummary = {
+  void?: ProcurementReceiptLine['void'];
   currentRound: Pick<ProcurementReceiptLine['currentRound'], 'status' | 'triggerType'>;
   quantities: Pick<ProcurementReceiptLine['quantities'], 'unprocessedQuantity'>;
 };
@@ -30,6 +31,7 @@ const ROUND_TAGS: Record<ReceiptRoundStatus, TagAppearance> = {
   quality_rejected: { type: 'danger', effect: 'light' },
   awaiting_acceptance: { type: 'warning', effect: 'light' },
   finalized: { type: 'success', effect: 'plain' },
+  voided: { type: 'danger', effect: 'plain' },
   superseded: { type: 'info', effect: 'plain' },
 };
 const LINE_STAGE_TAGS: Record<ReceiptLineStage, TagAppearance> = {
@@ -53,11 +55,16 @@ export const receiptRoundTagEffect = (status: ReceiptRoundStatus): TagAppearance
 
 export const isReceiptRejected = (line: ReceiptRoundSummary): boolean =>
   line.currentRound.triggerType === 'manual_rejection';
+export const isReceiptVoided = (
+  line: Pick<ReceiptRoundSummary, 'currentRound' | 'void'>,
+): boolean => Boolean(line.void) || line.currentRound.status === 'voided';
 export const canRevokeReceiptRejection = (line: ReceiptRoundSummary): boolean =>
+  !isReceiptVoided(line) &&
   isReceiptRejected(line) &&
   line.currentRound.status === 'finalized' &&
   Number(line.quantities.unprocessedQuantity) > 0;
 export const canReviewReceipt = (line: ReceiptRoundSummary): boolean =>
+  !isReceiptVoided(line) &&
   !isReceiptRejected(line) &&
   Number(line.quantities.unprocessedQuantity) > 0 &&
   [
@@ -72,13 +79,17 @@ export const canAcceptReceipt = (
     currentRound: Pick<ProcurementReceiptLine['currentRound'], 'inspectionId'>;
   },
 ): boolean =>
+  !isReceiptVoided(line) &&
   !isReceiptRejected(line) &&
   Number(line.quantities.unprocessedQuantity) > 0 &&
   ['awaiting_acceptance', 'finalized'].includes(line.currentRound.status) &&
   !!line.currentRound.inspectionId;
 export const canRejectReceipt = (line: ReceiptRoundSummary): boolean =>
-  !isReceiptRejected(line) && Number(line.quantities.unprocessedQuantity) > 0;
+  !isReceiptVoided(line) &&
+  !isReceiptRejected(line) &&
+  Number(line.quantities.unprocessedQuantity) > 0;
 const receiptLineStage = (line: ReceiptStageSummary): ReceiptLineStage | 'superseded' => {
+  if (isReceiptVoided(line)) return 'voided';
   if (line.stage) return line.stage;
   if (isKnownZero(line.quantities.unprocessedQuantity)) return 'completed';
   if (isReceiptRejected(line)) return 'manual_rejection';
@@ -113,6 +124,17 @@ interface ReceiptProcessingGuide {
 }
 /** 仅解释当前轮，不从历史检查或分配推断当前执行资格。 */
 export const receiptProcessingGuide = (line: ProcurementReceiptLine): ReceiptProcessingGuide => {
+  if (isReceiptVoided(line))
+    return {
+      tone: 'danger',
+      nextStep: '到货登记已作废，仅可查看原始登记、检验和正式清单历史。',
+      note: '未执行授权已失效；采购状态保持不变，需要继续收货时应重新登记实际到货。',
+      steps: [
+        { label: '登记到货', detail: '原始记录保留', tone: 'neutral' },
+        { label: '检验与清单', detail: '历史依据保留', tone: 'neutral' },
+        { label: '整单作废', detail: '停止后续办理', tone: 'danger' },
+      ],
+    };
   const stage = receiptLineStage(line);
   const completed = stage === 'completed' && isKnownZero(line.quantities.unprocessedQuantity);
   const rejected = isReceiptRejected(line);
@@ -150,6 +172,7 @@ export const receiptProcessingGuide = (line: ProcurementReceiptLine): ReceiptPro
     manual_rejection: '选择下方有效待退分配，核对交接凭据后确认退回。',
     completed: '当前无需继续入库或退回；核实总量有误时可更正实收。',
     superseded: '请刷新明细，核对最新处理轮次。',
+    voided: '到货登记已作废，历史记录仅供追溯。',
   };
   let tone: ReceiptFlowTone = completed
     ? 'success'
@@ -239,14 +262,17 @@ export const receiptProcessingGuide = (line: ProcurementReceiptLine): ReceiptPro
   };
 };
 export const currentReceiptCase = (line: Pick<ProcurementReceiptLine, 'currentRound' | 'cases'>) =>
-  line.cases.find(
-    (record) => record.roundId === line.currentRound.id && record.status === 'reviewing',
-  );
+  line.currentRound.status === 'voided'
+    ? undefined
+    : line.cases.find(
+        (record) => record.roundId === line.currentRound.id && record.status === 'reviewing',
+      );
 
 export const canExecuteReceiptAllocation = (
   line: ProcurementReceiptLine,
   allocation: ReceiptAllocationItem,
 ): boolean =>
+  !isReceiptVoided(line) &&
   allocation.isCurrent &&
   allocation.roundId === line.currentRound.id &&
   line.currentRound.status === 'finalized' &&
@@ -272,6 +298,7 @@ const receiptAllocationExecutionStatus = (
   line: ProcurementReceiptLine,
   allocation: ReceiptAllocationItem,
 ): AllocationExecutionStatus => {
+  if (isReceiptVoided(line)) return 'superseded';
   // 已完成物流事实不会因后续整批轮次失效而变回待办。
   if (
     allocation.disposition === 'inbound' &&

@@ -20,6 +20,7 @@ import {
   REVOKE_RECEIPT_REJECTION_SCOPE,
   CONFIRM_SUPPLIER_RETURN_SCOPE,
   CONFIRM_PROCUREMENT_INBOUND_SCOPE,
+  VOID_RECEIPT_SCOPE,
 } from '../../application/idempotency/procurement-idempotency-scopes.contract.js';
 import { ProcurementDomainExceptionFilter } from './procurement-domain-exception.filter.js';
 import { PurchaseOrderIdDto, PurchaseOrderQueryDto } from './purchase-order.dto.js';
@@ -38,6 +39,7 @@ import {
   RevokeReceiptRejectionDto,
   ConfirmSupplierReturnDto,
   ConfirmProcurementInboundDto,
+  VoidProcurementReceiptDto,
 } from './receipt.dto.js';
 
 @Controller('procurement')
@@ -118,6 +120,17 @@ export class ProcurementReceiptController {
     @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
   ) {
     return this.service.correctReceipt(id, body, context);
+  }
+  @Post('receipts/:id/actions/void')
+  @RequirePermission(PERMISSIONS.warehouse.receipts.void)
+  @AuditInApplication()
+  @IdempotentEndpoint({ scope: VOID_RECEIPT_SCOPE })
+  voidReceipt(
+    @Param() { id }: PurchaseOrderIdDto,
+    @Body() body: VoidProcurementReceiptDto,
+    @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
+  ) {
+    return this.service.voidReceipt(id, body, context);
   }
   @Post('receipt-lines/:id/actions/start-review')
   @RequirePermission(PERMISSIONS.quality.inboundInspections.review)

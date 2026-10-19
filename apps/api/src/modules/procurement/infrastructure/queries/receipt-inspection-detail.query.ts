@@ -9,6 +9,8 @@ import type { Db } from '../mysql-purchase-order.shared.js';
 import {
   type ReadRow,
   lineSelect,
+  RECEIPT_VOID_COLUMNS,
+  mapReceiptVoid,
   readCurrentRounds,
   mapRound,
   text,
@@ -47,7 +49,7 @@ export async function readInspectionReceiptLine(
     `${lineSelect(`line.id,line.receipt_id,r.receipt_no,po.purchase_no,line.purchase_order_line_id,
       pol.item_code_snapshot,material.material_name,pol.material_variant_code_snapshot,
       pol.unit_snapshot,line.supplier_batch_code,supplier.supplier_name,
-      line.current_receipt_revision_id,line.version`)} WHERE line.id=?`,
+      line.current_receipt_revision_id,line.version,${RECEIPT_VOID_COLUMNS}`)} WHERE line.id=?`,
     [id],
   );
   if (!row) throw new ProcurementDomainError('RECEIPT_NOT_FOUND', '到货明细不存在');
@@ -66,6 +68,7 @@ export async function readInspectionReceiptLine(
   const cases = await quality.getCases(references.map((reference) => text(reference.id)));
   const quantities = (await readReceiptPhysicalQuantities(db, [id])).get(id)!;
   return {
+    void: mapReceiptVoid(row),
     id: text(row.id),
     receiptId: text(row.receipt_id),
     receiptNo: text(row.receipt_no),

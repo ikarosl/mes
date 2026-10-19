@@ -2,6 +2,7 @@ import type { Db } from '../mysql-purchase-order.shared.js';
 import type { RowDataPacket } from 'mysql2/promise';
 import type {
   ProcurementReceiptItem,
+  ProcurementReceiptVoidItem,
   ProcurementReceiptListSource,
   ProcurementSupplierSummary,
   ReceiptRevisionItem,
@@ -25,7 +26,10 @@ export const pageInput = (query: PageQuery) => ({
 export const slots = (ids: readonly string[]) => ids.map(() => '?').join(',');
 export const receiptSelect = (columns: string) =>
   `SELECT ${columns} FROM procurement_receipt r JOIN procurement_order po ON po.id=r.purchase_order_id`;
-export const RECEIPT_COLUMNS = `r.id,r.receipt_no,r.purchase_order_id,po.purchase_no,r.received_at,r.handover_evidence,r.remark,r.created_at,
+export const RECEIPT_VOID_COLUMNS = `r.is_voided,r.void_reason,
+  r.voided_by void_created_by,r.voided_at void_created_at`;
+export const RECEIPT_COLUMNS = `r.id,r.receipt_no,r.purchase_order_id,po.purchase_no,r.received_at,r.handover_evidence,r.remark,r.created_at,r.version,
+  ${RECEIPT_VOID_COLUMNS},
   (SELECT COUNT(*) FROM procurement_receipt_line pending_line JOIN procurement_receipt_round pending_round ON pending_round.id=pending_line.current_round_id WHERE pending_line.receipt_id=r.id AND pending_round.status='awaiting_acceptance') awaiting_acceptance_count`;
 export const lineSelect = (columns: string) => `SELECT ${columns} FROM procurement_receipt_line line
   JOIN procurement_receipt r ON r.id=line.receipt_id
@@ -36,13 +40,16 @@ export const lineSelect = (columns: string) => `SELECT ${columns} FROM procureme
 export const LINE_COLUMNS = `line.id,line.receipt_id,line.purchase_order_id,line.purchase_order_line_id,pol.line_no purchase_order_line_no,
   line.item_id,pol.item_code_snapshot,material.material_name,line.material_variant_id,pol.material_variant_code_snapshot,
   pol.unit_snapshot,line.supplier_batch_code,line.current_receipt_revision_id,
-  line.over_receipt_note,line.version,line.current_round_id,r.receipt_no,po.purchase_no,pol.supplier_id,supplier.supplier_name`;
+  line.over_receipt_note,line.version,line.current_round_id,r.receipt_no,po.purchase_no,pol.supplier_id,supplier.supplier_name,
+  ${RECEIPT_VOID_COLUMNS}`;
 /** 两个按到货明细分页的工作列表共用来源、排序和映射。 */
 export const RECEIPT_LIST_SOURCE_COLUMNS = `line.receipt_id,r.receipt_no,line.purchase_order_id,po.purchase_no,
-  supplier.supplier_name,material.material_name,pol.material_variant_code_snapshot,pol.unit_snapshot`;
+  supplier.supplier_name,material.material_name,pol.material_variant_code_snapshot,pol.unit_snapshot,
+  ${RECEIPT_VOID_COLUMNS}`;
 export const RECEIPT_LINE_LIST_ORDER = 'r.received_at DESC,r.id DESC,line.line_no ASC,line.id ASC';
 export function mapReceiptListSource(row: ReadRow): ProcurementReceiptListSource {
   return {
+    void: mapReceiptVoid(row),
     receiptId: text(row.receipt_id),
     receiptNo: text(row.receipt_no),
     purchaseOrderId: text(row.purchase_order_id),
@@ -84,7 +91,9 @@ export function mapReceipt(
   suppliers: ProcurementSupplierSummary[],
 ): ProcurementReceiptItem {
   return {
+    void: mapReceiptVoid(row),
     id: text(row.id),
+    version: Number(row.version),
     receiptNo: text(row.receipt_no),
     awaitingAcceptanceCount: Number(row.awaiting_acceptance_count ?? 0),
     purchaseOrderId: text(row.purchase_order_id),
@@ -96,6 +105,15 @@ export function mapReceipt(
     createdAt: date(row.created_at),
     lineCount: Number(row.line_count),
   };
+}
+export function mapReceiptVoid(row: ReadRow): ProcurementReceiptVoidItem | null {
+  return Number(row.is_voided) !== 1
+    ? null
+    : {
+        reason: text(row.void_reason),
+        createdBy: text(row.void_created_by),
+        createdAt: date(row.void_created_at),
+      };
 }
 export function mapRevision(row: ReadRow): ReceiptRevisionItem {
   return {

@@ -13,7 +13,7 @@ const allowedTables = new Set([
   'procurement_order',
   'procurement_order_line',
   'procurement_order_line_source',
-  'procurement_order_line_closure',
+  'procurement_order_line_closure', // Historical migration ownership.
   'procurement_receipt',
   'procurement_receipt_line',
   'procurement_receipt_revision',

@@ -21,6 +21,7 @@ import {
   type AllocationRow,
   readAllocations,
   lockReceiptRoots,
+  requireReceiptActive,
   requireAllocation,
   touchReceiptLine,
   auditReceipt,
@@ -78,6 +79,7 @@ export const confirmReceiptInbound = async (
       [id],
     );
     if (!line) return receiptError('到货明细不存在', 'RECEIPT_NOT_FOUND');
+    await requireReceiptActive(connection, String(line.receipt_id));
     lines.set(id, line);
     allocations.set(id, await readAllocations(connection, id, inventoryQuery));
   }

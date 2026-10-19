@@ -31,7 +31,7 @@ export async function listExcessReceiptCandidates(
       PROCUREMENT_ERROR_CODES.purchaseOrderState,
     );
 
-  const filters = ['line.purchase_order_line_id=?'];
+  const filters = ['line.purchase_order_line_id=?', 'receipt.is_voided=0'];
   const params = [purchaseOrderLineId];
   if (query.receiptLineId) {
     filters.push('line.id=?');

@@ -54,7 +54,9 @@ export const confirmReceiptArrival = async (
   if (eligibility.status !== 'success') return receiptError(eligibility.message);
   for (const { line } of selected) {
     const [revisions] = await connection.query<(RowDataPacket & { received_quantity: number })[]>(
-      'SELECT r.received_quantity FROM procurement_receipt_line l JOIN procurement_receipt_revision r ON r.id=l.current_receipt_revision_id WHERE l.purchase_order_line_id=? ORDER BY l.id FOR SHARE',
+      `SELECT r.received_quantity FROM procurement_receipt_line l JOIN procurement_receipt_revision r ON r.id=l.current_receipt_revision_id
+        JOIN procurement_receipt receipt ON receipt.id=l.receipt_id
+        WHERE l.purchase_order_line_id=? AND receipt.is_voided=0 ORDER BY l.id FOR SHARE`,
       [line.id],
     );
     const entries = payload.details.filter((row) => row.purchaseOrderLineId === String(line.id));
@@ -67,13 +69,14 @@ export const confirmReceiptArrival = async (
     );
   }
   const [receipt] = await connection.execute<ResultSetHeader>(
-    'INSERT INTO procurement_receipt(receipt_no,purchase_order_id,received_at,handover_evidence,remark,created_by) VALUES(?,?,?,?,?,?)',
+    'INSERT INTO procurement_receipt(receipt_no,purchase_order_id,received_at,handover_evidence,remark,created_by,updated_by) VALUES(?,?,?,?,?,?,?)',
     [
       await allocateBusinessNumber(connection, 'purchase_receipt'),
       order.id,
       new Date(payload.receivedAt),
       payload.handoverEvidence.trim(),
       payload.remark ?? null,
+      context.actorId,
       context.actorId,
     ],
   );

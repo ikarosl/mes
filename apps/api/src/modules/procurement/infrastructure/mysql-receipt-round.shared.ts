@@ -40,7 +40,7 @@ export async function lockRound(
     'SELECT * FROM procurement_receipt_round WHERE id=? AND receipt_line_id=? FOR UPDATE',
     [line.current_round_id, line.id],
   );
-  if (!round || round.status === 'superseded')
+  if (!round || round.status === 'superseded' || round.status === 'voided')
     return receiptError('当前处理轮次不存在或已失效', 'RECEIPT_STATE');
   if (expected)
     requireOptimisticUpdate(
@@ -92,19 +92,22 @@ export async function insertRound(
     );
     hasAllocations = Boolean(source);
   }
-  const sourceRoundId = nextReceiptAllocationSourceRoundId(
-    input.previous
-      ? {
-          id: String(input.previous.id),
-          status: input.previous.status,
-          sourceAllocationRoundId:
-            input.previous.source_allocation_round_id === null
-              ? null
-              : String(input.previous.source_allocation_round_id),
-        }
-      : null,
-    hasAllocations,
-  );
+  const sourceRoundId =
+    input.status === 'voided'
+      ? null
+      : nextReceiptAllocationSourceRoundId(
+          input.previous
+            ? {
+                id: String(input.previous.id),
+                status: input.previous.status,
+                sourceAllocationRoundId:
+                  input.previous.source_allocation_round_id === null
+                    ? null
+                    : String(input.previous.source_allocation_round_id),
+              }
+            : null,
+          hasAllocations,
+        );
   const [result] = await db.execute<ResultSetHeader>(
     `INSERT INTO procurement_receipt_round(receipt_line_id,round_no,previous_round_id,trigger_type,receipt_revision_id,
       starting_quantity,status,inspection_id,reason,created_by,updated_by,source_allocation_round_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
@@ -194,7 +197,9 @@ export async function assertReceiptAggregate(
 ) {
   const [others] = await db.query<(RowDataPacket & { received_quantity: number })[]>(
     `SELECT r.received_quantity FROM procurement_receipt_line l JOIN procurement_receipt_revision r
-     ON r.id=l.current_receipt_revision_id WHERE l.purchase_order_line_id=? AND l.id<>? FOR SHARE`,
+     ON r.id=l.current_receipt_revision_id
+     JOIN procurement_receipt receipt ON receipt.id=l.receipt_id
+     WHERE l.purchase_order_line_id=? AND l.id<>? AND receipt.is_voided=0 FOR SHARE`,
     [line.purchase_order_line_id, line.id],
   );
   requireAggregateQuantity(

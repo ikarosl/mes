@@ -57,6 +57,7 @@ export const RECEIPT_ROUND_STATUSES = [
   'quality_rejected',
   'awaiting_acceptance',
   'finalized',
+  'voided',
   'superseded',
 ] as const;
 export const RECEIPT_ROUND_STATUS_LABELS = {
@@ -66,9 +67,11 @@ export const RECEIPT_ROUND_STATUS_LABELS = {
   quality_rejected: '质检不放行',
   awaiting_acceptance: '待核对定稿',
   finalized: '已定稿',
+  voided: '已作废',
   superseded: '历史轮次',
 } as const;
 export const RECEIPT_ROUND_TRIGGER_LABELS = {
+  receipt_void: '作废到货登记',
   rejection_revocation: '撤销拒收',
   receipt: '首次到货',
   receipt_correction: '实收更正',
@@ -85,6 +88,7 @@ export const RECEIPT_LINE_STAGES = [
   'awaiting_acceptance',
   'finalized',
   'manual_rejection',
+  'voided',
   'completed',
 ] as const;
 export const RECEIPT_LINE_STAGE_LABELS = {
@@ -95,5 +99,6 @@ export const RECEIPT_LINE_STAGE_LABELS = {
   awaiting_acceptance: RECEIPT_ROUND_STATUS_LABELS.awaiting_acceptance,
   finalized: RECEIPT_ROUND_STATUS_LABELS.finalized,
   manual_rejection: RECEIPT_ROUND_TRIGGER_LABELS.manual_rejection,
+  voided: RECEIPT_ROUND_STATUS_LABELS.voided,
   completed: '本批已处理完',
 } as const;

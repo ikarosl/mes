@@ -2,6 +2,7 @@ import type { RowDataPacket } from 'mysql2/promise';
 import type {
   PurchaseOrderQuery,
   ProcurementSupplierSummary,
+  ProcurementReceiptOrderOption,
   PurchaseOrderItem,
   PurchaseOrderLine,
   PurchaseOrderDetail,
@@ -11,23 +12,22 @@ import type {
   RelatedPurchasesResult,
 } from '@company/contracts';
 import { PROCUREMENT_ERROR_CODES } from '@company/constants';
-import { allowedPurchaseOrderClosureReasons } from '../../domain/purchase-order-closure.policy.js';
 import { readPurchaseLineMetrics } from './purchase-order-metrics.query.js';
 import {
   type Db,
   type OrderRow,
   type OrderLineRow,
-  type ClosureRow,
   mapOrder,
-  mapClosure,
+  hasOrderReceiptFacts,
   idsSql,
   orderError,
   readSourceIds,
+  sortedIds,
 } from '../mysql-purchase-order.shared.js';
 
 type OrderDisplayRow = OrderRow & { work_order_no: string | null; line_count: number };
 const ORDER_DISPLAY_SELECT = `SELECT o.id,o.purchase_no,o.work_order_id,o.source_type,o.supplement_reason,o.status,o.remark,o.version,o.ordered_at,o.created_at,o.updated_at,w.work_order_no,(SELECT COUNT(*) FROM procurement_order_line l WHERE l.purchase_order_id=o.id) line_count FROM procurement_order o LEFT JOIN work_orders w ON w.id=o.work_order_id`;
-export const readOrderSuppliers = async (
+const readOrderSuppliers = async (
   db: Db,
   ids: string[],
 ): Promise<Map<string, ProcurementSupplierSummary[]>> => {
@@ -103,15 +103,33 @@ export const listPurchaseOrders = async (
     `${ORDER_DISPLAY_SELECT} WHERE ${where.join(' AND ')} ORDER BY o.created_at DESC,o.id DESC LIMIT ? OFFSET ?`,
     [...params, query.pageSize, (query.page - 1) * query.pageSize],
   );
-  const suppliers = await readOrderSuppliers(
-    db,
-    rows.map((row) => String(row.id)),
-  );
   return {
-    items: rows.map((row) => mapOrder(row, suppliers.get(String(row.id)) ?? [])),
+    items: rows.map(mapOrder),
     total: Number(count?.total ?? 0),
     page: query.page,
     pageSize: query.pageSize,
+  };
+};
+
+export const listReceiptOrderOptions = async (
+  db: Db,
+  query: PurchaseOrderQuery & { page: number; pageSize: number },
+): Promise<PageResult<ProcurementReceiptOrderOption>> => {
+  const orders = await listPurchaseOrders(db, {
+    ...query,
+    status: 'ordered',
+    onlyNewArrival: true,
+  });
+  const suppliers = await readOrderSuppliers(
+    db,
+    orders.items.map((order) => order.id),
+  );
+  return {
+    ...orders,
+    items: orders.items.map((order) => ({
+      ...order,
+      suppliers: suppliers.get(order.id) ?? [],
+    })),
   };
 };
 
@@ -139,15 +157,16 @@ export const getPurchaseOrder = async (db: Db, id: string): Promise<PurchaseOrde
     db,
     lines.map((row) => String(row.id)),
   );
-  const [closures] = await db.query<ClosureRow[]>(
-    `SELECT c.id,c.purchase_order_line_id,c.reason_type,c.reason,c.planned_quantity,c.received_quantity,c.undetermined_quantity,c.approved_quantity,c.inbound_quantity,c.return_due_quantity,c.returned_quantity,c.quality_returned_quantity,c.created_at FROM procurement_order_line_closure c JOIN procurement_order_line l ON l.id=c.purchase_order_line_id WHERE l.purchase_order_id=?`,
-    [id],
-  );
-  const closureMap = new Map(
-    closures.map((row) => [String(row.purchase_order_line_id), mapClosure(row)]),
-  );
+  const suppliers = new Map(lines.map((row) => [String(row.supplier_id), row.supplier_name]));
   return {
-    ...mapOrder(order, (await readOrderSuppliers(db, [id])).get(id) ?? []),
+    ...mapOrder(order),
+    suppliers: sortedIds([...suppliers.keys()]).map((supplierId) => ({
+      id: supplierId,
+      supplierName: suppliers.get(supplierId)!,
+    })),
+    canCancel:
+      (order.status === 'draft' || order.status === 'ordered') &&
+      !(await hasOrderReceiptFacts(db, id)),
     items: lines.map((row) => ({
       id: String(row.id),
       lineNo: row.line_no,
@@ -174,15 +193,6 @@ export const getPurchaseOrder = async (db: Db, id: string): Promise<PurchaseOrde
       originAllocationId:
         row.origin_allocation_id === null ? null : String(row.origin_allocation_id),
       quantities: metrics.get(String(row.id))!.quantities,
-      allowedCloseReasons:
-        row.status === 'open'
-          ? allowedPurchaseOrderClosureReasons(
-              Number(row.planned_quantity),
-              metrics.get(String(row.id))!.quantities,
-              metrics.get(String(row.id))!.hasReceipt,
-            )
-          : [],
-      closure: closureMap.get(String(row.id)) ?? null,
     })),
   };
 };

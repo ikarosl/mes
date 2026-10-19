@@ -73,7 +73,11 @@ export async function readReceiptQuantitySummaries(
       unprocessedQuantity: String(unprocessed),
       receivedQuantity: facts.receivedQuantity,
       undeterminedQuantity: String(
-        currentRound.status === 'finalized' ? remaining('pending') : unprocessed,
+        currentRound.status === 'voided'
+          ? 0
+          : currentRound.status === 'finalized'
+            ? remaining('pending')
+            : unprocessed,
       ),
       approvedQuantity: String(inbound + pendingInbound),
       inboundQuantity: String(inbound),
@@ -119,9 +123,11 @@ export async function readReceiptPhysicalQuantities(
   );
   const returnTotals = new Map(returnSums.map((row) => [text(row.receipt_line_id), row]));
   const [currentRevisions] = await db.query<ReadRow[]>(
-    `SELECT revision.receipt_line_id,revision.received_quantity
+    `SELECT revision.receipt_line_id,
+      CASE WHEN receipt.is_voided=0 THEN revision.received_quantity ELSE 0 END received_quantity
     FROM procurement_receipt_revision revision
     JOIN procurement_receipt_line line ON line.current_receipt_revision_id=revision.id
+    JOIN procurement_receipt receipt ON receipt.id=line.receipt_id
     WHERE line.id IN (${marks})`,
     ids,
   );

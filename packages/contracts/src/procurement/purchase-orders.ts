@@ -11,8 +11,6 @@ export type PurchaseOrderSourceType = 'demand' | 'stock';
 export type PurchaseOrderStatus = 'draft' | 'ordered' | 'completed' | 'cancelled';
 export type PurchaseOrderLineStatus = 'draft' | 'open' | 'closed' | 'cancelled';
 export type PurchaseOrderSupplementReason = 'excess_purchase' | 'quality_replacement';
-export type PurchaseOrderClosureReason =
-  'quality_target' | 'quality_return_completed' | 'manual_end' | 'cancelled';
 export interface PurchaseOrderQuery extends PageQuery {
   keyword?: string;
   supplierId?: string;
@@ -68,7 +66,6 @@ export interface ProcurementSupplierSummary {
 export interface PurchaseOrderItem {
   id: string;
   purchaseNo: string;
-  suppliers: ProcurementSupplierSummary[];
   workOrderId: string | null;
   workOrderNo: string | null;
   sourceType: PurchaseOrderSourceType;
@@ -81,6 +78,9 @@ export interface PurchaseOrderItem {
   createdAt: string;
   updatedAt: string;
 }
+export interface ProcurementReceiptOrderOption extends PurchaseOrderItem {
+  suppliers: ProcurementSupplierSummary[];
+}
 export interface PurchaseOrderLineSource {
   demandId: string;
   workOrderId: string;
@@ -90,20 +90,6 @@ export interface PurchaseOrderLineSource {
   demandQuantity: string;
   remainingDemandQuantity: string;
   supplierHint: string | null;
-}
-export interface PurchaseOrderLineClosure {
-  id: string;
-  reasonType: PurchaseOrderClosureReason;
-  reason: string | null;
-  plannedQuantity: string;
-  receivedQuantity: string;
-  undeterminedQuantity: string;
-  approvedQuantity: string;
-  inboundQuantity: string;
-  returnDueQuantity: string;
-  returnedQuantity: string;
-  qualityReturnedQuantity: string;
-  createdAt: string;
 }
 export interface PurchaseOrderLine {
   fulfillmentMode: PurchaseFulfillmentMode;
@@ -128,10 +114,10 @@ export interface PurchaseOrderLine {
   originReceiptLineId: string | null;
   originAllocationId: string | null;
   quantities: ReceiptQuantitySummary;
-  allowedCloseReasons: PurchaseOrderClosureReason[];
-  closure: PurchaseOrderLineClosure | null;
 }
 export interface PurchaseOrderDetail extends PurchaseOrderItem {
+  suppliers: ProcurementSupplierSummary[];
+  canCancel: boolean;
   items: PurchaseOrderLine[];
 }
 export interface PurchaseOrderDraftLine {
@@ -150,9 +136,9 @@ export interface CreatePurchaseOrderPayload {
 export interface UpdatePurchaseOrderPayload extends CreatePurchaseOrderPayload, VersionedCommand {}
 export type PlacePurchaseOrderPayload = VersionedCommand;
 export type CancelPurchaseOrderPayload = ReasonedVersionedCommand;
-export interface ClosePurchaseOrderLinePayload extends ReasonedVersionedCommand {
-  reasonType: PurchaseOrderClosureReason;
-}
+export type ClosePurchaseOrderPayload = ReasonedVersionedCommand;
+export type ClosePurchaseOrderLinePayload = ReasonedVersionedCommand;
+export type ReopenPurchaseOrderLinePayload = ReasonedVersionedCommand;
 /** 同一原采购单、同一补因；各行独立保留真实到货或质量退回分配依据。 */
 export interface CreatePurchaseOrderSupplementLinePayload {
   originOrderLineId: string;

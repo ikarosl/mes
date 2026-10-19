@@ -61,8 +61,9 @@ export const lockReceiptRoots = async (
     const [rows] = await connection.query<(RowDataPacket & { purchase_order_id: number })[]>(
       `SELECT purchase_order_id FROM procurement_receipt_line WHERE id=?
        UNION SELECT p.purchase_order_id FROM procurement_receipt_allocation a
-       JOIN procurement_order_line p ON p.id=a.purchase_order_line_id WHERE a.receipt_line_id=?`,
-      [id, id],
+       JOIN procurement_order_line p ON p.id=a.purchase_order_line_id WHERE a.receipt_line_id=?
+       UNION SELECT purchase_order_id FROM procurement_order_line WHERE origin_receipt_line_id=?`,
+      [id, id, id],
     );
     roots.push(...rows.map((row) => String(row.purchase_order_id)));
   }
@@ -87,9 +88,20 @@ export const lockReceiptLine = async (
     [id],
   );
   if (!line) return receiptError('到货明细不存在', 'RECEIPT_NOT_FOUND');
+  await requireReceiptActive(connection, String(line.receipt_id));
   const allocations = await readAllocations(connection, id, inventory);
   return { order, line, allocations };
 };
+/** 来源根及到货行锁定后的当前读，避免迟到命令使用作废前快照。 */
+export async function requireReceiptActive(connection: PoolConnection, receiptId: string) {
+  const [[receipt]] = await connection.query<(RowDataPacket & { is_voided: number })[]>(
+    'SELECT is_voided FROM procurement_receipt WHERE id=? FOR SHARE',
+    [receiptId],
+  );
+  if (!receipt) return receiptError('到货单不存在', 'RECEIPT_NOT_FOUND');
+  if (Number(receipt.is_voided) === 1)
+    return receiptError('该到货登记已作废，不能继续办理，请刷新', 'RECEIPT_STATE');
+}
 export const readAllocations = async (
   connection: PoolConnection,
   id: string,

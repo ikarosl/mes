@@ -13,6 +13,9 @@ try {
   await withTransaction(pool, async (connection) => {
     await connection.query('SET @demo_password_hash = ?', [passwordHash]);
     await connection.query('SET @demo_work_order_prefix = ?', [BUSINESS_NUMBER_PREFIX.work_order]);
+    await connection.query('SET @demo_purchase_order_prefix = ?', [
+      BUSINESS_NUMBER_PREFIX.purchase_order,
+    ]);
     for (const seed of await readDemoSeeds()) {
       await connection.query(seed.sql);
       console.log(`已执行演示数据种子：${seed.name}`);

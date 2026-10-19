@@ -34,6 +34,11 @@
       class="notice"
     />
     <div v-loading="loading">
+      <ReceiptVoidNotice
+        v-if="line?.void"
+        :record="line.void"
+        class="notice"
+      />
       <InboundInspectionSummary
         v-if="line"
         :line="line"
@@ -293,6 +298,7 @@ import PaginationFooter from '../../../components/PaginationFooter.vue';
 import {
   canReviewReceipt,
   isReceiptRejected,
+  isReceiptVoided,
   receiptLineStageLabel,
   receiptLineStageType,
   receiptLineStageEffect,
@@ -302,6 +308,7 @@ import InboundInspectionSummary from './InboundInspectionSummary.vue';
 import InboundInspectionFields from './InboundInspectionFields.vue';
 import InboundInspectionHistory from './InboundInspectionHistory.vue';
 import InboundInspectionRecord from './InboundInspectionRecord.vue';
+import ReceiptVoidNotice from './ReceiptVoidNotice.vue';
 
 const emit = defineEmits<{ changed: []; 'record-focus-cleared': [] }>();
 const auth = useAuthStore(),
@@ -368,6 +375,7 @@ const hasDisposal = computed(
 const statusHint = computed(() => {
   const source = line.value;
   if (!source) return '';
+  if (isReceiptVoided(source)) return '到货登记已作废，仅可查阅原始检验依据与检验历史。';
   if (Number(source.quantities.unprocessedQuantity) === 0)
     return '本批已处理完，可查阅检验依据与检验历史。';
   if (isReceiptRejected(source))

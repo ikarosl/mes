@@ -16,6 +16,11 @@
         class="notice"
       />
       <template v-if="detail">
+        <ReceiptVoidNotice
+          v-if="detail.void"
+          :record="detail.void"
+          class="notice"
+        />
         <el-descriptions
           :column="3"
           border
@@ -111,7 +116,10 @@
                 />
               </template>
               <div
-                v-if="isKnownZero(selectedLine.quantities.unprocessedQuantity)"
+                v-if="
+                  !isReceiptVoided(selectedLine) &&
+                  isKnownZero(selectedLine.quantities.unprocessedQuantity)
+                "
                 class="done-message"
               >
                 <span>{{
@@ -138,13 +146,16 @@
                 </div>
               </div>
               <p
-                v-if="isKnownZero(selectedLine.quantities.unprocessedQuantity)"
+                v-if="
+                  !isReceiptVoided(selectedLine) &&
+                  isKnownZero(selectedLine.quantities.unprocessedQuantity)
+                "
                 class="done-hint"
               >
                 当前没有待处理数量，无法调整入库和退回安排。若实收总数有误，请先更正实收；新增待处理数量须重新检验并由仓库确认。已入库、已退回记录不变。
               </p>
               <div
-                v-else
+                v-else-if="!isReceiptVoided(selectedLine)"
                 class="current-actions"
               >
                 <template
@@ -242,7 +253,7 @@
                 </InlineHint>
                 <ReceiptLineAllocations
                   :line="selectedLine"
-                  :disabled="blocked"
+                  :disabled="blocked || isReceiptVoided(selectedLine)"
                   @return="actionDialog?.open(selectedLine, 'return', $event)"
                   @inbound="goInbound(selectedLine.id)"
                   @history="history?.open(selectedLine.id, $event, selectedLine)"
@@ -250,7 +261,10 @@
               </div>
             </div>
             <div
-              v-if="!isKnownZero(selectedLine.quantities.unprocessedQuantity)"
+              v-if="
+                !isReceiptVoided(selectedLine) &&
+                !isKnownZero(selectedLine.quantities.unprocessedQuantity)
+              "
               class="secondary-section"
             >
               <div class="section-heading"><strong>异常处置与采购承接</strong></div>
@@ -303,7 +317,7 @@
               </div>
             </div>
             <div
-              v-if="qualityReturnAllocations(selectedLine).length"
+              v-if="!isReceiptVoided(selectedLine) && qualityReturnAllocations(selectedLine).length"
               class="secondary-section"
             >
               <div class="section-heading"><strong>质量退回与补发</strong></div>
@@ -369,13 +383,25 @@
         </div>
       </template>
     </div>
-    <template #footer
-      ><el-button
+    <template #footer>
+      <span
+        v-if="detail && !detail.void"
+        :title="detail.voiding.blockedReason || undefined"
+      >
+        <el-button
+          type="danger"
+          plain
+          :disabled="blocked || !detail.voiding.canVoid"
+          @click="openVoid"
+          >作废整单</el-button
+        >
+      </span>
+      <el-button
         :disabled="loading || childOpen"
         @click="load"
         >刷新</el-button
-      ><el-button @click="close">关闭</el-button></template
-    >
+      ><el-button @click="close">关闭</el-button>
+    </template>
   </el-dialog>
   <ReceiptLineActionDialog
     ref="actionDialog"
@@ -384,6 +410,10 @@
   <ReceiptHistoryDialog ref="history" />
   <ReceiptAcceptanceDialog
     ref="acceptanceDialog"
+    @saved="saved"
+  />
+  <ReceiptVoidDialog
+    ref="voidDialog"
     @saved="saved"
   />
 </template>
@@ -396,6 +426,7 @@ import {
   canReviewReceipt,
   canExecuteReceiptAllocation,
   isReceiptRejected,
+  isReceiptVoided,
   receiptLineStageLabel,
   receiptLineStageType,
   receiptLineStageEffect,
@@ -423,6 +454,8 @@ import ReceiptAcceptanceDialog from './ReceiptAcceptanceDialog.vue';
 import ReceiptLineAllocations from './ReceiptLineAllocations.vue';
 import ReceiptLineActionDialog from './ReceiptLineActionDialog.vue';
 import ReceiptHistoryDialog from './ReceiptHistoryDialog.vue';
+import ReceiptVoidDialog from './ReceiptVoidDialog.vue';
+import ReceiptVoidNotice from './ReceiptVoidNotice.vue';
 const emit = defineEmits<{ changed: [] }>();
 const auth = useAuthStore(),
   router = useRouter();
@@ -451,9 +484,11 @@ const qualityReturnAllocations = (line: ProcurementReceiptLine): ReceiptAllocati
     (row) =>
       row.disposition === 'return' &&
       row.returnReason === 'quality' &&
+      canExecuteReceiptAllocation(line, row) &&
       Number(row.remainingQuantity) > 0,
   );
 const acceptanceDialog = ref<InstanceType<typeof ReceiptAcceptanceDialog>>();
+const voidDialog = ref<InstanceType<typeof ReceiptVoidDialog>>();
 const actionDialog = ref<InstanceType<typeof ReceiptLineActionDialog>>(),
   history = ref<InstanceType<typeof ReceiptHistoryDialog>>();
 const allocationsSection = ref<HTMLElement | null>(null);
@@ -462,9 +497,18 @@ const read = useLatestReadRequest(() => {
   loading.value = false;
 });
 const childOpen = computed(() =>
-  Boolean(actionDialog.value?.visible || acceptanceDialog.value?.visible || history.value?.visible),
+  Boolean(
+    actionDialog.value?.visible ||
+    acceptanceDialog.value?.visible ||
+    history.value?.visible ||
+    voidDialog.value?.visible,
+  ),
 );
 const blocked = computed(() => loading.value || readError.value || childOpen.value);
+const openVoid = async (): Promise<void> => {
+  if (blocked.value || !detail.value || detail.value.void) return;
+  await voidDialog.value?.open(detail.value.id);
+};
 const selectLine = (lineId: string): void => {
   if (lineId === activeLine.value || loading.value || childOpen.value) return;
   activeLine.value = lineId;
@@ -532,12 +576,21 @@ const open = async (
     return false;
   }
   if (!intent) return true;
+  if (intent === 'void') {
+    if (loadedDetail.void) EMessage.warning('该到货登记已作废，请查看作废原因和历史记录');
+    else await openVoid();
+    return true;
+  }
   const line = selectedLine.value;
   if (!lineId || !line || line.id !== lineId) {
     EMessage.warning('指定到货明细已不在最新详情中，请重新选择');
     return false;
   }
   if (blocked.value) return false;
+  if (intent !== 'history' && isReceiptVoided(line)) {
+    EMessage.warning('该到货登记已作废，仅可查看历史记录');
+    return true;
+  }
   if (intent === 'acceptance') {
     if (canAcceptReceipt(line)) acceptanceDialog.value?.open(line);
     else EMessage.warning('该明细当前不具备整批定稿资格，请核对最新阶段');
@@ -563,10 +616,16 @@ const open = async (
   return true;
 };
 const close = async (): Promise<boolean> => {
-  if (actionDialog.value?.locked || history.value?.locked || acceptanceDialog.value?.locked) {
+  if (
+    actionDialog.value?.locked ||
+    history.value?.locked ||
+    acceptanceDialog.value?.locked ||
+    voidDialog.value?.locked
+  ) {
     EMessage.warning('请先确认当前处置结果');
     return false;
   }
+  if (voidDialog.value?.visible && !(await voidDialog.value.close())) return false;
   if (acceptanceDialog.value?.visible && !(await acceptanceDialog.value.close())) return false;
   if (actionDialog.value?.visible && !(await actionDialog.value.close())) return false;
   if (history.value?.visible && !(await history.value.close())) return false;
@@ -634,7 +693,12 @@ defineExpose({
   openedReceiptId: computed(() => (visible.value ? id.value : '')),
   openedLineId: computed(() => (visible.value ? activeLine.value : '')),
   locked: computed(() =>
-    Boolean(actionDialog.value?.locked || history.value?.locked || acceptanceDialog.value?.locked),
+    Boolean(
+      actionDialog.value?.locked ||
+      history.value?.locked ||
+      acceptanceDialog.value?.locked ||
+      voidDialog.value?.locked,
+    ),
   ),
 });
 </script>

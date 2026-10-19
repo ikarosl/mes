@@ -74,6 +74,14 @@
         >
           <div class="receipt-heading">
             <strong>到货单 {{ receipt.receiptNo }}</strong>
+            <el-tag
+              v-if="receipt.lines[0].void"
+              type="danger"
+              effect="plain"
+              size="small"
+              :title="receipt.lines[0].void.reason"
+              >{{ RECEIPT_ROUND_STATUS_LABELS.voided }}</el-tag
+            >
             <span class="document-meta">本页 {{ receipt.lines.length }} 条到货明细</span>
             <slot
               name="receipt-meta"
@@ -138,6 +146,7 @@
 import { computed, ref, watch } from 'vue';
 import { Refresh } from '@element-plus/icons-vue';
 import type { ProcurementReceiptListSource } from '@company/contracts';
+import { RECEIPT_ROUND_STATUS_LABELS } from '@company/constants';
 import TableToolbar from '../../../components/TableToolbar.vue';
 import InlineHint from '../../../components/InlineHint.vue';
 import {

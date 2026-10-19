@@ -6,7 +6,7 @@ import type {
 import { procurementApi } from '../../../api/procurement';
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
 import { EMessage } from '../../../utils/message';
-import { currentReceiptCase } from '../receipt-round-presentation';
+import { currentReceiptCase, isReceiptVoided } from '../receipt-round-presentation';
 import { useReceiptLineAction } from './useReceiptLineAction';
 
 /** 质检工作台持有当前依据、历史窗口与编辑器，读取刷新不替换编辑器的冻结版本。 */
@@ -212,7 +212,8 @@ export function useInboundInspection(onChanged: () => void) {
     await loadRecords();
   }
   function beginAction(): void {
-    if (blocked.value || !line.value || actions.visible.value) return;
+    if (blocked.value || !line.value || isReceiptVoided(line.value) || actions.visible.value)
+      return;
     if (reviewingCase.value) actions.openInspection(line.value, 'inspect', reviewingCase.value);
     else actions.openInspection(line.value, 'review');
   }

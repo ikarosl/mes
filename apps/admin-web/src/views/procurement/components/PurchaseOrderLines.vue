@@ -15,50 +15,20 @@
     :data="order.items"
     row-key="id"
     :row-class-name="lineClassName"
+    :row-expandable="hasLineContext"
     class="purchase-line-table"
     @scroll="syncFromTable"
   >
-    <el-table-column type="expand">
+    <el-table-column
+      v-if="order.items.some(hasLineContext)"
+      type="expand"
+    >
       <template #default="{ row }">
         <div class="line-context">
-          <PurchaseOrderSources :sources="row.sources" />
-          <el-descriptions
-            :column="4"
-            border
-            size="small"
-            title="到货处理与仓库待办"
-          >
-            <el-descriptions-item label="累计实收">{{
-              Number(row.quantities.receivedQuantity)
-            }}</el-descriptions-item>
-            <el-descriptions-item label="少收量">{{
-              Math.max(Number(row.plannedQuantity) - Number(row.quantities.receivedQuantity), 0)
-            }}</el-descriptions-item>
-            <el-descriptions-item label="有效允许入库量">{{
-              Number(row.quantities.approvedQuantity)
-            }}</el-descriptions-item>
-            <el-descriptions-item label="放行差额">{{
-              Math.max(Number(row.plannedQuantity) - Number(row.quantities.approvedQuantity), 0)
-            }}</el-descriptions-item>
-            <el-descriptions-item label="累计已入量">{{
-              Number(row.quantities.inboundQuantity)
-            }}</el-descriptions-item>
-            <el-descriptions-item label="当前可入量">{{
-              Number(row.quantities.pendingInboundQuantity)
-            }}</el-descriptions-item>
-            <el-descriptions-item label="当前待退量">{{
-              Number(row.quantities.pendingReturnQuantity)
-            }}</el-descriptions-item>
-            <el-descriptions-item label="实际已退量">{{
-              Number(row.quantities.returnedQuantity)
-            }}</el-descriptions-item>
-            <el-descriptions-item label="未判定量">{{
-              Number(row.quantities.undeterminedQuantity)
-            }}</el-descriptions-item>
-            <el-descriptions-item label="复核中">{{
-              row.quantities.hasOpenReview ? '有范围暂停办理' : '无'
-            }}</el-descriptions-item>
-          </el-descriptions>
+          <PurchaseOrderSources
+            v-if="row.sources.length"
+            :sources="row.sources"
+          />
           <p v-if="row.originPurchaseOrderId">
             原采购：<el-button
               link
@@ -68,11 +38,6 @@
               >{{ row.originPurchaseNo }}</el-button
             >
             · 原采购行 {{ row.originOrderLineId }}
-          </p>
-          <p>
-            到货方式：{{
-              PURCHASE_FULFILLMENT_MODE_LABELS[row.fulfillmentMode as PurchaseFulfillmentMode]
-            }}
           </p>
           <p v-if="row.supplementEvidence">补单依据：{{ row.supplementEvidence }}</p>
           <p v-if="row.originReceiptLineId">
@@ -88,50 +53,11 @@
               · 质量退回分配明细 {{ row.originAllocationId }}</template
             >
           </p>
-          <el-descriptions
-            v-if="row.closure"
-            :column="4"
-            border
-            size="small"
-            title="关闭时的冻结依据"
-          >
-            <el-descriptions-item label="关闭原因">{{
-              PURCHASE_ORDER_CLOSURE_REASON_LABELS[
-                row.closure.reasonType as PurchaseOrderClosureReason
-              ]
-            }}</el-descriptions-item>
-            <el-descriptions-item label="计划量">{{
-              Number(row.closure.plannedQuantity)
-            }}</el-descriptions-item>
-            <el-descriptions-item label="实收量">{{
-              Number(row.closure.receivedQuantity)
-            }}</el-descriptions-item>
-            <el-descriptions-item label="未判定量">{{
-              Number(row.closure.undeterminedQuantity)
-            }}</el-descriptions-item>
-            <el-descriptions-item label="有效批准量">{{
-              Number(row.closure.approvedQuantity)
-            }}</el-descriptions-item>
-            <el-descriptions-item label="累计已入量">{{
-              Number(row.closure.inboundQuantity)
-            }}</el-descriptions-item>
-            <el-descriptions-item label="待退量">{{
-              Number(row.closure.returnDueQuantity)
-            }}</el-descriptions-item>
-            <el-descriptions-item label="实际已退量">{{
-              Number(row.closure.returnedQuantity)
-            }}</el-descriptions-item>
-            <el-descriptions-item
-              label="说明"
-              :span="4"
-              >{{ row.closure.reason || '—' }}</el-descriptions-item
-            >
-          </el-descriptions>
         </div>
       </template>
     </el-table-column>
     <el-table-column
-      label="采购行"
+      label="采购行 ID"
       min-width="160"
     >
       <template #default="{ row }">
@@ -140,7 +66,7 @@
           class="purchase-line-identity"
         >
           <div class="purchase-line-heading">
-            <strong>第 {{ row.lineNo }} 行</strong>
+            <strong class="purchase-line-id">{{ row.id }}</strong>
             <el-tag
               v-if="row.id === focusedLineId"
               size="small"
@@ -149,7 +75,6 @@
               >当前定位</el-tag
             >
           </div>
-          <div class="purchase-line-id">采购行 ID：{{ row.id }}</div>
         </div>
       </template>
     </el-table-column>
@@ -184,35 +109,40 @@
       ></el-table-column
     >
     <el-table-column
-      label="累计实收"
+      label="累计到货"
       width="100"
       ><template #default="{ row }">{{
         row.quantities.receivedQuantity
       }}</template></el-table-column
     >
     <el-table-column
-      label="正式可入 / 已入"
-      width="145"
-      ><template #default="{ row }"
-        >{{ row.quantities.pendingInboundQuantity }} /
-        {{ row.quantities.inboundQuantity }}</template
-      ></el-table-column
+      label="累计已入"
+      width="100"
+      ><template #default="{ row }">{{ row.quantities.inboundQuantity }}</template></el-table-column
     >
     <el-table-column
-      label="待处理 / 待退"
-      width="145"
-      ><template #default="{ row }"
-        >{{ row.quantities.undeterminedQuantity }} /
-        {{ row.quantities.pendingReturnQuantity }}</template
-      ></el-table-column
+      label="当前待退"
+      width="100"
+      ><template #default="{ row }">{{
+        row.quantities.pendingReturnQuantity
+      }}</template></el-table-column
+    >
+    <el-table-column
+      label="实际已退"
+      width="100"
+      ><template #default="{ row }">{{
+        row.quantities.returnedQuantity
+      }}</template></el-table-column
     >
     <el-table-column
       label="状态"
       width="100"
       fixed="right"
-      ><template #default="{ row }">{{
-        PURCHASE_ORDER_LINE_STATUS_LABELS[row.status as PurchaseOrderLineStatus]
-      }}</template></el-table-column
+      ><template #default="{ row }"
+        ><el-tag v-bind="purchaseOrderLineStatusTag(row.status as PurchaseOrderLineStatus)">{{
+          PURCHASE_ORDER_LINE_STATUS_LABELS[row.status as PurchaseOrderLineStatus]
+        }}</el-tag></template
+      ></el-table-column
     >
     <el-table-column
       label="操作"
@@ -238,18 +168,30 @@
             >相关补单</el-button
           >
           <el-button
-            v-if="row.status === 'open'"
+            v-if="order.status === 'ordered' && row.status === 'open'"
             link
             type="primary"
-            :disabled="disabled || !row.allowedCloseReasons.length"
+            :disabled="disabled"
             @click="$emit('close-line', row.id)"
             >结束此行</el-button
           >
           <el-button
             v-if="
-              auth.can(PERMISSIONS.warehouse.receipts.view) &&
               (order.status === 'ordered' || order.status === 'completed') &&
-              row.status !== 'cancelled'
+              row.status === 'closed'
+            "
+            link
+            type="primary"
+            :disabled="disabled"
+            @click="$emit('reopen-line', row.id)"
+            >恢复此行</el-button
+          >
+          <el-button
+            v-if="
+              auth.can(PERMISSIONS.warehouse.receipts.view) &&
+              order.status === 'ordered' &&
+              row.status === 'open' &&
+              row.fulfillmentMode === 'new_arrival'
             "
             link
             type="primary"
@@ -269,16 +211,15 @@ import type {
   PurchaseOrderDetail,
   PurchaseOrderLine,
   PurchaseOrderLineStatus,
-  PurchaseOrderClosureReason,
   PurchaseFulfillmentMode,
 } from '@company/contracts';
 import {
   PURCHASE_ORDER_LINE_STATUS_LABELS,
-  PURCHASE_ORDER_CLOSURE_REASON_LABELS,
   PURCHASE_FULFILLMENT_MODE_LABELS,
   PERMISSIONS,
 } from '@company/constants';
 import { useAuthStore } from '../../../stores/auth';
+import { purchaseOrderLineStatusTag } from '../purchase-order-presentation';
 import PurchaseOrderSources from './PurchaseOrderSources.vue';
 const props = defineProps<{
   order: PurchaseOrderDetail;
@@ -287,6 +228,7 @@ const props = defineProps<{
 }>();
 defineEmits<{
   'close-line': [string];
+  'reopen-line': [string];
   supplements: [string];
   supplement: [string];
   receipts: [];
@@ -294,6 +236,13 @@ defineEmits<{
   navigate: [string];
 }>();
 const auth = useAuthStore();
+const hasLineContext = (row: PurchaseOrderLine): boolean =>
+  Boolean(
+    row.sources.length ||
+    row.originPurchaseOrderId ||
+    row.supplementEvidence ||
+    row.originReceiptLineId,
+  );
 const lineClassName = ({ row }: { row: PurchaseOrderLine }): string =>
   row.id === props.focusedLineId ? 'source-line-highlight' : '';
 
@@ -395,6 +344,9 @@ onUnmounted(() => {
 .purchase-line-table {
   container-type: inline-size;
 }
+.purchase-line-table :deep(.el-table__expand-icon.is-disabled) {
+  visibility: hidden;
+}
 .purchase-line-table :deep(.el-table__expanded-cell:has(> .line-context)) {
   padding: 0;
 }
@@ -404,12 +356,6 @@ onUnmounted(() => {
   left: 0;
   width: 100cqw;
   padding: 16px 24px;
-  overflow-wrap: anywhere;
-}
-.line-context :deep(.el-descriptions__body table) {
-  table-layout: fixed;
-}
-.line-context :deep(.el-descriptions__content) {
   overflow-wrap: anywhere;
 }
 .material-identity {
@@ -443,8 +389,7 @@ onUnmounted(() => {
   gap: 4px;
 }
 .purchase-line-id {
-  color: var(--el-text-color-secondary);
-  font-size: 12px;
+  color: var(--el-text-color-primary);
   font-variant-numeric: tabular-nums;
 }
 :deep(.source-line-highlight td) {

@@ -151,10 +151,31 @@ export class MysqlQualityInboundRepository
     input: { receiptLineId: string; roundId: string; supersededByRoundId: string; reason: string },
     context: CommandContext,
   ): Promise<void> {
+    return this.supersedeMatchingCases(input, context);
+  }
+
+  supersedeReceiptCases(
+    input: { receiptLineId: string; supersededByRoundId: string; reason: string },
+    context: CommandContext,
+  ): Promise<void> {
+    return this.supersedeMatchingCases(input, context);
+  }
+
+  private supersedeMatchingCases(
+    input: {
+      receiptLineId: string;
+      roundId?: string;
+      supersededByRoundId: string;
+      reason: string;
+    },
+    context: CommandContext,
+  ): Promise<void> {
     return this.inTransaction(async (db) => {
       const [rows] = await db.query<CaseRow[]>(
-        `SELECT * FROM quality_inspection_case WHERE receipt_line_id=? AND incoming_round_id=? AND status='reviewing' ORDER BY id FOR UPDATE`,
-        [input.receiptLineId, input.roundId],
+        `SELECT * FROM quality_inspection_case WHERE receipt_line_id=?
+          AND source_kind='incoming' AND status='reviewing'
+          ${input.roundId === undefined ? '' : 'AND incoming_round_id=?'} ORDER BY id FOR UPDATE`,
+        input.roundId === undefined ? [input.receiptLineId] : [input.receiptLineId, input.roundId],
       );
       for (const row of rows) {
         const id = String(row.id);
@@ -264,19 +285,6 @@ export class MysqlQualityInboundRepository
     );
     const byCase = new Map(facts.map((r) => [String(r.case_id), mapInspection(r)]));
     return rows.map((r) => mapCase(r, byCase.get(String(r.id)) ?? null));
-  }
-  listOpenCases(input: { receiptLineIds: string[] }): Promise<QualityInboundCaseItem[]> {
-    const ids = [...new Set(input.receiptLineIds)];
-    if (ids.length > 100)
-      throw new QualityCommandError('INVALID_INPUT', '一次最多核对 100 个到货明细');
-    return this.inTransaction(async (db) => {
-      if (!ids.length) return [];
-      const [rows] = await db.query<CaseRow[]>(
-        `SELECT * FROM quality_inspection_case WHERE receipt_line_id IN (${ids.map(() => '?').join(',')}) AND status='reviewing' ORDER BY id FOR SHARE`,
-        ids,
-      );
-      return rows.map((row) => mapCase(row));
-    });
   }
   private async requireCase(db: Db, id: string, lock = ''): Promise<CaseRow> {
     const [[row]] = await db.query<CaseRow[]>(

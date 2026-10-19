@@ -4,7 +4,7 @@ Quality 拥有外购来料检验与复核、成品质检及复检的不可变记
 
 成品检查事实、请求语义及放行资格由[成品检验与放行](docs/finished-inspections.md)维护；来料核实数量、正式授权与建议例外由 Procurement 的[正式清单与整批分配](../procurement/docs/receipt-acceptance.md)维护。[统一检验模型](docs/unified-inspection-model.md)描述来料与成品共用 case/record 的来源边界；[数据库](docs/database.md)为 Quality 数据所有权入口。[工序专检](docs/process-inspections.md)维护独立专检单、结果事实、已处理下限及公开能力。[ADR-0019](../../../../../docs/adr/0019-finished-inspection-measurement-simplification.md)取代旧成品 C/R/S 语义，[ADR-0015](../../../../../docs/adr/0015-unified-quality-quantity-semantics.md)保留其余共同边界。
 
-公开入口为 [public.ts](public.ts)。`QualityInboundCommand` 提供 `startCase`、`completeCase`、`supersedeCases`；调用者必须先锁住到货与当前处理轮次，并在同池活动事务内执行。`QualityInboundQuery` 提供单个到货行的办理历史分页、单个及批量办理详情、在途检查及明确放行依据核验；查询边界见[数据库与查询](docs/database.md#迁移及查询)。公开错误 `QualityCommandError` 仅含稳定代码和业务说明，由调用方 presentation 映射 HTTP。
+公开入口为 [public.ts](public.ts)。`QualityInboundCommand` 提供 `startCase`、`completeCase`、`supersedeCases`、`supersedeReceiptCases`；调用者必须先锁住到货与当前处理轮次，并在同池活动事务内执行。`supersedeCases` 终止指定旧轮未完成办理；`supersedeReceiptCases` 用于来源整单作废，按到货明细终止全部历史轮次仍在 reviewing 的办理，保留完成结果。`QualityInboundQuery` 提供单个到货行的办理历史分页、单个及批量办理详情，以及明确放行依据核验；查询边界见[数据库与查询](docs/database.md#迁移及查询)。公开错误 `QualityCommandError` 仅含稳定代码和业务说明，由调用方 presentation 映射 HTTP。
 
 Quality 不导入或查询 Procurement。它按传入来源保存检验事实并核验自己的记录；当前范围是否仍有效、是否暂停或终止，由 Procurement 锁内校验。`requireReleaseBasis` 不能替代该来源校验。办理的 `reviewing/completed/superseded` 为显式状态，完成与替代均不能恢复。
 

@@ -31,8 +31,10 @@ export async function readDraftRoundOwnership(db: Db, ids: string[], existing?: 
   if (!ids.length) return [];
   const [rounds] = await db.query<(ReadRow & OwnershipRound)[]>(
     `SELECT l.id receipt_line_id,l.purchase_order_line_id,r.id round_id,r.status,r.source_allocation_round_id,v.received_quantity FROM procurement_receipt_line l
+      JOIN procurement_receipt receipt ON receipt.id=l.receipt_id
       JOIN procurement_receipt_round r ON r.id=l.current_round_id JOIN procurement_receipt_revision v ON v.id=l.current_receipt_revision_id
-      WHERE l.id IN (${slots(ids)}) AND r.status<>'finalized'`,
+      WHERE l.id IN (${slots(ids)}) AND r.status NOT IN('finalized','voided')
+        AND receipt.is_voided=0`,
     ids,
   );
   return projectDraftOwnership(

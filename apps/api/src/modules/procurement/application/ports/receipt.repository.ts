@@ -10,9 +10,16 @@ import type {
   ConfirmProcurementInboundPayload,
   ProcurementReceiptCommandResult,
   ConfirmProcurementInboundResult,
+  VoidProcurementReceiptPayload,
+  VoidProcurementReceiptCommandResult,
 } from '@company/contracts';
 import type { CommandContext } from '../../../../common/audit/audit.types.js';
 export abstract class ProcurementReceiptRepository {
+  abstract voidReceipt(
+    id: string,
+    payload: VoidProcurementReceiptPayload,
+    context: CommandContext,
+  ): Promise<VoidProcurementReceiptCommandResult>;
   abstract accept(
     id: string,
     payload: ConfirmReceiptAcceptancePayload,

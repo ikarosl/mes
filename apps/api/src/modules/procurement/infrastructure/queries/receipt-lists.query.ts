@@ -90,6 +90,7 @@ export async function listReceipts(
   const { where, params } = filters(query);
   if (query.awaitingAcceptance === 'yes')
     where.push(
+      'r.is_voided=0',
       "EXISTS(SELECT 1 FROM procurement_receipt_line pending_line JOIN procurement_receipt_round pending_round ON pending_round.id=pending_line.current_round_id WHERE pending_line.receipt_id=r.id AND pending_round.status='awaiting_acceptance')",
     );
   const { page, pageSize } = pageInput(query);
@@ -121,6 +122,7 @@ export async function listReceiptLines(
   const { where, params } = filters(query, true);
   if (query.awaitingAcceptance === 'yes')
     where.push(
+      'r.is_voided=0',
       "EXISTS(SELECT 1 FROM procurement_receipt_round pending_round WHERE pending_round.id=line.current_round_id AND pending_round.status='awaiting_acceptance')",
     );
   const { page, pageSize } = pageInput(query);
@@ -168,7 +170,9 @@ export async function listInboundReleases(
   const [materials] = await db.query<
     ReadRow[]
   >(`SELECT DISTINCT line.item_id FROM procurement_receipt_line line
-    JOIN procurement_receipt_allocation allocation ON allocation.receipt_line_id=line.id AND allocation.round_id=line.current_round_id JOIN procurement_receipt_round current_round ON current_round.id=line.current_round_id WHERE current_round.status='finalized' AND allocation.disposition='inbound' AND allocation.termination_reason IS NULL`);
+    JOIN procurement_receipt receipt ON receipt.id=line.receipt_id
+    JOIN procurement_receipt_allocation allocation ON allocation.receipt_line_id=line.id AND allocation.round_id=line.current_round_id JOIN procurement_receipt_round current_round ON current_round.id=line.current_round_id WHERE current_round.status='finalized' AND allocation.disposition='inbound' AND allocation.termination_reason IS NULL
+      AND receipt.is_voided=0`);
   const eligible = await variants.listPurchasableByMaterials({
     materialIds: materials.map((r) => text(r.item_id)),
   });
@@ -177,6 +181,7 @@ export async function listInboundReleases(
   const where = selectedFilters.where.map((clause) => clause.replaceAll('po.', 'assigned_order.'));
   const params = selectedFilters.params;
   where.push(
+    `r.is_voided=0`,
     `allocation.disposition='inbound'`,
     `allocation.termination_reason IS NULL`,
     `inspection.release_decision='released'`,
@@ -261,7 +266,7 @@ export async function listInspections(
 ): Promise<PageResult<ProcurementInboundInspectionLineItem>> {
   const { page, pageSize } = pageInput(query);
   const { where, params } = filters(query, true);
-  where.push("current_round.status<>'superseded'");
+  where.push("current_round.status NOT IN('superseded','voided')", 'r.is_voided=0');
   if (query.stage) {
     where.push(`${CURRENT_RECEIPT_LINE_STAGE}=?`);
     params.push(query.stage);

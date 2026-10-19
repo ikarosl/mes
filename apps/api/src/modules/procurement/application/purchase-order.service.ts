@@ -5,6 +5,8 @@ import type {
   PlacePurchaseOrderPayload,
   CancelPurchaseOrderPayload,
   ClosePurchaseOrderLinePayload,
+  ClosePurchaseOrderPayload,
+  ReopenPurchaseOrderLinePayload,
   CreatePurchaseOrderSupplementPayload,
   PurchaseOrderCommandResult,
   PurchaseOrderQuery,
@@ -32,6 +34,8 @@ import {
   PLACE_PURCHASE_ORDER_SCOPE,
   CANCEL_PURCHASE_ORDER_SCOPE,
   CLOSE_PURCHASE_ORDER_LINE_SCOPE,
+  REOPEN_PURCHASE_ORDER_LINE_SCOPE,
+  CLOSE_PURCHASE_ORDER_SCOPE,
   CREATE_PURCHASE_ORDER_SUPPLEMENT_SCOPE,
 } from './idempotency/procurement-idempotency-scopes.contract.js';
 import { purchaseOrderResultCodec } from './idempotency/purchase-order-result.codec.js';
@@ -184,7 +188,7 @@ export class PurchaseOrderService {
     payload: ClosePurchaseOrderLinePayload,
     context: IdempotentCommandContext,
   ): Promise<PurchaseOrderCommandResult> {
-    const body = { ...payload, reason: payload.reason.trim() };
+    const body = { version: payload.version, reason: payload.reason.trim() };
     const execution = await this.idempotency.execute({
       scope: CLOSE_PURCHASE_ORDER_LINE_SCOPE,
       key: context.idempotencyKey,
@@ -193,6 +197,40 @@ export class PurchaseOrderService {
       request: { params: { id }, body },
       resultCodec: purchaseOrderResultCodec,
       handler: () => this.repository.closeLine(id, body, auditContext(context)),
+    });
+    return execution.result;
+  }
+  async reopenLine(
+    id: string,
+    payload: ReopenPurchaseOrderLinePayload,
+    context: IdempotentCommandContext,
+  ): Promise<PurchaseOrderCommandResult> {
+    const body = { version: payload.version, reason: payload.reason.trim() };
+    const execution = await this.idempotency.execute({
+      scope: REOPEN_PURCHASE_ORDER_LINE_SCOPE,
+      key: context.idempotencyKey,
+      actorId: context.actorId,
+      requestId: context.requestId,
+      request: { params: { id }, body },
+      resultCodec: purchaseOrderResultCodec,
+      handler: () => this.repository.reopenLine(id, body, auditContext(context)),
+    });
+    return execution.result;
+  }
+  async close(
+    id: string,
+    payload: ClosePurchaseOrderPayload,
+    context: IdempotentCommandContext,
+  ): Promise<PurchaseOrderCommandResult> {
+    const body = { version: payload.version, reason: payload.reason.trim() };
+    const execution = await this.idempotency.execute({
+      scope: CLOSE_PURCHASE_ORDER_SCOPE,
+      key: context.idempotencyKey,
+      actorId: context.actorId,
+      requestId: context.requestId,
+      request: { params: { id }, body },
+      resultCodec: purchaseOrderResultCodec,
+      handler: () => this.repository.close(id, body, auditContext(context)),
     });
     return execution.result;
   }

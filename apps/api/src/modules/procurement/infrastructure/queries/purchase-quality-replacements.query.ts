@@ -27,6 +27,7 @@ export async function listQualityReplacementCandidates(
 
   const filters = [
     'line.purchase_order_line_id=?',
+    'receipt.is_voided=0',
     "allocation.disposition='return'",
     "allocation.return_reason='quality'",
     "((line.current_round_id=allocation.round_id AND round.status='finalized') OR supplier_return.id IS NOT NULL)",

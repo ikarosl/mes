@@ -2,9 +2,7 @@ import type { Pool, PoolConnection, RowDataPacket } from 'mysql2/promise';
 import type {
   PurchaseOrderItem,
   PurchaseFulfillmentMode,
-  ProcurementSupplierSummary,
   PurchaseOrderLineStatus,
-  PurchaseOrderLineClosure,
 } from '@company/contracts';
 import { PROCUREMENT_ERROR_CODES } from '@company/constants';
 import { toBeijingISOString } from '../../../common/time/date-time.js';
@@ -42,21 +40,6 @@ export type OrderLineRow = RowDataPacket & {
   origin_receipt_line_id: number | null;
   origin_allocation_id: number | null;
   supplement_evidence: string | null;
-};
-export type ClosureRow = RowDataPacket & {
-  id: number;
-  purchase_order_line_id: number;
-  reason_type: PurchaseOrderLineClosure['reasonType'];
-  reason: string | null;
-  planned_quantity: number;
-  received_quantity: number;
-  undetermined_quantity: number;
-  approved_quantity: number;
-  inbound_quantity: number;
-  return_due_quantity: number;
-  returned_quantity: number;
-  quality_returned_quantity: number;
-  created_at: Date;
 };
 export const idsSql = (ids: readonly string[]) => ids.map(() => '?').join(',');
 export const sortedIds = (ids: readonly string[]) =>
@@ -107,11 +90,9 @@ export const readSourceIds = async (
 };
 export const mapOrder = (
   row: OrderRow & { work_order_no: string | null; line_count: number },
-  suppliers: ProcurementSupplierSummary[],
 ): PurchaseOrderItem => ({
   id: String(row.id),
   purchaseNo: row.purchase_no,
-  suppliers,
   workOrderId: row.work_order_id === null ? null : String(row.work_order_id),
   workOrderNo: row.work_order_no,
   sourceType: row.source_type,
@@ -124,20 +105,18 @@ export const mapOrder = (
   createdAt: toBeijingISOString(row.created_at),
   updatedAt: toBeijingISOString(row.updated_at),
 });
-export const mapClosure = (row: ClosureRow): PurchaseOrderLineClosure => ({
-  id: String(row.id),
-  reasonType: row.reason_type,
-  reason: row.reason,
-  plannedQuantity: String(row.planned_quantity),
-  receivedQuantity: String(row.received_quantity),
-  undeterminedQuantity: String(row.undetermined_quantity),
-  approvedQuantity: String(row.approved_quantity),
-  inboundQuantity: String(row.inbound_quantity),
-  returnDueQuantity: String(row.return_due_quantity),
-  returnedQuantity: String(row.returned_quantity),
-  qualityReturnedQuantity: String(row.quality_returned_quantity),
-  createdAt: toBeijingISOString(row.created_at),
-});
+
+export const hasOrderReceiptFacts = async (db: Db, id: string, lock = false): Promise<boolean> => {
+  const [[arrival]] = await db.query<RowDataPacket[]>(
+    `SELECT id FROM procurement_receipt_line WHERE purchase_order_id=? ORDER BY id LIMIT 1${lock ? ' FOR SHARE' : ''}`,
+    [id],
+  );
+  const [[allocation]] = await db.query<RowDataPacket[]>(
+    `SELECT a.id FROM procurement_receipt_allocation a JOIN procurement_order_line l ON l.id=a.purchase_order_line_id WHERE l.purchase_order_id=? ORDER BY a.id LIMIT 1${lock ? ' FOR SHARE' : ''}`,
+    [id],
+  );
+  return Boolean(arrival || allocation);
+};
 
 export const requireDraft = (order: OrderRow) => {
   if (order.status !== 'draft')

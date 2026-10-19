@@ -4,22 +4,14 @@ import { withActiveConnection } from '@company/database';
 import { integerQuantity } from '@company/utils';
 import type { Pool, RowDataPacket } from 'mysql2/promise';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
-import { toBeijingISOString } from '../../../common/time/date-time.js';
 import { InventoryInboundQuery } from '../application/inventory-inbound.query.js';
 import type { ReceiptInboundFacts } from '../application/inventory-purchase-inbound.types.js';
 import { InventoryDomainError } from '../domain/inventory.errors.js';
 
 type FactRow = RowDataPacket & {
-  inbound_id: number | string;
-  inbound_no: string;
-  inbound_at: Date;
   detail_id: number | string;
-  batch_id: number | string;
   receipt_line_id: number | string;
-  receipt_revision_id: number | string;
-  inspection_id: number | string;
   allocation_id: number | string;
-  transaction_id: number | string;
   quantity: number | string;
 };
 
@@ -96,9 +88,8 @@ export class MysqlInventoryInboundQuery extends InventoryInboundQuery {
       // 保留事实当前读；批次身份由组合外键保证，不为展示批号提前取得库批共享锁。
       // 共批入库只在确认写入时统一锁定目标批次，避免历史共享锁再升级为排他锁。
       const [rows] = await db.query<FactRow[]>(
-        `SELECT o.id inbound_id,o.inbound_no,o.inbound_at,d.id detail_id,d.batch_id,
-         d.procurement_receipt_line_id receipt_line_id,d.procurement_receipt_revision_id receipt_revision_id,
-         d.procurement_allocation_id allocation_id,d.procurement_inspection_id inspection_id,tx.id transaction_id,tx.quantity
+        `SELECT d.id detail_id,d.procurement_receipt_line_id receipt_line_id,
+         d.procurement_allocation_id allocation_id,tx.quantity
          FROM inbound_order o JOIN inbound_detail d ON d.inbound_id=o.id
          JOIN inventory_transaction tx ON tx.reference_type='inbound_detail' AND tx.reference_detail_id=d.id
            AND tx.transaction_type='purchase_inbound' AND tx.quantity=d.inbound_number AND tx.quantity>0
@@ -122,7 +113,6 @@ export class MysqlInventoryInboundQuery extends InventoryInboundQuery {
       const seenDetails = new Set<string>();
       for (const row of rows) {
         const target = byReceipt.get(String(row.receipt_line_id))!;
-        const batchId = String(row.batch_id);
         const detailId = String(row.detail_id);
         if (seenDetails.has(detailId))
           throw new InventoryDomainError('INVALID_STATE', '到货入库事实存在重复正流水');
@@ -131,17 +121,8 @@ export class MysqlInventoryInboundQuery extends InventoryInboundQuery {
           integerQuantity(target.inboundQuantity) + integerQuantity(row.quantity),
         );
         target.receipts.push({
-          batchId,
-          inboundId: String(row.inbound_id),
-          inboundNo: row.inbound_no,
-          inboundDetailId: detailId,
-          transactionId: String(row.transaction_id),
-
           allocationId: String(row.allocation_id),
-          inspectionId: String(row.inspection_id),
-          receiptRevisionId: String(row.receipt_revision_id),
           quantity: String(row.quantity),
-          confirmedAt: toBeijingISOString(row.inbound_at),
         });
       }
       return ids.map((id) => byReceipt.get(id)!);

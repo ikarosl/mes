@@ -38,4 +38,9 @@ export abstract class QualityInboundCommand {
     input: { receiptLineId: string; roundId: string; supersededByRoundId: string; reason: string },
     context: CommandContext,
   ): Promise<void>;
+  /** 到货整单作废时，终止该明细全部轮次尚未完成的办理。 */
+  abstract supersedeReceiptCases(
+    input: { receiptLineId: string; supersededByRoundId: string; reason: string },
+    context: CommandContext,
+  ): Promise<void>;
 }

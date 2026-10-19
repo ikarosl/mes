@@ -6,12 +6,11 @@ import { type ReadRow, slots, text, inboundFactSelect } from './receipt-read.sha
 export async function readPurchaseLineMetrics(
   db: Db,
   lineIds: string[],
-): Promise<Map<string, { quantities: ReceiptQuantitySummary; hasReceipt: boolean }>> {
+): Promise<Map<string, { quantities: ReceiptQuantitySummary }>> {
   const result = new Map(
     lineIds.map((id) => [
       id,
       {
-        hasReceipt: false,
         quantities: {
           unprocessedQuantity: '0',
           receivedQuantity: '0',
@@ -30,15 +29,12 @@ export async function readPurchaseLineMetrics(
   );
   if (!lineIds.length) return result;
   // Physical quantities are counted once, against their current formal allocation (or original source before confirmation).
-  const [physical] = await db.query<ReadRow[]>(
-    `SELECT DISTINCT purchase_order_line_id FROM procurement_receipt_line WHERE purchase_order_line_id IN (${slots(lineIds)})
-      UNION SELECT DISTINCT purchase_order_line_id FROM procurement_receipt_allocation WHERE purchase_order_line_id IN (${slots(lineIds)})`,
-    [...lineIds, ...lineIds],
-  );
-  for (const row of physical) result.get(text(row.purchase_order_line_id))!.hasReceipt = true;
   const [related] = await db.query<ReadRow[]>(
-    `SELECT l.id FROM procurement_receipt_line l WHERE l.purchase_order_line_id IN (${slots(lineIds)})
-    OR EXISTS(SELECT 1 FROM procurement_receipt_allocation a WHERE a.receipt_line_id=l.id AND a.purchase_order_line_id IN (${slots(lineIds)}))`,
+    `SELECT l.id FROM procurement_receipt_line l
+      JOIN procurement_receipt receipt ON receipt.id=l.receipt_id
+      WHERE receipt.is_voided=0
+      AND (l.purchase_order_line_id IN (${slots(lineIds)})
+        OR EXISTS(SELECT 1 FROM procurement_receipt_allocation a WHERE a.receipt_line_id=l.id AND a.purchase_order_line_id IN (${slots(lineIds)})))`,
     [...lineIds, ...lineIds],
   );
   const rows = await readAllocationRows(
@@ -97,7 +93,9 @@ export async function readPurchaseLineMetrics(
   }
   const [pendingLines] = await db.query<ReadRow[]>(
     `SELECT r.id FROM procurement_receipt_line r JOIN procurement_receipt_round round ON round.id=r.current_round_id
-      WHERE round.status<>'finalized'
+      JOIN procurement_receipt receipt ON receipt.id=r.receipt_id
+      WHERE round.status NOT IN('finalized','voided')
+      AND receipt.is_voided=0
       AND (r.purchase_order_line_id IN (${slots(lineIds)}) OR EXISTS(
       SELECT 1 FROM procurement_receipt_allocation a WHERE a.receipt_line_id=r.id AND a.purchase_order_line_id IN (${slots(lineIds)})))`,
     [...lineIds, ...lineIds],
@@ -109,7 +107,6 @@ export async function readPurchaseLineMetrics(
   for (const owner of pendingOwners) {
     const target = result.get(owner.purchaseOrderLineId);
     if (!target) continue;
-    target.hasReceipt = true;
     add(owner.purchaseOrderLineId, 'receivedQuantity', owner.quantity);
     add(owner.purchaseOrderLineId, 'undeterminedQuantity', owner.quantity);
     target.quantities.hasOpenReview ||= owner.hasOpenReview;

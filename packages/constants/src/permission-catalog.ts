@@ -1031,6 +1031,16 @@ export const PERMISSION_CATALOG = [
     apiPath: null,
   },
   {
+    code: PERMISSIONS.warehouse.receipts.void,
+    name: '作废到货登记',
+    parentCode: PERMISSIONS.warehouse.receipts.view,
+    type: 'button',
+    routePath: null,
+    sortOrder: 50,
+    apiMethod: null,
+    apiPath: null,
+  },
+  {
     code: PERMISSIONS.warehouse.inbound.view,
     name: '入库管理',
     parentCode: PERMISSIONS.warehouse.view,

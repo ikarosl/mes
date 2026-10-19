@@ -18,7 +18,6 @@ import {
 } from 'class-validator';
 import {
   DEMAND_TYPES,
-  PURCHASE_ORDER_CLOSURE_REASONS,
   PURCHASE_ORDER_SUPPLEMENT_REASONS,
   PURCHASE_ORDER_SOURCE_TYPES,
   PURCHASE_ORDER_STATUSES,
@@ -27,7 +26,6 @@ import {
   PURCHASE_ORDER_MAX_QUANTITY,
 } from '@company/constants';
 import type {
-  PurchaseOrderClosureReason,
   PurchaseOrderSupplementReason,
   PurchaseOrderSourceType,
   PurchaseOrderStatus,
@@ -91,9 +89,9 @@ export class PurchaseOrderVersionDto {
 export class CancelPurchaseOrderDto extends PurchaseOrderVersionDto {
   @Transform(trim) @IsString() @IsNotEmpty() @MaxLength(2000) reason!: string;
 }
-export class ClosePurchaseOrderLineDto extends CancelPurchaseOrderDto {
-  @IsIn(PURCHASE_ORDER_CLOSURE_REASONS) reasonType!: PurchaseOrderClosureReason;
-}
+export class ClosePurchaseOrderDto extends CancelPurchaseOrderDto {}
+export class ClosePurchaseOrderLineDto extends CancelPurchaseOrderDto {}
+export class ReopenPurchaseOrderLineDto extends CancelPurchaseOrderDto {}
 export class CreatePurchaseOrderSupplementLineDto {
   @Matches(/^[1-9]\d{0,19}$/) originOrderLineId!: string;
   @Matches(/^[1-9]\d{0,19}$/) originReceiptLineId!: string;

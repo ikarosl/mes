@@ -71,6 +71,7 @@
         :focused-line-id="focusedLineId"
         :disabled="disabled || loading || failed"
         @close-line="$emit('close-line', $event)"
+        @reopen-line="$emit('reopen-line', $event)"
         @supplements="$emit('supplements', $event)"
         @supplement="$emit('supplement', $event)"
         @receipts="$emit('receipts')"
@@ -102,6 +103,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   refresh: [];
   'close-line': [string];
+  'reopen-line': [string];
   supplements: [string];
   supplement: [string?];
   'supplement-origin': [string];

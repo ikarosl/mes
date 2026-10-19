@@ -76,9 +76,12 @@ export async function listReceiptAllocationCandidates(
   query: ReceiptAllocationCandidateQuery,
 ): Promise<ReceiptAllocationCandidateResult> {
   const keyword = query.keyword?.trim();
-  const from = `FROM procurement_receipt_line r JOIN procurement_order_line p ON
+  const from = `FROM procurement_receipt_line r
+    JOIN procurement_receipt receipt ON receipt.id=r.receipt_id
+    JOIN procurement_order_line p ON
     (p.id=r.purchase_order_line_id OR (p.origin_order_line_id=r.purchase_order_line_id AND p.origin_receipt_line_id=r.id AND p.fulfillment_mode='existing_receipt'))
-    JOIN procurement_order o ON o.id=p.purchase_order_id WHERE r.id=? AND p.status IN('open','closed') AND o.ordered_at IS NOT NULL`;
+    JOIN procurement_order o ON o.id=p.purchase_order_id WHERE r.id=? AND p.status IN('open','closed') AND o.ordered_at IS NOT NULL
+      AND receipt.is_voided=0`;
   const select = `SELECT p.id,p.purchase_order_id,o.purchase_no,p.planned_quantity,p.fulfillment_mode,
     (p.id=r.purchase_order_line_id) is_original,
     (SELECT COUNT(*) FROM procurement_receipt_allocation a WHERE a.purchase_order_line_id=p.id) binding_count`;

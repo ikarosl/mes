@@ -1,6 +1,6 @@
 # ADR-0013：采购来源、检验后入库与事实边界
 
-本文仅被部分取代：[ADR-0014](0014-task-material-policy-and-output-inspection.md)确定成品质检归 Quality；[ADR-0015](0015-unified-quality-quantity-semantics.md)取代独立剔除量、检验直接生成可入范围、检前按采购拆批、来料部分复检和 QC 数量硬上限，并统一正式分配及补发依据。单工单采购、逐行供应商、需求独立、实收纠错、实际物流不可改写及唯一库存账本继续有效。
+本文仅被部分取代：[ADR-0014](0014-task-material-policy-and-output-inspection.md)确定成品质检归 Quality；[ADR-0015](0015-unified-quality-quantity-semantics.md)取代独立剔除量、检验直接生成可入范围、检前按采购拆批、来料部分复检和 QC 数量硬上限，并统一正式分配及补发依据；[ADR-0022](0022-procurement-state-and-receipt-void.md)取代采购物流数量关闭资格及结束后不能人工恢复的限制，明确到货原登记字段冻结与主表一次性作废转换的边界。单工单采购、逐行供应商、需求独立、实收纠错、实际物流不可改写及唯一库存账本继续有效。
 
 状态：Accepted。当前完整规则从 [Procurement 采购订单](../../apps/api/src/modules/procurement/docs/purchase-orders.md)、[到货处置](../../apps/api/src/modules/procurement/docs/receipts.md)、[正式清单与分配](../../apps/api/src/modules/procurement/docs/receipt-acceptance.md)读取；跨模块协作见[采购技术设计](../procurement-inbound-technical-design.md)。本文保留业务选择和不可越过的事实边界，验收与正式测试见[路线图](../roadmap.md)。
 

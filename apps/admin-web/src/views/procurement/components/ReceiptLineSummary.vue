@@ -34,7 +34,7 @@
       v-if="section === 'quantities'"
       class="quantity-focus"
     >
-      <dl>
+      <dl v-if="!isReceiptVoided(line)">
         <div>
           <dt>本轮剩余</dt>
           <dd :class="{ 'quantity-zero': isKnownZero(line.quantities.unprocessedQuantity) }">
@@ -63,9 +63,10 @@
       </dl>
       <div class="actual-quantities">
         <span
-          >本批核实总量
+          >{{ isReceiptVoided(line) ? '作废前核实量' : '本批核实总量' }}
           <strong
-            >{{ quantityText(line.quantities.receivedQuantity) }} {{ line.unit }}</strong
+            >{{ registeredQuantity === null ? '见实收修订' : quantityText(registeredQuantity) }}
+            <template v-if="registeredQuantity !== null">{{ line.unit }}</template></strong
           ></span
         >
         <span
@@ -87,8 +88,9 @@
         size="small"
         class="quantity-summary"
       >
-        <el-descriptions-item label="本批核实总量">
-          {{ quantityText(line.quantities.receivedQuantity) }} {{ line.unit }}
+        <el-descriptions-item :label="isReceiptVoided(line) ? '作废前核实量' : '本批核实总量'">
+          {{ registeredQuantity === null ? '见实收修订' : quantityText(registeredQuantity) }}
+          <template v-if="registeredQuantity !== null">{{ line.unit }}</template>
         </el-descriptions-item>
         <el-descriptions-item label="累计已入">
           <span :class="isKnownZero(line.quantities.inboundQuantity) ? 'quantity-zero' : undefined">
@@ -102,7 +104,10 @@
             {{ quantityText(line.quantities.returnedQuantity) }} {{ line.unit }}
           </span>
         </el-descriptions-item>
-        <el-descriptions-item label="本轮剩余">
+        <el-descriptions-item
+          v-if="!isReceiptVoided(line)"
+          label="本轮剩余"
+        >
           <strong
             :class="
               isKnownZero(line.quantities.unprocessedQuantity)
@@ -139,7 +144,7 @@
         <template v-if="!hasRemainingComponent">分配数量待核对。</template>
       </InlineHint>
       <InlineHint
-        v-else-if="!isKnownZero(line.quantities.unprocessedQuantity)"
+        v-else-if="isReceiptVoided(line) || !isKnownZero(line.quantities.unprocessedQuantity)"
         :tone="phaseTone"
         class="line-hint"
         >{{ phaseHint }}</InlineHint
@@ -162,6 +167,7 @@ import {
   receiptLineStageLabel,
   receiptLineStageType,
   receiptLineStageEffect,
+  isReceiptVoided,
 } from '../receipt-round-presentation';
 
 const props = withDefaults(
@@ -170,6 +176,12 @@ const props = withDefaults(
     section?: 'all' | 'identity' | 'quantities';
   }>(),
   { section: 'all' },
+);
+const registeredQuantity = computed(() =>
+  isReceiptVoided(props.line)
+    ? (props.line.revisions.find((revision) => revision.id === props.line.currentReceiptRevisionId)
+        ?.receivedQuantity ?? null)
+    : props.line.quantities.receivedQuantity,
 );
 const hasRemainingComponent = computed(() =>
   [
@@ -185,6 +197,8 @@ const phaseTone = computed<'info' | 'warning' | 'danger'>(() => {
 });
 const phaseHint = computed(() => {
   switch (props.line.currentRound.status) {
+    case 'voided':
+      return '到货登记已作废，原始数量和历史依据保留，未执行授权已失效。';
     case 'reviewing':
       return '本轮检验进行中，尚未形成正常定稿与入库资格。';
     case 'reinspection_required':

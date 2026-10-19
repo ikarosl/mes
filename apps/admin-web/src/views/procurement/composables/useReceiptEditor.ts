@@ -3,7 +3,7 @@ import type {
   ConfirmProcurementReceiptPayload,
   ProcurementReceiptCommandResult,
   PurchaseOrderDetail,
-  PurchaseOrderItem,
+  ProcurementReceiptOrderOption,
   PurchaseOrderLine,
 } from '@company/contracts';
 import { PURCHASE_ORDER_MAX_QUANTITY } from '@company/constants';
@@ -29,7 +29,7 @@ export function useReceiptEditor(onSaved: (id: string) => void | Promise<void>) 
     page = ref(1),
     pageSize = ref(10),
     total = ref(0),
-    orders = ref<PurchaseOrderItem[]>([]);
+    orders = ref<ProcurementReceiptOrderOption[]>([]);
   const order = ref<PurchaseOrderDetail | null>(null),
     rows = ref<ReceiptDraftRow[]>([]);
   const receivedAt = ref(''),

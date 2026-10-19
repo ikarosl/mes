@@ -11,6 +11,8 @@ import type {
   ConfirmProcurementInboundPayload,
   ProcurementReceiptCommandResult,
   ConfirmProcurementInboundResult,
+  VoidProcurementReceiptPayload,
+  VoidProcurementReceiptCommandResult,
 } from '@company/contracts';
 import type {
   CommandContext,
@@ -28,10 +30,12 @@ import {
   REVOKE_RECEIPT_REJECTION_SCOPE,
   CONFIRM_SUPPLIER_RETURN_SCOPE,
   CONFIRM_PROCUREMENT_INBOUND_SCOPE,
+  VOID_RECEIPT_SCOPE,
 } from './idempotency/procurement-idempotency-scopes.contract.js';
 import {
   receiptCommandResultCodec,
   inboundCommandResultCodec,
+  voidReceiptCommandResultCodec,
 } from './idempotency/receipt-result.codec.js';
 @Injectable()
 export class ReceiptService {
@@ -39,6 +43,27 @@ export class ReceiptService {
     private readonly repository: ProcurementReceiptRepository,
     private readonly idempotency: IdempotencyExecutor,
   ) {}
+  async voidReceipt(
+    id: string,
+    payload: VoidProcurementReceiptPayload,
+    context: IdempotentCommandContext,
+  ): Promise<VoidProcurementReceiptCommandResult> {
+    const body = {
+      version: payload.version,
+      reason: payload.reason.trim(),
+      lines: payload.lines.map((line) => ({ ...line })),
+    };
+    const execution = await this.idempotency.execute({
+      scope: VOID_RECEIPT_SCOPE,
+      key: context.idempotencyKey,
+      actorId: context.actorId,
+      requestId: context.requestId,
+      request: { params: { id }, body },
+      resultCodec: voidReceiptCommandResultCodec,
+      handler: () => this.repository.voidReceipt(id, body, auditContext(context)),
+    });
+    return execution.result;
+  }
   async confirmReceipt(
     payload: ConfirmProcurementReceiptPayload,
     context: IdempotentCommandContext,

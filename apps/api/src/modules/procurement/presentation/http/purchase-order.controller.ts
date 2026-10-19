@@ -14,6 +14,8 @@ import {
   PLACE_PURCHASE_ORDER_SCOPE,
   CANCEL_PURCHASE_ORDER_SCOPE,
   CLOSE_PURCHASE_ORDER_LINE_SCOPE,
+  REOPEN_PURCHASE_ORDER_LINE_SCOPE,
+  CLOSE_PURCHASE_ORDER_SCOPE,
   CREATE_PURCHASE_ORDER_SUPPLEMENT_SCOPE,
 } from '../../application/idempotency/procurement-idempotency-scopes.contract.js';
 import { ProcurementDomainExceptionFilter } from './procurement-domain-exception.filter.js';
@@ -27,6 +29,8 @@ import {
   PurchaseOrderVersionDto,
   CancelPurchaseOrderDto,
   ClosePurchaseOrderLineDto,
+  ClosePurchaseOrderDto,
+  ReopenPurchaseOrderLineDto,
   CreatePurchaseOrderSupplementDto,
   ProcurementDemandCandidateQueryDto,
   ProcurementDemandWorkOrderQueryDto,
@@ -154,6 +158,28 @@ export class PurchaseOrderController {
     @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
   ) {
     return this.service.closeLine(id, body, context);
+  }
+  @Post('purchase-order-lines/:id/actions/reopen')
+  @RequirePermission(PERMISSIONS.procurement.orders.close)
+  @AuditInApplication()
+  @IdempotentEndpoint({ scope: REOPEN_PURCHASE_ORDER_LINE_SCOPE })
+  reopenLine(
+    @Param() { id }: PurchaseOrderIdDto,
+    @Body() body: ReopenPurchaseOrderLineDto,
+    @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
+  ) {
+    return this.service.reopenLine(id, body, context);
+  }
+  @Post('purchase-orders/:id/actions/close')
+  @RequirePermission(PERMISSIONS.procurement.orders.close)
+  @AuditInApplication()
+  @IdempotentEndpoint({ scope: CLOSE_PURCHASE_ORDER_SCOPE })
+  close(
+    @Param() { id }: PurchaseOrderIdDto,
+    @Body() body: ClosePurchaseOrderDto,
+    @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
+  ) {
+    return this.service.close(id, body, context);
   }
   @Post('purchase-orders/:id/supplements')
   @RequirePermission(PERMISSIONS.procurement.orders.create)

@@ -101,6 +101,7 @@
               :line-count="row.lineCount"
               @refresh="expansion.read(row.id, true)"
               @close-line="handleAction(row.id, 'close', $event)"
+              @reopen-line="handleAction(row.id, 'reopen', $event)"
               @supplements="showSupplements"
               @supplement="openSupplement(row.id, $event)"
               @supplement-origin="openSupplement($event, undefined, 'excess_purchase')"
@@ -151,7 +152,7 @@
           label="状态"
           width="110"
           ><template #default="{ row }"
-            ><el-tag>{{
+            ><el-tag v-bind="purchaseOrderStatusTag(row.status as PurchaseOrderStatus)">{{
               PURCHASE_ORDER_STATUS_LABELS[row.status as PurchaseOrderStatus]
             }}</el-tag></template
           ></el-table-column
@@ -199,7 +200,15 @@
               >取消整单</el-button
             >
             <el-button
-              v-if="row.status !== 'draft' && auth.can(PERMISSIONS.warehouse.receipts.view)"
+              v-if="row.status === 'ordered'"
+              link
+              type="primary"
+              :disabled="blocked"
+              @click="handleAction(row.id, 'close-order')"
+              >结束整单</el-button
+            >
+            <el-button
+              v-if="row.status === 'ordered' && auth.can(PERMISSIONS.warehouse.receipts.view)"
               link
               type="primary"
               :disabled="blocked"
@@ -262,6 +271,8 @@ import PaginationFooter from '../../components/PaginationFooter.vue';
 import { formatDateTimeForDisplay } from '../../utils/date';
 import { EMessage } from '../../utils/message';
 import { usePurchaseOrdersList } from './composables/usePurchaseOrdersList';
+import type { PurchaseOrderAction } from './composables/usePurchaseOrderActions';
+import { purchaseOrderStatusTag } from './purchase-order-presentation';
 import PurchaseOrderEditorDialog from './components/PurchaseOrderEditorDialog.vue';
 import PurchaseOrderActionDialog from './components/PurchaseOrderActionDialog.vue';
 import PurchaseOrderExpandedRows from './components/PurchaseOrderExpandedRows.vue';
@@ -378,7 +389,7 @@ const edit = async (id: string): Promise<void> => {
     finishNavigation();
   }
 };
-const handleAction = async (id: string, action: 'place' | 'cancel' | 'close', lineId?: string) => {
+const handleAction = async (id: string, action: PurchaseOrderAction, lineId?: string) => {
   if (navigating.value) return;
   navigating.value = true;
   try {

@@ -151,6 +151,7 @@ JOIN permissions p ON p.code IN (
   'warehouse:receipts:accept',
   'warehouse:receipts:correct',
   'warehouse:receipts:return',
+  'warehouse:receipts:void',
   'warehouse:inbound:view',
   'warehouse:inbound:confirm-purchase',
   'warehouse:inbound:confirm-finished',

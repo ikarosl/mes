@@ -173,6 +173,18 @@ down 恢复本次切换前的权限编码和元数据快照，不恢复已清理
 
 down 在首个永久 DDL 前拒绝任何专检根／结果、专检来源处置、`inspection` 范围报工或没有报工来源的返工／报废／补料方案；不得通过删除真实业务事实绕过回滚保护。允许回滚时恢复报工必填来源及约束、删除空专检结构与新增权限目录，不恢复角色历史授权。DDL 中断时保持停写，核对实际约束和迁移登记，不修改已执行文件。业务事实、更正下限和跨模块所有权见 [Quality](../../../apps/api/src/modules/quality/README.md)及 [ADR-0021](../../../docs/adr/0021-process-inspection-and-abnormal-disposition.md)。
 
+### 202610190001：采购跟进状态简化
+
+暂停 Procurement 采购与关联到货写入，迁移后同步切换 API 和管理端。`202610190001-purchase-order-state-simplification` 的 up 在永久 DDL 前要求采购主单和旧关闭快照表为空，随后删除空的 `procurement_order_line_closure` 及不可变触发器。开发库按统一 migration／seed 初始化；采购当前状态由主行保存，结束、恢复及取消通过平台通用日志审计。
+
+down 在永久 DDL 前要求采购主单为空，仅恢复旧关闭快照空表及触发器；当前状态和通用日志无法还原关闭时的物流数量，不据此伪造关闭快照。主行身份、采购计划、来源、通用操作日志及库存事实不变。应用同时切换取消与行结束幂等 scope，新增行恢复和整单结束 scope，不重放旧契约为新动作。
+
+### 202610190002：到货整单登记作废
+
+暂停采购、到货、来料质检及采购入库写入，迁移后切换匹配应用。up 在首个永久 DDL 前要求 `procurement_receipt` 为空：既有记录没有主单修改审计和乐观版本，不猜造责任人或做兼容回填，开发库按统一 `db:init` 重建。守卫通过后在主表新增作废字段、修改审计和版本，替换 UPDATE 保护以冻结原登记字段并只允许一次作废与版本递增，保留 DELETE 保护；同时扩展 round 状态／触发原因并发布 `warehouse:receipts:void` 权限。实收、检验、清单或库存事实不转换，字段和约束由[采购数据库](../../../apps/api/src/modules/procurement/docs/database.md#到货整批轮次与-quality-关联)维护。演示仓管权限须通过显式 demo 入口刷新，权限目录发布不自动给既有角色授权。
+
+down 在首个永久 DDL 前要求 `procurement_receipt` 为空，且不存在 `voided` 状态或 `receipt_void` 触发轮；任何一项非空均拒绝，不能丢失主单的作废或修改依据，也不能把终止轮解释为普通轮次。守卫通过后恢复原全禁 UPDATE 触发器，删除主表新增外键、支撑索引、CHECK 和字段，移除新增权限及角色关联并恢复 round 值域。原 DELETE 保护保留，回滚不恢复旧角色授权。应用同时切换作废主单版本契约及 `procurement.receipt.void.v2` 幂等 scope；旧意图不迁入新 scope。MySQL DDL 中断仍按通用规则核对实际结构与迁移登记，不能假定可整体回滚。
+
 ## 验证边界
 
 - 空库 fresh 验证应用全量迁移后再次运行，核对无待执行或校验和冲突；`db:init` 不能替代迁移验证。

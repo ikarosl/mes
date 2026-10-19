@@ -81,3 +81,4 @@
 
 - [公共出入库单据与来源边界](adr/0020-shared-stock-documents-and-source-boundaries.md)：公共主从与内嵌来源的取舍、其他出库保护预留的反向读取例外
 - [工序专检与异常处置承接](adr/0021-process-inspection-and-abnormal-disposition.md)：独立现场检查、冲销更正下限与既有异常处理来源扩展
+- [采购跟进状态与到货登记作废](adr/0022-procurement-state-and-receipt-void.md)：人工结束／恢复、主单汇总及无实际执行的到货主表作废状态

@@ -151,6 +151,7 @@ export const PERMISSIONS = {
       accept: 'warehouse:receipts:accept',
       correct: 'warehouse:receipts:correct',
       return: 'warehouse:receipts:return',
+      void: 'warehouse:receipts:void',
     },
     otherInbounds: {
       view: 'warehouse:other-inbounds:view',

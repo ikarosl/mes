@@ -22,6 +22,13 @@
         @click="emit('detail', receipt.receiptId)"
         >查看到货单</el-button
       >
+      <el-button
+        v-if="!receipt.lines[0].void"
+        link
+        type="danger"
+        @click="emit('detail', receipt.receiptId, undefined, 'void')"
+        >作废整单</el-button
+      >
     </template>
     <template #supplier-detail="{ row }"
       ><div class="secondary">批号 {{ row.supplierBatchCode || '未填写' }}</div></template
@@ -52,14 +59,17 @@
     >
     <template #row="{ row }">
       <td class="quantity-cell">
-        <strong :class="{ 'zero-quantity': Number(row.quantities.receivedQuantity) === 0 }">{{
-          row.quantities.receivedQuantity
-        }}</strong>
-        <span
-          class="unit"
-          :class="{ 'zero-quantity': Number(row.quantities.receivedQuantity) === 0 }"
-          >{{ row.unit }}</span
-        >
+        <span v-if="isReceiptVoided(row)">—</span>
+        <template v-else>
+          <strong :class="{ 'zero-quantity': Number(row.quantities.receivedQuantity) === 0 }">{{
+            row.quantities.receivedQuantity
+          }}</strong>
+          <span
+            class="unit"
+            :class="{ 'zero-quantity': Number(row.quantities.receivedQuantity) === 0 }"
+            >{{ row.unit }}</span
+          >
+        </template>
       </td>
       <td>
         <div class="executed-quantity">
@@ -77,16 +87,23 @@
       </td>
       <td>
         <div class="remaining-quantity">
-          <strong :class="{ 'zero-quantity': Number(row.quantities.unprocessedQuantity) === 0 }">{{
-            row.quantities.unprocessedQuantity
-          }}</strong>
-          <span
-            class="unit"
-            :class="{ 'zero-quantity': Number(row.quantities.unprocessedQuantity) === 0 }"
-            >{{ row.unit }}</span
-          >
+          <span v-if="isReceiptVoided(row)">—</span>
+          <template v-else>
+            <strong
+              :class="{ 'zero-quantity': Number(row.quantities.unprocessedQuantity) === 0 }"
+              >{{ row.quantities.unprocessedQuantity }}</strong
+            >
+            <span
+              class="unit"
+              :class="{ 'zero-quantity': Number(row.quantities.unprocessedQuantity) === 0 }"
+              >{{ row.unit }}</span
+            >
+          </template>
         </div>
-        <div class="pending-quantities">
+        <div
+          v-if="!isReceiptVoided(row)"
+          class="pending-quantities"
+        >
           <span
             v-if="Number(row.quantities.pendingInboundQuantity) > 0"
             class="pending-inbound"
@@ -173,6 +190,7 @@ import { formatDateTimeForDisplay } from '../../../utils/date';
 import {
   canAcceptReceipt,
   canReviewReceipt,
+  isReceiptVoided,
   receiptLineStageLabel,
   receiptLineStageType,
   receiptLineStageEffect,
@@ -197,16 +215,20 @@ defineExpose<Pick<ReceiptWorklistHandle, 'expandPage'>>({
   expandPage: () => worklist.value?.expandPage(),
 });
 const hasInbound = (row: ProcurementReceiptLineListItem): boolean =>
+  !isReceiptVoided(row) &&
   auth.can(PERMISSIONS.warehouse.inbound.view) &&
   row.currentRound.status === 'finalized' &&
   Number(row.quantities.pendingInboundQuantity) > 0;
 const hasReturn = (row: ProcurementReceiptLineListItem): boolean =>
-  row.currentRound.status === 'finalized' && Number(row.quantities.pendingReturnQuantity) > 0;
+  !isReceiptVoided(row) &&
+  row.currentRound.status === 'finalized' &&
+  Number(row.quantities.pendingReturnQuantity) > 0;
 const hasAcceptancePrimary = (row: ProcurementReceiptLineListItem): boolean =>
   canAcceptReceipt(row) &&
   (row.currentRound.status === 'awaiting_acceptance' ||
     (row.currentRound.status === 'finalized' && Number(row.quantities.undeterminedQuantity) > 0));
 const canVisitQuality = (row: ProcurementReceiptLineListItem): boolean =>
+  !isReceiptVoided(row) &&
   auth.can(PERMISSIONS.quality.inboundInspections.view) &&
   Number(row.quantities.unprocessedQuantity) > 0 &&
   (row.currentRound.status === 'reviewing' || canReviewReceipt(row));

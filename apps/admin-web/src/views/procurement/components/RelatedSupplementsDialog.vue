@@ -19,14 +19,6 @@
         min-width="180"
       />
       <el-table-column
-        label="供应商"
-        min-width="210"
-        show-overflow-tooltip
-        ><template #default="{ row }">{{
-          supplierSummary(row.suppliers)
-        }}</template></el-table-column
-      >
-      <el-table-column
         label="补单原因"
         width="125"
         ><template #default="{ row }">{{
@@ -40,9 +32,11 @@
       <el-table-column
         label="状态"
         width="100"
-        ><template #default="{ row }">{{
-          PURCHASE_ORDER_STATUS_LABELS[row.status as PurchaseOrderStatus]
-        }}</template></el-table-column
+        ><template #default="{ row }"
+          ><el-tag v-bind="purchaseOrderStatusTag(row.status as PurchaseOrderStatus)">{{
+            PURCHASE_ORDER_STATUS_LABELS[row.status as PurchaseOrderStatus]
+          }}</el-tag></template
+        ></el-table-column
       >
       <el-table-column
         label="创建时间"
@@ -78,7 +72,6 @@
   </el-dialog>
 </template>
 <script setup lang="ts">
-import { supplierSummary } from '../supplier-summary';
 import { onActivated, ref, watch } from 'vue';
 import type {
   PurchaseOrderItem,
@@ -95,6 +88,7 @@ import { DialogWidth } from '../../../utils/dialog';
 import { EMessage } from '../../../utils/message';
 import { formatDateTimeForDisplay } from '../../../utils/date';
 import PaginationFooter from '../../../components/PaginationFooter.vue';
+import { purchaseOrderStatusTag } from '../purchase-order-presentation';
 const emit = defineEmits<{ navigate: [string] }>();
 const visible = ref(false),
   lineId = ref(''),

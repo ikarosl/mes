@@ -47,17 +47,27 @@
           label="采购状态"
           width="110"
         >
-          <template #default="{ row }">{{
-            PURCHASE_ORDER_STATUS_LABELS[row.purchaseOrderStatus as PurchaseOrderStatus]
-          }}</template>
+          <template #default="{ row }">
+            <el-tag
+              v-bind="purchaseOrderStatusTag(row.purchaseOrderStatus as PurchaseOrderStatus)"
+              >{{
+                PURCHASE_ORDER_STATUS_LABELS[row.purchaseOrderStatus as PurchaseOrderStatus]
+              }}</el-tag
+            >
+          </template>
         </el-table-column>
         <el-table-column
           label="行状态"
           width="100"
         >
-          <template #default="{ row }">{{
-            PURCHASE_ORDER_LINE_STATUS_LABELS[row.lineStatus as PurchaseOrderLineStatus]
-          }}</template>
+          <template #default="{ row }">
+            <el-tag
+              v-bind="purchaseOrderLineStatusTag(row.lineStatus as PurchaseOrderLineStatus)"
+              >{{
+                PURCHASE_ORDER_LINE_STATUS_LABELS[row.lineStatus as PurchaseOrderLineStatus]
+              }}</el-tag
+            >
+          </template>
         </el-table-column>
         <el-table-column
           label="操作"
@@ -110,6 +120,7 @@ import { useRouteAccess } from '../../../composables/useRouteAccess';
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
 import { DialogWidth } from '../../../utils/dialog';
 import PaginationFooter from '../../../components/PaginationFooter.vue';
+import { purchaseOrderLineStatusTag, purchaseOrderStatusTag } from '../purchase-order-presentation';
 const props = defineProps<{
   visible: boolean;
   demandId: string | null;

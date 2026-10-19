@@ -401,7 +401,7 @@
               class="line-form"
             >
               <el-form-item
-                :label="reason === 'excess_purchase' ? '承接采购量' : '约定补发量'"
+                :label="reason === 'excess_purchase' ? '补充采购量' : '约定补发量'"
                 required
               >
                 <el-input-number

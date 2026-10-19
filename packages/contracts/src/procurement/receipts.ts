@@ -1,5 +1,5 @@
 import type { ProcurementSupplierSummary } from './purchase-orders.js';
-import type { PageQuery } from '../common.js';
+import type { PageQuery, ReasonedVersionedCommand } from '../common.js';
 import type {
   QualityInboundCaseItem,
   QualityInboundCaseType,
@@ -14,6 +14,7 @@ export type ReceiptRoundStatus =
   | 'quality_rejected'
   | 'awaiting_acceptance'
   | 'finalized'
+  | 'voided'
   | 'superseded';
 /** 当前到货行的展示阶段，不改变轮次状态或执行资格。 */
 export type ReceiptLineStage =
@@ -24,6 +25,7 @@ export type ReceiptLineStage =
   | 'awaiting_acceptance'
   | 'finalized'
   | 'manual_rejection'
+  | 'voided'
   | 'completed';
 export type ReceiptRoundTrigger =
   | 'receipt'
@@ -31,7 +33,8 @@ export type ReceiptRoundTrigger =
   | 'review'
   | 'acceptance_correction'
   | 'manual_rejection'
-  | 'rejection_revocation';
+  | 'rejection_revocation'
+  | 'receipt_void';
 export interface ReceiptRoundItem {
   id: string;
   receiptLineId: string;
@@ -54,6 +57,8 @@ export interface ProcurementReceiptQuery extends PageQuery {
   purchaseOrderId?: string;
 }
 export interface ProcurementReceiptItem {
+  void: ProcurementReceiptVoidItem | null;
+  version: number;
   awaitingAcceptanceCount: number;
   id: string;
   receiptNo: string;
@@ -68,6 +73,7 @@ export interface ProcurementReceiptItem {
 }
 export interface ReceiptQuantitySummary {
   unprocessedQuantity: string;
+  /** 当前有效到货量；作废登记为 0，原核实总量保留于 revision 历史。 */
   receivedQuantity: string;
   undeterminedQuantity: string;
   approvedQuantity: string;
@@ -145,6 +151,7 @@ export interface ReceiptInspectionExecution {
   otherReturnedQuantity: string;
 }
 export interface ProcurementReceiptLine {
+  void: ProcurementReceiptVoidItem | null;
   currentRound: ReceiptRoundItem;
   /** 当前引用的同一份检验所关联的真实执行量；没有当前检验时各项为 0。 */
   currentInspectionExecution: ReceiptInspectionExecution;
@@ -186,6 +193,7 @@ export interface ProcurementReceiptLine {
 }
 /** 到货与来料工作列表共用的来源展示；分页单位始终为到货明细。 */
 export interface ProcurementReceiptListSource {
+  void: ProcurementReceiptVoidItem | null;
   receiptId: string;
   receiptNo: string;
   purchaseOrderId: string;
@@ -218,6 +226,7 @@ export interface ProcurementInboundInspectionDetail extends Pick<
   | 'version'
   | 'currentReceiptRevisionId'
   | 'currentRound'
+  | 'void'
 > {
   /** 实物范围；累计量仅供录入时解释剩余范围，不含授权数量。 */
   quantities: Pick<
@@ -231,6 +240,31 @@ export interface ProcurementInboundInspectionDetail extends Pick<
 }
 export interface ProcurementReceiptDetail extends ProcurementReceiptItem {
   items: ProcurementReceiptLine[];
+  /** 整单作废预览；lines 为完整行集合，不受明细或历史分页限制。 */
+  voiding: ProcurementReceiptVoiding;
+}
+export interface ProcurementReceiptVoidItem {
+  reason: string;
+  createdBy: string;
+  createdAt: string;
+}
+export interface ReceiptVoidLineVersion {
+  receiptLineId: string;
+  version: number;
+  roundId: string;
+  roundVersion: number;
+}
+export interface ProcurementReceiptVoiding {
+  canVoid: boolean;
+  blockedReason: string | null;
+  lines: ReceiptVoidLineVersion[];
+}
+export interface VoidProcurementReceiptPayload extends ReasonedVersionedCommand {
+  lines: ReceiptVoidLineVersion[];
+}
+export interface VoidProcurementReceiptCommandResult {
+  receiptId: string;
+  version: number;
 }
 export interface ConfirmProcurementReceiptPayload {
   purchaseOrderId: string;

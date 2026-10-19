@@ -14,12 +14,15 @@ import type {
   PurchaseQualityReplacementCandidateQuery,
   PurchaseQualityReplacementCandidate,
   PurchaseOrderItem,
+  ProcurementReceiptOrderOption,
   PurchaseOrderDetail,
   CreatePurchaseOrderPayload,
   UpdatePurchaseOrderPayload,
   PlacePurchaseOrderPayload,
   CancelPurchaseOrderPayload,
+  ClosePurchaseOrderPayload,
   ClosePurchaseOrderLinePayload,
+  ReopenPurchaseOrderLinePayload,
   CreatePurchaseOrderSupplementPayload,
   PurchaseOrderCommandResult,
   ProcurementDemandCandidateQuery,
@@ -35,6 +38,8 @@ import type {
   ProcurementReceiptLine,
   ProcurementInboundInspectionDetail,
   ConfirmProcurementReceiptPayload,
+  VoidProcurementReceiptPayload,
+  VoidProcurementReceiptCommandResult,
   CorrectReceiptLinePayload,
   StartReceiptReviewPayload,
   InspectReceiptLinePayload,
@@ -118,7 +123,7 @@ export const procurementApi = {
   receiptOrderOptions: (
     params: PurchaseOrderQuery,
     signal?: AbortSignal,
-  ): Promise<PageResult<PurchaseOrderItem>> =>
+  ): Promise<PageResult<ProcurementReceiptOrderOption>> =>
     request({ url: '/procurement/receipt-order-options', params, signal, skipErrorHandling: true }),
   receiptOrderDetail: (id: string, signal?: AbortSignal): Promise<PurchaseOrderDetail> =>
     request({ url: `/procurement/receipt-order-options/${id}`, signal, skipErrorHandling: true }),
@@ -127,6 +132,12 @@ export const procurementApi = {
     key: string,
   ): Promise<ProcurementReceiptCommandResult> =>
     command('/procurement/receipts/actions/confirm', data, key),
+  voidReceipt: (
+    id: string,
+    data: VoidProcurementReceiptPayload,
+    key: string,
+  ): Promise<VoidProcurementReceiptCommandResult> =>
+    command(`/procurement/receipts/${id}/actions/void`, data, key),
   correctReceipt: (
     id: string,
     data: CorrectReceiptLinePayload,
@@ -349,12 +360,24 @@ export const procurementApi = {
     key: string,
   ): Promise<PurchaseOrderCommandResult> =>
     command(`/procurement/purchase-orders/${id}/actions/cancel`, data, key),
+  closeOrder: (
+    id: string,
+    data: ClosePurchaseOrderPayload,
+    key: string,
+  ): Promise<PurchaseOrderCommandResult> =>
+    command(`/procurement/purchase-orders/${id}/actions/close`, data, key),
   closeOrderLine: (
     id: string,
     data: ClosePurchaseOrderLinePayload,
     key: string,
   ): Promise<PurchaseOrderCommandResult> =>
     command(`/procurement/purchase-order-lines/${id}/actions/close`, data, key),
+  reopenOrderLine: (
+    id: string,
+    data: ReopenPurchaseOrderLinePayload,
+    key: string,
+  ): Promise<PurchaseOrderCommandResult> =>
+    command(`/procurement/purchase-order-lines/${id}/actions/reopen`, data, key),
   createSupplement: (
     id: string,
     data: CreatePurchaseOrderSupplementPayload,

@@ -26,9 +26,16 @@
           border
         >
           <el-descriptions-item label="采购单">{{ detail.purchaseNo }}</el-descriptions-item>
-          <el-descriptions-item label="状态">{{
-            PURCHASE_ORDER_STATUS_LABELS[detail.status]
-          }}</el-descriptions-item>
+          <el-descriptions-item label="状态">
+            <el-tag v-bind="purchaseOrderStatusTag(detail.status)">{{
+              PURCHASE_ORDER_STATUS_LABELS[detail.status]
+            }}</el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item
+            v-if="actionLine"
+            label="采购行 ID"
+            >{{ actionLine.id }}</el-descriptions-item
+          >
           <el-descriptions-item
             v-if="actionLine"
             label="物料"
@@ -48,31 +55,35 @@
           >
           <el-descriptions-item
             v-if="actionLine"
-            label="累计实收"
+            label="累计到货"
             >{{ actionLine.quantities.receivedQuantity }}</el-descriptions-item
           >
           <el-descriptions-item
             v-if="actionLine"
-            label="正式可入＋已入"
-            >{{ actionLine.quantities.approvedQuantity }}</el-descriptions-item
+            label="累计已入"
+            >{{ actionLine.quantities.inboundQuantity }}</el-descriptions-item
           >
           <el-descriptions-item
             v-if="actionLine"
-            label="待处理 / 待退"
-            >{{ actionLine.quantities.undeterminedQuantity }} /
-            {{ actionLine.quantities.pendingReturnQuantity }}</el-descriptions-item
+            label="当前待退"
+            >{{ actionLine.quantities.pendingReturnQuantity }}</el-descriptions-item
           >
           <el-descriptions-item
             v-if="actionLine"
-            label="实际质量退回"
-            >{{ actionLine.quantities.qualityReturnedQuantity }}</el-descriptions-item
+            label="实际已退"
+            >{{ actionLine.quantities.returnedQuantity }}</el-descriptions-item
           >
         </el-descriptions>
         <el-table
-          v-if="mode === 'place'"
-          :data="detail.items"
+          v-if="mode === 'place' || mode === 'close-order'"
+          :data="confirmationLines"
           max-height="300"
         >
+          <el-table-column
+            prop="id"
+            label="采购行 ID"
+            min-width="110"
+          />
           <el-table-column
             prop="supplierName"
             label="实际供应商"
@@ -95,19 +106,45 @@
           />
         </el-table>
         <p v-if="mode === 'place'">确认下单后，各物料行的供应商、版本、数量和来源将锁定。</p>
-        <p v-else-if="mode === 'cancel'">仅从未有到货记录 的采购单可整单取消。</p>
-        <p v-else>
-          结束此行后停止新增到货；已有实物的检验、入库和退回继续办理。整单状态由全部物料行汇总。
+        <p v-else-if="mode === 'cancel'">
+          草稿可整单取消；已下单采购须没有属于本单的到货或承接记录。取消后整单及物料行均不可恢复。
+        </p>
+        <p v-else-if="mode === 'close-order'">
+          将结束本单剩余 {{ confirmationLines.length }} 条进行中的物料行，整单显示“{{
+            PURCHASE_ORDER_STATUS_LABELS.completed
+          }}”。已结束物料行保留原记录；已有到货的检验、入库和退回继续办理。
+        </p>
+        <p v-else-if="mode === 'reopen'">
+          <template v-if="actionOrder?.status === 'completed'">
+            恢复此行后，整张采购单将从“{{ PURCHASE_ORDER_STATUS_LABELS.completed }}”回到“{{
+              PURCHASE_ORDER_STATUS_LABELS.ordered
+            }}”。
+          </template>
+          <template v-else>
+            恢复此行后，整单保持“{{ PURCHASE_ORDER_STATUS_LABELS.ordered }}”。
+          </template>
+          此行恢复进行中，其他物料行保持原状态；恢复原因将记录在操作日志中。
+        </p>
+        <p v-else-if="mode === 'close'">
+          结束此行后停止新增到货；已有实物的检验、入库和退回继续办理。
+          <template v-if="isLastOpenLine">
+            这是最后一条进行中的物料行，确认后整单显示“{{
+              PURCHASE_ORDER_STATUS_LABELS.completed
+            }}”。
+          </template>
+          <template v-else>
+            本单仍有其他进行中的物料行，整单保持“{{ PURCHASE_ORDER_STATUS_LABELS.ordered }}”。
+          </template>
         </p>
         <el-alert
           v-if="actionStale"
-          title="状态或数量依据已变化，请关闭后重新选择操作；本次输入已保留。"
+          title="采购状态、版本或物料行信息已变化，请关闭后重新选择操作；本次输入已保留。"
           type="warning"
           :closable="false"
         />
         <el-alert
           v-else-if="!eligible && !loading"
-          title="当前状态不满足该操作条件。已有到货的采购请逐行结束。"
+          :title="ineligibleMessage"
           type="warning"
           :closable="false"
         />
@@ -117,19 +154,6 @@
           label-width="95px"
           @submit.prevent="confirmAction"
         >
-          <el-form-item
-            v-if="mode === 'close'"
-            label="结束方式"
-          >
-            <el-radio-group v-model="closeReason">
-              <el-radio
-                v-for="value in actionLine?.allowedCloseReasons ?? []"
-                :key="value"
-                :value="value"
-                >{{ PURCHASE_ORDER_CLOSURE_REASON_LABELS[value] }}</el-radio
-              >
-            </el-radio-group>
-          </el-form-item>
           <el-form-item
             label="原因"
             required
@@ -168,7 +192,7 @@
         :disabled="!actionValid"
         :loading="command.busy.value"
         @click="confirmAction"
-        >{{ mode === 'place' ? '确认下单' : '确认办理' }}</el-button
+        >{{ confirmLabel }}</el-button
       >
     </template>
   </el-dialog>
@@ -176,16 +200,16 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import type { PurchaseOrderDetail } from '@company/contracts';
-import {
-  PURCHASE_ORDER_CLOSURE_REASON_LABELS,
-  PURCHASE_ORDER_STATUS_LABELS,
-} from '@company/constants';
+import { PURCHASE_ORDER_STATUS_LABELS } from '@company/constants';
 import { DialogWidth } from '../../../utils/dialog';
-import { usePurchaseOrderActions } from '../composables/usePurchaseOrderActions';
+import { purchaseOrderStatusTag } from '../purchase-order-presentation';
+import {
+  usePurchaseOrderActions,
+  type PurchaseOrderAction,
+} from '../composables/usePurchaseOrderActions';
 const emit = defineEmits<{ changed: [string, PurchaseOrderDetail | null] }>();
-type Action = 'place' | 'cancel' | 'close';
 const initializing = ref(false);
-const mode = ref<Action>('place'),
+const mode = ref<PurchaseOrderAction>('place'),
   lineId = ref<string>();
 const {
   visible,
@@ -195,9 +219,9 @@ const {
   command,
   action,
   actionLine,
+  actionOrder,
   actionStale,
   reason,
-  closeReason,
   actionValid,
   eligible,
   open: openDetail,
@@ -211,8 +235,39 @@ const title = computed(() =>
     ? '正式下单'
     : mode.value === 'cancel'
       ? '取消整张采购单'
-      : '结束采购物料行',
+      : mode.value === 'close-order'
+        ? '结束整张采购单'
+        : mode.value === 'reopen'
+          ? '恢复采购物料行'
+          : '结束采购物料行',
 );
+const confirmLabel = computed(() =>
+  mode.value === 'place'
+    ? '确认下单'
+    : mode.value === 'cancel'
+      ? '确认取消'
+      : mode.value === 'reopen'
+        ? '确认恢复'
+        : '确认结束',
+);
+const confirmationLines = computed(() => {
+  const items = actionOrder.value?.items ?? detail.value?.items ?? [];
+  return mode.value === 'close-order' ? items.filter((line) => line.status === 'open') : items;
+});
+const isLastOpenLine = computed(
+  () => actionOrder.value?.items.filter((line) => line.status === 'open').length === 1,
+);
+const ineligibleMessage = computed(() => {
+  if (mode.value === 'cancel') {
+    return detail.value?.status === 'draft' || detail.value?.status === 'ordered'
+      ? '本单已有到货或承接记录，不能取消；需要停止后续采购时可结束整单或物料行。'
+      : '当前采购单状态不能取消。';
+  }
+  if (mode.value === 'close-order') return '仅已下单且仍有进行中物料行的采购单可结束。';
+  if (mode.value === 'close') return '仅已下单采购单内进行中的物料行可结束。';
+  if (mode.value === 'reopen') return '仅已下单或已结束采购单内已结束的物料行可恢复。';
+  return '仅草稿采购单可正式下单。';
+});
 const initialize = () => {
   if (!initializing.value || readError.value || loading.value || !visible.value || !detail.value)
     return;
@@ -222,7 +277,7 @@ const initialize = () => {
     detail.value?.items.find((line) => line.id === lineId.value),
   );
 };
-const open = async (id: string, action: Action, targetLineId?: string) => {
+const open = async (id: string, action: PurchaseOrderAction, targetLineId?: string) => {
   if (command.locked.value) return;
   initializing.value = true;
   mode.value = action;

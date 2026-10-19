@@ -17,7 +17,7 @@ import type {
   ReceiptHistoryKind,
   ReceiptHistoryItem,
   PurchaseOrderQuery,
-  PurchaseOrderItem,
+  ProcurementReceiptOrderOption,
   PurchaseOrderDetail,
 } from '@company/contracts';
 
@@ -45,6 +45,8 @@ export abstract class ProcurementReceiptQuery {
     kind: ReceiptHistoryKind,
     query: PageQuery,
   ): Promise<PageResult<ReceiptHistoryItem>>;
-  abstract listReceiptOrders(query: PurchaseOrderQuery): Promise<PageResult<PurchaseOrderItem>>;
+  abstract listReceiptOrders(
+    query: PurchaseOrderQuery,
+  ): Promise<PageResult<ProcurementReceiptOrderOption>>;
   abstract getReceiptOrder(id: string): Promise<PurchaseOrderDetail>;
 }

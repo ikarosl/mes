@@ -1,23 +1,23 @@
-import { emptyClosureFacts } from './mysql-purchase-order-closure.facts.js';
 import { allocateBusinessNumber } from '../../../infrastructure/numbering/mysql-business-number.js';
 import type { PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import type {
   CreatePurchaseOrderPayload,
   PurchaseOrderDraftLine,
   ProcurementDemandCandidate,
-  PurchaseOrderClosureReason,
+  PurchaseOrderLineStatus,
   PurchaseOrderSupplementReason,
 } from '@company/contracts';
 import { PROCUREMENT_ERROR_CODES } from '@company/constants';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { writeTransactionalAudit } from '../../../common/audit/transactional-audit-writer.js';
+import { requireOptimisticUpdate } from '../../../common/persistence/optimistic-lock.js';
 import type { InventoryMaterialEligibility } from '../../product/public.js';
 import {
-  type OrderRow,
   type OrderLineRow,
   orderError,
   idsSql,
   sortedIds,
+  hasOrderReceiptFacts,
 } from './mysql-purchase-order.shared.js';
 
 export const requireSupplier = async (connection: PoolConnection, id: string) => {
@@ -128,43 +128,17 @@ export const deleteDraftLines = async (connection: PoolConnection, lines: OrderL
   await connection.execute(`DELETE FROM procurement_order_line WHERE id IN (${idsSql(ids)})`, ids);
 };
 
-export const closeOrderLine = async (
+export const changeOrderLineStatus = async (
   connection: PoolConnection,
-  order: OrderRow,
   line: OrderLineRow,
-  reasonType: PurchaseOrderClosureReason,
-  reason: string,
+  status: Exclude<PurchaseOrderLineStatus, 'draft'>,
   context: CommandContext,
-  facts = emptyClosureFacts(),
 ) => {
-  await connection.execute(
-    `INSERT INTO procurement_order_line_closure(purchase_order_line_id,reason_type,reason,planned_quantity,received_quantity,undetermined_quantity,approved_quantity,inbound_quantity,return_due_quantity,returned_quantity,quality_returned_quantity,evidence_json,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    [
-      line.id,
-      reasonType,
-      reason,
-      line.planned_quantity,
-      Number(facts.quantities.receivedQuantity),
-      Number(facts.quantities.undeterminedQuantity),
-      Number(facts.quantities.approvedQuantity),
-      Number(facts.quantities.inboundQuantity),
-      Number(facts.quantities.returnDueQuantity),
-      Number(facts.quantities.returnedQuantity),
-      Number(facts.quantities.qualityReturnedQuantity),
-      JSON.stringify({
-        purchaseOrderId: String(order.id),
-        purchaseOrderVersion: order.version,
-        lineVersion: line.version,
-        ...facts.evidence,
-        hasOpenReview: facts.quantities.hasOpenReview,
-      }),
-      context.actorId,
-    ],
+  const [result] = await connection.execute<ResultSetHeader>(
+    'UPDATE procurement_order_line SET status=?,version=version+1,updated_by=? WHERE id=? AND version=?',
+    [status, context.actorId, line.id, line.version],
   );
-  await connection.execute(
-    'UPDATE procurement_order_line SET status=?,version=version+1,updated_by=? WHERE id=?',
-    [reasonType === 'cancelled' ? 'cancelled' : 'closed', context.actorId, line.id],
-  );
+  requireOptimisticUpdate(result.affectedRows);
 };
 export const refreshOrderCompletion = async (
   connection: PoolConnection,
@@ -175,15 +149,13 @@ export const refreshOrderCompletion = async (
     'SELECT status FROM procurement_order_line WHERE purchase_order_id=? ORDER BY id FOR SHARE',
     [orderId],
   );
-  const status = lines.every((line) => line.status === 'cancelled')
-    ? 'cancelled'
-    : lines.every((line) => line.status === 'closed' || line.status === 'cancelled')
-      ? 'completed'
-      : 'ordered';
+  const status =
+    lines.length > 0 && lines.every((line) => line.status === 'closed') ? 'completed' : 'ordered';
   await connection.execute(
     'UPDATE procurement_order SET status=?,version=version+1,updated_by=? WHERE id=?',
     [status, context.actorId, orderId],
   );
+  return status;
 };
 export const auditOrder = (
   connection: PoolConnection,
@@ -221,10 +193,17 @@ export const requireSupplementEvidence = async (
   if (reason !== 'quality_replacement' && allocationId)
     return orderError('只有质量补发可以引用质量退回分配明细');
   const [[receipt]] = await connection.query<RowDataPacket[]>(
-    'SELECT id FROM procurement_receipt_line WHERE id=? AND purchase_order_line_id=? FOR SHARE',
+    'SELECT id,receipt_id FROM procurement_receipt_line WHERE id=? AND purchase_order_line_id=? FOR SHARE',
     [receiptLineId, lineId],
   );
   if (!receipt) return orderError('原到货不属于所选原采购行');
+  const [[registration]] = await connection.query<(RowDataPacket & { is_voided: number })[]>(
+    'SELECT is_voided FROM procurement_receipt WHERE id=? FOR SHARE',
+    [receipt.receipt_id],
+  );
+  if (!registration) return orderError('原到货登记不存在');
+  if (Number(registration.is_voided) === 1)
+    return orderError('原到货登记已作废，不能继续创建或办理关联补单');
   if (!allocationId) return;
   const [[allocation]] = await connection.query<RowDataPacket[]>(
     `SELECT id FROM procurement_receipt_allocation
@@ -247,14 +226,9 @@ export async function requireOrderWithoutReceiptFacts(
   connection: PoolConnection,
   id: string,
 ): Promise<void> {
-  const [[arrival]] = await connection.query<RowDataPacket[]>(
-    'SELECT id FROM procurement_receipt_line WHERE purchase_order_id=? ORDER BY id LIMIT 1 FOR SHARE',
-    [id],
-  );
-  const [[allocation]] = await connection.query<RowDataPacket[]>(
-    'SELECT a.id FROM procurement_receipt_allocation a JOIN procurement_order_line l ON l.id=a.purchase_order_line_id WHERE l.purchase_order_id=? LIMIT 1 FOR SHARE',
-    [id],
-  );
-  if (arrival || allocation)
-    return orderError('已有确认到货，采购不能取消，请逐行人工结束', 'PURCHASE_ORDER_STATE');
+  if (await hasOrderReceiptFacts(connection, id, true))
+    return orderError(
+      '已有到货或正式承接记录，采购不能取消，可人工结束采购',
+      'PURCHASE_ORDER_STATE',
+    );
 }

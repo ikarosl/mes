@@ -1,7 +1,3 @@
-import { allowedPurchaseOrderClosureReasons } from '../domain/purchase-order-closure.policy.js';
-import { purchaseLineClosureFacts } from './mysql-purchase-order-closure.facts.js';
-import { InventoryInboundQuery } from '../../inventory/public.js';
-import { QualityInboundQuery } from '../../quality/public.js';
 import { Inject, Injectable } from '@nestjs/common';
 import { withTransaction } from '@company/database';
 import { PROCUREMENT_ERROR_CODES } from '@company/constants';
@@ -19,6 +15,8 @@ import type {
   PurchaseOrderCommandResult,
   CreatePurchaseOrderSupplementPayload,
   ClosePurchaseOrderLinePayload,
+  ReopenPurchaseOrderLinePayload,
+  ClosePurchaseOrderPayload,
   PurchaseOrderDraftLine,
   ProcurementDemandCandidate,
 } from '@company/contracts';
@@ -57,7 +55,7 @@ import {
   insertOrder,
   insertLines,
   deleteDraftLines,
-  closeOrderLine,
+  changeOrderLineStatus,
   refreshOrderCompletion,
   auditOrder,
   requireOrderWithoutReceiptFacts,
@@ -69,8 +67,6 @@ export class MysqlPurchaseOrderRepository extends PurchaseOrderRepository {
     @Inject(DATABASE_POOL) private readonly pool: Pool,
     private readonly production: ProductionProcurementQuery,
     private readonly product: ProductInventoryEligibility,
-    private readonly inventory: InventoryInboundQuery,
-    private readonly quality: QualityInboundQuery,
   ) {
     super();
   }
@@ -293,15 +289,10 @@ export class MysqlPurchaseOrderRepository extends PurchaseOrderRepository {
       if (order.status !== 'draft' && order.status !== 'ordered')
         return orderError('仅草稿或已下单采购可以取消', PROCUREMENT_ERROR_CODES.purchaseOrderState);
       const lines = await readLines(connection, id, true);
-      if (lines.some((line) => line.status === 'closed'))
-        return orderError(
-          '已有人工结束的采购行，请逐行处理剩余采购',
-          PROCUREMENT_ERROR_CODES.purchaseOrderState,
-        );
       await requireOrderWithoutReceiptFacts(connection, id);
       for (const line of lines)
-        if (line.status === 'draft' || line.status === 'open')
-          await closeOrderLine(connection, order, line, 'cancelled', reason, context);
+        if (line.status !== 'cancelled')
+          await changeOrderLineStatus(connection, line, 'cancelled', context);
       await connection.execute(
         "UPDATE procurement_order SET status='cancelled',version=version+1,updated_by=? WHERE id=?",
         [context.actorId, id],
@@ -334,37 +325,110 @@ export class MysqlPurchaseOrderRepository extends PurchaseOrderRepository {
       requireOptimisticUpdate(line.version === payload.version ? 1 : 0);
       if (line.status !== 'open')
         return orderError('采购行已经结束或取消', PROCUREMENT_ERROR_CODES.purchaseOrderState);
-      const facts = await purchaseLineClosureFacts(connection, id, this.quality, this.inventory);
-      if (
-        !allowedPurchaseOrderClosureReasons(
-          Number(line.planned_quantity),
-          facts.quantities,
-          facts.hasReceipt,
-        ).includes(payload.reasonType)
-      )
-        return orderError(
-          '当前到货、检验或退回情况不符合所选关闭方式，请核对相关记录',
-          'PURCHASE_ORDER_STATE',
-        );
-      await closeOrderLine(
-        connection,
-        order,
-        line,
-        payload.reasonType,
-        payload.reason,
-        context,
-        facts,
-      );
-      await refreshOrderCompletion(connection, orderId, context);
+      await changeOrderLineStatus(connection, line, 'closed', context);
+      const orderStatus = await refreshOrderCompletion(connection, orderId, context);
       await auditOrder(
         connection,
         context,
         'purchase-order-line.close',
         orderId,
-        { lineId: id, version: line.version },
-        { lineId: id, ...payload },
+        {
+          lineId: id,
+          status: line.status,
+          version: line.version,
+          orderStatus: order.status,
+          orderVersion: order.version,
+        },
+        {
+          lineId: id,
+          status: 'closed',
+          version: line.version + 1,
+          reason: payload.reason,
+          orderStatus,
+          orderVersion: order.version + 1,
+        },
       );
       return { purchaseOrderId: orderId, version: order.version + 1 };
+    });
+  }
+
+  reopenLine(
+    id: string,
+    payload: ReopenPurchaseOrderLinePayload,
+    context: CommandContext,
+  ): Promise<PurchaseOrderCommandResult> {
+    return withTransaction(this.pool, async (connection) => {
+      const orderId = await this.locateLineOrder(connection, id);
+      const order = await this.lockRoots(connection, orderId, await readLines(connection, orderId));
+      if (order.status !== 'ordered' && order.status !== 'completed')
+        return orderError(
+          '仅已下单或已结束采购可以恢复物料行',
+          PROCUREMENT_ERROR_CODES.purchaseOrderState,
+        );
+      const lines = await readLines(connection, orderId, true);
+      const line = lines.find((row) => String(row.id) === id);
+      if (!line) return orderError('采购行不存在', PROCUREMENT_ERROR_CODES.purchaseOrderNotFound);
+      requireOptimisticUpdate(line.version === payload.version ? 1 : 0);
+      if (line.status !== 'closed')
+        return orderError('仅已结束的采购行可以恢复', PROCUREMENT_ERROR_CODES.purchaseOrderState);
+      await changeOrderLineStatus(connection, line, 'open', context);
+      const orderStatus = await refreshOrderCompletion(connection, orderId, context);
+      await auditOrder(
+        connection,
+        context,
+        'purchase-order-line.reopen',
+        orderId,
+        {
+          lineId: id,
+          status: line.status,
+          version: line.version,
+          orderStatus: order.status,
+          orderVersion: order.version,
+        },
+        {
+          lineId: id,
+          status: 'open',
+          version: line.version + 1,
+          reason: payload.reason,
+          orderStatus,
+          orderVersion: order.version + 1,
+        },
+      );
+      return { purchaseOrderId: orderId, version: order.version + 1 };
+    });
+  }
+
+  close(
+    id: string,
+    payload: ClosePurchaseOrderPayload,
+    context: CommandContext,
+  ): Promise<PurchaseOrderCommandResult> {
+    return withTransaction(this.pool, async (connection) => {
+      const order = await this.lockRoots(connection, id, await readLines(connection, id));
+      requireOptimisticUpdate(order.version === payload.version ? 1 : 0);
+      if (order.status !== 'ordered')
+        return orderError('仅已下单采购可以整单结束', PROCUREMENT_ERROR_CODES.purchaseOrderState);
+      const lines = await readLines(connection, id, true);
+      const openLines = lines.filter((line) => line.status === 'open');
+      if (!openLines.length)
+        return orderError('采购单没有进行中的物料行', PROCUREMENT_ERROR_CODES.purchaseOrderState);
+      for (const line of openLines)
+        await changeOrderLineStatus(connection, line, 'closed', context);
+      await refreshOrderCompletion(connection, id, context);
+      await auditOrder(
+        connection,
+        context,
+        'purchase-order.close',
+        id,
+        { status: order.status, version: order.version },
+        {
+          status: 'completed',
+          version: order.version + 1,
+          reason: payload.reason,
+          lineIds: openLines.map((line) => String(line.id)),
+        },
+      );
+      return { purchaseOrderId: id, version: order.version + 1 };
     });
   }
 
