@@ -1,5 +1,7 @@
 # ADR-0022：采购跟进状态与到货登记作废
 
+本 ADR 涉及补单承接、分配采购归属及其取消／继续办理资格的条款，在 [ADR-0023](0023-supplement-source-and-receipt-ownership.md) 明确范围内被取代；其余业务边界继续有效。
+
 状态：Accepted。采购结束／恢复和到货整单作废边界已批准；实施、用户验收及正式测试状态见[路线图](../roadmap.md#采购跟进状态与到货作废)。字段、接口及事务由[采购订单](../../apps/api/src/modules/procurement/docs/purchase-orders.md)、[到货处置](../../apps/api/src/modules/procurement/docs/receipts.md)和[采购数据库](../../apps/api/src/modules/procurement/docs/database.md)维护。
 
 ## 背景与选择

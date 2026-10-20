@@ -56,14 +56,6 @@ export function useReceiptLineAction(
   const caseType = ref<StartReceiptReviewPayload['caseType']>('initial');
   const correctedQuantity = ref<number | undefined>(),
     physicalIdentityConfirmed = ref(false);
-  const ownership = ref<
-    Array<{
-      purchaseOrderLineId: string;
-      purchaseNo: string;
-      previousQuantity: number;
-      quantity: number | undefined;
-    }>
-  >([]);
   const inspection = ref<InboundInspectionDraft>(initialInboundInspection()),
     inspectionValid = ref(false);
   const read = useLatestReadRequest(() => {
@@ -119,36 +111,6 @@ export function useReceiptLineAction(
     () => Number(correctedQuantity.value) - disposedQuantity.value,
   );
   const rejected = computed(() => !!line.value && isReceiptRejected(line.value));
-  const ownershipTarget = computed(() =>
-    action.value === 'correct' ? correctedRemaining.value : remainingQuantity.value,
-  );
-  const ownershipChanged = computed(
-    () =>
-      ownership.value.some(
-        (source) => source.purchaseOrderLineId !== line.value?.purchaseOrderLineId,
-      ) &&
-      Number.isSafeInteger(ownershipTarget.value) &&
-      ownershipTarget.value >= 0 &&
-      line.value !== null &&
-      'ownershipSourceQuantity' in line.value &&
-      Number(line.value.ownershipSourceQuantity) !== ownershipTarget.value,
-  );
-  const ownershipRequired = computed(() => ownershipChanged.value && action.value === 'reject');
-  const ownershipTotal = computed(() =>
-    ownership.value.reduce((sum, row) => sum + Number(row.quantity), 0),
-  );
-  const ownershipValid = computed(
-    () =>
-      !ownershipRequired.value ||
-      (ownership.value.length <= 100 &&
-        ownershipTotal.value === ownershipTarget.value &&
-        ownership.value.every(
-          (row) =>
-            Number.isSafeInteger(row.quantity) &&
-            Number(row.quantity) >= 0 &&
-            Number(row.quantity) <= PURCHASE_ORDER_MAX_QUANTITY,
-        )),
-  );
   const snapshot = (): string =>
     JSON.stringify({
       action: action.value,
@@ -160,7 +122,6 @@ export function useReceiptLineAction(
       caseType: caseType.value,
       physicalIdentityConfirmed: physicalIdentityConfirmed.value,
       inspection: inspection.value,
-      ownership: ownership.value,
     });
   let baseline = '';
   const canConfirm = computed(() => {
@@ -175,7 +136,7 @@ export function useReceiptLineAction(
     if (action.value === 'inspect') return Boolean(caseRecord.value && inspectionValid.value);
     if (action.value === 'return')
       return Boolean(allocation.value && returnedAt.value && handoverEvidence.value.trim());
-    if (!reason.value.trim() || !ownershipValid.value) return false;
+    if (!reason.value.trim()) return false;
     if (action.value === 'correct')
       return (
         physicalIdentityConfirmed.value &&
@@ -260,14 +221,6 @@ export function useReceiptLineAction(
     correctedQuantity.value = Number(target.quantities.receivedQuantity);
     caseType.value = target.currentRound.status === 'uninspected' ? 'initial' : 'reinspection';
     physicalIdentityConfirmed.value = false;
-    ownership.value = ('ownershipSources' in target ? target.ownershipSources : []).map(
-      (source) => ({
-        purchaseOrderLineId: source.purchaseOrderLineId,
-        purchaseNo: source.purchaseNo,
-        previousQuantity: Number(source.quantity),
-        quantity: undefined,
-      }),
-    );
     inspection.value = initialInboundInspection();
     inspectionValid.value = false;
     baseline = snapshot();
@@ -311,14 +264,6 @@ export function useReceiptLineAction(
       range = allocation.value,
       qualityCase = caseRecord.value;
     const round = { roundId: target.currentRound.id, roundVersion: target.currentRound.version };
-    const ownershipInput = ownershipRequired.value
-      ? {
-          ownership: ownership.value.map((row) => ({
-            purchaseOrderLineId: row.purchaseOrderLineId,
-            quantity: Number(row.quantity),
-          })),
-        }
-      : {};
     if (action.value === 'correct') {
       const body: CorrectReceiptLinePayload = {
         version: target.version,
@@ -371,7 +316,6 @@ export function useReceiptLineAction(
       const body = {
         version: target.version,
         ...round,
-        ...ownershipInput,
         reason: reason.value.trim(),
       };
       await command.run(
@@ -433,11 +377,6 @@ export function useReceiptLineAction(
     remainingQuantity,
     correctedRemaining,
     rejected,
-    ownership,
-    ownershipRequired,
-    ownershipChanged,
-    ownershipTarget,
-    ownershipTotal,
     canConfirm,
     command,
     open,

@@ -178,7 +178,7 @@ export async function listInboundReleases(
   });
   if (!eligible.length) return empty;
   const selectedFilters = filters(query, true);
-  const where = selectedFilters.where.map((clause) => clause.replaceAll('po.', 'assigned_order.'));
+  const where = selectedFilters.where;
   const params = selectedFilters.params;
   where.push(
     `r.is_voided=0`,
@@ -213,15 +213,13 @@ export async function listInboundReleases(
     JOIN procurement_receipt_allocation allocation ON allocation.receipt_line_id=line.id AND allocation.round_id=current_round.id
     JOIN procurement_receipt_acceptance acceptance ON acceptance.id=allocation.acceptance_id
     JOIN quality_inspection_record inspection ON inspection.id=acceptance.inspection_record_id AND inspection.receipt_line_id=line.id
-    JOIN quality_inspection_case qc ON qc.id=inspection.case_id
-    JOIN procurement_order_line assigned_line ON assigned_line.id=allocation.purchase_order_line_id
-    JOIN procurement_order assigned_order ON assigned_order.id=assigned_line.purchase_order_id`;
+    JOIN quality_inspection_case qc ON qc.id=inspection.case_id`;
   const [[count]] = await db.query<ReadRow[]>(
     `${select('COUNT(*) total')} WHERE ${where.join(' AND ')}`,
     params,
   );
   const [rows] = await db.query<ReadRow[]>(
-    `${select(LINE_COLUMNS + ',r.received_at,current_round.id round_id,current_round.version round_version,acceptance.id acceptance_id,allocation.id allocation_id,assigned_line.id assigned_line_id,assigned_order.id assigned_order_id,assigned_order.purchase_no assigned_purchase_no,acceptance.after_receipt_revision_id receipt_revision_id,inspection.id inspection_id,qc.id inspection_case_id,' + allocationRemaining('allocation.id', 'allocation.quantity') + ' quantity')}
+    `${select(LINE_COLUMNS + ',r.received_at,current_round.id round_id,current_round.version round_version,acceptance.id acceptance_id,allocation.id allocation_id,acceptance.after_receipt_revision_id receipt_revision_id,inspection.id inspection_id,qc.id inspection_case_id,' + allocationRemaining('allocation.id', 'allocation.quantity') + ' quantity')}
     WHERE ${where.join(' AND ')} ORDER BY r.received_at,line.id,allocation.id LIMIT ? OFFSET ?`,
     [...params, pageSize, (page - 1) * pageSize],
   );
@@ -235,9 +233,9 @@ export async function listInboundReleases(
       receiptPurchaseNo: text(row.purchase_no),
       roundId: text(row.round_id),
       roundVersion: Number(row.round_version),
-      purchaseOrderId: text(row.assigned_order_id),
-      purchaseNo: text(row.assigned_purchase_no),
-      purchaseOrderLineId: text(row.assigned_line_id),
+      purchaseOrderId: text(row.purchase_order_id),
+      purchaseNo: text(row.purchase_no),
+      purchaseOrderLineId: text(row.purchase_order_line_id),
       acceptanceId: text(row.acceptance_id),
       allocationId: text(row.allocation_id),
       supplierId: text(row.supplier_id),

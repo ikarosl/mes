@@ -16,8 +16,9 @@ export interface PurchaseOrderQuery extends PageQuery {
   supplierId?: string;
   sourceType?: PurchaseOrderSourceType;
   status?: PurchaseOrderStatus;
+  supplementReason?: PurchaseOrderSupplementReason;
   originOrderLineId?: string;
-  originAllocationId?: string;
+  originReceiptLineId?: string;
 }
 export interface PurchaseOrderLineReceiptRecordQuery extends PageQuery {
   keyword?: string;
@@ -47,28 +48,27 @@ export interface PurchaseExcessReceiptCandidate {
   supplierBatchCode: string | null;
   /** 该次到货当前有效修订的本次到货量 T。 */
   receivedQuantity: string;
+  receiptLinkedSupplements: Array<{
+    status: PurchaseOrderStatus;
+    count: number;
+    plannedQuantity: string;
+  }>;
 }
 export interface PurchaseQualityReplacementCandidateQuery extends PageQuery {
   keyword?: string;
   receiptLineId?: string;
-  allocationId?: string;
 }
 /** 到货登记来源由请求路径中的原采购行确定。 */
 export interface PurchaseQualityReplacementCandidate {
-  allocationId: string;
   receiptLineId: string;
   receiptId: string;
   receiptNo: string;
   receivedAt: string;
   supplierBatchCode: string | null;
-  allocationPurchaseOrderLineId: string | null;
-  allocationPurchaseNo: string | null;
-  allocationQuantity: string;
+  receivedQuantity: string;
   pendingReturnQuantity: string;
   returnedQuantity: string;
-  returnNo: string | null;
-  isCurrent: boolean;
-  linkedSupplements: Array<{
+  receiptLinkedSupplements: Array<{
     status: PurchaseOrderStatus;
     count: number;
     plannedQuantity: string;
@@ -128,8 +128,7 @@ export interface PurchaseOrderLine {
   supplementEvidence: string | null;
   originReceiptLineId: string | null;
   originReceiptNo: string | null;
-  originAllocationId: string | null;
-  quantities: ReceiptQuantitySummary;
+  quantities: ReceiptQuantitySummary | null;
 }
 export interface PurchaseOrderDetail extends PurchaseOrderItem {
   suppliers: ProcurementSupplierSummary[];
@@ -155,11 +154,10 @@ export type CancelPurchaseOrderPayload = ReasonedVersionedCommand;
 export type ClosePurchaseOrderPayload = ReasonedVersionedCommand;
 export type ClosePurchaseOrderLinePayload = ReasonedVersionedCommand;
 export type ReopenPurchaseOrderLinePayload = ReasonedVersionedCommand;
-/** 同一原采购单、同一补因；各行独立保留真实到货或质量退回分配依据。 */
+/** 同一原采购单、同一补因；各行独立保留原采购行、真实到货及补购说明。 */
 export interface CreatePurchaseOrderSupplementLinePayload {
   originOrderLineId: string;
   originReceiptLineId: string;
-  originAllocationId?: string;
   plannedQuantity: number;
   supplementEvidence: string;
 }

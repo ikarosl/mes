@@ -28,17 +28,16 @@ export async function loadPurchaseInboundSources(
     `SELECT detail.id inbound_detail_id,receipt.id receipt_id,receipt.receipt_no,
       receipt_line.id receipt_line_id,
       receipt_order.purchase_no receipt_purchase_no,
-      assigned_order.id purchase_order_id,assigned_order.purchase_no,
-      assigned_line.id purchase_order_line_id,
+      receipt_order.id purchase_order_id,receipt_order.purchase_no,
+      receipt_line.purchase_order_line_id,
       inspection.id inspection_id,inspection.case_id,inspection.inspected_at
      FROM inbound_detail detail
      JOIN procurement_receipt_line receipt_line ON receipt_line.id=detail.procurement_receipt_line_id
      JOIN procurement_receipt receipt ON receipt.id=receipt_line.receipt_id
-     JOIN procurement_order receipt_order ON receipt_order.id=receipt.purchase_order_id
+     JOIN procurement_order_line source_line ON source_line.id=receipt_line.purchase_order_line_id
+     JOIN procurement_order receipt_order ON receipt_order.id=source_line.purchase_order_id
      JOIN procurement_receipt_allocation allocation ON allocation.id=detail.procurement_allocation_id
        AND allocation.receipt_line_id=receipt_line.id
-     JOIN procurement_order_line assigned_line ON assigned_line.id=allocation.purchase_order_line_id
-     JOIN procurement_order assigned_order ON assigned_order.id=assigned_line.purchase_order_id
      JOIN quality_inspection_record inspection ON inspection.id=detail.procurement_inspection_id
        AND inspection.receipt_line_id=receipt_line.id
      JOIN quality_inspection_case inspection_case ON inspection_case.id=inspection.case_id
@@ -68,7 +67,7 @@ export async function loadPurchaseInboundSources(
   return sources;
 }
 
-/** Supplier identity follows the purchase line assigned by this immutable allocation. */
+/** Supplier identity follows the purchase line frozen on the source receipt line. */
 export async function loadPurchaseInboundSupplierIds(
   db: Pool | PoolConnection,
   detailIds: string[],
@@ -78,11 +77,12 @@ export async function loadPurchaseInboundSupplierIds(
   const [rows] = await db.query<
     (RowDataPacket & { inbound_detail_id: number; supplier_id: number })[]
   >(
-    `SELECT detail.id inbound_detail_id,assigned_line.supplier_id
+    `SELECT detail.id inbound_detail_id,source_line.supplier_id
      FROM inbound_detail detail
+     JOIN procurement_receipt_line receipt_line ON receipt_line.id=detail.procurement_receipt_line_id
      JOIN procurement_receipt_allocation allocation ON allocation.id=detail.procurement_allocation_id
-       AND allocation.receipt_line_id=detail.procurement_receipt_line_id
-     JOIN procurement_order_line assigned_line ON assigned_line.id=allocation.purchase_order_line_id
+       AND allocation.receipt_line_id=receipt_line.id
+     JOIN procurement_order_line source_line ON source_line.id=receipt_line.purchase_order_line_id
      WHERE detail.id IN (${detailIds.map(() => '?').join(',')})`,
     detailIds,
   );

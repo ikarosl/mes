@@ -33,7 +33,6 @@ export type AllocationRow = RowDataPacket & {
   round_id: number;
   round_status: string;
   acceptance_id: number | null;
-  purchase_order_line_id: number | null;
   receipt_revision_id: number;
   inspection_id: number | null;
   quantity: number;
@@ -60,10 +59,8 @@ export const lockReceiptRoots = async (
   for (const id of sortedIds(ids)) {
     const [rows] = await connection.query<(RowDataPacket & { purchase_order_id: number })[]>(
       `SELECT purchase_order_id FROM procurement_receipt_line WHERE id=?
-       UNION SELECT p.purchase_order_id FROM procurement_receipt_allocation a
-       JOIN procurement_order_line p ON p.id=a.purchase_order_line_id WHERE a.receipt_line_id=?
        UNION SELECT purchase_order_id FROM procurement_order_line WHERE origin_receipt_line_id=?`,
-      [id, id, id],
+      [id, id],
     );
     roots.push(...rows.map((row) => String(row.purchase_order_id)));
   }
@@ -135,7 +132,7 @@ export async function readReceiptExecutionFacts(
     const batch = ids.slice(offset, offset + 100);
     const placeholders = batch.map(() => '?').join(',');
     const [rows] = await connection.query<AllocationRow[]>(
-      `SELECT a.id,a.receipt_line_id,a.round_id,a.acceptance_id,a.purchase_order_line_id,
+      `SELECT a.id,a.receipt_line_id,a.round_id,a.acceptance_id,
       a.quantity,a.disposition,a.return_reason,a.termination_reason,a.remark,
       r.status round_status,COALESCE(h.after_receipt_revision_id,r.receipt_revision_id) receipt_revision_id,
       h.inspection_record_id inspection_id FROM procurement_receipt_allocation a
@@ -218,7 +215,6 @@ export const insertAllocation = async (
     roundId: string;
     acceptanceId: string | null;
     lineNo: number;
-    purchaseOrderLineId: string | null;
     disposition: ReceiptAllocationDisposition;
     quantity: number;
     returnReason: ReceiptReturnReason | null;
@@ -229,14 +225,13 @@ export const insertAllocation = async (
 ): Promise<string> => {
   requireQuantity(row.quantity, '分配数量');
   const [created] = await db.execute<ResultSetHeader>(
-    `INSERT INTO procurement_receipt_allocation(receipt_line_id,round_id,acceptance_id,line_no,purchase_order_line_id,disposition,quantity,return_reason,termination_reason,remark,created_by)
-    VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO procurement_receipt_allocation(receipt_line_id,round_id,acceptance_id,line_no,disposition,quantity,return_reason,termination_reason,remark,created_by)
+    VALUES(?,?,?,?,?,?,?,?,?,?)`,
     [
       row.receiptLineId,
       row.roundId,
       row.acceptanceId,
       row.lineNo,
-      row.purchaseOrderLineId,
       row.disposition,
       row.quantity,
       row.returnReason,

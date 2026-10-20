@@ -101,8 +101,6 @@ export interface ReceiptAllocationItem {
   receiptLineId: string;
   roundId: string;
   acceptanceId: string | null;
-  purchaseOrderLineId: string | null;
-  purchaseNo: string | null;
   receiptRevisionId: string;
   inspectionId: string | null;
   quantity: string;
@@ -155,9 +153,6 @@ export interface ProcurementReceiptLine {
   currentRound: ReceiptRoundItem;
   /** 当前引用的同一份检验所关联的真实执行量；没有当前检验时各项为 0。 */
   currentInspectionExecution: ReceiptInspectionExecution;
-  /** 最近未消费执行份额的采购归属，仅作更正和拒收的人工核对来源。 */
-  ownershipSources: Array<{ purchaseOrderLineId: string; purchaseNo: string; quantity: string }>;
-  ownershipSourceQuantity: string;
   rounds: ReceiptRoundItem[];
   supplierId: string;
   supplierName: string;
@@ -167,6 +162,11 @@ export interface ProcurementReceiptLine {
   purchaseOrderId: string;
   purchaseNo: string;
   purchaseOrderLineId: string;
+  /** 来源采购行的计划与有效累计到货量；累计含本批及已退回，不含作废登记。 */
+  purchaseLineQuantities: {
+    plannedQuantity: string;
+    receivedQuantity: string;
+  };
   /** 原采购行计划量减当前正式已授权履约量，供本批定稿初值参考。 */
   originalRemainingPlannedQuantity: string;
   /** 登记来源采购行的持久行号；到货明细以 id 标识。 */
@@ -280,11 +280,6 @@ export interface ConfirmProcurementReceiptPayload {
     overReceiptNote?: string | null;
   }>;
 }
-/** 拒收时，库管确认剩余实物的既有采购归属。 */
-export interface ReceiptOwnershipInput {
-  purchaseOrderLineId: string;
-  quantity: number;
-}
 export interface CorrectReceiptLinePayload {
   roundId: string;
   roundVersion: number;
@@ -306,7 +301,6 @@ export interface RejectReceiptLinePayload {
   roundId: string;
   roundVersion: number;
   reason: string;
-  ownership?: ReceiptOwnershipInput[];
 }
 export interface RevokeReceiptRejectionPayload {
   version: number;
@@ -386,7 +380,6 @@ export type ReceiptAllocationDisposition = 'inbound' | 'return' | 'pending';
 export type ReceiptReturnReason =
   'quality' | 'excess' | 'procurement_termination' | 'manual_rejection';
 export interface ReceiptAllocationInput {
-  purchaseOrderLineId: string | null;
   disposition: ReceiptAllocationDisposition;
   quantity: number;
   returnReason: ReceiptReturnReason | null;
@@ -407,8 +400,6 @@ export interface ConfirmReceiptAcceptancePayload {
 }
 export interface ReceiptAllocationDetailItem {
   id: string;
-  purchaseOrderLineId: string | null;
-  purchaseNo: string | null;
   disposition: ReceiptAllocationDisposition;
   quantity: string;
   returnReason: ReceiptReturnReason | null;
@@ -428,22 +419,4 @@ export interface ReceiptAcceptanceItem {
   createdBy: string;
   createdAt: string;
   details: ReceiptAllocationDetailItem[];
-}
-export interface ReceiptAllocationCandidate {
-  purchaseOrderLineId: string;
-  purchaseOrderId: string;
-  purchaseNo: string;
-  plannedQuantity: string;
-  fulfillmentMode: 'new_arrival' | 'existing_receipt';
-  isOriginal: boolean;
-  remainingBindingQuantity: string | null;
-}
-export interface ReceiptAllocationCandidateQuery {
-  keyword?: string;
-  includeIds?: string[];
-}
-export interface ReceiptAllocationCandidateResult {
-  items: ReceiptAllocationCandidate[];
-  resolved: ReceiptAllocationCandidate[];
-  hasMore: boolean;
 }

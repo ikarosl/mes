@@ -139,7 +139,7 @@
       </el-form-item>
       <InlineHint class="receipt-entry-hint">
         本次只登记<strong>实际收到的实物</strong>；未填写数量的行不收货，同一采购行的不同供应商批号分成不同明细。<br />
-        累计量按采购行归属统计，<strong>不含本次输入</strong>；已到货包含已退回，已入库不代表当前库存。补单承接已到货实物时无需重复登记。
+        累计量按登记来源采购行统计，<strong>不含本次输入</strong>；已到货包含已退回，已入库不代表当前库存。超量补单记录已有到货补购，不新增到货。
       </InlineHint>
       <div class="entry-heading">
         <strong>本次到货明细</strong>

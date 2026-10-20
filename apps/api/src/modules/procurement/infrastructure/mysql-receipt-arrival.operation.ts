@@ -37,7 +37,7 @@ export const confirmReceiptArrival = async (
       requireOptimisticUpdate(line.version === detail.version ? 1 : 0);
       requireQuantity(detail.receivedQuantity, '实收数量');
       if (line.fulfillment_mode === 'existing_receipt')
-        return receiptError('该补单承接已到货实物，请在原到货清单分配，不能重复登记到货');
+        return receiptError('超量补单仅记录补购来源，不能登记新到货');
     }
     return { line };
   });

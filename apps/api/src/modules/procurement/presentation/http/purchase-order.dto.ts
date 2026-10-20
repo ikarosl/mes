@@ -44,8 +44,11 @@ export class PurchaseOrderQueryDto extends PageQueryDto {
   @IsOptional() @Matches(/^[1-9]\d{0,19}$/) supplierId?: string;
   @IsOptional() @IsIn(PURCHASE_ORDER_SOURCE_TYPES) sourceType?: PurchaseOrderSourceType;
   @IsOptional() @IsIn(PURCHASE_ORDER_STATUSES) status?: PurchaseOrderStatus;
+  @IsOptional()
+  @IsIn(PURCHASE_ORDER_SUPPLEMENT_REASONS)
+  supplementReason?: PurchaseOrderSupplementReason;
   @IsOptional() @Matches(/^[1-9]\d{0,19}$/) originOrderLineId?: string;
-  @IsOptional() @Matches(/^[1-9]\d{0,19}$/) originAllocationId?: string;
+  @IsOptional() @Matches(/^[1-9]\d{0,19}$/) originReceiptLineId?: string;
 }
 export class PurchaseOrderLineReceiptRecordQueryDto extends PageQueryDto {
   @IsOptional() @Transform(trim) @IsString() @MaxLength(100) keyword?: string;
@@ -57,7 +60,6 @@ export class PurchaseExcessReceiptCandidateQueryDto extends PageQueryDto {
 export class PurchaseQualityReplacementCandidateQueryDto extends PageQueryDto {
   @IsOptional() @Transform(trim) @IsString() @MaxLength(100) keyword?: string;
   @IsOptional() @Matches(/^[1-9]\d{0,19}$/) receiptLineId?: string;
-  @IsOptional() @Matches(/^[1-9]\d{0,19}$/) allocationId?: string;
 }
 export class PurchaseOrderDraftLineDto {
   @Matches(/^[1-9]\d{0,19}$/) supplierId!: string;
@@ -98,7 +100,6 @@ export class ReopenPurchaseOrderLineDto extends CancelPurchaseOrderDto {}
 export class CreatePurchaseOrderSupplementLineDto {
   @Matches(/^[1-9]\d{0,19}$/) originOrderLineId!: string;
   @Matches(/^[1-9]\d{0,19}$/) originReceiptLineId!: string;
-  @IsOptional() @Matches(/^[1-9]\d{0,19}$/) originAllocationId?: string;
   @IsInt() @Min(1) @Max(PURCHASE_ORDER_MAX_QUANTITY) plannedQuantity!: number;
   @Transform(trim) @IsString() @IsNotEmpty() @MaxLength(2000) supplementEvidence!: string;
 }

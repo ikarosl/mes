@@ -261,13 +261,10 @@
               </div>
             </div>
             <div
-              v-if="
-                !isReceiptVoided(selectedLine) &&
-                !isKnownZero(selectedLine.quantities.unprocessedQuantity)
-              "
+              v-if="!isReceiptVoided(selectedLine)"
               class="secondary-section"
             >
-              <div class="section-heading"><strong>异常处置与采购承接</strong></div>
+              <div class="section-heading"><strong>异常处置与采购补单</strong></div>
               <div class="section-actions">
                 <el-button
                   v-if="
@@ -279,11 +276,13 @@
                   >来料检验 / 复检</el-button
                 >
                 <el-button
+                  v-if="!isKnownZero(selectedLine.quantities.unprocessedQuantity)"
                   :disabled="blocked"
                   @click="actionDialog?.open(selectedLine, 'correct')"
                   >更正到货量</el-button
                 >
                 <el-button
+                  v-if="!isKnownZero(selectedLine.quantities.unprocessedQuantity)"
                   type="danger"
                   plain
                   :disabled="blocked || !canRejectReceipt(selectedLine)"
@@ -306,10 +305,7 @@
                   >更正整批正式分配</el-button
                 >
                 <el-button
-                  v-if="
-                    auth.can(PERMISSIONS.procurement.orders.view) &&
-                    Number(selectedLine.quantities.unprocessedQuantity) > 0
-                  "
+                  v-if="auth.can(PERMISSIONS.procurement.orders.view)"
                   :disabled="blocked"
                   @click="goExcessSupplement(selectedLine)"
                   >前往采购办理超量补单</el-button
@@ -317,34 +313,18 @@
               </div>
             </div>
             <div
-              v-if="!isReceiptVoided(selectedLine) && qualityReturnAllocations(selectedLine).length"
+              v-if="hasQualityReplacementSource(selectedLine)"
               class="secondary-section"
             >
               <div class="section-heading"><strong>质量退回与补发</strong></div>
               <div class="section-actions">
-                <span
-                  >当前有效质量待退分配
-                  {{ qualityReturnAllocations(selectedLine).length }}
-                  条；原货实际退回独立办理。</span
-                >
-                <el-dropdown
+                <span>本次到货存在质量待退或已退依据；原货实际退回独立办理。</span>
+                <el-button
                   v-if="auth.can(PERMISSIONS.procurement.orders.view)"
                   :disabled="blocked"
-                  @command="goQualityReplacement(selectedLine, $event)"
+                  @click="goQualityReplacement(selectedLine)"
+                  >前往采购办理质量补发</el-button
                 >
-                  <el-button :disabled="blocked">前往采购办理质量补发</el-button>
-                  <template #dropdown>
-                    <el-dropdown-menu>
-                      <el-dropdown-item
-                        v-for="range in qualityReturnAllocations(selectedLine)"
-                        :key="range.id"
-                        :command="range"
-                        >质量待退 {{ range.remainingQuantity }} {{ selectedLine.unit }} · 分配
-                        {{ range.id }}</el-dropdown-item
-                      >
-                    </el-dropdown-menu>
-                  </template>
-                </el-dropdown>
               </div>
             </div>
             <div class="secondary-section history-section">
@@ -435,11 +415,7 @@ import {
 import { computed, nextTick, onActivated, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useRouteAccess } from '../../../composables/useRouteAccess';
-import type {
-  ProcurementReceiptDetail,
-  ProcurementReceiptLine,
-  ReceiptAllocationItem,
-} from '@company/contracts';
+import type { ProcurementReceiptDetail, ProcurementReceiptLine } from '@company/contracts';
 import { PERMISSIONS } from '@company/constants';
 import { procurementApi } from '../../../api/procurement';
 import { useAuthStore } from '../../../stores/auth';
@@ -479,14 +455,16 @@ const filteredLines = computed(() => {
     ),
   );
 });
-const qualityReturnAllocations = (line: ProcurementReceiptLine): ReceiptAllocationItem[] =>
-  line.allocations.filter(
-    (row) =>
-      row.disposition === 'return' &&
-      row.returnReason === 'quality' &&
-      canExecuteReceiptAllocation(line, row) &&
-      Number(row.remainingQuantity) > 0,
-  );
+const hasQualityReplacementSource = (line: ProcurementReceiptLine): boolean =>
+  !isReceiptVoided(line) &&
+  (Number(line.quantities.qualityReturnedQuantity) > 0 ||
+    line.allocations.some(
+      (row) =>
+        row.disposition === 'return' &&
+        row.returnReason === 'quality' &&
+        canExecuteReceiptAllocation(line, row) &&
+        Number(row.remainingQuantity) > 0,
+    ));
 const acceptanceDialog = ref<InstanceType<typeof ReceiptAcceptanceDialog>>();
 const voidDialog = ref<InstanceType<typeof ReceiptVoidDialog>>();
 const actionDialog = ref<InstanceType<typeof ReceiptLineActionDialog>>(),
@@ -638,11 +616,8 @@ const saved = async (): Promise<void> => {
   emit('changed');
   await load();
 };
-const goQualityReplacement = async (
-  line: ProcurementReceiptLine,
-  scope: ReceiptAllocationItem,
-): Promise<void> => {
-  if (blocked.value || scope.disposition !== 'return' || scope.returnReason !== 'quality') return;
+const goQualityReplacement = async (line: ProcurementReceiptLine): Promise<void> => {
+  if (blocked.value || !hasQualityReplacementSource(line)) return;
   if (await close())
     await router.push({
       name: 'procurement-orders',
@@ -651,7 +626,6 @@ const goQualityReplacement = async (
         supplementLineId: line.purchaseOrderLineId,
         supplementReason: 'quality_replacement',
         receiptLineId: line.id,
-        allocationId: scope.id,
       },
     });
 };

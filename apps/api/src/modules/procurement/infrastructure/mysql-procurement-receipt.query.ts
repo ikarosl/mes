@@ -1,10 +1,8 @@
-import { listReceiptAllocationCandidates } from './queries/receipt-acceptance.query.js';
 import { Inject, Injectable } from '@nestjs/common';
 import { withTransaction } from '@company/database';
 import type { Pool } from 'mysql2/promise';
 import type {
   PageQuery,
-  ReceiptAllocationCandidateQuery,
   ProcurementReceiptQuery as ReceiptListQuery,
   ProcurementInboundReleaseQuery,
   ProcurementInboundInspectionQuery,
@@ -48,9 +46,6 @@ export class MysqlProcurementReceiptQuery extends ProcurementReceiptQuery {
     private readonly variants: MaterialVariantQuery,
   ) {
     super();
-  }
-  allocationCandidates(id: string, query: ReceiptAllocationCandidateQuery) {
-    return withTransaction(this.pool, (db) => listReceiptAllocationCandidates(db, id, query));
   }
   listReceipts(query: ReceiptListQuery) {
     return withTransaction(this.pool, (db) => listReceipts(db, query));

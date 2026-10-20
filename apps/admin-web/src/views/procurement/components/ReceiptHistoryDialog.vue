@@ -75,9 +75,7 @@
             >正式清单 ID：<span class="history-id">{{ row.id }}</span></strong
           >
           <span class="acceptance-quantity"
-            >当时剩余实物核实量：<strong>{{
-              displayValue(row.confirmedScopeQuantity)
-            }}</strong></span
+            >当时剩余数量：<strong>{{ displayValue(row.confirmedScopeQuantity) }}</strong></span
           >
           <span>确认时间：{{ formatDateTimeForDisplay(row.createdAt) }}</span>
         </div>
@@ -139,10 +137,6 @@
           <div class="history-field">
             <span class="history-label">分配明细 ID</span>
             <span class="history-value history-id">{{ displayValue(detail.id) }}</span>
-          </div>
-          <div class="history-field">
-            <span class="history-label">采购单</span>
-            <span class="history-value">{{ displayValue(detail.purchaseNo) }}</span>
           </div>
           <div class="history-field">
             <span class="history-label">授权去向</span>

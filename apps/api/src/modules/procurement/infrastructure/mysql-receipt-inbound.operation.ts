@@ -124,19 +124,17 @@ export const confirmReceiptInbound = async (
       detail.quantity > row.remaining_quantity
     )
       return receiptError('正式分配、实收版本或可入剩余量已变化，请刷新', 'RECEIPT_STATE');
-    const assignedLine = orderLines.get(String(row.purchase_order_line_id));
+    const purchaseLine = orderLines.get(String(line.purchase_order_line_id));
     if (
-      !assignedLine ||
-      String(assignedLine.supplier_id) !==
-        String(orderLines.get(String(line.purchase_order_line_id))!.supplier_id) ||
-      String(assignedLine.item_id) !== String(line.item_id) ||
-      String(assignedLine.material_variant_id) !== String(line.material_variant_id)
+      !purchaseLine ||
+      String(purchaseLine.item_id) !== String(line.item_id) ||
+      String(purchaseLine.material_variant_id) !== String(line.material_variant_id)
     )
-      return receiptError('正式分配采购来源归属已变化', 'RECEIPT_STATE');
-    selected.push({ detail, line, row, assignedLine });
+      return receiptError('到货采购来源归属已变化', 'RECEIPT_STATE');
+    selected.push({ detail, line, row, purchaseLine });
   }
   const supplierIds = sortedIds(
-    selected.map(({ assignedLine }) => String(assignedLine.supplier_id)),
+    selected.map(({ purchaseLine }) => String(purchaseLine.supplier_id)),
   );
   const [suppliers] = await connection.query<
     (RowDataPacket & { id: number; supplier_name: string })[]
@@ -166,8 +164,7 @@ export const confirmReceiptInbound = async (
       return receiptError('本次入库合计超过正式分配剩余量，请刷新', 'RECEIPT_STATE');
     amountByAllocation.set(detail.allocationId, total);
   }
-  const details = selected.map(({ detail, line, assignedLine }) => {
-    const original = orderLines.get(String(line.purchase_order_line_id))!;
+  const details = selected.map(({ detail, line, purchaseLine }) => {
     return {
       receiptLineId: detail.receiptLineId,
       receiptRevisionId: detail.receiptRevisionId,
@@ -175,10 +172,10 @@ export const confirmReceiptInbound = async (
       allocationId: detail.allocationId,
       itemId: String(line.item_id),
       materialVariantId: String(line.material_variant_id),
-      itemCode: original.item_code_snapshot,
-      materialVariantCode: original.material_variant_code_snapshot,
-      unit: original.unit_snapshot,
-      supplierNameSnapshot: supplierNames.get(String(assignedLine.supplier_id))!,
+      itemCode: purchaseLine.item_code_snapshot,
+      materialVariantCode: purchaseLine.material_variant_code_snapshot,
+      unit: purchaseLine.unit_snapshot,
+      supplierNameSnapshot: supplierNames.get(String(purchaseLine.supplier_id))!,
       quantity: String(detail.quantity),
       target: detail.target,
     };

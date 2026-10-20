@@ -26,7 +26,6 @@ import { ProcurementDomainExceptionFilter } from './procurement-domain-exception
 import { PurchaseOrderIdDto, PurchaseOrderQueryDto } from './purchase-order.dto.js';
 import {
   ReceiptListQueryDto,
-  ReceiptAllocationCandidateQueryDto,
   ReceiptReleaseQueryDto,
   InboundInspectionQueryDto,
   ReceiptHistoryPathDto,
@@ -78,14 +77,6 @@ export class ProcurementReceiptController {
   @RequirePermission(PERMISSIONS.warehouse.receipts.view)
   order(@Param() { id }: PurchaseOrderIdDto) {
     return this.query.getReceiptOrder(id);
-  }
-  @Get('receipt-lines/:id/allocation-candidates')
-  @RequirePermission(PERMISSIONS.warehouse.receipts.view)
-  allocationCandidates(
-    @Param() { id }: PurchaseOrderIdDto,
-    @Query() query: ReceiptAllocationCandidateQueryDto,
-  ) {
-    return this.query.allocationCandidates(id, query);
   }
   @Get('receipt-lines/:id/:historyKind')
   @RequirePermission([

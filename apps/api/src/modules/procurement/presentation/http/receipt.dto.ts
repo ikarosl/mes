@@ -56,17 +56,6 @@ export class ReceiptListQueryDto extends ReceiptSourceQueryDto {
   @IsOptional() @IsIn(['yes']) awaitingAcceptance?: 'yes';
   @IsOptional() @Matches(ID) purchaseOrderId?: string;
 }
-export class ReceiptAllocationCandidateQueryDto {
-  @IsOptional() @Transform(trim) @IsString() @MaxLength(100) keyword?: string;
-  @IsOptional()
-  @Transform(csv)
-  @IsArray()
-  @ArrayMinSize(1)
-  @ArrayMaxSize(100)
-  @ArrayUnique()
-  @Matches(ID, { each: true })
-  includeIds?: string[];
-}
 export class ReceiptReleaseQueryDto extends ReceiptListQueryDto {
   @IsOptional() @Matches(ID) receiptLineId?: string;
   @IsOptional()
@@ -133,19 +122,6 @@ export class VoidProcurementReceiptDto extends PurchaseOrderVersionDto {
   @Type(() => ReceiptVoidLineVersionDto)
   lines!: ReceiptVoidLineVersionDto[];
 }
-export class ReceiptOwnershipDto {
-  @Matches(ID) purchaseOrderLineId!: string;
-  @IsInt() @Min(0) @Max(PURCHASE_ORDER_MAX_QUANTITY) quantity!: number;
-}
-export class ReceiptOwnershipCommandDto extends ReceiptRoundCommandDto {
-  @IsOptional()
-  @IsArray()
-  @ArrayMaxSize(100)
-  @ArrayUnique((item: ReceiptOwnershipDto) => item.purchaseOrderLineId)
-  @ValidateNested({ each: true })
-  @Type(() => ReceiptOwnershipDto)
-  ownership?: ReceiptOwnershipDto[];
-}
 export class CorrectReceiptDto extends ReceiptRoundCommandDto {
   @Matches(ID) previousRevisionId!: string;
   @IsInt() @Min(0) @Max(PURCHASE_ORDER_MAX_QUANTITY) receivedQuantity!: number;
@@ -155,7 +131,7 @@ export class CorrectReceiptDto extends ReceiptRoundCommandDto {
 export class ReceiptAllocationCommandDto extends ReceiptRoundCommandDto {
   @Matches(ID) allocationId!: string;
 }
-export class RejectReceiptDto extends ReceiptOwnershipCommandDto {
+export class RejectReceiptDto extends ReceiptRoundCommandDto {
   @Transform(trim) @IsString() @IsNotEmpty() @MaxLength(2000) reason!: string;
 }
 export class RevokeReceiptRejectionDto extends ReceiptRoundCommandDto {
@@ -225,7 +201,6 @@ export class ConfirmProcurementInboundDto {
 }
 
 export class ReceiptAllocationDto {
-  @IsOptional() @Matches(ID) purchaseOrderLineId: string | null = null;
   @IsIn(RECEIPT_ALLOCATION_DISPOSITIONS) disposition!: ReceiptAllocationDisposition;
   @IsInt() @Min(1) @Max(PURCHASE_ORDER_MAX_QUANTITY) quantity!: number;
   @IsOptional()

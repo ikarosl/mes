@@ -14,9 +14,15 @@ import { EMessage } from '../../../utils/message';
 import { RouteMessageBox } from '../../../utils/route-message-box';
 import { useProcurementCommand } from './useProcurementCommand';
 
+type ReceiptPurchaseOrderLine = PurchaseOrderLine & {
+  quantities: NonNullable<PurchaseOrderLine['quantities']>;
+};
+const hasReceiptQuantities = (line: PurchaseOrderLine): line is ReceiptPurchaseOrderLine =>
+  line.quantities !== null;
+
 interface ReceiptDraftRow {
   key: number;
-  line: PurchaseOrderLine;
+  line: ReceiptPurchaseOrderLine;
   receivedQuantity: number | undefined;
   supplierBatchCode: string;
   overReceiptNote: string;
@@ -69,16 +75,19 @@ export function useReceiptEditor(onSaved: (id: string) => void | Promise<void>) 
     try {
       const result = await procurementApi.receiptOrderDetail(id, current.signal);
       if (!current.isCurrent()) return;
+      const receivable = result.items.filter(
+        (line) => line.status === 'open' && line.fulfillmentMode === 'new_arrival',
+      );
+      if (receivable.some((line) => !hasReceiptQuantities(line)))
+        throw new Error('可收货采购行的数量信息不完整，请重新读取');
       order.value = result;
-      rows.value = result.items
-        .filter((line) => line.status === 'open' && line.fulfillmentMode === 'new_arrival')
-        .map((line) => ({
-          key: ++sequence,
-          line,
-          receivedQuantity: undefined,
-          supplierBatchCode: '',
-          overReceiptNote: '',
-        }));
+      rows.value = receivable.filter(hasReceiptQuantities).map((line) => ({
+        key: ++sequence,
+        line,
+        receivedQuantity: undefined,
+        supplierBatchCode: '',
+        overReceiptNote: '',
+      }));
       stale.value = false;
     } catch (error) {
       if (current.isCurrent()) EMessage.error(error, '采购收货依据加载失败');
@@ -104,14 +113,15 @@ export function useReceiptEditor(onSaved: (id: string) => void | Promise<void>) 
             !line ||
             line.version !== row.line.version ||
             line.status !== 'open' ||
-            line.fulfillmentMode !== 'new_arrival'
+            line.fulfillmentMode !== 'new_arrival' ||
+            !hasReceiptQuantities(line)
           );
         });
       if (stale.value) return false;
       let quantitiesChanged = false;
       for (const row of rows.value) {
         const line = latestLines.get(row.line.id);
-        if (!line) continue;
+        if (!line || !hasReceiptQuantities(line)) continue;
         quantitiesChanged ||=
           Number(line.quantities.receivedQuantity) !==
             Number(row.line.quantities.receivedQuantity) ||

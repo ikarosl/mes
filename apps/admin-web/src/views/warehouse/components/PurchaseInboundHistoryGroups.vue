@@ -115,7 +115,7 @@
             <template #default="{ row }">{{ row.supplierName || '未记录' }}</template>
           </el-table-column>
           <el-table-column
-            label="采购归属与采用检验"
+            label="来源采购与采用检验"
             min-width="350"
           >
             <template #default="{ row }">
@@ -124,7 +124,7 @@
                 class="source-trace"
               >
                 <div>
-                  <span class="source-label">实际归属采购</span>
+                  <span class="source-label">来源采购</span>
                   <el-button
                     v-if="auth.can(PERMISSIONS.procurement.orders.view)"
                     class="source-link"
@@ -146,15 +146,6 @@
                       row.procurementSource.purchaseOrder.purchaseOrderLineId
                     }}
                   </span>
-                </div>
-                <div
-                  v-if="
-                    row.procurementSource.receipt.purchaseOrderNo !==
-                    row.procurementSource.purchaseOrder.purchaseOrderNo
-                  "
-                  class="assignment-note"
-                >
-                  补单承接 · 到货登记采购 {{ row.procurementSource.receipt.purchaseOrderNo }}
                 </div>
                 <div>
                   <span class="source-label">采用检验</span>
@@ -353,9 +344,5 @@ const supplierSummary = (order: PurchaseInboundOrderItem): string =>
   display: grid;
   gap: 3px;
   line-height: 1.5;
-}
-.assignment-note {
-  color: var(--el-color-warning-dark-2);
-  font-size: 12px;
 }
 </style>

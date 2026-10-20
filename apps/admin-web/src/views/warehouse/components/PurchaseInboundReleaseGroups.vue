@@ -99,7 +99,7 @@
             </template>
           </el-table-column>
           <el-table-column
-            label="实际归属采购"
+            label="来源采购"
             min-width="160"
           >
             <template #default="{ row }">
@@ -121,12 +121,6 @@
                 class="cell-wrap"
                 >{{ row.purchaseNo }}</span
               >
-              <div
-                v-if="row.purchaseNo !== row.receiptPurchaseNo"
-                class="assignment-note"
-              >
-                补单承接
-              </div>
             </template>
           </el-table-column>
           <el-table-column
@@ -250,10 +244,6 @@ const releaseGroups = computed<ReceiptPageGroup[]>(() => {
 .receipt-meta {
   color: var(--el-text-color-regular);
   font-size: 13px;
-}
-.assignment-note {
-  color: var(--el-color-warning-dark-2);
-  font-size: 12px;
 }
 .source-link {
   height: auto;

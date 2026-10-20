@@ -17,7 +17,7 @@ export function allocateReceiptQuantities(
     confirmedQuantity < 0 ||
     confirmedQuantity > MAX_PERSISTED_INTEGER_QUANTITY
   )
-    invalid('核实实物量必须为有效非负整数');
+    invalid('本轮剩余实物数量必须为有效非负整数');
   if (details.length > 100) invalid('一次最多分配 100 条明细');
   let total = 0;
   for (const row of details) {
@@ -36,10 +36,9 @@ export function allocateReceiptQuantities(
         : row.returnReason !== null)
     )
       invalid('分配用途与退回原因不一致；人工拒收请使用整批拒收入口');
-    if (row.disposition === 'inbound' && !row.purchaseOrderLineId)
-      invalid('可入库数量必须有正式采购行');
     total += row.quantity;
   }
-  if (total !== confirmedQuantity) invalid('可入库、待退回和待处理数量合计必须等于本轮核实实物量');
+  if (total !== confirmedQuantity)
+    invalid('可入库、待退回和待处理数量合计必须等于本轮剩余实物数量');
   return details.map((row) => ({ ...row }));
 }

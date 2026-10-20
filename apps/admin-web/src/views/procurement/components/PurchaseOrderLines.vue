@@ -52,9 +52,6 @@
               @click="$emit('source-receipt', row.originReceiptLineId)"
               >查看到货及正式清单</el-button
             >
-            <template v-if="row.originAllocationId">
-              · 到货分配 ID：{{ row.originAllocationId }}</template
-            >
           </p>
         </div>
       </template>
@@ -105,36 +102,42 @@
       }}</template></el-table-column
     >
     <el-table-column
-      label="采购量"
+      :label="order.supplementReason === 'excess_purchase' ? '补购量' : '采购量'"
       width="120"
       ><template #default="{ row }"
         >{{ Number(row.plannedQuantity) }} {{ row.unit }}</template
       ></el-table-column
     >
     <el-table-column
+      v-if="order.supplementReason !== 'excess_purchase'"
       label="累计到货"
       width="100"
       ><template #default="{ row }">{{
-        row.quantities.receivedQuantity
+        row.quantities?.receivedQuantity ?? '—'
       }}</template></el-table-column
     >
     <el-table-column
+      v-if="order.supplementReason !== 'excess_purchase'"
       label="累计已入"
       width="100"
-      ><template #default="{ row }">{{ row.quantities.inboundQuantity }}</template></el-table-column
+      ><template #default="{ row }">{{
+        row.quantities?.inboundQuantity ?? '—'
+      }}</template></el-table-column
     >
     <el-table-column
+      v-if="order.supplementReason !== 'excess_purchase'"
       label="当前待退"
       width="100"
       ><template #default="{ row }">{{
-        row.quantities.pendingReturnQuantity
+        row.quantities?.pendingReturnQuantity ?? '—'
       }}</template></el-table-column
     >
     <el-table-column
+      v-if="order.supplementReason !== 'excess_purchase'"
       label="实际已退"
       width="100"
       ><template #default="{ row }">{{
-        row.quantities.returnedQuantity
+        row.quantities?.returnedQuantity ?? '—'
       }}</template></el-table-column
     >
     <el-table-column
@@ -190,6 +193,7 @@
             >恢复此行</el-button
           >
           <el-button
+            v-if="row.fulfillmentMode === 'new_arrival'"
             link
             type="primary"
             :disabled="disabled"

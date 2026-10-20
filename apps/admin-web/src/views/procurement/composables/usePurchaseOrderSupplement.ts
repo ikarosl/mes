@@ -11,6 +11,7 @@ import { EMessage } from '../../../utils/message';
 import { RouteMessageBox } from '../../../utils/route-message-box';
 import {
   copySupplementBasis,
+  supplementBasisSignature,
   type SupplementBasisChoice,
   type SupplementBasisConfirmation,
 } from '../supplement-basis';
@@ -26,7 +27,6 @@ export interface SupplementLocation {
   lineId?: string;
   reason?: PurchaseOrderSupplementReason;
   receiptLineId?: string;
-  allocationId?: string;
 }
 
 export function usePurchaseOrderSupplement(onSaved: (id: string) => void) {
@@ -154,7 +154,7 @@ export function usePurchaseOrderSupplement(onSaved: (id: string) => void) {
       if (!draft || choices.length !== 1 || choice?.line.id !== replacingLineId) return false;
       const changed =
         draft.selectedExcess?.id !== choice.selectedExcess?.id ||
-        draft.selectedQuality?.allocationId !== choice.selectedQuality?.allocationId;
+        draft.selectedQuality?.receiptLineId !== choice.selectedQuality?.receiptLineId;
       Object.assign(draft, copySupplementBasis(choice), { basisError: false });
       if (changed) EMessage.warning('依据已更换，数量与说明已保留，请重新核对');
       return true;
@@ -265,7 +265,7 @@ export function usePurchaseOrderSupplement(onSaved: (id: string) => void) {
         }
         draft.selectedExcess = latest;
         draft.basisError = false;
-        return JSON.stringify(old) === JSON.stringify(latest);
+        return supplementBasisSignature(old) === supplementBasisSignature(latest);
       }
       if (reason.value === 'quality_replacement' && draft.selectedQuality) {
         const old = draft.selectedQuality;
@@ -275,22 +275,18 @@ export function usePurchaseOrderSupplement(onSaved: (id: string) => void) {
             page: 1,
             pageSize: 1,
             receiptLineId: old.receiptLineId,
-            allocationId: old.allocationId,
           },
           current.signal,
         );
         if (!stillCurrent()) return false;
-        const latest = result.items.find(
-          (item) =>
-            item.receiptLineId === old.receiptLineId && item.allocationId === old.allocationId,
-        );
+        const latest = result.items.find((item) => item.receiptLineId === old.receiptLineId);
         if (!latest) {
           draft.basisError = true;
           return false;
         }
         draft.selectedQuality = latest;
         draft.basisError = false;
-        return JSON.stringify(old) === JSON.stringify(latest);
+        return supplementBasisSignature(old) === supplementBasisSignature(latest);
       }
       return false;
     } catch (error) {
@@ -331,7 +327,7 @@ export function usePurchaseOrderSupplement(onSaved: (id: string) => void) {
       const results = await Promise.all(drafts.value.map((draft) => refreshBasis(draft, current)));
       if (!current.isCurrent()) return;
       if (results.some((valid) => !valid)) {
-        EMessage.warning('到货或质量分配依据已变化，输入已保留。请核对最新依据后再次提交');
+        EMessage.warning('到货依据已变化，输入已保留。请核对最新依据后再次提交');
         return;
       }
       const body: CreatePurchaseOrderSupplementPayload = {
@@ -342,9 +338,6 @@ export function usePurchaseOrderSupplement(onSaved: (id: string) => void) {
             targetReason === 'excess_purchase'
               ? draft.selectedExcess!.id
               : draft.selectedQuality!.receiptLineId,
-          ...(targetReason === 'quality_replacement'
-            ? { originAllocationId: draft.selectedQuality!.allocationId }
-            : {}),
           plannedQuantity: Number(draft.quantity),
           supplementEvidence: draft.evidence.trim(),
         })),
@@ -354,7 +347,7 @@ export function usePurchaseOrderSupplement(onSaved: (id: string) => void) {
         { intentType: 'procurement.order.supplement', params: { id }, query: {}, body },
         (key) => procurementApi.createSupplement(id, body, key),
         targetReason === 'excess_purchase'
-          ? '超量补单草稿已创建，请正式下单后由库管关联原到货定稿'
+          ? '超量补单草稿已创建，请核对后正式下单'
           : '质量补发草稿已创建，请核对后正式下单',
       );
     } finally {

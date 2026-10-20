@@ -15,12 +15,11 @@
       empty-text="本批暂无当前分配，请按当前阶段办理"
     >
       <el-table-column
-        label="采购归属"
+        label="到货分配 ID"
         min-width="170"
       >
         <template #default="{ row }">
-          <div class="allocation-purchase">{{ row.purchaseNo || '—' }}</div>
-          <div class="allocation-id">分配 ID：{{ row.id }}</div>
+          <div class="allocation-id">{{ row.id }}</div>
         </template>
       </el-table-column>
       <el-table-column
@@ -184,7 +183,6 @@ defineEmits<{
   align-items: center;
   margin: 16px 0 8px;
 }
-.allocation-purchase,
 .allocation-id,
 .allocation-remark {
   overflow-wrap: anywhere;

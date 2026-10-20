@@ -14,10 +14,8 @@ import {
   requireReceiptAcceptanceRemaining,
 } from '../domain/receipt-acceptance.policy.js';
 import { requireReceiptNotRejected } from '../domain/receipt-round.policy.js';
-import { sortedIds } from './mysql-purchase-order.shared.js';
 import {
   lockReceiptLine,
-  lockReceiptRoots,
   insertRevision,
   insertAllocation,
   receiptResult,
@@ -31,7 +29,7 @@ import {
   replaceRound,
   assertReceiptAggregate,
 } from './mysql-receipt-round.shared.js';
-import { requireAllocationOwnership } from './mysql-receipt-allocation-ownership.js';
+import { requireRetainedReceiptTermination } from '../domain/receipt-termination.policy.js';
 
 export async function confirmReceiptAcceptance(
   db: PoolConnection,
@@ -41,19 +39,6 @@ export async function confirmReceiptAcceptance(
   quality: QualityInboundQuery,
   inventory: InventoryInboundQuery,
 ): Promise<ProcurementReceiptCommandResult> {
-  const targetIds = sortedIds(
-    payload.details.flatMap((d) => (d.purchaseOrderLineId ? [d.purchaseOrderLineId] : [])),
-  );
-  const extraRoots: string[] = [];
-  if (targetIds.length) {
-    const [targets] = await db.query<(RowDataPacket & { purchase_order_id: number })[]>(
-      `SELECT purchase_order_id FROM procurement_order_line WHERE id IN (${targetIds.map(() => '?').join(',')})`,
-      targetIds,
-    );
-    extraRoots.push(...targets.map((t) => String(t.purchase_order_id)));
-  }
-  // Include new supplemental roots before taking any receipt lock.
-  await lockReceiptRoots(db, [id], extraRoots);
   const { line, allocations: priorAllocations } = await lockReceiptLine(db, id, inventory);
   requireOptimisticUpdate(line.version === payload.version ? 1 : 0);
   let round = await lockRound(db, line, payload);
@@ -86,10 +71,17 @@ export async function confirmReceiptAcceptance(
     );
   const balance = await receiptBalance(db, line, priorAllocations);
   requireReceiptAcceptanceRemaining(round.status, balance.remaining);
-  await requireAllocationOwnership(db, line, sources, allocations, confirmedQuantity);
+  requireRetainedReceiptTermination(
+    sources.map((source) => ({
+      remainingQuantity: source.remaining_quantity,
+      terminationReason: source.termination_reason,
+    })),
+    allocations,
+    confirmedQuantity,
+  );
   const nextTotal = requireAggregateQuantity(
     [balance.inbound, balance.returned, confirmedQuantity],
-    '核对后本次到货核实总量',
+    '核对后到货总量',
   );
   await assertReceiptAggregate(db, line, nextTotal);
   let afterRevisionId = payload.receiptRevisionId;

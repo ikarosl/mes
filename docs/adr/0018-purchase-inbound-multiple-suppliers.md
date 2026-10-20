@@ -1,5 +1,7 @@
 # ADR-0018：外购物料按实际确认成单
 
+本 ADR 涉及补单承接、分配采购归属及其取消／继续办理资格的条款，在 [ADR-0023](0023-supplement-source-and-receipt-ownership.md) 明确范围内被取代；其余业务边界继续有效。
+
 状态：Accepted。用户已批准跨供应商合单；实施及验收状态见[路线图](../roadmap.md)。
 
 ## 选择与理由

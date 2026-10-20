@@ -24,7 +24,6 @@ interface SupplementCandidatePage {
   excessRows: PurchaseExcessReceiptCandidate[];
   qualityRows: PurchaseQualityReplacementCandidate[];
   receiptLineId?: string;
-  allocationId?: string;
   error: boolean;
 }
 
@@ -138,7 +137,7 @@ export function usePurchaseOrderSupplementSelection(context: SupplementSelection
       } else {
         const result = await procurementApi.qualityReplacementCandidates(
           lineId,
-          { ...query, allocationId: state.allocationId },
+          query,
           current.signal,
         );
         if (!current.isCurrent()) return;
@@ -195,7 +194,6 @@ export function usePurchaseOrderSupplementSelection(context: SupplementSelection
     if (lineId) {
       const state = ensurePage(lineId);
       state.receiptLineId = location.receiptLineId;
-      state.allocationId = location.allocationId;
     }
     visible.value = true;
     void load();
@@ -248,7 +246,6 @@ export function usePurchaseOrderSupplementSelection(context: SupplementSelection
     if (context.disabled() || !currentPage.value) return;
     currentPage.value.page = 1;
     currentPage.value.receiptLineId = undefined;
-    currentPage.value.allocationId = undefined;
     await load();
   };
   const clearLocation = async (): Promise<void> => {

@@ -1,11 +1,13 @@
 <template>
   <el-dialog
     v-model="visible"
-    title="相关补单"
+    :title="filters.originReceiptLineId ? '同次到货的相关补单' : '相关补单'"
     :width="DialogWidth.lg"
   >
     <p class="help">
-      共 {{ total }} 张独立补单。补单量独立管理，原单数量和需求来源不会按此分摊或回写。
+      共 {{ total }} 张独立补单，包含历史及已取消记录。
+      <template v-if="filters.originReceiptLineId">同次到货的关联摘要按补单明细条数统计。</template>
+      补单量独立管理，不代表已补到货或剩余补购额度。
     </p>
     <el-table
       v-loading="loading"
@@ -97,11 +99,14 @@ import {
   purchaseOrderStatusTag,
   purchaseOrderSupplementReasonTag,
 } from '../purchase-order-presentation';
-import type { RelatedSupplementLocation } from '../purchase-order-location';
+import type {
+  RelatedSupplementFilter,
+  RelatedSupplementLocation,
+} from '../purchase-order-location';
 const emit = defineEmits<{ navigate: [RelatedSupplementLocation] }>();
 const visible = ref(false),
   lineId = ref(''),
-  allocationId = ref(''),
+  filters = ref<RelatedSupplementFilter>({}),
   rows = ref<PurchaseOrderItem[]>([]),
   loading = ref(false),
   page = ref(1),
@@ -113,16 +118,14 @@ const read = useLatestReadRequest(() => {
 const load = async (): Promise<void> => {
   if (!visible.value || !read.isActive()) return;
   const id = lineId.value,
-    allocation = allocationId.value,
-    current = read.begin(
-      () => visible.value && lineId.value === id && allocationId.value === allocation,
-    );
+    source = filters.value,
+    current = read.begin(() => visible.value && lineId.value === id && filters.value === source);
   loading.value = true;
   try {
     const result = await procurementApi.listOrders(
       {
         originOrderLineId: id,
-        originAllocationId: allocation || undefined,
+        ...source,
         page: page.value,
         pageSize: pageSize.value,
       },
@@ -138,9 +141,9 @@ const load = async (): Promise<void> => {
     if (current.isCurrent()) loading.value = false;
   }
 };
-const open = async (id: string, sourceAllocationId?: string): Promise<void> => {
+const open = async (id: string, source: RelatedSupplementFilter = {}): Promise<void> => {
   lineId.value = id;
-  allocationId.value = sourceAllocationId ?? '';
+  filters.value = { ...source };
   rows.value = [];
   total.value = 0;
   page.value = 1;
@@ -160,7 +163,7 @@ const navigate = (id: string): void => {
   emit('navigate', {
     purchaseOrderId: id,
     originOrderLineId: lineId.value,
-    ...(allocationId.value ? { originAllocationId: allocationId.value } : {}),
+    ...filters.value,
   });
 };
 const close = (): void => {

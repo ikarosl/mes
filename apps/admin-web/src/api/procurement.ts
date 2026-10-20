@@ -51,8 +51,6 @@ import type {
   ProcurementReceiptCommandResult,
   ConfirmReceiptAcceptancePayload,
   ReceiptAcceptanceItem,
-  ReceiptAllocationCandidateQuery,
-  ReceiptAllocationCandidateResult,
   ProcurementInboundInspectionQuery,
   ProcurementInboundInspectionLineItem,
   ProcurementInboundInspectionCaseDetail,
@@ -183,20 +181,6 @@ export const procurementApi = {
     request({
       url: `/procurement/receipt-lines/${id}/acceptances`,
       params,
-      signal,
-      skipErrorHandling: true,
-    }),
-  receiptAllocationCandidates: (
-    id: string,
-    params: ReceiptAllocationCandidateQuery,
-    signal?: AbortSignal,
-  ): Promise<ReceiptAllocationCandidateResult> =>
-    request({
-      url: `/procurement/receipt-lines/${id}/allocation-candidates`,
-      params: {
-        ...params,
-        includeIds: params.includeIds?.length ? params.includeIds.join(',') : undefined,
-      },
       signal,
       skipErrorHandling: true,
     }),

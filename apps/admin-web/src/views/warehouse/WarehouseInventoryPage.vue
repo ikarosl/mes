@@ -464,7 +464,7 @@
                   }}</template
                 >
                 <template v-else-if="row.procurementAllocationId"
-                  >采购分配 #{{ row.procurementAllocationId }}<br />到货明细 #{{
+                  >到货分配 ID：{{ row.procurementAllocationId }}<br />到货明细 #{{
                     row.procurementReceiptLineId
                   }}</template
                 >

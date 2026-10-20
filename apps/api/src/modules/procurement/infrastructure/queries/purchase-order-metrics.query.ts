@@ -1,7 +1,7 @@
-import { readDraftRoundOwnership, readAllocationRows } from './receipt-allocation.query.js';
 import type { ReceiptQuantitySummary } from '@company/contracts';
 import type { Db } from '../mysql-purchase-order.shared.js';
-import { type ReadRow, slots, text, inboundFactSelect } from './receipt-read.shared.js';
+import { readReceiptQuantitySummaries } from './receipt-quantities.query.js';
+import { type ReadRow, readCurrentRounds, slots, text } from './receipt-read.shared.js';
 
 interface PurchaseLineMetrics {
   quantities: ReceiptQuantitySummary;
@@ -34,107 +34,26 @@ export async function readPurchaseLineMetrics(
     ]),
   );
   if (!lineIds.length) return result;
-  // Physical quantities are counted once, against their current formal allocation (or original source before confirmation).
-  const [related] = await db.query<ReadRow[]>(
-    `SELECT l.id FROM procurement_receipt_line l
-      JOIN procurement_receipt receipt ON receipt.id=l.receipt_id
-      WHERE receipt.is_voided=0
-      AND (l.purchase_order_line_id IN (${slots(lineIds)})
-        OR EXISTS(SELECT 1 FROM procurement_receipt_allocation a WHERE a.receipt_line_id=l.id AND a.purchase_order_line_id IN (${slots(lineIds)})))`,
-    [...lineIds, ...lineIds],
-  );
-  const rows = await readAllocationRows(
-    db,
-    related.map((row) => text(row.id)),
-  );
-  const [origins] = await db.query<ReadRow[]>(
-    `SELECT id,purchase_order_line_id FROM procurement_receipt_line WHERE id IN (${slots(related.map((row) => text(row.id))) || 'NULL'})`,
-    related.map((row) => row.id),
-  );
-  const originById = new Map(
-    origins.map((row) => [text(row.id), text(row.purchase_order_line_id)]),
-  );
-  const add = (
-    id: string,
-    field: Exclude<keyof ReceiptQuantitySummary, 'hasOpenReview'>,
-    quantity: unknown,
-  ) => {
-    const target = result.get(id)!;
-    target.quantities[field] = String(Number(target.quantities[field]) + Number(quantity ?? 0));
-  };
-  // 列表与采购详情在同一次累加中保留来源，避免重新按登记总量计算补单归属。
-  const addReceived = (id: string, receiptLineId: string, quantity: number): void => {
-    const target = result.get(id)!;
-    add(id, 'receivedQuantity', quantity);
-    target.receivedByReceiptLine.set(
-      receiptLineId,
-      (target.receivedByReceiptLine.get(receiptLineId) ?? 0) + quantity,
-    );
-  };
-  for (const row of rows) {
-    const id = String(row.purchase_order_line_id ?? originById.get(text(row.receipt_line_id)));
-    if (!result.has(id)) continue;
-    const rest =
-      Number(row.is_current) === 1
-        ? Number(row.quantity) - Number(row.inbound_quantity) - Number(row.returned_quantity)
-        : 0;
-    addReceived(
-      id,
-      text(row.receipt_line_id),
-      rest + Number(row.inbound_quantity) + Number(row.returned_quantity),
-    );
-    if (row.disposition === 'inbound') add(id, 'pendingInboundQuantity', rest);
-    else if (row.disposition === 'return') add(id, 'pendingReturnQuantity', rest);
-    else add(id, 'undeterminedQuantity', rest);
-  }
-  const [inbounds] = await db.query<ReadRow[]>(
-    `${inboundFactSelect('allocation.purchase_order_line_id,SUM(tx.quantity) quantity').replace('  WHERE inbound.source_type', ' JOIN procurement_receipt_allocation allocation ON allocation.id=detail.procurement_allocation_id WHERE inbound.source_type')}
-      AND allocation.purchase_order_line_id IN (${slots(lineIds)}) GROUP BY allocation.purchase_order_line_id`,
+  // 每次实物只归登记到货行的采购来源；补单追溯不转移当前授权或历史执行。
+  const [lines] = await db.query<ReadRow[]>(
+    `SELECT line.id,line.purchase_order_line_id FROM procurement_receipt_line line
+      JOIN procurement_receipt receipt ON receipt.id=line.receipt_id
+      WHERE receipt.is_voided=0 AND line.purchase_order_line_id IN (${slots(lineIds)})`,
     lineIds,
   );
-  for (const row of inbounds)
-    add(text(row.purchase_order_line_id), 'inboundQuantity', row.quantity);
-  const [returns] = await db.query<ReadRow[]>(
-    `SELECT COALESCE(a.purchase_order_line_id,r.purchase_order_line_id) purchase_order_line_id,SUM(sr.returned_quantity) quantity,
-      SUM(CASE WHEN sr.reason_type='quality' THEN sr.returned_quantity ELSE 0 END) quality_quantity
-     FROM procurement_supplier_return sr JOIN procurement_receipt_line r ON r.id=sr.receipt_line_id
-     LEFT JOIN procurement_receipt_allocation a ON a.id=sr.allocation_id
-     WHERE COALESCE(a.purchase_order_line_id,r.purchase_order_line_id) IN (${slots(lineIds)}) GROUP BY COALESCE(a.purchase_order_line_id,r.purchase_order_line_id)`,
-    lineIds,
-  );
-  for (const row of returns) {
-    add(text(row.purchase_order_line_id), 'returnedQuantity', row.quantity);
-    add(text(row.purchase_order_line_id), 'qualityReturnedQuantity', row.quality_quantity);
-  }
-  const [pendingLines] = await db.query<ReadRow[]>(
-    `SELECT r.id FROM procurement_receipt_line r JOIN procurement_receipt_round round ON round.id=r.current_round_id
-      JOIN procurement_receipt receipt ON receipt.id=r.receipt_id
-      WHERE round.status NOT IN('finalized','voided')
-      AND receipt.is_voided=0
-      AND (r.purchase_order_line_id IN (${slots(lineIds)}) OR EXISTS(
-      SELECT 1 FROM procurement_receipt_allocation a WHERE a.receipt_line_id=r.id AND a.purchase_order_line_id IN (${slots(lineIds)})))`,
-    [...lineIds, ...lineIds],
-  );
-  const pendingOwners = await readDraftRoundOwnership(
-    db,
-    pendingLines.map((row) => text(row.id)),
-  );
-  for (const owner of pendingOwners) {
-    const target = result.get(owner.purchaseOrderLineId);
-    if (!target) continue;
-    addReceived(owner.purchaseOrderLineId, owner.receiptLineId, owner.quantity);
-    add(owner.purchaseOrderLineId, 'undeterminedQuantity', owner.quantity);
-    target.quantities.hasOpenReview ||= owner.hasOpenReview;
-  }
-  for (const value of result.values()) {
-    const q = value.quantities;
-    q.unprocessedQuantity = String(
-      Number(q.undeterminedQuantity) +
-        Number(q.pendingInboundQuantity) +
-        Number(q.pendingReturnQuantity),
-    );
-    q.approvedQuantity = String(Number(q.inboundQuantity) + Number(q.pendingInboundQuantity));
-    q.returnDueQuantity = String(Number(q.returnedQuantity) + Number(q.pendingReturnQuantity));
+  const ids = lines.map((row) => text(row.id));
+  const summaries = await readReceiptQuantitySummaries(db, ids, await readCurrentRounds(db, ids));
+  for (const line of lines) {
+    const target = result.get(text(line.purchase_order_line_id))!;
+    const quantities = summaries.get(text(line.id))!;
+    target.receivedByReceiptLine.set(text(line.id), Number(quantities.receivedQuantity));
+    for (const field of Object.keys(target.quantities) as (keyof ReceiptQuantitySummary)[]) {
+      if (field === 'hasOpenReview') target.quantities.hasOpenReview ||= quantities.hasOpenReview;
+      else
+        target.quantities[field] = String(
+          Number(target.quantities[field]) + Number(quantities[field]),
+        );
+    }
   }
   return result;
 }

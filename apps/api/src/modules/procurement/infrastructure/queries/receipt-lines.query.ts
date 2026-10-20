@@ -1,5 +1,5 @@
 import { mapReceiptAcceptances } from './receipt-acceptance.query.js';
-import { readDraftRoundOwnership, readAllocationRows } from './receipt-allocation.query.js';
+import { readAllocationRows } from './receipt-allocation.query.js';
 import type {
   ProcurementReceiptLine,
   ReceiptHistoryKind,
@@ -69,34 +69,6 @@ export async function readReceiptLines(
   const allAllocationRows = await readAllocationRows(db, ids);
   const allocationRows = allAllocationRows.filter((row) => Number(row.is_current) === 1);
   const allocations = groupRows(allocationRows);
-  const draftOwners = await readDraftRoundOwnership(db, ids, allAllocationRows);
-  const origins = new Map(lines.map((row) => [text(row.id), text(row.purchase_order_line_id)]));
-  const ownershipByLine = new Map<string, Map<string, number>>();
-  const addOwner = (lineId: string, ownerId: string, quantity: number) => {
-    const owners = ownershipByLine.get(lineId) ?? new Map<string, number>();
-    owners.set(ownerId, (owners.get(ownerId) ?? 0) + quantity);
-    ownershipByLine.set(lineId, owners);
-  };
-  for (const scope of allocationRows)
-    addOwner(
-      text(scope.receipt_line_id),
-      nullableText(scope.purchase_order_line_id) ?? origins.get(text(scope.receipt_line_id))!,
-      Number(scope.quantity) - Number(scope.inbound_quantity) - Number(scope.returned_quantity),
-    );
-  for (const owner of draftOwners)
-    if (owner.retainedQuantity > 0)
-      addOwner(owner.receiptLineId, owner.purchaseOrderLineId, owner.retainedQuantity);
-  const ownerIds = [
-    ...new Set([...ownershipByLine.values()].flatMap((owners) => [...owners.keys()])),
-  ];
-  const ownerNames = new Map<string, string>();
-  if (ownerIds.length) {
-    const [owners] = await db.query<ReadRow[]>(
-      `SELECT line.id,orders.purchase_no FROM procurement_order_line line JOIN procurement_order orders ON orders.id=line.purchase_order_id WHERE line.id IN (${slots(ownerIds)})`,
-      ownerIds,
-    );
-    for (const owner of owners) ownerNames.set(text(owner.id), text(owner.purchase_no));
-  }
   const executionRowsByLine = groupRows(allAllocationRows);
   const allocationTotals = new Map<string, number>();
   for (const row of allAllocationRows) {
@@ -164,6 +136,8 @@ export async function readReceiptLines(
     const lineCases = casesByLine.get(id) ?? [];
     const quantities = quantitySummaries.get(id);
     if (!quantities) throw new Error('到货明细缺少数量投影');
+    const purchaseLineMetrics = originalLineMetrics.get(text(row.purchase_order_line_id));
+    if (!purchaseLineMetrics) throw new Error('到货明细缺少来源采购行数量投影');
     const historyTotals: Record<ReceiptHistoryKind, number> = {
       rounds: Number(rounds.get(id)?.[0]?.history_count ?? 0),
       acceptances: Number(
@@ -175,13 +149,6 @@ export async function readReceiptLines(
       returns: Number(returns.get(id)?.[0]?.history_count ?? 0),
       inbounds: Number(inbounds.get(id)?.[0]?.history_count ?? 0),
     };
-    const ownershipSources = [...(ownershipByLine.get(id) ?? new Map<string, number>())].map(
-      ([purchaseOrderLineId, quantity]) => ({
-        purchaseOrderLineId,
-        purchaseNo: ownerNames.get(purchaseOrderLineId)!,
-        quantity: String(quantity),
-      }),
-    );
     return {
       void: mapReceiptVoid(row),
       id,
@@ -190,14 +157,15 @@ export async function readReceiptLines(
       purchaseOrderId: text(row.purchase_order_id),
       purchaseNo: text(row.purchase_no),
       purchaseOrderLineId: text(row.purchase_order_line_id),
+      purchaseLineQuantities: {
+        plannedQuantity: text(row.original_planned_quantity),
+        receivedQuantity: purchaseLineMetrics.quantities.receivedQuantity,
+      },
       originalRemainingPlannedQuantity: String(
         Math.max(
           0,
           Number(row.original_planned_quantity) -
-            Number(
-              originalLineMetrics.get(text(row.purchase_order_line_id))?.quantities
-                .approvedQuantity ?? 0,
-            ),
+            Number(purchaseLineMetrics.quantities.approvedQuantity),
         ),
       ),
       purchaseOrderLineNo: Number(row.purchase_order_line_no),
@@ -216,10 +184,6 @@ export async function readReceiptLines(
         qualityReturnedQuantity: String(execution.qualityReturnedQuantity),
         otherReturnedQuantity: String(execution.otherReturnedQuantity),
       },
-      ownershipSources,
-      ownershipSourceQuantity: String(
-        ownershipSources.reduce((sum, owner) => sum + Number(owner.quantity), 0),
-      ),
       rounds: (rounds.get(id) ?? []).map(mapRound),
       currentReceiptRevisionId: text(row.current_receipt_revision_id),
       batches: (batches.get(id) ?? []).map((fact) => ({

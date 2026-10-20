@@ -50,26 +50,26 @@
           >
           <el-descriptions-item
             v-if="actionLine"
-            label="采购量"
+            :label="detail.supplementReason === 'excess_purchase' ? '补购量' : '采购量'"
             >{{ actionLine.plannedQuantity }} {{ actionLine.unit }}</el-descriptions-item
           >
           <el-descriptions-item
-            v-if="actionLine"
+            v-if="actionLine?.quantities"
             label="累计到货"
             >{{ actionLine.quantities.receivedQuantity }}</el-descriptions-item
           >
           <el-descriptions-item
-            v-if="actionLine"
+            v-if="actionLine?.quantities"
             label="累计已入"
             >{{ actionLine.quantities.inboundQuantity }}</el-descriptions-item
           >
           <el-descriptions-item
-            v-if="actionLine"
+            v-if="actionLine?.quantities"
             label="当前待退"
             >{{ actionLine.quantities.pendingReturnQuantity }}</el-descriptions-item
           >
           <el-descriptions-item
-            v-if="actionLine"
+            v-if="actionLine?.quantities"
             label="实际已退"
             >{{ actionLine.quantities.returnedQuantity }}</el-descriptions-item
           >
@@ -96,7 +96,7 @@
           />
           <el-table-column
             prop="plannedQuantity"
-            label="采购量"
+            :label="detail.supplementReason === 'excess_purchase' ? '补购量' : '采购量'"
             width="100"
           />
           <el-table-column
@@ -104,10 +104,19 @@
             label="单位"
             width="70"
           />
+          <el-table-column
+            v-if="detail.supplementReason === 'quality_replacement'"
+            label="补单依据"
+            min-width="230"
+          >
+            <template #default="{ row }">
+              <div>{{ row.originReceiptNo }} · 到货明细 ID：{{ row.originReceiptLineId }}</div>
+            </template>
+          </el-table-column>
         </el-table>
         <p v-if="mode === 'place'">确认下单后，各物料行的供应商、版本、数量和来源将锁定。</p>
         <p v-else-if="mode === 'cancel'">
-          草稿可整单取消；已下单采购须没有属于本单的到货或承接记录。取消后整单及物料行均不可恢复。
+          草稿可整单取消；已下单采购须没有属于本单的到货记录（含已作废登记）。取消后整单及物料行均不可恢复。
         </p>
         <p v-else-if="mode === 'close-order'">
           将结束本单剩余 {{ confirmationLines.length }} 条进行中的物料行，整单显示“{{
@@ -260,7 +269,7 @@ const isLastOpenLine = computed(
 const ineligibleMessage = computed(() => {
   if (mode.value === 'cancel') {
     return detail.value?.status === 'draft' || detail.value?.status === 'ordered'
-      ? '本单已有到货或承接记录，不能取消；需要停止后续采购时可结束整单或物料行。'
+      ? '本单已有到货记录（包括已作废登记），不能取消；需要停止后续采购时可结束整单或物料行。'
       : '当前采购单状态不能取消。';
   }
   if (mode.value === 'close-order') return '仅已下单且仍有进行中物料行的采购单可结束。';

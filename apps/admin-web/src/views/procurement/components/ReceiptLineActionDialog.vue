@@ -143,50 +143,6 @@
                 show-word-limit
             /></el-form-item>
           </template>
-          <template v-if="ownershipRequired">
-            <el-alert
-              type="warning"
-              :closable="false"
-              class="notice"
-              title="本批剩余总量与原采购分配不同，请逐项核对原单和已绑定补单的数量，在原因中说明差异。不能改为新的采购归属。"
-            />
-            <el-table :data="ownership">
-              <el-table-column
-                prop="purchaseNo"
-                label="原采购归属"
-                min-width="200"
-              />
-              <el-table-column
-                prop="previousQuantity"
-                label="原剩余数量"
-                width="140"
-              />
-              <el-table-column
-                label="本次核实数量"
-                min-width="200"
-              >
-                <template #default="{ row }">
-                  <el-input-number
-                    v-model="row.quantity"
-                    :min="0"
-                    :max="PURCHASE_ORDER_MAX_QUANTITY"
-                    :precision="0"
-                    controls-position="right"
-                  />
-                </template>
-              </el-table-column>
-            </el-table>
-            <p class="hint">
-              归属合计 {{ Number.isFinite(ownershipTotal) ? ownershipTotal : '待填写' }} /
-              尚未入库或退回 {{ ownershipTarget }} {{ line.unit }}。各项可填 0，合计必须一致。
-            </p>
-          </template>
-          <el-alert
-            v-else-if="action === 'correct' && ownershipChanged"
-            type="info"
-            :closable="false"
-            title="本批已有补单归属。更正到货量后先重新检验，原归属保留追溯；库管后续定稿时根据本轮剩余实物核实量重新确认原单和补单份额。"
-          />
         </el-form>
       </div>
     </template>
@@ -247,11 +203,6 @@ const {
   remainingQuantity,
   correctedRemaining,
   rejected,
-  ownership,
-  ownershipRequired,
-  ownershipChanged,
-  ownershipTarget,
-  ownershipTotal,
   canConfirm,
   command,
   open,

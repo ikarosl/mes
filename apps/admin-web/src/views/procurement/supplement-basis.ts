@@ -22,14 +22,32 @@ export interface SupplementBasisConfirmation {
 export function copySupplementBasis(choice: SupplementBasisChoice): SupplementBasisChoice {
   return {
     line: choice.line,
-    selectedExcess: choice.selectedExcess ? { ...choice.selectedExcess } : null,
-    selectedQuality: choice.selectedQuality
+    selectedExcess: choice.selectedExcess
       ? {
-          ...choice.selectedQuality,
-          linkedSupplements: choice.selectedQuality.linkedSupplements.map((entry) => ({
+          ...choice.selectedExcess,
+          receiptLinkedSupplements: choice.selectedExcess.receiptLinkedSupplements.map((entry) => ({
             ...entry,
           })),
         }
       : null,
+    selectedQuality: choice.selectedQuality
+      ? {
+          ...choice.selectedQuality,
+          receiptLinkedSupplements: choice.selectedQuality.receiptLinkedSupplements.map(
+            (entry) => ({
+              ...entry,
+            }),
+          ),
+        }
+      : null,
   };
+}
+
+/** 相关补单只供查看，不参与当前到货或退回依据的变更判断。 */
+export function supplementBasisSignature(
+  basis: PurchaseExcessReceiptCandidate | PurchaseQualityReplacementCandidate,
+): string {
+  return JSON.stringify(basis, (key: string, value: unknown) =>
+    key === 'receiptLinkedSupplements' ? undefined : value,
+  );
 }

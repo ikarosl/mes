@@ -180,7 +180,7 @@ export async function replaceRound(
   return next;
 }
 
-/** Source ownership survives review; an empty finalization cannot resurrect older grants. */
+/** 来源轮仅用于保留终止约束；空定稿不能重新启用更早授权。 */
 export function precedingAllocations(round: RoundRow, allocations: AllocationRow[]) {
   const sourceId = round.status === 'finalized' ? round.id : round.source_allocation_round_id;
   return sourceId === null

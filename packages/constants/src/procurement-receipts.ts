@@ -47,7 +47,7 @@ export const RECEIPT_RETURN_REASONS = [
 export const PURCHASE_FULFILLMENT_MODES = ['new_arrival', 'existing_receipt'] as const;
 export const PURCHASE_FULFILLMENT_MODE_LABELS = {
   new_arrival: '等待新到货',
-  existing_receipt: '承接已到货',
+  existing_receipt: '已有到货补购',
 } as const;
 
 export const RECEIPT_ROUND_STATUSES = [

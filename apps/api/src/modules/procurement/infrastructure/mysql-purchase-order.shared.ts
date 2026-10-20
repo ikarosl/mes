@@ -38,7 +38,6 @@ export type OrderLineRow = RowDataPacket & {
   version: number;
   origin_order_line_id: number | null;
   origin_receipt_line_id: number | null;
-  origin_allocation_id: number | null;
   supplement_evidence: string | null;
 };
 export const idsSql = (ids: readonly string[]) => ids.map(() => '?').join(',');
@@ -111,11 +110,7 @@ export const hasOrderReceiptFacts = async (db: Db, id: string, lock = false): Pr
     `SELECT id FROM procurement_receipt_line WHERE purchase_order_id=? ORDER BY id LIMIT 1${lock ? ' FOR SHARE' : ''}`,
     [id],
   );
-  const [[allocation]] = await db.query<RowDataPacket[]>(
-    `SELECT a.id FROM procurement_receipt_allocation a JOIN procurement_order_line l ON l.id=a.purchase_order_line_id WHERE l.purchase_order_id=? ORDER BY a.id LIMIT 1${lock ? ' FOR SHARE' : ''}`,
-    [id],
-  );
-  return Boolean(arrival || allocation);
+  return Boolean(arrival);
 };
 
 export const requireDraft = (order: OrderRow) => {

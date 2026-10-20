@@ -19,7 +19,7 @@ export interface ProcurementInboundReleaseItem {
   receiptLineId: string;
   receiptLineVersion: number;
   receiptReceivedAt: string;
-  /** Original purchase order of the receipt; purchaseNo is this allocation's assigned order. */
+  /** 到货登记来源采购单号，与 purchaseNo 指向同一采购来源。 */
   receiptPurchaseNo: string;
   purchaseOrderId: string;
   purchaseNo: string;

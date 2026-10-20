@@ -89,7 +89,44 @@ Product 主数据、Procurement 供应商与 Production 草稿工单只补缺失
 
 管理员或采购员可用启用供应商与精确物料版本建立独立备料采购并正式下单，仓管登记含两行的同一张到货单；也可新建两行采购，避免覆盖采购跟进样例。先在任一行发起来料检查并保持未完成，再从主单作废入口核对完整两行及原因；提交同时携带详情的主单版本和完整行／轮版本。预期整单成功、主单版本由 0 增为 1、作废摘要显示原因／人员／时间、在途检查失效、原登记和数量修订可查、两行均退出有效数量及质检／入库候选。另建已完成 QC 并定稿、尚未实际入库或退回的到货登记，核对同样可作废且完成检验与清单保留。
 
-阻断样例须另建到货：任一行实际入库或实际退回后应整单拒绝；存在草稿、已下单或已结束关联补单时也应拒绝，人工取消尚未绑定的补单后再核对可作废。已正式绑定的补单仍阻断，解除或换归属不在本次能力内，不通过改数据库绕过。作废后旧页面的更正、检验、定稿、拒收、退回、入库及新补单引用应拒绝，采购状态保持人工跟进结果；历史到货存在，采购取消资格不会恢复。并发、失败回滚及正式自动化覆盖仍按[路线图](../../../docs/roadmap.md)的阶段安排。
+阻断样例须另建到货：任一行实际入库或实际退回后应整单拒绝；存在草稿、已下单或已结束关联补单时也应拒绝，来源处理轮已变化仍阻断。人工取消符合取消资格的关联补单后，再核对到货自身能否作废；不提供解除或跨到货换绑来源。作废后旧页面的更正、检验、定稿、拒收、退回、入库及新补单引用应拒绝，采购状态保持人工跟进结果；历史到货存在，采购取消资格不会恢复。并发、失败回滚及正式自动化覆盖仍按[路线图](../../../docs/roadmap.md)的阶段安排。
+
+## 补单来源与物流解耦的人工验收准备
+
+完成 `db:init`、显式加载 demo 并启动本地 API 后，使用[准备脚本](../../../scripts/prepare-procurement-supplement-demo.mjs)生成业务样例。采购、到货、质检、定稿、入库及退回全部通过正式 API 办理；脚本不直接写业务表，不属于正式测试集。
+
+```bash
+ALLOW_DEMO_SEED=1 node scripts/prepare-procurement-supplement-demo.mjs prepare
+ALLOW_DEMO_SEED=1 node scripts/prepare-procurement-supplement-demo.mjs report
+```
+
+未指定模式时只读报告。脚本读取初始化管理员的环境凭证，不输出密码或令牌；要求非生产环境及显式 `ALLOW_DEMO_SEED=1`。API 默认 `http://127.0.0.1:3002/api`，可用 `PROCUREMENT_SUPPLEMENT_DEMO_API_BASE_URL` 指定；远程地址额外要求 HTTPS 和 `PROCUREMENT_SUPPLEMENT_DEMO_ALLOW_REMOTE=1`。不会进入初始化、部署或 CI 自动执行链路。
+
+默认备注标记为 `[demo-supplement-decoupled-v1]`，报告提供实际单号和明细 ID，不依赖固定 ID。已有标记时只报告、不继续写入；失败会保留已完成的真实事实并报告，不盲目重试。需要新一组样例可设置由字母、数字、下划线或连字符组成的 `PROCUREMENT_SUPPLEMENT_DEMO_TAG`，或重建开发库后重新准备。
+
+| 场景标记 | 准备结果与人工核对目标 |
+| --- | --- |
+| `excess-original`、`excess-before-inbound`、`excess-after-inbound` | 原采购计划 100、到货及实入 120；分别在实入前、后办理 20 的超量补单。原采购保持 120／120，补单无自身物流统计和到货记录 |
+| `quality-original`、`quality-old-draft`、`quality-old-continued` | 原到货 100，质量分配 A 为可入 95／待退 5，更正 B 为 97／3；两张补单均固定原到货，另一张旧草稿改量、下单并自身到货入库 5。核对同到货唯一候选、相关补单及独立统计 |
+| `source-uninspected`、`source-all-pending`、`source-all-return` | 未检、全待处理、全超发待退来源不具备新建超量补单资格 |
+| `source-quality-returned-history` | 质量实际退回 2 后剩余 8 全部可入，当前无质量待退，该到货仍可作为新质量补单来源 |
+
+总计准备 10 张采购单、7 张到货单；超量样例的两张 20 用于比较办理时机，不表示应重复补购。成功报告应为 `prepared: true`、`initialReadinessIssues: []`；数据准备与数量核对成功不代表用户 UI 验收或正式测试通过。
+
+## 质量补单按原到货关联的人工验收准备
+
+两类补单都只保存原采购行、原到货明细和补购说明，不选择或保存分配 ID，也不提供分配依据更正入口。仓库入退仍使用真实 allocation；采购候选按到货明细去重，当前质量待退与历史真实质量已退分别核对。
+
+已有上一节的独立来源样例时，可追加一张小量历史退回草稿，不重复准备基础十张订单：
+
+```bash
+ALLOW_DEMO_SEED=1 PROCUREMENT_SUPPLEMENT_DEMO_TAG='<已有来源tag>' node scripts/prepare-procurement-supplement-demo.mjs prepare-history
+ALLOW_DEMO_SEED=1 PROCUREMENT_SUPPLEMENT_DEMO_TAG='<已有来源tag>' node scripts/prepare-procurement-supplement-demo.mjs report
+```
+
+`prepare-history` 复用 `source-quality-returned-history`，要求其候选当前待退为 0、真实质量已退为 2，创建 `quality-history-receipt-draft` 草稿并保留供采购员手工下单。已有同场景标记时不追加；失败不盲目重试。报告提供实际采购单／行及原到货 ID。人工验收核对当前轮仅可入 8、历史已退 2 时仍可按原到货新建和下单；处理轮变化不改已建补单来源，采购员手动决定补购量，不以待退或累计补单量封顶。
+
+该模式只补充正式 API 演示数据，不代表用户验收或正式测试通过，不修改已有单据、实际退回或库存事实。
 
 ## BOM 审批演示
 

@@ -37,7 +37,7 @@
           v-if="excessOrigin"
           class="origin-purchase"
         >
-          原采购单 <strong>{{ excessOrigin.purchaseNo }}</strong> · 本单承接已到货物料
+          原采购单 <strong>{{ excessOrigin.purchaseNo }}</strong> · 本单记录已有到货补购
         </span>
         <InlineHint
           v-else

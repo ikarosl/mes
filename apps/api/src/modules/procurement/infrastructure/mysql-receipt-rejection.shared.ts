@@ -1,5 +1,4 @@
 import type { PoolConnection } from 'mysql2/promise';
-import type { ReceiptOwnershipInput } from '@company/contracts';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
 import {
   insertAllocation,
@@ -17,18 +16,13 @@ export async function createRejectionAllocations(
   quantity: number,
   reason: string,
   context: CommandContext,
-  ownership?: ReceiptOwnershipInput[],
 ) {
   const plan = planReceiptRejectionAllocations(
-    String(line.purchase_order_line_id),
     sources.map((source) => ({
-      purchaseOrderLineId:
-        source.purchase_order_line_id === null ? null : String(source.purchase_order_line_id),
       remainingQuantity: source.remaining_quantity,
       terminationReason: source.termination_reason,
     })),
     quantity,
-    ownership,
   );
   for (const [index, allocation] of plan.entries())
     await insertAllocation(

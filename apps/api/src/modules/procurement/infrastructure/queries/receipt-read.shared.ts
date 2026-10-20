@@ -151,8 +151,6 @@ export function mapAllocation(row: ReadRow): ReceiptAllocationItem {
     receiptLineId: text(row.receipt_line_id),
     roundId: text(row.round_id),
     acceptanceId: nullableText(row.acceptance_id),
-    purchaseOrderLineId: nullableText(row.purchase_order_line_id),
-    purchaseNo: nullableText(row.purchase_no),
     receiptRevisionId: text(row.receipt_revision_id),
     inspectionId: nullableText(row.inspection_id),
     quantity: text(row.quantity),

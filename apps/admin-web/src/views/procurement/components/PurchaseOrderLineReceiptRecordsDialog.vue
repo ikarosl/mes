@@ -28,7 +28,7 @@
         </el-descriptions-item>
       </el-descriptions>
       <InlineHint class="records-hint">
-        仅列计入本行累计量的有效到货；每条数量可能只是该批的一部分。搜索不改变累计总量。
+        仅列登记在本采购行的有效到货；搜索不改变累计总量。
       </InlineHint>
       <el-form
         inline

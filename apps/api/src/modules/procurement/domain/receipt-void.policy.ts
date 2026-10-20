@@ -12,7 +12,7 @@ export function receiptVoidBlockedReason(input: {
   if (input.dependentPurchaseNos.length) {
     const names = [...new Set(input.dependentPurchaseNos)];
     const suffix = names.length > 5 ? ` 等 ${names.length} 张补单` : '';
-    return `仍有关联补单依赖该到货：${names.slice(0, 5).join('、')}${suffix}。请先人工处理关联补单；已绑定补单的解除或换归属暂不支持`;
+    return `仍有非取消补单固定引用该到货：${names.slice(0, 5).join('、')}${suffix}。请先核对相关补单状态`;
   }
   return null;
 }

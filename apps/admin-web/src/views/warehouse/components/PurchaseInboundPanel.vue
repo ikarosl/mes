@@ -240,16 +240,13 @@
             row-key="rowKey"
           >
             <el-table-column
-              label="到货明细 ID / 实际归属采购"
+              label="到货明细 ID / 来源采购"
               min-width="180"
               ><template #default="{ row }"
                 ><div class="muted">本次第 {{ targetRowNumbers.get(row.rowKey) }} 行</div>
                 <div>id:{{ row.source.receiptLineId }}</div>
                 <div class="muted">
-                  {{ row.source.purchaseNo
-                  }}<span v-if="row.source.purchaseNo !== row.source.receiptPurchaseNo">
-                    · 补单承接</span
-                  >
+                  {{ row.source.purchaseNo }}
                 </div></template
               ></el-table-column
             >

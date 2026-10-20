@@ -49,7 +49,7 @@ const readOrderSuppliers = async (
   return result;
 };
 const LINE_COLUMNS =
-  'l.id,l.purchase_order_id,l.supplier_id,l.line_no,l.item_id,l.material_variant_id,l.item_code_snapshot,l.material_variant_code_snapshot,l.unit_snapshot,l.planned_quantity,l.status,l.version,l.origin_order_line_id,l.origin_receipt_line_id,l.origin_allocation_id,l.supplement_evidence,l.fulfillment_mode';
+  'l.id,l.purchase_order_id,l.supplier_id,l.line_no,l.item_id,l.material_variant_id,l.item_code_snapshot,l.material_variant_code_snapshot,l.unit_snapshot,l.planned_quantity,l.status,l.version,l.origin_order_line_id,l.origin_receipt_line_id,l.supplement_evidence,l.fulfillment_mode';
 
 export const listPurchaseOrders = async (
   db: Db,
@@ -81,15 +81,19 @@ export const listPurchaseOrders = async (
     where.push('o.source_type=?');
     params.push(query.sourceType);
   }
-  if (query.originOrderLineId || query.originAllocationId) {
+  if (query.supplementReason) {
+    where.push('o.supplement_reason=?');
+    params.push(query.supplementReason);
+  }
+  if (query.originOrderLineId || query.originReceiptLineId) {
     const originFilters = ['origin_link.purchase_order_id=o.id'];
     if (query.originOrderLineId) {
       originFilters.push('origin_link.origin_order_line_id=?');
       params.push(query.originOrderLineId);
     }
-    if (query.originAllocationId) {
-      originFilters.push('origin_link.origin_allocation_id=?');
-      params.push(query.originAllocationId);
+    if (query.originReceiptLineId) {
+      originFilters.push('origin_link.origin_receipt_line_id=?');
+      params.push(query.originReceiptLineId);
     }
     where.push(
       `EXISTS(SELECT 1 FROM procurement_order_line origin_link WHERE ${originFilters.join(' AND ')})`,
@@ -158,7 +162,7 @@ export const getPurchaseOrder = async (db: Db, id: string): Promise<PurchaseOrde
   const sources = await readSources(db, id);
   const metrics = await readPurchaseLineMetrics(
     db,
-    lines.map((row) => String(row.id)),
+    lines.filter((row) => row.fulfillment_mode !== 'existing_receipt').map((row) => String(row.id)),
   );
   const suppliers = new Map(lines.map((row) => [String(row.supplier_id), row.supplier_name]));
   return {
@@ -194,9 +198,10 @@ export const getPurchaseOrder = async (db: Db, id: string): Promise<PurchaseOrde
       originReceiptLineId:
         row.origin_receipt_line_id === null ? null : String(row.origin_receipt_line_id),
       originReceiptNo: row.origin_receipt_no,
-      originAllocationId:
-        row.origin_allocation_id === null ? null : String(row.origin_allocation_id),
-      quantities: metrics.get(String(row.id))!.quantities,
+      quantities:
+        row.fulfillment_mode === 'existing_receipt'
+          ? null
+          : metrics.get(String(row.id))!.quantities,
     })),
   };
 };

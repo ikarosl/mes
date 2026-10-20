@@ -78,7 +78,7 @@ export function usePurchaseOrderLineReceiptRecords() {
   const open = async (order: PurchaseOrderDetail, lineId: string): Promise<boolean> => {
     if (!read.isActive()) return false;
     const line = order.items.find((item) => item.id === lineId);
-    if (!line) return false;
+    if (!line || line.fulfillmentMode !== 'new_arrival') return false;
     read.invalidate();
     session += 1;
     context.value = {

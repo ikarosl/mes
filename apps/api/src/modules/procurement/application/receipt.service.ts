@@ -155,10 +155,7 @@ export class ReceiptService {
     payload: RejectReceiptLinePayload,
     context: IdempotentCommandContext,
   ): Promise<ProcurementReceiptCommandResult> {
-    const body = {
-      ...payload,
-      ownership: payload.ownership?.map((owner) => ({ ...owner })),
-    };
+    const body = { ...payload };
     const execution = await this.idempotency.execute({
       scope: REJECT_RECEIPT_SCOPE,
       key: context.idempotencyKey,

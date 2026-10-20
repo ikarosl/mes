@@ -13,13 +13,13 @@
 
 采购结束／恢复仅管理跟进意图，不以物流数量为资格，主单按行汇总。到货主单冻结原登记字段，以主表专门字段、修改审计及乐观版本表达一次性整单作废；在无实际入退且已处理补单依赖时撤销未执行资格，原登记和已完成检查保留，采购状态不随作废改变。两者的取舍和取代范围见 [ADR-0022](adr/0022-procurement-state-and-receipt-void.md)。
 
-表均按公共审计、整数数量、FK/组合FK、并发和不可变规则设计。Quality source_kind与显式来源组互斥；结果冗余稳定来源ID仅用于组合FK，由case约束一致。采购原始来源仍固定，履约归属从不可变分配及有效范围取得。
+表均按公共审计、整数数量、FK/组合FK、并发和不可变规则设计。Quality source_kind与显式来源组互斥；结果冗余稳定来源ID仅用于组合FK，由case约束一致。采购原采购行及原到货身份固定，物流归属由到货自身采购行确定；超量补购只追溯来源，质量补发另有自己的到货。两类补单只保存原采购行、原到货明细及建单依据，不引用仓库分配，取舍见 [ADR-0025](adr/0025-supplement-receipt-line-basis.md)。
 
 ## 事务和当前依据
 
 来料由receipt_line.current_round_id指向整批流程。初次到货创建revision和uninspected轮次；草稿和检查无allocation。发起检查经Quality public创建与incoming_round_id同源的case；全检/抽检都覆盖本批全部未处置实物，样本不拆资格。结果按结论进入待定稿/待复检/不放行。库管定稿核实C并保存正式授权、校准revision和不可变allocation，Quality原G/F不覆盖。普通分配更正可显式继承本批有效QC。
 
-复检／独立更正使旧 round.superseded，全部未实际处置授权退出；previous_round_id 串联整批历史，source_allocation_round_id 仅继承采购归属／终止约束。allocation 保持不可变，实际入退直接关联，部分入库不拆子节点；I/B事实继续保留。T为本次到货核实总量，U=T−I−B，starting_quantity只存起始U。G/F是建议，正式可入数量仍由库管按明确放行记录承担确认责任。
+复检／独立更正使旧 round.superseded，全部未实际处置授权退出；previous_round_id 串联整批历史，source_allocation_round_id 仅继承采购终止约束。allocation 保持不可变，实际入退直接关联，部分入库不拆子节点；I/B事实继续保留。T为本次到货核实总量，U=T−I−B，starting_quantity只存起始U。G/F是建议，正式可入数量仍由库管按明确放行记录承担确认责任。
 
 按数值ID锁原采购和关联补单根，再锁到货行、当前轮和份额，经public核对Quality/Inventory；整单作废在到货行后锁定主单、核对主单版本及作废标记，再锁各当前轮。写入、审计、幂等同事务。质检、复检、拒收、定稿、入库、退回和作废在同一来源互斥，数据库锁不跨现场操作。先核对状态/版本再新增事实，禁止先插迟到记录再标历史。未知结果复用原幂等key/body，已成功操作只重放原结果。
 
@@ -39,8 +39,8 @@
 
 ## 迁移与验证
 
-当前来料正式分配使用不可变 allocation，入库、退回和质量补发精确引用其身份。数据库初始化、历史升级边界与回滚操作只维护于[迁移安全](../packages/database/docs/migration-safety.md)，不在业务说明复述迁移步骤。
+当前来料正式分配使用不可变 allocation，实际入库和退回精确引用其身份；质量补单关联到货明细，分配只参与新建资格核验。数据库初始化、历史升级边界与回滚操作只维护于[迁移安全](../packages/database/docs/migration-safety.md)，不在业务说明复述迁移步骤。
 
 共享字符串代码由constants管理，HTTP用class DTO；展示跨表字段登记api-data-ownership，业务资格仍由锁内public核验。新幂等scope与架构检查和API幂等文档同步。应用类型、构建、迁移检查及启动是交付验证，不等于用户UI验收或正式测试集通过。
 
-质量补发引用正式质量退回分配与供应商约定，创建及下单按原采购根锁重核处置有效；不以实际交接或原单关闭为前置。实际退回与补发分别引用同一分配明细，新增补发实物仍独立走到货/质检/正式清单/入库，字段见[采购订单](../apps/api/src/modules/procurement/docs/purchase-orders.md)。
+质量补发引用原到货明细与供应商约定，创建在原采购根锁内核验该明细存在当前有效质量退回处置或真实质量退回事实；已有补单下单只核验固定来源及采购资格，来源轮次被替代不阻断继续办理，不以实际交接或原单关闭为前置。候选按到货明细分页，质量待退只汇总当前剩余授权，质量已退只汇总实际事实。新增补发实物独立走到货/质检/正式清单/入库，字段见[采购订单](../apps/api/src/modules/procurement/docs/purchase-orders.md)。

@@ -12,7 +12,6 @@ import { procurementApi } from '../../../api/procurement';
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
 import { EMessage } from '../../../utils/message';
 import { useProcurementCommand } from './useProcurementCommand';
-import { useReceiptAllocationOptions } from './useReceiptAllocationOptions';
 
 export function useReceiptAcceptance(
   onSaved: (result: ProcurementReceiptCommandResult) => void | Promise<void>,
@@ -22,30 +21,46 @@ export function useReceiptAcceptance(
     stale = ref(false),
     remark = ref(''),
     overrideReason = ref(''),
-    quantity = ref<number | undefined>(),
+    receivedQuantityInput = ref(''),
     physicalIdentityConfirmed = ref(false);
   const line = ref<ProcurementReceiptLine | null>(null),
     review = ref<QualityInboundCaseItem | null>(null);
   const details = ref<ReceiptAllocationInput[]>([]);
-  const retainedOwners = computed(() =>
-    (line.value?.ownershipSources ?? []).filter((row) => Number(row.quantity) > 0),
-  );
-  const allocationOptions = useReceiptAllocationOptions(
-    () => (visible.value ? line.value?.id : undefined),
-    () =>
-      details.value.flatMap((row) => (row.purchaseOrderLineId ? [row.purchaseOrderLineId] : [])),
-    // 下拉输入存在防抖；复核或写入期间，迟到的搜索不得取消提交前读取。
-    () => visible.value && !loading.value && !stale.value && !command.locked.value,
-  );
   const read = useLatestReadRequest(() => {
     loading.value = false;
   });
   const command = useProcurementCommand<ProcurementReceiptCommandResult>(async (result) => {
     visible.value = false;
     read.invalidate();
-    allocationOptions.invalidate();
     await onSaved(result);
   }, '来料正式清单');
+  const executedQuantity = computed(
+    () =>
+      Number(line.value?.quantities.inboundQuantity ?? 0) +
+      Number(line.value?.quantities.returnedQuantity ?? 0),
+  );
+  const receivedQuantityError = computed(() => {
+    const input = receivedQuantityInput.value.trim();
+    if (!input) return '请填写本批到货总量';
+    const count = Number(input);
+    if (!/^\d+$/.test(input) || !Number.isSafeInteger(count) || count > PURCHASE_ORDER_MAX_QUANTITY)
+      return `本批到货总量须为 0 至 ${PURCHASE_ORDER_MAX_QUANTITY} 的整数`;
+    if (count < executedQuantity.value)
+      return `本批到货总量不能小于已入库与已退回合计 ${executedQuantity.value} ${line.value?.unit ?? ''}`;
+    return '';
+  });
+  const correctedTotal = computed(() =>
+    receivedQuantityError.value ? undefined : Number(receivedQuantityInput.value.trim()),
+  );
+  const quantity = computed(() =>
+    correctedTotal.value === undefined ? undefined : correctedTotal.value - executedQuantity.value,
+  );
+  const receivedQuantityChanged = computed(
+    () =>
+      !!line.value &&
+      correctedTotal.value !== undefined &&
+      correctedTotal.value !== Number(line.value.quantities.receivedQuantity),
+  );
   const inspection = computed(() => review.value?.inspection ?? null);
   const inspectionExecution = computed(() => ({
     inboundQuantity: Number(line.value?.currentInspectionExecution.inboundQuantity ?? 0),
@@ -96,18 +111,13 @@ export function useReceiptAcceptance(
       .filter((row) => row.disposition === 'inbound')
       .reduce((sum, row) => sum + Number(row.quantity), 0),
   );
-  const correctedTotal = computed(
-    () =>
-      Number(line.value?.quantities.inboundQuantity ?? 0) +
-      Number(line.value?.quantities.returnedQuantity ?? 0) +
-      Number(quantity.value),
-  );
   const quantityMismatch = computed(
     () =>
-      correctedTotal.value !== Number(line.value?.quantities.receivedQuantity ?? 0) ||
-      (inspection.value?.inspectionMethod === 'full' &&
-        Number(inspection.value.inspectedQuantity) - totalInspectionExecuted.value !==
-          Number(quantity.value)),
+      quantity.value !== undefined &&
+      (correctedTotal.value !== Number(line.value?.quantities.receivedQuantity ?? 0) ||
+        (inspection.value?.inspectionMethod === 'full' &&
+          Number(inspection.value.inspectedQuantity) - totalInspectionExecuted.value !==
+            quantity.value)),
   );
   const overrideRequired = computed(
     () =>
@@ -118,7 +128,7 @@ export function useReceiptAcceptance(
   const snapshot = () =>
     JSON.stringify([
       details.value,
-      quantity.value,
+      receivedQuantityInput.value,
       remark.value,
       overrideReason.value,
       physicalIdentityConfirmed.value,
@@ -127,12 +137,12 @@ export function useReceiptAcceptance(
   const canConfirm = computed(
     () =>
       !loading.value &&
-      allocationOptions.selectionReady.value &&
       !stale.value &&
       !command.locked.value &&
       inspection.value?.releaseDecision === 'released' &&
       Number.isSafeInteger(quantity.value) &&
       Number(quantity.value) >= 0 &&
+      correctedTotal.value !== undefined &&
       correctedTotal.value <= PURCHASE_ORDER_MAX_QUANTITY &&
       total.value === quantity.value &&
       details.value.length <= 100 &&
@@ -144,7 +154,6 @@ export function useReceiptAcceptance(
           Number.isSafeInteger(row.quantity) &&
           row.quantity > 0 &&
           row.quantity <= PURCHASE_ORDER_MAX_QUANTITY &&
-          (row.disposition !== 'inbound' || !!row.purchaseOrderLineId) &&
           (row.disposition !== 'return' || !!row.returnReason),
       ),
   );
@@ -154,10 +163,7 @@ export function useReceiptAcceptance(
     const request = read.begin(() => visible.value && line.value?.id === target.id);
     loading.value = true;
     try {
-      const [latest, options] = await Promise.all([
-        procurementApi.getReceiptLine(target.id, request.signal),
-        allocationOptions.load(),
-      ]);
+      const latest = await procurementApi.getReceiptLine(target.id, request.signal);
       if (!request.isCurrent()) return false;
       stale.value =
         latest.version !== target.version ||
@@ -177,7 +183,7 @@ export function useReceiptAcceptance(
             row.status === 'completed' &&
             row.inspection?.id === inspection.value?.id,
         );
-      return !stale.value && !!options && allocationOptions.selectionReady.value;
+      return !stale.value;
     } catch (error) {
       if (request.isCurrent()) {
         stale.value = true;
@@ -187,10 +193,6 @@ export function useReceiptAcceptance(
     } finally {
       if (request.isCurrent()) loading.value = false;
     }
-  };
-  const refreshCandidates = async () => {
-    if (command.locked.value || stale.value || loading.value) return;
-    await allocationOptions.search('');
   };
   const initializeDraft = (
     target: ProcurementReceiptLine,
@@ -205,23 +207,13 @@ export function useReceiptAcceptance(
             row.returnReason !== 'manual_rejection',
         )
         .map((row) => ({
-          purchaseOrderLineId: row.purchaseOrderLineId,
           disposition: row.disposition,
           quantity: Number(row.remainingQuantity),
           returnReason: row.returnReason,
           remark: row.remark ?? '',
         }));
-    const retained = target.ownershipSources.filter(
-      (row) => row.purchaseOrderLineId !== target.purchaseOrderLineId && Number(row.quantity) > 0,
-    );
-    const retainedQuantity = retained.reduce((sum, row) => sum + Number(row.quantity), 0);
-    const draft: ReceiptAllocationInput[] = retained.map((row) => ({
-      purchaseOrderLineId: row.purchaseOrderLineId,
-      disposition: 'pending',
-      quantity: Number(row.quantity),
-      returnReason: null,
-    }));
-    const remaining = Math.max(0, Number(quantity.value) - retainedQuantity);
+    const draft: ReceiptAllocationInput[] = [];
+    const remaining = Number(quantity.value);
     const available = Math.min(remaining, Math.max(0, limit.value ?? 0));
     const approved = Math.min(available, Number(target.originalRemainingPlannedQuantity));
     const unreturnedBad =
@@ -235,14 +227,12 @@ export function useReceiptAcceptance(
     const bad = Math.min(unreturnedBad, remaining - approved);
     if (approved > 0)
       draft.push({
-        purchaseOrderLineId: target.purchaseOrderLineId,
         disposition: 'inbound',
         quantity: approved,
         returnReason: null,
       });
     if (bad > 0)
       draft.push({
-        purchaseOrderLineId: target.purchaseOrderLineId,
         disposition: 'return',
         quantity: bad,
         returnReason: 'quality',
@@ -250,7 +240,6 @@ export function useReceiptAcceptance(
     const pending = remaining - approved - bad;
     if (pending > 0)
       draft.push({
-        purchaseOrderLineId: null,
         disposition: 'pending',
         quantity: pending,
         returnReason: null,
@@ -274,27 +263,20 @@ export function useReceiptAcceptance(
     }
     line.value = JSON.parse(JSON.stringify(target)) as ProcurementReceiptLine;
     review.value = JSON.parse(JSON.stringify(record)) as QualityInboundCaseItem;
-    quantity.value = Number(target.quantities.unprocessedQuantity);
+    receivedQuantityInput.value = String(target.quantities.receivedQuantity);
     details.value = initializeDraft(target, record.inspection);
     remark.value = '';
     overrideReason.value = '';
     physicalIdentityConfirmed.value = false;
-    allocationOptions.reset();
-    allocationOptions.seedLabels([
-      { purchaseOrderLineId: target.purchaseOrderLineId, purchaseNo: target.purchaseNo },
-      ...target.ownershipSources,
-    ]);
     stale.value = false;
     baseline = snapshot();
     visible.value = true;
-    await refreshCandidates();
   };
   const close = async () => {
     if (!visible.value) return true;
     if (!(await command.canClose(snapshot() !== baseline))) return false;
     visible.value = false;
     read.invalidate();
-    allocationOptions.invalidate();
     return true;
   };
   const confirm = async () => {
@@ -354,11 +336,12 @@ export function useReceiptAcceptance(
     inspection,
     inspectionExecution,
     fullLimitBeforeFloor,
-    retainedOwners,
-    allocationOptions,
-    refreshCandidates,
     details,
     quantity,
+    receivedQuantityInput,
+    receivedQuantityError,
+    receivedQuantityChanged,
+    executedQuantity,
     limit,
     total,
     inboundTotal,

@@ -32,7 +32,7 @@
       <div class="order-context">
         <template v-if="order">
           <span
-            >{{ isExcessSource ? '当前承接补单' : '原采购单' }}
+            >{{ isExcessSource ? '当前超量补单' : '原采购单' }}
             <strong>{{ order.purchaseNo }}</strong></span
           >
           <span
@@ -53,7 +53,7 @@
           :tone="originTarget ? 'info' : 'warning'"
         >
           <template v-if="originTarget">
-            本单 {{ order.purchaseNo }} 承接原到货；继续办理补单请前往原采购单
+            本单 {{ order.purchaseNo }} 记录已有到货补购；继续办理补单请前往原采购单
             {{ originTarget.purchaseNo }}。
             <el-button
               link
@@ -91,7 +91,7 @@
           </div>
           <InlineHint v-if="reason">
             <template v-if="reason === 'excess_purchase'"
-              >承接<strong>原到货</strong>，无需重复到货或质检；正式下单后由库管在原到货定稿中关联。</template
+              >记录<strong>已有到货补购</strong>及采购约定，不新增到货；原到货的质检、定稿和入退库独立办理。</template
             >
             <template v-else
               >补发须登记<strong>新到货</strong>并重新质检入库；原货实际退回另行办理。</template
@@ -144,15 +144,14 @@
               <div class="selected-basis">
                 <div class="basis-identity">
                   <span v-if="draft.selectedExcess"
-                    >已选依据 {{ draft.selectedExcess.receiptNo }} · id:{{
+                    >已选依据 {{ draft.selectedExcess.receiptNo }} · 明细 ID：{{
                       draft.selectedExcess.id
                     }}</span
                   >
                   <span v-else-if="draft.selectedQuality"
-                    >已选依据 {{ draft.selectedQuality.receiptNo }} · id:{{
+                    >已选依据 {{ draft.selectedQuality.receiptNo }} · 明细 ID：{{
                       draft.selectedQuality.receiptLineId
-                    }}
-                    · 到货分配 ID：{{ draft.selectedQuality.allocationId }}</span
+                    }}</span
                   >
                   <el-button
                     link
@@ -171,6 +170,10 @@
                   v-else-if="draft.selectedQuality"
                   class="basis-quantities"
                 >
+                  <span
+                    >到货量 <strong>{{ draft.selectedQuality.receivedQuantity }}</strong>
+                    {{ draft.line.unit }}</span
+                  >
                   <span>
                     待退回
                     <strong
@@ -189,10 +192,6 @@
                     >
                     {{ draft.line.unit }}
                   </span>
-                  <span
-                    >当时安排退回量 {{ draft.selectedQuality.allocationQuantity }}
-                    {{ draft.line.unit }}</span
-                  >
                 </div>
               </div>
               <el-alert
@@ -439,8 +438,12 @@ const confirmChoices = (confirmation: SupplementBasisConfirmation): void => {
 const refreshContext = async (): Promise<void> => {
   if (await refreshOrder()) await openPendingSelection();
 };
-const showRelated = async (lineId: string, allocationId: string): Promise<void> => {
-  if (!editingLocked.value) await related.value?.open(lineId, allocationId);
+const showRelated = async (lineId: string, receiptLineId: string): Promise<void> => {
+  if (!editingLocked.value && reason.value)
+    await related.value?.open(lineId, {
+      originReceiptLineId: receiptLineId,
+      supplementReason: reason.value,
+    });
 };
 const beforeClose = (): void => {
   void close();

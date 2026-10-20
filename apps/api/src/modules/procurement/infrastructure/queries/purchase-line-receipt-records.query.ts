@@ -12,10 +12,19 @@ export async function listPurchaseLineReceiptRecords(
   purchaseOrderLineId: string,
   query: PurchaseOrderLineReceiptRecordQuery & { page: number; pageSize: number },
 ): Promise<PurchaseOrderLineReceiptRecordPage> {
-  const [[line]] = await db.query<ReadRow[]>('SELECT id FROM procurement_order_line WHERE id=?', [
-    purchaseOrderLineId,
-  ]);
+  const [[line]] = await db.query<ReadRow[]>(
+    'SELECT id,fulfillment_mode FROM procurement_order_line WHERE id=?',
+    [purchaseOrderLineId],
+  );
   if (!line) return orderError('采购行不存在', PROCUREMENT_ERROR_CODES.purchaseOrderNotFound);
+  if (line.fulfillment_mode === 'existing_receipt')
+    return {
+      receivedQuantity: '0',
+      items: [],
+      total: 0,
+      page: query.page,
+      pageSize: query.pageSize,
+    };
 
   const metrics = (await readPurchaseLineMetrics(db, [purchaseOrderLineId])).get(
     purchaseOrderLineId,

@@ -6,6 +6,7 @@ import type {
   ProcurementDemandCandidate,
   PurchaseOrderLineStatus,
   PurchaseOrderSupplementReason,
+  PurchaseFulfillmentMode,
 } from '@company/contracts';
 import { PROCUREMENT_ERROR_CODES } from '@company/constants';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
@@ -82,7 +83,7 @@ export const insertLines = async (
     lineId: string;
     evidence: string;
     receiptLineId?: string | null;
-    allocationId?: string | null;
+    fulfillmentMode: PurchaseFulfillmentMode;
   }>,
 ) => {
   const map = new Map(references.map((row) => [`${row.itemId}:${row.materialVariantId}`, row]));
@@ -91,7 +92,7 @@ export const insertLines = async (
     const ref = map.get(`${line.itemId}:${line.materialVariantId}`);
     if (!ref) return orderError('采购物料资格已变化');
     const [result] = await connection.execute<ResultSetHeader>(
-      `INSERT INTO procurement_order_line(purchase_order_id,line_no,supplier_id,item_id,material_variant_id,item_code_snapshot,material_variant_code_snapshot,unit_snapshot,planned_quantity,origin_order_line_id,supplement_evidence,origin_receipt_line_id,origin_allocation_id,fulfillment_mode,created_by,updated_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO procurement_order_line(purchase_order_id,line_no,supplier_id,item_id,material_variant_id,item_code_snapshot,material_variant_code_snapshot,unit_snapshot,planned_quantity,origin_order_line_id,supplement_evidence,origin_receipt_line_id,fulfillment_mode,created_by,updated_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         id,
         index + 1,
@@ -105,8 +106,7 @@ export const insertLines = async (
         origin?.lineId ?? null,
         origin?.evidence ?? null,
         origin?.receiptLineId ?? null,
-        origin?.allocationId ?? null,
-        origin?.receiptLineId && !origin?.allocationId ? 'existing_receipt' : 'new_arrival',
+        origin?.fulfillmentMode ?? 'new_arrival',
         context.actorId,
         context.actorId,
       ],
@@ -180,55 +180,10 @@ export const auditOrder = (
     userAgent: context.userAgent,
   });
 
-export const requireSupplementEvidence = async (
-  connection: PoolConnection,
-  lineId: string,
-  reason: PurchaseOrderSupplementReason,
-  receiptLineId?: string,
-  allocationId?: string,
-) => {
-  if (!receiptLineId) return orderError('补单必须关联真实到货明细');
-  if (reason === 'quality_replacement' && !allocationId)
-    return orderError('质量补发必须引用已确认的质量退回分配明细');
-  if (reason !== 'quality_replacement' && allocationId)
-    return orderError('只有质量补发可以引用质量退回分配明细');
-  const [[receipt]] = await connection.query<RowDataPacket[]>(
-    'SELECT id,receipt_id FROM procurement_receipt_line WHERE id=? AND purchase_order_line_id=? FOR SHARE',
-    [receiptLineId, lineId],
-  );
-  if (!receipt) return orderError('原到货不属于所选原采购行');
-  const [[registration]] = await connection.query<(RowDataPacket & { is_voided: number })[]>(
-    'SELECT is_voided FROM procurement_receipt WHERE id=? FOR SHARE',
-    [receipt.receipt_id],
-  );
-  if (!registration) return orderError('原到货登记不存在');
-  if (Number(registration.is_voided) === 1)
-    return orderError('原到货登记已作废，不能继续创建或办理关联补单');
-  if (!allocationId) return;
-  const [[allocation]] = await connection.query<RowDataPacket[]>(
-    `SELECT id FROM procurement_receipt_allocation
-     WHERE id=? AND receipt_line_id=? AND disposition='return' AND return_reason='quality' FOR SHARE`,
-    [allocationId, receiptLineId],
-  );
-  if (!allocation) return orderError('补发依据必须是同次到货的正式质量退回处置');
-  // 原采购根已锁定，与复检、清单更正和实际退回串行；历史明细本身不能证明当前仍可补发。
-  const [[current]] = await connection.query<RowDataPacket[]>(
-    `SELECT a.id FROM procurement_receipt_allocation a
-      JOIN procurement_receipt_line l ON l.id=a.receipt_line_id JOIN procurement_receipt_round r ON r.id=a.round_id
-      WHERE a.id=? AND ((l.current_round_id=a.round_id AND r.status='finalized')
-        OR EXISTS(SELECT 1 FROM procurement_supplier_return sr WHERE sr.allocation_id=a.id AND sr.reason_type='quality')) FOR SHARE`,
-    [allocationId],
-  );
-  if (!current) return orderError('质量处置已被更正或正在复核，请依据当前正式清单重新办理补发');
-};
-
 export async function requireOrderWithoutReceiptFacts(
   connection: PoolConnection,
   id: string,
 ): Promise<void> {
   if (await hasOrderReceiptFacts(connection, id, true))
-    return orderError(
-      '已有到货或正式承接记录，采购不能取消，可人工结束采购',
-      'PURCHASE_ORDER_STATE',
-    );
+    return orderError('已有自身到货记录，采购不能取消，可人工结束采购', 'PURCHASE_ORDER_STATE');
 }

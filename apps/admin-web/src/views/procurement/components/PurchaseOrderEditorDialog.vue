@@ -29,7 +29,7 @@
     />
     <el-alert
       v-if="supplement"
-      title="此单为独立补单；供应商、物料和需求来源沿用原采购行，草稿只可调整采购数量及备注。"
+      title="此单为独立补单；供应商、物料和需求来源沿用原采购行，本窗口只调整采购数量及备注。"
       type="info"
       :closable="false"
       class="notice"
@@ -90,7 +90,8 @@
         >
       </div>
       <p class="help">
-        采购数量独立填写，不分摊到需求；正式下单后供应商、物料、数量和来源均不可编辑。
+        采购数量独立填写，不分摊到需求；正式下单后不提供常规编辑。
+        <template v-if="supplement">补单来源固定，原采购行或原到货选错须取消草稿后重建。</template>
       </p>
       <el-table
         :data="rows"
@@ -105,7 +106,7 @@
               :column="2"
               border
               size="small"
-              title="本行冻结的补单来源"
+              title="本行补单来源"
             >
               <el-descriptions-item label="原采购"
                 >{{ originalLine(row.key)?.originPurchaseNo }} · 原采购行 ID：
@@ -116,9 +117,6 @@
                   originalLine(row.key)?.originReceiptLineId
                 }}</el-descriptions-item
               >
-              <el-descriptions-item label="到货分配 ID">{{
-                originalLine(row.key)?.originAllocationId || '不适用'
-              }}</el-descriptions-item>
               <el-descriptions-item label="本行补单依据">{{
                 originalLine(row.key)?.supplementEvidence
               }}</el-descriptions-item>

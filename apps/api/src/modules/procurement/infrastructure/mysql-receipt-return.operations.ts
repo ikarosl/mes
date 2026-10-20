@@ -59,16 +59,7 @@ export async function rejectReceiptLine(
     context,
     quality,
   );
-  await createRejectionAllocations(
-    db,
-    line,
-    next,
-    sources,
-    remaining,
-    payload.reason,
-    context,
-    payload.ownership,
-  );
+  await createRejectionAllocations(db, line, next, sources, remaining, payload.reason, context);
   await touchReceiptLine(db, id, context);
   await auditReceipt(
     db,

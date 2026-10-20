@@ -93,11 +93,11 @@ Quality仍为G9/F1，共检查10。系统提示核实11与原报10、全检10不
 
 `procurement_receipt_allocation`（本轮不可变执行分配）：
 
-| id | receipt_line_id | round_id | acceptance_id | purchase_order_line_id | disposition | quantity | return_reason |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| D1 | L1 | W1 | A1 | POL1 | inbound | 9 | 空 |
-| D2 | L1 | W1 | A1 | POL1 | return | 1 | quality |
-| D3 | L1 | W1 | A1 | POL1 | return | 1 | excess |
+| id | receipt_line_id | round_id | acceptance_id | disposition | quantity | return_reason |
+| --- | --- | --- | --- | --- | --- | --- |
+| D1 | L1 | W1 | A1 | inbound | 9 | 空 |
+| D2 | L1 | W1 | A1 | return | 1 | quality |
+| D3 | L1 | W1 | A1 | return | 1 | excess |
 
 本步之后：L1.current_receipt_revision_id=V2，current_round_id=W1；W1.status=finalized，starting_quantity=10，receipt_revision_id仍为创建时的V1；A1.C=11；当前T=11、I=0、B=0、U=11。
 
@@ -138,10 +138,10 @@ W2由uninspected到reviewing；新建办理K2，关联W2/V3，申报快照10。�
 | --- | --- | --- | --- | --- | --- | --- |
 | A2 | W2 | Q2 | V3 | V3 | 10 | A1 |
 
-| allocation.id | receipt_line_id | round_id | acceptance_id | purchase_order_line_id | disposition | quantity | return_reason |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| D4 | L1 | W2 | A2 | POL1 | inbound | 9 | 空 |
-| D5 | L1 | W2 | A2 | POL1 | return | 1 | quality |
+| allocation.id | receipt_line_id | round_id | acceptance_id | disposition | quantity | return_reason |
+| --- | --- | --- | --- | --- | --- | --- |
+| D4 | L1 | W2 | A2 | inbound | 9 | 空 |
+| D5 | L1 | W2 | A2 | return | 1 | quality |
 
 T没有再次改变，因此不创建V4；W2改为finalized，starting_quantity仍为10，inspection_id=Q2。L1指向V3/W2。
 
@@ -171,7 +171,7 @@ V3仍然记录10，A2仍记录C10，D4/D5仍记录授权9/1；实际执行不覆
 - 新检验针对剩余6；假设新全检G5/F1，库管确认C6，分配可入5、待退1。
 - 最新本次到货核实总量仍是10，不能把新轮6或新定稿6当成整批总到货量。
 
-更正后T不能小于真实I+B。金额、收费或补购安排不在本例推算；已有补单采购归属在换轮时仍须按原规则核对。
+更正后T不能小于真实I+B。金额、收费或补购安排不在本例推算；已有补单保留建单时来源，换轮不修改其引用；采购终止约束仍须按原规则核对。
 
 ## 9. 误拒收后重新办理
 
@@ -187,7 +187,7 @@ V3仍然记录10，A2仍记录C10，D4/D5仍记录授权9/1；实际执行不覆
 
 ## 10. 继承依据及实际执行约束
 
-round.source_allocation_round_id只定位需核对的既有采购归属／终止分配：从有分配的已定稿前轮取该轮ID，否则沿前轮既有来源；已定稿且无分配的零剩余轮清空来源，不能跳过零轮恢复更老分配。它不授予执行资格。
+round.source_allocation_round_id只定位需核对的既有采购终止分配：从有分配的已定稿前轮取该轮ID，否则沿前轮既有来源；已定稿且无分配的零剩余轮清空来源，不能跳过零轮恢复更老分配。它不授予执行资格。
 
 同一allocation可分多次真实入库，inbound_detail直接引用它，不设allocation唯一消费约束；每次实际明细／库存流水独立，当前行／轮锁、余量核对和幂等防止超入。实际退回仍为一个待退分配一次全部交接。当前轮以外的分配即便显示历史未执行量也不可使用。
 

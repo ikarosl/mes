@@ -80,7 +80,9 @@ export function evaluateReceiptAcceptanceQuantities(
   );
   const overrideReason = payload.overrideReason?.trim() || null;
   if ((suggestion === null || inboundQuantity > suggestion) && !overrideReason)
-    return receiptError('可入数量超过质检建议或样本与核实数量不一致，请填写数量异常核对依据');
+    return receiptError(
+      '可入数量超过质检建议或抽检样本数量超过本轮剩余实物数量，请填写数量异常核对依据',
+    );
   if (overrideReason && overrideReason.length > 2000)
     return receiptError('数量异常核对依据最多 2000 字');
   const remark = payload.remark.trim();

@@ -35,7 +35,7 @@ export function requireReceiptCorrectionInput(input: {
     return receiptError('实收修订已经变化，请刷新', 'RECEIPT_STATE');
   if (input.physicalIdentityConfirmed !== true)
     return receiptError('必须核实这是原到货实物的录入更正，不是新来货或损耗');
-  requireQuantity(input.receivedQuantity, '更正后本次到货核实总量', true);
+  requireQuantity(input.receivedQuantity, '更正后到货总量', true);
 }
 
 export function planReceiptCorrection(
@@ -100,7 +100,7 @@ export function roundStatusAfterInspection(decision: QualityReleaseDecision): Re
       : 'quality_rejected';
 }
 
-/** A finalized empty round clears older ownership; review rounds only carry their explicit basis. */
+/** 已定稿空轮清除旧来源；复核轮仅沿用明确的约束来源。 */
 export function nextReceiptAllocationSourceRoundId(
   previous: {
     id: string;

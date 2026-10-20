@@ -20,6 +20,7 @@ import type {
   ReopenPurchaseOrderLinePayload,
   ClosePurchaseOrderPayload,
   PurchaseOrderDraftLine,
+  PurchaseFulfillmentMode,
   ProcurementDemandCandidate,
 } from '@company/contracts';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
@@ -30,6 +31,7 @@ import {
   type InventoryMaterialEligibility,
 } from '../../product/public.js';
 import { ProductionProcurementQuery } from '../../production/public.js';
+import { InventoryInboundQuery } from '../../inventory/public.js';
 import { PurchaseOrderRepository } from '../application/ports/purchase-order.repository.js';
 import { normalizePurchaseDraft } from '../domain/purchase-order.policy.js';
 import {
@@ -53,7 +55,6 @@ import {
 } from './mysql-purchase-order.shared.js';
 import {
   requireSuppliers,
-  requireSupplementEvidence,
   assertSources,
   insertOrder,
   insertLines,
@@ -63,6 +64,10 @@ import {
   auditOrder,
   requireOrderWithoutReceiptFacts,
 } from './mysql-purchase-order.write.js';
+import {
+  requireSupplementIdentity,
+  requireSupplementCreationEligibility,
+} from './mysql-purchase-order-supplement.shared.js';
 
 @Injectable()
 export class MysqlPurchaseOrderRepository extends PurchaseOrderRepository {
@@ -70,6 +75,7 @@ export class MysqlPurchaseOrderRepository extends PurchaseOrderRepository {
     @Inject(DATABASE_POOL) private readonly pool: Pool,
     private readonly production: ProductionProcurementQuery,
     private readonly product: ProductInventoryEligibility,
+    private readonly inventory: InventoryInboundQuery,
   ) {
     super();
   }
@@ -156,7 +162,7 @@ export class MysqlPurchaseOrderRepository extends PurchaseOrderRepository {
             lineId: string;
             evidence: string;
             receiptLineId?: string | null;
-            allocationId?: string | null;
+            fulfillmentMode: PurchaseFulfillmentMode;
           }>
         | undefined;
       if (order.supplement_reason) {
@@ -185,8 +191,7 @@ export class MysqlPurchaseOrderRepository extends PurchaseOrderRepository {
             evidence: line.supplement_evidence,
             receiptLineId:
               line.origin_receipt_line_id === null ? null : String(line.origin_receipt_line_id),
-            allocationId:
-              line.origin_allocation_id === null ? null : String(line.origin_allocation_id),
+            fulfillmentMode: line.fulfillment_mode,
           };
         });
       }
@@ -257,12 +262,10 @@ export class MysqlPurchaseOrderRepository extends PurchaseOrderRepository {
       const refs = await this.requireMaterials(candidateLines);
       if (order.supplement_reason)
         for (const line of lines)
-          await requireSupplementEvidence(
+          await requireSupplementIdentity(
             connection,
             String(line.origin_order_line_id),
-            order.supplement_reason,
             line.origin_receipt_line_id === null ? undefined : String(line.origin_receipt_line_id),
-            line.origin_allocation_id === null ? undefined : String(line.origin_allocation_id),
           );
       const refMap = new Map(refs.map((ref) => [`${ref.itemId}:${ref.materialVariantId}`, ref]));
       for (const line of lines) {
@@ -484,14 +487,19 @@ export class MysqlPurchaseOrderRepository extends PurchaseOrderRepository {
       });
       const orderId = await insertOrder(connection, draft, context, payload.supplementReason);
       const refs = await this.requireMaterials(draft.items);
-      for (const item of payload.items)
-        await requireSupplementEvidence(
+      for (const item of payload.items) {
+        await requireSupplementIdentity(
           connection,
           item.originOrderLineId,
+          item.originReceiptLineId,
+        );
+        await requireSupplementCreationEligibility(
+          connection,
           payload.supplementReason,
           item.originReceiptLineId,
-          item.originAllocationId,
+          this.inventory,
         );
+      }
       await insertLines(
         connection,
         orderId,
@@ -502,7 +510,8 @@ export class MysqlPurchaseOrderRepository extends PurchaseOrderRepository {
           lineId: item.originOrderLineId,
           evidence: item.supplementEvidence,
           receiptLineId: item.originReceiptLineId,
-          allocationId: item.originAllocationId ?? null,
+          fulfillmentMode:
+            payload.supplementReason === 'excess_purchase' ? 'existing_receipt' : 'new_arrival',
         })),
       );
       await auditOrder(connection, context, 'purchase-order.supplement', orderId, null, {

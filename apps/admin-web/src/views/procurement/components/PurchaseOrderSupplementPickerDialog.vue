@@ -14,7 +14,7 @@
       <span>{{
         replacingLineId
           ? '确认后保留已填数量与说明，请重新核对。'
-          : '每条采购行选择一份依据，可跨行、跨页保留选择。'
+          : '每条采购行选择一次到货，可跨行、跨页保留选择。'
       }}</span>
     </div>
     <div class="picker-columns">
@@ -68,7 +68,7 @@
             </span>
             <span>{{ line.materialVariantCode }}</span>
             <span>{{ line.supplierName }}</span>
-            <span>采购行 id:{{ line.id }}</span>
+            <span>采购行 ID：{{ line.id }}</span>
           </button>
         </div>
       </aside>
@@ -80,7 +80,7 @@
           <div class="basis-heading">
             <strong>{{ currentLine.itemName }} · {{ currentLine.materialVariantCode }}</strong>
             <span
-              >采购行 id:{{ currentLine.id }} · {{ currentLine.supplierName }} · 原计划
+              >采购行 ID：{{ currentLine.id }} · {{ currentLine.supplierName }} · 原计划
               {{ currentLine.plannedQuantity }} {{ currentLine.unit }}</span
             >
           </div>
@@ -118,15 +118,10 @@
               >
             </form>
             <div
-              v-if="currentPage.receiptLineId || currentPage.allocationId"
+              v-if="currentPage.receiptLineId"
               class="located-basis"
             >
-              <span
-                >定位到货明细 id:{{ currentPage.receiptLineId
-                }}<template v-if="currentPage.allocationId">
-                  · 到货分配 ID：{{ currentPage.allocationId }}</template
-                ></span
-              >
+              <span>定位到货明细 ID：{{ currentPage.receiptLineId }}</span>
               <el-button
                 link
                 type="primary"
@@ -140,15 +135,14 @@
               class="current-choice"
             >
               <span v-if="currentChoice.selectedExcess"
-                >已选 {{ currentChoice.selectedExcess.receiptNo }} · id:{{
+                >已选 {{ currentChoice.selectedExcess.receiptNo }} · 明细 ID：{{
                   currentChoice.selectedExcess.id
                 }}</span
               >
               <span v-else-if="currentChoice.selectedQuality"
-                >已选 {{ currentChoice.selectedQuality.receiptNo }} · id:{{
+                >已选 {{ currentChoice.selectedQuality.receiptNo }} · 明细 ID：{{
                   currentChoice.selectedQuality.receiptLineId
-                }}
-                · 到货分配 ID：{{ currentChoice.selectedQuality.allocationId }}</span
+                }}</span
               >
               <el-button
                 link
@@ -187,7 +181,9 @@
                     :aria-label="`选择到货 ${candidate.receiptNo} 明细 ${candidate.id}`"
                     class="basis-radio"
                     @change="selectExcess(candidate)"
-                    ><strong>{{ candidate.receiptNo }} · id:{{ candidate.id }}</strong></el-radio
+                    ><strong
+                      >{{ candidate.receiptNo }} · 明细 ID：{{ candidate.id }}</strong
+                    ></el-radio
                   >
                   <div class="candidate-information">
                     <span>批号 {{ candidate.supplierBatchCode || '未提供' }}</span>
@@ -199,40 +195,49 @@
                       {{ currentLine.unit }}</span
                     >
                   </div>
+                  <ReceiptLinkedSupplements
+                    :summaries="candidate.receiptLinkedSupplements"
+                    :unit="currentLine.unit"
+                    :disabled="disabled"
+                    @view="emit('related', currentLine.id, candidate.id)"
+                  />
                 </article>
               </template>
               <template v-else>
                 <el-empty
                   v-if="!loading && !currentPage.error && !currentPage.qualityRows.length"
-                  description="没有匹配的质量待退或已退分配，请更换搜索条件或采购行"
+                  description="没有匹配的质量待退或已退到货，请更换搜索条件或采购行"
                   :image-size="70"
                 />
                 <article
                   v-for="candidate in currentPage.qualityRows"
-                  :key="candidate.allocationId"
+                  :key="candidate.receiptLineId"
                   class="candidate-card"
                   :class="{
                     'is-selected':
-                      currentChoice?.selectedQuality?.allocationId === candidate.allocationId,
+                      currentChoice?.selectedQuality?.receiptLineId === candidate.receiptLineId,
                   }"
                 >
                   <el-radio
-                    :model-value="currentChoice?.selectedQuality?.allocationId"
-                    :value="candidate.allocationId"
+                    :model-value="currentChoice?.selectedQuality?.receiptLineId"
+                    :value="candidate.receiptLineId"
                     :disabled="disabled || loading || currentPage.error"
-                    :aria-label="`选择到货 ${candidate.receiptNo} 到货分配 ID ${candidate.allocationId}`"
+                    :aria-label="`选择到货 ${candidate.receiptNo} 明细 ${candidate.receiptLineId}`"
                     class="basis-radio"
                     @change="selectQuality(candidate)"
                     ><strong
-                      >{{ candidate.receiptNo }} · id:{{ candidate.receiptLineId }}</strong
+                      >{{ candidate.receiptNo }} · 明细 ID：{{ candidate.receiptLineId }}</strong
                     ></el-radio
                   >
                   <div class="candidate-information">
-                    <strong>到货分配 ID：{{ candidate.allocationId }}</strong>
                     <span>批号 {{ candidate.supplierBatchCode || '未提供' }}</span>
-                    <span>{{ candidate.isCurrent ? '当前有效分配' : '历史分配' }}</span>
+                    <span>到货 {{ formatDateTimeForDisplay(candidate.receivedAt) }}</span>
                   </div>
                   <div class="candidate-quantities">
+                    <span
+                      >到货量 <strong>{{ candidate.receivedQuantity }}</strong>
+                      {{ currentLine.unit }}</span
+                    >
                     <span
                       >待退回
                       <strong :class="receiptReturnQuantityClass(candidate.pendingReturnQuantity)">
@@ -248,56 +253,12 @@
                       {{ currentLine.unit }}</span
                     >
                   </div>
-                  <div class="candidate-return-record">
-                    <span>退回记录</span>
-                    <div class="candidate-detail-row">
-                      <span
-                        >当时安排退回量 {{ candidate.allocationQuantity }}
-                        {{ currentLine.unit }}</span
-                      >
-                      <span>{{
-                        candidate.returnNo ? `实际退回单 ${candidate.returnNo}` : '尚无实际退回单'
-                      }}</span>
-                    </div>
-                    <div class="candidate-detail-row">
-                      <span>到货 {{ formatDateTimeForDisplay(candidate.receivedAt) }}</span>
-                      <span v-if="candidate.allocationPurchaseOrderLineId !== currentLine.id">
-                        退回归属：<template v-if="candidate.allocationPurchaseOrderLineId">
-                          {{ candidate.allocationPurchaseNo || '采购单号待核对' }} · 采购行 id:{{
-                            candidate.allocationPurchaseOrderLineId
-                          }}</template
-                        ><template v-else>未指定采购行</template>
-                      </span>
-                    </div>
-                  </div>
-                  <div
-                    v-if="candidate.linkedSupplements.length"
-                    class="linked-supplements"
-                  >
-                    <div class="candidate-detail-row">
-                      <span>关联补单</span>
-                      <el-button
-                        link
-                        type="primary"
-                        :disabled="disabled"
-                        @click.stop="emit('related', currentLine.id, candidate.allocationId)"
-                        >查看关联补单号</el-button
-                      >
-                    </div>
-                    <span
-                      v-for="entry in candidate.linkedSupplements"
-                      :key="entry.status"
-                      >{{ PURCHASE_ORDER_STATUS_LABELS[entry.status] }}：关联明细
-                      <strong>{{ entry.count }}</strong> 条，补购量
-                      <strong>{{ entry.plannedQuantity }}</strong>
-                      {{ currentLine.unit }}</span
-                    >
-                  </div>
-                  <span
-                    v-else
-                    class="linked-supplements-empty"
-                    >暂无关联补单</span
-                  >
+                  <ReceiptLinkedSupplements
+                    :summaries="candidate.receiptLinkedSupplements"
+                    :unit="currentLine.unit"
+                    :disabled="disabled"
+                    @view="emit('related', currentLine.id, candidate.receiptLineId)"
+                  />
                 </article>
               </template>
             </div>
@@ -343,11 +304,9 @@
 
 <script setup lang="ts">
 import type { PurchaseOrderLine, PurchaseOrderSupplementReason } from '@company/contracts';
-import {
-  PURCHASE_ORDER_STATUS_LABELS,
-  PURCHASE_ORDER_SUPPLEMENT_REASON_LABELS,
-} from '@company/constants';
+import { PURCHASE_ORDER_SUPPLEMENT_REASON_LABELS } from '@company/constants';
 import InlineHint from '../../../components/InlineHint.vue';
+import ReceiptLinkedSupplements from './ReceiptLinkedSupplements.vue';
 import PaginationFooter from '../../../components/PaginationFooter.vue';
 import { formatDateTimeForDisplay } from '../../../utils/date';
 import { DialogWidth } from '../../../utils/dialog';
@@ -366,7 +325,7 @@ const props = defineProps<{
 }>();
 const emit = defineEmits<{
   confirm: [SupplementBasisConfirmation];
-  related: [lineId: string, allocationId: string];
+  related: [lineId: string, receiptLineId: string];
 }>();
 const {
   visible,
@@ -589,33 +548,6 @@ defineExpose({ open, close, visible });
 .candidate-quantities .quantity-zero {
   color: var(--el-text-color-placeholder);
   font-weight: 400;
-}
-.candidate-return-record {
-  display: grid;
-  justify-items: start;
-  gap: 4px;
-  margin-left: 22px;
-  color: var(--el-text-color-regular);
-}
-.candidate-detail-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 6px 18px;
-}
-.linked-supplements,
-.linked-supplements-empty {
-  margin-left: 22px;
-  padding-top: 8px;
-  border-top: 1px solid var(--el-border-color-lighter);
-  color: var(--el-text-color-regular);
-}
-.linked-supplements {
-  display: grid;
-  gap: 4px;
-}
-.linked-supplements strong {
-  color: var(--el-text-color-primary);
 }
 .basis-pagination {
   flex-shrink: 0;

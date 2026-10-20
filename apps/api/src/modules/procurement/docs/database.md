@@ -37,9 +37,9 @@
 | procurement_order_line | id、purchase_order_id FK、正 line_no；supplier_id FK；item_id FK、material_variant_id 与 item_id 组合 FK；item_code_snapshot VARCHAR(100)、material_variant_code_snapshot VARCHAR(180)、unit_snapshot VARCHAR(20)；planned_quantity INT；status draft/open/closed/cancelled；可空 origin_order_line_id 自FK及非空 supplement_evidence 成组；唯一(单,line_no)、(单,item,variant,supplier)、(id,单)、(id,item,variant)，原行与供应商组合索引 |
 | procurement_order_line_source | 联合PK(purchase_order_line_id,demand_id)，分别FK采购行、Production需求；created_at；反查索引(demand_id,purchase_order_line_id)，无采购分摊量 |
 
-source 和 supplier 等跨行归属在锁内校验，不借展示查询判断资格。采购行当前保存 origin_receipt_line_id（同原采购行组合FK）和 origin_allocation_id（同到货正式分配组合FK）。质量处置引用必须同时有原采购行/原到货且履约方式为 new_arrival；补发依据 supplement_evidence 必填。实际退回通过分配反查，采购行不保存 origin_supplier_return_id。采购行状态随人工结束／恢复／整单取消直接更新，主单在同一事务按行状态汇总；原因、目标、操作者及时间通过平台 `operation_logs` 追溯，成功审计使用[统一事务 Writer](../../../../docs/audit.md)。累计入库始终由 Inventory 流水事实决定。
+source 和 supplier 等跨行归属在锁内校验，不借展示查询判断资格。两种补单行都保存 origin_order_line_id、origin_receipt_line_id 和非空 supplement_evidence；原到货与原采购行由组合 FK 保证同源，原采购与原到货的空值成对。采购行不保存 origin_allocation_id 或具体实际退回引用。质量新建资格由到货明细上的当前正式质量退回或真实质量退回历史提供，仓库实际退回仍保留自己的分配引用。采购状态、原因及人员时间通过平台 `operation_logs` 追溯，成功审计使用[统一事务 Writer](../../../../docs/audit.md)。
 
-同一原采购主单、同一 supplement_reason 可生成多行补单；原因仍属补单主单，具体原采购行、到货、质量退回分配和约定证据分别保存在各补单行。每行只保留一份到货／分配依据，同单 `(item_id,material_variant_id,supplier_id)` 唯一；跨原采购主单合并及不同补因混单由命令拒绝。创建和下单逐行核对原行与来源身份，草稿修改保留各行依据，不把某行依据复制给其他行。
+同一原采购主单、同一 supplement_reason 可生成多行补单；补因属于主单，原采购行、原到货和约定说明属于各行。每行仅一份原到货，同单 `(item_id,material_variant_id,supplier_id)` 唯一；不跨原采购主单合并或混合补因。创建核验来源及新建资格，下单只核验固定身份、未作废及采购资格；草稿改量保留各行来源。
 
 `202610190001-purchase-order-state-simplification` 的 up 在永久 DDL 前要求采购主单和旧关闭快照表为空，再移除旧关闭快照表及触发器；down 要求采购主单为空后仅恢复空的旧关闭快照结构，不能从当前状态或通用日志猜造关闭数量快照。开发库通过统一 migration／seed 重建。迁移不修改采购主行身份、数量、来源、权限目录或通用操作日志。
 
@@ -54,7 +54,7 @@ source 和 supplier 等跨行归属在锁内校验，不借展示查询判断资
 | procurement_receipt_revision | 不可变本次到货核实总量；同明细 revision_no 唯一、previous_revision_id 同源、非负 T、同批确认及原因 |
 | procurement_receipt_round | 可变资格；同明细 round_no 唯一；previous/source_allocation_round_id 同到货 FK；起始 revision/starting_quantity；当前 QC；原因及 M审计/version |
 | procurement_receipt_acceptance | 不可变定稿；每 round 唯一、同到货；正常 QC 必填；前后 revision、C、override_reason、previous_acceptance及创建审计 |
-| procurement_receipt_allocation | 不可变去向授权；同轮 line_no 唯一；同到货 round FK、普通 acceptance 同轮组合 FK；owner、正 quantity、去向及原因、termination_reason、创建审计 |
+| procurement_receipt_allocation | 不可变去向授权；同轮 line_no 唯一；同到货 round FK、普通 acceptance 同轮组合 FK；正 quantity、去向及原因、termination_reason、创建审计 |
 | procurement_supplier_return | 不可变真实退回；自动 VR、唯一 return_no/allocation_id；同到货 allocation FK、revision、数量／时间／凭据；非人工拒收必须 QC |
 
 到货主单的作废字段及并发审计由 `procurement_receipt` 自身保存：
@@ -70,7 +70,7 @@ source 和 supplier 等跨行归属在锁内校验，不借展示查询判断资
 
 `id/receipt_no/purchase_order_id/received_at/handover_evidence/remark/created_by/created_at` 是原登记依据，UPDATE 触发器逐字段冻结，文本按字节比较。主单只允许一次 `is_voided=0→1` 且 `version=旧值+1` 的状态更新；已作废主单不能恢复或改写原因、人员、时间及审计版本。DELETE 触发器继续禁止删除。CHECK 保证作废标记、原因长度和三字段空值组合，人员外键及各自支撑索引 `idx_procurement_receipt_voided_by`、`idx_procurement_receipt_updater` 保证责任身份可追溯。作废状态不由通用操作日志推导，成功审计记录作废状态与版本的前后值、原因及终止轮引用。
 
-round.status 为 uninspected/reviewing/reinspection_required/quality_rejected/awaiting_acceptance/finalized/superseded/voided；trigger_type 为 receipt/receipt_correction/review/acceptance_correction/manual_rejection/rejection_revocation/receipt_void。状态与方法 full/sampling 分开。旧轮 superseded 即收回其全部剩余授权，allocation 自身不改状态、不拆子行。source_allocation_round_id 只继承采购归属／终止约束；经过已定稿零剩余且无分配的轮次必须清空，不能恢复更老授权。作废终止轮也清空该指针，不生成清单或分配，保留原 revision 及其 T；可作废资格和跨模块事务见[整单登记作废](receipts.md#整单到货登记作废)。
+round.status 为 uninspected/reviewing/reinspection_required/quality_rejected/awaiting_acceptance/finalized/superseded/voided；trigger_type 为 receipt/receipt_correction/review/acceptance_correction/manual_rejection/rejection_revocation/receipt_void。状态与方法 full/sampling 分开。旧轮 superseded 即收回其全部剩余授权，allocation 自身不改状态、不拆子行。source_allocation_round_id 只继承采购终止约束；经过已定稿零剩余且无分配的轮次必须清空，不能恢复更老授权。作废终止轮也清空该指针，不生成清单或分配，保留原 revision 及其 T；可作废资格和跨模块事务见[整单登记作废](receipts.md#整单到货登记作废)。
 
 allocation.disposition 只有 inbound/return/pending；return_reason 为 quality/excess/procurement_termination/manual_rejection。正常 acceptance 必填，只有 return/manual_rejection 可为空；应用必须同时核对当前 manual_rejection 轮。拒收原因／人／时间来自轮次不可覆盖的创建依据，实际退回不修改拒收事实。已有终止约束在拒收分配的 termination_reason 保留。
 
@@ -100,6 +100,14 @@ HTTP 资源使用 `/procurement/purchase-orders`，领域使用 `PurchaseOrder`�
 
 ## 正式分配、履约与退回引用
 
-采购行 fulfillment_mode 为 new_arrival/existing_receipt；普通及质量补发另登记真实到货，超量补单承接既有实物。原到货来源固定，正式履约取 allocation.purchase_order_line_id。origin_allocation_id 联合同到货 FK 定位质量补发依据，只有 new_arrival 且关联原采购行／到货才允许填写；具体质量去向和当前效力由事务内校验。
+采购行 fulfillment_mode 为 new_arrival/existing_receipt。普通采购和质量补单为 new_arrival，登记自身真实到货；超量补单为 existing_receipt，只记录已有到货补购，不统计自身物流。履约方式由补因明确决定，不从分配引用有无推导。到货及所有分配的采购来源固定为 receipt_line.purchase_order_line_id。
 
-正常入库／退回直接关联 allocation，旧 allocation 的实际执行事实保留；只有当前轮授权余额可以继续执行。质量补发使用有效质量待退分配或其真实质量退回及供应商约定，不绑定必须先发生的退回ID。manual_rejection 可无正常清单／QC，但必须真实拒收分配，不产生质量补发资格。其余规则见[到货命令](receipts.md)和[正式清单](receipt-acceptance.md)。
+质量补单只引用原到货明细；新建要求该到货有当前有效正式质量退回或真实质量退回历史，人工拒收不提供资格。既有引用继续办理不重新套新建资格。仓库正常入库／退回仍直接关联不可变 allocation，历史实际执行保留，仅当前轮授权余额可以继续执行。采购行来源不替代仓库授权。其余规则见[到货命令](receipts.md)和[正式清单](receipt-acceptance.md)。
+
+## 补单与物流解耦迁移
+
+`202610200001-procurement-supplement-logistics-decoupling` 删除 allocation 的 purchase_order_line_id、对应采购 FK／索引及 owner 必填 CHECK，并重建 Inventory 入库明细 INSERT／UPDATE 守卫，采购身份沿 receipt_line 解析。不可变分配、同源引用、真实执行及其他入库场景的守卫继续有效。up/down 均在永久 DDL 前拒绝已有 allocation、supplier_return、采购 inbound_detail 或含 origin_receipt_line_id 的补单；开发库按统一初始化重建，不转换历史归属。回滚只恢复空的旧字段和原触发器，不伪造承接关系。具体执行边界见[迁移安全](../../../../../../packages/database/docs/migration-safety.md#202610200001补单与到货物流解耦)。
+
+## 质量补单到货来源迁移
+
+`202610200002-quality-supplement-receipt-source` 只删除采购行 origin_allocation_id、对应同源外键／支撑索引及质量分配引用 CHECK，保留原采购、原到货、建单说明、采购状态／数量／版本及所有物流事实，补充原采购和原到货空值成对 CHECK。up 允许已有补单，不重置数据，不改写审计和 HTTP 幂等历史。down 在永久 DDL 前拒绝已有质量补单，不能从到货或日志猜造旧分配引用；仅在无质量补单时恢复空列及旧约束。执行边界见[迁移安全](../../../../../../packages/database/docs/migration-safety.md#202610200002质量补单到货来源)。

@@ -238,7 +238,11 @@
                 >结束整单</el-button
               >
               <el-button
-                v-if="row.status === 'ordered' && auth.can(PERMISSIONS.warehouse.receipts.view)"
+                v-if="
+                  row.status === 'ordered' &&
+                  row.supplementReason !== 'excess_purchase' &&
+                  auth.can(PERMISSIONS.warehouse.receipts.view)
+                "
                 link
                 type="primary"
                 :disabled="blocked"
@@ -390,7 +394,6 @@ const LOCATE_QUERY_KEYS = [
   'supplementLineId',
   'supplementReason',
   'receiptLineId',
-  'allocationId',
 ] as const;
 type LocateQuery = Partial<Record<(typeof LOCATE_QUERY_KEYS)[number], string>>;
 const readLocateQuery = (): LocateQuery => {
@@ -526,7 +529,8 @@ const navigateRelatedSupplement = (target: RelatedSupplementLocation): Promise<b
     const matches = detail.items.filter(
       (item) =>
         item.originOrderLineId === target.originOrderLineId &&
-        (!target.originAllocationId || item.originAllocationId === target.originAllocationId),
+        (!target.originReceiptLineId || item.originReceiptLineId === target.originReceiptLineId) &&
+        (!target.supplementReason || detail.supplementReason === target.supplementReason),
     );
     if (matches.length === 1) return matches[0]?.id;
     EMessage.warning('未能唯一定位关联明细，请核对本单来源');
@@ -618,7 +622,6 @@ const openSupplement = async (
   lineId?: string,
   reason?: PurchaseOrderSupplementReason,
   receiptLineId?: string,
-  allocationId?: string,
 ): Promise<boolean> => {
   if (navigating.value) return false;
   const revision = routeRevision;
@@ -641,7 +644,6 @@ const openSupplement = async (
         lineId,
         reason,
         receiptLineId,
-        allocationId,
       });
       return Boolean(opened) && current() && (await writeLocation(location, current));
     });
@@ -676,7 +678,10 @@ const openReceiptRecords = async (orderId: string, lineId: string): Promise<void
   try {
     if (!(await releaseDialogs())) return;
     const detail = expansion.entries[orderId]?.detail;
-    if (!detail || !detail.items.some((line) => line.id === lineId)) {
+    if (
+      !detail ||
+      !detail.items.some((line) => line.id === lineId && line.fulfillmentMode === 'new_arrival')
+    ) {
       EMessage.warning('该采购行已不在当前明细中，请刷新本单后重试');
       return;
     }
@@ -735,13 +740,7 @@ const locate = async (): Promise<void> => {
   consumed = token;
   const succeeded = orderId
     ? query.supplementLineId
-      ? await openSupplement(
-          orderId,
-          query.supplementLineId,
-          reason,
-          query.receiptLineId,
-          query.allocationId,
-        )
+      ? await openSupplement(orderId, query.supplementLineId, reason, query.receiptLineId)
       : await navigate(orderId, query.purchaseOrderLineId)
     : demandId
       ? await create('demand', [demandId], query.workOrderId)
@@ -760,7 +759,6 @@ watch(
     route.query.supplementLineId,
     route.query.supplementReason,
     route.query.receiptLineId,
-    route.query.allocationId,
   ],
   () => {
     // 显式入口即使已消费或回滚，首次列表也不另选默认单据。
