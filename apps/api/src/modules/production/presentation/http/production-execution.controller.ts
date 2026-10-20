@@ -44,7 +44,10 @@ export class ProductionExecutionController {
   constructor(private readonly service: ProductionExecutionService) {}
 
   @Get('batches/:batchId/execution-start-check')
-  @RequirePermission(PERMISSIONS.production.tasks.view)
+  @RequirePermission([
+    PERMISSIONS.production.tasks.view,
+    PERMISSIONS.production.executionRecords.view,
+  ])
   startCheck(@Param() { batchId }: BatchIdParamDto) {
     return this.service.getStartCheck(batchId);
   }
@@ -74,7 +77,10 @@ export class ProductionExecutionController {
   }
 
   @Get('batches/:batchId/execution-completion-check')
-  @RequirePermission(PERMISSIONS.production.tasks.view)
+  @RequirePermission([
+    PERMISSIONS.production.tasks.view,
+    PERMISSIONS.production.executionRecords.view,
+  ])
   completionCheck(@Param() { batchId }: BatchIdParamDto) {
     return this.service.getCompletionCheck(batchId);
   }
@@ -232,6 +238,7 @@ export class ProductionExecutionController {
 
   @Get('batches/:batchId/step-records/:recordId/execution-actions')
   @RequirePermission([
+    PERMISSIONS.production.executionRecords.view,
     PERMISSIONS.production.tasks.view,
     PERMISSIONS.production.trace.view,
     PERMISSIONS.production.steps.manageExecution,

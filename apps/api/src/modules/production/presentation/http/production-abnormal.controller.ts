@@ -39,7 +39,10 @@ export class ProductionAbnormalController {
   constructor(private readonly service: ProductionAbnormalService) {}
 
   @Get('batches/:batchId/step-records/:recordId/process-inspections')
-  @RequirePermission(PERMISSIONS.production.tasks.view)
+  @RequirePermission([
+    PERMISSIONS.production.tasks.view,
+    PERMISSIONS.production.executionRecords.view,
+  ])
   listPendingInspections(
     @Param() { batchId, recordId }: BatchStepReportReadParamDto,
     @Query() query: PageQueryDto,
@@ -48,7 +51,10 @@ export class ProductionAbnormalController {
   }
 
   @Get('batches/:batchId/step-records/:recordId/process-inspections/:inspectionId')
-  @RequirePermission(PERMISSIONS.production.tasks.view)
+  @RequirePermission([
+    PERMISSIONS.production.tasks.view,
+    PERMISSIONS.production.executionRecords.view,
+  ])
   getInspection(@Param() { batchId, recordId, inspectionId }: ProductionProcessInspectionParamDto) {
     return this.service.getInspection(batchId, recordId, inspectionId);
   }
@@ -66,7 +72,10 @@ export class ProductionAbnormalController {
   }
 
   @Get('batches/:batchId/step-records/:recordId/inspection-dispositions')
-  @RequirePermission(PERMISSIONS.production.tasks.view)
+  @RequirePermission([
+    PERMISSIONS.production.tasks.view,
+    PERMISSIONS.production.executionRecords.view,
+  ])
   listInspectionDispositions(
     @Param() { batchId, recordId }: BatchStepReportReadParamDto,
     @Query() query: PageQueryDto,
@@ -75,7 +84,10 @@ export class ProductionAbnormalController {
   }
 
   @Get('batches/:batchId/reworks')
-  @RequirePermission(PERMISSIONS.production.tasks.view)
+  @RequirePermission([
+    PERMISSIONS.production.tasks.view,
+    PERMISSIONS.production.executionRecords.view,
+  ])
   listReworks(@Param() { batchId }: BatchIdParamDto) {
     return this.service.listReworks(batchId);
   }

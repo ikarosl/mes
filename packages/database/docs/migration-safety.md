@@ -173,6 +173,12 @@ down 恢复本次切换前的权限编码和元数据快照，不恢复已清理
 
 down 在首个永久 DDL 前拒绝任何专检根／结果、专检来源处置、`inspection` 范围报工或没有报工来源的返工／报废／补料方案；不得通过删除真实业务事实绕过回滚保护。允许回滚时恢复报工必填来源及约束、删除空专检结构与新增权限目录，不恢复角色历史授权。DDL 中断时保持停写，核对实际约束和迁移登记，不修改已执行文件。业务事实、更正下限和跨模块所有权见 [Quality](../../../apps/api/src/modules/quality/README.md)及 [ADR-0021](../../../docs/adr/0021-process-inspection-and-abnormal-disposition.md)。
 
+### 202610190001：独立生产报工记录查看
+
+升级与回滚时暂停角色授权编辑并同步切换应用。up 只在 `production:view` 下发布 `production:execution-records:view` 页面目录，路由为 `/production/execution-records`；不改变业务表 schema，也不复制 `production:tasks:view` 的角色授权。已有环境需明确分配新权限，刷新管理端会话后生效；演示生产角色通过显式 demo 加载恢复，不由迁移写入。
+
+down 在事务内移除新权限及其角色关联，其他目录与授权保持原有内容。回滚应用与目录须同版，不将此迁移文件存在视为已执行或用户验收通过；共享读取和写入边界见 [Production](../../../apps/api/src/modules/production/docs/database/execution-traceability-quality.md#http-读取权限与消费者)。
+
 ## 验证边界
 
 - 空库 fresh 验证应用全量迁移后再次运行，核对无待执行或校验和冲突；`db:init` 不能替代迁移验证。

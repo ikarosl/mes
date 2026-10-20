@@ -771,6 +771,16 @@ export const PERMISSION_CATALOG = [
     apiPath: null,
   },
   {
+    code: PERMISSIONS.production.executionRecords.view,
+    name: '生产报工记录',
+    parentCode: PERMISSIONS.production.view,
+    type: 'page',
+    routePath: '/production/execution-records',
+    sortOrder: 35,
+    apiMethod: null,
+    apiPath: null,
+  },
+  {
     code: PERMISSIONS.production.trace.view,
     name: '生产追溯',
     parentCode: PERMISSIONS.production.view,

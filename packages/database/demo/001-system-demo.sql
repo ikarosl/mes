@@ -115,6 +115,7 @@ JOIN permissions p ON p.code IN (
   'production:orders:update',
   'production:orders:transition',
   'production:tasks:view',
+  'production:execution-records:view',
   'production:batches:create',
   'production:batches:update',
   'production:batches:transition',

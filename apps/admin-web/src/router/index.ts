@@ -276,7 +276,7 @@ export const router = createRouter({
           'production-execution-records',
           '生产报工记录',
           ProductionExecutionRecordsPage,
-          PERMISSIONS.production.tasks.view,
+          PERMISSIONS.production.executionRecords.view,
           'ProductionExecutionRecordsPage',
         ),
         page(

@@ -9,7 +9,10 @@ import { ProductionDomainExceptionFilter } from './production-domain-exception.f
 export class ProductionTerminationController {
   constructor(private readonly service: ProductionTerminationService) {}
   @Get('batches/:batchId/termination-check')
-  @RequirePermission(PERMISSIONS.production.tasks.view)
+  @RequirePermission([
+    PERMISSIONS.production.tasks.view,
+    PERMISSIONS.production.executionRecords.view,
+  ])
   getCheck(@Param() { batchId }: TerminationBatchParamDto) {
     return this.service.getCheck(batchId);
   }
