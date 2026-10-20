@@ -31,7 +31,7 @@
         name="rounds"
       />
       <el-tab-pane
-        label="实收修订"
+        label="到货量修订"
         name="revisions"
       />
       <el-tab-pane
@@ -75,7 +75,9 @@
             >正式清单 ID：<span class="history-id">{{ row.id }}</span></strong
           >
           <span class="acceptance-quantity"
-            >库管核实量：<strong>{{ displayValue(row.confirmedScopeQuantity) }}</strong></span
+            >当时剩余实物核实量：<strong>{{
+              displayValue(row.confirmedScopeQuantity)
+            }}</strong></span
           >
           <span>确认时间：{{ formatDateTimeForDisplay(row.createdAt) }}</span>
         </div>
@@ -89,13 +91,13 @@
             <span class="history-value history-id">{{ displayValue(row.roundId) }}</span>
           </div>
           <div class="history-field">
-            <span class="history-label">确认前实收修订 ID</span>
+            <span class="history-label">确认前到货量修订 ID</span>
             <span class="history-value history-id">{{
               displayValue(row.beforeReceiptRevisionId)
             }}</span>
           </div>
           <div class="history-field">
-            <span class="history-label">确认后实收修订 ID</span>
+            <span class="history-label">确认后到货量修订 ID</span>
             <span class="history-value history-id">{{
               displayValue(row.afterReceiptRevisionId)
             }}</span>
@@ -210,8 +212,8 @@
         </el-table-column>
         <el-table-column
           prop="startingQuantity"
-          label="开始时未处置量"
-          width="145"
+          label="轮开始时剩余实物"
+          width="170"
         />
         <el-table-column
           label="关联 ID"
@@ -253,8 +255,8 @@
           width="78"
         />
         <el-table-column
-          label="实收量"
-          width="110"
+          :label="sourceLine?.void ? '作废前到货量' : '当时到货量'"
+          width="135"
         >
           <template #default="{ row }">{{ Number(row.receivedQuantity) }}</template>
         </el-table-column>
@@ -265,7 +267,7 @@
           <template #default="{ row }">
             <div class="id-stack">
               <div class="id-pair">
-                <span>实收修订 ID</span><span class="history-id">{{ displayValue(row.id) }}</span>
+                <span>到货量修订 ID</span><span class="history-id">{{ displayValue(row.id) }}</span>
               </div>
               <div class="id-pair">
                 <span>前一修订 ID</span
@@ -369,10 +371,14 @@
           }}</template>
         </el-table-column>
         <el-table-column
-          label="已退量"
-          width="100"
+          label="已退回"
+          width="110"
         >
-          <template #default="{ row }">{{ Number(row.returnedQuantity) }}</template>
+          <template #default="{ row }">
+            <span :class="receiptReturnQuantityClass(row.returnedQuantity)">
+              {{ displayValue(row.returnedQuantity) }}
+            </span>
+          </template>
         </el-table-column>
         <el-table-column
           label="交接凭据"
@@ -526,7 +532,10 @@
                 >已入库 <strong>{{ displayValue(row.inboundQuantity) }}</strong></span
               >
               <span
-                >已退回 <strong>{{ displayValue(row.returnedQuantity) }}</strong></span
+                >已退回
+                <strong :class="receiptReturnQuantityClass(row.returnedQuantity)">
+                  {{ displayValue(row.returnedQuantity) }}
+                </strong></span
               >
               <span
                 >当前分配余量 <strong>{{ row.isCurrent ? row.remainingQuantity : 0 }}</strong></span
@@ -635,6 +644,7 @@ import {
   receiptAllocationAuthorizationTag,
   receiptRoundTagType,
   receiptRoundTagEffect,
+  receiptReturnQuantityClass,
 } from '../receipt-round-presentation';
 
 type HistoryTab =
@@ -972,6 +982,16 @@ defineExpose({ open, close, visible, locked: computed(() => false) });
 .history-value--warning {
   color: var(--el-color-warning-dark-2);
   font-weight: 500;
+}
+.quantity-grid strong.quantity-return,
+.quantity-return {
+  color: var(--el-color-warning-dark-2);
+  font-weight: 700;
+}
+.quantity-grid strong.quantity-zero,
+.quantity-zero {
+  color: var(--el-text-color-placeholder);
+  font-weight: 400;
 }
 
 .allocation-heading {

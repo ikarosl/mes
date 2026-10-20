@@ -142,13 +142,16 @@ export const getPurchaseOrder = async (db: Db, id: string): Promise<PurchaseOrde
       supplier_name: string;
       origin_order_id: number | null;
       origin_purchase_no: string | null;
+      origin_receipt_no: string | null;
     })[]
   >(
-    `SELECT ${LINE_COLUMNS},m.material_name,s.supplier_name,origin.purchase_order_id origin_order_id,original.purchase_no origin_purchase_no
+    `SELECT ${LINE_COLUMNS},m.material_name,s.supplier_name,origin.purchase_order_id origin_order_id,original.purchase_no origin_purchase_no,origin_receipt.receipt_no origin_receipt_no
      FROM procurement_order_line l JOIN materials m ON m.id=l.item_id
      JOIN procurement_supplier s ON s.id=l.supplier_id
      LEFT JOIN procurement_order_line origin ON origin.id=l.origin_order_line_id
      LEFT JOIN procurement_order original ON original.id=origin.purchase_order_id
+     LEFT JOIN procurement_receipt_line origin_receipt_line ON origin_receipt_line.id=l.origin_receipt_line_id
+     LEFT JOIN procurement_receipt origin_receipt ON origin_receipt.id=origin_receipt_line.receipt_id
      WHERE l.purchase_order_id=? ORDER BY l.line_no,l.id`,
     [id],
   );
@@ -190,6 +193,7 @@ export const getPurchaseOrder = async (db: Db, id: string): Promise<PurchaseOrde
       fulfillmentMode: row.fulfillment_mode as PurchaseOrderLine['fulfillmentMode'],
       originReceiptLineId:
         row.origin_receipt_line_id === null ? null : String(row.origin_receipt_line_id),
+      originReceiptNo: row.origin_receipt_no,
       originAllocationId:
         row.origin_allocation_id === null ? null : String(row.origin_allocation_id),
       quantities: metrics.get(String(row.id))!.quantities,

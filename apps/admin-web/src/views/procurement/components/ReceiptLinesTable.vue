@@ -35,8 +35,8 @@
     >
     <template #column-widths
       ><col style="width: 110px" />
-      <col style="width: 110px" />
-      <col style="width: 145px" />
+      <col style="width: 135px" />
+      <col style="width: 175px" />
       <col style="width: 130px" />
       <col style="width: 230px"
     /></template>
@@ -45,10 +45,15 @@
         scope="col"
         class="quantity-cell"
       >
-        核实量
+        到货量
       </th>
-      <th scope="col">已入 / 已退</th>
-      <th scope="col">剩余 / 待办</th>
+      <th scope="col">已入库 / 已退回</th>
+      <th
+        scope="col"
+        title="尚未入库或退回 = 到货量 − 已入库 − 已退回"
+      >
+        尚未入库或退回
+      </th>
       <th scope="col">当前阶段</th>
       <th
         scope="col"
@@ -73,14 +78,20 @@
       </td>
       <td>
         <div class="executed-quantity">
-          <span>已入</span>
+          <span>已入库</span>
           <strong :class="{ 'zero-quantity': Number(row.quantities.inboundQuantity) === 0 }">{{
             row.quantities.inboundQuantity
           }}</strong>
         </div>
         <div class="executed-quantity">
-          <span>已退</span>
-          <strong :class="{ 'zero-quantity': Number(row.quantities.returnedQuantity) === 0 }">{{
+          <span
+            :class="{
+              'returned-label':
+                receiptReturnQuantityClass(row.quantities.returnedQuantity) === 'quantity-return',
+            }"
+            >已退回</span
+          >
+          <strong :class="receiptReturnQuantityClass(row.quantities.returnedQuantity)">{{
             row.quantities.returnedQuantity
           }}</strong>
         </div>
@@ -107,12 +118,12 @@
           <span
             v-if="Number(row.quantities.pendingInboundQuantity) > 0"
             class="pending-inbound"
-            >待入 <strong>{{ row.quantities.pendingInboundQuantity }}</strong></span
+            >待入库 <strong>{{ row.quantities.pendingInboundQuantity }}</strong></span
           >
           <span
             v-if="Number(row.quantities.pendingReturnQuantity) > 0"
             class="pending-return"
-            >待退 <strong>{{ row.quantities.pendingReturnQuantity }}</strong></span
+            >待退回 <strong>{{ row.quantities.pendingReturnQuantity }}</strong></span
           >
           <span
             v-if="
@@ -194,6 +205,7 @@ import {
   receiptLineStageLabel,
   receiptLineStageType,
   receiptLineStageEffect,
+  receiptReturnQuantityClass,
   type ReceiptDetailIntent,
 } from '../receipt-round-presentation';
 
@@ -261,9 +273,17 @@ const hasQualityPrimary = (row: ProcurementReceiptLineListItem): boolean =>
 .remaining-quantity strong {
   font-variant-numeric: tabular-nums;
 }
-.zero-quantity {
+.zero-quantity,
+.quantity-zero {
   color: var(--el-text-color-placeholder);
   font-weight: 400;
+}
+.quantity-return {
+  color: var(--el-color-warning-dark-2);
+  font-weight: 700;
+}
+.executed-quantity .returned-label {
+  color: var(--el-color-warning-dark-2);
 }
 .quantity-cell .unit,
 .remaining-quantity .unit {

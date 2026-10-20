@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     v-model="visible"
-    :title="allocationId ? '该质量分配的相关补单' : '该采购行的相关补单'"
+    title="相关补单"
     :width="DialogWidth.lg"
   >
     <p class="help">
@@ -21,13 +21,18 @@
       <el-table-column
         label="补单原因"
         width="125"
-        ><template #default="{ row }">{{
-          row.supplementReason
-            ? PURCHASE_ORDER_SUPPLEMENT_REASON_LABELS[
+        ><template #default="{ row }"
+          ><el-tag
+            v-if="row.supplementReason"
+            size="small"
+            v-bind="purchaseOrderSupplementReasonTag(row.supplementReason)"
+            >{{
+              PURCHASE_ORDER_SUPPLEMENT_REASON_LABELS[
                 row.supplementReason as PurchaseOrderSupplementReason
               ]
-            : '—'
-        }}</template></el-table-column
+            }}</el-tag
+          ><span v-else>—</span></template
+        ></el-table-column
       >
       <el-table-column
         label="状态"
@@ -88,8 +93,12 @@ import { DialogWidth } from '../../../utils/dialog';
 import { EMessage } from '../../../utils/message';
 import { formatDateTimeForDisplay } from '../../../utils/date';
 import PaginationFooter from '../../../components/PaginationFooter.vue';
-import { purchaseOrderStatusTag } from '../purchase-order-presentation';
-const emit = defineEmits<{ navigate: [string] }>();
+import {
+  purchaseOrderStatusTag,
+  purchaseOrderSupplementReasonTag,
+} from '../purchase-order-presentation';
+import type { RelatedSupplementLocation } from '../purchase-order-location';
+const emit = defineEmits<{ navigate: [RelatedSupplementLocation] }>();
 const visible = ref(false),
   lineId = ref(''),
   allocationId = ref(''),
@@ -148,8 +157,11 @@ const changePageSize = async (value: number): Promise<void> => {
   await load();
 };
 const navigate = (id: string): void => {
-  visible.value = false;
-  emit('navigate', id);
+  emit('navigate', {
+    purchaseOrderId: id,
+    originOrderLineId: lineId.value,
+    ...(allocationId.value ? { originAllocationId: allocationId.value } : {}),
+  });
 };
 const close = (): void => {
   visible.value = false;

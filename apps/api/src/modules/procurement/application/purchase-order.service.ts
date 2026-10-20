@@ -10,6 +10,8 @@ import type {
   CreatePurchaseOrderSupplementPayload,
   PurchaseOrderCommandResult,
   PurchaseOrderQuery,
+  PurchaseOrderLineReceiptRecordQuery,
+  PurchaseOrderLineReceiptRecordPage,
   PurchaseExcessReceiptCandidateQuery,
   PurchaseExcessReceiptCandidate,
   PurchaseQualityReplacementCandidateQuery,
@@ -57,6 +59,17 @@ export class PurchaseOrderService {
   }
   get(id: string) {
     return this.repository.get(id);
+  }
+  receiptRecords(
+    id: string,
+    query: PurchaseOrderLineReceiptRecordQuery,
+  ): Promise<PurchaseOrderLineReceiptRecordPage> {
+    return this.repository.receiptRecords(id, {
+      ...query,
+      keyword: query.keyword?.trim() || undefined,
+      page: query.page ?? 1,
+      pageSize: query.pageSize ?? 10,
+    });
   }
   excessReceiptCandidates(
     id: string,

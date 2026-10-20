@@ -19,6 +19,22 @@ export interface PurchaseOrderQuery extends PageQuery {
   originOrderLineId?: string;
   originAllocationId?: string;
 }
+export interface PurchaseOrderLineReceiptRecordQuery extends PageQuery {
+  keyword?: string;
+}
+export interface PurchaseOrderLineReceiptRecord {
+  receiptId: string;
+  receiptLineId: string;
+  receiptNo: string;
+  receivedAt: string;
+  supplierBatchCode: string | null;
+  /** 当前累计到货中计入本采购行的数量。 */
+  receivedQuantity: string;
+}
+export interface PurchaseOrderLineReceiptRecordPage extends PageResult<PurchaseOrderLineReceiptRecord> {
+  /** 本采购行完整累计量，不受 keyword 或分页影响。 */
+  receivedQuantity: string;
+}
 export interface PurchaseExcessReceiptCandidateQuery extends PageQuery {
   keyword?: string;
   receiptLineId?: string;
@@ -29,14 +45,15 @@ export interface PurchaseExcessReceiptCandidate {
   receiptNo: string;
   receivedAt: string;
   supplierBatchCode: string | null;
+  /** 该次到货当前有效修订的本次到货量 T。 */
   receivedQuantity: string;
-  unprocessedQuantity: string;
 }
 export interface PurchaseQualityReplacementCandidateQuery extends PageQuery {
   keyword?: string;
   receiptLineId?: string;
   allocationId?: string;
 }
+/** 到货登记来源由请求路径中的原采购行确定。 */
 export interface PurchaseQualityReplacementCandidate {
   allocationId: string;
   receiptLineId: string;
@@ -44,8 +61,6 @@ export interface PurchaseQualityReplacementCandidate {
   receiptNo: string;
   receivedAt: string;
   supplierBatchCode: string | null;
-  sourcePurchaseOrderLineId: string;
-  sourcePurchaseNo: string;
   allocationPurchaseOrderLineId: string | null;
   allocationPurchaseNo: string | null;
   allocationQuantity: string;
@@ -112,6 +127,7 @@ export interface PurchaseOrderLine {
   originPurchaseNo: string | null;
   supplementEvidence: string | null;
   originReceiptLineId: string | null;
+  originReceiptNo: string | null;
   originAllocationId: string | null;
   quantities: ReceiptQuantitySummary;
 }

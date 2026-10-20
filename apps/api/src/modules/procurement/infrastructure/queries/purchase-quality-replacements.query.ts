@@ -52,7 +52,6 @@ export async function listQualityReplacementCandidates(
     JOIN procurement_receipt_line line ON line.id=allocation.receipt_line_id
     JOIN procurement_receipt receipt ON receipt.id=line.receipt_id
     JOIN procurement_receipt_round round ON round.id=allocation.round_id
-    JOIN procurement_order source_order ON source_order.id=line.purchase_order_id
     LEFT JOIN procurement_order_line allocation_owner ON allocation_owner.id=allocation.purchase_order_line_id
     LEFT JOIN procurement_order allocation_order ON allocation_order.id=allocation_owner.purchase_order_id
     LEFT JOIN procurement_supplier_return supplier_return ON supplier_return.allocation_id=allocation.id
@@ -62,9 +61,8 @@ export async function listQualityReplacementCandidates(
   const [rows] = await db.query<ReadRow[]>(
     `SELECT allocation.id allocation_id,allocation.quantity allocation_quantity,
       allocation.purchase_order_line_id allocation_purchase_order_line_id,
-      line.id receipt_line_id,line.purchase_order_line_id source_purchase_order_line_id,
-      line.receipt_id,line.supplier_batch_code,
-      receipt.receipt_no,receipt.received_at,source_order.purchase_no source_purchase_no,
+      line.id receipt_line_id,line.receipt_id,line.supplier_batch_code,
+      receipt.receipt_no,receipt.received_at,
       allocation_order.purchase_no allocation_purchase_no,
       (line.current_round_id=allocation.round_id AND round.status='finalized') is_current,
       COALESCE(supplier_return.returned_quantity,0) returned_quantity,supplier_return.return_no
@@ -107,8 +105,6 @@ export async function listQualityReplacementCandidates(
         receiptNo: text(row.receipt_no),
         receivedAt: date(row.received_at),
         supplierBatchCode: nullableText(row.supplier_batch_code),
-        sourcePurchaseOrderLineId: text(row.source_purchase_order_line_id),
-        sourcePurchaseNo: text(row.source_purchase_no),
         allocationPurchaseOrderLineId: nullableText(row.allocation_purchase_order_line_id),
         allocationPurchaseNo: nullableText(row.allocation_purchase_no),
         allocationQuantity: text(row.allocation_quantity),

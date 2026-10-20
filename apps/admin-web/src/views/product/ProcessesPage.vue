@@ -204,7 +204,7 @@
       v-model="uploadDialogVisible"
       title="上传工序技术文件"
       :width="DialogWidth.sm"
-      :close-on-click-modal="!uploading"
+      :close-on-click-modal="false"
       :close-on-press-escape="!uploading"
       :show-close="!uploading"
     >

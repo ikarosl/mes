@@ -332,8 +332,8 @@ export function useReceiptLineAction(
         { intentType: 'procurement.receipt.correct', params: { id: target.id }, query: {}, body },
         (key) => submitCurrent(() => procurementApi.correctReceipt(target.id, body, key)),
         Number(correctedQuantity.value) === disposedQuantity.value
-          ? '实收修订已保存，本批无剩余实物；已入已退保留'
-          : '实收修订已保存，整批剩余实物待重新检验；已入已退保留',
+          ? '到货量更正已保存，本批无剩余实物；已入库、已退回记录保留'
+          : '到货量更正已保存，整批剩余实物待重新检验；已入库、已退回记录保留',
       );
     } else if (action.value === 'inspect' && qualityCase) {
       const facts = inboundInspectionInput(inspection.value);

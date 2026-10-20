@@ -143,7 +143,7 @@
       </InlineHint>
       <div class="entry-heading">
         <strong>本次到货明细</strong>
-        <span>只填写本次实收数量；计划与累计量仅供核对</span>
+        <span>只填写本次到货量；计划与累计量仅供核对</span>
       </div>
       <el-table
         :data="rows"
@@ -166,13 +166,13 @@
           ><template #default="{ row }">
             <div>计划 {{ Number(row.line.plannedQuantity) }} {{ row.line.unit }}</div>
             <div class="material-meta">
-              此前已到 {{ Number(row.line.quantities.receivedQuantity) }} · 已入
+              此前已到货 {{ Number(row.line.quantities.receivedQuantity) }} · 已入库
               {{ Number(row.line.quantities.inboundQuantity) }} {{ row.line.unit }}
             </div>
           </template></el-table-column
         >
         <el-table-column
-          label="本次实收 / 差异依据"
+          label="本次到货量 / 差异依据"
           min-width="205"
           ><template #default="{ row }">
             <el-input-number

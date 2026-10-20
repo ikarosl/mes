@@ -6,6 +6,8 @@ import type {
   CreatePurchaseOrderPayload,
   UpdatePurchaseOrderPayload,
   PurchaseOrderQuery,
+  PurchaseOrderLineReceiptRecordQuery,
+  PurchaseOrderLineReceiptRecordPage,
   PurchaseExcessReceiptCandidateQuery,
   PurchaseExcessReceiptCandidate,
   PurchaseQualityReplacementCandidateQuery,
@@ -36,6 +38,7 @@ import {
   listRelatedPurchases,
 } from './queries/purchase-order.query.js';
 import { listExcessReceiptCandidates } from './queries/purchase-excess-receipts.query.js';
+import { listPurchaseLineReceiptRecords } from './queries/purchase-line-receipt-records.query.js';
 import { listQualityReplacementCandidates } from './queries/purchase-quality-replacements.query.js';
 import {
   type OrderRow,
@@ -75,6 +78,14 @@ export class MysqlPurchaseOrderRepository extends PurchaseOrderRepository {
   }
   get(id: string) {
     return withTransaction(this.pool, (connection) => getPurchaseOrder(connection, id));
+  }
+  receiptRecords(
+    id: string,
+    query: PurchaseOrderLineReceiptRecordQuery & { page: number; pageSize: number },
+  ): Promise<PurchaseOrderLineReceiptRecordPage> {
+    return withTransaction(this.pool, (connection) =>
+      listPurchaseLineReceiptRecords(connection, id, query),
+    );
   }
   excessReceiptCandidates(
     id: string,

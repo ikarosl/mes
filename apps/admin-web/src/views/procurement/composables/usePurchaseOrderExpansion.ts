@@ -21,6 +21,8 @@ export function usePurchaseOrderExpansion() {
   >();
   let active = true;
   let pageIds = new Set<string>();
+  let pendingFocusId = '';
+  let focusRevision = 0;
   const invalidate = (id: string) => {
     requests.get(id)?.controller.abort();
     requests.delete(id);
@@ -62,11 +64,17 @@ export function usePurchaseOrderExpansion() {
   };
   const prune = () => {
     for (const id of Object.keys(entries)) {
-      if (pageIds.has(id) || id === focusedId.value) continue;
+      if (pageIds.has(id) || id === focusedId.value || id === pendingFocusId) continue;
       invalidate(id);
       delete entries[id];
     }
     expanded.value = expanded.value.filter((id) => pageIds.has(id) || id === focusedId.value);
+  };
+  const cancelPendingFocus = () => {
+    focusRevision += 1;
+    if (pendingFocusId) invalidate(pendingFocusId);
+    pendingFocusId = '';
+    prune();
   };
   const sync = (rows: PurchaseOrderItem[], refreshExpanded: boolean) => {
     pageIds = new Set(rows.map((row) => row.id));
@@ -96,18 +104,33 @@ export function usePurchaseOrderExpansion() {
       void read(id);
     } else {
       expanded.value = expanded.value.filter((key) => key !== id);
-      invalidate(id);
+      if (id === pendingFocusId) cancelPendingFocus();
+      else invalidate(id);
     }
   };
-  const focus = async (id: string): Promise<boolean> => {
-    focusedId.value = id;
-    const detail = await read(id);
-    if (!detail) return false;
-    if (!expanded.value.includes(id)) expanded.value = [...expanded.value, id];
-    prune();
-    return true;
+  const focus = async (
+    id: string,
+    accept: (detail: PurchaseOrderDetail) => boolean | Promise<boolean> = () => true,
+  ): Promise<boolean> => {
+    cancelPendingFocus();
+    const revision = focusRevision;
+    pendingFocusId = id;
+    try {
+      const detail = await read(id);
+      if (!detail || !active || revision !== focusRevision) return false;
+      if (!(await accept(detail)) || !active || revision !== focusRevision) return false;
+      focusedId.value = id;
+      if (!expanded.value.includes(id)) expanded.value = [...expanded.value, id];
+      return true;
+    } finally {
+      if (revision === focusRevision) {
+        pendingFocusId = '';
+        prune();
+      }
+    }
   };
   const clearFocus = () => {
+    cancelPendingFocus();
     focusedId.value = '';
     prune();
   };
@@ -117,6 +140,7 @@ export function usePurchaseOrderExpansion() {
   };
   const deactivate = () => {
     active = false;
+    cancelPendingFocus();
     for (const id of requests.keys()) invalidate(id);
   };
   onActivated(() => {
@@ -133,6 +157,7 @@ export function usePurchaseOrderExpansion() {
     sync,
     setExpanded,
     focus,
+    cancelPendingFocus,
     clearFocus,
     replace,
   };

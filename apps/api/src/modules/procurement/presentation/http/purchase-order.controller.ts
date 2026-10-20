@@ -22,6 +22,7 @@ import { ProcurementDomainExceptionFilter } from './procurement-domain-exception
 import {
   PurchaseOrderIdDto,
   PurchaseOrderQueryDto,
+  PurchaseOrderLineReceiptRecordQueryDto,
   PurchaseExcessReceiptCandidateQueryDto,
   PurchaseQualityReplacementCandidateQueryDto,
   CreatePurchaseOrderDto,
@@ -53,6 +54,14 @@ export class PurchaseOrderController {
   @RequirePermission(PERMISSIONS.procurement.orders.view)
   get(@Param() { id }: PurchaseOrderIdDto) {
     return this.service.get(id);
+  }
+  @Get('purchase-order-lines/:id/receipt-records')
+  @RequirePermission(PERMISSIONS.procurement.orders.view)
+  receiptRecords(
+    @Param() { id }: PurchaseOrderIdDto,
+    @Query() query: PurchaseOrderLineReceiptRecordQueryDto,
+  ) {
+    return this.service.receiptRecords(id, query);
   }
   @Get('purchase-order-lines/:id/excess-receipt-candidates')
   @RequirePermission(PERMISSIONS.procurement.orders.view)

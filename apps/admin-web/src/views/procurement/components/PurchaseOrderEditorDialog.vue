@@ -108,13 +108,15 @@
               title="本行冻结的补单来源"
             >
               <el-descriptions-item label="原采购"
-                >{{ originalLine(row.key)?.originPurchaseNo }} · 原行
+                >{{ originalLine(row.key)?.originPurchaseNo }} · 原采购行 ID：
                 {{ originalLine(row.key)?.originOrderLineId }}</el-descriptions-item
               >
-              <el-descriptions-item label="原到货明细 ID">{{
-                originalLine(row.key)?.originReceiptLineId
-              }}</el-descriptions-item>
-              <el-descriptions-item label="质量退回分配 ID">{{
+              <el-descriptions-item label="原到货单号"
+                >{{ originalLine(row.key)?.originReceiptNo ?? '未提供' }} · 原到货明细 ID：{{
+                  originalLine(row.key)?.originReceiptLineId
+                }}</el-descriptions-item
+              >
+              <el-descriptions-item label="到货分配 ID">{{
                 originalLine(row.key)?.originAllocationId || '不适用'
               }}</el-descriptions-item>
               <el-descriptions-item label="本行补单依据">{{

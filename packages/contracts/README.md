@@ -19,7 +19,7 @@
 | 工单、任务与产出汇总 | [工单与任务](../../apps/api/src/modules/production/docs/database/work-orders-and-batches.md) |
 | 需求、替代与补料 | [需求设计](../../apps/api/src/modules/production/docs/database/demand-allocation-and-outbound.md) |
 | 收尾投影与审批证据 | [结案设计](../../apps/api/src/modules/production/docs/database/production-termination.md) |
-| 采购、到货与分配 | [Procurement](../../apps/api/src/modules/procurement/README.md)；到货主单及行级分页契约见[到货查询](../../apps/api/src/modules/procurement/docs/receipt-queries.md) |
+| 采购、到货与分配 | [Procurement](../../apps/api/src/modules/procurement/README.md)；到货主单及行级分页契约见[到货查询](../../apps/api/src/modules/procurement/docs/receipt-queries.md)，采购行的累计来源与独立单号／明细 ID 见[采购行到货记录](../../apps/api/src/modules/procurement/docs/receipt-queries.md#采购行到货记录)，超量补单候选的本次到货量、质量补发候选由请求原采购行确定来源及保留分配归属的字段边界见[候选查询契约](../../apps/api/src/modules/procurement/docs/receipt-queries.md#入库候选及正式分配) |
 | 检验事实与数量建议 | [Quality](../../apps/api/src/modules/quality/README.md) |
 | 库存的物料／成品身份及入库来源 | [Inventory](../../apps/api/src/modules/inventory/docs/database.md)；外购历史来源投影见[公开能力](../../apps/api/src/modules/inventory/docs/public-contracts.md) |
 | 审批人员与证据 | [Approval](../../apps/api/src/modules/approval/README.md) |

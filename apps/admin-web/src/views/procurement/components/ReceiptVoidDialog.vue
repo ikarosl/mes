@@ -83,7 +83,7 @@
             min-width="120"
           />
           <el-table-column
-            label="本批核实量"
+            label="本批到货量"
             width="110"
           >
             <template #default="{ row }"
@@ -91,8 +91,8 @@
             >
           </el-table-column>
           <el-table-column
-            label="已入 / 已退"
-            width="110"
+            label="已入库 / 已退回"
+            width="140"
           >
             <template #default="{ row }"
               >{{ row.quantities.inboundQuantity }} /

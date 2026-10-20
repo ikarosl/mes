@@ -1,36 +1,25 @@
-import { computed, onActivated, ref } from 'vue';
+import { computed, nextTick, onActivated, ref } from 'vue';
 import type {
   CreatePurchaseOrderSupplementPayload,
-  PurchaseExcessReceiptCandidate,
   PurchaseOrderDetail,
-  PurchaseOrderLine,
   PurchaseOrderSupplementReason,
-  PurchaseQualityReplacementCandidate,
 } from '@company/contracts';
 import { PURCHASE_ORDER_MAX_LINES, PURCHASE_ORDER_MAX_QUANTITY } from '@company/constants';
 import { procurementApi } from '../../../api/procurement';
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
 import { EMessage } from '../../../utils/message';
 import { RouteMessageBox } from '../../../utils/route-message-box';
+import {
+  copySupplementBasis,
+  type SupplementBasisChoice,
+  type SupplementBasisConfirmation,
+} from '../supplement-basis';
 import { useProcurementCommand } from './useProcurementCommand';
 
-export interface SupplementDraftLine {
-  line: PurchaseOrderLine;
+export interface SupplementDraftLine extends SupplementBasisChoice {
   quantity: number | undefined;
   evidence: string;
-  selectedExcess: PurchaseExcessReceiptCandidate | null;
-  selectedQuality: PurchaseQualityReplacementCandidate | null;
-  excessRows: PurchaseExcessReceiptCandidate[];
-  qualityRows: PurchaseQualityReplacementCandidate[];
-  page: number;
-  pageSize: number;
-  total: number;
-  keyword: string;
-  loading: boolean;
-  error: boolean;
   basisError: boolean;
-  request: number;
-  controller: AbortController | null;
 }
 
 export interface SupplementLocation {
@@ -39,25 +28,6 @@ export interface SupplementLocation {
   receiptLineId?: string;
   allocationId?: string;
 }
-
-const newDraft = (line: PurchaseOrderLine): SupplementDraftLine => ({
-  line,
-  quantity: undefined,
-  evidence: '',
-  selectedExcess: null,
-  selectedQuality: null,
-  excessRows: [],
-  qualityRows: [],
-  page: 1,
-  pageSize: 10,
-  total: 0,
-  keyword: '',
-  loading: false,
-  error: false,
-  basisError: false,
-  request: 0,
-  controller: null,
-});
 
 export function usePurchaseOrderSupplement(onSaved: (id: string) => void) {
   const visible = ref(false),
@@ -69,20 +39,21 @@ export function usePurchaseOrderSupplement(onSaved: (id: string) => void) {
     orderLoading = ref(false),
     orderError = ref(false),
     contextError = ref(false),
-    lineSearch = ref(''),
-    linePage = ref(1),
-    linePageSize = ref(10),
-    pendingLineId = ref(''),
+    pendingLocation = ref<SupplementLocation | null>(null),
     requestedReason = ref<PurchaseOrderSupplementReason>(),
     submittingCheck = ref(false);
   const read = useLatestReadRequest(() => {
     orderLoading.value = false;
   });
+  const basisRead = useLatestReadRequest(() => {
+    // save 的 finally 统一结束本轮核对，取消读取不清空用户输入。
+  });
   let epoch = 0;
   const command = useProcurementCommand((result) => {
     visible.value = false;
-    invalidateCandidates();
+    epoch += 1;
     read.invalidate();
+    basisRead.invalidate();
     onSaved(result.purchaseOrderId);
   });
   const eligibleLines = computed(() =>
@@ -92,34 +63,15 @@ export function usePurchaseOrderSupplement(onSaved: (id: string) => void) {
         )
       : [],
   );
-  const filteredLines = computed(() => {
-    const keyword = lineSearch.value.trim().toLocaleLowerCase();
-    return keyword
-      ? eligibleLines.value.filter((line) =>
-          [line.lineNo, line.itemCode, line.itemName, line.materialVariantCode, line.supplierName]
-            .join(' ')
-            .toLocaleLowerCase()
-            .includes(keyword),
-        )
-      : eligibleLines.value;
-  });
-  const pagedLines = computed(() =>
-    filteredLines.value.slice(
-      (linePage.value - 1) * linePageSize.value,
-      linePage.value * linePageSize.value,
-    ),
-  );
   const dirty = computed(
-    () =>
-      Boolean(reason.value || remark.value.trim()) ||
-      drafts.value.some((draft) => draft.quantity !== undefined || Boolean(draft.evidence.trim())),
+    () => Boolean(reason.value || remark.value.trim()) || drafts.value.length > 0,
   );
   const editingLocked = computed(() => command.locked.value || submittingCheck.value);
   const canSave = computed(
     () =>
       Boolean(order.value && reason.value && order.value.supplementReason !== 'excess_purchase') &&
       !editingLocked.value &&
-      !submittingCheck.value &&
+      read.isActive() &&
       !orderLoading.value &&
       !orderError.value &&
       !contextError.value &&
@@ -127,8 +79,6 @@ export function usePurchaseOrderSupplement(onSaved: (id: string) => void) {
       drafts.value.length <= PURCHASE_ORDER_MAX_LINES &&
       drafts.value.every(
         (draft) =>
-          !draft.loading &&
-          !draft.error &&
           !draft.basisError &&
           Boolean(
             reason.value === 'excess_purchase' ? draft.selectedExcess : draft.selectedQuality,
@@ -139,88 +89,12 @@ export function usePurchaseOrderSupplement(onSaved: (id: string) => void) {
           Boolean(draft.evidence.trim()),
       ),
   );
-
-  const invalidateCandidates = (): void => {
-    for (const draft of drafts.value) {
-      draft.request += 1;
-      draft.controller?.abort();
-      draft.controller = null;
-      draft.loading = false;
-    }
-  };
   const findDraft = (lineId: string): SupplementDraftLine | undefined =>
     drafts.value.find((draft) => draft.line.id === lineId);
-  const loadCandidates = async (draft: SupplementDraftLine): Promise<boolean> => {
-    if (!visible.value || !reason.value || editingLocked.value) return false;
-    draft.controller?.abort();
-    const controller = new AbortController();
-    draft.controller = controller;
-    const request = ++draft.request;
-    const targetOrder = order.value?.id;
-    const targetReason = reason.value;
-    const currentEpoch = epoch;
-    draft.loading = true;
-    try {
-      if (targetReason === 'excess_purchase') {
-        const result = await procurementApi.excessReceiptCandidates(
-          draft.line.id,
-          {
-            page: draft.page,
-            pageSize: draft.pageSize,
-            keyword: draft.keyword.trim() || undefined,
-          },
-          controller.signal,
-        );
-        if (
-          !visible.value ||
-          epoch !== currentEpoch ||
-          order.value?.id !== targetOrder ||
-          reason.value !== targetReason ||
-          draft.request !== request
-        )
-          return false;
-        draft.excessRows = result.items;
-        draft.total = result.total;
-      } else {
-        const result = await procurementApi.qualityReplacementCandidates(
-          draft.line.id,
-          {
-            page: draft.page,
-            pageSize: draft.pageSize,
-            keyword: draft.keyword.trim() || undefined,
-          },
-          controller.signal,
-        );
-        if (
-          !visible.value ||
-          epoch !== currentEpoch ||
-          order.value?.id !== targetOrder ||
-          reason.value !== targetReason ||
-          draft.request !== request
-        )
-          return false;
-        draft.qualityRows = result.items;
-        draft.total = result.total;
-      }
-      draft.error = false;
-      return true;
-    } catch (error) {
-      if (
-        visible.value &&
-        epoch === currentEpoch &&
-        draft.request === request &&
-        !controller.signal.aborted
-      ) {
-        draft.error = true;
-        EMessage.error(error, '补单来源依据读取失败');
-      }
-      return false;
-    } finally {
-      if (draft.request === request) {
-        draft.loading = false;
-        draft.controller = null;
-      }
-    }
+  const updateContextError = (): void => {
+    contextError.value = drafts.value.some(
+      (draft) => !eligibleLines.value.some((line) => line.id === draft.line.id),
+    );
   };
   const refreshOrder = async (): Promise<boolean> => {
     if (!visible.value || !targetId.value || !read.isActive() || command.locked.value) return false;
@@ -232,13 +106,11 @@ export function usePurchaseOrderSupplement(onSaved: (id: string) => void) {
       if (!current.isCurrent()) return false;
       order.value = latest;
       orderError.value = false;
-      contextError.value = drafts.value.some((draft) => {
-        const line = latest.items.find((item) => item.id === draft.line.id);
-        if (!line || line.fulfillmentMode !== 'new_arrival' || line.status === 'cancelled')
-          return true;
-        draft.line = line;
-        return false;
-      });
+      for (const draft of drafts.value) {
+        const line = eligibleLines.value.find((item) => item.id === draft.line.id);
+        if (line) draft.line = line;
+      }
+      updateContextError();
       if (contextError.value) EMessage.warning('原采购行已变化，请移除失效行后重新选择');
       return !contextError.value;
     } catch (error) {
@@ -251,68 +123,89 @@ export function usePurchaseOrderSupplement(onSaved: (id: string) => void) {
       if (current.isCurrent()) orderLoading.value = false;
     }
   };
-  const addLine = async (line: PurchaseOrderLine): Promise<void> => {
+  const adoptChoices = (confirmation: SupplementBasisConfirmation): boolean => {
     if (
-      !reason.value ||
-      order.value?.supplementReason === 'excess_purchase' ||
-      findDraft(line.id) ||
-      drafts.value.length >= PURCHASE_ORDER_MAX_LINES ||
-      editingLocked.value
+      !visible.value ||
+      editingLocked.value ||
+      orderLoading.value ||
+      orderError.value ||
+      order.value?.id !== confirmation.orderId ||
+      order.value.supplementReason === 'excess_purchase' ||
+      reason.value !== confirmation.reason
     )
-      return;
-    drafts.value.push(newDraft(line));
-    const selected = findDraft(line.id);
-    if (selected) await loadCandidates(selected);
+      return false;
+    const { choices, replacingLineId } = confirmation;
+    const ids = choices.map((choice) => choice.line.id);
+    if (
+      !choices.length ||
+      new Set(ids).size !== ids.length ||
+      choices.some(
+        (choice) =>
+          !eligibleLines.value.some((line) => line.id === choice.line.id) ||
+          !(reason.value === 'excess_purchase' ? choice.selectedExcess : choice.selectedQuality),
+      )
+    ) {
+      EMessage.warning('所选采购行或依据已变化，请重新核对');
+      return false;
+    }
+    if (replacingLineId) {
+      const draft = findDraft(replacingLineId);
+      const choice = choices[0];
+      if (!draft || choices.length !== 1 || choice?.line.id !== replacingLineId) return false;
+      const changed =
+        draft.selectedExcess?.id !== choice.selectedExcess?.id ||
+        draft.selectedQuality?.allocationId !== choice.selectedQuality?.allocationId;
+      Object.assign(draft, copySupplementBasis(choice), { basisError: false });
+      if (changed) EMessage.warning('依据已更换，数量与说明已保留，请重新核对');
+      return true;
+    }
+    if (ids.some((id) => findDraft(id))) {
+      EMessage.warning('部分采购行已经添加，请移除重复选择');
+      return false;
+    }
+    if (drafts.value.length + choices.length > PURCHASE_ORDER_MAX_LINES) {
+      EMessage.warning(`一张补单最多 ${PURCHASE_ORDER_MAX_LINES} 行，请另单办理`);
+      return false;
+    }
+    drafts.value.push(
+      ...choices.map((choice) => ({
+        ...copySupplementBasis(choice),
+        quantity: undefined,
+        evidence: '',
+        basisError: false,
+      })),
+    );
+    updateContextError();
+    return true;
   };
   const removeLine = (lineId: string): void => {
     if (editingLocked.value) return;
-    const draft = findDraft(lineId);
-    if (!draft) return;
-    draft.request += 1;
-    draft.controller?.abort();
-    drafts.value = drafts.value.filter((item) => item.line.id !== lineId);
-    contextError.value = drafts.value.some(
-      (item) =>
-        !order.value?.items.some(
-          (line) =>
-            line.id === item.line.id &&
-            line.fulfillmentMode === 'new_arrival' &&
-            line.status !== 'cancelled',
-        ),
-    );
+    drafts.value = drafts.value.filter((draft) => draft.line.id !== lineId);
+    updateContextError();
   };
-  const chooseReason = async (next: PurchaseOrderSupplementReason): Promise<void> => {
-    if (
-      reason.value === next ||
-      editingLocked.value ||
-      order.value?.supplementReason === 'excess_purchase'
-    )
-      return;
+  const chooseReason = async (next: PurchaseOrderSupplementReason): Promise<boolean> => {
+    if (reason.value === next) return true;
+    if (editingLocked.value || order.value?.supplementReason === 'excess_purchase') return false;
+    const currentEpoch = epoch;
     if (drafts.value.length || remark.value.trim()) {
       try {
         await RouteMessageBox.confirm(
-          '切换补单类型将清空已选择的原行和填写内容，确认切换吗？',
+          '切换补单类型将清空已选明细和填写内容，确认切换吗？',
           '切换补单类型',
-          {
-            type: 'warning',
-          },
+          { type: 'warning' },
         );
       } catch {
-        return;
+        return false;
       }
     }
-    if (!visible.value || editingLocked.value) return;
+    if (!visible.value || editingLocked.value || epoch !== currentEpoch) return false;
     epoch += 1;
-    invalidateCandidates();
+    basisRead.invalidate();
     drafts.value = [];
     remark.value = '';
     reason.value = next;
     contextError.value = false;
-    if (pendingLineId.value) {
-      const line = eligibleLines.value.find((item) => item.id === pendingLineId.value);
-      pendingLineId.value = '';
-      if (line) await addLine(line);
-    }
+    return true;
   };
   const open = async (id: string, location: SupplementLocation = {}): Promise<boolean> => {
     if (visible.value || editingLocked.value) return false;
@@ -320,12 +213,10 @@ export function usePurchaseOrderSupplement(onSaved: (id: string) => void) {
     targetId.value = id;
     order.value = null;
     requestedReason.value = location.reason;
-    pendingLineId.value = location.lineId ?? '';
+    pendingLocation.value = location.lineId ? { ...location } : null;
     reason.value = location.reason ?? '';
     drafts.value = [];
     remark.value = '';
-    lineSearch.value = '';
-    linePage.value = 1;
     orderError.value = false;
     contextError.value = false;
     visible.value = true;
@@ -334,103 +225,38 @@ export function usePurchaseOrderSupplement(onSaved: (id: string) => void) {
     if (!refreshedOrder) return true;
     if (refreshedOrder.supplementReason === 'excess_purchase') {
       reason.value = '';
-      pendingLineId.value = '';
-      return true;
-    }
-    if (!location.lineId) return true;
-    const line = eligibleLines.value.find((item) => item.id === location.lineId);
-    if (!line) {
-      pendingLineId.value = '';
+      pendingLocation.value = null;
+    } else if (
+      location.lineId &&
+      !eligibleLines.value.some((line) => line.id === location.lineId)
+    ) {
+      pendingLocation.value = null;
       EMessage.warning('指定采购行不属于该原单或已不可办理补单');
-      return true;
-    }
-    if (reason.value) {
-      await addLine(line);
-      pendingLineId.value = '';
-      const draft = findDraft(line.id);
-      if (!draft) return true;
-      if (location.receiptLineId || location.allocationId) {
-        try {
-          if (reason.value === 'quality_replacement') {
-            const result = await procurementApi.qualityReplacementCandidates(line.id, {
-              page: 1,
-              pageSize: 1,
-              receiptLineId: location.receiptLineId,
-              allocationId: location.allocationId,
-            });
-            if (epoch !== currentEpoch || !visible.value || findDraft(line.id) !== draft)
-              return true;
-            const candidate = result.items.find(
-              (item) =>
-                item.allocationId === location.allocationId &&
-                item.receiptLineId === location.receiptLineId,
-            );
-            if (candidate) draft.selectedQuality = candidate;
-            else EMessage.warning('指定质量分配依据已不可用，请在原采购行重新选择');
-          } else if (location.receiptLineId) {
-            const result = await procurementApi.excessReceiptCandidates(line.id, {
-              page: 1,
-              pageSize: 1,
-              receiptLineId: location.receiptLineId,
-            });
-            if (epoch !== currentEpoch || !visible.value || findDraft(line.id) !== draft)
-              return true;
-            const candidate = result.items.find((item) => item.id === location.receiptLineId);
-            if (candidate) draft.selectedExcess = candidate;
-            else EMessage.warning('指定到货依据已不可用，请在原采购行重新选择');
-          }
-        } catch (error) {
-          if (epoch === currentEpoch && visible.value)
-            EMessage.error(error, '定位补单依据失败，请手动核对来源');
-        }
-      }
     }
     return true;
   };
   const close = async (): Promise<boolean> => {
     if (!visible.value) return true;
-    if (submittingCheck.value) return false;
-    if (!(await command.canClose(dirty.value))) return false;
+    if (submittingCheck.value || !(await command.canClose(dirty.value))) return false;
     visible.value = false;
     epoch += 1;
     read.invalidate();
-    invalidateCandidates();
+    basisRead.invalidate();
     return true;
   };
-  const selectExcess = (
+  const refreshBasis = async (
     draft: SupplementDraftLine,
-    candidate: PurchaseExcessReceiptCandidate,
-  ): void => {
-    if (editingLocked.value) return;
-    draft.selectedExcess = candidate;
-    draft.basisError = false;
-  };
-  const selectQuality = (
-    draft: SupplementDraftLine,
-    candidate: PurchaseQualityReplacementCandidate,
-  ): void => {
-    if (editingLocked.value) return;
-    draft.selectedQuality = candidate;
-    draft.basisError = false;
-  };
-  const refreshBasis = async (draft: SupplementDraftLine): Promise<boolean> => {
-    const currentEpoch = epoch;
-    const targetOrder = order.value?.id;
-    const targetReason = reason.value;
-    const stillCurrent = (): boolean =>
-      visible.value &&
-      epoch === currentEpoch &&
-      order.value?.id === targetOrder &&
-      reason.value === targetReason &&
-      findDraft(draft.line.id) === draft;
+    current: ReturnType<typeof basisRead.begin>,
+  ): Promise<boolean> => {
+    const stillCurrent = (): boolean => current.isCurrent() && findDraft(draft.line.id) === draft;
     try {
       if (reason.value === 'excess_purchase' && draft.selectedExcess) {
         const old = draft.selectedExcess;
-        const result = await procurementApi.excessReceiptCandidates(draft.line.id, {
-          page: 1,
-          pageSize: 1,
-          receiptLineId: old.id,
-        });
+        const result = await procurementApi.excessReceiptCandidates(
+          draft.line.id,
+          { page: 1, pageSize: 1, receiptLineId: old.id },
+          current.signal,
+        );
         if (!stillCurrent()) return false;
         const latest = result.items.find((item) => item.id === old.id);
         if (!latest) {
@@ -438,16 +264,21 @@ export function usePurchaseOrderSupplement(onSaved: (id: string) => void) {
           return false;
         }
         draft.selectedExcess = latest;
+        draft.basisError = false;
         return JSON.stringify(old) === JSON.stringify(latest);
       }
       if (reason.value === 'quality_replacement' && draft.selectedQuality) {
         const old = draft.selectedQuality;
-        const result = await procurementApi.qualityReplacementCandidates(draft.line.id, {
-          page: 1,
-          pageSize: 1,
-          receiptLineId: old.receiptLineId,
-          allocationId: old.allocationId,
-        });
+        const result = await procurementApi.qualityReplacementCandidates(
+          draft.line.id,
+          {
+            page: 1,
+            pageSize: 1,
+            receiptLineId: old.receiptLineId,
+            allocationId: old.allocationId,
+          },
+          current.signal,
+        );
         if (!stillCurrent()) return false;
         const latest = result.items.find(
           (item) =>
@@ -458,6 +289,7 @@ export function usePurchaseOrderSupplement(onSaved: (id: string) => void) {
           return false;
         }
         draft.selectedQuality = latest;
+        draft.basisError = false;
         return JSON.stringify(old) === JSON.stringify(latest);
       }
       return false;
@@ -470,13 +302,13 @@ export function usePurchaseOrderSupplement(onSaved: (id: string) => void) {
     }
   };
   const save = async (): Promise<void> => {
-    if (!canSave.value || !order.value || !reason.value) return;
+    if (!canSave.value || !order.value || !reason.value || !basisRead.isActive()) return;
     const currentEpoch = epoch;
     submittingCheck.value = true;
     try {
       const before = order.value;
       if (!(await refreshOrder()) || !order.value) return;
-      if (epoch !== currentEpoch || !visible.value) return;
+      if (epoch !== currentEpoch || !visible.value || !basisRead.isActive()) return;
       if (
         before.version !== order.value.version ||
         drafts.value.some((draft) => {
@@ -487,31 +319,30 @@ export function usePurchaseOrderSupplement(onSaved: (id: string) => void) {
         EMessage.warning('原采购单或采购行已变化，输入已保留。请核对最新资料后再次提交');
         return;
       }
-      const results = await Promise.all(drafts.value.map(refreshBasis));
-      if (epoch !== currentEpoch || !visible.value) return;
-      if (results.some((current) => !current)) {
+      const id = order.value.id;
+      const targetReason = reason.value;
+      const current = basisRead.begin(
+        () =>
+          visible.value &&
+          epoch === currentEpoch &&
+          order.value?.id === id &&
+          reason.value === targetReason,
+      );
+      const results = await Promise.all(drafts.value.map((draft) => refreshBasis(draft, current)));
+      if (!current.isCurrent()) return;
+      if (results.some((valid) => !valid)) {
         EMessage.warning('到货或质量分配依据已变化，输入已保留。请核对最新依据后再次提交');
         return;
       }
-      if (
-        drafts.value.some(
-          (draft) =>
-            draft.basisError ||
-            (!draft.selectedExcess && reason.value === 'excess_purchase') ||
-            (!draft.selectedQuality && reason.value === 'quality_replacement'),
-        )
-      )
-        return;
-      const id = order.value.id;
       const body: CreatePurchaseOrderSupplementPayload = {
-        supplementReason: reason.value,
+        supplementReason: targetReason,
         items: drafts.value.map((draft) => ({
           originOrderLineId: draft.line.id,
           originReceiptLineId:
-            reason.value === 'excess_purchase'
+            targetReason === 'excess_purchase'
               ? draft.selectedExcess!.id
               : draft.selectedQuality!.receiptLineId,
-          ...(reason.value === 'quality_replacement'
+          ...(targetReason === 'quality_replacement'
             ? { originAllocationId: draft.selectedQuality!.allocationId }
             : {}),
           plannedQuantity: Number(draft.quantity),
@@ -522,7 +353,7 @@ export function usePurchaseOrderSupplement(onSaved: (id: string) => void) {
       await command.run(
         { intentType: 'procurement.order.supplement', params: { id }, query: {}, body },
         (key) => procurementApi.createSupplement(id, body, key),
-        reason.value === 'excess_purchase'
+        targetReason === 'excess_purchase'
           ? '超量补单草稿已创建，请正式下单后由库管关联原到货定稿'
           : '质量补发草稿已创建，请核对后正式下单',
       );
@@ -530,11 +361,16 @@ export function usePurchaseOrderSupplement(onSaved: (id: string) => void) {
       submittingCheck.value = false;
     }
   };
-  onActivated(() => {
-    if (visible.value && !editingLocked.value) {
-      void refreshOrder();
-      for (const draft of drafts.value) void loadCandidates(draft);
+  let activatedOnce = false;
+  onActivated(async () => {
+    if (!activatedOnce) {
+      activatedOnce = true;
+      return;
     }
+    // 嵌套 KeepAlive hook 的转发顺序可能先于读取守卫恢复 active。
+    await nextTick();
+    if (read.isActive() && visible.value && !editingLocked.value && !orderLoading.value)
+      await refreshOrder();
   });
   return {
     visible,
@@ -545,14 +381,9 @@ export function usePurchaseOrderSupplement(onSaved: (id: string) => void) {
     orderLoading,
     orderError,
     contextError,
-    lineSearch,
-    linePage,
-    linePageSize,
-    pendingLineId,
+    pendingLocation,
     requestedReason,
     eligibleLines,
-    filteredLines,
-    pagedLines,
     command,
     canSave,
     dirty,
@@ -561,13 +392,9 @@ export function usePurchaseOrderSupplement(onSaved: (id: string) => void) {
     open,
     close,
     chooseReason,
-    addLine,
+    adoptChoices,
     removeLine,
-    findDraft,
-    loadCandidates,
     refreshOrder,
-    selectExcess,
-    selectQuality,
     save,
   };
 }

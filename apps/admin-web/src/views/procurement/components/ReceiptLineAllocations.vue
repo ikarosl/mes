@@ -38,12 +38,17 @@
         header-align="right"
       />
       <el-table-column
-        prop="returnedQuantity"
         label="已退回"
         width="75"
         align="right"
         header-align="right"
-      />
+      >
+        <template #default="{ row }">
+          <span :class="receiptReturnQuantityClass(row.returnedQuantity)">
+            {{ row.returnedQuantity }}
+          </span>
+        </template>
+      </el-table-column>
       <el-table-column
         label="未执行量"
         width="110"
@@ -156,6 +161,7 @@ import {
   canExecuteReceiptAllocation,
   receiptAllocationExecutionLabel,
   receiptAllocationExecutionTag,
+  receiptReturnQuantityClass,
 } from '../receipt-round-presentation';
 import { computed } from 'vue';
 import { useRouteAccess } from '../../../composables/useRouteAccess';
@@ -212,5 +218,9 @@ defineEmits<{
 .quantity-zero {
   color: var(--el-text-color-placeholder);
   font-weight: 400;
+}
+.quantity-return {
+  color: var(--el-color-warning-dark-2);
+  font-weight: 700;
 }
 </style>

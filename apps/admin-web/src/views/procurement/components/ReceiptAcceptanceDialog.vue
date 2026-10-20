@@ -48,12 +48,12 @@
           class="review-summary"
         >
           <el-descriptions-item label="实物账">
-            <div>本批到货核实 {{ line.quantities.receivedQuantity }} {{ line.unit }}</div>
+            <div>本批到货量 {{ line.quantities.receivedQuantity }} {{ line.unit }}</div>
             <div>
-              历史已入 {{ line.quantities.inboundQuantity }} · 已退
+              已入库 {{ line.quantities.inboundQuantity }} · 已退回
               {{ line.quantities.returnedQuantity }} {{ line.unit }}
             </div>
-            <div>本轮未处置 {{ line.quantities.unprocessedQuantity }} {{ line.unit }}</div>
+            <div>尚未入库或退回 {{ line.quantities.unprocessedQuantity }} {{ line.unit }}</div>
           </el-descriptions-item>
           <el-descriptions-item label="检验依据">
             <div>
@@ -75,13 +75,13 @@
             </div>
           </el-descriptions-item>
           <el-descriptions-item label="本轮去向草稿">
-            <div>核实剩余 {{ quantity ?? '待填写' }} {{ line.unit }}</div>
+            <div>剩余实物核实量 {{ quantity ?? '待填写' }} {{ line.unit }}</div>
             <div>
               原单 / 补单可入 {{ inboundTotal }} · 待退 {{ returnTotal }} · 待处理
               {{ pendingTotal }} {{ line.unit }}
             </div>
             <div>
-              到货总量复核 {{ line.quantities.receivedQuantity }} →
+              到货量复核 {{ line.quantities.receivedQuantity }} →
               {{ Number.isFinite(correctedTotal) ? correctedTotal : '待填写' }}
             </div>
           </el-descriptions-item>
@@ -123,7 +123,7 @@
         />
         <el-form :disabled="command.locked.value || stale || loading">
           <el-form-item
-            label="库管核实本批未处置实物总量"
+            label="本轮剩余实物核实量"
             required
           >
             <el-input-number
@@ -139,9 +139,9 @@
             class="inspection-suggestion-hint"
           >
             <template v-if="inspection.inspectionMethod === 'full'">
-              <strong>同一检验建议可入：</strong>全检 {{ inspection.inspectedQuantity }} − 已入
-              {{ inspectionExecution.inboundQuantity }} − 其他已退
-              {{ inspectionExecution.otherReturnedQuantity }} − MAX(质量已退
+              <strong>同一检验建议可入：</strong>全检 {{ inspection.inspectedQuantity }} − 已入库
+              {{ inspectionExecution.inboundQuantity }} − 其他已退回
+              {{ inspectionExecution.otherReturnedQuantity }} − MAX(质量已退回
               {{ inspectionExecution.qualityReturnedQuantity }}，不合格
               {{ inspection.unqualifiedQuantity }})
               <template v-if="limit === null">；<strong>建议待核对</strong></template>
@@ -153,7 +153,8 @@
               >
             </template>
             <template v-else>
-              <strong>抽检建议可入：</strong>草稿核实剩余 {{ quantity ?? '待填写' }} − 样本不合格
+              <strong>抽检建议可入：</strong>草稿剩余实物核实量 {{ quantity ?? '待填写' }} −
+              样本不合格
               {{ inspection.unqualifiedQuantity }}
               <template v-if="limit !== null"
                 >= <strong>{{ limit }} {{ line.unit }}</strong></template
@@ -166,7 +167,7 @@
                 Number(quantity) !== Number(line.quantities.unprocessedQuantity)
               "
             >
-              本次草稿核实剩余 {{ quantity }}、复核到货总量
+              本次草稿剩余实物核实量 {{ quantity }}、复核到货量
               {{ Number.isFinite(correctedTotal) ? correctedTotal : '待填写' }} {{ line.unit }}。
             </template>
           </InlineHint>
@@ -183,7 +184,7 @@
             class="override-hint"
           >
             <template v-if="limit === null">
-              本轮建议可入无法计算：草稿核实剩余 {{ quantity }}、检验检查
+              本轮建议可入无法计算：草稿剩余实物核实量 {{ quantity }}、检验检查
               {{ inspection.inspectedQuantity }}、不合格 {{ inspection.unqualifiedQuantity }}
               {{ line.unit }}；请核对并填写异常依据。
             </template>

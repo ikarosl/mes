@@ -98,7 +98,7 @@
     :title="supplementStage === 'edit' ? '编制报废补料需求' : '复核报废补料需求'"
     width="min(1100px, calc(100% - 32px))"
     :show-close="!supplementConfirming"
-    :close-on-click-modal="!supplementConfirming"
+    :close-on-click-modal="false"
     :close-on-press-escape="!supplementConfirming"
   >
     <el-alert

@@ -37,20 +37,23 @@
               @click="$emit('navigate', row.originPurchaseOrderId)"
               >{{ row.originPurchaseNo }}</el-button
             >
-            · 原采购行 {{ row.originOrderLineId }}
+            · 原采购行 ID：{{ row.originOrderLineId }}
           </p>
           <p v-if="row.supplementEvidence">补单依据：{{ row.supplementEvidence }}</p>
           <p v-if="row.originReceiptLineId">
-            原到货明细：<el-button
+            原到货单号：{{ row.originReceiptNo ?? '未提供' }} · 原到货明细 ID：{{
+              row.originReceiptLineId
+            }}
+            <el-button
               v-if="auth.can(PERMISSIONS.warehouse.receipts.view)"
               link
               type="primary"
               :disabled="disabled"
               @click="$emit('source-receipt', row.originReceiptLineId)"
               >查看到货及正式清单</el-button
-            ><span v-else>{{ row.originReceiptLineId }}</span>
+            >
             <template v-if="row.originAllocationId">
-              · 质量退回分配明细 {{ row.originAllocationId }}</template
+              · 到货分配 ID：{{ row.originAllocationId }}</template
             >
           </p>
         </div>
@@ -187,17 +190,11 @@
             >恢复此行</el-button
           >
           <el-button
-            v-if="
-              auth.can(PERMISSIONS.warehouse.receipts.view) &&
-              order.status === 'ordered' &&
-              row.status === 'open' &&
-              row.fulfillmentMode === 'new_arrival'
-            "
             link
             type="primary"
             :disabled="disabled"
-            @click="$emit('receipts')"
-            >记录到货</el-button
+            @click="$emit('receipt-records', row.id)"
+            >到货记录</el-button
           >
         </div>
       </template></el-table-column
@@ -231,7 +228,7 @@ defineEmits<{
   'reopen-line': [string];
   supplements: [string];
   supplement: [string];
-  receipts: [];
+  'receipt-records': [string];
   'source-receipt': [string];
   navigate: [string];
 }>();

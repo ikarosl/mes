@@ -30,19 +30,19 @@
       >
         <el-form
           :disabled="command.locked.value || loading || stale"
-          label-width="140px"
+          label-width="180px"
           @submit.prevent="confirm"
         >
           <template v-if="action === 'correct'">
             <InlineHint class="notice">
               {{
                 rejected
-                  ? '更正后，原拒收决定不再适用，剩余物料需重新检验；如需拒收，请重新办理。已入库、已退回记录不变。'
-                  : '填写本次到货核实总量。尚未入库或退回的数量安排需重新确认，剩余物料需重新检验；更正为零时不发起检验。已入库、已退回记录不变；本操作不能代替新增到货或登记真实损耗。'
+                  ? '填写同一次到货的正确总量。更正后，原拒收决定不再适用，剩余实物需重新检验；如需拒收，请重新办理。已入库、已退回记录不变；本操作不能代替新增到货或登记真实损耗。'
+                  : '填写同一次到货的正确总量。尚未入库或退回的实物需重新检验并确认去向；无剩余实物时不发起检验。已入库、已退回记录不变；本操作不能代替新增到货或登记真实损耗。'
               }}
             </InlineHint>
             <el-form-item
-              label="更正后本次到货总量"
+              label="更正后到货量"
               required
             >
               <el-input-number
@@ -53,10 +53,10 @@
                 controls-position="right"
               />
             </el-form-item>
-            <el-form-item label="已入 / 已退锁定量"
+            <el-form-item label="已入库与已退回合计"
               ><strong>{{ disposedQuantity }} {{ line.unit }}</strong></el-form-item
             >
-            <el-form-item label="更正后未处置量"
+            <el-form-item label="更正后尚未入库或退回"
               ><strong>{{
                 Number.isFinite(correctedRemaining)
                   ? `${correctedRemaining} ${line.unit}`
@@ -71,7 +71,7 @@
               ></el-form-item
             >
             <el-form-item
-              label="实收更正原因"
+              label="到货量更正原因"
               required
               ><el-input
                 v-model="reason"
@@ -178,14 +178,14 @@
             </el-table>
             <p class="hint">
               归属合计 {{ Number.isFinite(ownershipTotal) ? ownershipTotal : '待填写' }} /
-              本批未处置总量 {{ ownershipTarget }} {{ line.unit }}。各项可填 0，合计必须一致。
+              尚未入库或退回 {{ ownershipTarget }} {{ line.unit }}。各项可填 0，合计必须一致。
             </p>
           </template>
           <el-alert
             v-else-if="action === 'correct' && ownershipChanged"
             type="info"
             :closable="false"
-            title="本批已有补单归属。普通实收更正后先重新检验，原归属保留追溯；库管后续定稿时根据核实总量重新确认原单和补单份额。"
+            title="本批已有补单归属。更正到货量后先重新检验，原归属保留追溯；库管后续定稿时根据本轮剩余实物核实量重新确认原单和补单份额。"
           />
         </el-form>
       </div>
@@ -211,7 +211,7 @@
           action === 'return'
             ? '确认全部已退回供应商'
             : action === 'correct'
-              ? '确认整批实收更正'
+              ? '确认更正到货量'
               : action === 'revoke'
                 ? '撤销拒收并重新办理'
                 : '确认人工拒收'
@@ -263,7 +263,7 @@ const line = computed(() =>
 );
 const title = computed(() =>
   action.value === 'correct'
-    ? '更正本次到货核实总量'
+    ? '更正到货量'
     : action.value === 'return'
       ? '确认实际退回供应商'
       : action.value === 'revoke'

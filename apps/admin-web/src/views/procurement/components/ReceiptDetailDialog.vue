@@ -124,8 +124,8 @@
               >
                 <span>{{
                   isKnownZero(selectedLine.quantities.receivedQuantity)
-                    ? '本批核实总量为零，当前无剩余实物。'
-                    : '当前核实量已全部入库或退回。'
+                    ? '本批到货量为零，当前无剩余实物。'
+                    : '本批到货量已全部入库或退回。'
                 }}</span>
                 <div class="done-actions">
                   <el-button
@@ -141,7 +141,7 @@
                     type="primary"
                     :disabled="blocked"
                     @click="actionDialog?.open(selectedLine, 'correct')"
-                    >更正实收</el-button
+                    >更正到货量</el-button
                   >
                 </div>
               </div>
@@ -152,7 +152,7 @@
                 "
                 class="done-hint"
               >
-                当前没有待处理数量，无法调整入库和退回安排。若实收总数有误，请先更正实收；新增待处理数量须重新检验并由仓库确认。已入库、已退回记录不变。
+                当前没有尚未入库或退回的实物，无法调整入库和退回安排。同批计数有误时可更正到货量；更正后增加的剩余实物须重新检验并由仓库确认。已入库、已退回记录不变。
               </p>
               <div
                 v-else-if="!isReceiptVoided(selectedLine)"
@@ -281,7 +281,7 @@
                 <el-button
                   :disabled="blocked"
                   @click="actionDialog?.open(selectedLine, 'correct')"
-                  >更正实收</el-button
+                  >更正到货量</el-button
                 >
                 <el-button
                   type="danger"
@@ -354,7 +354,7 @@
                   >处理轮次 {{ selectedLine.historyTotals.rounds }}</el-button
                 >
                 <el-button @click="history?.open(selectedLine.id, 'revisions', selectedLine)"
-                  >实收修订 {{ selectedLine.historyTotals.revisions }}</el-button
+                  >到货量修订 {{ selectedLine.historyTotals.revisions }}</el-button
                 >
                 <el-button @click="history?.open(selectedLine.id, 'cases', selectedLine)"
                   >检验历史 {{ selectedLine.historyTotals.cases }}</el-button

@@ -36,7 +36,7 @@
     >
       <dl v-if="!isReceiptVoided(line)">
         <div>
-          <dt>本轮剩余</dt>
+          <dt>尚未入库或退回</dt>
           <dd :class="{ 'quantity-zero': isKnownZero(line.quantities.unprocessedQuantity) }">
             {{ quantityText(line.quantities.unprocessedQuantity) }} <small>{{ line.unit }}</small>
           </dd>
@@ -50,7 +50,7 @@
         </div>
         <div>
           <dt>待退回</dt>
-          <dd :class="{ 'quantity-zero': isKnownZero(line.quantities.pendingReturnQuantity) }">
+          <dd :class="receiptReturnQuantityClass(line.quantities.pendingReturnQuantity)">
             {{ quantityText(line.quantities.pendingReturnQuantity) }} <small>{{ line.unit }}</small>
           </dd>
         </div>
@@ -63,23 +63,29 @@
       </dl>
       <div class="actual-quantities">
         <span
-          >{{ isReceiptVoided(line) ? '作废前核实量' : '本批核实总量' }}
+          >{{ isReceiptVoided(line) ? '作废前到货量' : '本批到货量' }}
           <strong
-            >{{ registeredQuantity === null ? '见实收修订' : quantityText(registeredQuantity) }}
+            >{{ registeredQuantity === null ? '见到货量修订' : quantityText(registeredQuantity) }}
             <template v-if="registeredQuantity !== null">{{ line.unit }}</template></strong
           ></span
         >
         <span
-          >累计已入
+          >已入库
           <strong>{{ quantityText(line.quantities.inboundQuantity) }} {{ line.unit }}</strong></span
         >
         <span
-          >累计已退
-          <strong
+          >已退回
+          <strong :class="receiptReturnQuantityClass(line.quantities.returnedQuantity)"
             >{{ quantityText(line.quantities.returnedQuantity) }} {{ line.unit }}</strong
           ></span
         >
       </div>
+      <p
+        v-if="!isReceiptVoided(line)"
+        class="quantity-definition"
+      >
+        尚未入库或退回 = 到货量 − 已入库 − 已退回。
+      </p>
     </div>
     <template v-if="section === 'all'">
       <el-descriptions
@@ -88,25 +94,23 @@
         size="small"
         class="quantity-summary"
       >
-        <el-descriptions-item :label="isReceiptVoided(line) ? '作废前核实量' : '本批核实总量'">
-          {{ registeredQuantity === null ? '见实收修订' : quantityText(registeredQuantity) }}
+        <el-descriptions-item :label="isReceiptVoided(line) ? '作废前到货量' : '本批到货量'">
+          {{ registeredQuantity === null ? '见到货量修订' : quantityText(registeredQuantity) }}
           <template v-if="registeredQuantity !== null">{{ line.unit }}</template>
         </el-descriptions-item>
-        <el-descriptions-item label="累计已入">
+        <el-descriptions-item label="已入库">
           <span :class="isKnownZero(line.quantities.inboundQuantity) ? 'quantity-zero' : undefined">
             {{ quantityText(line.quantities.inboundQuantity) }} {{ line.unit }}
           </span>
         </el-descriptions-item>
-        <el-descriptions-item label="累计已退">
-          <span
-            :class="isKnownZero(line.quantities.returnedQuantity) ? 'quantity-zero' : undefined"
-          >
+        <el-descriptions-item label="已退回">
+          <span :class="receiptReturnQuantityClass(line.quantities.returnedQuantity)">
             {{ quantityText(line.quantities.returnedQuantity) }} {{ line.unit }}
           </span>
         </el-descriptions-item>
         <el-descriptions-item
           v-if="!isReceiptVoided(line)"
-          label="本轮剩余"
+          label="尚未入库或退回"
         >
           <strong
             :class="
@@ -118,6 +122,12 @@
           >
         </el-descriptions-item>
       </el-descriptions>
+      <p
+        v-if="!isReceiptVoided(line)"
+        class="quantity-definition"
+      >
+        尚未入库或退回 = 到货量 − 已入库 − 已退回。
+      </p>
       <InlineHint
         v-if="
           !isKnownZero(line.quantities.unprocessedQuantity) &&
@@ -125,20 +135,21 @@
         "
         class="line-hint"
       >
-        本轮剩余去向：
+        尚未入库或退回的去向：
         <template v-if="Number(line.quantities.undeterminedQuantity) > 0">
           待处理
           <strong>{{ quantityText(line.quantities.undeterminedQuantity) }} {{ line.unit }}</strong
           >；
         </template>
         <template v-if="Number(line.quantities.pendingInboundQuantity) > 0">
-          可入
+          待入库
           <strong>{{ quantityText(line.quantities.pendingInboundQuantity) }} {{ line.unit }}</strong
           >；
         </template>
         <template v-if="Number(line.quantities.pendingReturnQuantity) > 0">
-          待退
-          <strong>{{ quantityText(line.quantities.pendingReturnQuantity) }} {{ line.unit }}</strong
+          待退回
+          <strong :class="receiptReturnQuantityClass(line.quantities.pendingReturnQuantity)"
+            >{{ quantityText(line.quantities.pendingReturnQuantity) }} {{ line.unit }}</strong
           >。
         </template>
         <template v-if="!hasRemainingComponent">分配数量待核对。</template>
@@ -167,6 +178,7 @@ import {
   receiptLineStageLabel,
   receiptLineStageType,
   receiptLineStageEffect,
+  receiptReturnQuantityClass,
   isReceiptVoided,
 } from '../receipt-round-presentation';
 
@@ -208,7 +220,7 @@ const phaseHint = computed(() => {
     case 'awaiting_acceptance':
       return '本轮检查已放行，待库管核对正式去向。';
     case 'uninspected':
-      return '本轮剩余待发起检验，尚无可执行分配。';
+      return '尚未入库或退回的实物待发起检验，尚无可执行分配。';
     default:
       return '请核对本轮阶段和当前正式分配。';
   }
@@ -232,6 +244,11 @@ const isKnownZero = (value: string): boolean => value.trim() !== '' && Number(va
 .quantity-zero {
   color: var(--el-text-color-placeholder);
   font-weight: 400;
+}
+.line-hint strong.quantity-return,
+.quantity-return {
+  color: var(--el-color-warning-dark-2);
+  font-weight: 700;
 }
 .quantity-focus dl {
   display: grid;
@@ -257,6 +274,9 @@ const isKnownZero = (value: string): boolean => value.trim() !== '' && Number(va
   color: var(--el-text-color-placeholder);
   font-weight: 400;
 }
+.quantity-focus dd.quantity-return {
+  color: var(--el-color-warning-dark-2);
+}
 .quantity-focus small {
   font-size: 13px;
   font-weight: 400;
@@ -271,6 +291,18 @@ const isKnownZero = (value: string): boolean => value.trim() !== '' && Number(va
 }
 .actual-quantities strong {
   color: var(--el-text-color-primary);
+}
+.actual-quantities strong.quantity-return {
+  color: var(--el-color-warning-dark-2);
+}
+.actual-quantities strong.quantity-zero {
+  color: var(--el-text-color-placeholder);
+  font-weight: 400;
+}
+.quantity-definition {
+  margin: 8px 0 0;
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
 }
 @media (max-width: 720px) {
   .quantity-focus dl {

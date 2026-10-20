@@ -3,14 +3,20 @@ import type { ReceiptQuantitySummary } from '@company/contracts';
 import type { Db } from '../mysql-purchase-order.shared.js';
 import { type ReadRow, slots, text, inboundFactSelect } from './receipt-read.shared.js';
 
+interface PurchaseLineMetrics {
+  quantities: ReceiptQuantitySummary;
+  receivedByReceiptLine: Map<string, number>;
+}
+
 export async function readPurchaseLineMetrics(
   db: Db,
   lineIds: string[],
-): Promise<Map<string, { quantities: ReceiptQuantitySummary }>> {
-  const result = new Map(
+): Promise<Map<string, PurchaseLineMetrics>> {
+  const result = new Map<string, PurchaseLineMetrics>(
     lineIds.map((id) => [
       id,
       {
+        receivedByReceiptLine: new Map(),
         quantities: {
           unprocessedQuantity: '0',
           receivedQuantity: '0',
@@ -56,6 +62,15 @@ export async function readPurchaseLineMetrics(
     const target = result.get(id)!;
     target.quantities[field] = String(Number(target.quantities[field]) + Number(quantity ?? 0));
   };
+  // 列表与采购详情在同一次累加中保留来源，避免重新按登记总量计算补单归属。
+  const addReceived = (id: string, receiptLineId: string, quantity: number): void => {
+    const target = result.get(id)!;
+    add(id, 'receivedQuantity', quantity);
+    target.receivedByReceiptLine.set(
+      receiptLineId,
+      (target.receivedByReceiptLine.get(receiptLineId) ?? 0) + quantity,
+    );
+  };
   for (const row of rows) {
     const id = String(row.purchase_order_line_id ?? originById.get(text(row.receipt_line_id)));
     if (!result.has(id)) continue;
@@ -63,9 +78,9 @@ export async function readPurchaseLineMetrics(
       Number(row.is_current) === 1
         ? Number(row.quantity) - Number(row.inbound_quantity) - Number(row.returned_quantity)
         : 0;
-    add(
+    addReceived(
       id,
-      'receivedQuantity',
+      text(row.receipt_line_id),
       rest + Number(row.inbound_quantity) + Number(row.returned_quantity),
     );
     if (row.disposition === 'inbound') add(id, 'pendingInboundQuantity', rest);
@@ -107,7 +122,7 @@ export async function readPurchaseLineMetrics(
   for (const owner of pendingOwners) {
     const target = result.get(owner.purchaseOrderLineId);
     if (!target) continue;
-    add(owner.purchaseOrderLineId, 'receivedQuantity', owner.quantity);
+    addReceived(owner.purchaseOrderLineId, owner.receiptLineId, owner.quantity);
     add(owner.purchaseOrderLineId, 'undeterminedQuantity', owner.quantity);
     target.quantities.hasOpenReview ||= owner.hasOpenReview;
   }

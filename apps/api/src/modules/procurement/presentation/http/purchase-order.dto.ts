@@ -47,6 +47,9 @@ export class PurchaseOrderQueryDto extends PageQueryDto {
   @IsOptional() @Matches(/^[1-9]\d{0,19}$/) originOrderLineId?: string;
   @IsOptional() @Matches(/^[1-9]\d{0,19}$/) originAllocationId?: string;
 }
+export class PurchaseOrderLineReceiptRecordQueryDto extends PageQueryDto {
+  @IsOptional() @Transform(trim) @IsString() @MaxLength(100) keyword?: string;
+}
 export class PurchaseExcessReceiptCandidateQueryDto extends PageQueryDto {
   @IsOptional() @Transform(trim) @IsString() @MaxLength(100) keyword?: string;
   @IsOptional() @Matches(/^[1-9]\d{0,19}$/) receiptLineId?: string;

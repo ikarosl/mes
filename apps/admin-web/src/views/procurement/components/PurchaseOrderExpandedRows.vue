@@ -74,7 +74,7 @@
         @reopen-line="$emit('reopen-line', $event)"
         @supplements="$emit('supplements', $event)"
         @supplement="$emit('supplement', $event)"
-        @receipts="$emit('receipts')"
+        @receipt-records="$emit('receipt-records', $event)"
         @source-receipt="$emit('source-receipt', $event)"
         @navigate="$emit('navigate', $event)"
       />
@@ -107,7 +107,7 @@ const emit = defineEmits<{
   supplements: [string];
   supplement: [string?];
   'supplement-origin': [string];
-  receipts: [];
+  'receipt-records': [string];
   'source-receipt': [string];
   navigate: [string];
 }>();

@@ -48,6 +48,14 @@ export const receiptAllocationAuthorizationTag = (
   disposition: ReceiptAllocationDisposition,
 ): TagAppearance => ALLOCATION_AUTHORIZATION_TAGS[disposition];
 const isKnownZero = (value: string): boolean => value.trim() !== '' && Number(value) === 0;
+export const receiptReturnQuantityClass = (
+  value: string | number | null | undefined,
+): 'quantity-return' | 'quantity-zero' | undefined => {
+  if (value === null || value === undefined || String(value).trim() === '') return undefined;
+  const quantity = Number(value);
+  if (!Number.isFinite(quantity)) return undefined;
+  return quantity === 0 ? 'quantity-zero' : 'quantity-return';
+};
 export const receiptRoundTagType = (status: ReceiptRoundStatus): TagAppearance['type'] =>
   ROUND_TAGS[status].type;
 export const receiptRoundTagEffect = (status: ReceiptRoundStatus): TagAppearance['effect'] =>
@@ -170,7 +178,7 @@ export const receiptProcessingGuide = (line: ProcurementReceiptLine): ReceiptPro
             ? '选择下方有效待退分配，核对交接后确认退回。'
             : '请核对本轮数量和入库、退回安排。',
     manual_rejection: '选择下方有效待退分配，核对交接凭据后确认退回。',
-    completed: '当前无需继续入库或退回；核实总量有误时可更正实收。',
+    completed: '当前无需继续入库或退回；同批计数有误时可更正到货量。',
     superseded: '请刷新明细，核对最新处理轮次。',
     voided: '到货登记已作废，历史记录仅供追溯。',
   };
@@ -189,7 +197,7 @@ export const receiptProcessingGuide = (line: ProcurementReceiptLine): ReceiptPro
     !Number.isFinite(Number(line.quantities.unprocessedQuantity))
   ) {
     tone = 'warning';
-    nextStep = '剩余数量待核对，请刷新明细后再办理。';
+    nextStep = '尚未入库或退回的数量待核对，请刷新明细后再办理。';
   }
   const finish: ReceiptFlowStep = {
     label: '处理完成',
@@ -218,7 +226,7 @@ export const receiptProcessingGuide = (line: ProcurementReceiptLine): ReceiptPro
     tone,
     nextStep,
     note: repeatInspection
-      ? '本轮须重新经过检验与仓库确认，旧分配不能继续执行；已入已退累计不变。'
+      ? '本轮须重新经过检验与仓库确认，旧分配不能继续执行；已入库、已退回累计不变。'
       : '入库与退回按正式分配分别办理，并非每批都需要两种操作。',
     steps: [
       registration,

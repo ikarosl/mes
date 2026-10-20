@@ -9,6 +9,8 @@ import type {
   MaterialOption,
   MaterialVariantItem,
   PurchaseOrderQuery,
+  PurchaseOrderLineReceiptRecordQuery,
+  PurchaseOrderLineReceiptRecordPage,
   PurchaseExcessReceiptCandidateQuery,
   PurchaseExcessReceiptCandidate,
   PurchaseQualityReplacementCandidateQuery,
@@ -89,6 +91,17 @@ const command = <T = PurchaseOrderCommandResult>(
   });
 
 export const procurementApi = {
+  purchaseOrderLineReceiptRecords: (
+    purchaseOrderLineId: string,
+    params: PurchaseOrderLineReceiptRecordQuery,
+    signal?: AbortSignal,
+  ): Promise<PurchaseOrderLineReceiptRecordPage> =>
+    request({
+      url: `/procurement/purchase-order-lines/${purchaseOrderLineId}/receipt-records`,
+      params,
+      signal,
+      skipErrorHandling: true,
+    }),
   excessReceiptCandidates: (
     purchaseOrderLineId: string,
     params: PurchaseExcessReceiptCandidateQuery,
