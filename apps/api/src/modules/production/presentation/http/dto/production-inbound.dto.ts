@@ -1,21 +1,11 @@
-import { Type } from 'class-transformer';
+import { IsIn, IsOptional, IsString, MaxLength, Matches } from 'class-validator';
 import {
-  ArrayMaxSize,
-  ArrayMinSize,
-  IsArray,
-  IsIn,
-  IsInt,
-  IsOptional,
-  IsString,
-  MaxLength,
-  Matches,
-  Max,
-  Min,
-  ValidateNested,
-} from 'class-validator';
-import { INBOUND_ORDER_STATUSES, INVENTORY_BATCH_STATUSES } from '@company/constants';
+  INBOUND_ORDER_STATUSES,
+  INVENTORY_BATCH_STATUSES,
+  INVENTORY_SOURCE_TYPES,
+  INVENTORY_ITEM_KINDS,
+} from '@company/constants';
 import type {
-  CreatePurchaseInboundPayload,
   InventoryBatchQuery,
   InventoryMaterialSupplyDemandQuery,
   InventoryMaterialDemandTraceQuery,
@@ -37,6 +27,8 @@ export class PurchaseInboundQueryDto extends PageQueryDto implements PurchaseInb
   @IsOptional() @IsIn(INBOUND_ORDER_STATUSES) status?: PurchaseInboundOrderQuery['status'];
 }
 export class InventoryBatchQueryDto extends PageQueryDto implements InventoryBatchQuery {
+  @IsOptional() @IsIn(INVENTORY_ITEM_KINDS) itemKind?: InventoryBatchQuery['itemKind'];
+  @IsOptional() @IsIn(INVENTORY_SOURCE_TYPES) sourceType?: InventoryBatchQuery['sourceType'];
   @IsOptional() @IsString() @MaxLength(100) keyword?: string;
   @IsOptional() @IsString() @MaxLength(100) batchCode?: string;
   @IsOptional() @IsIn(INVENTORY_BATCH_STATUSES) batchStatus?: InventoryBatchQuery['batchStatus'];
@@ -52,22 +44,4 @@ export class InventoryMaterialDemandTraceQueryDto
   implements InventoryMaterialDemandTraceQuery
 {
   @IsString() @Matches(/^[1-9]\d{0,19}$/) materialVariantId!: string;
-}
-export class CreatePurchaseInboundLineDto {
-  @IsString() @MaxLength(20) itemId!: string;
-  @IsString() @MaxLength(20) materialVariantId!: string;
-  @IsString() @MaxLength(100) batchCode!: string;
-  @Type(() => Number) @IsInt() @Min(1) @Max(99_999_999) inboundQuantity!: number;
-  @IsOptional() @IsString() @MaxLength(5000) remark?: string | null;
-}
-export class CreatePurchaseInboundDto implements CreatePurchaseInboundPayload {
-  @IsOptional() @IsString() @MaxLength(100) inboundNo?: string | null;
-  @IsOptional() @IsString() @MaxLength(100) provider?: string | null;
-  @IsOptional() @IsString() @MaxLength(5000) remark?: string | null;
-  @IsArray()
-  @ArrayMinSize(1)
-  @ArrayMaxSize(50)
-  @ValidateNested({ each: true })
-  @Type(() => CreatePurchaseInboundLineDto)
-  details!: CreatePurchaseInboundLineDto[];
 }

@@ -164,34 +164,13 @@
         </el-table-column>
       </el-table>
 
-      <div class="table-footer">
-        <span class="total-text">共 {{ total }} 条</span>
-        <el-select
-          v-model="pageSize"
-          class="page-size-select"
-          @change="handlePageSizeChange"
-        >
-          <el-option
-            label="10条/页"
-            :value="10"
-          />
-          <el-option
-            label="20条/页"
-            :value="20"
-          />
-          <el-option
-            label="50条/页"
-            :value="50"
-          />
-        </el-select>
-        <el-pagination
-          v-model:current-page="currentPage"
-          :page-size="pageSize"
-          :total="total"
-          layout="prev, pager, next, jumper"
-          @current-change="handlePageChange"
-        />
-      </div>
+      <PaginationFooter
+        :total="total"
+        :current-page="currentPage"
+        :page-size="pageSize"
+        @update:page-size="handlePageSizeChange"
+        @page-change="handlePageChange"
+      />
     </div>
 
     <!-- 新增/编辑角色弹窗 -->
@@ -220,6 +199,7 @@ import { Plus, Refresh } from '@element-plus/icons-vue';
 import { PERMISSIONS, SYSTEM_STATUS } from '@company/constants';
 import type { SystemRoleListItem } from '@company/contracts';
 import TableToolbar from '../../components/TableToolbar.vue';
+import PaginationFooter from '../../components/PaginationFooter.vue';
 import { EMessage } from '../../utils/message';
 import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
 import { useRowPending } from '../../utils/useRowPending';
@@ -438,48 +418,6 @@ onMounted(loadRoles);
 .data-table :deep(.el-button.is-link) {
   padding: 0;
   font-weight: 500;
-}
-
-.table-footer {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 12px;
-  height: 56px;
-  padding: 0 16px;
-}
-.total-text {
-  color: #6b7280;
-  font-size: 14px;
-}
-.page-size-select {
-  width: 86px;
-}
-.page-size-select :deep(.el-select__wrapper) {
-  min-height: 30px;
-  border-radius: 6px;
-}
-.table-footer :deep(.el-pagination) {
-  gap: 6px;
-}
-.table-footer :deep(.el-pager li),
-.table-footer :deep(.btn-prev),
-.table-footer :deep(.btn-next) {
-  min-width: 32px;
-  height: 32px;
-  border-radius: 6px;
-}
-.table-footer :deep(.el-pager li.is-active) {
-  border: 1px solid #306188;
-  background: #ffffff;
-  color: #306188;
-}
-.table-footer :deep(.el-pagination__jump) {
-  margin-left: 12px;
-  color: #6b7280;
-}
-.table-footer :deep(.el-pagination__editor) {
-  width: 48px;
 }
 
 @media (max-width: 1120px) {

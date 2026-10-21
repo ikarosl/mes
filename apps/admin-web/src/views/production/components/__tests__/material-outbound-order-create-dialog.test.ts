@@ -1,5 +1,7 @@
 import { mount } from '@vue/test-utils';
+import { createPinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createMemoryHistory, createRouter } from 'vue-router';
 import MaterialOutboundOrderCreateDialog from '../MaterialOutboundOrderCreateDialog.vue';
 
 const { confirm } = vi.hoisted(() => ({ confirm: vi.fn() }));
@@ -26,6 +28,21 @@ const candidate = {
   supplementNo: null,
 };
 
+const testPlugins = () => [
+  createPinia(),
+  createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/', component: { render: () => null } },
+      {
+        path: '/production/tasks',
+        name: 'production-tasks',
+        component: { render: () => null },
+      },
+    ],
+  }),
+];
+
 describe('MaterialOutboundOrderCreateDialog', () => {
   beforeEach(() => confirm.mockReset());
 
@@ -41,6 +58,7 @@ describe('MaterialOutboundOrderCreateDialog', () => {
         intentStatus: 'idle',
       },
       global: {
+        plugins: testPlugins(),
         stubs: {
           'el-dialog': { template: '<div><slot/><slot name="footer"/></div>' },
           'el-alert': { props: ['title'], template: '<p>{{ title }}</p>' },
@@ -66,7 +84,7 @@ describe('MaterialOutboundOrderCreateDialog', () => {
     expect(wrapper.text()).toContain('创建待出库单');
   });
 
-  it('keeps blocked batches visible with an actionable reason instead of silently filtering them', () => {
+  it('keeps batches without an orderable allocation visible with an actionable reason', () => {
     const wrapper = mount(MaterialOutboundOrderCreateDialog, {
       props: {
         modelValue: true,
@@ -80,9 +98,8 @@ describe('MaterialOutboundOrderCreateDialog', () => {
             batchStatus: 'material_partially_outbound',
             outboundEligibility: {
               eligible: false,
-              outboundMode: null,
-              blockedCode: 'short_batch_authorization_stale',
-              blockedReason: '需求计划已变化，请到生产任务重新复核短批授权',
+              blockedCode: 'allocation_incomplete',
+              blockedReason: '物料尚未形成可制单分配，请先完成分配',
             },
           },
         ],
@@ -93,6 +110,7 @@ describe('MaterialOutboundOrderCreateDialog', () => {
         intentStatus: 'idle',
       },
       global: {
+        plugins: testPlugins(),
         stubs: {
           'el-dialog': { template: '<div><slot/><slot name="footer"/></div>' },
           'el-alert': { props: ['title'], template: '<p>{{ title }}</p>' },
@@ -115,7 +133,7 @@ describe('MaterialOutboundOrderCreateDialog', () => {
 
     expect(wrapper.text()).toContain('另有 1 个生产批次暂不可制单');
     expect(wrapper.text()).toContain('PB-STALE');
-    expect(wrapper.text()).toContain('需求计划已变化，请到生产任务重新复核短批授权');
+    expect(wrapper.text()).toContain('物料尚未形成可制单分配，请先完成分配');
   });
 
   it('keeps the selected exact-version candidate and draft when an unknown result is retained', async () => {
@@ -127,9 +145,10 @@ describe('MaterialOutboundOrderCreateDialog', () => {
         optionLoading: false,
         candidateLoading: false,
         submitting: false,
-        intentStatus: 'pending',
+        intentStatus: 'idle',
       },
       global: {
+        plugins: testPlugins(),
         stubs: {
           'el-dialog': { template: '<div><slot/><slot name="footer"/></div>' },
           'el-alert': { props: ['title'], template: '<p>{{ title }}</p>' },
@@ -166,12 +185,13 @@ describe('MaterialOutboundOrderCreateDialog', () => {
     expect(vm.selectedCandidates).toEqual(
       expect.arrayContaining([expect.objectContaining({ materialVariantId: 'variant-1' })]),
     );
+    await wrapper.setProps({ intentStatus: 'pending' });
     confirm.mockRejectedValueOnce('cancel');
     await vm.requestClose();
 
     expect(confirm).toHaveBeenCalledWith(
-      expect.stringContaining('结果尚未确认'),
-      '放弃幂等意图确认',
+      expect.stringContaining('暂时无法确认出库单是否已创建'),
+      '确认关闭当前操作',
       expect.objectContaining({ cancelButtonText: '继续保留' }),
     );
     expect(wrapper.emitted('update:modelValue')).toBeUndefined();

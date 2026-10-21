@@ -3,6 +3,7 @@ import type {
   ReworkStatus,
   BatchStepAbnormalReviewStatus,
   BatchStepAbnormalOrigin,
+  BatchStepAbnormalDispositionType,
 } from './statuses.js';
 import type { BatchStepReportItem } from './execution.js';
 
@@ -11,10 +12,14 @@ export interface BatchStepAbnormalDispositionItem {
   dispositionNo: string;
   productionBatchId: string;
   stepRecordId: string;
-  sourceReportId: string;
+  sourceReportId: string | null;
+  sourceType: BatchStepAbnormalSourceType;
+  processInspectionId: string | null;
+  processInspectionRecordId: string | null;
+  sourceAbnormalQuantity: string;
   abnormalOrigin: BatchStepAbnormalOrigin;
   reviewStatus: BatchStepAbnormalReviewStatus;
-  dispositionType: 'rework' | 'scrap' | null;
+  dispositionType: BatchStepAbnormalDispositionType | null;
   remark: string | null;
   version: number;
   createdAt: string;
@@ -28,27 +33,37 @@ export interface RejectBatchStepAbnormalDispositionPayload extends VersionedComm
   reason: string;
 }
 
+export type BatchStepAbnormalSourceType = 'report' | 'process_inspection';
+export type BatchStepReportQuantityScope = 'production' | 'inspection';
+export interface AcceptProcessInspectionPayload extends VersionedCommand {
+  inspectionId: string;
+  recordId: string;
+  quantity: number;
+  remark?: string | null;
+}
+
 export interface ReworkRecordItem {
   reworkId: string;
   reworkNo: string;
   abnormalDispositionId: string;
   productionBatchId: string;
   stepRecordId: string;
-  sourceReportId: string;
+  sourceReportId: string | null;
+  /** 批准时的来源工序负责人快照，仅用于追溯，不作为返工执行授权。 */
   responsibleUserId: string;
   responsibleUserName: string | null;
+  quantityScope: BatchStepReportQuantityScope;
   reworkQuantity: string;
   unit: string;
   status: ReworkStatus;
-  completedReportId: string | null;
+  completedNormalReportId: string | null;
+  completedAbnormalReportId: string | null;
   startedAt: string | null;
   completedAt: string | null;
   version: number;
   remark: string | null;
   createdAt: string;
 }
-
-export type StartReworkPayload = VersionedCommand;
 
 export interface CompleteReworkPayload extends VersionedCommand {
   normalQuantity: number;
@@ -58,6 +73,7 @@ export interface CompleteReworkPayload extends VersionedCommand {
 
 export interface CompleteReworkResult {
   rework: ReworkRecordItem;
-  report: BatchStepReportItem;
+  normalReport: BatchStepReportItem | null;
+  abnormalReport: BatchStepReportItem | null;
   abnormalDisposition: BatchStepAbnormalDispositionItem | null;
 }

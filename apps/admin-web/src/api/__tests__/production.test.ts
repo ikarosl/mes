@@ -63,20 +63,23 @@ describe('productionApi', () => {
   it('creates a work order with required fields', async () => {
     const { productionApi } = await import('../production');
 
-    await productionApi.createOrder({
-      workOrderNo: 'WO-2026-0001',
-      orderType: 'mass_production',
-      productId: '1',
-      plannedQuantity: 100,
-      planStartDate: '2026-08-01',
-      planEndDate: '2026-08-31',
-    });
+    await productionApi.createOrder(
+      {
+        orderType: 'mass_production',
+        productId: '1',
+        plannedQuantity: 100,
+        planStartDate: '2026-08-01',
+        planEndDate: '2026-08-31',
+      },
+      'work-order-create-key',
+    );
 
     expect(request).toHaveBeenCalledWith({
       url: '/production/work-orders',
       method: 'POST',
+      headers: { 'Idempotency-Key': 'work-order-create-key' },
+      skipErrorHandling: true,
       data: {
-        workOrderNo: 'WO-2026-0001',
         orderType: 'mass_production',
         productId: '1',
         plannedQuantity: 100,
@@ -89,25 +92,28 @@ describe('productionApi', () => {
   it('creates a work order with all optional fields', async () => {
     const { productionApi } = await import('../production');
 
-    await productionApi.createOrder({
-      workOrderNo: 'WO-2026-0002',
-      orderType: 'research',
-      productId: '2',
-      plannedQuantity: 50,
-      workOrderOwnerId: 'u1',
-      customerName: '客户A',
-      qualityLevel: 'A级',
-      planStartDate: '2026-08-01',
-      planEndDate: '2026-08-15',
-      externalOrderNo: 'PO-001',
-      remark: '加急订单',
-    });
+    await productionApi.createOrder(
+      {
+        orderType: 'research',
+        productId: '2',
+        plannedQuantity: 50,
+        workOrderOwnerId: 'u1',
+        customerName: '客户A',
+        qualityLevel: 'A级',
+        planStartDate: '2026-08-01',
+        planEndDate: '2026-08-15',
+        externalOrderNo: 'PO-001',
+        remark: '加急订单',
+      },
+      'work-order-create-key',
+    );
 
     expect(request).toHaveBeenCalledWith({
       url: '/production/work-orders',
       method: 'POST',
+      headers: { 'Idempotency-Key': 'work-order-create-key' },
+      skipErrorHandling: true,
       data: {
-        workOrderNo: 'WO-2026-0002',
         orderType: 'research',
         productId: '2',
         plannedQuantity: 50,
@@ -232,29 +238,15 @@ describe('productionApi', () => {
     });
   });
 
-  it('lists batches under a work order', async () => {
-    const { productionApi } = await import('../production');
-
-    await productionApi.listOrderBatches('1');
-
-    expect(request).toHaveBeenCalledWith({
-      url: '/production/work-orders/1/batches',
-    });
-  });
-
   it('creates a batch under a work order with idempotency key and unsafe retry', async () => {
     const { productionApi } = await import('../production');
 
-    await productionApi.createOrderBatch(
-      '1',
-      { batchNo: 'BATCH-001', plannedQuantity: 50 },
-      'k1-uuid',
-    );
+    await productionApi.createOrderBatch('1', { plannedQuantity: 50 }, 'k1-uuid');
 
     expect(request).toHaveBeenCalledWith({
       url: '/production/work-orders/1/batches',
       method: 'POST',
-      data: { batchNo: 'BATCH-001', plannedQuantity: 50 },
+      data: { plannedQuantity: 50 },
       headers: { 'Idempotency-Key': 'k1-uuid' },
       retryIdempotentWrite: true,
       retryTimes: 2,
@@ -330,6 +322,7 @@ describe('productionApi', () => {
 
   it('configures explicit material variants with an idempotency key', async () => {
     const { productionApi } = await import('../production');
+    request.mockResolvedValueOnce({ data: { configured: true } });
     const data = {
       requirements: [
         {
@@ -360,12 +353,15 @@ describe('productionApi', () => {
       reason: '生产补充',
       requirements: [
         {
-          productMaterialId: 'pm-1',
+          materialId: 'material-1',
           splits: [{ materialVariantId: 'mv-3', quantity: 1 }],
         },
       ],
     };
 
+    request.mockResolvedValueOnce({
+      data: { additionId: '1', additionNo: 'ADD-1', demandIds: ['2'] },
+    });
     await productionApi.addManualMaterialDemands('batch-1', data, 'manual-key');
 
     expect(request).toHaveBeenCalledWith({
@@ -405,6 +401,16 @@ describe('productionApi', () => {
   it('creates production material outbound with unsafe retry under the same key', async () => {
     const { productionApi } = await import('../production');
     const data = { details: [{ allocationId: '9', outboundQuantity: 2 }], remark: null };
+    request.mockResolvedValueOnce({
+      data: {
+        outbound: {
+          productionBatchId: '1',
+          outboundId: '9',
+          status: 'pending_picking',
+          details: [{}],
+        },
+      },
+    });
     await productionApi.createMaterialOutbound('1', data, 'outbound-key');
     expect(request).toHaveBeenCalledWith({
       url: '/production/batches/1/material-outbounds',
@@ -432,10 +438,20 @@ describe('productionApi', () => {
       {
         url: '/production/material-outbounds',
         params: { page: 1, pageSize: 20, status: 'pending_picking' },
+        signal: undefined,
+        skipErrorHandling: true,
       },
-      { url: '/production/material-outbounds/8' },
-      { url: '/production/material-outbounds/batch-options', skipErrorHandling: true },
-      { url: '/production/batches/3/material-outbound-candidates' },
+      { url: '/production/material-outbounds/8', signal: undefined, skipErrorHandling: true },
+      {
+        url: '/production/material-outbounds/batch-options',
+        signal: undefined,
+        skipErrorHandling: true,
+      },
+      {
+        url: '/production/batches/3/material-outbound-candidates',
+        signal: undefined,
+        skipErrorHandling: true,
+      },
       {
         url: '/production/material-outbounds/8/actions/confirm',
         method: 'POST',
@@ -452,58 +468,27 @@ describe('productionApi', () => {
     ]);
   });
 
-  it('uses Production-owned purchase inbound and inventory endpoints with correct idempotency', async () => {
+  it('uses read-only Production purchase inbound and inventory endpoints', async () => {
     const { productionApi } = await import('../production');
-    const data = {
-      inboundNo: null,
-      provider: '供应商 A',
-      remark: null,
-      details: [
-        {
-          itemId: '2',
-          materialVariantId: 'mv-2',
-          batchCode: 'LOT-1',
-          inboundQuantity: 5,
-          remark: null,
-        },
-      ],
-    };
     await productionApi.listPurchaseInbounds({ page: 1, pageSize: 20, status: 'pending' });
     await productionApi.getPurchaseInbound('7');
-    await productionApi.createPurchaseInbound(data, 'create-inbound-key');
-    await productionApi.confirmPurchaseInbound('7', 0, 'confirm-inbound-key');
-    await productionApi.cancelPurchaseInbound('8', { version: 1, reason: '供应商变更' });
     await productionApi.listInventoryBatches({ page: 1, pageSize: 20 });
     await productionApi.getInventoryBatch('9');
-    expect(request.mock.calls.slice(-7).map(([config]) => config)).toEqual([
+    expect(request.mock.calls.slice(-4).map(([config]) => config)).toEqual([
       {
         url: '/production/purchase-inbounds',
         params: { page: 1, pageSize: 20, status: 'pending' },
+        signal: undefined,
+        skipErrorHandling: true,
       },
-      { url: '/production/purchase-inbounds/7' },
+      { url: '/production/purchase-inbounds/7', signal: undefined, skipErrorHandling: true },
       {
-        url: '/production/purchase-inbounds',
-        method: 'POST',
-        data,
-        headers: { 'Idempotency-Key': 'create-inbound-key' },
-        retryIdempotentWrite: true,
-        retryTimes: 2,
+        url: '/production/inventory-batches',
+        params: { page: 1, pageSize: 20 },
+        signal: undefined,
+        skipErrorHandling: true,
       },
-      {
-        url: '/production/purchase-inbounds/7/actions/confirm',
-        method: 'POST',
-        data: { version: 0 },
-        headers: { 'Idempotency-Key': 'confirm-inbound-key' },
-        retryIdempotentWrite: true,
-        retryTimes: 2,
-      },
-      {
-        url: '/production/purchase-inbounds/8/actions/cancel',
-        method: 'POST',
-        data: { version: 1, reason: '供应商变更' },
-      },
-      { url: '/production/inventory-batches', params: { page: 1, pageSize: 20 } },
-      { url: '/production/inventory-batches/9' },
+      { url: '/production/inventory-batches/9', signal: undefined, skipErrorHandling: true },
     ]);
   });
 
@@ -531,19 +516,13 @@ describe('productionApi', () => {
     ]);
   });
 
-  it('uses separate admin and employee SOP snapshot download routes', async () => {
+  it('uses the employee SOP snapshot download route', async () => {
     const { productionApi } = await import('../production');
     request.mockResolvedValue({ data: new Blob(['sop']) });
 
-    await productionApi.batchStepSopContent('1', '9');
     await productionApi.workerTaskSopContent('1', '9');
 
-    expect(request.mock.calls.slice(-2).map(([config]) => config)).toEqual([
-      {
-        url: '/production/batches/1/step-records/9/sop-content',
-        responseType: 'blob',
-        timeout: 0,
-      },
+    expect(request.mock.calls.slice(-1).map(([config]) => config)).toEqual([
       {
         url: '/production/worker-tasks/batches/1/step-records/9/sop-content',
         responseType: 'blob',
@@ -554,10 +533,10 @@ describe('productionApi', () => {
 
   it('lists current employee tasks and starts a step with its version', async () => {
     const { productionApi } = await import('../production');
-    await productionApi.listWorkerTasks();
+    await productionApi.listWorkerTasks({ page: 1, pageSize: 20 });
     await productionApi.startStep('1', '9', 3);
     expect(request.mock.calls.slice(-2).map(([config]) => config)).toEqual([
-      { url: '/production/worker-tasks' },
+      { url: '/production/worker-tasks', params: { page: 1, pageSize: 20 } },
       {
         url: '/production/batches/1/step-records/9/actions/start',
         method: 'POST',
@@ -566,16 +545,24 @@ describe('productionApi', () => {
     ]);
   });
 
-  it('checks and completes production execution without an idempotency header or client quantity', async () => {
+  it('checks and explicitly completes production execution with a versioned idempotent command', async () => {
     const { productionApi } = await import('../production');
     await productionApi.getExecutionCompletionCheck('1');
-    await productionApi.completeProductionExecution('1', 4);
+    await productionApi.completeProductionExecution(
+      '1',
+      { version: 4, closeoutVersion: null },
+      'k2-uuid',
+    );
     expect(request.mock.calls.slice(-2).map(([config]) => config)).toEqual([
       { url: '/production/batches/1/execution-completion-check' },
       {
         url: '/production/batches/1/actions/complete-execution',
         method: 'POST',
-        data: { version: 4 },
+        data: { version: 4, closeoutVersion: null },
+        headers: { 'Idempotency-Key': 'k2-uuid' },
+        retryIdempotentWrite: true,
+        retryTimes: 2,
+        skipErrorHandling: true,
       },
     ]);
   });
@@ -595,10 +582,10 @@ describe('productionApi', () => {
 
   it('uses idempotency only for report creation and correction, not reversal', async () => {
     const { productionApi } = await import('../production');
-    const createBody = { version: 3, normalQuantity: 2, abnormalQuantity: 1, remark: null };
+    const createBody = { version: 3, normalQuantity: 2, abnormalQuantity: 0, remark: null };
     await productionApi.createStepReport('1', '9', createBody, 'report-key');
     await productionApi.reverseStepReport('1', '9', '12', { version: 4, reason: '录入错误' });
-    const correctBody = { version: 4, normalQuantity: 2, abnormalQuantity: 0, reason: '修正' };
+    const correctBody = { version: 4, normalQuantity: 2, reason: '修正' };
     await productionApi.correctStepReport('1', '9', '12', correctBody, 'correct-key');
     expect(request.mock.calls.slice(-3).map(([config]) => config)).toEqual([
       {

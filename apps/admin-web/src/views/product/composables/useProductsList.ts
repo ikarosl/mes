@@ -1,39 +1,27 @@
 import { reactive, ref } from 'vue';
-import { SYSTEM_STATUS } from '@company/constants';
-import type { ProductAcquireMethod, ProductItemKind, ProductListItem } from '@company/contracts';
+import type { ProductListItem } from '@company/contracts';
 import { productApi } from '../../../api/product';
 import { EMessage } from '../../../utils/message';
 
-/** 产品页正式列表：查询、分页与列表加载。写操作成功后只调用 loadProducts()。 */
 export function useProductsList() {
   const products = ref<ProductListItem[]>([]);
   const loading = ref(false);
-  /** 列表请求代际：快速查询/翻页时丢弃旧响应（last-request-wins，见 frontend-architecture §7.3） */
-  let listRequestToken = 0;
   const total = ref(0);
   const currentPage = ref(1);
   const pageSize = ref(10);
   const query = reactive<{
     keyword: string;
     categoryId: string;
-    acquireMethod: ProductAcquireMethod | '';
-    status: string;
-  }>({ keyword: '', categoryId: '', acquireMethod: '', status: '' });
+    status: '' | 'enabled' | 'disabled';
+  }>({
+    keyword: '',
+    categoryId: '',
+    status: '',
+  });
+  let requestToken = 0;
 
-  const itemKindLabels: Record<ProductItemKind, string> = {
-    // 半成品保留为可检索的分类名称，但底层业务类型与物料一致。
-    material: '物料（含半成品）',
-    finished_product: '成品',
-  };
-
-  const itemKindLabel = (kind: ProductItemKind): string => itemKindLabels[kind];
-
-  const canConfigureProduction = (
-    row: Pick<ProductListItem, 'acquireMethod' | 'itemKind'>,
-  ): boolean => row.acquireMethod === 'self_made' && row.itemKind !== 'material';
-
-  const loadProducts = async (): Promise<void> => {
-    const token = ++listRequestToken;
+  const load = async (): Promise<void> => {
+    const token = ++requestToken;
     loading.value = true;
     try {
       const result = await productApi.products({
@@ -41,53 +29,36 @@ export function useProductsList() {
         pageSize: pageSize.value,
         keyword: query.keyword.trim() || undefined,
         categoryId: query.categoryId || undefined,
-        acquireMethod: query.acquireMethod || undefined,
-        status:
-          query.status === 'enabled'
-            ? SYSTEM_STATUS.enabled
-            : query.status === 'disabled'
-              ? SYSTEM_STATUS.disabled
-              : undefined,
+        status: query.status === '' ? undefined : query.status === 'enabled' ? 1 : 0,
       });
-      if (token !== listRequestToken) return; // 查询/翻页已变化，丢弃旧响应
+      if (token !== requestToken) return;
       products.value = result.items;
       total.value = result.total;
     } catch (error) {
-      if (token !== listRequestToken) return; // 丢弃旧请求的失败，不误导提示
-      EMessage.error(error, '产品资料加载失败');
+      if (token === requestToken) EMessage.error(error, '成品资料加载失败');
     } finally {
-      if (token === listRequestToken) loading.value = false; // loading 只由最新请求结束
+      if (token === requestToken) loading.value = false;
     }
   };
 
-  const handleSearch = async (): Promise<void> => {
+  const search = async () => {
     currentPage.value = 1;
-    await loadProducts();
+    await load();
   };
-
-  const resetQuery = async (): Promise<void> => {
-    Object.assign(query, { keyword: '', categoryId: '', acquireMethod: '', status: '' });
+  const reset = async () => {
+    Object.assign(query, { keyword: '', categoryId: '', status: '' });
     currentPage.value = 1;
-    await loadProducts();
+    await load();
   };
-
-  const handlePageSizeChange = async (val: number): Promise<void> => {
-    pageSize.value = val;
+  const changePageSize = async (value: number) => {
+    pageSize.value = value;
     currentPage.value = 1;
-    await loadProducts();
+    await load();
   };
-
-  const handlePageChange = async (val: number): Promise<void> => {
-    currentPage.value = val;
-    await loadProducts();
+  const changePage = async (value: number) => {
+    currentPage.value = value;
+    await load();
   };
-
-  const formatSpecItem = (item: { key: string; value: string; unit?: string }): string =>
-    `${item.key}: ${item.value ?? '-'}${item.unit ? ` ${item.unit}` : ''}`;
-
-  const formatSpecSummary = (
-    items: Array<{ key: string; value: string; unit?: string }>,
-  ): string => (!items?.length ? '-' : items.map(formatSpecItem).join('；'));
 
   return {
     products,
@@ -96,15 +67,10 @@ export function useProductsList() {
     currentPage,
     pageSize,
     query,
-    itemKindLabels,
-    itemKindLabel,
-    canConfigureProduction,
-    loadProducts,
-    handleSearch,
-    resetQuery,
-    handlePageSizeChange,
-    handlePageChange,
-    formatSpecItem,
-    formatSpecSummary,
+    load,
+    search,
+    reset,
+    changePageSize,
+    changePage,
   };
 }

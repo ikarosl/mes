@@ -1,0 +1,63 @@
+import { IdempotencyModule } from '../../infrastructure/idempotency/idempotency.module.js';
+import { OtherInventoryService } from './application/other-inventory.service.js';
+import { OtherInventoryRepository } from './application/ports/other-inventory.repository.js';
+import { MysqlOtherInventoryRepository } from './infrastructure/mysql-other-inventory.repository.js';
+import {
+  OtherInboundController,
+  OtherOutboundController,
+  OtherStockCandidateController,
+} from './presentation/http/other-inventory.controller.js';
+import { Module } from '@nestjs/common';
+import { InventoryProductionDocumentCommand } from './application/inventory-production-document.command.js';
+import { MysqlInventoryProductionDocumentCommand } from './infrastructure/mysql-inventory-production-document.command.js';
+import { DatabaseModule } from '../../infrastructure/database/database.module.js';
+import { ProductModule } from '../product/public.js';
+import { IdentityModule } from '../identity/public.js';
+import { InventoryStockCommand } from './application/inventory-stock.command.js';
+import { InventoryInboundCommand } from './application/inventory-inbound.command.js';
+import { InventoryInboundQuery } from './application/inventory-inbound.query.js';
+import { InventoryInboundRepository } from './application/ports/inventory-inbound.repository.js';
+import { InventoryStockCheckRepository } from './application/ports/inventory-stock-check.repository.js';
+import { InventoryStockCheckService } from './application/inventory-stock-check.service.js';
+import { MysqlInventoryStockCommand } from './infrastructure/mysql-inventory-stock.command.js';
+import { MysqlInventoryInboundCommand } from './infrastructure/mysql-inventory-inbound.command.js';
+import { MysqlInventoryInboundQuery } from './infrastructure/mysql-inventory-inbound.query.js';
+import { MysqlInventoryPurchaseInboundWriter } from './infrastructure/mysql-inventory-purchase-inbound.writer.js';
+import { MysqlInventoryInboundRepository } from './infrastructure/mysql-inventory-inbound.repository.js';
+import { MysqlInventoryStockCheckRepository } from './infrastructure/mysql-inventory-stock-check.repository.js';
+import { InventoryStockCheckController } from './presentation/http/inventory-stock-check.controller.js';
+import { InboundBatchCandidateController } from './presentation/http/inbound-batch-candidate.controller.js';
+
+@Module({
+  imports: [DatabaseModule, ProductModule, IdentityModule, IdempotencyModule],
+  controllers: [
+    OtherInboundController,
+    OtherOutboundController,
+    OtherStockCandidateController,
+    InventoryStockCheckController,
+    InboundBatchCandidateController,
+  ],
+  providers: [
+    OtherInventoryService,
+    { provide: OtherInventoryRepository, useClass: MysqlOtherInventoryRepository },
+    {
+      provide: InventoryProductionDocumentCommand,
+      useClass: MysqlInventoryProductionDocumentCommand,
+    },
+    MysqlInventoryPurchaseInboundWriter,
+    InventoryStockCheckService,
+    { provide: InventoryStockCommand, useClass: MysqlInventoryStockCommand },
+    { provide: InventoryInboundCommand, useClass: MysqlInventoryInboundCommand },
+    { provide: InventoryInboundQuery, useClass: MysqlInventoryInboundQuery },
+    { provide: InventoryInboundRepository, useClass: MysqlInventoryInboundRepository },
+    { provide: InventoryStockCheckRepository, useClass: MysqlInventoryStockCheckRepository },
+  ],
+  exports: [
+    InventoryProductionDocumentCommand,
+    InventoryStockCommand,
+    InventoryInboundCommand,
+    InventoryInboundQuery,
+    InventoryInboundRepository,
+  ],
+})
+export class InventoryModule {}

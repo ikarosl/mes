@@ -16,17 +16,15 @@ describe('productApi contract mapping', () => {
         materialId: '2',
         quantityPerUnit: 1.25,
         unit: 'kg',
-        isKeyMaterial: true,
-        needBatchRecord: true,
       },
     ];
 
-    await productApi.replaceMaterials('1', items);
+    await productApi.replaceMaterials('1', items, 7);
 
     expect(request).toHaveBeenCalledWith({
       url: '/product/products/1/materials',
       method: 'PUT',
-      data: { items },
+      data: { items, version: 7 },
     });
   });
 
@@ -72,34 +70,22 @@ describe('productApi contract mapping', () => {
     });
   });
 
-  it('passes product and route pagination filters as query parameters', async () => {
+  it('passes route pagination filters as query parameters', async () => {
     request.mockResolvedValue({ data: { items: [], total: 0, page: 3, pageSize: 50 } });
     const { productApi } = await import('../product');
 
-    await productApi.products({ page: 3, pageSize: 50, categoryId: '2', status: 1 });
     await productApi.routes({ page: 1, pageSize: 10, status: 'draft' });
 
     expect(request).toHaveBeenNthCalledWith(1, {
-      url: '/product/products',
-      params: { page: 3, pageSize: 50, categoryId: '2', status: 1 },
-    });
-    expect(request).toHaveBeenNthCalledWith(2, {
       url: '/product/process-routes',
       params: { page: 1, pageSize: 10, status: 'draft' },
     });
   });
 
-  it('maps grouped product, material, and material-version queries to their routes', async () => {
+  it('maps material and material-version queries to their routes', async () => {
     request.mockResolvedValue({ data: { items: [], total: 0, page: 1, pageSize: 10 } });
     const { productApi } = await import('../product');
 
-    await productApi.productGroups({
-      page: 2,
-      pageSize: 20,
-      keyword: '连接器',
-      categoryId: 'c1',
-      status: 1,
-    });
     await productApi.materialList({
       page: 3,
       pageSize: 50,
@@ -109,20 +95,9 @@ describe('productApi contract mapping', () => {
       status: 1,
     });
     await productApi.materialOptions();
-    await productApi.materialVariants({
-      page: 1,
-      pageSize: 10,
-      materialId: 'm1',
-      keyword: 'v1',
-      status: 1,
-    });
     await productApi.materialVariantsByMaterial('m1');
 
     expect(request).toHaveBeenNthCalledWith(1, {
-      url: '/product/product-groups',
-      params: { page: 2, pageSize: 20, keyword: '连接器', categoryId: 'c1', status: 1 },
-    });
-    expect(request).toHaveBeenNthCalledWith(2, {
       url: '/product/materials',
       params: {
         page: 3,
@@ -133,15 +108,11 @@ describe('productApi contract mapping', () => {
         status: 1,
       },
     });
-    expect(request).toHaveBeenNthCalledWith(3, {
+    expect(request).toHaveBeenNthCalledWith(2, {
       url: '/product/materials/options',
       skipErrorHandling: true,
     });
-    expect(request).toHaveBeenNthCalledWith(4, {
-      url: '/product/material-variants',
-      params: { page: 1, pageSize: 10, materialId: 'm1', keyword: 'v1', status: 1 },
-    });
-    expect(request).toHaveBeenNthCalledWith(5, {
+    expect(request).toHaveBeenNthCalledWith(3, {
       url: '/product/material-variants/by-material/m1',
       skipErrorHandling: true,
     });

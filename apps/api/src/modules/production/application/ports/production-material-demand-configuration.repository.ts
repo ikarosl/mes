@@ -1,9 +1,10 @@
 import type {
   MaterialDemandManagementPage,
   MaterialDemandManagementQuery,
+  MaterialDemandRequirementInput,
+  ManualMaterialDemandRequirementInput,
 } from '@company/contracts';
 import type { CommandContext } from '../../../../common/audit/audit.types.js';
-import type { NormalDemandVariantSplit } from '../../domain/production-material-requirement.policy.js';
 
 /**
  * Command boundary for administrator-confirmed material requirements.
@@ -15,14 +16,11 @@ import type { NormalDemandVariantSplit } from '../../domain/production-material-
  * Inventory is outside this management projection and is not queried during
  * demand configuration.
  */
-export interface ConfigureMaterialRequirementCommand {
-  productMaterialId: string;
-  splits: NormalDemandVariantSplit[];
-}
+export type ConfigureMaterialRequirementCommand = MaterialDemandRequirementInput;
 
 export interface AddManualMaterialDemandCommand {
   productionBatchId: string;
-  requirements: ConfigureMaterialRequirementCommand[];
+  requirements: ManualMaterialDemandRequirementInput[];
   reason: string;
 }
 

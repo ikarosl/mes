@@ -10,14 +10,12 @@ const steps = (aNormal: number, aReported: number, bNormal: number, bReported: n
     {
       id: 'a',
       stepOrder: 1,
-      status: aNormal >= 5 ? 'completed' : 'doing',
       effectiveDirectReported: aReported,
       effectiveNormal: aNormal,
     },
     {
       id: 'b',
       stepOrder: 2,
-      status: 'doing',
       effectiveDirectReported: bReported,
       effectiveNormal: bNormal,
     },
@@ -39,50 +37,45 @@ const supplement = (
 });
 
 describe('production route supplement quantity policy', () => {
-  it('turns the first-step input limit from 5 to 6 after its own scrap supplement activates', () => {
+  it('adds a fulfilled scrap supplement to the unified input limit for every step', () => {
     const result = calculateRouteStepQuantities('5.0000', steps(4, 5, 0, 0), [supplement('a', 1)]);
 
     expect(result.get('a')).toMatchObject({
-      requiredNormalQuantity: '5.0000',
-      releasedInputQuantity: '6.0000',
-      availableReportQuantity: '1.0000',
-      activatedSupplementInputQuantity: '1.0000',
-      activatedSupplementTargetQuantity: '0.0000',
+      requiredNormalQuantity: '5',
+      upperLimitQuantity: '6',
+      availableReportQuantity: '1',
+      activatedSupplementInputQuantity: '1',
+      activatedSupplementTargetQuantity: '0',
     });
     expect(result.get('b')).toMatchObject({
-      requiredNormalQuantity: '5.0000',
-      releasedInputQuantity: '4.0000',
+      requiredNormalQuantity: '5',
+      upperLimitQuantity: '6',
     });
   });
 
-  it('reopens A for scrap at B and keeps B blocked until A produces the replacement', () => {
-    const reopenedSteps = steps(5, 5, 4, 5);
-    reopenedSteps[0]!.status = 'doing';
-    const beforeAReplacement = calculateRouteStepQuantities('5.0000', reopenedSteps, [
+  it('shows route differences without enforcing upstream release or reopening steps', () => {
+    const beforeAReplacement = calculateRouteStepQuantities('5.0000', steps(5, 5, 4, 5), [
       supplement('b', 2),
     ]);
 
     expect(beforeAReplacement.get('a')).toMatchObject({
-      requiredNormalQuantity: '6.0000',
-      releasedInputQuantity: '6.0000',
-      availableReportQuantity: '1.0000',
-      isSupplementReopened: true,
+      requiredNormalQuantity: '6',
+      upperLimitQuantity: '6',
+      availableReportQuantity: '1',
     });
     expect(beforeAReplacement.get('b')).toMatchObject({
-      requiredNormalQuantity: '5.0000',
-      releasedInputQuantity: '5.0000',
-      availableReportQuantity: '0.0000',
-      remainingNormalQuantity: '1.0000',
-      supplementBlockedReason: '等待前道补产形成新的正常放行量',
+      requiredNormalQuantity: '5',
+      upperLimitQuantity: '6',
+      availableReportQuantity: '1',
+      remainingNormalQuantity: '1',
     });
 
     const afterAReplacement = calculateRouteStepQuantities('5.0000', steps(6, 6, 4, 5), [
       supplement('b', 2),
     ]);
     expect(afterAReplacement.get('b')).toMatchObject({
-      releasedInputQuantity: '6.0000',
-      availableReportQuantity: '1.0000',
-      supplementBlockedReason: null,
+      upperLimitQuantity: '6',
+      availableReportQuantity: '1',
     });
   });
 
@@ -92,11 +85,11 @@ describe('production route supplement quantity policy', () => {
     ]);
 
     expect(result.get('a')).toMatchObject({
-      requiredNormalQuantity: '5.0000',
-      releasedInputQuantity: '5.0000',
-      pendingSupplementInputQuantity: '1.0000',
+      requiredNormalQuantity: '5',
+      upperLimitQuantity: '5',
+      pendingSupplementInputQuantity: '1',
     });
-    expect(result.get('b')?.availableReportQuantity).toBe('0.0000');
+    expect(result.get('b')?.availableReportQuantity).toBe('0');
   });
 
   it('does not make a rework completion report consume ordinary route input again', () => {
@@ -106,7 +99,6 @@ describe('production route supplement quantity policy', () => {
         {
           id: 'a',
           stepOrder: 1,
-          status: 'doing',
           effectiveDirectReported: '5.0000',
           effectiveNormal: '5.0000',
         },
@@ -114,6 +106,6 @@ describe('production route supplement quantity policy', () => {
       [supplement('a', 1)],
     );
 
-    expect(result.get('a')?.availableReportQuantity).toBe('1.0000');
+    expect(result.get('a')?.availableReportQuantity).toBe('1');
   });
 });

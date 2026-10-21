@@ -276,7 +276,7 @@ describe('checkApiArchitecture', () => {
     const violations = await checkApiArchitecture([
       {
         path: 'apps/api/src/modules/production/application/leak.ts',
-        source: `const duplicated = 'production.batch.create.v5';\n`,
+        source: `const duplicated = 'production.batch.create.v13';\n`,
       },
     ]);
 
@@ -287,7 +287,7 @@ describe('checkApiArchitecture', () => {
     const violations = await checkApiArchitecture([
       {
         path: 'apps/api/src/modules/production/application/idempotency/fixture-idempotency-scopes.contract.ts',
-        source: `export const CREATE_BATCH_IDEMPOTENCY_SCOPE = 'production.batch.create.v5' as const;\n`,
+        source: `export const CREATE_BATCH_IDEMPOTENCY_SCOPE = 'production.batch.create.v13' as const;\n`,
       },
     ]);
 

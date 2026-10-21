@@ -14,6 +14,7 @@ export const RouteMessageBox = {
   ): ReturnType<typeof ElMessageBox.confirm> {
     return ElMessageBox.confirm(message, title, {
       ...options,
+      closeOnClickModal: false,
       appendTo: getRouteContent(),
     });
   },
@@ -24,6 +25,7 @@ export const RouteMessageBox = {
   ): ReturnType<typeof ElMessageBox.prompt> {
     return ElMessageBox.prompt(message, title, {
       ...options,
+      closeOnClickModal: false,
       appendTo: getRouteContent(),
     });
   },

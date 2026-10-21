@@ -7,9 +7,6 @@ const api = vi.hoisted(() => ({
   getBatchExecutionRecords: vi.fn(),
   getExecutionCompletionCheck: vi.fn(),
   listBatchReworks: vi.fn(),
-  completeProductionExecution: vi.fn(),
-  correctStepReport: vi.fn(),
-  reverseStepReport: vi.fn(),
   listSupplementCandidates: vi.fn(),
   getScrapSupplementPlan: vi.fn(),
   saveScrapSupplementPlan: vi.fn(),
@@ -49,66 +46,6 @@ describe('useProductionExecutionRecords', () => {
     await state.loadBatches('PB-2');
     expect(state.selectedBatchId.value).toBe('2');
     expect(state.record.value?.productionBatchId).toBe('2');
-  });
-
-  it('uses an idempotent intent for correction and refreshes the batch projection', async () => {
-    api.correctStepReport.mockResolvedValue({});
-    const state = useProductionExecutionRecords();
-    await state.selectBatch('1');
-    await state.correct(
-      { productionBatchId: '1', stepRecordId: '9', version: 3 } as never,
-      { reportId: '12' } as never,
-      2,
-      0,
-      null,
-      '  录入更正  ',
-    );
-    expect(api.correctStepReport).toHaveBeenCalledWith(
-      '1',
-      '9',
-      '12',
-      {
-        version: 3,
-        normalQuantity: 2,
-        abnormalQuantity: 0,
-        abnormalOrigin: null,
-        reason: '录入更正',
-      },
-      expect.any(String),
-    );
-    expect(api.getBatchExecutionRecords).toHaveBeenCalledWith('1', { skipErrorHandling: true });
-  });
-
-  it('retains an ambiguous correction intent until the administrator explicitly discards it', async () => {
-    api.correctStepReport.mockRejectedValue(new RequestError('网络断开', 0));
-    const state = useProductionExecutionRecords();
-    await state.selectBatch('1');
-
-    await expect(
-      state.correct(
-        { productionBatchId: '1', stepRecordId: '9', version: 3 } as never,
-        { reportId: '12' } as never,
-        2,
-        0,
-        null,
-        '录入更正',
-      ),
-    ).rejects.toBeInstanceOf(RequestError);
-
-    expect(state.getCorrectionIntentStatus('12')).toBe('pending');
-    state.resetCorrectionIntent('12');
-    expect(state.getCorrectionIntentStatus('12')).toBe('idle');
-  });
-
-  it('uses the server check version and refreshes the projection after completion', async () => {
-    api.getBatchExecutionRecords.mockResolvedValue(group('1'));
-    api.completeProductionExecution.mockResolvedValue({ batchStatus: 'completed' });
-    const state = useProductionExecutionRecords();
-    await state.selectBatch('1');
-    await state.completeExecution();
-    expect(api.completeProductionExecution).toHaveBeenCalledWith('1', 4);
-    expect(api.getBatchExecutionRecords).toHaveBeenCalledTimes(2);
-    expect(api.getExecutionCompletionCheck).toHaveBeenCalledTimes(2);
   });
 
   it('loads supplement candidates for the whole batch BOM without a process-step selector', async () => {
@@ -186,7 +123,10 @@ describe('useProductionExecutionRecords', () => {
     expect(body).not.toHaveProperty('remark');
     expect(body).not.toHaveProperty('materialEndStepRecordId');
     // 确认成功后刷新批次投影
-    expect(api.getBatchExecutionRecords).toHaveBeenCalledWith('1', { skipErrorHandling: true });
+    expect(api.getBatchExecutionRecords).toHaveBeenCalledWith(
+      '1',
+      expect.objectContaining({ skipErrorHandling: true }),
+    );
     expect(state.getSupplementIntentStatus('8')).toBe('idle');
   });
 
@@ -199,7 +139,10 @@ describe('useProductionExecutionRecords', () => {
     await state.approveScrapSupplement(disposition as never, 3);
 
     expect(api.getScrapSupplementPlan).toHaveBeenCalledWith('8');
-    expect(api.getBatchExecutionRecords).toHaveBeenCalledWith('1', { skipErrorHandling: true });
+    expect(api.getBatchExecutionRecords).toHaveBeenCalledWith(
+      '1',
+      expect.objectContaining({ skipErrorHandling: true }),
+    );
     expect(state.getSupplementIntentStatus('8')).toBe('idle');
   });
 

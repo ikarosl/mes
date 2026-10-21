@@ -44,7 +44,7 @@ describe('useIdempotentIntent', () => {
     // 修改 body：不静默换键 K2、不盲发新请求，提示先核对结果
     await expect(
       intent.execute({ ...snapshot, body: { plannedQuantity: '5.0000', routeId: '18' } }, submit),
-    ).rejects.toThrow(/结果未知/);
+    ).rejects.toThrow(/暂时无法确认上次批次操作是否成功/);
     expect(submit).toHaveBeenCalledTimes(1);
     expect(intent.getStatus()).toBe('pending');
 
@@ -68,7 +68,7 @@ describe('useIdempotentIntent', () => {
     await expect(intent.execute(snapshot, submit)).rejects.toBeInstanceOf(RequestError);
     await expect(
       intent.execute({ ...snapshot, params: { workOrderId: '11' } }, submit),
-    ).rejects.toThrow(/结果未知/);
+    ).rejects.toThrow(/暂时无法确认上次批次操作是否成功/);
     expect(submit).toHaveBeenCalledTimes(1);
   });
 
@@ -140,13 +140,13 @@ describe('useIdempotentIntent', () => {
     });
 
     // 同内容重试：不调用 submit，直接抛阻塞错误（不进入"同键重试仍失败"死循环）
-    await expect(intent.execute(snapshot, submit)).rejects.toThrow(/结果已损坏/);
+    await expect(intent.execute(snapshot, submit)).rejects.toThrow(/已暂停提交/);
     expect(submit).toHaveBeenCalledTimes(1);
 
     // 修改内容也不自动换新键：仍然阻塞，直到用户显式放弃
     await expect(
       intent.execute({ ...snapshot, body: { plannedQuantity: '5.0000', routeId: '18' } }, submit),
-    ).rejects.toThrow(/结果已损坏/);
+    ).rejects.toThrow(/已暂停提交/);
     expect(submit).toHaveBeenCalledTimes(1);
 
     // 显式放弃（关闭弹窗/重新发起）后恢复，下一次为新意图
@@ -178,7 +178,7 @@ describe('useIdempotentIntent', () => {
     // 模拟不支持 Web Crypto 的环境：execute 必须拒绝，且不调用 submit
     vi.stubGlobal('crypto', undefined);
     try {
-      await expect(intent.execute(snapshot, submit)).rejects.toThrow(/Web Crypto/);
+      await expect(intent.execute(snapshot, submit)).rejects.toThrow(/当前浏览器无法安全提交/);
       expect(submit).not.toHaveBeenCalled();
     } finally {
       vi.unstubAllGlobals();
@@ -227,7 +227,7 @@ describe('getStatus', () => {
     // 修改内容也不会自动换键恢复提交
     await expect(
       intent.execute({ ...snapshot, body: { plannedQuantity: '9.0000', routeId: '18' } }, submit),
-    ).rejects.toThrow(/结果已损坏/);
+    ).rejects.toThrow(/已暂停提交/);
     expect(intent.getStatus()).toBe('blocked');
 
     intent.reset();
@@ -280,14 +280,14 @@ describe('意图超时（expired）', () => {
 
       // 超过 12 小时重试窗口：不再发送旧键，也不自动创建新键
       vi.advanceTimersByTime(12 * 60 * 60 * 1000 + 1);
-      await expect(intent.execute(snapshot, submit)).rejects.toThrow(/重试窗口/);
+      await expect(intent.execute(snapshot, submit)).rejects.toThrow(/超过可重试时限/);
       expect(submit).toHaveBeenCalledTimes(1);
       expect(intent.getStatus()).toBe('expired');
 
       // 修改内容也不会自动换键盲发
       await expect(
         intent.execute({ ...snapshot, body: { plannedQuantity: '5.0000', routeId: '18' } }, submit),
-      ).rejects.toThrow(/重试窗口/);
+      ).rejects.toThrow(/超过可重试时限/);
       expect(submit).toHaveBeenCalledTimes(1);
 
       // 用户显式放弃后重新提交为新意图

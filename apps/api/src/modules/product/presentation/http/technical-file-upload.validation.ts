@@ -37,6 +37,7 @@ export const assertTechnicalFileType = (fileName: string, mimeType: string) => {
  * 以保证直接调用与未来改动不会绕过服务端安全边界。
  */
 export const technicalFileUploadOptions = {
+  // Multer 2.3 已将包含边界的上限转换为 Busboy 截断阈值，不重复加 1。
   limits: { fileSize: TECHNICAL_FILE_MAX_SIZE_BYTES, files: 1 },
   fileFilter: (
     _request: unknown,

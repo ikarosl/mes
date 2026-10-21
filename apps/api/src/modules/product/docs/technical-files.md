@@ -27,13 +27,13 @@ S3_FORCE_PATH_STYLE=true     # 有自定义 endpoint 时默认为 true
 
 ## 删除规则
 
-当前没有技术文件 HTTP 删除入口。Repository 只保留未来恢复入口所需的元数据软删除实现，并在删除前检查当前引用；对象内容不会随业务软删除而物理删除，以保留历史追溯。
+当前没有技术文件 HTTP 删除入口，权限目录不登记删除能力；目录来源与发布规则见 [Identity](../../identity/docs/database.md#14-permissions)。Repository 只保留未来恢复入口所需的元数据软删除实现，并在删除前检查当前引用；对象内容不会随业务软删除而物理删除，以保留历史追溯。
 
 `TechnicalFileStorage.remove` 目前只用于“对象上传成功但数据库写入失败”的补偿清理，不表示允许删除已经登记并可能被历史记录引用的业务文件。
 
 ## 安全与运维
 
-- 上传限制、允许 MIME 和最大文件大小由 Product DTO/application 校验；当前 SOP 最大 20 MiB。
+- 上传限制、允许 MIME 和最大文件大小由 Product DTO/application 校验；当前 SOP 最大 20 MiB，包含恰好 20 MiB。Multer 的 `limits.fileSize` 直接使用业务上限；Multer 2.3 内部负责转换 Busboy 截断阈值，调用方不再叠加 1 字节。超过业务上限的上传返回 413。
 - 生产 Nginx 将 API 请求体上限设为 21 MiB，仅用于容纳 20 MiB 文件与 multipart 封装开销；精确的文件上限仍由 Product 的共享常量与 Multer 校验。
 - 日志不得输出访问密钥、session token、签名 URL 或文件内容。
 - Bucket 备份、版本控制、保留策略和凭证轮换由部署环境负责；恢复时必须保持数据库 locator 与对象键一致。

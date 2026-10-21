@@ -44,7 +44,6 @@ const material = (overrides: Partial<MaterialListItem> = {}): MaterialListItem =
   specValues: [],
   status: 1,
   variantCount: 0,
-  variants: [],
   remark: null,
   updatedAt: null,
   ...overrides,

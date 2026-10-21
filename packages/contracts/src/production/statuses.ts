@@ -8,14 +8,23 @@ export type ProductionBatchStatus =
   | 'material_outbound'
   | 'doing'
   | 'completed'
-  | 'cancelled';
+  | 'cancelled'
+  | 'terminated'
+  | 'closing';
 
-export type BatchStepStatus = 'pending' | 'assigned' | 'doing' | 'completed';
+export type BatchStepStatus = 'pending' | 'assigned' | 'doing' | 'completed' | 'terminated';
 
 export type BatchStepAbnormalDispositionType = 'rework' | 'scrap';
 
 export type InventorySourceType =
-  'self_made' | 'purchased' | 'outsourced' | 'return_inbound' | 'stock_check_generated' | 'other';
+  | 'self_made'
+  | 'production_extra'
+  | 'finished_product'
+  | 'purchased'
+  | 'outsourced'
+  | 'return_inbound'
+  | 'stock_check_generated'
+  | 'other';
 
 export type InventoryBatchStatus = 'available' | 'frozen' | 'disabled';
 
@@ -31,12 +40,13 @@ export type InventoryTransactionType =
   | 'scrap_outbound'
   | 'stock_check_adjustment'
   | 'status_transfer_in'
-  | 'status_transfer_out';
+  | 'status_transfer_out'
+  | 'other_inbound'
+  | 'other_outbound';
 
 export type InventoryReferenceType =
   | 'inbound_detail'
   | 'outbound_detail'
-  | 'return_detail'
   | 'scrap'
   | 'stock_check_detail'
   | 'inspection_record'
@@ -44,13 +54,14 @@ export type InventoryReferenceType =
 
 export type InboundOrderStatus = 'pending' | 'completed' | 'cancelled';
 
-export type DemandType =
-  'normal' | 'manual_additional' | 'scrap_supplement' | 'material_loss_supplement';
+export type DemandType = 'normal' | 'manual_additional' | 'scrap_supplement';
 
 /** 同一次需求生成动作的分组类型。 */
 export type DemandGenerationGroupType = DemandType;
 
-export type DemandBusinessStatus = 'active' | 'fulfilled' | 'cancelled';
+export type DemandBusinessStatus = 'active' | 'fulfilled' | 'cancelled' | 'closed';
+export type DemandCloseCause =
+  'correction_replaced' | 'correction_exhausted' | 'single_close' | 'batch_closeout';
 
 /** 单条生产物料需求的分配/出库展示进度。 */
 export type MaterialDemandProgressStatus =
@@ -60,56 +71,30 @@ export type MaterialDemandProgressStatus =
   | 'shortage'
   | 'partially_outbound'
   | 'outbound'
-  | 'cancelled';
+  | 'cancelled'
+  | 'closed'
+  | 'correction_pending';
 
 export type BatchStepAbnormalOrigin = 'current_step' | 'previous_step';
 
 export type AllocationStatus = 'active' | 'released' | 'cancelled' | 'frozen' | 'abnormal';
 
-export type OutboundOrderStatus =
-  'pending_picking' | 'picked' | 'partially_outbound' | 'completed' | 'cancelled';
+export type OutboundOrderStatus = 'pending_picking' | 'completed' | 'cancelled';
 
-/** 短批授权窗口当前应提供的唯一业务动作。 */
-export type ShortBatchAuthorizationAction =
-  'authorize' | 'reauthorize' | 'adjust' | 'view' | 'not_required';
-
-/** 当前物料缺口相对于既有短批授权快照的覆盖关系。 */
-export type ShortBatchAuthorizationCoverage =
-  'none' | 'covered' | 'insufficient' | 'stale' | 'consumed';
-
-export type MaterialOutboundMode = 'normal' | 'short_batch';
-
-export type MaterialOutboundBlockedCode =
-  | 'allocation_incomplete'
-  | 'short_batch_authorization_required'
-  | 'short_batch_authorization_stale'
-  | 'no_orderable_allocation';
+export type MaterialOutboundBlockedCode = 'allocation_incomplete' | 'no_orderable_allocation';
 
 export type BatchStepReportType = 'normal' | 'reversal';
 
 export type BatchStepAbnormalReviewStatus =
-  'pending_review' | 'approved' | 'rejected' | 'cancelled';
+  'pending_review' | 'approved' | 'rejected' | 'cancelled' | 'terminated';
 
-export type ReturnOrderStatus = 'pending' | 'returned' | 'scrapped' | 'cancelled';
-
-export type ScrapScene =
-  'warehouse_allocated' | 'return_after_outbound' | 'production_consumed' | 'in_stock';
+export type ReturnOrderStatus = 'pending' | 'returned' | 'cancelled';
 
 export type ScrapStatus = 'pending' | 'confirmed' | 'cancelled';
+export type MaterialLossPurpose = 'production_record' | 'closeout_record';
 
 export type StockCheckStatus = 'pending' | 'counting' | 'completed' | 'cancelled';
 
 export type StockCheckResult = 'surplus' | 'shortage' | 'matched';
 
-export type InspectionType = 'process' | 'final';
-
-export type InspectionResult = 'pending' | 'passed' | 'failed' | 'conditional';
-
 export type ReworkStatus = 'pending' | 'doing' | 'completed' | 'cancelled';
-
-export type ReworkResult = 'pending' | 'passed' | 'failed';
-
-export type FinishedFlowType =
-  'warehouse_inbound' | 'quality_release' | 'warehouse_outbound' | 'other';
-
-export type FinishedFlowStatus = 'confirmed' | 'cancelled';

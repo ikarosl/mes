@@ -32,16 +32,11 @@ export class ProductSnapshotService extends ProductSnapshotQuery {
   getProductionProduct(productId: string): Promise<ProductQueryResult<ProductionProductSnapshot>> {
     return this.toResult(() => this.snapshots.getProductionProduct(productId));
   }
-  getProductionRouteSnapshot(
-    productId: string,
-    requestedRouteId: string | null,
-  ): Promise<ProductQueryResult<ProcessRouteSnapshot | null>> {
-    return this.toResult(() =>
-      this.snapshots.getProductionRouteSnapshot(productId, requestedRouteId),
-    );
-  }
   getBomSnapshot(productId: string): Promise<ProductQueryResult<ProductBomSnapshot>> {
     return this.toResult(() => this.snapshots.getBomSnapshot(productId));
+  }
+  getApprovedBomSnapshot(productId: string): Promise<ProductQueryResult<ProductBomSnapshot>> {
+    return this.toResult(() => this.snapshots.getApprovedBomSnapshot(productId));
   }
   getRouteSnapshot(routeId: string): Promise<ProductQueryResult<ProcessRouteSnapshot>> {
     return this.toResult(() => this.snapshots.getRouteSnapshot(routeId));

@@ -2,6 +2,7 @@ import { loadWorkspaceEnv } from '@company/config';
 import { createDatabasePool } from './index.js';
 import {
   acquireMigrationLockQuery,
+  assertAppliedMigrations,
   migrationLockName,
   readMigrations,
   releaseMigrationLockQuery,
@@ -10,6 +11,7 @@ import type { RowDataPacket } from 'mysql2/promise';
 
 // Turbo 会在 packages/database 目录执行任务，因此必须显式加载工作区根目录 .env。
 loadWorkspaceEnv();
+const migrations = await readMigrations();
 const pool = createDatabasePool({ multipleStatements: true });
 try {
   const connection = await pool.getConnection();
@@ -29,11 +31,9 @@ try {
         'SELECT name, checksum FROM _schema_migrations',
       );
       const applied = new Map(rows.map((row) => [row.name, row.checksum]));
-      for (const migration of await readMigrations()) {
-        const existing = applied.get(migration.name);
-        if (existing && existing !== migration.checksum)
-          throw new Error(`已执行的 migration 内容发生变化：${migration.name}`);
-        if (existing) continue;
+      assertAppliedMigrations(migrations, applied);
+      for (const migration of migrations) {
+        if (applied.has(migration.name)) continue;
         await connection.query(migration.sql);
         await connection.execute('INSERT INTO _schema_migrations (name, checksum) VALUES (?, ?)', [
           migration.name,

@@ -1,4 +1,9 @@
-import type { MaterialVariantItem, MaterialVariantListQuery, PageResult } from '@company/contracts';
+import type {
+  MaterialOption,
+  MaterialVariantItem,
+  MaterialVariantListQuery,
+  PageResult,
+} from '@company/contracts';
 import type { CommandContext } from '../../../../common/audit/audit.types.js';
 
 /**
@@ -22,6 +27,18 @@ export interface CreateMaterialVariantCommand {
 }
 
 export abstract class MaterialVariantQuery {
+  /** 采购候选允许版本停用；物料与分类必须有效，版本不得删除。 */
+  abstract listPurchasableByMaterials(input: {
+    materialIds: string[];
+  }): Promise<MaterialVariantRecord[]>;
+  abstract listProductionMaterials(input: {
+    keyword?: string;
+    includeIds?: string[];
+  }): Promise<MaterialOption[]>;
+  abstract listPurchasableMaterials(input: {
+    keyword?: string;
+    includeIds?: string[];
+  }): Promise<MaterialOption[]>;
   abstract listDisplayReferencesByIds(
     variantIds: string[],
   ): Promise<MaterialVariantDisplayReference[]>;
@@ -38,6 +55,8 @@ export abstract class MaterialVariantQuery {
 
 export abstract class MaterialVariantRepository extends MaterialVariantQuery {
   abstract list(query: MaterialVariantListQuery): Promise<PageResult<MaterialVariantItem>>;
+  /** 目录管理读取包含停用版本；基础物料及分类须未删除且为物料分类。 */
+  abstract listByMaterial(materialId: string): Promise<MaterialVariantItem[]>;
   abstract create(
     command: CreateMaterialVariantCommand,
     context: CommandContext,

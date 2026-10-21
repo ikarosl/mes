@@ -85,6 +85,6 @@ describe('useProductionAbnormalActions', () => {
     expect(EMessage.success).toHaveBeenCalledWith('返工已开始');
     await handlers.handleCompleteRework(rework as never, 1, 1, ' 备注 ');
     expect(actions.completeRework).toHaveBeenCalledWith(rework, 1, 1, ' 备注 ');
-    expect(EMessage.success).toHaveBeenCalledWith('返工已完成并生成报工事实');
+    expect(EMessage.success).toHaveBeenCalledWith('返工已完成，报工记录已生成');
   });
 });

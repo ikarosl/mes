@@ -1,22 +1,19 @@
-import type { PageQuery, ReasonedVersionedCommand, VersionedCommand } from '../common.js';
+import type { PageQuery, ReasonedVersionedCommand } from '../common.js';
 import type {
   ProductionBatchStatus,
   OutboundOrderStatus,
   MaterialOutboundBlockedCode,
-  MaterialOutboundMode,
 } from './statuses.js';
 import type { DemandGenerationSource } from './material.js';
 
 export type MaterialOutboundEligibility =
   | {
       eligible: true;
-      outboundMode: MaterialOutboundMode;
       blockedCode: null;
       blockedReason: null;
     }
   | {
       eligible: false;
-      outboundMode: null;
       blockedCode: MaterialOutboundBlockedCode;
       blockedReason: string;
     };
@@ -59,7 +56,6 @@ export interface MaterialOutboundItem {
   batchNo: string;
   workOrderId: string;
   workOrderNo: string;
-  shortBatchAuthorizationId?: string | null;
   productId: string;
   productCode: string;
   productName: string;
@@ -72,7 +68,7 @@ export interface MaterialOutboundItem {
   createdAt: string;
   version: number;
   remark: string | null;
-  cancelSource?: 'manual' | 'production_batch' | null;
+  cancelSource?: 'manual' | 'production_batch' | 'production_termination' | null;
   cancelReason?: string | null;
   cancelledById?: string | null;
   cancelledByName?: string | null;
@@ -120,7 +116,5 @@ export interface MaterialOutboundCandidateItem extends DemandGenerationSource {
   remainingActualOutboundQuantity: string;
   unit: string;
 }
-
-export type ConfirmMaterialOutboundPayload = VersionedCommand;
 
 export type CancelMaterialOutboundPayload = ReasonedVersionedCommand;

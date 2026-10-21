@@ -3,17 +3,12 @@ import type { PageQuery } from '../common.js';
 export type ProductItemKind = 'material' | 'finished_product';
 
 export type ProductAcquireMethod = 'self_made' | 'outsourced' | 'purchased';
+export type ProductBomStatus = 'draft' | 'pending_approval' | 'approved';
 
 export interface ProductListQuery extends PageQuery {
   keyword?: string;
   categoryId?: string;
   acquireMethod?: ProductAcquireMethod;
-  status?: number;
-}
-
-export interface ProductGroupQuery extends PageQuery {
-  keyword?: string;
-  categoryId?: string;
   status?: number;
 }
 
@@ -64,8 +59,6 @@ export interface ProductListItem {
   categoryCode: string;
   categoryName: string;
   itemKind: ProductItemKind;
-  defaultRouteId: string | null;
-  defaultRouteName: string | null;
   unit: string;
   acquireMethod: ProductAcquireMethod;
   specValues: ProductSpecValue[];
@@ -73,18 +66,11 @@ export interface ProductListItem {
   materialCount: number;
   bomLockedAt: string | null;
   bomLockedById: string | null;
+  bomStatus: ProductBomStatus;
+  bomApprovalInstanceId: string | null;
+  version: number;
   remark: string | null;
   updatedAt: string | null;
-}
-
-export interface ProductGroupItem {
-  groupKey: string;
-  productName: string;
-  categoryId: string;
-  categoryCode: string;
-  categoryName: string;
-  codeCount: number;
-  codes: ProductListItem[];
 }
 
 export interface ProductPayload {
@@ -105,7 +91,6 @@ export interface ProductOption {
   productName: string;
   acquireMethod: ProductAcquireMethod;
   unit: string;
-  defaultRouteId: string | null;
 }
 
 export interface ProductMaterialItem {
@@ -116,8 +101,6 @@ export interface ProductMaterialItem {
   itemKind: ProductItemKind;
   quantityPerUnit: string;
   unit: string;
-  isKeyMaterial: boolean;
-  needBatchRecord: boolean;
   status: number;
   remark: string | null;
 }
@@ -126,10 +109,14 @@ export interface ProductMaterialPayload {
   materialId: string;
   quantityPerUnit: number;
   unit: string;
-  isKeyMaterial: boolean;
-  needBatchRecord: boolean;
   status?: number;
   remark?: string | null;
+}
+
+/** 整份 BOM 替换命令；version 是读取成品时的聚合乐观锁版本。 */
+export interface ReplaceProductMaterialsCommand {
+  version: number;
+  items: ProductMaterialPayload[];
 }
 
 /**
@@ -169,6 +156,7 @@ export interface MaterialListQuery extends PageQuery {
   status?: number;
 }
 
+/** 基础物料分页行；版本明细通过单个基础物料的目录接口读取。 */
 export interface MaterialListItem {
   id: string;
   materialCode: string;
@@ -180,8 +168,8 @@ export interface MaterialListItem {
   acquireMethod: ProductAcquireMethod;
   specValues: ProductSpecValue[];
   status: number;
+  /** 未软删除的全部版本数，包含停用版本。 */
   variantCount: number;
-  variants: MaterialVariantItem[];
   remark: string | null;
   updatedAt: string | null;
 }

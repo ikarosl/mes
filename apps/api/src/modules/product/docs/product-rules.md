@@ -1,0 +1,122 @@
+# Product 业务规则与公开资格
+
+本文维护 Product 的命令边界、用途资格、BOM 审批和路线发布规则。表字段见[数据库设计](database.md)，文件生命周期见[技术文件](technical-files.md)。页面布局和接口逐项清单不在本章重复维护；HTTP 入口及权限以 `presentation/http`、共享契约和权限常量定位。
+
+## 稳定身份与工作流
+
+1. 分类仅使用 `item_kind = material | finished_product`；分类说明“是什么”，`acquire_method` 说明“如何获得”。不设置独立半成品类型。
+2. 成品写入 `products`（`item_code`），基础物料写入 `materials`（`material_code`），编码在各自表内永久唯一；编码和基础单位创建后不可修改。“原则变化”指材料、关键参数等决定成品或物料身份的根本属性变化，不泛指所有用料调整。成品身份发生此类变化时新建成品及成品编码，物料身份发生此类变化时新建物料及物料编码。
+3. 只有已启用的自制成品可以配置 `product_materials`；基础物料不配置 BOM。
+4. BOM 投入对象只能是已启用的基础物料；BOM 是 Production 批量任务生成需求基础的唯一来源；研发手工需求不依赖 BOM。本模块只维护 BOM，不生成需求，也不回写任何历史需求。
+5. `material_variants` 是物料库存的精确身份。版本编码由服务端按基础物料编码和版本号生成，创建后不可改；Production 的新需求、补料和生产出库使用启用版本，采购及对应入库允许停用但未删除的版本，基础物料和分类仍须有效。
+6. 工艺路线只表达工序顺序、负责人、SOP 与规则快照，不绑定产品或 BOM 行；批量物料需求按本任务完整 BOM 基础配置并锁版，研发直接手工提需。
+7. 路线创建时固定为 `draft`。只有草稿可以编辑路线内容与步骤；首次启用后，即使后来停用也不可原地修改，调整必须新建版本。
+8. 启用路线前必须至少包含一个启用步骤。保存步骤时后端从 `process_steps` 和 `technical_files` 复制工序与 SOP 快照。
+9. 成品不配置默认路线。批量任务创建前必须手动选择路线，并在创建事务内重新核验路线为 `enabled` 且未删除，冻结路线、步骤和 SOP 快照；缺失路线时拒绝创建。研发任务无需路线，不生成工序。路线停用或归档不受成品引用限制，也不改写历史任务快照。
+10. 所有产品资料写操作和 `operation_logs` 在同一数据库事务中提交；审计信息不记录文件内容、Token、Cookie 或其他密钥。
+
+
+已批准的 BOM 继续永久锁定；上述身份边界不开放既有 BOM 修改或新增 BOM 版本，工艺路线版本仍遵守自身发布规则。
+
+分类 `itemKind` 创建后不可修改；修改请求须与原类型一致，更新 SQL 不写该字段。
+
+所有路线的所有工序均须报工，不提供报工开关；路线步骤契约和表结构不保存是否报工字段。
+
+## 成品列表与筛选
+
+每个成品有独立的 `products.id` 和永久唯一编码；成品名称是可重复的展示与搜索字段，不形成父成品、成品类型或名称组。同名成品分别维护自身的分类、基础单位、BOM 和启停状态。
+
+`GET /api/product/products` 返回 `PageResult<ProductListItem>`，一行对应一条独立成品记录，`total`、`page` 和 `pageSize` 均按记录计算。列表只包含未删除成品及其未删除的成品分类；`keyword` trim 后匹配名称或成品编码，`categoryId`、`acquireMethod` 和 `status` 精确筛选当前记录，筛选先于计数和分页。返回结果不额外包含同名且未命中筛选的成品。
+
+列表按 `product_name, category_id, item_code, id` 稳定排序，名称比较与排序遵循数据库字段的排序规则；同名记录连续排列，每条记录独立占用分页名额。成品目录仅提供逐记录列表，不提供名称分组查询或可选分组视图。
+
+## 基础物料目录与版本明细
+
+`GET /api/product/materials` 返回 `PageResult<MaterialListItem>`，一行对应一个 `materials.id`，默认每页 10 条基础物料；编码永久唯一，不按名称或版本分组分页。列表只包含未删除物料及其未删除的物料分类，物料或分类停用仍可查看。`keyword` trim 后匹配基础物料编码、名称或任一未删除版本的编码；`categoryId`、`acquireMethod` 和 `status` 精确筛选基础物料，筛选先于计数和分页，结果按 `material_code, id` 稳定排序。
+
+列表行不包含版本明细，只返回 `variantCount`，统计该基础物料全部未软删除版本，包含停用版本，不受命中的版本关键词限制。数据库只对当前页物料 ID 聚合版本数量，不读取版本明细；没有版本时为 `0`。
+
+`GET /api/product/materials/:id/variants` 是单个基础物料的目录管理读取，返回完整 `MaterialVariantItem[]`，不分页、不截断，包含停用版本并排除软删除版本，按 `major_version, minor_version, id` 稳定排序。基础物料不存在、已软删除，或所属分类已软删除、不是物料分类时返回 `404 NOT_FOUND`；基础物料或分类停用仍允许查看，存在且没有版本时返回空数组。
+
+这两个目录接口分别校验 `product:products:view`、`product:materials:view` 任一视图权限。版本明细用于目录展开及管理展示，不授予新选版或业务写入资格；`/material-variants/by-material/:materialId` 仍按下文的启用候选语义读取。
+
+## 目录与 BOM 内部职责
+
+`MysqlProductCatalogRepository` 是 application port 的装配入口，委托四个内部职责：
+
+- `MysqlProductCatalogQuery` 负责逐记录成品分页、候选、BOM 展示和历史物料名称；展示结果不授予编辑或审批资格。
+- `MysqlProductCommands` 负责成品主数据和启停，写入与成功审计在同一事务内提交。
+- `MysqlProductBomEditor` 负责完整替换 BOM，在同一事务锁成品根、核对版本及编辑资格、校验单位、恢复或写入明细、递增聚合版本并记录成功审计。
+- `MysqlProductBomApproval` 负责送审准备、绑定申请、审批前关联核对、最终批准和恢复草稿；事务可复用 Approval 的同池外层事务。
+
+`domain/product-bom.policy.ts` 维护替换请求的版本、数量、行数及重复物料校验、BOM 编辑与送审状态、冻结申请关联，以及送审和末级批准共用的物料／分类状态及基础单位资格。应用服务在原命令边界调用请求校验；锁定读取、SQL 条件更新和审计仍由 infrastructure 执行，不因领域规则拆分提前或延后数据库操作。共享持久化函数只承载成品根读取、分类校验、规格解析和当前事务审计，不提供另一套业务写入口。
+
+## BOM 命令与审批
+
+`ProductBomApprovalHandler` 负责声明 BOM 受审快照的结构版本，并通过 `readSnapshotForDisplay()` 校验历史证据、按物料 ID 补充当前名称。Approval 通用提交调用其准备、绑定及终态方法；冻结版本取绑定返回值。BOM 资格和永久锁定规则仍由 Product 实现，不进入审批通用配置仓储。
+
+BOM 审批证据仅接受当前结构版本 2；开发环境通过数据重置切换，不保留版本 1 兼容读取或补造缺失字段。
+
+`PUT /products/:id/materials` 的请求体为 `{ version, items }`，不是裸数组。`version` 必填，使用成品列表返回的聚合版本；DTO 校验非负整数，Product 在同一事务锁成品根后核对版本，再替换明细、递增版本并写成功审计。旧版本返回 `409 CONFLICT`，缺失或非法版本返回 `400 VALIDATION_ERROR`。保存成功后重新读取成品版本，再用新版本提交 BOM 审批；未保存的本地修改不能直接送审。
+
+
+`ProductSnapshotQuery.getApprovedBomSnapshot` 在活动事务内锁定成品并复核批准依据，为 Production 批量任务初始需求提供不依赖路线的 BOM 快照；它不写审批或锁定事实，也不改变基础物料与精确版本身份。
+
+成品列表、候选和生产成品快照不包含默认路线字段。权限目录中的 `product:products:set-default-route` 无对应 HTTP 命令入口；数据库保留列的适用边界见[成品表](database.md#2-products)。
+
+`ProductProductionDefinitionCommand.requireApprovedBomForProductionTask` 是批量任务创建的资格边界：必须提供显式路线 ID，缺失时返回无效输入结果；成功时返回非空路线快照。成品、批准 BOM、所选路线及其步骤在同一创建事务内锁定并复核，不能用候选响应代替当前写入资格。
+
+## 候选、历史展示与写入资格
+
+`MaterialVariantQuery` 明确区分用途：`listEnabledByMaterials` 返回版本、基础物料及分类均启用且未删除的
+完整候选，也是 `/material-variants/by-material/:materialId` 的查询入口；`listDisplayReferencesByIds` 只按
+既有版本 ID 返回 `MaterialVariantDisplayReference`（ID 与编码），允许停用或软删除，仅供历史单据展示。
+历史引用不能用于新版本选择或写操作校验，基础物料及分类停用、软删除不影响既有版本编码解析。
+
+`ProductInventoryEligibility` 为库存命令提供事务内用途校验：
+`requirePurchasableReferences` 允许停用的精确版本，仍要求基础物料和分类启用且未删除、版本未删除；
+`requireProductionIssuableReferences` 另外要求版本启用。`lockHistoricalReferences` 只锁定历史身份，
+不因停用或软删除阻断退料、盘点和既有成品事实。所有方法返回稳定 `ProductQueryResult`，
+须在同池事务中调用，并在库存批次锁之前按 ID 顺序取得 Product 父身份共享锁。
+
+`ProductOtherStockQuery` 只为其他入出库提供独立库存对象身份，允许所有获取方式的物料精确版本及成品，
+不要求生产 BOM、路线或批准产出，也不授予采购、生产领料资格。`listMaterials` 返回基础物料的
+`id/code/name/unit`，要求物料、分类启用且未删除，并存在启用且未删除的精确版本；关键词匹配基础
+物料编码和名称。`listObjects` 按 `itemKind` 返回启用且未删除的对象、分类及物料版本；物料类型可传
+`materialId`，在服务端限定该基础物料的精确版本，成品类型不得传该筛选。关键词匹配编码、名称及
+物料版本编码；物料对象 `id` 是精确版本 ID，成品对象 `id` 是成品 ID，不为成品增加版本。
+
+两类候选窗口均为 50 项，按编码及唯一 ID 稳定排序，最多 100 个 `includeIds` 补回当前有效已选项，
+返回去重的 `items` 与关键词窗口是否还有结果的 `hasMore`；补回项不受关键词限制，但仍受当前资格
+及 `materialId` 归属筛选约束。基础物料候选不能从精确版本窗口在客户端分组得到，候选未出现在
+窗口内不代表失效，须显式请求对应 `includeIds` 核验。两类库存对象不能仅以数值 ID 判断相同身份。
+
+`resolveReferences` 必须复用调用方同池活动事务，并按输入顺序返回；输入物料版本和成品 ID 互斥。
+`requireEnabled=true` 用于确认新批次，要求对象、分类和物料版本全部启用且未删除；`false` 用于既有
+批次的历史身份，保留停用与软删除资料。先通过不可变版本归属定位基础物料，再以固定表顺序锁全部
+物料父身份、全部成品父身份，之后按 ID 排序锁分类和精确版本并复核归属及资格。定位读取不判断
+写入资格；当前锁定读返回的身份与资格才保护后续批次和流水写入。取得库存批次锁后不得再增加
+新的 Product 父身份锁；窗口候选不替代这项命令校验。
+
+
+采购候选通过 `listPurchasableMaterials/listPurchasableByMaterials` 读取：基础物料、分类须启用且未删除，精确版本未删除，允许版本停用。物料关键词窗口为 50 项，最多 100 个 `includeIds` 用于已选回显；候选不持有业务资格锁，写命令须重新调用用途门禁。
+
+生产用途 `listProductionMaterials` 使用相同的 50 项窗口和最多 100 个 `includeIds`，要求存在启用版本；研发手工提需由 Production 候选入口消费。窗口未包含某个 ID 不代表该 ID 已失效，不能以当前列表代替显式解析或命令校验。
+
+## 候选接口授权
+
+Product 自有候选按下表声明 any-of，路径省略 `/api/product`。生产任务内嵌的研发手工提需使用 Production 的用途物料候选，再使用本模块启用版本读取，不要求主数据管理页权限。其他入出库对象通过 Inventory 的独立候选入口读取，不复用本表扩大来源业务资格。
+
+| 只读候选接口 | 合法消费者 | 任一匹配的视图／宿主权限 |
+| --- | --- | --- |
+| `/categories/options` | 成品、基础物料及分类配置 | `product:products:view`、`product:materials:view`、`product:categories:view` |
+| `/products/options` | 成品、工艺路线、生产工单及任务 | `product:products:view`、`product:routes:view`、`production:orders:view`、`production:tasks:view` |
+| `/materials/options` | 成品 BOM、基础物料与版本配置、生产用料及入库候选 | `product:products:view`、`product:materials:view`、`product:material-variants:view`、`production:materials:view`、`production:material-demands:view`、`warehouse:inbound:view` |
+| `/material-variants/by-material/:materialId` | 成品 BOM、版本配置、生产用料、任务内嵌手工提需及入库候选 | `product:products:view`、`product:material-variants:view`、`production:materials:view`、`production:material-demands:view`、`production:tasks:view`、`warehouse:inbound:view` |
+| `/process-steps/options` | 工序及工艺路线配置 | `product:processes:view`、`product:routes:view` |
+| `/process-routes/options` | 工艺路线及生产工单／任务 | `product:routes:view`、`production:orders:view`、`production:tasks:view` |
+| `/users/options` | 工艺路线及生产工单／任务的负责人候选 | `product:routes:view`、`production:orders:view`、`production:tasks:view` |
+
+目录来源、分组及逐接口授权规则由 [Identity](../../identity/docs/database.md#14-permissions)维护；候选读取不授予主数据编辑、采购、生产或库存写入资格。跨模块候选仍由其所有者维护，Product 不记录 Production 接口清单。
+
+候选响应只包含选择所需最小字段；状态、关键词和业务筛选在服务端处理。生产新选版与采购用途候选不能混用，历史展示引用更不能作为写入资格。页面局部读取失败遵守[管理端错误处理](../../../../../admin-web/docs/http-error-handling.md)，不借候选 403 触发整页全局跳转。

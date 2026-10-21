@@ -13,25 +13,29 @@ describe('ProductionMaterialController permissions', () => {
   it('uses independent read, allocation, and outbound permissions', () => {
     expect(
       Reflect.getMetadata(REQUIRED_PERMISSION, ProductionMaterialController.prototype.demands),
-    ).toBe(PERMISSIONS.production.materials.view);
+    ).toEqual([
+      PERMISSIONS.production.materials.view,
+      PERMISSIONS.production.tasks.view,
+      PERMISSIONS.production.materialDemands.view,
+    ]);
     expect(
       Reflect.getMetadata(REQUIRED_PERMISSION, ProductionMaterialController.prototype.allocate),
     ).toBe(PERMISSIONS.production.materials.allocate);
     expect(
       Reflect.getMetadata(REQUIRED_PERMISSION, ProductionMaterialController.prototype.outbound),
-    ).toBe(PERMISSIONS.production.materials.outbound);
+    ).toBe(PERMISSIONS.warehouse.outbound.create);
     expect(
       Reflect.getMetadata(
         REQUIRED_PERMISSION,
         ProductionMaterialController.prototype.confirmOutbound,
       ),
-    ).toBe(PERMISSIONS.production.materials.confirmOutbound);
+    ).toBe(PERMISSIONS.warehouse.outbound.confirm);
     expect(
       Reflect.getMetadata(
         REQUIRED_PERMISSION,
         ProductionMaterialController.prototype.cancelOutbound,
       ),
-    ).toBe(PERMISSIONS.production.materials.cancelOutbound);
+    ).toBe(PERMISSIONS.warehouse.outbound.cancel);
   });
 
   it('binds allocation and outbound to their versioned idempotency scopes', () => {

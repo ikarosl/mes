@@ -1,6 +1,7 @@
 import { loadWorkspaceEnv } from '@company/config';
 import { createDatabasePool } from './index.js';
 import {
+  assertAppliedMigrations,
   migrationStatus,
   readMigrations,
   schemaMigrationsTableExistsQuery,
@@ -20,12 +21,13 @@ try {
     >('SELECT name, checksum FROM _schema_migrations');
     migrationRows.forEach((row) => applied.set(row.name, row.checksum));
   }
+  const migrations = await readMigrations();
+  assertAppliedMigrations(migrations, applied);
   let invalid = false;
-  for (const migration of await readMigrations()) {
-    const existing = applied.get(migration.name);
-    const status = migrationStatus(existing, migration.checksum);
+  for (const migration of migrations) {
+    const status = migrationStatus(applied.get(migration.name), migration.checksum);
     console.log(`${status} ${migration.name}`);
-    if (status !== 'applied') invalid = true;
+    if (status === 'pending') invalid = true;
   }
   if (invalid) process.exitCode = 1;
 } finally {

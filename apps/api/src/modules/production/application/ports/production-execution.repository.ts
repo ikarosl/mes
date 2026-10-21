@@ -3,6 +3,14 @@ import type {
   ProductionExecutionCompletionResult,
   ProductionStepCommandResult,
   ProductionWorkerTaskItem,
+  ProductionWorkerTaskQuery,
+  ProductionExecutionStartCheck,
+  ProductionExecutionStartResult,
+  StartProductionExecutionPayload,
+  CompleteProductionExecutionPayload,
+  PageResult,
+  ProductionStepExecutionHistoryItem,
+  ReopenProductionStepPayload,
 } from '@company/contracts';
 import type { CommandContext } from '../../../../common/audit/audit.types.js';
 
@@ -14,13 +22,27 @@ export interface ProductionStepSopSnapshot {
 }
 
 export abstract class ProductionExecutionRepository {
+  abstract getStartCheck(batchId: string): Promise<ProductionExecutionStartCheck>;
+  abstract startExecution(
+    batchId: string,
+    payload: StartProductionExecutionPayload,
+    context: CommandContext,
+  ): Promise<ProductionExecutionStartResult>;
+  abstract completeResearchExecution(
+    batchId: string,
+    payload: CompleteProductionExecutionPayload,
+    context: CommandContext,
+  ): Promise<ProductionExecutionCompletionResult>;
   abstract getCompletionCheck(batchId: string): Promise<ProductionExecutionCompletionCheck>;
   abstract completeExecution(
     batchId: string,
-    version: number,
+    payload: CompleteProductionExecutionPayload,
     context: CommandContext,
   ): Promise<ProductionExecutionCompletionResult>;
-  abstract listWorkerTasks(actorId: string): Promise<ProductionWorkerTaskItem[]>;
+  abstract listWorkerTasks(
+    actorId: string,
+    query: ProductionWorkerTaskQuery,
+  ): Promise<PageResult<ProductionWorkerTaskItem>>;
   abstract getStepSopSnapshot(
     batchId: string,
     stepRecordId: string,
@@ -51,5 +73,26 @@ export abstract class ProductionExecutionRepository {
     stepRecordId: string,
     version: number,
     context: CommandContext & { actorId: string },
+    asAdministrator?: boolean,
   ): Promise<ProductionStepCommandResult>;
+  abstract completeStep(
+    batchId: string,
+    stepRecordId: string,
+    version: number,
+    context: CommandContext & { actorId: string },
+    asAdministrator?: boolean,
+  ): Promise<ProductionStepCommandResult>;
+  abstract reopenStep(
+    batchId: string,
+    stepRecordId: string,
+    payload: ReopenProductionStepPayload,
+    context: CommandContext & { actorId: string },
+    asAdministrator?: boolean,
+  ): Promise<ProductionStepCommandResult>;
+  abstract listStepExecutionHistory(
+    batchId: string,
+    stepRecordId: string,
+    query: { page: number; pageSize: number },
+    responsibleUserId?: string,
+  ): Promise<PageResult<ProductionStepExecutionHistoryItem>>;
 }

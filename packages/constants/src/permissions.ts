@@ -1,5 +1,42 @@
 export const PERMISSIONS = {
+  procurement: {
+    view: 'procurement:view',
+    suppliers: {
+      view: 'procurement:suppliers:view',
+      create: 'procurement:suppliers:create',
+      update: 'procurement:suppliers:update',
+    },
+    orders: {
+      view: 'procurement:orders:view',
+      create: 'procurement:orders:create',
+      update: 'procurement:orders:update',
+      place: 'procurement:orders:place',
+      cancel: 'procurement:orders:cancel',
+      close: 'procurement:orders:close',
+    },
+  },
+  quality: {
+    processInspections: {
+      view: 'quality:process-inspections:view',
+      record: 'quality:process-inspections:record',
+    },
+    view: 'quality:view',
+    finishedInspections: {
+      view: 'quality:finished-inspections:view',
+      record: 'quality:finished-inspections:record',
+    },
+    inboundInspections: {
+      view: 'quality:inbound-inspections:view',
+      review: 'quality:inbound-inspections:review',
+      inspect: 'quality:inbound-inspections:inspect',
+    },
+  },
   dashboard: { view: 'dashboard:view' },
+  approval: {
+    view: 'approval:view',
+    configure: 'approval:configure',
+    decide: 'approval:decide',
+  },
   system: {
     view: 'system:view',
     users: {
@@ -57,7 +94,6 @@ export const PERMISSIONS = {
       view: 'product:files:view',
       upload: 'product:files:upload',
       download: 'product:files:download',
-      delete: 'product:files:delete',
       attach: 'product:files:attach',
     },
     routes: {
@@ -77,29 +113,23 @@ export const PERMISSIONS = {
       update: 'production:orders:update',
       transition: 'production:orders:transition',
     },
-    tasks: { view: 'production:tasks:view' },
+    tasks: {
+      view: 'production:tasks:view',
+      terminate: 'production:tasks:terminate',
+      manageOutput: 'production:tasks:manage-output',
+    },
     workerTasks: { view: 'production:worker-tasks:view' },
+    executionRecords: { view: 'production:execution-records:view' },
     trace: { view: 'production:trace:view' },
     materials: {
       view: 'production:materials:view',
       allocate: 'production:materials:allocate',
-      outbound: 'production:materials:outbound',
-      confirmOutbound: 'production:materials:outbound-confirm',
-      cancelOutbound: 'production:materials:outbound-cancel',
-      authorizeShortBatch: 'production:materials:authorize-short-batch',
-      closeRemainingDemands: 'production:materials:close-remaining-demands',
+      correctDemand: 'production:materials:correct-demand',
     },
     materialDemands: {
       view: 'production:material-demands:view',
       configure: 'production:material-demands:configure',
       addManual: 'production:material-demands:add-manual',
-    },
-    inventory: { view: 'production:inventory:view' },
-    inbounds: {
-      view: 'production:inbounds:view',
-      create: 'production:inbounds:create',
-      confirm: 'production:inbounds:confirm',
-      cancel: 'production:inbounds:cancel',
     },
     batches: {
       create: 'production:batches:create',
@@ -116,10 +146,41 @@ export const PERMISSIONS = {
     rework: { execute: 'production:rework:execute' },
   },
   warehouse: {
+    receipts: {
+      view: 'warehouse:receipts:view',
+      confirm: 'warehouse:receipts:confirm',
+      accept: 'warehouse:receipts:accept',
+      correct: 'warehouse:receipts:correct',
+      return: 'warehouse:receipts:return',
+      void: 'warehouse:receipts:void',
+    },
+    otherInbounds: {
+      view: 'warehouse:other-inbounds:view',
+      create: 'warehouse:other-inbounds:create',
+      update: 'warehouse:other-inbounds:update',
+      confirm: 'warehouse:other-inbounds:confirm',
+      cancel: 'warehouse:other-inbounds:cancel',
+    },
+    otherOutbounds: {
+      view: 'warehouse:other-outbounds:view',
+      create: 'warehouse:other-outbounds:create',
+      update: 'warehouse:other-outbounds:update',
+      confirm: 'warehouse:other-outbounds:confirm',
+      cancel: 'warehouse:other-outbounds:cancel',
+    },
     view: 'warehouse:view',
     inventory: { view: 'warehouse:inventory:view' },
-    inbound: { view: 'warehouse:inbound:view' },
-    outbound: { view: 'warehouse:outbound:view' },
+    inbound: {
+      view: 'warehouse:inbound:view',
+      confirmPurchase: 'warehouse:inbound:confirm-purchase',
+      confirmFinished: 'warehouse:inbound:confirm-finished',
+    },
+    outbound: {
+      view: 'warehouse:outbound:view',
+      create: 'warehouse:outbound:create',
+      confirm: 'warehouse:outbound:confirm',
+      cancel: 'warehouse:outbound:cancel',
+    },
     returns: {
       view: 'warehouse:returns:view',
       create: 'warehouse:returns:create',

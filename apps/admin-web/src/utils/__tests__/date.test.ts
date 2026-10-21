@@ -19,7 +19,7 @@ describe('date utilities', () => {
 
   it('formats a full ISO datetime to YYYY-MM-DD HH:mm:ss', () => {
     expect(formatDateTimeForDisplay('2026-07-29T16:00:32.900+08:00')).toBe('2026-07-29 16:00:32');
-    expect(formatDateTimeForDisplay('2026-07-29T00:05:01Z')).toBe('2026-07-29 00:05:01');
+    expect(formatDateTimeForDisplay('2026-07-29T00:05:01Z')).toBe('2026-07-29 08:05:01');
   });
 
   it('falls back for absent or invalid datetime values', () => {

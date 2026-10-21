@@ -1,3 +1,4 @@
+import { createPinia } from 'pinia';
 import { flushPromises, mount } from '@vue/test-utils';
 import { nextTick } from 'vue';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -50,6 +51,7 @@ const demandRow = (overrides: Record<string, unknown> = {}) =>
 const batch = (id = 'batch-1') =>
   ({
     id,
+    orderType: 'mass_production',
     batchNo: id === 'batch-1' ? 'PB-1' : 'PB-2',
     status: 'doing',
     workOrderNo: 'WO-1',
@@ -73,6 +75,7 @@ const mountDialog = (props: Record<string, unknown> = {}) =>
       ...props,
     },
     global: {
+      plugins: [createPinia()],
       stubs: {
         'el-dialog': dialogStub,
         'el-alert': passthrough,
@@ -170,7 +173,7 @@ describe('ManualMaterialDemandDialog', () => {
         reason: '补充试制用料',
         requirements: [
           {
-            productMaterialId: 'pm-1',
+            materialId: 'm-1',
             splits: [{ materialVariantId: 'mv-1', quantity: 2 }],
           },
         ],

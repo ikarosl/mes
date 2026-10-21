@@ -111,4 +111,21 @@ describe('post-blackbox schema migrations', () => {
     expect(up).toContain('CREATE TRIGGER trg_inventory_transaction_cleanup_variant_balance');
     expect(down).not.toContain('COLLATE utf8mb4_0900_ai_ci');
   });
+
+  it('removes BOM trace flags while retaining the owning status and deletion constraints', async () => {
+    const [up, down] = await Promise.all([
+      migration('202609110001-remove-bom-trace-flags', 'up'),
+      migration('202609110001-remove-bom-trace-flags', 'down'),
+    ]);
+
+    expect(up).toContain('DROP COLUMN is_key_material');
+    expect(up).toContain('DROP COLUMN need_batch_record');
+    expect(up).toContain('DROP COLUMN is_key_material_snapshot');
+    expect(up).toContain('DROP COLUMN need_batch_record_snapshot');
+    expect(up).toContain('CHECK (status IN (0, 1) AND is_deleted IN (0, 1))');
+    expect(down).toContain('ADD COLUMN is_key_material TINYINT NOT NULL DEFAULT 1');
+    expect(down).toContain('ADD COLUMN need_batch_record TINYINT NOT NULL DEFAULT 1');
+    expect(down).toContain('ADD COLUMN is_key_material_snapshot TINYINT NOT NULL');
+    expect(down).toContain('ADD COLUMN need_batch_record_snapshot TINYINT NOT NULL');
+  });
 });

@@ -1,36 +1,39 @@
 # apps/admin-web
 
-Vue 3 管理端主线。视觉与交互遵守[视觉设计](docs/visual-design.md)：左侧菜单 + 顶部栏 + 内容区；列表优先；新增、编辑、分配、确认使用 Modal，不使用 Drawer。前端分层、候选数据所有权、竞态守卫和刷新时机遵守[管理端架构](docs/architecture.md)。
-
-```text
-src/
-  app/
-  api/
-  components/
-    data-table/
-    query-form/
-    modal-form/
-    status-tag/
-  composables/
-  layouts/
-  router/
-  stores/
-  styles/
-  views/<module>/<feature>/
-    components/
-    composables/
-    schemas/
-    index.vue
-```
-
-页面负责组合，Modal 表单、查询模型、状态字典和 API schema 分离。当前共享组件仍由 admin-web 的
-`src/components` 所有；只有出现第二个独立前端消费者且组件 API 已稳定时，才评审提取 workspace UI 包。
+Vue 3 管理端。专题只维护代码或页面不容易解释的约束及原因；数量算法、状态机和业务资格由 API 模块所有者文档维护。
 
 ## 相关文档
 
-- [路由、弹窗和标签页](docs/route-dialogs-and-tabs.md)
-- [HTTP 错误处理](docs/http-error-handling.md)
+- [管理端架构](docs/architecture.md)：状态所有权、候选、刷新、并发和业务编辑边界。
+- [视觉设计](docs/visual-design.md)与[路由、弹窗和标签页](docs/route-dialogs-and-tabs.md)：显示规范及接入方式。
+- [HTTP 错误处理](docs/http-error-handling.md)：认证、重试、消息去重和已知限制。
+- [采购与入库](docs/procurement-inbound.md)、[来料检验与定稿](docs/incoming-inspection-adoption.md)、[成品质检与产出](docs/finished-inspections.md)、[工序专检与生产处理](docs/process-inspections.md)：专题前端约束。
+- [其他入出库](docs/other-inventory-orders.md)：草稿、精确库存对象、新批次组、库存候选、整单确认和未知结果保护。
+- [成品产出清单、复检与入库操作手册](../../docs/manuals/finished-output-inspection-inbound.md)：使用步骤和当前限制。
 
 ## 验证
 
-`corepack pnpm --filter @company/admin-web typecheck`、相邻测试及根 `corepack pnpm format:check`。
+`corepack pnpm --filter @company/admin-web typecheck` 检查应用源码和共享契约；`build` 在打包前执行同样的应用检查。`typecheck:test` 额外纳入测试文件，相邻测试由独立 `test` 入口执行。应用检查与构建不能替代测试类型检查和测试执行。
+
+交付和正式测试顺序遵守根 [AGENTS.md](../../AGENTS.md)。待实现、黑盒及 UI 验收统一由[路线图](../../docs/roadmap.md)维护，文档和实现存在不代表验收通过。
+
+## 审批组件展示
+
+启动管理端开发服务后，直接访问 `/dev/approval-components` 查看 BOM、结案和需求更正的 mock 展示，无需登录。入口、样例及本地模拟边界见[演示页说明](src/views/approval/demo/README.md)。
+
+## 审批交互与验收场景
+
+以下是人工验收情景，**不是已通过记录**；状态见[审批验收待办](../../docs/roadmap.md#审批试探验收与后续扩展)。业务规则见 [Approval](../api/src/modules/approval/README.md)，前端防误操作约束见[管理端架构](docs/architecture.md#审批bom-与通知)。验收需已准备迁移、启用角色及具备相应权限的账号。
+
+| 情景 | 需核对的结果 |
+| --- | --- |
+| 配置角色节点后接指定用户节点，切换类型，修改后直接发布 | 清空无关字段；发布当前草稿；无合格角色成员或指定用户失效时拒绝发布及提交 |
+| 编辑 BOM，保存后送审，再通过／驳回／撤回 | 未保存不得送审；在审不可改；驳回必填原因；撤回恢复编辑，再送审生成新申请；全通过后永久锁定 |
+| 审批后返回已缓存产品标签与打开的 BOM | 状态同步；本地脏草稿与远端版本冲突时保留输入并阻止保存，明确重新加载才放弃草稿 |
+| 同一账号具备连续节点资格；两个账号并发决定 | 每级各留记录；同一节点仅一次成功；旧 step/version 不得误批下一节点；新发布流程不改变在途申请 |
+| 在角色节点办理前新增／移除成员、使全部成员失效后恢复 | 旧申请资格随角色实时变化；失效者旧页提交被拒；无合格人有明确提示；固定用户不自动改派 |
+| 普通用户／管理员切换申请筛选，申请结束后查看 | 默认分别为与我相关／全部申请；待我处理只含当前待办；历史仅申请人和实际决定者可见，曾是候选人或收到通知不增加历史权限 |
+| 同一流程送审两张负责人不同的工单任务 | 业务关联人员逐次解析；仅当次确定负责人可处理；末节点类型错误、负责人无审批资格须拒绝；失效后恢复原资格或撤回重送 |
+| 点击通知正文／查看详情，标记已读失败或目标已失去权限 | 正文可独立标已读，详情入口按目标页面权限显示；成功标已读后才跳转，失败保留未读；记录不可见不回滚已读，也不因有通知取得业务权限 |
+
+BOM、需求更正、任务结案分别使用所属场景流程；工单下达审批未接入，不能用上述验收情景宣称支持。

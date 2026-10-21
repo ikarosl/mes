@@ -59,11 +59,7 @@ describe('permissionMatches', () => {
     expect(PERMISSIONS.production.materials).toEqual({
       view: 'production:materials:view',
       allocate: 'production:materials:allocate',
-      outbound: 'production:materials:outbound',
-      confirmOutbound: 'production:materials:outbound-confirm',
-      cancelOutbound: 'production:materials:outbound-cancel',
-      authorizeShortBatch: 'production:materials:authorize-short-batch',
-      closeRemainingDemands: 'production:materials:close-remaining-demands',
+      correctDemand: 'production:materials:correct-demand',
     });
     expect(ALLOCATION_STATUS_LABELS.released).toBe('已释放');
   });
@@ -87,14 +83,8 @@ describe('permissionMatches', () => {
     expect(PERMISSIONS.production.trace.view).not.toBe(PERMISSIONS.production.tasks.view);
   });
 
-  it('separates purchase inbound commands from read-only inventory access', () => {
-    expect(PERMISSIONS.production.inbounds).toEqual({
-      view: 'production:inbounds:view',
-      create: 'production:inbounds:create',
-      confirm: 'production:inbounds:confirm',
-      cancel: 'production:inbounds:cancel',
-    });
-    expect(PERMISSIONS.production.inventory.view).toBe('production:inventory:view');
+  it('uses a dedicated read-only inventory permission', () => {
+    expect(PERMISSIONS.warehouse.inventory.view).toBe('warehouse:inventory:view');
   });
 
   it('separates warehouse return and stock-check commands', () => {

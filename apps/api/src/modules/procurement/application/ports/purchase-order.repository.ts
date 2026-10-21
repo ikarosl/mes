@@ -1,0 +1,84 @@
+import type {
+  CreatePurchaseOrderPayload,
+  UpdatePurchaseOrderPayload,
+  PurchaseOrderQuery,
+  PurchaseOrderLineReceiptRecordQuery,
+  PurchaseOrderLineReceiptRecordPage,
+  PurchaseExcessReceiptCandidateQuery,
+  PurchaseExcessReceiptCandidate,
+  PurchaseQualityReplacementCandidateQuery,
+  PurchaseQualityReplacementCandidate,
+  PurchaseOrderItem,
+  PurchaseOrderDetail,
+  PageResult,
+  RelatedPurchasesQuery,
+  RelatedPurchasesResult,
+  PurchaseOrderCommandResult,
+  CreatePurchaseOrderSupplementPayload,
+  ClosePurchaseOrderLinePayload,
+  ReopenPurchaseOrderLinePayload,
+  ClosePurchaseOrderPayload,
+} from '@company/contracts';
+import type { CommandContext } from '../../../../common/audit/audit.types.js';
+
+export abstract class PurchaseOrderRepository {
+  abstract list(
+    query: PurchaseOrderQuery & { page: number; pageSize: number },
+  ): Promise<PageResult<PurchaseOrderItem>>;
+  abstract get(id: string): Promise<PurchaseOrderDetail>;
+  abstract receiptRecords(
+    id: string,
+    query: PurchaseOrderLineReceiptRecordQuery & { page: number; pageSize: number },
+  ): Promise<PurchaseOrderLineReceiptRecordPage>;
+  abstract excessReceiptCandidates(
+    id: string,
+    query: PurchaseExcessReceiptCandidateQuery & { page: number; pageSize: number },
+  ): Promise<PageResult<PurchaseExcessReceiptCandidate>>;
+  abstract qualityReplacementCandidates(
+    id: string,
+    query: PurchaseQualityReplacementCandidateQuery & { page: number; pageSize: number },
+  ): Promise<PageResult<PurchaseQualityReplacementCandidate>>;
+  abstract related(
+    query: RelatedPurchasesQuery & { page: number; pageSize: number },
+  ): Promise<RelatedPurchasesResult>;
+  abstract create(
+    payload: CreatePurchaseOrderPayload,
+    context: CommandContext,
+  ): Promise<PurchaseOrderCommandResult>;
+  abstract update(
+    id: string,
+    payload: UpdatePurchaseOrderPayload,
+    context: CommandContext,
+  ): Promise<PurchaseOrderCommandResult>;
+  abstract place(
+    id: string,
+    version: number,
+    context: CommandContext,
+  ): Promise<PurchaseOrderCommandResult>;
+  abstract cancel(
+    id: string,
+    version: number,
+    reason: string,
+    context: CommandContext,
+  ): Promise<PurchaseOrderCommandResult>;
+  abstract closeLine(
+    id: string,
+    payload: ClosePurchaseOrderLinePayload,
+    context: CommandContext,
+  ): Promise<PurchaseOrderCommandResult>;
+  abstract reopenLine(
+    id: string,
+    payload: ReopenPurchaseOrderLinePayload,
+    context: CommandContext,
+  ): Promise<PurchaseOrderCommandResult>;
+  abstract close(
+    id: string,
+    payload: ClosePurchaseOrderPayload,
+    context: CommandContext,
+  ): Promise<PurchaseOrderCommandResult>;
+  abstract supplement(
+    id: string,
+    payload: CreatePurchaseOrderSupplementPayload,
+    context: CommandContext,
+  ): Promise<PurchaseOrderCommandResult>;
+}

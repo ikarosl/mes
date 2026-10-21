@@ -5,6 +5,40 @@ import path from 'node:path';
 const root = process.cwd();
 const migrationsDir = path.join(root, 'packages/database/migrations');
 const allowedTables = new Set([
+  'procurement_supplier',
+  'purchase_order',
+  'purchase_order_line',
+  'purchase_order_line_source',
+  'purchase_order_line_closure',
+  'procurement_order',
+  'procurement_order_line',
+  'procurement_order_line_source',
+  'procurement_order_line_closure', // Historical migration ownership.
+  'procurement_receipt',
+  'procurement_receipt_line',
+  'procurement_receipt_revision',
+  'procurement_receipt_round',
+  'procurement_receipt_scope',
+  'procurement_supplier_return',
+  'quality_inbound_case',
+  'quality_inbound_inspection',
+  'quality_finished_inspection',
+  'quality_inspection_case',
+  'quality_inspection_record',
+  'quality_process_inspection',
+  'quality_process_inspection_record',
+  'procurement_receipt_acceptance',
+  'procurement_receipt_acceptance_line', // Historical migration ownership.
+  'procurement_receipt_allocation',
+  'notifications',
+  'notification_recipients',
+  'approval_flow_definitions',
+  'approval_flow_versions',
+  'approval_flow_steps',
+  'approval_instances',
+  'approval_instance_steps',
+  'approval_tasks',
+  'approval_actions',
   'departments',
   'users',
   'roles',
@@ -15,7 +49,8 @@ const allowedTables = new Set([
   'operation_logs',
   'http_idempotency_records',
   'technical_files',
-  'product_categories',
+  'product_categories', // Retired name; historical migrations retain ownership.
+  'item_categories',
   'products',
   'materials',
   'process_steps',
@@ -26,13 +61,24 @@ const allowedTables = new Set([
   'process_route_steps',
   'route_step_materials',
   'work_orders',
+  'work_order_daily_sequence',
+  'business_number_daily_sequence',
   'work_order_material_versions',
   'production_batches',
   'batch_step_records',
+  'batch_step_execution_actions',
   'batch_step_reports',
   'batch_step_abnormal_dispositions',
   'rework_records',
   'batch_step_scrap_records',
+  'production_batch_termination', // Retired; historical migrations retain ownership.
+  'production_output_inspection',
+  'production_output_revision',
+  'production_output_round',
+  'production_output_allocation',
+  'production_demand_correction',
+  'production_batch_closeout',
+  'production_batch_closeout_action',
   'batch_step_scrap_reproduction_authorization',
   'production_scrap_supplement_plan',
   'production_scrap_supplement_plan_line',
@@ -52,8 +98,8 @@ const allowedTables = new Set([
   'inventory_item_balance', // Retired; historical up/down migrations still create this projection.
   'inventory_material_variant_balance',
   'production_item_allocation',
-  'production_short_batch_authorization',
-  'production_short_batch_authorization_detail',
+  'production_short_batch_authorization', // Retired; historical migration ownership.
+  'production_short_batch_authorization_detail', // Retired; historical migration ownership.
   'outbound_order',
   'outbound_detail',
   'return_order',
@@ -76,6 +122,17 @@ const migrationNames = (await readdir(migrationsDir))
   .sort();
 const migrationNameSet = new Set(migrationNames);
 const migrationPrefixes = new Map();
+// 已登记的合并冲突不能通过重命名历史 migration 修复；仅保留这两个完整文件名。
+// 新增同序号文件仍失败，历史文件内容仍受 append-only 与运行器 checksum 校验。
+const historicalPrefixCollisions = new Map([
+  [
+    '202610190001',
+    new Set([
+      '202610190001-production-execution-records-view-permission.up.sql',
+      '202610190001-purchase-order-state-simplification.up.sql',
+    ]),
+  ],
+]);
 
 for (const name of migrationNames) {
   if (!/^\d{12}-[a-z0-9]+(?:-[a-z0-9]+)*\.(?:up|down)\.sql$/.test(name)) {
@@ -88,7 +145,10 @@ for (const name of migrationNames) {
     const prefix = name.slice(0, 12);
     const existing = migrationPrefixes.get(prefix);
     if (existing) {
-      violations.push(`${name}: migration number ${prefix} is already used by ${existing}`);
+      const historicalNames = historicalPrefixCollisions.get(prefix);
+      if (!historicalNames?.has(existing) || !historicalNames.has(name)) {
+        violations.push(`${name}: migration number ${prefix} is already used by ${existing}`);
+      }
     } else {
       migrationPrefixes.set(prefix, name);
     }

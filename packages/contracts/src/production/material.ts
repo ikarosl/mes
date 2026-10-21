@@ -1,37 +1,13 @@
-import type { VersionedCommand } from '../common.js';
+import type { DemandCorrectionTrace } from './demand-correction.js';
 import type {
   ProductionBatchStatus,
   DemandType,
   DemandGenerationGroupType,
   DemandBusinessStatus,
   MaterialDemandProgressStatus,
-  ShortBatchAuthorizationAction,
-  ShortBatchAuthorizationCoverage,
   AllocationStatus,
   InventorySourceType,
 } from './statuses.js';
-
-export interface ProductionItemDemandItem {
-  id: string;
-  productionBatchId: string;
-  productMaterialId: string;
-  itemId: string;
-  /** Frozen base-material formula and exact selected stock identity. */
-  requirementBasisId: string;
-  materialVariantId: string;
-  materialVariantCode: string;
-  itemCode: string;
-  itemName: string;
-  quantityPerUnit: string;
-  unit: string;
-  isKeyMaterial: boolean;
-  needBatchRecord: boolean;
-  plannedOutputQuantity: string;
-  needNumber: string;
-  demandType: DemandType;
-  businessStatus: DemandBusinessStatus;
-  version: number;
-}
 
 /** 需求生成动作的稳定追溯投影；展示文案由前端共享映射生成。 */
 export interface DemandGenerationSource {
@@ -64,11 +40,12 @@ export interface ProductionMaterialAllocationItem {
 }
 
 export interface ProductionMaterialDemandItem extends DemandGenerationSource {
+  correction?: DemandCorrectionTrace;
   demandId: string;
   productionBatchId: string;
-  productMaterialId: string;
+  productMaterialId: string | null;
   itemId: string;
-  requirementBasisId: string;
+  requirementBasisId: string | null;
   materialVariantId: string;
   materialVariantCode: string;
   itemCode: string;
@@ -89,62 +66,6 @@ export interface ProductionMaterialDemandItem extends DemandGenerationSource {
   demandProgressStatus: MaterialDemandProgressStatus;
   version: number;
   allocations: ProductionMaterialAllocationItem[];
-}
-
-export type ShortBatchAuthorizationStatus = 'none' | 'valid' | 'stale' | 'consumed';
-
-export interface ShortBatchAuthorizationPreviewLine extends DemandGenerationSource {
-  demandId: string;
-  itemId: string;
-  materialVariantId: string;
-  materialVariantCode: string;
-  itemCode: string;
-  itemName: string;
-  unit: string;
-  demandQuantity: string;
-  confirmedOutboundQuantity: string;
-  expectedOutboundQuantity: string;
-  authorizedRemainingQuantity: string;
-  /** 既有有效或失效授权的允许缺口；从未授权时为空。 */
-  existingAuthorizedRemainingQuantity: string | null;
-}
-
-export interface ShortBatchAuthorizationPreview {
-  productionBatchId: string;
-  batchStatus: ProductionBatchStatus;
-  batchVersion: number;
-  materialPlanVersion: number;
-  authorizationStatus: ShortBatchAuthorizationStatus;
-  authorizationAction: ShortBatchAuthorizationAction;
-  authorizationCoverage: ShortBatchAuthorizationCoverage;
-  blockedReason: string | null;
-  lines: ShortBatchAuthorizationPreviewLine[];
-}
-
-export interface AuthorizeShortBatchPayload extends VersionedCommand {
-  reason: string;
-}
-
-export interface ShortBatchAuthorizationResult {
-  authorizationId: string;
-  productionBatchId: string;
-  batchStatus: ProductionBatchStatus;
-  batchVersion: number;
-  materialPlanVersion: number;
-  status: 'active';
-  reason: string;
-  authorizedById: string;
-  authorizedAt: string;
-  lines: ShortBatchAuthorizationPreviewLine[];
-}
-
-export interface CloseRemainingMaterialDemandsResult {
-  productionBatchId: string;
-  batchStatus: ProductionBatchStatus;
-  batchVersion: number;
-  materialPlanVersion: number;
-  cancelledDemandCount: number;
-  releasedAllocationCount: number;
 }
 
 export interface AvailableItemBatchItem {
@@ -181,5 +102,3 @@ export interface MaterialAllocationCommandResult {
   batchVersion: number;
   allocations: ProductionMaterialAllocationItem[];
 }
-
-export type ReleaseMaterialAllocationPayload = VersionedCommand;

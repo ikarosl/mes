@@ -1,6 +1,10 @@
 import { z } from 'zod';
-import { BATCH_STEP_STATUSES, PRODUCTION_BATCH_STATUSES } from '@company/constants';
-import type { BatchStepRecordItem, ProductionBatchDetail } from '@company/contracts';
+import {
+  WORK_ORDER_TYPES,
+  PRODUCTION_BATCH_STATUSES,
+  PRODUCTION_CLOSEOUT_MODES,
+} from '@company/constants';
+import type { ProductionBatchDetail } from '@company/contracts';
 import type {
   IdempotencyResultCodec,
   JsonValue,
@@ -8,10 +12,10 @@ import type {
 import { CREATE_BATCH_IDEMPOTENCY_SCOPE } from './production-idempotency-scopes.contract.js';
 
 /**
- * createBatch 幂等结果 codec（scope `production.batch.create.v5`）。
+ * createBatch 幂等结果 codec，scope 与当前请求及结果结构绑定。
  *
- * v1 契约冻结：请求指纹规则、成功结果结构、本 Zod schema 三者在 scope v1 上线后不再演进；结果形状一旦
- * 后续不兼容变更必须 bump scope 并引入新 codec；旧 scope 记录不得由新 schema 猜测解析，
+ * 每个已发布 scope 的请求指纹规则、成功结果结构和本 Zod schema 保持固定；
+ * 后续不兼容变更必须升级 scope 和对应 codec；旧 scope 记录不得由新 schema 猜测解析，
  * 形状不符即走 corrupt，不允许用新 schema 去猜旧记录。
  *
  * encode 与 decode 都做完整嵌套运行时校验，不使用 `coerce`/`preprocess`、不做隐式类型转换，结构错误一律
@@ -21,49 +25,12 @@ import { CREATE_BATCH_IDEMPOTENCY_SCOPE } from './production-idempotency-scopes.
  */
 const nullableString = z.string().nullable();
 
-const batchStepRecordSchema: z.ZodType<BatchStepRecordItem> = z
-  .object({
-    id: z.string(),
-    productionBatchId: z.string(),
-    routeStepId: z.string(),
-    stepOrder: z.number().int(),
-    stepCode: z.string(),
-    stepName: z.string(),
-
-    defaultSopFileId: nullableString,
-    defaultSopFileName: nullableString,
-    defaultSopVersionNo: nullableString,
-
-    actualSopFileId: nullableString,
-    actualSopFileName: nullableString,
-    actualSopVersionNo: nullableString,
-
-    defaultResponsibleUserId: nullableString,
-    defaultResponsibleUserName: nullableString,
-    responsibleUserId: nullableString,
-    responsibleUserName: nullableString,
-    needInspection: z.boolean(),
-    status: z.enum(BATCH_STEP_STATUSES),
-
-    startedAt: nullableString,
-    completedAt: nullableString,
-
-    outputQuantity: z.string(),
-    qualifiedQuantity: z.string(),
-    abnormalQuantity: z.string(),
-    reworkQuantity: z.string(),
-
-    unit: z.string(),
-    remark: nullableString,
-    version: z.number().int().nonnegative(),
-  })
-  .strict();
-
 export const productionBatchDetailSchema: z.ZodType<ProductionBatchDetail> = z
   .object({
     id: z.string(),
     workOrderId: z.string(),
     workOrderNo: z.string(),
+    orderType: z.enum(WORK_ORDER_TYPES),
     productId: z.string(),
     productCode: z.string(),
     productName: z.string(),
@@ -74,35 +41,41 @@ export const productionBatchDetailSchema: z.ZodType<ProductionBatchDetail> = z
     routeVersion: nullableString,
 
     plannedQuantity: z.string(),
-    completedQuantity: z.string(),
-    qualifiedQuantity: z.string(),
 
     planStartDate: nullableString,
     planEndDate: nullableString,
     startedAt: nullableString,
+    startedById: nullableString,
+    startedByName: nullableString,
 
     status: z.enum(PRODUCTION_BATCH_STATUSES),
-    materialPlanVersion: z.number().int().positive(),
-    shortBatchAuthorizationStatus: z.enum(['none', 'valid', 'stale', 'consumed']),
-    shortBatchAuthorizationAction: z.enum([
-      'authorize',
-      'reauthorize',
-      'adjust',
-      'view',
-      'not_required',
-    ]),
-
+    closeoutMode: z.enum(PRODUCTION_CLOSEOUT_MODES).nullable(),
+    closeoutVersion: z.number().int().nonnegative().nullable(),
+    currentOutputRevisionId: nullableString,
+    finalOutput: z
+      .object({
+        revisionNo: z.number().int().positive(),
+        availableQuantity: z.string(),
+        extraQuantity: z.string(),
+        scrapQuantity: z.string(),
+      })
+      .strict()
+      .nullable(),
+    executionCompletedAt: nullableString,
+    executionCompletedBy: nullableString,
     ownerId: nullableString,
     ownerName: nullableString,
     completedAt: nullableString,
     completedBy: nullableString,
+    cancelReason: nullableString,
+    cancelledBy: nullableString,
+    cancelledByName: nullableString,
+    cancelledAt: nullableString,
     remark: nullableString,
 
     version: z.number().int().nonnegative(),
     createdAt: z.string(),
     updatedAt: z.string(),
-
-    stepRecords: z.array(batchStepRecordSchema),
   })
   .strict();
 

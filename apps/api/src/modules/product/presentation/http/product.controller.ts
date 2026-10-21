@@ -17,6 +17,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { PERMISSIONS } from '@company/constants';
+import type { MaterialVariantItem } from '@company/contracts';
 import type { CommandContext } from '../../../../common/audit/audit.types.js';
 import {
   AuditInApplication,
@@ -26,7 +27,6 @@ import {
 import { ProductService } from '../../application/product.service.js';
 import { ProductDomainExceptionFilter } from './product-domain-exception.filter.js';
 import {
-  DefaultRouteDto,
   ProcessRouteDto,
   ProcessRouteQueryDto,
   ProcessRouteStatusDto,
@@ -169,17 +169,6 @@ export class ProductController {
       status: query.status,
     });
   }
-  @Get('product-groups')
-  @RequirePermission(PERMISSIONS.product.products.view)
-  productGroups(@Query() query: ProductListQueryDto) {
-    return this.service.listProductGroups({
-      page: query.page,
-      pageSize: query.pageSize,
-      keyword: query.keyword?.trim() || undefined,
-      categoryId: query.categoryId,
-      status: query.status,
-    });
-  }
   @Get('products/options')
   // 跨页面选项授权：成品页、工艺路线页或生产工单/任务页任一视图权限即可读取
   @RequirePermission([
@@ -209,11 +198,16 @@ export class ProductController {
     PERMISSIONS.product.products.view,
     PERMISSIONS.production.materials.view,
     PERMISSIONS.production.materialDemands.view,
-    PERMISSIONS.production.inbounds.view,
+    PERMISSIONS.warehouse.inbound.view,
     PERMISSIONS.product.materialVariants.view,
   ])
   materialOptions() {
     return this.service.listMaterialOptions();
+  }
+  @Get('materials/:id/variants')
+  @RequirePermission([PERMISSIONS.product.products.view, PERMISSIONS.product.materials.view])
+  materialMasterDataVariants(@Param() { id }: ProductIdParamDto): Promise<MaterialVariantItem[]> {
+    return this.service.listMaterialMasterDataVariants(id);
   }
   @Post('materials')
   @RequirePermission(PERMISSIONS.product.materials.create)
@@ -258,7 +252,8 @@ export class ProductController {
     PERMISSIONS.product.products.view,
     PERMISSIONS.production.materials.view,
     PERMISSIONS.production.materialDemands.view,
-    PERMISSIONS.production.inbounds.view,
+    PERMISSIONS.production.tasks.view,
+    PERMISSIONS.warehouse.inbound.view,
   ])
   materialVariantsByMaterial(@Param() { materialId }: MaterialVariantMaterialParamDto) {
     return this.service.listMaterialVariantsByMaterial(materialId);
@@ -321,19 +316,8 @@ export class ProductController {
     @Body() body: ReplaceProductMaterialsDto,
     @CurrentCommandContext() audit: CommandContext,
   ) {
-    return this.service.replaceMaterials(id, body.items, audit);
+    return this.service.replaceMaterials(id, body, audit);
   }
-  @Patch('products/:id/default-route')
-  @RequirePermission(PERMISSIONS.product.products.setDefaultRoute)
-  @AuditInApplication()
-  defaultRoute(
-    @Param() { id }: ProductIdParamDto,
-    @Body() body: DefaultRouteDto,
-    @CurrentCommandContext() audit: CommandContext,
-  ) {
-    return this.service.setDefaultRoute(id, body.routeId, audit);
-  }
-
   @Get('process-steps')
   @RequirePermission(PERMISSIONS.product.processes.view)
   processSteps(@Query() query: ProcessStepQueryDto) {
@@ -410,9 +394,8 @@ export class ProductController {
     });
   }
   @Get('process-routes/options')
-  // 跨页面选项授权：产品页（默认路线下拉）、工艺路线页、生产工单/任务页（路线下拉）任一视图权限即可读取
+  // 跨页面选项授权：工艺路线页或生产工单/任务页任一视图权限即可读取
   @RequirePermission([
-    PERMISSIONS.product.products.view,
     PERMISSIONS.product.routes.view,
     PERMISSIONS.production.orders.view,
     PERMISSIONS.production.tasks.view,

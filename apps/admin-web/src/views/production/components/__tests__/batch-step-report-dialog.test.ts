@@ -1,53 +1,65 @@
 import { mount } from '@vue/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import BatchStepReportDialog from '../BatchStepReportDialog.vue';
+import type { ProductionReportContext } from '../../production-report-selection';
 
 const confirm = vi.hoisted(() => vi.fn());
 vi.mock('../../../../utils/route-message-box', () => ({
   RouteMessageBox: { confirm },
 }));
 
-const task = {
-  stepRecordId: '9',
+const task: ProductionReportContext = {
   productionBatchId: '1',
+  stepRecordId: '9',
   batchNo: 'PB-1',
-  workOrderId: '2',
-  workOrderNo: 'WO-1',
-  productId: '3',
-  productCode: 'P-1',
-  productName: '产品',
   stepOrder: 1,
-  hasPreviousStep: false,
-  stepCode: 'S-1',
   stepName: '切割',
+  hasPreviousStep: false,
   status: 'doing',
-  needRecord: true,
   unit: '件',
   plannedQuantity: '10.0000',
-  baseNormalQuantity: '10.0000',
-  requiredNormalQuantity: '10.0000',
-  releasedNormalQuantity: '6.0000',
-  availableNormalQuantity: '2.0000',
-  effectiveReportedQuantity: '4.0000',
-  effectiveDirectReportedQuantity: '4.0000',
-  effectiveNormalQuantity: '4.0000',
-  effectiveAbnormalQuantity: '0.0000',
   activatedSupplementInputQuantity: '0.0000',
-  activatedSupplementTargetQuantity: '0.0000',
   pendingSupplementInputQuantity: '0.0000',
-  isSupplementReopened: false,
-  supplementBlockedReason: null,
-  startedAt: null,
+  upperLimitQuantity: '10.0000',
+  effectiveDirectNormalQuantity: '4.0000',
+  effectiveNormalQuantity: '4.0000',
+  availableReportQuantity: '6.0000',
+  quotaDistribution: {
+    scrappedQuantity: '0.0000',
+    processingQuantity: '0.0000',
+    terminatedQuantity: '0.0000',
+    pendingReviewQuantity: '0.0000',
+    pendingReworkQuantity: '0.0000',
+    doingReworkQuantity: '0.0000',
+    isReliable: true,
+    unavailableReason: null,
+    pendingDispositions: [],
+    pendingReworks: [],
+    doingReworks: [],
+    terminatedDispositions: [],
+    cancelledReworks: [],
+  },
   version: 2,
-  canStart: false,
-  startBlockedReason: null,
-  canComplete: false,
-  completeBlockedReason: null,
-} as const;
+  canReport: true,
+  reportBlockedReason: null,
+};
 
-const mountDialog = (props: Record<string, unknown>) =>
+const mountDialog = (
+  props: {
+    task?: ProductionReportContext;
+    mode?: 'normal' | 'abnormal';
+    intentStatus?: 'idle' | 'pending' | 'blocked' | 'expired';
+  } = {},
+) =>
   mount(BatchStepReportDialog, {
-    props: { modelValue: true, task: task as never, mode: 'normal', submitting: false, ...props },
+    props: {
+      modelValue: true,
+      task: props.task ?? task,
+      mode: props.mode ?? 'normal',
+      submitting: false,
+      contextReady: true,
+      ...(props.intentStatus ? { intentStatus: props.intentStatus } : {}),
+    },
     global: {
       stubs: {
         'el-dialog': { template: '<div><slot/><slot name="footer"/></div>' },
@@ -55,9 +67,22 @@ const mountDialog = (props: Record<string, unknown>) =>
         'el-form-item': { template: '<div><slot/></div>' },
         'el-alert': { props: ['title'], template: '<p>{{ title }}</p>' },
         'el-input-number': true,
-        'el-input': true,
-        'el-radio-group': { template: '<div><slot/></div>' },
-        'el-radio': { template: '<label><slot/></label>' },
+        'el-input': {
+          props: ['modelValue'],
+          emits: ['update:modelValue'],
+          template:
+            '<input :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+        },
+        'el-radio-group': {
+          props: ['modelValue'],
+          emits: ['update:modelValue'],
+          template:
+            '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot/></select>',
+        },
+        'el-radio': {
+          props: ['value'],
+          template: '<option :value="value"><slot/></option>',
+        },
         'el-button': {
           emits: ['click'],
           template: '<button @click="$emit(\'click\')"><slot/></button>',
@@ -69,22 +94,20 @@ const mountDialog = (props: Record<string, unknown>) =>
 describe('BatchStepReportDialog', () => {
   beforeEach(() => confirm.mockReset());
 
-  it('submits only this report quantities and derives the remaining normal quantity', async () => {
+  it('submits one normal report within the unified remaining report quota', async () => {
     const wrapper = mountDialog({});
     const vm = wrapper.vm as unknown as {
-      remaining: number;
       available: number;
       canSubmit: boolean;
       form: {
-        quantity: number;
+        quantity: string;
         abnormalOrigin: 'current_step' | 'previous_step' | null;
         remark: string;
       };
       submit: () => void;
     };
-    expect(vm.remaining).toBe(6);
-    expect(vm.available).toBe(2);
-    vm.form.quantity = 1;
+    expect(vm.available).toBe(6);
+    await wrapper.find('input[aria-label="本次报工数量"]').setValue('1');
     vm.form.remark = ' 本次正常 ';
     expect(vm.canSubmit).toBe(true);
     vm.submit();
@@ -101,21 +124,21 @@ describe('BatchStepReportDialog', () => {
   it('submits only the abnormal quantity with a required origin in abnormal mode', async () => {
     const wrapper = mountDialog({
       mode: 'abnormal',
-      task: { ...task, hasPreviousStep: true } as never,
+      task: { ...task, hasPreviousStep: true },
     });
     const vm = wrapper.vm as unknown as {
       canSubmit: boolean;
       form: {
-        quantity: number;
+        quantity: string;
         abnormalOrigin: 'current_step' | 'previous_step' | null;
         remark: string;
       };
       submit: () => void;
     };
-    vm.form.quantity = 2;
+    await wrapper.find('input[aria-label="本次报工数量"]').setValue('2');
     // 异常报工必须选择异常来源
     expect(vm.canSubmit).toBe(false);
-    vm.form.abnormalOrigin = 'current_step';
+    await wrapper.find('select').setValue('current_step');
     expect(vm.canSubmit).toBe(true);
     vm.submit();
     expect(wrapper.emitted('submit')?.[0]).toEqual([
@@ -128,42 +151,37 @@ describe('BatchStepReportDialog', () => {
     ]);
   });
 
-  it('only allows current-step abnormal origin for the first route step', () => {
+  it('only allows current-step abnormal origin for the first route step', async () => {
     const wrapper = mountDialog({ mode: 'abnormal' });
     const vm = wrapper.vm as unknown as {
       canSubmit: boolean;
-      form: { quantity: number; abnormalOrigin: string | null };
+      form: { quantity: string; abnormalOrigin: string | null };
     };
 
     expect(wrapper.text()).not.toContain('前置工序异常');
     expect(wrapper.text()).toContain('当前为首道工序，只能上报当前工序发生的异常');
     expect(vm.form.abnormalOrigin).toBe('current_step');
-    vm.form.quantity = 1;
+    await wrapper.find('input[aria-label="本次报工数量"]').setValue('1');
     expect(vm.canSubmit).toBe(true);
-    vm.form.abnormalOrigin = 'previous_step';
-    expect(vm.canSubmit).toBe(false);
+    expect(wrapper.findAll('select option').map((option) => option.attributes('value'))).toEqual([
+      'current_step',
+    ]);
   });
 
-  it('limits this normal report by upstream release without treating it as completion target', () => {
-    const wrapper = mountDialog({});
-    expect(wrapper.text()).toContain('达到当前放行量不会提前完成本工序');
-    expect(wrapper.text()).toContain('最终剩余需完成');
-  });
-
-  it('counts abnormal quantity against the same released report capacity', () => {
+  it('counts abnormal quantity against the same unified report limit', async () => {
     const wrapper = mountDialog({
       mode: 'abnormal',
-      task: { ...task, hasPreviousStep: true } as never,
+      task: { ...task, hasPreviousStep: true },
     });
     const vm = wrapper.vm as unknown as {
       canSubmit: boolean;
-      form: { quantity: number; abnormalOrigin: string | null };
+      form: { quantity: string; abnormalOrigin: string | null };
     };
-    // 超过本次可报数量（available = 2）不可提交
-    vm.form.quantity = 3;
-    vm.form.abnormalOrigin = 'current_step';
+    // 超过本次可报数量（available = 6）不可提交
+    await wrapper.find('input[aria-label="本次报工数量"]').setValue('7');
+    await wrapper.find('select').setValue('current_step');
     expect(vm.canSubmit).toBe(false);
-    vm.form.quantity = 2;
+    await wrapper.find('input[aria-label="本次报工数量"]').setValue('6');
     expect(vm.canSubmit).toBe(true);
   });
 

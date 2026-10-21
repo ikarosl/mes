@@ -12,106 +12,31 @@
 
 生产退料是现场多余物料（包括生产结束或订单中途关闭产生的余料）退回仓库的通道。仅处理已确认领料且仍可退的公共可用物料，固定回原库存批次。订单关闭和剩余需求关闭须由独立生命周期命令办理，退料不触发这些动作。
 
+损耗列表、详情和候选的库存批号／物料编码展示由 `infrastructure/queries/material-loss-display.query.ts` 承担，只读访问登记的 Inventory 批次字段；当前物料名称仍读取 Product 当前名称，不过滤历史停用或删除记录。损耗创建、确认及取消读取 Production 自有损耗、分配和需求事实，通过 Inventory 公开当前读取得实际领退料；不使用库存展示查询作为业务校验。结案核对需要共享锁时仅锁 `item_scrap` 事实，再批量读取不可变批次展示字段，不因展示联查锁定其他模块库存数据。
+
 | 所有者 | 可写职责 | 禁止混用 |
 | --- | --- | --- |
-| `ProductionReturnRepository` | 退料主单/明细、正库存流水、退料审计 | 不创建/恢复/取消需求，不修改分配履约、批次状态、物料计划版本、短批授权，不调用需求计划 Writer |
-| `ProductionMaterialLossRepository` | 现场损坏/丢失的损耗确认，经 Writer 创建等量损耗补料需求 | 不把余料退回当损耗，不重复扣减仓库库存，不增加产品补产额度 |
+| `ProductionReturnRepository` | 退料来源、额度与命令编排和审计；同事务调用 Inventory 创建／确认／取消公共入库单 | 不创建/恢复/取消需求，不修改分配履约、批次状态，不调用需求计划 Writer |
+| `ProductionMaterialLossRepository` | 现场损坏/丢失的损耗申报与确认，独立保存损坏事实 | 不把余料退回当损耗，不重复扣减仓库库存，不增加产品补产额度 |
+| `ProductionCloseoutMaterialLossRepository` | 初次结案中的已领物料损坏立即确认，不补料，永久占用可退上限 | 不扩展在产损耗确认、不写库存、不改需求或补产 |
 | 需求配置与需求计划 Writer | 明确的初始配置、人工追加、补料生成、剩余需求关闭及计划版本推进 | 不提供退料重开需求的接口，不通过净领用量反推需求 |
 | 物料分配与出库 Repository | 分配预留、确认出库扣库存和需求余额 | 退料不减少既有履约量，也不恢复原分配可制单量 |
-| 生产执行 Repository | 独立开工/完工校验 | 不因退料创建需求、产品补产额度或回退工序状态；短批授权及开工不读取退料 |
-| 管理端与查询投影 | 展示来源、可退额度和明确操作提示 | 不将净领用量用作需求余额，不在页面代办损耗补料 |
+| 生产执行 Repository | 独立开工/完工校验 | 不因退料创建需求、产品补产额度或回退工序状态；开工不按退料推算现场余额 |
+| 管理端与查询投影 | 展示来源、可退额度和明确操作提示 | 不将净领用量用作需求余额，不从损耗自动追加需求 |
 
-所有退料一律不修改 `production_item_demand.need_number/remaining_number/business_status/fulfilled_by/fulfilled_at`。短批未开工也没有例外：退料不推进 `material_plan_version`，不作废已有授权；短批授权预览、员工任务按钮和开工命令只检查已发生确认领料及有效授权覆盖当前需求，不读取退料、不按净领用量判断。即使全部退回也不因此阻止短批开工。原有活动需求继续由领料履约或显式关闭管理动作处理。
+所有退料不修改 `production_item_demand.need_number/remaining_number/business_status/fulfilled_by/fulfilled_at`，不改变任务开工资格。开工只展示正式需求缺口，不按净领用量推算现场余额。原活动需求继续由领料履约或显式关闭管理动作处理。
 
 ## 3.7 退料表
 
----
+生产退料使用 Inventory 所有的 `inbound_order/detail(source_type=return_inbound)`，不保留第二份主从或退料数量。公共字段、外键、审计及完成守卫见 [Inventory 数据库](../../../inventory/docs/database.md)。Production 只拥有退料来源资格、额度和办理编排，不能直接写入或锁定公共单据。
 
-### 14. `return_order`
-
-职责：维护生产退料主单，记录某个生产批次的一次退料动作。
-
-| 字段                  | 类型              | 说明                                      |
-| --------------------- | ----------------- | ----------------------------------------- |
-| `id`                  | `BIGINT UNSIGNED` | 主键                                      |
-| `return_no`           | `VARCHAR(100)`    | 退料单号                                  |
-| `production_batch_id` | `BIGINT UNSIGNED` | 生产批次 ID，关联 `production_batches.id` |
-| `work_order_id`       | `BIGINT UNSIGNED` | 工单 ID，冗余保存                         |
-| `status`              | `VARCHAR(30)`     | 退料单状态，默认 `pending`                |
-| `return_at`           | `DATETIME`        | 实际退料时间                              |
-| `operator_id`         | `BIGINT UNSIGNED` | 操作人 ID                                 |
-| `version`             | `INT`             | 乐观锁版本号，默认 `0`                    |
-| `remark`              | `TEXT`            | 备注                                      |
-| `cancel_reason`       | `TEXT`            | 取消原因；历史未记录数据可为空            |
-| `cancelled_by`        | `BIGINT UNSIGNED` | 取消人；历史未记录数据可为空              |
-| `cancelled_at`        | `DATETIME`        | 取消时间；历史未记录数据可为空            |
-| 业务审计字段          | 见统一规则        | 可变业务单据审计字段                      |
-
-约束：
-
-- 主键：`id`
-- 唯一约束：`UNIQUE (return_no)`
-- 唯一约束：`UNIQUE (id, production_batch_id)`
-- 外键：`FOREIGN KEY (production_batch_id, work_order_id) REFERENCES production_batches(id, work_order_id)`
-- 外键：`FOREIGN KEY (operator_id) REFERENCES users(id)`
-- 外键：`FOREIGN KEY (cancelled_by) REFERENCES users(id)`
-- 检查约束：`CHECK (status IN ('pending', 'returned', 'scrapped', 'cancelled'))`
-- 组合索引：`INDEX (status, created_at)`，用于退料单状态分页
-
-说明：
-
-- 退料主单表达一次退料动作。
-- 具体退回哪个分配行、哪个批次、多少数量，由 `return_detail` 记录。
-- 确认退料后回到原库存批次，释放为公共可用库存；原生产任务关联仅用于来源追溯，不代表继续占用。
-- 当前已实现的最小退料只接受已确认生产领料，固定退回 `available` 并设置 `release_after_return = 1` 释放公共库存。不提供退回后保留给原生产任务的模式，也不开放退料报废命令。
-
----
-
-### 15. `return_detail`
-
-职责：维护生产退料明细，记录某个分配行按原精确版本退回原库存批次的数量，固定释放为公共可用库存。
-
-| 字段                   | 类型              | 说明                                     |
-| ---------------------- | ----------------- | ---------------------------------------- |
-| `id`                   | `BIGINT UNSIGNED` | 主键                                     |
-| `return_id`            | `BIGINT UNSIGNED` | 退料主单 ID，关联 `return_order.id`      |
-| `production_batch_id`  | `BIGINT UNSIGNED` | 生产批次 ID，冗余保存                    |
-| `demand_id`            | `BIGINT UNSIGNED` | 需求 ID                                  |
-| `allocation_id`        | `BIGINT UNSIGNED` | 分配明细 ID                              |
-| `item_id`              | `BIGINT UNSIGNED` | 退料对象 ID                              |
-| `material_variant_id`  | `BIGINT UNSIGNED` | 退料精确物料版本 ID                      |
-| `batch_id`             | `BIGINT UNSIGNED` | 退料库存批次 ID                          |
-| `return_number`        | `DECIMAL(12,4)`   | 本次退料数量                             |
-| `unit_snapshot`        | `VARCHAR(20)`     | 退料时单位快照                           |
-| `return_stock_status`  | `VARCHAR(20)`     | 退回后的库存状态，固定 `available`       |
-| `release_after_return` | `TINYINT`         | 固定为 `1`，退回后释放给公共库存 |
-| `remark`               | `TEXT`            | 备注                                     |
-| `created_by`           | `BIGINT UNSIGNED` | 创建人                                   |
-| `created_at`           | `DATETIME`        | 创建时间，默认 `CURRENT_TIMESTAMP`       |
-
-约束：
-
-- 主键：`id`
-- 外键：`FOREIGN KEY (return_id, production_batch_id) REFERENCES return_order(id, production_batch_id)`
-- 外键：`FOREIGN KEY (demand_id, production_batch_id) REFERENCES production_item_demand(id, production_batch_id)`
-- 外键：`FOREIGN KEY (allocation_id, demand_id, production_batch_id, item_id, batch_id, material_variant_id) REFERENCES production_item_allocation(id, demand_id, production_batch_id, item_id, batch_id, material_variant_id)`
-- 外键：`FOREIGN KEY (batch_id, item_id, material_variant_id) REFERENCES item_batch(id, item_id, material_variant_id)`
-- 检查约束：`CHECK (return_number > 0)`
-- 检查约束：`chk_return_detail_current_scope CHECK (return_stock_status = 'available' AND release_after_return = 1)`，只允许退回公共可用库存。
-- 整数约束：`chk_return_detail_quantity_integer CHECK (return_number = TRUNCATE(return_number, 0))`
-- 唯一约束：`UNIQUE (return_id, allocation_id)`
-- 组合候选键：`uk_return_detail_source UNIQUE (id, allocation_id, demand_id, production_batch_id, item_id, batch_id)`。该物理键为六列；精确版本由上述分配来源及库存批次组合外键保证，不能将本键解释为未约束版本，也不据此开放退料后报废。
-
-说明：
-
-- `return_stock_status = available` 的退料会增加库存流水中的可用库存。
-- `release_after_return = 1` 表示退回后释放给公共库存，不再继续占用原生产批次。
-- 退料入库应生成 `inventory_transaction`，类型为 `material_return_inbound`。
-- 创建待退料单时即占用可退数量；可退数量为同一 allocation 已确认领料累计减去其他 `pending/returned` 退料明细累计，再减去 `pending/confirmed` 的 `production_consumed` 损耗累计。取消待退料单释放占用。
-- 退料候选、创建和确认使用相同额度口径；创建及确认先锁定来源 allocation，再以当前读校验领料、退料与损耗占用，避免旧事务快照遗漏并发占用。
-- 确认退料按 `item_batch.id` 升序锁定涉及批次，重新校验可退数量，并将主单更新、正库存流水和成功审计放在同一事务。
-
----
+- 一单一个任务，关联工单；每条明细以 `return_allocation_id`、`demand_id`、任务、物料精确版本、原库存批次和单位指向原已领料分配。一个分配在同单只出现一次。
+- 创建 `pending` 时占可退额度，不记库存；整单确认 `pending → completed`，每条有效明细生成一条 `material_return_inbound` 正流水，引用 `inbound_detail.id`；取消 `pending → cancelled` 释放占用。单据不开放编辑、部分确认、终态恢复或退料报废。
+- 退料固定原批次、`stock_status=available`；原批次即使冻结或停用，历史真实回仓仍可办理，但不解除批次状态。回仓不恢复原需求、履约、分配可领量或任务阶段。
+- 可新增数量为同分配已完成生产领料累计，减 `pending/completed` 生产退料累计，再减 `pending/confirmed` 生产领料损耗。人工其他入库不参与退料额度。确认核对包括本单的全部占用，不重复减本次数量。
+- 候选、创建、确认和损耗共用该额度。写命令先锁任务和原分配，经 `InventoryProductionDocumentCommand.facts` 当前读真实单据，再锁自身损耗事实；Inventory 自己按公共锁序执行批次、单据、流水与完成守卫。来源命令成功审计与实际回仓同事务提交。
+- 退料 HTTP 使用 `returnNo/returnAt/returnQuantity` 和 `pending/returned/cancelled`；`returned` 映射公共完成态 `completed`。固定原批次可用库存回仓由上述业务规则表达，响应不附带固定状态或释放标记，也不提供退料报废状态。列表、详情和打印展示由已登记查询读取公共入库，只限定 `return_inbound`。
+- `occupiedLossQuantity` 是同分配待确认及已确认损耗合计；取消待确认损耗释放占用，确认后持续扣可退上限，另行需求的取消或关闭均不撤销损耗。当前不支持已确认损耗冲销。
 
 ## 3.8 报废表
 
@@ -123,7 +48,9 @@
 
 职责：当前只维护 `production_consumed` 生产领料损耗。仓库侧报废、退料后报废和库存内报废仍是未来场景，不在本表当前物理结构与应用能力中预建。
 
-设计决策：系统将“生产授权上限”与“现场物料可用量”解耦。授权只控制批次允许生产的数量，不因领料后的现场损耗动态回收额度；实际物料损耗通过“损耗报废 → 损耗补料 → 物料需求 → 分配与出库”闭环处理，以适度降低系统复杂度，避免为追求实时物料联动而引入过高的状态维护成本。
+同一实物损耗场景以 `loss_purpose` 区分登记阶段：`production_record` 为在产损耗，`closeout_record` 为初次结案损坏登记。两者都只记录损坏，不自动创建需求、补料单或补产授权；需要补料时管理员另行提需求。批量任务仍遵守任务物料版本锁，研发任务可独立选择版本。不能覆盖旧损耗数量或转换用途。对应结案命令及审批证据见[结案设计](production-termination.md#收尾物料损坏登记)。
+
+生产数量授权与已领物料损坏独立；确认损坏不会回收既有产品授权，也不重复扣减库存。损耗量不等于需要追加的需求量。
 
 | 字段                  | 类型              | 说明                                      |
 | --------------------- | ----------------- | ----------------------------------------- |
@@ -136,7 +63,9 @@
 | `material_variant_id` | `BIGINT UNSIGNED` | 报废精确物料版本 ID                       |
 | `batch_id`            | `BIGINT UNSIGNED` | 已确认领料的库存批次 ID，非空             |
 | `scrap_scene`         | `VARCHAR(40)`     | 当前固定为 `production_consumed`          |
-| `scrap_number`        | `DECIMAL(12,4)`   | 报废数量                                  |
+| `loss_purpose`       | `VARCHAR(30)`     | `production_record/closeout_record`，创建后不可改 |
+| `closeout_id`        | `BIGINT UNSIGNED` | 结案登记必填；在产损耗为空，与生产批次组成来源外键 |
+| `scrap_number`        | `INT`   | 报废数量                                  |
 | `unit_snapshot`       | `VARCHAR(20)`     | 报废时单位快照                            |
 | `reason_type`         | `VARCHAR(50)`     | 报废原因                                  |
 | `status`              | `VARCHAR(30)`     | 状态，默认 `pending`                      |
@@ -149,7 +78,7 @@
 | `version`             | `INT`             | 乐观锁版本号，默认 `0`                    |
 | 业务审计字段          | 见统一规则        | 可变业务单据审计字段                      |
 
-未来扩展场景语义：
+以下是未开放的后续场景设想及当前 `production_consumed` 的对照，不表示其他值已进入当前 CHECK，也不构成新增命令授权：
 
 | 值                      | 含义                                 | 是否影响 allocation 可再次出库量 |
 | ----------------------- | ------------------------------------ | -------------------------------- |
@@ -162,7 +91,7 @@
 
 - 主键：`id`
 - 唯一约束：`UNIQUE (scrap_no)`
-- 唯一约束：`UNIQUE (id, production_batch_id)`，供损耗补料单以组合外键保证同批次来源
+- 唯一约束：`UNIQUE (id, production_batch_id)`
 - 外键：`FOREIGN KEY (production_batch_id) REFERENCES production_batches(id)`
 - 外键：`FOREIGN KEY (demand_id, production_batch_id) REFERENCES production_item_demand(id, production_batch_id)`
 - 外键：`FOREIGN KEY (allocation_id, demand_id, production_batch_id, item_id, batch_id, material_variant_id) REFERENCES production_item_allocation(id, demand_id, production_batch_id, item_id, batch_id, material_variant_id)`
@@ -170,6 +99,9 @@
 - 外键：`confirmed_by`、`cancelled_by` 及业务审计操作者字段关联 `users.id`
 - 检查约束：`CHECK (scrap_number > 0)`
 - 检查约束：`CHECK (scrap_scene = 'production_consumed')`
+- 用途约束：在产登记要求 `closeout_id IS NULL`；结案登记要求非空 `closeout_id`、`status=confirmed`、固定 `reason_type=closeout_damage` 和非空 `remark` 损坏原因。
+- 组合外键：`(closeout_id,production_batch_id) -> production_batch_closeout(id,production_batch_id)`；索引 `idx_item_scrap_closeout_batch` 支持根查询。
+- 数据库触发器只允许在产待确认单按版本递增进入确认或取消终态，来源、数量、原因和用途不可改写，所有损耗禁止删除，终态禁止更新。结案登记只允许初次未送审的 `closing` 根，不能直接写入已结束任务。
 - 检查约束：`CHECK (status IN ('pending', 'confirmed', 'cancelled'))`
 - 检查约束：`pending` 要求 `confirmed_by/confirmed_at` 为空；`confirmed` 要求二者均非空；`cancelled` 要求二者为空
 - 非空来源列和组合外键共同保证 `production_consumed` 必须来自同一生产批次、需求、分配行、物料和库存批次
@@ -180,10 +112,14 @@
 - 生产消耗报废不应直接扣减原 allocation 的可再次出库量。
 - `production_consumed` 创建与确认时只允许选择状态为 `material_partially_outbound/material_outbound/doing` 的生产批次及其已确认领料分配行；部分出库后尚未开工时，现场暂存或搬运中的已领物料也可能发生损耗。物料、库存批次、需求、单位和生产批次都从服务端候选复制，不接受客户端自由拼接 ID 或单位。
 - 同一分配行当前可申报损耗量为“累计确认出库量 - `pending/returned` 退料占用量 - `pending/confirmed` 的 `production_consumed` 损耗占用量”；创建和确认事务都必须重新锁定来源分配行并校验，损耗数量必须大于 `0` 且不得超过该上限。取消待确认损耗必须填写原因并释放占用。
-- 现场创建损耗记录后状态为 `pending`。管理员确认时不提供“不补料”或修改补料数量的分支；同一事务把本单改为 `confirmed`、创建一张 `source_type = 'material_loss'` 的 `production_material_supplement`，并创建且仅创建一条 `material_loss_supplement` 需求。需求物料与单位固定取来源分配行，`need_number = scrap_number`。
-- 生产领料损耗补料只恢复损失的实物，不创建 `batch_step_scrap_records` 或 `batch_step_scrap_reproduction_authorization`，不增加产品补产额度，不修改批次计划量和工序可报上限。它与工序异常审批中的“产品报废并补产”是两条不同链路。
-- 损耗确认、补料单、补料需求、批次 `material_plan_version/version`、成功审计和 HTTP 幂等结果必须同事务提交；任一写入失败全部回滚。新增补料需求必须通过 Production 事务内需求计划写入器同步推进批次版本；若批次处于 `material_partially_outbound`，版本推进会使既有短批授权失效。已确认损耗不得改量或取消，错误修正必须等待独立冲销设计。
+- 在产 `production_record` 创建后为 `pending`；管理员确认只把本单变为 `confirmed`。结案登记由独立命令直接形成确认事实。两种用途均不产生补料单或需求。
+- 损耗确认与成功审计、HTTP 幂等结果同事务提交，不推进任务版本或改变产品数量授权。已确认损耗不得改量或取消，错误修正须独立冲销设计。
+- 损耗不自动补料；历史自动补料数据不得推测转换。升级及回退的空数据／审批证据守卫见[迁移安全](../../../../../../../packages/database/docs/migration-safety.md)。
 - 通用库存报废仍未进入当前正式范围。`warehouse_allocated/return_after_outbound/in_stock` 的命令、接口和页面操作继续禁用，不得因实现生产领料损耗而一并开放。
+
+#### 后续库存报废设想（须先评审，不是当前写入规则）
+
+以下保留原场景的来源与不重复扣库考虑，未完成事项统一见[路线图](../../../../../../../docs/roadmap.md)。它们不改变当前只支持 `production_consumed` 的结构与入口。
 
 - 库存内报废应生成 `inventory_transaction`，类型为 `scrap_outbound`。
 - 只有 `status = confirmed` 的报废记录参与视图汇总。
@@ -196,86 +132,4 @@
 
 ## 3.9 盘点表
 
----
-
-### 17. `stock_check_order`
-
-职责：维护库存盘点主单，记录一次盘点任务的基本信息。
-
-| 字段             | 类型              | 说明                                |
-| ---------------- | ----------------- | ----------------------------------- |
-| `id`             | `BIGINT UNSIGNED` | 主键                                |
-| `check_no`       | `VARCHAR(100)`    | 盘点单号                            |
-| `status`         | `VARCHAR(30)`     | 盘点状态，默认 `pending`            |
-| `check_at`       | `DATETIME`        | 实际盘点时间                        |
-| `operator_id`    | `BIGINT UNSIGNED` | 操作人 ID                           |
-| `remark`         | `TEXT`            | 备注                                |
-| `cancel_reason`  | `TEXT`            | 取消原因；历史未记录数据可为空      |
-| `cancelled_by`   | `BIGINT UNSIGNED` | 取消人；历史未记录数据可为空        |
-| `cancelled_at`   | `DATETIME`        | 取消时间；历史未记录数据可为空      |
-| `version`        | `INT`             | 乐观锁版本号，默认 `0`              |
-| 业务审计字段     | 见统一规则        | 可变业务单据审计字段                |
-
-约束：
-
-- 主键：`id`
-- 唯一约束：`UNIQUE (check_no)`
-- 外键：`FOREIGN KEY (operator_id) REFERENCES users(id)`
-- 外键：`FOREIGN KEY (cancelled_by) REFERENCES users(id)`
-- 检查约束：`CHECK (status IN ('pending', 'counting', 'completed', 'cancelled'))`
-- 组合索引：`INDEX (status, created_at)`，用于盘点单状态分页
-
-说明：
-
-- 盘点主单表达一次盘点动作。
-- 具体盘点了哪些库存对象、哪些批次、账面数量和实盘数量，由 `stock_check_detail` 记录。
-
----
-
-### 18. `stock_check_detail`
-
-职责：维护库存盘点明细，记录某个库存对象某个批次的账面数量、实盘数量和差异数量。
-
-| 字段                  | 类型              | 说明                                                   |
-| --------------------- | ----------------- | ------------------------------------------------------ |
-| `id`                  | `BIGINT UNSIGNED` | 主键                                                   |
-| `stock_check_id`      | `BIGINT UNSIGNED` | 盘点主单 ID，关联 `stock_check_order.id`               |
-| `item_id`             | `BIGINT UNSIGNED` | 库存对象 ID                                            |
-| `material_variant_id` | `BIGINT UNSIGNED` | 盘点的精确物料版本 ID                                  |
-| `batch_id`            | `BIGINT UNSIGNED` | 库存批次 ID                                            |
-| `stock_status`        | `VARCHAR(20)`     | 盘点的库存状态，例如 `available`、`pending_inspection` |
-| `unit_snapshot`       | `VARCHAR(20)`     | 盘点时单位快照                                         |
-| `system_quantity`     | `DECIMAL(12,4)`   | 盘点时系统账面数量                                     |
-| `actual_quantity`     | `DECIMAL(12,4)`   | 实盘数量；尚未录入时为空                               |
-| `difference_quantity` | `DECIMAL(12,4)`   | 可空生成列：实盘数量 - 系统数量                        |
-| `result`              | `VARCHAR(20)`     | 可空生成列：`surplus`、`shortage`、`matched`           |
-| `adjusted`            | `TINYINT`         | 是否已生成盘点调整流水：`0` 否，`1` 是                 |
-| `remark`              | `TEXT`            | 备注                                                   |
-| `created_by`          | `BIGINT UNSIGNED` | 创建人                                                 |
-| `created_at`          | `DATETIME`        | 创建时间，默认 `CURRENT_TIMESTAMP`                     |
-
-约束：
-
-- 主键：`id`
-- 外键：`FOREIGN KEY (stock_check_id) REFERENCES stock_check_order(id)`
-- 外键：`FOREIGN KEY (item_id) REFERENCES materials(id)`
-- 外键：`FOREIGN KEY (material_variant_id, item_id) REFERENCES material_variants(id, material_id)`
-- 外键：`FOREIGN KEY (batch_id, item_id, material_variant_id) REFERENCES item_batch(id, item_id, material_variant_id)`
-- 检查约束：`CHECK (system_quantity >= 0)`
-- 检查约束：`CHECK (actual_quantity IS NULL OR actual_quantity >= 0)`
-- 检查约束：`CHECK (stock_status IN ('available', 'pending_inspection', 'frozen', 'defective'))`
-- 检查约束：`CHECK (result IS NULL OR result IN ('surplus', 'shortage', 'matched'))`
-- 检查约束：`CHECK (adjusted IN (0, 1))`
-- 唯一约束：`UNIQUE (stock_check_id, item_id, material_variant_id, batch_id, stock_status)`
-
-说明：
-
-- `difference_quantity` 和 `result` 必须使用数据库生成列或只在查询视图中计算，禁止由接口独立写入。
-- 盘点调整应生成 `inventory_transaction`，类型为 `stock_check_adjustment`。
-- 盘点明细应记录盘点时的系统数量快照，避免后续库存变动影响盘点结果。
-- 创建盘点单时由管理员从当前正库存 `item_batch × stock_status` 候选中选择明细，系统在创建事务内冻结账面数量；空明细、重复批次状态组合和非正库存均拒绝。
-- 首次保存任意实盘数量时主单从 `pending` 进入 `counting`；允许分次保存，未录入明细保持 `actual_quantity = NULL`。
-- 完成盘点要求所有明细已录入。事务按批次 ID 升序锁定库存批次并重新汇总当前账面数量；任一当前数量与快照不同则整单拒绝，要求取消后重新建单，禁止用旧快照调整变化后的库存。
-- 校验通过后，差异非零的明细各生成一条 `stock_check_adjustment` 流水，匹配明细不生成零流水；全部明细统一标记 `adjusted = 1`，主单更新为 `completed`，流水、状态和成功审计同事务提交。当前不提供完成后再单独“生成调整”的第二入口。
-
----
+`stock_check_order/detail` 由 Inventory 所有，字段、状态、差异流水与当前库存快照规则见 [Inventory 盘点设计](../../../inventory/docs/database/stock-check.md)。Production 不直接写盘点或库存表；现有仓库 HTTP 路径和权限保持。

@@ -15,12 +15,11 @@ describe('product quantity DTOs', () => {
     const base = {
       materialId: '2',
       unit: 'pcs',
-      isKeyMaterial: true,
-      needBatchRecord: true,
     };
     expect(
       await validate(
         plainToInstance(ReplaceProductMaterialsDto, {
+          version: 0,
           items: [{ ...base, quantityPerUnit: 2 }],
         }),
       ),
@@ -28,6 +27,7 @@ describe('product quantity DTOs', () => {
     expect(
       await validate(
         plainToInstance(ReplaceProductMaterialsDto, {
+          version: 0,
           items: [{ ...base, quantityPerUnit: 1.5 }],
         }),
       ),
@@ -35,6 +35,7 @@ describe('product quantity DTOs', () => {
     expect(
       await validate(
         plainToInstance(ReplaceProductMaterialsDto, {
+          version: 0,
           items: [{ ...base, materialId: undefined, materialProductId: '2', quantityPerUnit: 2 }],
         }),
       ),

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { DemandGenerationGroupType } from '@company/contracts';
 import {
   groupMaterialDemandRows,
   materialDemandGroupLabel,
@@ -9,15 +10,12 @@ describe('material demand group presentation', () => {
     const rows = [
       row('NORMAL:8', 'normal', null, 'a1'),
       row('NORMAL:8', 'normal', null, 'a2'),
-      row('LOSSSUP:21', 'material_loss_supplement', 'BL-20260902-570A4B60', 'a3'),
+      row('SCRAPSUP:21', 'scrap_supplement', 'SUP-00021', 'a3'),
     ];
 
     const groups = groupMaterialDemandRows(rows);
 
-    expect(groups.map((group) => group.label)).toEqual([
-      '初始物料需求',
-      '损耗补料 BL-20260902-570A4B60',
-    ]);
+    expect(groups.map((group) => group.label)).toEqual(['初始物料需求', '报废补料 SUP-00021']);
     expect(groups[0]?.rows.map((item) => item.allocationId)).toEqual(['a1', 'a2']);
     expect(groups[1]?.rows.map((item) => item.allocationId)).toEqual(['a3']);
   });
@@ -35,7 +33,7 @@ describe('material demand group presentation', () => {
 
 const row = (
   generationGroupKey: string,
-  generationGroupType: 'normal' | 'material_loss_supplement',
+  generationGroupType: DemandGenerationGroupType,
   supplementNo: string | null,
   allocationId: string,
 ) => ({ generationGroupKey, generationGroupType, supplementNo, allocationId });

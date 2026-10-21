@@ -1,3 +1,5 @@
+import { createPinia } from 'pinia';
+import { createMemoryHistory, createRouter } from 'vue-router';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { flushPromises, mount } from '@vue/test-utils';
@@ -30,6 +32,14 @@ const traceTableColumnStub = {
       );
   },
 };
+
+const testPlugins = () => [
+  createPinia(),
+  createRouter({
+    history: createMemoryHistory(),
+    routes: [{ path: '/', name: 'production-trace', component: { template: '<div />' } }],
+  }),
+];
 
 describe('ProductionTracePage', () => {
   beforeEach(() => {
@@ -74,6 +84,7 @@ describe('ProductionTracePage', () => {
   it('uses the current project shell and exposes only persisted Production fact tabs', async () => {
     const wrapper = mount(ProductionTracePage, {
       global: {
+        plugins: testPlugins(),
         stubs: {
           TableToolbar: { template: '<div><slot name="actions"/><slot name="tools"/></div>' },
           'el-form': { template: '<form><slot/></form>' },
@@ -232,6 +243,7 @@ describe('ProductionTracePage', () => {
 
     const wrapper = mount(ProductionTracePage, {
       global: {
+        plugins: testPlugins(),
         stubs: {
           TableToolbar: { template: '<div><slot name="actions"/><slot name="tools"/></div>' },
           'el-form': { template: '<form><slot/></form>' },

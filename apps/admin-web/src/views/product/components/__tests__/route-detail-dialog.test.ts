@@ -95,7 +95,8 @@ describe('RouteDetailDialog', () => {
 
     await openDialog(wrapper);
 
-    expect(wrapper.text()).toContain('P1 / 工序1');
+    expect(wrapper.text()).toContain('工序1');
+    expect(wrapper.text()).toContain('P1');
     expect(wrapper.text()).toContain('首道装配');
     expect(wrapper.text()).toContain('张三');
     expect(wrapper.text()).toContain('sop.pdf');

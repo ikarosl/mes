@@ -7,6 +7,8 @@ import type {
   UpdateSystemRolePayload,
   UpdateSystemUserPayload,
   UserOption,
+  ApprovalRoleOption,
+  ApprovalActorEligibility,
 } from '@company/contracts';
 import type { AuditLogEntry } from '../../../../common/audit/audit.types.js';
 import type {
@@ -33,6 +35,10 @@ export abstract class RbacRepository {
   abstract listUsers(query: SystemUserQuery): Promise<PageResult<IdentityUser>>;
   abstract listDepartmentOptions(): Promise<IdentityDepartmentOption[]>;
   abstract listRoleOptions(): Promise<IdentityRoleOption[]>;
+  abstract listRoleReferencesByIds(ids: string[]): Promise<IdentityRoleOption[]>;
+  abstract listApprovalRoleOptions(): Promise<ApprovalRoleOption[]>;
+  abstract listApprovalEligibleUserIds(roleId?: string): Promise<string[]>;
+  abstract getApprovalActorEligibility(userId: string): Promise<ApprovalActorEligibility>;
   abstract listActiveUserOptions(): Promise<UserOption[]>;
   abstract listActiveUserOptionsByIds(ids: string[]): Promise<UserOption[]>;
   abstract listUserReferencesByIds(ids: string[]): Promise<UserOption[]>;

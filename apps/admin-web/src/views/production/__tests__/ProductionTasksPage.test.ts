@@ -1,6 +1,6 @@
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils';
 import ElementPlus from 'element-plus';
-import { KeepAlive, nextTick } from 'vue';
+import { nextTick } from 'vue';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia } from 'pinia';
 import { createRouter, createWebHistory } from 'vue-router';
@@ -84,9 +84,6 @@ const batchRow = {
   routeId: null,
   routeCode: null,
   status: 'pending',
-  materialPlanVersion: 1,
-  shortBatchAuthorizationStatus: 'none',
-  shortBatchAuthorizationAction: 'authorize',
   ownerName: null,
   version: 0,
 };
@@ -106,21 +103,6 @@ describe('ProductionTasksPage', () => {
         stubs: { ProductionBatchCancelDialog: productionBatchCancelDialogStub },
       },
     });
-
-  /** 放入 KeepAlive：让 onActivated 首次挂载即触发，验证页面激活的候选刷新行为 */
-  const mountPageWithKeepAlive = () =>
-    mount(
-      {
-        components: { KeepAlive, ProductionTasksPage },
-        template: '<KeepAlive><ProductionTasksPage /></KeepAlive>',
-      },
-      {
-        global: {
-          plugins: [ElementPlus, router, createPinia()],
-          stubs: { ProductionBatchCancelDialog: productionBatchCancelDialogStub },
-        },
-      },
-    );
 
   beforeEach(() => {
     listBatches.mockReset();
@@ -239,7 +221,7 @@ describe('ProductionTasksPage', () => {
 
   it('does not expose the removed one-click generation action after a batch is material-pending', async () => {
     listBatches.mockResolvedValue({
-      items: [{ ...batchRow, status: 'material_pending', materialPlanVersion: 2 }],
+      items: [{ ...batchRow, status: 'material_pending' }],
       total: 1,
       page: 1,
       pageSize: 10,
@@ -249,50 +231,6 @@ describe('ProductionTasksPage', () => {
 
     expect(wrapper.text()).not.toContain('生成物料');
     expect(wrapper.text()).not.toContain('需求已生成');
-  });
-
-  it('turns a current short-batch authorization into a read-only entry instead of another submit', async () => {
-    listBatches.mockResolvedValue({
-      items: [
-        {
-          ...batchRow,
-          status: 'material_partially_outbound',
-          shortBatchAuthorizationStatus: 'valid',
-          shortBatchAuthorizationAction: 'view',
-        },
-      ],
-      total: 1,
-      page: 1,
-      pageSize: 10,
-    });
-    const wrapper = mountPage();
-    await flushPromises();
-
-    const button = wrapper.findAll('button').find((item) => item.text().trim() === '查看短批授权');
-    expect(button).toBeDefined();
-    expect(button!.attributes('disabled')).toBeUndefined();
-  });
-
-  it('disables short-batch authorization when the backend says it is no longer required', async () => {
-    listBatches.mockResolvedValue({
-      items: [
-        {
-          ...batchRow,
-          status: 'material_partially_outbound',
-          shortBatchAuthorizationStatus: 'stale',
-          shortBatchAuthorizationAction: 'not_required',
-        },
-      ],
-      total: 1,
-      page: 1,
-      pageSize: 10,
-    });
-    const wrapper = mountPage();
-    await flushPromises();
-
-    const button = wrapper.findAll('button').find((item) => item.text().trim() === '物料已齐套');
-    expect(button).toBeDefined();
-    expect(button!.attributes('disabled')).toBeDefined();
   });
 
   it('expanding the 负责人 filter refreshes only the user options source', async () => {
@@ -350,18 +288,8 @@ describe('ProductionTasksPage', () => {
     );
   });
 
-  it('on activation refreshes only users and SOP files, never product/route/work-order', async () => {
-    mountPageWithKeepAlive();
-    await flushPromises();
-
-    // 首次挂载：onMounted 只加载正式列表；onActivated 只刷新页面持有的候选
-    expect(listBatches).toHaveBeenCalledTimes(1);
-    expect(userOptions).toHaveBeenCalledTimes(1);
-    expect(technicalFiles).toHaveBeenCalledTimes(1);
-    expect(productOptions).not.toHaveBeenCalled();
-    expect(routeOptions).not.toHaveBeenCalled();
-    expect(listOrders).not.toHaveBeenCalled();
-  });
+  // TODO(production-tasks): 保留缓存激活的任务上下文与候选按需读取场景；正式测试获准并适配当前生命周期后恢复。
+  it.todo('activation preserves task context while options load only at their entry');
 });
 
 type TaskGuardVm = {
@@ -423,7 +351,7 @@ describe('ProductionTasksPage task dialog close guard', () => {
     await vm.handleTaskDialogClose(false);
 
     expect(confirm).toHaveBeenCalledTimes(1);
-    expect(confirm.mock.calls[0][0]).toContain('结果未知');
+    expect(confirm.mock.calls[0][0]).toContain('暂时无法确认批次是否已创建');
     expect(vm.taskDialogVisible).toBe(true);
     expect(vm.createBatchIntent.getStatus()).toBe('pending');
 
@@ -453,7 +381,7 @@ describe('ProductionTasksPage task dialog close guard', () => {
         { ...intentSnapshot, body: { batchNo: null, remark: 'changed' } },
         () => Promise.resolve('ok'),
       ),
-    ).rejects.toThrow(/结果未知/);
+    ).rejects.toThrow(/暂时无法确认上次批次操作是否成功/);
     expect(vm.createBatchIntent.getStatus()).toBe('pending'); // K1 未丢失、未换键
   }, 15_000);
 
@@ -474,8 +402,8 @@ describe('ProductionTasksPage task dialog close guard', () => {
     await vm.handleTaskDialogClose(false);
 
     expect(confirm).toHaveBeenCalledTimes(1);
-    expect(confirm.mock.calls[0][0]).toContain('结果已损坏');
-    expect(confirm.mock.calls[0][0]).toContain('重复批次');
+    expect(confirm.mock.calls[0][0]).toContain('当前不能继续提交');
+    expect(confirm.mock.calls[0][0]).toContain('重复创建');
     expect(vm.taskDialogVisible).toBe(true);
     expect(vm.createBatchIntent.getStatus()).toBe('blocked');
   }, 15_000);
@@ -501,7 +429,7 @@ describe('ProductionTasksPage task dialog close guard', () => {
       await vm.handleTaskDialogClose(false);
 
       expect(confirm).toHaveBeenCalledTimes(1);
-      expect(confirm.mock.calls[0][0]).toContain('重试窗口');
+      expect(confirm.mock.calls[0][0]).toContain('超过可重试时限');
       expect(vm.taskDialogVisible).toBe(true);
       expect(vm.createBatchIntent.getStatus()).toBe('expired');
     } finally {

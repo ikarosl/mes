@@ -38,7 +38,7 @@
 
     <el-alert
       class="scope-alert"
-      title="当前只开放生产领料损耗：确认后固定按同物料、同单位、同数量生成损耗补料需求，不回收或增加产品生产授权。"
+      title="批量和研发的领料损耗均只记录物料损坏、扣减可退上限，不自动补料。需要更多物料时请在任务中另提需求；物料损坏不计入成品报废。"
       type="info"
       :closable="false"
       show-icon
@@ -74,6 +74,19 @@
           min-width="190"
         />
         <el-table-column
+          label="登记用途"
+          min-width="205"
+          ><template #default="{ row }"
+            ><div>{{ MATERIAL_LOSS_PURPOSE_LABELS[row.purpose as MaterialLossPurpose] }}</div>
+            <div
+              v-if="row.closeoutId"
+              class="secondary-cell"
+            >
+              收尾记录 #{{ row.closeoutId }}
+            </div></template
+          ></el-table-column
+        >
+        <el-table-column
           label="生产来源"
           min-width="220"
           ><template #default="{ row }"
@@ -100,24 +113,16 @@
           ></el-table-column
         >
         <el-table-column
-          prop="reasonType"
           label="损耗原因"
-          min-width="145"
-        />
-        <el-table-column
-          label="补料状态"
-          width="125"
+          min-width="220"
           ><template #default="{ row }"
-            ><el-tag
-              v-if="row.supplement"
-              effect="plain"
-              :type="row.supplement.status === 'fulfilled' ? 'success' : 'warning'"
-              >{{ row.supplement.status === 'fulfilled' ? '已补料领用' : '待补料领用' }}</el-tag
-            ><span
-              v-else
+            ><div>{{ row.purpose === 'closeout_record' ? row.remark : row.reasonType }}</div>
+            <div
+              v-if="row.purpose !== 'closeout_record' && row.remark"
               class="secondary-cell"
-              >待确认损耗</span
-            ></template
+            >
+              {{ row.remark }}
+            </div></template
           ></el-table-column
         >
         <el-table-column
@@ -149,15 +154,15 @@
           fixed="right"
           ><template #default="{ row }">
             <el-button
-              v-if="row.status === 'pending'"
+              v-if="row.purpose === 'production_record' && row.status === 'pending'"
               link
               type="success"
               :loading="pendingAction === `confirm:${row.id}`"
               @click="confirmLoss(row)"
-              >确认并补料</el-button
+              >确认损耗</el-button
             >
             <el-button
-              v-if="row.status === 'pending'"
+              v-if="row.purpose === 'production_record' && row.status === 'pending'"
               link
               :loading="pendingAction === `cancel:${row.id}`"
               @click="cancelLoss(row)"
@@ -182,7 +187,7 @@
       :close-on-click-modal="false"
     >
       <el-alert
-        title="请选择已经确认领料的物料。损耗确认后系统固定一比一生成补料需求，不能选择不补料或修改补料数量。"
+        title="请选择已确认领料的物料，记录实际损坏数量。确认损耗不会新建或回退需求；需要补充用料时另行手工提需。"
         type="warning"
         :closable="false"
       />
@@ -289,12 +294,14 @@
 </template>
 
 <script setup lang="ts">
+import { MATERIAL_LOSS_PURPOSE_LABELS } from '@company/constants';
 import { computed, onActivated, onMounted, reactive, ref } from 'vue';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import type {
   MaterialLossBatchOption,
   MaterialLossCandidateItem,
   MaterialLossItem,
+  MaterialLossPurpose,
   ScrapStatus,
 } from '@company/contracts';
 import PaginationFooter from '../../components/PaginationFooter.vue';
@@ -309,7 +316,7 @@ import { formatDateTimeForDisplay } from '../../utils/date';
 defineOptions({ name: 'ScrapsPage' });
 const query = reactive<{ page: number; pageSize: number; keyword: string; status?: ScrapStatus }>({
   page: 1,
-  pageSize: 20,
+  pageSize: 10,
   keyword: '',
 });
 const rows = ref<MaterialLossItem[]>([]);
@@ -425,9 +432,9 @@ async function submitCreate() {
 async function confirmLoss(row: MaterialLossItem) {
   try {
     await RouteMessageBox.confirm(
-      `确认 ${row.itemCode} 损耗 ${quantity(row.scrapQuantity)} ${row.unit}？确认后将自动生成完全等量的损耗补料需求，产品生产授权上限保持不变。`,
+      `确认 ${row.itemCode} 损耗 ${quantity(row.scrapQuantity)} ${row.unit}？确认后记录损坏事实并扣减可退额度，需要补料时请另行提需。`,
       '确认生产领料损耗',
-      { type: 'warning', confirmButtonText: '确认并生成补料' },
+      { type: 'warning', confirmButtonText: '确认损耗' },
     );
     pendingAction.value = `confirm:${row.id}`;
     const intent = confirmIntents.get(row.id) ?? useIdempotentIntent();
@@ -442,7 +449,7 @@ async function confirmLoss(row: MaterialLossItem) {
       (key) => warehouseApi.confirmMaterialLoss(row.id, row.version, key),
     );
     confirmIntents.delete(row.id);
-    EMessage.success('损耗已确认，等量补料需求已生成');
+    EMessage.success('损耗已确认，如需补充物料请另行提需');
     await loadRows();
   } catch (error) {
     if (error !== 'cancel' && error !== 'close') EMessage.error(error, '确认损耗失败');

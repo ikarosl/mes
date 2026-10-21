@@ -9,7 +9,6 @@ import { ProductDomainError } from '../domain/product.errors.js';
 import { mapProductWriteError } from './mysql-product.shared.js';
 
 type Db = Pool | PoolConnection;
-type EntityRow = RowDataPacket & { id: number; status?: number | string; is_deleted?: number };
 import type {
   ProcessRouteListItem,
   ProcessRouteOption,
@@ -161,12 +160,6 @@ export class MysqlProcessRouteRepository implements ProcessRouteRepository {
       if (status !== current && !allowed[current].includes(status)) {
         throw new ProductDomainError('INVALID_ROUTE', `工艺路线不能从 ${current} 变更为 ${status}`);
       }
-      if (status !== 'enabled' && (await this.isDefaultRouteInUse(connection, id))) {
-        throw new ProductDomainError(
-          'DEFAULT_ROUTE_IN_USE',
-          '作为产品默认路线的工艺路线不能停用或归档',
-        );
-      }
       if (status === 'enabled') {
         const [[steps]] = await connection.query<(RowDataPacket & { count: number })[]>(
           'SELECT COUNT(*) count FROM process_route_steps WHERE route_id=? AND is_deleted=0 AND status=1',
@@ -218,13 +211,6 @@ export class MysqlProcessRouteRepository implements ProcessRouteRepository {
     );
     if (!row) throw new ProductDomainError('NOT_FOUND', '工艺路线不存在');
     return row;
-  }
-  private async isDefaultRouteInUse(db: Db, routeId: string): Promise<boolean> {
-    const [[product]] = await db.query<EntityRow[]>(
-      'SELECT id FROM products WHERE default_route_id=? AND is_deleted=0 LIMIT 1 FOR UPDATE',
-      [routeId],
-    );
-    return Boolean(product);
   }
   private async audit(
     db: Db,

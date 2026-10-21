@@ -18,6 +18,7 @@ import {
   BatchIdParamDto,
   ConfigureMaterialDemandsDto,
   MaterialDemandManagementQueryDto,
+  ProductionMaterialOptionsQueryDto,
 } from './dto/production-material.dto.js';
 
 @Controller('production')
@@ -25,8 +26,20 @@ import {
 export class ProductionMaterialDemandController {
   constructor(private readonly service: ProductionMaterialDemandService) {}
 
+  @Get('material-demands/material-options')
+  @RequirePermission([
+    PERMISSIONS.production.materialDemands.view,
+    PERMISSIONS.production.tasks.view,
+  ])
+  materialOptions(@Query() query: ProductionMaterialOptionsQueryDto) {
+    return this.service.listMaterialOptions(query);
+  }
+
   @Get('material-demands')
-  @RequirePermission(PERMISSIONS.production.materialDemands.view)
+  @RequirePermission([
+    PERMISSIONS.production.materialDemands.view,
+    PERMISSIONS.production.tasks.view,
+  ])
   list(@Query() query: MaterialDemandManagementQueryDto) {
     return this.service.listManagement({
       page: query.page,

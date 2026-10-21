@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { ProductionMaterialOutboundService } from '../production-material-outbound.service.js';
 import { ProductionMaterialService } from '../production-material.service.js';
 import { CREATE_MATERIAL_ALLOCATION_IDEMPOTENCY_SCOPE } from '../idempotency/production-idempotency-scopes.contract.js';
 import { CREATE_MATERIAL_OUTBOUND_IDEMPOTENCY_SCOPE } from '../idempotency/production-idempotency-scopes.contract.js';
@@ -10,7 +11,7 @@ const context = {
   userAgent: null,
   idempotencyKey: 'key-1',
 };
-describe('ProductionMaterialService', () => {
+describe('Production material application services', () => {
   it('enriches outbound list operators with one bulk identity lookup', async () => {
     const rows = [
       { outboundId: '1', operatorId: '7', createdById: '8' },
@@ -27,10 +28,9 @@ describe('ProductionMaterialService', () => {
         { id: '8', displayName: '创建人' },
       ]),
     };
-    const service = new ProductionMaterialService(
+    const service = new ProductionMaterialOutboundService(
       repository as never,
       identity as never,
-      {} as never,
       {} as never,
     );
 
@@ -58,7 +58,6 @@ describe('ProductionMaterialService', () => {
     const service = new ProductionMaterialService(
       repository as never,
       {} as never,
-      {} as never,
       executor as never,
     );
     await service.createAllocations(
@@ -84,7 +83,6 @@ describe('ProductionMaterialService', () => {
     const executor = { execute: vi.fn() };
     const service = new ProductionMaterialService(
       repository as never,
-      {} as never,
       {} as never,
       executor as never,
     );
@@ -117,10 +115,9 @@ describe('ProductionMaterialService', () => {
         isReplay: false,
       })),
     };
-    const service = new ProductionMaterialService(
+    const service = new ProductionMaterialOutboundService(
       repository as never,
       { listUserReferencesByIds: vi.fn().mockResolvedValue([]) } as never,
-      {} as never,
       executor as never,
     );
     await service.createOutbound(
@@ -150,10 +147,9 @@ describe('ProductionMaterialService', () => {
         cancelledById: '7',
       }),
     };
-    const service = new ProductionMaterialService(
+    const service = new ProductionMaterialOutboundService(
       repository as never,
       { listUserReferencesByIds: vi.fn().mockResolvedValue([]) } as never,
-      {} as never,
       {} as never,
     );
 

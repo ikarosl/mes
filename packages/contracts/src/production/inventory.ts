@@ -10,6 +10,7 @@ import type {
   InventorySourceType,
   InventoryTransactionType,
   DemandType,
+  MaterialLossPurpose,
 } from './statuses.js';
 
 export interface ReturnOrderQuery extends PageQuery {
@@ -37,6 +38,8 @@ export interface ReturnOrderCandidateItem {
   batchCode: string;
   confirmedOutboundQuantity: string;
   occupiedReturnQuantity: string;
+  /** 同一分配来源待确认及已确认的领料损耗占用。 */
+  occupiedLossQuantity: string;
   returnableQuantity: string;
   unit: string;
 }
@@ -64,8 +67,6 @@ export interface ReturnOrderDetailItem {
   batchCode: string;
   returnQuantity: string;
   unit: string;
-  returnStockStatus: 'available';
-  releaseAfterReturn: true;
   inventoryTransactionId: string | null;
   remark: string | null;
 }
@@ -155,6 +156,8 @@ export interface MaterialLossItem {
   itemBatchId: string;
   batchCode: string;
   scrapScene: 'production_consumed';
+  purpose: MaterialLossPurpose;
+  closeoutId: string | null;
   scrapQuantity: string;
   unit: string;
   reasonType: string;
@@ -171,13 +174,6 @@ export interface MaterialLossItem {
   cancelledById?: string | null;
   cancelledByName?: string | null;
   cancelledAt?: string | null;
-  supplement: null | {
-    supplementId: string;
-    supplementNo: string;
-    status: 'approved' | 'fulfilled';
-    demandId: string;
-    demandQuantity: string;
-  };
 }
 
 export type CancelMaterialLossPayload = ReasonedVersionedCommand;
@@ -206,7 +202,6 @@ export interface StockCheckCandidateQuery extends PageQuery {
 }
 
 export interface CreateStockCheckPayload {
-  checkNo?: string | null;
   remark?: string | null;
   details: Array<{
     itemBatchId: string;
@@ -266,6 +261,8 @@ export interface StockCheckOrderItem {
 }
 
 export interface InventoryBatchQuery extends PageQuery {
+  itemKind?: 'material' | 'finished_product';
+  sourceType?: InventorySourceType;
   keyword?: string;
   batchCode?: string;
   batchStatus?: InventoryBatchStatus;
@@ -296,6 +293,8 @@ export interface InventoryMaterialDemandTraceQuery extends PageQuery {
 
 export interface InventoryMaterialDemandTraceItem {
   demandId: string;
+  pendingCorrectionId?: string | null;
+  replacesDemandId?: string | null;
   itemId: string;
   materialVariantId: string;
   materialVariantCode: string;
@@ -311,15 +310,16 @@ export interface InventoryMaterialDemandTraceItem {
   supplementId: string | null;
   supplementNo: string | null;
   abnormalDispositionNo: string | null;
-  materialLossScrapNo: string | null;
   createdAt: string;
 }
 
 export interface InventoryBatchItem {
   itemBatchId: string;
-  itemId: string;
-  materialVariantId: string;
-  materialVariantCode: string;
+  itemKind: 'material' | 'finished_product';
+  itemId: string | null;
+  productId: string | null;
+  materialVariantId: string | null;
+  materialVariantCode: string | null;
   itemCode: string;
   itemName: string;
   unit: string;
@@ -330,13 +330,28 @@ export interface InventoryBatchItem {
   onHandAvailableQuantity: string;
   reservedQuantity: string;
   availableToAllocateQuantity: string;
+  sourceWorkOrderId: string | null;
+  sourceWorkOrderNo: string | null;
+  sourceProductionBatchId: string | null;
+  sourceProductionBatchNo: string | null;
   inboundSources: Array<{
+    inboundDetailId: string;
     inboundId: string;
     inboundNo: string;
     provider: string | null;
     inboundAt: string;
     inboundQuantity: string;
     inventoryTransactionId: string;
+    sourceType: InventorySourceType;
+    outputRevisionId: string | null;
+    outputRevisionNo: number | null;
+    productionOutputAllocationId: string | null;
+    productionBatchId: string | null;
+    workOrderId: string | null;
+    procurementReceiptLineId: string | null;
+    procurementReceiptRevisionId: string | null;
+    procurementInspectionId: string | null;
+    procurementAllocationId: string | null;
   }>;
 }
 

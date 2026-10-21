@@ -25,11 +25,14 @@ describe('useProductionTrace', () => {
       {
         keyword: 'IB-001',
         page: 1,
-        pageSize: 20,
+        pageSize: 10,
       },
-      { skipErrorHandling: true },
+      { skipErrorHandling: true, signal: expect.any(AbortSignal) },
     );
-    expect(api.getProductionTrace).toHaveBeenCalledWith('9', { skipErrorHandling: true });
+    expect(api.getProductionTrace).toHaveBeenCalledWith('9', {
+      skipErrorHandling: true,
+      signal: expect.any(AbortSignal),
+    });
     expect(state.selectedBatchId.value).toBe('9');
   });
 });

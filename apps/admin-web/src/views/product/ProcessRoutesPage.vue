@@ -301,7 +301,7 @@ const toggleStatus = async (row: ProcessRouteListItem): Promise<void> => {
   const text = next === 'enabled' ? '启用' : '停用';
   try {
     await ElMessageBox.confirm(
-      `确定${text}路线"${row.routeName}（${row.versionNo}）"吗？${next === 'enabled' ? '启用后该版本的步骤、SOP 和规则快照将不可修改。' : ''}`,
+      `确定${text}路线"${row.routeName}（${row.versionNo}）"吗？${next === 'enabled' ? '启用后，该版本的工序、SOP 和工艺要求不能修改；如需调整，请创建新版本。' : ''}`,
       `${text}工艺路线`,
       { type: 'warning' },
     );
@@ -355,7 +355,7 @@ const submitSteps = async (steps: StepRow[]): Promise<void> => {
         remark: step.remark || null,
       })),
     );
-    EMessage.success('工序顺序和规则快照已保存');
+    EMessage.success('工序顺序和工艺要求已保存');
     stepsDialogVisible.value = false;
     await loadRoutes();
   } catch (error) {

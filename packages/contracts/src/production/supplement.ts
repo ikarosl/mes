@@ -14,15 +14,13 @@ export interface ProductionSupplementCandidateItem {
   requirementBasisId: string;
   productMaterialId: string;
   itemId: string;
-  materialVariantId: string;
-  materialVariantCode: string;
+  lockedMaterialVariantId: string;
+  lockedMaterialVariantCode: string;
   variants: ProductionSupplementVariantCandidate[];
   itemCode: string;
   itemName: string;
   quantityPerUnit: string;
   unit: string;
-  isKeyMaterial: boolean;
-  needBatchRecord: boolean;
   plannedOutputQuantity: string;
   normalDemandQuantity: string;
 }
@@ -32,11 +30,6 @@ export interface ApproveScrapSupplementLinePayload {
   requirementBasisId: string;
   materialVariantId: string;
   supplementQuantity: number;
-}
-
-export interface ApproveScrapSupplementPayload extends VersionedCommand {
-  details: ApproveScrapSupplementLinePayload[];
-  remark?: string | null;
 }
 
 export interface ProductionScrapSupplementPlanLineItem {
@@ -58,7 +51,7 @@ export interface ProductionScrapSupplementPlanItem {
   dispositionId: string;
   productionBatchId: string;
   sourceStepRecordId: string;
-  sourceReportId: string;
+  sourceReportId: string | null;
   status: 'draft' | 'confirmed';
   confirmedSupplementId: string | null;
   remark: string | null;
@@ -98,7 +91,7 @@ export interface ProductionMaterialSupplementItem {
   scrapRecordId: string;
   productionBatchId: string;
   stepRecordId: string;
-  status: 'approved' | 'fulfilled';
+  status: 'approved' | 'fulfilled' | 'cancelled';
   remark: string | null;
   createdAt: string;
   demands: ProductionMaterialSupplementDemandItem[];
@@ -130,7 +123,7 @@ export interface ApproveScrapSupplementResult {
   disposition: BatchStepAbnormalDispositionItem;
   scrapRecord: {
     scrapRecordId: string;
-    sourceReportId: string;
+    sourceReportId: string | null;
     scrapQuantity: string;
     unit: string;
   };

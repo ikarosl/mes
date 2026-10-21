@@ -1,0 +1,357 @@
+import { allocationRemaining } from './receipt-allocation.query.js';
+import type {
+  PageResult,
+  ProcurementReceiptQuery,
+  ProcurementReceiptItem,
+  ProcurementReceiptLineListItem,
+  ProcurementInboundReleaseQuery,
+  ProcurementInboundReleaseItem,
+  ProcurementInboundInspectionQuery,
+  ProcurementInboundInspectionLineItem,
+  ProcurementInboundInspectionCaseSummary,
+} from '@company/contracts';
+import type { MaterialVariantQuery } from '../../../product/public.js';
+import type { Db } from '../mysql-purchase-order.shared.js';
+import {
+  type ReadRow,
+  RECEIPT_COLUMNS,
+  receiptSelect,
+  lineSelect,
+  readCurrentRounds,
+  LINE_COLUMNS,
+  RECEIPT_LIST_SOURCE_COLUMNS,
+  RECEIPT_LINE_LIST_ORDER,
+  mapReceiptListSource,
+  mapReceipt,
+  mapRound,
+  readReceiptSuppliers,
+  pageInput,
+  slots,
+  text,
+  nullableText,
+  date,
+} from './receipt-read.shared.js';
+import {
+  RECEIPT_UNPROCESSED_QUANTITY,
+  receiptPhysicalQuantityJoins,
+  readReceiptQuantitySummaries,
+} from './receipt-quantities.query.js';
+
+const CURRENT_RECEIPT_LINE_STAGE = `CASE
+  WHEN ${RECEIPT_UNPROCESSED_QUANTITY}=0 THEN 'completed'
+  WHEN current_round.trigger_type='manual_rejection' THEN 'manual_rejection'
+  ELSE current_round.status END`;
+
+const RECEIPT_KEYWORD_LINE_SELECT = `SELECT 1 FROM procurement_receipt_line search_line
+  JOIN procurement_order_line search_order_line ON search_order_line.id=search_line.purchase_order_line_id
+  JOIN procurement_supplier search_supplier ON search_supplier.id=search_order_line.supplier_id
+  JOIN materials search_material ON search_material.id=search_line.item_id
+  WHERE search_line.receipt_id=r.id AND (
+    search_supplier.supplier_name LIKE ? OR search_material.material_name LIKE ?
+    OR search_order_line.item_code_snapshot LIKE ?
+    OR search_order_line.material_variant_code_snapshot LIKE ?
+  )`;
+
+function filters(
+  query: { keyword?: string; supplierId?: string; purchaseOrderId?: string },
+  line = false,
+) {
+  const where = ['1=1'];
+  const params: Array<string | number> = [];
+  if (query.supplierId) {
+    where.push(
+      line
+        ? 'pol.supplier_id=?'
+        : 'EXISTS(SELECT 1 FROM procurement_receipt_line filtered_line JOIN procurement_order_line filtered_order_line ON filtered_order_line.id=filtered_line.purchase_order_line_id WHERE filtered_line.receipt_id=r.id AND filtered_order_line.supplier_id=?)',
+    );
+    params.push(query.supplierId);
+  }
+  if (query.purchaseOrderId) {
+    where.push('po.id=?');
+    params.push(query.purchaseOrderId);
+  }
+  if (query.keyword?.trim()) {
+    if (line)
+      where.push(
+        '(r.receipt_no LIKE ? OR po.purchase_no LIKE ? OR supplier.supplier_name LIKE ? OR material.material_name LIKE ? OR pol.item_code_snapshot LIKE ? OR pol.material_variant_code_snapshot LIKE ?)',
+      );
+    else
+      where.push(
+        `(r.receipt_no LIKE ? OR po.purchase_no LIKE ? OR EXISTS(${RECEIPT_KEYWORD_LINE_SELECT}))`,
+      );
+    params.push(...Array<string>(6).fill(`%${query.keyword.trim()}%`));
+  }
+  return { where, params };
+}
+export async function listReceipts(
+  db: Db,
+  query: ProcurementReceiptQuery,
+): Promise<PageResult<ProcurementReceiptItem>> {
+  const { where, params } = filters(query);
+  if (query.awaitingAcceptance === 'yes')
+    where.push(
+      'r.is_voided=0',
+      "EXISTS(SELECT 1 FROM procurement_receipt_line pending_line JOIN procurement_receipt_round pending_round ON pending_round.id=pending_line.current_round_id WHERE pending_line.receipt_id=r.id AND pending_round.status='awaiting_acceptance')",
+    );
+  const { page, pageSize } = pageInput(query);
+  const [[count]] = await db.query<ReadRow[]>(
+    `${receiptSelect('COUNT(*) total')} WHERE ${where.join(' AND ')}`,
+    params,
+  );
+  const [rows] = await db.query<ReadRow[]>(
+    `${receiptSelect(RECEIPT_COLUMNS + ',(SELECT COUNT(*) FROM procurement_receipt_line line WHERE line.receipt_id=r.id) line_count')}
+    WHERE ${where.join(' AND ')} ORDER BY r.received_at DESC,r.id DESC LIMIT ? OFFSET ?`,
+    [...params, pageSize, (page - 1) * pageSize],
+  );
+  const suppliers = await readReceiptSuppliers(
+    db,
+    rows.map((row) => text(row.id)),
+  );
+  return {
+    items: rows.map((row) => mapReceipt(row, suppliers.get(text(row.id)) ?? [])),
+    total: Number(count?.total ?? 0),
+    page,
+    pageSize,
+  };
+}
+
+export async function listReceiptLines(
+  db: Db,
+  query: ProcurementReceiptQuery,
+): Promise<PageResult<ProcurementReceiptLineListItem>> {
+  const { where, params } = filters(query, true);
+  if (query.awaitingAcceptance === 'yes')
+    where.push(
+      'r.is_voided=0',
+      "EXISTS(SELECT 1 FROM procurement_receipt_round pending_round WHERE pending_round.id=line.current_round_id AND pending_round.status='awaiting_acceptance')",
+    );
+  const { page, pageSize } = pageInput(query);
+  const [[count]] = await db.query<ReadRow[]>(
+    `${lineSelect('COUNT(*) total')} WHERE ${where.join(' AND ')}`,
+    params,
+  );
+  const [rows] = await db.query<ReadRow[]>(
+    `${lineSelect(RECEIPT_LIST_SOURCE_COLUMNS + ',line.id,line.supplier_batch_code,r.received_at')}
+    WHERE ${where.join(' AND ')}
+    ORDER BY ${RECEIPT_LINE_LIST_ORDER} LIMIT ? OFFSET ?`,
+    [...params, pageSize, (page - 1) * pageSize],
+  );
+  const ids = rows.map((row) => text(row.id));
+  const currentRounds = await readCurrentRounds(db, ids);
+  const quantities = await readReceiptQuantitySummaries(db, ids, currentRounds);
+  return {
+    items: rows.map((row) => {
+      const id = text(row.id);
+      const currentRound = currentRounds.get(id);
+      const summary = quantities.get(id);
+      if (!currentRound || !summary) throw new Error('到货明细缺少当前轮次或数量投影');
+      return {
+        ...mapReceiptListSource(row),
+        id,
+        supplierBatchCode: nullableText(row.supplier_batch_code),
+        receivedAt: date(row.received_at),
+        currentRound: mapRound(currentRound),
+        quantities: summary,
+      };
+    }),
+    total: Number(count?.total ?? 0),
+    page,
+    pageSize,
+  };
+}
+
+export async function listInboundReleases(
+  db: Db,
+  variants: MaterialVariantQuery,
+  query: ProcurementInboundReleaseQuery,
+): Promise<PageResult<ProcurementInboundReleaseItem>> {
+  const { page, pageSize } = pageInput(query);
+  const empty = { items: [], total: 0, page, pageSize };
+  const [materials] = await db.query<
+    ReadRow[]
+  >(`SELECT DISTINCT line.item_id FROM procurement_receipt_line line
+    JOIN procurement_receipt receipt ON receipt.id=line.receipt_id
+    JOIN procurement_receipt_allocation allocation ON allocation.receipt_line_id=line.id AND allocation.round_id=line.current_round_id JOIN procurement_receipt_round current_round ON current_round.id=line.current_round_id WHERE current_round.status='finalized' AND allocation.disposition='inbound' AND allocation.termination_reason IS NULL
+      AND receipt.is_voided=0`);
+  const eligible = await variants.listPurchasableByMaterials({
+    materialIds: materials.map((r) => text(r.item_id)),
+  });
+  if (!eligible.length) return empty;
+  const selectedFilters = filters(query, true);
+  const where = selectedFilters.where;
+  const params = selectedFilters.params;
+  where.push(
+    `r.is_voided=0`,
+    `allocation.disposition='inbound'`,
+    `allocation.termination_reason IS NULL`,
+    `inspection.release_decision='released'`,
+    `current_round.status='finalized'`,
+    `allocation.round_id=current_round.id`,
+    `current_round.inspection_id=inspection.id`,
+    `acceptance.round_id=current_round.id`,
+    `qc.status='completed'`,
+    `(${allocationRemaining('allocation.id', 'allocation.quantity')})>0`,
+    `line.material_variant_id IN (${slots(eligible.map((v) => v.id))})`,
+  );
+  params.push(...eligible.map((v) => v.id));
+  if (query.receiptLineId) {
+    where.push('line.id=?');
+    params.push(query.receiptLineId);
+  }
+  if (query.allocationIds) {
+    if (!query.allocationIds.length) return empty;
+    where.push(`allocation.id IN (${slots(query.allocationIds)})`);
+    params.push(...query.allocationIds);
+  }
+  const select = (columns: string) => `SELECT ${columns} FROM procurement_receipt_line line
+    JOIN procurement_receipt r ON r.id=line.receipt_id
+    JOIN procurement_order po ON po.id=line.purchase_order_id
+    JOIN procurement_order_line pol ON pol.id=line.purchase_order_line_id
+    JOIN procurement_supplier supplier ON supplier.id=pol.supplier_id
+    JOIN materials material ON material.id=line.item_id
+    JOIN procurement_receipt_round current_round ON current_round.id=line.current_round_id
+    JOIN procurement_receipt_allocation allocation ON allocation.receipt_line_id=line.id AND allocation.round_id=current_round.id
+    JOIN procurement_receipt_acceptance acceptance ON acceptance.id=allocation.acceptance_id
+    JOIN quality_inspection_record inspection ON inspection.id=acceptance.inspection_record_id AND inspection.receipt_line_id=line.id
+    JOIN quality_inspection_case qc ON qc.id=inspection.case_id`;
+  const [[count]] = await db.query<ReadRow[]>(
+    `${select('COUNT(*) total')} WHERE ${where.join(' AND ')}`,
+    params,
+  );
+  const [rows] = await db.query<ReadRow[]>(
+    `${select(LINE_COLUMNS + ',r.received_at,current_round.id round_id,current_round.version round_version,acceptance.id acceptance_id,allocation.id allocation_id,acceptance.after_receipt_revision_id receipt_revision_id,inspection.id inspection_id,qc.id inspection_case_id,' + allocationRemaining('allocation.id', 'allocation.quantity') + ' quantity')}
+    WHERE ${where.join(' AND ')} ORDER BY r.received_at,line.id,allocation.id LIMIT ? OFFSET ?`,
+    [...params, pageSize, (page - 1) * pageSize],
+  );
+  return {
+    items: rows.map((row) => ({
+      receiptId: text(row.receipt_id),
+      receiptNo: text(row.receipt_no),
+      receiptLineId: text(row.id),
+      receiptLineVersion: Number(row.version),
+      receiptReceivedAt: date(row.received_at),
+      receiptPurchaseNo: text(row.purchase_no),
+      roundId: text(row.round_id),
+      roundVersion: Number(row.round_version),
+      purchaseOrderId: text(row.purchase_order_id),
+      purchaseNo: text(row.purchase_no),
+      purchaseOrderLineId: text(row.purchase_order_line_id),
+      acceptanceId: text(row.acceptance_id),
+      allocationId: text(row.allocation_id),
+      supplierId: text(row.supplier_id),
+      supplierName: text(row.supplier_name),
+      itemId: text(row.item_id),
+      itemCode: text(row.item_code_snapshot),
+      itemName: text(row.material_name),
+      materialVariantId: text(row.material_variant_id),
+      materialVariantCode: text(row.material_variant_code_snapshot),
+      unit: text(row.unit_snapshot),
+      supplierBatchCode: nullableText(row.supplier_batch_code),
+      receiptRevisionId: text(row.receipt_revision_id),
+      inspectionId: text(row.inspection_id),
+      inspectionCaseId: text(row.inspection_case_id),
+      approvedRemainingQuantity: text(row.quantity),
+    })),
+    total: Number(count?.total ?? 0),
+    page,
+    pageSize,
+  };
+}
+
+export async function listInspections(
+  db: Db,
+  query: ProcurementInboundInspectionQuery,
+): Promise<PageResult<ProcurementInboundInspectionLineItem>> {
+  const { page, pageSize } = pageInput(query);
+  const { where, params } = filters(query, true);
+  where.push("current_round.status NOT IN('superseded','voided')", 'r.is_voided=0');
+  if (query.stage) {
+    where.push(`${CURRENT_RECEIPT_LINE_STAGE}=?`);
+    params.push(query.stage);
+  }
+  if (query.receiptLineIds) {
+    if (!query.receiptLineIds.length) return { items: [], total: 0, page, pageSize };
+    where.push(`line.id IN (${slots(query.receiptLineIds)})`);
+    params.push(...query.receiptLineIds);
+  }
+  const select = (columns: string) =>
+    `${lineSelect(columns)} JOIN procurement_receipt_round current_round
+      ON current_round.id=line.current_round_id AND current_round.receipt_line_id=line.id
+      ${query.stage ? receiptPhysicalQuantityJoins() : ''}`;
+  const [[count]] = await db.query<ReadRow[]>(
+    `${select('COUNT(*) total')} WHERE ${where.join(' AND ')}`,
+    params,
+  );
+  const [rows] = await db.query<ReadRow[]>(
+    `SELECT ${RECEIPT_LIST_SOURCE_COLUMNS},line.id,
+      current_round.id active_round_id,current_round.round_no active_round_no,
+      current_round.status active_round_status,current_round.trigger_type active_round_trigger_type,
+      ${CURRENT_RECEIPT_LINE_STAGE} stage,${RECEIPT_UNPROCESSED_QUANTITY} unprocessed_quantity,
+      current_case.id case_id,current_case.incoming_round_id case_round_id,
+      current_case.status case_status,
+      source_round.round_no case_round_no,
+      adopted_record.id adopted_inspection_id,adopted_record.release_decision
+    FROM procurement_receipt_line line
+    JOIN procurement_receipt r ON r.id=line.receipt_id
+    JOIN procurement_order po ON po.id=line.purchase_order_id
+    JOIN procurement_order_line pol ON pol.id=line.purchase_order_line_id
+    JOIN procurement_supplier supplier ON supplier.id=pol.supplier_id
+    JOIN materials material ON material.id=line.item_id
+    JOIN procurement_receipt_round current_round
+      ON current_round.id=line.current_round_id AND current_round.receipt_line_id=line.id
+    ${receiptPhysicalQuantityJoins()}
+    LEFT JOIN quality_inspection_record adopted_record
+      ON adopted_record.id=current_round.inspection_id AND adopted_record.receipt_line_id=line.id
+    LEFT JOIN quality_inspection_case current_case
+      ON current_case.receipt_line_id=line.id AND current_case.source_kind='incoming'
+      AND (current_case.id=adopted_record.case_id OR
+        (adopted_record.id IS NULL AND current_case.incoming_round_id=current_round.id
+          AND current_case.status='reviewing'))
+    LEFT JOIN procurement_receipt_round source_round
+      ON source_round.id=current_case.incoming_round_id AND source_round.receipt_line_id=line.id
+    WHERE ${where.join(' AND ')}
+    ORDER BY ${RECEIPT_LINE_LIST_ORDER} LIMIT ? OFFSET ?`,
+    [...params, pageSize, (page - 1) * pageSize],
+  );
+  return {
+    items: rows.map((row) => {
+      const receiptLineId = text(row.id);
+      const currentCase: ProcurementInboundInspectionCaseSummary | null =
+        row.case_id === null
+          ? null
+          : {
+              id: text(row.case_id),
+              status: row.case_status as ProcurementInboundInspectionCaseSummary['status'],
+              inspection:
+                row.adopted_inspection_id === null
+                  ? null
+                  : {
+                      id: text(row.adopted_inspection_id),
+                      releaseDecision: row.release_decision as NonNullable<
+                        ProcurementInboundInspectionCaseSummary['inspection']
+                      >['releaseDecision'],
+                    },
+            };
+      return {
+        ...mapReceiptListSource(row),
+        receiptLineId,
+        stage: row.stage as ProcurementInboundInspectionLineItem['stage'],
+        currentRound: {
+          roundNo: Number(row.active_round_no),
+          status:
+            row.active_round_status as ProcurementInboundInspectionLineItem['currentRound']['status'],
+          triggerType:
+            row.active_round_trigger_type as ProcurementInboundInspectionLineItem['currentRound']['triggerType'],
+        },
+        quantities: { unprocessedQuantity: String(Number(row.unprocessed_quantity)) },
+        currentCase,
+        currentCaseRoundNo: currentCase === null ? null : Number(row.case_round_no),
+        isInherited:
+          currentCase?.inspection != null && text(row.case_round_id) !== text(row.active_round_id),
+      };
+    }),
+    total: Number(count?.total ?? 0),
+    page,
+    pageSize,
+  };
+}

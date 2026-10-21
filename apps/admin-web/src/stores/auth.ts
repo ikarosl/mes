@@ -34,7 +34,7 @@ export const useAuthStore = defineStore('auth', () => {
     channel?.postMessage('logout');
     await client.logout();
   };
-  const can = (permission?: string) =>
+  const can = (permission?: string | readonly string[]) =>
     permissionMatches(session.value?.user.permissions ?? [], permission);
   return {
     session,

@@ -43,8 +43,7 @@ export class ProductDomainExceptionFilter implements ExceptionFilter {
 
 const statusFor = (code: ProductErrorCode): number => {
   if (code === 'NOT_FOUND') return HttpStatus.NOT_FOUND;
-  if (code === 'CONFLICT' || code === 'ROUTE_IN_USE' || code === 'DEFAULT_ROUTE_IN_USE')
-    return HttpStatus.CONFLICT;
+  if (code === 'CONFLICT' || code === 'ROUTE_IN_USE') return HttpStatus.CONFLICT;
   if (code === 'STORAGE_UNAVAILABLE') return HttpStatus.BAD_GATEWAY;
   return HttpStatus.BAD_REQUEST;
 };

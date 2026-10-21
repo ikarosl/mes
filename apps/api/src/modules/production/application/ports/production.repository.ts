@@ -1,5 +1,4 @@
 import type {
-  // BatchStepRecordItem,
   CreateProductionBatchPayload,
   CreateWorkOrderPayload,
   PageResult,
@@ -7,6 +6,9 @@ import type {
   ProductionBatchCancellationCheck,
   ProductionBatchItem,
   ProductionBatchQuery,
+  ProductionBatchStartRecord,
+  ProductionBatchStepRecords,
+  ProductionStepCommandResult,
   UpdateProductionBatchPayload,
   WorkOrderDetail,
   WorkOrderItem,
@@ -20,6 +22,11 @@ import type { ProcessRouteSnapshot, ProductionProductSnapshot } from '../../../p
 export interface ResolvedBatchStepOverride {
   routeStepId: string;
   actualSop: { id: string; fileName: string; objectKey: string; versionNo: string } | null;
+}
+
+export interface WorkOrderReleaseContext {
+  productId: string;
+  workOrderOwnerId: string;
 }
 
 export abstract class ProductionRepository {
@@ -39,7 +46,7 @@ export abstract class ProductionRepository {
   ): Promise<WorkOrderDetail>;
   abstract withWorkOrderReleaseTransaction<T>(
     workOrderId: string,
-    action: (workOrderProductId: string) => Promise<T>,
+    action: (workOrder: WorkOrderReleaseContext) => Promise<T>,
   ): Promise<T>;
   abstract releaseWorkOrder(
     id: string,
@@ -66,11 +73,12 @@ export abstract class ProductionRepository {
   ): Promise<WorkOrderDetail>;
   abstract listBatches(query: ProductionBatchQuery): Promise<PageResult<ProductionBatchItem>>;
   abstract getBatch(id: string): Promise<ProductionBatchDetail>;
+  abstract getBatchStepRecords(id: string): Promise<ProductionBatchStepRecords>;
+  abstract getBatchStartRecord(id: string): Promise<ProductionBatchStartRecord | null>;
   abstract getBatchCancellationCheck(id: string): Promise<ProductionBatchCancellationCheck>;
-  abstract listWorkOrderBatches(workOrderId: string): Promise<ProductionBatchItem[]>;
   abstract withBatchCreationTransaction<T>(
     workOrderId: string,
-    action: (workOrderProductId: string) => Promise<T>,
+    action: (workOrderProductId: string, orderType: ProductionBatchItem['orderType']) => Promise<T>,
   ): Promise<T>;
   abstract createBatch(
     workOrderId: string,
@@ -97,7 +105,7 @@ export abstract class ProductionRepository {
     actualSop:
       { id: string; fileName: string; objectKey: string; versionNo: string } | null | undefined,
     audit: CommandContext,
-  ): Promise<ProductionBatchDetail>;
+  ): Promise<ProductionStepCommandResult>;
   abstract getBatchProductId(batchId: string): Promise<string>;
   abstract getWorkOrderProductId(workOrderId: string): Promise<string>;
 }

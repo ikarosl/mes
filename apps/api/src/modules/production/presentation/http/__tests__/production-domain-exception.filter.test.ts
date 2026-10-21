@@ -48,16 +48,10 @@ describe('ProductionDomainExceptionFilter', () => {
     );
   });
 
-  it('preserves structured conflict details for actionable clients', () => {
-    const details = {
-      conflictingStepRecordId: '9',
-      conflictingStepOrder: 2,
-      conflictingStepName: '装配',
-      downstreamEffectiveReportedQuantity: '10.0000',
-      correctedUpstreamNormalQuantity: '9.0000',
-    };
+  it('preserves structured dependency details for actionable clients', () => {
+    const details = { dependentRecordType: 'rework', dependentRecordId: '9' };
     const { json } = invoke(
-      new ProductionDomainError('DOWNSTREAM_QUANTITY_CONFLICT', '下游数量冲突', details),
+      new ProductionDomainError('STEP_REPORT_DEPENDENCY_CONFLICT', '报工存在下游依赖', details),
     );
 
     expect(json).toHaveBeenCalledWith(expect.objectContaining({ details }));

@@ -10,7 +10,7 @@
         :title="check.canCancel ? '请核对取消任务的全部影响' : blockerTitle"
         :description="
           check.canCancel
-            ? '提交时后端会重新校验任务状态和出库事实；任一条件变化都会拒绝取消。'
+            ? '请确认以下取消影响。若任务状态或领料记录发生变化，请重新核对。'
             : blockerDescription
         "
         :type="check.canCancel ? 'warning' : 'error'"
@@ -33,9 +33,6 @@
         </el-descriptions-item>
         <el-descriptions-item label="计划数量">
           {{ formatQuantity(batch.plannedQuantity) }}
-        </el-descriptions-item>
-        <el-descriptions-item label="完成数量">
-          {{ formatQuantity(batch.completedQuantity) }}
         </el-descriptions-item>
       </el-descriptions>
 
@@ -129,14 +126,18 @@ const canSubmit = computed(
   () => Boolean(props.check?.canCancel && trimmedReason.value) && !props.submitting,
 );
 const blockerTitle = computed(() =>
-  props.check?.blockers.includes('material_already_outbound')
-    ? '物料已经实际出库，禁止取消任务'
-    : '任务已经开工或结束，禁止取消任务',
+  props.check?.blockers.includes('pending_demand_correction')
+    ? '存在在审需求更正，不能取消任务'
+    : props.check?.blockers.includes('material_already_outbound')
+      ? '物料已经实际出库，禁止取消任务'
+      : '任务已经开工或结束，禁止取消任务',
 );
 const blockerDescription = computed(() =>
-  props.check?.blockers.includes('material_already_outbound')
-    ? '请继续完成生产闭环；第一版不提供已出库任务的强制取消。'
-    : '第一版只允许未开工且物料未实际出库的生产任务取消。',
+  props.check?.blockers.includes('pending_demand_correction')
+    ? '请先撤回或驳回需求更正审批，再核对任务取消。'
+    : props.check?.blockers.includes('material_already_outbound')
+      ? '请办理逐项收尾与提前结束审批。'
+      : '第一版只允许未开工且物料未实际出库的生产任务取消。',
 );
 
 watch(

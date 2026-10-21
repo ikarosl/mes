@@ -1,6 +1,6 @@
 import type {
-  ApproveScrapSupplementPayload,
   ApproveScrapSupplementResult,
+  ConfirmProductionScrapSupplementPlanPayload,
   ProductionScrapSupplementPlanItem,
   ProductionSupplementCandidateItem,
   SaveProductionScrapSupplementPlanPayload,
@@ -17,10 +17,9 @@ export abstract class ProductionSupplementRepository {
   abstract getCandidateContext(dispositionId: string): Promise<{
     candidates: ProductionSupplementCandidateItem[];
   }>;
-  abstract approve(
+  abstract confirmPlan(
     dispositionId: string,
-    payload: ApproveScrapSupplementPayload,
+    payload: ConfirmProductionScrapSupplementPlanPayload,
     context: CommandContext,
-    planReference?: { planId: string; version: number },
   ): Promise<ApproveScrapSupplementResult>;
 }

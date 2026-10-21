@@ -6,7 +6,6 @@ import {
   AssignProductionStepDto,
   ApproveBatchStepReworkDto,
   CompleteReworkDto,
-  ApproveScrapSupplementDto,
   ConfirmProductionScrapSupplementPlanDto,
   CancelWorkOrderDto,
   CreateProductionBatchDto,
@@ -89,38 +88,6 @@ describe('Production batch execution DTOs', () => {
     expect((await validate(fractional)).some((error) => error.property === 'normalQuantity')).toBe(
       true,
     );
-  });
-
-  it('requires at least one positive manually-entered supplement line', async () => {
-    const valid = plainToInstance(ApproveScrapSupplementDto, {
-      version: 0,
-      details: [
-        {
-          originalDemandId: '5',
-          requirementBasisId: 'basis-1',
-          materialVariantId: 'variant-1',
-          supplementQuantity: 1,
-        },
-      ],
-    });
-    expect(await validate(valid)).toEqual([]);
-    const empty = plainToInstance(ApproveScrapSupplementDto, {
-      version: 0,
-      details: [],
-    });
-    expect((await validate(empty)).some((error) => error.property === 'details')).toBe(true);
-    const invalid = plainToInstance(ApproveScrapSupplementDto, {
-      version: 0,
-      details: [
-        {
-          originalDemandId: '5',
-          requirementBasisId: 'basis-1',
-          materialVariantId: 'variant-1',
-          supplementQuantity: 0,
-        },
-      ],
-    });
-    expect((await validate(invalid))[0]?.children?.length).toBeGreaterThan(0);
   });
 });
 
@@ -321,7 +288,6 @@ describe('Production date-only DTO fields', () => {
       'create work order',
       CreateWorkOrderDto,
       {
-        workOrderNo: 'WO-001',
         orderType: 'mass_production',
         productId: '8',
         plannedQuantity: 1,
@@ -348,7 +314,6 @@ describe('Production date-only DTO fields', () => {
 
   it('requires both work-order plan dates on creation', async () => {
     const dto = plainToInstance(CreateWorkOrderDto, {
-      workOrderNo: 'WO-001',
       productId: '8',
       plannedQuantity: 1,
     });

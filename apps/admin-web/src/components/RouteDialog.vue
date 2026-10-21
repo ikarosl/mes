@@ -2,7 +2,9 @@
   <ElDialog
     v-bind="$attrs"
     :append-to-body="false"
+    :close-on-click-modal="false"
     :modal-class="resolvedModalClass"
+    :class="{ 'route-dialog-workbench': workbench }"
   >
     <slot />
     <template
@@ -34,6 +36,7 @@ defineOptions({
 
 const props = defineProps<{
   modalClass?: string;
+  workbench?: boolean;
 }>();
 
 const resolvedModalClass = computed(() =>

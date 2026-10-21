@@ -1,18 +1,18 @@
 SET @demo_actor_id = (SELECT id FROM users WHERE username = 'admin' AND deleted_at IS NULL LIMIT 1);
 
-INSERT INTO product_categories (parent_id, category_code, category_name, item_kind, status, created_by, updated_by)
+INSERT INTO item_categories (parent_id, category_code, category_name, item_kind, status, created_by, updated_by)
 SELECT NULL, 'mat-semi-001', '半成品', 'material', 1, @demo_actor_id, @demo_actor_id
-WHERE NOT EXISTS (SELECT 1 FROM product_categories WHERE category_code = 'mat-semi-001');
-SET @semi_category_id = (SELECT id FROM product_categories WHERE category_code = 'mat-semi-001');
+WHERE NOT EXISTS (SELECT 1 FROM item_categories WHERE category_code = 'mat-semi-001');
+SET @semi_category_id = (SELECT id FROM item_categories WHERE category_code = 'mat-semi-001');
 
-INSERT INTO product_categories (parent_id, category_code, category_name, item_kind, status, created_by, updated_by)
+INSERT INTO item_categories (parent_id, category_code, category_name, item_kind, status, created_by, updated_by)
 SELECT @semi_category_id, 'mat-microstrip-001', '微带电路', 'material', 1, @demo_actor_id, @demo_actor_id
-WHERE NOT EXISTS (SELECT 1 FROM product_categories WHERE category_code = 'mat-microstrip-001');
-INSERT INTO product_categories (parent_id, category_code, category_name, item_kind, status, created_by, updated_by)
+WHERE NOT EXISTS (SELECT 1 FROM item_categories WHERE category_code = 'mat-microstrip-001');
+INSERT INTO item_categories (parent_id, category_code, category_name, item_kind, status, created_by, updated_by)
 SELECT NULL, 'product-microstrip-001', '微带', 'finished_product', 1, @demo_actor_id, @demo_actor_id
-WHERE NOT EXISTS (SELECT 1 FROM product_categories WHERE category_code = 'product-microstrip-001');
-SET @material_category_id = (SELECT id FROM product_categories WHERE category_code = 'mat-microstrip-001');
-SET @product_category_id = (SELECT id FROM product_categories WHERE category_code = 'product-microstrip-001');
+WHERE NOT EXISTS (SELECT 1 FROM item_categories WHERE category_code = 'product-microstrip-001');
+SET @material_category_id = (SELECT id FROM item_categories WHERE category_code = 'mat-microstrip-001');
+SET @product_category_id = (SELECT id FROM item_categories WHERE category_code = 'product-microstrip-001');
 
 -- Names are search/display values and intentionally repeat across different codes.
 INSERT INTO products (item_code, product_name, category_id, unit, acquire_method, spec_values, status, created_by, updated_by)
@@ -44,9 +44,25 @@ WHERE NOT EXISTS (
     AND v.major_version = sample.major_version AND v.minor_version = sample.minor_version
 );
 
--- BOM references base material only. Re-loading never rewrites a locked BOM.
-INSERT INTO product_materials (product_id, material_id, quantity_per_unit, unit, is_key_material, need_batch_record, status, created_by, updated_by)
-SELECT p.id, m.id, 1, m.unit, 1, 1, 1, @demo_actor_id, @demo_actor_id
+-- Lock aggregate roots before BOM backfill; pending/approved evidence must not change.
+SELECT id FROM products
+WHERE item_code IN ('p-micro-20-30', 'p-micro-20-30-02', 'p-micro-20-30-03')
+ORDER BY id FOR UPDATE;
+
+UPDATE products p
+JOIN (
+  SELECT 'p-micro-20-30' item_code, 'm1.077.012' material_code UNION ALL
+  SELECT 'p-micro-20-30-02', 'm1.077.012' UNION ALL
+  SELECT 'p-micro-20-30-03', 'm1.077.013'
+) sample ON sample.item_code=p.item_code
+JOIN materials m ON m.material_code=sample.material_code
+SET p.version=p.version+1,p.updated_by=@demo_actor_id
+WHERE p.bom_status='draft' AND p.bom_locked_at IS NULL AND p.is_deleted=0
+  AND NOT EXISTS (SELECT 1 FROM product_materials pm WHERE pm.product_id=p.id AND pm.material_id=m.id);
+
+-- Seeded BOMs remain draft; no synthetic approval instances or decisions.
+INSERT INTO product_materials (product_id, material_id, quantity_per_unit, unit, status, created_by, updated_by)
+SELECT p.id, m.id, 1, m.unit, 1, @demo_actor_id, @demo_actor_id
 FROM (
   SELECT 'p-micro-20-30' item_code, 'm1.077.012' material_code UNION ALL
   SELECT 'p-micro-20-30-02', 'm1.077.012' UNION ALL
@@ -54,7 +70,7 @@ FROM (
 ) sample
 JOIN products p ON p.item_code = sample.item_code
 JOIN materials m ON m.material_code = sample.material_code
-WHERE p.bom_locked_at IS NULL AND NOT EXISTS (
+WHERE p.bom_status='draft' AND p.bom_locked_at IS NULL AND p.is_deleted=0 AND NOT EXISTS (
   SELECT 1 FROM product_materials pm WHERE pm.product_id = p.id AND pm.material_id = m.id
 );
 
@@ -86,8 +102,3 @@ WHERE EXISTS (SELECT 1 FROM process_routes WHERE id = @route_id AND status = 'dr
 UPDATE process_routes SET status = 'enabled', updated_by = @demo_actor_id
 WHERE id = @route_id AND status = 'draft'
   AND (SELECT COUNT(*) FROM process_route_steps WHERE route_id = @route_id AND status = 1 AND is_deleted = 0) = 2;
-
-UPDATE products SET default_route_id = @route_id, updated_by = @demo_actor_id
-WHERE item_code IN ('p-micro-20-30', 'p-micro-20-30-02', 'p-micro-20-30-03')
-  AND default_route_id IS NULL AND bom_locked_at IS NULL
-  AND EXISTS (SELECT 1 FROM process_routes WHERE id = @route_id AND status = 'enabled' AND is_deleted = 0);

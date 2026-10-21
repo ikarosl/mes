@@ -6,8 +6,12 @@
         name="supply-demand"
       />
       <el-tab-pane
-        label="库存批次"
-        name="inventory-batches"
+        label="物料批次"
+        name="material-batches"
+      />
+      <el-tab-pane
+        label="成品批次"
+        name="finished-product-batches"
       />
     </el-tabs>
     <section
@@ -89,9 +93,11 @@
           min-width="130"
           align="right"
           ><template #default="{ row }"
-            ><strong :class="row.isShortage ? 'shortage' : 'zero'">{{
-              formatQuantity(row.shortageQuantity)
-            }}</strong>
+            ><strong
+              class="shortage-link"
+              :class="row.isShortage ? 'shortage' : 'zero'"
+              >{{ formatQuantity(row.shortageQuantity) }}</strong
+            >
             {{ row.unit }}</template
           ></el-table-column
         ></el-table
@@ -123,7 +129,16 @@
           >
             <template #default="{ row }">
               <strong>{{ demandTypeLabel(row.demandType) }}</strong>
-              <div class="secondary">需求 #{{ row.demandId }}</div>
+              <div class="secondary">
+                需求 #{{ row.demandId
+                }}<span v-if="row.replacesDemandId"> · 替代 #{{ row.replacesDemandId }}</span>
+              </div>
+              <el-tag
+                v-if="row.pendingCorrectionId"
+                type="warning"
+                size="small"
+                >{{ MATERIAL_DEMAND_PROGRESS_LABELS.correction_pending }}</el-tag
+              >
             </template>
           </el-table-column>
           <el-table-column
@@ -183,26 +198,41 @@
       />
     </el-dialog>
     <section
-      v-if="viewMode === 'inventory-batches'"
+      v-if="viewMode !== 'supply-demand'"
       class="query-panel"
     >
       <el-form
         class="query-form"
         :inline="true"
-        :model="query"
-        ><el-form-item label="物料"
+        :model="batchList.query"
+        @submit.prevent="batchList.search"
+        ><el-form-item :label="batchItemLabel"
           ><el-input
-            v-model="query.keyword"
+            v-model="batchList.query.keyword"
             clearable
-            placeholder="编码或名称" /></el-form-item
-        ><el-form-item label="库存批次"
+            :placeholder="
+              isMaterialBatches ? '物料名称、版本编码或基础编码' : '成品名称、编码或来源工单'
+            "
+        /></el-form-item>
+        <el-form-item label="业务来源"
+          ><el-select
+            v-model="batchList.query.sourceType"
+            clearable
+            placeholder="全部"
+            ><el-option
+              v-for="(label, value) in INVENTORY_SOURCE_TYPE_LABELS"
+              :key="value"
+              :value="value"
+              :label="label" /></el-select
+        ></el-form-item>
+        <el-form-item label="库存批次"
           ><el-input
-            v-model="query.batchCode"
+            v-model="batchList.query.batchCode"
             clearable
             placeholder="批次号" /></el-form-item
         ><el-form-item label="批次状态"
           ><el-select
-            v-model="query.batchStatus"
+            v-model="batchList.query.batchStatus"
             clearable
             placeholder="全部"
             ><el-option
@@ -213,37 +243,56 @@
         ><el-form-item class="query-actions"
           ><el-button
             type="primary"
-            :loading="loading"
-            @click="search"
+            :loading="batchList.loading.value"
+            @click="batchList.search"
             >查询</el-button
-          ><el-button @click="reset">重置</el-button></el-form-item
+          ><el-button @click="batchList.reset">重置</el-button></el-form-item
         ></el-form
       >
     </section>
     <section
-      v-if="viewMode === 'inventory-batches'"
+      v-if="viewMode !== 'supply-demand'"
       class="table-panel"
     >
-      <TableToolbar :total="total"
+      <TableToolbar :total="batchList.total.value"
         ><template #tools
           ><el-button
             :icon="Refresh"
             text
             circle
-            :loading="loading"
-            @click="load" /></template></TableToolbar
-      ><el-table
-        v-loading="loading"
-        :data="rows"
+            :loading="batchList.loading.value"
+            @click="batchList.load" /></template
+      ></TableToolbar>
+      <el-alert
+        v-if="batchList.error.value"
+        type="error"
+        :closable="false"
+        title="列表读取失败；已显示的数据是上次成功结果，请刷新后核对。"
+      />
+      <el-table
+        :key="viewMode"
+        v-loading="batchList.loading.value"
+        :data="batchList.items.value"
+        row-key="itemBatchId"
         class="data-table"
-        empty-text="暂无库存批次"
+        :empty-text="`暂无${batchItemLabel}批次`"
         ><el-table-column
-          label="物料"
+          :label="batchItemLabel"
           min-width="210"
           ><template #default="{ row }"
             ><strong>{{ row.itemName }}</strong>
-            <div class="secondary">{{ row.itemCode }}</div>
-            <div class="variant-text">版本 {{ variantCode(row) }}</div></template
+            <div
+              v-if="isMaterialBatches"
+              class="variant-text"
+            >
+              {{ variantCode(row) }}
+            </div>
+            <div
+              v-else
+              class="secondary"
+            >
+              {{ row.itemCode }}
+            </div></template
           ></el-table-column
         ><el-table-column
           prop="batchCode"
@@ -252,14 +301,18 @@
         /><el-table-column
           label="来源"
           width="110"
-          ><template #default="{ row }">{{
-            inventorySourceTypeLabel(row.sourceType)
-          }}</template></el-table-column
+          ><template #default="{ row }">{{ sourceSummary(row) }}</template></el-table-column
         ><el-table-column
-          prop="provider"
-          label="供应方"
-          min-width="140"
-          ><template #default="{ row }">{{ row.provider || '-' }}</template></el-table-column
+          :label="isMaterialBatches ? '供应方' : '来源工单 / 任务'"
+          min-width="180"
+          ><template #default="{ row }"
+            ><template v-if="!isMaterialBatches"
+              >{{ inventoryBatchWorkOrderText(row) }}
+              <div class="secondary">
+                {{ inventoryBatchProductionBatchText(row) }}
+              </div></template
+            ><span v-else>{{ inventoryBatchProviderText(row) }}</span></template
+          ></el-table-column
         ><el-table-column
           label="账面可用量"
           width="130"
@@ -268,6 +321,7 @@
             >{{ formatQuantity(row.onHandAvailableQuantity) }} {{ row.unit }}</template
           ></el-table-column
         ><el-table-column
+          v-if="isMaterialBatches"
           label="有效预留量"
           width="130"
           align="right"
@@ -275,11 +329,12 @@
             >{{ formatQuantity(row.reservedQuantity) }} {{ row.unit }}</template
           ></el-table-column
         ><el-table-column
+          v-if="isMaterialBatches"
           label="可分配量"
           width="130"
           align="right"
           ><template #default="{ row }"
-            ><strong :class="{ zero: Number(row.availableToAllocateQuantity) <= 0 }">{{
+            ><strong :class="{ zero: inventoryAvailable(row) <= 0 }">{{
               formatQuantity(row.availableToAllocateQuantity)
             }}</strong>
             {{ row.unit }}</template
@@ -290,14 +345,14 @@
           ><template #default="{ row }"
             ><el-tag
               :type="
-                row.batchStatus === 'available' && Number(row.availableToAllocateQuantity) > 0
+                row.batchStatus === 'available' && inventoryAvailable(row) > 0
                   ? 'success'
                   : row.batchStatus === 'frozen'
                     ? 'warning'
                     : 'info'
               "
               >{{
-                row.batchStatus === 'available' && Number(row.availableToAllocateQuantity) <= 0
+                row.batchStatus === 'available' && inventoryAvailable(row) <= 0
                   ? '无可用库存'
                   : inventoryBatchStatusLabel(row.batchStatus)
               }}</el-tag
@@ -318,17 +373,17 @@
         ></el-table
       >
       <PaginationFooter
-        :total="total"
-        :current-page="query.page ?? 1"
-        :page-size="query.pageSize ?? 20"
-        @update:page-size="pageSizeChanged"
-        @page-change="handlePageChange"
+        :total="batchList.total.value"
+        :current-page="batchList.query.page ?? 1"
+        :page-size="batchList.query.pageSize ?? 10"
+        @update:page-size="batchList.changePageSize"
+        @page-change="batchList.changePage"
       />
     </section>
     <el-dialog
       v-model="detailVisible"
-      title="物料库存批次详情"
-      :width="DialogWidth.xl"
+      title="库存批次详情"
+      :width="DialogWidth.workbench"
       ><div
         v-loading="detailLoading"
         class="detail-body"
@@ -337,40 +392,98 @@
           ><el-descriptions
             :column="2"
             border
-            ><el-descriptions-item label="物料"
-              >{{ detail.itemCode }} · {{ detail.itemName }}</el-descriptions-item
-            ><el-descriptions-item label="物料版本">{{ variantCode(detail) }}</el-descriptions-item
+            ><el-descriptions-item :label="INVENTORY_ITEM_KIND_LABELS[detail.itemKind]"
+              >{{ detail.itemName
+              }}<template v-if="detail.itemKind === 'finished_product'">
+                · {{ detail.itemCode }}</template
+              ></el-descriptions-item
+            ><el-descriptions-item
+              v-if="detail.itemKind === 'material'"
+              label="物料版本"
+              >{{ variantCode(detail) }}</el-descriptions-item
             ><el-descriptions-item label="库存批次">{{ detail.batchCode }}</el-descriptions-item
-            ><el-descriptions-item label="来源">{{
-              inventorySourceTypeLabel(detail.sourceType)
-            }}</el-descriptions-item
-            ><el-descriptions-item label="供应方">{{ detail.provider || '-' }}</el-descriptions-item
+            ><el-descriptions-item label="来源">{{ sourceSummary(detail) }}</el-descriptions-item
+            ><el-descriptions-item
+              v-if="detail.itemKind === 'material'"
+              label="供应方"
+              >{{ inventoryBatchProviderText(detail) }}</el-descriptions-item
+            ><el-descriptions-item
+              v-else
+              label="来源工单 / 任务"
+              >{{ inventoryBatchWorkOrderText(detail) }} /
+              {{ inventoryBatchProductionBatchText(detail) }}</el-descriptions-item
             ><el-descriptions-item label="批次状态">{{
               inventoryBatchStatusLabel(detail.batchStatus)
             }}</el-descriptions-item
             ><el-descriptions-item label="账面可用量"
               >{{ formatQuantity(detail.onHandAvailableQuantity) }}
               {{ detail.unit }}</el-descriptions-item
-            ><el-descriptions-item label="有效预留量"
+            ><el-descriptions-item
+              v-if="detail.itemKind === 'material'"
+              label="有效预留量"
               >{{ formatQuantity(detail.reservedQuantity) }} {{ detail.unit }}</el-descriptions-item
-            ><el-descriptions-item label="可分配量"
+            ><el-descriptions-item
+              v-if="detail.itemKind === 'material'"
+              label="可分配量"
               >{{ formatQuantity(detail.availableToAllocateQuantity) }}
               {{ detail.unit }}</el-descriptions-item
             ><el-descriptions-item label="说明"
-              >数量仅由库存流水聚合，页面不可编辑</el-descriptions-item
+              >库存数量根据出入库记录自动计算，不能直接修改。<template
+                v-if="detail.itemKind === 'finished_product'"
+                >成品不参与物料分配和物料盘点。</template
+              ></el-descriptions-item
             ></el-descriptions
           >
           <h3>已确认入库来源</h3>
           <el-table
             :data="detail.inboundSources"
-            empty-text="期初来源：该批次没有 inbound_detail 对应的已确认入库单"
+            empty-text="该批次没有已确认入库单来源"
+            ><el-table-column label="入库单号"
+              ><template #default="{ row }"
+                ><el-button
+                  v-if="canOpenInbound(row.sourceType)"
+                  link
+                  type="primary"
+                  @click="openInbound(row.inboundId, row.sourceType)"
+                  >{{ row.inboundNo }}</el-button
+                ><span v-else>{{ row.inboundNo }}</span></template
+              ></el-table-column
             ><el-table-column
-              prop="inboundNo"
-              label="入库单号"
-            /><el-table-column
+              label="来源类别"
+              min-width="110"
+            >
+              <template #default="{ row }">{{
+                inventorySourceTypeLabel(row.sourceType)
+              }}</template> </el-table-column
+            ><el-table-column
+              label="来源授权"
+              min-width="170"
+            >
+              <template #default="{ row }">
+                <template v-if="row.productionOutputAllocationId"
+                  >成品授权 #{{ row.productionOutputAllocationId }}<br />任务 #{{
+                    row.productionBatchId
+                  }}</template
+                >
+                <template v-else-if="row.procurementAllocationId"
+                  >到货分配 ID：{{ row.procurementAllocationId }}<br />到货明细 #{{
+                    row.procurementReceiptLineId
+                  }}</template
+                >
+                <span v-else>入库明细 #{{ row.inboundDetailId }}</span>
+              </template> </el-table-column
+            ><el-table-column
               prop="provider"
               label="供应方"
               ><template #default="{ row }">{{ row.provider || '-' }}</template></el-table-column
+            ><el-table-column
+              label="批准清单"
+              min-width="140"
+              ><template #default="{ row }">{{
+                row.outputRevisionNo
+                  ? `第 ${row.outputRevisionNo} 版（#${row.outputRevisionId}）`
+                  : '—'
+              }}</template></el-table-column
             ><el-table-column
               label="确认时间"
               width="180"
@@ -456,15 +569,21 @@
   </div>
 </template>
 <script setup lang="ts">
-import { onActivated, onMounted, reactive, ref, watch } from 'vue';
+import { computed, onActivated, onMounted, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { Refresh } from '@element-plus/icons-vue';
-import { DEMAND_GENERATION_GROUP_TYPE_LABELS } from '@company/constants';
+import {
+  DEMAND_GENERATION_GROUP_TYPE_LABELS,
+  INVENTORY_ITEM_KIND_LABELS,
+  INVENTORY_SOURCE_TYPE_LABELS,
+  MATERIAL_DEMAND_PROGRESS_LABELS,
+} from '@company/constants';
 import type {
   DemandType,
   InventoryBatchDetailItem,
   InventoryBatchItem,
-  InventoryBatchQuery,
   InventoryMaterialDemandTraceItem,
+  InventorySourceType,
 } from '@company/contracts';
 import { productionApi } from '../../api/production';
 import TableToolbar from '../../components/TableToolbar.vue';
@@ -478,14 +597,59 @@ import {
   stockStatusLabel,
 } from '../../constants/business-status';
 import { DialogWidth } from '../../utils/dialog';
+import { useRouteAccess } from '../../composables/useRouteAccess';
+import { useLatestReadRequest } from '../../composables/requests/useLatestReadRequest';
 import { formatDateTimeForDisplay } from '../../utils/date';
 import { EMessage } from '../../utils/message';
 import { formatQuantity } from '../production/production-status';
 import { useInventoryMaterialSupplyDemandList } from './composables/useInventoryMaterialSupplyDemandList';
 import { useInventoryMaterialDemandTrace } from './composables/useInventoryMaterialDemandTrace';
-import { inventoryTransactionAssociationText } from './warehouse-inventory-presentation';
+import { useInventoryBatchList } from './composables/useInventoryBatchList';
+import {
+  inventoryBatchProductionBatchText,
+  inventoryBatchProviderText,
+  inventoryBatchWorkOrderText,
+  inventoryInboundRouteName,
+  inventoryTransactionAssociationText,
+} from './warehouse-inventory-presentation';
 defineOptions({ name: 'WarehouseInventoryPage' });
-const viewMode = ref<'supply-demand' | 'inventory-batches'>('supply-demand');
+const route = useRoute(),
+  router = useRouter();
+const { canAccessRoute } = useRouteAccess();
+const sourceSummary = (row: InventoryBatchItem) => {
+  const kinds = [...new Set(row.inboundSources.map((source) => source.sourceType))];
+  return kinds.length > 1 ? '多来源' : inventorySourceTypeLabel(kinds[0] ?? row.sourceType);
+};
+const inventoryAvailable = (row: InventoryBatchItem) =>
+  Number(
+    row.itemKind === 'finished_product'
+      ? row.onHandAvailableQuantity
+      : row.availableToAllocateQuantity,
+  );
+const canOpenInbound = (sourceType: InventorySourceType): boolean => {
+  const name = inventoryInboundRouteName(sourceType);
+  return name !== null && canAccessRoute({ name });
+};
+const openInbound = (inboundId: string, sourceType: InventorySourceType) => {
+  const name = inventoryInboundRouteName(sourceType);
+  if (!name || !canOpenInbound(sourceType)) return;
+  return router.push({ name, query: { inboundId, sourceType } });
+};
+const viewMode = ref<'supply-demand' | 'material-batches' | 'finished-product-batches'>(
+  'supply-demand',
+);
+const isMaterialBatches = computed(() => viewMode.value === 'material-batches');
+const materialBatches = useInventoryBatchList('material', () => isMaterialBatches.value);
+const finishedProductBatches = useInventoryBatchList(
+  'finished_product',
+  () => viewMode.value === 'finished-product-batches',
+);
+const batchList = computed(() =>
+  isMaterialBatches.value ? materialBatches : finishedProductBatches,
+);
+const batchItemLabel = computed(
+  () => INVENTORY_ITEM_KIND_LABELS[isMaterialBatches.value ? 'material' : 'finished_product'],
+);
 const {
   items: supplyDemandItems,
   loading: supplyDemandLoading,
@@ -511,68 +675,63 @@ const {
   changePageSize: changeDemandTracePageSize,
   changePage: changeDemandTracePage,
 } = useInventoryMaterialDemandTrace();
-const query = reactive<InventoryBatchQuery>({ page: 1, pageSize: 20 });
-const rows = ref<InventoryBatchItem[]>([]),
-  total = ref(0),
-  loading = ref(false),
-  detail = ref<InventoryBatchDetailItem | null>(null),
+const detail = ref<InventoryBatchDetailItem | null>(null),
   detailLoading = ref(false),
   detailVisible = ref(false);
-let token = 0;
-let detailToken = 0;
-const load = async () => {
-  const current = ++token;
-  loading.value = true;
-  try {
-    const r = await productionApi.listInventoryBatches({
-      ...query,
-      keyword: query.keyword?.trim() || undefined,
-      batchCode: query.batchCode?.trim() || undefined,
-    });
-    if (current === token) {
-      rows.value = r.items;
-      total.value = r.total;
-    }
-  } catch (e) {
-    EMessage.error(e, '库存批次加载失败');
-  } finally {
-    if (current === token) loading.value = false;
-  }
-};
-const search = () => {
-  query.page = 1;
-  return load();
-};
-const reset = () => {
-  query.keyword = undefined;
-  query.batchCode = undefined;
-  query.batchStatus = undefined;
-  query.page = 1;
-  return load();
-};
-const pageSizeChanged = (value: number) => {
-  query.pageSize = value;
-  query.page = 1;
-  return load();
-};
-const handlePageChange = (value: number) => {
-  query.page = value;
-  return load();
-};
-const openDetail = async (id: string) => {
-  const current = ++detailToken;
+const selectedBatchId = ref<string | null>(null);
+const detailReads = useLatestReadRequest(() => {
+  detailLoading.value = false;
+});
+const requestedBatchId = computed(() =>
+  route.name === 'warehouse-inventory' && typeof route.query.itemBatchId === 'string'
+    ? route.query.itemBatchId || null
+    : null,
+);
+let detailOpenedFromRoute = false;
+const openDetail = async (id: string, selectBatchTab = false): Promise<void> => {
+  if (!detailReads.isActive()) return;
+  selectedBatchId.value = id;
+  detailOpenedFromRoute = selectBatchTab;
   detailVisible.value = true;
   detail.value = null;
+  const request = detailReads.begin(
+    () =>
+      detailVisible.value &&
+      selectedBatchId.value === id &&
+      (!selectBatchTab || requestedBatchId.value === id),
+  );
   detailLoading.value = true;
   try {
-    const result = await productionApi.getInventoryBatch(id);
-    if (current === detailToken) detail.value = result;
+    const result = await productionApi.getInventoryBatch(id, request.signal);
+    if (!request.isCurrent()) return;
+    detail.value = result;
+    if (selectBatchTab) {
+      viewMode.value =
+        result.itemKind === 'material' ? 'material-batches' : 'finished-product-batches';
+    }
   } catch (e) {
-    if (current === detailToken) EMessage.error(e, '库存批次详情加载失败');
+    if (request.isCurrent()) EMessage.error(e, '库存批次详情加载失败');
   } finally {
-    if (current === detailToken) detailLoading.value = false;
+    if (request.isCurrent()) detailLoading.value = false;
   }
 };
+watch(
+  () => detailVisible.value,
+  (visible) => {
+    if (!visible) {
+      selectedBatchId.value = null;
+      detailReads.invalidate();
+    }
+  },
+);
+watch(
+  requestedBatchId,
+  (id) => {
+    if (id) void openDetail(id, true);
+    else if (detailOpenedFromRoute && detailLoading.value) detailReads.invalidate();
+  },
+  { immediate: true },
+);
 const demandTypeLabel = (type: DemandType): string => DEMAND_GENERATION_GROUP_TYPE_LABELS[type];
 const variantCode = (row: { materialVariantCode?: string | null }): string =>
   row.materialVariantCode || '未记录版本';
@@ -586,29 +745,30 @@ const demandSourceText = (row: InventoryMaterialDemandTraceItem) => {
         .filter(Boolean)
         .join(' · ') || '-'
     );
-  if (row.demandType === 'material_loss_supplement')
-    return (
-      [
-        row.supplementNo ? `补料单 ${row.supplementNo}` : null,
-        row.materialLossScrapNo ? `报废单 ${row.materialLossScrapNo}` : null,
-      ]
-        .filter(Boolean)
-        .join(' · ') || '-'
-    );
   if (row.demandType === 'manual_additional')
     return row.parentDemandId ? `源需求 #${row.parentDemandId}` : '人工追加';
   return row.batchNo;
 };
 const refreshCurrentView = () => {
-  if (viewMode.value === 'inventory-batches') return load();
-  return loadSupplyDemand();
+  if (viewMode.value === 'supply-demand') return loadSupplyDemand();
+  return batchList.value.load();
 };
 onMounted(refreshCurrentView);
-onActivated(refreshCurrentView);
-watch(viewMode, (mode) => {
-  if (mode === 'inventory-batches') void load();
-  else void loadSupplyDemand();
+let activated = false;
+onActivated(() => {
+  if (!activated) {
+    activated = true;
+    return;
+  }
+  void refreshCurrentView();
+  const requestedId = requestedBatchId.value;
+  if (requestedId && selectedBatchId.value !== requestedId) {
+    void openDetail(requestedId, true);
+  } else if (detailVisible.value && !detail.value && selectedBatchId.value) {
+    void openDetail(selectedBatchId.value, requestedId === selectedBatchId.value);
+  }
 });
+watch(viewMode, refreshCurrentView);
 </script>
 <style scoped>
 .inventory-page {
@@ -618,6 +778,10 @@ watch(viewMode, (mode) => {
 }
 .shortage {
   color: #ef4444;
+}
+.shortage-link {
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 .quantity-increase {
   color: var(--el-color-success);
@@ -644,6 +808,7 @@ watch(viewMode, (mode) => {
 }
 .query-form {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   gap: 10px 22px;
 }
@@ -682,22 +847,8 @@ watch(viewMode, (mode) => {
 .zero {
   color: #9ca3af;
 }
-.table-footer {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 12px;
-  min-height: 56px;
-  padding: 0 16px;
-  color: #6b7280;
-}
-.page-size-select {
-  width: 78px;
-}
 .detail-body {
   min-height: 160px;
-  max-height: 70vh;
-  overflow: auto;
 }
 .detail-body h3 {
   margin: 18px 0 10px;

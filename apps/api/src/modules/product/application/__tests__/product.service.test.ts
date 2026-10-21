@@ -11,7 +11,7 @@ const audit: CommandContext = {
 };
 
 describe('ProductService workflow safeguards', () => {
-  it('cleans and forwards material master CRUD plus options and product groups', async () => {
+  it('cleans and forwards material master CRUD plus options', async () => {
     const materials = {
       list: vi.fn().mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 10 }),
       listOptions: vi.fn().mockResolvedValue([]),
@@ -19,13 +19,10 @@ describe('ProductService workflow safeguards', () => {
       update: vi.fn().mockResolvedValue(undefined),
       setStatus: vi.fn().mockResolvedValue(undefined),
     };
-    const catalog = {
-      listProductGroups: vi.fn().mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 10 }),
-    };
     const service = new ProductService(
       {} as never,
       {} as never,
-      catalog as never,
+      {} as never,
       {} as never,
       {} as never,
       {} as never,
@@ -61,18 +58,12 @@ describe('ProductService workflow safeguards', () => {
     await service.setMaterialStatus('9', 0, audit);
     await service.listMaterialMasterData({ page: 2, pageSize: 20, status: 1 });
     await service.listMaterialOptions();
-    await service.listProductGroups({ page: 1, pageSize: 10, keyword: '微带' });
 
     expect(materials.create).toHaveBeenCalledWith(cleaned, audit);
     expect(materials.update).toHaveBeenCalledWith('9', cleaned, audit);
     expect(materials.setStatus).toHaveBeenCalledWith('9', 0, audit);
     expect(materials.list).toHaveBeenCalledWith({ page: 2, pageSize: 20, status: 1 });
     expect(materials.listOptions).toHaveBeenCalledOnce();
-    expect(catalog.listProductGroups).toHaveBeenCalledWith({
-      page: 1,
-      pageSize: 10,
-      keyword: '微带',
-    });
   });
 
   it('uses materialId for exact-version lookup and trims version creation input', async () => {
@@ -163,22 +154,21 @@ describe('ProductService workflow safeguards', () => {
     expect(() =>
       service.replaceMaterials(
         '10',
-        [
-          {
-            materialId: '20',
-            quantityPerUnit: 1,
-            unit: 'pcs',
-            isKeyMaterial: true,
-            needBatchRecord: true,
-          },
-          {
-            materialId: '20',
-            quantityPerUnit: 2,
-            unit: 'pcs',
-            isKeyMaterial: false,
-            needBatchRecord: true,
-          },
-        ],
+        {
+          version: 0,
+          items: [
+            {
+              materialId: '20',
+              quantityPerUnit: 1,
+              unit: 'pcs',
+            },
+            {
+              materialId: '20',
+              quantityPerUnit: 2,
+              unit: 'pcs',
+            },
+          ],
+        },
         audit,
       ),
     ).toThrow(ProductDomainError);
@@ -203,13 +193,14 @@ describe('ProductService workflow safeguards', () => {
     expect(() =>
       service.replaceMaterials(
         '10',
-        Array.from({ length: 201 }, (_, index) => ({
-          materialId: String(index + 1),
-          quantityPerUnit: 1,
-          unit: 'pcs',
-          isKeyMaterial: false,
-          needBatchRecord: false,
-        })),
+        {
+          version: 0,
+          items: Array.from({ length: 201 }, (_, index) => ({
+            materialId: String(index + 1),
+            quantityPerUnit: 1,
+            unit: 'pcs',
+          })),
+        },
         audit,
       ),
     ).toThrow(ProductDomainError);
@@ -234,15 +225,16 @@ describe('ProductService workflow safeguards', () => {
     expect(() =>
       service.replaceMaterials(
         '10',
-        [
-          {
-            materialId: '20',
-            quantityPerUnit: 1.5,
-            unit: 'pcs',
-            isKeyMaterial: true,
-            needBatchRecord: true,
-          },
-        ],
+        {
+          version: 0,
+          items: [
+            {
+              materialId: '20',
+              quantityPerUnit: 1.5,
+              unit: 'pcs',
+            },
+          ],
+        },
         audit,
       ),
     ).toThrow('必须是 1 到 99999999 的整数');

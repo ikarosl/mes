@@ -6,6 +6,7 @@ import {
 } from '../../../../common/http/request-context.middleware.js';
 import { toBeijingISOString } from '../../../../common/time/date-time.js';
 import { ProductionDomainError } from '../../domain/production.errors.js';
+import { InventoryCommandError } from '../../../inventory/public.js';
 
 interface RequestWithContext {
   originalUrl?: string;
@@ -19,9 +20,9 @@ interface ResponseWriter {
   status(status: number): { json(body: ApiErrorResponse): void };
 }
 
-@Catch(ProductionDomainError)
+@Catch(ProductionDomainError, InventoryCommandError)
 export class ProductionDomainExceptionFilter implements ExceptionFilter {
-  catch(exception: ProductionDomainError, host: ArgumentsHost): void {
+  catch(exception: ProductionDomainError | InventoryCommandError, host: ArgumentsHost): void {
     const http = host.switchToHttp();
     const request = http.getRequest<RequestWithContext>();
     const response = http.getResponse<ResponseWriter>();
@@ -60,8 +61,6 @@ const statusFor = (code: ProductionDomainError['code']): number => {
     code === 'OUTBOUND_ALLOCATION_CHANGED' ||
     code === 'OUTBOUND_CONFIRM_NOT_ALLOWED' ||
     code === 'OUTBOUND_CANCEL_NOT_ALLOWED' ||
-    code === 'SHORT_BATCH_AUTHORIZATION_NOT_ALLOWED' ||
-    code === 'SHORT_BATCH_AUTHORIZATION_STALE' ||
     code === 'INBOUND_CONFIRM_NOT_ALLOWED' ||
     code === 'INBOUND_CANCEL_NOT_ALLOWED' ||
     code === 'RETURN_QUANTITY_EXCEEDED' ||
@@ -77,12 +76,9 @@ const statusFor = (code: ProductionDomainError['code']): number => {
     code === 'STEP_REPORT_QUANTITY_EXCEEDED' ||
     code === 'STEP_REPORT_ALREADY_REVERSED' ||
     code === 'STEP_REPORT_DEPENDENCY_CONFLICT' ||
-    code === 'DOWNSTREAM_QUANTITY_CONFLICT' ||
     code === 'BATCH_EXECUTION_COMPLETION_NOT_ALLOWED' ||
     code === 'NO_REQUIRED_REPORTING_STEP' ||
-    code === 'REQUIRED_STEP_INCOMPLETE' ||
-    code === 'FINAL_STEP_QUANTITY_INSUFFICIENT' ||
-    code === 'ACTIVE_MATERIAL_DEMAND_REMAINS'
+    code === 'REQUIRED_STEP_INCOMPLETE'
   )
     return HttpStatus.CONFLICT;
   return HttpStatus.BAD_REQUEST;

@@ -7,9 +7,9 @@ import {
 
 describe('production material result codecs', () => {
   it('出库结果 codec 使用包含需求来源投影的新 scope', () => {
-    expect(materialOutboundResultCodec.scope).toBe('production.material-outbound.create.v3');
+    expect(materialOutboundResultCodec.scope).toBe('production.material-outbound.create.v4');
     expect(confirmMaterialOutboundResultCodec.scope).toBe(
-      'production.material-outbound.confirm.v2',
+      'production.material-outbound.confirm.v3',
     );
   });
 

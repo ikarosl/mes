@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import { isBatchNoValid } from '@company/code-rules';
 import type {
   CreateProductionBatchPayload,
   CreateWorkOrderPayload,
@@ -7,6 +6,9 @@ import type {
   ProductionBatchCancellationCheck,
   ProductionBatchItem,
   ProductionBatchQuery,
+  ProductionBatchStartRecord,
+  ProductionBatchStepRecords,
+  ProductionStepCommandResult,
   UpdateProductionBatchPayload,
   UpdateBatchStepExecutionPayload,
   UpdateWorkOrderPayload,
@@ -29,8 +31,12 @@ import {
 import { ProductionDomainError } from '../domain/production.errors.js';
 import { ProductionRepository } from './ports/production.repository.js';
 import type { ResolvedBatchStepOverride } from './ports/production.repository.js';
-import { CREATE_BATCH_IDEMPOTENCY_SCOPE } from './idempotency/production-idempotency-scopes.contract.js';
+import {
+  CREATE_BATCH_IDEMPOTENCY_SCOPE,
+  CREATE_WORK_ORDER_IDEMPOTENCY_SCOPE,
+} from './idempotency/production-idempotency-scopes.contract.js';
 import { productionBatchResultCodec } from './idempotency/production-batch-result.codec.js';
+import { workOrderCreateResultCodec } from './idempotency/work-order-create-result.codec.js';
 
 @Injectable()
 export class ProductionService {
@@ -58,24 +64,62 @@ export class ProductionService {
   async getBatch(id: string) {
     return this.enrichBatchDetail(await this.production.getBatch(id));
   }
+  async getBatchStepRecords(id: string): Promise<ProductionBatchStepRecords> {
+    const result = await this.production.getBatchStepRecords(id);
+    const names = await this.resolveUserNames(
+      result.stepRecords.flatMap((step) => [step.defaultResponsibleUserId, step.responsibleUserId]),
+    );
+    return {
+      ...result,
+      stepRecords: result.stepRecords.map((step) => ({
+        ...step,
+        defaultResponsibleUserName: step.defaultResponsibleUserId
+          ? (names.get(step.defaultResponsibleUserId) ?? null)
+          : null,
+        responsibleUserName: step.responsibleUserId
+          ? (names.get(step.responsibleUserId) ?? null)
+          : null,
+      })),
+    };
+  }
+  async getBatchStartRecord(id: string): Promise<ProductionBatchStartRecord | null> {
+    const record = await this.production.getBatchStartRecord(id);
+    if (record === null) return null;
+    const names = await this.resolveUserNames([record.startedById]);
+    return { ...record, startedByName: names.get(record.startedById) ?? null };
+  }
   getBatchCancellationCheck(id: string): Promise<ProductionBatchCancellationCheck> {
     return this.production.getBatchCancellationCheck(id);
   }
-  async listWorkOrderBatches(id: string) {
-    return this.enrichBatches(await this.production.listWorkOrderBatches(id));
-  }
-
-  async createWorkOrder(payload: CreateWorkOrderPayload, audit: CommandContext) {
-    if (payload.workOrderOwnerId) await this.requireActiveUser(payload.workOrderOwnerId);
-    if (!payload.planStartDate || !payload.planEndDate)
+  async createWorkOrder(payload: CreateWorkOrderPayload, audit: IdempotentCommandContext) {
+    const body = this.cleanWorkOrder(payload);
+    if (!body.planStartDate || !body.planEndDate)
       throw new ProductionDomainError('INVALID_INPUT', '工单计划开始日期和计划完成日期均为必填项');
-    this.assertPlanDates(payload.planStartDate, payload.planEndDate);
-    const product = this.requireProduct(
-      await this.products.getProductionProduct(payload.productId),
-    );
-    return this.enrichWorkOrder(
-      await this.production.createWorkOrder(this.cleanWorkOrder(payload), product, audit),
-    );
+    this.assertPlanDates(body.planStartDate, body.planEndDate);
+    const commandContext: CommandContext = {
+      actorId: audit.actorId,
+      requestId: audit.requestId,
+      ip: audit.ip,
+      userAgent: audit.userAgent,
+    };
+    const execution = await this.idempotency.execute<WorkOrderDetail>({
+      scope: CREATE_WORK_ORDER_IDEMPOTENCY_SCOPE,
+      key: audit.idempotencyKey,
+      actorId: audit.actorId,
+      requestId: audit.requestId,
+      request: { body },
+      resultCodec: workOrderCreateResultCodec,
+      handler: async () => {
+        if (body.workOrderOwnerId) await this.requireActiveUser(body.workOrderOwnerId);
+        const product = this.requireProduct(
+          await this.products.getProductionProduct(body.productId),
+        );
+        return this.enrichWorkOrder(
+          await this.production.createWorkOrder(body, product, commandContext),
+        );
+      },
+    });
+    return execution.result;
   }
   async updateWorkOrder(id: string, payload: UpdateWorkOrderPayload, audit: CommandContext) {
     if (payload.workOrderOwnerId !== undefined)
@@ -92,7 +136,9 @@ export class ProductionService {
   async releaseWorkOrder(id: string, version: number, audit: CommandContext) {
     const workOrder = await this.production.withWorkOrderReleaseTransaction(
       id,
-      async (productId) => {
+      async ({ productId, workOrderOwnerId }) => {
+        // 读取锁定工单的负责人，不信任之前保存草稿时的账号校验。
+        await this.requireActiveUser(workOrderOwnerId);
         const product = this.requireProduct(await this.products.getProductionProduct(productId));
         return this.production.releaseWorkOrder(id, version, product, audit);
       },
@@ -122,15 +168,23 @@ export class ProductionService {
     audit: IdempotentCommandContext,
   ) {
     const normalizedPayload = normalizeCreateBatchPayload(payload);
+    const fingerprintBody = {
+      routeId: normalizedPayload.routeId,
+      plannedQuantity: normalizedPayload.plannedQuantity,
+      ownerId: normalizedPayload.ownerId,
+      planStartDate: normalizedPayload.planStartDate,
+      planEndDate: normalizedPayload.planEndDate,
+      remark: normalizedPayload.remark,
+      stepOverrides: Array.isArray(normalizedPayload.stepOverrides)
+        ? normalizedPayload.stepOverrides.map((override) => ({
+            routeStepId: override.routeStepId,
+            actualSopFileId: override.actualSopFileId,
+          }))
+        : normalizedPayload.stepOverrides,
+    } satisfies CreateProductionBatchPayload;
     // 纯格式校验只由请求内容决定，放在幂等 executor 外；会受数据库状态影响的业务校验（负责人是否
     // 启用等）移入 handler，重放不重复执行——否则负责人停用后同键重试会 400 而非重放原结果。
     this.assertPlanDates(normalizedPayload.planStartDate, normalizedPayload.planEndDate);
-    if (
-      normalizedPayload.batchNo &&
-      !isBatchNoValid(normalizedPayload.batchNo, PRODUCTION_BATCH_NO_RULE)
-    ) {
-      throw new ProductionDomainError('INVALID_INPUT', '手动批次号必须符合 task_batch-001 格式');
-    }
     // 幂等能力止于 application service：repository 只接收不含幂等键的命令审计元数据。
     const commandContext: CommandContext = {
       actorId: audit.actorId,
@@ -145,7 +199,7 @@ export class ProductionService {
       requestId: audit.requestId,
       request: {
         params: { workOrderId },
-        body: normalizedPayload,
+        body: fingerprintBody,
       },
       resultCodec: productionBatchResultCodec,
       handler: async () => {
@@ -158,14 +212,24 @@ export class ProductionService {
         }
         return this.production.withBatchCreationTransaction(
           workOrderId,
-          async (workOrderProductId) => {
-            const route = this.requireProduct(
-              await productDefinitions.lockBomForProductionTask(
-                workOrderProductId,
-                normalizedPayload.routeId ?? null,
-                commandContext,
-              ),
-            );
+          async (workOrderProductId, orderType) => {
+            const research = orderType === 'research';
+            if (research) {
+              this.requireProduct(await this.products.getProductionProduct(workOrderProductId));
+              if (normalizedPayload.routeId || normalizedPayload.stepOverrides?.length)
+                throw new ProductionDomainError('INVALID_INPUT', '研发任务不配置工艺路线或工序');
+            } else if (!normalizedPayload.routeId) {
+              throw new ProductionDomainError('INVALID_INPUT', '请先选择工艺路线后再创建批量任务');
+            }
+            const route = research
+              ? null
+              : this.requireProduct(
+                  await productDefinitions.requireApprovedBomForProductionTask(
+                    workOrderProductId,
+                    normalizedPayload.routeId ?? null,
+                    commandContext,
+                  ),
+                );
             const stepOverrides = await this.resolveStepOverrides(
               normalizedPayload.stepOverrides ?? [],
               route,
@@ -206,7 +270,7 @@ export class ProductionService {
     recordId: string,
     payload: UpdateBatchStepExecutionPayload,
     audit: CommandContext,
-  ) {
+  ): Promise<ProductionStepCommandResult> {
     const actualSop =
       payload.actualSopFileId === undefined
         ? undefined
@@ -215,9 +279,7 @@ export class ProductionService {
           : this.requireProduct(
               await this.products.getEnabledSopFileSnapshot(payload.actualSopFileId!),
             );
-    return this.enrichBatchDetail(
-      await this.production.updateBatchStepExecution(batchId, recordId, payload, actualSop, audit),
-    );
+    return this.production.updateBatchStepExecution(batchId, recordId, payload, actualSop, audit);
   }
   private async requireActiveUser(id: string | null): Promise<void> {
     if (!id) return;
@@ -243,44 +305,24 @@ export class ProductionService {
   }
 
   private async enrichBatches(batches: ProductionBatchItem[]): Promise<ProductionBatchItem[]> {
-    const names = await this.resolveUserNames(
-      batches.flatMap((batch) => [batch.ownerId, batch.cancelledBy]),
-    );
+    const names = await this.resolveUserNames(batches.map((batch) => batch.ownerId));
     return batches.map((batch) => ({
       ...batch,
       ownerName: batch.ownerId ? (names.get(batch.ownerId) ?? null) : null,
-      ...(batch.status === 'cancelled'
-        ? {
-            cancelledByName: batch.cancelledBy ? (names.get(batch.cancelledBy) ?? null) : null,
-          }
-        : {}),
     }));
   }
 
   private async enrichBatchDetail(batch: ProductionBatchDetail): Promise<ProductionBatchDetail> {
-    const stepRecords = batch.stepRecords ?? [];
     const names = await this.resolveUserNames([
       batch.ownerId,
+      batch.startedById,
       batch.cancelledBy,
-      ...stepRecords.flatMap((step) => [step.defaultResponsibleUserId, step.responsibleUserId]),
     ]);
     return {
       ...batch,
       ownerName: batch.ownerId ? (names.get(batch.ownerId) ?? null) : null,
-      ...(batch.status === 'cancelled'
-        ? {
-            cancelledByName: batch.cancelledBy ? (names.get(batch.cancelledBy) ?? null) : null,
-          }
-        : {}),
-      stepRecords: stepRecords.map((step) => ({
-        ...step,
-        defaultResponsibleUserName: step.defaultResponsibleUserId
-          ? (names.get(step.defaultResponsibleUserId) ?? null)
-          : null,
-        responsibleUserName: step.responsibleUserId
-          ? (names.get(step.responsibleUserId) ?? null)
-          : null,
-      })),
+      startedByName: batch.startedById ? (names.get(batch.startedById) ?? null) : null,
+      cancelledByName: batch.cancelledBy ? (names.get(batch.cancelledBy) ?? null) : null,
     };
   }
 
@@ -298,8 +340,15 @@ export class ProductionService {
   }
   private cleanWorkOrder(payload: CreateWorkOrderPayload): CreateWorkOrderPayload {
     return {
-      ...payload,
-      workOrderNo: payload.workOrderNo.trim(),
+      orderType: payload.orderType,
+      previousResearchOrderId: payload.previousResearchOrderId ?? null,
+      productId: payload.productId,
+      plannedQuantity: payload.plannedQuantity,
+      customerName: payload.customerName?.trim() || null,
+      qualityLevel: payload.qualityLevel?.trim() || null,
+      workOrderOwnerId: payload.workOrderOwnerId ?? null,
+      planStartDate: payload.planStartDate,
+      planEndDate: payload.planEndDate,
       externalOrderNo: payload.externalOrderNo?.trim() || null,
       remark: payload.remark?.trim() || null,
     };
@@ -341,5 +390,3 @@ export class ProductionService {
     );
   }
 }
-
-const PRODUCTION_BATCH_NO_RULE = { prefix: 'task_batch', padding: 3 } as const;

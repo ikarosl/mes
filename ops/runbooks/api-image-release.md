@@ -3,7 +3,7 @@
 `main` 分支的 CI 全部通过后，CI 调用 `.github/workflows/cd-images.yml`。该工作流不会固定重建前后端，而是先执行：
 
 ```bash
-node scripts/detect-release-changes.mjs <push-before-sha> <verified-head-sha>
+node scripts/detect-release-changes.mjs '<push-before-sha>' '<verified-head-sha>'
 ```
 
 脚本通过 `turbo ls --affected --output=json` 读取 Turborepo 包依赖图。共享 workspace package 发生变化时，Turbo 会把依赖它的 API 或 Web 应用标记为受影响。脚本还单独处理不属于 workspace package 的镜像输入，例如 Dockerfile、Nginx 配置、lockfile 和根构建配置。
@@ -58,7 +58,7 @@ digest；某个应用未受影响时，不调用对应的部署脚本。Compose 
 
 ```bash
 pnpm release:changes:test
-pnpm release:changes <base-sha> <head-sha>
+pnpm release:changes '<base-sha>' '<head-sha>'
 ```
 
 输出中的 `apiChanged` 与 `webChanged` 决定对应镜像 Job 是否运行。不要使用 commit SHA 或新旧镜像 digest 代替包依赖影响分析；镜像标签、revision label 和 provenance 都可能让未改变业务代码的重建产生不同 digest。

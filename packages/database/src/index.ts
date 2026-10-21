@@ -111,7 +111,54 @@ export const tagConnection = (connection: PoolConnection): PoolConnection => {
   return facade as unknown as PoolConnection;
 };
 
-const transactionContext = new AsyncLocalStorage<{ pool: Pool; connection: PoolConnection }>();
+interface AfterCommitTask {
+  run: () => void | Promise<void>;
+  onError: () => void;
+}
+const transactionContext = new AsyncLocalStorage<{
+  pool: Pool;
+  connection: PoolConnection;
+  afterCommit: Map<string, AfterCommitTask>;
+  active: boolean;
+}>();
+
+/** 仅登记到当前事务；调用方只能捕获不可变事件和处理器，不得捕获连接或请求。 */
+export const registerAfterCommit = (
+  pool: Pool,
+  key: string,
+  run: AfterCommitTask['run'],
+  onError: AfterCommitTask['onError'],
+): void => {
+  const context = transactionContext.getStore();
+  if (!context?.active || context.pool !== pool) throw new Error('提交后任务必须登记在活动事务内');
+  if (!context.afterCommit.has(key)) context.afterCommit.set(key, { run, onError });
+};
+
+const dispatchAfterCommit = (tasks: Map<string, AfterCommitTask>): void => {
+  // 清除 ALS，避免处理器取得已释放连接或外围其他事务的上下文。
+  transactionContext.exit(() => {
+    for (const task of tasks.values()) {
+      const report = () => {
+        try {
+          task.onError();
+        } catch {
+          /* 诊断失败也不能影响提交结果。 */
+        }
+      };
+      try {
+        setImmediate(() => {
+          try {
+            Promise.resolve(task.run()).catch(report);
+          } catch {
+            report();
+          }
+        });
+      } catch {
+        report();
+      }
+    }
+  });
+};
 
 export const initializeDatabaseConnection = (connection: Pick<PoolConnection, 'query'>) =>
   connection.query(`SET time_zone = '${DATABASE_TIME_ZONE}'`);
@@ -140,7 +187,7 @@ export const withTransaction = async <T>(
   work: (connection: PoolConnection) => Promise<T>,
 ) => {
   const active = transactionContext.getStore();
-  if (active?.pool === pool) return work(active.connection);
+  if (active?.active && active.pool === pool) return work(active.connection);
 
   // 取连接失败发生在事务开启之前，不需要也绝不能回滚；包装后抛给调用方分类。
   let connection: PoolConnection;
@@ -149,6 +196,14 @@ export const withTransaction = async <T>(
   } catch (error) {
     throw new DatabaseError(error, '获取数据库连接失败');
   }
+  const context = {
+    pool,
+    connection: tagConnection(connection),
+    afterCommit: new Map<string, AfterCommitTask>(),
+    active: true,
+  };
+  let committed = false;
+  let reusable = false;
   try {
     try {
       await connection.beginTransaction();
@@ -158,12 +213,11 @@ export const withTransaction = async <T>(
     // ALS 存储 tagged 门面：work 回调仍收到原始 connection（事务内直接 execute/query 的调用方
     // 行为完全不变），只有经 withActiveConnection / 嵌套 withTransaction 取到的连接才带
     // DatabaseError 来源标记（见 tagConnection）。
-    const result = await transactionContext.run(
-      { pool, connection: tagConnection(connection) },
-      () => work(connection),
-    );
+    const result = await transactionContext.run(context, () => work(connection));
     try {
       await connection.commit();
+      committed = true;
+      reusable = true;
     } catch (error) {
       throw new DatabaseError(error, '提交数据库事务失败');
     }
@@ -173,6 +227,7 @@ export const withTransaction = async <T>(
     // （原始异常可能是业务错误，覆盖会丢失调用方依赖的错误类型与诊断）。
     try {
       await connection.rollback();
+      reusable = true;
     } catch (rollbackError) {
       // 日志安全规则：work 回调抛出的可能是业务/SDK 异常，message 可能含请求内容、SQL 参数或
       // 凭证，绝不打印原始 message。只记录异常类型（constructor.name）与经过白名单筛选的
@@ -186,7 +241,12 @@ export const withTransaction = async <T>(
     }
     throw error;
   } finally {
-    connection.release();
+    context.active = false;
+    // 只有确认事务结束的连接才能归还池；回滚失败时会话状态未知，必须销毁。
+    if (reusable) connection.release();
+    else connection.destroy();
+    if (committed) dispatchAfterCommit(context.afterCommit);
+    context.afterCommit.clear();
   }
 };
 
@@ -203,7 +263,7 @@ export const withActiveConnection = <T>(
   work: (queryable: Pool | PoolConnection) => Promise<T>,
 ): Promise<T> => {
   const active = transactionContext.getStore();
-  return work(active?.pool === pool ? active.connection : pool);
+  return work(active?.active && active.pool === pool ? active.connection : pool);
 };
 
 const requiredEnv = (name: string, allowEmpty = false) => {

@@ -14,20 +14,23 @@ describe('ProductionReportingController contract', () => {
   it('uses separate read, employee report and administrator correction permissions', () => {
     const prototype = ProductionReportingController.prototype;
     expect(Reflect.getMetadata(REQUIRED_PERMISSION, prototype.getBatchExecution)).toBe(
-      PERMISSIONS.production.tasks.view,
+      PERMISSIONS.production.executionRecords.view,
     );
     expect(Reflect.getMetadata(REQUIRED_PERMISSION, prototype.listExecutionBatches)).toBe(
-      PERMISSIONS.production.tasks.view,
+      PERMISSIONS.production.executionRecords.view,
     );
-    expect(Reflect.getMetadata(REQUIRED_PERMISSION, prototype.createReport)).toBe(
+    expect(Reflect.getMetadata(REQUIRED_PERMISSION, prototype.createReport)).toEqual([
       PERMISSIONS.production.steps.report,
-    );
-    expect(Reflect.getMetadata(REQUIRED_PERMISSION, prototype.reverseReport)).toBe(
       PERMISSIONS.production.steps.manageExecution,
-    );
-    expect(Reflect.getMetadata(REQUIRED_PERMISSION, prototype.correctReport)).toBe(
+    ]);
+    expect(Reflect.getMetadata(REQUIRED_PERMISSION, prototype.reverseReport)).toEqual([
+      PERMISSIONS.production.steps.report,
       PERMISSIONS.production.steps.manageExecution,
-    );
+    ]);
+    expect(Reflect.getMetadata(REQUIRED_PERMISSION, prototype.correctReport)).toEqual([
+      PERMISSIONS.production.steps.report,
+      PERMISSIONS.production.steps.manageExecution,
+    ]);
   });
 
   it('enables versioned HTTP idempotency only for create and correct', () => {
@@ -62,7 +65,15 @@ describe('ProductionReportingController contract', () => {
       ip: null,
       userAgent: null,
     };
-    await controller.createReport({ batchId: '1', recordId: '9' }, body, context);
-    expect(service.createReport).toHaveBeenCalledWith('1', '9', body, context);
+    await controller.createReport({ batchId: '1', recordId: '9' }, body, context, {
+      id: '7',
+      permissions: [PERMISSIONS.production.steps.report],
+    } as never);
+    expect(service.createReport).toHaveBeenCalledWith('1', '9', body, context, {
+      actorId: '7',
+      canManageExecution: false,
+      canReport: true,
+      canReadAllReports: false,
+    });
   });
 });

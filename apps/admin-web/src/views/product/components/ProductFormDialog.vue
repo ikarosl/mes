@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     :model-value="visible"
-    :title="editingProductId ? '编辑成品编码' : creatingInGroup ? '新增成品编码' : '新增成品'"
+    :title="editingProductId ? '编辑成品' : '新增成品'"
     :width="DialogWidth.lg"
     @update:model-value="$emit('update:visible', $event)"
     @open="$emit('refresh-options')"
@@ -31,7 +31,6 @@
           <el-input
             v-model="form.productName"
             placeholder="请输入成品名称"
-            :disabled="creatingInGroup"
           />
         </el-form-item>
         <el-form-item
@@ -41,7 +40,7 @@
           <el-select
             v-model="form.categoryId"
             placeholder="请选择分类"
-            :disabled="editingProductLocked || creatingInGroup"
+            :disabled="editingProductLocked"
             @visible-change="(visible: boolean) => visible && $emit('refresh-options')"
           >
             <el-option
@@ -166,7 +165,7 @@
           v-model="form.remark"
           type="textarea"
           :rows="3"
-          placeholder="可填写产品说明"
+          placeholder="可填写成品说明"
         />
       </el-form-item>
     </el-form>
@@ -176,7 +175,7 @@
         type="primary"
         :loading="submitting"
         @click="handleSubmit"
-        >保存产品</el-button
+        >保存成品</el-button
       >
     </template>
   </el-dialog>
@@ -210,7 +209,6 @@ const props = defineProps<{
   visible: boolean;
   editingProductId: string | null;
   editingProductLocked: boolean;
-  creatingInGroup: boolean;
   categoryOptions: ProductCategoryOption[];
   itemKindLabels: Record<ProductItemKind, string>;
   submitting: boolean;
@@ -244,13 +242,6 @@ const categoryChoices = computed(() =>
 
 const resetForm = (): void => {
   Object.assign(form, initialForm());
-};
-
-const setCreateDefaults = (group: { productName: string; categoryId: string }): void => {
-  Object.assign(form, initialForm(), {
-    productName: group.productName,
-    categoryId: group.categoryId,
-  });
 };
 
 const setForm = (row: {
@@ -304,7 +295,7 @@ const handleSubmit = (): void => {
   emit('save', { ...form });
 };
 
-defineExpose({ setForm, setCreateDefaults, resetForm });
+defineExpose({ setForm, resetForm });
 </script>
 
 <style scoped>

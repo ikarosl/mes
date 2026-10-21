@@ -1,11 +1,34 @@
 export const INVENTORY_SOURCE_TYPES = [
   'self_made',
+  'production_extra',
+  'finished_product',
   'purchased',
   'outsourced',
   'return_inbound',
   'stock_check_generated',
   'other',
 ] as const;
+
+export const FINISHED_GOODS_INBOUND_SOURCES = ['self_made', 'production_extra'] as const;
+export const FINISHED_GOODS_INBOUND_SOURCE_LABELS = {
+  self_made: '生产流转入库',
+  production_extra: '额外产出入库',
+} as const;
+export const INVENTORY_ITEM_KINDS = ['material', 'finished_product'] as const;
+export const INVENTORY_ITEM_KIND_LABELS = {
+  material: '物料',
+  finished_product: '成品',
+} as const;
+export const INVENTORY_SOURCE_TYPE_LABELS = {
+  self_made: '生产流转入库',
+  production_extra: '额外产出入库',
+  finished_product: '成品入库',
+  purchased: '外购物料入库',
+  outsourced: '委外入库',
+  return_inbound: '退回入库',
+  stock_check_generated: '盘点生成',
+  other: '其他',
+} as const satisfies Record<(typeof INVENTORY_SOURCE_TYPES)[number], string>;
 
 export const INVENTORY_BATCH_STATUSES = ['available', 'frozen', 'disabled'] as const;
 
@@ -22,12 +45,13 @@ export const INVENTORY_TRANSACTION_TYPES = [
   'stock_check_adjustment',
   'status_transfer_in',
   'status_transfer_out',
+  'other_inbound',
+  'other_outbound',
 ] as const;
 
 export const INVENTORY_REFERENCE_TYPES = [
   'inbound_detail',
   'outbound_detail',
-  'return_detail',
   'scrap',
   'stock_check_detail',
   'inspection_record',
@@ -45,12 +69,13 @@ export const INVENTORY_TRANSACTION_TYPE_LABELS = {
   stock_check_adjustment: '盘点差异调整',
   status_transfer_in: '库存状态转入',
   status_transfer_out: '库存状态转出',
+  other_inbound: '其他入库',
+  other_outbound: '其他出库',
 } as const satisfies Record<(typeof INVENTORY_TRANSACTION_TYPES)[number], string>;
 
 export const INVENTORY_REFERENCE_TYPE_LABELS = {
   inbound_detail: '入库明细',
   outbound_detail: '出库明细',
-  return_detail: '退料明细',
   scrap: '报废记录',
   stock_check_detail: '盘点明细',
   inspection_record: '检验记录',
@@ -59,27 +84,22 @@ export const INVENTORY_REFERENCE_TYPE_LABELS = {
 
 export const INBOUND_ORDER_STATUSES = ['pending', 'completed', 'cancelled'] as const;
 
-export const RETURN_ORDER_STATUSES = ['pending', 'returned', 'scrapped', 'cancelled'] as const;
+export const RETURN_ORDER_STATUSES = ['pending', 'returned', 'cancelled'] as const;
 
 export const RETURN_ORDER_STATUS_LABELS = {
   pending: '待退料',
   returned: '已入库',
-  scrapped: '已报废',
   cancelled: '已取消',
 } as const;
 
-export const SCRAP_SCENES = [
-  'warehouse_allocated',
-  'return_after_outbound',
-  'production_consumed',
-  'in_stock',
-] as const;
-
 export const SCRAP_STATUSES = ['pending', 'confirmed', 'cancelled'] as const;
+export const MATERIAL_LOSS_PURPOSES = ['production_record', 'closeout_record'] as const;
+export const MATERIAL_LOSS_PURPOSE_LABELS = {
+  production_record: '在产损坏登记（不补料）',
+  closeout_record: '结案损坏登记（不补料）',
+} as const;
 
 export const STOCK_CHECK_STATUSES = ['pending', 'counting', 'completed', 'cancelled'] as const;
-
-export const STOCK_CHECK_RESULTS = ['surplus', 'shortage', 'matched'] as const;
 
 export const STOCK_CHECK_STATUS_LABELS = {
   pending: '待盘点',
@@ -93,18 +113,3 @@ export const STOCK_CHECK_RESULT_LABELS = {
   shortage: '盘亏',
   matched: '一致',
 } as const;
-
-export const INSPECTION_TYPES = ['process', 'final'] as const;
-
-export const INSPECTION_RESULTS = ['pending', 'passed', 'failed', 'conditional'] as const;
-
-export const REWORK_RESULTS = ['pending', 'passed', 'failed'] as const;
-
-export const FINISHED_FLOW_TYPES = [
-  'warehouse_inbound',
-  'quality_release',
-  'warehouse_outbound',
-  'other',
-] as const;
-
-export const FINISHED_FLOW_STATUSES = ['confirmed', 'cancelled'] as const;

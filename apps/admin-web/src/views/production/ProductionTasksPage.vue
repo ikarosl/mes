@@ -89,180 +89,204 @@
       <el-table
         v-loading="loading"
         :data="batches"
+        row-key="id"
         :row-class-name="batchRowClass"
         class="tasks-table"
       >
         <el-table-column
-          label="批次号"
-          min-width="170"
+          label="任务 / 工单"
+          min-width="180"
         >
-          <template #default="{ row }"
-            ><span class="batch-no">{{ row.batchNo }}</span></template
-          >
-        </el-table-column>
-        <el-table-column
-          label="工单号"
-          min-width="150"
-        >
-          <template #default="{ row }">{{ row.workOrderNo || '-' }}</template>
+          <template #default="{ row }">
+            <div class="batch-no">{{ row.batchNo }}</div>
+            <div class="sub-text">{{ row.workOrderNo || '未关联工单' }}</div>
+          </template>
         </el-table-column>
         <el-table-column
           label="产品"
-          min-width="220"
+          min-width="190"
         >
           <template #default="{ row }">
             <div class="product-name">{{ row.productName }}</div>
-            <div class="sub-text">{{ row.productCode }}</div>
+            <div class="product-meta">
+              <span class="sub-text">{{ row.productCode }}</span>
+              <el-tag
+                size="small"
+                :type="taskTypeTagType(row.orderType)"
+                effect="light"
+                >{{ taskTypeLabel(row) }}</el-tag
+              >
+            </div>
           </template>
         </el-table-column>
         <el-table-column
           label="计划数量"
-          width="120"
+          width="100"
           align="right"
         >
           <template #default="{ row }">{{ formatQuantity(row.plannedQuantity) }}</template>
         </el-table-column>
         <el-table-column
-          label="工艺路线"
-          min-width="140"
+          label="当前批准产出"
+          min-width="135"
         >
-          <template #default="{ row }">{{ row.routeCode || '未选择' }}</template>
+          <template #header>
+            <el-tooltip
+              content="当前有效批准清单的可用量为计划内加计划外，不含报废，不代表报工量或实际入库量。完整清单见任务详情。"
+            >
+              <span>当前批准产出</span>
+            </el-tooltip>
+          </template>
+          <template #default="{ row }"
+            ><BatchApprovedOutput
+              :output="row.finalOutput"
+              compact
+          /></template>
         </el-table-column>
         <el-table-column
           label="任务状态"
-          width="130"
+          min-width="190"
         >
           <template #default="{ row }">
             <el-tag
               :type="batchStatusMeta(row.status).type"
-              :class="['task-status-tag', `task-status-${row.status}`]"
               effect="light"
+              >{{ batchStatusMeta(row.status).label }}</el-tag
             >
-              {{ batchStatusMeta(row.status).label }}
-            </el-tag>
+            <div class="phase-hint">{{ taskNextAction(row).label }}</div>
           </template>
         </el-table-column>
         <el-table-column
           label="交期"
-          width="140"
+          width="130"
         >
           <template #default="{ row }">
             <div>{{ formatDateForDisplay(row.planEndDate, '未设置') }}</div>
-            <span :class="['deadline-badge', `deadline-${batchDeadline(row).tone}`]">
-              {{ batchDeadline(row).label }}
-            </span>
-          </template>
-        </el-table-column>
-        <el-table-column
-          label="下一步"
-          min-width="165"
-        >
-          <template #default="{ row }">
-            <span :class="['next-action', `next-action-${taskNextAction(row).tone}`]">
-              {{ taskNextAction(row).label }}
-            </span>
+            <span
+              v-if="row.planEndDate"
+              :class="['deadline-badge', `deadline-${batchDeadline(row).tone}`]"
+              >{{ batchDeadline(row).label }}</span
+            >
           </template>
         </el-table-column>
         <el-table-column
           label="负责人"
-          width="120"
+          min-width="110"
         >
-          <template #default="{ row }">{{ row.ownerName || '-' }}</template>
+          <template #default="{ row }">{{ row.ownerName || '未指定' }}</template>
         </el-table-column>
         <el-table-column
           label="操作"
-          width="330"
+          width="290"
           fixed="right"
         >
           <template #default="{ row }">
-            <el-button
-              link
-              type="primary"
-              @click="openDetail(row)"
-              >查看</el-button
-            >
-            <el-button
-              link
-              type="primary"
-              :disabled="!canEditBatch(row)"
-              @click="openEdit(row)"
-              >编辑</el-button
-            >
-            <el-button
-              v-if="
-                row.status === 'material_pending' ||
-                row.status === 'material_assigned' ||
-                row.status === 'material_partially_outbound' ||
-                row.status === 'material_outbound' ||
-                row.status === 'doing'
-              "
-              link
-              type="primary"
-              @click="openMaterialAllocation(row)"
-              >分配物料</el-button
-            >
-            <el-button
-              v-if="row.status === 'pending'"
-              link
-              type="primary"
-              @click="openMaterialDemandConfiguration(row)"
-              >配置需求</el-button
-            >
-            <el-button
-              v-else
-              link
-              type="primary"
-              @click="openMaterialDemandOverview(row)"
-              >物料需求</el-button
-            >
-            <el-button
-              v-if="
-                row.status === 'material_pending' || row.status === 'material_partially_outbound'
-              "
-              link
-              type="warning"
-              :disabled="row.shortBatchAuthorizationAction === 'not_required'"
-              @click="openShortBatchAuthorization(row)"
-              >{{ shortBatchAuthorizationActionLabel(row) }}</el-button
-            >
-            <el-button
-              v-if="
-                row.status === 'material_assigned' ||
-                row.status === 'material_partially_outbound' ||
-                row.status === 'material_outbound' ||
-                row.status === 'doing' ||
-                (row.status === 'material_pending' && row.shortBatchAuthorizationStatus === 'valid')
-              "
-              link
-              type="primary"
-              @click="openMaterialOutbound(row)"
-              >领料出库</el-button
-            >
-            <el-dropdown trigger="click">
+            <div class="task-actions">
               <el-button
                 link
                 type="primary"
-                :disabled="row.status === 'completed' || row.status === 'cancelled'"
-                >更多</el-button
+                @click="openDetail(row)"
+                >详情</el-button
               >
-              <template #dropdown>
-                <el-dropdown-menu>
-                  <el-dropdown-item
-                    v-if="
-                      row.status === 'doing' && row.shortBatchAuthorizationStatus === 'consumed'
-                    "
-                    :disabled="isRowPending(row.id)"
-                    @click="closeRemainingMaterialDemands(row)"
-                    >关闭剩余物料需求</el-dropdown-item
-                  >
-                  <el-dropdown-item
-                    :disabled="isRowPending(row.id)"
-                    @click="openBatchCancellation(row)"
-                    >取消任务</el-dropdown-item
-                  >
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
+              <el-button
+                v-if="row.orderType === 'mass_production'"
+                link
+                type="primary"
+                @click="openSteps(row)"
+                >工序管理</el-button
+              >
+              <el-button
+                v-if="row.status === 'pending'"
+                link
+                type="primary"
+                @click="openMaterialDemandConfiguration(row)"
+                >配置需求</el-button
+              >
+              <el-button
+                v-else-if="canStartBatch(row)"
+                link
+                type="primary"
+                @click="openExecutionStart(row)"
+                >任务开工</el-button
+              >
+              <el-button
+                v-else-if="row.orderType === 'research' && row.status === 'doing'"
+                link
+                type="warning"
+                @click="openResearchExecution(row)"
+                >结束本轮研发</el-button
+              >
+              <el-button
+                v-else-if="['closing', 'completed', 'terminated'].includes(row.status)"
+                link
+                :type="batchCloseoutActionType(row.status)"
+                @click="openCloseout(row)"
+                >{{ batchCloseoutActionLabel(row.status, row.closeoutMode) }}</el-button
+              >
+              <el-dropdown trigger="click">
+                <el-button
+                  link
+                  type="primary"
+                  >更多<el-icon class="more-icon"><ArrowDown /></el-icon
+                ></el-button>
+                <template #dropdown>
+                  <el-dropdown-menu class="task-more-menu">
+                    <el-dropdown-item @click="openMaterialDemandOverview(row)"
+                      >物料需求</el-dropdown-item
+                    >
+                    <el-dropdown-item
+                      v-if="canHandleMaterials(row)"
+                      @click="openMaterialAllocation(row)"
+                      >分配物料</el-dropdown-item
+                    >
+                    <el-dropdown-item
+                      v-if="canHandleMaterials(row)"
+                      @click="openMaterialOutbound(row)"
+                      >领料出库</el-dropdown-item
+                    >
+                    <el-dropdown-item
+                      v-if="canEditBatch(row)"
+                      divided
+                      @click="openEdit(row)"
+                      >编辑任务</el-dropdown-item
+                    >
+                    <el-dropdown-item
+                      v-if="row.status === 'pending'"
+                      @click="openExecutionStart(row)"
+                      >任务开工</el-dropdown-item
+                    >
+                    <el-dropdown-item
+                      v-if="
+                        ['material_partially_outbound', 'material_outbound', 'doing'].includes(
+                          row.status,
+                        )
+                      "
+                      divided
+                      class="task-action-warning"
+                      @click="openCloseout(row)"
+                      >提前结束</el-dropdown-item
+                    >
+                    <el-dropdown-item
+                      v-if="row.status === 'closing'"
+                      divided
+                      class="task-action-warning"
+                      @click="openCloseoutWithdrawal(row)"
+                      >撤回结束</el-dropdown-item
+                    >
+                    <el-dropdown-item
+                      v-if="
+                        !['completed', 'cancelled', 'terminated', 'closing'].includes(row.status)
+                      "
+                      divided
+                      class="task-action-danger"
+                      :disabled="isRowPending(row.id)"
+                      @click="openBatchCancellation(row)"
+                      >取消任务</el-dropdown-item
+                    >
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -290,40 +314,21 @@
       @save="submitTask"
     />
 
-    <!-- 任务详情弹窗 -->
     <TaskDetailDialog
       :visible="detailDialogVisible"
       :batch="activeBatch"
-      :assignment-pending-ids="assignmentPendingIds"
-      @update:visible="detailDialogVisible = $event"
-      @edit-step-execution="openStepExecutionOverride"
-      @assign-step="openStepAssignment($event, 'assign')"
-      @reassign-step="openStepAssignment($event, 'reassign')"
-      @unassign-step="handleStepUnassign"
+      :loading="detailLoading"
+      :error="detailError"
+      @update:visible="handleDetailVisibility"
+      @refresh="refreshTaskDetail"
     />
 
-    <!-- 调整工序执行参数弹窗 -->
-    <StepExecutionDialog
-      :visible="stepExecutionDialogVisible"
-      :step-record="editingStepRecord"
-      :sop-file-options="sopFileOptions"
-      :submitting="submitting"
-      @update:visible="stepExecutionDialogVisible = $event"
-      @refresh-sop-files="refreshSopFiles"
-      @save="submitStepExecutionOverride"
-    />
-
-    <StepAssignmentDialog
-      :visible="stepAssignmentDialogVisible"
-      :mode="stepAssignmentMode"
-      :step-record="assignmentStepRecord"
-      :user-options="userSource.options.value"
-      :submitting="
-        assignmentStepRecord ? stepAssignments.isPending(assignmentStepRecord.id) : false
-      "
-      @update:visible="stepAssignmentDialogVisible = $event"
-      @refresh-users="userSource.refresh"
-      @submit="submitStepAssignment"
+    <ProductionTaskStepsDialog
+      ref="stepsDialog"
+      v-model:visible="stepsVisible"
+      :batch-id="stepsBatchId"
+      :batch-label="stepsBatchLabel"
+      @changed="taskPhaseChanged"
     />
 
     <MaterialDemandConfigurationDialog
@@ -334,12 +339,16 @@
     />
 
     <MaterialDemandOverviewDialog
+      ref="materialDemandOverviewDialog"
       :visible="materialDemandOverviewVisible"
       :batch="materialDemandBatch"
       :demands="materialOverviewDemands"
       :loading="materialOverviewLoading"
+      :error="materialOverviewError"
       @update:visible="materialDemandOverviewVisible = $event"
       @add-manual="openManualMaterialDemand"
+      @changed="handleManualMaterialDemandAdded"
+      @refresh="loadMaterialDemandOverview"
     />
 
     <ManualMaterialDemandDialog
@@ -347,6 +356,34 @@
       :batch="materialDemandBatch"
       @update:visible="manualMaterialDemandVisible = $event"
       @added="handleManualMaterialDemandAdded"
+    />
+
+    <ResearchExecutionDialog
+      v-model:visible="researchExecutionVisible"
+      :batch="batches.find((row) => row.id === researchExecutionBatch?.id) ?? null"
+      @changed="researchExecutionChanged"
+    />
+    <ProductionExecutionStartDialog
+      ref="executionStartDialog"
+      v-model:visible="executionStartVisible"
+      :batch-id="executionStartBatch?.id ?? null"
+      :batch-label="
+        executionStartBatch
+          ? `${executionStartBatch.batchNo} · ${executionStartBatch.productName}`
+          : ''
+      "
+      @changed="taskPhaseChanged"
+    />
+    <ProductionCloseoutWithdrawalDialog
+      ref="closeoutWithdrawalDialog"
+      v-model:visible="closeoutWithdrawalVisible"
+      :batch-id="closeoutWithdrawalBatch?.id ?? null"
+      :batch-label="
+        closeoutWithdrawalBatch
+          ? `${closeoutWithdrawalBatch.batchNo} · ${closeoutWithdrawalBatch.productName}`
+          : ''
+      "
+      @changed="taskPhaseChanged"
     />
 
     <MaterialDemandAllocationDialog
@@ -368,21 +405,29 @@
       :demands="visibleMaterialDemands"
       :outbounds="materials.outbounds.value"
       :loading-outbounds="materials.loadingOutbounds.value"
+      :loading-demands="materials.loadingDemands.value"
+      :intent-status="materials.getOutboundIntentStatus()"
       :submitting="materials.submitting.value"
-      :short-batch="materialBatchIsShortBatch"
       @update:visible="handleMaterialOutboundClose"
       @submit="handleMaterialOutbound"
     />
 
-    <ShortBatchAuthorizationDialog
-      :visible="shortBatchAuthorizationVisible"
-      :preview="shortBatchAuthorizationPreview"
-      :loading="shortBatchAuthorizationLoading"
-      :submitting="shortBatchAuthorizationSubmitting"
-      @update:visible="shortBatchAuthorizationVisible = $event"
-      @submit="submitShortBatchAuthorization"
+    <ProductionBatchTerminationDialog
+      ref="terminationDialog"
+      v-model:visible="terminationVisible"
+      :batch-id="terminationBatchId"
+      @terminated="closeoutChanged"
+      @open-output="openOutput"
+      @open-withdrawal="openOutputWithdrawal"
     />
-
+    <ProductionOutputDialog
+      ref="outputDialog"
+      v-model:visible="outputVisible"
+      :batch-id="outputBatchId"
+      @changed="loadTasks"
+      @open-closeout="openCloseoutItems"
+      @open-withdrawal="openOutputWithdrawal"
+    />
     <ProductionBatchCancelDialog
       :visible="batchCancelDialogVisible"
       :batch="cancellingBatch"
@@ -395,13 +440,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onActivated, onMounted, ref } from 'vue';
-import { useRoute } from 'vue-router';
-import { Plus, Refresh } from '@element-plus/icons-vue';
+import { computed, nextTick, onActivated, onMounted, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
+import { ArrowDown, Plus, Refresh } from '@element-plus/icons-vue';
 import TableToolbar from '../../components/TableToolbar.vue';
 import PaginationFooter from '../../components/PaginationFooter.vue';
 import type {
-  BatchStepRecordItem,
   CreateProductionBatchPayload,
   ProductionBatchDetail,
   ProductionBatchCancellationCheck,
@@ -410,10 +454,10 @@ import type {
   CreateMaterialOutboundPayload,
   ProductionMaterialAllocationItem,
   ProductionMaterialDemandItem,
-  ShortBatchAuthorizationPreview,
 } from '@company/contracts';
+import { WORK_ORDER_TYPE_LABELS } from '@company/constants';
+import { useLatestReadRequest } from '../../composables/requests/useLatestReadRequest';
 import { normalizeCreateBatchPayload } from '@company/utils';
-import { SHORT_BATCH_AUTHORIZATION_ACTION_LABELS } from '@company/constants';
 import { productionApi } from '../../api/production';
 import { formatDateForDisplay } from '../../utils/date';
 import { EMessage } from '../../utils/message';
@@ -427,23 +471,93 @@ import { buildLiveOptions } from '../../utils/live-options';
 import TaskFormDialog from './components/TaskFormDialog.vue';
 import type { TaskFormValue } from './components/TaskFormDialog.vue';
 import TaskDetailDialog from './components/TaskDetailDialog.vue';
-import StepExecutionDialog from './components/StepExecutionDialog.vue';
-import type { StepExecutionValue } from './components/StepExecutionDialog.vue';
+import BatchApprovedOutput from './components/BatchApprovedOutput.vue';
+import ProductionTaskStepsDialog from './components/ProductionTaskStepsDialog.vue';
 import MaterialDemandAllocationDialog from './components/MaterialDemandAllocationDialog.vue';
 import MaterialOutboundDialog from './components/MaterialOutboundDialog.vue';
-import ShortBatchAuthorizationDialog from './components/ShortBatchAuthorizationDialog.vue';
 import { useProductionMaterials } from './composables/useProductionMaterials';
-import StepAssignmentDialog from './components/StepAssignmentDialog.vue';
-import { useStepAssignments } from './composables/useStepAssignments';
-import { deadlinePresentation, taskNextActionPresentation } from './production-task-presentation';
+import {
+  batchCloseoutActionLabel,
+  batchCloseoutActionType,
+  deadlinePresentation,
+  taskNextActionPresentation,
+  taskTypeTagType,
+} from './production-task-presentation';
+import ProductionBatchTerminationDialog from './components/ProductionBatchTerminationDialog.vue';
+import ProductionOutputDialog from './components/ProductionOutputDialog.vue';
 import ProductionBatchCancelDialog from './components/ProductionBatchCancelDialog.vue';
 import MaterialDemandConfigurationDialog from './components/MaterialDemandConfigurationDialog.vue';
 import MaterialDemandOverviewDialog from './components/MaterialDemandOverviewDialog.vue';
 import ManualMaterialDemandDialog from './components/ManualMaterialDemandDialog.vue';
+import ResearchExecutionDialog from './components/ResearchExecutionDialog.vue';
+import ProductionExecutionStartDialog from './components/ProductionExecutionStartDialog.vue';
+import ProductionCloseoutWithdrawalDialog from './components/ProductionCloseoutWithdrawalDialog.vue';
 
 defineOptions({ name: 'ProductionTasksPage' });
 
+const researchExecutionVisible = ref(false);
+const researchExecutionBatch = ref<ProductionBatchItem | null>(null);
+const openResearchExecution = (batch: ProductionBatchItem) => {
+  researchExecutionBatch.value = batch;
+  researchExecutionVisible.value = true;
+};
+const researchExecutionChanged = async (batchId: string, completed: boolean) => {
+  await taskPhaseChanged(batchId);
+  if (completed) openOutput(batchId);
+};
+const executionStartVisible = ref(false);
+const executionStartBatch = ref<ProductionBatchItem | null>(null);
+const executionStartDialog = ref<InstanceType<typeof ProductionExecutionStartDialog> | null>(null);
+const closeoutWithdrawalVisible = ref(false);
+const closeoutWithdrawalBatch = ref<ProductionBatchItem | null>(null);
+const closeoutWithdrawalDialog = ref<InstanceType<
+  typeof ProductionCloseoutWithdrawalDialog
+> | null>(null);
+const terminationDialog = ref<InstanceType<typeof ProductionBatchTerminationDialog> | null>(null);
+const openExecutionStart = async (batch: ProductionBatchItem): Promise<void> => {
+  if (executionStartVisible.value && !(await executionStartDialog.value?.close())) return;
+  await nextTick();
+  executionStartBatch.value = { ...batch };
+  executionStartVisible.value = true;
+};
+const openCloseoutWithdrawal = async (batch: ProductionBatchItem): Promise<void> => {
+  if (closeoutWithdrawalVisible.value && !(await closeoutWithdrawalDialog.value?.close())) return;
+  await nextTick();
+  closeoutWithdrawalBatch.value = { ...batch };
+  closeoutWithdrawalVisible.value = true;
+};
+const openOutputWithdrawal = async (batchId: string): Promise<void> => {
+  try {
+    const batch =
+      batches.value.find((row) => row.id === batchId) ?? (await productionApi.getBatch(batchId));
+    await openCloseoutWithdrawal(batch);
+  } catch (error) {
+    EMessage.error(error, '撤回任务详情查询失败');
+  }
+};
+const closeoutChanged = async (): Promise<void> => {
+  if (terminationBatchId.value) await taskPhaseChanged(terminationBatchId.value);
+};
+async function taskPhaseChanged(batchId: string): Promise<void> {
+  const updates: Promise<unknown>[] = [loadTasks()];
+  if (detailBatchId.value === batchId && detailDialogVisible.value)
+    updates.push(refreshTaskDetail());
+  if (materials.batchId.value === batchId)
+    updates.push(materials.loadDemands(), materials.loadOutbounds());
+  if (materialDemandBatch.value?.id === batchId && materialDemandOverviewVisible.value)
+    updates.push(loadMaterialDemandOverview());
+  if (outputVisible.value && outputBatchId.value === batchId)
+    updates.push(outputDialog.value?.refresh() ?? Promise.resolve());
+  if (terminationVisible.value && terminationBatchId.value === batchId)
+    updates.push(terminationDialog.value?.refresh() ?? Promise.resolve());
+  const results = await Promise.allSettled(updates);
+  for (const result of results)
+    if (result.status === 'rejected')
+      EMessage.error(result.reason, '任务已变更，部分详情刷新失败，请重新核对');
+}
+
 const route = useRoute();
+const router = useRouter();
 
 const {
   batches,
@@ -462,7 +576,7 @@ const {
   handlePageChange,
 } = useProductionBatchesList();
 
-/** 页面级负责人候选（查询筛选 + 任务弹窗 + 工序执行弹窗）：页面持有并负责激活刷新 */
+/** 页面级负责人候选：筛选展开或任务表单打开时读取；存量 options 待后续专项替换 */
 const userSource = useUserOptions();
 
 /** 负责人筛选下拉实时选项：已选负责人在候选被移除时显示「ID（已失效）」并禁用 */
@@ -475,10 +589,14 @@ const userChoices = computed(() =>
 );
 
 const batchDeadline = (row: ProductionBatchItem) =>
-  deadlinePresentation(row.planEndDate, row.status === 'completed' || row.status === 'cancelled');
+  deadlinePresentation(
+    row.planEndDate,
+    row.status === 'completed' || row.status === 'cancelled' || row.status === 'terminated',
+  );
 const batchRowClass = ({ row }: { row: ProductionBatchItem }): string =>
   batchDeadline(row).overdueDays > 0 ? 'deadline-overdue-row' : '';
 const taskNextAction = (row: ProductionBatchItem) => taskNextActionPresentation(row);
+const taskTypeLabel = (row: ProductionBatchItem) => WORK_ORDER_TYPE_LABELS[row.orderType];
 
 /** 行内写操作守卫（关闭剩余需求、取消任务），同一行只允许一个在途。 */
 const { isRowPending, beginRow, endRow } = useRowPending();
@@ -487,53 +605,126 @@ const { isRowPending, beginRow, endRow } = useRowPending();
 const createBatchIntent = useIdempotentIntent();
 
 /* ====== 弹窗状态 ====== */
+const outputVisible = ref(false),
+  outputBatchId = ref<string | null>(null);
+const outputDialog = ref<InstanceType<typeof ProductionOutputDialog> | null>(null);
+let locatingOutput = false;
+const openOutput = async (batchId: string): Promise<boolean> => {
+  if (outputVisible.value && outputBatchId.value === batchId) return true;
+  if (locatingOutput || outputDialog.value?.navigationLocked) return false;
+  locatingOutput = true;
+  try {
+    if (outputVisible.value && outputDialog.value && !(await outputDialog.value.close()))
+      return false;
+    await nextTick();
+    outputBatchId.value = batchId;
+    outputVisible.value = true;
+    return true;
+  } finally {
+    locatingOutput = false;
+  }
+};
+let acceptedOutput = '';
+let locatingRouteOutput = false;
+async function locateOutput(): Promise<void> {
+  if (route.name !== 'production-tasks' || locatingRouteOutput) return;
+  const id = typeof route.query.batchId === 'string' ? route.query.batchId : '';
+  if (!/^[1-9]\d*$/.test(id)) return;
+  locatingRouteOutput = true;
+  try {
+    await nextTick();
+    const opened = await openOutput(id);
+    if (route.name !== 'production-tasks' || route.query.batchId !== id) return;
+    if (opened) acceptedOutput = id;
+    else {
+      const query = { ...route.query };
+      delete query.batchId;
+      const retainedBatchId = outputVisible.value ? outputBatchId.value : acceptedOutput;
+      await router.replace({
+        query: { ...query, ...(retainedBatchId ? { batchId: retainedBatchId } : {}) },
+      });
+    }
+  } finally {
+    locatingRouteOutput = false;
+    if (route.name === 'production-tasks' && route.query.batchId !== id) void locateOutput();
+  }
+}
+watch(
+  () => [route.name, route.query.batchId],
+  () => {
+    void locateOutput();
+  },
+  { immediate: true },
+);
+const openCloseoutItems = (batchId: string) => {
+  terminationBatchId.value = batchId;
+  terminationVisible.value = true;
+};
+function openCloseout(batch: ProductionBatchItem) {
+  if (
+    batch.status === 'completed' ||
+    batch.status === 'terminated' ||
+    (batch.status === 'closing' && batch.closeoutMode === 'normal')
+  )
+    openOutput(batch.id);
+  else {
+    terminationBatchId.value = batch.id;
+    terminationVisible.value = true;
+  }
+}
+const terminationVisible = ref(false);
+const terminationBatchId = ref<string | null>(null);
 const taskDialogVisible = ref(false);
 const detailDialogVisible = ref(false);
-const stepExecutionDialogVisible = ref(false);
 const editingTaskId = ref<string | null>(null);
+const editingTaskVersion = ref<number | null>(null);
+const editRead = useLatestReadRequest(() => undefined);
 const submitting = ref(false);
 const activeBatch = ref<ProductionBatchDetail | null>(null);
-const editingStepRecord = ref<BatchStepRecordItem | null>(null);
-const stepAssignmentDialogVisible = ref(false);
-const stepAssignmentMode = ref<'assign' | 'reassign'>('assign');
-const assignmentStepRecord = ref<BatchStepRecordItem | null>(null);
-const stepAssignments = useStepAssignments();
-const assignmentPendingIds = computed(
-  () =>
-    new Set(
-      (activeBatch.value?.stepRecords ?? [])
-        .filter((step) => stepAssignments.isPending(step.id))
-        .map((step) => step.id),
-    ),
-);
+const detailBatchId = ref<string | null>(null);
+const detailLoading = ref(false);
+const detailError = ref('');
+const detailRead = useLatestReadRequest(() => {
+  detailLoading.value = false;
+});
+const stepsVisible = ref(false);
+const stepsBatchId = ref<string | null>(null);
+const stepsBatchLabel = ref('');
+const stepsDialog = ref<InstanceType<typeof ProductionTaskStepsDialog> | null>(null);
 const materialAllocationVisible = ref(false);
 const materialDemandConfigurationVisible = ref(false);
 const materialDemandOverviewVisible = ref(false);
+const materialDemandOverviewDialog = ref<InstanceType<typeof MaterialDemandOverviewDialog> | null>(
+  null,
+);
 const manualMaterialDemandVisible = ref(false);
 const materialDemandBatch = ref<ProductionBatchItem | null>(null);
 const materialOverviewDemands = ref<ProductionMaterialDemandItem[]>([]);
 const materialOverviewLoading = ref(false);
+const materialOverviewError = ref('');
+const materialOverviewRead = useLatestReadRequest(() => {
+  materialOverviewLoading.value = false;
+});
+watch(materialDemandOverviewVisible, (visible) => {
+  if (!visible) materialOverviewRead.invalidate();
+});
 const materialOutboundVisible = ref(false);
-const shortBatchAuthorizationVisible = ref(false);
-const shortBatchAuthorizationLoading = ref(false);
-const shortBatchAuthorizationSubmitting = ref(false);
-const shortBatchAuthorizationPreview = ref<ShortBatchAuthorizationPreview | null>(null);
-const shortBatchAuthorizationBatchId = ref<string | null>(null);
 const batchCancelDialogVisible = ref(false);
 const batchCancelSubmitting = ref(false);
 const cancellingBatch = ref<ProductionBatchItem | null>(null);
 const batchCancellationCheck = ref<ProductionBatchCancellationCheck | null>(null);
 const materials = useProductionMaterials();
-const materialBatchIsShortBatch = ref(false);
 const visibleMaterialDemands = computed(() => materials.demands.value);
 const taskFormDialogRef = ref<{
-  setForm: (row: ProductionBatchItem) => void;
+  setForm: (row: ProductionBatchDetail) => void;
   resetForm: () => void;
 }>();
 
 /* ====== 任务 CRUD ====== */
 const openCreate = (): void => {
+  editRead.invalidate();
   editingTaskId.value = null;
+  editingTaskVersion.value = null;
   taskFormDialogRef.value?.resetForm();
   createBatchIntent.reset();
   taskDialogVisible.value = true;
@@ -549,6 +740,8 @@ const handleTaskDialogClose = async (visible: boolean): Promise<void> => {
     taskDialogVisible.value = true;
     return;
   }
+  if (submitting.value) return;
+  editRead.invalidate();
   const state = createBatchIntent.getStatus();
   if (state === 'idle') {
     taskDialogVisible.value = false;
@@ -557,10 +750,10 @@ const handleTaskDialogClose = async (visible: boolean): Promise<void> => {
   }
   const message =
     state === 'blocked'
-      ? '该提交的幂等结果已损坏，无法确认本次是否已创建批次。关闭后重新发起可能生成重复批次，建议先在批次列表中核对是否已生成。是否仍要关闭？'
+      ? '暂时无法确认批次是否已创建，当前不能继续提交。请先核对批次列表并联系管理员；关闭后重新办理可能重复创建，确认关闭？'
       : state === 'expired'
-        ? '该提交已超出幂等重试窗口（12 小时），旧键已无法安全重试。关闭后重新发起可能生成重复批次，建议先在批次列表中核对是否已生成。是否仍要关闭？'
-        : '上次提交结果未知（网络异常或服务端未确认）。关闭后将无法安全重试；若本次实际已成功，重新提交可能生成重复批次。是否仍要关闭？';
+        ? '本次提交已超过可重试时限。请先核对批次列表；关闭后重新办理可能重复创建，确认关闭？'
+        : '暂时无法确认批次是否已创建。关闭后无法继续重试本次提交，重新办理可能重复创建；请先核对批次列表，确认关闭？';
   try {
     await ElMessageBox.confirm(message, '关闭确认', {
       confirmButtonText: '仍要关闭',
@@ -574,10 +767,23 @@ const handleTaskDialogClose = async (visible: boolean): Promise<void> => {
   }
 };
 
-const openEdit = (row: ProductionBatchItem): void => {
-  editingTaskId.value = row.id;
-  taskFormDialogRef.value?.setForm(row);
-  taskDialogVisible.value = true;
+const openEdit = async (row: ProductionBatchItem): Promise<void> => {
+  if (taskDialogVisible.value || !editRead.isActive()) return;
+  const request = editRead.begin(() => !taskDialogVisible.value);
+  try {
+    const detail = await productionApi.getBatch(row.id, {
+      signal: request.signal,
+      skipErrorHandling: true,
+    });
+    if (!request.isCurrent()) return;
+    if (detail.id !== row.id) throw new Error('任务详情与当前目标不一致，请重试');
+    editingTaskId.value = detail.id;
+    editingTaskVersion.value = detail.version;
+    taskFormDialogRef.value?.setForm(detail);
+    taskDialogVisible.value = true;
+  } catch (error) {
+    if (request.isCurrent()) EMessage.error(error, '任务编辑信息查询失败');
+  }
 };
 
 const submitTask = async (data: TaskFormValue): Promise<void> => {
@@ -585,18 +791,18 @@ const submitTask = async (data: TaskFormValue): Promise<void> => {
   try {
     const editId = editingTaskId.value;
     if (editId) {
-      const batch = batches.value.find((item) => item.id === editId);
+      const version = editingTaskVersion.value;
+      if (version === null) throw new Error('任务编辑依据缺失，请关闭后重新打开');
       await productionApi.updateBatch(editId, {
         ownerId: data.ownerId || null,
         planStartDate: data.planStartDate || null,
         planEndDate: data.planEndDate || null,
         remark: data.remark || null,
-        version: batch?.version ?? 0,
+        version,
       });
       EMessage.success('任务已更新');
     } else {
       const payload: CreateProductionBatchPayload = {
-        batchNo: data.batchNo || '',
         routeId: data.routeId || null,
         plannedQuantity: data.plannedQuantity,
         ownerId: data.ownerId || null,
@@ -627,95 +833,48 @@ const submitTask = async (data: TaskFormValue): Promise<void> => {
   }
 };
 
-/* ====== 查看详情 ====== */
-const openDetail = async (row: ProductionBatchItem): Promise<void> => {
+/* ====== 只读详情与独立工序管理 ====== */
+async function refreshTaskDetail(): Promise<void> {
+  const id = detailBatchId.value;
+  if (!id || !detailDialogVisible.value || !detailRead.isActive()) return;
+  const request = detailRead.begin(() => detailDialogVisible.value && detailBatchId.value === id);
+  detailLoading.value = true;
+  detailError.value = '';
   try {
-    activeBatch.value = await productionApi.getBatch(row.id);
-    detailDialogVisible.value = true;
-  } catch (error) {
-    EMessage.error(error, '任务详情查询失败');
-  }
-};
-
-const openStepExecutionOverride = (row: BatchStepRecordItem): void => {
-  editingStepRecord.value = row;
-  stepExecutionDialogVisible.value = true;
-};
-
-const submitStepExecutionOverride = async (data: StepExecutionValue): Promise<void> => {
-  if (!activeBatch.value || !editingStepRecord.value) return;
-  submitting.value = true;
-  try {
-    activeBatch.value = await productionApi.updateBatchStepExecution(
-      activeBatch.value.id,
-      editingStepRecord.value.id,
-      {
-        version: editingStepRecord.value.version,
-        actualSopFileId: data.actualSopFileId,
-      },
-    );
-    stepExecutionDialogVisible.value = false;
-    EMessage.success('工序执行参数已更新');
-  } catch (error) {
-    EMessage.error(error, '工序执行参数保存失败');
-  } finally {
-    submitting.value = false;
-  }
-};
-
-const openStepAssignment = (row: BatchStepRecordItem, mode: 'assign' | 'reassign'): void => {
-  assignmentStepRecord.value = row;
-  stepAssignmentMode.value = mode;
-  stepAssignmentDialogVisible.value = true;
-};
-
-const refreshActiveBatch = async (): Promise<void> => {
-  if (!activeBatch.value) return;
-  activeBatch.value = await productionApi.getBatch(activeBatch.value.id);
-  await loadTasks();
-};
-
-const submitStepAssignment = async (responsibleUserId: string): Promise<void> => {
-  if (!activeBatch.value || !assignmentStepRecord.value) return;
-  const row = assignmentStepRecord.value;
-  try {
-    if (stepAssignmentMode.value === 'assign')
-      await stepAssignments.assign(activeBatch.value.id, row.id, responsibleUserId, row.version);
-    else
-      await stepAssignments.reassign(activeBatch.value.id, row.id, responsibleUserId, row.version);
-    stepAssignmentDialogVisible.value = false;
-    EMessage.success(stepAssignmentMode.value === 'assign' ? '工序派工成功' : '工序改派成功');
-    await refreshActiveBatch();
-  } catch (error) {
-    EMessage.error(error, stepExecutionErrorFallback(error, '工序派工失败'));
-  }
-};
-
-const handleStepUnassign = async (row: BatchStepRecordItem): Promise<void> => {
-  if (!activeBatch.value) return;
-  try {
-    await ElMessageBox.confirm(`确认撤回工序「${row.stepName}」的当前派工？`, '撤回派工', {
-      confirmButtonText: '确认撤回',
-      cancelButtonText: '取消',
-      type: 'warning',
+    const detail = await productionApi.getBatch(id, {
+      signal: request.signal,
+      skipErrorHandling: true,
     });
-    await stepAssignments.unassign(activeBatch.value.id, row.id, row.version);
-    EMessage.success('工序派工已撤回');
-    await refreshActiveBatch();
+    if (!request.isCurrent()) return;
+    if (detail.id !== id) throw new Error('任务详情与当前目标不一致，请重新刷新');
+    activeBatch.value = detail;
   } catch (error) {
-    if (error === 'cancel' || error === 'close') return;
-    EMessage.error(error, stepExecutionErrorFallback(error, '撤回派工失败'));
+    if (!request.isCurrent()) return;
+    activeBatch.value = null;
+    detailError.value = error instanceof Error ? error.message : '任务详情查询失败，请重试';
+  } finally {
+    if (request.isCurrent()) detailLoading.value = false;
   }
+}
+const handleDetailVisibility = (visible: boolean): void => {
+  detailDialogVisible.value = visible;
+  if (!visible) detailRead.invalidate();
 };
-
-const stepExecutionErrorFallback = (error: unknown, fallback: string): string => {
-  const code =
-    typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : '';
-  const messages: Record<string, string> = {
-    STEP_ASSIGNMENT_CONFLICT: '工序派工状态已变化，请刷新任务详情后重试',
-    CONCURRENT_MODIFICATION: '工序已被其他操作修改，请刷新后重试',
-  };
-  return messages[code] ?? fallback;
+const openDetail = async (row: ProductionBatchItem): Promise<void> => {
+  detailRead.invalidate();
+  detailBatchId.value = row.id;
+  activeBatch.value = null;
+  detailError.value = '';
+  detailDialogVisible.value = true;
+  await refreshTaskDetail();
+};
+const openSteps = async (row: ProductionBatchItem): Promise<void> => {
+  if (stepsVisible.value && stepsBatchId.value === row.id) return;
+  if (stepsVisible.value && !(await stepsDialog.value?.close())) return;
+  await nextTick();
+  stepsBatchId.value = row.id;
+  stepsBatchLabel.value = `${row.batchNo} · ${row.productName}`;
+  stepsVisible.value = true;
 };
 
 const openMaterialAllocation = async (row: ProductionBatchItem): Promise<void> => {
@@ -751,92 +910,11 @@ const handleMaterialRelease = async (
 const openMaterialOutbound = async (row: ProductionBatchItem): Promise<void> => {
   if (!(await prepareMaterialBatch(row.id))) return;
   materials.setBatch(row.id);
-  materialBatchIsShortBatch.value =
-    row.status === 'material_partially_outbound' ||
-    row.shortBatchAuthorizationStatus === 'valid' ||
-    row.shortBatchAuthorizationStatus === 'consumed';
   materialOutboundVisible.value = true;
   try {
     await Promise.all([materials.loadDemands(), materials.loadOutbounds()]);
   } catch (error) {
     EMessage.error(error, '生产领料数据查询失败');
-  }
-};
-const openShortBatchAuthorization = async (row: ProductionBatchItem): Promise<void> => {
-  shortBatchAuthorizationBatchId.value = row.id;
-  shortBatchAuthorizationPreview.value = null;
-  shortBatchAuthorizationVisible.value = true;
-  shortBatchAuthorizationLoading.value = true;
-  try {
-    shortBatchAuthorizationPreview.value = await productionApi.getShortBatchAuthorizationPreview(
-      row.id,
-    );
-  } catch (error) {
-    EMessage.error(error, '短批授权缺口查询失败');
-  } finally {
-    shortBatchAuthorizationLoading.value = false;
-  }
-};
-const shortBatchAuthorizationActionLabel = (row: ProductionBatchItem): string =>
-  SHORT_BATCH_AUTHORIZATION_ACTION_LABELS[row.shortBatchAuthorizationAction];
-const submitShortBatchAuthorization = async (reason: string): Promise<void> => {
-  const batchId = shortBatchAuthorizationBatchId.value;
-  const preview = shortBatchAuthorizationPreview.value;
-  if (
-    !batchId ||
-    !preview ||
-    preview.blockedReason !== null ||
-    !['authorize', 'reauthorize', 'adjust'].includes(preview.authorizationAction) ||
-    shortBatchAuthorizationSubmitting.value
-  )
-    return;
-  shortBatchAuthorizationSubmitting.value = true;
-  try {
-    await productionApi.authorizeShortBatch(batchId, {
-      version: preview.batchVersion,
-      reason,
-    });
-    EMessage.success('短批开工已授权，后续可继续分配和领料');
-    shortBatchAuthorizationVisible.value = false;
-    await loadTasks();
-  } catch (error) {
-    EMessage.error(error, '短批授权失败');
-    try {
-      shortBatchAuthorizationPreview.value =
-        await productionApi.getShortBatchAuthorizationPreview(batchId);
-    } catch {
-      // 保留原窗口与错误信息，由用户重新打开时刷新。
-    }
-  } finally {
-    shortBatchAuthorizationSubmitting.value = false;
-  }
-};
-const closeRemainingMaterialDemands = async (row: ProductionBatchItem): Promise<void> => {
-  if (!beginRow(row.id)) return;
-  try {
-    const result = await ElMessageBox.prompt(
-      '关闭后，所有剩余活动需求将取消，未出库分配将释放。该操作不会冲销已确认领料，请填写原因。',
-      '关闭剩余物料需求',
-      {
-        confirmButtonText: '确认关闭',
-        cancelButtonText: '取消',
-        type: 'warning',
-        inputType: 'textarea',
-        inputPlaceholder: '填写不再需要剩余物料的原因',
-        inputValidator: (value) => value.trim().length > 0 || '关闭原因不能为空',
-      },
-    );
-    await productionApi.closeRemainingMaterialDemands(row.id, {
-      version: row.version,
-      reason: result.value.trim(),
-    });
-    EMessage.success('剩余物料需求已关闭，未出库分配已释放');
-    await loadTasks();
-  } catch (error) {
-    if (error === 'cancel' || error === 'close') return;
-    EMessage.error(error, '关闭剩余物料需求失败');
-  } finally {
-    endRow(row.id);
   }
 };
 const handleMaterialOutbound = async (payload: CreateMaterialOutboundPayload): Promise<void> => {
@@ -850,10 +928,10 @@ const handleMaterialOutbound = async (payload: CreateMaterialOutboundPayload): P
 };
 const materialIntentMessage = (operation: string, state: string): string =>
   state === 'blocked'
-    ? `${operation}的幂等结果已损坏，无法确认业务结果。请先刷新需求、出库记录和库存后核对；仍要放弃本次安全重试吗？`
+    ? `暂时无法确认${operation}是否成功，当前不能继续提交。请先核对需求、出库记录和库存，并联系管理员；确认关闭当前操作？`
     : state === 'expired'
-      ? `${operation}已超出 12 小时安全重试窗口。请先核对需求、出库记录和库存；仍要放弃本次意图吗？`
-      : `${operation}的服务端结果尚未确认。放弃后重新提交可能重复形成业务事实，请先核对需求、出库记录和库存；仍要放弃吗？`;
+      ? `${operation}已超过可重试时限。请先核对需求、出库记录和库存；重新办理可能重复提交，确认关闭当前操作？`
+      : `暂时无法确认${operation}是否成功。关闭后无法继续重试本次提交，重新办理可能重复操作；请先核对需求、出库记录和库存，确认关闭？`;
 const confirmMaterialIntentReset = async (
   operation: string,
   status: 'idle' | 'pending' | 'blocked' | 'expired',
@@ -864,7 +942,7 @@ const confirmMaterialIntentReset = async (
     return true;
   }
   try {
-    await ElMessageBox.confirm(materialIntentMessage(operation, status), '放弃幂等意图确认', {
+    await ElMessageBox.confirm(materialIntentMessage(operation, status), '确认关闭当前操作', {
       confirmButtonText: '核对后仍要放弃',
       cancelButtonText: '继续保留',
       type: 'warning',
@@ -906,6 +984,7 @@ const handleMaterialAllocationClose = async (visible: boolean): Promise<void> =>
     materialAllocationVisible.value = false;
 };
 const handleMaterialOutboundClose = async (visible: boolean): Promise<void> => {
+  if (materials.submitting.value) return;
   if (visible) {
     materialOutboundVisible.value = true;
     return;
@@ -928,8 +1007,6 @@ const materialErrorFallback = (error: unknown, fallback: string): string => {
     ALLOCATION_ALREADY_OUTBOUND: '该分配已发生出库，不能释放',
     OUTBOUND_EXCEEDS_ALLOCATION: '出库数量超过当前未出库量，请刷新后重试',
     ALLOCATION_PENDING_OUTBOUND: '该分配已有待确认出库单，请先取消相关单据',
-    SHORT_BATCH_AUTHORIZATION_STALE:
-      '物料需求计划已变化：仍有分配缺口时请重新短批授权；全部活动需求完成分配后可按普通齐套方式继续领料',
     CONCURRENT_MODIFICATION: '数据已被其他操作修改，请刷新后重试',
   };
   return messages[code] ?? fallback;
@@ -971,26 +1048,65 @@ const confirmBatchCancellation = async (reason: string): Promise<void> => {
 };
 
 /* ====== 工具函数 ====== */
+const canHandleMaterials = (row: ProductionBatchItem): boolean =>
+  [
+    'material_pending',
+    'material_assigned',
+    'material_partially_outbound',
+    'material_outbound',
+    'doing',
+  ].includes(row.status);
+const canStartBatch = (row: ProductionBatchItem): boolean =>
+  [
+    'pending',
+    'material_pending',
+    'material_assigned',
+    'material_partially_outbound',
+    'material_outbound',
+  ].includes(row.status);
 const canEditBatch = (row: ProductionBatchItem): boolean => row.status === 'pending';
-const openMaterialDemandConfiguration = (row: ProductionBatchItem): void => {
+const closeMaterialDemandOverview = async (): Promise<boolean> =>
+  !materialDemandOverviewVisible.value ||
+  (await materialDemandOverviewDialog.value?.close()) === true;
+const openMaterialDemandConfiguration = async (row: ProductionBatchItem): Promise<void> => {
+  if (!(await closeMaterialDemandOverview())) return;
   materialDemandBatch.value = row;
-  materialDemandConfigurationVisible.value = true;
+  if (row.orderType === 'research') manualMaterialDemandVisible.value = true;
+  else materialDemandConfigurationVisible.value = true;
 };
 const loadMaterialDemandOverview = async (): Promise<void> => {
-  if (!materialDemandBatch.value) return;
+  if (
+    !materialDemandOverviewVisible.value ||
+    !materialDemandBatch.value ||
+    !materialOverviewRead.isActive()
+  )
+    return;
   const batchId = materialDemandBatch.value.id;
+  const current = materialOverviewRead.begin(
+    () => materialDemandOverviewVisible.value && materialDemandBatch.value?.id === batchId,
+  );
   materialOverviewLoading.value = true;
+  materialOverviewError.value = '';
   try {
-    materialOverviewDemands.value = await productionApi.listMaterialDemands(batchId);
+    const demands = await productionApi.listMaterialDemands(batchId, {
+      signal: current.signal,
+      skipErrorHandling: true,
+    });
+    if (current.isCurrent()) materialOverviewDemands.value = demands;
   } catch (error) {
-    EMessage.error(error, '物料需求查询失败');
+    if (!current.isCurrent()) return;
+    materialOverviewDemands.value = [];
+    materialOverviewError.value =
+      error instanceof Error ? error.message : '物料需求查询失败，请刷新重试';
   } finally {
-    materialOverviewLoading.value = false;
+    if (current.isCurrent()) materialOverviewLoading.value = false;
   }
 };
-const openMaterialDemandOverview = (row: ProductionBatchItem): void => {
+const openMaterialDemandOverview = async (row: ProductionBatchItem): Promise<void> => {
+  if (!(await closeMaterialDemandOverview())) return;
   materialDemandBatch.value = row;
   materialOverviewDemands.value = [];
+  materialOverviewError.value = '';
   materialDemandOverviewVisible.value = true;
   void loadMaterialDemandOverview();
 };
@@ -1009,10 +1125,9 @@ onMounted(() => {
   if (typeof keyword === 'string') query.keyword = keyword;
   void loadPageData();
 });
-/** 页面重新激活：定向刷新页面持有的候选（负责人 + SOP 文件）；弹窗自持候选由弹窗自身刷新 */
+/** 页面重新激活仅处理产出定位；候选由实际使用入口按需读取。 */
 onActivated(() => {
-  void userSource.refresh();
-  void refreshSopFiles();
+  void locateOutput();
 });
 </script>
 
@@ -1024,9 +1139,9 @@ onActivated(() => {
 }
 .query-panel,
 .table-panel {
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--el-border-color-lighter);
   border-radius: 8px;
-  background: #ffffff;
+  background: var(--el-bg-color);
 }
 .query-panel {
   padding: 20px 20px 4px;
@@ -1043,7 +1158,7 @@ onActivated(() => {
 .query-form :deep(.el-form-item__label) {
   height: 34px;
   padding-right: 8px;
-  color: #1f2937;
+  color: var(--el-text-color-primary);
   font-size: 14px;
   font-weight: 500;
   line-height: 34px;
@@ -1056,7 +1171,7 @@ onActivated(() => {
 .query-form :deep(.el-select__wrapper) {
   min-height: 34px;
   border-radius: 6px;
-  box-shadow: 0 0 0 1px #e5e7eb inset;
+  box-shadow: 0 0 0 1px var(--el-border-color-lighter) inset;
 }
 .query-actions {
   margin-left: auto;
@@ -1078,7 +1193,7 @@ onActivated(() => {
   justify-content: space-between;
   height: 56px;
   padding: 0 16px;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--el-border-color-lighter);
 }
 .table-toolbar :deep(.el-button) {
   height: 34px;
@@ -1086,23 +1201,23 @@ onActivated(() => {
 }
 .tasks-table {
   width: 100%;
-  color: #1f2937;
+  color: var(--el-text-color-primary);
   font-size: 14px;
 }
 .tasks-table :deep(.el-table__header th) {
   height: 48px;
-  background: #f9fafb;
-  color: #1f2937;
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-primary);
   font-weight: 600;
 }
 .tasks-table :deep(.el-table__row) {
   height: 48px;
 }
 .tasks-table :deep(.el-table__row:hover) {
-  background: #f3f4f6;
+  background: var(--el-fill-color-light);
 }
 .tasks-table :deep(.el-table__cell) {
-  border-bottom-color: #e5e7eb;
+  border-bottom-color: var(--el-border-color-lighter);
 }
 .tasks-table :deep(.el-tag) {
   height: 22px;
@@ -1113,59 +1228,15 @@ onActivated(() => {
   font-weight: 500;
   line-height: 22px;
 }
-.tasks-table :deep(.el-tag--success) {
-  background: #dcfce7;
-  color: #22c55e;
-}
-.tasks-table :deep(.el-tag--info) {
-  background: #f3f4f6;
-  color: #6b7280;
-}
-.tasks-table :deep(.el-tag--danger) {
-  background: #fce8e8;
-  color: #ef4444;
-}
-.tasks-table :deep(.el-tag--primary) {
-  background: #e8f0fe;
-  color: #306188;
-}
-.tasks-table :deep(.task-status-pending) {
-  background: #f4f4f5;
-  color: #909399;
-}
-.tasks-table :deep(.task-status-material_pending) {
-  background: #fdf6ec;
-  color: #e6a23c;
-}
-.tasks-table :deep(.task-status-material_assigned) {
-  background: #f5f3ff;
-  color: #a78bfa;
-}
-.tasks-table :deep(.task-status-material_outbound) {
-  background: #f0fdfa;
-  color: #14b8a6;
-}
-.tasks-table :deep(.task-status-doing) {
-  background: #ecf5ff;
-  color: #409eff;
-}
-.tasks-table :deep(.task-status-completed) {
-  background: #f0f9eb;
-  color: #67c23a;
-}
-.tasks-table :deep(.task-status-cancelled) {
-  background: #fef0f0;
-  color: #f56c6c;
-}
 .tasks-table :deep(tr.deadline-overdue-row) {
-  --el-table-tr-bg-color: rgb(255, 247, 237);
-  --el-table-row-hover-bg-color: rgb(255, 239, 219);
+  --el-table-tr-bg-color: var(--el-color-warning-light-9);
+  --el-table-row-hover-bg-color: var(--el-color-warning-light-8);
 }
 .tasks-table :deep(tr.deadline-overdue-row > td.el-table__cell) {
-  background-color: rgb(255, 247, 237) !important;
+  background-color: var(--el-color-warning-light-9) !important;
 }
 .tasks-table :deep(tr.deadline-overdue-row:hover > td.el-table__cell) {
-  background: rgb(255, 239, 219) !important;
+  background: var(--el-color-warning-light-8) !important;
 }
 .deadline-badge {
   display: inline-flex;
@@ -1180,35 +1251,54 @@ onActivated(() => {
   line-height: 20px;
 }
 .deadline-muted {
-  border-color: #e5e7eb;
-  background: #f4f4f5;
-  color: #909399;
+  border-color: var(--el-border-color-lighter);
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-secondary);
 }
 .deadline-normal {
-  border-color: #d9ecff;
-  background: #ecf5ff;
-  color: #409eff;
+  border-color: var(--el-color-primary-light-8);
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
 }
 .deadline-warning {
-  border-color: #fde2e2;
-  background: #fef0f0;
-  color: #f56c6c;
+  border-color: var(--el-color-warning-light-8);
+  background: var(--el-color-warning-light-9);
+  color: var(--el-color-warning);
 }
-.next-action {
-  font-size: 13px;
-  font-weight: 500;
+.phase-hint {
+  margin-top: 4px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.5;
 }
-.next-action-muted {
-  color: #909399;
+.task-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
 }
-.next-action-warning {
-  color: #e6a23c;
+.task-actions :deep(.el-button + .el-button) {
+  margin-left: 0;
 }
-.next-action-primary {
-  color: #409eff;
+.task-more-menu :deep(.task-action-warning:not(.is-disabled)) {
+  --el-text-color-regular: var(--el-color-warning);
+  --el-dropdown-menuItem-hover-color: var(--el-color-warning);
+  --el-dropdown-menuItem-hover-fill: var(--el-color-warning-light-9);
 }
-.next-action-success {
-  color: #67c23a;
+.task-more-menu :deep(.task-action-danger:not(.is-disabled)) {
+  --el-text-color-regular: var(--el-color-danger);
+  --el-dropdown-menuItem-hover-color: var(--el-color-danger);
+  --el-dropdown-menuItem-hover-fill: var(--el-color-danger-light-9);
+}
+.more-icon {
+  margin-left: 3px;
+}
+.product-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
 }
 .tasks-table :deep(.el-button.is-link) {
   padding: 0;
@@ -1216,65 +1306,13 @@ onActivated(() => {
 }
 .batch-no,
 .product-name {
-  color: #1f2937;
+  color: var(--el-text-color-primary);
   font-weight: 600;
 }
 .sub-text {
   margin-top: 2px;
-  color: #6b7280;
+  color: var(--el-text-color-secondary);
   font-size: 12px;
-}
-.table-footer {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 12px;
-  height: 56px;
-  padding: 0 16px;
-}
-.total-text {
-  color: #303133;
-  font-size: 14px;
-}
-.page-size-select {
-  width: 160px;
-}
-.page-size-select :deep(.el-select__wrapper) {
-  min-height: 40px;
-  padding: 0 12px;
-  border-radius: 4px;
-  box-shadow: 0 0 0 1px #dcdfe6 inset;
-}
-.table-footer :deep(.el-pagination) {
-  gap: 10px;
-  color: #303133;
-}
-.table-footer :deep(.el-pager li),
-.table-footer :deep(.btn-prev),
-.table-footer :deep(.btn-next) {
-  min-width: 40px;
-  height: 40px;
-  border: 0;
-  border-radius: 2px;
-  background: #f4f6f8;
-  color: #606266;
-}
-.table-footer :deep(.el-pager li.is-active) {
-  background: #409eff;
-  color: #ffffff;
-}
-.table-footer :deep(.btn-prev:disabled),
-.table-footer :deep(.btn-next:disabled) {
-  background: #f5f7fa;
-  color: #c0c4cc;
-}
-.table-footer :deep(.el-pagination__jump .el-input) {
-  width: 64px;
-}
-.table-footer :deep(.el-pagination__jump .el-input__wrapper) {
-  min-height: 40px;
-  border-radius: 4px;
-  box-shadow: 0 0 0 1px #dcdfe6 inset;
 }
 @media (max-width: 1120px) {
   .query-form {

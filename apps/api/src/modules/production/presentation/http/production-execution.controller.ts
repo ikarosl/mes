@@ -4,30 +4,84 @@ import {
   Get,
   Param,
   Post,
+  Query,
   Res,
   StreamableFile,
   UseFilters,
 } from '@nestjs/common';
 import { PERMISSIONS } from '@company/constants';
-import type { CommandContext } from '../../../../common/audit/audit.types.js';
+import type {
+  CommandContext,
+  IdempotentCommandContext,
+} from '../../../../common/audit/audit.types.js';
 import {
   AuditInApplication,
   CurrentCommandContext,
+  CurrentIdempotentCommandContext,
+  IdempotentEndpoint,
   RequirePermission,
 } from '../../../../common/security/auth.decorators.js';
 import { VersionedCommandDto } from '../../../../presentation/http/dto/versioned-command.dto.js';
+import { PageQueryDto } from '../../../../presentation/http/dto/page-query.dto.js';
 import { ProductionExecutionService } from '../../application/production-execution.service.js';
 import { ProductionDomainExceptionFilter } from './production-domain-exception.filter.js';
 import { AssignProductionStepDto, BatchStepRecordParamDto } from './dto/production.dto.js';
 import { BatchIdParamDto } from './dto/production-material.dto.js';
+import { ReopenProductionStepDto } from './dto/production-step-actions.dto.js';
+import { ProductionWorkerTaskQueryDto } from './dto/production-worker-task.dto.js';
+import {
+  StartProductionExecutionDto,
+  CompleteProductionExecutionDto,
+} from './dto/production-task-execution.dto.js';
+import {
+  START_PRODUCTION_EXECUTION_SCOPE,
+  COMPLETE_PRODUCTION_EXECUTION_SCOPE,
+  COMPLETE_RESEARCH_EXECUTION_SCOPE,
+} from '../../application/idempotency/production-idempotency-scopes.contract.js';
 
 @Controller('production')
 @UseFilters(ProductionDomainExceptionFilter)
 export class ProductionExecutionController {
   constructor(private readonly service: ProductionExecutionService) {}
 
+  @Get('batches/:batchId/execution-start-check')
+  @RequirePermission([
+    PERMISSIONS.production.tasks.view,
+    PERMISSIONS.production.executionRecords.view,
+  ])
+  startCheck(@Param() { batchId }: BatchIdParamDto) {
+    return this.service.getStartCheck(batchId);
+  }
+
+  @Post('batches/:batchId/actions/start-execution')
+  @RequirePermission(PERMISSIONS.production.batches.transition)
+  @AuditInApplication()
+  @IdempotentEndpoint({ scope: START_PRODUCTION_EXECUTION_SCOPE })
+  startExecution(
+    @Param() { batchId }: BatchIdParamDto,
+    @Body() body: StartProductionExecutionDto,
+    @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
+  ) {
+    return this.service.startExecution(batchId, body, context);
+  }
+
+  @Post('batches/:batchId/actions/complete-research')
+  @RequirePermission(PERMISSIONS.production.batches.transition)
+  @AuditInApplication()
+  @IdempotentEndpoint({ scope: COMPLETE_RESEARCH_EXECUTION_SCOPE })
+  completeResearch(
+    @Param() { batchId }: BatchIdParamDto,
+    @Body() body: CompleteProductionExecutionDto,
+    @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
+  ) {
+    return this.service.completeResearchExecution(batchId, body, context);
+  }
+
   @Get('batches/:batchId/execution-completion-check')
-  @RequirePermission(PERMISSIONS.production.tasks.view)
+  @RequirePermission([
+    PERMISSIONS.production.tasks.view,
+    PERMISSIONS.production.executionRecords.view,
+  ])
   completionCheck(@Param() { batchId }: BatchIdParamDto) {
     return this.service.getCompletionCheck(batchId);
   }
@@ -35,18 +89,22 @@ export class ProductionExecutionController {
   @Post('batches/:batchId/actions/complete-execution')
   @RequirePermission(PERMISSIONS.production.steps.manageExecution)
   @AuditInApplication()
+  @IdempotentEndpoint({ scope: COMPLETE_PRODUCTION_EXECUTION_SCOPE })
   completeExecution(
     @Param() { batchId }: BatchIdParamDto,
-    @Body() body: VersionedCommandDto,
-    @CurrentCommandContext() context: CommandContext,
+    @Body() body: CompleteProductionExecutionDto,
+    @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
   ) {
-    return this.service.completeExecution(batchId, body.version, context);
+    return this.service.completeExecution(batchId, body, context);
   }
 
   @Get('worker-tasks')
   @RequirePermission(PERMISSIONS.production.workerTasks.view)
-  myTasks(@CurrentCommandContext() context: CommandContext) {
-    return this.service.listMyTasks(context);
+  myTasks(
+    @CurrentCommandContext() context: CommandContext,
+    @Query() query: ProductionWorkerTaskQueryDto,
+  ) {
+    return this.service.listMyTasks(context, query);
   }
 
   @Get('batches/:batchId/step-records/:recordId/sop-content')
@@ -125,6 +183,85 @@ export class ProductionExecutionController {
     @CurrentCommandContext() context: CommandContext,
   ) {
     return this.service.startStep(batchId, recordId, body.version, context);
+  }
+
+  @Post('batches/:batchId/step-records/:recordId/actions/complete')
+  @RequirePermission(PERMISSIONS.production.steps.start)
+  @AuditInApplication()
+  completeStep(
+    @Param() { batchId, recordId }: BatchStepRecordParamDto,
+    @Body() body: VersionedCommandDto,
+    @CurrentCommandContext() context: CommandContext,
+  ) {
+    return this.service.completeStep(batchId, recordId, body.version, context);
+  }
+
+  @Post('batches/:batchId/step-records/:recordId/actions/reopen')
+  @RequirePermission(PERMISSIONS.production.steps.start)
+  @AuditInApplication()
+  reopenStep(
+    @Param() { batchId, recordId }: BatchStepRecordParamDto,
+    @Body() body: ReopenProductionStepDto,
+    @CurrentCommandContext() context: CommandContext,
+  ) {
+    return this.service.reopenStep(batchId, recordId, body, context);
+  }
+
+  @Post('batches/:batchId/step-records/:recordId/actions/admin-start')
+  @RequirePermission(PERMISSIONS.production.steps.manageExecution)
+  @AuditInApplication()
+  adminStartStep(
+    @Param() { batchId, recordId }: BatchStepRecordParamDto,
+    @Body() body: VersionedCommandDto,
+    @CurrentCommandContext() context: CommandContext,
+  ) {
+    return this.service.startStep(batchId, recordId, body.version, context, true);
+  }
+
+  @Post('batches/:batchId/step-records/:recordId/actions/admin-complete')
+  @RequirePermission(PERMISSIONS.production.steps.manageExecution)
+  @AuditInApplication()
+  adminCompleteStep(
+    @Param() { batchId, recordId }: BatchStepRecordParamDto,
+    @Body() body: VersionedCommandDto,
+    @CurrentCommandContext() context: CommandContext,
+  ) {
+    return this.service.completeStep(batchId, recordId, body.version, context, true);
+  }
+
+  @Post('batches/:batchId/step-records/:recordId/actions/admin-reopen')
+  @RequirePermission(PERMISSIONS.production.steps.manageExecution)
+  @AuditInApplication()
+  adminReopenStep(
+    @Param() { batchId, recordId }: BatchStepRecordParamDto,
+    @Body() body: ReopenProductionStepDto,
+    @CurrentCommandContext() context: CommandContext,
+  ) {
+    return this.service.reopenStep(batchId, recordId, body, context, true);
+  }
+
+  @Get('batches/:batchId/step-records/:recordId/execution-actions')
+  @RequirePermission([
+    PERMISSIONS.production.executionRecords.view,
+    PERMISSIONS.production.tasks.view,
+    PERMISSIONS.production.trace.view,
+    PERMISSIONS.production.steps.manageExecution,
+  ])
+  stepExecutionHistory(
+    @Param() { batchId, recordId }: BatchStepRecordParamDto,
+    @Query() query: PageQueryDto,
+  ) {
+    return this.service.listStepExecutionHistory(batchId, recordId, query);
+  }
+
+  @Get('worker-tasks/batches/:batchId/step-records/:recordId/execution-actions')
+  @RequirePermission(PERMISSIONS.production.workerTasks.view)
+  myStepExecutionHistory(
+    @Param() { batchId, recordId }: BatchStepRecordParamDto,
+    @Query() query: PageQueryDto,
+    @CurrentCommandContext() context: CommandContext,
+  ) {
+    return this.service.listStepExecutionHistory(batchId, recordId, query, context);
   }
 
   private streamSop(

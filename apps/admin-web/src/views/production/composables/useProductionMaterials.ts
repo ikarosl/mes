@@ -25,6 +25,14 @@ export const useProductionMaterials = () => {
   let outboundRequest = 0;
   const allocationIntent = useIdempotentIntent();
   const outboundIntent = useIdempotentIntent();
+  let outboundCommand: {
+    batchId: string;
+    payload: ReturnType<typeof normalizeMaterialOutboundPayload>;
+  } | null = null;
+  const resetOutboundIntent = (): void => {
+    outboundIntent.reset();
+    outboundCommand = null;
+  };
 
   const setBatch = (id: string): void => {
     if (batchId.value === id) return;
@@ -33,7 +41,7 @@ export const useProductionMaterials = () => {
     outbounds.value = [];
     availableItemBatches.value = [];
     allocationIntent.reset();
-    outboundIntent.reset();
+    resetOutboundIntent();
   };
   const loadDemands = async (): Promise<void> => {
     if (!batchId.value) return;
@@ -109,19 +117,25 @@ export const useProductionMaterials = () => {
   const outbound = async (payload: CreateMaterialOutboundPayload): Promise<void> => {
     if (!batchId.value || submitting.value) return;
     const id = batchId.value;
-    const normalized = normalizeMaterialOutboundPayload(payload);
+    outboundCommand ??= { batchId: id, payload: normalizeMaterialOutboundPayload(payload) };
+    const command = outboundCommand;
+    if (command.batchId !== id) throw new Error('请先核对原任务的领料出库结果，再切换任务');
     submitting.value = true;
     try {
       await outboundIntent.execute(
         {
           intentType: 'production.material-outbound.create',
-          params: { batchId: id },
+          params: { batchId: command.batchId },
           query: {},
-          body: normalized,
+          body: command.payload,
         },
-        (key) => productionApi.createMaterialOutbound(id, normalized, key),
+        (key) => productionApi.createMaterialOutbound(command.batchId, command.payload, key),
       );
+      outboundCommand = null;
       await Promise.all([loadDemands(), loadOutbounds()]);
+    } catch (error) {
+      if (outboundIntent.getStatus() === 'idle') outboundCommand = null;
+      throw error;
     } finally {
       submitting.value = false;
     }
@@ -139,7 +153,7 @@ export const useProductionMaterials = () => {
     getAllocationIntentStatus: allocationIntent.getStatus,
     getOutboundIntentStatus: outboundIntent.getStatus,
     resetAllocationIntent: allocationIntent.reset,
-    resetOutboundIntent: outboundIntent.reset,
+    resetOutboundIntent,
     setBatch,
     loadDemands,
     loadAvailable,

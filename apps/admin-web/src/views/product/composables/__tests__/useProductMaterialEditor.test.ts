@@ -26,8 +26,6 @@ const bomRow = {
   materialId: '2',
   quantityPerUnit: '1.5',
   unit: 'kg',
-  isKeyMaterial: true,
-  needBatchRecord: false,
   remark: null,
 };
 

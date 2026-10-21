@@ -18,7 +18,9 @@
       <el-descriptions-item label="状态">{{
         detailRow.status === 1 ? '启用' : '停用'
       }}</el-descriptions-item>
-      <el-descriptions-item label="更新时间">{{ detailRow.updatedAt || '-' }}</el-descriptions-item>
+      <el-descriptions-item label="更新时间">{{
+        formatDateTimeForDisplay(detailRow.updatedAt)
+      }}</el-descriptions-item>
       <el-descriptions-item
         label="备注"
         :span="2"
@@ -31,6 +33,7 @@
 <script setup lang="ts">
 import type { ProductCategoryListItem, ProductItemKind } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
+import { formatDateTimeForDisplay } from '../../../utils/date';
 
 defineProps<{
   visible: boolean;

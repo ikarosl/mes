@@ -23,6 +23,8 @@ const value = {
   itemBatchId: '7',
   batchCode: 'LOT-1',
   scrapScene: 'production_consumed' as const,
+  purpose: 'production_record' as const,
+  closeoutId: null,
   scrapQuantity: '1.0000',
   unit: '件',
   reasonType: '搬运损坏',
@@ -35,13 +37,6 @@ const value = {
   createdAt: '2026-08-20T09:00:00+08:00',
   version: 1,
   remark: null,
-  supplement: {
-    supplementId: '10',
-    supplementNo: 'BL-1',
-    status: 'approved' as const,
-    demandId: '11',
-    demandQuantity: '1.0000',
-  },
 };
 
 describe('production material-loss result codecs', () => {

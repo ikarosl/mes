@@ -6,53 +6,41 @@ const evaluate = (overrides: Record<string, unknown> = {}) =>
     productionBatchId: '10',
     batchStatus: 'doing',
     version: 2,
-    plannedQuantity: '10.0000',
-    requiredSteps: [
-      {
-        id: '22',
-        order: 20,
-        name: '包装',
-        status: 'completed',
-        effectiveNormalQuantity: '10.0000',
-      },
-    ],
+    plannedQuantity: '10',
+    requiredSteps: [{ status: 'completed' }],
     ...overrides,
   } as Parameters<typeof evaluateProductionExecutionCompletion>[0]);
 
 describe('production execution completion policy', () => {
-  it('uses the last required reporting step as the completed quantity source', () => {
+  it('allows execution end after all required steps are complete', () => {
     expect(evaluate()).toMatchObject({
       canComplete: true,
-      finalRequiredStepId: '22',
-      finalEffectiveNormalQuantity: '10.0000',
+      requiredStepCount: 1,
+      completedRequiredStepCount: 1,
       blockers: [],
     });
   });
 
-  it('reports incomplete steps and a short final quantity without allowing short completion', () => {
+  it('reports incomplete required steps', () => {
     const result = evaluate({
       requiredSteps: [
         {
-          id: '22',
-          order: 20,
-          name: '包装',
           status: 'doing',
-          effectiveNormalQuantity: '9.0000',
         },
       ],
     });
     expect(result.canComplete).toBe(false);
-    expect(result.blockers).toEqual([
-      'required_step_incomplete',
-      'final_step_quantity_insufficient',
-    ]);
+    expect(result.blockers).toEqual(['required_step_incomplete']);
   });
 
-  it('blocks completion while short-batch material demands remain active', () => {
-    expect(evaluate({ activeMaterialDemandCount: 2 })).toMatchObject({
-      canComplete: false,
-      activeMaterialDemandCount: 2,
-      blockers: ['active_material_demand_remains'],
-    });
+  it('leaves active demands and unfulfilled supplements for closeout without blocking execution end', () => {
+    expect(evaluate({ activeMaterialDemandCount: 2, unfulfilledSupplementCount: 1 })).toMatchObject(
+      {
+        canComplete: true,
+        activeMaterialDemandCount: 2,
+        unfulfilledSupplementCount: 1,
+        blockers: [],
+      },
+    );
   });
 });

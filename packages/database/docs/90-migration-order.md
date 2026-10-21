@@ -5,8 +5,8 @@
 ## 事实来源
 
 `packages/database/migrations/*.up.sql` 按文件名升序组成唯一 migration 注册表；同名
-`.down.sql` 提供配对回滚。`src/migration-utils.ts` 负责读取和计算校验和，`src/migrate.ts` 按顺序执行，
-`src/migrate-status.ts` 报告 `pending`、`applied` 或 `checksum-mismatch`。
+`.down.sql` 提供配对回滚 SQL。`src/migration-utils.ts` 负责读取、计算校验和及共用的已执行记录检查，`src/migrate.ts` 按注册顺序执行尚未登记的迁移，
+`src/migrate-status.ts` 报告 `pending` 或 `applied`；检查行为及登记规则见[迁移登记表](../README.md#迁移登记表-_schema_migrations)。当前运行器只执行 up，没有统一的 down／rollback 命令。
 
 文档不重复枚举 migration 文件或完成状态，避免注册表演进后产生第二份过期清单。查看当前顺序使用：
 
@@ -23,11 +23,12 @@ corepack pnpm db:migrate:status
 5. 破坏性 down migration 必须设置数据守卫。回滚会覆盖后续业务进度时，应明确拒绝回滚。
 6. migration 的物理集中不改变表所有权；字段、约束和状态语义必须同步到所属模块的数据库文档。
 
+历史注册表中 `202610190001-production-execution-records-view-permission` 与
+`202610190001-purchase-order-state-simplification` 共用时间序号。两者的完整文件名是独立迁移身份，按完整文件名排序执行，原名和 SQL 保持不可变；静态门禁仅登记这两个精确名称的例外，其他重复序号仍拒绝。该例外不免除 up/down 配对、历史变更或运行器校验和检查，不允许后续迁移复用该序号。
+
 ## 所有者与验证
 
-- Identity：[数据库设计](../../../apps/api/src/modules/identity/docs/database.md)
-- Product：[数据库设计](../../../apps/api/src/modules/product/docs/database.md)
-- Production：[数据库设计](../../../apps/api/src/modules/production/docs/database/README.md)
+- 业务表所有者：[数据库设计索引](../README.md#业务数据库设计)，覆盖 Identity、Product、Production、Inventory、Procurement、Quality、Approval 与 Notification。
 - 平台表：[操作审计](../../../apps/api/docs/audit.md)、[HTTP 幂等](../../../apps/api/docs/idempotency.md)
 - 公共字段与约束：[数据库公共约定](../../../docs/database-conventions.md)
 
@@ -38,4 +39,4 @@ corepack pnpm migration:check
 corepack pnpm --filter @company/database test
 ```
 
-升级和回滚的部署级约束见[迁移安全](migration-safety.md)，静态注册门禁见[迁移就绪检查](migration-readiness.md)。
+升级和回滚的部署约束、具体迁移的依赖顺序、非空守卫及不可单独运行的准备状态见[迁移安全](migration-safety.md)，静态注册门禁见[迁移就绪检查](migration-readiness.md)。

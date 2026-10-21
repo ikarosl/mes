@@ -22,7 +22,7 @@ const payload: MaterialPayload = {
 };
 
 describe('MysqlMaterialRepository', () => {
-  it('lists current material names and versions with the material-only filters', async () => {
+  it('lists current material names and variant counts with the material-only filters', async () => {
     const query = vi
       .fn()
       .mockResolvedValueOnce([[{ total: 1 }], []])
@@ -50,6 +50,7 @@ describe('MysqlMaterialRepository', () => {
           {
             id: 11,
             material_id: 9,
+            variant_count: 1,
             material_code: 'm1.077.012',
             material_name: '当前名称',
             major_version: '1',
@@ -87,20 +88,6 @@ describe('MysqlMaterialRepository', () => {
           specValues: [{ key: '阻抗', value: '50', unit: 'ohm' }],
           status: 1,
           variantCount: 1,
-          variants: [
-            {
-              id: '11',
-              materialId: '9',
-              materialCode: 'm1.077.012',
-              materialName: '当前名称',
-              majorVersion: '1',
-              minorVersion: '2',
-              variantCode: 'm1.077.012-1-2',
-              status: 1,
-              remark: null,
-              updatedAt: null,
-            },
-          ],
           remark: null,
           updatedAt: '2026-07-23T09:00:00.000+08:00',
         },
@@ -115,7 +102,6 @@ describe('MysqlMaterialRepository', () => {
     expect(String(query.mock.calls[0]?.[0])).toContain('material_variants');
     expect(query.mock.calls[0]?.[1]).toEqual(['%m1%', '%m1%', '%m1%', '3', 'purchased', 1]);
     expect(query.mock.calls[1]?.[1]).toEqual(['%m1%', '%m1%', '%m1%', '3', 'purchased', 1, 20, 20]);
-    expect(query.mock.calls[2]?.[1]).toEqual([9]);
   });
 
   it('lists only enabled, undeleted materials under enabled material categories as options', async () => {

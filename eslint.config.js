@@ -8,7 +8,17 @@ import vue from 'eslint-plugin-vue';
 export default tseslint.config(
   // 忽略构建产物与 .claude/worktrees/**（并发会话的 git worktree 副本含独立 tsconfig/eslint 配置，
   // 会导致 tsconfigRootDir 多候选解析失败；worktree 属于临时工作区，不应参与本仓库门禁）。
-  { ignores: ['**/dist/**', '**/coverage/**', '**/node_modules/**', '**/.claude/worktrees/**'] },
+  {
+    ignores: [
+      '**/dist/**',
+      '**/coverage/**',
+      '**/node_modules/**',
+      '**/.claude/worktrees/**',
+      '**/.worktrees/**',
+      'temp/**',
+      'ai_output/**',
+    ],
+  },
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
   ...vue.configs['flat/recommended'],

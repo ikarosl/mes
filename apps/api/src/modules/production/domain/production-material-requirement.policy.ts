@@ -36,23 +36,11 @@ export const requireCompleteNormalDemandSplit = (
     throw new ProductionDomainError('INVALID_INPUT', '各版本需求数量之和必须等于基础物料需求量');
 };
 
-/**
- * Material-loss supplementation is the only non-normal path that cannot substitute
- * another compatible version: it restores the exact variant physically lost.
- * Operation-scrap and manual additions may choose another enabled variant under the
- * same base material.
- *
- * The loss-confirm workflow calls this guard against both the locked allocation
- * candidate and its source demand. Operation-scrap/manual additions use Product's
- * public enabled-variant capability instead of this exact-identity rule.
- */
-export const requireSameVariantForMaterialLoss = (
+/** 确认损耗仍须引用原已领料分配的精确版本，不产生新的物料需求。 */
+export const requireMaterialLossSourceVariant = (
   lostMaterialVariantId: string,
-  selectedMaterialVariantId: string,
+  allocationMaterialVariantId: string,
 ): void => {
-  if (lostMaterialVariantId !== selectedMaterialVariantId)
-    throw new ProductionDomainError(
-      'INVALID_INPUT',
-      '生产领料损耗补充必须使用被损耗的同一物料版本',
-    );
+  if (lostMaterialVariantId !== allocationMaterialVariantId)
+    throw new ProductionDomainError('INVALID_INPUT', '损耗来源版本必须与原已领料分配一致');
 };

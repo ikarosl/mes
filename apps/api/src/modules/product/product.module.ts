@@ -2,7 +2,12 @@ import { Module } from '@nestjs/common';
 import { loadTechnicalFileStorageConfig } from '../../config/env.js';
 import { DatabaseModule } from '../../infrastructure/database/database.module.js';
 import { IdentityModule } from '../identity/public.js';
+import { ApprovalModule } from '../approval/public.js';
 import { ProductService } from './application/product.service.js';
+import { ProductInventoryEligibility } from './application/product-inventory-eligibility.query.js';
+import { MysqlProductInventoryEligibility } from './infrastructure/mysql-product-inventory-eligibility.query.js';
+import { ProductOtherStockQuery } from './application/product-other-stock.query.js';
+import { MysqlProductOtherStockQuery } from './infrastructure/mysql-product-other-stock.query.js';
 import { ProductSnapshotQuery } from './application/product-snapshot.query.js';
 import { ProductSnapshotService } from './application/product-snapshot.service.js';
 import { ProductProductionDefinitionCommand } from './application/product-production-definition.command.js';
@@ -33,12 +38,18 @@ import { MysqlTechnicalFileRepository } from './infrastructure/mysql-technical-f
 import { MysqlProductSnapshotRepository } from './infrastructure/mysql-product-snapshot.repository.js';
 import { S3TechnicalFileStorage } from './infrastructure/s3-technical-file.storage.js';
 import { ProductController } from './presentation/http/product.controller.js';
+import { ProductBomApprovalHandler } from './application/product-bom-approval.handler.js';
 
 @Module({
-  imports: [DatabaseModule, IdentityModule],
+  imports: [DatabaseModule, IdentityModule, ApprovalModule],
   controllers: [ProductController],
   providers: [
     ProductService,
+    MysqlProductInventoryEligibility,
+    { provide: ProductInventoryEligibility, useExisting: MysqlProductInventoryEligibility },
+    MysqlProductOtherStockQuery,
+    { provide: ProductOtherStockQuery, useExisting: MysqlProductOtherStockQuery },
+    ProductBomApprovalHandler,
     ProductSnapshotService,
     ProductProductionDefinitionService,
     TechnicalFileContentQuery,
@@ -76,6 +87,8 @@ import { ProductController } from './presentation/http/product.controller.js';
     },
   ],
   exports: [
+    ProductInventoryEligibility,
+    ProductOtherStockQuery,
     ProductSnapshotQuery,
     ProductProductionDefinitionCommand,
     TechnicalFileContentQuery,

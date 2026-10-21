@@ -24,6 +24,9 @@ describe('demo seed', () => {
     expect(seeds.map((seed) => seed.name)).toEqual([
       '001-system-demo.sql',
       '010-product-demo.sql',
+      '011-other-stock-demo.sql',
+      '012-inbound-grouping-demo.sql',
+      '013-purchase-order-status-demo.sql',
       '020-production-demo.sql',
     ]);
     const sql = seeds.map((seed) => seed.sql).join('\n');

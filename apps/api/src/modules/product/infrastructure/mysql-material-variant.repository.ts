@@ -1,11 +1,18 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import { withActiveConnection, withTransaction } from '@company/database';
-import type { MaterialVariantItem, MaterialVariantListQuery, PageResult } from '@company/contracts';
+import type {
+  MaterialOption,
+  MaterialVariantItem,
+  MaterialVariantListQuery,
+  PageResult,
+} from '@company/contracts';
+import { MATERIAL_OPTIONS_WINDOW_SIZE } from '@company/constants';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { writeTransactionalAudit } from '../../../common/audit/transactional-audit-writer.js';
 import { toBeijingISOString } from '../../../common/time/date-time.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
+import { ProductInventoryEligibility } from '../application/product-inventory-eligibility.query.js';
 import { ProductDomainError } from '../domain/product.errors.js';
 import { requireEnabledCompatibleMaterialVariant } from '../domain/material-variant.policy.js';
 import {
@@ -41,7 +48,10 @@ type VariantRow = RowDataPacket & {
  */
 @Injectable()
 export class MysqlMaterialVariantRepository extends MaterialVariantRepository {
-  constructor(@Inject(DATABASE_POOL) private readonly pool: Pool) {
+  constructor(
+    @Inject(DATABASE_POOL) private readonly pool: Pool,
+    private readonly eligibility: ProductInventoryEligibility,
+  ) {
     super();
   }
 
@@ -53,7 +63,7 @@ export class MysqlMaterialVariantRepository extends MaterialVariantRepository {
       `SELECT COUNT(*) total
          FROM material_variants v
          JOIN materials p ON p.id=v.material_id
-         JOIN product_categories c ON c.id=p.category_id
+         JOIN item_categories c ON c.id=p.category_id
         WHERE ${where}`,
       parameters,
     );
@@ -62,7 +72,7 @@ export class MysqlMaterialVariantRepository extends MaterialVariantRepository {
               v.major_version,v.minor_version,v.variant_code,v.status,v.is_deleted,v.remark,v.updated_at
          FROM material_variants v
          JOIN materials p ON p.id=v.material_id
-         JOIN product_categories c ON c.id=p.category_id
+         JOIN item_categories c ON c.id=p.category_id
         WHERE ${where}
         ORDER BY p.material_code,v.major_version,v.minor_version,v.id
         LIMIT ? OFFSET ?`,
@@ -74,6 +84,27 @@ export class MysqlMaterialVariantRepository extends MaterialVariantRepository {
       page,
       pageSize,
     };
+  }
+
+  async listByMaterial(materialId: string): Promise<MaterialVariantItem[]> {
+    const [[material]] = await this.pool.query<(RowDataPacket & { id: number })[]>(
+      `SELECT p.id FROM materials p JOIN item_categories c ON c.id=p.category_id
+        WHERE p.id=? AND p.is_deleted=0 AND c.is_deleted=0 AND c.item_kind='material'`,
+      [materialId],
+    );
+    if (!material) throw new ProductDomainError('NOT_FOUND', '基础物料不存在');
+    const { where, parameters } = this.filters({ materialId });
+    const [rows] = await this.pool.query<VariantRow[]>(
+      `SELECT v.id,v.material_id,p.material_code,p.material_name,
+              v.major_version,v.minor_version,v.variant_code,v.status,v.is_deleted,v.remark,v.updated_at
+         FROM material_variants v
+         JOIN materials p ON p.id=v.material_id
+         JOIN item_categories c ON c.id=p.category_id
+        WHERE ${where}
+        ORDER BY v.major_version,v.minor_version,v.id`,
+      parameters,
+    );
+    return rows.map((row) => this.map(row));
   }
 
   async listDisplayReferencesByIds(
@@ -92,6 +123,89 @@ export class MysqlMaterialVariantRepository extends MaterialVariantRepository {
     });
   }
 
+  async listPurchasableByMaterials(input: {
+    materialIds: string[];
+  }): Promise<MaterialVariantRecord[]> {
+    const ids = [...new Set(input.materialIds)];
+    if (!ids.length) return [];
+    return withActiveConnection(this.pool, async (db) => {
+      const [rows] = await db.query<VariantRow[]>(
+        `SELECT v.id,v.material_id,p.material_code,p.material_name,
+                v.major_version,v.minor_version,v.variant_code,v.status,v.is_deleted,v.remark,v.updated_at
+           FROM material_variants v
+           JOIN materials p ON p.id=v.material_id
+           JOIN item_categories c ON c.id=p.category_id
+          WHERE v.material_id IN (${ids.map(() => '?').join(',')})
+            AND v.is_deleted=0 AND p.status=1 AND p.is_deleted=0
+            AND c.status=1 AND c.is_deleted=0 AND c.item_kind='material'
+          ORDER BY v.material_id,v.major_version,v.minor_version,v.id`,
+        ids,
+      );
+      return rows.map((row) => this.toRecord(row));
+    });
+  }
+
+  listProductionMaterials(input: {
+    keyword?: string;
+    includeIds?: string[];
+  }): Promise<MaterialOption[]> {
+    return this.listMaterialOptions(input, true);
+  }
+
+  listPurchasableMaterials(input: {
+    keyword?: string;
+    includeIds?: string[];
+  }): Promise<MaterialOption[]> {
+    return this.listMaterialOptions(input, false);
+  }
+
+  private async listMaterialOptions(
+    input: { keyword?: string; includeIds?: string[] },
+    enabledOnly: boolean,
+  ): Promise<MaterialOption[]> {
+    const includeIds = [...new Set(input.includeIds ?? [])];
+    if (includeIds.length > 100) {
+      throw new ProductDomainError('INVALID_INPUT', '回显物料最多 100 项');
+    }
+    return withActiveConnection(this.pool, async (db) => {
+      type OptionRow = RowDataPacket & {
+        id: number;
+        material_code: string;
+        material_name: string;
+        acquire_method: MaterialOption['acquireMethod'];
+        unit: string;
+      };
+      const base = `SELECT p.id,p.material_code,p.material_name,p.acquire_method,p.unit
+          FROM materials p JOIN item_categories c ON c.id=p.category_id
+         WHERE p.status=1 AND p.is_deleted=0 AND c.status=1 AND c.is_deleted=0
+           AND c.item_kind='material'
+           AND EXISTS (SELECT 1 FROM material_variants v WHERE v.material_id=p.id AND v.is_deleted=0${enabledOnly ? ' AND v.status=1' : ''})`;
+      const keyword = input.keyword?.trim();
+      const [window] = await db.query<OptionRow[]>(
+        `${base}${keyword ? ' AND (p.material_code LIKE ? OR p.material_name LIKE ?)' : ''}
+          ORDER BY p.material_code,p.id LIMIT ?`,
+        [...(keyword ? [`%${keyword}%`, `%${keyword}%`] : []), MATERIAL_OPTIONS_WINDOW_SIZE],
+      );
+      const selected = includeIds.length
+        ? (
+            await db.query<OptionRow[]>(
+              `${base} AND p.id IN (${includeIds.map(() => '?').join(',')}) ORDER BY p.material_code,p.id`,
+              includeIds,
+            )
+          )[0]
+        : [];
+      return [
+        ...new Map([...window, ...selected].map((row) => [String(row.id), row])).values(),
+      ].map((row) => ({
+        id: String(row.id),
+        materialCode: row.material_code,
+        materialName: row.material_name,
+        acquireMethod: row.acquire_method,
+        unit: row.unit,
+      }));
+    });
+  }
+
   async listEnabledByMaterials(
     materialIds: string[],
     options: { lock?: boolean } = {},
@@ -103,13 +217,25 @@ export class MysqlMaterialVariantRepository extends MaterialVariantRepository {
                 v.major_version,v.minor_version,v.variant_code,v.status,v.is_deleted,v.remark,v.updated_at
            FROM material_variants v
            JOIN materials p ON p.id=v.material_id
-           JOIN product_categories c ON c.id=p.category_id
+           JOIN item_categories c ON c.id=p.category_id
           WHERE v.material_id IN (${materialIds.map(() => '?').join(',')})
             AND v.status=1 AND v.is_deleted=0 AND p.status=1 AND p.is_deleted=0
             AND c.status=1 AND c.is_deleted=0 AND c.item_kind='material'
-          ORDER BY v.material_id,v.major_version,v.minor_version,v.id${options.lock ? ' FOR UPDATE' : ''}`,
+          ORDER BY v.material_id,v.major_version,v.minor_version,v.id`,
         materialIds,
       );
+      if (options.lock) {
+        // 显式先锁父身份，避免由 JOIN 的执行计划决定跨表锁序。
+        const eligibility = await this.eligibility.requireProductionIssuableReferences({
+          references: rows.map((row) => ({
+            itemId: String(row.material_id),
+            materialVariantId: String(row.id),
+          })),
+        });
+        if (eligibility.status !== 'success') {
+          throw new ProductDomainError('INVALID_INPUT', eligibility.message);
+        }
+      }
       return rows.map((row) => {
         requireEnabledCompatibleMaterialVariant(String(row.material_id), {
           id: String(row.id),
@@ -153,7 +279,7 @@ export class MysqlMaterialVariantRepository extends MaterialVariantRepository {
         })[]
       >(
         `SELECT p.id,p.material_code,p.status,p.is_deleted
-           FROM materials p JOIN product_categories c ON c.id=p.category_id
+           FROM materials p JOIN item_categories c ON c.id=p.category_id
           WHERE p.id=? AND p.is_deleted=0 FOR UPDATE`,
         [command.materialId],
       );
@@ -200,10 +326,7 @@ export class MysqlMaterialVariantRepository extends MaterialVariantRepository {
       throw new ProductDomainError('INVALID_INPUT', '物料版本状态不合法');
     await withTransaction(this.pool, async (connection) => {
       const [[before]] = await connection.query<VariantRow[]>(
-        `SELECT v.id,v.material_id,p.material_code,p.material_name,
-                v.major_version,v.minor_version,v.variant_code,v.status,v.remark,v.updated_at
-           FROM material_variants v JOIN materials p ON p.id=v.material_id
-          WHERE v.id=? AND v.is_deleted=0 FOR UPDATE`,
+        `SELECT id,status FROM material_variants WHERE id=? AND is_deleted=0 FOR UPDATE`,
         [id],
       );
       if (!before) throw new ProductDomainError('NOT_FOUND', '物料版本不存在');

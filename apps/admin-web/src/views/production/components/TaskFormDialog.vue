@@ -11,6 +11,11 @@
       :model="form"
       :disabled="submitting"
     >
+      <el-form-item
+        v-if="editingTaskId"
+        label="任务批次号"
+        >{{ existingBatchNo }}</el-form-item
+      >
       <template v-if="!editingTaskId">
         <el-form-item
           label="选择工单"
@@ -35,12 +40,89 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="批次号">
-          <el-input
-            v-model="form.batchNo"
-            placeholder="留空自动生成"
-          />
-        </el-form-item>
+        <section
+          v-if="selectedWorkOrder"
+          class="work-order-summary"
+        >
+          <div class="summary-heading">
+            <strong>工单额度与审定产出</strong>
+            <el-button
+              link
+              type="primary"
+              :loading="workOrderSource.loading.value"
+              @click="workOrderSource.refresh()"
+              >刷新核对</el-button
+            >
+          </div>
+          <el-descriptions
+            :column="2"
+            border
+          >
+            <el-descriptions-item label="工单计划">{{
+              formatQuantity(selectedWorkOrder.plannedQuantity)
+            }}</el-descriptions-item>
+            <el-descriptions-item label="有效已分配">{{
+              formatQuantity(selectedWorkOrder.assignedQuantity)
+            }}</el-descriptions-item>
+            <el-descriptions-item label="剩余可分配"
+              ><strong>{{
+                formatQuantity(selectedWorkOrder.remainingQuantity)
+              }}</strong></el-descriptions-item
+            >
+            <el-descriptions-item label="已终止计划（不占额度）">{{
+              formatQuantity(selectedWorkOrder.terminatedPlannedQuantity)
+            }}</el-descriptions-item>
+            <el-descriptions-item label="审定计划内产出">{{
+              formatQuantity(selectedWorkOrder.finalOutput.availableQuantity)
+            }}</el-descriptions-item>
+            <el-descriptions-item label="审定计划外产出">{{
+              formatQuantity(selectedWorkOrder.finalOutput.extraQuantity)
+            }}</el-descriptions-item>
+            <el-descriptions-item label="审定可用合计">{{
+              formatQuantity(approvedUsableQuantity(selectedWorkOrder.finalOutput))
+            }}</el-descriptions-item>
+            <el-descriptions-item label="审定报废">{{
+              formatQuantity(selectedWorkOrder.finalOutput.scrapQuantity)
+            }}</el-descriptions-item>
+            <el-descriptions-item
+              label="计划内产出与计划比较"
+              :span="2"
+              >{{
+                plannedOutputGapText(selectedWorkOrder.finalOutput.plannedShortfallQuantity)
+              }}；已批准 {{ selectedWorkOrder.finalOutput.finalizedBatchCount }} 个任务，收尾中
+              {{ selectedWorkOrder.finalOutput.closingBatchCount }}
+              个任务（未计入）</el-descriptions-item
+            >
+          </el-descriptions>
+          <p class="summary-note">
+            剩余可分配 = 工单计划 −
+            有效已分配。已取消、已终止任务不占额度；收尾中、正常完成仍占用。已终止任务的审定产出继续累计，不抵扣可分配额度，也不代表已入库。
+          </p>
+          <p
+            v-if="Number.isInteger(form.plannedQuantity) && form.plannedQuantity > 0"
+            class="summary-note"
+          >
+            本次分配 {{ formatQuantity(form.plannedQuantity) }}；
+            {{
+              form.plannedQuantity > Number(selectedWorkOrder.remainingQuantity)
+                ? '超出额度'
+                : '分配后剩余'
+            }}
+            {{
+              formatQuantity(
+                Math.abs(Number(selectedWorkOrder.remainingQuantity) - form.plannedQuantity),
+              )
+            }}
+          </p>
+        </section>
+        <el-alert
+          v-if="workOrderSource.status.value === 'error'"
+          type="warning"
+          :closable="false"
+          title="工单额度刷新失败，请刷新核对后再保存任务。"
+          class="work-order-summary"
+        />
+        <el-form-item label="任务批次号">由系统自动生成</el-form-item>
         <el-form-item
           v-if="selectedWorkOrder"
           label="产品"
@@ -51,8 +133,14 @@
           />
         </el-form-item>
       </template>
-      <el-form-item label="工艺路线">
+      <el-form-item
+        v-if="taskOrderType !== 'research'"
+        label="工艺路线"
+        :required="!editingTaskId"
+      >
+        <span v-if="editingTaskId">{{ existingRouteLabel }}</span>
         <el-select
+          v-else
           v-model="form.routeId"
           filterable
           clearable
@@ -93,7 +181,6 @@
         <el-input-number
           v-model="form.plannedQuantity"
           :min="1"
-          :max="taskQuantityMax ?? undefined"
           :precision="0"
           :step="1"
         />
@@ -131,7 +218,7 @@
       </el-form-item>
     </el-form>
     <el-tabs
-      v-if="!editingTaskId && form.routeId"
+      v-if="!editingTaskId && taskOrderType !== 'research' && form.routeId"
       class="detail-tabs"
     >
       <el-tab-pane label="工序执行">
@@ -196,6 +283,7 @@
       <el-button
         type="primary"
         :loading="submitting"
+        :disabled="!editingTaskId && workOrderSource.status.value !== 'ready'"
         @click="handleSubmit"
         >保存任务</el-button
       >
@@ -207,6 +295,7 @@
 import { computed, onActivated, reactive, ref, watch } from 'vue';
 import type {
   ProcessRouteOption,
+  ProductionBatchDetail,
   TechnicalFileListItem,
   UserOption,
   WorkOrderOption,
@@ -215,15 +304,14 @@ import { DialogWidth } from '../../../utils/dialog';
 import { EMessage } from '../../../utils/message';
 import { toDateInputValue } from '../../../utils/date';
 import { buildLiveOptions, hasUnavailableSelection } from '../../../utils/live-options';
-import { resolveDefaultRouteId } from '../production-route-options';
-import { useProductOptions } from '../../../composables/options/useProductOptions';
 import { useProcessRouteOptions } from '../../../composables/options/useProcessRouteOptions';
 import { useTaskRouteSteps } from '../composables/useTaskRouteSteps';
 import { useWorkOrderOptions } from '../composables/useWorkOrderOptions';
+import { formatQuantity } from '../production-status';
+import { approvedUsableQuantity, plannedOutputGapText } from '../production-output-quantity';
 
 export type TaskFormValue = {
   workOrderId: string;
-  batchNo: string;
   routeId: string;
   ownerId: string;
   plannedQuantity: number;
@@ -251,9 +339,19 @@ const emit = defineEmits<{
   (e: 'save', data: TaskFormValue): void;
 }>();
 
+const existingBatchNo = ref('');
+const existingTaskContext = ref<Pick<
+  ProductionBatchDetail,
+  'orderType' | 'routeCode' | 'routeVersion'
+> | null>(null);
+const existingRouteLabel = computed(() => {
+  const context = existingTaskContext.value;
+  return context?.routeCode
+    ? `${context.routeCode}${context.routeVersion ? ` / ${context.routeVersion}` : ''}`
+    : '未配置';
+});
 const initialForm = (): Omit<TaskFormValue, 'stepOverrides'> => ({
   workOrderId: '',
-  batchNo: '',
   routeId: '',
   ownerId: '',
   plannedQuantity: 1,
@@ -262,15 +360,13 @@ const initialForm = (): Omit<TaskFormValue, 'stepOverrides'> => ({
   remark: '',
 });
 
-/** 本弹窗自持候选源：工单（本地过滤）/ 产品 / 工艺路线；打开、展开、页面激活时定向刷新 */
-const productSource = useProductOptions();
+/** 本弹窗自持工单与工艺路线候选；产品身份由所选工单提供。 */
 const routeSource = useProcessRouteOptions();
 const workOrderSource = useWorkOrderOptions();
 
-/** 打开弹窗：刷新本弹窗自持候选（产品 / 路线 / 工单），并请页面刷新它持有的用户 / SOP 文件候选 */
+/** 打开弹窗刷新自持候选，并请页面刷新它持有的用户 / SOP 文件候选。 */
 const onOpen = (): void => {
-  void productSource.refresh();
-  void routeSource.refresh();
+  if (!props.editingTaskId) void routeSource.refresh();
   void workOrderSource.refresh();
   emit('refresh-users');
   emit('refresh-sop-files');
@@ -286,8 +382,7 @@ watch(
 
 onActivated(() => {
   if (props.visible) {
-    void productSource.refresh();
-    void routeSource.refresh();
+    if (!props.editingTaskId) void routeSource.refresh();
     void workOrderSource.refresh();
   }
 });
@@ -302,6 +397,9 @@ const editingTaskOriginalQuantity = ref(0);
 
 const selectedWorkOrder = computed(
   () => workOrderSource.options.value.find((item) => item.id === form.workOrderId) ?? null,
+);
+const taskOrderType = computed(() =>
+  props.editingTaskId ? existingTaskContext.value?.orderType : selectedWorkOrder.value?.orderType,
 );
 /** 候选工单：标记失效已选值 */
 const workOrderChoices = computed(() =>
@@ -361,48 +459,14 @@ const routeChoices = computed(() =>
 const ownerChoices = computed(() =>
   buildLiveOptions(props.userOptions, form.ownerId ? [form.ownerId] : [], (user) => user.id),
 );
-const loadCreateStepPreview = (): void => {
+const handleRouteChange = (): void => {
+  resetStepPreview();
   void fetchStepPreview(form.routeId, Boolean(props.editingTaskId));
 };
-
-/** 待补算默认路线的工单 id：工单 change 时产品/路线候选未就绪，候选就绪后补算（不覆盖用户手动改的路线） */
-let pendingRouteWorkOrderId: string | null = null;
-
-/** 用户手动选择/清空路线：取消待补算的默认路线，避免迟到的默认路线补算覆盖手动选择 */
-const handleRouteChange = (): void => {
-  pendingRouteWorkOrderId = null;
-  loadCreateStepPreview();
-};
-
-const applyDefaultRoute = (order: WorkOrderOption): void => {
-  form.routeId = resolveDefaultRouteId(
-    order.productId,
-    productSource.options.value,
-    routeSource.options.value,
-  );
-  loadCreateStepPreview();
-};
-
-/**
- * 产品 / 路线候选就绪后，补算之前因候选未就绪而挂起的默认路线。
- * pending 只在工单 change 时设置，用户手动改路线不会被候选刷新覆盖。
- */
-watch(
-  () => [productSource.options.value, routeSource.options.value],
-  () => {
-    if (!pendingRouteWorkOrderId) return;
-    if (productSource.status.value !== 'ready' || routeSource.status.value !== 'ready') return;
-    const order = workOrderSource.options.value.find((item) => item.id === pendingRouteWorkOrderId);
-    pendingRouteWorkOrderId = null;
-    if (!order || order.id !== form.workOrderId) return; // 工单已切换/清空，丢弃挂起
-    applyDefaultRoute(order);
-  },
-);
 
 const handleWorkOrderChange = (workOrderId: string): void => {
   const order = workOrderSource.options.value.find((item) => item.id === workOrderId);
   // 切换工单：立即清空上一工单的路线与负责人及预览，防止旧产品路线残留到提交校验
-  pendingRouteWorkOrderId = null;
   form.routeId = '';
   form.ownerId = '';
   form.planStartDate = toDateInputValue(order?.planStartDate);
@@ -413,15 +477,11 @@ const handleWorkOrderChange = (workOrderId: string): void => {
   if (!Number.isInteger(form.plannedQuantity) || form.plannedQuantity <= 0) {
     EMessage.warning('该工单已无可分配数量');
   }
-  if (productSource.status.value === 'ready' && routeSource.status.value === 'ready') {
-    applyDefaultRoute(order);
-  } else {
-    pendingRouteWorkOrderId = order.id;
-  }
 };
 
 const resetForm = (): void => {
-  pendingRouteWorkOrderId = null;
+  existingBatchNo.value = '';
+  existingTaskContext.value = null;
   Object.assign(form, initialForm());
   resetStepPreview();
 };
@@ -429,7 +489,10 @@ const resetForm = (): void => {
 const setForm = (row: {
   workOrderId: string;
   batchNo: string;
+  orderType: ProductionBatchDetail['orderType'];
   routeId: string | null;
+  routeCode: string | null;
+  routeVersion: string | null;
   ownerId: string | null;
   plannedQuantity: string | number;
   planStartDate: string | null;
@@ -437,10 +500,14 @@ const setForm = (row: {
   remark: string | null;
 }): void => {
   editingTaskOriginalQuantity.value = Number(row.plannedQuantity);
-  pendingRouteWorkOrderId = null; // 编辑模式工单只读回显，不参与默认路线补算
+  existingBatchNo.value = row.batchNo;
+  existingTaskContext.value = {
+    orderType: row.orderType,
+    routeCode: row.routeCode,
+    routeVersion: row.routeVersion,
+  };
   Object.assign(form, {
     workOrderId: row.workOrderId,
-    batchNo: row.batchNo,
     routeId: row.routeId ?? '',
     ownerId: row.ownerId ?? '',
     plannedQuantity: Number(row.plannedQuantity),
@@ -452,6 +519,10 @@ const setForm = (row: {
 };
 
 const handleSubmit = (): void => {
+  if (!props.editingTaskId && workOrderSource.status.value !== 'ready') {
+    EMessage.warning('请先刷新工单额度后再保存任务');
+    return;
+  }
   if (
     (!props.editingTaskId && !form.workOrderId) ||
     !Number.isInteger(form.plannedQuantity) ||
@@ -495,7 +566,12 @@ const handleSubmit = (): void => {
     EMessage.warning('所选工单已失效，请重新选择');
     return;
   }
+  if (!props.editingTaskId && taskOrderType.value !== 'research' && !form.routeId) {
+    EMessage.warning('请先选择工艺路线');
+    return;
+  }
   if (
+    !props.editingTaskId &&
     form.routeId &&
     hasUnavailableSelection(availableRouteOptions.value, [form.routeId], (route) => route.id)
   ) {
@@ -511,6 +587,7 @@ const handleSubmit = (): void => {
   }
   emit('save', {
     ...form,
+    routeId: taskOrderType.value === 'research' ? '' : form.routeId,
     stepOverrides: createStepPreview.value
       .filter((step) => step.actualSopFileId)
       .map((step) => ({
@@ -524,6 +601,20 @@ defineExpose({ setForm, resetForm });
 </script>
 
 <style scoped>
+.work-order-summary {
+  margin-bottom: 20px;
+}
+.summary-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.summary-note {
+  margin: 10px 0 0;
+  line-height: 1.7;
+  color: var(--el-text-color-regular);
+}
 .dialog-form :deep(.el-input),
 .dialog-form :deep(.el-select),
 .dialog-form :deep(.el-input-number),

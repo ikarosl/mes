@@ -1,48 +1,5 @@
 import type { PageQuery, PermissionType, OperationResult } from './common.js';
 
-export interface UserListItem {
-  id: string;
-  username: string;
-  displayName: string;
-  departmentName: string | null;
-  status: number;
-  roles: string[];
-  lastLoginAt: string | null;
-}
-
-export interface RoleListItem {
-  id: string;
-  name: string;
-  code: string;
-  description: string | null;
-  status: number;
-  permissionIds: string[];
-}
-
-export interface PermissionListItem {
-  id: string;
-  parentId: string | null;
-  name: string;
-  code: string;
-  type: PermissionType;
-  routePath: string | null;
-  status: number;
-}
-
-export interface CreateUserRequest {
-  username: string;
-  password: string;
-  displayName: string;
-  departmentId?: string | null;
-  roleIds: string[];
-}
-
-export interface CreateRoleRequest {
-  name: string;
-  code: string;
-  description?: string | null;
-}
-
 export interface SystemUserListItem {
   id: string;
   username: string;
@@ -216,6 +173,7 @@ export const OPERATION_LOG_MODULE_OPTIONS = [
   { label: '系统管理', value: 'system' },
   { label: '产品资料', value: 'product' },
   { label: '生产管理', value: 'production' },
+  { label: '审批管理', value: 'approval' },
   { label: '生产物料分配', value: 'material-allocation' },
   { label: '仓储管理', value: 'warehouse' },
   { label: '质量管理', value: 'quality' },

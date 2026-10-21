@@ -28,7 +28,6 @@ const material = (): MaterialListItem => ({
   specValues: [],
   status: 1,
   variantCount: 0,
-  variants: [],
   remark: null,
   updatedAt: null,
 });

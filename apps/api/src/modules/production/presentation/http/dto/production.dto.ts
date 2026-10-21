@@ -19,7 +19,7 @@ import {
 } from 'class-validator';
 import type {
   ApproveBatchStepReworkPayload,
-  ApproveScrapSupplementPayload,
+  AssignProductionStepPayload,
   CancelWorkOrderPayload,
   CompleteReworkPayload,
   CreateProductionBatchPayload,
@@ -73,8 +73,8 @@ export class ProductionBatchQueryDto extends PageQueryDto implements ProductionB
   @IsOptional() @IsString() @MaxLength(20) ownerId?: string;
 }
 export class CreateWorkOrderDto implements CreateWorkOrderPayload {
-  @IsString() @MaxLength(100) workOrderNo!: string;
   @IsIn(WORK_ORDER_TYPES) orderType!: CreateWorkOrderPayload['orderType'];
+  @IsOptional() @IsString() @Matches(/^[1-9]\d{0,19}$/) previousResearchOrderId?: string | null;
   @IsString() @MaxLength(20) productId!: string;
   @Type(() => Number) @IsInt() @Min(1) @Max(MAX_QUANTITY) plannedQuantity!: number;
   @IsOptional() @IsString() @MaxLength(255) customerName?: string | null;
@@ -130,7 +130,6 @@ export class CreateBatchStepOverrideDto {
   @IsOptional() @IsString() @MaxLength(20) actualSopFileId?: string | null;
 }
 export class CreateProductionBatchDto implements CreateProductionBatchPayload {
-  @IsOptional() @IsString() @MaxLength(100) batchNo?: string | null;
   @IsOptional() @IsString() @MaxLength(20) routeId?: string | null;
   @Type(() => Number) @IsInt() @Min(1) @Max(MAX_QUANTITY) plannedQuantity!: number;
   @IsOptional() @IsString() @MaxLength(20) ownerId?: string | null;
@@ -183,7 +182,10 @@ export class UpdateBatchStepExecutionDto
   @IsOptional() @IsString() @MaxLength(20) actualSopFileId?: string | null;
 }
 
-export class AssignProductionStepDto extends VersionedCommandDto {
+export class AssignProductionStepDto
+  extends VersionedCommandDto
+  implements AssignProductionStepPayload
+{
   @IsString() @IsNotEmpty() @MaxLength(20) responsibleUserId!: string;
 }
 
@@ -209,10 +211,7 @@ export class CorrectBatchStepReportDto
   extends VersionedCommandDto
   implements CorrectBatchStepReportPayload
 {
-  @Type(() => Number) @IsInt() @Min(0) @Max(MAX_QUANTITY) normalQuantity!: number;
-  @Type(() => Number) @IsInt() @Min(0) @Max(MAX_QUANTITY) abnormalQuantity!: number;
-  @IsOptional() @IsIn(BATCH_STEP_ABNORMAL_ORIGINS) abnormalOrigin?:
-    'current_step' | 'previous_step' | null;
+  @Type(() => Number) @IsInt() @Min(1) @Max(MAX_QUANTITY) normalQuantity!: number;
   @IsString() @IsNotEmpty() @MaxLength(5000) reason!: string;
 }
 
@@ -249,19 +248,6 @@ export class ApproveScrapSupplementLineDto {
   @IsString() @IsNotEmpty() @MaxLength(20) requirementBasisId!: string;
   @IsString() @IsNotEmpty() @MaxLength(20) materialVariantId!: string;
   @Type(() => Number) @IsInt() @Min(1) @Max(MAX_QUANTITY) supplementQuantity!: number;
-}
-
-export class ApproveScrapSupplementDto
-  extends VersionedCommandDto
-  implements ApproveScrapSupplementPayload
-{
-  @IsArray()
-  @ArrayMinSize(1)
-  @ArrayMaxSize(200)
-  @ValidateNested({ each: true })
-  @Type(() => ApproveScrapSupplementLineDto)
-  details!: ApproveScrapSupplementLineDto[];
-  @IsOptional() @IsString() @MaxLength(5000) remark?: string | null;
 }
 
 export class SaveProductionScrapSupplementPlanDto {

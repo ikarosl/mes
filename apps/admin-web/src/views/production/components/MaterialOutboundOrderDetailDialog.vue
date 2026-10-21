@@ -56,11 +56,9 @@
           >
           <template v-if="detail.status === 'cancelled'">
             <el-descriptions-item label="取消来源">{{
-              detail.cancelSource === 'production_batch'
-                ? '生产任务取消'
-                : detail.cancelSource === 'manual'
-                  ? '人工取消'
-                  : '历史数据未记录'
+              detail.cancelSource
+                ? PRODUCTION_OUTBOUND_CANCEL_SOURCE_LABELS[detail.cancelSource]
+                : '历史数据未记录'
             }}</el-descriptions-item>
             <el-descriptions-item label="取消人">{{
               detail.cancelledByName || '-'
@@ -138,6 +136,7 @@
 </template>
 
 <script setup lang="ts">
+import { PRODUCTION_OUTBOUND_CANCEL_SOURCE_LABELS } from '@company/constants';
 import { computed } from 'vue';
 import { OUTBOUND_ORDER_STATUS_LABELS } from '@company/constants';
 import type { MaterialOutboundItem } from '@company/contracts';
@@ -159,7 +158,8 @@ const emit = defineEmits<{
 }>();
 
 const notice = computed(() => {
-  if (props.detail?.status === 'completed') return '整张单据已确认，每条明细均已生成负库存流水。';
+  if (props.detail?.status === 'completed')
+    return '整张单据已确认，每条明细均已生成负库存流水；当前有效需求的剩余量可继续分次办理。';
   if (props.detail?.status === 'cancelled')
     return '单据已取消，未扣减库存；明细仅作为历史记录保留。';
   return '单据尚未扣减库存，可打印用于拣货、领料和签字。';
@@ -169,8 +169,6 @@ const notice = computed(() => {
 <style scoped>
 .detail-body {
   min-height: 180px;
-  max-height: 70vh;
-  overflow-y: auto;
 }
 .detail-summary {
   margin: 16px 0;

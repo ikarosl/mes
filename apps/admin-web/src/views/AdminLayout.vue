@@ -1,18 +1,37 @@
 <template>
   <div class="shell">
-    <aside class="sidebar">
+    <aside
+      v-show="!isSidebarCollapsed"
+      id="admin-sidebar"
+      class="sidebar"
+    >
       <div class="brand">MES 追溯系统</div>
       <el-menu
         router
-        :default-active="$route.path"
+        :default-active="$route.meta.menuPath ?? $route.path"
       >
-        <el-menu-item index="/"><span>首页</span></el-menu-item>
+        <el-menu-item
+          v-if="auth.can(PERMISSIONS.dashboard.view)"
+          index="/"
+          ><span>首页</span></el-menu-item
+        >
         <el-sub-menu
           v-if="systemItems.length"
           index="system"
           ><template #title>系统管理</template
           ><el-menu-item
             v-for="item in systemItems"
+            :key="item.path"
+            :index="item.path"
+            >{{ item.title }}</el-menu-item
+          ></el-sub-menu
+        >
+        <el-sub-menu
+          v-if="approvalItems.length"
+          index="approval"
+          ><template #title>审批中心</template
+          ><el-menu-item
+            v-for="item in approvalItems"
             :key="item.path"
             :index="item.path"
             >{{ item.title }}</el-menu-item
@@ -30,6 +49,17 @@
           ></el-sub-menu
         >
         <el-sub-menu
+          v-if="procurementItems.length"
+          index="procurement"
+          ><template #title>采购管理</template
+          ><el-menu-item
+            v-for="item in procurementItems"
+            :key="item.path"
+            :index="item.path"
+            >{{ item.title }}</el-menu-item
+          ></el-sub-menu
+        >
+        <el-sub-menu
           v-if="productionItems.length"
           index="production"
           ><template #title>生产管理</template
@@ -41,6 +71,18 @@
           ></el-sub-menu
         >
         <el-sub-menu
+          v-if="qualityItems.length"
+          index="quality"
+        >
+          <template #title>质量管理</template>
+          <el-menu-item
+            v-for="item in qualityItems"
+            :key="item.path"
+            :index="item.path"
+            >{{ item.title }}</el-menu-item
+          >
+        </el-sub-menu>
+        <el-sub-menu
           v-if="warehouseItems.length"
           index="warehouse"
           ><template #title>仓储管理</template
@@ -48,6 +90,7 @@
             v-for="item in warehouseItems"
             :key="item.path"
             :index="item.path"
+            :route="item.route"
             >{{ item.title }}</el-menu-item
           ></el-sub-menu
         >
@@ -55,8 +98,21 @@
     </aside>
     <section class="main">
       <header class="topbar">
-        <span>{{ String($route.meta.title ?? '') }}</span>
+        <div class="topbar-heading">
+          <el-button
+            class="sidebar-toggle"
+            text
+            :icon="isSidebarCollapsed ? Expand : Fold"
+            :title="sidebarToggleLabel"
+            :aria-label="sidebarToggleLabel"
+            :aria-expanded="!isSidebarCollapsed"
+            aria-controls="admin-sidebar"
+            @click="toggleSidebar"
+          />
+          <span>{{ String($route.meta.title ?? '') }}</span>
+        </div>
         <div>
+          <NotificationBell />
           <span class="user">{{ auth.session?.user.displayName }}</span
           ><el-button
             link
@@ -69,9 +125,9 @@
       <nav class="tabs">
         <div
           v-for="tab in tabs.tabs"
-          :key="tab.path"
+          :key="tab.name"
           class="tab"
-          :class="{ active: tab.path === $route.fullPath }"
+          :class="{ active: tab.name === ($route.meta.tabName ?? $route.name) }"
           @click="$router.push(tab.path)"
         >
           <span>{{ tab.title }}</span
@@ -83,12 +139,15 @@
           </button>
         </div>
       </nav>
-      <main class="content">
+      <main
+        ref="contentRef"
+        class="content"
+      >
         <router-view v-slot="{ Component }"
           ><keep-alive :include="tabs.keepAliveNames">
             <component
               :is="Component"
-              :key="$route.name"
+              :key="$route.meta.tabName ?? $route.name"
             /> </keep-alive
         ></router-view>
       </main>
@@ -96,15 +155,53 @@
   </div>
 </template>
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
+import { Expand, Fold } from '@element-plus/icons-vue';
 import { PERMISSIONS } from '@company/constants';
 import { useAuthStore } from '../stores/auth';
 import { useTabsStore } from '../stores/tabs';
+import NotificationBell from '../components/notification/NotificationBell.vue';
 defineOptions({ name: 'AdminLayout' });
 const auth = useAuthStore();
 const tabs = useTabsStore();
 const router = useRouter();
+const isSidebarCollapsed = ref(false);
+const sidebarToggleLabel = computed(() => (isSidebarCollapsed.value ? '展开侧边栏' : '收起侧边栏'));
+const contentRef = ref<HTMLElement>();
+let contentObserver: ResizeObserver | undefined;
+
+// 集中提供路由区的视口坐标，让子树内的弹窗不受页面滚动或局部定位容器影响。
+const updateOverlayBounds = (): void => {
+  const content = contentRef.value;
+  if (!content) return;
+  const { top, left, width, height } = content.getBoundingClientRect();
+  content.style.setProperty('--route-overlay-top', `${top}px`);
+  content.style.setProperty('--route-overlay-left', `${left}px`);
+  content.style.setProperty('--route-overlay-width', `${width}px`);
+  content.style.setProperty('--route-overlay-height', `${height}px`);
+};
+
+const toggleSidebar = async (): Promise<void> => {
+  isSidebarCollapsed.value = !isSidebarCollapsed.value;
+  await nextTick();
+  updateOverlayBounds();
+};
+
+onMounted(() => {
+  const content = contentRef.value;
+  if (!content) return;
+  updateOverlayBounds();
+  contentObserver = new ResizeObserver(updateOverlayBounds);
+  contentObserver.observe(content);
+  window.addEventListener('resize', updateOverlayBounds);
+});
+
+onBeforeUnmount(() => {
+  contentObserver?.disconnect();
+  window.removeEventListener('resize', updateOverlayBounds);
+});
+
 const all = [
   { title: '用户管理', path: '/system/users', permission: PERMISSIONS.system.users.view },
   { title: '角色管理', path: '/system/roles', permission: PERMISSIONS.system.roles.view },
@@ -116,6 +213,16 @@ const all = [
   { title: '操作日志', path: '/system/logs', permission: PERMISSIONS.system.logs.view },
 ];
 const systemItems = computed(() => all.filter((item) => auth.can(item.permission)));
+
+const approvalMenus = [
+  {
+    title: '审批待办',
+    path: '/approval/inbox',
+    permission: router.resolve({ name: 'approval-inbox' }).meta.permission,
+  },
+  { title: '审批流程配置', path: '/approval/flows', permission: PERMISSIONS.approval.configure },
+];
+const approvalItems = computed(() => approvalMenus.filter((item) => auth.can(item.permission)));
 
 const productMenus = [
   { title: '成品与物料', path: '/product/products', permission: PERMISSIONS.product.products.view },
@@ -133,6 +240,22 @@ const productMenus = [
 ];
 const productItems = computed(() => productMenus.filter((item) => auth.can(item.permission)));
 
+const procurementMenus = [
+  {
+    title: '采购单',
+    path: '/procurement/purchase-orders',
+    permission: PERMISSIONS.procurement.orders.view,
+  },
+  {
+    title: '供应商配置',
+    path: '/procurement/suppliers',
+    permission: PERMISSIONS.procurement.suppliers.view,
+  },
+];
+const procurementItems = computed(() =>
+  procurementMenus.filter((item) => auth.can(item.permission)),
+);
+
 const productionMenus = [
   { title: '工单管理', path: '/production/orders', permission: PERMISSIONS.production.orders.view },
   { title: '生产任务', path: '/production/tasks', permission: PERMISSIONS.production.tasks.view },
@@ -144,7 +267,7 @@ const productionMenus = [
   {
     title: '生产报工记录',
     path: '/production/execution-records',
-    permission: PERMISSIONS.production.tasks.view,
+    permission: PERMISSIONS.production.executionRecords.view,
   },
   {
     title: '生产追溯',
@@ -154,39 +277,68 @@ const productionMenus = [
 ];
 const productionItems = computed(() => productionMenus.filter((item) => auth.can(item.permission)));
 
+const qualityMenus = [
+  {
+    title: '工序专检',
+    path: '/quality/process-inspections',
+    permission: PERMISSIONS.quality.processInspections.view,
+  },
+  {
+    title: '成品质检',
+    path: '/quality/finished-inspections',
+    permission: PERMISSIONS.quality.finishedInspections.view,
+  },
+  {
+    title: '来料检验',
+    path: '/quality/inbound-inspections',
+    permission: PERMISSIONS.quality.inboundInspections.view,
+  },
+];
+const qualityItems = computed(() => qualityMenus.filter((item) => auth.can(item.permission)));
+
 const warehouseMenus = [
+  {
+    title: '采购到货',
+    path: '/procurement/receipts',
+    routeNames: ['procurement-receipts'],
+  },
   {
     title: '库存查询',
     path: '/warehouse/inventory',
-    permission: PERMISSIONS.production.inventory.view,
+    routeNames: ['warehouse-inventory'],
   },
   {
     title: '入库管理',
     path: '/warehouse/inbound-orders',
-    permission: PERMISSIONS.production.inbounds.view,
+    routeNames: ['warehouse-inbound', 'warehouse-inbound-finished', 'warehouse-other-inbounds'],
   },
   {
     title: '出库管理',
     path: '/warehouse/outbound-orders',
-    permission: PERMISSIONS.production.materials.view,
+    routeNames: ['warehouse-outbound', 'warehouse-other-outbounds'],
   },
   {
     title: '退料管理',
     path: '/warehouse/return-orders',
-    permission: PERMISSIONS.warehouse.returns.view,
+    routeNames: ['warehouse-returns'],
   },
   {
-    title: '报废管理',
+    title: '领料损耗',
     path: '/warehouse/scraps',
-    permission: PERMISSIONS.warehouse.scraps.view,
+    routeNames: ['warehouse-scraps'],
   },
   {
     title: '盘点管理',
     path: '/warehouse/stock-checks',
-    permission: PERMISSIONS.warehouse.stockChecks.view,
+    routeNames: ['warehouse-stock-checks'],
   },
 ];
-const warehouseItems = computed(() => warehouseMenus.filter((item) => auth.can(item.permission)));
+const warehouseItems = computed(() =>
+  warehouseMenus.flatMap((item) => {
+    const name = item.routeNames.find((name) => auth.can(router.resolve({ name }).meta.permission));
+    return name ? [{ ...item, route: { name } }] : [];
+  }),
+);
 const signOut = async () => {
   await auth.logout();
   await router.replace('/login');

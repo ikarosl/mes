@@ -6,7 +6,6 @@ import type {
   InventoryTransactionType,
   OutboundOrderStatus,
   ReturnOrderStatus,
-  ScrapScene,
   ScrapStatus,
   StockCheckResult,
   StockCheckStatus,
@@ -14,6 +13,7 @@ import type {
 } from '@company/contracts';
 import {
   INVENTORY_REFERENCE_TYPE_LABELS,
+  INVENTORY_SOURCE_TYPE_LABELS,
   INVENTORY_TRANSACTION_TYPE_LABELS,
   OUTBOUND_ORDER_STATUS_LABELS,
   RETURN_ORDER_STATUS_LABELS,
@@ -31,14 +31,10 @@ export const inventoryReferenceTypeLabels = INVENTORY_REFERENCE_TYPE_LABELS sati
   string
 >;
 
-export const inventorySourceTypeLabels = {
-  self_made: '自产',
-  purchased: '外购',
-  outsourced: '委外',
-  return_inbound: '退货入库',
-  stock_check_generated: '盘点生成',
-  other: '其他',
-} satisfies Record<InventorySourceType, string>;
+export const inventorySourceTypeLabels = INVENTORY_SOURCE_TYPE_LABELS satisfies Record<
+  InventorySourceType,
+  string
+>;
 
 export const inventoryBatchStatusLabels = {
   available: '可用',
@@ -74,13 +70,6 @@ export const scrapStatusLabels = {
   confirmed: '已确认',
   cancelled: '已取消',
 } satisfies Record<ScrapStatus, string>;
-
-export const scrapSceneLabels = {
-  warehouse_allocated: '已分配报废',
-  return_after_outbound: '退料后报废',
-  production_consumed: '生产消耗报废',
-  in_stock: '库存内报废',
-} satisfies Record<ScrapScene, string>;
 
 export const stockCheckStatusLabels = STOCK_CHECK_STATUS_LABELS satisfies Record<
   StockCheckStatus,

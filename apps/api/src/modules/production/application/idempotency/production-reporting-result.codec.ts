@@ -1,19 +1,31 @@
+import {
+  BATCH_STEP_ABNORMAL_SOURCE_TYPES,
+  BATCH_STEP_REPORT_QUANTITY_SCOPES,
+} from '@company/constants';
 import { z } from 'zod';
 import {
   BATCH_STEP_ABNORMAL_REVIEW_STATUSES,
   BATCH_STEP_REPORT_TYPES,
   BATCH_STEP_STATUSES,
+  PRODUCTION_BATCH_STATUSES,
 } from '@company/constants';
 import type {
+  BatchStepAbnormalDispositionItem,
   BatchStepReportCommandResult,
   CorrectBatchStepReportCommandResult,
+  BatchReverseStepReportsCommandResult,
 } from '@company/contracts';
 import type {
   IdempotencyResultCodec,
   JsonValue,
 } from '../../../../common/idempotency/idempotency-executor.js';
-import { CORRECT_STEP_REPORT_IDEMPOTENCY_SCOPE } from './production-idempotency-scopes.contract.js';
-import { CREATE_STEP_REPORT_IDEMPOTENCY_SCOPE } from './production-idempotency-scopes.contract.js';
+import {
+  BATCH_REVERSE_STEP_REPORTS_SCOPE,
+  CORRECT_HISTORICAL_STEP_REPORT_SCOPE,
+  CREATE_HISTORICAL_STEP_REPORT_SCOPE,
+  CORRECT_STEP_REPORT_IDEMPOTENCY_SCOPE,
+  CREATE_STEP_REPORT_IDEMPOTENCY_SCOPE,
+} from './production-idempotency-scopes.contract.js';
 
 const reportSchema = z
   .object({
@@ -22,6 +34,7 @@ const reportSchema = z
     productionBatchId: z.string(),
     stepRecordId: z.string(),
     reportType: z.enum(BATCH_STEP_REPORT_TYPES),
+    quantityScope: z.enum(BATCH_STEP_REPORT_QUANTITY_SCOPES),
     reversalOfReportId: z.string().nullable(),
     correctionOfReportId: z.string().nullable(),
     reportedQuantity: z.string(),
@@ -34,6 +47,9 @@ const reportSchema = z
     createdByName: z.string().nullable(),
     createdAt: z.string(),
     isEffective: z.boolean(),
+    canReverse: z.boolean(),
+    canCorrect: z.boolean(),
+    correctionBlockedReason: z.string().nullable(),
   })
   .strict();
 
@@ -43,7 +59,11 @@ const dispositionSchema = z
     dispositionNo: z.string(),
     productionBatchId: z.string(),
     stepRecordId: z.string(),
-    sourceReportId: z.string(),
+    sourceReportId: z.string().nullable(),
+    sourceType: z.enum(BATCH_STEP_ABNORMAL_SOURCE_TYPES),
+    processInspectionId: z.string().nullable(),
+    processInspectionRecordId: z.string().nullable(),
+    sourceAbnormalQuantity: z.string(),
     abnormalOrigin: z.enum(['current_step', 'previous_step']),
     reviewStatus: z.enum(BATCH_STEP_ABNORMAL_REVIEW_STATUSES),
     dispositionType: z.enum(['rework', 'scrap']).nullable(),
@@ -53,18 +73,28 @@ const dispositionSchema = z
   })
   .strict();
 
+const quantityFields = {
+  upperLimitQuantity: z.string(),
+  requiredNormalQuantity: z.string(),
+  availableReportQuantity: z.string(),
+  effectiveReportedQuantity: z.string(),
+  effectiveDirectReportedQuantity: z.string(),
+  effectiveDirectNormalQuantity: z.string(),
+  effectiveDirectAbnormalQuantity: z.string(),
+  effectiveNormalQuantity: z.string(),
+  effectiveAbnormalQuantity: z.string(),
+  remainingNormalQuantity: z.string(),
+  previousStepNormalQuantity: z.string().nullable(),
+  directReportedVsPreviousNormalDifference: z.string().nullable(),
+  normalVsPreviousNormalDifference: z.string().nullable(),
+  normalVsTargetDifference: z.string(),
+};
 const summaryFields = {
+  ...quantityFields,
   productionBatchId: z.string(),
   stepRecordId: z.string(),
   stepStatus: z.enum(BATCH_STEP_STATUSES),
   stepVersion: z.number().int().nonnegative(),
-  requiredNormalQuantity: z.string(),
-  releasedNormalQuantity: z.string(),
-  availableNormalQuantity: z.string(),
-  effectiveReportedQuantity: z.string(),
-  effectiveNormalQuantity: z.string(),
-  effectiveAbnormalQuantity: z.string(),
-  remainingNormalQuantity: z.string(),
 };
 
 const createSchema: z.ZodType<BatchStepReportCommandResult> = z
@@ -96,3 +126,37 @@ export const correctStepReportResultCodec = {
   ...codec(correctSchema),
   scope: CORRECT_STEP_REPORT_IDEMPOTENCY_SCOPE,
 } as const;
+
+export const createHistoricalStepReportResultCodec = {
+  ...codec(createSchema),
+  scope: CREATE_HISTORICAL_STEP_REPORT_SCOPE,
+} as const;
+export const correctHistoricalStepReportResultCodec = {
+  ...codec(correctSchema),
+  scope: CORRECT_HISTORICAL_STEP_REPORT_SCOPE,
+} as const;
+const batchReverseSchema: z.ZodType<BatchReverseStepReportsCommandResult> = z
+  .object({
+    productionBatchId: z.string(),
+    batchStatus: z.enum(PRODUCTION_BATCH_STATUSES),
+    phase: z.enum(['execution', 'history']),
+    reversals: z.array(z.object({ originalReportId: z.string(), reversal: reportSchema }).strict()),
+    steps: z.array(
+      z
+        .object({
+          ...quantityFields,
+          stepRecordId: z.string(),
+          stepStatus: z.enum(BATCH_STEP_STATUSES),
+          stepVersion: z.number().int().nonnegative(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+export const batchReverseStepReportsResultCodec = {
+  ...codec(batchReverseSchema),
+  scope: BATCH_REVERSE_STEP_REPORTS_SCOPE,
+} as const;
+
+export const acceptProcessInspectionResultCodec: IdempotencyResultCodec<BatchStepAbnormalDispositionItem> =
+  codec(dispositionSchema);

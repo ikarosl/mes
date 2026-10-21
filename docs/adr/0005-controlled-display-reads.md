@@ -10,9 +10,8 @@
 
 - 调整 ADR-0004 中禁止跨模块查表的范围：业务命令和写入资格校验继续通过所属模块公开能力；展示、搜索、排序和分页允许登记的只读 SQL。
 - 读取放在 `infrastructure/queries/` 专用目录，允许提供固定引用的 SQL 片段供 Repository 组合。读取关系、目标表和字段在 `scripts/api-data-ownership.mjs` 登记；改表须检查登记调用方。
-- 当前只向 Production 开放 `materials.id/material_name`；不开放跨模块写入、锁定或业务校验。架构脚本检查登记范围，代码审查确认用途与动态 SQL，Controller 和领域层不写 SQL。
-- 基础物料名称按稳定 ID 读取当前主数据，历史引用不因停用或软删除被过滤。需求基础、需求、库存批次和入库明细不持久化名称快照；编码、单位、精确版本与数量规则保持不变。
-- 工单成品名称、工序/SOP 快照、审计前后值和幂等响应重放保持各自原有语义。改名审批另行决定。
+- 物料名称读取向 Production、Procurement 与 Inventory 开放 `materials.id/material_name`；其他展示字段及 Quality 的生产来源展示按 `scripts/api-data-ownership.mjs` 的逐目录、逐字段登记授权；不开放跨模块写入、锁定或业务校验。架构脚本检查登记范围，代码审查确认用途与动态 SQL，Controller 和领域层不写 SQL。
+- 基础物料名称选择当前展示语义，不在需求和库存链复制名称；完整读取条件、快照范围及工单成品／工序SOP／审计／幂等例外由[数据库公共规则](../database-conventions.md#基础物料名称与历史身份)维护。改名审批仍另行决定，见路线图。
 
 ## 结果
 

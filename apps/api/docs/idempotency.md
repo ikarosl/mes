@@ -1,90 +1,25 @@
 # HTTP 幂等性与并发契约
 
-本文只描述当前有效契约。实施过程记录不作为设计依据；当前代码、scope 常量、接口契约和测试是实现事实来源。
+本文维护 API 平台的幂等执行、持久化、恢复和启用条件。HTTP 可见契约见[公共 API 规范](../../../docs/api-conventions.md#7-请求上下文与幂等键)，前端提示与重试见[HTTP 错误处理](../../admin-web/docs/http-error-handling.md)。
 
 ## 1. 当前启用范围
 
-幂等能力按端点显式启用。客户端只发送 `Idempotency-Key`，scope 由服务端
-`production-idempotency-scopes.contract.ts` 唯一定义。
+幂等按端点显式启用，以 Controller 的 `@IdempotentEndpoint({ scope })` 和 application scope 契约为准：[Production](../src/modules/production/application/idempotency/production-idempotency-scopes.contract.ts)、[Procurement](../src/modules/procurement/application/idempotency/procurement-idempotency-scopes.contract.ts)、[Quality 成品质检](../src/modules/quality/application/idempotency/finished-inspection-idempotency.contract.ts)、[Quality 工序专检](../src/modules/quality/application/idempotency/process-inspection-idempotency.contract.ts)、[Inventory](../src/modules/inventory/application/idempotency/other-inventory-idempotency-scopes.contract.ts)。本文不复制命令与版本清单。
 
-| 命令 | HTTP 入口 | scope |
-| --- | --- | --- |
-| 创建生产批次 | `POST /api/production/work-orders/:workOrderId/batches` | `production.batch.create.v5` |
-| 创建物料分配 | `POST /api/production/batches/:batchId/material-allocations` | `production.material-allocation.create.v1` |
-| 创建生产领料出库单 | `POST /api/production/batches/:batchId/material-outbounds` | `production.material-outbound.create.v3` |
-| 确认生产领料出库单 | `POST /api/production/material-outbounds/:outboundId/actions/confirm` | `production.material-outbound.confirm.v2` |
-| 管理员一次确认全部 BOM 行的精确版本需求 | `POST /api/production/batches/:batchId/material-demands/configurations` | `production.material-demands.configure.v1` |
-| 创建任务级人工追加物料需求 | `POST /api/production/batches/:batchId/material-demands/additions` | `production.material-demands.add-manual.v2` |
-| 创建外购物料入库单 | `POST /api/production/purchase-inbounds` | `production.purchase-inbound.create.v1` |
-| 确认外购物料入库单 | `POST /api/production/purchase-inbounds/:inboundId/actions/confirm` | `production.purchase-inbound.confirm.v1` |
-| 创建工序报工 | `POST /api/production/batches/:batchId/step-records/:recordId/reports` | `production.step-report.create.v3` |
-| 更正工序报工 | `POST /api/production/batches/:batchId/step-records/:recordId/reports/:reportId/actions/correct` | `production.step-report.correct.v3` |
-| 完成返工 | `POST /api/production/reworks/:reworkId/actions/complete` | `production.rework.complete.v1` |
-| 确认报废补料方案 | `POST /api/production/abnormal-dispositions/:dispositionId/scrap-supplement-plan/actions/confirm` | `production.abnormal.scrap-supplement-plan.confirm.v1` |
-| 创建生产领料损耗 | `POST /api/warehouse/scraps` | `production.material-loss.create.v1` |
-| 确认生产领料损耗 | `POST /api/warehouse/scraps/:scrapId/actions/confirm` | `production.material-loss.confirm.v1` |
-
-此表是文档摘要；代码事实来源始终是 scope 常量与 Controller 上的 `@IdempotentEndpoint({ scope })`。
-未启用端点携带任意幂等键（包括空值、超长值以及公开端点）必须返回
-`400 IDEMPOTENCY_NOT_SUPPORTED`，不得忽略请求头制造伪幂等信号。启用端点缺少键或键不合法返回
-`400 VALIDATION_ERROR`。键 trim 后长度必须为 1～150 个字符。
+客户端只发送 Idempotency-Key，不传 scope。未启用端点含 Public 携带任意键（空值／超长值也包括）返回 `400 IDEMPOTENCY_NOT_SUPPORTED`；启用端点缺少键或 trim 后长度不在 1～150 返回 `400 VALIDATION_ERROR`。不能忽略 header 制造伪幂等信号，也不能仅按 HTTP 方法扩大启用范围。
 
 ## 2. 项目级决定
 
-- MySQL 是幂等事实来源；该能力不依赖 Redis。
-- 幂等记录、业务写入和成功审计复用同一连接、同一事务。
-- Controller 只声明 scope 并读取已校验上下文，不开启事务。
-- application service 调用 `IdempotencyExecutor`；传给业务 Repository 的上下文必须收窄为普通
-  `CommandContext`，不得携带幂等键。
-- 每个 scope 必须绑定完整结果 codec。首次成功和重放都返回 codec 规范化后的同一结果形状。
-- 文件上传及其他包含非事务外部副作用的命令，未建立 outbox、补偿或恢复闭环前不得直接套用 MySQL 幂等 executor。
-- 管理端只有在复用同一个 `Idempotency-Key` 并设置 `retryIdempotentWrite: true` 时才允许写请求自动重试；普通写请求、未启用端点和文件上传不得开启该选项。
+- MySQL 是唯一幂等事实来源，不依赖 Redis。幂等记录、业务写入、成功审计复用同一连接和事务。
+- Controller 声明 scope、读取已校验上下文；application 调 executor。业务 Repository 仅接收普通 CommandContext，不携带键或解析 header，见[命令上下文](command-context.md)。
+- 只有 executor 写 http_idempotency_records，housekeeping 只做到期物理清理。业务代码不得直接读写此表。
+- 每个 scope 绑定完整结果 codec，首次和重放均返回其规范化结果。当前只保存成功结果，失败不留占位或缓存；端点沿用固定成功状态码，requestId 等易变响应头按本次请求产生。
+- version 防旧状态覆盖，幂等键防同一意图重复执行，二者不可互代。已有状态短路及 version 的命令是否启用，以各模块契约为准。
+- 文件上传、外部 HTTP 和消息发送等不在 MySQL 事务内，未建立 outbox、补偿或恢复闭环不能套用 executor 宣称原子幂等；Product 上传当前不得带键或自动重试。
 
-version 乐观锁与 HTTP 幂等解决不同问题：version 防止基于旧状态覆盖写，幂等键防止同一业务意图因响应不确定而重复执行。已使用状态短路和 version 且响应丢失不会产生第二份事实的命令，可以不启用 HTTP 幂等。
+## 3. 登记前校验与审计关联
 
-## 3. 请求流程
-
-```text
-请求
-  -> IdempotencyKeyGuard
-     -> 未启用且带键：400 IDEMPOTENCY_NOT_SUPPORTED
-     -> 已启用但键缺失/非法：400 VALIDATION_ERROR
-     -> 写入请求局部的已验证键
-  -> @CurrentIdempotentCommandContext()
-  -> application service
-  -> IdempotencyExecutor.execute()
-     -> 计算请求指纹
-     -> 开启 MySQL 事务
-     -> 登记/仲裁幂等记录
-     -> 首次执行业务写入和成功审计，或读取已保存结果
-     -> 提交
-  -> 返回规范化结果
-```
-
-重放请求拥有新的 request ID，但 `http_idempotency_records.initial_request_id` 保留首次请求 ID；重放不追加第二条业务成功审计。
-
-## 4. 代码边界
-
-```text
-common/idempotency/
-  idempotency-executor.ts       # 协议无关端口与结果 codec
-  idempotency.errors.ts         # 存储错误分类
-
-infrastructure/idempotency/
-  idempotency.module.ts         # 平台装配
-  idempotency-key.guard.ts      # 端点启用门禁和键校验
-  canonical-request-fingerprint.ts
-  mysql-idempotency.executor.ts
-  idempotency-housekeeping.service.ts
-  idempotency.metrics.ts
-
-modules/production/application/idempotency/
-  production-idempotency-scopes.contract.ts
-  production-*-result.codec.ts
-```
-
-`http_idempotency_records` 的业务写入口只能是 `MysqlIdempotencyExecutor`，到期物理清理只能由
-`IdempotencyHousekeepingService` 执行。业务 Controller、Service 和 Repository 均不得直接访问该表。
+鉴权、DTO 与请求头校验在登记前完成；Guard 将 trim 后的键写入请求局部私有属性，参数装饰器不重新解析原 header。首次登记以当前 requestId 写 initial_request_id，关联首次成功审计；重放保留首次值，只返回本次 requestId，不重复写业务成功审计，也不把原始键写入 operation_logs。
 
 ## 5. 数据库记录与保留期
 
@@ -118,168 +53,69 @@ modules/production/application/idempotency/
 | `chk_http_idempotency_status` | `CHECK (status IN ('processing', 'completed'))` |
 | `chk_http_idempotency_completed` | `completed` 时 `result_json`、`completed_at`、`expires_at` 必须全部非 SQL `NULL`；`processing` 时三列必须全部为 SQL `NULL` |
 
-完成条件的完整 CHECK 表达式为：
+CHECK 只约束完成字段的 SQL NULL 组合，不校验结果形状、时间先后或 12 小时间隔；这些由 codec／executor 保证。JSON 字面值 null 不等于 SQL NULL，是否接受该结果由对应 codec 决定。
 
-```sql
-CHECK (
-  (status = 'completed' AND result_json IS NOT NULL AND completed_at IS NOT NULL AND expires_at IS NOT NULL)
-  OR (status = 'processing' AND result_json IS NULL AND completed_at IS NULL AND expires_at IS NULL)
-)
-```
-
-该 CHECK 不校验结果业务形状或时间先后，也不在数据库层强制 12 小时间隔；这些由结果 codec 和 executor 保证。JSON 字面值 `null` 与 SQL `NULL` 不同，是否允许该结果由对应 codec 决定。
-
-### 保留期与业务使用
-
-`completed` 记录提供至少 12 小时的服务端重放保证。到达 `expires_at` 只表示允许清理；记录物理删除前，同
-scope/key 仍按既有记录仲裁。清理后该 scope/key 才可能成为新的首次请求。
-
-客户端不得在超过 12 小时后自动重试旧键，也不得自动换新键盲发。首次结果可能已经成功，必须先核对业务结果，再由用户显式放弃旧意图。
-
-物料需求配置和人工追加均由 application service 调用 `IdempotencyExecutor`，业务规则以
-[Production 需求设计](../src/modules/production/docs/database/demand-allocation-and-outbound.md)及
-[需求配置 Repository](../src/modules/production/infrastructure/mysql-production-material-demand-configuration.repository.ts)为准：
-
-- 初始配置必须一次覆盖任务的全部 BOM 行，明确每行的精确物料版本及数量。写事务先锁定工单和批次，
-  重新读取 Product 公共 BOM，并锁定、校验启用版本；每行拆分数量之和必须等于该行应需量。全部校验
-  通过后，在同一事务写入所有需求基础与初始需求，并将批次从 `pending` 推进至 `material_pending`。
-  任一行缺失或不合法均整单回滚，不产生部分配置事实。
-- 人工追加是针对已生成初始需求的进行中任务的一次动作，可以选取任务冻结 BOM 中的多种基础物料，
-  无需覆盖全部 BOM 行。事务内锁定工单、批次和冻结需求基础，校验启用版本、正整数追加数量及工单
-  物料版本规则后，写入一条 `production_manual_demand_addition` 和对应的多条需求。需求通过
-  `manual_addition_id` 关联追加动作，`parent_demand_id` 为空；不读取当前 BOM 替代任务冻结基础。
-- 两类命令均遵守工单类型约束：批量单同一基础物料只能选择一个版本并遵守工单级版本锁，研发单允许
-  多版本拆分。新增需求统一经 Production 需求计划写入器推进 `material_plan_version`；幂等记录、
-  业务事实、批次更新和成功审计同事务提交。同 scope/key、同请求的成功重放只返回已保存结果，
-  不再次生成需求、推进计划版本或追加成功审计。
+完成记录保证至少 12 小时重放。expires_at 只代表允许清理，物理删除前同 scope/key 仍按原记录仲裁，过期也重放；物理删除后才可能变为首次执行。因此客户端超过窗口不能自动重试旧键或换新键，须先核对业务结果。
 
 ## 6. 规范化请求指纹
 
-服务端按以下输入计算 SHA-256：
+服务端对 scope、已认证 actorId、语义 path params、query 和规范化 body 计算 SHA-256，包含 version、核对令牌等所有业务输入。排除键、requestId、IP、User-Agent、Cookie、Token 等传输／审计信息；客户端签名不是安全指纹。
 
-```ts
-{
-  scope,
-  actorId,
-  params,
-  query,
-  body,
-}
-```
+application 将 DTO 及嵌套 DTO 显式转成普通对象并完成 trim 后再传入。对象键递归排序，数组保序，undefined 对象属性忽略；仅接受 JSON-safe 值，不放宽到 Date、getter、自定义原型或循环引用。规范化算法及固定兼容向量见[指纹测试](../src/infrastructure/idempotency/__tests__/canonical-request-fingerprint.test.ts)；向量中的旧 scope 仅为算法兼容基准，不能当作当前命令版本。修改算法／向量须评审并提升受影响 scope。
 
-输入是 DTO 转换、trim 后的业务有效载荷；排除 `Idempotency-Key`、request ID、IP、User-Agent、Cookie、Token
-等传输或审计元数据。对象键递归排序、数组顺序保留、`undefined` 对象属性忽略，随后对 canonical JSON 计算摘要。
-只接受 JSON-safe 值，不放宽到 `Date`、getter、自定义原型或循环引用。
-
-固定兼容向量：
-
-```ts
-const input = {
-  scope: 'production.batch.create.v1',
-  actorId: '7',
-  params: { workOrderId: '42' },
-  query: {},
-  body: { plannedQuantity: '2.0000', routeId: '18' },
-};
-
-// e6138c319f8d59537d6812947f08c0e85b2afe7f590aacedd7a666f3a4ea7a8c
-```
-
-这里的 v1 是算法测试向量，不代表当前 createBatch scope。修改规范化算法或固定向量属于兼容性变更，必须评审并为受影响命令提升 scope 版本。
+唯一键为区分大小写的 `(scope, idempotency_key)`，不按用户另分唯一键；actor 在指纹内，因此他人复用同键会冲突。
 
 ## 7. MySQL Executor 事务语义
 
-首次请求：
+首次在事务内登记 processing，执行 handler、业务与审计，经过结果 encode、JSON-safe 校验及 decode 后保存 completed 快照和到期时间，commit 后返回并计成功指标。handler、数据库、审计、序列化、完成更新或提交失败均整体回滚，不留下失败占位或独立提交的业务事实。
 
-1. 在事务内插入 `processing` 记录。
-2. 执行业务 handler；Repository 通过活动事务连接写业务事实和成功审计。
-3. `resultCodec.encode`、JSON-safe 校验和 `decode` 产生规范化结果。
-4. 将记录更新为 `completed`，保存结果并设置 12 小时保留期。
-5. 提交后返回规范化结果，并记录 first-run 指标。
-
-相同 scope/key 的并发请求由唯一键和 InnoDB 锁仲裁：
-
-- 相同指纹且已有 `completed`：不执行 handler，decode 已保存结果并重放；
-- 指纹不同：返回 `409 IDEMPOTENCY_CONFLICT`；
-- 竞争方回滚或只能看到异常 `processing`：返回可重试存储错误，不猜测结果。
-
-业务失败、数据库失败、审计失败、结果 encode/decode 失败或完成更新失败都会使整个事务回滚，不留下失败占位或已提交业务事实。成功指标只在 commit 后记录。
+唯一键与 InnoDB 锁仲裁同 scope/key 的并发请求：相同指纹且已完成只 decode 重放、不再执行 handler；不同指纹返回冲突；竞争方回滚或读到异常 processing 时返回可重试存储错误，不猜成功或伪造结果。成功重放使用原快照，不因当前业务状态变化重新执行业务，也不恢复旧授权资格。
 
 ## 8. 错误与日志语义
 
-| 情况 | HTTP/业务语义 |
+| 情况 | 结果 |
 | --- | --- |
-| 未启用端点携带键 | `400 IDEMPOTENCY_NOT_SUPPORTED` |
-| 已启用端点缺少或携带非法键 | `400 VALIDATION_ERROR` |
-| 同 scope/key 但请求指纹不同 | `409 IDEMPOTENCY_CONFLICT` |
-| MySQL 锁等待、死锁、连接中断或池关闭 | `503 IDEMPOTENCY_STORAGE_RETRYABLE` |
-| 已保存结果无法通过 codec 解析 | `500 IDEMPOTENCY_RESULT_CORRUPT` |
-| 业务校验或权限失败 | 保留原有错误；事务回滚，不保存失败结果 |
+| 同键不同指纹 | `409 IDEMPOTENCY_CONFLICT` |
+| 已识别的 MySQL NOWAIT 冲突、锁等待、死锁、连接中断或池关闭 | `503 IDEMPOTENCY_STORAGE_RETRYABLE` |
+| 已保存结果无法通过 codec | `500 IDEMPOTENCY_RESULT_CORRUPT` |
+| 业务／权限校验失败 | 保留原错误，失败结果不保存 |
+| 指纹、executor 或 handler 的未知代码异常 | `500 INTERNAL_SERVER_ERROR`，不能因处于幂等链路而改写分类 |
 
-日志只能记录 request ID、scope、错误分类和幂等键 SHA-256 摘要前 12 位；禁止输出原始幂等键、请求体、Token、Cookie 或凭证。结果损坏是人工调查信号，同键重试不会自行恢复。
+其他出入库四类写操作由 application 在 executor 整个事务已经结束后有限重试，最多三次，保持原 scope、键、操作者及规范化请求；绝不在失败事务内重试单条库存 SQL。
+
+其他 SDK 网络错误不误判为 MySQL retryable。损坏记录保留供调查，同键重试不会自行修复，不自动另建意图。诊断仅记录 requestId、scope、分类及键 SHA-256 前 12 位；不输出原键、载荷、Token、Cookie、凭证。原异常链仅开发环境可记录，其他环境的脱敏边界见 [API 诊断](../README.md#http-错误诊断)。
 
 ## 9. 前端键生命周期
 
-`useIdempotentIntent` 由页面或弹窗局部持有，不进入 Pinia 或 API wrapper：
+局部 useIdempotentIntent 在首次正式提交时生成加密 UUID，firstAttemptAt 从此时起算 12 小时，并保存实际发送的参数／body／版本／令牌。成功或契约明确无副作用的业务 4xx 结束意图；网络中断及不确定结果保留原键原请求，修改内容不能静默换键。损坏结果或超窗口阻塞并要求核对，用户明确放弃后才可开始新意图。
 
-- 第一次正式提交才生成加密随机 UUID；
-- 成功或明确业务失败后清除当前意图；
-- 无响应、断网或可重试 5xx 属于结果不确定，保持原键重试；
-- 结果不确定时修改业务内容，必须阻止提交，不得静默换键；
-- `IDEMPOTENCY_RESULT_CORRUPT` 阻塞当前意图，提示人工核对；
-- 超过 12 小时后阻止旧键重试和自动换键，要求先核对业务结果；
-- 页面硬刷新会丢失内存意图，因此当前方案不承诺跨刷新恢复。
-
-前端稳定签名只用于判断表单内容是否变化，不是安全请求指纹。服务端仍独立计算包含 actor、scope、params、query
-和 body 的完整指纹。API wrapper 只转发调用方提供的键。
+当前仅内存保存，KeepAlive 可恢复，硬刷新不可恢复；只保存键或 payload hash 不构成闭环。会话变化销毁旧意图，API wrapper 只透传键，不持有或生成。前端实现及关闭保护见[管理端架构](../../admin-web/docs/architecture.md#5-写意图与错误)。只有启用幂等且携带原键的写请求可开启 retryIdempotentWrite，失败范围见[重试矩阵](../../admin-web/docs/http-error-handling.md#4-基础请求与重试)。
 
 ## 10. 清理与运行维护
 
-`IdempotencyHousekeepingService` 默认每小时运行一次，可通过
-`IDEMPOTENCY_SWEEP_INTERVAL_MS` 调整。非法、零或负值会禁用自动清理并告警。
+housekeeping 默认每小时运行，IDEMPOTENCY_SWEEP_INTERVAL_MS 非法、零或负值会禁用并告警；每批最多清理 500 条已到期 completed。持久可见 processing 属异常，只告警，不自动修改／删除；运维不得人工改 completed 或伪造 result_json。
 
-- 每批最多删除 500 条已到期 `completed` 记录，避免长事务锁表；
-- 持久化可见的 `processing` 记录属于异常信号，只告警，不自动修改或删除；
-- 清理不改变 12 小时内重放保证；
-- 运维不得人工把未知 `processing` 改成 `completed`，也不得伪造结果 JSON。
+内存指标区分首次、重放、冲突、可重试存储错误及损坏；housekeeping 输出窗口摘要。首次和重放仅 commit 后计数，不能把成功尝试当作已提交事实。
 
-## 11. 测试要求
+## 11. 验证与启用门槛
 
-每个新增或变更的幂等命令至少覆盖：
+新增端点须具备同事务业务／审计、稳定 scope、完整 codec、覆盖全部语义输入的指纹，以及 Controller、Service、前端恢复与契约接线，不包含未纳入恢复模型的外部副作用。
 
-- Guard 的启用/未启用/公开端点矩阵；
-- scope 常量、Controller 元数据、Service executor 和结果 codec 一致；
-- 同键同请求重放、同键不同请求冲突及 handler 只执行一次；
-- 结果首次返回与重放形状一致；
-- 业务失败、审计失败、序列化失败和 commit 失败整体回滚；
-- 锁等待、死锁和连接故障映射为 retryable，其他 SDK 网络错误不被误判；
-- 前端模糊失败复用键、明确失败清除、内容变化阻塞、结果损坏阻塞及超时阻塞；
-- 真实 MySQL 唯一键竞争、事务原子性和到期清理。
+在[测试策略](../../../docs/testing-strategy.md)规定阶段验证启用／未启用／Public 矩阵、接线一致、同键重放／同键异内容冲突、handler 仅一次、首次与重放形状一致、业务／审计／codec／commit 失败回滚、MySQL 瞬态错误分类、前端未知／损坏／超时恢复及真实唯一键竞争／清理。真实 MySQL 测试的专用端点与 `_test` 库门禁见[测试策略](../../../docs/testing-strategy.md#业务-mysql-integration)。
 
-真实 MySQL 测试只能连接名称以 `_test` 或 `_ci` 结尾的专用库，并通过仓库现有集成测试门禁显式启用。
+根 [AGENTS.md](../../../AGENTS.md#数据库与交付约定)规定设计确认后另行通知正式测试；仅完成接线的命令不能宣称上述验证已通过，状态留在[路线图](../../../docs/roadmap.md)。
 
-## 12. 观测与启用门槛
+## 13. scope 版本与开发重置
 
-平台内存指标至少区分 first run、replay、conflict、storage retryable 和 corrupt。Housekeeping 周期性输出窗口摘要；first run/replay 只在事务提交后计数。
+scope 是服务端独占版本，客户端不能选择／协商。不兼容的结果形状、指纹或命令语义变更须升级 scope 和 codec。开发阶段清理旧幂等及业务数据后切换，不保留旧 scope 解码分支、双写或兼容窗口，不用新 codec 猜旧结果。发布前结束旧客户端操作并刷新，不把旧意图自动迁入新 scope。
 
-新增端点只有同时满足以下条件才能加 `@IdempotentEndpoint`：
+## 14. 业务接入时的原子边界
 
-1. 业务写入和成功审计可复用 executor 的同一 MySQL 事务；
-2. 服务端稳定 scope 和完整结果 codec 已定义；
-3. 请求指纹覆盖全部语义输入；
-4. Controller、Service、前端键生命周期和接口契约同时接线；
-5. 第 11 节相关测试通过；
-6. 不包含尚未纳入事务恢复模型的外部副作用。
+以下是平台容易遗漏的接线边界，业务资格与数量算法仍由模块所有者维护：
 
-## 13. scope 版本兼容
-
-scope 是服务端独占的命令契约版本，客户端不得传输、选择或协商。结果结构、指纹语义或命令语义发生不兼容变化时：
-
-1. 新增 scope 版本和对应 codec；
-2. 新请求只写新 scope；
-3. 如需兼容旧记录，在至少覆盖旧记录最长保留期的窗口内保留旧 scope 的 decode 能力；
-4. 窗口结束且旧记录已自然过期/清理后，再删除旧兼容分支。
-
-不得用新 codec 猜测旧结果，也不得覆盖旧 scope 记录。兼容示例和算法测试中的旧版本字符串不是当前端点版本；当前版本以 scope 常量为准。
-
-创建批次当前结果不包含报工开关快照；所有工序统一报工。开发阶段不保留旧 scope 的兼容解码，发布前结束旧客户端操作并刷新页面，不将旧意图自动迁入新 scope。
+- [生产需求](../src/modules/production/docs/database/demand-allocation-and-outbound.md)：需求事实、锁版基础、任务版本、审计和结果同事务，重放不再生成需求或推进版本。管理员任务开工、研发结束与撤回结束保存原状态转换结果，重放不追加开工或进入／撤回事实。
+- [审批与收尾](../src/modules/production/docs/database/production-termination.md)：送审的业务记录绑定、Approval 实例／节点、审计及通知均在外层事务，不先保存申请再异步补审批。通用批准／驳回／撤回仍依赖当前节点和版本，不据此宣称 HTTP 幂等重放。损坏登记与实核版本同事务，不能附加第二次库存扣减。
+- [成品质检](../src/modules/quality/docs/finished-inspections.md)：先规范化 G/F、派生 N、方式与明确结论，再对完整检查事实指纹；不接收成品整批 C，也不计算放行量。说明与凭据 trim，结果保存 batchId、实际 inspectionId 和新 version，不能只保存成功布尔值。登记 namespace 为 `quality.finished-inspection.record.v3`，旧 v2 结果不按新事实语义重放。
+- [成品入库](../src/modules/production/docs/database/finished-goods-inbound.md)：来源锁内复核、库存批次／流水、单据与审计同事务，结果严格保留 inboundId，重放不再建批或写库存；不能换键绕过当前来源锁。
+- [工单创建](../src/modules/production/docs/database/work-orders-and-batches.md#工单自动编号)：取号、业务、审计和完整结果同事务，重放首次草稿快照，不重读已变化工单或再取号。
+- [来料整批](../src/modules/procurement/docs/receipt-acceptance.md)：实际执行指纹含 allocation 及行／轮版本、实收修订、QC、数量；correct 指纹含核实总量与原因、不含 ownership，reject 的可选 ownership 含逐行 ID、数量和顺序。撤销拒收重放不再次换轮，旧成功快照不重新授予执行资格。

@@ -8,6 +8,18 @@ const context = {
   ip: null,
   userAgent: null,
 };
+const commandContext = {
+  actorId: context.actorId,
+  requestId: context.requestId,
+  ip: context.ip,
+  userAgent: context.userAgent,
+};
+const access = {
+  actorId: context.actorId,
+  canManageExecution: false,
+  canReport: true,
+  canReadAllReports: false,
+};
 
 describe('ProductionReportingService', () => {
   it('returns the execution batch summary projection without per-row enrichment', async () => {
@@ -35,12 +47,13 @@ describe('ProductionReportingService', () => {
     await service.createReport(
       '1',
       '2',
-      { version: 3, normalQuantity: 2, abnormalQuantity: 1, remark: '  note  ' },
+      { version: 3, normalQuantity: 2, abnormalQuantity: 0, remark: '  note  ' },
       context,
+      access,
     );
     expect(idempotency.execute).toHaveBeenCalledWith(
       expect.objectContaining({
-        scope: 'production.step-report.create.v3',
+        scope: 'production.step-report.create.v5',
         key: context.idempotencyKey,
       }),
     );
@@ -50,11 +63,12 @@ describe('ProductionReportingService', () => {
       {
         version: 3,
         normalQuantity: 2,
-        abnormalQuantity: 1,
+        abnormalQuantity: 0,
         abnormalOrigin: null,
         remark: 'note',
       },
-      expect.not.objectContaining({ idempotencyKey: expect.anything() }),
+      commandContext,
+      access,
     );
   });
 
@@ -72,11 +86,12 @@ describe('ProductionReportingService', () => {
       '1',
       '2',
       '9',
-      { version: 4, normalQuantity: 2, abnormalQuantity: 0, reason: '  修正  ' },
+      { version: 4, normalQuantity: 2, reason: '  修正  ' },
       context,
+      access,
     );
     expect(idempotency.execute).toHaveBeenCalledWith(
-      expect.objectContaining({ scope: 'production.step-report.correct.v3' }),
+      expect.objectContaining({ scope: 'production.step-report.correct.v6' }),
     );
     expect(reporting.correctReport).toHaveBeenCalledWith(
       '1',
@@ -85,11 +100,10 @@ describe('ProductionReportingService', () => {
       {
         version: 4,
         normalQuantity: 2,
-        abnormalQuantity: 0,
-        abnormalOrigin: null,
         reason: '修正',
       },
-      expect.not.objectContaining({ idempotencyKey: expect.anything() }),
+      commandContext,
+      access,
     );
   });
 });

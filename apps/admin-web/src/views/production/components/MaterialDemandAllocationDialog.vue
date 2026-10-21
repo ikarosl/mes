@@ -5,6 +5,18 @@
     :width="DialogWidth.xl"
     @update:model-value="$emit('update:visible', $event)"
   >
+    <div class="demand-toolbar">
+      <el-button
+        :disabled="!hasCollapsedGroups"
+        @click="expandAllGroups"
+        >全部展开</el-button
+      >
+      <el-button
+        :disabled="!hasExpandedGroups"
+        @click="collapseAllGroups"
+        >全部收起</el-button
+      >
+    </div>
     <div
       v-loading="loadingDemands"
       class="dialog-body"
@@ -13,15 +25,17 @@
         v-if="demandGroups.length === 0 && !loadingDemands"
         description="当前任务没有物料需求"
       />
-      <section
+      <MaterialDemandGroupSection
         v-for="group in demandGroups"
         :key="group.generationGroupKey"
         class="demand-group"
+        :title="generationGroupLabel(group)"
+        :count="group.demands.length"
+        :summary="formatDateForDisplay(group.createdAt)"
+        :expanded="!collapsedGroupKeys.has(group.generationGroupKey)"
+        :selected="group.demands.some((demand) => demand.demandId === selectedDemandId)"
+        @toggle="toggleGroup(group.generationGroupKey)"
       >
-        <header class="demand-group-header">
-          <strong>{{ generationGroupLabel(group) }}</strong>
-          <span>{{ formatDateForDisplay(group.createdAt) }}</span>
-        </header>
         <el-table
           :data="group.demands"
           :row-class-name="demandRowClassName"
@@ -76,14 +90,21 @@
             }}</template></el-table-column
           >
           <el-table-column
-            label="进度"
+            label="需求状态"
             width="110"
-            ><template #default="{ row }"
-              ><el-tag>{{ progressLabel(row.demandProgressStatus) }}</el-tag></template
-            ></el-table-column
+            fixed="right"
           >
+            <template #default="{ row }">
+              <el-tag
+                :type="materialDemandProgressMeta(row.demandProgressStatus).type"
+                effect="light"
+                size="small"
+                >{{ materialDemandProgressMeta(row.demandProgressStatus).label }}</el-tag
+              >
+            </template>
+          </el-table-column>
         </el-table>
-      </section>
+      </MaterialDemandGroupSection>
 
       <section
         v-if="selectedDemand"
@@ -179,7 +200,12 @@
                 link
                 type="danger"
                 :loading="releasePendingIds.has(row.allocationId)"
-                :disabled="row.allocationStatus !== 'active' || Number(row.outboundQuantity) > 0"
+                :disabled="
+                  selectedDemand?.businessStatus !== 'active' ||
+                  Boolean(selectedDemand?.correction?.pendingCorrectionId) ||
+                  row.allocationStatus !== 'active' ||
+                  Number(row.outboundQuantity) > 0
+                "
                 @click="confirmRelease(row)"
                 >释放</el-button
               ></template
@@ -201,15 +227,12 @@ import type {
   ProductionMaterialAllocationItem,
   ProductionMaterialDemandItem,
 } from '@company/contracts';
-import {
-  ALLOCATION_STATUS_LABELS,
-  DEMAND_GENERATION_GROUP_TYPE_LABELS,
-  MATERIAL_DEMAND_PROGRESS_LABELS,
-} from '@company/constants';
+import { ALLOCATION_STATUS_LABELS, DEMAND_GENERATION_GROUP_TYPE_LABELS } from '@company/constants';
 import { DialogWidth } from '../../../utils/dialog';
 import { RouteMessageBox } from '../../../utils/route-message-box';
 import { formatDateForDisplay } from '../../../utils/date';
-import { formatQuantity } from '../production-status';
+import { formatQuantity, materialDemandProgressMeta } from '../production-status';
+import MaterialDemandGroupSection from './MaterialDemandGroupSection.vue';
 
 interface DemandGenerationGroupView {
   generationGroupKey: string;
@@ -262,6 +285,32 @@ const demandGroups = computed<DemandGenerationGroupView[]>(() => {
   }
   return [...groups.values()];
 });
+const collapsedGroupKeys = ref(new Set<string>());
+const hasCollapsedGroups = computed(() =>
+  demandGroups.value.some((group) => collapsedGroupKeys.value.has(group.generationGroupKey)),
+);
+const hasExpandedGroups = computed(() =>
+  demandGroups.value.some((group) => !collapsedGroupKeys.value.has(group.generationGroupKey)),
+);
+const toggleGroup = (key: string): void => {
+  if (collapsedGroupKeys.value.has(key)) collapsedGroupKeys.value.delete(key);
+  else collapsedGroupKeys.value.add(key);
+};
+const expandAllGroups = (): void => collapsedGroupKeys.value.clear();
+const collapseAllGroups = (): void => {
+  for (const group of demandGroups.value) collapsedGroupKeys.value.add(group.generationGroupKey);
+};
+let expansionBatchId: string | null = null;
+watch(
+  () => props.demands[0]?.productionBatchId,
+  (batchId) => {
+    // 刷新期间暂时没有需求行时，保留当前任务的折叠选择。
+    if (!batchId || batchId === expansionBatchId) return;
+    expansionBatchId = batchId;
+    collapsedGroupKeys.value = new Set();
+  },
+  { immediate: true, flush: 'sync' },
+);
 const selectedBatch = computed(() =>
   props.availableItemBatches.find((item) => item.itemBatchId === form.itemBatchId),
 );
@@ -280,7 +329,10 @@ const selectedBatchMatchesDemand = computed(
 const selectedDemandCanAllocate = computed(() => {
   const demand = selectedDemand.value;
   return Boolean(
-    demand && demand.businessStatus === 'active' && Number(demand.remainingQuantity) > 0,
+    demand &&
+    demand.businessStatus === 'active' &&
+    !demand.correction?.pendingCorrectionId &&
+    Number(demand.remainingQuantity) > 0,
   );
 });
 const canAllocate = computed(() =>
@@ -297,6 +349,7 @@ const canAllocate = computed(() =>
 watch(
   () => props.visible,
   (visible) => {
+    collapsedGroupKeys.value = new Set();
     if (visible) selectDefaultDemand();
   },
 );
@@ -311,12 +364,18 @@ watch(
 const selectDefaultDemand = (): void => {
   const oldestActionableGroup = demandGroups.value.find((group) =>
     group.demands.some(
-      (item) => item.businessStatus === 'active' && Number(item.remainingQuantity) > 0,
+      (item) =>
+        item.businessStatus === 'active' &&
+        !item.correction?.pendingCorrectionId &&
+        Number(item.remainingQuantity) > 0,
     ),
   );
   const demand =
     oldestActionableGroup?.demands.find(
-      (item) => item.businessStatus === 'active' && Number(item.remainingQuantity) > 0,
+      (item) =>
+        item.businessStatus === 'active' &&
+        !item.correction?.pendingCorrectionId &&
+        Number(item.remainingQuantity) > 0,
     ) ?? demandGroups.value[0]?.demands[0];
   if (demand) selectDemand(demand);
 };
@@ -325,7 +384,11 @@ const selectDemand = (row: ProductionMaterialDemandItem | null) => {
   selectedDemandId.value = row.demandId;
   form.itemBatchId = '';
   form.assignedQuantity = Math.max(1, Number(row.remainingQuantity));
-  if (row.businessStatus === 'active' && Number(row.remainingQuantity) > 0)
+  if (
+    row.businessStatus === 'active' &&
+    !row.correction?.pendingCorrectionId &&
+    Number(row.remainingQuantity) > 0
+  )
     emit('load-available', row.demandId);
 };
 const submitAllocation = () => {
@@ -356,8 +419,6 @@ const confirmRelease = async (row: ProductionMaterialAllocationItem) => {
     /* 用户取消 */
   }
 };
-const progressLabel = (status: ProductionMaterialDemandItem['demandProgressStatus']): string =>
-  MATERIAL_DEMAND_PROGRESS_LABELS[status];
 const allocationLabel = (status: AllocationStatus) => ALLOCATION_STATUS_LABELS[status];
 const generationGroupLabel = (group: DemandGenerationGroupView): string => {
   const label = DEMAND_GENERATION_GROUP_TYPE_LABELS[group.generationGroupType];
@@ -368,23 +429,17 @@ const demandRowClassName = ({ row }: { row: ProductionMaterialDemandItem }): str
 </script>
 
 <style scoped>
-.dialog-body {
-  max-height: 70vh;
-  overflow-y: auto;
+.demand-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.demand-toolbar .el-button + .el-button {
+  margin-left: 0;
 }
 .demand-group + .demand-group {
   margin-top: 18px;
-}
-.demand-group-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
-  color: #1f2937;
-}
-.demand-group-header span {
-  color: #6b7280;
-  font-size: 13px;
 }
 .secondary {
   color: #6b7280;
@@ -409,6 +464,6 @@ const demandRowClassName = ({ row }: { row: ProductionMaterialDemandItem }): str
   background: #f9fafb;
 }
 .allocation-form :deep(.el-select) {
-  width: 280px;
+  width: 400px;
 }
 </style>

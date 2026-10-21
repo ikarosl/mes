@@ -1,94 +1,103 @@
-import { ref } from 'vue';
-import type { BatchStepAbnormalOrigin, ProductionWorkerTaskItem } from '@company/contracts';
+import { computed, reactive, ref } from 'vue';
+import type { ProductionWorkerTaskItem, ProductionWorkerTaskQuery } from '@company/contracts';
 import { productionApi } from '../../../api/production';
-import { useIdempotentIntent } from '../../../composables/idempotency/useIdempotentIntent';
+import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
+import { EMessage } from '../../../utils/message';
+
+interface WorkerTaskFilterDraft {
+  status: NonNullable<ProductionWorkerTaskQuery['status']> | '';
+  batchNo: string;
+  workOrderNo: string;
+}
+
+const emptyFilters = (): WorkerTaskFilterDraft => ({ status: '', batchNo: '', workOrderNo: '' });
 
 export const useWorkerTasks = () => {
   const tasks = ref<ProductionWorkerTaskItem[]>([]);
-  const loading = ref(false);
-  const startPendingIds = ref(new Set<string>());
-  const reportPendingIds = ref(new Set<string>());
-  const reportIntents = new Map<string, ReturnType<typeof useIdempotentIntent>>();
-  let requestToken = 0;
-
-  const load = async (): Promise<void> => {
-    const token = ++requestToken;
-    loading.value = true;
-    try {
-      const rows = await productionApi.listWorkerTasks();
-      if (token === requestToken) tasks.value = rows;
-    } finally {
-      if (token === requestToken) loading.value = false;
-    }
-  };
-
-  const start = async (task: ProductionWorkerTaskItem): Promise<void> => {
-    if (startPendingIds.value.has(task.stepRecordId)) return;
-    startPendingIds.value = new Set(startPendingIds.value).add(task.stepRecordId);
-    try {
-      await productionApi.startStep(task.productionBatchId, task.stepRecordId, task.version);
-      await load();
-    } finally {
-      const next = new Set(startPendingIds.value);
-      next.delete(task.stepRecordId);
-      startPendingIds.value = next;
-    }
-  };
-
-  const report = async (
-    task: ProductionWorkerTaskItem,
-    normalQuantity: number,
-    abnormalQuantity: number,
-    abnormalOrigin: BatchStepAbnormalOrigin | null,
-    remark: string | null,
-  ): Promise<void> => {
-    if (reportPendingIds.value.has(task.stepRecordId)) return;
-    reportPendingIds.value = new Set(reportPendingIds.value).add(task.stepRecordId);
-    const body = {
-      version: task.version,
-      normalQuantity,
-      abnormalQuantity,
-      abnormalOrigin: abnormalQuantity > 0 ? abnormalOrigin : null,
-      remark: remark?.trim() || null,
+  const loading = ref(false),
+    total = ref(0),
+    page = ref(1),
+    pageSize = ref(10),
+    errorText = ref('');
+  const query = reactive(emptyFilters());
+  const appliedFilters = ref<ProductionWorkerTaskQuery>({});
+  const hasAppliedFilters = computed(
+    () =>
+      Boolean(appliedFilters.value.status) ||
+      Boolean(appliedFilters.value.batchNo) ||
+      Boolean(appliedFilters.value.workOrderNo),
+  );
+  const hasAppliedStatus = computed(() => Boolean(appliedFilters.value.status));
+  const applyFilters = (): void => {
+    appliedFilters.value = {
+      status: query.status || undefined,
+      batchNo: query.batchNo.trim() || undefined,
+      workOrderNo: query.workOrderNo.trim() || undefined,
     };
-    const intent = reportIntents.get(task.stepRecordId) ?? useIdempotentIntent();
-    reportIntents.set(task.stepRecordId, intent);
+    page.value = 1;
+  };
+  const clearFilters = (): void => {
+    Object.assign(query, emptyFilters());
+    appliedFilters.value = {};
+    page.value = 1;
+  };
+  const reads = useLatestReadRequest(() => (loading.value = false));
+  const load = async (): Promise<boolean> => {
+    if (!reads.isActive()) return false;
+    const filters = appliedFilters.value,
+      requestedPageSize = pageSize.value;
+    let requestedPage = page.value;
+    const { isCurrent, signal } = reads.begin(
+      () =>
+        appliedFilters.value === filters &&
+        page.value === requestedPage &&
+        pageSize.value === requestedPageSize,
+    );
+    loading.value = true;
+    errorText.value = '';
     try {
-      await intent.execute(
-        {
-          intentType: 'production.step-report.create',
-          params: { batchId: task.productionBatchId, stepRecordId: task.stepRecordId },
-          query: {},
-          body,
-        },
-        (key) =>
-          productionApi.createStepReport(task.productionBatchId, task.stepRecordId, body, key),
-      );
-      reportIntents.delete(task.stepRecordId);
-      await load();
+      while (isCurrent()) {
+        const result = await productionApi.listWorkerTasks(
+          { ...filters, page: requestedPage, pageSize: requestedPageSize },
+          { skipErrorHandling: true, signal },
+        );
+        if (!isCurrent()) return false;
+        const lastPage = Math.max(1, Math.ceil(result.total / requestedPageSize));
+        if (requestedPage > lastPage) {
+          requestedPage = lastPage;
+          page.value = lastPage;
+          if (result.total > 0) continue;
+        }
+        tasks.value = result.items;
+        total.value = result.total;
+        return true;
+      }
+      return false;
+    } catch (error) {
+      if (!isCurrent()) return false;
+      tasks.value = [];
+      total.value = 0;
+      requestedPage = 1;
+      page.value = 1;
+      errorText.value = '本人任务刷新失败，旧操作依据已清除，请重试。';
+      EMessage.error(error, errorText.value);
+      return false;
     } finally {
-      const next = new Set(reportPendingIds.value);
-      next.delete(task.stepRecordId);
-      reportPendingIds.value = next;
+      if (isCurrent()) loading.value = false;
     }
   };
-
-  const getReportIntentStatus = (stepRecordId: string) =>
-    reportIntents.get(stepRecordId)?.getStatus() ?? 'idle';
-  const resetReportIntent = (stepRecordId: string): void => {
-    reportIntents.get(stepRecordId)?.reset();
-    reportIntents.delete(stepRecordId);
-  };
-
   return {
     tasks,
     loading,
-    startPendingIds,
-    reportPendingIds,
+    total,
+    page,
+    pageSize,
+    query,
+    hasAppliedFilters,
+    hasAppliedStatus,
+    errorText,
+    applyFilters,
+    clearFilters,
     load,
-    start,
-    report,
-    getReportIntentStatus,
-    resetReportIntent,
   };
 };

@@ -2,223 +2,458 @@
   <el-dialog
     :model-value="visible"
     title="任务详情"
-    :width="DialogWidth.xl"
-    @update:model-value="$emit('update:visible', $event)"
+    :width="DialogWidth.lg"
+    @update:model-value="updateVisible"
   >
-    <template v-if="batch">
-      <el-descriptions
-        :column="3"
-        border
+    <div class="detail-toolbar">
+      <div
+        v-if="batch"
+        class="task-identity"
       >
-        <el-descriptions-item label="批次号">{{ batch.batchNo }}</el-descriptions-item>
-        <el-descriptions-item label="工单号">{{ batch.workOrderNo || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="产品">{{ batch.productName }}</el-descriptions-item>
-        <el-descriptions-item label="工艺路线">{{ batch.routeCode || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="计划数量">{{
-          formatQuantity(batch.plannedQuantity)
-        }}</el-descriptions-item>
-        <el-descriptions-item label="完成/合格"
-          >{{ formatQuantity(batch.completedQuantity) }} /
-          {{ formatQuantity(batch.qualifiedQuantity) }}</el-descriptions-item
-        >
-        <el-descriptions-item label="任务状态">{{
-          batchStatusMeta(batch.status).label
-        }}</el-descriptions-item>
-        <el-descriptions-item label="负责人">{{ batch.ownerName || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="版本号">{{ batch.version }}</el-descriptions-item>
-        <template v-if="batch.status === 'cancelled'">
-          <el-descriptions-item label="取消人">{{
-            batch.cancelledByName || batch.cancelledBy || '-'
-          }}</el-descriptions-item>
-          <el-descriptions-item label="取消时间">{{
-            formatDateTimeForDisplay(batch.cancelledAt)
-          }}</el-descriptions-item>
-          <el-descriptions-item
-            label="取消原因"
-            :span="3"
-            >{{ batch.cancelReason || '历史数据未记录' }}</el-descriptions-item
+        <div class="task-heading">
+          <strong>{{ batch.batchNo }}</strong>
+          <el-tag
+            :type="taskTypeTagType(batch.orderType)"
+            effect="light"
+            >{{ WORK_ORDER_TYPE_LABELS[batch.orderType] }}</el-tag
           >
-        </template>
-      </el-descriptions>
+          <el-tag :type="batchStatusMeta(batch.status).type">
+            {{ batchStatusMeta(batch.status).label }}
+          </el-tag>
+        </div>
+        <div class="product-heading">
+          {{ batch.productName }} <span>{{ batch.productCode }}</span>
+        </div>
+      </div>
+      <el-button
+        :loading="loading"
+        @click="refreshDetails"
+        >刷新详情</el-button
+      >
+    </div>
 
-      <el-tabs class="detail-tabs">
-        <el-tab-pane label="工序执行">
-          <el-table
-            v-if="batch.stepRecords?.length"
-            :data="batch.stepRecords"
-            class="detail-table"
+    <el-alert
+      v-if="error"
+      :title="error"
+      type="error"
+      :closable="false"
+      show-icon
+      class="detail-error"
+    />
+
+    <div v-loading="loading">
+      <template v-if="batch">
+        <el-descriptions
+          :column="2"
+          border
+        >
+          <el-descriptions-item label="工单">{{ batch.workOrderNo || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="负责人">{{
+            batch.ownerName || (batch.ownerId ? '姓名暂不可用' : '未指定')
+          }}</el-descriptions-item>
+          <el-descriptions-item label="计划量">{{
+            formatQuantity(batch.plannedQuantity)
+          }}</el-descriptions-item>
+          <el-descriptions-item label="计划日期">
+            {{ formatDateForDisplay(batch.planStartDate, '未定') }} 至
+            {{ formatDateForDisplay(batch.planEndDate, '未定') }}
+          </el-descriptions-item>
+          <el-descriptions-item
+            v-if="batch.orderType !== 'research'"
+            label="工艺路线"
+            :span="2"
           >
-            <el-table-column
-              prop="stepOrder"
-              label="序号"
-              width="70"
-            />
-            <el-table-column
-              prop="stepName"
-              label="工序"
-              min-width="160"
-            />
-            <el-table-column
-              label="工序编码"
-              min-width="120"
+            {{ batch.routeCode || '未配置' }}
+            <span
+              v-if="batch.routeVersion"
+              class="route-version"
+              >版本 {{ batch.routeVersion }}</span
             >
-              <template #default="{ row }">{{ row.stepCode }}</template>
-            </el-table-column>
-            <el-table-column
-              label="默认负责人"
-              width="120"
+          </el-descriptions-item>
+          <el-descriptions-item
+            label="备注"
+            :span="2"
+          >
+            <span class="multiline-text">{{ batch.remark || '未填写' }}</span>
+          </el-descriptions-item>
+          <el-descriptions-item
+            label="当前批准产出"
+            :span="2"
+          >
+            <BatchApprovedOutput :output="batch.finalOutput" />
+          </el-descriptions-item>
+        </el-descriptions>
+
+        <div class="section-title">任务开工记录</div>
+        <el-descriptions
+          :column="2"
+          border
+        >
+          <el-descriptions-item label="开工人">{{
+            batch.startedAt ? batch.startedByName || '姓名暂不可用' : '尚未开工'
+          }}</el-descriptions-item>
+          <el-descriptions-item label="开工时间">{{
+            formatDateTimeForDisplay(batch.startedAt, '尚未开工')
+          }}</el-descriptions-item>
+        </el-descriptions>
+
+        <section
+          v-if="batch.startedAt"
+          class="start-evidence"
+        >
+          <el-button
+            class="evidence-toggle"
+            :aria-expanded="expandedEvidence"
+            :disabled="!readActive"
+            @click="toggleEvidence"
+          >
+            <el-icon><ArrowDown v-if="expandedEvidence" /><ArrowRight v-else /></el-icon>
+            <span>{{ expandedEvidence ? '收起' : '展开' }}开工记录</span>
+            <el-tag
+              v-if="startRecord"
+              size="small"
+              :type="startRecord.startMaterialSnapshot.hasMaterialShortage ? 'warning' : 'info'"
+              class="snapshot-tag"
             >
-              <template #default="{ row }">{{ row.defaultResponsibleUserName || '-' }}</template>
-            </el-table-column>
-            <el-table-column
-              label="派工负责人"
-              width="130"
-            >
-              <template #default="{ row }">{{ row.responsibleUserName || '尚未派工' }}</template>
-            </el-table-column>
-            <el-table-column
-              label="生效参考文件"
-              min-width="180"
-            >
-              <template #default="{ row }">{{
-                row.actualSopFileName || row.defaultSopFileName || '未配置'
-              }}</template>
-            </el-table-column>
-            <el-table-column
-              label="需检验"
-              width="80"
-            >
-              <template #default="{ row }">{{ row.needInspection ? '是' : '否' }}</template>
-            </el-table-column>
-            <el-table-column
-              label="状态"
-              width="110"
-            >
-              <template #default="{ row }">{{
-                STEP_STATUS_LABELS[row.status] ?? row.status
-              }}</template>
-            </el-table-column>
-            <el-table-column
-              label="产出/合格/异常"
-              width="170"
-            >
-              <template #default="{ row }">
-                {{ formatQuantity(row.outputQuantity) }} /
-                {{ formatQuantity(row.qualifiedQuantity) }} /
-                {{ formatQuantity(row.abnormalQuantity) }}
-              </template>
-            </el-table-column>
-            <el-table-column
-              label="操作"
-              width="220"
-              fixed="right"
-            >
-              <template #default="{ row }">
-                <el-button
-                  v-if="row.status === 'pending'"
-                  link
-                  type="primary"
-                  :loading="assignmentPendingIds.has(row.id)"
-                  @click="$emit('assign-step', row)"
-                  >派工</el-button
-                >
-                <template v-else-if="row.status === 'assigned'">
-                  <el-button
-                    link
-                    type="primary"
-                    :loading="assignmentPendingIds.has(row.id)"
-                    @click="$emit('reassign-step', row)"
-                    >改派</el-button
-                  >
-                  <el-button
-                    link
-                    type="danger"
-                    :loading="assignmentPendingIds.has(row.id)"
-                    @click="$emit('unassign-step', row)"
-                    >撤回</el-button
-                  >
-                </template>
-                <el-button
-                  link
-                  type="primary"
-                  :disabled="row.status !== 'pending' && row.status !== 'assigned'"
-                  @click="$emit('edit-step-execution', row)"
-                  >调整</el-button
-                >
-              </template>
-            </el-table-column>
-          </el-table>
+              {{
+                startRecord.startMaterialSnapshot.hasMaterialShortage ? '当时有缺口' : '当时无缺口'
+              }}
+            </el-tag>
+          </el-button>
           <div
-            v-else
-            class="empty-hint"
+            v-if="expandedEvidence"
+            v-loading="startRecordLoading"
+            class="evidence-content"
           >
-            暂无工序记录
+            <el-descriptions
+              v-if="startRecord"
+              :column="1"
+              border
+              class="start-reason"
+            >
+              <el-descriptions-item label="开工说明">
+                <span class="multiline-text">{{ startRecord.startReason || '未填写说明' }}</span>
+              </el-descriptions-item>
+            </el-descriptions>
+            <div class="evidence-toolbar">
+              <p class="snapshot-note">以下数量保存于任务开工时，用于核对当时依据。</p>
+              <el-button
+                :loading="startRecordLoading"
+                :disabled="!readActive"
+                @click="loadStartRecord"
+                >刷新开工记录</el-button
+              >
+            </div>
+            <el-alert
+              v-if="startRecordError"
+              :title="startRecordError"
+              type="error"
+              :closable="false"
+              show-icon
+              class="detail-error"
+            />
+            <el-table
+              v-if="startRecord"
+              :data="startRecord.startMaterialSnapshot.lines"
+              empty-text="开工时没有有效物料需求"
+            >
+              <el-table-column
+                label="物料 / 精确版本"
+                min-width="220"
+              >
+                <template #default="{ row }">
+                  {{ row.itemCode }}
+                  <div class="secondary-text">{{ row.materialVariantCode }}</div>
+                </template>
+              </el-table-column>
+              <el-table-column
+                label="开工时需求"
+                min-width="140"
+                align="right"
+              >
+                <template #default="{ row }"
+                  >{{ formatQuantity(row.demandQuantity) }} {{ row.unit }}</template
+                >
+              </el-table-column>
+              <el-table-column
+                label="开工时已领"
+                min-width="140"
+                align="right"
+              >
+                <template #default="{ row }"
+                  >{{ formatQuantity(row.confirmedOutboundQuantity) }} {{ row.unit }}</template
+                >
+              </el-table-column>
+              <el-table-column
+                label="开工时未领"
+                min-width="140"
+                align="right"
+              >
+                <template #default="{ row }"
+                  >{{ formatQuantity(row.remainingQuantity) }} {{ row.unit }}</template
+                >
+              </el-table-column>
+            </el-table>
+            <el-skeleton
+              v-else-if="startRecordLoading && !startRecordLoaded"
+              :rows="3"
+              animated
+            />
+            <el-empty
+              v-else-if="startRecordLoaded && !startRecordError"
+              :image-size="48"
+              description="尚无任务开工记录"
+            />
+            <p
+              v-else-if="!startRecordError"
+              class="snapshot-note"
+            >
+              开工记录尚未加载，请刷新开工记录。
+            </p>
           </div>
-          <!-- TODO(4.2-C): batch_step_reports 分批报工、异常展示和管理员更正尚未落地。 -->
-        </el-tab-pane>
-        <el-tab-pane label="物料需求">
-          <div class="empty-hint">
-            物料需求、库存批次分配与领料出库统一从任务列表的批次操作入口办理。
-          </div>
-        </el-tab-pane>
-      </el-tabs>
+        </section>
+
+        <template v-if="batch.status === 'cancelled'">
+          <div class="section-title">取消记录</div>
+          <el-descriptions
+            :column="2"
+            border
+          >
+            <el-descriptions-item label="取消人">{{
+              batch.cancelledByName || '姓名暂不可用'
+            }}</el-descriptions-item>
+            <el-descriptions-item label="取消时间">{{
+              formatDateTimeForDisplay(batch.cancelledAt)
+            }}</el-descriptions-item>
+            <el-descriptions-item
+              label="取消原因"
+              :span="2"
+            >
+              <span class="multiline-text">{{ batch.cancelReason || '未记录原因' }}</span>
+            </el-descriptions-item>
+          </el-descriptions>
+        </template>
+      </template>
+      <el-empty
+        v-else-if="!loading && !error"
+        :image-size="64"
+        description="暂无任务详情"
+      />
+      <el-skeleton
+        v-else-if="loading && !batch"
+        :rows="5"
+        animated
+      />
+    </div>
+
+    <template #footer>
+      <el-button @click="updateVisible(false)">关闭</el-button>
     </template>
   </el-dialog>
 </template>
 
 <script setup lang="ts">
-import type { BatchStepRecordItem, ProductionBatchDetail } from '@company/contracts';
+import { onActivated, onDeactivated, ref, shallowRef, watch } from 'vue';
+import { ArrowDown, ArrowRight } from '@element-plus/icons-vue';
+import { WORK_ORDER_TYPE_LABELS } from '@company/constants';
+import type { ProductionBatchDetail, ProductionBatchStartRecord } from '@company/contracts';
+import { productionApi } from '../../../api/production';
+import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
 import { DialogWidth } from '../../../utils/dialog';
-import { formatDateTimeForDisplay } from '../../../utils/date';
-import { STEP_STATUS_LABELS, batchStatusMeta, formatQuantity } from '../production-status';
+import { formatDateForDisplay, formatDateTimeForDisplay } from '../../../utils/date';
+import { batchStatusMeta, formatQuantity } from '../production-status';
+import { taskTypeTagType } from '../production-task-presentation';
+import BatchApprovedOutput from './BatchApprovedOutput.vue';
 
-defineProps<{
-  visible: boolean;
-  batch: ProductionBatchDetail | null;
-  assignmentPendingIds: Set<string>;
+const props = withDefaults(
+  defineProps<{
+    visible: boolean;
+    batch: ProductionBatchDetail | null;
+    loading?: boolean;
+    error?: string;
+  }>(),
+  { loading: false, error: '' },
+);
+
+const emit = defineEmits<{
+  (event: 'update:visible', value: boolean): void;
+  (event: 'refresh'): void;
 }>();
 
-defineEmits<{
-  (e: 'update:visible', val: boolean): void;
-  (e: 'edit-step-execution', row: BatchStepRecordItem): void;
-  (e: 'assign-step', row: BatchStepRecordItem): void;
-  (e: 'reassign-step', row: BatchStepRecordItem): void;
-  (e: 'unassign-step', row: BatchStepRecordItem): void;
-}>();
+const expandedEvidence = ref(false);
+const startRecord = shallowRef<ProductionBatchStartRecord | null>(null);
+const startRecordLoaded = ref(false);
+const startRecordLoading = ref(false);
+const startRecordError = ref('');
+const readActive = ref(true);
+const startRecordReads = useLatestReadRequest(() => (startRecordLoading.value = false));
+
+async function loadStartRecord(): Promise<void> {
+  const batchId = props.batch?.id;
+  if (!props.visible || !batchId || !readActive.value || !startRecordReads.isActive()) return;
+  const { isCurrent, signal } = startRecordReads.begin(
+    () => props.visible && props.batch?.id === batchId,
+  );
+  startRecordLoading.value = true;
+  startRecordError.value = '';
+  try {
+    const result = await productionApi.getBatchStartRecord(batchId, {
+      signal,
+      skipErrorHandling: true,
+    });
+    if (!isCurrent()) return;
+    if (
+      result !== null &&
+      (!result ||
+        result.productionBatchId !== batchId ||
+        !result.startMaterialSnapshot ||
+        !Array.isArray(result.startMaterialSnapshot.lines))
+    )
+      throw new Error('开工记录与当前任务不一致或记录不完整，请重试');
+    startRecord.value = result;
+    startRecordLoaded.value = true;
+  } catch (failure) {
+    if (isCurrent())
+      startRecordError.value =
+        failure instanceof Error ? failure.message : '开工记录加载失败，请重试';
+  } finally {
+    if (isCurrent()) startRecordLoading.value = false;
+  }
+}
+
+function expandEvidence(): void {
+  if (!props.visible || !readActive.value) return;
+  expandedEvidence.value = true;
+  if (!startRecordLoaded.value && !startRecordLoading.value) void loadStartRecord();
+}
+
+function toggleEvidence(): void {
+  if (expandedEvidence.value) expandedEvidence.value = false;
+  else expandEvidence();
+}
+
+function refreshDetails(): void {
+  emit('refresh');
+  if (expandedEvidence.value || startRecordLoaded.value) void loadStartRecord();
+}
+
+function updateVisible(visible: boolean): void {
+  if (!visible) {
+    startRecordReads.invalidate();
+    expandedEvidence.value = false;
+  }
+  emit('update:visible', visible);
+}
+
+watch(
+  () => props.batch?.id,
+  () => {
+    startRecordReads.invalidate();
+    expandedEvidence.value = false;
+    startRecord.value = null;
+    startRecordLoaded.value = false;
+    startRecordError.value = '';
+  },
+);
+watch(
+  () => props.visible,
+  (visible) => {
+    if (!visible) {
+      startRecordReads.invalidate();
+      expandedEvidence.value = false;
+    }
+  },
+);
+onActivated(() => (readActive.value = true));
+onDeactivated(() => (readActive.value = false));
 </script>
 
 <style scoped>
-.detail-tabs {
-  margin-top: 18px;
+.detail-toolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
 }
-.detail-table {
-  width: 100%;
-  color: #1f2937;
-  font-size: 14px;
+.task-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--el-text-color-primary);
 }
-.detail-table :deep(.el-table__header th) {
-  height: 48px;
-  background: #f9fafb;
-  color: #1f2937;
+.task-heading strong {
+  font-size: 16px;
+}
+.product-heading {
+  margin-top: 8px;
+  color: var(--el-text-color-primary);
+}
+.product-heading span,
+.route-version,
+.secondary-text,
+.snapshot-note {
+  color: var(--el-text-color-secondary);
+}
+.product-heading span,
+.route-version {
+  margin-left: 8px;
+}
+.detail-error {
+  margin-bottom: 16px;
+}
+.section-title {
+  margin: 20px 0 12px;
+  color: var(--el-text-color-primary);
   font-weight: 600;
 }
-.detail-table :deep(.el-table__row) {
-  height: 48px;
+.multiline-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
-.detail-table :deep(.el-table__row:hover) {
-  background: #f3f4f6;
+.start-evidence {
+  margin-top: 12px;
 }
-.detail-table :deep(.el-table__cell) {
-  border-bottom-color: #e5e7eb;
+.evidence-toggle {
+  justify-content: flex-start;
+  width: 100%;
+  height: auto;
+  min-height: 42px;
+  white-space: normal;
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-primary);
+  border-color: var(--el-border-color-lighter);
 }
-.detail-table :deep(.el-button.is-link) {
-  padding: 0;
-  font-weight: 500;
+.evidence-toggle :deep(> span) {
+  flex-wrap: wrap;
+  gap: 8px;
 }
-.empty-hint {
-  padding: 24px;
-  text-align: center;
-  color: #9ca3af;
-  font-size: 14px;
+.snapshot-tag {
+  margin-left: 12px;
+}
+.evidence-content {
+  padding-top: 12px;
+}
+.start-reason {
+  margin-bottom: 12px;
+}
+.evidence-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+.evidence-toolbar .snapshot-note {
+  margin: 0;
+}
+.snapshot-note {
+  margin: 8px 0 12px;
+  font-size: 13px;
+}
+.secondary-text {
+  margin-top: 4px;
+  font-size: 12px;
 }
 </style>

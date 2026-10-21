@@ -29,8 +29,8 @@
       <TableToolbar :total="total">
         <template #actions>
           <div class="trace-caption">
-            <strong>Production 事实追溯</strong>
-            <span>按批次核对需求、分配、领料出库、库存流水、工序和报工事实</span>
+            <strong>生产追溯</strong>
+            <span>按任务核对物料、领料、库存流向和工序报工</span>
           </div>
         </template>
         <template #tools>
@@ -54,7 +54,7 @@
         type="info"
         :closable="false"
         show-icon
-        title="本页只展示当前已落库的 Production 事实，不代表质量放行，也不包含返工、报废、退料或成品流向。"
+        title="成品产出以当前批准清单为准，实际入库请核对入库确认记录。"
       />
 
       <div class="trace-workspace">
@@ -68,39 +68,68 @@
             class="trace-order-group"
           >
             <header>
-              <strong>{{ item.workOrderNo }}</strong>
-              <small>{{ item.productCode }} / {{ item.productName }}</small>
-              <span>{{ item.batches.length }} 个生产批次</span>
-            </header>
-            <button
-              v-for="batch in item.batches"
-              :key="batch.productionBatchId"
-              type="button"
-              :class="['trace-result', { active: selectedBatchId === batch.productionBatchId }]"
-              @click="selectBatch(batch.productionBatchId)"
-            >
-              <strong>{{ batch.batchNo }}</strong>
-              <el-tag
-                size="small"
-                :type="batchStatusMeta(batch.batchStatus).type"
+              <button
+                type="button"
+                class="trace-order-toggle"
+                :aria-expanded="!collapsedWorkOrderIds.has(item.workOrderId)"
+                :aria-controls="`trace-order-batches-${item.workOrderId}`"
+                :aria-label="`${collapsedWorkOrderIds.has(item.workOrderId) ? '展开' : '收起'}工单 ${item.workOrderNo} 的生产批次`"
+                @click="toggleWorkOrder(item.workOrderId)"
               >
-                {{ batchStatusMeta(batch.batchStatus).label }}
-              </el-tag>
-            </button>
+                <span class="trace-order-identity">
+                  <el-icon
+                    class="trace-order-arrow"
+                    :class="{ collapsed: collapsedWorkOrderIds.has(item.workOrderId) }"
+                    aria-hidden="true"
+                    ><ArrowDown
+                  /></el-icon>
+                  <strong>{{ item.workOrderNo }}</strong>
+                </span>
+                <small>{{ item.productCode }} / {{ item.productName }}</small>
+                <span class="trace-order-meta">
+                  <span>{{ item.batches.length }} 个生产批次</span>
+                  <span class="trace-order-action">{{
+                    collapsedWorkOrderIds.has(item.workOrderId) ? '展开' : '收起'
+                  }}</span>
+                </span>
+              </button>
+            </header>
+            <div
+              v-show="!collapsedWorkOrderIds.has(item.workOrderId)"
+              :id="`trace-order-batches-${item.workOrderId}`"
+              class="trace-order-batches"
+            >
+              <button
+                v-for="batch in item.batches"
+                :key="batch.productionBatchId"
+                type="button"
+                :class="['trace-result', { active: selectedBatchId === batch.productionBatchId }]"
+                @click="selectBatch(batch.productionBatchId)"
+              >
+                <strong>{{ batch.batchNo }}</strong>
+                <el-tag
+                  size="small"
+                  :type="batchStatusMeta(batch.batchStatus).type"
+                >
+                  {{ batchStatusMeta(batch.batchStatus).label }}
+                </el-tag>
+              </button>
+            </div>
           </section>
           <el-empty
             v-if="!loading && items.length === 0"
             description="未找到生产追溯记录"
             :image-size="72"
           />
-          <el-pagination
-            v-if="total > 20"
-            small
+          <PaginationFooter
+            compact
             layout="prev, pager, next"
             :current-page="currentPage"
-            :page-size="20"
+            :page-size="pageSize"
             :total="total"
-            @current-change="changePage"
+            :disabled="loading"
+            @update:page-size="changePageSize"
+            @page-change="changePage"
           />
         </aside>
 
@@ -109,40 +138,92 @@
           class="trace-detail"
         >
           <template v-if="detail">
-            <div class="trace-overview">
-              <div>
-                <span>生产工单</span><strong>{{ detail.summary.workOrderNo }}</strong>
-              </div>
-              <div>
-                <span>生产批次</span><strong>{{ detail.summary.batchNo }}</strong>
-              </div>
-              <div>
-                <span>产品</span
-                ><strong
-                  >{{ detail.summary.productCode }} / {{ detail.summary.productName }}</strong
+            <el-descriptions
+              class="trace-summary"
+              :column="3"
+              size="default"
+              border
+            >
+              <el-descriptions-item label="工单号">{{
+                detail.summary.workOrderNo
+              }}</el-descriptions-item>
+              <el-descriptions-item label="任务号">{{
+                detail.summary.batchNo
+              }}</el-descriptions-item>
+              <el-descriptions-item label="计划数量">{{
+                formatQuantity(detail.summary.plannedQuantity)
+              }}</el-descriptions-item>
+              <el-descriptions-item
+                label="产品"
+                :span="2"
+              >
+                {{ detail.summary.productCode }} / {{ detail.summary.productName }}
+              </el-descriptions-item>
+              <el-descriptions-item label="任务状态">
+                <el-tag
+                  size="small"
+                  :type="batchStatusMeta(detail.summary.batchStatus).type"
                 >
-              </div>
-              <div>
-                <span>执行状态</span
-                ><strong>{{ batchStatusMeta(detail.summary.batchStatus).label }}</strong>
-              </div>
-              <div>
-                <span>计划数量</span
-                ><strong>{{ formatQuantity(detail.summary.plannedQuantity) }}</strong>
-              </div>
-              <div>
-                <span>完成数量</span
-                ><strong>{{ formatQuantity(detail.summary.completedQuantity) }}</strong>
-              </div>
-              <div>
-                <span>开工时间</span
-                ><strong>{{ formatDateTimeForDisplay(detail.summary.startedAt) }}</strong>
-              </div>
-              <div>
-                <span>完工时间</span
-                ><strong>{{ formatDateTimeForDisplay(detail.summary.completedAt) }}</strong>
-              </div>
-            </div>
+                  {{ batchStatusMeta(detail.summary.batchStatus).label }}
+                </el-tag>
+              </el-descriptions-item>
+              <el-descriptions-item label="开工时间">{{
+                formatDateTimeForDisplay(detail.summary.startedAt)
+              }}</el-descriptions-item>
+              <el-descriptions-item label="执行完工时间">{{
+                formatDateTimeForDisplay(detail.summary.executionCompletedAt)
+              }}</el-descriptions-item>
+              <el-descriptions-item label="正常结案时间">{{
+                formatDateTimeForDisplay(detail.summary.completedAt)
+              }}</el-descriptions-item>
+            </el-descriptions>
+
+            <section class="approved-output">
+              <header class="summary-heading">
+                <strong>审定产出</strong>
+                <el-button
+                  v-if="detail.summary.closeoutMode && canAccessRoute({ name: 'production-tasks' })"
+                  type="primary"
+                  link
+                  @click="openOutput(detail.summary.productionBatchId)"
+                  >查看批准清单与结案记录</el-button
+                >
+              </header>
+              <el-descriptions
+                v-if="detail.summary.finalOutput"
+                class="trace-summary"
+                :column="3"
+                size="default"
+                border
+              >
+                <el-descriptions-item label="可用产出合计"
+                  ><strong>{{
+                    formatQuantity(approvedUsableQuantity(detail.summary.finalOutput))
+                  }}</strong></el-descriptions-item
+                >
+                <el-descriptions-item label="计划内产出">{{
+                  formatQuantity(detail.summary.finalOutput.availableQuantity)
+                }}</el-descriptions-item>
+                <el-descriptions-item label="计划外产出">{{
+                  formatQuantity(detail.summary.finalOutput.extraQuantity)
+                }}</el-descriptions-item>
+                <el-descriptions-item label="累计成品报废">{{
+                  formatQuantity(detail.summary.finalOutput.scrapQuantity)
+                }}</el-descriptions-item>
+                <el-descriptions-item label="计划内差额">{{
+                  plannedOutputGapText(detail.summary.finalOutput.plannedShortfallQuantity)
+                }}</el-descriptions-item>
+                <el-descriptions-item label="批准清单版本"
+                  >第 {{ detail.summary.finalOutput.revisionNo }} 版</el-descriptions-item
+                >
+              </el-descriptions>
+              <p
+                v-else
+                class="output-pending"
+              >
+                尚无批准清单，暂不计入审定产出。
+              </p>
+            </section>
 
             <el-tabs
               v-model="activeTab"
@@ -151,10 +232,11 @@
               <el-tab-pane
                 label="物料需求与分配"
                 name="materials"
+                lazy
               >
                 <el-table
                   :data="detail.materialDemands"
-                  empty-text="暂无物料需求事实"
+                  empty-text="暂无物料需求"
                 >
                   <el-table-column
                     prop="itemCode"
@@ -210,6 +292,7 @@
               <el-tab-pane
                 label="物料入库来源"
                 name="inbound"
+                lazy
               >
                 <el-alert
                   title="这里展示本生产批次所分配库存批次的可用库存增加记录，包括外购入库、生产退料和盘点调整；不代表每笔入库数量均由本任务领用。"
@@ -270,6 +353,7 @@
               <el-tab-pane
                 label="领料出库与库存流水"
                 name="outbound"
+                lazy
               >
                 <article
                   v-for="outbound in detail.materialOutbounds"
@@ -316,7 +400,7 @@
                 </article>
                 <el-empty
                   v-if="detail.materialOutbounds.length === 0"
-                  description="暂无生产领料出库事实"
+                  description="暂无领料出库记录"
                   :image-size="72"
                 />
                 <h2 class="subsection-title">对应库存流水</h2>
@@ -368,6 +452,7 @@
               <el-tab-pane
                 label="工序与报工"
                 name="steps"
+                lazy
               >
                 <article
                   v-for="step in detail.steps"
@@ -380,61 +465,46 @@
                       BATCH_STEP_STATUS_LABELS[step.status]
                     }}</el-tag>
                   </header>
+                  <ProductionStepProgress
+                    :reported-quantity="step.effectiveDirectReportedQuantity"
+                    :upper-limit-quantity="step.upperLimitQuantity"
+                    :direct-normal-quantity="step.effectiveDirectNormalQuantity"
+                    :direct-abnormal-quantity="step.effectiveDirectAbnormalQuantity"
+                    :unit="step.unit"
+                  />
                   <p class="step-summary">
-                    有效正常 {{ formatQuantity(step.effectiveNormalQuantity) }} /
-                    {{ formatQuantity(step.requiredNormalQuantity) }}； 有效异常
-                    {{ formatQuantity(step.effectiveAbnormalQuantity) }}；待处置异常
+                    正常累计（含{{ BATCH_STEP_REWORK_RESULT_LABELS.normal }}）{{
+                      formatQuantity(step.effectiveNormalQuantity)
+                    }}；建议目标
+                    {{ formatQuantity(step.requiredNormalQuantity) }}；正常与建议目标之差
+                    {{ formatQuantityDifference(step.normalVsTargetDifference) }}；待处置异常
                     {{
                       step.abnormalDispositions.filter(
                         (item) => item.reviewStatus === 'pending_review',
                       ).length
                     }}
-                    条
+                    项。报工比例不代替工序完成状态。
                   </p>
-                  <el-table
-                    :data="step.reports"
-                    size="small"
-                    empty-text="暂无报工事实"
+                  <ProductionStepExecutionHistoryDialog
+                    v-model="historyVisibleByStep[step.stepRecordId]"
+                    :batch-id="step.productionBatchId"
+                    :step-record-id="step.stepRecordId"
+                    :step-name="step.stepName"
+                  />
+                  <el-button
+                    link
+                    type="primary"
+                    @click="historyVisibleByStep[step.stepRecordId] = true"
+                    >状态业务历史</el-button
                   >
-                    <el-table-column
-                      prop="reportNo"
-                      label="报工单号"
-                      min-width="180"
-                    />
-                    <el-table-column
-                      label="事实关系"
-                      min-width="170"
-                    >
-                      <template #default="{ row }">
-                        <span v-if="row.reversalOfReportId"
-                          >冲销 #{{ row.reversalOfReportId }}</span
-                        >
-                        <span v-else-if="row.correctionOfReportId"
-                          >替代 #{{ row.correctionOfReportId }}</span
-                        >
-                        <span v-else>原始报工</span>
-                      </template>
-                    </el-table-column>
-                    <el-table-column
-                      label="正常 / 异常"
-                      min-width="150"
-                    >
-                      <template #default="{ row }"
-                        >{{ formatQuantity(row.normalQuantity) }} /
-                        {{ formatQuantity(row.abnormalQuantity) }}</template
-                      >
-                    </el-table-column>
-                    <el-table-column
-                      label="有效性"
-                      width="90"
-                    >
-                      <template #default="{ row }"
-                        ><el-tag :type="row.isEffective ? 'success' : 'info'">{{
-                          row.isEffective ? '有效' : '已冲销'
-                        }}</el-tag></template
-                      >
-                    </el-table-column>
-                  </el-table>
+                  <ProductionStepReportTable
+                    :batch-id="step.productionBatchId"
+                    :step-record-id="step.stepRecordId"
+                    :version="step.version"
+                    :show-actions="false"
+                    @view-detail="reportTrace.open"
+                    @view-report="reportTrace.open"
+                  />
                 </article>
               </el-tab-pane>
             </el-tabs>
@@ -447,29 +517,104 @@
       </div>
     </section>
   </div>
+  <ProductionReportTraceDialog :reader="reportTrace" />
+  <ProductionOutputDialog
+    v-model:visible="outputVisible"
+    :batch-id="outputBatchId"
+    @changed="refresh"
+    @open-closeout="openCloseoutItems"
+  />
+  <ProductionBatchTerminationDialog
+    v-model:visible="closeoutVisible"
+    :batch-id="outputBatchId"
+    @terminated="refresh"
+    @open-output="openOutput"
+  />
 </template>
 
 <script setup lang="ts">
-import { onActivated, onMounted, ref } from 'vue';
+import { reactive, ref, watch } from 'vue';
+import { usePageActivationRefresh } from '../../composables/requests/usePageActivationRefresh';
+import { useRouteAccess } from '../../composables/useRouteAccess';
+import ProductionOutputDialog from './components/ProductionOutputDialog.vue';
+import ProductionStepProgress from './components/ProductionStepProgress.vue';
+import ProductionStepReportTable from './components/ProductionStepReportTable.vue';
+import ProductionReportTraceDialog from './components/ProductionReportTraceDialog.vue';
+import { useProductionReportTrace } from './composables/useProductionReportTrace';
+import ProductionStepExecutionHistoryDialog from './components/ProductionStepExecutionHistoryDialog.vue';
+import ProductionBatchTerminationDialog from './components/ProductionBatchTerminationDialog.vue';
 import type { InventoryTransactionType } from '@company/contracts';
 
-import { Refresh } from '@element-plus/icons-vue';
-import { BATCH_STEP_STATUS_LABELS, INVENTORY_TRANSACTION_TYPE_LABELS } from '@company/constants';
+import { ArrowDown, Refresh } from '@element-plus/icons-vue';
+import {
+  BATCH_STEP_REWORK_RESULT_LABELS,
+  BATCH_STEP_STATUS_LABELS,
+  INVENTORY_TRANSACTION_TYPE_LABELS,
+} from '@company/constants';
 import TableToolbar from '../../components/TableToolbar.vue';
+import PaginationFooter from '../../components/PaginationFooter.vue';
 import { formatDateTimeForDisplay } from '../../utils/date';
 import { EMessage } from '../../utils/message';
-import { batchStatusMeta, formatQuantity, stepStatusMeta } from './production-status';
+import {
+  batchStatusMeta,
+  formatQuantity,
+  formatQuantityDifference,
+  stepStatusMeta,
+} from './production-status';
+import { approvedUsableQuantity, plannedOutputGapText } from './production-output-quantity';
 import { useProductionTrace } from './composables/useProductionTrace';
 
 defineOptions({ name: 'ProductionTracePage' });
+const { canAccessRoute } = useRouteAccess();
 const sourceLabel = (value: InventoryTransactionType) =>
   INVENTORY_TRANSACTION_TYPE_LABELS[value] ?? value;
 
+const outputVisible = ref(false),
+  closeoutVisible = ref(false),
+  outputBatchId = ref<string | null>(null);
+const openOutput = (batchId: string) => {
+  if (!canAccessRoute({ name: 'production-tasks' })) return;
+  outputBatchId.value = batchId;
+  outputVisible.value = true;
+};
+const openCloseoutItems = (batchId: string) => {
+  outputBatchId.value = batchId;
+  closeoutVisible.value = true;
+};
+const historyVisibleByStep = reactive<Record<string, boolean>>({});
 const keyword = ref('');
 const currentPage = ref(1);
 const activeTab = ref('materials');
-const { items, total, loading, detailLoading, selectedBatchId, detail, search, selectBatch } =
-  useProductionTrace();
+const {
+  items,
+  total,
+  pageSize,
+  loading,
+  detailLoading,
+  selectedBatchId,
+  detail,
+  search,
+  selectBatch,
+} = useProductionTrace();
+const collapsedWorkOrderIds = ref(new Set<string>());
+watch(
+  () => items.value.map((item) => item.workOrderId),
+  (ids) => {
+    const currentIds = new Set(ids);
+    collapsedWorkOrderIds.value = new Set(
+      [...collapsedWorkOrderIds.value].filter((id) => currentIds.has(id)),
+    );
+  },
+);
+function toggleWorkOrder(id: string): void {
+  const next = new Set(collapsedWorkOrderIds.value);
+  if (next.has(id)) next.delete(id);
+  else next.add(id);
+  collapsedWorkOrderIds.value = next;
+}
+const reportTrace = useProductionReportTrace({
+  contextId: () => selectedBatchId.value,
+});
 const variantCode = (row: { materialVariantCode?: string | null }): string =>
   row.materialVariantCode || '未记录版本';
 
@@ -491,13 +636,16 @@ const changePage = async (page: number) => {
   currentPage.value = page;
   await search(keyword.value, page);
 };
+const changePageSize = async (size: number): Promise<void> => {
+  pageSize.value = size;
+  await runSearch();
+};
 const refresh = async () => {
   if (selectedBatchId.value) await selectBatch(selectedBatchId.value);
   else await runSearch();
 };
 
-onMounted(runSearch);
-onActivated(refresh);
+usePageActivationRefresh(refresh);
 </script>
 
 <style scoped>
@@ -592,14 +740,66 @@ onActivated(refresh);
   border-radius: 8px;
   background: var(--el-bg-color);
 }
-.trace-order-group header {
+.trace-order-toggle {
   display: grid;
   gap: 3px;
+  width: 100%;
   padding: 2px 2px 6px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--el-text-color-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
-.trace-order-group header small,
-.trace-order-group header span {
+.trace-order-toggle:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 2px;
+}
+.trace-order-identity {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+.trace-order-identity strong,
+.trace-order-toggle small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.trace-order-arrow {
+  flex: none;
+  margin-top: 3px;
+  font-size: 12px;
+}
+.trace-order-arrow.collapsed {
+  transform: rotate(-90deg);
+}
+.trace-order-toggle small,
+.trace-order-meta {
   color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+.trace-order-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.trace-order-action {
+  flex: none;
+  padding: 0 6px;
+  border: 1px solid var(--el-border-color);
+  border-radius: var(--el-border-radius-small);
+  color: var(--el-text-color-regular);
+  line-height: 20px;
+}
+.trace-order-toggle:hover .trace-order-action {
+  background: var(--el-fill-color);
+}
+.trace-order-batches {
+  display: grid;
+  gap: 8px;
 }
 .trace-result.active {
   border-color: var(--el-color-primary);
@@ -618,20 +818,28 @@ onActivated(refresh);
   overflow: auto;
   padding: 16px 20px 20px;
 }
-.trace-overview {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
+.trace-summary :deep(.el-descriptions__table) {
+  table-layout: fixed;
 }
-.trace-overview div {
-  display: grid;
-  gap: 4px;
-  padding: 12px;
-  border-radius: 8px;
-  background: var(--el-fill-color-light);
+.trace-summary :deep(.el-descriptions__cell) {
+  overflow-wrap: anywhere;
+  font-size: 14px;
 }
-.trace-overview span {
-  color: var(--el-text-color-secondary);
+.approved-output {
+  margin-top: 12px;
+}
+.summary-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+.output-pending {
+  margin: 0;
+  color: var(--el-text-color-regular);
   font-size: 13px;
 }
 .trace-tabs {
@@ -672,9 +880,6 @@ onActivated(refresh);
   .trace-results {
     border-right: 0;
     border-bottom: 1px solid var(--el-border-color-lighter);
-  }
-  .trace-overview {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .query-form {
     display: grid;

@@ -14,14 +14,12 @@ import type {
   ProductCategoryOption,
   ProductCategoryPayload,
   ProductCategoryQuery,
-  ProductGroupItem,
-  ProductGroupQuery,
   ProductListItem,
   ProductListQuery,
   ProductMaterialItem,
   ProductMaterialPayload,
+  ReplaceProductMaterialsCommand,
   MaterialVariantItem,
-  MaterialVariantListQuery,
   MaterialVariantPayload,
   MaterialListItem,
   MaterialListQuery,
@@ -36,6 +34,11 @@ import type {
 } from '@company/contracts';
 import { toRequestError, type RetryRequestConfig } from '@company/request';
 import { httpClient } from './http';
+
+interface ReadRequestOptions {
+  skipErrorHandling?: boolean;
+  signal?: AbortSignal;
+}
 
 const request = async <T>(config: RetryRequestConfig) => {
   try {
@@ -58,8 +61,12 @@ const cleanProductPayload = (data: ProductPayload): ProductPayload => ({
 });
 
 export const productApi = {
-  technicalFiles: (params: TechnicalFileQuery) =>
-    request<PageResult<TechnicalFileListItem>>({ url: `${base}/technical-files`, params }),
+  technicalFiles: (params: TechnicalFileQuery, options: ReadRequestOptions = {}) =>
+    request<PageResult<TechnicalFileListItem>>({
+      ...options,
+      url: `${base}/technical-files`,
+      params,
+    }),
   technicalFileContent: (id: string) =>
     request<Blob>({
       url: `${base}/technical-files/${id}/content`,
@@ -83,8 +90,6 @@ export const productApi = {
 
   products: (params: ProductListQuery) =>
     request<PageResult<ProductListItem>>({ url: `${base}/products`, params }),
-  productGroups: (params: ProductGroupQuery) =>
-    request<PageResult<ProductGroupItem>>({ url: `${base}/product-groups`, params }),
   productOptions: () =>
     request<ProductOption[]>({ url: `${base}/products/options`, skipErrorHandling: true }),
   createProduct: (data: ProductPayload) =>
@@ -101,8 +106,6 @@ export const productApi = {
     }),
   setProductStatus: (id: string, status: number) =>
     request<void>({ url: `${base}/products/${id}/status`, method: 'PATCH', data: { status } }),
-  materialVariants: (params: MaterialVariantListQuery) =>
-    request<PageResult<MaterialVariantItem>>({ url: `${base}/material-variants`, params }),
   materialVariantsByMaterial: (materialId: string) =>
     request<MaterialVariantItem[]>({
       url: `${base}/material-variants/by-material/${materialId}`,
@@ -120,8 +123,13 @@ export const productApi = {
       method: 'PATCH',
       data: { status },
     }),
-  materialList: (params: MaterialListQuery) =>
-    request<PageResult<MaterialListItem>>({ url: `${base}/materials`, params }),
+  materialList: (params: MaterialListQuery, options: ReadRequestOptions = {}) =>
+    request<PageResult<MaterialListItem>>({ ...options, url: `${base}/materials`, params }),
+  materialVariants: (materialId: string, options: ReadRequestOptions = {}) =>
+    request<MaterialVariantItem[]>({
+      ...options,
+      url: `${base}/materials/${materialId}/variants`,
+    }),
   materialOptions: () =>
     request<MaterialOption[]>({ url: `${base}/materials/options`, skipErrorHandling: true }),
   createMaterial: (data: MaterialPayload) =>
@@ -132,15 +140,12 @@ export const productApi = {
     request<void>({ url: `${base}/materials/${id}/status`, method: 'PATCH', data: { status } }),
   productMaterials: (id: string) =>
     request<ProductMaterialItem[]>({ url: `${base}/products/${id}/materials` }),
-  replaceMaterials: (id: string, items: ProductMaterialPayload[]) =>
-    request<void>({ url: `${base}/products/${id}/materials`, method: 'PUT', data: { items } }),
-  setDefaultRoute: (id: string, routeId: string | null) =>
+  replaceMaterials: (id: string, items: ProductMaterialPayload[], version: number) =>
     request<void>({
-      url: `${base}/products/${id}/default-route`,
-      method: 'PATCH',
-      data: { routeId },
+      url: `${base}/products/${id}/materials`,
+      method: 'PUT',
+      data: { items, version } satisfies ReplaceProductMaterialsCommand,
     }),
-
   processSteps: (params: ProcessStepQuery) =>
     request<PageResult<ProcessStepListItem>>({ url: `${base}/process-steps`, params }),
   processStepOptions: () =>
@@ -197,6 +202,6 @@ export const productApi = {
     request<ProcessRouteStepItem[]>({ url: `${base}/process-routes/${id}/steps` }),
   replaceRouteSteps: (id: string, items: ProcessRouteStepPayload[]) =>
     request<void>({ url: `${base}/process-routes/${id}/steps`, method: 'PUT', data: { items } }),
-  userOptions: () =>
-    request<UserOption[]>({ url: `${base}/users/options`, skipErrorHandling: true }),
+  userOptions: (options: ReadRequestOptions = {}) =>
+    request<UserOption[]>({ ...options, url: `${base}/users/options`, skipErrorHandling: true }),
 };

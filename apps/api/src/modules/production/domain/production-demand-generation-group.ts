@@ -3,7 +3,7 @@ import type { DemandGenerationGroupType } from '@company/contracts';
 
 type BusinessId = string | number | bigint;
 
-export type DemandGenerationGroupSource =
+export type DemandGenerationGroupSource = (
   | {
       type: typeof DEMAND_GENERATION_GROUP_TYPE.normal;
       productionBatchId: BusinessId;
@@ -13,20 +13,16 @@ export type DemandGenerationGroupSource =
       supplementId: BusinessId;
     }
   | {
-      type: typeof DEMAND_GENERATION_GROUP_TYPE.materialLossSupplement;
-      supplementId: BusinessId;
-    }
-  | {
       type: typeof DEMAND_GENERATION_GROUP_TYPE.manualAdditional;
       productionBatchId: BusinessId;
       businessActionNo: string;
-    };
+    }
+) & { correctionId?: BusinessId };
 
 const GROUP_KEY_PREFIX: Record<DemandGenerationGroupType, string> = {
   normal: 'NORMAL',
   manual_additional: 'ADDITIONAL',
   scrap_supplement: 'SCRAPSUP',
-  material_loss_supplement: 'LOSSSUP',
 };
 
 export const buildDemandGenerationGroupKey = (source: DemandGenerationGroupSource): string => {
@@ -35,7 +31,6 @@ export const buildDemandGenerationGroupKey = (source: DemandGenerationGroupSourc
     case DEMAND_GENERATION_GROUP_TYPE.normal:
       return `${prefix}:${source.productionBatchId}`;
     case DEMAND_GENERATION_GROUP_TYPE.scrapSupplement:
-    case DEMAND_GENERATION_GROUP_TYPE.materialLossSupplement:
       return `${prefix}:${source.supplementId}`;
     case DEMAND_GENERATION_GROUP_TYPE.manualAdditional:
       return `${prefix}:${source.productionBatchId}:${source.businessActionNo}`;
@@ -46,7 +41,11 @@ export const buildDemandGenerationKeys = (
   source: DemandGenerationGroupSource,
   demandIdentityId: BusinessId,
 ): { generationGroupKey: string; idempotencyKey: string } => {
-  const generationGroupKey = buildDemandGenerationGroupKey(source);
+  const originalGroupKey = buildDemandGenerationGroupKey(source);
+  const generationGroupKey =
+    source.correctionId === undefined
+      ? originalGroupKey
+      : `${originalGroupKey}:CORRECTION:${source.correctionId}`;
   return {
     generationGroupKey,
     idempotencyKey: `${generationGroupKey}:${demandIdentityId}`,

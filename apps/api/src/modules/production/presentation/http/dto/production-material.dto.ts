@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   ArrayMinSize,
@@ -15,13 +15,11 @@ import {
 } from 'class-validator';
 import { OUTBOUND_ORDER_STATUSES } from '@company/constants';
 import type {
-  AuthorizeShortBatchPayload,
   MaterialDemandManagementQuery,
   CreateMaterialAllocationsPayload,
   CreateMaterialOutboundPayload,
   MaterialOutboundQuery,
 } from '@company/contracts';
-import { VersionedCommandDto } from '../../../../../presentation/http/dto/versioned-command.dto.js';
 import { PageQueryDto } from '../../../../../presentation/http/dto/page-query.dto.js';
 
 export class BatchIdParamDto {
@@ -70,13 +68,6 @@ export class CreateMaterialOutboundDto implements CreateMaterialOutboundPayload 
   @IsOptional() @IsString() @MaxLength(5000) remark?: string | null;
 }
 
-export class AuthorizeShortBatchDto
-  extends VersionedCommandDto
-  implements AuthorizeShortBatchPayload
-{
-  @IsString() @MaxLength(5000) reason!: string;
-}
-
 export class MaterialDemandManagementQueryDto
   extends PageQueryDto
   implements MaterialDemandManagementQuery
@@ -89,6 +80,7 @@ export class MaterialDemandManagementQueryDto
 export class NormalDemandVariantSplitDto {
   @IsString() @MaxLength(20) materialVariantId!: string;
   @Type(() => Number) @IsInt() @Min(1) @Max(99_999_999) quantity!: number;
+  @IsOptional() @IsString() @MaxLength(500) supplierHint?: string | null;
 }
 
 export class ConfigureMaterialRequirementDto {
@@ -110,12 +102,33 @@ export class ConfigureMaterialDemandsDto {
   requirements!: ConfigureMaterialRequirementDto[];
 }
 
+export class ManualMaterialRequirementDto {
+  @IsString() @MaxLength(20) materialId!: string;
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(50)
+  @ValidateNested({ each: true })
+  @Type(() => NormalDemandVariantSplitDto)
+  splits!: NormalDemandVariantSplitDto[];
+}
+
 export class AddManualMaterialDemandsDto {
   @IsString() @IsNotEmpty() @MaxLength(5000) reason!: string;
   @IsArray()
   @ArrayMinSize(1)
   @ArrayMaxSize(200)
   @ValidateNested({ each: true })
-  @Type(() => ConfigureMaterialRequirementDto)
-  requirements!: ConfigureMaterialRequirementDto[];
+  @Type(() => ManualMaterialRequirementDto)
+  requirements!: ManualMaterialRequirementDto[];
+}
+
+export class ProductionMaterialOptionsQueryDto {
+  @IsOptional() @IsString() @MaxLength(100) keyword?: string;
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? [value] : value))
+  @IsArray()
+  @ArrayMaxSize(100)
+  @IsString({ each: true })
+  @MaxLength(20, { each: true })
+  includeIds?: string[];
 }

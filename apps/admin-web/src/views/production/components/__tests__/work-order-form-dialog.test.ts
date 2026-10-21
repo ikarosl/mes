@@ -41,7 +41,6 @@ const openDialog = async (overrides: Record<string, unknown> = {}) => {
           itemCode: 'C1',
           acquireMethod: 'self_made',
           unit: '个',
-          defaultRouteId: null,
         },
       ],
       productOptionsStatus: 'ready',
@@ -131,7 +130,6 @@ describe('WorkOrderFormDialog', () => {
     const wrapper = await openDialog();
     const vm = wrapper.vm as unknown as {
       form: {
-        workOrderNo: string;
         productId: string;
         plannedQuantity: number;
         planStartDate: string;
@@ -139,7 +137,6 @@ describe('WorkOrderFormDialog', () => {
       };
     };
     Object.assign(vm.form, {
-      workOrderNo: 'WO-001',
       productId: 'p1',
       plannedQuantity: 10,
       planStartDate: '',
@@ -157,7 +154,6 @@ describe('WorkOrderFormDialog', () => {
     const wrapper = await openDialog();
     const vm = wrapper.vm as unknown as {
       form: {
-        workOrderNo: string;
         productId: string;
         plannedQuantity: number;
         planStartDate: string;
@@ -165,7 +161,6 @@ describe('WorkOrderFormDialog', () => {
       };
     };
     Object.assign(vm.form, {
-      workOrderNo: 'WO-001',
       productId: 'p1',
       plannedQuantity: 10,
       planStartDate: '2026-08-31',

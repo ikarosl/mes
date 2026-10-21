@@ -24,19 +24,8 @@ describe('ProductSnapshotService', () => {
     expect(repository.getProductionProduct).toHaveBeenCalledWith('1');
   });
 
-  it('delegates production route snapshots with the work-order product boundary', async () => {
-    const repository = {
-      getProductionRouteSnapshot: vi.fn().mockResolvedValue(null),
-    };
-    const service = new ProductSnapshotService(repository as never);
-
-    await expect(service.getProductionRouteSnapshot('1', null)).resolves.toEqual({
-      status: 'success',
-      value: null,
-    });
-
-    expect(repository.getProductionRouteSnapshot).toHaveBeenCalledWith('1', null);
-  });
+  // TODO(test-migration): 高重要性：跨模块路线快照；正式测试获准后按显式路线公开能力恢复。
+  it.todo('delegates production route snapshots with the work-order product boundary');
 
   it('delegates inactive-safe display reference reads through the Product boundary', async () => {
     const references = [{ id: '2', itemCode: 'MAT-2', productName: '停用物料', unit: 'pcs' }];

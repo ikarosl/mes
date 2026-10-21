@@ -1,3 +1,4 @@
+import { BATCH_STEP_ABNORMAL_SOURCE_TYPES } from '@company/constants';
 import { z } from 'zod';
 import type { ApproveScrapSupplementResult } from '@company/contracts';
 import type {
@@ -11,7 +12,11 @@ const schema: z.ZodType<ApproveScrapSupplementResult> = z.object({
     dispositionNo: z.string(),
     productionBatchId: z.string(),
     stepRecordId: z.string(),
-    sourceReportId: z.string(),
+    sourceReportId: z.string().nullable(),
+    sourceType: z.enum(BATCH_STEP_ABNORMAL_SOURCE_TYPES),
+    processInspectionId: z.string().nullable(),
+    processInspectionRecordId: z.string().nullable(),
+    sourceAbnormalQuantity: z.string(),
     abnormalOrigin: z.enum(['current_step', 'previous_step']),
     reviewStatus: z.enum(['pending_review', 'approved', 'rejected', 'cancelled']),
     dispositionType: z.enum(['rework', 'scrap']).nullable(),
@@ -21,7 +26,7 @@ const schema: z.ZodType<ApproveScrapSupplementResult> = z.object({
   }),
   scrapRecord: z.object({
     scrapRecordId: z.string(),
-    sourceReportId: z.string(),
+    sourceReportId: z.string().nullable(),
     scrapQuantity: z.string(),
     unit: z.string(),
   }),

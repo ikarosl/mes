@@ -1,0 +1,83 @@
+import { Body, Controller, Get, Param, Post, Query, UseFilters } from '@nestjs/common';
+import { PERMISSIONS } from '@company/constants';
+import type { IdempotentCommandContext } from '../../../../common/audit/audit.types.js';
+import {
+  AuditInApplication,
+  CurrentIdempotentCommandContext,
+  IdempotentEndpoint,
+  RequirePermission,
+} from '../../../../common/security/auth.decorators.js';
+import { VersionedCommandDto } from '../../../../presentation/http/dto/versioned-command.dto.js';
+import { PageQueryDto } from '../../../../presentation/http/dto/page-query.dto.js';
+import { FinishedInspectionService } from '../../application/finished-inspection.service.js';
+import {
+  FINISHED_INSPECTION_RECORD_SCOPE,
+  FINISHED_REINSPECTION_BEGIN_SCOPE,
+  FINISHED_INSPECTION_START_SCOPE,
+} from '../../application/idempotency/finished-inspection-idempotency.contract.js';
+import {
+  BeginFinishedReinspectionDto,
+  FinishedInspectionBatchParamDto,
+  FinishedInspectionRecordParamDto,
+  FinishedInspectionTaskQueryDto,
+  RecordFinishedInspectionDto,
+} from './finished-inspection.dto.js';
+import { QualityCommandExceptionFilter } from './quality-command-exception.filter.js';
+@Controller('quality/finished-inspections')
+@UseFilters(QualityCommandExceptionFilter)
+export class FinishedInspectionController {
+  constructor(private readonly service: FinishedInspectionService) {}
+  @Get()
+  @RequirePermission(PERMISSIONS.quality.finishedInspections.view)
+  list(@Query() query: FinishedInspectionTaskQueryDto) {
+    return this.service.listTasks(query);
+  }
+  @Get(':batchId')
+  @RequirePermission(PERMISSIONS.quality.finishedInspections.view)
+  detail(@Param() { batchId }: FinishedInspectionBatchParamDto) {
+    return this.service.detail(batchId);
+  }
+  @Get(':batchId/records')
+  @RequirePermission(PERMISSIONS.quality.finishedInspections.view)
+  records(@Param() { batchId }: FinishedInspectionBatchParamDto, @Query() query: PageQueryDto) {
+    return this.service.listRecords(batchId, query);
+  }
+  @Get(':batchId/records/:recordId')
+  @RequirePermission(PERMISSIONS.quality.finishedInspections.view)
+  recordDetail(@Param() { batchId, recordId }: FinishedInspectionRecordParamDto) {
+    return this.service.getRecord(batchId, recordId);
+  }
+  @Post(':batchId/actions/start')
+  @RequirePermission(PERMISSIONS.quality.finishedInspections.record)
+  @AuditInApplication()
+  @IdempotentEndpoint({ scope: FINISHED_INSPECTION_START_SCOPE })
+  start(
+    @Param() { batchId }: FinishedInspectionBatchParamDto,
+    @Body() body: VersionedCommandDto,
+    @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
+  ) {
+    return this.service.start(batchId, body.version, context);
+  }
+  @Post(':batchId/actions/record')
+  @RequirePermission(PERMISSIONS.quality.finishedInspections.record)
+  @AuditInApplication()
+  @IdempotentEndpoint({ scope: FINISHED_INSPECTION_RECORD_SCOPE })
+  record(
+    @Param() { batchId }: FinishedInspectionBatchParamDto,
+    @Body() body: RecordFinishedInspectionDto,
+    @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
+  ) {
+    return this.service.record(batchId, body, context);
+  }
+  @Post(':batchId/actions/reinspect')
+  @RequirePermission(PERMISSIONS.quality.finishedInspections.record)
+  @AuditInApplication()
+  @IdempotentEndpoint({ scope: FINISHED_REINSPECTION_BEGIN_SCOPE })
+  beginReinspection(
+    @Param() { batchId }: FinishedInspectionBatchParamDto,
+    @Body() body: BeginFinishedReinspectionDto,
+    @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
+  ) {
+    return this.service.beginReinspection(batchId, body, context);
+  }
+}

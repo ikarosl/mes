@@ -50,20 +50,138 @@ const idempotencyRecordsWritePattern =
  * ——scope 只能经由契约常量标识符引用。
  */
 const knownIdempotencyScopes = [
-  'production.batch.create.v5',
+  'quality.process-inspection.create.v1',
+  'quality.process-inspection.correct.v1',
+  'quality.process-inspection.reverse.v1',
+  'production.process-inspection.accept.v1',
+  'production.step-report.create.v5',
+  'production.step-report.correct.v6',
+  'production.step-report.history-create.v3',
+  'production.step-report.history-correct.v2',
+  'production.step-report.batch-reverse.v2',
+  'production.rework.complete.v4',
+  'production.abnormal.scrap-supplement-plan.confirm.v3',
+  'procurement.inbound.confirm.v8',
+  'procurement.inbound.confirm.v7',
+  'production.finished-inbound.confirm.v4',
+  'inventory.other-inbound.create.v1',
+  'inventory.other-inbound.save.v1',
+  'inventory.other-inbound.confirm.v1',
+  'inventory.other-inbound.cancel.v1',
+  'inventory.other-outbound.create.v1',
+  'inventory.other-outbound.save.v1',
+  'inventory.other-outbound.confirm.v1',
+  'inventory.other-outbound.cancel.v1',
+  'production.batch.create.v13',
+  'production.batch.create.v12',
+  'production.batch-closeout.begin.v2',
+  'production.batch-closeout.withdraw.v1',
+  'production.material-outbound.create.v4',
+  'production.material-outbound.confirm.v3',
+  'production.step-report.history-create.v2',
+  'production.execution.start.v1',
+  'production.execution.complete.v2',
+  'production.execution.complete.v1',
+  'production.research.complete.v3',
+  'production.research.complete.v2',
+  'production.batch.create.v10',
+  'production.demand-correction.submit.v2',
+  'production.step-report.create.v4',
+  'production.step-report.correct.v5',
+  'production.step-report.correct.v4',
+  'production.step-report.history-create.v1',
+  'production.step-report.history-correct.v1',
+  'production.step-report.batch-reverse.v1',
+  'production.rework.complete.v3',
+  'production.rework.complete.v2',
+  'production.abnormal.scrap-supplement-plan.confirm.v2',
+  'procurement.inbound.confirm.v6',
+  'production.batch.create.v9',
+  'production.finished-inbound.confirm.v3',
+  'production.work-order.create.v4',
+  'procurement.receipt.correct.v3',
+  'procurement.receipt.void.v3',
+  'procurement.receipt.void.v2',
+  'procurement.receipt.accept.v4',
+  'procurement.receipt.accept.v3',
+  'procurement.receipt.reject.v3',
+  'procurement.receipt.reject.v2',
+  'procurement.receipt.revoke-rejection.v1',
+  'procurement.receipt.return.v4',
+  'procurement.inbound.confirm.v5',
+  'procurement.inbound.confirm.v4',
+  'procurement.purchase-order.supplement.v6',
+  'procurement.purchase-order.supplement.v5',
+  'procurement.purchase-order.supplement.v4',
+  'procurement.purchase-order.supplement.v3',
+  'procurement.receipt.confirm.v2',
+  'procurement.receipt.correct.v2',
+  'procurement.receipt.review.v2',
+  'procurement.receipt.inspect.v3',
+  'procurement.receipt.accept.v2',
+  'procurement.receipt.reject.v1',
+  'procurement.receipt.return.v3',
+  'procurement.inbound.confirm.v3',
+  'procurement.receipt.confirm.v1',
+  'procurement.receipt.accept.v1',
+  'procurement.receipt.correct.v1',
+  'procurement.receipt.review.v1',
+  'procurement.receipt.inspect.v1',
+  'procurement.receipt.inspect.v2',
+  'procurement.receipt.terminate-return.v1',
+  'procurement.receipt.terminate-return.v2',
+  'procurement.receipt.return.v1',
+  'procurement.receipt.return.v2',
+  'procurement.inbound.confirm.v1',
+  'procurement.inbound.confirm.v2',
+
+  'procurement.purchase-order.create.v2',
+  'procurement.purchase-order.update.v4',
+  'procurement.purchase-order.update.v3',
+  'procurement.purchase-order.update.v2',
+  'procurement.purchase-order.place.v4',
+  'procurement.purchase-order.place.v3',
+  'procurement.purchase-order.place.v2',
+  'procurement.purchase-order.place.v1',
+  'procurement.purchase-order.cancel.v3',
+  'procurement.purchase-order.cancel.v2',
+  'procurement.purchase-order.close.v1',
+  'procurement.purchase-order-line.close.v2',
+  'procurement.purchase-order-line.reopen.v1',
+  'procurement.purchase-order.supplement.v1',
+  'procurement.purchase-order.supplement.v2',
+  'production.batch.create.v8',
+  'production.batch.terminate.v1',
+  'production.demand-correction.submit.v1',
+  'production.batch-closeout.begin.v1',
+  'production.batch-closeout.handle.v1',
+  'production.output.draft.v1',
+  'production.output.reinspection.begin.v1',
+  'quality.finished-inspection.record.v3',
+  'quality.finished-inspection.start.v1',
+  'quality.finished-reinspection.begin.v1',
+  'production.output.material-review.v1',
+  'production.closeout.material-loss.record.v1',
+  'production.output.submit.v1',
+  'production.output.correction.begin.v1',
+  'production.output.correction.cancel.v1',
   'production.material-allocation.create.v1',
+  'production.work-order.create.v3',
+  'production.research.start.v1',
+  'production.research.complete.v1',
   'production.material-outbound.create.v3',
   'production.material-outbound.confirm.v2',
   'production.purchase-inbound.create.v1',
   'production.purchase-inbound.confirm.v1',
+  'production.finished-inbound.confirm.v2',
   'production.step-report.create.v3',
   'production.step-report.correct.v3',
   'production.rework.complete.v1',
   'production.abnormal.scrap-supplement-plan.confirm.v1',
-  'production.material-loss.create.v1',
-  'production.material-loss.confirm.v1',
-  'production.material-demands.configure.v1',
-  'production.material-demands.add-manual.v2',
+  'production.material-loss.create.v3',
+  'production.material-loss.confirm.v3',
+  'production.material-demands.configure.v2',
+  'production.material-demands.add-manual.v3',
 ];
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const idempotencyScopeLiteralPattern = new RegExp(
@@ -155,28 +273,53 @@ const checks = [
       'Repository Port/Adapter 不得依赖 IdempotentCommandContext；HTTP 幂等能力止于 application 用例',
     fileMatch: isRepositoryBoundaryFile,
   },
-  // 当前登记的幂等用例必须显式列入本白名单并具备版本化契约与测试。
+  // 幂等用例必须显式列入本白名单并具备版本化契约；交付与正式测试按 AGENTS 顺序执行。
   {
     directory: 'apps/api/src/modules',
     pattern: /\bIdempotentCommandContext\b/,
     message:
       '只有已登记的 Production 幂等命令可使用 IdempotentCommandContext；新增命令必须先完成契约登记与验收',
     exclude: [
+      'apps/api/src/modules/inventory/application/other-inventory.service.ts',
+      'apps/api/src/modules/inventory/presentation/http/other-inventory.controller.ts',
+      'apps/api/src/modules/procurement/application/purchase-order.service.ts',
+      'apps/api/src/modules/procurement/application/receipt.service.ts',
+      'apps/api/src/modules/quality/application/finished-inspection.service.ts',
+      'apps/api/src/modules/quality/application/process-inspection.service.ts',
+      'apps/api/src/modules/procurement/presentation/http/purchase-order.controller.ts',
+      'apps/api/src/modules/procurement/presentation/http/receipt.controller.ts',
+      'apps/api/src/modules/quality/presentation/http/finished-inspection.controller.ts',
+      'apps/api/src/modules/quality/presentation/http/process-inspection.controller.ts',
       'apps/api/src/modules/production/application/production.service.ts',
+      'apps/api/src/modules/production/application/production-termination.service.ts',
+      'apps/api/src/modules/production/application/production-demand-correction.service.ts',
+      'apps/api/src/modules/production/application/production-closeout.service.ts',
+      'apps/api/src/modules/production/application/production-output.service.ts',
+      'apps/api/src/modules/production/application/production-closeout-material-loss.service.ts',
+      'apps/api/src/modules/production/application/production-execution.service.ts',
       'apps/api/src/modules/production/application/production-material.service.ts',
+      'apps/api/src/modules/production/application/production-material-outbound.service.ts',
       'apps/api/src/modules/production/application/production-inbound.service.ts',
+      'apps/api/src/modules/production/application/production-finished-inbound.service.ts',
       'apps/api/src/modules/production/application/production-reporting.service.ts',
       'apps/api/src/modules/production/application/production-abnormal.service.ts',
       'apps/api/src/modules/production/application/production-supplement.service.ts',
-      'apps/api/src/modules/production/application/production-inventory.service.ts',
+      'apps/api/src/modules/production/application/production-material-loss.service.ts',
       'apps/api/src/modules/production/application/production-material-demand.service.ts',
       'apps/api/src/modules/production/presentation/http/production.controller.ts',
+      'apps/api/src/modules/production/presentation/http/production-termination.controller.ts',
+      'apps/api/src/modules/production/presentation/http/production-demand-correction.controller.ts',
+      'apps/api/src/modules/production/presentation/http/production-closeout.controller.ts',
+      'apps/api/src/modules/production/presentation/http/production-output.controller.ts',
+      'apps/api/src/modules/production/presentation/http/production-closeout-material-loss.controller.ts',
+      'apps/api/src/modules/production/presentation/http/production-execution.controller.ts',
       'apps/api/src/modules/production/presentation/http/production-material.controller.ts',
       'apps/api/src/modules/production/presentation/http/production-inbound.controller.ts',
+      'apps/api/src/modules/production/presentation/http/production-finished-inbound.controller.ts',
       'apps/api/src/modules/production/presentation/http/production-reporting.controller.ts',
       'apps/api/src/modules/production/presentation/http/production-abnormal.controller.ts',
       'apps/api/src/modules/production/presentation/http/production-supplement.controller.ts',
-      'apps/api/src/modules/production/presentation/http/warehouse.controller.ts',
+      'apps/api/src/modules/production/presentation/http/production-material-loss.controller.ts',
       'apps/api/src/modules/production/presentation/http/production-material-demand.controller.ts',
     ],
   },
@@ -186,13 +329,27 @@ const checks = [
     message:
       '只有已登记的 Production application 用例可依赖 IdempotencyExecutor；新增用例必须先完成契约登记与验收',
     exclude: [
+      'apps/api/src/modules/inventory/application/other-inventory.service.ts',
+      'apps/api/src/modules/inventory/presentation/http/other-inventory.controller.ts',
+      'apps/api/src/modules/procurement/application/purchase-order.service.ts',
+      'apps/api/src/modules/procurement/application/receipt.service.ts',
+      'apps/api/src/modules/quality/application/finished-inspection.service.ts',
+      'apps/api/src/modules/quality/application/process-inspection.service.ts',
       'apps/api/src/modules/production/application/production.service.ts',
+      'apps/api/src/modules/production/application/production-termination.service.ts',
+      'apps/api/src/modules/production/application/production-demand-correction.service.ts',
+      'apps/api/src/modules/production/application/production-closeout.service.ts',
+      'apps/api/src/modules/production/application/production-output.service.ts',
+      'apps/api/src/modules/production/application/production-closeout-material-loss.service.ts',
+      'apps/api/src/modules/production/application/production-execution.service.ts',
       'apps/api/src/modules/production/application/production-material.service.ts',
+      'apps/api/src/modules/production/application/production-material-outbound.service.ts',
       'apps/api/src/modules/production/application/production-inbound.service.ts',
+      'apps/api/src/modules/production/application/production-finished-inbound.service.ts',
       'apps/api/src/modules/production/application/production-reporting.service.ts',
       'apps/api/src/modules/production/application/production-abnormal.service.ts',
       'apps/api/src/modules/production/application/production-supplement.service.ts',
-      'apps/api/src/modules/production/application/production-inventory.service.ts',
+      'apps/api/src/modules/production/application/production-material-loss.service.ts',
       'apps/api/src/modules/production/application/production-material-demand.service.ts',
     ],
     fileMatch: isApplicationLayerFile,
@@ -211,7 +368,17 @@ const checks = [
       /(?:['"]Idempotency-Key['"]\s*:|\[\s*IDEMPOTENCY_KEY_HEADER\s*\]\s*:|\bretryIdempotentWrite\s*:)/,
     message:
       '只有已登记的 production API wrapper 可设置 Idempotency-Key/retryIdempotentWrite；新增调用必须先登记后端幂等契约',
-    exclude: ['apps/admin-web/src/api/production.ts', 'apps/admin-web/src/api/warehouse.ts'],
+    exclude: [
+      'apps/admin-web/src/api/other-inventory.ts',
+      'apps/admin-web/src/api/production.ts',
+      'apps/admin-web/src/api/production-process-inspections.ts',
+      'apps/admin-web/src/api/production-research.ts',
+      'apps/admin-web/src/api/finished-inspections.ts',
+      'apps/admin-web/src/api/process-inspections.ts',
+      'apps/admin-web/src/api/warehouse.ts',
+      'apps/admin-web/src/api/procurement.ts',
+      'apps/admin-web/src/api/procurement-inbounds.ts',
+    ],
   },
   // 通用 persistence helper 不得依赖 Nest HTTP/框架异常
   {
@@ -220,25 +387,27 @@ const checks = [
     message: '通用 persistence helper 不得直接依赖 Nest HTTP/框架异常',
   },
   // application / domain 层不得从 @nestjs/common 导入 Nest HTTP 异常；application 不得依赖 SDK
-  ...['identity', 'product', 'production'].flatMap((module) => [
-    {
-      directory: `apps/api/src/modules/${module}/application`,
-      pattern: nestHttpExceptionImportPattern,
-      message: `${module}/application 不得从 @nestjs/common 导入 Nest HTTP 异常；业务失败应抛出协议无关的模块错误`,
-    },
-    {
-      directory: `apps/api/src/modules/${module}/domain`,
-      pattern: nestHttpExceptionImportPattern,
-      message: `${module}/domain 不得从 @nestjs/common 导入 Nest HTTP 异常`,
-    },
-    {
-      directory: `apps/api/src/modules/${module}/application`,
-      pattern: applicationSdkPattern,
-      message: `${module}/application 不得直接依赖数据库、存储等 SDK 包`,
-    },
-  ]),
+  ...['identity', 'product', 'production', 'approval', 'procurement', 'quality'].flatMap(
+    (module) => [
+      {
+        directory: `apps/api/src/modules/${module}/application`,
+        pattern: nestHttpExceptionImportPattern,
+        message: `${module}/application 不得从 @nestjs/common 导入 Nest HTTP 异常；业务失败应抛出协议无关的模块错误`,
+      },
+      {
+        directory: `apps/api/src/modules/${module}/domain`,
+        pattern: nestHttpExceptionImportPattern,
+        message: `${module}/domain 不得从 @nestjs/common 导入 Nest HTTP 异常`,
+      },
+      {
+        directory: `apps/api/src/modules/${module}/application`,
+        pattern: applicationSdkPattern,
+        message: `${module}/application 不得直接依赖数据库、存储等 SDK 包`,
+      },
+    ],
+  ),
   // application 层不得识别数据库驱动错误码（实现错误由 infrastructure 映射）
-  ...['product', 'production'].flatMap((module) => [
+  ...['product', 'production', 'approval'].flatMap((module) => [
     {
       directory: `apps/api/src/modules/${module}/application`,
       pattern: dbDriverCodePattern,
@@ -246,21 +415,21 @@ const checks = [
     },
   ]),
   // application port 不得泄漏 mysql2 类型
-  ...['identity', 'product', 'production'].flatMap((module) => [
+  ...['identity', 'product', 'production', 'approval'].flatMap((module) => [
     {
       directory: `apps/api/src/modules/${module}/application/ports`,
       pattern: /from ['"]mysql2(?:\/promise)?['"]/i,
       message: `${module} application port 不得泄漏 mysql2 类型`,
     },
   ]),
-  // 需求计划事实与批次 material_plan_version 必须由同一事务写入口联动，避免新增调用者漏推版本。
+  // 需求计划事实与批次 version 必须由同一事务写入口联动，避免新增调用者漏推版本。
   {
     directory: 'apps/api/src/modules/production',
     pattern: /\bINSERT\s+INTO\s+production_item_demand\b/i,
     message:
-      'production_item_demand 新增只能经 mysql-production-demand-plan.writer，确保同步推进 material_plan_version',
+      'production_item_demand 新增只能经 mysql-production-demand-plan.writer，确保同步推进批次 version',
     exclude: [
-      'apps/api/src/modules/production/infrastructure/mysql-production-demand-plan.writer.ts',
+      'apps/api/src/modules/production/infrastructure/demand/mysql-production-demand-plan.writer.ts',
     ],
   },
   {
@@ -268,9 +437,9 @@ const checks = [
     pattern:
       /\bUPDATE\s+production_item_demand[\s\S]{0,500}?(?:cancel_source\s*=|remaining_number\s*=\s*remaining_number\s*\+)/i,
     message:
-      '需求计划取消或重开只能经 mysql-production-demand-plan.writer，确保同步推进 material_plan_version',
+      '需求计划取消或重开只能经 mysql-production-demand-plan.writer，确保同步推进批次 version',
     exclude: [
-      'apps/api/src/modules/production/infrastructure/mysql-production-demand-plan.writer.ts',
+      'apps/api/src/modules/production/infrastructure/demand/mysql-production-demand-plan.writer.ts',
     ],
   },
   // 跨模块深层 import：只能通过目标模块 public.ts
@@ -316,7 +485,7 @@ const checks = [
   {
     directory: 'apps/api/src',
     pattern:
-      /from ['"]\.\/modules\/(?:identity|product|production)\/(?!public(?:\.js)?['"])[^'"]*['"]/,
+      /from ['"]\.\/modules\/(?:identity|product|production|approval)\/(?!public(?:\.js)?['"])[^'"]*['"]/,
     message:
       '组合根 app.module.ts 只能通过模块 public.ts 引用业务模块，不得引用模块内部层（application/domain/presentation/infrastructure）',
     fileMatch: (relative) => relative === 'apps/api/src/app.module.ts',
@@ -449,11 +618,13 @@ const applyDataOwnershipChecks = async (sources, violations) => {
     const moduleName = relative.match(/^apps\/api\/src\/modules\/([^/]+)\//)?.[1];
     const sourceOwner =
       moduleName ??
-      (relative.startsWith('apps/api/src/infrastructure/idempotency/')
-        ? 'platform-idempotency'
-        : relative === 'apps/api/src/common/audit/transactional-audit-writer.ts'
-          ? 'platform-audit'
-          : null);
+      (relative === 'apps/api/src/infrastructure/numbering/mysql-business-number.ts'
+        ? 'platform-numbering'
+        : relative.startsWith('apps/api/src/infrastructure/idempotency/')
+          ? 'platform-idempotency'
+          : relative === 'apps/api/src/common/audit/transactional-audit-writer.ts'
+            ? 'platform-audit'
+            : null);
     const forbidden = new Set();
     const displayAccess = API_DISPLAY_READ_ACCESS.find((rule) =>
       relative.startsWith(rule.directory),

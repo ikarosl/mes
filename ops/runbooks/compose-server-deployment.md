@@ -62,6 +62,8 @@ HTTP_PORT=8091
 
 ## 独立发布
 
+API 镜像通过 workspace 依赖顺序预构建 `@company/database`，部署产物须携带其 `dist`、`migrations` 和 `seed`，生产不安装或运行 `tsx`。迁移使用本次候选的不可变 API 镜像执行一次性 `node node_modules/@company/database/dist/migrate.js`，成功后才切换 API。构建入口见 [API Dockerfile](../../infra/docker/api.Dockerfile)。
+
 API 发布：
 
 ```bash
@@ -69,6 +71,8 @@ sudo /opt/easy-mes/deploy-api.sh 'sha256:<api-digest>'
 ```
 
 它只拉取 API 镜像，确保 MySQL/MinIO 正在运行，执行数据库迁移和 Bucket 初始化，然后更新并检查 API；不拉取或重启 Web。
+
+当前脚本在迁移前不自动停止旧 API，而部分迁移明确要求暂停业务写入。该执行前置缺口记录为[冲突 CO-04](../../docs/documentation-conflicts.md#co-04)；不能把迁移建议锁当作业务停写。发布前须核对[迁移安全](../../packages/database/docs/migration-safety.md)中本次经过的迁移边界，维护窗口及脚本责任待统一处理。
 
 Web 发布：
 

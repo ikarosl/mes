@@ -1,3 +1,14 @@
+import { beijingTodayUtc } from '../../utils/date';
+import type { ProductionBatchStatus, WorkOrderType } from '@company/contracts';
+
+const TASK_TYPE_TAG_TYPES: Record<WorkOrderType, 'primary' | 'warning'> = {
+  mass_production: 'primary',
+  research: 'warning',
+};
+
+export const taskTypeTagType = (orderType: WorkOrderType): 'primary' | 'warning' =>
+  TASK_TYPE_TAG_TYPES[orderType];
+
 export interface DeadlinePresentation {
   label: string;
   overdueDays: number;
@@ -9,17 +20,17 @@ export interface TaskNextActionPresentation {
   tone: 'muted' | 'warning' | 'primary' | 'success';
 }
 
-const beijingTodayUtc = (now = new Date()): number => {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'Asia/Shanghai',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(now);
-  const value = (type: Intl.DateTimeFormatPartTypes) =>
-    Number(parts.find((part) => part.type === type)?.value ?? 0);
-  return Date.UTC(value('year'), value('month') - 1, value('day'));
+export const batchCloseoutActionLabel = (
+  status: ProductionBatchStatus,
+  mode?: 'normal' | 'early' | null,
+): string => {
+  if (status === 'terminated' || status === 'completed') return '查看结案信息';
+  if (status === 'closing') return mode === 'normal' ? '核对产出清单' : '继续收尾';
+  return '提前结束';
 };
+
+export const batchCloseoutActionType = (status: ProductionBatchStatus): 'primary' | 'warning' =>
+  status === 'terminated' || status === 'completed' ? 'primary' : 'warning';
 
 const dateUtc = (value: string | null): number | null => {
   if (!value) return null;
@@ -57,19 +68,23 @@ export const taskNextActionPresentation = (batch: {
     | 'material_outbound'
     | 'doing'
     | 'completed'
-    | 'cancelled';
-  hasActiveMaterialOutbound?: boolean;
+    | 'cancelled'
+    | 'terminated'
+    | 'closing';
+  orderType?: WorkOrderType;
+  closeoutMode?: 'normal' | 'early' | null;
 }): TaskNextActionPresentation => {
+  if (batch.status === 'terminated' || batch.status === 'completed')
+    return { label: batchCloseoutActionLabel(batch.status, batch.closeoutMode), tone: 'muted' };
+  if (batch.status === 'closing')
+    return {
+      label: batch.closeoutMode === 'normal' ? '核对产出 / 结案审批' : '处理收尾 / 结案审批',
+      tone: 'warning',
+    };
   if (batch.status === 'cancelled') return { label: '任务已取消', tone: 'muted' };
-  if (batch.status === 'material_partially_outbound')
-    return { label: '短批已部分领料', tone: 'warning' };
-  if (
-    batch.hasActiveMaterialOutbound ||
-    !['pending', 'material_pending', 'material_assigned'].includes(batch.status)
-  ) {
-    return { label: '物料操作已完成', tone: 'success' };
-  }
-  if (batch.status === 'pending') return { label: '待配置物料需求', tone: 'warning' };
-  if (batch.status === 'material_pending') return { label: '待完成物料分配', tone: 'warning' };
-  return { label: '待创建领料出库单', tone: 'primary' };
+  if (batch.orderType === 'research' && batch.status === 'doing')
+    return { label: '结束本轮后核对产出', tone: 'primary' };
+  if (batch.status === 'doing') return { label: '可继续办理物料与生产', tone: 'success' };
+  if (batch.status === 'pending') return { label: '需先配置物料需求', tone: 'warning' };
+  return { label: '开工时核对需求与缺口', tone: 'primary' };
 };

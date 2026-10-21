@@ -17,14 +17,29 @@ const batchTransitions: Readonly<Record<ProductionBatchStatus, readonly Producti
       'material_assigned',
       'material_partially_outbound',
       'material_outbound',
+      'doing',
       'cancelled',
     ],
-    material_assigned: ['material_pending', 'material_outbound', 'cancelled'],
-    material_partially_outbound: ['material_outbound', 'doing'],
-    material_outbound: ['doing'],
-    doing: ['completed'],
+    material_assigned: [
+      'material_pending',
+      'material_partially_outbound',
+      'material_outbound',
+      'doing',
+      'cancelled',
+    ],
+    material_partially_outbound: ['material_outbound', 'doing', 'closing'],
+    material_outbound: ['doing', 'closing'],
+    doing: ['closing'],
+    closing: [
+      'doing',
+      'material_partially_outbound',
+      'material_outbound',
+      'completed',
+      'terminated',
+    ],
     completed: [],
     cancelled: [],
+    terminated: [],
   };
 
 export const requireWorkOrderTransition = (

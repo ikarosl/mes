@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   requireAssignableStep,
   requireAssignedStep,
-  requireFirstStepStartable,
-  requireFollowingStepStartable,
+  productionTaskStartBlockedReason,
+  requireTaskExecutingForStepStart,
 } from '../production-execution.policy.js';
 
 describe('production execution policy', () => {
@@ -18,35 +18,44 @@ describe('production execution policy', () => {
     );
   });
 
-  it('only releases the first step after all material is outbound', () => {
-    expect(() => requireFirstStepStartable('material_outbound')).not.toThrow();
-    expect(() => requireFirstStepStartable('material_partially_outbound', true)).not.toThrow();
-    expect(() => requireFirstStepStartable('material_partially_outbound', false)).toThrowError(
-      expect.objectContaining({ code: 'STEP_START_NOT_ALLOWED' }),
-    );
-    expect(() => requireFirstStepStartable('material_assigned')).toThrowError(
-      expect.objectContaining({ code: 'STEP_START_NOT_ALLOWED' }),
-    );
+  it('allows administrator start after material configuration without requiring full allocation or outbound', () => {
+    for (const batchStatus of [
+      'material_pending',
+      'material_assigned',
+      'material_partially_outbound',
+      'material_outbound',
+    ] as const) {
+      expect(
+        productionTaskStartBlockedReason({
+          batchStatus,
+          workOrderStatus: 'released',
+          orderType: 'mass_production',
+          hasInitialMaterialConfiguration: true,
+        }),
+      ).toBeNull();
+    }
+    expect(
+      productionTaskStartBlockedReason({
+        batchStatus: 'material_pending',
+        workOrderStatus: 'released',
+        orderType: 'mass_production',
+        hasInitialMaterialConfiguration: false,
+      }),
+    ).toBe('请先完整确认本任务的初始 BOM 需求配置');
+    expect(
+      productionTaskStartBlockedReason({
+        batchStatus: 'material_pending',
+        workOrderStatus: 'released',
+        orderType: 'research',
+        hasInitialMaterialConfiguration: false,
+      }),
+    ).toBe('请先配置至少一条本任务的正式物料需求');
   });
 
-  it('uses upstream normal output to release following steps', () => {
+  it('requires an administrator to start the task before a worker starts a step', () => {
+    expect(() => requireTaskExecutingForStepStart({ batchStatus: 'doing' })).not.toThrow();
     expect(() =>
-      requireFollowingStepStartable({
-        batchStatus: 'doing',
-        previousEffectiveNormal: 1,
-      }),
-    ).not.toThrow();
-    expect(() =>
-      requireFollowingStepStartable({
-        batchStatus: 'doing',
-        previousEffectiveNormal: 0,
-      }),
-    ).toThrowError(expect.objectContaining({ code: 'STEP_START_NOT_ALLOWED' }));
-    expect(() =>
-      requireFollowingStepStartable({
-        batchStatus: 'doing',
-        previousEffectiveNormal: 0,
-      }),
+      requireTaskExecutingForStepStart({ batchStatus: 'material_partially_outbound' }),
     ).toThrowError(expect.objectContaining({ code: 'STEP_START_NOT_ALLOWED' }));
   });
 });

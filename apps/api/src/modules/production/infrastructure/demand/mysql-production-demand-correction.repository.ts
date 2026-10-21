@@ -1,0 +1,722 @@
+import { createHash } from 'node:crypto';
+import { Inject, Injectable } from '@nestjs/common';
+import { withTransaction } from '@company/database';
+import type { Pool, PoolConnection, RowDataPacket, ResultSetHeader } from 'mysql2/promise';
+import type {
+  DemandCorrectionApprovalSnapshot,
+  DemandCorrectionCheck,
+  DemandCorrectionHistoryItem,
+  DemandCorrectionChainItem,
+  SubmitDemandCorrectionPayload,
+} from '@company/contracts';
+import type { CommandContext } from '../../../../common/audit/audit.types.js';
+import type { ApprovalSubjectPreparation } from '../../../approval/public.js';
+import {
+  InventoryStockCommand,
+  InventoryProductionDocumentCommand,
+} from '../../../inventory/public.js';
+import { materialQuantitiesOf } from './mysql-production-material-facts.js';
+import { DATABASE_POOL } from '../../../../infrastructure/database/database.module.js';
+import { toBeijingISOString } from '../../../../common/time/date-time.js';
+import { ProductionDemandCorrectionRepository } from '../../application/ports/production-demand-correction.repository.js';
+import { ProductionDomainError } from '../../domain/production.errors.js';
+import {
+  correctionRemaining,
+  demandCorrectionBlockers,
+  demandCorrectionCloseCause,
+  evaluateZeroRemainderImpact,
+} from '../../domain/production-demand-correction.policy.js';
+import { fixedIntegerQuantity } from '../../domain/integer-quantity.js';
+import { lockWorkOrderForBatch } from '../tasks/mysql-work-order-material-version.js';
+import { findBatch, type BatchRow } from '../tasks/mysql-production-batch.persistence.js';
+import {
+  mysqlProductionDemandPlanWriter,
+  type DemandPlanLine,
+} from './mysql-production-demand-plan.writer.js';
+import {
+  fulfillReadySupplements,
+  selectRouteSupplementSources,
+} from '../execution/mysql-production-supplement-activation.js';
+import { loadSupplementRequirements } from '../execution/mysql-production-supplement-requirements.js';
+import { DEMAND_CORRECTION_APPROVAL_SNAPSHOT_SCHEMA_VERSION } from '../../application/production-approval-snapshot.schema.js';
+import { writeProductionAudit } from '../shared/mysql-production-audit.js';
+
+type Demand = RowDataPacket & {
+  id: number;
+  production_batch_id: number;
+  requirement_basis_id: number | null;
+  product_material_id: number | null;
+  item_id: number;
+  material_variant_id: number;
+  item_code_snapshot: string;
+  material_variant_code_snapshot: string;
+  supplier_hint: string | null;
+  unit_snapshot: string;
+  quantity_per_unit_snapshot: string | null;
+  planned_output_quantity_snapshot: string | null;
+  need_number: string;
+  remaining_number: string;
+  demand_type: DemandCorrectionCheck['demandType'];
+  business_status: DemandCorrectionChainItem['businessStatus'];
+  close_cause: DemandCorrectionChainItem['closeCause'];
+  parent_demand_id: number | null;
+  manual_addition_id: number | null;
+  supplement_id: number | null;
+  replaces_demand_id: number | null;
+  pending_correction_id: number | null;
+  version: number;
+};
+type Correction = RowDataPacket & {
+  id: number;
+  old_demand_id: number;
+  production_batch_id: number;
+  correction_kind: 'quantity' | 'close';
+  target_total_quantity: string;
+  issued_quantity: string;
+  old_remaining_quantity: string;
+  new_remaining_quantity: string;
+  reason: string;
+  evidence: DemandCorrectionCheck | string;
+  evidence_hash: string;
+  approval_instance_id: number | null;
+  new_demand_id: number | null;
+  applied_at: Date | null;
+  ended_at: Date | null;
+  result_snapshot: { fulfilledSupplementIds: string[] } | string | null;
+  created_at: Date;
+  version: number;
+};
+const id = (value: number | string | null): string | null =>
+  value === null ? null : String(value);
+const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+
+@Injectable()
+export class MysqlProductionDemandCorrectionRepository extends ProductionDemandCorrectionRepository {
+  constructor(
+    @Inject(DATABASE_POOL) private readonly pool: Pool,
+    private readonly inventory: InventoryStockCommand,
+    private readonly documents: InventoryProductionDocumentCommand,
+  ) {
+    super();
+  }
+
+  getCheck(demandId: string): Promise<DemandCorrectionCheck> {
+    return withTransaction(
+      this.pool,
+      async (db) => (await this.loadCheck(db, demandId, false)).check,
+    );
+  }
+
+  listHistory(demandId: string): Promise<DemandCorrectionHistoryItem[]> {
+    return withTransaction(this.pool, async (db) => {
+      const { check } = await this.loadCheck(db, demandId, false);
+      const ids = check.chain.map((line) => line.demandId);
+      // 包含向后的替代链：任意一条历史需求都可查看完整纠错历史。
+      let current = ids[ids.length - 1]!;
+      while (true) {
+        const [[next]] = await db.query<(RowDataPacket & { id: number })[]>(
+          'SELECT id FROM production_item_demand WHERE replaces_demand_id=?',
+          [current],
+        );
+        if (!next) break;
+        current = String(next.id);
+        if (ids.includes(current)) throw new ProductionDomainError('CONFLICT', '需求替代链异常');
+        ids.push(current);
+      }
+      const [rows] = await db.query<Correction[]>(
+        `SELECT * FROM production_demand_correction WHERE old_demand_id IN (${ids.map(() => '?').join(',')}) ORDER BY id`,
+        ids,
+      );
+      return rows.map((row) => {
+        const result =
+          row.result_snapshot === null
+            ? { fulfilledSupplementIds: [] }
+            : typeof row.result_snapshot === 'string'
+              ? (JSON.parse(row.result_snapshot) as {
+                  fulfilledSupplementIds: string[];
+                })
+              : row.result_snapshot;
+        return {
+          id: String(row.id),
+          oldDemandId: String(row.old_demand_id),
+          newDemandId: id(row.new_demand_id),
+          approvalInstanceId: id(row.approval_instance_id),
+          state: row.applied_at
+            ? 'applied'
+            : row.ended_at
+              ? 'ended'
+              : row.approval_instance_id
+                ? 'pending'
+                : 'draft',
+          snapshot: this.snapshot(row),
+          createdAt: toBeijingISOString(row.created_at),
+          appliedAt: row.applied_at ? toBeijingISOString(row.applied_at) : null,
+          ...result,
+        };
+      });
+    });
+  }
+
+  createRequest(
+    demandId: string,
+    payload: SubmitDemandCorrectionPayload,
+    context: CommandContext,
+  ): Promise<string> {
+    return withTransaction(this.pool, async (db) => {
+      const { check } = await this.loadCheck(db, demandId, true);
+      const remaining = correctionRemaining(check, payload);
+      const [created] = await db.execute<ResultSetHeader>(
+        `INSERT INTO production_demand_correction
+          (old_demand_id,production_batch_id,correction_kind,target_total_quantity,issued_quantity,old_remaining_quantity,
+           new_remaining_quantity,reason,evidence,evidence_hash,created_by,updated_by)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+        [
+          demandId,
+          check.batchId,
+          payload.kind,
+          payload.targetTotalQuantity,
+          check.issuedQuantity,
+          check.oldRemainingQuantity,
+          remaining,
+          payload.reason,
+          JSON.stringify(check),
+          check.checkToken,
+          context.actorId,
+          context.actorId,
+        ],
+      );
+      return String(created.insertId);
+    });
+  }
+
+  prepare(
+    correctionId: string,
+    version: number,
+    _context: CommandContext,
+  ): Promise<ApprovalSubjectPreparation> {
+    return withTransaction(this.pool, async (db) => {
+      const row = await this.lockRequest(db, correctionId);
+      if (row.version !== version || row.approval_instance_id !== null || row.ended_at !== null)
+        throw new ProductionDomainError('CONCURRENT_MODIFICATION', '更正申请已送审或结束');
+      const { check } = await this.loadCheck(db, String(row.old_demand_id), true);
+      if (!check.canCorrect || check.checkToken !== row.evidence_hash)
+        throw new ProductionDomainError('CONCURRENT_MODIFICATION', '更正依据已变化，请重新核对');
+      return {
+        title: `${check.workOrderNo} / ${check.batchNo} · ${check.itemCode} 需求更正`,
+        subjectVersion: row.version,
+        snapshotSchemaVersion: DEMAND_CORRECTION_APPROVAL_SNAPSHOT_SCHEMA_VERSION,
+        businessAssigneeResolutions: [],
+        snapshot: this.snapshot(row),
+      };
+    });
+  }
+
+  bind(
+    correctionId: string,
+    instanceId: string,
+    version: number,
+    context: CommandContext,
+  ): Promise<number> {
+    return withTransaction(this.pool, async (db) => {
+      const row = await this.lockRequest(db, correctionId);
+      if (row.version !== version || row.approval_instance_id !== null || row.ended_at !== null)
+        throw new ProductionDomainError('CONCURRENT_MODIFICATION', '更正申请已变化');
+      const check = this.snapshot(row).check;
+      await db.execute(
+        'UPDATE production_demand_correction SET approval_instance_id=?,version=version+1,updated_by=? WHERE id=?',
+        [instanceId, context.actorId, correctionId],
+      );
+      const [bound] = await db.execute<ResultSetHeader>(
+        `UPDATE production_item_demand SET pending_correction_id=?,version=version+1,updated_by=?
+         WHERE id=? AND business_status='active' AND pending_correction_id IS NULL AND version=?`,
+        [correctionId, context.actorId, row.old_demand_id, check.version],
+      );
+      if (bound.affectedRows !== 1)
+        throw new ProductionDomainError('CONCURRENT_MODIFICATION', '需求已变化或已有在审更正');
+      await writeProductionAudit(
+        db,
+        context,
+        'production-demand.correction.submit',
+        'production_item_demand',
+        String(row.old_demand_id),
+        { version: check.version },
+        { correctionId, instanceId, targetTotalQuantity: row.target_total_quantity },
+      );
+      return version + 1;
+    });
+  }
+
+  lock(correctionId: string, instanceId: string, version: number): Promise<void> {
+    return withTransaction(this.pool, async (db) => {
+      await this.current(db, correctionId, instanceId, version);
+    });
+  }
+
+  restore(
+    correctionId: string,
+    instanceId: string,
+    version: number,
+    context: CommandContext,
+  ): Promise<void> {
+    return withTransaction(this.pool, async (db) => {
+      const row = await this.current(db, correctionId, instanceId, version);
+      await db.execute(
+        `UPDATE production_item_demand SET pending_correction_id=NULL,version=version+1,updated_by=?
+        WHERE id=? AND pending_correction_id=?`,
+        [context.actorId, row.old_demand_id, correctionId],
+      );
+      await db.execute(
+        'UPDATE production_demand_correction SET ended_at=NOW(),version=version+1,updated_by=? WHERE id=?',
+        [context.actorId, correctionId],
+      );
+      await writeProductionAudit(
+        db,
+        context,
+        'production-demand.correction.end',
+        'production_item_demand',
+        String(row.old_demand_id),
+        { correctionId },
+        { instanceId, unfrozen: true },
+      );
+    });
+  }
+
+  finalize(
+    correctionId: string,
+    instanceId: string,
+    version: number,
+    context: CommandContext,
+  ): Promise<void> {
+    return withTransaction(this.pool, async (db) => {
+      if (!context.actorId) throw new ProductionDomainError('INVALID_INPUT', '缺少操作人');
+      const row = await this.current(db, correctionId, instanceId, version);
+      const { check, demand, batch, additionNo } = await this.loadCheck(
+        db,
+        String(row.old_demand_id),
+        true,
+        correctionId,
+      );
+      if (!check.canCorrect || check.checkToken !== row.evidence_hash)
+        throw new ProductionDomainError(
+          'CONCURRENT_MODIFICATION',
+          '领退料、损耗或补产影响已变化，请驳回或撤回后重新复核送审',
+        );
+      const newQuantity = Number(row.new_remaining_quantity);
+      const closeCause = demandCorrectionCloseCause(row.correction_kind, newQuantity);
+      // 只释放该需求未出库预留。已领料仍从旧分配/旧需求追溯并办理退料。
+      const [allocationsToRelease] = await db.query<
+        (RowDataPacket & { id: string; assigned_number: string })[]
+      >(
+        `SELECT CAST(id AS CHAR) id,assigned_number FROM production_item_allocation
+         WHERE demand_id=? AND allocation_status='active' ORDER BY id FOR UPDATE`,
+        [demand.id],
+      );
+      const issuedByAllocation = materialQuantitiesOf(
+        await this.documents.facts({ demandIds: [String(demand.id)], lock: true }),
+      ).issued;
+      for (const allocation of allocationsToRelease) {
+        if (Number(allocation.assigned_number) <= (issuedByAllocation.get(allocation.id) ?? 0))
+          continue;
+        await db.execute(
+          `UPDATE production_item_allocation SET allocation_status='released',version=version+1,updated_by=?
+           WHERE id=? AND allocation_status='active'`,
+          [context.actorId, allocation.id],
+        );
+      }
+      const line: DemandPlanLine = {
+        identityId: correctionId,
+        requirementBasisId: demand.requirement_basis_id,
+        productMaterialId: demand.product_material_id,
+        itemId: demand.item_id,
+        materialVariantId: demand.material_variant_id,
+        materialVariantCode: demand.material_variant_code_snapshot,
+        itemCode: demand.item_code_snapshot,
+        quantityPerUnit:
+          demand.quantity_per_unit_snapshot === null
+            ? null
+            : String(demand.quantity_per_unit_snapshot),
+        unit: demand.unit_snapshot,
+        plannedOutputQuantity:
+          demand.planned_output_quantity_snapshot === null
+            ? null
+            : String(demand.planned_output_quantity_snapshot),
+        supplierHint: demand.supplier_hint,
+        needNumber: newQuantity,
+        demandType: demand.demand_type,
+        parentDemandId: demand.parent_demand_id,
+        supplementId: demand.supplement_id,
+        manualAdditionId: demand.manual_addition_id,
+        replacesDemandId: demand.id,
+      };
+      const newDemandId = await mysqlProductionDemandPlanWriter.applyCorrection(db, {
+        demandId: String(demand.id),
+        correctionId,
+        batchId: String(batch.id),
+        actorId: context.actorId,
+        reason: row.reason,
+        closeCause,
+        expectedBatchVersion: batch.version,
+        source:
+          demand.demand_type === 'scrap_supplement'
+            ? { type: 'scrap_supplement', supplementId: demand.supplement_id!, correctionId }
+            : {
+                type: 'manual_additional',
+                productionBatchId: batch.id,
+                businessActionNo: additionNo!,
+                correctionId,
+              },
+        lines: newQuantity > 0 ? [line] : [],
+      });
+      await db.execute(
+        `UPDATE production_demand_correction SET new_demand_id=?,applied_by=?,applied_at=NOW(),ended_at=NOW(),
+        result_snapshot=JSON_OBJECT('fulfilledSupplementIds',JSON_ARRAY()),version=version+1,updated_by=? WHERE id=?`,
+        [newDemandId, context.actorId, context.actorId, correctionId],
+      );
+      await db.query(
+        'SELECT id FROM batch_step_records WHERE production_batch_id=? ORDER BY step_order_snapshot,id FOR UPDATE',
+        [batch.id],
+      );
+      const activation = await fulfillReadySupplements(db, String(batch.id), context.actorId);
+      await db.execute('UPDATE production_demand_correction SET result_snapshot=? WHERE id=?', [
+        JSON.stringify(activation),
+        correctionId,
+      ]);
+      // 未开工的分配状态重新按全部当前需求核对；已开工任务继续保持 doing。
+      if (['material_pending', 'material_assigned'].includes(batch.status)) {
+        await db.execute(
+          `UPDATE production_batches b SET status=IF(EXISTS (
+          SELECT 1 FROM production_item_demand d WHERE d.production_batch_id=b.id AND d.business_status='active'
+          AND (d.pending_correction_id IS NOT NULL OR d.need_number>COALESCE((SELECT SUM(a.assigned_number)
+            FROM production_item_allocation a WHERE a.demand_id=d.id AND a.allocation_status='active'),0))
+        ),'material_pending','material_assigned') WHERE b.id=?`,
+          [batch.id],
+        );
+      }
+      await writeProductionAudit(
+        db,
+        context,
+        'production-demand.correction.apply',
+        'production_item_demand',
+        String(demand.id),
+        { needNumber: String(demand.need_number), remainingNumber: demand.remaining_number },
+        {
+          correctionId,
+          instanceId,
+          newDemandId,
+          closeCause,
+          ...activation,
+        },
+      );
+    });
+  }
+
+  private snapshot(row: Correction): DemandCorrectionApprovalSnapshot {
+    return {
+      kind: 'demand_correction',
+      correctionId: String(row.id),
+      check:
+        typeof row.evidence === 'string'
+          ? (JSON.parse(row.evidence) as DemandCorrectionCheck)
+          : row.evidence,
+      correctionKind: row.correction_kind,
+      targetTotalQuantity: Number(row.target_total_quantity),
+      newRemainingQuantity: Number(row.new_remaining_quantity),
+      reason: row.reason,
+    };
+  }
+
+  private async lockRequest(db: PoolConnection, correctionId: string): Promise<Correction> {
+    const [[locator]] = await db.query<Correction[]>(
+      'SELECT production_batch_id FROM production_demand_correction WHERE id=?',
+      [correctionId],
+    );
+    if (!locator) throw new ProductionDomainError('NOT_FOUND', '更正申请不存在');
+    await lockWorkOrderForBatch(db, String(locator.production_batch_id));
+    await findBatch(db, String(locator.production_batch_id), true);
+    const [[row]] = await db.query<Correction[]>(
+      'SELECT * FROM production_demand_correction WHERE id=? FOR UPDATE',
+      [correctionId],
+    );
+    if (!row) throw new ProductionDomainError('NOT_FOUND', '更正申请不存在');
+    return row;
+  }
+
+  private async current(
+    db: PoolConnection,
+    correctionId: string,
+    instanceId: string,
+    version: number,
+  ): Promise<Correction> {
+    const row = await this.lockRequest(db, correctionId);
+    const [[demand]] = await db.query<Demand[]>(
+      'SELECT * FROM production_item_demand WHERE id=? FOR UPDATE',
+      [row.old_demand_id],
+    );
+    if (
+      row.version !== version ||
+      id(row.approval_instance_id) !== instanceId ||
+      row.ended_at !== null ||
+      !demand ||
+      id(demand.pending_correction_id) !== correctionId ||
+      demand.business_status !== 'active'
+    )
+      throw new ProductionDomainError('CONCURRENT_MODIFICATION', '需求更正申请或冻结关联已变化');
+    return row;
+  }
+
+  private async loadCheck(
+    db: PoolConnection,
+    demandId: string,
+    lock: boolean,
+    ownCorrectionId?: string,
+  ): Promise<{
+    check: DemandCorrectionCheck;
+    demand: Demand;
+    batch: BatchRow;
+    additionNo: string | null;
+  }> {
+    const [[locator]] = await db.query<Demand[]>(
+      'SELECT production_batch_id FROM production_item_demand WHERE id=?',
+      [demandId],
+    );
+    if (!locator) throw new ProductionDomainError('NOT_FOUND', '需求不存在');
+    const batchId = String(locator.production_batch_id);
+    if (lock) await lockWorkOrderForBatch(db, batchId);
+    const batch = await findBatch(db, batchId, lock);
+    const suffix = lock ? ' FOR SHARE' : '';
+    const [[demand]] = await db.query<Demand[]>(
+      `SELECT * FROM production_item_demand WHERE id=?${lock ? ' FOR UPDATE' : ''}`,
+      [demandId],
+    );
+    if (!demand) throw new ProductionDomainError('NOT_FOUND', '需求不存在');
+    const chainRows: Demand[] = [demand];
+    let parent = demand.replaces_demand_id;
+    while (parent !== null) {
+      if (chainRows.some((row) => String(row.id) === String(parent)))
+        throw new ProductionDomainError('CONFLICT', '需求替代链异常');
+      const [[previous]] = await db.query<Demand[]>(
+        `SELECT * FROM production_item_demand WHERE id=?${suffix}`,
+        [parent],
+      );
+      if (
+        !previous ||
+        previous.production_batch_id !== demand.production_batch_id ||
+        previous.item_id !== demand.item_id ||
+        previous.material_variant_id !== demand.material_variant_id ||
+        previous.unit_snapshot !== demand.unit_snapshot
+      )
+        throw new ProductionDomainError('CONFLICT', '需求替代来源不一致');
+      chainRows.unshift(previous);
+      parent = previous.replaces_demand_id;
+    }
+    const chainIds = chainRows.map((row) => String(row.id));
+    const facts = await this.documents.facts({ demandIds: chainIds, lock });
+    const quantities = materialQuantitiesOf(facts);
+    const outbounds = facts.outbounds.flatMap((order) =>
+      order.details.map((line) => ({
+        id: line.id,
+        demand_id: line.demandId,
+        outbound_number: line.quantity,
+        status: order.status === 'pending' ? 'pending_picking' : order.status,
+        outbound_no: order.no,
+      })),
+    );
+    const chain = chainRows.map((row): DemandCorrectionChainItem => ({
+      demandId: String(row.id),
+      replacesDemandId: id(row.replaces_demand_id),
+      demandQuantity: String(row.need_number),
+      remainingQuantity: String(row.remaining_number),
+      businessStatus: row.business_status,
+      closeCause: row.close_cause,
+      outboundQuantity: fixedIntegerQuantity(
+        outbounds
+          .filter((o) => String(o.demand_id) === String(row.id) && o.status === 'completed')
+          .reduce((sum, o) => sum + Number(o.outbound_number), 0),
+      ),
+    }));
+    const issued = chain.reduce((sum, row) => sum + Number(row.outboundQuantity), 0);
+    const [allocations] = await db.query<
+      (RowDataPacket & {
+        id: number;
+        batch_id: number;
+        assigned_number: string;
+        allocation_status: string;
+        version: number;
+        issued: string;
+      })[]
+    >(
+      `SELECT a.id,a.batch_id,a.assigned_number,a.allocation_status,a.version,
+        0 issued
+       FROM production_item_allocation a WHERE a.demand_id=? ORDER BY a.id${suffix}`,
+      [demandId],
+    );
+    for (const allocation of allocations)
+      allocation.issued = String(quantities.issued.get(String(allocation.id)) ?? 0);
+    // Batch labels are immutable presentation references, not correction eligibility or stock locks.
+    const inventoryBatches = new Map(
+      (
+        await this.inventory.materialBatchReferences([
+          ...new Set(allocations.map((allocation) => String(allocation.batch_id))),
+        ])
+      ).map((batch) => [batch.id, batch]),
+    );
+    const returns = facts.returns.flatMap((order) =>
+      order.details.map((line) => ({
+        id: line.id,
+        return_number: line.quantity,
+        status: order.status === 'completed' ? 'returned' : order.status,
+      })),
+    );
+    const [losses] = await db.query<(RowDataPacket & { status: string })[]>(
+      `SELECT id,scrap_number,status FROM item_scrap
+      WHERE demand_id IN (${chainIds.map(() => '?').join(',')}) ORDER BY id${suffix}`,
+      chainIds,
+    );
+    const [[addition]] =
+      demand.manual_addition_id === null
+        ? [[]]
+        : await db.query<(RowDataPacket & { addition_no: string; reason: string })[]>(
+            `SELECT addition_no,reason FROM production_manual_demand_addition WHERE id=?${suffix}`,
+            [demand.manual_addition_id],
+          );
+    const [[supplement]] =
+      demand.supplement_id === null
+        ? [[]]
+        : await db.query<
+            (RowDataPacket & { supplement_no: string; status: string; reason: string | null })[]
+          >(
+            `SELECT supplement_no,status,remark reason FROM production_material_supplement WHERE id=?${suffix}`,
+            [demand.supplement_id],
+          );
+    const [authorizations] = await db.query<
+      (RowDataPacket & { id: string; quantity: string; stepName: string })[]
+    >(
+      `SELECT CAST(a.id AS CHAR) id,a.authorized_quantity quantity,s.step_name_snapshot stepName
+       FROM batch_step_scrap_reproduction_authorization a JOIN batch_step_records s ON s.id=a.quota_end_step_record_id
+       WHERE a.supplement_id=? ORDER BY a.id${suffix}`,
+      [demand.supplement_id],
+    );
+    const pendingCorrectionId = id(demand.pending_correction_id);
+    const ownPending = ownCorrectionId !== undefined && pendingCorrectionId === ownCorrectionId;
+    const [requirementRows] =
+      demand.supplement_id === null
+        ? [[]]
+        : await db.query<Demand[]>(
+            `SELECT * FROM production_item_demand WHERE supplement_id=? ORDER BY id${suffix}`,
+            [demand.supplement_id],
+          );
+    const supplementRequirements: DemandCorrectionCheck['supplementRequirements'] =
+      requirementRows.map((row) => ({
+        demandId: String(row.id),
+        replacesDemandId: id(row.replaces_demand_id),
+        demandQuantity: String(row.need_number),
+        remainingQuantity: String(row.remaining_number),
+        outboundQuantity: fixedIntegerQuantity(
+          Number(row.need_number) - Number(row.remaining_number),
+        ),
+        businessStatus: row.business_status,
+        closeCause: row.close_cause,
+        itemCode: row.item_code_snapshot,
+        materialVariantCode: row.material_variant_code_snapshot,
+        unit: row.unit_snapshot,
+        pendingCorrectionId:
+          ownPending && String(row.id) === demandId ? null : id(row.pending_correction_id),
+      }));
+    const [originalPlan] =
+      demand.supplement_id === null
+        ? [[]]
+        : await db.query<(RowDataPacket & DemandCorrectionCheck['originalPlan'][number])[]>(
+            `SELECT CAST(p.id AS CHAR) planId,CAST(l.original_demand_id AS CHAR) originalDemandId,l.planned_quantity plannedQuantity
+       FROM production_scrap_supplement_plan p JOIN production_scrap_supplement_plan_line l ON l.plan_id=p.id
+       WHERE p.confirmed_supplement_id=? ORDER BY l.id${suffix}`,
+            [demand.supplement_id],
+          );
+    const sources =
+      demand.supplement_id === null
+        ? []
+        : ((await selectRouteSupplementSources(db, [batchId], lock)).get(batchId) ?? []);
+    let zeroRemainderImpact: DemandCorrectionCheck['zeroRemainderImpact'] = null;
+    if (demand.supplement_id !== null) {
+      const requirements = await loadSupplementRequirements(db, String(demand.supplement_id), lock);
+      zeroRemainderImpact = evaluateZeroRemainderImpact(
+        demandId,
+        String(demand.supplement_id),
+        issued,
+        batch.planned_quantity,
+        requirements,
+        sources,
+      );
+    }
+    const pendingOutboundNos = [
+      ...new Set(
+        outbounds
+          .filter(
+            (o) =>
+              String(o.demand_id) === demandId && !['completed', 'cancelled'].includes(o.status),
+          )
+          .map((o) => o.outbound_no),
+      ),
+    ];
+    const blockers = demandCorrectionBlockers({
+      demandType: demand.demand_type,
+      businessStatus: demand.business_status,
+      hasOtherPendingCorrection: Boolean(pendingCorrectionId) && !ownPending,
+      batchStatus: batch.status,
+      hasSupplement: demand.supplement_id !== null,
+      supplementStatus: supplement?.status ?? null,
+      hasPendingOutbound: pendingOutboundNos.length > 0,
+      allocationStatuses: allocations.map((allocation) => allocation.allocation_status),
+      hasPendingLoss: losses.some((loss) => loss.status === 'pending'),
+    });
+    const body: Omit<DemandCorrectionCheck, 'checkToken'> = {
+      demandId,
+      batchId,
+      batchNo: batch.batch_no,
+      workOrderNo: batch.work_order_no,
+      materialId: String(demand.item_id),
+      itemCode: demand.item_code_snapshot,
+      materialVariantCode: demand.material_variant_code_snapshot,
+      unit: demand.unit_snapshot,
+      demandType: demand.demand_type,
+      parentDemandId: id(demand.parent_demand_id),
+      manualAdditionId: id(demand.manual_addition_id),
+      supplementId: id(demand.supplement_id),
+      supplementNo: supplement?.supplement_no ?? null,
+      sourceReason: addition?.reason ?? supplement?.reason ?? null,
+      version: Number(demand.version) - (ownPending ? 1 : 0),
+      currentTotalQuantity: fixedIntegerQuantity(issued + Number(demand.remaining_number)),
+      issuedQuantity: fixedIntegerQuantity(issued),
+      oldRemainingQuantity: String(demand.remaining_number),
+      pendingCorrectionId: ownPending ? null : pendingCorrectionId,
+      chain,
+      reservations: allocations
+        .filter(
+          (a) => a.allocation_status === 'active' && Number(a.assigned_number) > Number(a.issued),
+        )
+        .map((a) => {
+          const inventoryBatch = inventoryBatches.get(String(a.batch_id));
+          if (!inventoryBatch)
+            throw new ProductionDomainError('NOT_FOUND', '需求分配的库存批次不存在');
+          return {
+            allocationId: String(a.id),
+            inventoryBatchCode: inventoryBatch.batchCode,
+            quantity: fixedIntegerQuantity(Number(a.assigned_number) - Number(a.issued)),
+            version: a.version,
+          };
+        }),
+      pendingOutboundNos,
+      authorizations,
+      supplementRequirements,
+      originalPlan,
+      zeroRemainderImpact,
+      blockers,
+      canCorrect: blockers.length === 0,
+    };
+    return {
+      check: { ...body, checkToken: hash({ body, returns, losses, sources }) },
+      demand,
+      batch,
+      additionNo: addition?.addition_no ?? null,
+    };
+  }
+}

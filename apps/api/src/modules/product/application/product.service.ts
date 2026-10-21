@@ -8,12 +8,12 @@ import type {
   ProcessStepQuery,
   ProductCategoryPayload,
   ProductCategoryQuery,
-  ProductMaterialPayload,
+  ReplaceProductMaterialsCommand,
+  MaterialVariantItem,
   MaterialVariantListQuery,
   MaterialVariantPayload,
   MaterialListQuery,
   MaterialPayload,
-  ProductGroupQuery,
   ProductListQuery,
   ProductPayload,
   TechnicalFileQuery,
@@ -21,6 +21,7 @@ import type {
 import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { IdentityDirectoryService } from '../../identity/public.js';
 import { ProductDomainError } from '../domain/product.errors.js';
+import { requireValidBomReplacement } from '../domain/product-bom.policy.js';
 import { ProcessRouteRepository } from './ports/process-route.repository.js';
 import { ProcessRouteStepRepository } from './ports/process-route-step.repository.js';
 import { ProcessStepRepository } from './ports/process-step.repository.js';
@@ -76,9 +77,6 @@ export class ProductService {
   listProducts(query: ProductListQuery) {
     return this.catalog.listProducts(query);
   }
-  listProductGroups(query: ProductGroupQuery) {
-    return this.catalog.listProductGroups(query);
-  }
   listProductOptions() {
     return this.catalog.listProductOptions();
   }
@@ -90,6 +88,9 @@ export class ProductService {
   }
   listMaterialMasterData(query: MaterialListQuery) {
     return this.materials.list(query);
+  }
+  listMaterialMasterDataVariants(materialId: string): Promise<MaterialVariantItem[]> {
+    return this.materialVariants.listByMaterial(materialId);
   }
   listMaterialOptions() {
     return this.materials.listOptions();
@@ -165,31 +166,9 @@ export class ProductService {
   setMaterialVariantStatus(id: string, status: number, audit: CommandContext) {
     return this.materialVariants.setStatus(id, status, audit);
   }
-  replaceMaterials(id: string, items: ProductMaterialPayload[], audit: CommandContext) {
-    if (items.length > 200) {
-      throw new ProductDomainError('INVALID_INPUT', '一份 BOM 最多包含 200 行明细');
-    }
-    if (new Set(items.map((item) => item.materialId)).size !== items.length) {
-      throw new ProductDomainError('INVALID_INPUT', '同一投入物料不能在一份 BOM 中重复');
-    }
-    if (
-      items.some(
-        (item) =>
-          !Number.isInteger(item.quantityPerUnit) ||
-          item.quantityPerUnit <= 0 ||
-          item.quantityPerUnit > 99_999_999 ||
-          !item.unit.trim(),
-      )
-    ) {
-      throw new ProductDomainError(
-        'INVALID_INPUT',
-        'BOM 单位用量必须是 1 到 99999999 的整数，且用量单位不能为空',
-      );
-    }
-    return this.catalog.replaceMaterials(id, items, audit);
-  }
-  setDefaultRoute(id: string, routeId: string | null, audit: CommandContext) {
-    return this.catalog.setDefaultRoute(id, routeId, audit);
+  replaceMaterials(id: string, command: ReplaceProductMaterialsCommand, audit: CommandContext) {
+    requireValidBomReplacement(command);
+    return this.catalog.replaceMaterials(id, command, audit);
   }
   createProcessStep(payload: ProcessStepPayload, audit: CommandContext) {
     return this.processSteps.createProcessStep(this.cleanProcessStep(payload), audit);

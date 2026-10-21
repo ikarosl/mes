@@ -4,8 +4,7 @@
 
 ## 1.8 `operation_logs`
 
-职责：作为项目级平台审计基础设施，记录认证、权限和业务操作审计，不归属任何业务模块；不得记录
-密码、Token、Cookie 或其他密钥。跨模块写入与唯一 Writer 规则以 `docs/architecture.md` 为准。
+本表记录认证、权限和业务审计；跨模块唯一 Writer 规则见[项目架构](../../../docs/architecture.md)。
 
 | 字段          | 类型                 | 说明                              |
 | ------------- | -------------------- | --------------------------------- |
@@ -32,4 +31,4 @@
 
 约束：`CHECK (result IN ('success', 'failed'))`。索引：`(user_id, created_at)`、`(module, action, created_at)`、`(request_id)`。
 
-核心业务写入和成功审计必须在同一事务提交；通用请求、失败和安全拒绝日志为 best-effort。日志不得记录密码、Token、Cookie、签名、原始幂等键或凭证。
+核心业务写入和成功审计必须在同一事务提交；通用请求、失败和安全拒绝日志为 best-effort。日志不得记录密码、Token、Cookie、签名、凭证、原始幂等键或原始请求体。请求 ID 的关联及重放规则见[命令上下文](command-context.md)。

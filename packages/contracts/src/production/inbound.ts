@@ -1,4 +1,4 @@
-import type { PageQuery, ReasonedVersionedCommand } from '../common.js';
+import type { PageQuery } from '../common.js';
 import type { InboundOrderStatus } from './statuses.js';
 
 export interface PurchaseInboundDetailItem {
@@ -14,13 +14,40 @@ export interface PurchaseInboundDetailItem {
   unit: string;
   stockStatus: 'available';
   inventoryTransactionId: string | null;
+  procurementReceiptLineId: string | null;
+  procurementReceiptRevisionId: string | null;
+  procurementInspectionId: string | null;
+  procurementAllocationId: string | null;
+  supplierId: string | null;
+  supplierName: string | null;
+  /** Historical source of this actual inbound detail; absent on legacy purchased inbounds. */
+  procurementSource: {
+    receipt: {
+      receiptId: string;
+      receiptNo: string;
+      receiptLineId: string;
+      /** Purchase order on which this delivery was originally registered. */
+      purchaseOrderNo: string;
+    };
+    /** Purchase order assigned by this detail's immutable allocation. */
+    purchaseOrder: {
+      purchaseOrderId: string;
+      purchaseOrderNo: string;
+      purchaseOrderLineId: string;
+    };
+    inspection: {
+      inspectionId: string;
+      caseId: string;
+      inspectedAt: string;
+    };
+  } | null;
 }
 
 export interface PurchaseInboundOrderItem {
   inboundId: string;
   inboundNo: string;
   sourceType: 'purchased';
-  provider: string | null;
+  suppliers: Array<{ supplierId: string | null; supplierName: string }>;
   status: InboundOrderStatus;
   inboundAt: string | null;
   operatorId: string | null;
@@ -40,22 +67,7 @@ export interface PurchaseInboundOrderItem {
   details: PurchaseInboundDetailItem[];
 }
 
-export type CancelPurchaseInboundPayload = ReasonedVersionedCommand;
-
 export interface PurchaseInboundOrderQuery extends PageQuery {
   keyword?: string;
   status?: InboundOrderStatus;
-}
-
-export interface CreatePurchaseInboundPayload {
-  inboundNo?: string | null;
-  provider?: string | null;
-  remark?: string | null;
-  details: Array<{
-    itemId: string;
-    materialVariantId: string;
-    batchCode: string;
-    inboundQuantity: number;
-    remark?: string | null;
-  }>;
 }
