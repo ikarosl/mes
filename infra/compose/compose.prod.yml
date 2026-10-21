@@ -8,6 +8,9 @@ services:
       - --log-bin-trust-function-creators=1
     env_file:
       - /etc/easy-mes/mysql.env
+    ports:
+      # 数据库客户端维护入口；安全组仅允许维护 IP。
+      - ${MYSQL_BIND_ADDRESS:-0.0.0.0}:${MYSQL_PORT:-13306}:3306
     volumes:
       - type: bind
         source: /srv/easy-mes/mysql
@@ -39,6 +42,9 @@ services:
       - :9001
     env_file:
       - /etc/easy-mes/minio.env
+    ports:
+      # 控制台维护入口；安全组仅允许维护 IP，S3 API 9000 不发布到宿主机。
+      - ${MINIO_CONSOLE_BIND_ADDRESS:-0.0.0.0}:${MINIO_CONSOLE_PORT:-19001}:9001
     volumes:
       - type: bind
         source: /srv/easy-mes/minio
@@ -94,7 +100,7 @@ services:
       api:
         condition: service_healthy
     ports:
-      # 这是暴露到宿主机的端口，和使用的是服务器下/etc/easy-mes/deploy.env.example中的HTTP_BIND_ADDRESS和HTTP_PORT变量
+      # 宿主机绑定地址和端口由 /etc/easy-mes/deploy.env 配置。
       # 左宿主机端口，右容器端口
       - ${HTTP_BIND_ADDRESS:-0.0.0.0}:${HTTP_PORT:-8091}:8091
     volumes:
