@@ -5,7 +5,14 @@ import type {
 } from '@company/contracts';
 import { PROCUREMENT_ERROR_CODES } from '@company/constants';
 import { type Db, orderError } from '../mysql-purchase-order.shared.js';
-import { type ReadRow, date, nullableText, text } from './receipt-read.shared.js';
+import {
+  type ReadRow,
+  date,
+  nullableText,
+  readCurrentRounds,
+  text,
+} from './receipt-read.shared.js';
+import { readReceiptQuantitySummaries } from './receipt-quantities.query.js';
 import { readReceiptLinkedSupplements } from './purchase-supplement-summary.query.js';
 
 export async function listQualityReplacementCandidates(
@@ -45,10 +52,9 @@ export async function listQualityReplacementCandidates(
     const keyword = `%${query.keyword}%`;
     params.push(keyword, keyword, keyword);
   }
-  // 两份数量各自按到货明细聚合，再与来源一对一关联，避免跨轮次分配或退回相乘。
+  // 质量原因聚合只判断候选资格；展示数量另取整次到货的共用投影。
   const from = `FROM procurement_receipt_line line
     JOIN procurement_receipt receipt ON receipt.id=line.receipt_id
-    JOIN procurement_receipt_revision revision ON revision.id=line.current_receipt_revision_id
     LEFT JOIN (
       SELECT allocation.receipt_line_id,
         SUM(GREATEST(0,allocation.quantity-COALESCE(executed.returned_quantity,0))) quantity
@@ -70,30 +76,33 @@ export async function listQualityReplacementCandidates(
   const [[count]] = await db.query<ReadRow[]>(`SELECT COUNT(*) total ${from}`, params);
   const [rows] = await db.query<ReadRow[]>(
     `SELECT line.id receipt_line_id,line.receipt_id,line.supplier_batch_code,
-      receipt.receipt_no,receipt.received_at,revision.received_quantity,
-      COALESCE(pending.quantity,0) pending_return_quantity,
-      COALESCE(returned.quantity,0) returned_quantity
+      receipt.receipt_no,receipt.received_at
       ${from}
       ORDER BY receipt.received_at DESC,line.id DESC LIMIT ? OFFSET ?`,
     [...params, query.pageSize, (query.page - 1) * query.pageSize],
   );
-  const linked = await readReceiptLinkedSupplements(
-    db,
-    rows.map((row) => text(row.receipt_line_id)),
-    'quality_replacement',
-  );
+  const ids = rows.map((row) => text(row.receipt_line_id));
+  const quantities = await readReceiptQuantitySummaries(db, ids, await readCurrentRounds(db, ids));
+  const linked = await readReceiptLinkedSupplements(db, ids, 'quality_replacement');
   return {
-    items: rows.map((row) => ({
-      receiptLineId: text(row.receipt_line_id),
-      receiptId: text(row.receipt_id),
-      receiptNo: text(row.receipt_no),
-      receivedAt: date(row.received_at),
-      supplierBatchCode: nullableText(row.supplier_batch_code),
-      receivedQuantity: text(row.received_quantity),
-      pendingReturnQuantity: text(row.pending_return_quantity),
-      returnedQuantity: text(row.returned_quantity),
-      receiptLinkedSupplements: linked.get(text(row.receipt_line_id)) ?? [],
-    })),
+    items: rows.map((row) => {
+      const receiptLineId = text(row.receipt_line_id);
+      const summary = quantities.get(receiptLineId);
+      if (!summary) throw new Error('到货明细缺少数量投影');
+      return {
+        receiptLineId,
+        receiptId: text(row.receipt_id),
+        receiptNo: text(row.receipt_no),
+        receivedAt: date(row.received_at),
+        supplierBatchCode: nullableText(row.supplier_batch_code),
+        receivedQuantity: summary.receivedQuantity,
+        pendingInboundQuantity: summary.pendingInboundQuantity,
+        inboundQuantity: summary.inboundQuantity,
+        pendingReturnQuantity: summary.pendingReturnQuantity,
+        returnedQuantity: summary.returnedQuantity,
+        receiptLinkedSupplements: linked.get(receiptLineId) ?? [],
+      };
+    }),
     total: Number(count.total),
     page: query.page,
     pageSize: query.pageSize,

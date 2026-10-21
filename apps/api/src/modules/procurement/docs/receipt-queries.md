@@ -100,9 +100,11 @@ revision/acceptance/return/inbound各预览最新10条。case预览包含最新1
 
 入库候选按到货自身采购单筛选，返回 roundId/roundVersion、行版本、allocationId、acceptanceId、inspectionId、inspectionCaseId、receiptRevisionId 及正式剩余量。inspectionCaseId 指向该分配实际采用检验的 case，不用当前轮 case 替代。采购身份沿 allocation.receipt_line_id 对应的到货采购行解析；分页仍以 allocation 为单位。allocationIds 精确解析已选授权；每次执行重读剩余量，物料用途在分页前过滤，采购关闭不隐藏有效物流。
 
-超量补单候选限定原采购行的未作废到货，须存在当前有效可入余量或真实历史已入库；全待处理、全退回及失效未执行的可入记录不提供资格。返回到货身份、时间、供应商批号、当前修订 receivedQuantity 和 receiptLinkedSupplements。到货量不作为补购数量上限；搜索、精确 receiptLineId、计数与分页共用筛选和只读快照，不以原采购关闭排除合法来源。创建命令仍在锁内核验实际事实。
+超量补单候选限定原采购行的未作废到货，须存在当前有效可入余量或真实历史已入库；全待处理、全退回及失效未执行的可入记录不提供资格。返回到货身份、时间、供应商批号、下述五项到货处理数量和 receiptLinkedSupplements。搜索、精确 receiptLineId、计数与分页共用筛选和只读快照，不以原采购关闭排除合法来源。创建命令仍在锁内核验实际事实。
 
-质量补发候选限定请求路径原采购行，按到货明细分页；每份到货只有一条。合法来源为未作废到货上存在当前有效正式质量退回，或真实质量退回历史。返回 receiptLineId、receiptId/receiptNo、receivedAt、supplierBatchCode、receivedQuantity、pendingReturnQuantity、returnedQuantity 和 receiptLinkedSupplements。receivedQuantity 取当前实收修订 T；pendingReturnQuantity 独立汇总当前 finalized 轮质量退回分配减真实已退的剩余，returnedQuantity 独立汇总该到货的全部真实 quality 退回，不因多轮或多分配重复。当前无质量待退、但历史实际质量已退仍返回候选。分配 ID、分配授权量、分配当前性和单笔退回单号不属于该候选契约。
+质量补发候选限定请求路径原采购行，按到货明细分页；每份到货只有一条。合法来源为未作废到货上存在当前有效正式质量退回，或真实质量退回历史。返回 receiptLineId、receiptId/receiptNo、receivedAt、supplierBatchCode、下述五项到货处理数量和 receiptLinkedSupplements。当前无质量待退、但历史实际质量已退仍返回候选。资格聚合只认 quality 原因，不由展示的全部原因待退／已退量判断；人工拒收、超发及采购终止退回不单独提供质量补发资格。分配 ID、分配授权量、分配当前性和单笔退回单号不属于该候选契约。
+
+两类候选共用 `PurchaseSupplementReceiptQuantities`，平面返回 `receivedQuantity/pendingInboundQuantity/inboundQuantity/pendingReturnQuantity/returnedQuantity` 五个必填整数字符串。五项均描述该次到货的整体处理情况，口径复用[数量投影](#数量投影)：本次到货量取当前实收修订 T；可入及待退只取当前 finalized 轮的有效分配余量；已入及已退只取该到货全部历史真实执行事实，旧轮未执行授权不累计。待退及已退包含质量、超发、采购终止和人工拒收全部原因，不只代表质量退回。当前页按到货明细 ID 批量复用 `readCurrentRounds` 与 `readReceiptQuantitySummaries`，在候选计数、分页及补单摘要所在的同一只读快照中组装，不逐行查询。五项数量只供核对，不提供新的候选资格、超量判断或累计补购额度，也不作为补单数量上限。
 
 keyword 匹配到货单号、供应商批号，或通过 EXISTS 匹配真实质量退回单号；receiptLineId 精确筛选在计数和分页前生效。按到货时间和明细 ID 倒序稳定排序。质量新建命令在原采购根锁内核验到货资格；已有补单下单只检查固定身份、未作废和采购资格。
 

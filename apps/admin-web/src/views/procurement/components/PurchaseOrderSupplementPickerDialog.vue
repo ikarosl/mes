@@ -17,6 +17,16 @@
           : '每条采购行选择一次到货，可跨行、跨页保留选择。'
       }}</span>
     </div>
+    <InlineHint
+      v-if="reason"
+      class="picker-eligibility"
+    >
+      {{
+        reason === 'excess_purchase'
+          ? '可选范围：当前有效定稿仍有可入库数量，或已有实际入库记录的到货；仅完成质检暂不可选。'
+          : '可选范围：当前有效定稿仍有质量待退数量，或已有实际质量退回记录的到货；人工拒收不提供质量依据。'
+      }}
+    </InlineHint>
     <div class="picker-columns">
       <aside
         class="purchase-directory"
@@ -165,7 +175,7 @@
               <template v-if="reason === 'excess_purchase'">
                 <el-empty
                   v-if="!loading && !currentPage.error && !currentPage.excessRows.length"
-                  description="没有匹配的实际到货，请更换搜索条件或采购行"
+                  :description="candidateEmptyText"
                   :image-size="70"
                 />
                 <article
@@ -189,12 +199,11 @@
                     <span>批号 {{ candidate.supplierBatchCode || '未提供' }}</span>
                     <span>到货 {{ formatDateTimeForDisplay(candidate.receivedAt) }}</span>
                   </div>
-                  <div class="candidate-quantities">
-                    <span
-                      >到货量 <strong>{{ candidate.receivedQuantity }}</strong>
-                      {{ currentLine.unit }}</span
-                    >
-                  </div>
+                  <SupplementReceiptQuantities
+                    class="candidate-quantities"
+                    :quantities="candidate"
+                    :unit="currentLine.unit"
+                  />
                   <ReceiptLinkedSupplements
                     :summaries="candidate.receiptLinkedSupplements"
                     :unit="currentLine.unit"
@@ -206,7 +215,7 @@
               <template v-else>
                 <el-empty
                   v-if="!loading && !currentPage.error && !currentPage.qualityRows.length"
-                  description="没有匹配的质量待退或已退到货，请更换搜索条件或采购行"
+                  :description="candidateEmptyText"
                   :image-size="70"
                 />
                 <article
@@ -233,26 +242,11 @@
                     <span>批号 {{ candidate.supplierBatchCode || '未提供' }}</span>
                     <span>到货 {{ formatDateTimeForDisplay(candidate.receivedAt) }}</span>
                   </div>
-                  <div class="candidate-quantities">
-                    <span
-                      >到货量 <strong>{{ candidate.receivedQuantity }}</strong>
-                      {{ currentLine.unit }}</span
-                    >
-                    <span
-                      >待退回
-                      <strong :class="receiptReturnQuantityClass(candidate.pendingReturnQuantity)">
-                        {{ candidate.pendingReturnQuantity }}
-                      </strong>
-                      {{ currentLine.unit }}</span
-                    >
-                    <span
-                      >已退回
-                      <strong :class="receiptReturnQuantityClass(candidate.returnedQuantity)">
-                        {{ candidate.returnedQuantity }}
-                      </strong>
-                      {{ currentLine.unit }}</span
-                    >
-                  </div>
+                  <SupplementReceiptQuantities
+                    class="candidate-quantities"
+                    :quantities="candidate"
+                    :unit="currentLine.unit"
+                  />
                   <ReceiptLinkedSupplements
                     :summaries="candidate.receiptLinkedSupplements"
                     :unit="currentLine.unit"
@@ -303,15 +297,16 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue';
 import type { PurchaseOrderLine, PurchaseOrderSupplementReason } from '@company/contracts';
 import { PURCHASE_ORDER_SUPPLEMENT_REASON_LABELS } from '@company/constants';
 import InlineHint from '../../../components/InlineHint.vue';
 import ReceiptLinkedSupplements from './ReceiptLinkedSupplements.vue';
+import SupplementReceiptQuantities from './SupplementReceiptQuantities.vue';
 import PaginationFooter from '../../../components/PaginationFooter.vue';
 import { formatDateTimeForDisplay } from '../../../utils/date';
 import { DialogWidth } from '../../../utils/dialog';
 import { usePurchaseOrderSupplementSelection } from '../composables/usePurchaseOrderSupplementSelection';
-import { receiptReturnQuantityClass } from '../receipt-round-presentation';
 import type { SupplementBasisChoice, SupplementBasisConfirmation } from '../supplement-basis';
 
 defineOptions({ name: 'PurchaseOrderSupplementPickerDialog' });
@@ -359,6 +354,12 @@ const {
   added: () => props.added,
   disabled: () => props.disabled,
 });
+const candidateEmptyText = computed(() => {
+  const filtered = Boolean(currentPage.value?.keyword.trim() || currentPage.value?.receiptLineId);
+  if (props.reason === 'excess_purchase')
+    return filtered ? '未找到匹配条件的补购依据到货' : '未找到有可入库余量或实际入库记录的到货';
+  return filtered ? '未找到匹配条件的质量补发依据到货' : '未找到有质量待退或实际质量退回记录的到货';
+});
 const confirmSelection = (): void => {
   const selection = confirm();
   if (selection) emit('confirm', selection);
@@ -388,6 +389,9 @@ defineExpose({ open, close, visible });
 }
 .picker-context > span:last-child {
   color: var(--el-text-color-regular);
+}
+.picker-eligibility {
+  flex-shrink: 0;
 }
 .picker-columns {
   display: grid;
@@ -530,24 +534,15 @@ defineExpose({ open, close, visible });
   white-space: normal;
   line-height: 1.5;
 }
-.candidate-information,
-.candidate-quantities {
+.candidate-information {
   display: flex;
   flex-wrap: wrap;
   gap: 6px 18px;
   margin-left: 22px;
   color: var(--el-text-color-regular);
 }
-.candidate-quantities strong {
-  color: var(--el-text-color-primary);
-}
-.candidate-quantities .quantity-return {
-  color: var(--el-color-warning-dark-2);
-  font-weight: 700;
-}
-.candidate-quantities .quantity-zero {
-  color: var(--el-text-color-placeholder);
-  font-weight: 400;
+.candidate-quantities {
+  margin-left: 22px;
 }
 .basis-pagination {
   flex-shrink: 0;

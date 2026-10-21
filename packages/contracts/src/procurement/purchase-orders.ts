@@ -40,14 +40,21 @@ export interface PurchaseExcessReceiptCandidateQuery extends PageQuery {
   keyword?: string;
   receiptLineId?: string;
 }
-export interface PurchaseExcessReceiptCandidate {
+/** 整次到货的处理数量；待退、已退包含全部原因，不表示补单资格或额度。 */
+export type PurchaseSupplementReceiptQuantities = Pick<
+  ReceiptQuantitySummary,
+  | 'receivedQuantity'
+  | 'pendingInboundQuantity'
+  | 'inboundQuantity'
+  | 'pendingReturnQuantity'
+  | 'returnedQuantity'
+>;
+export interface PurchaseExcessReceiptCandidate extends PurchaseSupplementReceiptQuantities {
   id: string;
   receiptId: string;
   receiptNo: string;
   receivedAt: string;
   supplierBatchCode: string | null;
-  /** 该次到货当前有效修订的本次到货量 T。 */
-  receivedQuantity: string;
   receiptLinkedSupplements: Array<{
     status: PurchaseOrderStatus;
     count: number;
@@ -59,15 +66,12 @@ export interface PurchaseQualityReplacementCandidateQuery extends PageQuery {
   receiptLineId?: string;
 }
 /** 到货登记来源由请求路径中的原采购行确定。 */
-export interface PurchaseQualityReplacementCandidate {
+export interface PurchaseQualityReplacementCandidate extends PurchaseSupplementReceiptQuantities {
   receiptLineId: string;
   receiptId: string;
   receiptNo: string;
   receivedAt: string;
   supplierBatchCode: string | null;
-  receivedQuantity: string;
-  pendingReturnQuantity: string;
-  returnedQuantity: string;
   receiptLinkedSupplements: Array<{
     status: PurchaseOrderStatus;
     count: number;

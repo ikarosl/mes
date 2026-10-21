@@ -18,8 +18,8 @@
 | POST /procurement/purchase-order-lines/:id/actions/reopen | close | 行 version、reason |
 | POST /procurement/purchase-orders/:id/actions/close | close | 主单 version、reason，原子结束全部进行中行 |
 | POST /procurement/purchase-orders/:id/supplements | create | `id` 为原采购主单；supplementReason、items（每行 originOrderLineId、originReceiptLineId、plannedQuantity、supplementEvidence）及 remark；原子创建多行同补因独立补单 |
-| GET /procurement/purchase-order-lines/:id/excess-receipt-candidates | view | 公共分页；keyword 搜到货单号／供应商批号，receiptLineId 精确定位；仅列有当前可入余量或实际已入事实的有效到货，返回身份、本次到货量及同次到货同补因的补单摘要 |
-| GET /procurement/purchase-order-lines/:id/quality-replacement-candidates | view | 按原到货明细分页；keyword 搜到货单号／供应商批号／真实质量退回单号，receiptLineId 精确定位；当前有效质量待退或真实质量已退提供资格，返回本次到货量、当前待退／历史已退及同到货同补因补单摘要 |
+| GET /procurement/purchase-order-lines/:id/excess-receipt-candidates | view | 公共分页；keyword 搜到货单号／供应商批号，receiptLineId 精确定位；仅列有当前可入余量或实际已入事实的有效到货，返回身份、整次到货五项处理数量及同次到货同补因的补单摘要 |
+| GET /procurement/purchase-order-lines/:id/quality-replacement-candidates | view | 按原到货明细分页；keyword 搜到货单号／供应商批号／真实质量退回单号，receiptLineId 精确定位；当前有效质量待退或真实质量已退提供资格，返回整次到货五项处理数量及同到货同补因补单摘要，口径见[候选查询契约](receipt-queries.md#入库候选及正式分配) |
 | GET /procurement/demand-work-orders | view | page/pageSize/keyword，只返回包含合资格需求的工单 |
 | GET /procurement/demand-candidates | view | 必填 workOrderId，分页及 keyword/batchId/itemId/demandType |
 | POST /procurement/demand-candidates/resolve | view | workOrderId/demandIds，显式解析每个已选项，异工单返回阻断；只读，无幂等头 |
@@ -74,13 +74,13 @@ GET `/procurement/related-purchases` 接受批量 demandIds 和公共分页，�
 
 补单是独立单号、ID 和草稿，一张补单只引用同一已正式下单原采购单且只选择一种补因，可选该原单的多条不同物料行；每条补单行只引用一条原采购行、一条真实到货及一份具体依据，同一原行不得重复加入。各行继承原供应商、精确物料版本和完整需求关联，主单继承来源类别及工单。旧需求资格不重新判定、不重开，不因来源后来关闭而失去追溯；Product 和供应商仍重新核验。超量新建要求有效可入或实际已入的真实到货引用及非空现场依据文字；补单草稿只调整各行计划量及主单备注，行数、顺序、原身份、需求和依据保持。两类补单均不设累计补购额度或次数上限，不存在仓库承接绑定。
 
-采购页的超量补单到货候选独立使用 `procurement:orders:view`，不借用到货管理页权限。候选严格按原采购行读取，不把相同物料的其他采购到货混入；允许原采购已关闭、到货已执行完的历史事实作为依据，本次到货量按[候选查询契约](receipt-queries.md#入库候选及正式分配)展示，不作为创建补单的数量上限，创建仍由服务端在锁内核验资格，定稿不绑定补单。keyword 在分页前匹配到货单号或供应商批号，列表按到货时间和明细 ID 倒序分页，`receiptLineId` 仅在该原行内精确解析，用于跨页面定位。
+采购页的超量补单到货候选独立使用 `procurement:orders:view`，不借用到货管理页权限。候选严格按原采购行读取，不把相同物料的其他采购到货混入；允许原采购已关闭、到货已执行完的历史事实作为依据，整次到货的处理数量按[候选查询契约](receipt-queries.md#入库候选及正式分配)展示，不作为创建补单的数量上限，创建仍由服务端在锁内核验资格，定稿不绑定补单。keyword 在分页前匹配到货单号或供应商批号，列表按到货时间和明细 ID 倒序分页，`receiptLineId` 仅在该原行内精确解析，用于跨页面定位。
 
 结束和恢复命令只锁采购根与行，不读取或冻结到货、Quality、Inventory 数量。整单结束、整单取消与逐行操作均先按数值顺序锁原采购根和当前根，再锁全部采购行；部分行结束、最后一行结束和从已结束主单恢复一行据锁内行状态原子汇总主单。取消在相同锁内检查本单历史自身到货，不借助数量投影判断资格。
 
 质量补发每行提交 originOrderLineId、originReceiptLineId 及非空 supplementEvidence（供应商补发约定）。创建在原采购根锁内核验该到货属于固定原采购行且未作废，并存在当前有效正式质量退回分配或真实质量退回历史；只存在旧检验不合格数、无实际退回的失效授权、人工拒收、超发或采购终止退回均不提供质量补单新建资格。资格按到货明细判断，不保存或选择某条分配 ID。已有补单下单只核验固定来源身份、未作废及采购资格，不以当前处理轮或新建资格阻断。
 
-候选按请求路径原采购行的到货明细分页，每份到货只返回一行。pendingReturnQuantity 只汇总当前正式质量退回剩余，returnedQuantity 汇总全部真实质量退回，两份数量独立聚合；当前无质量待退但历史实际质量已退仍可选择。receivedQuantity 是该次到货的当前核实总量，不作为补发数量上限。补单保留原行需求来源，不按已建补单累计量限制补发，采购核对约定数量及相关补单。允许先补后退，不要求原单关闭，不自动登记退回、关闭原单或新增需求。仓库退回仍通过自己的 allocation_id 追溯实际执行，与补单来源引用分离。
+候选按请求路径原采购行的到货明细分页，每份到货只返回一行。当前无质量待退但历史实际质量已退仍可选择；展示使用与超量候选相同的整次到货五项处理数量，全部原因的待退／已退量与质量原因候选资格的边界由[候选查询契约](receipt-queries.md#入库候选及正式分配)维护。数量不作为补发上限，补单保留原行需求来源，不按已建补单累计量限制补发，采购核对约定数量及相关补单。允许先补后退，不要求原单关闭，不自动登记退回、关闭原单或新增需求。仓库退回仍通过自己的 allocation_id 追溯实际执行，与补单来源引用分离。
 
 成功审计 action 为 `purchase-order.create/update/place/cancel/close/supplement` 或 `purchase-order-line.close/reopen`，同业务事务写入。验证与验收顺序遵守 [AGENTS.md](../../../../../../AGENTS.md#数据库与交付约定)。
 

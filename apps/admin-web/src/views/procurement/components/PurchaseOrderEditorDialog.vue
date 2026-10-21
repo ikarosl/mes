@@ -117,7 +117,7 @@
                   originalLine(row.key)?.originReceiptLineId
                 }}</el-descriptions-item
               >
-              <el-descriptions-item label="本行补单依据">{{
+              <el-descriptions-item label="创建时到货行id">{{
                 originalLine(row.key)?.supplementEvidence
               }}</el-descriptions-item>
             </el-descriptions>

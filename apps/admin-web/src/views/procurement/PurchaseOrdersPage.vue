@@ -7,7 +7,7 @@
         class="query-form"
         @submit.prevent="search"
       >
-        <el-form-item label="采购单 / 供应商"
+        <el-form-item label="采购单"
           ><el-input
             v-model="query.keyword"
             clearable

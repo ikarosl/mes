@@ -96,6 +96,9 @@
             <template v-else
               >补发须登记<strong>新到货</strong>并重新质检入库；原货实际退回另行办理。</template
             >
+            请结合可入库、已入库及退回数量核对{{
+              reason === 'excess_purchase' ? '补购量' : '约定补发量'
+            }}。
           </InlineHint>
           <InlineHint v-else-if="pendingLocation?.lineId"
             >已定位采购行 <strong>id:{{ pendingLocation.lineId }}</strong
@@ -161,38 +164,16 @@
                     >更换依据</el-button
                   >
                 </div>
-                <span
+                <SupplementReceiptQuantities
                   v-if="draft.selectedExcess"
-                  class="basis-quantities"
-                  >到货量 {{ draft.selectedExcess.receivedQuantity }} {{ draft.line.unit }}</span
-                >
-                <div
+                  :quantities="draft.selectedExcess"
+                  :unit="draft.line.unit"
+                />
+                <SupplementReceiptQuantities
                   v-else-if="draft.selectedQuality"
-                  class="basis-quantities"
-                >
-                  <span
-                    >到货量 <strong>{{ draft.selectedQuality.receivedQuantity }}</strong>
-                    {{ draft.line.unit }}</span
-                  >
-                  <span>
-                    待退回
-                    <strong
-                      :class="
-                        receiptReturnQuantityClass(draft.selectedQuality.pendingReturnQuantity)
-                      "
-                      >{{ draft.selectedQuality.pendingReturnQuantity }}</strong
-                    >
-                    {{ draft.line.unit }}
-                  </span>
-                  <span>
-                    已退回
-                    <strong
-                      :class="receiptReturnQuantityClass(draft.selectedQuality.returnedQuantity)"
-                      >{{ draft.selectedQuality.returnedQuantity }}</strong
-                    >
-                    {{ draft.line.unit }}
-                  </span>
-                </div>
+                  :quantities="draft.selectedQuality"
+                  :unit="draft.line.unit"
+                />
               </div>
               <el-alert
                 v-if="draft.basisError"
@@ -321,8 +302,8 @@ import { useTabsStore } from '../../../stores/tabs';
 import { DialogWidth } from '../../../utils/dialog';
 import InlineHint from '../../../components/InlineHint.vue';
 import { excessSupplementOrigin } from '../supplement-origin';
-import { receiptReturnQuantityClass } from '../receipt-round-presentation';
 import RelatedSupplementsDialog from './RelatedSupplementsDialog.vue';
+import SupplementReceiptQuantities from './SupplementReceiptQuantities.vue';
 import PurchaseOrderSupplementPickerDialog from './PurchaseOrderSupplementPickerDialog.vue';
 import {
   usePurchaseOrderSupplement,
@@ -530,20 +511,6 @@ defineExpose({ open, close, visible, locked: editingLocked });
 }
 .basis-identity {
   justify-content: space-between;
-}
-.basis-quantities {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 18px;
-  color: var(--el-text-color-regular);
-}
-.basis-quantities .quantity-return {
-  color: var(--el-color-warning-dark-2);
-  font-weight: 700;
-}
-.basis-quantities .quantity-zero {
-  color: var(--el-text-color-placeholder);
-  font-weight: 400;
 }
 .line-form {
   display: grid;
