@@ -108,7 +108,7 @@
               v-loading="actionLoading"
               class="action-form"
             >
-              <h3>{{ caseType === 'initial' ? '发起整批检验' : '开始复检 / 更正' }}</h3>
+              <h3>{{ caseType === 'initial' ? '发起检验' : '开始复检 / 更正' }}</h3>
               <InlineHint tone="warning">
                 确认后本批全部剩余实物
                 <strong
@@ -400,7 +400,7 @@ const primaryLabel = computed(() => {
   if (actionOpen.value) return action.value === 'inspect' ? '保存检验记录' : '确认发起检验 / 复检';
   if (reviewingCase.value) return '填写检验结果';
   if (canReviewReceipt(line.value))
-    return line.value.currentRound.status === 'uninspected' ? '发起整批检验' : '开始复检';
+    return line.value.currentRound.status === 'uninspected' ? '发起检验' : '开始复检';
   return '查看检验历史';
 });
 const primaryDisabled = computed(() => {

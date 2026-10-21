@@ -238,6 +238,7 @@
           <el-table
             :data="group.items"
             row-key="rowKey"
+            scrollbar-always-on
           >
             <el-table-column
               label="到货明细 ID / 实际归属采购"
@@ -344,20 +345,26 @@
                 </div></template
               ></el-table-column
             >
-            <el-table-column width="110">
+            <el-table-column
+              label="操作"
+              min-width="132"
+              fixed="right"
+            >
               <template #default="{ row }">
-                <InboundSplitControl
-                  :quantity="row.quantity"
-                  :disabled="releases.locked.value || releases.selected.value.length >= 100"
-                  @split="(quantity) => releases.split(row.rowKey, quantity)"
-                />
-                <el-button
-                  type="danger"
-                  link
-                  :disabled="releases.locked.value"
-                  @click="releases.remove(row.rowKey)"
-                  >移除此目标</el-button
-                >
+                <div class="review-actions">
+                  <InboundSplitControl
+                    :quantity="row.quantity"
+                    :disabled="releases.locked.value || releases.selected.value.length >= 100"
+                    @split="(quantity) => releases.split(row.rowKey, quantity)"
+                  />
+                  <el-button
+                    type="danger"
+                    link
+                    :disabled="releases.locked.value"
+                    @click="releases.remove(row.rowKey)"
+                    >移除此目标</el-button
+                  >
+                </div>
               </template>
             </el-table-column>
           </el-table>
@@ -786,6 +793,15 @@ onScopeDispose(useTabsStore().registerCloseGuard('warehouse-inbound', releases.c
   color: var(--el-text-color-primary);
   font-size: 14px;
   font-weight: 700;
+}
+.review-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+.review-actions :deep(.el-button) {
+  margin-left: 0;
 }
 .remark-form {
   margin-top: 16px;

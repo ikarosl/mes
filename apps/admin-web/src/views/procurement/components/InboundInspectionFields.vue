@@ -51,8 +51,9 @@
     <InlineHint
       :tone="
         preview &&
-        model.inspectionMethod !== 'sampling' &&
-        preview.inspectedQuantity !== coveredQuantity
+        (model.inspectionMethod === 'sampling'
+          ? preview.inspectedQuantity > coveredQuantity
+          : preview.inspectedQuantity !== coveredQuantity)
           ? 'warning'
           : 'info'
       "
@@ -61,7 +62,18 @@
       {{ model.inspectionMethod === 'sampling' ? '样本总数' : '检查总数' }}：
       <strong v-if="preview">{{ preview.inspectedQuantity }} {{ unit }}</strong>
       <template v-else>请填写有效数量</template>。
-      <template v-if="model.inspectionMethod === 'sampling'">抽检只填写样本数量。</template>
+      <template
+        v-if="
+          model.inspectionMethod === 'sampling' &&
+          preview &&
+          preview.inspectedQuantity > coveredQuantity
+        "
+      >
+        样本总数超过仓库送检数量
+        <strong>{{ coveredQuantity }} {{ unit }}</strong
+        >，请核对送检数量或检验记录。
+      </template>
+      <template v-else-if="model.inspectionMethod === 'sampling'">抽检只填写样本数量。</template>
       <template v-else-if="preview && preview.inspectedQuantity !== coveredQuantity">
         与仓库送检数量相差
         <strong>{{ Math.abs(preview.inspectedQuantity - coveredQuantity) }} {{ unit }}</strong

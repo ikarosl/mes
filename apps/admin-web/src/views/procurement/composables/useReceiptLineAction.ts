@@ -348,7 +348,7 @@ export function useReceiptLineAction(
       await command.run(
         { intentType: 'procurement.receipt.review', params: { id: target.id }, query: {}, body },
         (key) => submitCurrent(() => procurementApi.startReview(target.id, body, key)),
-        '已发起整批检验，全部剩余实物暂停入库及实际退回',
+        '已发起检验，全部剩余实物暂停入库及实际退回',
       );
     } else if (action.value === 'reject') {
       const body = {
