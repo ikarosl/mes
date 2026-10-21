@@ -32,6 +32,7 @@ describe('ProductionAbnormalService', () => {
       repository as never,
       identity as never,
       {} as never,
+      {} as never,
     );
     const result = await service.approveRework(
       '4',
@@ -66,6 +67,7 @@ describe('ProductionAbnormalService', () => {
       repository as never,
       identity as never,
       idempotency as never,
+      {} as never,
     );
     await service.completeRework(
       '5',
@@ -80,7 +82,7 @@ describe('ProductionAbnormalService', () => {
     );
     expect(idempotency.execute).toHaveBeenCalledWith(
       expect.objectContaining({
-        scope: 'production.rework.complete.v3',
+        scope: 'production.rework.complete.v4',
         key: 'key',
         request: expect.objectContaining({
           params: { reworkId: '5' },

@@ -298,7 +298,9 @@ describe('ProductMaterialDialog', () => {
     await wrapper.setProps({ visible: true, product: locked });
     await flushPromises();
 
-    expect(wrapper.find('.el-alert-stub').attributes('data-title')).toContain('永久锁定');
+    expect(wrapper.find('.el-alert-stub').attributes('data-title')).toContain(
+      '已审批通过，仅可查看',
+    );
     expect(buttonByText(wrapper, '添加已有物料')?.attributes('disabled')).toBeDefined();
     expect(saveButton(wrapper)).toBeUndefined();
   });
@@ -431,7 +433,7 @@ describe('ProductMaterialDialog', () => {
     expect(
       wrapper
         .findAll('.el-alert-stub')
-        .some((alert) => alert.attributes('data-title')?.includes('永久锁定')),
+        .some((alert) => alert.attributes('data-title')?.includes('已审批通过，仅可查看')),
     ).toBe(true);
     expect(saveButton(wrapper)).toBeUndefined();
     expect(buttonByText(wrapper, '添加已有物料')?.attributes('disabled')).toBeDefined();

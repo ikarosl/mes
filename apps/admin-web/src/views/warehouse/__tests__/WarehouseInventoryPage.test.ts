@@ -1,3 +1,5 @@
+import { createPinia } from 'pinia';
+import { createMemoryHistory, createRouter } from 'vue-router';
 import { flushPromises, mount } from '@vue/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { productionApi } from '../../../api/production';
@@ -45,6 +47,14 @@ vi.mock('../../../api/production', () => ({
   },
 }));
 
+const testPlugins = () => [
+  createPinia(),
+  createRouter({
+    history: createMemoryHistory(),
+    routes: [{ path: '/', name: 'warehouse-inventory', component: { template: '<div />' } }],
+  }),
+];
+
 describe('WarehouseInventoryPage', () => {
   beforeEach(() => {
     vi.mocked(productionApi.listInventoryBatches).mockClear();
@@ -56,6 +66,7 @@ describe('WarehouseInventoryPage', () => {
   it('uses the current read-only inventory layout without stock mutation actions', () => {
     const wrapper = mount(WarehouseInventoryPage, {
       global: {
+        plugins: testPlugins(),
         stubs: {
           'el-form': { template: '<form><slot/></form>' },
           'el-tabs': { template: '<div><slot/></div>' },
@@ -88,6 +99,7 @@ describe('WarehouseInventoryPage', () => {
   it('loads the complete positive and negative inventory ledger in batch detail', async () => {
     const wrapper = mount(WarehouseInventoryPage, {
       global: {
+        plugins: testPlugins(),
         stubs: {
           'el-form': { template: '<form><slot/></form>' },
           'el-tabs': { template: '<div><slot/></div>' },
@@ -116,7 +128,7 @@ describe('WarehouseInventoryPage', () => {
     );
     await wrapper.vm.$nextTick();
 
-    expect(productionApi.getInventoryBatch).toHaveBeenCalledWith('101');
+    expect(productionApi.getInventoryBatch).toHaveBeenCalledWith('101', expect.any(AbortSignal));
     expect(wrapper.text()).not.toContain('正库存流水');
     expect(wrapper.text()).toContain('库存流水（全部正负记录）');
     const detail = (wrapper.vm as unknown as { detail: { inventoryTransactions: unknown[] } })
@@ -171,6 +183,7 @@ describe('WarehouseInventoryPage', () => {
     });
     const wrapper = mount(WarehouseInventoryPage, {
       global: {
+        plugins: testPlugins(),
         stubs: {
           'el-form': { template: '<form><slot/></form>' },
           'el-tabs': { template: '<div><slot/></div>' },

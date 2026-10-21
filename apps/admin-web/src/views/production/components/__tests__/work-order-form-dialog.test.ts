@@ -41,7 +41,6 @@ const openDialog = async (overrides: Record<string, unknown> = {}) => {
           itemCode: 'C1',
           acquireMethod: 'self_made',
           unit: '个',
-          defaultRouteId: null,
         },
       ],
       productOptionsStatus: 'ready',

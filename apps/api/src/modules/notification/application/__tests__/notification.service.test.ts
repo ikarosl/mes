@@ -122,10 +122,10 @@ describe('NotificationService', () => {
       const audit = { ...context, actorId };
 
       expect(() => service.publish(input, audit)).toThrowError(
-        new NotificationDomainError('FORBIDDEN', '通知操作需要登录身份'),
+        new NotificationDomainError('FORBIDDEN', '请先登录后再操作通知'),
       );
       expect(() => service.read('20', 0, audit)).toThrowError(
-        new NotificationDomainError('FORBIDDEN', '通知操作需要登录身份'),
+        new NotificationDomainError('FORBIDDEN', '请先登录后再操作通知'),
       );
       expect(persistence.publish).not.toHaveBeenCalled();
       expect(persistence.read).not.toHaveBeenCalled();
@@ -144,7 +144,7 @@ describe('NotificationService', () => {
     const service = new NotificationService(persistence as never);
 
     expect(() => service.read(id, version, context)).toThrowError(
-      new NotificationDomainError('INVALID_INPUT', '通知 ID 或版本无效'),
+      new NotificationDomainError('INVALID_INPUT', '通知信息无效，请刷新通知列表后重试'),
     );
     expect(persistence.read).not.toHaveBeenCalled();
   });

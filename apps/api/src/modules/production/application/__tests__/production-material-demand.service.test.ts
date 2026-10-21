@@ -17,7 +17,11 @@ describe('ProductionMaterialDemandService', () => {
   it('normalizes a complete batch configuration and executes it under the registered scope', async () => {
     const repository = { configureNormalDemands: vi.fn().mockResolvedValue(undefined) };
     const executor = executingExecutor();
-    const service = new ProductionMaterialDemandService(repository as never, executor as never);
+    const service = new ProductionMaterialDemandService(
+      repository as never,
+      executor as never,
+      {} as never,
+    );
 
     await expect(
       service.configure(
@@ -67,8 +71,8 @@ describe('ProductionMaterialDemandService', () => {
         {
           productMaterialId: '100',
           splits: [
-            { materialVariantId: 'v1', quantity: 6 },
-            { materialVariantId: 'v2', quantity: 4 },
+            { materialVariantId: 'v1', quantity: 6, supplierHint: null },
+            { materialVariantId: 'v2', quantity: 4, supplierHint: null },
           ],
         },
       ],
@@ -85,7 +89,11 @@ describe('ProductionMaterialDemandService', () => {
       }),
     };
     const executor = executingExecutor();
-    const service = new ProductionMaterialDemandService(repository as never, executor as never);
+    const service = new ProductionMaterialDemandService(
+      repository as never,
+      executor as never,
+      {} as never,
+    );
 
     await expect(
       service.addManual(
@@ -93,7 +101,7 @@ describe('ProductionMaterialDemandService', () => {
         {
           requirements: [
             {
-              productMaterialId: '100',
+              materialId: '100',
               splits: [
                 { materialVariantId: 'v1', quantity: 2 },
                 { materialVariantId: 'v2', quantity: 3 },
@@ -121,10 +129,10 @@ describe('ProductionMaterialDemandService', () => {
         productionBatchId: '21',
         requirements: [
           {
-            productMaterialId: '100',
+            materialId: '100',
             splits: [
-              { materialVariantId: 'v1', quantity: 2 },
-              { materialVariantId: 'v2', quantity: 3 },
+              { materialVariantId: 'v1', quantity: 2, supplierHint: null },
+              { materialVariantId: 'v2', quantity: 3, supplierHint: null },
             ],
           },
         ],
@@ -141,7 +149,11 @@ describe('ProductionMaterialDemandService', () => {
     };
     const replay = { additionId: '31', additionNo: 'MD-1', demandIds: ['41'] };
     const executor = { execute: vi.fn().mockResolvedValue({ result: replay, isReplay: true }) };
-    const service = new ProductionMaterialDemandService(repository as never, executor as never);
+    const service = new ProductionMaterialDemandService(
+      repository as never,
+      executor as never,
+      {} as never,
+    );
 
     await expect(
       service.addManual('21', { requirements: [], reason: '重试' }, context),
@@ -155,7 +167,11 @@ describe('ProductionMaterialDemandService', () => {
       configureNormalDemands: vi.fn().mockRejectedValue(new Error('transaction rolled back')),
     };
     const executor = executingExecutor();
-    const service = new ProductionMaterialDemandService(repository as never, executor as never);
+    const service = new ProductionMaterialDemandService(
+      repository as never,
+      executor as never,
+      {} as never,
+    );
 
     await expect(
       service.configure(
@@ -175,15 +191,17 @@ describe('ProductionMaterialDemandService', () => {
       addManualDemand: vi.fn().mockRejectedValue(new Error('audit rolled back')),
     };
     const executor = executingExecutor();
-    const service = new ProductionMaterialDemandService(repository as never, executor as never);
+    const service = new ProductionMaterialDemandService(
+      repository as never,
+      executor as never,
+      {} as never,
+    );
 
     await expect(
       service.addManual(
         '21',
         {
-          requirements: [
-            { productMaterialId: '100', splits: [{ materialVariantId: 'v1', quantity: 1 }] },
-          ],
+          requirements: [{ materialId: '100', splits: [{ materialVariantId: 'v1', quantity: 1 }] }],
           reason: '补料',
         },
         context,
@@ -194,7 +212,11 @@ describe('ProductionMaterialDemandService', () => {
   it('rejects an empty manual-addition reason before idempotency registration', async () => {
     const repository = { addManualDemand: vi.fn() };
     const executor = { execute: vi.fn() };
-    const service = new ProductionMaterialDemandService(repository as never, executor as never);
+    const service = new ProductionMaterialDemandService(
+      repository as never,
+      executor as never,
+      {} as never,
+    );
 
     await expect(
       service.addManual('21', { requirements: [], reason: '   ' }, context),

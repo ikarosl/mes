@@ -190,8 +190,8 @@ describe('MaterialOutboundOrderCreateDialog', () => {
     await vm.requestClose();
 
     expect(confirm).toHaveBeenCalledWith(
-      expect.stringContaining('结果尚未确认'),
-      '放弃幂等意图确认',
+      expect.stringContaining('暂时无法确认出库单是否已创建'),
+      '确认关闭当前操作',
       expect.objectContaining({ cancelButtonText: '继续保留' }),
     );
     expect(wrapper.emitted('update:modelValue')).toBeUndefined();

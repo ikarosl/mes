@@ -16,8 +16,8 @@ export default defineConfig({
     environment: 'node',
     include: ['tests/integration/**/*.test.ts'],
     fileParallelism: false,
-    // 真实 MySQL 迁移套件需要在临时库执行完整 DDL 链；本地/CI 资源较慢时 30s 会超时。
-    testTimeout: 120_000,
-    hookTimeout: 120_000,
+    // 真实 MySQL 迁移套件反复执行完整 DDL 链，给较慢的本地/CI 磁盘保留完成余量。
+    testTimeout: 180_000,
+    hookTimeout: 180_000,
   },
 });

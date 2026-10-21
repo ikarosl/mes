@@ -4,6 +4,10 @@ coverage
 .turbo
 .pnpm-store
 .git
+.worktrees
+.claude/worktrees
+temp
+ai_output
 .env*
 !.env.example
 *.log

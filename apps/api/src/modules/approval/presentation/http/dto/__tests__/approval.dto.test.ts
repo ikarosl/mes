@@ -118,7 +118,7 @@ describe('approval DTOs', () => {
     ).rejects.toMatchObject({
       response: {
         code: 'VALIDATION_ERROR',
-        message: '请求包含未允许的字段：bypassApproval',
+        message: '提交内容格式不正确，请重新打开页面后重试',
       },
     });
   });

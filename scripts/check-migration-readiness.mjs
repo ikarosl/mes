@@ -122,6 +122,17 @@ const migrationNames = (await readdir(migrationsDir))
   .sort();
 const migrationNameSet = new Set(migrationNames);
 const migrationPrefixes = new Map();
+// 已登记的合并冲突不能通过重命名历史 migration 修复；仅保留这两个完整文件名。
+// 新增同序号文件仍失败，历史文件内容仍受 append-only 与运行器 checksum 校验。
+const historicalPrefixCollisions = new Map([
+  [
+    '202610190001',
+    new Set([
+      '202610190001-production-execution-records-view-permission.up.sql',
+      '202610190001-purchase-order-state-simplification.up.sql',
+    ]),
+  ],
+]);
 
 for (const name of migrationNames) {
   if (!/^\d{12}-[a-z0-9]+(?:-[a-z0-9]+)*\.(?:up|down)\.sql$/.test(name)) {
@@ -134,7 +145,10 @@ for (const name of migrationNames) {
     const prefix = name.slice(0, 12);
     const existing = migrationPrefixes.get(prefix);
     if (existing) {
-      violations.push(`${name}: migration number ${prefix} is already used by ${existing}`);
+      const historicalNames = historicalPrefixCollisions.get(prefix);
+      if (!historicalNames?.has(existing) || !historicalNames.has(name)) {
+        violations.push(`${name}: migration number ${prefix} is already used by ${existing}`);
+      }
     } else {
       migrationPrefixes.set(prefix, name);
     }

@@ -13,7 +13,7 @@ vi.mock('../../../utils/message', () => ({
 describe('StockChecksPage', () => {
   beforeEach(() => {
     listStockChecks.mockReset();
-    listStockChecks.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 20 });
+    listStockChecks.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 10 });
   });
 
   it('loads real stock-check data and presents creation as the primary action', async () => {
@@ -48,7 +48,7 @@ describe('StockChecksPage', () => {
 
     expect(listStockChecks).toHaveBeenCalledWith({
       page: 1,
-      pageSize: 20,
+      pageSize: 10,
       keyword: undefined,
       status: undefined,
     });

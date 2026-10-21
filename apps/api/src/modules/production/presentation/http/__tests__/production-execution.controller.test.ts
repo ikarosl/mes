@@ -59,7 +59,7 @@ describe('ProductionExecutionController permissions', () => {
     expect(response.setHeader).toHaveBeenCalledWith('Content-Length', '12');
   });
 
-  it('exposes semantic POST routes and does not enable HTTP idempotency', () => {
+  it('exposes semantic POST routes and versioned completion idempotency', () => {
     expect(
       Reflect.getMetadata(PATH_METADATA, ProductionExecutionController.prototype.taskStepSop),
     ).toBe('batches/:batchId/step-records/:recordId/sop-content');
@@ -85,7 +85,9 @@ describe('ProductionExecutionController permissions', () => {
     expect(Reflect.getMetadata(REQUIRED_PERMISSION, complete)).toBe(
       PERMISSIONS.production.steps.manageExecution,
     );
-    expect(Reflect.getMetadata(IDEMPOTENT_ENDPOINT, complete)).toBeUndefined();
+    expect(Reflect.getMetadata(IDEMPOTENT_ENDPOINT, complete)).toEqual({
+      scope: 'production.execution.complete.v2',
+    });
   });
 
   it('forwards authenticated actor and version to the application service', async () => {
@@ -100,10 +102,18 @@ describe('ProductionExecutionController permissions', () => {
     ).resolves.toEqual({ stepStatus: 'doing' });
     expect(service.startStep).toHaveBeenCalledWith('1', '9', 2, context);
     await expect(
-      controller.completeExecution({ batchId: '1' }, { version: 3 }, context),
+      controller.completeExecution(
+        { batchId: '1' },
+        { version: 3, closeoutVersion: null },
+        { ...context, idempotencyKey: 'execution-key' },
+      ),
     ).resolves.toEqual({
       batchStatus: 'completed',
     });
-    expect(service.completeExecution).toHaveBeenCalledWith('1', 3, context);
+    expect(service.completeExecution).toHaveBeenCalledWith(
+      '1',
+      { version: 3, closeoutVersion: null },
+      { ...context, idempotencyKey: 'execution-key' },
+    );
   });
 });

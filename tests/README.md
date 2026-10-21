@@ -23,6 +23,10 @@
 
 `*.mysql.test.ts` 是 Vitest 运行入口。共享可变夹具及执行顺序的审批、生产持久化套件保留统一入口，在 `*.cases.ts` 中按功能定义场景，由入口按原顺序注册；`*-fixture.ts` 只提供初始化、数据构造和清理，不单独注册测试。目录拆分不代表新增覆盖或既有场景已通过当前业务回归。
 
+生产 `execution/`、`materials/`、`persistence/` 及 `inventory/inventory-ledger.mysql.test.ts` 的旧结构夹具覆盖目前暂停执行：原文件仅保留测试说明和恢复条件注释，测试入口逐场景登记 `it.todo`，不保留旧测试实现。这些场景属于待恢复的高重要性覆盖，不是已通过的数据库验证；恢复范围与优先级见[路线图](../docs/roadmap.md#存量测试恢复待正式测试授权)。历史 migration 套件及其他仍有效的集成测试继续运行，不能因为其验证旧结构就将其视为废弃。
+
+另有创建任务 HTTP 旧夹具、当前链上的历史库存投影回填夹具，以及存在已确认重复外键缺陷的完整 up/down/up 场景原位登记 TODO。最后一项是未修复的真实回滚缺陷；独立 CI `migration-fresh` 保持全量正向迁移、重复执行与状态检查，不替代完整回滚验证。具体限制见[迁移安全](../packages/database/docs/migration-safety.md#202609240001202609240002统一分次入库及权限回滚准备)。
+
 审批[业务套件](integration/approval/approval.mysql.test.ts)使用实际节点执行记录和角色/指定用户配置构造 fixture，不创建个人任务或模拟历史通知授权。[迁移套件](integration/approval/approval-assignees-migration.mysql.test.ts)单独构造旧结构，验证历史决定与证据保留、角色/用户约束、回滚保护和 up/down/up 结构一致性。数据库清理顺序遵守当前外键关系，失败也必须释放连接、关闭 HTTP 应用并清理本套件资料；迁移测试只在独立临时测试库执行 DDL，不能改写已执行 migration。已有本机 MySQL 时直接使用该服务，初始化由测试命令编排，不要求 Docker。
 
 通知[持久化套件](integration/notification/notification.mysql.test.ts)验证发布去重、并发、固定收件、首次已读和事务审计；[HTTP 套件](integration/notification/notification-http.mysql.test.ts)使用真实认证及全局管线验证无业务权限用户的本人通知访问和目标独立鉴权；[迁移套件](integration/notification/notification-migration.mysql.test.ts)验证完整迁移链、up/down/up、非空回滚保护及外键/唯一键/CHECK。通知夹具及审批夹具均先清理本次创建的收件与消息，再清理用户，避免长期保留外键影响测试隔离。

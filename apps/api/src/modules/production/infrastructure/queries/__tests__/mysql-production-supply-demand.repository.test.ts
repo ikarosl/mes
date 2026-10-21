@@ -5,6 +5,7 @@ describe('MysqlProductionSupplyDemandRepository', () => {
   it('matches demand snapshots but aggregates every active demand for the matched item', async () => {
     const query = vi
       .fn()
+      .mockResolvedValueOnce([[{ material_id: 5 }], []])
       .mockResolvedValueOnce([[{ total: 1 }], []])
       .mockResolvedValueOnce([
         [
@@ -23,7 +24,10 @@ describe('MysqlProductionSupplyDemandRepository', () => {
         ],
         [],
       ]);
-    const repository = new MysqlProductionSupplyDemandRepository({ query } as never);
+    const repository = new MysqlProductionSupplyDemandRepository(
+      { query } as never,
+      { listEnabledByMaterials: vi.fn().mockResolvedValue([{ id: '6' }]) } as never,
+    );
 
     const result = await repository.list({
       keyword: '旧名称',
@@ -39,12 +43,13 @@ describe('MysqlProductionSupplyDemandRepository', () => {
       shortageQuantity: '4',
       isShortage: true,
     });
-    const dataSql = String(query.mock.calls[1]?.[0]);
+    const dataSql = String(query.mock.calls[2]?.[0]);
     expect(dataSql).toContain('EXISTS (');
     expect(dataSql).toContain('SUM(remaining_number)');
     expect(dataSql).toContain('MAX(id) representative_demand_id');
     expect(dataSql).not.toContain('MAX(demand.item_name_snapshot)');
-    expect(query.mock.calls[1]?.[1]).toEqual([
+    expect(query.mock.calls[2]?.[1]).toEqual([
+      '6',
       '%旧名称%',
       '%旧名称%',
       '%旧名称%',
@@ -85,7 +90,10 @@ describe('MysqlProductionSupplyDemandRepository', () => {
         ],
         [],
       ]);
-    const repository = new MysqlProductionSupplyDemandRepository({ query } as never);
+    const repository = new MysqlProductionSupplyDemandRepository(
+      { query } as never,
+      { listEnabledByMaterials: vi.fn().mockResolvedValue([{ id: '6' }]) } as never,
+    );
 
     const result = await repository.listDemandTrace('5', {
       materialVariantId: 'v5',

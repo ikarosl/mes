@@ -27,13 +27,16 @@ describe('useMaterialsList', () => {
 
     await state.load();
 
-    expect(materialList).toHaveBeenCalledWith({
-      page: 1,
-      pageSize: 10,
-      keyword: '电阻',
-      categoryId: 'category-1',
-      status: 1,
-    });
+    expect(materialList).toHaveBeenCalledWith(
+      {
+        page: 1,
+        pageSize: 10,
+        keyword: '电阻',
+        categoryId: 'category-1',
+        status: 1,
+      },
+      { signal: expect.any(AbortSignal), skipErrorHandling: true },
+    );
   });
 
   it('resets filters and page before loading again', async () => {
@@ -47,13 +50,16 @@ describe('useMaterialsList', () => {
 
     expect(state.currentPage.value).toBe(1);
     expect(state.query).toMatchObject({ keyword: '', categoryId: '', status: '' });
-    expect(materialList).toHaveBeenLastCalledWith({
-      page: 1,
-      pageSize: 10,
-      keyword: undefined,
-      categoryId: undefined,
-      status: undefined,
-    });
+    expect(materialList).toHaveBeenLastCalledWith(
+      {
+        page: 1,
+        pageSize: 10,
+        keyword: undefined,
+        categoryId: undefined,
+        status: undefined,
+      },
+      { signal: expect.any(AbortSignal), skipErrorHandling: true },
+    );
     expect(materialList).toHaveBeenCalledTimes(2);
   });
 
@@ -65,20 +71,28 @@ describe('useMaterialsList', () => {
 
     expect(state.pageSize.value).toBe(25);
     expect(state.currentPage.value).toBe(1);
-    expect(materialList).toHaveBeenNthCalledWith(1, {
-      page: 4,
-      pageSize: 10,
-      keyword: undefined,
-      categoryId: undefined,
-      status: undefined,
-    });
-    expect(materialList).toHaveBeenNthCalledWith(2, {
-      page: 1,
-      pageSize: 25,
-      keyword: undefined,
-      categoryId: undefined,
-      status: undefined,
-    });
+    expect(materialList).toHaveBeenNthCalledWith(
+      1,
+      {
+        page: 4,
+        pageSize: 10,
+        keyword: undefined,
+        categoryId: undefined,
+        status: undefined,
+      },
+      { signal: expect.any(AbortSignal), skipErrorHandling: true },
+    );
+    expect(materialList).toHaveBeenNthCalledWith(
+      2,
+      {
+        page: 1,
+        pageSize: 25,
+        keyword: undefined,
+        categoryId: undefined,
+        status: undefined,
+      },
+      { signal: expect.any(AbortSignal), skipErrorHandling: true },
+    );
   });
 
   it('keeps the latest page when responses arrive out of order', async () => {

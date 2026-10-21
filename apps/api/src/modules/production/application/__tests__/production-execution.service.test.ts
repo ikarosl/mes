@@ -2,6 +2,13 @@ import { describe, expect, it, vi } from 'vitest';
 import { ProductionExecutionService } from '../production-execution.service.js';
 
 const context = { actorId: '7', requestId: 'request-1', ip: null, userAgent: null };
+const idempotentContext = { ...context, idempotencyKey: 'execution-key' };
+const executingIdempotency = {
+  execute: vi.fn(async (command: { handler: () => Promise<unknown> }) => ({
+    result: await command.handler(),
+    isReplay: false,
+  })),
+};
 
 describe('ProductionExecutionService', () => {
   it('only assigns an active employee and forwards a narrow command context', async () => {
@@ -13,6 +20,7 @@ describe('ProductionExecutionService', () => {
       execution as never,
       identity as never,
       {} as never,
+      executingIdempotency as never,
     );
 
     await expect(service.assignStep('1', '2', '9', 0, context)).resolves.toEqual({
@@ -28,6 +36,7 @@ describe('ProductionExecutionService', () => {
       execution as never,
       identity as never,
       {} as never,
+      executingIdempotency as never,
     );
 
     await expect(service.assignStep('1', '2', '9', 0, context)).rejects.toMatchObject({
@@ -41,12 +50,22 @@ describe('ProductionExecutionService', () => {
       listWorkerTasks: vi.fn().mockResolvedValue([]),
       startStep: vi.fn().mockResolvedValue({ stepStatus: 'doing' }),
     };
-    const service = new ProductionExecutionService(execution as never, {} as never, {} as never);
+    const service = new ProductionExecutionService(
+      execution as never,
+      {} as never,
+      {} as never,
+      executingIdempotency as never,
+    );
 
-    await service.listMyTasks(context);
+    await service.listMyTasks(context, { page: 1, pageSize: 10 });
     await service.startStep('1', '2', 3, context);
-    expect(execution.listWorkerTasks).toHaveBeenCalledWith('7');
-    expect(execution.startStep).toHaveBeenCalledWith('1', '2', 3, context);
+    expect(execution.listWorkerTasks).toHaveBeenCalledWith('7', {
+      page: 1,
+      pageSize: 10,
+      batchNo: undefined,
+      workOrderNo: undefined,
+    });
+    expect(execution.startStep).toHaveBeenCalledWith('1', '2', 3, context, false);
   });
 
   it('forwards completion checks and completion with the authenticated command context', async () => {
@@ -54,12 +73,21 @@ describe('ProductionExecutionService', () => {
       getCompletionCheck: vi.fn().mockResolvedValue({ canComplete: true }),
       completeExecution: vi.fn().mockResolvedValue({ batchStatus: 'completed' }),
     };
-    const service = new ProductionExecutionService(execution as never, {} as never, {} as never);
+    const service = new ProductionExecutionService(
+      execution as never,
+      {} as never,
+      {} as never,
+      executingIdempotency as never,
+    );
 
     await service.getCompletionCheck('1');
-    await service.completeExecution('1', 3, context);
+    await service.completeExecution('1', { version: 3, closeoutVersion: null }, idempotentContext);
     expect(execution.getCompletionCheck).toHaveBeenCalledWith('1');
-    expect(execution.completeExecution).toHaveBeenCalledWith('1', 3, context);
+    expect(execution.completeExecution).toHaveBeenCalledWith(
+      '1',
+      { version: 3, closeoutVersion: null },
+      context,
+    );
   });
 
   it('loads admin and employee SOP content through the frozen snapshot locator', async () => {
@@ -81,6 +109,7 @@ describe('ProductionExecutionService', () => {
       execution as never,
       {} as never,
       content as never,
+      executingIdempotency as never,
     );
 
     await expect(service.getStepSopContent('1', '2')).resolves.toEqual({

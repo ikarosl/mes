@@ -30,6 +30,9 @@ const demandRow = (
     version: 0,
     created_at: new Date('2026-09-01T01:00:00.000Z'),
     allocated_quantity: '6.0000',
+    remaining_allocated_quantity: String(
+      Number(overrides.allocated_quantity ?? 6) - Number(overrides.outbound_quantity ?? 2),
+    ),
     outbound_quantity: '2.0000',
     ...overrides,
   }) as DemandRow;

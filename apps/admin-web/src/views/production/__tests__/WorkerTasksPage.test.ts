@@ -51,7 +51,7 @@ describe('WorkerTasksPage', () => {
     expect(wrapper.find('.page-heading').exists()).toBe(false);
     expect(wrapper.find('h1').exists()).toBe(false);
     expect(wrapper.find('.tasks-caption').text()).toContain('当前分派与历史记录');
-    expect(wrapper.find('.execution-tip').text()).toContain('明确完成和重开');
+    expect(wrapper.find('.execution-tip').text()).toContain('已完成工序需先重新开工才能新增报工');
   });
 
   it('downloads the frozen SOP through the employee-scoped endpoint', async () => {

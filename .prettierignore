@@ -9,6 +9,9 @@ uploads/
 var/
 # 并发会话的 git worktree 副本（.claude/worktrees/**）属于临时工作区，不参与格式化门禁
 .claude/worktrees/
+.worktrees/
+temp/
+ai_output/
 # 设计规范由人工维护，避免格式化器重排表格、流程和 SQL 示例。
 docs/
 # 所有 Markdown 文档由人工维护，不参与 Prettier 格式检查或自动改写。

@@ -47,7 +47,7 @@ describe('ScrapsPage', () => {
       items: [materialLoss],
       total: 1,
       page: 1,
-      pageSize: 20,
+      pageSize: 10,
     });
   });
 
@@ -82,13 +82,13 @@ describe('ScrapsPage', () => {
 
     expect(listMaterialLosses).toHaveBeenCalledWith({
       page: 1,
-      pageSize: 20,
+      pageSize: 10,
       keyword: undefined,
       status: undefined,
     });
     expect(wrapper.text()).toContain('申报领料损耗');
-    expect(wrapper.text()).toContain('不回收或增加产品生产授权');
-    expect(wrapper.text()).toContain('确认并补料');
+    expect(wrapper.text()).toContain('不自动补料');
+    expect(wrapper.text()).toContain('确认损耗');
     expect(wrapper.text()).not.toContain('库存报废管理暂未开放');
   });
 

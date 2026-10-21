@@ -26,7 +26,13 @@ describe('MysqlProductionMaterialRepository available item batches', () => {
         ],
         [],
       ]);
-    const repository = new MysqlProductionMaterialRepository({ query } as never);
+    const repository = new MysqlProductionMaterialRepository(
+      { query } as never,
+      {} as never,
+      { listEnabledByMaterials: vi.fn().mockResolvedValue([{ id: '6' }]) } as never,
+      {} as never,
+      {} as never,
+    );
 
     const result = await repository.listAvailableItemBatches('1');
 
@@ -52,7 +58,13 @@ describe('MysqlProductionMaterialRepository normal demand lookup', () => {
       .fn()
       .mockResolvedValueOnce([[{ id: 7 }], []])
       .mockResolvedValueOnce([[{ has_normal_demands: 1 }], []]);
-    const repository = new MysqlProductionMaterialRepository({ query } as never);
+    const repository = new MysqlProductionMaterialRepository(
+      { query } as never,
+      {} as never,
+      { listEnabledByMaterials: vi.fn().mockResolvedValue([{ id: '6' }]) } as never,
+      {} as never,
+      {} as never,
+    );
 
     await expect(repository.hasGeneratedNormalDemands('7')).resolves.toBe(true);
 

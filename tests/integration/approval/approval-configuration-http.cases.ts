@@ -115,7 +115,10 @@ export const registerApprovalConfigurationHttpCases = (
       .set('X-Request-Id', randomUUID())
       .send({ version: 0, taskId: '1' });
     expect(legacyDecision.status).toBe(400);
-    expect(String(legacyDecision.body.message)).toContain('taskId');
+    expect(legacyDecision.body).toMatchObject({
+      code: 'VALIDATION_ERROR',
+      message: '提交内容格式不正确，请重新打开页面后重试',
+    });
     const clientQualification = await request(app.getHttpServer())
       .get('/api/approval/instances?page=1&pageSize=10&roleIds=1&userId=1&canApprove=true')
       .set('Authorization', `Bearer ${token}`)

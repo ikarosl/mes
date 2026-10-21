@@ -24,10 +24,22 @@
 
 根 `pnpm verify` 依次覆盖格式、文档链接、架构、migration、秘密和生产依赖扫描、Lint、构建、类型检查及单元/组件测试。禁止使用 `--passWithNoTests` 让缺失测试静默通过。
 
+仓库内 `.worktrees/` 与 `.claude/worktrees/` 是独立 checkout 的临时副本；`temp/`、`ai_output/` 是 Git 忽略的本地草稿和输出，不属于交付源码。格式、Lint、Vitest 发现与 Docker 构建上下文均排除这些目录，避免本地检查混入 CI checkout 中不存在的临时文件。当前 `apps/`、`packages/`、`scripts/` 和 `tests/` 中的有效测试仍按原入口执行。
+
+根单元／组件 Vitest 配置每个进程最多使用 2 个 worker，避免 Turbo 同时运行多个 workspace 时重复按整机 CPU 数量扩张进程池；MySQL 套件仍按其专用配置逐文件执行。
+
+MySQL 单例与 hook 超时为 180 秒，为完整 migration 链及清理保留执行余量；断言、专用测试库保护和失败退出保持生效。
+
 API、管理端以及 contracts／constants／utils 的应用构建、应用类型检查不编译相邻测试文件；测试通过 Vitest 独立运行。测试类型检查分别使用
 `corepack pnpm --filter @company/api typecheck:test`、`corepack pnpm --filter @company/admin-web typecheck:test`、`corepack pnpm --filter @company/contracts typecheck:test`、`corepack pnpm --filter @company/constants typecheck:test` 和 `corepack pnpm --filter @company/utils typecheck:test`，在集中修复或验证测试时单独执行，不阻塞应用构建。用户暂缓正式测试期间，旧夹具的契约迁移记录到路线图；不能以应用检查通过代替测试检查。
 
 交付和正式测试的先后顺序以 [AGENTS.md](../AGENTS.md#数据库与交付约定) 为准。进入正式测试阶段后，新增或修复业务规则必须补相邻测试；跨模块契约、数据库事务或 HTTP 管线发生变化时，补对应根 Integration/API 测试。在已获准编写测试的阶段，历史代码重构前先以 characterization test 锁定现有行为。
+
+### 暂缓完善测试集期间的存量清理
+
+当前仅维护本地与 CI 可执行的存量门禁，不代表进入正式测试补全阶段。废弃测试须先由子代理核对现行实现和所有者文档、向主代理报告，再由主代理判断重要性：已移除功能的专属低重要性断言可以删除；权限、事务、幂等、库存事实、并发及数量不变量等高重要性覆盖在原文件仅保留测试说明注释，并以 `TODO(scope): 测试目的；重要性与暂停原因；恢复条件` 和 `it.todo` 显式登记，不保留旧测试实现。共享夹具整体失效时仅原位保留恢复说明；不得以全局排除、忽略类型错误或空测试通过代替登记。
+
+文案、已确定的权限路径及必填夹具字段可作最小机械适配；需要新数据准备或重写业务旅程的用例等待正式测试授权。测试报告中的 TODO 是待恢复覆盖，不能计入通过数；恢复优先级及待验收集中在[路线图](roadmap.md#存量测试恢复待正式测试授权)。
 
 ## 业务 MySQL Integration
 

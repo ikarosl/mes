@@ -228,12 +228,11 @@ describe('Product options cross-page authorization contract', () => {
       PERMISSIONS.product.products.view,
       PERMISSIONS.production.materials.view,
       PERMISSIONS.production.materialDemands.view,
-      PERMISSIONS.production.inbounds.view,
+      PERMISSIONS.warehouse.inbound.view,
       PERMISSIONS.product.materialVariants.view,
     ],
     processStepOptions: [PERMISSIONS.product.processes.view, PERMISSIONS.product.routes.view],
     routeOptions: [
-      PERMISSIONS.product.products.view,
       PERMISSIONS.product.routes.view,
       PERMISSIONS.production.orders.view,
       PERMISSIONS.production.tasks.view,
@@ -258,7 +257,7 @@ describe('Product options cross-page authorization contract', () => {
       {
         page: '产品管理',
         permission: PERMISSIONS.product.products.view,
-        endpoints: ['categoryOptions', 'productOptions', 'materialOptions', 'routeOptions'],
+        endpoints: ['categoryOptions', 'productOptions', 'materialOptions'],
       },
       {
         page: '产品分类',
@@ -282,7 +281,7 @@ describe('Product options cross-page authorization contract', () => {
       },
       {
         page: '外购物料入库',
-        permission: PERMISSIONS.production.inbounds.view,
+        permission: PERMISSIONS.warehouse.inbound.view,
         endpoints: ['materialOptions'],
       },
     ];
@@ -308,13 +307,13 @@ describe('Product options cross-page authorization contract', () => {
   it('allows the purchase inbound page to read material options only', () => {
     expect(
       permissionMatches(
-        [PERMISSIONS.production.inbounds.view],
+        [PERMISSIONS.warehouse.inbound.view],
         readOptionsPermissions('productOptions'),
       ),
     ).toBe(false);
     expect(
       permissionMatches(
-        [PERMISSIONS.production.inbounds.view],
+        [PERMISSIONS.warehouse.inbound.view],
         readOptionsPermissions('materialOptions'),
       ),
     ).toBe(true);

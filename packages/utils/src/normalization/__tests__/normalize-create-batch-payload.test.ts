@@ -5,26 +5,21 @@ import { normalizeCreateBatchPayload } from '../normalize-create-batch-payload.j
 const base: CreateProductionBatchPayload = { plannedQuantity: 10 };
 
 describe('normalizeCreateBatchPayload', () => {
-  it('去掉 batchNo 与 remark 的首尾空白', () => {
+  it('去掉 remark 的首尾空白', () => {
     expect(
       normalizeCreateBatchPayload({
         plannedQuantity: 10,
-        batchNo: '  ABC-001  ',
         remark: ' 测试 ',
       }),
     ).toEqual({
       plannedQuantity: 10,
-      batchNo: 'ABC-001',
       remark: '测试',
     });
   });
 
   it('空串、纯空白串与缺省字段统一归一化为 null', () => {
-    expect(normalizeCreateBatchPayload({ ...base, batchNo: '' }).batchNo).toBe(null);
-    expect(normalizeCreateBatchPayload({ ...base, batchNo: '   ' }).batchNo).toBe(null);
     expect(normalizeCreateBatchPayload({ ...base, remark: '   ' }).remark).toBe(null);
     expect(normalizeCreateBatchPayload({ ...base, remark: '' }).remark).toBe(null);
-    expect(normalizeCreateBatchPayload(base).batchNo).toBe(null);
     expect(normalizeCreateBatchPayload(base).remark).toBe(null);
   });
 
@@ -44,7 +39,6 @@ describe('normalizeCreateBatchPayload', () => {
       }),
     ).toEqual({
       plannedQuantity: 12.5,
-      batchNo: null,
       remark: null,
       routeId: 'r1',
       ownerId: 'o1',
@@ -55,7 +49,7 @@ describe('normalizeCreateBatchPayload', () => {
   });
 
   it('归一化是幂等的：重复调用结果不变', () => {
-    const once = normalizeCreateBatchPayload({ plannedQuantity: 1, batchNo: ' A ', remark: ' x ' });
+    const once = normalizeCreateBatchPayload({ plannedQuantity: 1, remark: ' x ' });
     expect(normalizeCreateBatchPayload(once)).toEqual(once);
   });
 });

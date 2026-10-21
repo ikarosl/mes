@@ -10,6 +10,7 @@ const report = {
   productionBatchId: '1',
   stepRecordId: '2',
   reportType: 'normal' as const,
+  quantityScope: 'production' as const,
   reversalOfReportId: null,
   correctionOfReportId: null,
   reportedQuantity: '4.0000',

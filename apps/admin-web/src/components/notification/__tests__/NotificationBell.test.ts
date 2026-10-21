@@ -48,6 +48,7 @@ vi.mock('../useNotifications', async () => {
   };
 });
 vi.mock('../../../utils/message', () => ({ EMessage: { error: vi.fn() } }));
+vi.mock('../../../stores/auth', () => ({ useAuthStore: () => ({ can: () => true }) }));
 
 const router = createRouter({
   history: createMemoryHistory(),

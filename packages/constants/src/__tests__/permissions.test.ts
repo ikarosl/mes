@@ -59,9 +59,6 @@ describe('permissionMatches', () => {
     expect(PERMISSIONS.production.materials).toEqual({
       view: 'production:materials:view',
       allocate: 'production:materials:allocate',
-      outbound: 'production:materials:outbound',
-      confirmOutbound: 'production:materials:outbound-confirm',
-      cancelOutbound: 'production:materials:outbound-cancel',
       correctDemand: 'production:materials:correct-demand',
     });
     expect(ALLOCATION_STATUS_LABELS.released).toBe('已释放');
@@ -87,7 +84,7 @@ describe('permissionMatches', () => {
   });
 
   it('uses a dedicated read-only inventory permission', () => {
-    expect(PERMISSIONS.production.inventory.view).toBe('production:inventory:view');
+    expect(PERMISSIONS.warehouse.inventory.view).toBe('warehouse:inventory:view');
   });
 
   it('separates warehouse return and stock-check commands', () => {

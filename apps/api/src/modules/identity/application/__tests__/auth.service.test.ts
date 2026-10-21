@@ -13,6 +13,7 @@ describe('AuthService token TTLs', () => {
         username: 'admin',
         passwordHash: 'stored-password-hash',
         displayName: 'Admin',
+        isEnabled: true,
       }),
       findProfile: vi.fn().mockResolvedValue({
         id: '1',

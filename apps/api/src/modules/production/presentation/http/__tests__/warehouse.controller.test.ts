@@ -46,13 +46,13 @@ describe('Production warehouse controller contracts', () => {
         IDEMPOTENT_ENDPOINT,
         ProductionMaterialLossController.prototype.createMaterialLoss,
       ),
-    ).toEqual({ scope: 'production.material-loss.create.v1' });
+    ).toEqual({ scope: 'production.material-loss.create.v3' });
     expect(
       Reflect.getMetadata(
         IDEMPOTENT_ENDPOINT,
         ProductionMaterialLossController.prototype.confirmMaterialLoss,
       ),
-    ).toEqual({ scope: 'production.material-loss.confirm.v1' });
+    ).toEqual({ scope: 'production.material-loss.confirm.v3' });
     expect(
       Reflect.getMetadata(
         IDEMPOTENT_ENDPOINT,

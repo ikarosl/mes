@@ -23,6 +23,9 @@ corepack pnpm db:migrate:status
 5. 破坏性 down migration 必须设置数据守卫。回滚会覆盖后续业务进度时，应明确拒绝回滚。
 6. migration 的物理集中不改变表所有权；字段、约束和状态语义必须同步到所属模块的数据库文档。
 
+历史注册表中 `202610190001-production-execution-records-view-permission` 与
+`202610190001-purchase-order-state-simplification` 共用时间序号。两者的完整文件名是独立迁移身份，按完整文件名排序执行，原名和 SQL 保持不可变；静态门禁仅登记这两个精确名称的例外，其他重复序号仍拒绝。该例外不免除 up/down 配对、历史变更或运行器校验和检查，不允许后续迁移复用该序号。
+
 ## 所有者与验证
 
 - 业务表所有者：[数据库设计索引](../README.md#业务数据库设计)，覆盖 Identity、Product、Production、Inventory、Procurement、Quality、Approval 与 Notification。

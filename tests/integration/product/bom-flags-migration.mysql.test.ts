@@ -165,6 +165,12 @@ describeMysql('BOM trace flag migration', () => {
     const connection = await createTempDatabase(tempDb);
     try {
       await applyMigrations(connection, await upMigrations());
+      // Demo seeds require an initialized administrator as their audit actor.
+      await insert(
+        connection,
+        'INSERT INTO users (username,password_hash,display_name) VALUES (?,?,?)',
+        ['admin', 'migration-test-only', 'BOM demo migration actor'],
+      );
       await runDemoSeed(tempDb);
       const before = await demoProjection(connection);
       expect(before.bom.length).toBeGreaterThan(0);
@@ -354,7 +360,7 @@ const insertBomFixture = async (
     `INSERT INTO work_orders
        (work_order_no,order_type,product_id,product_code_snapshot,product_name_snapshot,unit_snapshot,
         planned_quantity,status,created_by,updated_by)
-     VALUES (?,'research',?,?,?,'pcs','10.0000','draft',?,?)`,
+     VALUES (?,'mass_production',?,?,?,'pcs','10.0000','draft',?,?)`,
     [
       `${token}-work-order`,
       productId,
@@ -373,18 +379,19 @@ const insertBomFixture = async (
   );
   const basisSql = legacyFlags
     ? `INSERT INTO production_material_requirement_basis
-         (production_batch_id,product_material_id,material_id,material_code_snapshot,unit_snapshot,
+         (production_batch_id,product_material_id,material_id,locked_material_variant_id,material_code_snapshot,unit_snapshot,
           quantity_per_unit_snapshot,is_key_material_snapshot,need_batch_record_snapshot,
           planned_output_quantity_snapshot,required_number,created_by)
-       VALUES (?,?,?,?,'kg','2.0000',0,1,'10.0000','20.0000',?)`
+       VALUES (?,?,?,?,?,'kg','2.0000',0,1,'10.0000','20.0000',?)`
     : `INSERT INTO production_material_requirement_basis
-         (production_batch_id,product_material_id,material_id,material_code_snapshot,unit_snapshot,
+         (production_batch_id,product_material_id,material_id,locked_material_variant_id,material_code_snapshot,unit_snapshot,
           quantity_per_unit_snapshot,planned_output_quantity_snapshot,required_number,created_by)
-       VALUES (?,?,?,?,'kg','2.0000','10.0000','20.0000',?)`;
+       VALUES (?,?,?,?,?,'kg','2.0000','10.0000','20.0000',?)`;
   const basisId = await insert(connection, basisSql, [
     batchId,
     productMaterialId,
     materialId,
+    variantId,
     `${token}-material`,
     actorId,
   ]);

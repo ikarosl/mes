@@ -14,7 +14,11 @@ describe('MysqlProductionExecutionRepository SOP snapshots', () => {
       ],
       [],
     ]);
-    const repository = new MysqlProductionExecutionRepository({ query } as never);
+    const repository = new MysqlProductionExecutionRepository(
+      { query } as never,
+      {} as never,
+      {} as never,
+    );
 
     await expect(repository.getStepSopSnapshot('1', '9')).resolves.toEqual({
       fileId: '5',
@@ -30,7 +34,11 @@ describe('MysqlProductionExecutionRepository SOP snapshots', () => {
 
   it('enforces current assignee ownership for employee SOP downloads', async () => {
     const query = vi.fn().mockResolvedValue([[], []]);
-    const repository = new MysqlProductionExecutionRepository({ query } as never);
+    const repository = new MysqlProductionExecutionRepository(
+      { query } as never,
+      {} as never,
+      {} as never,
+    );
 
     await expect(repository.getStepSopSnapshot('1', '9', '7')).rejects.toMatchObject({
       code: 'NOT_STEP_ASSIGNEE',

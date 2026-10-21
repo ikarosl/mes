@@ -47,6 +47,9 @@ describe('admin routes after product/production consolidation', () => {
       PERMISSIONS.approval.decide,
       PERMISSIONS.approval.configure,
       PERMISSIONS.product.products.manageBom,
+      PERMISSIONS.production.materials.correctDemand,
+      PERMISSIONS.production.tasks.terminate,
+      PERMISSIONS.production.tasks.manageOutput,
     ]);
     expect(flows?.path).toBe('/approval/flows');
     expect(flows?.meta.keepAliveName).toBe('ApprovalFlowsPage');

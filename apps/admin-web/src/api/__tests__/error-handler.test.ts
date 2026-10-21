@@ -133,7 +133,8 @@ describe('handleHttpError', () => {
     {
       code: CONCURRENCY_ERROR_CODES.idempotencyConflict,
       status: 409,
-      expected: '本次提交标识已用于不同内容，请刷新数据后重新操作（请求编号：request_conflict）',
+      expected:
+        '本次提交内容与上次不一致，无法继续提交。请先核对上次操作结果（请求编号：request_conflict）',
     },
     {
       code: IDEMPOTENCY_STORAGE_RETRYABLE,
@@ -143,7 +144,8 @@ describe('handleHttpError', () => {
     {
       code: IDEMPOTENCY_RESULT_CORRUPT,
       status: 500,
-      expected: '服务端保存的提交结果异常，请联系管理员核对业务结果（请求编号：request_conflict）',
+      expected:
+        '暂时无法确认操作结果，请先核对相关记录，并联系管理员处理（请求编号：request_conflict）',
     },
   ])('maps the explicit idempotency error $code globally', ({ code, status, expected }) => {
     const options = createOptions();

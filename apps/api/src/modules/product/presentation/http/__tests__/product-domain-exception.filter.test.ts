@@ -25,7 +25,6 @@ describe('ProductDomainExceptionFilter', () => {
     ['NOT_FOUND', 404],
     ['CONFLICT', 409],
     ['ROUTE_IN_USE', 409],
-    ['DEFAULT_ROUTE_IN_USE', 409],
     ['STORAGE_UNAVAILABLE', 502],
     ['INVALID_INPUT', 400],
     ['INVALID_PRODUCT_KIND', 400],

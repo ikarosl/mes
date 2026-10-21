@@ -53,7 +53,7 @@ describe('ProductionReportingService', () => {
     );
     expect(idempotency.execute).toHaveBeenCalledWith(
       expect.objectContaining({
-        scope: 'production.step-report.create.v4',
+        scope: 'production.step-report.create.v5',
         key: context.idempotencyKey,
       }),
     );
@@ -91,7 +91,7 @@ describe('ProductionReportingService', () => {
       access,
     );
     expect(idempotency.execute).toHaveBeenCalledWith(
-      expect.objectContaining({ scope: 'production.step-report.correct.v5' }),
+      expect.objectContaining({ scope: 'production.step-report.correct.v6' }),
     );
     expect(reporting.correctReport).toHaveBeenCalledWith(
       '1',

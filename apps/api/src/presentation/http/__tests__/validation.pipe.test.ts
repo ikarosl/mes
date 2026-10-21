@@ -39,11 +39,11 @@ describe('HTTP validation pipe', () => {
         { type: 'body', metatype: CreateUserDto },
       ),
     ).rejects.toMatchObject({
-      response: { code: 'VALIDATION_ERROR', message: '请求包含未允许的字段：isAdmin' },
+      response: { code: 'VALIDATION_ERROR', message: '提交内容格式不正确，请重新打开页面后重试' },
     });
   });
 
-  it('includes the complete nested field path in validation errors', async () => {
+  it('rejects invalid nested fields with a Chinese validation message', async () => {
     const pipe = createValidationPipe();
 
     await expect(
@@ -62,7 +62,7 @@ describe('HTTP validation pipe', () => {
     ).rejects.toMatchObject({
       response: {
         code: 'VALIDATION_ERROR',
-        message: expect.stringContaining('specValues[0].key'),
+        message: '输入值不能为空',
       },
     });
   });
@@ -78,7 +78,7 @@ describe('HTTP validation pipe', () => {
         error as { getResponse: () => { code: string; message: string } }
       ).getResponse();
       expect(response).toMatchObject({ code: 'VALIDATION_ERROR' });
-      expect(response.message).toContain('itemCode:');
+      expect(response.message).toBe('输入值长度不能超过 100 个字符');
       expect(response.message).not.toMatch(/\b(must|should|be|characters|property)\b/i);
     }
   });

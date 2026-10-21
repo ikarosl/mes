@@ -438,10 +438,20 @@ describe('productionApi', () => {
       {
         url: '/production/material-outbounds',
         params: { page: 1, pageSize: 20, status: 'pending_picking' },
+        signal: undefined,
+        skipErrorHandling: true,
       },
-      { url: '/production/material-outbounds/8' },
-      { url: '/production/material-outbounds/batch-options', skipErrorHandling: true },
-      { url: '/production/batches/3/material-outbound-candidates' },
+      { url: '/production/material-outbounds/8', signal: undefined, skipErrorHandling: true },
+      {
+        url: '/production/material-outbounds/batch-options',
+        signal: undefined,
+        skipErrorHandling: true,
+      },
+      {
+        url: '/production/batches/3/material-outbound-candidates',
+        signal: undefined,
+        skipErrorHandling: true,
+      },
       {
         url: '/production/material-outbounds/8/actions/confirm',
         method: 'POST',
@@ -472,8 +482,13 @@ describe('productionApi', () => {
         skipErrorHandling: true,
       },
       { url: '/production/purchase-inbounds/7', signal: undefined, skipErrorHandling: true },
-      { url: '/production/inventory-batches', params: { page: 1, pageSize: 20 } },
-      { url: '/production/inventory-batches/9' },
+      {
+        url: '/production/inventory-batches',
+        params: { page: 1, pageSize: 20 },
+        signal: undefined,
+        skipErrorHandling: true,
+      },
+      { url: '/production/inventory-batches/9', signal: undefined, skipErrorHandling: true },
     ]);
   });
 

@@ -2,6 +2,17 @@
 
 本页只维护未完成实施、待决策及待验收事项；实施与验收状态分别标注，已完成检查的运行流水由 Git 保存。验收使用当前工作区启动的服务，入口按根 [README](../README.md#快速开始测试环境) 确认，不沿用历史临时端口。正式测试须等用户明确通知，再按 [AGENTS.md](../AGENTS.md#数据库与交付约定)由 Luna MAX 子代理全量验证；应用类型、构建与启动通过不代表用户验收或正式测试通过。当前规则从模块所有者读取，ADR 用于追查理由与取代关系。
 
+## 存量测试恢复：待正式测试授权
+
+状态：用户授权执行本地 CI 门禁、清理废弃测试，暂不完善测试集。高重要性旧用例按[测试策略](testing-strategy.md#暂缓完善测试集期间的存量清理)原位仅保留测试说明注释和可见 TODO，不保留旧实现，不能将门禁通过解释为这些场景已验证或用户验收通过。用户明确进入正式测试阶段后，由指定子代理恢复并全量验证。
+
+- [ ] 最高优先级：修复历史完整 down 链的真实重复外键缺陷。`202609240001-unified-inbound-allocation-target.up.sql` 已重建 `fk_inbound_detail_batch_item/product/variant` 及 `fk_inventory_transaction_finished_detail`，其 down 又直接添加同名约束，真实 MySQL 首先报 `ER_FK_DUP_NAME`。整链 up/down/up 用例的测试说明在 `tests/integration/production/migrations/production-scrap-supplement-migration.mysql.test.ts` 原位保留为 TODO；这是未修复缺陷，不是废弃业务规则。不得修改已执行 SQL 或以关闭外键、截断链、忽略错误让断言通过；确定符合不可变迁移规则的回滚准备与边界执行方案后，恢复整链及索引一致性验证。当前独立 `migration-fresh` 仍执行全量 up、重复 up 和状态检查，但不能证明完整 down 链可用。
+- [ ] 最高优先级恢复库存流水不可修改／不可删除、真实来源约束、预留与负库存保护；入口在 `tests/integration/inventory/inventory-ledger.mysql.test.ts` 及 `tests/integration/production/materials/`，按现行公共入出库单据重建共享夹具。
+- [ ] 恢复生产执行、报工冲销唯一、异常与报废补料、事务审计回滚、并发分配及持久化集成；入口在 `tests/integration/production/execution/`、`persistence/`。以任务锁版、自动业务编号、执行进入收尾及批准产出清单为准，不恢复工单跨任务锁版或旧完成数量模型。
+- [ ] 恢复 API 相邻 TODO 中的任务创建／取消锁序、结案损耗、正式产出资格、路线上下文快照及 BOM 资格保护，核对幂等重放、权限与当前来源互斥规则。
+- [ ] 恢复 `tests/integration/idempotency/create-batch-http-pipeline.mysql.test.ts` 的 HTTP 安全、鉴权及幂等闭环，使用显式路线和自动编号夹具；恢复 `tests/integration/inventory/migrations/inventory-item-balance-migration.mysql.test.ts` 在当前完整迁移链上的历史投影回填及 down/up，以合法公共入库来源准备流水，不截断迁移链规避来源约束。
+- [ ] 恢复管理端相邻 TODO 中的仓储子页办理、异常处理弹窗、批准产出完工资格、菜单路由上下文及任务创建数量／日期保护；废弃的产品默认路线与自动选路行为不作为恢复目标。
+
 ## 弹窗禁止点击外部关闭：待验收
 
 状态：已实施，待用户黑盒、UI 验收及正式测试。统一关闭约束见管理端[路由与弹窗规范](../apps/admin-web/docs/route-dialogs-and-tabs.md#3-联动流程)；仅管理端交互变更，无 API 契约、数据库、数据所有权或 migration 变更。

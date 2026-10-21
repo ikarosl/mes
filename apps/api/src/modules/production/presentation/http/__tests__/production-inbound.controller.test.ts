@@ -8,19 +8,19 @@ describe('ProductionInboundController contract', () => {
   it('uses inventory permissions for stock and supply-demand reads', () => {
     expect(
       Reflect.getMetadata(REQUIRED_PERMISSION, ProductionInboundController.prototype.inventory),
-    ).toBe(PERMISSIONS.production.inventory.view);
+    ).toBe(PERMISSIONS.warehouse.inventory.view);
     expect(
       Reflect.getMetadata(
         REQUIRED_PERMISSION,
         ProductionInboundController.prototype.materialSupplyDemand,
       ),
-    ).toBe(PERMISSIONS.production.inventory.view);
+    ).toBe(PERMISSIONS.warehouse.inventory.view);
     expect(
       Reflect.getMetadata(
         REQUIRED_PERMISSION,
         ProductionInboundController.prototype.materialDemandTrace,
       ),
-    ).toBe(PERMISSIONS.production.inventory.view);
+    ).toBe(PERMISSIONS.warehouse.inventory.view);
   });
 
   it('forwards the material variant when listing demand trace', async () => {
