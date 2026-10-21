@@ -11,8 +11,8 @@ export const stepReworkRecoveredQuantity = (
   >,
 ): number => Number(step.effectiveNormalQuantity) - Number(step.effectiveDirectNormalQuantity);
 
-/** 只把服务端可信分类换成视觉宽度，不补差额，也不参与报工资格。 */
-export const stepQuotaDistributionSegments = (
+/** 分类展示须同时满足服务端可信标记及数量守恒；不补差额，也不参与报工资格。 */
+export const isStepQuotaDistributionReliable = (
   step: Pick<
     BatchStepExecutionRecordItem,
     | 'quotaDistribution'
@@ -20,29 +20,26 @@ export const stepQuotaDistributionSegments = (
     | 'availableReportQuantity'
     | 'upperLimitQuantity'
   >,
-) => {
+): boolean => {
   const distribution = step.quotaDistribution;
-  if (!distribution.isReliable) return null;
-  const segments = [
-    { key: 'normal', label: '正常', quantity: step.effectiveNormalQuantity },
-    { key: 'scrapped', label: '已报废', quantity: distribution.scrappedQuantity },
-    { key: 'processing', label: '处理中', quantity: distribution.processingQuantity },
-    { key: 'terminated', label: '已终止未恢复', quantity: distribution.terminatedQuantity },
-    { key: 'available', label: '剩余额度', quantity: step.availableReportQuantity },
+  if (!distribution.isReliable) return false;
+  const quantities = [
+    step.effectiveNormalQuantity,
+    distribution.scrappedQuantity,
+    distribution.processingQuantity,
+    distribution.terminatedQuantity,
+    step.availableReportQuantity,
   ];
   const upperLimit = Number(step.upperLimitQuantity);
   if (
     !Number.isSafeInteger(upperLimit) ||
     upperLimit < 0 ||
-    segments.some(
-      ({ quantity }) =>
+    quantities.some(
+      (quantity) =>
         quantity === null || !Number.isSafeInteger(Number(quantity)) || Number(quantity) < 0,
     ) ||
-    segments.reduce((total, segment) => total + Number(segment.quantity), 0) !== upperLimit
+    quantities.reduce((total: number, quantity) => total + Number(quantity), 0) !== upperLimit
   )
-    return null;
-  if (upperLimit === 0) return [];
-  return segments
-    .filter(({ quantity }) => Number(quantity) > 0)
-    .map((segment) => ({ ...segment, width: `${(Number(segment.quantity) / upperLimit) * 100}%` }));
+    return false;
+  return true;
 };

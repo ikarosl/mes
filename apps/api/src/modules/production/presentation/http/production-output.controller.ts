@@ -33,7 +33,10 @@ import { VersionedCommandDto } from '../../../../presentation/http/dto/versioned
 export class ProductionOutputController {
   constructor(private readonly service: ProductionOutputService) {}
   @Get()
-  @RequirePermission(PERMISSIONS.production.tasks.view)
+  @RequirePermission([
+    PERMISSIONS.production.tasks.view,
+    PERMISSIONS.production.executionRecords.view,
+  ])
   async detail(
     @Param() { batchId }: TerminationBatchParamDto,
     @Res() response: { json(body: ProductionOutputDetail | null): void },

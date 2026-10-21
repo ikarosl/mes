@@ -98,6 +98,8 @@
 
 采购／成品入库共用 `warehouse:inbound:view`，生产领料出库独立使用 `warehouse:outbound:view`。其他入库／出库分类继续分别使用 `warehouse:other-inbounds:view`／`warehouse:other-outbounds:view`，各写动作独立授权。同一方向页面的菜单可进入不代表取得所有分类或接口权限。实际读取与写入边界见 [Production 领料接口](../../production/docs/database/demand-allocation-and-outbound.md#http-权限与消费者)、[入库读取](../../production/docs/database/inventory-ledger-and-inbound.md)、[到货查询](../../procurement/docs/receipt-queries.md)和[到货处置](../../procurement/docs/receipts.md)。
 
+生产任务与生产报工记录分别使用 `production:tasks:view`、`production:execution-records:view`，两者均是 `production:view` 的直接 `page` 子项。报工记录路由为 `/production/execution-records`，共享读取及员工范围由 [Production 接口矩阵](../../production/docs/database/execution-traceability-quality.md#http-读取权限与消费者)维护。成对 migration `202610190001-production-execution-records-view-permission` 只发布新的报工页面目录项，不复制旧任务查看权限的角色授权；回滚删除新目录项及其授权，不调整其他角色配置。已有环境执行迁移后须明确分配新页面权限，demo 仅在显式加载时按职责配置生产演示角色。
+
 ## 1.5 `user_roles`
 
 | 字段         | 类型              | 说明     |

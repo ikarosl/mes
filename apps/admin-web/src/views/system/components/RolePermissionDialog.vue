@@ -54,7 +54,7 @@
     </div>
 
     <InlineHint class="perm-selection-hint">
-      勾选父节点会批量选择本级及全部下级；目录层级不表示授权继承。
+      勾选父节点会批量选择本级及全部下级；勾选子节点会补选各级祖先自身权限，半选祖先也会保存其自身权限。目录层级不表示后端授权继承。
     </InlineHint>
 
     <div class="perm-body">
@@ -240,6 +240,18 @@ const collectIds = (node: SystemPermissionTreeNode): string[] => [
   ...(node.children ?? []).flatMap((c) => collectIds(c)),
 ];
 
+const withAncestorIds = (ids: Iterable<string>): Set<string> => {
+  const next = new Set(ids);
+  const addAncestors = (node: SystemPermissionTreeNode): void => {
+    for (const child of node.children ?? []) {
+      addAncestors(child);
+      if (next.has(child.id)) next.add(node.id);
+    }
+  };
+  for (const node of tree.value) addAncestors(node);
+  return next;
+};
+
 const isChecked = (node: SystemPermissionTreeNode): boolean => {
   const ids = collectIds(node);
   return ids.length > 0 && ids.every((id) => checkedIds.value.has(id));
@@ -258,7 +270,7 @@ const handleCheck = (node: SystemPermissionTreeNode, checked: boolean | string |
     if (checked) next.add(id);
     else next.delete(id);
   }
-  checkedIds.value = next;
+  checkedIds.value = withAncestorIds(next);
 };
 
 const handleNodeClick = (node: SystemPermissionTreeNode): void => {
@@ -289,7 +301,7 @@ const setDetailExpanded = async (expanded: boolean): Promise<void> => {
 };
 
 const resetAssigned = (): void => {
-  checkedIds.value = new Set(initialIds.value);
+  checkedIds.value = withAncestorIds(initialIds.value);
 };
 
 const resetDialog = (): void => {
@@ -322,8 +334,8 @@ const loadPermissions = async (roleId: string): Promise<void> => {
       systemApi.rolePermissions(roleId),
     ]);
     tree.value = buildTree(permissions);
-    checkedIds.value = new Set(detail.permissionIds);
-    initialIds.value = [...detail.permissionIds];
+    checkedIds.value = withAncestorIds(detail.permissionIds);
+    initialIds.value = [...checkedIds.value];
     activeNode.value = tree.value[0] ?? null;
   } catch (error) {
     EMessage.error(error, '角色权限加载失败');
@@ -338,7 +350,7 @@ const submitPermissions = async (): Promise<void> => {
   loading.value = true;
   try {
     await systemApi.setRolePermissions(props.role.id, {
-      permissionIds: [...checkedIds.value],
+      permissionIds: [...withAncestorIds(checkedIds.value)],
     });
     EMessage.success('角色权限已保存');
     emit('update:visible', false);

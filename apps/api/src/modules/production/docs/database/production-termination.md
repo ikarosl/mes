@@ -2,6 +2,8 @@
 
 Production 所有结案、产出草稿和批准清单；质检记录由 Quality 所有，Production 只保存引用。正常生产、短产、提前停止和研发任务共用同一结案流程。长期决策见 [ADR-0011](../../../../../../../docs/adr/0011-task-closeout-output-list-and-finished-goods-inbound.md)；需求纠错见[需求设计](demand-allocation-and-outbound.md#正式需求更正与替代)。
 
+产出详情、收尾检查／详情和撤回核对由生产任务页与生产报工记录页共用，读取权限见[生产执行接口矩阵](execution-traceability-quality.md#http-读取权限与消费者)。页面查看不授予写入资格：进入／逐项处理／撤回收尾仍要求 `production:tasks:terminate`，产出草稿、物料实核及送审等仍要求 `production:tasks:manage-output`，审批决定仍由 Approval 独立鉴权。
+
 **产线草稿 → 质检留存当次记录 → 产线管理员核对清单 → 所属工单负责人结案审批 → 仓管依据批准清单办理入库。** 质检记录是业务事实，不是通用审批的一层；质检无权改写产线草稿，产线管理员也不能覆盖质检记录。成品入库由[独立入库用例](finished-goods-inbound.md)办理，批准不增加库存。
 
 ## 流程与状态

@@ -267,7 +267,7 @@ const productionMenus = [
   {
     title: '生产报工记录',
     path: '/production/execution-records',
-    permission: PERMISSIONS.production.tasks.view,
+    permission: PERMISSIONS.production.executionRecords.view,
   },
   {
     title: '生产追溯',

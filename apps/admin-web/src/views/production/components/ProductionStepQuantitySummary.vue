@@ -1,55 +1,26 @@
 <template>
-  <div class="step-quantity-summary">
+  <div
+    class="step-quantity-summary"
+    :class="{ 'is-compact': compact }"
+  >
+    <span class="quota-unit">数量（{{ step.unit }}）</span>
     <div class="quota-values">
-      <span
-        ><i
-          v-if="showDistribution"
-          class="normal-swatch"
-          aria-hidden="true"
-        />正常 <strong>{{ formatQuantity(step.effectiveNormalQuantity) }}</strong>
-        {{ step.unit }}</span
-      >
-      <span
-        ><i
-          v-if="showDistribution"
-          class="scrapped-swatch"
-          aria-hidden="true"
-        />已报废 <strong>{{ classificationQuantity(distribution.scrappedQuantity) }}</strong>
-        {{ step.unit }}</span
-      >
-      <span
-        :class="{ 'no-processing': displayable && Number(distribution.processingQuantity) === 0 }"
-        ><i
-          v-if="showDistribution"
-          class="processing-swatch"
-          aria-hidden="true"
-        />处理中 <strong>{{ classificationQuantity(distribution.processingQuantity) }}</strong>
-        {{ step.unit }}</span
-      >
-      <span
-        ><i
-          v-if="showDistribution"
-          class="available-swatch"
-          aria-hidden="true"
-        />剩余额度 <strong>{{ formatQuantity(step.availableReportQuantity) }}</strong>
-        {{ step.unit }}</span
-      >
-    </div>
-    <div
-      v-if="showDistribution && segments?.length"
-      class="distribution-bar"
-      role="img"
-      :aria-label="
-        segments.map((segment) => `${segment.label} ${segment.quantity} ${step.unit}`).join('，')
-      "
-    >
-      <span
-        v-for="segment in segments"
-        :key="segment.key"
-        :class="`distribution-segment ${segment.key}-swatch`"
-        :style="{ width: segment.width }"
-        :title="`${segment.label} ${segment.quantity} ${step.unit}`"
-      />
+      <div class="quota-tile normal-value">
+        <span>正常</span>
+        <strong>{{ formatQuantity(step.effectiveNormalQuantity) }}</strong>
+      </div>
+      <div class="quota-tile scrapped-value">
+        <span>已报废</span>
+        <strong>{{ classificationQuantity(distribution.scrappedQuantity) }}</strong>
+      </div>
+      <div class="quota-tile processing-value">
+        <span>处理中</span>
+        <strong>{{ classificationQuantity(distribution.processingQuantity) }}</strong>
+      </div>
+      <div class="quota-tile available-value">
+        <span>剩余可报</span>
+        <strong>{{ formatQuantity(step.availableReportQuantity) }}</strong>
+      </div>
     </div>
     <div class="normal-source">
       <span>正常来源：直接正常 {{ formatQuantity(step.effectiveDirectNormalQuantity) }}</span>
@@ -85,35 +56,31 @@ import { BATCH_STEP_REWORK_RESULT_LABELS } from '@company/constants';
 import type { ProductionWorkerTaskItem } from '@company/contracts';
 import { formatQuantity } from '../production-status';
 import {
-  stepQuotaDistributionSegments,
+  isStepQuotaDistributionReliable,
   stepReworkRecoveredQuantity,
 } from '../production-step-quantity-presentation';
 import ProductionQuotaBasis from './ProductionQuotaBasis.vue';
 
 defineOptions({ name: 'ProductionStepQuantitySummary' });
-const props = withDefaults(
-  defineProps<{
-    step: Pick<
-      ProductionWorkerTaskItem,
-      | 'status'
-      | 'unit'
-      | 'effectiveNormalQuantity'
-      | 'effectiveDirectNormalQuantity'
-      | 'availableReportQuantity'
-      | 'upperLimitQuantity'
-      | 'activatedSupplementInputQuantity'
-      | 'pendingSupplementInputQuantity'
-      | 'quotaDistribution'
-    >;
-    plannedQuantity: string;
-    showReopenHint: boolean;
-    showDistribution?: boolean;
-  }>(),
-  { showDistribution: false },
-);
+const props = defineProps<{
+  compact?: boolean;
+  step: Pick<
+    ProductionWorkerTaskItem,
+    | 'status'
+    | 'unit'
+    | 'effectiveNormalQuantity'
+    | 'effectiveDirectNormalQuantity'
+    | 'availableReportQuantity'
+    | 'upperLimitQuantity'
+    | 'activatedSupplementInputQuantity'
+    | 'pendingSupplementInputQuantity'
+    | 'quotaDistribution'
+  >;
+  plannedQuantity: string;
+  showReopenHint: boolean;
+}>();
 const distribution = computed(() => props.step.quotaDistribution);
-const segments = computed(() => stepQuotaDistributionSegments(props.step));
-const displayable = computed(() => segments.value !== null);
+const displayable = computed(() => isStepQuotaDistributionReliable(props.step));
 const classificationQuantity = (quantity: string | null): string =>
   displayable.value && quantity !== null ? formatQuantity(quantity) : '待核对';
 </script>
@@ -123,8 +90,8 @@ const classificationQuantity = (quantity: string | null): string =>
   display: grid;
   gap: 8px;
   min-width: 0;
+  container-type: inline-size;
 }
-.quota-values,
 .normal-source {
   display: flex;
   align-items: baseline;
@@ -132,58 +99,101 @@ const classificationQuantity = (quantity: string | null): string =>
   gap: 4px 14px;
 }
 .quota-values {
-  color: var(--el-text-color-primary);
-  font-size: 13px;
+  display: grid;
+  width: 100%;
+  max-width: 640px;
+  justify-self: start;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-auto-rows: 1fr;
+  gap: 8px;
 }
-.quota-values > span,
 .normal-source > span {
   white-space: nowrap;
 }
-.quota-values strong {
-  font-size: 15px;
-  font-weight: 600;
-}
-.quota-values i {
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  margin-right: 5px;
-  border-radius: 2px;
-}
-.distribution-bar {
+.quota-tile {
   display: flex;
-  height: 8px;
-  overflow: hidden;
-  border-radius: 4px;
-  background: var(--el-fill-color-light);
+  min-width: 0;
+  min-height: 88px;
+  box-sizing: border-box;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-left: 3px solid var(--quota-color);
+  border-radius: 6px;
+  background: var(--quota-background);
+  color: var(--el-text-color-regular);
+  font-size: 13px;
+  line-height: 1.4;
 }
-.distribution-segment {
-  flex: 0 0 auto;
+.quota-tile strong {
+  color: var(--quota-color);
+  font-size: 20px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
 }
-.normal-swatch {
-  background: var(--el-color-primary);
+.normal-value {
+  --quota-color: var(--el-color-primary);
+  --quota-background: var(--el-color-primary-light-9);
 }
-.scrapped-swatch {
-  background: var(--el-color-danger);
+.scrapped-value {
+  --quota-color: var(--el-color-danger);
+  --quota-background: var(--el-color-danger-light-9);
 }
-.processing-swatch {
-  background: var(--el-color-warning);
+.processing-value {
+  --quota-color: var(--el-color-warning);
+  --quota-background: var(--el-color-warning-light-9);
 }
-.available-swatch {
-  background: var(--el-fill-color-darker);
+.available-value {
+  --quota-color: var(--el-text-color-secondary);
+  --quota-background: var(--el-fill-color-light);
 }
-.terminated-swatch {
-  background: var(--el-text-color-placeholder);
+@container (max-width: 560px) {
+  .quota-values {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.is-compact .quota-values {
+  display: flex;
+  flex-wrap: wrap;
+  max-width: none;
+  gap: 4px 14px;
+}
+.is-compact .quota-tile {
+  min-height: 0;
+  flex-direction: row;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  white-space: nowrap;
+}
+.is-compact .quota-tile::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--quota-color);
+}
+.is-compact .quota-tile strong {
+  color: var(--el-text-color-primary);
+  font-size: 13px;
 }
 .normal-source {
   gap: 4px;
   color: var(--el-text-color-regular);
   font-size: 12px;
 }
-.no-processing,
+.quota-unit,
 .terminated-quantity {
   color: var(--el-text-color-secondary);
 }
+.quota-unit,
 .terminated-quantity,
 .classification-unavailable {
   font-size: 12px;

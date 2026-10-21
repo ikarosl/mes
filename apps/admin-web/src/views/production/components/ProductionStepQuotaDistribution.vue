@@ -1,83 +1,59 @@
 <template>
   <div class="step-quota-distribution">
+    <span class="quota-unit">数量（{{ step.unit }}）</span>
     <div class="quota-values">
-      <span class="quota-unit">数量（{{ step.unit }}）</span>
-      <span
-        ><i
-          class="normal-swatch"
-          aria-hidden="true"
-        />正常 <strong>{{ formatQuantity(step.effectiveNormalQuantity) }}</strong></span
-      >
+      <div class="quota-tile normal-value">
+        <span>正常</span>
+        <strong>{{ formatQuantity(step.effectiveNormalQuantity) }}</strong>
+      </div>
       <button
         v-if="!displayable || Number(distribution.scrappedQuantity) > 0"
         type="button"
-        class="quota-value-action"
+        class="quota-tile quota-value-action scrapped-value"
         :disabled="disabled"
         aria-label="查看报废明细"
         @click="$emit('view-scraps')"
       >
-        <i
-          class="scrapped-swatch"
-          aria-hidden="true"
-        />已报废 <strong>{{ classificationQuantity(distribution.scrappedQuantity) }}</strong
-        ><span class="detail-action">查看明细</span>
+        <span>已报废</span>
+        <strong>{{ classificationQuantity(distribution.scrappedQuantity) }}</strong>
+        <span class="detail-action">查看明细</span>
       </button>
-      <span v-else
-        ><i
-          class="scrapped-swatch"
-          aria-hidden="true"
-        />已报废 <strong>0</strong></span
+      <div
+        v-else
+        class="quota-tile scrapped-value"
       >
+        <span>已报废</span>
+        <strong>0</strong>
+      </div>
       <button
         v-if="displayable && Number(distribution.processingQuantity) > 0"
         type="button"
-        class="quota-value-action processing-value"
+        class="quota-tile quota-value-action processing-value"
         :disabled="disabled"
         :aria-expanded="processingExpanded"
         :aria-controls="`step-processing-${step.stepRecordId}`"
         @click="$emit('toggle-processing')"
       >
-        <i
-          class="processing-swatch"
-          aria-hidden="true"
-        />处理中 <strong>{{ classificationQuantity(distribution.processingQuantity) }}</strong
-        ><span class="detail-action">{{ processingExpanded ? '收起明细' : '查看明细' }}</span>
+        <span>处理中</span>
+        <strong>{{ classificationQuantity(distribution.processingQuantity) }}</strong>
+        <span class="detail-action">{{ processingExpanded ? '收起明细' : '查看明细' }}</span>
       </button>
-      <span
+      <div
         v-else
-        :class="{ 'no-processing': displayable }"
-        ><i
-          class="processing-swatch"
-          aria-hidden="true"
-        />处理中 <strong>{{ classificationQuantity(distribution.processingQuantity) }}</strong
-        ><span
+        class="quota-tile processing-value"
+      >
+        <span>处理中</span>
+        <strong>{{ classificationQuantity(distribution.processingQuantity) }}</strong>
+        <span
           v-if="displayable"
           class="quiet-note"
           >无待处理异常</span
-        ></span
-      >
-      <span
-        ><i
-          class="available-swatch"
-          aria-hidden="true"
-        />剩余额度 <strong>{{ formatQuantity(step.availableReportQuantity) }}</strong></span
-      >
-    </div>
-    <div
-      v-if="segments?.length"
-      class="distribution-bar"
-      role="img"
-      :aria-label="
-        segments.map((segment) => `${segment.label} ${segment.quantity} ${step.unit}`).join('，')
-      "
-    >
-      <span
-        v-for="segment in segments"
-        :key="segment.key"
-        :class="`distribution-segment ${segment.key}-swatch`"
-        :style="{ width: segment.width }"
-        :title="`${segment.label} ${segment.quantity} ${step.unit}`"
-      />
+        >
+      </div>
+      <div class="quota-tile available-value">
+        <span>剩余可报</span>
+        <strong>{{ formatQuantity(step.availableReportQuantity) }}</strong>
+      </div>
     </div>
     <ProductionQuotaBasis
       :quota="step"
@@ -163,7 +139,7 @@ import type {
 } from '@company/contracts';
 import { REWORK_STATUS_LABELS } from '@company/constants';
 import { formatQuantity } from '../production-status';
-import { stepQuotaDistributionSegments } from '../production-step-quantity-presentation';
+import { isStepQuotaDistributionReliable } from '../production-step-quantity-presentation';
 import ProductionQuotaBasis from './ProductionQuotaBasis.vue';
 
 const props = defineProps<{
@@ -179,8 +155,7 @@ defineEmits<{
   'view-report': [report: BatchStepReportReference];
 }>();
 const distribution = computed(() => props.step.quotaDistribution);
-const segments = computed(() => stepQuotaDistributionSegments(props.step));
-const displayable = computed(() => segments.value !== null);
+const displayable = computed(() => isStepQuotaDistributionReliable(props.step));
 const classificationQuantity = (quantity: string | null): string =>
   displayable.value && quantity !== null ? formatQuantity(quantity) : '待核对';
 const detailGroups = computed(() =>
@@ -203,8 +178,8 @@ const detailKey = (
   flex: 0 0 100%;
   gap: 6px;
   min-width: 0;
+  container-type: inline-size;
 }
-.quota-values,
 .quota-basis,
 .processing-detail-row {
   display: flex;
@@ -212,21 +187,11 @@ const detailKey = (
   flex-wrap: wrap;
   gap: 6px 16px;
 }
-.quota-values {
-  color: var(--el-text-color-primary);
-  font-size: 13px;
-}
-.quota-values > span,
 .quota-value-action {
   display: inline-flex;
   align-items: center;
   gap: 5px;
 }
-.quota-values strong {
-  font-size: 15px;
-  font-weight: 600;
-}
-.quota-values i,
 .quota-basis i {
   width: 7px;
   height: 7px;
@@ -257,35 +222,68 @@ const detailKey = (
 .quota-value-action:hover .detail-action {
   text-decoration: underline;
 }
-.no-processing,
 .quiet-note,
 .quota-unit {
   color: var(--el-text-color-secondary);
 }
-.quiet-note {
+.quiet-note,
+.quota-unit {
   font-size: 12px;
 }
-.distribution-bar {
+.quota-values {
+  display: grid;
+  width: 100%;
+  max-width: 640px;
+  justify-self: start;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-auto-rows: 1fr;
+  gap: 8px;
+}
+.quota-tile {
   display: flex;
-  height: 8px;
-  overflow: hidden;
-  border-radius: 4px;
-  background: var(--el-fill-color-light);
+  min-width: 0;
+  min-height: 88px;
+  box-sizing: border-box;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-left: 3px solid var(--quota-color);
+  border-radius: 6px;
+  background: var(--quota-background);
+  color: var(--el-text-color-regular);
+  font-size: 13px;
+  line-height: 1.4;
 }
-.distribution-segment {
-  flex: 0 0 auto;
+.quota-tile strong {
+  color: var(--quota-color);
+  font-size: 20px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
 }
-.normal-swatch {
-  background: var(--el-color-primary);
+.normal-value {
+  --quota-color: var(--el-color-primary);
+  --quota-background: var(--el-color-primary-light-9);
 }
-.scrapped-swatch {
-  background: var(--el-color-danger);
+.scrapped-value {
+  --quota-color: var(--el-color-danger);
+  --quota-background: var(--el-color-danger-light-9);
 }
-.processing-swatch {
-  background: var(--el-color-warning);
+.processing-value {
+  --quota-color: var(--el-color-warning);
+  --quota-background: var(--el-color-warning-light-9);
 }
-.available-swatch {
-  background: var(--el-fill-color-darker);
+.available-value {
+  --quota-color: var(--el-text-color-secondary);
+  --quota-background: var(--el-fill-color-light);
+}
+@container (max-width: 560px) {
+  .quota-values {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 .terminated-swatch {
   background: var(--el-text-color-placeholder);

@@ -27,7 +27,10 @@ import { TerminationBatchParamDto } from './dto/production-termination.dto.js';
 export class ProductionCloseoutController {
   constructor(private readonly service: ProductionCloseoutService) {}
   @Get()
-  @RequirePermission(PERMISSIONS.production.tasks.view)
+  @RequirePermission([
+    PERMISSIONS.production.tasks.view,
+    PERMISSIONS.production.executionRecords.view,
+  ])
   async detail(
     @Param() { batchId }: TerminationBatchParamDto,
     @Res() response: { json(body: BatchCloseoutDetail | null): void },
@@ -47,7 +50,10 @@ export class ProductionCloseoutController {
     return this.service.begin(batchId, body, context);
   }
   @Get('withdraw-check')
-  @RequirePermission(PERMISSIONS.production.tasks.view)
+  @RequirePermission([
+    PERMISSIONS.production.tasks.view,
+    PERMISSIONS.production.executionRecords.view,
+  ])
   withdrawalCheck(@Param() { batchId }: TerminationBatchParamDto) {
     return this.service.withdrawalCheck(batchId);
   }

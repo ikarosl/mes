@@ -196,6 +196,11 @@ up 删除 allocation 的采购归属列、FK、索引及对应 CHECK，重建最
 暂停 Procurement 采购／补单写入，切换匹配 API 和管理端。up 允许已有补单，以单条 ALTER 删除采购行 origin_allocation_id、对应外键／支撑索引及质量分配引用 CHECK，保留原采购及原到货组合 FK，补充两项来源空值成对 CHECK。所有现有采购身份、计划、状态、版本、建单说明、到货、检查、分配、真实入退及库存事实保持；操作日志和旧 HTTP 幂等记录不清理，不重置开发库。
 
 down 在任何永久 DDL 前拒绝已有质量补单：仅原到货无法确定曾选择的某条质量分配，不能从当前轮或全局日志猜造引用。允许回退时只恢复空列、其外键／支撑索引和旧 CHECK；已有普通及超量采购来源保持。MySQL DDL 中断仍按通用规则核对结构和迁移登记。当前业务约束见[采购数据库](../../../apps/api/src/modules/procurement/docs/database.md#质量补单到货来源迁移)。
+### 202610190001：独立生产报工记录查看
+
+升级与回滚时暂停角色授权编辑并同步切换应用。up 只在 `production:view` 下发布 `production:execution-records:view` 页面目录，路由为 `/production/execution-records`；不改变业务表 schema，也不复制 `production:tasks:view` 的角色授权。已有环境需明确分配新权限，刷新管理端会话后生效；演示生产角色通过显式 demo 加载恢复，不由迁移写入。
+
+down 在事务内移除新权限及其角色关联，其他目录与授权保持原有内容。回滚应用与目录须同版，不将此迁移文件存在视为已执行或用户验收通过；共享读取和写入边界见 [Production](../../../apps/api/src/modules/production/docs/database/execution-traceability-quality.md#http-读取权限与消费者)。
 
 ## 验证边界
 

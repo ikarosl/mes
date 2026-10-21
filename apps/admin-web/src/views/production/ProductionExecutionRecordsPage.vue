@@ -275,6 +275,30 @@
                   @view-report="reportTrace.open"
                 />
               </header>
+              <AbnormalReworkPanel
+                v-if="hasVisitedStep(step.stepRecordId)"
+                v-model:expansion="processingExpansion"
+                :batch-no="record.batchNo"
+                :content-visible="isStepExpanded(step.stepRecordId)"
+                :disabled="contextLoading || bulkLocked"
+                :dispositions="step.abnormalDispositions"
+                :reworks="reworks.filter((item) => item.stepRecordId === step.stepRecordId)"
+                :pending-keys="pendingKeys"
+                :unit="step.unit"
+                :source-step="step"
+                :route-steps="record.steps"
+                :candidate-loader="loadSupplementCandidates"
+                :plan-loader="loadScrapSupplementPlan"
+                :plan-saver="saveScrapSupplementPlan"
+                :plan-confirmer="handleApproveScrapSupplement"
+                :intent-status-loader="getSupplementIntentStatus"
+                :intent-resetter="resetSupplementIntent"
+                @view-report="reportTrace.open"
+                @approve="handleApproveRework"
+                @reject="handleRejectDisposition"
+                @start="handleStartRework"
+                @complete="(rework) => reworkEditor.open(rework, step)"
+              />
               <div
                 v-if="hasVisitedStep(step.stepRecordId)"
                 v-show="isStepExpanded(step.stepRecordId)"
@@ -412,30 +436,6 @@
                   @reverse="(report) => reportEditor.open('reverse', step, report)"
                 />
               </div>
-              <AbnormalReworkPanel
-                v-if="hasVisitedStep(step.stepRecordId)"
-                v-model:expansion="processingExpansion"
-                :batch-no="record.batchNo"
-                :content-visible="isStepExpanded(step.stepRecordId)"
-                :disabled="contextLoading || bulkLocked"
-                :dispositions="step.abnormalDispositions"
-                :reworks="reworks.filter((item) => item.stepRecordId === step.stepRecordId)"
-                :pending-keys="pendingKeys"
-                :unit="step.unit"
-                :source-step="step"
-                :route-steps="record.steps"
-                :candidate-loader="loadSupplementCandidates"
-                :plan-loader="loadScrapSupplementPlan"
-                :plan-saver="saveScrapSupplementPlan"
-                :plan-confirmer="handleApproveScrapSupplement"
-                :intent-status-loader="getSupplementIntentStatus"
-                :intent-resetter="resetSupplementIntent"
-                @view-report="reportTrace.open"
-                @approve="handleApproveRework"
-                @reject="handleRejectDisposition"
-                @start="handleStartRework"
-                @complete="(rework) => reworkEditor.open(rework, step)"
-              />
             </article>
           </template>
           <el-empty

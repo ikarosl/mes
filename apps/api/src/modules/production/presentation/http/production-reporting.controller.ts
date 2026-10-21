@@ -47,19 +47,20 @@ export class ProductionReportingController {
   constructor(private readonly service: ProductionReportingService) {}
 
   @Get('execution-batches')
-  @RequirePermission(PERMISSIONS.production.tasks.view)
+  @RequirePermission(PERMISSIONS.production.executionRecords.view)
   listExecutionBatches(@Query() query: ProductionBatchQueryDto) {
     return this.service.listExecutionBatches(query);
   }
 
   @Get('batches/:batchId/execution-records')
-  @RequirePermission(PERMISSIONS.production.tasks.view)
+  @RequirePermission(PERMISSIONS.production.executionRecords.view)
   getBatchExecution(@Param() { batchId }: BatchIdParamDto, @CurrentUser() user: UserProfile) {
     return this.service.getBatchExecution(batchId, reportingAccess(user));
   }
 
   @Get('batches/:batchId/step-records/:recordId/reports')
   @RequirePermission([
+    PERMISSIONS.production.executionRecords.view,
     PERMISSIONS.production.tasks.view,
     PERMISSIONS.production.trace.view,
     PERMISSIONS.production.workerTasks.view,
@@ -74,6 +75,7 @@ export class ProductionReportingController {
 
   @Get('batches/:batchId/step-records/:recordId/reports/:reportId')
   @RequirePermission([
+    PERMISSIONS.production.executionRecords.view,
     PERMISSIONS.production.tasks.view,
     PERMISSIONS.production.trace.view,
     PERMISSIONS.production.workerTasks.view,
@@ -87,6 +89,7 @@ export class ProductionReportingController {
 
   @Get('batches/:batchId/step-records/:recordId/scrap-records')
   @RequirePermission([
+    PERMISSIONS.production.executionRecords.view,
     PERMISSIONS.production.tasks.view,
     PERMISSIONS.production.trace.view,
     PERMISSIONS.production.workerTasks.view,
@@ -253,6 +256,7 @@ const reportingAccess = (user: UserProfile): ProductionReportingAccess => ({
   ),
   canReport: permissionMatches(user.permissions, PERMISSIONS.production.steps.report),
   canReadAllReports: permissionMatches(user.permissions, [
+    PERMISSIONS.production.executionRecords.view,
     PERMISSIONS.production.tasks.view,
     PERMISSIONS.production.trace.view,
   ]),

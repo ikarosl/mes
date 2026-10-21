@@ -115,9 +115,9 @@
               >
             </div>
             <ProductionStepQuantitySummary
+              compact
               :step="row"
               :planned-quantity="row.plannedQuantity"
-              show-distribution
               :show-reopen-hint="row.batchStatus === 'doing'" /></template
         ></el-table-column>
         <el-table-column

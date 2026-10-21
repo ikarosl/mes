@@ -186,7 +186,7 @@ RN = N - DN                   // 跨轮返工恢复正常净量
 
 分页列表按页批量投影真实冲销原报工、更正原报工、已形成的冲销和替代报工引用，引用同时携带报工 ID、真实 `report_no`、任务及工序身份，不依赖关联记录是否在当前页。已有异常处置、替代、返工来源、返工完成及报废依赖使用同一事实来源展示；有独立编号的记录返回真实业务编号，报废事实没有独立编号时只保留事实 ID，禁止自行拼造。基础更正资格和具体依赖保护继续由原业务规则计算，展示关系不授予写入资格。
 
-`GET /api/production/batches/:batchId/step-records/:recordId/reports/:reportId` 提供授权只读详情，与报工分页同样接受 `production:tasks:view`、`production:trace:view`、`production:worker-tasks:view` 中任意一项。只有员工查看权限时，查询必须核验当前工序负责人是当前用户；历史报工人或来源负责人快照本身不扩大报工读取范围；员工不提供独立返工列表或办理入口。三个路径 ID 必须是正整数字符串，且任务、工序、报工严格同源；不能通过错配或非法 ID 读取其他记录。
+`GET /api/production/batches/:batchId/step-records/:recordId/reports/:reportId` 提供授权只读详情，与报工分页共用下方[读取权限](#http-读取权限与消费者)。只有员工查看权限时，查询必须核验当前工序负责人是当前用户；历史报工人或来源负责人快照本身不扩大报工读取范围；员工不提供独立返工列表或办理入口。三个路径 ID 必须是正整数字符串，且任务、工序、报工严格同源；不能通过错配或非法 ID 读取其他记录。
 
 详情的 `processingChain` 只组合当前报工的来源返工片段和本身异常处置片段：来源报工 → 异常处置 → 返工单 → 正常恢复／残余异常报工。`completedNormalReport`、`completedAbnormalReport` 分别返回真实结果引用，数量为零的一侧为空；残余异常结果保留它自己生成的新处置片段，可沿真实报工引用逐笔导航。未批准返工、未完成返工或报废分支不生成虚假的返工／结果节点。专检首轮没有来源报工，`reworkOrigin` 保留真实返工单及异常处置 ID，`processingChain` 不伪造来源报工节点。返工读取使用独立 `ReworkRecordView` 返回两类完成单号与数量、计数范围及可空来源报工编号；基础返工命令结果见[返工模型](#45-rework_records当前最小返工)。这些投影只组合 Production 已有事实，不创建可写汇总或另一个业务状态。
 
@@ -235,7 +235,7 @@ available_report[i]     = MAX(0, U - effective_direct_reported[i])
 
 ##### 执行记录额度分布（已确认）
 
-执行记录页及报工弹窗保留执行状态，数量摘要使用报工额度分布，不把数量占比当作工序进度或状态，也不新增可写汇总字段。本分布只分类 `quantity_scope=production` 的直接根及其后继处置。正常量 `N` 包含该范围内直接正常和返工恢复；已报废 `S` 只取该范围内同源报废事实；处理中 `P` 只取有效异常分支当前的待审核、待返工和返工中数量；明确终止处置或取消未完成返工后尚未恢复的数量记为 `T`，独立展示为“已终止未恢复”：
+执行记录页、员工本人工序列表及报工弹窗保留执行状态，数量摘要展示正常、已报废、处理中和剩余可报，执行记录页及报工弹窗使用等尺寸数字块，员工本人工序列表使用小色点和紧凑数量，不按数量占比填充或表达工序进度，也不新增可写汇总字段。显示颜色及窄容器列数由[管理端展示约束](../../../../../../admin-web/docs/architecture.md#生产需求收尾与库存)维护。本分布只分类 `quantity_scope=production` 的直接根及其后继处置。正常量 `N` 包含该范围内直接正常和返工恢复；已报废 `S` 只取该范围内同源报废事实；处理中 `P` 只取有效异常分支当前的待审核、待返工和返工中数量；明确终止处置或取消未完成返工后尚未恢复的数量记为 `T`，独立展示为“已终止未恢复”：
 
 ```text
 D = 直接正常净量 + 直接异常净量
@@ -248,7 +248,7 @@ N + S + P + T + 剩余额度 = U   // 仅来源链完整且分类可信时成立
 - 员工任务仍按当前本人负责工序服务端分页，分类的报工、处置、返工、报废四类事实仅为当前页已授权工序批量读取，不按工序、批次或返工深度追加查询。页内批次的路线汇总只批量读取一次，以保留原前道差等数量投影，不返回其他工序的事实或来源引用；不新增全量员工查询入口，不改变读取权限。报工弹窗直接使用所属读取上下文中的分类，命令请求、基础数量结果及幂等快照不增加分类字段。
 - 分类从仍有效且计入生产数量的直接报工根沿整单返工来源逐轮读取，专检处置和所有 `inspection` 后继均不进入 `N/S/P/T`。已完成返工的整单量退出 `P`，按明确引用核对正常与异常两个子结果的同源、纯数量类型及合计；正常恢复子报工计入 `N` 并结束该分支，异常子报工沿其新处置继续分类。两子结果都不作为新的直接根，不重复累计旧轮次的异常量。报废必须存在同源、同量真实事实，不能只看处置的 `approved` 状态；待审核和未完成返工也不能用 `D-N-S` 补平。
 - 合法驳回与来源全量同值冲销同时生效，该来源不再占用 `D`。有效来源仍被历史标为 `rejected/cancelled`、返工完成事实被冲销或更正、缺失或跨归属引用、重复／循环、数量或单位不符均返回 `isReliable=false`、分类量 `null` 及具体原因；页面显示待核对并保留原报工事实，不把未知量当零或重新解释处置结果。当前命令继续拒绝返工完成或混合来源的整笔驳回，历史保护规则不变。
-- 有明确 `terminated` 处置或 `cancelled` 未完成返工的有效来源可归入 `T`，不归入处理中或已报废；有 `T` 时另列真实终止残量，不强凑正常／已报废／处理中／剩余额度四段。正常量不表示质检合格，分布也不是库存或可靠在制品余额。
+- 有明确 `terminated` 处置或 `cancelled` 未完成返工的有效来源可归入 `T`，不归入处理中或已报废；有 `T` 时在四个数字块之外另列真实终止残量。正常量不表示质检合格，分布也不是库存或可靠在制品余额。
 - 页面“报工上限 101 = 计划 100 + 已报废补产 1”中的已报废补产只包含关联补料已履约的有效授权，生效定义仍见[统一首工上限](#统一首工上限已确认)。待履约授权另列待生效报废补产，不能把全部已报废数量 `S` 直接加入上限。路径建议正常目标及其目标差保留原只读公式和其他消费方，执行记录页及报工弹窗不展示，前道差收纳为核对信息。
 - 额度分布不触发完工，也不阻止明确完成；新增授权、冲销及返工结果只刷新数量，不自动改变工序状态。“剩余额度”仍是原可报数量投影，普通新增及更正写命令继续沿原统一上限、资格和具体依赖校验。
 - 首末报工时间仅表示事实登记时间，不能据此回填实际开完工时间。“尚无报工历史”和“冲销后净量为零”也不能互相替代。
@@ -342,6 +342,23 @@ N + S + P + T + 剩余额度 = U   // 仅来源链完整且分类可信时成立
 报工记录、工序状态历史与员工工序均使用服务端分页。报工历史读取沿工序当前归属限制员工范围，管理／追溯页面使用各自查看权限；状态时间线组合执行动作与既有收尾终止事实。员工仅办理普通工序，不提供本人返工查询接口、专用契约或工作台；管理员在已有异常处置流程读取和办理返工，员工数量摘要只从本人工序投影读取生产计数范围内的返工成果。前端进度不从某一页记录相加，跨页批量仅保存用户明确选中的记录。
 
 `GET /api/production/worker-tasks` 使用 `ProductionWorkerTaskQuery` 和公共分页参数，只读取当前员工负责、任务未取消的 `assigned/doing/completed/terminated` 工序，包含已结案历史；权限仍为 `production:worker-tasks:view`。可选 `status` 只接受上述可见工序状态，省略表示全部；`batchNo`、`workOrderNo` 分别对任务单号和工单号作字面文本部分匹配，去除首尾空白后为空表示不筛选，最多 100 字符，`%`、`_` 不作通配符。三个条件按 AND 组合，在统计总数和分页前应用；列表与数量摘要沿同一次只读快照返回。固定按任务 `id DESC`、工序 `step_order_snapshot ASC`、工序 `id ASC` 排序，任务阶段和工序状态不参与排序；开始、完成或重开不改变同一结果集合的顺序，状态变化后不再满足筛选的工序移出结果。
+#### HTTP 读取权限与消费者
+
+生产报工记录页 `/production/execution-records` 独立使用 `production:execution-records:view`，与生产任务页 `production:tasks:view` 分别作为 `production:view` 的直接页面子项。目录层级不使两项权限互相授予，模块分组也不替代任一页面权限。只读页面权限不授予工序执行、报工、异常处置、返工、任务状态或产出清单写入资格；具体命令仍分别校验现有动作权限、任务阶段、版本和数据归属。
+
+以下路径均相对于 `/production`；多项权限为精确 any-of，共享读取保留既有消费者：
+
+| GET 路径 | 消费者及权限 |
+| --- | --- |
+| `/execution-batches`、`/batches/:batchId/execution-records` | 生产报工记录页专用；`production:execution-records:view` |
+| `/batches/:batchId/execution-completion-check`、`/batches/:batchId/execution-start-check` | 报工页与任务页的执行核对；`production:execution-records:view` 或 `production:tasks:view` |
+| `/batches/:batchId/reworks` | 生产异常返工明细；`production:execution-records:view` 或 `production:tasks:view` |
+| `/batches/:batchId/step-records/:recordId/reports`、`/batches/:batchId/step-records/:recordId/reports/:reportId`、`/batches/:batchId/step-records/:recordId/scrap-records` | 报工、任务、追溯与本人工序的历史／关联事实；`production:execution-records:view`、`production:tasks:view`、`production:trace:view` 或 `production:worker-tasks:view`。仅有员工查看权限时，仍须为工序当前负责人 |
+| `/batches/:batchId/step-records/:recordId/execution-actions` | 报工、任务、追溯及管理员执行动作历史；`production:execution-records:view`、`production:tasks:view`、`production:trace:view` 或既有 `production:steps:manage-execution` |
+| `/batches/:batchId/step-records/:recordId/process-inspections`、`/batches/:batchId/step-records/:recordId/process-inspections/:inspectionId`、`/batches/:batchId/step-records/:recordId/inspection-dispositions` | 生产侧专检依据与处理历史；`production:execution-records:view` 或 `production:tasks:view`，不要求 Quality 页面权限 |
+| `/batches/:batchId/output`、`/batches/:batchId/termination-check`、`/batches/:batchId/closeout`、`/batches/:batchId/closeout/withdraw-check` | 报工页与任务页共用的产出、收尾及撤回核对弹窗；`production:execution-records:view` 或 `production:tasks:view`，业务规则见[结案设计](production-termination.md) |
+
+全量报工历史读取能力只由报工记录、任务或追溯查看权限计算，不因新的页面查看权限升级管理员执行或员工报工能力。员工专用工序、SOP 和状态历史接口继续使用本人查看权限及当前归属校验；报工页没有 SOP 内容读取消费者。报废补料候选及方案属于异常办理依据，继续要求 `production:steps:manage-abnormal`，不由页面查看权限替代。
 
 #### 当前最小返工来源规则与升级预留
 
@@ -369,7 +386,7 @@ N + S + P + T + 剩余额度 = U   // 仅来源链完整且分类可信时成立
 
 | 方法与路径 | 读取边界与权限 |
 | --- | --- |
-| `GET /production/batches/:batchId/step-records/:recordId/process-inspections` | 当前工序有效且待处理量大于零的检查分页；`production:tasks:view` |
+| `GET /production/batches/:batchId/step-records/:recordId/process-inspections` | 当前工序有效且待处理量大于零的检查分页；权限见[读取权限与消费者](#http-读取权限与消费者) |
 | `GET /production/batches/:batchId/step-records/:recordId/process-inspections/:inspectionId` | 当前工序单次检查详情；同上。处理完或已冲销的检查仍可核对，来源不符返回不存在 |
 | `GET /production/batches/:batchId/step-records/:recordId/inspection-dispositions` | 当前工序全部专检来源的生产处理历史分页；同上，任务工序归属不符返回不存在 |
 
@@ -475,7 +492,7 @@ N + S + P + T + 剩余额度 = U   // 仅来源链完整且分类可信时成立
 
 `GET /production/batches/:batchId/step-records/:recordId/scrap-records` 按创建时间及 ID 倒序返回默认每页 10 条的 `PageResult<BatchStepScrapRecordView>`，总数和当前页共享一致性快照。它读取真实报废事实、严格同任务同工序的处置及可空来源报工，返回真实来源 `SR/BAD` 编号、报废数量和单位、来源说明、审批说明、事实创建人和时间，以及存在的真实补产授权与补料引用；没有关联时返回 `null`，没有报废业务编号时不得拼造。专检来源返回专检单及结果 ID，来源报工对象为 `null`，不得伪造报工编号。
 
-该接口与报工历史读取共用 `production.tasks.view`、`production.trace.view`、`production.workerTasks.view` 任一查看权限；仅有员工查看权限时仍须是工序当前负责人。管理员及超级管理员沿通用权限匹配获取授权，不按角色名硬编码。读取必须严格匹配路径任务／工序和事实来源，不扩大报工或异常写权限；即使分布待核对，也允许授权用户读取真实报废明细。
+该接口与报工历史共用[读取权限](#http-读取权限与消费者)；仅有员工查看权限时仍须是工序当前负责人。管理员及超级管理员沿通用权限匹配获取授权，不按角色名硬编码。读取必须严格匹配路径任务／工序和事实来源，不扩大报工或异常写权限；即使分布待核对，也允许授权用户读取真实报废明细。
 
 #### `batch_step_scrap_reproduction_authorization`
 

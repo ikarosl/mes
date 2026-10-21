@@ -93,9 +93,11 @@
           min-width="130"
           align="right"
           ><template #default="{ row }"
-            ><strong :class="row.isShortage ? 'shortage' : 'zero'">{{
-              formatQuantity(row.shortageQuantity)
-            }}</strong>
+            ><strong
+              class="shortage-link"
+              :class="row.isShortage ? 'shortage' : 'zero'"
+              >{{ formatQuantity(row.shortageQuantity) }}</strong
+            >
             {{ row.unit }}</template
           ></el-table-column
         ></el-table
@@ -776,6 +778,10 @@ watch(viewMode, refreshCurrentView);
 }
 .shortage {
   color: #ef4444;
+}
+.shortage-link {
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 .quantity-increase {
   color: var(--el-color-success);

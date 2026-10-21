@@ -1,6 +1,6 @@
 <template>
   <div class="processing-summary">
-    <strong>异常处理过程</strong>
+    <strong>异常处理</strong>
     <div class="summary-actions">
       <span class="processing-counts">
         <span :class="{ 'pending-count': pendingCount > 0 }">{{ pendingCount }} 项待办</span>
@@ -31,7 +31,6 @@ const pendingCount = computed(() => props.groups.filter(processingGroupPending).
   gap: 8px 16px;
 }
 .processing-summary {
-  justify-content: space-between;
   font-size: 14px;
 }
 .processing-counts {

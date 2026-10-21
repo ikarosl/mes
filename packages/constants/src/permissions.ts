@@ -119,6 +119,7 @@ export const PERMISSIONS = {
       manageOutput: 'production:tasks:manage-output',
     },
     workerTasks: { view: 'production:worker-tasks:view' },
+    executionRecords: { view: 'production:execution-records:view' },
     trace: { view: 'production:trace:view' },
     materials: {
       view: 'production:materials:view',
