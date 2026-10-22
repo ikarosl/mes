@@ -74,6 +74,10 @@ services:
     image: ${API_IMAGE:-easy-mes-api:release-not-configured}
     env_file:
       - /etc/easy-mes/api.env
+    environment:
+      APP_PORT: ${API_PORT:-3000}
+      # 部署入口固定使用 HTTPS，Refresh Cookie 仅通过 HTTPS 发送。
+      REFRESH_TOKEN_COOKIE_SECURE: 'true'
     depends_on:
       mysql:
         condition: service_healthy
@@ -84,7 +88,7 @@ services:
         - CMD
         - node
         - -e
-        - fetch('http://127.0.0.1:3000/api/health/live').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))
+        - fetch('http://127.0.0.1:'+process.env.APP_PORT+'/api/health/live').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))
       interval: 10s
       timeout: 5s
       retries: 12
@@ -96,24 +100,39 @@ services:
 
   web:
     image: ${WEB_IMAGE:-easy-mes-web:release-not-configured}
+    # 官方启动入口根据端口和服务地址生成容器内的 HTTPS 配置。
+    environment:
+      WEB_LISTEN_PORT: ${WEB_LISTEN_PORT:-8091}
+      API_PORT: ${API_PORT:-3000}
+      TLS_SERVER_NAME: ${TLS_SERVER_NAME:?Set TLS_SERVER_NAME to the certificate public IPv4 or DNS name}
+      HTTPS_PORT: ${HTTPS_PORT:-8091}
     depends_on:
       api:
         condition: service_healthy
     ports:
       # 宿主机绑定地址和端口由 /etc/easy-mes/deploy.env 配置。
       # 左宿主机端口，右容器端口
-      - ${HTTP_BIND_ADDRESS:-0.0.0.0}:${HTTP_PORT:-8091}:8091
+      - ${HTTP_BIND_ADDRESS:-0.0.0.0}:${HTTP_PORT:-80}:${WEB_LISTEN_PORT:-8091}
+      - ${HTTPS_BIND_ADDRESS:-0.0.0.0}:${HTTPS_PORT:-8091}:443
     volumes:
       - type: bind
         source: /srv/easy-mes/nginx-logs
         target: /var/log/nginx
+      - type: bind
+        source: /etc/letsencrypt
+        target: /etc/letsencrypt
+        read_only: true
+      - type: bind
+        source: /srv/easy-mes/acme-challenge
+        target: /var/www/acme
+        read_only: true
     healthcheck:
       test:
         - CMD
         - wget
         - --quiet
         - --output-document=/dev/null
-        - http://127.0.0.1:8091/api/health/live
+        - http://127.0.0.1:${WEB_LISTEN_PORT:-8091}/api/health/live
       interval: 10s
       timeout: 5s
       retries: 12

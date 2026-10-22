@@ -1,7 +1,7 @@
 # 运维入口
 
 `ops/` 拥有单机 Compose 测试服务器的安装、发布和运行手册。基础设施拓扑与镜像配置位于 `infra/`，业务应用和数据库设计不在这里重复维护。
-
+`reload-web-tls.sh` 手动创建 上传 维护
 ## Runbooks
 
 - [Compose 测试服务器部署](runbooks/compose-server-deployment.md)
@@ -12,9 +12,10 @@
 
 | 脚本 | 使用时机与职责 |
 | --- | --- |
-| `scripts/install-easy-mes-compose` | 首次安装：建立运行、配置及数据目录，安装 Compose 配置、发布脚本和缺失的配置模板。 |
+| `scripts/install-easy-mes-compose` | 首次安装：建立运行、配置及数据目录，安装 Compose 配置、发布脚本和缺失的环境配置。 |
 | `scripts/deploy-api.sh` | API 发布：拉取指定 digest 的 API 镜像，启动基础服务，执行 migration、Bucket 初始化并启动检查 API。 |
-| `scripts/deploy-web.sh` | Web 发布：拉取指定 digest 的 Web 镜像，启动并检查 Web/Nginx。 |
+| `scripts/deploy-web.sh` | Web 发布：拉取指定 digest 的 Web 镜像，生成并校验候选 Nginx 配置，启动并检查 Web/Nginx。 |
+| `scripts/reload-web-tls.sh` | Certbot 续期钩子：取得部署锁、校验并重载 Web/Nginx，加载更新后的证书。 |
 | `scripts/apply-control.sh` | 后续 CD：校验并更新控制文件；已有发布记录时按新 Compose 配置协调运行中的服务。 |
 
 首次安装使用已有应用镜像，无需在服务器构建源码。上传文件必须保留 `ops/` 与

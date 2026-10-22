@@ -43,6 +43,10 @@ GitHub Actions secrets：
 - `SSH_DEPLOY_SECRET`（对应部署用户的 OpenSSH 私钥）
 - `SSH_KNOWN_HOSTS`（已经核对指纹的服务器主机公钥记录）
 
+SSH_KNOWN_HOSTS 有格式要求：IP地址 公钥算法 公钥内容
+无自定义端口：203.0.113.10 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA……
+有自定义端口：[203.0.113.10]:2222 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA……
+
 `SSH_KNOWN_HOSTS` 不属于登录私钥，但当前工作流按 Secret 读取。可在可信网络中执行
 `ssh-keyscan -p <port> <host>` 获取，并与服务器控制台显示的主机指纹核对后保存。
 

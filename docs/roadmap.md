@@ -627,6 +627,9 @@
 
 ## 正式上线前运维手册：待补齐
 
+- [ ] 公网 IP HTTPS 的模板、证书挂载和 Certbot 续期重载钩子已实施，待服务器正式签发、续期演练及用户登录/上传验收；入口见[HTTPS 接入](../ops/runbooks/compose-server-deployment.md#公网-ip-的-https-接入)。本机临时证书验证不代表公网签发或自动续期成功。
+- [ ] Web 在容器启动时根据环境变量生成 Nginx 配置已实施，待服务器部署与用户验收；核对默认及自定义端口、配置生成与校验、重启重新生成及修改 env 后重新创建的页面/API 访问，使用方式见[部署手册](../ops/runbooks/compose-server-deployment.md#nginx-配置生成与端口来源)。正式测试待授权。
+
 - [ ] 补齐发布与回滚、备份与恢复、迁移失败处理手册；业务停写责任与恢复顺序的待决问题见 [CO-04](documentation-conflicts.md#co-04)。
 - [ ] 补齐 MySQL 连接耗尽、对象存储／Redis 不可用及磁盘空间不足的排障手册。
 - [ ] 补齐 JWT 密钥轮换及安全事件处理手册；入口由[运维手册](../ops/runbooks/README.md)维护。

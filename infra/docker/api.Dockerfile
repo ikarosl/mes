@@ -31,6 +31,7 @@ COPY --from=build --chown=node:node /prod/api ./
 
 USER node
 
+# 声明默认端口；运行时监听 APP_PORT，由生产 Compose 从 deploy.env 的 API_PORT 注入。
 EXPOSE 3000
 
 CMD ["node", "dist/main.js"]

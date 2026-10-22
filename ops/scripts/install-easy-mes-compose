@@ -1,20 +1,36 @@
 #!/usr/bin/env bash
 
+# 【用途】第一次安装服务器部署文件，建立目录并复制配置模板。
+# 【入口】在上传的部署文件包根目录执行：sudo bash ops/scripts/install-easy-mes-compose
+# 【顺序】检查环境 → 创建目录 → 安装控制文件 → 补充配置模板 → 提示人工操作。
+# 这里只准备文件，不安装 Docker，也不拉镜像、启动服务或初始化数据库。
+# 详细操作入口：ops/runbooks/compose-server-deployment.md。
+#
+# 【执行环境】统一脚本运行条件和新建文件的默认保护方式，减少环境差异造成的部署问题。
+# 执行错误会中止后续步骤；已经创建的目录和复制的文件会保留，不会自动撤销安装。
 set -Eeuo pipefail
 IFS=$'\n\t'
 export PATH='/usr/sbin:/usr/bin:/sbin:/bin'
 umask 077
 
+# 【目录分工】SOURCE_ROOT 是上传包或仓库根目录，通过安装脚本所在位置确定。
+# 上传时须保留 ops/ 与 infra/compose/ 的相对位置，否则找不到要安装的文件。
+# STACK_DIR 存放运行用的部署文件，CONFIG_DIR 存放人工配置和凭证，DATA_DIR 存放数据、备份和日志。
+# 将运行文件、配置和业务数据分开保存，便于后续更新程序时保留配置与数据。
 readonly SOURCE_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 readonly STACK_DIR='/opt/easy-mes'
 readonly CONFIG_DIR='/etc/easy-mes'
 readonly DATA_DIR='/srv/easy-mes'
 
+# 【函数：报错并结束】显示失败原因并停止脚本，让人工操作或自动发布流程知道本次操作失败。
 fail() {
   printf 'ERROR: %s\n' "$*" >&2
   exit 1
 }
 
+# 【函数：只补充缺失的配置】接收一份模板和对应的服务器目标路径；目标文件不存在时才复制模板。
+# 已有文件保留，避免重复安装覆盖人工填写的账号、密码和端口；新文件仅允许 root 读写。
+# 复制完成后提示操作人员替换占位值，模板生成成功不代表配置已经可用于启动。
 install_example_if_missing() {
   local source="$1"
   local target="$2"
@@ -25,11 +41,17 @@ install_example_if_missing() {
   fi
 }
 
+# 【主流程】为首次部署准备服务器目录、控制文件和初始配置。完成后仍需人工填写配置，再运行发布脚本。
 main() {
+  # 【步骤 1：检查执行条件】确认当前使用 root 管理员身份，且 Docker 与 Compose 已可使用。
+  # 这些条件决定后续能否写入系统目录、设置文件归属并管理服务；不满足时停止安装。
   [[ "${EUID}" -eq 0 ]] || fail 'run this installer as root'
   command -v docker >/dev/null 2>&1 || fail 'docker is required'
   docker compose version >/dev/null 2>&1 || fail 'the Docker Compose plugin is required'
 
+  # 【步骤 2：创建服务器目录】为运行文件、人工配置、MySQL 数据、MinIO 文件、备份和 Nginx 日志准备独立目录。
+  # MySQL 数据目录交给容器使用的数据库用户，其余目录按当前部署方式设置归属和访问权限。
+  # 凭证目录仅允许 root 访问；备份目录只提供存放位置，这一步不会自动执行数据备份。
   install -d -o root -g root -m 755 "${STACK_DIR}" "${DATA_DIR}"
   install -d -o root -g root -m 700 "${CONFIG_DIR}"
   install -d -o 999 -g 999 -m 750 "${DATA_DIR}/mysql"
@@ -38,7 +60,14 @@ main() {
   install -d -o root -g root -m 750 "${DATA_DIR}/backups/mysql"
   install -d -o root -g root -m 750 "${DATA_DIR}/backups/minio"
   install -d -o root -g root -m 750 "${DATA_DIR}/nginx-logs"
+  install -d -o root -g root -m 755 "${DATA_DIR}/acme-challenge"
+  install -d -o root -g root -m 700 /etc/letsencrypt
+  install -d -o root -g root -m 755 /etc/letsencrypt/renewal-hooks/deploy
+  install -o root -g root -m 750 "${SOURCE_ROOT}/ops/scripts/reload-web-tls.sh" \
+    /etc/letsencrypt/renewal-hooks/deploy/easy-mes-reload
 
+  # 【步骤 3：复制运行控制文件】将服务定义和三个发布脚本安装到 /opt/easy-mes，作为服务器后续发布的固定入口。
+  # 重复执行安装器会覆盖这些控制文件，并设置脚本可执行、文件由 root 管理；人工配置由下一步单独处理。
   install -o root -g root -m 644 "${SOURCE_ROOT}/infra/compose/compose.prod.yml" \
     "${STACK_DIR}/compose.prod.yml"
   install -o root -g root -m 755 "${SOURCE_ROOT}/ops/scripts/deploy-api.sh" \
@@ -48,15 +77,23 @@ main() {
   install -o root -g root -m 755 "${SOURCE_ROOT}/ops/scripts/apply-control.sh" \
     "${STACK_DIR}/apply-control.sh"
 
+  # 【步骤 4：生成四份初始配置】按“模板 → 正式配置”的对应关系调用上方函数。
+  # deploy.env 配置镜像仓库与端口；mysql.env 配置数据库；minio.env 配置对象存储；
+  # api.env 配置后端连接和鉴权。模板仅在正式文件缺失时复制，不会补改已有文件中的字段。
   install_example_if_missing "${SOURCE_ROOT}/ops/config/etc/easy_mes/deploy.env.example" "${CONFIG_DIR}/deploy.env"
   install_example_if_missing "${SOURCE_ROOT}/ops/config/etc/easy_mes/mysql.env.example" "${CONFIG_DIR}/mysql.env"
   install_example_if_missing "${SOURCE_ROOT}/ops/config/etc/easy_mes/minio.env.example" "${CONFIG_DIR}/minio.env"
   install_example_if_missing "${SOURCE_ROOT}/ops/config/etc/easy_mes/api.env.example" "${CONFIG_DIR}/api.env"
 
+  # 【步骤 5：提示后续人工工作】编辑刚才的配置，准备有效的 MinIO 许可证，再发布 API/Web。
+  # Nginx 模板已在 Web 镜像中，容器启动时生成最终配置，服务器无需额外准备 nginx.conf。
+  # 这里的输出只是待办提示，不会执行这些操作；首次数据库 seed 和管理员初始化另见
+  # ops/runbooks/database-initialization.md。release.env 会由后续发布脚本创建。
   printf '\nInstalled the Compose stack. Next:\n'
   printf '  1. edit files under %s\n' "${CONFIG_DIR}"
   printf '  2. install %s/minio.license\n' "${CONFIG_DIR}"
   printf '  3. deploy API/Web digests with %s/deploy-api.sh and deploy-web.sh\n' "${STACK_DIR}"
 }
 
+# 【程序入口】从这里开始执行 main 中列出的安装准备流程。
 main "$@"
