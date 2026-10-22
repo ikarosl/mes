@@ -39,8 +39,7 @@ GitHub Actions secrets：
 - `DOCKER_HUB_TOKEN`
 - `SSH_DEPLOY_HOST`
 - `SSH_DEPLOY_PORT`
-- `SSH_DEPLOY_USER_NAME`（优先使用）
-- `SSH_DEPOLY_USER_NAME`（兼容现有的误拼名称，可迁移后删除）
+- `SSH_DEPLOY_USER_NAME`
 - `SSH_DEPLOY_SECRET`（对应部署用户的 OpenSSH 私钥）
 - `SSH_KNOWN_HOSTS`（已经核对指纹的服务器主机公钥记录）
 
