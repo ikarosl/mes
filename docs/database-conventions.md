@@ -11,9 +11,8 @@
 
 ## 统一审计规则
 
-Identity现行主数据与以下公共列约定的差异尚未裁决，见[CO-02](documentation-conflicts.md#co-02)；不据此默认为其豁免。
-
-- 主数据和配置表使用：`created_by`、`created_at`、`updated_by`、`updated_at`、`is_deleted`、`deleted_by`、`deleted_at`。
+- 主数据和配置表默认使用：`created_by`、`created_at`、`updated_by`、`updated_at`、`is_deleted`、`deleted_by`、`deleted_at`。
+- Identity 的 `departments/users/roles/permissions` 是完整审计列约定的例外，沿用 `created_at/updated_at/deleted_at`，不要求补齐 `created_by/updated_by/is_deleted/deleted_by`。人工管理命令的操作者通过同事务 `operation_logs` 追溯；该例外不免除现有事务审计要求。各表及系统目录发布边界见 [Identity 数据库设计](../apps/api/src/modules/identity/docs/database.md)。
 - 可变业务单据使用：`created_by`、`created_at`、`updated_by`、`updated_at`、`version`；取消通过状态表达，不物理删除。
 - 库存流水等不可变事实使用：`created_by`、`created_at`；错误通过反向冲销流水修正，不更新、不删除。
 - 纯关联表使用复合主键并至少保留 `created_at`；当前 RBAC 关联表的操作者通过 `operation_logs` 追溯。

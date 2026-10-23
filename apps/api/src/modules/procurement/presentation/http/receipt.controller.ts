@@ -63,10 +63,20 @@ export class ProcurementReceiptController {
   get(@Param() { id }: PurchaseOrderIdDto) {
     return this.query.getReceipt(id);
   }
+  @Get('receipts/:id/voiding')
+  @RequirePermission(PERMISSIONS.warehouse.receipts.view)
+  voiding(@Param() { id }: PurchaseOrderIdDto) {
+    return this.query.getReceiptVoiding(id);
+  }
   @Get('receipt-lines/:id')
   @RequirePermission(PERMISSIONS.warehouse.receipts.view)
   line(@Param() { id }: PurchaseOrderIdDto) {
     return this.query.getReceiptLine(id);
+  }
+  @Get('receipt-lines/:id/acceptance-context')
+  @RequirePermission(PERMISSIONS.warehouse.receipts.view)
+  acceptanceContext(@Param() { id }: PurchaseOrderIdDto) {
+    return this.query.getReceiptAcceptanceContext(id);
   }
   @Get('receipt-order-options')
   @RequirePermission(PERMISSIONS.warehouse.receipts.view)

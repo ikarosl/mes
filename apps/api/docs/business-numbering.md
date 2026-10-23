@@ -41,4 +41,4 @@
 
 追加 `202609280001-business-number-daily-sequence` 成对 migration；升级和回滚前均暂停全部受影响写入，并要求相关编号业务表及旧 HTTP 幂等记录为空。开发数据通过统一初始化流程重建，不转换旧编号、不推导旧日计数、不保留兼容双写。迁移还为库存批号增加全局唯一键，保留归批和必要的组合外键。
 
-迁移运行限制见[迁移安全](../../../packages/database/docs/migration-safety.md)。实现、启动验证、用户验收和正式测试是不同阶段；剩余验证集中在[路线图](../../../docs/roadmap.md)。
+迁移运行限制见[迁移安全](../../../packages/database/docs/migration-safety.md)，剩余验证见[路线图](../../../docs/roadmap.md)。

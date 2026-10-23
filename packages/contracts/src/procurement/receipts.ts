@@ -148,12 +148,10 @@ export interface ReceiptInspectionExecution {
   qualityReturnedQuantity: string;
   otherReturnedQuantity: string;
 }
-export interface ProcurementReceiptLine {
+/** 到货行来源、当前轮和处置数量，不携带历史、检验或采购行投影。 */
+export interface ProcurementReceiptLineOverview {
   void: ProcurementReceiptVoidItem | null;
   currentRound: ReceiptRoundItem;
-  /** 当前引用的同一份检验所关联的真实执行量；没有当前检验时各项为 0。 */
-  currentInspectionExecution: ReceiptInspectionExecution;
-  rounds: ReceiptRoundItem[];
   supplierId: string;
   supplierName: string;
   id: string;
@@ -162,13 +160,6 @@ export interface ProcurementReceiptLine {
   purchaseOrderId: string;
   purchaseNo: string;
   purchaseOrderLineId: string;
-  /** 来源采购行的计划与有效累计到货量；累计含本批及已退回，不含作废登记。 */
-  purchaseLineQuantities: {
-    plannedQuantity: string;
-    receivedQuantity: string;
-  };
-  /** 原采购行计划量减当前正式已授权履约量，供本批定稿初值参考。 */
-  originalRemainingPlannedQuantity: string;
   /** 登记来源采购行的持久行号；到货明细以 id 标识。 */
   purchaseOrderLineNo: number;
   itemId: string;
@@ -179,17 +170,43 @@ export interface ProcurementReceiptLine {
   unit: string;
   supplierBatchCode: string | null;
   currentReceiptRevisionId: string;
-  batches: Array<{ batchId: string; batchCode: string }>;
+  /** 当前实收修订的原核实总量；登记作废后仍保留。 */
+  registeredQuantity: string;
   overReceiptNote: string | null;
   version: number;
   quantities: ReceiptQuantitySummary;
-  revisions: ReceiptRevisionItem[];
+}
+/** 当前行处置视图；分配仅含当前 finalized 轮，包含已执行完的行。 */
+export interface ProcurementReceiptLine extends ProcurementReceiptLineOverview {
+  /** 来源采购行的计划与有效累计到货量；累计含本批及已退回，不含作废登记。 */
+  purchaseLineQuantities: {
+    plannedQuantity: string;
+    receivedQuantity: string;
+  };
   allocations: ReceiptAllocationItem[];
-  cases: QualityInboundCaseItem[];
-  returns: SupplierReturnItem[];
-  inbounds: ReceiptInboundHistoryItem[];
-  acceptances: ReceiptAcceptanceItem[];
-  historyTotals: Record<ReceiptHistoryKind, number>;
+}
+/** 库管定稿所需的当前明确检验依据及同快照参考，不表示有定稿资格。 */
+export interface ProcurementReceiptAcceptanceContext extends ProcurementReceiptLine {
+  currentInspectionCase: QualityInboundCaseItem | null;
+  inspectionSourceRoundNo: number | null;
+  /** 当前引用的同一份检验所关联的真实执行量；没有当前检验时各项为 0。 */
+  currentInspectionExecution: ReceiptInspectionExecution;
+  /** 原采购行计划量减当前正式已授权履约量，供本批定稿初值参考。 */
+  originalRemainingPlannedQuantity: string;
+}
+/** 整单详情的轻量目录；行操作按 id 读取当前行。 */
+export interface ProcurementReceiptLineIndexItem extends Pick<
+  ProcurementReceiptLineOverview,
+  | 'id'
+  | 'itemCode'
+  | 'itemName'
+  | 'materialVariantCode'
+  | 'supplierName'
+  | 'supplierBatchCode'
+  | 'void'
+> {
+  currentRound: Pick<ReceiptRoundItem, 'status' | 'triggerType'>;
+  quantities: Pick<ReceiptQuantitySummary, 'unprocessedQuantity'>;
 }
 /** 到货与来料工作列表共用的来源展示；分页单位始终为到货明细。 */
 export interface ProcurementReceiptListSource {
@@ -206,12 +223,15 @@ export interface ProcurementReceiptListSource {
 export interface ProcurementReceiptLineListItem
   extends
     ProcurementReceiptListSource,
-    Pick<ProcurementReceiptLine, 'id' | 'supplierBatchCode' | 'currentRound' | 'quantities'> {
+    Pick<
+      ProcurementReceiptLineOverview,
+      'id' | 'supplierBatchCode' | 'currentRound' | 'quantities'
+    > {
   receivedAt: string;
 }
 /** 质检详情及录入核对；不携带仓库分配、执行明细或历史预览。 */
 export interface ProcurementInboundInspectionDetail extends Pick<
-  ProcurementReceiptLine,
+  ProcurementReceiptLineOverview,
   | 'id'
   | 'receiptId'
   | 'receiptNo'
@@ -239,7 +259,10 @@ export interface ProcurementInboundInspectionDetail extends Pick<
   rounds: Array<Pick<ReceiptRoundItem, 'id' | 'roundNo'>>;
 }
 export interface ProcurementReceiptDetail extends ProcurementReceiptItem {
-  items: ProcurementReceiptLine[];
+  items: ProcurementReceiptLineIndexItem[];
+}
+export interface ProcurementReceiptVoidingDetail extends ProcurementReceiptItem {
+  items: ProcurementReceiptLineOverview[];
   /** 整单作废预览；lines 为完整行集合，不受明细或历史分页限制。 */
   voiding: ProcurementReceiptVoiding;
 }

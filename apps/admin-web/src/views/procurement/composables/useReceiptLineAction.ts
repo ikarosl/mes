@@ -183,12 +183,13 @@ export function useReceiptLineAction(
         stale.value = true;
       if (
         caseRecord.value &&
-        !latest?.cases.some(
-          (item) =>
-            item.id === caseRecord.value?.id &&
-            item.version === caseRecord.value.version &&
-            item.status === 'reviewing',
-        )
+        (hasReceiptAllocations(latest) ||
+          !latest.cases.some(
+            (item) =>
+              item.id === caseRecord.value?.id &&
+              item.version === caseRecord.value.version &&
+              item.status === 'reviewing',
+          ))
       )
         stale.value = true;
       return !stale.value;

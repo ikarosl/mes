@@ -13,8 +13,6 @@
 | FR-01 | 产品／物料规格参数编辑表重复 | 高 | Product 模块组件 | 值得抽离，保留父级初始化差异 |
 | FR-02 | 两类入库数量输入及额度摘要重复 | 高 | Warehouse 模块组件 | 值得抽离纯输入与展示部分 |
 | FR-03 | 两个领料制单入口的分配选择表重复 | 高 | Production 模块组件 | 值得抽离，先适配不同字段契约 |
-| FR-04 | 用户／角色页重复实现已有分页组件 | 高 | 采用现有组件 | 保留原分页事件与布局 |
-| FR-05 | 日志页独立分页，公共组件缺固定页容量模式 | 中 | 公共组件可选能力 | 不直接替换导致新增页容量操作 |
 | FR-06 | 两处生产批次摘要表重复 | 中 | Production 模块组件 | 核心列共享，业务动作留在父级 |
 | FR-07 | 单据分组折叠按钮结构重复 | 中 | 公共展示组件 | CSS 已复用，只收敛按钮结构与事件 |
 | FR-08 | 外购入库单／多供应商分区组操作重复 | 中 | Warehouse 模块组件 | 仅封装组选择与核对入口 |
@@ -45,18 +43,6 @@
 - 证据：[MaterialOutboundDialog.vue](../apps/admin-web/src/views/production/components/MaterialOutboundDialog.vue) 第 21–111 行与 [MaterialOutboundOrderCreateDialog.vue](../apps/admin-web/src/views/production/components/MaterialOutboundOrderCreateDialog.vue) 第 86–172 行重复需求组标题、分配行勾选、分配／已确认／待确认占用／可制单数量、本次数量输入和选中摘要。后者也用于仓储出库入口，但业务组件所有者仍是 Production。
 - 建议：`views/production/components/MaterialOutboundAllocationPicker.vue`，接收规范化分配组、选中 ID 和逐行数量，发出选择与数量变化事件。
 - 边界：两处“已确认”分别使用 `outboundQuantity` 与 `confirmedOutboundQuantity`，物料身份及单位展示也有差异；须由调用方按现有契约适配，不能因外观相似直接混用字段。批次候选、备注、历史、提交、关闭保护和幂等意图保留在各自 editor。选择逻辑见 FR-11。
-
-### FR-04：用户／角色页采用现有分页
-
-- 证据：[UsersPage.vue](../apps/admin-web/src/views/system/UsersPage.vue) 第 212–239 行、[RolesPage.vue](../apps/admin-web/src/views/system/RolesPage.vue) 第 167–194 行手写总数、10／20／50 条选择及分页，已存在 [PaginationFooter.vue](../apps/admin-web/src/components/PaginationFooter.vue)。两个页面也有各自分页样式。
-- 建议：直接复用已有组件，接入 `total/currentPage/pageSize/layout` 和 `update:pageSize/pageChange`，不另造分页包装。
-- 边界：用户页当前没有 jumper，角色页有；切换页容量后重置页码及读取由原列表处理。公共组件与现有系统页的尺寸、间距存在差异，后续需 UI 核对，不把替换记为无视觉变化。
-
-### FR-05：日志分页保持固定页容量
-
-- 证据：[LogsPage.vue](../apps/admin-web/src/views/system/LogsPage.vue) 第 214–223 行只有总数与页码，第 291–292 行附近固定每页 10 条；`PaginationFooter` 当前总是显示页容量选择。
-- 建议：若统一到已有分页组件，可先评估 `showPageSize=false` 一类可选展示能力，再接入日志列表。
-- 边界：不能为消除重复，未经确认就给日志页增加页容量切换；本项不是新建第二个分页组件的理由。
 
 ### FR-06：生产批次摘要表
 

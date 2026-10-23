@@ -9,7 +9,7 @@
 ├── compose.prod.yml
 ├── deploy-api.sh
 ├── deploy-web.sh
-├── apply-control.sh              # 由 CD 校验并原子更新服务端控制文件
+├── apply-control.sh              # 由 CD 预检查并逐个更新服务端控制文件
 └── release.env                 # 当前 API/Web 镜像 digest，由发布脚本维护
 
 /etc/easy-mes/
@@ -256,8 +256,7 @@ HTTPS_PORT=8091
 install -d -o root -g root -m 755 /srv/easy-mes/acme-challenge
 ```
 
-放行 TCP 8091，然后发布对应版本的 Compose 和 Web 镜像。已有服务器可以通过下一次 main 推送
-执行 CD；首次安装按本手册的安装及 API/Web 发布顺序执行。不要在证书准备好之前推送本次部署变更。
+放行 TCP 8091，并确认上述证书与配置已就绪，再发布对应版本的 Compose 和 Web 镜像。已有服务器通过 main 推送执行 CD；首次安装按本手册的安装及 API/Web 发布顺序执行。
 Compose 更新会将 API 的 Secure Cookie 固定设为 true，业务必须使用 HTTPS 入口。
 
 定义后续验证共用的 Compose 参数并检查：
@@ -289,7 +288,7 @@ HTTPS 验证不加 `-k`，HTTP 首页应跳转 HTTPS。从自己的电脑访问
 ```
 
 此步骤必须完成，否则 Certbot 会继续使用 standalone，在 Nginx 已占用 80 时续期失败。
-然后安装本版本的重载脚本（从上传包根目录执行；首次安装器也会安装此钩子）：
+然后从上传包根目录安装重载脚本。首次安装器也会安装此钩子；常规 CD 不同步该文件，后续更新须手工上传并安装：
 
 ```bash
 install -d -o root -g root -m 755 /etc/letsencrypt/renewal-hooks/deploy
@@ -401,4 +400,13 @@ mes-deploy ALL=(root) NOPASSWD: /opt/easy-mes/apply-control.sh *
 
 三个脚本会再次严格校验 digest 或 Git SHA 参数。部署用户不需要加入 `docker` 组，
 也不需要读取 `/etc/easy-mes`。`apply-control.sh` 只接受由 CD 上传到固定临时目录的
-四个控制文件，并在替换前执行 Bash 与 Compose 校验；它不会修改人工配置。
+四个控制文件：`compose.prod.yml`、`deploy-api.sh`、`deploy-web.sh` 和 `apply-control.sh`；
+它检查文件齐全且为非符号链接的普通文件，替换前只对 `deploy-api.sh` 执行 Bash 语法检查，
+并对候选 Compose 配置执行 `config --quiet` 校验，不修改人工配置。
+
+取得共用发布锁后，脚本备份现有控制文件，再逐个覆盖，不提供整组原子替换。
+复制中途失败会中止后续步骤，没有自动恢复分支，运行目录可能保留不同版本的控制文件。
+
+已有非空 `release.env` 时，脚本按新 Compose 配置协调服务；仅此步骤失败时尝试恢复旧控制文件，
+再按旧配置启动服务，本次更新仍以失败结束。没有发布记录时只安装控制文件，不启动服务。
+成功或失败退出都会尝试清理本次上传包及临时备份，临时备份不能作为退出后的恢复副本。

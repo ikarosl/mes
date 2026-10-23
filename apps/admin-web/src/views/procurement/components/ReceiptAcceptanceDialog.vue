@@ -9,7 +9,18 @@
   >
     <div v-loading="loading">
       <el-alert
-        v-if="stale"
+        v-if="readError"
+        type="error"
+        :title="
+          line
+            ? '依据核对失败，输入已保留；请关闭后重新核对。'
+            : '定稿依据读取失败，请重新读取或关闭。'
+        "
+        :closable="false"
+        class="notice"
+      />
+      <el-alert
+        v-else-if="stale"
         type="error"
         title="依据已变化或核对失败。输入已保留，请关闭后从当前范围重新核对。"
         :closable="false"
@@ -44,44 +55,7 @@
           :closable="false"
           class="notice"
         />
-        <el-descriptions
-          :column="1"
-          direction="vertical"
-          border
-          size="small"
-          class="review-summary"
-        >
-          <el-descriptions-item label="数量核对">
-            <div class="summary-quantities">
-              <span>
-                采购计划 <strong>{{ line.purchaseLineQuantities.plannedQuantity }}</strong>
-                {{ line.unit }}
-              </span>
-              <span>
-                累计到货 <strong>{{ line.purchaseLineQuantities.receivedQuantity }}</strong>
-                {{ line.unit }}
-              </span>
-            </div>
-            <div class="receipt-composition">
-              累计到货：其他到货 <strong>{{ otherReceivedQuantity ?? '待核对' }}</strong> + 本批到货
-              <strong>{{ line.quantities.receivedQuantity }}</strong
-              >（已入库 <strong>{{ line.quantities.inboundQuantity }}</strong> + 已退回
-              <strong :class="receiptReturnQuantityClass(line.quantities.returnedQuantity)">{{
-                line.quantities.returnedQuantity
-              }}</strong>
-              + 剩余 <strong>{{ line.quantities.unprocessedQuantity }}</strong> {{ line.unit }}）
-            </div>
-            <div class="summary-note">
-              其他到货不含本明细；累计含已退回、排除作废；剩余为尚未入库或退回的实物。
-            </div>
-          </el-descriptions-item>
-        </el-descriptions>
-        <InlineHint
-          v-if="line.overReceiptNote"
-          class="over-receipt-note"
-        >
-          超量接受依据：{{ line.overReceiptNote }}
-        </InlineHint>
+        <ReceiptQuantityOverview :line="line" />
         <div class="evidence-toolbar">
           <div class="evidence-summary">
             <span>
@@ -326,6 +300,12 @@
         >关闭</el-button
       >
       <el-button
+        v-if="readError && !line"
+        :disabled="loading || command.locked.value"
+        @click="loadContext"
+        >重新读取依据</el-button
+      >
+      <el-button
         v-if="command.status.value === 'pending'"
         type="primary"
         :loading="command.busy.value"
@@ -362,11 +342,12 @@ import InlineHint from '../../../components/InlineHint.vue';
 import { useReceiptAcceptance } from '../composables/useReceiptAcceptance';
 import InboundInspectionRecord from './InboundInspectionRecord.vue';
 import InspectionQuantity from '../../quality/components/InspectionQuantity.vue';
-import { receiptReturnQuantityClass } from '../receipt-round-presentation';
+import ReceiptQuantityOverview from './ReceiptQuantityOverview.vue';
 const emit = defineEmits<{ saved: [ProcurementReceiptCommandResult] }>();
 const {
   visible,
   loading,
+  readError,
   stale,
   remark,
   overrideReason,
@@ -391,28 +372,14 @@ const {
   open,
   close,
   confirm,
+  loadContext,
 } = useReceiptAcceptance((result) => emit('saved', result));
 const evidenceExpanded = ref(false);
 const evidenceId = useId();
 watch(visible, (isVisible) => {
   if (isVisible) evidenceExpanded.value = false;
 });
-const inspectionRoundNo = computed(() => {
-  const receiptLine = line.value;
-  const record = inspection.value;
-  if (!receiptLine || !record) return undefined;
-  const caseRecord = receiptLine.cases.find((row) => row.inspection?.id === record.id);
-  if (!caseRecord) return undefined;
-  if (receiptLine.currentRound.id === caseRecord.roundId) return receiptLine.currentRound.roundNo;
-  return receiptLine.rounds.find((round) => round.id === caseRecord.roundId)?.roundNo;
-});
-const otherReceivedQuantity = computed(() => {
-  if (!line.value) return null;
-  const remaining =
-    Number(line.value.purchaseLineQuantities.receivedQuantity) -
-    Number(line.value.quantities.receivedQuantity);
-  return Number.isSafeInteger(remaining) && remaining >= 0 ? remaining : null;
-});
+const inspectionRoundNo = computed(() => line.value?.inspectionSourceRoundNo ?? undefined);
 const beforeClose = () => {
   void close();
 };
@@ -429,32 +396,6 @@ defineExpose({ open, close, visible, locked: command.locked });
 .acceptance-identity {
   margin-bottom: 8px;
 }
-.review-summary {
-  margin-bottom: 12px;
-}
-.over-receipt-note {
-  margin-bottom: 12px;
-}
-.review-summary :deep(.el-descriptions__body .el-descriptions__table .el-descriptions__cell) {
-  font-size: 14px;
-  line-height: 1.6;
-  overflow-wrap: anywhere;
-}
-.summary-quantities {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 24px;
-}
-.receipt-composition {
-  margin: 3px 0;
-}
-.review-summary strong {
-  color: var(--el-text-color-primary);
-  font-variant-numeric: tabular-nums;
-}
-.summary-note {
-  color: var(--el-text-color-regular);
-}
 .evidence-toolbar,
 .evidence-summary {
   display: flex;
@@ -469,11 +410,6 @@ defineExpose({ open, close, visible, locked: command.locked });
 }
 .evidence-toggle-icon {
   margin-left: 8px;
-}
-.review-summary strong.quantity-return,
-.quantity-return {
-  color: var(--el-color-warning-dark-2);
-  font-weight: 700;
 }
 .evidence-details {
   padding: 12px;

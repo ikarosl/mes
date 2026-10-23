@@ -23,7 +23,7 @@ const hasReceiptQuantities = (line: PurchaseOrderLine): line is ReceiptPurchaseO
 interface ReceiptDraftRow {
   key: number;
   line: ReceiptPurchaseOrderLine;
-  receivedQuantity: number | undefined;
+  receivedQuantity: number | null | undefined;
   supplierBatchCode: string;
   overReceiptNote: string;
 }
@@ -152,11 +152,11 @@ export function useReceiptEditor(onSaved: (id: string) => void | Promise<void>) 
       handoverEvidence.value ||
       remark.value ||
       rows.value.some(
-        (row) => row.receivedQuantity !== undefined || row.supplierBatchCode || row.overReceiptNote,
+        (row) => row.receivedQuantity != null || row.supplierBatchCode || row.overReceiptNote,
       ),
     ),
   );
-  const activeRows = computed(() => rows.value.filter((row) => row.receivedQuantity !== undefined));
+  const activeRows = computed(() => rows.value.filter((row) => row.receivedQuantity != null));
   const canConfirm = computed(() =>
     Boolean(
       order.value &&

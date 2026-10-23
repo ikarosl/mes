@@ -1,7 +1,8 @@
-import { computed, onActivated, ref } from 'vue';
+import { computed, onActivated, onDeactivated, ref } from 'vue';
 import type {
   ConfirmReceiptAcceptancePayload,
   ProcurementReceiptCommandResult,
+  ProcurementReceiptAcceptanceContext,
   ProcurementReceiptLine,
   QualityInboundCaseItem,
   ReceiptAllocationInput,
@@ -12,18 +13,22 @@ import { procurementApi } from '../../../api/procurement';
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
 import { EMessage } from '../../../utils/message';
 import { useProcurementCommand } from './useProcurementCommand';
+import { canAcceptReceipt } from '../receipt-round-presentation';
 
 export function useReceiptAcceptance(
   onSaved: (result: ProcurementReceiptCommandResult) => void | Promise<void>,
 ) {
   const visible = ref(false),
     loading = ref(false),
+    readError = ref(false),
     stale = ref(false),
+    active = ref(true),
+    targetId = ref(''),
     remark = ref(''),
     overrideReason = ref(''),
     receivedQuantityInput = ref(''),
     physicalIdentityConfirmed = ref(false);
-  const line = ref<ProcurementReceiptLine | null>(null),
+  const line = ref<ProcurementReceiptAcceptanceContext | null>(null),
     review = ref<QualityInboundCaseItem | null>(null);
   const details = ref<ReceiptAllocationInput[]>([]);
   const read = useLatestReadRequest(() => {
@@ -137,6 +142,10 @@ export function useReceiptAcceptance(
   const canConfirm = computed(
     () =>
       !loading.value &&
+      visible.value &&
+      active.value &&
+      !!line.value &&
+      !readError.value &&
       !stale.value &&
       !command.locked.value &&
       inspection.value?.releaseDecision === 'released' &&
@@ -163,13 +172,17 @@ export function useReceiptAcceptance(
     const request = read.begin(() => visible.value && line.value?.id === target.id);
     loading.value = true;
     try {
-      const latest = await procurementApi.getReceiptLine(target.id, request.signal);
+      const latest = await procurementApi.receiptAcceptanceContext(target.id, request.signal);
       if (!request.isCurrent()) return false;
+      const latestCase = latest.currentInspectionCase;
       stale.value =
+        latest.id !== target.id ||
+        !canAcceptReceipt(latest) ||
         latest.version !== target.version ||
         latest.currentReceiptRevisionId !== target.currentReceiptRevisionId ||
         latest.currentRound.id !== target.currentRound.id ||
         latest.currentRound.version !== target.currentRound.version ||
+        latest.currentRound.status !== target.currentRound.status ||
         latest.currentRound.inspectionId !== inspection.value?.id ||
         latest.currentInspectionExecution.inboundQuantity !==
           target.currentInspectionExecution.inboundQuantity ||
@@ -177,16 +190,18 @@ export function useReceiptAcceptance(
           target.currentInspectionExecution.qualityReturnedQuantity ||
         latest.currentInspectionExecution.otherReturnedQuantity !==
           target.currentInspectionExecution.otherReturnedQuantity ||
-        !latest.cases.some(
-          (row) =>
-            row.id === review.value?.id &&
-            row.status === 'completed' &&
-            row.inspection?.id === inspection.value?.id,
-        );
+        !latestCase ||
+        latestCase.id !== review.value?.id ||
+        latestCase.version !== review.value?.version ||
+        latestCase.status !== 'completed' ||
+        latestCase.inspection?.releaseDecision !== 'released' ||
+        latestCase.inspection?.id !== inspection.value?.id;
+      readError.value = false;
       return !stale.value;
     } catch (error) {
       if (request.isCurrent()) {
         stale.value = true;
+        readError.value = true;
         EMessage.error(error, '清单依据核对失败，输入已保留');
       }
       return false;
@@ -195,7 +210,7 @@ export function useReceiptAcceptance(
     }
   };
   const initializeDraft = (
-    target: ProcurementReceiptLine,
+    target: ProcurementReceiptAcceptanceContext,
     record: NonNullable<QualityInboundCaseItem['inspection']>,
   ): ReceiptAllocationInput[] => {
     if (target.currentRound.status === 'finalized')
@@ -246,31 +261,60 @@ export function useReceiptAcceptance(
       });
     return draft;
   };
+  const loadContext = async (): Promise<void> => {
+    if (!visible.value || !targetId.value || line.value || !read.isActive()) return;
+    const target = targetId.value;
+    const request = read.begin(() => visible.value && targetId.value === target);
+    loading.value = true;
+    try {
+      const context = await procurementApi.receiptAcceptanceContext(target, request.signal);
+      if (!request.isCurrent()) return;
+      if (context.id !== target) throw new Error('定稿依据与当前到货明细不匹配，请重新核对来源');
+      const record = context.currentInspectionCase;
+      if (
+        !canAcceptReceipt(context) ||
+        !record?.inspection ||
+        record.inspection.id !== context.currentRound.inspectionId ||
+        record.status !== 'completed' ||
+        record.inspection.releaseDecision !== 'released'
+      ) {
+        stale.value = true;
+        readError.value = false;
+        EMessage.warning('本批当前没有有效整批定稿资格，请关闭后核对最新阶段');
+        return;
+      }
+      line.value = JSON.parse(JSON.stringify(context)) as ProcurementReceiptAcceptanceContext;
+      review.value = JSON.parse(JSON.stringify(record)) as QualityInboundCaseItem;
+      receivedQuantityInput.value = String(context.quantities.receivedQuantity);
+      details.value = initializeDraft(context, record.inspection);
+      stale.value = false;
+      readError.value = false;
+      baseline = snapshot();
+    } catch (error) {
+      if (request.isCurrent()) {
+        readError.value = true;
+        EMessage.error(error, '整批定稿依据读取失败，请重新读取或关闭');
+      }
+    } finally {
+      if (request.isCurrent()) loading.value = false;
+    }
+  };
   const open = async (target: ProcurementReceiptLine) => {
     if (visible.value || command.locked.value) return;
-    const record = target.cases.find(
-      (row) => row.inspection?.id === target.currentRound.inspectionId,
-    );
-    if (
-      !record?.inspection ||
-      record.status !== 'completed' ||
-      record.inspection.releaseDecision !== 'released' ||
-      !['awaiting_acceptance', 'finalized'].includes(target.currentRound.status) ||
-      target.currentRound.triggerType === 'manual_rejection'
-    ) {
-      EMessage.warning('本批尚无有效明确放行结论，不能进行可入定稿');
-      return;
-    }
-    line.value = JSON.parse(JSON.stringify(target)) as ProcurementReceiptLine;
-    review.value = JSON.parse(JSON.stringify(record)) as QualityInboundCaseItem;
-    receivedQuantityInput.value = String(target.quantities.receivedQuantity);
-    details.value = initializeDraft(target, record.inspection);
+    read.invalidate();
+    targetId.value = target.id;
+    line.value = null;
+    review.value = null;
+    details.value = [];
+    receivedQuantityInput.value = '';
     remark.value = '';
     overrideReason.value = '';
     physicalIdentityConfirmed.value = false;
     stale.value = false;
+    readError.value = false;
     baseline = snapshot();
     visible.value = true;
+    await loadContext();
   };
   const close = async () => {
     if (!visible.value) return true;
@@ -280,7 +324,15 @@ export function useReceiptAcceptance(
     return true;
   };
   const confirm = async () => {
-    if (!canConfirm.value || !(await check()) || !line.value || !review.value || !inspection.value)
+    if (
+      !canConfirm.value ||
+      !(await check()) ||
+      !read.isActive() ||
+      !canConfirm.value ||
+      !line.value ||
+      !review.value ||
+      !inspection.value
+    )
       return;
     const target = line.value;
     const body: ConfirmReceiptAcceptancePayload = {
@@ -320,12 +372,18 @@ export function useReceiptAcceptance(
     );
   };
   onActivated(() => {
+    active.value = true;
     if (!visible.value || command.locked.value) return;
-    void check();
+    if (line.value) void check();
+    else if (!stale.value) void loadContext();
+  });
+  onDeactivated(() => {
+    active.value = false;
   });
   return {
     visible,
     loading,
+    readError,
     stale,
     remark,
     overrideReason,
@@ -351,5 +409,6 @@ export function useReceiptAcceptance(
     open,
     close,
     confirm,
+    loadContext,
   };
 }

@@ -1,6 +1,6 @@
 import { computed, onActivated, ref } from 'vue';
 import type {
-  ProcurementReceiptDetail,
+  ProcurementReceiptVoidingDetail,
   VoidProcurementReceiptCommandResult,
   VoidProcurementReceiptPayload,
 } from '@company/contracts';
@@ -19,8 +19,8 @@ export function useReceiptVoid(
     stale = ref(false),
     id = ref(''),
     reason = ref('');
-  const detail = ref<ProcurementReceiptDetail | null>(null);
-  const eligibility = ref<ProcurementReceiptDetail['voiding'] | null>(null);
+  const detail = ref<ProcurementReceiptVoidingDetail | null>(null);
+  const eligibility = ref<ProcurementReceiptVoidingDetail['voiding'] | null>(null);
   const read = useLatestReadRequest(() => {
     loading.value = false;
   });
@@ -35,7 +35,7 @@ export function useReceiptVoid(
     const current = read.begin(() => visible.value && id.value === target);
     loading.value = true;
     try {
-      const latest = await procurementApi.getReceipt(target, current.signal);
+      const latest = await procurementApi.receiptVoiding(target, current.signal);
       if (!current.isCurrent()) return false;
       if (
         latest.id !== target ||

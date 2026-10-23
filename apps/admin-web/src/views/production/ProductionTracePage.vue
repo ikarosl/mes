@@ -502,6 +502,7 @@
                     :step-record-id="step.stepRecordId"
                     :version="step.version"
                     :show-actions="false"
+                    :active="activeTab === 'steps'"
                     @view-detail="reportTrace.open"
                     @view-report="reportTrace.open"
                   />

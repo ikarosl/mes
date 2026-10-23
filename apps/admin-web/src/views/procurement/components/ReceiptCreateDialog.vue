@@ -322,7 +322,7 @@ const lineSummaries = computed(() => {
       previousReceived: Number(row.line.quantities.receivedQuantity),
     };
     summary.draftCount += 1;
-    if (row.receivedQuantity !== undefined) {
+    if (row.receivedQuantity != null) {
       summary.enteredCount += 1;
       summary.quantity = (summary.quantity ?? 0) + Number(row.receivedQuantity);
     }

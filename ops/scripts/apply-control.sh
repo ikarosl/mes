@@ -8,7 +8,6 @@
 # 已有发布记录时协调服务；协调失败则恢复旧文件并尝试重新启动服务。
 # 首次服务器目录须先由 install-easy-mes-compose 准备。
 # 完整操作入口：ops/runbooks/compose-server-deployment.md。
-# 校验覆盖及替换原子性与手册的差异见 docs/documentation-conflicts.md#co-11，尚待确认处理。
 #
 # 【执行环境】统一脚本运行条件和新建文件的默认保护方式，减少环境差异造成的部署问题。
 # 未单独处理的执行错误会中止后续步骤；具体恢复动作见下方失败处理流程。
@@ -116,7 +115,7 @@ main() {
   docker compose version >/dev/null 2>&1 || fail 'Docker Compose plugin is unavailable'
 
   # 【步骤 3：检查上传包】确认四个控制文件齐全，检查发布脚本及新 Compose 配置，尽量在替换前发现问题。
-  # 当前脚本的语法检查实际仅覆盖 deploy-api.sh，未覆盖另外两个脚本；差异已登记在 CO-11。
+  # 当前脚本的语法检查仅覆盖 deploy-api.sh，未覆盖另外两个脚本。
   # 本步骤只做检查，不启动服务。
   for name in compose.prod.yml deploy-api.sh deploy-web.sh apply-control.sh; do
     require_regular_bundle_file "${bundle_dir}/${name}"

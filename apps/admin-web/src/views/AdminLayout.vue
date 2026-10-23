@@ -128,7 +128,7 @@
           :key="tab.name"
           class="tab"
           :class="{ active: tab.name === ($route.meta.tabName ?? $route.name) }"
-          @click="$router.push(tab.path)"
+          @click="tab.path !== $route.fullPath && $router.push(tab.path)"
         >
           <span>{{ tab.title }}</span
           ><button

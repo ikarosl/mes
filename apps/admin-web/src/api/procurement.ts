@@ -38,6 +38,8 @@ import type {
   ProcurementReceiptLineListItem,
   ProcurementReceiptDetail,
   ProcurementReceiptLine,
+  ProcurementReceiptAcceptanceContext,
+  ProcurementReceiptVoidingDetail,
   ProcurementInboundInspectionDetail,
   ConfirmProcurementReceiptPayload,
   VoidProcurementReceiptPayload,
@@ -131,6 +133,17 @@ export const procurementApi = {
     request({ url: `/procurement/receipts/${id}`, signal, skipErrorHandling: true }),
   getReceiptLine: (id: string, signal?: AbortSignal): Promise<ProcurementReceiptLine> =>
     request({ url: `/procurement/receipt-lines/${id}`, signal, skipErrorHandling: true }),
+  receiptAcceptanceContext: (
+    id: string,
+    signal?: AbortSignal,
+  ): Promise<ProcurementReceiptAcceptanceContext> =>
+    request({
+      url: `/procurement/receipt-lines/${id}/acceptance-context`,
+      signal,
+      skipErrorHandling: true,
+    }),
+  receiptVoiding: (id: string, signal?: AbortSignal): Promise<ProcurementReceiptVoidingDetail> =>
+    request({ url: `/procurement/receipts/${id}/voiding`, signal, skipErrorHandling: true }),
   receiptOrderOptions: (
     params: PurchaseOrderQuery,
     signal?: AbortSignal,

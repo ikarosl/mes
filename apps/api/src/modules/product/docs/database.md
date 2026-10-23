@@ -12,7 +12,9 @@ BOM 单位用量使用 `INT`；`chk_integer_storage_product_materials` 限制其
 
 职责：统一维护物料和成品分类，不创建第二套库存分类表。
 
-分类仍由 Product 模块所有。旧临时决策中“移除父子层级”的目标与当前树结构缺少明确取代关系，保留为[冲突 CO-01](../../../../../../docs/documentation-conflicts.md#co-01)，当前结构不等于已裁决撤回该目标。`products.category_id`、`materials.category_id` 及分类自身的 `parent_id` 均引用这张表；API 路径 `/product/categories`、权限和公开 `ProductCategory` 契约不随物理表名改变。
+分类仍由 Product 模块所有。`products.category_id`、`materials.category_id` 及分类自身的 `parent_id` 均引用这张表；API 路径 `/product/categories`、权限和公开 `ProductCategory` 契约不随物理表名改变。
+
+`parent_id` 保留为后续半成品、多级物品扩展的分类关系基础；当前仅提供父分类维护、同类型校验及防环，不据此启用半成品或多级物品业务。目录筛选与用途资格针对直接关联分类，不沿父级递归或继承。成品的独立编码身份及逐条平铺规则见[成品列表与筛选](product-rules.md#成品列表与筛选)，分类关系不构成成品之间的父子身份。
 
 | 字段            | 类型              | 说明                                            |
 | --------------- | ----------------- | ----------------------------------------------- |

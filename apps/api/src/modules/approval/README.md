@@ -40,7 +40,7 @@
 
 初始化与演示数据使用[统一数据库入口](../../../../../ops/runbooks/database-initialization.md)，升级／回滚前置条件见[迁移安全](../../../../../packages/database/docs/migration-safety.md)。开发重置不得伪造不存在的人工审批证据。
 
-相邻测试验证角色／指定用户／业务来源三选一、字符串 ID、节点与版本命令、拒绝客户端授权字段、接口权限和实时资格解析。真实 MySQL 套件验证节点共享待办、动态成员及指定用户资格、分页/历史范围、单节点并发决定、事务回滚和迁移约束。应用类型检查和构建排除相邻测试；测试类型使用对应应用的 `typecheck:test` 独立检查，不得把应用检查通过当作测试或用户验收通过；验证边界见根[测试策略](../../../../../docs/testing-strategy.md)。
+相邻测试验证角色／指定用户／业务来源三选一、字符串 ID、节点与版本命令、拒绝客户端授权字段、接口权限和实时资格解析。真实 MySQL 套件验证节点共享待办、动态成员及指定用户资格、分页/历史范围、单节点并发决定、事务回滚和迁移约束。
 
 相邻后端测试通过 `corepack pnpm --filter @company/api test` 执行，测试类型使用 `corepack pnpm --filter @company/api typecheck:test` 检查。跨模块审批用例位于根 `tests/integration/approval`，BOM 字段移除迁移用例位于 `tests/integration/product`，均由现有 `corepack pnpm test:production:mysql` 入口执行；必须配置专用测试库，环境门禁见根[测试策略](../../../../../docs/testing-strategy.md)。
 

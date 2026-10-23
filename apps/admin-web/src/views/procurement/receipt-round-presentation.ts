@@ -4,6 +4,7 @@ import {
   RECEIPT_ROUND_STATUS_LABELS,
 } from '@company/constants';
 import type {
+  ProcurementInboundInspectionDetail,
   ProcurementReceiptLine,
   ReceiptAllocationDisposition,
   ReceiptAllocationItem,
@@ -269,7 +270,9 @@ export const receiptProcessingGuide = (line: ProcurementReceiptLine): ReceiptPro
     ],
   };
 };
-export const currentReceiptCase = (line: Pick<ProcurementReceiptLine, 'currentRound' | 'cases'>) =>
+export const currentReceiptCase = (
+  line: Pick<ProcurementInboundInspectionDetail, 'currentRound' | 'cases'>,
+) =>
   line.currentRound.status === 'voided'
     ? undefined
     : line.cases.find(

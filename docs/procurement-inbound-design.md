@@ -12,7 +12,7 @@
 
 补单历史来源和固定到货采购归属由 [ADR-0023](adr/0023-supplement-source-and-receipt-ownership.md) 确定，取代上述决策中的超量承接、定稿选择采购归属及旧依据必须持续有效的限制。[ADR-0025](adr/0025-supplement-receipt-line-basis.md) 统一两类补单的到货明细级来源，质量补单不引用仓库分配，原采购、原到货和物流事实保持固定。
 
-成品与来料的输入职责和依据要求仍以各自所有者文档为准，不能外推到尚未批准的检验类型；成品固定已入基准、剩余范围快照及开始冻结的取代关系见[CQ-01](documentation-conflicts.md#cq-01)，实施与验收见[路线图](roadmap.md)。基础物料名称、历史展示及稳定身份遵守[数据库公共规则](database-conventions.md#基础物料名称与历史身份)。
+成品与来料的输入职责和依据要求仍以各自所有者文档为准，不能外推到尚未批准的检验类型；成品固定已入基准、剩余范围快照及开始冻结的取代关系见 [ADR-0016](adr/0016-inbound-authorizations-and-stock-batches.md)，现行检查数量职责见 [ADR-0019](adr/0019-finished-inspection-measurement-simplification.md)，实施与验收见[路线图](roadmap.md)。基础物料名称、历史展示及稳定身份遵守[数据库公共规则](database-conventions.md#基础物料名称与历史身份)。
 
 ## 1. 已确定的边界
 

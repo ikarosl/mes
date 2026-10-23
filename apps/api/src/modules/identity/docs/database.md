@@ -2,7 +2,7 @@
 
 > [返回 Identity 文档](../README.md)。
 
-当前字段按既有 migration 与代码记录。Identity 主数据审计字段与根公共规范的差异尚未明确为例外，保留双方证据见[冲突 CO-02](../../../../../../docs/documentation-conflicts.md#co-02)；本文不把缺少的操作者字段描述成已实现。
+Identity 主数据适用[公共审计列规则中的例外](../../../../../../docs/database-conventions.md#统一审计规则)，各表沿用下列字段。人工管理命令的事务日志要求见[认证与管理边界](../README.md#认证与管理边界)。
 
 ## 1.1 `departments`
 

@@ -10,8 +10,35 @@
         <h3>{{ receiptLineStageLabel(line) }}</h3>
         <p><strong>下一步：</strong>{{ guide.nextStep }}</p>
       </div>
-      <div class="processing-actions"><slot /></div>
     </div>
+    <dl
+      v-if="!isReceiptVoided(line)"
+      class="processing-quantities"
+    >
+      <div>
+        <dt>待入库</dt>
+        <dd
+          :class="{ 'quantity-zero': parseQuantity(line.quantities.pendingInboundQuantity) === 0 }"
+        >
+          {{ quantityText(line.quantities.pendingInboundQuantity) }} <small>{{ line.unit }}</small>
+        </dd>
+      </div>
+      <div>
+        <dt>待退回</dt>
+        <dd
+          :class="receiptReturnQuantityClass(parseQuantity(line.quantities.pendingReturnQuantity))"
+        >
+          {{ quantityText(line.quantities.pendingReturnQuantity) }} <small>{{ line.unit }}</small>
+        </dd>
+      </div>
+      <div>
+        <dt>待明确去向</dt>
+        <dd :class="{ 'quantity-zero': parseQuantity(line.quantities.undeterminedQuantity) === 0 }">
+          {{ quantityText(line.quantities.undeterminedQuantity) }} <small>{{ line.unit }}</small>
+        </dd>
+      </div>
+    </dl>
+    <div class="processing-actions"><slot /></div>
     <div class="flow-heading">本轮处理流程</div>
     <ol class="receipt-flow">
       <li
@@ -27,17 +54,27 @@
       </li>
     </ol>
     <p class="flow-note">{{ guide.note }}</p>
-    <slot name="quantities" />
   </section>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue';
 import type { ProcurementReceiptLine } from '@company/contracts';
-import { receiptLineStageLabel, receiptProcessingGuide } from '../receipt-round-presentation';
+import {
+  isReceiptVoided,
+  receiptLineStageLabel,
+  receiptProcessingGuide,
+  receiptReturnQuantityClass,
+} from '../receipt-round-presentation';
 
 const props = defineProps<{ line: ProcurementReceiptLine }>();
 const guide = computed(() => receiptProcessingGuide(props.line));
+const parseQuantity = (value: string): number | null => {
+  if (!value.trim()) return null;
+  const quantity = Number(value);
+  return Number.isSafeInteger(quantity) && quantity >= 0 ? quantity : null;
+};
+const quantityText = (value: string): string => parseQuantity(value)?.toString() ?? '待核对';
 </script>
 
 <style scoped>
@@ -86,8 +123,38 @@ h3 {
   color: var(--el-text-color-primary);
 }
 .processing-actions {
-  flex: 1 1 100%;
-  max-width: 100%;
+  margin-top: 12px;
+}
+.processing-quantities {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 12px 0 0;
+  padding: 12px 0;
+  border-top: 1px solid var(--el-border-color-lighter);
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+.processing-quantities dt {
+  color: var(--el-text-color-regular);
+  font-size: 13px;
+}
+.processing-quantities dd {
+  margin: 5px 0 0;
+  color: var(--el-text-color-primary);
+  font-size: 18px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.processing-quantities dd.quantity-zero {
+  color: var(--el-text-color-placeholder);
+  font-weight: 400;
+}
+.processing-quantities dd.quantity-return {
+  color: var(--el-color-warning-dark-2);
+}
+.processing-quantities small {
+  font-size: 13px;
+  font-weight: 400;
 }
 .flow-heading {
   margin-top: 16px;
@@ -147,7 +214,7 @@ h3 {
   line-height: 1.5;
 }
 .flow-note {
-  margin: 8px 0 12px;
+  margin: 8px 0 0;
   font-size: 13px;
   color: var(--el-text-color-regular);
   line-height: 1.5;

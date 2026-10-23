@@ -1,7 +1,8 @@
 # 运维入口
 
 `ops/` 拥有单机 Compose 测试服务器的安装、发布和运行手册。基础设施拓扑与镜像配置位于 `infra/`，业务应用和数据库设计不在这里重复维护。
-`reload-web-tls.sh` 手动创建 上传 维护
+TLS 续期钩子由首次安装器安装；后续更新须按[部署手册](runbooks/compose-server-deployment.md#公网-ip-的-https-接入)手工上传和安装，常规 CD 不同步该文件。
+
 ## Runbooks
 
 - [Compose 测试服务器部署](runbooks/compose-server-deployment.md)

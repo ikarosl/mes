@@ -10,7 +10,7 @@
 
 登录凭据读取排除已删除账号，先验证密码，再判断账号启停。用户名不存在、账号已删除或密码错误统一提示“用户名或密码错误”；仅在密码正确且账号停用时提示“账号已停用，请联系管理员”，不更新最近登录时间或签发令牌。刷新令牌与 Access Token 认证仍要求账号当前启用且未删除。
 
-写操作均由应用服务构造审计上下文，Repository 在同一数据库事务内写入业务数据和 `operation_logs`。密码只以 bcrypt 哈希写入，审计数据不包含密码、Token 或 Cookie。
+用户、角色及其授权的管理命令由应用服务构造审计上下文，Repository 在同一数据库事务内写入业务数据和 `operation_logs`。密码只以 bcrypt 哈希写入，审计数据不包含密码、Token 或 Cookie。
 
 用户与角色列表遵守公共分页及筛选契约。操作日志的 `createdAtFrom/createdAtTo` 是包含端点的时刻筛选，须提交带 `Z` 或显式时区偏移的 ISO 8601 时间。写接口独立校验权限，不以页面入口可见性代替授权。
 
@@ -35,4 +35,4 @@ Writer，无需通过 Identity `public.ts`。`operation_logs` 的字段和唯一
 
 ## 验证
 
-开发交付先运行 `corepack pnpm --filter @company/api typecheck`、构建与启动检查，供用户黑盒和 UI 验收。Identity 相邻单元测试、HTTP 契约测试及正式测试调整遵守根[测试策略](../../../../../docs/testing-strategy.md)的阶段约定。
+验证命令见[API 入口](../../../README.md#验证)，交付及正式测试阶段见[测试策略](../../../../../docs/testing-strategy.md)。

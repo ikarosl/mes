@@ -445,4 +445,6 @@ router.beforeEach(async (to) => {
   return true;
 });
 
-router.afterEach((to) => useTabsStore().visit(to, router));
+router.afterEach((to, _from, failure) => {
+  if (!failure) useTabsStore().visit(to, router);
+});

@@ -1,4 +1,4 @@
-import type { ReceiptQuantitySummary } from '@company/contracts';
+import type { ReceiptInspectionExecution, ReceiptQuantitySummary } from '@company/contracts';
 import type { Db } from '../mysql-purchase-order.shared.js';
 import { allocationInboundSum, allocationReturnedSum } from './receipt-allocation.query.js';
 import { type ReadRow, inboundFactSelect, slots, text } from './receipt-read.shared.js';
@@ -23,25 +23,25 @@ export async function readReceiptQuantitySummaries(
   db: Db,
   ids: string[],
   currentRounds: Map<string, ReadRow>,
-  allAllocationRows?: ReadRow[],
+  currentAllocationRows?: ReadRow[],
 ): Promise<Map<string, ReceiptQuantitySummary>> {
   const result = new Map<string, ReceiptQuantitySummary>();
   if (!ids.length) return result;
   const marks = slots(ids);
-  const allocationRows = allAllocationRows
-    ? allAllocationRows.filter((row) => Number(row.is_current) === 1)
-    : (
-        await db.query<ReadRow[]>(
-          `SELECT a.receipt_line_id,a.disposition,a.quantity,
+  const allocationRows =
+    currentAllocationRows ??
+    (
+      await db.query<ReadRow[]>(
+        `SELECT a.receipt_line_id,a.disposition,a.quantity,
           ${allocationInboundSum()} inbound_quantity,${allocationReturnedSum()} returned_quantity
           FROM procurement_receipt_allocation a
           JOIN procurement_receipt_line line ON line.id=a.receipt_line_id
           JOIN procurement_receipt_round current_round ON current_round.id=line.current_round_id
           WHERE a.receipt_line_id IN (${marks}) AND a.round_id=current_round.id
             AND current_round.status='finalized'`,
-          ids,
-        )
-      )[0];
+        ids,
+      )
+    )[0];
   const activeByLine = new Map<string, ReadRow[]>();
   for (const row of allocationRows) {
     const id = text(row.receipt_line_id);
@@ -92,6 +92,32 @@ export async function readReceiptQuantitySummaries(
     });
   }
   return result;
+}
+
+/** 当前明确采用的检验只抵扣引用它的真实执行，不装载历史分配。 */
+export async function readReceiptInspectionExecution(
+  db: Db,
+  receiptLineId: string,
+  inspectionId: string | null,
+): Promise<ReceiptInspectionExecution> {
+  if (inspectionId === null)
+    return { inboundQuantity: '0', qualityReturnedQuantity: '0', otherReturnedQuantity: '0' };
+  const [[inbound]] = await db.query<ReadRow[]>(
+    `${inboundFactSelect('COALESCE(SUM(tx.quantity),0) quantity')}
+      AND detail.procurement_receipt_line_id=? AND detail.procurement_inspection_id=?`,
+    [receiptLineId, inspectionId],
+  );
+  const [[returns]] = await db.query<ReadRow[]>(
+    `SELECT COALESCE(SUM(CASE WHEN reason_type='quality' THEN returned_quantity ELSE 0 END),0) quality_quantity,
+      COALESCE(SUM(CASE WHEN reason_type<>'quality' THEN returned_quantity ELSE 0 END),0) other_quantity
+      FROM procurement_supplier_return WHERE receipt_line_id=? AND inspection_id=?`,
+    [receiptLineId, inspectionId],
+  );
+  return {
+    inboundQuantity: String(Number(inbound?.quantity ?? 0)),
+    qualityReturnedQuantity: String(Number(returns?.quality_quantity ?? 0)),
+    otherReturnedQuantity: String(Number(returns?.other_quantity ?? 0)),
+  };
 }
 
 type ReceiptPhysicalQuantities = Pick<

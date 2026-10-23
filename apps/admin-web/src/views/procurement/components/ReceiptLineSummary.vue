@@ -1,17 +1,21 @@
 <template>
   <div class="line-summary">
     <el-descriptions
-      v-if="section !== 'quantities'"
-      :column="3"
+      :column="section === 'all' ? 3 : 2"
       border
       size="small"
     >
       <el-descriptions-item
         label="物料 / 版本"
-        :span="2"
+        :span="section === 'all' ? 2 : 1"
       >
-        <strong>{{ line.itemName }}</strong> · {{ line.itemCode }} · {{ line.materialVariantCode }}
+        <strong>{{ line.itemName }}</strong> · {{ line.materialVariantCode }}
       </el-descriptions-item>
+      <el-descriptions-item
+        v-if="section === 'identity'"
+        label="采购行 ID"
+        >id:{{ line.purchaseOrderLineId }}</el-descriptions-item
+      >
       <el-descriptions-item
         v-if="section === 'all'"
         label="本轮阶段"
@@ -27,66 +31,12 @@
       <el-descriptions-item label="供应商批号">{{
         line.supplierBatchCode || '未提供'
       }}</el-descriptions-item>
-      <el-descriptions-item label="到货明细 ID">id:{{ line.id }}</el-descriptions-item>
-    </el-descriptions>
-
-    <div
-      v-if="section === 'quantities'"
-      class="quantity-focus"
-    >
-      <dl v-if="!isReceiptVoided(line)">
-        <div>
-          <dt>尚未入库或退回</dt>
-          <dd :class="{ 'quantity-zero': isKnownZero(line.quantities.unprocessedQuantity) }">
-            {{ quantityText(line.quantities.unprocessedQuantity) }} <small>{{ line.unit }}</small>
-          </dd>
-        </div>
-        <div>
-          <dt>待入库</dt>
-          <dd :class="{ 'quantity-zero': isKnownZero(line.quantities.pendingInboundQuantity) }">
-            {{ quantityText(line.quantities.pendingInboundQuantity) }}
-            <small>{{ line.unit }}</small>
-          </dd>
-        </div>
-        <div>
-          <dt>待退回</dt>
-          <dd :class="receiptReturnQuantityClass(line.quantities.pendingReturnQuantity)">
-            {{ quantityText(line.quantities.pendingReturnQuantity) }} <small>{{ line.unit }}</small>
-          </dd>
-        </div>
-        <div>
-          <dt>待明确去向</dt>
-          <dd :class="{ 'quantity-zero': isKnownZero(line.quantities.undeterminedQuantity) }">
-            {{ quantityText(line.quantities.undeterminedQuantity) }} <small>{{ line.unit }}</small>
-          </dd>
-        </div>
-      </dl>
-      <div class="actual-quantities">
-        <span
-          >{{ isReceiptVoided(line) ? '作废前到货量' : '本批到货量' }}
-          <strong
-            >{{ registeredQuantity === null ? '见到货量修订' : quantityText(registeredQuantity) }}
-            <template v-if="registeredQuantity !== null">{{ line.unit }}</template></strong
-          ></span
-        >
-        <span
-          >已入库
-          <strong>{{ quantityText(line.quantities.inboundQuantity) }} {{ line.unit }}</strong></span
-        >
-        <span
-          >已退回
-          <strong :class="receiptReturnQuantityClass(line.quantities.returnedQuantity)"
-            >{{ quantityText(line.quantities.returnedQuantity) }} {{ line.unit }}</strong
-          ></span
-        >
-      </div>
-      <p
-        v-if="!isReceiptVoided(line)"
-        class="quantity-definition"
+      <el-descriptions-item
+        v-if="section === 'all'"
+        label="到货明细 ID"
+        >id:{{ line.id }}</el-descriptions-item
       >
-        尚未入库或退回 = 到货量 − 已入库 − 已退回。
-      </p>
-    </div>
+    </el-descriptions>
     <template v-if="section === 'all'">
       <el-descriptions
         :column="4"
@@ -162,8 +112,8 @@
       >
     </template>
     <InlineHint
-      v-if="section !== 'identity' && line.overReceiptNote"
-      :tone="section === 'quantities' ? 'warning' : 'info'"
+      v-if="section === 'all' && line.overReceiptNote"
+      tone="warning"
       class="line-hint"
     >
       超量接受依据：{{ line.overReceiptNote }}
@@ -185,14 +135,13 @@ import {
 const props = withDefaults(
   defineProps<{
     line: ProcurementReceiptLine;
-    section?: 'all' | 'identity' | 'quantities';
+    section?: 'all' | 'identity';
   }>(),
   { section: 'all' },
 );
 const registeredQuantity = computed(() =>
   isReceiptVoided(props.line)
-    ? (props.line.revisions.find((revision) => revision.id === props.line.currentReceiptRevisionId)
-        ?.receivedQuantity ?? null)
+    ? props.line.registeredQuantity || null
     : props.line.quantities.receivedQuantity,
 );
 const hasRemainingComponent = computed(() =>
@@ -230,6 +179,9 @@ const quantityText = (value: string): string =>
 const isKnownZero = (value: string): boolean => value.trim() !== '' && Number(value) === 0;
 </script>
 <style scoped>
+.line-summary :deep(.el-descriptions__cell) {
+  overflow-wrap: anywhere;
+}
 .round-number {
   margin-left: 8px;
 }
@@ -250,63 +202,9 @@ const isKnownZero = (value: string): boolean => value.trim() !== '' && Number(va
   color: var(--el-color-warning-dark-2);
   font-weight: 700;
 }
-.quantity-focus dl {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-  margin: 0;
-  padding: 12px 0;
-  border-top: 1px solid var(--el-border-color-lighter);
-  border-bottom: 1px solid var(--el-border-color-lighter);
-}
-.quantity-focus dt {
-  color: var(--el-text-color-regular);
-  font-size: 13px;
-}
-.quantity-focus dd {
-  margin: 5px 0 0;
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--el-text-color-primary);
-  overflow-wrap: anywhere;
-}
-.quantity-focus dd.quantity-zero {
-  color: var(--el-text-color-placeholder);
-  font-weight: 400;
-}
-.quantity-focus dd.quantity-return {
-  color: var(--el-color-warning-dark-2);
-}
-.quantity-focus small {
-  font-size: 13px;
-  font-weight: 400;
-}
-.actual-quantities {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 20px;
-  margin-top: 10px;
-  font-size: 13px;
-  color: var(--el-text-color-regular);
-}
-.actual-quantities strong {
-  color: var(--el-text-color-primary);
-}
-.actual-quantities strong.quantity-return {
-  color: var(--el-color-warning-dark-2);
-}
-.actual-quantities strong.quantity-zero {
-  color: var(--el-text-color-placeholder);
-  font-weight: 400;
-}
 .quantity-definition {
   margin: 8px 0 0;
   color: var(--el-text-color-secondary);
   font-size: 13px;
-}
-@media (max-width: 720px) {
-  .quantity-focus dl {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
 </style>

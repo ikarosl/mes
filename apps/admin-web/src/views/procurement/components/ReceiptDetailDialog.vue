@@ -7,7 +7,7 @@
     :before-close="beforeClose"
     :close-on-click-modal="false"
   >
-    <div v-loading="loading">
+    <div v-loading="receiptLoading">
       <el-alert
         v-if="readError"
         title="详情刷新失败，请刷新后再办理；旧内容只供核对。"
@@ -22,20 +22,15 @@
           class="notice"
         />
         <el-descriptions
-          :column="3"
+          :column="detail.remark ? 4 : 3"
           border
           size="small"
           class="receipt-header"
           ><el-descriptions-item label="采购单">{{ detail.purchaseNo }}</el-descriptions-item
-          ><el-descriptions-item label="供应商">{{
-            supplierSummary(detail.suppliers)
-          }}</el-descriptions-item
           ><el-descriptions-item label="实际到货时间">{{
             formatDateTimeForDisplay(detail.receivedAt)
           }}</el-descriptions-item
-          ><el-descriptions-item
-            label="交接凭据"
-            :span="detail.remark ? 2 : 3"
+          ><el-descriptions-item label="交接凭据"
             ><span
               class="header-evidence"
               :title="detail.handoverEvidence"
@@ -59,8 +54,8 @@
             <el-input
               v-model="lineSearch"
               clearable
-              aria-label="筛选本单物料"
-              placeholder="物料 / 编码 / 版本 / 批号"
+              aria-label="筛选本单明细"
+              placeholder="物料 / 编码 / 供应商 / 批号"
             />
             <p
               v-if="lineSearch && !filteredLines.some((line) => line.id === activeLine)"
@@ -79,9 +74,8 @@
                 @click="selectLine(line.id)"
               >
                 <span class="line-identity">id:{{ line.id }} · {{ line.itemName }}</span>
-                <span class="line-version"
-                  >{{ line.itemCode }} · {{ line.materialVariantCode }}</span
-                >
+                <span class="line-version">{{ line.materialVariantCode }}</span>
+                <span class="line-version">{{ line.supplierName }}</span>
                 <span class="line-version"
                   >供应商批号 {{ line.supplierBatchCode || '未提供' }}</span
                 >
@@ -103,18 +97,15 @@
           </nav>
           <section
             v-if="selectedLine"
+            v-loading="lineLoading"
             class="receipt-current"
           >
-            <div class="selected-source">
-              <strong>到货 {{ detail.receiptNo }} · id:{{ selectedLine.id }}</strong>
-            </div>
+            <ReceiptLineSummary
+              :line="selectedLine"
+              section="identity"
+              class="line-identity-summary"
+            />
             <ReceiptLineProcessingCard :line="selectedLine">
-              <template #quantities>
-                <ReceiptLineSummary
-                  :line="selectedLine"
-                  section="quantities"
-                />
-              </template>
               <div
                 v-if="
                   !isReceiptVoided(selectedLine) &&
@@ -232,14 +223,7 @@
                 >
               </div>
             </ReceiptLineProcessingCard>
-            <div class="line-identity-summary">
-              <ReceiptLineSummary
-                :line="selectedLine"
-                section="identity"
-              />
-            </div>
             <div class="work-section">
-              <div class="section-heading"><strong>本轮分配与执行</strong></div>
               <div
                 ref="allocationsSection"
                 class="allocations-section"
@@ -331,54 +315,59 @@
               <div class="section-heading"><strong>历史与依据</strong></div>
               <div class="section-actions">
                 <el-button @click="history?.open(selectedLine.id, 'rounds', selectedLine)"
-                  >处理轮次 {{ selectedLine.historyTotals.rounds }}</el-button
+                  >处理轮次</el-button
                 >
                 <el-button @click="history?.open(selectedLine.id, 'revisions', selectedLine)"
-                  >到货量修订 {{ selectedLine.historyTotals.revisions }}</el-button
+                  >到货量修订</el-button
                 >
                 <el-button @click="history?.open(selectedLine.id, 'cases', selectedLine)"
-                  >检验历史 {{ selectedLine.historyTotals.cases }}</el-button
+                  >检验历史</el-button
                 >
                 <el-button @click="history?.open(selectedLine.id, 'acceptances', selectedLine)"
-                  >正式清单 {{ selectedLine.historyTotals.acceptances }}</el-button
+                  >正式清单</el-button
                 >
                 <el-button @click="history?.open(selectedLine.id, 'returns', selectedLine)"
-                  >退回记录 {{ selectedLine.historyTotals.returns }}</el-button
+                  >退回记录</el-button
                 >
                 <el-button @click="history?.open(selectedLine.id, 'inbounds', selectedLine)"
-                  >入库记录 {{ selectedLine.historyTotals.inbounds }}</el-button
+                  >入库记录</el-button
                 >
               </div>
-              <div class="batch-trace">
-                已入库存批次：{{
-                  selectedLine.batches.length
-                    ? selectedLine.batches.map((batch) => batch.batchCode).join('、')
-                    : isKnownZero(selectedLine.quantities.inboundQuantity)
-                      ? '暂无实际入库'
-                      : '批次待核对'
-                }}
-              </div>
+              <div class="batch-trace">库存批次请查看入库记录，按实际入库明细追溯。</div>
             </div>
+          </section>
+          <section
+            v-else-if="activeLine"
+            v-loading="lineLoading"
+            class="receipt-current"
+          >
+            <el-empty
+              :description="lineReadError ? '明细读取失败，请重新读取后办理' : '正在读取当前明细'"
+            >
+              <el-button
+                v-if="lineReadError"
+                :disabled="lineLoading || receiptLoading"
+                @click="loadLine"
+                >重新读取明细</el-button
+              >
+            </el-empty>
           </section>
         </div>
       </template>
     </div>
     <template #footer>
-      <span
-        v-if="detail && !detail.void"
-        :title="detail.voiding.blockedReason || undefined"
-      >
+      <span v-if="detail && !detail.void">
         <el-button
           type="danger"
           plain
-          :disabled="blocked || !detail.voiding.canVoid"
+          :disabled="blocked"
           @click="openVoid"
           >作废整单</el-button
         >
       </span>
       <el-button
         :disabled="loading || childOpen"
-        @click="load"
+        @click="load()"
         >刷新</el-button
       ><el-button @click="close">关闭</el-button>
     </template>
@@ -398,7 +387,6 @@
   />
 </template>
 <script setup lang="ts">
-import { supplierSummary } from '../supplier-summary';
 import {
   canAcceptReceipt,
   canRejectReceipt,
@@ -412,7 +400,7 @@ import {
   receiptLineStageEffect,
   type ReceiptDetailIntent,
 } from '../receipt-round-presentation';
-import { computed, nextTick, onActivated, ref } from 'vue';
+import { computed, nextTick, onActivated, onDeactivated, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useRouteAccess } from '../../../composables/useRouteAccess';
 import type { ProcurementReceiptDetail, ProcurementReceiptLine } from '@company/contracts';
@@ -440,19 +428,31 @@ const visible = ref(false),
   activeLine = ref(''),
   lineSearch = ref(''),
   allocationFocused = ref(false),
-  loading = ref(false),
-  readError = ref(false);
+  receiptLoading = ref(false),
+  lineLoading = ref(false),
+  receiptReadError = ref(false),
+  lineReadError = ref(false),
+  active = ref(true);
+const loading = computed(() => receiptLoading.value || lineLoading.value);
+const readError = computed(() => receiptReadError.value || lineReadError.value);
 const detail = ref<ProcurementReceiptDetail | null>(null);
+const lineDetail = ref<ProcurementReceiptLine | null>(null);
 const selectedLine = computed(() =>
-  detail.value?.items.find((line) => line.id === activeLine.value),
+  lineDetail.value?.id === activeLine.value && lineDetail.value?.receiptId === id.value
+    ? lineDetail.value
+    : null,
 );
 const filteredLines = computed(() => {
   const query = lineSearch.value.trim().toLocaleLowerCase();
   if (!query) return detail.value?.items ?? [];
   return (detail.value?.items ?? []).filter((line) =>
-    [line.itemName, line.itemCode, line.materialVariantCode, line.supplierBatchCode ?? ''].some(
-      (value) => value.toLocaleLowerCase().includes(query),
-    ),
+    [
+      line.itemName,
+      line.itemCode,
+      line.materialVariantCode,
+      line.supplierName,
+      line.supplierBatchCode ?? '',
+    ].some((value) => value.toLocaleLowerCase().includes(query)),
   );
 });
 const hasQualityReplacementSource = (line: ProcurementReceiptLine): boolean =>
@@ -471,8 +471,11 @@ const actionDialog = ref<InstanceType<typeof ReceiptLineActionDialog>>(),
   history = ref<InstanceType<typeof ReceiptHistoryDialog>>();
 const allocationsSection = ref<HTMLElement | null>(null);
 const isKnownZero = (value: string): boolean => value.trim() !== '' && Number(value) === 0;
-const read = useLatestReadRequest(() => {
-  loading.value = false;
+const receiptRead = useLatestReadRequest(() => {
+  receiptLoading.value = false;
+});
+const lineRead = useLatestReadRequest(() => {
+  lineLoading.value = false;
 });
 const childOpen = computed(() =>
   Boolean(
@@ -482,15 +485,21 @@ const childOpen = computed(() =>
     voidDialog.value?.visible,
   ),
 );
-const blocked = computed(() => loading.value || readError.value || childOpen.value);
+const blocked = computed(
+  () => !active.value || loading.value || readError.value || childOpen.value,
+);
 const openVoid = async (): Promise<void> => {
   if (blocked.value || !detail.value || detail.value.void) return;
   await voidDialog.value?.open(detail.value.id);
 };
 const selectLine = (lineId: string): void => {
-  if (lineId === activeLine.value || loading.value || childOpen.value) return;
+  if (lineId === activeLine.value || receiptLoading.value || childOpen.value) return;
+  lineRead.invalidate();
   activeLine.value = lineId;
+  lineDetail.value = null;
+  lineReadError.value = false;
   allocationFocused.value = false;
+  void loadLine();
 };
 const focusAllocations = async (): Promise<void> => {
   if (!selectedLine.value || blocked.value) return;
@@ -499,27 +508,62 @@ const focusAllocations = async (): Promise<void> => {
   allocationsSection.value?.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
   allocationsSection.value?.focus({ preventScroll: true });
 };
-const load = async (): Promise<ProcurementReceiptDetail | null> => {
-  if (!visible.value || !read.isActive()) return null;
+const loadLine = async (): Promise<ProcurementReceiptLine | null> => {
+  if (!visible.value || !activeLine.value || !lineRead.isActive()) return null;
   const target = id.value;
-  const current = read.begin(() => visible.value && id.value === target);
-  loading.value = true;
+  const targetLine = activeLine.value;
+  const current = lineRead.begin(
+    () => visible.value && id.value === target && activeLine.value === targetLine,
+  );
+  lineLoading.value = true;
   try {
-    const result = await procurementApi.getReceipt(target, current.signal);
+    const result = await procurementApi.getReceiptLine(targetLine, current.signal);
     if (!current.isCurrent()) return null;
-    detail.value = result;
-    readError.value = false;
-    if (!result.items.some((line) => line.id === activeLine.value))
-      activeLine.value = result.items[0]?.id ?? '';
+    if (result.id !== targetLine || result.receiptId !== target)
+      throw new Error('到货明细与当前到货单不匹配，请重新核对来源');
+    lineDetail.value = result;
+    lineReadError.value = false;
     return result;
   } catch (error) {
     if (current.isCurrent()) {
-      readError.value = true;
+      lineReadError.value = true;
+      EMessage.error(error, '到货明细加载失败');
+    }
+    return null;
+  } finally {
+    if (current.isCurrent()) lineLoading.value = false;
+  }
+};
+const load = async (requiredLineId?: string): Promise<ProcurementReceiptDetail | null> => {
+  if (!visible.value || !receiptRead.isActive()) return null;
+  const target = id.value;
+  const current = receiptRead.begin(() => visible.value && id.value === target);
+  lineRead.invalidate();
+  receiptLoading.value = true;
+  try {
+    const result = await procurementApi.getReceipt(target, current.signal);
+    if (!current.isCurrent()) return null;
+    if (result.id !== target) throw new Error('到货单与当前读取目标不匹配，请重新核对来源');
+    detail.value = result;
+    receiptReadError.value = false;
+    if (requiredLineId && !result.items.some((line) => line.id === requiredLineId)) return result;
+    if (!result.items.some((line) => line.id === activeLine.value)) {
+      lineDetail.value = null;
+      activeLine.value = result.items[0]?.id ?? '';
+      lineReadError.value = false;
+    }
+    receiptLoading.value = false;
+    await loadLine();
+    if (!current.isCurrent()) return null;
+    return result;
+  } catch (error) {
+    if (current.isCurrent()) {
+      receiptReadError.value = true;
       EMessage.error(error, '到货详情加载失败');
     }
     return null;
   } finally {
-    if (current.isCurrent()) loading.value = false;
+    if (current.isCurrent()) receiptLoading.value = false;
   }
 };
 let openSequence = 0;
@@ -535,9 +579,11 @@ const open = async (
   lineSearch.value = '';
   allocationFocused.value = false;
   detail.value = null;
-  readError.value = false;
+  lineDetail.value = null;
+  receiptReadError.value = false;
+  lineReadError.value = false;
   visible.value = true;
-  const loadedDetail = await load();
+  const loadedDetail = await load(lineId);
   if (
     sequence !== openSequence ||
     !visible.value ||
@@ -570,7 +616,7 @@ const open = async (
     return true;
   }
   if (intent === 'acceptance') {
-    if (canAcceptReceipt(line)) acceptanceDialog.value?.open(line);
+    if (canAcceptReceipt(line)) await acceptanceDialog.value?.open(line);
     else EMessage.warning('该明细当前不具备整批定稿资格，请核对最新阶段');
   } else if (intent === 'correct') {
     actionDialog.value?.open(line, 'correct');
@@ -609,7 +655,8 @@ const close = async (): Promise<boolean> => {
   if (history.value?.visible && !(await history.value.close())) return false;
   visible.value = false;
   openSequence += 1;
-  read.invalidate();
+  receiptRead.invalidate();
+  lineRead.invalidate();
   return true;
 };
 const saved = async (): Promise<void> => {
@@ -617,7 +664,8 @@ const saved = async (): Promise<void> => {
   await load();
 };
 const goQualityReplacement = async (line: ProcurementReceiptLine): Promise<void> => {
-  if (blocked.value || !hasQualityReplacementSource(line)) return;
+  if (blocked.value || selectedLine.value?.id !== line.id || !hasQualityReplacementSource(line))
+    return;
   if (await close())
     await router.push({
       name: 'procurement-orders',
@@ -630,10 +678,12 @@ const goQualityReplacement = async (line: ProcurementReceiptLine): Promise<void>
     });
 };
 const goQuality = async (lineId: string): Promise<void> => {
+  if (blocked.value || selectedLine.value?.id !== lineId) return;
   if (await close())
     await router.push({ name: 'quality-inbound-inspections', query: { receiptLineId: lineId } });
 };
 const goExcessSupplement = async (line: ProcurementReceiptLine): Promise<void> => {
+  if (blocked.value || selectedLine.value?.id !== line.id) return;
   if (await close())
     await router.push({
       name: 'procurement-orders',
@@ -647,6 +697,7 @@ const goExcessSupplement = async (line: ProcurementReceiptLine): Promise<void> =
 };
 const { canAccessRoute } = useRouteAccess();
 const goInbound = async (lineId: string): Promise<void> => {
+  if (blocked.value || selectedLine.value?.id !== lineId) return;
   if (!canAccessRoute({ name: 'warehouse-inbound' })) return;
   if (await close())
     await router.push({
@@ -658,7 +709,11 @@ const beforeClose = (): void => {
   void close();
 };
 onActivated(() => {
+  active.value = true;
   if (visible.value && !loading.value && !childOpen.value) void load();
+});
+onDeactivated(() => {
+  active.value = false;
 });
 defineExpose({
   open,
@@ -682,6 +737,7 @@ defineExpose({
 }
 .receipt-header :deep(.el-descriptions__cell) {
   vertical-align: top;
+  overflow-wrap: anywhere;
 }
 .header-evidence {
   display: block;
@@ -739,6 +795,7 @@ defineExpose({
   color: var(--el-text-color-primary);
   cursor: pointer;
   text-align: left;
+  overflow-wrap: anywhere;
 }
 .receipt-index-item.active {
   background: var(--el-color-primary-light-9);
@@ -756,11 +813,8 @@ defineExpose({
   flex: 1;
   min-width: 0;
 }
-.selected-source {
-  margin-bottom: 10px;
-}
 .line-identity-summary {
-  margin-top: 12px;
+  margin-bottom: 12px;
 }
 .work-section {
   margin-top: 16px;

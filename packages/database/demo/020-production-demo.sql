@@ -8,9 +8,9 @@ SELECT sample.external_order_no, sample.order_type, sample.quantity, sample.rema
   p.id product_id, p.item_code, p.product_name, p.unit
 FROM (
   SELECT 'demo-mass-001' external_order_no, 'mass_production' order_type, 100 quantity,
-    '批量单：整个工单同一基础物料只允许一个版本，包含全部批次和补料' remark UNION ALL
+    '批量单：每个任务同一基础物料锁定一个版本，不同任务可独立选版' remark UNION ALL
   SELECT 'demo-research-001', 'research', 10,
-    '研发单：从产品 BOM 选择基础物料，由管理员配置一个或多个启用版本'
+    '研发单：无需 BOM，按任务手工提需并选择物料与精确版本'
 ) sample JOIN products p ON p.item_code = 'p-micro-20-30'
 WHERE NOT EXISTS (
   SELECT 1 FROM work_orders wo WHERE wo.external_order_no = sample.external_order_no

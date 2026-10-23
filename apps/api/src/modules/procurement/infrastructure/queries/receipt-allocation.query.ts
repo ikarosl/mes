@@ -13,10 +13,11 @@ export const allocationSelect =
   ${allocationInboundSum()} inbound_quantity,${allocationReturnedSum()} returned_quantity
   FROM procurement_receipt_allocation a JOIN procurement_receipt_line l ON l.id=a.receipt_line_id
   JOIN procurement_receipt_round r ON r.id=a.round_id LEFT JOIN procurement_receipt_acceptance h ON h.id=a.acceptance_id`;
-export async function readAllocationRows(db: Db, ids: string[]): Promise<ReadRow[]> {
+export async function readCurrentAllocationRows(db: Db, ids: string[]): Promise<ReadRow[]> {
   if (!ids.length) return [];
   const [rows] = await db.query<ReadRow[]>(
-    `${allocationSelect()} WHERE a.receipt_line_id IN (${slots(ids)}) ORDER BY a.id`,
+    `${allocationSelect()} WHERE a.receipt_line_id IN (${slots(ids)})
+      AND a.round_id=l.current_round_id AND r.status='finalized' ORDER BY a.id`,
     ids,
   );
   return rows;

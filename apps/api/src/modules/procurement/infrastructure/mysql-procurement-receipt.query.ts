@@ -8,6 +8,10 @@ import type {
   ProcurementInboundInspectionQuery,
   ReceiptHistoryKind,
   PurchaseOrderQuery,
+  ProcurementReceiptDetail,
+  ProcurementReceiptLine,
+  ProcurementReceiptAcceptanceContext,
+  ProcurementReceiptVoidingDetail,
 } from '@company/contracts';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
 import { MaterialVariantQuery } from '../../product/public.js';
@@ -16,7 +20,13 @@ import { ProcurementReceiptQuery } from '../application/ports/receipt-query.js';
 import { ProcurementDomainError } from '../domain/procurement.errors.js';
 import { receiptVoidBlockedReason } from '../domain/receipt-void.policy.js';
 import { readReceiptDependentPurchases } from './mysql-receipt-void.shared.js';
-import { readReceiptLines } from './queries/receipt-lines.query.js';
+import {
+  readReceipt,
+  readReceiptLine,
+  readReceiptLineIndex,
+  readReceiptLineOverviews,
+  readReceiptAcceptanceContext,
+} from './queries/receipt-lines.query.js';
 import {
   readInspectionCase,
   readInspectionReceiptLine,
@@ -29,14 +39,7 @@ import {
 } from './queries/receipt-lists.query.js';
 import { readReceiptHistory } from './queries/receipt-history.query.js';
 import { listReceiptOrderOptions, getPurchaseOrder } from './queries/purchase-order.query.js';
-import {
-  type ReadRow,
-  receiptSelect,
-  RECEIPT_COLUMNS,
-  mapReceipt,
-  readReceiptSuppliers,
-  pageInput,
-} from './queries/receipt-read.shared.js';
+import { type ReadRow, pageInput } from './queries/receipt-read.shared.js';
 
 @Injectable()
 export class MysqlProcurementReceiptQuery extends ProcurementReceiptQuery {
@@ -53,15 +56,16 @@ export class MysqlProcurementReceiptQuery extends ProcurementReceiptQuery {
   listReceiptLines(query: ReceiptListQuery) {
     return withTransaction(this.pool, (db) => listReceiptLines(db, query));
   }
-  getReceipt(id: string) {
+  getReceipt(id: string): Promise<ProcurementReceiptDetail> {
     return withTransaction(this.pool, async (db) => {
-      const [[row]] = await db.query<ReadRow[]>(
-        `${receiptSelect(RECEIPT_COLUMNS + ',(SELECT COUNT(*) FROM procurement_receipt_line line WHERE line.receipt_id=r.id) line_count')} WHERE r.id=?`,
-        [id],
-      );
-      if (!row) throw new ProcurementDomainError('RECEIPT_NOT_FOUND', '到货单不存在');
-      const receipt = mapReceipt(row, (await readReceiptSuppliers(db, [id])).get(id) ?? []);
-      const items = await readReceiptLines(db, this.quality, { receiptId: id });
+      const receipt = await readReceipt(db, id);
+      return { ...receipt, items: await readReceiptLineIndex(db, id) };
+    });
+  }
+  getReceiptVoiding(id: string): Promise<ProcurementReceiptVoidingDetail> {
+    return withTransaction(this.pool, async (db) => {
+      const receipt = await readReceipt(db, id);
+      const items = await readReceiptLineOverviews(db, id);
       const blockedReason = receiptVoidBlockedReason({
         isVoided: receipt.void !== null,
         hasExecution: items.some(
@@ -90,12 +94,11 @@ export class MysqlProcurementReceiptQuery extends ProcurementReceiptQuery {
       };
     });
   }
-  getReceiptLine(id: string) {
-    return withTransaction(this.pool, async (db) => {
-      const lines = await readReceiptLines(db, this.quality, { lineId: id });
-      if (!lines[0]) throw new ProcurementDomainError('RECEIPT_NOT_FOUND', '到货明细不存在');
-      return lines[0];
-    });
+  getReceiptLine(id: string): Promise<ProcurementReceiptLine> {
+    return withTransaction(this.pool, (db) => readReceiptLine(db, id));
+  }
+  getReceiptAcceptanceContext(id: string): Promise<ProcurementReceiptAcceptanceContext> {
+    return withTransaction(this.pool, (db) => readReceiptAcceptanceContext(db, this.quality, id));
   }
   getInspectionReceiptLine(id: string) {
     return withTransaction(this.pool, (db) => readInspectionReceiptLine(db, this.quality, id));
