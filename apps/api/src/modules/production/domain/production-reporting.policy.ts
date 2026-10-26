@@ -44,14 +44,36 @@ export const reportCorrectionEligibility = (
   access: ProductionReportingAccess,
 ): ReportCorrectionEligibility => {
   const phase = reportingPhase(batchStatus);
-  const reason = executionCorrectionBlockedReason(
-    phase,
-    pendingApprovalId,
-    stepStatus,
-    responsibleUserId,
-    access,
-  );
-  const historicalReason = historicalCorrectionBlockedReason(phase, pendingApprovalId, access);
+  const reason = (() => {
+    if (pendingApprovalId) {
+      return '结案或产出更正正在审批，状态和报工均已冻结';
+    }
+    if (phase !== 'execution') {
+      return '任务已经结束执行，员工只读；管理员请使用历史纠错';
+    }
+    if (!['doing', 'completed'].includes(stepStatus)) {
+      return '工序尚未开始或已终止，不能办理执行报工';
+    }
+    if (!access.canReport && !access.canManageExecution) {
+      return `需要「${REPORT_PERMISSION_LABEL}」或「${MANAGE_EXECUTION_PERMISSION_LABEL}」权限`;
+    }
+    if (!access.canManageExecution && responsibleUserId !== access.actorId) {
+      return '只有当前工序负责人可以办理';
+    }
+    return null;
+  })();
+  const historicalReason = (() => {
+    if (pendingApprovalId) {
+      return '结案或产出更正正在审批，状态和报工均已冻结';
+    }
+    if (phase !== 'history') {
+      return '任务尚未进入结案或批准结束阶段';
+    }
+    if (!access.canManageExecution) {
+      return `历史报工纠错需要「${MANAGE_EXECUTION_PERMISSION_LABEL}」权限`;
+    }
+    return null;
+  })();
   const historicalCreateBlockedReason =
     historicalReason ??
     (batchStatus === 'closing' ? '任务处于结案阶段，请先撤回任务结束后新增报工' : null);
@@ -87,35 +109,6 @@ export const reportWriteEligibility = (
     canReport: reason === null,
     reportBlockedReason: reason,
   };
-};
-
-const executionCorrectionBlockedReason = (
-  phase: ReturnType<typeof reportingPhase>,
-  pendingApprovalId: string | null,
-  stepStatus: BatchStepStatus,
-  responsibleUserId: string | null,
-  access: ProductionReportingAccess,
-): string | null => {
-  if (pendingApprovalId) return '结案或产出更正正在审批，状态和报工均已冻结';
-  if (phase !== 'execution') return '任务已经结束执行，员工只读；管理员请使用历史纠错';
-  if (!['doing', 'completed'].includes(stepStatus)) return '工序尚未开始或已终止，不能办理执行报工';
-  if (!access.canReport && !access.canManageExecution)
-    return `需要「${REPORT_PERMISSION_LABEL}」或「${MANAGE_EXECUTION_PERMISSION_LABEL}」权限`;
-  if (!access.canManageExecution && responsibleUserId !== access.actorId)
-    return '只有当前工序负责人可以办理';
-  return null;
-};
-
-const historicalCorrectionBlockedReason = (
-  phase: ReturnType<typeof reportingPhase>,
-  pendingApprovalId: string | null,
-  access: ProductionReportingAccess,
-): string | null => {
-  if (pendingApprovalId) return '结案或产出更正正在审批，状态和报工均已冻结';
-  if (phase !== 'history') return '任务尚未进入结案或批准结束阶段';
-  if (!access.canManageExecution)
-    return `历史报工纠错需要「${MANAGE_EXECUTION_PERMISSION_LABEL}」权限`;
-  return null;
 };
 
 const newReportBlockedReason = (

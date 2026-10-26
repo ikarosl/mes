@@ -6,9 +6,12 @@ import { type ReadRow, inboundFactSelect, slots, text } from './receipt-read.sha
 const receiptInboundTotalsSelect = (where = ''): string =>
   `${inboundFactSelect('detail.procurement_receipt_line_id receipt_line_id,SUM(tx.quantity) quantity')}
     ${where} GROUP BY detail.procurement_receipt_line_id`;
-const receiptReturnTotalsSelect = (where = ''): string =>
-  `SELECT receipt_line_id,SUM(returned_quantity) quantity,
-    SUM(CASE WHEN reason_type='quality' THEN returned_quantity ELSE 0 END) quality_quantity
+const receiptReturnTotalsSelect = (where = '', includeQualityQuantity = true): string =>
+  `SELECT receipt_line_id,SUM(returned_quantity) quantity${
+    includeQualityQuantity
+      ? ",SUM(CASE WHEN reason_type='quality' THEN returned_quantity ELSE 0 END) quality_quantity"
+      : ''
+  }
   FROM procurement_supplier_return ${where} GROUP BY receipt_line_id`;
 /** 供分页前的阶段筛选使用；与实物数量投影共用库存流水及退回事实。 */
 export const receiptPhysicalQuantityJoins = (): string =>
@@ -18,6 +21,29 @@ export const receiptPhysicalQuantityJoins = (): string =>
   LEFT JOIN (${receiptReturnTotalsSelect()}) physical_returns ON physical_returns.receipt_line_id=line.id`;
 export const RECEIPT_UNPROCESSED_QUANTITY =
   '(current_revision.received_quantity-COALESCE(physical_inbound.quantity,0)-COALESCE(physical_returns.quantity,0))';
+
+/** 目录仅判断是否仍有实物；按指定到货行汇总真实已入与已退之和，不读取修订或质量分量。 */
+export async function readReceiptProcessedQuantities(
+  db: Db,
+  ids: string[],
+): Promise<Map<string, number>> {
+  const result = new Map(ids.map((id) => [id, 0]));
+  if (!ids.length) return result;
+  const marks = slots(ids);
+  const [inboundSums] = await db.query<ReadRow[]>(
+    receiptInboundTotalsSelect(`AND detail.procurement_receipt_line_id IN (${marks})`),
+    ids,
+  );
+  const [returnSums] = await db.query<ReadRow[]>(
+    receiptReturnTotalsSelect(`WHERE receipt_line_id IN (${marks})`, false),
+    ids,
+  );
+  for (const row of [...inboundSums, ...returnSums]) {
+    const id = text(row.receipt_line_id);
+    result.set(id, (result.get(id) ?? 0) + Number(row.quantity));
+  }
+  return result;
+}
 
 export async function readReceiptQuantitySummaries(
   db: Db,

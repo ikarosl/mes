@@ -21,7 +21,8 @@ import { ProcurementDomainError } from '../domain/procurement.errors.js';
 import { receiptVoidBlockedReason } from '../domain/receipt-void.policy.js';
 import { readReceiptDependentPurchases } from './mysql-receipt-void.shared.js';
 import {
-  readReceipt,
+  readReceiptVoidingHeader,
+  readReceiptHeader,
   readReceiptLine,
   readReceiptLineIndex,
   readReceiptLineOverviews,
@@ -58,13 +59,13 @@ export class MysqlProcurementReceiptQuery extends ProcurementReceiptQuery {
   }
   getReceipt(id: string): Promise<ProcurementReceiptDetail> {
     return withTransaction(this.pool, async (db) => {
-      const receipt = await readReceipt(db, id);
-      return { ...receipt, items: await readReceiptLineIndex(db, id) };
+      const receipt = await readReceiptHeader(db, id);
+      return { ...receipt, items: await readReceiptLineIndex(db, id, receipt.void !== null) };
     });
   }
   getReceiptVoiding(id: string): Promise<ProcurementReceiptVoidingDetail> {
     return withTransaction(this.pool, async (db) => {
-      const receipt = await readReceipt(db, id);
+      const receipt = await readReceiptVoidingHeader(db, id);
       const items = await readReceiptLineOverviews(db, id);
       const blockedReason = receiptVoidBlockedReason({
         isVoided: receipt.void !== null,

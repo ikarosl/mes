@@ -197,16 +197,10 @@ export interface ProcurementReceiptAcceptanceContext extends ProcurementReceiptL
 /** 整单详情的轻量目录；行操作按 id 读取当前行。 */
 export interface ProcurementReceiptLineIndexItem extends Pick<
   ProcurementReceiptLineOverview,
-  | 'id'
-  | 'itemCode'
-  | 'itemName'
-  | 'materialVariantCode'
-  | 'supplierName'
-  | 'supplierBatchCode'
-  | 'void'
+  'id' | 'itemCode' | 'itemName' | 'materialVariantCode' | 'supplierName' | 'supplierBatchCode'
 > {
-  currentRound: Pick<ReceiptRoundItem, 'status' | 'triggerType'>;
-  quantities: Pick<ReceiptQuantitySummary, 'unprocessedQuantity'>;
+  /** 仅用于目录展示，不代表办理资格；superseded 保留异常当前轮的展示兜底。 */
+  stage: ReceiptLineStage | 'superseded';
 }
 /** 到货与来料工作列表共用的来源展示；分页单位始终为到货明细。 */
 export interface ProcurementReceiptListSource {
@@ -258,7 +252,10 @@ export interface ProcurementInboundInspectionDetail extends Pick<
   /** 仅上述检验的来源轮号，不是历史轮次预览。 */
   rounds: Array<Pick<ReceiptRoundItem, 'id' | 'roundNo'>>;
 }
-export interface ProcurementReceiptDetail extends ProcurementReceiptItem {
+export interface ProcurementReceiptDetail extends Pick<
+  ProcurementReceiptItem,
+  'void' | 'id' | 'receiptNo' | 'purchaseNo' | 'receivedAt' | 'handoverEvidence' | 'remark'
+> {
   items: ProcurementReceiptLineIndexItem[];
 }
 export interface ProcurementReceiptVoidingDetail extends ProcurementReceiptItem {

@@ -6,6 +6,7 @@ import {
 import type {
   ProcurementInboundInspectionDetail,
   ProcurementReceiptLine,
+  ProcurementReceiptLineIndexItem,
   ReceiptAllocationDisposition,
   ReceiptAllocationItem,
   ReceiptLineStage,
@@ -20,7 +21,9 @@ type ReceiptRoundSummary = {
   currentRound: Pick<ProcurementReceiptLine['currentRound'], 'status' | 'triggerType'>;
   quantities: Pick<ProcurementReceiptLine['quantities'], 'unprocessedQuantity'>;
 };
-type ReceiptStageSummary = ReceiptRoundSummary & { stage?: ReceiptLineStage };
+type ReceiptStageSummary =
+  | (ReceiptRoundSummary & { stage?: ReceiptLineStage })
+  | Pick<ProcurementReceiptLineIndexItem, 'stage'>;
 type TagAppearance = {
   type: 'primary' | 'success' | 'warning' | 'danger' | 'info';
   effect: 'light' | 'plain';
@@ -98,6 +101,7 @@ export const canRejectReceipt = (line: ReceiptRoundSummary): boolean =>
   !isReceiptRejected(line) &&
   Number(line.quantities.unprocessedQuantity) > 0;
 const receiptLineStage = (line: ReceiptStageSummary): ReceiptLineStage | 'superseded' => {
+  if (!('currentRound' in line)) return line.stage;
   if (isReceiptVoided(line)) return 'voided';
   if (line.stage) return line.stage;
   if (isKnownZero(line.quantities.unprocessedQuantity)) return 'completed';

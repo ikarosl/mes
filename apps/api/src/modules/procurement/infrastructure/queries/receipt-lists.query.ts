@@ -15,6 +15,7 @@ import type { Db } from '../mysql-purchase-order.shared.js';
 import {
   type ReadRow,
   RECEIPT_COLUMNS,
+  RECEIPT_LINE_FROM,
   receiptSelect,
   lineSelect,
   readCurrentRounds,
@@ -99,7 +100,7 @@ export async function listReceipts(
     params,
   );
   const [rows] = await db.query<ReadRow[]>(
-    `${receiptSelect(RECEIPT_COLUMNS + ',(SELECT COUNT(*) FROM procurement_receipt_line line WHERE line.receipt_id=r.id) line_count')}
+    `${receiptSelect(RECEIPT_COLUMNS)}
     WHERE ${where.join(' AND ')} ORDER BY r.received_at DESC,r.id DESC LIMIT ? OFFSET ?`,
     [...params, pageSize, (page - 1) * pageSize],
   );
@@ -203,11 +204,7 @@ export async function listInboundReleases(
     where.push(`allocation.id IN (${slots(query.allocationIds)})`);
     params.push(...query.allocationIds);
   }
-  const select = (columns: string) => `SELECT ${columns} FROM procurement_receipt_line line
-    JOIN procurement_receipt r ON r.id=line.receipt_id
-    JOIN procurement_order po ON po.id=line.purchase_order_id
-    JOIN procurement_order_line pol ON pol.id=line.purchase_order_line_id
-    JOIN procurement_supplier supplier ON supplier.id=pol.supplier_id
+  const select = (columns: string) => `SELECT ${columns} ${RECEIPT_LINE_FROM}
     JOIN materials material ON material.id=line.item_id
     JOIN procurement_receipt_round current_round ON current_round.id=line.current_round_id
     JOIN procurement_receipt_allocation allocation ON allocation.receipt_line_id=line.id AND allocation.round_id=current_round.id
@@ -291,11 +288,7 @@ export async function listInspections(
       current_case.status case_status,
       source_round.round_no case_round_no,
       adopted_record.id adopted_inspection_id,adopted_record.release_decision
-    FROM procurement_receipt_line line
-    JOIN procurement_receipt r ON r.id=line.receipt_id
-    JOIN procurement_order po ON po.id=line.purchase_order_id
-    JOIN procurement_order_line pol ON pol.id=line.purchase_order_line_id
-    JOIN procurement_supplier supplier ON supplier.id=pol.supplier_id
+    ${RECEIPT_LINE_FROM}
     JOIN materials material ON material.id=line.item_id
     JOIN procurement_receipt_round current_round
       ON current_round.id=line.current_round_id AND current_round.receipt_line_id=line.id

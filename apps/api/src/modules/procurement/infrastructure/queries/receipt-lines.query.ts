@@ -1,12 +1,13 @@
 import type {
   ProcurementReceiptAcceptanceContext,
+  ProcurementReceiptDetail,
   ProcurementReceiptItem,
   ProcurementReceiptLine,
   ProcurementReceiptLineIndexItem,
   ProcurementReceiptLineOverview,
   QualityInboundCaseItem,
   ReceiptQuantitySummary,
-  ReceiptRoundItem,
+  ReceiptRoundStatus,
 } from '@company/contracts';
 import type { QualityInboundQuery } from '../../../quality/public.js';
 import { ProcurementDomainError } from '../../domain/procurement.errors.js';
@@ -15,54 +16,85 @@ import { readCurrentAllocationRows } from './receipt-allocation.query.js';
 import { readPurchaseLineMetrics } from './purchase-order-metrics.query.js';
 import {
   readReceiptInspectionExecution,
-  readReceiptPhysicalQuantities,
+  readReceiptProcessedQuantities,
   readReceiptQuantitySummaries,
 } from './receipt-quantities.query.js';
 import {
   type ReadRow,
   LINE_COLUMNS,
   RECEIPT_COLUMNS,
-  RECEIPT_VOID_COLUMNS,
+  RECEIPT_HEADER_COLUMNS,
   lineSelect,
+  receiptLineSourceSelect,
   receiptSelect,
   readCurrentRounds,
   readReceiptSuppliers,
   text,
   nullableText,
   mapReceipt,
+  mapReceiptHeader,
   mapReceiptVoid,
   mapRound,
   mapAllocation,
 } from './receipt-read.shared.js';
 
-export async function readReceipt(db: Db, id: string): Promise<ProcurementReceiptItem> {
+export async function readReceiptVoidingHeader(
+  db: Db,
+  id: string,
+): Promise<ProcurementReceiptItem> {
+  const [[row]] = await db.query<ReadRow[]>(`${receiptSelect(RECEIPT_COLUMNS)} WHERE r.id=?`, [id]);
+  if (!row) throw new ProcurementDomainError('RECEIPT_NOT_FOUND', '到货单不存在');
+  return mapReceipt(row, (await readReceiptSuppliers(db, [id])).get(id) ?? []);
+}
+
+export async function readReceiptHeader(
+  db: Db,
+  id: string,
+): Promise<Omit<ProcurementReceiptDetail, 'items'>> {
   const [[row]] = await db.query<ReadRow[]>(
-    `${receiptSelect(RECEIPT_COLUMNS + ',(SELECT COUNT(*) FROM procurement_receipt_line line WHERE line.receipt_id=r.id) line_count')} WHERE r.id=?`,
+    `${receiptSelect(RECEIPT_HEADER_COLUMNS)} WHERE r.id=?`,
     [id],
   );
   if (!row) throw new ProcurementDomainError('RECEIPT_NOT_FOUND', '到货单不存在');
-  return mapReceipt(row, (await readReceiptSuppliers(db, [id])).get(id) ?? []);
+  return mapReceiptHeader(row);
+}
+
+function receiptLineIndexStage(
+  row: ReadRow,
+  isVoided: boolean,
+  processedQuantity: number,
+): ProcurementReceiptLineIndexItem['stage'] {
+  if (isVoided || row.round_status === 'voided') return 'voided';
+  if (Number(row.received_quantity) - processedQuantity === 0) return 'completed';
+  if (row.trigger_type === 'manual_rejection') return 'manual_rejection';
+  return row.round_status as ReceiptRoundStatus;
 }
 
 /** 整单目录只需要当前轮摘要和真实剩余，不读取授权、采购指标或历史。 */
 export async function readReceiptLineIndex(
   db: Db,
   receiptId: string,
+  isVoided: boolean,
 ): Promise<ProcurementReceiptLineIndexItem[]> {
   const [rows] = await db.query<ReadRow[]>(
-    `${lineSelect(`line.id,pol.item_code_snapshot,material.material_name,pol.material_variant_code_snapshot,
-      supplier.supplier_name,line.supplier_batch_code,${RECEIPT_VOID_COLUMNS}`)}
+    `${receiptLineSourceSelect(`line.id,pol.item_code_snapshot,material.material_name,pol.material_variant_code_snapshot,
+      supplier.supplier_name,line.supplier_batch_code,current_round.status round_status,
+      current_round.trigger_type,current_revision.received_quantity`)}
+      LEFT JOIN procurement_receipt_round current_round ON current_round.id=line.current_round_id
+        AND current_round.receipt_line_id=line.id
+      LEFT JOIN procurement_receipt_revision current_revision ON current_revision.id=line.current_receipt_revision_id
+        AND current_revision.receipt_line_id=line.id
       WHERE line.receipt_id=? ORDER BY line.line_no,line.id`,
     [receiptId],
   );
-  const ids = rows.map((row) => text(row.id));
-  const currentRounds = await readCurrentRounds(db, ids);
-  const quantities = await readReceiptPhysicalQuantities(db, ids);
+  if (rows.some((row) => row.round_status === null || row.received_quantity === null))
+    throw new Error('到货明细缺少当前轮次或数量投影');
+  const ids = isVoided
+    ? []
+    : rows.filter((row) => row.round_status !== 'voided').map((row) => text(row.id));
+  const processedQuantities = await readReceiptProcessedQuantities(db, ids);
   return rows.map((row) => {
     const id = text(row.id);
-    const currentRound = currentRounds.get(id);
-    const summary = quantities.get(id);
-    if (!currentRound || !summary) throw new Error('到货明细缺少当前轮次或数量投影');
     return {
       id,
       itemCode: text(row.item_code_snapshot),
@@ -70,12 +102,7 @@ export async function readReceiptLineIndex(
       materialVariantCode: text(row.material_variant_code_snapshot),
       supplierName: text(row.supplier_name),
       supplierBatchCode: nullableText(row.supplier_batch_code),
-      void: mapReceiptVoid(row),
-      currentRound: {
-        status: currentRound.status as ReceiptRoundItem['status'],
-        triggerType: currentRound.trigger_type as ReceiptRoundItem['triggerType'],
-      },
-      quantities: { unprocessedQuantity: summary.unprocessedQuantity },
+      stage: receiptLineIndexStage(row, isVoided, processedQuantities.get(id) ?? 0),
     };
   });
 }

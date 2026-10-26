@@ -254,7 +254,9 @@ const reportingAccess = (user: UserProfile): ProductionReportingAccess => ({
     user.permissions,
     PERMISSIONS.production.steps.manageExecution,
   ),
+  // 是否有报工权限
   canReport: permissionMatches(user.permissions, PERMISSIONS.production.steps.report),
+  // 能否查看非本人负责工序的报工记录
   canReadAllReports: permissionMatches(user.permissions, [
     PERMISSIONS.production.executionRecords.view,
     PERMISSIONS.production.tasks.view,

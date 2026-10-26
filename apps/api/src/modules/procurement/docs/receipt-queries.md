@@ -24,7 +24,7 @@
 
 到货登记与处置使用仓储到货查看权限，URL 和事实所有者保持 Procurement。来料质检使用专用来源详情与检验权限；采购订单详情、入库或质检页面的导航分别按目标页面授权，不因显示来源单号隐式授予完整采购、仓储或 Quality 能力。权限目录及 any-of 规则见 [Identity](../../identity/docs/database.md#14-permissions)。
 
-分页默认10、上限100，批量ID最多100且不重复。所有筛选在窗口截取前执行，排序含稳定ID。供应商按具体采购行关联；到货主单返回去重供应商集合。供应商筛选使用EXISTS，不使主单或总数重复；详情仍展示该主单全部明细。
+分页默认10、上限100，批量ID最多100且不重复。所有筛选在窗口截取前执行，排序含稳定ID。供应商按具体采购行关联；到货主单列表及作废预览返回去重供应商集合，详情目录逐行展示供应商。供应商筛选使用EXISTS，不使主单或总数重复；详情仍展示该主单全部明细。
 
 `/procurement/receipt-order-options` 返回 `PageResult<ProcurementReceiptOrderOption>`，只包含已下单且仍有进行中新到货行的采购单；候选包含去重 `suppliers` 供到货选单辨认，分页后按当前页采购单批量读取供应商，不逐单请求。候选详情保留完整采购行及供应商汇总。普通采购主单列表不携带该集合，契约见[采购订单](purchase-orders.md#明细供应商与单工单来源)。
 
@@ -32,7 +32,7 @@
 
 行列表返回 `PageResult<ProcurementReceiptLineListItem>`。每条只含行及主单身份、物料与供应商展示字段、完整 `currentRound`、完整 `quantities`；不装载 `rounds`、`cases`、`allocations` 等历史或详情数组。单行详情及作废预览的 `purchaseOrderLineNo` 取登记来源 `procurement_order_line.line_no`；`purchaseOrderLineId` 保留为定位采购行的 ID。到货明细只以 `id`／`receiptLineId` 公开识别；到货列表／详情、来料列表／详情、补单候选和入库候选不查询、映射或返回到货 `lineNo`／`receiptLineNo`。数据库 `procurement_receipt_line.line_no` 仍保存登记顺序并用于到货列表和整单详情的稳定排序，不作为公开定位字段。列表只返回实际展示、分组及操作定位需要的字段，不返回基础物料编码、采购行 ID／行号、物料／精确版本 ID 或供应商 ID；基础编码仍参与服务端关键词匹配。当前页批量读取轮次、修订、当前正式分配和实际入退事实，数量口径与详情共用同一投影；需要完整来源或历史时按行 ID 读取详情及独立历史分页。
 
-到货主单返回自身 `version`；主单、到货行列表及来源详情返回 `void: {reason,createdBy,createdAt}|null`，从主表 `is_voided` 及 `void_reason/voided_by/voided_at` 映射，没有独立作废记录 ID。一般到货列表保留作废登记及其终止轮；待定稿筛选不包含作废行。`/:id/voiding` 独立返回 `ProcurementReceiptVoidingDetail`，包含主单、完整行概况及 `voiding: {canVoid,blockedReason,lines:[{receiptLineId,version,roundId,roundVersion}]}`；`items` 和 `voiding.lines` 始终为同一主单完整集合，不受其他列表分页影响。预览读取同一快照下的主单版本、真实入退和非 cancelled 补单来源引用，不装载分配明细、检验、采购行指标或历史。所有状态下的作废资格均按[到货所有者规则](receipts.md#整单到货登记作废)核验，命令再在锁内检查主单版本、全单集合及行／轮版本，不以预览替代写入校验。
+到货主单列表及作废预览返回主单 `version`；主单、到货行列表及来源详情返回 `void: {reason,createdBy,createdAt}|null`，从主表 `is_voided` 及 `void_reason/voided_by/voided_at` 映射，没有独立作废记录 ID。一般到货列表保留作废登记及其终止轮；待定稿筛选不包含作废行。`/:id/voiding` 独立返回 `ProcurementReceiptVoidingDetail`，包含主单、完整行概况及 `voiding: {canVoid,blockedReason,lines:[{receiptLineId,version,roundId,roundVersion}]}`；`items` 和 `voiding.lines` 始终为同一主单完整集合，不受其他列表分页影响。预览读取同一快照下的主单版本、真实入退和非 cancelled 补单来源引用，不装载分配明细、检验、采购行指标或历史。所有状态下的作废资格均按[到货所有者规则](receipts.md#整单到货登记作废)核验，命令再在锁内检查主单版本、全单集合及行／轮版本，不以预览替代写入校验。
 
 ## 工作列表的查询复用
 
@@ -52,7 +52,11 @@
 
 ## 当前轮次与历史
 
-整单详情 `ProcurementReceiptDetail.items` 是完整的轻量明细目录，只返回行 ID、物料／供应商／批号检索展示、作废标记、当前轮状态与触发类型、剩余实物量；不组装所有行的办理详情。单行详情 `ProcurementReceiptLine` 按当前选择读取，包含来源身份、当前版本／修订、当前轮、数量、采购数量对照和当前分配。两者均不预载七类历史、历史计数、检验事实或库存批次集合。
+整单详情 `ProcurementReceiptDetail` 服务于工作台顶部登记信息和左侧明细目录，主单仅返回 `id/receiptNo/purchaseNo/receivedAt/handoverEvidence/remark/void`。它不继承主单列表的供应商集合、版本、待定稿数、创建时间或行数统计；目录行数由完整 `items` 长度取得，作废命令依据仍独立读取专用预览。
+
+`items` 只返回行 ID、物料／供应商／批号检索展示及 `stage`，不返回 `currentRound`、`quantities` 或逐行重复的作废记录。阶段沿用[检验列表](#检验列表)的剩余实物和人工拒收判定顺序，并优先识别主单或当前轮作废；异常当前轮的 `superseded` 保留原展示兜底。它只表达目录标签，不授予办理资格。查询只读取阶段所需的轮次字段、当前实收修订及本单行范围的真实入退汇总，不读取完整轮次、供应商汇总或列表计数；真实入退口径仍遵守[数量投影](#数量投影)。
+
+单行详情 `ProcurementReceiptLine` 按当前选择读取，包含来源身份、当前版本／修订、当前轮、数量、采购数量对照和当前分配。整单目录和单行详情均不预载七类历史、历史计数、检验事实或库存批次集合。
 
 定稿上下文 `ProcurementReceiptAcceptanceContext` 在单行详情基础上返回 `currentInspectionCase`、`inspectionSourceRoundNo`、`currentInspectionExecution` 和 `originalRemainingPlannedQuantity`，供首次初始化及提交前重核。检验只按当前轮明确引用的 `inspectionId` 定位，通过 Quality public 取得完整事实，来源轮号精确关联；无引用时检验与来源轮号为 `null`、执行量为零，不从最新历史推断。全部依据在同池事务的同一快照内取得，接口本身不授予定稿资格。
 
